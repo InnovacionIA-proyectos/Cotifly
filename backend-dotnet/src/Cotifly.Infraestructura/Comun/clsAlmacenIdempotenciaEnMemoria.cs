@@ -9,9 +9,8 @@ namespace Cotifly.Infraestructura.Comun;
 /// simultáneas y el resultado que se guarda queda <see cref="IClsAlmacenIdempotencia.Vigencia"/>.
 /// </summary>
 /// <remarks>
-/// Válido mientras la API corre con una sola réplica (<c>infra/stack.dotnet.dokploy.yml</c>, <c>replicas: 1</c>). Un reinicio olvida
-/// las claves; la defensa que queda es el <c>If-Match</c> obligatorio (la segunda petición responde <c>CONFLICTO_CONCURRENCIA</c>). Con
-/// varias réplicas se pasa a una tabla con el siguiente script libre (hoy el <c>0011</c>: el <c>0009</c> y el <c>0010</c> son de HU-021; ADR-018 §12, ADR-019).
+/// #191: la API ya no la usa (registra <see cref="Persistence.clsAlmacenIdempotenciaSql"/>, sobre la tabla del script 06); queda para las
+/// pruebas que no tienen base. Un reinicio olvida las claves y no se comparte entre réplicas.
 /// <para>Cada entrada cuenta cuántas peticiones la están usando (bajo <see cref="_candado"/>): la purga solo quita una entrada sin
 /// usuarios, así dos peticiones con la misma clave nunca obtienen semáforos distintos.</para>
 /// <para>Memoria acotada (arrastre de #99 en #102): la purga de vencidas y fallidas corre cada <see cref="IntervaloPurga"/> (no en cada

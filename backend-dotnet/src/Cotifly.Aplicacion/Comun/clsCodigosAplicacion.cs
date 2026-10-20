@@ -36,4 +36,10 @@ public static class clsCodigosAplicacion
     /// <summary>Mensaje de <see cref="IdempotencyKeyReutilizada"/>.</summary>
     public const string MensajeIdempotencyKeyReutilizada =
         "Esta Idempotency-Key ya se usó con otra petición: genera una clave nueva para cada intención.";
+
+    /// <summary>
+    /// #173/#191: <c>detalle.motivo</c> de <c>ESTADO_NO_PERMITE</c> (409) cuando otra petición con la misma <c>Idempotency-Key</c> no ha
+    /// terminado (en esta réplica o en otra) o la primera captura dejó el folio sin terminar de registrar el envío a Nexo.
+    /// </summary>
+    public const string MotivoCapturaEnCurso = "CAPTURA_EN_CURSO";
 }

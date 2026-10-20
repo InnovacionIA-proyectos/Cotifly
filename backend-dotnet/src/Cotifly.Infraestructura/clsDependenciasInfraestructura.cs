@@ -116,8 +116,12 @@ public static class clsDependenciasInfraestructura
         servicios.TryAddSingleton<IClsReloj, clsRelojSistema>();
         servicios.TryAddSingleton<IClsCalendarioNegocio, clsCalendarioNegocio>();
 
-        // Idempotency-Key de las mutaciones de la etapa final (ADR-018 §8, #100): en memoria, una sola réplica de la API.
-        servicios.TryAddSingleton<IClsAlmacenIdempotencia, clsAlmacenIdempotenciaEnMemoria>();
+        // Idempotency-Key de la captura y de las mutaciones de la etapa final (ADR-018 §8, #100, #173). #191: en la tabla del 06
+        // (dbo_cotifly.CapturasIdempotentes), compartida entre réplicas y a prueba de reinicios; sin la tabla, /health/ready dice
+        // "falta 06" (no se degrada a memoria). El registro de la captura en curso usa la misma fila, dentro de la transacción del folio.
+        servicios.TryAddSingleton<IClsAlmacenIdempotencia, clsAlmacenIdempotenciaSql>();
+        servicios.TryAddScoped<IClsRegistroCapturasIdempotentes, clsRegistroCapturasIdempotentesSql>();
+        servicios.AddHostedService<clsLimpiezaIdempotenciaHostedService>();
 
         AgregarPersistencia(servicios);
 

@@ -1,8 +1,5 @@
 using System.Diagnostics;
 using System.Globalization;
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 using Cotifly.Aplicacion.Auditoria.Services;
 using Cotifly.Aplicacion.Comun;
 using Cotifly.Aplicacion.Comun.Interfaces;
@@ -70,7 +67,6 @@ public sealed class clsServiciosConexosCosteoService(
     /// <summary>Operación del ámbito de la idempotencia (<c>"conexos:{usuarioId}"</c>).</summary>
     public const string OperacionIdempotencia = "conexos";
 
-    private static readonly JsonSerializerOptions _jsonHuella = new(JsonSerializerDefaults.Web);
 
     /// <summary>Herramienta de la auditoría (<c>EventosHerramienta.herramienta</c>).</summary>
     public const string HerramientaAuditoria = "agregar_servicios_conexos";
@@ -154,8 +150,7 @@ public sealed class clsServiciosConexosCosteoService(
     /// <summary>Huella de la petición para la idempotencia: folio e items tal como llegaron (SHA-256).</summary>
     public static string Huella(string folio, IReadOnlyList<clsConexoAgregarEntrada>? items)
     {
-        var cuerpo = JsonSerializer.Serialize(new { folio = folio?.Trim(), items }, _jsonHuella);
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(cuerpo)));
+        return clsHuellaIdempotencia.Calcular(new { folio = folio?.Trim(), items });
     }
 
     private async Task<clsResultado<clsCosteoCotizacion>> EjecutarAsync(

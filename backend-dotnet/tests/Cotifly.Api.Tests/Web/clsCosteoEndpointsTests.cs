@@ -504,13 +504,41 @@ public sealed class clsCosteoEndpointsTests : IDisposable
         _nexo.SolicitudesCreadas.Count.Should().Be(antes + 2);
     }
 
-    private async Task<HttpResponseMessage> CapturarConClaveAsync(string token, string clave, string cuerpo)
+    /// <summary>
+    /// #191 (HU-026.1): la Idempotency-Key vive en dbo_cotifly.CapturasIdempotentes (script 06). Una captura repetida con la misma clave
+    /// DESPUÉS DE REINICIAR LA API (otra instancia, sin nada en memoria; igual que otra réplica) devuelve el mismo folio y no crea otra
+    /// solicitud en Nexo. El mismo cuerpo con otra escala de decimales (1424.95 → 1424.950) es la misma petición (deuda del PR #195).
+    /// </summary>
+    [Fact]
+    public async Task I191_LaCapturaRepetidaTrasReiniciarLaApiNoCreaOtraSolicitudEnNexo()
+    {
+        var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var clave = Guid.NewGuid().ToString();
+        var antes = _nexo.SolicitudesCreadas.Count;
+        using var primera = await CapturarConClaveAsync(ana.Access, clave, Formulario());
+        var folio = (await VerificarContratoAsync(primera, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString();
+
+        using var reiniciada = clsApiWebPruebas.ConNexo(_entorno.BaseDatos, _nexo);
+        var otraEscala = Formulario().Replace("1424.95", "1424.950", StringComparison.Ordinal);
+        otraEscala.Should().Contain("1424.950");
+        using var reintento = await CapturarConClaveAsync(ana.Access, clave, otraEscala, reiniciada.Cliente);
+
+        reintento.StatusCode.Should().Be(HttpStatusCode.Created, await reintento.Content.ReadAsStringAsync(Ct));
+        JsonDocument.Parse(await reintento.Content.ReadAsStringAsync(Ct)).RootElement.GetProperty("folio").GetString()
+            .Should().Be(folio, "la API reiniciada lee la clave de la tabla del 06");
+        _nexo.SolicitudesCreadas.Count.Should().Be(antes + 1, "una sola solicitud en Nexo");
+        (await clsBaseDatosPruebas.EscalarAsync<string>(_entorno.BaseDatos.CadenaCotifly,
+                $"SELECT CONCAT(estado, '|', folio) FROM dbo_cotifly.CapturasIdempotentes WHERE clave = N'{clave}'"))
+            .Should().Be($"terminada|{folio}", "la fila guarda el folio de la captura (en la transacción que lo confirmó) y su resultado");
+    }
+
+    private async Task<HttpResponseMessage> CapturarConClaveAsync(string token, string clave, string cuerpo, HttpClient? cliente = null)
     {
         using var peticion = new HttpRequestMessage(_post, "/web/solicitudes-costeo");
         peticion.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
         peticion.Headers.TryAddWithoutValidation("Idempotency-Key", clave);
         peticion.Content = new StringContent(cuerpo, System.Text.Encoding.UTF8, "application/json");
-        return await _api.Cliente.SendAsync(peticion, Ct);
+        return await (cliente ?? _api.Cliente).SendAsync(peticion, Ct);
     }
 
     public void Dispose()

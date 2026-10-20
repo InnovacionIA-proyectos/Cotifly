@@ -23,6 +23,8 @@ namespace Cotifly.Infraestructura.Comun.Persistence;
 /// <item><see cref="DescripcionEsquemaSin04"/>: solo faltan las columnas de la cubicación en segundo plano (HU-023.5, #160);</item>
 /// <item><see cref="DescripcionEsquemaSin05"/>: solo falta <c>categoriaServicioConexo</c> de <c>db/scripts/05_categoria_conexo.sql</c>
 /// (HU-014, #188);</item>
+/// <item><see cref="DescripcionEsquemaSin06"/>: solo falta la tabla <c>CapturasIdempotentes</c> (o alguna de sus columnas) de
+/// <c>db/scripts/06_idempotencia_captura.sql</c> (#191: la <c>Idempotency-Key</c> persistente; no se degrada a memoria);</item>
 /// <item><see cref="DescripcionEsquemaSin09"/>: solo falta <c>CotizacionesSolicitud.scorePrioridad</c> de
 /// <c>db/scripts/09_score_prioridad.sql</c> (HU-018.1, #155);</item>
 /// <item>cualquier otra ausencia: <c>esquema incompleto: falta Tabla.columna</c> (las primeras, sin datos de conexión).</item>
@@ -89,6 +91,34 @@ public sealed class clsBaseDatosHealthCheck(
     public static readonly IReadOnlySet<string> Columnas05 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "CotizacionServiciosConexos.categoriaServicioConexo",
+    };
+
+    /// <summary>#191: está todo hasta el 05, pero no la tabla <c>CapturasIdempotentes</c> de <c>db/scripts/06_idempotencia_captura.sql</c>.</summary>
+    public const string DescripcionEsquemaSin06 = "esquema incompleto: falta 06";
+
+    /// <summary>
+    /// Columnas de <c>dbo_cotifly.CapturasIdempotentes</c> (<c>db/scripts/06_idempotencia_captura.sql</c>), mapeadas en el modelo EF
+    /// (<see cref="clsCapturaIdempotenteFila"/>) y usadas con SQL propio por <see cref="clsAlmacenIdempotenciaSql"/> y
+    /// <see cref="clsRegistroCapturasIdempotentesSql"/>.
+    /// </summary>
+    public static readonly IReadOnlySet<string> Columnas06 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "CapturasIdempotentes.id",
+        "CapturasIdempotentes.usuarioId",
+        "CapturasIdempotentes.operacion",
+        "CapturasIdempotentes.clave",
+        "CapturasIdempotentes.huella",
+        "CapturasIdempotentes.estado",
+        "CapturasIdempotentes.tomadaPor",
+        "CapturasIdempotentes.enCursoHasta",
+        "CapturasIdempotentes.resultado",
+        "CapturasIdempotentes.cotizacionId",
+        "CapturasIdempotentes.folio",
+        "CapturasIdempotentes.solicitudNexoId",
+        "CapturasIdempotentes.scorePrioridad",
+        "CapturasIdempotentes.createdAt",
+        "CapturasIdempotentes.updatedAt",
+        "CapturasIdempotentes.expiraAt",
     };
 
     /// <summary>HU-018.1 (#155): está todo lo anterior, pero no la columna <c>scorePrioridad</c> de <c>db/scripts/09_score_prioridad.sql</c>.</summary>
@@ -231,10 +261,10 @@ public sealed class clsBaseDatosHealthCheck(
             return HealthCheckResult.Unhealthy(DescripcionEsquemaSin0009);
         }
 
-        // Faltan columnas de los ajustes que van después del 0009 (0010, 02 del cubicador, 03, 04, 05 y 09): se pide el primero que falta,
-        // en el orden en que se aplican.
+        // Faltan columnas de los ajustes que van después del 0009 (0010, 02 del cubicador, 03, 04, 05, 06 y 09): se pide el primero que
+        // falta, en el orden en que se aplican.
         if (faltantes.All(f => Columnas0010.Contains(f) || Columnas02.Contains(f) || Columnas03.Contains(f) || Columnas04.Contains(f)
-                               || Columnas05.Contains(f) || Columnas09.Contains(f)))
+                               || Columnas05.Contains(f) || Columnas06.Contains(f) || Columnas09.Contains(f)))
         {
             return HealthCheckResult.Unhealthy(
                 faltantes.Any(Columnas0010.Contains) ? DescripcionEsquemaSin0010
@@ -242,6 +272,7 @@ public sealed class clsBaseDatosHealthCheck(
                 : faltantes.Any(Columnas03.Contains) ? DescripcionEsquemaSin03
                 : faltantes.Any(Columnas04.Contains) ? DescripcionEsquemaSin04
                 : faltantes.Any(Columnas05.Contains) ? DescripcionEsquemaSin05
+                : faltantes.Any(Columnas06.Contains) ? DescripcionEsquemaSin06
                 : DescripcionEsquemaSin09);
         }
 

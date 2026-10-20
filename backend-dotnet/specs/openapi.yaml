@@ -1467,6 +1467,8 @@ paths:
             #173. `ESTADO_NO_PERMITE` con `detalle.motivo = CAPTURA_EN_CURSO`: la `Idempotency-Key` ya creó un folio cuyo envío a Nexo
             no terminó de registrarse (la primera petición falló después de confirmar el folio). No se vuelve a llamar a Nexo;
             `detalle.folio` y `detalle.solicitud_nexo_id` dicen qué revisar. No reintentar: llevar al comercial a "Mis cotizaciones".
+            #191: el mismo 409 (`CAPTURA_EN_CURSO`) responde si otra petición con la misma clave todavía está en curso en otra
+            réplica de la API; no se ejecuta nada.
             `IDEMPOTENCY_KEY_REUTILIZADA` (D4, E2E 2026-10-16; antes 400 `ErrorWeb`): la misma `Idempotency-Key` con otro cuerpo; no se
             hace nada. Generar una clave nueva para cada intención.
           content:
@@ -3139,6 +3141,11 @@ components:
         con el texto) y no ejecuta nada; una clave fuera de 8 a 64 caracteres sigue siendo 400 `ErrorWeb`. Solo los éxitos consumen la clave: en `re-solicitar`, un 200 con `error_envio` (Nexo
         falló) tampoco la consume, y repetirla vuelve a ejecutar (con el mismo `If-Match` responde `CONFLICTO_CONCURRENCIA`:
         recargar y reintentar). En `POST /web/solicitudes-costeo` (#173) toda captura 201 la consume, también con `error_envio`.
+        #191: la clave se guarda en la base (sobrevive a un reinicio y la comparten las réplicas). Una repetición simultánea que
+        cae en la misma réplica espera a la primera y recibe su respuesta; si cae en otra réplica mientras la primera está en
+        curso, responde 409 `ESTADO_NO_PERMITE` con `detalle.motivo = CAPTURA_EN_CURSO` sin ejecutar nada (esperar unos segundos
+        y repetir, o revisar el folio). Los números del cuerpo se comparan por valor:
+        `1.5` y `1.50` son la misma petición.
       schema:
         type: string
         minLength: 8
