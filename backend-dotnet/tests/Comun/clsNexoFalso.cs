@@ -689,7 +689,9 @@ public sealed class clsNexoFalso : HttpMessageHandler
             return nodo;
         }
 
-        if (ExponerSituacionLinea)
+        // Validación #183: un Nexo con #320 trae estadoLinea en TODAS las líneas (también después de deshacer un rechazo); Cotifly solo
+        // deshace el rechazo con esa confirmación.
+        if (ExponerSituacionLinea || s.ConRechazoLinea)
         {
             var costeada = s.Cotizacion?.Fletes.ContainsKey(indice) == true;
             nodo["estadoLinea"] = costeada ? "autoResuelta" : "porCostear";
@@ -737,6 +739,7 @@ public sealed class clsNexoFalso : HttpMessageHandler
 
             s.Cotizacion ??= new clsCotizacionFalsa(Guid.NewGuid().ToString());
             s.Estado = "EnCosteo";
+            s.ConRechazoLinea = true;
         });
 
     /// <summary>
@@ -1064,6 +1067,9 @@ public sealed class clsNexoFalso : HttpMessageHandler
 
         /// <summary>HU-028.1 (#183, Nexo #320): motivo del rechazo de la Mesa por índice de línea (orden de captura).</summary>
         public Dictionary<int, string> Rechazos { get; } = [];
+
+        /// <summary>Validación #183: la solicitud viene de un Nexo con #320 (alguna línea se rechazó): todas sus líneas traen estadoLinea.</summary>
+        public bool ConRechazoLinea { get; set; }
     }
 
     private sealed class clsCotizacionFalsa(string id)
