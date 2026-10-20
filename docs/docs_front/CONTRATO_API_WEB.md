@@ -689,7 +689,10 @@ Cotifly; NEXO no expone su fecha ni quién rechazó). Reglas:
 - PDF y Excel: la ruta rechazada sale "Sin costeo" / "SIN COSTEO", sin precio y **sin motivo**; no suma en el total. El motivo solo lo ve
   el comercial en pantalla.
 - Mientras NEXO no entregue, la Mesa puede deshacer el rechazo: el camión vuelve a `pendiente_costeo` y `motivo_rechazo` a `null`.
-  Entregada, el rechazo es definitivo.
+  Entregada, el rechazo es definitivo. El rechazo solo se deshace cuando NEXO devuelve el estado de la línea y ya no es `rechazada`
+  (también si en la misma consulta ya viene costeada y entregada); una lectura sin el estado de la línea lo conserva.
+- Si la Mesa rechaza una línea que el PDF ya cotizó, el precio de esa versión se conserva y `motivo_estado_costeo` avisa que el costeo
+  cambió después del PDF (genera una versión nueva para cotizar sin ella).
 - Re-solicitar (mismo folio o `-vN`) y editar la solicitud vuelven a pedir los camiones rechazados (la Mesa los evalúa otra vez). La
   respuesta de `re-solicitar` trae `aviso_rechazos` con las rutas y sus motivos para que el comercial los quite editando si no aplican.
 - Marcar ganada o perdida con rutas rechazadas funciona igual (el precio es el de las demás).

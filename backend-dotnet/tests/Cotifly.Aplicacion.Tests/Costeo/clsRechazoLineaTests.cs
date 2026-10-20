@@ -58,6 +58,8 @@ public sealed class clsRechazoLineaTests
         cotizacion.PrecioFinal.Should().Be(1_176_471m, "el total es solo la ruta 1");
         cotizacion.CostoFinal.Should().Be(1_000_000m);
         cotizacion.RutasCotizables.Should().ContainSingle().Which.Orden.Should().Be(1);
+        clsTextosCosteoService.Contexto(cotizacion, null).Rutas.Should().ContainSingle("la IA no redacta sobre la ruta rechazada (validación #183)")
+            .Which.Origen.Should().Be(cotizacion.RutasOrdenadas[0].OrigenNombre);
         cotizacion.TodasLasRutasRechazadas.Should().BeFalse();
         cotizacion.MotivoEstadoCosteo.Should().BeNull();
 
@@ -145,6 +147,72 @@ public sealed class clsRechazoLineaTests
         cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.Entregada, "marcar ganada con un camión rechazado funciona");
         cotizacion.PrecioFinal.Should().Be(1_764_706m);
         cotizacion.MotivoEstadoCosteo.Should().BeNull("un camión rechazado no es \"entregada sin flete\"");
+    }
+
+    [Fact]
+    public void SiLaMesaDeshaceCosteaYEntregaEntreDosConsultasElCamionTomaSuFleteYLaRutaVuelveAlTotal()
+    {
+        // Validación #183: el polling puede tardar hasta 15 min entre consultas. Si en ese tiempo la Mesa deshace el rechazo, costea la
+        // línea y entrega, la foto trae "entregada" CON el detalle de la línea (no rechazada): manda el detalle, no se conserva el rechazo.
+        var cotizacion = DosRutas();
+        Aplicar(cotizacion, Foto("EnCosteo", [Linea("N-1", "A"), Linea("N-2", "C", rechazo: "Revisar"), Linea("N-3", "C", rechazo: "Revisar")],
+            [("N-1", 1_000_000m)]));
+        cotizacion.RutasOrdenadas[1].Rechazada.Should().BeTrue();
+
+        Aplicar(cotizacion, Foto("Entregada", [Linea("N-1", "A"), Linea("N-2", "C"), Linea("N-3", "C")],
+            [("N-1", 1_000_000m), ("N-2", 300_000m), ("N-3", 200_000m)], estadoCotizacion: "Entregada"));
+
+        var segunda = cotizacion.RutasOrdenadas[1];
+        segunda.Vehiculos.Should().OnlyContain(v => v.EstadoCosteo == EstadoCosteo.Entregada && v.CostoFlete != null && v.MotivoRechazo == null && v.RechazadaAt == null);
+        segunda.Rechazada.Should().BeFalse();
+        segunda.CostoFletesTotal.Should().Be(500_000m);
+        cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.Entregada);
+        cotizacion.PrecioFinal.Should().Be(1_764_706m, "1.500.000 con margen del 15 %: la ruta 2 vuelve a contar");
+        cotizacion.MotivoEstadoCosteo.Should().BeNull();
+    }
+
+    [Fact]
+    public void UnaFotoSinElEstadoDeLaLineaNoDeshaceElRechazoNiLoHaceOscilar()
+    {
+        // Validación #183: una lectura en costeo sin el detalle de la línea (Nexo no devolvió lineas[], o la línea no vino) no es la
+        // confirmación de que la Mesa deshizo el rechazo: se conserva, con su fecha, y la siguiente lectura completa no lo "re-crea".
+        var cotizacion = DosRutas();
+        var rechazo = Foto("EnCosteo", [Linea("N-1", "A"), Linea("N-2", "C", rechazo: "Sin tarifa"), Linea("N-3", "C")], [("N-1", 1_000_000m), ("N-3", 500_000m)]);
+        Aplicar(cotizacion, rechazo);
+        var camion = cotizacion.RutasOrdenadas[1].VehiculosOrdenados[0];
+
+        var incompleta = Foto("EnCosteo", [], [("N-1", 1_000_000m), ("N-3", 500_000m)]);
+        Aplicar(cotizacion, incompleta, _ahora.AddMinutes(5));
+        var soloOtras = Foto("EnCosteo", [Linea("N-1", "A"), Linea("N-3", "C")], [("N-1", 1_000_000m), ("N-3", 500_000m)]) with { LineasSolicitud = ["N-1", "N-2", "N-3"] };
+        Aplicar(cotizacion, soloOtras, _ahora.AddMinutes(10));
+
+        (camion.EstadoCosteo, camion.MotivoRechazo, camion.RechazadaAt).Should().Be(
+            ((EstadoCosteo?)EstadoCosteo.Rechazada, (string?)"Sin tarifa", (DateTimeOffset?)_ahora));
+        Aplicar(cotizacion, rechazo, _ahora.AddMinutes(15)).Should().BeFalse("la lectura completa no cambia nada: no oscila");
+        camion.RechazadaAt.Should().Be(_ahora);
+        cotizacion.PrecioFinal.Should().Be(1_764_706m);
+    }
+
+    [Fact]
+    public void UnRechazoDespuesDelPdfConservaElPrecioDeLaVersionYLoAdvierte()
+    {
+        // Validación #183: con PDF el precio de la versión se conserva (ADR-015 §5), pero si la Mesa rechaza una línea que el PDF cotizó el
+        // comercial debe saberlo (antes no había aviso: la línea rechazada no trae flete en Nexo y no "difería").
+        var cotizacion = DosRutas();
+        var completa = Foto("EnCosteo", [Linea("N-1", "A"), Linea("N-2", "C"), Linea("N-3", "C")], [("N-1", 1_000_000m), ("N-2", 300_000m), ("N-3", 200_000m)]);
+        Aplicar(cotizacion, completa);
+        var precio = cotizacion.PrecioFinal;
+        precio.Should().NotBeNull();
+        cotizacion.AsignarPdf("pdf/PCN-REC.pdf");
+        Aplicar(cotizacion, completa, _ahora.AddMinutes(5));
+        cotizacion.MotivoEstadoCosteo.Should().BeNull("sin cambios no hay aviso");
+
+        Aplicar(cotizacion, Foto("EnCosteo", [Linea("N-1", "A"), Linea("N-2", "C", rechazo: "Sin cupo"), Linea("N-3", "C")],
+            [("N-1", 1_000_000m), ("N-3", 200_000m)]), _ahora.AddMinutes(10));
+
+        cotizacion.RutasOrdenadas[1].VehiculosOrdenados[0].Rechazado.Should().BeTrue();
+        cotizacion.PrecioFinal.Should().Be(precio, "el precio de la versión con PDF se conserva");
+        cotizacion.MotivoEstadoCosteo.Should().Be(clsPrecioCosteoService.MotivoCambioDespuesDelPdf);
     }
 
     [Fact]

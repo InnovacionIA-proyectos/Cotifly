@@ -133,12 +133,13 @@ public sealed class clsPrecioCosteoService(ILogger<clsPrecioCosteoService>? logg
         {
             var estado = clsDerivacionEstadoCosteo.DerivarLinea(foto, camion.LineaSolicitudNexoId);
             // HU-028.1 (#183, Nexo #320): la Mesa rechazó la línea: el camión guarda el motivo (y queda sin flete si se leen costos).
-            var motivoRechazo = estado == EstadoCosteo.Rechazada
-                ? clsDerivacionEstadoCosteo.SituacionLinea(foto, camion.LineaSolicitudNexoId)?.MotivoRechazo
-                : null;
+            var situacion = clsDerivacionEstadoCosteo.SituacionLinea(foto, camion.LineaSolicitudNexoId);
+            var motivoRechazo = estado == EstadoCosteo.Rechazada ? situacion?.MotivoRechazo : null;
+            // El detalle trae el estado de la línea y no es "rechazada": si el camión lo estaba, la Mesa lo deshizo (también si ya entregó).
+            var lineaNoRechazada = estado != EstadoCosteo.Rechazada && situacion?.EstadoLinea is not null;
             if (conPdf)
             {
-                return new clsCosteoCamionNexo(camion.Id, estado, ConCostos: false, MotivoRechazo: motivoRechazo);
+                return new clsCosteoCamionNexo(camion.Id, estado, ConCostos: false, MotivoRechazo: motivoRechazo, LineaNoRechazada: lineaNoRechazada);
             }
 
             if (estado == EstadoCosteo.Rechazada)
@@ -157,7 +158,8 @@ public sealed class clsPrecioCosteoService(ILogger<clsPrecioCosteoService>? logg
 
             // La Mesa de Costeo le puso vehículo a una línea que iba vacía (sin selección automática): se copia.
             var linea = Detalle(foto, camion.LineaSolicitudNexoId);
-            return new clsCosteoCamionNexo(camion.Id, estado, ConCostos: true, costos?.Flete, costos?.Retorno, linea?.TipoVehiculo, linea?.Carroceria);
+            return new clsCosteoCamionNexo(camion.Id, estado, ConCostos: true, costos?.Flete, costos?.Retorno, linea?.TipoVehiculo, linea?.Carroceria,
+                LineaNoRechazada: lineaNoRechazada);
         }).ToList();
 
         // Un error del módulo de precio lo reporta AplicarPrecio (que vuelve a recalcular): aquí cuenta como cambio.
@@ -225,11 +227,16 @@ public sealed class clsPrecioCosteoService(ILogger<clsPrecioCosteoService>? logg
         return cambio;
     }
 
-    /// <summary>¿El flete o el retorno de Nexo de algún camión difieren de los guardados? (la solicitud ya tiene PDF).</summary>
+    /// <summary>
+    /// ¿El flete o el retorno de Nexo de algún camión difieren de los guardados? (la solicitud ya tiene PDF). HU-028.1 (#183, validación):
+    /// también si la Mesa de Costeo rechazó la línea de un camión que el PDF cotizó (rechazado y con el flete que se conservó con el PDF;
+    /// uno rechazado antes del PDF no tiene flete).
+    /// </summary>
     private static bool CambioDespuesDelPdf(clsCotizacionSolicitud cotizacion, clsCosteoConsultadoNexo foto) =>
-        foto.Cotizacion is not null
-        && cotizacion.Vehiculos.Any(c => clsDerivacionEstadoCosteo.CostosCamion(foto, c.LineaSolicitudNexoId) is { } costos
-                                         && (costos.Flete != c.CostoFlete || costos.Retorno != (c.CostoRetornoContenedor ?? 0m)));
+        cotizacion.Vehiculos.Any(c => c.Rechazado && c.CostoFlete is not null)
+        || (foto.Cotizacion is not null
+            && cotizacion.Vehiculos.Any(c => !c.Rechazado && clsDerivacionEstadoCosteo.CostosCamion(foto, c.LineaSolicitudNexoId) is { } costos
+                                             && (costos.Flete != c.CostoFlete || costos.Retorno != (c.CostoRetornoContenedor ?? 0m))));
 
     /// <summary>Una línea de warning por cada línea de Nexo sin dueño y por cada empate sin resolver (#134).</summary>
     private void Avisar(clsCotizacionSolicitud cotizacion, clsEmparejamiento emparejamiento)

@@ -911,6 +911,13 @@ public sealed partial class clsCotizacionSolicitud
                 continue;
             }
 
+            if (lectura.LineaNoRechazada)
+            {
+                // HU-028.1 (#183): el detalle de Nexo dice que la línea ya no está rechazada (la Mesa lo deshizo antes de entregar): el
+                // camión lo deshace aunque la lectura ya diga "entregada" (deshacer, costear y entregar entre dos consultas del polling).
+                cambio |= camion.DeshacerRechazo();
+            }
+
             if (!lectura.ConCostos)
             {
                 cambio |= camion.RegistrarEstado(lectura.Estado);

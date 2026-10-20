@@ -225,9 +225,9 @@ public sealed class clsVehiculoLineaSolicitud
         == clsEmparejadorLineasNexo.Normalizar(b.Replace('_', ' ').Replace('-', ' '));
 
     /// <summary>
-    /// Nexo recibió la solicitud (o falló el envío): el camión toma el estado de la solicitud. HU-028.1 (#183): un camión rechazado no toma
-    /// <c>entregada</c> (con la cotización entregada el rechazo es definitivo, <see cref="ConservaRechazo"/>); cualquier otro estado deshace el
-    /// rechazo y borra su motivo y su fecha.
+    /// Nexo recibió la solicitud (o falló el envío): el camión toma el estado de la solicitud. HU-028.1 (#183): un camión rechazado conserva
+    /// el rechazo (<see cref="ConservaRechazo"/>) salvo <c>descartada</c>; solo lo deshace <see cref="DeshacerRechazo"/>, cuando el detalle de
+    /// Nexo confirma que la línea ya no está rechazada, o el reenvío (<see cref="ReiniciarCosteo"/>).
     /// </summary>
     internal bool RegistrarEstado(EstadoCosteo estado)
     {
@@ -272,13 +272,31 @@ public sealed class clsVehiculoLineaSolicitud
     }
 
     /// <summary>
-    /// HU-028.1 (#183): ¿se conserva el rechazo ante una lectura que trae <paramref name="estado"/>? Sí si el camión está rechazado y llega
-    /// <c>entregada</c>: Nexo no deja deshacer un rechazo con la cotización entregada (#320, 409), así que una lectura entregada sin el
-    /// estado de la línea (la respuesta del resultado, una foto sin detalle) no lo deshace. Cualquier otro estado sí lo deshace (la Mesa lo
-    /// deshizo antes de entregar: el camión vuelve a <c>pendiente_costeo</c> o <c>autocosteo</c>).
+    /// HU-028.1 (#183): ¿se conserva el rechazo ante una lectura que trae <paramref name="estado"/>? Sí, mientras el camión esté rechazado y
+    /// el estado no sea <c>descartada</c> (la solicitud o la línea ya no existen en Nexo). Una lectura que NO trae el estado de la línea (la
+    /// respuesta del resultado, una foto sin detalle o con la línea ausente) no lo deshace: ni con <c>entregada</c> (Nexo no deja deshacer
+    /// un rechazo entregado, #320, 409) ni con <c>pendiente_costeo</c> o <c>autocosteo</c> (si no, una foto incompleta lo borraría y la
+    /// siguiente lo volvería a poner con otra fecha: oscilaría). Solo lo deshace la confirmación del detalle (<see cref="DeshacerRechazo"/>).
     /// </summary>
     internal bool ConservaRechazo(EstadoCosteo estado) =>
-        EstadoCosteo == Cotizaciones.EstadoCosteo.Rechazada && estado == Cotizaciones.EstadoCosteo.Entregada;
+        EstadoCosteo == Cotizaciones.EstadoCosteo.Rechazada && estado != Cotizaciones.EstadoCosteo.Descartada;
+
+    /// <summary>
+    /// HU-028.1 (#183): Nexo confirma, con el estado de la línea en su detalle, que la Mesa de Costeo deshizo el rechazo: el camión sale de
+    /// <c>rechazada</c> (queda <c>pendiente_costeo</c>, sin motivo ni fecha) y la misma lectura le aplica después su estado y sus costos,
+    /// también <c>entregada</c>. Sin efecto si el camión no está rechazado. Devuelve si cambió.
+    /// </summary>
+    internal bool DeshacerRechazo()
+    {
+        if (!Rechazado)
+        {
+            return false;
+        }
+
+        EstadoCosteo = Cotizaciones.EstadoCosteo.PendienteCosteo;
+        OlvidarRechazoSiNoAplica();
+        return true;
+    }
 
     /// <summary>Fuera de <c>rechazada</c> el camión no tiene motivo ni fecha de rechazo (CHECK del script 10). Devuelve si borró algo.</summary>
     private bool OlvidarRechazoSiNoAplica()
@@ -320,7 +338,7 @@ public sealed class clsVehiculoLineaSolicitud
 
         if (ConservaRechazo(estado))
         {
-            // HU-028.1 (#183): entregada con el camión rechazado: el rechazo es definitivo y la línea no tiene flete.
+            // HU-028.1 (#183): la lectura no confirma que la Mesa deshizo el rechazo: el camión sigue rechazado y sin flete.
             return false;
         }
 
