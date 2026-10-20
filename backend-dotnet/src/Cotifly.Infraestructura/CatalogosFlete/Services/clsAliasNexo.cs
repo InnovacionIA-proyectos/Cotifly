@@ -35,6 +35,13 @@ public sealed class clsAliasNexo(
 
     public const string Mensaje = "El diccionario de alias de Nexo no está disponible en este momento: intenta de nuevo más tarde.";
 
+    /// <summary>
+    /// Detalle del "no disponible" cuando la causa es el comercial (no existe o no tiene <c>idUsuarioExterno</c>), no Nexo: la caché
+    /// (<see cref="clsAliasNexoEnCache"/>) no lo cuenta como una caída de Nexo, así un comercial sin identidad no deja sin diccionario a
+    /// los demás durante <see cref="clsAliasNexoEnCache.EsperaTrasFallo"/>.
+    /// </summary>
+    public const string DetalleSinIdentidad = "El comercial no tiene usuario de Nexo (idUsuarioExterno).";
+
     private readonly string? _urlBase = string.IsNullOrWhiteSpace(opciones.Value.UrlBase) ? null : opciones.Value.UrlBase.Trim().TrimEnd('/');
 
     public async Task<clsResultado<clsDiccionarioAliasNexo>> ObtenerAsync(Guid usuarioId, CancellationToken cancellationToken = default)
@@ -47,7 +54,8 @@ public sealed class clsAliasNexo(
         var usuario = await usuarios.ObtenerPorIdAsync(usuarioId, cancellationToken);
         if (usuario?.IdUsuarioExterno is not { } idUsuarioExterno)
         {
-            return NoDisponible(usuario is null ? "el comercial no existe" : "el comercial no tiene idUsuarioExterno (almacén corporativo)");
+            return NoDisponible(
+                usuario is null ? "el comercial no existe" : "el comercial no tiene idUsuarioExterno (almacén corporativo)", detalle: DetalleSinIdentidad);
         }
 
         using var peticion = new HttpRequestMessage(HttpMethod.Get, clsCatalogosMaestrosNexo.ConstruirUrl(_urlBase, RutaAlias));
@@ -123,7 +131,7 @@ public sealed class clsAliasNexo(
             ? valor.GetString()!.Trim()
             : null;
 
-    private clsErrorDominio NoDisponible(string motivo, Exception? causa = null)
+    private clsErrorDominio NoDisponible(string motivo, Exception? causa = null, string? detalle = null)
     {
         logger.LogWarning("Diccionario de alias de Nexo no disponible ({Motivo}).", motivo);
         if (causa is not null)
@@ -131,7 +139,7 @@ public sealed class clsAliasNexo(
             logger.LogDebug(causa, "Detalle del fallo del diccionario de alias de Nexo ({Motivo}).", motivo);
         }
 
-        return new clsErrorDominio(clsCodigosError.CatalogosFleteNoDisponible, Mensaje);
+        return new clsErrorDominio(clsCodigosError.CatalogosFleteNoDisponible, Mensaje, detalle);
     }
 }
 
@@ -222,7 +230,13 @@ public sealed class clsAliasNexoEnCache(
                 return resultado;
             }
 
-            cache.UltimoFallo = reloj.AhoraUtc;
+            // Un comercial sin identidad en Nexo no es una caída de Nexo: no se frena a los demás (la siguiente consulta, de otro
+            // comercial, vuelve a intentar).
+            if (!string.Equals(resultado.Error.Detalle, clsAliasNexo.DetalleSinIdentidad, StringComparison.Ordinal))
+            {
+                cache.UltimoFallo = reloj.AhoraUtc;
+            }
+
             return Respaldo(registrar: true) ?? resultado;
         }
         catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException)

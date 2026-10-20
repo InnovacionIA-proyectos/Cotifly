@@ -142,6 +142,29 @@ public sealed class clsAliasNexoTests : IDisposable
         await interno.Received(2).ObtenerAsync(_usuarioId, Arg.Any<CancellationToken>());
     }
 
+    /// <summary>
+    /// Validación #194: un comercial sin <c>idUsuarioExterno</c> no consulta Nexo, y ese "no disponible" no es una caída de Nexo: la caché no
+    /// frena durante un minuto a los demás comerciales (antes, el primero sin identidad dejaba a todos sin diccionario).
+    /// </summary>
+    [Fact]
+    public async Task UnComercialSinIdentidadEnNexoNoDejaSinDiccionarioALosDemas()
+    {
+        var sinIdentidad = Guid.NewGuid();
+        _usuarios.ObtenerPorIdAsync(sinIdentidad, Arg.Any<CancellationToken>())
+            .Returns(clsUsuarioWeb.Crear("corp", "Usuario corporativo", "corp@boterosoto.com.co", null, DateTimeOffset.UtcNow, null).Valor);
+        _nexo.Responder(HttpStatusCode.OK, Diccionario);
+        var cache = new clsAliasNexoEnCache(
+            Nexo(), new clsCacheAliasNexo(), new clsRelojFalso(), Options.Create(new clsOpcionesNexo()), NullLogger<clsAliasNexoEnCache>.Instance);
+
+        var fallo = await cache.ObtenerAsync(sinIdentidad, Ct);
+        fallo.Error.Codigo.Should().Be(clsCodigosError.CatalogosFleteNoDisponible);
+        fallo.Error.Detalle.Should().Be(clsAliasNexo.DetalleSinIdentidad);
+        _nexo.Peticiones.Should().BeEmpty();
+
+        (await cache.ObtenerAsync(_usuarioId, Ct)).Valor.Resolver(TipoAliasNexo.Vehiculo, "C2").Should().Be("2", "el otro comercial sí consulta");
+        _nexo.Peticiones.Should().ContainSingle();
+    }
+
     private clsAliasNexo Nexo() =>
         new(_http, Options.Create(new clsOpcionesNexo { UrlBase = clsNexoClientesFalso.UrlBase }), _usuarios, NullLogger<clsAliasNexo>.Instance);
 
