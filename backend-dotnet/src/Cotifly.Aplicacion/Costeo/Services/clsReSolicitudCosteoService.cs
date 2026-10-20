@@ -1,10 +1,8 @@
 using System.Diagnostics;
 using System.Globalization;
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 using Cotifly.Aplicacion.Auditoria.Repositories;
 using Cotifly.Aplicacion.Auditoria.Services;
+using Cotifly.Aplicacion.Comun;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Costeo.DTOs;
 using Cotifly.Aplicacion.Costeo.Interfaces;
@@ -109,7 +107,6 @@ public sealed class clsReSolicitudCosteoService(
     /// <summary>Motivo de la versión nueva que sugiere <c>PDF_YA_ENVIADO</c> desde la re-solicitud.</summary>
     public const string MotivoVersion = "Re-solicitar el costeo después del envío";
 
-    private static readonly JsonSerializerOptions _jsonHuella = new(JsonSerializerDefaults.Web);
 
     public Task<clsResultado<clsReSolicitudCosteo>> ReSolicitarAsync(
         Guid usuarioId,
@@ -727,13 +724,12 @@ public sealed class clsReSolicitudCosteoService(
     public static string Huella(string folio, clsEntradaReSolicitudCosteo entrada)
     {
         ArgumentNullException.ThrowIfNull(entrada);
-        var cuerpo = JsonSerializer.Serialize(new
+        return clsHuellaIdempotencia.Calcular(new
         {
             folio = folio?.Trim(),
             motivo = Motivo(entrada.Motivo),
             entrada.NuevaVersion,
             datos = entrada.DatosCarga is { } datos ? datos with { Presentes = new SortedSet<string>(datos.Presentes, StringComparer.Ordinal) } : null,
-        }, _jsonHuella);
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(cuerpo)));
+        });
     }
 }

@@ -11,16 +11,17 @@ namespace Cotifly.Aplicacion.Comun.Interfaces;
 /// <remarks>
 /// <list type="bullet">
 /// <item><c>ambito</c> = <c>"{operacion}:{usuarioId}"</c>; <c>huella</c> = hash (SHA-256) del folio y del cuerpo de la petición.</item>
-/// <item>Dos peticiones simultáneas con la misma clave se serializan con un semáforo POR CLAVE: la segunda espera a la primera y
-/// recibe su resultado (si se guardó) o se ejecuta (si no).</item>
+/// <item>Dos peticiones simultáneas con la misma clave: solo una ejecuta. En la misma réplica la segunda espera a la primera y recibe
+/// su resultado (si se guardó) o se ejecuta (si no). En la tabla (#191), la de OTRA réplica recibe 409 <c>ESTADO_NO_PERMITE</c> con
+/// <c>detalle.motivo = CAPTURA_EN_CURSO</c> (entre réplicas no hay a quién esperar).</item>
 /// <item>La misma clave con otra huella es <c>SOLICITUD_INVALIDA</c> (400 <c>ErrorWeb</c>).</item>
 /// <item><c>seGuarda</c> decide qué resultados consumen la clave; por defecto (<c>null</c>), solo los éxitos. Lo que no se guarda no
 /// consume la clave: la repetición se vuelve a ejecutar.</item>
 /// <item>Se purgan las claves vencidas y las fallidas que nadie está usando.</item>
 /// </list>
-/// Implementación vigente: en la memoria del proceso, válida mientras la API corre con <c>replicas: 1</c>
-/// (<c>infra/stack.dotnet.dokploy.yml</c>). Al escalar se crea una tabla con el siguiente script libre, hoy el <c>0011</c> (ADR-018 §12; el <c>0009</c> es la reestructuración de
-/// HU-021 y el <c>0010</c>, los nombres de municipio, ADR-019).
+/// Implementación de la API (#191): <c>clsAlmacenIdempotenciaSql</c>, sobre <c>dbo_cotifly.CapturasIdempotentes</c>
+/// (<c>db/scripts/06_idempotencia_captura.sql</c>): sobrevive a un reinicio y la comparten las réplicas. La de memoria
+/// (<c>clsAlmacenIdempotenciaEnMemoria</c>) queda para las pruebas (ADR-018 §12).
 /// </remarks>
 public interface IClsAlmacenIdempotencia
 {

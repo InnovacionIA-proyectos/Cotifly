@@ -68,7 +68,7 @@ public sealed class clsPersistenciaUnitariaTests
         modelo.GetDefaultSchema().Should().Be("dbo_cotifly");
         modelo.FindEntityType(typeof(clsCotizacionSolicitud))!.GetTableName().Should().Be("CotizacionesSolicitud");
         modelo.FindEntityType(typeof(clsMargenPolitica))!.GetTableName().Should().Be("MargenesPolitica");
-        modelo.GetEntityTypes().Should().HaveCount(20, "HU-021: las 20 tablas tras el 0009 (cabecera, rutas, camiones, mercancías y conexos de la cotización)");
+        modelo.GetEntityTypes().Should().HaveCount(21, "HU-021: las 20 tablas tras el 0009 (cabecera, rutas, camiones, mercancías y conexos de la cotización) más CapturasIdempotentes del 06 (#191)");
     }
 
     [Fact]

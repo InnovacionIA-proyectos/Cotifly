@@ -163,7 +163,11 @@ definición del CHECK en `sys.check_constraints`, así que `cotifly_app` necesit
 otorga el permiso, con el 07 ya aplicado se declara `BaseDatos__MotivoBusquedaAgotada=habilitado` (ver la tabla de variables).
 HU-018.1 (#155): antes de desplegar se aplica `db/scripts/09_score_prioridad.sql` (`CotizacionesSolicitud.scorePrioridad DECIMAL(9,4) NULL`,
 idempotente, sin respaldo porque solo agrega una columna NULL). A diferencia del 07 **sí es obligatorio**: el backend mapea la columna y
-sin ella `/health/ready` responde 503 "esquema incompleto: falta 09" (§4.5). No lleva variable ni permiso nuevo. Para cambiar una hay que declararla en el manifiesto (y `Cubicador__ApiKey` como secreto) antes de cargarla en
+sin ella `/health/ready` responde 503 "esquema incompleto: falta 09" (§4.5). No lleva variable ni permiso nuevo.
+#191 (HU-026.1): antes de desplegar se aplica `db/scripts/06_idempotencia_captura.sql` (tabla `dbo_cotifly.CapturasIdempotentes`: la
+`Idempotency-Key` de la captura, los conexos, la re-solicitud y la edición, persistente y compartida entre réplicas). **Obligatorio**: sin la
+tabla `/health/ready` responde 503 "esquema incompleto: falta 06" (la API no degrada a memoria). No lleva variable ni permiso nuevo (la
+limpieza de las claves vencidas la hace la API cada hora). Para cambiar una hay que declararla en el manifiesto (y `Cubicador__ApiKey` como secreto) antes de cargarla en
 Dokploy. Todas están en `backend-dotnet/.env.example`.
 
 **Base de datos, HU-014.3 (#152):** el backend ya no expone `GET /web/metricas/actividad` ni `/web/metricas/ajustes-margen` (responden
@@ -385,7 +389,7 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
 
 ### 4.5 Release paso a paso
 
-0. **Precondición de esquema: `db/migrations_mssql/0001`–`0010`, `db/scripts/02`, `db/scripts/03`, `db/scripts/pendientes/04`, `db/scripts/05` y `db/scripts/09` aplicados** en la base del ambiente (o la base instalada
+0. **Precondición de esquema: `db/migrations_mssql/0001`–`0010`, `db/scripts/02`, `db/scripts/03`, `db/scripts/pendientes/04`, `db/scripts/05`, `db/scripts/06` y `db/scripts/09` aplicados** en la base del ambiente (o la base instalada
    desde cero con `db/scripts/01_crear_esquema.sql` y `db/seeder/`, que equivale a `0001`–`0010`). Los aplica el DBA con
    un usuario administrador y `sqlcmd -I`; la app no aplica migraciones. Regla de siempre: **primero el script, después
    la imagen.** Sin el esquema completo, `/health/ready` responde `503` (tabla de abajo), Traefik no manda tráfico a la
@@ -421,6 +425,24 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
      sale sin él, la sonda de vida sigue en 200, Swarm retira la versión anterior y **toda la API queda en 503** en
      `/health/ready`: aplicar el `09` (un `ADD` de columna NULL, segundos) la recupera **sin redesplegar**, porque
      `/health/ready` revisa el esquema en cada consulta.
+   - **#191 (HU-026.1): `db/scripts/06_idempotencia_captura.sql` va ANTES de la imagen de #191** (lo aprueba y aplica el DBA). Crea
+     `dbo_cotifly.CapturasIdempotentes`, donde la API guarda cada `Idempotency-Key` (captura, conexos, re-solicitud y edición) con
+     su huella, su estado (`en_curso`, `terminada`, `libre`), su respuesta y, en la captura, el folio y el `solicitudNexoId`: un
+     reintento que cae en otra réplica o después de un reinicio ya no crea otra solicitud en Nexo (si la primera sigue en curso en
+     otra réplica, responde 409 `CAPTURA_EN_CURSO`). Hasta #191 estaba en
+     `db/scripts/pendientes/` sin usar; conserva su número y el ejecutador lo corre por nombre (`05`, `06`, `07`…). Es idempotente;
+     si encuentra la tabla de la propuesta anterior **vacía** la recrea, y con filas se detiene sin tocarla. Sin él, la imagen de
+     #191 queda en 503 "falta 06" (como con el `09`, aplicarlo la recupera sin redesplegar). Aplicarlo con la imagen anterior en
+     marcha no cambia nada (no lee la tabla). Verificación de solo lectura (dos valores no NULL y `1`):
+
+     ```sql
+     SELECT OBJECT_ID(N'dbo_cotifly.CapturasIdempotentes', N'U')                     AS tabla_06,
+            COL_LENGTH(N'dbo_cotifly.CapturasIdempotentes', N'resultado')            AS resultado_06,
+            (SELECT COUNT(*) FROM sys.key_constraints
+              WHERE name = N'uq_capturasIdempotentes_usuarioId_operacion_clave')     AS unico_06;
+     ```
+
+     Con la imagen de #191 la API puede correr con más de una réplica sin perder la idempotencia (antes exigía `replicas: 1`).
    - **Excepción, HU-014.3 (#152): el `08` va DESPUÉS de la imagen.** `db/scripts/08_retirar_vistas_actividad.sql` borra las
      vistas que lee la versión anterior. El ejecutador (`db/ejecutar-bd.*`) corre todos los `scripts/` en orden de nombre
      (`07`, `08`, `09`), así que si el DBA lo usa antes de la imagen para aplicar el `09` también aplica el `08`: no rompe nada
@@ -443,6 +465,7 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
    | `esquema incompleto: falta 03` | Faltan `ordenVehiculo` o `idServicioConexoCatalogo` (HU-014, #188) | Aplicar `db/scripts/03_orden_vehiculo_y_conexo_catalogo.sql` |
    | `esquema incompleto: falta 04` | Faltan las columnas de la cubicación en segundo plano (HU-023.5) | Aplicar `db/scripts/pendientes/04_cubicacion_segundo_plano.sql`, con la aprobación del DBA |
    | `esquema incompleto: falta 05` | Falta `CotizacionServiciosConexos.categoriaServicioConexo` (HU-014, #188) | Aplicar `db/scripts/05_categoria_conexo.sql` |
+   | `esquema incompleto: falta 06` | Falta la tabla `CapturasIdempotentes` (o tiene la forma de la propuesta de #173) (#191) | Aplicar `db/scripts/06_idempotencia_captura.sql`, con la aprobación del DBA |
    | `esquema incompleto: falta 09` | Falta `CotizacionesSolicitud.scorePrioridad` (HU-018.1, #155) | Aplicar `db/scripts/09_score_prioridad.sql` |
    | `esquema incompleto: falta Tabla.columna, ...` (hasta 5) | Falta otra tabla o columna del modelo (por ejemplo un script intermedio sin aplicar) | Comparar con `db/scripts/01_crear_esquema.sql` y aplicar el script que la trae (lista en `docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md` §A.5) |
 

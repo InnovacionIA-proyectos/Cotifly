@@ -1,10 +1,8 @@
 using System.Diagnostics;
 using System.Globalization;
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 using Cotifly.Aplicacion.Auditoria.Repositories;
 using Cotifly.Aplicacion.Auditoria.Services;
+using Cotifly.Aplicacion.Comun;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Costeo.DTOs;
 using Cotifly.Aplicacion.Costeo.Interfaces;
@@ -101,7 +99,6 @@ public sealed class clsEdicionSolicitudService(
     /// <summary>Código de <c>detalle.errores</c>: las rutas que se conservan cambiaron su orden relativo (no se reordenan).</summary>
     public const string CodigoRutasReordenadas = "RUTAS_REORDENADAS";
 
-    private static readonly JsonSerializerOptions _jsonHuella = new(JsonSerializerDefaults.Web);
 
     public async Task<clsResultado<clsSolicitudEditable>> ObtenerAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default)
     {
@@ -167,8 +164,7 @@ public sealed class clsEdicionSolicitudService(
     public static string Huella(string folio, clsEntradaEdicionSolicitud entrada)
     {
         ArgumentNullException.ThrowIfNull(entrada);
-        var cuerpo = JsonSerializer.Serialize(new { folio = folio?.Trim(), entrada }, _jsonHuella);
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(cuerpo)));
+        return clsHuellaIdempotencia.Calcular(new { folio = folio?.Trim(), entrada });
     }
 
     /// <summary>Nota de trazabilidad que viaja en <c>notas</c> de la captura (no se guarda en la cotización).</summary>

@@ -23,7 +23,7 @@ dejarla con la configuración inicial.
 | `scripts/03_orden_vehiculo_y_conexo_catalogo.sql` | HU-023.3 (#158); HU-014 (#188) | En el ejecutador (desde #188; antes en `pendientes/`). **El backend mapea sus columnas** (`ordenVehiculo`, `idServicioConexoCatalogo`): sin él, `/health/ready` responde "esquema incompleto: falta 03". Se aplica antes de desplegar la imagen (ver abajo) |
 | `scripts/pendientes/04_cubicacion_segundo_plano.sql` | HU-023.5 (#160) | Propuesta, pendiente de scalderon-bs y del DBA. **El backend sí mapea sus columnas**: sin él, `/health/ready` responde "esquema incompleto: falta 04". Se aplica antes de desplegar la imagen. El ejecutador no lo corre; el entorno local (`levantar-local.*`) sí |
 | `scripts/05_categoria_conexo.sql` | #173; HU-014 (#188) | En el ejecutador (desde #188; antes en `pendientes/`). **El backend mapea la columna** (`categoriaServicioConexo`): sin él, `/health/ready` responde "esquema incompleto: falta 05". Se aplica antes de desplegar la imagen |
-| `scripts/pendientes/06_idempotencia_captura.sql` | #173 | Propuesta (deuda). El backend no mapea la tabla |
+| `scripts/06_idempotencia_captura.sql` | #173; #191 (HU-026.1) | En el ejecutador (desde #191; antes en `pendientes/`). Tabla `CapturasIdempotentes`: la `Idempotency-Key` persistente. **El backend la usa y la mapea**: sin él, `/health/ready` responde "esquema incompleto: falta 06". **Lo aprueba y aplica el DBA antes de desplegar la imagen** (ver abajo) |
 | `scripts/07_motivo_busqueda_agotada.sql` | HU-023 (#176) | En el ejecutador (orden de nombre, después del `02`); lo aplica @scalderon-bs en la base compartida. Quinto motivo `BUSQUEDA_AGOTADA` en el CHECK del motivo. No es obligatorio para arrancar (ver abajo) |
 | `scripts/08_retirar_vistas_actividad.sql` | HU-014.3 (#152) | En el ejecutador (después del `07`); **lo aplica el DBA** en la base compartida, después de desplegar el backend sin el borrador de métricas. `DROP VIEW` de `vActividadPorComercial` y `vAjustesMargenPorComercial` (ver abajo) |
 | `scripts/09_score_prioridad.sql` | HU-018.1 (#155) | En el ejecutador (orden de nombre, después del `08`). `CotizacionesSolicitud.scorePrioridad DECIMAL(9,4) NULL`. **El backend mapea la columna**: sin él, `/health/ready` responde "esquema incompleto: falta 09". Se aplica antes de desplegar la imagen (ver abajo) |
@@ -75,8 +75,21 @@ falta 09" y Traefik no manda tráfico a la versión nueva. A diferencia del `07`
 backend puede esquivar guardando `NULL`; una columna mapeada no se puede esquivar sin dejar de leerla). Como está en `scripts/`, el
 ejecutador y `db-init` lo aplican solos.
 
-**Orden completo** de una base nueva: `01` (o `0001` a `0010`), `02`, `03`, `pendientes/04`, `05`, `07`, `08` y `09`. El entorno
-local (`backend-dotnet/scripts/levantar-local.ps1` / `.sh`) aplica los ajustes `02` en adelante (hoy `02`, `03`, `05`, `07`, `08` y
+**`scripts/06_idempotencia_captura.sql`** (#191, HU-026.1; propuesto en #173) crea `dbo_cotifly.CapturasIdempotentes`: una fila por
+`Idempotency-Key`, comercial y operación (`capturar_costeo`, `conexos`, `re_solicitar_costeo`, `editar_solicitud`), con `UNIQUE
+(usuarioId, operacion, clave)`. Guarda la huella del cuerpo (SHA-256; los números se comparan por valor), el estado (`en_curso` con la
+toma de la petición y su vencimiento de 10 min, `terminada` con la respuesta en JSON, o `libre`), y en la captura el folio, el
+`solicitudNexoId` y el `scorePrioridad`. Vence en 24 h (`expiraAt`, con índice): la API ignora las vencidas y las borra cada hora
+en lotes de 1000; no hace falta un job del DBA. Hasta #191 todo esto vivía en la memoria del proceso y se perdía al reiniciar o con dos
+réplicas (despliegue `start-first`): un reintento podía crear otra solicitud en Nexo. **Conserva su número** (es como lo conocen el DBA
+y los documentos, y el 06 estaba libre en `scripts/`); solo depende del `01`. Idempotente; si encuentra la tabla de la propuesta de #173
+(sin `operacion`) vacía la recrea, y con filas se detiene sin tocarla. Sin FK (la fila se reserva antes de que exista el folio).
+**Obligatorio para arrancar**: sin la tabla `/health/ready` responde 503 "esquema incompleto: falta 06"; la API no degrada a memoria
+(con varias réplicas volvería el duplicado en Nexo sin que nadie lo note). No necesita permisos nuevos (`cotifly_app` ya tiene
+`SELECT/INSERT/UPDATE/DELETE` sobre el esquema).
+
+**Orden completo** de una base nueva: `01` (o `0001` a `0010`), `02`, `03`, `pendientes/04`, `05`, `06`, `07`, `08` y `09`. El entorno
+local (`backend-dotnet/scripts/levantar-local.ps1` / `.sh`) aplica los ajustes `02` en adelante (hoy `02`, `03`, `05`, `06`, `07`, `08` y
 `09`) y el `pendientes/04` en ese orden en cada arranque (son idempotentes). Con el `03` aplicado el CHECK del motivo ya es el del
 `07` (sin el `07`, la sonda no da el aviso del `07`).
 
@@ -92,10 +105,11 @@ db/
 │   ├── 02_alter_cubicador.sql columnas para la respuesta del cubicador (ALTER; se puede repetir)
 │   ├── 03_orden_vehiculo_y_conexo_catalogo.sql  orden del camión e id del catálogo del conexo (se puede repetir)
 │   ├── 05_categoria_conexo.sql         categoría del catálogo de Nexo en el conexo (se puede repetir)
+│   ├── 06_idempotencia_captura.sql     Idempotency-Key persistente: tabla CapturasIdempotentes (se puede repetir)
 │   ├── 07_motivo_busqueda_agotada.sql  quinto motivo de "sin selección" en el CHECK (se puede repetir)
 │   ├── 08_retirar_vistas_actividad.sql retira las vistas del borrador de métricas (se puede repetir)
 │   ├── 09_score_prioridad.sql          scorePrioridad de Nexo en la cabecera (se puede repetir)
-│   ├── pendientes/            propuestas 04 y 06, pendientes de revisión (el ejecutador no las corre)
+│   ├── pendientes/            propuesta 04, pendiente de revisión (el ejecutador no la corre)
 │   └── operacion/             scripts de datos de una sola vez que corre el DBA con aprobación
 ├── seeder/
 │   ├── 01_lineas_negocio.sql      líneas de negocio y su margen de política
@@ -149,13 +163,12 @@ ya tiene el esquema; así una base instalada antes queda igual que una nueva.
 
 Con `-Auto` / `-a` el `02` corre en **cada** arranque (la segunda vez no hace nada). En una base anterior al `0009` (sin
 `CotizacionMercancias`) el `02` se detiene con un error en su precondición y el ejecutador también: primero hay que migrar con
-`migrations_mssql/0009` y `0010`. `scripts/pendientes/` (propuestas pendientes de revisión: el `04` y el `06`) **no** la corre el
+`migrations_mssql/0009` y `0010`. `scripts/pendientes/` (propuestas pendientes de revisión: hoy el `04`) **no** la corre el
 ejecutador. Tampoco `scripts/operacion/`: scripts de datos de una sola vez que corre el DBA con aprobación, como
 `revincular_identidad_dbSolucionesTI_Prueba.sql` (#172, ver [`DEPLOY.md`](../DEPLOY.md#identidad-compartida-con-nexo-172)) y
 `corregir_rol_comercial_32.sql` (#173: `Roles.idRolExterno` de `comercial` pasa de 34, que en `dbSolucionesTI_Prueba` es
 `AdministracionZonasGeocerca`, a 32 `ClienteProComercial`; respalda `Roles` en `RespaldoRoles_173`, es idempotente y **requiere
-aprobación; lo ejecuta el DBA**). En `pendientes/` está también el `06_idempotencia_captura.sql` (#173, deuda): tabla `CapturasIdempotentes` con `UNIQUE (usuarioId, clave)` para que la
-`Idempotency-Key` de la captura sobreviva a reinicios y a despliegues `start-first`; hoy vive en memoria y el backend no la mapea.
+aprobación; lo ejecuta el DBA**). El `06_idempotencia_captura.sql` salió de `pendientes/` con #191: ya lo corre el ejecutador.
 
 ### Con Docker
 
@@ -184,7 +197,7 @@ día se corren contra otra base, hay que cambiar esa línea. No aplica a la inst
 
 1. Selecciona la base de datos destino arriba a la izquierda: los scripts corren sobre la que tengas seleccionada.
 2. Abre y ejecuta, en este orden: `scripts/01_crear_esquema.sql`, `scripts/02_alter_cubicador.sql`,
-   `scripts/07_motivo_busqueda_agotada.sql`, `scripts/08_retirar_vistas_actividad.sql`, `scripts/09_score_prioridad.sql`, `seeder/01_lineas_negocio.sql`, `seeder/02_sap_mapeo_trqtype.sql` y `seeder/03_roles.sql`.
+   `scripts/06_idempotencia_captura.sql`, `scripts/07_motivo_busqueda_agotada.sql`, `scripts/08_retirar_vistas_actividad.sql`, `scripts/09_score_prioridad.sql`, `seeder/01_lineas_negocio.sql`, `seeder/02_sap_mapeo_trqtype.sql` y `seeder/03_roles.sql`.
 3. Si `dbo_cotifly` ya tiene tablas, el `01` avisa y no crea nada. Si falla otro paso, mira el error antes de seguir con
    los siguientes.
 
@@ -193,6 +206,7 @@ día se corren contra otra base, hay que cambiar esa línea. No aplica a la inst
 ```
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/01_crear_esquema.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/02_alter_cubicador.sql
+sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/06_idempotencia_captura.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/07_motivo_busqueda_agotada.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/08_retirar_vistas_actividad.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/09_score_prioridad.sql
@@ -264,6 +278,7 @@ Cambios pequeños al esquema que todavía no se consolidan en el `01`. Van como 
 | Script | HU | Qué cambia |
 |---|---|---|
 | `02_alter_cubicador.sql` | HU-023.3 (#158) | `CotizacionMercancias`: `idTipoMercancia` (uuid) se reemplaza por `codigoMercancia`. Camión (`CotizacionVehiculosLineaSolicitud`): `volumenTotalM3`, `porcentajeLlenadoVolumen` y `porcentajeLlenadoPeso` (0 a 100). Ruta (`CotizacionLineasSolicitud`): `idRecomendacion`, `resultadoCubicacion`, `motivoSinSeleccion` y `condicionada` |
+| `06_idempotencia_captura.sql` | #191 (HU-026.1) | Tabla nueva `CapturasIdempotentes` (Idempotency-Key persistente) con su `UNIQUE (usuarioId, operacion, clave)`, CHECKs de estado y de JSON, e índices de vencimiento y de folio. Idempotente; recrea la tabla vacía de la propuesta de #173. Obligatorio: el backend la usa |
 | `07_motivo_busqueda_agotada.sql` | HU-023 (#176) | `ck_cotizacionLineasSolicitud_motivoSinSeleccion` admite los 5 motivos (`BUSQUEDA_AGOTADA`) y exige `ISNULL(resultadoCubicacion, '') = 'SIN_SELECCION_AUTOMATICA'`. Idempotente, DROP + ADD `WITH CHECK` en una transacción; se detiene sin tocar nada si alguna ruta tiene motivo sin `SIN_SELECCION_AUTOMATICA` |
 | `08_retirar_vistas_actividad.sql` | HU-014.3 (#152) | `DROP VIEW` de `vActividadPorComercial` y `vAjustesMargenPorComercial` (borrador de métricas retirado), cada uno solo si la vista existe. No toca tablas ni datos |
 | `09_score_prioridad.sql` | HU-018.1 (#155) | `CotizacionesSolicitud.scorePrioridad DECIMAL(9,4) NULL` (el `scorePrioridad` de Nexo). Idempotente, `ADD` de columna NULL en una transacción. Obligatorio: el backend mapea la columna |

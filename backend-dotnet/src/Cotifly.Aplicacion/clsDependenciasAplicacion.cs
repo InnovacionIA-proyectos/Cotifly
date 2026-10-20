@@ -97,8 +97,8 @@ public static class clsDependenciasAplicacion
         servicios.AddSingleton<clsAlmacenCategoriasConexos>();
         servicios.AddScoped<IClsCategoriasConexos, clsCategoriasConexosService>();
 
-        // #173: capturas con Idempotency-Key registradas antes de llamar a Nexo (el reintento nunca duplica la solicitud).
-        servicios.AddSingleton<IClsRegistroCapturasIdempotentes, clsRegistroCapturasIdempotentesEnMemoria>();
+        // #173: capturas con Idempotency-Key registradas antes de llamar a Nexo (el reintento nunca duplica la solicitud). #191: el
+        // registro (IClsRegistroCapturasIdempotentes) lo registra Infraestructura sobre la tabla del 06, junto con el almacén de la clave.
 
         // Captura por rutas (HU-021.6): validación común al formulario y a la licitación y el punto de extensión de los camiones. El
         // planificador (HU-021.5, #133) crea un camión por fila de la recomendación del cubicador (IClsCubicador, lo registra
