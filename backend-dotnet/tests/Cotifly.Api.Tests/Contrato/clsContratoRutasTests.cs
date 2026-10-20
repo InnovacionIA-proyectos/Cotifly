@@ -158,6 +158,10 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         // HU-016.1 (#154): listado regional del gerente comercial.
         (typeof(clsCotizacionesRegional), "CotizacionesRegional"),
         (typeof(clsComercialCotizacion), "ComercialCotizacion"),
+        // HU-027.1 (#179): detalle por folio.
+        (typeof(clsDetalleCotizacion), "DetalleCotizacion"),
+        (typeof(clsFechasCotizacion), "FechasCotizacion"),
+        (typeof(clsTotalesCotizacion), "TotalesCotizacion"),
         (typeof(clsDatosNuevaVersion), "DatosNuevaVersion"),
         (typeof(clsLineaNegocioAdmin), "LineaNegocio"),
         (typeof(clsMetricasComercial), "MetricasComercial"),

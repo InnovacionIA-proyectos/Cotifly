@@ -718,7 +718,11 @@ public sealed class clsEdicionSolicitudService(
         return avisos;
     }
 
-    private static clsRutaEditable Editable(
+    /// <summary>
+    /// La ruta como la captura el comercial (<c>RutaEditable</c>). La comparte el detalle por folio (HU-027.1, #179), que pasa
+    /// <paramref name="catalogo"/> vacío (no consulta Nexo): los conexos salen con el id del catálogo guardado (script 03) o el guardado.
+    /// </summary>
+    internal static clsRutaEditable Editable(
         clsLineaSolicitud r, IReadOnlyDictionary<int, clsMargenPolitica?> politicasRuta, IReadOnlyDictionary<string, clsCostoConexoNexo> catalogo) =>
         new(
             r.Id,

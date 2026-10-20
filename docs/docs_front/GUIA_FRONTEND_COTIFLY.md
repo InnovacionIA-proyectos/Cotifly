@@ -579,6 +579,7 @@ Resumen:
 | `POST /web/cubicacion` | Ambos | En QA |
 | `POST /web/solicitudes-costeo` | Ambos | En QA |
 | `POST /web/cotizaciones/{folio}/costeo/reintentar` | Ambos (dueño) | En QA |
+| `GET /web/cotizaciones/{folio}` | Dueño o gerente de su regional (solo consulta) | Implementado (HU-027.1, #179), pendiente de QA. Sección 5.29 |
 | `GET /web/cotizaciones/{folio}/costeo` | Ambos (dueño) | En QA |
 | `PUT /web/cotizaciones/{folio}/costeo/servicios-conexos` | Ambos (dueño) | En QA |
 | `POST /web/cotizaciones/{folio}/costeo/pdf` | Ambos (dueño) | En QA |
@@ -768,7 +769,7 @@ Vista "Todas las cotizaciones" del gerente comercial: las cotizaciones de los co
 | `comercial.usuario_id` | UUID | Dueño de la cotización (`UsuariosWeb.id`); el mismo `usuario_id` de `/web/metricas/regional` |
 | `comercial.nombre_usuario`, `comercial.nombre_completo` | string o null | Mostrar `nombre_completo` (o `nombre_usuario` si es null) |
 
-`comercial` solo viene en este endpoint: `GET /web/mis-cotizaciones` y las demás respuestas con `CotizacionResumen` no lo traen.
+`comercial` solo viene en este endpoint y en el detalle por folio (sección 5.29): `GET /web/mis-cotizaciones` y las demás respuestas con `CotizacionResumen` no lo traen.
 
 Errores:
 
@@ -1923,6 +1924,25 @@ Contrato completo, ejemplos y errores en `CONTRATO_API_WEB.md` §8.13; flujo de 
   `detalle.motivo = RECHAZO_NEXO_FALLIDO` (no se cambió nada ni se capturó otra solicitud; la versión subió: recargar).
 - **Reemplaza** el uso de `GET .../nueva-version` para prellenar y de `datos_carga` en `re-solicitar` (obsoleto) para cambiar la carga.
 
+### 5.29 Detalle por folio (`GET /web/cotizaciones/{folio}`). HU-027.1 (#179): implementado, pendiente de QA
+
+Para "Ver detalle" (HU-021-FE.7, #75) y para **recargar** esa página: una sola llamada en lugar de combinar `GET /web/mis-cotizaciones`
+con `GET .../costeo`. Contrato completo y ejemplo en `CONTRATO_API_WEB.md` §8.14.
+
+- **200 `DetalleCotizacion`** con el `ETag` (= `row_version`): `cotizacion` (la misma fila de "Mis cotizaciones", con el dueño en
+  `comercial`), `costeo` (lo mismo que `GET .../costeo`: rutas con camiones, porcentajes de llenado, mercancías, conexos con precio,
+  margen, precio y avisos), `captura` (las rutas como las devuelve `GET .../solicitud`: municipios por id y nombre y condiciones; se
+  cruzan con `costeo.rutas[]` por `linea_solicitud_id`), `tipo`, `notas`, `fechas` y `totales`. Se pueden reutilizar los componentes que
+  ya pintan `CotizacionResumen`, `CosteoCotizacion` y `RutaEditable`.
+- **Acceso:** el dueño; un gerente comercial de la regional del dueño la ve en **solo consulta** (`solo_lectura: true`: esconder las
+  acciones, que le responden 404; descargar el PDF sí puede, sección 5.6). Cualquier otro usuario: 404.
+- **No consulta NEXO** ni dispara el polling: muestra lo último que Cotifly guardó. Para ver si llegó el costeo, volver a pedirlo más tarde
+  (no en un bucle apretado).
+- Sin costeo, los precios de `costeo`, de sus rutas y de `totales` vienen en `null`.
+- **Una fuente por dato** (tabla en `CONTRATO_API_WEB.md` §8.14): precios, margen, camiones y conexos con precio de `costeo.rutas[]`;
+  municipios y condiciones de `captura`; resultado, envío y dueño de `cotizacion`; totales de `totales`. No usar `captura` para
+  prellenar "Editar solicitud" (sección 5.28): para eso está `GET .../solicitud`.
+
 ## 6. Flujos
 
 ### 6.1 Login y renovación de sesión
@@ -2360,6 +2380,7 @@ UI por estado:
 | Tablero de regional (`/web/metricas/regional`) | No (403) | Sí (HU-010.3): su regional, filtrable por comercial | Política `GerenteComercial`; 409 sin regional |
 | Administrar márgenes | No | Sí | `/web/admin/*` solo `gerente_comercial` (403 si no). HU-004.10 dice "rol admin": es `gerente_comercial` |
 | PDF de otros comerciales | No | Solo de su regional (y solo si su regional se conoce) | `/pdfs` |
+| Detalle de otros comerciales ("Ver detalle") | No (404) | Solo de su regional, en solo consulta (`solo_lectura`) | `GET /web/cotizaciones/{folio}` (#179) |
 
 - Usar `user.rol` del login de Cotifly (o el claim `rol`), no los `IDROLES` de ClientePro.
 - Proteger las rutas con guards además de esconder los menús; el backend igual valida.

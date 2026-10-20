@@ -377,6 +377,52 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
 
+  /web/cotizaciones/{folio}:
+    get:
+      operationId: obtenerDetalleCotizacion
+      tags: [web]
+      summary: Detalle completo de una cotización en una sola llamada ("Ver detalle")
+      x-issue: '#179 (HU-027.1, parte A)'
+      description: |
+        HU-027.1 (#179). Todo lo que necesita "Ver detalle" (HU-021-FE.7, #75) para pintar y **recargar** la página sin combinar
+        `GET /web/mis-cotizaciones` con `GET .../costeo`. Es una composición de las proyecciones que ya existen, con sus mismas reglas:
+        - `cotizacion`: la cabecera (`CotizacionResumen`, la fila de "Mis cotizaciones"): folio, versión, cliente y NIT, estado de envío,
+          estado del costeo, resultado (`ganada`, `motivo_rechazo`), `deadline` en UTC, `score_prioridad`, moneda y TRM, `pdf_url`, y el
+          dueño en `comercial` (siempre presente aquí).
+        - `costeo`: lo mismo que `GET .../costeo` (`CosteoCotizacion`): por ruta los camiones con vehículo, porcentajes de llenado y estado
+          del costeo, las mercancías, los conexos con precio, el margen, el precio y los avisos; `pdf_desactualizado`, `textos` y
+          `row_version`.
+        - `captura`: cada ruta como la capturó el comercial (`RutaEditable`, la de `GET .../solicitud`): municipios por id y nombre y
+          condiciones (tipología, clases, exclusivo, contenedor, horas, valores, peso). Se cruza con `costeo.rutas[]` por
+          `linea_solicitud_id`. Los conexos salen con el id del catálogo guardado (aquí no se consulta Nexo).
+        - `tipo`, `notas`, `fechas` y `totales` (rutas, camiones, peso, transporte, conexos y precio final).
+        - `row_version` (también en el `ETag`) para el `If-Match` de las acciones que siguen.
+
+        Solo lectura de lo que Cotifly tiene guardado: no consulta Nexo, no dispara el polling ni cambia la cotización.
+
+        Acceso: el **dueño**; o un `gerente_comercial` cuya regional efectiva incluye al dueño (la misma regla que
+        `GET /web/cotizaciones/regional` y la descarga del PDF), que solo consulta (`solo_lectura = true`; las acciones siguen siendo del
+        dueño y a él le responden 404). Si la regional del gerente no se puede comprobar (sin regional o fuente caída) se niega. Cualquier
+        otro usuario recibe 404, igual que si el folio no existiera.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/Folio'
+      responses:
+        '200':
+          description: Detalle de la cotización
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DetalleCotizacion'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '404':
+          $ref: '#/components/responses/NoEsTuya'
+
   /web/cotizaciones/{folio}/enviar:
     post:
       operationId: enviarCotizacion
@@ -4071,8 +4117,9 @@ components:
       type: object
       required: [usuario_id, nombre_usuario, nombre_completo]
       description: |
-        HU-016.1 (#154). Comercial dueño de la cotización (`UsuariosWeb`). Solo en `GET /web/cotizaciones/regional` (siempre
-        presente ahí); en el resto de respuestas `CotizacionResumen` no trae `comercial`.
+        HU-016.1 (#154). Comercial dueño de la cotización (`UsuariosWeb`). Solo en `GET /web/cotizaciones/regional` y en
+        `DetalleCotizacion.cotizacion` (`GET /web/cotizaciones/{folio}`, #179), siempre presente ahí; en el resto de respuestas
+        `CotizacionResumen` no trae `comercial`.
       properties:
         usuario_id:
           type: string
@@ -4106,6 +4153,110 @@ components:
               - $ref: '#/components/schemas/CotizacionResumen'
               - type: object
                 required: [comercial]
+
+    DetalleCotizacion:
+      type: object
+      required: [folio, row_version, solo_lectura, tipo, notas, fechas, cotizacion, costeo, captura, totales]
+      description: |
+        HU-027.1 (#179). Respuesta de `GET /web/cotizaciones/{folio}`: la cabecera (`cotizacion`), el costeo por ruta (`costeo`), las rutas
+        capturadas (`captura`) y los totales, en una llamada. Nunca trae costos de Nexo.
+      properties:
+        folio:
+          type: string
+        row_version:
+          type: string
+          nullable: true
+          description: Versión de negocio de la cotización (la misma del `ETag` y de `costeo.row_version`) para el `If-Match`.
+        solo_lectura:
+          type: boolean
+          description: |
+            `true` si quien consulta es un gerente comercial de la regional del dueño: solo consulta (ocultar o deshabilitar las acciones).
+            `false` para el dueño.
+        tipo:
+          type: string
+          nullable: true
+          enum: [spot, licitacion, null]
+          description: Tipo de la solicitud; `null` en las cotizaciones del chat.
+        notas:
+          type: string
+          nullable: true
+          description: Notas de la solicitud (formulario de costeo).
+        fechas:
+          $ref: '#/components/schemas/FechasCotizacion'
+        cotizacion:
+          description: La cabecera (`CotizacionResumen`), con el comercial dueño en `comercial` (siempre presente aquí).
+          allOf:
+            - $ref: '#/components/schemas/CotizacionResumen'
+            - type: object
+              required: [comercial]
+        costeo:
+          $ref: '#/components/schemas/CosteoCotizacion'
+        captura:
+          type: array
+          description: Las rutas capturadas en orden (`RutaEditable`); se cruzan con `costeo.rutas[]` por `linea_solicitud_id`.
+          items:
+            $ref: '#/components/schemas/RutaEditable'
+        totales:
+          $ref: '#/components/schemas/TotalesCotizacion'
+
+    FechasCotizacion:
+      type: object
+      required: [created_at, updated_at, costeo_enviado_at, costeo_listo_at, marcado_at]
+      description: HU-027.1 (#179). Fechas de la cabecera, ISO 8601 en UTC.
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Último cambio de la cotización.
+        costeo_enviado_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Último envío de la solicitud a Nexo; `null` si nunca llegó.
+        costeo_listo_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Cuándo quedó con precio; `null` sin costeo.
+        marcado_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Cuándo se marcó el resultado (ganada o perdida); `null` sin resultado.
+
+    TotalesCotizacion:
+      type: object
+      required: [rutas, camiones, peso_kg, precio_transporte, precio_conexos, precio_final]
+      description: |
+        HU-027.1 (#179). Totales de la solicitud con las reglas del costeo y del PDF, en la moneda de la cotización. Los precios son `null`
+        mientras alguna ruta no tenga precio; `precio_transporte + precio_conexos = precio_final`.
+      properties:
+        rutas:
+          type: integer
+        camiones:
+          type: integer
+          description: Camiones que cuentan en el precio (los descartados en Nexo no, salvo que lo estén todos los de la ruta).
+        peso_kg:
+          type: number
+          nullable: true
+          description: Suma del peso declarado de las rutas; `null` si ninguna lo trae.
+        precio_transporte:
+          type: number
+          nullable: true
+          description: Suma de la tarifa de transporte de las rutas (la que imprime el PDF).
+        precio_conexos:
+          type: number
+          nullable: true
+          description: Suma del precio de los servicios conexos de todas las rutas.
+        precio_final:
+          type: number
+          nullable: true
+          description: Igual a `costeo.precio_final`.
 
     EnvioWeb:
       type: object

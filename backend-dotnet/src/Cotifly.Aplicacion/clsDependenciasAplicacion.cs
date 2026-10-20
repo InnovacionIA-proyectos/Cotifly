@@ -66,6 +66,8 @@ public static class clsDependenciasAplicacion
         // autenticada del PDF, y administración de líneas (HU-004.9).
         servicios.AddScoped<IClsMisCotizacionesService, clsMisCotizacionesService>();
         servicios.AddScoped<IClsCotizacionesRegionalService, clsCotizacionesRegionalService>();
+        // HU-027.1 (#179): detalle por folio (dueño, o gerente de su regional en solo consulta).
+        servicios.AddScoped<IClsDetalleCotizacionService, clsDetalleCotizacionService>();
         servicios.AddScoped<IClsNuevaVersionService, clsNuevaVersionService>();
         servicios.AddScoped<IClsGeneradorFolioService, clsGeneradorFolioService>();
         servicios.AddScoped<IClsDescargaPdfService, clsDescargaPdfService>();
