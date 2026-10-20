@@ -2077,6 +2077,10 @@ Diferencias con los endpoints de origen, por no consultar NEXO: en `captura[].se
 guardado con la ruta (el `GET .../solicitud` lo resuelve contra el catálogo de NEXO para editar), y un conexo anterior a HU-014 sin
 categoría guardada puede salir con la de respaldo (`logistico`).
 
+Qué fuente usar cuando un dato viene repetido (tabla completa en `CONTRATO_API_WEB.md` §8.14): estado, precio y conexos con precio, de
+`costeo` (por ruta, `costeo.rutas[]`); municipios y condiciones, de `captura`; resultado, envío, cliente y dueño, de `cotizacion`; totales,
+de `totales`. Para prellenar "Editar solicitud" y armar el `PUT`, `GET .../solicitud`, no `captura`.
+
 | HTTP | UI |
 |---|---|
 | 200 | Pintar la cabecera, las rutas (`costeo.rutas[]` + `captura[]` por `linea_solicitud_id`) y los totales. Guardar el `ETag` |

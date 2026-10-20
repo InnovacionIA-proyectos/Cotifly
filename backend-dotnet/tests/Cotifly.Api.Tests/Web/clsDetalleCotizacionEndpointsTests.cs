@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Cotifly.Pruebas.Comun;
 using Cotifly.Pruebas.Web;
 using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
@@ -157,6 +158,103 @@ public sealed class clsDetalleCotizacionEndpointsTests : IDisposable
         (await clsBaseDatosPruebas.EscalarAsync<int>(_entorno.BaseDatos.CadenaCotifly,
                 $"SELECT COUNT(*) FROM dbo_cotifly.EventosHerramienta WHERE herramienta = 'consultar_detalle_cotizacion' AND input LIKE '%{deAna.Folio}%'"))
             .Should().Be(3, "gloria (permitida), hugo y el gerente sin regional (negadas); ni el dueño ni el comercial ajeno");
+    }
+
+    /// <summary>
+    /// Validación #179: después de editar (reemplazo en NEXO quitando una ruta y agregando otra) y de crear la <c>-v2</c>, <c>captura</c> y
+    /// <c>costeo.rutas[]</c> siguen cruzando 1 a 1 por <c>linea_solicitud_id</c> (sin la ruta quitada); y con <c>solo_lectura</c> el gerente
+    /// de la regional sigue recibiendo 404 en las acciones del dueño.
+    /// </summary>
+    [Fact]
+    public async Task TrasEditarYCrearLaVersionNuevaCapturaYCosteoCruzanYElGerenteNoActua()
+    {
+        var occidente = Regional();
+        var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial, occidente);
+        var gloria = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoGerente, occidente);
+        using var envio = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, Formulario());
+        var folio = (await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+
+        // 1. Reemplazo en NEXO: se quita la ruta 1 y se agrega una nueva al final.
+        var (modelo, etag) = await ModeloAsync(ana, folio);
+        var quitada = modelo["rutas"]![0]!["linea_solicitud_id"]!.GetValue<string>();
+        var segunda = modelo["rutas"]![1]!.DeepClone();
+        var nueva = modelo["rutas"]![1]!.DeepClone();
+        nueva.AsObject().Remove("linea_solicitud_id");
+        nueva["destino_municipio_id"] = 76001;
+        nueva["destino"] = "Cali";
+        modelo["rutas"] = new JsonArray(segunda, nueva);
+        modelo["motivo"] = "Cambió el destino";
+        using (var editada = await _api.EnviarAsync(HttpMethod.Put, $"{Ruta(folio)}/solicitud", ana.Access, modelo.ToJsonString(), etag))
+        {
+            editada.StatusCode.Should().Be(HttpStatusCode.OK, await editada.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        }
+
+        var tras = await DetalleAsync(ana, folio);
+        var idsTras = Cruzadas(tras);
+        idsTras.Should().HaveCount(2).And.NotContain(quitada);
+
+        // 2. Costeo, entrega y resultado: editar crea la -v2, con sus propias rutas.
+        var solicitud = _nexo.SolicitudesCreadas[^1];
+        _nexo.CostearLinea(solicitud, 0, 1_000_000m);
+        _nexo.CostearLinea(solicitud, 1, 800_000m);
+        _nexo.Entregar(solicitud);
+        await _api.ProcesarPollingAsync(folio);
+        using (var resultado = await _api.EnviarAsync(_post, $"{Ruta(folio)}/resultado", ana.Access, """{"resultado":"ganada","motivo":"Precio"}"""))
+        {
+            resultado.StatusCode.Should().Be(HttpStatusCode.OK, await resultado.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        }
+
+        (modelo, etag) = await ModeloAsync(ana, folio);
+        modelo["rutas"]![0]!["horas_cargue"] = 9;
+        modelo["modo_esperado"] = "nueva_version";
+        using (var version = await _api.EnviarAsync(HttpMethod.Put, $"{Ruta(folio)}/solicitud", ana.Access, modelo.ToJsonString(), etag))
+        {
+            version.StatusCode.Should().Be(HttpStatusCode.Created, await version.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        }
+
+        var v2 = await DetalleAsync(ana, $"{folio}-v2");
+        Cruzadas(v2).Should().HaveCount(2).And.NotIntersectWith(idsTras, "la versión nueva tiene sus propias rutas");
+        Cruzadas(await DetalleAsync(ana, folio)).Should().Equal(idsTras, "la original no cambia");
+
+        // 3. El gerente la ve en solo consulta, pero las acciones del dueño le siguen respondiendo 404.
+        using (var deGerente = await _api.EnviarAsync(_get, Ruta(folio), gloria.Access))
+        {
+            (await VerificarContratoAsync(deGerente, Contrato, _get, HttpStatusCode.OK)).GetProperty("solo_lectura").GetBoolean().Should().BeTrue();
+        }
+
+        foreach (var (metodo, ruta, cuerpo) in new (HttpMethod, string, string?)[]
+                 {
+                     (_get, $"{Ruta(folio)}/costeo", null),
+                     (_get, $"{Ruta(folio)}/solicitud", null),
+                     (HttpMethod.Put, $"{Ruta(folio)}/costeo/margen", """{"margen":0.3,"linea_orden":1}"""),
+                     (_post, $"{Ruta(folio)}/resultado", """{"resultado":"perdida","motivo":"Precio"}"""),
+                 })
+        {
+            using var accion = await _api.EnviarAsync(metodo, ruta, gloria.Access, cuerpo, tras.GetProperty("row_version").GetString());
+            accion.StatusCode.Should().Be(HttpStatusCode.NotFound, $"{metodo} {ruta} es del dueño");
+        }
+    }
+
+    private async Task<JsonElement> DetalleAsync(clsSesionPrueba sesion, string folio)
+    {
+        using var respuesta = await _api.EnviarAsync(_get, Ruta(folio), sesion.Access);
+        return await VerificarContratoAsync(respuesta, Contrato, _get, HttpStatusCode.OK);
+    }
+
+    /// <summary>Los <c>linea_solicitud_id</c> de <c>captura</c>, comprobando que son exactamente los de <c>costeo.rutas[]</c> y en el mismo orden.</summary>
+    private static List<string> Cruzadas(JsonElement detalle)
+    {
+        var captura = detalle.GetProperty("captura").EnumerateArray().Select(r => r.GetProperty("linea_solicitud_id").GetString()!).ToList();
+        var costeo = detalle.GetProperty("costeo").GetProperty("rutas").EnumerateArray().Select(r => r.GetProperty("linea_solicitud_id").GetString()!).ToList();
+        captura.Should().Equal(costeo, "captura y costeo se cruzan por linea_solicitud_id");
+        return captura;
+    }
+
+    private async Task<(JsonNode Modelo, string? Etag)> ModeloAsync(clsSesionPrueba sesion, string folio)
+    {
+        using var respuesta = await _api.EnviarAsync(_get, $"{Ruta(folio)}/solicitud", sesion.Access);
+        respuesta.StatusCode.Should().Be(HttpStatusCode.OK);
+        return (JsonNode.Parse(await respuesta.Content.ReadAsStringAsync(TestContext.Current.CancellationToken))!, respuesta.Headers.ETag?.Tag);
     }
 
     [Fact]

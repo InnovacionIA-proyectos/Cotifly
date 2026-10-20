@@ -1938,6 +1938,9 @@ con `GET .../costeo`. Contrato completo y ejemplo en `CONTRATO_API_WEB.md` §8.1
 - **No consulta NEXO** ni dispara el polling: muestra lo último que Cotifly guardó. Para ver si llegó el costeo, volver a pedirlo más tarde
   (no en un bucle apretado).
 - Sin costeo, los precios de `costeo`, de sus rutas y de `totales` vienen en `null`.
+- **Una fuente por dato** (tabla en `CONTRATO_API_WEB.md` §8.14): precios, margen, camiones y conexos con precio de `costeo.rutas[]`;
+  municipios y condiciones de `captura`; resultado, envío y dueño de `cotizacion`; totales de `totales`. No usar `captura` para
+  prellenar "Editar solicitud" (sección 5.28): para eso está `GET .../solicitud`.
 
 ## 6. Flujos
 

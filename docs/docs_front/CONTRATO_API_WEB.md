@@ -1381,6 +1381,19 @@ frontend ya conoce, con sus mismas reglas y nombres:
 | `row_version` | | La versión de la fila (también en el `ETag`) para el `If-Match` de las acciones que siguen |
 | `solo_lectura` | | `true` si lo consulta un gerente de la regional del dueño |
 
+- **Qué fuente usar.** Algunos datos vienen en más de un bloque; siempre valen lo mismo, pero úsese uno solo para cada cosa:
+
+  | Dato | Fuente | No usar |
+  |---|---|---|
+  | Estado del costeo, precio total, moneda y TRM | `costeo` (`estado_costeo`, `precio_final`, `moneda`, `trm_aplicada`) | `cotizacion.*` es la fila del listado (mismos valores) |
+  | Precio, margen, camiones, mercancías y avisos de cada ruta | `costeo.rutas[]` | `captura[].margen_aplicado` viene aunque la ruta no tenga precio |
+  | Conexos con precio y `estado_nexo` | `costeo.rutas[].servicios_conexos` (por ruta) | `costeo.servicios_conexos` (todas las rutas juntas) solo para un total; `captura[].servicios_conexos` no trae precio y agrupa por servicio |
+  | Municipios (id y nombre), condiciones y valores capturados | `captura[]`, cruzada con `costeo.rutas[]` por `linea_solicitud_id` | |
+  | Resultado, envío, cliente, `pdf_url` y comercial dueño | `cotizacion` | |
+  | Totales de la solicitud | `totales` | sumar en el frontend |
+  | Prellenar "Editar solicitud" y el cuerpo del `PUT` | `GET .../solicitud` (resuelve los conexos contra el catálogo de NEXO) | `captura` |
+  | `If-Match` de la acción siguiente | `row_version` o el `ETag` | |
+
 - **Acceso.** El dueño ve su cotización. Un `gerente_comercial` ve la de un comercial de su regional efectiva (la misma regla que
   `GET /web/cotizaciones/regional` y la descarga del PDF) en **solo consulta**: `solo_lectura = true`, y las acciones (margen, conexos,
   resultado, edición, generar el PDF, correo) le siguen respondiendo 404 porque son del dueño; ocultarlas o deshabilitarlas (descargar

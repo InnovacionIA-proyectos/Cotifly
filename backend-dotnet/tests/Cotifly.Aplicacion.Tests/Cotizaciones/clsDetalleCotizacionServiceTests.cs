@@ -13,6 +13,7 @@ using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Dominio.Identidad;
 using Cotifly.Dominio.Margen;
+using Cotifly.Pruebas.Comun;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 
@@ -72,6 +73,34 @@ public sealed class clsDetalleCotizacionServiceTests
         // El dueño nunca carga la cotización sin filtrar por dueño ni queda en la auditoría.
         await _cotizaciones.DidNotReceiveWithAnyArgs().ObtenerPorFolioAsync(default!, Ct);
         await _auditoria.DidNotReceiveWithAnyArgs().RegistrarAsync(default!, default, default, default, default, default);
+    }
+
+    /// <summary>
+    /// Validación #179: en USD (TRM con decimales) y con varias rutas con conexos, cada precio se redondea por separado y aun así
+    /// <c>precio_transporte + precio_conexos = precio_final</c> (la tarifa absorbe el redondeo), igual a la suma de las rutas del costeo; y
+    /// <c>captura</c> se cruza 1 a 1 con <c>costeo.rutas[]</c> por <c>linea_solicitud_id</c>.
+    /// </summary>
+    [Fact]
+    public async Task EnDolaresConVariasRutasYConexosLosTotalesCuadranYCapturaCruzaConCosteo()
+    {
+        var cotizacion = clsCotizacionMuestra.LicitacionCosteada(
+            [1_234_567m, 2_345_678m, 987_654m], folio: "PCN-AP-01102026-003", usuarioId: _ana.Id, moneda: "USD", trm: 3917.37m);
+        clsCotizacionMuestra.ConConexo(cotizacion, "CX-1", "Cargue", 85_333m, 3m, orden: 1);
+        clsCotizacionMuestra.ConConexo(cotizacion, "CX-2", "Escolta", 41_111m, 1m, orden: 1);
+        clsCotizacionMuestra.ConConexo(cotizacion, "CX-3", "Almacenamiento", 12_345m, 7m, orden: 3);
+        _cotizaciones.ObtenerPorFolioDelUsuarioAsync(cotizacion.Folio, _ana.Id, Arg.Any<CancellationToken>()).Returns(cotizacion);
+
+        var detalle = (await Servicio(Comercial(_ana)).ObtenerAsync(cotizacion.Folio, Ct)).Valor;
+
+        detalle.Costeo.Moneda.Should().Be("USD");
+        var totales = detalle.Totales;
+        totales.Rutas.Should().Be(3);
+        totales.PrecioFinal.Should().NotBeNull().And.Be(detalle.Costeo.PrecioFinal);
+        (totales.PrecioTransporte + totales.PrecioConexos).Should().Be(totales.PrecioFinal);
+        totales.PrecioFinal.Should().Be(detalle.Costeo.Rutas.Sum(r => r.PrecioFinalLinea));
+        totales.PrecioConexos.Should().Be(detalle.Costeo.ServiciosConexos.Sum(c => c.Precio)).And.BePositive();
+        detalle.Captura.Select(r => r.LineaSolicitudId).Should().Equal(detalle.Costeo.Rutas.Select(r => r.LineaSolicitudId));
+        detalle.Captura[0].ServiciosConexos.Select(c => c.IdServicioConexo).Should().Equal("CX-1", "CX-2");
     }
 
     [Fact]
