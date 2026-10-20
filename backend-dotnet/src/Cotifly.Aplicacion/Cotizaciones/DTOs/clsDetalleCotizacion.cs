@@ -46,10 +46,18 @@ public sealed record clsFechasCotizacion(
 /// del PDF (nunca costos de Nexo). Los precios son <c>null</c> mientras alguna ruta no tenga precio.
 /// </summary>
 /// <param name="Rutas">Número de rutas.</param>
-/// <param name="Camiones">Camiones que cuentan en el precio (los descartados en Nexo no, salvo que lo estén todos).</param>
+/// <param name="Camiones">Camiones que cuentan en el precio (los descartados en Nexo no, salvo que lo estén todos; HU-028.1, #183: los
+/// rechazados por la Mesa de Costeo nunca).</param>
 /// <param name="PesoKg">Suma del peso declarado de las rutas; <c>null</c> si ninguna lo trae.</param>
 /// <param name="PrecioTransporte">Suma de la tarifa de transporte de las rutas (la del PDF).</param>
 /// <param name="PrecioConexos">Suma del precio de los servicios conexos de todas las rutas.</param>
 /// <param name="PrecioFinal">Precio de la solicitud (= <c>costeo.precio_final</c>): transporte + conexos.</param>
 public sealed record clsTotalesCotizacion(
-    int Rutas, int Camiones, decimal? PesoKg, decimal? PrecioTransporte, decimal? PrecioConexos, decimal? PrecioFinal);
+    int Rutas, int Camiones, decimal? PesoKg, decimal? PrecioTransporte, decimal? PrecioConexos, decimal? PrecioFinal)
+{
+    /// <summary>HU-028.1 (#183): rutas rechazadas por la Mesa de Costeo de Nexo (todos sus camiones): no cuentan en los precios.</summary>
+    public int RutasRechazadas { get; init; }
+
+    /// <summary>HU-028.1 (#183): camiones rechazados por la Mesa de Costeo de Nexo (de cualquier ruta).</summary>
+    public int CamionesRechazados { get; init; }
+}

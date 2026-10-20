@@ -218,7 +218,13 @@ public sealed class clsCosteoController(
 
         // HU-021.9 (#136): la respuesta trae siempre los conexos que se conservan (lista vacía si no había); conexos_descartados (#124)
         // queda vacío por compatibilidad: con la decisión 3 la re-solicitud ya no descarta conexos.
-        var resumen = valor.Cotizacion with { ConexosDescartados = valor.ConexosDescartados ?? [], ConexosConservados = valor.ConexosConservados ?? [] };
+        var resumen = valor.Cotizacion with
+        {
+            ConexosDescartados = valor.ConexosDescartados ?? [],
+            ConexosConservados = valor.ConexosConservados ?? [],
+            // HU-028.1 (#183): solo si la cotización de origen tenía camiones rechazados por la Mesa de Costeo.
+            AvisoRechazos = valor.AvisoRechazos,
+        };
         return valor.VersionNueva
             ? Created($"/web/cotizaciones/{valor.Cotizacion.Folio}/costeo", resumen)
             : Ok(resumen);

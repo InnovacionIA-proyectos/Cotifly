@@ -56,6 +56,51 @@ public sealed class clsExportadorExcelLicitacionTests
     }
 
     [Fact]
+    public void Hu183_UnaLineaRechazadaSaleSinCosteoNoEsPendienteYElTotalSeMuestraSinElla()
+    {
+        // HU-028.1 (#183): "SIN COSTEO" en el precio, "Rechazada en NEXO" en el estado (sin motivo), contada aparte en el resumen y marcada en
+        // la hoja de camiones; el total (sin ella) se muestra porque no queda ninguna pendiente.
+        var datos = Datos(clsPliegoMuestra.Excel(3), total: 1_176_471m) with
+        {
+            Lineas =
+            [
+                new clsLineaExportacion(1, 0, "BUENAVENTURA", "BOGOTA, D.C.", "3S3", 32000m, "Costeada", 1_176_471m,
+                    [new clsCamionExportacion(1, "3S3", null, 32000m, null, null, null)]),
+                new clsLineaExportacion(2, 2, "CUCUTA", "BOGOTA, D.C.", "2", 8000m, "Rechazada en NEXO", null,
+                    [new clsCamionExportacion(1, "2", null, 8000m, null, null, null) { Rechazado = true }]) { Rechazada = true },
+            ],
+        };
+
+        using var libro = new XLWorkbook(new MemoryStream(_exportador.Generar(datos).Valor));
+
+        var hoja = libro.Worksheet(clsPliegoMuestra.Hoja);
+        hoja.Cell(clsPliegoMuestra.FilaExcel(2), 7).GetString().Should().Be(clsExportadorExcelLicitacionClosedXml.SinCosteo);
+        hoja.Cell(clsPliegoMuestra.FilaExcel(2), 8).GetString().Should().Be("Rechazada en NEXO");
+        var resumen = libro.Worksheet(clsExportadorExcelLicitacionClosedXml.HojaResumen);
+        var textos = resumen.CellsUsed().Select(c => c.GetFormattedString()).ToList();
+        textos.Should().Contain(clsExportadorExcelLicitacionClosedXml.EtiquetaRechazadas);
+        textos.Should().NotContain(t => t.StartsWith("Pendiente:", StringComparison.Ordinal), "una rechazada no es pendiente");
+        resumen.CellsUsed().Should().Contain(c => c.DataType == XLDataType.Number && c.GetValue<decimal>() == 1_176_471m, "el total sin la rechazada");
+        var camiones = libro.Worksheet(clsExportadorExcelLicitacionClosedXml.HojaCamiones);
+        camiones.Cell(1, 11).GetString().Should().Be(clsExportadorExcelLicitacionClosedXml.ColumnaCosteoCamion);
+        camiones.Column(11).CellsUsed().Select(c => c.GetString()).Should().Contain(clsCamionExportacion.TextoRechazado);
+    }
+
+    [Fact]
+    public void Hu183_ConTodasLasLineasRechazadasElTotalDiceSinCosteo()
+    {
+        var datos = Datos(null, total: null) with
+        {
+            Lineas = [new clsLineaExportacion(1, 0, "A", "B", "3S3", 1m, "Rechazada en NEXO", null) { Rechazada = true }],
+        };
+
+        using var libro = new XLWorkbook(new MemoryStream(_exportador.Generar(datos).Valor));
+
+        libro.Worksheet(clsExportadorExcelLicitacionClosedXml.HojaResumen).CellsUsed().Select(c => c.GetFormattedString())
+            .Should().Contain(clsExportadorExcelLicitacionClosedXml.TodasRechazadas);
+    }
+
+    [Fact]
     public void ElResumenTraeElTotalSoloSiTodasLasLineasTienenPrecioYLosConexosConSuPrecio()
     {
         using var libro = new XLWorkbook(new MemoryStream(_exportador.Generar(Datos(clsPliegoMuestra.Excel(3), total: 9m)).Valor));

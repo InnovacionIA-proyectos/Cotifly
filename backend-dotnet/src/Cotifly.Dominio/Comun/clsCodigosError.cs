@@ -288,6 +288,19 @@ public static class clsCodigosError
     public const string RutaInexistente = "RUTA_INEXISTENTE";
 
     /// <summary>
+    /// HU-028.1 (#183, Nexo #320): la ruta indicada fue rechazada por la Mesa de Costeo de Nexo (todos sus camiones): no tiene precio, así
+    /// que no admite ajuste de margen ni servicios conexos; 409 con <c>detalle.linea_orden</c>, <c>detalle.linea_solicitud_id</c> y
+    /// <c>detalle.motivo_rechazo</c>. Código nuevo del backend .NET.
+    /// </summary>
+    public const string RutaRechazada = "RUTA_RECHAZADA";
+
+    /// <summary>
+    /// HU-028.1 (#183, decisión D1 de Nexo #320): la Mesa de Costeo rechazó TODAS las rutas de la cotización: no hay nada que cotizar y el
+    /// PDF no se genera; 409. Código nuevo del backend .NET.
+    /// </summary>
+    public const string SinRutasCotizables = "SIN_RUTAS_COTIZABLES";
+
+    /// <summary>
     /// HU-013 (ADR-018 §4 y §5): el estado o el tipo de la cotización no permite la acción (una licitación no admite conexos, con
     /// <c>detalle.motivo = LICITACION</c>; re-solicitar con un costeo en curso); 409. Código nuevo del backend .NET.
     /// </summary>

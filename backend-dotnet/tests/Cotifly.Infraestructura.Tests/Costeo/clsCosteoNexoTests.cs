@@ -395,6 +395,35 @@ public sealed class clsCosteoNexoTests : IDisposable
         linea.NumeroLinea.Should().Be(1, "lo demás se lee igual");
     }
 
+    [Fact]
+    public void Hu183_LaLineaRechazadaTraeElEstadoYElMotivoDelRechazoDeNexo320()
+    {
+        // Nexo #320 (S6-HU-24.3): estadoLinea = "rechazada" y motivoRechazo al final de clsLineaCosteoDto; ni quién ni cuándo.
+        using var documento = JsonDocument.Parse(
+            """{"lineaId":"L1","clsRuta":"A → B","peso":1,"numeroLinea":2,"estadoLinea":"rechazada","motivoPendiente":null,"motivoRechazo":"  Ruta sin operación  "}""");
+
+        var linea = clsCosteoNexo.LeerLineaSolicitud(documento.RootElement);
+
+        (linea.EstadoLinea, linea.MotivoRechazo).Should().Be(("rechazada", "  Ruta sin operación  "));
+        linea.Situacion.Rechazada.Should().BeTrue();
+        linea.Situacion.MotivoRechazo.Should().Be("Ruta sin operación");
+        linea.NumeroLinea.Should().Be(2, "lo demás se lee igual");
+    }
+
+    [Theory]
+    [InlineData("""{"lineaId":"L1","clsRuta":"A → B","peso":1,"estadoLinea":"porCostear"}""")]
+    [InlineData("""{"lineaId":"L1","clsRuta":"A → B","peso":1,"estadoLinea":"rechazada","motivoRechazo":7}""")]
+    public void Hu183_SinMotivoRechazoONoTextoQuedaEnNullSinError(string json)
+    {
+        // Un Nexo con #309 y sin #320 no lo manda; uno que lo mandara con otro tipo tampoco rompe la lectura.
+        using var documento = JsonDocument.Parse(json);
+
+        var linea = clsCosteoNexo.LeerLineaSolicitud(documento.RootElement);
+
+        linea.MotivoRechazo.Should().BeNull();
+        linea.Situacion.MotivoRechazo.Should().BeNull();
+    }
+
     [Theory]
     [InlineData("""{"lineaId":"L1","clsRuta":"A → B","peso":1}""")]
     [InlineData("""{"lineaId":"L1","clsRuta":"A → B","peso":1,"estadoLinea":null,"motivoPendiente":null}""")]

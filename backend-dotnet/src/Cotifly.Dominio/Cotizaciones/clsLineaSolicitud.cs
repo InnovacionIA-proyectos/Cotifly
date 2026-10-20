@@ -555,6 +555,7 @@ public sealed partial class clsLineaSolicitud
     internal bool RegistrarEstadoCamiones(EstadoCosteo estado)
     {
         // HU-021.9: un camión descartado en Nexo sigue descartado (no viaja en un reenvío); si lo están todos, cuentan todos.
+        // HU-028.1 (#183): un camión rechazado tampoco toma el estado de la solicitud (lo deshace solo la lectura de su línea).
         var cambio = false;
         foreach (var camion in VehiculosQueCuentan)
         {
@@ -599,7 +600,8 @@ public sealed partial class clsLineaSolicitud
     /// </summary>
     internal void ReiniciarCosteo()
     {
-        foreach (var camion in VehiculosQueCuentan)
+        // HU-028.1 (#183): los rechazados SÍ se reenvían (VehiculosVigentes): la Mesa de Costeo vuelve a evaluar la línea.
+        foreach (var camion in VehiculosVigentes)
         {
             camion.ReiniciarCosteo();
             camion.RegistrarEstado(Cotizaciones.EstadoCosteo.PendienteEnvio);
@@ -676,15 +678,56 @@ public sealed partial class clsLineaSolicitud
         CostoFletesTotal is { } fletes && CostoRetornoContenedorTotal is { } retorno ? fletes + retorno + (CostoLevanteContenedorTotal ?? 0m) : null;
 
     /// <summary>
-    /// Camiones que cuentan para el estado y los totales: los <c>descartada</c> en Nexo se ignoran, salvo que todos lo estén (entonces
-    /// cuentan todos y la ruta queda descartada y sin flete). Regla del coordinador del 2026-10-08 (ADR-019).
+    /// Camiones que cuentan para el estado y los totales (precio, PDF, Excel, conteos): los <c>descartada</c> en Nexo se ignoran, salvo que
+    /// todos lo estén (entonces cuentan todos y la ruta queda descartada y sin flete). Regla del coordinador del 2026-10-08 (ADR-019).
+    /// HU-028.1 (#183): los <c>rechazada</c> por la Mesa de Costeo tampoco cuentan, y SIN excepción: una ruta con todos sus camiones
+    /// rechazados (o rechazados y descartados) no tiene camiones que cuenten, queda <c>rechazada</c> y sin precio, y no bloquea la cotización.
+    /// Para lo que viaja a Nexo (envío, re-solicitud, <c>-vN</c>, edición) se usa <see cref="VehiculosVigentes"/>, que sí incluye los rechazados.
     /// </summary>
     public IReadOnlyList<clsVehiculoLineaSolicitud> VehiculosQueCuentan
     {
         get
         {
+            var vigentes = VehiculosVigentes;
+            return vigentes.Any(v => v.Rechazado) ? [.. vigentes.Where(v => !v.Rechazado)] : vigentes;
+        }
+    }
+
+    /// <summary>
+    /// Camiones que viajan a Nexo y se copian a una versión nueva o a una edición: todos menos los <c>descartada</c> (la Mesa borró su línea,
+    /// #134), salvo que todos lo estén (entonces todos). HU-028.1 (#183): los <c>rechazada</c> SÍ están: al re-solicitar, editar o crear la
+    /// <c>-vN</c> la Mesa de Costeo vuelve a evaluar su línea (decisión conservadora: no se pierde un camión que el comercial pidió).
+    /// </summary>
+    public IReadOnlyList<clsVehiculoLineaSolicitud> VehiculosVigentes
+    {
+        get
+        {
             var vigentes = _vehiculos.Where(v => v.EstadoCosteo != Cotizaciones.EstadoCosteo.Descartada).ToList();
             return vigentes.Count > 0 ? vigentes : [.. _vehiculos];
+        }
+    }
+
+    /// <summary>
+    /// HU-028.1 (#183): ¿la ruta quedó <c>rechazada</c>? (todos sus camiones vigentes rechazados por la Mesa de Costeo de Nexo). No tiene
+    /// precio, no cuenta en el total de la cotización, el PDF y el Excel la muestran "Sin costeo" y no admite margen ni conexos
+    /// (<c>RUTA_RECHAZADA</c>).
+    /// </summary>
+    public bool Rechazada => EstadoCosteo == Cotizaciones.EstadoCosteo.Rechazada;
+
+    /// <summary>HU-028.1 (#183): ¿algún camión de la ruta está rechazado? (la ruta puede seguir con precio por los demás).</summary>
+    public bool TieneCamionesRechazados => _vehiculos.Any(v => v.Rechazado);
+
+    /// <summary>
+    /// HU-028.1 (#183): los motivos del rechazo de sus camiones, distintos y en el orden de los camiones, unidos con <c>" | "</c>; <c>null</c>
+    /// si ninguno está rechazado (o Nexo no mandó el motivo). Para el comercial (costeo, detalle, licitación); nunca va al PDF ni al Excel.
+    /// </summary>
+    public string? MotivoRechazo
+    {
+        get
+        {
+            var motivos = clsVehiculoLineaSolicitud.EnOrden(_vehiculos).Where(v => v.Rechazado).Select(v => v.MotivoRechazo).OfType<string>()
+                .Distinct(StringComparer.Ordinal).ToList();
+            return motivos.Count == 0 ? null : string.Join(" | ", motivos);
         }
     }
 

@@ -313,6 +313,8 @@ contra el contrato, así que un ejemplo desactualizado rompe la compilación de 
 | 400 (en `detalle.errores`) | `CAMPO_REQUERIDO`, `CAMPO_NO_APLICA` | Captura | Falta un id de municipio o el `codigo_mercancia`, o llegó un campo plano junto con `rutas`. |
 | 400 | `RUTA_REQUERIDA` | Margen y conexos | Varias rutas y la petición no dice cuál. `detalle.rutas` = `[{linea_orden, linea_solicitud_id, origen, destino}]`. |
 | 400 | `RUTA_INEXISTENTE` | Margen y conexos | La ruta no es de la cotización, o `linea_orden` y `linea_solicitud_id` son de rutas distintas. |
+| 409 | `RUTA_RECHAZADA` | Margen y conexos | HU-028.1 (#183): la Mesa de Costeo de NEXO rechazó la ruta (todos sus camiones); `detalle` trae `linea_orden`, `linea_solicitud_id` y `motivo_rechazo`. |
+| 409 | `SIN_RUTAS_COTIZABLES` | `POST .../costeo/pdf` | HU-028.1 (#183, D1): la Mesa rechazó todas las rutas; no se genera el PDF. |
 | 400 | `JUSTIFICACION_REQUERIDA` | Margen | Por debajo del sugerido **de esa ruta**; `detalle` trae `margen_sugerido`, `linea_orden` y `linea_solicitud_id`. |
 | 409 | `USAR_RESULTADO_NEXO` | `/seguimiento` | `detalle` = `{metodo, endpoint, requiere_if_match}`. |
 | 409 | `ESTADO_NO_PERMITE` | Re-solicitar | `datos_carga` en una cotización de varias rutas: `detalle.motivo` = `VARIAS_RUTAS` (formulario) o `LICITACION` (licitación). |
@@ -669,6 +671,28 @@ Los dos son **solo de lectura y no se guardan en la base**: los lee el polling d
 siguiente consulta del polling, en minutos). `null` = no mostrar nada; nunca es un error. Salen en `GET .../costeo`, en `costeo` de `GET /web/cotizaciones/{folio}` (§8.14) y en las respuestas
 de `PUT .../costeo/margen` y `PUT .../costeo/servicios-conexos`; en las demás mutaciones del costeo vienen en `null` (volver a pedir el
 `GET`).
+
+**Línea rechazada por la Mesa de Costeo (HU-028.1, #183, NEXO #320).** La Mesa de Costeo de NEXO puede rechazar la línea de un camión
+con un motivo (texto libre, hasta 500). El polling lo lee y lo **guarda**: el camión llega con `estado_costeo = "rechazada"` (valor
+**nuevo** del enum en `rutas[].camiones[]`, `rutas[]` y `lineas[]` de la licitación), `motivo_rechazo` y `rechazada_at` (cuándo lo vio
+Cotifly; NEXO no expone su fecha ni quién rechazó). Reglas:
+
+- Un camión rechazado no cuenta en el precio de su ruta ni en los totales y no lleva conexos (van al primer camión no rechazado).
+- Si TODOS los camiones de una ruta están rechazados, la ruta queda `rechazada`: `precio_final_linea = null`, sus conexos no salen
+  ni suman, no suma en `precio_final` y `rutas[].motivo_rechazo` trae los motivos (unidos con " | "). Ajustar el margen o los conexos de
+  esa ruta responde **409 `RUTA_RECHAZADA`** (`detalle.linea_orden`, `detalle.linea_solicitud_id`, `detalle.motivo_rechazo`).
+- La cotización no espera una línea rechazada: queda `autocosteo` cuando todas las demás tienen flete. La cabecera nunca queda
+  `rechazada`.
+- Con TODAS las rutas rechazadas: `pendiente_costeo` hasta que NEXO entregue (la Mesa aún puede deshacer), luego `entregada` sin
+  `precio_final`, con `motivo_estado_costeo` = "La Mesa de Costeo de Nexo rechazó todas las rutas..." y el polling se detiene.
+  `POST .../costeo/pdf` responde **409 `SIN_RUTAS_COTIZABLES`** (decisión D1).
+- PDF y Excel: la ruta rechazada sale "Sin costeo" / "SIN COSTEO", sin precio y **sin motivo**; no suma en el total. El motivo solo lo ve
+  el comercial en pantalla.
+- Mientras NEXO no entregue, la Mesa puede deshacer el rechazo: el camión vuelve a `pendiente_costeo` y `motivo_rechazo` a `null`.
+  Entregada, el rechazo es definitivo.
+- Re-solicitar (mismo folio o `-vN`) y editar la solicitud vuelven a pedir los camiones rechazados (la Mesa los evalúa otra vez). La
+  respuesta de `re-solicitar` trae `aviso_rechazos` con las rutas y sus motivos para que el comercial los quite editando si no aplican.
+- Marcar ganada o perdida con rutas rechazadas funciona igual (el precio es el de las demás).
 
 **El vehículo de cada camión: la Mesa manda (D2, decisión del 2026-10-19).** "Si la Mesa de Costeo realiza un cambio, nos acogemos a
 dichos cambios, incluido el tipo de vehículo." `rutas[].camiones[].tipo_vehiculo` y `carroceria` nacen con los códigos del cubicador

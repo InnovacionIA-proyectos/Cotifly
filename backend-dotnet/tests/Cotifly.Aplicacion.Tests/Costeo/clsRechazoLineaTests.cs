@@ -1,0 +1,288 @@
+using Cotifly.Aplicacion.Costeo.Services;
+using Cotifly.Aplicacion.Licitaciones.Services;
+using Cotifly.Dominio.Comun;
+using Cotifly.Dominio.Cotizaciones;
+using Cotifly.Dominio.Margen;
+
+namespace Cotifly.Aplicacion.Tests.Costeo;
+
+/// <summary>
+/// HU-028.1 (#183, Nexo #320): la Mesa de Costeo rechaza una línea (un camión de Cotifly) con un motivo. El polling lo lee del detalle de la
+/// foto (<c>estadoLinea = "rechazada"</c> y <c>motivoRechazo</c>), lo guarda en el camión y la regla se refleja en la ruta, la cabecera, el
+/// precio, el PDF, el Excel, la licitación, el margen, los conexos, la re-solicitud y la <c>-vN</c>.
+/// </summary>
+public sealed class clsRechazoLineaTests
+{
+    private static readonly DateTimeOffset _ahora = new(2026, 10, 20, 16, 0, 0, TimeSpan.Zero);
+    private readonly clsPrecioCosteoService _servicio = new();
+
+    // ------------------------------------------------------------------ Lectura y camión
+
+    [Fact]
+    public void UnCamionRechazadoGuardaElMotivoYNoCuentaEnElPrecioDeSuRuta()
+    {
+        var cotizacion = DosRutas();
+        Aplicar(cotizacion, Foto("EnCosteo", [Linea("N-1", "A"), Linea("N-2", "C", rechazo: "  Ruta sin operación  "), Linea("N-3", "C")],
+            [("N-1", 1_000_000m), ("N-3", 500_000m)]));
+
+        var segunda = cotizacion.RutasOrdenadas[1];
+        var (rechazado, vigente) = (segunda.VehiculosOrdenados[0], segunda.VehiculosOrdenados[1]);
+        (rechazado.EstadoCosteo, rechazado.MotivoRechazo, rechazado.RechazadaAt, rechazado.CostoFlete, rechazado.LineaSolicitudNexoId)
+            .Should().Be(((EstadoCosteo?)EstadoCosteo.Rechazada, (string?)"Ruta sin operación", (DateTimeOffset?)_ahora, (decimal?)null, (string?)"N-2"),
+                "la línea rechazada sigue existiendo en Nexo: no es una línea sin dueño");
+        segunda.EstadoCosteo.Should().Be(EstadoCosteo.Autocosteo, "el rechazado se ignora en el resumen, como un descartado");
+        segunda.CostoFletesTotal.Should().Be(500_000m, "solo el camión vigente");
+        segunda.MotivoRechazo.Should().Be("Ruta sin operación");
+        segunda.Rechazada.Should().BeFalse("le queda un camión vigente");
+        cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.Autocosteo, "el autocosteo no espera la línea rechazada");
+        cotizacion.PrecioFinal.Should().Be(1_764_706m, "1.500.000 con margen del 15 %");
+        clsServiciosConexosCosteoService.PrimerCamion(segunda).Should().BeSameAs(vigente, "el rechazado no recibe conexos");
+    }
+
+    [Fact]
+    public void UnaRutaConTodosSusCamionesRechazadosQuedaRechazadaSinPrecioYNoBloqueaLaCotizacion()
+    {
+        var cotizacion = DosRutas();
+        Aplicar(cotizacion, Foto("EnCosteo", [Linea("N-1", "A"), Linea("N-2", "C", rechazo: "Sin tarifa"), Linea("N-3", "C", rechazo: "Sin cupo")],
+            [("N-1", 1_000_000m)]));
+
+        var segunda = cotizacion.RutasOrdenadas[1];
+        segunda.EstadoCosteo.Should().Be(EstadoCosteo.Rechazada);
+        segunda.Rechazada.Should().BeTrue();
+        segunda.PrecioFinalLinea.Should().BeNull();
+        segunda.CostoFinal.Should().BeNull();
+        segunda.VehiculosQueCuentan.Should().BeEmpty("los rechazados nunca cuentan, ni siquiera si lo están todos");
+        segunda.VehiculosVigentes.Should().HaveCount(2, "pero sí viajan en un reenvío");
+        segunda.MotivoRechazo.Should().Be("Sin tarifa | Sin cupo");
+        cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.Autocosteo);
+        cotizacion.PrecioFinal.Should().Be(1_176_471m, "el total es solo la ruta 1");
+        cotizacion.CostoFinal.Should().Be(1_000_000m);
+        cotizacion.RutasCotizables.Should().ContainSingle().Which.Orden.Should().Be(1);
+        cotizacion.TodasLasRutasRechazadas.Should().BeFalse();
+        cotizacion.MotivoEstadoCosteo.Should().BeNull();
+
+        // Margen y conexos en la ruta rechazada: 409 RUTA_RECHAZADA con el motivo; la otra ruta sí se ajusta.
+        var margen = cotizacion.ValidarAjusteMargen(2, 0.2m, null);
+        margen!.Codigo.Should().Be(clsCodigosError.RutaRechazada);
+        margen.Datos!["motivo_rechazo"].Should().Be("Sin tarifa | Sin cupo");
+        cotizacion.ValidarAjusteMargen(1, 0.2m, null).Should().BeNull();
+        clsAjusteMargenCosteoService.Recalcular(cotizacion, segunda, 0.2m).Error.Codigo.Should().Be(clsCodigosError.RutaRechazada);
+        clsAjusteMargenCosteoService.Recalcular(cotizacion, cotizacion.RutasOrdenadas[0], 0.2m).Valor.PrecioFinal
+            .Should().Be(1_250_000m, "el total de la vista previa no suma la ruta rechazada");
+        cotizacion.CambiarConexos(2, [new clsCambioConexo("CX-1", "Cargue", 100_000m, 1m)], _ahora);
+        clsCosteoCotizacionService.ConexosConPrecio(cotizacion, segunda).Should().BeEmpty("una ruta rechazada no muestra ni cobra conexos");
+        cotizacion.PrecioFinal.Should().Be(1_176_471m, "el conexo de la ruta rechazada no suma");
+    }
+
+    [Fact]
+    public void ElPdfYElExcelMuestranLaRutaRechazadaSinCosteoSinPrecioNiMotivoYElTotalSinElla()
+    {
+        var cotizacion = DosRutas();
+        Aplicar(cotizacion, Foto("EnCosteo", [Linea("N-1", "A"), Linea("N-2", "C", rechazo: "Motivo interno"), Linea("N-3", "C", rechazo: "Motivo interno")],
+            [("N-1", 1_000_000m)]));
+
+        clsCosteoCotizacionService.ValidarTotal(cotizacion, "COP").Should().BeNull("las rutas rechazadas no cuentan en \"todas con precio\"");
+        var resumen = clsCosteoCotizacionService.ResumenPliego(cotizacion, "COP");
+        var precioRuta1 = Cotifly.Aplicacion.Pdf.Services.clsFormatoMoneda.Formatear(1_176_471m, "COP");
+        resumen.Filas.Select(f => f.Tarifa).Should().Equal(precioRuta1, clsCosteoCotizacionService.TextoSinCosteo);
+        resumen.Total.Should().Be(precioRuta1, "el total del pliego no suma la ruta rechazada");
+        var pliego = clsCosteoCotizacionService.PayloadPliego(cotizacion, null, "COP");
+        var fila = pliego.Secciones![1].Filas!.Single();
+        (fila.Tarifa, fila.Nota).Should().Be(((decimal?)null, clsCosteoCotizacionService.TextoSinCosteo));
+        fila.VehiculoPeso.Should().NotBeNull("se muestran los camiones que se pidieron");
+        System.Text.Json.JsonSerializer.Serialize(pliego).Should().NotContain("Motivo interno", "el PDF no lleva el motivo");
+
+        var excel = clsLicitacionService.DatosExportacion(cotizacion, null, _ahora);
+        excel.Lineas[1].Should().Match<Cotifly.Aplicacion.Licitaciones.DTOs.clsLineaExportacion>(
+            l => l.Rechazada && l.PrecioFinal == null && l.Estado == clsLicitacionService.EstadoRechazadaEnNexo);
+        excel.Lineas[1].Camiones!.Should().OnlyContain(c => c.Rechazado);
+        excel.PrecioTotal.Should().Be(1_176_471m, "el total del Excel no suma la ruta rechazada");
+        System.Text.Json.JsonSerializer.Serialize(excel).Should().NotContain("Motivo interno", "el Excel no lleva el motivo");
+
+        var licitacion = clsLicitacionService.Vista(cotizacion, null);
+        (licitacion.LineasCosteadas, licitacion.LineasPendientes, licitacion.LineasRechazadas, licitacion.PrecioFinal)
+            .Should().Be((1, 0, 1, (decimal?)1_176_471m));
+        licitacion.Lineas[1].Should().Match<Cotifly.Aplicacion.Licitaciones.DTOs.clsLineaLicitacion>(
+            l => l.EstadoCosteo == "rechazada" && l.MotivoRechazo == "Motivo interno" && l.PrecioFinal == null);
+
+        var vista = clsCosteoCotizacionService.Vista(cotizacion, null);
+        vista.Rutas[1].Should().Match<clsRutaCosteo>(r => r.EstadoCosteo == "rechazada" && r.MotivoRechazo == "Motivo interno" && r.PrecioFinalLinea == null);
+        vista.Rutas[1].Camiones.Should().OnlyContain(c => c.EstadoCosteo == "rechazada" && c.MotivoRechazo == "Motivo interno" && c.RechazadaAt == _ahora);
+        vista.Rutas[0].MotivoRechazo.Should().BeNull();
+    }
+
+    [Fact]
+    public void SiLaMesaDeshaceElRechazoAntesDeEntregarElCamionVuelveAPendienteSinMotivo()
+    {
+        var cotizacion = DosRutas();
+        Aplicar(cotizacion, Foto("EnCosteo", [Linea("N-1", "A"), Linea("N-2", "C", rechazo: "Revisar"), Linea("N-3", "C", rechazo: "Revisar")],
+            [("N-1", 1_000_000m)]));
+        cotizacion.RutasOrdenadas[1].Rechazada.Should().BeTrue();
+
+        Aplicar(cotizacion, Foto("EnCosteo", [Linea("N-1", "A"), Linea("N-2", "C"), Linea("N-3", "C")], [("N-1", 1_000_000m)])).Should().BeTrue();
+
+        var segunda = cotizacion.RutasOrdenadas[1];
+        segunda.Vehiculos.Should().OnlyContain(v => v.EstadoCosteo == EstadoCosteo.PendienteCosteo && v.MotivoRechazo == null && v.RechazadaAt == null);
+        segunda.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo);
+        cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo, "la línea vuelve a esperar a la Mesa");
+        cotizacion.PrecioFinal.Should().BeNull();
+    }
+
+    [Fact]
+    public void ConLaCotizacionEntregadaElRechazoEsDefinitivoAunqueLaFotoNoTraigaElEstadoDeLaLinea()
+    {
+        var cotizacion = DosRutas();
+        Aplicar(cotizacion, Foto("EnCosteo", [Linea("N-1", "A"), Linea("N-2", "C", rechazo: "Sin tarifa"), Linea("N-3", "C")],
+            [("N-1", 1_000_000m), ("N-3", 500_000m)]));
+
+        // La respuesta del resultado (o una foto sin detalle) dice "Entregada" sin el estado de cada línea: el rechazo se conserva.
+        var sinDetalle = new clsCosteoConsultadoNexo("Entregada", ["N-1", "N-2", "N-3"], new clsCotizacionNexo("COT-1", "Entregada", "Ganada",
+            [new clsLineaCosteoNexo("N-1", 1_000_000m, null, null), new clsLineaCosteoNexo("N-3", 500_000m, null, null)], []));
+        Aplicar(cotizacion, sinDetalle);
+
+        var rechazado = cotizacion.RutasOrdenadas[1].VehiculosOrdenados[0];
+        (rechazado.EstadoCosteo, rechazado.MotivoRechazo).Should().Be(((EstadoCosteo?)EstadoCosteo.Rechazada, (string?)"Sin tarifa"));
+        cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.Entregada, "marcar ganada con un camión rechazado funciona");
+        cotizacion.PrecioFinal.Should().Be(1_764_706m);
+        cotizacion.MotivoEstadoCosteo.Should().BeNull("un camión rechazado no es \"entregada sin flete\"");
+    }
+
+    [Fact]
+    public void ConTodasLasRutasRechazadasLaCabeceraSigueEnCosteoYAlEntregarQuedaEntregadaSinTotalYElPdfSeBloquea()
+    {
+        var cotizacion = DosRutas();
+        var todas = new[] { Linea("N-1", "A", rechazo: "Fuera de cobertura"), Linea("N-2", "C", rechazo: "Fuera de cobertura"), Linea("N-3", "C", rechazo: "Fuera de cobertura") };
+
+        Aplicar(cotizacion, Foto("EnCosteo", todas, []));
+
+        cotizacion.TodasLasRutasRechazadas.Should().BeTrue();
+        cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo, "la Mesa puede deshacer o entregar: el polling sigue");
+        cotizacion.CosteoSiguienteConsultaAt.Should().NotBeNull();
+        cotizacion.PrecioFinal.Should().BeNull();
+        cotizacion.MotivoEstadoCosteo.Should().Be(clsCotizacionSolicitud.MotivoTodasLasRutasRechazadas);
+
+        Aplicar(cotizacion, Foto("Entregada", todas, [], estadoCotizacion: "Entregada"));
+
+        cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.Entregada);
+        cotizacion.CosteoSiguienteConsultaAt.Should().BeNull("entregada: el polling se detiene");
+        cotizacion.PrecioFinal.Should().BeNull();
+        cotizacion.EntregadaSinPrecio.Should().BeFalse("sin rutas que cotizar no hay precio que completar");
+        cotizacion.MotivoEstadoCosteo.Should().Be(clsCotizacionSolicitud.MotivoTodasLasRutasRechazadas);
+        cotizacion.Rutas.Should().OnlyContain(r => r.EstadoCosteo == EstadoCosteo.Rechazada);
+        clsCosteoCotizacionService.ValidarTotal(cotizacion, "COP")!.Codigo.Should().Be(clsCodigosError.SinRutasCotizables);
+        clsLicitacionService.DatosExportacion(cotizacion, null, _ahora).PrecioTotal.Should().BeNull();
+    }
+
+    [Fact]
+    public void ConUnNexoSinElEstadoDeLaLineaNoHayRechazo()
+    {
+        var cotizacion = DosRutas();
+        // Nexo anterior a #309/#320: sin estadoLinea ni motivoRechazo.
+        Aplicar(cotizacion, Foto("EnCosteo", [Linea("N-1", "A") with { EstadoLinea = null }, Linea("N-2", "C") with { EstadoLinea = null },
+            Linea("N-3", "C") with { EstadoLinea = null }], [("N-1", 1_000_000m)]));
+
+        cotizacion.Vehiculos.Should().NotContain(v => v.EstadoCosteo == EstadoCosteo.Rechazada);
+        clsDerivacionEstadoCosteo.LineaRechazada(Foto("EnCosteo", [Linea("N-1", "A")], []), "N-1").Should().BeFalse();
+        cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo);
+    }
+
+    // ------------------------------------------------------------------ Reenvío, -vN y edición
+
+    [Fact]
+    public void LaReSolicitudVuelveAEnviarLosCamionesRechazadosSinElRechazoYAvisa()
+    {
+        var cotizacion = DosRutas();
+        Aplicar(cotizacion, Foto("EnCosteo", [Linea("N-1", "A"), Linea("N-2", "C", rechazo: "Sin tarifa"), Linea("N-3", "C", rechazo: "Sin tarifa")],
+            [("N-1", 1_000_000m)]));
+
+        clsReSolicitudCosteoService.AvisoRechazos(cotizacion, versionNueva: true).Should().Contain("ruta 2").And.Contain("Sin tarifa").And.Contain("copia");
+        clsReSolicitudCosteoService.AvisoRechazos(cotizacion, versionNueva: false).Should().Contain("Se vuelven a pedir");
+        var instantanea = System.Text.Json.JsonSerializer.Serialize(clsReSolicitudCosteoService.Instantanea(cotizacion));
+        instantanea.Should().Contain("Sin tarifa", "el rechazo anterior queda en la auditoría");
+
+        cotizacion.PrepararReSolicitud();
+
+        cotizacion.Vehiculos.Should().OnlyContain(v => v.EstadoCosteo == EstadoCosteo.PendienteEnvio && v.MotivoRechazo == null && v.RechazadaAt == null);
+        cotizacion.LineasNexo().Should().HaveCount(3, "los camiones que la Mesa rechazó vuelven a viajar a Nexo");
+        clsReSolicitudCosteoService.AvisoRechazos(cotizacion, versionNueva: false).Should().BeNull();
+    }
+
+    [Fact]
+    public void LaCabeceraNuncaQuedaRechazadaYUnEstadoDeLaSolicitudNoPisaElRechazo()
+    {
+        var cotizacion = DosRutas();
+        Aplicar(cotizacion, Foto("EnCosteo", [Linea("N-1", "A"), Linea("N-2", "C", rechazo: "x"), Linea("N-3", "C", rechazo: "x")], [("N-1", 1_000_000m)]));
+
+        cotizacion.RegistrarEntregaImplicita("COT-1");
+
+        cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.Entregada);
+        cotizacion.RutasOrdenadas[1].Vehiculos.Should().OnlyContain(v => v.EstadoCosteo == EstadoCosteo.Rechazada && v.MotivoRechazo == "x");
+        cotizacion.EstadoCabecera(EstadoCosteo.PendienteCosteo).Should().NotBe(EstadoCosteo.Rechazada);
+        clsResumenEstadoCosteo.Resumir([EstadoCosteo.Rechazada, EstadoCosteo.Descartada]).Should().Be(EstadoCosteo.Rechazada);
+        clsResumenEstadoCosteo.Resumir([EstadoCosteo.Rechazada, EstadoCosteo.Autocosteo]).Should().Be(EstadoCosteo.Autocosteo);
+        clsResumenEstadoCosteo.Resumir([EstadoCosteo.Descartada, EstadoCosteo.Descartada]).Should().Be(EstadoCosteo.Descartada);
+    }
+
+    [Fact]
+    public void ElMotivoDeNexoSeRecortaA500YUnMotivoVacioNoBorraElQueYaSeTenia()
+    {
+        var cotizacion = DosRutas();
+        var largo = new string('m', 600);
+        Aplicar(cotizacion, Foto("EnCosteo", [Linea("N-1", "A"), Linea("N-2", "C", rechazo: largo), Linea("N-3", "C")], [("N-1", 1_000_000m)]));
+        var camion = cotizacion.RutasOrdenadas[1].VehiculosOrdenados[0];
+        camion.MotivoRechazo!.Length.Should().Be(clsSituacionLineaNexo.LargoMaximoMotivoRechazo);
+        camion.MotivoRechazo.Should().EndWith("…");
+
+        Aplicar(cotizacion, Foto("EnCosteo", [Linea("N-1", "A"), Linea("N-2", "C", rechazo: " ", rechazada: true), Linea("N-3", "C")], [("N-1", 1_000_000m)]),
+            _ahora.AddHours(1));
+
+        camion.MotivoRechazo.Should().HaveLength(clsSituacionLineaNexo.LargoMaximoMotivoRechazo, "un motivo vacío no borra el anterior");
+        camion.RechazadaAt.Should().Be(_ahora, "la fecha es la de la primera lectura que lo vio");
+    }
+
+    // ------------------------------------------------------------------ Apoyo
+
+    private bool Aplicar(clsCotizacionSolicitud cotizacion, clsCosteoConsultadoNexo foto, DateTimeOffset? cuando = null) =>
+        clsLecturaCosteo.AplicarFoto(cotizacion, foto, cuando ?? _ahora, new clsOpcionesCosteoNexo(), _servicio);
+
+    /// <summary>
+    /// Dos rutas enviadas a Nexo con margen del 15 %: la 1 (A → B) con un camión y la 2 (C → D) con dos camiones. Los camiones ya están
+    /// asociados a sus líneas de Nexo: N-1 (ruta 1), N-2 y N-3 (ruta 2).
+    /// </summary>
+    private static clsCotizacionSolicitud DosRutas()
+    {
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-REC-20102026-001" }).Valor;
+        cotizacion.RegistrarSolicitudLicitacion(new clsEncabezadoSolicitudCosteo { Tipo = TipoSolicitud.Licitacion },
+            [
+                new clsLineaSolicitudCosteo { Origen = "A", Destino = "B", TipoVehiculo = "3S3", PesoKg = 10_000m },
+                new clsLineaSolicitudCosteo { Origen = "C", Destino = "D", TipoVehiculo = "3S3", PesoKg = 8_000m },
+            ],
+            [0, 1], 3);
+        cotizacion.RutasOrdenadas[1].AgregarVehiculo("2S2", null, 4_000m);
+        cotizacion.RegistrarEnvioCosteo("SOL-1", false, _ahora, _ahora);
+        foreach (var ruta in cotizacion.Rutas)
+        {
+            ruta.RegistrarMargenCosteo(0.15m, 0.15m, OrigenMargen.PoliticaLinea, "margen");
+        }
+
+        cotizacion.RutasOrdenadas[0].VehiculosOrdenados[0].AsignarLineaNexo("N-1");
+        cotizacion.RutasOrdenadas[1].VehiculosOrdenados[0].AsignarLineaNexo("N-2");
+        cotizacion.RutasOrdenadas[1].VehiculosOrdenados[1].AsignarLineaNexo("N-3");
+        return cotizacion;
+    }
+
+    private static clsLineaSolicitudNexo Linea(string id, string origen, string? rechazo = null, bool rechazada = false) =>
+        new(id, $"{origen} → {(origen == "A" ? "B" : "D")}", null, null, null, null)
+        {
+            EstadoLinea = rechazo is not null || rechazada ? "rechazada" : "porCostear",
+            MotivoRechazo = rechazo,
+        };
+
+    private static clsCosteoConsultadoNexo Foto(
+        string estado, IReadOnlyList<clsLineaSolicitudNexo> detalle, IReadOnlyList<(string Id, decimal Flete)> fletes, string estadoCotizacion = "Borrador") =>
+        new(estado, [.. detalle.Select(d => d.Id)], new clsCotizacionNexo("COT-1", estadoCotizacion, "SinDefinir",
+            [.. fletes.Select(f => new clsLineaCosteoNexo(f.Id, f.Flete, null, null))], []))
+        {
+            Detalle = detalle,
+        };
+}

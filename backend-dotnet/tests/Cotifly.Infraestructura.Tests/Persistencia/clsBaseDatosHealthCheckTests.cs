@@ -195,6 +195,18 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
     }
 
     [Fact]
+    public async Task HU0281_ConEl09PeroSinEl10EsUnhealthyPorqueLeFaltaEl10()
+    {
+        // HU-028.1 (#183): el modelo EF mapea motivoRechazo y rechazadaAt del camión de db/scripts/10_rechazo_linea.sql.
+        await using var sin10 = await baseDatos.CrearBaseConScriptsAsync("dbSin10", clsBaseDatosPruebas.ScriptsHasta09);
+
+        var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin10.Cadena);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be("esquema incompleto: falta 10");
+    }
+
+    [Fact]
     public async Task I191_ConEl05PeroSinEl06EsUnhealthyPorqueLeFaltaEl06()
     {
         // #191: la Idempotency-Key persistente usa dbo_cotifly.CapturasIdempotentes (db/scripts/06) con SQL propio: sin la tabla, la API

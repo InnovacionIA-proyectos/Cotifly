@@ -602,14 +602,14 @@ public sealed class clsEnvioCosteoService(
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         var rutas = cotizacion.RutasOrdenadas;
-        // HU-021.9: solo los camiones que viajan (un descartado en Nexo no se reenvía).
-        if (rutas.All(r => r.VehiculosQueCuentan.Count <= 1))
+        // HU-021.9: solo los camiones que viajan (un descartado en Nexo no se reenvía; HU-028.1, #183: uno rechazado sí).
+        if (rutas.All(r => r.VehiculosVigentes.Count <= 1))
         {
             return null;
         }
 
         var nota = "Cotifly: una línea por camión, en este orden. "
-            + string.Join(" ", rutas.Select(r => $"Ruta {r.Orden} ({r.Ruta}): {r.VehiculosQueCuentan.Count} {(r.VehiculosQueCuentan.Count == 1 ? "camión" : "camiones")}."))
+            + string.Join(" ", rutas.Select(r => $"Ruta {r.Orden} ({r.Ruta}): {r.VehiculosVigentes.Count} {(r.VehiculosVigentes.Count == 1 ? "camión" : "camiones")}."))
             + " " + AvisoSinPosiciones;
         return nota.Length <= LargoMaximoNotaCamiones ? nota : nota[..(LargoMaximoNotaCamiones - 1)] + "…";
     }

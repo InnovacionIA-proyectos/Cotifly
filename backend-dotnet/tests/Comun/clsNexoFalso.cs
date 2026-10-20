@@ -212,7 +212,7 @@ public sealed class clsNexoFalso : HttpMessageHandler
         lock (_candado)
         {
             var s = _solicitudes[solicitudId];
-            return [.. Enumerable.Range(0, s.LineaIds.Count).Select(i => s.Cotizacion?.Fletes.ContainsKey(i) == true ? "AutoResuelta" : "PorCostear")];
+            return [.. Enumerable.Range(0, s.LineaIds.Count).Select(i => EstadoLineaEnum(s, i))];
         }
     }
 
@@ -651,7 +651,7 @@ public sealed class clsNexoFalso : HttpMessageHandler
                 scorePrioridad = 0.5m,
                 createdAt = DateTimeOffset.UtcNow,
                 // Como Nexo (Include(Lineas) sin OrderBy, ids GUID): el orden NO es el de captura. El falso las devuelve al revés.
-                lineas = Indices(s).Select(i => new { id = s.LineaIds[i], estadoLinea = s.Cotizacion?.Fletes.ContainsKey(i) == true ? "AutoResuelta" : "PorCostear" }).ToArray(),
+                lineas = Indices(s).Select(i => new { id = s.LineaIds[i], estadoLinea = EstadoLineaEnum(s, i) }).ToArray(),
             },
             tiempos = new { horasCargue = 4m, horasDescargue = 4m },
             // LineaCosteoDto: el contenido de cada línea, con la ruta "Origen → Destino" (ObtenerCosteoQuery de Nexo).
@@ -680,6 +680,15 @@ public sealed class clsNexoFalso : HttpMessageHandler
     private JsonNode ConSituacionLinea(clsSolicitudFalsa s, int indice, object linea)
     {
         var nodo = JsonSerializer.SerializeToNode(linea, _json)!;
+        if (s.Rechazos.TryGetValue(indice, out var rechazo))
+        {
+            // HU-028.1 (#183, Nexo #320): un Nexo que rechaza líneas siempre trae estadoLinea; motivoRechazo al final de la línea.
+            nodo["estadoLinea"] = "rechazada";
+            nodo["motivoPendiente"] = null;
+            nodo["motivoRechazo"] = rechazo;
+            return nodo;
+        }
+
         if (ExponerSituacionLinea)
         {
             var costeada = s.Cotizacion?.Fletes.ContainsKey(indice) == true;
@@ -695,6 +704,62 @@ public sealed class clsNexoFalso : HttpMessageHandler
 
     /// <summary>#181: Nexo deja la línea <paramref name="indice"/> (base 0, orden de captura) pendiente con este motivo.</summary>
     public void MarcarMotivoPendiente(string solicitudId, int indice, string motivo) => Con(solicitudId, s => s.Motivos[indice] = motivo);
+
+    /// <summary>
+    /// HU-028.1 (#183, Nexo #320: <c>POST /api/cotizaciones/{id}/lineas/{lineaSolicitudId}/rechazo</c>): la Mesa de Costeo rechaza la línea
+    /// <paramref name="indice"/> (base 0, orden de captura) con <paramref name="motivo"/>. Como Nexo: solo con la cotización en borrador
+    /// (<c>COTIZACION_NO_EDITABLE</c>), la línea sin flete (<c>LINEA_CON_FLETE</c>) y no rechazada antes (<c>LINEA_YA_RECHAZADA</c>);
+    /// motivo obligatorio de hasta 500 (<c>MOTIVO_RECHAZO_REQUERIDO</c>). El falso lanza <see cref="InvalidOperationException"/> con el código.
+    /// Desde aquí <c>GET /api/solicitudes/{id}</c> trae la línea con <c>estadoLinea = "rechazada"</c> y <c>motivoRechazo</c>.
+    /// </summary>
+    public void RechazarLinea(string solicitudId, int indice, string motivo) =>
+        Con(solicitudId, s =>
+        {
+            if (string.IsNullOrWhiteSpace(motivo) || motivo.Trim().Length > 500)
+            {
+                throw new InvalidOperationException("MOTIVO_RECHAZO_REQUERIDO");
+            }
+
+            if (s.Cotizacion is { Estado: "Entregada" })
+            {
+                throw new InvalidOperationException("COTIZACION_NO_EDITABLE");
+            }
+
+            if (s.Cotizacion?.Fletes.ContainsKey(indice) == true)
+            {
+                throw new InvalidOperationException("LINEA_CON_FLETE");
+            }
+
+            if (!s.Rechazos.TryAdd(indice, motivo.Trim()))
+            {
+                throw new InvalidOperationException("LINEA_YA_RECHAZADA");
+            }
+
+            s.Cotizacion ??= new clsCotizacionFalsa(Guid.NewGuid().ToString());
+            s.Estado = "EnCosteo";
+        });
+
+    /// <summary>
+    /// HU-028.1 (#183, Nexo #320: <c>DELETE .../rechazo</c>): la Mesa deshace el rechazo de la línea <paramref name="indice"/>. Como Nexo,
+    /// solo con la cotización sin entregar (<c>COTIZACION_NO_EDITABLE</c>, 409) y la línea rechazada (<c>LINEA_NO_RECHAZADA</c>).
+    /// </summary>
+    public void DeshacerRechazoLinea(string solicitudId, int indice) =>
+        Con(solicitudId, s =>
+        {
+            if (s.Cotizacion is { Estado: "Entregada" })
+            {
+                throw new InvalidOperationException("COTIZACION_NO_EDITABLE");
+            }
+
+            if (!s.Rechazos.Remove(indice))
+            {
+                throw new InvalidOperationException("LINEA_NO_RECHAZADA");
+            }
+        });
+
+    /// <summary>Estado de la línea como lo serializa el enum de Nexo en <c>solicitud.lineas[]</c> (<c>JsonStringEnumConverter</c>, sin política).</summary>
+    private static string EstadoLineaEnum(clsSolicitudFalsa s, int indice) =>
+        s.Rechazos.ContainsKey(indice) ? "Rechazada" : s.Cotizacion?.Fletes.ContainsKey(indice) == true ? "AutoResuelta" : "PorCostear";
 
     /// <summary>
     /// <c>GET /api/cotizaciones/por-solicitud/{solicitudId}</c> (Nexo S5-HU-20.1, #286): la cotización que ya existe, SIN crear nada; 204 si
@@ -996,6 +1061,9 @@ public sealed class clsNexoFalso : HttpMessageHandler
 
         /// <summary>#181: motivo pendiente por índice de línea (orden de captura).</summary>
         public Dictionary<int, string> Motivos { get; } = [];
+
+        /// <summary>HU-028.1 (#183, Nexo #320): motivo del rechazo de la Mesa por índice de línea (orden de captura).</summary>
+        public Dictionary<int, string> Rechazos { get; } = [];
     }
 
     private sealed class clsCotizacionFalsa(string id)

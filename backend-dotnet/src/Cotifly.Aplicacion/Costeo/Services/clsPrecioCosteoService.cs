@@ -132,9 +132,20 @@ public sealed class clsPrecioCosteoService(ILogger<clsPrecioCosteoService>? logg
         var lecturas = Vigentes(cotizacion).Select(camion =>
         {
             var estado = clsDerivacionEstadoCosteo.DerivarLinea(foto, camion.LineaSolicitudNexoId);
+            // HU-028.1 (#183, Nexo #320): la Mesa rechazó la línea: el camión guarda el motivo (y queda sin flete si se leen costos).
+            var motivoRechazo = estado == EstadoCosteo.Rechazada
+                ? clsDerivacionEstadoCosteo.SituacionLinea(foto, camion.LineaSolicitudNexoId)?.MotivoRechazo
+                : null;
             if (conPdf)
             {
-                return new clsCosteoCamionNexo(camion.Id, estado, ConCostos: false);
+                return new clsCosteoCamionNexo(camion.Id, estado, ConCostos: false, MotivoRechazo: motivoRechazo);
+            }
+
+            if (estado == EstadoCosteo.Rechazada)
+            {
+                var detalle = Detalle(foto, camion.LineaSolicitudNexoId);
+                return new clsCosteoCamionNexo(
+                    camion.Id, estado, ConCostos: true, TipoVehiculo: detalle?.TipoVehiculo, Carroceria: detalle?.Carroceria, MotivoRechazo: motivoRechazo);
             }
 
             var costos = clsDerivacionEstadoCosteo.CostosCamion(foto, camion.LineaSolicitudNexoId);
@@ -197,14 +208,16 @@ public sealed class clsPrecioCosteoService(ILogger<clsPrecioCosteoService>? logg
             return cambio;
         }
 
-        if (varios && camiones.Count(c => c.CostoFlete is null) is > 0 and var sinFlete)
+        // HU-028.1 (#183): un camión rechazado por la Mesa no tiene flete a propósito: no es "entregada sin flete".
+        var porCostear = camiones.Where(c => !c.Rechazado).ToList();
+        if (varios && porCostear.Count(c => c.CostoFlete is null) is > 0 and var sinFlete)
         {
             cotizacion.AdvertirCosteo(
-                $"Nexo entregó la cotización sin flete para {sinFlete} de {camiones.Count} líneas: no se calcula el precio total. Revísala con el equipo de Nexo.");
+                $"Nexo entregó la cotización sin flete para {sinFlete} de {porCostear.Count} líneas: no se calcula el precio total. Revísala con el equipo de Nexo.");
             return cambio;
         }
 
-        if (cotizacion.Rutas.Any(r => r.MargenAplicado is null || r.MetodoCalculo is null))
+        if (cotizacion.RutasCotizables.Any(r => r.MargenAplicado is null || r.MetodoCalculo is null))
         {
             cotizacion.AdvertirCosteo(MotivoSinMargen);
         }
@@ -235,7 +248,8 @@ public sealed class clsPrecioCosteoService(ILogger<clsPrecioCosteoService>? logg
 
     /// <summary>
     /// Camiones que lee el polling, en el orden de envío: todos menos los <c>descartada</c> (regla del núcleo, ADR-019), salvo que todos lo
-    /// estén (entonces se leen todos, como cuentan en la ruta).
+    /// estén (entonces se leen todos, como cuentan en la ruta). HU-028.1 (#183): los <c>rechazada</c> SÍ se leen: así se ve si la Mesa
+    /// deshizo el rechazo (vuelven a <c>pendiente_costeo</c>), y su línea sigue existiendo en Nexo (no es una línea "sin dueño").
     /// </summary>
     public static IReadOnlyList<clsVehiculoLineaSolicitud> Vigentes(clsCotizacionSolicitud cotizacion)
     {

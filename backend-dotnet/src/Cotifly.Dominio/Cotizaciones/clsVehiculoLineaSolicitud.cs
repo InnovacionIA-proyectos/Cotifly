@@ -54,6 +54,23 @@ public sealed class clsVehiculoLineaSolicitud
     /// <summary>Estado del costeo de este camión en Nexo; <c>null</c> mientras no se envía.</summary>
     public EstadoCosteo? EstadoCosteo { get; private set; }
 
+    /// <summary>
+    /// HU-028.1 (#183, <c>motivoRechazo</c>, script 10): por qué la Mesa de Costeo de Nexo rechazó la línea de este camión (Nexo #320), o
+    /// <c>null</c> si no está <see cref="Cotizaciones.EstadoCosteo.Rechazada"/> (o Nexo no mandó el motivo). Lo ve el comercial en el costeo,
+    /// el detalle y la licitación; nunca va al PDF ni al Excel.
+    /// </summary>
+    public string? MotivoRechazo { get; private set; }
+
+    /// <summary>
+    /// HU-028.1 (#183, <c>rechazadaAt</c>, script 10): cuándo VIO Cotifly el rechazo por primera vez (la lectura del polling que lo trajo).
+    /// <c>GET /api/solicitudes/{id}</c> de Nexo no expone su <c>rechazadaAt</c> ni quién rechazó (#320): esta es la mejor fecha que tiene
+    /// Cotifly. <c>null</c> si el camión no está rechazado.
+    /// </summary>
+    public DateTimeOffset? RechazadaAt { get; private set; }
+
+    /// <summary>HU-028.1 (#183): ¿la Mesa de Costeo de Nexo rechazó la línea de este camión? No cuenta en el precio, en los totales ni en el PDF.</summary>
+    public bool Rechazado => EstadoCosteo == Cotizaciones.EstadoCosteo.Rechazada;
+
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
 
@@ -207,12 +224,73 @@ public sealed class clsVehiculoLineaSolicitud
         clsEmparejadorLineasNexo.Normalizar(a.Replace('_', ' ').Replace('-', ' '))
         == clsEmparejadorLineasNexo.Normalizar(b.Replace('_', ' ').Replace('-', ' '));
 
-    /// <summary>Nexo recibió la solicitud (o falló el envío): el camión toma el estado de la solicitud.</summary>
+    /// <summary>
+    /// Nexo recibió la solicitud (o falló el envío): el camión toma el estado de la solicitud. HU-028.1 (#183): un camión rechazado no toma
+    /// <c>entregada</c> (con la cotización entregada el rechazo es definitivo, <see cref="ConservaRechazo"/>); cualquier otro estado deshace el
+    /// rechazo y borra su motivo y su fecha.
+    /// </summary>
     internal bool RegistrarEstado(EstadoCosteo estado)
     {
+        if (ConservaRechazo(estado))
+        {
+            return false;
+        }
+
         var cambio = EstadoCosteo != estado;
         EstadoCosteo = estado;
+        cambio |= OlvidarRechazoSiNoAplica();
         return cambio;
+    }
+
+    /// <summary>
+    /// HU-028.1 (#183, Nexo #320): la Mesa de Costeo rechazó la línea de este camión con <paramref name="motivo"/>. El camión queda
+    /// <see cref="Cotizaciones.EstadoCosteo.Rechazada"/>, sin flete ni retorno de Nexo (una línea rechazada no tiene flete; el levante, de
+    /// Cotifly, se conserva) y conserva su línea de Nexo (la línea sigue existiendo: la Mesa puede deshacer el rechazo). La fecha
+    /// (<see cref="RechazadaAt"/>) es la primera lectura que lo vio: no cambia mientras siga rechazado. Con <paramref name="conCostos"/> en
+    /// <c>false</c> (la solicitud ya tiene PDF: el precio de la versión se conserva) no toca los costos. Devuelve <c>true</c> si algo cambió.
+    /// </summary>
+    internal bool RegistrarRechazo(string? motivo, DateTimeOffset ahora, bool conCostos = true)
+    {
+        var limpio = clsSituacionLineaNexo.NormalizarMotivoRechazo(motivo);
+        var antes = (EstadoCosteo, MotivoRechazo, RechazadaAt, CostoFlete, CostoRetornoContenedor);
+        if (EstadoCosteo != Cotizaciones.EstadoCosteo.Rechazada)
+        {
+            RechazadaAt = ahora;
+        }
+
+        EstadoCosteo = Cotizaciones.EstadoCosteo.Rechazada;
+        // Un motivo vacío de Nexo no borra el que ya se tenía (el rechazo sigue; solo faltó el texto en esta lectura).
+        MotivoRechazo = limpio ?? MotivoRechazo;
+        RechazadaAt ??= ahora;
+        if (conCostos)
+        {
+            CostoFlete = null;
+            CostoRetornoContenedor = null;
+        }
+
+        return antes != (EstadoCosteo, MotivoRechazo, RechazadaAt, CostoFlete, CostoRetornoContenedor);
+    }
+
+    /// <summary>
+    /// HU-028.1 (#183): ¿se conserva el rechazo ante una lectura que trae <paramref name="estado"/>? Sí si el camión está rechazado y llega
+    /// <c>entregada</c>: Nexo no deja deshacer un rechazo con la cotización entregada (#320, 409), así que una lectura entregada sin el
+    /// estado de la línea (la respuesta del resultado, una foto sin detalle) no lo deshace. Cualquier otro estado sí lo deshace (la Mesa lo
+    /// deshizo antes de entregar: el camión vuelve a <c>pendiente_costeo</c> o <c>autocosteo</c>).
+    /// </summary>
+    internal bool ConservaRechazo(EstadoCosteo estado) =>
+        EstadoCosteo == Cotizaciones.EstadoCosteo.Rechazada && estado == Cotizaciones.EstadoCosteo.Entregada;
+
+    /// <summary>Fuera de <c>rechazada</c> el camión no tiene motivo ni fecha de rechazo (CHECK del script 10). Devuelve si borró algo.</summary>
+    private bool OlvidarRechazoSiNoAplica()
+    {
+        if (EstadoCosteo == Cotizaciones.EstadoCosteo.Rechazada || (MotivoRechazo is null && RechazadaAt is null))
+        {
+            return false;
+        }
+
+        MotivoRechazo = null;
+        RechazadaAt = null;
+        return true;
     }
 
     /// <summary>Id de la línea en Nexo, asignado la primera vez que el polling ve la solicitud (se conserva después).</summary>
@@ -240,11 +318,18 @@ public sealed class clsVehiculoLineaSolicitud
             throw new ArgumentOutOfRangeException(nameof(flete), "El flete y el retorno no pueden ser negativos.");
         }
 
+        if (ConservaRechazo(estado))
+        {
+            // HU-028.1 (#183): entregada con el camión rechazado: el rechazo es definitivo y la línea no tiene flete.
+            return false;
+        }
+
         decimal? retornoFinal = flete is null ? null : retorno ?? 0m;
         var cambio = EstadoCosteo != estado || CostoFlete != flete || CostoRetornoContenedor != retornoFinal;
         EstadoCosteo = estado;
         CostoFlete = flete;
         CostoRetornoContenedor = retornoFinal;
+        cambio |= OlvidarRechazoSiNoAplica();
         return cambio;
     }
 
@@ -258,6 +343,9 @@ public sealed class clsVehiculoLineaSolicitud
         EstadoCosteo = null;
         CostoFlete = null;
         CostoRetornoContenedor = null;
+        // HU-028.1 (#183): la línea vuelve a viajar a Nexo y la Mesa la evalúa otra vez; el rechazo anterior queda en la auditoría.
+        MotivoRechazo = null;
+        RechazadaAt = null;
     }
 
     private static string? Normalizar(string? valor) => string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();

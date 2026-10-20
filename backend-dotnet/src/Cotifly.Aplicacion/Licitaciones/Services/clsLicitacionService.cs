@@ -132,8 +132,10 @@ public sealed class clsLicitacionService(
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         var lineas = cotizacion.RutasOrdenadas;
-        var tarifas = lineas.Select(l => Costeo.Services.clsCosteoCotizacionService.PrecioTransporte(cotizacion, l)).ToList();
-        var conexos = lineas
+        // HU-028.1 (#183): una ruta rechazada por la Mesa de Costeo sale "SIN COSTEO" (sin precio ni motivo), sin sus conexos, y no suma.
+        var tarifas = lineas.Select(l => l.Rechazada ? null : Costeo.Services.clsCosteoCotizacionService.PrecioTransporte(cotizacion, l)).ToList();
+        var cotizables = lineas.Select((l, i) => (Ruta: l, Tarifa: tarifas[i])).Where(x => !x.Ruta.Rechazada).ToList();
+        var conexos = lineas.Where(r => !r.Rechazada)
             .SelectMany(r => Costeo.Services.clsCosteoCotizacionService.ConexosConPrecio(cotizacion, r))
             .Select(s => new clsConexoExportacion(s.Nombre ?? s.Categoria, s.Categoria, s.Cantidad, s.Precio))
             .ToList();
@@ -143,12 +145,15 @@ public sealed class clsLicitacionService(
             cotizacion.NitCliente,
             cotizacion.Moneda ?? clsCotizacionSolicitud.MonedaPesos,
             cotizacion.TrmAplicada,
-            tarifas.All(t => t is not null) ? tarifas.Sum(t => t!.Value) : null,
+            cotizables.Count > 0 && cotizables.All(x => x.Tarifa is not null) ? cotizables.Sum(x => x.Tarifa!.Value) : null,
             archivo?.Hoja,
             archivo?.Contenido,
             [.. lineas.Select((l, i) => new clsLineaExportacion(
                 l.Orden, l.RutaOrigenIndice, l.OrigenNombre ?? string.Empty, l.DestinoNombre ?? string.Empty, TipoVehiculo(l), l.PesoKg, EstadoLegible(l), tarifas[i],
-                CamionesExportacion(l, vehiculos, carrocerias), CubicacionLegible(l)))],
+                CamionesExportacion(l, vehiculos, carrocerias), CubicacionLegible(l))
+            {
+                Rechazada = l.Rechazada,
+            })],
             conexos,
             ahora);
     }
@@ -162,7 +167,11 @@ public sealed class clsLicitacionService(
             clsNombresCatalogoCubicadorExtensiones.Nombre(catalogo, codigo);
         return [.. ruta.VehiculosOrdenados.Select((v, i) => new clsCamionExportacion(
             i + 1, Nombre(v.TipoVehiculo, vehiculos), Nombre(v.Carroceria, carrocerias), v.PesoKg, v.VolumenTotalM3,
-            v.PorcentajeLlenadoVolumen, v.PorcentajeLlenadoPeso))];
+            v.PorcentajeLlenadoVolumen, v.PorcentajeLlenadoPeso)
+        {
+            // HU-028.1 (#183): la hoja "Camiones Cotifly" marca el camión rechazado por la Mesa (sin el motivo).
+            Rechazado = v.Rechazado,
+        })];
     }
 
     /// <summary>HU-023.5: estado de la cubicación en segundo plano para el Excel (<c>null</c> si la ruta se cubicó al guardarla).</summary>
@@ -212,10 +221,21 @@ public sealed class clsLicitacionService(
         return diccionario;
     }
 
-    /// <summary>Estado de la línea para el Excel: <c>Costeada</c> solo si tiene precio con margen.</summary>
+    /// <summary>HU-028.1 (#183): estado legible de una ruta rechazada por la Mesa de Costeo de Nexo (sin el motivo).</summary>
+    public const string EstadoRechazadaEnNexo = "Rechazada en NEXO";
+
+    /// <summary>
+    /// Estado de la línea para el Excel: <c>Costeada</c> solo si tiene precio con margen. HU-028.1 (#183): una ruta rechazada por la Mesa
+    /// (todos sus camiones) es <see cref="EstadoRechazadaEnNexo"/>, sin el motivo.
+    /// </summary>
     public static string EstadoLegible(clsLineaSolicitud linea)
     {
         ArgumentNullException.ThrowIfNull(linea);
+        if (linea.Rechazada)
+        {
+            return EstadoRechazadaEnNexo;
+        }
+
         if (linea.PrecioFinalLinea is not null)
         {
             return "Costeada";
@@ -650,7 +670,9 @@ public sealed class clsLicitacionService(
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         var ordenadas = cotizacion.RutasOrdenadas;
-        var tarifas = ordenadas.Select(l => Costeo.Services.clsCosteoCotizacionService.PrecioTransporte(cotizacion, l)).ToList();
+        // HU-028.1 (#183): una ruta rechazada por la Mesa no tiene precio, no es pendiente y no suma en el total.
+        var tarifas = ordenadas.Select(l => l.Rechazada ? null : Costeo.Services.clsCosteoCotizacionService.PrecioTransporte(cotizacion, l)).ToList();
+        var cotizables = ordenadas.Select((l, i) => (Ruta: l, Tarifa: tarifas[i])).Where(x => !x.Ruta.Rechazada).ToList();
         return new clsLicitacion(
             cotizacion.Folio,
             cotizacion.ClienteNombre,
@@ -661,18 +683,24 @@ public sealed class clsLicitacionService(
             cotizacion.MotivoEstadoCosteo,
             cotizacion.Moneda ?? clsCotizacionSolicitud.MonedaPesos,
             cotizacion.TrmAplicada,
-            cotizacion.PrecioFinal is not null && tarifas.All(t => t is not null) ? tarifas.Sum(t => t!.Value) : null,
-            ordenadas.Count(l => l.PrecioFinalLinea is not null),
-            ordenadas.Count(l => l.PrecioFinalLinea is null),
+            cotizacion.PrecioFinal is not null && cotizables.Count > 0 && cotizables.All(x => x.Tarifa is not null) ? cotizables.Sum(x => x.Tarifa!.Value) : null,
+            cotizables.Count(x => x.Ruta.PrecioFinalLinea is not null),
+            cotizables.Count(x => x.Ruta.PrecioFinalLinea is null),
             archivo?.NombreArchivo,
             archivo?.Hoja,
             [.. ordenadas.Select((l, i) => new clsLineaLicitacion(
                 l.Orden, l.RutaOrigenIndice, l.OrigenNombre ?? string.Empty, l.DestinoNombre ?? string.Empty, TipoVehiculo(l), l.PesoKg,
                 l.EstadoCosteo is { } e ? clsCodigoEnum.ACodigo(e) : null, l.PrecioFinalLinea is null ? null : tarifas[i],
                 l.EstadoCubicacion is { } c ? clsCodigoEnum.ACodigo(c) : null, l.ErrorCubicacion, l.ResultadoCubicacion, l.MotivoSinSeleccion,
-                l.Condicionada, clsCamionLicitacion.De(l)))],
+                l.Condicionada, clsCamionLicitacion.De(l))
+            {
+                MotivoRechazo = l.MotivoRechazo,
+            })],
             clsProgresoCubicacion.De(cotizacion),
-            Cotizaciones.DTOs.clsCubicacionRutaResumen.De(cotizacion));
+            Cotizaciones.DTOs.clsCubicacionRutaResumen.De(cotizacion))
+        {
+            LineasRechazadas = ordenadas.Count(l => l.Rechazada),
+        };
     }
 
     /// <summary>Vehículo de la ruta: el de su camión, o los de sus camiones separados por coma (HU-021).</summary>

@@ -15,8 +15,12 @@ namespace Cotifly.Infraestructura.Comun.Persistence.Configurations;
 /// </summary>
 internal sealed class clsCotizacionSolicitudConfiguracion : IEntityTypeConfiguration<clsCotizacionSolicitud>
 {
+    /// <summary>
+    /// Los estados del CHECK de <c>estadoCosteo</c> de las tres tablas (cabecera, ruta y camión). HU-028.1 (#183):
+    /// <c>db/scripts/10_rechazo_linea.sql</c> agrega <c>rechazada</c> en las tres.
+    /// </summary>
     public const string EstadosCosteo =
-        "('pendiente_envio', 'error_envio', 'pendiente_costeo', 'autocosteo', 'entregada', 'descartada', 'costeo_vencido')";
+        "('pendiente_envio', 'error_envio', 'pendiente_costeo', 'autocosteo', 'entregada', 'descartada', 'costeo_vencido', 'rechazada')";
 
     public void Configure(EntityTypeBuilder<clsCotizacionSolicitud> builder)
     {
@@ -92,6 +96,7 @@ internal sealed class clsCotizacionSolicitudConfiguracion : IEntityTypeConfigura
         builder.Ignore(c => c.RutasOrdenadas);
         builder.Ignore(c => c.PrimeraRuta);
         builder.Ignore(c => c.Vehiculos);
+        builder.Ignore(c => c.RutasCotizables);
     }
 }
 
@@ -206,6 +211,7 @@ internal sealed class clsLineaSolicitudConfiguracion : IEntityTypeConfiguration<
         builder.Navigation(l => l.Conexos).HasField("_conexos").UsePropertyAccessMode(PropertyAccessMode.Field);
         builder.Ignore(l => l.VehiculosOrdenados);
         builder.Ignore(l => l.VehiculosQueCuentan);
+        builder.Ignore(l => l.VehiculosVigentes);
         builder.Ignore(l => l.MercanciasOrdenadas);
     }
 }
@@ -228,6 +234,9 @@ internal sealed class clsVehiculoLineaSolicitudConfiguracion : IEntityTypeConfig
                 + "AND (porcentajeLlenadoPeso IS NULL OR (porcentajeLlenadoPeso >= 0 AND porcentajeLlenadoPeso <= 100))");
             // HU-014 (#188): db/scripts/03_orden_vehiculo_y_conexo_catalogo.sql.
             t.HasCheckConstraint("ck_cotizacionVehiculosLineaSolicitud_ordenVehiculo", "ordenVehiculo IS NULL OR ordenVehiculo >= 1");
+            // HU-028.1 (#183): db/scripts/10_rechazo_linea.sql (motivo y fecha solo con el camión rechazado).
+            t.HasCheckConstraint("ck_cotizacionVehiculosLineaSolicitud_rechazo",
+                "ISNULL(estadoCosteo, N'') = N'rechazada' OR (motivoRechazo IS NULL AND rechazadaAt IS NULL)");
         });
 
         builder.HasKey(v => v.Id).HasName("pk_cotizacionVehiculosLineaSolicitud");
@@ -251,6 +260,11 @@ internal sealed class clsVehiculoLineaSolicitudConfiguracion : IEntityTypeConfig
 
         // HU-014 (#188, script 03): el orden del camión en su ruta (antes, un desfase de 1 ms en createdAt). NULL en filas viejas.
         builder.Property(v => v.OrdenVehiculo).Columna("ordenVehiculo", "int");
+
+        // HU-028.1 (#183): db/scripts/10_rechazo_linea.sql (sin él, /health/ready dice "falta 10"). El motivo de la Mesa de Costeo de Nexo
+        // (#320, hasta 500) y cuándo lo vio Cotifly.
+        builder.Property(v => v.MotivoRechazo).Columna("motivoRechazo", "nvarchar(500)").HasMaxLength(clsSituacionLineaNexo.LargoMaximoMotivoRechazo);
+        builder.Property(v => v.RechazadaAt).Fecha("rechazadaAt");
 
         builder.HasIndex(v => v.LineaSolicitudId).HasDatabaseName("ix_cotizacionVehiculosLineaSolicitud_lineaSolicitudId");
         // Único por ruta y FILTRADO (las filas viejas en NULL no chocan). Declararlo aquí también le sirve a EF para ordenar un recálculo

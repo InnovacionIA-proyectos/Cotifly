@@ -184,6 +184,14 @@ public sealed record clsRutaCosteo(
 
     /// <summary>HU-009 (#139, B1): aviso al comercial cuando <see cref="MargenSapAnomalo"/>; <c>null</c> si no.</summary>
     public string? AvisoMargen { get; init; }
+
+    /// <summary>
+    /// HU-028.1 (#183, Nexo #320): por qué la Mesa de Costeo de Nexo rechazó camiones de la ruta (los motivos distintos de sus camiones
+    /// <c>rechazada</c>, unidos con <c>" | "</c>); <c>null</c> si ninguno está rechazado. Con <see cref="EstadoCosteo"/> = <c>rechazada</c>
+    /// (todos rechazados) la ruta no tiene precio, no suma en el total y responde 409 <c>RUTA_RECHAZADA</c> al margen y a los conexos; con
+    /// algunos rechazados, su precio es el de los demás. Solo para el comercial: el PDF y el Excel no llevan el motivo.
+    /// </summary>
+    public string? MotivoRechazo { get; init; }
 }
 
 /// <summary>
@@ -208,6 +216,19 @@ public sealed record clsCamionCosteo(
     /// mes actual...), con el texto de Nexo. Solo con el camión en <c>pendiente_costeo</c>; <c>null</c> en los demás casos o sin el dato.
     /// </summary>
     public string? MotivoPendiente { get; init; }
+
+    /// <summary>
+    /// HU-028.1 (#183, Nexo #320): por qué la Mesa de Costeo de Nexo rechazó la línea del camión (<see cref="EstadoCosteo"/> =
+    /// <c>rechazada</c>), con el texto de Nexo. Se guarda en el camión (script 10): sale aunque el servicio se reinicie. <c>null</c> si el
+    /// camión no está rechazado o Nexo no mandó el motivo.
+    /// </summary>
+    public string? MotivoRechazo { get; init; }
+
+    /// <summary>
+    /// HU-028.1 (#183): cuándo vio Cotifly el rechazo por primera vez (UTC). Nexo no expone su fecha ni quién rechazó en
+    /// <c>GET /api/solicitudes/{id}</c>. <c>null</c> si el camión no está rechazado.
+    /// </summary>
+    public DateTimeOffset? RechazadaAt { get; init; }
 }
 
 /// <summary>
@@ -403,6 +424,12 @@ public sealed class clsCosteoCotizacionService(
         }
 
         var ruta = resuelta.Valor;
+        // HU-028.1 (#183): una ruta rechazada por la Mesa de Costeo no admite ajustar sus conexos (409 RUTA_RECHAZADA).
+        if (cotizacion.ValidarRutaNoRechazada(ruta) is { } rechazada)
+        {
+            return rechazada;
+        }
+
         if (cambio.Conexos is null)
         {
             var incluidos = cambio.Incluidos ?? [];
@@ -751,8 +778,10 @@ public sealed class clsCosteoCotizacionService(
                         {
                             Destino = r.DestinoNombre,
                             VehiculoPeso = Camiones(r, catalogo),
-                            Tarifa = PrecioTransporte(cotizacion, r),
+                            // HU-028.1 (#183): una ruta rechazada por la Mesa sale "Sin costeo", sin precio y sin motivo.
+                            Tarifa = r.Rechazada ? null : PrecioTransporte(cotizacion, r),
                             Moneda = moneda,
+                            Nota = r.Rechazada ? TextoSinCosteo : null,
                         },
                     ],
                 };
@@ -777,18 +806,19 @@ public sealed class clsCosteoCotizacionService(
 
     /// <summary>
     /// Resumen del pliego: una fila por ruta, en orden, con la tarifa del transporte, y el total (la suma de esas tarifas, sin servicios
-    /// conexos; HU-021: <c>PrecioFinal</c> sí los incluye, por eso no se usa aquí).
+    /// conexos; HU-021: <c>PrecioFinal</c> sí los incluye, por eso no se usa aquí). HU-028.1 (#183): una ruta rechazada por la Mesa de
+    /// Costeo sale <see cref="TextoSinCosteo"/> (sin precio y sin motivo) y no suma en el total.
     /// </summary>
     public static clsResumenPliegoDocumento ResumenPliego(clsCotizacionSolicitud cotizacion, string moneda, clsNombresCatalogoCubicador? catalogo = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         var rutas = cotizacion.RutasOrdenadas;
-        var tarifas = rutas.Select(r => PrecioTransporte(cotizacion, r)).ToList();
+        var tarifas = rutas.Select(r => r.Rechazada ? null : PrecioTransporte(cotizacion, r)).ToList();
         var filas = rutas.Select((r, i) => new clsFilaPliegoDocumento(
             r.Orden.ToString(System.Globalization.CultureInfo.InvariantCulture),
             clsTextoSeguro.LimpiarLinea($"{r.OrigenNombre} → {r.DestinoNombre}") ?? string.Empty,
             Camiones(r, catalogo) ?? "—",
-            tarifas[i] is { } precio ? clsFormatoMoneda.Formatear(precio, moneda) : "—")).ToList();
+            r.Rechazada ? TextoSinCosteo : tarifas[i] is { } precio ? clsFormatoMoneda.Formatear(precio, moneda) : "—")).ToList();
         return new clsResumenPliegoDocumento(
             "RESUMEN DEL PLIEGO",
             filas,
@@ -796,6 +826,12 @@ public sealed class clsCosteoCotizacionService(
             clsFormatoMoneda.Formatear(tarifas.Sum(t => t ?? 0m), moneda),
             "Tarifas por viaje de cada ruta; el total es la suma de un viaje por ruta, sin servicios conexos, y es solo de referencia.");
     }
+
+    /// <summary>
+    /// HU-028.1 (#183): texto de una ruta rechazada por la Mesa de Costeo de Nexo en el PDF (resumen y sección del pliego) y en el Excel:
+    /// sin precio y sin motivo (el motivo solo lo ve el comercial en Cotifly; decisión de Nexo #320).
+    /// </summary>
+    public const string TextoSinCosteo = "Sin costeo";
 
     /// <summary>Filas que admite el PDF de pliego: las mismas 1000 líneas de una licitación.</summary>
     public const int MaximoLineasPliego = Licitaciones.Validators.clsValidadorLicitacion.MaximoLineas;
@@ -822,7 +858,7 @@ public sealed class clsCosteoCotizacionService(
 
     /// <summary>
     /// Condiciones del PDF, de una ruta o de pliego (409 <c>COSTEO_NO_LISTO</c> si no se cumplen; HU-021.9): la solicitud tiene rutas,
-    /// TODAS tienen precio (el ajuste de margen es por ruta, pero el PDF exige todas) y el total de la solicitud es la suma de esos precios
+    /// TODAS las que no rechazó la Mesa (HU-028.1, #183; sin ninguna, <c>SIN_RUTAS_COTIZABLES</c>) tienen precio (el ajuste de margen es por ruta, pero el PDF exige todas) y el total de la solicitud es la suma de esos precios
     /// (<c>precioFinal</c> = Σ <c>precioFinalLinea</c>, con los conexos incluidos: nada se inventa en el PDF). En USD (ADR-014 §5) los
     /// precios ya vienen convertidos con la <c>trmAplicada</c>.
     /// </summary>
@@ -839,12 +875,20 @@ public sealed class clsCosteoCotizacionService(
             return new clsErrorDominio(clsCodigosError.CosteoNoListo, $"La cotización {cotizacion.Folio} no tiene rutas.");
         }
 
-        if (cotizacion.RutasOrdenadas.FirstOrDefault(r => r.PrecioFinalLinea is null) is { } sinPrecio)
+        // HU-028.1 (#183): las rutas rechazadas por la Mesa no cuentan en "todas con precio" ni en el total (salen "Sin costeo").
+        var cotizables = cotizacion.RutasCotizables;
+        if (cotizables.Count == 0)
+        {
+            return new clsErrorDominio(clsCodigosError.SinRutasCotizables,
+                $"La Mesa de Costeo de Nexo rechazó todas las rutas de la cotización {cotizacion.Folio}: no hay nada que cotizar y no se genera el PDF.");
+        }
+
+        if (cotizables.FirstOrDefault(r => r.PrecioFinalLinea is null) is { } sinPrecio)
         {
             return new clsErrorDominio(clsCodigosError.CosteoNoListo, $"La ruta {sinPrecio.Orden} de la cotización {cotizacion.Folio} todavía no tiene precio.");
         }
 
-        var suma = cotizacion.Rutas.Sum(r => r.PrecioFinalLinea!.Value);
+        var suma = cotizables.Sum(r => r.PrecioFinalLinea!.Value);
         return suma == cotizacion.PrecioFinal
             ? null
             : new clsErrorDominio(clsCodigosError.CosteoNoListo,
@@ -879,7 +923,9 @@ public sealed class clsCosteoCotizacionService(
     public static string? Camiones(clsLineaSolicitud ruta, clsNombresCatalogoCubicador? catalogo = null)
     {
         ArgumentNullException.ThrowIfNull(ruta);
-        var camiones = clsVehiculoLineaSolicitud.EnOrden(ruta.VehiculosQueCuentan).ToList();
+        // HU-028.1 (#183): los camiones rechazados no se cotizan y no se imprimen; en una ruta toda rechazada ("Sin costeo") se muestran
+        // los que se pidieron, para que el cliente sepa qué ruta no se cotizó.
+        var camiones = clsVehiculoLineaSolicitud.EnOrden(ruta.Rechazada ? ruta.VehiculosVigentes : ruta.VehiculosQueCuentan).ToList();
         if (camiones.Count <= 1)
         {
             var unico = camiones.Count == 1 ? camiones[0] : null;
@@ -968,13 +1014,20 @@ public sealed class clsCosteoCotizacionService(
 
     /// <summary>
     /// Conexos de la ruta como los ve el comercial: precio con el margen de la ruta (nunca el costo de Nexo); todos incluidos. La categoría
-    /// es la del catálogo de Nexo (<paramref name="categorias"/>, #173) o <see cref="CategoriaConexo"/> si no se conoce.
+    /// es la del catálogo de Nexo (<paramref name="categorias"/>, #173) o <see cref="CategoriaConexo"/> si no se conoce. HU-028.1 (#183): una
+    /// ruta rechazada por la Mesa de Costeo no tiene precio y sus conexos tampoco (lista vacía: no salen en el costeo, el PDF ni el Excel,
+    /// y no suman; siguen guardados en la ruta y se ven en la captura).
     /// </summary>
     public static IReadOnlyList<clsServicioConexoPrecio> ConexosConPrecio(
         clsCotizacionSolicitud cotizacion, clsLineaSolicitud ruta, IReadOnlyDictionary<string, string>? categorias = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(ruta);
+        if (ruta.Rechazada)
+        {
+            return [];
+        }
+
         return [.. ruta.Conexos.OrderBy(c => c.CreatedAt).ThenBy(c => c.IdServicioConexo, StringComparer.Ordinal)
             .Select(c => (Conexo: c, Error: ruta.PrecioDe(c.Costo, cotizacion.Moneda, cotizacion.TrmAplicada, out var precio), Precio: precio))
             .Where(x => x.Error is null && x.Precio is not null)
@@ -1016,9 +1069,18 @@ public sealed class clsCosteoCotizacionService(
         ? null
         : new clsErrorDominio(clsCodigosError.CosteoNoListo, $"La cotización {cotizacion.Folio} todavía no tiene el costeo de Nexo con margen aplicado.");
 
-    /// <summary>Condiciones para generar el PDF: costeo con precio, sin PDF vigente (<c>PDF_YA_GENERADO</c>) y sin envío (<c>PDF_YA_ENVIADO</c>).</summary>
+    /// <summary>
+    /// Condiciones para generar el PDF: hay rutas que cotizar (HU-028.1, #183: con TODAS rechazadas por la Mesa, <c>SIN_RUTAS_COTIZABLES</c>,
+    /// decisión D1 de Nexo #320), costeo con precio, sin PDF vigente (<c>PDF_YA_GENERADO</c>) y sin envío (<c>PDF_YA_ENVIADO</c>).
+    /// </summary>
     private static clsErrorDominio? Bloqueo(clsCotizacionSolicitud cotizacion)
     {
+        if (cotizacion.TodasLasRutasRechazadas)
+        {
+            return new clsErrorDominio(clsCodigosError.SinRutasCotizables,
+                $"La Mesa de Costeo de Nexo rechazó todas las rutas de la cotización {cotizacion.Folio}: no hay nada que cotizar y no se genera el PDF.");
+        }
+
         if (SinCosteo(cotizacion) is { } sinCosteo)
         {
             return sinCosteo;
@@ -1158,6 +1220,8 @@ public sealed class clsCosteoCotizacionService(
             conexos)
         {
             MargenSapAnomalo = ruta.MargenSapAnomalo,
+            // HU-028.1 (#183): los motivos del rechazo de sus camiones (la ruta puede seguir con precio por los no rechazados).
+            MotivoRechazo = ruta.MotivoRechazo,
             AvisoMargen = AvisoMargenSapAnomalo(ruta),
             AvisoConexosNexo = revisar.Count == 0
                 ? null
@@ -1199,6 +1263,9 @@ public sealed class clsCosteoCotizacionService(
         {
             EstadoLineaNexo = situacion?.EstadoLinea,
             MotivoPendiente = camion.EstadoCosteo == EstadoCosteo.PendienteCosteo ? situacion?.MotivoPendiente : null,
+            // HU-028.1 (#183): guardados en el camión (script 10), no dependen de la foto en memoria de #181.
+            MotivoRechazo = camion.Rechazado ? camion.MotivoRechazo : null,
+            RechazadaAt = camion.Rechazado ? camion.RechazadaAt?.ToUniversalTime() : null,
         };
     }
 

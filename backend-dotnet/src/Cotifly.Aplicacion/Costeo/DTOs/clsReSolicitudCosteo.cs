@@ -34,4 +34,10 @@ public sealed record clsReSolicitudCosteo(
 
     /// <summary>HU-021.9: orden de las rutas de la <c>-vN</c> cuyos camiones se volvieron a planificar (solo para la auditoría).</summary>
     public IReadOnlyList<int>? RutasReplanificadas { get; init; }
+
+    /// <summary>
+    /// HU-028.1 (#183): aviso al comercial cuando la cotización de origen tenía camiones rechazados por la Mesa de Costeo (se vuelven a
+    /// pedir); <c>null</c> si no tenía. Va en <c>aviso_rechazos</c> de la respuesta.
+    /// </summary>
+    public string? AvisoRechazos { get; init; }
 }

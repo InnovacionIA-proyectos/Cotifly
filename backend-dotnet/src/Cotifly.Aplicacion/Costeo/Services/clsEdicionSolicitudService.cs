@@ -466,7 +466,8 @@ public sealed class clsEdicionSolicitudService(
             var validada = validadas.Lineas[i];
             var guardada = entradas[i]!.LineaSolicitudId is { } id ? guardadas[id] : null;
             var rutaId = modo == ModoEdicionSolicitud.NuevaVersion || guardada is null ? Guid.NewGuid() : guardada.Id;
-            var vigente = guardada is not null && guardada.VehiculosQueCuentan.Count > 0 && !clsReglaRecubicacion.Exige(guardada.ALinea(), validada.Linea)
+            // HU-028.1 (#183): los camiones rechazados por la Mesa se conservan (VehiculosVigentes): la edición los vuelve a mandar a Nexo.
+            var vigente = guardada is not null && guardada.VehiculosVigentes.Count > 0 && !clsReglaRecubicacion.Exige(guardada.ALinea(), validada.Linea)
                 ? PlanVigente(guardada)
                 : null;
             if (vigente is null)
@@ -798,9 +799,12 @@ public sealed class clsEdicionSolicitudService(
         return resultado;
     }
 
-    /// <summary>Los camiones vigentes de la ruta (los descartados en Nexo no, salvo que lo estén todos) y su resultado del cubicador.</summary>
+    /// <summary>
+    /// Los camiones vigentes de la ruta (los descartados en Nexo no, salvo que lo estén todos; HU-028.1, #183: los rechazados por la Mesa sí,
+    /// la Mesa los vuelve a evaluar) y su resultado del cubicador.
+    /// </summary>
     private static clsPlanRuta PlanVigente(clsLineaSolicitud ruta) =>
-        new([.. clsVehiculoLineaSolicitud.EnOrden(ruta.VehiculosQueCuentan).Select(v => new clsCamionPlaneado(
+        new([.. clsVehiculoLineaSolicitud.EnOrden(ruta.VehiculosVigentes).Select(v => new clsCamionPlaneado(
                 v.TipoVehiculo, v.Carroceria, v.PesoKg, v.IdRecomendacionVehiculo, v.VolumenTotalM3, v.PorcentajeLlenadoVolumen, v.PorcentajeLlenadoPeso))],
             ruta.ResultadoCubicacion is { } resultado ? new clsCubicacionRuta(ruta.IdRecomendacion, resultado, ruta.MotivoSinSeleccion, ruta.Condicionada) : null);
 

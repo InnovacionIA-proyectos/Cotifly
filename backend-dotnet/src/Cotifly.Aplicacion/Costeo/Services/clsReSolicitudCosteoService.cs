@@ -226,6 +226,8 @@ public sealed class clsReSolicitudCosteoService(
         var v = validada.Valor;
         var instantanea = Instantanea(cotizacion);
         var conservados = ConexosConservados(cotizacion);
+        // HU-028.1 (#183): se calcula antes de olvidar el costeo (la re-solicitud en el mismo folio borra el rechazo del camión).
+        var avisoRechazos = AvisoRechazos(cotizacion, entrada.VersionNueva);
         var nota = NotaTrazabilidad(cotizacion.Folio, cotizacion.SolicitudNexoId);
         var (resultado, resultante, pdfInvalidado) = entrada.VersionNueva
             ? await CrearVersionAsync(cotizacion, usuarioId, v, versionEsperada,
@@ -233,8 +235,31 @@ public sealed class clsReSolicitudCosteoService(
             : await ReenviarAsync(cotizacion, usuarioId, versionEsperada, v.Lineas, v.Politica,
                 Reserva(entradaAuditoria, instantanea, cronometro), nota, cancellationToken);
         return (resultado.EsExitoso
-            ? clsResultado<clsReSolicitudCosteo>.Exito(resultado.Valor with { ConexosDescartados = [], ConexosConservados = conservados })
+            ? clsResultado<clsReSolicitudCosteo>.Exito(
+                resultado.Valor with { ConexosDescartados = [], ConexosConservados = conservados, AvisoRechazos = avisoRechazos })
             : resultado, resultante, pdfInvalidado);
+    }
+
+    /// <summary>
+    /// HU-028.1 (#183, propuesta de la issue: "copiarla, avisarle al comercial y dejarle quitarla"): si la cotización tiene camiones
+    /// rechazados por la Mesa de Costeo de Nexo, el aviso de que se vuelven a pedir (en el mismo folio la Mesa evalúa otra vez la línea; en la
+    /// <c>-vN</c> se copian) con las rutas y sus motivos; <c>null</c> si no tiene. El rechazo anterior queda en la auditoría (instantánea).
+    /// </summary>
+    public static string? AvisoRechazos(clsCotizacionSolicitud cotizacion, bool versionNueva)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        var rutas = cotizacion.RutasOrdenadas.Where(r => r.TieneCamionesRechazados).ToList();
+        if (rutas.Count == 0)
+        {
+            return null;
+        }
+
+        var detalle = string.Join("; ", rutas.Select(r => $"ruta {r.Orden} ({r.OrigenNombre} → {r.DestinoNombre})"
+            + (r.MotivoRechazo is { } motivo ? $": {motivo}" : string.Empty)));
+        return (versionNueva
+                ? "La versión nueva copia los camiones que la Mesa de Costeo de Nexo había rechazado y Nexo los vuelve a evaluar: "
+                : "Se vuelven a pedir a Nexo los camiones que la Mesa de Costeo había rechazado: ")
+            + detalle + ". Si no aplican, quítalos editando la solicitud.";
     }
 
     /// <summary>
@@ -528,7 +553,9 @@ public sealed class clsReSolicitudCosteoService(
             var linea = validada.Lineas[i] with { TipoVehiculo = null, Carroceria = null };
             // En el orden estable de la ruta (ordenVehiculo, o createdAt en las filas anteriores a #188): el primero lleva los conexos
             // (decisión 3). La versión nueva los numera otra vez 1..n.
-            var vigentes = clsVehiculoLineaSolicitud.EnOrden(ruta.VehiculosQueCuentan).ToList();
+            // HU-028.1 (#183, propuesta de la issue): los camiones rechazados por la Mesa SÍ se copian (VehiculosVigentes) y la Mesa los
+            // vuelve a evaluar en la solicitud nueva; la respuesta avisa al comercial (AvisoRechazos) y él los puede quitar editando.
+            var vigentes = clsVehiculoLineaSolicitud.EnOrden(ruta.VehiculosVigentes).ToList();
             // La ruta de la versión nueva es otra: un id nuevo, el mismo para el cubicador (idLineaSolicitud, #133) y para la ruta guardada.
             var rutaId = Guid.NewGuid();
             IReadOnlyList<clsCamionPlaneado> camiones;
@@ -676,6 +703,9 @@ public sealed class clsReSolicitudCosteoService(
                 {
                     linea_solicitud_nexo_id = v.LineaSolicitudNexoId,
                     estado_costeo = v.EstadoCosteo is { } estadoCamion ? clsCodigoEnum.ACodigo(estadoCamion) : null,
+                    // HU-028.1 (#183): el rechazo anterior de la Mesa queda en la auditoría (la re-solicitud lo olvida en el camión).
+                    motivo_rechazo = v.MotivoRechazo,
+                    rechazada_at = v.RechazadaAt,
                     costo_flete = v.CostoFlete,
                     costo_retorno_contenedor = v.CostoRetornoContenedor,
                     costo_levante_contenedor = v.CostoLevanteContenedor,
