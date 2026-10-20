@@ -19,5 +19,8 @@ public interface IClsCostosConexosNexo
         Guid usuarioId, IReadOnlyCollection<string> ids, CancellationToken cancellationToken = default);
 }
 
-/// <summary>Un servicio del catálogo de Nexo con su costo unitario (solo interno).</summary>
-public sealed record clsCostoConexoNexo(string Id, string? Nombre, decimal CostoUnitario);
+/// <summary>
+/// Un servicio del catálogo de Nexo con su costo unitario (solo interno). HU-014 (#188): <paramref name="Categoria"/> es su categoría en el
+/// catálogo (<c>logistico</c>, <c>adicional</c>...; <c>null</c> si Nexo no la trae), que se guarda con el conexo (script 05).
+/// </summary>
+public sealed record clsCostoConexoNexo(string Id, string? Nombre, decimal CostoUnitario, string? Categoria = null);

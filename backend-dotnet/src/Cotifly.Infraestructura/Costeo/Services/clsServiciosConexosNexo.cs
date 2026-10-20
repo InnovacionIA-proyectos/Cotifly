@@ -24,7 +24,7 @@ public sealed class clsServiciosConexosNexo(clsCosteoNexo costeo) : IClsServicio
     public const string MensajeNoDisponible = "Nexo no está disponible en este momento: intenta de nuevo más tarde.";
 
     public const string MensajeSinPermiso =
-        "Tu usuario no tiene permiso en Nexo para los servicios conexos: pide al administrador de Nexo el rol Comercial, CoordinadorFletes o Admin.";
+        "Tu usuario no tiene permiso en Nexo para los servicios conexos: pide al administrador de Nexo el rol Comercial o Admin.";
 
     public const string MensajeConexoInvalido = "Nexo no aceptó el servicio conexo: revisa que el servicio exista, esté activo y la cantidad sea válida.";
 

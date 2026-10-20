@@ -29,5 +29,9 @@ public sealed class clsCosteoNexoNoDisponible : IClsCosteoNexo
         Guid usuarioId, string cotizacionNexoId, clsResultadoNexo resultado, CancellationToken cancellationToken = default) =>
         Task.FromResult(NoDisponible<clsCotizacionNexo>());
 
+    public Task<clsResultado<ResultadoRechazoNexo>> RechazarSolicitudAsync(
+        Guid usuarioId, string solicitudId, string motivo, string? comentario, CancellationToken cancellationToken = default) =>
+        Task.FromResult(NoDisponible<ResultadoRechazoNexo>());
+
     private static clsResultado<T> NoDisponible<T>() => new clsErrorDominio(clsCodigosError.CosteoNexoNoDisponible, Mensaje);
 }

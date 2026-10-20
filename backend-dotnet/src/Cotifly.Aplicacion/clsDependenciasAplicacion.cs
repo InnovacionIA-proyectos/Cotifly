@@ -81,6 +81,8 @@ public static class clsDependenciasAplicacion
         servicios.AddScoped<IClsRecalculoVehiculosService, clsRecalculoVehiculosService>();
         servicios.AddScoped<IClsServiciosConexosCosteoService, clsServiciosConexosCosteoService>();
         servicios.AddScoped<IClsReSolicitudCosteoService, clsReSolicitudCosteoService>();
+        // HU-028 (#186): editar la solicitud (GET y PUT /web/cotizaciones/{folio}/solicitud).
+        servicios.AddScoped<IClsEdicionSolicitudService, clsEdicionSolicitudService>();
 
         // Decisión 10 (HU-021.9): envío diferido de los conexos de las rutas a la cotización de Nexo, desde el polling.
         servicios.AddScoped<IClsEnvioConexosNexoService, clsEnvioConexosNexoService>();

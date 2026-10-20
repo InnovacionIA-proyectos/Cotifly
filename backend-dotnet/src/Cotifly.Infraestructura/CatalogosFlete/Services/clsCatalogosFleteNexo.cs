@@ -9,8 +9,12 @@ namespace Cotifly.Infraestructura.CatalogosFlete.Services;
 /// Catálogos de <c>GET /web/catalogos-flete</c> a partir de los catálogos maestros de Nexo (HU-013.10, #106, G1): los tipos de
 /// vehículo (<c>valor</c> = <c>codigo</c>, <c>etiqueta</c> = <c>descripcion</c>) y las clases de viaje (<c>valor</c> y
 /// <c>etiqueta</c> = <c>descripcion</c>) salen de <see cref="IClsCatalogosMaestrosProvider"/> (con caché); la carrocería sigue en
-/// código (<see cref="clsCatalogosCaptura.Carrocerias"/>) hasta que Nexo publique su catálogo. La respuesta no cambia de forma.
-/// Ya no consulta <c>GET /api/biblioteca-sap-historico/filtros</c> (el histórico de tarifas).
+/// código (<see cref="clsCatalogosCaptura.Carrocerias"/>) hasta que Nexo publique su catálogo. Ya no consulta
+/// <c>GET /api/biblioteca-sap-historico/filtros</c> (el histórico de tarifas).
+/// HU-027.1 (#179): también expone las clases de contenedor del catálogo maestro (<c>valor</c> y <c>etiqueta</c> =
+/// <c>descripcion</c>, que en Nexo es el código, ej. <c>CNT40.HC</c>), sin la lista provisional G15
+/// (<see cref="clsCatalogosCaptura.ClasesContenedorProvisionales"/>). Si Nexo responde <c>[]</c> (base SAP sin configurar) o ese
+/// catálogo opcional falla, la lista va vacía y la respuesta sigue siendo 200.
 /// </summary>
 /// <remarks>
 /// Sin catálogos maestros (Nexo caído sin copia utilizable, comercial sin <c>idUsuarioExterno</c>) responde
@@ -31,6 +35,6 @@ public sealed class clsCatalogosFleteNexo(IClsCatalogosMaestrosProvider maestros
             return resultado.Error;
         }
 
-        return new clsCatalogosFlete(resultado.Valor.TiposVehiculo, Carrocerias, resultado.Valor.ClasesViaje);
+        return new clsCatalogosFlete(resultado.Valor.TiposVehiculo, Carrocerias, resultado.Valor.ClasesViaje, resultado.Valor.ClasesContenedor);
     }
 }

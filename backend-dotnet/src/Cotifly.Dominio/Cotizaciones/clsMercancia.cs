@@ -66,6 +66,24 @@ public sealed class clsMercancia
         return [.. posiciones.Select((p, i) => Nueva(lineaSolicitudId, i + 1, p))];
     }
 
+    /// <summary>
+    /// HU-028 (#186): la mercancía toma el contenido editado de <paramref name="p"/> en el mismo orden (ya validado por la captura), con su
+    /// <see cref="clsPosicionCarga.CodigoMercancia"/>. Se actualiza en su lugar para no repetir el orden de la ruta al guardar.
+    /// </summary>
+    internal void Actualizar(int orden, clsPosicionCarga p)
+    {
+        ArgumentNullException.ThrowIfNull(p);
+        ArgumentOutOfRangeException.ThrowIfLessThan(orden, 1);
+        Orden = orden;
+        CodigoMercancia = string.IsNullOrWhiteSpace(p.CodigoMercancia) ? null : p.CodigoMercancia.Trim();
+        NombreMercancia = string.IsNullOrWhiteSpace(p.Descripcion) ? null : p.Descripcion.Trim();
+        Cantidad = p.Cantidad;
+        LargoCm = p.LargoCm;
+        AnchoCm = p.AnchoCm;
+        AltoCm = p.AltoCm;
+        PesoKg = p.PesoKg;
+    }
+
     /// <summary>La mercancía como posición de la captura (para reenviarla a Nexo o pedir la recomendación del cubicador).</summary>
     public clsPosicionCarga APosicion() => new(NombreMercancia, Cantidad, LargoCm, AnchoCm, AltoCm, PesoKg, CodigoMercancia: CodigoMercancia);
 

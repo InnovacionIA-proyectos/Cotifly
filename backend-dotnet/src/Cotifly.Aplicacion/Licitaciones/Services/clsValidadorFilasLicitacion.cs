@@ -84,8 +84,11 @@ public sealed class clsValidadorFilasLicitacion(
             errores.AddRange(codigos.Errores[i].Select(e => new clsErrorFilaLicitacion(indice, lineas[indice]?.Fila, e.Campo, e.Codigo, e.Mensaje)));
         }
 
-        var resultantes = lineas;
-        if (clsMunicipiosLicitacion.NecesitaCatalogo(lineas, captura))
+        // D-1019B-2 (#188 M1): el vehículo digitado se guarda escrito como en el catálogo de Nexo (como viaja), no como lo digitó el comercial.
+        IReadOnlyList<clsLineaLicitacionEntrada?> resultantes = codigos.Canonicas is { } canonicas && canonicas.Count == lineas.Count
+            ? [.. lineas.Select((l, i) => l is null || ReferenceEquals(canonicas[i], l.Linea) || canonicas[i] is null ? l : l with { Linea = canonicas[i] })]
+            : lineas;
+        if (clsMunicipiosLicitacion.NecesitaCatalogo(resultantes, captura))
         {
             var catalogo = await municipios.ObtenerAsync(usuarioId, cancellationToken);
             if (catalogo.EsFallo)
@@ -95,7 +98,7 @@ public sealed class clsValidadorFilasLicitacion(
             else
             {
                 var avisos = new List<string>();
-                var resueltas = clsMunicipiosLicitacion.Resolver(lineas, catalogo.Valor, captura, avisos);
+                var resueltas = clsMunicipiosLicitacion.Resolver(resultantes, catalogo.Valor, captura, avisos);
                 foreach (var aviso in avisos)
                 {
                     logger?.LogWarning("Municipio de la captura: {Aviso}", aviso);

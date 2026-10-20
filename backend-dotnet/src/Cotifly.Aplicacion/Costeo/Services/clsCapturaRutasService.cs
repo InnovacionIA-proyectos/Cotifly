@@ -44,8 +44,13 @@ public interface IClsCapturaRutasService
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>Una ruta validada para <see cref="IClsCapturaRutasService.PrepararAsync"/>: la entrada, su línea de negocio e índice de origen.</summary>
-public sealed record clsRutaPorPreparar(clsLineaLicitacionEntrada Ruta, int LineaNegocioId, int? RutaOrigenIndice);
+/// <summary>
+/// Una ruta validada para <see cref="IClsCapturaRutasService.PrepararAsync"/>: la entrada, su línea de negocio e índice de origen.
+/// HU-028 (#186, edición): <paramref name="RutaId"/> fija el id de la ruta (el de la ruta guardada que se edita; <c>null</c> = uno nuevo)
+/// y <paramref name="PlanVigente"/> trae sus camiones vigentes cuando la carga no cambió: entonces no se llama al planificador.
+/// </summary>
+public sealed record clsRutaPorPreparar(
+    clsLineaLicitacionEntrada Ruta, int LineaNegocioId, int? RutaOrigenIndice, Guid? RutaId = null, clsPlanRuta? PlanVigente = null);
 
 /// <summary>Resultado de <see cref="IClsCapturaRutasService.PrepararAsync"/>: las rutas listas, o errores por ruta, o un error general.</summary>
 public sealed record clsRutasPreparadas(IReadOnlyList<clsRutaCapturada> Rutas, IReadOnlyList<clsErrorFilaLicitacion> Errores, clsErrorDominio? Error);
@@ -212,7 +217,7 @@ public sealed class clsCapturaRutasService(
         var preparadas = new List<clsRutaCapturada>(rutas.Count);
         for (var i = 0; i < rutas.Count; i++)
         {
-            var (entrada, lineaNegocioId, indiceOrigen) = rutas[i];
+            var (entrada, lineaNegocioId, indiceOrigen, _, _) = rutas[i];
             var linea = ConNombresDelCatalogo(entrada.Linea, tipos);
             var conexos = new List<clsCambioConexo>();
             var pedidos = entrada.Conexos ?? [];
@@ -225,10 +230,18 @@ public sealed class clsCapturaRutasService(
                     continue;
                 }
 
-                conexos.Add(new clsCambioConexo(costo.Id, costo.Nombre, costo.CostoUnitario, pedidos[c]!.Cantidad!.Value));
+                // HU-014 (#188): el id pedido es el del catálogo (scripts 03 y 05: se guardan el id del catálogo y la categoría).
+                conexos.Add(new clsCambioConexo(costo.Id, costo.Nombre, costo.CostoUnitario, pedidos[c]!.Cantidad!.Value, costo.Id, costo.Categoria));
             }
 
-            var rutaId = Guid.NewGuid();
+            var rutaId = rutas[i].RutaId ?? Guid.NewGuid();
+            if (rutas[i].PlanVigente is { } vigente)
+            {
+                // HU-028: la carga y la clase de viaje no cambiaron: se conservan los camiones vigentes (sin llamar al cubicador).
+                preparadas.Add(new clsRutaCapturada(linea, lineaNegocioId, indiceOrigen, vigente.Camiones, conexos, rutaId, vigente.Cubicacion));
+                continue;
+            }
+
             if (cubicarDespues)
             {
                 // HU-023.5 (#160): el camión provisional (sin vehículo, con el peso de la ruta) lo reemplaza la cubicación en segundo plano.

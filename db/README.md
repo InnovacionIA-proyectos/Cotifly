@@ -12,7 +12,7 @@ dejarla con la configuración inicial.
   el `01` ya no crea las 2 vistas del borrador de métricas y el `08` las retira de las bases que ya las tienen.
 - **Verificación continua.** Las pruebas de integración (Testcontainers,
   `backend-dotnet/tests/Cotifly.Infraestructura.Tests/Persistencia/clsEsquemaTests.cs`) comprueban en cada corrida que la
-  instalación desde cero y las migraciones `0001` a `0010` (más el `02`, el `pendientes/04`, el `07`, el `08` y el `09`) dejan el mismo esquema, que el `0010` es
+  instalación desde cero y las migraciones `0001` a `0010` (más el `02`, el `03`, el `pendientes/04`, el `05`, el `07`, el `08` y el `09`) dejan el mismo esquema, que el `0010` es
   idempotente y que el `0009` migra los datos del esquema anterior sin perder ajustes, correos ni auditoría.
 - **Scripts posteriores al `0010`** y lo que falta aprobar (aprobación, no prueba):
 
@@ -20,9 +20,9 @@ dejarla con la configuración inicial.
 |---|---|---|
 | `migrations_mssql/0010_nombres_municipio.sql` | HU-021 | Borrador pendiente de revisión de scalderon-bs y del DBA |
 | `scripts/02_alter_cubicador.sql` | HU-023.3 (#158) | En el ejecutador. Columnas para guardar la respuesta del cubicador; va después del `01` (o del `0010` en una base migrada) |
-| `scripts/pendientes/03_orden_vehiculo_y_conexo_catalogo.sql` | HU-023.3 (#158) | Propuesta. El backend no mapea sus columnas |
+| `scripts/03_orden_vehiculo_y_conexo_catalogo.sql` | HU-023.3 (#158); HU-014 (#188) | En el ejecutador (desde #188; antes en `pendientes/`). **El backend mapea sus columnas** (`ordenVehiculo`, `idServicioConexoCatalogo`): sin él, `/health/ready` responde "esquema incompleto: falta 03". Se aplica antes de desplegar la imagen (ver abajo) |
 | `scripts/pendientes/04_cubicacion_segundo_plano.sql` | HU-023.5 (#160) | Propuesta, pendiente de scalderon-bs y del DBA. **El backend sí mapea sus columnas**: sin él, `/health/ready` responde "esquema incompleto: falta 04". Se aplica antes de desplegar la imagen. El ejecutador no lo corre; el entorno local (`levantar-local.*`) sí |
-| `scripts/pendientes/05_categoria_conexo.sql` | #173 | Propuesta. El backend no mapea la columna |
+| `scripts/05_categoria_conexo.sql` | #173; HU-014 (#188) | En el ejecutador (desde #188; antes en `pendientes/`). **El backend mapea la columna** (`categoriaServicioConexo`): sin él, `/health/ready` responde "esquema incompleto: falta 05". Se aplica antes de desplegar la imagen |
 | `scripts/pendientes/06_idempotencia_captura.sql` | #173 | Propuesta (deuda). El backend no mapea la tabla |
 | `scripts/07_motivo_busqueda_agotada.sql` | HU-023 (#176) | En el ejecutador (orden de nombre, después del `02`); lo aplica @scalderon-bs en la base compartida. Quinto motivo `BUSQUEDA_AGOTADA` en el CHECK del motivo. No es obligatorio para arrancar (ver abajo) |
 | `scripts/08_retirar_vistas_actividad.sql` | HU-014.3 (#152) | En el ejecutador (después del `07`); **lo aplica el DBA** en la base compartida, después de desplegar el backend sin el borrador de métricas. `DROP VIEW` de `vActividadPorComercial` y `vAjustesMargenPorComercial` (ver abajo) |
@@ -34,15 +34,26 @@ licitación en segundo plano (`estadoCubicacion`, `cubicacionIntentos`, `cubicac
 datos. Es idempotente y no destructivo. **No** está en el 01 ni lo corre el ejecutador: queda en un solo lugar hasta su
 aprobación. Pero el backend de la #160 SÍ mapea sus columnas: **no desplegar sin aplicar antes el 0010 y el 04**.
 
+**`scripts/03_orden_vehiculo_y_conexo_catalogo.sql` y `scripts/05_categoria_conexo.sql`** (HU-014, #188). Eran propuestas en
+`pendientes/` con "NO APLICAR"; con #188 el backend mapea sus columnas y pasan a `scripts/`, como el `09`. **Conservan su número**:
+es el nombre con que ya los conocen el DBA y @scalderon-bs; por nombre el `03` corre antes del `07` y deja el mismo CHECK del motivo
+que el `07` (en cualquier orden terminan iguales), y el `05` no depende de ningún otro. Renumerarlos (a `10` y `11`) no cambiaría el
+resultado y confundiría a quien ya los aplicó. El `03` agrega `CotizacionVehiculosLineaSolicitud.ordenVehiculo` (numera los
+camiones existentes por `createdAt`, con un índice único filtrado por ruta), `CotizacionServiciosConexos.idServicioConexoCatalogo`
+(NULL en las filas anteriores: el backend las sigue resolviendo por id o por nombre) y corrige el CHECK del motivo; el `05`, la
+columna `categoriaServicioConexo` (NULL en las filas anteriores: el costeo la lee del catálogo). Los dos son idempotentes y **van
+antes de la imagen de #188**: sin ellos `/health/ready` responde 503 "falta 03" o "falta 05". El DBA confirma que están aplicados con
+la consulta de solo lectura de [`DEPLOY.md`](../DEPLOY.md) §4.5 (paso 0).
+
 **`scripts/07_motivo_busqueda_agotada.sql`** (HU-023, #176) reemplaza el CHECK
 `ck_cotizacionLineasSolicitud_motivoSinSeleccion` por uno con los **5 motivos** del contrato vigente del cubicador (agrega
 `BUSQUEDA_AGOTADA`) y con `ISNULL(resultadoCubicacion, '') = 'SIN_SELECCION_AUTOMATICA'` (la regla del 02 sin el hueco del NULL, la
-misma que propone el `pendientes/03`). Es idempotente (si el CHECK ya tiene `BUSQUEDA_AGOTADA` **y** el `ISNULL` no hace nada; una
+misma que deja el `03`). Es idempotente (si el CHECK ya tiene `BUSQUEDA_AGOTADA` **y** el `ISNULL` no hace nada; una
 versión sin `ISNULL` la corrige), hace DROP y ADD `WITH CHECK` en una transacción, imprime la definición anterior como respaldo
 y trae la consulta de verificación. **No es obligatorio para arrancar**: el backend lee `sys.check_constraints` y, sin el 07, guarda
 `BUSQUEDA_AGOTADA` en `NULL` con el motivo real como advertencia de la ruta (`MOTIVO_SIN_SELECCION`); `/health/ready` sigue en 200 y
 solo lo avisa en la descripción (la autodetección necesita `GRANT VIEW DEFINITION ON SCHEMA::dbo_cotifly TO cotifly_app`; sin él la
-sonda dice que no se puede verificar, o se fija con `BaseDatos__MotivoBusquedaAgotada`, ver DEPLOY.md). El `pendientes/03` deja
+sonda dice que no se puede verificar, o se fija con `BaseDatos__MotivoBusquedaAgotada`, ver DEPLOY.md). El `03` deja
 exactamente el mismo CHECK y solo lo reemplaza si le falta `BUSQUEDA_AGOTADA` o el `ISNULL`: en cualquier orden terminan iguales.
 
 **`scripts/08_retirar_vistas_actividad.sql`** (HU-014.3, #152) borra las vistas `vActividadPorComercial` y
@@ -64,9 +75,10 @@ falta 09" y Traefik no manda tráfico a la versión nueva. A diferencia del `07`
 backend puede esquivar guardando `NULL`; una columna mapeada no se puede esquivar sin dejar de leerla). Como está en `scripts/`, el
 ejecutador y `db-init` lo aplican solos.
 
-**Orden completo** de una base nueva: `01` (o `0001` a `0010`), `02`, `pendientes/04`, `07`, `08` y `09`. El entorno local
-(`backend-dotnet/scripts/levantar-local.ps1` / `.sh`) aplica los ajustes `02` en adelante (hoy `02`, `07`, `08` y `09`) y el
-`pendientes/04` en ese orden en cada arranque (son idempotentes).
+**Orden completo** de una base nueva: `01` (o `0001` a `0010`), `02`, `03`, `pendientes/04`, `05`, `07`, `08` y `09`. El entorno
+local (`backend-dotnet/scripts/levantar-local.ps1` / `.sh`) aplica los ajustes `02` en adelante (hoy `02`, `03`, `05`, `07`, `08` y
+`09`) y el `pendientes/04` en ese orden en cada arranque (son idempotentes). Con el `03` aplicado el CHECK del motivo ya es el del
+`07` (sin el `07`, la sonda no da el aviso del `07`).
 
 ## Estructura
 
@@ -78,10 +90,12 @@ db/
 ├── scripts/
 │   ├── 01_crear_esquema.sql   schema, tablas, restricciones e índices, en su forma final (sin vistas desde HU-014.3)
 │   ├── 02_alter_cubicador.sql columnas para la respuesta del cubicador (ALTER; se puede repetir)
+│   ├── 03_orden_vehiculo_y_conexo_catalogo.sql  orden del camión e id del catálogo del conexo (se puede repetir)
+│   ├── 05_categoria_conexo.sql         categoría del catálogo de Nexo en el conexo (se puede repetir)
 │   ├── 07_motivo_busqueda_agotada.sql  quinto motivo de "sin selección" en el CHECK (se puede repetir)
 │   ├── 08_retirar_vistas_actividad.sql retira las vistas del borrador de métricas (se puede repetir)
 │   ├── 09_score_prioridad.sql          scorePrioridad de Nexo en la cabecera (se puede repetir)
-│   ├── pendientes/            propuestas 03 a 06, pendientes de revisión (el ejecutador no las corre)
+│   ├── pendientes/            propuestas 04 y 06, pendientes de revisión (el ejecutador no las corre)
 │   └── operacion/             scripts de datos de una sola vez que corre el DBA con aprobación
 ├── seeder/
 │   ├── 01_lineas_negocio.sql      líneas de negocio y su margen de política
@@ -135,13 +149,12 @@ ya tiene el esquema; así una base instalada antes queda igual que una nueva.
 
 Con `-Auto` / `-a` el `02` corre en **cada** arranque (la segunda vez no hace nada). En una base anterior al `0009` (sin
 `CotizacionMercancias`) el `02` se detiene con un error en su precondición y el ejecutador también: primero hay que migrar con
-`migrations_mssql/0009` y `0010`. `scripts/pendientes/` (propuestas pendientes de revisión, como el `03`) **no** la corre el
+`migrations_mssql/0009` y `0010`. `scripts/pendientes/` (propuestas pendientes de revisión: el `04` y el `06`) **no** la corre el
 ejecutador. Tampoco `scripts/operacion/`: scripts de datos de una sola vez que corre el DBA con aprobación, como
 `revincular_identidad_dbSolucionesTI_Prueba.sql` (#172, ver [`DEPLOY.md`](../DEPLOY.md#identidad-compartida-con-nexo-172)) y
 `corregir_rol_comercial_32.sql` (#173: `Roles.idRolExterno` de `comercial` pasa de 34, que en `dbSolucionesTI_Prueba` es
 `AdministracionZonasGeocerca`, a 32 `ClienteProComercial`; respalda `Roles` en `RespaldoRoles_173`, es idempotente y **requiere
-aprobación; lo ejecuta el DBA**). En `pendientes/` está también el `05_categoria_conexo.sql` (#173, categoría del catálogo de Nexo
-en el conexo; el backend no la mapea). Y el `06_idempotencia_captura.sql` (#173, deuda): tabla `CapturasIdempotentes` con `UNIQUE (usuarioId, clave)` para que la
+aprobación; lo ejecuta el DBA**). En `pendientes/` está también el `06_idempotencia_captura.sql` (#173, deuda): tabla `CapturasIdempotentes` con `UNIQUE (usuarioId, clave)` para que la
 `Idempotency-Key` de la captura sobreviva a reinicios y a despliegues `start-first`; hoy vive en memoria y el backend no la mapea.
 
 ### Con Docker

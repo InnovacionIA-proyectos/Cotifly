@@ -104,6 +104,45 @@ public sealed class clsValidadorFilasLicitacionTests
         resultado.Error.Codigo.Should().Be(clsCodigosError.MunicipiosNoDisponible);
     }
 
+    /// <summary>
+    /// HU-014 (#188, revisión de M1): el reintento y la re-solicitud de una licitación cubicada revalidan lo guardado. El camión del
+    /// cubicador trae un código que Nexo no conoce (<c>2S2</c>, <c>CAMA_BAJA</c>): no es dato digitado y lo que viaja lo decide
+    /// <c>Nexo:EnviarCodigosCubicador</c>, así que no debe pedir una carga nueva.
+    /// </summary>
+    [Fact]
+    public async Task HU014ElVehiculoDelCamionDelCubicadorNoBloqueaElReintentoDeLaLicitacion()
+    {
+        var cotizacion = LicitacionCon(new clsCamionPlaneado("2S2", "CAMA_BAJA", 9000m, Guid.NewGuid()));
+
+        var lineas = clsEnvioCosteoService.LineasGuardadas(cotizacion);
+        var resultado = await Validador().RevalidarGuardadasAsync(_usuarioId, cotizacion.Folio, _encabezado, lineas, [0], Ct);
+
+        lineas[0].TipoVehiculo.Should().BeNull("el código del cubicador no se revalida contra el catálogo de Nexo");
+        lineas[0].Carroceria.Should().BeNull();
+        resultado.EsExitoso.Should().BeTrue();
+        cotizacion.PrimeraRuta!.Vehiculos[0].TipoVehiculo.Should().Be("2S2", "el camión guardado no cambia");
+    }
+
+    /// <summary>HU-014 (#188, M1): el vehículo digitado del respaldo (sin recomendación) sí se revalida contra Nexo.</summary>
+    [Fact]
+    public async Task HU014ElVehiculoDigitadoDelRespaldoSiSeRevalidaContraNexo()
+    {
+        var cotizacion = LicitacionCon(new clsCamionPlaneado("2S2", null, 9000m));
+
+        var resultado = await Validador().RevalidarGuardadasAsync(
+            _usuarioId, cotizacion.Folio, _encabezado, clsEnvioCosteoService.LineasGuardadas(cotizacion), [0], Ct);
+
+        resultado.Error.Detalle.Should().Be(clsValidadorFilasLicitacion.MotivoRequiereNuevaCarga);
+    }
+
+    private static clsCotizacionSolicitud LicitacionCon(clsCamionPlaneado camion)
+    {
+        var cotizacion = Pruebas.Comun.clsCotizacionMuestra.Cabecera();
+        cotizacion.RegistrarCaptura(_encabezado,
+            [new clsRutaCapturada(Linea() with { OrigenMunicipioId = 76109, DestinoMunicipioId = 11001, TipoVehiculo = null }, 3, 0, [camion], [])]);
+        return cotizacion;
+    }
+
     private clsValidadorFilasLicitacion Validador() =>
         new(new clsValidadorCatalogosCaptura(_maestros, NullLogger<clsValidadorCatalogosCaptura>.Instance), _municipios);
 }

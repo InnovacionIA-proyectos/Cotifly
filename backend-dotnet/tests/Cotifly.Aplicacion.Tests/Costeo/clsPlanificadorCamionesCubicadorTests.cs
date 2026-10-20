@@ -337,7 +337,7 @@ public sealed class clsPlanificadorCamionesCubicadorTests
     [InlineData(true)]
     public void LaBanderaDeRespaldoDecideSiElVehiculoDelClienteSeConservaOSeIgnora(bool aceptar)
     {
-        // HU-021.11 (#138): Captura:AceptarVehiculoCliente (apagada por defecto, decisión 7).
+        // HU-021.11 (#138): Captura:AceptarVehiculoCliente (encendida por defecto desde #188; apagada rige la decisión 7).
         var logger = new clsLoggerFalso<clsPlanificadorCamionesCubicadorTests>();
         var rutas = new List<clsLineaLicitacionEntrada?> { new(null, Ruta() with { TipoVehiculo = "3S3", Carroceria = "FURGON" }), null };
 

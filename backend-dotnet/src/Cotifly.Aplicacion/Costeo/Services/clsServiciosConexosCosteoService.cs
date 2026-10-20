@@ -463,7 +463,8 @@ public sealed class clsServiciosConexosCosteoService(
         {
             var cantidad = conexo.Cantidad > 0m ? decimal.Round(conexo.Cantidad, 2) : 1m;
             var precio = decimal.Round(conexo.ValorAplicado / cantidad, 2, MidpointRounding.ToEven);
-            return new clsCambioConexo(conexo.Id, conexo.Nombre ?? conexo.Categoria, precio, cantidad);
+            // HU-014 (#188): con el id del catálogo (servicioConexoId, script 03) y la categoría que informó Nexo (script 05).
+            return new clsCambioConexo(conexo.Id, conexo.Nombre ?? conexo.Categoria, precio, cantidad, conexo.ServicioConexoId, conexo.CategoriaInformada);
         }).ToList();
         return cotizacion.CambiarConexos(ruta.Orden, cambios, ahora);
     }

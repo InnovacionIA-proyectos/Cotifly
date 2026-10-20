@@ -77,7 +77,7 @@ Característica: Servicios conexos del catálogo de Nexo
   Escenario: Si Nexo niega el rol al agregar no cambia nada
     Dado que "ana" envió a costeo el formulario ampliado del cliente "900555111" como "C1"
     Y Nexo costeó la solicitud de "C1" con un flete de 2550000 y el polling lo registró
-    Y que Nexo responde 403 al agregar conexos porque "ana" no tiene el rol Comercial, CoordinadorFletes ni Admin
+    Y que Nexo responde 403 al agregar conexos porque "ana" no tiene el rol Comercial ni Admin
     Cuando "ana" agrega a "C1" en la línea 1 el servicio conexo "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d" con la cantidad 1
     Entonces la respuesta tiene el estado 403 con el código de negocio "NEXO_SIN_PERMISO"
     Y "C1" tiene 0 servicios conexos incluidos

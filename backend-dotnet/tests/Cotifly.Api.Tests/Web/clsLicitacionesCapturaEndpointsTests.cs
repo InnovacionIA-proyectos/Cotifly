@@ -24,7 +24,9 @@ public sealed class clsLicitacionesCapturaEndpointsTests : IDisposable
     public clsLicitacionesCapturaEndpointsTests(clsEntornoApiWeb entorno)
     {
         _entorno = entorno;
-        _api = clsApiWebPruebas.ConNexo(entorno.BaseDatos, _nexo);
+        // HU-014 (#188): Captura:AceptarVehiculoCliente está encendida por defecto. Estas pruebas verifican la decisión 7 (el vehículo del
+        // pliego se ignora), así que la apagan; el camino con la bandera encendida lo cubren clsCosteoEndpointsTests y la captura web.
+        _api = clsApiWebPruebas.ConNexo(entorno.BaseDatos, _nexo, new Dictionary<string, string?> { ["Captura:AceptarVehiculoCliente"] = "false" });
     }
 
     [Fact]

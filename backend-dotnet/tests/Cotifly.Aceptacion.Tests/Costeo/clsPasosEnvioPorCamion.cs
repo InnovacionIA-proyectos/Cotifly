@@ -156,7 +156,7 @@ public sealed class clsPasosEnvioPorCamion(clsPasosCosteo costeo)
         var primero = await clsBaseDatosPruebas.EscalarAsync<string>(Cadena,
             "SELECT TOP 1 v.lineaSolicitudNexoId FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v "
             + "JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = v.lineaSolicitudId JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId "
-            + $"WHERE c.folio = '{folio}' AND l.orden = {orden} ORDER BY v.createdAt, v.id");
+            + $"WHERE c.folio = '{folio}' AND l.orden = {orden} ORDER BY IIF(v.ordenVehiculo IS NULL, 1, 0), v.ordenVehiculo, v.createdAt, v.id");
         var indice = costeo.Nexo.LineasDe(solicitud).ToList().IndexOf(primero!);
         indice.Should().Be(0, "el primer camión de la ruta es la primera línea que viajó a Nexo");
         var peticion = costeo.Nexo.PeticionesConexos(costeo.Nexo.CotizacionDe(solicitud)!).Should().ContainSingle().Subject;

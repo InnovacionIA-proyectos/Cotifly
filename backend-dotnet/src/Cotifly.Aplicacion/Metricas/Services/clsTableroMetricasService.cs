@@ -41,6 +41,9 @@ public sealed class clsTableroMetricasService(
     public const int AniosMaximos = 3;
 
     public const string FormatoFecha = "yyyy-MM-dd";
+
+    /// <summary>Primer año que acepta <c>anio</c> (HU-010.5); el último es el año en curso más uno (en Bogotá).</summary>
+    public const int AnioMinimo = 2020;
     public const string MensajeComercialAjeno = "Comercial no encontrado en tu regional.";
 
     public async Task<clsResultado<clsMetricasComercial>> ObtenerComercialAsync(clsConsultaMetricas consulta, CancellationToken cancellationToken = default)
@@ -151,11 +154,19 @@ public sealed class clsTableroMetricasService(
     /// <summary>
     /// Periodo de la consulta en fechas de negocio: por defecto del 1 de enero del año en curso a hoy. 400 si una fecha no es
     /// <c>AAAA-MM-DD</c>, si <c>hasta</c> es anterior a <c>desde</c> o si el rango supera <see cref="AniosMaximos"/> años.
+    /// HU-010.5 (#187): con <c>anio</c> el periodo es ese año completo y, con <c>mes</c>, ese mes completo (fechas de Bogotá); reemplaza a
+    /// <c>desde</c>/<c>hasta</c>, que se ignoran. 400 si <c>mes</c> llega sin <c>anio</c>, si no es un entero de 1 a 12 o si <c>anio</c>
+    /// no es un entero de <see cref="AnioMinimo"/> al año en curso más uno. Solo la regional los pasa: en el comercial siempre son nulos.
     /// </summary>
     public clsResultado<clsPeriodoMetricas> ResolverPeriodo(clsConsultaMetricas consulta)
     {
         ArgumentNullException.ThrowIfNull(consulta);
         var hoy = calendario.Hoy;
+
+        if (!string.IsNullOrWhiteSpace(consulta.Anio) || !string.IsNullOrWhiteSpace(consulta.Mes))
+        {
+            return PeriodoAnioMes(consulta.Anio, consulta.Mes, hoy);
+        }
 
         if (!LeerFecha(consulta.Desde, "desde", new DateOnly(hoy.Year, 1, 1), out var desde, out var errorDesde))
         {
@@ -179,6 +190,38 @@ public sealed class clsTableroMetricasService(
 
         return new clsPeriodoMetricas(desde, hasta, calendario.ZonaHoraria);
     }
+
+    /// <summary>El año completo, o el mes completo de ese año (HU-010.5).</summary>
+    private clsResultado<clsPeriodoMetricas> PeriodoAnioMes(string? textoAnio, string? textoMes, DateOnly hoy)
+    {
+        if (string.IsNullOrWhiteSpace(textoAnio))
+        {
+            return Invalida("El parámetro 'mes' requiere 'anio'.");
+        }
+
+        var anioMaximo = hoy.Year + 1;
+        if (!LeerEntero(textoAnio, out var anio) || anio < AnioMinimo || anio > anioMaximo)
+        {
+            return Invalida($"El parámetro 'anio' debe ser un año entre {AnioMinimo} y {anioMaximo}.");
+        }
+
+        if (string.IsNullOrWhiteSpace(textoMes))
+        {
+            return new clsPeriodoMetricas(new DateOnly(anio, 1, 1), new DateOnly(anio, 12, 31), calendario.ZonaHoraria);
+        }
+
+        if (!LeerEntero(textoMes, out var mes) || mes is < 1 or > 12)
+        {
+            return Invalida("El parámetro 'mes' debe ser un número de 1 a 12.");
+        }
+
+        var inicio = new DateOnly(anio, mes, 1);
+        return new clsPeriodoMetricas(inicio, inicio.AddMonths(1).AddDays(-1), calendario.ZonaHoraria);
+    }
+
+    /// <summary>Entero sin signo ni separadores (<c>2026</c>, <c>04</c>); nada de <c>+4</c>, <c>4.0</c> ni <c>2 026</c>.</summary>
+    private static bool LeerEntero(string texto, out int valor) =>
+        int.TryParse(texto.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out valor);
 
     private Task<clsDatosMetricas> ListarAsync(IReadOnlyCollection<Guid> ids, clsPeriodoMetricas periodo, CancellationToken cancellationToken) =>
         metricas.ListarCotizacionesAsync(ids, calendario.InicioDelDia(periodo.Desde), calendario.InicioDelDia(periodo.Hasta.AddDays(1)), cancellationToken);

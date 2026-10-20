@@ -57,7 +57,7 @@ ClientePro (ya autenticado)
 | `POST /api/auth/logout` | cualquiera | Revoca la sesión, siempre 204 (salvo 429 por el límite de `/api/auth/*`) |
 | `POST /web/chat` | ambos | Turno del agente cotizador (ya no crea cotizaciones, ADR-018) |
 | `POST /web/solicitudes-costeo` | ambos | **Endpoint vigente para crear una cotización** (una línea): formulario ampliado, validación por código de catálogo y envío a costeo en Nexo. Ver §3.2 |
-| `GET /web/catalogos-flete` | ambos | Tipos de vehículo, carrocerías y clases de viaje del formulario (catálogos maestros de Nexo). Ver §3.2 |
+| `GET /web/catalogos-flete` | ambos | Tipos de vehículo, carrocerías, clases de viaje y clases de contenedor del formulario (catálogos maestros de Nexo; `clases_contenedor` desde HU-027.1, puede venir vacía). Ver §3.2 |
 | `GET /web/municipios` | ambos | Buscador de origen y destino (`?q=&departamento=`, máx. 50) o catálogo completo sin filtros. 503 `MUNICIPIOS_NO_DISPONIBLE` si Nexo no responde (antes 400). Ver §8.1, fila 5 |
 | `GET /web/mis-cotizaciones` | ambos | Cotizaciones propias (máx. 100) |
 | `GET /web/cotizaciones/regional` | gerente_comercial | HU-016.1 (#154): cotizaciones de los comerciales de su regional (máx. 100), con la forma de `mis-cotizaciones` y el comercial dueño en cada fila. Ver §8.10.1 |
@@ -71,7 +71,7 @@ ClientePro (ya autenticado)
 | `GET /web/admin/lineas-negocio` | gerente_comercial | Políticas de margen |
 | `PUT /web/admin/lineas-negocio/{id}` | gerente_comercial | Edita margen, método y estado |
 | `GET /web/metricas/comercial` | ambos | Tablero del comercial (HU-010.2): indicadores y serie mensual de sus cotizaciones. Ver §3.1 |
-| `GET /web/metricas/regional` | gerente_comercial | Tablero del gerente (HU-010.3): su regional, filtrable por `usuario_id`, con lista de comerciales, serie mensual y concentración por ciudad. Ver §3.1 |
+| `GET /web/metricas/regional` | gerente_comercial | Tablero del gerente (HU-010.3): su regional, filtrable por `usuario_id` y por `anio`/`mes` (HU-010.5), con lista de comerciales, serie mensual y concentración por ciudad. Ver §3.1 |
 | `GET /web/metricas/actividad` y `GET /web/metricas/ajustes-margen` | — | **Retirados (HU-014.3, #152):** responden 404. Eran el borrador del tablero; usar `/web/metricas/comercial` y `/regional` |
 | `GET /pdfs/{archivo}` | dueño o gerente de su regional | Descarga del PDF. Exige `Authorization`, así que se baja con HttpClient como blob, no con un `<a href>`. El enlace firmado `?t=` (ADR-011) se retiró en #105 junto con Google Chat |
 
@@ -86,6 +86,7 @@ Todos los campos de `/web/*` van en snake_case, incluidos los de los endpoints n
 Decisiones completas en `backend-dotnet/specs/decisiones/ADR-016-metricas-agregadas-y-regional.md`; esquemas y ejemplos en el tag `metricas` del spec.
 
 **Parámetros.** `desde` y `hasta` son opcionales (`AAAA-MM-DD`, fechas de Bogotá, ambas incluidas). Por defecto van del 1 de enero del año en curso a hoy; máximo 3 años. En `/regional`, `usuario_id` es opcional (UUID de un comercial de la regional). Fechas mal formadas, `hasta < desde` o un `usuario_id` que no es UUID: 400.
+**Año y mes (HU-010.5, #187), solo en `/regional`:** `?anio=2026` es el año completo y `?anio=2026&mes=10` ese mes completo (fechas de Bogotá). Si llega `anio`, reemplaza a `desde`/`hasta` (se ignoran). `mes` sin `anio`, `mes` fuera de 1 a 12 o `anio` fuera de 2020 al año en curso más uno (o no enteros): 400. Sin `anio` ni `mes`, nada cambia; `/comercial` no los acepta.
 
 **Quién ve qué.** El rol sale del token de la sesión (claim `rol`, emitido en el login SSO con la verificación doble de ClientePro); no se lee de ninguna columna.
 - `/comercial`: las cotizaciones propias (también para un gerente, que cotiza).
@@ -158,8 +159,11 @@ Reglas para el frontend (HU-013.10, #106):
 - **`tipo_vehiculo` y `carroceria` ya no se envían** (decisión 7 de HU-021: los define el cubicador o la Mesa de Costeo de Nexo;
   si llegan, se ignoran). Lo que sigue aplica a ellos solo con la bandera del servidor `Captura:AceptarVehiculoCliente`.
 - **Solo códigos de catálogo** en `tipo_vehiculo`, `carroceria` y `clase_viaje` (el `valor` de `GET /web/catalogos-flete`,
-  nunca la `etiqueta`), `tipologia` (enum de 7 valores) y `clase_contenedor` (`CNT20.IT`, `CNT20.RE`, `CNT20.ST`, `CNT40.HC`,
-  `CNT40.RE` y la lista provisional `CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP`). Otro texto es 400
+  nunca la `etiqueta`; HU-014 #188: `tipo_vehiculo` y `carroceria` deben ser códigos que **Nexo** conozca, ya no basta el catálogo
+  del cubicador, y se aceptan con otras mayúsculas, sin tildes o con `_`/`-` por espacio: `FURGON_REFRIGERADO` = `FURGON REFRIGERADO`),
+  `tipologia` (enum de 7 valores) y `clase_contenedor` (el `valor` de `clases_contenedor` de `GET /web/catalogos-flete`: `CNT20.IT`,
+  `CNT20.RE`, `CNT20.ST`, `CNT40.HC`, `CNT40.RE`; más la lista provisional `CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP`, que no viene
+  en el catálogo). Otro texto es 400
   `SOLICITUD_COSTEO_INVALIDA` con el campo en el mensaje. Si los catálogos de Nexo no están disponibles (ni su copia en
   memoria), 503 `CATALOGOS_FLETE_NO_DISPONIBLE` y no se guarda nada. Sin Nexo configurado en el servidor, un formulario con
   `tipo_vehiculo` o `clase_viaje` siempre recibe ese 503.
@@ -172,6 +176,10 @@ Reglas para el frontend (HU-013.10, #106):
 - **Retirados (HU-021, decisión 1):** `valor_estimado` y `referencia` ya no están en el contrato; si llegan, se ignoran.
 - `GET /web/catalogos-flete` responde 503 `CATALOGOS_FLETE_NO_DISPONIBLE` solo si Nexo no responde y no hay una copia de los
   catálogos de menos de 24 horas: en ese caso, deshabilitar los selects y ofrecer reintento (no hay texto libre).
+- **`clases_contenedor` (HU-027.1, #179):** las clases de contenedor de Nexo (`GET /api/catalogos/clases-contenedor`). En Nexo la
+  `descripcion` es el código, así que `valor` = `etiqueta` = `CNT40.HC`, el mismo texto que valida la captura. No trae la lista
+  provisional. Puede venir `[]` con 200 (Nexo sin base de SAP configurada o el catálogo caído): deshabilitar el selector y ofrecer
+  reintento.
 
 ### Reservados para la próxima versión (HU-005)
 
@@ -277,7 +285,7 @@ contra el contrato, así que un ejemplo desactualizado rompe la compilación de 
 |---|---|---|
 | 1 | **`precio_final` incluye los servicios conexos.** Es la suma de `rutas[].precio_final_linea`, y cada ruta es fletes + retorno + levante + conexos, con su margen. | No sumar el `precio` de `servicios_conexos`: es el desglose. El PDF muestra la tarifa del transporte y los conexos aparte, y tarifa + conexos = precio de la ruta. |
 | 2 | **`POST /web/solicitudes-costeo` recibe `rutas[]`** (hasta 100). Sin `rutas`, el formato plano anterior sigue funcionando como una sola ruta, pero está `deprecated` y **se retira cuando salga HU-021-FE**. | Migrar el formulario a `rutas[]`. No mezclar: `rutas` y un campo de ruta en la raíz es 400 `SOLICITUD_COSTEO_INVALIDA` con `CAMPO_NO_APLICA`. |
-| 3 | **`tipo_vehiculo` y `carroceria` se ignoran** (decisión 7: los define el cubicador o la Mesa de Costeo de Nexo). | Quitarlos del formulario y del mapeo del Excel. El vehículo se lee de `rutas[].camiones[]`. Excepción: con la bandera del servidor `Captura:AceptarVehiculoCliente = true` (apagada por defecto) se usan en el camión del respaldo mientras no haya cubicador (HU-021-FE.2). |
+| 3 | **`tipo_vehiculo` y `carroceria` se ignoran** (decisión 7: los define el cubicador o la Mesa de Costeo de Nexo). | Quitarlos del formulario y del mapeo del Excel. El vehículo se lee de `rutas[].camiones[]`. Excepción: con la bandera del servidor `Captura:AceptarVehiculoCliente = true` (encendida por defecto desde #188) se usan en el camión del respaldo mientras no haya cubicador (HU-021-FE.2). |
 | 4 | **`valor_estimado` y `referencia` salen del contrato** (decisión 1), también `referencia` de la vista `Licitacion`. | Dejar de enviarlos y de leerlos. Si se envían, se ignoran sin error (queda un aviso en el log). |
 | 5 | **Municipios con id obligatorio.** Origen, destino y las ciudades de devolución y de levante van con su id de `GET /web/municipios` y una copia del nombre. Toda captura consulta el catálogo: si no responde, **503 `MUNICIPIOS_NO_DISPONIBLE`** y nada se guarda. HU-023 (#176): el buscador usa `GET /web/municipios?q=<texto>&departamento=<depto>`, que pasa a `GET /api/captura-solicitudes/ciudades` de Nexo (máximo 50, solo Colombia); sin filtros sigue siendo el catálogo completo. | Enviar siempre el `*_municipio_id` elegido en la búsqueda. Ante el 503, ofrecer Reintentar. Ante `MUNICIPIO_AMBIGUO`, mostrar los candidatos y repetir con el id elegido. |
 | 6 | **Mercancías con `codigo_mercancia` obligatorio** (HU-023.3, #158: el `codigo` del catálogo del cubicador, `GET /web/tipos-mercancia`; obligatorio con el cubicador configurado) y `nombre_mercancia` (antes `descripcion`). `id_tipo_mercancia` es obsoleto: se acepta y se traduce al código. | Usar el desplegable del catálogo y mandar su `codigo`. Sin cubicador, el endpoint responde 503 `CUBICADOR_NO_DISPONIBLE`: el formulario sigue con los tipos que ya conoce. |
@@ -865,9 +873,11 @@ cotizaciones de otra regional. El propio gerente es miembro de su regional, así
 |---|---|
 | Formato plano de `POST /web/solicitudes-costeo` (una ruta en la raíz, `deprecated`) | Cuando salga HU-021-FE |
 | `conexos_descartados` en la respuesta de re-solicitar (siempre `[]`, `deprecated`) | Cuando salga HU-021-FE |
-| `tipo_vehiculo` y `carroceria` en la ruta (`deprecated`; se ignoran salvo `Captura:AceptarVehiculoCliente`; con la bandera, aceptan los códigos del cubicador, HU-023.1) | Cuando exista el cubicador (C1) |
+| `tipo_vehiculo` y `carroceria` en la ruta (`deprecated`; se ignoran salvo `Captura:AceptarVehiculoCliente`; con la bandera, solo códigos que Nexo conozca: HU-014 #188 retiró los del catálogo del cubicador que Nexo no conoce, HU-023.1) | Cuando exista el cubicador (C1) |
 | `incluidos` en `PUT .../costeo/servicios-conexos` (compatibilidad de HU-005.7) | Sin fecha |
 | `valor_estimado` y `referencia` en la petición: ya no están en el contrato, pero si llegan se ignoran sin error | Sin fecha |
+| `datos_carga` en `POST .../costeo/re-solicitar` (`deprecated`, HU-028: usar `PUT .../solicitud`; acepta `codigo_mercancia` y los ids de las ciudades del contenedor) | Cuando el frontend use "Editar solicitud" |
+| `GET /web/cotizaciones/{id}/nueva-version` para prellenar (HU-028: usar `GET .../solicitud`, que trae mercancías, conexos y condiciones por ruta) | Cuando el frontend use "Editar solicitud" |
 
 ### 8.12 Calcular cubicaje: `POST /web/cubicacion` (HU-023.2, #157)
 
@@ -1135,3 +1145,221 @@ el `GET`. También responde 503 `CUBICADOR_OCUPADO` si hay demasiadas cubicacion
   caída en **503**. HU-023 (#176): `CUBICACION_DEMASIADO_GRANDE` (400) está **vigente**, con el tope del cubicador (10.000 unidades).
 - HU-023 (#176): `extradimension` vuelve a la estructura del cubicador (`hay_extradimension`, `medidas_estandar`, `piezas[]` con
   `indice_posicion` y `excesos[]`): la forma provisional `{extradimensionado, dimensiones, detalle}` se retira.
+
+### 8.13 Editar la solicitud: `GET` y `PUT /web/cotizaciones/{folio}/solicitud` (HU-028, #186)
+
+El comercial edita la solicitud que ya creó: **todo menos el cliente, el tipo (spot/licitación) y la línea de negocio de cada ruta**.
+Puede cambiar rutas (agregar, quitar, cambiar origen, destino y ciudades), mercancías, condiciones, conexos, clase de viaje, horas,
+valores, deadline, notas y moneda. Decisión en [ADR-021](../../backend-dotnet/specs/decisiones/ADR-021-edicion-de-la-solicitud.md).
+
+**Modo según el estado** (lo decide el servidor y el `GET` lo anuncia en `edicion.modo`):
+
+| Modo | Cuándo | Qué hace | Respuesta del `PUT` |
+|---|---|---|---|
+| `en_sitio` | Nunca llegó a NEXO (`error_envio`, también el rechazo definitivo, o `pendiente_envio` abandonado) | Edita la misma cotización y la envía | 200 |
+| `reemplazo` | Está en NEXO, sin entregar al cliente y sin resultado (también en `pendiente_costeo`) | Rechaza la solicitud anterior en NEXO, aplica la edición y la captura de nuevo **en el mismo folio**; el PDF queda desactualizado | 200 |
+| `nueva_version` | Ya entregada al cliente (`enviada`/`reenviada`) o con resultado | Crea la `-vN` con lo editado; la original no cambia ni se rechaza en NEXO | 201 + `Location` |
+| (no permitida) | Licitación (fase 2), cotización del chat, envío o cubicación en curso | Nada | 409 `ESTADO_NO_PERMITE` |
+
+**Flujo de la pantalla "Editar solicitud":**
+
+1. `GET .../solicitud` y guardar el `ETag`. Si `edicion.permitida` es `false`, mostrar `edicion.mensaje` y no abrir el formulario.
+2. Prellenar el formulario de captura por rutas (el mismo de `POST /web/solicitudes-costeo`) con la respuesta: cada ruta trae
+   `linea_solicitud_id`, los municipios con id y nombre, las mercancías con `codigo_mercancia` y los conexos con el id del catálogo.
+   Cliente, tipo y la línea de negocio de cada ruta guardada van en **solo lectura** (`bloqueados`, `campos_bloqueados`). Una ruta nueva
+   solo ofrece las líneas de `lineas_negocio_disponibles`.
+3. Antes de guardar, mostrar el modo y los `edicion.avisos` (por ejemplo "se reemplazará la solicitud en NEXO", "la Mesa está costeando:
+   se pierde su trabajo", "se creará la versión -vN") y pedir un `motivo` opcional.
+4. `PUT .../solicitud` con el modelo editado (el JSON del `GET` sirve tal cual: los campos que no son de entrada se ignoran),
+   `If-Match` con el `ETag`, `Idempotency-Key` y `modo_esperado` con el modo que se mostró.
+5. 200: refrescar la misma cotización. 201: navegar a la `-vN` (`folio` de la respuesta). 409 `CONFLICTO_CONCURRENCIA` o
+   `ESTADO_NO_PERMITE` (`MODO_CAMBIO`): recargar y confirmar de nuevo. 400: marcar los campos de `detalle.errores` (o `detalle.campo`).
+   503 con `detalle.motivo = RECHAZO_NEXO_FALLIDO`: "NEXO no respondió; no se cambió nada", recargar (la versión subió) y reintentar.
+
+Reglas que conviene saber:
+
+- Las rutas que se conservan **no se reordenan** (`RUTAS_REORDENADAS`); las nuevas pueden ir en cualquier posición. Quitar una ruta con
+  margen ajustado deja su ajuste en el historial sin ruta (aviso `MARGEN_RUTA_QUITADA`).
+- El margen negociado de una ruta que se conserva **sobrevive**; una ruta nueva toma el margen sugerido al enviarse.
+- Solo se vuelven a pedir los camiones al cubicador de las rutas nuevas o con el peso, las mercancías o la clase de viaje cambiados
+  (`rutas_replanificadas`); las demás conservan sus camiones, también el vehículo que la Mesa haya cambiado.
+- `moneda` ausente conserva la guardada; si cambia, se fija la TRM del día.
+- Si el cuerpo no cambia nada, 200 con `sin_cambios: true` y nada se toca.
+
+<!-- respuesta: GET /web/cotizaciones/{folio}/solicitud 200 -->
+```json
+{
+  "folio": "PCN-900555111-DG-09102026-001",
+  "version": 1,
+  "version_negocio": 7,
+  "bloqueados": { "tipo": "spot", "nit_cliente": "900555111", "cliente_nombre": "LONGYIN S.A.S.", "origen_cliente": "cliente" },
+  "campos_bloqueados": ["tipo", "nit_cliente", "cliente_nombre", "origen_cliente", "rutas[].linea_negocio"],
+  "edicion": {
+    "modo": "reemplazo",
+    "permitida": true,
+    "motivo_no_permitida": null,
+    "mensaje": null,
+    "avisos": [
+      { "codigo": "REEMPLAZA_SOLICITUD_NEXO", "mensaje": "La solicitud actual se rechaza en Nexo y se captura de nuevo en el mismo folio." },
+      { "codigo": "PIERDE_TRABAJO_MESA", "mensaje": "La Mesa de Costeo está costeando esta solicitud: se pierde el trabajo que lleve y vuelve a empezar." }
+    ]
+  },
+  "deadline": "2026-10-15T22:00:00+00:00",
+  "notas": null,
+  "moneda": "COP",
+  "linea_negocio": "Importacion",
+  "lineas_negocio_disponibles": ["Importacion"],
+  "rutas": [
+    {
+      "linea_solicitud_id": "0c6d1f0e-7d1c-4f5e-9a3b-2e4f6a8b0c1d",
+      "linea_orden": 1,
+      "linea_negocio": "Importacion",
+      "linea_negocio_bloqueada": true,
+      "origen_municipio_id": 76109,
+      "origen": "Buenaventura",
+      "destino_municipio_id": 11001,
+      "destino": "Bogotá D.C.",
+      "tipologia": "Contenedor",
+      "clase_viaje": "Contenedor",
+      "clase_contenedor": "CNT40.HC",
+      "exclusivo": true,
+      "consolidado": false,
+      "retorna_contenedor": true,
+      "ciudad_devolucion_municipio_id": 76109,
+      "ciudad_devolucion_contenedor": "Buenaventura",
+      "levante_contenedor_diferente": false,
+      "ciudad_levante_municipio_id": null,
+      "ciudad_levante_contenedor": null,
+      "horas_cargue": 4,
+      "horas_descargue": 6.5,
+      "valor_levante_contenedor": null,
+      "valor_mercancia": 250000000,
+      "peso_kg": 28500.5,
+      "mercancias": [
+        { "codigo_mercancia": "CAFE_EN_ESTIBAS", "nombre_mercancia": "Estiba de café", "cantidad": 20, "largo_cm": 120, "ancho_cm": 100, "alto_cm": 150, "peso_kg": 1424.95 }
+      ],
+      "servicios_conexos": [ { "id_servicio_conexo": "CX-1", "nombre": "Cargue", "cantidad": 1 } ],
+      "margen_aplicado": 0.15,
+      "origen_margen": "politica_linea",
+      "margen_negociado": false
+    }
+  ]
+}
+```
+
+<!-- esquema: EdicionSolicitudWeb -->
+```json
+{
+  "modo_esperado": "reemplazo",
+  "motivo": "El cliente cambió el horario de cargue",
+  "deadline": "2026-10-15T17:00:00-05:00",
+  "rutas": [
+    {
+      "linea_solicitud_id": "0c6d1f0e-7d1c-4f5e-9a3b-2e4f6a8b0c1d",
+      "origen_municipio_id": 76109, "origen": "Buenaventura",
+      "destino_municipio_id": 11001, "destino": "Bogotá D.C.",
+      "tipologia": "Contenedor", "clase_viaje": "Contenedor", "clase_contenedor": "CNT40.HC",
+      "exclusivo": true, "consolidado": false,
+      "retorna_contenedor": true, "ciudad_devolucion_municipio_id": 76109, "ciudad_devolucion_contenedor": "Buenaventura",
+      "horas_cargue": 9, "horas_descargue": 6.5, "valor_mercancia": 250000000, "peso_kg": 28500.5,
+      "mercancias": [
+        { "codigo_mercancia": "CAFE_EN_ESTIBAS", "cantidad": 20, "largo_cm": 120, "ancho_cm": 100, "alto_cm": 150, "peso_kg": 1424.95 }
+      ],
+      "servicios_conexos": [ { "id_servicio_conexo": "CX-1", "cantidad": 1 } ]
+    },
+    {
+      "linea_negocio": "Importacion",
+      "origen_municipio_id": 76109, "origen": "Buenaventura",
+      "destino_municipio_id": 76001, "destino": "Cali",
+      "tipologia": "CargaSuelta", "clase_viaje": "Carga Suelta",
+      "peso_kg": 2000,
+      "mercancias": [ { "codigo_mercancia": "BEBIDAS", "cantidad": 10, "largo_cm": 120, "ancho_cm": 100, "alto_cm": 150, "peso_kg": 200 } ]
+    }
+  ]
+}
+```
+
+<!-- respuesta: PUT /web/cotizaciones/{folio}/solicitud 200 -->
+```json
+{
+  "modo": "reemplazo",
+  "folio": "PCN-900555111-DG-09102026-001",
+  "folio_origen": "PCN-900555111-DG-09102026-001",
+  "sin_cambios": false,
+  "cotizacion": {
+    "id": "5b0f8a3e-2c1d-4e6f-9a7b-3c2d1e0f9a8b",
+    "folio": "PCN-900555111-DG-09102026-001",
+    "version": 1,
+    "nit_cliente": "900555111",
+    "origen_cliente": "cliente",
+    "origen_margen": "politica_linea",
+    "cliente": "LONGYIN S.A.S.",
+    "linea_negocio": "Importacion",
+    "precio_final": null,
+    "margen_aplicado": 0.15,
+    "moneda": "COP",
+    "trm_aplicada": 0,
+    "estado_costeo": "pendiente_costeo",
+    "motivo_estado_costeo": null,
+    "estado_envio": "sin_enviar",
+    "ganada": null,
+    "motivo_rechazo": null,
+    "pdf_url": null,
+    "created_at": "2026-10-09T15:20:11.532+00:00",
+    "deadline": "2026-10-15T22:00:00+00:00",
+    "score_prioridad": 0.5
+  },
+  "avisos": [
+    { "codigo": "REEMPLAZA_SOLICITUD_NEXO", "mensaje": "La solicitud actual se rechaza en Nexo y se captura de nuevo en el mismo folio." },
+    { "codigo": "PIERDE_TRABAJO_MESA", "mensaje": "La Mesa de Costeo está costeando esta solicitud: se pierde el trabajo que lleve y vuelve a empezar." }
+  ],
+  "rutas_replanificadas": [2],
+  "rutas_agregadas": [2],
+  "rutas_quitadas": [],
+  "solicitud_nexo_reemplazada": "descartada"
+}
+```
+
+<!-- respuesta: PUT /web/cotizaciones/{folio}/solicitud 400 -->
+```json
+{
+  "error": {
+    "codigo": "CAMPO_NO_EDITABLE",
+    "mensaje": "La línea de negocio de una ruta no se cambia: la ruta 1 es 'Importacion'.",
+    "detalle": {
+      "campo": "rutas[0].linea_negocio",
+      "campos": ["rutas[0].linea_negocio"],
+      "errores": [
+        { "ruta": 0, "campo": "rutas[0].linea_negocio", "codigo": "CAMPO_NO_EDITABLE", "mensaje": "La línea de negocio de una ruta no se cambia: la ruta 1 es 'Importacion'." }
+      ]
+    }
+  }
+}
+```
+
+<!-- respuesta: PUT /web/cotizaciones/{folio}/solicitud 503 -->
+```json
+{
+  "error": {
+    "codigo": "NEXO_NO_DISPONIBLE",
+    "mensaje": "No se pudo rechazar en Nexo la solicitud anterior de PCN-900555111-DG-09102026-001: la edición no se aplicó y no se creó otra solicitud. Intenta de nuevo en unos minutos (recarga la solicitud: su versión cambió).",
+    "detalle": { "motivo": "RECHAZO_NEXO_FALLIDO", "solicitud_nexo_id": "3f2b8c1e-0000-4000-8000-000000000001", "version_negocio": 8, "causa": "COSTEO_NEXO_NO_DISPONIBLE" }
+  }
+}
+```
+
+| HTTP | Código | Cuándo | Qué mostrar |
+|---|---|---|---|
+| 400 | `CAMPO_NO_EDITABLE` | Cambia el cliente, el tipo o la línea de una ruta guardada, o una ruta nueva usa una línea que la solicitud no tiene | Restaurar el valor (`detalle.campo`) |
+| 400 | `SOLICITUD_COSTEO_INVALIDA` | Reglas de la captura, `RUTA_INEXISTENTE`, `RUTA_REPETIDA` o `RUTAS_REORDENADAS` en `detalle.errores` | Marcar los campos |
+| 403 | `NEXO_SIN_PERMISO` | NEXO no deja rechazar la solicitud anterior | "Pide el rol en NEXO"; nada cambió |
+| 409 | `ESTADO_NO_PERMITE` | `LICITACION`, `SIN_FORMULARIO`, `ENVIO_EN_CURSO`, `CUBICACION_EN_CURSO` o `MODO_CAMBIO` en `detalle.motivo` | El mensaje; con `MODO_CAMBIO`, recargar |
+| 409 | `CONFLICTO_CONCURRENCIA` | El `If-Match` ya no es el vigente | Recargar |
+| 428 | `PRECONDICION_REQUERIDA` | Falta `If-Match` | (error de integración) |
+| 503 | `NEXO_NO_DISPONIBLE` (`RECHAZO_NEXO_FALLIDO`) | El rechazo de la solicitud anterior falló: no se capturó otra | "NEXO no respondió; no se cambió nada" y Reintentar tras recargar |
+
+**`re-solicitar` con `datos_carga` queda obsoleto** (`deprecated` en el contrato): para cambiar la carga se usa este `PUT`. Mientras el
+frontend migra, `datos_carga` se sigue aceptando con tres defectos corregidos: las mercancías conservan `codigo_mercancia` y
+`nombre_mercancia`, las ciudades de devolución y de levante aceptan `ciudad_devolucion_municipio_id` y `ciudad_levante_municipio_id`, y un
+cambio de `clase_viaje` vuelve a pedir los camiones al cubicador. `GET .../nueva-version` sigue disponible, pero para prellenar usar el
+`GET .../solicitud`.

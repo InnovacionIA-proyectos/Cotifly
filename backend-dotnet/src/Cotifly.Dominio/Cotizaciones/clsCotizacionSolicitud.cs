@@ -20,7 +20,7 @@ namespace Cotifly.Dominio.Cotizaciones;
 /// Una nueva versión es una fila nueva con <see cref="Version"/> + 1 y folio <c>-vN</c>, sin FK a la original (HU-002.4 Fase 2).
 /// <see cref="CreatedAt"/> y <see cref="UpdatedAt"/> los asigna la persistencia con el reloj de la aplicación.
 /// </summary>
-public sealed class clsCotizacionSolicitud
+public sealed partial class clsCotizacionSolicitud
 {
     public const string CodigoError = "COTIZACION_INVALIDA";
     public const string MonedaPesos = "COP";
@@ -306,7 +306,7 @@ public sealed class clsCotizacionSolicitud
 
             foreach (var conexo in capturada.Conexos ?? [])
             {
-                ruta.AgregarOActualizarConexo(conexo.IdServicioConexo, conexo.Nombre, conexo.Precio, conexo.Cantidad);
+                ruta.AgregarOActualizarConexo(conexo);
             }
 
             _rutas.Add(ruta);
@@ -884,7 +884,7 @@ public sealed class clsCotizacionSolicitud
     {
         ArgumentNullException.ThrowIfNull(conexos);
         var ruta = RutaDeOrden(ordenRuta);
-        var cambios = conexos.Count(c => ruta.AgregarOActualizarConexo(c.IdServicioConexo, c.Nombre, c.Precio, c.Cantidad));
+        var cambios = conexos.Count(ruta.AgregarOActualizarConexo);
         var recalculo = RecalcularRuta(ruta, ahora);
         return recalculo.EsFallo ? recalculo.Error : cambios;
     }

@@ -13,6 +13,9 @@ public sealed class clsServicioConexoRuta
     public const int LargoMaximoId = 64;
     public const int LargoMaximoNombre = 200;
 
+    /// <summary>Largo de <c>categoriaServicioConexo</c> (script 05).</summary>
+    public const int LargoMaximoCategoria = 20;
+
     private clsServicioConexoRuta()
     {
     }
@@ -28,6 +31,20 @@ public sealed class clsServicioConexoRuta
     /// <summary>Nombre del servicio (copia); <c>null</c> en las filas migradas del JSON.</summary>
     public string? Nombre { get; private set; }
 
+    /// <summary>
+    /// HU-014 (#188, <c>idServicioConexoCatalogo</c> del script 03): el id del CATÁLOGO de Nexo del servicio. <see cref="IdServicioConexo"/>
+    /// es el del catálogo en un conexo capturado, pero el de la FILA de la cotización de Nexo en uno agregado o importado (#124, #135); este
+    /// campo dice siempre el del catálogo, así que no hay que resolverlo por nombre (<c>clsResolutorConexosCatalogo</c>). <c>null</c> en las
+    /// filas anteriores a #188 (se resuelven como antes) y si Nexo no lo informó.
+    /// </summary>
+    public string? IdServicioConexoCatalogo { get; private set; }
+
+    /// <summary>
+    /// HU-014 (#188, <c>categoriaServicioConexo</c> del script 05): la categoría del servicio en el catálogo de Nexo (<c>logistico</c>,
+    /// <c>adicional</c>...), copiada al capturar o importar. <c>null</c> en las filas anteriores a #188: el costeo la lee del catálogo.
+    /// </summary>
+    public string? Categoria { get; private set; }
+
     /// <summary>Costo unitario de Nexo al aplicarlo (antes del margen).</summary>
     public decimal Precio { get; private set; }
 
@@ -40,7 +57,9 @@ public sealed class clsServicioConexoRuta
     /// <summary>Costo del conexo en la ruta: <see cref="Precio"/> × <see cref="Cantidad"/>.</summary>
     public decimal Costo => Precio * Cantidad;
 
-    internal static clsServicioConexoRuta Crear(Guid lineaSolicitudId, string idServicioConexo, string? nombre, decimal precio, decimal cantidad)
+    internal static clsServicioConexoRuta Crear(
+        Guid lineaSolicitudId, string idServicioConexo, string? nombre, decimal precio, decimal cantidad,
+        string? idServicioConexoCatalogo = null, string? categoria = null)
     {
         var id = Validar(idServicioConexo, precio, cantidad);
         return new clsServicioConexoRuta
@@ -51,19 +70,31 @@ public sealed class clsServicioConexoRuta
             Nombre = LimpiarNombre(nombre),
             Precio = precio,
             Cantidad = cantidad,
+            IdServicioConexoCatalogo = Acotar(idServicioConexoCatalogo, LargoMaximoId),
+            Categoria = Acotar(categoria, LargoMaximoCategoria),
         };
     }
 
-    /// <summary>Cambia el precio, la cantidad o el nombre (el mismo conexo leído otra vez). Devuelve <c>true</c> si cambió.</summary>
-    internal bool Actualizar(string? nombre, decimal precio, decimal cantidad)
+    /// <summary>
+    /// Cambia el precio, la cantidad o el nombre (el mismo conexo leído otra vez). Devuelve <c>true</c> si cambió alguno de esos tres.
+    /// HU-014 (#188): si trae el id del catálogo o la categoría y la fila no los tenía (una fila anterior a #188), los completa; no
+    /// reemplaza uno ya guardado ni cuenta como cambio (la persistencia sí lo guarda).
+    /// </summary>
+    internal bool Actualizar(string? nombre, decimal precio, decimal cantidad, string? idServicioConexoCatalogo = null, string? categoria = null)
     {
         Validar(IdServicioConexo, precio, cantidad);
         var antes = (Nombre, Precio, Cantidad);
         Nombre = LimpiarNombre(nombre) ?? Nombre;
         Precio = precio;
         Cantidad = cantidad;
+        IdServicioConexoCatalogo ??= Acotar(idServicioConexoCatalogo, LargoMaximoId);
+        Categoria ??= Acotar(categoria, LargoMaximoCategoria);
         return antes != (Nombre, Precio, Cantidad);
     }
+
+    /// <summary>El texto recortado, o <c>null</c> si viene vacío o no cabe en la columna (no se guarda un valor truncado).</summary>
+    private static string? Acotar(string? valor, int largo) =>
+        valor?.Trim() is { Length: > 0 } limpio && limpio.Length <= largo ? limpio : null;
 
     private static string Validar(string idServicioConexo, decimal precio, decimal cantidad)
     {

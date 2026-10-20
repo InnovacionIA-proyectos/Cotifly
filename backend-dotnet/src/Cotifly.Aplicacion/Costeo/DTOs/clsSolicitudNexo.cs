@@ -86,8 +86,9 @@ public sealed record clsSolicitudNexo
 public sealed record clsSolicitudCreadaNexo(string Id, int Lineas, int FletesCalculados, int LineasPorCostear, bool CosteoEnProceso)
 {
     /// <summary>
-    /// HU-023.4: ¿las líneas de los camiones del cubicador llevaron sus códigos de vehículo y carrocería (<c>Nexo:EnviarCodigosCubicador</c>
-    /// al enviar)? El envío lo registra (<see cref="clsEnvioNexoRegistrado"/>) para que el polling compare contra lo que viajó.
+    /// HU-023.4: ¿las líneas de los camiones del cubicador llevaron TODAS sus códigos de vehículo y carrocería (<c>Nexo:EnviarCodigosCubicador</c>
+    /// = <c>siempre</c> al enviar)? Con <c>solo_conocidos</c> (HU-014 #188) unas sí y otras no: <c>false</c>, el caso seguro. El envío lo
+    /// registra (<see cref="clsEnvioNexoRegistrado"/>) para que el polling compare contra lo que viajó.
     /// </summary>
     public bool CodigosCubicadorEnviados { get; init; }
 

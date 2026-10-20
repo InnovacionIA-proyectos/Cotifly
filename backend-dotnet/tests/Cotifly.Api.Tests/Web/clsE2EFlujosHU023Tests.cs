@@ -69,7 +69,7 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
 
         (await Filas($"""
             SELECT CONCAT(l.orden, '|', ISNULL(v.tipoVehiculo, '-'), '|', ISNULL(v.carroceria, '-'), '|', v.pesoKg, '|', IIF(v.idRecomendacionVehiculo IS NULL, '-', 'R'), '|', v.estadoCosteo)
-            {DeLosCamiones(id)} ORDER BY l.orden, v.createdAt, v.id
+            {DeLosCamiones(id)} ORDER BY l.orden, IIF(v.ordenVehiculo IS NULL, 1, 0), v.ordenVehiculo, v.createdAt, v.id
             """)).Should().Equal(
             "1|3S3|FURGON|14000.00|R|pendiente_costeo",
             "1|3S3|FURGON|14000.00|R|pendiente_costeo",
@@ -141,7 +141,7 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
 
         // 3. Conexo diferido: viaja a la línea de Nexo del PRIMER camión de la ruta 1.
         var item = _nexo.PeticionesConexos(_nexo.CotizacionDe(solicitud)!).Should().ContainSingle().Subject["items"]!.AsArray().Should().ContainSingle().Subject!;
-        var primerCamion = await Escalar<string>($"SELECT TOP 1 LOWER(CAST(v.idRecomendacionVehiculo AS nvarchar(40))) {DeLosCamiones(id)} AND l.orden = 1 ORDER BY v.createdAt, v.id");
+        var primerCamion = await Escalar<string>($"SELECT TOP 1 LOWER(CAST(v.idRecomendacionVehiculo AS nvarchar(40))) {DeLosCamiones(id)} AND l.orden = 1 ORDER BY IIF(v.ordenVehiculo IS NULL, 1, 0), v.ordenVehiculo, v.createdAt, v.id");
         var indicePrimero = alta.FindIndex(l => string.Equals(l["idRecomendacionVehiculo"]!.GetValue<string>(), primerCamion, StringComparison.OrdinalIgnoreCase));
         item["lineaId"]!.GetValue<string>().Should().Be(_nexo.LineaCotizacionDe(solicitud, indicePrimero));
 
