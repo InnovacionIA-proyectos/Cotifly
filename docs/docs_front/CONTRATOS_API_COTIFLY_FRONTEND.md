@@ -1495,7 +1495,7 @@ polling.
       "linea_negocio_id": 3,
       "peso_kg": 28500,
       "camiones": [
-        { "tipo_vehiculo": "3S3", "carroceria": "PORTACONTENEDORES", "peso_kg": 28500, "estado_costeo": "autocosteo", "volumen_total_m3": 36, "porcentaje_llenado_volumen": 53.1, "porcentaje_llenado_peso": 83.82 }
+        { "tipo_vehiculo": "3S3", "carroceria": "PORTACONTENEDORES", "peso_kg": 28500, "estado_costeo": "autocosteo", "volumen_total_m3": 36, "porcentaje_llenado_volumen": 53.1, "porcentaje_llenado_peso": 83.82, "estado_linea_nexo": "auto_resuelta", "motivo_pendiente": null }
       ],
       "vehiculos": "1 × 3S3 - PORTACONTENEDORES (28500 KG)",
       "mercancias": [
@@ -2787,7 +2787,7 @@ Notación: `?` = puede ser `null` (el campo viene igual). **(omitible)** = el ca
 | `precio_final_linea` | número? | Precio de la ruta (con sus conexos) |
 | `margen_aplicado`, `margen_sugerido`, `origen_margen` | número?, número?, enum? | Por debajo del sugerido, el ajuste exige justificación |
 | `peso_kg` | número? | Peso declarado de la ruta |
-| `camiones` | `CamionCosteo[]` | `{tipo_vehiculo?, carroceria?, peso_kg?, estado_costeo?, volumen_total_m3?, porcentaje_llenado_volumen?, porcentaje_llenado_peso?}`. Los porcentajes llegan en `null` si no pasó por el cubicador o si la Mesa cambió el vehículo (D2): mostrar "—" |
+| `camiones` | `CamionCosteo[]` | `{tipo_vehiculo?, carroceria?, peso_kg?, estado_costeo?, volumen_total_m3?, porcentaje_llenado_volumen?, porcentaje_llenado_peso?, estado_linea_nexo?, motivo_pendiente?}`. Los porcentajes llegan en `null` si no pasó por el cubicador o si la Mesa cambió el vehículo (D2): mostrar "—". `estado_linea_nexo` (`por_costear`, `auto_resuelta`, `revisada`) y `motivo_pendiente` (#181, texto de NEXO de por qué la línea sigue por costear; solo con el camión en `pendiente_costeo`) son de solo lectura, no se guardan y pueden llegar en `null` (NEXO sin el dato, camión sin asociar o servicio recién reiniciado): `null` = no mostrar nada |
 | `vehiculos` | string? | Texto agrupado como en el PDF ("2 × 3S3 - FURGON (20000 KG)", "Vehículo por definir") |
 | `mercancias` | `MercanciaCosteo[]` | `{orden, codigo_mercancia?, nombre_mercancia?, cantidad, largo_cm, ancho_cm, alto_cm, peso_kg?}` |
 | `servicios_conexos` | `ServicioConexoCosteo[]` | Los de la ruta |
@@ -3167,6 +3167,7 @@ fila_excel, campo, codigo, mensaje}`.
 | 43 | **HU-010.5 (#187):** `GET /web/metricas/regional` acepta `anio` (año completo) y `anio`+`mes` (mes completo), en fechas de Bogotá; si llega `anio`, reemplaza a `desde`/`hasta`. 400 si `mes` llega sin `anio`, está fuera de 1-12 o `anio` no está entre 2020 y el año en curso más uno | Agrega | Selector de año y mes en el tablero del gerente (#51); leer `periodo` de la respuesta |
 | 44 | **Nuevos** `GET` y `PUT /web/cotizaciones/{folio}/solicitud` (HU-028): editar la solicitud en sitio, como reemplazo en NEXO o en una `-vN` | Agrega | Pantalla "Editar solicitud" (3.7 y 4.4.10) |
 | 45 | `datos_carga` de `re-solicitar` queda obsoleto; acepta `codigo_mercancia`, `ciudad_devolucion_municipio_id` y `ciudad_levante_municipio_id` | Cambia | Migrar a `PUT .../solicitud` |
+| 46 | **#181 (NEXO #309):** `rutas[].camiones[]` de `GET .../costeo` trae `estado_linea_nexo` y `motivo_pendiente` (por qué la línea sigue pendiente en NEXO: consulta completa, línea sin vehículo, SICE-TAC que no es del mes actual...). Solo de lectura, no se guardan; `null` si NEXO no los manda | Agrega | Mostrar `motivo_pendiente` junto al camión en `pendiente_costeo`; con `null`, nada |
 
 ---
 

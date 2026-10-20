@@ -536,7 +536,11 @@ Internet / red corporativa
   `ForwardedHeaders__ProxiesConocidos__0=<IP de Traefik>` (agregando esa línea al manifiesto, §5.4) o un CIDR más
   estrecho en `RedesConocidas`.
 - **Una réplica:** el barrido de sesiones y la Idempotency-Key viven en el proceso, y el volumen de PDFs es local
-  (ADR-012). Escalar exige un volumen compartido y el candado de correo en la base.
+  (ADR-012). Escalar exige un volumen compartido y el candado de correo en la base También viven solo en memoria las cubicaciones
+  asíncronas (opción D) y, desde #181, el estado y el motivo pendiente de la línea de NEXO de cada camión
+  (`estado_linea_nexo`/`motivo_pendiente` de `GET .../costeo`): los escribe el polling y los lee la API del mismo proceso,
+  se pierden con un reinicio o un despliegue (vuelven con la siguiente consulta del polling) y con más réplicas una
+  réplica no vería lo que leyó el polling de otra. Escalar exige guardarlos en la base.
 - **TLS:** los labels de Traefik (router `websecure`, `certresolver=letsencrypt`, HSTS, puerto 8080 y healthcheck de
   `/health/ready`) están escritos; que el certificado funcione depende de HU-006.2.
   - **Versión de Traefik (informativo):** los manifiestos usan `traefik.docker.network`, la etiqueta de Traefik v2

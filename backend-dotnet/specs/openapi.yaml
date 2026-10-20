@@ -4883,6 +4883,22 @@ components:
           minimum: 0
           maximum: 100
           description: HU-023.3. Qué tan lleno va el camión en peso; `null` sin recomendación.
+        estado_linea_nexo:
+          type: string
+          nullable: true
+          description: |
+            #181 (Nexo #309). Estado de la línea del camión en Nexo, en `snake_case`: `por_costear`, `auto_resuelta` o `revisada`
+            (un valor nuevo de Nexo llega con la misma conversión). Solo se muestra, no se guarda en la base: lo lee el polling y
+            sale en `null` si Nexo no lo manda (versión anterior), si el camión aún no se asoció a su línea o si el servicio se
+            reinició y el polling no ha vuelto a consultar.
+        motivo_pendiente:
+          type: string
+          nullable: true
+          description: |
+            #181 (Nexo #309). Por qué la línea del camión sigue pendiente en Nexo, con el texto de Nexo (p. ej. "Línea sin vehículo:
+            requiere consulta completa" o "SICE-TAC no se usa: el período más reciente cargado es AAAAMM..."). Solo con
+            `estado_costeo = pendiente_costeo`; `null` en los demás casos o si Nexo no lo manda. Mostrarlo en lugar de un
+            "pendiente de costeo" mudo.
 
     MercanciaCosteo:
       type: object
