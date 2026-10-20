@@ -5186,7 +5186,9 @@ components:
           description: |
             HU-030.1 (#184). El peso con tara que viaja a Nexo en la línea del camión: con un solo camión, el de la ruta; con varios, el
             peso de carga del camión más una parte igual de la tara (el último camión se queda con el resto del redondeo, así la suma
-            es exactamente el de la ruta). `null` si la ruta no lleva tara.
+            es exactamente el de la ruta). `null` si la ruta no lleva tara. Integración 1021 (con #183): también `null` en un camión
+            rechazado fuera del envío (no viaja ni lleva tara); la tara de cada contenedor es la tara total entre TODOS los camiones de
+            la ruta y el resto del redondeo va en el último que viaja.
         estado_costeo:
           type: string
           nullable: true

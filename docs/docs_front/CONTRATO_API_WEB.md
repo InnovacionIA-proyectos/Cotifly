@@ -1703,7 +1703,10 @@ la suma de las mercancías): `PESO_CON_TARA_MENOR_QUE_CARGA`; con otra clase de 
 camión más una parte igual de la tara (`peso_con_tara_kg` menos la suma de los pesos de carga de los camiones; un contenedor por camión, de la misma clase); el último camión en
 orden se queda con el resto del redondeo, así que la suma de las líneas es exactamente `peso_con_tara_kg`. En los dos casos la línea va
 **sin posiciones**: Nexo valida que el peso de una línea con posiciones coincida al 1 % con su suma (`PESO_INCONSISTENTE`, confirmado al
-cerrar NEXO#308) y la tara la descuadraría. Sin `peso_con_tara_kg` todo sigue como antes.
+cerrar NEXO#308) y la tara la descuadraría. Sin `peso_con_tara_kg` todo sigue como antes. Integración 1021 (con #183): la tara de un contenedor es
+`(peso_con_tara_kg − Σ pesos de carga de las líneas de TODOS los camiones) / N` (N = todos los camiones de la ruta, truncada a 2
+decimales); solo la llevan los camiones que viajan, el último que viaja suma el resto del redondeo, y un camión rechazado fuera del envío
+no viaja ni lleva tara (`camiones[].peso_con_tara_kg = null`).
 
 **Lectura.** `GET .../costeo` (y `costeo` del detalle por folio) trae `rutas[].peso_con_tara_kg` y, por camión, el peso con tara que
 viajó a Nexo:

@@ -531,9 +531,14 @@ public sealed partial class clsLineaSolicitud
 
     /// <summary>
     /// HU-030.1 (#184): el peso con tara que viaja a Nexo en la línea de <paramref name="camion"/> (<see cref="PesoLineaNexo"/>), o
-    /// <c>null</c> si la ruta no lleva tara. Es lo que el comercial ve por camión en el costeo.
+    /// <c>null</c> si la ruta no lleva tara. Es lo que el comercial ve por camión en el costeo. Integración 1021 (con HU-028.1, #183): un
+    /// camión rechazado que quedó fuera del envío (<see cref="clsVehiculoLineaSolicitud.FueraDelEnvio"/>) no viaja ni lleva tara: <c>null</c>.
     /// </summary>
-    public decimal? PesoConTaraCamion(clsVehiculoLineaSolicitud camion) => LlevaTara ? PesoLineaNexo(camion) : null;
+    public decimal? PesoConTaraCamion(clsVehiculoLineaSolicitud camion)
+    {
+        ArgumentNullException.ThrowIfNull(camion);
+        return LlevaTara && !camion.FueraDelEnvio ? PesoLineaNexo(camion) : null;
+    }
 
     /// <summary>
     /// ¿La ruta tiene un solo camión (contando los descartados)? Decide si la línea lleva las posiciones y el peso de la ruta
@@ -561,6 +566,8 @@ public sealed partial class clsLineaSolicitud
     /// clase: la misma tara), en céntimos, y el último camión en orden (<see cref="VehiculosOrdenados"/>) se queda con el resto del
     /// redondeo: la suma de las líneas es exactamente el peso con tara. Con un solo camión, la línea lleva el peso con tara tal cual. Como
     /// el peso sin tara, cuenta los camiones descartados: lo que ya viajó no cambia y el emparejador vuelve a calcular el mismo peso.
+    /// Integración 1021 (con #183): un camión rechazado fuera del envío no lleva tara y el redondeo lo absorbe el último que viaja
+    /// (<see cref="TaraDelCamion"/>).
     /// </remarks>
     public decimal? PesoLineaNexo(clsVehiculoLineaSolicitud camion)
     {
@@ -587,17 +594,26 @@ public sealed partial class clsLineaSolicitud
 
     /// <summary>
     /// HU-030.1 (#184): la parte de la tara que lleva <paramref name="camion"/> (ver <see cref="PesoLineaNexo"/>), o <c>null</c> si la
-    /// ruta no lleva tara o no se conoce su peso de carga. Una tara negativa (dato anterior a la validación) cuenta como 0.
+    /// ruta no lleva tara, no se conoce su peso de carga o el camión no viaja. Una tara negativa (dato anterior a la validación) cuenta como 0.
     /// </summary>
     /// <remarks>
-    /// La tara es el peso con tara menos la carga que <b>viaja</b> en las líneas (la suma de <see cref="PesoCargaLineaNexo"/> de todos
-    /// los camiones), no la declarada: con varios camiones, la suma de sus pesos del cubicador puede diferir hasta 1 % del <see cref="PesoKg"/>
-    /// declarado (sale de las mercancías), y así la suma de las líneas sigue siendo exactamente el peso con tara (validación #184). Si
-    /// algún camión no trae peso, se usa la carga de la ruta (<see cref="PesoKg"/> o la suma de las mercancías).
+    /// <para>
+    /// La tara total es el peso con tara menos la carga que <b>viaja</b> en las líneas (la suma de <see cref="PesoCargaLineaNexo"/> de
+    /// TODOS los camiones de la ruta), no la declarada: con varios camiones, la suma de sus pesos del cubicador puede diferir hasta 1 % del
+    /// <see cref="PesoKg"/> declarado (sale de las mercancías), y así la suma de las líneas sigue siendo exactamente el peso con tara
+    /// (validación #184). Si algún camión no trae peso, se usa la carga de la ruta (<see cref="PesoKg"/> o la suma de las mercancías).
+    /// </para>
+    /// <para>
+    /// Integración 1021 (con HU-028.1, #183: los camiones rechazados por la Mesa no se reenvían): hay un contenedor por camión, así que la
+    /// tara de UN contenedor es la tara total dividida entre el número TOTAL de camiones de la ruta (<c>N</c>, en céntimos, hacia cero).
+    /// Solo la llevan los camiones que viajan (los que no están <see cref="clsVehiculoLineaSolicitud.FueraDelEnvio"/>): cada uno su parte, y
+    /// el ÚLTIMO que viaja suma además el resto del redondeo (<c>tara − parte × N</c>). Un rechazado fuera del envío no lleva tara (<c>null</c>)
+    /// y su contenedor no carga a los demás. Sin rechazados es la regla de #184 (el último camión cuadra la suma con el peso con tara).
+    /// </para>
     /// </remarks>
     private decimal? TaraDelCamion(clsVehiculoLineaSolicitud camion)
     {
-        if (!LlevaTara)
+        if (!LlevaTara || camion.FueraDelEnvio)
         {
             return null;
         }
@@ -613,7 +629,8 @@ public sealed partial class clsLineaSolicitud
 
         var tara = Math.Max(0m, PesoConTaraKg!.Value - carga.Value);
         var parte = Math.Round(tara / camiones.Count, clsSolicitudCosteo.Decimales, MidpointRounding.ToZero);
-        return ReferenceEquals(camiones[^1], camion) ? tara - (parte * (camiones.Count - 1)) : parte;
+        var ultimoQueViaja = camiones.Last(v => !v.FueraDelEnvio);
+        return ReferenceEquals(ultimoQueViaja, camion) ? parte + (tara - (parte * camiones.Count)) : parte;
     }
 
     /// <summary>
