@@ -655,7 +655,7 @@ public sealed class clsNexoFalso : HttpMessageHandler
             },
             tiempos = new { horasCargue = 4m, horasDescargue = 4m },
             // LineaCosteoDto: el contenido de cada línea, con la ruta "Origen → Destino" (ObtenerCosteoQuery de Nexo).
-            lineas = Indices(s).Select(i => new
+            lineas = Indices(s).Select(i => ConSituacionLinea(s, i, new
             {
                 lineaId = s.LineaIds[i],
                 ruta = $"{s.Lineas[i].Origen} → {s.Lineas[i].Destino}",
@@ -668,9 +668,33 @@ public sealed class clsNexoFalso : HttpMessageHandler
                 idRecomendacionVehiculo = s.Lineas[i].IdRecomendacionVehiculo,
                 // Nexo #297 (S5-HU-20.5): posición de la línea en el arreglo del alta, desde 1.
                 numeroLinea = i + 1,
-            }).ToArray(),
+            })).ToArray(),
         });
     }
+
+    /// <summary>
+    /// #181 (Nexo #309): con <see cref="ExponerSituacionLinea"/>, la línea lleva al final <c>estadoLinea</c> (minúscula inicial:
+    /// <c>porCostear</c> o <c>autoResuelta</c>) y <c>motivoPendiente</c> (el de <see cref="MarcarMotivoPendiente"/>, solo si sigue por
+    /// costear). Sin ella, la línea sale como la de un Nexo anterior a #309: sin esos campos.
+    /// </summary>
+    private JsonNode ConSituacionLinea(clsSolicitudFalsa s, int indice, object linea)
+    {
+        var nodo = JsonSerializer.SerializeToNode(linea, _json)!;
+        if (ExponerSituacionLinea)
+        {
+            var costeada = s.Cotizacion?.Fletes.ContainsKey(indice) == true;
+            nodo["estadoLinea"] = costeada ? "autoResuelta" : "porCostear";
+            nodo["motivoPendiente"] = !costeada && s.Motivos.TryGetValue(indice, out var motivo) ? motivo : null;
+        }
+
+        return nodo;
+    }
+
+    /// <summary>#181: ¿<c>GET /api/solicitudes/{id}</c> trae <c>estadoLinea</c> y <c>motivoPendiente</c> por línea (Nexo con #309)? Por defecto no.</summary>
+    public bool ExponerSituacionLinea { get; set; }
+
+    /// <summary>#181: Nexo deja la línea <paramref name="indice"/> (base 0, orden de captura) pendiente con este motivo.</summary>
+    public void MarcarMotivoPendiente(string solicitudId, int indice, string motivo) => Con(solicitudId, s => s.Motivos[indice] = motivo);
 
     /// <summary>
     /// <c>GET /api/cotizaciones/por-solicitud/{solicitudId}</c> (Nexo S5-HU-20.1, #286): la cotización que ya existe, SIN crear nada; 204 si
@@ -969,6 +993,9 @@ public sealed class clsNexoFalso : HttpMessageHandler
         public List<clsLineaFalsa> Lineas { get; } = [];
         public string Estado { get; set; } = "Pendiente";
         public clsCotizacionFalsa? Cotizacion { get; set; }
+
+        /// <summary>#181: motivo pendiente por índice de línea (orden de captura).</summary>
+        public Dictionary<int, string> Motivos { get; } = [];
     }
 
     private sealed class clsCotizacionFalsa(string id)

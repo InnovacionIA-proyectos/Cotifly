@@ -1133,7 +1133,7 @@ public sealed class clsEnvioCosteoServiceTests
         var entrada = Captura(Ruta(76109, "Buenaventura", 11001, "Bogotá D.C."));
         var primera = () => servicio.CapturarUnaVezAsync(_ana, entrada, "clave-155-sc", Ct);
         await primera.Should().ThrowAsync<TimeoutException>();
-        registro.BuscarPorFolio(_creada!.Folio)!.ScorePrioridad.Should().Be(62.5m, "el registro guarda el score con el id de Nexo");
+        (await registro.BuscarPorFolioAsync(_creada!.Folio, Ct))!.ScorePrioridad.Should().Be(62.5m, "el registro guarda el score con el id de Nexo");
 
         var guardada = await FolioPendienteSinIdDeNexoAsync(entrada);
 
@@ -1155,8 +1155,8 @@ public sealed class clsEnvioCosteoServiceTests
         var servicio = ServicioIdempotente(registro);
         var entrada = Captura(Ruta(76109, "Buenaventura", 11001, "Bogotá D.C."));
         var guardada = await FolioPendienteSinIdDeNexoAsync(entrada);
-        registro.Registrar($"{clsEnvioCosteoService.OperacionIdempotencia}:{_ana}", "clave-anterior",
-            new clsCapturaIdempotente("huella", guardada.Id, guardada.Folio, "sol-previa", _reloj.AhoraUtc));
+        await registro.RegistrarAsync($"{clsEnvioCosteoService.OperacionIdempotencia}:{_ana}", "clave-anterior",
+            new clsCapturaIdempotente("huella", guardada.Id, guardada.Folio, "sol-previa", _reloj.AhoraUtc), Ct);
 
         var reintento = await servicio.ReintentarAsync(_ana, guardada.Folio, Ct);
 

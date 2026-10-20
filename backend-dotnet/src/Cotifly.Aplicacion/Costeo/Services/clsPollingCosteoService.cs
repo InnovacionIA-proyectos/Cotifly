@@ -69,7 +69,8 @@ public sealed class clsPollingCosteoService(
     IOptions<clsOpcionesCosteoNexo> opciones,
     ILogger<clsPollingCosteoService> logger,
     IClsPrecioCosteoService precioCosteo,
-    IClsEnvioConexosNexoService? envioConexos = null) : IClsPollingCosteoService
+    IClsEnvioConexosNexoService? envioConexos = null,
+    IClsSituacionLineasNexo? situacionesNexo = null) : IClsPollingCosteoService
 {
     /// <summary>Evento de auditoría de cada cambio de estado detectado (<c>EventosHerramienta</c>).</summary>
     public const string HerramientaCambioEstado = "costeo_nexo_estado";
@@ -256,6 +257,10 @@ public sealed class clsPollingCosteoService(
             logger.LogInformation("La cotización {Folio} cambió mientras se consultaba a Nexo: se vuelve a consultar en el siguiente ciclo.", cotizacion.Folio);
             return ResultadoConsultaCosteo.Conflicto;
         }
+
+        // #181: lo que Nexo dice de la línea de cada camión (estado y motivo pendiente) queda a la vista en GET .../costeo, sin guardarse en
+        // la base. Solo con la foto ya guardada: así coincide con los camiones asociados que ve el comercial.
+        situacionesNexo?.Registrar(cotizacion.Id, clsLecturaCosteo.SituacionesPorCamion(cotizacion, consulta.Valor));
 
         if (cambio)
         {

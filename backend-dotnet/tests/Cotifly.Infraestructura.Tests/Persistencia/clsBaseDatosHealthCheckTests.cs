@@ -49,6 +49,10 @@ public sealed class clsBaseDatosHealthCheckTests
 
     [Theory]
     [InlineData("CotizacionesSolicitud.scorePrioridad", clsBaseDatosHealthCheck.DescripcionEsquemaSin09)]
+    // #191: el 06 va entre el 05 y el 09.
+    [InlineData("CapturasIdempotentes.id|CapturasIdempotentes.operacion", clsBaseDatosHealthCheck.DescripcionEsquemaSin06)]
+    [InlineData("CotizacionesSolicitud.scorePrioridad|CapturasIdempotentes.resultado", clsBaseDatosHealthCheck.DescripcionEsquemaSin06)]
+    [InlineData("CapturasIdempotentes.resultado|CotizacionServiciosConexos.categoriaServicioConexo", clsBaseDatosHealthCheck.DescripcionEsquemaSin05)]
     [InlineData("CotizacionesSolicitud.scorePrioridad|CotizacionLineasSolicitud.estadoCubicacion", clsBaseDatosHealthCheck.DescripcionEsquemaSin04)]
     [InlineData("CotizacionesSolicitud.scorePrioridad|CotizacionLineasSolicitud.condicionada", clsBaseDatosHealthCheck.DescripcionEsquemaSin02)]
     // HU-014 (#188): el 03 y el 05, en su lugar de la cadena (02 → 03 → 04 → 05 → 09).
@@ -179,15 +183,40 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
     }
 
     [Fact]
-    public async Task HU0181_ConEl05PeroSinEl09EsUnhealthyPorqueLeFaltaEl09()
+    public async Task HU0181_ConEl06PeroSinEl09EsUnhealthyPorqueLeFaltaEl09()
     {
         // HU-018.1 (#155): el modelo EF mapea CotizacionesSolicitud.scorePrioridad de db/scripts/09_score_prioridad.sql.
-        await using var sin09 = await baseDatos.CrearBaseConScriptsAsync("dbSin09", clsBaseDatosPruebas.ScriptsHasta05);
+        await using var sin09 = await baseDatos.CrearBaseConScriptsAsync("dbSin09", clsBaseDatosPruebas.ScriptsHasta06);
 
         var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin09.Cadena);
 
         resultado.Status.Should().Be(HealthStatus.Unhealthy);
         resultado.Description.Should().Be("esquema incompleto: falta 09");
+    }
+
+    [Fact]
+    public async Task I191_ConEl05PeroSinEl06EsUnhealthyPorqueLeFaltaEl06()
+    {
+        // #191: la Idempotency-Key persistente usa dbo_cotifly.CapturasIdempotentes (db/scripts/06) con SQL propio: sin la tabla, la API
+        // no degrada a memoria, la sonda lo dice.
+        await using var sin06 = await baseDatos.CrearBaseConScriptsAsync("dbSin06", clsBaseDatosPruebas.ScriptsHasta05);
+
+        var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin06.Cadena);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be("esquema incompleto: falta 06");
+    }
+
+    [Fact]
+    public async Task I191_ConLaTablaDeLaPropuestaAnteriorEsUnhealthyPorqueLeFaltaEl06()
+    {
+        // La tabla de la propuesta de #173 (sin operacion, tomadaPor, enCursoHasta, resultado ni scorePrioridad) no basta.
+        await using var vieja = await baseDatos.CrearBaseConScriptsAsync("dbSin06Vieja", clsBaseDatosPruebas.ScriptsHasta05);
+        await clsBaseDatosPruebas.EjecutarAsync(vieja.Cadena, clsIdempotenciaSqlTests.TablaPropuestaAnterior);
+
+        var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(vieja.Cadena);
+
+        resultado.Description.Should().Be("esquema incompleto: falta 06");
     }
 
     [Fact]

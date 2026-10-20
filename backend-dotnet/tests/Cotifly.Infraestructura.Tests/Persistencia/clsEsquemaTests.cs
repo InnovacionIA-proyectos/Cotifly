@@ -24,6 +24,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         "CotizacionServiciosConexos", "CotizacionVehiculosLineaSolicitud", "CotizacionesSolicitud", "EventosConversacion", "EventosHerramienta",
         "MargenAjustes", "MargenesPolitica", "Roles", "SapMapeoTrqType", "Sesiones",
         "TokensRefresco", "TokensRevocados", "UsuariosRoles", "UsuariosWeb",
+
+        // #191: la Idempotency-Key persistente (db/scripts/06; la base de las pruebas aplica toda la cadena de scripts).
+        "CapturasIdempotentes",
     ];
 
     /// <summary>Filtro de las tablas de respaldo que deja el 0009 (<c>Respaldo0009_*</c>): no son del modelo.</summary>
@@ -88,7 +91,8 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         scripts[clsBaseDatosPruebas.ScriptsHasta02 - 1].Should().Be(clsBaseDatosPruebas.Script02);
         scripts[clsBaseDatosPruebas.ScriptsHasta03 - 1].Should().Be(clsBaseDatosPruebas.Script03, "ScriptsHasta03 incluye el 03 y no el 04");
         scripts[clsBaseDatosPruebas.ScriptsHasta04 - 1].Should().Be(clsBaseDatosPruebas.Script04, "ScriptsHasta04 incluye el 04 y no el 05");
-        scripts[clsBaseDatosPruebas.ScriptsHasta05 - 1].Should().Be(clsBaseDatosPruebas.Script05, "ScriptsHasta05 incluye el 05 y no el 09");
+        scripts[clsBaseDatosPruebas.ScriptsHasta05 - 1].Should().Be(clsBaseDatosPruebas.Script05, "ScriptsHasta05 incluye el 05 y no el 06");
+        scripts[clsBaseDatosPruebas.ScriptsHasta06 - 1].Should().Be(clsBaseDatosPruebas.Script06, "ScriptsHasta06 incluye el 06 y no el 09");
         scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script09, "ScriptsSin07 incluye el 09 (el backend mapea scorePrioridad)");
         scripts[clsBaseDatosPruebas.ScriptsSin07].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsSin07 corta justo antes del 07");
         scripts[clsBaseDatosPruebas.ScriptsHasta07 - 1].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsHasta07 incluye el 07");
@@ -170,6 +174,43 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
 
         await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbIdem04Inst");
         await ReaplicarYVerificarIdempotenciaAsync(instalada.Cadena, clsBaseDatosPruebas.Script04);
+    }
+
+    [Fact]
+    public async Task I191_ElScript06EsIdempotenteSobreUnaBaseMigradaYSobreUnaInstalacionDesdeCero()
+    {
+        // #191: CapturasIdempotentes (db/scripts/06; el 01 no la trae).
+        await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem06", clsBaseDatosPruebas.Scripts.Length);
+        await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script06);
+
+        await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbIdem06Inst");
+        await ReaplicarYVerificarIdempotenciaAsync(instalada.Cadena, clsBaseDatosPruebas.Script06);
+        (await clsBaseDatosPruebas.EscalarAsync<int>(instalada.Cadena,
+                "SELECT COUNT(*) FROM sys.indexes WHERE object_id = OBJECT_ID(N'dbo_cotifly.CapturasIdempotentes') "
+                + "AND name IN (N'ix_capturasIdempotentes_expiraAt', N'ix_capturasIdempotentes_folio', N'uq_capturasIdempotentes_usuarioId_operacion_clave')"))
+            .Should().Be(3);
+    }
+
+    [Fact]
+    public async Task I191_ElScript06RecreaLaTablaVaciaDeLaPropuestaAnteriorYSeDetieneSiTieneFilas()
+    {
+        // La propuesta de #173 (sin operacion) nunca la usó el backend: vacía se recrea; con filas, el 06 se detiene sin tocarla.
+        await using var vacia = await BaseDatos.CrearBaseConScriptsAsync("dbIdem06Vieja", clsBaseDatosPruebas.ScriptsHasta05);
+        await clsBaseDatosPruebas.EjecutarAsync(vacia.Cadena, clsIdempotenciaSqlTests.TablaPropuestaAnterior);
+
+        await clsBaseDatosPruebas.AplicarScriptAsync(vacia.Cadena, clsBaseDatosPruebas.Script06);
+
+        (await clsBaseDatosPruebas.EscalarAsync<int>(vacia.Cadena,
+            "SELECT CASE WHEN COL_LENGTH(N'dbo_cotifly.CapturasIdempotentes', N'operacion') IS NULL THEN 0 ELSE 1 END")).Should().Be(1);
+
+        await using var conFilas = await BaseDatos.CrearBaseConScriptsAsync("dbIdem06Filas", clsBaseDatosPruebas.ScriptsHasta05);
+        await clsBaseDatosPruebas.EjecutarAsync(conFilas.Cadena, clsIdempotenciaSqlTests.TablaPropuestaAnterior
+            + "INSERT INTO dbo_cotifly.CapturasIdempotentes (usuarioId, clave, huella, estado, expiraAt) VALUES (NEWID(), N'clave-vieja', REPLICATE('A', 64), N'reservada', SYSDATETIMEOFFSET());");
+
+        var aplicar = () => clsBaseDatosPruebas.AplicarScriptAsync(conFilas.Cadena, clsBaseDatosPruebas.Script06);
+
+        (await aplicar.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("propuesta de #173");
+        (await clsBaseDatosPruebas.EscalarAsync<int>(conFilas.Cadena, "SELECT COUNT(*) FROM dbo_cotifly.CapturasIdempotentes")).Should().Be(1);
     }
 
     [Fact]
@@ -755,8 +796,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         });
 
         ef.Should().BeEquivalentTo(bd);
-        bd.Where(x => x.Contains(":ix_", StringComparison.Ordinal)).Should().HaveCount(15,
-            "el 0002 crea 10 índices ix_, el 0004 uno, el 0006 uno (historial de PDF), el 0009 quita el de posiciones por línea y agrega el de camiones y el de ajustes por ruta, y la propuesta 04 el de la cola del cubicador");
+        bd.Where(x => x.Contains(":ix_", StringComparison.Ordinal)).Should().HaveCount(17,
+            "el 0002 crea 10 índices ix_, el 0004 uno, el 0006 uno (historial de PDF), el 0009 quita el de posiciones por línea y agrega el de camiones y el de ajustes por ruta, la propuesta 04 el de la cola del cubicador y el script 06 (#191) el de vencimiento y el filtrado por folio de las Idempotency-Key");
+        bd.Should().Contain("CapturasIdempotentes:ix_capturasIdempotentes_folio unico=False claves=(folio) include=(expiraAt,scorePrioridad,solicitudNexoId) filtro=folioisnotnull");
         bd.Should().Contain(x => x.StartsWith("CotizacionLineasSolicitud:ix_cotizacionLineasSolicitud_cubicacionPendiente unico=False", StringComparison.Ordinal)
             && x.Contains("claves=(cubicacionDisponibleAt,createdAt)", StringComparison.Ordinal)
             && x.EndsWith("filtro=estadocubicacion=n'pendiente'", StringComparison.Ordinal));

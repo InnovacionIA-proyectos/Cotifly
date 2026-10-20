@@ -512,7 +512,8 @@ public sealed class clsCosteoNexo(
     /// <c>ruta</c>; el swagger de Nexo QA (2026-10-08) la publica como <c>clsRuta</c> (renombre de su DTO), así que se aceptan los dos
     /// nombres. <c>grupoRutaId</c> es el id de la ruta de Cotifly e <c>idRecomendacionVehiculo</c> el camión del cubicador que Nexo guardó
     /// en la línea (HU-023.4, #159; <c>null</c> si la línea viajó sin ellos). <c>grupoRutaId</c> no es su <c>rutaId</c>, que es de su
-    /// catálogo de rutas.
+    /// catálogo de rutas. #181 (Nexo #309): <c>estadoLinea</c> y <c>motivoPendiente</c> van al final de la línea y son opcionales; si Nexo no
+    /// los manda (versión anterior), o no son texto, quedan en <c>null</c> sin error. Solo se muestran: el emparejamiento no los usa.
     /// </summary>
     internal static clsLineaSolicitudNexo LeerLineaSolicitud(JsonElement linea) =>
         new(Texto(linea, "lineaId") ?? string.Empty, Texto(linea, "ruta") ?? Texto(linea, "clsRuta"), Texto(linea, "tipologia"), Decimal(linea, "peso"),
@@ -521,7 +522,15 @@ public sealed class clsCosteoNexo(
             GrupoRutaId = Texto(linea, "grupoRutaId"),
             IdRecomendacionVehiculo = Texto(linea, "idRecomendacionVehiculo"),
             NumeroLinea = Entero(linea, "numeroLinea") ?? Entero(linea, "orden"),
+            EstadoLinea = Cadena(linea, "estadoLinea"),
+            MotivoPendiente = Cadena(linea, "motivoPendiente"),
         };
+
+    /// <summary>La propiedad si es un texto; <c>null</c> si falta, es <c>null</c> o es de otro tipo (#181: campos opcionales de Nexo).</summary>
+    internal static string? Cadena(JsonElement objeto, string propiedad) =>
+        objeto.ValueKind == JsonValueKind.Object && objeto.TryGetProperty(propiedad, out var valor) && valor.ValueKind == JsonValueKind.String
+            ? valor.GetString()
+            : null;
 
     /// <summary><c>{urlBase}{ruta}</c>, con <paramref name="ruta"/> empezando por <c>/api/</c> (la base no lleva <c>/api</c>).</summary>
     public static Uri ConstruirUrl(string urlBase, string ruta)

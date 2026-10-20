@@ -96,6 +96,32 @@ public static class clsLecturaCosteo
         return (ruta, [.. nexo.Conexos.Where(c => !conocidos.Contains(c.Id) && (c.ServicioConexoId is null || !conocidos.Contains(c.ServicioConexoId)))]);
     }
 
+    /// <summary>
+    /// #181: la situación que Nexo informa de la línea de cada camión vigente ya asociado (<c>estadoLinea</c> y <c>motivoPendiente</c> de
+    /// <see cref="clsCosteoConsultadoNexo.Detalle"/>), por id de camión. Se llama después de <see cref="AplicarFoto"/> (que asocia los
+    /// camiones); no toca la cotización ni el emparejamiento. Los camiones sin línea de Nexo, o cuya línea no trae nada (Nexo sin #309), no
+    /// salen.
+    /// </summary>
+    public static IReadOnlyDictionary<Guid, clsSituacionLineaNexo> SituacionesPorCamion(clsCotizacionSolicitud cotizacion, clsCosteoConsultadoNexo foto)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        ArgumentNullException.ThrowIfNull(foto);
+        var porLinea = foto.Detalle
+            .GroupBy(d => d.Id, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().Situacion, StringComparer.OrdinalIgnoreCase);
+        var situaciones = new Dictionary<Guid, clsSituacionLineaNexo>();
+        foreach (var camion in clsPrecioCosteoService.Vigentes(cotizacion))
+        {
+            if (camion.LineaSolicitudNexoId is { } lineaId && porLinea.TryGetValue(lineaId, out var situacion) && !situacion.Vacia)
+            {
+                // La línea de la que se leyó: la vista la muestra solo mientras el camión siga asociado a ella.
+                situaciones[camion.Id] = situacion with { LineaNexoId = lineaId };
+            }
+        }
+
+        return situaciones;
+    }
+
     /// <summary>Motivo de una entregada leída sin precio y sin otra explicación (Nexo no trajo la cotización o sus fletes).</summary>
     public const string MotivoEntregadaSinPrecio =
         "Nexo entregó la cotización pero no devolvió su costeo (cotización o fletes): no se calcula el precio. Revísala con el equipo de Nexo.";

@@ -479,8 +479,10 @@ export function esErrorNegocio(b: unknown): b is ErrorNegocio {
 > solicitud en Nexo: responde la cotización de la primera (201) o, si la primera no terminó de registrar el envío, 409
 > `ESTADO_NO_PERMITE` con `detalle.motivo = CAPTURA_EN_CURSO` y `detalle.folio`: no reintentar, llevar al comercial a "Mis
 > cotizaciones" con ese folio. La misma clave con otro cuerpo es 409 `IDEMPOTENCY_KEY_REUTILIZADA` (`ErrorNegocio`; antes 400 con texto). Si el 201 trae `avisos: ["RESUMEN_INCOMPLETO"]`, la cotización
-> sí quedó creada: recargar "Mis cotizaciones" (no reenviar). Limitación conocida: la clave vive en la memoria del servidor (se pierde
-> al reiniciar; tabla propuesta en `db/scripts/pendientes/06`).
+> sí quedó creada: recargar "Mis cotizaciones" (no reenviar). Desde #191 la clave se guarda en la base (`db/scripts/06`): sobrevive a un
+> reinicio y la comparten las réplicas. Si la repetición cae en otra réplica mientras la primera sigue en curso, también es 409
+> `ESTADO_NO_PERMITE` con `detalle.motivo = CAPTURA_EN_CURSO` (sin `detalle.folio` si aún no hay folio): esperar unos segundos y repetir
+> con la misma clave. Los números del cuerpo se comparan por valor (`1.5` = `1.50`).
 
 Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA` → 404 `ErrorWeb`; `SIN_PERMISO` → 403 `ErrorWeb`; validaciones → 400 `ErrorWeb`; las dependencias caídas (`CORREO_DESHABILITADO`, `COSTEO_NEXO_NO_DISPONIBLE`, `COSTEO_NEXO_TIEMPO_AGOTADO`, `NEXO_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE`, `CATALOGOS_FLETE_NO_DISPONIBLE`, `REGIONAL_NO_DISPONIBLE`, `PDF_RENDER_NO_DISPONIBLE`, `SERVICIO_OCUPADO` y los `CUBICADOR_*`) → 503 `ErrorNegocio`; `NEXO_SIN_PERMISO` → 403 `ErrorNegocio`; los de conflicto de estado del costeo y `CONFLICTO_CONCURRENCIA` → 409 `ErrorNegocio`; `PRECONDICION_REQUERIDA` → 428 `ErrorNegocio`; el resto de códigos de negocio → 400 `ErrorNegocio`. El servidor nunca responde 412. En la práctica casi todos los errores de `/web/*` con código son `ErrorNegocio`: parsear siempre las dos formas.
 
@@ -579,6 +581,7 @@ Resumen:
 | `POST /web/cubicacion` | Ambos | En QA |
 | `POST /web/solicitudes-costeo` | Ambos | En QA |
 | `POST /web/cotizaciones/{folio}/costeo/reintentar` | Ambos (dueño) | En QA |
+| `GET /web/cotizaciones/{folio}` | Dueño o gerente de su regional (solo consulta) | Implementado (HU-027.1, #179), pendiente de QA. Sección 5.29 |
 | `GET /web/cotizaciones/{folio}/costeo` | Ambos (dueño) | En QA |
 | `PUT /web/cotizaciones/{folio}/costeo/servicios-conexos` | Ambos (dueño) | En QA |
 | `POST /web/cotizaciones/{folio}/costeo/pdf` | Ambos (dueño) | En QA |
@@ -768,7 +771,7 @@ Vista "Todas las cotizaciones" del gerente comercial: las cotizaciones de los co
 | `comercial.usuario_id` | UUID | Dueño de la cotización (`UsuariosWeb.id`); el mismo `usuario_id` de `/web/metricas/regional` |
 | `comercial.nombre_usuario`, `comercial.nombre_completo` | string o null | Mostrar `nombre_completo` (o `nombre_usuario` si es null) |
 
-`comercial` solo viene en este endpoint: `GET /web/mis-cotizaciones` y las demás respuestas con `CotizacionResumen` no lo traen.
+`comercial` solo viene en este endpoint y en el detalle por folio (sección 5.29): `GET /web/mis-cotizaciones` y las demás respuestas con `CotizacionResumen` no lo traen.
 
 Errores:
 
@@ -1278,6 +1281,7 @@ La cotización tiene una o varias rutas y cada una tiene su margen y sus conexos
 - **Concurrencia y PDF:** como siempre, `If-Match` obligatorio (428/409) y el `ETag` nuevo en la respuesta. Sin enviar, el PDF vigente queda invalidado (`pdf_desactualizado`); enviada o con resultado, 409 `PDF_YA_ENVIADO` con la llamada para crear la versión `-vN`. Sin cambios (mismo margen o mismas cantidades), 200 sin tocar nada.
 - **Asistente:** la acción propuesta `ajustar_margen` trae `linea_orden` en el `cuerpo`: enviarlo tal cual al Confirmar. Si la cotización tiene varias rutas y el comercial no dijo cuál, el asistente pregunta antes de proponer.
 - **Camiones y mercancías de cada ruta (HU-021.9, #136):** `rutas[]` trae también `linea_negocio_id`, `peso_kg`, `camiones[]` (`tipo_vehiculo`, `carroceria`, `peso_kg`, `estado_costeo`; sin costos; vehículo en `null` = lo define la Mesa de Costeo), `vehiculos` (el texto que imprime el PDF, por ejemplo "2 × 3S3 - FURGON (20000 KG)") y `mercancias[]` (`orden`, `codigo_mercancia`, `nombre_mercancia`, `cantidad`, medidas y `peso_kg`). Un camión `descartada` sigue en la lista con su estado, pero no cuenta en el precio ni sale en el PDF.
+- **Por qué un camión sigue pendiente (#181, Nexo #309):** cada `camiones[]` trae además `estado_linea_nexo` (`por_costear`, `auto_resuelta` o `revisada`) y `motivo_pendiente` (texto de Nexo, p. ej. "Línea sin vehículo: requiere consulta completa" o "SICE-TAC no se usa: ..."; solo con el camión en `pendiente_costeo`). Mostrar el motivo junto al camión pendiente en vez de un "pendiente de costeo" sin explicación. Son solo de lectura y **no se guardan**: los lee el polling y llegan en `null` si Nexo no los manda (versión anterior), si el camión aún no se asoció a su línea o justo después de un reinicio del servicio (vuelven con la siguiente consulta). `null` = no mostrar nada, nunca un error. Salen en `GET .../costeo` y en las respuestas de los `PUT` de margen y de conexos; en las demás mutaciones vienen en `null` (volver a pedir el `GET`).
 
 ### 5.18.2 Contrato HU-021 cerrado (HU-021.11, #138): cambios que rompen
 
@@ -1922,6 +1926,25 @@ Contrato completo, ejemplos y errores en `CONTRATO_API_WEB.md` §8.13; flujo de 
   `detalle.motivo = RECHAZO_NEXO_FALLIDO` (no se cambió nada ni se capturó otra solicitud; la versión subió: recargar).
 - **Reemplaza** el uso de `GET .../nueva-version` para prellenar y de `datos_carga` en `re-solicitar` (obsoleto) para cambiar la carga.
 
+### 5.29 Detalle por folio (`GET /web/cotizaciones/{folio}`). HU-027.1 (#179): implementado, pendiente de QA
+
+Para "Ver detalle" (HU-021-FE.7, #75) y para **recargar** esa página: una sola llamada en lugar de combinar `GET /web/mis-cotizaciones`
+con `GET .../costeo`. Contrato completo y ejemplo en `CONTRATO_API_WEB.md` §8.14.
+
+- **200 `DetalleCotizacion`** con el `ETag` (= `row_version`): `cotizacion` (la misma fila de "Mis cotizaciones", con el dueño en
+  `comercial`), `costeo` (lo mismo que `GET .../costeo`: rutas con camiones, porcentajes de llenado, mercancías, conexos con precio,
+  margen, precio y avisos), `captura` (las rutas como las devuelve `GET .../solicitud`: municipios por id y nombre y condiciones; se
+  cruzan con `costeo.rutas[]` por `linea_solicitud_id`), `tipo`, `notas`, `fechas` y `totales`. Se pueden reutilizar los componentes que
+  ya pintan `CotizacionResumen`, `CosteoCotizacion` y `RutaEditable`.
+- **Acceso:** el dueño; un gerente comercial de la regional del dueño la ve en **solo consulta** (`solo_lectura: true`: esconder las
+  acciones, que le responden 404; descargar el PDF sí puede, sección 5.6). Cualquier otro usuario: 404.
+- **No consulta NEXO** ni dispara el polling: muestra lo último que Cotifly guardó. Para ver si llegó el costeo, volver a pedirlo más tarde
+  (no en un bucle apretado).
+- Sin costeo, los precios de `costeo`, de sus rutas y de `totales` vienen en `null`.
+- **Una fuente por dato** (tabla en `CONTRATO_API_WEB.md` §8.14): precios, margen, camiones y conexos con precio de `costeo.rutas[]`;
+  municipios y condiciones de `captura`; resultado, envío y dueño de `cotizacion`; totales de `totales`. No usar `captura` para
+  prellenar "Editar solicitud" (sección 5.28): para eso está `GET .../solicitud`.
+
 ## 6. Flujos
 
 ### 6.1 Login y renovación de sesión
@@ -2359,6 +2382,7 @@ UI por estado:
 | Tablero de regional (`/web/metricas/regional`) | No (403) | Sí (HU-010.3): su regional, filtrable por comercial | Política `GerenteComercial`; 409 sin regional |
 | Administrar márgenes | No | Sí | `/web/admin/*` solo `gerente_comercial` (403 si no). HU-004.10 dice "rol admin": es `gerente_comercial` |
 | PDF de otros comerciales | No | Solo de su regional (y solo si su regional se conoce) | `/pdfs` |
+| Detalle de otros comerciales ("Ver detalle") | No (404) | Solo de su regional, en solo consulta (`solo_lectura`) | `GET /web/cotizaciones/{folio}` (#179) |
 
 - Usar `user.rol` del login de Cotifly (o el claim `rol`), no los `IDROLES` de ClientePro.
 - Proteger las rutas con guards además de esconder los menús; el backend igual valida.

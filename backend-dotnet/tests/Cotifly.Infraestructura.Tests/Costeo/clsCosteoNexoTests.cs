@@ -381,6 +381,37 @@ public sealed class clsCosteoNexoTests : IDisposable
     }
 
     [Fact]
+    public void Hu181_LaLineaTraeElEstadoYElMotivoPendienteDeNexo309()
+    {
+        // Nexo #309 (S6-HU-24.1): al final de clsLineaCosteoDto, opcionales; estadoLinea con minúscula inicial.
+        using var documento = JsonDocument.Parse(
+            """{"lineaId":"L1","clsRuta":"BUENAVENTURA → BOGOTA","peso":10000,"numeroLinea":1,"tieneReglaSoloSicetac":false,"estadoLinea":"porCostear","motivoPendiente":"SICE-TAC no se usa: el período más reciente cargado es 202609 y el del mes actual es 202610 (sin mes de gracia). El Administrador de Tarifas debe validar el flete.","lineaNegocio":null}""");
+
+        var linea = clsCosteoNexo.LeerLineaSolicitud(documento.RootElement);
+
+        linea.EstadoLinea.Should().Be("porCostear");
+        linea.MotivoPendiente.Should().StartWith("SICE-TAC no se usa");
+        linea.Situacion.Should().Be(new Dominio.Cotizaciones.clsSituacionLineaNexo("por_costear", linea.MotivoPendiente));
+        linea.NumeroLinea.Should().Be(1, "lo demás se lee igual");
+    }
+
+    [Theory]
+    [InlineData("""{"lineaId":"L1","clsRuta":"A → B","peso":1}""")]
+    [InlineData("""{"lineaId":"L1","clsRuta":"A → B","peso":1,"estadoLinea":null,"motivoPendiente":null}""")]
+    [InlineData("""{"lineaId":"L1","clsRuta":"A → B","peso":1,"estadoLinea":0,"motivoPendiente":{"texto":"x"}}""")]
+    public void Hu181_SinLosCamposDeNexo309OConOtroTipoQuedanEnNullSinError(string json)
+    {
+        // Un Nexo anterior a #309 no los manda; uno que mandara el enum como número tampoco rompe la lectura.
+        using var documento = JsonDocument.Parse(json);
+
+        var linea = clsCosteoNexo.LeerLineaSolicitud(documento.RootElement);
+
+        (linea.EstadoLinea, linea.MotivoPendiente).Should().Be(((string?)null, (string?)null));
+        linea.Situacion.Vacia.Should().BeTrue();
+        linea.Should().Be(new Dominio.Cotizaciones.clsLineaSolicitudNexo("L1", "A → B", null, 1m, null, null));
+    }
+
+    [Fact]
     public async Task ConLasBanderasApagadasLaLineaDelCubicadorVaSinVehiculoNiCamposNuevos()
     {
         // Contrato con Nexo #297 (S5-HU-20.5): con las banderas apagadas (interruptor de emergencia, HU-023 #176) no viajan grupoRutaId,

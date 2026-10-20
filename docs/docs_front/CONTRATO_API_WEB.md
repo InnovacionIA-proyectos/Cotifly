@@ -61,6 +61,7 @@ ClientePro (ya autenticado)
 | `GET /web/municipios` | ambos | Buscador de origen y destino (`?q=&departamento=`, máx. 50) o catálogo completo sin filtros. 503 `MUNICIPIOS_NO_DISPONIBLE` si Nexo no responde (antes 400). Ver §8.1, fila 5 |
 | `GET /web/mis-cotizaciones` | ambos | Cotizaciones propias (máx. 100) |
 | `GET /web/cotizaciones/regional` | gerente_comercial | HU-016.1 (#154): cotizaciones de los comerciales de su regional (máx. 100), con la forma de `mis-cotizaciones` y el comercial dueño en cada fila. Ver §8.10.1 |
+| `GET /web/cotizaciones/{folio}` | dueño o gerente de su regional | HU-027.1 (#179): detalle completo en una llamada (cabecera, costeo por ruta, rutas capturadas y totales) con el `ETag`; el gerente solo consulta. Ver §8.14 |
 | `POST /web/cotizaciones/{folio}/enviar` | ambos | Envía la cotización por correo con el PDF. 503 `ErrorNegocio` `CORREO_DESHABILITADO` si el correo está deshabilitado en el servidor |
 | `POST /web/cotizaciones/{folio}/correo/vista-previa` | ambos | Asunto, cuerpo y destinatarios sin enviar |
 | `POST /web/cotizaciones/{folio}/seguimiento` | ambos | Marca ganada o perdida **solo** cotizaciones fuera de Nexo (`estado_costeo` `null`, `descartada` o `costeo_vencido`). Las de Nexo responden 409 `USAR_RESULTADO_NEXO`, con `detalle` = `{metodo, endpoint, requiere_if_match}` (HU-021.13) |
@@ -616,7 +617,7 @@ primer nivel son los de la ruta 1:
       "origen_margen": "politica_linea",
       "vehiculos": "1 × 3S3 - PORTACONTENEDORES (28500.5 KG)",
       "camiones": [
-        { "tipo_vehiculo": "3S3", "carroceria": "PORTACONTENEDORES", "peso_kg": 28500.5, "estado_costeo": "autocosteo" }
+        { "tipo_vehiculo": "3S3", "carroceria": "PORTACONTENEDORES", "peso_kg": 28500.5, "estado_costeo": "autocosteo", "estado_linea_nexo": "auto_resuelta", "motivo_pendiente": null }
       ],
       "mercancias": [
         { "orden": 1, "codigo_mercancia": "CAFE_EN_ESTIBAS", "nombre_mercancia": "Estiba de café", "cantidad": 20, "largo_cm": 120, "ancho_cm": 100, "alto_cm": 150, "peso_kg": 1425 }
@@ -657,6 +658,17 @@ primer nivel son los de la ruta 1:
 ```
 
 `estado_nexo` y `aviso_conexos_nexo` solo vienen con valor en `GET .../costeo`; en las respuestas de las mutaciones son `null`.
+
+**Por qué un camión sigue pendiente (#181, Nexo #309).** Cada `rutas[].camiones[]` trae `estado_linea_nexo` (`por_costear`,
+`auto_resuelta` o `revisada`: el estado de su línea en Nexo) y `motivo_pendiente` (el texto de Nexo de por qué la línea sigue por
+costear, p. ej. `"Línea sin vehículo: requiere consulta completa"` o `"SICE-TAC no se usa: el período más reciente cargado es AAAAMM y
+el del mes actual es AAAAMM (sin mes de gracia). El Administrador de Tarifas debe validar el flete."`). `motivo_pendiente` solo llega
+con el camión en `estado_costeo = pendiente_costeo`: mostrarlo junto al camión en lugar de un "pendiente de costeo" sin explicación.
+Los dos son **solo de lectura y no se guardan en la base**: los lee el polling del costeo y llegan en `null` si Nexo no los manda
+(versión anterior a su #309), si el camión aún no se asoció a su línea de Nexo o justo después de reiniciar el servicio (vuelven con la
+siguiente consulta del polling, en minutos). `null` = no mostrar nada; nunca es un error. Salen en `GET .../costeo`, en `costeo` de `GET /web/cotizaciones/{folio}` (§8.14) y en las respuestas
+de `PUT .../costeo/margen` y `PUT .../costeo/servicios-conexos`; en las demás mutaciones del costeo vienen en `null` (volver a pedir el
+`GET`).
 
 **El vehículo de cada camión: la Mesa manda (D2, decisión del 2026-10-19).** "Si la Mesa de Costeo realiza un cambio, nos acogemos a
 dichos cambios, incluido el tipo de vehículo." `rutas[].camiones[].tipo_vehiculo` y `carroceria` nacen con los códigos del cubicador
@@ -822,7 +834,7 @@ gerente, resuelta en el servidor con la misma regla que `GET /web/metricas/regio
 cotizaciones de otra regional. El propio gerente es miembro de su regional, así que sus cotizaciones también salen.
 
 - Cada fila es un `CotizacionResumen` (la misma forma de `GET /web/mis-cotizaciones`: línea de la ruta 1 o `Varias`, `precio_final` de
-  la cabecera) más `comercial` = `{usuario_id, nombre_usuario, nombre_completo}` del dueño. `comercial` solo viene en este endpoint.
+  la cabecera) más `comercial` = `{usuario_id, nombre_usuario, nombre_completo}` del dueño. `comercial` solo viene en este endpoint y en el detalle por folio (§8.14).
 - Máximo 100 en total (no por comercial), de la más reciente a la más antigua (`created_at` y, a igualdad, `folio` descendente). Sin
   filtros ni paginación: para filtrar por comercial, el frontend filtra la lista por `comercial.usuario_id`.
 - Errores: 409 `REGIONAL_NO_ASIGNADA` (gerente sin regional; nunca se devuelven todas las regionales) y 503 `REGIONAL_NO_DISPONIBLE`
@@ -1363,3 +1375,237 @@ frontend migra, `datos_carga` se sigue aceptando con tres defectos corregidos: l
 `nombre_mercancia`, las ciudades de devolución y de levante aceptan `ciudad_devolucion_municipio_id` y `ciudad_levante_municipio_id`, y un
 cambio de `clase_viaje` vuelve a pedir los camiones al cubicador. `GET .../nueva-version` sigue disponible, pero para prellenar usar el
 `GET .../solicitud`.
+
+### 8.14 Detalle por folio: `GET /web/cotizaciones/{folio}` (HU-027.1, #179)
+
+"Ver detalle" (HU-021-FE.7, #75) en **una sola llamada**, también para recargar la página: ya no hace falta combinar
+`GET /web/mis-cotizaciones` (cliente, NIT, `estado_envio`, `ganada`) con `GET .../costeo`. Es una composición de las respuestas que el
+frontend ya conoce, con sus mismas reglas y nombres:
+
+| Campo | Forma | Qué trae |
+|---|---|---|
+| `cotizacion` | `CotizacionResumen` (la fila de "Mis cotizaciones") | Folio, versión, cliente y NIT, `estado_envio`, `estado_costeo`, resultado (`ganada`, `motivo_rechazo`), `deadline` en UTC, `score_prioridad`, moneda y TRM, `pdf_url`, y el dueño en `comercial` (aquí siempre viene) |
+| `costeo` | `CosteoCotizacion` (lo mismo que `GET .../costeo`) | Por ruta: camiones con vehículo, porcentajes de llenado y estado, mercancías, conexos con precio y `estado_nexo`, margen, precio y avisos; `pdf_desactualizado`, `textos`, `row_version` |
+| `captura` | `RutaEditable[]` (lo mismo que `rutas` de `GET .../solicitud`) | Municipios por id y nombre y condiciones de cada ruta (tipología, clases, exclusivo, contenedor, horas, valores, peso). Se cruza con `costeo.rutas[]` por `linea_solicitud_id` |
+| `tipo`, `notas`, `fechas` | | Tipo de la solicitud, notas, y `created_at`, `updated_at`, `costeo_enviado_at`, `costeo_listo_at`, `marcado_at` (UTC) |
+| `totales` | `TotalesCotizacion` | `rutas`, `camiones` (los que cuentan en el precio), `peso_kg`, `precio_transporte`, `precio_conexos` y `precio_final` (`transporte + conexos = final`; `null` mientras alguna ruta no tenga precio) |
+| `row_version` | | La versión de la fila (también en el `ETag`) para el `If-Match` de las acciones que siguen |
+| `solo_lectura` | | `true` si lo consulta un gerente de la regional del dueño |
+
+- **Qué fuente usar.** Algunos datos vienen en más de un bloque; siempre valen lo mismo, pero úsese uno solo para cada cosa:
+
+  | Dato | Fuente | No usar |
+  |---|---|---|
+  | Estado del costeo, precio total, moneda y TRM | `costeo` (`estado_costeo`, `precio_final`, `moneda`, `trm_aplicada`) | `cotizacion.*` es la fila del listado (mismos valores) |
+  | Precio, margen, camiones, mercancías y avisos de cada ruta | `costeo.rutas[]` | `captura[].margen_aplicado` viene aunque la ruta no tenga precio |
+  | Conexos con precio y `estado_nexo` | `costeo.rutas[].servicios_conexos` (por ruta) | `costeo.servicios_conexos` (todas las rutas juntas) solo para un total; `captura[].servicios_conexos` no trae precio y agrupa por servicio |
+  | Municipios (id y nombre), condiciones y valores capturados | `captura[]`, cruzada con `costeo.rutas[]` por `linea_solicitud_id` | |
+  | Resultado, envío, cliente, `pdf_url` y comercial dueño | `cotizacion` | |
+  | Totales de la solicitud | `totales` | sumar en el frontend |
+  | Prellenar "Editar solicitud" y el cuerpo del `PUT` | `GET .../solicitud` (resuelve los conexos contra el catálogo de NEXO) | `captura` |
+  | `If-Match` de la acción siguiente | `row_version` o el `ETag` | |
+
+- **Acceso.** El dueño ve su cotización. Un `gerente_comercial` ve la de un comercial de su regional efectiva (la misma regla que
+  `GET /web/cotizaciones/regional` y la descarga del PDF) en **solo consulta**: `solo_lectura = true`, y las acciones (margen, conexos,
+  resultado, edición, generar el PDF, correo) le siguen respondiendo 404 porque son del dueño; ocultarlas o deshabilitarlas (descargar
+  el PDF de `pdf_url` sí puede, §5.6 de la guía). Si la regional del
+  gerente no se puede comprobar, se niega. Cualquier otro usuario recibe 404, igual que si el folio no existiera.
+- **Solo lee lo guardado.** No consulta NEXO ni dispara el polling: el estado del costeo es el último que leyó el polling. Para ver un
+  cambio de NEXO, volver a pedir el detalle más tarde.
+- **Diferencias con los endpoints de origen** (por no consultar NEXO): en `captura[].servicios_conexos[]` el `id_servicio_conexo` es el
+  del catálogo guardado con la ruta (para editar, el `GET .../solicitud` lo resuelve contra el catálogo de NEXO de hoy); y la `categoria`
+  de un conexo guardado antes de HU-014 que no esté en la memoria del servidor sale con la de respaldo (`logistico`), donde
+  `GET .../costeo` puede traer la del catálogo.
+- Sin costeo (`pendiente_costeo`, `error_envio`...): `costeo.precio_final`, `costeo.rutas[].precio_final_linea` y los precios de
+  `totales` vienen en `null`; el resto del detalle está completo.
+
+<!-- respuesta: GET /web/cotizaciones/{folio} 200 -->
+```json
+{
+  "folio": "PCN-900555111-DG-09102026-001",
+  "row_version": "9",
+  "solo_lectura": false,
+  "tipo": "spot",
+  "notas": "Cliente pide entrega en la mañana",
+  "fechas": {
+    "created_at": "2026-10-09T15:20:11.532+00:00",
+    "updated_at": "2026-10-10T13:02:45.010+00:00",
+    "costeo_enviado_at": "2026-10-09T15:20:12.004+00:00",
+    "costeo_listo_at": "2026-10-09T15:24:40.118+00:00",
+    "marcado_at": "2026-10-10T13:02:45.010+00:00"
+  },
+  "cotizacion": {
+    "id": "5b0f8a3e-2c1d-4e6f-9a7b-3c2d1e0f9a8b",
+    "folio": "PCN-900555111-DG-09102026-001",
+    "version": 1,
+    "nit_cliente": "900555111",
+    "origen_cliente": "cliente",
+    "origen_margen": "politica_linea",
+    "cliente": "LONGYIN S.A.S.",
+    "linea_negocio": "Varias",
+    "precio_final": 8823530,
+    "margen_aplicado": 0.15,
+    "moneda": "COP",
+    "trm_aplicada": 0,
+    "estado_costeo": "entregada",
+    "motivo_estado_costeo": null,
+    "estado_envio": "enviada",
+    "ganada": true,
+    "motivo_rechazo": "No aplica",
+    "pdf_url": "/pdfs/PCN-900555111-DG-09102026-001.pdf",
+    "created_at": "2026-10-09T15:20:11.532+00:00",
+    "deadline": "2026-10-15T22:00:00+00:00",
+    "score_prioridad": 62.5,
+    "comercial": { "usuario_id": "5f0c2a8e-4b1d-4c55-9a51-2f7d0c1e9b10", "nombre_usuario": "DGUERRA", "nombre_completo": "Duban Guerra" }
+  },
+  "costeo": {
+    "folio": "PCN-900555111-DG-09102026-001",
+    "estado_costeo": "entregada",
+    "motivo_estado_costeo": null,
+    "costeo_listo_at": "2026-10-09T15:24:40.118+00:00",
+    "precio_final": 8823530,
+    "margen_aplicado": 0.15,
+    "margen_sugerido": 0.15,
+    "origen_margen": "politica_linea",
+    "moneda": "COP",
+    "trm_aplicada": 0,
+    "deadline": "2026-10-15T22:00:00+00:00",
+    "score_prioridad": 62.5,
+    "servicios_conexos": [
+      { "id": "CX-1", "nombre": "Cargue con montacargas", "categoria": "logistico", "cantidad": 2, "precio": 470588, "incluido": true, "linea_orden": 1, "estado_nexo": "enviado" }
+    ],
+    "pdf_url": "/pdfs/PCN-900555111-DG-09102026-001.pdf",
+    "textos": null,
+    "pdf_desactualizado": false,
+    "row_version": "9",
+    "rutas": [
+      {
+        "linea_orden": 1,
+        "linea_solicitud_id": "0c9e7f3a-5b2d-4c1e-8f6a-9b8c7d6e5f4a",
+        "linea_negocio_id": 3,
+        "origen": "Buenaventura",
+        "destino": "Bogotá D.C.",
+        "estado_costeo": "entregada",
+        "peso_kg": 28500.5,
+        "precio_final_linea": 5294118,
+        "margen_aplicado": 0.15,
+        "margen_sugerido": 0.15,
+        "origen_margen": "politica_linea",
+        "vehiculos": "1 × 3S3 - PORTACONTENEDORES (28500.5 KG)",
+        "camiones": [
+          { "tipo_vehiculo": "3S3", "carroceria": "PORTACONTENEDORES", "peso_kg": 28500.5, "estado_costeo": "entregada", "volumen_total_m3": 36, "porcentaje_llenado_volumen": 53.2, "porcentaje_llenado_peso": 83.8 }
+        ],
+        "mercancias": [
+          { "orden": 1, "codigo_mercancia": "CAFE_EN_ESTIBAS", "nombre_mercancia": "Estiba de café", "cantidad": 20, "largo_cm": 120, "ancho_cm": 100, "alto_cm": 150, "peso_kg": 1425 }
+        ],
+        "servicios_conexos": [
+          { "id": "CX-1", "nombre": "Cargue con montacargas", "categoria": "logistico", "cantidad": 2, "precio": 470588, "incluido": true, "linea_orden": 1, "estado_nexo": "enviado" }
+        ],
+        "aviso_conexos_nexo": null,
+        "margen_sap_anomalo": false,
+        "aviso_margen": null
+      },
+      {
+        "linea_orden": 2,
+        "linea_solicitud_id": "7d6c5b4a-3e2f-4a1b-9c8d-0e1f2a3b4c5d",
+        "linea_negocio_id": 1,
+        "origen": "Medellín",
+        "destino": "Cartagena",
+        "estado_costeo": "entregada",
+        "peso_kg": 12500,
+        "precio_final_linea": 3529412,
+        "margen_aplicado": 0.15,
+        "margen_sugerido": 0.15,
+        "origen_margen": "politica_linea",
+        "vehiculos": "1 × 2S2 - FURGON (12500 KG)",
+        "camiones": [
+          { "tipo_vehiculo": "2S2", "carroceria": "FURGON", "peso_kg": 12500, "estado_costeo": "entregada" }
+        ],
+        "mercancias": [
+          { "orden": 1, "codigo_mercancia": "CAFE_EN_ESTIBAS", "nombre_mercancia": "Bobinas", "cantidad": 10, "largo_cm": 120, "ancho_cm": 100, "alto_cm": 150, "peso_kg": 1250 }
+        ],
+        "servicios_conexos": [],
+        "aviso_conexos_nexo": null,
+        "margen_sap_anomalo": false,
+        "aviso_margen": null
+      }
+    ]
+  },
+  "captura": [
+    {
+      "linea_solicitud_id": "0c9e7f3a-5b2d-4c1e-8f6a-9b8c7d6e5f4a",
+      "linea_orden": 1,
+      "linea_negocio": "Importacion",
+      "linea_negocio_bloqueada": true,
+      "origen_municipio_id": 76109,
+      "origen": "Buenaventura",
+      "destino_municipio_id": 11001,
+      "destino": "Bogotá D.C.",
+      "tipologia": "Contenedor",
+      "clase_viaje": "Contenedor",
+      "clase_contenedor": "CNT40.HC",
+      "exclusivo": true,
+      "consolidado": false,
+      "retorna_contenedor": true,
+      "ciudad_devolucion_municipio_id": 76109,
+      "ciudad_devolucion_contenedor": "Buenaventura",
+      "levante_contenedor_diferente": false,
+      "ciudad_levante_municipio_id": null,
+      "ciudad_levante_contenedor": null,
+      "horas_cargue": 4,
+      "horas_descargue": 6.5,
+      "valor_levante_contenedor": null,
+      "valor_mercancia": 250000000,
+      "peso_kg": 28500.5,
+      "mercancias": [
+        { "codigo_mercancia": "CAFE_EN_ESTIBAS", "nombre_mercancia": "Estiba de café", "cantidad": 20, "largo_cm": 120, "ancho_cm": 100, "alto_cm": 150, "peso_kg": 1425 }
+      ],
+      "servicios_conexos": [ { "id_servicio_conexo": "CX-1", "nombre": "Cargue con montacargas", "cantidad": 2 } ],
+      "margen_aplicado": 0.15,
+      "origen_margen": "politica_linea",
+      "margen_negociado": false
+    },
+    {
+      "linea_solicitud_id": "7d6c5b4a-3e2f-4a1b-9c8d-0e1f2a3b4c5d",
+      "linea_orden": 2,
+      "linea_negocio": "Exportacion",
+      "linea_negocio_bloqueada": true,
+      "origen_municipio_id": 5001,
+      "origen": "Medellín",
+      "destino_municipio_id": 13001,
+      "destino": "Cartagena",
+      "tipologia": "Contenedor",
+      "clase_viaje": "Contenedor",
+      "clase_contenedor": "CNT20.ST",
+      "exclusivo": true,
+      "consolidado": false,
+      "retorna_contenedor": false,
+      "ciudad_devolucion_municipio_id": null,
+      "ciudad_devolucion_contenedor": null,
+      "levante_contenedor_diferente": false,
+      "ciudad_levante_municipio_id": null,
+      "ciudad_levante_contenedor": null,
+      "horas_cargue": 4,
+      "horas_descargue": 6.5,
+      "valor_levante_contenedor": null,
+      "valor_mercancia": 90000000,
+      "peso_kg": 12500,
+      "mercancias": [
+        { "codigo_mercancia": "CAFE_EN_ESTIBAS", "nombre_mercancia": "Bobinas", "cantidad": 10, "largo_cm": 120, "ancho_cm": 100, "alto_cm": 150, "peso_kg": 1250 }
+      ],
+      "servicios_conexos": [],
+      "margen_aplicado": 0.15,
+      "origen_margen": "politica_linea",
+      "margen_negociado": false
+    }
+  ],
+  "totales": {
+    "rutas": 2,
+    "camiones": 2,
+    "peso_kg": 41000.5,
+    "precio_transporte": 8352942,
+    "precio_conexos": 470588,
+    "precio_final": 8823530
+  }
+}
+```

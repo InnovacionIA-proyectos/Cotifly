@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Fecha** | 2026-10-19 |
-| **Versión de referencia** | Rama `integracion-1019`: QA (PR #185, rama `hu-023-defectos-e2e-1016`, con D-1019-1) más #179 (HU-027.1, clases de contenedor), #180 (HU-025.1, textos de roles), #187 (HU-010.5, métricas por año y mes), #188 (HU-014, columnas 03/05 y "solo códigos conocidos") y #186 (HU-028, editar la solicitud) |
+| **Fecha** | 2026-10-20 |
+| **Versión de referencia** | Rama `integracion-1019`: QA (PR #185, rama `hu-023-defectos-e2e-1016`, con D-1019-1) más #179 (HU-027.1, clases de contenedor), #180 (HU-025.1, textos de roles), #187 (HU-010.5, métricas por año y mes), #188 (HU-014, columnas 03/05 y "solo códigos conocidos") y #186 (HU-028, editar la solicitud); más la rama `179-detalle-por-folio` (#179 parte A, `GET /web/cotizaciones/{folio}`) |
 | **Audiencia** | Equipo de frontend del módulo Cotifly dentro de ClientePro (Angular 17.3.8) |
 | **Fuente de verdad** | El código del backend .NET y `backend-dotnet/specs/openapi.yaml`. Si este documento y el código no coinciden, manda el código. Los cambios de esta versión están en la sección 9 |
 
@@ -678,7 +678,7 @@ Convenciones de esta sección:
   más de 64 KB: 413. Un JSON mal formado o con tipos erróneos: 400 `ErrorWeb`. Tampoco se repiten.
 - `{folio}` es el folio de la cotización (hasta 50 caracteres), codificado con `encodeURIComponent`.
 
-Resumen (48 endpoints):
+Resumen (49 endpoints):
 
 | # | Método y ruta | Rol | Módulo |
 |---|---|---|---|
@@ -730,6 +730,7 @@ Resumen (48 endpoints):
 | 46 | `GET /health/ready` | Público | Health |
 | 47 | `GET /web/cotizaciones/{folio}/solicitud` | Ambos (dueño) | Captura y costeo (HU-028) |
 | 48 | `PUT /web/cotizaciones/{folio}/solicitud` | Ambos (dueño) | Captura y costeo (HU-028) |
+| 49 | `GET /web/cotizaciones/{folio}` | Dueño o gerente de su regional (solo consulta) | Cotizaciones (HU-027.1, #179) |
 
 Retirados (responden 404): `GET /web/metricas/actividad`, `GET /web/metricas/ajustes-margen`, `POST /chat/events`, `POST /web/login`.
 
@@ -1495,7 +1496,7 @@ polling.
       "linea_negocio_id": 3,
       "peso_kg": 28500,
       "camiones": [
-        { "tipo_vehiculo": "3S3", "carroceria": "PORTACONTENEDORES", "peso_kg": 28500, "estado_costeo": "autocosteo", "volumen_total_m3": 36, "porcentaje_llenado_volumen": 53.1, "porcentaje_llenado_peso": 83.82 }
+        { "tipo_vehiculo": "3S3", "carroceria": "PORTACONTENEDORES", "peso_kg": 28500, "estado_costeo": "autocosteo", "volumen_total_m3": 36, "porcentaje_llenado_volumen": 53.1, "porcentaje_llenado_peso": 83.82, "estado_linea_nexo": "auto_resuelta", "motivo_pendiente": null }
       ],
       "vehiculos": "1 × 3S3 - PORTACONTENEDORES (28500 KG)",
       "mercancias": [
@@ -2048,6 +2049,42 @@ Datos de lectura de una cotización existente para prellenar un formulario. No m
 |---|---|
 | 200 | Prellenar. `version_siguiente` es informativa (la asigna el servidor). Los datos de primer nivel son los de la ruta 1 |
 | 404 | `ErrorWeb`: no existe, no es tuya o el `id` no es un UUID |
+
+#### 4.5.5 `GET /web/cotizaciones/{folio}` ("Ver detalle", HU-027.1, #179)
+
+El detalle completo de una cotización en **una sola llamada**, para "Ver detalle" (HU-021-FE.7, #75) y para recargar esa página. Ya no
+hace falta combinar `GET /web/mis-cotizaciones` (cliente, NIT, `estado_envio`, `ganada`) con `GET .../costeo`. Ejemplo completo en
+`CONTRATO_API_WEB.md` §8.14.
+
+- **Rol:** el dueño; o un `gerente_comercial` cuya regional efectiva incluye al dueño (la misma regla que 4.11.2 y que la descarga del
+  PDF), en **solo consulta**. Cualquier otro usuario: 404, igual que si no existiera.
+- **Solo lectura de lo guardado:** no consulta NEXO ni dispara el polling.
+
+**200 `DetalleCotizacion`** con `ETag` (= `row_version`). Es una composición de modelos que el frontend ya conoce:
+
+| Campo | Modelo | Contenido |
+|---|---|---|
+| `cotizacion` | `CotizacionResumen` (4.5.1) | Cabecera: folio, versión, cliente y NIT, `estado_envio`, `estado_costeo`, `ganada` y `motivo_rechazo`, `deadline` (UTC), `score_prioridad`, moneda y TRM, `pdf_url`; `comercial` (el dueño) siempre viene |
+| `costeo` | `CosteoCotizacion` (4.4.3) | Rutas con camiones (vehículo, porcentajes de llenado, estado), mercancías, conexos con precio y `estado_nexo`, margen, precio y avisos; `pdf_desactualizado`, `textos`, `row_version` |
+| `captura` | `RutaEditable[]` (4.4.10) | Cada ruta como se capturó: municipios por id y nombre y condiciones. Se cruza con `costeo.rutas[]` por `linea_solicitud_id` |
+| `tipo`, `notas` | | `spot` / `licitacion` (`null` en las del chat) y las notas |
+| `fechas` | `FechasCotizacion` | `created_at`, `updated_at`, `costeo_enviado_at`, `costeo_listo_at`, `marcado_at` (UTC, `null` si no aplica) |
+| `totales` | `TotalesCotizacion` | `rutas`, `camiones` (los que cuentan en el precio), `peso_kg`, `precio_transporte`, `precio_conexos`, `precio_final` (`transporte + conexos = final`; los precios en `null` sin costeo) |
+| `row_version` | | Para el `If-Match` de las acciones que siguen |
+| `solo_lectura` | | `true` si lo ve un gerente: esconder las acciones (le responden 404); descargar el PDF sí puede |
+
+Diferencias con los endpoints de origen, por no consultar NEXO: en `captura[].servicios_conexos[]` el `id_servicio_conexo` es el
+guardado con la ruta (el `GET .../solicitud` lo resuelve contra el catálogo de NEXO para editar), y un conexo anterior a HU-014 sin
+categoría guardada puede salir con la de respaldo (`logistico`).
+
+Qué fuente usar cuando un dato viene repetido (tabla completa en `CONTRATO_API_WEB.md` §8.14): estado, precio y conexos con precio, de
+`costeo` (por ruta, `costeo.rutas[]`); municipios y condiciones, de `captura`; resultado, envío, cliente y dueño, de `cotizacion`; totales,
+de `totales`. Para prellenar "Editar solicitud" y armar el `PUT`, `GET .../solicitud`, no `captura`.
+
+| HTTP | UI |
+|---|---|
+| 200 | Pintar la cabecera, las rutas (`costeo.rutas[]` + `captura[]` por `linea_solicitud_id`) y los totales. Guardar el `ETag` |
+| 404 | `ErrorWeb`: no existe, no es tuya o no es de tu regional |
 
 ### 4.6 Licitaciones
 
@@ -2755,7 +2792,7 @@ Notación: `?` = puede ser `null` (el campo viene igual). **(omitible)** = el ca
 | `conexos_descartados` | string[] **(omitible)** | Solo en `re-solicitar`, siempre `[]`. Obsoleto |
 | `cubicacion` | `CubicacionRuta[]` **(omitible)** | Solo en la respuesta de la captura, si alguna ruta pasó por el cubicador |
 | `avisos` | string[] **(omitible)** | Solo `RESUMEN_INCOMPLETO` en la captura |
-| `comercial` | `ComercialCotizacion` **(omitible)** | Solo en `GET /web/cotizaciones/regional`: `{usuario_id, nombre_usuario?, nombre_completo?}` |
+| `comercial` | `ComercialCotizacion` **(omitible)** | Solo en `GET /web/cotizaciones/regional` y en `DetalleCotizacion.cotizacion` (4.5.5): `{usuario_id, nombre_usuario?, nombre_completo?}` |
 
 **`CosteoCotizacion`** (`GET .../costeo` y respuestas de margen, conexos y recálculo)
 
@@ -2787,7 +2824,7 @@ Notación: `?` = puede ser `null` (el campo viene igual). **(omitible)** = el ca
 | `precio_final_linea` | número? | Precio de la ruta (con sus conexos) |
 | `margen_aplicado`, `margen_sugerido`, `origen_margen` | número?, número?, enum? | Por debajo del sugerido, el ajuste exige justificación |
 | `peso_kg` | número? | Peso declarado de la ruta |
-| `camiones` | `CamionCosteo[]` | `{tipo_vehiculo?, carroceria?, peso_kg?, estado_costeo?, volumen_total_m3?, porcentaje_llenado_volumen?, porcentaje_llenado_peso?}`. Los porcentajes llegan en `null` si no pasó por el cubicador o si la Mesa cambió el vehículo (D2): mostrar "—" |
+| `camiones` | `CamionCosteo[]` | `{tipo_vehiculo?, carroceria?, peso_kg?, estado_costeo?, volumen_total_m3?, porcentaje_llenado_volumen?, porcentaje_llenado_peso?, estado_linea_nexo?, motivo_pendiente?}`. Los porcentajes llegan en `null` si no pasó por el cubicador o si la Mesa cambió el vehículo (D2): mostrar "—". `estado_linea_nexo` (`por_costear`, `auto_resuelta`, `revisada`) y `motivo_pendiente` (#181, texto de NEXO de por qué la línea sigue por costear; solo con el camión en `pendiente_costeo`) son de solo lectura, no se guardan y pueden llegar en `null` (NEXO sin el dato, camión sin asociar o servicio recién reiniciado): `null` = no mostrar nada |
 | `vehiculos` | string? | Texto agrupado como en el PDF ("2 × 3S3 - FURGON (20000 KG)", "Vehículo por definir") |
 | `mercancias` | `MercanciaCosteo[]` | `{orden, codigo_mercancia?, nombre_mercancia?, cantidad, largo_cm, ancho_cm, alto_cm, peso_kg?}` |
 | `servicios_conexos` | `ServicioConexoCosteo[]` | Los de la ruta |
@@ -3126,7 +3163,7 @@ fila_excel, campo, codigo, mensaje}`.
 | 2 | `GET /web/municipios?q=&departamento=` busca en NEXO (máximo 50, solo Colombia); sin filtros, catálogo completo | Agrega | Buscador con `q` desde 3 letras; guardar el `id` elegido |
 | 3 | **Retirados** `GET /web/metricas/actividad` y `GET /web/metricas/ajustes-margen` (404) | Rompe | Usar `/web/metricas/comercial` y `/web/metricas/regional` |
 | 4 | **Nuevo** `GET /web/cotizaciones/regional` (solo gerente) | Agrega | Vista "Todas las cotizaciones" |
-| 5 | `CotizacionResumen` trae `deadline` (UTC) y `score_prioridad` en todo lugar; `comercial` solo en el listado regional. `CosteoCotizacion` trae `deadline` y `score_prioridad` | Agrega | Mostrar en la lista y en el detalle; `score_prioridad` tal cual |
+| 5 | `CotizacionResumen` trae `deadline` (UTC) y `score_prioridad` en todo lugar; `comercial` solo en el listado regional y en el detalle por folio (fila 47). `CosteoCotizacion` trae `deadline` y `score_prioridad` | Agrega | Mostrar en la lista y en el detalle; `score_prioridad` tal cual |
 | 6 | Cubicación: quinto motivo **`BUSQUEDA_AGOTADA`**; `mensaje_sin_seleccion` en `POST /web/cubicacion` y en las rutas del costeo | Agrega | Mostrar `mensaje_sin_seleccion`; nunca decir que la carga no cabe |
 | 7 | `extradimension` cambia de forma: `{hay_extradimension, medidas_estandar, piezas[]}` con `indice_posicion` y `excesos[]` (la forma provisional `{extradimensionado, dimensiones, detalle}` se retira) | Rompe | Pintar las piezas que exceden por posición |
 | 8 | `mercancias_condicionadas[].comentario` sale del `comentario_condicion` del catálogo; `TipoMercancia` trae `condicionada_cubicacion` y `comentario_condicion` | Agrega | Avisar de las condicionadas al escoger y al ver la cubicación |
@@ -3167,6 +3204,9 @@ fila_excel, campo, codigo, mensaje}`.
 | 43 | **HU-010.5 (#187):** `GET /web/metricas/regional` acepta `anio` (año completo) y `anio`+`mes` (mes completo), en fechas de Bogotá; si llega `anio`, reemplaza a `desde`/`hasta`. 400 si `mes` llega sin `anio`, está fuera de 1-12 o `anio` no está entre 2020 y el año en curso más uno | Agrega | Selector de año y mes en el tablero del gerente (#51); leer `periodo` de la respuesta |
 | 44 | **Nuevos** `GET` y `PUT /web/cotizaciones/{folio}/solicitud` (HU-028): editar la solicitud en sitio, como reemplazo en NEXO o en una `-vN` | Agrega | Pantalla "Editar solicitud" (3.7 y 4.4.10) |
 | 45 | `datos_carga` de `re-solicitar` queda obsoleto; acepta `codigo_mercancia`, `ciudad_devolucion_municipio_id` y `ciudad_levante_municipio_id` | Cambia | Migrar a `PUT .../solicitud` |
+| 46 | **#181 (NEXO #309):** `rutas[].camiones[]` de `GET .../costeo` (y de `costeo` en `GET /web/cotizaciones/{folio}`, fila 47) trae `estado_linea_nexo` y `motivo_pendiente` (por qué la línea sigue pendiente en NEXO: consulta completa, línea sin vehículo, SICE-TAC que no es del mes actual...). Solo de lectura, no se guardan; `null` si NEXO no los manda | Agrega | Mostrar `motivo_pendiente` junto al camión en `pendiente_costeo`; con `null`, nada |
+| 47 | **Nuevo** `GET /web/cotizaciones/{folio}` (HU-027.1, #179): detalle completo en una llamada (`cotizacion` + `costeo` + `captura` + `totales`), con `ETag`; también para el gerente de la regional, en solo consulta (`solo_lectura`) | Agrega | "Ver detalle" (#75) y su recarga con una sola llamada; con `solo_lectura`, esconder las acciones |
+| 48 | **#191 (HU-026.1):** la `Idempotency-Key` de la captura, los conexos, la re-solicitud y `PUT .../solicitud` se guarda en la base (sobrevive a un reinicio; la comparten las réplicas). Una repetición que cae en otra réplica mientras la primera sigue en curso responde 409 `ESTADO_NO_PERMITE` con `detalle.motivo = CAPTURA_EN_CURSO` sin ejecutar nada; en la misma réplica espera y recibe la respuesta de la primera, como antes. Los números del cuerpo se comparan por valor (`1.5` = `1.50`) | Agrega | Tratar `CAPTURA_EN_CURSO` también en conexos, re-solicitud y edición: esperar unos segundos y repetir con la MISMA clave (o recargar el folio) |
 
 ---
 
@@ -3245,6 +3285,22 @@ fila_excel, campo, codigo, mensaje}`.
 ---
 
 ## 9. Notas de versión
+
+**2026-10-20 (rama `191-idempotencia-persistente`, HU-026.1 parte C, #191).** `Idempotency-Key` persistente:
+
+- La clave se guarda en la base: sobrevive a un reinicio y la comparten las réplicas. Sin cambios de forma en las respuestas.
+- Nuevo caso de 409 `ESTADO_NO_PERMITE` con `detalle.motivo = CAPTURA_EN_CURSO` en captura, conexos, re-solicitud y edición: la misma
+  clave sigue en curso en otra réplica. Los números del cuerpo se comparan por valor. Cambio con su "qué hacer": sección 7, fila 48.
+
+**2026-10-20 (rama `181-motivo-pendiente`, #181, NEXO #309).** `rutas[].camiones[]` del costeo (y del detalle por folio) trae
+`estado_linea_nexo` y `motivo_pendiente`, de solo lectura. Cambio con su "qué hacer": sección 7, fila 46.
+
+**2026-10-20 (rama `179-detalle-por-folio`, HU-027.1 parte A, #179).** Detalle por folio:
+
+- **Nuevo** `GET /web/cotizaciones/{folio}` (`DetalleCotizacion` con `ETag`): cabecera (`CotizacionResumen` con el dueño), costeo por
+  ruta (`CosteoCotizacion`), rutas capturadas (`RutaEditable`), fechas y totales. Son **49 endpoints**. Ver 4.5.5.
+- Acceso: el dueño, o el gerente de la regional del dueño en solo consulta (`solo_lectura`); cualquier otro, 404. No consulta NEXO.
+- `comercial` de `CotizacionResumen` viene también en `DetalleCotizacion.cotizacion`. Cambio con su "qué hacer": sección 7, fila 47.
 
 **2026-10-19 (rama `186-hu-028-editar-solicitud`, HU-028, #186).** Editar la solicitud:
 

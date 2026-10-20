@@ -9,22 +9,26 @@ namespace Cotifly.Aplicacion.Costeo.Services;
 /// <c>ESTADO_NO_PERMITE</c> (<c>detalle.motivo = CAPTURA_EN_CURSO</c>).
 /// </summary>
 /// <remarks>
-/// Vive en la memoria del proceso (singleton), igual que el almacén de idempotencia: se pierde al reiniciar o en un despliegue
-/// <c>start-first</c>. La tabla persistente está propuesta en <c>db/scripts/pendientes/06_idempotencia_captura.sql</c> (deuda, ADR-018).
+/// #191: la implementación de la API es <c>clsRegistroCapturasIdempotentesSql</c> (Infraestructura), sobre la tabla
+/// <c>dbo_cotifly.CapturasIdempotentes</c> de <c>db/scripts/06_idempotencia_captura.sql</c>, la misma fila que reserva la clave en
+/// <c>clsAlmacenIdempotenciaSql</c>: sobrevive a un reinicio y a un despliegue <c>start-first</c> (dos réplicas a la vez).
+/// <see cref="RegistrarAsync"/> participa en la transacción abierta del <c>DbContext</c> del ámbito: la captura lo llama dentro de la
+/// transacción que confirma el folio, así el folio y su clave quedan juntos o no queda ninguno. <see cref="clsRegistroCapturasIdempotentesEnMemoria"/>
+/// queda para las pruebas de Aplicación.
 /// </remarks>
 public interface IClsRegistroCapturasIdempotentes
 {
-    /// <summary>La captura registrada con (<paramref name="ambito"/>, <paramref name="clave"/>) y vigente, o <c>null</c>.</summary>
-    clsCapturaIdempotente? Buscar(string ambito, string clave);
+    /// <summary>La captura registrada con (<paramref name="ambito"/>, <paramref name="clave"/>), vigente y con folio, o <c>null</c>.</summary>
+    Task<clsCapturaIdempotente?> BuscarAsync(string ambito, string clave, CancellationToken cancellationToken = default);
 
     /// <summary>Registra o actualiza la captura (al confirmar el folio y, después, con el <c>solicitudNexoId</c>).</summary>
-    void Registrar(string ambito, string clave, clsCapturaIdempotente captura);
+    Task RegistrarAsync(string ambito, string clave, clsCapturaIdempotente captura, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// #173: la captura vigente de <paramref name="folio"/> (con cualquier clave), o <c>null</c>. La usa el reintento: si Nexo ya tiene
     /// la solicitud (el guardado posterior falló), se vincula ese id en lugar de reenviar.
     /// </summary>
-    clsCapturaIdempotente? BuscarPorFolio(string folio);
+    Task<clsCapturaIdempotente?> BuscarPorFolioAsync(string folio, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -35,7 +39,10 @@ public interface IClsRegistroCapturasIdempotentes
 public sealed record clsCapturaIdempotente(
     string Huella, Guid CotizacionId, string Folio, string? SolicitudNexoId, DateTimeOffset RegistradaAt, decimal? ScorePrioridad = null);
 
-/// <summary>Implementación en memoria de <see cref="IClsRegistroCapturasIdempotentes"/> (vigencia de 24 h, como la clave).</summary>
+/// <summary>
+/// Implementación en memoria de <see cref="IClsRegistroCapturasIdempotentes"/> (vigencia de 24 h, como la clave). Solo para pruebas: se
+/// pierde al reiniciar y no se comparte entre réplicas (la API usa la tabla del 06, #191).
+/// </summary>
 public sealed class clsRegistroCapturasIdempotentesEnMemoria(IClsReloj reloj) : IClsRegistroCapturasIdempotentes
 {
     /// <summary>Tope de entradas: al llegar, se purgan las vencidas.</summary>
@@ -44,15 +51,15 @@ public sealed class clsRegistroCapturasIdempotentesEnMemoria(IClsReloj reloj) : 
     private readonly object _candado = new();
     private readonly Dictionary<string, clsCapturaIdempotente> _capturas = new(StringComparer.Ordinal);
 
-    public clsCapturaIdempotente? Buscar(string ambito, string clave)
+    public Task<clsCapturaIdempotente?> BuscarAsync(string ambito, string clave, CancellationToken cancellationToken = default)
     {
         lock (_candado)
         {
-            return _capturas.TryGetValue(Llave(ambito, clave), out var captura) && Vigente(captura) ? captura : null;
+            return Task.FromResult(_capturas.TryGetValue(Llave(ambito, clave), out var captura) && Vigente(captura) ? captura : null);
         }
     }
 
-    public void Registrar(string ambito, string clave, clsCapturaIdempotente captura)
+    public Task RegistrarAsync(string ambito, string clave, clsCapturaIdempotente captura, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(captura);
         lock (_candado)
@@ -67,16 +74,18 @@ public sealed class clsRegistroCapturasIdempotentesEnMemoria(IClsReloj reloj) : 
 
             _capturas[Llave(ambito, clave)] = captura;
         }
+
+        return Task.CompletedTask;
     }
 
-    public clsCapturaIdempotente? BuscarPorFolio(string folio)
+    public Task<clsCapturaIdempotente?> BuscarPorFolioAsync(string folio, CancellationToken cancellationToken = default)
     {
         lock (_candado)
         {
-            return _capturas.Values
+            return Task.FromResult(_capturas.Values
                 .Where(c => Vigente(c) && string.Equals(c.Folio, folio, StringComparison.Ordinal))
                 .OrderByDescending(c => c.SolicitudNexoId is not null)
-                .FirstOrDefault();
+                .FirstOrDefault());
         }
     }
 
