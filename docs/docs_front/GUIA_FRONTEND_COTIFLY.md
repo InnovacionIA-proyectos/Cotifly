@@ -479,8 +479,10 @@ export function esErrorNegocio(b: unknown): b is ErrorNegocio {
 > solicitud en Nexo: responde la cotización de la primera (201) o, si la primera no terminó de registrar el envío, 409
 > `ESTADO_NO_PERMITE` con `detalle.motivo = CAPTURA_EN_CURSO` y `detalle.folio`: no reintentar, llevar al comercial a "Mis
 > cotizaciones" con ese folio. La misma clave con otro cuerpo es 409 `IDEMPOTENCY_KEY_REUTILIZADA` (`ErrorNegocio`; antes 400 con texto). Si el 201 trae `avisos: ["RESUMEN_INCOMPLETO"]`, la cotización
-> sí quedó creada: recargar "Mis cotizaciones" (no reenviar). Limitación conocida: la clave vive en la memoria del servidor (se pierde
-> al reiniciar; tabla propuesta en `db/scripts/pendientes/06`).
+> sí quedó creada: recargar "Mis cotizaciones" (no reenviar). Desde #191 la clave se guarda en la base (`db/scripts/06`): sobrevive a un
+> reinicio y la comparten las réplicas. Si la repetición cae en otra réplica mientras la primera sigue en curso, también es 409
+> `ESTADO_NO_PERMITE` con `detalle.motivo = CAPTURA_EN_CURSO` (sin `detalle.folio` si aún no hay folio): esperar unos segundos y repetir
+> con la misma clave. Los números del cuerpo se comparan por valor (`1.5` = `1.50`).
 
 Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA` → 404 `ErrorWeb`; `SIN_PERMISO` → 403 `ErrorWeb`; validaciones → 400 `ErrorWeb`; las dependencias caídas (`CORREO_DESHABILITADO`, `COSTEO_NEXO_NO_DISPONIBLE`, `COSTEO_NEXO_TIEMPO_AGOTADO`, `NEXO_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE`, `CATALOGOS_FLETE_NO_DISPONIBLE`, `REGIONAL_NO_DISPONIBLE`, `PDF_RENDER_NO_DISPONIBLE`, `SERVICIO_OCUPADO` y los `CUBICADOR_*`) → 503 `ErrorNegocio`; `NEXO_SIN_PERMISO` → 403 `ErrorNegocio`; los de conflicto de estado del costeo y `CONFLICTO_CONCURRENCIA` → 409 `ErrorNegocio`; `PRECONDICION_REQUERIDA` → 428 `ErrorNegocio`; el resto de códigos de negocio → 400 `ErrorNegocio`. El servidor nunca responde 412. En la práctica casi todos los errores de `/web/*` con código son `ErrorNegocio`: parsear siempre las dos formas.
 

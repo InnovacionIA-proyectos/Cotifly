@@ -3206,6 +3206,7 @@ fila_excel, campo, codigo, mensaje}`.
 | 45 | `datos_carga` de `re-solicitar` queda obsoleto; acepta `codigo_mercancia`, `ciudad_devolucion_municipio_id` y `ciudad_levante_municipio_id` | Cambia | Migrar a `PUT .../solicitud` |
 | 46 | **#181 (NEXO #309):** `rutas[].camiones[]` de `GET .../costeo` (y de `costeo` en `GET /web/cotizaciones/{folio}`, fila 47) trae `estado_linea_nexo` y `motivo_pendiente` (por qué la línea sigue pendiente en NEXO: consulta completa, línea sin vehículo, SICE-TAC que no es del mes actual...). Solo de lectura, no se guardan; `null` si NEXO no los manda | Agrega | Mostrar `motivo_pendiente` junto al camión en `pendiente_costeo`; con `null`, nada |
 | 47 | **Nuevo** `GET /web/cotizaciones/{folio}` (HU-027.1, #179): detalle completo en una llamada (`cotizacion` + `costeo` + `captura` + `totales`), con `ETag`; también para el gerente de la regional, en solo consulta (`solo_lectura`) | Agrega | "Ver detalle" (#75) y su recarga con una sola llamada; con `solo_lectura`, esconder las acciones |
+| 48 | **#191 (HU-026.1):** la `Idempotency-Key` de la captura, los conexos, la re-solicitud y `PUT .../solicitud` se guarda en la base (sobrevive a un reinicio; la comparten las réplicas). Una repetición que cae en otra réplica mientras la primera sigue en curso responde 409 `ESTADO_NO_PERMITE` con `detalle.motivo = CAPTURA_EN_CURSO` sin ejecutar nada; en la misma réplica espera y recibe la respuesta de la primera, como antes. Los números del cuerpo se comparan por valor (`1.5` = `1.50`) | Agrega | Tratar `CAPTURA_EN_CURSO` también en conexos, re-solicitud y edición: esperar unos segundos y repetir con la MISMA clave (o recargar el folio) |
 
 ---
 
@@ -3284,6 +3285,15 @@ fila_excel, campo, codigo, mensaje}`.
 ---
 
 ## 9. Notas de versión
+
+**2026-10-20 (rama `191-idempotencia-persistente`, HU-026.1 parte C, #191).** `Idempotency-Key` persistente:
+
+- La clave se guarda en la base: sobrevive a un reinicio y la comparten las réplicas. Sin cambios de forma en las respuestas.
+- Nuevo caso de 409 `ESTADO_NO_PERMITE` con `detalle.motivo = CAPTURA_EN_CURSO` en captura, conexos, re-solicitud y edición: la misma
+  clave sigue en curso en otra réplica. Los números del cuerpo se comparan por valor. Cambio con su "qué hacer": sección 7, fila 48.
+
+**2026-10-20 (rama `181-motivo-pendiente`, #181, NEXO #309).** `rutas[].camiones[]` del costeo (y del detalle por folio) trae
+`estado_linea_nexo` y `motivo_pendiente`, de solo lectura. Cambio con su "qué hacer": sección 7, fila 46.
 
 **2026-10-20 (rama `179-detalle-por-folio`, HU-027.1 parte A, #179).** Detalle por folio:
 
