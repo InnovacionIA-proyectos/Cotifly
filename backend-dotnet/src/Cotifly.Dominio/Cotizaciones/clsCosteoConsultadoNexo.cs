@@ -71,6 +71,20 @@ public sealed record clsSituacionLineaNexo(string? EstadoLinea, string? MotivoPe
     public bool Vacia => EstadoLinea is null && MotivoPendiente is null;
 
     /// <summary>
+    /// Id de la línea de Nexo de la que se leyó (<see cref="clsLineaSolicitudNexo.Id"/>), o <c>null</c> si no se sabe. La vista solo la
+    /// muestra en el camión que sigue asociado a esa misma línea: tras una re-solicitud o un cambio de línea, la foto vieja no se muestra.
+    /// </summary>
+    public string? LineaNexoId { get; init; }
+
+    /// <summary>Los estados conocidos de Nexo #309, por su forma compacta (solo letras y dígitos, en minúscula).</summary>
+    private static readonly Dictionary<string, string> _estadosConocidos = new(StringComparer.Ordinal)
+    {
+        ["porcostear"] = "por_costear",
+        ["autoresuelta"] = "auto_resuelta",
+        ["revisada"] = "revisada",
+    };
+
+    /// <summary>
     /// La situación con los valores de Nexo: el estado convertido con <see cref="CodigoEstado"/> y el motivo sin espacios sobrantes (un
     /// texto vacío cuenta como <c>null</c>).
     /// </summary>
@@ -80,6 +94,8 @@ public sealed record clsSituacionLineaNexo(string? EstadoLinea, string? MotivoPe
     /// <summary>
     /// <c>estadoLinea</c> de Nexo como código de Cotifly en <c>snake_case</c>: <c>porCostear</c> o <c>PorCostear</c> →
     /// <c>por_costear</c>, <c>autoResuelta</c> → <c>auto_resuelta</c>, <c>revisada</c> → <c>revisada</c>. Vacío o <c>null</c> → <c>null</c>.
+    /// Los tres estados conocidos se reconocen con cualquier mayúscula o separador (<c>PORCOSTEAR</c>, <c>por_costear</c>, <c>Por Costear</c>
+    /// → <c>por_costear</c>); un valor nuevo pasa con la conversión de <c>camelCase</c> a <c>snake_case</c>.
     /// </summary>
     public static string? CodigoEstado(string? estadoLineaNexo)
     {
@@ -89,6 +105,12 @@ public sealed record clsSituacionLineaNexo(string? EstadoLinea, string? MotivoPe
         }
 
         var texto = estadoLineaNexo.Trim();
+        var compacto = string.Concat(texto.Where(char.IsLetterOrDigit)).ToLowerInvariant();
+        if (_estadosConocidos.TryGetValue(compacto, out var conocido))
+        {
+            return conocido;
+        }
+
         var codigo = new System.Text.StringBuilder(texto.Length + 4);
         for (var i = 0; i < texto.Length; i++)
         {
@@ -98,7 +120,7 @@ public sealed record clsSituacionLineaNexo(string? EstadoLinea, string? MotivoPe
                 c = '_';
             }
 
-            // Solo al pasar de minúscula o dígito a mayúscula: "PorCostear" → "por_costear", "PORCOSTEAR" → "porcostear".
+            // Solo al pasar de minúscula o dígito a mayúscula: "EnRevision" → "en_revision", "ENREVISION" → "enrevision".
             if (char.IsUpper(c) && i > 0 && char.IsLetterOrDigit(texto[i - 1]) && !char.IsUpper(texto[i - 1]))
             {
                 codigo.Append('_');

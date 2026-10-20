@@ -114,7 +114,8 @@ public static class clsLecturaCosteo
         {
             if (camion.LineaSolicitudNexoId is { } lineaId && porLinea.TryGetValue(lineaId, out var situacion) && !situacion.Vacia)
             {
-                situaciones[camion.Id] = situacion;
+                // La línea de la que se leyó: la vista la muestra solo mientras el camión siga asociado a ella.
+                situaciones[camion.Id] = situacion with { LineaNexoId = lineaId };
             }
         }
 

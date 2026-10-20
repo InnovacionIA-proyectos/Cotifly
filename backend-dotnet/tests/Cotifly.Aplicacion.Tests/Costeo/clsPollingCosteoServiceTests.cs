@@ -451,7 +451,7 @@ public sealed class clsPollingCosteoServiceTests
         camion.LineaSolicitudNexoId.Should().Be("L1", "el emparejamiento no cambia");
         situaciones.Obtener(_cotizacion.Id).Should().BeEquivalentTo(new Dictionary<Guid, clsSituacionLineaNexo>
         {
-            [camion.Id] = new("por_costear", "Línea sin vehículo: requiere consulta completa"),
+            [camion.Id] = new("por_costear", "Línea sin vehículo: requiere consulta completa") { LineaNexoId = "L1" },
         });
         _cotizacion.VersionNegocio.Should().Be(0, "el motivo solo se muestra: no es un cambio de negocio ni se guarda");
     }

@@ -1180,13 +1180,19 @@ public sealed class clsCosteoCotizacionService(
     }
 
     /// <summary>
-    /// <c>CamionCosteo</c> del camión <paramref name="camion"/> con lo que Nexo dice de su línea (#181), si se conoce: el estado de la línea
-    /// siempre y el motivo pendiente solo con el camión en <c>pendiente_costeo</c>.
+    /// <c>CamionCosteo</c> del camión <paramref name="camion"/> con lo que Nexo dice de su línea (#181), si se conoce y el camión sigue
+    /// asociado a la línea de la que se leyó (<see cref="clsSituacionLineaNexo.LineaNexoId"/>): el estado de la línea siempre y el motivo
+    /// pendiente solo con el camión en <c>pendiente_costeo</c>.
     /// </summary>
     public static clsCamionCosteo CamionCosteo(clsVehiculoLineaSolicitud camion, IReadOnlyDictionary<Guid, clsSituacionLineaNexo>? situaciones = null)
     {
         ArgumentNullException.ThrowIfNull(camion);
-        var situacion = situaciones is not null && situaciones.TryGetValue(camion.Id, out var deNexo) ? deNexo : null;
+        // Solo si el camión sigue asociado a la línea de la que se leyó: tras una re-solicitud (el camión conserva su id pero olvida su
+        // línea) o un cambio de línea, la foto anterior no se muestra hasta que el polling lea la nueva.
+        var situacion = situaciones is not null && situaciones.TryGetValue(camion.Id, out var deNexo)
+            && camion.LineaSolicitudNexoId is { } linea && string.Equals(deNexo.LineaNexoId, linea, StringComparison.OrdinalIgnoreCase)
+            ? deNexo
+            : null;
         return new clsCamionCosteo(
             camion.TipoVehiculo, camion.Carroceria, camion.PesoKg, camion.EstadoCosteo is { } estado ? clsCodigoEnum.ACodigo(estado) : null,
             camion.VolumenTotalM3, camion.PorcentajeLlenadoVolumen, camion.PorcentajeLlenadoPeso)

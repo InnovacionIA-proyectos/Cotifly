@@ -32,8 +32,8 @@ public sealed class clsSituacionLineasNexoTests
         var mediano = cotizacion.Vehiculos.Single(v => v.PesoKg == 8_000m);
         situaciones.Should().BeEquivalentTo(new Dictionary<Guid, clsSituacionLineaNexo>
         {
-            [grande.Id] = new("por_costear", SinVehiculo),
-            [mediano.Id] = new("auto_resuelta", null),
+            [grande.Id] = new("por_costear", SinVehiculo) { LineaNexoId = "N-a" },
+            [mediano.Id] = new("auto_resuelta", null) { LineaNexoId = "N-b" },
         });
 
         var vista = clsCosteoCotizacionService.Vista(cotizacion, null, situaciones: situaciones);
@@ -61,14 +61,57 @@ public sealed class clsSituacionLineasNexoTests
     {
         var cotizacion = Ruta(("3S3", 10_000m));
         var camion = cotizacion.Vehiculos.Single();
+        camion.AsignarLineaNexo("N-a");
         camion.RegistrarEstado(EstadoCosteo.Entregada);
-        var situaciones = new Dictionary<Guid, clsSituacionLineaNexo> { [camion.Id] = new("por_costear", SinVehiculo) };
+        var situaciones = new Dictionary<Guid, clsSituacionLineaNexo> { [camion.Id] = new("por_costear", SinVehiculo) { LineaNexoId = "N-a" } };
 
         var vista = clsCosteoCotizacionService.CamionCosteo(camion, situaciones);
 
         vista.EstadoLineaNexo.Should().Be("por_costear");
         vista.MotivoPendiente.Should().BeNull("el camión ya no está pendiente en Cotifly");
         clsCosteoCotizacionService.CamionCosteo(camion).Should().Be(clsCosteoCotizacionService.CamionCosteo(camion, new Dictionary<Guid, clsSituacionLineaNexo>()));
+    }
+
+    [Fact]
+    public void LaFotoSoloSeMuestraEnElCamionQueSigueAsociadoASuLinea()
+    {
+        var cotizacion = Ruta(("3S3", 10_000m));
+        var foto = Foto([Detalle("N-a", "3S3", 10_000m) with { EstadoLinea = "porCostear", MotivoPendiente = SinVehiculo }], []);
+        clsLecturaCosteo.AplicarFoto(cotizacion, foto, _ahora, new clsOpcionesCosteoNexo(), new clsPrecioCosteoService());
+        var situaciones = clsLecturaCosteo.SituacionesPorCamion(cotizacion, foto);
+        var camion = cotizacion.Vehiculos.Single();
+        clsCosteoCotizacionService.CamionCosteo(camion, situaciones).MotivoPendiente.Should().Be(SinVehiculo);
+
+        // La línea en otra forma de escribir el id sigue siendo la misma.
+        clsCosteoCotizacionService.CamionCosteo(camion, new Dictionary<Guid, clsSituacionLineaNexo>
+        {
+            [camion.Id] = new("por_costear", SinVehiculo) { LineaNexoId = "n-A" },
+        }).EstadoLineaNexo.Should().Be("por_costear");
+
+        // Una foto de otra línea (o sin línea conocida) no se muestra en este camión.
+        clsCosteoCotizacionService.CamionCosteo(camion, new Dictionary<Guid, clsSituacionLineaNexo>
+        {
+            [camion.Id] = new("por_costear", "de otra línea") { LineaNexoId = "N-z" },
+        }).Should().Match<clsCamionCosteo>(c => c.EstadoLineaNexo == null && c.MotivoPendiente == null);
+        clsCosteoCotizacionService.CamionCosteo(camion, new Dictionary<Guid, clsSituacionLineaNexo>
+        {
+            [camion.Id] = new("por_costear", "sin línea"),
+        }).Should().Match<clsCamionCosteo>(c => c.EstadoLineaNexo == null && c.MotivoPendiente == null);
+
+        // Re-solicitud (HU-013.4): el camión conserva su id y vuelve a pendiente_costeo, pero olvida su línea; la foto en memoria de la
+        // solicitud anterior no se muestra hasta que el polling lea la nueva.
+        cotizacion.PrepararReSolicitud();
+        cotizacion.RegistrarEnvioCosteo("SOL-2", false, _ahora, _ahora);
+        camion.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo);
+        clsCosteoCotizacionService.CamionCosteo(camion, situaciones)
+            .Should().Match<clsCamionCosteo>(c => c.EstadoLineaNexo == null && c.MotivoPendiente == null);
+
+        // La solicitud nueva asocia otra línea: la foto vieja (N-a) sigue sin mostrarse.
+        var nueva = Foto([Detalle("N-x", "3S3", 10_000m)], []);
+        clsLecturaCosteo.AplicarFoto(cotizacion, nueva, _ahora, new clsOpcionesCosteoNexo(), new clsPrecioCosteoService());
+        camion.LineaSolicitudNexoId.Should().Be("N-x");
+        clsCosteoCotizacionService.CamionCosteo(camion, situaciones)
+            .Should().Match<clsCamionCosteo>(c => c.EstadoLineaNexo == null && c.MotivoPendiente == null);
     }
 
     [Fact]
