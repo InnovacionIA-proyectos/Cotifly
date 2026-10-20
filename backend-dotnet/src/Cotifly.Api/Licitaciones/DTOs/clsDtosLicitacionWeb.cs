@@ -117,6 +117,9 @@ public sealed class clsLineaLicitacionWebRequest
     public decimal? PesoKg { get; init; }
     public decimal? ValorMercancia { get; init; }
 
+    /// <summary>HU-030.1 (#184): peso total con tara de la fila (solo con <c>clase_viaje = Contenedor</c>), como en la captura.</summary>
+    public decimal? PesoConTaraKg { get; init; }
+
     /// <summary>Mercancías de la ruta (nombre anterior: <see cref="Posiciones"/>; si llegan las dos, valen estas).</summary>
     public IReadOnlyList<clsPosicionCargaWebRequest?>? Mercancias { get; init; }
     public IReadOnlyList<clsPosicionCargaWebRequest?>? Posiciones { get; init; }
@@ -148,6 +151,7 @@ public sealed class clsLineaLicitacionWebRequest
         ValorAprovisionamiento = ValorLevanteContenedor ?? ValorAprovisionamiento,
         PesoKg = PesoKg,
         ValorMercancia = ValorMercancia,
+        PesoConTaraKg = PesoConTaraKg,
         Posiciones = clsPosicionCargaWebRequest.APosiciones(Mercancias ?? Posiciones),
     };
 }

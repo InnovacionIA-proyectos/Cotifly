@@ -64,6 +64,9 @@ public sealed partial class clsContratoEjemplosDocTests
             // HU-027.1 (#179): detalle por folio.
             "respuesta: GET /web/cotizaciones/{folio} 200",
             "respuesta: PUT /web/cotizaciones/{folio}/solicitud 503",
+            // HU-030.1 (#184): peso con tara de las cargas contenerizadas.
+            "esquema: RutaCapturaWeb",
+            "esquema: CamionCosteo",
         ]);
     }
 

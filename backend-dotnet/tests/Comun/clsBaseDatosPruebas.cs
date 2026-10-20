@@ -6,7 +6,7 @@ namespace Cotifly.Pruebas.Comun;
 
 /// <summary>
 /// SQL Server 2019 en Testcontainers con el esquema real (ADR-008, ADR-010):
-/// crea <c>dbTarifario_Nexo_Pruebas</c>, aplica <c>db/migrations_mssql/0001</c> a <c>0010</c>, <c>db/scripts/02_alter_cubicador.sql</c>, el <c>03</c> (HU-014, #188), la propuesta <c>db/scripts/pendientes/04</c> (HU-023.5), el <c>05</c> (#188), el <c>06</c> (#191, Idempotency-Key), el <c>07</c>, el <c>08</c> (HU-014.3) y el <c>09</c> (HU-018.1) partidos por <c>GO</c> (HU-021: el 0009
+/// crea <c>dbTarifario_Nexo_Pruebas</c>, aplica <c>db/migrations_mssql/0001</c> a <c>0010</c>, <c>db/scripts/02_alter_cubicador.sql</c>, el <c>03</c> (HU-014, #188), la propuesta <c>db/scripts/pendientes/04</c> (HU-023.5), el <c>05</c> (#188), el <c>06</c> (#191, Idempotency-Key), el <c>07</c>, el <c>08</c> (HU-014.3), el <c>09</c> (HU-018.1) y el <c>11</c> (HU-030.1) partidos por <c>GO</c> (HU-021: el 0009
 /// reestructura las cotizaciones en rutas y camiones y el 0010 agrega los nombres de municipio; las pruebas de esquema verifican además
 /// que <c>db/scripts/01_crear_esquema.sql</c> deja el mismo esquema, <see cref="CrearBaseInstaladaAsync"/>), y crea una <c>dbsolucionesti</c> falsa con las tres tablas del almacén corporativo y sus tipos reales:
 /// <c>dbo.tblSAPUsuariosApp</c> (ID NUMERIC, incluida la columna CLAVE, que el backend nunca debe leer),
@@ -46,6 +46,8 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
         // por nombre; son independientes) porque el backend mapea scorePrioridad: `ScriptsSin07` (todo hasta el 09) es la base de las
         // pruebas del 07 y la incluye.
         Script09,
+        // HU-030.1 (#184): pesoConTaraKg en la ruta (db/scripts/11; el backend lo mapea). Como el 09, va antes del 07 en esta lista.
+        Script11,
         // HU-023 (#176): BUSQUEDA_AGOTADA en el CHECK del motivo (db/scripts/07, lo aplica @scalderon-bs).
         Script07,
         // HU-014.3 (#152): retiro de las vistas del borrador de métricas (db/scripts/08, lo aplica el DBA).
@@ -57,6 +59,12 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
 
     /// <summary>HU-018.1 (#155): el 09 de <c>scorePrioridad</c> (relativa a <c>migrations_mssql</c>).</summary>
     public const string Script09 = "../scripts_bd/09_score_prioridad.sql";
+
+    /// <summary>HU-030.1 (#184): el 11 del peso con tara de la ruta (relativa a <c>migrations_mssql</c>).</summary>
+    public const string Script11 = "../scripts_bd/11_peso_con_tara.sql";
+
+    /// <summary>HU-030.1 (#184): scripts hasta el 09 (sin el 11, el 07 ni el 08). <c>Scripts[ScriptsHasta09 - 1]</c> es el 09.</summary>
+    public const int ScriptsHasta09 = 16;
 
     /// <summary>HU-014 (#188): el 03 del orden del camión y el id del catálogo del conexo (relativa a <c>migrations_mssql</c>).</summary>
     public const string Script03 = "../scripts_bd/03_orden_vehiculo_y_conexo_catalogo.sql";
@@ -89,15 +97,15 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     /// Scripts hasta el 07 incluido (con el 09, sin el 08): la base migrada que todavía tiene las vistas del borrador de métricas.
     /// <c>Scripts[ScriptsHasta07 - 1]</c> es el 07 (lo verifica <c>clsEsquemaTests</c>).
     /// </summary>
-    public const int ScriptsHasta07 = 17;
+    public const int ScriptsHasta07 = 18;
 
     /// <summary>
     /// Todos los scripts anteriores al 07 en <see cref="Scripts"/> (sin el 07 ni los que van después). <c>Scripts[ScriptsSin07]</c> es el 07
     /// (lo verifica <c>clsEsquemaTests</c>). Si otra rama agrega un script que el backend mapea, va antes del 07 en la lista y este número
-    /// sube (hoy llega hasta el 09: <c>Scripts[ScriptsSin07 - 1]</c> es el 09). HU-014 (#188): incluye el 03, que deja el CHECK del 07; para
+    /// sube (hoy llega hasta el 11: <c>Scripts[ScriptsSin07 - 1]</c> es el 11). HU-014 (#188): incluye el 03, que deja el CHECK del 07; para
     /// una base que de verdad no admite BUSQUEDA_AGOTADA, <see cref="CrearBaseSin07Async"/>.
     /// </summary>
-    public const int ScriptsSin07 = 16;
+    public const int ScriptsSin07 = 17;
 
     /// <summary>
     /// HU-014 (#188): el CHECK del motivo tal como lo deja el <c>02</c> (4 motivos, sin <c>BUSQUEDA_AGOTADA</c> ni <c>ISNULL</c>). Con el 03
@@ -224,6 +232,8 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("08_retirar_vistas_actividad.sql"));
                 // HU-018.1 (#155): el 09 (scorePrioridad) va después del 08 por nombre, como en el ejecutador.
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("09_score_prioridad.sql"));
+                // HU-030.1 (#184): el 11 (pesoConTaraKg) va después del 09 por nombre, como en el ejecutador.
+                await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("11_peso_con_tara.sql"));
                 if (conSeeders)
                 {
                     foreach (var seeder in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "scripts_bd", "seeder"), "*.sql").Order(StringComparer.Ordinal))
@@ -269,6 +279,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("07_motivo_busqueda_agotada.sql"));
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("08_retirar_vistas_actividad.sql"));
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("09_score_prioridad.sql"));
+            await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("11_peso_con_tara.sql"));
             foreach (var seeder in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "scripts_bd", "seeder"), "*.sql").Order(StringComparer.Ordinal))
             {
                 await EjecutarScriptAsync(CadenaCotifly, seeder);

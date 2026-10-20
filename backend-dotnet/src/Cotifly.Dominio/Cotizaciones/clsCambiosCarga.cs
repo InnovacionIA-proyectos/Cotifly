@@ -29,13 +29,16 @@ public sealed record clsCambiosCarga
     public const string CampoValorMercancia = "valor_mercancia";
     public const string CampoPosiciones = "posiciones";
 
+    /// <summary>HU-030.1 (#184): el peso total con tara de una ruta de contenedor (<see cref="clsLineaSolicitudCosteo.PesoConTaraKg"/>).</summary>
+    public const string CampoPesoConTara = clsSolicitudCosteo.CampoPesoConTara;
+
     /// <summary>Campos que acepta <c>datos_carga</c> (los de línea de la captura más las horas del encabezado).</summary>
     public static readonly IReadOnlySet<string> Campos = new HashSet<string>(StringComparer.Ordinal)
     {
         CampoTipoVehiculo, CampoCarroceria, CampoTipologia, CampoClaseViaje, CampoClaseContenedor, CampoExclusivo, CampoConsolidado,
         CampoRetornaContenedor, CampoCiudadDevolucionContenedor, CampoCiudadDevolucionMunicipioId, CampoLevanteContenedorDiferente,
         CampoCiudadLevanteContenedor, CampoCiudadLevanteMunicipioId,
-        CampoValorAprovisionamiento, CampoHorasCargue, CampoHorasDescargue, CampoPesoKg, CampoValorMercancia, CampoPosiciones,
+        CampoValorAprovisionamiento, CampoHorasCargue, CampoHorasDescargue, CampoPesoKg, CampoValorMercancia, CampoPosiciones, CampoPesoConTara,
     };
 
     /// <summary>Nombres (del contrato) de los campos que trae la petición, incluidos los que vienen en <c>null</c>.</summary>
@@ -65,6 +68,9 @@ public sealed record clsCambiosCarga
     public decimal? HorasDescargue { get; init; }
     public decimal? PesoKg { get; init; }
     public decimal? ValorMercancia { get; init; }
+
+    /// <summary>HU-030.1 (#184): peso total con tara (solo con <c>clase_viaje = Contenedor</c>; <c>null</c> lo quita).</summary>
+    public decimal? PesoConTaraKg { get; init; }
 
     /// <summary>Posiciones nuevas (solo si <c>posiciones</c> está en <see cref="Presentes"/>; <c>null</c> = sin posiciones).</summary>
     public IReadOnlyList<clsPosicionCarga>? Posiciones { get; init; }
@@ -105,6 +111,7 @@ public sealed record clsCambiosCarga
             ValorAprovisionamiento = Valor(CampoValorAprovisionamiento, ValorAprovisionamiento, linea.ValorAprovisionamiento),
             PesoKg = Valor(CampoPesoKg, PesoKg, linea.PesoKg),
             ValorMercancia = Valor(CampoValorMercancia, ValorMercancia, linea.ValorMercancia),
+            PesoConTaraKg = Valor(CampoPesoConTara, PesoConTaraKg, linea.PesoConTaraKg),
 
             // HU-021: las horas son de la ruta (la cabecera ya no las guarda).
             HorasCargue = Valor(CampoHorasCargue, HorasCargue, linea.HorasCargue),

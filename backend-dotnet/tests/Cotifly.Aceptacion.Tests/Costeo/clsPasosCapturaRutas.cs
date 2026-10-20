@@ -17,7 +17,7 @@ namespace Cotifly.Aceptacion.Tests.Costeo;
 public sealed class clsPasosCapturaRutas(clsContextoWeb web, clsPasosCosteo costeo)
 {
     private static readonly HashSet<string> _enteras = new(StringComparer.Ordinal) { "origen_municipio_id", "destino_municipio_id" };
-    private static readonly HashSet<string> _decimales = new(StringComparer.Ordinal) { "peso_kg" };
+    private static readonly HashSet<string> _decimales = new(StringComparer.Ordinal) { "peso_kg", "peso_con_tara_kg" };
 
     [Given("el catálogo de servicios conexos de Nexo tiene el servicio {string} {string} con un costo de {int}")]
     public void DadoElServicioConexo(string id, string nombre, int costo) =>

@@ -126,14 +126,15 @@ El diagrama completo, con todas las columnas y el resto de tablas, está en
 | `db/scripts/07_motivo_busqueda_agotada.sql` | HU-023 (#176): quinto motivo `BUSQUEDA_AGOTADA` en el CHECK del motivo. Idempotente |
 | `db/scripts/08_retirar_vistas_actividad.sql` | HU-014.3 (#152): `DROP VIEW` de `vActividadPorComercial` y `vAjustesMargenPorComercial` si existen. Idempotente; lo aplica el DBA después de desplegar el backend sin el borrador de métricas |
 | `db/scripts/09_score_prioridad.sql` | HU-018.1 (#155): `CotizacionesSolicitud.scorePrioridad DECIMAL(9,4) NULL` (el `scorePrioridad` de Nexo). Obligatorio: el backend mapea la columna; sin él `/health/ready` responde "falta 09". Se aplica antes de la imagen |
+| `db/scripts/11_peso_con_tara.sql` | HU-030.1 (#184): `CotizacionLineasSolicitud.pesoConTaraKg DECIMAL(12,2) NULL` con su CHECK (> 0): el peso con tara de una ruta `Contenedor`. Obligatorio: el backend mapea la columna; sin él `/health/ready` responde "falta 11". Se aplica antes de la imagen |
 | `db/scripts/pendientes/04` y `06` | Propuestas pendientes de revisión de scalderon-bs y del DBA (cubicación en segundo plano e idempotencia de la captura). El ejecutador no las corre. El backend mapea el `04` (sin él, "falta 04") |
 | `db/scripts/operacion/` | Scripts de datos de una sola vez (identidad compartida con Nexo, rol comercial). Los corre el DBA con aprobación |
 
 Detalle de cada script en [`ESQUEMA_OBJETIVO_SQLSERVER.md`](docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md) §A.5.
 
-**Precondición para desplegar el backend:** `0001` a `0010`, el `02`, el `03`, el `pendientes/04`, el `05` y el `09` aplicados (o la
+**Precondición para desplegar el backend:** `0001` a `0010`, el `02`, el `03`, el `pendientes/04`, el `05`, el `09` y el `11` aplicados (o la
 instalación desde cero con el ejecutador, más el `04`). Si falta algo, `/health/ready` responde `503` y dice qué falta (`falta 0009`,
-`falta 0010`, `falta 02`, `falta 03`, `falta 04`, `falta 05`, `falta 09`, `falta Tabla.columna`; ver [`DEPLOY.md`](DEPLOY.md) §4.5).
+`falta 0010`, `falta 02`, `falta 03`, `falta 04`, `falta 05`, `falta 09`, `falta 11`, `falta Tabla.columna`; ver [`DEPLOY.md`](DEPLOY.md) §4.5).
 
 ## 5. Cómo acceder
 

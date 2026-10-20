@@ -27,6 +27,8 @@ namespace Cotifly.Infraestructura.Comun.Persistence;
 /// <c>db/scripts/06_idempotencia_captura.sql</c> (#191: la <c>Idempotency-Key</c> persistente; no se degrada a memoria);</item>
 /// <item><see cref="DescripcionEsquemaSin09"/>: solo falta <c>CotizacionesSolicitud.scorePrioridad</c> de
 /// <c>db/scripts/09_score_prioridad.sql</c> (HU-018.1, #155);</item>
+/// <item><see cref="DescripcionEsquemaSin11"/>: solo falta <c>CotizacionLineasSolicitud.pesoConTaraKg</c> de
+/// <c>db/scripts/11_peso_con_tara.sql</c> (HU-030.1, #184);</item>
 /// <item>cualquier otra ausencia: <c>esquema incompleto: falta Tabla.columna</c> (las primeras, sin datos de conexión).</item>
 /// </list>
 /// La sonda tiene un tiempo máximo propio (<see cref="TiempoMaximo"/>). Las descripciones no incluyen la cadena ni el servidor.
@@ -128,6 +130,15 @@ public sealed class clsBaseDatosHealthCheck(
     public static readonly IReadOnlySet<string> Columnas09 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "CotizacionesSolicitud.scorePrioridad",
+    };
+
+    /// <summary>HU-030.1 (#184): está todo lo anterior, pero no la columna <c>pesoConTaraKg</c> de <c>db/scripts/11_peso_con_tara.sql</c>.</summary>
+    public const string DescripcionEsquemaSin11 = "esquema incompleto: falta 11";
+
+    /// <summary>Columnas que agrega <c>db/scripts/11_peso_con_tara.sql</c> (HU-030.1).</summary>
+    public static readonly IReadOnlySet<string> Columnas11 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "CotizacionLineasSolicitud.pesoConTaraKg",
     };
 
     /// <summary>Prefijo de la descripción cuando falta otra tabla o columna del modelo.</summary>
@@ -261,10 +272,10 @@ public sealed class clsBaseDatosHealthCheck(
             return HealthCheckResult.Unhealthy(DescripcionEsquemaSin0009);
         }
 
-        // Faltan columnas de los ajustes que van después del 0009 (0010, 02 del cubicador, 03, 04, 05, 06 y 09): se pide el primero que
-        // falta, en el orden en que se aplican.
+        // Faltan columnas de los ajustes que van después del 0009 (0010, 02 del cubicador, 03, 04, 05, 06, 09 y 11): se pide el primero
+        // que falta, en el orden en que se aplican.
         if (faltantes.All(f => Columnas0010.Contains(f) || Columnas02.Contains(f) || Columnas03.Contains(f) || Columnas04.Contains(f)
-                               || Columnas05.Contains(f) || Columnas06.Contains(f) || Columnas09.Contains(f)))
+                               || Columnas05.Contains(f) || Columnas06.Contains(f) || Columnas09.Contains(f) || Columnas11.Contains(f)))
         {
             return HealthCheckResult.Unhealthy(
                 faltantes.Any(Columnas0010.Contains) ? DescripcionEsquemaSin0010
@@ -273,7 +284,8 @@ public sealed class clsBaseDatosHealthCheck(
                 : faltantes.Any(Columnas04.Contains) ? DescripcionEsquemaSin04
                 : faltantes.Any(Columnas05.Contains) ? DescripcionEsquemaSin05
                 : faltantes.Any(Columnas06.Contains) ? DescripcionEsquemaSin06
-                : DescripcionEsquemaSin09);
+                : faltantes.Any(Columnas09.Contains) ? DescripcionEsquemaSin09
+                : DescripcionEsquemaSin11);
         }
 
         return HealthCheckResult.Unhealthy(PrefijoEsquemaIncompleto + string.Join(", ", faltantes.Order(StringComparer.Ordinal).Take(5)));

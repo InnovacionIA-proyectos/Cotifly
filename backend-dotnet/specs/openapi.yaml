@@ -1495,7 +1495,8 @@ paths:
             `mensaje`). Códigos por campo: los de `ErrorFilaLicitacion` (`LINEA_INCOMPLETA`, `CAMPO_REQUERIDO`, `CAMPO_DEMASIADO_LARGO`,
             `VALOR_FUERA_DE_RANGO`, `POSICION_INVALIDA`, `PESO_REQUERIDO`, `PESO_INCONSISTENTE`, `CAMPO_NO_APLICA`,
             `CODIGO_NO_CATALOGO`, `MUNICIPIO_AMBIGUO`, `MUNICIPIO_NO_ENCONTRADO`, `LINEAS_REQUERIDAS`, `DEMASIADAS_LINEAS`) más
-            `CONEXO_DUPLICADO`, `CONEXO_NO_ENCONTRADO` y `DEMASIADOS_CONEXOS`. `CAMPO_REQUERIDO` en
+            `CONEXO_DUPLICADO`, `CONEXO_NO_ENCONTRADO` y `DEMASIADOS_CONEXOS`. HU-030.1 (#184): `peso_con_tara_kg` con otra clase de
+            viaje que `Contenedor` es `CAMPO_NO_APLICA` y menor que el peso de carga es `PESO_CON_TARA_MENOR_QUE_CARGA`. `CAMPO_REQUERIDO` en
             `origen_municipio_id`/`destino_municipio_id` o `mercancias[i].id_tipo_mercancia` cuando falta el id.
             HU-021.5: `TIPO_MERCANCIA_INEXISTENTE` en `mercancias[i].id_tipo_mercancia` si el id no está en el catálogo del cubicador.
             `POSICION_INVALIDA` va en `mercancias[i].<subcampo>` (índice base 0: `cantidad`, `largo_cm`, `ancho_cm`, `alto_cm`,
@@ -4909,6 +4910,12 @@ components:
           type: number
           nullable: true
           description: HU-021.9. Peso total que declaró el comercial para la ruta.
+        peso_con_tara_kg:
+          type: number
+          nullable: true
+          description: |
+            HU-030.1 (#184). Peso total de la ruta con la tara de los contenedores (solo una ruta `Contenedor` que la trae); `null` =
+            a Nexo va el peso de carga. Cada camión trae su parte en `camiones[].peso_con_tara_kg`.
         camiones:
           type: array
           description: |
@@ -5021,6 +5028,13 @@ components:
         peso_kg:
           type: number
           nullable: true
+        peso_con_tara_kg:
+          type: number
+          nullable: true
+          description: |
+            HU-030.1 (#184). El peso con tara que viaja a Nexo en la línea del camión: con un solo camión, el de la ruta; con varios, el
+            peso de carga del camión más una parte igual de la tara (el último camión se queda con el resto del redondeo, así la suma
+            es exactamente el de la ruta). `null` si la ruta no lleva tara.
         estado_costeo:
           type: string
           nullable: true
@@ -5329,6 +5343,14 @@ components:
           nullable: true
           minimum: 0
           maximum: 999999.99
+        peso_con_tara_kg:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 999999.99
+          description: |
+            HU-030.1 (#184). Peso total con tara de la ruta de contenedor (mismas reglas que `RutaCapturaWeb.peso_con_tara_kg`);
+            `null` lo quita.
         valor_mercancia:
           type: number
           nullable: true
@@ -5709,6 +5731,18 @@ components:
           minimum: 0
           maximum: 999999.99
           description: Peso total de la ruta (es el del camión que se crea mientras no haya cubicador).
+        peso_con_tara_kg:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 999999.99
+          description: |
+            HU-030.1 (#184). **Solo con `clase_viaje = Contenedor`** y opcional: peso total de la ruta CON la tara de los contenedores
+            (kg, 2 decimales), lo escribe el comercial. Valor inicial sugerido: el peso de carga (`peso_kg`). No puede ser menor que
+            el peso de carga (`peso_kg` o, sin él, la suma de las mercancías): `PESO_CON_TARA_MENOR_QUE_CARGA`. Con otra clase de
+            viaje es `CAMPO_NO_APLICA`. No va al cubicador (recibe el peso por mercancía, sin tara): va a Nexo como `peso` de las
+            líneas de la ruta, repartido por camión (la tara, por partes iguales), y esas líneas viajan **sin posiciones** (Nexo
+            valida `PESO_INCONSISTENTE` al 1 % cuando la línea trae posiciones). Sin él, a Nexo va el peso de carga, como antes.
         mercancias:
           type: array
           nullable: true
@@ -6038,6 +6072,12 @@ components:
         peso_kg:
           type: number
           nullable: true
+        peso_con_tara_kg:
+          type: number
+          nullable: true
+          description: |
+            HU-030.1 (#184). Peso total con tara de la ruta de contenedor tal como lo escribió el comercial (`RutaCapturaWeb.peso_con_tara_kg`);
+            `null` = sin tara. Cambiarlo en el `PUT` no vuelve a cubicar (el cubicador no usa la tara).
         mercancias:
           type: array
           items:
@@ -6211,6 +6251,18 @@ components:
           minimum: 0
           maximum: 999999.99
           description: Peso total de la ruta (es el del camión que se crea mientras no haya cubicador).
+        peso_con_tara_kg:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 999999.99
+          description: |
+            HU-030.1 (#184). **Solo con `clase_viaje = Contenedor`** y opcional: peso total de la ruta CON la tara de los contenedores
+            (kg, 2 decimales), lo escribe el comercial. Valor inicial sugerido: el peso de carga (`peso_kg`). No puede ser menor que
+            el peso de carga (`peso_kg` o, sin él, la suma de las mercancías): `PESO_CON_TARA_MENOR_QUE_CARGA`. Con otra clase de
+            viaje es `CAMPO_NO_APLICA`. No va al cubicador (recibe el peso por mercancía, sin tara): va a Nexo como `peso` de las
+            líneas de la ruta, repartido por camión (la tara, por partes iguales), y esas líneas viajan **sin posiciones** (Nexo
+            valida `PESO_INCONSISTENTE` al 1 % cuando la línea trae posiciones). Sin él, a Nexo va el peso de carga, como antes.
         mercancias:
           type: array
           nullable: true
@@ -6727,6 +6779,18 @@ components:
           nullable: true
           minimum: 0
           maximum: 999999.99
+        peso_con_tara_kg:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 999999.99
+          description: |
+            HU-030.1 (#184). **Solo con `clase_viaje = Contenedor`** y opcional: peso total de la ruta CON la tara de los contenedores
+            (kg, 2 decimales), lo escribe el comercial. Valor inicial sugerido: el peso de carga (`peso_kg`). No puede ser menor que
+            el peso de carga (`peso_kg` o, sin él, la suma de las mercancías): `PESO_CON_TARA_MENOR_QUE_CARGA`. Con otra clase de
+            viaje es `CAMPO_NO_APLICA`. No va al cubicador (recibe el peso por mercancía, sin tara): va a Nexo como `peso` de las
+            líneas de la ruta, repartido por camión (la tara, por partes iguales), y esas líneas viajan **sin posiciones** (Nexo
+            valida `PESO_INCONSISTENTE` al 1 % cuando la línea trae posiciones). Sin él, a Nexo va el peso de carga, como antes.
         valor_mercancia:
           type: number
           nullable: true
@@ -6838,7 +6902,8 @@ components:
           enum: [LINEAS_REQUERIDAS, DEMASIADAS_LINEAS, LINEA_INCOMPLETA, CAMPO_REQUERIDO, CAMPO_DEMASIADO_LARGO, VALOR_FUERA_DE_RANGO,
                  DEMASIADAS_POSICIONES, POSICION_INVALIDA, PESO_REQUERIDO, PESO_INCONSISTENTE, FILA_INVALIDA, CAMPO_NO_APLICA,
                  CODIGO_NO_CATALOGO, MUNICIPIO_AMBIGUO, MUNICIPIO_NO_ENCONTRADO, MUNICIPIO_INEXISTENTE, CONEXO_DUPLICADO,
-                 CONEXO_NO_ENCONTRADO, DEMASIADOS_CONEXOS, TIPO_MERCANCIA_INEXISTENTE, MERCANCIA_DESCONOCIDA, MERCANCIA_NO_CUBICABLE]
+                 CONEXO_NO_ENCONTRADO, DEMASIADOS_CONEXOS, TIPO_MERCANCIA_INEXISTENTE, MERCANCIA_DESCONOCIDA, MERCANCIA_NO_CUBICABLE,
+                 PESO_CON_TARA_MENOR_QUE_CARGA]
           description: |
             HU-013.11: `CODIGO_NO_CATALOGO` (el valor no es un código de catálogo, G2), `CAMPO_NO_APLICA` y `CAMPO_REQUERIDO` de las
             reglas condicionales (G3), `MUNICIPIO_AMBIGUO` y `MUNICIPIO_NO_ENCONTRADO` (G6, campo `origen` o `destino`).
@@ -6848,7 +6913,8 @@ components:
             `CONEXO_NO_ENCONTRADO` y `DEMASIADOS_CONEXOS` en `servicios_conexos`. HU-021.5: `TIPO_MERCANCIA_INEXISTENTE` en
             `mercancias[i].id_tipo_mercancia` (el id obsoleto no está en el catálogo del cubicador). HU-023.3:
             `MERCANCIA_DESCONOCIDA` y `MERCANCIA_NO_CUBICABLE` en `mercancias[i].codigo_mercancia`; `CAMPO_REQUERIDO` en
-            `mercancias[i].codigo_mercancia` si falta el código.
+            `mercancias[i].codigo_mercancia` si falta el código. HU-030.1 (#184): `PESO_CON_TARA_MENOR_QUE_CARGA` en
+            `peso_con_tara_kg` (menor que el peso de carga) y `CAMPO_NO_APLICA` en `peso_con_tara_kg` sin `clase_viaje = Contenedor`.
         mensaje:
           type: string
 

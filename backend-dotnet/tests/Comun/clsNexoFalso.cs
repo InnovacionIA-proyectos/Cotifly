@@ -32,6 +32,14 @@ public sealed class clsNexoFalso : HttpMessageHandler
     public HttpStatusCode? AltaFalla { get; set; }
 
     /// <summary>
+    /// HU-030.1 (#184): altas rechazadas con <c>400 PESO_INCONSISTENTE</c>. Como Nexo (<c>CapturarSolicitudValidador</c>, confirmado al
+    /// cerrar NEXO#308): una línea con posiciones con peso cuyo <c>peso</c> difiere más del 1 % de <c>Σ cantidad × pesoKg</c> se rechaza.
+    /// </summary>
+    public int AltasPesoInconsistente => Volatile.Read(ref _altasPesoInconsistente);
+
+    private int _altasPesoInconsistente;
+
+    /// <summary>
     /// HU-023.3 (#158): si tiene valor, el alta (<c>POST /api/captura-solicitudes</c>) lo espera antes de responder: sirve para hacer
     /// otra petición a la API mientras el envío a Nexo está en curso (carreras).
     /// </summary>
@@ -533,6 +541,37 @@ public sealed class clsNexoFalso : HttpMessageHandler
         return Json(HttpStatusCode.OK, filas);
     }
 
+    /// <summary>
+    /// HU-030.1 (#184): el índice (base 0) de la primera línea del alta cuyo <c>peso</c> no cuadra al 1 % con sus posiciones con peso
+    /// (la regla de Nexo); <c>null</c> si todas cuadran o no traen posiciones.
+    /// </summary>
+    internal static int? LineaConPesoInconsistente(JsonNode? alta)
+    {
+        if (alta?["lineas"] is not JsonArray lineas)
+        {
+            return null;
+        }
+
+        for (var i = 0; i < lineas.Count; i++)
+        {
+            if (lineas[i]?["posiciones"] is not JsonArray { Count: > 0 } posiciones || lineas[i]?["peso"] is not JsonValue pesoNodo)
+            {
+                continue;
+            }
+
+            var suma = posiciones.Sum(p => p?["pesoKg"] is JsonValue kg && kg.GetValue<decimal>() > 0
+                ? (p["cantidad"]?.GetValue<int>() ?? 1) * kg.GetValue<decimal>()
+                : 0m);
+            var peso = pesoNodo.GetValue<decimal>();
+            if (suma > 0 && peso > 0 && Math.Abs(peso - suma) / peso > 0.01m)
+            {
+                return i;
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>HU-023 (#176): la query de cada <c>GET /api/captura-solicitudes/ciudades</c> recibida.</summary>
     public ConcurrentQueue<string> CiudadesConsultadas { get; } = new();
 
@@ -544,6 +583,13 @@ public sealed class clsNexoFalso : HttpMessageHandler
         }
 
         UltimaAlta = JsonNode.Parse(cuerpo ?? "{}");
+        if (LineaConPesoInconsistente(UltimaAlta) is { } inconsistente)
+        {
+            Interlocked.Increment(ref _altasPesoInconsistente);
+            return Error(HttpStatusCode.BadRequest, "PESO_INCONSISTENTE",
+                $"Línea {inconsistente + 1}: el peso no coincide con la suma de las posiciones (tolerancia 1 %).");
+        }
+
         var numero = Math.Max(1, UltimaAlta?["lineas"] is JsonArray arreglo ? arreglo.Count : 1);
         var solicitud = new clsSolicitudFalsa(Guid.NewGuid().ToString(), _solicitudes.Count, [.. Enumerable.Range(0, numero).Select(_ => Guid.NewGuid().ToString())]);
         if (UltimaAlta?["lineas"] is JsonArray recibidas)

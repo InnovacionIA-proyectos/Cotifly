@@ -35,6 +35,7 @@ public sealed partial class clsLineaSolicitud
         HorasDescargue = linea.HorasDescargue ?? encabezado?.HorasDescargue;
         PesoKg = linea.PesoKg;
         ValorMercancia = linea.ValorMercancia;
+        PesoConTaraKg = linea.PesoConTaraKg;
         ReemplazarMercancias(linea.Posiciones);
 
         if (replanificada)
