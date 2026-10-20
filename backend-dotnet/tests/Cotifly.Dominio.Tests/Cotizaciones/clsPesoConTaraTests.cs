@@ -142,6 +142,21 @@ public sealed class clsPesoConTaraTests
     }
 
     [Fact]
+    public void ConVariosCamionesQueNoSumanLaCargaDeclaradaLaSumaDeLasLineasSigueSiendoElPesoConTara()
+    {
+        // Validación #184: la carga declarada es 28000 kg, pero los camiones del cubicador suman 27800 kg (sus pesos salen de las
+        // mercancías y la regla del 1 % admite la diferencia). La tara se calcula sobre lo que viaja: 35600 − 27800 = 7800 (3900 por
+        // camión); con la carga declarada habrían viajado 35400 kg en lugar de los 35600 que escribió el comercial.
+        var ruta = Ruta(Linea(pesoKg: 28_000m, pesoConTaraKg: 35_600m) with { Posiciones = [] }, 16_000m, 11_800m);
+
+        var pesos = ruta.VehiculosOrdenados.Select(v => ruta.ALineaNexo(v).PesoKg!.Value).ToList();
+
+        pesos.Should().Equal(19_900m, 15_700m);
+        pesos.Sum().Should().Be(35_600m);
+        ruta.VehiculosOrdenados.Select(v => clsCamionParaEmparejar.Desde(ruta, v).PesoKg).Should().Equal(19_900m, 15_700m);
+    }
+
+    [Fact]
     public void SinTaraConVariosCamionesCadaLineaLlevaElPesoDeSuCamion()
     {
         var ruta = Ruta(Linea(), 16_000m, 12_000m);

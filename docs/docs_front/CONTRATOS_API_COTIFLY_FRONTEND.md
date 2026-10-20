@@ -674,7 +674,7 @@ suma) y el cubicador necesita el peso de la carga **sin** tara. El comercial esc
   comercial no sabe cuántos habrá. Valor inicial sugerido: `peso_kg` (el comercial le suma la tara de todos los contenedores de la
   ruta). Se puede corregir después en "Editar solicitud" (`PUT .../solicitud`, sin volver a cubicar) y en una fila de la licitación.
 - **Qué viaja a NEXO:** con un camión, la línea lleva `peso = peso_con_tara_kg`. Con varios, cada línea lleva el peso de carga de su
-  camión más una parte igual de la tara (`peso_con_tara_kg − peso_kg`, un contenedor por camión); el último camión se queda con el resto
+  camión más una parte igual de la tara (`peso_con_tara_kg` menos la suma de los pesos de carga de los camiones, un contenedor por camión); el último camión se queda con el resto
   del redondeo, así que la suma es exactamente `peso_con_tara_kg`. En los dos casos la línea va **sin posiciones**: NEXO valida que el peso
   de una línea con posiciones coincida al 1 % con su suma (`PESO_INCONSISTENTE`) y la tara la descuadraría.
 - **Qué ve el comercial:** `GET .../costeo` trae `rutas[].peso_con_tara_kg` y, por camión, `camiones[].peso_con_tara_kg` (lo que viajó).

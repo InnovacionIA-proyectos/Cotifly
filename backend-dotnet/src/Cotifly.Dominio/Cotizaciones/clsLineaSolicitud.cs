@@ -545,7 +545,7 @@ public sealed partial class clsLineaSolicitud
     /// </summary>
     /// <remarks>
     /// HU-030.1 (#184): en una ruta que <see cref="LlevaTara"/> (contenedor con <see cref="PesoConTaraKg"/>) la tara total (peso con tara
-    /// menos el peso de carga de la ruta) se reparte <b>por partes iguales</b> entre TODOS sus camiones (uno por contenedor, de la misma
+    /// menos la carga que viaja en sus líneas) se reparte <b>por partes iguales</b> entre TODOS sus camiones (uno por contenedor, de la misma
     /// clase: la misma tara), en céntimos, y el último camión en orden (<see cref="VehiculosOrdenados"/>) se queda con el resto del
     /// redondeo: la suma de las líneas es exactamente el peso con tara. Con un solo camión, la línea lleva el peso con tara tal cual. Como
     /// el peso sin tara, cuenta los camiones descartados: lo que ya viajó no cambia y el emparejador vuelve a calcular el mismo peso.
@@ -577,16 +577,29 @@ public sealed partial class clsLineaSolicitud
     /// HU-030.1 (#184): la parte de la tara que lleva <paramref name="camion"/> (ver <see cref="PesoLineaNexo"/>), o <c>null</c> si la
     /// ruta no lleva tara o no se conoce su peso de carga. Una tara negativa (dato anterior a la validación) cuenta como 0.
     /// </summary>
+    /// <remarks>
+    /// La tara es el peso con tara menos la carga que <b>viaja</b> en las líneas (la suma de <see cref="PesoCargaLineaNexo"/> de todos
+    /// los camiones), no la declarada: con varios camiones, la suma de sus pesos del cubicador puede diferir hasta 1 % del <see cref="PesoKg"/>
+    /// declarado (sale de las mercancías), y así la suma de las líneas sigue siendo exactamente el peso con tara (validación #184). Si
+    /// algún camión no trae peso, se usa la carga de la ruta (<see cref="PesoKg"/> o la suma de las mercancías).
+    /// </remarks>
     private decimal? TaraDelCamion(clsVehiculoLineaSolicitud camion)
     {
-        var suma = SumaPesoMercancias;
-        if (!LlevaTara || (PesoKg ?? (suma > 0 ? suma : null)) is not { } carga)
+        if (!LlevaTara)
         {
             return null;
         }
 
-        var tara = Math.Max(0m, PesoConTaraKg!.Value - carga);
         var camiones = VehiculosOrdenados;
+        var pesos = camiones.Select(PesoCargaLineaNexo).ToList();
+        var suma = SumaPesoMercancias;
+        var carga = pesos.All(p => p is not null) ? pesos.Sum() : PesoKg ?? (suma > 0 ? suma : null);
+        if (carga is null)
+        {
+            return null;
+        }
+
+        var tara = Math.Max(0m, PesoConTaraKg!.Value - carga.Value);
         var parte = Math.Round(tara / camiones.Count, clsSolicitudCosteo.Decimales, MidpointRounding.ToZero);
         return ReferenceEquals(camiones[^1], camion) ? tara - (parte * (camiones.Count - 1)) : parte;
     }
