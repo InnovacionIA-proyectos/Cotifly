@@ -871,7 +871,7 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
             new { fila = 1, origen = "CALI", origen_municipio_id = 76001, destino = "CARTAGENA", destino_municipio_id = 13001, tipologia = "CargaSeca", peso_kg = 12_500m,
                 valor_mercancia = 50_000_000m, mercancias = new[] { MercanciaPliego(10, 1250m) } },
             new { fila = 2, origen = "CUCUTA", origen_municipio_id = 54001, destino = "BOGOTA, D.C.", destino_municipio_id = 11001, tipologia = "CargaSeca", peso_kg = 8_000m,
-                valor_mercancia = 50_000_000m },
+                valor_mercancia = 50_000_000m, tipo_vehiculo = "2" },
         ];
 
         // 1. Carga del pliego (Excel + filas mapeadas).
@@ -886,7 +886,8 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         await api.ProcesarCubicacionAsync(folio);
 
         // 2. Cubicador por fila: dos camiones, uno y el respaldo; cada ruta con su fila de origen del Excel.
-        (await CamionesAsync(folio)).Should().Equal("1|3S3|FURGON|16000.00|R", "1|2S3|ESTACAS|12000.00|R", "2|2|FURGON|12500.00|R", "3|||8000.00|-");
+        // HU-032 (#197): la fila sin mercancías no va al cubicador y lleva su vehículo elegido.
+        (await CamionesAsync(folio)).Should().Equal("1|3S3|FURGON|16000.00|R", "1|2S3|ESTACAS|12000.00|R", "2|2|FURGON|12500.00|R", "3|2||8000.00|-");
         _cubicador.Recomendaciones.Should().HaveCount(2, "la fila sin mercancías no llama al cubicador");
         (await clsBaseDatosPruebas.EscalarAsync<string>(Cadena,
             "SELECT STRING_AGG(CONCAT(l.orden, '=', l.rutaOrigenIndice), ',') WITHIN GROUP (ORDER BY l.orden) FROM dbo_cotifly.CotizacionLineasSolicitud l "
@@ -897,7 +898,7 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         _nexo.UltimaAlta!["tipo"]!.GetValue<string>().Should().Be("licitacion");
         var lineas = _nexo.UltimaAlta!["lineas"]!.AsArray().Select(l => l!).ToList();
         lineas.Select(l => (l["tipoVehiculo"]?.GetValue<string>(), l["peso"]!.GetValue<decimal>()))
-            .Should().Equal(("3S3", 16_000m), ("2S3", 12_000m), ("2", 12_500m), ((string?)null, 8_000m));
+            .Should().Equal(("3S3", 16_000m), ("2S3", 12_000m), ("2", 12_500m), ("2", 8_000m));
 
         // 4. Polling parcial (falta un camión de la ruta 1) y completo, con las líneas barajadas.
         var solicitud = _nexo.SolicitudesCreadas[^1];

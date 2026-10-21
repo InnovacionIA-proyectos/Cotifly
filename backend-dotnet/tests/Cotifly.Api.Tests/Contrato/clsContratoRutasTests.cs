@@ -238,6 +238,7 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         (typeof(Cotifly.Dominio.Cotizaciones.clsMercanciaCondicionada), "MercanciaCondicionada"),
         (typeof(Cotifly.Dominio.Cotizaciones.clsAvisosCubicacion), "AvisosCubicacion"),
         (typeof(Cotifly.Dominio.Cotizaciones.clsAdvertenciaCubicador), "AdvertenciaCubicador"),
+        (typeof(Cotifly.Dominio.Cotizaciones.clsVehiculoAviso), "VehiculoAviso"),
         (typeof(Cotifly.Dominio.Cotizaciones.clsExtradimensionCubicador), "ExtradimensionCubicador"),
         // HU-023 (#176): extradimensión con la estructura vigente y lo que lleva cada camión por posición.
         (typeof(Cotifly.Dominio.Cotizaciones.clsMedidasEstandarCubicador), "MedidasEstandarCubicador"),

@@ -61,6 +61,8 @@ public sealed class clsPasosCapturaRutas(clsContextoWeb web, clsPasosCosteo cost
             ["destino"] = "Bogotá",
             ["tipologia"] = "CargaSeca",
             ["peso_kg"] = 28_000m,
+            // HU-032 (#197): la ruta solo trae el peso: el vehículo elegido es obligatorio.
+            ["tipo_vehiculo"] = "3S3",
             ["servicios_conexos"] = new JsonArray(new JsonObject { ["id_servicio_conexo"] = servicio, ["cantidad"] = cantidad }),
         }));
 
@@ -80,6 +82,15 @@ public sealed class clsPasosCapturaRutas(clsContextoWeb web, clsPasosCosteo cost
         var esperadas = string.Join(';', tabla.Rows.Select(f =>
             $"{f["orden"]}|{f["linea_negocio"]}|{f["origen"]}|{f["destino"]}|{f["camiones"]}|{f["peso_camion"]}|{f["vehiculo"]}"));
         guardadas.Should().Be(esperadas);
+    }
+
+    [Then("Nexo recibió una solicitud con {int} líneas con los tipos de vehículo {string}")]
+    public void EntoncesNexoRecibioLineasConVehiculo(int lineas, string vehiculos)
+    {
+        var alta = costeo.Nexo.UltimaAlta ?? throw new InvalidOperationException("Nexo no recibió ningún alta.");
+        var enviados = alta["lineas"]!.AsArray().Select(l => l!["tipoVehiculo"]?.GetValue<string>()).ToList();
+        enviados.Should().HaveCount(lineas);
+        enviados.Should().Equal(vehiculos.Split(", "));
     }
 
     [Then("Nexo recibió una solicitud con {int} líneas sin tipo de vehículo")]
