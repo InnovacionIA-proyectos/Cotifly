@@ -94,10 +94,10 @@ public sealed class clsLineaLicitacionWebRequest
     /// <summary>Horas de descargue de esta fila (G5); sin valor, las del encabezado.</summary>
     public decimal? HorasDescargue { get; init; }
 
-    /// <summary>Obsoleto (decisión 7 de HU-021): se acepta y se ignora con un aviso en el log.</summary>
+    /// <summary>HU-032 (#197, ADR-022): el vehículo elegido de la ruta (código de Nexo). Obligatorio sin mercancías cubicables, salvo en Contenedor (<c>VEHICULO_REQUERIDO</c>); es el respaldo del cubicador: si el cubicador asigna, manda el cubicador. La carrocería es opcional.</summary>
     public string? TipoVehiculo { get; init; }
 
-    /// <summary>Obsoleto (decisión 7 de HU-021): se acepta y se ignora con un aviso en el log.</summary>
+    /// <summary>HU-032 (#197, ADR-022): el vehículo elegido de la ruta (código de Nexo). Obligatorio sin mercancías cubicables, salvo en Contenedor (<c>VEHICULO_REQUERIDO</c>); es el respaldo del cubicador: si el cubicador asigna, manda el cubicador. La carrocería es opcional.</summary>
     public string? Carroceria { get; init; }
     public string? Tipologia { get; init; }
     public string? ClaseViaje { get; init; }

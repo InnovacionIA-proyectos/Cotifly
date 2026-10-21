@@ -49,6 +49,30 @@ public sealed record clsResultadoEdicion(IReadOnlyList<clsLineaSolicitud> RutasQ
 /// </summary>
 public static class clsReglaRecubicacion
 {
+    /// <summary>
+    /// HU-032 (#197): <see cref="Exige(clsLineaSolicitudCosteo, clsLineaSolicitudCosteo)"/> y, con <paramref name="vehiculoCuenta"/> (los
+    /// camiones de la ruta salen del vehículo elegido: no los asignó el cubicador), también un cambio del vehículo o la carrocería elegidos
+    /// (sin mayúsculas, tildes ni separadores): en una ruta sin mercancías cubicables cambiar solo el vehículo es un cambio que viaja.
+    /// </summary>
+    public static bool Exige(clsLineaSolicitudCosteo anterior, clsLineaSolicitudCosteo nueva, bool vehiculoCuenta) =>
+        Exige(anterior, nueva) || (vehiculoCuenta && !MismoVehiculo(anterior, nueva));
+
+    /// <summary>HU-032 (#197): ¿el mismo vehículo y la misma carrocería elegidos? (<see cref="clsVehiculoLineaSolicitud.MismoCodigo"/>).</summary>
+    public static bool MismoVehiculo(clsLineaSolicitudCosteo a, clsLineaSolicitudCosteo b)
+    {
+        ArgumentNullException.ThrowIfNull(a);
+        ArgumentNullException.ThrowIfNull(b);
+        return MismoCodigo(a.TipoVehiculo, b.TipoVehiculo) && MismoCodigo(a.Carroceria, b.Carroceria);
+    }
+
+    private static bool MismoCodigo(string? a, string? b) =>
+        (Normalizar(a), Normalizar(b)) switch
+        {
+            (null, null) => true,
+            ({ } x, { } y) => clsVehiculoLineaSolicitud.MismoCodigo(x, y),
+            _ => false,
+        };
+
     public static bool Exige(clsLineaSolicitudCosteo anterior, clsLineaSolicitudCosteo nueva)
     {
         ArgumentNullException.ThrowIfNull(anterior);

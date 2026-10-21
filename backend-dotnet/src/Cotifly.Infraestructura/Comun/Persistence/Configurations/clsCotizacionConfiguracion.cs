@@ -179,6 +179,9 @@ internal sealed class clsLineaSolicitudConfiguracion : IEntityTypeConfiguration<
         builder.Property(l => l.ValorMercancia).Columna("valorMercancia", "decimal(18,2)");
         // HU-030.1 (#184): db/scripts/11_peso_con_tara.sql (sin él, /health/ready dice "falta 11").
         builder.Property(l => l.PesoConTaraKg).Columna("pesoConTaraKg", "decimal(12,2)");
+        // HU-032 (#197): db/scripts/12_vehiculo_elegido.sql (sin él, /health/ready dice "falta 12").
+        builder.Property(l => l.TipoVehiculoElegido).Columna("tipoVehiculoElegido", "nvarchar(100)").HasMaxLength(clsSolicitudCosteo.LargoCatalogo);
+        builder.Property(l => l.CarroceriaElegida).Columna("carroceriaElegida", "nvarchar(100)").HasMaxLength(clsSolicitudCosteo.LargoCatalogo);
         builder.Property(l => l.ValorLevanteContenedor).Columna("valorLevanteContenedor", "decimal(18,2)");
         builder.Property(l => l.CostoFletesTotal).Columna("costoFletesTotal", "decimal(18,2)");
         builder.Property(l => l.CostoRetornoContenedorTotal).Columna("costoRetornoContenedorTotal", "decimal(18,2)");
@@ -288,7 +291,9 @@ internal sealed class clsMercanciaConfiguracion : IEntityTypeConfiguration<clsMe
         builder.ToTable("CotizacionMercancias", t =>
         {
             t.HasCheckConstraint("ck_cotizacionPosiciones_cantidad", "cantidad >= 1");
-            t.HasCheckConstraint("ck_cotizacionPosiciones_medidas", "largoCm > 0 AND anchoCm > 0 AND altoCm > 0 AND (pesoKg IS NULL OR pesoKg >= 0)");
+            // HU-032 (#197): db/scripts/12 (una mercancía no cubicable va sin ninguna medida; si trae, las tres > 0).
+            t.HasCheckConstraint("ck_cotizacionPosiciones_medidas",
+                "((largoCm IS NULL AND anchoCm IS NULL AND altoCm IS NULL) OR (largoCm > 0 AND anchoCm > 0 AND altoCm > 0)) AND (pesoKg IS NULL OR pesoKg >= 0)");
         });
 
         builder.HasKey(m => m.Id).HasName("pk_cotizacionPosiciones");

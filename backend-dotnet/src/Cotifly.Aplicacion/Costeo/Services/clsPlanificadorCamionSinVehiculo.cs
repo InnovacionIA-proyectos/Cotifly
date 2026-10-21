@@ -5,11 +5,11 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Aplicacion.Costeo.Services;
 
 /// <summary>
-/// Respaldo de la planificación de camiones (HU-021.6; HU-021.5, #133: lo usa <see cref="clsPlanificadorCamionesCubicador"/> cuando el
-/// cubicador no está configurado o falla): un solo camión por ruta, SIN vehículo ni carrocería (salvo la bandera
-/// <see cref="clsOpcionesCaptura.AceptarVehiculoCliente"/>, #138)
-/// (decisión 7: no los digita el comercial; los resuelve la Mesa de Costeo de Nexo) y con el peso total de la ruta: el declarado o, si
-/// no hay, la suma de sus mercancías (<see cref="clsLineaSolicitudCosteo.SumaPesoPosiciones"/>).
+/// Camión de una ruta que no usa los vehículos del cubicador (HU-021.6; HU-021.5, #133; HU-032, #197): un solo camión con el VEHÍCULO
+/// ELEGIDO de la ruta (<c>tipo_vehiculo</c>/<c>carroceria</c>; sin vehículo si no trae, y entonces lo resuelve la Mesa de Costeo de Nexo) y
+/// el peso total de la ruta: el declarado o, si no hay, la suma de sus mercancías (<see cref="clsLineaSolicitudCosteo.SumaPesoPosiciones"/>).
+/// Lo usa <see cref="clsPlanificadorCamionesCubicador"/> para las rutas sin mercancías cubicables. Con
+/// <see cref="clsOpcionesCaptura.AceptarVehiculoCliente"/> apagada la captura borra el elegido antes y el camión va sin vehículo.
 /// </summary>
 public sealed class clsPlanificadorCamionSinVehiculo : IClsPlanificadorCamiones
 {
@@ -21,8 +21,8 @@ public sealed class clsPlanificadorCamionSinVehiculo : IClsPlanificadorCamiones
     }
 
     /// <summary>
-    /// El único camión del respaldo, con <see cref="PesoTotal"/>: sin vehículo ni carrocería, salvo que la ruta los traiga porque la bandera
-    /// <see cref="clsOpcionesCaptura.AceptarVehiculoCliente"/> está encendida (#138; apagada, la captura los borra antes de llegar aquí).
+    /// El único camión, con <see cref="PesoTotal"/> y el vehículo elegido de la ruta tal cual (HU-032: validado en la captura); sin vehículo
+    /// ni carrocería si la ruta no los trae.
     /// </summary>
     public static IReadOnlyList<clsCamionPlaneado> Camiones(clsLineaSolicitudCosteo ruta) =>
         [new clsCamionPlaneado(Texto(ruta.TipoVehiculo), Texto(ruta.Carroceria), PesoTotal(ruta))];

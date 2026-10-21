@@ -277,7 +277,9 @@ public static class clsEmparejadorLineasNexo
         {
             // Cada vuelta asocia al menos un par; un empate resuelto puede volver seguros otros pares.
             empates.Clear();
-            avanzo = AsociarSeguros(pendientes, libres, resultado) || ResolverEmpate(pendientes, libres, resultado, empates);
+            avanzo = AsociarSeguros(pendientes, libres, resultado)
+                     || AsociarRespaldoPorRutaYPeso(pendientes, libres, resultado)
+                     || ResolverEmpate(pendientes, libres, resultado, empates);
         }
         while (avanzo && pendientes.Count > 0 && libres.Count > 0);
 
@@ -338,6 +340,45 @@ public static class clsEmparejadorLineasNexo
 
         return avanzo;
     }
+
+    /// <summary>
+    /// HU-032 (#197): un camión de respaldo (sin <c>idRecomendacionVehiculo</c>: el del vehículo elegido o sin vehículo) se asocia por RUTA y
+    /// PESO cuando esa combinación es única en la cotización (un solo camión pendiente y una sola línea libre la tienen), aunque el vehículo
+    /// o la carrocería ya no cuadren: la Mesa de Costeo pudo cambiarlos en Nexo antes del primer polling (D2, "la Mesa manda"). La línea no
+    /// puede ser de un camión del cubicador (con <c>idRecomendacionVehiculo</c>) ni contradecir la tipología. Devuelve si asoció alguno.
+    /// </summary>
+    private static bool AsociarRespaldoPorRutaYPeso(
+        List<clsCamionParaEmparejar> pendientes, List<clsLineaSolicitudNexo> libres, Dictionary<Guid, string> resultado)
+    {
+        var avanzo = false;
+        foreach (var camion in pendientes.Where(c => c.IdRecomendacionVehiculo is null && c.PesoKg is not null).ToList())
+        {
+            var candidatas = libres.Where(n => Recomendacion(n) is null && PuedeSerDe(camion, n)).ToList();
+            if (candidatas.Count != 1 || pendientes.Count(c => PuedeSerDe(c, candidatas[0])) != 1)
+            {
+                continue;
+            }
+
+            Asociar(camion, candidatas[0], pendientes, libres, resultado);
+            avanzo = true;
+        }
+
+        return avanzo;
+    }
+
+    /// <summary>
+    /// HU-032 (#197): ¿la línea de Nexo puede ser de este camión sin mirar el vehículo? La misma ruta, el mismo peso, sin contradecir la
+    /// tipología y, si la línea trae <c>idRecomendacionVehiculo</c>, el del camión. Un camión del cubicador cuenta como posible dueño de una
+    /// línea sin recomendación (Nexo puede no devolverla): así la unicidad nunca le quita su línea.
+    /// </summary>
+    private static bool PuedeSerDe(clsCamionParaEmparejar camion, clsLineaSolicitudNexo nexo) =>
+        camion.PesoKg is { } peso && nexo.Peso is { } pesoNexo && Math.Round(peso, 2) == Math.Round(pesoNexo, 2)
+        && (Recomendacion(nexo) is not { } recomendacion || camion.IdRecomendacionVehiculo == recomendacion)
+        && MismaRuta(camion, nexo)
+        && Compatible(camion.Tipologia, nexo.Tipologia);
+
+    private static Guid? Recomendacion(clsLineaSolicitudNexo nexo) =>
+        Guid.TryParse(nexo.IdRecomendacionVehiculo, out var recomendacion) && recomendacion != Guid.Empty ? recomendacion : null;
 
     /// <summary>
     /// Resuelve el primer grupo de camiones idénticos de una misma ruta (en orden de envío) cuyas líneas candidatas no puede reclamar
@@ -410,14 +451,7 @@ public static class clsEmparejadorLineasNexo
             return false; // HU-023.4: la línea es de otro camión del cubicador
         }
 
-        if (camion.RutaId is { } rutaId && Guid.TryParse(nexo.GrupoRutaId, out var referencia))
-        {
-            if (referencia != rutaId)
-            {
-                return false;
-            }
-        }
-        else if (nexo.Ruta is null || Normalizar(nexo.Ruta) != Normalizar($"{camion.Origen} → {camion.Destino}"))
+        if (!MismaRuta(camion, nexo))
         {
             return false;
         }
@@ -427,6 +461,12 @@ public static class clsEmparejadorLineasNexo
                && Compatible(camion.Carroceria, nexo.Carroceria)
                && (camion.PesoKg is not { } peso || nexo.Peso is not { } pesoNexo || Math.Round(peso, 2) == Math.Round(pesoNexo, 2));
     }
+
+    /// <summary>La misma ruta: por el <c>grupoRutaId</c> si ambos lados lo traen; si no, por el texto <c>"Origen → Destino"</c> normalizado.</summary>
+    private static bool MismaRuta(clsCamionParaEmparejar camion, clsLineaSolicitudNexo nexo) =>
+        camion.RutaId is { } rutaId && Guid.TryParse(nexo.GrupoRutaId, out var referencia)
+            ? referencia == rutaId
+            : nexo.Ruta is not null && Normalizar(nexo.Ruta) == Normalizar($"{camion.Origen} → {camion.Destino}");
 
     /// <summary>
     /// Un dato que solo trae un lado no contradice; si los dos lo traen, se comparan sin tildes, mayúsculas ni separadores (D2, E2E

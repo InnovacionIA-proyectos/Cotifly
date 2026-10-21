@@ -221,12 +221,16 @@ public sealed record clsCubicacionRutaResumen(
     IReadOnlyList<clsAdvertenciaCubicador> Advertencias,
     clsExtradimensionCubicador? Extradimension)
 {
-    /// <summary>Las rutas de <paramref name="cotizacion"/> que pasaron por el cubicador, en orden; <c>null</c> si ninguna.</summary>
+    /// <summary>
+    /// Las rutas de <paramref name="cotizacion"/> que pasaron por el cubicador o que tienen avisos (HU-032, #197: los del vehículo, como
+    /// <c>VEHICULO_ELEGIDO_USADO</c> o <c>MERCANCIAS_NO_CUBICABLES</c>, también en una ruta que no llamó al cubicador), en orden; <c>null</c>
+    /// si ninguna.
+    /// </summary>
     public static IReadOnlyList<clsCubicacionRutaResumen>? De(clsCotizacionSolicitud cotizacion)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         var rutas = cotizacion.RutasOrdenadas
-            .Where(r => r.ResultadoCubicacion is not null)
+            .Where(r => r.ResultadoCubicacion is not null || r.AvisosCubicacion?.Advertencias is { Count: > 0 })
             .Select(r => new clsCubicacionRutaResumen(
                 r.Orden, r.Id, r.ResultadoCubicacion, r.MotivoSinSeleccion, r.Condicionada,
                 r.AvisosCubicacion?.MercanciasCondicionadas ?? [], r.AvisosCubicacion?.Advertencias ?? [], r.AvisosCubicacion?.Extradimension))

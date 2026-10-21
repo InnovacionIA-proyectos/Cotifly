@@ -132,6 +132,16 @@ public sealed partial class clsLineaSolicitud
     public bool Condicionada { get; private set; }
 
     /// <summary>
+    /// HU-032 (#197, ADR-022; script <c>db/scripts/12</c>): el tipo de vehículo que eligió el comercial para la ruta (<c>tipo_vehiculo</c> de
+    /// la captura), aparte del de sus camiones: es el respaldo del cubicador y lo que la edición y la re-solicitud conservan. Un cambio de la
+    /// Mesa de Costeo en Nexo (D2) cambia el camión, no el elegido. <c>null</c> = no eligió, o la ruta es anterior al 12.
+    /// </summary>
+    public string? TipoVehiculoElegido { get; private set; }
+
+    /// <summary>HU-032 (#197): la carrocería elegida para la ruta (opcional; ver <see cref="TipoVehiculoElegido"/>).</summary>
+    public string? CarroceriaElegida { get; private set; }
+
+    /// <summary>
     /// HU-023.3: avisos del cubicador de la última llamada (mercancías condicionadas, advertencias y extradimensión). HU-023.5 (#160):
     /// se guardan en <c>avisosCubicacion</c> (JSON, propuesta <c>db/scripts/pendientes/04</c>) porque la licitación se cubica en segundo plano y el comercial
     /// los lee después en <c>GET /web/licitaciones/{folio}</c>. <c>null</c> sin cubicador (o en una ruta anterior al 04).
@@ -232,6 +242,8 @@ public sealed partial class clsLineaSolicitud
             PesoConTaraKg = linea.PesoConTaraKg,
             ValorLevanteContenedor = linea.ValorAprovisionamiento,
             CostoServiciosConexos = 0m,
+            TipoVehiculoElegido = Normalizar(linea.TipoVehiculo),
+            CarroceriaElegida = Normalizar(linea.Carroceria),
         };
         ruta._mercancias.AddRange(clsMercancia.DesdeCaptura(ruta.Id, linea.Posiciones));
         return ruta;
@@ -312,7 +324,13 @@ public sealed partial class clsLineaSolicitud
     /// HU-023.3: guarda lo que respondió el cubicador para la ruta (<c>null</c> = sin cubicador: se limpian el resultado, el motivo y la
     /// corrida). Los avisos se guardan con la ruta (<see cref="AvisosCubicacion"/>, HU-023.5).
     /// </summary>
-    public void RegistrarCubicacion(clsCubicacionRuta? cubicacion)
+    public void RegistrarCubicacion(clsCubicacionRuta? cubicacion) => RegistrarCubicacion(cubicacion, null);
+
+    /// <summary>
+    /// <see cref="RegistrarCubicacion(clsCubicacionRuta?)"/> con los avisos del vehículo de la ruta (HU-032, #197, <see cref="clsAvisosVehiculo"/>):
+    /// se guardan con las advertencias del cubicador y reemplazan los anteriores.
+    /// </summary>
+    public void RegistrarCubicacion(clsCubicacionRuta? cubicacion, IReadOnlyList<clsAdvertenciaCubicador>? avisosVehiculo)
     {
         if (cubicacion is not null && cubicacion.MotivoSinSeleccion is not null
             && !string.Equals(cubicacion.Resultado, "SIN_SELECCION_AUTOMATICA", StringComparison.Ordinal))
@@ -324,7 +342,7 @@ public sealed partial class clsLineaSolicitud
         ResultadoCubicacion = cubicacion?.Resultado;
         MotivoSinSeleccion = cubicacion?.MotivoSinSeleccion;
         Condicionada = cubicacion?.Condicionada ?? false;
-        AvisosCubicacion = cubicacion?.Avisos;
+        AvisosCubicacion = clsAvisosVehiculo.Combinar(cubicacion?.Avisos, avisosVehiculo);
     }
 
     /// <summary>Código de la advertencia que deja el motivo real cuando la base no lo admite (<see cref="DegradarMotivoSinSeleccion"/>).</summary>
@@ -358,7 +376,8 @@ public sealed partial class clsLineaSolicitud
     /// HU-023.3: reemplaza los camiones de la ruta por un plan nuevo del cubicador (recalcular la ruta, re-solicitud con cambios de carga),
     /// con su resultado. Solo antes de enviar a Nexo: los camiones anteriores se quitan y los nuevos nacen sin estado ni costo.
     /// </summary>
-    public void ReemplazarCamiones(IReadOnlyList<clsCamionPlaneado> camiones, clsCubicacionRuta? cubicacion)
+    public void ReemplazarCamiones(
+        IReadOnlyList<clsCamionPlaneado> camiones, clsCubicacionRuta? cubicacion, IReadOnlyList<clsAdvertenciaCubicador>? avisosVehiculo = null)
     {
         ArgumentNullException.ThrowIfNull(camiones);
         if (camiones.Count == 0)
@@ -372,7 +391,7 @@ public sealed partial class clsLineaSolicitud
             AgregarVehiculo(camion);
         }
 
-        RegistrarCubicacion(cubicacion);
+        RegistrarCubicacion(cubicacion, avisosVehiculo);
     }
 
     /// <summary>
@@ -390,7 +409,7 @@ public sealed partial class clsLineaSolicitud
     internal void CompletarCubicacion(clsPlanRuta plan)
     {
         ArgumentNullException.ThrowIfNull(plan);
-        ReemplazarCamiones(plan.Camiones, plan.Cubicacion);
+        ReemplazarCamiones(plan.Camiones, plan.Cubicacion, plan.Avisos);
         EstadoCubicacion = Cotizaciones.EstadoCubicacion.Cubicada;
         CubicacionDisponibleAt = null;
         ErrorCubicacion = null;
@@ -490,6 +509,33 @@ public sealed partial class clsLineaSolicitud
     }
 
     /// <summary>
+    /// HU-032 (#197): el vehículo elegido de la ruta: <see cref="TipoVehiculoElegido"/> y <see cref="CarroceriaElegida"/> si están guardados;
+    /// en una ruta anterior al script 12 (sin elegido), el del camión del respaldo si la ruta tiene uno solo sin recomendación del cubicador
+    /// (el vehículo digitado de <c>Captura:AceptarVehiculoCliente</c>). Lo muestra el modelo editable y con él compara la edición.
+    /// </summary>
+    public (string? TipoVehiculo, string? Carroceria) VehiculoElegido =>
+        TipoVehiculoElegido is not null || CarroceriaElegida is not null
+            ? (TipoVehiculoElegido, CarroceriaElegida)
+            : _vehiculos is [{ IdRecomendacionVehiculo: null } unico] ? (unico.TipoVehiculo, unico.Carroceria) : (null, null);
+
+    /// <summary>
+    /// HU-032 (#197): ¿los camiones de la ruta dependen del vehículo elegido? Sí salvo que el cubicador los haya asignado
+    /// (<c>ASIGNADO</c>): entonces el elegido solo es el respaldo y cambiarlo no cambia lo que viaja.
+    /// </summary>
+    public bool UsaVehiculoElegido => !string.Equals(ResultadoCubicacion, "ASIGNADO", StringComparison.Ordinal);
+
+    /// <summary>
+    /// HU-032 (#197): la ruta como línea de la captura con su vehículo ELEGIDO (<see cref="VehiculoElegido"/>), no el de su camión: lo que
+    /// el planificador usa de respaldo y lo que conservan la edición y la re-solicitud. <see cref="ALinea"/> sigue con el del camión (lo
+    /// que viaja; con él se revalida lo guardado).
+    /// </summary>
+    public clsLineaSolicitudCosteo ALineaConElegido()
+    {
+        var (tipo, carroceria) = VehiculoElegido;
+        return ALinea() with { TipoVehiculo = tipo, Carroceria = carroceria };
+    }
+
+    /// <summary>
     /// Línea que viaja a Nexo por <paramref name="camion"/> (una línea por camión, <c>CAMBIOS_BACKEND</c> §5.3): los datos de la ruta
     /// (origen y destino por nombre e id, condiciones, horas, valor de la mercancía) y los del camión (vehículo, carrocería, peso y su
     /// levante como <c>valorAprovisionamiento</c>) y el id de la ruta (<see cref="clsLineaSolicitudCosteo.RutaId"/>, para N1 de Nexo). Las
@@ -518,7 +564,8 @@ public sealed partial class clsLineaSolicitud
             PesoKg = PesoLineaNexo(camion),
             PesoConTaraKg = null,
             ValorAprovisionamiento = ValorLevanteContenedor is null ? null : camion.CostoLevanteContenedor,
-            Posiciones = UnSoloCamion && !LlevaTara ? linea.Posiciones : [],
+            // HU-032 (#197): una ruta con mercancías sin medidas (no cubicables) viaja sin posiciones (PosicionesParaNexo).
+            Posiciones = UnSoloCamion && !LlevaTara ? linea.PosicionesParaNexo : [],
         };
     }
 

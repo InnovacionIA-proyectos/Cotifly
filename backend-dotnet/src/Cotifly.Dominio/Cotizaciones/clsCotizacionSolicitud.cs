@@ -298,7 +298,7 @@ public sealed partial class clsCotizacionSolicitud
                 ruta.AgregarVehiculo(camion);
             }
 
-            ruta.RegistrarCubicacion(capturada.Cubicacion);
+            ruta.RegistrarCubicacion(capturada.Cubicacion, capturada.AvisosVehiculo);
             if (capturada.CubicacionPendiente)
             {
                 ruta.MarcarCubicacionPendiente();
@@ -1136,7 +1136,7 @@ public sealed partial class clsCotizacionSolicitud
             return new clsErrorDominio(clsCodigosError.RutaInexistente, $"La ruta {rutaId} no es de la cotización {Folio}.");
         }
 
-        ruta.ReemplazarCamiones(plan.Camiones, plan.Cubicacion);
+        ruta.ReemplazarCamiones(plan.Camiones, plan.Cubicacion, plan.Avisos);
         var recalculo = RecalcularTotales(ahora);
         return recalculo.EsFallo ? recalculo.Error : ruta;
     }

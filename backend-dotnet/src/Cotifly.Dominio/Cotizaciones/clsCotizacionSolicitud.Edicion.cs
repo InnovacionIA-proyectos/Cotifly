@@ -274,7 +274,7 @@ public sealed partial class clsCotizacionSolicitud
             ruta.AgregarVehiculo(camion);
         }
 
-        ruta.RegistrarCubicacion(capturada.Cubicacion);
+        ruta.RegistrarCubicacion(capturada.Cubicacion, capturada.AvisosVehiculo);
         foreach (var conexo in capturada.Conexos ?? [])
         {
             ruta.AgregarOActualizarConexo(conexo);

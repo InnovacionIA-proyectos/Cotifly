@@ -39,7 +39,13 @@ public sealed class clsConvertidorAvisosCubicacion : ValueConverter<clsAvisosCub
 
         var acotados = new clsAvisosCubicacion(
             [.. (avisos.MercanciasCondicionadas ?? []).Take(MaximoElementos).Select(m => new clsMercanciaCondicionada(Recortar(m.CodigoMercancia)!, Recortar(m.Comentario)))],
-            [.. (avisos.Advertencias ?? []).Take(MaximoElementos).Select(a => new clsAdvertenciaCubicador(Recortar(a.Codigo), Recortar(a.Mensaje)!))],
+            // HU-032 (#197): los avisos del vehículo conservan el vehículo elegido y los finales.
+            [.. (avisos.Advertencias ?? []).Take(MaximoElementos).Select(a => a with
+            {
+                Codigo = Recortar(a.Codigo),
+                Mensaje = Recortar(a.Mensaje)!,
+                VehiculosFinales = a.VehiculosFinales is { } finales ? [.. finales.Take(MaximoElementos)] : null,
+            })],
             avisos.Extradimension is { } e
                 ? new clsExtradimensionCubicador(e.HayExtradimension, e.MedidasEstandar, [.. (e.Piezas ?? []).Take(MaximoElementos).Select(p => new clsPiezaExtradimension(
                     p.IndicePosicion, Recortar(p.IdTipoMercancia), Recortar(p.CodigoMercancia),

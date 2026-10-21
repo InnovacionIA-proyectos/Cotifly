@@ -233,7 +233,7 @@ public sealed class clsEnvioCosteoService(
             return new clsErrorDominio(clsCodigosError.ErrorInterno, "El envío a costeo exige el comercial autenticado.");
         }
 
-        var rutas = SinVehiculo(entrada.Rutas, logger, opcionesCaptura?.Value.AceptarVehiculoCliente ?? false);
+        var rutas = SinVehiculo(entrada.Rutas, logger, opcionesCaptura?.Value.AceptarVehiculoCliente ?? true);
         var nit = entrada.NitCliente?.Trim();
 
         // HU-021.6: todas las validaciones juntas (encabezado y cada ruta); el error trae el primero y detalle.errores trae todos.
@@ -353,27 +353,19 @@ public sealed class clsEnvioCosteoService(
     }
 
     /// <summary>
-    /// Decisión 7 de HU-021 (HU-021.6): el comercial ya no digita vehículo ni carrocería (los define el cubicador o la Mesa de Costeo de
-    /// Nexo). Si una ruta los trae (cliente con el contrato anterior), se ignoran y queda un aviso en el log; la captura sigue.
-    /// Con la bandera de respaldo <see cref="clsOpcionesCaptura.AceptarVehiculoCliente"/> (#138) se conservan: los valida el catálogo de
-    /// Nexo como cualquier código y solo los usa el camión del respaldo (<see cref="clsPlanificadorCamionSinVehiculo"/>); si el cubicador
-    /// recomienda, manda el cubicador.
+    /// HU-032 (#197, ADR-022; revierte en parte la decisión 7 de HU-021): el vehículo y la carrocería que elige el comercial son el
+    /// respaldo del cubicador y se conservan (<see cref="clsOpcionesCaptura.AceptarVehiculoCliente"/>, encendida por defecto): una ruta sin
+    /// mercancías cubicables los usa (y los exige, salvo en Contenedor) y una que va al cubicador los usa si el cubicador no selecciona
+    /// vehículo o falla (<see cref="clsPlanificadorCamionesCubicador"/>). Con la bandera APAGADA (interruptor de reversa) rige la decisión 7:
+    /// se ignoran con un aviso en el log y la captura sigue. Lo comparten la captura, la licitación y la edición.
     /// </summary>
     public static IReadOnlyList<clsLineaLicitacionEntrada?> SinVehiculo(
-        IReadOnlyList<clsLineaLicitacionEntrada?> rutas, ILogger logger, bool aceptarVehiculoCliente = false)
+        IReadOnlyList<clsLineaLicitacionEntrada?> rutas, ILogger logger, bool aceptarVehiculoCliente = true)
     {
         ArgumentNullException.ThrowIfNull(rutas);
         ArgumentNullException.ThrowIfNull(logger);
         if (aceptarVehiculoCliente)
         {
-            var conVehiculo = rutas.Count(r => r?.Linea is { } l && (l.TipoVehiculo is not null || l.Carroceria is not null));
-            if (conVehiculo > 0)
-            {
-                logger.LogInformation(
-                    "{Rutas} ruta(s) traen tipo_vehiculo o carroceria y Captura:AceptarVehiculoCliente está encendida: se conservan para el camión del respaldo (sin cubicador).",
-                    conVehiculo);
-            }
-
             return rutas;
         }
 
@@ -391,7 +383,7 @@ public sealed class clsEnvioCosteoService(
         if (ignoradas > 0)
         {
             logger.LogWarning(
-                "{Rutas} ruta(s) traen tipo_vehiculo o carroceria: se ignoran (HU-021, decisión 7: los define el cubicador o la Mesa de Costeo de Nexo).",
+                "{Rutas} ruta(s) traen tipo_vehiculo o carroceria: se ignoran porque Captura:AceptarVehiculoCliente está apagada (decisión 7 de HU-021).",
                 ignoradas);
         }
 
@@ -399,20 +391,22 @@ public sealed class clsEnvioCosteoService(
     }
 
     /// <summary>
-    /// La misma regla (decisión 7) sobre los cambios de carga de la re-solicitud (<c>datos_carga</c>, HU-021.9): <c>tipo_vehiculo</c> y
-    /// <c>carroceria</c> se ignoran con un aviso en el log. Está junto a la de la captura. La bandera <see cref="clsOpcionesCaptura.AceptarVehiculoCliente"/> (#138) no aplica aquí: los camiones de la versión nueva salen del planificador o se copian.
+    /// La misma regla sobre los cambios de carga de la re-solicitud (<c>datos_carga</c>, HU-021.9). HU-032 (#197): con la bandera
+    /// <see cref="clsOpcionesCaptura.AceptarVehiculoCliente"/> encendida (por defecto) <c>tipo_vehiculo</c> y <c>carroceria</c> cambian el
+    /// vehículo elegido de la ruta; apagada se ignoran con un aviso en el log (decisión 7).
     /// </summary>
-    public static clsCambiosCarga SinVehiculo(clsCambiosCarga cambios, ILogger logger)
+    public static clsCambiosCarga SinVehiculo(clsCambiosCarga cambios, ILogger logger, bool aceptarVehiculoCliente = true)
     {
         ArgumentNullException.ThrowIfNull(cambios);
         ArgumentNullException.ThrowIfNull(logger);
-        if (!cambios.Presentes.Contains(clsCambiosCarga.CampoTipoVehiculo) && !cambios.Presentes.Contains(clsCambiosCarga.CampoCarroceria))
+        if (aceptarVehiculoCliente
+            || (!cambios.Presentes.Contains(clsCambiosCarga.CampoTipoVehiculo) && !cambios.Presentes.Contains(clsCambiosCarga.CampoCarroceria)))
         {
             return cambios;
         }
 
         logger.LogWarning(
-            "datos_carga trae tipo_vehiculo o carroceria: se ignoran (HU-021, decisión 7: los define el cubicador o la Mesa de Costeo de Nexo).");
+            "datos_carga trae tipo_vehiculo o carroceria: se ignoran porque Captura:AceptarVehiculoCliente está apagada (decisión 7 de HU-021).");
         var presentes = new HashSet<string>(cambios.Presentes, StringComparer.Ordinal);
         presentes.Remove(clsCambiosCarga.CampoTipoVehiculo);
         presentes.Remove(clsCambiosCarga.CampoCarroceria);

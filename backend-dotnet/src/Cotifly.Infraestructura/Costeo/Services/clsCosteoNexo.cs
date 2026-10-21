@@ -637,9 +637,10 @@ public sealed class clsCosteoNexo(
                 s.LineaNegocioNexo ?? solicitud.LineaNegocioNexo, s.ClaseViaje, s.ClaseContenedor,
                 s.Exclusivo, s.Consolidado, s.RetornaContenedor, s.CiudadDevolucionContenedor, s.LevanteContenedorDiferente,
                 s.CiudadLevanteContenedor, s.ValorAprovisionamiento, s.HorasCargue ?? e.HorasCargue, s.HorasDescargue ?? e.HorasDescargue, s.PesoKg, s.ValorMercancia,
-                s.Posiciones.Count == 0
+                // HU-032 (#197): una mercancía sin medidas (no cubicable) no viaja como posición; con ella la línea va sin posiciones.
+                s.PosicionesParaNexo.Count == 0
                     ? null
-                    : [.. s.Posiciones.Select(p => new clsCapturaPosicionWire(p.Descripcion, p.Cantidad, p.LargoCm, p.AnchoCm, p.AltoCm, p.PesoKg))],
+                    : [.. s.PosicionesParaNexo.Select(p => new clsCapturaPosicionWire(p.Descripcion, p.Cantidad, p.LargoCm, p.AnchoCm, p.AltoCm, p.PesoKg))],
                 GrupoRutaId(s, enviarGrupoRutaId, camionesPorRuta),
                 enviarDatosCubicador ? s.IdRecomendacionVehiculo?.ToString("D") : null);
             })]);

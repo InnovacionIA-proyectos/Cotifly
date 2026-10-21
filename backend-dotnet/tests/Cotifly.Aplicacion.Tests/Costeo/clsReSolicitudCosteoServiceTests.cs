@@ -218,20 +218,22 @@ public sealed class clsReSolicitudCosteoServiceTests
         ruta.LineaNegocioId.Should().Be(3);
         ruta.Mercancias.Should().HaveCount(2).And.OnlyContain(m => m.LineaSolicitudId == ruta.Id);
 
-        // HU-021.9: el peso cambió, así que el camión anterior (3S3) se borra y se vuelve a planificar; el tipo_vehiculo de datos_carga
-        // se ignora (decisión 7: lo define el cubicador o la Mesa de Costeo de Nexo).
+        // HU-021.9: el peso cambió, así que el camión anterior (3S3) se borra y se vuelve a planificar. HU-032 (#197): el tipo_vehiculo de
+        // datos_carga es el vehículo elegido nuevo de la ruta (la carrocería elegida se conserva) y la versión nueva lo guarda.
         var camion = ruta.Vehiculos.Should().ContainSingle().Subject;
-        (camion.TipoVehiculo, camion.Carroceria, camion.PesoKg).Should().Be(((string?)null, (string?)null, 28_400m));
-        // Las mercancías de la muestra no tienen codigo_mercancia (filas anteriores al script 02): el cubicador no las puede cubicar y va el
-        // respaldo de un camión sin vehículo con el peso de la ruta (corrección del auditor de #136).
-        await _planificador.DidNotReceiveWithAnyArgs().PlanificarAsync(default, default, default!, Ct);
+        (camion.TipoVehiculo, camion.Carroceria, camion.PesoKg).Should().Be(("2S3", "PORTACONTENEDORES", 28_400m));
+        (ruta.TipoVehiculoElegido, ruta.CarroceriaElegida).Should().Be(("2S3", "PORTACONTENEDORES"));
+        // Las mercancías de la muestra no tienen codigo_mercancia (filas anteriores al script 02): no se pueden cubicar. HU-032: el
+        // planificador no llama al cubicador y la ruta lleva el vehículo elegido con el peso de la ruta.
+        await _planificador.Received(1).PlanificarAsync(_ana, Arg.Any<Guid>(), Arg.Is<clsLineaSolicitudCosteo>(l => l.TipoVehiculo == "2S3"), Arg.Any<CancellationToken>());
         resultado.Valor.RutasReplanificadas.Should().Equal(1);
         await _unidad.Received(1).GuardarCambiosAsync(Arg.Any<CancellationToken>());
         await _envio.Received(1).EnviarGuardadaAsync(nueva, _politica, _ana, Arg.Any<string?>());
         _cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.CosteoVencido, "la original no cambia su costeo");
         _cotizacion.SolicitudNexoId.Should().Be("sol-vieja");
         _eventos.Should().StartWith(new[] { "instantanea", "reservar:costeo_vencido:v5" }, "la versión de la original se reserva antes de crear la nueva");
-        await _catalogos.Received(1).ValidarAsync(_ana, Arg.Is<clsLineaSolicitudCosteo>(l => l.TipoVehiculo != "2S3"), Arg.Any<CancellationToken>());
+        // HU-032: la ruta no se puede cubicar, así que el vehículo elegido se valida contra Nexo antes de crear la versión.
+        await _catalogos.Received(1).ValidarAsync(_ana, Arg.Is<clsLineaSolicitudCosteo>(l => l.TipoVehiculo == "2S3"), Arg.Any<CancellationToken>());
     }
 
     // --- HU-028 (#186): defectos A y C de datos_carga ---

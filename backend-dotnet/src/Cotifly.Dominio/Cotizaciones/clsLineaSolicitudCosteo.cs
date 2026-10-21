@@ -60,6 +60,12 @@ public static class clsCodigosLineaSolicitud
     /// <see cref="CampoNoAplica"/>.
     /// </summary>
     public const string PesoConTaraMenorQueCarga = "PESO_CON_TARA_MENOR_QUE_CARGA";
+
+    /// <summary>
+    /// HU-032 (#197): la ruta no se puede cubicar (no todas sus mercancías son cubicables, o solo trae el peso) y no trae
+    /// <c>tipo_vehiculo</c>. Salvo en Contenedor (Nexo deduce el vehículo), el vehículo elegido es obligatorio.
+    /// </summary>
+    public const string VehiculoRequerido = "VEHICULO_REQUERIDO";
 }
 
 /// <summary>Un error de un campo de la licitación: el campo (snake_case del contrato), su código y un mensaje legible.</summary>
@@ -183,6 +189,40 @@ public sealed record clsLineaSolicitudCosteo
 
     /// <summary>Suma <c>cantidad × pesoKg</c> de las posiciones con peso (la misma de Nexo).</summary>
     public decimal SumaPesoPosiciones => Posiciones.Where(p => p?.PesoKg is > 0).Sum(p => p.Cantidad * p.PesoKg!.Value);
+
+    /// <summary>
+    /// HU-032 (#197): cómo se cubica la ruta según sus mercancías (<see cref="clsPosicionCarga.EsCubicable"/>). Solo
+    /// <see cref="CubicabilidadRuta.Cubicable"/> llama al cubicador; en los demás casos la ruta usa el vehículo elegido.
+    /// </summary>
+    public CubicabilidadRuta Cubicabilidad
+    {
+        get
+        {
+            var mercancias = Posiciones.Where(p => p is not null).ToList();
+            if (mercancias.Count == 0)
+            {
+                return CubicabilidadRuta.SinMercancias;
+            }
+
+            var cubicables = mercancias.Count(p => p.EsCubicable);
+            return cubicables == mercancias.Count ? CubicabilidadRuta.Cubicable
+                : cubicables == 0 ? CubicabilidadRuta.NoCubicable
+                : CubicabilidadRuta.Mixta;
+        }
+    }
+
+    /// <summary>
+    /// HU-032 (#197): ¿la ruta exige el vehículo elegido? Sí cuando no se puede cubicar (no todas sus mercancías son cubicables) y no es de
+    /// contenedor: en Cupo, Nexo no autocostea una línea sin vehículo (COTIFLY-CONTRATO §4); en Contenedor lo deduce por peso y clase.
+    /// </summary>
+    public bool ExigeVehiculoElegido => Cubicabilidad != CubicabilidadRuta.Cubicable && !EsContenedor;
+
+    /// <summary>
+    /// HU-032 (#197): las posiciones que pueden viajar a Nexo: todas, si todas traen sus tres medidas; ninguna si alguna es una mercancía
+    /// sin medidas (no cubicable). Mandar solo una parte descuadraría el peso de la línea contra la suma de sus posiciones
+    /// (<c>PESO_INCONSISTENTE</c> de Nexo, tolerancia 1 %): sin posiciones, a Nexo le basta el peso de la ruta.
+    /// </summary>
+    public IReadOnlyList<clsPosicionCarga> PosicionesParaNexo => Posiciones.All(p => p is not null && p.ConMedidas) ? Posiciones : [];
 
     /// <summary>
     /// Todos los errores de la línea (vacía si Nexo la aceptaría): obligatorios, largos, rangos con 2 decimales, posiciones y la

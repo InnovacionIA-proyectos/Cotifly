@@ -246,10 +246,11 @@ public sealed record clsCamionCosteo(
 
 /// <summary>
 /// <c>MercanciaCosteo</c> (HU-021.9, #136): una mercancía de la ruta (código del catálogo del cubicador, HU-023.3; nombre, medidas y peso).
-/// <c>codigo_mercancia</c> es <c>null</c> en las mercancías anteriores al script <c>02</c>.
+/// <c>codigo_mercancia</c> es <c>null</c> en las mercancías anteriores al script <c>02</c>. HU-032 (#197): las medidas son <c>null</c> en una
+/// mercancía no cubicable (sin medidas ni tipo de mercancía).
 /// </summary>
 public sealed record clsMercanciaCosteo(
-    int Orden, string? CodigoMercancia, string? NombreMercancia, int Cantidad, decimal LargoCm, decimal AnchoCm, decimal AltoCm, decimal? PesoKg);
+    int Orden, string? CodigoMercancia, string? NombreMercancia, int Cantidad, decimal? LargoCm, decimal? AnchoCm, decimal? AltoCm, decimal? PesoKg);
 
 /// <summary>PDF del costeo generado (<c>SalidaPdf</c>) y la versión nueva de la fila (va en el <c>ETag</c>, no en el cuerpo).</summary>
 public sealed record clsPdfCosteoGenerado(clsSalidaPdf Pdf, string? RowVersion);

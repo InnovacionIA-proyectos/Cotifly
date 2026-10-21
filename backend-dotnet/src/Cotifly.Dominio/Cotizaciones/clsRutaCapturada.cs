@@ -41,7 +41,14 @@ public sealed record clsRutaCapturada(
     IReadOnlyList<clsCambioConexo> Conexos,
     Guid? RutaId = null,
     clsCubicacionRuta? Cubicacion = null,
-    bool CubicacionPendiente = false);
+    bool CubicacionPendiente = false)
+{
+    /// <summary>
+    /// HU-032 (#197): los avisos del vehículo de la ruta (<see cref="clsAvisosVehiculo"/>: el cubicador ajustó el elegido, se usó el elegido,
+    /// mercancías no cubicables o elegido inválido); se guardan con las advertencias de la ruta. <c>null</c> = ninguno.
+    /// </summary>
+    public IReadOnlyList<clsAdvertenciaCubicador>? AvisosVehiculo { get; init; }
+}
 
 /// <summary>
 /// Lo que respondió el cubicador para una ruta (HU-023.3, #158; columnas del script <c>02</c> en <c>CotizacionLineasSolicitud</c>): la
@@ -54,9 +61,11 @@ public sealed record clsCubicacionRuta(
 
 /// <summary>
 /// Plan de camiones de una ruta (HU-023.3): los camiones (al menos uno) y lo que respondió el cubicador (<c>null</c> si la ruta no lo
-/// llamó: sin cubicador configurado, sin códigos de mercancía o respaldo por una caída).
+/// llamó: sin cubicador configurado, sin mercancías cubicables o respaldo por una caída). HU-032 (#197): <paramref name="Avisos"/> son los
+/// avisos del vehículo de la ruta (<see cref="clsAvisosVehiculo"/>); <c>null</c> = ninguno.
 /// </summary>
-public sealed record clsPlanRuta(IReadOnlyList<clsCamionPlaneado> Camiones, clsCubicacionRuta? Cubicacion = null);
+public sealed record clsPlanRuta(
+    IReadOnlyList<clsCamionPlaneado> Camiones, clsCubicacionRuta? Cubicacion = null, IReadOnlyList<clsAdvertenciaCubicador>? Avisos = null);
 
 /// <summary>Avisos del cubicador para una ruta que se devuelven al comercial y no se guardan (HU-023.3).</summary>
 public sealed record clsAvisosCubicacion(
@@ -67,8 +76,19 @@ public sealed record clsAvisosCubicacion(
 /// <summary>Una mercancía que dejó la ruta condicionada (pendiente de aprobación): se devuelve al comercial, no se guarda.</summary>
 public sealed record clsMercanciaCondicionada(string CodigoMercancia, string? Comentario);
 
-/// <summary>Una advertencia del cubicador (por ejemplo "refrigerado = FURGON + alerta"): se devuelve al comercial, no se guarda.</summary>
-public sealed record clsAdvertenciaCubicador(string? Codigo, string Mensaje);
+/// <summary>
+/// Una advertencia de la ruta (por ejemplo, del cubicador: "refrigerado = FURGON + alerta"); se devuelve al comercial y se guarda con la
+/// ruta (<c>avisosCubicacion</c>). HU-032 (#197): los avisos del vehículo (<see cref="clsAvisosVehiculo"/>) llevan además el vehículo elegido
+/// (<see cref="VehiculoElegido"/>) y el que quedó en los camiones (<see cref="VehiculosFinales"/>); en las demás, los dos son <c>null</c>.
+/// </summary>
+public sealed record clsAdvertenciaCubicador(string? Codigo, string Mensaje)
+{
+    /// <summary>HU-032: el vehículo que eligió el comercial para la ruta (solo en los avisos del vehículo).</summary>
+    public clsVehiculoAviso? VehiculoElegido { get; init; }
+
+    /// <summary>HU-032: el vehículo de cada camión que quedó en la ruta (solo en los avisos del vehículo).</summary>
+    public IReadOnlyList<clsVehiculoAviso>? VehiculosFinales { get; init; }
+}
 
 /// <summary>
 /// Extradimensión de la respuesta del cubicador (HU-023, #176; guía del cubicador §5.3): si alguna pieza excede las medidas estándar

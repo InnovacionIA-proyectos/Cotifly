@@ -192,10 +192,11 @@ public sealed class clsCubicacionLicitacionService(
             return new clsDetalleRuta(ResultadoCubicacionRuta.Fallida, intentoNoAdmitido, clsCodigosError.EstadoNoPermite);
         }
 
-        // Como el camino síncrono: con Captura:AceptarVehiculoCliente (#138) el vehículo del cliente (el del camión provisional) se
-        // conserva para el respaldo; si el cubicador recomienda, manda el cubicador. Sin la bandera, el respaldo va sin vehículo.
-        var entrada = opcionesCaptura?.Value.AceptarVehiculoCliente == true
-            ? linea.ALinea()
+        // Como el camino síncrono (HU-032, #197): el vehículo ELEGIDO de la ruta (guardado en la ruta; el camión provisional va sin él) es el
+        // respaldo: si el cubicador no escoge o falla, se valida contra Nexo y se usa. Si el cubicador recomienda, manda el cubicador. Con
+        // Captura:AceptarVehiculoCliente apagada el respaldo va sin vehículo.
+        var entrada = opcionesCaptura?.Value.AceptarVehiculoCliente != false
+            ? linea.ALineaConElegido()
             : linea.ALinea() with { TipoVehiculo = null, Carroceria = null };
         var plan = await planificador.PlanificarEnSegundoPlanoAsync(cotizacion.UsuarioId ?? Guid.Empty, linea.Id, entrada, cancellationToken);
         var ahora = reloj.AhoraUtc;

@@ -39,13 +39,16 @@ public sealed partial class clsLineaSolicitud
         PesoKg = linea.PesoKg;
         ValorMercancia = linea.ValorMercancia;
         PesoConTaraKg = linea.PesoConTaraKg;
+        // HU-032 (#197): la edición conserva (o cambia) el vehículo elegido de la ruta.
+        TipoVehiculoElegido = Normalizar(linea.TipoVehiculo);
+        CarroceriaElegida = Normalizar(linea.Carroceria);
         ReemplazarMercancias(linea.Posiciones);
 
         if (replanificada)
         {
             // Los camiones nuevos copian el levante de la ruta al crearse.
             ValorLevanteContenedor = linea.ValorAprovisionamiento;
-            ReemplazarCamiones(capturada.Camiones, capturada.Cubicacion);
+            ReemplazarCamiones(capturada.Camiones, capturada.Cubicacion, capturada.AvisosVehiculo);
         }
         else
         {

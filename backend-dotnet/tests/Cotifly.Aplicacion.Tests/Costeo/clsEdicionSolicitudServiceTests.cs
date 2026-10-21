@@ -702,13 +702,16 @@ public sealed class clsEdicionSolicitudServiceTests
         return cotizacion;
     }
 
-    /// <summary>El cuerpo de la edición con el contenido guardado (como lo arma el frontend con el GET), con <paramref name="cambio"/> por ruta.</summary>
+    /// <summary>
+    /// El cuerpo de la edición con el contenido guardado (como lo arma el frontend con el GET, HU-032: con el vehículo elegido de la ruta),
+    /// con <paramref name="cambio"/> por ruta.
+    /// </summary>
     private static clsEntradaEdicionSolicitud EntradaDe(
         clsCotizacionSolicitud cotizacion, Func<int, clsLineaSolicitudCosteo, clsLineaSolicitudCosteo>? cambio = null) =>
         new(
             [.. cotizacion.RutasOrdenadas.Select((r, i) => (clsRutaEdicionEntrada?)new clsRutaEdicionEntrada(r.Id, new clsLineaLicitacionEntrada(
                 null,
-                (cambio ?? ((_, l) => l))(i, r.ALinea() with { TipoVehiculo = null, Carroceria = null }),
+                (cambio ?? ((_, l) => l))(i, r.ALineaConElegido()),
                 "Importacion",
                 [.. r.Conexos.Select(c => (clsConexoCapturaEntrada?)new clsConexoCapturaEntrada(c.IdServicioConexo, c.Cantidad))])))],
             Tipo: "spot",

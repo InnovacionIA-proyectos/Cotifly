@@ -16,6 +16,7 @@ using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Dominio.Margen;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Cotifly.Aplicacion.Costeo.Services;
 
@@ -90,8 +91,11 @@ public sealed class clsReSolicitudCosteoService(
     IClsAuditoriaService auditoria,
     IClsPlanificadorCamiones planificador,
     IClsResolutorConexosCatalogo resolutorConexos,
-    ILogger<clsReSolicitudCosteoService> logger) : IClsReSolicitudCosteoService
+    ILogger<clsReSolicitudCosteoService> logger,
+    IOptions<clsOpcionesCaptura>? opcionesCaptura = null) : IClsReSolicitudCosteoService
 {
+    /// <summary>HU-032 (#197): ¿el vehículo elegido cuenta? (<c>Captura:AceptarVehiculoCliente</c>, encendida por defecto).</summary>
+    private bool AceptaVehiculo => opcionesCaptura?.Value.AceptarVehiculoCliente ?? true;
     /// <summary>Motivo de <c>ESTADO_NO_PERMITE</c>: cambios de carga en una licitación de varias rutas.</summary>
     public const string MotivoLicitacion = "LICITACION";
 
@@ -360,6 +364,10 @@ public sealed class clsReSolicitudCosteoService(
 
         var lineas = clsEnvioCosteoService.LineasGuardadas(cotizacion);
         var replanificar = false;
+
+        // HU-032 (#197): la versión nueva conserva el vehículo elegido de cada ruta (antes lo borraba); con la bandera apagada, ninguno.
+        IReadOnlyList<(string? TipoVehiculo, string? Carroceria)> elegidos =
+            [.. cotizacion.RutasOrdenadas.Select(r => AceptaVehiculo ? r.VehiculoElegido : (null, null))];
         if (entrada.VersionNueva && entrada.DatosCarga is { } pedidos)
         {
             if (lineas.Count != 1)
@@ -376,14 +384,31 @@ public sealed class clsReSolicitudCosteoService(
                     esLicitacion ? MotivoLicitacion : MotivoVariasRutas);
             }
 
-            var cambios = clsEnvioCosteoService.SinVehiculo(pedidos, logger);
-            var anterior = lineas[0];
+            var cambios = clsEnvioCosteoService.SinVehiculo(pedidos, logger, AceptaVehiculo);
+            var ruta = cotizacion.RutasOrdenadas[0];
+            var anterior = lineas[0] with { TipoVehiculo = elegidos[0].TipoVehiculo, Carroceria = elegidos[0].Carroceria };
             encabezado = cambios.Aplicar(encabezado);
             lineas = [cambios.Aplicar(anterior)];
-            replanificar = CambiaLaCarga(anterior, lineas[0]);
+            elegidos = [(lineas[0].TipoVehiculo, lineas[0].Carroceria)];
+            // HU-032 (#197): cambiar el vehículo elegido también es un cambio que viaja si los camiones dependen de él.
+            replanificar = clsReglaRecubicacion.Exige(anterior, lineas[0], AceptaVehiculo && ruta.UsaVehiculoElegido);
 
-            // G2 (#106): los cambios de carga solo traen códigos de catálogo, igual que la captura (nunca texto libre a Nexo).
-            if (await catalogos.ValidarAsync(usuarioId, lineas[0], cancellationToken) is { } noCatalogo)
+            // HU-032 (#197): sin mercancías cubicables el vehículo elegido es obligatorio (salvo Contenedor).
+            if (AceptaVehiculo && lineas[0].ExigeVehiculoElegido && string.IsNullOrWhiteSpace(lineas[0].TipoVehiculo)
+                && lineas[0].Posiciones.All(p => p is not null && p.PrimerError(1) is null))
+            {
+                return new clsErrorDominio(clsCodigosError.SolicitudCosteoInvalida,
+                    "La ruta no se puede cubicar (solo trae el peso o mercancías sin medidas) y no trae tipo_vehiculo: elige el vehículo "
+                    + "(GET /web/catalogos-flete). Solo una ruta de contenedor puede ir sin vehículo.", clsCodigosLineaSolicitud.VehiculoRequerido)
+                {
+                    Datos = new Dictionary<string, object?>(StringComparer.Ordinal) { ["ruta"] = 0, ["campo"] = "tipo_vehiculo" },
+                };
+            }
+
+            // G2 (#106): los cambios de carga solo traen códigos de catálogo, igual que la captura (nunca texto libre a Nexo). HU-032 (#197):
+            // el vehículo elegido se valida aquí solo si se va a usar (la ruta no se puede cubicar); si va al cubicador, se valida tarde.
+            var paraCatalogo = lineas[0].Cubicabilidad == CubicabilidadRuta.Cubicable ? lineas[0] with { TipoVehiculo = null, Carroceria = null } : lineas[0];
+            if (await catalogos.ValidarAsync(usuarioId, paraCatalogo, cancellationToken) is { } noCatalogo)
             {
                 return noCatalogo;
             }
@@ -413,7 +438,7 @@ public sealed class clsReSolicitudCosteoService(
             return TodosRechazados(cotizacion.Folio);
         }
 
-        return new clsReSolicitudValidada(encabezado, lineas, politica, replanificar);
+        return new clsReSolicitudValidada(encabezado, lineas, politica, replanificar) { Elegidos = elegidos };
     }
 
     /// <summary>
@@ -436,7 +461,11 @@ public sealed class clsReSolicitudCosteoService(
         clsEncabezadoSolicitudCosteo Encabezado,
         IReadOnlyList<clsLineaSolicitudCosteo> Lineas,
         clsMargenPolitica? Politica,
-        bool Replanificar);
+        bool Replanificar)
+    {
+        /// <summary>HU-032 (#197): el vehículo elegido de cada ruta (en su orden) para la versión nueva.</summary>
+        public IReadOnlyList<(string? TipoVehiculo, string? Carroceria)> Elegidos { get; init; } = [];
+    }
 
     /// <summary>Mismo folio: reserva (con el costeo anterior olvidado y su instantánea auditada) y vuelve a capturar en Nexo.</summary>
     private async Task<(clsResultado<clsReSolicitudCosteo>, clsCotizacionSolicitud?, bool)> ReenviarAsync(
@@ -580,7 +609,9 @@ public sealed class clsReSolicitudCosteoService(
         for (var i = 0; i < originales.Count; i++)
         {
             var ruta = originales[i];
-            var linea = validada.Lineas[i] with { TipoVehiculo = null, Carroceria = null };
+            // HU-032 (#197): la línea de la versión nueva lleva el vehículo ELEGIDO de la ruta (no el de su camión).
+            var (tipoElegido, carroceriaElegida) = i < validada.Elegidos.Count ? validada.Elegidos[i] : (null, null);
+            var linea = validada.Lineas[i] with { TipoVehiculo = tipoElegido, Carroceria = carroceriaElegida };
             // En el orden estable de la ruta (ordenVehiculo, o createdAt en las filas anteriores a #188): el primero lleva los conexos
             // (decisión 3). La versión nueva los numera otra vez 1..n.
             // HU-028.1 (#183, decisión del 2026-10-20): los camiones rechazados por la Mesa se copian COMO RECHAZADOS (con su motivo y su
@@ -591,19 +622,11 @@ public sealed class clsReSolicitudCosteoService(
             var rutaId = Guid.NewGuid();
             IReadOnlyList<clsCamionPlaneado> camiones;
             clsCubicacionRuta? cubicacion = null;
-            if ((validada.Replanificar || vigentes.Count == 0) && linea.Posiciones.Any(p => string.IsNullOrWhiteSpace(p.CodigoMercancia)))
+            IReadOnlyList<clsAdvertenciaCubicador>? avisos = null;
+            if (validada.Replanificar || vigentes.Count == 0)
             {
-                // Ruta con mercancías sin código del catálogo del cubicador (anteriores al script 02): el cubicador no las puede cubicar.
-                // Respaldo: un camión sin vehículo con el peso de la ruta (lo resuelve la Mesa de Costeo de Nexo) y un aviso. Para pedir
-                // los camiones al cubicador, el comercial vuelve a escoger las mercancías (HU-023.3).
-                logger.LogWarning(
-                    "La ruta {Ruta} de {Folio} tiene mercancías sin codigo_mercancia: la versión nueva lleva un camión sin vehículo (respaldo) en vez de planificarlos.",
-                    ruta.Orden, original.Folio);
-                camiones = [new clsCamionPlaneado(null, null, clsPlanificadorCamionSinVehiculo.PesoTotal(linea))];
-                replanificadas.Add(ruta.Orden);
-            }
-            else if (validada.Replanificar || vigentes.Count == 0)
-            {
+                // HU-032 (#197): una ruta sin mercancías cubicables (también las anteriores al script 02, sin código) no llama al cubicador:
+                // el planificador le pone el vehículo elegido (o ninguno) con el peso de la ruta.
                 var plan = await planificador.PlanificarAsync(usuarioId, rutaId, linea, cancellationToken);
                 if (plan.EsFallo)
                 {
@@ -618,6 +641,7 @@ public sealed class clsReSolicitudCosteoService(
 
                 camiones = plan.Valor.Camiones;
                 cubicacion = plan.Valor.Cubicacion;
+                avisos = plan.Valor.Avisos;
                 replanificadas.Add(ruta.Orden);
             }
             else
@@ -627,8 +651,9 @@ public sealed class clsReSolicitudCosteoService(
                     v.TipoVehiculo, v.Carroceria, v.PesoKg, v.IdRecomendacionVehiculo, v.VolumenTotalM3, v.PorcentajeLlenadoVolumen, v.PorcentajeLlenadoPeso,
                     v.RechazoParaCopiar))];
                 cubicacion = ruta.ResultadoCubicacion is { } resultado
-                    ? new clsCubicacionRuta(ruta.IdRecomendacion, resultado, ruta.MotivoSinSeleccion, ruta.Condicionada)
+                    ? new clsCubicacionRuta(ruta.IdRecomendacion, resultado, ruta.MotivoSinSeleccion, ruta.Condicionada, ruta.AvisosCubicacion)
                     : null;
+                avisos = clsEdicionSolicitudService.AvisosVehiculo(ruta);
             }
 
             var conexos = new List<clsCambioConexo>();
@@ -654,7 +679,10 @@ public sealed class clsReSolicitudCosteoService(
                 conexos.Add(new clsCambioConexo(c.IdServicioConexo, c.Nombre, c.Precio, c.Cantidad, c.IdServicioConexoCatalogo, c.Categoria));
             }
 
-            rutas.Add(new clsRutaCapturada(linea, ruta.LineaNegocioId ?? validada.Politica?.Id, ruta.RutaOrigenIndice, camiones, conexos, rutaId, cubicacion));
+            rutas.Add(new clsRutaCapturada(linea, ruta.LineaNegocioId ?? validada.Politica?.Id, ruta.RutaOrigenIndice, camiones, conexos, rutaId, cubicacion)
+            {
+                AvisosVehiculo = avisos,
+            });
         }
 
         return new clsRutasVersion(rutas, replanificadas);

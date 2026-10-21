@@ -6,6 +6,7 @@ using Cotifly.Aplicacion.Comun;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Costeo.DTOs;
 using Cotifly.Aplicacion.Costeo.Interfaces;
+using Cotifly.Aplicacion.Cotizaciones.DTOs;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Cotizaciones.Services;
 using Cotifly.Aplicacion.Licitaciones.DTOs;
@@ -17,6 +18,7 @@ using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Dominio.Margen;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Cotifly.Aplicacion.Costeo.Services;
 
@@ -76,8 +78,12 @@ public sealed class clsEdicionSolicitudService(
     IClsAuditoriaRepository registroAuditoria,
     IClsAuditoriaService auditoria,
     IClsReloj reloj,
-    ILogger<clsEdicionSolicitudService> logger) : IClsEdicionSolicitudService
+    ILogger<clsEdicionSolicitudService> logger,
+    IOptions<clsOpcionesCaptura>? opcionesCaptura = null) : IClsEdicionSolicitudService
 {
+    /// <summary>HU-032 (#197): ¿el vehículo elegido cuenta? (<c>Captura:AceptarVehiculoCliente</c>, encendida por defecto).</summary>
+    private bool AceptaVehiculo => opcionesCaptura?.Value.AceptarVehiculoCliente ?? true;
+
     /// <summary>Herramienta de la auditoría (<c>EventosHerramienta.herramienta</c>).</summary>
     public const string HerramientaAuditoria = "editar_solicitud";
 
@@ -407,7 +413,8 @@ public sealed class clsEdicionSolicitudService(
             Notas = entrada.Notas,
         };
         var moneda = (Limpio(entrada.Moneda) ?? cotizacion.Moneda ?? clsCotizacionSolicitud.MonedaPesos).ToUpperInvariant();
-        var sinVehiculo = clsEnvioCosteoService.SinVehiculo(rutasCaptura, logger);
+        // HU-032 (#197): la edición conserva el vehículo elegido de cada ruta (antes lo borraba); con la bandera apagada se ignora.
+        var sinVehiculo = clsEnvioCosteoService.SinVehiculo(rutasCaptura, logger, AceptaVehiculo);
         var captura = new clsEntradaCaptura(
             cotizacion.NitCliente, cotizacion.ClienteNombre, sinVehiculo.FirstOrDefault(r => r?.LineaNegocio is not null)?.LineaNegocio ?? "-",
             encabezado, sinVehiculo, entrada.Moneda);
@@ -438,7 +445,7 @@ public sealed class clsEdicionSolicitudService(
         var catalogoGuardados = cotizacion.Rutas.SelectMany(r => r.Conexos).All(c => pedidos.Contains(c.IdServicioConexoCatalogo ?? c.IdServicioConexo))
             ? new Dictionary<string, clsCostoConexoNexo>()
             : await ConexosDelCatalogoAsync(usuarioId, cotizacion, cancellationToken);
-        if (MismoContenido(cotizacion, encabezado, moneda, entradas, validadas.Lineas, catalogoGuardados))
+        if (MismoContenido(cotizacion, encabezado, moneda, entradas, validadas.Lineas, catalogoGuardados, AceptaVehiculo))
         {
             return new clsEdicionPreparada(encabezado, [], true, null, null, []);
         }
@@ -452,7 +459,7 @@ public sealed class clsEdicionSolicitudService(
             var guardada = entradas[i]!.LineaSolicitudId is { } id ? guardadas[id] : null;
             algunaViaja = guardada is null
                 || guardada.VehiculosVigentes.Count == 0
-                || clsReglaRecubicacion.Exige(guardada.ALinea(), validadas.Lineas[i].Linea)
+                || Replanifica(guardada, validadas.Lineas[i].Linea)
                 || guardada.ViajaANexo
                 || (entradas[i]!.ReincluirRechazados && guardada.CamionesRechazados > 0);
         }
@@ -487,7 +494,7 @@ public sealed class clsEdicionSolicitudService(
             var rutaId = modo == ModoEdicionSolicitud.NuevaVersion || guardada is null ? Guid.NewGuid() : guardada.Id;
             // HU-028.1 (#183): los camiones rechazados por la Mesa se conservan, rechazados y sin viajar, salvo reincluir_rechazados (entonces
             // viajan sin el rechazo). Una ruta que se vuelve a cubicar estrena camiones: el rechazo de los anteriores no aplica.
-            var vigente = guardada is not null && guardada.VehiculosVigentes.Count > 0 && !clsReglaRecubicacion.Exige(guardada.ALinea(), validada.Linea)
+            var vigente = guardada is not null && guardada.VehiculosVigentes.Count > 0 && !Replanifica(guardada, validada.Linea)
                 ? PlanVigente(guardada, entradas[i]!.ReincluirRechazados)
                 : null;
             if (vigente is null)
@@ -515,6 +522,14 @@ public sealed class clsEdicionSolicitudService(
         var politica = lineas[0] is { } primera ? politicasRuta.GetValueOrDefault(primera) : null;
         return new clsEdicionPreparada(encabezado, rutas, false, fijada, politica, replanificadas);
     }
+
+    /// <summary>
+    /// ¿Hay que volver a planificar los camiones de la ruta guardada? Si cambió lo que recibe el cubicador (<see cref="clsReglaRecubicacion"/>)
+    /// o, HU-032 (#197), el vehículo elegido cuando sus camiones dependen de él (la ruta no la asignó el cubicador): en una ruta sin
+    /// mercancías cubicables cambiar solo el vehículo es un cambio que viaja (reemplazo en Nexo o <c>-vN</c>, según el modo).
+    /// </summary>
+    private bool Replanifica(clsLineaSolicitud guardada, clsLineaSolicitudCosteo nueva) =>
+        clsReglaRecubicacion.Exige(guardada.ALineaConElegido(), nueva, AceptaVehiculo && guardada.UsaVehiculoElegido);
 
     // ------------------------------------------------------------------ Modos
 
@@ -708,7 +723,9 @@ public sealed class clsEdicionSolicitudService(
         var avisoRechazos = sinCambios ? null : clsReSolicitudCosteoService.AvisoRechazos(resultante, modo == ModoEdicionSolicitud.NuevaVersion);
         IReadOnlyList<clsAvisoEdicion> todos = avisoRechazos is null ? avisos : [.. avisos, new clsAvisoEdicion(clsAvisoEdicion.RechazadosOmitidos, avisoRechazos)];
         var resumen = await misCotizaciones.ResumirAsync(resultante, CancellationToken.None);
-        return new(clsCodigoEnum.ACodigo(modo), resultante.Folio, origen.Folio, sinCambios, resumen with { AvisoRechazos = avisoRechazos }, todos,
+        // HU-032 (#197): como la captura, la respuesta trae por ruta el resultado del cubicador y los avisos del vehículo (cotizacion.cubicacion).
+        return new(clsCodigoEnum.ACodigo(modo), resultante.Folio, origen.Folio, sinCambios,
+            resumen with { AvisoRechazos = avisoRechazos, Cubicacion = clsCubicacionRutaResumen.De(resultante) }, todos,
             replanificadas, agregadas, quitadas, reemplazada)
         {
             AvisoRechazos = avisoRechazos,
@@ -789,6 +806,9 @@ public sealed class clsEdicionSolicitudService(
             r.MotivoRechazo)
         {
             PesoConTaraKg = r.PesoConTaraKg,
+            // HU-032 (#197): el vehículo elegido (no el de los camiones), para reenviarlo tal cual en el PUT.
+            TipoVehiculo = r.VehiculoElegido.TipoVehiculo,
+            Carroceria = r.VehiculoElegido.Carroceria,
         };
 
     /// <summary>
@@ -848,7 +868,17 @@ public sealed class clsEdicionSolicitudService(
         new([.. clsVehiculoLineaSolicitud.EnOrden(ruta.VehiculosVigentes).Select(v => new clsCamionPlaneado(
                 v.TipoVehiculo, v.Carroceria, v.PesoKg, v.IdRecomendacionVehiculo, v.VolumenTotalM3, v.PorcentajeLlenadoVolumen, v.PorcentajeLlenadoPeso,
                 reincluirRechazados ? null : v.RechazoParaCopiar))],
-            ruta.ResultadoCubicacion is { } resultado ? new clsCubicacionRuta(ruta.IdRecomendacion, resultado, ruta.MotivoSinSeleccion, ruta.Condicionada) : null);
+            ruta.ResultadoCubicacion is { } resultado
+                ? new clsCubicacionRuta(ruta.IdRecomendacion, resultado, ruta.MotivoSinSeleccion, ruta.Condicionada, ruta.AvisosCubicacion)
+                : null,
+            // HU-032 (#197): los avisos del vehículo de la ruta siguen con sus camiones.
+            AvisosVehiculo(ruta));
+
+    /// <summary>HU-032 (#197): los avisos del vehículo guardados con la ruta (<see cref="clsAvisosVehiculo.Codigos"/>), o <c>null</c>.</summary>
+    internal static IReadOnlyList<clsAdvertenciaCubicador>? AvisosVehiculo(clsLineaSolicitud ruta) =>
+        ruta.AvisosCubicacion?.Advertencias?.Where(a => a.Codigo is not null && clsAvisosVehiculo.Codigos.Contains(a.Codigo)).ToList() is { Count: > 0 } avisos
+            ? avisos
+            : null;
 
     /// <summary>
     /// ¿La edición deja todo como está? Compara el encabezado, la moneda y, ruta por ruta y en orden, la misma ruta guardada, los municipios
@@ -864,7 +894,7 @@ public sealed class clsEdicionSolicitudService(
     /// </summary>
     private static bool MismoContenido(
         clsCotizacionSolicitud cotizacion, clsEncabezadoSolicitudCosteo encabezado, string moneda, IReadOnlyList<clsRutaEdicionEntrada?> entradas,
-        IReadOnlyList<clsLineaLicitacionEntrada> validadas, IReadOnlyDictionary<string, clsCostoConexoNexo> catalogo)
+        IReadOnlyList<clsLineaLicitacionEntrada> validadas, IReadOnlyDictionary<string, clsCostoConexoNexo> catalogo, bool aceptaVehiculo)
     {
         var guardadas = cotizacion.RutasOrdenadas;
         if (guardadas.Count != validadas.Count || entradas.Count != validadas.Count
@@ -892,6 +922,13 @@ public sealed class clsEdicionSolicitudService(
             var conexosNuevos = (validadas[i].Conexos ?? []).Where(c => c is not null).Select(c => (c!.IdServicioConexo, (decimal?)c.Cantidad));
             var conexosGuardados = ConexosEditables(guardada, catalogo).Select(c => ((string?)c.IdServicioConexo, (decimal?)c.Cantidad));
             if (!MismaRuta(guardada.ALinea(), nueva) || !MismosConexos(conexosGuardados, conexosNuevos))
+            {
+                return false;
+            }
+
+            // HU-032 (#197): el vehículo elegido cuenta si los camiones dependen de él (la ruta no la asignó el cubicador). Se compara con el
+            // ELEGIDO guardado, no con el del camión: un cambio de la Mesa de Costeo en Nexo (D2) no es un cambio del comercial.
+            if (aceptaVehiculo && guardada.UsaVehiculoElegido && !clsReglaRecubicacion.MismoVehiculo(guardada.ALineaConElegido(), nueva))
             {
                 return false;
             }

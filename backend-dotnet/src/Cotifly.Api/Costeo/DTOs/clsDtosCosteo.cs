@@ -54,10 +54,10 @@ public sealed class clsSolicitudCosteoWebRequest
     public int? OrigenMunicipioId { get; init; }
     public int? DestinoMunicipioId { get; init; }
 
-    /// <summary>Obsoleto (decisión 7 de HU-021): se acepta y se ignora con un aviso en el log.</summary>
+    /// <summary>HU-032 (#197, ADR-022): el vehículo elegido de la ruta (código de Nexo). Obligatorio sin mercancías cubicables, salvo en Contenedor (<c>VEHICULO_REQUERIDO</c>); es el respaldo del cubicador: si el cubicador asigna, manda el cubicador. La carrocería es opcional.</summary>
     public string? TipoVehiculo { get; init; }
 
-    /// <summary>Obsoleto (decisión 7 de HU-021): se acepta y se ignora con un aviso en el log.</summary>
+    /// <summary>HU-032 (#197, ADR-022): el vehículo elegido de la ruta (código de Nexo). Obligatorio sin mercancías cubicables, salvo en Contenedor (<c>VEHICULO_REQUERIDO</c>); es el respaldo del cubicador: si el cubicador asigna, manda el cubicador. La carrocería es opcional.</summary>
     public string? Carroceria { get; init; }
     public string? Tipologia { get; init; }
     public string? ClaseViaje { get; init; }
@@ -216,10 +216,10 @@ public class clsRutaCapturaWebRequest
     public IReadOnlyList<clsPosicionCargaWebRequest?>? Mercancias { get; init; }
     public IReadOnlyList<clsConexoCapturaWebRequest?>? ServiciosConexos { get; init; }
 
-    /// <summary>Obsoleto (decisión 7 de HU-021): se acepta y se ignora con un aviso en el log.</summary>
+    /// <summary>HU-032 (#197, ADR-022): el vehículo elegido de la ruta (código de Nexo). Obligatorio sin mercancías cubicables, salvo en Contenedor (<c>VEHICULO_REQUERIDO</c>); es el respaldo del cubicador: si el cubicador asigna, manda el cubicador. La carrocería es opcional.</summary>
     public string? TipoVehiculo { get; init; }
 
-    /// <summary>Obsoleto (decisión 7 de HU-021): se acepta y se ignora con un aviso en el log.</summary>
+    /// <summary>HU-032 (#197, ADR-022): el vehículo elegido de la ruta (código de Nexo). Obligatorio sin mercancías cubicables, salvo en Contenedor (<c>VEHICULO_REQUERIDO</c>); es el respaldo del cubicador: si el cubicador asigna, manda el cubicador. La carrocería es opcional.</summary>
     public string? Carroceria { get; init; }
 
     public clsLineaLicitacionEntrada AEntrada() => new(
@@ -281,13 +281,18 @@ public sealed class clsPosicionCargaWebRequest
     public string? NombreMercancia { get; init; }
     public string? Descripcion { get; init; }
     public int Cantidad { get; init; } = 1;
-    public decimal LargoCm { get; init; }
-    public decimal AnchoCm { get; init; }
-    public decimal AltoCm { get; init; }
+
+    /// <summary>
+    /// Medidas en cm. HU-032 (#197): opcionales. Sin ninguna (ausentes o <c>null</c>) y sin <c>codigo_mercancia</c> la mercancía es "no
+    /// cubicable": se guarda, no viaja a Nexo como posición y la ruta usa el vehículo elegido. Si viene una, vienen las tres.
+    /// </summary>
+    public decimal? LargoCm { get; init; }
+    public decimal? AnchoCm { get; init; }
+    public decimal? AltoCm { get; init; }
     public decimal? PesoKg { get; init; }
 
     public clsPosicionCarga APosicion() => new(
-        NombreMercancia ?? Descripcion, Cantidad, LargoCm, AnchoCm, AltoCm, PesoKg, IdTipoMercancia,
+        NombreMercancia ?? Descripcion, Cantidad, LargoCm ?? 0m, AnchoCm ?? 0m, AltoCm ?? 0m, PesoKg, IdTipoMercancia,
         string.IsNullOrWhiteSpace(CodigoMercancia) ? null : CodigoMercancia.Trim());
 
     /// <summary>Las mercancías del contrato como posiciones del dominio (un elemento <c>null</c> se conserva: lo reporta la validación).</summary>

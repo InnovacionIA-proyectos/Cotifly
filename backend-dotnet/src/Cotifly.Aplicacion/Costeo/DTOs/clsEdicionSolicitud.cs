@@ -150,11 +150,23 @@ public sealed record clsRutaEditable(
     /// <c>null</c> = sin tara. Se edita como los demás campos de la ruta: cambiarlo no vuelve a cubicar (el cubicador no usa la tara).
     /// </summary>
     public decimal? PesoConTaraKg { get; init; }
+
+    /// <summary>
+    /// HU-032 (#197, ADR-022): el vehículo elegido de la ruta (<c>tipo_vehiculo</c>), el respaldo del cubicador; <c>null</c> si no eligió.
+    /// No es el vehículo de los camiones (el del cubicador o el que puso la Mesa de Costeo): esos salen en <c>GET .../costeo</c>.
+    /// </summary>
+    public string? TipoVehiculo { get; init; }
+
+    /// <summary>HU-032 (#197): la carrocería elegida (<c>carroceria</c>); <c>null</c> si no eligió.</summary>
+    public string? Carroceria { get; init; }
 }
 
-/// <summary>Una mercancía editable (<c>MercanciaEditable</c>), con su código del catálogo del cubicador.</summary>
+/// <summary>
+/// Una mercancía editable (<c>MercanciaEditable</c>), con su código del catálogo del cubicador. HU-032 (#197): las medidas son <c>null</c>
+/// en una mercancía no cubicable (sin medidas ni tipo de mercancía).
+/// </summary>
 public sealed record clsMercanciaEditable(
-    string? CodigoMercancia, string? NombreMercancia, int Cantidad, decimal LargoCm, decimal AnchoCm, decimal AltoCm, decimal? PesoKg);
+    string? CodigoMercancia, string? NombreMercancia, int Cantidad, decimal? LargoCm, decimal? AnchoCm, decimal? AltoCm, decimal? PesoKg);
 
 /// <summary>Un servicio conexo editable (<c>ConexoEditable</c>): el id del catálogo de Nexo, su nombre y la cantidad (sin precio).</summary>
 public sealed record clsConexoEditable(string IdServicioConexo, string? Nombre, decimal Cantidad);

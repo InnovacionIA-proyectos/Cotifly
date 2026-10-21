@@ -94,8 +94,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         scripts[clsBaseDatosPruebas.ScriptsHasta05 - 1].Should().Be(clsBaseDatosPruebas.Script05, "ScriptsHasta05 incluye el 05 y no el 06");
         scripts[clsBaseDatosPruebas.ScriptsHasta06 - 1].Should().Be(clsBaseDatosPruebas.Script06, "ScriptsHasta06 incluye el 06 y no el 09");
         scripts[clsBaseDatosPruebas.ScriptsHasta09 - 1].Should().Be(clsBaseDatosPruebas.Script09, "ScriptsHasta09 incluye el 09 y no el 10 ni el 11");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 2].Should().Be(clsBaseDatosPruebas.Script10, "ScriptsSin07 incluye el 10 (el backend mapea el rechazo)");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script11, "ScriptsSin07 llega hasta el 11 (el backend mapea pesoConTaraKg)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 3].Should().Be(clsBaseDatosPruebas.Script10, "ScriptsSin07 incluye el 10 (el backend mapea el rechazo)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 2].Should().Be(clsBaseDatosPruebas.Script11, "ScriptsSin07 incluye el 11 (el backend mapea pesoConTaraKg)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script12, "ScriptsSin07 llega hasta el 12 (el backend mapea el vehículo elegido)");
         scripts[clsBaseDatosPruebas.ScriptsSin07].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsSin07 corta justo antes del 07");
         scripts[clsBaseDatosPruebas.ScriptsHasta07 - 1].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsHasta07 incluye el 07");
         scripts[clsBaseDatosPruebas.ScriptsHasta07..].Should().ContainSingle().Which.Should().Be(clsBaseDatosPruebas.Script08, "después del 07 solo va el 08");
@@ -249,6 +250,28 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
                 "SELECT COUNT(*) FROM sys.check_constraints WHERE name = N'ck_cotizacionLineasSolicitud_pesoConTaraKg' "
                 + "AND parent_object_id = OBJECT_ID(N'dbo_cotifly.CotizacionLineasSolicitud')"))
             .Should().Be(1);
+    }
+
+    [Fact]
+    public async Task HU032_ElScript12EsIdempotenteDejaElVehiculoElegidoYLasMedidasNullYElCheckAdmiteSoloTresNullOTresPositivas()
+    {
+        // HU-032 (#197): tipoVehiculoElegido/carroceriaElegida en la ruta y medidas NULL (las tres o ninguna) en la mercancía.
+        await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem12", clsBaseDatosPruebas.Scripts.Length);
+        await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script12);
+
+        await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbIdem12Inst");
+        await ReaplicarYVerificarIdempotenciaAsync(instalada.Cadena, clsBaseDatosPruebas.Script12);
+        (await LeerAsync(
+                "SELECT CONCAT(c.name, '|', TYPE_NAME(c.user_type_id), '|', c.max_length, '|', c.is_nullable) FROM sys.columns c "
+                + "WHERE (c.object_id = OBJECT_ID(N'dbo_cotifly.CotizacionLineasSolicitud') AND c.name IN (N'tipoVehiculoElegido', N'carroceriaElegida')) "
+                + "OR (c.object_id = OBJECT_ID(N'dbo_cotifly.CotizacionMercancias') AND c.name IN (N'largoCm', N'anchoCm', N'altoCm'))",
+                r => r.GetString(0), instalada.Cadena))
+            .Should().BeEquivalentTo(["tipoVehiculoElegido|nvarchar|200|1", "carroceriaElegida|nvarchar|200|1",
+                "largoCm|decimal|9|1", "anchoCm|decimal|9|1", "altoCm|decimal|9|1"]);
+        var definicion = await clsBaseDatosPruebas.EscalarAsync<string>(instalada.Cadena,
+            "SELECT definition FROM sys.check_constraints WHERE name = N'ck_cotizacionPosiciones_medidas' "
+            + "AND parent_object_id = OBJECT_ID(N'dbo_cotifly.CotizacionMercancias')");
+        definicion.Should().Contain("IS NULL").And.Contain("[largoCm]>(0)");
     }
 
     [Fact]

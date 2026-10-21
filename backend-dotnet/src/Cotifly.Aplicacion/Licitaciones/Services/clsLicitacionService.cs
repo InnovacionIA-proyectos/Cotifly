@@ -472,11 +472,11 @@ public sealed class clsLicitacionService(
             return clsResultadoLicitacion.Fallo(new clsErrorDominio(clsCodigosError.LicitacionInvalida, "El tipo de una licitación es 'licitacion'."));
         }
 
-        // HU-021 (decisión 7): vehículo y carrocería ya no se mapean del Excel; si llegan, se ignoran con un aviso en el log (salvo la
-        // bandera de respaldo Captura:AceptarVehiculoCliente, #138: entonces van solo en el camión del respaldo).
+        // HU-032 (#197): el vehículo elegido de cada fila es el respaldo del cubicador (y obligatorio en una fila sin mercancías
+        // cubicables, salvo Contenedor). Con Captura:AceptarVehiculoCliente apagada se ignora (decisión 7 de HU-021).
         entrada = entrada with
         {
-            Lineas = [.. clsEnvioCosteoService.SinVehiculo(entrada.Lineas ?? [], logger, opcionesCaptura?.Value.AceptarVehiculoCliente ?? false).Select(l => l!)],
+            Lineas = [.. clsEnvioCosteoService.SinVehiculo(entrada.Lineas ?? [], logger, opcionesCaptura?.Value.AceptarVehiculoCliente ?? true).Select(l => l!)],
         };
 
         // El archivo se valida primero (un archivo ilegible invalida todas las filas) y se cuenta su hoja con la regla de Nexo.

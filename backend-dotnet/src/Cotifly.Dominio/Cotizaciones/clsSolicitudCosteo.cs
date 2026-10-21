@@ -276,9 +276,7 @@ public sealed record clsPosicionCarga(
             ?? (Cantidad is < 1 or > CantidadMaxima
                 ? new clsErrorPosicion(CampoCantidad, $"{prefijo}la cantidad debe estar entre 1 y {CantidadMaxima}.")
                 : null)
-            ?? Con("largo_cm", clsSolicitudCosteo.Rango("largo_cm", LargoCm, MedidaMinima, MedidaMaxima))
-            ?? Con("ancho_cm", clsSolicitudCosteo.Rango("ancho_cm", AnchoCm, MedidaMinima, MedidaMaxima))
-            ?? Con("alto_cm", clsSolicitudCosteo.Rango("alto_cm", AltoCm, MedidaMinima, MedidaMaxima))
+            ?? ErrorMedidas(prefijo, Con)
             ?? Con("peso_kg", clsSolicitudCosteo.Rango("peso_kg", PesoKg, 0m, clsSolicitudCosteo.MaximoPeso))
             // HU-023 (#176): la mercancía que viaja al cubicador (con tipo de mercancía) exige peso por unidad mayor que 0. También rige al
             // revalidar lo guardado (reintento, re-solicitud): una ruta anterior a la regla con tipo de mercancía y sin peso no se reenvía y
@@ -291,6 +289,72 @@ public sealed record clsPosicionCarga(
 
     /// <summary>¿La posición viaja al cubicador? (trae su tipo de mercancía: el código o, en la transición, el uuid anterior).</summary>
     public bool VaAlCubicador() => !string.IsNullOrWhiteSpace(CodigoMercancia) || IdTipoMercancia is { } id && id != Guid.Empty;
+
+    /// <summary>HU-032 (#197): ¿no trae ninguna medida? (el contrato manda 0 cuando <c>largo_cm</c>, <c>ancho_cm</c> y <c>alto_cm</c> no vienen).</summary>
+    public bool SinMedidas => LargoCm == 0m && AnchoCm == 0m && AltoCm == 0m;
+
+    /// <summary>HU-032 (#197): ¿trae las tres medidas? Solo una mercancía con medidas viaja a Nexo como posición.</summary>
+    public bool ConMedidas => LargoCm > 0m && AnchoCm > 0m && AltoCm > 0m;
+
+    /// <summary>
+    /// HU-032 (#197): ¿se puede cubicar? Trae su tipo de mercancía (código o, en la transición, el uuid), las tres medidas y el peso por
+    /// unidad mayor que 0: es lo que el cubicador necesita.
+    /// </summary>
+    public bool EsCubicable => VaAlCubicador() && ConMedidas && PesoKg is > 0m;
+
+    /// <summary>
+    /// HU-032 (#197): mercancía "no cubicable" que se acepta: no trae NINGUNA medida ni tipo de mercancía (solo descripción, cantidad o
+    /// peso). Se guarda con la ruta y no viaja como posición a Nexo; la ruta no se cubica y usa el vehículo elegido.
+    /// </summary>
+    public bool EsNoCubicable => SinMedidas && !VaAlCubicador();
+
+    /// <summary>
+    /// HU-032 (#197): las medidas de la mercancía. Sin ninguna medida y sin tipo de mercancía es una mercancía no cubicable (válida). Con
+    /// tipo de mercancía y sin medidas es un error: el comercial escogió la mercancía para cubicarla y el cubicador las necesita (si no las
+    /// conoce, quita el código). Medidas parciales (por ejemplo, largo sin ancho) son un dato mal digitado: error en la primera que falta.
+    /// Las que vienen deben estar entre <see cref="MedidaMinima"/> y <see cref="MedidaMaxima"/>.
+    /// </summary>
+    private clsErrorPosicion? ErrorMedidas(string prefijo, Func<string, clsErrorDominio?, clsErrorPosicion?> con)
+    {
+        if (SinMedidas)
+        {
+            return VaAlCubicador()
+                ? new clsErrorPosicion("largo_cm",
+                    $"{prefijo}trae el tipo de mercancía pero no sus medidas: escribe largo, ancho y alto en cm (el cubicador las necesita) o quita el código de mercancía.")
+                : null;
+        }
+
+        foreach (var (campo, valor) in new[] { ("largo_cm", LargoCm), ("ancho_cm", AnchoCm), ("alto_cm", AltoCm) })
+        {
+            if (valor == 0m)
+            {
+                return new clsErrorPosicion(campo,
+                    $"{prefijo}faltan medidas ({campo}): escribe largo, ancho y alto en cm, o deja las tres vacías si no las conoces.");
+            }
+        }
+
+        return con("largo_cm", clsSolicitudCosteo.Rango("largo_cm", LargoCm, MedidaMinima, MedidaMaxima))
+            ?? con("ancho_cm", clsSolicitudCosteo.Rango("ancho_cm", AnchoCm, MedidaMinima, MedidaMaxima))
+            ?? con("alto_cm", clsSolicitudCosteo.Rango("alto_cm", AltoCm, MedidaMinima, MedidaMaxima));
+    }
+}
+
+/// <summary>
+/// HU-032 (#197): cómo se cubica una ruta según sus mercancías (<see cref="clsLineaSolicitudCosteo.Cubicabilidad"/>).
+/// </summary>
+public enum CubicabilidadRuta
+{
+    /// <summary>La ruta no trae mercancías (solo el peso): no se cubica; usa el vehículo elegido.</summary>
+    SinMercancias,
+
+    /// <summary>Todas sus mercancías son cubicables (<see cref="clsPosicionCarga.EsCubicable"/>): se llama al cubicador.</summary>
+    Cubicable,
+
+    /// <summary>Ninguna es cubicable: no se cubica; usa el vehículo elegido.</summary>
+    NoCubicable,
+
+    /// <summary>Unas sí y otras no: no se cubica; usa el vehículo elegido con el aviso <c>MERCANCIAS_NO_CUBICABLES</c>.</summary>
+    Mixta,
 }
 
 /// <summary>
