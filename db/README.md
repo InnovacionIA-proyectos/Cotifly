@@ -29,6 +29,7 @@ dejarla con la configuración inicial.
 | `scripts/09_score_prioridad.sql` | HU-018.1 (#155) | En el ejecutador (orden de nombre, después del `08`). `CotizacionesSolicitud.scorePrioridad DECIMAL(9,4) NULL`. **El backend mapea la columna**: sin él, `/health/ready` responde "esquema incompleto: falta 09". Se aplica antes de desplegar la imagen (ver abajo) |
 | `scripts/10_rechazo_linea.sql` | HU-028.2 (#182) / HU-028.1 (#183). **Lo revisa @scalderon-bs antes de la base compartida** | En el ejecutador (orden de nombre, después del `09`). Camión: `motivoRechazo NVARCHAR(500) NULL` y `rechazadaAt DATETIMEOFFSET NULL`; `'rechazada'` en los tres CHECK de `estadoCosteo`; CHECK `ck_cotizacionVehiculosLineaSolicitud_rechazo`. **El backend mapea las columnas**: sin él, `/health/ready` responde "esquema incompleto: falta 10". Se aplica antes de desplegar la imagen (ver abajo) |
 | `scripts/11_peso_con_tara.sql` | HU-030.1 (#184) | En el ejecutador (orden de nombre, después del `09`; el `10` es de #183). `CotizacionLineasSolicitud.pesoConTaraKg DECIMAL(12,2) NULL` con su CHECK (> 0). **El backend mapea la columna**: sin él, `/health/ready` responde "esquema incompleto: falta 11". Se aplica antes de desplegar la imagen (ver abajo) |
+| `scripts/12_vehiculo_elegido.sql` | HU-032 (#197) | En el ejecutador (orden de nombre, después del `11`). Ruta: `tipoVehiculoElegido NVARCHAR(100) NULL` y `carroceriaElegida NVARCHAR(100) NULL` (el vehículo elegido, respaldo del cubicador); mercancía: `largoCm`/`anchoCm`/`altoCm` pasan a NULL con el CHECK "las tres NULL o las tres > 0" (mercancías no cubicables). Idempotente y en una transacción; imprime el CHECK anterior. **El backend mapea las columnas**: sin él, `/health/ready` responde "esquema incompleto: falta 12". Se aplica antes de desplegar la imagen |
 
 **`scripts/pendientes/04_cubicacion_segundo_plano.sql`** (HU-023.5, #160) agrega a la ruta la cola de la cubicación de la
 licitación en segundo plano (`estadoCubicacion`, `cubicacionIntentos`, `cubicacionDisponibleAt`, `errorCubicacion`,
@@ -145,6 +146,7 @@ db/
 │   ├── 09_score_prioridad.sql          scorePrioridad de Nexo en la cabecera (se puede repetir)
 │   ├── 10_rechazo_linea.sql            rechazo de la línea por la Mesa de Costeo en el camión (se puede repetir)
 │   ├── 11_peso_con_tara.sql            peso con tara de la ruta de contenedor (se puede repetir)
+│   ├── 12_vehiculo_elegido.sql         vehículo elegido de la ruta y medidas NULL de la mercancía (se puede repetir)
 │   ├── pendientes/            propuesta 04, pendiente de revisión (el ejecutador no la corre)
 │   └── operacion/             scripts de datos de una sola vez que corre el DBA con aprobación
 ├── seeder/
@@ -248,6 +250,7 @@ sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/08_retirar_vistas
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/09_score_prioridad.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/10_rechazo_linea.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/11_peso_con_tara.sql
+sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/12_vehiculo_elegido.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i seeder/01_lineas_negocio.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i seeder/02_sap_mapeo_trqtype.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i seeder/03_roles.sql
@@ -321,6 +324,7 @@ Cambios pequeños al esquema que todavía no se consolidan en el `01`. Van como 
 | `08_retirar_vistas_actividad.sql` | HU-014.3 (#152) | `DROP VIEW` de `vActividadPorComercial` y `vAjustesMargenPorComercial` (borrador de métricas retirado), cada uno solo si la vista existe. No toca tablas ni datos |
 | `09_score_prioridad.sql` | HU-018.1 (#155) | `CotizacionesSolicitud.scorePrioridad DECIMAL(9,4) NULL` (el `scorePrioridad` de Nexo). Idempotente, `ADD` de columna NULL en una transacción. Obligatorio: el backend mapea la columna |
 | `11_peso_con_tara.sql` | HU-030.1 (#184) | `CotizacionLineasSolicitud.pesoConTaraKg DECIMAL(12,2) NULL` con el CHECK `ck_cotizacionLineasSolicitud_pesoConTaraKg` (> 0): el peso con tara de una ruta `Contenedor`. Idempotente, `ADD` de columna NULL en una transacción. Obligatorio: el backend mapea la columna |
+| `12_vehiculo_elegido.sql` | HU-032 (#197) | `CotizacionLineasSolicitud.tipoVehiculoElegido`/`carroceriaElegida NVARCHAR(100) NULL` y `CotizacionMercancias.largoCm/anchoCm/altoCm` NULL con el CHECK `ck_cotizacionPosiciones_medidas` (las tres NULL o las tres > 0). Idempotente, en una transacción. Obligatorio: el backend mapea las columnas |
 
 El `02` se detiene sin tocar nada si `idTipoMercancia` todavía tiene valores (un uuid no se puede convertir a código).
 Cuando el diseño se estabilice, estos cambios se pasan al `01` y el script se retira.

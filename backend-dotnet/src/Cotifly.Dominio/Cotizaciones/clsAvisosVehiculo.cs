@@ -4,7 +4,7 @@ namespace Cotifly.Dominio.Cotizaciones;
 public sealed record clsVehiculoAviso(string? TipoVehiculo, string? Carroceria)
 {
     /// <summary>El vehículo como lo lee el comercial: <c>3S3 - FURGON</c>, <c>3S3</c> o <c>sin vehículo</c>.</summary>
-    public string Texto => (Limpio(TipoVehiculo), Limpio(Carroceria)) switch
+    public string ATexto() => (Limpio(TipoVehiculo), Limpio(Carroceria)) switch
     {
         (null, null) => "sin vehículo",
         ({ } tipo, null) => tipo,
@@ -49,7 +49,7 @@ public static class clsAvisosVehiculo
         ArgumentNullException.ThrowIfNull(elegido);
         ArgumentNullException.ThrowIfNull(finales);
         return new clsAdvertenciaCubicador(AjustadoPorCubicador,
-            $"El cubicador asignó {string.Join(", ", finales.Select(f => f.Texto))} en lugar del vehículo elegido ({elegido.Texto}): manda el cubicador.")
+            $"El cubicador asignó {string.Join(", ", finales.Select(f => f.ATexto()))} en lugar del vehículo elegido ({elegido.ATexto()}): manda el cubicador.")
         {
             VehiculoElegido = elegido,
             VehiculosFinales = finales,
@@ -61,7 +61,7 @@ public static class clsAvisosVehiculo
     {
         ArgumentNullException.ThrowIfNull(elegido);
         ArgumentException.ThrowIfNullOrWhiteSpace(causa);
-        return new clsAdvertenciaCubicador(ElegidoUsado, $"{causa}: la ruta va con el vehículo elegido ({elegido.Texto}).")
+        return new clsAdvertenciaCubicador(ElegidoUsado, $"{causa}: la ruta va con el vehículo elegido ({elegido.ATexto()}).")
         {
             VehiculoElegido = elegido,
             VehiculosFinales = [elegido],
@@ -74,7 +74,7 @@ public static class clsAvisosVehiculo
         ArgumentNullException.ThrowIfNull(elegido);
         return new clsAdvertenciaCubicador(MercanciasNoCubicables,
             "La ruta tiene mercancías sin medidas ni tipo de mercancía: no se cubica y va con el vehículo elegido "
-            + $"({elegido.Texto}). Las mercancías sin medidas no viajan a Nexo como posiciones: va el peso de la ruta.")
+            + $"({elegido.ATexto()}). Las mercancías sin medidas no viajan a Nexo como posiciones: va el peso de la ruta.")
         {
             VehiculoElegido = elegido,
             VehiculosFinales = [elegido],
@@ -91,7 +91,7 @@ public static class clsAvisosVehiculo
         ArgumentNullException.ThrowIfNull(final);
         var resuelve = final.TipoVehiculo is null ? " y la resuelve la Mesa de Costeo" : string.Empty;
         return new clsAdvertenciaCubicador(ElegidoInvalido,
-            $"{causa} y el vehículo elegido ({elegido.Texto}) no es un código de Nexo: la ruta va {(final.TipoVehiculo is null ? "sin vehículo" : $"con {final.Texto}")}{resuelve}.")
+            $"{causa} y el vehículo elegido ({elegido.ATexto()}) no es un código de Nexo: la ruta va {(final.TipoVehiculo is null ? "sin vehículo" : $"con {final.ATexto()}")}{resuelve}.")
         {
             VehiculoElegido = elegido,
             VehiculosFinales = [final],

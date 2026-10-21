@@ -113,10 +113,6 @@ public sealed class clsCapturaRutasService(
             if (rutas[i] is { } ruta)
             {
                 previos.AddRange(ErroresConexos(ruta.Conexos).Select(e => new clsErrorFilaLicitacion(i, ruta.Fila, e.Campo, e.Codigo, e.Mensaje)));
-                if (VehiculoRequerido(ruta.Linea) is { } requerido)
-                {
-                    previos.Add(new clsErrorFilaLicitacion(i, ruta.Fila, requerido.Campo, requerido.Codigo, requerido.Mensaje));
-                }
             }
         }
 
@@ -140,6 +136,15 @@ public sealed class clsCapturaRutasService(
         }
 
         var errores = new List<clsErrorFilaLicitacion>(validadas.Errores);
+
+        // HU-032 (#197): VEHICULO_REQUERIDO va después de los errores de catálogo y municipios de su ruta (el orden final es por ruta).
+        for (var i = 0; i < rutas.Count; i++)
+        {
+            if (rutas[i] is { } ruta && VehiculoRequerido(ruta.Linea) is { } requerido)
+            {
+                errores.Add(new clsErrorFilaLicitacion(i, ruta.Fila, requerido.Campo, requerido.Codigo, requerido.Mensaje));
+            }
+        }
         // Con un catálogo de Nexo caído (el de municipios, o el maestro que se consultó primero y oculta si el de municipios respondió) los
         // ids que faltan no se exigen aquí: la captura responde 503 y se validan al volver a enviarla. Con el catálogo de municipios
         // disponible, un nombre que no se pudo resolver ya trae su propio error.
@@ -463,7 +468,7 @@ public sealed class clsCapturaRutasService(
             // Sin cubicador configurado no hay de dónde sacar el código (GET /web/tipos-mercancia responde 503): se guarda NULL y la
             // ruta va al respaldo. Con cubicador es obligatorio en una mercancía con medidas. HU-032 (#197): una mercancía sin medidas ni
             // código es "no cubicable": se acepta (la ruta usa el vehículo elegido).
-            return exigeCodigo && !p.EsNoCubicable
+            return exigeCodigo && !p.EsNoCubicable && p.PrimerError(m + 1) is null
                 ? new clsErrorCampo(campoCodigo, clsCodigosLineaSolicitud.CampoRequerido,
                     $"La mercancía {m + 1} debe traer el código del catálogo del cubicador (codigo_mercancia, GET /web/tipos-mercancia).")
                 : null;

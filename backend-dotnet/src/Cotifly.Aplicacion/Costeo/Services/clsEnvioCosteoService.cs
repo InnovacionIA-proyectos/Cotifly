@@ -789,7 +789,8 @@ public sealed class clsEnvioCosteoService(
         var cronometro = Stopwatch.StartNew();
 
         // HU-021 (CAMBIOS_BACKEND §5.3, #134): una línea por camión, ruta por ruta y en orden, cada una con los datos de su ruta y de su
-        // camión. Sin vehículo (sin selección automática) la línea viaja igual y la resuelve la Mesa: la solicitud nunca se parte. Mientras
+        // camión. Un camión sin vehículo (sin selección automática y sin vehículo elegido, HU-032) viaja igual y lo resuelve la Mesa: la
+        // solicitud nunca se parte. Mientras
         // Nexo no tenga el campo de ruta por línea (N1), la nota del encabezado le dice a la Mesa qué líneas son la misma ruta.
         // Cada línea lleva la línea de negocio de Nexo de SU ruta (#134); `politica` (la de la ruta 1 o la del formulario) solo evita volver a
         // leerla y sirve de respaldo para una ruta sin línea de negocio.

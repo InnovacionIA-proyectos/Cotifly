@@ -179,7 +179,7 @@ public sealed class clsSolicitudCosteoWebRequest
 /// <summary>
 /// <c>RutaCapturaWeb</c> (HU-021.6): una ruta del formulario. Origen y destino con su id de municipio de <c>GET /web/municipios</c>
 /// (obligatorio; sin él, Cotifly lo resuelve por el nombre y si es ambiguo responde el error con los candidatos) y una copia del
-/// nombre; igual las ciudades de devolución y de levante del contenedor. Sin vehículo ni carrocería (decisión 7).
+/// nombre; igual las ciudades de devolución y de levante del contenedor. HU-032 (#197): con el vehículo elegido (respaldo del cubicador).
 /// </summary>
 public class clsRutaCapturaWebRequest
 {

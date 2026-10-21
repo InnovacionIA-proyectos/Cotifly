@@ -1479,10 +1479,14 @@ paths:
           Nexo que no respondió).
         - **Retirados (HU-021.11, #138):** `valor_estimado` y `referencia` (decisión 1) **ya no están en el contrato**; si un
           frontend anterior los manda, se ignoran sin error y queda un aviso `CAMPOS_RETIRADOS` en el log del servidor.
-          `tipo_vehiculo` y `carroceria` (decisión 7) siguen `deprecated`: con la bandera de respaldo `Captura:AceptarVehiculoCliente`
-          apagada se ignoran con un aviso en el log; encendida (el valor por defecto desde #188, HU-021-FE.2) se validan contra el
-          catálogo de Nexo y van **solo en el camión del respaldo** (sin cubicador, ruta sin mercancías tipadas o cubicador caído
-          con `Cubicador:RespaldoSiFalla`); si el cubicador recomienda, manda el cubicador.
+        - **Vehículo elegido o cubicador (HU-032, #197, ADR-022):** `tipo_vehiculo` y `carroceria` de cada ruta **vuelven al
+          contrato** (ya no son `deprecated`): son el vehículo que elige el comercial y el **respaldo del cubicador**. Una ruta con
+          TODAS sus mercancías cubicables (código, las tres medidas y peso) va al cubicador: si asigna, manda el cubicador (aviso
+          `VEHICULO_AJUSTADO_POR_CUBICADOR` si el elegido era otro); si no selecciona, falla o está ocupado, va el elegido (aviso
+          `VEHICULO_ELEGIDO_USADO`; si no es un código de Nexo, sin vehículo con `VEHICULO_ELEGIDO_INVALIDO`). Una ruta sin
+          mercancías cubicables (solo `peso_kg`, mercancías sin medidas ni código, o mixta con `MERCANCIAS_NO_CUBICABLES`) no va al
+          cubicador y usa el elegido, que entonces es **obligatorio salvo en Contenedor** (`VEHICULO_REQUERIDO` en
+          `detalle.errores[]`, campo `tipo_vehiculo`). Los avisos salen en `cubicacion[].advertencias` de la respuesta.
         - **Formato plano anterior (`deprecated`, se retira cuando salga HU-021-FE):** sin `rutas`, los campos de ruta en la raíz
           (`origen`, `destino`, `posiciones`...) se leen como una sola ruta con un camión, con las mismas reglas. Enviar `rutas` y
           campos de ruta en la raíz a la vez es `SOLICITUD_COSTEO_INVALIDA`.
@@ -1565,7 +1569,8 @@ paths:
             `VALOR_FUERA_DE_RANGO`, `POSICION_INVALIDA`, `PESO_REQUERIDO`, `PESO_INCONSISTENTE`, `CAMPO_NO_APLICA`,
             `CODIGO_NO_CATALOGO`, `MUNICIPIO_AMBIGUO`, `MUNICIPIO_NO_ENCONTRADO`, `LINEAS_REQUERIDAS`, `DEMASIADAS_LINEAS`) más
             `CONEXO_DUPLICADO`, `CONEXO_NO_ENCONTRADO` y `DEMASIADOS_CONEXOS`. HU-030.1 (#184): `peso_con_tara_kg` con otra clase de
-            viaje que `Contenedor` es `CAMPO_NO_APLICA` y menor que el peso de carga es `PESO_CON_TARA_MENOR_QUE_CARGA`. `CAMPO_REQUERIDO` en
+            viaje que `Contenedor` es `CAMPO_NO_APLICA` y menor que el peso de carga es `PESO_CON_TARA_MENOR_QUE_CARGA`. HU-032 (#197):
+            `VEHICULO_REQUERIDO` en `tipo_vehiculo` (ruta sin mercancías cubicables y sin vehículo, salvo Contenedor). `CAMPO_REQUERIDO` en
             `origen_municipio_id`/`destino_municipio_id` o `mercancias[i].id_tipo_mercancia` cuando falta el id.
             HU-021.5: `TIPO_MERCANCIA_INEXISTENTE` en `mercancias[i].id_tipo_mercancia` si el id no está en el catálogo del cubicador.
             `POSICION_INVALIDA` va en `mercancias[i].<subcampo>` (índice base 0: `cantidad`, `largo_cm`, `ancho_cm`, `alto_cm`,
@@ -4032,7 +4037,10 @@ components:
           items:
             $ref: '#/components/schemas/CubicacionRuta'
           description: |
-            HU-023.3 (#158). Solo en la respuesta de `POST /web/solicitudes-costeo` y solo si alguna ruta pasó por el cubicador: por
+            HU-023.3 (#158). Solo en la respuesta de `POST /web/solicitudes-costeo` (y, HU-032, en la de la edición) y solo si alguna
+            ruta pasó por el cubicador **o tiene avisos del vehículo** (HU-032, #197: `VEHICULO_AJUSTADO_POR_CUBICADOR`,
+            `VEHICULO_ELEGIDO_USADO`, `MERCANCIAS_NO_CUBICABLES`, `VEHICULO_ELEGIDO_INVALIDO` en `advertencias`, también en una ruta que no
+            llamó al cubicador: entonces `resultado` es `null`): por
             ruta, el resultado y los avisos (mercancías condicionadas, advertencias y extradimensión). El resultado, el motivo y,
             desde HU-023.5 (#160), también los avisos se guardan en la ruta: `GET .../costeo` los devuelve en
             `rutas[].avisos_cubicacion`.
@@ -4050,7 +4058,9 @@ components:
     CubicacionRuta:
       type: object
       required: [linea_orden, linea_solicitud_id, resultado, motivo_sin_seleccion, condicionada, mercancias_condicionadas, advertencias, extradimension]
-      description: HU-023.3 (#158). Lo que respondió el cubicador para una ruta de la captura.
+      description: |
+        HU-023.3 (#158). Lo que respondió el cubicador para una ruta de la captura. HU-032 (#197): también una ruta que no llamó al
+        cubicador pero tiene avisos del vehículo (`resultado` y `motivo_sin_seleccion` en `null`).
       properties:
         linea_orden:
           type: integer
@@ -4119,12 +4129,44 @@ components:
     AdvertenciaCubicador:
       type: object
       required: [codigo, mensaje]
+      description: |
+        Una advertencia de la ruta. Del cubicador (por ejemplo, refrigerado) o, HU-032 (#197, ADR-022), un **aviso del vehículo**:
+        - `VEHICULO_AJUSTADO_POR_CUBICADOR`: el cubicador asignó otro vehículo que el elegido; manda el cubicador.
+        - `VEHICULO_ELEGIDO_USADO`: el cubicador no seleccionó vehículo, falló o estaba ocupado; la ruta va con el elegido.
+        - `MERCANCIAS_NO_CUBICABLES`: la ruta mezcla mercancías cubicables y sin medidas; no se cubica y va con el elegido.
+        - `VEHICULO_ELEGIDO_INVALIDO`: el cubicador no seleccionó y el elegido no es un código de Nexo; la ruta va sin vehículo (o
+          sin la carrocería).
+        Los avisos del vehículo traen `vehiculo_elegido` y `vehiculos_finales` (el de cada camión que quedó); las demás advertencias
+        los traen en `null`. Son informativos: la pantalla los muestra junto al vehículo final de la ruta.
       properties:
         codigo:
           type: string
           nullable: true
         mensaje:
           type: string
+        vehiculo_elegido:
+          description: HU-032 (#197). El vehículo que eligió el comercial (solo en los avisos del vehículo).
+          oneOf:
+            - $ref: '#/components/schemas/VehiculoAviso'
+            - $ref: '#/components/schemas/Nulo'
+        vehiculos_finales:
+          type: array
+          nullable: true
+          description: HU-032 (#197). El vehículo de cada camión que quedó en la ruta (solo en los avisos del vehículo).
+          items:
+            $ref: '#/components/schemas/VehiculoAviso'
+
+    VehiculoAviso:
+      type: object
+      required: [tipo_vehiculo, carroceria]
+      description: 'HU-032 (#197). Un vehículo de un aviso de la ruta (los dos pueden ser `null`, sin vehículo).'
+      properties:
+        tipo_vehiculo:
+          type: string
+          nullable: true
+        carroceria:
+          type: string
+          nullable: true
 
     ExtradimensionCubicador:
       type: object
@@ -5264,10 +5306,14 @@ components:
           type: integer
         largo_cm:
           type: number
+          nullable: true
+          description: HU-032 (#197). `null` (las tres medidas) en una mercancía no cubicable, sin medidas.
         ancho_cm:
           type: number
+          nullable: true
         alto_cm:
           type: number
+          nullable: true
         peso_kg:
           type: number
           nullable: true
@@ -5439,6 +5485,10 @@ components:
       description: |
         HU-013.4. Cambios de carga de una re-solicitud: solo los campos que cambian, con los límites de
         `SolicitudCosteoWeb`. Origen, destino, cliente y línea de negocio no se cambian aquí (eso es otra cotización).
+        HU-032 (#197): `tipo_vehiculo` y `carroceria` cambian el **vehículo elegido** de la ruta (antes se ignoraban). Si la ruta no
+        se puede cubicar el vehículo se valida contra Nexo y es obligatorio salvo en Contenedor (`SOLICITUD_COSTEO_INVALIDA` con
+        `detalle.motivo = VEHICULO_REQUERIDO` y `detalle.ruta = 0`); cambiarlo vuelve a planificar la ruta si sus camiones dependían
+        del elegido.
         Si trae `posiciones`, reemplaza todas las anteriores. La combinación resultante (lo guardado más los cambios) se
         valida igual que en la captura, con las condiciones de G3 (`docs/conexion_nexo/HU-013-preguntas-nexo.md`): `clase_contenedor`
         solo con `clase_viaje = Contenedor`, `ciudad_devolucion_contenedor` con `retorna_contenedor`,
@@ -5711,16 +5761,22 @@ components:
 
     PosicionCargaWeb:
       type: object
-      required: [largo_cm, ancho_cm, alto_cm]
       description: |
         Posición de cubicaje (`clsCapturaPosicionRequest` de Nexo: `descripcion`, `cantidad`, `largoCm`, `anchoCm`,
-        `altoCm`, `pesoKg`), en centímetros y kilogramos. `largo_cm`, `ancho_cm` y `alto_cm` son obligatorios (0,1 a
-        999.999). `peso_kg` es opcional y **por unidad**: el peso de la posición es `cantidad × peso_kg`.
+        `altoCm`, `pesoKg`), en centímetros y kilogramos. `largo_cm`, `ancho_cm` y `alto_cm` van de 0,1 a 999.999. `peso_kg` es
+        opcional y **por unidad**: el peso de la posición es `cantidad × peso_kg`.
+
+        **HU-032 (#197): las medidas son opcionales.** Una mercancía **sin ninguna medida y sin código** (solo `nombre_mercancia`,
+        `cantidad` o `peso_kg`) es "no cubicable": se acepta y se guarda, **no viaja a Nexo como posición** (si una mercancía de la
+        ruta no tiene medidas, la línea va a Nexo sin posiciones, solo con el peso de la ruta) y la ruta no se cubica (usa el
+        vehículo elegido). **Medidas parciales** (por ejemplo, `largo_cm` sin `ancho_cm`) son `POSICION_INVALIDA` en la primera que
+        falta ("faltan medidas"); **código sin medidas** es `POSICION_INVALIDA` en `largo_cm` (el cubicador las necesita: si no se
+        conocen, quitar el código). La regla de peso de la ruta (`PESO_REQUERIDO`/`PESO_INCONSISTENTE`) cuenta todas las mercancías.
 
         HU-021.6 (#132): es también la **mercancía** de una ruta (`RutaCapturaWeb.mercancias`, `LineaLicitacionWeb.mercancias`).
         **HU-023.3 (#158):** en una captura nueva con el cubicador configurado, `codigo_mercancia` (código de `GET /web/tipos-mercancia`)
-        es **obligatorio** (`CAMPO_REQUERIDO` en `mercancias[i].codigo_mercancia`; sin cubicador se acepta sin código y la ruta va al
-        respaldo); con el catálogo disponible debe estar activo
+        es **obligatorio en una mercancía con medidas** (`CAMPO_REQUERIDO` en `mercancias[i].codigo_mercancia`; sin cubicador se acepta
+        sin código y la ruta va al respaldo; HU-032: una mercancía sin medidas no lo exige); con el catálogo disponible debe estar activo
         (`MERCANCIA_DESCONOCIDA`) y ser cubicable (`MERCANCIA_NO_CUBICABLE`). `id_tipo_mercancia` queda **obsoleto**: durante la
         transición se acepta y se traduce al código con el catálogo (sin catálogo, `CAMPO_REQUERIDO` en `codigo_mercancia`).
         `nombre_mercancia` es la copia del nombre del catálogo (`descripcion` es el nombre anterior del mismo campo).
@@ -5753,14 +5809,18 @@ components:
           default: 1
         largo_cm:
           type: number
+          nullable: true
           minimum: 0.1
           maximum: 999999
+          description: HU-032 (#197). Opcional; si viene una medida, vienen las tres.
         ancho_cm:
           type: number
+          nullable: true
           minimum: 0.1
           maximum: 999999
         alto_cm:
           type: number
+          nullable: true
           minimum: 0.1
           maximum: 999999
         peso_kg:
@@ -5795,9 +5855,9 @@ components:
       description: |
         HU-021.6 (#132, ADR-019): una ruta del formulario por rutas. Lo que es igual para todos sus camiones: línea de negocio,
         origen y destino (id de municipio obligatorio + copia del nombre, decisión 2), condiciones del contenedor (ciudades por id +
-        nombre), horas, levante, valor de la mercancía, peso, mercancías y conexos. **Sin vehículo ni carrocería** (decisión 7): la
-        ruta nace con un camión sin vehículo con su peso total y la Mesa de Costeo de Nexo lo resuelve (el cubicador, #133, los
-        recomendará). Mismos límites y reglas condicionales que `SolicitudCosteoWeb` (G3) y los mismos códigos de catálogo (G2).
+        nombre), horas, levante, valor de la mercancía, peso, mercancías, conexos y, desde HU-032 (#197, ADR-022), el **vehículo
+        elegido** (`tipo_vehiculo`, `carroceria`): el respaldo del cubicador y obligatorio cuando la ruta no se puede cubicar (salvo
+        Contenedor). Mismos límites y reglas condicionales que `SolicitudCosteoWeb` (G3) y los mismos códigos de catálogo (G2).
         `peso_kg` puede faltar si las mercancías traen peso (`PESO_REQUERIDO` si ninguno).
       properties:
         linea_negocio:
@@ -5930,25 +5990,28 @@ components:
         tipo_vehiculo:
           type: string
           nullable: true
-          deprecated: true
           maxLength: 100
           description: |
-            Retirado (decisión 7 de HU-021): lo define el cubicador o la Mesa de Costeo de Nexo. Con la bandera de respaldo apagada
-            se acepta y se ignora con un aviso en el log. **Bandera de respaldo (HU-021.11, #138; HU-021-FE.2):** con
-            `Captura:AceptarVehiculoCliente = true` (el valor por defecto desde #188) debe ser un código que **Nexo** conozca (el
-            `valor` de `tipos_vehiculo` de `GET /web/catalogos-flete`; HU-014 #188: un código que solo conoce el cubicador ya no se
-            acepta; se admiten otras mayúsculas, sin tildes o con `_`/`-` por espacio) o es `CODIGO_NO_CATALOGO`, y va **solo en el camión del respaldo** (sin cubicador configurado, ruta sin mercancías
-            tipadas o cubicador caído con `Cubicador:RespaldoSiFalla`). Si el cubicador recomienda, manda el cubicador y este
-            valor no se usa (pero igual se valida antes: un código inválido es `CODIGO_NO_CATALOGO`). El campo se retira con HU-021-FE.
+            **HU-032 (#197, ADR-022): el vehículo elegido de la ruta**, un código de Nexo (el `valor` de `tipos_vehiculo` de
+            `GET /web/catalogos-flete`; se admiten otras mayúsculas, sin tildes o con `_`/`-` por espacio, y un alias de Nexo, #194) y
+            se guarda escrito como en Nexo. Regla:
+            - **Ruta sin mercancías cubicables** (solo `peso_kg`, mercancías sin medidas ni código, o mixta): no se llama al cubicador
+              y la ruta va con este vehículo. Es **obligatorio salvo en Contenedor** (`VEHICULO_REQUERIDO`) y se valida antes de
+              guardar (`CODIGO_NO_CATALOGO`).
+            - **Ruta con todas sus mercancías cubicables:** va al cubicador y este vehículo es el respaldo; NO se valida antes. Si el
+              cubicador asigna, manda el cubicador (aviso `VEHICULO_AJUSTADO_POR_CUBICADOR` si era otro). Si no selecciona, falla o
+              está ocupado, va este vehículo validado en ese momento (`VEHICULO_ELEGIDO_USADO`; si no es de Nexo, la ruta va sin
+              vehículo con `VEHICULO_ELEGIDO_INVALIDO` y la captura no se pierde).
+            Con `Captura:AceptarVehiculoCliente = false` (interruptor de reversa) se ignora con un aviso en el log.
         carroceria:
           type: string
           nullable: true
-          deprecated: true
           maxLength: 100
           description: |
-            Igual que `tipo_vehiculo` (decisión 7; bandera `Captura:AceptarVehiculoCliente`): debe ser una carrocería de Nexo
-            (`ESTACAS`, `ESTIBAS`, `FURGON`, `FURGON REFRIGERADO`, `PLATAFORMA`, `PORTACONTENEDORES`, `TANQUE`, `TRAYLER`, `VOLCO`; con
-            la misma equivalencia: `FURGON_REFRIGERADO` sirve) o es `CODIGO_NO_CATALOGO` (HU-014 #188).
+            HU-032 (#197): la carrocería elegida, **opcional** (Nexo autocostea Cupo con el tipo de vehículo). Misma regla que
+            `tipo_vehiculo`; debe ser una carrocería de Nexo (`ESTACAS`, `ESTIBAS`, `FURGON`, `FURGON REFRIGERADO`, `PLATAFORMA`,
+            `PORTACONTENEDORES`, `TANQUE`, `TRAYLER`, `VOLCO`; con la misma equivalencia: `FURGON_REFRIGERADO` sirve) o es
+            `CODIGO_NO_CATALOGO` (si se valida antes) o el camión va sin carrocería con `VEHICULO_ELEGIDO_INVALIDO` (si se valida tarde).
 
     EdicionSolicitudWeb:
       type: object
@@ -6286,10 +6349,21 @@ components:
           type: string
           nullable: true
           description: HU-028.1 (#183). Los motivos del rechazo de sus camiones (distintos, unidos con " | "); `null` sin rechazados.
+        tipo_vehiculo:
+          type: string
+          nullable: true
+          description: |
+            HU-032 (#197). El vehículo **elegido** de la ruta (el respaldo del cubicador), para reenviarlo tal cual en el `PUT`; `null`
+            si no eligió. No es el vehículo de los camiones (el del cubicador o el que puso la Mesa de Costeo): esos salen en
+            `GET .../costeo`. En una ruta anterior a HU-032 es el del único camión del respaldo.
+        carroceria:
+          type: string
+          nullable: true
+          description: HU-032 (#197). La carrocería elegida; `null` si no eligió.
 
     MercanciaEditable:
       type: object
-      required: [cantidad, largo_cm, ancho_cm, alto_cm]
+      required: [cantidad]
       description: HU-028. Una mercancía de la ruta, con su código del catálogo del cubicador (se devuelve tal cual como `PosicionCargaWeb`).
       properties:
         codigo_mercancia:
@@ -6303,10 +6377,14 @@ components:
           type: integer
         largo_cm:
           type: number
+          nullable: true
+          description: HU-032 (#197). `null` (las tres medidas) en una mercancía no cubicable, sin medidas.
         ancho_cm:
           type: number
+          nullable: true
         alto_cm:
           type: number
+          nullable: true
         peso_kg:
           type: number
           nullable: true
@@ -6475,21 +6553,18 @@ components:
         tipo_vehiculo:
           type: string
           nullable: true
-          deprecated: true
           maxLength: 100
           description: |
-            Retirado (decisión 7 de HU-021): lo define el cubicador o la Mesa de Costeo de Nexo. Por defecto se acepta y se ignora
-            con un aviso en el log. **Bandera de respaldo (HU-021.11, #138; HU-021-FE.2):** con `Captura:AceptarVehiculoCliente =
-            true` (apagada por defecto) se valida contra el catálogo de Nexo (código de `GET /web/catalogos-flete`,
-            `CODIGO_NO_CATALOGO` si no) y va **solo en el camión del respaldo** (sin cubicador configurado, ruta sin mercancías
-            tipadas o cubicador caído con `Cubicador:RespaldoSiFalla`). Si el cubicador recomienda, manda el cubicador y este
-            valor no se usa (pero igual se valida antes: un código inválido es `CODIGO_NO_CATALOGO`). Cuando el cubicador exista, la bandera se apaga y el campo se retira.
+            HU-032 (#197): el vehículo elegido de la ruta, con la misma regla que `RutaCapturaWeb.tipo_vehiculo`. La edición lo
+            **conserva** (el `GET` lo devuelve en `RutaEditable.tipo_vehiculo`; reenviarlo tal cual). En una ruta cuyos camiones
+            dependen del elegido (no los asignó el cubicador), **cambiar solo el vehículo es un cambio**: la ruta se vuelve a
+            planificar y viaja a Nexo (reemplazo o `-vN`, según el modo). En una ruta `ASIGNADO` es solo el respaldo y cambiarlo no
+            dispara nada. Se compara con el elegido guardado, no con el vehículo que la Mesa de Costeo puso en Nexo.
         carroceria:
           type: string
           nullable: true
-          deprecated: true
           maxLength: 100
-          description: Igual que `tipo_vehiculo` (decisión 7; bandera `Captura:AceptarVehiculoCliente`).
+          description: HU-032 (#197). La carrocería elegida (opcional); misma regla que `tipo_vehiculo`.
 
     SolicitudCosteoWeb:
       type: object
@@ -6614,15 +6689,13 @@ components:
         tipo_vehiculo:
           type: string
           nullable: true
-          deprecated: true
           description: |
-            Formato plano. Retirado (decisión 7 de HU-021, HU-021.6): el comercial ya no digita el vehículo; lo define el cubicador
-            o la Mesa de Costeo de Nexo. Igual que `RutaCapturaWeb.tipo_vehiculo` (bandera `Captura:AceptarVehiculoCliente`).
+            Formato plano (el formato es el que está obsoleto; el campo no). HU-032 (#197): el vehículo elegido de la única ruta, con
+            la misma regla que `RutaCapturaWeb.tipo_vehiculo`.
         carroceria:
           type: string
           nullable: true
-          deprecated: true
-          description: Formato plano. Igual que `RutaCapturaWeb.carroceria`.
+          description: Formato plano. HU-032 (#197). Igual que `RutaCapturaWeb.carroceria`.
         tipologia:
           deprecated: true
           type: string
@@ -6911,15 +6984,15 @@ components:
         tipo_vehiculo:
           type: string
           nullable: true
-          deprecated: true
           description: |
-            Retirado del mapeo (decisión 7 de HU-021, HU-021.6). Se acepta y se ignora, salvo la bandera de respaldo
-            `Captura:AceptarVehiculoCliente` (igual que `RutaCapturaWeb.tipo_vehiculo`, #138).
+            HU-032 (#197): el vehículo elegido de la fila, con la misma regla que `RutaCapturaWeb.tipo_vehiculo`. Una fila con todas sus
+            mercancías cubicables se cubica en segundo plano (camión provisional sin vehículo; el elegido es el respaldo); una fila
+            sin mercancías cubicables no espera al cubicador y lleva el elegido (obligatorio salvo Contenedor). Los avisos de cada
+            fila salen en `Licitacion.cubicacion[]` (por `linea_orden`).
         carroceria:
           type: string
           nullable: true
-          deprecated: true
-          description: Igual que `tipo_vehiculo`.
+          description: HU-032 (#197). La carrocería elegida (opcional). Igual que `RutaCapturaWeb.carroceria`.
         tipologia:
           type: string
           nullable: true
@@ -7100,7 +7173,7 @@ components:
                  DEMASIADAS_POSICIONES, POSICION_INVALIDA, PESO_REQUERIDO, PESO_INCONSISTENTE, FILA_INVALIDA, CAMPO_NO_APLICA,
                  CODIGO_NO_CATALOGO, MUNICIPIO_AMBIGUO, MUNICIPIO_NO_ENCONTRADO, MUNICIPIO_INEXISTENTE, CONEXO_DUPLICADO,
                  CONEXO_NO_ENCONTRADO, DEMASIADOS_CONEXOS, TIPO_MERCANCIA_INEXISTENTE, MERCANCIA_DESCONOCIDA, MERCANCIA_NO_CUBICABLE,
-                 PESO_CON_TARA_MENOR_QUE_CARGA]
+                 PESO_CON_TARA_MENOR_QUE_CARGA, VEHICULO_REQUERIDO]
           description: |
             HU-013.11: `CODIGO_NO_CATALOGO` (el valor no es un código de catálogo, G2), `CAMPO_NO_APLICA` y `CAMPO_REQUERIDO` de las
             reglas condicionales (G3), `MUNICIPIO_AMBIGUO` y `MUNICIPIO_NO_ENCONTRADO` (G6, campo `origen` o `destino`).
@@ -7112,6 +7185,8 @@ components:
             `MERCANCIA_DESCONOCIDA` y `MERCANCIA_NO_CUBICABLE` en `mercancias[i].codigo_mercancia`; `CAMPO_REQUERIDO` en
             `mercancias[i].codigo_mercancia` si falta el código. HU-030.1 (#184): `PESO_CON_TARA_MENOR_QUE_CARGA` en
             `peso_con_tara_kg` (menor que el peso de carga) y `CAMPO_NO_APLICA` en `peso_con_tara_kg` sin `clase_viaje = Contenedor`.
+            HU-032 (#197): `VEHICULO_REQUERIDO` en `tipo_vehiculo` cuando la ruta no se puede cubicar (solo peso, mercancías sin
+            medidas ni código, o mixta), no es de Contenedor y no trae vehículo.
         mensaje:
           type: string
 

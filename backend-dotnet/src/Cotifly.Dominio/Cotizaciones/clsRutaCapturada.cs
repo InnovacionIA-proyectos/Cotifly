@@ -2,9 +2,10 @@ namespace Cotifly.Dominio.Cotizaciones;
 
 /// <summary>
 /// Camión que se crea con una ruta capturada (HU-021.6). Con el cubicador (HU-021.5, #133) es uno por fila de su recomendación, con el
-/// vehículo, la carrocería, el peso total del vehículo (C2) y <paramref name="IdRecomendacionVehiculo"/> (C3); sin vehículo ni carrocería
-/// si el cubicador no seleccionó uno (lo resuelve la Mesa de Costeo de Nexo, decisión 7). Sin cubicador (respaldo) es uno solo, sin
-/// vehículo, con el peso total de la ruta. HU-023.1 (#156): con el contrato del cubicador, el camión trae además el volumen que lleva y
+/// vehículo, la carrocería, el peso total del vehículo (C2) y <paramref name="IdRecomendacionVehiculo"/> (C3). HU-032 (#197, ADR-022): si
+/// el cubicador no seleccionó uno, si falla, si no está configurado o si la ruta no tiene mercancías cubicables, es uno solo con el vehículo
+/// ELEGIDO por el comercial (o sin vehículo si no eligió: lo resuelve la Mesa de Costeo de Nexo) y el peso total de la ruta. HU-023.1
+/// (#156): con el contrato del cubicador, el camión trae además el volumen que lleva y
 /// los dos porcentajes de llenado (los guarda HU-023.3 con las columnas del script <c>02</c>). HU-028.1 (#183, decisión del 2026-10-20):
 /// <paramref name="Rechazo"/> es el rechazo de la Mesa de Costeo que el camión trae de la cotización de origen al copiarse a una versión
 /// <c>-vN</c>: nace rechazado, con el mismo motivo y fecha, y NO viaja a Nexo (<see cref="clsVehiculoLineaSolicitud.FueraDelEnvio"/>).
