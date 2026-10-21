@@ -275,6 +275,52 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
+    public async Task HU032_ElCheckDelScript12RechazaLasMedidasParcialesConNull()
+    {
+        // Validación de HU-032: "NULL > 0" es UNKNOWN y un CHECK solo rechaza FALSE. Sin "IS NOT NULL", (NULL, 10, 10) pasaba el CHECK
+        // "las tres NULL o las tres > 0". Se prueba la definición que deja el 12 sobre una tabla temporal con las mismas columnas.
+        await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbCheck12");
+
+        var resultados = await clsBaseDatosPruebas.EscalarAsync<string>(instalada.Cadena, """
+            DECLARE @d NVARCHAR(MAX) = (SELECT definition FROM sys.check_constraints WHERE name = N'ck_cotizacionPosiciones_medidas'
+                                        AND parent_object_id = OBJECT_ID(N'dbo_cotifly.CotizacionMercancias'));
+            CREATE TABLE #m (largoCm DECIMAL(10,2) NULL, anchoCm DECIMAL(10,2) NULL, altoCm DECIMAL(10,2) NULL, pesoKg DECIMAL(12,2) NULL);
+            EXEC (N'ALTER TABLE #m ADD CONSTRAINT ck_m CHECK ' + @d);
+            DECLARE @r NVARCHAR(200) = N'';
+            BEGIN TRY INSERT #m VALUES (NULL, NULL, NULL, 5); SET @r += N'ninguna=ok;'; END TRY BEGIN CATCH SET @r += N'ninguna=error;'; END CATCH;
+            BEGIN TRY INSERT #m VALUES (10, 10, 10, 5); SET @r += N'tres=ok;'; END TRY BEGIN CATCH SET @r += N'tres=error;'; END CATCH;
+            BEGIN TRY INSERT #m VALUES (NULL, 10, 10, 5); SET @r += N'sinLargo=ok;'; END TRY BEGIN CATCH SET @r += N'sinLargo=error;'; END CATCH;
+            BEGIN TRY INSERT #m VALUES (10, NULL, 10, 5); SET @r += N'sinAncho=ok;'; END TRY BEGIN CATCH SET @r += N'sinAncho=error;'; END CATCH;
+            BEGIN TRY INSERT #m VALUES (10, 10, NULL, 5); SET @r += N'sinAlto=ok;'; END TRY BEGIN CATCH SET @r += N'sinAlto=error;'; END CATCH;
+            BEGIN TRY INSERT #m VALUES (0, 10, 10, 5); SET @r += N'cero=ok;'; END TRY BEGIN CATCH SET @r += N'cero=error;'; END CATCH;
+            SELECT @r;
+            """);
+
+        resultados.Should().Be("ninguna=ok;tres=ok;sinLargo=error;sinAncho=error;sinAlto=error;cero=error;");
+    }
+
+    [Fact]
+    public async Task HU032_ElScript12ReemplazaElCheckDeUnaVersionPreviaSinIsNotNull()
+    {
+        // Validación de HU-032: un ambiente que aplicó la primera versión del 12 (CHECK sin "IS NOT NULL") queda con el CHECK corregido al
+        // volver a correrlo.
+        await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbCheck12Previo");
+        await clsBaseDatosPruebas.EjecutarAsync(instalada.Cadena, """
+            ALTER TABLE dbo_cotifly.CotizacionMercancias DROP CONSTRAINT ck_cotizacionPosiciones_medidas;
+            ALTER TABLE dbo_cotifly.CotizacionMercancias WITH CHECK ADD CONSTRAINT ck_cotizacionPosiciones_medidas
+                CHECK (((largoCm IS NULL AND anchoCm IS NULL AND altoCm IS NULL) OR (largoCm > 0 AND anchoCm > 0 AND altoCm > 0))
+                       AND (pesoKg IS NULL OR pesoKg >= 0));
+            """);
+
+        await clsBaseDatosPruebas.AplicarScriptAsync(instalada.Cadena, clsBaseDatosPruebas.Script12);
+
+        (await clsBaseDatosPruebas.EscalarAsync<string>(instalada.Cadena,
+                "SELECT definition FROM sys.check_constraints WHERE name = N'ck_cotizacionPosiciones_medidas' "
+                + "AND parent_object_id = OBJECT_ID(N'dbo_cotifly.CotizacionMercancias')"))
+            .Should().Contain("[altoCm] IS NOT NULL");
+    }
+
+    [Fact]
     public async Task HU0281_ElScript10EsIdempotenteSobreUnaBaseMigradaYSobreUnaInstalacionDesdeCero()
     {
         // HU-028.2 (#182) / HU-028.1 (#183): motivoRechazo y rechazadaAt en el camión y 'rechazada' en los tres CHECK de estadoCosteo.

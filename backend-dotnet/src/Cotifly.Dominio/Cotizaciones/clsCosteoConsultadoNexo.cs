@@ -278,7 +278,7 @@ public static class clsEmparejadorLineasNexo
             // Cada vuelta asocia al menos un par; un empate resuelto puede volver seguros otros pares.
             empates.Clear();
             avanzo = AsociarSeguros(pendientes, libres, resultado)
-                     || AsociarRespaldoPorRutaYPeso(pendientes, libres, resultado)
+                     || AsociarRespaldoPorRutaYPeso(camiones, nexo, pendientes, libres, resultado)
                      || ResolverEmpate(pendientes, libres, resultado, empates);
         }
         while (avanzo && pendientes.Count > 0 && libres.Count > 0);
@@ -346,15 +346,21 @@ public static class clsEmparejadorLineasNexo
     /// PESO cuando esa combinación es única en la cotización (un solo camión pendiente y una sola línea libre la tienen), aunque el vehículo
     /// o la carrocería ya no cuadren: la Mesa de Costeo pudo cambiarlos en Nexo antes del primer polling (D2, "la Mesa manda"). La línea no
     /// puede ser de un camión del cubicador (con <c>idRecomendacionVehiculo</c>) ni contradecir la tipología. Devuelve si asoció alguno.
+    /// <para>Validación de HU-032: la unicidad se mide sobre TODOS los camiones y TODAS las líneas de la entrada (<paramref name="todosCamiones"/>,
+    /// <paramref name="todasLineas"/>), no sobre los que van quedando: si no, un par por contenido equivocado entre dos rutas con el mismo
+    /// origen, destino y peso (sin <c>grupoRutaId</c>, la línea suelta) dejaba "única" la línea de la otra ruta y el costo se cruzaba en cascada.</para>
     /// </summary>
     private static bool AsociarRespaldoPorRutaYPeso(
+        IReadOnlyList<clsCamionParaEmparejar> todosCamiones, IReadOnlyList<clsLineaSolicitudNexo> todasLineas,
         List<clsCamionParaEmparejar> pendientes, List<clsLineaSolicitudNexo> libres, Dictionary<Guid, string> resultado)
     {
         var avanzo = false;
         foreach (var camion in pendientes.Where(c => c.IdRecomendacionVehiculo is null && c.PesoKg is not null).ToList())
         {
             var candidatas = libres.Where(n => Recomendacion(n) is null && PuedeSerDe(camion, n)).ToList();
-            if (candidatas.Count != 1 || pendientes.Count(c => PuedeSerDe(c, candidatas[0])) != 1)
+            if (candidatas.Count != 1 || pendientes.Count(c => PuedeSerDe(c, candidatas[0])) != 1
+                || todasLineas.Count(n => Recomendacion(n) is null && PuedeSerDe(camion, n)) != 1
+                || todosCamiones.Count(c => PuedeSerDe(c, candidatas[0])) != 1)
             {
                 continue;
             }

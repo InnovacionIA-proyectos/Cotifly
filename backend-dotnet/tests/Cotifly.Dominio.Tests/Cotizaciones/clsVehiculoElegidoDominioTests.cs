@@ -224,6 +224,138 @@ public sealed class clsVehiculoElegidoDominioTests
         clsEmparejadorLineasNexo.Emparejar(Camiones(cotizacion), nexo).Should().BeEmpty();
     }
 
+    // --- Validación de HU-032: bordes del respaldo por ruta y peso (dos rutas con el mismo origen, destino y peso) ---
+
+    [Fact]
+    public void DosRutasConElMismoOrigenDestinoYPesoNoSeAsocianPorRutaYPesoAunqueUnaYaCuadrePorVehiculo()
+    {
+        // Rutas de un camión: viajan como línea suelta (grupoRutaId = null), así que la ruta solo se distingue por el texto. La combinación
+        // ruta + peso NO es única en la cotización: la ruta 2 no se asocia por ella (la línea que queda podría ser de la ruta 1).
+        var cotizacion = Capturar(
+            new clsRutaCapturada(Linea("Buenaventura", "Bogotá", 10_000m, "3S3"), 3, 0, [new clsCamionPlaneado("3S3", null, 10_000m)], []),
+            new clsRutaCapturada(Linea("Buenaventura", "Bogotá", 10_000m, "2S2"), 3, 1, [new clsCamionPlaneado("2S2", null, 10_000m)], []));
+        var (a, b) = (cotizacion.RutasOrdenadas[0].Vehiculos[0].Id, cotizacion.RutasOrdenadas[1].Vehiculos[0].Id);
+        clsLineaSolicitudNexo[] nexo =
+        [
+            new("NA", "Buenaventura → Bogotá", null, 10_000m, "3S3", null),
+            new("NB", "Buenaventura → Bogotá", null, 10_000m, "C3", null), // la Mesa cambió el 2S2 de la ruta 2
+        ];
+
+        foreach (var orden in new clsLineaSolicitudNexo[][] { nexo, [nexo[1], nexo[0]] })
+        {
+            var pares = clsEmparejadorLineasNexo.Emparejar(Camiones(cotizacion), orden);
+
+            pares.Should().ContainSingle().Which.Should().Be(new KeyValuePair<Guid, string>(a, "NA"));
+            pares.Should().NotContainKey(b);
+        }
+    }
+
+    [Fact]
+    public void UnParPorVehiculoEquivocadoNoArrastraEnCascadaAlRespaldoPorRutaYPeso()
+    {
+        // Regresión de la validación de HU-032: la ruta 1 (C2) y la ruta 2 (2S2) tienen el mismo origen, destino y peso; la Mesa cambió la
+        // línea de la ruta 1 a X9 y la de la ruta 2 a C2. Por contenido la línea de la ruta 2 cuadra con el camión de la ruta 1 (un cruce que
+        // ya existía). Antes, con la unicidad medida sobre lo que quedaba, la línea de la ruta 1 parecía "única" para la ruta 2 y se cruzaba
+        // también; ahora la combinación no es única en la cotización y la ruta 2 queda sin asociar.
+        var cotizacion = Capturar(
+            new clsRutaCapturada(Linea("Buenaventura", "Bogotá", 8_000m, "C2"), 3, 0, [new clsCamionPlaneado("C2", null, 8_000m)], []),
+            new clsRutaCapturada(Linea("Buenaventura", "Bogotá", 8_000m, "2S2"), 3, 1, [new clsCamionPlaneado("2S2", null, 8_000m)], []));
+        clsLineaSolicitudNexo[] nexo =
+        [
+            new("L1", "Buenaventura → Bogotá", null, 8_000m, "X9", null),
+            new("L2", "Buenaventura → Bogotá", null, 8_000m, "C2", null),
+        ];
+
+        var pares = clsEmparejadorLineasNexo.Emparejar(Camiones(cotizacion), nexo);
+
+        pares.Should().NotContainKey(cotizacion.RutasOrdenadas[1].Vehiculos[0].Id);
+    }
+
+    [Fact]
+    public void SiLaMesaBorraLaLineaDeUnaRutaYCambiaLaDeOtraIgualNingunaSeAsociaPorRutaYPeso()
+    {
+        var cotizacion = Capturar(
+            new clsRutaCapturada(Linea("Buenaventura", "Bogotá", 10_000m, "3S3"), 3, 0, [new clsCamionPlaneado("3S3", null, 10_000m)], []),
+            new clsRutaCapturada(Linea("Buenaventura", "Bogotá", 10_000m, "2S2"), 3, 1, [new clsCamionPlaneado("2S2", null, 10_000m)], []));
+        clsLineaSolicitudNexo[] nexo = [new("NB", "Buenaventura → Bogotá", null, 10_000m, "C3", null)];
+
+        var detalle = clsEmparejadorLineasNexo.EmparejarConDetalle(Camiones(cotizacion), nexo);
+
+        detalle.Pares.Should().BeEmpty("la única línea puede ser de cualquiera de las dos rutas: asociarla sería adivinar");
+        detalle.CamionesSinAsociar.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void ConGrupoRutaIdDosRutasIgualesCambiadasPorLaMesaSeAsocianCadaUnaASuRuta()
+    {
+        var cotizacion = Capturar(
+            new clsRutaCapturada(Linea("Buenaventura", "Bogotá", 10_000m, "3S3"), 3, 0, [new clsCamionPlaneado("3S3", null, 10_000m)], []),
+            new clsRutaCapturada(Linea("Buenaventura", "Bogotá", 10_000m, "2S2"), 3, 1, [new clsCamionPlaneado("2S2", null, 10_000m)], []));
+        var rutas = cotizacion.RutasOrdenadas;
+        clsLineaSolicitudNexo[] nexo =
+        [
+            new("NB", "Buenaventura → Bogotá", null, 10_000m, "C2", null) { GrupoRutaId = rutas[1].Id.ToString("D") },
+            new("NA", "Buenaventura → Bogotá", null, 10_000m, "C3", null) { GrupoRutaId = rutas[0].Id.ToString("D") },
+        ];
+
+        var pares = clsEmparejadorLineasNexo.Emparejar(Camiones(cotizacion), nexo);
+
+        (pares[rutas[0].Vehiculos[0].Id], pares[rutas[1].Vehiculos[0].Id]).Should().Be(("NA", "NB"));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void FuzzDelRespaldoConRutasIgualesNuncaCruzaUnaLineaDeOtraRuta(int semilla)
+    {
+        // Rutas del respaldo (un camión, sin recomendación) con el MISMO origen y destino y pocos pesos; la Mesa cambia el vehículo (a un
+        // código que ningún camión de Cotifly lleva, para aislar el respaldo por ruta y peso de los cruces por contenido que ya existían) o
+        // borra la línea antes del primer polling, y unas veces Nexo devuelve el grupoRutaId y otras no. Ningún camión puede quedarse con
+        // la línea de otra ruta.
+        var azar = new Random(197 + semilla);
+        var (cruces, asociados) = (0, 0);
+        string[] vehiculos = ["3S3", "2S2", "C2"];
+        string[] deLaMesa = ["X1", "X2"];
+        for (var vuelta = 0; vuelta < 500; vuelta++)
+        {
+            var rutas = Enumerable.Range(0, azar.Next(2, 5)).Select(i =>
+            {
+                var peso = azar.Next(2) == 0 ? 8_000m : 10_000m;
+                var vehiculo = vehiculos[azar.Next(vehiculos.Length)];
+                return new clsRutaCapturada(Linea("Buenaventura", "Bogotá", peso, vehiculo), 3, i, [new clsCamionPlaneado(vehiculo, null, peso)], []);
+            }).ToArray();
+            var cotizacion = Capturar(rutas);
+            var conGrupo = azar.Next(2) == 0;
+            var dueno = new Dictionary<string, Guid>();
+            var lineas = new List<clsLineaSolicitudNexo>();
+            foreach (var ruta in cotizacion.RutasOrdenadas)
+            {
+                var camion = ruta.Vehiculos[0];
+                if (azar.Next(6) == 0)
+                {
+                    continue; // la Mesa borró la línea
+                }
+
+                var id = $"N-{lineas.Count}";
+                dueno[id] = ruta.Id;
+                var vehiculo = azar.Next(3) == 0 ? deLaMesa[azar.Next(deLaMesa.Length)] : camion.TipoVehiculo;
+                lineas.Add(new clsLineaSolicitudNexo(id, "Buenaventura → Bogotá", null, camion.PesoKg, vehiculo, null)
+                {
+                    GrupoRutaId = conGrupo ? ruta.Id.ToString("D") : null,
+                });
+            }
+
+            var camiones = Camiones(cotizacion);
+            var pares = clsEmparejadorLineasNexo.Emparejar(camiones, [.. lineas.OrderBy(_ => azar.Next())]);
+            asociados += pares.Count;
+            cruces += pares.Count(p => dueno[p.Value] != camiones.Single(c => c.Id == p.Key).RutaId);
+        }
+
+        cruces.Should().Be(0);
+        asociados.Should().BeGreaterThan(0);
+    }
+
     private static clsCotizacionSolicitud Capturar(params clsRutaCapturada[] rutas)
     {
         var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-HU032-1" }).Valor;

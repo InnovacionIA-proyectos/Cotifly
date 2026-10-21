@@ -293,7 +293,8 @@ internal sealed class clsMercanciaConfiguracion : IEntityTypeConfiguration<clsMe
             t.HasCheckConstraint("ck_cotizacionPosiciones_cantidad", "cantidad >= 1");
             // HU-032 (#197): db/scripts/12 (una mercancía no cubicable va sin ninguna medida; si trae, las tres > 0).
             t.HasCheckConstraint("ck_cotizacionPosiciones_medidas",
-                "((largoCm IS NULL AND anchoCm IS NULL AND altoCm IS NULL) OR (largoCm > 0 AND anchoCm > 0 AND altoCm > 0)) AND (pesoKg IS NULL OR pesoKg >= 0)");
+                "((largoCm IS NULL AND anchoCm IS NULL AND altoCm IS NULL) OR (largoCm IS NOT NULL AND anchoCm IS NOT NULL AND altoCm IS NOT NULL "
+                + "AND largoCm > 0 AND anchoCm > 0 AND altoCm > 0)) AND (pesoKg IS NULL OR pesoKg >= 0)");
         });
 
         builder.HasKey(m => m.Id).HasName("pk_cotizacionPosiciones");

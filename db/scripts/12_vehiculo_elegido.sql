@@ -56,11 +56,13 @@ BEGIN TRY
         ALTER TABLE dbo_cotifly.CotizacionLineasSolicitud
             ADD carroceriaElegida NVARCHAR(100) COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL;
 
-    -- El CHECK anterior (todas > 0) se imprime como respaldo y se quita antes de cambiar la nulabilidad.
+    -- El CHECK anterior (todas > 0) se imprime como respaldo y se quita antes de cambiar la nulabilidad. Validación de HU-032: también se
+    -- reemplaza una versión previa de este mismo script cuyo CHECK no tenía "IS NOT NULL" (con medidas parciales, por ejemplo largo NULL
+    -- y ancho y alto > 0, "NULL > 0" es UNKNOWN y un CHECK solo rechaza FALSE: las dejaba pasar).
     DECLARE @definicion NVARCHAR(MAX) = (SELECT definition FROM sys.check_constraints
                                          WHERE name = N'ck_cotizacionPosiciones_medidas'
                                            AND parent_object_id = OBJECT_ID(N'dbo_cotifly.CotizacionMercancias'));
-    IF @definicion IS NOT NULL AND CHARINDEX(N'largoCm] IS NULL', @definicion) = 0
+    IF @definicion IS NOT NULL AND CHARINDEX(N'[altoCm] IS NOT NULL', @definicion) = 0
     BEGIN
         PRINT N'CHECK anterior de ck_cotizacionPosiciones_medidas: ' + @definicion;
         ALTER TABLE dbo_cotifly.CotizacionMercancias DROP CONSTRAINT ck_cotizacionPosiciones_medidas;
@@ -77,7 +79,8 @@ BEGIN TRY
                    WHERE name = N'ck_cotizacionPosiciones_medidas'
                      AND parent_object_id = OBJECT_ID(N'dbo_cotifly.CotizacionMercancias'))
         ALTER TABLE dbo_cotifly.CotizacionMercancias WITH CHECK ADD CONSTRAINT ck_cotizacionPosiciones_medidas
-            CHECK (((largoCm IS NULL AND anchoCm IS NULL AND altoCm IS NULL) OR (largoCm > 0 AND anchoCm > 0 AND altoCm > 0))
+            CHECK (((largoCm IS NULL AND anchoCm IS NULL AND altoCm IS NULL)
+                    OR (largoCm IS NOT NULL AND anchoCm IS NOT NULL AND altoCm IS NOT NULL AND largoCm > 0 AND anchoCm > 0 AND altoCm > 0))
                    AND (pesoKg IS NULL OR pesoKg >= 0));
 
     COMMIT TRANSACTION;

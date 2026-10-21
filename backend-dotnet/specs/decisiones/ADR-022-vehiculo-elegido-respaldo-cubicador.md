@@ -132,8 +132,10 @@ crearlas con el elegido.
 ### 10. Emparejamiento del camión del respaldo
 
 Un camión sin `idRecomendacionVehiculo` se asocia **por ruta y peso** cuando esa combinación es única en la cotización (un solo camión
-pendiente puede ser su dueño y una sola línea libre sin recomendación la tiene), aunque el vehículo o la carrocería ya no cuadren: la Mesa
-pudo cambiarlos antes del primer polling. Un camión del cubicador cuenta como posible dueño de una línea sin recomendación (NEXO puede no
+pendiente puede ser su dueño y una sola línea libre sin recomendación la tiene, y lo mismo contando **todos** los camiones y **todas** las
+líneas de la lectura, no solo los que van quedando), aunque el vehículo o la carrocería ya no cuadren: la Mesa pudo cambiarlos antes del
+primer polling. La unicidad global evita la cascada que encontró la validación: dos rutas con el mismo origen, destino y peso (línea
+suelta, sin `grupoRutaId`) en las que un par por contenido equivocado dejaba "única" la línea de la otra ruta. Un camión del cubicador cuenta como posible dueño de una línea sin recomendación (NEXO puede no
 devolverla), así que la unicidad nunca le quita su línea. Si no es única, queda sin asociar como antes.
 
 ### 11. La bandera `Captura:AceptarVehiculoCliente`
