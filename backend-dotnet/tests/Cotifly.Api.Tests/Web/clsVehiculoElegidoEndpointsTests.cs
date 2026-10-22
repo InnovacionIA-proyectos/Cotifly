@@ -462,6 +462,28 @@ public sealed class clsVehiculoElegidoEndpointsTests : IDisposable
     }
 
     [Fact]
+    public async Task EditarQuitandoElVehiculoDeUnaRutaSoloConPesoSinTocarLaCargaPideElVehiculo()
+    {
+        // Auditoría B3: la exención de "ruta sin cambios" no se puede usar para quitar el vehículo elegido. Quitarlo es un cambio (los
+        // camiones dependen de él), aunque la carga sea la misma y lo único que cambie además sea algo que no se cubica (el valor).
+        var api = Api();
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        using var envio = await api.EnviarAsync(_post, Captura, ana.Access, Formulario("2S3", 9_000m));
+        var folio = (await VerificarContratoAsync(envio, Captura, _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+
+        var (modelo, etag) = await ModeloAsync(api, ana, folio);
+        var altas = _nexo.SolicitudesCreadas.Count;
+        modelo["rutas"]![0]!.AsObject().Remove("tipo_vehiculo");
+        modelo["rutas"]![0]!["valor_mercancia"] = 60_000_000m;
+        using var cambio = await api.EnviarAsync(_put, $"/web/cotizaciones/{folio}/solicitud", ana.Access, modelo.ToJsonString(), etag);
+
+        cambio.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await ErroresVehiculoRequeridoAsync(cambio)).Should().Equal(0);
+        _nexo.SolicitudesCreadas.Should().HaveCount(altas, "nada se envía");
+        (await ElegidoAsync(folio)).Should().Be("2S3|");
+    }
+
+    [Fact]
     public async Task EditarUnFolioAnteriorSinVehiculoAgregandoUnaRutaNuevaSinVehiculoLaPideSoloEnLaNueva()
     {
         var api = Api();
