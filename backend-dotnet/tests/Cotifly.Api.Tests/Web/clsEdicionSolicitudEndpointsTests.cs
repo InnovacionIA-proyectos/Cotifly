@@ -144,6 +144,30 @@ public sealed class clsEdicionSolicitudEndpointsTests : IDisposable
         (await ColumnaAsync(folio, "estadoCosteo")).Should().Be("pendiente_costeo");
     }
 
+    /// <summary>
+    /// Endurecimiento B (#199): con el 403 de Nexo al rechazar, el cliente recibe 403 <c>NEXO_SIN_PERMISO</c> con
+    /// <c>detalle.motivo = RECHAZO_NEXO_FALLIDO</c>; antes el texto crudo de Nexo ("HTTP 403 ...") pisaba el motivo.
+    /// </summary>
+    [Fact]
+    public async Task SiNexoNiegaElRechazoEs403ConElMotivoDeCotiflyYSinElTextoDeNexo()
+    {
+        var (sesion, folio) = await EnviarAsync();
+        _nexo.RechazoFalla = HttpStatusCode.Forbidden;
+        _nexo.CodigoRechazoFalla = "FORBIDDEN";
+        var (modelo, etag) = await ModeloAsync(sesion, folio);
+        modelo["rutas"]![0]!["horas_cargue"] = 9;
+
+        using var respuesta = await EditarAsync(sesion, folio, modelo, etag);
+
+        respuesta.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        await VerificarErrorNegocioAsync(respuesta, "NEXO_SIN_PERMISO");
+        var texto = await respuesta.Content.ReadAsStringAsync(Ct);
+        using var cuerpo = JsonDocument.Parse(texto);
+        cuerpo.RootElement.GetProperty("error").GetProperty("detalle").GetProperty("motivo").GetString().Should().Be("RECHAZO_NEXO_FALLIDO");
+        texto.Should().NotContain("HTTP 403");
+        _nexo.SolicitudesCreadas.Should().ContainSingle();
+    }
+
     [Fact]
     public async Task YaConResultadoSeCreaLaVersionNuevaYLaOriginalNoCambia()
     {

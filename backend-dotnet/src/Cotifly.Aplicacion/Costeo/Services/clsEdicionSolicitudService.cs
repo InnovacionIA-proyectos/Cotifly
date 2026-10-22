@@ -635,8 +635,9 @@ public sealed class clsEdicionSolicitudService(
         var rechazo = await nexo.RechazarSolicitudAsync(usuarioId, anterior, MotivoRechazoNexo, comentario, CancellationToken.None);
         if (rechazo.EsFallo)
         {
-            logger.LogWarning("No se pudo rechazar en Nexo la solicitud {Solicitud} de {Folio} ({Codigo}): la edición no se aplica ni se captura otra.",
-                anterior, cotizacion.Folio, rechazo.Error.Codigo);
+            // El texto técnico de Nexo ("HTTP 403 ...") va solo al log; el cliente recibe detalle.motivo = RECHAZO_NEXO_FALLIDO.
+            logger.LogWarning("No se pudo rechazar en Nexo la solicitud {Solicitud} de {Folio} ({Codigo}: {Detalle}): la edición no se aplica ni se captura otra.",
+                anterior, cotizacion.Folio, rechazo.Error.Codigo, rechazo.Error.Detalle);
             return RechazoFallido(cotizacion, anterior, rechazo.Error);
         }
 
@@ -751,6 +752,11 @@ public sealed class clsEdicionSolicitudService(
         return await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, versionEsperada, CancellationToken.None);
     }
 
+    /// <summary>
+    /// El rechazo de la solicitud anterior falló: <c>NEXO_SIN_PERMISO</c> (403) o <c>NEXO_NO_DISPONIBLE</c> (503), siempre con
+    /// <c>detalle.motivo = RECHAZO_NEXO_FALLIDO</c>. Endurecimiento B (#199): sin el <see cref="clsErrorDominio.Detalle"/> de Nexo, que
+    /// <c>clsErrorNegocioWeb</c> publicaría como <c>detalle.motivo</c> encima del motivo de Cotifly (lo técnico queda en el log).
+    /// </summary>
     private static clsErrorDominio RechazoFallido(clsCotizacionSolicitud cotizacion, string anterior, clsErrorDominio error)
     {
         var datos = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -761,7 +767,7 @@ public sealed class clsEdicionSolicitudService(
             ["causa"] = error.Codigo,
         };
         return error.Codigo == clsCodigosError.NexoSinPermiso
-            ? error with { Datos = datos }
+            ? new clsErrorDominio(error.Codigo, error.Mensaje) { Datos = datos }
             : new clsErrorDominio(clsCodigosError.NexoNoDisponible,
                 $"No se pudo rechazar en Nexo la solicitud anterior de {cotizacion.Folio}: la edición no se aplicó y no se creó otra solicitud. "
                 + "Intenta de nuevo en unos minutos (recarga la solicitud: su versión cambió).") { Datos = datos };

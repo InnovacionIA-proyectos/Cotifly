@@ -189,13 +189,14 @@ public sealed class clsEdicionSolicitudServiceTests
     {
         var cotizacion = Registrar(EnNexo());
         _nexo.RechazarSolicitudAsync(default, default!, default!, default, Ct)
-            .ReturnsForAnyArgs(new clsErrorDominio(fallo, "Nexo no responde."));
+            .ReturnsForAnyArgs(new clsErrorDominio(fallo, "Nexo no responde.", "HTTP 403 FORBIDDEN texto crudo de Nexo"));
         _eventos.Clear();
 
         var resultado = await Servicio().EditarAsync(_ana, Folio, EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m }), Version, null, Ct);
 
         resultado.Error.Codigo.Should().Be(esperado);
         resultado.Error.Datos!["motivo"].Should().Be(clsEdicionSolicitudService.MotivoRechazoFallido);
+        resultado.Error.Detalle.Should().BeNull("endurecimiento B: el texto técnico de Nexo no pisa detalle.motivo (solo va al log)");
         resultado.Error.Datos["solicitud_nexo_id"].Should().Be("SOL-1");
         _eventos.Should().Equal(["guardar:v4"], "solo se reservó la versión");
         await _nexo.ReceivedWithAnyArgs(1).RechazarSolicitudAsync(default, default!, default!, default, Ct);
