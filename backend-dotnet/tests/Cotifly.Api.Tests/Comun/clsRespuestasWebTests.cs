@@ -28,6 +28,8 @@ public sealed class clsRespuestasWebTests
     [InlineData(clsCodigosError.CorreoPdfNoEncontrado, 400, "ErrorNegocio")]
     [InlineData(clsCodigosError.CorreoEnvioFallido, 400, "ErrorNegocio")]
     [InlineData(clsCodigosError.ConfirmacionRequerida, 400, "ErrorNegocio")]
+    [InlineData(clsCodigosError.ErrorInterno, 500, "ErrorNegocio")]
+    [InlineData("REGISTRO_DUPLICADO", 500, "ErrorNegocio")]
     public void CadaCodigoRespondeElEstadoYLaFormaDeLaTabla(string codigo, int estado, string forma)
     {
         var resultado = clsRespuestasWeb.Error(new clsErrorDominio(codigo, "mensaje del caso de uso", "motivo"));
@@ -35,6 +37,31 @@ public sealed class clsRespuestasWebTests
         var objeto = resultado.Should().BeAssignableTo<ObjectResult>().Subject;
         objeto.StatusCode.Should().Be(estado);
         objeto.Value!.GetType().Should().Be(forma == "ErrorWeb" ? typeof(clsErrorWeb) : typeof(clsErrorNegocioWeb));
+    }
+
+    /// <summary>
+    /// Endurecimiento A (#199): <c>ERROR_INTERNO</c> era 400 (rama por defecto) y <c>REGISTRO_DUPLICADO</c> llegaba con el nombre de la
+    /// restricción. Los dos son 500 <c>ERROR_INTERNO</c> con el mensaje genérico, sin <c>detalle</c>.
+    /// </summary>
+    [Theory]
+    [InlineData(clsCodigosError.ErrorInterno, "No se encontró el comercial autenticado en UsuariosWeb.", null)]
+    [InlineData("REGISTRO_DUPLICADO", "El registro ya existe.", "uq_cotizacionesSolicitud_folio")]
+    public async Task LosErroresInternosSonUn500GenericoSinElDetalleTecnico(string codigo, string mensaje, string? detalle)
+    {
+        var resultado = (ObjectResult)clsRespuestasWeb.Error(new clsErrorDominio(codigo, mensaje, detalle));
+        var http = new Microsoft.AspNetCore.Http.DefaultHttpContext
+        {
+            RequestServices = new ServiceCollection().AddLogging().AddControllers().Services.BuildServiceProvider(),
+        };
+        http.Response.Body = new MemoryStream();
+
+        await resultado.ExecuteResultAsync(new ActionContext(http, new Microsoft.AspNetCore.Routing.RouteData(), new Microsoft.AspNetCore.Mvc.Abstractions.ActionDescriptor()));
+
+        http.Response.StatusCode.Should().Be(500);
+        resultado.Value.Should().Be(clsManejadorErroresNoControlados.CuerpoErrorInterno());
+        http.Response.Body.Position = 0;
+        var cuerpo = await new StreamReader(http.Response.Body).ReadToEndAsync(TestContext.Current.CancellationToken);
+        cuerpo.Should().Contain("ERROR_INTERNO").And.NotContain("uq_").And.NotContain("UsuariosWeb").And.NotContain("detalle");
     }
 
     [Theory]

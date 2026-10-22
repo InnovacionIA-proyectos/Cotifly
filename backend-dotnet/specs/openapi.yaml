@@ -18,8 +18,8 @@ info:
       de rol, el 404 (no existe o no es tuya), el 413, el 415, el 429 y el 400 de validación del cuerpo (`Cuerpo inválido...`,
       `CORREO_INVALIDO`, teléfono, seguimiento, `Idempotency-Key` fuera de largo). `ErrorNegocio`
       (`{"error": {"codigo", "mensaje", "detalle?"}}`): el resto de errores de negocio de `/web/*`, que son la mayoría (400 con
-      código, 409 de estado, `CONFLICTO_CONCURRENCIA` e `IDEMPOTENCY_KEY_REUTILIZADA`, 428 `PRECONDICION_REQUERIDA`, 403 `NEXO_SIN_PERMISO` y los 503 de
-      dependencias). Un mismo estado puede traer cualquiera de las dos (por ejemplo, el 400 de `POST /web/solicitudes-costeo`):
+      código, 409 de estado, `CONFLICTO_CONCURRENCIA` e `IDEMPOTENCY_KEY_REUTILIZADA`, 428 `PRECONDICION_REQUERIDA`, 403 `NEXO_SIN_PERMISO`, los 503 de
+      dependencias y el 500 `ERROR_INTERNO`, respuesta común `ErrorInterno`; en `/api/auth/*` el 500 es `ErrorWeb`). Un mismo estado puede traer cualquiera de las dos (por ejemplo, el 400 de `POST /web/solicitudes-costeo`):
       el cliente distingue por el tipo de `error` (texto u objeto). El servidor nunca responde 412.
     - CORS (#12, deuda de #178): el navegador puede enviar `Authorization`, `Content-Type`, `If-Match` e `Idempotency-Key`
       (métodos `GET`, `POST` y `PUT`) y leer `ETag`, `Location`, `Retry-After` y `Content-Disposition`
@@ -173,6 +173,8 @@ paths:
           $ref: '#/components/responses/CredencialesInvalidas'
         '429':
           $ref: '#/components/responses/DemasiadasPeticiones'
+        '500':
+          $ref: '#/components/responses/ErrorInternoAuth'
 
   /api/auth/refresh:
     post:
@@ -200,6 +202,8 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '429':
           $ref: '#/components/responses/DemasiadasPeticiones'
+        '500':
+          $ref: '#/components/responses/ErrorInternoAuth'
 
   /api/auth/logout:
     post:
@@ -221,6 +225,8 @@ paths:
           description: Sesión cerrada
         '429':
           $ref: '#/components/responses/DemasiadasPeticiones'
+        '500':
+          $ref: '#/components/responses/ErrorInternoAuth'
 
   /web/chat:
     post:
@@ -313,6 +319,8 @@ paths:
                 error: "Sesión no encontrada."
         '429':
           $ref: '#/components/responses/DemasiadasPeticiones'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/mis-cotizaciones:
     get:
@@ -331,6 +339,8 @@ paths:
                 $ref: '#/components/schemas/MisCotizaciones'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/regional:
     get:
@@ -380,6 +390,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}:
     get:
@@ -426,6 +438,8 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/enviar:
     post:
@@ -434,7 +448,10 @@ paths:
       summary: Envía la cotización al cliente por correo con el PDF adjunto
       description: |
         El remitente es el comercial autenticado. Solo puede enviar cotizaciones propias
-        (si no es suya responde 404, igual que si no existe). Un envío idéntico a los
+        (si no es suya responde 404, igual que si no existe). Endurecimiento A (#199): el dueño se comprueba ANTES que
+        todo lo demás, así que un folio ajeno o inexistente responde 404 aunque el correo esté deshabilitado (antes 503
+        `CORREO_DESHABILITADO`) o los destinatarios sean inválidos (antes 400 `CORREO_INVALIDO`): esas respuestas ya no
+        permiten saber qué folios existen. Un envío idéntico a los
         mismos destinatarios en los últimos 5 minutos se rechaza como duplicado (cuenta
         un envío `enviado` o todavía en curso: `encolado`/`enviando`; un `fallido` no).
 
@@ -493,7 +510,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
         '503':
-          description: El envío de correo está deshabilitado (`Correo:Habilitado=false`, valor por defecto)
+          description: El envío de correo está deshabilitado (`Correo:Habilitado=false`, valor por defecto); solo con una cotización propia
           content:
             application/json:
               schema:
@@ -502,6 +519,8 @@ paths:
                 error:
                   codigo: CORREO_DESHABILITADO
                   mensaje: "El envío de correo está deshabilitado."
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/correos:
     get:
@@ -530,6 +549,8 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/correos/{correoId}/reintentar:
     post:
@@ -584,6 +605,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/seguimiento:
     post:
@@ -632,6 +655,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/admin/lineas-negocio:
     get:
@@ -653,6 +678,8 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '403':
           $ref: '#/components/responses/SinPermiso'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/admin/lineas-negocio/{id}:
     put:
@@ -693,6 +720,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorWeb'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/metricas/comercial:
     get:
@@ -764,6 +793,8 @@ paths:
                 error: "El parámetro 'desde' debe ser una fecha AAAA-MM-DD."
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/metricas/regional:
     get:
@@ -973,6 +1004,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/usuario/telefono:
     get:
@@ -990,6 +1023,8 @@ paths:
                 $ref: '#/components/schemas/TelefonoComercial'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
     put:
       operationId: guardarTelefono
       tags: [web]
@@ -1018,6 +1053,8 @@ paths:
           $ref: '#/components/responses/Validacion'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{id}/nueva-version:
     get:
@@ -1049,6 +1086,8 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/clientes:
     get:
@@ -1097,6 +1136,8 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/municipios:
     get:
@@ -1145,6 +1186,8 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/tipos-mercancia:
     get:
@@ -1181,6 +1224,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/tipos-carroceria:
     get:
@@ -1210,6 +1255,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/tipos-vehiculo:
     get:
@@ -1241,6 +1288,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/catalogos-flete:
     get:
@@ -1298,6 +1347,8 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/alias/resolver:
     get:
@@ -1367,6 +1418,8 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cubicacion:
     post:
@@ -1500,6 +1553,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cubicacion/{id}:
     get:
@@ -1546,6 +1601,8 @@ paths:
                 $ref: '#/components/schemas/ErrorWeb'
               example:
                 error: 'La cubicación no existe, ya venció o no es tuya: vuelve a calcular el cubicaje.'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/solicitudes-costeo:
     post:
@@ -1731,6 +1788,8 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/costeo/reintentar:
     post:
@@ -1790,6 +1849,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/resultado:
     post:
@@ -1902,6 +1963,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/costeo:
     get:
@@ -1936,6 +1999,8 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/rutas/{rutaId}/recalcular-vehiculos:
     post:
@@ -2004,6 +2069,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/costeo/margen:
     put:
@@ -2122,6 +2189,8 @@ paths:
                       nueva_version: true
         '428':
           $ref: '#/components/responses/PrecondicionRequerida'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/costeo/re-solicitar:
     post:
@@ -2262,6 +2331,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/solicitud:
     get:
@@ -2300,6 +2371,8 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
     put:
       operationId: editarSolicitud
       tags: [web]
@@ -2413,6 +2486,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/servicios-conexos:
     get:
@@ -2481,6 +2556,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/costeo/servicios-conexos:
     post:
@@ -2596,6 +2673,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
     put:
       operationId: seleccionarServiciosConexos
       tags: [web]
@@ -2677,6 +2756,8 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '428':
           $ref: '#/components/responses/PrecondicionRequerida'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/costeo/textos/redactar:
     post:
@@ -2731,6 +2812,8 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '428':
           $ref: '#/components/responses/PrecondicionRequerida'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/costeo/textos:
     put:
@@ -2785,6 +2868,8 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '428':
           $ref: '#/components/responses/PrecondicionRequerida'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/costeo/pdf:
     post:
@@ -2862,6 +2947,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/licitaciones/analizar-excel:
     post:
@@ -2935,6 +3022,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/licitaciones:
     post:
@@ -3044,6 +3133,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorWeb'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/licitaciones/{folio}:
     get:
@@ -3055,6 +3146,8 @@ paths:
         tiene `precio_final = null`. Solo el dueño. HU-023.5 (#160): trae los camiones de cada ruta (`lineas[].camiones`), el
         estado de su cubicación en segundo plano (`lineas[].estado_cubicacion`, `error_cubicacion`), el progreso
         (`progreso_cubicacion`) y los avisos del cubicador por ruta (`cubicacion`, la misma forma de `POST /web/solicitudes-costeo`).
+        Endurecimiento A (#199): un folio que no es una licitación (formulario o chat) responde 404, como el Excel y reintentar
+        (antes respondía 200).
       security:
         - bearer: []
       parameters:
@@ -3070,6 +3163,8 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/licitaciones/{folio}/cubicacion/reintentar:
     post:
@@ -3120,6 +3215,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/licitaciones/{folio}/excel:
     get:
@@ -3164,6 +3261,8 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/clientes/{nit}/destinatarios-previos:
     get:
@@ -3195,6 +3294,8 @@ paths:
                 $ref: '#/components/schemas/ErrorWeb'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/correo/vista-previa:
     post:
@@ -3227,6 +3328,8 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /pdfs/{archivo}:
     get:
@@ -3272,6 +3375,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorWeb'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /health:
     get:
@@ -3498,6 +3603,31 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorWeb'
+    ErrorInterno:
+      description: |
+        Endurecimiento A (#199): error interno no controlado (una excepción, o un error que no es del cliente como una restricción
+        única que el caso de uso no tradujo). Siempre `ErrorNegocio` con `codigo = ERROR_INTERNO` y un mensaje genérico, sin
+        `detalle`, sin el mensaje de la excepción ni la traza; el detalle técnico queda solo en el log del servidor, con el id de
+        correlación de la petición. Una petición que el cliente abortó no recibe respuesta. Reintentar más tarde; si se repite,
+        reportar a soporte la hora y la operación.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorNegocio'
+          example:
+            error:
+              codigo: ERROR_INTERNO
+              mensaje: "Ocurrió un error interno. Intenta de nuevo y, si se repite, contacta a soporte."
+    ErrorInternoAuth:
+      description: |
+        Endurecimiento A (#199): error interno no controlado en `/api/auth/*`. `ErrorWeb` con el mismo mensaje genérico (la única forma
+        de error de ese grupo); el detalle queda solo en el log del servidor.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorWeb'
+          example:
+            error: "Ocurrió un error interno. Intenta de nuevo y, si se repite, contacta a soporte."
 
   schemas:
     Nulo:
@@ -3616,6 +3746,10 @@ components:
                 camiones; no admite ajuste de margen ni de conexos; `detalle` trae `linea_orden`, `linea_solicitud_id` y
                 `motivo_rechazo`) y `SIN_RUTAS_COTIZABLES` (409: la Mesa rechazó todas las rutas; `POST .../costeo/pdf` no genera
                 el PDF, decisión D1).
+                Endurecimiento A (#199): `ERROR_INTERNO` es 500 (antes salía como 400) y lo emiten tanto los casos de uso (por ejemplo,
+                el comercial autenticado no existe en `UsuariosWeb`) como el manejador global de errores no controlados, siempre con un
+                mensaje genérico y sin `detalle` (respuesta común `ErrorInterno`). Una restricción única que el caso de uso no tradujo
+                (`REGISTRO_DUPLICADO` interno) también sale como 500 `ERROR_INTERNO`, sin el nombre de la restricción.
               enum:
                 - TARIFA_FUENTE_NO_DISPONIBLE
                 - TARIFA_CONFIG_INVALIDA

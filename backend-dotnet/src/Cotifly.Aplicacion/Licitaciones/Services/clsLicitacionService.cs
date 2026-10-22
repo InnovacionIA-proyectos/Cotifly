@@ -652,7 +652,8 @@ public sealed class clsLicitacionService(
         var cotizacion = usuarioId == Guid.Empty || string.IsNullOrWhiteSpace(folio)
             ? null
             : await cotizaciones.ObtenerPorFolioDelUsuarioAsync(folio, usuarioId, cancellationToken);
-        if (cotizacion is null)
+        // Endurecimiento A (#199): un folio de formulario no es una licitación: 404, como reintentar y el Excel.
+        if (cotizacion is null || cotizacion.TipoSolicitud != TipoSolicitud.Licitacion)
         {
             return new clsErrorDominio(clsCodigosError.CotizacionNoEncontrada, "Cotización no encontrada o no es tuya.");
         }

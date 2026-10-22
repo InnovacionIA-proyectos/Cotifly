@@ -263,6 +263,31 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
         noLicitacion.StatusCode.Should().Be(HttpStatusCode.NotFound, "una cotización spot de una línea no es una licitación");
     }
 
+    /// <summary>
+    /// Endurecimiento A (#199): <c>GET /web/licitaciones/{folio}</c> de un folio de formulario (o del chat) responde 404, como el Excel y
+    /// reintentar: antes respondía 200 con la vista de licitación de una cotización que no lo es.
+    /// </summary>
+    [Fact]
+    public async Task LaVistaDeLicitacionSoloAbreLicitaciones()
+    {
+        var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var folio = (await CrearAsync(ana, clsPliegoMuestra.Lineas(), clsPliegoMuestra.Excel(), HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+        var delChat = await _api.CrearCotizacionAsync(ana.UsuarioId, conPdf: false);
+        using var formulario = await _api.EnviarAsync(HttpMethod.Post, "/web/solicitudes-costeo", ana.Access, clsCosteoEndpointsTests.Formulario());
+        var spot = (await VerificarContratoAsync(formulario, "/web/solicitudes-costeo", HttpMethod.Post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+
+        using var licitacion = await _api.EnviarAsync(HttpMethod.Get, $"/web/licitaciones/{folio}", ana.Access);
+        using var deFormulario = await _api.EnviarAsync(HttpMethod.Get, $"/web/licitaciones/{spot}", ana.Access);
+        using var deChat = await _api.EnviarAsync(HttpMethod.Get, $"/web/licitaciones/{delChat.Folio}", ana.Access);
+
+        licitacion.StatusCode.Should().Be(HttpStatusCode.OK);
+        foreach (var respuesta in new[] { deFormulario, deChat })
+        {
+            await VerificarContratoAsync(respuesta, "/web/licitaciones/{folio}", HttpMethod.Get, HttpStatusCode.NotFound);
+            (await respuesta.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).Should().Be("""{"error":"Cotización no encontrada o no es tuya."}""");
+        }
+    }
+
     [Fact]
     public async Task NingunaParteDelExcelExportadoTraeCostosDeNexo()
     {

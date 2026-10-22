@@ -207,6 +207,34 @@ public sealed class clsWebEndpointsTests(clsEntornoApiWeb entorno)
         jsonRelay.GetProperty("error").GetProperty("codigo").GetString().Should().Be("CORREO_ENVIO_FALLIDO", "los errores del envío van como ErrorNegocio");
     }
 
+    /// <summary>
+    /// Endurecimiento A (#199): <c>/enviar</c> de un folio ajeno o inexistente responde 404 antes que <c>CORREO_DESHABILITADO</c> (503) o
+    /// <c>CORREO_INVALIDO</c> (400): con esas respuestas se podía saber qué folios existen.
+    /// </summary>
+    [Fact]
+    public async Task ElEnvioDeUnFolioAjenoOInexistenteResponde404AntesQueDeshabilitadoOInvalido()
+    {
+        var ana = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var luis = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var deLuis = await Api.CrearCotizacionAsync(luis.UsuarioId, "900111222");
+        var valido = clsApiWebPruebas.Json(new { para = new[] { "cliente@empresa.com" } });
+        var invalido = clsApiWebPruebas.Json(new { para = new[] { "no-es-correo" } });
+
+        foreach (var folio in new[] { deLuis.Folio, "PCN-XX-01011999-999" })
+        {
+            var ruta = $"/web/cotizaciones/{folio}/enviar";
+            using var deshabilitado = await entorno.ApiSinCorreo.EnviarAsync(_post, ruta, ana.Access, valido);
+            using var deshabilitadoEInvalido = await entorno.ApiSinCorreo.EnviarAsync(_post, ruta, ana.Access, invalido);
+            using var conInvalido = await Api.EnviarAsync(_post, ruta, ana.Access, invalido);
+
+            foreach (var respuesta in new[] { deshabilitado, deshabilitadoEInvalido, conInvalido })
+            {
+                respuesta.StatusCode.Should().Be(HttpStatusCode.NotFound, folio);
+                (await respuesta.Content.ReadAsStringAsync(Ct)).Should().Be("""{"error":"Cotización no encontrada o no es tuya."}""");
+            }
+        }
+    }
+
     [Fact]
     public async Task LosDestinatariosPreviosSoloIncluyenLosEnviosDelComercial()
     {

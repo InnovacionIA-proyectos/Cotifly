@@ -314,6 +314,24 @@ public sealed class clsCorreoServiceTests : IDisposable
         await NoSeEnvioNadaAsync();
     }
 
+    /// <summary>
+    /// Endurecimiento A (#199): el dueño se comprueba primero. Un folio ajeno o inexistente es <c>COTIZACION_NO_ENCONTRADA</c> (404) aunque el
+    /// correo esté deshabilitado (503) o los destinatarios sean inválidos (400): si no, esas respuestas dejarían enumerar folios.
+    /// </summary>
+    [Theory]
+    [InlineData(false, "cliente@empresa.com")]
+    [InlineData(true, "no-es-correo")]
+    [InlineData(false, "no-es-correo")]
+    public async Task UnaCotizacionAjenaEsNoEncontradaAntesQueCorreoDeshabilitadoOInvalido(bool habilitado, string para)
+    {
+        _opciones.Habilitado = habilitado;
+
+        var resultado = await Servicio().EnviarAsync(Entrada(para: [para], usuario: Guid.NewGuid()), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.CotizacionNoEncontrada);
+        await NoSeEnvioNadaAsync();
+    }
+
     // test_pdf_no_encontrado
     [Fact]
     public async Task SinPdfEnElAlmacenNoSeEnvia()

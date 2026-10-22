@@ -257,6 +257,7 @@ no existe: las cotizaciones se crean solo con el formulario (`POST /web/solicitu
 | 404 | No existe o no es del usuario. Son indistinguibles a propósito (mismo cuerpo `{"error":"Cotización no encontrada o no es tuya."}`, también en `/pdfs`). |
 | 413 | El cuerpo de una petición a `/web/*` supera 64 KB. |
 | 429 | Demasiadas peticiones: reintentar después de unos segundos. |
+| 500 | Endurecimiento A (#199): error interno no controlado. `ErrorNegocio` con `codigo = ERROR_INTERNO` y un mensaje genérico, sin `detalle` ni datos técnicos (en `/api/auth/*`, `ErrorWeb`). Reintentar más tarde; no cerrar sesión. |
 | 409 | `ErrorNegocio`: conflictos de estado del costeo (`ESTADO_NO_PERMITE`, `COSTEO_NO_LISTO`, `PDF_YA_GENERADO`, `PDF_YA_ENVIADO`...), `IDEMPOTENCY_KEY_REUTILIZADA` (D4, 2026-10-16: la misma `Idempotency-Key` con otro cuerpo en la captura, los conexos, re-solicitar o la edición `PUT .../solicitud`; antes era 400 `{"error": "texto"}`; generar una clave nueva) y `CONFLICTO_CONCURRENCIA` (el `If-Match` no coincide: recargar y repetir). `GET /web/metricas/regional` y `GET /web/cotizaciones/regional` de un gerente sin regional: `REGIONAL_NO_ASIGNADA`. |
 | 428 | `ErrorNegocio` `PRECONDICION_REQUERIDA`: falta `If-Match` en una mutación de la etapa final (también `recalcular-vehiculos` y `PUT .../solicitud`; `POST /web/cubicacion` no lo usa). **No hay 412**: el conflicto de versión es el 409 `CONFLICTO_CONCURRENCIA`. |
 | 503 | `POST /enviar` con el correo deshabilitado en el servidor: `ErrorNegocio` con `CORREO_DESHABILITADO`. `GET /web/metricas/regional` y `GET /web/cotizaciones/regional` con la fuente de la regional caída: `REGIONAL_NO_DISPONIBLE`. `GET /web/catalogos-flete` y `GET /web/municipios` con Nexo sin responder: `CATALOGOS_FLETE_NO_DISPONIBLE` y `MUNICIPIOS_NO_DISPONIBLE`. |
@@ -281,6 +282,8 @@ El backend Python no tenía CORS: `chat.html` funcionaba porque se servía desde
 | Nuevos códigos `CLIENTE_BUSQUEDA_NO_DISPONIBLE` y `HERRAMIENTA_DESCONOCIDA` | Búsqueda de clientes (HU-005.2) y validación del modelo (HU-003.10) |
 | `CLIENTE_BUSQUEDA_NO_DISPONIBLE` en `GET /web/clientes` pasa de 400 a **503** | OBS-1021B-3 (E2E 2026-10-21): como los demás catálogos de Nexo; el `mensaje` dice qué falta (Nexo sin configurar, `Nexo:UrlBase`; usuario sin vincular; Nexo caído). El frontend trata 400 y 503 igual mientras conviva la versión anterior |
 | Nuevo código `FOLIO_CONSECUTIVO_AGOTADO` | El folio lo genera el servidor con las iniciales del comercial y un consecutivo diario de 3 dígitos por iniciales (ADR-011); el Python lo tomaba del LLM |
+| Error no controlado: 500 `ErrorNegocio` `ERROR_INTERNO` genérico | Endurecimiento A (#199): en .NET un 500 salía sin cuerpo y `ERROR_INTERNO` como 400; ahora siempre 500 sin detalles técnicos |
+| `POST .../enviar` de un folio ajeno o inexistente: 404 primero | Endurecimiento A (#199): antes respondía 503 `CORREO_DESHABILITADO` o 400 `CORREO_INVALIDO` sin comprobar el dueño, y así se podían enumerar folios |
 | `num_cotizaciones_enviadas` cuenta `enviada` y `reenviada` | La vista del 0001 contaba solo `enviada`; la corrigió el script `0003`. La vista y su endpoint (`/web/metricas/actividad`) se retiraron en HU-014.3 (#152) |
 
 ## 8. Contrato por rutas (HU-021, #130 a #140; cerrado en HU-021.11, #138)
