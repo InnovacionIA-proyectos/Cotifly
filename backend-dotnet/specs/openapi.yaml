@@ -3554,9 +3554,9 @@ components:
                 cubicaje", la captura, el recálculo de vehículos y la licitación, siempre con el cubicador configurado) y `TRM_NO_DISPONIBLE`
                 (HU-012.1/HU-012.2, ADR-014: ninguna fuente de la TRM entregó una TRM válida para el día; por defecto
                 DolarApi y, de respaldo, los datos abiertos de la Superintendencia Financiera; no se cotiza en USD y el
-                comercial puede reintentar o cotizar en COP; en `POST /web/licitaciones` con `moneda = USD` también). Solo en la herramienta
-                `resolver_municipio` del agente (HU-005.13), nunca en `/web/*`: `MUNICIPIO_ARGUMENTO_INVALIDO`
-                (`campo` distinto de `origen`/`destino` o `texto` vacío; no se consulta Nexo).
+                comercial puede reintentar o cotizar en COP; en `POST /web/licitaciones` con `moneda = USD` también). Retirados con el
+                agente cotizador (#105, endurecimiento B de #199): `TARIFA_FUENTE_NO_DISPONIBLE`, `TARIFA_CONFIG_INVALIDA` y
+                `MUNICIPIO_ARGUMENTO_INVALIDO` ya no existen.
                 Costeo en Nexo (ADR-015): `SOLICITUD_COSTEO_INVALIDA` (formulario ampliado fuera de los límites de
                 Nexo), `COSTEO_NEXO_NO_DISPONIBLE` (Nexo sin configurar, 5xx, red, circuito abierto o el comercial sin
                 `idUsuarioExterno`), `COSTEO_NEXO_TIEMPO_AGOTADO` (Nexo no respondió a tiempo), `COSTEO_NEXO_RECHAZADA`
@@ -3617,8 +3617,6 @@ components:
                 `motivo_rechazo`) y `SIN_RUTAS_COTIZABLES` (409: la Mesa rechazó todas las rutas; `POST .../costeo/pdf` no genera
                 el PDF, decisión D1).
               enum:
-                - TARIFA_FUENTE_NO_DISPONIBLE
-                - TARIFA_CONFIG_INVALIDA
                 - MARGEN_FUENTE_NO_DISPONIBLE
                 - MARGEN_LINEA_DESCONOCIDA
                 - PRECIO_INVALIDO
@@ -3657,7 +3655,6 @@ components:
                 - USAR_RESULTADO_NEXO
                 - SOLICITUD_NO_TRANSICIONABLE
                 - TRM_NO_DISPONIBLE
-                - MUNICIPIO_ARGUMENTO_INVALIDO
                 - REGIONAL_NO_ASIGNADA
                 - REGIONAL_NO_DISPONIBLE
                 - ARCHIVO_REQUERIDO
