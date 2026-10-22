@@ -717,7 +717,7 @@ public sealed class clsCosteoCotizacionService(
         ArgumentNullException.ThrowIfNull(cotizacion);
         var esPliego = EsPliego(cotizacion);
         return new clsTextosBase(
-            esPliego ? clsTextosEstandar.AsuntoLicitacion(null, cotizacion.Rutas.Count) : clsTextosEstandar.AsuntoEstandar(lineaNegocio),
+            esPliego ? clsTextosEstandar.AsuntoVariasRutas(EsLicitacion(cotizacion), cotizacion.Rutas.Count) : clsTextosEstandar.AsuntoEstandar(lineaNegocio),
             clsTextosEstandar.IntroduccionEstandar(esPliego));
     }
 
@@ -828,13 +828,15 @@ public sealed class clsCosteoCotizacionService(
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         var rutas = cotizacion.RutasOrdenadas;
+        // OBS-C-3 (endurecimiento B de #199): "PLIEGO" solo en una licitación; una spot de varias rutas dice "TARIFA DE TRANSPORTE".
+        var tituloSeccion = EsLicitacion(cotizacion) ? "PLIEGO DE TRANSPORTE" : "TARIFA DE TRANSPORTE";
         var secciones = rutas
             .Select(r =>
             {
                 var linea = (lineasPorId is null ? null : clsLineasNegocioRutas.DeRuta(r, lineasPorId)) ?? lineaNegocio;
                 return new clsTarifaPayload
                 {
-                    Titulo = $"RUTA {r.Orden}: " + (linea is null ? "PLIEGO DE TRANSPORTE" : $"PLIEGO DE TRANSPORTE {linea.ToUpperInvariant()}"),
+                    Titulo = $"RUTA {r.Orden}: " + (linea is null ? tituloSeccion : $"{tituloSeccion} {linea.ToUpperInvariant()}"),
                     Origen = r.OrigenNombre,
                     Filas =
                     [
@@ -860,7 +862,7 @@ public sealed class clsCosteoCotizacionService(
             Cliente = cotizacion.ClienteNombre,
             LineaNegocio = lineaNegocio ?? (lineasDeRutas.Count > 1 ? Cotizaciones.DTOs.clsCotizacionConLinea.Varias : lineasDeRutas.FirstOrDefault()),
             MetodoCalculo = cotizacion.PrimeraRuta?.MetodoCalculo,
-            Asunto = clsTextosEstandar.AsuntoLicitacion(null, rutas.Count),
+            Asunto = clsTextosEstandar.AsuntoVariasRutas(EsLicitacion(cotizacion), rutas.Count),
             Secciones = secciones,
             ServiciosConexos = ConexosSinPrecio(cotizacion, rutas, conRuta: true),
         };
@@ -882,7 +884,7 @@ public sealed class clsCosteoCotizacionService(
             Camiones(r, catalogo) ?? "—",
             r.Rechazada ? TextoSinCosteo : tarifas[i] is { } precio ? clsFormatoMoneda.Formatear(precio, moneda) : "—")).ToList();
         return new clsResumenPliegoDocumento(
-            "RESUMEN DEL PLIEGO",
+            EsLicitacion(cotizacion) ? clsTextosEstandar.TituloResumenPliego : clsTextosEstandar.TituloResumenRutas,
             filas,
             $"{clsTextosEstandar.EtiquetaTotalGeneral} ({filas.Count} RUTAS)",
             clsFormatoMoneda.Formatear(tarifas.Sum(t => t ?? 0m), moneda),
@@ -909,6 +911,17 @@ public sealed class clsCosteoCotizacionService(
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         return cotizacion.Rutas.Count > 1;
+    }
+
+    /// <summary>
+    /// OBS-C-3 (E2E 2026-10-22, endurecimiento B de #199): ¿la solicitud es una licitación? Los textos del PDF de varias rutas dependen del
+    /// tipo: solo una licitación dice "para su licitación" y "RESUMEN DEL PLIEGO"; una spot de varias rutas usa el mismo layout con textos
+    /// neutros.
+    /// </summary>
+    public static bool EsLicitacion(clsCotizacionSolicitud cotizacion)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        return cotizacion.TipoSolicitud == TipoSolicitud.Licitacion;
     }
 
     /// <summary>¿Las rutas del pliego pasan del umbral del layout completo (una sección por ruta)?</summary>
