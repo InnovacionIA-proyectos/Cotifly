@@ -15,8 +15,10 @@
 
 > **AVISO HU-021 (ADR-019, 2026-10-08): `precio_final` YA INCLUYE los servicios conexos.** Es la suma de las rutas, y cada ruta es
 > su costo (fletes, retorno, levante y conexos) con el margen. **No sumarle el `precio` de los conexos** (se cobrarían dos veces):
-> ese `precio` es el desglose. En la licitación (`GET /web/licitaciones/{folio}`), su Excel y el PDF del pliego cada línea es la
+> ese `precio` es el desglose. En la vista de la licitación (`GET /web/licitaciones/{folio}`) y en su Excel cada línea es la
 > tarifa del transporte y el total va **sin** conexos, que se listan aparte una sola vez. Tarifa + conexos = precio de la ruta.
+> El PDF (de una ruta o del pliego), desde HU-033 (#199), muestra el **valor final de cada ruta** (conexos incluidos, sin desglose) y
+> el total general "VALOR TOTAL DE LA COTIZACIÓN" ("VALOR TOTAL DE LA COTIZACIÓN (N RUTAS)" en el resumen del pliego).
 
 Convención de la guía: "a confirmar" marca todo lo que no está cerrado en el código ni en las decisiones. No hay nada inventado. Si algo no aparece aquí, no existe en el backend.
 
@@ -58,7 +60,7 @@ flowchart LR
     SAP["SAP TM OData<br/>márgenes por cliente"]
     TRM["co.dolarapi.com<br/>TRM (respaldo datos.gov.co)"]
     IA["Proveedor de IA<br/>asistente por folio y textos del PDF"]
-    SMTP["Relay SMTP"]
+    MAIL["MailSender (correo)"]
 
     FE -- "login SSO, JWT Bearer, JSON" --> AUTH
     FE -- "Bearer, JSON snake_case" --> WEB
@@ -72,7 +74,7 @@ flowchart LR
     WEB --> SAP
     WEB --> TRM
     WEB --> IA
-    WEB --> SMTP
+    WEB --> MAIL
 ```
 
 - El navegador **solo** habla con la API de Cotifly (y, para crear prospectos, con el backend de ClientePro por su canal existente `RequestDataService`, ver ADR-005 §3). Nunca llama a Nexo, SAP, la TRM ni la IA directamente.
@@ -107,7 +109,7 @@ Se recomienda una variable `environment.cotiflyApiUrl`, sin barra final, distint
 Reglas de serialización de `/web/*` (`clsJsonWeb`):
 
 - En `/web/*` un campo en camelCase **se ignora en silencio** (`motivoRechazo` no llega a `motivo_rechazo`). La lectura no distingue mayúsculas, pero el guion bajo sí cuenta.
-- Los campos `nullable` **siempre vienen** en la respuesta, con `null` si no tienen valor. Nunca se omiten.
+- Los campos `nullable` **siempre vienen** en la respuesta, con `null` si no tienen valor. Las excepciones, que se **omiten** cuando no tienen valor, están marcadas en el contrato (por ejemplo `comercial`, `cubicacion`, `avisos`, `conexos_conservados`, `avisos_cubicacion`, `sugerencia`; ver `CONTRATOS_API_COTIFLY_FRONTEND.md` §1.4).
 - Los números son estrictos: `"margen": "0.2"` (texto) es un cuerpo inválido y responde 400.
 - Los enums van como código snake_case: `sin_enviar`, `politica_linea`, `pendiente_costeo`.
 - Las tildes no se escapan (`"Cotización"`).
@@ -143,8 +145,8 @@ Reglas de serialización de `/web/*` (`clsJsonWeb`):
 
 - Orígenes exactos por configuración (`Cors__OrigenesPermitidos__0`, `__1`...), sin comodines. En producción la API no arranca sin al menos uno. **Pendiente:** el equipo de frontend debe entregar los dominios reales de ClientePro por ambiente, incluido `http://localhost:4200` para desarrollo si se usa contra QA.
 - Métodos: `GET`, `POST` y `PUT` (ningún endpoint usa `DELETE` ni `PATCH`). Sin cookies (`withCredentials` debe ir en `false`). El preflight se cachea 10 minutos.
-- **Encabezados que el navegador puede enviar** (lista explícita, sin comodín): `Authorization`, `Content-Type`, `If-Match` (concurrencia, sección 10) e `Idempotency-Key` (captura, conexos y re-solicitar).
-- **Encabezados de respuesta que el navegador puede leer** (`Access-Control-Expose-Headers`): `ETag` (la versión que vuelve en `If-Match`), `Location` (201 de `re-solicitar` con la versión `-vN`), `Retry-After` (429 y 503 `SERVICIO_OCUPADO`) y `Content-Disposition` (descarga del Excel de la licitación y del PDF).
+- **Encabezados que el navegador puede enviar** (lista explícita, sin comodín): `Authorization`, `Content-Type`, `If-Match` (concurrencia, sección 10) e `Idempotency-Key` (captura, conexos, re-solicitar y `PUT .../solicitud`). `POST /web/cubicacion` no usa ninguno de los dos.
+- **Encabezados de respuesta que el navegador puede leer** (`Access-Control-Expose-Headers`): `ETag` (la versión que vuelve en `If-Match`), `Location` (201 de `re-solicitar` o de `PUT .../solicitud` con la versión `-vN`, y 202 de `POST /web/cubicacion` con la cubicación en proceso), `Retry-After` (429, 503 `SERVICIO_OCUPADO` y `CUBICADOR_OCUPADO`, 202 de `POST /web/cubicacion` y `GET /web/cubicacion/{id}` en proceso) y `Content-Disposition` (descarga del Excel de la licitación y del PDF).
 - Consecuencias prácticas:
   - **No enviar otros encabezados propios** a Cotifly (`X-Request-Id`, `X-Correlation-Id`, encabezados del canal cifrado de ClientePro, `Cache-Control`...). El preflight falla y la petición no sale. Si el interceptor global de ClientePro agrega encabezados, hay que excluir las URL de Cotifly. La API no tiene id de correlación (sección 2.10).
   - `WWW-Authenticate` no está expuesto: el 401 se reconoce por el estado y el cuerpo (sección 3.5).
@@ -484,7 +486,7 @@ export function esErrorNegocio(b: unknown): b is ErrorNegocio {
 > `ESTADO_NO_PERMITE` con `detalle.motivo = CAPTURA_EN_CURSO` (sin `detalle.folio` si aún no hay folio): esperar unos segundos y repetir
 > con la misma clave. Los números del cuerpo se comparan por valor (`1.5` = `1.50`).
 
-Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA` → 404 `ErrorWeb`; `SIN_PERMISO` → 403 `ErrorWeb`; validaciones → 400 `ErrorWeb`; las dependencias caídas (`CORREO_DESHABILITADO`, `COSTEO_NEXO_NO_DISPONIBLE`, `COSTEO_NEXO_TIEMPO_AGOTADO`, `NEXO_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE`, `CATALOGOS_FLETE_NO_DISPONIBLE`, `REGIONAL_NO_DISPONIBLE`, `PDF_RENDER_NO_DISPONIBLE`, `SERVICIO_OCUPADO` y los `CUBICADOR_*`) → 503 `ErrorNegocio`; `NEXO_SIN_PERMISO` → 403 `ErrorNegocio`; los de conflicto de estado del costeo y `CONFLICTO_CONCURRENCIA` → 409 `ErrorNegocio`; `PRECONDICION_REQUERIDA` → 428 `ErrorNegocio`; el resto de códigos de negocio → 400 `ErrorNegocio`. El servidor nunca responde 412. En la práctica casi todos los errores de `/web/*` con código son `ErrorNegocio`: parsear siempre las dos formas.
+Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA` → 404 `ErrorWeb`; `SIN_PERMISO` → 403 `ErrorWeb`; validaciones → 400 `ErrorWeb`; las dependencias caídas (`CORREO_DESHABILITADO`, `COSTEO_NEXO_NO_DISPONIBLE`, `COSTEO_NEXO_TIEMPO_AGOTADO`, `NEXO_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE`, `CLIENTE_BUSQUEDA_NO_DISPONIBLE`, `CATALOGOS_FLETE_NO_DISPONIBLE`, `REGIONAL_NO_DISPONIBLE`, `PDF_RENDER_NO_DISPONIBLE`, `SERVICIO_OCUPADO` y los `CUBICADOR_*` salvo `CUBICADOR_PETICION_RECHAZADA`, que es 400) → 503 `ErrorNegocio`; `NEXO_SIN_PERMISO` → 403 `ErrorNegocio`; los de conflicto de estado del costeo (incluidos `RUTA_RECHAZADA` y `SIN_RUTAS_COTIZABLES`, HU-028.1), `CORREO_NO_REINTENTABLE`, `IDEMPOTENCY_KEY_REUTILIZADA`, `REGIONAL_NO_ASIGNADA` y `CONFLICTO_CONCURRENCIA` → 409 `ErrorNegocio`; `PRECONDICION_REQUERIDA` → 428 `ErrorNegocio`; el resto de códigos de negocio → 400 `ErrorNegocio`. El servidor nunca responde 412. En la práctica casi todos los errores de `/web/*` con código son `ErrorNegocio`: parsear siempre las dos formas.
 
 ### 4.3 Mensajes fijos de `ErrorWeb`
 
@@ -516,8 +518,8 @@ Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA
 | `CAMPO_NO_EDITABLE` | 400 en `PUT /web/cotizaciones/{folio}/solicitud` | La edición cambia el cliente, el tipo o la línea de negocio de una ruta (HU-028) | Restaurar el campo de `detalle.campo` y dejarlo en solo lectura | Implementado, pendiente de QA |
 | `CORREO_DUPLICADO` | 400 en `/enviar` | Mismo envío a los mismos destinatarios hace menos de 5 min | "Ya enviaste esta cotización a esos destinatarios hace poco" | En QA |
 | `CORREO_PDF_NO_ENCONTRADO` | 400 en `/enviar` | La cotización no tiene PDF | Deshabilitar "Enviar" si `pdf_url` es null | En QA |
-| `CORREO_ENVIO_FALLIDO` | 400 en `/enviar` y en `.../reintentar` | MailSender rechazó el correo o no respondió (HU-033) | Mostrar `mensaje`; si no respondió a tiempo, revisar el historial antes de reenviar | En QA |
-| `CORREO_NO_REINTENTABLE` | 409 en `.../correos/{id}/reintentar` | HU-033: el envío no está fallido, nunca llegó a MailSender o MailSender ya no lo conoce | Ofrecer enviar de nuevo | Nuevo (#199) |
+| `CORREO_ENVIO_FALLIDO` | 400 en `/enviar` y en `.../reintentar` | MailSender rechazó el correo o no respondió (HU-033) | Mostrar `mensaje`; en `/enviar`, si no respondió a tiempo, el correo pudo quedar encolado: la cotización **queda enviada**, durante 5 minutos reenviar a los mismos destinatarios responde `CORREO_DUPLICADO` y la fila del historial queda `fallido` con un `error` que empieza por "Resultado incierto:" (revisar el buzón antes de enviar de nuevo) | En QA |
+| `CORREO_NO_REINTENTABLE` | 409 en `.../correos/{id}/reintentar` | HU-033: el envío no está fallido, ya se está reintentando (doble clic), nunca llegó a MailSender o MailSender ya no lo conoce | Ofrecer enviar de nuevo | Nuevo (#199) |
 | `CORREO_DESHABILITADO` | 503 en `/enviar` | El correo está apagado en el servidor (`Correo:Habilitado=false`, por defecto) | "El envío de correo no está habilitado en este ambiente" | En QA |
 | `CORREO_INVALIDO` | 400 `ErrorWeb` (sin código) en `/enviar` | Destinatarios inválidos o vacíos, asunto de más de 300 o cuerpo de más de 5000 | Validar en el formulario antes de enviar | En QA |
 | `FOLIO_DUPLICADO` | chat | Colisión de folio | "Reintenta" | En QA |
@@ -543,7 +545,7 @@ Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA
 | `COSTEO_NO_LISTO` | 409 en `servicios-conexos`, `costeo/pdf` y `resultado` | Todavía sin precio con margen; o, en resultado, la cotización no está en Nexo (chat, descartada, vencida, o no enviada) | Deshabilitar los botones hasta que haya `precio_final`. En resultado, usar `/seguimiento` | En QA |
 | `PDF_YA_GENERADO` | 409 en `costeo/pdf` | Ya tiene un PDF **vigente**. Los ajustes de la etapa final (margen, conexos, textos, re-solicitar) ya no responden este código: invalidan el PDF (`pdf_desactualizado = true`) y entonces se puede regenerar | Ocultar "Generar PDF" mientras `pdf_url` tenga valor; con `pdf_desactualizado`, ofrecer "Regenerar PDF" | En QA |
 | `RESULTADO_YA_DEFINIDO` | 409 en `resultado` | Nexo ya tiene otro resultado | Deshabilitar ganada/perdida y refrescar | En QA |
-| `COTIZACION_NO_ENTREGADA` | 409 en `resultado` | HU-033: solo una ganada en `error_envio` (Nexo no recibió la solicitud); sin entrega en `autocosteo`/`pendiente_costeo` el resultado queda pendiente de sincronizar (200) | "Nexo no recibió la solicitud; reintenta el envío" | En QA |
+| `COTIZACION_NO_ENTREGADA` | 409 en `resultado` | HU-033: solo una `ganada` en `error_envio` (Nexo no recibió la solicitud), una cotización en `pendiente_envio` que ya tiene solicitud en Nexo (no se le pide el resultado) y una `ganada` en `pendiente_costeo` si la lectura del costeo de Nexo falla con un error que no es de disponibilidad (si Nexo no responde, 503); sin entrega en `autocosteo` (ganada o perdida) y con una ganada en `pendiente_costeo` el resultado queda pendiente de sincronizar (200) | "Nexo todavía no tiene la cotización; reintenta el envío o espera el costeo" | En QA |
 | `SOLICITUD_NO_TRANSICIONABLE` | 409 en `resultado` | Nexo no permite la transición | Mostrar el `mensaje` | En QA |
 | `REGIONAL_NO_ASIGNADA` | 409 en `/web/metricas/regional` y `/web/cotizaciones/regional` | El gerente no tiene regional (ni en `DimEjecutivo` ni en `UsuariosWeb.regional`) | Estado vacío con el `mensaje`: "Tu usuario no tiene una regional asignada...". Sin reintento automático | En QA |
 | `REGIONAL_NO_DISPONIBLE` | 503 en `/web/metricas/regional` y `/web/cotizaciones/regional` | La fuente de la regional (`DimEjecutivo`) está configurada pero no responde | "No se pudo consultar tu regional" con Reintentar | En QA |
@@ -557,7 +559,7 @@ Regla para `errores` del chat (En QA): reaccionar solo a los códigos conocidos 
 
 Todos los de `/web/*` exigen `Authorization: Bearer`, responden 401 `ErrorWeb` sin token y usan snake_case. "Ambos" = `comercial` o `gerente_comercial`; cada uno ve **solo lo suyo**, salvo donde se indique.
 
-Resumen:
+Resumen (parcial; los 52 endpoints están en `CONTRATOS_API_COTIFLY_FRONTEND.md` §4):
 
 | Método y ruta | Rol | Estado |
 |---|---|---|
@@ -791,8 +793,10 @@ gerente (sección 5.6). Si la fuente de la regional está caída, el listado res
 
 > **HU-033 (#199, ADR-023).** El correo sale por el microservicio interno MailSender: el 200 de `enviar` significa que MailSender lo
 > **aceptó** (`estado = encolado`) y la entrega se sigue en el historial (`GET .../correos`). El comercial va en copia oculta. El cuerpo
-> lleva, después del texto del comercial, el precio de cada ruta y el **valor total** sin desglose. Fuera de producción todo va al buzón
-> de pruebas con `[QA]`: la vista previa trae `entorno_pruebas = true` y un `aviso` para mostrar tal cual. Detalle y ejemplos en
+> lleva, después del texto del comercial, el precio de cada ruta y el **valor total** sin desglose. Por defecto, en todos los ambientes,
+> todo va al buzón de pruebas con `[QA]` (`redirigido_a`); solo producción con `Correo:Proteccion:Modo=ninguno` y
+> `Correo:Proteccion:PermitirEnvioReal=true` escribe a los destinatarios reales. Mientras redirige, la vista previa trae
+> `entorno_pruebas = true` y un `aviso` para mostrar tal cual. Detalle y ejemplos en
 > `CONTRATOS_API_COTIFLY_FRONTEND.md` §4.8.
 
 **`POST /web/cotizaciones/{folio}/correo/vista-previa`**
@@ -828,7 +832,7 @@ gerente (sección 5.6). Si la fuente de la regional está caída, el listado res
 ```
 
 - 200 `{"enviado": true, "message_id": "<id en MailSender>", "correo_id": "<id del envío>", "estado": "encolado", "redirigido_a": null}`: decir "Correo en camino".
-- Errores: 400 `ErrorWeb` (destinatarios, asunto o cuerpo inválidos); 400 `ErrorNegocio` (`CORREO_DUPLICADO`, `CORREO_PDF_NO_ENCONTRADO`, `CORREO_ENVIO_FALLIDO` si MailSender lo rechazó o no respondió, `CONFIRMACION_REQUERIDA`); 404; 409 `CONFLICTO_CONCURRENCIA`; 503 `CORREO_DESHABILITADO`.
+- Errores: 400 `ErrorWeb` (destinatarios, asunto o cuerpo inválidos); 400 `ErrorNegocio` (`CORREO_DUPLICADO`, `CORREO_PDF_NO_ENCONTRADO`, `CORREO_ENVIO_FALLIDO` si MailSender lo rechazó, no está disponible o no respondió; si no respondió a tiempo, el correo pudo quedar encolado: la cotización **queda enviada**, durante 5 minutos reenviar a los mismos destinatarios responde `CORREO_DUPLICADO` y la fila del historial queda `fallido` con un `error` que empieza por "Resultado incierto:" (revisar el buzón antes de enviar de nuevo)); 404; 409 `CONFLICTO_CONCURRENCIA`; 503 `CORREO_DESHABILITADO`.
 - El remitente es el comercial del token (también en copia oculta). Tras un 200, `estado_envio` pasa a `enviada` y luego a `reenviada`. Refrescar la fila con `GET /web/mis-cotizaciones` (el envío no devuelve la fila).
 
 **`GET /web/cotizaciones/{folio}/correos`** (HU-033)
@@ -838,7 +842,7 @@ gerente (sección 5.6). Si la fuente de la regional está caída, el listado res
 
 **`POST /web/cotizaciones/{folio}/correos/{correoId}/reintentar`** (HU-033)
 
-- Sin cuerpo. 200 `EnvioCorreo` (vuelve a `encolado`); 409 `CORREO_NO_REINTENTABLE` (no está fallido o nunca llegó a MailSender: ofrecer enviar de nuevo); 400 `CORREO_ENVIO_FALLIDO` (MailSender no respondió); 404; 503 `CORREO_DESHABILITADO`.
+- Sin cuerpo. 200 `EnvioCorreo` (vuelve a `encolado`); 409 `CORREO_NO_REINTENTABLE` (no está fallido, ya se está reintentando por un doble clic, nunca llegó a MailSender o MailSender ya no lo conoce: recargar el historial y ofrecer enviar de nuevo); 400 `CORREO_ENVIO_FALLIDO` (MailSender no respondió); 404; 503 `CORREO_DESHABILITADO`.
 
 **`GET /web/clientes/{nit}/destinatarios-previos`**
 
@@ -893,13 +897,13 @@ descargarPdf(pdfUrl: string, folio: string): Observable<void> {
 |---|---|---|
 | `resultado` | `ganada` o `perdida` | Obligatorio |
 | `motivo` | string o null | Hasta 100. Se guarda en `motivo_rechazo` y se envía a Nexo |
-| `comentario` | string o null | Hasta 500. **Solo se envía a Nexo**; no se guarda en Cotifly |
+| `comentario` | string o null | Hasta 500. **Solo se envía a Nexo**; no se guarda en Cotifly (salvo mientras el resultado está pendiente de sincronizar, hasta enviarlo, HU-033) |
 
 ```json
 { "resultado": "perdida", "motivo": "Precio", "comentario": "El cliente consiguió 8 % menos con otro transportador." }
 ```
 
-- Primero escribe en Nexo y, **solo si Nexo responde 200**, en Cotifly. En 409 y 503 no cambia nada local.
+- Primero escribe en Nexo y, **solo si Nexo responde 200**, en Cotifly. En 409 y 503 no cambia nada local (salvo `RESULTADO_YA_DEFINIDO`, que deja el resultado de Nexo). Excepciones: el resultado diferido (HU-033, abajo) y la perdida antes del costeo (#127) se guardan solo en Cotifly con 200.
 - 200 `CotizacionResumen` (con `ganada` y `motivo_rechazo`; puede traer `estado_costeo` = `entregada` si Nexo la entregó en ese momento).
 - **Costeo no leído (#123, HU-013.14).** Si Nexo ya entregó y Cotifly todavía no lo había leído, la API relee el costeo al registrar el resultado y la respuesta trae `estado_costeo = entregada` **con** `precio_final`. Si esa relectura falla, el resultado queda registrado igual, `estado_costeo` conserva su valor (por ejemplo `pendiente_costeo`) y `precio_final` llega con el polling en segundos: seguir consultando `GET .../costeo` mientras `precio_final` sea `null`. Con resultado registrado, el PDF sigue la regla de ADR-018 §11 (`PDF_YA_ENVIADO`: versión nueva), ya no `COSTEO_NO_LISTO`.
 - **`RESULTADO_YA_DEFINIDO` con `detalle.motivo` (#123).** Si Nexo ya tenía otro resultado, Cotifly lo toma y responde 409 con `detalle.motivo` = `ganada`/`perdida` (el de Nexo). Mostrar el mensaje y recargar la cotización: Cotifly ya quedó con el resultado de Nexo.
@@ -910,7 +914,7 @@ descargarPdf(pdfUrl: string, folio: string): Observable<void> {
   - el 200 trae el `ETag` nuevo;
   - una "ganada" en `error_envio` es 409 `COTIZACION_NO_ENTREGADA`; en `pendiente_costeo` queda pendiente de sincronizar (HU-033, abajo);
   - en `pendiente_costeo`, si Nexo ya la entregó, la pérdida va a Nexo como siempre; si Nexo no responde, 503 sin cambios: ofrecer Reintentar.
-- Errores: 400 `ErrorWeb` (`resultado` inválido o límites); 400 `ErrorNegocio` `COSTEO_NEXO_RECHAZADA` (otro 4xx de Nexo; código en `detalle.motivo`); 404 (no es tuya o Nexo no encuentra la cotización); 409 `COSTEO_NO_LISTO` (chat, descartada, vencida o no enviada), `COTIZACION_NO_ENTREGADA` (también sin pedirle el resultado a Nexo en `pendiente_envio`, o en `pendiente_costeo` si Nexo todavía no tiene el costo; desde #123 en `pendiente_costeo` primero se le pregunta a Nexo si ya costeó), `RESULTADO_YA_DEFINIDO`, `SOLICITUD_NO_TRANSICIONABLE`; 503 `COSTEO_NEXO_NO_DISPONIBLE` (también si Nexo responde 401/403: es configuración) o `COSTEO_NEXO_TIEMPO_AGOTADO`.
+- Errores: 400 `ErrorWeb` (`resultado` inválido o límites); 400 `ErrorNegocio` `COSTEO_NEXO_RECHAZADA` (otro 4xx de Nexo; código en `detalle.motivo`); 404 (no es tuya o Nexo no encuentra la cotización); 409 `COSTEO_NO_LISTO` (chat, descartada, vencida o no enviada), `COTIZACION_NO_ENTREGADA` (solo una `ganada` en `error_envio` (Nexo no recibió la solicitud), una cotización en `pendiente_envio` que ya tiene solicitud en Nexo (no se le pide el resultado) y una `ganada` en `pendiente_costeo` si la lectura del costeo de Nexo falla con un error que no es de disponibilidad (si Nexo no responde, 503); desde #123 en `pendiente_costeo` primero se le pregunta a Nexo si ya costeó y, si confirma que no, la ganada queda pendiente de sincronizar con 200), `RESULTADO_YA_DEFINIDO`, `SOLICITUD_NO_TRANSICIONABLE`; 503 `COSTEO_NEXO_NO_DISPONIBLE` (también si Nexo responde 401/403: es configuración) o `COSTEO_NEXO_TIEMPO_AGOTADO`.
 - Re-marcar el **mismo** resultado en Nexo es idempotente; cambiarlo responde `RESULTADO_YA_DEFINIDO`. Deshabilitar los botones cuando `ganada` tenga valor.
 - **Resultado diferido (HU-033, #199, ADR-023).** Si Nexo todavía no tiene la cotización entregada (`autocosteo`, o una ganada en `pendiente_costeo`), ya no es 409: responde 200 con `sincronizacion_resultado_nexo = "pendiente"`. Mostrar el badge "Pendiente de sincronizar con NEXO": Cotifly lo envía a Nexo una sola vez cuando la Mesa la entregue (`sincronizado`). Con `no_sincronizable`, mostrar `error_sincronizacion_resultado_nexo` (registrarlo con la Mesa). `solo_cotifly` = nunca va a Nexo (perdida antes del costeo, chat, descartada o vencida). El campo viene en "Mis cotizaciones", el detalle por folio, el listado regional y `GET .../costeo`.
 
@@ -1348,7 +1352,7 @@ El resumen completo, los ejemplos JSON de cada endpoint cambiado y la lista de c
 
 ### 5.19 PDF del costeo (`POST /web/cotizaciones/{folio}/costeo/pdf`). En QA
 
-- Sin cuerpo. El servidor arma el PDF: una fila con origen, destino, vehículo y la tarifa del transporte, más los conexos, cada uno con su precio. Tarifa + conexos = `precio_final` (HU-021).
+- Sin cuerpo. El servidor arma el PDF: una fila con origen, destino, vehículo y el **valor final de la ruta** (transporte y conexos incluidos, con su margen, sin desglose), los conexos listados como incluidos **sin precio** y, al final, el "VALOR TOTAL DE LA COTIZACIÓN" con la leyenda de impuestos (HU-033, #199; antes la tarifa del transporte y cada conexo con su precio).
 - 201 `SalidaPdf` `{cotizacion_id, folio, pdf_url, registrada_en_bd: true}`.
 - 400 `PDF_PAYLOAD_INVALIDO`. 404. 409 `COSTEO_NO_LISTO`, `PDF_YA_GENERADO` (ya hay un PDF **vigente**), `PDF_YA_ENVIADO` o `CONFLICTO_CONCURRENCIA` (`If-Match` opcional aquí). 503 `PDF_RENDER_NO_DISPONIBLE` (transitorio: reintentar; desde #92).
 - **Ya no es "una sola vez".** Mientras la cotización no se haya enviado ni tenga resultado, ajustar el margen, los conexos o los textos, o re-solicitar en el mismo folio, invalida el PDF (`pdf_url = null`, `pdf_desactualizado = true`) y se **regenera** con este mismo endpoint (ADR-018 §11). Ya enviada o con resultado, los cambios van en una versión `-vN`. Antes de generarlo, confirmar el teléfono (`GET`/`PUT /web/usuario/telefono`).
@@ -1829,7 +1833,7 @@ Valida **todas** las filas antes de guardar nada; si son válidas crea la cotiza
 
 **HU-021.6 (#132): cada fila es una ruta.** Cambios para el mapeo del pliego:
 
-- **Quitar del mapeo las columnas de tipo de vehículo y carrocería** (decisión 7): si llegan, se ignoran. Cada fila nace con un camión sin vehículo con su peso total; la Mesa de Costeo de Nexo elige el vehículo (el cubicador, #133, lo recomendará).
+- **Mapear las columnas de tipo de vehículo y carrocería como el vehículo elegido** (HU-032, #197, ADR-022; revierte la decisión 7 de HU-021.6, que las quitaba del mapeo): `tipo_vehiculo` y `carroceria` de cada fila son el vehículo elegido y el respaldo del cubicador. Son **obligatorios en una fila sin mercancías cubicables**, salvo en las clases de viaje exentas (por defecto, Contenedor): sin ellos, `VEHICULO_REQUERIDO` en `errores[]`. Con todas las mercancías cubicables manda el cubicador si asigna; si no, el elegido (ver 3.9 de `CONTRATOS_API_COTIFLY_FRONTEND.md`).
 - Cada fila puede traer su `linea_negocio` (sin ella, la de la licitación), `ciudad_devolucion_municipio_id`/`ciudad_levante_municipio_id` (sin ellas, se resuelve el nombre, como el origen), `valor_levante_contenedor` (nombre nuevo de `valor_aprovisionamiento`), `mercancias[]` (nombre nuevo de `posiciones`; cada una con `codigo_mercancia` **obligatorio** con el cubicador configurado, HU-023.3; `id_tipo_mercancia` obsoleto) y `servicios_conexos[]` (`{id_servicio_conexo, cantidad}`, ver 5.15.1).
 - Si una fila trae solo el id de municipio, el nombre se copia del catálogo. Errores nuevos en `errores[]`: `CAMPO_REQUERIDO` en `mercancias[i].codigo_mercancia`, `MUNICIPIO_*` en las ciudades del contenedor y `CONEXO_NO_ENCONTRADO`, `CONEXO_DUPLICADO`, `DEMASIADOS_CONEXOS`.
 
@@ -1919,7 +1923,7 @@ Valida **todas** las filas antes de guardar nada; si son válidas crea la cotiza
 
 Una línea puede tener precio aunque la licitación siga en `pendiente_costeo`: mostrarlo por fila con la marca "pendiente" en las demás.
 
-- **Total:** `precio_final` es la suma de los precios ya redondeados de las líneas, **sin servicios conexos**. Rotularlo "Total (sin servicios conexos)" y mostrar los conexos aparte (`GET /web/cotizaciones/{folio}/costeo`).
+- **Total:** `precio_final` es la suma de los precios ya redondeados de las líneas, **sin servicios conexos**. Rotularlo "Total (sin servicios conexos)" y mostrar los conexos aparte (`GET /web/cotizaciones/{folio}/costeo`). El PDF del pliego, en cambio, imprime el valor final por ruta con conexos y el total general (HU-033, 5.27).
 - Si una línea no se pudo asociar con certeza a su línea en Nexo (dos rutas idénticas, o Nexo devolvió otra cosa), queda sin precio y `motivo_estado_costeo` lo explica: mostrar el motivo; la licitación no tendrá total hasta que se resuelva con el equipo de Nexo.
 - Las licitaciones no aparecen en la concentración por ciudad del tablero de métricas (sus rutas viven por línea).
 
@@ -1935,7 +1939,7 @@ Una línea puede tener precio aunque la licitación siga en `pendiente_costeo`: 
 
 ### 5.27 PDF del pliego (mismo `POST /web/cotizaciones/{folio}/costeo/pdf`). En QA
 
-- Sin endpoint nuevo. **HU-021.9 (#136): sale con el layout de pliego toda solicitud de más de una ruta** (formulario o licitación): resumen de todas las rutas con su tarifa y "TOTAL DEL PLIEGO (N RUTAS, SIN SERVICIOS CONEXOS)", y luego **una sección por ruta** ("RUTA n: PLIEGO DE TRANSPORTE {línea de esa ruta}", origen, destino, camiones y tarifa). Con una sola ruta (también una licitación de una fila) sale el PDF de una ruta: origen, destino, los camiones agrupados ("2 × 3S3 - FURGON (20000 KG)") y la tarifa, con los conexos aparte.
+- Sin endpoint nuevo. **HU-021.9 (#136): sale con el layout de pliego toda solicitud de más de una ruta** (formulario o licitación): resumen de todas las rutas con su **valor final** (transporte y conexos incluidos, sin desglose) y "VALOR TOTAL DE LA COTIZACIÓN (N RUTAS)" (HU-033, #199; antes la tarifa sin conexos y "TOTAL DEL PLIEGO (N RUTAS, SIN SERVICIOS CONEXOS)"), y luego **una sección por ruta** ("RUTA n: PLIEGO DE TRANSPORTE {línea de esa ruta}", origen, destino, camiones y valor final de la ruta). Los conexos se listan como incluidos, sin precio. Una ruta rechazada por la Mesa sale "Sin costeo" y no suma. Con una sola ruta (también una licitación de una fila) sale el PDF de una ruta: origen, destino, los camiones agrupados ("2 × 3S3 - FURGON (20000 KG)") y el valor final de la ruta, con los conexos como incluidos y el VALOR TOTAL DE LA COTIZACIÓN al final. La vista de la licitación (5.25) y su Excel (5.26) siguen mostrando la tarifa del transporte sin conexos.
 - **Tamaño:** con más de 20 rutas el PDF trae **solo el resumen** (todas las rutas siguen ahí; las secciones por ruta se omiten). Admite hasta 1000 rutas; un pliego grande puede tener decenas de páginas: mostrar un spinner y descargar el blob.
 - **409 `COSTEO_NO_LISTO`** mientras alguna ruta no tenga precio (`lineas_pendientes > 0`, o una línea sin asociar en Nexo) o el total todavía no sea la suma de las rutas (esperar la siguiente consulta del costeo): deshabilitar el botón hasta que `precio_final` tenga valor. Vale igual para una ruta: el ajuste de margen es por ruta, pero el PDF exige todas.
 - **409 `PDF_YA_GENERADO`** solo con un PDF vigente: como en la cotización, un ajuste sin enviar lo invalida (`pdf_desactualizado`) y se regenera. Los servicios conexos quitados con `PUT .../costeo/servicios-conexos` ya no están en la ruta y no aparecen.
@@ -2122,10 +2126,11 @@ flowchart TD
     fila["Fila de CotizacionResumen"] --> tipo{"¿estado_costeo es null?"}
     tipo -- "sí, cotización del chat" --> chat["Ganada, Perdida y Limpiar<br/>POST /seguimiento"]
     tipo -- "no, flujo Nexo" --> est{"¿Qué estado_costeo?"}
-    est -- "entregada" --> res["Ganada y Perdida<br/>POST /resultado"]
-    est -- "autocosteo" --> auto["Ganada y Perdida deshabilitados<br/>Nexo exige entregada"]
+    est -- "entregada o autocosteo" --> res["Ganada y Perdida<br/>POST /resultado<br/>sin entrega en Nexo: pendiente de sincronizar"]
+    est -- "pendiente_costeo" --> pc["Ganada y Perdida<br/>POST /resultado<br/>ganada: pendiente de sincronizar<br/>perdida: solo en Cotifly si Nexo no la entregó"]
+    est -- "error_envio" --> ee["Solo Perdida en Cotifly<br/>POST /resultado con If-Match<br/>Reintentar el envío"]
     est -- "descartada o costeo_vencido" --> loc["Solo en Cotifly<br/>POST /seguimiento, a confirmar con negocio"]
-    est -- "pendiente_envio, error_envio o pendiente_costeo" --> nada["Sin resultado<br/>Reintentar si aplica"]
+    est -- "pendiente_envio" --> nada["Sin resultado<br/>Reintentar si aplica"]
     res --> def{"¿ganada tiene valor?"}
     def -- "sí" --> bloq["Botones deshabilitados<br/>RESULTADO_YA_DEFINIDO"]
     def -- "no" --> hab["Botones habilitados"]
@@ -2137,7 +2142,7 @@ Tabla de acciones por fila (con las dos pilas fusionadas):
 |---|---|---|
 | Descargar PDF | `pdf_url` no es null | `GET /pdfs/{archivo}` (blob) |
 | Enviar correo | `pdf_url` no es null | `vista-previa` y luego `enviar` |
-| Ganada / Perdida | `ganada` es null **y** (`estado_costeo` es null, **o** `estado_costeo = entregada`) | Chat: `/seguimiento` `{ganada, motivo_rechazo}`. Nexo: `/resultado` `{resultado, motivo, comentario}` |
+| Ganada / Perdida | `ganada` es null **y** (`estado_costeo` es null, `entregada`, `autocosteo` o `pendiente_costeo`; en `error_envio` solo Perdida). HU-033: sin entrega en Nexo el resultado queda pendiente de sincronizar | Chat: `/seguimiento` `{ganada, motivo_rechazo}`. Nexo: `/resultado` `{resultado, motivo, comentario}` |
 | Limpiar resultado | Solo cotizaciones del chat (`estado_costeo` null) con `ganada` con valor | `/seguimiento` con `{"ganada": null}` |
 | Ganada / Perdida en `descartada` o `costeo_vencido` | El backend lo permite por `/seguimiento`, solo en Cotifly. **A confirmar** con negocio si se muestra | `/seguimiento` |
 | Reintentar envío a Nexo | `estado_costeo = error_envio` sin "Rechazo definitivo", o `pendiente_envio` antiguo sin cubicación en curso (`progreso_cubicacion` null o `completa`), y `ganada` null | `/costeo/reintentar` |
@@ -2188,7 +2193,7 @@ sequenceDiagram
     end
 ```
 
-Responsabilidades: prellenar con los destinatarios previos, validar los correos en el cliente (al menos un `para`, asunto hasta 300, cuerpo hasta 5000), mostrar el aviso de ambiente de pruebas de la vista previa, enviar solo desde la confirmación del modal, manejar `CORREO_DUPLICADO` (5 min, cuenta también un envío en curso) y `CORREO_DESHABILITADO` (503, apagado por defecto), refrescar `estado_envio` y seguir el historial de envíos (HU-033) con "Reintentar" en los fallidos reintentables. El agente del chat también puede enviar correos (`enviar_correo`) si el comercial lo pide en el chat.
+Responsabilidades: prellenar con los destinatarios previos, validar los correos en el cliente (al menos un `para`, asunto hasta 300, cuerpo hasta 5000), mostrar el aviso de ambiente de pruebas de la vista previa, enviar solo desde la confirmación del modal, manejar `CORREO_DUPLICADO` (5 min, cuenta también un envío en curso) y `CORREO_DESHABILITADO` (503, apagado por defecto), refrescar `estado_envio` y seguir el historial de envíos (HU-033) con "Reintentar" en los fallidos reintentables. El asistente del chat **no** envía correos: solo consulta la cotización y propone acciones (`consultar_cotizacion`, `proponer_ajuste_margen`, `proponer_re_solicitud`, `buscar_servicio_conexo`); el envío se hace siempre desde este modal.
 
 ### 6.7 Administración de márgenes por línea (Gerente Comercial)
 
@@ -2431,9 +2436,9 @@ UI por estado:
 |---|---|---|---|---|
 | `null` | (sin etiqueta, "Chat") | `precio_final` | PDF, Enviar, Ganada/Perdida/Limpiar por `/seguimiento`, Nueva versión | No |
 | `pendiente_envio` | "Enviando a Nexo" (licitación con `progreso_cubicacion` en curso: "Calculando vehículos") | "—" | Reintentar tras 2 minutos (no mientras la licitación se cubica: 409) | Sí, corto |
-| `error_envio` | "No llegó a Nexo" (rojo) y `motivo_estado_costeo` | "—" | Reintentar (salvo "Rechazo definitivo") | No |
-| `pendiente_costeo` | "En costeo" (ámbar) | "Pendiente" | Ninguna de resultado | Sí |
-| `autocosteo` | "Costeada (borrador Nexo)" | `precio_final` cuando llegue | Conexos y PDF (a confirmar si solo en `entregada`); resultado deshabilitado | Hasta tener `precio_final` |
+| `error_envio` | "No llegó a Nexo" (rojo) y `motivo_estado_costeo` | "—" | Reintentar (salvo "Rechazo definitivo"); solo Perdida en Cotifly por `/resultado` (#127) | No |
+| `pendiente_costeo` | "En costeo" (ámbar) | "Pendiente" | Ganada/Perdida por `/resultado` (HU-033: la ganada queda pendiente de sincronizar; la perdida, solo en Cotifly si Nexo no la entregó) | Sí |
+| `autocosteo` | "Costeada (borrador Nexo)" | `precio_final` cuando llegue | Conexos y PDF (a confirmar si solo en `entregada`); Ganada/Perdida por `/resultado` (HU-033: pendiente de sincronizar mientras Nexo no la entregue) | Hasta tener `precio_final` |
 | `entregada` | "Entregada" (verde) | `precio_final` | Conexos, PDF, Enviar, Ganada/Perdida por `/resultado` | No |
 | `descartada` | "Descartada por Nexo" (gris) | "—" | Ganada/Perdida solo en Cotifly por `/seguimiento` (a confirmar) | No |
 | `costeo_vencido` | "Costeo vencido" (gris) y motivo | "—" | Ídem `descartada` | No |

@@ -47,8 +47,9 @@ public sealed class clsCosteoController(
     }
 
     /// <summary>
-    /// 200 <c>CotizacionResumen</c> con <c>ganada</c> y <c>motivo_rechazo</c> (solo si Nexo respondió 200); 400; 404 si no es suya;
-    /// 409 <c>RESULTADO_YA_DEFINIDO</c>, <c>COTIZACION_NO_ENTREGADA</c>, <c>COSTEO_NO_LISTO</c> o <c>CONFLICTO_CONCURRENCIA</c>; 428 en la
+    /// 200 <c>CotizacionResumen</c> con <c>ganada</c> y <c>motivo_rechazo</c> (Nexo respondió 200, o HU-033: Nexo aún no la tiene
+    /// entregada y el resultado queda pendiente de sincronizar); 400; 404 si no es suya; 409 <c>RESULTADO_YA_DEFINIDO</c>,
+    /// <c>COTIZACION_NO_ENTREGADA</c> (ganada en <c>error_envio</c>, <c>pendiente_envio</c> ya en Nexo, o error de Nexo al leer el costeo), <c>COSTEO_NO_LISTO</c> o <c>CONFLICTO_CONCURRENCIA</c>; 428 en la
     /// perdida solo en Cotifly sin <c>If-Match</c> (HU-013.17); 503 si Nexo no responde. El 200 trae el <c>ETag</c> nuevo.
     /// </summary>
     [HttpPost("cotizaciones/{folio}/resultado")]

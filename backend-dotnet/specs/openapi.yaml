@@ -32,16 +32,20 @@ info:
     - **AVISO PARA EL FRONTEND (HU-021, ADR-019): `precio_final` de la cotización YA INCLUYE los servicios
       conexos.** Es la suma de las rutas, y el precio de cada ruta es su costo (fletes, retorno, levante y
       conexos) con el margen. NO sumarle el `precio` de los conexos: se cobrarían dos veces. El `precio` de
-      cada conexo es informativo (el desglose del PDF). La excepción son la licitación (`Licitacion.precio_final`
-      y `lineas[].precio_final`), el Excel y el PDF del pliego: allí cada fila es la tarifa del transporte y el
-      total va sin conexos, que se listan aparte una sola vez. Tarifa + conexos = precio de la ruta, exacto.
+      cada conexo es informativo (desglose en pantalla). La excepción son la vista de la licitación
+      (`Licitacion.precio_final` y `lineas[].precio_final`) y su Excel: allí cada fila es la tarifa del transporte y
+      el total va sin conexos, que se listan aparte una sola vez. Tarifa + conexos = precio de la ruta, exacto. El
+      PDF (de una ruta o del pliego), desde HU-033 (#199), imprime el valor final de cada ruta (conexos incluidos,
+      sin desglose) y el total general "VALOR TOTAL DE LA COTIZACIÓN".
     - Concurrencia optimista (HU-013, ADR-018 §8): `GET /web/cotizaciones/{folio}/costeo` devuelve el
       encabezado `ETag` (y `row_version` en el cuerpo), y toda respuesta 200 o 201 de una mutación del
       costeo trae el `ETag` nuevo. Las mutaciones de la etapa final (margen, conexos POST y PUT,
-      re-solicitar, textos y redactar) EXIGEN `If-Match` con ese valor: sin él responden 428
-      `PRECONDICION_REQUERIDA`; si la cotización cambió entretanto, 409 `CONFLICTO_CONCURRENCIA`, sin
-      cambios. `POST .../costeo/pdf` lo acepta opcional. `POST .../costeo/servicios-conexos` y
-      `POST .../costeo/re-solicitar` aceptan además `Idempotency-Key` (doble clic). Rige desde el
+      re-solicitar, textos y redactar), el recálculo de vehículos y la edición (`PUT .../solicitud`) EXIGEN
+      `If-Match` con ese valor: sin él responden 428 `PRECONDICION_REQUERIDA`; si la cotización cambió
+      entretanto, 409 `CONFLICTO_CONCURRENCIA`, sin cambios. `POST .../costeo/pdf` lo acepta opcional.
+      `POST /web/solicitudes-costeo`, `POST .../costeo/servicios-conexos`, `POST .../costeo/re-solicitar` y
+      `PUT .../solicitud` aceptan además `Idempotency-Key` (doble clic). `POST /web/cubicacion` no usa ninguno
+      de los dos (202 con `Location` y `Retry-After` si sigue calculando). Rige desde el
       script `0006` (columna `versionNegocio`), que entrega #98 (HU-013.2). El valor es opaco: el cliente
       lo guarda y lo reenvía tal cual. Solo cambia con cambios de negocio (margen, conexos, textos,
       re-solicitud, PDF, o el polling cuando cambia el estado, el costo o el precio), no con cada consulta.
@@ -440,8 +444,10 @@ paths:
         MailSender y `correo_id` el del envío en Cotifly (historial y reintento). El comercial va en copia oculta.
         El cuerpo va en HTML con un bloque fijo después del texto del comercial: el precio de cada ruta y el VALOR
         TOTAL de la cotización, sin desglose, con la leyenda de impuestos del PDF.
-        Fuera de producción (`Correo:Proteccion:Modo=redirigir`) el correo va SOLO al buzón de pruebas (sin CC ni CCO),
-        con `[QA]` en el asunto y los destinatarios originales en el cuerpo; `redirigido_a` trae ese buzón. En la base y
+        Por defecto, en todos los ambientes (`Correo:Proteccion:Modo=redirigir`), el correo va SOLO al buzón de pruebas
+        (sin CC ni CCO), con `[QA]` en el asunto y los destinatarios originales en el cuerpo; `redirigido_a` trae ese buzón.
+        Solo producción con `Correo:Proteccion:Modo=ninguno` y `Correo:Proteccion:PermitirEnvioReal=true` escribe a los
+        destinatarios reales. En la base y
         en el historial quedan los destinatarios originales.
 
         Concurrencia (HU-013.2, ADR-018 §12): antes de que el correo salga, la cotización queda marcada como enviada
@@ -1876,9 +1882,12 @@ paths:
         '409':
           description: |
             Sin cambio local, salvo `RESULTADO_YA_DEFINIDO` de Nexo, que deja en Cotifly el resultado de Nexo (`detalle.motivo`).
-            De Nexo: `RESULTADO_YA_DEFINIDO`, `COTIZACION_NO_ENTREGADA` (también sin pedirle el resultado a Nexo en
-            `pendiente_envio`, y para una `ganada` en `error_envio` o en `pendiente_costeo` sin la entrega en Nexo) y
-            `SOLICITUD_NO_TRANSICIONABLE`. De Cotifly: `COSTEO_NO_LISTO` (chat, descartada o costeo vencido, que se marcan
+            De Nexo: `RESULTADO_YA_DEFINIDO` y `SOLICITUD_NO_TRANSICIONABLE`. `COTIZACION_NO_ENTREGADA` lo responde Cotifly sin
+            pedirle el resultado a Nexo: en `pendiente_envio` (ya con solicitud en Nexo), para una `ganada` en `error_envio` y
+            para una `ganada` en `pendiente_costeo` si la lectura del costeo de Nexo falla con un error que no es de
+            disponibilidad (Nexo caído o lento es 503). Cuando Nexo responde `COTIZACION_NO_ENTREGADA` (`autocosteo`) o
+            confirma que no hay entrega (una `ganada` en `pendiente_costeo`), ya no es 409: 200 pendiente de sincronizar
+            (HU-033). De Cotifly: `COSTEO_NO_LISTO` (chat, descartada o costeo vencido, que se marcan
             con `/seguimiento`; o todavía no enviada a Nexo), `RESULTADO_YA_DEFINIDO` (ya tiene resultado sin costeo) y
             `CONFLICTO_CONCURRENCIA` (`If-Match` que no coincide)
           content:
@@ -2784,7 +2793,8 @@ paths:
       summary: Genera el PDF de la cotización con el precio sobre el costeo de Nexo
       description: |
         HU-005.7, módulo PDF de HU-003.5. El payload lo arma el servidor desde la cotización: una fila con origen,
-        destino, vehículo y `precio_final`, y los servicios conexos de la ruta, cada uno con su precio. Solo el dueño.
+        destino, vehículo y el valor final de la ruta (HU-033: conexos incluidos, sin desglose), los servicios conexos
+        listados como incluidos sin precio y el "VALOR TOTAL DE LA COTIZACIÓN" al final. Solo el dueño.
         Desde HU-013 (ADR-018 §11, #98) ya no es "una sola vez": mientras la cotización no se haya enviado ni tenga resultado,
         los ajustes (margen, conexos, textos, re-solicitar en el mismo folio) invalidan el PDF (`pdf_desactualizado = true`) y
         se regenera aquí (el anterior queda en el historial). Con el PDF vigente responde `PDF_YA_GENERADO`; ya enviada o con
@@ -2792,10 +2802,12 @@ paths:
 
         **Por ruta (HU-021.9, #136).** Con una ruta, el PDF sale de la ruta y sus camiones: origen, destino, los camiones
         agrupados ("2 × 3S3 - FURGON (20000 KG)"; un camión sin vehículo es "Vehículo por definir" y uno descartado en Nexo no
-        se imprime) y la tarifa del transporte de la ruta; los servicios conexos van aparte con su precio (tarifa + conexos =
-        precio de la ruta). Con **más de una ruta** (formulario o licitación) sale con el layout de pliego: resumen con una
-        fila por ruta (número, ruta, vehículo y peso, tarifa) y el total del pliego sin servicios conexos, y luego **una
-        sección por ruta** con su título (y la línea de negocio de la ruta), su origen, su destino, sus camiones y su tarifa.
+        se imprime) y el valor final de la ruta (HU-033, #199: transporte y conexos con su margen, sin desglose; los
+        conexos se listan como incluidos, sin precio). Con **más de una ruta** (formulario o licitación) sale con el layout
+        de pliego: resumen con una fila por ruta (número, ruta, vehículo y peso, valor final) y "VALOR TOTAL DE LA
+        COTIZACIÓN (N RUTAS)" (antes la tarifa sin conexos y "TOTAL DEL PLIEGO (N RUTAS, SIN SERVICIOS CONEXOS)"), y luego
+        **una sección por ruta** con su título (y la línea de negocio de la ruta), su origen, su destino, sus camiones y su
+        valor final. Una ruta rechazada por la Mesa sale "Sin costeo" y no suma.
         Con más de 20 rutas solo trae el resumen (hasta 1000 rutas). Una licitación de una sola fila sale con el PDF de una
         ruta. En los dos casos el PDF exige que **todas** las rutas tengan precio y que `precio_final` sea la suma de sus
         `precio_final_linea` (con los conexos incluidos); si no, `COSTEO_NO_LISTO` (el ajuste de margen es por ruta, el PDF no).
@@ -4610,7 +4622,7 @@ components:
         redirigido_a:
           type: string
           nullable: true
-          description: HU-033. Buzón de pruebas al que se redirigió (fuera de producción); `null` si va a los destinatarios reales.
+          description: HU-033. Buzón de pruebas al que se redirigió (por defecto en todos los ambientes); `null` si va a los destinatarios reales (solo producción con `Modo=ninguno` y `PermitirEnvioReal=true`).
 
     EnvioCorreo:
       type: object
@@ -7532,8 +7544,8 @@ components:
           type: number
           nullable: true
           description: |
-            Tarifa del transporte de la línea con su margen, SIN servicios conexos (la misma del Excel y del PDF del pliego;
-            HU-021); `null` mientras no tiene flete o si está `rechazada` (HU-028.1). Nunca el costo de Nexo.
+            Tarifa del transporte de la línea con su margen, SIN servicios conexos (la misma del Excel; HU-021; el PDF del
+            pliego, desde HU-033, imprime el valor final de la ruta con conexos); `null` mientras no tiene flete o si está `rechazada` (HU-028.1). Nunca el costo de Nexo.
         estado_cubicacion:
           type: string
           nullable: true

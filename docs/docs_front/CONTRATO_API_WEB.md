@@ -18,7 +18,7 @@ El contrato se congeló el 2026-09-24 a partir de la API web del bot anterior, q
 - `/web/login` se reemplazó por `POST /api/auth/login-clientepro` (patrón "Login SSO — Cliente Pro").
 - La creación de cotizaciones es solo por formulario (`POST /web/solicitudes-costeo` y `POST /web/licitaciones`, ADR-018);
   Google Chat se retiró en #105.
-- Los demás endpoints se agregaron después (HU-003.5, HU-003.6, HU-004.9, HU-010.1, HU-013, HU-021 y HU-023) y están en
+- Los demás endpoints se agregaron después (HU-003.5, HU-003.6, HU-004.9, HU-010.1, HU-013, HU-021, HU-023, HU-027.1, HU-028, HU-031.1 y HU-033) y están en
   `specs/openapi.yaml`.
 
 ## 2. Autenticación
@@ -50,23 +50,25 @@ ClientePro (ya autenticado)
 
 ## 3. Endpoints
 
+Resumen de los endpoints de uso más frecuente; la lista completa (52) está en `CONTRATOS_API_COTIFLY_FRONTEND.md` §4.
+
 | Método y ruta | Rol | Resumen |
 |---|---|---|
 | `POST /api/auth/login-clientepro` | público | Emite la sesión |
 | `POST /api/auth/refresh` | público | Rota el refresh token (429 si se pasa el límite de `/api/auth/*`) |
 | `POST /api/auth/logout` | cualquiera | Revoca la sesión, siempre 204 (salvo 429 por el límite de `/api/auth/*`) |
 | `POST /web/chat` | ambos | Turno del agente cotizador (ya no crea cotizaciones, ADR-018) |
-| `POST /web/solicitudes-costeo` | ambos | **Endpoint vigente para crear una cotización** (una línea): formulario ampliado, validación por código de catálogo y envío a costeo en Nexo. Ver §3.2 |
+| `POST /web/solicitudes-costeo` | ambos | **Endpoint vigente para crear una cotización** (una o varias rutas, hasta 100): formulario ampliado, validación por código de catálogo y envío a costeo en Nexo. Ver §3.2 |
 | `GET /web/catalogos-flete` | ambos | Tipos de vehículo, carrocerías, clases de viaje y clases de contenedor del formulario (catálogos maestros de Nexo; `clases_contenedor` desde HU-027.1, puede venir vacía). Ver §3.2 |
 | `GET /web/alias/resolver` | ambos | HU-031.1 (#194): traduce un tipo de vehículo o una clase de contenedor escritos a mano al código oficial de Nexo (catálogo y diccionario de alias), en lote (`?tipo=vehiculo&texto=TB&texto=3s3`, hasta 200). `{tipo, resultados: [{texto, reconocido, codigo, fuente}]}`; 503 `CATALOGOS_FLETE_NO_DISPONIBLE` si Nexo no responde. Ver `CONTRATOS_API_COTIFLY_FRONTEND.md` §4.2.8 |
 | `GET /web/municipios` | ambos | Buscador de origen y destino (`?q=&departamento=`, máx. 50) o catálogo completo sin filtros. 503 `MUNICIPIOS_NO_DISPONIBLE` si Nexo no responde (antes 400). Ver §8.1, fila 5 |
 | `GET /web/mis-cotizaciones` | ambos | Cotizaciones propias (máx. 100) |
 | `GET /web/cotizaciones/regional` | gerente_comercial | HU-016.1 (#154): cotizaciones de los comerciales de su regional (máx. 100), con la forma de `mis-cotizaciones` y el comercial dueño en cada fila. Ver §8.10.1 |
 | `GET /web/cotizaciones/{folio}` | dueño o gerente de su regional | HU-027.1 (#179): detalle completo en una llamada (cabecera, costeo por ruta, rutas capturadas y totales) con el `ETag`; el gerente solo consulta. Ver §8.14 |
-| `POST /web/cotizaciones/{folio}/enviar` | ambos | Envía la cotización por correo con el PDF. HU-033 (#199): por MailSender; el 200 es "aceptado" (`estado = encolado`, `correo_id`, `redirigido_a`), el comercial va en copia oculta y el cuerpo lleva el precio por ruta y el total sin desglose. Fuera de producción va al buzón de pruebas con `[QA]`. 503 `ErrorNegocio` `CORREO_DESHABILITADO` si el correo está deshabilitado en el servidor |
+| `POST /web/cotizaciones/{folio}/enviar` | ambos | Envía la cotización por correo con el PDF. HU-033 (#199): por MailSender; el 200 es "aceptado" (`estado = encolado`, `correo_id`, `redirigido_a`), el comercial va en copia oculta y el cuerpo lleva el precio por ruta y el total sin desglose. Por defecto, en todos los ambientes, va al buzón de pruebas con `[QA]` (`redirigido_a`); solo producción con `Correo:Proteccion:Modo=ninguno` y `Correo:Proteccion:PermitirEnvioReal=true` escribe a los destinatarios reales. 503 `ErrorNegocio` `CORREO_DESHABILITADO` si el correo está deshabilitado en el servidor |
 | `POST /web/cotizaciones/{folio}/correo/vista-previa` | ambos | Asunto, cuerpo y destinatarios sin enviar. HU-033: también `cuerpo_html`, `resumen` (precio por ruta y total), `copia_oculta` y el aviso de ambiente de pruebas (`entorno_pruebas`, `redirigido_a`, `aviso`) |
 | `GET /web/cotizaciones/{folio}/correos` | ambos (dueño) | HU-033 (#199): historial de envíos con el estado de MailSender (`encolado`, `enviando`, `enviado`, `fallido` con `error`) y `reintentable` |
-| `POST /web/cotizaciones/{folio}/correos/{correoId}/reintentar` | ambos (dueño) | HU-033 (#199): pide a MailSender reintentar un envío `fallido`; 409 `CORREO_NO_REINTENTABLE` si no aplica |
+| `POST /web/cotizaciones/{folio}/correos/{correoId}/reintentar` | ambos (dueño) | HU-033 (#199): pide a MailSender reintentar un envío `fallido`; 409 `CORREO_NO_REINTENTABLE` si no aplica (no está `fallido`, ya se está reintentando por un doble clic, nunca llegó a MailSender o MailSender ya no lo conoce) |
 | `POST /web/cotizaciones/{folio}/seguimiento` | ambos | Marca ganada o perdida **solo** cotizaciones fuera de Nexo (`estado_costeo` `null`, `descartada` o `costeo_vencido`). Las de Nexo responden 409 `USAR_RESULTADO_NEXO`, con `detalle` = `{metodo, endpoint, requiere_if_match}` (HU-021.13) |
 | `POST /web/cotizaciones/{folio}/resultado` | ambos (dueño) | Marca ganada o perdida las cotizaciones de Nexo (primero en Nexo y, si responde 200, en Cotifly). Lleva `If-Match` (obligatorio en la perdida sin costeo: 428 si falta). `motivo` máximo 100 caracteres en una perdida; en una ganada no se valida. `motivo_rechazo` queda `"No aplica"` en una ganada (HU-021.13, alimenta HU-019.1). HU-033 (#199): si Nexo todavía no la tiene entregada, el resultado queda solo en Cotifly (`sincronizacion_resultado_nexo = pendiente`, 200) y se envía a Nexo una sola vez cuando la Mesa la entrega; el estado viene en `CotizacionResumen` y en el costeo |
 | `GET /web/cotizaciones/{id}/nueva-version` | ambos | Datos para prellenar una nueva versión |
@@ -189,17 +191,17 @@ Reglas para el frontend (HU-013.10, #106):
   provisional. Puede venir `[]` con 200 (Nexo sin base de SAP configurada o el catálogo caído): deshabilitar el selector y ofrecer
   reintento.
 
-### Reservados para la próxima versión (HU-005)
+### Antes reservados (HU-005): ya implementados
 
-No existen todavía; se agregarán al spec cuando se implemente la integración con Nexo:
+Los endpoints que esta sección reservaba ya existen: ver §3 y `CONTRATOS_API_COTIFLY_FRONTEND.md` §4.
 
-| Endpoint previsto | HU |
-|---|---|
-| Buscador de clientes por nombre o NIT | HU-005.2 |
-| Catálogo de ciudades | HU-005.13 |
-| Crear prospecto (API Grovity de ClientePro) | HU-005.2 |
-| Servicios conexos del costeo | HU-004.4 / HU-011.4 |
-| `POST /web/cotizaciones/{folio}/resultado` (reemplaza a `/seguimiento`) | HU-005.14 |
+| Endpoint | HU | Estado |
+|---|---|---|
+| Buscador de clientes por nombre o NIT (`GET /web/clientes`) | HU-005.2 | Implementado: ver §3 y CONTRATOS §4.2 |
+| Catálogo de ciudades (`GET /web/municipios`) | HU-005.13 | Implementado: ver §3 y CONTRATOS §4.2 |
+| Servicios conexos del costeo (`GET /web/servicios-conexos`, `POST`/`PUT .../costeo/servicios-conexos`) | HU-004.4 / HU-011.4 | Implementado: ver CONTRATOS §4.2 y §4.4 |
+| `POST /web/cotizaciones/{folio}/resultado` (reemplaza a `/seguimiento`) | HU-005.14 | Implementado: ver §3 y CONTRATOS §4.5 |
+| Crear prospecto (API Grovity de ClientePro) | HU-005.2 | Pendiente, fuera de Cotifly: lo hace ClientePro por su canal existente |
 
 Los esquemas completos de request y response están en el `openapi.yaml`. El spec incluye además `/health` y `/health/ready`, que no consume el frontend. El webhook de Google Chat (`POST /chat/events`) se retiró en #105 (HU-013.9).
 
@@ -255,13 +257,13 @@ no existe: las cotizaciones se crean solo con el formulario (`POST /web/solicitu
 | 404 | No existe o no es del usuario. Son indistinguibles a propósito (mismo cuerpo `{"error":"Cotización no encontrada o no es tuya."}`, también en `/pdfs`). |
 | 413 | El cuerpo de una petición a `/web/*` supera 64 KB. |
 | 429 | Demasiadas peticiones: reintentar después de unos segundos. |
-| 409 | `ErrorNegocio`: conflictos de estado del costeo (`ESTADO_NO_PERMITE`, `COSTEO_NO_LISTO`, `PDF_YA_GENERADO`, `PDF_YA_ENVIADO`...), `IDEMPOTENCY_KEY_REUTILIZADA` (D4, 2026-10-16: la misma `Idempotency-Key` con otro cuerpo en la captura, los conexos o re-solicitar; antes era 400 `{"error": "texto"}`; generar una clave nueva) y `CONFLICTO_CONCURRENCIA` (el `If-Match` no coincide: recargar y repetir). `GET /web/metricas/regional` y `GET /web/cotizaciones/regional` de un gerente sin regional: `REGIONAL_NO_ASIGNADA`. |
-| 428 | `ErrorNegocio` `PRECONDICION_REQUERIDA`: falta `If-Match` en una mutación de la etapa final. **No hay 412**: el conflicto de versión es el 409 `CONFLICTO_CONCURRENCIA`. |
+| 409 | `ErrorNegocio`: conflictos de estado del costeo (`ESTADO_NO_PERMITE`, `COSTEO_NO_LISTO`, `PDF_YA_GENERADO`, `PDF_YA_ENVIADO`...), `IDEMPOTENCY_KEY_REUTILIZADA` (D4, 2026-10-16: la misma `Idempotency-Key` con otro cuerpo en la captura, los conexos, re-solicitar o la edición `PUT .../solicitud`; antes era 400 `{"error": "texto"}`; generar una clave nueva) y `CONFLICTO_CONCURRENCIA` (el `If-Match` no coincide: recargar y repetir). `GET /web/metricas/regional` y `GET /web/cotizaciones/regional` de un gerente sin regional: `REGIONAL_NO_ASIGNADA`. |
+| 428 | `ErrorNegocio` `PRECONDICION_REQUERIDA`: falta `If-Match` en una mutación de la etapa final (también `recalcular-vehiculos` y `PUT .../solicitud`; `POST /web/cubicacion` no lo usa). **No hay 412**: el conflicto de versión es el 409 `CONFLICTO_CONCURRENCIA`. |
 | 503 | `POST /enviar` con el correo deshabilitado en el servidor: `ErrorNegocio` con `CORREO_DESHABILITADO`. `GET /web/metricas/regional` y `GET /web/cotizaciones/regional` con la fuente de la regional caída: `REGIONAL_NO_DISPONIBLE`. `GET /web/catalogos-flete` y `GET /web/municipios` con Nexo sin responder: `CATALOGOS_FLETE_NO_DISPONIBLE` y `MUNICIPIOS_NO_DISPONIBLE`. |
 
 ## 6. CORS
 
-El backend Python no tenía CORS: `chat.html` funcionaba porque se servía desde el mismo origen. **No se agrega CORS al `orquestador` Python**, porque el módulo Angular va a consumir solo el backend .NET (corte único, HU-003.1). En .NET, los orígenes permitidos se configuran con `Cors__OrigenesPermitidos__0`, `__1`, etc. (origen exacto, `https://host[:puerto]`, sin ruta ni comodines; en producción la API no arranca sin al menos uno). Se permiten los métodos `GET`, `POST` y `PUT` (ningún endpoint usa `DELETE` ni `PATCH`) y, como lista explícita, los headers `Authorization`, `Content-Type`, `If-Match` (concurrencia optimista) e `Idempotency-Key` (captura, conexos y re-solicitar), sin cookies ni credenciales; el preflight se cachea 10 minutos. La respuesta expone (`Access-Control-Expose-Headers`) `ETag`, `Location`, `Retry-After` y `Content-Disposition`, para que el frontend lea la versión de la cotización, la URL de la versión `-vN`, la espera de un 429 o un 503 `SERVICIO_OCUPADO` y el nombre de un archivo descargado. Cualquier otro header propio (`X-Request-Id`, `X-Correlation-Id`...) hace fallar el preflight: la API no tiene id de correlación.
+El backend Python no tenía CORS: `chat.html` funcionaba porque se servía desde el mismo origen. **No se agrega CORS al `orquestador` Python**, porque el módulo Angular va a consumir solo el backend .NET (corte único, HU-003.1). En .NET, los orígenes permitidos se configuran con `Cors__OrigenesPermitidos__0`, `__1`, etc. (origen exacto, `https://host[:puerto]`, sin ruta ni comodines; en producción la API no arranca sin al menos uno). Se permiten los métodos `GET`, `POST` y `PUT` (ningún endpoint usa `DELETE` ni `PATCH`) y, como lista explícita, los headers `Authorization`, `Content-Type`, `If-Match` (concurrencia optimista) e `Idempotency-Key` (captura, conexos, re-solicitar y `PUT .../solicitud`), sin cookies ni credenciales; el preflight se cachea 10 minutos. La respuesta expone (`Access-Control-Expose-Headers`) `ETag`, `Location`, `Retry-After` y `Content-Disposition`, para que el frontend lea la versión de la cotización, la URL de la versión `-vN` (201 de `re-solicitar` o de `PUT .../solicitud`) o de la cubicación en proceso (202 de `POST /web/cubicacion`), la espera de un 429, de un 503 `SERVICIO_OCUPADO` o `CUBICADOR_OCUPADO` y del polling de la cubicación, y el nombre de un archivo descargado. Cualquier otro header propio (`X-Request-Id`, `X-Correlation-Id`...) hace fallar el preflight: la API no tiene id de correlación.
 
 **Pendiente:** el dominio real de `clientepro-frontend` en pruebas y en producción. Lo debe confirmar el equipo de frontend.
 
@@ -292,7 +294,7 @@ contra el contrato, así que un ejemplo desactualizado rompe la compilación de 
 
 | # | Cambio | Qué hacer en el frontend |
 |---|---|---|
-| 1 | **`precio_final` incluye los servicios conexos.** Es la suma de `rutas[].precio_final_linea`, y cada ruta es fletes + retorno + levante + conexos, con su margen. | No sumar el `precio` de `servicios_conexos`: es el desglose. El PDF muestra la tarifa del transporte y los conexos aparte, y tarifa + conexos = precio de la ruta. |
+| 1 | **`precio_final` incluye los servicios conexos.** Es la suma de `rutas[].precio_final_linea`, y cada ruta es fletes + retorno + levante + conexos, con su margen. | No sumar el `precio` de `servicios_conexos`: es el desglose. El PDF muestra la tarifa del transporte y los conexos aparte, y tarifa + conexos = precio de la ruta. (HU-033: el PDF muestra el valor final por ruta, conexos incluidos, y el total general; la vista de la licitación y su Excel siguen con la tarifa sin conexos.) |
 | 2 | **`POST /web/solicitudes-costeo` recibe `rutas[]`** (hasta 100). Sin `rutas`, el formato plano anterior sigue funcionando como una sola ruta, pero está `deprecated` y **se retira cuando salga HU-021-FE**. | Migrar el formulario a `rutas[]`. No mezclar: `rutas` y un campo de ruta en la raíz es 400 `SOLICITUD_COSTEO_INVALIDA` con `CAMPO_NO_APLICA`. |
 | 3 | **HU-032 (#197): `tipo_vehiculo` y `carroceria` son el vehículo elegido** (antes se ignoraban, decisión 7). Obligatorio sin mercancías cubicables salvo Contenedor (`VEHICULO_REQUERIDO`); respaldo del cubicador si la ruta se cubica. | Mostrar el selector en el formulario, la licitación y la edición; exigirlo cuando aplique; mostrar el vehículo final de `rutas[].camiones[]` con su aviso. |
 | 4 | **`valor_estimado` y `referencia` salen del contrato** (decisión 1), también `referencia` de la vista `Licitacion`. | Dejar de enviarlos y de leerlos. Si se envían, se ignoran sin error (queda un aviso en el log). |
@@ -837,6 +839,8 @@ líneas distintas), y `precio_final` es la suma de las rutas, con conexos:
       "estado_envio": "enviada",
       "ganada": true,
       "motivo_rechazo": "No aplica",
+      "sincronizacion_resultado_nexo": "sincronizado",
+      "error_sincronizacion_resultado_nexo": null,
       "pdf_url": "/pdfs/PCN-900555111-DG-09102026-001.pdf",
       "created_at": "2026-10-09T15:20:11.532+00:00",
       "deadline": "2026-10-15T22:00:00+00:00",
@@ -909,6 +913,8 @@ cotizaciones de otra regional. El propio gerente es miembro de su regional, así
       "estado_envio": "sin_enviar",
       "ganada": null,
       "motivo_rechazo": null,
+      "sincronizacion_resultado_nexo": null,
+      "error_sincronizacion_resultado_nexo": null,
       "pdf_url": "/pdfs/PCN-900555111-AP-09102026-001.pdf",
       "created_at": "2026-10-09T15:20:11.532+00:00",
       "deadline": "2026-10-15T22:00:00+00:00",
@@ -1499,6 +1505,8 @@ frontend ya conoce, con sus mismas reglas y nombres:
     "estado_envio": "enviada",
     "ganada": true,
     "motivo_rechazo": "No aplica",
+    "sincronizacion_resultado_nexo": "sincronizado",
+    "error_sincronizacion_resultado_nexo": null,
     "pdf_url": "/pdfs/PCN-900555111-DG-09102026-001.pdf",
     "created_at": "2026-10-09T15:20:11.532+00:00",
     "deadline": "2026-10-15T22:00:00+00:00",
