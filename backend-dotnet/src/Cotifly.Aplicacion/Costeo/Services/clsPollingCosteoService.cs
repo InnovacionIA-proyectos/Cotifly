@@ -193,6 +193,8 @@ public sealed class clsPollingCosteoService(
             var cambioDesconocida = cotizacion.DetenerPorSolicitudDesconocida(
                 $"Nexo ya no reconoce la solicitud {cotizacion.SolicitudNexoId} (404 SOLICITUD_NO_ENCONTRADA): se dejó de consultar. Revísala con el equipo de Nexo o envía una versión nueva.");
             cotizacion.RegistrarFalloConsultaCosteo(siguiente: null);
+            cambioDesconocida |= sincronizacion?.Abandonar(cotizacion,
+                $"Nexo ya no reconoce la solicitud {cotizacion.SolicitudNexoId}: el resultado queda solo en Cotifly.") ?? false;
             if (!await GuardarConVersionAsync(cotizacion, version, cambioDesconocida))
             {
                 return ResultadoConsultaCosteo.Conflicto;
@@ -220,6 +222,12 @@ public sealed class clsPollingCosteoService(
             cotizacion.RegistrarFalloConsultaCosteo(relectura
                 ? ahora + clsAgendaPollingCosteo.Espera(ahora, enviadaAt, fallos, config)
                 : clsAgendaPollingCosteo.Siguiente(ahora, enviadaAt, fallos, config));
+            if (sincronizacion is not null && cotizacion.ResultadoPendienteDeSincronizar && cotizacion.CosteoSiguienteConsultaAt is null)
+            {
+                // HU-033: pasada la edad máxima del costeo, un resultado pendiente sigue esperando la entrega (Nexo caído no la detiene).
+                cotizacion.ProgramarRelecturaCosteo(ahora + config.IntervaloMaximo);
+            }
+
             var agotada = relectura && fallos >= config.MaximoFallosRelectura;
             var cambioAgotada = false;
             if (agotada)
@@ -307,8 +315,9 @@ public sealed class clsPollingCosteoService(
         if (sincronizacion is not null && cotizacion.ResultadoPendienteDeSincronizar && cotizacion.EstadoCosteo == EstadoCosteo.Entregada)
         {
             var versionSincronizacion = cotizacion.VersionNegocio;
-            if (await sincronizacion.SincronizarAsync(cotizacion, ahora, CancellationToken.None)
-                && !await GuardarConVersionAsync(cotizacion, versionSincronizacion, cambioNegocio: true))
+            var cambioSincronizacion = await sincronizacion.SincronizarAsync(cotizacion, ahora, CancellationToken.None);
+            // Se guarda siempre: aunque no cambie nada visible, la sincronización pudo reprogramar la agenda (reintento).
+            if (!await GuardarConVersionAsync(cotizacion, versionSincronizacion, cambioSincronizacion))
             {
                 logger.LogInformation("La cotización {Folio} cambió mientras se enviaba el resultado pendiente: se reintenta en el siguiente ciclo.", cotizacion.Folio);
             }

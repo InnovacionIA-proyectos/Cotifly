@@ -175,6 +175,35 @@ public sealed class clsResultadoDiferidoNexoTests
     }
 
     [Fact]
+    public async Task ConNexoCaidoPasadaLaEdadMaximaUnResultadoPendienteNoPierdeLaAgenda()
+    {
+        Autocosteo();
+        _cotizacion.RegistrarResultadoPendienteNexo(true, null, null, _reloj.AhoraUtc);
+        _reloj.Avanzar(_opciones.EdadMaxima + TimeSpan.FromHours(1));
+        _nexo.ConsultarCosteoAsync(_ana, "SOL-1", Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio(clsCodigosError.CosteoNexoNoDisponible, "Nexo caído"));
+
+        (await Polling().ProcesarAsync(Pendiente(), Ct)).Should().Be(ResultadoConsultaCosteo.Error);
+
+        _cotizacion.CosteoSiguienteConsultaAt.Should().NotBeNull("sigue esperando la entrega aunque Nexo no responda");
+        _cotizacion.EstadoSincronizacionResultado.Should().Be("pendiente");
+    }
+
+    [Fact]
+    public async Task SiNexoYaNoReconoceLaSolicitudElResultadoPendienteQuedaNoSincronizable()
+    {
+        Autocosteo();
+        _cotizacion.RegistrarResultadoPendienteNexo(true, null, null, _reloj.AhoraUtc);
+        _nexo.ConsultarCosteoAsync(_ana, "SOL-1", Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio(clsCodigosError.CosteoNexoSolicitudNoEncontrada, "404"));
+
+        (await Polling().ProcesarAsync(Pendiente(), Ct)).Should().Be(ResultadoConsultaCosteo.Detenida);
+
+        _cotizacion.EstadoSincronizacionResultado.Should().Be("no_sincronizable");
+        _cotizacion.ErrorSincronizacionResultado.Should().Contain("ya no reconoce");
+    }
+
+    [Fact]
     public void ElEstadoQueVeElFrontendDistingueSoloCotiflyDeSincronizadoYPendiente()
     {
         _cotizacion.EstadoSincronizacionResultado.Should().BeNull("sin resultado");
