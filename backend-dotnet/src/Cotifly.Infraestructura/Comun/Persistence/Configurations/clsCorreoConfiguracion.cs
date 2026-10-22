@@ -12,7 +12,8 @@ internal sealed class clsCorreoConfiguracion : IEntityTypeConfiguration<clsCorre
 {
     public void Configure(EntityTypeBuilder<clsCorreo> builder)
     {
-        builder.ToTable("Correos");
+        // HU-033 (#199): db/scripts/13_correo_mailsender.sql agrega el CHECK del estado con encolado y enviando.
+        builder.ToTable("Correos", t => t.HasCheckConstraint("ck_correos_estado", "estado IS NULL OR estado IN ('encolado', 'enviando', 'enviado', 'fallido')"));
         builder.HasKey(c => c.Id).HasName("pk_correos");
         builder.Property(c => c.Id).Columna("id", "uniqueidentifier").ValueGeneratedNever();
         builder.Property(c => c.CotizacionId).Columna("cotizacionId", "uniqueidentifier");
@@ -23,6 +24,18 @@ internal sealed class clsCorreoConfiguracion : IEntityTypeConfiguration<clsCorre
             .HasConversion(new clsConvertidorCodigoEnum<EstadoCorreo>());
         builder.Property(c => c.Error).Columna("error", TipoTexto);
         builder.Property(c => c.CreatedAt).Fecha("createdAt");
+        // HU-033 (#199): db/scripts/13_correo_mailsender.sql (sin él, /health/ready dice "falta 13").
+        builder.Property(c => c.IdMailSender).Columna("idMailSender", "uniqueidentifier");
+        builder.Property(c => c.RedirigidoA).Columna("redirigidoA", "nvarchar(320)").HasMaxLength(clsCorreoDestinatario.LargoMaximoEmail);
+        builder.Property(c => c.IntentosEntrega).Columna("intentosEntrega", "int");
+        builder.Property(c => c.EnviadoAt).Fecha("enviadoAt");
+        builder.Property(c => c.EstadoActualizadoAt).Fecha("estadoActualizadoAt");
+        builder.Property(c => c.SiguienteConsultaAt).Fecha("siguienteConsultaAt");
+        builder.HasIndex(c => c.SiguienteConsultaAt).HasDatabaseName("ix_correos_siguienteConsultaAt").HasFilter("[siguienteConsultaAt] IS NOT NULL");
+        builder.HasIndex(c => c.IdMailSender).IsUnique().HasDatabaseName("ux_correos_idMailSender").HasFilter("[idMailSender] IS NOT NULL");
+        builder.Ignore(c => c.EnCurso);
+        builder.Ignore(c => c.CuentaComoEnvio);
+        builder.Ignore(c => c.EsReintentable);
         builder.Ignore(c => c.Para);
         builder.Ignore(c => c.Cc);
 

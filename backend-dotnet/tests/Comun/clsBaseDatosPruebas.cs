@@ -54,6 +54,9 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
         // HU-032 (#197): el vehículo elegido de la ruta y las medidas NULL de la mercancía (db/scripts/12; el backend lo mapea). Como el 11,
         // va antes del 07 en esta lista.
         Script12,
+        // HU-033 (#199): seguimiento de MailSender en Correos y resultado diferido a Nexo (db/scripts/13; el backend lo mapea). Como el 12,
+        // va antes del 07 en esta lista.
+        Script13,
         // HU-023 (#176): BUSQUEDA_AGOTADA en el CHECK del motivo (db/scripts/07, lo aplica @scalderon-bs).
         Script07,
         // HU-014.3 (#152): retiro de las vistas del borrador de métricas (db/scripts/08, lo aplica el DBA).
@@ -74,6 +77,9 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
 
     /// <summary>HU-032 (#197): el 12 del vehículo elegido y las mercancías sin medidas (relativa a <c>migrations_mssql</c>).</summary>
     public const string Script12 = "../scripts_bd/12_vehiculo_elegido.sql";
+
+    /// <summary>HU-033 (#199): el 13 del correo por MailSender y el resultado diferido a Nexo (relativa a <c>migrations_mssql</c>).</summary>
+    public const string Script13 = "../scripts_bd/13_correo_mailsender.sql";
 
     /// <summary>
     /// Scripts hasta el 09 (sin el 10, el 11, el 07 ni el 08). <c>Scripts[ScriptsHasta09 - 1]</c> es el 09 (lo verifica
@@ -112,17 +118,17 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     /// Scripts hasta el 07 incluido (con el 09, el 10 y el 11, sin el 08): la base migrada que todavía tiene las vistas del borrador de métricas.
     /// <c>Scripts[ScriptsHasta07 - 1]</c> es el 07 (lo verifica <c>clsEsquemaTests</c>).
     /// </summary>
-    public const int ScriptsHasta07 = 20;
+    public const int ScriptsHasta07 = 21;
 
     /// <summary>
     /// Todos los scripts anteriores al 07 en <see cref="Scripts"/> (sin el 07 ni los que van después). <c>Scripts[ScriptsSin07]</c> es el 07
     /// (lo verifica <c>clsEsquemaTests</c>). Si otra rama agrega un script que el backend mapea, va antes del 07 en la lista y este número
-    /// sube (hoy llega hasta el 12: <c>Scripts[ScriptsSin07 - 1]</c> es el 12, HU-032 #197; el anterior el 11, HU-030.1 #184, y antes el
-    /// 10, HU-028.1 #183).
+    /// sube (hoy llega hasta el 13: <c>Scripts[ScriptsSin07 - 1]</c> es el 13, HU-033 #199; el anterior el 12, HU-032 #197, antes el 11,
+    /// HU-030.1 #184, y antes el 10, HU-028.1 #183).
     /// HU-014 (#188): incluye el 03, que deja el CHECK del 07; para una base que de verdad no admite BUSQUEDA_AGOTADA,
     /// <see cref="CrearBaseSin07Async"/>.
     /// </summary>
-    public const int ScriptsSin07 = 19;
+    public const int ScriptsSin07 = 20;
 
     /// <summary>
     /// HU-014 (#188): el CHECK del motivo tal como lo deja el <c>02</c> (4 motivos, sin <c>BUSQUEDA_AGOTADA</c> ni <c>ISNULL</c>). Con el 03
@@ -255,6 +261,8 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("11_peso_con_tara.sql"));
                 // HU-032 (#197): el 12 (vehículo elegido y medidas NULL) va después del 11 por nombre.
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("12_vehiculo_elegido.sql"));
+                // HU-033 (#199): el 13 (MailSender y resultado diferido) va después del 12 por nombre.
+                await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("13_correo_mailsender.sql"));
                 if (conSeeders)
                 {
                     foreach (var seeder in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "scripts_bd", "seeder"), "*.sql").Order(StringComparer.Ordinal))
@@ -303,6 +311,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("10_rechazo_linea.sql"));
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("11_peso_con_tara.sql"));
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("12_vehiculo_elegido.sql"));
+            await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("13_correo_mailsender.sql"));
             foreach (var seeder in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "scripts_bd", "seeder"), "*.sql").Order(StringComparer.Ordinal))
             {
                 await EjecutarScriptAsync(CadenaCotifly, seeder);

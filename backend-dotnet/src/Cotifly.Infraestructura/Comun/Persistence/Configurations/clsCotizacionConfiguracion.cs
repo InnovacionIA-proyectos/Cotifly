@@ -32,6 +32,10 @@ internal sealed class clsCotizacionSolicitudConfiguracion : IEntityTypeConfigura
             t.HasCheckConstraint("ck_cotizaciones_textosCotizacion_json", "textosCotizacion IS NULL OR ISJSON(textosCotizacion) = 1");
             t.HasCheckConstraint("ck_cotizaciones_versionNegocio", "versionNegocio >= 0");
             t.HasCheckConstraint("ck_cotizaciones_estadoCosteo", $"estadoCosteo IS NULL OR estadoCosteo IN {EstadosCosteo}");
+            // HU-033 (#199): db/scripts/13_correo_mailsender.sql.
+            t.HasCheckConstraint("ck_cotizaciones_sincronizacionResultadoNexo",
+                "sincronizacionResultadoNexo IS NULL OR sincronizacionResultadoNexo IN ('pendiente', 'sincronizado', 'no_sincronizable')");
+            t.HasCheckConstraint("ck_cotizaciones_intentosSincronizacionResultado", "intentosSincronizacionResultado >= 0");
         });
 
         builder.HasKey(c => c.Id).HasName("pk_cotizaciones");
@@ -71,6 +75,15 @@ internal sealed class clsCotizacionSolicitudConfiguracion : IEntityTypeConfigura
         builder.Property(c => c.SolicitudNexoId).Columna("solicitudNexoId", "nvarchar(64)").HasMaxLength(clsCotizacionSolicitud.LargoMaximoIdNexo);
         // HU-018.1 (#155): db/scripts/09_score_prioridad.sql (sin él, /health/ready dice "falta 09").
         builder.Property(c => c.ScorePrioridad).Columna("scorePrioridad", "decimal(9,4)");
+        // HU-033 (#199): resultado diferido a Nexo, db/scripts/13_correo_mailsender.sql (sin él, /health/ready dice "falta 13").
+        builder.Property(c => c.SincronizacionResultado).Columna("sincronizacionResultadoNexo", "nvarchar(20)").HasMaxLength(20)
+            .HasConversion(new clsConvertidorCodigoEnum<SincronizacionResultadoNexo>());
+        builder.Property(c => c.ComentarioResultadoPendiente).Columna("comentarioResultadoPendiente", "nvarchar(500)")
+            .HasMaxLength(clsCotizacionSolicitud.LargoMaximoComentarioResultado);
+        builder.Property(c => c.ResultadoSincronizadoAt).Fecha("resultadoSincronizadoAt");
+        builder.Property(c => c.ErrorSincronizacionResultado).Columna("errorSincronizacionResultado", "nvarchar(1000)")
+            .HasMaxLength(clsCotizacionSolicitud.LargoMaximoErrorSincronizacion);
+        builder.Property(c => c.IntentosSincronizacionResultado).Columna("intentosSincronizacionResultado", "int");
         builder.Property(c => c.MotivoEstadoCosteo).Columna("motivoEstadoCosteo", "nvarchar(1000)").HasMaxLength(clsCotizacionSolicitud.LargoMaximoMotivoCosteo);
         builder.Property(c => c.CosteoEnviadoAt).Fecha("costeoEnviadoAt");
         builder.Property(c => c.CosteoSiguienteConsultaAt).Fecha("costeoSiguienteConsultaAt");

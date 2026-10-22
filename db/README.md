@@ -12,7 +12,7 @@ dejarla con la configuración inicial.
   el `01` ya no crea las 2 vistas del borrador de métricas y el `08` las retira de las bases que ya las tienen.
 - **Verificación continua.** Las pruebas de integración (Testcontainers,
   `backend-dotnet/tests/Cotifly.Infraestructura.Tests/Persistencia/clsEsquemaTests.cs`) comprueban en cada corrida que la
-  instalación desde cero y las migraciones `0001` a `0010` (más el `02`, el `03`, el `pendientes/04`, el `05`, el `07`, el `08`, el `09`, el `10` y el `11`) dejan el mismo esquema, que el `0010` es
+  instalación desde cero y las migraciones `0001` a `0010` (más el `02`, el `03`, el `pendientes/04`, el `05`, el `07`, el `08`, el `09`, el `10`, el `11`, el `12` y el `13`) dejan el mismo esquema, que el `0010` es
   idempotente y que el `0009` migra los datos del esquema anterior sin perder ajustes, correos ni auditoría.
 - **Scripts posteriores al `0010`** y lo que falta aprobar (aprobación, no prueba):
 
@@ -30,6 +30,7 @@ dejarla con la configuración inicial.
 | `scripts/10_rechazo_linea.sql` | HU-028.2 (#182) / HU-028.1 (#183). **Lo revisa @scalderon-bs antes de la base compartida** | En el ejecutador (orden de nombre, después del `09`). Camión: `motivoRechazo NVARCHAR(500) NULL` y `rechazadaAt DATETIMEOFFSET NULL`; `'rechazada'` en los tres CHECK de `estadoCosteo`; CHECK `ck_cotizacionVehiculosLineaSolicitud_rechazo`. **El backend mapea las columnas**: sin él, `/health/ready` responde "esquema incompleto: falta 10". Se aplica antes de desplegar la imagen (ver abajo) |
 | `scripts/11_peso_con_tara.sql` | HU-030.1 (#184) | En el ejecutador (orden de nombre, después del `09`; el `10` es de #183). `CotizacionLineasSolicitud.pesoConTaraKg DECIMAL(12,2) NULL` con su CHECK (> 0). **El backend mapea la columna**: sin él, `/health/ready` responde "esquema incompleto: falta 11". Se aplica antes de desplegar la imagen (ver abajo) |
 | `scripts/12_vehiculo_elegido.sql` | HU-032 (#197) | En el ejecutador (orden de nombre, después del `11`). Ruta: `tipoVehiculoElegido NVARCHAR(100) NULL` y `carroceriaElegida NVARCHAR(100) NULL` (el vehículo elegido, respaldo del cubicador); mercancía: `largoCm`/`anchoCm`/`altoCm` pasan a NULL con el CHECK "las tres NULL o las tres > 0" (mercancías no cubicables). Idempotente y en una transacción; imprime el CHECK anterior. **El backend mapea las columnas**: sin él, `/health/ready` responde "esquema incompleto: falta 12". Se aplica antes de desplegar la imagen |
+| `scripts/13_correo_mailsender.sql` | HU-033 (#199) | En el ejecutador (orden de nombre, después del `12`). `Correos`: el seguimiento de MailSender (`idMailSender`, `redirigidoA`, `intentosEntrega`, `enviadoAt`, `estadoActualizadoAt`, `siguienteConsultaAt`, dos índices filtrados y el CHECK del estado con `encolado` y `enviando`); `CotizacionesSolicitud`: el resultado diferido a Nexo (`sincronizacionResultadoNexo`, `comentarioResultadoPendiente`, `resultadoSincronizadoAt`, `errorSincronizacionResultado`, `intentosSincronizacionResultado`). Idempotente, no destructivo. **El backend mapea las columnas**: sin él, `/health/ready` responde "esquema incompleto: falta 13". Se aplica antes de desplegar la imagen |
 
 **`scripts/pendientes/04_cubicacion_segundo_plano.sql`** (HU-023.5, #160) agrega a la ruta la cola de la cubicación de la
 licitación en segundo plano (`estadoCubicacion`, `cubicacionIntentos`, `cubicacionDisponibleAt`, `errorCubicacion`,
@@ -147,6 +148,7 @@ db/
 │   ├── 10_rechazo_linea.sql            rechazo de la línea por la Mesa de Costeo en el camión (se puede repetir)
 │   ├── 11_peso_con_tara.sql            peso con tara de la ruta de contenedor (se puede repetir)
 │   ├── 12_vehiculo_elegido.sql         vehículo elegido de la ruta y medidas NULL de la mercancía (se puede repetir)
+│   ├── 13_correo_mailsender.sql        seguimiento de MailSender en Correos y resultado diferido a Nexo (se puede repetir)
 │   ├── pendientes/            propuesta 04, pendiente de revisión (el ejecutador no la corre)
 │   └── operacion/             scripts de datos de una sola vez que corre el DBA con aprobación
 ├── seeder/
@@ -251,6 +253,7 @@ sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/09_score_priorida
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/10_rechazo_linea.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/11_peso_con_tara.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/12_vehiculo_elegido.sql
+sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/13_correo_mailsender.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i seeder/01_lineas_negocio.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i seeder/02_sap_mapeo_trqtype.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i seeder/03_roles.sql
@@ -325,6 +328,7 @@ Cambios pequeños al esquema que todavía no se consolidan en el `01`. Van como 
 | `09_score_prioridad.sql` | HU-018.1 (#155) | `CotizacionesSolicitud.scorePrioridad DECIMAL(9,4) NULL` (el `scorePrioridad` de Nexo). Idempotente, `ADD` de columna NULL en una transacción. Obligatorio: el backend mapea la columna |
 | `11_peso_con_tara.sql` | HU-030.1 (#184) | `CotizacionLineasSolicitud.pesoConTaraKg DECIMAL(12,2) NULL` con el CHECK `ck_cotizacionLineasSolicitud_pesoConTaraKg` (> 0): el peso con tara de una ruta `Contenedor`. Idempotente, `ADD` de columna NULL en una transacción. Obligatorio: el backend mapea la columna |
 | `12_vehiculo_elegido.sql` | HU-032 (#197) | `CotizacionLineasSolicitud.tipoVehiculoElegido`/`carroceriaElegida NVARCHAR(100) NULL` y `CotizacionMercancias.largoCm/anchoCm/altoCm` NULL con el CHECK `ck_cotizacionPosiciones_medidas` (las tres NULL o las tres > 0). Idempotente, en una transacción. Obligatorio: el backend mapea las columnas |
+| `13_correo_mailsender.sql` | HU-033 (#199) | `Correos`: `idMailSender`, `redirigidoA`, `intentosEntrega`, `enviadoAt`, `estadoActualizadoAt`, `siguienteConsultaAt` (NULL) con los índices filtrados `ix_correos_siguienteConsultaAt` y `ux_correos_idMailSender` y el CHECK `ck_correos_estado`; `CotizacionesSolicitud`: `sincronizacionResultadoNexo` (CHECK), `comentarioResultadoPendiente`, `resultadoSincronizadoAt`, `errorSincronizacionResultado` (NULL) e `intentosSincronizacionResultado` (NOT NULL DEFAULT 0, CHECK ≥ 0). Idempotente. Obligatorio: el backend mapea las columnas |
 
 El `02` se detiene sin tocar nada si `idTipoMercancia` todavía tiene valores (un uuid no se puede convertir a código).
 Cuando el diseño se estabilice, estos cambios se pasan al `01` y el script se retira.

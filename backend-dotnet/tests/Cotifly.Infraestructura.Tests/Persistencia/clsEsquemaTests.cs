@@ -94,9 +94,10 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         scripts[clsBaseDatosPruebas.ScriptsHasta05 - 1].Should().Be(clsBaseDatosPruebas.Script05, "ScriptsHasta05 incluye el 05 y no el 06");
         scripts[clsBaseDatosPruebas.ScriptsHasta06 - 1].Should().Be(clsBaseDatosPruebas.Script06, "ScriptsHasta06 incluye el 06 y no el 09");
         scripts[clsBaseDatosPruebas.ScriptsHasta09 - 1].Should().Be(clsBaseDatosPruebas.Script09, "ScriptsHasta09 incluye el 09 y no el 10 ni el 11");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 3].Should().Be(clsBaseDatosPruebas.Script10, "ScriptsSin07 incluye el 10 (el backend mapea el rechazo)");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 2].Should().Be(clsBaseDatosPruebas.Script11, "ScriptsSin07 incluye el 11 (el backend mapea pesoConTaraKg)");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script12, "ScriptsSin07 llega hasta el 12 (el backend mapea el vehículo elegido)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 4].Should().Be(clsBaseDatosPruebas.Script10, "ScriptsSin07 incluye el 10 (el backend mapea el rechazo)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 3].Should().Be(clsBaseDatosPruebas.Script11, "ScriptsSin07 incluye el 11 (el backend mapea pesoConTaraKg)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 2].Should().Be(clsBaseDatosPruebas.Script12, "ScriptsSin07 incluye el 12 (el backend mapea el vehículo elegido)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script13, "ScriptsSin07 llega hasta el 13 (el backend mapea MailSender y el resultado diferido)");
         scripts[clsBaseDatosPruebas.ScriptsSin07].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsSin07 corta justo antes del 07");
         scripts[clsBaseDatosPruebas.ScriptsHasta07 - 1].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsHasta07 incluye el 07");
         scripts[clsBaseDatosPruebas.ScriptsHasta07..].Should().ContainSingle().Which.Should().Be(clsBaseDatosPruebas.Script08, "después del 07 solo va el 08");
@@ -272,6 +273,37 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
             "SELECT definition FROM sys.check_constraints WHERE name = N'ck_cotizacionPosiciones_medidas' "
             + "AND parent_object_id = OBJECT_ID(N'dbo_cotifly.CotizacionMercancias')");
         definicion.Should().Contain("IS NULL").And.Contain("[largoCm]>(0)");
+    }
+
+    [Fact]
+    public async Task HU033_ElScript13EsIdempotenteYDejaLasColumnasDeMailSenderYDelResultadoDiferidoConSusCheck()
+    {
+        // HU-033 (#199): Correos con el seguimiento de MailSender (y el CHECK del estado) y la cabecera con la sincronización del resultado.
+        await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem13", clsBaseDatosPruebas.Scripts.Length);
+        await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script13);
+
+        await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbIdem13Inst");
+        await ReaplicarYVerificarIdempotenciaAsync(instalada.Cadena, clsBaseDatosPruebas.Script13);
+        (await LeerAsync(
+                "SELECT CONCAT(OBJECT_NAME(c.object_id), '.', c.name, '|', TYPE_NAME(c.user_type_id), '|', c.is_nullable) FROM sys.columns c "
+                + "WHERE (c.object_id = OBJECT_ID(N'dbo_cotifly.Correos') AND c.name IN (N'idMailSender', N'redirigidoA', N'intentosEntrega', "
+                + "N'enviadoAt', N'estadoActualizadoAt', N'siguienteConsultaAt')) "
+                + "OR (c.object_id = OBJECT_ID(N'dbo_cotifly.CotizacionesSolicitud') AND c.name IN (N'sincronizacionResultadoNexo', "
+                + "N'comentarioResultadoPendiente', N'resultadoSincronizadoAt', N'errorSincronizacionResultado', N'intentosSincronizacionResultado'))",
+                r => r.GetString(0), instalada.Cadena))
+            .Should().BeEquivalentTo([
+                "Correos.idMailSender|uniqueidentifier|1", "Correos.redirigidoA|nvarchar|1", "Correos.intentosEntrega|int|1",
+                "Correos.enviadoAt|datetimeoffset|1", "Correos.estadoActualizadoAt|datetimeoffset|1", "Correos.siguienteConsultaAt|datetimeoffset|1",
+                "CotizacionesSolicitud.sincronizacionResultadoNexo|nvarchar|1", "CotizacionesSolicitud.comentarioResultadoPendiente|nvarchar|1",
+                "CotizacionesSolicitud.resultadoSincronizadoAt|datetimeoffset|1", "CotizacionesSolicitud.errorSincronizacionResultado|nvarchar|1",
+                "CotizacionesSolicitud.intentosSincronizacionResultado|int|0"]);
+        (await clsBaseDatosPruebas.EscalarAsync<int>(instalada.Cadena,
+                "SELECT COUNT(*) FROM sys.check_constraints WHERE name IN (N'ck_correos_estado', "
+                + "N'ck_cotizaciones_sincronizacionResultadoNexo', N'ck_cotizaciones_intentosSincronizacionResultado')"))
+            .Should().Be(3);
+        (await clsBaseDatosPruebas.EscalarAsync<int>(instalada.Cadena,
+                "SELECT COUNT(*) FROM sys.indexes WHERE name IN (N'ix_correos_siguienteConsultaAt', N'ux_correos_idMailSender') AND has_filter = 1"))
+            .Should().Be(2);
     }
 
     [Fact]
@@ -943,8 +975,11 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         });
 
         ef.Should().BeEquivalentTo(bd);
-        bd.Where(x => x.Contains(":ix_", StringComparison.Ordinal)).Should().HaveCount(17,
-            "el 0002 crea 10 índices ix_, el 0004 uno, el 0006 uno (historial de PDF), el 0009 quita el de posiciones por línea y agrega el de camiones y el de ajustes por ruta, la propuesta 04 el de la cola del cubicador y el script 06 (#191) el de vencimiento y el filtrado por folio de las Idempotency-Key");
+        bd.Where(x => x.Contains(":ix_", StringComparison.Ordinal)).Should().HaveCount(18,
+            "el 0002 crea 10 índices ix_, el 0004 uno, el 0006 uno (historial de PDF), el 0009 quita el de posiciones por línea y agrega el de camiones y el de ajustes por ruta, la propuesta 04 el de la cola del cubicador, el script 06 (#191) el de vencimiento y el filtrado por folio de las Idempotency-Key y el 13 (#199) la agenda del worker de correos");
+        bd.Should().Contain("Correos:ix_correos_siguienteConsultaAt unico=False claves=(siguienteConsultaAt) include=() filtro=siguienteconsultaatisnotnull");
+        bd.Should().Contain(x => x.StartsWith("Correos:ux_correos_idMailSender unico=True claves=(idMailSender)", StringComparison.Ordinal)
+            && x.EndsWith("filtro=idmailsenderisnotnull", StringComparison.Ordinal));
         bd.Should().Contain("CapturasIdempotentes:ix_capturasIdempotentes_folio unico=False claves=(folio) include=(expiraAt,scorePrioridad,solicitudNexoId) filtro=folioisnotnull");
         bd.Should().Contain(x => x.StartsWith("CotizacionLineasSolicitud:ix_cotizacionLineasSolicitud_cubicacionPendiente unico=False", StringComparison.Ordinal)
             && x.Contains("claves=(cubicacionDisponibleAt,createdAt)", StringComparison.Ordinal)

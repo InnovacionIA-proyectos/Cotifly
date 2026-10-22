@@ -36,8 +36,12 @@ public sealed class clsCodigoEnumTests
         clsCodigoEnum.Codigos<TipoDestinatario>().Should().Equal("para", "cc");
 
     [Fact]
-    public void EstadoCorreoUsaEnviadoFallido() =>
-        clsCodigoEnum.Codigos<EstadoCorreo>().Should().Equal("enviado", "fallido");
+    public void EstadoCorreoUsaEnviadoFallidoEncoladoYEnviando() =>
+        clsCodigoEnum.Codigos<EstadoCorreo>().Should().Equal("enviado", "fallido", "encolado", "enviando");
+
+    [Fact]
+    public void LaSincronizacionDelResultadoUsaPendienteSincronizadoYNoSincronizable() =>
+        clsCodigoEnum.Codigos<SincronizacionResultadoNexo>().Should().Equal("pendiente", "sincronizado", "no_sincronizable");
 
     [Theory]
     [InlineData("politica_linea", OrigenMargen.PoliticaLinea)]
