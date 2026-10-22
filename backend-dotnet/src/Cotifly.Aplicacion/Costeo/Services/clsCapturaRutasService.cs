@@ -229,19 +229,34 @@ public sealed class clsCapturaRutasService(
     }
 
     /// <summary>
-    /// HU-032 (#197): <c>VEHICULO_REQUERIDO</c> en <c>tipo_vehiculo</c> si la ruta no se puede cubicar (solo el peso o mercancías sin
-    /// medidas, también una ruta mixta), no es de contenedor y no trae vehículo; <c>null</c> si no aplica o la bandera
-    /// <c>Captura:AceptarVehiculoCliente</c> está apagada. La carrocería es opcional: Nexo autocostea Cupo con el tipo de vehículo. Una
-    /// mercancía mal digitada (o, con el cubicador, una con medidas y sin código) ya trae su error: la ruta no se juzga hasta corregirla.
+    /// HU-032 (#197): <c>VEHICULO_REQUERIDO</c> en <c>tipo_vehiculo</c> según <see cref="FaltaVehiculo"/>; <c>null</c> si no aplica o la
+    /// bandera <c>Captura:AceptarVehiculoCliente</c> está apagada.
     /// </summary>
     private clsErrorCampo? VehiculoRequerido(clsLineaSolicitudCosteo? linea) =>
-        AceptaVehiculo && linea is not null && linea.ExigeVehiculoElegido && string.IsNullOrWhiteSpace(linea.TipoVehiculo)
-        && linea.Posiciones.All(p => p is not null && p.PrimerError(1) is null
-                                     && !(cubicador is { EstaConfigurado: true } && p.ConMedidas && !p.VaAlCubicador()))
-            ? new clsErrorCampo("tipo_vehiculo", clsCodigosLineaSolicitud.VehiculoRequerido,
-                "La ruta no se puede cubicar (solo trae el peso o mercancías sin medidas) y no trae tipo_vehiculo: elige el vehículo "
-                + "(GET /web/catalogos-flete). Solo una ruta de contenedor puede ir sin vehículo.")
+        AceptaVehiculo && linea is not null
+        && FaltaVehiculo(linea, opcionesCaptura?.Value.ClasesSinVehiculo, cubicador is { EstaConfigurado: true })
+            ? new clsErrorCampo("tipo_vehiculo", clsCodigosLineaSolicitud.VehiculoRequerido, MensajeVehiculoRequerido)
             : null;
+
+    /// <summary>Mensaje de <c>VEHICULO_REQUERIDO</c> (la captura, la edición y la re-solicitud con <c>datos_carga</c>).</summary>
+    public const string MensajeVehiculoRequerido =
+        "La ruta no se puede cubicar (solo trae el peso o mercancías sin medidas) y no trae tipo_vehiculo: elige el vehículo "
+        + "(GET /web/catalogos-flete). Solo una ruta de una clase de viaje exenta (por defecto, Contenedor) puede ir sin vehículo.";
+
+    /// <summary>
+    /// HU-032 (#197): la regla ÚNICA de <c>VEHICULO_REQUERIDO</c> (captura, edición y re-solicitud con <c>datos_carga</c>): la ruta no se
+    /// puede cubicar (solo el peso o mercancías sin medidas, también una ruta mixta), su clase de viaje no es una de
+    /// <paramref name="clasesSinVehiculo"/> (<c>Captura:ClasesSinVehiculoObligatorio</c>, por defecto Contenedor) y no trae vehículo. La
+    /// carrocería es opcional: Nexo autocostea Cupo con el tipo de vehículo. Una mercancía mal digitada (o, con
+    /// <paramref name="cubicadorConfigurado"/>, una con medidas y sin código: <c>CAMPO_REQUERIDO</c> en su código) ya trae su error: la ruta
+    /// no se juzga hasta corregirla. La edición solo la aplica a una ruta nueva o que cambia (B3).
+    /// </summary>
+    public static bool FaltaVehiculo(clsLineaSolicitudCosteo linea, IReadOnlyCollection<string>? clasesSinVehiculo, bool cubicadorConfigurado)
+    {
+        ArgumentNullException.ThrowIfNull(linea);
+        return linea.ExigeVehiculoElegido(clasesSinVehiculo) && string.IsNullOrWhiteSpace(linea.TipoVehiculo)
+               && linea.Posiciones.All(p => p is not null && p.PrimerError(1) is null && !(cubicadorConfigurado && p.ConMedidas && !p.VaAlCubicador()));
+    }
 
     private static string? Limpio(string? valor) => string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
 

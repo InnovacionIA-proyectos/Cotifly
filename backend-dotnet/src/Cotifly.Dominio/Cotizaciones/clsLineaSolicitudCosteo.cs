@@ -212,10 +212,16 @@ public sealed record clsLineaSolicitudCosteo
     }
 
     /// <summary>
-    /// HU-032 (#197): ¿la ruta exige el vehículo elegido? Sí cuando no se puede cubicar (no todas sus mercancías son cubicables) y no es de
-    /// contenedor: en Cupo, Nexo no autocostea una línea sin vehículo (COTIFLY-CONTRATO §4); en Contenedor lo deduce por peso y clase.
+    /// HU-032 (#197): ¿la ruta exige el vehículo elegido? Sí cuando no se puede cubicar (no todas sus mercancías son cubicables) y su clase
+    /// de viaje no es una de <paramref name="clasesSinVehiculo"/> (<c>Captura:ClasesSinVehiculoObligatorio</c>; <c>null</c> = solo
+    /// <see cref="clsCatalogosCaptura.ClaseViajeContenedor"/>, el valor por defecto): en Cupo, Nexo no autocostea una línea sin vehículo
+    /// (COTIFLY-CONTRATO §4); en Contenedor lo deduce por peso y clase. La clase se compara recortada y exacta, como se guarda y como la
+    /// valida el catálogo de Nexo.
     /// </summary>
-    public bool ExigeVehiculoElegido => Cubicabilidad != CubicabilidadRuta.Cubicable && !EsContenedor;
+    public bool ExigeVehiculoElegido(IReadOnlyCollection<string>? clasesSinVehiculo = null) =>
+        Cubicabilidad != CubicabilidadRuta.Cubicable
+        && !(ClaseViaje?.Trim() is { Length: > 0 } clase
+             && (clasesSinVehiculo ?? clsCatalogosCaptura.ClasesSinVehiculoPorDefecto).Contains(clase, StringComparer.Ordinal));
 
     /// <summary>
     /// HU-032 (#197): las posiciones que pueden viajar a Nexo: todas, si todas traen sus tres medidas; ninguna si alguna es una mercancía

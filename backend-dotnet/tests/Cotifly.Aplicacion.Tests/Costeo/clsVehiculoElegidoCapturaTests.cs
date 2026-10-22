@@ -40,9 +40,11 @@ public sealed class clsVehiculoElegidoCapturaTests
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
+    private List<string>? _clasesSinVehiculo;
+
     private clsCapturaRutasService Servicio(bool aceptarVehiculo = true) => new(
         _filas, Substitute.For<IClsCostosConexosNexo>(), new clsPlanificadorCamionSinVehiculo(), NullLogger<clsCapturaRutasService>.Instance,
-        _cubicador, Options.Create(new clsOpcionesCaptura { AceptarVehiculoCliente = aceptarVehiculo }));
+        _cubicador, Options.Create(new clsOpcionesCaptura { AceptarVehiculoCliente = aceptarVehiculo, ClasesSinVehiculoObligatorio = _clasesSinVehiculo }));
 
     private static clsLineaSolicitudCosteo Cupo(string? vehiculo, params clsPosicionCarga[] mercancias) =>
         clsSolicitudCosteoMuestra.RutaCaptura() with
@@ -132,5 +134,41 @@ public sealed class clsVehiculoElegidoCapturaTests
         await ValidarAsync(Cupo("3S3", Cubicable()));
 
         _validadas.Should().ContainSingle().Which!.Linea.TipoVehiculo.Should().Be("3S3", "sin cubicador el elegido se usa seguro");
+    }
+
+    // --- Captura:ClasesSinVehiculoObligatorio (decisión del usuario del 2026-10-21) ---
+
+    [Fact]
+    public async Task PorDefectoCargaSueltaSinVehiculoEsVehiculoRequerido()
+    {
+        (await ValidarAsync(Cupo(null) with { ClaseViaje = "Carga Suelta" })).Errores
+            .Should().ContainSingle(e => e.Codigo == clsCodigosLineaSolicitud.VehiculoRequerido);
+    }
+
+    [Fact]
+    public async Task ConCargaSueltaConfiguradaComoExentaSeAceptaSinVehiculoYCupoLoSigueExigiendo()
+    {
+        _clasesSinVehiculo = ["Contenedor", "Carga Suelta"];
+
+        (await ValidarAsync(Cupo(null) with { ClaseViaje = " Carga Suelta " })).Errores.Should().BeEmpty();
+        (await ValidarAsync(Cupo(null))).Errores.Should().ContainSingle(e => e.Codigo == clsCodigosLineaSolicitud.VehiculoRequerido);
+    }
+
+    [Fact]
+    public async Task UnaListaConfiguradaSinContenedorLoVuelveObligatorioEnContenedor()
+    {
+        _clasesSinVehiculo = ["Carga Suelta"];
+
+        (await ValidarAsync(Cupo(null) with { ClaseViaje = "Contenedor", ClaseContenedor = "CNT40.HC" })).Errores
+            .Should().ContainSingle(e => e.Codigo == clsCodigosLineaSolicitud.VehiculoRequerido, "la lista configurada reemplaza la de por defecto");
+    }
+
+    [Fact]
+    public void LaReglaExcluyeUnaMercanciaConMedidasYSinCodigoSoloConElCubicadorConfigurado()
+    {
+        var ruta = Cupo(null, new clsPosicionCarga("Caja", 1, 10m, 10m, 10m, 1_000m));
+
+        clsCapturaRutasService.FaltaVehiculo(ruta, null, cubicadorConfigurado: true).Should().BeFalse("ya trae CAMPO_REQUERIDO en su código");
+        clsCapturaRutasService.FaltaVehiculo(ruta, null, cubicadorConfigurado: false).Should().BeTrue();
     }
 }

@@ -8,6 +8,7 @@ using Cotifly.Aplicacion.Costeo.DTOs;
 using Cotifly.Aplicacion.Costeo.Interfaces;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Cotizaciones.Services;
+using Cotifly.Aplicacion.Cubicacion.Interfaces;
 using Cotifly.Aplicacion.Licitaciones.Services;
 using Cotifly.Aplicacion.Margen.Repositories;
 using Cotifly.Aplicacion.Margen.Services;
@@ -92,7 +93,8 @@ public sealed class clsReSolicitudCosteoService(
     IClsPlanificadorCamiones planificador,
     IClsResolutorConexosCatalogo resolutorConexos,
     ILogger<clsReSolicitudCosteoService> logger,
-    IOptions<clsOpcionesCaptura>? opcionesCaptura = null) : IClsReSolicitudCosteoService
+    IOptions<clsOpcionesCaptura>? opcionesCaptura = null,
+    IClsCubicador? cubicador = null) : IClsReSolicitudCosteoService
 {
     /// <summary>HU-032 (#197): ¿el vehículo elegido cuenta? (<c>Captura:AceptarVehiculoCliente</c>, encendida por defecto).</summary>
     private bool AceptaVehiculo => opcionesCaptura?.Value.AceptarVehiculoCliente ?? true;
@@ -393,13 +395,15 @@ public sealed class clsReSolicitudCosteoService(
             // HU-032 (#197): cambiar el vehículo elegido también es un cambio que viaja si los camiones dependen de él.
             replanificar = clsReglaRecubicacion.Exige(anterior, lineas[0], AceptaVehiculo && ruta.UsaVehiculoElegido);
 
-            // HU-032 (#197): sin mercancías cubicables el vehículo elegido es obligatorio (salvo Contenedor).
-            if (AceptaVehiculo && lineas[0].ExigeVehiculoElegido && string.IsNullOrWhiteSpace(lineas[0].TipoVehiculo)
-                && lineas[0].Posiciones.All(p => p is not null && p.PrimerError(1) is null))
+            // HU-032 (#197): sin mercancías cubicables el vehículo elegido es obligatorio (salvo en las clases de viaje exentas), con la
+            // MISMA regla de la captura (una mercancía con medidas y sin código, con el cubicador configurado, no la juzga). B3 (decisión del
+            // usuario del 2026-10-21): como en la edición, solo si la ruta cambia (replanificar: carga, clase de viaje o vehículo elegido);
+            // unos datos_carga que dejan la ruta como estaba no lo exigen (un folio anterior a HU-032 sin vehículo sigue re-solicitándose).
+            if (AceptaVehiculo && replanificar
+                && clsCapturaRutasService.FaltaVehiculo(lineas[0], opcionesCaptura?.Value.ClasesSinVehiculo, cubicador is { EstaConfigurado: true }))
             {
-                return new clsErrorDominio(clsCodigosError.SolicitudCosteoInvalida,
-                    "La ruta no se puede cubicar (solo trae el peso o mercancías sin medidas) y no trae tipo_vehiculo: elige el vehículo "
-                    + "(GET /web/catalogos-flete). Solo una ruta de contenedor puede ir sin vehículo.", clsCodigosLineaSolicitud.VehiculoRequerido)
+                return new clsErrorDominio(clsCodigosError.SolicitudCosteoInvalida, clsCapturaRutasService.MensajeVehiculoRequerido,
+                    clsCodigosLineaSolicitud.VehiculoRequerido)
                 {
                     Datos = new Dictionary<string, object?>(StringComparer.Ordinal) { ["ruta"] = 0, ["campo"] = "tipo_vehiculo" },
                 };
@@ -407,10 +411,21 @@ public sealed class clsReSolicitudCosteoService(
 
             // G2 (#106): los cambios de carga solo traen códigos de catálogo, igual que la captura (nunca texto libre a Nexo). HU-032 (#197):
             // el vehículo elegido se valida aquí solo si se va a usar (la ruta no se puede cubicar); si va al cubicador, se valida tarde.
-            var paraCatalogo = lineas[0].Cubicabilidad == CubicabilidadRuta.Cubicable ? lineas[0] with { TipoVehiculo = null, Carroceria = null } : lineas[0];
+            var vehiculoTardio = lineas[0].Cubicabilidad == CubicabilidadRuta.Cubicable;
+            var paraCatalogo = vehiculoTardio ? lineas[0] with { TipoVehiculo = null, Carroceria = null } : lineas[0];
             if (await catalogos.ValidarAsync(usuarioId, paraCatalogo, cancellationToken) is { } noCatalogo)
             {
                 return noCatalogo;
+            }
+
+            // B4 (HU-032): lo validado se guarda escrito como en Nexo (Canonica, igual que la captura): "2s3"/"furgon" → 2S3/FURGON, un
+            // alias de Nexo → su código oficial. Un vehículo que va al cubicador (validación tardía) queda como vino, recortado.
+            if (await CanonicaAsync(usuarioId, paraCatalogo, cancellationToken) is { } canonica)
+            {
+                lineas = [vehiculoTardio
+                    ? canonica with { TipoVehiculo = Limpio(lineas[0].TipoVehiculo), Carroceria = Limpio(lineas[0].Carroceria) }
+                    : canonica];
+                elegidos = [(lineas[0].TipoVehiculo, lineas[0].Carroceria)];
             }
         }
 
@@ -440,6 +455,24 @@ public sealed class clsReSolicitudCosteoService(
 
         return new clsReSolicitudValidada(encabezado, lineas, politica, replanificar) { Elegidos = elegidos };
     }
+
+    /// <summary>
+    /// B4 (HU-032): <paramref name="linea"/> con <c>tipo_vehiculo</c>, <c>carroceria</c> y <c>clase_contenedor</c> escritos como en Nexo
+    /// (<see cref="clsValidadorCatalogosCaptura.Canonica"/>, por <see cref="IClsValidadorCatalogosCaptura.ValidarLineasAsync"/>, como la
+    /// captura); <c>null</c> si no hay nada que reescribir o el validador no la devolvió.
+    /// </summary>
+    private async Task<clsLineaSolicitudCosteo?> CanonicaAsync(Guid usuarioId, clsLineaSolicitudCosteo linea, CancellationToken cancellationToken)
+    {
+        if (Limpio(linea.TipoVehiculo) is null && Limpio(linea.Carroceria) is null && Limpio(linea.ClaseContenedor) is null)
+        {
+            return null;
+        }
+
+        var validacion = await catalogos.ValidarLineasAsync(usuarioId, [linea], cancellationToken);
+        return validacion.Canonicas is [{ } canonica] ? canonica : null;
+    }
+
+    private static string? Limpio(string? valor) => string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
 
     /// <summary>
     /// ¿Los cambios de carga cambian lo que recibe el cubicador (peso, clase de viaje o mercancías)? Entonces sus camiones ya no sirven:

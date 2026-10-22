@@ -411,28 +411,176 @@ public sealed class clsVehiculoElegidoEndpointsTests : IDisposable
     }
 
     [Fact]
-    public async Task EditarUnFolioAnteriorSoloConPesoYSinVehiculoReenviandoElMismoCuerpoPideElVehiculo()
+    public async Task EditarUnFolioAnteriorSoloConPesoYSinVehiculoReenviandoElMismoCuerpoEsSinCambios()
     {
-        // Validación de HU-032: una ruta de Cupo solo con peso y sin vehículo era válida antes de la regla (se simula una ruta anterior al 12:
-        // sin elegido y con su camión sin vehículo). Con la regla, la edición la juzga como una captura: el mismo cuerpo del GET ya no es
-        // "sin cambios" sino VEHICULO_REQUERIDO.
+        // B3 (decisión del usuario del 2026-10-21): una ruta que no cambia no exige el vehículo. Una ruta de Cupo solo con peso y sin vehículo
+        // era válida antes de HU-032 (se simula una ruta anterior al 12: sin elegido y con su camión sin vehículo): el mismo cuerpo del GET
+        // es "sin cambios", no VEHICULO_REQUERIDO.
         var api = Api();
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
-        _nexo.AltaFalla = HttpStatusCode.ServiceUnavailable;
+        var folio = await FolioAnteriorSinVehiculoAsync(api, ana, enviado: false);
+
+        var (modelo, etag) = await ModeloAsync(api, ana, folio);
+        modelo["rutas"]![0]!["tipo_vehiculo"].Should().BeNull();
+        using var igual = await api.EnviarAsync(_put, $"/web/cotizaciones/{folio}/solicitud", ana.Access, modelo.ToJsonString(), etag);
+
+        (await VerificarContratoAsync(igual, Edicion, _put, HttpStatusCode.OK)).GetProperty("sin_cambios").GetBoolean().Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("9000.00")]
+    [InlineData("9000.0")]
+    public async Task EditarUnFolioAnteriorSinVehiculoConElMismoPesoEnOtraEscalaSigueSinCambios(string peso)
+    {
+        // "Cambia" se compara por valor, como sin_cambios (D-1019B-1): 9000.00 es el mismo peso que 9000.
+        var api = Api();
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var folio = await FolioAnteriorSinVehiculoAsync(api, ana, enviado: false);
+
+        var (modelo, etag) = await ModeloAsync(api, ana, folio);
+        modelo["rutas"]![0]!["peso_kg"] = JsonNode.Parse(peso);
+        using var igual = await api.EnviarAsync(_put, $"/web/cotizaciones/{folio}/solicitud", ana.Access, modelo.ToJsonString(), etag);
+
+        (await VerificarContratoAsync(igual, Edicion, _put, HttpStatusCode.OK)).GetProperty("sin_cambios").GetBoolean().Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task EditarUnFolioAnteriorSinVehiculoCambiandoElPesoDeLaRutaPideElVehiculo()
+    {
+        var api = Api();
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var folio = await FolioAnteriorSinVehiculoAsync(api, ana, enviado: false);
+
+        var (modelo, etag) = await ModeloAsync(api, ana, folio);
+        var altas = _nexo.SolicitudesCreadas.Count;
+        modelo["rutas"]![0]!["peso_kg"] = 9_500m;
+        using var cambio = await api.EnviarAsync(_put, $"/web/cotizaciones/{folio}/solicitud", ana.Access, modelo.ToJsonString(), etag);
+
+        cambio.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await ErroresVehiculoRequeridoAsync(cambio)).Should().Equal(0);
+        _nexo.SolicitudesCreadas.Should().HaveCount(altas, "nada se envía");
+    }
+
+    [Fact]
+    public async Task EditarUnFolioAnteriorSinVehiculoAgregandoUnaRutaNuevaSinVehiculoLaPideSoloEnLaNueva()
+    {
+        var api = Api();
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var folio = await FolioAnteriorSinVehiculoAsync(api, ana, enviado: false);
+
+        var (modelo, etag) = await ModeloAsync(api, ana, folio);
+        var nueva = modelo["rutas"]![0]!.DeepClone();
+        nueva.AsObject().Remove("linea_solicitud_id");
+        nueva["destino_municipio_id"] = 76001;
+        nueva["destino"] = "Cali";
+        modelo["rutas"]!.AsArray().Add(nueva);
+        using var agregada = await api.EnviarAsync(_put, $"/web/cotizaciones/{folio}/solicitud", ana.Access, modelo.ToJsonString(), etag);
+
+        agregada.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await ErroresVehiculoRequeridoAsync(agregada)).Should().Equal([1], "la ruta guardada no cambió: solo la nueva exige el vehículo");
+    }
+
+    [Fact]
+    public async Task LaReSolicitudDeUnFolioAnteriorSinVehiculoPideElVehiculoSoloSiLaRutaCambia()
+    {
+        var api = Api();
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var folio = await FolioAnteriorSinVehiculoAsync(api, ana, enviado: true);
+        using var leido = await api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", ana.Access);
+        var etag = leido.Headers.ETag!.Tag;
+
+        // Cambia el peso: la ruta cambia y, sin mercancías cubicables ni vehículo, es VEHICULO_REQUERIDO (nada se reserva ni se envía).
+        var altas = _nexo.SolicitudesCreadas.Count;
+        using var cambio = await api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/re-solicitar", ana.Access,
+            """{"motivo":"Cambió el peso","datos_carga":{"peso_kg":9500}}""", etag);
+        cambio.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await cambio.Content.ReadAsStringAsync(Ct)).Should().Contain("VEHICULO_REQUERIDO");
+        _nexo.SolicitudesCreadas.Should().HaveCount(altas, "nada se envía");
+
+        // Los mismos datos de carga (9000.0 es el peso guardado, por valor) no cambian la ruta: no exigen el vehículo.
+        using var igual = await api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/re-solicitar", ana.Access,
+            """{"motivo":"Otra versión","datos_carga":{"peso_kg":9000.0}}""", etag);
+        var nueva = (await VerificarContratoAsync(igual, ReSolicitud, _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+        (await ElegidoAsync(nueva)).Should().Be("|");
+    }
+
+    [Fact]
+    public async Task LaReSolicitudConDatosDeCargaGuardaElVehiculoEscritoComoEnNexo()
+    {
+        // B4 (HU-032): como la captura, el vehículo validado se guarda con la escritura del catálogo de Nexo (Canonica).
+        var api = Api();
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         using var envio = await api.EnviarAsync(_post, Captura, ana.Access, Formulario("2S3", 9_000m));
         var folio = (await VerificarContratoAsync(envio, Captura, _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+        await api.ProcesarPollingAsync(folio, TimeSpan.FromHours(73));
+        using var leido = await api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", ana.Access);
+
+        using var respuesta = await api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/re-solicitar", ana.Access,
+            """{"motivo":"Otro vehículo","datos_carga":{"tipo_vehiculo":"3s3","carroceria":"furgon"}}""", leido.Headers.ETag!.Tag);
+
+        var nueva = (await VerificarContratoAsync(respuesta, ReSolicitud, _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+        (await ElegidoAsync(nueva)).Should().Be("3S3|FURGON");
+        (await CamionAsync(nueva)).Should().Be("3S3");
+    }
+
+    [Fact]
+    public async Task EnCargaSueltaSinVehiculoEs400PorDefectoYSeCapturaSiSeConfiguraComoExenta()
+    {
+        var cuerpo = JsonNode.Parse(Formulario(null, 9_000m))!;
+        cuerpo["rutas"]![0]!["clase_viaje"] = "Carga Suelta";
+
+        // Por defecto solo Contenedor está exento.
+        var api = Api();
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        using var porDefecto = await api.EnviarAsync(_post, Captura, ana.Access, cuerpo.ToJsonString());
+        porDefecto.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await ErroresVehiculoRequeridoAsync(porDefecto)).Should().Equal(0);
+
+        // Con Captura:ClasesSinVehiculoObligatorio = [Contenedor, Carga Suelta] la ruta se captura sin vehículo (y Cupo lo sigue exigiendo).
+        using var exenta = clsApiWebPruebas.ConNexo(_entorno.BaseDatos, _nexo, new Dictionary<string, string?>
+        {
+            ["Captura:ClasesSinVehiculoObligatorio:0"] = "Contenedor",
+            ["Captura:ClasesSinVehiculoObligatorio:1"] = "Carga Suelta",
+        }, cubicador: _cubicador);
+        var beto = await exenta.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        using var capturada = await exenta.EnviarAsync(_post, Captura, beto.Access, cuerpo.ToJsonString());
+        await VerificarContratoAsync(capturada, Captura, _post, HttpStatusCode.Created);
+        _nexo.UltimaAlta!["lineas"]![0]!["tipoVehiculo"].Should().BeNull();
+        using var cupo = await exenta.EnviarAsync(_post, Captura, beto.Access, Formulario(null, 9_000m));
+        cupo.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await ErroresVehiculoRequeridoAsync(cupo)).Should().Equal(0);
+    }
+
+    /// <summary>
+    /// Un folio "anterior a HU-032": una ruta de Cupo solo con peso, sin vehículo elegido y con su camión sin vehículo (se captura con el
+    /// vehículo y se borra en la base). <paramref name="enviado"/>: costeado y vencido (para re-solicitar); si no, en <c>error_envio</c>.
+    /// </summary>
+    private async Task<string> FolioAnteriorSinVehiculoAsync(clsApiWebPruebas api, clsSesionPrueba sesion, bool enviado)
+    {
+        _nexo.AltaFalla = enviado ? null : HttpStatusCode.ServiceUnavailable;
+        using var envio = await api.EnviarAsync(_post, Captura, sesion.Access, Formulario("2S3", 9_000m));
+        var folio = (await VerificarContratoAsync(envio, Captura, _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
         _nexo.AltaFalla = null;
+        if (enviado)
+        {
+            await api.ProcesarPollingAsync(folio, TimeSpan.FromHours(73));
+        }
+
         await clsBaseDatosPruebas.EjecutarAsync(_entorno.BaseDatos.CadenaCotifly,
             "UPDATE l SET tipoVehiculoElegido = NULL, carroceriaElegida = NULL FROM dbo_cotifly.CotizacionLineasSolicitud l "
             + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}'; "
             + "UPDATE v SET tipoVehiculo = NULL FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = v.lineaSolicitudId "
             + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}';");
+        return folio;
+    }
 
-        var (modelo, etag) = await ModeloAsync(api, ana, folio);
-        using var igual = await api.EnviarAsync(_put, $"/web/cotizaciones/{folio}/solicitud", ana.Access, modelo.ToJsonString(), etag);
-
-        igual.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await igual.Content.ReadAsStringAsync(Ct)).Should().Contain("VEHICULO_REQUERIDO");
+    /// <summary>Las rutas (índice base 0) con <c>VEHICULO_REQUERIDO</c> en <c>tipo_vehiculo</c> de un 400 de la captura o la edición.</summary>
+    private static async Task<IReadOnlyList<int>> ErroresVehiculoRequeridoAsync(HttpResponseMessage respuesta)
+    {
+        using var json = JsonDocument.Parse(await respuesta.Content.ReadAsStringAsync(Ct));
+        return [.. json.RootElement.GetProperty("error").GetProperty("detalle").GetProperty("errores").EnumerateArray()
+            .Where(e => e.GetProperty("codigo").GetString() == "VEHICULO_REQUERIDO" && e.GetProperty("campo").GetString() == "tipo_vehiculo")
+            .Select(e => e.GetProperty("ruta").GetInt32())];
     }
 
     [Fact]

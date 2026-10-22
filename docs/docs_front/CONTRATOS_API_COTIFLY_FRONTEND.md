@@ -727,9 +727,11 @@ flowchart TD
   `peso_kg`) se acepta como "no cubicable": se guarda, **no viaja a NEXO como posición** (la línea de esa ruta va solo con el peso) y la
   ruta no se cubica. **Medidas parciales** (largo sin ancho, por ejemplo) y **código sin medidas** son `POSICION_INVALIDA`. La regla de
   peso (`PESO_REQUERIDO`, `PESO_INCONSISTENTE`) cuenta todas las mercancías.
-- **Cuándo es obligatorio el vehículo.** Si la ruta no se puede cubicar y **no** es `Contenedor`: 400 `SOLICITUD_COSTEO_INVALIDA` con
-  `{ruta, campo: "tipo_vehiculo", codigo: "VEHICULO_REQUERIDO"}` en `detalle.errores[]`. En Contenedor puede ir sin vehículo (NEXO lo
-  deduce). La carrocería nunca es obligatoria. Si la ruta va al cubicador, el vehículo es opcional (sin él, si el cubicador no escoge, el
+- **Cuándo es obligatorio el vehículo.** Si la ruta no se puede cubicar y su `clase_viaje` **no** es una de las exentas: 400
+  `SOLICITUD_COSTEO_INVALIDA` con `{ruta, campo: "tipo_vehiculo", codigo: "VEHICULO_REQUERIDO"}` en `detalle.errores[]`. Las clases
+  exentas las configura el backend (`Captura:ClasesSinVehiculoObligatorio`); **por defecto solo `Contenedor`** (NEXO deduce el vehículo).
+  Si negocio exime otra (por ejemplo `Carga Suelta`), el backend la agrega a esa lista: el frontend no debe fijar la regla en el código
+  sin una forma de cambiarla (una constante de configuración del frontend, alineada con el ambiente). La carrocería nunca es obligatoria. Si la ruta va al cubicador, el vehículo es opcional (sin él, si el cubicador no escoge, el
   camión va sin vehículo y lo resuelve la Mesa).
 - **Cuándo se valida contra NEXO.** Solo si se va a usar: sin mercancías cubicables, antes de guardar (`CODIGO_NO_CATALOGO`); con todas
   cubicables, solo si el cubicador no escoge (entonces un código inválido NO tumba la captura: la ruta va sin vehículo con su aviso). Se
@@ -740,12 +742,22 @@ flowchart TD
   carroceria}`). `cubicacion[]` trae también las rutas que no llamaron al cubicador si tienen avisos (con `resultado: null`).
 - **Edición y re-solicitud.** `GET .../solicitud` devuelve el elegido en `rutas[].tipo_vehiculo`/`carroceria`: reenviarlo tal cual. En una
   ruta cuyos camiones salen del elegido (no los asignó el cubicador), **cambiar solo el vehículo es un cambio** que viaja a NEXO
-  (reemplazo o `-vN`). En una ruta `ASIGNADO` es solo el respaldo: cambiarlo no dispara nada. `datos_carga.tipo_vehiculo` también cambia
-  el elegido.
+  (reemplazo o `-vN`). `datos_carga.tipo_vehiculo` también cambia el elegido.
+- **Ruta asignada por el cubicador: cambiar solo el vehículo NO se guarda (B2).** En una ruta con `resultado_cubicacion = ASIGNADO`
+  (`GET .../costeo`) el elegido es solo el respaldo: si lo único que cambia es `tipo_vehiculo`/`carroceria`, el PUT responde 200 con
+  `sin_cambios: true` y el vehículo elegido **no** se actualiza (manda el cubicador). El frontend debe **deshabilitar** el selector en esa
+  ruta o **explicarlo** ("El cubicador asignó el vehículo; cambia la carga para volver a cubicar"). Si cambia también la carga (peso,
+  mercancías o clase de viaje), la ruta se vuelve a cubicar y el elegido nuevo sí se guarda.
+- **`VEHICULO_REQUERIDO` en la edición: solo rutas nuevas o que cambian (B3).** Una ruta guardada que **no cambia** no exige el vehículo:
+  reenviar el GET de un folio anterior a HU-032 (Cupo solo con peso, sin vehículo) da `sin_cambios`, no 400. Si cambia la carga de esa ruta
+  (peso, mercancías o clase de viaje; se compara por valor: `9000.00` es `9000`) o se quita el vehículo, o es una ruta nueva, sí lo exige.
+  Lo mismo en la re-solicitud con `datos_carga`: lo exige solo si la ruta cambia. La `-vN` sin `datos_carga` no lo exige.
 - **Qué hacer en el frontend:**
   1. **Volver a mostrar el selector** de vehículo (y de carrocería, opcional) en cada ruta: captura, licitación y "Editar solicitud".
-  2. **Exigirlo** cuando la ruta no tenga mercancías cubicables (solo peso, o alguna mercancía sin medidas), salvo con
-     `clase_viaje = Contenedor`. Permitir mercancías sin medidas (las tres vacías); si escribe una medida, pedir las tres.
+  2. **Exigirlo** cuando la ruta no tenga mercancías cubicables (solo peso, o alguna mercancía sin medidas), salvo en las clases exentas
+     (por defecto `clase_viaje = Contenedor`). En "Editar solicitud", solo en rutas nuevas o cuya carga cambió. Permitir mercancías sin
+     medidas (las tres vacías, `null` u omitidas; `0` también es "sin medida"); si escribe una medida, pedir las tres, mayores que 0.
+  2b. En una ruta `ASIGNADO`, deshabilitar o explicar el cambio de solo el vehículo (no se guarda: `sin_cambios`).
   3. **Mostrar el vehículo final** de cada camión (`GET .../costeo`, `rutas[].camiones[]`) con el aviso de la ruta al lado (por ejemplo
      "El cubicador asignó 3S3 - FURGON en lugar del vehículo elegido (2S2)").
 
@@ -1380,7 +1392,7 @@ Cada mercancía (`PosicionCargaWeb`):
 | `codigo_mercancia` | string o null | **Sí en una mercancía con medidas** (con el cubicador configurado) | Hasta 64. `codigo` de `GET /web/tipos-mercancia`, activo y cubicable (`MERCANCIA_DESCONOCIDA`, `MERCANCIA_NO_CUBICABLE`). HU-032 (#197): una mercancía sin medidas no lo lleva (si lo trae sin medidas es `POSICION_INVALIDA`) |
 | `nombre_mercancia` | string o null | No | Hasta 200. Copia del nombre; con catálogo, se toma el del catálogo |
 | `cantidad` | entero | No | 1 a 100.000. Por defecto 1 |
-| `largo_cm`, `ancho_cm`, `alto_cm` | número o null | Las tres o ninguna | 0,1 a 999.999. HU-032 (#197): sin ninguna (y sin código) la mercancía es **no cubicable**: se guarda, no viaja a NEXO como posición y la ruta usa el vehículo elegido. Medidas parciales: `POSICION_INVALIDA` ("faltan medidas") |
+| `largo_cm`, `ancho_cm`, `alto_cm` | número o null | Las tres o ninguna | Con valor, 0,1 a 999.999. Ausentes, `null` o `0` = sin medida (B5). HU-032 (#197): sin ninguna (y sin código) la mercancía es **no cubicable**: se guarda, no viaja a NEXO como posición y la ruta usa el vehículo elegido. Medidas parciales: `POSICION_INVALIDA` ("faltan medidas") |
 | `peso_kg` | número o null | Sí si lleva `codigo_mercancia` | **Por unidad**, 0 a 999.999,99 y **mayor que 0** cuando la mercancía viaja al cubicador (si no, `POSICION_INVALIDA` en `mercancias[i].peso_kg`) |
 | `id_tipo_mercancia` | — | No enviar | Obsoleto (uuid). Se traduce al código durante la transición |
 | `descripcion` | — | No enviar | Nombre anterior de `nombre_mercancia` |
@@ -1846,7 +1858,7 @@ Vuelve a pedir el costeo a NEXO, en el mismo folio o en una versión nueva.
 Campos admitidos en `datos_carga` (`DatosCargaWeb`, mismos límites de la captura): `tipologia`, `clase_viaje`, `clase_contenedor`,
 `exclusivo`, `consolidado`, `retorna_contenedor`, `ciudad_devolucion_contenedor`, `levante_contenedor_diferente`,
 `ciudad_levante_contenedor`, `valor_aprovisionamiento`, `horas_cargue`, `horas_descargue`, `peso_kg`, `valor_mercancia`,
-`peso_con_tara_kg` (HU-030.1), `posiciones` (reemplaza todas), `tipo_vehiculo` y `carroceria` (HU-032, #197: cambian el vehículo elegido; sin mercancías cubicables se validan y el vehículo es obligatorio salvo Contenedor, `detalle.motivo = VEHICULO_REQUERIDO`). Origen, destino, cliente y línea de negocio **no** se
+`peso_con_tara_kg` (HU-030.1), `posiciones` (reemplaza todas), `tipo_vehiculo` y `carroceria` (HU-032, #197: cambian el vehículo elegido; sin mercancías cubicables se validan, se guardan escritos como en NEXO y el vehículo es obligatorio salvo en las clases exentas, por defecto Contenedor, si la ruta cambia: `detalle.motivo = VEHICULO_REQUERIDO`). Origen, destino, cliente y línea de negocio **no** se
 cambian aquí (400). Un campo en `null` se borra.
 
 **Obsoleto (HU-028, #186):** para cambiar la carga usar `PUT /web/cotizaciones/{folio}/solicitud` (4.4.10). Mientras el frontend migra,
@@ -3269,7 +3281,7 @@ aparecer en `errores[]` del chat: ignorarlos (el asistente lo explica en `texto`
 | `VALOR_FUERA_DE_RANGO` | Número fuera de rango, o `moneda` inválida en la licitación | — |
 | `DEMASIADAS_POSICIONES` | Más de 200 mercancías | `mercancias` (antes `posiciones`) |
 | `POSICION_INVALIDA` | Mercancía inválida (medidas fuera de rango o parciales, código sin medidas, cantidad, o peso por unidad ≤ 0 con tipo de mercancía). Mensaje con la mercancía en base 1 (`Mercancía 2: ...`) | `mercancias[i].<subcampo>`, base 0 (D6; antes `posiciones[i]`) |
-| `VEHICULO_REQUERIDO` | HU-032 (#197): la ruta no se puede cubicar (solo peso, mercancías sin medidas o mixta), no es Contenedor y no trae vehículo | `tipo_vehiculo` |
+| `VEHICULO_REQUERIDO` | HU-032 (#197): la ruta no se puede cubicar (solo peso, mercancías sin medidas o mixta), su clase de viaje no es exenta (por defecto, solo Contenedor; `Captura:ClasesSinVehiculoObligatorio`) y no trae vehículo. En la edición y la re-solicitud, solo en una ruta nueva o que cambia | `tipo_vehiculo` |
 | `PESO_REQUERIDO` | Ni `peso_kg` > 0 ni mercancías con peso | `peso_kg` |
 | `PESO_INCONSISTENTE` | `peso_kg` difiere más del 1 % de `sum(cantidad × peso_kg)` | `peso_kg` |
 | `PESO_CON_TARA_MENOR_QUE_CARGA` | HU-030.1 (#184): el peso total con tara es menor que el peso de carga | `peso_con_tara_kg` |

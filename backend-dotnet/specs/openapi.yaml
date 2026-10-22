@@ -5763,8 +5763,9 @@ components:
       type: object
       description: |
         Posición de cubicaje (`clsCapturaPosicionRequest` de Nexo: `descripcion`, `cantidad`, `largoCm`, `anchoCm`,
-        `altoCm`, `pesoKg`), en centímetros y kilogramos. `largo_cm`, `ancho_cm` y `alto_cm` van de 0,1 a 999.999. `peso_kg` es
-        opcional y **por unidad**: el peso de la posición es `cantidad × peso_kg`.
+        `altoCm`, `pesoKg`), en centímetros y kilogramos. `largo_cm`, `ancho_cm` y `alto_cm` son opcionales: ausentes, `null` o `0`
+        es "sin medida"; con valor van de 0,1 a 999.999 y vienen las tres juntas. `peso_kg` es opcional y **por unidad**: el peso de la
+        posición es `cantidad × peso_kg`.
 
         **HU-032 (#197): las medidas son opcionales.** Una mercancía **sin ninguna medida y sin código** (solo `nombre_mercancia`,
         `cantidad` o `peso_kg`) es "no cubicable": se acepta y se guarda, **no viaja a Nexo como posición** (si una mercancía de la
@@ -5810,19 +5811,24 @@ components:
         largo_cm:
           type: number
           nullable: true
-          minimum: 0.1
+          minimum: 0
           maximum: 999999
-          description: HU-032 (#197). Opcional; si viene una medida, vienen las tres.
+          description: |
+            HU-032 (#197, B5). Opcional. Ausente, `null` o `0` = **sin medida**. Si viene con valor, es mayor que 0 (de 0,1 a 999.999;
+            menos es `POSICION_INVALIDA`) y vienen las tres medidas juntas (`largo_cm`, `ancho_cm`, `alto_cm`): una parcial es
+            `POSICION_INVALIDA` en la primera que falta.
         ancho_cm:
           type: number
           nullable: true
-          minimum: 0.1
+          minimum: 0
           maximum: 999999
+          description: HU-032 (#197, B5). Como `largo_cm`. Ausente, `null` o `0` = sin medida; con valor, de 0,1 a 999.999 y las tres juntas.
         alto_cm:
           type: number
           nullable: true
-          minimum: 0.1
+          minimum: 0
           maximum: 999999
+          description: HU-032 (#197, B5). Como `largo_cm`. Ausente, `null` o `0` = sin medida; con valor, de 0,1 a 999.999 y las tres juntas.
         peso_kg:
           type: number
           nullable: true

@@ -4,6 +4,9 @@
 # cae, va el elegido validado contra Nexo en ese momento. Una ruta sin mercancías cubicables (solo peso, mercancías sin medidas, o mixta) no
 # va al cubicador y usa el elegido, obligatorio salvo en Contenedor. Las mercancías sin medidas se guardan y no viajan a Nexo como
 # posiciones. Por HTTP contra la API real en memoria, SQL Server 2019 en Testcontainers, un Nexo falso y un cubicador falso.
+# Decisiones del 2026-10-21 (cubiertas en tests/Cotifly.Api.Tests/Web/clsVehiculoElegidoEndpointsTests.cs): las clases de viaje exentas son
+# configurables (Captura:ClasesSinVehiculoObligatorio, por defecto solo Contenedor) y la edición y la re-solicitud con datos_carga solo
+# exigen el vehículo en una ruta nueva o que cambia (un folio anterior sin vehículo reenviado tal cual es "sin cambios").
 # Pasos: tests/Cotifly.Aceptacion.Tests/Costeo/clsPasosVehiculoElegido.cs.
 @integracion
 Característica: Vehículo elegido o cubicador

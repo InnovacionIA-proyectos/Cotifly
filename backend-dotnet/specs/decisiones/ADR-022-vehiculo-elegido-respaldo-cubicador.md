@@ -64,14 +64,24 @@ Sin vehículo elegido, el respaldo es un camión sin vehículo (lo resuelve la M
 
 ### 3. Vehículo obligatorio sin cubicación: `VEHICULO_REQUERIDO`
 
-Una ruta que no se puede cubicar (`Cubicabilidad` distinta de `Cubicable`) y **no es de Contenedor** debe traer `tipo_vehiculo`: 400
+Una ruta que no se puede cubicar (`Cubicabilidad` distinta de `Cubicable`) y cuya clase de viaje **no es una de las exentas** (por
+defecto, solo Contenedor) debe traer `tipo_vehiculo`: 400
 `SOLICITUD_COSTEO_INVALIDA` con `detalle.errores[] = {ruta, campo: "tipo_vehiculo", codigo: "VEHICULO_REQUERIDO"}` (y `detalle.motivo =
 VEHICULO_REQUERIDO` si es el primer error), junto con los demás errores de la captura, como el resto de reglas por ruta. En la re-solicitud
 con `datos_carga` es el mismo código en `detalle.motivo` con `detalle.ruta = 0`.
 
 - **La carrocería es opcional**: NEXO autocostea Cupo con el tipo de vehículo (§4); exigirla sumaría fricción sin cambiar el costeo.
-- Solo **Contenedor** puede ir sin vehículo (decisión del líder). NEXO también costea Carga suelta y Extradimensionado sin vehículo
-  ("sin cambios", §4), pero se exige igual: es más seguro para el precio y el comercial siempre puede elegirlo.
+- Por defecto solo **Contenedor** puede ir sin vehículo (decisión del líder). NEXO también costea Carga Suelta y Extradimensionado sin
+  vehículo ("sin cambios", §4), pero se exige igual: es más seguro para el precio y el comercial siempre puede elegirlo.
+- **Las clases exentas son configurables** (decisión del usuario del 2026-10-21): `Captura:ClasesSinVehiculoObligatorio`
+  (`Captura__ClasesSinVehiculoObligatorio__0`, `__1`...), una lista con la escritura exacta de las clases de viaje de NEXO (`descripcion`
+  de `GET /api/catalogos/clases-viaje`, la misma de `clase_viaje`: `Contenedor`, `Cupo`, `Carga Suelta`, `Extradimensionado`; se
+  compara recortada y exacta, como el catálogo). Sin configurar es `[Contenedor]`; la lista configurada **reemplaza** a la de por defecto
+  (el enlazador de configuración agrega a una lista con valores, por eso el valor por defecto no vive en la lista). Se valida al arrancar
+  (`clsValidadorOpcionesCaptura`): un valor que no es una clase conocida (`Carga suelta`, `CargaSuelta`, vacío) impide arrancar.
+- Con el cubicador configurado, una mercancía con medidas y sin código ya trae su `CAMPO_REQUERIDO` en `codigo_mercancia`: la ruta no se
+  juzga por el vehículo hasta corregirla. La regla es una sola (`clsCapturaRutasService.FaltaVehiculo`) para la captura, la licitación, la
+  edición y la re-solicitud con `datos_carga` (B4).
 - No se exige mientras una mercancía de la ruta tenga su propio error (se corrige primero), ni con la bandera apagada.
 - Una ruta que va al cubicador no lo exige: si el cubicador no escoge, el camión va sin vehículo como antes.
 
@@ -115,13 +125,25 @@ ruta. La validación de peso de Cotifly (`PESO_REQUERIDO`/`PESO_INCONSISTENTE`, 
 
 - Aplican la misma regla y **conservan** el vehículo elegido (se quitó el `SinVehiculo` sin bandera). El `GET .../solicitud` lo devuelve
   en `rutas[].tipo_vehiculo`/`carroceria`.
+- **`VEHICULO_REQUERIDO` solo en rutas nuevas o que cambian** (B3, decisión del usuario del 2026-10-21). En la edición una ruta guardada
+  que **no cambia** no exige el vehículo: el mismo cuerpo del GET de un folio anterior a HU-032 (Cupo solo con peso, sin vehículo) es
+  `sin_cambios`, no 400. "Cambia" es exactamente lo que obliga a volver a planificar la ruta (`clsReglaRecubicacion.Exige` con el vehículo:
+  el peso, la clase de viaje o las mercancías, comparados **por valor** como `sin_cambios` —`9000.00` es `9000`—, y el vehículo elegido
+  si los camiones dependen de él; quitarlo es un cambio). Origen, destino, horas, valores, la tara (#184), los conexos y
+  `reincluir_rechazados` (#183) no cambian la carga y no lo exigen. Una ruta nueva siempre lo exige.
 - Cambiar el elegido **es un cambio** (se replanifica la ruta y viaja: reemplazo en NEXO o `-vN`, según el modo) solo si los camiones
   dependen de él (`clsLineaSolicitud.UsaVehiculoElegido`: la ruta no la asignó el cubicador). En una ruta `ASIGNADO` el elegido es solo el
   respaldo: cambiarlo no dispara nada (`sin_cambios` sigue siendo por valor).
 - Se compara contra el **elegido guardado**, no contra el camión: un cambio de la Mesa en NEXO (D2) no se confunde con uno del comercial.
 - Se respetan los rechazados no reenviados (#183), la tara (#184), el alias (#194) y "la Mesa manda" (D2) en los camiones conservados.
 - Re-solicitud: `datos_carga.tipo_vehiculo`/`carroceria` cambian el elegido; `VEHICULO_REQUERIDO` y la validación previa aplican solo en ese
-  camino. La `-vN` sin `datos_carga` copia las rutas sin exigir el vehículo (rutas anteriores a la regla).
+  camino y, como en la edición, **solo si la ruta cambia** (unos `datos_carga` con los mismos valores no lo exigen). La `-vN` sin
+  `datos_carga` copia las rutas sin exigir el vehículo (rutas anteriores a la regla). La validación previa deja el vehículo, la carrocería
+  y la clase de contenedor **escritos como en NEXO** (`Canonica`, con el alias de #194), igual que la captura (B4).
+- En una ruta `ASIGNADO`, cambiar **solo** el vehículo elegido es `sin_cambios` y no se guarda (B2): el frontend lo deshabilita o lo
+  explica (contrato y guía del frontend).
+- **Huella de idempotencia (B1, deuda):** se calcula sobre el registro de dominio de la entrada, que esta HU amplió; un reintento con la
+  misma `Idempotency-Key` que cruza el despliegue puede dar 409 durante 24 h (riesgo documentado en `DEPLOY.md`).
 
 ### 9. Licitación
 

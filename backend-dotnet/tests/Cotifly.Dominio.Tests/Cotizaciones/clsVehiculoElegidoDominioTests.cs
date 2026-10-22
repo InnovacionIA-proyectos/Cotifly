@@ -76,10 +76,21 @@ public sealed class clsVehiculoElegidoDominioTests
     [Fact]
     public void SinMercanciasCubicablesLaRutaExigeVehiculoSalvoEnContenedor()
     {
-        Linea("A", "B", 1_000m, null).ExigeVehiculoElegido.Should().BeTrue();
-        Linea("A", "B", 1_000m, null, SinMedidas(1_000m)).ExigeVehiculoElegido.Should().BeTrue();
-        (Linea("A", "B", 1_000m, null) with { ClaseViaje = "Contenedor" }).ExigeVehiculoElegido.Should().BeFalse();
-        Linea("A", "B", 1_000m, null, Cubicable()).ExigeVehiculoElegido.Should().BeFalse();
+        Linea("A", "B", 1_000m, null).ExigeVehiculoElegido().Should().BeTrue();
+        Linea("A", "B", 1_000m, null, SinMedidas(1_000m)).ExigeVehiculoElegido().Should().BeTrue();
+        (Linea("A", "B", 1_000m, null) with { ClaseViaje = "Contenedor" }).ExigeVehiculoElegido().Should().BeFalse();
+        Linea("A", "B", 1_000m, null, Cubicable()).ExigeVehiculoElegido().Should().BeFalse();
+    }
+
+    [Fact]
+    public void LasClasesSinVehiculoObligatorioSeComparanRecortadasYExactas()
+    {
+        var cargaSuelta = Linea("A", "B", 1_000m, null) with { ClaseViaje = " Carga Suelta " };
+
+        cargaSuelta.ExigeVehiculoElegido().Should().BeTrue("por defecto solo Contenedor está exento");
+        cargaSuelta.ExigeVehiculoElegido(["Contenedor", "Carga Suelta"]).Should().BeFalse();
+        (cargaSuelta with { ClaseViaje = "carga suelta" }).ExigeVehiculoElegido(["Carga Suelta"]).Should().BeTrue("se compara como el catálogo de Nexo");
+        (Linea("A", "B", 1_000m, null) with { ClaseViaje = "Contenedor" }).ExigeVehiculoElegido(["Carga Suelta"]).Should().BeTrue();
     }
 
     [Fact]

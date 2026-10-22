@@ -7,6 +7,7 @@ using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Aplicacion.Cotizaciones.DTOs;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Cotizaciones.Services;
+using Cotifly.Aplicacion.Cubicacion.Interfaces;
 using Cotifly.Aplicacion.Licitaciones.Services;
 using Cotifly.Aplicacion.Margen.Repositories;
 using Cotifly.Dominio.Auditoria;
@@ -55,6 +56,14 @@ public sealed class clsReSolicitudCosteoServiceTests
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(_cotizacion.Folio, _ana, Arg.Any<CancellationToken>()).Returns(_cotizacion);
         _cotizaciones.When(r => r.Agregar(Arg.Any<clsCotizacionSolicitud>())).Do(ci => _agregada = ci.Arg<clsCotizacionSolicitud>());
         _politicas.ObtenerPorIdAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(_politica);
+        // B4 (HU-032): el validador devuelve la línea escrita como en Nexo (aquí, en mayúsculas, como Canonica).
+        _catalogos.ValidarLineasAsync(Arg.Any<Guid>(), Arg.Any<IReadOnlyList<clsLineaSolicitudCosteo>>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                var lineas = ci.Arg<IReadOnlyList<clsLineaSolicitudCosteo>>();
+                return new clsValidacionCatalogoLineas([.. lineas.Select(_ => (IReadOnlyList<clsErrorCampo>)[])], null,
+                    [.. lineas.Select(l => l with { TipoVehiculo = l.TipoVehiculo?.Trim().ToUpperInvariant(), Carroceria = l.Carroceria?.Trim().ToUpperInvariant() })]);
+            });
         _monedas.FijarAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(ci => new clsMonedaFijada(ci.Arg<string?>() ?? "COP", ci.Arg<string?>() == "USD" ? 4_012.35m : 0m));
         _registro.When(r => r.Registrar(Arg.Any<clsEventoHerramienta>())).Do(ci =>
@@ -727,6 +736,45 @@ public sealed class clsReSolicitudCosteoServiceTests
         await _envio.DidNotReceiveWithAnyArgs().EnviarGuardadaAsync(default!, default, default, default);
     }
 
+    // --- HU-032 (#197): VEHICULO_REQUERIDO alineado con la captura (B3 y B4) ---
+
+    /// <summary>Datos de carga que pasan la ruta a Cupo, quitan el vehículo y dejan una mercancía con medidas y sin código.</summary>
+    private static clsCambiosCarga SinVehiculoConMercanciaSinCodigo() => new()
+    {
+        Presentes = new HashSet<string>
+        {
+            clsCambiosCarga.CampoTipoVehiculo, clsCambiosCarga.CampoPosiciones, clsCambiosCarga.CampoPesoKg, clsCambiosCarga.CampoClaseViaje,
+            clsCambiosCarga.CampoClaseContenedor, clsCambiosCarga.CampoTipologia,
+        },
+        TipoVehiculo = null,
+        ClaseViaje = "Cupo",
+        ClaseContenedor = null,
+        Tipologia = "CargaSeca",
+        PesoKg = 1_000m,
+        Posiciones = [new clsPosicionCarga("Caja", 1, 100m, 100m, 100m, 1_000m)],
+    };
+
+    [Fact]
+    public async Task SinVehiculoYConUnaMercanciaSinCodigoLosDatosDeCargaSonVehiculoRequeridoSinCubicador()
+    {
+        var resultado = await Servicio().ReSolicitarAsync(_ana, _cotizacion.Folio, Entrada() with { DatosCarga = SinVehiculoConMercanciaSinCodigo() }, Version, null, Ct);
+
+        resultado.Error.Detalle.Should().Be(clsCodigosLineaSolicitud.VehiculoRequerido);
+        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
+    }
+
+    [Fact]
+    public async Task ConElCubicadorConfiguradoUnaMercanciaConMedidasYSinCodigoNoSeJuzgaComoVehiculoRequerido()
+    {
+        // Como la captura: con el cubicador esa mercancía ya trae su error de código, así que la ruta no se juzga por el vehículo.
+        var cubicador = Substitute.For<IClsCubicador>();
+        cubicador.EstaConfigurado.Returns(true);
+
+        var resultado = await Servicio(cubicador).ReSolicitarAsync(_ana, _cotizacion.Folio, Entrada() with { DatosCarga = SinVehiculoConMercanciaSinCodigo() }, Version, null, Ct);
+
+        (resultado.EsFallo && resultado.Error.Detalle == clsCodigosLineaSolicitud.VehiculoRequerido).Should().BeFalse();
+    }
+
     [Fact]
     public async Task UnCodigoFueraDelCatalogoEnLosCambiosDeCargaEs400SinReservar()
     {
@@ -925,9 +973,10 @@ public sealed class clsReSolicitudCosteoServiceTests
         clsReSolicitudCosteoService.ConexosConservados(cotizacion).Should().BeEmpty();
     }
 
-    private clsReSolicitudCosteoService Servicio() =>
+    private clsReSolicitudCosteoService Servicio(IClsCubicador? cubicador = null) =>
         new(_cotizaciones, _politicas, _folios, _envio, _catalogos, _filas, _monedas, _mis, _idempotencia, _unidad, _registro, _auditoria,
-            _planificador, new clsResolutorConexosCatalogo(_costos, _catalogoNexo), NullLogger<clsReSolicitudCosteoService>.Instance);
+            _planificador, new clsResolutorConexosCatalogo(_costos, _catalogoNexo), NullLogger<clsReSolicitudCosteoService>.Instance,
+            cubicador: cubicador);
 
     /// <summary>Validador de filas de licitación que deja pasar las líneas tal cual (cada prueba lo cambia si lo necesita).</summary>
     private static IClsValidadorFilasLicitacion FilasQuePasan()

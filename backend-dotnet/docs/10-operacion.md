@@ -283,6 +283,7 @@ ambiente").
 | `Nexo__EnviarDatosCubicador` | `true` | `idRecomendacionVehiculo` por línea (HU-023.4, #176). Interruptor de emergencia |
 | `Nexo__EnviarCodigosCubicador` | `siempre` | Códigos de vehículo y carrocería del cubicador en la línea (#297), resueltos antes con el catálogo y el diccionario de alias de Nexo (#194). `siempre` (= `true`, por defecto desde #194, decisión del 2026-10-20): todos; los que nadie conoce, a la bandeja de normalización de Nexo (NEXO #322); `solo_conocidos` (el valor por defecto de #188 a #194): solo los resueltos; `nunca`: ninguno (emergencia). `false` = `solo_conocidos`; otro valor no arranca |
 | `Captura__AceptarVehiculoCliente` | `true` | Bandera de respaldo HU-021-FE.2 (vehículo del frontend solo en el camión del respaldo). Encendida por defecto desde #188 |
+| `Captura__ClasesSinVehiculoObligatorio__0`, `__1`... | `Contenedor` | HU-032 (#197): clases de viaje que no exigen el vehículo elegido en una ruta que no se puede cubicar. Escritura exacta de Nexo (`Contenedor`, `Cupo`, `Carga Suelta`, `Extradimensionado`); la lista reemplaza a la de por defecto; un valor desconocido no arranca. Si el comercial reporta `VEHICULO_REQUERIDO` en una clase que negocio exime, revisar esta lista |
 | `Pdf__PermitirCotizacionChat` | `false` | Cotización legada del chat: apagada responde `COTIZACION_CHAT_RETIRADA` |
 
 ### Identidad compartida con Nexo (#172)

@@ -10,6 +10,7 @@ using Cotifly.Aplicacion.Cotizaciones.DTOs;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Cotizaciones.Services;
 using Cotifly.Aplicacion.Licitaciones.DTOs;
+using Cotifly.Aplicacion.Licitaciones.Services;
 using Cotifly.Aplicacion.Margen.Repositories;
 using Cotifly.Aplicacion.Margen.Services;
 using Cotifly.Dominio.Auditoria;
@@ -420,6 +421,7 @@ public sealed class clsEdicionSolicitudService(
             encabezado, sinVehiculo, entrada.Moneda);
         var previos = clsEnvioCosteoService.ErroresFormulario(captura, sinVehiculo).Concat(errores).ToList();
         var validadas = await capturaRutas.ValidarAsync(usuarioId, sinVehiculo, previos, cancellationToken);
+        validadas = SinVehiculoRequeridoEnRutasSinCambios(validadas, entradas, guardadas);
         if (validadas.Errores.Count > 0)
         {
             return clsEnvioCosteoService.ErrorCaptura(validadas.Errores, validadas.NoDisponible?.Codigo, sinVehiculo.Count);
@@ -521,6 +523,26 @@ public sealed class clsEdicionSolicitudService(
             originales[i]?.Id, r, Replanificada: replanificadas.Contains(i + 1), ReincluirRechazados: entradas[i]!.ReincluirRechazados)).ToList();
         var politica = lineas[0] is { } primera ? politicasRuta.GetValueOrDefault(primera) : null;
         return new clsEdicionPreparada(encabezado, rutas, false, fijada, politica, replanificadas);
+    }
+
+    /// <summary>
+    /// HU-032 (#197, B3; decisión del usuario del 2026-10-21): en la edición <c>VEHICULO_REQUERIDO</c> solo aplica a una ruta nueva o que
+    /// CAMBIA. Una ruta guardada que no cambia (p. ej. una de Cupo anterior a HU-032 que solo trae el peso) no exige el vehículo: el mismo
+    /// cuerpo del GET da <c>sin_cambios</c>. "Cambia" es lo mismo que obliga a volver a planificar sus camiones (<see cref="Replanifica"/>:
+    /// el peso, la clase de viaje o las mercancías por valor, como <c>sin_cambios</c>, y el vehículo elegido si sus camiones dependen de
+    /// él). Lo demás (origen, destino, horas, valores, tara, conexos, <c>reincluir_rechazados</c>) no toca el vehículo y no lo exige.
+    /// </summary>
+    private clsFilasLicitacionValidadas SinVehiculoRequeridoEnRutasSinCambios(
+        clsFilasLicitacionValidadas validadas, IReadOnlyList<clsRutaEdicionEntrada?> entradas, IReadOnlyDictionary<Guid, clsLineaSolicitud> guardadas)
+    {
+        bool Exento(clsErrorFilaLicitacion e) =>
+            e.Codigo == clsCodigosLineaSolicitud.VehiculoRequerido
+            && e.Indice is { } i && i < entradas.Count && i < validadas.Lineas.Count
+            && entradas[i]?.LineaSolicitudId is { } id && guardadas.TryGetValue(id, out var guardada)
+            && validadas.Lineas[i] is { Linea: { } nueva }
+            && !Replanifica(guardada, nueva);
+
+        return validadas.Errores.Any(Exento) ? validadas with { Errores = [.. validadas.Errores.Where(e => !Exento(e))] } : validadas;
     }
 
     /// <summary>
