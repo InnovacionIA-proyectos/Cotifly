@@ -140,6 +140,31 @@ public sealed class clsResultadoDiferidoNexoTests
         _cotizacion.ErrorSincronizacionResultado.Should().Contain("tras 2 intentos");
     }
 
+    /// <summary>
+    /// Auditoría de la integración (#199): sin el id de la cotización de Nexo, la sincronización la LEE (DEF-C-1, nunca el POST de
+    /// "crear o recuperar"). Si Nexo todavía no la tiene (<c>COTIZACION_NO_ENTREGADA</c>), sigue pendiente y no cuenta un fallo: no
+    /// agota los intentos ni la deja no_sincronizable.
+    /// </summary>
+    [Fact]
+    public async Task SinIdDeNexoYSinCotizacionEnNexoSiguePendienteSinContarFallo()
+    {
+        _opciones.MaximoFallosSincronizacionResultado = 1;
+        _cotizacion.RegistrarResultadoPendienteNexo(true, null, null, _reloj.AhoraUtc);
+        _cotizacion.Vehiculos[0].RegistrarEstado(EstadoCosteo.Entregada);
+        _cotizacion.RegistrarConsultaCosteo(EstadoCosteo.Entregada, null, null);
+        _cotizacion.CotizacionNexoId.Should().BeNull();
+        _nexo.LeerCotizacionAsync(_ana, "SOL-1", null, Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio(clsCodigosError.CotizacionNoEntregada, "Nexo todavía no tiene la cotización de la solicitud SOL-1."));
+
+        var cambio = await Sincronizacion().SincronizarAsync(_cotizacion, _reloj.AhoraUtc, Ct);
+
+        cambio.Should().BeFalse();
+        _cotizacion.EstadoSincronizacionResultado.Should().Be("pendiente");
+        _cotizacion.IntentosSincronizacionResultado.Should().Be(0);
+        _cotizacion.CosteoSiguienteConsultaAt.Should().Be(_reloj.AhoraUtc + _opciones.IntervaloReintentoConexos);
+        await _nexo.DidNotReceive().MarcarResultadoAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<clsResultadoNexo>(), Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public async Task SiNexoDescartaLaSolicitudElResultadoQuedaSoloEnCotifly()
     {

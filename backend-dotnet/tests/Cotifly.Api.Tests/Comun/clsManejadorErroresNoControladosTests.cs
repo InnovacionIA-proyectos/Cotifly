@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -55,6 +56,33 @@ public sealed class clsManejadorErroresNoControladosTests
         entrada.Excepcion!.Message.Should().Contain(Secreto, "el detalle técnico queda en el log");
         registro.Entradas.Should().NotContain(e => e.Categoria.StartsWith("Microsoft.AspNetCore.Diagnostics", StringComparison.Ordinal) && e.Nivel >= LogLevel.Error,
             "la excepción se registra una sola vez, con el id de correlación");
+    }
+
+    /// <summary>
+    /// Auditoría de la integración (#199): el manejador va antes de CORS en la tubería y el middleware de excepciones limpia los
+    /// encabezados; el 500 de un origen permitido igual debe llevar <c>Access-Control-Allow-Origin</c>, o el navegador lo convierte en un
+    /// error de red opaco y la consola no puede leer el <c>id_correlacion</c>. Uno de otro origen no lo lleva.
+    /// </summary>
+    [Fact]
+    public async Task El500DeUnOrigenPermitidoLlevaLosEncabezadosCors()
+    {
+        const string Origen = "https://clientepro.boterosoto.com.co";
+        var registro = new clsRegistroLogs();
+        using var factory = Crear(registro, new() { ["Cors:OrigenesPermitidos:0"] = Origen });
+        using var cliente = factory.CreateClient();
+
+        using var permitida = new HttpRequestMessage(HttpMethod.Get, new Uri("/pruebas-error/falla", UriKind.Relative));
+        permitida.Headers.Add("Origin", Origen);
+        using var respuesta = await cliente.SendAsync(permitida, Ct);
+        using var ajena = new HttpRequestMessage(HttpMethod.Get, new Uri("/pruebas-error/falla", UriKind.Relative));
+        ajena.Headers.Add("Origin", "https://otro-sitio.com");
+        using var respuestaAjena = await cliente.SendAsync(ajena, Ct);
+
+        respuesta.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        respuesta.Headers.GetValues("Access-Control-Allow-Origin").Should().Equal(Origen);
+        respuesta.Headers.GetValues("X-Content-Type-Options").Should().Equal("nosniff");
+        respuestaAjena.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        respuestaAjena.Headers.Contains("Access-Control-Allow-Origin").Should().BeFalse();
     }
 
     [Fact]
@@ -124,10 +152,11 @@ public sealed class clsManejadorErroresNoControladosTests
         return contexto;
     }
 
-    private static WebApplicationFactory<Program> Crear(clsRegistroLogs registro) =>
+    private static WebApplicationFactory<Program> Crear(clsRegistroLogs registro, Dictionary<string, string?>? valores = null) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
         {
             b.UseEnvironment(clsCotiflyApiFactory.EntornoPruebas);
+            b.ConfigureAppConfiguration((_, configuracion) => configuracion.AddInMemoryCollection(valores ?? []));
             b.ConfigureLogging(l => l.AddProvider(registro));
             b.ConfigureServices(s => s.AddControllers().AddApplicationPart(typeof(clsErrorPruebaController).Assembly));
         });

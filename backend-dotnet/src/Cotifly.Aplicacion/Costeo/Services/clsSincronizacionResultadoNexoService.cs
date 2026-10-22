@@ -63,6 +63,14 @@ public sealed class clsSincronizacionResultadoNexoService(
         {
             // DEF-C-1: se LEE la cotización de Nexo (sin "crear o recuperar").
             var recuperada = await nexo.LeerCotizacionAsync(usuarioId, solicitudId, cotizacionNexoId: null, CancellationToken.None);
+            if (recuperada.EsFallo && recuperada.Error.Codigo == clsCodigosError.CotizacionNoEntregada)
+            {
+                // Auditoría de la integración (#199): con DEF-C-1 la lectura ya no crea la cotización en Nexo; si Nexo todavía no la tiene
+                // (204 de por-solicitud) es la misma carrera con la Mesa que el COTIZACION_NO_ENTREGADA de abajo: sigue pendiente, sin
+                // contar un fallo (antes sumaba intentos y podía dejar el resultado no_sincronizable).
+                return await SinEntregaAsync(cotizacion, ahora, ganada, recuperada.Error, cronometro);
+            }
+
             if (recuperada.EsFallo)
             {
                 return await FalloAsync(cotizacion, ahora, recuperada.Error, cronometro);
@@ -108,13 +116,20 @@ public sealed class clsSincronizacionResultadoNexoService(
 
         if (marcada.Error.Codigo == clsCodigosError.CotizacionNoEntregada)
         {
-            // Carrera con la Mesa (la deshizo o el polling vio una entrega que Nexo aún no confirma): sigue pendiente, sin contar fallo.
-            cotizacion.ProgramarRelecturaCosteo(ahora + opciones.Value.IntervaloReintentoConexos);
-            await AuditarAsync(cotizacion, ganada, exito: false, new { error = new { codigo = marcada.Error.Codigo, mensaje = marcada.Error.Mensaje } }, cronometro);
-            return false;
+            return await SinEntregaAsync(cotizacion, ahora, ganada, marcada.Error, cronometro);
         }
 
         return await FalloAsync(cotizacion, ahora, marcada.Error, cronometro);
+    }
+
+    /// <summary>
+    /// Carrera con la Mesa (la deshizo o el polling vio una entrega que Nexo aún no confirma): sigue pendiente, sin contar fallo.
+    /// </summary>
+    private async Task<bool> SinEntregaAsync(clsCotizacionSolicitud cotizacion, DateTimeOffset ahora, bool ganada, clsErrorDominio error, Stopwatch cronometro)
+    {
+        cotizacion.ProgramarRelecturaCosteo(ahora + opciones.Value.IntervaloReintentoConexos);
+        await AuditarAsync(cotizacion, ganada, exito: false, new { error = new { codigo = error.Codigo, mensaje = error.Mensaje } }, cronometro);
+        return false;
     }
 
     public bool Abandonar(clsCotizacionSolicitud cotizacion, string motivo)
