@@ -314,7 +314,7 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
         descarga.StatusCode.Should().Be(HttpStatusCode.OK);
         var texto = clsLectorPdf.Leer(await descarga.Content.ReadAsByteArrayAsync(TestContext.Current.CancellationToken)).Texto;
 
-        texto.Should().Contain("RESUMEN DEL PLIEGO").And.Contain("TOTAL DEL PLIEGO (3 RUTAS, SIN SERVICIOS CONEXOS)").And.Contain("$4.529.412");
+        texto.Should().Contain("RESUMEN DEL PLIEGO").And.Contain("VALOR TOTAL DE LA COTIZACIÓN (3 RUTAS)").And.Contain("$4.529.412");
         texto.Should().ContainEquivalentOf("Cartagena").And.Contain("$1.176.471").And.Contain("$2.352.941").And.Contain("$1.000.000");
         texto.Should().NotContain("$850.000").And.NotContain("$2.000.000", "los fletes de Nexo nunca van al PDF");
     }

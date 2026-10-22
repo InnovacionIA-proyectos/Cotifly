@@ -69,7 +69,10 @@ public sealed class clsPdfCosteoMonedaTests
         var resultado = await Servicio().GenerarPdfAsync(_ana, cotizacion.Folio, Version, Ct);
 
         resultado.EsExitoso.Should().BeTrue(resultado.EsFallo ? resultado.Error.Mensaje : string.Empty);
-        _documento!.Secciones[0].Filas[0].Tarifa.Should().Be("US$750,00", "la tarifa es el precio del transporte; el conexo va aparte");
+        _documento!.Secciones[0].Filas[0].Tarifa.Should().Be("US$775,00", "HU-033 (#199): la tarifa es el precio final de la ruta, con el conexo incluido");
+        _documento.Incluye.Should().Contain(i => i.StartsWith("Cargue", StringComparison.Ordinal) && !i.Contains("US$", StringComparison.Ordinal),
+            "el conexo se lista como incluido, sin precio");
+        _documento.TotalGeneral!.Valor.Should().Be("US$775,00 USD");
         _documento.NotaMoneda.Should().Be(clsTextosEstandar.NotaTrmMinima(4000m));
         _documento.NotaMoneda.Should().Contain("TRM mínima de $4.000,00");
     }
@@ -77,21 +80,23 @@ public sealed class clsPdfCosteoMonedaTests
     // HU-021: el precio ya no se guarda aparte del costo (la ruta lo calcula con su margen), así que la cotización no puede traer un
     // precio incoherente; la guarda de coherencia del PDF se prueba con el payload alterado y la trazabilidad que arma el servicio.
     [Fact]
-    public void UnPrecioEnDolaresQueNoCorrespondeAlCostoYLaTrmNoSeImprime()
+    public void UnPrecioEnDolaresQueNoEsElPrecioFinalDeLaRutaNoSeImprime()
     {
+        // HU-033 (#199): la tarifa impresa es el precio final de la ruta (precioFinalLinea, con el conexo): 750,00 + 25,00 = 775,00.
         var cotizacion = EnDolares();
         var ruta = cotizacion.PrimeraRuta!;
         var payload = clsCosteoCotizacionService.Payload(cotizacion, "Importacion", "USD");
         payload.Tarifa!.Filas![0].Tarifa = 760m;
         var traza = new clsTrazabilidadCotizacion(
-            ruta.CostoTransporte, ruta.MargenPoliticaSugerido, ruta.MargenAplicado, null, ruta.MetodoCalculo, 760m, cotizacion.NitCliente, null, "USD",
+            null, ruta.MargenPoliticaSugerido, null, null, ruta.MetodoCalculo, ruta.PrecioFinalLinea, cotizacion.NitCliente, null, "USD",
             cotizacion.TrmAplicada);
 
         var error = clsGenerarPdfService.ValidarCoherencia(payload, traza, "margen", "USD");
 
-        error!.Codigo.Should().Be(clsCodigosError.PdfPayloadInvalido, "2.550.000 / 0,85 / 4.000 = 750,00, no 760");
-        clsGenerarPdfService.ValidarCoherencia(clsCosteoCotizacionService.Payload(cotizacion, "Importacion", "USD"), traza with { PrecioFinal = 750m }, "margen", "USD")
-            .Should().BeNull("el payload que arma el servicio es coherente con el costo y la TRM");
+        error!.Codigo.Should().Be(clsCodigosError.PdfPayloadInvalido, "el precio final de la ruta es 775,00, no 760");
+        ruta.PrecioFinalLinea.Should().Be(775m);
+        clsGenerarPdfService.ValidarCoherencia(clsCosteoCotizacionService.Payload(cotizacion, "Importacion", "USD"), traza, "margen", "USD")
+            .Should().BeNull("el payload que arma el servicio imprime el precio final de la ruta");
     }
 
     // #92, #95: con el turno de render agotado no se guarda el PDF ni cambia la versión.

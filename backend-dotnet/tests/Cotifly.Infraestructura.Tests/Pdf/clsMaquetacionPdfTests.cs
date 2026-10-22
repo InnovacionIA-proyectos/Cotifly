@@ -66,8 +66,11 @@ public sealed class clsMaquetacionPdfTests
             ("asunto", "Asunto:"),
             ("condiciones", "Facturación y forma"),
             ("resumen", "RESUMEN DEL PLIEGO"),
-            ("total", "TOTAL DEL PLIEGO"),
+            // HU-033 (#199): el total del resumen es el total general (con los conexos) y al final de la tarifa va el bloque del total
+            // con su nota y la leyenda de impuestos; los conexos se listan sin precio ("Cargue y descargue (ruta 1)").
+            ("total", "VALOR TOTAL DE LA"),
             ("tablaOrigen", "PLIEGO DE TRANSPORTE"),
+            ("totalGeneralNota", "El valor de cada ruta"),
             ("conexos", "Cargue y"),
             ("firma", "Cordialmente,"),
             ("firmante", "Ana Pérez"),

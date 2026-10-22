@@ -15,9 +15,10 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Infraestructura.Tests.Pdf;
 
 /// <summary>
-/// PDF de pliego (HU-011.5, ADR-017 §6) renderizado con PDFsharp-MigraDoc y leído con PdfPig: resumen con todas las rutas y el
-/// total sin conexos, una sección por ruta (HU-021.9; o solo el resumen en pliegos grandes), los servicios conexos aparte, nunca costos,
-/// el encabezado del resumen en cada página y pliegos de hasta 1000 rutas. En USD, la nota de TRM mínima (ADR-014 §5).
+/// PDF de pliego (HU-011.5, ADR-017 §6) renderizado con PDFsharp-MigraDoc y leído con PdfPig: resumen con todas las rutas y el total
+/// general, una sección por ruta (HU-021.9; o solo el resumen en pliegos grandes), nunca costos, el encabezado del resumen en cada página y
+/// pliegos de hasta 1000 rutas. En USD, la nota de TRM mínima (ADR-014 §5). HU-033 (#199, decisión 5): cada ruta imprime UN valor final
+/// (transporte y conexos incluidos), los conexos se listan como incluidos sin precio y al final va el total general (= precioFinal).
 /// </summary>
 public sealed class clsPdfPliegoTests
 {
@@ -70,15 +71,17 @@ public sealed class clsPdfPliegoTests
         clsCosteoCotizacionService.ValidarTotal(cotizacion, "COP").Should().BeNull();
         var payload = clsCosteoCotizacionService.PayloadPliego(cotizacion, "Nacional", "COP");
         clsValidadorCotizacionPdfPayload.Validar(payload, clsCosteoCotizacionService.MaximoLineasPliego, clsCosteoCotizacionService.MaximoLineasPliego).Should().BeNull();
-        var documento = clsConstructorDocumentoCotizacion.Construir(payload, cotizacion.Folio, _firma, new DateOnly(2026, 10, 1), "COP", 0m).Valor;
+        var documento = clsConstructorDocumentoCotizacion.Construir(payload, cotizacion.Folio, _firma, new DateOnly(2026, 10, 1), "COP", 0m).Valor
+            with { TotalGeneral = clsCosteoCotizacionService.TotalGeneral(cotizacion, "COP") };
         var pdf = _generador.Generar(clsCosteoCotizacionService.DocumentoPliego(documento, cotizacion, "COP"));
         pdf.Paginas.Should().BeGreaterThanOrEqualTo(2, "carta y condiciones en la hoja 1; resumen y tarifas desde la hoja 2");
         return (clsLectorPdf.Leer(pdf.Contenido), pdf.Paginas);
     }
 
     /// <summary>
-    /// HU-021 (corrección del núcleo): el Excel de la licitación y el PDF del pliego cuadran. Las dos tarifas son el transporte de la ruta
-    /// (sin conexos), el total es su suma (sin conexos) y los conexos van aparte una sola vez: tarifas + conexos = precio final.
+    /// HU-021 (corrección del núcleo) y HU-033 (#199): el Excel de la licitación y el PDF del pliego cuadran. El Excel conserva el transporte de
+    /// la ruta y los conexos aparte; el PDF imprime el valor final de cada ruta (transporte + sus conexos) y su total es el precio final. Los
+    /// conexos se cobran una sola vez: total del Excel + conexos = total del PDF = precioFinal.
     /// </summary>
     [Fact]
     public void ElExcelYElPdfDelPliegoCuadranYNoCobranDosVecesLosConexos()
@@ -97,12 +100,17 @@ public sealed class clsPdfPliegoTests
             .CellRight().GetValue<decimal>();
         var conexos = datos.ServiciosConexos.Sum(c => c.Precio);
 
-        tarifasExcel.Should().BeEquivalentTo(payload.Secciones!.SelectMany(s => s.Filas!).Select(f => f.Tarifa!.Value), "la misma tarifa en el Excel y el PDF");
-        totalExcel.Should().Be(tarifasExcel.Sum(), "el total es sin servicios conexos");
+        var tarifasPdf = payload.Secciones!.SelectMany(s => s.Filas!).Select(f => f.Tarifa!.Value).ToList();
+        var lineas = cotizacion.RutasOrdenadas;
+        tarifasPdf.Should().Equal(lineas.Select(l => l.PrecioFinalLinea!.Value), "el PDF imprime el valor final de cada ruta");
+        tarifasPdf.Select((t, i) => t - tarifasExcel[i]).Should().Equal(
+            lineas.Select(l => clsCosteoCotizacionService.ConexosConPrecio(cotizacion, l).Sum(c => c.Precio)), "la diferencia por ruta son sus conexos");
+        totalExcel.Should().Be(tarifasExcel.Sum(), "el total del Excel es sin servicios conexos");
         conexos.Should().BeGreaterThan(0m);
         (totalExcel + conexos).Should().Be(cotizacion.PrecioFinal, "el conexo se cobra una sola vez");
-        payload.ServiciosConexos!.Sum(c => c.Precio).Should().Be(conexos);
-        Generar(cotizacion).Lector.Texto.Should().Contain(clsFormatoMoneda.Formatear(totalExcel, "COP"), "el total del resumen del PDF es el del Excel");
+        tarifasPdf.Sum().Should().Be(cotizacion.PrecioFinal!.Value, "el total del PDF es la suma de los valores de las rutas");
+        payload.ServiciosConexos!.Should().OnlyContain(c => c.Precio == null, "los conexos se listan sin precio");
+        Generar(cotizacion).Lector.Texto.Should().Contain(clsFormatoMoneda.Formatear(cotizacion.PrecioFinal, "COP"), "el total general del PDF es el precio final");
     }
 
     /// <summary>
@@ -125,7 +133,7 @@ public sealed class clsPdfPliegoTests
     }
 
     [Fact]
-    public void UnPliegoDeDoceRutasTraeElResumenConTodasLasRutasYElTotalSinConexos()
+    public void UnPliegoDeDoceRutasTraeElResumenConTodasLasRutasYElTotalGeneral()
     {
         var (cotizacion, lineas) = Pliego(12);
 
@@ -134,11 +142,12 @@ public sealed class clsPdfPliegoTests
 
         paginas.Should().BeGreaterThan(2, "un pliego de 12 rutas ocupa más de una hoja de tarifas");
         texto.Should().Contain("RESUMEN DEL PLIEGO", "HU-021: la referencia del pliego se eliminó (decisión 1)");
-        texto.Should().Contain("TOTAL DEL PLIEGO (12 RUTAS, SIN SERVICIOS CONEXOS)");
-        texto.Should().Contain(clsFormatoMoneda.Formatear(lineas.Sum(l => clsCosteoCotizacionService.PrecioTransporte(cotizacion, l)!.Value), "COP"), "el total del pliego es sin conexos");
+        texto.Should().Contain("VALOR TOTAL DE LA COTIZACIÓN (12 RUTAS)").And.NotContain("SIN SERVICIOS CONEXOS");
+        texto.Should().Contain(clsFormatoMoneda.Formatear(cotizacion.PrecioFinal, "COP"), "el total es el precio final, con los conexos");
+        lineas.Sum(l => l.PrecioFinalLinea!.Value).Should().Be(cotizacion.PrecioFinal!.Value);
         foreach (var linea in lineas)
         {
-            texto.Should().Contain(clsFormatoMoneda.Formatear(clsCosteoCotizacionService.PrecioTransporte(cotizacion, linea)!.Value, "COP"), $"la ruta {linea.Orden} va con su precio");
+            texto.Should().Contain(clsFormatoMoneda.Formatear(linea.PrecioFinalLinea, "COP"), $"la ruta {linea.Orden} va con su valor final");
             texto.Should().Contain(linea.DestinoNombre);
         }
 
@@ -146,13 +155,14 @@ public sealed class clsPdfPliegoTests
     }
 
     [Fact]
-    public void LosServiciosConexosDeLasRutasAparecenConSuPrecioYNuncaLosCostosDeNexo()
+    public void LosServiciosConexosSeListanSinPrecioYNuncaLosCostosDeNexo()
     {
         var (cotizacion, lineas) = Pliego(3);
 
         var texto = Generar(cotizacion).Lector.Texto;
 
-        texto.Should().Contain("Cargue y descargue").And.Contain("$200.008");
+        texto.Should().Contain("Cargue y descargue (ruta 1)", "HU-033: el conexo se lista como incluido, con su ruta");
+        texto.Should().NotContain("$200.008", "HU-033: sin desglose, el precio del conexo no se imprime aparte");
         texto.Should().NotContain("$170.007", "el costo del conexo nunca va al PDF");
         foreach (var linea in lineas)
         {
@@ -173,7 +183,7 @@ public sealed class clsPdfPliegoTests
         payload.Secciones!.Select(s => s.Origen).Should().Equal(lineas.Select(l => l.OrigenNombre));
         payload.Secciones!.Select(s => s.Filas![0].Destino).Should().Equal(lineas.Select(l => l.DestinoNombre));
         payload.Secciones!.Select(s => s.Filas![0].VehiculoPeso).Should().Equal(lineas.Select(l => clsCosteoCotizacionService.Camiones(l)));
-        payload.Secciones!.Select(s => s.Filas![0].Tarifa).Should().Equal(lineas.Select(l => clsCosteoCotizacionService.PrecioTransporte(cotizacion, l)));
+        payload.Secciones!.Select(s => s.Filas![0].Tarifa).Should().Equal(lineas.Select(l => l.PrecioFinalLinea), "HU-033: el valor final de la ruta");
     }
 
     /// <summary>HU-021.9: con rutas de varias líneas de negocio, cada sección lleva la de su ruta.</summary>
@@ -192,8 +202,8 @@ public sealed class clsPdfPliegoTests
     }
 
     /// <summary>
-    /// HU-021.9: un pliego de 3 rutas renderizado: cada ruta en su sección con su precio, el resumen con el total sin conexos, los conexos
-    /// aparte, y tarifas + conexos = precio final (Σ precioFinalLinea).
+    /// HU-021.9 y HU-033: un pliego de 3 rutas renderizado: cada ruta en su sección con su valor final (con sus conexos), el resumen y el
+    /// total general = precio final (Σ precioFinalLinea), sin costos ni márgenes ni el precio de los conexos aparte.
     /// </summary>
     [Fact]
     public void UnPliegoDeTresRutasImprimeCadaRutaConSuPrecioYCuadraConElTotal()
@@ -205,13 +215,15 @@ public sealed class clsPdfPliegoTests
         foreach (var linea in lineas)
         {
             texto.Should().Contain($"RUTA {linea.Orden}: PLIEGO DE TRANSPORTE NACIONAL");
-            texto.Should().Contain(clsFormatoMoneda.Formatear(clsCosteoCotizacionService.PrecioTransporte(cotizacion, linea)!.Value, "COP"));
+            texto.Should().Contain(clsFormatoMoneda.Formatear(linea.PrecioFinalLinea, "COP"));
         }
 
-        var tarifas = lineas.Sum(l => clsCosteoCotizacionService.PrecioTransporte(cotizacion, l)!.Value);
-        var conexos = lineas.SelectMany(l => clsCosteoCotizacionService.ConexosConPrecio(cotizacion, l)).Sum(c => c.Precio);
-        (tarifas + conexos).Should().Be(cotizacion.PrecioFinal, "precioFinal = Σ precioFinalLinea, con los conexos");
-        texto.Should().Contain(clsFormatoMoneda.Formatear(tarifas, "COP")).And.Contain("TOTAL DEL PLIEGO (3 RUTAS, SIN SERVICIOS CONEXOS)");
+        lineas.Sum(l => l.PrecioFinalLinea!.Value).Should().Be(cotizacion.PrecioFinal, "precioFinal = Σ precioFinalLinea, con los conexos");
+        texto.Should().Contain("VALOR TOTAL DE LA COTIZACIÓN (3 RUTAS)").And.Contain(clsFormatoMoneda.Formatear(cotizacion.PrecioFinal, "COP") + " COP",
+            "el total general al final de la tarifa");
+        texto.Should().NotContain(clsFormatoMoneda.Formatear(clsCosteoCotizacionService.PrecioTransporte(cotizacion, lineas[0]), "COP"),
+            "sin desglose: el transporte de la ruta 1 sin su conexo no se imprime");
+        texto.Should().NotContainAny("margen", "Margen", "MARGEN");
     }
 
     [Fact]
@@ -244,8 +256,8 @@ public sealed class clsPdfPliegoTests
         reloj.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(60), $"{numero} rutas");
         paginas.Should().BeLessThan(numero / 10 + 10, "solo el resumen: unas 30 rutas por página, sin las tablas por origen");
         lector.Texto.Should().NotContain("PLIEGO DE TRANSPORTE NACIONAL", "sin tablas por origen en modo compacto");
-        lector.Texto.Should().Contain($"TOTAL DEL PLIEGO ({numero} RUTAS, SIN SERVICIOS CONEXOS)");
-        lector.Texto.Should().Contain(clsFormatoMoneda.Formatear(clsCosteoCotizacionService.PrecioTransporte(cotizacion, lineas[^1])!.Value, "COP"), "la última ruta también está");
+        lector.Texto.Should().Contain($"VALOR TOTAL DE LA COTIZACIÓN ({numero} RUTAS)");
+        lector.Texto.Should().Contain(clsFormatoMoneda.Formatear(lineas[^1].PrecioFinalLinea, "COP"), "la última ruta también está");
     }
 
     [Fact]
@@ -278,13 +290,13 @@ public sealed class clsPdfPliegoTests
         clsCosteoCotizacionService.EsPliego(cotizacion).Should().BeFalse("el pliego es para más de una ruta");
         clsCosteoCotizacionService.EsPliego(Pliego(2).Cotizacion).Should().BeTrue();
         var texto = GenerarRuta(cotizacion, "COP", 0m);
-        texto.Should().Contain("BUENAVENTURA").And.Contain("BOGOTA").And.NotContain("TOTAL DEL PLIEGO");
-        texto.Should().Contain(clsFormatoMoneda.Formatear(clsCosteoCotizacionService.PrecioTransporte(cotizacion, lineas[0])!.Value, "COP"));
+        texto.Should().Contain("BUENAVENTURA").And.Contain("BOGOTA").And.NotContain("RESUMEN DEL PLIEGO");
+        texto.Should().Contain(clsFormatoMoneda.Formatear(lineas[0].PrecioFinalLinea, "COP"), "HU-033: el valor final de la ruta");
     }
 
     /// <summary>
-    /// HU-021.9: el PDF de una ruta con dos camiones iguales los agrupa ("2 × 3S3 - FURGON") con el peso total, imprime la tarifa del
-    /// transporte y los conexos aparte: tarifa + conexos = precio de la ruta = precio final. Nunca los costos.
+    /// HU-021.9: el PDF de una ruta con dos camiones iguales los agrupa ("2 × 3S3 - FURGON") con el peso total. HU-033 (#199): imprime UN valor
+    /// final (precio de la ruta = precio final, con el conexo incluido), el conexo como incluido sin precio y el total general. Nunca los costos.
     /// </summary>
     [Fact]
     public void ElPdfDeUnaRutaConDosCamionesLosAgrupaYCuadraConElPrecio()
@@ -302,10 +314,13 @@ public sealed class clsPdfPliegoTests
         clsCosteoCotizacionService.Camiones(ruta, new clsNombresCatalogoCubicador(null, new Dictionary<string, string>()))
             .Should().Be("2 × 3S3 - FURGON (20000 KG)");
         texto.Should().Contain("2 × 3S3 - FURGON (20000", "la celda puede partirse en dos renglones junto a la tarifa");
-        var tarifa = clsCosteoCotizacionService.PrecioTransporte(cotizacion, ruta)!.Value;
+        var transporte = clsCosteoCotizacionService.PrecioTransporte(cotizacion, ruta)!.Value;
         var conexo = clsCosteoCotizacionService.ConexosConPrecio(cotizacion, ruta).Single().Precio;
-        (tarifa + conexo).Should().Be(ruta.PrecioFinalLinea!.Value).And.Be(cotizacion.PrecioFinal!.Value);
-        texto.Should().Contain(clsFormatoMoneda.Formatear(tarifa, "COP")).And.Contain("Cargue y descargue").And.Contain(clsFormatoMoneda.Formatear(conexo, "COP"));
+        (transporte + conexo).Should().Be(ruta.PrecioFinalLinea!.Value).And.Be(cotizacion.PrecioFinal!.Value);
+        texto.Should().Contain(clsFormatoMoneda.Formatear(ruta.PrecioFinalLinea, "COP")).And.Contain("Cargue y descargue");
+        texto.Should().NotContain(clsFormatoMoneda.Formatear(transporte, "COP"), "sin desglose: ni el transporte solo")
+            .And.NotContain(clsFormatoMoneda.Formatear(conexo, "COP"), "ni el precio del conexo");
+        texto.Should().Contain("VALOR TOTAL DE LA COTIZACIÓN").And.Contain(clsFormatoMoneda.Formatear(cotizacion.PrecioFinal, "COP") + " COP");
         foreach (var camion in ruta.Vehiculos)
         {
             texto.Should().NotContain(clsFormatoMoneda.Formatear(camion.CostoFlete!.Value, "COP"), "el costo de Nexo nunca va al PDF");
@@ -321,7 +336,8 @@ public sealed class clsPdfPliegoTests
         clsCosteoCotizacionService.ValidarTotal(cotizacion, "USD").Should().BeNull();
         var texto = GenerarRuta(cotizacion, "USD", 3273.49m);
 
-        texto.Should().Contain(clsFormatoMoneda.Formatear(clsCosteoCotizacionService.PrecioTransporte(cotizacion, ruta)!.Value, "USD"));
+        texto.Should().Contain(clsFormatoMoneda.Formatear(ruta.PrecioFinalLinea, "USD"));
+        texto.Should().Contain(clsFormatoMoneda.Formatear(cotizacion.PrecioFinal, "USD") + " USD", "el total general en dólares");
         texto.Should().Contain(
             "Esta cotización está bajo una TRM mínima de $3.273,49 y es de resaltar que la tarifa puede variar de acuerdo al "
             + "comportamiento de la misma a la fecha de elaboración de la CPI.");
@@ -367,7 +383,8 @@ public sealed class clsPdfPliegoTests
         clsCosteoCotizacionService.ValidarTotal(cotizacion, moneda).Should().BeNull();
         var payload = clsCosteoCotizacionService.Payload(cotizacion, "Nacional", moneda);
         clsValidadorCotizacionPdfPayload.Validar(payload).Should().BeNull();
-        var documento = clsConstructorDocumentoCotizacion.Construir(payload, cotizacion.Folio, _firma, new DateOnly(2026, 10, 1), moneda, trm).Valor;
+        var documento = clsConstructorDocumentoCotizacion.Construir(payload, cotizacion.Folio, _firma, new DateOnly(2026, 10, 1), moneda, trm).Valor
+            with { TotalGeneral = clsCosteoCotizacionService.TotalGeneral(cotizacion, moneda) };
         var pdf = _generador.Generar(documento);
         return System.Text.RegularExpressions.Regex.Replace(clsLectorPdf.Leer(pdf.Contenido).Texto, @"\s+", " ");
     }
@@ -384,7 +401,7 @@ public sealed class clsPdfPliegoTests
         var pdf = _generador.Generar(clsCosteoCotizacionService.DocumentoPliego(documento, cotizacion, "USD"));
         var texto = System.Text.RegularExpressions.Regex.Replace(clsLectorPdf.Leer(pdf.Contenido).Texto, @"\s+", " ");
 
-        texto.Should().Contain(clsFormatoMoneda.Formatear(clsCosteoCotizacionService.PrecioTransporte(cotizacion, lineas[0])!.Value, "USD"));
+        texto.Should().Contain(clsFormatoMoneda.Formatear(lineas[0].PrecioFinalLinea, "USD"));
         texto.Should().Contain(
             "Esta cotización está bajo una TRM mínima de $3.273,49 y es de resaltar que la tarifa puede variar de acuerdo al "
             + "comportamiento de la misma a la fecha de elaboración de la CPI.");

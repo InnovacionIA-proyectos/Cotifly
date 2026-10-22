@@ -73,6 +73,12 @@ public sealed record clsDocumentoCotizacion
     /// <summary>Datos aduaneros, mercancía extradimensionada o refrigerada ("Detalle adicional del servicio").</summary>
     public required IReadOnlyList<clsBloqueDocumento> BloquesAdicionales { get; init; }
 
+    /// <summary>
+    /// HU-033 (#199, decisión 5): total general al final de la tarifa (etiqueta, valor con moneda y nota con la leyenda de impuestos);
+    /// <c>null</c> = sin bloque (el PDF del chat).
+    /// </summary>
+    public clsTotalDocumento? TotalGeneral { get; init; }
+
     public required IReadOnlyList<string> Incluye { get; init; }
 
     public required IReadOnlyList<string> NoIncluye { get; init; }
@@ -113,6 +119,9 @@ public sealed record clsDatoDocumento(string Etiqueta, string Valor);
 
 /// <summary>Frase de cierre centrada; <see cref="Enlace"/> se imprime como hipervínculo en la línea siguiente.</summary>
 public sealed record clsFraseFinalDocumento(string Texto, string? Enlace);
+
+/// <summary>HU-033 (#199): total general del PDF (<c>VALOR TOTAL DE LA COTIZACIÓN</c>, el valor formateado con la moneda y la nota con la leyenda).</summary>
+public sealed record clsTotalDocumento(string Etiqueta, string Valor, string Nota);
 
 /// <summary>Firma del comercial. <see cref="Celular"/> sale de <c>UsuariosWeb.telefono</c>; si es nulo no se imprime "Cel".</summary>
 public sealed record clsFirmaDocumento(string Nombre, string? Cargo, string? Email, string? Celular);

@@ -23,6 +23,23 @@ public static class clsTextosEstandar
         string Facturacion);
 
     public const string TituloTarifa = "NUESTRA TARIFA PARA SU SOLICITUD ES:";
+
+    /// <summary>
+    /// HU-033 (#199, decisión 5): etiqueta del total general al final de la tarifa del PDF y en el resumen del correo. El total es la suma del
+    /// precio final de cada ruta (transporte y servicios conexos incluidos), sin desglose.
+    /// </summary>
+    public const string EtiquetaTotalGeneral = "VALOR TOTAL DE LA COTIZACIÓN";
+
+    /// <summary>
+    /// HU-033 (#199): leyenda de impuestos del total, la misma en el PDF y en el correo. El PDF no traía ninguna: este texto es el que se
+    /// propone y queda pendiente de validación de negocio (un solo lugar para cambiarlo).
+    /// </summary>
+    public const string LeyendaImpuestos =
+        "Valores por viaje según las rutas cotizadas, con los servicios conexos incluidos. No incluyen impuestos, tasas ni contribuciones "
+        + "que se causen según la normativa vigente.";
+
+    /// <summary>HU-033 (#199): nota del total general del PDF: el precio de cada ruta ya incluye su transporte y sus servicios conexos.</summary>
+    public const string NotaTotalGeneral = "El valor de cada ruta incluye el transporte y los servicios conexos indicados; el total es la suma de las rutas.";
     public const string TituloTablaPorDefecto = "COTIZACIÓN — BSSL";
     public const string PrefijoOrigen = "ORIGEN Y/O LUGAR DE CARGUE: ";
     public const string TituloDetalleAdicional = "Detalle adicional del servicio";
