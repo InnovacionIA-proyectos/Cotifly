@@ -198,6 +198,21 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
         (await Columna(cotizacion, "motivoRechazo")).Should().Be(motivo);
     }
 
+    [Then("la respuesta trae la sincronización del resultado {string}")]
+    public void EntoncesLaRespuestaTraeLaSincronizacion(string estado) =>
+        web.UltimoJson().GetProperty("sincronizacion_resultado_nexo").GetString().Should().Be(estado);
+
+    [Then("el resultado de {string} queda {string} con Nexo")]
+    public async Task EntoncesElResultadoQueda(string cotizacion, string estado) =>
+        (await Columna(cotizacion, "sincronizacionResultadoNexo")).Should().Be(estado);
+
+    [Then("Nexo recibió {int} envíos del resultado de {string}")]
+    public async Task EntoncesNexoRecibioResultados(int cantidad, string cotizacion)
+    {
+        var cotizacionNexo = await Columna(cotizacion, "cotizacionNexoId");
+        _nexo.Llamadas(HttpMethod.Post, $"/api/cotizaciones/{cotizacionNexo}/resultado").Should().Be(cantidad, "el resultado pendiente se envía una sola vez");
+    }
+
     [Then("la cotización {string} sigue sin resultado")]
     public async Task EntoncesSinResultado(string cotizacion)
     {

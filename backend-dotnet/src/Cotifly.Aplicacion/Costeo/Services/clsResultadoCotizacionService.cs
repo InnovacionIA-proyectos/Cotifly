@@ -56,6 +56,13 @@ public interface IClsResultadoCotizacionService
 /// <c>detalle</c> = el resultado de Nexo: Cotifly y Nexo quedan iguales.</para>
 /// <para><b>Perdida solo en Cotifly (HU-013.17).</b> En <c>error_envio</c>, o en <c>pendiente_costeo</c> cuando Nexo CONFIRMA que no
 /// tiene la cotización entregada (si Nexo no responde, 503 sin cambios), solo se admite <c>perdida</c> con motivo e <c>If-Match</c>: no va a Nexo y detiene el polling.</para>
+/// <para><b>Resultado diferido (HU-033, #199, ADR-023, decisión 6).</b> Si la cotización todavía no está Entregada en Nexo, el resultado se
+/// guarda SOLO en Cotifly como <c>pendiente</c> de sincronizar y el polling lo envía a Nexo una sola vez cuando ve la entrega
+/// (<see cref="IClsSincronizacionResultadoNexoService"/>). Aplica a la ganada en <c>pendiente_costeo</c> (Nexo confirma que no está
+/// entregada) y a la ganada o perdida en <c>autocosteo</c> cuando Nexo responde <c>COTIZACION_NO_ENTREGADA</c>. La perdida en
+/// <c>pendiente_costeo</c> sigue siendo la "perdida solo en Cotifly" de HU-013.17 (#127: el cliente desistió antes del costeo, el polling
+/// se detiene y nunca va a Nexo). Cotifly nunca llama a <c>/entregar</c>. Un segundo <c>/resultado</c> con el mismo valor mientras está
+/// pendiente responde 200 sin cambios; con otro valor, <c>RESULTADO_YA_DEFINIDO</c>.</para>
 /// </remarks>
 public sealed class clsResultadoCotizacionService(
     IClsCotizacionRepository cotizaciones,
@@ -70,6 +77,9 @@ public sealed class clsResultadoCotizacionService(
 
     /// <summary>Evento de auditoría de la perdida solo en Cotifly (HU-013.17).</summary>
     public const string HerramientaPerdidaSinCosteo = "resultado_cotizacion_sin_costeo";
+
+    /// <summary>HU-033 (#199): evento de auditoría del resultado guardado solo en Cotifly, pendiente de sincronizar con Nexo.</summary>
+    public const string HerramientaResultadoPendiente = "resultado_cotizacion_pendiente_nexo";
 
     public const int LargoMaximoMotivo = 100;
     public const int LargoMaximoComentario = 500;
@@ -122,6 +132,16 @@ public sealed class clsResultadoCotizacionService(
                 $"La cotización {cotizacion.Folio} no tiene resultado en Nexo (chat, descartada o costeo vencido): márcalo con el seguimiento de Cotifly.");
         }
 
+        // HU-033 (#199): ya hay un resultado esperando la entrega de Nexo. El mismo valor es idempotente (200 sin cambios); otro valor no.
+        if (cotizacion.ResultadoPendienteDeSincronizar)
+        {
+            return cotizacion.Ganada == ganada.Value
+                ? cotizacion
+                : new clsErrorDominio(clsCodigosError.ResultadoYaDefinido,
+                    $"La cotización {cotizacion.Folio} ya tiene resultado registrado (pendiente de sincronizar con Nexo): crea una versión nueva para cambiarlo.",
+                    cotizacion.Ganada == true ? "ganada" : "perdida");
+        }
+
         if (cotizacion.Ganada is not null && cotizacion.EstadoCosteo is EstadoCosteo.PendienteCosteo or EstadoCosteo.ErrorEnvio)
         {
             return new clsErrorDominio(clsCodigosError.ResultadoYaDefinido,
@@ -172,8 +192,11 @@ public sealed class clsResultadoCotizacionService(
 
             if (clsDerivacionEstadoCosteo.Derivar(lectura.Valor) != EstadoCosteo.Entregada)
             {
-                // Nexo CONFIRMA que no hay entrega: la perdida queda solo en Cotifly (HU-013.17); la ganada no se puede marcar.
-                return ganada.Value ? NoEntregada(cotizacion) : await RegistrarPerdidaSinCosteoAsync(cotizacion, ganada.Value, motivo, versionEsperada);
+                // Nexo CONFIRMA que no hay entrega: la perdida queda solo en Cotifly (HU-013.17, #127: el cliente desistió antes del costeo);
+                // la ganada queda pendiente de sincronizar y va a Nexo cuando la Mesa entregue (HU-033, #199).
+                return ganada.Value
+                    ? await RegistrarPendienteNexoAsync(cotizacion, ganada.Value, motivo, comentario, versionEsperada ?? cotizacion.VersionNegocio)
+                    : await RegistrarPerdidaSinCosteoAsync(cotizacion, ganada.Value, motivo, versionEsperada);
             }
 
             previa = lectura.Valor;
@@ -190,6 +213,12 @@ public sealed class clsResultadoCotizacionService(
         if (marcada.EsFallo && marcada.Error.Codigo == clsCodigosError.ResultadoYaDefinido)
         {
             return await SincronizarResultadoDeNexoAsync(cotizacion, usuarioId, versionLeida, ganada.Value, marcada.Error, cronometro);
+        }
+
+        if (marcada.EsFallo && marcada.Error.Codigo == clsCodigosError.CotizacionNoEntregada)
+        {
+            // HU-033 (#199): Nexo todavía no tiene la cotización entregada (autocosteo): el resultado queda solo en Cotifly, pendiente.
+            return await RegistrarPendienteNexoAsync(cotizacion, ganada.Value, motivo, comentario, versionEsperada ?? versionLeida);
         }
 
         string? origenFoto = null;
@@ -218,6 +247,43 @@ public sealed class clsResultadoCotizacionService(
             (int)cronometro.ElapsedMilliseconds,
             cotizacion.ThreadId);
         return marcada.EsExitoso ? cotizacion : marcada.Error;
+    }
+
+    /// <summary>
+    /// HU-033 (#199): guarda el resultado solo en Cotifly, pendiente de enviarlo a Nexo cuando la Mesa entregue la cotización (con la
+    /// versión de negocio: <c>CONFLICTO_CONCURRENCIA</c> si cambió). Si el polling ya no la consultaba (pasó la edad máxima en
+    /// <c>autocosteo</c>), la vuelve a agendar para ver la entrega.
+    /// </summary>
+    private async Task<clsResultado<clsCotizacionSolicitud>> RegistrarPendienteNexoAsync(
+        clsCotizacionSolicitud cotizacion, bool ganada, string? motivo, string? comentario, int version)
+    {
+        var cronometro = Stopwatch.StartNew();
+        var ahora = reloj.AhoraUtc;
+        cotizacion.RegistrarResultadoPendienteNexo(ganada, Normalizar(motivo), Normalizar(comentario), ahora);
+        if (cotizacion.CosteoSiguienteConsultaAt is null)
+        {
+            cotizacion.ProgramarRelecturaCosteo(ahora);
+        }
+
+        cotizacion.IncrementarVersionNegocio();
+        if (!await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, version, CancellationToken.None))
+        {
+            return Conflicto(cotizacion);
+        }
+
+        await auditoria.RegistrarAsync(
+            HerramientaResultadoPendiente,
+            new { folio = cotizacion.Folio, resultado = ganada ? "ganada" : "perdida", motivo },
+            new
+            {
+                estado_costeo = cotizacion.EstadoCosteo is { } e ? clsCodigoEnum.ACodigo(e) : null,
+                enviado_a_nexo = false,
+                sincronizacion = cotizacion.EstadoSincronizacionResultado,
+            },
+            exito: true,
+            (int)cronometro.ElapsedMilliseconds,
+            cotizacion.ThreadId);
+        return cotizacion;
     }
 
     /// <summary>
@@ -362,6 +428,8 @@ public sealed class clsResultadoCotizacionService(
 
             var ahora = reloj.AhoraUtc;
             cotizacion.MarcarSeguimiento(ganada, motivo, ahora);
+            // HU-033 (#199): Nexo ya tiene el resultado.
+            cotizacion.MarcarResultadoSincronizado(ahora);
             if (RequiereLectura(cotizacion))
             {
                 if (foto is not null)

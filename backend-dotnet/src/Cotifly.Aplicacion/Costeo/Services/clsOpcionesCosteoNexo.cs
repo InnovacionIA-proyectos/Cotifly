@@ -82,6 +82,22 @@ public sealed class clsOpcionesCosteoNexo : IValidatableObject
 
     public TimeSpan EsperaMaximaCatalogoConexos => TimeSpan.FromHours(EsperaMaximaCatalogoConexosHoras);
 
+    /// <summary>
+    /// HU-033 (#199): envíos fallidos seguidos del resultado pendiente a Nexo (Nexo caído o con error) antes de dejarlo
+    /// <c>no_sincronizable</c>. Entre intentos se espera <see cref="IntervaloReintentoConexosMinutos"/>.
+    /// </summary>
+    [Range(1, 100)]
+    public int MaximoFallosSincronizacionResultado { get; set; } = 10;
+
+    /// <summary>
+    /// HU-033 (#199): días que el polling sigue consultando una cotización con un resultado pendiente de sincronizar (aunque haya pasado
+    /// <see cref="EdadMaximaHoras"/>), esperando a que la Mesa de Costeo la entregue. Pasados, el resultado queda <c>no_sincronizable</c>.
+    /// </summary>
+    [Range(1, 365)]
+    public int EdadMaximaSincronizacionResultadoDias { get; set; } = 30;
+
+    public TimeSpan EdadMaximaSincronizacionResultado => TimeSpan.FromDays(EdadMaximaSincronizacionResultadoDias);
+
     public TimeSpan LecturaInmediata => TimeSpan.FromSeconds(LecturaInmediataSegundos);
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)

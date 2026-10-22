@@ -59,7 +59,6 @@ public sealed class clsResultadoCotizacionServiceTests
 
     [Theory]
     [InlineData(clsCodigosError.ResultadoYaDefinido)]
-    [InlineData(clsCodigosError.CotizacionNoEntregada)]
     [InlineData(clsCodigosError.SolicitudNoTransicionable)]
     [InlineData(clsCodigosError.CotizacionNoEncontrada)]
     [InlineData(clsCodigosError.CosteoNexoRechazada)]
@@ -225,17 +224,84 @@ public sealed class clsResultadoCotizacionServiceTests
     }
 
     [Fact]
-    public async Task EnPendienteDeCosteoSinCostoEnNexoEsCotizacionNoEntregadaSinPedirElResultado()
+    public async Task EnPendienteDeCosteoSinEntregaLaGanadaQuedaPendienteDeSincronizarSinPedirElResultadoANexo()
     {
-        Estado(EstadoCosteo.PendienteCosteo, null);
+        // HU-033 (#199, decisión 6): antes era COTIZACION_NO_ENTREGADA; ahora se guarda solo en Cotifly y se envía cuando la Mesa entregue.
+        Estado(EstadoCosteo.PendienteCosteo, _reloj.AhoraUtc.AddMinutes(5));
         _nexo.ConsultarCosteoAsync(_ana, "SOL-1", Arg.Any<CancellationToken>()).Returns(
             new clsCosteoConsultadoNexo("EnCosteo", ["L1"], new clsCotizacionNexo("COT-1", clsCotizacionNexo.EstadoBorrador, "SinDefinir", [], [])));
 
-        (await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "ganada", null, null, Ct)).Error.Codigo.Should().Be(clsCodigosError.CotizacionNoEntregada);
+        var resultado = await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "ganada", null, "Firmó el contrato", Ct);
 
+        resultado.Valor.Ganada.Should().BeTrue();
+        _cotizacion.SincronizacionResultado.Should().Be(SincronizacionResultadoNexo.Pendiente);
+        _cotizacion.EstadoSincronizacionResultado.Should().Be("pendiente");
+        _cotizacion.ComentarioResultadoPendiente.Should().Be("Firmó el contrato");
+        _cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo, "el estado de costeo no cambia");
+        _cotizacion.CosteoSiguienteConsultaAt.Should().NotBeNull("el polling sigue para ver la entrega");
         await _nexo.DidNotReceiveWithAnyArgs().MarcarResultadoAsync(default, default!, default!, Ct);
-        _cotizacion.Ganada.Should().BeNull();
-        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
+        await _unidad.Received(1).GuardarCambiosSiVersionAsync(_cotizacion.Id, 0, Arg.Any<CancellationToken>());
+        await _auditoria.Received(1).RegistrarAsync(clsResultadoCotizacionService.HerramientaResultadoPendiente, Arg.Any<object?>(), Arg.Any<object?>(), true, Arg.Any<int>(), Arg.Any<string?>());
+    }
+
+    [Fact]
+    public async Task EnPendienteDeCosteoSinEntregaLaPerdidaSigueSiendoSoloEnCotifly()
+    {
+        // #127 (HU-013.17): el cliente desistió antes del costeo: no queda pendiente de sincronizar, se detiene el polling.
+        Estado(EstadoCosteo.PendienteCosteo, _reloj.AhoraUtc.AddMinutes(5));
+        _nexo.ConsultarCosteoAsync(_ana, "SOL-1", Arg.Any<CancellationToken>()).Returns(
+            new clsCosteoConsultadoNexo("EnCosteo", ["L1"], new clsCotizacionNexo("COT-1", clsCotizacionNexo.EstadoBorrador, "SinDefinir", [], [])));
+
+        var resultado = await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "perdida", "El cliente desistió", null, 0, Ct);
+
+        resultado.Valor.Ganada.Should().BeFalse();
+        _cotizacion.PerdidaSoloEnCotifly.Should().BeTrue();
+        _cotizacion.SincronizacionResultado.Should().BeNull();
+        _cotizacion.EstadoSincronizacionResultado.Should().Be("solo_cotifly");
+        _cotizacion.CosteoSiguienteConsultaAt.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("ganada")]
+    [InlineData("perdida")]
+    public async Task EnAutocosteoSiNexoNoLaTieneEntregadaElResultadoQuedaPendiente(string valor)
+    {
+        Estado(EstadoCosteo.Autocosteo, null);
+        ConPrecio(EstadoCosteo.Autocosteo, 1_000_000m);
+        _nexo.MarcarResultadoAsync(_ana, "COT-1", Arg.Any<clsResultadoNexo>(), Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio(clsCodigosError.CotizacionNoEntregada, "Solo se puede marcar el resultado de una cotización entregada."));
+
+        var resultado = await Servicio().MarcarAsync(_ana, _cotizacion.Folio, valor, "Precio alto", "Comentario", Ct);
+
+        resultado.EsExitoso.Should().BeTrue();
+        _cotizacion.Ganada.Should().Be(valor == "ganada");
+        _cotizacion.ResultadoPendienteDeSincronizar.Should().BeTrue();
+        _cotizacion.CosteoSiguienteConsultaAt.Should().NotBeNull("si el polling ya no la consultaba, se vuelve a agendar");
+        _cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.Autocosteo);
+    }
+
+    [Fact]
+    public async Task UnSegundoResultadoIgualMientrasEstaPendienteEsIdempotenteYUnoDistintoEsResultadoYaDefinido()
+    {
+        Estado(EstadoCosteo.Autocosteo, null);
+        ConPrecio(EstadoCosteo.Autocosteo, 1_000_000m);
+        _cotizacion.RegistrarResultadoPendienteNexo(true, null, null, _reloj.AhoraUtc);
+
+        (await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "ganada", null, null, Ct)).Valor.Ganada.Should().BeTrue();
+        var distinto = await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "perdida", "Otro", null, Ct);
+
+        distinto.Error.Codigo.Should().Be(clsCodigosError.ResultadoYaDefinido);
+        distinto.Error.Detalle.Should().Be("ganada");
+        await _nexo.DidNotReceiveWithAnyArgs().MarcarResultadoAsync(default, default!, default!, Ct);
+    }
+
+    [Fact]
+    public async Task ConElOkDeNexoElResultadoQuedaSincronizado()
+    {
+        await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "ganada", null, null, Ct);
+
+        _cotizacion.SincronizacionResultado.Should().Be(SincronizacionResultadoNexo.Sincronizado);
+        _cotizacion.ResultadoSincronizadoAt.Should().Be(_reloj.AhoraUtc);
     }
 
     [Fact]

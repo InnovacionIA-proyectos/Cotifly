@@ -50,6 +50,9 @@ public static class clsDependenciasAplicacion
         servicios.AddScoped<IClsCorreoService>(sp => new clsCorreoServiceAuditado(
             sp.GetRequiredService<clsCorreoService>(), sp.GetRequiredService<IClsAuditoriaService>()));
         servicios.AddScoped<IClsVistaPreviaCorreoService, clsVistaPreviaCorreoService>();
+        // HU-033 (#199): historial y reintento de los envíos, y la consulta del estado en MailSender (worker de correos).
+        servicios.AddScoped<IClsHistorialCorreosService, clsHistorialCorreosService>();
+        servicios.AddScoped<IClsSeguimientoCorreosService, clsSeguimientoCorreosService>();
         servicios.AddScoped<IClsDestinatariosPreviosService, clsDestinatariosPreviosService>();
         servicios.AddScoped<IClsTelefonoComercialService, clsTelefonoComercialService>();
         servicios.AddScoped<IClsSeguimientoService, clsSeguimientoService>();
@@ -78,6 +81,8 @@ public static class clsDependenciasAplicacion
         servicios.AddScoped<CatalogosFlete.Services.IClsResolucionAliasService, CatalogosFlete.Services.clsResolucionAliasService>();
         servicios.AddScoped<IClsEnvioCosteoService, clsEnvioCosteoService>();
         servicios.AddScoped<IClsPollingCosteoService, clsPollingCosteoService>();
+        // HU-033 (#199): envío a Nexo del resultado que quedó pendiente (lo llama el polling cuando ve la entrega).
+        servicios.AddScoped<IClsSincronizacionResultadoNexoService, clsSincronizacionResultadoNexoService>();
         servicios.AddSingleton<IClsPrecioCosteoService, clsPrecioCosteoService>();
         // #181: estado y motivo pendiente de la línea de Nexo de cada camión, en memoria (los llena el polling; no van a la base).
         servicios.AddSingleton<IClsSituacionLineasNexo, clsSituacionLineasNexoEnMemoria>();
