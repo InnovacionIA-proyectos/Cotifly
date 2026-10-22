@@ -45,8 +45,9 @@ Contrato real de MailSender (leído del código, solo lectura):
 - **`smtp_relay` (MailKit) se retira**, junto con `smtp` y `wscorreos`: (a) la issue #199 decide que MailSender reemplaza al SMTP directo;
   (b) MailSender ya hace el relay, los reintentos y su propio registro, y es el único que necesita la IP autorizada en el relay (no cada
   nodo de Cotifly); (c) mantener dos transportes con modelos distintos (síncrono y asíncrono) duplica la matriz de pruebas y deja un camino
-  que nadie opera. Con el correo **deshabilitado** un `Correo__Modo` heredado (`smtp_relay` en los stacks) no impide arrancar; habilitado,
-  sí. Si algún día hiciera falta volver, el transporte está en el historial de git (#11) detrás de la misma interfaz.
+  que nadie opera. Con el correo **deshabilitado** un `Correo__Modo` heredado (~~`smtp_relay` en los stacks~~ por ejemplo `smtp_relay` en un `.env` o en
+  una variable vieja; los stacks `infra/stack.dotnet.*.yml` ya fijan `Correo__Modo: mailsender`, sin leerlo del entorno) no impide
+  arrancar; habilitado, sí. Si algún día hiciera falta volver, el transporte está en el historial de git (#11) detrás de la misma interfaz.
 
 ### 2. Estado asíncrono
 
