@@ -194,7 +194,7 @@ Fuente: encabezados de los scripts `03`, `05` y `06` (#158 y #173); aplicación 
 - [ ] Guardar `categoriaServicioConexo` al capturar e importar los conexos, como propone el encabezado del `05`. Las filas viejas siguen leyendo la categoría del catálogo.
 
 **Parte C — Idempotencia persistente (script `06`).**
-- [ ] Pasar la idempotencia de la captura de memoria a `CapturasIdempotentes`: la clave se reserva en la misma transacción que confirma el folio.
+- [x] Pasar la idempotencia de la captura de memoria a `CapturasIdempotentes`: la clave se reserva en la misma transacción que confirma el folio. **Tabla ya creada en la compartida (2026-10-22, script `06`, probado en Docker).** Falta que el backend la use.
 - [ ] **Antes de fusionar:** avisarle a Sara para que apruebe y aplique el `06` en la compartida.
 
 **Pruebas (de todas las partes):** orden estable con camiones creados en el mismo milisegundo; conexo agregado e importado con su id del catálogo y su categoría; captura repetida después de reiniciar la API no crea otra solicitud en NEXO.
@@ -374,6 +374,13 @@ Fuente: decisión de Sara del 2026-10-16 (con el chat de NEXO) y revisión del c
 
 ### [HU-028.2] [BD] Columnas del rechazo
 **Ya creada en GitHub: #182** (abierta por @jpvelez-bts).
+
+> **Actualización 2026-10-22:** el contrato de NEXO ya se verificó (chat de NEXO, contra `origin/QA` y `origin/DEPLOY` de NEXO):
+> - `estadoLinea = "rechazada"` y `motivoRechazo` **ya están en QA/main de NEXO** (S6-HU-24.1/#309, S6-HU-24.3/#320), listos para leer en cada reconsulta del polling.
+> - **Es por línea/camión individual**, confirmado en el comando de NEXO (`LineaSolicitudId` único por llamada, sin `grupoRutaId`): la columna por camión está bien pensada.
+> - **`RechazadaPor`/`RechazadaAt` NO se pueden leer en ninguna reconsulta** hoy: solo salen en la respuesta puntual del endpoint de rechazar, que además solo existe en DEPLOY. Por eso el script **no agrega `rechazadaAt`** por ahora.
+>
+> **Script escrito y probado en Docker:** `db/scripts/pendientes/10_rechazo_linea_camion.sql`. Agrega `rechazada` al CHECK de `estadoCosteo` del camión y de la ruta, y `motivoRechazo NVARCHAR(500) NULL` en el camión. Probado: datos previos intactos, idempotente, rechaza estados inventados, compatible con el `03`. **No aplicado en la compartida todavía** (falta el mapeo de backend, HU-028.1/#183, antes de que tenga sentido llenarlo).
 **Labels:** `datos`, `base-de-datos`, `sprint-6`
 **Repo donde se crea este issue:** `Cotifly`
 **Asignado a:** Sara (Datos)
@@ -412,3 +419,6 @@ Fuente: decisión de Sara del 2026-10-16 (con el chat de NEXO) y revisión del c
 - **Lo que falta del contrato de captura es de NEXO (#297):** devolver y ordenar por `numeroLinea` en el GET, y que una línea de Cupo sin vehículo no se autocostee.
 - **En el portal de NEXO no existen** la bandeja de vehículos en cuarentena (S5-HU-19.3) ni editar el vehículo y poner el precio sin vehículo en la Mesa (S5-HU-19.4).
 - **Peso con tara:** NEXO planea que el "peso total" de la línea incluya la tara. El `peso_kg` que manda Cotifly es solo la carga. Falta decidir quién suma la tara antes de que NEXO cambie su validación.
+  - **Detalle nuevo (2026-10-22, vía `clientepro-frontend`):** la comercial aclaró que, a su juicio, `pesoKg` **siempre** debería incluir la tara, incluso en rutas CON mercancías itemizadas — no solo en Contenedor/Cupo/Devolución Contenedor (donde hoy ya funciona así, sin problema: `clsSolicitudCosteo.cs:194` no compara contra nada si no hay posiciones con peso).
+  - **Choca con el código de hoy:** `clsSolicitudCosteo.cs:201-204` (`PESO_INCONSISTENTE`) exige que `pesoKg` cuadre dentro del 1% contra `sum(cantidad × peso_kg)` de las mercancías (que es neto, sin tara). Si `pesoKg` siempre trae tara, esa validación fallaría en casi cualquier ruta con mercancías reales (la tara no es despreciable).
+  - **No construir nada en el frontend** que asuma "siempre con tara" hasta que esto se decida — rompería la captura de rutas con mercancías tal como está el código. Si se decide que sí, el ajuste de backend es mediano: tocar la regla de `PESO_INCONSISTENTE` (quitar la comparación, o restar una tara conocida antes de comparar) y probablemente el contrato con NEXO.

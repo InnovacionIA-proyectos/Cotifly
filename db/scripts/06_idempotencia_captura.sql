@@ -1,9 +1,8 @@
 /* ============================================================================
-   Cotifly — 06 (PROPUESTA, #173): claves de idempotencia de la captura, persistentes
+   Cotifly — 06 (#173): claves de idempotencia de la captura, persistentes
    ============================================================================
-   *** PENDIENTE DE REVISIÓN DE @scalderon-bs Y DEL DBA. NO APLICAR. ***
-   Está en db/scripts/pendientes/ a propósito: el ejecutador (ejecutar-bd.ps1 / .sh) solo corre los .sql de
-   db/scripts (sin subcarpetas). El backend NO mapea esta tabla todavía.
+   Aprobado y aplicado en la base compartida el 2026-10-22 (HU-024.1, organización de scripts). Movido de
+   db/scripts/pendientes/ a db/scripts/. El backend todavía NO mapea esta tabla.
 
    Por qué (deuda, ADR-018 §12): POST /web/solicitudes-costeo acepta Idempotency-Key (#173). Hoy la clave y la
    captura "en curso" (folio confirmado antes de llamar a Nexo y el solicitudNexoId en cuanto se conoce) viven en

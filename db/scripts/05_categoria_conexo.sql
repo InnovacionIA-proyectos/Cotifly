@@ -1,10 +1,9 @@
 /* ============================================================================
-   Cotifly — 05 (PROPUESTA, #173): categoría del catálogo de Nexo en el conexo de la ruta
+   Cotifly — 05 (#173): categoría del catálogo de Nexo en el conexo de la ruta
    ============================================================================
-   *** PENDIENTE DE REVISIÓN DE @scalderon-bs Y DEL DBA. NO APLICAR. ***
-   Está en db/scripts/pendientes/ a propósito: el ejecutador (ejecutar-bd.ps1 / .sh) solo corre los .sql de
-   db/scripts (sin subcarpetas). El backend NO mapea esta columna todavía (mapearla sin la columna rompería
-   cada lectura de la cotización).
+   Aprobado y aplicado en la base compartida el 2026-10-16 (HU-024.1, organización de scripts). Movido de
+   db/scripts/pendientes/ a db/scripts/. El backend todavía NO mapea esta columna (mapearla sin la columna
+   rompería cada lectura de la cotización).
 
    Por qué: el costeo mostraba todos los conexos con categoría `logistico` (constante del backend) aunque en el
    catálogo de Nexo sean `adicional` (E2E real del 2026-10-14). Desde #173 el backend lee la categoría del

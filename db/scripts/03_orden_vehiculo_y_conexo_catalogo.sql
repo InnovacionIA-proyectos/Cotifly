@@ -1,9 +1,9 @@
 /* ============================================================================
-   Cotifly — 03 (PROPUESTA): orden del camión e id del catálogo del conexo
+   Cotifly — 03: orden del camión e id del catálogo del conexo
    ============================================================================
-   *** PENDIENTE DE REVISIÓN DE @scalderon-bs. NO APLICAR. ***
-   Está en db/scripts/pendientes/ a propósito: el ejecutador (ejecutar-bd.ps1 / .sh) solo corre
-   los .sql de db/scripts (sin subcarpetas) y no entra a esta carpeta. El backend NO mapea estas columnas todavía.
+   Aprobado y aplicado en la base compartida el 2026-10-14 (HU-024.1, organización de scripts). Movido de
+   db/scripts/pendientes/ a db/scripts/. El backend todavía NO mapea estas columnas (ordenVehiculo,
+   idServicioConexoCatalogo): las filas nuevas quedan en NULL hasta que lo haga.
 
    HU-023.3 (#158). Dos deudas que el 02 no cubre (ADR-019, "Pendientes"; ADR-020) y una corrección al CHECK del 02:
      1. CotizacionVehiculosLineaSolicitud.ordenVehiculo: el orden del camión en su ruta (la fila de la
