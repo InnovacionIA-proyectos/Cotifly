@@ -413,6 +413,28 @@ public sealed class clsLicitacionCubicadorEndpointsTests : IDisposable
         camiones.Cell(2, 8).GetValue<decimal>().Should().Be(81.25m);
     }
 
+    /// <summary>
+    /// Endurecimiento B (#199): una licitación con servicios conexos cuyo catálogo en Nexo responde 403 es 403 <c>NEXO_SIN_PERMISO</c>
+    /// (declarado en el contrato); nada se guarda ni se captura en Nexo.
+    /// </summary>
+    [Fact]
+    public async Task ConElCatalogoDeConexosEn403LaLicitacionEs403NexoSinPermiso()
+    {
+        const string Cargue = "SC-CARGUE-LIC";
+        _nexo.ConServicioConexo(Cargue, Cargue, "Cargue en puerto", "logistico", "UND", 150_000m);
+        _nexo.CatalogoFalla = HttpStatusCode.Forbidden;
+        var api = Api();
+        var sesion = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var cuerpo = JsonNode.Parse(Licitacion(1))!;
+        cuerpo["lineas"]![0]!["servicios_conexos"] = new JsonArray(new JsonObject { ["id_servicio_conexo"] = Cargue, ["cantidad"] = 1 });
+
+        using var envio = await api.EnviarAsync(_post, Ruta, sesion.Access, cuerpo.ToJsonString());
+
+        (await VerificarContratoAsync(envio, Ruta, _post, HttpStatusCode.Forbidden)).GetProperty("error").GetProperty("codigo").GetString()
+            .Should().Be("NEXO_SIN_PERMISO");
+        _nexo.SolicitudesCreadas.Should().BeEmpty();
+    }
+
     [Fact]
     public async Task LosConexosQuedanEnLaRutaAlReemplazarElCamionProvisionalYElEnvioDiferidoVaAlPrimerCamionReal()
     {

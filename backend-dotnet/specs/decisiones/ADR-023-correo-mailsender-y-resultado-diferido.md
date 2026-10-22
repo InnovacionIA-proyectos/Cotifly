@@ -144,6 +144,22 @@ es del mismo tipo. El 13 agrega `idMailSender` (único filtrado), `redirigidoA`,
 `siguienteConsultaAt` (agenda, índice filtrado), `encoladoAt` (auditoría #199) y el CHECK `ck_correos_estado`; y en la cabecera la sincronización del resultado. Idempotente
 y no destructivo; obligatorio ("falta 13" en `/health/ready`).
 
+### 8. Endurecimiento B (#199, E2E 2026-10-22)
+
+- **Precios de la licitación: la diferencia se mantiene (decisión del usuario).** La vista de la licitación (`GET /web/licitaciones/{folio}`:
+  `precio_final` y `lineas[].precio_final`) y su Excel son **internos** y siguen **desglosados**: la tarifa del transporte sin conexos, con
+  los conexos aparte (tarifa + conexos = precio de la ruta). El PDF y el correo, que ve el cliente, muestran el **valor final** de cada
+  ruta y el total (§5). No es una inconsistencia: el frontend no debe "corregir" una contra la otra (guía del frontend, aviso inicial).
+- **Textos del PDF de varias rutas según el tipo (OBS-C-3).** El layout de pliego se usa para toda solicitud de más de una ruta, pero
+  solo una **licitación** dice "para su licitación (N rutas)", "RESUMEN DEL PLIEGO" y "RUTA n: PLIEGO DE TRANSPORTE"; una **spot** de
+  varias rutas dice "presentación oferta de servicios de Transporte (N rutas)", "RESUMEN DE LAS RUTAS" y "RUTA n: TARIFA DE TRANSPORTE".
+  La referencia de maquetación (fixture de licitación) no cambia.
+- **Resultado sin escrituras de más en NEXO.** Ante `RESULTADO_YA_DEFINIDO` (en `/resultado` y en la sincronización diferida) Cotifly
+  **lee** la cotización de NEXO (`GET /api/cotizaciones/{id}` o `/por-solicitud/{id}`) en lugar del "crear o recuperar"
+  (`POST /api/cotizaciones`, DEF-C-1); repetir el mismo resultado ya `sincronizado` es 200 sin llamar a NEXO (OBS-C-2); una perdida en
+  `pendiente_costeo` con la solicitud que NEXO ya no reconoce (404) queda `solo_cotifly`, como en `error_envio`; y el 404
+  `COTIZACION_NO_ENCONTRADA` de NEXO al marcar es 409 `COTIZACION_NEXO_NO_ENCONTRADA`, no el 404 "no es tuya".
+
 ## Consecuencias
 
 - Hay que cargar en Dokploy `Correo__MailSender__UrlBase` y el buzón de pruebas, aplicar el 13 y, para producción, autorizar la IP de

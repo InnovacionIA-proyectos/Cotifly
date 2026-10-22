@@ -334,7 +334,8 @@ contra el contrato, así que un ejemplo desactualizado rompe la compilación de 
 | 503 | `CUBICADOR_NO_AUTORIZADO` | Captura y licitación | HU-023.1: el cubicador rechazó la llave de Cotifly (nunca va al respaldo). No es la sesión del comercial: no cerrar sesión. |
 | 400 | `MERCANCIAS_REQUERIDAS`, `MERCANCIA_DESCONOCIDA`, `MERCANCIA_NO_CUBICABLE`, `DIMENSIONES_INVALIDAS` | Captura y licitación | HU-023.1: el cubicador rechazó las mercancías de una ruta; `mensaje` trae el detalle del cubicador. No se guarda nada. D-1019-1: cuando se sabe qué mercancía es, `detalle.ruta` y `detalle.item` (base 0) y `detalle.campo`. |
 | 400 | `CUBICACION_DEMASIADO_GRANDE` | Captura, licitación, recálculo de vehículos y `POST /web/cubicacion` | **Vigente** desde HU-023 (#176): la ruta o el cálculo pasa de 10.000 unidades (tope del cubicador; se valida antes de llamarlo, con el cubicador configurado). Partir la carga en varias rutas. No se guarda nada. |
-| 503 / 403 | `NEXO_NO_DISPONIBLE` / `NEXO_SIN_PERMISO` | Captura con conexos | No se pudo leer el costo del conexo en el catálogo de Nexo. |
+| 503 / 403 | `NEXO_NO_DISPONIBLE` / `NEXO_SIN_PERMISO` | Captura, licitación y re-solicitud (`-vN`) con conexos | No se pudo leer el costo del conexo en el catálogo de Nexo. Nada se guarda. El 403 quedó declarado en el openapi de las tres operaciones (endurecimiento B de #199). |
+| 400 | `FOLIO_INVALIDO` | Versión nueva (`re-solicitar` `-vN` y `nueva_version` de `PUT .../solicitud`) | Endurecimiento B (#199): el folio de la versión nueva no cumple ADR-011 (folio de la original con otra forma o `-vN` de más de 50 caracteres). Nada se crea; avisar a soporte. El PDF no lo responde. |
 
 ### 8.3 Crear la solicitud: `POST /web/solicitudes-costeo`
 
@@ -539,8 +540,10 @@ sola a Nexo (`estado_costeo` pasa a `pendiente_costeo`) y cada ruta trae sus `ca
 volumen y llenado) y su `resultado_cubicacion`; los avisos del cubicador van en `cubicacion[]` (la misma forma de
 `POST /web/solicitudes-costeo`, ahora se guardan). Si una ruta falla (`estado_cubicacion = fallida`, con `error_cubicacion`), el estado
 es `con_fallas` y la licitación **no sale a Nexo** hasta `POST /web/licitaciones/{folio}/cubicacion/reintentar` (cuerpo opcional
-`{"usar_respaldo": true}` para aceptar con un camión sin vehículo, que resuelve la Mesa de Costeo, **solo las rutas que fallaron porque
-el cubicador no respondió** (`error_cubicacion` empieza por `CUBICADOR_NO_DISPONIBLE`); sin él, vuelven a la cola). 409
+`{"usar_respaldo": true}` para aceptar con el respaldo **solo las rutas que fallaron porque el cubicador no respondió**
+(`error_cubicacion` empieza por `CUBICADOR_NO_DISPONIBLE`); sin él, vuelven a la cola. Endurecimiento B (#199, HU-032, ADR-022 §9): el
+respaldo es el del segundo plano: el vehículo elegido de la ruta si es de Nexo, con `VEHICULO_ELEGIDO_USADO`, o sin vehículo con
+`VEHICULO_ELEGIDO_INVALIDO`; sin elegido, sin vehículo, que resuelve la Mesa de Costeo). 409
 `ESTADO_NO_PERMITE` si no hay rutas fallidas, o con `usar_respaldo` si las fallidas son rechazos de la mercancía o las medidas
 (`MERCANCIA_DESCONOCIDA`, `DIMENSIONES_INVALIDAS`...): esos se corrigen en una versión nueva. Mientras la cubicación no termina, `POST .../costeo/reintentar` y el
 recálculo de una ruta responden 409. Sin cubicador, como antes (sin `progreso_cubicacion`):
@@ -793,6 +796,11 @@ Encabezado `If-Match: "7"` (obligatorio en la perdida sin costeo; opcional en el
 ```
 
 Responde 200 `CotizacionResumen` con el `ETag` nuevo; una ganada queda con `motivo_rechazo: "No aplica"`.
+
+Endurecimiento B (#199, E2E 2026-10-22): repetir el mismo resultado ya `sincronizado` es 200 sin cambios y sin llamar a Nexo; ante
+`RESULTADO_YA_DEFINIDO` Cotifly **lee** el resultado de Nexo (ya no `POST /api/cotizaciones`); una perdida en `pendiente_costeo` con la
+solicitud que Nexo ya no reconoce queda `solo_cotifly`; y si Nexo no reconoce la cotización al marcar, responde 409
+`COTIZACION_NEXO_NO_ENCONTRADA` (`detalle.motivo = COTIZACION_NO_ENCONTRADA`), nunca el 404 "no es tuya".
 
 `/seguimiento` de una cotización que pasó por Nexo:
 
@@ -1417,11 +1425,13 @@ Reglas que conviene saber:
 |---|---|---|---|
 | 400 | `CAMPO_NO_EDITABLE` | Cambia el cliente, el tipo o la línea de una ruta guardada, o una ruta nueva usa una línea que la solicitud no tiene | Restaurar el valor (`detalle.campo`) |
 | 400 | `SOLICITUD_COSTEO_INVALIDA` | Reglas de la captura, `RUTA_INEXISTENTE`, `RUTA_REPETIDA` o `RUTAS_REORDENADAS` en `detalle.errores` | Marcar los campos |
-| 403 | `NEXO_SIN_PERMISO` | NEXO no deja rechazar la solicitud anterior | "Pide el rol en NEXO"; nada cambió |
+| 400 | `FOLIO_INVALIDO` | `nueva_version`: el folio de la versión nueva no cumple ADR-011 | "Contacta a soporte"; nada cambió |
+| 403 | `NEXO_SIN_PERMISO` (`detalle.motivo = RECHAZO_NEXO_FALLIDO`) | NEXO no deja rechazar la solicitud anterior. Desde el endurecimiento B (#199) `detalle.motivo` es siempre `RECHAZO_NEXO_FALLIDO` (antes el texto crudo "HTTP 403 …") | "Pide el rol en NEXO"; no se capturó otra; la versión subió: recargar |
 | 409 | `ESTADO_NO_PERMITE` | `LICITACION`, `SIN_FORMULARIO`, `ENVIO_EN_CURSO`, `CUBICACION_EN_CURSO` o `MODO_CAMBIO` en `detalle.motivo` | El mensaje; con `MODO_CAMBIO`, recargar |
 | 409 | `CONFLICTO_CONCURRENCIA` | El `If-Match` ya no es el vigente | Recargar |
 | 428 | `PRECONDICION_REQUERIDA` | Falta `If-Match` | (error de integración) |
 | 503 | `NEXO_NO_DISPONIBLE` (`RECHAZO_NEXO_FALLIDO`) | El rechazo de la solicitud anterior falló: no se capturó otra | "NEXO no respondió; no se cambió nada" y Reintentar tras recargar |
+| 503 | `SERVICIO_OCUPADO` | `nueva_version`: el candado del folio `-vN` siguió ocupado | Endurecimiento B (#199): nada cambió, tampoco la versión de la original. Reintentar con el mismo `If-Match` |
 
 **`re-solicitar` con `datos_carga` queda obsoleto** (`deprecated` en el contrato): para cambiar la carga se usa este `PUT`. Mientras el
 frontend migra, `datos_carga` se sigue aceptando con tres defectos corregidos: las mercancías conservan `codigo_mercancia` y
