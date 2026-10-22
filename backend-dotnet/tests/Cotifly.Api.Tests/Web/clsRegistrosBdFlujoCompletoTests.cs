@@ -53,7 +53,6 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
         .ConCliente(clsCosteoEndpointsTests.Nit, "LONGYIN S.A.S.")
         .ConServicioConexo(Cargue, Cargue, "Cargue en puerto", "logistico", "UND", 150_000m);
     private readonly clsCubicadorFalso _cubicador = new();
-    private readonly clsServidorSmtpFalso _relay = new();
     private readonly clsApiWebPruebas _api;
 
     public clsRegistrosBdFlujoCompletoTests(clsEntornoApiWebInstalada entorno)
@@ -70,10 +69,6 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
         _api = clsApiWebPruebas.ConNexo(_bd, _nexo, cubicador: _cubicador, extra: new Dictionary<string, string?>
         {
             ["Correo:Habilitado"] = "true",
-            ["Correo:Modo"] = "smtp_relay",
-            ["Correo:SmtpRelay:Host"] = clsServidorSmtpFalso.Host,
-            ["Correo:SmtpRelay:Port"] = _relay.Puerto.ToString(CultureInfo.InvariantCulture),
-            ["Correo:SmtpRelay:TimeoutSeg"] = "10",
         });
     }
 
@@ -239,13 +234,31 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
             correo.StatusCode.Should().Be(HttpStatusCode.OK, await correo.Content.ReadAsStringAsync(Ct));
         }
 
-        _relay.Recibidos.Should().ContainSingle();
+        // HU-033 (#199): sale por MailSender (falso). Fuera de Production va al buzón de pruebas con [QA], sin CC ni CCO reales y con los
+        // destinatarios originales en el cuerpo; el cuerpo trae el precio por ruta y el total, sin desglose.
+        var recibido = _api.MailSender.Recibidos.Should().ContainSingle().Subject;
+        recibido.To.Should().Equal(clsMailSenderFalso.BuzonPruebas);
+        recibido.Cc.Should().BeEmpty();
+        recibido.Bcc.Should().BeEmpty();
+        recibido.Subject.Should().StartWith("[QA] Cotización ");
+        recibido.Body.Should().Contain("compras@longyin.com.co").And.Contain("gerencia@longyin.com.co")
+            .And.Contain(System.Net.WebUtility.HtmlEncode(Cotifly.Aplicacion.Pdf.Services.clsTextosEstandar.EtiquetaTotalGeneral));
+        recibido.Body.Should().NotContainAny("Costo", "Margen", "margen", "flete");
+        recibido.Adjuntos.Should().ContainSingle().Which.Nombre.Should().EndWith(".pdf");
+        recibido.CorrelationId.Should().StartWith(folio + ":");
         (await Filas($"""
-            SELECT CONCAT(c.estado, '|', IIF(c.messageId IS NULL, '-', 'M'), '|', c.confirmadoPor, '|', ISNULL(c.error, '-'), '|', IIF(c.asunto IS NULL OR c.asunto = '', '-', 'A'), '|',
+            SELECT CONCAT(c.estado, '|', IIF(c.idMailSender IS NULL, '-', 'I'), '|', c.confirmadoPor, '|', ISNULL(c.error, '-'), '|', IIF(c.asunto IS NULL OR c.asunto = '', '-', 'A'), '|',
+                ISNULL(c.redirigidoA, '-'), '|', IIF(c.siguienteConsultaAt IS NULL, '-', 'S'), '|',
                 (SELECT STRING_AGG(CONCAT(d.tipo, '=', d.email), ',') WITHIN GROUP (ORDER BY d.tipo DESC) FROM dbo_cotifly.CorreoDestinatarios d WHERE d.correoId = c.id))
             FROM dbo_cotifly.Correos c WHERE c.cotizacionId = '{id}'
             """)).Should().Equal(
-            $"enviado|M|{ana.UsuarioId.ToString().ToUpperInvariant()}|-|A|para=compras@longyin.com.co,cc=gerencia@longyin.com.co");
+            $"encolado|I|{ana.UsuarioId.ToString().ToUpperInvariant()}|-|A|{clsMailSenderFalso.BuzonPruebas}|S|para=compras@longyin.com.co,cc=gerencia@longyin.com.co");
+
+        // El worker de correos consulta MailSender: entregado → "enviado", sin más consultas.
+        _api.MailSender.Entregar(recibido.Id);
+        (await _api.ProcesarCorreosAsync(folio)).Should().Be(1);
+        (await Fila($"SELECT CONCAT(c.estado, '|', IIF(c.enviadoAt IS NULL, '-', 'E'), '|', IIF(c.siguienteConsultaAt IS NULL, '-', 'S'), '|', c.intentosEntrega) FROM dbo_cotifly.Correos c WHERE c.cotizacionId = '{id}'"))
+            .Should().Be("enviado|E|-|1");
         (await Fila($"SELECT CONCAT(estadoEnvio, '|', IIF(marcadoAt IS NULL, '-', 'M')) FROM dbo_cotifly.CotizacionesSolicitud WHERE id = '{id}'"))
             .Should().StartWith("enviada|");
 
@@ -312,7 +325,6 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
         _api.Dispose();
         _nexo.Dispose();
         _cubicador.Dispose();
-        await _relay.DisposeAsync();
     }
 
     /// <summary>

@@ -21,7 +21,8 @@ namespace Cotifly.Aplicacion.Tests.Correo;
 /// <summary>
 /// Caso de uso <c>enviar_correo</c> con puertos simulados. Port de <c>tests/test_correo.py</c> (confirmación obligatoria,
 /// cotización inexistente, PDF ausente, duplicado &lt; 5 min, distinto destinatario, fallo del transporte) más dueño,
-/// correo deshabilitado, <c>reenviada</c> (bug del Python) y fila <c>fallido</c>.
+/// correo deshabilitado, <c>reenviada</c> (bug del Python) y fila <c>fallido</c>. HU-033 (#199): MailSender encola (fila
+/// <c>encolado</c> con su id), copia oculta al comercial, protección "redirigir", correlación, metadatos y el resumen con el total.
 /// </summary>
 public sealed class clsCorreoServiceTests : IDisposable
 {
@@ -33,7 +34,8 @@ public sealed class clsCorreoServiceTests : IDisposable
     private readonly IClsUnitOfWork _unidadTrabajo = Substitute.For<IClsUnitOfWork>();
     private readonly clsRelojFalso _reloj = new();
     private readonly clsCandadoEnvios _candado = new();
-    private readonly clsOpcionesCorreo _opciones = new() { Habilitado = true };
+    private static readonly Guid _idMailSender = Guid.Parse("6d1a0f4e-3b2c-4c1d-9e8f-0a1b2c3d4e5f");
+    private readonly clsOpcionesCorreo _opciones = new() { Habilitado = true, Proteccion = new() { Modo = "ninguno" } };
     private readonly clsLoggerFalso<clsCorreoService> _logger = new();
     private readonly clsUsuarioWeb _comercial;
     private readonly clsCotizacionSolicitud _cotizacion;
@@ -57,8 +59,9 @@ public sealed class clsCorreoServiceTests : IDisposable
         _unidadTrabajo.GuardarCambiosSiVersionAsync(Arg.Any<Guid>(), Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(true);
         _correos.ListarEnviadosDesdeAsync(Arg.Any<Guid>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>()).Returns([]);
         _almacen.LeerPorReferenciaAsync("/data/pdfs/PCN-C1.pdf", Arg.Any<CancellationToken>()).Returns("%PDF-1.4 prueba"u8.ToArray());
-        _transporte.Modo.Returns("smtp_relay");
-        _transporte.EnviarAsync(Arg.Do<clsMensajeCorreo>(m => _enviado = m), Arg.Any<CancellationToken>()).Returns("<abc@boterosoto.com.co>");
+        _transporte.Modo.Returns("mailsender");
+        _transporte.EnviarAsync(Arg.Do<clsMensajeCorreo>(m => _enviado = m), Arg.Any<CancellationToken>())
+            .Returns(new clsEnvioAceptado(_idMailSender, EstadoCorreo.Encolado, null));
         _correos.When(c => c.Agregar(Arg.Any<clsCorreo>())).Do(ci => _registrados.Add(ci.Arg<clsCorreo>()));
     }
 
@@ -78,7 +81,11 @@ public sealed class clsCorreoServiceTests : IDisposable
     {
         var resultado = await Servicio().EnviarAsync(Entrada(cc: ["jefe@boterosoto.com.co"]), Ct);
 
-        resultado.Valor.Should().Be(new clsSalidaEnvioCorreo(true, "<abc@boterosoto.com.co>", true));
+        resultado.Valor.Enviado.Should().BeTrue();
+        resultado.Valor.MessageId.Should().Be(_idMailSender.ToString());
+        resultado.Valor.RegistradoEnBd.Should().BeTrue();
+        resultado.Valor.Estado.Should().Be("encolado");
+        resultado.Valor.RedirigidoA.Should().BeNull();
         _enviado!.Remitente.Should().Be("nvargas@boterosoto.com.co");
         _enviado.Para.Should().Equal("cliente@empresa.com");
         _enviado.Cc.Should().Equal("jefe@boterosoto.com.co");
@@ -89,13 +96,93 @@ public sealed class clsCorreoServiceTests : IDisposable
         _enviado.CuerpoHtml.Should().Contain("Estimado cliente,<br>").And.Contain("Botero Soto</b> · Soluciones Logísticas");
 
         var fila = _registrados.Should().ContainSingle().Subject;
-        fila.Estado.Should().Be(EstadoCorreo.Enviado);
-        fila.MessageId.Should().Be("<abc@boterosoto.com.co>");
+        fila.Estado.Should().Be(EstadoCorreo.Encolado, "MailSender lo encoló (202): el worker confirma la entrega");
+        fila.IdMailSender.Should().Be(_idMailSender);
+        fila.Id.Should().Be(resultado.Valor.CorreoId);
+        fila.SiguienteConsultaAt.Should().Be(_reloj.AhoraUtc + _opciones.Seguimiento.Intervalo);
         fila.ConfirmadoPor.Should().Be(_comercial.Id);
         fila.Para.Should().Equal("cliente@empresa.com");
         fila.Cc.Should().Equal("jefe@boterosoto.com.co");
         _cotizacion.EstadoEnvio.Should().Be(EstadoEnvio.Enviada);
         await _unidadTrabajo.Received(1).GuardarCambiosAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ElComercialVaEnCopiaOcultaYElCorreoLlevaCorrelacionYMetadatos()
+    {
+        var resultado = await Servicio().EnviarAsync(Entrada(), Ct);
+
+        _enviado!.Bcc.Should().Equal("nvargas@boterosoto.com.co");
+        _enviado.IdCorrelacion.Should().Be($"PCN-C1:{resultado.Valor.CorreoId:D}");
+        _enviado.Metadatos.Should().Contain("folio", "PCN-C1").And.Contain("origen", "cotifly")
+            .And.Contain("correo_id", resultado.Valor.CorreoId.ToString("D")).And.Contain("cotizacion_id", _cotizacion.Id.ToString("D"));
+    }
+
+    [Theory]
+    [InlineData("NVARGAS@boterosoto.com.co", null)]
+    [InlineData("cliente@empresa.com", "nvargas@boterosoto.com.co")]
+    public async Task SiElComercialYaVaEnParaOCcNoSeRepiteEnCopiaOculta(string para, string? cc)
+    {
+        await Servicio().EnviarAsync(Entrada(para: [para], cc: cc is null ? null : [cc]), Ct);
+
+        _enviado!.Bcc.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ConRedirigirTodoVaAlBuzonDePruebasConQaYLosDestinatariosOriginalesEnElCuerpo()
+    {
+        _opciones.Proteccion = new clsOpcionesProteccionCorreo { Modo = "redirigir", BuzonPruebas = "qa@pruebas.local" };
+
+        var resultado = await Servicio().EnviarAsync(Entrada(para: ["cliente@empresa.com"], cc: ["jefe@empresa.com"]), Ct);
+
+        _enviado!.Para.Should().Equal("qa@pruebas.local");
+        _enviado.Cc.Should().BeEmpty("ningún CC real sale de un ambiente de pruebas");
+        _enviado.Bcc.Should().BeEmpty("ni la copia oculta");
+        _enviado.Asunto.Should().Be("[QA] Cotización PCN-C1 — Botero Soto");
+        _enviado.CuerpoHtml.Should().Contain("Destinatarios originales")
+            .And.Contain("cliente@empresa.com").And.Contain("jefe@empresa.com").And.Contain("nvargas@boterosoto.com.co");
+        resultado.Valor.RedirigidoA.Should().Be("qa@pruebas.local");
+        var fila = _registrados.Should().ContainSingle().Subject;
+        fila.Para.Should().Equal("cliente@empresa.com");
+        fila.Cc.Should().Equal("jefe@empresa.com");
+        fila.RedirigidoA.Should().Be("qa@pruebas.local");
+    }
+
+    [Fact]
+    public async Task UnEnvioEnCursoEnMailSenderTambienCuentaParaLaDeduplicacion()
+    {
+        var previo = clsCorreo.Crear(_cotizacion.Id, ["cliente@empresa.com"], EstadoCorreo.Encolado, idMailSender: Guid.NewGuid(),
+            siguienteConsultaAt: _reloj.AhoraUtc).Valor;
+        _correos.ListarEnviadosDesdeAsync(Arg.Any<Guid>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>()).Returns([previo]);
+
+        (await Servicio().EnviarAsync(Entrada(), Ct)).Error.Codigo.Should().Be(clsCodigosError.CorreoDuplicado);
+    }
+
+    [Fact]
+    public async Task UnFallidoNoCuentaParaLaDeduplicacion()
+    {
+        var previo = clsCorreo.Crear(_cotizacion.Id, ["cliente@empresa.com"], EstadoCorreo.Fallido, idMailSender: Guid.NewGuid()).Valor;
+        _correos.ListarEnviadosDesdeAsync(Arg.Any<Guid>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>()).Returns([previo]);
+
+        (await Servicio().EnviarAsync(Entrada(), Ct)).EsExitoso.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ElCuerpoLlevaElTotalDeLaCotizacionSinDesglose()
+    {
+        var costeada = clsCotizacionMuestra.Costeada(folio: "PCN-C2", usuarioId: _comercial.Id);
+        costeada.AsignarPdf("/data/pdfs/PCN-C2.pdf");
+        _cotizaciones.ObtenerPorFolioDelUsuarioAsync("PCN-C2", _comercial.Id, Arg.Any<CancellationToken>()).Returns(costeada);
+        _almacen.LeerPorReferenciaAsync("/data/pdfs/PCN-C2.pdf", Arg.Any<CancellationToken>()).Returns("%PDF-1.4"u8.ToArray());
+
+        var resultado = await Servicio().EnviarAsync(new clsEntradaEnviarCorreo(_comercial.Id, ["cliente@empresa.com"], Folio: "PCN-C2"), Ct);
+
+        resultado.EsExitoso.Should().BeTrue();
+        var total = Cotifly.Aplicacion.Pdf.Services.clsFormatoMoneda.Formatear(costeada.PrecioFinal, "COP");
+        _enviado!.CuerpoHtml.Should().Contain(System.Net.WebUtility.HtmlEncode(clsPlantillaCorreo.TituloResumen))
+            .And.Contain(System.Net.WebUtility.HtmlEncode(clsPlantillaCorreo.EtiquetaTotal))
+            .And.Contain(total + " COP").And.Contain(System.Net.WebUtility.HtmlEncode(Cotifly.Aplicacion.Pdf.Services.clsTextosEstandar.LeyendaImpuestos));
+        _enviado.CuerpoHtml.Should().NotContainAny("Costo", "costo", "Margen", "margen", "Flete", "flete");
     }
 
     [Fact]
@@ -126,6 +213,7 @@ public sealed class clsCorreoServiceTests : IDisposable
         await Servicio().EnviarAsync(Entrada(usuario: sinCorreo.Id), Ct);
 
         _enviado!.Remitente.Should().BeNull();
+        _enviado.Bcc.Should().BeEmpty("sin correo no hay copia oculta");
     }
 
     // test_sin_confirmado_por_rechaza_y_no_envia
@@ -286,6 +374,23 @@ public sealed class clsCorreoServiceTests : IDisposable
 
         await Servicio().EnviarAsync(Entrada(para: ["c@x.com"]), Ct);
         _cotizacion.EstadoEnvio.Should().Be(EstadoEnvio.Reenviada);
+    }
+
+    [Fact]
+    public async Task UnRechazoDeMailSenderDejaLaFilaFallidaSinIdYDeshaceLaReserva()
+    {
+        _transporte.EnviarAsync(Arg.Any<clsMensajeCorreo>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new clsEnvioCorreoException("MailSender rechazó el correo por datos inválidos (HTTP 422)."));
+
+        var resultado = await Servicio().EnviarAsync(Entrada(), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.CorreoEnvioFallido);
+        var fila = _registrados.Should().ContainSingle().Subject;
+        fila.Estado.Should().Be(EstadoCorreo.Fallido);
+        fila.IdMailSender.Should().BeNull();
+        fila.EsReintentable.Should().BeFalse("nunca llegó a MailSender: se envía de nuevo");
+        fila.SiguienteConsultaAt.Should().BeNull();
+        _cotizacion.EstadoEnvio.Should().Be(EstadoEnvio.SinEnviar);
     }
 
     [Fact]

@@ -25,13 +25,26 @@ public sealed record clsEntradaEnviarCorreo(
     string? ThreadId = null);
 
 /// <summary>
-/// Salida del envío (<c>RespuestaEnvio</c>: <c>{enviado, message_id}</c>, más <c>registrado_en_bd</c> de la herramienta).
+/// Salida del envío (<c>RespuestaEnvio</c>: <c>{enviado, message_id}</c>, más <c>registrado_en_bd</c> de la herramienta). HU-033 (#199):
+/// <c>enviado = true</c> significa que MailSender ACEPTÓ el correo (202); la entrega real se ve en <see cref="Estado"/> y en el historial
+/// (<c>GET .../correos</c>).
 /// </summary>
+/// <param name="MessageId">Id del correo en MailSender (el <c>id</c> del 202).</param>
 /// <param name="RegistradoEnBd">
-/// False solo si el correo salió pero la base no pudo registrar el envío: no se reporta como error para que el comercial no
+/// False solo si MailSender aceptó el correo pero la base no pudo registrar el envío: no se reporta como error para que el comercial no
 /// lo reenvíe (queda un error en el log).
 /// </param>
-public sealed record clsSalidaEnvioCorreo(bool Enviado, string MessageId, bool RegistradoEnBd);
+public sealed record clsSalidaEnvioCorreo(bool Enviado, string MessageId, bool RegistradoEnBd)
+{
+    /// <summary>HU-033: id del correo en Cotifly (fila de <c>Correos</c>; el del historial y del reintento).</summary>
+    public Guid CorreoId { get; init; }
+
+    /// <summary>HU-033: estado del correo al responder (<c>encolado</c>).</summary>
+    public string Estado { get; init; } = "encolado";
+
+    /// <summary>HU-033: buzón de pruebas al que se redirigió (fuera de producción); <c>null</c> si va a los destinatarios reales.</summary>
+    public string? RedirigidoA { get; init; }
+}
 
 /// <summary>Borrador del formulario de envío para la vista previa (<c>EnvioWeb</c> opcional).</summary>
 public sealed record clsBorradorCorreo(
@@ -41,9 +54,47 @@ public sealed record clsBorradorCorreo(
     string? Cuerpo = null);
 
 /// <summary>Vista previa del correo (<c>VistaPreviaCorreo</c>): nada se envía.</summary>
-/// <param name="Cuerpo">Cuerpo en texto plano, tal como sale.</param>
+/// <param name="Cuerpo">Texto del comercial (editable), sin el bloque fijo del resumen.</param>
 /// <param name="Adjunto">Nombre del PDF que se adjuntará.</param>
-public sealed record clsVistaPreviaCorreo(string Asunto, string Cuerpo, IReadOnlyList<string> Para, IReadOnlyList<string> Cc, string Adjunto);
+public sealed record clsVistaPreviaCorreo(string Asunto, string Cuerpo, IReadOnlyList<string> Para, IReadOnlyList<string> Cc, string Adjunto)
+{
+    /// <summary>HU-033: el cuerpo en HTML tal como lo recibe el cliente (texto, resumen con el total y firma; sin el aviso de pruebas).</summary>
+    public string? CuerpoHtml { get; init; }
+
+    /// <summary>HU-033: bloque fijo del resumen (precio por ruta y total, sin desglose); <c>null</c> si la cotización no tiene total.</summary>
+    public Services.clsResumenCorreo? Resumen { get; init; }
+
+    /// <summary>HU-033: copia oculta que se agrega al enviar (el correo del comercial), o <c>null</c> si no tiene correo.</summary>
+    public string? CopiaOculta { get; init; }
+
+    /// <summary>HU-033: ¿el ambiente redirige los correos al buzón de pruebas? (aviso "ambiente de pruebas" en el frontend).</summary>
+    public bool EntornoPruebas { get; init; }
+
+    /// <summary>HU-033: buzón de pruebas que recibirá el correo con <see cref="EntornoPruebas"/>; <c>null</c> en producción.</summary>
+    public string? RedirigidoA { get; init; }
+
+    /// <summary>HU-033: texto del aviso de pruebas para mostrar tal cual; <c>null</c> en producción.</summary>
+    public string? Aviso { get; init; }
+}
+
+/// <summary>
+/// HU-033 (#199): un envío del historial de la cotización (<c>GET /web/cotizaciones/{folio}/correos</c>), con el estado que reporta
+/// MailSender. Los destinatarios son los originales aunque el correo se haya redirigido al buzón de pruebas.
+/// </summary>
+public sealed record clsEnvioCorreoHistorial(
+    Guid Id,
+    DateTimeOffset CreatedAt,
+    string Estado,
+    IReadOnlyList<string> Para,
+    IReadOnlyList<string> Cc,
+    string? Asunto,
+    string? Error,
+    int? Intentos,
+    DateTimeOffset? EnviadoAt,
+    DateTimeOffset? EstadoActualizadoAt,
+    string? RedirigidoA,
+    string? IdMailSender,
+    bool Reintentable);
 
 /// <summary>Destinatarios del último envío a un cliente (<c>Destinatarios</c>); listas vacías si nunca se le envió.</summary>
 public sealed record clsDestinatarios(IReadOnlyList<string> Para, IReadOnlyList<string> Cc)

@@ -79,6 +79,12 @@ public static class clsCodigosError
     /// </summary>
     public const string CorreoDeshabilitado = "CORREO_DESHABILITADO";
 
+    /// <summary>
+    /// HU-033 (#199): el correo no se puede reintentar en MailSender: no está <c>fallido</c>, nunca llegó a MailSender (se rechazó al
+    /// encolarlo: hay que enviarlo de nuevo) o MailSender ya no lo conoce. 409.
+    /// </summary>
+    public const string CorreoNoReintentable = "CORREO_NO_REINTENTABLE";
+
     /// <summary>Fallo inesperado (ej. el comercial autenticado no existe en <c>UsuariosWeb</c>).</summary>
     public const string ErrorInterno = "ERROR_INTERNO";
 

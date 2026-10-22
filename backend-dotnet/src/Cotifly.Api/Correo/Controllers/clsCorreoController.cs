@@ -16,11 +16,13 @@ namespace Cotifly.Api.Correo.Controllers;
 public sealed class clsCorreoController(
     IClsContextoUsuario usuario,
     IClsCorreoService correo,
-    IClsVistaPreviaCorreoService vistaPrevia) : clsControladorWebBase(usuario)
+    IClsVistaPreviaCorreoService vistaPrevia,
+    IClsHistorialCorreosService historial) : clsControladorWebBase(usuario)
 {
     /// <summary>
-    /// 200 <c>RespuestaEnvio</c>; 400 <c>ErrorWeb</c> (destinatarios, asunto o cuerpo inválidos) o <c>ErrorNegocio</c> (duplicado,
-    /// sin PDF, fallo del relay); 404 si no es suya; 503 <c>ErrorNegocio</c> <c>CORREO_DESHABILITADO</c>.
+    /// 200 <c>RespuestaEnvio</c> (MailSender aceptó el correo: queda <c>encolado</c>); 400 <c>ErrorWeb</c> (destinatarios, asunto o cuerpo
+    /// inválidos) o <c>ErrorNegocio</c> (duplicado, sin PDF, MailSender lo rechazó o no respondió); 404 si no es suya; 409 si la cotización
+    /// cambió; 503 <c>ErrorNegocio</c> <c>CORREO_DESHABILITADO</c>.
     /// </summary>
     [HttpPost("enviar")]
     [ProducesResponseType<clsRespuestaEnvio>(StatusCodes.Status200OK)]
@@ -35,8 +37,48 @@ public sealed class clsCorreoController(
             new clsEntradaEnviarCorreo(UsuarioId, cuerpo.Para ?? [], Folio: folio, Cc: cuerpo.Cc, Asunto: cuerpo.Asunto, Cuerpo: cuerpo.Cuerpo),
             cancellationToken);
         return resultado.Coincidir<IActionResult>(
-            salida => Ok(new clsRespuestaEnvio(salida.Enviado, salida.MessageId)),
+            salida => Ok(new clsRespuestaEnvio(salida.Enviado, salida.MessageId)
+            {
+                CorreoId = salida.CorreoId == Guid.Empty ? null : salida.CorreoId,
+                Estado = salida.Estado,
+                RedirigidoA = salida.RedirigidoA,
+            }),
             Error);
+    }
+
+    /// <summary>
+    /// HU-033 (#199): 200 <c>HistorialCorreos</c>, los envíos de la cotización con el estado de MailSender (<c>encolado</c>, <c>enviando</c>,
+    /// <c>enviado</c> o <c>fallido</c> con su error); 404 si no es suya.
+    /// </summary>
+    [HttpGet("correos")]
+    [ProducesResponseType<clsHistorialCorreosRespuesta>(StatusCodes.Status200OK)]
+    [ProducesResponseType<clsErrorWeb>(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Historial(string folio, CancellationToken cancellationToken)
+    {
+        var resultado = await historial.ListarAsync(UsuarioId, folio, cancellationToken);
+        return resultado.Coincidir<IActionResult>(lista => Ok(new clsHistorialCorreosRespuesta(folio, lista)), Error);
+    }
+
+    /// <summary>
+    /// HU-033 (#199): reintenta en MailSender un envío <c>fallido</c>. 200 <c>EnvioCorreo</c> (vuelve a <c>encolado</c>); 404 si la cotización
+    /// no es suya o el envío no es de ella; 409 <c>CORREO_NO_REINTENTABLE</c>; 400 <c>CORREO_ENVIO_FALLIDO</c> si MailSender no respondió;
+    /// 503 <c>CORREO_DESHABILITADO</c>.
+    /// </summary>
+    [HttpPost("correos/{correoId}/reintentar")]
+    [ProducesResponseType<clsEnvioCorreoHistorial>(StatusCodes.Status200OK)]
+    [ProducesResponseType<clsErrorWeb>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status409Conflict)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> Reintentar(string folio, string correoId, CancellationToken cancellationToken)
+    {
+        // Un id que ni siquiera es un GUID responde 404, igual que uno que no existe (la sesión se exige antes).
+        if (!Guid.TryParse(correoId, out var id))
+        {
+            return clsRespuestasWeb.NoEsTuya();
+        }
+
+        var resultado = await historial.ReintentarAsync(UsuarioId, folio, id, cancellationToken);
+        return resultado.Coincidir<IActionResult>(c => Ok(c), Error);
     }
 
     /// <summary>200 <c>VistaPreviaCorreo</c> (no envía nada; el cuerpo es opcional); 404 si no es suya.</summary>
