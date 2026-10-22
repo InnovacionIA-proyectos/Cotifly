@@ -49,6 +49,10 @@ public sealed class clsCosteoNexo(
         "Nexo no respondió a tiempo: la solicitud pudo quedar creada en Nexo; verifica en Nexo antes de reintentar.";
     public const string MensajeRechazada = "Nexo rechazó la solicitud.";
 
+    /// <summary>Mensaje de <c>COTIZACION_NEXO_NO_ENCONTRADA</c> (404 <c>COTIZACION_NO_ENCONTRADA</c> de Nexo).</summary>
+    public const string MensajeCotizacionNexoNoEncontrada =
+        "Nexo no encuentra la cotización de este folio: no se registró nada. Recarga la cotización y, si persiste, avisa a la Mesa de Costeo.";
+
     /// <summary>Código de Nexo de <c>GET /api/solicitudes/{id}</c> sobre una solicitud descartada (409).</summary>
     public const string CodigoNexoDescartada = "SOLICITUD_DESCARTADA";
 
@@ -911,7 +915,9 @@ public sealed class clsCosteoNexo(
 
                 if (respuesta.StatusCode == HttpStatusCode.NotFound && codigoNexo == clsCodigosError.CotizacionNoEncontrada)
                 {
-                    return new clsErrorDominio(clsCodigosError.CotizacionNoEncontrada, mensajeNexo ?? "Cotización no encontrada en Nexo.", detalle);
+                    // Endurecimiento B (#199): nunca el COTIZACION_NO_ENCONTRADA local (404 "no es tuya"): la cotización es del comercial y lo
+                    // que Nexo no reconoce es SU cotización. 409 con el código de Nexo en detalle.motivo; el texto técnico queda en el log.
+                    return new clsErrorDominio(clsCodigosError.CotizacionNexoNoEncontrada, MensajeCotizacionNexoNoEncontrada, codigoNexo);
                 }
 
                 // 401/403: la identidad del comercial no vale en Nexo (sin idUsuarioExterno válido o sin rol en Cabina de Fletes). Es

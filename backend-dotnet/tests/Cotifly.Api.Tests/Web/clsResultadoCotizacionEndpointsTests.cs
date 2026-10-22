@@ -397,6 +397,25 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
         _nexo.Peticiones.Should().NotContain(p => p.Metodo != HttpMethod.Get && p.Url.AbsolutePath.StartsWith("/api/cotizaciones", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// Endurecimiento B (#199): si Nexo ya no reconoce la cotización de Nexo del folio (404 <c>COTIZACION_NO_ENCONTRADA</c> al marcar), el
+    /// comercial recibe 409 <c>COTIZACION_NEXO_NO_ENCONTRADA</c> con el código de Nexo en <c>detalle.motivo</c>, no el 404 "no es tuya".
+    /// </summary>
+    [Fact]
+    public async Task SiNexoNoEncuentraLaCotizacionAlMarcarEs409ConSuCodigoYNoEl404NoEsTuya()
+    {
+        var (sesion, folio, solicitud) = await EnviarAsync(entregar: true);
+        _nexo.Olvidar(solicitud);
+
+        using var respuesta = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"ganada"}""");
+
+        respuesta.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        await VerificarErrorNegocioAsync(respuesta, "COTIZACION_NEXO_NO_ENCONTRADA");
+        using var json = JsonDocument.Parse(await respuesta.Content.ReadAsStringAsync(Ct));
+        json.RootElement.GetProperty("error").GetProperty("detalle").GetProperty("motivo").GetString().Should().Be("COTIZACION_NO_ENCONTRADA");
+        (await EscalarAsync($"SELECT COALESCE(CAST(ganada AS nvarchar(5)), 'null') FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'")).Should().Be("null");
+    }
+
     /// <summary>La consulta de diagnóstico (solo lectura) documentada para el DBA en ADR-018 §17.</summary>
     private const string SqlDiagnosticoEntregadasSinPrecio = """
         SELECT c.folio FROM dbo_cotifly.CotizacionesSolicitud c

@@ -3648,6 +3648,7 @@ components:
                 - COSTEO_NEXO_RECHAZADA
                 - COSTEO_NEXO_SOLICITUD_INVALIDA
                 - COSTEO_NEXO_SOLICITUD_NO_ENCONTRADA
+                - COTIZACION_NEXO_NO_ENCONTRADA
                 - COSTEO_NO_REINTENTABLE
                 - COSTEO_NO_LISTO
                 - PDF_YA_GENERADO

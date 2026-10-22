@@ -152,6 +152,13 @@ public static class clsCodigosError
     public const string CosteoNexoSolicitudNoEncontrada = "COSTEO_NEXO_SOLICITUD_NO_ENCONTRADA";
 
     /// <summary>
+    /// Endurecimiento B (#199, E2E 2026-10-22): Nexo respondió 404 <c>COTIZACION_NO_ENCONTRADA</c> sobre la cotización de Nexo de un folio
+    /// del comercial (por ejemplo, al marcar el resultado). Es 409, nunca el 404 "no es tuya": la cotización sí es del comercial en
+    /// Cotifly y lo que falta es la de Nexo. El código de Nexo va en <c>detalle.motivo</c>. Código nuevo del backend .NET.
+    /// </summary>
+    public const string CotizacionNexoNoEncontrada = "COTIZACION_NEXO_NO_ENCONTRADA";
+
+    /// <summary>
     /// <c>POST /web/cotizaciones/{folio}/costeo/reintentar</c> sobre una cotización que no está en <c>error_envio</c> ni en
     /// <c>pendiente_envio</c> (o no nació del formulario ampliado): 409. Código nuevo del backend .NET.
     /// </summary>

@@ -281,13 +281,16 @@ public sealed class clsCosteoNexoConsultaTests : IDisposable
     }
 
     [Fact]
-    public async Task Un404CotizacionNoEncontradaEsCotizacionNoEncontrada()
+    public async Task Un404CotizacionNoEncontradaDeNexoEsCotizacionNexoNoEncontradaYNoElNoEsTuya()
     {
+        // Endurecimiento B (#199): antes viajaba como COTIZACION_NO_ENCONTRADA y el comercial veía el 404 "no es tuya".
         _nexo.Responder(HttpStatusCode.NotFound, """{"code":"COTIZACION_NO_ENCONTRADA","message":"Cotización no encontrada."}""");
 
         var resultado = await Adaptador().MarcarResultadoAsync(_usuarioId, "COT-X", new Cotifly.Aplicacion.Costeo.DTOs.clsResultadoNexo(true, null, null), Ct);
 
-        resultado.Error.Codigo.Should().Be(clsCodigosError.CotizacionNoEncontrada);
+        resultado.Error.Codigo.Should().Be(clsCodigosError.CotizacionNexoNoEncontrada);
+        resultado.Error.Detalle.Should().Be("COTIZACION_NO_ENCONTRADA", "solo el código de Nexo, sin el texto HTTP");
+        resultado.Error.Mensaje.Should().Be(clsCosteoNexo.MensajeCotizacionNexoNoEncontrada);
     }
 
     [Fact]
