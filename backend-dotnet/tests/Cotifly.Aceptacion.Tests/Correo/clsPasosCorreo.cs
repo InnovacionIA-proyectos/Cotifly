@@ -33,6 +33,31 @@ public sealed class clsPasosCorreo(clsContextoEscenario contexto)
     public void DadoProduccionSinProteccion() =>
         contexto.UsarEntorno("Production", new Dictionary<string, string?> { ["Correo:Habilitado"] = "true", ["Correo:Proteccion:Modo"] = "ninguno", ["Correo:Proteccion:PermitirEnvioReal"] = "true" });
 
+    [Given("el ambiente de producción con la protección de correo por defecto")]
+    public void DadoProduccionConProteccion() =>
+        contexto.UsarEntorno("Production", new Dictionary<string, string?> { ["Correo:Habilitado"] = "true", ["Correo:Proteccion:Modo"] = "redirigir", ["Correo:Proteccion:PermitirEnvioReal"] = "false" });
+
+    [Given("MailSender no responde a tiempo al encolar")]
+    public void DadoMailSenderLento()
+    {
+        // Auditoría #199: el POST se corta por tiempo (1 s) mientras MailSender tarda 3 s: pudo quedar encolado, el resultado es incierto.
+        contexto.Reconfigurar(new Dictionary<string, string?> { ["Correo:MailSender:TimeoutSegundos"] = "1" });
+        contexto.MailSender.Demora = TimeSpan.FromSeconds(3);
+    }
+
+    [When("MailSender vuelve a responder a tiempo")]
+    public void CuandoMailSenderVuelve() => contexto.MailSender.Demora = null;
+
+    [Then("el último correo de {string} queda registrado como incierto")]
+    public async Task EntoncesElUltimoCorreoQuedaIncierto(string folio)
+    {
+        var correo = await UltimoCorreoAsync(folio);
+        correo.Incierto.Should().BeTrue("sin respuesta al POST, MailSender pudo encolarlo");
+        clsCodigoEnum.ACodigo(correo.Estado!.Value).Should().Be("fallido");
+        correo.IdMailSender.Should().BeNull();
+        correo.Error.Should().StartWith(Dominio.Correo.clsCorreo.PrefijoIncierto);
+    }
+
     [Given("el envío de correo deshabilitado")]
     public void DadoElCorreoDeshabilitado() => contexto.Reconfigurar(new Dictionary<string, string?> { ["Correo:Habilitado"] = "false" });
 

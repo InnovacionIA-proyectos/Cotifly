@@ -121,3 +121,17 @@ Característica: Solo códigos de catálogo en el formulario de costeo
       | CNT20.OP |
       | CNT40.FT |
       | CNT40.OP |
+
+  # HU-031.1 (#194, NEXO #321): GET /web/alias/resolver traduce el texto del comercial (o del pliego) al código oficial con el diccionario de
+  # alias de Nexo (GET /api/catalogos/alias). Si el diccionario no responde, la respuesta es "no disponible", nunca "no reconocido".
+  Escenario: Un alias de vehículo del diccionario de Nexo se resuelve al código oficial del catálogo
+    Dado que el diccionario de alias de Nexo traduce el alias "TB" al vehículo "2S3"
+    Cuando "ana" resuelve el texto "tb" como tipo de vehículo
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "AliasResueltos" del contrato
+    Y el texto "tb" se reconoce como el código "2S3" por "alias"
+
+  Escenario: Con el diccionario de alias caído la resolución responde no disponible y no "no reconocido"
+    Dado que el diccionario de alias de Nexo traduce el alias "TB" al vehículo "2S3"
+    Y que el diccionario de alias de Nexo falla
+    Cuando "ana" resuelve el texto "TB" como tipo de vehículo
+    Entonces la respuesta tiene el estado 503 con el código de negocio "CATALOGOS_FLETE_NO_DISPONIBLE"

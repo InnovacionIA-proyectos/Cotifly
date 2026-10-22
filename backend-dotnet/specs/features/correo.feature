@@ -33,6 +33,14 @@ Característica: Envío de la cotización por correo
     Y MailSender recibe el correo de "ana.correo@boterosoto.com.co" para "cliente@empresa.com" con copia a "jefe@empresa.com" y copia oculta a "ana.correo@boterosoto.com.co"
     Y el correo tiene el asunto "Cotización PCN-12102026 — Botero Soto" y adjunta "PCN-12102026.pdf"
 
+  Escenario: En producción sin la segunda llave del envío real el correo va al buzón de pruebas
+    Dado el ambiente de producción con la protección de correo por defecto
+    Y que "ana.correo" tiene la cotización "PCN-16102026" del cliente "900123456" con su PDF
+    Cuando "ana.correo" envía la cotización "PCN-16102026" a "cliente@empresa.com"
+    Entonces el envío es exitoso
+    Y MailSender recibe el correo solo para el buzón de pruebas con el asunto "[QA] Cotización PCN-16102026 — Botero Soto"
+    Y el último correo de "PCN-16102026" queda registrado como "encolado" para "cliente@empresa.com" y redirigido al buzón de pruebas
+
   Escenario: El worker confirma la entrega de MailSender
     Dado que "ana.correo" tiene la cotización "PCN-13102026" del cliente "900123456" con su PDF
     Y que "ana.correo" envió la cotización "PCN-13102026" a "cliente@empresa.com"
@@ -91,6 +99,18 @@ Característica: Envío de la cotización por correo
     Entonces el envío se rechaza con el código "CORREO_ENVIO_FALLIDO"
     Y el último correo de "PCN-06102026" queda registrado como "fallido"
     Y la cotización "PCN-06102026" queda en estado de envío "sin_enviar"
+
+  Escenario: Sin respuesta de MailSender al encolar, el envío queda incierto y bloquea el reenvío inmediato
+    Dado que "ana.correo" tiene la cotización "PCN-15102026" del cliente "900123456" con su PDF
+    Y MailSender no responde a tiempo al encolar
+    Cuando "ana.correo" envía la cotización "PCN-15102026" a "cliente@empresa.com"
+    Entonces el envío se rechaza con el código "CORREO_ENVIO_FALLIDO"
+    Y el último correo de "PCN-15102026" queda registrado como incierto
+    Y la cotización "PCN-15102026" queda en estado de envío "enviada"
+    Cuando MailSender vuelve a responder a tiempo
+    Y "ana.correo" envía la cotización "PCN-15102026" a "cliente@empresa.com"
+    Entonces el envío se rechaza con el código "CORREO_DUPLICADO"
+    Y MailSender no recibe ningún correo
 
   Escenario: Sin PDF en el almacén no se envía
     Dado que "ana.correo" tiene la cotización "PCN-07102026" del cliente "900123456" sin PDF

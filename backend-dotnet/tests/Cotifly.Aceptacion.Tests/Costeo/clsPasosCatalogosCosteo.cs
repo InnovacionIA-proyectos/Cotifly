@@ -52,6 +52,26 @@ public sealed class clsPasosCatalogosCosteo(clsContextoWeb web, clsPasosCosteo c
     [Then("las clases de contenedor vienen vacías")]
     public void EntoncesClasesContenedorVacias() => ClasesContenedor().Should().BeEmpty();
 
+    [Given("que el diccionario de alias de Nexo traduce el alias {string} al vehículo {string}")]
+    public void DadoElAliasDeVehiculo(string alias, string codigo) => costeo.Nexo.Alias.Add((alias, "Vehiculo", codigo, true));
+
+    [Given("que el diccionario de alias de Nexo falla")]
+    public void DadoElDiccionarioDeAliasFalla() => costeo.Nexo.CatalogosFallidos.Add("alias");
+
+    [When("{string} resuelve el texto {string} como tipo de vehículo")]
+    public Task CuandoResuelveElAlias(string alias, string texto) =>
+        web.EnviarAsync(HttpMethod.Get, $"/web/alias/resolver?tipo=vehiculo&texto={Uri.EscapeDataString(texto)}", web.Sesion(alias).Access);
+
+    [Then("el texto {string} se reconoce como el código {string} por {string}")]
+    public void EntoncesElAliasSeReconoce(string texto, string codigo, string fuente)
+    {
+        var resultado = web.UltimoJson().GetProperty("resultados").EnumerateArray().Should().ContainSingle().Subject;
+        resultado.GetProperty("texto").GetString().Should().Be(texto);
+        resultado.GetProperty("reconocido").GetBoolean().Should().BeTrue();
+        resultado.GetProperty("codigo").GetString().Should().Be(codigo);
+        resultado.GetProperty("fuente").GetString().Should().Be(fuente);
+    }
+
     private List<(string? Valor, string? Etiqueta)> ClasesContenedor() =>
         [.. web.UltimoJson().GetProperty("clases_contenedor").EnumerateArray()
             .Select(t => (t.GetProperty("valor").GetString(), t.GetProperty("etiqueta").GetString()))];

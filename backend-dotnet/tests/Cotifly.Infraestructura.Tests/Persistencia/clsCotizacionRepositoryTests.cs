@@ -272,6 +272,42 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
         fila.Should().Be("spot|pendiente_envio|CNT40.HC|28500.50|Buenaventura|Buenaventura|3S3|pendiente_envio");
     }
 
+    /// <summary>
+    /// HU-032 (#197, script 12): el vehículo elegido de la ruta (<c>tipoVehiculoElegido</c> y <c>carroceriaElegida</c>) y una mercancía no
+    /// cubicable (sin medidas: <c>largoCm</c>, <c>anchoCm</c> y <c>altoCm</c> en NULL) se guardan y se reconstruyen igual.
+    /// </summary>
+    [Fact]
+    public async Task HU032_ElVehiculoElegidoYUnaMercanciaSinMedidasSeGuardanYSeReconstruyenIgual()
+    {
+        var solicitud = clsSolicitudCosteoMuestra.Crear() with
+        {
+            TipoVehiculo = "2S3",
+            Carroceria = "FURGON",
+            PesoKg = 29_500m,
+            Posiciones = [new clsPosicionCarga("Estiba de café", 20, 120m, 100m, 150m, 1425m), new clsPosicionCarga("Bultos", 2, 0m, 0m, 0m, 500m)],
+        };
+        var cotizacion = clsCotizacionMuestra.Formulario(folio: FolioUnico(), usuarioId: await CrearUsuarioAsync(), lineaNegocioId: 1, solicitud: solicitud);
+        var original = cotizacion.PrimeraRuta!;
+        (original.TipoVehiculoElegido, original.CarroceriaElegida).Should().Be(("2S3", "FURGON"));
+
+        await GuardarAsync(cotizacion);
+        var leida = await ConsultarAsync(s => s.GetRequiredService<IClsCotizacionRepository>().ObtenerPorFolioAsync(cotizacion.Folio, Ct));
+
+        var ruta = leida!.Rutas.Should().ContainSingle().Subject;
+        (ruta.TipoVehiculoElegido, ruta.CarroceriaElegida).Should().Be(("2S3", "FURGON"));
+        ruta.VehiculoElegido.Should().Be(("2S3", "FURGON"));
+        ruta.MercanciasOrdenadas.Select(m => (m.Orden, m.LargoCm, m.AnchoCm, m.AltoCm, m.PesoKg)).Should().Equal(
+            original.MercanciasOrdenadas.Select(m => (m.Orden, m.LargoCm, m.AnchoCm, m.AltoCm, m.PesoKg)));
+        var sinMedidas = ruta.MercanciasOrdenadas[1];
+        (sinMedidas.LargoCm, sinMedidas.AnchoCm, sinMedidas.AltoCm).Should().Be(((decimal?)null, (decimal?)null, (decimal?)null));
+        sinMedidas.APosicion().SinMedidas.Should().BeTrue("vuelve a la captura como una mercancía sin medidas");
+        (await clsBaseDatosPruebas.EscalarAsync<string>(BaseDatos.CadenaCotifly,
+                "SELECT CONCAT(l.tipoVehiculoElegido, '|', l.carroceriaElegida, '|', "
+                + "(SELECT COUNT(*) FROM dbo_cotifly.CotizacionMercancias m WHERE m.lineaSolicitudId = l.id AND m.largoCm IS NULL AND m.anchoCm IS NULL AND m.altoCm IS NULL)) "
+                + $"FROM dbo_cotifly.CotizacionLineasSolicitud l WHERE l.cotizacionSolicitudId = '{cotizacion.Id}'"))
+            .Should().Be("2S3|FURGON|1");
+    }
+
     [Fact]
     public async Task UnaCotizacionDelChatTieneSuRutaSinMercanciasNiSolicitudDeCosteo()
     {
