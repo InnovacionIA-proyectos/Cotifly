@@ -120,6 +120,45 @@ public sealed class clsConcurrenciaCotizacionTests(clsBaseDatosPruebas baseDatos
         (await VersionAsync(cotizacion.Id)).Should().Be("1");
     }
 
+    /// <summary>
+    /// Auditoría de la integración (#199), concurrencia real: mientras la versión nueva tiene reservada la original DENTRO del candado (la
+    /// fila con <c>UPDLOCK</c>), una edición en sitio con el mismo <c>If-Match</c> (<see cref="IClsUnitOfWork.GuardarCambiosSiVersionAsync"/>)
+    /// espera, sin interbloqueo, y al confirmarse la reserva pierde (<c>false</c>): la versión sube una sola vez.
+    /// </summary>
+    [Fact]
+    public async Task UnaEdicionConcurrenteEsperaLaReservaDentroDelCandadoYPierde()
+    {
+        var cotizacion = NuevaCotizacion(null);
+        await GuardarAsync(cotizacion);
+        var reservada = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var liberar = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var version = ConsultarAsync(s => s.GetRequiredService<IClsCandadoTransaccional>().EjecutarAsync<int>("cotifly:prueba-reserva-" + cotizacion.Id, async ct =>
+        {
+            var propia = await s.GetRequiredService<IClsCotizacionRepository>().ObtenerPorIdAsync(cotizacion.Id, ct);
+            (await s.GetRequiredService<IClsUnitOfWork>().VersionVigenteEnTransaccionAsync(propia!.Id, 0, ct)).Should().BeTrue();
+            reservada.SetResult();
+            await liberar.Task.WaitAsync(TimeSpan.FromSeconds(30), ct);
+            propia.IncrementarVersionNegocio();
+            return await s.GetRequiredService<IClsUnitOfWork>().GuardarCambiosAsync(ct);
+        }, Ct));
+        await reservada.Task.WaitAsync(TimeSpan.FromSeconds(30), Ct);
+
+        var edicion = ConsultarAsync(async s =>
+        {
+            var propia = await s.GetRequiredService<IClsCotizacionRepository>().ObtenerPorIdAsync(cotizacion.Id, Ct);
+            propia!.IncrementarVersionNegocio();
+            return await s.GetRequiredService<IClsUnitOfWork>().GuardarCambiosSiVersionAsync(propia.Id, 0, Ct);
+        });
+        await Task.Delay(TimeSpan.FromMilliseconds(700), Ct);
+        edicion.IsCompleted.Should().BeFalse("la fila está retenida por la reserva hasta confirmar");
+
+        liberar.SetResult();
+        (await version).EsExitoso.Should().BeTrue();
+        (await edicion).Should().BeFalse("la reserva ganó: el If-Match de la edición ya no vale");
+        (await VersionAsync(cotizacion.Id)).Should().Be("1");
+    }
+
     [Fact]
     public async Task LaComparacionEnTransaccionExigeUnaTransaccionAbierta()
     {
