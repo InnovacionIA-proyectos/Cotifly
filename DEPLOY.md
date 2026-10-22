@@ -129,9 +129,12 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `Pdf__StorageModo`, `Pdf__StorageDir` | no | no | `volumen`, `/data/pdfs` | manifiesto | |
 | `Pdf__BaseUrl` | no | no (no se valida al arrancar) | vacío | Dokploy | URL pública de la API (`https://<PUBLIC_HOST>`). Vacía, el enlace del PDF queda relativo (`/pdfs/{folio}.pdf`): sirve en la web |
 | `Pdf__PermitirCotizacionChat` | no | no | `false` | — (no está en el manifiesto) | `false` = la cotización legada del chat responde `COTIZACION_CHAT_RETIRADA` (HU-021.6). Solo las pruebas del PDF legado la encienden |
-| `Correo__Habilitado`, `Correo__Modo` | no | no | `false`, `smtp_relay` | Dokploy | transporte real por confirmar (D3) |
-| `Correo__SmtpRelay__Host` | no | con el correo habilitado | vacío | Dokploy | relay interno, sin AUTH (control por IP) |
-| `Correo__SmtpRelay__Port`, `__FromFallback`, `__TimeoutSeg` | no | no | `25`, `notificaciones@boterosoto.com.co`, `20` | manifiesto | |
+| `Correo__Habilitado`, `Correo__Modo` | no | no | `false`, `mailsender` | Dokploy | HU-033 (#199, ADR-023): el correo sale por el microservicio interno MailSender; `smtp_relay`, `smtp` y `wscorreos` se retiraron (con el correo habilitado no arrancan) |
+| `Correo__MailSender__UrlBase` | no | con el correo habilitado | vacío | Dokploy | URL interna de MailSender (sin autenticación: red interna). La de QA se carga en Dokploy, **nunca** en el repositorio |
+| `Correo__MailSender__TimeoutSegundos`, `__Remitente`, `__Prioridad` | no | no | `15`, `notificaciones@boterosoto.com.co`, `Normal` | manifiesto | `Remitente`: `From` si el comercial no tiene correo |
+| `Correo__Proteccion__Modo` | no | fuera de Production con el correo habilitado debe ser `redirigir` | `redirigir` | manifiesto (staging: **fijo** en `redirigir`) | todo correo va solo al buzón de pruebas, con `[QA]` en el asunto y los destinatarios originales en el cuerpo. `ninguno` solo en producción, al salir en vivo |
+| `Correo__Proteccion__BuzonPruebas` | no | con `redirigir` y el correo habilitado (un correo válido) | vacío | Dokploy | **buzón de pruebas por definir**; sin él la API no arranca con el correo habilitado y `redirigir` |
+| `Correo__Seguimiento__IntervaloTickSegundos`, `__IntervaloConsultaSegundos`, `__EdadMaximaHoras` | no | no | `15`, `30`, `24` | — | worker que consulta el estado en MailSender |
 | `IA__Proveedor`, `IA__Modelo`, `IA__Endpoint` | no | no (sin proveedor el agente no responde) | vacío | Dokploy | ADR-003. Con OmniRoute (gateway LLM interno, #84): `IA__Proveedor=openai_compatible`, `IA__Endpoint=http://llm-services-omniroute.10-10-40-17.sslip.io/v1` (HTTP dentro de la red interna, sin TLS; exige salida del worker hacia `10.10.40.17:80`) y `IA__Modelo=gemini/gemini-3.5-flash-lite`. Matriz de modelos en [docs/03](backend-dotnet/docs/03-infraestructura.md#omniroute). **Nunca** un gateway web no oficial de los que lista OmniRoute (`duckduckgo-web`, `theoldllm`, `veoaifree-web`, `chipotle`): riesgo de confidencialidad |
 | `IA__ApiKey` | **sí** (≥ 16) | según el proveedor (obligatoria con openai, azure_openai, gemini y anthropic); si tiene valor, en Production no puede ser un placeholder ni tener menos de 16 caracteres | vacío | Dokploy | **secreto de Dokploy**, nunca en el repositorio ni en el manifiesto. Con OmniRoute es la clave del gateway (`Authorization: Bearer`); como el tráfico va por HTTP, solo debe viajar dentro de la red interna. La clave usada en las pruebas del 2026-10-01 se compartió por chat: **rotarla** antes de cargarla en staging |
 | `IA__Fallbacks__N__Proveedor`, `__Modelo`, `__Endpoint` | no | no | vacío | Dokploy | respaldos ante 429, 5xx, red caída o el 400 "No credentials for provider" de OmniRoute. Los manifiestos declaran `__0__` y `__1__` con `${...:-}`: un respaldo con `Proveedor` vacío no existe (si tiene modelo, endpoint o clave sin proveedor, la API no arranca). Con OmniRoute: `__0__` `gemini/gemini-3.5-flash`, `__1__` `gemini/gemini-3-flash-preview`, mismo endpoint y clave |
@@ -183,6 +186,16 @@ interruptor de reversa del vehículo elegido (ADR-022): `false` vuelve al compor
 no es una clase de viaje de Nexo impide arrancar. **Folios anteriores:** la edición y la re-solicitud con `datos_carga` solo exigen el
 vehículo en una ruta nueva o que cambia (peso, mercancías, clase de viaje o vehículo elegido): un folio de Cupo anterior a HU-032 que solo
 trae el peso se sigue editando y re-solicitando sin vehículo mientras no cambie esa ruta.
+
+HU-033 (#199, ADR-023): antes de desplegar se aplica `db/scripts/13_correo_mailsender.sql` (en `Correos`, el id de MailSender, el buzón de
+redirección, los intentos, la fecha de envío y la agenda del worker, con el CHECK del estado `encolado|enviando|enviado|fallido`; en la
+cabecera, la sincronización del resultado con Nexo). El backend mapea las columnas: sin ellas `/health/ready` responde 503 "esquema
+incompleto: falta 13" (§4.5). Para activar el correo: `Correo__Habilitado=true`, `Correo__MailSender__UrlBase` (Dokploy) y
+`Correo__Proteccion__BuzonPruebas`. **Ojo: staging y QA corren con `ASPNETCORE_ENVIRONMENT=Production`**, así que la regla "fuera de
+Production, `redirigir` obligatorio" del validador no los distingue: por eso `infra/stack.dotnet.staging.yml` fija
+`Correo__Proteccion__Modo=redirigir` (no se lee del entorno) y en el Dokploy de QA no se debe cargar `Correo__Proteccion__Modo=ninguno`. En
+producción `ninguno` se pone solo al salir en vivo, con SPF/DMARC revisados por TI (el relay autoriza la IP de MailSender, no la de
+Cotifly).
 
 **Riesgo de despliegue: la huella de la `Idempotency-Key` (#191, B1 de la auditoría de HU-032).** La huella con la que se reconoce un
 reintento se calcula sobre la entrada ya convertida al registro de dominio (`clsEntradaCaptura`, `clsEntradaEdicionSolicitud`,
@@ -302,7 +315,7 @@ solo *sí* o *no* (y para las variables no secretas puede llevar el valor). Los 
 | `IA__SoportaJsonSchema` / `IA__MaxTokens` | no | con OmniRoute y Gemini: `false` y `1500` (§2.2) | no | Backend | `LLM_MAX_TOKENS` |
 | `Nexo__UrlBase` | no | equipo de Nexo (URL de producción, no la de pruebas) | no | Backend / Nexo | — |
 | `SapTm__Modo` (+ `ExportPath` o `Url`/`User`/`Pass`) | `Pass` sí | SAP / infraestructura (HU-009) | no | SAP / Backend | `SAP_TM_*` |
-| `Correo__Habilitado` / `Correo__SmtpRelay__Host` | no | TI (relay y transporte real, D3) | no | TI | `CORREO_*`, `SMTP_RELAY_HOST` |
+| `Correo__Habilitado` / `Correo__MailSender__UrlBase` / `Correo__Proteccion__BuzonPruebas` | no | Backend (URL de MailSender) y negocio (buzón de pruebas, por definir) | no | Backend | `CORREO_*`, `SMTP_RELAY_HOST` (retiradas: el relay lo usa MailSender) |
 | `MCP_AUTH_TOKEN`, `INTERNAL_API_TOKEN`, `S3_*`, `DRIVE_*`, `SHEETS_*` | — | se retiran (§2.2) | no aplica | Backend | sí |
 
 ## 4. Registry, imagen versionada y release (HU-006.4, #28)
@@ -530,6 +543,7 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
    | `esquema incompleto: falta 10` | Faltan `motivoRechazo` o `rechazadaAt` del camión (HU-028.1, #183) | Aplicar `db/scripts/10_rechazo_linea.sql` |
    | `esquema incompleto: falta 11` | Falta `CotizacionLineasSolicitud.pesoConTaraKg` (HU-030.1, #184) | Aplicar `db/scripts/11_peso_con_tara.sql` |
    | `esquema incompleto: falta 12` | Faltan `tipoVehiculoElegido`/`carroceriaElegida` de la ruta (HU-032, #197) | Aplicar `db/scripts/12_vehiculo_elegido.sql` |
+   | `esquema incompleto: falta 13` | Faltan las columnas de MailSender en `Correos` o la sincronización del resultado en la cabecera (HU-033, #199) | Aplicar `db/scripts/13_correo_mailsender.sql` |
    | `esquema incompleto: falta Tabla.columna, ...` (hasta 5) | Falta otra tabla o columna del modelo (por ejemplo un script intermedio sin aplicar) | Comparar con `db/scripts/01_crear_esquema.sql` y aplicar el script que la trae (lista en `docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md` §A.5) |
 
 1. **Staging.** Merge a `QA` → el pipeline (o `publicar-imagen.sh --canal qa`) publica `sha-<corto>`. En Dokploy, stack

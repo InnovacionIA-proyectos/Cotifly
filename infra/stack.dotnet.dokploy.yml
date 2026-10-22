@@ -151,13 +151,15 @@ services:
       Pdf__StorageDir: /data/pdfs
       Pdf__BaseUrl: ${Pdf__BaseUrl:-}
 
-      # Correo (D3): deshabilitado por defecto; relay interno sin AUTH.
+      # Correo (HU-033, #199, ADR-023): deshabilitado por defecto; sale por el microservicio interno MailSender (URL solo en Dokploy).
       Correo__Habilitado: ${Correo__Habilitado:-false}
-      Correo__Modo: ${Correo__Modo:-smtp_relay}
-      Correo__SmtpRelay__Host: ${Correo__SmtpRelay__Host:-}
-      Correo__SmtpRelay__Port: ${Correo__SmtpRelay__Port:-25}
-      Correo__SmtpRelay__FromFallback: ${Correo__SmtpRelay__FromFallback:-notificaciones@boterosoto.com.co}
-      Correo__SmtpRelay__TimeoutSeg: ${Correo__SmtpRelay__TimeoutSeg:-20}
+      Correo__Modo: mailsender
+      Correo__MailSender__UrlBase: ${Correo__MailSender__UrlBase:-}
+      Correo__MailSender__TimeoutSegundos: ${Correo__MailSender__TimeoutSegundos:-15}
+      Correo__MailSender__Remitente: ${Correo__MailSender__Remitente:-notificaciones@boterosoto.com.co}
+      # Producción: redirigir hasta salir en vivo; "ninguno" solo con SPF/DMARC revisados (DEPLOY.md, HU-033).
+      Correo__Proteccion__Modo: ${Correo__Proteccion__Modo:-redirigir}
+      Correo__Proteccion__BuzonPruebas: ${Correo__Proteccion__BuzonPruebas:-}
 
       # Agente de IA (ADR-003). Sin proveedor el agente no responde. IA__ApiKey: secreto.
       # Con OmniRoute (#84; docs/03 "OmniRoute"): IA__Proveedor=openai_compatible,

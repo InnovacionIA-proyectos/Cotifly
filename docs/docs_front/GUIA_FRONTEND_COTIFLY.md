@@ -1,6 +1,6 @@
 # Guía de integración frontend: módulo Cotifly en ClientePro (Angular) contra el backend .NET 10
 
-> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-19
+> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-22
 
 | Campo | Valor |
 |---|---|
@@ -9,7 +9,7 @@
 | Estado | Vigente |
 | Dueño | Duban Guerra (backend) |
 | Fecha de creación | 2026-09-29 |
-| Actualizado | 2026-10-19 |
+| Actualizado | 2026-10-22 |
 | Fuentes verificadas | `backend-dotnet/specs/openapi.yaml`, `docs/docs_front/CONTRATO_API_WEB.md`, `backend-dotnet/docs/07-api.md` y `04-flujo-del-sistema.md`, ADR-005, ADR-009, ADR-011, ADR-014, ADR-015, `docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md`, el backlog de HU-001 a HU-013 (archivado en `docs/archivo/backlog/`) y los controllers de `backend-dotnet/src/Cotifly.Api` en `origin/QA` |
 | Fuente de verdad | `backend-dotnet/specs/openapi.yaml`. Si esta guía y el spec difieren, manda el spec, y hay que avisar al backend |
 
@@ -516,7 +516,8 @@ Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA
 | `CAMPO_NO_EDITABLE` | 400 en `PUT /web/cotizaciones/{folio}/solicitud` | La edición cambia el cliente, el tipo o la línea de negocio de una ruta (HU-028) | Restaurar el campo de `detalle.campo` y dejarlo en solo lectura | Implementado, pendiente de QA |
 | `CORREO_DUPLICADO` | 400 en `/enviar` | Mismo envío a los mismos destinatarios hace menos de 5 min | "Ya enviaste esta cotización a esos destinatarios hace poco" | En QA |
 | `CORREO_PDF_NO_ENCONTRADO` | 400 en `/enviar` | La cotización no tiene PDF | Deshabilitar "Enviar" si `pdf_url` es null | En QA |
-| `CORREO_ENVIO_FALLIDO` | 400 en `/enviar` | Falló el relay SMTP | "No se pudo enviar. Reintenta" | En QA |
+| `CORREO_ENVIO_FALLIDO` | 400 en `/enviar` y en `.../reintentar` | MailSender rechazó el correo o no respondió (HU-033) | Mostrar `mensaje`; si no respondió a tiempo, revisar el historial antes de reenviar | En QA |
+| `CORREO_NO_REINTENTABLE` | 409 en `.../correos/{id}/reintentar` | HU-033: el envío no está fallido, nunca llegó a MailSender o MailSender ya no lo conoce | Ofrecer enviar de nuevo | Nuevo (#199) |
 | `CORREO_DESHABILITADO` | 503 en `/enviar` | El correo está apagado en el servidor (`Correo:Habilitado=false`, por defecto) | "El envío de correo no está habilitado en este ambiente" | En QA |
 | `CORREO_INVALIDO` | 400 `ErrorWeb` (sin código) en `/enviar` | Destinatarios inválidos o vacíos, asunto de más de 300 o cuerpo de más de 5000 | Validar en el formulario antes de enviar | En QA |
 | `FOLIO_DUPLICADO` | chat | Colisión de folio | "Reintenta" | En QA |
@@ -542,7 +543,7 @@ Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA
 | `COSTEO_NO_LISTO` | 409 en `servicios-conexos`, `costeo/pdf` y `resultado` | Todavía sin precio con margen; o, en resultado, la cotización no está en Nexo (chat, descartada, vencida, o no enviada) | Deshabilitar los botones hasta que haya `precio_final`. En resultado, usar `/seguimiento` | En QA |
 | `PDF_YA_GENERADO` | 409 en `costeo/pdf` | Ya tiene un PDF **vigente**. Los ajustes de la etapa final (margen, conexos, textos, re-solicitar) ya no responden este código: invalidan el PDF (`pdf_desactualizado = true`) y entonces se puede regenerar | Ocultar "Generar PDF" mientras `pdf_url` tenga valor; con `pdf_desactualizado`, ofrecer "Regenerar PDF" | En QA |
 | `RESULTADO_YA_DEFINIDO` | 409 en `resultado` | Nexo ya tiene otro resultado | Deshabilitar ganada/perdida y refrescar | En QA |
-| `COTIZACION_NO_ENTREGADA` | 409 en `resultado` | Nexo exige la cotización entregada (su issue #171) | "Nexo todavía no ha entregado esta cotización" | En QA |
+| `COTIZACION_NO_ENTREGADA` | 409 en `resultado` | HU-033: solo una ganada en `error_envio` (Nexo no recibió la solicitud); sin entrega en `autocosteo`/`pendiente_costeo` el resultado queda pendiente de sincronizar (200) | "Nexo no recibió la solicitud; reintenta el envío" | En QA |
 | `SOLICITUD_NO_TRANSICIONABLE` | 409 en `resultado` | Nexo no permite la transición | Mostrar el `mensaje` | En QA |
 | `REGIONAL_NO_ASIGNADA` | 409 en `/web/metricas/regional` y `/web/cotizaciones/regional` | El gerente no tiene regional (ni en `DimEjecutivo` ni en `UsuariosWeb.regional`) | Estado vacío con el `mensaje`: "Tu usuario no tiene una regional asignada...". Sin reintento automático | En QA |
 | `REGIONAL_NO_DISPONIBLE` | 503 en `/web/metricas/regional` y `/web/cotizaciones/regional` | La fuente de la regional (`DimEjecutivo`) está configurada pero no responde | "No se pudo consultar tu regional" con Reintentar | En QA |
@@ -786,7 +787,13 @@ cotización de otro comercial: en esta vista la fila es de consulta. La descarga
 gerente sobre cualquier fila de este listado, porque usa **la misma regla**: el dueño debe ser miembro de la regional efectiva del
 gerente (sección 5.6). Si la fuente de la regional está caída, el listado responde 503 y el PDF ajeno 404.
 
-### 5.5 Correo: vista previa, envío y destinatarios previos. En QA
+### 5.5 Correo: vista previa, envío, historial y destinatarios previos. En QA
+
+> **HU-033 (#199, ADR-023).** El correo sale por el microservicio interno MailSender: el 200 de `enviar` significa que MailSender lo
+> **aceptó** (`estado = encolado`) y la entrega se sigue en el historial (`GET .../correos`). El comercial va en copia oculta. El cuerpo
+> lleva, después del texto del comercial, el precio de cada ruta y el **valor total** sin desglose. Fuera de producción todo va al buzón
+> de pruebas con `[QA]`: la vista previa trae `entorno_pruebas = true` y un `aviso` para mostrar tal cual. Detalle y ejemplos en
+> `CONTRATOS_API_COTIFLY_FRONTEND.md` §4.8.
 
 **`POST /web/cotizaciones/{folio}/correo/vista-previa`**
 
@@ -799,11 +806,18 @@ gerente (sección 5.6). Si la fuente de la regional está caída, el listado res
   "cuerpo": "Buenos días,\n\nAdjunto la cotización ...",
   "para": ["compras@cliente.com"],
   "cc": [],
-  "adjunto": "PCN-9000472281-DG-29092026-004.pdf"
+  "adjunto": "PCN-9000472281-DG-29092026-004.pdf",
+  "cuerpo_html": "<div ...>...</div>",
+  "resumen": { "moneda": "COP", "total": 3000000, "total_texto": "$3.000.000", "rutas": [ { "orden": 1, "ruta": "Buenaventura → Bogotá, D.C.", "precio": 3000000, "precio_texto": "$3.000.000" } ], "leyenda": "...", "nota_moneda": null },
+  "copia_oculta": "comercial@boterosoto.com.co",
+  "entorno_pruebas": true,
+  "redirigido_a": "<buzón de pruebas>",
+  "aviso": "Ambiente de pruebas: el correo NO llegará a los destinatarios; ..."
 }
 ```
 
 - 404 si no es tuya.
+- Con `entorno_pruebas = true`, mostrar `aviso` en un recuadro de advertencia en el modal. `cuerpo_html` es la vista fiel del correo.
 
 **`POST /web/cotizaciones/{folio}/enviar`**
 
@@ -813,9 +827,18 @@ gerente (sección 5.6). Si la fuente de la regional está caída, el listado res
 { "para": ["compras@cliente.com"], "cc": ["gerente@boterosoto.com.co"], "asunto": null, "cuerpo": null }
 ```
 
-- 200 `{"enviado": true, "message_id": "<id del relay o null>"}`.
-- Errores: 400 `ErrorWeb` (destinatarios, asunto o cuerpo inválidos); 400 `ErrorNegocio` (`CORREO_DUPLICADO`, `CORREO_PDF_NO_ENCONTRADO`, `CORREO_ENVIO_FALLIDO`, `CONFIRMACION_REQUERIDA`); 404; 503 `CORREO_DESHABILITADO`.
-- El remitente es el comercial del token. Tras un 200, `estado_envio` pasa a `enviada` y luego a `reenviada`. Refrescar la fila con `GET /web/mis-cotizaciones` (el envío no devuelve la fila).
+- 200 `{"enviado": true, "message_id": "<id en MailSender>", "correo_id": "<id del envío>", "estado": "encolado", "redirigido_a": null}`: decir "Correo en camino".
+- Errores: 400 `ErrorWeb` (destinatarios, asunto o cuerpo inválidos); 400 `ErrorNegocio` (`CORREO_DUPLICADO`, `CORREO_PDF_NO_ENCONTRADO`, `CORREO_ENVIO_FALLIDO` si MailSender lo rechazó o no respondió, `CONFIRMACION_REQUERIDA`); 404; 409 `CONFLICTO_CONCURRENCIA`; 503 `CORREO_DESHABILITADO`.
+- El remitente es el comercial del token (también en copia oculta). Tras un 200, `estado_envio` pasa a `enviada` y luego a `reenviada`. Refrescar la fila con `GET /web/mis-cotizaciones` (el envío no devuelve la fila).
+
+**`GET /web/cotizaciones/{folio}/correos`** (HU-033)
+
+- 200 `{folio, correos: [EnvioCorreo]}`, del más reciente al más antiguo: `estado` (`encolado`, `enviando`, `enviado`, `fallido`), `error`, `intentos`, `enviado_at`, `para`, `cc` (los originales), `redirigido_a` y `reintentable`.
+- Mientras haya envíos `encolado` o `enviando`, refrescar cada 10 a 30 s. Un `fallido` muestra `error` y, con `reintentable = true`, el botón "Reintentar".
+
+**`POST /web/cotizaciones/{folio}/correos/{correoId}/reintentar`** (HU-033)
+
+- Sin cuerpo. 200 `EnvioCorreo` (vuelve a `encolado`); 409 `CORREO_NO_REINTENTABLE` (no está fallido o nunca llegó a MailSender: ofrecer enviar de nuevo); 400 `CORREO_ENVIO_FALLIDO` (MailSender no respondió); 404; 503 `CORREO_DESHABILITADO`.
 
 **`GET /web/clientes/{nit}/destinatarios-previos`**
 
@@ -885,10 +908,11 @@ descargarPdf(pdfUrl: string, folio: string): Observable<void> {
   - no se envía a Nexo y el polling se detiene: dejar de consultar;
   - la respuesta trae `ganada = false` y `motivo_estado_costeo` empieza por "Perdida solo en Cotifly";
   - el 200 trae el `ETag` nuevo;
-  - una "ganada" en esos estados es 409 `COTIZACION_NO_ENTREGADA`;
+  - una "ganada" en `error_envio` es 409 `COTIZACION_NO_ENTREGADA`; en `pendiente_costeo` queda pendiente de sincronizar (HU-033, abajo);
   - en `pendiente_costeo`, si Nexo ya la entregó, la pérdida va a Nexo como siempre; si Nexo no responde, 503 sin cambios: ofrecer Reintentar.
 - Errores: 400 `ErrorWeb` (`resultado` inválido o límites); 400 `ErrorNegocio` `COSTEO_NEXO_RECHAZADA` (otro 4xx de Nexo; código en `detalle.motivo`); 404 (no es tuya o Nexo no encuentra la cotización); 409 `COSTEO_NO_LISTO` (chat, descartada, vencida o no enviada), `COTIZACION_NO_ENTREGADA` (también sin pedirle el resultado a Nexo en `pendiente_envio`, o en `pendiente_costeo` si Nexo todavía no tiene el costo; desde #123 en `pendiente_costeo` primero se le pregunta a Nexo si ya costeó), `RESULTADO_YA_DEFINIDO`, `SOLICITUD_NO_TRANSICIONABLE`; 503 `COSTEO_NEXO_NO_DISPONIBLE` (también si Nexo responde 401/403: es configuración) o `COSTEO_NEXO_TIEMPO_AGOTADO`.
 - Re-marcar el **mismo** resultado en Nexo es idempotente; cambiarlo responde `RESULTADO_YA_DEFINIDO`. Deshabilitar los botones cuando `ganada` tenga valor.
+- **Resultado diferido (HU-033, #199, ADR-023).** Si Nexo todavía no tiene la cotización entregada (`autocosteo`, o una ganada en `pendiente_costeo`), ya no es 409: responde 200 con `sincronizacion_resultado_nexo = "pendiente"`. Mostrar el badge "Pendiente de sincronizar con NEXO": Cotifly lo envía a Nexo una sola vez cuando la Mesa la entregue (`sincronizado`). Con `no_sincronizable`, mostrar `error_sincronizacion_resultado_nexo` (registrarlo con la Mesa). `solo_cotifly` = nunca va a Nexo (perdida antes del costeo, chat, descartada o vencida). El campo viene en "Mis cotizaciones", el detalle por folio, el listado regional y `GET .../costeo`.
 
 ### 5.9 Nueva versión (`GET /web/cotizaciones/{id}/nueva-version`). En QA
 
@@ -2129,8 +2153,7 @@ Tabla de acciones por fila (con las dos pilas fusionadas):
 
 Notas:
 
-- Regla de ruteo del botón de resultado: `estado_costeo === null` → `/seguimiento`; `entregada` → `/resultado`; `descartada` o `costeo_vencido` → `/seguimiento`. Cualquier otro estado → deshabilitado. Si `/seguimiento` responde 409 `USAR_RESULTADO_NEXO`, es un error de ruteo del frontend.
-- El backend también **intenta** `/resultado` en `autocosteo` (el polling pudo no ver aún la entrega), pero Nexo responde `COTIZACION_NO_ENTREGADA` mientras siga en borrador. La recomendación es habilitar solo en `entregada`. Si negocio quiere permitir el intento en `autocosteo`, manejar ese 409.
+- Regla de ruteo del botón de resultado: `estado_costeo === null` → `/seguimiento`; `entregada`, `autocosteo` o `pendiente_costeo` → `/resultado` (HU-033: sin entrega queda pendiente de sincronizar; en `pendiente_costeo` la perdida es la "perdida antes del costeo" con `If-Match`); `descartada` o `costeo_vencido` → `/seguimiento`. Cualquier otro estado → deshabilitado. Si `/seguimiento` responde 409 `USAR_RESULTADO_NEXO`, es un error de ruteo del frontend.
 - Las cotizaciones del chat anterior tienen `estado_costeo` null y van por `/seguimiento`.
 - Estado de envío: badge `sin_enviar`, `enviada` o `reenviada`. Margen negociado: badge "Ajuste fuera de política" si `origen_margen = negociado`.
 - Refrescar la fila con la respuesta de `/seguimiento`, `/resultado` o `/reintentar` (devuelven `CotizacionResumen`) sin recargar la tabla.
@@ -2153,15 +2176,19 @@ sequenceDiagram
     U->>F: Confirma el envío
     F->>A: POST /web/cotizaciones/folio/enviar
     alt 200
-        A-->>F: enviado true
+        A-->>F: enviado true, estado encolado (MailSender lo aceptó)
         F->>A: GET /web/mis-cotizaciones (refresca estado_envio)
+        loop mientras haya envíos encolado o enviando
+            F->>A: GET /web/cotizaciones/folio/correos
+            A-->>F: estado de cada envío (enviado o fallido con error)
+        end
     else 400, 404 o 503
         A-->>F: ErrorWeb o ErrorNegocio
         F->>U: Mensaje según el código
     end
 ```
 
-Responsabilidades: prellenar con los destinatarios previos, validar los correos en el cliente (al menos un `para`, asunto hasta 300, cuerpo hasta 5000), enviar solo desde la confirmación del modal, manejar `CORREO_DUPLICADO` (5 min) y `CORREO_DESHABILITADO` (503, apagado por defecto en ambientes sin relay) y refrescar `estado_envio`. El agente del chat también puede enviar correos (`enviar_correo`) si el comercial lo pide en el chat.
+Responsabilidades: prellenar con los destinatarios previos, validar los correos en el cliente (al menos un `para`, asunto hasta 300, cuerpo hasta 5000), mostrar el aviso de ambiente de pruebas de la vista previa, enviar solo desde la confirmación del modal, manejar `CORREO_DUPLICADO` (5 min, cuenta también un envío en curso) y `CORREO_DESHABILITADO` (503, apagado por defecto), refrescar `estado_envio` y seguir el historial de envíos (HU-033) con "Reintentar" en los fallidos reintentables. El agente del chat también puede enviar correos (`enviar_correo`) si el comercial lo pide en el chat.
 
 ### 6.7 Administración de márgenes por línea (Gerente Comercial)
 

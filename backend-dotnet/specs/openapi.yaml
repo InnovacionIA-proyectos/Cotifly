@@ -431,7 +431,18 @@ paths:
       description: |
         El remitente es el comercial autenticado. Solo puede enviar cotizaciones propias
         (si no es suya responde 404, igual que si no existe). Un envío idéntico a los
-        mismos destinatarios en los últimos 5 minutos se rechaza como duplicado.
+        mismos destinatarios en los últimos 5 minutos se rechaza como duplicado (cuenta
+        un envío `enviado` o todavía en curso: `encolado`/`enviando`; un `fallido` no).
+
+        HU-033 (#199, ADR-023): el correo sale por el microservicio interno MailSender. El 200 significa que MailSender
+        lo ACEPTÓ (202) y quedó `encolado` (`estado`); la entrega al relay se confirma después y se ve en
+        `GET /web/cotizaciones/{folio}/correos` (`enviado` o `fallido` con su error). `message_id` es el id del correo en
+        MailSender y `correo_id` el del envío en Cotifly (historial y reintento). El comercial va en copia oculta.
+        El cuerpo va en HTML con un bloque fijo después del texto del comercial: el precio de cada ruta y el VALOR
+        TOTAL de la cotización, sin desglose, con la leyenda de impuestos del PDF.
+        Fuera de producción (`Correo:Proteccion:Modo=redirigir`) el correo va SOLO al buzón de pruebas (sin CC ni CCO),
+        con `[QA]` en el asunto y los destinatarios originales en el cuerpo; `redirigido_a` trae ese buzón. En la base y
+        en el historial quedan los destinatarios originales.
 
         Concurrencia (HU-013.2, ADR-018 §12): antes de que el correo salga, la cotización queda marcada como enviada
         con control de versión; si un ajuste (margen, conexos) la cambió entretanto, o su PDF quedó desactualizado,
@@ -448,13 +459,16 @@ paths:
               $ref: '#/components/schemas/EnvioWeb'
       responses:
         '200':
-          description: Correo enviado
+          description: MailSender aceptó el correo (queda `encolado`; la entrega se sigue en el historial)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/RespuestaEnvio'
         '400':
-          description: Error de negocio del envío (duplicado, sin PDF, fallo SMTP, validación)
+          description: |
+            Error de negocio del envío: duplicado (`CORREO_DUPLICADO`), sin PDF (`CORREO_PDF_NO_ENCONTRADO`), MailSender lo
+            rechazó (400/413/422), no está disponible o no respondió a tiempo (`CORREO_ENVIO_FALLIDO`; con tiempo agotado el
+            correo pudo quedar encolado: revisar el historial antes de reenviar), o validación (`ErrorWeb`)
           content:
             application/json:
               schema:
@@ -481,6 +495,88 @@ paths:
                 error:
                   codigo: CORREO_DESHABILITADO
                   mensaje: "El envío de correo está deshabilitado."
+
+  /web/cotizaciones/{folio}/correos:
+    get:
+      operationId: historialCorreos
+      tags: [web]
+      summary: Historial de envíos de la cotización con el estado de MailSender
+      description: |
+        HU-033 (#199, ADR-023). Los envíos de la cotización, del más reciente al más antiguo, con el estado que reporta
+        MailSender: `encolado` (aceptado, sin entregar), `enviando` (entregando o con un reintento programado por un error
+        transitorio), `enviado` (el relay lo aceptó: `enviado_at`) o `fallido` (rechazado al encolarlo, reintentos agotados
+        o sin confirmación en 24 h: `error`). Un worker de Cotifly consulta MailSender cada 30 s mientras el envío está en
+        curso. Los destinatarios son los ORIGINALES aunque el correo se haya redirigido al buzón de pruebas
+        (`redirigido_a`). Solo el dueño; una cotización ajena es 404.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/Folio'
+      responses:
+        '200':
+          description: Historial de envíos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistorialCorreos'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '404':
+          $ref: '#/components/responses/NoEsTuya'
+
+  /web/cotizaciones/{folio}/correos/{correoId}/reintentar:
+    post:
+      operationId: reintentarCorreo
+      tags: [web]
+      summary: Pide a MailSender que reintente un envío fallido
+      description: |
+        HU-033 (#199, ADR-023). Los reintentos de entrega los hace MailSender solo (hasta 5, con espera exponencial); este
+        endpoint pide uno más (`POST /api/v1/emails/{id}/retry`) para un envío `fallido` que MailSender conoce
+        (`reintentable = true`). El envío vuelve a `encolado` y el worker sigue su estado. Un envío que se rechazó al
+        encolarlo (sin id de MailSender) no se reintenta: se envía de nuevo con `POST .../enviar`. Solo el dueño.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/Folio'
+        - name: correoId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: MailSender aceptó el reintento (el envío vuelve a `encolado`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvioCorreo'
+        '400':
+          description: '`CORREO_ENVIO_FALLIDO`: MailSender no respondió o no está disponible'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '404':
+          description: La cotización no es suya o el envío no es de ella
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWeb'
+        '409':
+          description: '`CORREO_NO_REINTENTABLE`: el envío no está `fallido`, nunca llegó a MailSender o MailSender ya no lo conoce'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '503':
+          description: '`CORREO_DESHABILITADO`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
 
   /web/cotizaciones/{folio}/seguimiento:
     post:
@@ -1698,8 +1794,21 @@ paths:
         primero `POST /api/cotizaciones/{id}/resultado` de Nexo (`{id}` = la cotización de Nexo de la solicitud) y,
         **solo si Nexo responde 200**, `ganada` y `motivo_rechazo` en Cotifly (perdida: `motivo`; ganada: `"No aplica"`,
         HU-021.13; a Nexo se le envía `motivo` tal como llega). `comentario` se reenvía a
-        Nexo y no se guarda en Cotifly. `409` de Nexo (`RESULTADO_YA_DEFINIDO`, `COTIZACION_NO_ENTREGADA`) o Nexo caído
-        (`503`) no cambian nada local; el frontend puede deshabilitar el botón cuando `ganada` ya tiene valor.
+        Nexo y no se guarda en Cotifly. `409` de Nexo (`RESULTADO_YA_DEFINIDO`) o Nexo caído (`503`) no cambian nada local;
+        el frontend puede deshabilitar el botón cuando `ganada` ya tiene valor. `COTIZACION_NO_ENTREGADA` ya no es un error
+        (HU-033, abajo).
+
+        **Resultado diferido (HU-033, #199, ADR-023).** Si Nexo todavía no tiene la cotización Entregada (en `autocosteo`
+        Nexo responde `409 COTIZACION_NO_ENTREGADA`; en `pendiente_costeo` Cotifly lo confirma leyendo el costeo), el
+        resultado se guarda SOLO en Cotifly y responde 200 con `sincronizacion_resultado_nexo = pendiente` ("pendiente de
+        sincronizar con NEXO"); el `comentario` se guarda para enviarlo después. El polling sigue consultando la solicitud
+        y, cuando ve que la Mesa de Costeo la entregó, envía el resultado a Nexo UNA vez (idempotente) y queda `sincronizado`.
+        Cotifly nunca entrega la cotización en Nexo (no llama a `/entregar`). Si Nexo descarta la solicitud, el costeo vence,
+        pasan 30 días sin entrega o se agotan 10 intentos fallidos, queda `no_sincronizable` (solo en Cotifly, con
+        `error_sincronizacion_resultado_nexo`). Si al sincronizar Nexo ya tenía otro resultado, manda Nexo (como en
+        `RESULTADO_YA_DEFINIDO`) y queda anotado. Mientras está pendiente, otro `/resultado` con el mismo valor es 200 sin
+        cambios y con otro valor es 409 `RESULTADO_YA_DEFINIDO`. Excepción: la perdida en `pendiente_costeo` sigue siendo
+        la "perdida solo en Cotifly" de HU-013.17 (abajo), que nunca se sincroniza.
 
         Entrega implícita: si Nexo entrega la cotización al marcar el resultado, `estado_costeo` salta a `entregada`
         aunque estuviera en `autocosteo` o `pendiente_costeo`; es un estado válido. Desde su issue #171, Nexo exige que la
@@ -1712,8 +1821,8 @@ paths:
         el resultado se registra igual (Nexo ya lo tiene), `estado_costeo` conserva su valor (nunca `entregada` sin
         precio) y el polling aplica el precio en segundos: el frontend sigue consultando `GET .../costeo` mientras
         `precio_final` sea `null`. En `pendiente_costeo`, Cotifly lee primero el costeo de Nexo y reutiliza esa lectura:
-        solo si Nexo ya la entregó le pide el resultado; si no, una `ganada` es 409 `COTIZACION_NO_ENTREGADA` y una
-        `perdida` queda solo en Cotifly (abajo).
+        solo si Nexo ya la entregó le pide el resultado; si no, una `ganada` queda pendiente de sincronizar (HU-033, arriba)
+        y una `perdida` queda solo en Cotifly (abajo).
 
         **Resultado ya definido en Nexo (HU-013.14).** Si Nexo responde `RESULTADO_YA_DEFINIDO` (otro resultado quedó en
         Nexo y no en Cotifly), Cotifly lee el resultado de Nexo, lo guarda y responde ese 409 con
@@ -1725,7 +1834,8 @@ paths:
         obligatorio (400 si falta) e `If-Match` obligatorio (428 sin él, 409 `CONFLICTO_CONCURRENCIA` si no coincide).
         No se envía a Nexo, se detiene el polling y `motivo_estado_costeo` lo indica ("Perdida solo en Cotifly ...").
         Si Nexo costea después, el resultado no cambia. Cuenta en las métricas como perdida y queda en la auditoría
-        (`resultado_cotizacion_sin_costeo`). Una `ganada` en esos estados es 409 `COTIZACION_NO_ENTREGADA`.
+        (`resultado_cotizacion_sin_costeo`) y `sincronizacion_resultado_nexo` es `solo_cotifly`. Una `ganada` en `error_envio`
+        es 409 `COTIZACION_NO_ENTREGADA` (Nexo no recibió la solicitud); en `pendiente_costeo` queda pendiente (HU-033).
 
         `If-Match` es opcional en el resto (compatibilidad); si viene y no coincide, 409 `CONFLICTO_CONCURRENCIA`. El 200
         devuelve el `ETag` nuevo.
@@ -3078,7 +3188,11 @@ paths:
       operationId: previsualizarCorreo
       tags: [web]
       summary: Renderiza el correo sin enviarlo
-      description: Devuelve asunto, cuerpo y destinatarios prediligenciados para el modal de confirmación.
+      description: |
+        Devuelve asunto, cuerpo y destinatarios prediligenciados para el modal de confirmación. HU-033 (#199): también el
+        cuerpo en HTML tal como lo recibe el cliente (`cuerpo_html`), el resumen sin desglose (`resumen`: precio por ruta y
+        total), la copia oculta al comercial (`copia_oculta`) y, en un ambiente de pruebas, `entorno_pruebas = true` con el
+        buzón (`redirigido_a`) y el texto del aviso (`aviso`) para mostrarlo tal cual.
       security:
         - bearer: []
       parameters:
@@ -3410,7 +3524,9 @@ components:
                 con ese folio; el Python versionaba el folio en silencio, en .NET el folio lo
                 genera HU-003.6 y la colisión se informa), `FOLIO_CONSECUTIVO_AGOTADO` (HU-003.6:
                 ya se usaron los 999 folios del día de esas iniciales, ADR-011), `CORREO_DESHABILITADO` (HU-003.5:
-                `Correo:Habilitado=false`, el valor por defecto; en `/web/*` se responde 503),
+                `Correo:Habilitado=false`, el valor por defecto; en `/web/*` se responde 503), `CORREO_NO_REINTENTABLE`
+                (HU-033, #199: 409 en `POST .../correos/{correoId}/reintentar`: el envío no está `fallido`, nunca llegó a
+                MailSender o MailSender ya no lo conoce),
                 `CORREO_INVALIDO` (HU-003.5: destinatarios `para`/`cc` inválidos o vacíos, asunto
                 de más de 300 caracteres o cuerpo de más de 5000; lo devuelve la herramienta
                 `enviar_correo`, y en `POST /web/cotizaciones/{folio}/enviar` va como `ErrorWeb` 400),
@@ -3506,6 +3622,7 @@ components:
                 - FOLIO_DUPLICADO
                 - FOLIO_CONSECUTIVO_AGOTADO
                 - CORREO_DESHABILITADO
+                - CORREO_NO_REINTENTABLE
                 - CORREO_INVALIDO
                 - CLIENTE_BUSQUEDA_NO_DISPONIBLE
                 - HERRAMIENTA_DESCONOCIDA
@@ -4013,6 +4130,20 @@ components:
             `POST /api/captura-solicitudes`), con hasta 4 decimales. Nexo no fija la escala (su ejemplo trae 62.5): mostrarlo tal
             cual. `null` si Nexo no lo mandó, si la solicitud no se ha enviado o si se envió antes del script 09. Siempre presente.
             Es el de la creación: no se actualiza después (`scoreUrgencia` por solicitud sigue bloqueado, ADR-016).
+        sincronizacion_resultado_nexo:
+          type: string
+          nullable: true
+          enum: [pendiente, sincronizado, no_sincronizable, solo_cotifly, null]
+          description: |
+            HU-033 (#199, ADR-023). Estado del resultado ganada/perdida frente a Nexo: `null` sin resultado; `pendiente`
+            ("pendiente de sincronizar con NEXO": guardado solo en Cotifly hasta que la Mesa entregue la cotización);
+            `sincronizado` (Nexo lo tiene); `no_sincronizable` (ya no se podrá enviar: ver `error_sincronizacion_resultado_nexo`);
+            `solo_cotifly` (nunca va a Nexo: perdida antes del costeo de HU-013.17, cotización sin Nexo, descartada o vencida).
+            Siempre presente.
+        error_sincronizacion_resultado_nexo:
+          type: string
+          nullable: true
+          description: HU-033. Último error al enviar el resultado pendiente, o por qué ya no se puede enviar. Siempre presente.
         conexos_descartados:
           type: array
           deprecated: true
@@ -4460,9 +4591,133 @@ components:
         enviado:
           type: boolean
           enum: [true]
+          description: HU-033. MailSender aceptó el correo (202); la entrega se sigue en el historial.
         message_id:
           type: string
           nullable: true
+          description: HU-033. Id del correo en MailSender.
+        correo_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: HU-033. Id del envío en Cotifly (historial y reintento).
+        estado:
+          type: string
+          nullable: true
+          enum: [encolado, enviando, enviado, fallido, null]
+          description: HU-033. Estado del envío al responder (`encolado`).
+        redirigido_a:
+          type: string
+          nullable: true
+          description: HU-033. Buzón de pruebas al que se redirigió (fuera de producción); `null` si va a los destinatarios reales.
+
+    EnvioCorreo:
+      type: object
+      description: HU-033 (#199). Un envío del historial de la cotización con el estado de MailSender.
+      required: [id, created_at, estado, para, cc, reintentable]
+      properties:
+        id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        estado:
+          type: string
+          enum: [encolado, enviando, enviado, fallido]
+        para:
+          type: array
+          items:
+            type: string
+          description: Destinatarios originales.
+        cc:
+          type: array
+          items:
+            type: string
+        asunto:
+          type: string
+          nullable: true
+        error:
+          type: string
+          nullable: true
+          description: Último error de MailSender (`lastError`) o por qué quedó `fallido`.
+        intentos:
+          type: integer
+          nullable: true
+          description: Intentos de entrega al relay que lleva MailSender.
+        enviado_at:
+          type: string
+          format: date-time
+          nullable: true
+        estado_actualizado_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Última consulta del estado en MailSender.
+        redirigido_a:
+          type: string
+          nullable: true
+        id_mail_sender:
+          type: string
+          nullable: true
+          description: Id del correo en MailSender (`null` si se rechazó al encolarlo).
+        reintentable:
+          type: boolean
+          description: '`fallido` y conocido por MailSender: admite `POST .../correos/{correoId}/reintentar`.'
+
+    HistorialCorreos:
+      type: object
+      required: [folio, correos]
+      properties:
+        folio:
+          type: string
+        correos:
+          type: array
+          items:
+            $ref: '#/components/schemas/EnvioCorreo'
+
+    ResumenCorreo:
+      type: object
+      description: |
+        HU-033 (#199, decisión 5). Bloque fijo del correo para el cliente: el precio final de cada ruta (transporte y conexos
+        incluidos) y el total general, sin desglose (nunca costo, margen, flete ni conexos con precio).
+      required: [moneda, total, total_texto, rutas, leyenda]
+      properties:
+        moneda:
+          type: string
+          enum: [COP, USD]
+        total:
+          type: number
+        total_texto:
+          type: string
+          description: Con el formato del PDF (`$3.294.798`, `US$996,35`).
+        rutas:
+          type: array
+          items:
+            $ref: '#/components/schemas/RutaResumenCorreo'
+        leyenda:
+          type: string
+          description: Leyenda de impuestos (la misma del PDF).
+        nota_moneda:
+          type: string
+          nullable: true
+          description: En USD, la nota de TRM mínima del PDF.
+
+    RutaResumenCorreo:
+      type: object
+      required: [orden, ruta, precio_texto]
+      properties:
+        orden:
+          type: integer
+        ruta:
+          type: string
+          description: '"Origen → Destino".'
+        precio:
+          type: number
+          nullable: true
+          description: Precio final de la ruta; `null` si la Mesa de Costeo la rechazó (`precio_texto` = "Sin costeo").
+        precio_texto:
+          type: string
 
     SeguimientoWeb:
       type: object
@@ -5397,6 +5652,20 @@ components:
           description: |
             HU-018.1 (#155). `scorePrioridad` que Nexo devolvió al crear la solicitud (hasta 4 decimales; escala de Nexo, mostrarlo
             tal cual). `null` si Nexo no lo mandó, si no se ha enviado o si se envió antes del script 09. Siempre presente.
+        resultado:
+          type: string
+          nullable: true
+          enum: [ganada, perdida, null]
+          description: HU-033 (#199). Resultado registrado (`null` si no tiene).
+        sincronizacion_resultado_nexo:
+          type: string
+          nullable: true
+          enum: [pendiente, sincronizado, no_sincronizable, solo_cotifly, null]
+          description: HU-033 (#199). Igual que en `CotizacionResumen`.
+        error_sincronizacion_resultado_nexo:
+          type: string
+          nullable: true
+          description: HU-033. Igual que en `CotizacionResumen`.
         textos:
           description: HU-013.5. Asunto e introducción guardados para el PDF, o `null` si todavía no hay (el PDF usa los estándar).
           oneOf:
@@ -7748,6 +8017,30 @@ components:
         adjunto:
           type: string
           description: Nombre del PDF que se adjuntará.
+        cuerpo_html:
+          type: string
+          nullable: true
+          description: HU-033. El cuerpo en HTML tal como lo recibe el cliente (texto, resumen con el total y firma).
+        resumen:
+          description: HU-033. Precio por ruta y total, sin desglose; `null` si la cotización todavía no tiene total.
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/ResumenCorreo'
+        copia_oculta:
+          type: string
+          nullable: true
+          description: HU-033. Copia oculta que se agrega al enviar (el comercial), o `null` si no tiene correo o ya va en para/cc.
+        entorno_pruebas:
+          type: boolean
+          description: HU-033. El ambiente redirige los correos al buzón de pruebas (mostrar el aviso).
+        redirigido_a:
+          type: string
+          nullable: true
+          description: HU-033. Buzón de pruebas; `null` en producción.
+        aviso:
+          type: string
+          nullable: true
+          description: HU-033. Texto del aviso de pruebas para mostrar tal cual; `null` en producción.
 
     DatosNuevaVersion:
       type: object

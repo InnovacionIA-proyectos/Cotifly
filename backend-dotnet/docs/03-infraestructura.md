@@ -98,8 +98,10 @@ Resumen de todas las variables de [`.env.example`](../.env.example). "Production
 | `SapTm__Pass` | vacío | **sí** (≥ 8) | con `odata` | [SAP TM](#integraciones-externas-y-sap-tm) |
 | `Pdf__StorageModo`, `Pdf__StorageDir`, `Pdf__BaseUrl` | `volumen`, `/data/pdfs`, vacío | no | no | [PDF y correo](#pdf-y-correo) |
 | `Pdf__TiempoEsperaRenderSegundos` | `30` | no | no | [PDF y correo](#pdf-y-correo) |
-| `Correo__Habilitado`, `Correo__Modo` | `false`, `smtp_relay` | no | no | [PDF y correo](#pdf-y-correo) |
-| `Correo__SmtpRelay__Host`, `__Port`, `__FromFallback`, `__TimeoutSeg` | vacío, `25`, `notificaciones@boterosoto.com.co`, `20` | no | `Host` con el correo habilitado | [PDF y correo](#pdf-y-correo) |
+| `Correo__Habilitado`, `Correo__Modo` | `false`, `mailsender` | no | no | [PDF y correo](#pdf-y-correo) |
+| `Correo__MailSender__UrlBase`, `__TimeoutSegundos`, `__Remitente`, `__Prioridad` | vacío, `15`, `notificaciones@boterosoto.com.co`, `Normal` | no | `UrlBase` con el correo habilitado | [PDF y correo](#pdf-y-correo) |
+| `Correo__Proteccion__Modo`, `__BuzonPruebas` | `redirigir`, vacío | no | fuera de Production con el correo habilitado: `redirigir` y el buzón | [PDF y correo](#pdf-y-correo) |
+| `Correo__Seguimiento__IntervaloTickSegundos`, `__IntervaloConsultaSegundos`, `__EdadMaximaHoras` | `15`, `30`, `24` | no | no | [PDF y correo](#pdf-y-correo) |
 | `IA__Proveedor`, `IA__Modelo`, `IA__Endpoint` | vacío (agente sin configurar) | no | no | [Agente de IA](#agente-de-ia) |
 | `IA__ApiKey`, `IA__Fallbacks__N__ApiKey` | vacío | **sí** | según el proveedor | [Agente de IA](#agente-de-ia) |
 | `IA__MaxTokens`, `IA__MaxIteraciones`, `IA__SoportaJsonSchema`, `IA__MinutosSinJsonSchema`, `IA__JsonSchemaEstricto`, `IA__Rpm`, `IA__TimeoutSeg`, `IA__PropuestaDirecta`, `IA__RespuestaFinalEnLoop` | `4096`, `12`, `true`, `30`, `false`, `8`, `60`, `true`, `true` | no | no | [Agente de IA](#agente-de-ia) |
@@ -185,17 +187,25 @@ Para desarrollo local, `scripts/levantar-local.ps1` y `scripts/levantar-local.sh
 | `Pdf:BaseUrl` | vacío | Base de `pdf_url` (`{BaseUrl}/pdfs/{folio}.pdf`); vacía deja la URL relativa, servida por `GET /pdfs/{archivo}` (#12) | `Pdf__BaseUrl` |
 | `Pdf:TiempoEsperaRenderSegundos` | `30` | Espera máxima del turno de render (1–600). El render es uno a la vez por proceso porque PDFsharp-MigraDoc no es thread-safe (#92, ADR-006). Agotada, responde 503 `PDF_RENDER_NO_DISPONIBLE` | `Pdf__TiempoEsperaRenderSegundos` |
 | `Pdf:PermitirCotizacionChat` | `false` | HU-021.6: habilita `clsGenerarPdfService`, el camino legado que crea una cotización "del chat" sin municipios. Apagado responde `COTIZACION_CHAT_RETIRADA`; solo lo encienden las pruebas del PDF legado | `Pdf__PermitirCotizacionChat` |
-| `Correo:Habilitado` | `false` | Sin habilitar, el envío responde `CORREO_DESHABILITADO` (vista previa y destinatarios previos funcionan) | `Correo__Habilitado` |
-| `Correo:Modo` | `smtp_relay` | Único implementado; `wscorreos` y `smtp` no arrancan con el correo habilitado (D3) | `Correo__Modo` |
-| `Correo:SmtpRelay:Host` | vacío | Relay interno (en el Python `10.10.40.62`); obligatorio con el correo habilitado | `Correo__SmtpRelay__Host` |
-| `Correo:SmtpRelay:Port` | `25` | Puerto del relay | `Correo__SmtpRelay__Port` |
-| `Correo:SmtpRelay:FromFallback` | `notificaciones@boterosoto.com.co` | Remitente si el comercial no tiene correo en `UsuariosWeb` | `Correo__SmtpRelay__FromFallback` |
-| `Correo:SmtpRelay:TimeoutSeg` | `20` | Límite de cada operación con el relay | `Correo__SmtpRelay__TimeoutSeg` |
+| `Correo:Habilitado` | `false` | Sin habilitar, el envío responde `CORREO_DESHABILITADO` (vista previa, destinatarios previos e historial funcionan) | `Correo__Habilitado` |
+| `Correo:Modo` | `mailsender` | HU-033 (#199, ADR-023): el único transporte. `smtp_relay`, `smtp` y `wscorreos` se retiraron: con el correo habilitado no arrancan | `Correo__Modo` |
+| `Correo:MailSender:UrlBase` | vacío | Raíz del microservicio MailSender (red interna, sin autenticación); obligatoria con el correo habilitado. Solo en configuración | `Correo__MailSender__UrlBase` |
+| `Correo:MailSender:TimeoutSegundos` | `15` | Límite de cada llamada a MailSender (1–120). El POST no se reintenta (MailSender no tiene clave de idempotencia); el GET del estado, hasta 2 veces | `Correo__MailSender__TimeoutSegundos` |
+| `Correo:MailSender:Remitente` | `notificaciones@boterosoto.com.co` | `From` si el comercial no tiene correo en `UsuariosWeb` (MailSender acepta cualquier dirección válida; decide el relay) | `Correo__MailSender__Remitente` |
+| `Correo:MailSender:Prioridad` | `Normal` | `Low`, `Normal` o `High` (cabeceras `Priority`/`Importance`/`X-Priority`) | `Correo__MailSender__Prioridad` |
+| `Correo:Proteccion:Modo` | `redirigir` | `redirigir`: todo correo va solo a `BuzonPruebas`, con `[QA]` en el asunto y los destinatarios originales en el cuerpo. `ninguno`: a los destinatarios reales, **solo en Production** (fuera de Production con el correo habilitado la API no arranca) | `Correo__Proteccion__Modo` |
+| `Correo:Proteccion:BuzonPruebas` | vacío | Obligatorio con `redirigir` y el correo habilitado (un correo válido). **Por definir** | `Correo__Proteccion__BuzonPruebas` |
+| `Correo:Seguimiento:IntervaloTickSegundos` | `15` | Cada cuánto despierta el worker de correos (`clsWorkerEstadoCorreos`) | `Correo__Seguimiento__IntervaloTickSegundos` |
+| `Correo:Seguimiento:IntervaloConsultaSegundos` | `30` | Espera entre dos consultas del mismo correo en MailSender | `Correo__Seguimiento__IntervaloConsultaSegundos` |
+| `Correo:Seguimiento:EdadMaximaHoras` | `24` | Sin confirmación de MailSender en ese plazo, el correo queda `fallido` (reintentable) | `Correo__Seguimiento__EdadMaximaHoras` |
+| `CosteoNexo:MaximoFallosSincronizacionResultado` | `10` | HU-033: envíos fallidos del resultado pendiente a Nexo antes de dejarlo `no_sincronizable` | `CosteoNexo__MaximoFallosSincronizacionResultado` |
+| `CosteoNexo:EdadMaximaSincronizacionResultadoDias` | `30` | HU-033: días que el polling espera la entrega de la Mesa con un resultado pendiente (más allá de `EdadMaximaHoras`) | `CosteoNexo__EdadMaximaSincronizacionResultadoDias` |
 
-- Con varias réplicas, el candado de la deduplicación (`clsCandadoEnvios`) es por proceso: haría falta `sp_getapplock` (HU-006.6). Un volumen local de PDFs tampoco se comparte entre nodos (ADR-012).
-- Activar el correo en producción: confirmar el transporte real con el equipo (D3), autorizar la IP del nodo en el relay y poner `Correo__Habilitado=true` y `Correo__SmtpRelay__Host`.
+- Con varias réplicas, el candado de la deduplicación (`clsCandadoEnvios`) es por proceso: haría falta `sp_getapplock` (HU-006.6). Un volumen local de PDFs tampoco se comparte entre nodos (ADR-012). El worker de correos sí admite varias réplicas (reclama cada correo con `siguienteConsultaAt`).
+- **HU-033 (#199, ADR-023): el correo sale por MailSender.** El 202 deja el envío `encolado` con el id de MailSender (`Correos.idMailSender`, script 13); el worker consulta `GET /api/v1/emails/{id}` y lo lleva a `enviado` o `fallido`. Los reintentos de entrega los hace MailSender (5, con espera exponencial de 30 s a 15 min); Cotifly expone `POST /web/cotizaciones/{folio}/correos/{id}/reintentar` (`/retry`). `X-Correlation-ID` = `{folio}:{id del envío}`.
+- Activar el correo: `Correo__Habilitado=true`, `Correo__MailSender__UrlBase` (la de QA está en Dokploy) y, fuera de Production, `Correo__Proteccion__BuzonPruebas`. La IP de MailSender (no la de Cotifly) es la que el relay debe tener autorizada.
 - **Operación (para HU-006):**
-  - El `From` es el correo del comercial (`@boterosoto.com.co`) aunque sale por el relay: revisar con TI que SPF/DMARC del dominio autoricen al relay para no caer en spam.
+  - El `From` es el correo del comercial (`@boterosoto.com.co`) aunque sale por el relay vía MailSender: revisar con TI que SPF/DMARC del dominio autoricen al relay para no caer en spam.
   - `replicas: 1` en Dokploy mientras no haya `sp_getapplock` para la deduplicación ni un volumen compartido para los PDFs; con varios nodos, ambos son requisito.
   - `/data/pdfs` debe ser escribible por el UID 1654: con un volumen con nombre Docker copia el dueño de la imagen; con un bind mount, `chown 1654:1654` en el host.
   - `EventosHerramienta` guarda entradas con datos personales (correos de clientes, nombres, NIT): definir la retención y la purga con datos/seguridad.

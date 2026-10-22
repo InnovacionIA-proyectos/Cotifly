@@ -177,6 +177,11 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         (typeof(clsDestinatarios), "Destinatarios"),
         (typeof(clsVistaPreviaCorreo), "VistaPreviaCorreo"),
         (typeof(clsRespuestaEnvio), "RespuestaEnvio"),
+        // HU-033 (#199): historial de envíos por MailSender, reintento y el resumen sin desglose de la vista previa.
+        (typeof(Cotifly.Api.Correo.DTOs.clsHistorialCorreosRespuesta), "HistorialCorreos"),
+        (typeof(Cotifly.Aplicacion.Correo.DTOs.clsEnvioCorreoHistorial), "EnvioCorreo"),
+        (typeof(Cotifly.Aplicacion.Correo.Services.clsResumenCorreo), "ResumenCorreo"),
+        (typeof(Cotifly.Aplicacion.Correo.Services.clsRutaResumenCorreo), "RutaResumenCorreo"),
         (typeof(clsSeguimientoWebRequest), "SeguimientoWeb"),
         (typeof(clsEnvioWebRequest), "EnvioWeb"),
         (typeof(clsActualizarLineaNegocioRequest), "ActualizarLineaNegocio"),
