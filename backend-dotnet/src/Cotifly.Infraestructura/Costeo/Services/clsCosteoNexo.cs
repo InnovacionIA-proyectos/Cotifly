@@ -20,8 +20,8 @@ namespace Cotifly.Infraestructura.Costeo.Services;
 /// <summary>
 /// Costeo contra Nexo en vivo (ADR-015). Rutas de <c>CONTRATO.md</c> de Nexo bajo <c>{Nexo:UrlBase}</c> (la raíz del servicio, sin
 /// <c>/api</c>): <c>POST /api/captura-solicitudes</c> (HU-005.5), <c>GET /api/solicitudes/{id}</c> y
-/// <c>GET /api/cotizaciones/por-solicitud/{id}</c> (HU-005.6; sin escribir en Nexo, E2E 2026-10-16) y, solo al marcar el resultado o con
-/// un Nexo sin esa ruta, <c>POST /api/cotizaciones</c> ("crear o recuperar"). Igual que el resto de adaptadores de Nexo, identifica al comercial
+/// <c>GET /api/cotizaciones/{id}</c> y <c>GET /api/cotizaciones/por-solicitud/{id}</c> (HU-005.6 y el resultado; sin escribir en Nexo, E2E
+/// 2026-10-16 y DEF-C-1 del 2026-10-22) y, solo con un Nexo sin esa ruta, <c>POST /api/cotizaciones</c> ("crear o recuperar"). Igual que el resto de adaptadores de Nexo, identifica al comercial
 /// con <c>X-Portal-clsUsuario-Id: {UsuariosWeb.idUsuarioExterno}</c> y nunca un token de Cotifly; se registra vía
 /// <c>clsFabricaCosteoNexo</c> (sin <c>Nexo:UrlBase</c> → <see cref="clsCosteoNexoNoDisponible"/>).
 /// </summary>
@@ -197,7 +197,7 @@ public sealed class clsCosteoNexo(
             return new clsCosteoConsultadoNexo(estado, lineas, null) { Detalle = contenidoLineas, CodigosCubicadorEnviados = await CodigosEnviadosAsync(id, cancellationToken) };
         }
 
-        var (cotizacion, error) = await CotizacionDeSolicitudAsync(usuarioId, id, cancellationToken);
+        var (cotizacion, error) = await CotizacionDeSolicitudAsync(usuarioId, id, cotizacionNexoId: null, cancellationToken);
         if (error is not null)
         {
             return error;
@@ -282,9 +282,12 @@ public sealed class clsCosteoNexo(
     /// </list>
     /// </summary>
     private async Task<(clsCotizacionNexo? Cotizacion, clsErrorDominio? Error)> CotizacionDeSolicitudAsync(
-        Guid usuarioId, string solicitudId, CancellationToken cancellationToken)
+        Guid usuarioId, string solicitudId, string? cotizacionNexoId, CancellationToken cancellationToken)
     {
-        if (await CotizacionGuardadaAsync(solicitudId, cancellationToken) is { Length: > 0 } cotizacionNexoId)
+        cotizacionNexoId = string.IsNullOrWhiteSpace(cotizacionNexoId)
+            ? await CotizacionGuardadaAsync(solicitudId, cancellationToken)
+            : cotizacionNexoId.Trim();
+        if (cotizacionNexoId is { Length: > 0 })
         {
             var porId = await EnviarAsync(usuarioId, HttpMethod.Get, $"/api/cotizaciones/{Uri.EscapeDataString(cotizacionNexoId)}", null, cancellationToken);
             if (porId.EsExitoso)
@@ -352,10 +355,26 @@ public sealed class clsCosteoNexo(
         }
     }
 
+    public async Task<clsResultado<clsCotizacionNexo>> LeerCotizacionAsync(
+        Guid usuarioId, string solicitudId, string? cotizacionNexoId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(solicitudId);
+        var id = solicitudId.Trim();
+        var (cotizacion, error) = await CotizacionDeSolicitudAsync(usuarioId, id, cotizacionNexoId, cancellationToken);
+        if (error is not null)
+        {
+            return error;
+        }
+
+        return cotizacion is null
+            ? new clsErrorDominio(clsCodigosError.CotizacionNoEntregada, $"Nexo todavía no tiene la cotización de la solicitud {id}.")
+            : cotizacion;
+    }
+
     /// <summary>
     /// "Crear o recuperar": devuelve la entregada, el borrador existente o uno vacío nuevo (lo mismo que hace la Mesa de Nexo al abrir la
-    /// solicitud). ES UNA ESCRITURA en Nexo: el polling ya no la usa (lee con <see cref="RutaCotizacionPorSolicitud"/>); queda para marcar el
-    /// resultado cuando Cotifly todavía no conoce el id de la cotización y para un Nexo sin la ruta de lectura.
+    /// solicitud). ES UNA ESCRITURA en Nexo: ni el polling ni el resultado la usan (leen con <see cref="LeerCotizacionAsync"/>, DEF-C-1); queda
+    /// solo para un Nexo sin la ruta de lectura <see cref="RutaCotizacionPorSolicitud"/>, una vez por lectura.
     /// </summary>
     public async Task<clsResultado<clsCotizacionNexo>> ObtenerCotizacionAsync(Guid usuarioId, string solicitudId, CancellationToken cancellationToken = default)
     {

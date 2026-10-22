@@ -108,7 +108,7 @@ public sealed class clsResultadoDiferidoNexoTests
         Entregada();
         _nexo.MarcarResultadoAsync(_ana, "COT-1", Arg.Any<clsResultadoNexo>(), Arg.Any<CancellationToken>())
             .Returns(new clsErrorDominio(clsCodigosError.ResultadoYaDefinido, "Ya está marcada como Perdida."));
-        _nexo.ObtenerCotizacionAsync(_ana, "SOL-1", Arg.Any<CancellationToken>()).Returns(new clsCotizacionNexo("COT-1", "Entregada", "Perdida", [], []));
+        _nexo.LeerCotizacionAsync(_ana, "SOL-1", Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns(new clsCotizacionNexo("COT-1", "Entregada", "Perdida", [], []));
 
         (await Sincronizacion().SincronizarAsync(_cotizacion, _reloj.AhoraUtc, Ct)).Should().BeTrue();
 

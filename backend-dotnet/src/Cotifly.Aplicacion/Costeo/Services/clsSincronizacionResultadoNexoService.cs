@@ -61,7 +61,8 @@ public sealed class clsSincronizacionResultadoNexoService(
         var cotizacionNexoId = cotizacion.CotizacionNexoId;
         if (cotizacionNexoId is null)
         {
-            var recuperada = await nexo.ObtenerCotizacionAsync(usuarioId, solicitudId, CancellationToken.None);
+            // DEF-C-1: se LEE la cotización de Nexo (sin "crear o recuperar").
+            var recuperada = await nexo.LeerCotizacionAsync(usuarioId, solicitudId, cotizacionNexoId: null, CancellationToken.None);
             if (recuperada.EsFallo)
             {
                 return await FalloAsync(cotizacion, ahora, recuperada.Error, cronometro);
@@ -84,7 +85,7 @@ public sealed class clsSincronizacionResultadoNexoService(
 
         if (marcada.Error.Codigo == clsCodigosError.ResultadoYaDefinido)
         {
-            var leida = await nexo.ObtenerCotizacionAsync(usuarioId, solicitudId, CancellationToken.None);
+            var leida = await nexo.LeerCotizacionAsync(usuarioId, solicitudId, cotizacionNexoId, CancellationToken.None);
             bool? deNexo = leida.EsExitoso
                 ? leida.Valor.Resultado.Trim().ToLowerInvariant() switch { "ganada" => true, "perdida" => false, _ => null }
                 : null;
