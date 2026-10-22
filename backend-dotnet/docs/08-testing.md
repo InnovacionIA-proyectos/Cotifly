@@ -42,7 +42,7 @@ Conteos de la corrida del 2026-10-09 de la [matriz de HU-021](qa/MATRIZ_PRUEBAS_
 | Arquitectura | `Cotifly.Arquitectura.Tests` | ArchUnitNET | Dependencias entre capas, Dominio sin paquetes externos, convención `cls`/`ICls`, contexto de `docker build` |
 
 - TDD: test en rojo, implementación, refactor (ADR-010).
-- Las pruebas no llaman a proveedores de IA reales ni a SAP TM o un relay reales: usan dobles locales (`clsChatClientGuionizado`, `clsSapTmFalso`, `clsServidorSmtpFalso`, `clsNexoClientesFalso` para Nexo y `clsTrmFalso` para los datos abiertos de la TRM, HU-012). Las pruebas con proveedores reales son manuales.
+- Las pruebas no llaman a proveedores de IA reales ni a SAP TM o un relay reales: usan dobles locales (`clsChatClientGuionizado`, `clsSapTmFalso`, `clsMailSenderFalso` (HU-033: MailSender en proceso; nunca se envían correos reales), `clsNexoClientesFalso` para Nexo y `clsTrmFalso` para los datos abiertos de la TRM, HU-012). Las pruebas con proveedores reales son manuales.
 
 ## 8.2 Proyectos y alcance
 
@@ -284,12 +284,12 @@ Workflow `.github/workflows/backend-dotnet.yml` (GitHub Actions, `ubuntu-latest`
 | `test_duplicado_menos_5min_rechaza` | `clsCorreoServiceTests.UnEnvioALosMismosDestinatariosEnMenosDeCincoMinutosEsDuplicado`; `clsPdfCorreoIntegracionTests.ElEnvioDeduplicaConElRelojDeLaAplicacionYPasaAReenviada`; `correo.feature` |
 | `test_duplicado_mas_5min_permite` | `clsCorreoServiceTests.LaVentanaDeDeduplicacionSeMideConElRelojDeLaAplicacion`; `clsCorreoRepositoryTests.UnEnvioAnteriorAlInstanteNoSeLista`; `correo.feature` |
 | `test_distintos_destinatarios_no_es_duplicado` | `clsCorreoServiceTests.OtroConjuntoDeDestinatariosNoEsDuplicado` |
-| `test_fallo_smtp_eleva_envio_smtp_error` | `clsCorreoServiceTests.UnFalloDelTransporteQuedaRegistradoComoFallidoYNoCambiaElEstado`; `clsTransporteSmtpRelayTests.UnRelayInalcanzableEsEnvioFallido`; `correo.feature` |
+| `test_fallo_smtp_eleva_envio_smtp_error` | `clsCorreoServiceTests.UnFalloDelTransporteQuedaRegistradoComoFallidoYNoCambiaElEstado`; `clsTransporteMailSenderTests.UnMailSenderCaidoEsUnEnvioFallidoSinReintentarElPost` (HU-033); `correo.feature` |
 | `test_now_estable_en_transaccion` (Postgres) | Sin equivalente: la ventana se mide con `IClsReloj` (el interceptor fija `createdAt` con el mismo reloj) |
-| `test_relay_arma_mensaje_con_remitente_comercial_y_adjunto` | `clsTransporteSmtpRelayTests.ArmaElMensajeConElRemitenteComercialElCuerpoYElAdjunto` |
-| `test_relay_sin_confirmado_usa_fallback` | `clsTransporteSmtpRelayTests.SinCorreoDelComercialUsaElRemitenteDeRespaldo` |
-| `test_relay_fallo_de_red_eleva_error` | `clsTransporteSmtpRelayTests.UnRelayInalcanzableEsEnvioFallido` (+ `SiElRelayRechazaLosDestinatariosPideAutorizarLaIpDelServidor`) |
-| `tests/test_ws_correos.py` (WSCorreos SOAP) | Sin equivalente: `wscorreos` no se porta hasta confirmar el transporte real (D3) |
+| `test_relay_arma_mensaje_con_remitente_comercial_y_adjunto` | HU-033: `clsTransporteMailSenderTests.UnAltaAceptadaDevuelveElIdDeMailSenderYQuedaEncolada` (el relay ahora lo usa MailSender) |
+| `test_relay_sin_confirmado_usa_fallback` | `clsTransporteMailSenderTests.SinCorreoDelComercialElRemitenteEsElPorDefecto` |
+| `test_relay_fallo_de_red_eleva_error` | `clsTransporteMailSenderTests.UnMailSenderCaidoEsUnEnvioFallidoSinReintentarElPost` (+ `UnRechazoDeMailSenderEsUnEnvioFallidoConElMotivo`, `SinRespuestaATiempoElEnvioEsInciertoYNoSeReintenta`) |
+| `tests/test_ws_correos.py` (WSCorreos SOAP) | Sin equivalente: `wscorreos` se retiró (HU-033, ADR-023: el transporte es MailSender) |
 | Middleware de auditoría (`mcp_server/auditoria.py`, cubierto por `test_generar_pdf_dod_via_mcp`) | `clsAuditoriaServiceTests`; `clsPdfCorreoIntegracionTests`; `auditoria.feature`; en el agente, `clsInyeccionEstadoTests.LaAuditoriaDelFiltroNoDuplicaLaDeLosCasosDeUso` |
 | `test_loop_tool_use_invoca_mcp_y_cierra` | `clsAgenteRunnerTests.DosHerramientasEncadenadasDevuelvenSuSalidaRealAlModelo` (+ `SinHerramientasElTurnoCierraConLaRespuestaDeLaLlamadaFinal`) |
 | `test_tools_declaradas_excluyen_ping` | `clsAgenteRunnerTests.SinHerramientasElTurnoCierraConLaRespuestaDeLaLlamadaFinal` (las 7 declaradas, sin `ping`) y `EnviarCorreoSoloSeDeclaraConElCorreoHabilitado` |
