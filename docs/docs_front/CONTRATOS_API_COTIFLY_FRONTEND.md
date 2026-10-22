@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Fecha** | 2026-10-22 |
-| **Versión de referencia** | Rama `integracion-1019`: QA (PR #185, rama `hu-023-defectos-e2e-1016`, con D-1019-1) más #179 (HU-027.1, clases de contenedor), #180 (HU-025.1, textos de roles), #187 (HU-010.5, métricas por año y mes), #188 (HU-014, columnas 03/05 y "solo códigos conocidos") y #186 (HU-028, editar la solicitud); más la rama `179-detalle-por-folio` (#179 parte A, `GET /web/cotizaciones/{folio}`); más #181 (motivo pendiente), #183 (HU-028.1, rechazo de línea), #184 (HU-030.1, peso con tara), #191 (`Idempotency-Key` persistente), #194 (HU-031.1, alias de NEXO) y #197 (HU-032, vehículo elegido); más la rama `199-correo-mailsender` (HU-033, #199: correo por MailSender, total sin desglose y resultado diferido a NEXO) |
+| **Versión de referencia** | Rama `integracion-1019`: QA (PR #185, rama `hu-023-defectos-e2e-1016`, con D-1019-1) más #179 (HU-027.1, clases de contenedor), #180 (HU-025.1, textos de roles), #187 (HU-010.5, métricas por año y mes), #188 (HU-014, columnas 03/05 y "solo códigos conocidos") y #186 (HU-028, editar la solicitud); más la rama `179-detalle-por-folio` (#179 parte A, `GET /web/cotizaciones/{folio}`); más #181 (motivo pendiente), #183 (HU-028.1, rechazo de línea), #184 (HU-030.1, peso con tara), #191 (`Idempotency-Key` persistente), #194 (HU-031.1, alias de NEXO) y #197 (HU-032, vehículo elegido); más la rama `199-correo-mailsender` (HU-033, #199: correo por MailSender, total sin desglose y resultado diferido a NEXO), con los endurecimientos A y B de #199 integrados |
 | **Audiencia** | Equipo de frontend del módulo Cotifly dentro de ClientePro (Angular 17.3.8) |
 | **Fuente de verdad** | El código del backend .NET y `backend-dotnet/specs/openapi.yaml`. Si este documento y el código no coinciden, manda el código. Los cambios de esta versión están en la sección 9 |
 
@@ -132,7 +132,10 @@ Reglas de dinero que la UI debe respetar:
   fletes + retorno + levante + conexos, con el margen de la ruta. **No sumarle** el `precio` de `servicios_conexos`: ese `precio` es
   solo el desglose. Si se suma, se cobra dos veces.
 - Excepción: en la **vista de la licitación** (`Licitacion.precio_final`, `lineas[].precio_final`) y en su **Excel**, cada fila es la
-  tarifa del transporte **sin** conexos; los conexos se listan aparte. Tarifa + conexos = precio de la ruta.
+  tarifa del transporte **sin** conexos; los conexos se listan aparte. Tarifa + conexos = precio de la ruta. **Es una diferencia
+  intencional (decisión del usuario, endurecimiento B de #199, ADR-023 §8):** la vista y el Excel son internos y siguen desglosados; el
+  PDF y el correo, que ve el cliente, muestran el valor final. La UI no debe "corregir" una contra la otra: en la vista de la licitación,
+  si muestra un total por ruta comparable con el PDF, es `lineas[].precio_final` + sus conexos.
 - El **PDF** (de una ruta o del pliego) ya no sigue esa excepción (HU-033, #199): muestra el **valor final de cada ruta** (transporte y
   conexos incluidos, sin desglose; los conexos se listan como incluidos, sin precio) y el total general "VALOR TOTAL DE LA COTIZACIÓN"
   (en el resumen del pliego, "VALOR TOTAL DE LA COTIZACIÓN (N RUTAS)").
@@ -637,9 +640,11 @@ sequenceDiagram
 
 - Sin cubicador configurado, la licitación se envía a NEXO de una vez con un camión sin vehículo por ruta y no trae
   `progreso_cubicacion`.
-- Con una ruta `fallida`, la licitación **no sale a NEXO** hasta reintentar. `usar_respaldo: true` acepta con un camión sin vehículo
-  solo las rutas que fallaron porque el cubicador no respondió (`error_cubicacion` empieza por `CUBICADOR_NO_DISPONIBLE`); un rechazo
-  de la mercancía o de las medidas no se acepta con respaldo.
+- Con una ruta `fallida`, la licitación **no sale a NEXO** hasta reintentar. `usar_respaldo: true` acepta con el respaldo solo las rutas
+  que fallaron porque el cubicador no respondió (`error_cubicacion` empieza por `CUBICADOR_NO_DISPONIBLE`); un rechazo de la mercancía o
+  de las medidas no se acepta con respaldo. Endurecimiento B (#199): el respaldo usa el **vehículo elegido** de la ruta, como el
+  segundo plano (HU-032): si es de NEXO, el camión lo lleva con `VEHICULO_ELEGIDO_USADO`; si no, va sin vehículo con
+  `VEHICULO_ELEGIDO_INVALIDO`; sin elegido, sin vehículo.
 - Las licitaciones no admiten conexos por `POST .../costeo/servicios-conexos` (409 `ESTADO_NO_PERMITE`, `detalle.motivo = LICITACION`).
 
 ### 3.7 Editar la solicitud (HU-028, #186)
@@ -678,8 +683,10 @@ sequenceDiagram
     end
 ```
 
-Si el rechazo en NEXO falla, **no** se captura otra solicitud (nunca quedan dos vivas): 503 `NEXO_NO_DISPONIBLE` con
-`detalle.motivo = RECHAZO_NEXO_FALLIDO`; la versión subió, así que hay que recargar antes de reintentar. Las rutas que se conservan no se
+Si el rechazo en NEXO falla, **no** se captura otra solicitud (nunca quedan dos vivas): 503 `NEXO_NO_DISPONIBLE` (o 403
+`NEXO_SIN_PERMISO`) con `detalle.motivo = RECHAZO_NEXO_FALLIDO` (siempre ese valor: el texto técnico de NEXO ya no lo pisa,
+endurecimiento B de #199); la versión subió, así que hay que recargar antes de reintentar. En `nueva_version`, un 503
+`SERVICIO_OCUPADO` ya no sube la versión de la original: el `If-Match` sigue valiendo. Las rutas que se conservan no se
 reordenan; las nuevas pueden ir en cualquier posición. El margen negociado de una ruta que se conserva sobrevive. Solo se recubican las
 rutas nuevas y las que cambian peso, mercancías o clase de viaje y, HU-032 (#197), las que cambian el vehículo elegido cuando sus camiones
 salen de él (no los asignó el cubicador). El `GET` trae el vehículo elegido de cada ruta (`tipo_vehiculo`, `carroceria`): reenviarlo.
@@ -1571,7 +1578,7 @@ Error **409** de la clave de idempotencia:
 | 400 | `MERCANCIAS_REQUERIDAS`, `MERCANCIA_DESCONOCIDA`, `MERCANCIA_NO_CUBICABLE`, `DIMENSIONES_INVALIDAS`, `CUBICACION_DEMASIADO_GRANDE` | El cubicador rechazó una ruta: mostrar `mensaje`. Nada se guardó. Cuando se sabe qué mercancía es (D-1019-1), vienen `detalle.ruta` y `detalle.item` (base 0) y `detalle.campo`: marcar esa mercancía |
 | 400 | `POSICION_INVALIDA`, `CUBICADOR_PETICION_RECHAZADA` (como `error.codigo`) | D1: el cubicador respondió 422 a una ruta (antes 503 `CUBICADOR_RESPUESTA_INVALIDA`). Mostrar `mensaje`; nada se guardó. Corregir la carga antes de reenviar |
 | 400 | `ErrorWeb` | JSON inválido, o `Idempotency-Key` fuera de 8 a 64 caracteres |
-| 403 | `NEXO_SIN_PERMISO` | Rol del comercial en NEXO (al leer el costo de los conexos): avisar a soporte |
+| 403 | `NEXO_SIN_PERMISO` | Rol del comercial en NEXO (al leer el costo de los conexos): avisar a soporte. Nada se guardó. Declarado en el openapi desde el endurecimiento B (#199) |
 | 409 | `ESTADO_NO_PERMITE` + `detalle.motivo = CAPTURA_EN_CURSO` | No reintentar. Llevar a "Mis cotizaciones" con `detalle.folio` |
 | 409 | `IDEMPOTENCY_KEY_REUTILIZADA` | La misma clave llegó con otro cuerpo (antes 400 `ErrorWeb`). Nada se ejecutó: generar una clave nueva y reenviar |
 | 503 | `CATALOGOS_FLETE_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE`, `NEXO_NO_DISPONIBLE` | Nada se guardó. Reintentar (con la **misma** `Idempotency-Key`) |
@@ -1925,7 +1932,9 @@ Respuesta (los dos casos traen siempre `conexos_conservados` y `conexos_descarta
 | 400 | `SOLICITUD_COSTEO_INVALIDA` | `motivo` vacío o largo, `datos_carga` vacío o con un campo no permitido, o reglas de la captura (peso, contenedor) |
 | 400 | `TRM_NO_DISPONIBLE` | Versión nueva en USD sin TRM: no se creó nada |
 | 400 | `LICITACION_INVALIDA` + `detalle.motivo = LICITACION_REQUIERE_NUEVA_CARGA` | Crear una licitación nueva |
+| 400 | `FOLIO_INVALIDO` | Versión nueva: el folio de la original no tiene la forma de ADR-011 (p. ej. migrado) o el `-vN` pasaría de 50 caracteres. Nada se creó: avisar a soporte (endurecimiento B, #199) |
 | 400 | `ErrorWeb` | JSON inválido o `Idempotency-Key` fuera de 8 a 64 caracteres |
+| 403 | `NEXO_SIN_PERMISO` | Versión nueva con conexos: NEXO respondió 403 al leer su costo. Nada se creó: avisar a soporte (endurecimiento B, #199) |
 | 404 | `ErrorWeb` | — |
 | 409 | `ESTADO_NO_PERMITE` | Estado que no lo permite. Con `detalle.motivo = VARIAS_RUTAS` (formulario) o `LICITACION`: no se admiten `datos_carga` con varias rutas; usar `nueva_version: true` sin `datos_carga` |
 | 409 | `PDF_YA_ENVIADO` | En el mismo folio tras el envío o con resultado: repetir con `nueva_version: true` |
@@ -1933,7 +1942,7 @@ Respuesta (los dos casos traen siempre `conexos_conservados` y `conexos_descarta
 | 409 | `IDEMPOTENCY_KEY_REUTILIZADA` | La misma clave con otro cuerpo (antes 400 `ErrorWeb`): nada se ejecutó; generar una clave nueva |
 | 428 | `PRECONDICION_REQUERIDA` | — |
 | 503 | `CATALOGOS_FLETE_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE` | Licitación que no se pudo revalidar: reintentar |
-| 503 | `SERVICIO_OCUPADO` | Reintentar en 1 s |
+| 503 | `SERVICIO_OCUPADO` | Reintentar en 1 s. Endurecimiento B (#199): en la versión nueva nada cambió, tampoco la versión de la original: reintentar con el mismo `If-Match` |
 
 UX: antes de confirmar, si la cotización tiene conexos, se puede mostrar "Se conservan los servicios conexos «...» con su costo y siguen
 en el precio" (mismo folio) o "La versión nueva copia los servicios conexos «...»" (versión nueva).
@@ -2037,12 +2046,14 @@ Respuesta `EdicionSolicitudResultado`: `modo`, `folio` (el resultante), `folio_o
 | 201 | `EdicionSolicitudResultado` | `nueva_version`: navegar a `folio` (o al `Location`) |
 | 400 | `CAMPO_NO_EDITABLE` | Restaurar el campo de `detalle.campo` (todos en `detalle.campos`) |
 | 400 | `SOLICITUD_COSTEO_INVALIDA` | Marcar `detalle.errores[]` (reglas de la captura, `RUTA_INEXISTENTE`, `RUTA_REPETIDA`, `RUTAS_REORDENADAS`) |
-| 403 | `NEXO_SIN_PERMISO` | NEXO no deja rechazar la solicitud anterior; nada cambió |
+| 400 | `FOLIO_INVALIDO` | `nueva_version`: el folio de la original no tiene la forma de ADR-011 o el `-vN` pasaría de 50 caracteres. Nada cambió: avisar a soporte (endurecimiento B, #199) |
+| 403 | `NEXO_SIN_PERMISO` (`detalle.motivo = RECHAZO_NEXO_FALLIDO`) | NEXO no deja rechazar la solicitud anterior; no se capturó otra. La versión subió: recargar. Sin `RECHAZO_NEXO_FALLIDO`, el 403 es del catálogo de conexos; nada cambió |
 | 409 | `ESTADO_NO_PERMITE` | Mostrar el mensaje; con `MODO_CAMBIO`, recargar y confirmar de nuevo |
 | 409 | `SIN_RUTAS_COTIZABLES` (`detalle.motivo = TODOS_RECHAZADOS`) | HU-028.1 (#183): ninguna ruta mandaría camiones a NEXO (todos rechazados por la Mesa). Ofrecer `reincluir_rechazados`; nada cambió |
 | 409 | `CONFLICTO_CONCURRENCIA`, `IDEMPOTENCY_KEY_REUTILIZADA` | Recargar |
 | 503 | `NEXO_NO_DISPONIBLE` (`detalle.motivo = RECHAZO_NEXO_FALLIDO`) | "NEXO no respondió; no se cambió nada". La versión subió: recargar antes de reintentar |
 | 503 | `CATALOGOS_FLETE_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE`, `CUBICADOR_NO_DISPONIBLE`, `TRM_NO_DISPONIBLE` | Reintentar; nada se guardó |
+| 503 | `SERVICIO_OCUPADO` | `nueva_version`: el candado del folio `-vN` siguió ocupado. Nada cambió, tampoco la versión de la original (endurecimiento B, #199): reintentar con el mismo `If-Match` |
 
 ### 4.5 Cotizaciones
 
@@ -2134,7 +2145,12 @@ Casos:
 - **Perdida solo en Cotifly** (#127): en `error_envio`, o en `pendiente_costeo` cuando NEXO confirma que no la tiene entregada, una
   `perdida` exige `motivo` e `If-Match`. No va a NEXO **nunca** (el cliente desistió antes del costeo), el polling se detiene,
   `motivo_estado_costeo` empieza por "Perdida solo en Cotifly" y `sincronizacion_resultado_nexo` es `solo_cotifly`. Una `ganada` en
-  `error_envio` es 409 `COTIZACION_NO_ENTREGADA` (NEXO no recibió la solicitud).
+  `error_envio` es 409 `COTIZACION_NO_ENTREGADA` (NEXO no recibió la solicitud). Endurecimiento B (#199): lo mismo si NEXO ya no
+  reconoce la solicitud (404) en `pendiente_costeo`: la `perdida` queda `solo_cotifly` (antes 400 `COSTEO_NEXO_SOLICITUD_NO_ENCONTRADA`).
+- **Mismo resultado ya sincronizado (endurecimiento B, #199, OBS-C-2)**: repetir el resultado que NEXO ya tiene responde **200 sin
+  cambios** y sin llamar a NEXO (mismo `ETag`).
+- **Sin escrituras de más en NEXO (DEF-C-1)**: ante `RESULTADO_YA_DEFINIDO`, Cotifly **lee** el resultado de NEXO con
+  `GET /api/cotizaciones/{id}` (o `/por-solicitud/{id}`); ya no hace `POST /api/cotizaciones`. No cambia la respuesta.
 
 | HTTP | Código | UI |
 |---|---|---|
@@ -2145,6 +2161,7 @@ Casos:
 | 409 | `RESULTADO_YA_DEFINIDO` (`detalle.motivo` = `ganada` o `perdida`, el de NEXO) | Cotifly ya quedó con el resultado de NEXO: mostrar el mensaje y recargar |
 | 409 | `COTIZACION_NO_ENTREGADA` | Solo una `ganada` en `error_envio` (NEXO no recibió la solicitud), una cotización en `pendiente_envio` que ya tiene solicitud en NEXO (no se le pide el resultado) y una `ganada` en `pendiente_costeo` si la lectura del costeo de NEXO falla con un error que no es de disponibilidad (si NEXO no responde, 503): "NEXO todavía no tiene la cotización; reintenta el envío o espera el costeo" |
 | 409 | `SOLICITUD_NO_TRANSICIONABLE` | Mostrar `mensaje` |
+| 409 | `COTIZACION_NEXO_NO_ENCONTRADA` (`detalle.motivo = COTIZACION_NO_ENCONTRADA`) | Endurecimiento B (#199): NEXO no reconoce la cotización de NEXO del folio. Nada cambió. Mostrar `mensaje` ("recarga; si persiste, avisa a la Mesa de Costeo"). Antes salía como el 404 "no es tuya" |
 | 409 | `COSTEO_NO_LISTO` | La cotización no está en NEXO (chat, descartada, costeo vencido o no enviada): usar `/seguimiento` |
 | 409 | `CONFLICTO_CONCURRENCIA` | Recargar y repetir |
 | 428 | `PRECONDICION_REQUERIDA` | Perdida sin costeo sin `If-Match` |
@@ -2414,6 +2431,7 @@ Error **400** por filas (`ReporteLicitacionInvalida`, nada queda guardado):
 | 400 | `ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE`, `EXCEL_INVALIDO`, `EXCEL_SIN_DATOS`, `FOLIO_CONSECUTIVO_AGOTADO`, `TRM_NO_DISPONIBLE` | Mostrar `mensaje` |
 | 400 | `MARGEN_LINEA_DESCONOCIDA` (`detalle.lineas_validas`, `detalle.motivo`) | Ofrecer las líneas válidas |
 | 400 | `ErrorWeb` | JSON inválido |
+| 403 | `NEXO_SIN_PERMISO` | Filas con `servicios_conexos`: NEXO respondió 403 al leer su costo. Nada se creó: avisar a soporte. Un 403 en el **alta** sí crea la licitación en `error_envio` (201) (endurecimiento B, #199) |
 | 413 | `ErrorWeb` | Excel + JSON de más de 12 MB |
 | 503 | `CATALOGOS_FLETE_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE`, `SERVICIO_OCUPADO` | Nada se guardó: reintentar |
 
@@ -2438,7 +2456,7 @@ Reintenta las rutas con `estado_cubicacion = fallida`. Solo antes de enviar la l
 
 | Campo | Tipo | Obligatorio | Reglas |
 |---|---|---|---|
-| `usar_respaldo` | bool o null | No | `true` = aceptar con un camión sin vehículo las rutas que fallaron porque el cubicador no respondió (`error_cubicacion` empieza por `CUBICADOR_NO_DISPONIBLE`) y, si no queda nada pendiente, enviar a NEXO en la misma petición. Sin él, las fallidas vuelven a la cola |
+| `usar_respaldo` | bool o null | No | `true` = aceptar con el respaldo las rutas que fallaron porque el cubicador no respondió (`error_cubicacion` empieza por `CUBICADOR_NO_DISPONIBLE`) y, si no queda nada pendiente, enviar a NEXO en la misma petición. El respaldo (endurecimiento B, #199, HU-032) es el vehículo elegido de la ruta si es de NEXO (aviso `VEHICULO_ELEGIDO_USADO`) o, si no, sin vehículo (`VEHICULO_ELEGIDO_INVALIDO`); sin elegido, sin vehículo. Sin `usar_respaldo`, las fallidas vuelven a la cola |
 
 ```json
 { "usar_respaldo": true }
@@ -2473,6 +2491,9 @@ Descarga el Excel original del cliente con columnas agregadas: `Precio final Cot
 Genera el PDF de la cotización. El servidor arma todo: tarifas, camiones, conexos con su precio y los textos guardados (o los estándar).
 Nunca llama a la IA y nunca imprime costos de NEXO. Con una ruta sale el PDF de una ruta; con varias (formulario o licitación) sale el
 layout de pliego (resumen y una sección por ruta; con más de 20 rutas, solo el resumen). En USD lleva la nota de TRM mínima.
+Endurecimiento B (#199, OBS-C-3): los textos de varias rutas dependen del tipo. Licitación: "… para su licitación (N rutas)", "RESUMEN DEL
+PLIEGO" y "RUTA n: PLIEGO DE TRANSPORTE …". Spot de varias rutas: "… de Transporte (N rutas)", "RESUMEN DE LAS RUTAS" y "RUTA n: TARIFA
+DE TRANSPORTE …". Este endpoint no responde `FOLIO_INVALIDO`.
 
 - **Rol:** ambos (dueño). **Headers:** `If-Match` opcional. **Sin cuerpo.**
 
@@ -3345,6 +3366,8 @@ parecido del catálogo, `sugerido = true`, con `similitud` de 0 a 1), `null` (si
 | `EXCEL_INVALIDO` | 400 | No se pudo leer el Excel | Pedir otro archivo |
 | `EXCEL_SIN_DATOS` | 400 | Ninguna hoja con tabla, o la hoja no existe | Revisar el archivo o la hoja |
 | `FOLIO_CONSECUTIVO_AGOTADO` | 400 | Se usaron los 999 folios del día de esas iniciales | "Contacta a soporte" |
+| `FOLIO_INVALIDO` | 400 | Endurecimiento B (#199): el folio que arma el servidor no cumple ADR-011. En la práctica solo en la versión nueva (`re-solicitar` con `-vN` y `nueva_version` de `PUT .../solicitud`): folio de la original con otra forma o `-vN` de más de 50 caracteres. El PDF no lo responde | "Contacta a soporte" |
+| `COTIZACION_NEXO_NO_ENCONTRADA` | 409 | Endurecimiento B (#199): NEXO respondió 404 `COTIZACION_NO_ENCONTRADA` al marcar el resultado (`detalle.motivo` = ese código). Nunca es el 404 "no es tuya" | Mostrar `mensaje`; recargar y, si persiste, avisar a la Mesa |
 | `FOLIO_REQUERIDO` | 400 | `/web/chat` sin folio | Abrir el asistente solo desde una cotización |
 | `FORMATO_NO_SOPORTADO` | 400 | Archivo que no es `.xlsx` ni `.xlsm` | Pedir otro archivo |
 | `IDEMPOTENCY_KEY_REUTILIZADA` | 409 | D4 (2026-10-16): la misma `Idempotency-Key` con otro cuerpo en la captura, agregar conexos, re-solicitar o editar la solicitud (antes 400 `ErrorWeb`). Nada se ejecutó | Generar una clave nueva para la nueva intención |
@@ -3383,7 +3406,7 @@ parecido del catálogo, `sugerido = true`, con `similitud` de 0 a 1), `null` (si
 Códigos del enum que **no** debería ver la consola web (internos del asistente o del agente retirado):
 `MARGEN_FUENTE_NO_DISPONIBLE`, `PRECIO_INVALIDO`, `CONFIRMACION_REQUERIDA`, `AJUSTE_COTIZACION_INVALIDA`, `FOLIO_DUPLICADO`,
 `HERRAMIENTA_DESCONOCIDA`, `COTIZACION_CHAT_RETIRADA` (fila 57: `TARIFA_FUENTE_NO_DISPONIBLE`, `TARIFA_CONFIG_INVALIDA`, `AJUSTE_ID_INVALIDO`
-y `MUNICIPIO_ARGUMENTO_INVALIDO` salieron del enum porque ningún código los emite). Pueden
+y `MUNICIPIO_ARGUMENTO_INVALIDO` salieron del enum porque ningún código los emite; fila 58: los tres de tarifa y municipio se borraron también del backend). Pueden
 aparecer en `errores[]` del chat: ignorarlos (el asistente lo explica en `texto`). `COTIZACION_NO_ENCONTRADA` se traduce siempre a 404
 `ErrorWeb`; `CORREO_INVALIDO` llega como 400 `ErrorWeb` sin código.
 
@@ -3497,6 +3520,7 @@ fila_excel, campo, codigo, mensaje}`.
 | 55 | **HU-033 (#199, ADR-023): correo por MailSender, total sin desglose y resultado diferido a NEXO.** (a) `POST .../enviar`: 200 = MailSender **aceptó** el correo (`estado = encolado`); campos nuevos `correo_id`, `estado` y `redirigido_a` en `RespuestaEnvio`; el comercial va en copia oculta. (b) **Nuevos** `GET .../correos` (historial con `encolado`/`enviando`/`enviado`/`fallido` y `error`) y `POST .../correos/{correoId}/reintentar` (409 `CORREO_NO_REINTENTABLE`). (c) `VistaPreviaCorreo` trae `cuerpo_html`, `resumen` (precio por ruta y total), `copia_oculta`, `entorno_pruebas`, `redirigido_a` y `aviso`. (d) El PDF imprime el **valor final de cada ruta** (transporte y conexos incluidos), los conexos como incluidos **sin precio** y el **VALOR TOTAL DE LA COTIZACIÓN** al final, con la leyenda de impuestos; el resumen del pliego dice "VALOR TOTAL DE LA COTIZACIÓN (N RUTAS)" (antes "TOTAL DEL PLIEGO (N RUTAS, SIN SERVICIOS CONEXOS)"). (e) `/resultado` en `autocosteo` (o una `ganada` en `pendiente_costeo`) ya no es 409 `COTIZACION_NO_ENTREGADA`: responde 200 con `sincronizacion_resultado_nexo = pendiente`. Campos nuevos `sincronizacion_resultado_nexo` y `error_sincronizacion_resultado_nexo` en `CotizacionResumen` (detalle, "Mis cotizaciones", listado regional) y en `CosteoCotizacion` (+ `resultado`) | Cambia | Historial de envíos con su estado y "Reintentar"; aviso de ambiente de pruebas en la vista previa; vista previa con el resumen; tras `/resultado`, mostrar "Pendiente de sincronizar con NEXO" según `sincronizacion_resultado_nexo` y no tratar `COTIZACION_NO_ENTREGADA` como el caso normal |
 | 56 | **Auditoría QA total (2026-10-22): correcciones de coherencia documental.** Sin cambios de código ni de forma. Se alinean con el código: 52 endpoints; la redirección del correo al buzón de pruebas es el valor por defecto en todos los ambientes (solo producción con `Correo:Proteccion:Modo=ninguno` y `Correo:Proteccion:PermitirEnvioReal=true` escribe a los destinatarios reales); `CORREO_NO_REINTENTABLE` también por un reintento en curso (doble clic); `CORREO_ENVIO_FALLIDO` por tiempo agotado deja la cotización enviada (5 min de `CORREO_DUPLICADO`, historial "Resultado incierto:"); el PDF (de una ruta o del pliego) muestra el valor final por ruta con conexos y el total general, mientras la vista de la licitación y su Excel siguen sin conexos; casos exactos de `COTIZACION_NO_ENTREGADA` frente al resultado pendiente de sincronizar; `If-Match`, `Idempotency-Key` y `Location` de `PUT .../solicitud` y `POST /web/cubicacion`; `RUTA_RECHAZADA`/`SIN_RUTAS_COTIZABLES` (409) y `CLIENTE_BUSQUEDA_NO_DISPONIBLE` (503) en el mapeo HTTP; la fila 20 queda revertida por la 53 | Cambia (solo documentación) | Revisar el manejo de esos casos contra lo descrito; ningún contrato nuevo |
 | 57 | **Endurecimiento A (#199, 2026-10-22).** (a) **Nuevo 500 `ERROR_INTERNO`** en todo `/web/*` y `/pdfs/*` (respuesta común `ErrorInterno` del openapi): `ErrorNegocio` `{"error": {"codigo": "ERROR_INTERNO", "mensaje": "Ocurrió un error interno. Intenta de nuevo y, si se repite, contacta a soporte.", "detalle": {"id_correlacion": "..."}}}`: el único `detalle` es `id_correlacion`, el id de la petición en el log (sin datos técnicos) (antes un error no controlado salía sin cuerpo; `ERROR_INTERNO` de los casos de uso salía como **400**, y una restricción única no traducida salía como 400 `REGISTRO_DUPLICADO` con el nombre de la restricción). En `/api/auth/*` el 500 es `ErrorWeb` con el mismo texto. (b) **`POST .../enviar` de un folio ajeno o inexistente responde 404** antes que `CORREO_DESHABILITADO` (503) o `CORREO_INVALIDO` (400): ya no se pueden enumerar folios. (c) **`GET /web/licitaciones/{folio}`** de un folio que no es licitación (formulario o chat) responde **404** (antes 200), como el Excel y reintentar. (d) **Ids que no son UUID en la ruta** (`GET /web/cubicacion/{id}`, `POST .../rutas/{rutaId}/recalcular-vehiculos`) responden **404** `ErrorWeb` como uno inexistente (antes un 404 sin cuerpo y un 400 "Cuerpo inválido"). (e) **Contrato (`openapi.yaml`), solo documental:** 500 `ErrorInterno` declarado en todas las operaciones (`ErrorWeb` en `/api/auth/*`); 413 `CuerpoDemasiadoGrande` y 415 `TipoContenidoNoSoportado` como respuestas comunes de las operaciones con cuerpo; `Retry-After` en el 429; salen del enum `AJUSTE_ID_INVALIDO`, `TARIFA_FUENTE_NO_DISPONIBLE`, `TARIFA_CONFIG_INVALIDA` y `MUNICIPIO_ARGUMENTO_INVALIDO` (nunca se emitían); esquemas de entrada propios `TelefonoComercialWeb` (PUT del teléfono: `telefono` opcional, vacío borra) y `BorradorCorreoWeb` (vista previa: todo opcional); `ItemCubicacion` con sus rangos (cantidad 1-100.000, medidas 0,1-999.999, `peso_kg` obligatorio > 0, 2 decimales); `cantidad` de los conexos con 2 decimales (`multipleOf: 0.01`); topes de `LineaLicitacionWeb` (`tipo_vehiculo`/`carroceria` ≤ 100, montos ≤ 9.999.999.999.999,99) y su texto de HU-032 (el vehículo elegido ya no se ignora); `moneda` (`null` = COP, vacío es error) y `deadline` (sin zona, hora de Bogotá) de la licitación; tope del Excel 10 MB − 64 KB; 400/503 del cubicador (`CUBICADOR_NO_AUTORIZADO`, `CUBICADOR_RESPUESTA_INVALIDA` y los rechazos) en catálogos, captura, licitación, edición y re-solicitud; 409 de `servicios-conexos` con `CAPTURA_EN_CURSO` y `CONFLICTO_CONCURRENCIA` con `agregado_en_nexo = true`; `REGIONAL_*` también en `/web/cotizaciones/regional`; `ServicioConexoCatalogo.id` y `servicio_id` sin `format: uuid` (es el id de NEXO tal como viene); `VistaPreviaCorreo.resumen` anulable con `oneOf` | Cambia | Tratar el 500 como error genérico: mensaje "Ocurrió un error. Reintenta" sin mostrar nada técnico; mostrar `detalle.id_correlacion` como "código para soporte" si se quiere; no cerrar sesión. Ante `CONFLICTO_CONCURRENCIA` con `agregado_en_nexo = true` en conexos, recargar el costeo y NO repetir el POST. En `/enviar`, un 404 se trata como siempre ("no existe o no es tuya"); con una cotización propia los 503 y 400 siguen igual. Abrir la vista de licitación solo con folios de licitación |
+| 58 | **Endurecimiento B (#199, E2E 2026-10-22).** (a) `POST .../resultado`: DEF-C-1, ante `RESULTADO_YA_DEFINIDO` Cotifly **lee** NEXO (ya no hace `POST /api/cotizaciones`); OBS-C-2, repetir el mismo resultado ya `sincronizado` es 200 sin cambios y sin llamar a NEXO; una `perdida` en `pendiente_costeo` con la solicitud inexistente en NEXO queda `solo_cotifly` (antes 400 `COSTEO_NEXO_SOLICITUD_NO_ENCONTRADA`); el 404 de NEXO sobre su cotización es **409 `COTIZACION_NEXO_NO_ENCONTRADA`** (antes el 404 "no es tuya"). (b) `PUT .../solicitud` (reemplazo): `detalle.motivo` es siempre `RECHAZO_NEXO_FALLIDO`, también en el 403 `NEXO_SIN_PERMISO` (antes el texto crudo "HTTP 403 …"). (c) `nueva_version` y re-solicitar `-vN`: con 503 `SERVICIO_OCUPADO` la original **no** cambia (su `If-Match` sigue valiendo). (d) `POST /web/licitaciones/{folio}/cubicacion/reintentar` con `usar_respaldo`: aplica el vehículo elegido (`VEHICULO_ELEGIDO_USADO` / `VEHICULO_ELEGIDO_INVALIDO`). (e) 403 `NEXO_SIN_PERMISO` declarado en `POST /web/solicitudes-costeo`, `POST /web/licitaciones` y `re-solicitar` (catálogo de conexos). (f) `FOLIO_INVALIDO` en el enum. (g) PDF de una **spot** de varias rutas: sin "licitación" ni "pliego". (h) `TARIFA_FUENTE_NO_DISPONIBLE`, `TARIFA_CONFIG_INVALIDA` y `MUNICIPIO_ARGUMENTO_INVALIDO` se borran también del backend (del enum ya salieron en la fila 57). (i) Se documenta la diferencia intencional de precios de la licitación (vista y Excel desglosados; PDF y correo con el valor final) | Cambia / Agrega | Manejar 409 `COTIZACION_NEXO_NO_ENCONTRADA` en el botón de resultado; leer siempre `detalle.motivo = RECHAZO_NEXO_FALLIDO` en la edición; tras `SERVICIO_OCUPADO` reintentar con el mismo `If-Match`; mostrar los avisos del vehículo tras "Enviar con respaldo"; tratar el 403 `NEXO_SIN_PERMISO` en captura, licitación y re-solicitud ("avisar a soporte"); no comparar la vista de la licitación con el PDF |
 
 ---
 
@@ -3598,6 +3622,14 @@ fila_excel, campo, codigo, mensaje}`.
   costeo. La perdida antes del costeo (#127) no cambia (`solo_cotifly`).
 - Requiere `db/scripts/13_correo_mailsender.sql` (sin él, `/health/ready` responde "falta 13"). Cambio con su "qué hacer": sección 7,
   fila 55, y 4.8. Son **52 endpoints** (nuevos `GET .../correos` y `POST .../correos/{correoId}/reintentar`).
+- **Endurecimiento A (#199):** 500 `ERROR_INTERNO` con `detalle.id_correlacion` en todo `/web/*` y `/pdfs/*` (antes 400 o sin cuerpo);
+  `/enviar` de un folio ajeno responde 404 antes que los 503/400 del correo; `GET /web/licitaciones/{folio}` de un folio que no es
+  licitación es 404; ids que no son UUID en la ruta son 404; el openapi declara 413/415/500 comunes y retira del enum cuatro códigos
+  que nadie emitía. Sección 7, fila 57.
+- **Endurecimiento B (#199):** `/resultado` lee NEXO sin volver a escribir, no repite una ganada ya sincronizada y traduce el 404 de
+  NEXO a 409 `COTIZACION_NEXO_NO_ENCONTRADA`; con `SERVICIO_OCUPADO` la original no cambia (su `If-Match` sigue valiendo);
+  `usar_respaldo` de la licitación aplica el vehículo elegido; 403 `NEXO_SIN_PERMISO` y `FOLIO_INVALIDO` en el contrato; PDF spot sin
+  "licitación". Sección 7, fila 58.
 
 **2026-10-21 (rama `197-vehiculo-elegido`, HU-032, #197, ADR-022).** Vehículo elegido como respaldo del cubicador:
 

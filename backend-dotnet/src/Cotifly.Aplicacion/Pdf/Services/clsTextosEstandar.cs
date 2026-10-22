@@ -224,6 +224,21 @@ public static class clsTextosEstandar
         : $"presentación oferta de servicios de Transporte para la licitación {referencia} ({rutas} rutas)";
 
     /// <summary>
+    /// OBS-C-3 (E2E 2026-10-22, endurecimiento B de #199): asunto estándar del PDF de varias rutas según el tipo de la solicitud. Solo una
+    /// licitación dice "para su licitación" (<see cref="AsuntoLicitacion"/>); una cotización spot de varias rutas (formulario) dice
+    /// "presentación oferta de servicios de Transporte (N rutas)".
+    /// </summary>
+    public static string AsuntoVariasRutas(bool esLicitacion, int rutas) => esLicitacion
+        ? AsuntoLicitacion(null, rutas)
+        : $"presentación oferta de servicios de Transporte ({rutas} rutas)";
+
+    /// <summary>Título del resumen de una licitación de varias rutas (HU-011.5).</summary>
+    public const string TituloResumenPliego = "RESUMEN DEL PLIEGO";
+
+    /// <summary>OBS-C-3 (endurecimiento B de #199): título del resumen de una cotización spot de varias rutas (no es un pliego).</summary>
+    public const string TituloResumenRutas = "RESUMEN DE LAS RUTAS";
+
+    /// <summary>
     /// Introducción estándar de la variante (párrafos separados por una línea en blanco), la misma que imprime el PDF sin textos de la
     /// IA ni del comercial: la de <see cref="TarifaUnica"/> o, en un pliego, la de <see cref="MultiSeccion"/> (con sus viñetas
     /// <c>·</c>; pasa de 900 caracteres). Respaldo del redactor de la IA (HU-013.5).

@@ -1806,8 +1806,8 @@ paths:
             `CATALOGOS_FLETE_NO_DISPONIBLE`: los catálogos maestros de Nexo no están disponibles (Nexo caído o sin configurar, el
             comercial sin `idUsuarioExterno`) y no hay una copia de menos de `Nexo:HorasCatalogosVencidos`. Nada queda guardado.
             HU-021.6: `MUNICIPIOS_NO_DISPONIBLE` si alguna ruta necesita el catálogo de municipios (un municipio sin id, o con id y
-            sin nombre) y Nexo no responde; `NEXO_NO_DISPONIBLE` (o 403 `NEXO_SIN_PERMISO`) si la ruta trae servicios conexos y no se
-            pudo leer su costo en el catálogo de Nexo. Nada queda guardado.
+            sin nombre) y Nexo no responde; `NEXO_NO_DISPONIBLE` (o 403 `NEXO_SIN_PERMISO`, ver el 403) si la ruta trae servicios
+            conexos y no se pudo leer su costo en el catálogo de Nexo. Nada queda guardado.
             HU-021.5: `CUBICADOR_NO_DISPONIBLE` solo con `Cubicador:RespaldoSiFalla = false`, si el cubicador configurado no pudo
             recomendar los vehículos de una ruta ("no se pudo calcular los vehículos"); nada queda guardado ni se envía a Nexo. Con el
             valor por defecto (`true`) la ruta sigue con un camión sin vehículo.
@@ -1826,6 +1826,17 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: |
+            `NEXO_SIN_PERMISO` (endurecimiento B de #199): Nexo respondió 403 al leer el costo de los servicios conexos de una ruta
+            en su catálogo (`GET /api/servicios-conexos`: el comercial no tiene el rol `Comercial` ni `Admin` en Nexo). Nada queda
+            guardado ni se captura en Nexo; `detalle.motivo` trae solo el código de Nexo. `ErrorWeb` si el rol de Cotifly no alcanza.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorNegocio'
+                  - $ref: '#/components/schemas/ErrorWeb'
         '500':
           $ref: '#/components/responses/ErrorInterno'
         '413':
@@ -1949,6 +1960,18 @@ paths:
 
         `If-Match` es opcional en el resto (compatibilidad); si viene y no coincide, 409 `CONFLICTO_CONCURRENCIA`. El 200
         devuelve el `ETag` nuevo.
+
+        **Endurecimiento B (#199, E2E 2026-10-22).**
+        - DEF-C-1: ante `RESULTADO_YA_DEFINIDO` Cotifly **lee** el resultado de Nexo (`GET /api/cotizaciones/{id}` con el id que ya
+          conoce, o `GET /api/cotizaciones/por-solicitud/{id}`); ya no escribe en Nexo con `POST /api/cotizaciones` ("crear o
+          recuperar"). Lo mismo cuando todavía no conoce el id de la cotización de Nexo: si Nexo aún no la tiene, es como una cotización
+          no entregada (pendiente de sincronizar en `autocosteo`). El "crear o recuperar" queda solo para un Nexo sin la ruta de lectura.
+        - OBS-C-2: repetir el **mismo** resultado que ya está `sincronizado` responde 200 sin cambios (mismo `ETag`) y sin llamar a
+          Nexo. Otro valor sigue yendo a Nexo, que manda (409 `RESULTADO_YA_DEFINIDO`).
+        - Una `perdida` en `pendiente_costeo` cuya solicitud Nexo ya no reconoce (404) queda como perdida `solo_cotifly` (mismas
+          reglas: `motivo` e `If-Match`), igual que en `error_envio`; antes respondía `COSTEO_NEXO_SOLICITUD_NO_ENCONTRADA`.
+        - Si Nexo responde 404 `COTIZACION_NO_ENCONTRADA` al marcar (no reconoce la cotización de Nexo del folio), es 409
+          `COTIZACION_NEXO_NO_ENCONTRADA` con el código de Nexo en `detalle.motivo`, sin cambio local; nunca el 404 "no es tuya".
       security:
         - bearer: []
       parameters:
@@ -1992,7 +2015,8 @@ paths:
             confirma que no hay entrega (una `ganada` en `pendiente_costeo`), ya no es 409: 200 pendiente de sincronizar
             (HU-033). De Cotifly: `COSTEO_NO_LISTO` (chat, descartada o costeo vencido, que se marcan
             con `/seguimiento`; o todavía no enviada a Nexo), `RESULTADO_YA_DEFINIDO` (ya tiene resultado sin costeo) y
-            `CONFLICTO_CONCURRENCIA` (`If-Match` que no coincide)
+            `CONFLICTO_CONCURRENCIA` (`If-Match` que no coincide). Endurecimiento B (#199): `COTIZACION_NEXO_NO_ENCONTRADA` si Nexo
+            responde 404 `COTIZACION_NO_ENCONTRADA` (no reconoce su cotización del folio; `detalle.motivo` = ese código de Nexo)
           content:
             application/json:
               schema:
@@ -2351,7 +2375,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/CotizacionResumen'
         '400':
-          description: '`SOLICITUD_COSTEO_INVALIDA` (`motivo` vacío o largo, `datos_carga` vacío, fuera de los límites de Nexo o incoherente, reglas de peso), `TRM_NO_DISPONIBLE` (versión nueva en USD sin TRM del día) o, en una licitación, `LICITACION_INVALIDA` con `detalle.motivo = LICITACION_REQUIERE_NUEVA_CARGA` y `detalle.errores[]` (sus filas guardadas ya no cumplen las reglas de captura, HU-013.11: ni el mismo folio ni la `-vN` se pueden enviar; crear una licitación nueva) (`ErrorNegocio`); `ErrorWeb` si el cuerpo no es JSON válido. Nada cambia. Con un catálogo de Nexo caído al revalidar una licitación, 503 `CATALOGOS_FLETE_NO_DISPONIBLE` o `MUNICIPIOS_NO_DISPONIBLE`'
+          description: '`SOLICITUD_COSTEO_INVALIDA` (`motivo` vacío o largo, `datos_carga` vacío, fuera de los límites de Nexo o incoherente, reglas de peso), `TRM_NO_DISPONIBLE` (versión nueva en USD sin TRM del día), `FOLIO_INVALIDO` (versión nueva: el folio de la original no tiene la forma de ADR-011, p. ej. migrado, o el `-vN` pasaría de 50 caracteres; endurecimiento B de #199) o, en una licitación, `LICITACION_INVALIDA` con `detalle.motivo = LICITACION_REQUIERE_NUEVA_CARGA` y `detalle.errores[]` (sus filas guardadas ya no cumplen las reglas de captura, HU-013.11: ni el mismo folio ni la `-vN` se pueden enviar; crear una licitación nueva) (`ErrorNegocio`); `ErrorWeb` si el cuerpo no es JSON válido. Nada cambia. Con un catálogo de Nexo caído al revalidar una licitación, 503 `CATALOGOS_FLETE_NO_DISPONIBLE` o `MUNICIPIOS_NO_DISPONIBLE`'
           content:
             application/json:
               schema:
@@ -2360,6 +2384,17 @@ paths:
                   - $ref: '#/components/schemas/ErrorWeb'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: |
+            `NEXO_SIN_PERMISO` (endurecimiento B de #199): Nexo respondió 403 al leer el costo de los servicios conexos de una ruta
+            en su catálogo (la versión nueva copia los conexos con el costo de hoy) (`GET /api/servicios-conexos`: el comercial no tiene el rol `Comercial` ni `Admin` en Nexo). Nada queda
+            guardado ni se crea la versión ni se captura en Nexo; `detalle.motivo` trae solo el código de Nexo. `ErrorWeb` si el rol de Cotifly no alcanza.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorNegocio'
+                  - $ref: '#/components/schemas/ErrorWeb'
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
@@ -2375,8 +2410,10 @@ paths:
             Licitación (HU-013.11): `CATALOGOS_FLETE_NO_DISPONIBLE` (sin catálogo maestro de Nexo ni copia de 24 h para revalidar las
             filas guardadas) o `MUNICIPIOS_NO_DISPONIBLE` (alguna fila guardada sin id de municipio y el catálogo no responde). Nada
             cambia ni se envía a Nexo. `SERVICIO_OCUPADO` (#125) si el candado del folio de la versión `-vN` siguió ocupado tras
-            los reintentos: no se creó la versión. Cubicador (endurecimiento A, #199): `CUBICADOR_NO_DISPONIBLE` (sin respaldo),
-            `CUBICADOR_NO_AUTORIZADO` o `CUBICADOR_RESPUESTA_INVALIDA` al volver a pedir los camiones; nada cambia.
+            los reintentos: no se creó la versión. Endurecimiento B (#199): la reserva de la original va dentro de ese candado, así
+            que con `SERVICIO_OCUPADO` **nada cambia**: la `versionNegocio` de la original no sube y su `If-Match` sigue valiendo.
+            Cubicador (endurecimiento A, #199): `CUBICADOR_NO_DISPONIBLE` (sin respaldo), `CUBICADOR_NO_AUTORIZADO` o
+            `CUBICADOR_RESPUESTA_INVALIDA` al volver a pedir los camiones; nada cambia.
           headers:
             Retry-After:
               $ref: '#/components/headers/RetryAfter'
@@ -2452,9 +2489,11 @@ paths:
           (`POST /api/solicitudes/{id}/rechazar`, motivo "Edición de la solicitud desde Cotifly"; si ya estaba descartada o Nexo no la
           conoce, sigue) y solo entonces aplica la edición, invalida el PDF (`pdf_desactualizado`) y captura de nuevo en el **mismo
           folio**. Si el rechazo falla, **no** se captura otra solicitud: 503 `NEXO_NO_DISPONIBLE` (403 `NEXO_SIN_PERMISO`) con
-          `detalle.motivo = RECHAZO_NEXO_FALLIDO` y `detalle.version_negocio` (la versión subió: recargar).
+          `detalle.motivo = RECHAZO_NEXO_FALLIDO` y `detalle.version_negocio` (la versión subió: recargar). Endurecimiento B (#199):
+          `detalle.motivo` es siempre `RECHAZO_NEXO_FALLIDO`, también en el 403; el texto técnico de Nexo solo va al log.
         - `nueva_version`: ya entregada al cliente o con resultado. Se crea `-vN` (201 y `Location`) con lo editado y el margen
-          negociado de las rutas que se conservan; la original no cambia ni se rechaza en Nexo.
+          negociado de las rutas que se conservan; la original no cambia ni se rechaza en Nexo. Endurecimiento B (#199): la reserva
+          de la original va dentro del candado del folio `-vN`; con 503 `SERVICIO_OCUPADO` nada cambia (ni su `versionNegocio`).
         - Las licitaciones no se editan en esta fase (409 `ESTADO_NO_PERMITE`, `detalle.motivo = LICITACION`).
 
         **Validación y camiones:** las mismas reglas que `POST /web/solicitudes-costeo` (todos los errores en `detalle.errores`) y el
@@ -2512,7 +2551,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/EdicionSolicitudResultado'
         '400':
-          description: '`CAMPO_NO_EDITABLE` (`detalle.campo`, `detalle.campos`, `detalle.errores`), `SOLICITUD_COSTEO_INVALIDA` (`detalle.errores` por ruta y campo: reglas de la captura, `RUTA_INEXISTENTE`, `RUTA_REPETIDA`, `RUTAS_REORDENADAS`, `motivo` largo), un rechazo del cubicador (`MERCANCIA_DESCONOCIDA`...) o `TRM_NO_DISPONIBLE`. Nada cambia'
+          description: '`CAMPO_NO_EDITABLE` (`detalle.campo`, `detalle.campos`, `detalle.errores`), `SOLICITUD_COSTEO_INVALIDA` (`detalle.errores` por ruta y campo: reglas de la captura, `RUTA_INEXISTENTE`, `RUTA_REPETIDA`, `RUTAS_REORDENADAS`, `motivo` largo), un rechazo del cubicador (`MERCANCIA_DESCONOCIDA`...), `TRM_NO_DISPONIBLE` o, en `nueva_version`, `FOLIO_INVALIDO` (el folio de la original no tiene la forma de ADR-011 o el `-vN` pasaría de 50 caracteres). Nada cambia'
           content:
             application/json:
               schema:
@@ -2522,7 +2561,7 @@ paths:
         '401':
           $ref: '#/components/responses/SesionExpirada'
         '403':
-          description: '`NEXO_SIN_PERMISO`: Nexo no deja rechazar la solicitud anterior (rol o solicitud ajena). Nada se capturó'
+          description: '`NEXO_SIN_PERMISO`: Nexo no deja rechazar la solicitud anterior (rol o solicitud ajena), con `detalle.motivo = RECHAZO_NEXO_FALLIDO` (nunca el texto de Nexo; endurecimiento B de #199), o Nexo respondió 403 al leer el costo de los conexos en su catálogo. Nada se capturó'
           content:
             application/json:
               schema:
@@ -2538,7 +2577,7 @@ paths:
         '428':
           $ref: '#/components/responses/PrecondicionRequerida'
         '503':
-          description: '`NEXO_NO_DISPONIBLE` con `detalle.motivo = RECHAZO_NEXO_FALLIDO` (el rechazo de la solicitud anterior falló: no se capturó otra), `CATALOGOS_FLETE_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE`, `NEXO_NO_DISPONIBLE` (conexos), `CUBICADOR_NO_DISPONIBLE` (sin respaldo), `CUBICADOR_NO_AUTORIZADO` o `CUBICADOR_RESPUESTA_INVALIDA`. Nada se aplicó'
+          description: '`NEXO_NO_DISPONIBLE` con `detalle.motivo = RECHAZO_NEXO_FALLIDO` (el rechazo de la solicitud anterior falló: no se capturó otra), `CATALOGOS_FLETE_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE`, `NEXO_NO_DISPONIBLE` (conexos), `CUBICADOR_NO_DISPONIBLE` (sin respaldo), `CUBICADOR_NO_AUTORIZADO`, `CUBICADOR_RESPUESTA_INVALIDA` o `SERVICIO_OCUPADO` (`nueva_version`: el candado del folio `-vN` siguió ocupado; la original no cambia, su `If-Match` sigue valiendo). Nada se aplicó'
           content:
             application/json:
               schema:
@@ -2974,7 +3013,12 @@ paths:
         de pliego: resumen con una fila por ruta (número, ruta, vehículo y peso, valor final) y "VALOR TOTAL DE LA
         COTIZACIÓN (N RUTAS)" (antes la tarifa sin conexos y "TOTAL DEL PLIEGO (N RUTAS, SIN SERVICIOS CONEXOS)"), y luego
         **una sección por ruta** con su título (y la línea de negocio de la ruta), su origen, su destino, sus camiones y su
-        valor final. Una ruta rechazada por la Mesa sale "Sin costeo" y no suma.
+        valor final. Una ruta rechazada por la Mesa sale "Sin costeo" y no suma. OBS-C-3 (endurecimiento B de #199): los textos
+        dependen del tipo. Una **licitación** dice "presentación oferta de servicios de Transporte para su licitación (N rutas)",
+        "RESUMEN DEL PLIEGO" y "RUTA n: PLIEGO DE TRANSPORTE …"; una cotización **spot** de varias rutas (formulario) dice
+        "presentación oferta de servicios de Transporte (N rutas)", "RESUMEN DE LAS RUTAS" y "RUTA n: TARIFA DE TRANSPORTE …".
+        `POST /web/cotizaciones/{folio}/costeo/pdf` no responde `FOLIO_INVALIDO`: su `PDF_YA_ENVIADO` lleva a la versión nueva
+        (`re-solicitar`), que sí puede.
         Con más de 20 rutas solo trae el resumen (hasta 1000 rutas). Una licitación de una sola fila sale con el PDF de una
         ruta. En los dos casos el PDF exige que **todas** las rutas tengan precio y que `precio_final` sea la suma de sus
         `precio_final_linea` (con los conexos incluidos); si no, `COSTEO_NO_LISTO` (el ajuste de margen es por ruta, el PDF no).
@@ -3193,8 +3237,10 @@ paths:
             `CUBICADOR_PETICION_RECHAZADA`); en segundo plano (por defecto) esos rechazos quedan en la fila (`estado_cubicacion =
             fallida`, `error_cubicacion`) y el 201 sale igual. Un código de mercancía desconocido o no cubicable se reporta por fila en
             `ReporteLicitacionInvalida`. `ErrorWeb` si el cuerpo no
-            es JSON válido. Si Nexo responde 403 al alta, la licitación queda igual en `error_envio` con el motivo
-            `NEXO_SIN_PERMISO` (201).
+            es JSON válido. Si Nexo responde 403 al **alta** (`POST /api/captura-solicitudes`), la licitación queda igual creada (201)
+            en `error_envio` y `motivo_estado_costeo` dice que el usuario no tiene permiso en Nexo (Cabina de Fletes). En cambio, un
+            403 del **catálogo de conexos** (filas con `servicios_conexos`) ocurre antes de guardar: 403 `NEXO_SIN_PERMISO` y nada se
+            crea (endurecimiento B de #199).
           content:
             application/json:
               schema:
@@ -3204,6 +3250,17 @@ paths:
                   - $ref: '#/components/schemas/ErrorWeb'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: |
+            `NEXO_SIN_PERMISO` (endurecimiento B de #199): Nexo respondió 403 al leer el costo de los servicios conexos de una ruta
+            en su catálogo (`GET /api/servicios-conexos`: el comercial no tiene el rol `Comercial` ni `Admin` en Nexo). Nada queda
+            guardado ni se captura en Nexo; `detalle.motivo` trae solo el código de Nexo. `ErrorWeb` si el rol de Cotifly no alcanza.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorNegocio'
+                  - $ref: '#/components/schemas/ErrorWeb'
         '503':
           description: |
             HU-013.11: `CATALOGOS_FLETE_NO_DISPONIBLE` (alguna fila trae `tipo_vehiculo` o `clase_viaje` y no hay catálogo maestro
@@ -3268,8 +3325,11 @@ paths:
       description: |
         HU-023.5 (#160). Las rutas con `estado_cubicacion = fallida` vuelven a la cola del cubicador. Con `usar_respaldo = true`,
         solo las que fallaron porque el cubicador no respondió (`error_cubicacion` empieza por `CUBICADOR_NO_DISPONIBLE`) se
-        aceptan con el camión provisional sin vehículo (lo resuelve la Mesa de Costeo de Nexo) y, si ya no queda ninguna pendiente
-        ni fallida, la licitación se envía a Nexo en la misma petición. Un rechazo de la petición (mercancía o medidas) no se acepta
+        aceptan con el respaldo, sin volver a llamar al cubicador, y, si ya no queda ninguna pendiente ni fallida, la licitación se
+        envía a Nexo en la misma petición. Endurecimiento B (#199, HU-032, ADR-022 §9): el respaldo es el mismo del camino en
+        segundo plano: con el vehículo elegido de la ruta (`tipo_vehiculo`) y válido en Nexo, el camión lo lleva con el aviso
+        `VEHICULO_ELEGIDO_USADO`; si no es un código de Nexo, va sin vehículo con `VEHICULO_ELEGIDO_INVALIDO`; sin elegido, sin
+        vehículo (lo resuelve la Mesa de Costeo de Nexo). Los avisos salen en la ruta (`cubicacion`, `avisos_cubicacion`). Un rechazo de la petición (mercancía o medidas) no se acepta
         con respaldo: esconde un dato malo (HU-023.1). Solo antes de enviarla a Nexo. Cuerpo opcional.
       security:
         - bearer: []
@@ -3285,7 +3345,7 @@ paths:
                 usar_respaldo:
                   type: boolean
                   nullable: true
-                  description: '`true` = aceptar las rutas que fallaron por una caída del cubicador con un camión sin vehículo en vez de volver a llamar al cubicador.'
+                  description: '`true` = aceptar las rutas que fallaron por una caída del cubicador con el respaldo (el vehículo elegido de la ruta si es de Nexo, si no sin vehículo) en vez de volver a llamar al cubicador.'
       responses:
         '200':
           description: La licitación con su progreso
@@ -3819,7 +3879,8 @@ components:
                 comercial puede reintentar o cotizar en COP; en `POST /web/licitaciones` con `moneda = USD` también). Endurecimiento A
                 (#199): se retiran del enum los códigos que ningún código emite (`AJUSTE_ID_INVALIDO`, `TARIFA_FUENTE_NO_DISPONIBLE`,
                 `TARIFA_CONFIG_INVALIDA` y `MUNICIPIO_ARGUMENTO_INVALIDO`, este último de la herramienta `resolver_municipio`, retirada
-                con el agente legado en HU-013.9); `clsContratoReflexionTests` exige que cada valor del enum lo emita algún código.
+                con el agente legado en HU-013.9; los tres de tarifa y municipio, además, se borraron del backend en el endurecimiento B);
+                `clsContratoReflexionTests` exige que cada valor del enum lo emita algún código.
                 Costeo en Nexo (ADR-015): `SOLICITUD_COSTEO_INVALIDA` (formulario ampliado fuera de los límites de
                 Nexo), `COSTEO_NEXO_NO_DISPONIBLE` (Nexo sin configurar, 5xx, red, circuito abierto o el comercial sin
                 `idUsuarioExterno`), `COSTEO_NEXO_TIEMPO_AGOTADO` (Nexo no respondió a tiempo), `COSTEO_NEXO_RECHAZADA`
@@ -3883,6 +3944,12 @@ components:
                 el comercial autenticado no existe en `UsuariosWeb`) como el manejador global de errores no controlados, siempre con un
                 mensaje genérico y con `detalle.id_correlacion` como único detalle (respuesta común `ErrorInterno`). Una restricción única que el caso de uso no tradujo
                 (`REGISTRO_DUPLICADO` interno) también sale como 500 `ERROR_INTERNO`, sin el nombre de la restricción.
+                Endurecimiento B (#199): `COTIZACION_NEXO_NO_ENCONTRADA` (409 en `POST .../resultado`: Nexo respondió 404
+                `COTIZACION_NO_ENCONTRADA`, no reconoce la cotización de Nexo del folio; `detalle.motivo` = ese código; nunca el 404
+                "no es tuya") y `FOLIO_INVALIDO` (400: el folio que arma el servidor no cumple ADR-011; en la práctica solo en la
+                versión nueva de `re-solicitar` y en `nueva_version` de `PUT .../solicitud` si el folio de la original no tiene esa forma
+                o el `-vN` pasaría de 50 caracteres; en la captura y la licitación solo si el folio armado no la cumple, lo que el
+                límite de 20 del NIT ya impide; el PDF no lo responde).
               enum:
                 - MARGEN_FUENTE_NO_DISPONIBLE
                 - MARGEN_LINEA_DESCONOCIDA
@@ -3898,6 +3965,7 @@ components:
                 - AJUSTE_MARGEN_INVALIDO
                 - FOLIO_DUPLICADO
                 - FOLIO_CONSECUTIVO_AGOTADO
+                - FOLIO_INVALIDO
                 - CORREO_DESHABILITADO
                 - CORREO_NO_REINTENTABLE
                 - CORREO_INVALIDO
@@ -3912,6 +3980,7 @@ components:
                 - COSTEO_NEXO_RECHAZADA
                 - COSTEO_NEXO_SOLICITUD_INVALIDA
                 - COSTEO_NEXO_SOLICITUD_NO_ENCONTRADA
+                - COTIZACION_NEXO_NO_ENCONTRADA
                 - COSTEO_NO_REINTENTABLE
                 - COSTEO_NO_LISTO
                 - PDF_YA_GENERADO

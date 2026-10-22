@@ -7,15 +7,6 @@ namespace Cotifly.Dominio.Comun;
 /// </summary>
 public static class clsCodigosError
 {
-    /// <summary>No hay fuente de costeo disponible (el tarifario de Drive se retiró; Nexo llega con HU-005).</summary>
-    public const string TarifaFuenteNoDisponible = "TARIFA_FUENTE_NO_DISPONIBLE";
-
-    /// <summary>
-    /// La fuente de costeo devolvió una tarifa inválida para cotizar (ej. en una moneda distinta de COP: el costo siempre es en pesos,
-    /// HU-012.2). Mismo código que el Python para la configuración inválida del tarifario.
-    /// </summary>
-    public const string TarifaConfigInvalida = "TARIFA_CONFIG_INVALIDA";
-
     /// <summary>La fuente de margen (SAP TM) no respondió o no está configurada.</summary>
     public const string MargenFuenteNoDisponible = "MARGEN_FUENTE_NO_DISPONIBLE";
 
@@ -152,6 +143,13 @@ public static class clsCodigosError
     public const string CosteoNexoSolicitudNoEncontrada = "COSTEO_NEXO_SOLICITUD_NO_ENCONTRADA";
 
     /// <summary>
+    /// Endurecimiento B (#199, E2E 2026-10-22): Nexo respondió 404 <c>COTIZACION_NO_ENCONTRADA</c> sobre la cotización de Nexo de un folio
+    /// del comercial (por ejemplo, al marcar el resultado). Es 409, nunca el 404 "no es tuya": la cotización sí es del comercial en
+    /// Cotifly y lo que falta es la de Nexo. El código de Nexo va en <c>detalle.motivo</c>. Código nuevo del backend .NET.
+    /// </summary>
+    public const string CotizacionNexoNoEncontrada = "COTIZACION_NEXO_NO_ENCONTRADA";
+
+    /// <summary>
     /// <c>POST /web/cotizaciones/{folio}/costeo/reintentar</c> sobre una cotización que no está en <c>error_envio</c> ni en
     /// <c>pendiente_envio</c> (o no nació del formulario ampliado): 409. Código nuevo del backend .NET.
     /// </summary>
@@ -186,12 +184,6 @@ public static class clsCodigosError
 
     /// <summary>Nexo no puede pasar la solicitud a <c>Entregada</c> (está descartada): 409, sin cambio local. Mismo código que usa Nexo.</summary>
     public const string SolicitudNoTransicionable = "SOLICITUD_NO_TRANSICIONABLE";
-
-    /// <summary>
-    /// La herramienta <c>resolver_municipio</c> (HU-005.13) recibió un <c>campo</c> que no es <c>origen</c> ni <c>destino</c>, o un
-    /// <c>texto</c> vacío: el modelo debe corregir la llamada. Se responde sin consultar Nexo. Código nuevo del backend .NET.
-    /// </summary>
-    public const string MunicipioArgumentoInvalido = "MUNICIPIO_ARGUMENTO_INVALIDO";
 
     /// <summary>
     /// Licitaciones desde Excel (HU-011.2, ADR-017): falta el archivo o viene vacío. Mismo código que usa Nexo en

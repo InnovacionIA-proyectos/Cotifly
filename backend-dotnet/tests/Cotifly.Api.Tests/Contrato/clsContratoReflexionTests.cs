@@ -233,6 +233,17 @@ public sealed class clsContratoReflexionTests(clsCotiflyApiFactory factory) : IC
 
         usadasFueraDelContrato.Should().BeEmpty($"{string.Join(", ", usadasFueraDelContrato)}: cada código de clsCodigosError que el código emite está en el enum de ErrorNegocio.codigo");
         muertasEnElContrato.Should().BeEmpty($"{string.Join(", ", muertasEnElContrato)}: el enum de ErrorNegocio.codigo no anuncia códigos que ningún código emite");
+
+        // Integración de los endurecimientos A y B (#199): FOLIO_INVALIDO vive en clsFolio.CodigoInvalido (Dominio), no en clsCodigosError;
+        // está en el enum porque el código lo emite (re-solicitar -vN y nueva_version), aunque no sea una constante de clsCodigosError.
+        constantes.Should().NotContain(Cotifly.Dominio.Cotizaciones.clsFolio.CodigoInvalido, "FOLIO_INVALIDO no es de clsCodigosError");
+        enumContrato.Should().Contain(Cotifly.Dominio.Cotizaciones.clsFolio.CodigoInvalido);
+        literales.Should().Contain(Cotifly.Dominio.Cotizaciones.clsFolio.CodigoInvalido);
+        // COTIZACION_NEXO_NO_ENCONTRADA (endurecimiento B) es una constante de clsCodigosError, está en el enum y la emite el adaptador
+        // de Nexo (no basta con que la mencione la tabla de traducción HTTP de clsRespuestasWeb).
+        enumContrato.Should().Contain(clsCodigosError.CotizacionNexoNoEncontrada);
+        LiteralesDe(typeof(Cotifly.Infraestructura.clsDependenciasInfraestructura).Assembly)
+            .Should().Contain(clsCodigosError.CotizacionNexoNoEncontrada, "clsCosteoNexo la emite ante el 404 de Nexo");
     }
 
     /// <summary>Tipos (con sus anidados mapeados) que salen en respuestas y que entran por el cuerpo de las acciones de /web y /pdfs.</summary>
@@ -422,7 +433,11 @@ public sealed class clsContratoReflexionTests(clsCotiflyApiFactory factory) : IC
 
     private static readonly Lazy<HashSet<string>> _literales = new(LeerLiteralesDelIl);
 
-    private static HashSet<string> LeerLiteralesDelIl()
+    private static HashSet<string> LeerLiteralesDelIl() =>
+        LiteralesDe(typeof(Program).Assembly, typeof(Cotifly.Aplicacion.Correo.Services.clsOpcionesCorreo).Assembly, typeof(Cotifly.Infraestructura.clsDependenciasInfraestructura).Assembly, typeof(clsCodigosError).Assembly);
+
+    /// <summary>Literales de texto (<c>ldstr</c>) del IL de los ensamblados dados.</summary>
+    private static HashSet<string> LiteralesDe(params Assembly[] ensamblados)
     {
         var operandos = new Dictionary<short, OperandType>();
         foreach (var campo in typeof(OpCodes).GetFields(BindingFlags.Public | BindingFlags.Static))
@@ -433,7 +448,7 @@ public sealed class clsContratoReflexionTests(clsCotiflyApiFactory factory) : IC
 
         var literales = new HashSet<string>(StringComparer.Ordinal);
         const BindingFlags Todos = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly;
-        foreach (var ensamblado in new[] { typeof(Program).Assembly, typeof(Cotifly.Aplicacion.Correo.Services.clsOpcionesCorreo).Assembly, typeof(Cotifly.Infraestructura.clsDependenciasInfraestructura).Assembly, typeof(clsCodigosError).Assembly })
+        foreach (var ensamblado in ensamblados)
         {
             foreach (var tipo in ensamblado.GetTypes())
             {

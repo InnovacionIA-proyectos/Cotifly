@@ -447,10 +447,12 @@ public sealed partial class clsLineaSolicitud
 
     /// <summary>
     /// HU-023.5: el comercial reintenta una ruta fallida. Sin <paramref name="usarRespaldo"/> vuelve a la cola. Con él, solo si falló por
-    /// una caída del cubicador (<see cref="FalloPorCaidaDelCubicador"/>), acepta el camión provisional sin vehículo (lo resuelve la Mesa
-    /// de Costeo de Nexo) y la ruta queda cubicada sin resultado ni error; un rechazo no cambia (devuelve <c>false</c>).
+    /// una caída del cubicador (<see cref="FalloPorCaidaDelCubicador"/>), la ruta queda cubicada sin resultado ni error con el camión del
+    /// <paramref name="respaldo"/> (HU-032, ADR-022, endurecimiento B de #199: el vehículo elegido validado contra Nexo y su aviso
+    /// <c>VEHICULO_ELEGIDO_USADO</c> o <c>VEHICULO_ELEGIDO_INVALIDO</c>, como en segundo plano) o, sin él, con el camión provisional sin
+    /// vehículo (lo resuelve la Mesa de Costeo de Nexo). Un rechazo no cambia (devuelve <c>false</c>).
     /// </summary>
-    internal bool ReintentarCubicacion(bool usarRespaldo)
+    internal bool ReintentarCubicacion(bool usarRespaldo, clsPlanRuta? respaldo = null)
     {
         if (EstadoCubicacion != Cotizaciones.EstadoCubicacion.Fallida || (usarRespaldo && !FalloPorCaidaDelCubicador))
         {
@@ -459,6 +461,12 @@ public sealed partial class clsLineaSolicitud
 
         CubicacionIntentos = 0;
         CubicacionDisponibleAt = null;
+        if (usarRespaldo && respaldo is not null)
+        {
+            CompletarCubicacion(respaldo);
+            return true;
+        }
+
         if (usarRespaldo)
         {
             EstadoCubicacion = Cotizaciones.EstadoCubicacion.Cubicada;

@@ -244,14 +244,53 @@ public sealed class clsCosteoNexoConsultaTests : IDisposable
         resultado.Error.Mensaje.Should().Be("No se puede.");
     }
 
+    // DEF-C-1 (E2E 2026-10-22): leer la cotización para el resultado nunca escribe en Nexo si hay una ruta de lectura.
     [Fact]
-    public async Task Un404CotizacionNoEncontradaEsCotizacionNoEncontrada()
+    public async Task LeerLaCotizacionConElIdConocidoHaceSoloUnGetPorId()
     {
+        _nexo.Responder(HttpStatusCode.OK, Cotizacion);
+
+        var leida = await Adaptador().LeerCotizacionAsync(_usuarioId, "SOL-1", "COT-1", Ct);
+
+        leida.Valor.Id.Should().Be("COT-1");
+        _nexo.Peticiones.Should().ContainSingle().Which.Url.AbsolutePath.Should().Be("/api/cotizaciones/COT-1");
+        _nexo.Peticiones.Should().OnlyContain(p => p.Metodo == HttpMethod.Get);
+    }
+
+    [Fact]
+    public async Task LeerLaCotizacionSinIdLaBuscaPorLaSolicitudYSinCotizacionEsNoEntregada()
+    {
+        _nexo.Responder(HttpStatusCode.OK, Cotizacion).Responder(HttpStatusCode.NoContent);
+
+        (await Adaptador().LeerCotizacionAsync(_usuarioId, "SOL-1", null, Ct)).Valor.Id.Should().Be("COT-1");
+        (await Adaptador().LeerCotizacionAsync(_usuarioId, "SOL-1", null, Ct)).Error.Codigo.Should().Be(clsCodigosError.CotizacionNoEntregada);
+
+        _nexo.Peticiones.Should().HaveCount(2).And.OnlyContain(p => p.Metodo == HttpMethod.Get
+            && p.Url.AbsolutePath == "/api/cotizaciones/por-solicitud/SOL-1");
+    }
+
+    [Fact]
+    public async Task LeerLaCotizacionConUnIdQueNexoNoReconoceLaBuscaPorLaSolicitudSinEscribir()
+    {
+        _nexo.Responder(HttpStatusCode.NotFound, """{"code":"COTIZACION_NO_ENCONTRADA","message":"x"}""").Responder(HttpStatusCode.OK, Cotizacion);
+
+        (await Adaptador().LeerCotizacionAsync(_usuarioId, "SOL-1", "COT-VIEJA", Ct)).Valor.Id.Should().Be("COT-1");
+
+        _nexo.Peticiones.Select(p => (p.Metodo.Method, p.Url.AbsolutePath))
+            .Should().Equal(("GET", "/api/cotizaciones/COT-VIEJA"), ("GET", "/api/cotizaciones/por-solicitud/SOL-1"));
+    }
+
+    [Fact]
+    public async Task Un404CotizacionNoEncontradaDeNexoEsCotizacionNexoNoEncontradaYNoElNoEsTuya()
+    {
+        // Endurecimiento B (#199): antes viajaba como COTIZACION_NO_ENCONTRADA y el comercial veía el 404 "no es tuya".
         _nexo.Responder(HttpStatusCode.NotFound, """{"code":"COTIZACION_NO_ENCONTRADA","message":"Cotización no encontrada."}""");
 
         var resultado = await Adaptador().MarcarResultadoAsync(_usuarioId, "COT-X", new Cotifly.Aplicacion.Costeo.DTOs.clsResultadoNexo(true, null, null), Ct);
 
-        resultado.Error.Codigo.Should().Be(clsCodigosError.CotizacionNoEncontrada);
+        resultado.Error.Codigo.Should().Be(clsCodigosError.CotizacionNexoNoEncontrada);
+        resultado.Error.Detalle.Should().Be("COTIZACION_NO_ENCONTRADA", "solo el código de Nexo, sin el texto HTTP");
+        resultado.Error.Mensaje.Should().Be(clsCosteoNexo.MensajeCotizacionNexoNoEncontrada);
     }
 
     [Fact]

@@ -411,6 +411,45 @@ public sealed class clsEnvioConexosNexoEndpointsTests : IDisposable
         _nexo.PeticionesConexos(_nexo.CotizacionDe(solicitud)!).Should().ContainSingle();
     }
 
+    /// <summary>
+    /// Endurecimiento B (#199): si el catálogo de conexos de Nexo responde 403 al leer el costo de los conexos de la captura, la captura
+    /// responde 403 <c>NEXO_SIN_PERMISO</c> (declarado en el contrato) sin guardar nada ni capturar en Nexo.
+    /// </summary>
+    [Fact]
+    public async Task ConElCatalogoDeConexosEn403LaCapturaEs403NexoSinPermisoSinGuardarNada()
+    {
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        _nexo.CatalogoFalla = HttpStatusCode.Forbidden;
+
+        using var respuesta = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", sesion.Access, Formulario());
+
+        (await VerificarContratoAsync(respuesta, "/web/solicitudes-costeo", _post, HttpStatusCode.Forbidden))
+            .GetProperty("error").GetProperty("codigo").GetString().Should().Be("NEXO_SIN_PERMISO");
+        _nexo.SolicitudesCreadas.Should().BeEmpty("nada se captura en Nexo");
+    }
+
+    /// <summary>Endurecimiento B (#199): lo mismo en la re-solicitud con versión nueva, que relee el costo de los conexos.</summary>
+    [Fact]
+    public async Task ConElCatalogoDeConexosEn403LaReSolicitudEs403NexoSinPermisoSinCrearVersion()
+    {
+        var (sesion, folio) = await ConAgregadoYEntregadaAsync();
+        var etag = await EtagAsync(sesion, folio);
+        var solicitudes = _nexo.SolicitudesCreadas.Count;
+        _nexo.CatalogoFalla = HttpStatusCode.Forbidden;
+
+        // Una hora después: la caché del catálogo de conexos (5 min) ya venció y la versión nueva tiene que leerlo.
+        using (clsRelojFijable.Fijar(DateTimeOffset.UtcNow.AddHours(1)))
+        {
+            using var respuesta = await ConVersionAsync(_post, $"/web/cotizaciones/{folio}/costeo/re-solicitar", sesion.Access,
+                clsApiWebPruebas.Json(new { motivo = "Actualizar el costo", nueva_version = true }), etag);
+
+            (await VerificarContratoAsync(respuesta, "/web/cotizaciones/{folio}/costeo/re-solicitar", _post, HttpStatusCode.Forbidden))
+                .GetProperty("error").GetProperty("codigo").GetString().Should().Be("NEXO_SIN_PERMISO");
+        }
+
+        _nexo.SolicitudesCreadas.Should().HaveCount(solicitudes, "no se crea la versión ni se captura en Nexo");
+    }
+
     private async Task<(clsSesionPrueba Sesion, string Folio)> CapturarAsync()
     {
         var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);

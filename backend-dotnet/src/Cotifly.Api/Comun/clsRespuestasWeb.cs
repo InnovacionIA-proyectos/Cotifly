@@ -72,6 +72,8 @@ public static class clsRespuestasWeb
         clsCodigosError.TextosEditados,
         clsCodigosError.ResultadoYaDefinido,
         clsCodigosError.CotizacionNoEntregada,
+        // Endurecimiento B (#199): Nexo no reconoce la cotización de Nexo del folio (no es el 404 "no es tuya").
+        clsCodigosError.CotizacionNexoNoEncontrada,
         clsCodigosError.UsarResultadoNexo,
         clsCodigosError.SolicitudNoTransicionable,
         clsCodigosError.ConflictoConcurrencia,

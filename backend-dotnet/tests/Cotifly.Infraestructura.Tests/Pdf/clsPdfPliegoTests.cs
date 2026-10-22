@@ -33,11 +33,12 @@ public sealed class clsPdfPliegoTests
     /// Licitación de <paramref name="numero"/> rutas costeadas (HU-021: una ruta por fila con un camión; el flete en el camión y el precio
     /// en la ruta con el 15 % de la política) y un conexo de 170.007 en la ruta 1 (los conexos son filas de la ruta: todos van en el PDF).
     /// </summary>
-    internal static (clsCotizacionSolicitud Cotizacion, IReadOnlyList<clsLineaSolicitud> Lineas) Pliego(int numero, Func<int, (string Origen, string Destino)>? ruta = null)
+    internal static (clsCotizacionSolicitud Cotizacion, IReadOnlyList<clsLineaSolicitud> Lineas) Pliego(
+        int numero, Func<int, (string Origen, string Destino)>? ruta = null, TipoSolicitud tipo = TipoSolicitud.Licitacion)
     {
         var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-900555111-AP-01102026-001", ClienteNombre = "AGENCIA DE ADUANAS JF", NitCliente = "900555111" }).Valor;
         cotizacion.RegistrarSolicitudLicitacion(
-            new clsEncabezadoSolicitudCosteo { Tipo = TipoSolicitud.Licitacion },
+            new clsEncabezadoSolicitudCosteo { Tipo = tipo },
             [.. Enumerable.Range(0, numero).Select(i =>
             {
                 var (origen, destino, vehiculo, toneladas) = clsPliegoMuestra.Ruta(i);
@@ -278,6 +279,30 @@ public sealed class clsPdfPliegoTests
         var (cotizacion, lineas) = Pliego(6, i => (largo + "O" + i, largo + "D" + i));
 
         Generar(cotizacion).Lector.Texto.Replace(" ", string.Empty, StringComparison.Ordinal).Should().Contain("FINALD5");
+    }
+
+    /// <summary>
+    /// OBS-C-3 (E2E 2026-10-22, endurecimiento B de #199): una cotización SPOT de dos rutas sale con el layout de varias rutas, pero sin
+    /// "licitación" ni "pliego" en sus textos; la licitación los conserva.
+    /// </summary>
+    [Fact]
+    public void UnaSpotDeVariasRutasNoDiceLicitacionNiPliegoYLaLicitacionSi()
+    {
+        var spot = Generar(Pliego(2, tipo: TipoSolicitud.Spot).Cotizacion).Lector.Texto;
+        var licitacion = Generar(Pliego(2).Cotizacion).Lector.Texto;
+
+        spot.Should().Contain("presentación oferta de servicios de Transporte (2 rutas)").And.Contain(clsTextosEstandar.TituloResumenRutas)
+            .And.Contain("VALOR TOTAL DE LA COTIZACIÓN (2 RUTAS)");
+        spot.Should().NotContainEquivalentOf("licitación").And.NotContain("PLIEGO").And.Contain("RUTA 1: TARIFA DE TRANSPORTE NACIONAL");
+        licitacion.Should().Contain("para su licitación (2 rutas)").And.Contain(clsTextosEstandar.TituloResumenPliego);
+    }
+
+    [Theory]
+    [InlineData(TipoSolicitud.Spot, "presentación oferta de servicios de Transporte (3 rutas)")]
+    [InlineData(TipoSolicitud.Licitacion, "presentación oferta de servicios de Transporte para su licitación (3 rutas)")]
+    public void LosTextosEstandarDeVariasRutasDependenDelTipo(TipoSolicitud tipo, string asunto)
+    {
+        clsCosteoCotizacionService.TextosEstandar(Pliego(3, tipo: tipo).Cotizacion, "Nacional").Asunto.Should().Be(asunto);
     }
 
     /// <summary>HU-021.9 (#136): <c>EsPliego</c> = "tiene más de una ruta"; una licitación de una fila sale con el PDF de una ruta.</summary>

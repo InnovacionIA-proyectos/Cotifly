@@ -629,8 +629,9 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         descarga.StatusCode.Should().Be(HttpStatusCode.OK);
         var texto = clsLectorPdf.Leer(await descarga.Content.ReadAsByteArrayAsync(Ct)).Texto;
         // La cabecera "Varias" es el payload del pliego (sin texto propio en el documento); cada sección lleva la línea de su ruta.
-        texto.Should().Contain("licitación (2 rutas)").And.Contain("RUTA 1: PLIEGO DE TRANSPORTE IMPORTACION")
-            .And.Contain("RUTA 2: PLIEGO DE TRANSPORTE EXPORTACION").And.Contain("1 × Tractocamión 3S3 - Furgón", "HU-023.1: el PDF muestra los nombres del catálogo del cubicador, en el orden del cubicador")
+        // OBS-C-3 (endurecimiento B de #199): es una cotización spot de dos rutas (formulario): no dice "licitación" ni "pliego".
+        texto.Should().Contain("Transporte (2 rutas)").And.Contain("RESUMEN DE LAS RUTAS").And.Contain("RUTA 1: TARIFA DE TRANSPORTE IMPORTACION")
+            .And.Contain("RUTA 2: TARIFA DE TRANSPORTE EXPORTACION").And.NotContainEquivalentOf("licitación").And.Contain("1 × Tractocamión 3S3 - Furgón", "HU-023.1: el PDF muestra los nombres del catálogo del cubicador, en el orden del cubicador")
             .And.NotContain("3S3 - FURGON");
 
         // 7. La Mesa entrega y el comercial pide una versión nueva: conserva los tres camiones en orden y el respaldo, y los conexos viajan

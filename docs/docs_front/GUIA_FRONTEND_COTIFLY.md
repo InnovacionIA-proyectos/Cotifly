@@ -19,6 +19,9 @@
 > tarifa del transporte y el total va **sin** conexos, que se listan aparte una sola vez. Tarifa + conexos = precio de la ruta.
 > El PDF (de una ruta o del pliego), desde HU-033 (#199), muestra el **valor final de cada ruta** (conexos incluidos, sin desglose) y
 > el total general "VALOR TOTAL DE LA COTIZACIÓN" ("VALOR TOTAL DE LA COTIZACIÓN (N RUTAS)" en el resumen del pliego).
+> **La diferencia es intencional (decisión del usuario, endurecimiento B de #199, ADR-023 §8):** la vista de la licitación y su Excel
+> son internos y siguen desglosados (tarifa sin conexos, conexos aparte); el PDF y el correo, que ve el cliente, muestran el valor
+> final. No "corregir" una pantalla contra la otra: el valor final de una fila de la licitación es `lineas[].precio_final` + sus conexos.
 
 Convención de la guía: "a confirmar" marca todo lo que no está cerrado en el código ni en las decisiones. No hay nada inventado. Si algo no aparece aquí, no existe en el backend.
 
@@ -464,10 +467,10 @@ export function esErrorNegocio(b: unknown): b is ErrorNegocio {
 | `POST .../seguimiento` | 400 (motivo de más de 2000), 404 | 409 `USAR_RESULTADO_NEXO` |
 | `GET /web/clientes` | 400 si falta `q` (`Falta el texto de búsqueda (q).`) | 503 `CLIENTE_BUSQUEDA_NO_DISPONIBLE` (antes 400, OBS-1021B-3) |
 | `GET /web/municipios`, `GET /web/catalogos-flete`, `POST /web/cubicacion` | 401; 400 `Cuerpo inválido.` en `/web/cubicacion` | 503 `MUNICIPIOS_NO_DISPONIBLE` y `CATALOGOS_FLETE_NO_DISPONIBLE`; 400 `ITEMS_REQUERIDOS`, `DIMENSIONES_INVALIDAS` (peso por unidad ≤ 0 o medidas fuera de 0,1 a 999.999, con `detalle.item`), `POSICION_INVALIDA` (cantidad), `MERCANCIA_DESCONOCIDA`, `CUBICACION_DEMASIADO_GRANDE` y los rechazos del cubicador; 503 `CUBICADOR_NO_DISPONIBLE` en `/web/cubicacion` (HU-023.2) |
-| `POST /web/solicitudes-costeo` | 400 si el JSON es inválido | 400 `SOLICITUD_COSTEO_INVALIDA`, `MARGEN_LINEA_DESCONOCIDA`, `FOLIO_CONSECUTIVO_AGOTADO` |
+| `POST /web/solicitudes-costeo` | 400 si el JSON es inválido | 400 `SOLICITUD_COSTEO_INVALIDA`, `MARGEN_LINEA_DESCONOCIDA`, `FOLIO_CONSECUTIVO_AGOTADO`; 403 `NEXO_SIN_PERMISO` (catálogo de conexos de NEXO, endurecimiento B de #199) |
 | `POST .../costeo/reintentar` | 404 | 409 `COSTEO_NO_REINTENTABLE`; 400 `SOLICITUD_COSTEO_INVALIDA` si lo guardado ya no pasa la validación |
 | `GET .../costeo`, `PUT .../servicios-conexos`, `POST .../costeo/pdf` | 404; 400 en `PUT .../servicios-conexos` si vienen `conexos` e `incluidos` juntos o ninguno | 400 `SOLICITUD_COSTEO_INVALIDA` (id de conexo desconocido), `PDF_PAYLOAD_INVALIDO`; 409 `COSTEO_NO_LISTO`, `PDF_YA_ENVIADO`, `CONFLICTO_CONCURRENCIA` y, solo en el PDF, `PDF_YA_GENERADO`; 428 `PRECONDICION_REQUERIDA`; 503 `PDF_RENDER_NO_DISPONIBLE` (#92) |
-| `POST .../resultado` | 400 (`resultado` inválido, `motivo` de más de 100 en una perdida, `comentario` de más de 500), 404 | 400 `COSTEO_NEXO_RECHAZADA`; 409 `RESULTADO_YA_DEFINIDO`, `COTIZACION_NO_ENTREGADA`, `SOLICITUD_NO_TRANSICIONABLE`, `COSTEO_NO_LISTO`; 503 `COSTEO_NEXO_NO_DISPONIBLE`, `COSTEO_NEXO_TIEMPO_AGOTADO` |
+| `POST .../resultado` | 400 (`resultado` inválido, `motivo` de más de 100 en una perdida, `comentario` de más de 500), 404 | 400 `COSTEO_NEXO_RECHAZADA`; 409 `RESULTADO_YA_DEFINIDO`, `COTIZACION_NO_ENTREGADA`, `SOLICITUD_NO_TRANSICIONABLE`, `COSTEO_NO_LISTO`, `COTIZACION_NEXO_NO_ENCONTRADA` (endurecimiento B de #199); 503 `COSTEO_NEXO_NO_DISPONIBLE`, `COSTEO_NEXO_TIEMPO_AGOTADO` |
 | `PUT /web/admin/lineas-negocio/{id}` | 400, 403, 404 | — |
 | `GET /web/metricas/comercial` | 400 (fechas), 401 | — |
 | `GET /web/metricas/regional` | 400 (fechas, `usuario_id`, `anio` o `mes`; `mes` sin `anio`), 401, 403, 404 `Comercial no encontrado en tu regional.` | 409 `REGIONAL_NO_ASIGNADA`, 503 `REGIONAL_NO_DISPONIBLE` |
@@ -542,6 +545,8 @@ Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA
 | `COSTEO_NO_LISTO` | 409 en `servicios-conexos`, `costeo/pdf` y `resultado` | Todavía sin precio con margen; o, en resultado, la cotización no está en Nexo (chat, descartada, vencida, o no enviada) | Deshabilitar los botones hasta que haya `precio_final`. En resultado, usar `/seguimiento` | En QA |
 | `PDF_YA_GENERADO` | 409 en `costeo/pdf` | Ya tiene un PDF **vigente**. Los ajustes de la etapa final (margen, conexos, textos, re-solicitar) ya no responden este código: invalidan el PDF (`pdf_desactualizado = true`) y entonces se puede regenerar | Ocultar "Generar PDF" mientras `pdf_url` tenga valor; con `pdf_desactualizado`, ofrecer "Regenerar PDF" | En QA |
 | `RESULTADO_YA_DEFINIDO` | 409 en `resultado` | Nexo ya tiene otro resultado | Deshabilitar ganada/perdida y refrescar | En QA |
+| `COTIZACION_NEXO_NO_ENCONTRADA` | 409 en `resultado` | Endurecimiento B (#199): NEXO respondió 404 `COTIZACION_NO_ENCONTRADA` (no reconoce su cotización del folio; `detalle.motivo` = ese código). Antes salía como el 404 "no es tuya" | Mostrar `mensaje`: recargar y, si persiste, avisar a la Mesa de Costeo. Nada cambió | En QA |
+| `FOLIO_INVALIDO` | 400 en `re-solicitar` (`-vN`) y `PUT .../solicitud` (`nueva_version`) | Endurecimiento B (#199): el folio de la versión nueva no cumple ADR-011 (folio de la original con otra forma o `-vN` de más de 50 caracteres). La captura y la licitación no lo dan en la práctica; el PDF no lo responde | "Contacta a soporte". Nada se creó | En QA |
 | `COTIZACION_NO_ENTREGADA` | 409 en `resultado` | HU-033: solo una `ganada` en `error_envio` (Nexo no recibió la solicitud), una cotización en `pendiente_envio` que ya tiene solicitud en Nexo (no se le pide el resultado) y una `ganada` en `pendiente_costeo` si la lectura del costeo de Nexo falla con un error que no es de disponibilidad (si Nexo no responde, 503); sin entrega en `autocosteo` (ganada o perdida) y con una ganada en `pendiente_costeo` el resultado queda pendiente de sincronizar (200) | "Nexo todavía no tiene la cotización; reintenta el envío o espera el costeo" | En QA |
 | `SOLICITUD_NO_TRANSICIONABLE` | 409 en `resultado` | Nexo no permite la transición | Mostrar el `mensaje` | En QA |
 | `REGIONAL_NO_ASIGNADA` | 409 en `/web/metricas/regional` y `/web/cotizaciones/regional` | El gerente no tiene regional (ni en `DimEjecutivo` ni en `UsuariosWeb.regional`) | Estado vacío con el `mensaje`: "Tu usuario no tiene una regional asignada...". Sin reintento automático | En QA |
@@ -550,7 +555,7 @@ Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA
 
 Códigos internos que el frontend solo ve como texto en un `ErrorWeb` 400: `SOLICITUD_INVALIDA`, `TELEFONO_INVALIDO`, `CORREO_INVALIDO` y `SEGUIMIENTO_INVALIDO`.
 
-Regla para `errores` del chat (En QA): reaccionar solo a los códigos conocidos (`TRM_NO_DISPONIBLE`, `CLIENTE_BUSQUEDA_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE`, `PDF_RENDER_NO_DISPONIBLE`) e **ignorar** el resto (`CONFIRMACION_REQUERIDA`, `HERRAMIENTA_DESCONOCIDA`...), que el agente ya explica en `texto`. Endurecimiento A (#199): `TARIFA_FUENTE_NO_DISPONIBLE`, `TARIFA_CONFIG_INVALIDA`, `AJUSTE_ID_INVALIDO` y `MUNICIPIO_ARGUMENTO_INVALIDO` salieron del contrato (ningún código los emite).
+Regla para `errores` del chat (En QA): reaccionar solo a los códigos conocidos (`TRM_NO_DISPONIBLE`, `CLIENTE_BUSQUEDA_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE`, `PDF_RENDER_NO_DISPONIBLE`) e **ignorar** el resto (`CONFIRMACION_REQUERIDA`, `HERRAMIENTA_DESCONOCIDA`...), que el agente ya explica en `texto`. Endurecimiento A (#199): `TARIFA_FUENTE_NO_DISPONIBLE`, `TARIFA_CONFIG_INVALIDA`, `AJUSTE_ID_INVALIDO` y `MUNICIPIO_ARGUMENTO_INVALIDO` salieron del contrato (ningún código los emite); endurecimiento B (#199): los tres de tarifa y municipio se borraron también del backend.
 
 ## 5. Endpoints
 
@@ -911,8 +916,12 @@ descargarPdf(pdfUrl: string, folio: string): Observable<void> {
   - el 200 trae el `ETag` nuevo;
   - una "ganada" en `error_envio` es 409 `COTIZACION_NO_ENTREGADA`; en `pendiente_costeo` queda pendiente de sincronizar (HU-033, abajo);
   - en `pendiente_costeo`, si Nexo ya la entregó, la pérdida va a Nexo como siempre; si Nexo no responde, 503 sin cambios: ofrecer Reintentar.
-- Errores: 400 `ErrorWeb` (`resultado` inválido o límites); 400 `ErrorNegocio` `COSTEO_NEXO_RECHAZADA` (otro 4xx de Nexo; código en `detalle.motivo`); 404 (no es tuya o Nexo no encuentra la cotización); 409 `COSTEO_NO_LISTO` (chat, descartada, vencida o no enviada), `COTIZACION_NO_ENTREGADA` (solo una `ganada` en `error_envio` (Nexo no recibió la solicitud), una cotización en `pendiente_envio` que ya tiene solicitud en Nexo (no se le pide el resultado) y una `ganada` en `pendiente_costeo` si la lectura del costeo de Nexo falla con un error que no es de disponibilidad (si Nexo no responde, 503); desde #123 en `pendiente_costeo` primero se le pregunta a Nexo si ya costeó y, si confirma que no, la ganada queda pendiente de sincronizar con 200), `RESULTADO_YA_DEFINIDO`, `SOLICITUD_NO_TRANSICIONABLE`; 503 `COSTEO_NEXO_NO_DISPONIBLE` (también si Nexo responde 401/403: es configuración) o `COSTEO_NEXO_TIEMPO_AGOTADO`.
+- Errores: 400 `ErrorWeb` (`resultado` inválido o límites); 400 `ErrorNegocio` `COSTEO_NEXO_RECHAZADA` (otro 4xx de Nexo; código en `detalle.motivo`); 404 (no es tuya); 409 `COTIZACION_NEXO_NO_ENCONTRADA` (Nexo no encuentra la cotización, endurecimiento B de #199); 409 `COSTEO_NO_LISTO` (chat, descartada, vencida o no enviada), `COTIZACION_NO_ENTREGADA` (solo una `ganada` en `error_envio` (Nexo no recibió la solicitud), una cotización en `pendiente_envio` que ya tiene solicitud en Nexo (no se le pide el resultado) y una `ganada` en `pendiente_costeo` si la lectura del costeo de Nexo falla con un error que no es de disponibilidad (si Nexo no responde, 503); desde #123 en `pendiente_costeo` primero se le pregunta a Nexo si ya costeó y, si confirma que no, la ganada queda pendiente de sincronizar con 200), `RESULTADO_YA_DEFINIDO`, `SOLICITUD_NO_TRANSICIONABLE`; 503 `COSTEO_NEXO_NO_DISPONIBLE` (también si Nexo responde 401/403: es configuración) o `COSTEO_NEXO_TIEMPO_AGOTADO`.
 - Re-marcar el **mismo** resultado en Nexo es idempotente; cambiarlo responde `RESULTADO_YA_DEFINIDO`. Deshabilitar los botones cuando `ganada` tenga valor.
+- **Endurecimiento B (#199, E2E 2026-10-22).** Repetir el mismo resultado ya `sincronizado` responde 200 sin cambios **sin llamar a NEXO**
+  (OBS-C-2). Ante `RESULTADO_YA_DEFINIDO`, Cotifly **lee** el resultado de NEXO; ya no escribe con `POST /api/cotizaciones` (DEF-C-1).
+  Una perdida en `pendiente_costeo` con la solicitud que NEXO ya no reconoce queda `solo_cotifly` (como en `error_envio`). Si NEXO no
+  reconoce la cotización al marcar, 409 `COTIZACION_NEXO_NO_ENCONTRADA` (ya no el 404 "no es tuya"): mostrar el mensaje y recargar.
 - **Resultado diferido (HU-033, #199, ADR-023).** Si Nexo todavía no tiene la cotización entregada (`autocosteo`, o una ganada en `pendiente_costeo`), ya no es 409: responde 200 con `sincronizacion_resultado_nexo = "pendiente"`. Mostrar el badge "Pendiente de sincronizar con NEXO": Cotifly lo envía a Nexo una sola vez cuando la Mesa la entregue (`sincronizado`). Con `no_sincronizable`, mostrar `error_sincronizacion_resultado_nexo` (registrarlo con la Mesa). `solo_cotifly` = nunca va a Nexo (perdida antes del costeo, chat, descartada o vencida). El campo viene en "Mis cotizaciones", el detalle por folio, el listado regional y `GET .../costeo`.
 
 ### 5.9 Nueva versión (`GET /web/cotizaciones/{id}/nueva-version`). En QA
@@ -1815,8 +1824,11 @@ Formato y mapeo: `docs/conexion_nexo/HU-011-formato-excel-licitacion.md`. Cotifl
   "Calculando vehículos: `cubicadas` de `total`" y consultar `GET /web/licitaciones/{folio}` cada 3 a 5 s mientras siga `en_curso`.
   Al quedar `completa` la licitación sale sola a Nexo. Con `con_fallas`, mostrar por ruta `error_cubicacion` y dos botones:
   **Reintentar** (`POST /web/licitaciones/{folio}/cubicacion/reintentar` sin cuerpo) y, solo si el error empieza por
-  `CUBICADOR_NO_DISPONIBLE`, **Enviar sin vehículo** (`{"usar_respaldo": true}`: la Mesa de Costeo escoge el vehículo; un rechazo de
-  la mercancía o las medidas responde 409).
+  `CUBICADOR_NO_DISPONIBLE`, **Enviar con respaldo** (`{"usar_respaldo": true}`; un rechazo de la mercancía o las medidas responde
+  409). Endurecimiento B (#199, HU-032): el respaldo usa el **vehículo elegido** de la ruta, como el segundo plano: si es de NEXO, el
+  camión lo lleva con el aviso `VEHICULO_ELEGIDO_USADO`; si no, va sin vehículo con `VEHICULO_ELEGIDO_INVALIDO`; sin elegido, sin
+  vehículo (la Mesa de Costeo lo escoge). Mostrar los avisos de la ruta después de enviar. 403 `NEXO_SIN_PERMISO` al crear la
+  licitación: filas con conexos y NEXO negó leer su costo; nada se creó (avisar a soporte).
 - Cada línea trae `camiones[]` (vehículo y carrocería por código: el nombre sale de `GET /web/tipos-vehiculo` y
   `GET /web/tipos-carroceria`) y `cubicacion[]` trae los avisos del cubicador por ruta, como en el formulario.
 - La descarga del Excel trae la columna y la hoja `Camiones Cotifly`.
@@ -1936,7 +1948,7 @@ Una línea puede tener precio aunque la licitación siga en `pendiente_costeo`: 
 
 ### 5.27 PDF del pliego (mismo `POST /web/cotizaciones/{folio}/costeo/pdf`). En QA
 
-- Sin endpoint nuevo. **HU-021.9 (#136): sale con el layout de pliego toda solicitud de más de una ruta** (formulario o licitación): resumen de todas las rutas con su **valor final** (transporte y conexos incluidos, sin desglose) y "VALOR TOTAL DE LA COTIZACIÓN (N RUTAS)" (HU-033, #199; antes la tarifa sin conexos y "TOTAL DEL PLIEGO (N RUTAS, SIN SERVICIOS CONEXOS)"), y luego **una sección por ruta** ("RUTA n: PLIEGO DE TRANSPORTE {línea de esa ruta}", origen, destino, camiones y valor final de la ruta). Los conexos se listan como incluidos, sin precio. Una ruta rechazada por la Mesa sale "Sin costeo" y no suma. Con una sola ruta (también una licitación de una fila) sale el PDF de una ruta: origen, destino, los camiones agrupados ("2 × 3S3 - FURGON (20000 KG)") y el valor final de la ruta, con los conexos como incluidos y el VALOR TOTAL DE LA COTIZACIÓN al final. La vista de la licitación (5.25) y su Excel (5.26) siguen mostrando la tarifa del transporte sin conexos.
+- Sin endpoint nuevo. **HU-021.9 (#136): sale con el layout de pliego toda solicitud de más de una ruta** (formulario o licitación): resumen de todas las rutas con su **valor final** (transporte y conexos incluidos, sin desglose) y "VALOR TOTAL DE LA COTIZACIÓN (N RUTAS)" (HU-033, #199; antes la tarifa sin conexos y "TOTAL DEL PLIEGO (N RUTAS, SIN SERVICIOS CONEXOS)"), y luego **una sección por ruta** ("RUTA n: PLIEGO DE TRANSPORTE {línea de esa ruta}", origen, destino, camiones y valor final de la ruta). Endurecimiento B (#199, OBS-C-3): esos textos son los de una **licitación**; una cotización **spot** de varias rutas usa el mismo layout con "presentación oferta de servicios de Transporte (N rutas)", "RESUMEN DE LAS RUTAS" y "RUTA n: TARIFA DE TRANSPORTE {línea}", sin "licitación" ni "pliego". Los conexos se listan como incluidos, sin precio. Una ruta rechazada por la Mesa sale "Sin costeo" y no suma. Con una sola ruta (también una licitación de una fila) sale el PDF de una ruta: origen, destino, los camiones agrupados ("2 × 3S3 - FURGON (20000 KG)") y el valor final de la ruta, con los conexos como incluidos y el VALOR TOTAL DE LA COTIZACIÓN al final. La vista de la licitación (5.25) y su Excel (5.26) siguen mostrando la tarifa del transporte sin conexos.
 - **Tamaño:** con más de 20 rutas el PDF trae **solo el resumen** (todas las rutas siguen ahí; las secciones por ruta se omiten). Admite hasta 1000 rutas; un pliego grande puede tener decenas de páginas: mostrar un spinner y descargar el blob.
 - **409 `COSTEO_NO_LISTO`** mientras alguna ruta no tenga precio (`lineas_pendientes > 0`, o una línea sin asociar en Nexo) o el total todavía no sea la suma de las rutas (esperar la siguiente consulta del costeo): deshabilitar el botón hasta que `precio_final` tenga valor. Vale igual para una ruta: el ajuste de margen es por ruta, pero el PDF exige todas.
 - **409 `PDF_YA_GENERADO`** solo con un PDF vigente: como en la cotización, un ajuste sin enviar lo invalida (`pdf_desactualizado`) y se regenera. Los servicios conexos quitados con `PUT .../costeo/servicios-conexos` ya no están en la ruta y no aparecen.
@@ -1962,8 +1974,11 @@ Contrato completo, ejemplos y errores en `CONTRATO_API_WEB.md` §8.13; flujo de 
   rechazo. La respuesta trae `aviso_rechazos` (y el aviso `RECHAZADOS_OMITIDOS`) con lo que se omitió.
 - **Errores:** 400 `CAMPO_NO_EDITABLE` (`detalle.campo`) o `SOLICITUD_COSTEO_INVALIDA` (`detalle.errores`); 409 `ESTADO_NO_PERMITE`
   (`MODO_CAMBIO`: recargar), `SIN_RUTAS_COTIZABLES` (`TODOS_RECHAZADOS`: ninguna ruta mandaría camiones; ofrecer reincluir),
-  `CONFLICTO_CONCURRENCIA` o `IDEMPOTENCY_KEY_REUTILIZADA`; 428 sin `If-Match`; 503 `NEXO_NO_DISPONIBLE` con
-  `detalle.motivo = RECHAZO_NEXO_FALLIDO` (no se cambió nada ni se capturó otra solicitud; la versión subió: recargar).
+  `CONFLICTO_CONCURRENCIA` o `IDEMPOTENCY_KEY_REUTILIZADA`; 428 sin `If-Match`; 503 `NEXO_NO_DISPONIBLE` (o 403 `NEXO_SIN_PERMISO`) con
+  `detalle.motivo = RECHAZO_NEXO_FALLIDO` (no se cambió nada ni se capturó otra solicitud; la versión subió: recargar). Endurecimiento B
+  (#199): `detalle.motivo` es siempre `RECHAZO_NEXO_FALLIDO` (antes el 403 traía el texto crudo de NEXO). En `nueva_version`, 503
+  `SERVICIO_OCUPADO` no cambia nada, tampoco la versión de la original: reintentar con el mismo `If-Match`; 400 `FOLIO_INVALIDO` si el
+  folio de la versión nueva no cumple ADR-011 (avisar a soporte).
 - **Reemplaza** el uso de `GET .../nueva-version` para prellenar y de `datos_carga` en `re-solicitar` (obsoleto) para cambiar la carga.
 - **Peso con tara (HU-030.1, #184):** cada ruta trae `peso_con_tara_kg` (`null` = sin tara) y se edita como los demás campos; cambiar
   solo la tara no vuelve a cubicar. Ver 5.30.
@@ -2392,7 +2407,8 @@ Botón **"Editar solicitud"** en el detalle de la cotización (y en "Mis cotizac
    - 409 `CONFLICTO_CONCURRENCIA` o `ESTADO_NO_PERMITE` con `MODO_CAMBIO`: recargar con el `GET` y volver a confirmar.
    - 409 `SIN_RUTAS_COTIZABLES` (`TODOS_RECHAZADOS`): "La Mesa rechazó todos los camiones: no hay nada que enviar". Ofrecer marcar
      "Volver a pedirlos a la Mesa" en las rutas.
-   - 503 `RECHAZO_NEXO_FALLIDO`: "NEXO no respondió; no se cambió nada". Recargar y ofrecer Reintentar.
+   - 503 (o 403) con `detalle.motivo = RECHAZO_NEXO_FALLIDO`: "NEXO no respondió (o no dio permiso); no se cambió nada". Recargar y
+     ofrecer Reintentar. El `detalle.motivo` ya no trae el texto técnico de NEXO (endurecimiento B de #199).
 
 ## 7. Estados y reglas de UI
 

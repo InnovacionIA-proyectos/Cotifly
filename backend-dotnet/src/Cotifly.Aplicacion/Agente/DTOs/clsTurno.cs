@@ -55,21 +55,15 @@ public sealed record clsResultadoTurno(
 /// <summary>
 /// Nombres de las herramientas tal como las ve el modelo (los del Python, en snake_case). Los parámetros van en camelCase (firma
 /// unificada del plan: <c>lineaNegocio</c>, <c>pesoKg</c>...). El agente cotizador legado (plugin <c>cotizador</c>) se retiró en
-/// HU-013.9 (#105): de sus herramientas, <c>buscar_cliente</c>, <c>resolver_municipio</c>, <c>buscar_tarifa</c> y
-/// <c>obtener_margen</c> ya no se registran; <c>consultar_cotizacion</c> la usa el asistente por folio y otras se citan en las
-/// acciones sugeridas.
+/// HU-013.9 (#105): sus herramientas <c>buscar_cliente</c>, <c>resolver_municipio</c>, <c>buscar_tarifa</c>, <c>obtener_margen</c>,
+/// <c>calcular_precio</c> y <c>enviar_correo</c> ya no existen (endurecimiento B de #199: se quitaron sus constantes);
+/// <c>consultar_cotizacion</c> la usa el asistente por folio y otras se citan en las acciones sugeridas.
 /// </summary>
 public static class clsNombresHerramientas
 {
     public const string Plugin = "cotizador";
-    public const string BuscarCliente = "buscar_cliente";
-    public const string ResolverMunicipio = "resolver_municipio";
-    public const string BuscarTarifa = "buscar_tarifa";
-    public const string ObtenerMargen = "obtener_margen";
-    public const string CalcularPrecio = "calcular_precio";
     public const string RegistrarAjusteMargen = "registrar_ajuste_margen";
     public const string GenerarPdf = "generar_pdf";
-    public const string EnviarCorreo = "enviar_correo";
     public const string ConsultarCotizacion = "consultar_cotizacion";
 
     /// <summary>Plugin del asistente por folio (HU-013.6, #102): solo lectura y propuesta.</summary>

@@ -31,10 +31,14 @@ public interface IClsCosteoNexo
     Task<clsResultado<clsCosteoConsultadoNexo>> ConsultarCosteoAsync(Guid usuarioId, string solicitudId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// "Crear o recuperar" la cotización de Nexo de una solicitud (<c>POST /api/cotizaciones {solicitudId}</c>). Escribe en Nexo: solo
-    /// cuando hace falta el id de la cotización y no se conoce (marcar el resultado), una vez por solicitud.
+    /// La cotización de Nexo de una solicitud SIN escribir en Nexo (DEF-C-1, E2E 2026-10-22: el resultado hacía un <c>POST /api/cotizaciones</c>,
+    /// "crear o recuperar", aunque ya conocía el id). Lee como el polling: con <paramref name="cotizacionNexoId"/> (o el guardado para la
+    /// solicitud) <c>GET /api/cotizaciones/{id}</c>; si esa lectura no la trae, <c>GET /api/cotizaciones/por-solicitud/{id}</c>. Solo con un
+    /// Nexo sin esa ruta (404/405 sin código) usa el "crear o recuperar", una vez. Si Nexo todavía no tiene cotización para la solicitud
+    /// (204), <c>COTIZACION_NO_ENTREGADA</c>; los fallos de Nexo, como en <see cref="ConsultarCosteoAsync"/>.
     /// </summary>
-    Task<clsResultado<clsCotizacionNexo>> ObtenerCotizacionAsync(Guid usuarioId, string solicitudId, CancellationToken cancellationToken = default);
+    Task<clsResultado<clsCotizacionNexo>> LeerCotizacionAsync(
+        Guid usuarioId, string solicitudId, string? cotizacionNexoId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Marca el resultado en Nexo (<c>POST /api/cotizaciones/{cotizacionNexoId}/resultado</c>, HU-005.14) con
