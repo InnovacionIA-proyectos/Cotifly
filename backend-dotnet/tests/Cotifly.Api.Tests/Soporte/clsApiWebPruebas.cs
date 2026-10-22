@@ -93,6 +93,16 @@ public sealed class clsApiWebPruebas : IDisposable
                 s.AddSingleton<IClsReloj>(sp => new clsRelojFijable(sp.GetRequiredService<TimeProvider>()));
                 s.AddHttpClient(Cotifly.Infraestructura.Correo.Services.clsTransporteMailSender.NombreCliente)
                     .ConfigurePrimaryHttpMessageHandler(() => MailSender);
+
+                // Auditoría QA 2026-10-22: el worker de correos hace una vuelta de la agenda COMPLETA al arrancar (antes del primer tick) y
+                // la base es compartida: con el correo habilitado, una API de prueba consultaba en SU MailSender falso los correos de otros
+                // escenarios (404) y los dejaba fallidos (intermitentes en correo.feature). Las pruebas procesan sus correos con
+                // ProcesarCorreosAsync, así que el worker no se registra en la API de pruebas.
+                foreach (var worker in s.Where(d => d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService)
+                             && d.ImplementationType == typeof(Cotifly.Infraestructura.Correo.Services.clsWorkerEstadoCorreos)).ToList())
+                {
+                    s.Remove(worker);
+                }
             });
             configurar?.Invoke(b);
         });
