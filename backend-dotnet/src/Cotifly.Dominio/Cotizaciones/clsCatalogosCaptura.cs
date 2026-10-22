@@ -20,6 +20,16 @@ public static class clsCatalogosCaptura
     /// </summary>
     public static readonly IReadOnlyList<string> ClasesViaje = [ClaseViajeContenedor, "Cupo", "Carga Suelta", "Extradimensionado"];
 
+    /// <summary>
+    /// HU-032 (#197): la clase de viaje de <see cref="ClasesViaje"/> que coincide con <paramref name="valor"/> recortado y sin distinguir
+    /// mayúsculas, con la escritura de Nexo (<c>carga suelta</c> → <c>Carga Suelta</c>); <c>null</c> si no es ninguna. Solo para la
+    /// configuración al arrancar: la captura sigue comparando exacto contra el catálogo vivo de Nexo.
+    /// </summary>
+    public static string? ClaseViajeNormalizada(string? valor) =>
+        string.IsNullOrWhiteSpace(valor)
+            ? null
+            : ClasesViaje.FirstOrDefault(c => string.Equals(c, valor.Trim(), StringComparison.OrdinalIgnoreCase));
+
     /// <summary>HU-032 (#197): clases de viaje en las que el vehículo elegido no es obligatorio si no se configura otra cosa: solo Contenedor.</summary>
     public static readonly IReadOnlyList<string> ClasesSinVehiculoPorDefecto = [ClaseViajeContenedor];
 

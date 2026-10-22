@@ -78,7 +78,10 @@ con `datos_carga` es el mismo código en `detalle.motivo` con `detalle.ruta = 0`
   de `GET /api/catalogos/clases-viaje`, la misma de `clase_viaje`: `Contenedor`, `Cupo`, `Carga Suelta`, `Extradimensionado`; se
   compara recortada y exacta, como el catálogo). Sin configurar es `[Contenedor]`; la lista configurada **reemplaza** a la de por defecto
   (el enlazador de configuración agrega a una lista con valores, por eso el valor por defecto no vive en la lista). Se valida al arrancar
-  (`clsValidadorOpcionesCaptura`): un valor que no es una clase conocida (`Carga suelta`, `CargaSuelta`, vacío) impide arrancar.
+  (`clsValidadorOpcionesCaptura`): un valor que no es una clase conocida (`CargaSuelta`, `Granel`) impide arrancar. Ajustes de la
+  auditoría (2026-10-21): los valores se aceptan sin distinguir mayúsculas y se **normalizan** a la escritura del catálogo (`Carga
+  suelta` → `Carga Suelta`; la comparación con `clase_viaje` sigue exacta), los vacíos se ignoran (todos vacíos = `[Contenedor]`) y una
+  lista que no incluye `Contenedor` deja al arrancar el warning `CAPTURA_CONTENEDOR_EXIGE_VEHICULO` (EventId 2120), sin impedirlo.
 - Con el cubicador configurado, una mercancía con medidas y sin código ya trae su `CAMPO_REQUERIDO` en `codigo_mercancia`: la ruta no se
   juzga por el vehículo hasta corregirla. La regla es una sola (`clsCapturaRutasService.FaltaVehiculo`) para la captura, la licitación, la
   edición y la re-solicitud con `datos_carga` (B4).

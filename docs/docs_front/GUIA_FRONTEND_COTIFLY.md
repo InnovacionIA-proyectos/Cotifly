@@ -460,7 +460,7 @@ export function esErrorNegocio(b: unknown): b is ErrorNegocio {
 | `POST /web/chat` | 400 (`sesion_id inválido`, `folio inválido`, mensaje), 404 (sesión de otro comercial, o folio ajeno o inexistente) | 400 `FOLIO_REQUERIDO` (desde #102, sin `folio`). Los errores de las herramientas llegan en `errores` de un 200 |
 | `POST /web/cotizaciones/{folio}/enviar` | 400 `CORREO_INVALIDO` (sin código visible), 404 | 400 (`CORREO_DUPLICADO`, `CORREO_PDF_NO_ENCONTRADO`, `CORREO_ENVIO_FALLIDO`...), 503 `CORREO_DESHABILITADO` |
 | `POST .../seguimiento` | 400 (motivo de más de 2000), 404 | 409 `USAR_RESULTADO_NEXO` |
-| `GET /web/clientes` | 400 si falta `q` (`Falta el texto de búsqueda (q).`) | 400 `CLIENTE_BUSQUEDA_NO_DISPONIBLE` |
+| `GET /web/clientes` | 400 si falta `q` (`Falta el texto de búsqueda (q).`) | 503 `CLIENTE_BUSQUEDA_NO_DISPONIBLE` (antes 400, OBS-1021B-3) |
 | `GET /web/municipios`, `GET /web/catalogos-flete`, `POST /web/cubicacion` | 401; 400 `Cuerpo inválido.` en `/web/cubicacion` | 503 `MUNICIPIOS_NO_DISPONIBLE` y `CATALOGOS_FLETE_NO_DISPONIBLE`; 400 `ITEMS_REQUERIDOS`, `DIMENSIONES_INVALIDAS` (peso por unidad ≤ 0 o medidas fuera de 0,1 a 999.999, con `detalle.item`), `POSICION_INVALIDA` (cantidad), `MERCANCIA_DESCONOCIDA`, `CUBICACION_DEMASIADO_GRANDE` y los rechazos del cubicador; 503 `CUBICADOR_NO_DISPONIBLE` en `/web/cubicacion` (HU-023.2) |
 | `POST /web/solicitudes-costeo` | 400 si el JSON es inválido | 400 `SOLICITUD_COSTEO_INVALIDA`, `MARGEN_LINEA_DESCONOCIDA`, `FOLIO_CONSECUTIVO_AGOTADO` |
 | `POST .../costeo/reintentar` | 404 | 409 `COSTEO_NO_REINTENTABLE`; 400 `SOLICITUD_COSTEO_INVALIDA` si lo guardado ya no pasa la validación |
@@ -521,7 +521,7 @@ Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA
 | `CORREO_INVALIDO` | 400 `ErrorWeb` (sin código) en `/enviar` | Destinatarios inválidos o vacíos, asunto de más de 300 o cuerpo de más de 5000 | Validar en el formulario antes de enviar | En QA |
 | `FOLIO_DUPLICADO` | chat | Colisión de folio | "Reintenta" | En QA |
 | `FOLIO_CONSECUTIVO_AGOTADO` | chat; 400 en `solicitudes-costeo` | Se usaron los 999 folios del día de esas iniciales | "Límite diario de folios alcanzado. Contacta a soporte" | En QA |
-| `CLIENTE_BUSQUEDA_NO_DISPONIBLE` | 400 en `/web/clientes`; chat | Nexo sin configurar, caído, o el comercial sin `idUsuarioExterno`. **No** significa "sin resultados" (eso es 200 con `candidatos: []`) | En el autocompletado: "Buscador de clientes no disponible" con reintento | En QA |
+| `CLIENTE_BUSQUEDA_NO_DISPONIBLE` | 503 en `/web/clientes` (antes 400, OBS-1021B-3: tratar 400 y 503 igual mientras conviva el frontend anterior); chat | Nexo sin configurar (`Nexo:UrlBase`), caído, o el comercial sin `idUsuarioExterno`; el `mensaje` dice cuál. **No** significa "sin resultados" (eso es 200 con `candidatos: []`) | En el autocompletado: "Buscador de clientes no disponible" con reintento | En QA |
 | `HERRAMIENTA_DESCONOCIDA` | chat (interno) | El modelo pidió una herramienta inexistente | Ignorar | En QA |
 | `MUNICIPIOS_NO_DISPONIBLE` | 503 en `/web/municipios` (antes 400), captura y licitación; chat | Catálogo de Nexo no disponible | Deshabilitar el autocompletado de origen y destino y mostrar reintento. El chat sigue con texto libre | En QA |
 | `CATALOGOS_FLETE_NO_DISPONIBLE` | 503 en `/web/catalogos-flete` y en `/web/solicitudes-costeo` | Catálogos maestros de Nexo no disponibles y sin copia de respaldo en el servidor (menos de 24 h, HU-013.10) | Selects vacíos con reintento; no enviar texto libre | En QA |
@@ -939,7 +939,7 @@ descargarPdf(pdfUrl: string, folio: string): Observable<void> {
 ```
 
 - `exacta = true` solo cuando hay un único candidato (Nexo no distingue exacta de aproximada).
-- `candidatos: []` = sin coincidencias (no es un error). 400 `ErrorNegocio` `CLIENTE_BUSQUEDA_NO_DISPONIBLE` = el buscador no está disponible.
+- `candidatos: []` = sin coincidencias (no es un error). 503 `ErrorNegocio` `CLIENTE_BUSQUEDA_NO_DISPONIBLE` = el buscador no está disponible (antes 400, OBS-1021B-3; su `mensaje` dice qué falta: NEXO sin configurar, usuario sin vincular a NEXO o NEXO caído). Ofrecer Reintentar y el NIT manual.
 - **Nunca mostrar `bp`** (uso interno). **Nunca tratar el texto buscado como NIT**: el NIT sale solo de `candidatos`.
 - Autocompletado recomendado: debounce de 300 ms, mínimo 3 caracteres (regla de UX; el servidor acepta 1) y cancelar la búsqueda anterior (`switchMap`). Cada búsqueda llama a Nexo (hasta 8 s en el peor caso).
 - Prospectos: se pueden elegir, pero **el envío a costeo en Nexo falla** para prospectos sin BP (queda `error_envio` con `COSTEO_NEXO_RECHAZADA`, sección 6.4). Advertir en la UI. Crear un prospecto nuevo va por el componente existente de ClientePro (`RegistroclienteprospectoComponent`, Grovity), no por Cotifly.

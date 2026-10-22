@@ -976,13 +976,22 @@ paths:
               schema:
                 $ref: '#/components/schemas/ResultadoBusquedaClientes'
         '400':
-          description: Falta `q`, o la búsqueda en Nexo no está disponible (`CLIENTE_BUSQUEDA_NO_DISPONIBLE`)
+          description: Falta `q` (`Falta el texto de búsqueda (q).`)
           content:
             application/json:
               schema:
-                oneOf:
-                  - $ref: '#/components/schemas/ErrorNegocio'
-                  - $ref: '#/components/schemas/ErrorWeb'
+                $ref: '#/components/schemas/ErrorWeb'
+        '503':
+          description: |
+            `CLIENTE_BUSQUEDA_NO_DISPONIBLE`: la búsqueda en Nexo no está disponible. `mensaje` dice qué falta: Nexo sin configurar en el
+            ambiente (`Nexo:UrlBase` vacía), el comercial sin `idUsuarioExterno` (no vinculado a Nexo) o Nexo no respondió (caído, 5xx,
+            tiempo agotado). Nunca por "no hubo candidatos" (eso es `200` con `candidatos: []`). Sin `Retry-After`. OBS-1021B-3
+            (E2E 2026-10-21): antes era 400; ahora es 503, como `GET /web/municipios`, `GET /web/catalogos-flete` y los demás catálogos
+            de Nexo. El frontend muestra "Buscador de clientes no disponible" con Reintentar y deja ingresar el NIT a mano.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
         '401':
           $ref: '#/components/responses/SesionExpirada'
 
@@ -3393,7 +3402,7 @@ components:
                 Mismos códigos que el backend Python, más los nuevos del backend .NET:
                 `CLIENTE_BUSQUEDA_NO_DISPONIBLE` (HU-005.2: Nexo sin configurar, sin
                 respuesta o el comercial sin `idUsuarioExterno`; nunca por "no hubo
-                candidatos", que es `200` con `candidatos: []`), `HERRAMIENTA_DESCONOCIDA` (el modelo pidió una
+                candidatos", que es `200` con `candidatos: []`; 503 en `GET /web/clientes` desde OBS-1021B-3), `HERRAMIENTA_DESCONOCIDA` (el modelo pidió una
                 herramienta inexistente, HU-003.10), `AJUSTE_MARGEN_INVALIDO` (HU-003.4:
                 el margen negociado por el comercial está fuera de rango para su método de
                 cálculo, es decir negativo o ≥ 1 con `margen`, o el método no es

@@ -102,6 +102,8 @@ public static class clsRespuestasWeb
             clsCodigosError.CorreoDeshabilitado or clsCodigosError.CosteoNexoNoDisponible or clsCodigosError.CosteoNexoTiempoAgotado
                 or clsCodigosAplicacion.RegionalNoDisponible or clsCodigosError.CatalogosFleteNoDisponible or clsCodigosError.NexoNoDisponible
                 or clsCodigosError.MunicipiosNoDisponible or clsCodigosError.PdfRenderNoDisponible
+                // OBS-1021B-3 (E2E 2026-10-21): la búsqueda de clientes sin Nexo es 503, como los demás catálogos (antes 400).
+                or clsCodigosError.ClienteBusquedaNoDisponible
                 or clsCodigosError.CubicadorNoDisponible or clsCodigosError.CubicadorRespuestaInvalida or clsCodigosError.CubicadorNoAutorizado =>
                 new ObjectResult(clsErrorNegocioWeb.Desde(error)) { StatusCode = StatusCodes.Status503ServiceUnavailable },
             clsCodigosAplicacion.RegionalNoAsignada => new ConflictObjectResult(clsErrorNegocioWeb.Desde(error)),

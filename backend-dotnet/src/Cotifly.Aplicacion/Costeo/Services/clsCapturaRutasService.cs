@@ -78,6 +78,9 @@ public sealed class clsCapturaRutasService(
     /// </summary>
     private bool ValidaVehiculoAntes(clsLineaSolicitudCosteo linea) =>
         linea.Cubicabilidad != CubicabilidadRuta.Cubicable || cubicador is not { EstaConfigurado: true };
+    /// <summary>Campo de la clase de viaje en los errores por ruta.</summary>
+    private const string CampoClaseViaje = "clase_viaje";
+
     /// <summary>Máximo de servicios conexos por ruta.</summary>
     public const int MaximoConexosPorRuta = 20;
 
@@ -137,10 +140,18 @@ public sealed class clsCapturaRutasService(
 
         var errores = new List<clsErrorFilaLicitacion>(validadas.Errores);
 
-        // HU-032 (#197): VEHICULO_REQUERIDO va después de los errores de catálogo y municipios de su ruta (el orden final es por ruta).
+        // HU-032 (#197): VEHICULO_REQUERIDO va después de los errores de catálogo y municipios de su ruta (el orden final es por ruta). B4:
+        // una ruta cuya clase de viaje ya tiene un error (mal escrita o fuera del catálogo) no se juzga: la exención depende de la clase, y
+        // el comercial vería dos errores por uno solo.
+        var claseConError = validadas.Errores
+            .Where(e => e.Indice is not null && e.Campo == CampoClaseViaje)
+            .Select(e => e.Indice!.Value)
+            .ToHashSet();
         for (var i = 0; i < rutas.Count; i++)
         {
-            if (rutas[i] is { } ruta && VehiculoRequerido(ruta.Linea) is { } requerido)
+            if (rutas[i] is { } ruta && !claseConError.Contains(i)
+                && !ruta.Linea.ErroresCaptura().Any(e => e.Campo == CampoClaseViaje)
+                && VehiculoRequerido(ruta.Linea) is { } requerido)
             {
                 errores.Add(new clsErrorFilaLicitacion(i, ruta.Fila, requerido.Campo, requerido.Codigo, requerido.Mensaje));
             }

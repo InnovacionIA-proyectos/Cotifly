@@ -164,6 +164,39 @@ public sealed class clsVehiculoElegidoCapturaTests
     }
 
     [Fact]
+    public async Task ConLaClaseDeViajeMalEscritaSoloSeReportaElErrorDeLaClaseSinVehiculoRequerido()
+    {
+        // B4: la exención depende de la clase de viaje; si la clase ya tiene un error (CODIGO_NO_CATALOGO del validador de catálogos), la
+        // ruta no se juzga: el comercial ve un error, no dos.
+        _filas.ValidarAsync(Arg.Any<Guid>(), Arg.Any<IReadOnlyList<clsLineaLicitacionEntrada?>>(), Arg.Any<IReadOnlyList<clsErrorFilaLicitacion>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(ci => new clsFilasLicitacionValidadas(
+                [.. ci.Arg<IReadOnlyList<clsLineaLicitacionEntrada?>>().Select(l => l!)],
+                [new clsErrorFilaLicitacion(0, null, "clase_viaje", clsCodigosLineaSolicitud.CodigoNoCatalogo, "'Contenedr' no es una clase de viaje.")],
+                null));
+
+        var validadas = await ValidarAsync(Cupo(null) with { ClaseViaje = "Contenedr" });
+
+        validadas.Errores.Should().ContainSingle().Which.Campo.Should().Be("clase_viaje");
+    }
+
+    [Fact]
+    public async Task UnErrorDeClaseDeViajeEnOtraRutaNoQuitaElVehiculoRequeridoDeEstaRuta()
+    {
+        _filas.ValidarAsync(Arg.Any<Guid>(), Arg.Any<IReadOnlyList<clsLineaLicitacionEntrada?>>(), Arg.Any<IReadOnlyList<clsErrorFilaLicitacion>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(ci => new clsFilasLicitacionValidadas(
+                [.. ci.Arg<IReadOnlyList<clsLineaLicitacionEntrada?>>().Select(l => l!)],
+                [new clsErrorFilaLicitacion(1, null, "clase_viaje", clsCodigosLineaSolicitud.CodigoNoCatalogo, "mal escrita")],
+                null));
+
+        var validadas = await Servicio().ValidarAsync(
+            _usuario, [new clsLineaLicitacionEntrada(null, Cupo(null)), new clsLineaLicitacionEntrada(null, Cupo(null) with { ClaseViaje = "Cpo" })], [], Ct);
+
+        validadas.Errores.Where(e => e.Codigo == clsCodigosLineaSolicitud.VehiculoRequerido).Select(e => e.Indice).Should().Equal(0);
+    }
+
+    [Fact]
     public void LaReglaExcluyeUnaMercanciaConMedidasYSinCodigoSoloConElCubicadorConfigurado()
     {
         var ruta = Cupo(null, new clsPosicionCarga("Caja", 1, 10m, 10m, 10m, 1_000m));

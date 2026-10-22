@@ -444,6 +444,53 @@ public sealed class clsVehiculoElegidoEndpointsTests : IDisposable
         (await VerificarContratoAsync(igual, Edicion, _put, HttpStatusCode.OK)).GetProperty("sin_cambios").GetBoolean().Should().BeTrue();
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("2s3")]
+    public async Task ConNexoCaidoElMismoCuerpoDelGetEsSinCambiosSinConsultarNexo(string? vehiculoReescrito)
+    {
+        // OBS-1021B-1 (E2E 2026-10-21): "¿cambió algo?" va antes de los catálogos de Nexo. Con Nexo caído, el mismo cuerpo del GET (también
+        // con el vehículo escrito de otra forma, que Nexo canonizaría a 2S3) es sin_cambios y no hace ninguna llamada a Nexo.
+        var api = Api();
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        using var envio = await api.EnviarAsync(_post, Captura, ana.Access, Formulario("2S3", 9_000m));
+        var folio = (await VerificarContratoAsync(envio, Captura, _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+        var (modelo, etag) = await ModeloAsync(api, ana, folio);
+        if (vehiculoReescrito is not null)
+        {
+            modelo["rutas"]![0]!["tipo_vehiculo"] = vehiculoReescrito;
+        }
+
+        _nexo.Caido = HttpStatusCode.ServiceUnavailable;
+        var llamadas = _nexo.Peticiones.Count;
+        using var igual = await api.EnviarAsync(_put, $"/web/cotizaciones/{folio}/solicitud", ana.Access, modelo.ToJsonString(), etag);
+
+        (await VerificarContratoAsync(igual, Edicion, _put, HttpStatusCode.OK)).GetProperty("sin_cambios").GetBoolean().Should().BeTrue();
+        _nexo.Peticiones.Should().HaveCount(llamadas, "sin cambios no se consulta Nexo");
+    }
+
+    [Fact]
+    public async Task ConNexoCaidoUnCambioRealSigueValidandoseContraNexoYNoSeAplica()
+    {
+        // Auditoría del punto anterior: la comparación previa no deja pasar un cambio real sin los catálogos de Nexo.
+        var api = Api();
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        using var envio = await api.EnviarAsync(_post, Captura, ana.Access, Formulario("2S3", 9_000m));
+        var folio = (await VerificarContratoAsync(envio, Captura, _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+        var (modelo, etag) = await ModeloAsync(api, ana, folio);
+        modelo["rutas"]![0]!["peso_kg"] = 9_500m;
+
+        _nexo.Caido = HttpStatusCode.ServiceUnavailable;
+        var llamadas = _nexo.Peticiones.Count;
+        using var cambio = await api.EnviarAsync(_put, $"/web/cotizaciones/{folio}/solicitud", ana.Access, modelo.ToJsonString(), etag);
+
+        cambio.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        _nexo.Peticiones.Count.Should().BeGreaterThan(llamadas, "el cambio se valida contra Nexo");
+        (await clsBaseDatosPruebas.EscalarAsync<decimal>(_entorno.BaseDatos.CadenaCotifly,
+            "SELECT l.pesoKg FROM dbo_cotifly.CotizacionLineasSolicitud l JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId "
+            + $"WHERE c.folio = '{folio}'")).Should().Be(9_000m, "nada se aplicó");
+    }
+
     [Fact]
     public async Task EditarUnFolioAnteriorSinVehiculoCambiandoElPesoDeLaRutaPideElVehiculo()
     {

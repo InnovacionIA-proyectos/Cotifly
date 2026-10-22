@@ -420,6 +420,18 @@ public sealed class clsEdicionSolicitudService(
             cotizacion.NitCliente, cotizacion.ClienteNombre, sinVehiculo.FirstOrDefault(r => r?.LineaNegocio is not null)?.LineaNegocio ?? "-",
             encabezado, sinVehiculo, entrada.Moneda);
         var previos = clsEnvioCosteoService.ErroresFormulario(captura, sinVehiculo).Concat(errores).ToList();
+
+        // OBS-1021B-1 (E2E 2026-10-21): "¿cambió algo?" ANTES de los catálogos de Nexo. El mismo cuerpo del GET responde sin_cambios sin
+        // consultar Nexo (antes, con Nexo caído, respondía 503). Solo con el cuerpo crudo bien formado (sin errores de formulario, de la
+        // línea ni de conexos) y por VALOR contra lo guardado, que ya se validó al capturarlo: la canonización de Nexo (2s3 → 2S3) se
+        // reemplaza por una comparación equivalente sin catálogo (mayúsculas en los códigos, MismoCodigo en el vehículo). Si algo difiere,
+        // no hay forma de saberlo sin catálogo (un municipio solo por nombre, un alias, un conexo agregado en Nexo) o la línea de negocio
+        // está inactiva, se sigue por la validación completa: un cambio real nunca se salta los catálogos.
+        if (previos.Count == 0 && SinCambiosSinCatalogo(cotizacion, encabezado, moneda, entradas, sinVehiculo, politicasRuta, lineas))
+        {
+            return new clsEdicionPreparada(encabezado, [], true, null, null, []);
+        }
+
         var validadas = await capturaRutas.ValidarAsync(usuarioId, sinVehiculo, previos, cancellationToken);
         validadas = SinVehiculoRequeridoEnRutasSinCambios(validadas, entradas, guardadas);
         if (validadas.Errores.Count > 0)
@@ -523,6 +535,31 @@ public sealed class clsEdicionSolicitudService(
             originales[i]?.Id, r, Replanificada: replanificadas.Contains(i + 1), ReincluirRechazados: entradas[i]!.ReincluirRechazados)).ToList();
         var politica = lineas[0] is { } primera ? politicasRuta.GetValueOrDefault(primera) : null;
         return new clsEdicionPreparada(encabezado, rutas, false, fijada, politica, replanificadas);
+    }
+
+    /// <summary>
+    /// OBS-1021B-1: ¿el cuerpo crudo (sin pasar por los catálogos de Nexo) deja todo como está? Exige que cada ruta esté bien formada
+    /// (<see cref="clsLineaSolicitudCosteo.ErroresCaptura"/> y <see cref="clsCapturaRutasService.ErroresConexos"/> vacíos), que su línea
+    /// de negocio siga activa y que <see cref="MismoContenido"/> lo confirme sin catálogo de conexos (un conexo agregado en Nexo, guardado
+    /// con el id de su fila, no coincide y se va por la validación completa). Nunca consulta Nexo.
+    /// </summary>
+    private bool SinCambiosSinCatalogo(
+        clsCotizacionSolicitud cotizacion, clsEncabezadoSolicitudCosteo encabezado, string moneda, IReadOnlyList<clsRutaEdicionEntrada?> entradas,
+        IReadOnlyList<clsLineaLicitacionEntrada?> crudas, IReadOnlyDictionary<int, clsMargenPolitica?> politicasRuta, IReadOnlyList<int?> lineas)
+    {
+        if (crudas.Count != entradas.Count || crudas.Any(r => r?.Linea is null))
+        {
+            return false;
+        }
+
+        var rutas = crudas.Select(r => r!).ToList();
+        if (rutas.Any(r => r.Linea.ErroresCaptura().Count > 0 || clsCapturaRutasService.ErroresConexos(r.Conexos).Count > 0)
+            || lineas.Any(l => l is null || politicasRuta.GetValueOrDefault(l.Value) is not { Activa: true }))
+        {
+            return false;
+        }
+
+        return MismoContenido(cotizacion, encabezado, moneda, entradas, rutas, new Dictionary<string, clsCostoConexoNexo>(), AceptaVehiculo);
     }
 
     /// <summary>

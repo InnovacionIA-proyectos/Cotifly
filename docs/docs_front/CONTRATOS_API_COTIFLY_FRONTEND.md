@@ -995,7 +995,7 @@ Buscador de clientes y prospectos del catálogo de NEXO.
 |---|---|---|
 | 200 | `ResultadoBusquedaClientes` | `candidatos: []` = sin coincidencias (no es error). `exacta = true` solo si hay un único candidato. **Nunca mostrar `bp`**. El NIT sale solo de `candidatos`, nunca del texto buscado. Etiqueta "Prospecto" si `origen_cliente = prospecto` |
 | 400 | `ErrorWeb` `Falta el texto de búsqueda (q).` | No llamar sin texto |
-| 400 | `CLIENTE_BUSQUEDA_NO_DISPONIBLE` | "Buscador de clientes no disponible" con Reintentar |
+| 503 | `CLIENTE_BUSQUEDA_NO_DISPONIBLE` | "Buscador de clientes no disponible" con Reintentar, y dejar ingresar el NIT a mano. Mostrar `mensaje`: dice qué falta (NEXO sin configurar, `Nexo:UrlBase`; el usuario sin vincular a NEXO; o NEXO no respondió). **Antes era 400** (fila 54 de la sección 7): tratar 400 y 503 igual mientras conviva el frontend anterior |
 
 UX: debounce de 300 ms, desde 3 letras. Cada búsqueda llega a NEXO (puede tardar varios segundos). Un prospecto sin BP puede quedar en
 `error_envio` al enviar a costeo: advertirlo.
@@ -3199,7 +3199,7 @@ parecido del catálogo, `sugerido = true`, con `similitud` de 0 a 1), `null` (si
 | `ARCHIVO_REQUERIDO` | 400 | Falta el Excel o está vacío | Pedir el archivo |
 | `CAMPO_NO_EDITABLE` | 400 | La edición cambia el cliente, el tipo o la línea de negocio de una ruta (HU-028) | Restaurar el campo de `detalle.campo` |
 | `CATALOGOS_FLETE_NO_DISPONIBLE` | 503 | Catálogos de NEXO caídos y sin copia de menos de 24 h | Deshabilitar selects, Reintentar; nada se guardó |
-| `CLIENTE_BUSQUEDA_NO_DISPONIBLE` | 400 | Buscador de clientes no disponible (no es "sin resultados") | "Buscador no disponible", Reintentar |
+| `CLIENTE_BUSQUEDA_NO_DISPONIBLE` | 503 (antes 400) | Buscador de clientes no disponible (no es "sin resultados"); `mensaje` dice qué falta | "Buscador no disponible", Reintentar |
 | `CONEXO_INVALIDO` | 400 | NEXO no aceptó el servicio, o la ruta no existe | Mostrar mensaje; recargar el costeo antes de reintentar |
 | `CONFLICTO_CONCURRENCIA` | 409 | El `If-Match` no coincide; nada cambió | Recargar el costeo y repetir |
 | `CORREO_DESHABILITADO` | 503 | Correo apagado en el servidor | "El envío de correo no está habilitado en este ambiente" |
@@ -3373,6 +3373,7 @@ fila_excel, campo, codigo, mensaje}`.
 | 51 | **HU-028.1 (#183, NEXO #320):** valor nuevo `rechazada` en `estado_costeo` de `rutas[]`, `rutas[].camiones[]` y las líneas y camiones de la licitación (nunca en la cabecera). Campos nuevos: `motivo_rechazo` y `rechazada_at` en `CamionCosteo`; `motivo_rechazo` en `RutaCosteo`, `LineaLicitacion` y `CamionLicitacion` (+ `estado_costeo`); `lineas_rechazadas` en `Licitacion`; `rutas_rechazadas` y `camiones_rechazados` en `TotalesCotizacion`; `aviso_rechazos` en la respuesta de `re-solicitar`. Códigos nuevos 409 `RUTA_RECHAZADA` (margen y conexos en una ruta rechazada) y `SIN_RUTAS_COTIZABLES` (PDF con todas rechazadas). Precio, totales, PDF, Excel y métricas sin las rutas rechazadas | Agrega | Mostrar "Rechazada en NEXO" + motivo; deshabilitar margen, conexos y PDF según corresponda; el enum de estados debe aceptar `rechazada` |
 | 52 | **HU-028.1 (#183), decisión del 2026-10-20 ("no reenviar los camiones rechazados por defecto"):** re-solicitar (mismo folio o `-vN`) y editar ya **no** reenvían a NEXO los camiones rechazados por la Mesa: siguen rechazados (la `-vN` los copia rechazados) y una ruta con todos rechazados no viaja (queda `rechazada`, visible, sin precio). `aviso_rechazos` cambia de sentido (ahora dice qué se **omitió**) y sale también en `PUT .../solicitud` (raíz y `cotizacion`), con el aviso nuevo `RECHAZADOS_OMITIDOS`. Campos nuevos: `reincluir_rechazados` en `RutaEdicionWeb`; `camiones_rechazados` y `motivo_rechazo` en `RutaEditable`. 409 `SIN_RUTAS_COTIZABLES` (`detalle.motivo = TODOS_RECHAZADOS`) en `re-solicitar` y `PUT .../solicitud` si no queda nada que enviar | Cambia | En "Editar solicitud", casilla "Volver a pedirlos a la Mesa" por ruta con `camiones_rechazados > 0`; mostrar `aviso_rechazos` tras re-solicitar o editar; tratar el 409 ofreciendo reincluir |
 | 53 | **HU-032 (#197, ADR-022): vehículo elegido o cubicador.** `tipo_vehiculo` y `carroceria` vuelven al contrato (captura, licitación, edición, `datos_carga`) como el vehículo elegido y respaldo del cubicador; `RutaEditable` los devuelve. Error nuevo por ruta `VEHICULO_REQUERIDO` (sin mercancías cubicables, salvo Contenedor). Las medidas de una mercancía son opcionales: sin ninguna (y sin código) es "no cubicable" y se acepta; medidas parciales o código sin medidas son `POSICION_INVALIDA`; `MercanciaCosteo`/`MercanciaEditable` pueden traer las medidas en `null`. Avisos nuevos en `advertencias[]` (`VEHICULO_AJUSTADO_POR_CUBICADOR`, `VEHICULO_ELEGIDO_USADO`, `MERCANCIAS_NO_CUBICABLES`, `VEHICULO_ELEGIDO_INVALIDO`) con `vehiculo_elegido` y `vehiculos_finales`; `cubicacion[]` también en la respuesta de la edición y con rutas que no llamaron al cubicador | Cambia | Volver a mostrar el selector de vehículo (carrocería opcional) y exigirlo sin mercancías cubicables salvo Contenedor; aceptar mercancías sin medidas (las tres o ninguna); mostrar el vehículo final de cada camión con su aviso (ver 3.9) |
+| 54 | **OBS-1021B-3 (E2E 2026-10-21):** `GET /web/clientes` responde **503** `CLIENTE_BUSQUEDA_NO_DISPONIBLE` cuando NEXO no está configurado, no responde o el comercial no está vinculado a NEXO (antes **400**), como los demás catálogos de NEXO. El `mensaje` dice qué falta (con NEXO sin configurar nombra `Nexo:UrlBase`) | Rompe | Tratar 400 y 503 igual mientras conviva el frontend anterior; "Buscador de clientes no disponible" con Reintentar y NIT manual |
 
 ---
 
@@ -3463,6 +3464,11 @@ fila_excel, campo, codigo, mensaje}`.
   sin medidas son `POSICION_INVALIDA`.
 - La edición y la re-solicitud conservan el vehículo elegido (`RutaEditable.tipo_vehiculo`/`carroceria`); cambiarlo es un cambio si los
   camiones dependen de él.
+- OBS-1021B-3: `GET /web/clientes` sin NEXO responde **503** `CLIENTE_BUSQUEDA_NO_DISPONIBLE` (antes 400), con un `mensaje` que dice
+  qué falta. Sección 7, fila 54.
+- OBS-1021B-1: `PUT .../solicitud` con el mismo cuerpo del `GET` responde `sin_cambios` sin consultar NEXO (antes, con NEXO caído,
+  503). Un cambio real se sigue validando contra los catálogos de NEXO.
+- B4: con `clase_viaje` mal escrita la ruta solo trae `CODIGO_NO_CATALOGO` en `clase_viaje`, sin `VEHICULO_REQUERIDO` adicional.
 - Requiere `db/scripts/12_vehiculo_elegido.sql` (sin él, `/health/ready` responde "falta 12"). Cambio con su "qué hacer": sección 7,
   fila 53, y 3.9.
 

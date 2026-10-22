@@ -63,10 +63,9 @@ public sealed class clsArranqueConfiguracionTests
     }
 
     [Theory]
-    [InlineData("Carga suelta")]
     [InlineData("CargaSuelta")]
     [InlineData("Granel")]
-    [InlineData(" ")]
+    [InlineData("Carga  Suelta")]
     public void UnaClaseSinVehiculoObligatorioDesconocidaImpideArrancar(string clase)
     {
         using var factory = Crear(new() { ["Captura:ClasesSinVehiculoObligatorio:0"] = "Contenedor", ["Captura:ClasesSinVehiculoObligatorio:1"] = clase });
@@ -74,6 +73,46 @@ public sealed class clsArranqueConfiguracionTests
         var arrancar = () => factory.CreateClient();
 
         arrancar.Should().Throw<OptionsValidationException>().WithMessage("*Captura:ClasesSinVehiculoObligatorio*");
+    }
+
+    [Fact]
+    public void LasClasesSinVehiculoObligatorioSeAceptanSinDistinguirMayusculasYSeNormalizanALaEscrituraDeNexo()
+    {
+        // Ajuste de la auditoría: "Carga suelta" ya no impide arrancar; se guarda como el catálogo ("Carga Suelta"), que es con lo que se
+        // compara (exacto) la clase de viaje de la ruta.
+        using var factory = Crear(new()
+        {
+            ["Captura:ClasesSinVehiculoObligatorio:0"] = "contenedor",
+            ["Captura:ClasesSinVehiculoObligatorio:1"] = " Carga suelta ",
+            ["Captura:ClasesSinVehiculoObligatorio:2"] = "CARGA SUELTA",
+        });
+
+        var opciones = factory.Services.GetRequiredService<IOptions<clsOpcionesCaptura>>().Value;
+
+        opciones.ClasesSinVehiculo.Should().Equal("Contenedor", "Carga Suelta");
+    }
+
+    [Theory]
+    [InlineData(" ")]
+    [InlineData("")]
+    public void UnValorVacioEntreLasClasesSinVehiculoObligatorioSeIgnoraYLaAppArranca(string vacio)
+    {
+        // B1: el validador ignora los vacíos, igual que el getter (antes "__1=" impedía arrancar).
+        using var factory = Crear(new() { ["Captura:ClasesSinVehiculoObligatorio:0"] = "Contenedor", ["Captura:ClasesSinVehiculoObligatorio:1"] = vacio });
+
+        var opciones = factory.Services.GetRequiredService<IOptions<clsOpcionesCaptura>>().Value;
+
+        opciones.ClasesSinVehiculo.Should().Equal("Contenedor");
+    }
+
+    [Fact]
+    public void ConTodasLasClasesSinVehiculoObligatorioVaciasRigeLaListaPorDefecto()
+    {
+        using var factory = Crear(new() { ["Captura:ClasesSinVehiculoObligatorio:0"] = " ", ["Captura:ClasesSinVehiculoObligatorio:1"] = "" });
+
+        var opciones = factory.Services.GetRequiredService<IOptions<clsOpcionesCaptura>>().Value;
+
+        opciones.ClasesSinVehiculo.Should().Equal("Contenedor");
     }
 
     private static Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> Crear(Dictionary<string, string?> valores) =>

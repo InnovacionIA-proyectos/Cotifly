@@ -275,6 +275,7 @@ El backend Python no tenía CORS: `chat.html` funcionaba porque se servía desde
 | Cuerpo inválido responde 400 `{"error": "..."}` | En Python (FastAPI) era 422 `{"detail": [...]}` |
 | 404 de `/pdfs` responde `{"error": "..."}` | En Python era `{"detail": "..."}` |
 | Nuevos códigos `CLIENTE_BUSQUEDA_NO_DISPONIBLE` y `HERRAMIENTA_DESCONOCIDA` | Búsqueda de clientes (HU-005.2) y validación del modelo (HU-003.10) |
+| `CLIENTE_BUSQUEDA_NO_DISPONIBLE` en `GET /web/clientes` pasa de 400 a **503** | OBS-1021B-3 (E2E 2026-10-21): como los demás catálogos de Nexo; el `mensaje` dice qué falta (Nexo sin configurar, `Nexo:UrlBase`; usuario sin vincular; Nexo caído). El frontend trata 400 y 503 igual mientras conviva la versión anterior |
 | Nuevo código `FOLIO_CONSECUTIVO_AGOTADO` | El folio lo genera el servidor con las iniciales del comercial y un consecutivo diario de 3 dígitos por iniciales (ADR-011); el Python lo tomaba del LLM |
 | `num_cotizaciones_enviadas` cuenta `enviada` y `reenviada` | La vista del 0001 contaba solo `enviada`; la corrigió el script `0003`. La vista y su endpoint (`/web/metricas/actividad`) se retiraron en HU-014.3 (#152) |
 

@@ -38,6 +38,11 @@ public sealed class clsBuscadorClientesNexo(
 
     public const string Mensaje = "La búsqueda de clientes en Nexo no está disponible en este momento: intenta de nuevo o ingresa el NIT manualmente.";
 
+    /// <summary>OBS-1021B-3: el comercial no tiene <c>idUsuarioExterno</c> (no está vinculado a Nexo): el mensaje dice qué falta.</summary>
+    public const string MensajeSinUsuarioNexo =
+        "La búsqueda de clientes no está disponible: tu usuario no está vinculado a Nexo (falta idUsuarioExterno). "
+        + "Ingresa el NIT manualmente o pide a soporte que lo vincule.";
+
     /// <summary>Reintentos ante fallos transitorios (además del primer intento).</summary>
     public const int Reintentos = 2;
 
@@ -58,13 +63,16 @@ public sealed class clsBuscadorClientesNexo(
         ArgumentNullException.ThrowIfNull(texto);
         if (_urlBase is null)
         {
-            return NoDisponible("Nexo sin configurar (Nexo:UrlBase)");
+            // OBS-1021B-3: el mensaje dice qué falta (la configuración de Nexo), no "intenta de nuevo".
+            return NoDisponible("Nexo sin configurar (Nexo:UrlBase)", mensaje: clsBuscadorClientesNoDisponible.Mensaje);
         }
 
         var usuario = await usuarios.ObtenerPorIdAsync(usuarioId, cancellationToken);
         if (usuario?.IdUsuarioExterno is not { } idUsuarioExterno)
         {
-            return NoDisponible(usuario is null ? "el comercial no existe" : "el comercial no tiene idUsuarioExterno (almacén corporativo)");
+            return usuario is null
+                ? NoDisponible("el comercial no existe")
+                : NoDisponible("el comercial no tiene idUsuarioExterno (almacén corporativo)", mensaje: MensajeSinUsuarioNexo);
         }
 
         using var peticion = new HttpRequestMessage(HttpMethod.Get, ConstruirUrl(_urlBase, texto));
@@ -156,7 +164,7 @@ public sealed class clsBuscadorClientesNexo(
     private static string? Texto(JsonElement objeto, string propiedad) =>
         objeto.TryGetProperty(propiedad, out var valor) && valor.ValueKind == JsonValueKind.String ? valor.GetString() : null;
 
-    private clsResultado<clsResultadoBusquedaClientes> NoDisponible(string motivo, Exception? causa = null)
+    private clsResultado<clsResultadoBusquedaClientes> NoDisponible(string motivo, Exception? causa = null, string mensaje = Mensaje)
     {
         logger.LogWarning("Búsqueda de clientes en Nexo no disponible ({Motivo}).", motivo);
         if (causa is not null)
@@ -164,6 +172,6 @@ public sealed class clsBuscadorClientesNexo(
             logger.LogDebug(causa, "Detalle del fallo de búsqueda de clientes en Nexo ({Motivo}).", motivo);
         }
 
-        return new clsErrorDominio(clsCodigosError.ClienteBusquedaNoDisponible, Mensaje);
+        return new clsErrorDominio(clsCodigosError.ClienteBusquedaNoDisponible, mensaje);
     }
 }
