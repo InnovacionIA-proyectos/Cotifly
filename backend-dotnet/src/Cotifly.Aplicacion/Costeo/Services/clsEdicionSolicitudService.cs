@@ -671,20 +671,23 @@ public sealed class clsEdicionSolicitudService(
     /// <summary>
     /// Versión nueva (<c>-vN</c>): reserva la versión de la original (la original no cambia nada más ni se rechaza en Nexo: es la que tiene
     /// el cliente), crea la versión con las rutas editadas y el margen negociado de las que conserva, y la envía.
+    /// Endurecimiento B (#199): la reserva va DENTRO del candado del folio <c>-vN</c> y en su misma transacción que el alta de la versión: si
+    /// el candado no se obtiene (<c>SERVICIO_OCUPADO</c>) o la versión no se crea, la original queda como estaba (su <c>versionNegocio</c>
+    /// y su <c>If-Match</c> siguen valiendo). Antes se reservaba primero y un <c>SERVICIO_OCUPADO</c> dejaba la original con la versión subida.
     /// </summary>
     private async Task<clsResultado<clsEdicionAplicada>> VersionNuevaAsync(
         clsCotizacionSolicitud original, Guid usuarioId, clsEdicionPreparada p, int versionEsperada, clsEventoHerramienta? reserva,
         CancellationToken cancellationToken)
     {
-        if (!await ReservarAsync(original, versionEsperada, reserva))
-        {
-            return clsReglaPdfCosteo.Conflicto(original.Folio);
-        }
-
         var moneda = p.Moneda ?? new clsMonedaFijada(original.Moneda ?? clsCotizacionSolicitud.MonedaPesos, original.TrmAplicada);
         var anteriorDe = p.Rutas.Where(r => r.RutaExistenteId is not null).ToDictionary(r => r.Ruta.RutaId!.Value, r => r.RutaExistenteId!.Value);
         var creada = await folios.CrearNuevaVersionAsync<clsCotizacionSolicitud>(usuarioId, original.Id, async (folio, ct) =>
         {
+            if (!await ReservarEnTransaccionAsync(unidadTrabajo, registroAuditoria, original, versionEsperada, reserva, ct))
+            {
+                return clsReglaPdfCosteo.Conflicto(original.Folio);
+            }
+
             var version = original.CrearVersionEditada(folio, moneda.Moneda, moneda.TrmAplicada);
             if (version.EsFallo)
             {
@@ -738,6 +741,29 @@ public sealed class clsEdicionSolicitudService(
 
         cotizacion.IncrementarVersionNegocio();
         return await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, versionEsperada, CancellationToken.None) ? (resultado, avisos) : null;
+    }
+
+    /// <summary>
+    /// Endurecimiento B (#199): la reserva de la original para una versión nueva, DENTRO de la transacción del candado del folio
+    /// (<see cref="IClsGeneradorFolioService.CrearNuevaVersionAsync{TValor}"/>): bloquea la fila y compara la versión; si coincide, la sube y
+    /// deja la instantánea para el guardado de la versión nueva (misma transacción: o queda todo o nada). <c>false</c> si otra escritura ganó.
+    /// </summary>
+    internal static async Task<bool> ReservarEnTransaccionAsync(
+        IClsUnitOfWork unidad, IClsAuditoriaRepository auditoria, clsCotizacionSolicitud original, int versionEsperada,
+        clsEventoHerramienta? reserva, CancellationToken cancellationToken)
+    {
+        if (!await unidad.VersionVigenteEnTransaccionAsync(original.Id, versionEsperada, cancellationToken))
+        {
+            return false;
+        }
+
+        original.IncrementarVersionNegocio();
+        if (reserva is not null)
+        {
+            auditoria.Registrar(reserva);
+        }
+
+        return true;
     }
 
     /// <summary>Sube la versión de negocio y guarda con la instantánea; <c>false</c> si otra escritura ganó (nada se escribe).</summary>

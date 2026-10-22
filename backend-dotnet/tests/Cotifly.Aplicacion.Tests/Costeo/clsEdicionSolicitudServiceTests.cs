@@ -87,6 +87,12 @@ public sealed class clsEdicionSolicitudServiceTests
             _eventos.Add($"guardar:v{ci.ArgAt<int>(1)}");
             return true;
         });
+        // Endurecimiento B (#199): la reserva de la versión nueva se compara dentro de la transacción del candado del folio -vN.
+        _unidad.VersionVigenteEnTransaccionAsync(Arg.Any<Guid>(), Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(ci =>
+        {
+            _eventos.Add($"reservar-en-candado:v{ci.ArgAt<int>(1)}");
+            return true;
+        });
         _nexo.RechazarSolicitudAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
@@ -335,6 +341,48 @@ public sealed class clsEdicionSolicitudServiceTests
         cotizacion.PrimeraRuta.HorasCargue.Should().NotBe(9m, "la original no cambia");
         cotizacion.VersionNegocio.Should().Be(Version + 1, "la original solo reserva su versión");
         await _envio.Received(1).EnviarGuardadaAsync(nueva, _importacion, _ana, $"Versión editada de {Folio}.");
+        _eventos.Should().Contain($"reservar-en-candado:v{Version}", "la reserva va dentro del candado del folio -vN");
+        await _unidad.DidNotReceive().GuardarCambiosSiVersionAsync(cotizacion.Id, Version, Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Endurecimiento B (#199, revisión 3b del auditor): en <c>nueva_version</c>, si el candado del folio -vN está ocupado
+    /// (<c>SERVICIO_OCUPADO</c>), la original no cambia: ni su <c>versionNegocio</c> (el <c>If-Match</c> sigue valiendo) ni nada más.
+    /// </summary>
+    [Fact]
+    public async Task EnNuevaVersionConElCandadoOcupadoLaOriginalConservaSuVersion()
+    {
+        var cotizacion = Registrar(EnNexo());
+        cotizacion.RegistrarEnvio();
+        _folios.CrearNuevaVersionAsync(_ana, cotizacion.Id, Arg.Any<Func<clsFolio, CancellationToken, Task<clsResultado<clsCotizacionSolicitud>>>>(), Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio(clsCodigosError.ServicioOcupado, "ocupado"));
+
+        var resultado = await Servicio().EditarAsync(_ana, Folio, EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m }), Version, null, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.ServicioOcupado);
+        cotizacion.VersionNegocio.Should().Be(Version, "nada cambia");
+        _agregada.Should().BeNull();
+        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
+        await _unidad.DidNotReceiveWithAnyArgs().VersionVigenteEnTransaccionAsync(default, default, Ct);
+        await _envio.DidNotReceiveWithAnyArgs().EnviarGuardadaAsync(default!, default, default, default);
+    }
+
+    [Fact]
+    public async Task EnNuevaVersionSiOtraPeticionGanaLaReservaNoSeCreaLaVersion()
+    {
+        var cotizacion = Registrar(EnNexo());
+        cotizacion.RegistrarEnvio();
+        _unidad.VersionVigenteEnTransaccionAsync(cotizacion.Id, Version, Arg.Any<CancellationToken>()).Returns(false);
+        _folios.CrearNuevaVersionAsync(_ana, cotizacion.Id, Arg.Any<Func<clsFolio, CancellationToken, Task<clsResultado<clsCotizacionSolicitud>>>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ci.Arg<Func<clsFolio, CancellationToken, Task<clsResultado<clsCotizacionSolicitud>>>>()(
+                clsFolio.Desde(Folio).Valor.ConVersion(2).Valor, CancellationToken.None));
+
+        var resultado = await Servicio().EditarAsync(_ana, Folio, EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m }), Version, null, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.ConflictoConcurrencia);
+        cotizacion.VersionNegocio.Should().Be(Version);
+        _agregada.Should().BeNull();
+        await _envio.DidNotReceiveWithAnyArgs().EnviarGuardadaAsync(default!, default, default, default);
     }
 
     // --- Campos bloqueados y estados (decisiones 1, 5 y 6) ---

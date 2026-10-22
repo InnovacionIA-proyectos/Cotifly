@@ -83,6 +83,54 @@ public sealed class clsConcurrenciaCotizacionTests(clsBaseDatosPruebas baseDatos
             .Should().Be("PCN-Y.pdf|0|1");
     }
 
+    /// <summary>
+    /// Endurecimiento B (#199): la reserva de la original para una versión nueva se compara DENTRO de la transacción del candado del folio
+    /// (<see cref="IClsUnitOfWork.VersionVigenteEnTransaccionAsync"/>): con la versión vigente lo guardado en esa transacción queda; si la
+    /// operación falla después, la transacción se deshace y la versión de la original no cambia.
+    /// </summary>
+    [Fact]
+    public async Task LaReservaDentroDelCandadoSoloQuedaSiLaTransaccionSeConfirma()
+    {
+        var cotizacion = NuevaCotizacion(null);
+        await GuardarAsync(cotizacion);
+
+        var fallida = await ConsultarAsync(s => s.GetRequiredService<IClsCandadoTransaccional>().EjecutarAsync<int>("cotifly:prueba-reserva", async ct =>
+        {
+            var propia = await s.GetRequiredService<IClsCotizacionRepository>().ObtenerPorIdAsync(cotizacion.Id, ct);
+            (await s.GetRequiredService<IClsUnitOfWork>().VersionVigenteEnTransaccionAsync(propia!.Id, 0, ct)).Should().BeTrue();
+            propia.IncrementarVersionNegocio();
+            await s.GetRequiredService<IClsUnitOfWork>().GuardarCambiosAsync(ct);
+            return new Cotifly.Dominio.Comun.clsErrorDominio("FALLO_DESPUES", "la versión nueva no se creó");
+        }, Ct));
+        fallida.EsFallo.Should().BeTrue();
+        (await VersionAsync(cotizacion.Id)).Should().Be("0", "la transacción se deshizo: la original no cambia");
+
+        var vencida = await ConsultarAsync(s => s.GetRequiredService<IClsCandadoTransaccional>().EjecutarAsync<bool>("cotifly:prueba-reserva", async ct =>
+            await s.GetRequiredService<IClsUnitOfWork>().VersionVigenteEnTransaccionAsync(cotizacion.Id, 7, ct), Ct));
+        vencida.Valor.Should().BeFalse("la versión esperada no es la vigente");
+
+        var confirmada = await ConsultarAsync(s => s.GetRequiredService<IClsCandadoTransaccional>().EjecutarAsync<int>("cotifly:prueba-reserva", async ct =>
+        {
+            var propia = await s.GetRequiredService<IClsCotizacionRepository>().ObtenerPorIdAsync(cotizacion.Id, ct);
+            (await s.GetRequiredService<IClsUnitOfWork>().VersionVigenteEnTransaccionAsync(propia!.Id, 0, ct)).Should().BeTrue();
+            propia.IncrementarVersionNegocio();
+            return await s.GetRequiredService<IClsUnitOfWork>().GuardarCambiosAsync(ct);
+        }, Ct));
+        confirmada.EsExitoso.Should().BeTrue();
+        (await VersionAsync(cotizacion.Id)).Should().Be("1");
+    }
+
+    [Fact]
+    public async Task LaComparacionEnTransaccionExigeUnaTransaccionAbierta()
+    {
+        var accion = () => ConsultarAsync(s => s.GetRequiredService<IClsUnitOfWork>().VersionVigenteEnTransaccionAsync(Guid.NewGuid(), 0, Ct));
+
+        await accion.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    private Task<string?> VersionAsync(Guid id) =>
+        clsBaseDatosPruebas.EscalarAsync<string>(BaseDatos.CadenaCotifly, $"SELECT CAST(versionNegocio AS nvarchar(10)) FROM dbo_cotifly.CotizacionesSolicitud WHERE id = '{id}'");
+
     [Fact]
     public async Task ElPollingQueLeyoAntesDeUnAjusteNoPisaElPrecioAjustado()
     {

@@ -76,6 +76,12 @@ public sealed class clsReSolicitudCosteoServiceTests
             _eventos.Add($"reservar:{clsCodigoEnum.ACodigo(_cotizacion.EstadoCosteo!.Value)}:v{_cotizacion.VersionNegocio}");
             return true;
         });
+        // Endurecimiento B (#199): la reserva de la versión nueva se compara dentro de la transacción del candado del folio -vN.
+        _unidad.VersionVigenteEnTransaccionAsync(Arg.Any<Guid>(), Version, Arg.Any<CancellationToken>()).Returns(ci =>
+        {
+            _eventos.Add($"reservar-en-candado:v{Version}");
+            return true;
+        });
         _envio.EnviarGuardadaAsync(Arg.Any<clsCotizacionSolicitud>(), Arg.Any<clsMargenPolitica?>(), Arg.Any<Guid>(), Arg.Any<string?>())
             .Returns(ci =>
             {
@@ -240,7 +246,9 @@ public sealed class clsReSolicitudCosteoServiceTests
         await _envio.Received(1).EnviarGuardadaAsync(nueva, _politica, _ana, Arg.Any<string?>());
         _cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.CosteoVencido, "la original no cambia su costeo");
         _cotizacion.SolicitudNexoId.Should().Be("sol-vieja");
-        _eventos.Should().StartWith(new[] { "instantanea", "reservar:costeo_vencido:v5" }, "la versión de la original se reserva antes de crear la nueva");
+        _eventos.Should().StartWith(new[] { "reservar-en-candado:v4", "instantanea" },
+            "la versión de la original se reserva dentro del candado del folio -vN, antes de crear la nueva (endurecimiento B)");
+        _cotizacion.VersionNegocio.Should().Be(Version + 1, "la reserva sube la versión de la original");
         // HU-032: la ruta no se puede cubicar, así que el vehículo elegido se valida contra Nexo antes de crear la versión.
         await _catalogos.Received(1).ValidarAsync(_ana, Arg.Is<clsLineaSolicitudCosteo>(l => l.TipoVehiculo == "2S3"), Arg.Any<CancellationToken>());
     }
@@ -726,13 +734,35 @@ public sealed class clsReSolicitudCosteoServiceTests
     [Fact]
     public async Task SiOtraPeticionGanaLaReservaDeLaOriginalNoSeCreaVersionNiSeLlamaANexo()
     {
-        _unidad.GuardarCambiosSiVersionAsync(_cotizacion.Id, Version, Arg.Any<CancellationToken>()).Returns(false);
+        _unidad.VersionVigenteEnTransaccionAsync(_cotizacion.Id, Version, Arg.Any<CancellationToken>()).Returns(false);
 
         var resultado = await Servicio().ReSolicitarAsync(_ana, _cotizacion.Folio, Entrada() with { NuevaVersion = true }, Version, null, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.ConflictoConcurrencia);
         _agregada.Should().BeNull();
-        await _folios.DidNotReceiveWithAnyArgs().CrearNuevaVersionAsync<clsCotizacionSolicitud>(default, default, default!, Ct);
+        _cotizacion.VersionNegocio.Should().Be(Version, "la reserva no pasó");
+        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosAsync(Ct);
+        await _envio.DidNotReceiveWithAnyArgs().EnviarGuardadaAsync(default!, default, default, default);
+    }
+
+    /// <summary>
+    /// Endurecimiento B (#199, revisión 3b del auditor): con el candado del folio -vN ocupado (<c>SERVICIO_OCUPADO</c>), la original no
+    /// cambia: no se reserva su versión (el <c>If-Match</c> sigue valiendo), no se crea la versión ni se llama a Nexo.
+    /// </summary>
+    [Fact]
+    public async Task ConElCandadoDelFolioOcupadoLaOriginalNoCambiaNiSuVersion()
+    {
+        _folios.CrearNuevaVersionAsync(_ana, _cotizacion.Id, Arg.Any<Func<clsFolio, CancellationToken, Task<clsResultado<clsCotizacionSolicitud>>>>(), Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio(clsCodigosError.ServicioOcupado, "ocupado"));
+
+        var resultado = await Servicio().ReSolicitarAsync(_ana, _cotizacion.Folio, Entrada() with { NuevaVersion = true }, Version, null, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.ServicioOcupado);
+        _cotizacion.VersionNegocio.Should().Be(Version, "nada cambia: el If-Match de la original sigue vigente");
+        _agregada.Should().BeNull();
+        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
+        await _unidad.DidNotReceiveWithAnyArgs().VersionVigenteEnTransaccionAsync(default, default, Ct);
+        _instantaneas.Should().BeEmpty("la instantánea de la reserva no se registra");
         await _envio.DidNotReceiveWithAnyArgs().EnviarGuardadaAsync(default!, default, default, default);
     }
 

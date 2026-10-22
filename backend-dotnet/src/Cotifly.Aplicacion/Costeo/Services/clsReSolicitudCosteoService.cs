@@ -563,13 +563,15 @@ public sealed class clsReSolicitudCosteoService(
             return (rutas.Error, null, false);
         }
 
-        if (!await ReservarAsync(original, versionEsperada, reserva, cancellationToken))
-        {
-            return (clsReglaPdfCosteo.Conflicto(original.Folio), null, false);
-        }
-
+        // Endurecimiento B (#199): la reserva de la original va DENTRO del candado del folio -vN, en la misma transacción que la versión: un
+        // SERVICIO_OCUPADO (o una versión que no se crea) deja la original como estaba, con su If-Match vigente.
         var creada = await folios.CrearNuevaVersionAsync<clsCotizacionSolicitud>(usuarioId, original.Id, async (folio, ct) =>
         {
+            if (!await clsEdicionSolicitudService.ReservarEnTransaccionAsync(unidadTrabajo, registroAuditoria, original, versionEsperada, reserva, ct))
+            {
+                return clsReglaPdfCosteo.Conflicto(original.Folio);
+            }
+
             var version = original.CrearVersion(folio, moneda.Valor.TrmAplicada);
             if (version.EsFallo)
             {
