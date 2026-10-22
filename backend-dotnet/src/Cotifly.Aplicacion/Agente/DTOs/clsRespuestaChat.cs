@@ -21,6 +21,12 @@ public sealed record clsRespuestaChat(
     clsAccionPropuesta? AccionPropuesta = null)
 {
     /// <summary>
+    /// Errores de las herramientas del turno, en orden; vacío (nunca <c>null</c>) si ninguna falló. Endurecimiento A (#199): el contrato
+    /// declara <c>errores</c> como arreglo no anulable.
+    /// </summary>
+    public IReadOnlyList<clsErrorHerramienta> Errores { get; init; } = Errores ?? [];
+
+    /// <summary>
     /// Respuesta del asistente por folio (HU-013.6, #102, ADR-018 §2b): <c>precio</c>, <c>margen</c> y <c>pdf</c> siempre en <c>null</c>
     /// (obsoletos) y la acción propuesta armada por el servidor, si la hubo. Si el validador no obtuvo un texto válido del modelo pero
     /// el turno sí armó una propuesta, el texto es <paramref name="textoSinRespuesta"/> y la propuesta sale igual.

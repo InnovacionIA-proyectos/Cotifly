@@ -175,6 +175,8 @@ paths:
           $ref: '#/components/responses/DemasiadasPeticiones'
         '500':
           $ref: '#/components/responses/ErrorInternoAuth'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /api/auth/refresh:
     post:
@@ -204,6 +206,8 @@ paths:
           $ref: '#/components/responses/DemasiadasPeticiones'
         '500':
           $ref: '#/components/responses/ErrorInternoAuth'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /api/auth/logout:
     post:
@@ -227,6 +231,8 @@ paths:
           $ref: '#/components/responses/DemasiadasPeticiones'
         '500':
           $ref: '#/components/responses/ErrorInternoAuth'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/chat:
     post:
@@ -321,6 +327,10 @@ paths:
           $ref: '#/components/responses/DemasiadasPeticiones'
         '500':
           $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/mis-cotizaciones:
     get:
@@ -521,6 +531,10 @@ paths:
                   mensaje: "El envío de correo está deshabilitado."
         '500':
           $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/cotizaciones/{folio}/correos:
     get:
@@ -657,6 +671,10 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '500':
           $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/admin/lineas-negocio:
     get:
@@ -722,6 +740,10 @@ paths:
                 $ref: '#/components/schemas/ErrorWeb'
         '500':
           $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/metricas/comercial:
     get:
@@ -1055,6 +1077,10 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '500':
           $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/cotizaciones/{id}/nueva-version:
     get:
@@ -1555,6 +1581,10 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '500':
           $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/cubicacion/{id}:
     get:
@@ -1790,6 +1820,10 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '500':
           $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/cotizaciones/{folio}/costeo/reintentar:
     post:
@@ -1965,6 +1999,10 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '500':
           $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/cotizaciones/{folio}/costeo:
     get:
@@ -2191,6 +2229,10 @@ paths:
           $ref: '#/components/responses/PrecondicionRequerida'
         '500':
           $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/cotizaciones/{folio}/costeo/re-solicitar:
     post:
@@ -2333,6 +2375,10 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '500':
           $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/cotizaciones/{folio}/solicitud:
     get:
@@ -2488,6 +2534,10 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '500':
           $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/servicios-conexos:
     get:
@@ -2675,6 +2725,10 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '500':
           $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
     put:
       operationId: seleccionarServiciosConexos
       tags: [web]
@@ -2758,6 +2812,10 @@ paths:
           $ref: '#/components/responses/PrecondicionRequerida'
         '500':
           $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/cotizaciones/{folio}/costeo/textos/redactar:
     post:
@@ -2870,6 +2928,10 @@ paths:
           $ref: '#/components/responses/PrecondicionRequerida'
         '500':
           $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/cotizaciones/{folio}/costeo/pdf:
     post:
@@ -3024,6 +3086,8 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '500':
           $ref: '#/components/responses/ErrorInterno'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/licitaciones:
     post:
@@ -3135,6 +3199,8 @@ paths:
                 $ref: '#/components/schemas/ErrorWeb'
         '500':
           $ref: '#/components/responses/ErrorInterno'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/licitaciones/{folio}:
     get:
@@ -3217,6 +3283,10 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '500':
           $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/licitaciones/{folio}/excel:
     get:
@@ -3330,6 +3400,10 @@ paths:
           $ref: '#/components/responses/NoEsTuya'
         '500':
           $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /pdfs/{archivo}:
     get:
@@ -3543,7 +3617,8 @@ components:
       description: |
         Segundos que conviene esperar antes de reintentar o volver a consultar. Con `SERVICIO_OCUPADO` (#125) siempre 1; con
         `CUBICADOR_OCUPADO` (opción C) 10; en el 202 de `POST /web/cubicacion` y en `GET /web/cubicacion/{id}` con `en_proceso`
-        (opción D) 2. Las demás causas del 503 no lo envían.
+        (opción D) 2; en el 429 (endurecimiento A, #199) lo que falta para que se abra la ventana del límite. Las demás causas del
+        503 no lo envían.
       schema:
         type: integer
       example: 1
@@ -3598,11 +3673,38 @@ components:
           example:
             error: "Cotización no encontrada o no es tuya."
     DemasiadasPeticiones:
-      description: Límite de peticiones alcanzado
+      description: |
+        Límite de peticiones alcanzado (`/api/auth/*`: `LimiteAuth`; `/web/chat`: `LimiteChat`). Endurecimiento A (#199): trae
+        `Retry-After` con los segundos que faltan para que se abra la ventana.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorWeb'
+          example:
+            error: "Demasiadas peticiones. Intenta de nuevo en unos segundos."
+    CuerpoDemasiadoGrande:
+      description: |
+        Endurecimiento A (#199): el cuerpo supera el límite de `/web/*` (`SeguridadHttp:LimiteCuerpoWebBytes`, 64 KB por defecto;
+        12 MB en `/web/licitaciones*`, `SeguridadHttp:LimiteCuerpoLicitacionBytes`). `ErrorWeb`; no se procesa nada.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorWeb'
+          example:
+            error: "El cuerpo de la petición es demasiado grande."
+    TipoContenidoNoSoportado:
+      description: |
+        Endurecimiento A (#199): el cuerpo no viene como `application/json` (o como `multipart/form-data` donde el endpoint lo pide).
+        `ErrorWeb`; no se procesa nada.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorWeb'
+          example:
+            error: "Cuerpo inválido: envía JSON con Content-Type: application/json."
     ErrorInterno:
       description: |
         Endurecimiento A (#199): error interno no controlado (una excepción, o un error que no es del cliente como una restricción
@@ -3684,9 +3786,10 @@ components:
                 cubicaje", la captura, el recálculo de vehículos y la licitación, siempre con el cubicador configurado) y `TRM_NO_DISPONIBLE`
                 (HU-012.1/HU-012.2, ADR-014: ninguna fuente de la TRM entregó una TRM válida para el día; por defecto
                 DolarApi y, de respaldo, los datos abiertos de la Superintendencia Financiera; no se cotiza en USD y el
-                comercial puede reintentar o cotizar en COP; en `POST /web/licitaciones` con `moneda = USD` también). Solo en la herramienta
-                `resolver_municipio` del agente (HU-005.13), nunca en `/web/*`: `MUNICIPIO_ARGUMENTO_INVALIDO`
-                (`campo` distinto de `origen`/`destino` o `texto` vacío; no se consulta Nexo).
+                comercial puede reintentar o cotizar en COP; en `POST /web/licitaciones` con `moneda = USD` también). Endurecimiento A
+                (#199): se retiran del enum los códigos que ningún código emite (`AJUSTE_ID_INVALIDO`, `TARIFA_FUENTE_NO_DISPONIBLE`,
+                `TARIFA_CONFIG_INVALIDA` y `MUNICIPIO_ARGUMENTO_INVALIDO`, este último de la herramienta `resolver_municipio`, retirada
+                con el agente legado en HU-013.9); `clsContratoReflexionTests` exige que cada valor del enum lo emita algún código.
                 Costeo en Nexo (ADR-015): `SOLICITUD_COSTEO_INVALIDA` (formulario ampliado fuera de los límites de
                 Nexo), `COSTEO_NEXO_NO_DISPONIBLE` (Nexo sin configurar, 5xx, red, circuito abierto o el comercial sin
                 `idUsuarioExterno`), `COSTEO_NEXO_TIEMPO_AGOTADO` (Nexo no respondió a tiempo), `COSTEO_NEXO_RECHAZADA`
@@ -3751,8 +3854,6 @@ components:
                 mensaje genérico y sin `detalle` (respuesta común `ErrorInterno`). Una restricción única que el caso de uso no tradujo
                 (`REGISTRO_DUPLICADO` interno) también sale como 500 `ERROR_INTERNO`, sin el nombre de la restricción.
               enum:
-                - TARIFA_FUENTE_NO_DISPONIBLE
-                - TARIFA_CONFIG_INVALIDA
                 - MARGEN_FUENTE_NO_DISPONIBLE
                 - MARGEN_LINEA_DESCONOCIDA
                 - PRECIO_INVALIDO
@@ -3764,7 +3865,6 @@ components:
                 - CORREO_PDF_NO_ENCONTRADO
                 - CORREO_ENVIO_FALLIDO
                 - AJUSTE_COTIZACION_INVALIDA
-                - AJUSTE_ID_INVALIDO
                 - AJUSTE_MARGEN_INVALIDO
                 - FOLIO_DUPLICADO
                 - FOLIO_CONSECUTIVO_AGOTADO
@@ -3790,7 +3890,6 @@ components:
                 - USAR_RESULTADO_NEXO
                 - SOLICITUD_NO_TRANSICIONABLE
                 - TRM_NO_DISPONIBLE
-                - MUNICIPIO_ARGUMENTO_INVALIDO
                 - REGIONAL_NO_ASIGNADA
                 - REGIONAL_NO_DISPONIBLE
                 - ARCHIVO_REQUERIDO
@@ -8169,10 +8268,12 @@ components:
           nullable: true
           description: HU-033. El cuerpo en HTML tal como lo recibe el cliente (texto, resumen con el total y firma).
         resumen:
-          description: HU-033. Precio por ruta y total, sin desglose; `null` si la cotización todavía no tiene total.
-          nullable: true
-          allOf:
+          description: |
+            HU-033. Precio por ruta y total, sin desglose; `null` si la cotización todavía no tiene total. Endurecimiento A (#199):
+            `oneOf` con `Nulo` (en OAS 3.0.3 `nullable: true` sin `type` no admite `null`).
+          oneOf:
             - $ref: '#/components/schemas/ResumenCorreo'
+            - $ref: '#/components/schemas/Nulo'
         copia_oculta:
           type: string
           nullable: true
