@@ -3,7 +3,7 @@
 SQL Server 2019, schema `dbo_cotifly`. Esta carpeta tiene todo lo necesario para **crear la base de datos desde cero** y
 dejarla con la configuración inicial.
 
-> **Estado:** vigente · **Dueño:** Duban Guerra (backend); revisión de scripts: scalderon-bs y el DBA · **Actualizado:** 2026-10-15
+> **Estado:** vigente · **Dueño:** Duban Guerra (backend); revisión de scripts: scalderon-bs y el DBA · **Actualizado:** 2026-10-22
 
 ## Estado
 
@@ -12,7 +12,7 @@ dejarla con la configuración inicial.
   el `01` ya no crea las 2 vistas del borrador de métricas y el `08` las retira de las bases que ya las tienen.
 - **Verificación continua.** Las pruebas de integración (Testcontainers,
   `backend-dotnet/tests/Cotifly.Infraestructura.Tests/Persistencia/clsEsquemaTests.cs`) comprueban en cada corrida que la
-  instalación desde cero y las migraciones `0001` a `0010` (más el `02`, el `03`, el `pendientes/04`, el `05`, el `07`, el `08`, el `09`, el `10`, el `11`, el `12` y el `13`) dejan el mismo esquema, que el `0010` es
+  instalación desde cero y las migraciones `0001` a `0010` (más el `02`, el `03`, el `pendientes/04`, el `05`, el `06`, el `07`, el `08`, el `09`, el `10`, el `11`, el `12` y el `13`) dejan el mismo esquema, que el `0010` es
   idempotente y que el `0009` migra los datos del esquema anterior sin perder ajustes, correos ni auditoría.
 - **Scripts posteriores al `0010`** y lo que falta aprobar (aprobación, no prueba):
 
@@ -120,13 +120,13 @@ y los documentos, y el 06 estaba libre en `scripts/`); solo depende del `01`. Id
 (con varias réplicas volvería el duplicado en Nexo sin que nadie lo note). No necesita permisos nuevos (`cotifly_app` ya tiene
 `SELECT/INSERT/UPDATE/DELETE` sobre el esquema).
 
-**Orden completo** de una base nueva: `01` (o `0001` a `0010`), `02`, `03`, `pendientes/04`, `05`, `06`, `07`, `08`, `09`, `10` y `11`. El
-entorno local (`backend-dotnet/scripts/levantar-local.ps1` / `.sh`) aplica los ajustes `02` en adelante (hoy `02`, `03`, `05`, `06`, `07`,
-`08`, `09`, `10` y `11`) y el `pendientes/04` en ese orden en cada arranque (son idempotentes). Con el `03` aplicado el CHECK del motivo ya es el del
+**Orden completo** de una base nueva: `01` (o `0001` a `0010`), `02`, `03`, `pendientes/04`, `05`, `06`, `07`, `08`, `09`, `10`, `11`,
+`12` y `13`. El entorno local (`backend-dotnet/scripts/levantar-local.ps1` / `.sh`) aplica los ajustes `02` en adelante (hoy `02`, `03`,
+`05`, `06`, `07`, `08`, `09`, `10`, `11`, `12` y `13`) y el `pendientes/04` en ese orden en cada arranque (son idempotentes). Con el `03` aplicado el CHECK del motivo ya es el del
 `07` (sin el `07`, la sonda no da el aviso del `07`).
 
-**Orden del release 1021** sobre una base ya migrada (con #183 y #184): `03` → `pendientes/04` → `05` → `06` → `07` → `09` → `10` → `11`
-→ imagen → `08`. El `10` (rechazo de la línea) toma un bloqueo de esquema al reemplazar los CHECK de `estadoCosteo`: mejor en una ventana
+**Orden del release** sobre una base ya migrada: `03` → `pendientes/04` → `05` → `06` → `07` → `09` → `10` → `11` → `12` → `13` →
+imagen → `08`. El `10` (rechazo de la línea) toma un bloqueo de esquema al reemplazar los CHECK de `estadoCosteo`: mejor en una ventana
 de poco tráfico. Detalle para el DBA: `DEPLOY.md` §4.
 
 ## Estructura
@@ -164,13 +164,13 @@ las pruebas y el CI leen `migrations_mssql/`, y por eso esa carpeta no se movió
 
 ## Instalar desde cero
 
-Necesitas `sqlcmd` y permiso para crear schemas, tablas y vistas en la base.
+Necesitas `sqlcmd` y permiso para crear schemas, tablas e índices en la base.
 
 **Windows (PowerShell):**
 
 ```powershell
 cd db
-# Crea la base si no existe, el esquema (01 y 02) y los seeders:
+# Crea la base si no existe, el esquema (01 y los ajustes 02 a 13) y los seeders:
 .\ejecutar-bd.ps1 -Servidor localhost -Base dbCotifly -CrearBase
 
 # Con usuario de SQL Server en vez de autenticación de Windows:
@@ -237,7 +237,11 @@ día se corren contra otra base, hay que cambiar esa línea. No aplica a la inst
 
 1. Selecciona la base de datos destino arriba a la izquierda: los scripts corren sobre la que tengas seleccionada.
 2. Abre y ejecuta, en este orden: `scripts/01_crear_esquema.sql`, `scripts/02_alter_cubicador.sql`,
-   `scripts/06_idempotencia_captura.sql`, `scripts/07_motivo_busqueda_agotada.sql`, `scripts/08_retirar_vistas_actividad.sql`, `scripts/09_score_prioridad.sql`, `scripts/10_rechazo_linea.sql`, `scripts/11_peso_con_tara.sql`, `seeder/01_lineas_negocio.sql`, `seeder/02_sap_mapeo_trqtype.sql` y `seeder/03_roles.sql`.
+   `scripts/03_orden_vehiculo_y_conexo_catalogo.sql`, `scripts/pendientes/04_cubicacion_segundo_plano.sql` (solo con la aprobación
+   del DBA; el backend lo exige), `scripts/05_categoria_conexo.sql`, `scripts/06_idempotencia_captura.sql`,
+   `scripts/07_motivo_busqueda_agotada.sql`, `scripts/08_retirar_vistas_actividad.sql`, `scripts/09_score_prioridad.sql`,
+   `scripts/10_rechazo_linea.sql`, `scripts/11_peso_con_tara.sql`, `scripts/12_vehiculo_elegido.sql`,
+   `scripts/13_correo_mailsender.sql`, `seeder/01_lineas_negocio.sql`, `seeder/02_sap_mapeo_trqtype.sql` y `seeder/03_roles.sql`.
 3. Si `dbo_cotifly` ya tiene tablas, el `01` avisa y no crea nada. Si falla otro paso, mira el error antes de seguir con
    los siguientes.
 
@@ -246,6 +250,9 @@ día se corren contra otra base, hay que cambiar esa línea. No aplica a la inst
 ```
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/01_crear_esquema.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/02_alter_cubicador.sql
+sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/03_orden_vehiculo_y_conexo_catalogo.sql
+sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/pendientes/04_cubicacion_segundo_plano.sql   # con aprobación del DBA
+sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/05_categoria_conexo.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/06_idempotencia_captura.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/07_motivo_busqueda_agotada.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/08_retirar_vistas_actividad.sql
@@ -265,8 +272,8 @@ siguen ejecutando después de un error.
 
 ## Qué crea
 
-**Esquema** (`scripts/01_crear_esquema.sql`): 20 tablas en el schema `dbo_cotifly`, sin vistas (las 2 del borrador de métricas
-se retiraron en HU-014.3, #152).
+**Esquema** (`scripts/01_crear_esquema.sql` y los ajustes): 21 tablas en el schema `dbo_cotifly`, sin vistas: 20 del `01` y
+`CapturasIdempotentes` del `06` (las 2 vistas del borrador de métricas se retiraron en HU-014.3, #152).
 
 | Grupo | Tablas |
 |---|---|
@@ -275,6 +282,7 @@ se retiraron en HU-014.3, #152).
 | Conversación del agente | `Sesiones`, `EventosConversacion`, `EventosHerramienta` |
 | Cotizaciones | `CotizacionesSolicitud` (cabecera), `CotizacionLineasSolicitud` (ruta), `CotizacionVehiculosLineaSolicitud` (camiones), `CotizacionMercancias`, `CotizacionServiciosConexos`, `CotizacionArchivosLicitacion`, `CotizacionPdfsHistorial` |
 | Márgenes y correo | `MargenAjustes`, `Correos`, `CorreoDestinatarios` |
+| Idempotencia (`06`) | `CapturasIdempotentes` |
 
 El esquema vigente con su diagrama ER está en [`docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md`](../docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md)
 y el significado de cada columna en [`docs/database/DICCIONARIO_BASE_DE_DATOS.md`](../docs/database/DICCIONARIO_BASE_DE_DATOS.md).
@@ -322,10 +330,13 @@ Cambios pequeños al esquema que todavía no se consolidan en el `01`. Van como 
 | Script | HU | Qué cambia |
 |---|---|---|
 | `02_alter_cubicador.sql` | HU-023.3 (#158) | `CotizacionMercancias`: `idTipoMercancia` (uuid) se reemplaza por `codigoMercancia`. Camión (`CotizacionVehiculosLineaSolicitud`): `volumenTotalM3`, `porcentajeLlenadoVolumen` y `porcentajeLlenadoPeso` (0 a 100). Ruta (`CotizacionLineasSolicitud`): `idRecomendacion`, `resultadoCubicacion`, `motivoSinSeleccion` y `condicionada` |
+| `03_orden_vehiculo_y_conexo_catalogo.sql` | HU-023.3 (#158); HU-014 (#188) | Camión: `ordenVehiculo INT NULL` (CHECK ≥ 1, índice único filtrado por ruta; numera los camiones existentes). Conexo: `idServicioConexoCatalogo NVARCHAR(64) NULL`. Corrige el CHECK del motivo (el mismo del `07`). Idempotente, en una transacción. Obligatorio: el backend mapea las columnas |
+| `05_categoria_conexo.sql` | #173; HU-014 (#188) | `CotizacionServiciosConexos.categoriaServicioConexo NVARCHAR(20) NULL` (sin CHECK de valores). Idempotente. Obligatorio: el backend mapea la columna |
 | `06_idempotencia_captura.sql` | #191 (HU-026.1) | Tabla nueva `CapturasIdempotentes` (Idempotency-Key persistente) con su `UNIQUE (usuarioId, operacion, clave)`, CHECKs de estado y de JSON, e índices de vencimiento y de folio. Idempotente; recrea la tabla vacía de la propuesta de #173. Obligatorio: el backend la usa |
 | `07_motivo_busqueda_agotada.sql` | HU-023 (#176) | `ck_cotizacionLineasSolicitud_motivoSinSeleccion` admite los 5 motivos (`BUSQUEDA_AGOTADA`) y exige `ISNULL(resultadoCubicacion, '') = 'SIN_SELECCION_AUTOMATICA'`. Idempotente, DROP + ADD `WITH CHECK` en una transacción; se detiene sin tocar nada si alguna ruta tiene motivo sin `SIN_SELECCION_AUTOMATICA` |
 | `08_retirar_vistas_actividad.sql` | HU-014.3 (#152) | `DROP VIEW` de `vActividadPorComercial` y `vAjustesMargenPorComercial` (borrador de métricas retirado), cada uno solo si la vista existe. No toca tablas ni datos |
 | `09_score_prioridad.sql` | HU-018.1 (#155) | `CotizacionesSolicitud.scorePrioridad DECIMAL(9,4) NULL` (el `scorePrioridad` de Nexo). Idempotente, `ADD` de columna NULL en una transacción. Obligatorio: el backend mapea la columna |
+| `10_rechazo_linea.sql` | HU-028.2 (#182) / HU-028.1 (#183) | Camión: `motivoRechazo NVARCHAR(500) NULL` y `rechazadaAt DATETIMEOFFSET NULL` con el CHECK `ck_cotizacionVehiculosLineaSolicitud_rechazo`; `'rechazada'` en los tres CHECK de `estadoCosteo` (8 estados). Idempotente, en una transacción. Obligatorio: el backend mapea las columnas |
 | `11_peso_con_tara.sql` | HU-030.1 (#184) | `CotizacionLineasSolicitud.pesoConTaraKg DECIMAL(12,2) NULL` con el CHECK `ck_cotizacionLineasSolicitud_pesoConTaraKg` (> 0): el peso con tara de una ruta `Contenedor`. Idempotente, `ADD` de columna NULL en una transacción. Obligatorio: el backend mapea la columna |
 | `12_vehiculo_elegido.sql` | HU-032 (#197) | `CotizacionLineasSolicitud.tipoVehiculoElegido`/`carroceriaElegida NVARCHAR(100) NULL` y `CotizacionMercancias.largoCm/anchoCm/altoCm` NULL con el CHECK `ck_cotizacionPosiciones_medidas` (las tres NULL o las tres > 0). Idempotente, en una transacción. Obligatorio: el backend mapea las columnas |
 | `13_correo_mailsender.sql` | HU-033 (#199) | `Correos`: `idMailSender`, `redirigidoA`, `intentosEntrega`, `enviadoAt`, `estadoActualizadoAt`, `siguienteConsultaAt`, `encoladoAt` (NULL) con los índices filtrados `ix_correos_siguienteConsultaAt` y `ux_correos_idMailSender` y el CHECK `ck_correos_estado`; `CotizacionesSolicitud`: `sincronizacionResultadoNexo` (CHECK), `comentarioResultadoPendiente`, `resultadoSincronizadoAt`, `errorSincronizacionResultado` (NULL) e `intentosSincronizacionResultado` (NOT NULL DEFAULT 0, CHECK ≥ 0). Idempotente. Obligatorio: el backend mapea las columnas |
@@ -347,7 +358,7 @@ Contra una base vacía **local o de pruebas, nunca la compartida**:
 .\ejecutar-bd.ps1 -Servidor localhost -Base dbCotifly_prueba -CrearBase
 ```
 
-El resumen final debe mostrar 20 tablas, 6 líneas de negocio, 5 mapeos SAP TM y 2 roles. Al final del
-`02_alter_cubicador.sql` hay una consulta para comprobar sus 8 columnas. Para comprobar que quedó igual que
-una base migrada, aplicar en otra base vacía `db/migrations_mssql/0001` a `0010` más el `02` y comparar columnas (por ejemplo con
-`INFORMATION_SCHEMA.COLUMNS`) entre las dos.
+El resumen final debe mostrar 21 tablas (las 20 del `01` y `CapturasIdempotentes` del `06`), 6 líneas de negocio, 5 mapeos SAP TM y
+2 roles. Al final de cada ajuste (`02` a `13`) hay una consulta para comprobar sus columnas. Para comprobar que quedó igual que
+una base migrada, aplicar en otra base vacía `db/migrations_mssql/0001` a `0010` más los ajustes `02` a `13` (y `pendientes/04` en
+las dos) y comparar columnas (por ejemplo con `INFORMATION_SCHEMA.COLUMNS`) entre las dos.

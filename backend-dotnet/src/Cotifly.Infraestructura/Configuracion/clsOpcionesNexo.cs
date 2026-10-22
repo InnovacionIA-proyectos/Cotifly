@@ -101,8 +101,9 @@ public sealed class clsOpcionesNexo : IValidatableObject
     }
 
     /// <summary>
-    /// Minutos que se reutiliza en memoria el catálogo de municipios de Nexo (HU-005.13: cambia muy poco y el agente lo consulta
-    /// en cada <c>resolver_municipio</c>). Solo se guardan respuestas exitosas; <c>0</c> desactiva la caché. Por defecto 60.
+    /// Minutos que se reutiliza en memoria el catálogo de municipios de Nexo (HU-005.13: cambia muy poco; lo consultan
+    /// <c>GET /web/municipios</c> y la validación de la captura y de licitaciones; la herramienta <c>resolver_municipio</c> se retiró con
+    /// el agente legado en HU-013.9, #105). Solo se guardan respuestas exitosas; <c>0</c> desactiva la caché. Por defecto 60.
     /// </summary>
     [Range(0, 1440)]
     public int MinutosCacheMunicipios { get; set; } = 60;

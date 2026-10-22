@@ -190,7 +190,7 @@ SqlcmdArchivo 'master' '/sql/dev-01-bases.sql'
 # backend mapea sus columnas, sin ellos /health/ready da 503 "falta 09", "falta 10" o "falta 11"), en orden de nombre,
 # igual que db/ejecutar-bd.*: cada uno revisa si su cambio ya está, así que se pueden repetir.
 # De db/scripts/pendientes/ solo entra el 04_cubicacion_segundo_plano.sql (HU-023.5, el backend mapea sus columnas: sin él
-# /health/ready da 503 "falta 04"), intercalado por nombre: queda 02, 03, pendientes/04, 05, 06, 07, 08, 09, 10, 11. El resto de pendientes/ no se corre.
+# /health/ready da 503 "falta 04"), intercalado por nombre: queda 02, 03, pendientes/04, 05, 06, 07, 08, 09, 10, 11, 12, 13. El resto de pendientes/ no se corre.
 $tablas = SqlcmdEscalar 'dbTarifario_Nexo_Pruebas' "SELECT COUNT(*) FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.name = 'dbo_cotifly'"
 $viejo = SqlcmdEscalar 'dbTarifario_Nexo_Pruebas' "SELECT CASE WHEN OBJECT_ID(N'dbo_cotifly.Cotizaciones', N'U') IS NULL THEN 0 ELSE 1 END"
 if ($tablas -eq '0') {

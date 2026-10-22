@@ -39,7 +39,7 @@ flowchart LR
     end
     sap[SAP TM<br/>export JSON u OData]
     llm[Proveedor LLM]
-    smtp[Relay SMTP interno]
+    mails[MailSender<br/>microservicio interno de correo]
     nexo[Nexo<br/>clientes, municipios, catálogos, cubicación]
     pdfs[(Volumen /data/pdfs)]
 
@@ -49,7 +49,7 @@ flowchart LR
     api --> dbi
     api --> sap
     api --> llm
-    api --> smtp
+    api -- "HTTP POST /api/v1/emails" --> mails
     api -- "HTTPS con X-Portal-clsUsuario-Id" --> nexo
     api --> pdfs
 ```
@@ -290,7 +290,7 @@ Diferencias deliberadas con el Python:
 - **Trazabilidad:** costo, márgenes, precio y origen llegan en `clsTrazabilidadCotizacion` desde el estado de la conversación, no del payload del LLM (`_datos_trazabilidad`).
 - **Variante multi:** usa el prefijo `US$` de la moneda de cada fila (el `money()` de `armar_multi.py` lo ignoraba).
 - **Almacén:** la lectura por referencia solo toma el nombre del archivo (el Python leía cualquier ruta local existente guardada en `pdfPath`).
-- **Correo:** `estadoEnvio` pasa a `reenviada`; la deduplicación se serializa por cotización dentro del proceso; `wscorreos` y `smtp` no se portan hasta confirmar el transporte (D3); `Correo:Habilitado=false` por defecto responde `CORREO_DESHABILITADO` (el Python ocultaba la herramienta).
+- **Correo:** `estadoEnvio` pasa a `reenviada`; la deduplicación se serializa por cotización dentro del proceso; el transporte es el microservicio MailSender (HU-033, ADR-023; `wscorreos`, `smtp` y `smtp_relay` se retiraron); `Correo:Habilitado=false` por defecto responde `CORREO_DESHABILITADO` (el Python ocultaba la herramienta).
 - **Incluye itemizado:** con `servicios_conexos` se lista el flete (origen y destinos) y cada servicio con su precio. Nexo (HU-005) todavía no entrega el costeo desglosado por servicio: mientras tanto los envía el formulario, y sin ellos queda el texto estándar.
 
 ## 2.9 Identidad: login SSO con verificación doble

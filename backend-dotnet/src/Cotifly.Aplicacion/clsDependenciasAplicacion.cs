@@ -108,8 +108,9 @@ public static class clsDependenciasAplicacion
 
         // Captura por rutas (HU-021.6): validación común al formulario y a la licitación y el punto de extensión de los camiones. El
         // planificador (HU-021.5, #133) crea un camión por fila de la recomendación del cubicador (IClsCubicador, lo registra
-        // Infraestructura) y, sin cubicador o si falla, un camión sin vehículo por ruta (respaldo). Scoped: recuerda en la petición que el
-        // cubicador falló. TryAdd: un planificador registrado antes (pruebas) se respeta.
+        // Infraestructura) y, sin cubicador, si falla, si no selecciona vehículo o si la ruta no tiene mercancías cubicables, un camión por
+        // ruta con el vehículo elegido por el comercial o, sin él, sin vehículo (respaldo, HU-032 #197). Scoped: recuerda en la petición
+        // que el cubicador falló. TryAdd: un planificador registrado antes (pruebas) se respeta.
         servicios.AddScoped<IClsCapturaRutasService, clsCapturaRutasService>();
         servicios.TryAddScoped<Costeo.Interfaces.IClsPlanificadorCamiones, clsPlanificadorCamionesCubicador>();
 

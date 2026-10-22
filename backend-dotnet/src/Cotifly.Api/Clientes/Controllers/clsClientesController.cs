@@ -18,7 +18,7 @@ public sealed class clsClientesController(IClsContextoUsuario usuario, IClsDesti
 
     /// <summary>
     /// 200 <c>ResultadoBusquedaClientes</c>: el mismo catálogo de Nexo (clientes y prospectos) que consume el formulario de
-    /// captura y la herramienta <c>buscar_cliente</c> del agente (HU-005.2, ADR-005). 400 si falta <c>q</c>. 503
+    /// captura (HU-005.2, ADR-005; la herramienta <c>buscar_cliente</c> se retiró con el agente legado en HU-013.9, #105). 400 si falta <c>q</c>. 503
     /// <c>CLIENTE_BUSQUEDA_NO_DISPONIBLE</c> si Nexo no está configurado (<c>Nexo:UrlBase</c> vacía) o no respondió (OBS-1021B-3: antes
     /// 400), como los demás catálogos de Nexo.
     /// </summary>

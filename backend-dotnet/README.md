@@ -1,6 +1,6 @@
 # Cotifly — backend .NET 10
 
-> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-15
+> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-22
 
 Backend de Cotifly, el bot cotizador de Botero Soto, en C# / .NET 10 (milestone HU-003). Un comercial captura la solicitud en la consola web de ClientePro; Nexo costea, el backend resuelve margen y precio, genera el PDF y lo envía por correo, y la IA solo redacta textos y asiste sobre una cotización ya hecha ([ADR-018](specs/decisiones/ADR-018-pipeline-determinista-ia-etapa-final.md)). Google Chat y el agente cotizador conversacional se retiraron en HU-013.9 (#105). Reemplazó al bot anterior en Python (corte big-bang, [ADR-001](specs/decisiones/ADR-001-estrategia-de-corte.md)), que se retiró del repositorio en HU-022.1 (tag `python-final`).
 
@@ -49,11 +49,11 @@ En Linux, macOS o Git Bash: `sh backend-dotnet/scripts/levantar-local.sh` (y `--
 | [QA: matriz HU-021](docs/qa/MATRIZ_PRUEBAS_HU021.md) y [matriz HU-023](docs/qa/MATRIZ_PRUEBAS_HU023.md) | Registro de las campañas de pruebas de HU-021 y HU-023 |
 | [QA: regresión manual](docs/qa/regresion-manual.md) | Casos de los 3 flujos principales para la ronda de Kevin (HU-003.8) |
 | [QA: paridad Python vs .NET](../docs/archivo/paridad-python-dotnet.md) | HU-003.9 (#15): cerrada por decisión del usuario (2026-10-13, HU-022.1): el Python se retiró del repositorio (tag `python-final`), así que ya no hay contra qué comparar. Se conserva como histórico |
-| [Decisiones (ADR)](specs/decisiones/README.md) | ADR-001 a ADR-020 |
+| [Decisiones (ADR)](specs/decisiones/README.md) | ADR-001 a ADR-023 |
 
 ## Convenciones en una línea
 
-Clases `cls*` e interfaces `ICls*` (el build falla si no), tablas PascalCase y columnas camelCase, esquema solo por scripts `db/migrations_mssql/000N_*.sql` (nunca migraciones EF), toda versión NuGet en `Directory.Packages.props`, cero warnings, ningún secreto en `appsettings*.json`, un cambio de contrato empieza en `specs/openapi.yaml`, y cada cambio de comportamiento trae su prueba ([ADR-010](specs/decisiones/ADR-010-metodologia-sdd-tdd-bdd.md)). Detalle en [docs/02-arquitectura.md](docs/02-arquitectura.md#24-convenciones-de-nombres).
+Clases `cls*` e interfaces `ICls*` (el build falla si no), tablas PascalCase y columnas camelCase, esquema solo por scripts SQL (migraciones `db/migrations_mssql/000N_*.sql` y ajustes `db/scripts/NN_*.sql`; nunca migraciones EF), toda versión NuGet en `Directory.Packages.props`, cero warnings, ningún secreto en `appsettings*.json`, un cambio de contrato empieza en `specs/openapi.yaml`, y cada cambio de comportamiento trae su prueba ([ADR-010](specs/decisiones/ADR-010-metodologia-sdd-tdd-bdd.md)). Detalle en [docs/02-arquitectura.md](docs/02-arquitectura.md#24-convenciones-de-nombres).
 
 ## Integración continua
 

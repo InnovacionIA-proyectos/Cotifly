@@ -1,6 +1,6 @@
 # Base de datos — Cotifly
 
-> **Estado:** vigente desde HU-021 · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-15 (HU-023 y HU-022.1)
+> **Estado:** vigente desde HU-021 · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-22 (ajustes `02` a `13`, HU-033)
 
 Punto de entrada a la base de datos de Cotifly: motor, esquema, scripts y dónde está cada detalle.
 
@@ -10,10 +10,12 @@ Punto de entrada a la base de datos de Cotifly: motor, esquema, scripts y dónde
   (`tbsdatacenter`).
 - **Acceso desde el código:** EF Core *Database First* en el backend .NET
   (`backend-dotnet/src/Cotifly.Infraestructura/Comun/Persistence/`). No hay migraciones de EF: el esquema solo cambia con
-  scripts `db/migrations_mssql/000N_*.sql` (ADR-008).
+  scripts SQL (ADR-008): las migraciones `db/migrations_mssql/0001` a `0010` y los ajustes `db/scripts/02` a `13` (más
+  `db/scripts/pendientes/04`).
 - **Qué guarda:** la trazabilidad de cada cotización (rutas, camiones, costos de Nexo, margen, precio, PDF, correo y
   resultado), la identidad interna y la auditoría. No es el ERP: Nexo, SAP TM y el cubicador son fuentes externas.
-- **20 tablas, sin vistas** (las 2 del borrador de métricas se retiraron en HU-014.3, #152, con `db/scripts/08`).
+- **21 tablas, sin vistas:** las 20 que crea el `01` (o el `0001` a `0010`) y `CapturasIdempotentes` del `db/scripts/06` (las 2
+  vistas del borrador de métricas se retiraron en HU-014.3, #152, con `db/scripts/08`).
 
 | Documento | Qué tiene |
 |---|---|
@@ -111,6 +113,7 @@ El diagrama completo, con todas las columnas y el resto de tablas, está en
 | Configuración | `MargenesPolitica` (líneas de negocio), `SapMapeoTrqType` |
 | Identidad | `UsuariosWeb`, `Roles`, `UsuariosRoles`, `TokensRefresco`, `TokensRevocados` |
 | Asistente y auditoría | `Sesiones`, `EventosConversacion`, `EventosHerramienta` |
+| Idempotencia | `CapturasIdempotentes` (claves `Idempotency-Key` persistentes, `db/scripts/06`, #191) |
 
 ## 4. Scripts
 
@@ -123,6 +126,7 @@ El diagrama completo, con todas las columnas y el resto de tablas, está en
 | `db/scripts/02_alter_cubicador.sql` | HU-023.3: columnas de resultado de la cubicación y `codigoMercancia` en lugar de `idTipoMercancia`. Idempotente; el ejecutador lo corre después del `01` |
 | `db/scripts/03_orden_vehiculo_y_conexo_catalogo.sql` | HU-023.3 (#158), mapeado en HU-014 (#188): `ordenVehiculo` del camión (índice único filtrado por ruta), `idServicioConexoCatalogo` del conexo y el CHECK del motivo del `07`. Obligatorio: sin él `/health/ready` responde "falta 03". Se aplica antes de la imagen |
 | `db/scripts/05_categoria_conexo.sql` | #173, mapeado en HU-014 (#188): `categoriaServicioConexo` del conexo. Obligatorio: sin él `/health/ready` responde "falta 05". Se aplica antes de la imagen |
+| `db/scripts/06_idempotencia_captura.sql` | #191 (HU-026.1): tabla `CapturasIdempotentes` (claves `Idempotency-Key` persistentes entre réplicas y reinicios). Obligatorio: la API no degrada a memoria; sin él `/health/ready` responde "falta 06". Se aplica antes de la imagen |
 | `db/scripts/07_motivo_busqueda_agotada.sql` | HU-023 (#176): quinto motivo `BUSQUEDA_AGOTADA` en el CHECK del motivo. Idempotente |
 | `db/scripts/08_retirar_vistas_actividad.sql` | HU-014.3 (#152): `DROP VIEW` de `vActividadPorComercial` y `vAjustesMargenPorComercial` si existen. Idempotente; lo aplica el DBA después de desplegar el backend sin el borrador de métricas |
 | `db/scripts/09_score_prioridad.sql` | HU-018.1 (#155): `CotizacionesSolicitud.scorePrioridad DECIMAL(9,4) NULL` (el `scorePrioridad` de Nexo). Obligatorio: el backend mapea la columna; sin él `/health/ready` responde "falta 09". Se aplica antes de la imagen |
@@ -130,16 +134,16 @@ El diagrama completo, con todas las columnas y el resto de tablas, está en
 | `db/scripts/11_peso_con_tara.sql` | HU-030.1 (#184): `CotizacionLineasSolicitud.pesoConTaraKg DECIMAL(12,2) NULL` con su CHECK (> 0): el peso con tara de una ruta `Contenedor`. Obligatorio: el backend mapea la columna; sin él `/health/ready` responde "falta 11". Se aplica antes de la imagen |
 | `db/scripts/12_vehiculo_elegido.sql` | HU-032 (#197): el vehículo elegido de la ruta (`tipoVehiculoElegido`, `carroceriaElegida`, NVARCHAR(100) NULL) y las medidas de la mercancía en NULL (CHECK: las tres NULL o las tres > 0). Obligatorio: el backend mapea las columnas; sin él `/health/ready` responde "falta 12". Se aplica antes de la imagen |
 | `db/scripts/13_correo_mailsender.sql` | HU-033 (#199, ADR-023): en `Correos`, el seguimiento de MailSender (`idMailSender` con índice único filtrado, `redirigidoA`, `intentosEntrega`, `enviadoAt`, `estadoActualizadoAt`, `siguienteConsultaAt` con índice filtrado, `encoladoAt`) y el CHECK `ck_correos_estado` (`encolado`, `enviando`, `enviado`, `fallido`); en `CotizacionesSolicitud`, el resultado diferido a Nexo (`sincronizacionResultadoNexo` con CHECK, `comentarioResultadoPendiente`, `resultadoSincronizadoAt`, `errorSincronizacionResultado`, `intentosSincronizacionResultado`). Obligatorio: el backend mapea las columnas; sin él `/health/ready` responde "falta 13". Se aplica antes de la imagen |
-| `db/scripts/pendientes/04` y `06` | Propuestas pendientes de revisión de scalderon-bs y del DBA (cubicación en segundo plano e idempotencia de la captura). El ejecutador no las corre. El backend mapea el `04` (sin él, "falta 04") |
+| `db/scripts/pendientes/04_cubicacion_segundo_plano.sql` | HU-023.5 (#160): cola de la cubicación de la licitación en segundo plano. Propuesta pendiente de revisión de scalderon-bs y del DBA; el ejecutador no la corre (`levantar-local` sí, en local). El backend la mapea: sin ella, "falta 04" |
 | `db/scripts/operacion/` | Scripts de datos de una sola vez (identidad compartida con Nexo, rol comercial). Los corre el DBA con aprobación |
 
 Detalle de cada script en [`ESQUEMA_OBJETIVO_SQLSERVER.md`](docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md) §A.5.
 
-**Precondición para desplegar el backend:** `0001` a `0010`, el `02`, el `03`, el `pendientes/04`, el `05`, el `06`, el `09`, el `10` y el `11`
-aplicados (o la instalación desde cero con el ejecutador, más el `04`). Si falta algo, `/health/ready` responde `503` y dice qué falta
-(`falta 0009`, `falta 0010`, `falta 02`, `falta 03`, `falta 04`, `falta 05`, `falta 06`, `falta 09`, `falta 10`, `falta 11`,
-`falta Tabla.columna`; ver [`DEPLOY.md`](DEPLOY.md) §4.5). Orden del release 1021: `03` → `pendientes/04` → `05` → `06` → `07` → `09` →
-`10` → `11` → imagen → `08`.
+**Precondición para desplegar el backend:** `0001` a `0010`, el `02`, el `03`, el `pendientes/04`, el `05`, el `06`, el `09`, el `10`,
+el `11`, el `12` y el `13` aplicados (o la instalación desde cero con el ejecutador, más el `04`). Si falta algo, `/health/ready` responde
+`503` y dice qué falta (`falta 0002`, `falta 0009`, `falta 0010`, `falta 02`, `falta 03`, `falta 04`, `falta 05`, `falta 06`, `falta 09`,
+`falta 10`, `falta 11`, `falta 12`, `falta 13`, `falta Tabla.columna`; ver [`DEPLOY.md`](DEPLOY.md) §4.5). Orden del release: `03` →
+`pendientes/04` → `05` → `06` → `07` → `09` → `10` → `11` → `12` → `13` → imagen → `08`.
 
 ## 5. Cómo acceder
 
@@ -158,7 +162,7 @@ de pruebas están en [`DEPLOY.md`](DEPLOY.md) §6.
 
 | Pendiente | Quién lo resuelve |
 |---|---|
-| Revisión del `0010` y de `db/scripts/pendientes/04` y `06` | scalderon-bs y el DBA |
+| Revisión del `0010` y de `db/scripts/pendientes/04` | scalderon-bs y el DBA |
 | Confirmar que el `03` y el `05` están aplicados en la base compartida y en cada ambiente antes de la imagen de #188 (consulta en [`DEPLOY.md`](DEPLOY.md) §4.5) | DBA |
 | `TrqType` de SAP TM para `DevolucionContenedor` (falta en `db/seeder/02_sap_mapeo_trqtype.sql`; no se inventa) | Negocio o SAP |
 | Fijar `Roles.idRolExterno` de los roles de ClientePro en cada ambiente (`db/seeder/03_roles.sql`) | DBA |

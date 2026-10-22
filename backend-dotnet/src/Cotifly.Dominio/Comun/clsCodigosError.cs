@@ -89,8 +89,8 @@ public static class clsCodigosError
     public const string ErrorInterno = "ERROR_INTERNO";
 
     /// <summary>
-    /// La búsqueda de clientes (HU-005.2, endpoint de Nexo) aún no está conectada (ADR-005): el agente sigue sin cliente resuelto.
-    /// Código nuevo del backend .NET (#12).
+    /// La búsqueda de clientes de Nexo (HU-005.2, ADR-005; <c>clsBuscadorClientesNexo</c>) no está disponible: <c>Nexo:UrlBase</c> vacía o
+    /// Nexo no respondió. <c>GET /web/clientes</c> responde 503. Código nuevo del backend .NET (#12).
     /// </summary>
     public const string ClienteBusquedaNoDisponible = "CLIENTE_BUSQUEDA_NO_DISPONIBLE";
 

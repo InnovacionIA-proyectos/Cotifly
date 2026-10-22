@@ -53,8 +53,11 @@ public sealed record clsResultadoTurno(
 }
 
 /// <summary>
-/// Nombres de las herramientas del plugin <c>cotizador</c> tal como las ve el modelo (los del Python, en snake_case). Los
-/// parámetros van en camelCase (firma unificada del plan: <c>lineaNegocio</c>, <c>pesoKg</c>...).
+/// Nombres de las herramientas tal como las ve el modelo (los del Python, en snake_case). Los parámetros van en camelCase (firma
+/// unificada del plan: <c>lineaNegocio</c>, <c>pesoKg</c>...). El agente cotizador legado (plugin <c>cotizador</c>) se retiró en
+/// HU-013.9 (#105): de sus herramientas, <c>buscar_cliente</c>, <c>resolver_municipio</c>, <c>buscar_tarifa</c> y
+/// <c>obtener_margen</c> ya no se registran; <c>consultar_cotizacion</c> la usa el asistente por folio y otras se citan en las
+/// acciones sugeridas.
 /// </summary>
 public static class clsNombresHerramientas
 {

@@ -20,7 +20,8 @@ public interface IClsCapturaRutasService
     /// Todas las validaciones que dependen de catálogos o que solo aplican a una captura nueva, acumuladas sobre
     /// <paramref name="erroresPrevios"/> (los de forma y rango que ya calculó el llamador): forma de los conexos, códigos de catálogo,
     /// municipios (origen, destino y ciudades del contenedor: id y nombre, nunca adivina), <see cref="clsLineaSolicitudCosteo.ErroresCaptura"/>
-    /// y, con el catálogo del cubicador disponible, que cada <c>id_tipo_mercancia</c> exista (<c>TIPO_MERCANCIA_INEXISTENTE</c>, HU-021.5).
+    /// y, con el catálogo del cubicador disponible, que cada <c>codigo_mercancia</c> esté activo y sea cubicable (HU-023.3) o que el
+    /// <c>id_tipo_mercancia</c> obsoleto exista (<c>TIPO_MERCANCIA_INEXISTENTE</c>, HU-021.5).
     /// Devuelve las rutas con los municipios resueltos, todos los errores (encabezado primero, luego por ruta) y, si un catálogo de Nexo
     /// no respondió, ese error.
     /// </summary>
@@ -32,7 +33,7 @@ public interface IClsCapturaRutasService
 
     /// <summary>
     /// Arma las rutas ya validadas: el id de cada ruta (viaja al cubicador), el nombre de cada mercancía copiado del catálogo del cubicador
-    /// por su <c>id_tipo_mercancia</c> (HU-021.5; sin catálogo, el que mandó el cliente), sus conexos con el costo unitario del catálogo de
+    /// por su <c>codigo_mercancia</c> (o el <c>id_tipo_mercancia</c> obsoleto; HU-021.5; sin catálogo, el que mandó el cliente), sus conexos con el costo unitario del catálogo de
     /// Nexo como precio (decisión 3) y sus camiones (<see cref="IClsPlanificadorCamiones"/>). Un conexo que no está en el catálogo es un error de su ruta
     /// (<c>CONEXO_NO_ENCONTRADO</c>); Nexo caído o el planificador sin respuesta son <see cref="clsRutasPreparadas.Error"/>.
     /// Con <paramref name="cubicarDespues"/> (HU-023.5, #160: licitación con cubicador) no se llama al planificador: cada ruta queda con
