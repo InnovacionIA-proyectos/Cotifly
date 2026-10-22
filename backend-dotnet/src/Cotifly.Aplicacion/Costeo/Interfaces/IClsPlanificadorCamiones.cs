@@ -28,4 +28,16 @@ public interface IClsPlanificadorCamiones
     Task<clsResultado<clsPlanRuta>> PlanificarEnSegundoPlanoAsync(
         Guid usuarioId, Guid rutaId, clsLineaSolicitudCosteo ruta, CancellationToken cancellationToken = default) =>
         PlanificarAsync(usuarioId, rutaId, ruta, cancellationToken);
+
+    /// <summary>
+    /// Endurecimiento B (#199, HU-032, ADR-022): el RESPALDO de una ruta que iba al cubicador y este no respondió, SIN llamar al cubicador:
+    /// lo que aplica <c>POST /web/licitaciones/{folio}/cubicacion/reintentar</c> con <c>usar_respaldo = true</c>, igual que el camino en
+    /// segundo plano. Un camión con el vehículo elegido de <paramref name="ruta"/> validado contra Nexo y el aviso
+    /// <c>VEHICULO_ELEGIDO_USADO</c> (o, si no es un código de Nexo, sin vehículo con <c>VEHICULO_ELEGIDO_INVALIDO</c>); sin elegido, sin
+    /// vehículo. Por defecto, el camión sin vehículo con el peso de la ruta.
+    /// </summary>
+    Task<clsResultado<clsPlanRuta>> PlanificarRespaldoAsync(
+        Guid usuarioId, Guid rutaId, clsLineaSolicitudCosteo ruta, CancellationToken cancellationToken = default) =>
+        Task.FromResult(clsResultado<clsPlanRuta>.Exito(
+            new clsPlanRuta([new clsCamionPlaneado(null, null, Services.clsPlanificadorCamionSinVehiculo.PesoTotal(ruta))])));
 }

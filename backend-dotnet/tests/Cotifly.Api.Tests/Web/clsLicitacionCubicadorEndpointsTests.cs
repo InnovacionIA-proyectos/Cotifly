@@ -335,6 +335,39 @@ public sealed class clsLicitacionCubicadorEndpointsTests : IDisposable
         _nexo.UltimaAlta!["lineas"]!.AsArray().Should().ContainSingle().Which!["tipoVehiculo"].Should().BeNull();
     }
 
+    /// <summary>
+    /// Endurecimiento B (#199, HU-032, ADR-022): <c>usar_respaldo = true</c> sobre una ruta caída aplica el vehículo ELEGIDO de la ruta, como
+    /// el camino en segundo plano: válido en Nexo → el camión lo lleva con <c>VEHICULO_ELEGIDO_USADO</c>; inválido → sin vehículo con
+    /// <c>VEHICULO_ELEGIDO_INVALIDO</c>. Antes aceptaba el camión provisional sin vehículo. Sin volver a llamar al cubicador.
+    /// </summary>
+    [Theory]
+    [InlineData("3S3", "3S3", "VEHICULO_ELEGIDO_USADO")]
+    [InlineData("XYZ", null, "VEHICULO_ELEGIDO_INVALIDO")]
+    public async Task ConRespaldoLaCaidaUsaElVehiculoElegidoDeLaRuta(string elegido, string? final, string aviso)
+    {
+        _cubicador.Caido = HttpStatusCode.ServiceUnavailable;
+        var api = Api(extra: new() { ["Cubicador:RespaldoSiFalla"] = "false", ["Cubicador:MaximoIntentos"] = "1" });
+        var sesion = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var cuerpo = JsonNode.Parse(Licitacion(1))!;
+        cuerpo["lineas"]![0]!["tipo_vehiculo"] = elegido;
+        using var envio = await api.EnviarAsync(_post, Ruta, sesion.Access, cuerpo.ToJsonString());
+        var folio = (await VerificarContratoAsync(envio, Ruta, _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+        await api.ProcesarCubicacionAsync(folio);
+        (await LicitacionAsync(api, sesion, folio)).GetProperty("lineas")[0].GetProperty("estado_cubicacion").GetString().Should().Be("fallida");
+        var llamadas = _cubicador.Recomendaciones.Count;
+
+        using var respaldo = await api.EnviarAsync(_post, $"{Ruta}/{folio}/cubicacion/reintentar", sesion.Access, """{"usar_respaldo":true}""");
+
+        Progreso(await VerificarContratoAsync(respaldo, "/web/licitaciones/{folio}/cubicacion/reintentar", _post, HttpStatusCode.OK))
+            .Should().Be(("completa", 1, 1, 0, 0));
+        _cubicador.Recomendaciones.Should().HaveCount(llamadas, "el respaldo no vuelve a llamar al cubicador");
+        _nexo.UltimaAlta!["lineas"]!.AsArray().Should().ContainSingle().Which!["tipoVehiculo"]?.GetValue<string>().Should().Be(final);
+        using var costeo = await api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", sesion.Access);
+        (await VerificarContratoAsync(costeo, "/web/cotizaciones/{folio}/costeo", _get, HttpStatusCode.OK)).GetProperty("rutas")[0]
+            .GetProperty("avisos_cubicacion").GetProperty("advertencias").EnumerateArray().Select(a => a.GetProperty("codigo").GetString())
+            .Should().Equal(aviso);
+    }
+
     [Fact]
     public async Task DosReplicasNoRepitenNingunaRutaNiPasanElLimiteGlobalYEnvianANexoUnaSolaVez()
     {

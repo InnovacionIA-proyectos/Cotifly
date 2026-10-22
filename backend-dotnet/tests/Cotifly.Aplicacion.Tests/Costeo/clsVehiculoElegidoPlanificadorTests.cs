@@ -183,6 +183,44 @@ public sealed class clsVehiculoElegidoPlanificadorTests
         aviso.VehiculosFinales.Should().Equal(new clsVehiculoAviso(null, null));
     }
 
+    // --- Endurecimiento B (#199): el respaldo sin llamar al cubicador (usar_respaldo de la licitación) ---
+
+    [Fact]
+    public async Task ElRespaldoSinCubicadorUsaElElegidoValidadoConSuAvisoYNoLlamaAlCubicador()
+    {
+        var plan = (await Planificador().PlanificarRespaldoAsync(_usuario, _rutaId, Cubicable() with { PesoKg = 12_000m }, Ct)).Valor;
+
+        plan.Camiones.Should().Equal(new clsCamionPlaneado("2S2", "FURGON", 12_000m));
+        plan.Cubicacion.Should().BeNull();
+        var aviso = plan.Avisos.Should().ContainSingle().Subject;
+        aviso.Codigo.Should().Be(clsAvisosVehiculo.ElegidoUsado);
+        aviso.Mensaje.Should().StartWith(clsPlanificadorCamionesCubicador.CausaNoDisponible);
+        await _cubicador.DidNotReceiveWithAnyArgs().RecomendarAsync(default!, Ct);
+    }
+
+    [Fact]
+    public async Task ElRespaldoSinCubicadorConUnElegidoQueNoEsDeNexoVaSinVehiculoConElAviso()
+    {
+        _catalogos.ValidarLineasAsync(Arg.Any<Guid>(), Arg.Any<IReadOnlyList<clsLineaSolicitudCosteo>>(), Arg.Any<CancellationToken>())
+            .Returns(new clsValidacionCatalogoLineas([[new clsErrorCampo("tipo_vehiculo", clsCodigosLineaSolicitud.CodigoNoCatalogo, "no")]], null));
+
+        var plan = (await Planificador().PlanificarRespaldoAsync(_usuario, _rutaId, Cubicable() with { TipoVehiculo = "XYZ" }, Ct)).Valor;
+
+        plan.Camiones.Should().ContainSingle().Which.Should().Match<clsCamionPlaneado>(c => c.TipoVehiculo == null && c.Carroceria == null);
+        plan.Avisos.Should().ContainSingle().Which.Codigo.Should().Be(clsAvisosVehiculo.ElegidoInvalido);
+        await _cubicador.DidNotReceiveWithAnyArgs().RecomendarAsync(default!, Ct);
+    }
+
+    [Fact]
+    public async Task ElRespaldoSinCubicadorNiElegidoVaSinVehiculoYSinAviso()
+    {
+        var plan = (await Planificador().PlanificarRespaldoAsync(_usuario, _rutaId, Cubicable() with { TipoVehiculo = null, Carroceria = null }, Ct)).Valor;
+
+        plan.Camiones.Should().ContainSingle().Which.TipoVehiculo.Should().BeNull();
+        plan.Avisos.Should().BeNull();
+        await _catalogos.DidNotReceiveWithAnyArgs().ValidarLineasAsync(default, default!, Ct);
+    }
+
     [Fact]
     public async Task SinSeleccionConSoloLaCarroceriaInvalidaVaElTipoSinCarroceria()
     {

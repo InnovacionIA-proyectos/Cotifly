@@ -498,17 +498,22 @@ public sealed partial class clsCotizacionSolicitud
 
     /// <summary>
     /// HU-023.5: el comercial reintenta las rutas fallidas (vuelven a la cola) o, con <paramref name="usarRespaldo"/>, las acepta con el
-    /// camión sin vehículo. Devuelve cuántas cambió (0 = no había fallidas o la solicitud ya salió a Nexo).
+    /// respaldo de cada una en <paramref name="respaldos"/> (por id de ruta: el camión con el vehículo elegido y su aviso, HU-032) o, si no
+    /// trae, con el camión sin vehículo. Devuelve cuántas cambió (0 = no había fallidas o la solicitud ya salió a Nexo).
     /// </summary>
-    public int ReintentarCubicacionFallida(bool usarRespaldo)
+    public int ReintentarCubicacionFallida(bool usarRespaldo, IReadOnlyDictionary<Guid, clsPlanRuta>? respaldos = null)
     {
-        if (Ganada is not null || SolicitudNexoId is not null || EstadoCosteo != Cotizaciones.EstadoCosteo.PendienteEnvio)
+        if (!AdmiteReintentoCubicacion)
         {
             return 0;
         }
 
-        return _rutas.Count(r => r.ReintentarCubicacion(usarRespaldo));
+        return _rutas.Count(r => r.ReintentarCubicacion(usarRespaldo, respaldos is not null && respaldos.TryGetValue(r.Id, out var plan) ? plan : null));
     }
+
+    /// <summary>HU-023.5: ¿se pueden reintentar las rutas fallidas? Sin resultado, sin enviar a Nexo y en <c>pendiente_envio</c>.</summary>
+    public bool AdmiteReintentoCubicacion =>
+        Ganada is null && SolicitudNexoId is null && EstadoCosteo == Cotizaciones.EstadoCosteo.PendienteEnvio;
 
     /// <summary>¿La cotización nació del flujo de costeo en Nexo? (<see cref="EstadoCosteo"/> con valor).</summary>
     public bool EnFlujoCosteo => EstadoCosteo is not null;
