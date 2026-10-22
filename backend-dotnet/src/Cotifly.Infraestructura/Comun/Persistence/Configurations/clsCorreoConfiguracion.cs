@@ -31,11 +31,14 @@ internal sealed class clsCorreoConfiguracion : IEntityTypeConfiguration<clsCorre
         builder.Property(c => c.EnviadoAt).Fecha("enviadoAt");
         builder.Property(c => c.EstadoActualizadoAt).Fecha("estadoActualizadoAt");
         builder.Property(c => c.SiguienteConsultaAt).Fecha("siguienteConsultaAt");
+        builder.Property(c => c.EncoladoAt).Fecha("encoladoAt");
         builder.HasIndex(c => c.SiguienteConsultaAt).HasDatabaseName("ix_correos_siguienteConsultaAt").HasFilter("[siguienteConsultaAt] IS NOT NULL");
         builder.HasIndex(c => c.IdMailSender).IsUnique().HasDatabaseName("ux_correos_idMailSender").HasFilter("[idMailSender] IS NOT NULL");
         builder.Ignore(c => c.EnCurso);
         builder.Ignore(c => c.CuentaComoEnvio);
         builder.Ignore(c => c.EsReintentable);
+        builder.Ignore(c => c.Incierto);
+        builder.Ignore(c => c.InicioSeguimiento);
         builder.Ignore(c => c.Para);
         builder.Ignore(c => c.Cc);
 

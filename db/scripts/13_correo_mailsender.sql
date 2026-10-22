@@ -17,6 +17,8 @@
           enviadoAt            DATETIMEOFFSET   NULL   cuándo el relay lo aceptó (sentAt de MailSender)
           estadoActualizadoAt  DATETIMEOFFSET   NULL   última consulta del estado en MailSender
           siguienteConsultaAt  DATETIMEOFFSET   NULL   agenda del worker de correos (NULL = estado final); índice filtrado
+          encoladoAt           DATETIMEOFFSET   NULL   última aceptación de MailSender (envío o reintento): desde aquí se mide la
+                                                       edad máxima de la consulta (NULL = se usa createdAt)
         y el CHECK ck_correos_estado: estado NULL o 'encolado' | 'enviando' | 'enviado' | 'fallido' (antes sin CHECK: solo
         'enviado' y 'fallido', que el CHECK admite).
      2. CotizacionesSolicitud (la cabecera):
@@ -76,6 +78,8 @@ BEGIN TRY
         ALTER TABLE dbo_cotifly.Correos ADD estadoActualizadoAt DATETIMEOFFSET NULL;
     IF COL_LENGTH(N'dbo_cotifly.Correos', N'siguienteConsultaAt') IS NULL
         ALTER TABLE dbo_cotifly.Correos ADD siguienteConsultaAt DATETIMEOFFSET NULL;
+    IF COL_LENGTH(N'dbo_cotifly.Correos', N'encoladoAt') IS NULL
+        ALTER TABLE dbo_cotifly.Correos ADD encoladoAt DATETIMEOFFSET NULL;
 
     IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'ck_correos_estado' AND parent_object_id = OBJECT_ID(N'dbo_cotifly.Correos'))
         ALTER TABLE dbo_cotifly.Correos WITH CHECK ADD CONSTRAINT ck_correos_estado

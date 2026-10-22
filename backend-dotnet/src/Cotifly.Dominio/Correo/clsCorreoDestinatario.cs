@@ -7,6 +7,9 @@ public sealed class clsCorreoDestinatario
 {
     public const int LargoMaximoEmail = 320;
 
+    /// <summary>Caracteres que no van en una dirección de un solo destinatario (espacios, separadores de lista, nombre con ángulos o comillas).</summary>
+    private static readonly char[] _caracteresNoPermitidos = [' ', '\t', ',', ';', '<', '>', '"', '\r', '\n'];
+
     private clsCorreoDestinatario()
     {
     }
@@ -32,7 +35,11 @@ public sealed class clsCorreoDestinatario
 
         var normalizado = Normalizar(email);
         var arroba = normalizado.IndexOf('@', StringComparison.Ordinal);
-        if (arroba <= 0 || arroba == normalizado.Length - 1 || normalizado.Contains(' ', StringComparison.Ordinal))
+        // HU-033 (#199): una sola dirección por destinatario. MailSender separa una entrada con ',' o ';' en varias direcciones
+        // (RecipientList), así que "a@x.com,b@y.com" llegaría a dos personas mientras Cotifly guarda una: se rechaza, igual que un nombre
+        // con ángulos o comillas y una segunda arroba.
+        if (arroba <= 0 || arroba == normalizado.Length - 1 || normalizado.IndexOfAny(_caracteresNoPermitidos) >= 0
+            || normalizado.IndexOf('@', arroba + 1) >= 0)
         {
             return new clsErrorDominio(clsCorreo.CodigoError, $"'{normalizado}' no es un email válido.");
         }

@@ -182,6 +182,7 @@ public sealed class clsBaseDatosHealthCheck(
         "Correos.enviadoAt",
         "Correos.estadoActualizadoAt",
         "Correos.siguienteConsultaAt",
+        "Correos.encoladoAt",
         "CotizacionesSolicitud.sincronizacionResultadoNexo",
         "CotizacionesSolicitud.comentarioResultadoPendiente",
         "CotizacionesSolicitud.resultadoSincronizadoAt",

@@ -163,8 +163,12 @@ services:
       Correo__MailSender__UrlBase: ${Correo__MailSender__UrlBase:-}
       Correo__MailSender__TimeoutSegundos: ${Correo__MailSender__TimeoutSegundos:-15}
       Correo__MailSender__Remitente: ${Correo__MailSender__Remitente:-notificaciones@boterosoto.com.co}
-      # Staging corre como Production: la protección se FIJA aquí (no se lee del entorno). Todo correo va al buzón de pruebas.
+      Correo__MailSender__ModoRemitente: ${Correo__MailSender__ModoRemitente:-comercial}
+      Correo__MailSender__DominiosRemitente: ${Correo__MailSender__DominiosRemitente:-boterosoto.com.co}
+      # Staging corre como Production: la protección se FIJA aquí (no se lee del entorno). Todo correo va al buzón de pruebas; el envío
+      # real necesitaría además PermitirEnvioReal=true, que aquí queda fijo en false.
       Correo__Proteccion__Modo: redirigir
+      Correo__Proteccion__PermitirEnvioReal: "false"
       Correo__Proteccion__BuzonPruebas: ${Correo__Proteccion__BuzonPruebas:-}
 
       # Agente de IA (ADR-003). Sin proveedor el agente no responde. IA__ApiKey: secreto.

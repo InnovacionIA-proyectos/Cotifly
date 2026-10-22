@@ -35,7 +35,7 @@ public sealed class clsCorreoServiceTests : IDisposable
     private readonly clsRelojFalso _reloj = new();
     private readonly clsCandadoEnvios _candado = new();
     private static readonly Guid _idMailSender = Guid.Parse("6d1a0f4e-3b2c-4c1d-9e8f-0a1b2c3d4e5f");
-    private readonly clsOpcionesCorreo _opciones = new() { Habilitado = true, Proteccion = new() { Modo = "ninguno" } };
+    private readonly clsOpcionesCorreo _opciones = new() { Habilitado = true, Proteccion = new() { Modo = "ninguno", PermitirEnvioReal = true } };
     private readonly clsLoggerFalso<clsCorreoService> _logger = new();
     private readonly clsUsuarioWeb _comercial;
     private readonly clsCotizacionSolicitud _cotizacion;
@@ -146,6 +146,71 @@ public sealed class clsCorreoServiceTests : IDisposable
         fila.Para.Should().Equal("cliente@empresa.com");
         fila.Cc.Should().Equal("jefe@empresa.com");
         fila.RedirigidoA.Should().Be("qa@pruebas.local");
+    }
+
+    [Theory]
+    [InlineData("ninguno", false)]
+    [InlineData("redirigir", true)]
+    [InlineData("lista_blanca", true)]
+    [InlineData(null, false)]
+    public async Task AuditoriaSinLasDosLlavesDelEnvioRealTodoVaAlBuzonDePruebas(string? modo, bool permitir)
+    {
+        // Auditoría #199: segura por defecto. "ninguno" sin PermitirEnvioReal (o la confirmación sin "ninguno", o un modo desconocido) redirige.
+        _opciones.Proteccion = new clsOpcionesProteccionCorreo { Modo = modo, PermitirEnvioReal = permitir, BuzonPruebas = "qa@pruebas.local" };
+
+        var resultado = await Servicio().EnviarAsync(Entrada(para: ["cliente@empresa.com"], cc: ["jefe@empresa.com"]), Ct);
+
+        resultado.EsExitoso.Should().BeTrue();
+        _enviado!.Para.Should().Equal("qa@pruebas.local");
+        _enviado.Cc.Should().BeEmpty();
+        _enviado.Bcc.Should().BeEmpty();
+        _enviado.Metadatos.Values.Should().NotContain(v => v != null && v.Contains('@'), "la metadata no lleva destinatarios");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("sin-arroba")]
+    [InlineData("qa@pruebas.local,cliente@empresa.com")]
+    public async Task AuditoriaSiHayQueRedirigirYNoHayBuzonValidoNoSaleNada(string? buzon)
+    {
+        // Falla cerrado: antes, sin buzón el mensaje salía SIN redirigir a los destinatarios reales.
+        _opciones.Proteccion = new clsOpcionesProteccionCorreo { Modo = "ninguno", BuzonPruebas = buzon };
+
+        var resultado = await Servicio().EnviarAsync(Entrada(), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.CorreoEnvioFallido);
+        resultado.Error.Mensaje.Should().Contain("BuzonPruebas");
+        await NoSeEnvioNadaAsync();
+        await _unidadTrabajo.DidNotReceive().GuardarCambiosSiVersionAsync(Arg.Any<Guid>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task AuditoriaUnEnvioInciertoConservaLaReservaYCuentaParaLaDeduplicacion()
+    {
+        _transporte.EnviarAsync(Arg.Any<clsMensajeCorreo>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new clsEnvioCorreoException("MailSender no respondió a tiempo") { Incierto = true });
+
+        var resultado = await Servicio().EnviarAsync(Entrada(), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.CorreoEnvioFallido);
+        _cotizacion.EstadoEnvio.Should().Be(EstadoEnvio.Enviada, "el correo pudo salir: no se deshace la reserva");
+        var fila = _registrados.Should().ContainSingle().Subject;
+        fila.Estado.Should().Be(EstadoCorreo.Fallido);
+        fila.Incierto.Should().BeTrue();
+        fila.CuentaComoEnvio.Should().BeTrue("un reenvío inmediato a los mismos destinatarios sería un duplicado");
+        fila.EsReintentable.Should().BeFalse();
+
+        _correos.ListarEnviadosDesdeAsync(Arg.Any<Guid>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>()).Returns([fila]);
+        (await Servicio().EnviarAsync(Entrada(), Ct)).Error.Codigo.Should().Be(clsCodigosError.CorreoDuplicado);
+    }
+
+    [Fact]
+    public async Task ElCuerpoLlevaLaFirmaDelComercial()
+    {
+        await Servicio().EnviarAsync(Entrada(), Ct);
+
+        _enviado!.CuerpoHtml.Should().Contain(System.Net.WebUtility.HtmlEncode("Nathaly Vargas · nvargas@boterosoto.com.co"));
     }
 
     [Fact]

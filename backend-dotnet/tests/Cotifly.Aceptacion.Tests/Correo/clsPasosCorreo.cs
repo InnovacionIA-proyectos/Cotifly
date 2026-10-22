@@ -31,7 +31,7 @@ public sealed class clsPasosCorreo(clsContextoEscenario contexto)
 
     [Given("el ambiente de producción sin protección de correo")]
     public void DadoProduccionSinProteccion() =>
-        contexto.UsarEntorno("Production", new Dictionary<string, string?> { ["Correo:Habilitado"] = "true", ["Correo:Proteccion:Modo"] = "ninguno" });
+        contexto.UsarEntorno("Production", new Dictionary<string, string?> { ["Correo:Habilitado"] = "true", ["Correo:Proteccion:Modo"] = "ninguno", ["Correo:Proteccion:PermitirEnvioReal"] = "true" });
 
     [Given("el envío de correo deshabilitado")]
     public void DadoElCorreoDeshabilitado() => contexto.Reconfigurar(new Dictionary<string, string?> { ["Correo:Habilitado"] = "false" });

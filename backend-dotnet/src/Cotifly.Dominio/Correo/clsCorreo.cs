@@ -49,6 +49,23 @@ public sealed class clsCorreo
     /// <summary>Agenda de la consulta del estado (worker de correos): <c>null</c> = ya no se consulta (estado final).</summary>
     public DateTimeOffset? SiguienteConsultaAt { get; private set; }
 
+    /// <summary>
+    /// Auditoría #199: cuándo MailSender lo aceptó por última vez (el envío o un reintento). La edad máxima de la consulta se mide desde aquí
+    /// (no desde <see cref="CreatedAt"/>): si no, un reintento de un correo de más de 24 h quedaba <c>fallido</c> en la primera consulta.
+    /// <c>null</c> en un correo anterior: se usa <see cref="CreatedAt"/>.
+    /// </summary>
+    public DateTimeOffset? EncoladoAt { get; private set; }
+
+    /// <summary>Prefijo del error de un envío con resultado incierto (MailSender no respondió al POST: pudo quedar encolado).</summary>
+    public const string PrefijoIncierto = "Resultado incierto: ";
+
+    /// <summary>
+    /// Auditoría #199: MailSender no respondió al encolarlo (tiempo agotado) y no se sabe si lo encoló. Es <see cref="EstadoCorreo.Fallido"/>
+    /// sin <see cref="IdMailSender"/>, pero CUENTA para la deduplicación de 5 minutos: un reenvío inmediato podría duplicar el correo.
+    /// </summary>
+    public bool Incierto => Estado == EstadoCorreo.Fallido && IdMailSender is null && Error is not null
+                            && Error.StartsWith(PrefijoIncierto, StringComparison.Ordinal);
+
     /// <summary>¿MailSender todavía no confirmó el resultado? (<see cref="EstadoCorreo.Encolado"/> o <see cref="EstadoCorreo.Enviando"/>.)</summary>
     public bool EnCurso => Estado is EstadoCorreo.Encolado or EstadoCorreo.Enviando;
 
@@ -56,7 +73,7 @@ public sealed class clsCorreo
     /// ¿Cuenta para la deduplicación de 5 minutos? Los que salieron o siguen en curso en MailSender (saldrán, salvo fallo); los fallidos no,
     /// para que el comercial pueda volver a enviar.
     /// </summary>
-    public bool CuentaComoEnvio => Estado is EstadoCorreo.Enviado || EnCurso;
+    public bool CuentaComoEnvio => Estado is EstadoCorreo.Enviado || EnCurso || Incierto;
 
     /// <summary>¿Se puede pedir a MailSender que lo reintente? Solo un fallido que MailSender conoce (tiene <see cref="IdMailSender"/>).</summary>
     public bool EsReintentable => Estado == EstadoCorreo.Fallido && IdMailSender is not null;
@@ -85,7 +102,8 @@ public sealed class clsCorreo
         Guid? id = null,
         Guid? idMailSender = null,
         string? redirigidoA = null,
-        DateTimeOffset? siguienteConsultaAt = null)
+        DateTimeOffset? siguienteConsultaAt = null,
+        DateTimeOffset? encoladoAt = null)
     {
         ArgumentNullException.ThrowIfNull(para);
 
@@ -106,6 +124,7 @@ public sealed class clsCorreo
             IdMailSender = idMailSender,
             RedirigidoA = clsValidacion.Normalizar(redirigidoA),
             SiguienteConsultaAt = estado is EstadoCorreo.Encolado or EstadoCorreo.Enviando ? siguienteConsultaAt : null,
+            EncoladoAt = idMailSender is null ? null : encoladoAt,
         };
 
         var falla = correo.AgregarDestinatarios(para, TipoDestinatario.Para)
@@ -170,8 +189,12 @@ public sealed class clsCorreo
         Estado = EstadoCorreo.Encolado;
         Error = null;
         EstadoActualizadoAt = ahora;
+        EncoladoAt = ahora;
         SiguienteConsultaAt = siguiente;
     }
+
+    /// <summary>Desde cuándo se mide la edad máxima de la consulta: la última aceptación de MailSender o, en un correo anterior, la creación.</summary>
+    public DateTimeOffset InicioSeguimiento => EncoladoAt ?? CreatedAt;
 
     private static string? Recortar(string? texto)
     {

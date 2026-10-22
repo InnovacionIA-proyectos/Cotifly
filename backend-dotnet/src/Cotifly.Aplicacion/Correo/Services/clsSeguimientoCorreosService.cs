@@ -93,7 +93,8 @@ public sealed class clsSeguimientoCorreosService(
             return ResultadoConsultaCorreo.SinCambio;
         }
 
-        if (ahora - correo.CreatedAt >= config.EdadMaxima)
+        // Auditoría #199: desde la última aceptación (envío o reintento), no desde la creación.
+        if (ahora - correo.InicioSeguimiento >= config.EdadMaxima)
         {
             correo.VencerConsulta(
                 $"MailSender no confirmó la entrega en {config.EdadMaximaHoras} h (id {idExterno:D}): revisa el buzón o reintenta el envío.", ahora);
@@ -106,7 +107,7 @@ public sealed class clsSeguimientoCorreosService(
         bool cambio;
         try
         {
-            var estado = await externo.ConsultarAsync(idExterno, $"cotifly:{correo.Id:D}", cancellationToken);
+            var estado = await externo.ConsultarAsync(idExterno, correo.Id.ToString("D"), cancellationToken);
             cambio = estado is null
                 ? correo.ActualizarEntrega(EstadoCorreo.Fallido, MensajeNoEncontrado, correo.IntentosEntrega, correo.EnviadoAt, ahora, null)
                 : correo.ActualizarEntrega(estado.Estado, estado.Error, estado.Intentos, estado.EnviadoAt, ahora, ahora + config.Intervalo);

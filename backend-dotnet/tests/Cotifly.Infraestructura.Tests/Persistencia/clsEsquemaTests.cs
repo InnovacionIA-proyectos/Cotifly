@@ -287,13 +287,14 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         (await LeerAsync(
                 "SELECT CONCAT(OBJECT_NAME(c.object_id), '.', c.name, '|', TYPE_NAME(c.user_type_id), '|', c.is_nullable) FROM sys.columns c "
                 + "WHERE (c.object_id = OBJECT_ID(N'dbo_cotifly.Correos') AND c.name IN (N'idMailSender', N'redirigidoA', N'intentosEntrega', "
-                + "N'enviadoAt', N'estadoActualizadoAt', N'siguienteConsultaAt')) "
+                + "N'enviadoAt', N'estadoActualizadoAt', N'siguienteConsultaAt', N'encoladoAt')) "
                 + "OR (c.object_id = OBJECT_ID(N'dbo_cotifly.CotizacionesSolicitud') AND c.name IN (N'sincronizacionResultadoNexo', "
                 + "N'comentarioResultadoPendiente', N'resultadoSincronizadoAt', N'errorSincronizacionResultado', N'intentosSincronizacionResultado'))",
                 r => r.GetString(0), instalada.Cadena))
             .Should().BeEquivalentTo([
                 "Correos.idMailSender|uniqueidentifier|1", "Correos.redirigidoA|nvarchar|1", "Correos.intentosEntrega|int|1",
                 "Correos.enviadoAt|datetimeoffset|1", "Correos.estadoActualizadoAt|datetimeoffset|1", "Correos.siguienteConsultaAt|datetimeoffset|1",
+                "Correos.encoladoAt|datetimeoffset|1",
                 "CotizacionesSolicitud.sincronizacionResultadoNexo|nvarchar|1", "CotizacionesSolicitud.comentarioResultadoPendiente|nvarchar|1",
                 "CotizacionesSolicitud.resultadoSincronizadoAt|datetimeoffset|1", "CotizacionesSolicitud.errorSincronizacionResultado|nvarchar|1",
                 "CotizacionesSolicitud.intentosSincronizacionResultado|int|0"]);

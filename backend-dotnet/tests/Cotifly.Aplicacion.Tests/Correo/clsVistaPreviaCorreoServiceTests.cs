@@ -19,7 +19,7 @@ public sealed class clsVistaPreviaCorreoServiceTests
     private readonly IClsCotizacionRepository _cotizaciones = Substitute.For<IClsCotizacionRepository>();
     private readonly IClsCorreoRepository _correos = Substitute.For<IClsCorreoRepository>();
     private readonly IClsUsuarioWebRepository _usuarios = Substitute.For<IClsUsuarioWebRepository>();
-    private readonly clsOpcionesCorreo _opciones = new() { Habilitado = true, Proteccion = new() { Modo = "ninguno" } };
+    private readonly clsOpcionesCorreo _opciones = new() { Habilitado = true, Proteccion = new() { Modo = "ninguno", PermitirEnvioReal = true } };
     private readonly Guid _usuario = Guid.NewGuid();
     private readonly clsCotizacionSolicitud _cotizacion;
 

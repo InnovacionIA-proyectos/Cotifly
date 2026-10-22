@@ -63,7 +63,7 @@ public static class clsPlantillaCorreo
     /// Cuerpo en HTML: el aviso de pruebas (si el correo se redirige), el texto escapado (un <c>&lt;script&gt;</c> del comercial llega como
     /// texto) con los saltos de línea como <c>&lt;br&gt;</c>, el resumen con el total (si hay) y la firma corporativa en azul Botero Soto.
     /// </summary>
-    public static string Html(string texto, clsResumenCorreo? resumen = null, string? avisoPruebas = null)
+    public static string Html(string texto, clsResumenCorreo? resumen = null, string? avisoPruebas = null, string? firmaComercial = null)
     {
         ArgumentNullException.ThrowIfNull(texto);
         var cuerpo = Escapar(texto);
@@ -72,9 +72,26 @@ public static class clsPlantillaCorreo
                + cuerpo
                + (resumen is null ? string.Empty : ResumenHtml(resumen))
                + "<hr style=\"border:none;border-top:1px solid #D9DEE5;margin:16px 0\">"
+               + (string.IsNullOrWhiteSpace(firmaComercial)
+                   ? string.Empty
+                   : $"<div style=\"font-size:13px;margin-bottom:4px\">{WebUtility.HtmlEncode(firmaComercial.Trim())}</div>")
                + "<div style=\"font-size:12px;color:#5F6B7A\">"
                + "<b style=\"color:#005AA8\">Botero Soto</b> · Soluciones Logísticas</div>"
                + "</div>";
+    }
+
+    /// <summary>
+    /// HU-033 (auditoría #199): firma del comercial en el cuerpo ("Nombre · correo · Cel. teléfono"): con el <c>From</c> corporativo el
+    /// cliente sigue sabiendo a quién responder (MailSender no tiene <c>Reply-To</c>). <c>null</c> sin datos.
+    /// </summary>
+    public static string? FirmaComercial(string? nombre, string? correo, string? telefono)
+    {
+        var partes = new[] { nombre, correo, string.IsNullOrWhiteSpace(telefono) ? null : $"Cel. {telefono.Trim()}" }
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Select(p => clsTextoSeguro.LimpiarLinea(p!.Trim()))
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .ToList();
+        return partes.Count == 0 ? null : string.Join(" · ", partes);
     }
 
     /// <summary>Recuadro del aviso de pruebas (correo redirigido) al inicio del cuerpo.</summary>

@@ -41,11 +41,56 @@ public sealed class clsOpcionesMailSender
     /// <summary>Tiempo máximo de cada llamada a MailSender (segundos, por defecto 15). El 202 llega en cuanto encola.</summary>
     public int TimeoutSegundos { get; set; } = 15;
 
+    /// <summary>El <c>From</c> es el correo del comercial (por defecto; las respuestas del cliente le llegan a él).</summary>
+    public const string RemitenteComercial = "comercial";
+
+    /// <summary>El <c>From</c> es siempre <see cref="Remitente"/> (el comercial va en la firma del cuerpo y en copia oculta).</summary>
+    public const string RemitenteCorporativo = "corporativo";
+
     /// <summary>
-    /// Remitente cuando el comercial no tiene correo en <c>UsuariosWeb</c>. MailSender acepta cualquier dirección válida en <c>From</c> (no
-    /// tiene lista blanca); quien decide es el relay corporativo (SPF/DMARC del dominio).
+    /// Remitente corporativo: el <c>From</c> con <see cref="ModoRemitente"/>=<c>corporativo</c>, o cuando el correo del comercial falta, no es
+    /// válido o su dominio no está en <see cref="DominiosRemitente"/>. MailSender acepta cualquier dirección válida en <c>From</c> (no tiene
+    /// lista blanca); quien decide es el relay corporativo (SPF/DMARC del dominio).
     /// </summary>
     public string Remitente { get; set; } = "notificaciones@boterosoto.com.co";
+
+    /// <summary>
+    /// HU-033 (auditoría #199): de quién es el <c>From</c>. <c>comercial</c> (por defecto): el correo del comercial, porque MailSender no tiene
+    /// <c>Reply-To</c> y así las respuestas le llegan a él. <c>corporativo</c>: siempre <see cref="Remitente"/>, para cuando SPF/DMARC del
+    /// dominio no autoricen al relay a enviar como cada comercial (un 550 5.7.1 es un fallo permanente).
+    /// </summary>
+    public string ModoRemitente { get; set; } = RemitenteComercial;
+
+    /// <summary>
+    /// Dominios con los que el comercial puede ir en el <c>From</c> (separados por coma; por defecto <c>boterosoto.com.co</c>): un correo de
+    /// otro dominio (personal, de un aliado) fallaría DMARC, así que sale con <see cref="Remitente"/>.
+    /// </summary>
+    public string DominiosRemitente { get; set; } = "boterosoto.com.co";
+
+    /// <summary><see cref="ModoRemitente"/> sin espacios y en minúsculas; vacío equivale a <c>comercial</c>.</summary>
+    public string ModoRemitenteNormalizado =>
+        string.IsNullOrWhiteSpace(ModoRemitente) ? RemitenteComercial : ModoRemitente.Trim().ToLowerInvariant();
+
+    /// <summary>
+    /// El <c>From</c> del mensaje: el correo del comercial si el modo es <c>comercial</c> y es UNA dirección válida de un dominio permitido;
+    /// si no, <see cref="Remitente"/>. Nunca devuelve una dirección mal formada que MailSender rechazaría (422) o el relay no aceptaría.
+    /// </summary>
+    public string ElegirRemitente(string? correoComercial)
+    {
+        if (ModoRemitenteNormalizado != RemitenteComercial || string.IsNullOrWhiteSpace(correoComercial))
+        {
+            return Remitente;
+        }
+
+        var candidato = correoComercial.Trim();
+        if (!MailAddress.TryCreate(candidato, out var direccion) || !string.Equals(direccion.Address, candidato, StringComparison.OrdinalIgnoreCase))
+        {
+            return Remitente;
+        }
+
+        var dominios = DominiosRemitente.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return dominios.Length == 0 || dominios.Contains(direccion.Host, StringComparer.OrdinalIgnoreCase) ? candidato : Remitente;
+    }
 
     /// <summary><c>Low</c>, <c>Normal</c> (por defecto) o <c>High</c>: cabeceras <c>Priority</c>/<c>Importance</c>/<c>X-Priority</c>.</summary>
     public string Prioridad { get; set; } = "Normal";
@@ -95,14 +140,20 @@ public sealed class clsValidadorOpcionesCorreoTransporte : IValidateOptions<clsO
             errores.Add($"'{Prefijo}MailSender:Prioridad' debe ser Low, Normal o High.");
         }
 
+        if (mailSender.ModoRemitenteNormalizado is not (clsOpcionesMailSender.RemitenteComercial or clsOpcionesMailSender.RemitenteCorporativo))
+        {
+            errores.Add($"'{Prefijo}MailSender:ModoRemitente' debe ser '{clsOpcionesMailSender.RemitenteComercial}' o '{clsOpcionesMailSender.RemitenteCorporativo}'.");
+        }
+
         return errores.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(errores);
     }
 }
 
 /// <summary>
-/// HU-033 (#199, decisión 3): reglas de <see cref="clsOpcionesCorreo"/>. Con el correo habilitado y fuera de <c>Production</c>, la
-/// protección <c>redirigir</c> con un <c>BuzonPruebas</c> válido es OBLIGATORIA: la API no arranca sin ella. En <c>Production</c> se
-/// admite <c>ninguno</c> (y <c>redirigir</c>, para un piloto controlado). El modo siempre debe ser uno conocido.
+/// HU-033 (#199, decisión 3): reglas de <see cref="clsOpcionesCorreo"/>. La protección es segura por defecto y NO depende del ambiente (QA y
+/// staging corren como <c>Production</c>): con el correo habilitado, el envío real exige las dos llaves <c>Proteccion:Modo=ninguno</c> y
+/// <c>Proteccion:PermitirEnvioReal=true</c> (una sin la otra impide arrancar) y, además, <c>Production</c>; en cualquier otro caso se redirige
+/// y el <c>BuzonPruebas</c> válido es obligatorio. El modo siempre debe ser uno conocido.
 /// </summary>
 public sealed class clsValidadorOpcionesCorreo(IHostEnvironment entorno) : IValidateOptions<clsOpcionesCorreo>
 {
@@ -120,15 +171,25 @@ public sealed class clsValidadorOpcionesCorreo(IHostEnvironment entorno) : IVali
         }
         else if (options.Habilitado)
         {
-            if (!entorno.IsProduction() && modo != clsOpcionesProteccionCorreo.ModoRedirigir)
+            var ninguno = modo == clsOpcionesProteccionCorreo.ModoNinguno;
+            if (ninguno != proteccion.PermitirEnvioReal)
             {
-                errores.Add($"Fuera de Production (ambiente '{entorno.EnvironmentName}') '{Prefijo}Proteccion:Modo' debe ser "
-                            + $"'{clsOpcionesProteccionCorreo.ModoRedirigir}': ningún correo de pruebas puede llegar a un cliente.");
+                // Las dos llaves van juntas: una sola es casi siempre un error de configuración (y nunca habilita el envío real).
+                errores.Add($"El envío a destinatarios reales exige las dos llaves juntas: '{Prefijo}Proteccion:Modo={clsOpcionesProteccionCorreo.ModoNinguno}' "
+                            + $"y '{Prefijo}Proteccion:PermitirEnvioReal=true'. Para redirigir al buzón de pruebas deje Modo={clsOpcionesProteccionCorreo.ModoRedirigir} "
+                            + "y PermitirEnvioReal=false.");
             }
 
-            if (modo == clsOpcionesProteccionCorreo.ModoRedirigir && !MailAddress.TryCreate(proteccion.BuzonPruebas?.Trim(), out _))
+            if (!entorno.IsProduction() && (ninguno || proteccion.PermitirEnvioReal))
             {
-                errores.Add($"'{Prefijo}Proteccion:BuzonPruebas' es obligatorio (un correo válido) con '{Prefijo}Proteccion:Modo={clsOpcionesProteccionCorreo.ModoRedirigir}'.");
+                errores.Add($"Fuera de Production (ambiente '{entorno.EnvironmentName}') '{Prefijo}Proteccion:Modo' debe ser "
+                            + $"'{clsOpcionesProteccionCorreo.ModoRedirigir}' y PermitirEnvioReal=false: ningún correo de pruebas puede llegar a un cliente.");
+            }
+
+            if (proteccion.Redirige && clsProteccionCorreo.BuzonValido(proteccion) is null)
+            {
+                errores.Add($"'{Prefijo}Proteccion:BuzonPruebas' es obligatorio (un solo correo válido) mientras el correo se redirige "
+                            + $"('{Prefijo}Proteccion:Modo={clsOpcionesProteccionCorreo.ModoRedirigir}', el valor por defecto).");
             }
         }
 

@@ -39,6 +39,16 @@ public interface IClsCorreoRepository
     /// <paramref name="reclamoHasta"/> en una sola sentencia. <c>false</c> si otra réplica ya la tomó.
     /// </summary>
     Task<bool> ReclamarConsultaAsync(Guid correoId, DateTimeOffset esperada, DateTimeOffset reclamoHasta, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Auditoría #199: reserva el reintento de un correo <c>fallido</c> con id de MailSender en una sola sentencia (pasa a <c>encolado</c>, con
+    /// <paramref name="encoladoAt"/> y la consulta en <paramref name="consultaAt"/>). <c>false</c> si ya no está fallido: un doble clic o
+    /// dos réplicas no piden dos <c>/retry</c> (MailSender correría dos entregas a la vez y el cliente recibiría el correo dos veces).
+    /// </summary>
+    Task<bool> ReclamarReintentoAsync(Guid correoId, DateTimeOffset encoladoAt, DateTimeOffset consultaAt, CancellationToken cancellationToken = default);
+
+    /// <summary>Auditoría #199: deshace la reserva de <see cref="ReclamarReintentoAsync"/> cuando MailSender no aceptó el reintento (vuelve a <c>fallido</c>).</summary>
+    Task LiberarReintentoAsync(Guid correoId, DateTimeOffset encoladoAt, CancellationToken cancellationToken = default);
 }
 
 /// <summary>HU-033: un correo de la agenda del worker (su id y la consulta reservada).</summary>

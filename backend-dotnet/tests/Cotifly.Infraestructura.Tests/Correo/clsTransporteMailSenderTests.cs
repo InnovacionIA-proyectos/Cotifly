@@ -95,6 +95,42 @@ public sealed class clsTransporteMailSenderTests : IDisposable
     }
 
     [Theory]
+    // Auditoría #199 (SPF/DMARC): el comercial va en el From solo si es UNA dirección válida de un dominio permitido.
+    [InlineData("comercial", "boterosoto.com.co", "nvargas@boterosoto.com.co", "nvargas@boterosoto.com.co")]
+    [InlineData("comercial", "boterosoto.com.co", "NVargas@BoteroSoto.com.co", "NVargas@BoteroSoto.com.co")]
+    [InlineData("comercial", "boterosoto.com.co", "nvargas@gmail.com", "notificaciones@boterosoto.com.co")]
+    [InlineData("comercial", "boterosoto.com.co", "Nathaly <nvargas@boterosoto.com.co>", "notificaciones@boterosoto.com.co")]
+    [InlineData("comercial", "boterosoto.com.co", "sin-arroba", "notificaciones@boterosoto.com.co")]
+    [InlineData("comercial", "boterosoto.com.co, bssl.com.co", "ana@bssl.com.co", "ana@bssl.com.co")]
+    [InlineData("corporativo", "boterosoto.com.co", "nvargas@boterosoto.com.co", "notificaciones@boterosoto.com.co")]
+    [InlineData("CORPORATIVO", "", "nvargas@boterosoto.com.co", "notificaciones@boterosoto.com.co")]
+    [InlineData("comercial", "", "nvargas@cualquiera.com", "nvargas@cualquiera.com")]
+    public void AuditoriaElRemitenteSeEligePorModoYDominio(string modo, string dominios, string comercial, string esperado)
+    {
+        var opciones = new Cotifly.Infraestructura.Configuracion.clsOpcionesMailSender { ModoRemitente = modo, DominiosRemitente = dominios };
+
+        opciones.ElegirRemitente(comercial).Should().Be(esperado);
+    }
+
+    [Fact]
+    public async Task AuditoriaConElModoCorporativoElFromEsElRemitenteConfigurado()
+    {
+        using var proveedor = clsServiciosPruebas.Crear(null, new clsRelojFalso(), configuracionExtra: new Dictionary<string, string?>
+        {
+            ["Correo:Habilitado"] = "true",
+            ["Correo:MailSender:UrlBase"] = clsMailSenderFalso.UrlBase,
+            ["Correo:MailSender:ModoRemitente"] = "corporativo",
+            ["Correo:MailSender:Remitente"] = "cotizaciones@boterosoto.com.co",
+            ["Correo:Proteccion:BuzonPruebas"] = clsMailSenderFalso.BuzonPruebas,
+        }, configurar: s => s.AddHttpClient(clsTransporteMailSender.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => _mailSender));
+        using var ambito = proveedor.CreateScope();
+
+        await ambito.ServiceProvider.GetRequiredService<IClsTransporteCorreo>().EnviarAsync(Mensaje(), Ct);
+
+        _mailSender.Recibidos.Should().ContainSingle().Which.From.Should().Be("cotizaciones@boterosoto.com.co");
+    }
+
+    [Theory]
     [InlineData(HttpStatusCode.BadRequest, "datos inválidos (HTTP 400)")]
     [InlineData(HttpStatusCode.UnprocessableEntity, "datos inválidos (HTTP 422)")]
     [InlineData(HttpStatusCode.RequestEntityTooLarge, "tamaño permitido (HTTP 413)")]

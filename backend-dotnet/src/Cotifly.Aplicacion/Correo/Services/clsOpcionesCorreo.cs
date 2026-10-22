@@ -23,15 +23,18 @@ public sealed class clsOpcionesCorreo
 }
 
 /// <summary>
-/// HU-033 (#199): <c>Correo:Proteccion</c>. Fuera de <c>Production</c> el modo <see cref="ModoRedirigir"/> es OBLIGATORIO (con el correo
-/// habilitado, la API no arranca sin él ni sin <see cref="BuzonPruebas"/>): ningún correo de QA o desarrollo llega a un cliente.
+/// HU-033 (#199): <c>Correo:Proteccion</c>. SEGURA POR DEFECTO, sin depender de <c>ASPNETCORE_ENVIRONMENT</c> (QA y staging corren como
+/// <c>Production</c>): todo correo se redirige al buzón de pruebas salvo que se configuren EXPLÍCITAMENTE las dos llaves
+/// <c>Correo:Proteccion:Modo=ninguno</c> y <c>Correo:Proteccion:PermitirEnvioReal=true</c> (solo en producción). Un modo desconocido,
+/// <c>ninguno</c> sin la confirmación o la confirmación sin <c>ninguno</c> siguen redirigiendo; con el correo habilitado la API no arranca con
+/// una configuración incoherente ni sin un <see cref="BuzonPruebas"/> válido cuando redirige.
 /// </summary>
 public sealed class clsOpcionesProteccionCorreo
 {
     /// <summary>Todo correo va al buzón de pruebas (sin CC ni CCO reales), con <c>[QA]</c> en el asunto y los destinatarios originales en el cuerpo.</summary>
     public const string ModoRedirigir = "redirigir";
 
-    /// <summary>Sin protección: el correo va a los destinatarios reales (solo en producción).</summary>
+    /// <summary>Sin protección: el correo va a los destinatarios reales (solo en producción y con <see cref="PermitirEnvioReal"/>).</summary>
     public const string ModoNinguno = "ninguno";
 
     /// <summary>Prefijo del asunto de un correo redirigido.</summary>
@@ -40,14 +43,23 @@ public sealed class clsOpcionesProteccionCorreo
     /// <summary><see cref="ModoRedirigir"/> (por defecto) o <see cref="ModoNinguno"/>.</summary>
     public string? Modo { get; set; } = ModoRedirigir;
 
-    /// <summary>Buzón que recibe todos los correos con <see cref="ModoRedirigir"/>. Obligatorio en ese modo (sin valor por defecto).</summary>
+    /// <summary>Buzón que recibe todos los correos cuando se redirige. Obligatorio en ese caso (sin valor por defecto).</summary>
     public string? BuzonPruebas { get; set; }
+
+    /// <summary>
+    /// Segunda llave del envío real (por defecto <c>false</c>): solo con <c>Modo=ninguno</c> Y <c>PermitirEnvioReal=true</c> el correo va a los
+    /// destinatarios reales. Así un <c>Correo__Proteccion__Modo=ninguno</c> copiado por error en QA no basta para escribirle a un cliente.
+    /// </summary>
+    public bool PermitirEnvioReal { get; set; }
 
     /// <summary><see cref="Modo"/> sin espacios y en minúsculas; vacío equivale a <see cref="ModoRedirigir"/>.</summary>
     public string ModoNormalizado => string.IsNullOrWhiteSpace(Modo) ? ModoRedirigir : Modo.Trim().ToLowerInvariant();
 
-    /// <summary>¿Los correos se redirigen al buzón de pruebas?</summary>
-    public bool Redirige => ModoNormalizado == ModoRedirigir;
+    /// <summary>¿El correo va a los destinatarios reales? Solo con las dos llaves: <c>Modo=ninguno</c> y <c>PermitirEnvioReal=true</c>.</summary>
+    public bool EnviaADestinatariosReales => ModoNormalizado == ModoNinguno && PermitirEnvioReal;
+
+    /// <summary>¿Los correos se redirigen al buzón de pruebas? Siempre, salvo <see cref="EnviaADestinatariosReales"/> (falla cerrado).</summary>
+    public bool Redirige => !EnviaADestinatariosReales;
 }
 
 /// <summary>

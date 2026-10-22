@@ -20,7 +20,10 @@ public sealed class clsCorreoRepository(clsCotiflyDbContext contexto) : IClsCorr
     public async Task<IReadOnlyList<clsCorreo>> ListarEnviadosDesdeAsync(Guid cotizacionId, DateTimeOffset desde, CancellationToken cancellationToken = default) =>
         await contexto.Correos.AsNoTracking()
             .Include(c => c.Destinatarios)
-            .Where(c => c.CotizacionId == cotizacionId && _cuentan.Contains(c.Estado) && c.CreatedAt >= desde)
+            .Where(c => c.CotizacionId == cotizacionId && c.CreatedAt >= desde
+                        && (_cuentan.Contains(c.Estado)
+                            // Auditoría #199: un envío incierto (sin respuesta al encolar) también cuenta en la ventana de 5 minutos.
+                            || (c.Estado == EstadoCorreo.Fallido && c.IdMailSender == null && c.Error != null && c.Error.StartsWith(clsCorreo.PrefijoIncierto))))
             .OrderByDescending(c => c.CreatedAt)
             .ToListAsync(cancellationToken);
 
@@ -68,4 +71,22 @@ public sealed class clsCorreoRepository(clsCotiflyDbContext contexto) : IClsCorr
             .ExecuteUpdateAsync(s => s.SetProperty(c => c.SiguienteConsultaAt, (DateTimeOffset?)reclamoHasta), cancellationToken);
         return filas == 1;
     }
+
+    public async Task<bool> ReclamarReintentoAsync(Guid correoId, DateTimeOffset encoladoAt, DateTimeOffset consultaAt, CancellationToken cancellationToken = default)
+    {
+        var filas = await contexto.Correos
+            .Where(c => c.Id == correoId && c.Estado == EstadoCorreo.Fallido && c.IdMailSender != null)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(c => c.Estado, (EstadoCorreo?)EstadoCorreo.Encolado)
+                .SetProperty(c => c.EncoladoAt, (DateTimeOffset?)encoladoAt)
+                .SetProperty(c => c.SiguienteConsultaAt, (DateTimeOffset?)consultaAt), cancellationToken);
+        return filas == 1;
+    }
+
+    public Task LiberarReintentoAsync(Guid correoId, DateTimeOffset encoladoAt, CancellationToken cancellationToken = default) =>
+        contexto.Correos
+            .Where(c => c.Id == correoId && c.Estado == EstadoCorreo.Encolado && c.EncoladoAt == encoladoAt)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(c => c.Estado, (EstadoCorreo?)EstadoCorreo.Fallido)
+                .SetProperty(c => c.SiguienteConsultaAt, (DateTimeOffset?)null), cancellationToken);
 }

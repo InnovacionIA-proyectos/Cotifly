@@ -147,7 +147,8 @@ public sealed class clsTransporteMailSender(HttpClient http, IOptions<clsOpcione
     /// <summary>El formulario multipart de <c>CreateEmailForm</c> (un campo por destinatario).</summary>
     internal static MultipartFormDataContent Formulario(clsMensajeCorreo mensaje, clsOpcionesMailSender config)
     {
-        var remitente = string.IsNullOrWhiteSpace(mensaje.Remitente) ? config.Remitente : mensaje.Remitente.Trim();
+        // HU-033 (auditoría): el From lo decide Correo:MailSender:ModoRemitente/DominiosRemitente; nunca una dirección mal formada.
+        var remitente = config.ElegirRemitente(mensaje.Remitente);
         var formulario = new MultipartFormDataContent
         {
             { Texto(remitente), "From" },

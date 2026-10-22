@@ -90,13 +90,27 @@ public sealed class clsHistorialCorreosService(
         }
 
         var cronometro = Stopwatch.StartNew();
+        var reclamo = reloj.AhoraUtc;
+        // Auditoría #199: un solo /retry por fallo. Sin la reserva, un doble clic (o dos réplicas) pedían dos reintentos y MailSender
+        // corría dos entregas del mismo correo a la vez.
+        if (!await correos.ReclamarReintentoAsync(correo.Id, reclamo, reclamo + opciones.Value.Seguimiento.Reclamo, cancellationToken))
+        {
+            return new clsErrorDominio(clsCodigosError.CorreoNoReintentable, "Este envío ya se está reintentando o cambió de estado: recarga el historial.");
+        }
+
         bool aceptado;
         try
         {
             aceptado = await externo.ReintentarAsync(correo.IdMailSender!.Value, IdCorrelacion(cotizacion.Folio, correo), cancellationToken);
         }
-        catch (clsEnvioCorreoException ex)
+        catch (Exception ex) when (ex is clsEnvioCorreoException or OperationCanceledException)
         {
+            await correos.LiberarReintentoAsync(correo.Id, reclamo, CancellationToken.None);
+            if (ex is OperationCanceledException)
+            {
+                throw;
+            }
+
             logger.LogWarning("MailSender no aceptó el reintento del correo {CorreoId}: {Motivo}", correo.Id, ex.Message);
             await AuditarAsync(cotizacion.Folio, correo, exito: false, ex.Message, cronometro);
             return new clsErrorDominio(clsCodigosError.CorreoEnvioFallido, ex.Message);
@@ -105,6 +119,8 @@ public sealed class clsHistorialCorreosService(
         var ahora = reloj.AhoraUtc;
         if (!aceptado)
         {
+            // La reserva dejó la fila en "encolado" fuera de este contexto: se devuelve a "fallido" antes de guardar el motivo.
+            await correos.LiberarReintentoAsync(correo.Id, reclamo, CancellationToken.None);
             correo.ActualizarEntrega(EstadoCorreo.Fallido, clsSeguimientoCorreosService.MensajeNoEncontrado, correo.IntentosEntrega, correo.EnviadoAt, ahora, null);
             await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
             await AuditarAsync(cotizacion.Folio, correo, exito: false, clsSeguimientoCorreosService.MensajeNoEncontrado, cronometro);

@@ -76,30 +76,39 @@ public sealed class clsRegistroPdfYCorreoTests
         var resultado = new clsValidadorOpcionesCorreoTransporte().Validate(null, new clsOpcionesCorreoTransporte
         {
             Habilitado = true,
-            MailSender = new clsOpcionesMailSender { UrlBase = "http://mailsender.local", Remitente = "sin-arroba", TimeoutSegundos = 0, Prioridad = "Urgente" },
+            MailSender = new clsOpcionesMailSender { UrlBase = "http://mailsender.local", Remitente = "sin-arroba", TimeoutSegundos = 0, Prioridad = "Urgente", ModoRemitente = "otro" },
         });
 
-        resultado.FailureMessage.Should().Contain("MailSender:Remitente").And.Contain("MailSender:TimeoutSegundos").And.Contain("MailSender:Prioridad");
+        resultado.FailureMessage.Should().Contain("MailSender:Remitente").And.Contain("MailSender:TimeoutSegundos").And.Contain("MailSender:Prioridad").And.Contain("MailSender:ModoRemitente");
     }
 
     [Theory]
-    [InlineData("Development", true, "redirigir", "qa@pruebas.local", null)]
-    [InlineData("Staging", true, "redirigir", "qa@pruebas.local", null)]
-    [InlineData("Staging", true, "ninguno", null, "debe ser 'redirigir'")]
-    [InlineData("Development", true, "redirigir", null, "Proteccion:BuzonPruebas")]
-    [InlineData("Development", true, "redirigir", "sin-arroba", "Proteccion:BuzonPruebas")]
-    [InlineData("Development", true, null, null, "Proteccion:BuzonPruebas")]
-    [InlineData("Development", false, "ninguno", null, null)]
-    [InlineData("Production", true, "ninguno", null, null)]
-    [InlineData("Production", true, "redirigir", "qa@pruebas.local", null)]
-    [InlineData("Production", true, "redirigir", null, "Proteccion:BuzonPruebas")]
-    [InlineData("Production", false, "lista_blanca", null, "Proteccion:Modo")]
-    public void FueraDeProduccionLaProteccionRedirigirConBuzonEsObligatoria(string entorno, bool habilitado, string? modo, string? buzon, string? error)
+    [InlineData("Development", true, "redirigir", "qa@pruebas.local", false, null)]
+    [InlineData("Staging", true, "redirigir", "qa@pruebas.local", false, null)]
+    [InlineData("Staging", true, "ninguno", null, true, "debe ser 'redirigir'")]
+    [InlineData("Development", true, "redirigir", null, false, "Proteccion:BuzonPruebas")]
+    [InlineData("Development", true, "redirigir", "sin-arroba", false, "Proteccion:BuzonPruebas")]
+    [InlineData("Development", true, "redirigir", "qa@pruebas.local,cliente@empresa.com", false, "Proteccion:BuzonPruebas")]
+    [InlineData("Development", true, "redirigir", "QA <qa@pruebas.local>", false, "Proteccion:BuzonPruebas")]
+    [InlineData("Development", true, null, null, false, "Proteccion:BuzonPruebas")]
+    [InlineData("Development", false, "ninguno", null, false, null)]
+    [InlineData("Production", true, "ninguno", null, true, null)]
+    [InlineData("Production", true, "redirigir", "qa@pruebas.local", false, null)]
+    [InlineData("Production", true, "redirigir", null, false, "Proteccion:BuzonPruebas")]
+    [InlineData("Production", false, "lista_blanca", null, false, "Proteccion:Modo")]
+    // Auditoría #199: segura por defecto y sin depender del ambiente (QA y staging corren como Production): el envío real exige las dos
+    // llaves; una sola no arranca.
+    [InlineData("Production", true, "ninguno", null, false, "PermitirEnvioReal=true")]
+    [InlineData("Production", true, "ninguno", "qa@pruebas.local", false, "PermitirEnvioReal=true")]
+    [InlineData("Production", true, "redirigir", "qa@pruebas.local", true, "las dos llaves")]
+    [InlineData("Production", true, null, "qa@pruebas.local", true, "las dos llaves")]
+    [InlineData("Staging", true, "redirigir", "qa@pruebas.local", true, "debe ser 'redirigir'")]
+    public void LaProteccionRedirigeSalvoConLasDosLlavesEnProduccion(string entorno, bool habilitado, string? modo, string? buzon, bool permitir, string? error)
     {
         var resultado = new clsValidadorOpcionesCorreo(new clsEntornoFalso(entorno)).Validate(null, new clsOpcionesCorreo
         {
             Habilitado = habilitado,
-            Proteccion = new clsOpcionesProteccionCorreo { Modo = modo, BuzonPruebas = buzon },
+            Proteccion = new clsOpcionesProteccionCorreo { Modo = modo, BuzonPruebas = buzon, PermitirEnvioReal = permitir },
         });
 
         if (error is null)

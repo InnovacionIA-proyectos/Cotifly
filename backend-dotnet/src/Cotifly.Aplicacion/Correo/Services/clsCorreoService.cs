@@ -122,13 +122,14 @@ public sealed class clsCorreoService(
         var texto = cuerpo ?? clsPlantillaCorreo.CuerpoPorDefecto;
         var correoId = Guid.NewGuid();
         var resumen = clsPlantillaCorreo.Resumen(cotizacion);
+        var firma = clsPlantillaCorreo.FirmaComercial(usuario?.NombreCompleto, usuario?.Email, usuario?.Telefono);
         var original = new clsMensajeCorreo(
             usuario?.Email,
             para,
             cc,
             asunto,
             texto,
-            clsPlantillaCorreo.Html(texto, resumen),
+            clsPlantillaCorreo.Html(texto, resumen, firmaComercial: firma),
             new clsAdjuntoCorreo(NombreAdjunto(cotizacion), pdf))
         {
             Bcc = CopiaOculta(usuario?.Email, para, cc) is { } bcc ? [bcc] : [],
@@ -141,8 +142,19 @@ public sealed class clsCorreoService(
                 ["cotizacion_id"] = cotizacion.Id.ToString("D"),
             },
         };
-        var (mensaje, redirigidoA) = clsProteccionCorreo.Aplicar(
-            original, opciones.Value.Proteccion, aviso => clsPlantillaCorreo.Html(texto, resumen, aviso));
+        clsMensajeCorreo mensaje;
+        string? redirigidoA;
+        try
+        {
+            (mensaje, redirigidoA) = clsProteccionCorreo.Aplicar(
+                original, opciones.Value.Proteccion, aviso => clsPlantillaCorreo.Html(texto, resumen, aviso, firma));
+        }
+        catch (InvalidOperationException ex)
+        {
+            // Falla cerrado (HU-033): hay que redirigir y no hay buzón válido. Nada sale y la cotización no cambia.
+            logger.LogError("Correo de la cotización {Folio} bloqueado por la protección: {Motivo}", cotizacion.Folio, ex.Message);
+            return new clsErrorDominio(clsCodigosError.CorreoEnvioFallido, ex.Message);
+        }
 
         // Reserva del envío (ADR-018 §12): sube la versión y deja la cotización enviada antes de que el correo salga.
         var estadoAnterior = cotizacion.EstadoEnvio;
@@ -162,7 +174,16 @@ public sealed class clsCorreoService(
         }
         catch (clsEnvioCorreoException ex)
         {
-            logger.LogWarning("Falló el envío de la cotización {Folio} por {Modo}: {Motivo}", cotizacion.Folio, transporte.Modo, ex.Message);
+            logger.LogWarning("Falló el envío de la cotización {Folio} por {Modo} (incierto: {Incierto}): {Motivo}",
+                cotizacion.Folio, transporte.Modo, ex.Incierto, ex.Message);
+            if (ex.Incierto)
+            {
+                // Auditoría #199: MailSender no respondió al POST y pudo encolarlo. La reserva se CONSERVA (el PDF pudo salir: es la foto
+                // entregada) y la fila incierta cuenta para la deduplicación de 5 minutos, así un reenvío inmediato no duplica el correo.
+                await RegistrarFallidoAsync(cotizacion, correoId, para, cc, asunto, entrada.UsuarioId, clsCorreo.PrefijoIncierto + ex.Message, redirigidoA);
+                return new clsErrorDominio(clsCodigosError.CorreoEnvioFallido, ex.Message);
+            }
+
             await DeshacerReservaAsync(cotizacion, estadoAnterior);
             await RegistrarFallidoAsync(cotizacion, correoId, para, cc, asunto, entrada.UsuarioId, ex.Message, redirigidoA);
             return new clsErrorDominio(clsCodigosError.CorreoEnvioFallido, ex.Message);
@@ -220,7 +241,7 @@ public sealed class clsCorreoService(
         {
             var correo = clsCorreo.Crear(cotizacion.Id, para, aceptado.Estado, asunto, cc, usuarioId, aceptado.MessageId,
                 id: correoId, idMailSender: aceptado.IdExterno, redirigidoA: redirigidoA,
-                siguienteConsultaAt: reloj.AhoraUtc + opciones.Value.Seguimiento.Intervalo).Valor;
+                siguienteConsultaAt: reloj.AhoraUtc + opciones.Value.Seguimiento.Intervalo, encoladoAt: reloj.AhoraUtc).Valor;
             correos.Agregar(correo);
             await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None); // el estado de envío ya quedó en la reserva
             return true;

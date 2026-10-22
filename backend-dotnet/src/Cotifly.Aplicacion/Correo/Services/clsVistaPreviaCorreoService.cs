@@ -48,15 +48,17 @@ public sealed class clsVistaPreviaCorreoService(
         var resumen = clsPlantillaCorreo.Resumen(cotizacion);
         var usuario = await usuarios.ObtenerPorIdAsync(usuarioId, cancellationToken);
         var proteccion = opciones.Value.Proteccion;
-        var buzon = proteccion.Redirige && !string.IsNullOrWhiteSpace(proteccion.BuzonPruebas) ? proteccion.BuzonPruebas.Trim() : null;
+        // HU-033: se redirige salvo con las dos llaves del envío real; sin un buzón válido el envío no sale (la vista previa lo avisa).
+        var redirige = proteccion.Redirige;
+        var buzon = redirige ? clsProteccionCorreo.BuzonValido(proteccion) : null;
         return new clsVistaPreviaCorreo(asunto, cuerpo, para, cc, clsCorreoService.NombreAdjunto(cotizacion))
         {
-            CuerpoHtml = clsPlantillaCorreo.Html(cuerpo, resumen),
+            CuerpoHtml = clsPlantillaCorreo.Html(cuerpo, resumen, firmaComercial: clsPlantillaCorreo.FirmaComercial(usuario?.NombreCompleto, usuario?.Email, usuario?.Telefono)),
             Resumen = resumen,
             CopiaOculta = clsCorreoService.CopiaOculta(usuario?.Email, para, cc),
-            EntornoPruebas = buzon is not null,
+            EntornoPruebas = redirige,
             RedirigidoA = buzon,
-            Aviso = buzon is null ? null : clsProteccionCorreo.AvisoVistaPrevia(buzon),
+            Aviso = !redirige ? null : buzon is null ? clsProteccionCorreo.MensajeSinBuzon : clsProteccionCorreo.AvisoVistaPrevia(buzon),
         };
     }
 

@@ -157,8 +157,13 @@ services:
       Correo__MailSender__UrlBase: ${Correo__MailSender__UrlBase:-}
       Correo__MailSender__TimeoutSegundos: ${Correo__MailSender__TimeoutSegundos:-15}
       Correo__MailSender__Remitente: ${Correo__MailSender__Remitente:-notificaciones@boterosoto.com.co}
-      # Producción: redirigir hasta salir en vivo; "ninguno" solo con SPF/DMARC revisados (DEPLOY.md, HU-033).
+      # From: "comercial" (su correo, si es de DominiosRemitente) o "corporativo" (siempre Remitente). Ver 03-infraestructura (SPF/DMARC).
+      Correo__MailSender__ModoRemitente: ${Correo__MailSender__ModoRemitente:-comercial}
+      Correo__MailSender__DominiosRemitente: ${Correo__MailSender__DominiosRemitente:-boterosoto.com.co}
+      # Protección SEGURA POR DEFECTO (auditoría #199): todo va al buzón de pruebas salvo las DOS llaves juntas, solo para salir en
+      # vivo y con SPF/DMARC revisados: Correo__Proteccion__Modo=ninguno Y Correo__Proteccion__PermitirEnvioReal=true.
       Correo__Proteccion__Modo: ${Correo__Proteccion__Modo:-redirigir}
+      Correo__Proteccion__PermitirEnvioReal: ${Correo__Proteccion__PermitirEnvioReal:-false}
       Correo__Proteccion__BuzonPruebas: ${Correo__Proteccion__BuzonPruebas:-}
 
       # Agente de IA (ADR-003). Sin proveedor el agente no responde. IA__ApiKey: secreto.
