@@ -7,7 +7,7 @@ namespace Cotifly.Api.Comun;
 /// Endurecimiento A (#199): manejador global de las excepciones que ningún caso de uso controló. Sin él, un 500 salía sin cuerpo (o con la
 /// página de desarrollo). Responde siempre la misma forma del contrato, sin detalles técnicos ni la traza:
 /// <list type="bullet">
-/// <item><c>/web/*</c>, <c>/pdfs/*</c> y el resto: 500 <c>ErrorNegocio</c> <c>{"error": {"codigo": "ERROR_INTERNO", "mensaje": "..."}}</c>.</item>
+/// <item><c>/web/*</c>, <c>/pdfs/*</c> y el resto: 500 <c>ErrorNegocio</c> <c>{"error": {"codigo": "ERROR_INTERNO", "mensaje": "...", "detalle": {"id_correlacion": "..."}}}</c>.</item>
 /// <item><c>/api/*</c> (login, refresh, logout): 500 <c>ErrorWeb</c> <c>{"error": "..."}</c>, la única forma de error de ese grupo.</item>
 /// </list>
 /// La excepción queda en el log UNA vez, con el id de correlación de la petición (<see cref="HttpContext.TraceIdentifier"/>, el mismo
@@ -71,12 +71,21 @@ public static partial class clsManejadorErroresNoControlados
             return;
         }
 
-        await contexto.Response.WriteAsJsonAsync(CuerpoErrorInterno(), CancellationToken.None);
+        await contexto.Response.WriteAsJsonAsync(CuerpoErrorInterno(contexto.TraceIdentifier), CancellationToken.None);
     }
 
-    /// <summary>El cuerpo <c>ErrorNegocio</c> del 500: código <c>ERROR_INTERNO</c> y el mensaje genérico, sin <c>detalle</c>.</summary>
-    public static clsErrorNegocioWeb CuerpoErrorInterno() =>
-        new(new clsErrorNegocioWeb.clsCuerpo(clsCodigosError.ErrorInterno, MensajeErrorInterno, Detalle: null));
+    /// <summary>Clave de <c>detalle</c> con el id de correlación de la petición (el mismo del log), para soporte.</summary>
+    public const string ClaveIdCorrelacion = "id_correlacion";
+
+    /// <summary>
+    /// El cuerpo <c>ErrorNegocio</c> del 500: código <c>ERROR_INTERNO</c>, el mensaje genérico y, como único <c>detalle</c>, el id de
+    /// correlación (<see cref="HttpContext.TraceIdentifier"/>): no expone datos y permite a soporte encontrar la excepción en el log.
+    /// </summary>
+    public static clsErrorNegocioWeb CuerpoErrorInterno(string? idCorrelacion) =>
+        new(new clsErrorNegocioWeb.clsCuerpo(
+            clsCodigosError.ErrorInterno,
+            MensajeErrorInterno,
+            string.IsNullOrWhiteSpace(idCorrelacion) ? null : new Dictionary<string, object?>(StringComparer.Ordinal) { [ClaveIdCorrelacion] = idCorrelacion }));
 
     [LoggerMessage(EventId = 5000, Level = LogLevel.Error,
         Message = "Error no controlado en {Metodo} {Ruta} (id de correlación {IdCorrelacion}): se respondió 500 ERROR_INTERNO.")]

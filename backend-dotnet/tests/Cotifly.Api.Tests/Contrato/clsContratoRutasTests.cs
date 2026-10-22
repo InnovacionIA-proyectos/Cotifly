@@ -185,7 +185,9 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         (typeof(clsSeguimientoWebRequest), "SeguimientoWeb"),
         (typeof(clsEnvioWebRequest), "EnvioWeb"),
         (typeof(clsActualizarLineaNegocioRequest), "ActualizarLineaNegocio"),
-        (typeof(clsTelefonoRequest), "TelefonoComercial"),
+        // Endurecimiento A (#199): el PUT del teléfono y la vista previa del correo tienen su propio esquema de entrada.
+        (typeof(clsTelefonoRequest), "TelefonoComercialWeb"),
+        (typeof(clsEnvioWebRequest), "BorradorCorreoWeb"),
         (typeof(clsRespuestaChat), "RespuestaChat"),
         (typeof(clsRespuestaChatError), "RespuestaChatError"),
         (typeof(clsAccionPropuesta), "AccionPropuesta"),

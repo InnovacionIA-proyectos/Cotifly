@@ -792,6 +792,9 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         sinIfMatch.StatusCode.Should().Be(HttpStatusCode.PreconditionRequired);
         using var recalculo = await ConVersionAsync(api, _post, ruta, ana.Access, "{}", await EtagAsync(api, ana, folio));
         var costeo = await VerificarContratoAsync(recalculo, "/web/cotizaciones/{folio}/rutas/{rutaId}/recalcular-vehiculos", _post, HttpStatusCode.OK);
+        // Endurecimiento A (#199): un id de ruta que no es un GUID es 404, como una ruta que no existe (antes 400 "Cuerpo inválido").
+        using var noGuid = await ConVersionAsync(api, _post, $"/web/cotizaciones/{folio}/rutas/no-es-guid/recalcular-vehiculos", ana.Access, "{}", await EtagAsync(api, ana, folio));
+        await VerificarContratoAsync(noGuid, "/web/cotizaciones/{folio}/rutas/{rutaId}/recalcular-vehiculos", _post, HttpStatusCode.NotFound);
 
         costeo.GetProperty("rutas")[0].GetProperty("camiones").EnumerateArray().Select(c => c.GetProperty("tipo_vehiculo").GetString())
             .Should().Equal("2S2", "C2");

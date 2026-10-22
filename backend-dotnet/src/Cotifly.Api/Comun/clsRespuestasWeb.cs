@@ -135,7 +135,7 @@ public static class clsRespuestasWeb
 public sealed partial class clsResultadoErrorInterno : ObjectResult
 {
     public clsResultadoErrorInterno(clsErrorDominio original)
-        : base(clsManejadorErroresNoControlados.CuerpoErrorInterno())
+        : base(clsManejadorErroresNoControlados.CuerpoErrorInterno(idCorrelacion: null))
     {
         Original = original ?? throw new ArgumentNullException(nameof(original));
         StatusCode = StatusCodes.Status500InternalServerError;
@@ -147,6 +147,7 @@ public sealed partial class clsResultadoErrorInterno : ObjectResult
     public override Task ExecuteResultAsync(ActionContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
+        Value = clsManejadorErroresNoControlados.CuerpoErrorInterno(context.HttpContext.TraceIdentifier);
         var logger = context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(clsResultadoErrorInterno).FullName!);
         LogErrorInterno(logger, Original.Codigo, Original.Mensaje, Original.Detalle, context.HttpContext.TraceIdentifier,
             context.HttpContext.Request.Method, context.HttpContext.Request.Path.Value ?? string.Empty);

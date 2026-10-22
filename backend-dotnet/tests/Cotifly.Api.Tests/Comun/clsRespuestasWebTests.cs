@@ -58,10 +58,13 @@ public sealed class clsRespuestasWebTests
         await resultado.ExecuteResultAsync(new ActionContext(http, new Microsoft.AspNetCore.Routing.RouteData(), new Microsoft.AspNetCore.Mvc.Abstractions.ActionDescriptor()));
 
         http.Response.StatusCode.Should().Be(500);
-        resultado.Value.Should().Be(clsManejadorErroresNoControlados.CuerpoErrorInterno());
+        var cuerpoError = ((clsErrorNegocioWeb)resultado.Value!).Error;
+        cuerpoError.Codigo.Should().Be("ERROR_INTERNO");
+        cuerpoError.Mensaje.Should().Be(clsManejadorErroresNoControlados.MensajeErrorInterno);
+        cuerpoError.Detalle.Should().Equal(new Dictionary<string, object?> { ["id_correlacion"] = http.TraceIdentifier }, "solo el id de correlación");
         http.Response.Body.Position = 0;
         var cuerpo = await new StreamReader(http.Response.Body).ReadToEndAsync(TestContext.Current.CancellationToken);
-        cuerpo.Should().Contain("ERROR_INTERNO").And.NotContain("uq_").And.NotContain("UsuariosWeb").And.NotContain("detalle");
+        cuerpo.Should().Contain("ERROR_INTERNO").And.NotContain("uq_").And.NotContain("UsuariosWeb").And.NotContain("motivo");
     }
 
     [Theory]

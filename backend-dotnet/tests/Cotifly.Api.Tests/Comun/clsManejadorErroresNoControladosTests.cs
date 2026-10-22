@@ -42,13 +42,16 @@ public sealed class clsManejadorErroresNoControladosTests
         var error = json.RootElement.GetProperty("error");
         error.GetProperty("codigo").GetString().Should().Be("ERROR_INTERNO");
         error.GetProperty("mensaje").GetString().Should().Be(clsManejadorErroresNoControlados.MensajeErrorInterno);
-        error.TryGetProperty("detalle", out _).Should().BeFalse("sin detalles técnicos");
+        var detalle = error.GetProperty("detalle");
+        detalle.EnumerateObject().Select(p => p.Name).Should().Equal(["id_correlacion"], "sin detalles técnicos: solo el id de correlación");
+        var idCorrelacion = detalle.GetProperty("id_correlacion").GetString();
+        idCorrelacion.Should().NotBeNullOrWhiteSpace();
         clsValidadorEsquemaOpenApi.Validar(cuerpo, await clsValidadorEsquemaOpenApi.EsquemaAsync("ErrorNegocio")).Should().BeEmpty();
         respuesta.Headers.GetValues("X-Content-Type-Options").Should().Equal("nosniff");
         respuesta.Headers.GetValues("X-Frame-Options").Should().Equal("DENY");
 
         var entrada = registro.Entradas.Should().ContainSingle(e => e.Nivel == LogLevel.Error && e.Excepcion is InvalidOperationException).Subject;
-        entrada.Mensaje.Should().Contain("GET /pruebas-error/falla").And.Contain("id de correlación");
+        entrada.Mensaje.Should().Contain("GET /pruebas-error/falla").And.Contain($"id de correlación {idCorrelacion}", "el id de la respuesta lleva al log");
         entrada.Excepcion!.Message.Should().Contain(Secreto, "el detalle técnico queda en el log");
         registro.Entradas.Should().NotContain(e => e.Categoria.StartsWith("Microsoft.AspNetCore.Diagnostics", StringComparison.Ordinal) && e.Nivel >= LogLevel.Error,
             "la excepción se registra una sola vez, con el id de correlación");
