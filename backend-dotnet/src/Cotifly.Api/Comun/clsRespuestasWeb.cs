@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using Cotifly.Api.Identidad;
 using Cotifly.Aplicacion.Comun;
+using Cotifly.Aplicacion.Comun.Exceptions;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Cotizaciones.Services;
 using Cotifly.Aplicacion.Identidad.Services;
@@ -110,6 +111,9 @@ public static class clsRespuestasWeb
                 new ObjectResult(clsErrorNegocioWeb.Desde(error)) { StatusCode = StatusCodes.Status503ServiceUnavailable },
             clsCodigosAplicacion.RegionalNoAsignada => new ConflictObjectResult(clsErrorNegocioWeb.Desde(error)),
             clsCodigosError.NexoSinPermiso => new ObjectResult(clsErrorNegocioWeb.Desde(error)) { StatusCode = StatusCodes.Status403Forbidden },
+            // Endurecimiento A (#199): un error interno es 500, nunca 400; REGISTRO_DUPLICADO (una restricción única que el caso de uso no
+            // tradujo) también, sin el nombre técnico de la restricción: el detalle queda solo en el log.
+            clsCodigosError.ErrorInterno or clsViolacionUnicidadException.CodigoRegistroDuplicado => new clsResultadoErrorInterno(error),
             clsCodigosError.PrecondicionRequerida =>
                 new ObjectResult(clsErrorNegocioWeb.Desde(error)) { StatusCode = StatusCodes.Status428PreconditionRequired },
             _ when _conflicto.Contains(error.Codigo) => new ConflictObjectResult(clsErrorNegocioWeb.Desde(error)),
@@ -120,6 +124,39 @@ public static class clsRespuestasWeb
 
     /// <summary>404 <c>NoEsTuya</c> (ids o folios que ni siquiera tienen forma válida).</summary>
     public static IActionResult NoEsTuya() => new NotFoundObjectResult(new clsErrorWeb(MensajeNoEsTuya));
+}
+
+/// <summary>
+/// Endurecimiento A (#199): 500 <c>ErrorNegocio</c> <c>ERROR_INTERNO</c> con el mensaje genérico de
+/// <see cref="clsManejadorErroresNoControlados"/>, para un error de dominio que no es del cliente (<c>ERROR_INTERNO</c>,
+/// <c>REGISTRO_DUPLICADO</c>). El código, el mensaje y el detalle originales (por ejemplo, el nombre de la restricción) van solo al log, con
+/// el id de correlación de la petición.
+/// </summary>
+public sealed partial class clsResultadoErrorInterno : ObjectResult
+{
+    public clsResultadoErrorInterno(clsErrorDominio original)
+        : base(clsManejadorErroresNoControlados.CuerpoErrorInterno(idCorrelacion: null))
+    {
+        Original = original ?? throw new ArgumentNullException(nameof(original));
+        StatusCode = StatusCodes.Status500InternalServerError;
+    }
+
+    /// <summary>El error de dominio tal como llegó (solo para el log; nunca sale en la respuesta).</summary>
+    public clsErrorDominio Original { get; }
+
+    public override Task ExecuteResultAsync(ActionContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        Value = clsManejadorErroresNoControlados.CuerpoErrorInterno(context.HttpContext.TraceIdentifier);
+        var logger = context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(clsResultadoErrorInterno).FullName!);
+        LogErrorInterno(logger, Original.Codigo, Original.Mensaje, Original.Detalle, context.HttpContext.TraceIdentifier,
+            context.HttpContext.Request.Method, context.HttpContext.Request.Path.Value ?? string.Empty);
+        return base.ExecuteResultAsync(context);
+    }
+
+    [LoggerMessage(EventId = 5002, Level = LogLevel.Error,
+        Message = "Error interno {Codigo} en {Metodo} {Ruta} (id de correlación {IdCorrelacion}): {Mensaje} {Detalle}. Se respondió 500 ERROR_INTERNO.")]
+    private static partial void LogErrorInterno(ILogger logger, string codigo, string mensaje, string? detalle, string idCorrelacion, string metodo, string ruta);
 }
 
 /// <summary><see cref="ObjectResult"/> que agrega <c>Retry-After</c> (segundos) a la respuesta (#125).</summary>

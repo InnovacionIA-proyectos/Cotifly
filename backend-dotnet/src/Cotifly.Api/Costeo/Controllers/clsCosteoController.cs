@@ -37,12 +37,19 @@ public sealed class clsCosteoController(
     [clsRequiereIfMatch]
     [ProducesResponseType<clsCosteoCotizacion>(StatusCodes.Status200OK)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<clsErrorWeb>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status409Conflict)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status428PreconditionRequired)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status503ServiceUnavailable)]
-    public async Task<IActionResult> RecalcularVehiculos(string folio, Guid rutaId, CancellationToken cancellationToken)
+    public async Task<IActionResult> RecalcularVehiculos(string folio, string rutaId, CancellationToken cancellationToken)
     {
-        var resultado = await recalculoVehiculos.RecalcularAsync(UsuarioId, folio, rutaId, clsConcurrenciaHttp.VersionDe(HttpContext), cancellationToken);
+        // Endurecimiento A (#199): un id de ruta que no es un GUID responde 404, igual que una ruta que no existe (antes 400 "Cuerpo inválido").
+        if (!Guid.TryParse(rutaId, out var ruta))
+        {
+            return clsRespuestasWeb.NoEsTuya();
+        }
+
+        var resultado = await recalculoVehiculos.RecalcularAsync(UsuarioId, folio, ruta, clsConcurrenciaHttp.VersionDe(HttpContext), cancellationToken);
         return resultado.Coincidir<IActionResult>(c => Ok(c), Error);
     }
 

@@ -158,7 +158,14 @@ public sealed partial class clsGenerarPdfService(
         catch (clsViolacionUnicidadException ex)
         {
             await almacen.EliminarAsync(nombre, CancellationToken.None);
-            return ex.Error.Codigo == clsCodigosError.FolioDuplicado ? FolioDuplicado(folio!) : ex.Error;
+            if (ex.Error.Codigo == clsCodigosError.FolioDuplicado)
+            {
+                return FolioDuplicado(folio!);
+            }
+
+            // Endurecimiento A (#199): otra restricción única no es un error del cliente; su nombre técnico queda solo en el log.
+            LogRestriccionInesperada(logger, folio!, ex.Restriccion ?? "(desconocida)");
+            return new clsErrorDominio(clsCodigosError.ErrorInterno, "No se pudo registrar el PDF de la cotización.");
         }
         catch
         {
@@ -330,6 +337,9 @@ public sealed partial class clsGenerarPdfService(
         new(clsCodigosError.FolioDuplicado, $"Ya existe una cotización con el folio {folio}.", detalle);
 
     private static clsErrorDominio Invalido(string mensaje) => new(clsCodigosError.PdfPayloadInvalido, mensaje);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "El PDF {Folio} chocó con la restricción única {Restriccion} al registrarse: se responde ERROR_INTERNO.")]
+    private static partial void LogRestriccionInesperada(ILogger logger, string folio, string restriccion);
 
     [GeneratedRegex(@"^[A-Za-z0-9_-]+\z", RegexOptions.CultureInvariant)]
     private static partial Regex ExpresionFolio();

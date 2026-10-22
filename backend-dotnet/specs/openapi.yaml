@@ -18,8 +18,8 @@ info:
       de rol, el 404 (no existe o no es tuya), el 413, el 415, el 429 y el 400 de validación del cuerpo (`Cuerpo inválido...`,
       `CORREO_INVALIDO`, teléfono, seguimiento, `Idempotency-Key` fuera de largo). `ErrorNegocio`
       (`{"error": {"codigo", "mensaje", "detalle?"}}`): el resto de errores de negocio de `/web/*`, que son la mayoría (400 con
-      código, 409 de estado, `CONFLICTO_CONCURRENCIA` e `IDEMPOTENCY_KEY_REUTILIZADA`, 428 `PRECONDICION_REQUERIDA`, 403 `NEXO_SIN_PERMISO` y los 503 de
-      dependencias). Un mismo estado puede traer cualquiera de las dos (por ejemplo, el 400 de `POST /web/solicitudes-costeo`):
+      código, 409 de estado, `CONFLICTO_CONCURRENCIA` e `IDEMPOTENCY_KEY_REUTILIZADA`, 428 `PRECONDICION_REQUERIDA`, 403 `NEXO_SIN_PERMISO`, los 503 de
+      dependencias y el 500 `ERROR_INTERNO`, respuesta común `ErrorInterno`; en `/api/auth/*` el 500 es `ErrorWeb`). Un mismo estado puede traer cualquiera de las dos (por ejemplo, el 400 de `POST /web/solicitudes-costeo`):
       el cliente distingue por el tipo de `error` (texto u objeto). El servidor nunca responde 412.
     - CORS (#12, deuda de #178): el navegador puede enviar `Authorization`, `Content-Type`, `If-Match` e `Idempotency-Key`
       (métodos `GET`, `POST` y `PUT`) y leer `ETag`, `Location`, `Retry-After` y `Content-Disposition`
@@ -173,6 +173,10 @@ paths:
           $ref: '#/components/responses/CredencialesInvalidas'
         '429':
           $ref: '#/components/responses/DemasiadasPeticiones'
+        '500':
+          $ref: '#/components/responses/ErrorInternoAuth'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /api/auth/refresh:
     post:
@@ -200,6 +204,10 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '429':
           $ref: '#/components/responses/DemasiadasPeticiones'
+        '500':
+          $ref: '#/components/responses/ErrorInternoAuth'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /api/auth/logout:
     post:
@@ -221,6 +229,10 @@ paths:
           description: Sesión cerrada
         '429':
           $ref: '#/components/responses/DemasiadasPeticiones'
+        '500':
+          $ref: '#/components/responses/ErrorInternoAuth'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/chat:
     post:
@@ -313,6 +325,12 @@ paths:
                 error: "Sesión no encontrada."
         '429':
           $ref: '#/components/responses/DemasiadasPeticiones'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/mis-cotizaciones:
     get:
@@ -331,6 +349,8 @@ paths:
                 $ref: '#/components/schemas/MisCotizaciones'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/regional:
     get:
@@ -380,6 +400,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}:
     get:
@@ -426,6 +448,8 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/enviar:
     post:
@@ -434,7 +458,10 @@ paths:
       summary: Envía la cotización al cliente por correo con el PDF adjunto
       description: |
         El remitente es el comercial autenticado. Solo puede enviar cotizaciones propias
-        (si no es suya responde 404, igual que si no existe). Un envío idéntico a los
+        (si no es suya responde 404, igual que si no existe). Endurecimiento A (#199): el dueño se comprueba ANTES que
+        todo lo demás, así que un folio ajeno o inexistente responde 404 aunque el correo esté deshabilitado (antes 503
+        `CORREO_DESHABILITADO`) o los destinatarios sean inválidos (antes 400 `CORREO_INVALIDO`): esas respuestas ya no
+        permiten saber qué folios existen. Un envío idéntico a los
         mismos destinatarios en los últimos 5 minutos se rechaza como duplicado (cuenta
         un envío `enviado` o todavía en curso: `encolado`/`enviando`; un `fallido` no).
 
@@ -493,7 +520,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
         '503':
-          description: El envío de correo está deshabilitado (`Correo:Habilitado=false`, valor por defecto)
+          description: El envío de correo está deshabilitado (`Correo:Habilitado=false`, valor por defecto); solo con una cotización propia
           content:
             application/json:
               schema:
@@ -502,6 +529,12 @@ paths:
                 error:
                   codigo: CORREO_DESHABILITADO
                   mensaje: "El envío de correo está deshabilitado."
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/cotizaciones/{folio}/correos:
     get:
@@ -530,6 +563,8 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/correos/{correoId}/reintentar:
     post:
@@ -584,6 +619,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/seguimiento:
     post:
@@ -632,6 +669,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/admin/lineas-negocio:
     get:
@@ -653,6 +696,8 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '403':
           $ref: '#/components/responses/SinPermiso'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/admin/lineas-negocio/{id}:
     put:
@@ -693,6 +738,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorWeb'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/metricas/comercial:
     get:
@@ -764,6 +815,8 @@ paths:
                 error: "El parámetro 'desde' debe ser una fecha AAAA-MM-DD."
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/metricas/regional:
     get:
@@ -973,6 +1026,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/usuario/telefono:
     get:
@@ -990,6 +1045,8 @@ paths:
                 $ref: '#/components/schemas/TelefonoComercial'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
     put:
       operationId: guardarTelefono
       tags: [web]
@@ -1006,7 +1063,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/TelefonoComercial'
+              $ref: '#/components/schemas/TelefonoComercialWeb'
       responses:
         '200':
           description: Teléfono guardado
@@ -1018,6 +1075,12 @@ paths:
           $ref: '#/components/responses/Validacion'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/cotizaciones/{id}/nueva-version:
     get:
@@ -1049,6 +1112,8 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/clientes:
     get:
@@ -1097,6 +1162,8 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/municipios:
     get:
@@ -1145,6 +1212,8 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/tipos-mercancia:
     get:
@@ -1176,11 +1245,14 @@ paths:
           description: |
             `CUBICADOR_NO_DISPONIBLE`: el cubicador no está configurado (`Cubicador:UrlBase` vacía, el valor por defecto mientras
             no exista) o no respondió. El formulario puede seguir con los tipos que ya conoce: sin catálogo, la captura conserva el
-            nombre que manda el cliente.
+            nombre que manda el cliente. `CUBICADOR_NO_AUTORIZADO` (el cubicador rechazó la llave de Cotifly, 401/403) o
+            `CUBICADOR_RESPUESTA_INVALIDA` (la respuesta no cumple el contrato): avisar a soporte, no es la sesión del comercial.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/tipos-carroceria:
     get:
@@ -1205,11 +1277,13 @@ paths:
         '401':
           $ref: '#/components/responses/SesionExpirada'
         '503':
-          description: '`CUBICADOR_NO_DISPONIBLE`: el cubicador no está configurado o no respondió.'
+          description: '`CUBICADOR_NO_DISPONIBLE`: el cubicador no está configurado o no respondió; `CUBICADOR_NO_AUTORIZADO` (rechazó la llave de Cotifly) o `CUBICADOR_RESPUESTA_INVALIDA` (respuesta fuera del contrato).'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/tipos-vehiculo:
     get:
@@ -1236,11 +1310,14 @@ paths:
         '503':
           description: |
             `CUBICADOR_NO_DISPONIBLE`: el cubicador no está configurado, no respondió o no publica `GET /vehiculos-catalogo`
-            (petición P1).
+            (petición P1). `CUBICADOR_NO_AUTORIZADO` (rechazó la llave de Cotifly) o `CUBICADOR_RESPUESTA_INVALIDA` (respuesta fuera
+            del contrato).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/catalogos-flete:
     get:
@@ -1298,6 +1375,8 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/alias/resolver:
     get:
@@ -1367,6 +1446,8 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cubicacion:
     post:
@@ -1500,6 +1581,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/cubicacion/{id}:
     get:
@@ -1516,7 +1603,8 @@ paths:
 
         Solo el comercial que la pidió la ve. Se guarda en la memoria de Cotifly `Cubicador:RetencionCubicacionMinutos` (15 min)
         desde su último cambio: vencida, de otro usuario, inexistente o perdida porque Cotifly se reinició, responde **404** igual
-        (sin distinguir): el front vuelve a calcular.
+        (sin distinguir): el front vuelve a calcular. Endurecimiento A (#199): un `id` que no es un UUID también es ese 404 (antes un
+        404 sin cuerpo).
       security:
         - bearer: []
       parameters:
@@ -1539,13 +1627,15 @@ paths:
         '401':
           $ref: '#/components/responses/SesionExpirada'
         '404':
-          description: '`ErrorWeb`: la cubicación no existe, venció, se perdió al reiniciar Cotifly o es de otro usuario'
+          description: '`ErrorWeb`: la cubicación no existe, venció, se perdió al reiniciar Cotifly, es de otro usuario o el `id` no es un UUID'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorWeb'
               example:
                 error: 'La cubicación no existe, ya venció o no es tuya: vuelve a calcular el cubicaje.'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/solicitudes-costeo:
     post:
@@ -1688,7 +1778,10 @@ paths:
             `POSICION_INVALIDA` va en `mercancias[i].<subcampo>` (índice base 0: `cantidad`, `largo_cm`, `ancho_cm`, `alto_cm`,
             `peso_kg`, `descripcion` o `codigo_mercancia`) y su mensaje nombra la mercancía en base 1 (`Mercancía 1: ...`), sin
             índices; `DEMASIADAS_POSICIONES` va en `mercancias` (antes `posiciones[i]` y `posiciones`, E2E 2026-10-16).
-            Nada queda guardado. `ErrorWeb` si el cuerpo no es JSON válido.
+            Rechazos del cubicador (HU-023.1; endurecimiento A, #199): `ErrorNegocio` con su propio código, `MERCANCIAS_REQUERIDAS`,
+            `MERCANCIA_DESCONOCIDA`, `MERCANCIA_NO_CUBICABLE`, `DIMENSIONES_INVALIDAS`, `POSICION_INVALIDA`, `CUBICACION_DEMASIADO_GRANDE`
+            o `CUBICADOR_PETICION_RECHAZADA`, con `detalle.ruta`, `detalle.item` (base 0) y `detalle.campo` cuando se sabe; nunca van al
+            respaldo. Nada queda guardado. `ErrorWeb` si el cuerpo no es JSON válido.
           content:
             application/json:
               schema:
@@ -1720,6 +1813,8 @@ paths:
             valor por defecto (`true`) la ruta sigue con un camión sin vehículo.
             También si se agota `Cubicador:PresupuestoCapturaSegundos` (una licitación hace un POST por fila). El 503 no trae el detalle
             interno (estado HTTP, ruta del cubicador): queda en el log con el evento `CUBICADOR_RESPALDO`.
+            `CUBICADOR_NO_AUTORIZADO` (el cubicador rechazó la llave de Cotifly) y `CUBICADOR_RESPUESTA_INVALIDA` (respuesta fuera del
+            contrato) son 503 SIEMPRE, también con el respaldo encendido: nunca van al respaldo y nada queda guardado.
             `SERVICIO_OCUPADO` (#125): el candado del folio siguió ocupado tras los reintentos; nada queda guardado, se puede
             reintentar.
           headers:
@@ -1731,6 +1826,12 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/cotizaciones/{folio}/costeo/reintentar:
     post:
@@ -1790,6 +1891,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/resultado:
     post:
@@ -1902,6 +2005,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/cotizaciones/{folio}/costeo:
     get:
@@ -1936,6 +2045,8 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/rutas/{rutaId}/recalcular-vehiculos:
     post:
@@ -1959,7 +2070,9 @@ paths:
         - name: rutaId
           in: path
           required: true
-          description: '`linea_solicitud_id` de la ruta (de `rutas[]` de `CosteoCotizacion`).'
+          description: |
+            `linea_solicitud_id` de la ruta (de `rutas[]` de `CosteoCotizacion`). Endurecimiento A (#199): un valor que no es un UUID
+            responde 404 `NoEsTuya`, como una ruta que no existe (antes 400 "Cuerpo inválido").
           schema:
             type: string
             format: uuid
@@ -2004,6 +2117,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/costeo/margen:
     put:
@@ -2122,6 +2237,12 @@ paths:
                       nueva_version: true
         '428':
           $ref: '#/components/responses/PrecondicionRequerida'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/cotizaciones/{folio}/costeo/re-solicitar:
     post:
@@ -2254,7 +2375,8 @@ paths:
             Licitación (HU-013.11): `CATALOGOS_FLETE_NO_DISPONIBLE` (sin catálogo maestro de Nexo ni copia de 24 h para revalidar las
             filas guardadas) o `MUNICIPIOS_NO_DISPONIBLE` (alguna fila guardada sin id de municipio y el catálogo no responde). Nada
             cambia ni se envía a Nexo. `SERVICIO_OCUPADO` (#125) si el candado del folio de la versión `-vN` siguió ocupado tras
-            los reintentos: no se creó la versión.
+            los reintentos: no se creó la versión. Cubicador (endurecimiento A, #199): `CUBICADOR_NO_DISPONIBLE` (sin respaldo),
+            `CUBICADOR_NO_AUTORIZADO` o `CUBICADOR_RESPUESTA_INVALIDA` al volver a pedir los camiones; nada cambia.
           headers:
             Retry-After:
               $ref: '#/components/headers/RetryAfter'
@@ -2262,6 +2384,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/cotizaciones/{folio}/solicitud:
     get:
@@ -2300,6 +2428,8 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
     put:
       operationId: editarSolicitud
       tags: [web]
@@ -2408,11 +2538,17 @@ paths:
         '428':
           $ref: '#/components/responses/PrecondicionRequerida'
         '503':
-          description: '`NEXO_NO_DISPONIBLE` con `detalle.motivo = RECHAZO_NEXO_FALLIDO` (el rechazo de la solicitud anterior falló: no se capturó otra), `CATALOGOS_FLETE_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE`, `NEXO_NO_DISPONIBLE` (conexos) o `CUBICADOR_NO_DISPONIBLE`. Nada se aplicó'
+          description: '`NEXO_NO_DISPONIBLE` con `detalle.motivo = RECHAZO_NEXO_FALLIDO` (el rechazo de la solicitud anterior falló: no se capturó otra), `CATALOGOS_FLETE_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE`, `NEXO_NO_DISPONIBLE` (conexos), `CUBICADOR_NO_DISPONIBLE` (sin respaldo), `CUBICADOR_NO_AUTORIZADO` o `CUBICADOR_RESPUESTA_INVALIDA`. Nada se aplicó'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/servicios-conexos:
     get:
@@ -2481,6 +2617,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/costeo/servicios-conexos:
     post:
@@ -2583,7 +2721,16 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`COSTEO_NO_LISTO`, `RUTA_RECHAZADA` (HU-028.1, #183: la Mesa de Costeo rechazó la ruta), `LINEA_SIN_COTIZACION_NEXO`, `PDF_YA_ENVIADO`, `ESTADO_NO_PERMITE` (`detalle.motivo = LICITACION` o `VARIAS_RUTAS`: cambios de carga con más de una ruta), `CONFLICTO_CONCURRENCIA` o `IDEMPOTENCY_KEY_REUTILIZADA` (la misma `Idempotency-Key` con otro cuerpo; antes 400 `ErrorWeb`); sin cambios'
+          description: |
+            `COSTEO_NO_LISTO`, `RUTA_RECHAZADA` (HU-028.1, #183: la Mesa de Costeo rechazó la ruta), `LINEA_SIN_COTIZACION_NEXO`,
+            `PDF_YA_ENVIADO`, `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION`, `CONFLICTO_CONCURRENCIA` o
+            `IDEMPOTENCY_KEY_REUTILIZADA` (la misma `Idempotency-Key` con otro cuerpo; antes 400 `ErrorWeb`): sin cambios.
+            Endurecimiento A (#199):
+            - `ESTADO_NO_PERMITE` con `detalle.motivo = CAPTURA_EN_CURSO` (y `detalle.folio`): otra petición con la misma
+              `Idempotency-Key` sigue en curso en otra réplica; no se ejecuta nada. Esperar y repetir con la misma clave.
+            - `CONFLICTO_CONCURRENCIA` con `detalle.agregado_en_nexo = true`: la cotización cambió DESPUÉS de que Nexo agregó el
+              conexo. El conexo SÍ quedó en Nexo (el polling lo trae a Cotifly): recargar el costeo y NO repetir el POST (Nexo no
+              tiene DELETE; la misma `Idempotency-Key` devuelve esta misma respuesta).
           content:
             application/json:
               schema:
@@ -2596,6 +2743,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
     put:
       operationId: seleccionarServiciosConexos
       tags: [web]
@@ -2677,6 +2830,12 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '428':
           $ref: '#/components/responses/PrecondicionRequerida'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/cotizaciones/{folio}/costeo/textos/redactar:
     post:
@@ -2731,6 +2890,8 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '428':
           $ref: '#/components/responses/PrecondicionRequerida'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/costeo/textos:
     put:
@@ -2785,6 +2946,12 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '428':
           $ref: '#/components/responses/PrecondicionRequerida'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/cotizaciones/{folio}/costeo/pdf:
     post:
@@ -2862,6 +3029,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/licitaciones/analizar-excel:
     post:
@@ -2873,7 +3042,7 @@ paths:
         `POST {Nexo:UrlBase}/api/captura-solicitudes/analizar-excel` con la identidad del comercial y devuelve las hojas con
         su fila de encabezado, los encabezados y hasta 1000 filas como texto, para que el frontend mapee las columnas a los
         campos destino. Ni Nexo ni Cotifly guardan el archivo en este paso. `multipart/form-data` con el campo `archivo`
-        (`.xlsx` o `.xlsm`, máximo 10 MB). El cuerpo completo de `/web/licitaciones*` admite hasta
+        (`.xlsx` o `.xlsm`, máximo 10 MB menos 64 KB: 10.420.224 bytes). El cuerpo completo de `/web/licitaciones*` admite hasta
         `SeguridadHttp:LimiteCuerpoLicitacionBytes` (12 MB por defecto; 413 al pasarlo).
 
         **Código de mercancía (HU-023.5, #160).** Cotifly reconoce en cada hoja la columna de la mercancía (encabezado con
@@ -2908,7 +3077,7 @@ paths:
         '400':
           description: |
             `ARCHIVO_REQUERIDO` (falta o vacío), `FORMATO_NO_SOPORTADO` (otra extensión), `ARCHIVO_DEMASIADO_GRANDE` (más de
-            10 MB), y de Nexo `EXCEL_INVALIDO` (no se pudo leer) o `EXCEL_SIN_DATOS` (ninguna hoja con tabla).
+            10 MB menos 64 KB, 10.420.224 bytes), y de Nexo `EXCEL_INVALIDO` (no se pudo leer) o `EXCEL_SIN_DATOS` (ninguna hoja con tabla).
             `COSTEO_NEXO_RECHAZADA` para otro 4xx de Nexo. Un 413 de Nexo también es `ARCHIVO_DEMASIADO_GRANDE`: Cotifly acepta
             hasta 10 MB menos 64 KB para que el archivo con el sobre multipart quepa en el límite de 10 MB de Nexo.
           content:
@@ -2935,6 +3104,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/licitaciones:
     post:
@@ -3013,7 +3186,13 @@ paths:
             línea no existe, o está inactiva: `detalle.motivo` lo dice; HU-013.15: en los dos casos `detalle.lineas_validas` trae las
             líneas activas de Cotifly y, con `linea_negocio = Licitaciones` (la línea del catálogo de Nexo, que no da margen), `detalle.motivo =
             LINEA_DE_NEXO`), `FOLIO_CONSECUTIVO_AGOTADO`, `TRM_NO_DISPONIBLE` con
-            `moneda = USD`). `ErrorWeb` si el cuerpo no
+            `moneda = USD`). `ARCHIVO_DEMASIADO_GRANDE`: el Excel pasa de 10 MB menos 64 KB (10.420.224 bytes). Endurecimiento A
+            (#199): con `Cubicador:LicitacionEnSegundoPlano = false` (no es el valor por defecto) las filas se cubican al crear y un
+            rechazo del cubicador es 400 `ErrorNegocio` con su código (`MERCANCIAS_REQUERIDAS`, `MERCANCIA_DESCONOCIDA`,
+            `MERCANCIA_NO_CUBICABLE`, `DIMENSIONES_INVALIDAS`, `POSICION_INVALIDA`, `CUBICACION_DEMASIADO_GRANDE`,
+            `CUBICADOR_PETICION_RECHAZADA`); en segundo plano (por defecto) esos rechazos quedan en la fila (`estado_cubicacion =
+            fallida`, `error_cubicacion`) y el 201 sale igual. Un código de mercancía desconocido o no cubicable se reporta por fila en
+            `ReporteLicitacionInvalida`. `ErrorWeb` si el cuerpo no
             es JSON válido. Si Nexo responde 403 al alta, la licitación queda igual en `error_envio` con el motivo
             `NEXO_SIN_PERMISO` (201).
           content:
@@ -3030,7 +3209,9 @@ paths:
             HU-013.11: `CATALOGOS_FLETE_NO_DISPONIBLE` (alguna fila trae `tipo_vehiculo` o `clase_viaje` y no hay catálogo maestro
             de Nexo ni una copia de menos de 24 h para validarlos) o `MUNICIPIOS_NO_DISPONIBLE` (alguna fila sin id de municipio y el
             catálogo de municipios no responde). Nada se guarda. `SERVICIO_OCUPADO` (#125) si el candado del folio siguió ocupado
-            tras los reintentos: nada se guarda y se puede reintentar.
+            tras los reintentos: nada se guarda y se puede reintentar. Endurecimiento A (#199): solo con
+            `Cubicador:LicitacionEnSegundoPlano = false`, `CUBICADOR_NO_DISPONIBLE` (con `Cubicador:RespaldoSiFalla = false`),
+            `CUBICADOR_NO_AUTORIZADO` o `CUBICADOR_RESPUESTA_INVALIDA`; nada se guarda.
           headers:
             Retry-After:
               $ref: '#/components/headers/RetryAfter'
@@ -3044,6 +3225,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorWeb'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/licitaciones/{folio}:
     get:
@@ -3055,6 +3240,8 @@ paths:
         tiene `precio_final = null`. Solo el dueño. HU-023.5 (#160): trae los camiones de cada ruta (`lineas[].camiones`), el
         estado de su cubicación en segundo plano (`lineas[].estado_cubicacion`, `error_cubicacion`), el progreso
         (`progreso_cubicacion`) y los avisos del cubicador por ruta (`cubicacion`, la misma forma de `POST /web/solicitudes-costeo`).
+        Endurecimiento A (#199): un folio que no es una licitación (formulario o chat) responde 404, como el Excel y reintentar
+        (antes respondía 200).
       security:
         - bearer: []
       parameters:
@@ -3070,6 +3257,8 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/licitaciones/{folio}/cubicacion/reintentar:
     post:
@@ -3120,6 +3309,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/licitaciones/{folio}/excel:
     get:
@@ -3164,6 +3359,8 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/clientes/{nit}/destinatarios-previos:
     get:
@@ -3195,6 +3392,8 @@ paths:
                 $ref: '#/components/schemas/ErrorWeb'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/correo/vista-previa:
     post:
@@ -3215,7 +3414,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/EnvioWeb'
+              $ref: '#/components/schemas/BorradorCorreoWeb'
       responses:
         '200':
           description: Vista previa
@@ -3227,6 +3426,12 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /pdfs/{archivo}:
     get:
@@ -3272,6 +3477,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorWeb'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /health:
     get:
@@ -3438,7 +3645,8 @@ components:
       description: |
         Segundos que conviene esperar antes de reintentar o volver a consultar. Con `SERVICIO_OCUPADO` (#125) siempre 1; con
         `CUBICADOR_OCUPADO` (opción C) 10; en el 202 de `POST /web/cubicacion` y en `GET /web/cubicacion/{id}` con `en_proceso`
-        (opción D) 2. Las demás causas del 503 no lo envían.
+        (opción D) 2; en el 429 (endurecimiento A, #199) lo que falta para que se abra la ventana del límite. Las demás causas del
+        503 no lo envían.
       schema:
         type: integer
       example: 1
@@ -3493,11 +3701,65 @@ components:
           example:
             error: "Cotización no encontrada o no es tuya."
     DemasiadasPeticiones:
-      description: Límite de peticiones alcanzado
+      description: |
+        Límite de peticiones alcanzado (`/api/auth/*`: `LimiteAuth`; `/web/chat`: `LimiteChat`). Endurecimiento A (#199): trae
+        `Retry-After` con los segundos que faltan para que se abra la ventana.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorWeb'
+          example:
+            error: "Demasiadas peticiones. Intenta de nuevo en unos segundos."
+    CuerpoDemasiadoGrande:
+      description: |
+        Endurecimiento A (#199): el cuerpo supera el límite de `/web/*` (`SeguridadHttp:LimiteCuerpoWebBytes`, 64 KB por defecto;
+        12 MB en `/web/licitaciones*`, `SeguridadHttp:LimiteCuerpoLicitacionBytes`). `ErrorWeb`; no se procesa nada.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorWeb'
+          example:
+            error: "El cuerpo de la petición es demasiado grande."
+    TipoContenidoNoSoportado:
+      description: |
+        Endurecimiento A (#199): el cuerpo no viene como `application/json` (o como `multipart/form-data` donde el endpoint lo pide).
+        `ErrorWeb`; no se procesa nada.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorWeb'
+          example:
+            error: "Cuerpo inválido: envía JSON con Content-Type: application/json."
+    ErrorInterno:
+      description: |
+        Endurecimiento A (#199): error interno no controlado (una excepción, o un error que no es del cliente como una restricción
+        única que el caso de uso no tradujo). Siempre `ErrorNegocio` con `codigo = ERROR_INTERNO`, un mensaje genérico y, como único
+        `detalle`, `id_correlacion` (el id de la petición en el log del servidor: dárselo a soporte); nunca el mensaje de la excepción
+        ni la traza, que quedan solo en el log con ese id. Una petición que el cliente abortó no recibe respuesta. Reintentar más tarde; si se repite,
+        reportar a soporte la hora y la operación.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorNegocio'
+          example:
+            error:
+              codigo: ERROR_INTERNO
+              mensaje: "Ocurrió un error interno. Intenta de nuevo y, si se repite, contacta a soporte."
+              detalle:
+                id_correlacion: "0HNPGF5LGM4MM:00000001"
+    ErrorInternoAuth:
+      description: |
+        Endurecimiento A (#199): error interno no controlado en `/api/auth/*`. `ErrorWeb` con el mismo mensaje genérico (la única forma
+        de error de ese grupo); el detalle queda solo en el log del servidor.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorWeb'
+          example:
+            error: "Ocurrió un error interno. Intenta de nuevo y, si se repite, contacta a soporte."
 
   schemas:
     Nulo:
@@ -3554,9 +3816,10 @@ components:
                 cubicaje", la captura, el recálculo de vehículos y la licitación, siempre con el cubicador configurado) y `TRM_NO_DISPONIBLE`
                 (HU-012.1/HU-012.2, ADR-014: ninguna fuente de la TRM entregó una TRM válida para el día; por defecto
                 DolarApi y, de respaldo, los datos abiertos de la Superintendencia Financiera; no se cotiza en USD y el
-                comercial puede reintentar o cotizar en COP; en `POST /web/licitaciones` con `moneda = USD` también). Solo en la herramienta
-                `resolver_municipio` del agente (HU-005.13), nunca en `/web/*`: `MUNICIPIO_ARGUMENTO_INVALIDO`
-                (`campo` distinto de `origen`/`destino` o `texto` vacío; no se consulta Nexo).
+                comercial puede reintentar o cotizar en COP; en `POST /web/licitaciones` con `moneda = USD` también). Endurecimiento A
+                (#199): se retiran del enum los códigos que ningún código emite (`AJUSTE_ID_INVALIDO`, `TARIFA_FUENTE_NO_DISPONIBLE`,
+                `TARIFA_CONFIG_INVALIDA` y `MUNICIPIO_ARGUMENTO_INVALIDO`, este último de la herramienta `resolver_municipio`, retirada
+                con el agente legado en HU-013.9); `clsContratoReflexionTests` exige que cada valor del enum lo emita algún código.
                 Costeo en Nexo (ADR-015): `SOLICITUD_COSTEO_INVALIDA` (formulario ampliado fuera de los límites de
                 Nexo), `COSTEO_NEXO_NO_DISPONIBLE` (Nexo sin configurar, 5xx, red, circuito abierto o el comercial sin
                 `idUsuarioExterno`), `COSTEO_NEXO_TIEMPO_AGOTADO` (Nexo no respondió a tiempo), `COSTEO_NEXO_RECHAZADA`
@@ -3585,7 +3848,7 @@ components:
                 `COTIZACION_NO_ENTREGADA` (409, sin cambio local) y `USAR_RESULTADO_NEXO` (409: `/seguimiento`
                 sobre una cotización que pasó por Nexo).
                 `PRECIO_INVALIDO` queda solo para el cálculo de precio.
-                Solo en `GET /web/metricas/regional` (HU-010.1, ADR-016): `REGIONAL_NO_ASIGNADA` (409: el gerente no
+                En `GET /web/metricas/regional` (HU-010.1, ADR-016) y en `GET /web/cotizaciones/regional` (HU-016.1, #154): `REGIONAL_NO_ASIGNADA` (409: el gerente no
                 tiene regional en `DimEjecutivo` ni en `UsuariosWeb.regional`) y `REGIONAL_NO_DISPONIBLE` (503: la
                 conexión a `DimEjecutivo` está configurada pero falla).
                 Licitaciones (HU-011, ADR-017): `ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `EXCEL_INVALIDO` y `EXCEL_SIN_DATOS`
@@ -3616,9 +3879,11 @@ components:
                 camiones; no admite ajuste de margen ni de conexos; `detalle` trae `linea_orden`, `linea_solicitud_id` y
                 `motivo_rechazo`) y `SIN_RUTAS_COTIZABLES` (409: la Mesa rechazó todas las rutas; `POST .../costeo/pdf` no genera
                 el PDF, decisión D1).
+                Endurecimiento A (#199): `ERROR_INTERNO` es 500 (antes salía como 400) y lo emiten tanto los casos de uso (por ejemplo,
+                el comercial autenticado no existe en `UsuariosWeb`) como el manejador global de errores no controlados, siempre con un
+                mensaje genérico y con `detalle.id_correlacion` como único detalle (respuesta común `ErrorInterno`). Una restricción única que el caso de uso no tradujo
+                (`REGISTRO_DUPLICADO` interno) también sale como 500 `ERROR_INTERNO`, sin el nombre de la restricción.
               enum:
-                - TARIFA_FUENTE_NO_DISPONIBLE
-                - TARIFA_CONFIG_INVALIDA
                 - MARGEN_FUENTE_NO_DISPONIBLE
                 - MARGEN_LINEA_DESCONOCIDA
                 - PRECIO_INVALIDO
@@ -3630,7 +3895,6 @@ components:
                 - CORREO_PDF_NO_ENCONTRADO
                 - CORREO_ENVIO_FALLIDO
                 - AJUSTE_COTIZACION_INVALIDA
-                - AJUSTE_ID_INVALIDO
                 - AJUSTE_MARGEN_INVALIDO
                 - FOLIO_DUPLICADO
                 - FOLIO_CONSECUTIVO_AGOTADO
@@ -3656,7 +3920,6 @@ components:
                 - USAR_RESULTADO_NEXO
                 - SOLICITUD_NO_TRANSICIONABLE
                 - TRM_NO_DISPONIBLE
-                - MUNICIPIO_ARGUMENTO_INVALIDO
                 - REGIONAL_NO_ASIGNADA
                 - REGIONAL_NO_DISPONIBLE
                 - ARCHIVO_REQUERIDO
@@ -4597,6 +4860,34 @@ components:
           nullable: true
           maxLength: 5000
 
+    BorradorCorreoWeb:
+      type: object
+      description: |
+        Endurecimiento A (#199): cuerpo opcional de `POST .../correo/vista-previa` (antes `EnvioWeb`, que exige `para`). Todo es
+        opcional: sin `para` (o vacío) se usan los destinatarios del último envío del comercial a ese cliente; sin `asunto` ni
+        `cuerpo`, los de la plantilla. No se valida ni se envía nada.
+      properties:
+        para:
+          type: array
+          nullable: true
+          items:
+            type: string
+            maxLength: 320
+        cc:
+          type: array
+          nullable: true
+          items:
+            type: string
+            maxLength: 320
+        asunto:
+          type: string
+          nullable: true
+          maxLength: 300
+        cuerpo:
+          type: string
+          nullable: true
+          maxLength: 5000
+
     RespuestaEnvio:
       type: object
       required: [enviado]
@@ -5093,11 +5384,24 @@ components:
     TelefonoComercial:
       type: object
       required: [telefono]
+      description: Respuesta de `GET` y `PUT /web/usuario/telefono`. El teléfono guardado (recortado) o `null` si no hay.
       properties:
         telefono:
           type: string
           nullable: true
           pattern: '^\+?[0-9 ]{7,20}$'
+
+    TelefonoComercialWeb:
+      type: object
+      description: |
+        Endurecimiento A (#199): cuerpo de `PUT /web/usuario/telefono` (antes compartía `TelefonoComercial`). `telefono` es opcional:
+        ausente, `null`, vacío o solo espacios BORRAN el teléfono. Con valor, se recorta y debe cumplir `^\+?[0-9 ]{7,20}$`; si no,
+        400 `ErrorWeb` (`TELEFONO_INVALIDO`).
+      properties:
+        telefono:
+          type: string
+          nullable: true
+          pattern: '^\s*(\+?[0-9 ]{7,20})?\s*$'
 
     Destinatarios:
       type: object
@@ -5740,6 +6044,8 @@ components:
           type: number
           minimum: 0.01
           maximum: 999999.99
+          multipleOf: 0.01
+          description: Hasta 2 decimales (más decimales es 400).
 
     AjusteMargenWeb:
       type: object
@@ -5924,12 +6230,13 @@ components:
           description: HU-021.8. La ruta por su id (`rutas[].linea_solicitud_id`); alternativa a `linea_orden`.
         servicio_id:
           type: string
-          format: uuid
-          description: '`id` de `ServicioConexoCatalogo` (`servicioConexoId` de Nexo).'
+          description: '`id` de `ServicioConexoCatalogo` (`servicioConexoId` de Nexo), tal como lo entrega Nexo.'
         cantidad:
           type: number
           minimum: 0.01
           maximum: 999999.99
+          multipleOf: 0.01
+          description: Hasta 2 decimales (más decimales es 400 `ErrorWeb`).
 
     AgregarServiciosConexosWeb:
       type: object
@@ -5954,7 +6261,9 @@ components:
       properties:
         id:
           type: string
-          format: uuid
+          description: |
+            Id del servicio en el catálogo de NEXO tal como lo entrega NEXO (Cotifly no lo interpreta ni garantiza su formato).
+            Endurecimiento A (#199): sin `format: uuid`.
         codigo:
           type: string
           nullable: true
@@ -6145,7 +6454,8 @@ components:
           exclusiveMinimum: true
           minimum: 0
           maximum: 99999.99
-          description: Unidades del servicio (hasta 2 decimales).
+          multipleOf: 0.01
+          description: Unidades del servicio (hasta 2 decimales; más es `VALOR_FUERA_DE_RANGO`).
 
     RutaCapturaWeb:
       type: object
@@ -7226,11 +7536,13 @@ components:
           Cotifly nunca elige entre candidatos. El texto se guarda y viaja tal como vino, junto al id.
         - **Horas (G5).** `horas_cargue`/`horas_descargue` de la fila, si vienen, viajan en esa línea; si no, las del encabezado.
 
-        HU-021.6 (#132, ADR-019): cada fila es una **ruta** con un camión sin vehículo (hasta el cubicador, #133). Puede traer su
-        `linea_negocio` (sin ella, la de la licitación), las ciudades de devolución y de levante por id + nombre (con solo el nombre
-        se resuelven como el origen), `mercancias` con `id_tipo_mercancia` obligatorio y `servicios_conexos` del catálogo de Nexo
-        (`ConexoCapturaWeb`). **`tipo_vehiculo` y `carroceria` se retiraron del mapeo del Excel** (decisión 7): si llegan, se
-        ignoran (salvo la bandera `Captura:AceptarVehiculoCliente`, igual que en `RutaCapturaWeb`). Una fila con solo el id de municipio copia el nombre del catálogo.
+        HU-021.6 (#132, ADR-019): cada fila es una **ruta**. Puede traer su `linea_negocio` (sin ella, la de la licitación), las
+        ciudades de devolución y de levante por id + nombre (con solo el nombre se resuelven como el origen), `mercancias` con
+        `codigo_mercancia` (HU-023) y `servicios_conexos` del catálogo de Nexo (`ConexoCapturaWeb`). Una fila con solo el id de
+        municipio copia el nombre del catálogo. HU-032 (#197, endurecimiento A #199 corrige este texto): `tipo_vehiculo` y
+        `carroceria` YA NO se ignoran: son el vehículo elegido de la fila, con las mismas reglas que `RutaCapturaWeb` (respaldo del
+        cubicador y obligatorio en una fila sin mercancías cubicables, salvo Contenedor; `Captura:AceptarVehiculoCliente = false`
+        los vuelve a ignorar). Los montos (`valor_*`) van de 0 a 9.999.999.999.999,99 y los pesos hasta 999.999,99, con 2 decimales.
 
         Los valores se guardan recortados y el primer envío, el reintento y la re-solicitud mandan exactamente lo guardado.
       properties:
@@ -7281,6 +7593,7 @@ components:
         tipo_vehiculo:
           type: string
           nullable: true
+          maxLength: 100
           description: |
             HU-032 (#197): el vehículo elegido de la fila, con la misma regla que `RutaCapturaWeb.tipo_vehiculo`. Una fila con todas sus
             mercancías cubicables se cubica en segundo plano (camión provisional sin vehículo; el elegido es el respaldo); una fila
@@ -7289,6 +7602,7 @@ components:
         carroceria:
           type: string
           nullable: true
+          maxLength: 100
           description: HU-032 (#197). La carrocería elegida (opcional). Igual que `RutaCapturaWeb.carroceria`.
         tipologia:
           type: string
@@ -7336,11 +7650,13 @@ components:
           type: number
           nullable: true
           minimum: 0
+          maximum: 9999999999999.99
           description: HU-021.6. Valor de un levante (nombre nuevo de `valor_aprovisionamiento`; si llegan los dos, vale este).
         valor_aprovisionamiento:
           type: number
           nullable: true
           minimum: 0
+          maximum: 9999999999999.99
         peso_kg:
           type: number
           nullable: true
@@ -7362,6 +7678,7 @@ components:
           type: number
           nullable: true
           minimum: 0
+          maximum: 9999999999999.99
         mercancias:
           type: array
           nullable: true
@@ -7406,6 +7723,10 @@ components:
           type: string
           format: date-time
           nullable: true
+          description: |
+            Endurecimiento A (#199). Opcional. ISO 8601: con zona se respeta; sin zona (o solo la fecha, `2026-10-31`) se interpreta en
+            hora de Bogotá (-05:00). No se valida que sea futura. En la respuesta (`Licitacion.deadline`) vuelve en UTC (D5). Un
+            valor que no es ISO es 400 `ErrorWeb` ("Cuerpo inválido").
         notas:
           type: string
           nullable: true
@@ -7435,7 +7756,8 @@ components:
           description: |
             Opcional (ADR-014 §5). Moneda de la licitación: `COP` por defecto. Con `USD` los precios se convierten con la TRM
             del día de creación (`trm_aplicada` de `Licitacion`) y el PDF de pliego lleva la nota de TRM mínima. Se acepta
-            sin distinguir mayúsculas ni espacios al borde.
+            sin distinguir mayúsculas ni espacios al borde. Endurecimiento A (#199): `null` o ausente es `COP`; un texto vacío o
+            cualquier otro valor es un error de la licitación (`ReporteLicitacionInvalida`, `VALOR_FUERA_DE_RANGO` en `moneda`).
         lineas:
           type: array
           minItems: 1
@@ -7698,7 +8020,7 @@ components:
 
     ItemCubicacion:
       type: object
-      required: [cantidad, largo_cm, ancho_cm, alto_cm]
+      required: [cantidad, largo_cm, ancho_cm, alto_cm, peso_kg]
       description: |
         HU-023.2 (#157). Un bulto o grupo de bultos idénticos. Debe traer `codigo_mercancia` o, mientras el frontend no tenga el
         desplegable, `descripcion` (se resuelve al tipo más parecido del catálogo); sin ninguno de los dos, 400 `MERCANCIA_DESCONOCIDA`.
@@ -7715,20 +8037,38 @@ components:
           description: Texto libre de la mercancía; solo se usa si no viene `codigo_mercancia`.
         cantidad:
           type: integer
-          description: Cuántos bultos idénticos con estas medidas.
+          minimum: 1
+          maximum: 100000
+          description: |
+            Cuántos bultos idénticos con estas medidas (1 a 100.000; fuera de rango, 400 `POSICION_INVALIDA` con `detalle.item` y
+            `detalle.campo`). La suma de las cantidades de todos los ítems no puede pasar de 10.000 (`CUBICACION_DEMASIADO_GRANDE`).
         largo_cm:
           type: number
-          description: Largo en centímetros.
+          minimum: 0.1
+          maximum: 999999
+          multipleOf: 0.01
+          description: Largo en centímetros (0,1 a 999.999, hasta 2 decimales; fuera de rango, 400 `DIMENSIONES_INVALIDAS`).
         ancho_cm:
           type: number
-          description: Ancho en centímetros.
+          minimum: 0.1
+          maximum: 999999
+          multipleOf: 0.01
+          description: Ancho en centímetros (0,1 a 999.999, hasta 2 decimales).
         alto_cm:
           type: number
-          description: Alto en centímetros.
+          minimum: 0.1
+          maximum: 999999
+          multipleOf: 0.01
+          description: Alto en centímetros (0,1 a 999.999, hasta 2 decimales).
         peso_kg:
           type: number
-          nullable: true
-          description: Peso en kilogramos de cada bulto.
+          exclusiveMinimum: true
+          minimum: 0
+          maximum: 999999.99
+          multipleOf: 0.01
+          description: |
+            Peso en kilogramos de cada bulto: obligatorio, mayor que 0 y hasta 999.999,99 con 2 decimales (sin él, o en 0, 400
+            `DIMENSIONES_INVALIDAS` con `detalle.campo = peso_kg`; endurecimiento A, #199: antes el contrato lo declaraba anulable).
 
     CubicacionRequest:
       type: object
@@ -8035,10 +8375,12 @@ components:
           nullable: true
           description: HU-033. El cuerpo en HTML tal como lo recibe el cliente (texto, resumen con el total y firma).
         resumen:
-          description: HU-033. Precio por ruta y total, sin desglose; `null` si la cotización todavía no tiene total.
-          nullable: true
-          allOf:
+          description: |
+            HU-033. Precio por ruta y total, sin desglose; `null` si la cotización todavía no tiene total. Endurecimiento A (#199):
+            `oneOf` con `Nulo` (en OAS 3.0.3 `nullable: true` sin `type` no admite `null`).
+          oneOf:
             - $ref: '#/components/schemas/ResumenCorreo'
+            - $ref: '#/components/schemas/Nulo'
         copia_oculta:
           type: string
           nullable: true

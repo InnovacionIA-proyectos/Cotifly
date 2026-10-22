@@ -460,7 +460,7 @@ export function esErrorNegocio(b: unknown): b is ErrorNegocio {
 | `/api/auth/*` | 400, 401, 429 | Nunca |
 | Cualquier `/web/*` | 401, 403, 404, 413, 429 y 400 de validación del cuerpo | — |
 | `POST /web/chat` | 400 (`sesion_id inválido`, `folio inválido`, mensaje), 404 (sesión de otro comercial, o folio ajeno o inexistente) | 400 `FOLIO_REQUERIDO` (desde #102, sin `folio`). Los errores de las herramientas llegan en `errores` de un 200 |
-| `POST /web/cotizaciones/{folio}/enviar` | 400 `CORREO_INVALIDO` (sin código visible), 404 | 400 (`CORREO_DUPLICADO`, `CORREO_PDF_NO_ENCONTRADO`, `CORREO_ENVIO_FALLIDO`...), 503 `CORREO_DESHABILITADO` |
+| `POST /web/cotizaciones/{folio}/enviar` | 400 `CORREO_INVALIDO` (sin código visible), 404 (folio ajeno o inexistente: siempre 404, antes que el 503 o el 400, endurecimiento A #199) | 400 (`CORREO_DUPLICADO`, `CORREO_PDF_NO_ENCONTRADO`, `CORREO_ENVIO_FALLIDO`...), 503 `CORREO_DESHABILITADO` |
 | `POST .../seguimiento` | 400 (motivo de más de 2000), 404 | 409 `USAR_RESULTADO_NEXO` |
 | `GET /web/clientes` | 400 si falta `q` (`Falta el texto de búsqueda (q).`) | 503 `CLIENTE_BUSQUEDA_NO_DISPONIBLE` (antes 400, OBS-1021B-3) |
 | `GET /web/municipios`, `GET /web/catalogos-flete`, `POST /web/cubicacion` | 401; 400 `Cuerpo inválido.` en `/web/cubicacion` | 503 `MUNICIPIOS_NO_DISPONIBLE` y `CATALOGOS_FLETE_NO_DISPONIBLE`; 400 `ITEMS_REQUERIDOS`, `DIMENSIONES_INVALIDAS` (peso por unidad ≤ 0 o medidas fuera de 0,1 a 999.999, con `detalle.item`), `POSICION_INVALIDA` (cantidad), `MERCANCIA_DESCONOCIDA`, `CUBICACION_DEMASIADO_GRANDE` y los rechazos del cubicador; 503 `CUBICADOR_NO_DISPONIBLE` en `/web/cubicacion` (HU-023.2) |
@@ -486,7 +486,7 @@ export function esErrorNegocio(b: unknown): b is ErrorNegocio {
 > `ESTADO_NO_PERMITE` con `detalle.motivo = CAPTURA_EN_CURSO` (sin `detalle.folio` si aún no hay folio): esperar unos segundos y repetir
 > con la misma clave. Los números del cuerpo se comparan por valor (`1.5` = `1.50`).
 
-Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA` → 404 `ErrorWeb`; `SIN_PERMISO` → 403 `ErrorWeb`; validaciones → 400 `ErrorWeb`; las dependencias caídas (`CORREO_DESHABILITADO`, `COSTEO_NEXO_NO_DISPONIBLE`, `COSTEO_NEXO_TIEMPO_AGOTADO`, `NEXO_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE`, `CLIENTE_BUSQUEDA_NO_DISPONIBLE`, `CATALOGOS_FLETE_NO_DISPONIBLE`, `REGIONAL_NO_DISPONIBLE`, `PDF_RENDER_NO_DISPONIBLE`, `SERVICIO_OCUPADO` y los `CUBICADOR_*` salvo `CUBICADOR_PETICION_RECHAZADA`, que es 400) → 503 `ErrorNegocio`; `NEXO_SIN_PERMISO` → 403 `ErrorNegocio`; los de conflicto de estado del costeo (incluidos `RUTA_RECHAZADA` y `SIN_RUTAS_COTIZABLES`, HU-028.1), `CORREO_NO_REINTENTABLE`, `IDEMPOTENCY_KEY_REUTILIZADA`, `REGIONAL_NO_ASIGNADA` y `CONFLICTO_CONCURRENCIA` → 409 `ErrorNegocio`; `PRECONDICION_REQUERIDA` → 428 `ErrorNegocio`; el resto de códigos de negocio → 400 `ErrorNegocio`. El servidor nunca responde 412. En la práctica casi todos los errores de `/web/*` con código son `ErrorNegocio`: parsear siempre las dos formas.
+Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA` → 404 `ErrorWeb`; `SIN_PERMISO` → 403 `ErrorWeb`; validaciones → 400 `ErrorWeb`; las dependencias caídas (`CORREO_DESHABILITADO`, `COSTEO_NEXO_NO_DISPONIBLE`, `COSTEO_NEXO_TIEMPO_AGOTADO`, `NEXO_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE`, `CLIENTE_BUSQUEDA_NO_DISPONIBLE`, `CATALOGOS_FLETE_NO_DISPONIBLE`, `REGIONAL_NO_DISPONIBLE`, `PDF_RENDER_NO_DISPONIBLE`, `SERVICIO_OCUPADO` y los `CUBICADOR_*` salvo `CUBICADOR_PETICION_RECHAZADA`, que es 400) → 503 `ErrorNegocio`; `NEXO_SIN_PERMISO` → 403 `ErrorNegocio`; los de conflicto de estado del costeo (incluidos `RUTA_RECHAZADA` y `SIN_RUTAS_COTIZABLES`, HU-028.1), `CORREO_NO_REINTENTABLE`, `IDEMPOTENCY_KEY_REUTILIZADA`, `REGIONAL_NO_ASIGNADA` y `CONFLICTO_CONCURRENCIA` → 409 `ErrorNegocio`; `PRECONDICION_REQUERIDA` → 428 `ErrorNegocio`; `ERROR_INTERNO` (y una restricción única no traducida) → 500 `ErrorNegocio` genérico, como cualquier excepción no controlada (endurecimiento A, #199); el resto de códigos de negocio → 400 `ErrorNegocio`. El servidor nunca responde 412. En la práctica casi todos los errores de `/web/*` con código son `ErrorNegocio`: parsear siempre las dos formas.
 
 ### 4.3 Mensajes fijos de `ErrorWeb`
 
@@ -504,13 +504,11 @@ Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA
 
 | Código | Dónde aparece | Significado | UX sugerida | Estado |
 |---|---|---|---|---|
-| `TARIFA_FUENTE_NO_DISPONIBLE` | `errores` del chat (`buscar_tarifa`) | El tarifario de Drive se retiró: no hay tarifa automática | **No es un error para el usuario**: el agente pide el costo. No mostrar alerta | En QA |
-| `TARIFA_CONFIG_INVALIDA` | `errores` del chat | La tarifa de la fuente no está en COP | Aviso: "La tarifa no está en pesos; indica el costo" | En QA |
 | `MARGEN_FUENTE_NO_DISPONIBLE` | chat | SAP caído y la línea no tiene política | "No se pudo obtener el margen. Intenta más tarde" | En QA |
 | `MARGEN_LINEA_DESCONOCIDA` | chat; 400 en `solicitudes-costeo` | La línea no existe o está inactiva | Marcar el campo línea: "Línea no disponible" | En QA |
 | `PRECIO_INVALIDO` | chat | Datos de precio inválidos (costo o margen fuera de rango, moneda desconocida) | Mostrar el texto del agente | En QA |
 | `AJUSTE_MARGEN_INVALIDO` | chat | Margen negociado fuera de rango (negativo o 1 o más con método `margen`) | "Margen fuera de rango" | En QA |
-| `AJUSTE_COTIZACION_INVALIDA`, `AJUSTE_ID_INVALIDO` | chat | Ajuste de margen sin cotización válida | Texto del agente | En QA |
+| `AJUSTE_COTIZACION_INVALIDA` | chat | Ajuste de margen sin cotización válida | Texto del agente | En QA |
 | `PDF_PAYLOAD_INVALIDO` | chat; 400 en `costeo/pdf` | Datos incompletos o incoherentes para el PDF | "No se pudo generar el PDF: faltan datos" | En QA |
 | `PDF_RENDER_NO_DISPONIBLE` | chat; 503 en `costeo/pdf` (desde #92) | Falló el render o no hubo turno de render a tiempo (los PDF se generan uno a la vez) | "Reintenta más tarde" con botón Reintentar | En QA |
 | `CONFIRMACION_REQUERIDA` | chat (y `errores`) | Falta confirmar (PDF, o elegir el municipio o el cliente). En `/enviar` no llega: el comercial sale del token | No mostrar alerta: el agente lo pide. Ofrecer el botón "Confirmo" si hay previsualización | En QA |
@@ -532,8 +530,7 @@ Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA
 | `CUBICADOR_OCUPADO` | 503 en `/web/cubicacion` con `Retry-After: 10`, o `fallida` en `GET /web/cubicacion/{id}` | Opción C (2026-10-19): el cubicador está calculando otras cargas y no se liberó a tiempo, o hay demasiadas cubicaciones en curso | "El cubicador está ocupado": Reintentar tras el `Retry-After` (sección 5.14.1) | Implementado |
 | `CUBICACION_NO_DISPONIBLE` | Retirado (HU-023.2, #157) | La cubicación de Nexo se retiró: `/web/cubicacion` responde los códigos del cubicador (503 `CUBICADOR_NO_DISPONIBLE`, 400 `MERCANCIA_DESCONOCIDA`...) | Ver sección 5.14 | Retirado |
 | `CUBICACION_DEMASIADO_GRANDE` | 400 en `/web/cubicacion`, captura, recálculo de vehículos y licitación (con el cubicador configurado) | Vigente desde HU-023 (#176): las mercancías de la ruta o del cálculo suman más de 10.000 unidades, el tope del cubicador. No se llama al cubicador ni se guarda nada | "Parte la carga en varias rutas" (mostrar `mensaje`) | Vigente |
-| `MUNICIPIO_ARGUMENTO_INVALIDO` | Solo interno del agente | — | Ignorar | En QA |
-| `ERROR_INTERNO` | Cualquiera | Error no controlado | "Ocurrió un error. Reintenta" | En QA |
+| `ERROR_INTERNO` | 500 en cualquier `/web/*` (endurecimiento A, #199; antes 400 o sin cuerpo) | Error no controlado del servidor; mensaje genérico y `detalle.id_correlacion` (id de la petición en el log, para soporte) | "Ocurrió un error. Reintenta" (no mostrar nada técnico ni cerrar sesión) | En QA |
 | `TRM_NO_DISPONIBLE` | `errores` del chat (`calcular_precio`, `registrar_ajuste_margen`); 400 en `POST /web/licitaciones` y en `POST /web/solicitudes-costeo` (#103) con `moneda = USD` | Ninguna fuente de la TRM respondió (DolarApi ni la Superintendencia): no hay precio en USD | Mensaje no bloqueante: "No se pudo obtener la TRM. Reintenta en unos minutos o cotiza en pesos", con botones **Reintentar** y **Cambiar a COP**. Quitar el spinner | En QA (#70/#71) |
 | `SOLICITUD_COSTEO_INVALIDA` | 400 en `solicitudes-costeo`, `reintentar` y `servicios-conexos` | Campo fuera de los límites de Nexo. `detalle.motivo` = `PESO_REQUERIDO` o `PESO_INCONSISTENTE` cuando es el peso | Mostrar `mensaje` junto al campo (el mensaje nombra el campo) | En QA |
 | `COSTEO_NEXO_NO_DISPONIBLE` | `motivo_estado_costeo` (envío); 503 en `resultado` | Nexo caído, circuito abierto, sin configurar, 401/403 de Nexo o cliente no resoluble | En el envío queda `error_envio` (botón Reintentar). En resultado: "Nexo no responde; intenta más tarde". Nada cambió | En QA |
@@ -553,7 +550,7 @@ Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA
 
 Códigos internos que el frontend solo ve como texto en un `ErrorWeb` 400: `SOLICITUD_INVALIDA`, `TELEFONO_INVALIDO`, `CORREO_INVALIDO` y `SEGUIMIENTO_INVALIDO`.
 
-Regla para `errores` del chat (En QA): reaccionar solo a los códigos conocidos (`TRM_NO_DISPONIBLE`, `TARIFA_CONFIG_INVALIDA`, `CLIENTE_BUSQUEDA_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE`, `PDF_RENDER_NO_DISPONIBLE`) e **ignorar** el resto (`TARIFA_FUENTE_NO_DISPONIBLE`, `CONFIRMACION_REQUERIDA`, `HERRAMIENTA_DESCONOCIDA`...), que el agente ya explica en `texto`.
+Regla para `errores` del chat (En QA): reaccionar solo a los códigos conocidos (`TRM_NO_DISPONIBLE`, `CLIENTE_BUSQUEDA_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE`, `PDF_RENDER_NO_DISPONIBLE`) e **ignorar** el resto (`CONFIRMACION_REQUERIDA`, `HERRAMIENTA_DESCONOCIDA`...), que el agente ya explica en `texto`. Endurecimiento A (#199): `TARIFA_FUENTE_NO_DISPONIBLE`, `TARIFA_CONFIG_INVALIDA`, `AJUSTE_ID_INVALIDO` y `MUNICIPIO_ARGUMENTO_INVALIDO` salieron del contrato (ningún código los emite).
 
 ## 5. Endpoints
 

@@ -18,7 +18,8 @@ namespace Cotifly.Aplicacion.Correo.Services;
 /// Implementación de <see cref="IClsCorreoService"/> (port de <c>ServicioCorreo</c> de <c>mcp_server/correo.py</c> y de
 /// <c>enviar_cotizacion</c> de <c>orquestador/web.py</c>; HU-033, #199, ADR-023: el transporte es MailSender). Invariantes:
 /// <list type="bullet">
-/// <item>Ningún correo sale sin el comercial autenticado (<c>confirmado_por</c>), que además debe ser el dueño de la cotización.</item>
+/// <item>Ningún correo sale sin el comercial autenticado (<c>confirmado_por</c>), que además debe ser el dueño de la cotización. El dueño se
+/// comprueba antes que nada más (correo deshabilitado, destinatarios): un folio ajeno o inexistente siempre es <c>COTIZACION_NO_ENCONTRADA</c>.</item>
 /// <item>Deduplicación: un envío a los mismos destinatarios <c>para</c> (sin distinguir mayúsculas ni orden) en los últimos 5 minutos que
 /// salió o sigue en curso en MailSender (<c>enviado</c>, <c>encolado</c>, <c>enviando</c>) se rechaza; los fallidos no cuentan. La regla
 /// vive aquí, no en el repositorio (deuda de ADR-008), y se mide con <see cref="IClsReloj"/>. Los envíos de una misma cotización se
@@ -69,6 +70,14 @@ public sealed class clsCorreoService(
             return new clsErrorDominio(clsCodigosError.ConfirmacionRequerida, "Falta 'confirmado_por': el envío no está autorizado.");
         }
 
+        // Endurecimiento A (#199): primero el dueño. Un folio ajeno o inexistente responde 404 antes que CORREO_DESHABILITADO (503) o
+        // CORREO_INVALIDO (400), que si no dejarían enumerar los folios de otros comerciales (como en reintentar).
+        var cotizacion = await BuscarCotizacionAsync(entrada, cancellationToken);
+        if (cotizacion is null)
+        {
+            return new clsErrorDominio(clsCodigosError.CotizacionNoEncontrada, "Cotización no encontrada o no es tuya.");
+        }
+
         if (!opciones.Value.Habilitado)
         {
             return new clsErrorDominio(clsCodigosError.CorreoDeshabilitado, "El envío de correo desde Cotifly está deshabilitado (Correo:Habilitado=false).");
@@ -84,12 +93,6 @@ public sealed class clsCorreoService(
         if (invalida is not null)
         {
             return invalida;
-        }
-
-        var cotizacion = await BuscarCotizacionAsync(entrada, cancellationToken);
-        if (cotizacion is null)
-        {
-            return new clsErrorDominio(clsCodigosError.CotizacionNoEncontrada, "Cotización no encontrada o no es tuya.");
         }
 
         var usuario = await usuarios.ObtenerPorIdAsync(entrada.UsuarioId, cancellationToken);
