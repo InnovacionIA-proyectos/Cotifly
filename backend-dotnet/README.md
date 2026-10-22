@@ -5,7 +5,7 @@
 Backend de Cotifly, el bot cotizador de Botero Soto, en C# / .NET 10 (milestone HU-003). Un comercial captura la solicitud en la consola web de ClientePro; Nexo costea, el backend resuelve margen y precio, genera el PDF y lo envía por correo, y la IA solo redacta textos y asiste sobre una cotización ya hecha ([ADR-018](specs/decisiones/ADR-018-pipeline-determinista-ia-etapa-final.md)). Google Chat y el agente cotizador conversacional se retiraron en HU-013.9 (#105). Reemplazó al bot anterior en Python (corte big-bang, [ADR-001](specs/decisiones/ADR-001-estrategia-de-corte.md)), que se retiró del repositorio en HU-022.1 (tag `python-final`).
 
 - Clean Architecture de 4 capas en un monolito modular: `Cotifly.Dominio`, `Cotifly.Aplicacion`, `Cotifly.Infraestructura`, `Cotifly.Api` ([ADR-002](specs/decisiones/ADR-002-arquitectura-clean-monolito-modular.md)).
-- ASP.NET Core 10, EF Core 10 Database First sobre SQL Server 2019, Semantic Kernel + Microsoft.Extensions.AI, PDFsharp-MigraDoc, MailKit.
+- ASP.NET Core 10, EF Core 10 Database First sobre SQL Server 2019, Semantic Kernel + Microsoft.Extensions.AI, PDFsharp-MigraDoc; el correo sale por el microservicio interno MailSender (HTTP).
 - Un solo contenedor (`Dockerfile` multi-stage, runtime chiseled, sin shell, usuario no root); sin `docker-compose` ([ADR-007](specs/decisiones/ADR-007-contenedores-sin-docker-compose.md)).
 - Contrato HTTP congelado en [`specs/openapi.yaml`](specs/openapi.yaml); escenarios BDD en [`specs/features/`](specs/features/).
 

@@ -468,7 +468,8 @@ paths:
           description: |
             Error de negocio del envío: duplicado (`CORREO_DUPLICADO`), sin PDF (`CORREO_PDF_NO_ENCONTRADO`), MailSender lo
             rechazó (400/413/422), no está disponible o no respondió a tiempo (`CORREO_ENVIO_FALLIDO`; con tiempo agotado el
-            correo pudo quedar encolado: revisar el historial antes de reenviar), o validación (`ErrorWeb`)
+            correo pudo quedar encolado: la cotización queda enviada y el mismo envío cuenta 5 minutos para `CORREO_DUPLICADO`;
+            también si el ambiente redirige sin buzón de pruebas: no sale nada), o validación (`ErrorWeb`)
           content:
             application/json:
               schema:
@@ -566,7 +567,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorWeb'
         '409':
-          description: '`CORREO_NO_REINTENTABLE`: el envío no está `fallido`, nunca llegó a MailSender o MailSender ya no lo conoce'
+          description: '`CORREO_NO_REINTENTABLE`: el envío no está `fallido`, ya se está reintentando, nunca llegó a MailSender o MailSender ya no lo conoce'
           content:
             application/json:
               schema:

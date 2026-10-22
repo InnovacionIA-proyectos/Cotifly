@@ -2575,7 +2575,10 @@ Renderiza el correo sin enviarlo.
 
 #### 4.8.3 `POST /web/cotizaciones/{folio}/enviar`
 
-Envía la cotización por correo con el PDF adjunto. El remitente es el comercial del token (va también en copia oculta).
+Envía la cotización por correo con el PDF adjunto. El remitente es el comercial del token (va también en copia oculta y en la firma del
+cuerpo); si su correo no es del dominio corporativo, o el ambiente usa el remitente corporativo (`Correo:MailSender:ModoRemitente`), el
+`From` es el buzón corporativo. Por defecto, en todos los ambientes, el correo se redirige al buzón de pruebas (`redirigido_a`): solo
+producción, con la configuración explícita, escribe a los destinatarios reales.
 
 - **Rol:** ambos (dueño).
 
@@ -2610,7 +2613,7 @@ producción.
 | 400 | `ErrorWeb` | Destinatarios, asunto o cuerpo inválidos: validar en el formulario |
 | 400 | `CORREO_DUPLICADO` | "Ya enviaste esta cotización a esos destinatarios hace menos de 5 minutos" (cuenta también un envío todavía en curso) |
 | 400 | `CORREO_PDF_NO_ENCONTRADO` | Sin PDF: deshabilitar Enviar si `pdf_url` es `null` |
-| 400 | `CORREO_ENVIO_FALLIDO` | MailSender lo rechazó o no está disponible: mostrar `mensaje`. Si dice que no respondió a tiempo, el correo pudo quedar encolado: revisar el historial antes de reenviar |
+| 400 | `CORREO_ENVIO_FALLIDO` | MailSender lo rechazó o no está disponible: mostrar `mensaje`. Si dice que no respondió a tiempo, el correo pudo quedar encolado: la cotización **queda enviada** y, durante 5 minutos, reenviar a los mismos destinatarios responde `CORREO_DUPLICADO` (la fila del historial es `fallido` con un `error` que empieza por "Resultado incierto:"). También llega si el ambiente redirige y no tiene buzón de pruebas: no salió nada |
 | 404 | `ErrorWeb` | — |
 | 409 | `CONFLICTO_CONCURRENCIA` | La cotización cambió o el PDF quedó desactualizado: recargar y regenerar el PDF |
 | 503 | `CORREO_DESHABILITADO` | "El envío de correo no está habilitado en este ambiente" |
@@ -2649,7 +2652,7 @@ Historial de envíos de la cotización, del más reciente al más antiguo, con e
 | `encolado` | MailSender lo aceptó y no lo ha entregado | "En cola" (spinner) |
 | `enviando` | MailSender lo está entregando o programó un reintento por un error transitorio (`error` trae el último) | "Enviando…" |
 | `enviado` | El relay lo aceptó (`enviado_at`) | "Enviado" ✓ |
-| `fallido` | Rechazado al encolarlo, reintentos agotados o sin confirmación en 24 h (`error`) | "No se pudo enviar" + `error`; botón "Reintentar" solo con `reintentable = true`; si no, ofrecer enviar de nuevo |
+| `fallido` | Rechazado al encolarlo, reintentos agotados o sin confirmación en 24 h desde el último envío o reintento (`error`) | "No se pudo enviar" + `error`; botón "Reintentar" solo con `reintentable = true`; si no, ofrecer enviar de nuevo. Con `error` que empieza por "Resultado incierto:" el correo pudo salir: pedir que revise el buzón antes de enviarlo de nuevo |
 
 Mientras haya envíos `encolado` o `enviando`, refrescar el historial cada 10 a 30 s. Los destinatarios son los originales aunque el
 correo se haya redirigido al buzón de pruebas (`redirigido_a`).
@@ -2663,7 +2666,7 @@ Pide a MailSender que reintente un envío `fallido` (`reintentable = true`). Sin
 | 200 | `EnvioCorreo` | Reemplazar la fila del historial y seguir su estado |
 | 400 | `CORREO_ENVIO_FALLIDO` | MailSender no respondió: "Intenta más tarde" |
 | 404 | `ErrorWeb` | La cotización no es suya o el envío no es de ella |
-| 409 | `CORREO_NO_REINTENTABLE` | El envío no está fallido, nunca llegó a MailSender o MailSender ya no lo conoce: ofrecer enviar de nuevo |
+| 409 | `CORREO_NO_REINTENTABLE` | El envío no está fallido, ya se está reintentando (doble clic: solo el primero llega a MailSender), nunca llegó a MailSender o MailSender ya no lo conoce: recargar el historial; ofrecer enviar de nuevo si sigue `fallido` sin `reintentable` |
 | 503 | `CORREO_DESHABILITADO` | "El envío de correo no está habilitado en este ambiente" |
 
 ### 4.9 Asistente IA

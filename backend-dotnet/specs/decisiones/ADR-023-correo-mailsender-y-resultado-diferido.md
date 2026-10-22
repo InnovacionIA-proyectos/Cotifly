@@ -63,10 +63,20 @@ Contrato real de MailSender (leído del código, solo lectura):
   desde ese momento). Un `fallido` posterior **no** lo revierte: el comercial reintenta el mismo correo y el PDF que salió sigue siendo la
   foto entregada. Un rechazo al encolar (400/413/422, caída o tiempo agotado) sí deshace la reserva y deja una fila `fallido` sin
   `idMailSender` (no reintentable: se envía de nuevo).
-- **Deduplicación de 5 minutos:** cuenta un envío `enviado`, `encolado` o `enviando` a los mismos `para`; un `fallido` no.
+- **Deduplicación de 5 minutos:** cuenta un envío `enviado`, `encolado` o `enviando` a los mismos `para`; un `fallido` no, salvo el
+  **incierto** (auditoría #199): un tiempo agotado en el POST deja la fila `fallido` con el error `Resultado incierto: …`, que SÍ cuenta,
+  y **conserva** la reserva del envío (el correo pudo salir; el PDF es la foto entregada).
+- **Auditoría #199:** el reintento reserva la fila (`fallido` → `encolado` en una sentencia) antes del `/retry` y la libera si MailSender no
+  lo acepta: un doble clic o dos réplicas piden un solo reintento (MailSender correría dos entregas a la vez). La edad máxima de la consulta
+  se mide desde `Correos.encoladoAt` (la última aceptación: envío o reintento), no desde `createdAt`: si no, reintentar un correo de más
+  de 24 h lo devolvía a `fallido` en la primera consulta. Cotifly valida una sola dirección por destinatario (MailSender separa `,`/`;`).
 
 ### 3. Protección fuera de producción
 
+- **Segura por defecto (auditoría #199):** se redirige SIEMPRE salvo con las dos llaves juntas `Correo:Proteccion:Modo=ninguno` y
+  `Correo:Proteccion:PermitirEnvioReal=true` (y `Production`). Una llave sin la otra impide arrancar; un modo desconocido redirige; si
+  hubiera que redirigir sin un buzón válido, el correo no sale (falla cerrado; antes salía sin redirigir). **Producción en vivo:**
+  `Correo__Proteccion__Modo=ninguno` y `Correo__Proteccion__PermitirEnvioReal=true`.
 - `Correo:Proteccion:Modo` = `redirigir` (por defecto) | `ninguno`. Con `redirigir`, el mensaje que sale va **solo** a
   `Correo:Proteccion:BuzonPruebas` (sin CC ni CCO), con `[QA]` en el asunto y un aviso al inicio del cuerpo con los destinatarios
   originales (para, CC y CCO). En la base quedan los destinatarios **originales** y el buzón en `Correos.redirigidoA`: la deduplicación,
@@ -82,6 +92,12 @@ Contrato real de MailSender (leído del código, solo lectura):
 
 El correo del comercial (el dueño, `confirmadoPor`) va en `Bcc`, salvo que no tenga correo o ya esté en `para`/`cc`. Como MailSender no
 admite `Reply-To`, el `From` es el comercial: las respuestas del cliente le llegan a él.
+
+**Auditoría #199 (SPF/DMARC):** el `From` es configurable. `Correo:MailSender:ModoRemitente=comercial` (por defecto) usa el correo del
+comercial solo si es UNA dirección válida de `Correo:MailSender:DominiosRemitente` (`boterosoto.com.co`); si no, `Remitente`.
+`corporativo` usa siempre `Remitente` (para cuando TI no autorice al relay a enviar como cada comercial: un `550 5.7.1` es un fallo
+permanente en MailSender). En ambos modos la firma del cuerpo trae nombre, correo y celular del comercial. Lo ideal es que MailSender
+agregue `ReplyTo`: `From` corporativo y respuestas al comercial.
 
 ### 5. Contenido para el cliente: precio por ruta y total, sin desglose
 
@@ -124,7 +140,7 @@ admite `Reply-To`, el `From` es el comercial: las respuestas del cliente le lleg
 
 `Correos.messageId` (NVARCHAR(MAX), el Message-ID RFC del SMTP directo) no sirve para guardar el id de MailSender: no se puede indexar ni
 es del mismo tipo. El 13 agrega `idMailSender` (único filtrado), `redirigidoA`, `intentosEntrega`, `enviadoAt`, `estadoActualizadoAt`,
-`siguienteConsultaAt` (agenda, índice filtrado) y el CHECK `ck_correos_estado`; y en la cabecera la sincronización del resultado. Idempotente
+`siguienteConsultaAt` (agenda, índice filtrado), `encoladoAt` (auditoría #199) y el CHECK `ck_correos_estado`; y en la cabecera la sincronización del resultado. Idempotente
 y no destructivo; obligatorio ("falta 13" en `/health/ready`).
 
 ## Consecuencias
