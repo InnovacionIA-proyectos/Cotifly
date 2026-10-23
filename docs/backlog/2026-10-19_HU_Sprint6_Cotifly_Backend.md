@@ -29,8 +29,8 @@
 | HU-025 | HU-025.1 | Configuración por ambiente: banderas e identidad | 🟠 Alta / 🟡 Media | DBA, frontend (parte B) |
 | HU-026 | HU-026.1 | Usar las columnas nuevas de la base de datos | 🟡 Media | — |
 | HU-027 | HU-027.1 | Contrato web que necesita el frontend | 🟡 Media / ⚪ Baja | Decisión de negocio (parte D) |
-| HU-028 | HU-028.1 | Rechazo de una línea con motivo (backend) | 🟡 Media | **Contrato de NEXO** |
-| HU-028 | HU-028.2 | [BD] Columnas del rechazo | 🟡 Media | **Contrato de NEXO** |
+| HU-028 | HU-028.1 | Rechazo de una línea con motivo (backend) | 🟡 Media | HU-028.2 (listo) |
+| HU-028 | HU-028.2 | [BD] Columnas del rechazo | 🟡 Media | ✅ Listo, PR #200 |
 | HU-028 | HU-028.3 | [QA] Rechazo de línea de punta a punta | 🟡 Media | HU-028.1, HU-028.2 |
 
 **5 issues para Duban** (HU-010.5, HU-025.1, HU-026.1, HU-027.1, HU-028.1) + 1 para Sara (HU-028.2) + 1 para Kevin (HU-028.3).
@@ -194,8 +194,7 @@ Fuente: encabezados de los scripts `03`, `05` y `06` (#158 y #173); aplicación 
 - [ ] Guardar `categoriaServicioConexo` al capturar e importar los conexos, como propone el encabezado del `05`. Las filas viejas siguen leyendo la categoría del catálogo.
 
 **Parte C — Idempotencia persistente (script `06`).**
-- [x] Pasar la idempotencia de la captura de memoria a `CapturasIdempotentes`: la clave se reserva en la misma transacción que confirma el folio. **Tabla ya creada en la compartida (2026-10-22, script `06`, probado en Docker).** Falta que el backend la use.
-- [ ] **Antes de fusionar:** avisarle a Sara para que apruebe y aplique el `06` en la compartida.
+- [x] Pasar la idempotencia de la captura de memoria a `CapturasIdempotentes`: la clave se reserva en la misma transacción que confirma el folio. **Tabla ya creada y aplicada en la compartida (2026-10-22, script `06`, probado en Docker).** Falta que el backend la use.
 
 **Pruebas (de todas las partes):** orden estable con camiones creados en el mismo milisegundo; conexo agregado e importado con su id del catálogo y su categoría; captura repetida después de reiniciar la API no crea otra solicitud en NEXO.
 
@@ -277,7 +276,7 @@ Fuente: preguntas del frontend sobre HU-021-FE.7 (#75), HU-021-FE.8 (#76) y HU-0
 > **HU en Notion:** _(pendiente — crear y pegar el link)_
 > **Sprint:** Sprint 6 · **Épica:** E3 — Integración Cotifly ↔ Nexo · **Talla:** L · **Roles:** Backend (Duban), Datos (Sara), QA (Kevin)
 > **Repos donde se crean issues de esta milestone:** `Cotifly`
-> ⚠ **Bloqueada por NEXO:** el contrato todavía no está cerrado. Las decisiones de negocio ya están tomadas (2026-10-16). **No construir hasta que NEXO publique el contrato.**
+> **Contrato de NEXO verificado (2026-10-22):** `estadoLinea`/`motivoRechazo` ya están en QA/DEPLOY de NEXO, por línea individual. HU-028.2 (BD) ya se construyó y tiene PR. HU-028.1 (backend) y HU-028.3 (QA) siguen pendientes — ya no están bloqueadas por el contrato, solo falta construirlas.
 > **Issues ya creadas en GitHub:** #182 (HU-028.2), #183 (HU-028.1), #192 (HU-028.3). Fuente cruzada: `2026-10-16_ISSUES-POR-REPOSITORIO.md` del chat de NEXO (ahí esta HU-028.2 era "DATA-4").
 
 ### Historia
@@ -372,23 +371,20 @@ Fuente: decisión de Sara del 2026-10-16 (con el chat de NEXO) y revisión del c
 - [ ] **Por decidir:** ¿la `-vN` copia la ruta rechazada (y NEXO la vuelve a evaluar) o la omite? Propuesta: copiarla, avisarle al comercial y dejarle quitarla. En el mismo folio, la re-solicitud vuelve a capturar la línea y el rechazo anterior queda en la auditoría.
 - [ ] Marcar ganada con rutas rechazadas debe funcionar.
 
-### [HU-028.2] [BD] Columnas del rechazo
-**Ya creada en GitHub: #182** (abierta por @jpvelez-bts).
+### [HU-028.2] [BD] Columnas del rechazo — ✅ LISTO (2026-10-22)
+**Ya creada en GitHub: #182** (abierta por @jpvelez-bts). **PR: [#200](https://github.com/InnovacionIA-proyectos/Cotifly/pull/200) → `QA`.**
 
-> **Actualización 2026-10-22:** el contrato de NEXO ya se verificó (chat de NEXO, contra `origin/QA` y `origin/DEPLOY` de NEXO):
-> - `estadoLinea = "rechazada"` y `motivoRechazo` **ya están en QA/main de NEXO** (S6-HU-24.1/#309, S6-HU-24.3/#320), listos para leer en cada reconsulta del polling.
-> - **Es por línea/camión individual**, confirmado en el comando de NEXO (`LineaSolicitudId` único por llamada, sin `grupoRutaId`): la columna por camión está bien pensada.
-> - **`RechazadaPor`/`RechazadaAt` NO se pueden leer en ninguna reconsulta** hoy: solo salen en la respuesta puntual del endpoint de rechazar, que además solo existe en DEPLOY. Por eso el script **no agrega `rechazadaAt`** por ahora.
+> El contrato de NEXO ya se verificó (chat de NEXO, contra `origin/QA` y `origin/DEPLOY` de NEXO): `estadoLinea = "rechazada"` y `motivoRechazo` ya están en QA/main de NEXO (S6-HU-24.1/#309, S6-HU-24.3/#320), por línea/camión individual. `RechazadaPor`/`RechazadaAt` no se pueden leer en ninguna reconsulta todavía, así que el script **no agrega `rechazadaAt`**; tampoco se tocó el CHECK de `CotizacionesSolicitud` (cabecera) porque una cotización totalmente rechazada se sigue entregando como `entregada`, no `rechazada`.
 >
-> **Script escrito y probado en Docker:** `db/scripts/pendientes/10_rechazo_linea_camion.sql`. Agrega `rechazada` al CHECK de `estadoCosteo` del camión y de la ruta, y `motivoRechazo NVARCHAR(500) NULL` en el camión. Probado: datos previos intactos, idempotente, rechaza estados inventados, compatible con el `03`. **No aplicado en la compartida todavía** (falta el mapeo de backend, HU-028.1/#183, antes de que tenga sentido llenarlo).
+> **Script:** `db/scripts/10_rechazo_linea_camion.sql` (ya no está en `pendientes/`, esa carpeta se eliminó — HU-024.1). Agrega `rechazada` al CHECK de `estadoCosteo` del camión y de la ruta, y `motivoRechazo NVARCHAR(500) NULL` en el camión. Probado en Docker (datos previos intactos, idempotente, rechaza estados inventados, compatible con el `03`) y **aplicado en la compartida**.
 **Labels:** `datos`, `base-de-datos`, `sprint-6`
 **Repo donde se crea este issue:** `Cotifly`
 **Asignado a:** Sara (Datos)
-**Parte de HU-028 (milestone). Depende del contrato de NEXO. Bloquea a HU-028.1.**
+**Parte de HU-028 (milestone). Ya no bloquea a HU-028.1: el script está aplicado.**
 
-- [ ] Script en `db/scripts/`: `CotizacionVehiculosLineaSolicitud` con `rechazada` en el CHECK de `estadoCosteo`, `motivoRechazo NVARCHAR(…) NULL` y, opcional, `rechazadaAt`.
-- [ ] Revisar los CHECK de `estadoCosteo` en `CotizacionLineasSolicitud` y `CotizacionesSolicitud` si la ruta también puede quedar `rechazada`.
-- [ ] Probarlo en Docker (idempotente, en una transacción) y aplicarlo en la compartida.
+- [x] Script en `db/scripts/`: `CotizacionVehiculosLineaSolicitud` con `rechazada` en el CHECK de `estadoCosteo` y `motivoRechazo NVARCHAR(500) NULL`.
+- [x] Revisado el CHECK de `estadoCosteo` en `CotizacionLineasSolicitud` (ruta): también admite `rechazada`. `CotizacionesSolicitud` (cabecera) se deja igual, a propósito.
+- [x] Probado en Docker (idempotente, en una transacción) y aplicado en la compartida.
 
 ### [HU-028.3] [QA] Rechazo de línea de punta a punta
 **Ya creada en GitHub: #192.**

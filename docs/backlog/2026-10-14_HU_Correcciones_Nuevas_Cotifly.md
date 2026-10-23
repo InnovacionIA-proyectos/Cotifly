@@ -114,10 +114,6 @@ Cuando consulta sin anio ni mes
 Entonces el comportamiento es el de antes
 ```
 
-### 2.3 10 cotizaciones de prueba para el tablero del Gerente Comercial — Sara
-- [ ] Volver a cargarlas en la compartida; Sara da las indicaciones.
-- Ya se puede: al 2026-10-16 la compartida tiene 1 usuario en `UsuariosWeb` (antes 0) y 3 cotizaciones.
-
 ### 2.4 NEXO: confirmar el recorte de la #297 y el estado del portal — coordinación
 - [ ] **Confirmar en GitHub que NEXO#297 (S5-HU-20.5) quedó recortada.** Según el chat de NEXO, quedó en dos puntos: (a) devolver `NumeroLinea` en `GET /api/solicitudes/{id}` y ordenar por él; (b) que una línea de Cupo sin vehículo no se autocostee. La normalización de tildes queda opcional, porque la cuarentena ya evita los duplicados oficiales. Las 18.1 a 18.4 ya están hechas en `origin/QA` de NEXO (commits `1ba4631` y `695e0b6`, 13-oct).
 - [ ] **Confirmar que sigan abiertas en el portal (`administracion_embarqa_nexo`) las issues de S5-HU-19.3 y 19.4.** Verificado en sus ramas remotas el 2026-10-14:
