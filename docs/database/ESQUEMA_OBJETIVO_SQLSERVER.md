@@ -408,8 +408,14 @@ retiraron en HU-014.3 (#152) con `db/scripts/08_retirar_vistas_actividad.sql`, j
 | `db/scripts/pendientes/04_cubicacion_segundo_plano.sql` | **HU-023.5 (#160):** cola de la cubicación de la licitación en la ruta (`estadoCubicacion`, `cubicacionIntentos`, `cubicacionDisponibleAt`, `errorCubicacion`, `avisosCubicacion`). Pendiente de scalderon-bs y del DBA; el backend lo exige (`falta 04`) |
 | `db/scripts/05_categoria_conexo.sql` | **#173, mapeado en HU-014 (#188):** `CotizacionServiciosConexos.categoriaServicioConexo NVARCHAR(20) NULL`. Idempotente; el backend lo exige (`falta 05`) |
 | `db/scripts/09_score_prioridad.sql` | **HU-018.1 (#155):** `CotizacionesSolicitud.scorePrioridad DECIMAL(9,4) NULL` (el `scorePrioridad` del alta en Nexo). Idempotente; lo corre el ejecutador después del `08`; el backend lo exige (`falta 09`) |
+| `db/scripts/10_rechazo_linea.sql` | **HU-028.2 (#182) / HU-028.1 (#183):** rechazo de la línea por la Mesa de Costeo de Nexo (#320) en el camión: `CotizacionVehiculosLineaSolicitud.motivoRechazo NVARCHAR(500) NULL` y `rechazadaAt DATETIMEOFFSET NULL`, `'rechazada'` en los tres CHECK de `estadoCosteo` y `ck_cotizacionVehiculosLineaSolicitud_rechazo` (motivo y fecha solo con el camión rechazado). Idempotente; lo corre el ejecutador después del `09`; el backend lo exige (`falta 10`). Pendiente de revisión de @scalderon-bs |
+| `db/scripts/11_peso_con_tara.sql` | **HU-030.1 (#184):** `CotizacionLineasSolicitud.pesoConTaraKg DECIMAL(12,2) NULL` con el CHECK `ck_cotizacionLineasSolicitud_pesoConTaraKg` (> 0): el peso con tara de una ruta `Contenedor`. Idempotente; lo corre el ejecutador después del `09`; el backend lo exige (`falta 11`) |
+| `db/scripts/12_vehiculo_elegido.sql` | **HU-032 (#197):** `CotizacionLineasSolicitud.tipoVehiculoElegido`/`carroceriaElegida NVARCHAR(100) NULL` y medidas de `CotizacionMercancias` en NULL (CHECK: las tres NULL o las tres > 0). Idempotente; lo corre el ejecutador después del `11`; el backend lo exige (`falta 12`) |
 
-Las columnas del `02`, del `03`, del `04`, del `05` y del `09` no están en las tablas de §A.4 de arriba; el detalle está en la cabecera de cada script.
+Las columnas del `02`, del `03`, del `04`, del `05`, del `09`, del `10` y del `11` no están en las tablas de §A.4 de arriba; el detalle está en la cabecera de cada script.
+
+**Orden del release 1021** (base ya migrada, con #183 y #184): `03` → `pendientes/04` → `05` → `06` → `07` → `09` → `10` → `11` → imagen
+→ `08`. Los `09`, `10` y `11` son obligatorios para la imagen (`/health/ready` responde "falta 09", "falta 10" o "falta 11").
 
 **Deuda de esquema propuesta (`db/scripts/pendientes/`, revisión de scalderon-bs y del DBA):** `06` (tabla de idempotencia de la
 captura, ADR-018). El `03` y el `05` pasaron a `db/scripts/` en HU-014 (#188).

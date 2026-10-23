@@ -233,7 +233,7 @@ public sealed class clsEnvioCosteoService(
             return new clsErrorDominio(clsCodigosError.ErrorInterno, "El envío a costeo exige el comercial autenticado.");
         }
 
-        var rutas = SinVehiculo(entrada.Rutas, logger, opcionesCaptura?.Value.AceptarVehiculoCliente ?? false);
+        var rutas = SinVehiculo(entrada.Rutas, logger, opcionesCaptura?.Value.AceptarVehiculoCliente ?? true);
         var nit = entrada.NitCliente?.Trim();
 
         // HU-021.6: todas las validaciones juntas (encabezado y cada ruta); el error trae el primero y detalle.errores trae todos.
@@ -353,27 +353,19 @@ public sealed class clsEnvioCosteoService(
     }
 
     /// <summary>
-    /// Decisión 7 de HU-021 (HU-021.6): el comercial ya no digita vehículo ni carrocería (los define el cubicador o la Mesa de Costeo de
-    /// Nexo). Si una ruta los trae (cliente con el contrato anterior), se ignoran y queda un aviso en el log; la captura sigue.
-    /// Con la bandera de respaldo <see cref="clsOpcionesCaptura.AceptarVehiculoCliente"/> (#138) se conservan: los valida el catálogo de
-    /// Nexo como cualquier código y solo los usa el camión del respaldo (<see cref="clsPlanificadorCamionSinVehiculo"/>); si el cubicador
-    /// recomienda, manda el cubicador.
+    /// HU-032 (#197, ADR-022; revierte en parte la decisión 7 de HU-021): el vehículo y la carrocería que elige el comercial son el
+    /// respaldo del cubicador y se conservan (<see cref="clsOpcionesCaptura.AceptarVehiculoCliente"/>, encendida por defecto): una ruta sin
+    /// mercancías cubicables los usa (y los exige, salvo en Contenedor) y una que va al cubicador los usa si el cubicador no selecciona
+    /// vehículo o falla (<see cref="clsPlanificadorCamionesCubicador"/>). Con la bandera APAGADA (interruptor de reversa) rige la decisión 7:
+    /// se ignoran con un aviso en el log y la captura sigue. Lo comparten la captura, la licitación y la edición.
     /// </summary>
     public static IReadOnlyList<clsLineaLicitacionEntrada?> SinVehiculo(
-        IReadOnlyList<clsLineaLicitacionEntrada?> rutas, ILogger logger, bool aceptarVehiculoCliente = false)
+        IReadOnlyList<clsLineaLicitacionEntrada?> rutas, ILogger logger, bool aceptarVehiculoCliente = true)
     {
         ArgumentNullException.ThrowIfNull(rutas);
         ArgumentNullException.ThrowIfNull(logger);
         if (aceptarVehiculoCliente)
         {
-            var conVehiculo = rutas.Count(r => r?.Linea is { } l && (l.TipoVehiculo is not null || l.Carroceria is not null));
-            if (conVehiculo > 0)
-            {
-                logger.LogInformation(
-                    "{Rutas} ruta(s) traen tipo_vehiculo o carroceria y Captura:AceptarVehiculoCliente está encendida: se conservan para el camión del respaldo (sin cubicador).",
-                    conVehiculo);
-            }
-
             return rutas;
         }
 
@@ -391,7 +383,7 @@ public sealed class clsEnvioCosteoService(
         if (ignoradas > 0)
         {
             logger.LogWarning(
-                "{Rutas} ruta(s) traen tipo_vehiculo o carroceria: se ignoran (HU-021, decisión 7: los define el cubicador o la Mesa de Costeo de Nexo).",
+                "{Rutas} ruta(s) traen tipo_vehiculo o carroceria: se ignoran porque Captura:AceptarVehiculoCliente está apagada (decisión 7 de HU-021).",
                 ignoradas);
         }
 
@@ -399,20 +391,22 @@ public sealed class clsEnvioCosteoService(
     }
 
     /// <summary>
-    /// La misma regla (decisión 7) sobre los cambios de carga de la re-solicitud (<c>datos_carga</c>, HU-021.9): <c>tipo_vehiculo</c> y
-    /// <c>carroceria</c> se ignoran con un aviso en el log. Está junto a la de la captura. La bandera <see cref="clsOpcionesCaptura.AceptarVehiculoCliente"/> (#138) no aplica aquí: los camiones de la versión nueva salen del planificador o se copian.
+    /// La misma regla sobre los cambios de carga de la re-solicitud (<c>datos_carga</c>, HU-021.9). HU-032 (#197): con la bandera
+    /// <see cref="clsOpcionesCaptura.AceptarVehiculoCliente"/> encendida (por defecto) <c>tipo_vehiculo</c> y <c>carroceria</c> cambian el
+    /// vehículo elegido de la ruta; apagada se ignoran con un aviso en el log (decisión 7).
     /// </summary>
-    public static clsCambiosCarga SinVehiculo(clsCambiosCarga cambios, ILogger logger)
+    public static clsCambiosCarga SinVehiculo(clsCambiosCarga cambios, ILogger logger, bool aceptarVehiculoCliente = true)
     {
         ArgumentNullException.ThrowIfNull(cambios);
         ArgumentNullException.ThrowIfNull(logger);
-        if (!cambios.Presentes.Contains(clsCambiosCarga.CampoTipoVehiculo) && !cambios.Presentes.Contains(clsCambiosCarga.CampoCarroceria))
+        if (aceptarVehiculoCliente
+            || (!cambios.Presentes.Contains(clsCambiosCarga.CampoTipoVehiculo) && !cambios.Presentes.Contains(clsCambiosCarga.CampoCarroceria)))
         {
             return cambios;
         }
 
         logger.LogWarning(
-            "datos_carga trae tipo_vehiculo o carroceria: se ignoran (HU-021, decisión 7: los define el cubicador o la Mesa de Costeo de Nexo).");
+            "datos_carga trae tipo_vehiculo o carroceria: se ignoran porque Captura:AceptarVehiculoCliente está apagada (decisión 7 de HU-021).");
         var presentes = new HashSet<string>(cambios.Presentes, StringComparer.Ordinal);
         presentes.Remove(clsCambiosCarga.CampoTipoVehiculo);
         presentes.Remove(clsCambiosCarga.CampoCarroceria);
@@ -601,15 +595,18 @@ public sealed class clsEnvioCosteoService(
     public static string? NotaCamionesPorRuta(clsCotizacionSolicitud cotizacion)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        var rutas = cotizacion.RutasOrdenadas;
-        // HU-021.9: solo los camiones que viajan (un descartado en Nexo no se reenvía).
-        if (rutas.All(r => r.VehiculosQueCuentan.Count <= 1))
+        // HU-021.9: solo los camiones que viajan (un descartado en Nexo no se reenvía; HU-028.1, #183, decisión del 2026-10-20: uno
+        // rechazado por la Mesa tampoco). Una ruta con todos sus camiones rechazados no viaja: no sale en la nota.
+        var rutas = cotizacion.RutasOrdenadas.Where(r => r.ViajaANexo).ToList();
+        // Una ruta partida en varios camiones manda sus líneas sin posiciones aunque solo viaje uno (los demás rechazados o descartados): la
+        // nota se la explica a la Mesa.
+        if (rutas.All(r => r.VehiculosQueViajan.Count <= 1 && !r.LineasSinPosiciones))
         {
             return null;
         }
 
         var nota = "Cotifly: una línea por camión, en este orden. "
-            + string.Join(" ", rutas.Select(r => $"Ruta {r.Orden} ({r.Ruta}): {r.VehiculosQueCuentan.Count} {(r.VehiculosQueCuentan.Count == 1 ? "camión" : "camiones")}."))
+            + string.Join(" ", rutas.Select(r => $"Ruta {r.Orden} ({r.Ruta}): {r.VehiculosQueViajan.Count} {(r.VehiculosQueViajan.Count == 1 ? "camión" : "camiones")}."))
             + " " + AvisoSinPosiciones;
         return nota.Length <= LargoMaximoNotaCamiones ? nota : nota[..(LargoMaximoNotaCamiones - 1)] + "…";
     }
@@ -792,7 +789,8 @@ public sealed class clsEnvioCosteoService(
         var cronometro = Stopwatch.StartNew();
 
         // HU-021 (CAMBIOS_BACKEND §5.3, #134): una línea por camión, ruta por ruta y en orden, cada una con los datos de su ruta y de su
-        // camión. Sin vehículo (sin selección automática) la línea viaja igual y la resuelve la Mesa: la solicitud nunca se parte. Mientras
+        // camión. Un camión sin vehículo (sin selección automática y sin vehículo elegido, HU-032) viaja igual y lo resuelve la Mesa: la
+        // solicitud nunca se parte. Mientras
         // Nexo no tenga el campo de ruta por línea (N1), la nota del encabezado le dice a la Mesa qué líneas son la misma ruta.
         // Cada línea lleva la línea de negocio de Nexo de SU ruta (#134); `politica` (la de la ruta 1 o la del formulario) solo evita volver a
         // leerla y sirve de respaldo para una ruta sin línea de negocio.
@@ -815,7 +813,10 @@ public sealed class clsEnvioCosteoService(
 
             // HU-023.4 (#159): lo que viajó (códigos del cubicador o no), en la misma transacción que el solicitudNexoId: el polling compara
             // contra esto y no contra la bandera actual.
-            cotizaciones.RegistrarEnvioNexo(new clsEnvioNexoRegistrado(cotizacion.Folio, creada.Id, creada.CodigosCubicadorEnviados));
+            cotizaciones.RegistrarEnvioNexo(new clsEnvioNexoRegistrado(cotizacion.Folio, creada.Id, creada.CodigosCubicadorEnviados)
+            {
+                EquivalenciasVehiculo = creada.EquivalenciasVehiculo,
+            });
         }
         else
         {

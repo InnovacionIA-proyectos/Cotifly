@@ -9,8 +9,11 @@ public sealed partial class clsLineaSolicitud
     /// (actualizadas en su lugar: la base exige un orden único por ruta). Los camiones se reemplazan por los del plan si
     /// <paramref name="replanificada"/>; si no, se conservan (con el levante nuevo copiado a cada uno, decisión 4). Los conexos quedan
     /// exactamente los de la edición, con el costo del catálogo de hoy. La línea de negocio, el margen y el id no cambian. No recalcula.
+    /// HU-028.1 (#183): con <paramref name="reincluirRechazados"/> (y camiones conservados) los camiones que la Mesa de Costeo rechazó
+    /// olvidan el rechazo y vuelven a viajar (<see cref="ReincluirRechazados"/>); sin él siguen rechazados y fuera del envío.
     /// </summary>
-    internal void AplicarEdicion(int orden, clsRutaCapturada capturada, clsEncabezadoSolicitudCosteo? encabezado, bool replanificada)
+    internal void AplicarEdicion(
+        int orden, clsRutaCapturada capturada, clsEncabezadoSolicitudCosteo? encabezado, bool replanificada, bool reincluirRechazados = false)
     {
         ArgumentNullException.ThrowIfNull(capturada);
         ArgumentOutOfRangeException.ThrowIfLessThan(orden, 1);
@@ -35,17 +38,25 @@ public sealed partial class clsLineaSolicitud
         HorasDescargue = linea.HorasDescargue ?? encabezado?.HorasDescargue;
         PesoKg = linea.PesoKg;
         ValorMercancia = linea.ValorMercancia;
+        PesoConTaraKg = linea.PesoConTaraKg;
+        // HU-032 (#197): la edición conserva (o cambia) el vehículo elegido de la ruta.
+        TipoVehiculoElegido = Normalizar(linea.TipoVehiculo);
+        CarroceriaElegida = Normalizar(linea.Carroceria);
         ReemplazarMercancias(linea.Posiciones);
 
         if (replanificada)
         {
             // Los camiones nuevos copian el levante de la ruta al crearse.
             ValorLevanteContenedor = linea.ValorAprovisionamiento;
-            ReemplazarCamiones(capturada.Camiones, capturada.Cubicacion);
+            ReemplazarCamiones(capturada.Camiones, capturada.Cubicacion, capturada.AvisosVehiculo);
         }
         else
         {
             CambiarValorLevante(linea.ValorAprovisionamiento);
+            if (reincluirRechazados)
+            {
+                ReincluirRechazados();
+            }
         }
 
         var conexos = capturada.Conexos ?? [];

@@ -19,13 +19,27 @@ namespace Cotifly.Aplicacion.Costeo.Services;
 /// <c>idRecomendacionVehiculo</c>.
 /// </summary>
 /// <remarks>
+/// HU-032 (#197, ADR-022): el vehículo que eligió el comercial (<c>tipo_vehiculo</c>/<c>carroceria</c> de la ruta) es el RESPALDO del
+/// cubicador. Orden de decisión por ruta:
+/// <list type="number">
+/// <item><b>Sin mercancías cubicables</b> (<see cref="clsLineaSolicitudCosteo.Cubicabilidad"/> distinta de <c>Cubicable</c>: solo el
+/// peso, mercancías sin medidas ni tipo, o una ruta mixta): NO se llama al cubicador; un camión con el vehículo elegido (validado contra
+/// Nexo en la captura) y el peso de la ruta. La ruta mixta lleva el aviso <c>MERCANCIAS_NO_CUBICABLES</c>.</item>
+/// <item><b>Sin cubicador configurado</b> (warning una vez por captura): igual, con el elegido (la captura ya lo validó: sin cubicador se
+/// sabe que se usa; se revalida como en el punto 4) y el aviso <c>VEHICULO_ELEGIDO_USADO</c> si había uno.</item>
+/// <item><b>ASIGNADO</b>: manda el cubicador (un camión por vehículo recomendado). Si había un vehículo elegido distinto, aviso
+/// <c>VEHICULO_AJUSTADO_POR_CUBICADOR</c> con el elegido y los finales. El elegido no se valida.</item>
+/// <item><b>Sin selección automática, caída, ocupado o presupuesto agotado</b> (con <see cref="IClsCubicador.RespaldoSiFalla"/>): un
+/// camión con el vehículo elegido y el aviso <c>VEHICULO_ELEGIDO_USADO</c>. Validación TARDÍA: el elegido no se validó en la captura (la
+/// ruta iba al cubicador), así que se valida aquí contra el catálogo y el alias de Nexo (<see cref="IClsValidadorCatalogosCaptura"/>); si
+/// no es un código de Nexo, el camión va sin vehículo (o sin la carrocería) con el aviso <c>VEHICULO_ELEGIDO_INVALIDO</c> y la captura no
+/// se pierde. Con el catálogo de Nexo caído (sin copia utilizable) va tal cual: el envío lo resuelve contra la copia vencida o el alias y,
+/// si no, Nexo lo recibe para normalizarlo (ADR-022). Sin elegido, el camión va sin vehículo (lo resuelve la Mesa de Costeo).</item>
+/// </list>
 /// <list type="bullet">
-/// <item><b>Sin selección automática</b>: un camión sin vehículo ni carrocería con el peso total de la ruta; se envía igual a Nexo y lo
-/// resuelve la Mesa de Costeo.</item>
 /// <item><b>Condicionada</b>: no se parte ni se bloquea nada; los camiones se crean como vienen. Una línea informativa en el log.</item>
-/// <item><b>Respaldo sin llamar al cubicador</b> (<see cref="clsPlanificadorCamionSinVehiculo"/>): sin cubicador configurado (warning
-/// una vez por captura) o con una ruta sin mercancías o con alguna mercancía sin <c>codigoMercancia</c> (rutas migradas, agente de chat).
-/// Durante la transición, una mercancía con el <c>id_tipo_mercancia</c> anterior se traduce al código con el catálogo.</item>
+/// <item>Durante la transición, una mercancía con el <c>id_tipo_mercancia</c> anterior se traduce al código con el catálogo; si no se
+/// puede, la ruta va al respaldo con el elegido.</item>
 /// <item><b>Rechazo de la petición, respuesta inválida o llave rechazada</b> (<c>MERCANCIAS_REQUERIDAS</c>, <c>MERCANCIA_DESCONOCIDA</c>,
 /// <c>MERCANCIA_NO_CUBICABLE</c>, <c>DIMENSIONES_INVALIDAS</c>, <c>CUBICADOR_RESPUESTA_INVALIDA</c>, <c>CUBICADOR_NO_AUTORIZADO</c>): el
 /// error vuelve tal cual y la captura no guarda nada. Nunca van al respaldo: esconderían un dato malo (HU-023.1, contra el fallo silencioso).</item>
@@ -77,6 +91,7 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
     private readonly ILogger<clsPlanificadorCamionesCubicador> _logger;
     private readonly IClsCubicador? _cubicador;
     private readonly IClsUsuarioWebRepository? _usuarios;
+    private readonly IClsValidadorCatalogosCaptura? _catalogos;
     private readonly Counter<long>? _respaldos;
 
     /// <summary>¿Ya cayó el cubicador (o se agotó el presupuesto) en esta petición? Las rutas siguientes van directo al respaldo.</summary>
@@ -95,11 +110,13 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
         ILogger<clsPlanificadorCamionesCubicador> logger,
         IClsCubicador? cubicador = null,
         IMeterFactory? medidores = null,
-        IClsUsuarioWebRepository? usuarios = null)
+        IClsUsuarioWebRepository? usuarios = null,
+        IClsValidadorCatalogosCaptura? catalogos = null)
     {
         _logger = logger;
         _cubicador = cubicador;
         _usuarios = usuarios;
+        _catalogos = catalogos;
         _respaldos = medidores?.Create(NombreMedidor).CreateCounter<long>(MetricaRespaldos,
             description: "Rutas que quedaron con un camión sin vehículo porque el cubicador falló (etiqueta motivo).");
     }
@@ -120,16 +137,29 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
         Guid usuarioId, Guid rutaId, clsLineaSolicitudCosteo ruta, bool ocupadoEsError, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(ruta);
+
+        // HU-032 (#197): sin mercancías cubicables no se llama al cubicador: la ruta usa el vehículo elegido (validado en la captura).
+        var cubicabilidad = ruta.Cubicabilidad;
+        if (cubicabilidad != CubicabilidadRuta.Cubicable)
+        {
+            _logger.LogInformation(
+                "La ruta {RutaId} no tiene mercancías cubicables ({Cubicabilidad}): no se llama al cubicador y lleva el vehículo elegido.",
+                rutaId, cubicabilidad);
+            return Elegido(ruta, cubicabilidad == CubicabilidadRuta.Mixta ? [clsAvisosVehiculo.Mixta(VehiculoElegido(ruta) ?? _sinVehiculo)] : null);
+        }
+
         if (_cubicador is not { EstaConfigurado: true } cubicador)
         {
             if (!_avisoSinConfigurar)
             {
                 _avisoSinConfigurar = true;
                 _logger.LogWarning(EventoSinConfigurar,
-                    "CUBICADOR_SIN_CONFIGURAR: Cubicador:UrlBase vacía; las rutas de esta captura quedan con un camión sin vehículo (respaldo).");
+                    "CUBICADOR_SIN_CONFIGURAR: Cubicador:UrlBase vacía; las rutas de esta captura quedan con un camión con el vehículo elegido o sin vehículo (respaldo).");
             }
 
-            return Respaldo(ruta);
+            // Sin cubicador el elegido se usa seguro (la captura ya lo validó); se vuelve a validar (con la caché del catálogo) porque la
+            // versión nueva de la re-solicitud o la edición pueden traerlo sin pasar por la validación de la captura.
+            return await RespaldoAsync(usuarioId, ruta, null, CausaSinConfigurar, cancellationToken);
         }
 
         var posiciones = ruta.Posiciones.Where(p => p is not null).ToList();
@@ -139,7 +169,8 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
             if (traducidas.EsFallo)
             {
                 var caidaCatalogo = clsErroresCubicador.EsCaida(traducidas.Error);
-                return Falla(cubicador, rutaId, ruta, caidaCatalogo ? "caida" : "rechazo", traducidas.Error.Detalle ?? traducidas.Error.Codigo, caidaCatalogo);
+                return await FallaAsync(usuarioId, cubicador, rutaId, ruta, caidaCatalogo ? "caida" : "rechazo",
+                    traducidas.Error.Detalle ?? traducidas.Error.Codigo, caidaCatalogo, cancellationToken);
             }
 
             posiciones = [.. traducidas.Valor];
@@ -148,19 +179,21 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
         var mercancias = posiciones.Select(clsMercanciaCubicador.Desde).ToList();
         if (mercancias.Count == 0 || mercancias.Any(m => m is null))
         {
+            // Transición: un id_tipo_mercancia que el catálogo del cubicador no tradujo deja la mercancía sin código.
             _logger.LogInformation(
-                "La ruta {RutaId} no trae mercancías con codigoMercancia (ruta migrada, re-solicitud o chat): queda con un camión sin vehículo (respaldo).", rutaId);
-            return Respaldo(ruta);
+                "La ruta {RutaId} trae una mercancía sin codigoMercancia que el catálogo no tradujo: lleva el vehículo elegido (respaldo).", rutaId);
+            return await RespaldoAsync(usuarioId, ruta, null, CausaSinCodigo, cancellationToken);
         }
 
         if (_caido)
         {
-            return Respaldo(ruta);
+            return await RespaldoAsync(usuarioId, ruta, null, CausaNoDisponible, cancellationToken);
         }
 
         if (_inicio is { } inicio && Stopwatch.GetElapsedTime(inicio) > cubicador.PresupuestoCaptura)
         {
-            return Falla(cubicador, rutaId, ruta, "presupuesto", "presupuesto de tiempo de la captura agotado", caida: true);
+            return await FallaAsync(usuarioId, cubicador, rutaId, ruta, "presupuesto", "presupuesto de tiempo de la captura agotado", caida: true,
+                cancellationToken);
         }
 
         _inicio ??= Stopwatch.GetTimestamp();
@@ -189,10 +222,11 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
             }
 
             var caida = clsErroresCubicador.EsCaida(recomendacion.Error);
-            return Falla(cubicador, rutaId, ruta, caida ? "caida" : "rechazo", recomendacion.Error.Detalle ?? recomendacion.Error.Codigo, caida);
+            return await FallaAsync(usuarioId, cubicador, rutaId, ruta, caida ? "caida" : "rechazo",
+                recomendacion.Error.Detalle ?? recomendacion.Error.Codigo, caida, cancellationToken);
         }
 
-        return Camiones(rutaId, ruta, recomendacion.Valor);
+        return await CamionesAsync(usuarioId, rutaId, ruta, recomendacion.Valor, cancellationToken);
     }
 
     /// <summary>
@@ -269,8 +303,9 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
         return externo;
     }
 
-    private clsResultado<clsPlanRuta> Falla(
-        IClsCubicador cubicador, Guid rutaId, clsLineaSolicitudCosteo ruta, string motivo, string detalle, bool caida)
+    private async Task<clsResultado<clsPlanRuta>> FallaAsync(
+        Guid usuarioId, IClsCubicador cubicador, Guid rutaId, clsLineaSolicitudCosteo ruta, string motivo, string detalle, bool caida,
+        CancellationToken cancellationToken)
     {
         if (!cubicador.RespaldoSiFalla)
         {
@@ -283,25 +318,114 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
         {
             _caido = true;
             _logger.LogWarning(EventoRespaldo,
-                "CUBICADOR_RESPALDO: el cubicador no pudo recomendar los vehículos de la ruta {RutaId} ({Motivo}: {Detalle}); esta ruta y las siguientes de la captura quedan con un camión sin vehículo (lo resuelve la Mesa de Costeo de Nexo).",
+                "CUBICADOR_RESPALDO: el cubicador no pudo recomendar los vehículos de la ruta {RutaId} ({Motivo}: {Detalle}); esta ruta y las siguientes de la captura quedan con un camión con el vehículo elegido o, sin él, sin vehículo (lo resuelve la Mesa de Costeo de Nexo).",
                 rutaId, motivo, detalle);
         }
         else if (!caida)
         {
             _logger.LogWarning(EventoRespaldo,
-                "CUBICADOR_RESPALDO: el cubicador no pudo recomendar los vehículos de la ruta {RutaId} ({Motivo}: {Detalle}); la ruta queda con un camión sin vehículo (lo resuelve la Mesa de Costeo de Nexo).",
+                "CUBICADOR_RESPALDO: el cubicador no pudo recomendar los vehículos de la ruta {RutaId} ({Motivo}: {Detalle}); la ruta queda con un camión con el vehículo elegido o, sin él, sin vehículo (lo resuelve la Mesa de Costeo de Nexo).",
                 rutaId, motivo, detalle);
         }
 
         _respaldos?.Add(1, new KeyValuePair<string, object?>("motivo", motivo));
-        return Respaldo(ruta);
+        return await RespaldoAsync(usuarioId, ruta, null, motivo == "presupuesto" ? CausaPresupuesto : CausaNoDisponible, cancellationToken);
     }
 
-    private static clsResultado<clsPlanRuta> Respaldo(clsLineaSolicitudCosteo ruta, clsCubicacionRuta? cubicacion = null) =>
-        clsResultado<clsPlanRuta>.Exito(new clsPlanRuta(clsPlanificadorCamionSinVehiculo.Camiones(ruta), cubicacion));
+    /// <summary>Causa del aviso del vehículo: el cubicador no seleccionó vehículo.</summary>
+    public const string CausaSinSeleccion = "El cubicador no seleccionó vehículo";
 
-    /// <summary>Un camión por vehículo recomendado (en su orden); "sin selección" es un camión sin vehículo con el peso de la ruta.</summary>
-    private clsResultado<clsPlanRuta> Camiones(Guid rutaId, clsLineaSolicitudCosteo ruta, clsRecomendacionCubicador recomendacion)
+    /// <summary>Causa del aviso del vehículo: el cubicador no respondió, falló o estaba ocupado.</summary>
+    public const string CausaNoDisponible = "El cubicador no estuvo disponible";
+
+    /// <summary>Causa del aviso del vehículo: se agotó el presupuesto de tiempo de la captura para el cubicador.</summary>
+    public const string CausaPresupuesto = "Se agotó el tiempo para consultar el cubicador en esta captura";
+
+    /// <summary>Causa del aviso del vehículo: el cubicador no está configurado.</summary>
+    public const string CausaSinConfigurar = "El cubicador no está configurado";
+
+    /// <summary>Causa del aviso del vehículo: una mercancía quedó sin código del catálogo del cubicador.</summary>
+    public const string CausaSinCodigo = "Una mercancía no tiene código del catálogo del cubicador";
+
+    private static readonly clsVehiculoAviso _sinVehiculo = new(null, null);
+
+    /// <summary>El vehículo elegido de la ruta, o <c>null</c> si no trae tipo de vehículo ni carrocería.</summary>
+    private static clsVehiculoAviso? VehiculoElegido(clsLineaSolicitudCosteo ruta) =>
+        string.IsNullOrWhiteSpace(ruta.TipoVehiculo) && string.IsNullOrWhiteSpace(ruta.Carroceria)
+            ? null
+            : new clsVehiculoAviso(Limpio(ruta.TipoVehiculo), Limpio(ruta.Carroceria));
+
+    private static string? Limpio(string? valor) => string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
+
+    /// <summary>HU-032: un camión con el vehículo elegido TAL CUAL (ya validado en la captura) y el peso de la ruta.</summary>
+    private static clsResultado<clsPlanRuta> Elegido(clsLineaSolicitudCosteo ruta, IReadOnlyList<clsAdvertenciaCubicador>? avisos) =>
+        clsResultado<clsPlanRuta>.Exito(new clsPlanRuta(clsPlanificadorCamionSinVehiculo.Camiones(ruta), null, avisos));
+
+    /// <summary>
+    /// HU-032 (#197): el respaldo de una ruta que SÍ iba al cubicador (sin selección, caída, ocupado, presupuesto o mercancía sin traducir):
+    /// un camión con el vehículo elegido validado TARDE contra Nexo (<see cref="ValidarElegidoAsync"/>) y su aviso; sin elegido, sin vehículo.
+    /// </summary>
+    private async Task<clsResultado<clsPlanRuta>> RespaldoAsync(
+        Guid usuarioId, clsLineaSolicitudCosteo ruta, clsCubicacionRuta? cubicacion, string causa, CancellationToken cancellationToken)
+    {
+        var peso = clsPlanificadorCamionSinVehiculo.PesoTotal(ruta);
+        if (VehiculoElegido(ruta) is not { } elegido)
+        {
+            return clsResultado<clsPlanRuta>.Exito(new clsPlanRuta([new clsCamionPlaneado(null, null, peso)], cubicacion));
+        }
+
+        var (final, valido) = await ValidarElegidoAsync(usuarioId, ruta, cancellationToken);
+        var aviso = valido ? clsAvisosVehiculo.Usado(final, causa) : clsAvisosVehiculo.Invalido(elegido, final, causa);
+        return clsResultado<clsPlanRuta>.Exito(new clsPlanRuta([new clsCamionPlaneado(final.TipoVehiculo, final.Carroceria, peso)], cubicacion, [aviso]));
+    }
+
+    /// <summary>
+    /// HU-032 (#197): validación tardía del vehículo elegido contra el catálogo y el alias de Nexo (la misma regla M1 de la captura,
+    /// <see cref="IClsValidadorCatalogosCaptura.ValidarLineasAsync"/>): devuelve el vehículo que viaja, escrito como en Nexo, y si el elegido
+    /// era válido. Un tipo de vehículo que no es de Nexo deja el camión sin vehículo; una carrocería que no lo es, sin carrocería. Con el
+    /// catálogo maestro caído (sin copia utilizable) el tipo va TAL CUAL: el envío lo resuelve contra la copia vencida o el alias y, si no,
+    /// Nexo lo recibe para normalizarlo (ADR-022).
+    /// </summary>
+    private async Task<(clsVehiculoAviso Final, bool Valido)> ValidarElegidoAsync(
+        Guid usuarioId, clsLineaSolicitudCosteo ruta, CancellationToken cancellationToken)
+    {
+        var tipo = Limpio(ruta.TipoVehiculo);
+        var carroceria = Limpio(ruta.Carroceria);
+        if (_catalogos is null)
+        {
+            return (new clsVehiculoAviso(tipo, carroceria), true);
+        }
+
+        var soloVehiculo = new clsLineaSolicitudCosteo { Origen = ruta.Origen, Destino = ruta.Destino, TipoVehiculo = tipo, Carroceria = carroceria };
+        var validacion = await _catalogos.ValidarLineasAsync(usuarioId, [soloVehiculo], cancellationToken);
+        var errores = validacion.Errores is [var deRuta, ..] ? deRuta : [];
+        var canonica = validacion.Canonicas is [{ } primera, ..] ? primera : soloVehiculo;
+        var tipoInvalido = errores.Any(e => e.Campo == "tipo_vehiculo");
+        var carroceriaInvalida = errores.Any(e => e.Campo == "carroceria");
+        if (validacion.NoDisponible is not null && tipo is not null)
+        {
+            _logger.LogWarning("El catálogo de vehículos de Nexo no está disponible para validar el vehículo elegido ({Codigo}): va tal cual.",
+                validacion.NoDisponible.Codigo);
+        }
+
+        if (tipoInvalido || carroceriaInvalida)
+        {
+            _logger.LogWarning("El vehículo elegido no es un código de Nexo ({Campos}): la ruta va sin él (VEHICULO_ELEGIDO_INVALIDO).",
+                string.Join(", ", errores.Select(e => e.Campo)));
+        }
+
+        var final = tipoInvalido
+            ? _sinVehiculo
+            : new clsVehiculoAviso(Limpio(canonica.TipoVehiculo) ?? tipo, carroceriaInvalida ? null : Limpio(canonica.Carroceria) ?? carroceria);
+        return (final, !tipoInvalido && !carroceriaInvalida);
+    }
+
+    /// <summary>
+    /// Un camión por vehículo recomendado (en su orden), con el aviso <c>VEHICULO_AJUSTADO_POR_CUBICADOR</c> si el elegido era otro; "sin
+    /// selección" es el respaldo con el vehículo elegido (<see cref="RespaldoAsync"/>).
+    /// </summary>
+    private async Task<clsResultado<clsPlanRuta>> CamionesAsync(
+        Guid usuarioId, Guid rutaId, clsLineaSolicitudCosteo ruta, clsRecomendacionCubicador recomendacion, CancellationToken cancellationToken)
     {
         if (recomendacion.Condicionada)
         {
@@ -311,10 +435,12 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
 
         if (!recomendacion.Asignado)
         {
-            _logger.LogInformation("El cubicador no seleccionó vehículo en la ruta {RutaId} ({Motivo}): el camión queda sin vehículo para la Mesa de Costeo de Nexo.",
+            _logger.LogInformation(
+                "El cubicador no seleccionó vehículo en la ruta {RutaId} ({Motivo}): el camión lleva el vehículo elegido o, sin él, queda sin vehículo para la Mesa de Costeo de Nexo.",
                 rutaId, recomendacion.MotivoSinSeleccion ?? "sin motivo");
-            // HU-023.3: la ruta guarda el resultado y el motivo; el camión va sin vehículo ni recomendación.
-            return Respaldo(ruta, recomendacion.ACubicacionRuta());
+            // HU-023.3 y HU-032 (#197): la ruta guarda el resultado y el motivo; el camión va con el vehículo elegido (validado aquí contra
+            // Nexo: VEHICULO_ELEGIDO_USADO o VEHICULO_ELEGIDO_INVALIDO) o sin vehículo, y sin recomendación.
+            return await RespaldoAsync(usuarioId, ruta, recomendacion.ACubicacionRuta(), CausaSinSeleccion, cancellationToken);
         }
 
         var camiones = new List<clsCamionPlaneado>(recomendacion.Vehiculos.Count);
@@ -333,7 +459,26 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
                 v.VolumenTotalM3, v.PorcentajeLlenadoVolumen, v.PorcentajeLlenadoPeso));
         }
 
-        return clsResultado<clsPlanRuta>.Exito(new clsPlanRuta(camiones, recomendacion.ACubicacionRuta()));
+        return clsResultado<clsPlanRuta>.Exito(new clsPlanRuta(camiones, recomendacion.ACubicacionRuta(), AvisoAjustado(ruta, camiones)));
+    }
+
+    /// <summary>
+    /// HU-032 (#197): <c>VEHICULO_AJUSTADO_POR_CUBICADOR</c> si había un vehículo elegido y algún camión del cubicador lleva otro tipo de
+    /// vehículo (o, si se eligió la carrocería, otra carrocería); <c>null</c> si no.
+    /// </summary>
+    private static IReadOnlyList<clsAdvertenciaCubicador>? AvisoAjustado(clsLineaSolicitudCosteo ruta, IReadOnlyList<clsCamionPlaneado> camiones)
+    {
+        if (VehiculoElegido(ruta) is not { } elegido)
+        {
+            return null;
+        }
+
+        static bool Distinto(string? deseado, string? final) =>
+            deseado is not null && (final is null || !clsVehiculoLineaSolicitud.MismoCodigo(deseado, final));
+
+        return camiones.Any(c => Distinto(elegido.TipoVehiculo, c.TipoVehiculo) || Distinto(elegido.Carroceria, c.Carroceria))
+            ? [clsAvisosVehiculo.Ajustado(elegido, [.. camiones.Select(c => new clsVehiculoAviso(c.TipoVehiculo, c.Carroceria))])]
+            : null;
     }
 }
 

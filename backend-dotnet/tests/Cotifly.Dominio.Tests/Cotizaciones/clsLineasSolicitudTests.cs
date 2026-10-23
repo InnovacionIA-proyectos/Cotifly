@@ -76,7 +76,10 @@ public sealed class clsLineasSolicitudTests
         var error = linea.Errores().Should().ContainSingle(e => e.Codigo == clsCodigosLineaSolicitud.PosicionInvalida).Subject;
 
         error.Campo.Should().Be($"mercancias[{indice}].{subcampo}");
-        error.Mensaje.Should().StartWith($"Mercancía {indice + 1}: el campo '{subcampo}' debe estar entre");
+        // HU-032 (#197): una medida en 0 con las demás escritas es una medida que falta (medidas parciales); una negativa, fuera de rango.
+        error.Mensaje.Should().StartWith(subcampo == "alto_cm"
+            ? $"Mercancía {indice + 1}: el campo '{subcampo}' debe estar entre"
+            : $"Mercancía {indice + 1}: faltan medidas ({subcampo})");
         error.Mensaje.Should().NotContain("[", "el índice del arreglo solo va en el campo");
     }
 
@@ -190,7 +193,9 @@ public sealed class clsLineasSolicitudTests
         ]);
         clsLineaSolicitudNexo[] nexo = [new("N1", "A → B", null, 1m, null, null), new("N2", "A → B", null, 1m, null, null), new("N3", "C → D", null, 1m, "2", null)];
 
-        clsEmparejadorLineasNexo.Emparejar(lineas, nexo).Should().BeEmpty("dos idénticas son ambiguas y la tercera contradice el vehículo");
+        // HU-032 (#197): la tercera contradice el vehículo, pero es un camión del respaldo y su ruta y su peso son únicos en la cotización:
+        // la Mesa de Costeo le cambió el vehículo en Nexo (D2) y se asocia. Las dos idénticas siguen ambiguas.
+        clsEmparejadorLineasNexo.Emparejar(lineas, nexo).Should().ContainSingle().Which.Value.Should().Be("N3");
     }
 
     [Fact]

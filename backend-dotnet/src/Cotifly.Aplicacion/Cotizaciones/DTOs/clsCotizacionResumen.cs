@@ -47,6 +47,15 @@ public sealed record clsCotizacionResumen(
     public IReadOnlyList<string>? ConexosConservados { get; init; }
 
     /// <summary>
+    /// HU-028.1 (#183, decisión del 2026-10-20): solo en la respuesta de <c>POST .../costeo/re-solicitar</c> y de
+    /// <c>PUT .../solicitud</c> cuando se omitieron del envío camiones rechazados por la Mesa de Costeo de Nexo: qué rutas, cuántos camiones y
+    /// sus motivos (en la <c>-vN</c>, que se copiaron como rechazados). Para reconsiderarlos, la edición con <c>reincluir_rechazados</c>. En el
+    /// resto de respuestas es <c>null</c> y no se serializa.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? AvisoRechazos { get; init; }
+
+    /// <summary>
     /// HU-018.1 (#155): fecha límite de la solicitud (cabecera) en UTC, como <c>created_at</c> (se guarda con el desplazamiento con que llegó,
     /// -05:00 si vino sin zona); <c>null</c> si no se dio. Siempre se serializa.
     /// </summary>
@@ -212,12 +221,16 @@ public sealed record clsCubicacionRutaResumen(
     IReadOnlyList<clsAdvertenciaCubicador> Advertencias,
     clsExtradimensionCubicador? Extradimension)
 {
-    /// <summary>Las rutas de <paramref name="cotizacion"/> que pasaron por el cubicador, en orden; <c>null</c> si ninguna.</summary>
+    /// <summary>
+    /// Las rutas de <paramref name="cotizacion"/> que pasaron por el cubicador o que tienen avisos (HU-032, #197: los del vehículo, como
+    /// <c>VEHICULO_ELEGIDO_USADO</c> o <c>MERCANCIAS_NO_CUBICABLES</c>, también en una ruta que no llamó al cubicador), en orden; <c>null</c>
+    /// si ninguna.
+    /// </summary>
     public static IReadOnlyList<clsCubicacionRutaResumen>? De(clsCotizacionSolicitud cotizacion)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         var rutas = cotizacion.RutasOrdenadas
-            .Where(r => r.ResultadoCubicacion is not null)
+            .Where(r => r.ResultadoCubicacion is not null || r.AvisosCubicacion?.Advertencias is { Count: > 0 })
             .Select(r => new clsCubicacionRutaResumen(
                 r.Orden, r.Id, r.ResultadoCubicacion, r.MotivoSinSeleccion, r.Condicionada,
                 r.AvisosCubicacion?.MercanciasCondicionadas ?? [], r.AvisosCubicacion?.Advertencias ?? [], r.AvisosCubicacion?.Extradimension))

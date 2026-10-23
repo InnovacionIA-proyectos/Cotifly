@@ -720,12 +720,36 @@ public sealed class clsEnvioCosteoServiceTests
     }
 
     [Fact]
-    public async Task ElVehiculoYLaCarroceriaQueLleganSeIgnoran()
+    public async Task HU032_ElVehiculoElegidoDeUnaRutaSinMercanciasSeConservaSeValidaYVaEnSuCamion()
     {
+        // HU-032 (#197): la ruta solo trae el peso: no se cubica y lleva el vehículo elegido (validado contra Nexo antes de guardar).
         var conVehiculo = Ruta(76109, "Buenaventura", 11001, "Bogotá D.C.");
         conVehiculo = conVehiculo with { Linea = conVehiculo.Linea with { TipoVehiculo = "3S3", Carroceria = "FURGON" } };
 
         var cotizacion = (await Servicio().CapturarAsync(_ana, Captura(conVehiculo), Ct)).Valor;
+
+        var camion = cotizacion.PrimeraRuta!.Vehiculos.Should().ContainSingle().Subject;
+        (camion.TipoVehiculo, camion.Carroceria).Should().Be(("3S3", "FURGON"));
+        (cotizacion.PrimeraRuta.TipoVehiculoElegido, cotizacion.PrimeraRuta.CarroceriaElegida).Should().Be(("3S3", "FURGON"));
+        await _catalogos.Received().ValidarLineasAsync(_ana,
+            Arg.Is<IReadOnlyList<clsLineaSolicitudCosteo>>(l => l.Any(x => x.TipoVehiculo == "3S3")), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ConLaBanderaApagadaElVehiculoYLaCarroceriaQueLleganSeIgnoran()
+    {
+        // HU-032 (#197): Captura:AceptarVehiculoCliente = false es el interruptor de reversa (comportamiento anterior: decisión 7).
+        var conVehiculo = Ruta(76109, "Buenaventura", 11001, "Bogotá D.C.");
+        conVehiculo = conVehiculo with { Linea = conVehiculo.Linea with { TipoVehiculo = "3S3", Carroceria = "FURGON" } };
+        var apagada = Options.Create(new clsOpcionesCaptura { AceptarVehiculoCliente = false });
+        var servicio = new clsEnvioCosteoService(
+            _cotizaciones, _politicas, _margen, _folios, _buscador, _nexo, _catalogos, _filas, _monedas, _unidad, _auditoria, _reloj,
+            Options.Create(_opciones), NullLogger<clsEnvioCosteoService>.Instance, new clsPrecioCosteoService(),
+            new clsCapturaRutasService(_filas, _costosConexos, new clsPlanificadorCamionSinVehiculo(), NullLogger<clsCapturaRutasService>.Instance,
+                opcionesCaptura: apagada),
+            apagada);
+
+        var cotizacion = (await servicio.CapturarAsync(_ana, Captura(conVehiculo), Ct)).Valor;
 
         var camion = cotizacion.PrimeraRuta!.Vehiculos.Should().ContainSingle().Subject;
         camion.TipoVehiculo.Should().BeNull();

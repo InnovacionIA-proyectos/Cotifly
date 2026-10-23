@@ -354,6 +354,63 @@ public sealed class clsCosteoPorCamionTests
             "nombra todas las rutas, también las de un camión");
     }
 
+    /// <summary>
+    /// HU-031.1 (#194): el camión del cubicador guarda <c>C2</c> y viajó como <c>2</c> (traducido por el alias de Nexo). Con la
+    /// equivalencia que registró el envío se empareja con la línea de Nexo que dice <c>2</c>, conserva su <c>C2</c> y sus porcentajes de
+    /// llenado (no es un cambio de la Mesa) y las lecturas siguientes no cambian nada (sin oscilación).
+    /// </summary>
+    [Fact]
+    public void HU0311_ElCamionTraducidoPorAliasSeEmparejaYNoOscila()
+    {
+        var cotizacion = Ruta(("3S3", 10_000m));
+        var camion = cotizacion.PrimeraRuta!.AgregarVehiculo(new clsCamionPlaneado("C2", null, 4_000m, Guid.NewGuid(), 22.5m, 81.25m, 47.06m));
+        var foto = Foto("EnCosteo", [("3S3", 10_000m, "N-a", 1_000_000m), ("2", 4_000m, "N-b", 400_000m)]) with
+        {
+            EquivalenciasVehiculo = new Dictionary<string, string> { ["C2"] = "2" },
+        };
+
+        Aplicar(cotizacion, foto).Should().BeTrue();
+
+        camion.LineaSolicitudNexoId.Should().Be("N-b", "C2 viajó como 2: el emparejador compara con el código que viajó");
+        (camion.TipoVehiculo, camion.PorcentajeLlenadoVolumen, camion.PorcentajeLlenadoPeso).Should().Be(("C2", (decimal?)81.25m, (decimal?)47.06m),
+            "Nexo devolvió el mismo código que se le envió: no es un cambio de la Mesa");
+        cotizacion.MotivoEstadoCosteo.Should().NotBe(clsPrecioCosteoService.MotivoSinAsociar(1, 2));
+        cotizacion.PrecioFinal.Should().NotBeNull();
+
+        for (var ciclo = 0; ciclo < 3; ciclo++)
+        {
+            Aplicar(cotizacion, foto).Should().BeFalse("la misma foto no cambia nada (ciclo {0})", ciclo);
+            camion.TipoVehiculo.Should().Be("C2");
+        }
+    }
+
+    [Fact]
+    public void HU0311_SinLaEquivalenciaElCamionTraducidoNoSeEmparejaPorContenido()
+    {
+        // Lo que pasaría sin registrar la traducción: C2 contra 2 es una contradicción y el camión queda sin asociar.
+        var cotizacion = Ruta(("3S3", 10_000m));
+        var camion = cotizacion.PrimeraRuta!.AgregarVehiculo(new clsCamionPlaneado("C2", null, 4_000m, Guid.NewGuid()));
+
+        Aplicar(cotizacion, Foto("EnCosteo", [("3S3", 10_000m, "N-a", 1_000_000m), ("2", 4_000m, "N-b", 400_000m)]));
+
+        camion.LineaSolicitudNexoId.Should().BeNull();
+    }
+
+    [Fact]
+    public void HU0311_SiLaMesaCambiaDeVerdadElVehiculoTraducidoSeAdopta()
+    {
+        var cotizacion = Ruta(("3S3", 10_000m));
+        var camion = cotizacion.PrimeraRuta!.AgregarVehiculo(new clsCamionPlaneado("C2", null, 4_000m, Guid.NewGuid(), 22.5m, 81.25m, 47.06m));
+        var equivalencias = new Dictionary<string, string> { ["C2"] = "2" };
+        Aplicar(cotizacion, Foto("EnCosteo", [("3S3", 10_000m, "N-a", 1_000_000m), ("2", 4_000m, "N-b", 400_000m)]) with { EquivalenciasVehiculo = equivalencias });
+
+        var cambiada = Foto("EnCosteo", [("3S3", 10_000m, "N-a", 1_000_000m), ("2S2", 4_000m, "N-b", 450_000m)]) with { EquivalenciasVehiculo = equivalencias };
+        Aplicar(cotizacion, cambiada).Should().BeTrue();
+
+        (camion.TipoVehiculo, camion.PorcentajeLlenadoVolumen).Should().Be(("2S2", (decimal?)null), "D2: la Mesa manda");
+        Aplicar(cotizacion, cambiada).Should().BeFalse("y la lectura siguiente no vuelve a cambiar");
+    }
+
     // ------------------------------------------------------------------ Apoyo
 
     private bool Aplicar(clsCotizacionSolicitud cotizacion, clsCosteoConsultadoNexo foto) =>

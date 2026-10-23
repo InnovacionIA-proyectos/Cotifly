@@ -152,7 +152,14 @@ public sealed record clsLicitacion(
     string? Hoja,
     IReadOnlyList<clsLineaLicitacion> Lineas,
     clsProgresoCubicacion? ProgresoCubicacion = null,
-    IReadOnlyList<Cotizaciones.DTOs.clsCubicacionRutaResumen>? Cubicacion = null);
+    IReadOnlyList<Cotizaciones.DTOs.clsCubicacionRutaResumen>? Cubicacion = null)
+{
+    /// <summary>
+    /// HU-028.1 (#183): líneas (rutas) rechazadas por la Mesa de Costeo de Nexo. No son pendientes (<c>lineas_pendientes</c> no las cuenta)
+    /// ni suman en <c>precio_final</c>.
+    /// </summary>
+    public int LineasRechazadas { get; init; }
+}
 
 /// <summary>
 /// HU-023.5 (#160): progreso de la cubicación en segundo plano de una licitación. <paramref name="Estado"/>: <c>en_curso</c> (quedan
@@ -199,12 +206,22 @@ public sealed record clsCamionLicitacion(
     decimal? PorcentajeLlenadoVolumen,
     decimal? PorcentajeLlenadoPeso)
 {
+    /// <summary>HU-028.1 (#183): estado del costeo del camión (<c>rechazada</c> si la Mesa de Costeo rechazó su línea); <c>null</c> sin enviar.</summary>
+    public string? EstadoCosteo { get; init; }
+
+    /// <summary>HU-028.1 (#183): por qué la Mesa de Costeo rechazó la línea del camión; <c>null</c> si no está rechazado.</summary>
+    public string? MotivoRechazo { get; init; }
+
     /// <summary>Los camiones de la ruta, en su orden.</summary>
     public static IReadOnlyList<clsCamionLicitacion> De(clsLineaSolicitud ruta)
     {
         ArgumentNullException.ThrowIfNull(ruta);
         return [.. ruta.VehiculosOrdenados.Select((v, i) => new clsCamionLicitacion(
-            i + 1, v.TipoVehiculo, v.Carroceria, v.PesoKg, v.VolumenTotalM3, v.PorcentajeLlenadoVolumen, v.PorcentajeLlenadoPeso))];
+            i + 1, v.TipoVehiculo, v.Carroceria, v.PesoKg, v.VolumenTotalM3, v.PorcentajeLlenadoVolumen, v.PorcentajeLlenadoPeso)
+        {
+            EstadoCosteo = v.EstadoCosteo is { } estado ? Dominio.Comun.clsCodigoEnum.ACodigo(estado) : null,
+            MotivoRechazo = v.Rechazado ? v.MotivoRechazo : null,
+        })];
     }
 }
 
@@ -240,7 +257,14 @@ public sealed record clsLineaExportacion(
     string Estado,
     decimal? PrecioFinal,
     IReadOnlyList<clsCamionExportacion>? Camiones = null,
-    string? Cubicacion = null);
+    string? Cubicacion = null)
+{
+    /// <summary>
+    /// HU-028.1 (#183): la Mesa de Costeo de Nexo rechazó la ruta (todos sus camiones): sale "SIN COSTEO", sin precio ni motivo, y no cuenta
+    /// en el total ni como pendiente.
+    /// </summary>
+    public bool Rechazada { get; init; }
+}
 
 /// <summary>
 /// HU-023.5 (#160): un camión exportado. <paramref name="Vehiculo"/> y <paramref name="Carroceria"/> son el nombre del catálogo del
@@ -255,6 +279,12 @@ public sealed record clsCamionExportacion(
     decimal? PorcentajeLlenadoVolumen,
     decimal? PorcentajeLlenadoPeso)
 {
+    /// <summary>HU-028.1 (#183): la Mesa de Costeo de Nexo rechazó la línea de este camión (no cuenta en el precio). Sin el motivo.</summary>
+    public bool Rechazado { get; init; }
+
+    /// <summary>HU-028.1 (#183): texto del camión rechazado en la hoja "Camiones Cotifly".</summary>
+    public const string TextoRechazado = "Rechazado en NEXO (sin costeo)";
+
     /// <summary>Texto del camión sin vehículo.</summary>
     public const string SinVehiculo = "Sin vehículo (Mesa de Costeo)";
 
@@ -306,4 +336,12 @@ public sealed record clsLineaLicitacion(
     string? ResultadoCubicacion = null,
     string? MotivoSinSeleccion = null,
     bool Condicionada = false,
-    IReadOnlyList<clsCamionLicitacion>? Camiones = null);
+    IReadOnlyList<clsCamionLicitacion>? Camiones = null)
+{
+    /// <summary>
+    /// HU-028.1 (#183): por qué la Mesa de Costeo de Nexo rechazó camiones de la línea (los motivos distintos, unidos con <c>" | "</c>);
+    /// <c>null</c> si ninguno. Con <c>estado_costeo = rechazada</c> la línea no tiene precio y no es pendiente. Solo en pantalla: el Excel
+    /// no lleva el motivo.
+    /// </summary>
+    public string? MotivoRechazo { get; init; }
+}

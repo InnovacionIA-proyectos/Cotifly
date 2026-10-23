@@ -78,7 +78,7 @@ public sealed class clsPrecioCosteoService(ILogger<clsPrecioCosteoService>? logg
         var porCamion = cotizacion.RutasOrdenadas.SelectMany(r => r.Vehiculos.Select(v => (Ruta: r, Camion: v))).ToDictionary(x => x.Camion.Id);
         var asignados = cotizacion.Vehiculos.Select(c => c.LineaSolicitudNexoId).OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
         var detalle = foto.Detalle.Where(d => foto.LineasSolicitud.Contains(d.Id, StringComparer.OrdinalIgnoreCase)).ToList();
-        var candidatos = pendientes.Select(c => clsCamionParaEmparejar.Desde(porCamion[c.Id].Ruta, c, foto.CodigosCubicadorEnviados)).ToList();
+        var candidatos = pendientes.Select(c => clsCamionParaEmparejar.Desde(porCamion[c.Id].Ruta, c, foto.CodigosCubicadorEnviados, foto.EquivalenciasVehiculo)).ToList();
         var emparejamiento = clsEmparejadorLineasNexo.EmparejarConDetalle(candidatos, detalle, asignados);
         foreach (var (camionId, nexoId) in emparejamiento.Pares)
         {
@@ -132,9 +132,21 @@ public sealed class clsPrecioCosteoService(ILogger<clsPrecioCosteoService>? logg
         var lecturas = Vigentes(cotizacion).Select(camion =>
         {
             var estado = clsDerivacionEstadoCosteo.DerivarLinea(foto, camion.LineaSolicitudNexoId);
+            // HU-028.1 (#183, Nexo #320): la Mesa rechazó la línea: el camión guarda el motivo (y queda sin flete si se leen costos).
+            var situacion = clsDerivacionEstadoCosteo.SituacionLinea(foto, camion.LineaSolicitudNexoId);
+            var motivoRechazo = estado == EstadoCosteo.Rechazada ? situacion?.MotivoRechazo : null;
+            // El detalle trae el estado de la línea y no es "rechazada": si el camión lo estaba, la Mesa lo deshizo (también si ya entregó).
+            var lineaNoRechazada = estado != EstadoCosteo.Rechazada && situacion?.EstadoLinea is not null;
             if (conPdf)
             {
-                return new clsCosteoCamionNexo(camion.Id, estado, ConCostos: false);
+                return new clsCosteoCamionNexo(camion.Id, estado, ConCostos: false, MotivoRechazo: motivoRechazo, LineaNoRechazada: lineaNoRechazada);
+            }
+
+            if (estado == EstadoCosteo.Rechazada)
+            {
+                var detalle = Detalle(foto, camion.LineaSolicitudNexoId);
+                return new clsCosteoCamionNexo(
+                    camion.Id, estado, ConCostos: true, TipoVehiculo: detalle?.TipoVehiculo, Carroceria: detalle?.Carroceria, MotivoRechazo: motivoRechazo);
             }
 
             var costos = clsDerivacionEstadoCosteo.CostosCamion(foto, camion.LineaSolicitudNexoId);
@@ -144,9 +156,12 @@ public sealed class clsPrecioCosteoService(ILogger<clsPrecioCosteoService>? logg
                 costos = null;
             }
 
-            // La Mesa de Costeo le puso vehículo a una línea que iba vacía (sin selección automática): se copia.
+            // La Mesa de Costeo le puso vehículo a una línea que iba vacía (sin selección automática): se copia. HU-031.1 (#194): si Nexo
+            // devuelve el mismo código que viajó traducido por alias (C2 → 2), no es un cambio de la Mesa: el camión conserva el suyo.
             var linea = Detalle(foto, camion.LineaSolicitudNexoId);
-            return new clsCosteoCamionNexo(camion.Id, estado, ConCostos: true, costos?.Flete, costos?.Retorno, linea?.TipoVehiculo, linea?.Carroceria);
+            var tipoVehiculo = clsEquivalenciasVehiculo.DeNexo(camion.TipoVehiculo, linea?.TipoVehiculo, foto.EquivalenciasVehiculo);
+            return new clsCosteoCamionNexo(camion.Id, estado, ConCostos: true, costos?.Flete, costos?.Retorno, tipoVehiculo, linea?.Carroceria,
+                LineaNoRechazada: lineaNoRechazada);
         }).ToList();
 
         // Un error del módulo de precio lo reporta AplicarPrecio (que vuelve a recalcular): aquí cuenta como cambio.
@@ -197,14 +212,16 @@ public sealed class clsPrecioCosteoService(ILogger<clsPrecioCosteoService>? logg
             return cambio;
         }
 
-        if (varios && camiones.Count(c => c.CostoFlete is null) is > 0 and var sinFlete)
+        // HU-028.1 (#183): un camión rechazado por la Mesa no tiene flete a propósito: no es "entregada sin flete".
+        var porCostear = camiones.Where(c => !c.Rechazado).ToList();
+        if (varios && porCostear.Count(c => c.CostoFlete is null) is > 0 and var sinFlete)
         {
             cotizacion.AdvertirCosteo(
-                $"Nexo entregó la cotización sin flete para {sinFlete} de {camiones.Count} líneas: no se calcula el precio total. Revísala con el equipo de Nexo.");
+                $"Nexo entregó la cotización sin flete para {sinFlete} de {porCostear.Count} líneas: no se calcula el precio total. Revísala con el equipo de Nexo.");
             return cambio;
         }
 
-        if (cotizacion.Rutas.Any(r => r.MargenAplicado is null || r.MetodoCalculo is null))
+        if (cotizacion.RutasCotizables.Any(r => r.MargenAplicado is null || r.MetodoCalculo is null))
         {
             cotizacion.AdvertirCosteo(MotivoSinMargen);
         }
@@ -212,11 +229,16 @@ public sealed class clsPrecioCosteoService(ILogger<clsPrecioCosteoService>? logg
         return cambio;
     }
 
-    /// <summary>¿El flete o el retorno de Nexo de algún camión difieren de los guardados? (la solicitud ya tiene PDF).</summary>
+    /// <summary>
+    /// ¿El flete o el retorno de Nexo de algún camión difieren de los guardados? (la solicitud ya tiene PDF). HU-028.1 (#183, validación):
+    /// también si la Mesa de Costeo rechazó la línea de un camión que el PDF cotizó (rechazado y con el flete que se conservó con el PDF;
+    /// uno rechazado antes del PDF no tiene flete).
+    /// </summary>
     private static bool CambioDespuesDelPdf(clsCotizacionSolicitud cotizacion, clsCosteoConsultadoNexo foto) =>
-        foto.Cotizacion is not null
-        && cotizacion.Vehiculos.Any(c => clsDerivacionEstadoCosteo.CostosCamion(foto, c.LineaSolicitudNexoId) is { } costos
-                                         && (costos.Flete != c.CostoFlete || costos.Retorno != (c.CostoRetornoContenedor ?? 0m)));
+        cotizacion.Vehiculos.Any(c => c.Rechazado && c.CostoFlete is not null)
+        || (foto.Cotizacion is not null
+            && cotizacion.Vehiculos.Any(c => !c.Rechazado && clsDerivacionEstadoCosteo.CostosCamion(foto, c.LineaSolicitudNexoId) is { } costos
+                                             && (costos.Flete != c.CostoFlete || costos.Retorno != (c.CostoRetornoContenedor ?? 0m))));
 
     /// <summary>Una línea de warning por cada línea de Nexo sin dueño y por cada empate sin resolver (#134).</summary>
     private void Avisar(clsCotizacionSolicitud cotizacion, clsEmparejamiento emparejamiento)
@@ -235,12 +257,16 @@ public sealed class clsPrecioCosteoService(ILogger<clsPrecioCosteoService>? logg
 
     /// <summary>
     /// Camiones que lee el polling, en el orden de envío: todos menos los <c>descartada</c> (regla del núcleo, ADR-019), salvo que todos lo
-    /// estén (entonces se leen todos, como cuentan en la ruta).
+    /// estén (entonces se leen todos, como cuentan en la ruta). HU-028.1 (#183): los <c>rechazada</c> SÍ se leen: así se ve si la Mesa
+    /// deshizo el rechazo (vuelven a <c>pendiente_costeo</c>), y su línea sigue existiendo en Nexo (no es una línea "sin dueño"). Pero NO los
+    /// rechazados en una solicitud anterior que quedaron fuera del envío actual (<see cref="clsVehiculoLineaSolicitud.FueraDelEnvio"/>,
+    /// decisión del 2026-10-20): no tienen línea en la solicitud nueva, así que ni se emparejan (tomarían la línea de otro camión), ni se
+    /// leen, ni cuentan como "sin asociar".
     /// </summary>
     public static IReadOnlyList<clsVehiculoLineaSolicitud> Vigentes(clsCotizacionSolicitud cotizacion)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        var todos = cotizacion.Vehiculos;
+        var todos = cotizacion.Vehiculos.Where(c => !c.FueraDelEnvio).ToList();
         var vigentes = todos.Where(c => c.EstadoCosteo != EstadoCosteo.Descartada).ToList();
         return vigentes.Count > 0 ? vigentes : todos;
     }

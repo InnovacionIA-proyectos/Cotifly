@@ -322,7 +322,8 @@ public sealed class clsResultadoCotizacionService(
         if (string.Equals(marcada.Estado, clsCotizacionNexo.EstadoEntregada, StringComparison.OrdinalIgnoreCase) && marcada.Lineas.Count > 0)
         {
             // HU-021: si todos los camiones ya tienen su línea de Nexo, la respuesta del resultado basta como foto.
-            var camiones = cotizacion.Vehiculos;
+            // HU-028.1 (#183): los rechazados que quedaron fuera del envío no tienen línea en esta solicitud (no se esperan).
+            var camiones = cotizacion.Vehiculos.Where(c => !c.FueraDelEnvio).ToList();
             if (camiones.Count > 0 && camiones.All(c => c.LineaSolicitudNexoId is not null))
             {
                 return (new clsCosteoConsultadoNexo(

@@ -100,6 +100,14 @@ comparan sin tildes y con `_` y `-` equivalentes a espacio (`Bogotá` = `Bogota`
   las posiciones. Si vienen los dos, deben coincidir (tolerancia 1 %). Es `400 PESO_INCONSISTENTE`
   si no.
 
+> **Nota de Cotifly (HU-030.1, Cotifly#184, 2026-10-20; agregada por Cotifly, no es texto de NEXO).** El `peso` de la línea
+> incluye la tara y NEXO no la suma (NEXO#308). Cotifly lo aplica **solo a las cargas contenerizadas** (`claseViaje = Contenedor`):
+> el comercial escribe por ruta el peso total con tara y Cotifly manda en cada línea de esa ruta `peso` = el peso con tara (con
+> varios camiones, el peso de carga del camión más una parte igual de la tara; la suma de las líneas es el peso con tara de la ruta).
+> Como NEXO valida `PESO_INCONSISTENTE` (1 %) cuando la línea trae posiciones, **esas líneas viajan sin `posiciones[]`**. Sin peso
+> con tara, y en las demás clases de viaje, Cotifly manda lo de siempre (con un camión, el peso de carga y las posiciones; con
+> varios, el peso de cada camión sin posiciones). Lo que va al Cubicador (peso por unidad de cada mercancía, sin tara) no cambia.
+
 ## 4. "Línea sin vehículo": solo Cupo
 
 Una línea **sin `tipoVehiculo`** se acepta. Pero:

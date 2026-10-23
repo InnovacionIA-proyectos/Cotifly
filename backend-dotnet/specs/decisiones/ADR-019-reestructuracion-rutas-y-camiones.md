@@ -1,6 +1,6 @@
 # ADR-019 — Reestructuración: rutas y camiones
 
-- **Estado:** Aceptada (decisiones del usuario del 2026-10-08 y 2026-10-09). Las issues #130 a #140 están cerradas o en PR. Sigue pendiente la revisión del `0010` por scalderon-bs. El cubicador (#133) está integrado contra un servidor falso, a la espera de C1, y evoluciona hacia HU-023 (decisión 12)
+- **Estado:** Aceptada (decisiones del usuario del 2026-10-08 y 2026-10-09). **La decisión 7 (vehículo y carrocería fuera de la captura) y la bandera de respaldo de #138 quedan reemplazadas en parte por [ADR-022](ADR-022-vehiculo-elegido-respaldo-cubicador.md) (HU-032, #197, 2026-10-21): el vehículo elegido vuelve como respaldo del cubicador.** Las issues #130 a #140 están cerradas o en PR. Sigue pendiente la revisión del `0010` por scalderon-bs. El cubicador (#133) está integrado contra un servidor falso, a la espera de C1, y evoluciona hacia HU-023 (decisión 12)
 - **Fecha:** 2026-10-08
 - **Issue / HU:** #130 (HU-021.3), #131 (HU-021.4) · milestone HU-021 · reemplaza en parte ADR-014, ADR-015, ADR-017 y ADR-018
 

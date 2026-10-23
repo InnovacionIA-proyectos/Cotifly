@@ -23,8 +23,10 @@ public enum ModoEdicionSolicitud
 /// negocio y su margen negociado) o <c>null</c> si es una ruta nueva. <paramref name="Ruta"/> trae la línea validada, la línea de negocio,
 /// los camiones (vueltos a planificar o los vigentes) y los conexos con el costo del catálogo de hoy. <paramref name="Replanificada"/>
 /// dice si sus camiones salieron del planificador (cambió la carga o la clase de viaje, o es nueva) o son los vigentes.
+/// <paramref name="ReincluirRechazados"/> (HU-028.1, #183, <c>reincluir_rechazados</c>): en una ruta guardada que conserva sus camiones, los
+/// que rechazó la Mesa de Costeo vuelven a viajar sin el rechazo; sin él (por defecto) siguen rechazados y fuera del envío.
 /// </summary>
-public sealed record clsRutaEditada(Guid? RutaExistenteId, clsRutaCapturada Ruta, bool Replanificada);
+public sealed record clsRutaEditada(Guid? RutaExistenteId, clsRutaCapturada Ruta, bool Replanificada, bool ReincluirRechazados = false);
 
 /// <summary>
 /// El contenido editado de una solicitud (HU-028): el encabezado (el <c>tipo</c> no cambia), las rutas en su orden nuevo y, si cambia la
@@ -47,6 +49,30 @@ public sealed record clsResultadoEdicion(IReadOnlyList<clsLineaSolicitud> RutasQ
 /// </summary>
 public static class clsReglaRecubicacion
 {
+    /// <summary>
+    /// HU-032 (#197): <see cref="Exige(clsLineaSolicitudCosteo, clsLineaSolicitudCosteo)"/> y, con <paramref name="vehiculoCuenta"/> (los
+    /// camiones de la ruta salen del vehículo elegido: no los asignó el cubicador), también un cambio del vehículo o la carrocería elegidos
+    /// (sin mayúsculas, tildes ni separadores): en una ruta sin mercancías cubicables cambiar solo el vehículo es un cambio que viaja.
+    /// </summary>
+    public static bool Exige(clsLineaSolicitudCosteo anterior, clsLineaSolicitudCosteo nueva, bool vehiculoCuenta) =>
+        Exige(anterior, nueva) || (vehiculoCuenta && !MismoVehiculo(anterior, nueva));
+
+    /// <summary>HU-032 (#197): ¿el mismo vehículo y la misma carrocería elegidos? (<see cref="clsVehiculoLineaSolicitud.MismoCodigo"/>).</summary>
+    public static bool MismoVehiculo(clsLineaSolicitudCosteo a, clsLineaSolicitudCosteo b)
+    {
+        ArgumentNullException.ThrowIfNull(a);
+        ArgumentNullException.ThrowIfNull(b);
+        return MismoCodigo(a.TipoVehiculo, b.TipoVehiculo) && MismoCodigo(a.Carroceria, b.Carroceria);
+    }
+
+    private static bool MismoCodigo(string? a, string? b) =>
+        (Normalizar(a), Normalizar(b)) switch
+        {
+            (null, null) => true,
+            ({ } x, { } y) => clsVehiculoLineaSolicitud.MismoCodigo(x, y),
+            _ => false,
+        };
+
     public static bool Exige(clsLineaSolicitudCosteo anterior, clsLineaSolicitudCosteo nueva)
     {
         ArgumentNullException.ThrowIfNull(anterior);

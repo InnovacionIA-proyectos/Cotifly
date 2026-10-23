@@ -529,6 +529,7 @@ stateDiagram-v2
     pendiente_costeo --> entregada: NEXO la entregó
     pendiente_costeo --> descartada: NEXO la descartó
     pendiente_costeo --> costeo_vencido: 72 h sin costeo
+    pendiente_costeo --> entregada: NEXO entrega con todas las rutas rechazadas (sin precio)
     autocosteo --> entregada: NEXO la entrega (o al marcar el resultado)
     autocosteo --> pendiente_costeo: el costeo cambió en NEXO
     autocosteo --> descartada
@@ -548,6 +549,13 @@ stateDiagram-v2
 | `entregada` | "Entregada" | `precio_final` | Margen, conexos, textos, PDF, enviar, resultado, re-solicitar | No (solo si `precio_final` es `null`) |
 | `descartada` | "Descartada por NEXO" | — | Resultado por `/seguimiento` (solo en Cotifly) | No |
 | `costeo_vencido` | "Costeo vencido" + motivo | — | Re-solicitar; resultado por `/seguimiento` | No |
+
+**Ruta o camión `rechazada` (HU-028.1, #183, NEXO #320).** Solo en `rutas[]`, `rutas[].camiones[]` y las líneas y camiones de la
+licitación (la cabecera nunca): la Mesa de Costeo rechazó la línea con un motivo (`motivo_rechazo`). Etiqueta sugerida "Rechazada en
+NEXO" + motivo; sin precio; no suma en el total ni es pendiente; margen y conexos en esa ruta → 409 `RUTA_RECHAZADA`. Con todas las
+rutas rechazadas la cotización queda `entregada` sin `precio_final` (y `motivo_estado_costeo` lo explica) y el PDF → 409
+`SIN_RUTAS_COTIZABLES`. Antes de que NEXO entregue la Mesa puede deshacerlo (vuelve a `pendiente_costeo`); entregada, es definitivo.
+**Decisión del 2026-10-20: no se reenvían los camiones rechazados por defecto.** Al re-solicitar (mismo folio o `-vN`) o editar la solicitud (`en_sitio`, `reemplazo`, `nueva_version`), un camión que la Mesa rechazó **no viaja** a NEXO: sigue rechazado (con su `motivo_rechazo` y `rechazada_at`) y la `-vN` lo copia como rechazado. Una ruta con todos sus camiones rechazados no se envía (no se manda a NEXO una ruta sin camiones): queda visible, `rechazada` y sin precio. La respuesta trae `aviso_rechazos` con lo que se omitió (rutas, camiones y motivos); en la edición también el aviso `RECHAZADOS_OMITIDOS`. Si no queda ningún camión que viaje: 409 `SIN_RUTAS_COTIZABLES` con `detalle.motivo = TODOS_RECHAZADOS`. Para que la Mesa los reconsidere: `PUT .../solicitud` con `reincluir_rechazados: true` en la ruta (vuelven a viajar tal como están, sin volver a cubicar).
 
 ### 3.4 Reglas de polling
 
@@ -662,7 +670,96 @@ sequenceDiagram
 Si el rechazo en NEXO falla, **no** se captura otra solicitud (nunca quedan dos vivas): 503 `NEXO_NO_DISPONIBLE` con
 `detalle.motivo = RECHAZO_NEXO_FALLIDO`; la versión subió, así que hay que recargar antes de reintentar. Las rutas que se conservan no se
 reordenan; las nuevas pueden ir en cualquier posición. El margen negociado de una ruta que se conserva sobrevive. Solo se recubican las
-rutas nuevas y las que cambian peso, mercancías o clase de viaje.
+rutas nuevas y las que cambian peso, mercancías o clase de viaje y, HU-032 (#197), las que cambian el vehículo elegido cuando sus camiones
+salen de él (no los asignó el cubicador). El `GET` trae el vehículo elegido de cada ruta (`tipo_vehiculo`, `carroceria`): reenviarlo.
+
+### 3.8 Peso con tara de las cargas contenerizadas (HU-030.1, #184)
+
+Solo para rutas con `clase_viaje = Contenedor`. NEXO necesita el peso de cada línea **con** la tara de los contenedores (NEXO no la
+suma) y el cubicador necesita el peso de la carga **sin** tara. El comercial escribe en la ruta el **peso total con tara**
+(`peso_con_tara_kg`, campo "Peso total con tara" de clientepro-frontend#107); Cotifly guarda los dos pesos.
+
+- **Dónde se escribe:** en la ruta, no en el camión, porque los camiones salen del cubicador en la misma petición de la captura y el
+  comercial no sabe cuántos habrá. Valor inicial sugerido: `peso_kg` (el comercial le suma la tara de todos los contenedores de la
+  ruta). Se puede corregir después en "Editar solicitud" (`PUT .../solicitud`, sin volver a cubicar) y en una fila de la licitación.
+- **Qué viaja a NEXO:** con un camión, la línea lleva `peso = peso_con_tara_kg`. Con varios, cada línea lleva el peso de carga de su
+  camión más una parte igual de la tara (`peso_con_tara_kg` menos la suma de los pesos de carga de los camiones, un contenedor por camión); el último camión se queda con el resto
+  del redondeo, así que la suma es exactamente `peso_con_tara_kg`. En los dos casos la línea va **sin posiciones**: NEXO valida que el peso
+  de una línea con posiciones coincida al 1 % con su suma (`PESO_INCONSISTENTE`) y la tara la descuadraría.
+- **Fórmula final con camiones rechazados (integración 1021, #184 con #183):** con `N` = número **total** de camiones de la ruta (un
+  contenedor por camión, también los rechazados) y `carga_i` = el peso de carga de la línea de cada camión (con un camión, el peso de la
+  ruta; con varios, el del camión):
+  - `tara_total = max(0, peso_con_tara_kg − Σ carga_i)` (la suma sobre los `N` camiones);
+  - `tara_contenedor = truncar(tara_total / N, 2 decimales)`;
+  - cada camión que **viaja** manda `carga_i + tara_contenedor`, y el **último que viaja** suma además el resto del redondeo
+    (`tara_total − tara_contenedor × N`);
+  - un camión rechazado por la Mesa que quedó **fuera del envío** (al re-solicitar, editar o en la `-vN`, decisión del 2026-10-20) no
+    viaja ni lleva tara: su `camiones[].peso_con_tara_kg` llega en `null`, y su contenedor no se reparte entre los demás. Si se reincluye
+    (`reincluir_rechazados`), vuelve a llevar su parte.
+  Sin rechazados es la regla anterior: la suma de las líneas es exactamente `peso_con_tara_kg`. Con rechazados, la suma de las líneas que
+  viajan es `peso_con_tara_kg` menos la carga y la tara de los contenedores rechazados. Un camión rechazado en la solicitud **actual**
+  (todavía con su línea en NEXO) conserva lo que ya viajó.
+- **Qué ve el comercial:** `GET .../costeo` trae `rutas[].peso_con_tara_kg` y, por camión, `camiones[].peso_con_tara_kg` (lo que viajó).
+- **Errores (400 `SOLICITUD_COSTEO_INVALIDA`, en `detalle.errores`):** `CAMPO_NO_APLICA` en `peso_con_tara_kg` con otra clase de viaje;
+  `PESO_CON_TARA_MENOR_QUE_CARGA` si es menor que el peso de carga; `VALOR_FUERA_DE_RANGO` fuera de 0 a 999.999,99 o con más de 2
+  decimales.
+- Sin `peso_con_tara_kg`, todo sigue como antes (con un camión, la línea lleva el peso de carga y las posiciones).
+
+### 3.9 Vehículo elegido o cubicador (HU-032, #197)
+
+El comercial **vuelve a elegir el vehículo** de cada ruta (`tipo_vehiculo` y, opcional, `carroceria`, de `GET /web/catalogos-flete`).
+Ese vehículo es el **respaldo del cubicador** (ADR-022; revierte en parte la decisión 7 de HU-021). La regla es por ruta:
+
+```mermaid
+flowchart TD
+    A[Ruta] --> B{¿Todas sus mercancías son cubicables?<br/>código + largo, ancho y alto + peso}
+    B -- "No (solo peso_kg, mercancías sin medidas, o mixta)" --> C[No se llama al cubicador:<br/>la ruta va con el vehículo elegido]
+    C --> C2[Obligatorio salvo Contenedor: VEHICULO_REQUERIDO<br/>Mixta: aviso MERCANCIAS_NO_CUBICABLES]
+    B -- Sí --> D[Cubicador]
+    D -- ASIGNADO --> E[Manda el cubicador<br/>aviso VEHICULO_AJUSTADO_POR_CUBICADOR si el elegido era otro]
+    D -- "Sin selección, caída u ocupado" --> F{¿El elegido es código de NEXO?}
+    F -- Sí --> G[Va el elegido<br/>aviso VEHICULO_ELEGIDO_USADO]
+    F -- No --> H[Va sin vehículo, lo resuelve la Mesa<br/>aviso VEHICULO_ELEGIDO_INVALIDO]
+    D -- "4xx de datos (mercancía desconocida, medidas inválidas)" --> X[400: no se guarda nada]
+```
+
+- **Mercancías sin medidas.** Una mercancía **sin ninguna medida y sin `codigo_mercancia`** (solo `nombre_mercancia`, `cantidad` o
+  `peso_kg`) se acepta como "no cubicable": se guarda, **no viaja a NEXO como posición** (la línea de esa ruta va solo con el peso) y la
+  ruta no se cubica. **Medidas parciales** (largo sin ancho, por ejemplo) y **código sin medidas** son `POSICION_INVALIDA`. La regla de
+  peso (`PESO_REQUERIDO`, `PESO_INCONSISTENTE`) cuenta todas las mercancías.
+- **Cuándo es obligatorio el vehículo.** Si la ruta no se puede cubicar y su `clase_viaje` **no** es una de las exentas: 400
+  `SOLICITUD_COSTEO_INVALIDA` con `{ruta, campo: "tipo_vehiculo", codigo: "VEHICULO_REQUERIDO"}` en `detalle.errores[]`. Las clases
+  exentas las configura el backend (`Captura:ClasesSinVehiculoObligatorio`); **por defecto solo `Contenedor`** (NEXO deduce el vehículo).
+  Si negocio exime otra (por ejemplo `Carga Suelta`), el backend la agrega a esa lista: el frontend no debe fijar la regla en el código
+  sin una forma de cambiarla (una constante de configuración del frontend, alineada con el ambiente). La carrocería nunca es obligatoria. Si la ruta va al cubicador, el vehículo es opcional (sin él, si el cubicador no escoge, el
+  camión va sin vehículo y lo resuelve la Mesa).
+- **Cuándo se valida contra NEXO.** Solo si se va a usar: sin mercancías cubicables, antes de guardar (`CODIGO_NO_CATALOGO`); con todas
+  cubicables, solo si el cubicador no escoge (entonces un código inválido NO tumba la captura: la ruta va sin vehículo con su aviso). Se
+  aceptan alias de NEXO (#194) y se guarda escrito como en NEXO.
+- **Avisos por ruta.** En `cubicacion[].advertencias[]` de la respuesta de la captura (y de la edición, en `cotizacion.cubicacion`; en la
+  licitación, `Licitacion.cubicacion[]` por `linea_orden`) y en `rutas[].avisos_cubicacion.advertencias[]` de `GET .../costeo`. Cada aviso
+  del vehículo trae `codigo`, `mensaje` (texto listo para mostrar), `vehiculo_elegido` y `vehiculos_finales` (`{tipo_vehiculo,
+  carroceria}`). `cubicacion[]` trae también las rutas que no llamaron al cubicador si tienen avisos (con `resultado: null`).
+- **Edición y re-solicitud.** `GET .../solicitud` devuelve el elegido en `rutas[].tipo_vehiculo`/`carroceria`: reenviarlo tal cual. En una
+  ruta cuyos camiones salen del elegido (no los asignó el cubicador), **cambiar solo el vehículo es un cambio** que viaja a NEXO
+  (reemplazo o `-vN`). `datos_carga.tipo_vehiculo` también cambia el elegido.
+- **Ruta asignada por el cubicador: cambiar solo el vehículo NO se guarda (B2).** En una ruta con `resultado_cubicacion = ASIGNADO`
+  (`GET .../costeo`) el elegido es solo el respaldo: si lo único que cambia es `tipo_vehiculo`/`carroceria`, el PUT responde 200 con
+  `sin_cambios: true` y el vehículo elegido **no** se actualiza (manda el cubicador). El frontend debe **deshabilitar** el selector en esa
+  ruta o **explicarlo** ("El cubicador asignó el vehículo; cambia la carga para volver a cubicar"). Si cambia también la carga (peso,
+  mercancías o clase de viaje), la ruta se vuelve a cubicar y el elegido nuevo sí se guarda.
+- **`VEHICULO_REQUERIDO` en la edición: solo rutas nuevas o que cambian (B3).** Una ruta guardada que **no cambia** no exige el vehículo:
+  reenviar el GET de un folio anterior a HU-032 (Cupo solo con peso, sin vehículo) da `sin_cambios`, no 400. Si cambia la carga de esa ruta
+  (peso, mercancías o clase de viaje; se compara por valor: `9000.00` es `9000`) o se quita el vehículo, o es una ruta nueva, sí lo exige.
+  Lo mismo en la re-solicitud con `datos_carga`: lo exige solo si la ruta cambia. La `-vN` sin `datos_carga` no lo exige.
+- **Qué hacer en el frontend:**
+  1. **Volver a mostrar el selector** de vehículo (y de carrocería, opcional) en cada ruta: captura, licitación y "Editar solicitud".
+  2. **Exigirlo** cuando la ruta no tenga mercancías cubicables (solo peso, o alguna mercancía sin medidas), salvo en las clases exentas
+     (por defecto `clase_viaje = Contenedor`). En "Editar solicitud", solo en rutas nuevas o cuya carga cambió. Permitir mercancías sin
+     medidas (las tres vacías, `null` u omitidas; `0` también es "sin medida"); si escribe una medida, pedir las tres, mayores que 0.
+  2b. En una ruta `ASIGNADO`, deshabilitar o explicar el cambio de solo el vehículo (no se guarda: `sin_cambios`).
+  3. **Mostrar el vehículo final** de cada camión (`GET .../costeo`, `rutas[].camiones[]`) con el aviso de la ruta al lado (por ejemplo
+     "El cubicador asignó 3S3 - FURGON en lugar del vehículo elegido (2S2)").
 
 ---
 
@@ -731,6 +828,7 @@ Resumen (49 endpoints):
 | 47 | `GET /web/cotizaciones/{folio}/solicitud` | Ambos (dueño) | Captura y costeo (HU-028) |
 | 48 | `PUT /web/cotizaciones/{folio}/solicitud` | Ambos (dueño) | Captura y costeo (HU-028) |
 | 49 | `GET /web/cotizaciones/{folio}` | Dueño o gerente de su regional (solo consulta) | Cotizaciones (HU-027.1, #179) |
+| 50 | `GET /web/alias/resolver` | Ambos | Catálogos (HU-031.1, #194) |
 
 Retirados (responden 404): `GET /web/metricas/actividad`, `GET /web/metricas/ajustes-margen`, `POST /chat/events`, `POST /web/login`.
 
@@ -897,7 +995,7 @@ Buscador de clientes y prospectos del catálogo de NEXO.
 |---|---|---|
 | 200 | `ResultadoBusquedaClientes` | `candidatos: []` = sin coincidencias (no es error). `exacta = true` solo si hay un único candidato. **Nunca mostrar `bp`**. El NIT sale solo de `candidatos`, nunca del texto buscado. Etiqueta "Prospecto" si `origen_cliente = prospecto` |
 | 400 | `ErrorWeb` `Falta el texto de búsqueda (q).` | No llamar sin texto |
-| 400 | `CLIENTE_BUSQUEDA_NO_DISPONIBLE` | "Buscador de clientes no disponible" con Reintentar |
+| 503 | `CLIENTE_BUSQUEDA_NO_DISPONIBLE` | "Buscador de clientes no disponible" con Reintentar, y dejar ingresar el NIT a mano. Mostrar `mensaje`: dice qué falta (NEXO sin configurar, `Nexo:UrlBase`; el usuario sin vincular a NEXO; o NEXO no respondió). **Antes era 400** (fila 54 de la sección 7): tratar 400 y 503 igual mientras conviva el frontend anterior |
 
 UX: debounce de 300 ms, desde 3 letras. Cada búsqueda llega a NEXO (puede tardar varios segundos). Un prospecto sin BP puede quedar en
 `error_envio` al enviar a costeo: advertirlo.
@@ -979,6 +1077,48 @@ Catálogo de servicios conexos de NEXO, **sin costos**. Solo servicios activos.
 | 400 | `ErrorWeb` | Filtro fuera de límites |
 | 403 | `NEXO_SIN_PERMISO` | El comercial no tiene el rol requerido en NEXO: avisar a soporte |
 | 503 | `NEXO_NO_DISPONIBLE` | Reintentar |
+
+#### 4.2.8 `GET /web/alias/resolver` (HU-031.1, #194)
+
+Traduce un **tipo de vehículo** o una **clase de contenedor** escritos a mano (por ejemplo, las columnas del Excel de una licitación) al
+código oficial de NEXO, con la misma regla que usa el servidor al validar la captura y al enviar a NEXO: primero el catálogo oficial y,
+si no está, el **diccionario de alias** de NEXO ("TB", "T.B", "Turbo" → `2L2`; "40 HC" → `CNT40.HC`). El frontend no puede llamar a
+NEXO directamente; este endpoint es el intermediario.
+
+- **Rol:** ambos.
+
+| Parámetro | En | Obligatorio | Reglas |
+|---|---|---|---|
+| `tipo` | query | Sí | `vehiculo` o `contenedor` (sin distinguir mayúsculas) |
+| `texto` | query, repetible | Sí | Uno o varios: `?tipo=vehiculo&texto=TB&texto=3s3`. Hasta 200 por llamada, cada uno de hasta 100 caracteres, ninguno vacío |
+
+**En lote:** manda todas las filas en una sola llamada (no una por fila). La respuesta trae un resultado por `texto`, en el mismo orden
+(los repetidos también).
+
+```json
+{
+  "tipo": "vehiculo",
+  "resultados": [
+    { "texto": "TB", "reconocido": true, "codigo": "2L2", "fuente": "alias" },
+    { "texto": "3s3", "reconocido": true, "codigo": "3S3", "fuente": "catalogo" },
+    { "texto": "Tractomula", "reconocido": false, "codigo": null, "fuente": null }
+  ]
+}
+```
+
+- `codigo` es lo que hay que guardar en la fila y enviar en `tipo_vehiculo`/`clase_contenedor`. `fuente`: `catalogo` (ya era un
+  código oficial, quizá con otra escritura), `alias` (lo tradujo el diccionario) o `null`.
+- `reconocido: false`: ni el catálogo ni el diccionario lo conocen. Marcar la celda: la captura lo rechazaría (400
+  `CODIGO_NO_CATALOGO`). Para que el texto se reconozca, el administrador de tarifas de NEXO debe crear el alias.
+- Para el contenedor también reconoce la lista provisional de extradimensionado (`CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP`).
+- La captura (`POST /web/solicitudes-costeo`, `POST /web/licitaciones`) ya acepta el alias directamente y lo guarda con el código
+  oficial: llamar a este endpoint sirve para **avisar antes** al comercial, no es obligatorio.
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `AliasResueltos` | Reemplazar el texto por `codigo` cuando `reconocido`; marcar los no reconocidos |
+| 400 | `ErrorWeb` | `tipo` inválido, sin `texto`, uno vacío, más de 200 o uno de más de 100 caracteres: error de programación |
+| 503 | `CATALOGOS_FLETE_NO_DISPONIBLE` | No se pudo consultar NEXO (ni hay copia): no marcar nada como "no reconocido"; ofrecer Reintentar |
 
 ### 4.3 Cubicación
 
@@ -1239,18 +1379,20 @@ Cada ruta (`RutaCapturaWeb`):
 | `horas_cargue`, `horas_descargue` | número o null | No | 0 a 240 |
 | `valor_mercancia` | número o null | No | 0 a 9.999.999.999.999,99 |
 | `peso_kg` | número o null | Condicional | 0 a 999.999,99. Peso total de la ruta. Puede faltar si las mercancías traen peso (`PESO_REQUERIDO` si ninguno). Si vienen los dos, deben coincidir dentro del 1 % con `sum(cantidad × peso_kg)` (`PESO_INCONSISTENTE`) |
+| `peso_con_tara_kg` | número o null | No | **Solo con `clase_viaje = Contenedor`** (HU-030.1, #184). 0 a 999.999,99 con 2 decimales. Peso total de la ruta **con la tara** de los contenedores, que escribe el comercial (campo "Peso total con tara"; valor inicial sugerido: `peso_kg`). No puede ser menor que el peso de carga (`peso_kg` o la suma de las mercancías): `PESO_CON_TARA_MENOR_QUE_CARGA`. Con otra clase de viaje: `CAMPO_NO_APLICA`. No va al cubicador; va a NEXO como peso de las líneas de la ruta (ver 3.8) |
 | `mercancias` | `PosicionCargaWeb[]` o null | No | Hasta 200 |
 | `servicios_conexos` | `ConexoCapturaWeb[]` o null | No | Hasta 20 por ruta, sin repetir el mismo servicio |
-| `tipo_vehiculo`, `carroceria` | — | **No enviar** | Obsoletos: se ignoran (los define el cubicador o la Mesa de Costeo). Excepción: con la bandera del servidor `Captura:AceptarVehiculoCliente` (encendida por defecto) van en el camión del respaldo y **deben ser códigos que NEXO conozca**: `tipo_vehiculo` del catálogo de tipos de vehículo de NEXO (`GET /web/catalogos-flete`) y `carroceria` de la lista de carrocerías de NEXO. Se aceptan con otras mayúsculas, sin tildes o con `_`/`-` en vez de espacio (`FURGON_REFRIGERADO` = `FURGON REFRIGERADO`). Un código que solo conoce el cubicador (HU-014 #188) es **400** `SOLICITUD_COSTEO_INVALIDA` (`CODIGO_NO_CATALOGO` en `detalle.errores`) con el campo en el mensaje |
+| `tipo_vehiculo` | string o null | **Sí sin mercancías cubicables, salvo Contenedor** | HU-032 (#197): el **vehículo elegido** (ver 3.9). Hasta 100. Código del catálogo de tipos de vehículo de NEXO (`GET /web/catalogos-flete`), con otras mayúsculas, sin tildes o con `_`/`-` en vez de espacio, o un **alias** de NEXO (#194, "TB" → `2L2`); se guarda escrito como en NEXO. Sin mercancías cubicables se valida antes de guardar (`CODIGO_NO_CATALOGO`) y es obligatorio salvo Contenedor (`VEHICULO_REQUERIDO`). Con todas cubicables es el respaldo del cubicador: no se valida antes; si el cubicador asigna, manda el cubicador |
+| `carroceria` | string o null | No | HU-032 (#197): la carrocería elegida, opcional. Lista de carrocerías de NEXO (`ESTACAS`, `FURGON`, `FURGON REFRIGERADO`...). Misma regla que `tipo_vehiculo` |
 
 Cada mercancía (`PosicionCargaWeb`):
 
 | Campo | Tipo | Obligatorio | Reglas |
 |---|---|---|---|
-| `codigo_mercancia` | string o null | **Sí** (con el cubicador configurado) | Hasta 64. `codigo` de `GET /web/tipos-mercancia`, activo y cubicable (`MERCANCIA_DESCONOCIDA`, `MERCANCIA_NO_CUBICABLE`) |
+| `codigo_mercancia` | string o null | **Sí en una mercancía con medidas** (con el cubicador configurado) | Hasta 64. `codigo` de `GET /web/tipos-mercancia`, activo y cubicable (`MERCANCIA_DESCONOCIDA`, `MERCANCIA_NO_CUBICABLE`). HU-032 (#197): una mercancía sin medidas no lo lleva (si lo trae sin medidas es `POSICION_INVALIDA`) |
 | `nombre_mercancia` | string o null | No | Hasta 200. Copia del nombre; con catálogo, se toma el del catálogo |
 | `cantidad` | entero | No | 1 a 100.000. Por defecto 1 |
-| `largo_cm`, `ancho_cm`, `alto_cm` | número | Sí | 0,1 a 999.999 |
+| `largo_cm`, `ancho_cm`, `alto_cm` | número o null | Las tres o ninguna | Con valor, 0,1 a 999.999. Ausentes, `null` o `0` = sin medida (B5). HU-032 (#197): sin ninguna (y sin código) la mercancía es **no cubicable**: se guarda, no viaja a NEXO como posición y la ruta usa el vehículo elegido. Medidas parciales: `POSICION_INVALIDA` ("faltan medidas") |
 | `peso_kg` | número o null | Sí si lleva `codigo_mercancia` | **Por unidad**, 0 a 999.999,99 y **mayor que 0** cuando la mercancía viaja al cubicador (si no, `POSICION_INVALIDA` en `mercancias[i].peso_kg`) |
 | `id_tipo_mercancia` | — | No enviar | Obsoleto (uuid). Se traduce al código durante la transición |
 | `descripcion` | — | No enviar | Nombre anterior de `nombre_mercancia` |
@@ -1715,8 +1857,8 @@ Vuelve a pedir el costeo a NEXO, en el mismo folio o en una versión nueva.
 
 Campos admitidos en `datos_carga` (`DatosCargaWeb`, mismos límites de la captura): `tipologia`, `clase_viaje`, `clase_contenedor`,
 `exclusivo`, `consolidado`, `retorna_contenedor`, `ciudad_devolucion_contenedor`, `levante_contenedor_diferente`,
-`ciudad_levante_contenedor`, `valor_aprovisionamiento`, `horas_cargue`, `horas_descargue`, `peso_kg`, `valor_mercancia`, `posiciones`
-(reemplaza todas). `tipo_vehiculo` y `carroceria` se aceptan pero se ignoran. Origen, destino, cliente y línea de negocio **no** se
+`ciudad_levante_contenedor`, `valor_aprovisionamiento`, `horas_cargue`, `horas_descargue`, `peso_kg`, `valor_mercancia`,
+`peso_con_tara_kg` (HU-030.1), `posiciones` (reemplaza todas), `tipo_vehiculo` y `carroceria` (HU-032, #197: cambian el vehículo elegido; sin mercancías cubicables se validan, se guardan escritos como en NEXO y el vehículo es obligatorio salvo en las clases exentas, por defecto Contenedor, si la ruta cambia: `detalle.motivo = VEHICULO_REQUERIDO`). Origen, destino, cliente y línea de negocio **no** se
 cambian aquí (400). Un campo en `null` se borra.
 
 **Obsoleto (HU-028, #186):** para cambiar la carga usar `PUT /web/cotizaciones/{folio}/solicitud` (4.4.10). Mientras el frontend migra,
@@ -1850,7 +1992,7 @@ decide el servidor según el estado y el `GET` lo anuncia (ver 3.7).
 | `edicion` | `modo` (`en_sitio`, `reemplazo`, `nueva_version` o `null`), `permitida`, `motivo_no_permitida` (`LICITACION`, `SIN_FORMULARIO`, `ENVIO_EN_CURSO`, `CUBICACION_EN_CURSO`), `mensaje` y `avisos[]` (`codigo` y `mensaje`) |
 | `deadline`, `notas`, `moneda`, `linea_negocio` | Encabezado (la línea es la de la ruta 1) |
 | `lineas_negocio_disponibles` | Las líneas de la solicitud: las únicas que puede usar una ruta nueva |
-| `rutas[]` (`RutaEditable`) | `linea_solicitud_id`, `linea_orden`, `linea_negocio` (+ `linea_negocio_bloqueada: true`), origen, destino y ciudades del contenedor **por id y nombre**, condiciones, horas, `valor_levante_contenedor`, `valor_mercancia`, `peso_kg`, `mercancias[]` (con `codigo_mercancia`), `servicios_conexos[]` (`id_servicio_conexo` del catálogo de NEXO, `nombre`, `cantidad`; sin precio; una fila por servicio, con las cantidades sumadas si se agregó también en NEXO), `margen_aplicado`, `origen_margen`, `margen_negociado` |
+| `rutas[]` (`RutaEditable`) | `linea_solicitud_id`, `linea_orden`, `linea_negocio` (+ `linea_negocio_bloqueada: true`), origen, destino y ciudades del contenedor **por id y nombre**, condiciones, horas, `valor_levante_contenedor`, `valor_mercancia`, `peso_kg`, `peso_con_tara_kg` (HU-030.1; `null` = sin tara), `tipo_vehiculo` y `carroceria` (HU-032, #197: el vehículo elegido, no el de los camiones), `mercancias[]` (con `codigo_mercancia`; medidas `null` en una mercancía sin medidas), `servicios_conexos[]` (`id_servicio_conexo` del catálogo de NEXO, `nombre`, `cantidad`; sin precio; una fila por servicio, con las cantidades sumadas si se agregó también en NEXO), `margen_aplicado`, `origen_margen`, `margen_negociado`; HU-028.1 (#183, solo lectura): `camiones_rechazados` (camiones rechazados por la Mesa de Costeo) y `motivo_rechazo` |
 
 Sin costos de NEXO ni precios.
 
@@ -1860,6 +2002,7 @@ viejo); `Idempotency-Key` recomendada.
 | Campo | Tipo | Obligatorio | Reglas |
 |---|---|---|---|
 | `rutas[]` | `RutaEdicionWeb` | Sí (1 a 100) | Los campos de `RutaCapturaWeb` más `linea_solicitud_id` (la ruta guardada que se edita; sin él, ruta nueva). Las guardadas que no vienen se quitan. Las que se conservan **no se reordenan** |
+| `rutas[].reincluir_rechazados` | boolean | No | HU-028.1 (#183). `true`: los camiones de la ruta que rechazó la Mesa de Costeo vuelven a viajar sin el rechazo (tal como están, sin recubicar). Ausente/`false`: no viajan (decisión del 2026-10-20) |
 | `tipo`, `nit_cliente`, `cliente_nombre`, `origen_cliente` | string | No | Bloqueados: si vienen, con el valor guardado (si no, 400 `CAMPO_NO_EDITABLE`) |
 | `linea_negocio` | string | No | Línea por defecto de una ruta nueva (una de `lineas_negocio_disponibles`) |
 | `deadline`, `notas`, `horas_cargue`, `horas_descargue` | — | No | Como en la captura. Ausente = vacío (es un reemplazo completo) |
@@ -1871,7 +2014,9 @@ El JSON del `GET` sirve tal cual como cuerpo del `PUT` (los campos que no son de
 
 Respuesta `EdicionSolicitudResultado`: `modo`, `folio` (el resultante), `folio_origen`, `sin_cambios`, `cotizacion`
 (`CotizacionResumen`), `avisos[]`, `rutas_replanificadas[]` (orden de las rutas recubicadas), `rutas_agregadas[]` (orden),
-`rutas_quitadas[]` (ids) y `solicitud_nexo_reemplazada` (`descartada`, `ya_descartada`, `no_encontrada` o `null`).
+`rutas_quitadas[]` (ids), `solicitud_nexo_reemplazada` (`descartada`, `ya_descartada`, `no_encontrada` o `null`) y, HU-028.1 (#183),
+`aviso_rechazos` (lo que se omitió del envío por estar rechazado por la Mesa; también en `cotizacion.aviso_rechazos` y en el aviso
+`RECHAZADOS_OMITIDOS`; no viene si no se omitió nada ni con `sin_cambios`).
 
 | HTTP | Código | UI |
 |---|---|---|
@@ -1881,6 +2026,7 @@ Respuesta `EdicionSolicitudResultado`: `modo`, `folio` (el resultante), `folio_o
 | 400 | `SOLICITUD_COSTEO_INVALIDA` | Marcar `detalle.errores[]` (reglas de la captura, `RUTA_INEXISTENTE`, `RUTA_REPETIDA`, `RUTAS_REORDENADAS`) |
 | 403 | `NEXO_SIN_PERMISO` | NEXO no deja rechazar la solicitud anterior; nada cambió |
 | 409 | `ESTADO_NO_PERMITE` | Mostrar el mensaje; con `MODO_CAMBIO`, recargar y confirmar de nuevo |
+| 409 | `SIN_RUTAS_COTIZABLES` (`detalle.motivo = TODOS_RECHAZADOS`) | HU-028.1 (#183): ninguna ruta mandaría camiones a NEXO (todos rechazados por la Mesa). Ofrecer `reincluir_rechazados`; nada cambió |
 | 409 | `CONFLICTO_CONCURRENCIA`, `IDEMPOTENCY_KEY_REUTILIZADA` | Recargar |
 | 503 | `NEXO_NO_DISPONIBLE` (`detalle.motivo = RECHAZO_NEXO_FALLIDO`) | "NEXO no respondió; no se cambió nada". La versión subió: recargar antes de reintentar |
 | 503 | `CATALOGOS_FLETE_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE`, `CUBICADOR_NO_DISPONIBLE`, `TRM_NO_DISPONIBLE` | Reintentar; nada se guardó |
@@ -2163,9 +2309,10 @@ filas antes de guardar.
 | `valor_levante_contenedor` | número o null | Condicional | Solo con levante distinto del origen. Nombre nuevo de `valor_aprovisionamiento` (si llegan los dos, vale este) |
 | `horas_cargue`, `horas_descargue` | número o null | No | 0 a 240 |
 | `peso_kg`, `valor_mercancia` | número o null | Condicional | Regla de peso como en la captura |
+| `peso_con_tara_kg` | número o null | No | HU-030.1 (#184): como en la captura (solo en una fila `Contenedor`, nunca menor que la carga) |
 | `mercancias` | `PosicionCargaWeb[]` o null | No | Hasta 200. Nombre nuevo de `posiciones` (si llegan las dos, valen estas) |
 | `servicios_conexos` | `ConexoCapturaWeb[]` o null | No | Hasta 20 |
-| `tipo_vehiculo`, `carroceria` | — | No enviar | Se ignoran |
+| `tipo_vehiculo`, `carroceria` | string o null | Como en la captura | HU-032 (#197): el vehículo elegido de la fila (ver 3.9). Fila sin mercancías cubicables: obligatorio salvo Contenedor y se planifica al crearla; fila con todas cubicables: respaldo del cubicador en segundo plano |
 
 ```json
 {
@@ -2824,7 +2971,8 @@ Notación: `?` = puede ser `null` (el campo viene igual). **(omitible)** = el ca
 | `precio_final_linea` | número? | Precio de la ruta (con sus conexos) |
 | `margen_aplicado`, `margen_sugerido`, `origen_margen` | número?, número?, enum? | Por debajo del sugerido, el ajuste exige justificación |
 | `peso_kg` | número? | Peso declarado de la ruta |
-| `camiones` | `CamionCosteo[]` | `{tipo_vehiculo?, carroceria?, peso_kg?, estado_costeo?, volumen_total_m3?, porcentaje_llenado_volumen?, porcentaje_llenado_peso?, estado_linea_nexo?, motivo_pendiente?}`. Los porcentajes llegan en `null` si no pasó por el cubicador o si la Mesa cambió el vehículo (D2): mostrar "—". `estado_linea_nexo` (`por_costear`, `auto_resuelta`, `revisada`) y `motivo_pendiente` (#181, texto de NEXO de por qué la línea sigue por costear; solo con el camión en `pendiente_costeo`) son de solo lectura, no se guardan y pueden llegar en `null` (NEXO sin el dato, camión sin asociar o servicio recién reiniciado): `null` = no mostrar nada |
+| `peso_con_tara_kg` | número? | HU-030.1 (#184): peso total con tara de una ruta `Contenedor` (el que escribió el comercial); `null` = sin tara |
+| `camiones` | `CamionCosteo[]` | `{tipo_vehiculo?, carroceria?, peso_kg?, peso_con_tara_kg?, estado_costeo?, volumen_total_m3?, porcentaje_llenado_volumen?, porcentaje_llenado_peso?, estado_linea_nexo?, motivo_pendiente?, motivo_rechazo?, rechazada_at?}`. `peso_con_tara_kg` (HU-030.1) es el peso que viajó a NEXO en la línea del camión (su carga más su parte de la tara); `null` si la ruta no lleva tara o si el camión no viaja (rechazado y fuera del envío, #183). Los porcentajes llegan en `null` si no pasó por el cubicador o si la Mesa cambió el vehículo (D2): mostrar "—". `estado_linea_nexo` (`por_costear`, `auto_resuelta`, `revisada`) y `motivo_pendiente` (#181, texto de NEXO de por qué la línea sigue por costear; solo con el camión en `pendiente_costeo`) son de solo lectura, no se guardan y pueden llegar en `null` (NEXO sin el dato, camión sin asociar o servicio recién reiniciado): `null` = no mostrar nada. HU-028.1 (#183): con `estado_costeo = rechazada` (la Mesa de Costeo rechazó su línea), `motivo_rechazo` (texto de NEXO) y `rechazada_at` (cuándo lo vio Cotifly); se guardan en la base. La ruta trae `motivo_rechazo` (motivos de sus camiones rechazados) |
 | `vehiculos` | string? | Texto agrupado como en el PDF ("2 × 3S3 - FURGON (20000 KG)", "Vehículo por definir") |
 | `mercancias` | `MercanciaCosteo[]` | `{orden, codigo_mercancia?, nombre_mercancia?, cantidad, largo_cm, ancho_cm, alto_cm, peso_kg?}` |
 | `servicios_conexos` | `ServicioConexoCosteo[]` | Los de la ruta |
@@ -2900,6 +3048,7 @@ fila_excel?, campo, codigo, mensaje}`, `LineaNegocio {id, linea_negocio, margen,
 | `entregada` | NEXO la entregó |
 | `descartada` | NEXO descartó la solicitud |
 | `costeo_vencido` | Se agotó el tiempo máximo (72 h) sin costeo, o NEXO ya no reconoce la solicitud |
+| `rechazada` | HU-028.1 (#183): **solo ruta y camión** (y líneas/camiones de la licitación). La Mesa de Costeo de NEXO rechazó la línea del camión con `motivo_rechazo`; una ruta es `rechazada` si lo están todos sus camiones. No tiene precio ni suma; distinto de `descartada` (línea borrada, #134) |
 
 "Costeada" = `autocosteo` o `entregada` con `precio_final`. Sin `precio_final` y con `motivo_estado_costeo`: falta el margen.
 
@@ -2935,7 +3084,7 @@ hasta reintentar), `completa`. `progreso_cubicacion = null` si ninguna ruta pas�
 |---|---|
 | `clase_viaje` | `valor` de `clases_viaje` (`GET /web/catalogos-flete`): `Contenedor`, `Cupo`, `Carga Suelta`, `Extradimensionado`. Comparación exacta, distingue mayúsculas |
 | `tipologia` | `Contenedor`, `CargaSuelta`, `GranelSolido`, `GranelLiquido`, `Alimentos`, `Refrigerados`, `CargaSeca` |
-| `clase_contenedor` | `valor` de `clases_contenedor` (`GET /web/catalogos-flete`, HU-027.1): `CNT20.IT`, `CNT20.RE`, `CNT20.ST`, `CNT40.HC`, `CNT40.RE`. Además, la lista provisional de extradimensionado `CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP`, que no viene en el catálogo. Obligatoria con `clase_viaje = Contenedor` y solo admitida con ella |
+| `clase_contenedor` | `valor` de `clases_contenedor` (`GET /web/catalogos-flete`, HU-027.1): `CNT20.IT`, `CNT20.RE`, `CNT20.ST`, `CNT40.HC`, `CNT40.RE`. Además, la lista provisional de extradimensionado `CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP`, que no viene en el catálogo. HU-031.1 (#194): también un **alias** del diccionario de NEXO que traduce a una de ellas ("40 HC" → `CNT40.HC`), que se guarda con el código. Obligatoria con `clase_viaje = Contenedor` y solo admitida con ella |
 
 Enviar siempre el **código**, nunca la etiqueta ni texto libre (`CODIGO_NO_CATALOGO` o `SOLICITUD_COSTEO_INVALIDA`).
 
@@ -2947,7 +3096,7 @@ Enviar siempre el **código**, nunca la etiqueta ni texto libre (`CODIGO_NO_CATA
 |---|---|
 | `ASIGNADO` | El cubicador recomendó vehículos (uno o varios, pueden ser de tipos distintos) |
 | `SIN_SELECCION_AUTOMATICA` | No pudo escoger. Respuesta válida: la ruta queda con un camión sin vehículo que resuelve la Mesa de Costeo de NEXO. Trae `motivo_sin_seleccion` y `mensaje_sin_seleccion` |
-| `null` | La ruta no pasó por el cubicador (sin cubicador configurado, sin mercancías tipadas o respaldo por caída) |
+| `null` | La ruta no pasó por el cubicador (sin cubicador configurado, sin mercancías cubicables o respaldo por caída). HU-032: una ruta así puede salir en `cubicacion[]` si tiene avisos del vehículo |
 
 **`motivo_sin_seleccion`** (solo con `SIN_SELECCION_AUTOMATICA`). El servidor ya envía el texto en `mensaje_sin_seleccion`; usar ese texto.
 Mensajes que genera el servidor:
@@ -2988,7 +3137,15 @@ llega en `null` y el motivo real queda en una advertencia con `codigo = "MOTIVO_
   (el `comentario_condicion` del catálogo). Mostrarlo como aviso.
 
 **Otros campos del cubicador**: `alerta_bajo_llenado` (el camión va poco lleno), `heterogenea` (el camión lleva mercancías de tipos
-distintos), `numero_vehiculo` (desde 1), `advertencias[]` (`{codigo?, mensaje}`, por ejemplo `REFRIGERADO`).
+distintos), `numero_vehiculo` (desde 1), `advertencias[]` (`{codigo?, mensaje, vehiculo_elegido, vehiculos_finales}`, por ejemplo
+`REFRIGERADO`). HU-032 (#197), avisos del vehículo en `advertencias[]` (ver 3.9):
+
+| `codigo` | Significado |
+|---|---|
+| `VEHICULO_AJUSTADO_POR_CUBICADOR` | El cubicador asignó otro vehículo que el elegido; manda el cubicador |
+| `VEHICULO_ELEGIDO_USADO` | El cubicador no seleccionó, falló o estaba ocupado: la ruta va con el elegido |
+| `MERCANCIAS_NO_CUBICABLES` | La ruta mezcla mercancías cubicables y sin medidas: no se cubica y va con el elegido |
+| `VEHICULO_ELEGIDO_INVALIDO` | El cubicador no seleccionó y el elegido no es código de NEXO: la ruta va sin vehículo (o sin la carrocería) |
 
 **`CodigoMercanciaFila.origen`** (análisis del Excel): `excel` (tomado de la columna de código, `sugerido = false`), `parecido` (el más
 parecido del catálogo, `sugerido = true`, con `similitud` de 0 a 1), `null` (sin sugerencia).
@@ -3042,7 +3199,7 @@ parecido del catálogo, `sugerido = true`, con `similitud` de 0 a 1), `null` (si
 | `ARCHIVO_REQUERIDO` | 400 | Falta el Excel o está vacío | Pedir el archivo |
 | `CAMPO_NO_EDITABLE` | 400 | La edición cambia el cliente, el tipo o la línea de negocio de una ruta (HU-028) | Restaurar el campo de `detalle.campo` |
 | `CATALOGOS_FLETE_NO_DISPONIBLE` | 503 | Catálogos de NEXO caídos y sin copia de menos de 24 h | Deshabilitar selects, Reintentar; nada se guardó |
-| `CLIENTE_BUSQUEDA_NO_DISPONIBLE` | 400 | Buscador de clientes no disponible (no es "sin resultados") | "Buscador no disponible", Reintentar |
+| `CLIENTE_BUSQUEDA_NO_DISPONIBLE` | 503 (antes 400) | Buscador de clientes no disponible (no es "sin resultados"); `mensaje` dice qué falta | "Buscador no disponible", Reintentar |
 | `CONEXO_INVALIDO` | 400 | NEXO no aceptó el servicio, o la ruta no existe | Mostrar mensaje; recargar el costeo antes de reintentar |
 | `CONFLICTO_CONCURRENCIA` | 409 | El `If-Match` no coincide; nada cambió | Recargar el costeo y repetir |
 | `CORREO_DESHABILITADO` | 503 | Correo apagado en el servidor | "El envío de correo no está habilitado en este ambiente" |
@@ -3094,6 +3251,8 @@ parecido del catálogo, `sugerido = true`, con `similitud` de 0 a 1), `null` (si
 | `RESULTADO_YA_DEFINIDO` | 409 | NEXO (o Cotifly) ya tiene un resultado | Mostrar y recargar |
 | `RUTA_INEXISTENTE` | 400 | La ruta no es de la cotización | Recargar el costeo |
 | `RUTA_REQUERIDA` | 400 | Varias rutas y no se indicó cuál (`detalle.rutas`) | Selector de ruta |
+| `RUTA_RECHAZADA` | 409 | HU-028.1 (#183): la Mesa de Costeo de NEXO rechazó la ruta (margen o conexos); `detalle.linea_orden`, `detalle.linea_solicitud_id`, `detalle.motivo_rechazo` | Deshabilitar margen y conexos en esa ruta; mostrar el motivo |
+| `SIN_RUTAS_COTIZABLES` | 409 | HU-028.1 (#183, D1): la Mesa rechazó todas las rutas; `POST .../costeo/pdf` no genera el PDF. En `re-solicitar` y `PUT .../solicitud` (`detalle.motivo = TODOS_RECHAZADOS`): ningún camión viajaría a NEXO | Esconder "Generar PDF"; mostrar `motivo_estado_costeo`. Al re-solicitar o editar: ofrecer reincluir los rechazados en la edición |
 | `SERVICIO_OCUPADO` | 503 | Otra operación retiene el folio (con `Retry-After: 1`) | Reintentar en 1 s |
 | `SOLICITUD_COSTEO_INVALIDA` | 400 | Formulario o carga inválidos (`detalle.errores[]` en la captura) | Pintar errores por campo |
 | `SOLICITUD_NO_TRANSICIONABLE` | 409 | NEXO no permite la transición | Mostrar `mensaje` |
@@ -3121,12 +3280,14 @@ aparecer en `errores[]` del chat: ignorarlos (el asistente lo explica en `texto`
 | `CAMPO_DEMASIADO_LARGO` | Texto más largo que el límite | — |
 | `VALOR_FUERA_DE_RANGO` | Número fuera de rango, o `moneda` inválida en la licitación | — |
 | `DEMASIADAS_POSICIONES` | Más de 200 mercancías | `mercancias` (antes `posiciones`) |
-| `POSICION_INVALIDA` | Mercancía inválida (medidas, cantidad, o peso por unidad ≤ 0 con tipo de mercancía). Mensaje con la mercancía en base 1 (`Mercancía 2: ...`) | `mercancias[i].<subcampo>`, base 0 (D6; antes `posiciones[i]`) |
+| `POSICION_INVALIDA` | Mercancía inválida (medidas fuera de rango o parciales, código sin medidas, cantidad, o peso por unidad ≤ 0 con tipo de mercancía). Mensaje con la mercancía en base 1 (`Mercancía 2: ...`) | `mercancias[i].<subcampo>`, base 0 (D6; antes `posiciones[i]`) |
+| `VEHICULO_REQUERIDO` | HU-032 (#197): la ruta no se puede cubicar (solo peso, mercancías sin medidas o mixta), su clase de viaje no es exenta (por defecto, solo Contenedor; `Captura:ClasesSinVehiculoObligatorio`) y no trae vehículo. En la edición y la re-solicitud, solo en una ruta nueva o que cambia | `tipo_vehiculo` |
 | `PESO_REQUERIDO` | Ni `peso_kg` > 0 ni mercancías con peso | `peso_kg` |
 | `PESO_INCONSISTENTE` | `peso_kg` difiere más del 1 % de `sum(cantidad × peso_kg)` | `peso_kg` |
+| `PESO_CON_TARA_MENOR_QUE_CARGA` | HU-030.1 (#184): el peso total con tara es menor que el peso de carga | `peso_con_tara_kg` |
 | `FILA_INVALIDA` | `fila` inexistente o repetida en el Excel | `fila` |
-| `CAMPO_NO_APLICA` | Campo que no aplica (clase de contenedor sin Contenedor, valor de levante sin levante distinto, campo plano junto con `rutas`) | — |
-| `CODIGO_NO_CATALOGO` | Valor que no es código de catálogo | `tipologia`, `clase_viaje`, `clase_contenedor` |
+| `CAMPO_NO_APLICA` | Campo que no aplica (clase de contenedor sin Contenedor, `peso_con_tara_kg` sin Contenedor, valor de levante sin levante distinto, campo plano junto con `rutas`) | — |
+| `CODIGO_NO_CATALOGO` | Valor que no es código de catálogo | `tipologia`, `clase_viaje`, `clase_contenedor`, `tipo_vehiculo`, `carroceria` (estos dos solo si el vehículo se va a usar, HU-032) |
 | `MUNICIPIO_AMBIGUO` | El nombre tiene varios candidatos (el mensaje trae los ids) | `origen`, `destino`, ciudades |
 | `MUNICIPIO_NO_ENCONTRADO` | El nombre no coincide con ningún municipio | ídem |
 | `MUNICIPIO_INEXISTENTE` | El id no existe en el catálogo | `*_municipio_id` |
@@ -3207,6 +3368,12 @@ fila_excel, campo, codigo, mensaje}`.
 | 46 | **#181 (NEXO #309):** `rutas[].camiones[]` de `GET .../costeo` (y de `costeo` en `GET /web/cotizaciones/{folio}`, fila 47) trae `estado_linea_nexo` y `motivo_pendiente` (por qué la línea sigue pendiente en NEXO: consulta completa, línea sin vehículo, SICE-TAC que no es del mes actual...). Solo de lectura, no se guardan; `null` si NEXO no los manda | Agrega | Mostrar `motivo_pendiente` junto al camión en `pendiente_costeo`; con `null`, nada |
 | 47 | **Nuevo** `GET /web/cotizaciones/{folio}` (HU-027.1, #179): detalle completo en una llamada (`cotizacion` + `costeo` + `captura` + `totales`), con `ETag`; también para el gerente de la regional, en solo consulta (`solo_lectura`) | Agrega | "Ver detalle" (#75) y su recarga con una sola llamada; con `solo_lectura`, esconder las acciones |
 | 48 | **#191 (HU-026.1):** la `Idempotency-Key` de la captura, los conexos, la re-solicitud y `PUT .../solicitud` se guarda en la base (sobrevive a un reinicio; la comparten las réplicas). Una repetición que cae en otra réplica mientras la primera sigue en curso responde 409 `ESTADO_NO_PERMITE` con `detalle.motivo = CAPTURA_EN_CURSO` sin ejecutar nada; en la misma réplica espera y recibe la respuesta de la primera, como antes. Los números del cuerpo se comparan por valor (`1.5` = `1.50`) | Agrega | Tratar `CAPTURA_EN_CURSO` también en conexos, re-solicitud y edición: esperar unos segundos y repetir con la MISMA clave (o recargar el folio) |
+| 49 | **HU-030.1 (#184):** campo nuevo opcional `peso_con_tara_kg` por ruta (captura, licitación, `PUT .../solicitud` y `datos_carga`), **solo con `clase_viaje = Contenedor`**: el peso total con la tara de los contenedores. Va a NEXO como el peso de las líneas de la ruta (repartido por camión) y esas líneas viajan sin posiciones; al cubicador no va. `GET .../costeo` (y el detalle por folio) lo trae en la ruta y, por camión, el peso con tara que viajó. Códigos nuevos: `PESO_CON_TARA_MENOR_QUE_CARGA` y `CAMPO_NO_APLICA` en `peso_con_tara_kg` | Agrega | Campo "Peso total con tara" (#107) visible solo con Contenedor, con valor inicial `peso_kg` y una nota de que incluye la tara de todos los contenedores de la ruta |
+| 50 | **HU-031.1 (#194):** nuevo `GET /web/alias/resolver` (sección 4.2.8) y la captura acepta un alias de NEXO en `tipo_vehiculo` (respaldo) y `clase_contenedor`, guardándolo con el código oficial | Agrega | Al importar el Excel de una licitación, resolver las columnas de vehículo y contenedor en una sola llamada y marcar las celdas con `reconocido: false` |
+| 51 | **HU-028.1 (#183, NEXO #320):** valor nuevo `rechazada` en `estado_costeo` de `rutas[]`, `rutas[].camiones[]` y las líneas y camiones de la licitación (nunca en la cabecera). Campos nuevos: `motivo_rechazo` y `rechazada_at` en `CamionCosteo`; `motivo_rechazo` en `RutaCosteo`, `LineaLicitacion` y `CamionLicitacion` (+ `estado_costeo`); `lineas_rechazadas` en `Licitacion`; `rutas_rechazadas` y `camiones_rechazados` en `TotalesCotizacion`; `aviso_rechazos` en la respuesta de `re-solicitar`. Códigos nuevos 409 `RUTA_RECHAZADA` (margen y conexos en una ruta rechazada) y `SIN_RUTAS_COTIZABLES` (PDF con todas rechazadas). Precio, totales, PDF, Excel y métricas sin las rutas rechazadas | Agrega | Mostrar "Rechazada en NEXO" + motivo; deshabilitar margen, conexos y PDF según corresponda; el enum de estados debe aceptar `rechazada` |
+| 52 | **HU-028.1 (#183), decisión del 2026-10-20 ("no reenviar los camiones rechazados por defecto"):** re-solicitar (mismo folio o `-vN`) y editar ya **no** reenvían a NEXO los camiones rechazados por la Mesa: siguen rechazados (la `-vN` los copia rechazados) y una ruta con todos rechazados no viaja (queda `rechazada`, visible, sin precio). `aviso_rechazos` cambia de sentido (ahora dice qué se **omitió**) y sale también en `PUT .../solicitud` (raíz y `cotizacion`), con el aviso nuevo `RECHAZADOS_OMITIDOS`. Campos nuevos: `reincluir_rechazados` en `RutaEdicionWeb`; `camiones_rechazados` y `motivo_rechazo` en `RutaEditable`. 409 `SIN_RUTAS_COTIZABLES` (`detalle.motivo = TODOS_RECHAZADOS`) en `re-solicitar` y `PUT .../solicitud` si no queda nada que enviar | Cambia | En "Editar solicitud", casilla "Volver a pedirlos a la Mesa" por ruta con `camiones_rechazados > 0`; mostrar `aviso_rechazos` tras re-solicitar o editar; tratar el 409 ofreciendo reincluir |
+| 53 | **HU-032 (#197, ADR-022): vehículo elegido o cubicador.** `tipo_vehiculo` y `carroceria` vuelven al contrato (captura, licitación, edición, `datos_carga`) como el vehículo elegido y respaldo del cubicador; `RutaEditable` los devuelve. Error nuevo por ruta `VEHICULO_REQUERIDO` (sin mercancías cubicables, salvo Contenedor). Las medidas de una mercancía son opcionales: sin ninguna (y sin código) es "no cubicable" y se acepta; medidas parciales o código sin medidas son `POSICION_INVALIDA`; `MercanciaCosteo`/`MercanciaEditable` pueden traer las medidas en `null`. Avisos nuevos en `advertencias[]` (`VEHICULO_AJUSTADO_POR_CUBICADOR`, `VEHICULO_ELEGIDO_USADO`, `MERCANCIAS_NO_CUBICABLES`, `VEHICULO_ELEGIDO_INVALIDO`) con `vehiculo_elegido` y `vehiculos_finales`; `cubicacion[]` también en la respuesta de la edición y con rutas que no llamaron al cubicador | Cambia | Volver a mostrar el selector de vehículo (carrocería opcional) y exigirlo sin mercancías cubicables salvo Contenedor; aceptar mercancías sin medidas (las tres o ninguna); mostrar el vehículo final de cada camión con su aviso (ver 3.9) |
+| 54 | **OBS-1021B-3 (E2E 2026-10-21):** `GET /web/clientes` responde **503** `CLIENTE_BUSQUEDA_NO_DISPONIBLE` cuando NEXO no está configurado, no responde o el comercial no está vinculado a NEXO (antes **400**), como los demás catálogos de NEXO. El `mensaje` dice qué falta (con NEXO sin configurar nombra `Nexo:UrlBase`) | Rompe | Tratar 400 y 503 igual mientras conviva el frontend anterior; "Buscador de clientes no disponible" con Reintentar y NIT manual |
 
 ---
 
@@ -3222,6 +3389,8 @@ fila_excel, campo, codigo, mensaje}`.
 - [ ] Fechas mostradas en America/Bogota; `deadline` enviado con desfase `-05:00`.
 - [ ] Formato de dinero: COP sin decimales, USD con 2; nunca calcular precios en el cliente.
 - [ ] Folio codificado con `encodeURIComponent`, sin parsearlo.
+- [ ] HU-032 (#197): selector de vehículo por ruta (carrocería opcional), obligatorio sin mercancías cubicables salvo Contenedor;
+      mercancías con las tres medidas o ninguna; vehículo final de cada camión con su aviso de `advertencias[]` (3.9).
 
 **Sesión**
 
@@ -3285,6 +3454,48 @@ fila_excel, campo, codigo, mensaje}`.
 ---
 
 ## 9. Notas de versión
+
+**2026-10-21 (rama `197-vehiculo-elegido`, HU-032, #197, ADR-022).** Vehículo elegido como respaldo del cubicador:
+
+- `tipo_vehiculo` y `carroceria` de la ruta dejan de estar obsoletos: son el vehículo elegido. Ruta sin mercancías cubicables: no se
+  cubica, usa el elegido y lo exige salvo en Contenedor (`VEHICULO_REQUERIDO`). Ruta con todas cubicables: manda el cubicador si asigna;
+  si no, el elegido (validado contra NEXO en ese momento). Avisos del vehículo en `advertencias[]` (3.9 y 5.5).
+- Mercancías sin medidas ni código aceptadas ("no cubicables"): se guardan y no viajan a NEXO como posiciones. Medidas parciales y código
+  sin medidas son `POSICION_INVALIDA`.
+- La edición y la re-solicitud conservan el vehículo elegido (`RutaEditable.tipo_vehiculo`/`carroceria`); cambiarlo es un cambio si los
+  camiones dependen de él.
+- OBS-1021B-3: `GET /web/clientes` sin NEXO responde **503** `CLIENTE_BUSQUEDA_NO_DISPONIBLE` (antes 400), con un `mensaje` que dice
+  qué falta. Sección 7, fila 54.
+- OBS-1021B-1: `PUT .../solicitud` con el mismo cuerpo del `GET` responde `sin_cambios` sin consultar NEXO (antes, con NEXO caído,
+  503). Un cambio real se sigue validando contra los catálogos de NEXO.
+- B4: con `clase_viaje` mal escrita la ruta solo trae `CODIGO_NO_CATALOGO` en `clase_viaje`, sin `VEHICULO_REQUERIDO` adicional.
+- Requiere `db/scripts/12_vehiculo_elegido.sql` (sin él, `/health/ready` responde "falta 12"). Cambio con su "qué hacer": sección 7,
+  fila 53, y 3.9.
+
+**2026-10-20 (rama `183-rechazo-de-linea`, HU-028.1, #183, NEXO #320).** Rechazo de una línea en la Mesa de Costeo: valor nuevo
+`rechazada` en el estado de ruta y camión, `motivo_rechazo`, `rechazada_at`, conteos de rechazadas, `aviso_rechazos` y los 409
+`RUTA_RECHAZADA` y `SIN_RUTAS_COTIZABLES`. Requiere `db/scripts/10_rechazo_linea.sql`. Cambio con su "qué hacer": sección 7, fila 51.
+Decisión del 2026-10-20: los camiones rechazados **no se reenvían** al re-solicitar ni al editar; `reincluir_rechazados` en la edición
+para reconsiderarlos; `aviso_rechazos` también en la edición; 409 `SIN_RUTAS_COTIZABLES` (`TODOS_RECHAZADOS`). Sección 7, fila 52.
+
+**2026-10-20 (rama `184-tara-contenedor`, HU-030.1, #184).** Peso con tara de las cargas contenerizadas:
+
+- Campo opcional `peso_con_tara_kg` en la ruta (captura, licitación, edición y `datos_carga`), solo con `clase_viaje = Contenedor`;
+  se guarda en la ruta (script `db/scripts/11_peso_con_tara.sql`). Con él, las líneas de la ruta van a NEXO con el peso con tara
+  (la tara repartida por partes iguales entre los camiones) y sin posiciones. Sin él, nada cambia. Al cubicador no va. Con camiones
+  rechazados fuera del envío (#183), la fórmula final está en 3.8 ("Fórmula final con camiones rechazados").
+- `GET .../costeo`: `rutas[].peso_con_tara_kg` y `rutas[].camiones[].peso_con_tara_kg`. Cambio con su "qué hacer": sección 7, fila 49
+  y 3.8.
+
+**2026-10-20 (rama `194-alias-nexo`, HU-031.1, #194, NEXO #321 y #322).** Diccionario de alias de NEXO:
+
+- **Nuevo** `GET /web/alias/resolver?tipo=vehiculo|contenedor&texto=...` (en lote, hasta 200 textos): traduce un vehículo o una clase de
+  contenedor escritos a mano al código oficial de NEXO (sección 4.2.8).
+- La captura acepta en `tipo_vehiculo` (camión del respaldo) y `clase_contenedor` un **alias** que el diccionario de NEXO traduce a un
+  código oficial, y lo guarda con ese código. Antes era 400 `CODIGO_NO_CATALOGO`; un texto que tampoco es alias sigue siéndolo.
+- Sin cambios de forma en las demás respuestas. En el servidor, el vehículo del cubicador también se traduce con el alias al enviar a
+  NEXO (y `Nexo:EnviarCodigosCubicador` pasa a `siempre`): menos camiones llegan a NEXO sin vehículo, así que más rutas se autocostean.
+  `GET .../costeo` sigue mostrando el código del cubicador. Cambio con su "qué hacer": sección 7, fila 50.
 
 **2026-10-20 (rama `191-idempotencia-persistente`, HU-026.1 parte C, #191).** `Idempotency-Key` persistente:
 

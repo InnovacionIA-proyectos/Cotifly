@@ -51,6 +51,10 @@ public sealed class clsPasosCubicador(clsPasosCosteo costeo, clsContextoWeb web)
     [Given("que el cubicador no responde")]
     public void DadoQueElCubicadorNoResponde() => _cubicador.Caido = HttpStatusCode.ServiceUnavailable;
 
+    [Then("el cubicador no recibió ninguna recomendación")]
+    public void EntoncesSinRecomendaciones() =>
+        _cubicador.Recomendaciones.Should().BeEmpty("HU-032 (#197): una ruta sin mercancías cubicables no va al cubicador");
+
     [Then("el cubicador recibió la ruta {int} de {string} con el origen {string} y su llave como Bearer")]
     public async Task EntoncesElCubicadorRecibio(int orden, string cotizacion, string origen)
     {

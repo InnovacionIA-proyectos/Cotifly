@@ -33,4 +33,13 @@ public enum EstadoCosteo
 
     /// <summary>El polling llegó a la edad máxima sin costeo: se deja de consultar y queda visible en "Mis cotizaciones".</summary>
     CosteoVencido,
+
+    /// <summary>
+    /// HU-028.1 (#183, Nexo #320): la Mesa de Costeo de Nexo rechazó la línea del CAMIÓN con un motivo (<c>estadoLinea = "rechazada"</c>):
+    /// no se costea, no cuenta en el precio ni en los totales y no recibe conexos. Distinto de <see cref="Descartada"/> (la línea se
+    /// borró, #134): la línea rechazada sigue existiendo en Nexo y la Mesa puede deshacer el rechazo mientras la cotización no esté
+    /// entregada. Una ruta con todos sus camiones rechazados queda <c>rechazada</c>, sin precio. La cabecera nunca queda en este estado
+    /// (<see cref="clsCotizacionSolicitud.EstadoCabecera"/>): si todas sus rutas están rechazadas resume lo que diga Nexo de la solicitud.
+    /// </summary>
+    Rechazada,
 }

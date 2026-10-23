@@ -141,15 +141,22 @@ public sealed class clsDetalleCotizacionService(
     {
         var rutas = cotizacion.RutasOrdenadas;
         var pesos = rutas.Select(r => r.PesoKg).OfType<decimal>().ToList();
-        var conPrecio = costeo.PrecioFinal is not null && rutas.All(r => r.PrecioFinalLinea is not null);
-        var transportes = rutas.Select(r => clsCosteoCotizacionService.PrecioTransporte(cotizacion, r)).ToList();
+        // HU-028.1 (#183): las rutas rechazadas por la Mesa no cuentan en los precios (ni sus conexos).
+        var cotizables = cotizacion.RutasCotizables;
+        var conPrecio = costeo.PrecioFinal is not null && cotizables.Count > 0 && cotizables.All(r => r.PrecioFinalLinea is not null);
+        var transportes = cotizables.Select(r => clsCosteoCotizacionService.PrecioTransporte(cotizacion, r)).ToList();
+        var ordenesCotizables = cotizables.Select(r => r.Orden).ToHashSet();
         return new clsTotalesCotizacion(
             rutas.Count,
             rutas.Sum(r => r.VehiculosQueCuentan.Count),
             pesos.Count == 0 ? null : pesos.Sum(),
             conPrecio && transportes.All(t => t is not null) ? transportes.Sum() : null,
-            conPrecio ? costeo.Rutas.SelectMany(r => r.ServiciosConexos).Sum(c => c.Precio) : null,
-            costeo.PrecioFinal);
+            conPrecio ? costeo.Rutas.Where(r => ordenesCotizables.Contains(r.LineaOrden)).SelectMany(r => r.ServiciosConexos).Sum(c => c.Precio) : null,
+            costeo.PrecioFinal)
+        {
+            RutasRechazadas = rutas.Count(r => r.Rechazada),
+            CamionesRechazados = rutas.Sum(r => r.Vehiculos.Count(v => v.Rechazado)),
+        };
     }
 
     /// <summary>Las políticas de las líneas de las rutas, con una sola lectura de <c>MargenesPolitica</c> (tabla pequeña).</summary>

@@ -19,12 +19,12 @@ public sealed class clsLoggerFalso<TCategoria> : ILogger<TCategoria>
     public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
     {
         ArgumentNullException.ThrowIfNull(formatter);
-        _registros.Enqueue(new clsRegistroLog(logLevel, formatter(state, exception), exception));
+        _registros.Enqueue(new clsRegistroLog(logLevel, formatter(state, exception), exception, eventId));
     }
 }
 
-/// <summary>Un registro de <see cref="clsLoggerFalso{TCategoria}"/>.</summary>
-public sealed record clsRegistroLog(LogLevel Nivel, string Mensaje, Exception? Excepcion);
+/// <summary>Un registro de <see cref="clsLoggerFalso{TCategoria}"/> (con su <see cref="EventId"/>, para los avisos con código estable).</summary>
+public sealed record clsRegistroLog(LogLevel Nivel, string Mensaje, Exception? Excepcion, EventId Evento = default);
 
 /// <summary>Proveedor de logs en memoria: captura la categoría de cada registro (para verificar, p. ej., que Polly no avisa).</summary>
 public sealed class clsProveedorLogsFalso : ILoggerProvider

@@ -224,7 +224,8 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
         ArgumentNullException.ThrowIfNull(tabla);
         object[] lineas = [.. tabla.Rows.Select(fila =>
         {
-            var linea = new Dictionary<string, object?> { ["peso_kg"] = 28_000m };
+            // HU-032 (#197): una fila solo con el peso exige el vehículo elegido (salvo Contenedor).
+            var linea = new Dictionary<string, object?> { ["peso_kg"] = 28_000m, ["tipo_vehiculo"] = "3S3" };
             foreach (var (columna, valor) in fila.Where(c => !string.IsNullOrWhiteSpace(c.Value)))
             {
                 linea[columna] = _columnasNumericas.Contains(columna) ? decimal.Parse(valor, CultureInfo.InvariantCulture)
@@ -311,11 +312,11 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
         var lineas = Enumerable.Range(0, filas + 1).Select(i =>
         {
             // La línea de más repite la ruta de la primera (municipios conocidos): su único error es la fila que no existe.
-            var (origen, destino, _, toneladas) = clsPliegoMuestra.Ruta(i % filas);
+            var (origen, destino, vehiculo, toneladas) = clsPliegoMuestra.Ruta(i % filas);
             var linea = new Dictionary<string, object?>
             {
                 ["fila"] = i, ["origen"] = origen, ["destino"] = destino, ["tipologia"] = "CargaSeca",
-                ["valor_mercancia"] = 50_000_000m,
+                ["valor_mercancia"] = 50_000_000m, ["tipo_vehiculo"] = vehiculo,
             };
             if (i != filas - 1)
             {

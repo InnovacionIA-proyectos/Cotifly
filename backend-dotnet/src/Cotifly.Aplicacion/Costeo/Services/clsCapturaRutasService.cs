@@ -6,6 +6,7 @@ using Cotifly.Aplicacion.Licitaciones.Services;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Cotifly.Aplicacion.Costeo.Services;
 
@@ -61,8 +62,25 @@ public sealed class clsCapturaRutasService(
     IClsCostosConexosNexo costosConexos,
     IClsPlanificadorCamiones planificador,
     ILogger<clsCapturaRutasService> logger,
-    IClsCubicador? cubicador = null) : IClsCapturaRutasService
+    IClsCubicador? cubicador = null,
+    IOptions<clsOpcionesCaptura>? opcionesCaptura = null) : IClsCapturaRutasService
 {
+    /// <summary>
+    /// HU-032 (#197): ¿el vehículo elegido cuenta? (<c>Captura:AceptarVehiculoCliente</c>, encendida por defecto). Apagada es el
+    /// interruptor de reversa: el elegido se ignora (lo borra la captura) y no se exige <c>VEHICULO_REQUERIDO</c>.
+    /// </summary>
+    private bool AceptaVehiculo => opcionesCaptura?.Value.AceptarVehiculoCliente ?? true;
+
+    /// <summary>
+    /// HU-032 (#197): ¿el vehículo elegido de la ruta se valida contra Nexo ANTES de guardar? Solo si se sabe que se va a usar: la ruta no
+    /// se puede cubicar (no todas sus mercancías son cubicables) o no hay cubicador configurado. Si la ruta va al cubicador, el elegido es
+    /// solo el respaldo: se valida tarde, si se llega a usar (<see cref="clsPlanificadorCamionesCubicador"/>).
+    /// </summary>
+    private bool ValidaVehiculoAntes(clsLineaSolicitudCosteo linea) =>
+        linea.Cubicabilidad != CubicabilidadRuta.Cubicable || cubicador is not { EstaConfigurado: true };
+    /// <summary>Campo de la clase de viaje en los errores por ruta.</summary>
+    private const string CampoClaseViaje = "clase_viaje";
+
     /// <summary>Máximo de servicios conexos por ruta.</summary>
     public const int MaximoConexosPorRuta = 20;
 
@@ -101,8 +119,43 @@ public sealed class clsCapturaRutasService(
             }
         }
 
-        var validadas = await filas.ValidarAsync(usuarioId, rutas, previos, cancellationToken);
+        // HU-032 (#197): el vehículo elegido de una ruta que va al cubicador no se valida aquí (validación tardía): se aparta de la línea
+        // que se valida contra los catálogos de Nexo y se devuelve tal cual después.
+        var diferidos = rutas
+            .Select(r => r?.Linea is { } l && !ValidaVehiculoAntes(l) && (l.TipoVehiculo is not null || l.Carroceria is not null) ? l : null)
+            .ToList();
+        IReadOnlyList<clsLineaLicitacionEntrada?> paraValidar = diferidos.All(d => d is null)
+            ? rutas
+            : [.. rutas.Select((r, i) => diferidos[i] is { } l ? r! with { Linea = l with { TipoVehiculo = null, Carroceria = null } } : r)];
+        var validadas = await filas.ValidarAsync(usuarioId, paraValidar, previos, cancellationToken);
+        if (!ReferenceEquals(paraValidar, rutas))
+        {
+            validadas = validadas with
+            {
+                Lineas = [.. validadas.Lineas.Select((r, i) => i < diferidos.Count && diferidos[i] is { } original && r.Linea is { } linea
+                    ? r with { Linea = linea with { TipoVehiculo = Limpio(original.TipoVehiculo), Carroceria = Limpio(original.Carroceria) } }
+                    : r)],
+            };
+        }
+
         var errores = new List<clsErrorFilaLicitacion>(validadas.Errores);
+
+        // HU-032 (#197): VEHICULO_REQUERIDO va después de los errores de catálogo y municipios de su ruta (el orden final es por ruta). B4:
+        // una ruta cuya clase de viaje ya tiene un error (mal escrita o fuera del catálogo) no se juzga: la exención depende de la clase, y
+        // el comercial vería dos errores por uno solo.
+        var claseConError = validadas.Errores
+            .Where(e => e.Indice is not null && e.Campo == CampoClaseViaje)
+            .Select(e => e.Indice!.Value)
+            .ToHashSet();
+        for (var i = 0; i < rutas.Count; i++)
+        {
+            if (rutas[i] is { } ruta && !claseConError.Contains(i)
+                && !ruta.Linea.ErroresCaptura().Any(e => e.Campo == CampoClaseViaje)
+                && VehiculoRequerido(ruta.Linea) is { } requerido)
+            {
+                errores.Add(new clsErrorFilaLicitacion(i, ruta.Fila, requerido.Campo, requerido.Codigo, requerido.Mensaje));
+            }
+        }
         // Con un catálogo de Nexo caído (el de municipios, o el maestro que se consultó primero y oculta si el de municipios respondió) los
         // ids que faltan no se exigen aquí: la captura responde 503 y se validan al volver a enviarla. Con el catálogo de municipios
         // disponible, un nombre que no se pudo resolver ya trae su propio error.
@@ -186,6 +239,38 @@ public sealed class clsCapturaRutasService(
         return validadas with { Errores = [.. errores.OrderBy(e => e.Indice ?? -1)], NoDisponible = noDisponible };
     }
 
+    /// <summary>
+    /// HU-032 (#197): <c>VEHICULO_REQUERIDO</c> en <c>tipo_vehiculo</c> según <see cref="FaltaVehiculo"/>; <c>null</c> si no aplica o la
+    /// bandera <c>Captura:AceptarVehiculoCliente</c> está apagada.
+    /// </summary>
+    private clsErrorCampo? VehiculoRequerido(clsLineaSolicitudCosteo? linea) =>
+        AceptaVehiculo && linea is not null
+        && FaltaVehiculo(linea, opcionesCaptura?.Value.ClasesSinVehiculo, cubicador is { EstaConfigurado: true })
+            ? new clsErrorCampo("tipo_vehiculo", clsCodigosLineaSolicitud.VehiculoRequerido, MensajeVehiculoRequerido)
+            : null;
+
+    /// <summary>Mensaje de <c>VEHICULO_REQUERIDO</c> (la captura, la edición y la re-solicitud con <c>datos_carga</c>).</summary>
+    public const string MensajeVehiculoRequerido =
+        "La ruta no se puede cubicar (solo trae el peso o mercancías sin medidas) y no trae tipo_vehiculo: elige el vehículo "
+        + "(GET /web/catalogos-flete). Solo una ruta de una clase de viaje exenta (por defecto, Contenedor) puede ir sin vehículo.";
+
+    /// <summary>
+    /// HU-032 (#197): la regla ÚNICA de <c>VEHICULO_REQUERIDO</c> (captura, edición y re-solicitud con <c>datos_carga</c>): la ruta no se
+    /// puede cubicar (solo el peso o mercancías sin medidas, también una ruta mixta), su clase de viaje no es una de
+    /// <paramref name="clasesSinVehiculo"/> (<c>Captura:ClasesSinVehiculoObligatorio</c>, por defecto Contenedor) y no trae vehículo. La
+    /// carrocería es opcional: Nexo autocostea Cupo con el tipo de vehículo. Una mercancía mal digitada (o, con
+    /// <paramref name="cubicadorConfigurado"/>, una con medidas y sin código: <c>CAMPO_REQUERIDO</c> en su código) ya trae su error: la ruta
+    /// no se juzga hasta corregirla. La edición solo la aplica a una ruta nueva o que cambia (B3).
+    /// </summary>
+    public static bool FaltaVehiculo(clsLineaSolicitudCosteo linea, IReadOnlyCollection<string>? clasesSinVehiculo, bool cubicadorConfigurado)
+    {
+        ArgumentNullException.ThrowIfNull(linea);
+        return linea.ExigeVehiculoElegido(clasesSinVehiculo) && string.IsNullOrWhiteSpace(linea.TipoVehiculo)
+               && linea.Posiciones.All(p => p is not null && p.PrimerError(1) is null && !(cubicadorConfigurado && p.ConMedidas && !p.VaAlCubicador()));
+    }
+
+    private static string? Limpio(string? valor) => string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
+
     private static clsErrorFilaLicitacion ConexoNoEncontrado(int ruta, int? fila, int indice, string id) =>
         new(ruta, fila, $"servicios_conexos[{indice}].id_servicio_conexo", clsCodigosLineaSolicitud.ConexoNoEncontrado,
             $"El servicio conexo '{id}' no está activo en el catálogo de Nexo (GET /web/servicios-conexos).");
@@ -238,18 +323,24 @@ public sealed class clsCapturaRutasService(
             if (rutas[i].PlanVigente is { } vigente)
             {
                 // HU-028: la carga y la clase de viaje no cambiaron: se conservan los camiones vigentes (sin llamar al cubicador).
-                preparadas.Add(new clsRutaCapturada(linea, lineaNegocioId, indiceOrigen, vigente.Camiones, conexos, rutaId, vigente.Cubicacion));
+                preparadas.Add(new clsRutaCapturada(linea, lineaNegocioId, indiceOrigen, vigente.Camiones, conexos, rutaId, vigente.Cubicacion)
+                {
+                    AvisosVehiculo = vigente.Avisos,
+                });
                 continue;
             }
 
-            if (cubicarDespues)
+            if (cubicarDespues && linea.Cubicabilidad == CubicabilidadRuta.Cubicable)
             {
                 // HU-023.5 (#160): el camión provisional (sin vehículo, con el peso de la ruta) lo reemplaza la cubicación en segundo plano.
+                // HU-032 (#197): va sin el vehículo elegido (no se ha validado: se valida si el cubicador no escoge); la ruta lo guarda.
                 preparadas.Add(new clsRutaCapturada(
-                    linea, lineaNegocioId, indiceOrigen, clsPlanificadorCamionSinVehiculo.Camiones(linea), conexos, rutaId, CubicacionPendiente: true));
+                    linea, lineaNegocioId, indiceOrigen, [new clsCamionPlaneado(null, null, clsPlanificadorCamionSinVehiculo.PesoTotal(linea))],
+                    conexos, rutaId, CubicacionPendiente: true));
                 continue;
             }
 
+            // HU-032 (#197): una fila sin mercancías cubicables no espera al cubicador (no lo llama): se planifica ya, con el vehículo elegido.
             var plan = await planificador.PlanificarAsync(usuarioId, rutaId, linea, cancellationToken);
             if (plan.EsFallo)
             {
@@ -259,7 +350,10 @@ public sealed class clsCapturaRutasService(
                 return new clsRutasPreparadas([], [], ConRuta(plan.Error, i));
             }
 
-            preparadas.Add(new clsRutaCapturada(linea, lineaNegocioId, indiceOrigen, plan.Valor.Camiones, conexos, rutaId, plan.Valor.Cubicacion));
+            preparadas.Add(new clsRutaCapturada(linea, lineaNegocioId, indiceOrigen, plan.Valor.Camiones, conexos, rutaId, plan.Valor.Cubicacion)
+            {
+                AvisosVehiculo = plan.Valor.Avisos,
+            });
         }
 
         return errores.Count > 0 ? new clsRutasPreparadas([], errores, null) : new clsRutasPreparadas(preparadas, [], null);
@@ -398,8 +492,9 @@ public sealed class clsCapturaRutasService(
         if (p.IdTipoMercancia is not { } id || id == Guid.Empty)
         {
             // Sin cubicador configurado no hay de dónde sacar el código (GET /web/tipos-mercancia responde 503): se guarda NULL y la
-            // ruta va al respaldo. Con cubicador es obligatorio.
-            return exigeCodigo
+            // ruta va al respaldo. Con cubicador es obligatorio en una mercancía con medidas. HU-032 (#197): una mercancía sin medidas ni
+            // código es "no cubicable": se acepta (la ruta usa el vehículo elegido).
+            return exigeCodigo && !p.EsNoCubicable && p.PrimerError(m + 1) is null
                 ? new clsErrorCampo(campoCodigo, clsCodigosLineaSolicitud.CampoRequerido,
                     $"La mercancía {m + 1} debe traer el código del catálogo del cubicador (codigo_mercancia, GET /web/tipos-mercancia).")
                 : null;

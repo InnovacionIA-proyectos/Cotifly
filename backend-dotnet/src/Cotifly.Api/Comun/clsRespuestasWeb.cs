@@ -77,6 +77,9 @@ public static class clsRespuestasWeb
         clsCodigosError.PdfYaEnviado,
         clsCodigosError.LineaSinCotizacionNexo,
         clsCodigosError.EstadoNoPermite,
+        // HU-028.1 (#183): ruta rechazada por la Mesa de Costeo (margen o conexos) y PDF con todas las rutas rechazadas.
+        clsCodigosError.RutaRechazada,
+        clsCodigosError.SinRutasCotizables,
         // D4 (E2E 2026-10-16): la misma Idempotency-Key con otro cuerpo (antes 400 ErrorWeb).
         clsCodigosAplicacion.IdempotencyKeyReutilizada,
     };
@@ -99,6 +102,8 @@ public static class clsRespuestasWeb
             clsCodigosError.CorreoDeshabilitado or clsCodigosError.CosteoNexoNoDisponible or clsCodigosError.CosteoNexoTiempoAgotado
                 or clsCodigosAplicacion.RegionalNoDisponible or clsCodigosError.CatalogosFleteNoDisponible or clsCodigosError.NexoNoDisponible
                 or clsCodigosError.MunicipiosNoDisponible or clsCodigosError.PdfRenderNoDisponible
+                // OBS-1021B-3 (E2E 2026-10-21): la búsqueda de clientes sin Nexo es 503, como los demás catálogos (antes 400).
+                or clsCodigosError.ClienteBusquedaNoDisponible
                 or clsCodigosError.CubicadorNoDisponible or clsCodigosError.CubicadorRespuestaInvalida or clsCodigosError.CubicadorNoAutorizado =>
                 new ObjectResult(clsErrorNegocioWeb.Desde(error)) { StatusCode = StatusCodes.Status503ServiceUnavailable },
             clsCodigosAplicacion.RegionalNoAsignada => new ConflictObjectResult(clsErrorNegocioWeb.Desde(error)),

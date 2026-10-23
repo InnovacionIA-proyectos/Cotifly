@@ -194,6 +194,11 @@ public sealed class clsAjusteMargenCosteoService(
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(ruta);
+        if (cotizacion.ValidarRutaNoRechazada(ruta) is { } rechazada)
+        {
+            return rechazada;
+        }
+
         if (ruta.CostoFinal is not { } costo)
         {
             return new clsErrorDominio(clsCodigosError.CosteoNoListo,
@@ -205,7 +210,8 @@ public sealed class clsAjusteMargenCosteoService(
             return error;
         }
 
-        var otras = cotizacion.Rutas.Where(r => r.Id != ruta.Id).ToList();
+        // HU-028.1 (#183): las rutas rechazadas por la Mesa no cuentan en el total.
+        var otras = cotizacion.RutasCotizables.Where(r => r.Id != ruta.Id).ToList();
         decimal? total = otras.All(r => r.PrecioFinalLinea is not null) ? precio!.Value + otras.Sum(r => r.PrecioFinalLinea!.Value) : null;
         return new clsRecalculoMargen(total, ruta, ruta.PrecioFinalLinea, precio!.Value);
     }

@@ -179,7 +179,7 @@ public sealed class clsCatalogosMaestrosNexo(
     }
 
     /// <summary>El cuerpo completo si no supera <see cref="MaximoBytes"/>; <c>null</c> si lo supera.</summary>
-    private static async Task<ReadOnlyMemory<byte>?> LeerConLimiteAsync(HttpContent contenido, CancellationToken cancellationToken)
+    internal static async Task<ReadOnlyMemory<byte>?> LeerConLimiteAsync(HttpContent contenido, CancellationToken cancellationToken)
     {
         await using var flujo = await contenido.ReadAsStreamAsync(cancellationToken);
         using var memoria = new MemoryStream();

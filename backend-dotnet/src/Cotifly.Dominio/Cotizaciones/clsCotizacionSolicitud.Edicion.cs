@@ -145,7 +145,7 @@ public sealed partial class clsCotizacionSolicitud
             var orden = i + 1;
             if (editada.RutaExistenteId is { } id)
             {
-                _rutas.First(r => r.Id == id).AplicarEdicion(orden, editada.Ruta, edicion.Encabezado, editada.Replanificada);
+                _rutas.First(r => r.Id == id).AplicarEdicion(orden, editada.Ruta, edicion.Encabezado, editada.Replanificada, editada.ReincluirRechazados);
                 continue;
             }
 
@@ -274,7 +274,7 @@ public sealed partial class clsCotizacionSolicitud
             ruta.AgregarVehiculo(camion);
         }
 
-        ruta.RegistrarCubicacion(capturada.Cubicacion);
+        ruta.RegistrarCubicacion(capturada.Cubicacion, capturada.AvisosVehiculo);
         foreach (var conexo in capturada.Conexos ?? [])
         {
             ruta.AgregarOActualizarConexo(conexo);

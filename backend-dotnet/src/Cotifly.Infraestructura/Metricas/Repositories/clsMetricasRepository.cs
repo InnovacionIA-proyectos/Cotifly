@@ -35,7 +35,9 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
     /// luego mayor <c>version</c>); ajustes de la vigente con <c>OUTER APPLY</c> por <c>cotizacionId</c> (índice del 0002).
     /// <c>{0}</c>/<c>{1}</c>/<c>{2}</c>: origen y destino de la ruta 1 y <c>deadline</c> (o <c>NULL</c> si la columna no existe);
     /// <c>{3}</c>: la lectura de la ruta 1 (fragmentos fijos del código, nunca datos del usuario). Costo = suma de <c>costoFinal</c> de las
-    /// rutas (solo si todas lo tienen); margen = promedio de las rutas ponderado por su costo (sin costo, el promedio simple).
+    /// rutas (solo si todas lo tienen); margen = promedio de las rutas ponderado por su costo (sin costo, el promedio simple). HU-028.1
+    /// (#183): las rutas <c>rechazada</c> por la Mesa de Costeo no cuentan (ni en el costo ni en el margen): el valor cotizado
+    /// (<c>precioFinal</c>) ya las excluye.
     /// I1 (HU-023): <c>WITH (FORCESEEK)</c> obliga a buscar la cabecera por <c>ix_cotizaciones_usuarioId_createdAt</c> (filtro por
     /// <c>usuarioId</c>), así la lectura no toma candados S en filas de otros comerciales y no se cruza con su polling. La solución de
     /// fondo, que también cubre el choque con las escrituras del mismo comercial, es <c>READ_COMMITTED_SNAPSHOT</c>: decisión del DBA.
@@ -57,6 +59,7 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
                             ELSE CAST(AVG(l.margenAplicado) AS decimal(9,4)) END AS margen
                 FROM dbo_cotifly.CotizacionLineasSolicitud l
                 WHERE l.cotizacionSolicitudId = c.id
+                  AND (l.estadoCosteo IS NULL OR l.estadoCosteo <> N'rechazada')
             ) rr
             {3}
             WHERE c.usuarioId IN (SELECT CAST([value] AS uniqueidentifier) FROM OPENJSON(@usuarios))
@@ -87,6 +90,13 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
                    SUM(m.diferencia) AS sumaDiferencias, SUM(ABS(m.diferencia)) AS sumaDiferenciasAbs
             FROM dbo_cotifly.MargenAjustes m
             WHERE m.cotizacionId = v.id
+              -- HU-028.1 (#183, B2): como en SqlRutas, no cuentan los ajustes de una ruta que la Mesa rechazó después, ni (si TODAS las rutas
+              -- están rechazadas) los que no tienen ruta: así la cabecera suma exactamente lo que suman sus rutas.
+              AND NOT EXISTS (SELECT 1 FROM dbo_cotifly.CotizacionLineasSolicitud x
+                              WHERE x.id = m.lineaSolicitudId AND x.cotizacionSolicitudId = m.cotizacionId AND x.estadoCosteo = N'rechazada')
+              AND (EXISTS (SELECT 1 FROM dbo_cotifly.CotizacionLineasSolicitud y
+                           WHERE y.cotizacionSolicitudId = v.id AND (y.estadoCosteo IS NULL OR y.estadoCosteo <> N'rechazada'))
+                   OR NOT EXISTS (SELECT 1 FROM dbo_cotifly.CotizacionLineasSolicitud z WHERE z.cotizacionSolicitudId = v.id))
         ) a
         WHERE v.orden = 1 AND v.primeraCreacion >= @desde AND v.primeraCreacion < @hasta
         """;
@@ -95,7 +105,8 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
     /// Rutas de las versiones vigentes (<c>@cotizaciones</c>, JSON de ids) con su línea de negocio y el resumen de sus
     /// <c>MargenAjustes</c> (HU-021.10, decisión 8). Un ajuste cuenta en la ruta de su <c>lineaSolicitudId</c>; si no tiene ruta, o la
     /// ruta no es de su cotización, cuenta en la primera ruta (menor <c>orden</c>), como la migración del 0009. Así la suma de las rutas
-    /// da exactamente los ajustes de la cotización (<c>OUTER APPLY</c> por <c>cotizacionId</c> de <see cref="SqlCotizaciones"/>).
+    /// da exactamente los ajustes de la cotización (<c>OUTER APPLY</c> por <c>cotizacionId</c> de <see cref="SqlCotizaciones"/>). HU-028.1
+    /// (#183): las rutas <c>rechazada</c> no salen (no tienen precio; una ruta rechazada no admite ajustes de margen).
     /// </summary>
     private const string SqlRutas = """
         WITH rutas AS (
@@ -104,6 +115,7 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
             FROM dbo_cotifly.CotizacionLineasSolicitud l
             LEFT JOIN dbo_cotifly.MargenesPolitica mp ON mp.id = l.lineaNegocioId
             WHERE l.cotizacionSolicitudId IN (SELECT CAST([value] AS uniqueidentifier) FROM OPENJSON(@cotizaciones))
+              AND (l.estadoCosteo IS NULL OR l.estadoCosteo <> N'rechazada')
         )
         SELECT r.cotizacionSolicitudId AS CotizacionId, r.orden AS Orden, r.lineaNegocioId AS LineaNegocioId, r.lineaNegocio AS LineaNegocio,
                r.costoFinal AS Costo, r.precioFinalLinea AS PrecioFinal, r.margenAplicado AS MargenAplicado,

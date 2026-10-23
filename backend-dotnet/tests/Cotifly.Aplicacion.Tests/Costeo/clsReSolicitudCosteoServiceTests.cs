@@ -7,6 +7,7 @@ using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Aplicacion.Cotizaciones.DTOs;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Cotizaciones.Services;
+using Cotifly.Aplicacion.Cubicacion.Interfaces;
 using Cotifly.Aplicacion.Licitaciones.Services;
 using Cotifly.Aplicacion.Margen.Repositories;
 using Cotifly.Dominio.Auditoria;
@@ -55,6 +56,14 @@ public sealed class clsReSolicitudCosteoServiceTests
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(_cotizacion.Folio, _ana, Arg.Any<CancellationToken>()).Returns(_cotizacion);
         _cotizaciones.When(r => r.Agregar(Arg.Any<clsCotizacionSolicitud>())).Do(ci => _agregada = ci.Arg<clsCotizacionSolicitud>());
         _politicas.ObtenerPorIdAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(_politica);
+        // B4 (HU-032): el validador devuelve la línea escrita como en Nexo (aquí, en mayúsculas, como Canonica).
+        _catalogos.ValidarLineasAsync(Arg.Any<Guid>(), Arg.Any<IReadOnlyList<clsLineaSolicitudCosteo>>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                var lineas = ci.Arg<IReadOnlyList<clsLineaSolicitudCosteo>>();
+                return new clsValidacionCatalogoLineas([.. lineas.Select(_ => (IReadOnlyList<clsErrorCampo>)[])], null,
+                    [.. lineas.Select(l => l with { TipoVehiculo = l.TipoVehiculo?.Trim().ToUpperInvariant(), Carroceria = l.Carroceria?.Trim().ToUpperInvariant() })]);
+            });
         _monedas.FijarAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(ci => new clsMonedaFijada(ci.Arg<string?>() ?? "COP", ci.Arg<string?>() == "USD" ? 4_012.35m : 0m));
         _registro.When(r => r.Registrar(Arg.Any<clsEventoHerramienta>())).Do(ci =>
@@ -218,20 +227,22 @@ public sealed class clsReSolicitudCosteoServiceTests
         ruta.LineaNegocioId.Should().Be(3);
         ruta.Mercancias.Should().HaveCount(2).And.OnlyContain(m => m.LineaSolicitudId == ruta.Id);
 
-        // HU-021.9: el peso cambió, así que el camión anterior (3S3) se borra y se vuelve a planificar; el tipo_vehiculo de datos_carga
-        // se ignora (decisión 7: lo define el cubicador o la Mesa de Costeo de Nexo).
+        // HU-021.9: el peso cambió, así que el camión anterior (3S3) se borra y se vuelve a planificar. HU-032 (#197): el tipo_vehiculo de
+        // datos_carga es el vehículo elegido nuevo de la ruta (la carrocería elegida se conserva) y la versión nueva lo guarda.
         var camion = ruta.Vehiculos.Should().ContainSingle().Subject;
-        (camion.TipoVehiculo, camion.Carroceria, camion.PesoKg).Should().Be(((string?)null, (string?)null, 28_400m));
-        // Las mercancías de la muestra no tienen codigo_mercancia (filas anteriores al script 02): el cubicador no las puede cubicar y va el
-        // respaldo de un camión sin vehículo con el peso de la ruta (corrección del auditor de #136).
-        await _planificador.DidNotReceiveWithAnyArgs().PlanificarAsync(default, default, default!, Ct);
+        (camion.TipoVehiculo, camion.Carroceria, camion.PesoKg).Should().Be(("2S3", "PORTACONTENEDORES", 28_400m));
+        (ruta.TipoVehiculoElegido, ruta.CarroceriaElegida).Should().Be(("2S3", "PORTACONTENEDORES"));
+        // Las mercancías de la muestra no tienen codigo_mercancia (filas anteriores al script 02): no se pueden cubicar. HU-032: el
+        // planificador no llama al cubicador y la ruta lleva el vehículo elegido con el peso de la ruta.
+        await _planificador.Received(1).PlanificarAsync(_ana, Arg.Any<Guid>(), Arg.Is<clsLineaSolicitudCosteo>(l => l.TipoVehiculo == "2S3"), Arg.Any<CancellationToken>());
         resultado.Valor.RutasReplanificadas.Should().Equal(1);
         await _unidad.Received(1).GuardarCambiosAsync(Arg.Any<CancellationToken>());
         await _envio.Received(1).EnviarGuardadaAsync(nueva, _politica, _ana, Arg.Any<string?>());
         _cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.CosteoVencido, "la original no cambia su costeo");
         _cotizacion.SolicitudNexoId.Should().Be("sol-vieja");
         _eventos.Should().StartWith(new[] { "instantanea", "reservar:costeo_vencido:v5" }, "la versión de la original se reserva antes de crear la nueva");
-        await _catalogos.Received(1).ValidarAsync(_ana, Arg.Is<clsLineaSolicitudCosteo>(l => l.TipoVehiculo != "2S3"), Arg.Any<CancellationToken>());
+        // HU-032: la ruta no se puede cubicar, así que el vehículo elegido se valida contra Nexo antes de crear la versión.
+        await _catalogos.Received(1).ValidarAsync(_ana, Arg.Is<clsLineaSolicitudCosteo>(l => l.TipoVehiculo == "2S3"), Arg.Any<CancellationToken>());
     }
 
     // --- HU-028 (#186): defectos A y C de datos_carga ---
@@ -578,6 +589,91 @@ public sealed class clsReSolicitudCosteoServiceTests
         return licitacion;
     }
 
+    // --- HU-028.1 (#183, decisión del 2026-10-20): los camiones rechazados por la Mesa de Costeo no se reenvían por defecto ---
+
+    /// <summary>
+    /// <see cref="VencidaDeDosRutas"/> con el segundo camión de la ruta 1 rechazado ("Sin cupo") y, si <paramref name="todaLaRuta2"/>, el
+    /// camión de la ruta 2 ("Sin operación"); con <paramref name="todos"/>, también el primero de la ruta 1.
+    /// </summary>
+    private clsCotizacionSolicitud ConRechazos(bool todaLaRuta2 = true, bool todos = false)
+    {
+        var licitacion = VencidaDeDosRutas();
+        var (ruta1, ruta2) = (licitacion.RutasOrdenadas[0], licitacion.RutasOrdenadas[1]);
+        var lecturas = new List<clsCosteoCamionNexo> { new(ruta1.VehiculosOrdenados[1].Id, EstadoCosteo.Rechazada, true, MotivoRechazo: "Sin cupo") };
+        if (todaLaRuta2 || todos)
+        {
+            lecturas.Add(new(ruta2.VehiculosOrdenados[0].Id, EstadoCosteo.Rechazada, true, MotivoRechazo: "Sin operación"));
+        }
+
+        if (todos)
+        {
+            lecturas.Add(new(ruta1.VehiculosOrdenados[0].Id, EstadoCosteo.Rechazada, true, MotivoRechazo: "Sin cupo"));
+        }
+
+        licitacion.AplicarFotoNexo(lecturas, DateTimeOffset.UtcNow).EsExitoso.Should().BeTrue();
+        return licitacion;
+    }
+
+    [Fact]
+    public async Task HU0281_EnElMismoFolioLosCamionesRechazadosNoViajanSiguenRechazadosYLaRespuestaAvisaQueSeOmitieron()
+    {
+        var licitacion = ConRechazos();
+        IReadOnlyList<clsVehiculoLineaSolicitud>? enviados = null;
+        _envio.When(e => e.EnviarGuardadaAsync(licitacion, Arg.Any<clsMargenPolitica?>(), Arg.Any<Guid>(), Arg.Any<string?>()))
+            .Do(ci => enviados = [.. licitacion.LineasNexo().Select(l => l.Camion)]);
+
+        var resultado = await Servicio().ReSolicitarAsync(_ana, licitacion.Folio, Entrada(), Version, null, Ct);
+
+        resultado.EsExitoso.Should().BeTrue(resultado.EsFallo ? resultado.Error.Mensaje : null);
+        var (ruta1, ruta2) = (licitacion.RutasOrdenadas[0], licitacion.RutasOrdenadas[1]);
+        enviados.Should().Equal([ruta1.VehiculosOrdenados[0]], "solo viaja el camión no rechazado; la ruta 2 (toda rechazada) se omite");
+        ruta1.VehiculosOrdenados[1].Should().Match<clsVehiculoLineaSolicitud>(v => v.FueraDelEnvio && v.MotivoRechazo == "Sin cupo");
+        (ruta2.Rechazada, ruta2.ViajaANexo).Should().Be((true, false), "la ruta queda visible como rechazada, sin precio");
+        resultado.Valor.AvisoRechazos.Should().StartWith("No se volvieron a enviar a Nexo")
+            .And.Contain("ruta 1 (").And.Contain("1 de 2 camiones. Motivo: Sin cupo")
+            .And.Contain("ruta 2 (").And.Contain("la ruta completa (1 camión)").And.Contain("Motivo: Sin operación");
+    }
+
+    [Fact]
+    public async Task HU0281_LaVersionNuevaCopiaLosRechazadosComoRechazadosSinEnviarlos()
+    {
+        var licitacion = ConRechazos();
+
+        var resultado = await Servicio().ReSolicitarAsync(_ana, licitacion.Folio, Entrada() with { NuevaVersion = true }, Version, null, Ct);
+
+        resultado.EsExitoso.Should().BeTrue(resultado.EsFallo ? resultado.Error.Mensaje : null);
+        var nueva = _agregada!;
+        nueva.RutasOrdenadas.Select(r => r.Vehiculos.Count).Should().Equal([2, 1], "se copian todos (el número de camiones decide cómo viajan los demás)");
+        var copiado = nueva.RutasOrdenadas[0].VehiculosOrdenados[1];
+        (copiado.EstadoCosteo, copiado.MotivoRechazo, copiado.RechazadaAt, copiado.FueraDelEnvio).Should().Be(
+            ((EstadoCosteo?)EstadoCosteo.Rechazada, (string?)"Sin cupo", licitacion.RutasOrdenadas[0].VehiculosOrdenados[1].RechazadaAt, true),
+            "trazable: el mismo motivo y la misma fecha");
+        nueva.RutasOrdenadas[1].Rechazada.Should().BeTrue();
+        nueva.LineasNexo().Select(l => l.Camion).Should().Equal([nueva.RutasOrdenadas[0].VehiculosOrdenados[0]]);
+        resultado.Valor.AvisoRechazos.Should().StartWith("La versión nueva copia como rechazados").And.Contain("Sin operación");
+        await _envio.Received(1).EnviarGuardadaAsync(nueva, Arg.Any<clsMargenPolitica?>(), _ana, Arg.Any<string?>());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task HU0281_ConTodosLosCamionesRechazadosNoHayNadaQueEnviarYResponde409SinTocarNada(bool versionNueva)
+    {
+        var licitacion = ConRechazos(todos: true);
+
+        var resultado = await Servicio().ReSolicitarAsync(_ana, licitacion.Folio, Entrada() with { NuevaVersion = versionNueva }, Version, null, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.SinRutasCotizables);
+        resultado.Error.Detalle.Should().Be(clsReSolicitudCosteoService.MotivoTodosRechazados);
+        resultado.Error.Mensaje.Should().Contain("reincluir_rechazados");
+        licitacion.VersionNegocio.Should().Be(Version);
+        _agregada.Should().BeNull();
+        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
+        await _envio.DidNotReceiveWithAnyArgs().EnviarGuardadaAsync(default!, default, default, default);
+        (await Servicio().ValidarAsync(_ana, licitacion, Entrada() with { NuevaVersion = versionNueva }, Ct))!.Codigo
+            .Should().Be(clsCodigosError.SinRutasCotizables, "la propuesta del asistente usa las mismas reglas");
+    }
+
     [Fact]
     public async Task LaVersionNuevaEnUsdFijaLaTrmDelDiaYLaOriginalConservaLaSuya()
     {
@@ -638,6 +734,45 @@ public sealed class clsReSolicitudCosteoServiceTests
         _agregada.Should().BeNull();
         await _folios.DidNotReceiveWithAnyArgs().CrearNuevaVersionAsync<clsCotizacionSolicitud>(default, default, default!, Ct);
         await _envio.DidNotReceiveWithAnyArgs().EnviarGuardadaAsync(default!, default, default, default);
+    }
+
+    // --- HU-032 (#197): VEHICULO_REQUERIDO alineado con la captura (B3 y B4) ---
+
+    /// <summary>Datos de carga que pasan la ruta a Cupo, quitan el vehículo y dejan una mercancía con medidas y sin código.</summary>
+    private static clsCambiosCarga SinVehiculoConMercanciaSinCodigo() => new()
+    {
+        Presentes = new HashSet<string>
+        {
+            clsCambiosCarga.CampoTipoVehiculo, clsCambiosCarga.CampoPosiciones, clsCambiosCarga.CampoPesoKg, clsCambiosCarga.CampoClaseViaje,
+            clsCambiosCarga.CampoClaseContenedor, clsCambiosCarga.CampoTipologia,
+        },
+        TipoVehiculo = null,
+        ClaseViaje = "Cupo",
+        ClaseContenedor = null,
+        Tipologia = "CargaSeca",
+        PesoKg = 1_000m,
+        Posiciones = [new clsPosicionCarga("Caja", 1, 100m, 100m, 100m, 1_000m)],
+    };
+
+    [Fact]
+    public async Task SinVehiculoYConUnaMercanciaSinCodigoLosDatosDeCargaSonVehiculoRequeridoSinCubicador()
+    {
+        var resultado = await Servicio().ReSolicitarAsync(_ana, _cotizacion.Folio, Entrada() with { DatosCarga = SinVehiculoConMercanciaSinCodigo() }, Version, null, Ct);
+
+        resultado.Error.Detalle.Should().Be(clsCodigosLineaSolicitud.VehiculoRequerido);
+        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
+    }
+
+    [Fact]
+    public async Task ConElCubicadorConfiguradoUnaMercanciaConMedidasYSinCodigoNoSeJuzgaComoVehiculoRequerido()
+    {
+        // Como la captura: con el cubicador esa mercancía ya trae su error de código, así que la ruta no se juzga por el vehículo.
+        var cubicador = Substitute.For<IClsCubicador>();
+        cubicador.EstaConfigurado.Returns(true);
+
+        var resultado = await Servicio(cubicador).ReSolicitarAsync(_ana, _cotizacion.Folio, Entrada() with { DatosCarga = SinVehiculoConMercanciaSinCodigo() }, Version, null, Ct);
+
+        (resultado.EsFallo && resultado.Error.Detalle == clsCodigosLineaSolicitud.VehiculoRequerido).Should().BeFalse();
     }
 
     [Fact]
@@ -838,9 +973,10 @@ public sealed class clsReSolicitudCosteoServiceTests
         clsReSolicitudCosteoService.ConexosConservados(cotizacion).Should().BeEmpty();
     }
 
-    private clsReSolicitudCosteoService Servicio() =>
+    private clsReSolicitudCosteoService Servicio(IClsCubicador? cubicador = null) =>
         new(_cotizaciones, _politicas, _folios, _envio, _catalogos, _filas, _monedas, _mis, _idempotencia, _unidad, _registro, _auditoria,
-            _planificador, new clsResolutorConexosCatalogo(_costos, _catalogoNexo), NullLogger<clsReSolicitudCosteoService>.Instance);
+            _planificador, new clsResolutorConexosCatalogo(_costos, _catalogoNexo), NullLogger<clsReSolicitudCosteoService>.Instance,
+            cubicador: cubicador);
 
     /// <summary>Validador de filas de licitación que deja pasar las líneas tal cual (cada prueba lo cambia si lo necesita).</summary>
     private static IClsValidadorFilasLicitacion FilasQuePasan()

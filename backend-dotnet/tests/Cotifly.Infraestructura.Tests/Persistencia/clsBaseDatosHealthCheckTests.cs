@@ -70,6 +70,21 @@ public sealed class clsBaseDatosHealthCheckTests
         resultado.Description.Should().Be(descripcion);
     }
 
+    [Theory]
+    [InlineData("CotizacionLineasSolicitud.pesoConTaraKg", clsBaseDatosHealthCheck.DescripcionEsquemaSin11)]
+    [InlineData("CotizacionLineasSolicitud.pesoConTaraKg|CotizacionesSolicitud.scorePrioridad", clsBaseDatosHealthCheck.DescripcionEsquemaSin09)]
+    [InlineData("CotizacionLineasSolicitud.pesoConTaraKg|CotizacionVehiculosLineaSolicitud.motivoRechazo", clsBaseDatosHealthCheck.DescripcionEsquemaSin10)]
+    [InlineData("CotizacionLineasSolicitud.pesoConTaraKg|CapturasIdempotentes.resultado", clsBaseDatosHealthCheck.DescripcionEsquemaSin06)]
+    [InlineData("CotizacionLineasSolicitud.pesoConTaraKg|CotizacionLineasSolicitud.condicionada", clsBaseDatosHealthCheck.DescripcionEsquemaSin02)]
+    [InlineData("CotizacionLineasSolicitud.pesoConTaraKg|Otra.columna", "esquema incompleto: falta CotizacionLineasSolicitud.pesoConTaraKg, Otra.columna")]
+    public void HU0301_SinEl11LaSondaPideEl11SoloCuandoNoFaltaUnScriptAnterior(string faltantes, string descripcion)
+    {
+        var resultado = clsBaseDatosHealthCheck.Clasificar(faltantes.Split('|'), cotizacionesViejas: false);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be(descripcion);
+    }
+
     internal static async Task<HealthCheckResult> EvaluarAsync(string? cadena)
     {
         await using var proveedor = clsServiciosPruebas.Crear(cadena, new clsRelojFalso());
@@ -183,6 +198,31 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
     }
 
     [Fact]
+    public async Task HU0301_ConEl10PeroSinEl11EsUnhealthyPorqueLeFaltaEl11()
+    {
+        // HU-030.1 (#184): el modelo EF mapea CotizacionLineasSolicitud.pesoConTaraKg de db/scripts/11_peso_con_tara.sql. Integración 1021:
+        // la base llega hasta el 10 (Scripts[ScriptsSin07 - 2], #183); hasta el 09 la sonda pide primero el 10.
+        await using var sin11 = await baseDatos.CrearBaseConScriptsAsync("dbSin11", clsBaseDatosPruebas.ScriptsSin07 - 2);
+
+        var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin11.Cadena);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be("esquema incompleto: falta 11");
+    }
+
+    [Fact]
+    public async Task HU032_ConEl11PeroSinEl12EsUnhealthyPorqueLeFaltaEl12()
+    {
+        // HU-032 (#197): el modelo EF mapea tipoVehiculoElegido y carroceriaElegida de la ruta (db/scripts/12_vehiculo_elegido.sql).
+        await using var sin12 = await baseDatos.CrearBaseConScriptsAsync("dbSin12", clsBaseDatosPruebas.ScriptsSin07 - 1);
+
+        var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin12.Cadena);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be("esquema incompleto: falta 12");
+    }
+
+    [Fact]
     public async Task HU0181_ConEl06PeroSinEl09EsUnhealthyPorqueLeFaltaEl09()
     {
         // HU-018.1 (#155): el modelo EF mapea CotizacionesSolicitud.scorePrioridad de db/scripts/09_score_prioridad.sql.
@@ -192,6 +232,18 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
 
         resultado.Status.Should().Be(HealthStatus.Unhealthy);
         resultado.Description.Should().Be("esquema incompleto: falta 09");
+    }
+
+    [Fact]
+    public async Task HU0281_ConEl09PeroSinEl10EsUnhealthyPorqueLeFaltaEl10()
+    {
+        // HU-028.1 (#183): el modelo EF mapea motivoRechazo y rechazadaAt del camión de db/scripts/10_rechazo_linea.sql.
+        await using var sin10 = await baseDatos.CrearBaseConScriptsAsync("dbSin10", clsBaseDatosPruebas.ScriptsHasta09);
+
+        var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin10.Cadena);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be("esquema incompleto: falta 10");
     }
 
     [Fact]

@@ -395,6 +395,35 @@ public sealed class clsCosteoNexoTests : IDisposable
         linea.NumeroLinea.Should().Be(1, "lo demás se lee igual");
     }
 
+    [Fact]
+    public void Hu183_LaLineaRechazadaTraeElEstadoYElMotivoDelRechazoDeNexo320()
+    {
+        // Nexo #320 (S6-HU-24.3): estadoLinea = "rechazada" y motivoRechazo al final de clsLineaCosteoDto; ni quién ni cuándo.
+        using var documento = JsonDocument.Parse(
+            """{"lineaId":"L1","clsRuta":"A → B","peso":1,"numeroLinea":2,"estadoLinea":"rechazada","motivoPendiente":null,"motivoRechazo":"  Ruta sin operación  "}""");
+
+        var linea = clsCosteoNexo.LeerLineaSolicitud(documento.RootElement);
+
+        (linea.EstadoLinea, linea.MotivoRechazo).Should().Be(("rechazada", "  Ruta sin operación  "));
+        linea.Situacion.Rechazada.Should().BeTrue();
+        linea.Situacion.MotivoRechazo.Should().Be("Ruta sin operación");
+        linea.NumeroLinea.Should().Be(2, "lo demás se lee igual");
+    }
+
+    [Theory]
+    [InlineData("""{"lineaId":"L1","clsRuta":"A → B","peso":1,"estadoLinea":"porCostear"}""")]
+    [InlineData("""{"lineaId":"L1","clsRuta":"A → B","peso":1,"estadoLinea":"rechazada","motivoRechazo":7}""")]
+    public void Hu183_SinMotivoRechazoONoTextoQuedaEnNullSinError(string json)
+    {
+        // Un Nexo con #309 y sin #320 no lo manda; uno que lo mandara con otro tipo tampoco rompe la lectura.
+        using var documento = JsonDocument.Parse(json);
+
+        var linea = clsCosteoNexo.LeerLineaSolicitud(documento.RootElement);
+
+        linea.MotivoRechazo.Should().BeNull();
+        linea.Situacion.MotivoRechazo.Should().BeNull();
+    }
+
     [Theory]
     [InlineData("""{"lineaId":"L1","clsRuta":"A → B","peso":1}""")]
     [InlineData("""{"lineaId":"L1","clsRuta":"A → B","peso":1,"estadoLinea":null,"motivoPendiente":null}""")]
@@ -502,16 +531,16 @@ public sealed class clsCosteoNexoTests : IDisposable
     }
 
     [Fact]
-    public void HU014_GrupoRutaYDatosDelCubicadorEncendidosYCodigosDelCubicadorSoloConocidosPorDefecto()
+    public void HU0311_GrupoRutaYDatosDelCubicadorEncendidosYCodigosDelCubicadorSiemprePorDefecto()
     {
-        // HU-023 (#176): Nexo ya desplegó grupoRutaId, idRecomendacionVehiculo y numeroLinea. HU-014 (#188, decisión del 2026-10-19,
-        // "enviar solo códigos conocidos"): los códigos del cubicador viajan solo si Nexo los conoce.
+        // HU-023 (#176): Nexo ya desplegó grupoRutaId, idRecomendacionVehiculo y numeroLinea. HU-031.1 (#194, decisión del 2026-10-20):
+        // los códigos del cubicador viajan siempre (resueltos por catálogo o alias; los demás, a la bandeja de normalización de Nexo).
         var opciones = new clsOpcionesNexo();
 
         opciones.EnviarGrupoRutaId.Should().BeTrue();
         opciones.EnviarDatosCubicador.Should().BeTrue();
         opciones.EnviarCodigosCubicador.Should().BeNull();
-        opciones.ModoCodigosCubicador.Should().Be(ModoCodigosCubicador.SoloConocidos);
+        opciones.ModoCodigosCubicador.Should().Be(ModoCodigosCubicador.Siempre);
     }
 
     [Fact]
@@ -545,9 +574,8 @@ public sealed class clsCosteoNexoTests : IDisposable
         Guid.TryParse(grupos[1], out _).Should().BeTrue();
         lineas.Select(l => l.GetProperty("idRecomendacionVehiculo").GetString()).Should().Equal(
             r1.ToString("D"), r2a.ToString("D"), r2b.ToString("D"), r3.ToString("D"));
-        // HU-014 (#188): por defecto (solo_conocidos) y sin catálogo de tipos de vehículo de Nexo, ningún código es conocido: no viajan;
-        // el camión va por su idRecomendacionVehiculo y su peso.
-        lineas.Select(l => l.TryGetProperty("tipoVehiculo", out _) || l.TryGetProperty("carroceria", out _)).Should().OnlyContain(conCodigos => !conCodigos);
+        // HU-031.1 (#194): por defecto (siempre) y sin catálogo ni alias de Nexo, los códigos del cubicador viajan tal cual.
+        lineas.Select(l => l.GetProperty("tipoVehiculo").GetString()).Should().Equal("3S3", "3S3", "C2", "2S2");
         lineas.Skip(1).Take(2).Select(l => l.GetProperty("peso").GetDecimal()).Should().Equal([20_000m, 4_000m], "con varios camiones, el peso de cada uno");
     }
 

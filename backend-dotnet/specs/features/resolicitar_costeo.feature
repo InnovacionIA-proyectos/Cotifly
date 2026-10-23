@@ -55,9 +55,9 @@ Característica: Re-solicitar el costeo a Nexo
     Entonces la respuesta tiene el estado 201 y cumple el esquema "CotizacionResumen" del contrato
     Y la respuesta trae el folio de "C1" con el sufijo "-v2" y la versión 2
     Y el encabezado Location apunta al costeo de la versión nueva
-    # HU-021.9: el peso cambió, así que los camiones se vuelven a planificar (hasta el cubicador, uno sin vehículo con el peso de la
-    # ruta); el tipo_vehiculo de datos_carga se ignora (decisión 7: lo define el cubicador o la Mesa de Costeo de Nexo).
-    Y la versión nueva queda en el estado de costeo "pendiente_costeo" con el peso 28400 en un camión sin vehículo
+    # HU-021.9: el peso cambió, así que los camiones se vuelven a planificar. HU-032 (#197): el tipo_vehiculo de datos_carga es el
+    # vehículo elegido nuevo; sin cubicador configurado la ruta lleva ese vehículo (validado contra Nexo) con el peso de la ruta.
+    Y la versión nueva queda en el estado de costeo "pendiente_costeo" con el peso 28400 y el vehículo "2S3"
     Y la cotización "C1" sigue en el estado de costeo "costeo_vencido" sin cambios
     Y Nexo recibió la solicitud de la versión nueva con el peso 28400
 

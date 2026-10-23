@@ -1,5 +1,6 @@
 using Cotifly.Aplicacion.CatalogosFlete.DTOs;
 using Cotifly.Aplicacion.CatalogosFlete.Interfaces;
+using Cotifly.Aplicacion.CatalogosFlete.Services;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Dominio.Margen;
@@ -70,9 +71,15 @@ public sealed record clsValidacionCatalogoLineas(
 /// <c>clases-viaje</c>, exacta) y <c>clase_contenedor</c> (<c>descripcion</c> de <c>clases-contenedor</c>, exacta; HU-023.1 quitó la
 /// lista fija de 5 códigos). Solo se consulta si hace falta; sin copia utilizable, <c>CATALOGOS_FLETE_NO_DISPONIBLE</c>.</item>
 /// <item>Un valor con espacios al borde se compara recortado, igual que lo guarda la cotización.</item>
+/// <item><b>HU-031.1 (#194): alias de Nexo.</b> Un <c>tipo_vehiculo</c> que el catálogo no conoce, o una <c>clase_contenedor</c> que no
+/// está en el catálogo ni en la lista provisional, se busca en el diccionario de alias de Nexo (NEXO #321; "TB" → <c>2L2</c>, "40HC" →
+/// <c>CNT40.HC</c>) ANTES de rechazarlo: si resuelve a un código oficial, se acepta y <see cref="clsValidacionCatalogoLineas.Canonicas"/>
+/// lo guarda con ese código (<see cref="Canonica"/>, como ya hacía con la escritura de Nexo). Sin diccionario (Nexo caído y sin copia)
+/// se valida como antes, sin alias, con un warning: nunca se rechaza por el diccionario. Solo se consulta si hace falta.</item>
 /// </list>
 /// </remarks>
-public sealed class clsValidadorCatalogosCaptura(IClsCatalogosMaestrosProvider maestros, ILogger<clsValidadorCatalogosCaptura> logger)
+public sealed class clsValidadorCatalogosCaptura(
+    IClsCatalogosMaestrosProvider maestros, ILogger<clsValidadorCatalogosCaptura> logger, IClsAliasNexoProvider? alias = null)
     : IClsValidadorCatalogosCaptura
 {
     public const string MensajeSinCatalogo =
@@ -104,7 +111,8 @@ public sealed class clsValidadorCatalogosCaptura(IClsCatalogosMaestrosProvider m
             return ClasesContenedorNoDisponibles();
         }
 
-        return ErroresMaestros(linea, catalogos.Valor) is [var maestro, ..] ? AErrorDominio(maestro) : null;
+        var diccionario = await AliasSiHaceFaltaAsync(usuarioId, [linea], catalogos.Valor, cancellationToken);
+        return ErroresMaestros(linea, catalogos.Valor, diccionario) is [var maestro, ..] ? AErrorDominio(maestro) : null;
     }
 
     public async Task<clsValidacionCatalogoLineas> ValidarLineasAsync(
@@ -112,6 +120,7 @@ public sealed class clsValidadorCatalogosCaptura(IClsCatalogosMaestrosProvider m
     {
         ArgumentNullException.ThrowIfNull(lineas);
         clsCatalogosMaestros? catalogos = null;
+        clsDiccionarioAliasNexo? diccionario = null;
         clsErrorDominio? noDisponible = null;
         if (lineas.Any(l => l is not null && UsaCatalogoMaestro(l)))
         {
@@ -127,30 +136,80 @@ public sealed class clsValidadorCatalogosCaptura(IClsCatalogosMaestrosProvider m
                 {
                     noDisponible = ClasesContenedorNoDisponibles();
                 }
+
+                diccionario = await AliasSiHaceFaltaAsync(usuarioId, lineas, catalogos, cancellationToken);
             }
         }
 
         IReadOnlyList<IReadOnlyList<clsErrorCampo>> errores = [.. lineas.Select(l => l is null
             ? (IReadOnlyList<clsErrorCampo>)[]
-            : [.. ErroresEnCodigo(l), .. catalogos is null ? [] : ErroresMaestros(l, catalogos)])];
-        return new clsValidacionCatalogoLineas(errores, noDisponible, [.. lineas.Select(l => l is null ? l! : Canonica(l, catalogos))]);
+            : [.. ErroresEnCodigo(l), .. catalogos is null ? [] : ErroresMaestros(l, catalogos, diccionario)])];
+        return new clsValidacionCatalogoLineas(errores, noDisponible, [.. lineas.Select(l => l is null ? l! : Canonica(l, catalogos, diccionario))]);
+    }
+
+    /// <summary>
+    /// HU-031.1 (#194): el diccionario de alias de Nexo, solo si alguna línea trae un <c>tipo_vehiculo</c> que el catálogo no conoce o una
+    /// <c>clase_contenedor</c> que no está en el catálogo ni en la lista provisional. <c>null</c> si no hace falta o no está disponible (se
+    /// valida sin alias; nunca falla por esto).
+    /// </summary>
+    private async Task<clsDiccionarioAliasNexo?> AliasSiHaceFaltaAsync(
+        Guid usuarioId, IReadOnlyList<clsLineaSolicitudCosteo?> lineas, clsCatalogosMaestros catalogos, CancellationToken cancellationToken)
+    {
+        var tipos = catalogos.TiposVehiculo.Select(t => t.Valor).ToList();
+        var clases = catalogos.ClasesContenedor.Select(c => c.Valor).ToList();
+        if (alias is null || !lineas.Any(l => l is not null
+                && ((Recortar(l.TipoVehiculo) is { } tipo && clsCodigosConocidosNexo.Resolver(tipos, tipo) is null)
+                    || (Recortar(l.ClaseContenedor) is { } clase && clases.Count > 0
+                        && clsResolucionCodigosNexo.ClaseContenedor(clases, null, clase) is null))))
+        {
+            return null;
+        }
+
+        try
+        {
+            var resultado = await alias.ObtenerAsync(usuarioId, cancellationToken);
+            if (resultado.EsExitoso)
+            {
+                return resultado.Valor;
+            }
+
+            logger.LogWarning("Sin el diccionario de alias de Nexo ({Codigo}): la captura se valida sin alias.", resultado.Error.Codigo);
+            return null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning("Falló la lectura del diccionario de alias de Nexo ({Tipo}): la captura se valida sin alias.", ex.GetType().Name);
+            return null;
+        }
     }
 
     /// <summary>
     /// D-1019B-2 (#188 M1): la línea con <c>tipo_vehiculo</c> y <c>carroceria</c> escritos como en Nexo (la equivalencia de
-    /// <see cref="clsCodigosConocidosNexo"/>), la misma escritura con la que viajan. Un código que no se puede resolver (o el tipo sin el
-    /// catálogo maestro) queda recortado y tal cual: ya trae su error.
+    /// <see cref="clsCodigosConocidosNexo"/>), la misma escritura con la que viajan. HU-031.1 (#194): con <paramref name="alias"/>, un
+    /// <c>tipo_vehiculo</c> o una <c>clase_contenedor</c> que solo conoce el diccionario de alias de Nexo queda con el código oficial
+    /// ("TB" → <c>2L2</c>, "40HC" → <c>CNT40.HC</c>). Un código que no se puede resolver (o el tipo sin el catálogo maestro) queda
+    /// recortado y tal cual: ya trae su error.
     /// </summary>
-    public static clsLineaSolicitudCosteo Canonica(clsLineaSolicitudCosteo linea, clsCatalogosMaestros? catalogos)
+    public static clsLineaSolicitudCosteo Canonica(clsLineaSolicitudCosteo linea, clsCatalogosMaestros? catalogos, clsDiccionarioAliasNexo? alias = null)
     {
         ArgumentNullException.ThrowIfNull(linea);
         var tipo = Recortar(linea.TipoVehiculo);
         var carroceria = Recortar(linea.Carroceria);
-        var tipoNexo = tipo is null || catalogos is null ? tipo : clsCodigosConocidosNexo.Resolver(catalogos.TiposVehiculo.Select(t => t.Valor), tipo) ?? tipo;
+        var tipoNexo = tipo is null || catalogos is null
+            ? tipo
+            : clsResolucionCodigosNexo.Vehiculo(catalogos.TiposVehiculo.Select(t => t.Valor), alias, tipo)?.Codigo ?? tipo;
         var carroceriaNexo = carroceria is null ? null : clsCodigosConocidosNexo.Carroceria(carroceria) ?? carroceria;
+        var clase = linea.ClaseContenedor;
+        if (alias is not null && catalogos is { ClasesContenedor.Count: > 0 } && Recortar(clase) is { } valorClase
+            && clsResolucionCodigosNexo.ClaseContenedor([.. catalogos.ClasesContenedor.Select(c => c.Valor)], alias, valorClase) is { Fuente: FuenteCodigoNexo.Alias } claseAlias)
+        {
+            clase = claseAlias.Codigo;
+        }
+
         return string.Equals(tipoNexo, linea.TipoVehiculo, StringComparison.Ordinal) && string.Equals(carroceriaNexo, linea.Carroceria, StringComparison.Ordinal)
+               && string.Equals(clase, linea.ClaseContenedor, StringComparison.Ordinal)
             ? linea
-            : linea with { TipoVehiculo = tipoNexo, Carroceria = carroceriaNexo };
+            : linea with { TipoVehiculo = tipoNexo, Carroceria = carroceriaNexo, ClaseContenedor = clase };
     }
 
     /// <summary>Tipología (enum) y carrocería (lista de carrocerías de Nexo, con la equivalencia de <see cref="clsCodigosConocidosNexo"/>).</summary>
@@ -174,11 +233,11 @@ public sealed class clsValidadorCatalogosCaptura(IClsCatalogosMaestrosProvider m
     /// Tipo de vehículo (<c>codigo</c>, con la equivalencia de <see cref="clsCodigosConocidosNexo"/>), clase de viaje (<c>descripcion</c>) y
     /// clase de contenedor (<c>descripcion</c> de <c>clases-contenedor</c>, o la lista provisional G15) contra el catálogo maestro de Nexo.
     /// </summary>
-    private static List<clsErrorCampo> ErroresMaestros(clsLineaSolicitudCosteo linea, clsCatalogosMaestros catalogos)
+    private static List<clsErrorCampo> ErroresMaestros(clsLineaSolicitudCosteo linea, clsCatalogosMaestros catalogos, clsDiccionarioAliasNexo? alias)
     {
         var errores = new List<clsErrorCampo>();
         if (Recortar(linea.TipoVehiculo) is { } tipoVehiculo
-            && clsCodigosConocidosNexo.Resolver(catalogos.TiposVehiculo.Select(t => t.Valor), tipoVehiculo) is null)
+            && clsResolucionCodigosNexo.Vehiculo(catalogos.TiposVehiculo.Select(t => t.Valor), alias, tipoVehiculo) is null)
         {
             errores.Add(NoEsCodigo("tipo_vehiculo", tipoVehiculo, null));
         }
@@ -189,7 +248,8 @@ public sealed class clsValidadorCatalogosCaptura(IClsCatalogosMaestrosProvider m
         }
 
         if (Recortar(linea.ClaseContenedor) is { } claseContenedor && !EsProvisional(claseContenedor) && catalogos.ClasesContenedor.Count > 0
-            && !EnCatalogo(catalogos.ClasesContenedor, claseContenedor))
+            && !EnCatalogo(catalogos.ClasesContenedor, claseContenedor)
+            && clsResolucionCodigosNexo.ClaseContenedor([.. catalogos.ClasesContenedor.Select(c => c.Valor)], alias, claseContenedor) is null)
         {
             errores.Add(NoEsCodigo("clase_contenedor", claseContenedor,
                 string.Join(", ", catalogos.ClasesContenedor.Select(c => c.Valor).Concat(clsCatalogosCaptura.ClasesContenedorProvisionales))));

@@ -6,9 +6,11 @@ using Cotifly.Aplicacion.Comun;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Costeo.DTOs;
 using Cotifly.Aplicacion.Costeo.Interfaces;
+using Cotifly.Aplicacion.Cotizaciones.DTOs;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Cotizaciones.Services;
 using Cotifly.Aplicacion.Licitaciones.DTOs;
+using Cotifly.Aplicacion.Licitaciones.Services;
 using Cotifly.Aplicacion.Margen.Repositories;
 using Cotifly.Aplicacion.Margen.Services;
 using Cotifly.Dominio.Auditoria;
@@ -17,6 +19,7 @@ using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Dominio.Margen;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Cotifly.Aplicacion.Costeo.Services;
 
@@ -76,8 +79,12 @@ public sealed class clsEdicionSolicitudService(
     IClsAuditoriaRepository registroAuditoria,
     IClsAuditoriaService auditoria,
     IClsReloj reloj,
-    ILogger<clsEdicionSolicitudService> logger) : IClsEdicionSolicitudService
+    ILogger<clsEdicionSolicitudService> logger,
+    IOptions<clsOpcionesCaptura>? opcionesCaptura = null) : IClsEdicionSolicitudService
 {
+    /// <summary>HU-032 (#197): ¿el vehículo elegido cuenta? (<c>Captura:AceptarVehiculoCliente</c>, encendida por defecto).</summary>
+    private bool AceptaVehiculo => opcionesCaptura?.Value.AceptarVehiculoCliente ?? true;
+
     /// <summary>Herramienta de la auditoría (<c>EventosHerramienta.herramienta</c>).</summary>
     public const string HerramientaAuditoria = "editar_solicitud";
 
@@ -407,12 +414,26 @@ public sealed class clsEdicionSolicitudService(
             Notas = entrada.Notas,
         };
         var moneda = (Limpio(entrada.Moneda) ?? cotizacion.Moneda ?? clsCotizacionSolicitud.MonedaPesos).ToUpperInvariant();
-        var sinVehiculo = clsEnvioCosteoService.SinVehiculo(rutasCaptura, logger);
+        // HU-032 (#197): la edición conserva el vehículo elegido de cada ruta (antes lo borraba); con la bandera apagada se ignora.
+        var sinVehiculo = clsEnvioCosteoService.SinVehiculo(rutasCaptura, logger, AceptaVehiculo);
         var captura = new clsEntradaCaptura(
             cotizacion.NitCliente, cotizacion.ClienteNombre, sinVehiculo.FirstOrDefault(r => r?.LineaNegocio is not null)?.LineaNegocio ?? "-",
             encabezado, sinVehiculo, entrada.Moneda);
         var previos = clsEnvioCosteoService.ErroresFormulario(captura, sinVehiculo).Concat(errores).ToList();
+
+        // OBS-1021B-1 (E2E 2026-10-21): "¿cambió algo?" ANTES de los catálogos de Nexo. El mismo cuerpo del GET responde sin_cambios sin
+        // consultar Nexo (antes, con Nexo caído, respondía 503). Solo con el cuerpo crudo bien formado (sin errores de formulario, de la
+        // línea ni de conexos) y por VALOR contra lo guardado, que ya se validó al capturarlo: la canonización de Nexo (2s3 → 2S3) se
+        // reemplaza por una comparación equivalente sin catálogo (mayúsculas en los códigos, MismoCodigo en el vehículo). Si algo difiere,
+        // no hay forma de saberlo sin catálogo (un municipio solo por nombre, un alias, un conexo agregado en Nexo) o la línea de negocio
+        // está inactiva, se sigue por la validación completa: un cambio real nunca se salta los catálogos.
+        if (previos.Count == 0 && SinCambiosSinCatalogo(cotizacion, encabezado, moneda, entradas, sinVehiculo, politicasRuta, lineas))
+        {
+            return new clsEdicionPreparada(encabezado, [], true, null, null, []);
+        }
+
         var validadas = await capturaRutas.ValidarAsync(usuarioId, sinVehiculo, previos, cancellationToken);
+        validadas = SinVehiculoRequeridoEnRutasSinCambios(validadas, entradas, guardadas);
         if (validadas.Errores.Count > 0)
         {
             return clsEnvioCosteoService.ErrorCaptura(validadas.Errores, validadas.NoDisponible?.Codigo, sinVehiculo.Count);
@@ -438,9 +459,28 @@ public sealed class clsEdicionSolicitudService(
         var catalogoGuardados = cotizacion.Rutas.SelectMany(r => r.Conexos).All(c => pedidos.Contains(c.IdServicioConexoCatalogo ?? c.IdServicioConexo))
             ? new Dictionary<string, clsCostoConexoNexo>()
             : await ConexosDelCatalogoAsync(usuarioId, cotizacion, cancellationToken);
-        if (MismoContenido(cotizacion, encabezado, moneda, entradas, validadas.Lineas, catalogoGuardados))
+        if (MismoContenido(cotizacion, encabezado, moneda, entradas, validadas.Lineas, catalogoGuardados, AceptaVehiculo))
         {
             return new clsEdicionPreparada(encabezado, [], true, null, null, []);
+        }
+
+        // HU-028.1 (#183, decisión del 2026-10-20): los camiones que rechazó la Mesa de Costeo no viajan salvo reincluir_rechazados. Si con la
+        // edición ninguna ruta manda líneas a Nexo (todas con sus camiones rechazados, sin reincluirlos ni cambiar su carga) no hay nada que
+        // enviar: 409 SIN_RUTAS_COTIZABLES antes de escribir (y antes de fijar la TRM o llamar al cubicador).
+        var algunaViaja = false;
+        for (var i = 0; i < validadas.Lineas.Count && !algunaViaja; i++)
+        {
+            var guardada = entradas[i]!.LineaSolicitudId is { } id ? guardadas[id] : null;
+            algunaViaja = guardada is null
+                || guardada.VehiculosVigentes.Count == 0
+                || Replanifica(guardada, validadas.Lineas[i].Linea)
+                || guardada.ViajaANexo
+                || (entradas[i]!.ReincluirRechazados && guardada.CamionesRechazados > 0);
+        }
+
+        if (!algunaViaja)
+        {
+            return clsReSolicitudCosteoService.TodosRechazados(cotizacion.Folio);
         }
 
         // 5. La moneda: la TRM del día si cambia o si es una versión nueva (sin TRM no se escribe nada).
@@ -466,8 +506,10 @@ public sealed class clsEdicionSolicitudService(
             var validada = validadas.Lineas[i];
             var guardada = entradas[i]!.LineaSolicitudId is { } id ? guardadas[id] : null;
             var rutaId = modo == ModoEdicionSolicitud.NuevaVersion || guardada is null ? Guid.NewGuid() : guardada.Id;
-            var vigente = guardada is not null && guardada.VehiculosQueCuentan.Count > 0 && !clsReglaRecubicacion.Exige(guardada.ALinea(), validada.Linea)
-                ? PlanVigente(guardada)
+            // HU-028.1 (#183): los camiones rechazados por la Mesa se conservan, rechazados y sin viajar, salvo reincluir_rechazados (entonces
+            // viajan sin el rechazo). Una ruta que se vuelve a cubicar estrena camiones: el rechazo de los anteriores no aplica.
+            var vigente = guardada is not null && guardada.VehiculosVigentes.Count > 0 && !Replanifica(guardada, validada.Linea)
+                ? PlanVigente(guardada, entradas[i]!.ReincluirRechazados)
                 : null;
             if (vigente is null)
             {
@@ -489,10 +531,64 @@ public sealed class clsEdicionSolicitudService(
             return clsEnvioCosteoService.ErrorCaptura(preparadas.Errores, null, porPreparar.Count);
         }
 
-        var rutas = preparadas.Rutas.Select((r, i) => new clsRutaEditada(originales[i]?.Id, r, Replanificada: replanificadas.Contains(i + 1))).ToList();
+        var rutas = preparadas.Rutas.Select((r, i) => new clsRutaEditada(
+            originales[i]?.Id, r, Replanificada: replanificadas.Contains(i + 1), ReincluirRechazados: entradas[i]!.ReincluirRechazados)).ToList();
         var politica = lineas[0] is { } primera ? politicasRuta.GetValueOrDefault(primera) : null;
         return new clsEdicionPreparada(encabezado, rutas, false, fijada, politica, replanificadas);
     }
+
+    /// <summary>
+    /// OBS-1021B-1: ¿el cuerpo crudo (sin pasar por los catálogos de Nexo) deja todo como está? Exige que cada ruta esté bien formada
+    /// (<see cref="clsLineaSolicitudCosteo.ErroresCaptura"/> y <see cref="clsCapturaRutasService.ErroresConexos"/> vacíos), que su línea
+    /// de negocio siga activa y que <see cref="MismoContenido"/> lo confirme sin catálogo de conexos (un conexo agregado en Nexo, guardado
+    /// con el id de su fila, no coincide y se va por la validación completa). Nunca consulta Nexo.
+    /// </summary>
+    private bool SinCambiosSinCatalogo(
+        clsCotizacionSolicitud cotizacion, clsEncabezadoSolicitudCosteo encabezado, string moneda, IReadOnlyList<clsRutaEdicionEntrada?> entradas,
+        IReadOnlyList<clsLineaLicitacionEntrada?> crudas, IReadOnlyDictionary<int, clsMargenPolitica?> politicasRuta, IReadOnlyList<int?> lineas)
+    {
+        if (crudas.Count != entradas.Count || crudas.Any(r => r?.Linea is null))
+        {
+            return false;
+        }
+
+        var rutas = crudas.Select(r => r!).ToList();
+        if (rutas.Any(r => r.Linea.ErroresCaptura().Count > 0 || clsCapturaRutasService.ErroresConexos(r.Conexos).Count > 0)
+            || lineas.Any(l => l is null || politicasRuta.GetValueOrDefault(l.Value) is not { Activa: true }))
+        {
+            return false;
+        }
+
+        return MismoContenido(cotizacion, encabezado, moneda, entradas, rutas, new Dictionary<string, clsCostoConexoNexo>(), AceptaVehiculo);
+    }
+
+    /// <summary>
+    /// HU-032 (#197, B3; decisión del usuario del 2026-10-21): en la edición <c>VEHICULO_REQUERIDO</c> solo aplica a una ruta nueva o que
+    /// CAMBIA. Una ruta guardada que no cambia (p. ej. una de Cupo anterior a HU-032 que solo trae el peso) no exige el vehículo: el mismo
+    /// cuerpo del GET da <c>sin_cambios</c>. "Cambia" es lo mismo que obliga a volver a planificar sus camiones (<see cref="Replanifica"/>:
+    /// el peso, la clase de viaje o las mercancías por valor, como <c>sin_cambios</c>, y el vehículo elegido si sus camiones dependen de
+    /// él). Lo demás (origen, destino, horas, valores, tara, conexos, <c>reincluir_rechazados</c>) no toca el vehículo y no lo exige.
+    /// </summary>
+    private clsFilasLicitacionValidadas SinVehiculoRequeridoEnRutasSinCambios(
+        clsFilasLicitacionValidadas validadas, IReadOnlyList<clsRutaEdicionEntrada?> entradas, IReadOnlyDictionary<Guid, clsLineaSolicitud> guardadas)
+    {
+        bool Exento(clsErrorFilaLicitacion e) =>
+            e.Codigo == clsCodigosLineaSolicitud.VehiculoRequerido
+            && e.Indice is { } i && i < entradas.Count && i < validadas.Lineas.Count
+            && entradas[i]?.LineaSolicitudId is { } id && guardadas.TryGetValue(id, out var guardada)
+            && validadas.Lineas[i] is { Linea: { } nueva }
+            && !Replanifica(guardada, nueva);
+
+        return validadas.Errores.Any(Exento) ? validadas with { Errores = [.. validadas.Errores.Where(e => !Exento(e))] } : validadas;
+    }
+
+    /// <summary>
+    /// ¿Hay que volver a planificar los camiones de la ruta guardada? Si cambió lo que recibe el cubicador (<see cref="clsReglaRecubicacion"/>)
+    /// o, HU-032 (#197), el vehículo elegido cuando sus camiones dependen de él (la ruta no la asignó el cubicador): en una ruta sin
+    /// mercancías cubicables cambiar solo el vehículo es un cambio que viaja (reemplazo en Nexo o <c>-vN</c>, según el modo).
+    /// </summary>
+    private bool Replanifica(clsLineaSolicitud guardada, clsLineaSolicitudCosteo nueva) =>
+        clsReglaRecubicacion.Exige(guardada.ALineaConElegido(), nueva, AceptaVehiculo && guardada.UsaVehiculoElegido);
 
     // ------------------------------------------------------------------ Modos
 
@@ -673,12 +769,27 @@ public sealed class clsEdicionSolicitudService(
 
     // ------------------------------------------------------------------ Lectura y respuesta
 
+    /// <summary>
+    /// La respuesta de la edición. HU-028.1 (#183, hallazgo B3 de la auditoría): si la edición dejó fuera del envío camiones rechazados por la
+    /// Mesa de Costeo, lo dice en <c>aviso_rechazos</c> (en la respuesta y en <c>cotizacion</c>, como la re-solicitud) y en el aviso
+    /// <c>RECHAZADOS_OMITIDOS</c>. Una edición <c>sin_cambios</c> no envía nada: no lleva ese aviso.
+    /// </summary>
     private async Task<clsResultadoEdicionSolicitud> RespuestaAsync(
         clsCotizacionSolicitud resultante, clsCotizacionSolicitud origen, ModoEdicionSolicitud modo, bool sinCambios,
         IReadOnlyList<clsAvisoEdicion> avisos, IReadOnlyList<int> replanificadas, IReadOnlyList<int> agregadas, IReadOnlyList<Guid> quitadas,
-        string? reemplazada) =>
-        new(clsCodigoEnum.ACodigo(modo), resultante.Folio, origen.Folio, sinCambios,
-            await misCotizaciones.ResumirAsync(resultante, CancellationToken.None), avisos, replanificadas, agregadas, quitadas, reemplazada);
+        string? reemplazada)
+    {
+        var avisoRechazos = sinCambios ? null : clsReSolicitudCosteoService.AvisoRechazos(resultante, modo == ModoEdicionSolicitud.NuevaVersion);
+        IReadOnlyList<clsAvisoEdicion> todos = avisoRechazos is null ? avisos : [.. avisos, new clsAvisoEdicion(clsAvisoEdicion.RechazadosOmitidos, avisoRechazos)];
+        var resumen = await misCotizaciones.ResumirAsync(resultante, CancellationToken.None);
+        // HU-032 (#197): como la captura, la respuesta trae por ruta el resultado del cubicador y los avisos del vehículo (cotizacion.cubicacion).
+        return new(clsCodigoEnum.ACodigo(modo), resultante.Folio, origen.Folio, sinCambios,
+            resumen with { AvisoRechazos = avisoRechazos, Cubicacion = clsCubicacionRutaResumen.De(resultante) }, todos,
+            replanificadas, agregadas, quitadas, reemplazada)
+        {
+            AvisoRechazos = avisoRechazos,
+        };
+    }
 
     /// <summary>Los avisos que el comercial confirma antes de editar, según el modo y el estado actual.</summary>
     private static IReadOnlyList<clsAvisoEdicion> Avisos(clsCotizacionSolicitud cotizacion, ModoEdicionSolicitud modo)
@@ -749,7 +860,15 @@ public sealed class clsEdicionSolicitudService(
             ConexosEditables(r, catalogo),
             r.MargenAplicado,
             r.OrigenMargen is { } origen ? clsCodigoEnum.ACodigo(origen) : null,
-            r.TieneMargenNegociado);
+            r.TieneMargenNegociado,
+            r.CamionesRechazados,
+            r.MotivoRechazo)
+        {
+            PesoConTaraKg = r.PesoConTaraKg,
+            // HU-032 (#197): el vehículo elegido (no el de los camiones), para reenviarlo tal cual en el PUT.
+            TipoVehiculo = r.VehiculoElegido.TipoVehiculo,
+            Carroceria = r.VehiculoElegido.Carroceria,
+        };
 
     /// <summary>
     /// Los conexos de la ruta como los edita el comercial: con el id del catálogo de Nexo (si se resolvió) y UNA fila por servicio. Un
@@ -798,16 +917,33 @@ public sealed class clsEdicionSolicitudService(
         return resultado;
     }
 
-    /// <summary>Los camiones vigentes de la ruta (los descartados en Nexo no, salvo que lo estén todos) y su resultado del cubicador.</summary>
-    private static clsPlanRuta PlanVigente(clsLineaSolicitud ruta) =>
-        new([.. clsVehiculoLineaSolicitud.EnOrden(ruta.VehiculosQueCuentan).Select(v => new clsCamionPlaneado(
-                v.TipoVehiculo, v.Carroceria, v.PesoKg, v.IdRecomendacionVehiculo, v.VolumenTotalM3, v.PorcentajeLlenadoVolumen, v.PorcentajeLlenadoPeso))],
-            ruta.ResultadoCubicacion is { } resultado ? new clsCubicacionRuta(ruta.IdRecomendacion, resultado, ruta.MotivoSinSeleccion, ruta.Condicionada) : null);
+    /// <summary>
+    /// Los camiones vigentes de la ruta (los descartados en Nexo no, salvo que lo estén todos) y su resultado del cubicador. HU-028.1 (#183,
+    /// decisión del 2026-10-20): los rechazados por la Mesa van con su rechazo (<see cref="clsCamionPlaneado.Rechazo"/>): en la <c>-vN</c>
+    /// nacen rechazados y no viajan; con <paramref name="reincluirRechazados"/> van sin él y viajan (D2: con el vehículo que tengan). En sitio
+    /// y en el reemplazo los camiones se conservan en la ruta guardada y este plan no se usa para crearlos.
+    /// </summary>
+    private static clsPlanRuta PlanVigente(clsLineaSolicitud ruta, bool reincluirRechazados) =>
+        new([.. clsVehiculoLineaSolicitud.EnOrden(ruta.VehiculosVigentes).Select(v => new clsCamionPlaneado(
+                v.TipoVehiculo, v.Carroceria, v.PesoKg, v.IdRecomendacionVehiculo, v.VolumenTotalM3, v.PorcentajeLlenadoVolumen, v.PorcentajeLlenadoPeso,
+                reincluirRechazados ? null : v.RechazoParaCopiar))],
+            ruta.ResultadoCubicacion is { } resultado
+                ? new clsCubicacionRuta(ruta.IdRecomendacion, resultado, ruta.MotivoSinSeleccion, ruta.Condicionada, ruta.AvisosCubicacion)
+                : null,
+            // HU-032 (#197): los avisos del vehículo de la ruta siguen con sus camiones.
+            AvisosVehiculo(ruta));
+
+    /// <summary>HU-032 (#197): los avisos del vehículo guardados con la ruta (<see cref="clsAvisosVehiculo.Codigos"/>), o <c>null</c>.</summary>
+    internal static IReadOnlyList<clsAdvertenciaCubicador>? AvisosVehiculo(clsLineaSolicitud ruta) =>
+        ruta.AvisosCubicacion?.Advertencias?.Where(a => a.Codigo is not null && clsAvisosVehiculo.Codigos.Contains(a.Codigo)).ToList() is { Count: > 0 } avisos
+            ? avisos
+            : null;
 
     /// <summary>
     /// ¿La edición deja todo como está? Compara el encabezado, la moneda y, ruta por ruta y en orden, la misma ruta guardada, los municipios
     /// por id, las condiciones, las horas, los valores, el peso, las mercancías (en orden, por código, cantidad, medidas y peso) y los
-    /// conexos (id y cantidad, sin importar el orden). Los nombres copiados de los catálogos no cuentan.
+    /// conexos (id y cantidad, sin importar el orden). Los nombres copiados de los catálogos no cuentan. HU-028.1 (#183): una ruta con camiones
+    /// rechazados y <c>reincluir_rechazados</c> sí es un cambio.
     /// <para>
     /// D-1019B-1 (E2E 2026-10-19): la comparación es por VALOR, nunca por el texto. Un <c>decimal</c> leído de SQL Server conserva la escala
     /// de la columna (<c>36666.60</c>) y el que llega en el JSON reenviado no (<c>36666.6</c>): son iguales con <c>==</c> pero no como texto.
@@ -817,7 +953,7 @@ public sealed class clsEdicionSolicitudService(
     /// </summary>
     private static bool MismoContenido(
         clsCotizacionSolicitud cotizacion, clsEncabezadoSolicitudCosteo encabezado, string moneda, IReadOnlyList<clsRutaEdicionEntrada?> entradas,
-        IReadOnlyList<clsLineaLicitacionEntrada> validadas, IReadOnlyDictionary<string, clsCostoConexoNexo> catalogo)
+        IReadOnlyList<clsLineaLicitacionEntrada> validadas, IReadOnlyDictionary<string, clsCostoConexoNexo> catalogo, bool aceptaVehiculo)
     {
         var guardadas = cotizacion.RutasOrdenadas;
         if (guardadas.Count != validadas.Count || entradas.Count != validadas.Count
@@ -845,6 +981,20 @@ public sealed class clsEdicionSolicitudService(
             var conexosNuevos = (validadas[i].Conexos ?? []).Where(c => c is not null).Select(c => (c!.IdServicioConexo, (decimal?)c.Cantidad));
             var conexosGuardados = ConexosEditables(guardada, catalogo).Select(c => ((string?)c.IdServicioConexo, (decimal?)c.Cantidad));
             if (!MismaRuta(guardada.ALinea(), nueva) || !MismosConexos(conexosGuardados, conexosNuevos))
+            {
+                return false;
+            }
+
+            // HU-032 (#197): el vehículo elegido cuenta si los camiones dependen de él (la ruta no la asignó el cubicador). Se compara con el
+            // ELEGIDO guardado, no con el del camión: un cambio de la Mesa de Costeo en Nexo (D2) no es un cambio del comercial.
+            if (aceptaVehiculo && guardada.UsaVehiculoElegido && !clsReglaRecubicacion.MismoVehiculo(guardada.ALineaConElegido(), nueva))
+            {
+                return false;
+            }
+
+            // HU-028.1 (#183): pedir que la Mesa reconsidere camiones rechazados es un cambio (vuelven a viajar). Que la ruta tenga rechazados
+            // sin pedirlo no lo es: la misma solicitud reenviada no dispara nada.
+            if (entradas[i]!.ReincluirRechazados && guardada.CamionesRechazados > 0)
             {
                 return false;
             }
@@ -883,14 +1033,14 @@ public sealed class clsEdicionSolicitudService(
     private sealed record clsClaveRuta(
         int? Origen, int? Destino, string? Tipologia, string? ClaseViaje, string? ClaseContenedor, bool? Exclusivo, bool? Consolidado,
         bool RetornaContenedor, int? CiudadDevolucion, bool LevanteDiferente, int? CiudadLevante, decimal? ValorLevante, decimal? HorasCargue,
-        decimal? HorasDescargue, decimal? PesoKg, decimal? ValorMercancia);
+        decimal? HorasDescargue, decimal? PesoKg, decimal? ValorMercancia, decimal? PesoConTaraKg);
 
     private sealed record clsClaveMercancia(string? Codigo, int Cantidad, decimal LargoCm, decimal AnchoCm, decimal AltoCm, decimal? PesoKg);
 
     private static clsClaveRuta Clave(clsLineaSolicitudCosteo l) =>
         new(l.OrigenMunicipioId, l.DestinoMunicipioId, Texto(l.Tipologia), Texto(l.ClaseViaje), Texto(l.ClaseContenedor), l.Exclusivo, l.Consolidado,
             l.RetornaContenedor ?? false, l.CiudadDevolucionMunicipioId, l.LevanteContenedorDiferente ?? false, l.CiudadLevanteMunicipioId,
-            l.ValorAprovisionamiento, l.HorasCargue, l.HorasDescargue, l.PesoKg, l.ValorMercancia);
+            l.ValorAprovisionamiento, l.HorasCargue, l.HorasDescargue, l.PesoKg, l.ValorMercancia, l.PesoConTaraKg);
 
     private static clsClaveMercancia? ClaveMercancia(clsPosicionCarga? p) =>
         p is null ? null : new(Texto(p.CodigoMercancia), p.Cantidad, p.LargoCm, p.AnchoCm, p.AltoCm, p.PesoKg);

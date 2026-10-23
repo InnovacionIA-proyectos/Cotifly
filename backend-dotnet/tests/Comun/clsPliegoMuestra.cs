@@ -56,14 +56,17 @@ public static class clsPliegoMuestra
     }
 
     /// <summary>
-    /// Líneas mapeadas (objetos anónimos snake_case) de las <paramref name="filas"/> filas del pliego. HU-021.6 (decisión 7): la columna
-    /// del tipo de vehículo del Excel ya no se mapea (el vehículo lo define el cubicador o la Mesa de Costeo de Nexo).
+    /// Líneas mapeadas (objetos anónimos snake_case) de las <paramref name="filas"/> filas del pliego. HU-032 (#197): cada fila lleva su
+    /// vehículo elegido (código de Nexo): una fila solo con el peso no se cubica y lo exige.
     /// </summary>
     public static object[] Lineas(int filas = 3) =>
         [.. Enumerable.Range(0, filas).Select(i =>
         {
-            var (origen, destino, _, toneladas) = Ruta(i);
-            return (object)new { fila = i, origen, destino, tipologia = "CargaSeca", peso_kg = toneladas * 1000m, valor_mercancia = 50_000_000m };
+            var (origen, destino, vehiculo, toneladas) = Ruta(i);
+            return (object)new
+            {
+                fila = i, origen, destino, tipologia = "CargaSeca", peso_kg = toneladas * 1000m, valor_mercancia = 50_000_000m, tipo_vehiculo = vehiculo,
+            };
         })];
 
     /// <summary>JSON de <c>POST /web/licitaciones</c> con las líneas dadas.</summary>

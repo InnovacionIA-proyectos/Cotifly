@@ -46,7 +46,8 @@ public static class clsLecturaCosteo
         }
 
         var estadoNexo = clsDerivacionEstadoCosteo.Derivar(foto);
-        var estado = cotizacion.Rutas.Count == 0 ? estadoNexo : cotizacion.ResumirRutas() ?? estadoNexo;
+        // HU-028.1 (#183): con todas las rutas rechazadas la cabecera toma lo que dice Nexo (entregada) o sigue en pendiente_costeo.
+        var estado = cotizacion.EstadoCabecera(estadoNexo);
         var siguiente = clsDerivacionEstadoCosteo.EsTerminal(estado)
             ? null
             : cotizacion.CosteoEnviadoAt is { } enviadaAt
@@ -59,6 +60,9 @@ public static class clsLecturaCosteo
         }
 
         cambio = precioCosteo.AplicarPrecio(cotizacion, foto, ahora) | cambio;
+
+        // HU-028.1 (#183): todas las rutas rechazadas por la Mesa: el motivo queda visible en "Mis cotizaciones" (y se quita si se deshace).
+        cambio = cotizacion.AvisarRutasRechazadas() | cambio;
 
         // Una entregada que se leyó y sigue sin precio (p. ej. Nexo no trajo la cotización) queda con motivo: así no parece "sin leer" y
         // la reparación del arranque no la vuelve a agendar (ADR-018 §17).
@@ -97,7 +101,8 @@ public static class clsLecturaCosteo
     }
 
     /// <summary>
-    /// #181: la situación que Nexo informa de la línea de cada camión vigente ya asociado (<c>estadoLinea</c> y <c>motivoPendiente</c> de
+    /// #181: la situación que Nexo informa de la línea de cada camión vigente ya asociado (<c>estadoLinea</c>, <c>motivoPendiente</c> y, #183,
+    /// <c>motivoRechazo</c> de
     /// <see cref="clsCosteoConsultadoNexo.Detalle"/>), por id de camión. Se llama después de <see cref="AplicarFoto"/> (que asocia los
     /// camiones); no toca la cotización ni el emparejamiento. Los camiones sin línea de Nexo, o cuya línea no trae nada (Nexo sin #309), no
     /// salen.

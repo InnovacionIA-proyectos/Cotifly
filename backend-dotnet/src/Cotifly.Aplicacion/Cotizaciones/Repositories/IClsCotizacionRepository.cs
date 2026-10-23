@@ -49,6 +49,12 @@ public interface IClsCotizacionRepository
     Task<bool?> ObtenerCodigosCubicadorEnviadosAsync(string solicitudNexoId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// HU-031.1 (#194): los códigos de vehículo que viajaron traducidos por el alias en el alta de <paramref name="solicitudNexoId"/>
+    /// (<see cref="clsEnvioNexoRegistrado.EquivalenciasVehiculo"/>: código de Cotifly → código enviado). Vacío si no hay registro o ninguno.
+    /// </summary>
+    Task<IReadOnlyDictionary<string, string>> ObtenerEquivalenciasVehiculoAsync(string solicitudNexoId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// E2E 2026-10-16: el id de la cotización de Nexo (<c>cotizacionNexoId</c>) ya guardado para la solicitud de Nexo
     /// <paramref name="solicitudNexoId"/>, o <c>null</c>. Con él el polling lee la cotización por su id en lugar de buscarla o crearla.
     /// </summary>

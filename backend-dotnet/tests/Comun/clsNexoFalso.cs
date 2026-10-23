@@ -32,6 +32,14 @@ public sealed class clsNexoFalso : HttpMessageHandler
     public HttpStatusCode? AltaFalla { get; set; }
 
     /// <summary>
+    /// HU-030.1 (#184): altas rechazadas con <c>400 PESO_INCONSISTENTE</c>. Como Nexo (<c>CapturarSolicitudValidador</c>, confirmado al
+    /// cerrar NEXO#308): una línea con posiciones con peso cuyo <c>peso</c> difiere más del 1 % de <c>Σ cantidad × pesoKg</c> se rechaza.
+    /// </summary>
+    public int AltasPesoInconsistente => Volatile.Read(ref _altasPesoInconsistente);
+
+    private int _altasPesoInconsistente;
+
+    /// <summary>
     /// HU-023.3 (#158): si tiene valor, el alta (<c>POST /api/captura-solicitudes</c>) lo espera antes de responder: sirve para hacer
     /// otra petición a la API mientras el envío a Nexo está en curso (carreras).
     /// </summary>
@@ -99,6 +107,12 @@ public sealed class clsNexoFalso : HttpMessageHandler
 
     /// <summary>Descripciones de <c>GET /api/catalogos/clases-viaje</c>.</summary>
     public List<string> ClasesViaje { get; } = ["Contenedor", "Cupo", "Carga Suelta", "Extradimensionado"];
+
+    /// <summary>
+    /// HU-031.1 (#194): el diccionario de <c>GET /api/catalogos/alias</c> (NEXO #321): texto, tipo (<c>Vehiculo</c> | <c>Contenedor</c>),
+    /// código oficial y si está activo. Vacío por defecto. Para hacerlo fallar: <c>CatalogosFallidos.Add("alias")</c>.
+    /// </summary>
+    public List<(string Alias, string Tipo, string Codigo, bool Activo)> Alias { get; } = [];
 
     /// <summary>Descripciones de <c>GET /api/catalogos/clases-contenedor</c>.</summary>
     public List<string> ClasesContenedor { get; } = ["CNT20.IT", "CNT20.RE", "CNT20.ST", "CNT40.HC", "CNT40.RE"];
@@ -212,7 +226,7 @@ public sealed class clsNexoFalso : HttpMessageHandler
         lock (_candado)
         {
             var s = _solicitudes[solicitudId];
-            return [.. Enumerable.Range(0, s.LineaIds.Count).Select(i => s.Cotizacion?.Fletes.ContainsKey(i) == true ? "AutoResuelta" : "PorCostear")];
+            return [.. Enumerable.Range(0, s.LineaIds.Count).Select(i => EstadoLineaEnum(s, i))];
         }
     }
 
@@ -497,6 +511,15 @@ public sealed class clsNexoFalso : HttpMessageHandler
             "clases-viaje" => Json(HttpStatusCode.OK, ClasesViaje.Select((d, i) => new { id = i + 1, descripcion = d }).ToList()),
             "clases-contenedor" => Json(HttpStatusCode.OK, ClasesContenedor.Select((d, i) => new { id = i + 1, descripcion = d, tamanoContenedor = (int?)null }).ToList()),
             "lineas-negocio" => Json(HttpStatusCode.OK, LineasNegocio.Select((d, i) => new { id = i + 1, descripcion = d }).ToList()),
+            "alias" => Json(HttpStatusCode.OK, Alias.Select((a, i) => new
+            {
+                id = Guid.Parse($"00000000-0000-4000-8000-{i + 1:D12}"),
+                alias = a.Alias,
+                aliasNormalizado = Cotifly.Aplicacion.CatalogosFlete.DTOs.clsDiccionarioAliasNexo.Normalizar(a.Alias),
+                tipoElemento = a.Tipo,
+                codigo = a.Codigo,
+                activo = a.Activo,
+            }).ToList()),
             _ => Error(HttpStatusCode.NotFound, "RUTA_NO_ENCONTRADA", $"GET /api/catalogos/{nombre}"),
         };
     }
@@ -533,6 +556,37 @@ public sealed class clsNexoFalso : HttpMessageHandler
         return Json(HttpStatusCode.OK, filas);
     }
 
+    /// <summary>
+    /// HU-030.1 (#184): el índice (base 0) de la primera línea del alta cuyo <c>peso</c> no cuadra al 1 % con sus posiciones con peso
+    /// (la regla de Nexo); <c>null</c> si todas cuadran o no traen posiciones.
+    /// </summary>
+    internal static int? LineaConPesoInconsistente(JsonNode? alta)
+    {
+        if (alta?["lineas"] is not JsonArray lineas)
+        {
+            return null;
+        }
+
+        for (var i = 0; i < lineas.Count; i++)
+        {
+            if (lineas[i]?["posiciones"] is not JsonArray { Count: > 0 } posiciones || lineas[i]?["peso"] is not JsonValue pesoNodo)
+            {
+                continue;
+            }
+
+            var suma = posiciones.Sum(p => p?["pesoKg"] is JsonValue kg && kg.GetValue<decimal>() > 0
+                ? (p["cantidad"]?.GetValue<int>() ?? 1) * kg.GetValue<decimal>()
+                : 0m);
+            var peso = pesoNodo.GetValue<decimal>();
+            if (suma > 0 && peso > 0 && Math.Abs(peso - suma) / peso > 0.01m)
+            {
+                return i;
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>HU-023 (#176): la query de cada <c>GET /api/captura-solicitudes/ciudades</c> recibida.</summary>
     public ConcurrentQueue<string> CiudadesConsultadas { get; } = new();
 
@@ -544,6 +598,13 @@ public sealed class clsNexoFalso : HttpMessageHandler
         }
 
         UltimaAlta = JsonNode.Parse(cuerpo ?? "{}");
+        if (LineaConPesoInconsistente(UltimaAlta) is { } inconsistente)
+        {
+            Interlocked.Increment(ref _altasPesoInconsistente);
+            return Error(HttpStatusCode.BadRequest, "PESO_INCONSISTENTE",
+                $"Línea {inconsistente + 1}: el peso no coincide con la suma de las posiciones (tolerancia 1 %).");
+        }
+
         var numero = Math.Max(1, UltimaAlta?["lineas"] is JsonArray arreglo ? arreglo.Count : 1);
         var solicitud = new clsSolicitudFalsa(Guid.NewGuid().ToString(), _solicitudes.Count, [.. Enumerable.Range(0, numero).Select(_ => Guid.NewGuid().ToString())]);
         if (UltimaAlta?["lineas"] is JsonArray recibidas)
@@ -651,7 +712,7 @@ public sealed class clsNexoFalso : HttpMessageHandler
                 scorePrioridad = 0.5m,
                 createdAt = DateTimeOffset.UtcNow,
                 // Como Nexo (Include(Lineas) sin OrderBy, ids GUID): el orden NO es el de captura. El falso las devuelve al revés.
-                lineas = Indices(s).Select(i => new { id = s.LineaIds[i], estadoLinea = s.Cotizacion?.Fletes.ContainsKey(i) == true ? "AutoResuelta" : "PorCostear" }).ToArray(),
+                lineas = Indices(s).Select(i => new { id = s.LineaIds[i], estadoLinea = EstadoLineaEnum(s, i) }).ToArray(),
             },
             tiempos = new { horasCargue = 4m, horasDescargue = 4m },
             // LineaCosteoDto: el contenido de cada línea, con la ruta "Origen → Destino" (ObtenerCosteoQuery de Nexo).
@@ -680,7 +741,18 @@ public sealed class clsNexoFalso : HttpMessageHandler
     private JsonNode ConSituacionLinea(clsSolicitudFalsa s, int indice, object linea)
     {
         var nodo = JsonSerializer.SerializeToNode(linea, _json)!;
-        if (ExponerSituacionLinea)
+        if (s.Rechazos.TryGetValue(indice, out var rechazo))
+        {
+            // HU-028.1 (#183, Nexo #320): un Nexo que rechaza líneas siempre trae estadoLinea; motivoRechazo al final de la línea.
+            nodo["estadoLinea"] = "rechazada";
+            nodo["motivoPendiente"] = null;
+            nodo["motivoRechazo"] = rechazo;
+            return nodo;
+        }
+
+        // Validación #183: un Nexo con #320 trae estadoLinea en TODAS las líneas (también después de deshacer un rechazo); Cotifly solo
+        // deshace el rechazo con esa confirmación.
+        if (ExponerSituacionLinea || s.ConRechazoLinea)
         {
             var costeada = s.Cotizacion?.Fletes.ContainsKey(indice) == true;
             nodo["estadoLinea"] = costeada ? "autoResuelta" : "porCostear";
@@ -695,6 +767,63 @@ public sealed class clsNexoFalso : HttpMessageHandler
 
     /// <summary>#181: Nexo deja la línea <paramref name="indice"/> (base 0, orden de captura) pendiente con este motivo.</summary>
     public void MarcarMotivoPendiente(string solicitudId, int indice, string motivo) => Con(solicitudId, s => s.Motivos[indice] = motivo);
+
+    /// <summary>
+    /// HU-028.1 (#183, Nexo #320: <c>POST /api/cotizaciones/{id}/lineas/{lineaSolicitudId}/rechazo</c>): la Mesa de Costeo rechaza la línea
+    /// <paramref name="indice"/> (base 0, orden de captura) con <paramref name="motivo"/>. Como Nexo: solo con la cotización en borrador
+    /// (<c>COTIZACION_NO_EDITABLE</c>), la línea sin flete (<c>LINEA_CON_FLETE</c>) y no rechazada antes (<c>LINEA_YA_RECHAZADA</c>);
+    /// motivo obligatorio de hasta 500 (<c>MOTIVO_RECHAZO_REQUERIDO</c>). El falso lanza <see cref="InvalidOperationException"/> con el código.
+    /// Desde aquí <c>GET /api/solicitudes/{id}</c> trae la línea con <c>estadoLinea = "rechazada"</c> y <c>motivoRechazo</c>.
+    /// </summary>
+    public void RechazarLinea(string solicitudId, int indice, string motivo) =>
+        Con(solicitudId, s =>
+        {
+            if (string.IsNullOrWhiteSpace(motivo) || motivo.Trim().Length > 500)
+            {
+                throw new InvalidOperationException("MOTIVO_RECHAZO_REQUERIDO");
+            }
+
+            if (s.Cotizacion is { Estado: "Entregada" })
+            {
+                throw new InvalidOperationException("COTIZACION_NO_EDITABLE");
+            }
+
+            if (s.Cotizacion?.Fletes.ContainsKey(indice) == true)
+            {
+                throw new InvalidOperationException("LINEA_CON_FLETE");
+            }
+
+            if (!s.Rechazos.TryAdd(indice, motivo.Trim()))
+            {
+                throw new InvalidOperationException("LINEA_YA_RECHAZADA");
+            }
+
+            s.Cotizacion ??= new clsCotizacionFalsa(Guid.NewGuid().ToString());
+            s.Estado = "EnCosteo";
+            s.ConRechazoLinea = true;
+        });
+
+    /// <summary>
+    /// HU-028.1 (#183, Nexo #320: <c>DELETE .../rechazo</c>): la Mesa deshace el rechazo de la línea <paramref name="indice"/>. Como Nexo,
+    /// solo con la cotización sin entregar (<c>COTIZACION_NO_EDITABLE</c>, 409) y la línea rechazada (<c>LINEA_NO_RECHAZADA</c>).
+    /// </summary>
+    public void DeshacerRechazoLinea(string solicitudId, int indice) =>
+        Con(solicitudId, s =>
+        {
+            if (s.Cotizacion is { Estado: "Entregada" })
+            {
+                throw new InvalidOperationException("COTIZACION_NO_EDITABLE");
+            }
+
+            if (!s.Rechazos.Remove(indice))
+            {
+                throw new InvalidOperationException("LINEA_NO_RECHAZADA");
+            }
+        });
+
+    /// <summary>Estado de la línea como lo serializa el enum de Nexo en <c>solicitud.lineas[]</c> (<c>JsonStringEnumConverter</c>, sin política).</summary>
+    private static string EstadoLineaEnum(clsSolicitudFalsa s, int indice) =>
+        s.Rechazos.ContainsKey(indice) ? "Rechazada" : s.Cotizacion?.Fletes.ContainsKey(indice) == true ? "AutoResuelta" : "PorCostear";
 
     /// <summary>
     /// <c>GET /api/cotizaciones/por-solicitud/{solicitudId}</c> (Nexo S5-HU-20.1, #286): la cotización que ya existe, SIN crear nada; 204 si
@@ -996,6 +1125,12 @@ public sealed class clsNexoFalso : HttpMessageHandler
 
         /// <summary>#181: motivo pendiente por índice de línea (orden de captura).</summary>
         public Dictionary<int, string> Motivos { get; } = [];
+
+        /// <summary>HU-028.1 (#183, Nexo #320): motivo del rechazo de la Mesa por índice de línea (orden de captura).</summary>
+        public Dictionary<int, string> Rechazos { get; } = [];
+
+        /// <summary>Validación #183: la solicitud viene de un Nexo con #320 (alguna línea se rechazó): todas sus líneas traen estadoLinea.</summary>
+        public bool ConRechazoLinea { get; set; }
     }
 
     private sealed class clsCotizacionFalsa(string id)
