@@ -57,7 +57,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     public const string Script07 = "../scripts_bd/07_motivo_busqueda_agotada.sql";
 
     /// <summary>HU-023.5 (#160): la propuesta 04 de la cubicación en segundo plano (relativa a <c>migrations_mssql</c>).</summary>
-    public const string Script04 = "../scripts_bd/pendientes/04_cubicacion_segundo_plano.sql";
+    public const string Script04 = "../scripts_bd/04_cubicacion_segundo_plano.sql";
 
     /// <summary>
     /// Scripts hasta el 07 incluido (con el 09, sin el 08): la base migrada que todavía tiene las vistas del borrador de métricas.
@@ -152,7 +152,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
                 // HU-023.3: la instalación desde cero corre el 02 después del 01 (como el ejecutador).
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("02_alter_cubicador.sql"));
                 // HU-023.5: la propuesta 04 (pendiente de aprobación) también, porque el backend mapea sus columnas.
-                await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("pendientes/04_cubicacion_segundo_plano.sql"));
+                await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("04_cubicacion_segundo_plano.sql"));
                 // HU-023 (#176): el 07 corre después del 02 (el ejecutador lo toma solo).
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("07_motivo_busqueda_agotada.sql"));
                 // HU-014.3 (#152): el 08 va después del 07; sobre el 01 actual no hace nada (ya no crea las vistas).
@@ -197,7 +197,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             // HU-023.3 (#158): el 02 del cubicador va después del 01, como lo corre el ejecutador.
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("02_alter_cubicador.sql"));
             // HU-023.5 (#160): la propuesta pendiente 04 (el backend mapea sus columnas; no fusionar sin aplicarla).
-            await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("pendientes/04_cubicacion_segundo_plano.sql"));
+            await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("04_cubicacion_segundo_plano.sql"));
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("07_motivo_busqueda_agotada.sql"));
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("08_retirar_vistas_actividad.sql"));
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("09_score_prioridad.sql"));
