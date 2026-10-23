@@ -166,3 +166,24 @@ Característica: Costeo de la cotización en Nexo
     Y "ana" abre el costeo de "C1"
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CosteoCotizacion" del contrato
     Y la respuesta trae la fecha límite vacía y el score de prioridad vacío
+
+  # #181 (Nexo #309) — Por qué la línea del camión sigue pendiente en Nexo: se muestra en el costeo, sin guardarlo en la base
+  Escenario: El costeo muestra por qué la línea del camión sigue pendiente en Nexo
+    Dado que Nexo expone el estado y el motivo pendiente de cada línea
+    Cuando "ana" envía a costeo el formulario ampliado del cliente "900555111" como "C1"
+    Y Nexo deja pendiente la línea de "C1" con el motivo "Línea sin vehículo: requiere consulta completa"
+    Y el polling consulta a Nexo
+    Y "ana" abre el costeo de "C1"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "CosteoCotizacion" del contrato
+    Y el camión de "C1" está "por_costear" en Nexo con el motivo "Línea sin vehículo: requiere consulta completa"
+    Cuando Nexo costea la solicitud de "C1" con un flete de 2550000
+    Y el polling consulta a Nexo
+    Y "ana" abre el costeo de "C1"
+    Entonces el camión de "C1" está "auto_resuelta" en Nexo sin motivo pendiente
+
+  Escenario: Con un Nexo que no expone el estado de la línea el costeo sale sin motivo y sin error
+    Cuando "ana" envía a costeo el formulario ampliado del cliente "900555111" como "C1"
+    Y el polling consulta a Nexo
+    Y "ana" abre el costeo de "C1"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "CosteoCotizacion" del contrato
+    Y el camión de "C1" sale sin estado de línea de Nexo ni motivo pendiente

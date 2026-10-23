@@ -1,8 +1,10 @@
 using System.Net;
 using Cotifly.Aplicacion.CatalogosFlete.DTOs;
 using Cotifly.Aplicacion.CatalogosFlete.Interfaces;
+using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Dominio.Comun;
+using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Dominio.Identidad;
 using Cotifly.Infraestructura.CatalogosFlete.Services;
 using Cotifly.Infraestructura.Configuracion;
@@ -94,7 +96,42 @@ public sealed class clsCatalogosFleteNexoTests : IDisposable
         resultado.Valor.TiposVehiculo.Should().NotBeEmpty();
         resultado.Valor.ClasesContenedor.Should().BeEmpty();
         resultado.Valor.LineasNegocio.Should().BeEmpty();
+        resultado.Valor.ClasesContenedorNoDisponible.Should().BeTrue("falló: la caché puede conservar la copia anterior");
+        resultado.Valor.LineasNegocioNoDisponible.Should().BeTrue();
         logger.Registros.Should().Contain(r => r.Nivel == Microsoft.Extensions.Logging.LogLevel.Warning && r.Mensaje.Contains("opcional", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task UnaListaVaciaRealDeNexoNoSeMarcaComoFallo()
+    {
+        // Hallazgo M de #179: [] (base de SAP sin configurar) es una respuesta legítima, no un fallo pasajero.
+        _nexo.ClasesContenedor.Clear();
+        _nexo.LineasNegocio.Clear();
+
+        var resultado = await Maestros().ObtenerAsync(_usuarioId, Ct);
+
+        resultado.Valor.ClasesContenedor.Should().BeEmpty();
+        resultado.Valor.ClasesContenedorNoDisponible.Should().BeFalse();
+        resultado.Valor.LineasNegocioNoDisponible.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ConLaCacheUnFalloPasajeroDeClasesDeContenedorConservaLasDeLaCopiaAnterior()
+    {
+        // Hallazgo M de #179, de punta a punta con el Nexo falso: la copia nueva (vigente 30 min) no deja el selector vacío.
+        var reloj = new clsRelojFalso();
+        var cache = new clsCacheCatalogosMaestros();
+        clsCatalogosMaestrosEnCache Proveedor() => new(
+            Maestros(), cache, reloj, Options.Create(new clsOpcionesNexo { UrlBase = clsNexoFalso.UrlBase }),
+            NullLogger<clsCatalogosMaestrosEnCache>.Instance);
+
+        await Proveedor().ObtenerAsync(_usuarioId, Ct);
+        _nexo.CatalogosFallidos.Add("clases-contenedor");
+        reloj.Avanzar(TimeSpan.FromMinutes(31));
+
+        var resultado = await new clsCatalogosFleteNexo(Proveedor()).ObtenerAsync(_usuarioId, Ct);
+
+        resultado.Valor.ClasesContenedor.Select(c => c.Valor).Should().Contain("CNT40.HC");
     }
 
     [Fact]
@@ -178,13 +215,68 @@ public sealed class clsCatalogosFleteNexoTests : IDisposable
     {
         var maestros = Substitute.For<IClsCatalogosMaestrosProvider>();
         maestros.ObtenerAsync(_usuarioId, Arg.Any<CancellationToken>()).Returns(clsResultado<clsCatalogosMaestros>.Exito(new clsCatalogosMaestros(
-            [new("3S3", "Tractocamión")], [new("Carga Suelta", "Carga Suelta")], [], [])));
+            [new("3S3", "Tractocamión")], [new("Carga Suelta", "Carga Suelta")], [new("CNT40.HC", "CNT40.HC")], [])));
 
         var resultado = await new clsCatalogosFleteNexo(maestros).ObtenerAsync(_usuarioId, Ct);
 
         resultado.Valor.TiposVehiculo.Should().Equal(new clsOpcionCatalogo("3S3", "Tractocamión"));
         resultado.Valor.ClasesViaje.Should().Equal(new clsOpcionCatalogo("Carga Suelta", "Carga Suelta"));
+        resultado.Valor.ClasesContenedor.Should().Equal(new clsOpcionCatalogo("CNT40.HC", "CNT40.HC"));
         resultado.Valor.TiposCarroceria.Select(c => c.Valor).Should().Contain(["FURGON", "PORTACONTENEDORES", "VOLCO"]).And.HaveCount(9);
+    }
+
+    [Fact]
+    public async Task LosCatalogosDeFleteExponenSoloLasClasesDeContenedorDeNexoConLaDescripcionComoValor()
+    {
+        // HU-027.1 (#179): en Nexo la descripcion de clases-contenedor es el código; el valor expuesto es el que valida la captura.
+        var resultado = await new clsCatalogosFleteNexo(Maestros()).ObtenerAsync(_usuarioId, Ct);
+
+        resultado.EsExitoso.Should().BeTrue();
+        resultado.Valor.ClasesContenedor.Should().Equal(
+            _nexo.ClasesContenedor.Select(d => new clsOpcionCatalogo(d, d)));
+        resultado.Valor.ClasesContenedor.Select(c => c.Valor).Should().Equal("CNT20.IT", "CNT20.RE", "CNT20.ST", "CNT40.HC", "CNT40.RE")
+            .And.NotContain(clsCatalogosCaptura.ClasesContenedorProvisionales);
+    }
+
+    [Fact]
+    public async Task CadaClaseDeContenedorExpuestaLaAceptaLaValidacionDeLaCaptura()
+    {
+        // HU-027.1 (#179): el valor que ofrece GET /web/catalogos-flete es el mismo con que se valida clase_contenedor.
+        var maestros = Maestros();
+        var validador = new clsValidadorCatalogosCaptura(maestros, NullLogger<clsValidadorCatalogosCaptura>.Instance);
+        var clases = (await new clsCatalogosFleteNexo(maestros).ObtenerAsync(_usuarioId, Ct)).Valor.ClasesContenedor;
+
+        clases.Should().NotBeEmpty();
+        foreach (var clase in clases)
+        {
+            var linea = clsSolicitudCosteoMuestra.Crear().ALinea() with { ClaseViaje = clsCatalogosCaptura.ClaseViajeContenedor, ClaseContenedor = clase.Valor };
+            (await validador.ValidarAsync(_usuarioId, linea, Ct)).Should().BeNull(clase.Valor);
+        }
+    }
+
+    [Fact]
+    public async Task SiNexoDevuelveLasClasesDeContenedorVaciasLosCatalogosDeFleteSiguenConLaListaVacia()
+    {
+        // Nexo responde [] cuando su base de SAP no está configurada.
+        _nexo.ClasesContenedor.Clear();
+
+        var resultado = await new clsCatalogosFleteNexo(Maestros()).ObtenerAsync(_usuarioId, Ct);
+
+        resultado.EsExitoso.Should().BeTrue();
+        resultado.Valor.ClasesContenedor.Should().BeEmpty();
+        resultado.Valor.ClasesViaje.Should().NotBeEmpty();
+        resultado.Valor.TiposVehiculo.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task SiFallaElCatalogoDeClasesDeContenedorLosCatalogosDeFleteSiguenConLaListaVacia()
+    {
+        _nexo.CatalogosFallidos.Add("clases-contenedor");
+
+        var resultado = await new clsCatalogosFleteNexo(Maestros()).ObtenerAsync(_usuarioId, Ct);
+
+        resultado.EsExitoso.Should().BeTrue();
+        resultado.Valor.ClasesContenedor.Should().BeEmpty();
     }
 
     [Fact]

@@ -100,6 +100,9 @@ public static class clsDependenciasInfraestructura
         servicios.AddOpcionesValidadas<clsOpcionesNexo>(configuracion, clsOpcionesNexo.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesCosteoNexo>(configuracion, clsOpcionesCosteoNexo.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesCaptura>(configuracion, clsOpcionesCaptura.Seccion);
+        servicios.AddSingleton<IValidateOptions<clsOpcionesCaptura>, clsValidadorOpcionesCaptura>();
+        // HU-032 (#197, M1): warning al arrancar si la lista de clases exentas no incluye Contenedor (no lo impide).
+        servicios.AddHostedService<clsAvisosArranqueCaptura>();
         servicios.AddOpcionesValidadas<clsOpcionesTrm>(configuracion, clsOpcionesTrm.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesTrm>, clsValidadorOpcionesTrm>();
         servicios.AddOpcionesValidadas<clsOpcionesCandadoSql>(configuracion, clsOpcionesCandadoSql.Seccion);
@@ -116,8 +119,12 @@ public static class clsDependenciasInfraestructura
         servicios.TryAddSingleton<IClsReloj, clsRelojSistema>();
         servicios.TryAddSingleton<IClsCalendarioNegocio, clsCalendarioNegocio>();
 
-        // Idempotency-Key de las mutaciones de la etapa final (ADR-018 §8, #100): en memoria, una sola réplica de la API.
-        servicios.TryAddSingleton<IClsAlmacenIdempotencia, clsAlmacenIdempotenciaEnMemoria>();
+        // Idempotency-Key de la captura y de las mutaciones de la etapa final (ADR-018 §8, #100, #173). #191: en la tabla del 06
+        // (dbo_cotifly.CapturasIdempotentes), compartida entre réplicas y a prueba de reinicios; sin la tabla, /health/ready dice
+        // "falta 06" (no se degrada a memoria). El registro de la captura en curso usa la misma fila, dentro de la transacción del folio.
+        servicios.TryAddSingleton<IClsAlmacenIdempotencia, clsAlmacenIdempotenciaSql>();
+        servicios.TryAddScoped<IClsRegistroCapturasIdempotentes, clsRegistroCapturasIdempotentesSql>();
+        servicios.AddHostedService<clsLimpiezaIdempotenciaHostedService>();
 
         AgregarPersistencia(servicios);
 
@@ -329,6 +336,11 @@ public static class clsDependenciasInfraestructura
         servicios.TryAddSingleton<clsCacheCatalogosMaestros>();
         servicios.AddHttpClient<clsCatalogosMaestrosNexo>(clsBuscadorClientesNexo.NombreCliente);
         servicios.TryAddScoped<IClsCatalogosMaestrosProvider>(clsFabricaCatalogosMaestros.Crear);
+
+        // HU-031.1 (#194): diccionario de alias de Nexo (NEXO #321), mismo cliente HTTP y las mismas reglas de caché que los maestros.
+        servicios.TryAddSingleton<clsCacheAliasNexo>();
+        servicios.AddHttpClient<clsAliasNexo>(clsBuscadorClientesNexo.NombreCliente);
+        servicios.TryAddScoped<IClsAliasNexoProvider>(clsFabricaAliasNexo.Crear);
 
         servicios.TryAddScoped<clsCatalogosFleteNoDisponible>();
         servicios.TryAddScoped<clsCatalogosFleteNexo>();

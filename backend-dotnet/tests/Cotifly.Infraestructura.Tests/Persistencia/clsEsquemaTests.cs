@@ -24,6 +24,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         "CotizacionServiciosConexos", "CotizacionVehiculosLineaSolicitud", "CotizacionesSolicitud", "EventosConversacion", "EventosHerramienta",
         "MargenAjustes", "MargenesPolitica", "Roles", "SapMapeoTrqType", "Sesiones",
         "TokensRefresco", "TokensRevocados", "UsuariosRoles", "UsuariosWeb",
+
+        // #191: la Idempotency-Key persistente (db/scripts/06; la base de las pruebas aplica toda la cadena de scripts).
+        "CapturasIdempotentes",
     ];
 
     /// <summary>Filtro de las tablas de respaldo que deja el 0009 (<c>Respaldo0009_*</c>): no son del modelo.</summary>
@@ -86,8 +89,14 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         scripts[clsBaseDatosPruebas.ScriptsHasta0009 - 1].Should().Be("0009_reestructuracion_cotizaciones.sql");
         scripts[clsBaseDatosPruebas.ScriptsHasta0010 - 1].Should().Be("0010_nombres_municipio.sql");
         scripts[clsBaseDatosPruebas.ScriptsHasta02 - 1].Should().Be(clsBaseDatosPruebas.Script02);
-        scripts[clsBaseDatosPruebas.ScriptsHasta04 - 1].Should().Be(clsBaseDatosPruebas.Script04, "ScriptsHasta04 incluye el 04 y no el 09");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script09, "ScriptsSin07 incluye el 09 (el backend mapea scorePrioridad)");
+        scripts[clsBaseDatosPruebas.ScriptsHasta03 - 1].Should().Be(clsBaseDatosPruebas.Script03, "ScriptsHasta03 incluye el 03 y no el 04");
+        scripts[clsBaseDatosPruebas.ScriptsHasta04 - 1].Should().Be(clsBaseDatosPruebas.Script04, "ScriptsHasta04 incluye el 04 y no el 05");
+        scripts[clsBaseDatosPruebas.ScriptsHasta05 - 1].Should().Be(clsBaseDatosPruebas.Script05, "ScriptsHasta05 incluye el 05 y no el 06");
+        scripts[clsBaseDatosPruebas.ScriptsHasta06 - 1].Should().Be(clsBaseDatosPruebas.Script06, "ScriptsHasta06 incluye el 06 y no el 09");
+        scripts[clsBaseDatosPruebas.ScriptsHasta09 - 1].Should().Be(clsBaseDatosPruebas.Script09, "ScriptsHasta09 incluye el 09 y no el 10 ni el 11");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 3].Should().Be(clsBaseDatosPruebas.Script10, "ScriptsSin07 incluye el 10 (el backend mapea el rechazo)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 2].Should().Be(clsBaseDatosPruebas.Script11, "ScriptsSin07 incluye el 11 (el backend mapea pesoConTaraKg)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script12, "ScriptsSin07 llega hasta el 12 (el backend mapea el vehículo elegido)");
         scripts[clsBaseDatosPruebas.ScriptsSin07].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsSin07 corta justo antes del 07");
         scripts[clsBaseDatosPruebas.ScriptsHasta07 - 1].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsHasta07 incluye el 07");
         scripts[clsBaseDatosPruebas.ScriptsHasta07..].Should().ContainSingle().Which.Should().Be(clsBaseDatosPruebas.Script08, "después del 07 solo va el 08");
@@ -117,6 +126,49 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
+    public async Task HU014_ElScript05EsIdempotenteSobreUnaBaseMigradaYSobreUnaInstalacionDesdeCero()
+    {
+        // HU-014 (#188): db/scripts/05 (categoría del conexo; el 01 no la trae).
+        await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem05", clsBaseDatosPruebas.Scripts.Length);
+        await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script05);
+
+        await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbIdem05Inst");
+        await ReaplicarYVerificarIdempotenciaAsync(instalada.Cadena, clsBaseDatosPruebas.Script05);
+    }
+
+    [Fact]
+    public async Task HU014_El03NumeraLosCamionesExistentesPorCreatedAtYElIndiceFiltradoRechazaUnOrdenRepetido()
+    {
+        // HU-014 (#188): sobre una base con camiones escritos SIN ordenVehiculo (02 sin el 03, como la base compartida antes de aplicarlo),
+        // el 03 los numera 1..n por ruta en el orden de createdAt (el desfase de 1 ms de antes de #188); después el índice único filtrado
+        // rechaza un orden repetido en la misma ruta y admite varios NULL.
+        await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbOrden03", clsBaseDatosPruebas.ScriptsHasta02);
+        var cadena = baseAislada.Cadena;
+        Guid cotizacion = Guid.NewGuid(), ruta = Guid.NewGuid();
+        await clsBaseDatosPruebas.EjecutarAsync(cadena,
+            "INSERT INTO dbo_cotifly.CotizacionesSolicitud (id, folio) VALUES "
+            + $"('{cotizacion}', 'PCN-ORD-03'); "
+            + "INSERT INTO dbo_cotifly.CotizacionLineasSolicitud (id, cotizacionSolicitudId, orden) VALUES "
+            + $"('{ruta}', '{cotizacion}', 1); "
+            + "INSERT INTO dbo_cotifly.CotizacionVehiculosLineaSolicitud (id, lineaSolicitudId, tipoVehiculo, createdAt) VALUES "
+            + $"(NEWID(), '{ruta}', N'TERCERO', '2026-10-01T10:00:00.002+00:00'), "
+            + $"(NEWID(), '{ruta}', N'PRIMERO', '2026-10-01T10:00:00.000+00:00'), "
+            + $"(NEWID(), '{ruta}', N'SEGUNDO', '2026-10-01T10:00:00.001+00:00');");
+
+        await clsBaseDatosPruebas.AplicarScriptAsync(cadena, clsBaseDatosPruebas.Script03);
+
+        (await LeerAsync(
+                $"SELECT CONCAT(ordenVehiculo, '=', tipoVehiculo) FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud WHERE lineaSolicitudId = '{ruta}' ORDER BY ordenVehiculo",
+                r => r.GetString(0), cadena))
+            .Should().Equal("1=PRIMERO", "2=SEGUNDO", "3=TERCERO");
+        var repetido = () => clsBaseDatosPruebas.EjecutarAsync(cadena,
+            $"INSERT INTO dbo_cotifly.CotizacionVehiculosLineaSolicitud (id, lineaSolicitudId, ordenVehiculo) VALUES (NEWID(), '{ruta}', 2)");
+        (await repetido.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("uq_cotizacionVehiculosLineaSolicitud_lineaSolicitudId_ordenVehiculo");
+        await clsBaseDatosPruebas.EjecutarAsync(cadena,
+            $"INSERT INTO dbo_cotifly.CotizacionVehiculosLineaSolicitud (id, lineaSolicitudId) VALUES (NEWID(), '{ruta}'), (NEWID(), '{ruta}')");
+    }
+
+    [Fact]
     public async Task ElScript04EsIdempotenteSobreUnaBaseMigradaYSobreUnaInstalacionDesdeCero()
     {
         // HU-023.5 (#160): la cola de la cubicación en segundo plano (propuesta pendiente 04; el 01 no la trae).
@@ -125,6 +177,43 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
 
         await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbIdem04Inst");
         await ReaplicarYVerificarIdempotenciaAsync(instalada.Cadena, clsBaseDatosPruebas.Script04);
+    }
+
+    [Fact]
+    public async Task I191_ElScript06EsIdempotenteSobreUnaBaseMigradaYSobreUnaInstalacionDesdeCero()
+    {
+        // #191: CapturasIdempotentes (db/scripts/06; el 01 no la trae).
+        await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem06", clsBaseDatosPruebas.Scripts.Length);
+        await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script06);
+
+        await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbIdem06Inst");
+        await ReaplicarYVerificarIdempotenciaAsync(instalada.Cadena, clsBaseDatosPruebas.Script06);
+        (await clsBaseDatosPruebas.EscalarAsync<int>(instalada.Cadena,
+                "SELECT COUNT(*) FROM sys.indexes WHERE object_id = OBJECT_ID(N'dbo_cotifly.CapturasIdempotentes') "
+                + "AND name IN (N'ix_capturasIdempotentes_expiraAt', N'ix_capturasIdempotentes_folio', N'uq_capturasIdempotentes_usuarioId_operacion_clave')"))
+            .Should().Be(3);
+    }
+
+    [Fact]
+    public async Task I191_ElScript06RecreaLaTablaVaciaDeLaPropuestaAnteriorYSeDetieneSiTieneFilas()
+    {
+        // La propuesta de #173 (sin operacion) nunca la usó el backend: vacía se recrea; con filas, el 06 se detiene sin tocarla.
+        await using var vacia = await BaseDatos.CrearBaseConScriptsAsync("dbIdem06Vieja", clsBaseDatosPruebas.ScriptsHasta05);
+        await clsBaseDatosPruebas.EjecutarAsync(vacia.Cadena, clsIdempotenciaSqlTests.TablaPropuestaAnterior);
+
+        await clsBaseDatosPruebas.AplicarScriptAsync(vacia.Cadena, clsBaseDatosPruebas.Script06);
+
+        (await clsBaseDatosPruebas.EscalarAsync<int>(vacia.Cadena,
+            "SELECT CASE WHEN COL_LENGTH(N'dbo_cotifly.CapturasIdempotentes', N'operacion') IS NULL THEN 0 ELSE 1 END")).Should().Be(1);
+
+        await using var conFilas = await BaseDatos.CrearBaseConScriptsAsync("dbIdem06Filas", clsBaseDatosPruebas.ScriptsHasta05);
+        await clsBaseDatosPruebas.EjecutarAsync(conFilas.Cadena, clsIdempotenciaSqlTests.TablaPropuestaAnterior
+            + "INSERT INTO dbo_cotifly.CapturasIdempotentes (usuarioId, clave, huella, estado, expiraAt) VALUES (NEWID(), N'clave-vieja', REPLICATE('A', 64), N'reservada', SYSDATETIMEOFFSET());");
+
+        var aplicar = () => clsBaseDatosPruebas.AplicarScriptAsync(conFilas.Cadena, clsBaseDatosPruebas.Script06);
+
+        (await aplicar.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("propuesta de #173");
+        (await clsBaseDatosPruebas.EscalarAsync<int>(conFilas.Cadena, "SELECT COUNT(*) FROM dbo_cotifly.CapturasIdempotentes")).Should().Be(1);
     }
 
     [Fact]
@@ -144,6 +233,150 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
+    public async Task HU0301_ElScript11EsIdempotenteSobreUnaBaseMigradaYSobreUnaInstalacionDesdeCeroYDejaDecimal122NullConSuCheck()
+    {
+        // HU-030.1 (#184): pesoConTaraKg en la ruta (db/scripts/11; el 01 no lo trae).
+        await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem11", clsBaseDatosPruebas.Scripts.Length);
+        await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script11);
+
+        await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbIdem11Inst");
+        await ReaplicarYVerificarIdempotenciaAsync(instalada.Cadena, clsBaseDatosPruebas.Script11);
+        (await clsBaseDatosPruebas.EscalarAsync<string>(instalada.Cadena,
+                "SELECT CONCAT(ty.name, '(', c.precision, ',', c.scale, ')|', c.is_nullable) FROM sys.columns c "
+                + "JOIN sys.types ty ON ty.user_type_id = c.user_type_id "
+                + "WHERE c.object_id = OBJECT_ID(N'dbo_cotifly.CotizacionLineasSolicitud') AND c.name = N'pesoConTaraKg'"))
+            .Should().Be("decimal(12,2)|1");
+        (await clsBaseDatosPruebas.EscalarAsync<int>(instalada.Cadena,
+                "SELECT COUNT(*) FROM sys.check_constraints WHERE name = N'ck_cotizacionLineasSolicitud_pesoConTaraKg' "
+                + "AND parent_object_id = OBJECT_ID(N'dbo_cotifly.CotizacionLineasSolicitud')"))
+            .Should().Be(1);
+    }
+
+    [Fact]
+    public async Task HU032_ElScript12EsIdempotenteDejaElVehiculoElegidoYLasMedidasNullYElCheckAdmiteSoloTresNullOTresPositivas()
+    {
+        // HU-032 (#197): tipoVehiculoElegido/carroceriaElegida en la ruta y medidas NULL (las tres o ninguna) en la mercancía.
+        await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem12", clsBaseDatosPruebas.Scripts.Length);
+        await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script12);
+
+        await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbIdem12Inst");
+        await ReaplicarYVerificarIdempotenciaAsync(instalada.Cadena, clsBaseDatosPruebas.Script12);
+        (await LeerAsync(
+                "SELECT CONCAT(c.name, '|', TYPE_NAME(c.user_type_id), '|', c.max_length, '|', c.is_nullable) FROM sys.columns c "
+                + "WHERE (c.object_id = OBJECT_ID(N'dbo_cotifly.CotizacionLineasSolicitud') AND c.name IN (N'tipoVehiculoElegido', N'carroceriaElegida')) "
+                + "OR (c.object_id = OBJECT_ID(N'dbo_cotifly.CotizacionMercancias') AND c.name IN (N'largoCm', N'anchoCm', N'altoCm'))",
+                r => r.GetString(0), instalada.Cadena))
+            .Should().BeEquivalentTo(["tipoVehiculoElegido|nvarchar|200|1", "carroceriaElegida|nvarchar|200|1",
+                "largoCm|decimal|9|1", "anchoCm|decimal|9|1", "altoCm|decimal|9|1"]);
+        var definicion = await clsBaseDatosPruebas.EscalarAsync<string>(instalada.Cadena,
+            "SELECT definition FROM sys.check_constraints WHERE name = N'ck_cotizacionPosiciones_medidas' "
+            + "AND parent_object_id = OBJECT_ID(N'dbo_cotifly.CotizacionMercancias')");
+        definicion.Should().Contain("IS NULL").And.Contain("[largoCm]>(0)");
+    }
+
+    [Fact]
+    public async Task HU032_ElCheckDelScript12RechazaLasMedidasParcialesConNull()
+    {
+        // Validación de HU-032: "NULL > 0" es UNKNOWN y un CHECK solo rechaza FALSE. Sin "IS NOT NULL", (NULL, 10, 10) pasaba el CHECK
+        // "las tres NULL o las tres > 0". Se prueba la definición que deja el 12 sobre una tabla temporal con las mismas columnas.
+        await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbCheck12");
+
+        var resultados = await clsBaseDatosPruebas.EscalarAsync<string>(instalada.Cadena, """
+            DECLARE @d NVARCHAR(MAX) = (SELECT definition FROM sys.check_constraints WHERE name = N'ck_cotizacionPosiciones_medidas'
+                                        AND parent_object_id = OBJECT_ID(N'dbo_cotifly.CotizacionMercancias'));
+            CREATE TABLE #m (largoCm DECIMAL(10,2) NULL, anchoCm DECIMAL(10,2) NULL, altoCm DECIMAL(10,2) NULL, pesoKg DECIMAL(12,2) NULL);
+            EXEC (N'ALTER TABLE #m ADD CONSTRAINT ck_m CHECK ' + @d);
+            DECLARE @r NVARCHAR(200) = N'';
+            BEGIN TRY INSERT #m VALUES (NULL, NULL, NULL, 5); SET @r += N'ninguna=ok;'; END TRY BEGIN CATCH SET @r += N'ninguna=error;'; END CATCH;
+            BEGIN TRY INSERT #m VALUES (10, 10, 10, 5); SET @r += N'tres=ok;'; END TRY BEGIN CATCH SET @r += N'tres=error;'; END CATCH;
+            BEGIN TRY INSERT #m VALUES (NULL, 10, 10, 5); SET @r += N'sinLargo=ok;'; END TRY BEGIN CATCH SET @r += N'sinLargo=error;'; END CATCH;
+            BEGIN TRY INSERT #m VALUES (10, NULL, 10, 5); SET @r += N'sinAncho=ok;'; END TRY BEGIN CATCH SET @r += N'sinAncho=error;'; END CATCH;
+            BEGIN TRY INSERT #m VALUES (10, 10, NULL, 5); SET @r += N'sinAlto=ok;'; END TRY BEGIN CATCH SET @r += N'sinAlto=error;'; END CATCH;
+            BEGIN TRY INSERT #m VALUES (0, 10, 10, 5); SET @r += N'cero=ok;'; END TRY BEGIN CATCH SET @r += N'cero=error;'; END CATCH;
+            SELECT @r;
+            """);
+
+        resultados.Should().Be("ninguna=ok;tres=ok;sinLargo=error;sinAncho=error;sinAlto=error;cero=error;");
+    }
+
+    [Fact]
+    public async Task HU032_ElScript12ReemplazaElCheckDeUnaVersionPreviaSinIsNotNull()
+    {
+        // Validación de HU-032: un ambiente que aplicó la primera versión del 12 (CHECK sin "IS NOT NULL") queda con el CHECK corregido al
+        // volver a correrlo.
+        await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbCheck12Previo");
+        await clsBaseDatosPruebas.EjecutarAsync(instalada.Cadena, """
+            ALTER TABLE dbo_cotifly.CotizacionMercancias DROP CONSTRAINT ck_cotizacionPosiciones_medidas;
+            ALTER TABLE dbo_cotifly.CotizacionMercancias WITH CHECK ADD CONSTRAINT ck_cotizacionPosiciones_medidas
+                CHECK (((largoCm IS NULL AND anchoCm IS NULL AND altoCm IS NULL) OR (largoCm > 0 AND anchoCm > 0 AND altoCm > 0))
+                       AND (pesoKg IS NULL OR pesoKg >= 0));
+            """);
+
+        await clsBaseDatosPruebas.AplicarScriptAsync(instalada.Cadena, clsBaseDatosPruebas.Script12);
+
+        (await clsBaseDatosPruebas.EscalarAsync<string>(instalada.Cadena,
+                "SELECT definition FROM sys.check_constraints WHERE name = N'ck_cotizacionPosiciones_medidas' "
+                + "AND parent_object_id = OBJECT_ID(N'dbo_cotifly.CotizacionMercancias')"))
+            .Should().Contain("[altoCm] IS NOT NULL");
+    }
+
+    [Fact]
+    public async Task HU0281_ElScript10EsIdempotenteSobreUnaBaseMigradaYSobreUnaInstalacionDesdeCero()
+    {
+        // HU-028.2 (#182) / HU-028.1 (#183): motivoRechazo y rechazadaAt en el camión y 'rechazada' en los tres CHECK de estadoCosteo.
+        await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem10", clsBaseDatosPruebas.Scripts.Length);
+        await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script10);
+
+        await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbIdem10Inst");
+        await ReaplicarYVerificarIdempotenciaAsync(instalada.Cadena, clsBaseDatosPruebas.Script10);
+        (await LeerAsync(
+                "SELECT CONCAT(c.name, '|', TYPE_NAME(c.user_type_id), '|', c.max_length, '|', c.is_nullable) FROM sys.columns c "
+                + "WHERE c.object_id = OBJECT_ID(N'dbo_cotifly.CotizacionVehiculosLineaSolicitud') AND c.name IN (N'motivoRechazo', N'rechazadaAt')",
+                r => r.GetString(0), instalada.Cadena))
+            .Should().BeEquivalentTo(["motivoRechazo|nvarchar|1000|1", "rechazadaAt|datetimeoffset|10|1"]);
+        (await clsBaseDatosPruebas.EscalarAsync<int>(instalada.Cadena,
+                "SELECT COUNT(*) FROM sys.check_constraints WHERE name IN (N'ck_cotizaciones_estadoCosteo', N'ck_cotizacionLineasSolicitud_estadoCosteo', "
+                + "N'ck_cotizacionVehiculosLineaSolicitud_estadoCosteo') AND definition LIKE N'%''rechazada''%'"))
+            .Should().Be(3, "las tres tablas admiten 'rechazada'");
+    }
+
+    [Fact]
+    public async Task HU0281_ElScript10SeAplicaSobreUnaBaseConDatosYElCheckDelRechazoExigeElEstado()
+    {
+        // Sobre una base hasta el 09 con un camión ya escrito: el 10 se aplica sin tocar las filas; después el CHECK del rechazo solo admite
+        // motivo y fecha con el camión en 'rechazada' (también con estadoCosteo NULL: el ISNULL del CHECK) y el de estadoCosteo admite 'rechazada'.
+        await using var baseConDatos = await BaseDatos.CrearBaseConScriptsAsync("dbDatos10", clsBaseDatosPruebas.ScriptsHasta09);
+        var cotizacion = Guid.NewGuid();
+        var ruta = Guid.NewGuid();
+        var camion = Guid.NewGuid();
+        await clsBaseDatosPruebas.EjecutarAsync(baseConDatos.Cadena,
+            $"INSERT INTO dbo_cotifly.CotizacionesSolicitud (id, folio, estadoCosteo) VALUES ('{cotizacion}', 'COT-R10', 'pendiente_costeo'); "
+            + $"INSERT INTO dbo_cotifly.CotizacionLineasSolicitud (id, cotizacionSolicitudId, orden, estadoCosteo) VALUES ('{ruta}', '{cotizacion}', 1, 'pendiente_costeo'); "
+            + $"INSERT INTO dbo_cotifly.CotizacionVehiculosLineaSolicitud (id, lineaSolicitudId, estadoCosteo, ordenVehiculo) VALUES ('{camion}', '{ruta}', 'pendiente_costeo', 1);");
+
+        await clsBaseDatosPruebas.AplicarScriptAsync(baseConDatos.Cadena, clsBaseDatosPruebas.Script10);
+
+        (await clsBaseDatosPruebas.EscalarAsync<string>(baseConDatos.Cadena,
+            $"SELECT estadoCosteo FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud WHERE id = '{camion}'")).Should().Be("pendiente_costeo");
+        var motivoSinRechazo = () => clsBaseDatosPruebas.EjecutarAsync(baseConDatos.Cadena,
+            $"UPDATE dbo_cotifly.CotizacionVehiculosLineaSolicitud SET motivoRechazo = N'x' WHERE id = '{camion}'");
+        (await motivoSinRechazo.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("ck_cotizacionVehiculosLineaSolicitud_rechazo");
+        var fechaSinEstado = () => clsBaseDatosPruebas.EjecutarAsync(baseConDatos.Cadena,
+            $"UPDATE dbo_cotifly.CotizacionVehiculosLineaSolicitud SET estadoCosteo = NULL, rechazadaAt = SYSDATETIMEOFFSET() WHERE id = '{camion}'");
+        (await fechaSinEstado.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("ck_cotizacionVehiculosLineaSolicitud_rechazo");
+
+        await clsBaseDatosPruebas.EjecutarAsync(baseConDatos.Cadena,
+            $"UPDATE dbo_cotifly.CotizacionVehiculosLineaSolicitud SET estadoCosteo = 'rechazada', motivoRechazo = N'Ruta sin tarifa', rechazadaAt = SYSDATETIMEOFFSET() WHERE id = '{camion}'; "
+            + $"UPDATE dbo_cotifly.CotizacionLineasSolicitud SET estadoCosteo = 'rechazada' WHERE id = '{ruta}'; "
+            + $"UPDATE dbo_cotifly.CotizacionesSolicitud SET estadoCosteo = 'rechazada' WHERE id = '{cotizacion}';");
+        (await clsBaseDatosPruebas.EscalarAsync<string>(baseConDatos.Cadena,
+            $"SELECT motivoRechazo FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud WHERE id = '{camion}'")).Should().Be("Ruta sin tarifa");
+        var estadoInvalido = () => clsBaseDatosPruebas.EjecutarAsync(baseConDatos.Cadena,
+            $"UPDATE dbo_cotifly.CotizacionVehiculosLineaSolicitud SET estadoCosteo = 'rechazado' WHERE id = '{camion}'");
+        (await estadoInvalido.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("ck_cotizacionVehiculosLineaSolicitud_estadoCosteo");
+    }
+
+    [Fact]
     public async Task LosCheckDel04AcotanElEstadoLosIntentosYExigenAvisosEnJson()
     {
         var definiciones = await LeerAsync(
@@ -156,11 +389,12 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
-    public async Task LaPropuesta03PendienteSeAplicaSobreEl02EsIdempotenteYCorrigeElCheckDelMotivo()
+    public async Task ElScript03SeAplicaSobreEl02EsIdempotenteYCorrigeElCheckDelMotivo()
     {
-        // HU-023.3 (#158): db/scripts/pendientes/03 (pendiente de revisión de @scalderon-bs; el backend no la mapea). En una base aislada.
-        const string Script03 = "../scripts_bd/pendientes/03_orden_vehiculo_y_conexo_catalogo.sql";
-        await using var baseAislada = await BaseDatos.CrearBaseInstaladaAsync("dbPropuesta03");
+        // HU-023.3 (#158); desde HU-014 (#188) está en db/scripts/ y el backend mapea sus columnas. En una base aislada (01 + 02 + 03 + ...),
+        // se vuelve a correr.
+        const string Script03 = clsBaseDatosPruebas.Script03;
+        await using var baseAislada = await BaseDatos.CrearBaseInstaladaAsync("dbScript03");
 
         await clsBaseDatosPruebas.AplicarScriptAsync(baseAislada.Cadena, Script03);
         await ReaplicarYVerificarIdempotenciaAsync(baseAislada.Cadena, Script03);
@@ -709,8 +943,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         });
 
         ef.Should().BeEquivalentTo(bd);
-        bd.Where(x => x.Contains(":ix_", StringComparison.Ordinal)).Should().HaveCount(15,
-            "el 0002 crea 10 índices ix_, el 0004 uno, el 0006 uno (historial de PDF), el 0009 quita el de posiciones por línea y agrega el de camiones y el de ajustes por ruta, y la propuesta 04 el de la cola del cubicador");
+        bd.Where(x => x.Contains(":ix_", StringComparison.Ordinal)).Should().HaveCount(17,
+            "el 0002 crea 10 índices ix_, el 0004 uno, el 0006 uno (historial de PDF), el 0009 quita el de posiciones por línea y agrega el de camiones y el de ajustes por ruta, la propuesta 04 el de la cola del cubicador y el script 06 (#191) el de vencimiento y el filtrado por folio de las Idempotency-Key");
+        bd.Should().Contain("CapturasIdempotentes:ix_capturasIdempotentes_folio unico=False claves=(folio) include=(expiraAt,scorePrioridad,solicitudNexoId) filtro=folioisnotnull");
         bd.Should().Contain(x => x.StartsWith("CotizacionLineasSolicitud:ix_cotizacionLineasSolicitud_cubicacionPendiente unico=False", StringComparison.Ordinal)
             && x.Contains("claves=(cubicacionDisponibleAt,createdAt)", StringComparison.Ordinal)
             && x.EndsWith("filtro=estadocubicacion=n'pendiente'", StringComparison.Ordinal));

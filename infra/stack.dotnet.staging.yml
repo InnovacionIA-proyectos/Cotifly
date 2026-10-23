@@ -122,6 +122,16 @@ services:
       # Nexo__UrlBase es la RAÍZ del servicio (https://<host-nexo>), sin "/api": el cliente agrega las rutas /api/...
       Nexo__UrlBase: ${Nexo__UrlBase:-}
       Nexo__MinutosCacheMunicipios: ${Nexo__MinutosCacheMunicipios:-60}
+      # HU-014 (#188): banderas de Nexo y de la captura con valor EXPLÍCITO, para que un cambio del valor por defecto del código no
+      # cambie el ambiente sin querer. HU-031.1 (#194, decisión del 2026-10-20): EnviarCodigosCubicador en siempre (Nexo ya tiene la
+      # bandeja de normalización, NEXO #322): el código del cubicador se resuelve con el catálogo y el diccionario de alias de Nexo y
+      # viaja oficial; el que ninguno conoce viaja tal cual y Nexo lo normaliza. siempre | solo_conocidos | nunca; true = siempre (un
+      # true que quede en Dokploy ya no es un riesgo), false = solo_conocidos. AceptarVehiculoCliente en true (el vehículo digitado solo
+      # va en el camión del respaldo y debe ser un código de Nexo o un alias que resuelve a uno). Ver DEPLOY.md.
+      Nexo__EnviarGrupoRutaId: ${Nexo__EnviarGrupoRutaId:-true}
+      Nexo__EnviarDatosCubicador: ${Nexo__EnviarDatosCubicador:-true}
+      Nexo__EnviarCodigosCubicador: ${Nexo__EnviarCodigosCubicador:-siempre}
+      Captura__AceptarVehiculoCliente: ${Captura__AceptarVehiculoCliente:-true}
       # Polling del costeo en Nexo (HU-005.6/005.8, clsOpcionesCosteoNexo). APAGADO por defecto en staging hasta que el
       # DBA confirme que staging y producción NO comparten dbo_cotifly: si la comparten, los workers de los dos stacks
       # consultarían y actualizarían las mismas cotizaciones contra instancias distintas de Nexo (pruebas y producción).

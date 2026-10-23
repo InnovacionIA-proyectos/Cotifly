@@ -131,7 +131,7 @@ public sealed class clsPasosServiciosConexos(
 
     // "las dos respuestas tienen el estado {int} y el mismo cuerpo" es de clsPasosReSolicitudCosteo (una sola definición).
 
-    [Given("que Nexo responde 403 al agregar conexos porque {string} no tiene el rol Comercial, CoordinadorFletes ni Admin")]
+    [Given("que Nexo responde 403 al agregar conexos porque {string} no tiene el rol Comercial ni Admin")]
     public void DadoSinRol(string alias)
     {
         web.Sesion(alias).Should().NotBeNull();

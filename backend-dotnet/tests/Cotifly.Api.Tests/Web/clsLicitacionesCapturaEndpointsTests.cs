@@ -24,7 +24,9 @@ public sealed class clsLicitacionesCapturaEndpointsTests : IDisposable
     public clsLicitacionesCapturaEndpointsTests(clsEntornoApiWeb entorno)
     {
         _entorno = entorno;
-        _api = clsApiWebPruebas.ConNexo(entorno.BaseDatos, _nexo);
+        // HU-014 (#188): Captura:AceptarVehiculoCliente está encendida por defecto. Estas pruebas verifican la decisión 7 (el vehículo del
+        // pliego se ignora), así que la apagan; el camino con la bandera encendida lo cubren clsCosteoEndpointsTests y la captura web.
+        _api = clsApiWebPruebas.ConNexo(entorno.BaseDatos, _nexo, new Dictionary<string, string?> { ["Captura:AceptarVehiculoCliente"] = "false" });
     }
 
     [Fact]
@@ -223,6 +225,32 @@ public sealed class clsLicitacionesCapturaEndpointsTests : IDisposable
             .Should().Be("76109|11001", "el siguiente reenvío manda lo mismo");
     }
 
+    /// <summary>
+    /// HU-030.1 (#184): una fila de contenedor de la licitación acepta <c>peso_con_tara_kg</c> (igual que la captura): se guarda en la ruta y
+    /// viaja a Nexo como el peso de su línea, sin posiciones. En una fila de otra clase de viaje es <c>CAMPO_NO_APLICA</c> en esa fila.
+    /// </summary>
+    [Fact]
+    public async Task HU0301_UnaFilaDeContenedorConPesoConTaraLoGuardaYLoMandaANexoYEnOtraClaseEsCampoNoAplica()
+    {
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var contenedor = Valida() with { tipologia = "Contenedor", clase_viaje = "Contenedor", clase_contenedor = "CNT40.HC", peso_con_tara_kg = 31_800m };
+
+        using var invalida = await _api.EnviarAsync(HttpMethod.Post, Ruta, sesion.Access,
+            Cuerpo([contenedor, Valida() with { clase_viaje = "Cupo", peso_con_tara_kg = 30_000m }]));
+        var json = await VerificarContratoAsync(invalida, Ruta, HttpMethod.Post, HttpStatusCode.BadRequest);
+        var error = json.GetProperty("errores").EnumerateArray().Should().ContainSingle().Subject;
+        (error.GetProperty("indice").GetInt32(), error.GetProperty("campo").GetString(), error.GetProperty("codigo").GetString())
+            .Should().Be((1, "peso_con_tara_kg", "CAMPO_NO_APLICA"));
+
+        using var envio = await _api.EnviarAsync(HttpMethod.Post, Ruta, sesion.Access, Cuerpo([contenedor]));
+        var folio = (await VerificarContratoAsync(envio, Ruta, HttpMethod.Post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+        var linea = _nexo.UltimaAlta!["lineas"]!.AsArray().Should().ContainSingle().Subject!;
+        linea["peso"]!.GetValue<decimal>().Should().Be(31_800m);
+        linea["posiciones"].Should().BeNull();
+        (await EscalarAsync("SELECT CAST(l.pesoConTaraKg AS nvarchar(20)) FROM dbo_cotifly.CotizacionLineasSolicitud l "
+            + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}'")).Should().Be("31800.00");
+    }
+
     private List<string> Altas() =>
         [.. _nexo.Peticiones.Where(p => p.Metodo == HttpMethod.Post && p.Url.AbsolutePath == "/api/captura-solicitudes").Select(p => p.Cuerpo!)];
 
@@ -280,6 +308,7 @@ public sealed class clsLicitacionesCapturaEndpointsTests : IDisposable
         public decimal? horas_cargue { get; init; }
         public decimal? horas_descargue { get; init; }
         public decimal peso_kg { get; init; } = 28_000m;
+        public decimal? peso_con_tara_kg { get; init; }
     }
 #pragma warning restore IDE1006, SA1300
 }

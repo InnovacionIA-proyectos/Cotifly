@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Cotifly.Aplicacion.Auditoria.Services;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Costeo.DTOs;
+using Cotifly.Aplicacion.Costeo.Interfaces;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Margen.Repositories;
 using Cotifly.Aplicacion.Pdf.Services;
@@ -60,7 +61,8 @@ public sealed class clsAjusteMargenCosteoService(
     IOptions<clsOpcionesPdf> opcionesPdf,
     IClsEnvioConexosNexoService? envioConexos = null,
     ILogger<clsAjusteMargenCosteoService>? logger = null,
-    IClsCategoriasConexos? categoriasConexos = null) : IClsAjusteMargenCosteoService
+    IClsCategoriasConexos? categoriasConexos = null,
+    IClsSituacionLineasNexo? situacionesNexo = null) : IClsAjusteMargenCosteoService
 {
     private readonly ILogger _logger = logger ?? NullLogger<clsAjusteMargenCosteoService>.Instance;
 
@@ -143,7 +145,7 @@ public sealed class clsAjusteMargenCosteoService(
         if (anterior == redondeado)
         {
             // Idempotente: el mismo margen vigente de la ruta no registra un ajuste ni invalida el PDF.
-            return (await clsCosteoCotizacionService.VistaConEstadosAsync(cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, _logger, cancellationToken, categoriasConexos), false, false);
+            return (await clsCosteoCotizacionService.VistaConEstadosAsync(cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, _logger, cancellationToken, categoriasConexos, situacionesNexo?.Obtener(cotizacion.Id)), false, false);
         }
 
         // Vista previa ANTES de cambiar nada: si el módulo de precio rechaza el margen, la cotización queda intacta.
@@ -177,7 +179,8 @@ public sealed class clsAjusteMargenCosteoService(
 
         // #173: con el estado_nexo de cada conexo, igual que GET .../costeo.
         return (await clsCosteoCotizacionService.VistaConEstadosAsync(
-            cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, _logger, CancellationToken.None, categoriasConexos), true, pdfInvalidado);
+            cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, _logger, CancellationToken.None, categoriasConexos, situacionesNexo?.Obtener(cotizacion.Id)),
+            true, pdfInvalidado);
     }
 
     /// <summary>
@@ -191,6 +194,11 @@ public sealed class clsAjusteMargenCosteoService(
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(ruta);
+        if (cotizacion.ValidarRutaNoRechazada(ruta) is { } rechazada)
+        {
+            return rechazada;
+        }
+
         if (ruta.CostoFinal is not { } costo)
         {
             return new clsErrorDominio(clsCodigosError.CosteoNoListo,
@@ -202,7 +210,8 @@ public sealed class clsAjusteMargenCosteoService(
             return error;
         }
 
-        var otras = cotizacion.Rutas.Where(r => r.Id != ruta.Id).ToList();
+        // HU-028.1 (#183): las rutas rechazadas por la Mesa no cuentan en el total.
+        var otras = cotizacion.RutasCotizables.Where(r => r.Id != ruta.Id).ToList();
         decimal? total = otras.All(r => r.PrecioFinalLinea is not null) ? precio!.Value + otras.Sum(r => r.PrecioFinalLinea!.Value) : null;
         return new clsRecalculoMargen(total, ruta, ruta.PrecioFinalLinea, precio!.Value);
     }

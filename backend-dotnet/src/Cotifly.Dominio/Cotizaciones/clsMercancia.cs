@@ -33,9 +33,14 @@ public sealed class clsMercancia
     public string? NombreMercancia { get; private set; }
 
     public int Cantidad { get; private set; }
-    public decimal LargoCm { get; private set; }
-    public decimal AnchoCm { get; private set; }
-    public decimal AltoCm { get; private set; }
+
+    /// <summary>
+    /// Medidas en cm. HU-032 (#197, script <c>db/scripts/12</c>): las tres son <c>null</c> en una mercancía no cubicable (sin medidas ni tipo
+    /// de mercancía, <see cref="clsPosicionCarga.EsNoCubicable"/>); si no, las tres mayores que 0.
+    /// </summary>
+    public decimal? LargoCm { get; private set; }
+    public decimal? AnchoCm { get; private set; }
+    public decimal? AltoCm { get; private set; }
     public decimal? PesoKg { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
 
@@ -66,8 +71,31 @@ public sealed class clsMercancia
         return [.. posiciones.Select((p, i) => Nueva(lineaSolicitudId, i + 1, p))];
     }
 
+    /// <summary>
+    /// HU-028 (#186): la mercancía toma el contenido editado de <paramref name="p"/> en el mismo orden (ya validado por la captura), con su
+    /// <see cref="clsPosicionCarga.CodigoMercancia"/>. Se actualiza en su lugar para no repetir el orden de la ruta al guardar.
+    /// </summary>
+    internal void Actualizar(int orden, clsPosicionCarga p)
+    {
+        ArgumentNullException.ThrowIfNull(p);
+        ArgumentOutOfRangeException.ThrowIfLessThan(orden, 1);
+        Orden = orden;
+        CodigoMercancia = string.IsNullOrWhiteSpace(p.CodigoMercancia) ? null : p.CodigoMercancia.Trim();
+        NombreMercancia = string.IsNullOrWhiteSpace(p.Descripcion) ? null : p.Descripcion.Trim();
+        Cantidad = p.Cantidad;
+        LargoCm = Medida(p, p.LargoCm);
+        AnchoCm = Medida(p, p.AnchoCm);
+        AltoCm = Medida(p, p.AltoCm);
+        PesoKg = p.PesoKg;
+    }
+
     /// <summary>La mercancía como posición de la captura (para reenviarla a Nexo o pedir la recomendación del cubicador).</summary>
-    public clsPosicionCarga APosicion() => new(NombreMercancia, Cantidad, LargoCm, AnchoCm, AltoCm, PesoKg, CodigoMercancia: CodigoMercancia);
+    /// <remarks>HU-032 (#197): una mercancía sin medidas vuelve con 0 en las tres (como llega del contrato).</remarks>
+    public clsPosicionCarga APosicion() =>
+        new(NombreMercancia, Cantidad, LargoCm ?? 0m, AnchoCm ?? 0m, AltoCm ?? 0m, PesoKg, CodigoMercancia: CodigoMercancia);
+
+    /// <summary>HU-032 (#197): la medida que se guarda: <c>null</c> si la mercancía no trae ninguna (<see cref="clsPosicionCarga.SinMedidas"/>).</summary>
+    private static decimal? Medida(clsPosicionCarga p, decimal valor) => p.SinMedidas ? null : valor;
 
     private static clsMercancia Nueva(Guid lineaSolicitudId, int orden, clsPosicionCarga p)
     {
@@ -80,9 +108,9 @@ public sealed class clsMercancia
             CodigoMercancia = string.IsNullOrWhiteSpace(p.CodigoMercancia) ? null : p.CodigoMercancia.Trim(),
             NombreMercancia = string.IsNullOrWhiteSpace(p.Descripcion) ? null : p.Descripcion.Trim(),
             Cantidad = p.Cantidad,
-            LargoCm = p.LargoCm,
-            AnchoCm = p.AnchoCm,
-            AltoCm = p.AltoCm,
+            LargoCm = Medida(p, p.LargoCm),
+            AnchoCm = Medida(p, p.AnchoCm),
+            AltoCm = Medida(p, p.AltoCm),
             PesoKg = p.PesoKg,
         };
     }

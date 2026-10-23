@@ -12,6 +12,27 @@ public static class clsCatalogosCaptura
     /// <summary>Clase de viaje que exige <c>clase_contenedor</c> (y la única que la admite).</summary>
     public const string ClaseViajeContenedor = "Contenedor";
 
+    /// <summary>
+    /// HU-032 (#197): las clases de viaje de Nexo (<c>descripcion</c> de <c>GET /api/catalogos/clases-viaje</c>, el <c>valor</c> de
+    /// <c>clases_viaje</c> en <c>GET /web/catalogos-flete</c>), con la escritura exacta de Nexo ("Carga Suelta" con espacio). La captura
+    /// valida <c>clase_viaje</c> contra el catálogo vivo de Nexo; esta lista solo valida la configuración al arrancar
+    /// (<c>Captura:ClasesSinVehiculoObligatorio</c>), que no puede consultar Nexo.
+    /// </summary>
+    public static readonly IReadOnlyList<string> ClasesViaje = [ClaseViajeContenedor, "Cupo", "Carga Suelta", "Extradimensionado"];
+
+    /// <summary>
+    /// HU-032 (#197): la clase de viaje de <see cref="ClasesViaje"/> que coincide con <paramref name="valor"/> recortado y sin distinguir
+    /// mayúsculas, con la escritura de Nexo (<c>carga suelta</c> → <c>Carga Suelta</c>); <c>null</c> si no es ninguna. Solo para la
+    /// configuración al arrancar: la captura sigue comparando exacto contra el catálogo vivo de Nexo.
+    /// </summary>
+    public static string? ClaseViajeNormalizada(string? valor) =>
+        string.IsNullOrWhiteSpace(valor)
+            ? null
+            : ClasesViaje.FirstOrDefault(c => string.Equals(c, valor.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>HU-032 (#197): clases de viaje en las que el vehículo elegido no es obligatorio si no se configura otra cosa: solo Contenedor.</summary>
+    public static readonly IReadOnlyList<string> ClasesSinVehiculoPorDefecto = [ClaseViajeContenedor];
+
     /// <summary>Carrocerías de Nexo, en código hasta que Nexo publique su catálogo (pregunta 12 de <c>HU-013-preguntas-nexo.md</c>).</summary>
     public static readonly IReadOnlyList<string> Carrocerias =
         ["ESTACAS", "ESTIBAS", "FURGON", "FURGON REFRIGERADO", "PLATAFORMA", "PORTACONTENEDORES", "TANQUE", "TRAYLER", "VOLCO"];

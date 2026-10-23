@@ -187,19 +187,21 @@ public sealed class clsTextosCosteoService(
 
     /// <summary>
     /// Contexto de la IA desde la cotización (ADR-018 §2a; por ruta desde HU-021.9, #136): cliente, líneas de negocio de las rutas
-    /// (<paramref name="lineaNegocio"/>), rutas (origen y destino de cada ruta), tipos de vehículo de sus camiones vigentes (sin repetir;
-    /// un camión descartado en Nexo no cuenta), nombres de los conexos de las rutas y moneda, cada texto recortado a <see cref="clsContextoRedaccion.LargoMaximoCampo"/>.
+    /// (<paramref name="lineaNegocio"/>), rutas (origen y destino de cada ruta; HU-028.1, #183: sin las rechazadas por la Mesa de Costeo),
+    /// tipos de vehículo de sus camiones vigentes (sin repetir; un camión descartado o rechazado en Nexo no cuenta), nombres de los conexos de las rutas y moneda, cada texto recortado a <see cref="clsContextoRedaccion.LargoMaximoCampo"/>.
     /// Nada sale de la cabecera salvo el cliente y la moneda. Nada más: ni costos, ni margen, ni precios, ni la TRM, ni el folio, el NIT o
     /// el comercial.
     /// </summary>
     public static clsContextoRedaccion Contexto(clsCotizacionSolicitud cotizacion, string? lineaNegocio)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        var ordenadas = cotizacion.RutasOrdenadas;
+        // HU-028.1 (#183): sin las rutas que la Mesa de Costeo de Nexo rechazó (el PDF las muestra "Sin costeo"): el texto de la IA no debe
+        // ofrecer al cliente una ruta ni unos conexos que no se cotizaron.
+        var ordenadas = cotizacion.RutasCotizables;
         List<clsRutaRedaccion> rutas = [.. ordenadas
             .Where(r => !string.IsNullOrWhiteSpace(r.OrigenNombre) && !string.IsNullOrWhiteSpace(r.DestinoNombre))
             .Select(r => new clsRutaRedaccion(Recortar(r.OrigenNombre)!, Recortar(r.DestinoNombre)!)).Distinct().Take(clsContextoRedaccion.MaximoRutas)];
-        var vehiculos = ordenadas.SelectMany(r => r.VehiculosQueCuentan.OrderBy(v => v.CreatedAt).ThenBy(v => v.Id))
+        var vehiculos = ordenadas.SelectMany(r => clsVehiculoLineaSolicitud.EnOrden(r.VehiculosQueCuentan))
             .Select(v => v.TipoVehiculo?.Trim()).OfType<string>().Where(t => t.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var conexos = ordenadas.SelectMany(r => r.Conexos)

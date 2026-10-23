@@ -115,10 +115,11 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `Cubicador__RutaSalud` | no | no | vacío | manifiesto | ruta del endpoint de salud del cubicador (petición P7, por ejemplo `/health`) para la sonda `cubicador` de `/health/ready`; vacía no lo consulta |
 | `Cubicador__MinutosCacheCatalogos`, `__TiempoMaximoCatalogoSegundos`, `__PresupuestoCapturaSegundos` | no | no | `30`, `10`, `180` | manifiesto | caché de los tres catálogos, tope de cada catálogo y tiempo máximo de llamadas por captura (se revisa antes de cada ruta y la espera por el cupo cuenta; antes `120`, opción C). Una ruta sola puede tardar lo que dura una llamada al cubicador (`EsperaMaximaCupoSegundos` + `TiempoEsperaRecomendacionSegundos` + 2 + `EsperaAntesReconsultaSegundos` + `TiempoEsperaReconsultaSegundos` = 217 s) y una captura de varias rutas, en el peor caso, el presupuesto más esa llamada (180 + 217 ≈ 400 s, 6,5 min): Traefik (sin `respondingTimeouts.writeTimeout` ni `serversTransport.forwardingTimeouts.responseHeaderTimeout` que lo corten), cualquier otro proxy y el cliente del front deben cubrirlo |
 | `CosteoNexo__MaximoReintentosConexos`, `__IntervaloReintentoConexosMinutos`, `__EsperaMaximaCatalogoConexosHoras` | no | no | `5` (1-100), `5` (1-1440), `24` (1-720) | — (no están en el manifiesto: rige el valor por defecto) | envío diferido de los conexos a Nexo (HU-021.9, decisión 10): intentos fallidos antes de `fallido_definitivo`, espera entre reintentos de una cotización ya entregada y horas máximas esperando el catálogo de conexos o la cotización de Nexo |
-| `Nexo__EnviarGrupoRutaId` (antes `Nexo__EnviarReferenciaRuta`) | no | no | `true` | — (no está en el manifiesto) | HU-023.4: manda `grupoRutaId` en las líneas de una ruta con varios camiones (una ruta de un camión va con `null`). HU-023 (#176): encendida por defecto porque Nexo ya lo desplegó; `false` solo como interruptor de emergencia |
-| `Nexo__EnviarDatosCubicador` | no | no | `true` | — (no está en el manifiesto) | HU-023.4: manda `idRecomendacionVehiculo` por línea. Encendida por defecto (#176); `false` = interruptor de emergencia |
-| `Nexo__EnviarCodigosCubicador` | no | no | `true` | — (no está en el manifiesto) | Nexo #297: manda los códigos de vehículo y carrocería del cubicador (un código desconocido nace en cuarentena, 18.4). Encendida por defecto (#176); con `false` esas líneas van sin vehículo a la Mesa |
-| `Captura__AceptarVehiculoCliente` | no | no | `false` | — (no está en el manifiesto) | bandera de respaldo (HU-021-FE.2): encendida, el vehículo y la carrocería que manda el frontend van solo en el camión del respaldo. Apagada rige la decisión 7. Se retira cuando exista el cubicador |
+| `Nexo__EnviarGrupoRutaId` (antes `Nexo__EnviarReferenciaRuta`) | no | no | `true` | manifiesto (HU-014, #188) | HU-023.4: manda `grupoRutaId` en las líneas de una ruta con varios camiones (una ruta de un camión va con `null`). HU-023 (#176): encendida por defecto porque Nexo ya lo desplegó; `false` solo como interruptor de emergencia |
+| `Nexo__EnviarDatosCubicador` | no | no | `true` | manifiesto (#188) | HU-023.4: manda `idRecomendacionVehiculo` por línea. Encendida por defecto (#176); `false` = interruptor de emergencia |
+| `Nexo__EnviarCodigosCubicador` | no | no | **`siempre`** | manifiesto (#188, #194) | Nexo #297: códigos de vehículo y carrocería del cubicador en la línea. Antes de enviar, el código se resuelve con `GET /api/catalogos/tipos-vehiculo` de Nexo (la copia en caché, con la equivalencia de Nexo: sin tildes ni mayúsculas, `_`/`-` = espacio) y, si no está, con el **diccionario de alias** de Nexo (**HU-031.1 #194**, NEXO #321, `GET /api/catalogos/alias`, misma caché: `C2` → `2`); lo resuelto viaja escrito como en Nexo y se autocostea. Tres modos: **`siempre` (por defecto desde #194, decisión del 2026-10-20: Nexo ya tiene la bandeja de normalización, NEXO #322)** manda todos; el que nadie conoce, tal cual (cuarentena en Nexo, que lo normaliza). `solo_conocidos` (el de #188) manda el vehículo solo si se resolvió y la carrocería solo con ese vehículo y si está en la lista de carrocerías de Nexo; si no, la línea va sin vehículo (Cupo queda `PorCostear`). `nunca` no manda ninguno (emergencia). Sin catálogo ni diccionario de Nexo el envío no falla (sigue el modo sin resolver, con un warning). Compatibilidad: `true` = `siempre`, `false` = `solo_conocidos`; otro valor no arranca. El polling empareja igual en los tres modos y compara contra el código que viajó (la traducción del alias queda registrada con el envío) |
+| `Captura__AceptarVehiculoCliente` | no | no | **`true`** | manifiesto (#188) | **HU-032 (#197, ADR-022): interruptor de reversa del vehículo elegido.** Encendida, el vehículo elegido de cada ruta es el respaldo del cubicador (obligatorio sin mercancías cubicables salvo Contenedor, validado contra Nexo solo si se usa, con avisos por ruta; la edición y la re-solicitud lo conservan); apagada vuelve el comportamiento anterior (se ignora). Historia: bandera de respaldo (HU-021-FE.2). **HU-014 (#188, decisión del 2026-10-19): encendida**: el vehículo y la carrocería que manda el frontend (HU-014 #188, M1: deben ser códigos que Nexo conozca, del catálogo de tipos de vehículo de Nexo y de su lista de carrocerías; uno que solo conoce el cubicador es 400) van solo en el camión del respaldo (cubicador sin configurar, ruta sin mercancías tipadas o cubicador caído con `Cubicador__RespaldoSiFalla`). Si el cubicador recomienda, manda el cubicador. Apagada rige la decisión 7 |
+| `Captura__ClasesSinVehiculoObligatorio__0`, `__1`... | no | no | **`Contenedor`** (sin configurar) | — (no está en el manifiesto: rige el valor por defecto) | **HU-032 (#197, decisión del 2026-10-21):** clases de viaje en las que una ruta que no se puede cubicar **no** exige el vehículo elegido (`VEHICULO_REQUERIDO`). Clases de Nexo (`Contenedor`, `Cupo`, `Carga Suelta`, `Extradimensionado`), sin distinguir mayúsculas (se normalizan a la escritura de Nexo) y sin contar los vacíos; la lista configurada **reemplaza** a la de por defecto (para eximir también Carga Suelta: `__0=Contenedor`, `__1=Carga Suelta`); sin `Contenedor` deja el warning `CAPTURA_CONTENEDOR_EXIGE_VEHICULO` al arrancar. Un valor desconocido no arranca |
 | `BaseDatos__MotivoBusquedaAgotada` | no | no | `auto` | manifiesto | HU-023 (#176): `auto` detecta `db/scripts/07_motivo_busqueda_agotada.sql` (exige `VIEW DEFINITION` sobre `dbo_cotifly` para `cotifly_app`); `habilitado` asume el 07 aplicado sin consultar (solo con el 07 aplicado: sin él, guardar `BUSQUEDA_AGOTADA` falla); `deshabilitado` guarda el motivo en NULL con un aviso. Otro valor no arranca |
 | `Trm__Proveedor` | no | no | `dolarapi_con_respaldo` | manifiesto | cadena de fuentes de la TRM (ADR-014): `dolarapi_con_respaldo`, `dolarapi` o `superfinanciera`; otro valor no arranca |
 | `Trm__UrlDolarApi` | no | **sí** (vacía no arranca) | `https://co.dolarapi.com/v1/trm` | manifiesto | TRM del día, fuente principal (agregador no oficial); exige salida a `co.dolarapi.com:443` |
@@ -149,10 +150,15 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
   - **cómo:** (1) el dueño de OmniRoute emite una clave nueva; (2) actualizar `IA__ApiKey` e `IA__Fallbacks__N__ApiKey` en Dokploy (staging y producción); (3) redesplegar el stack (*Deploy* en Dokploy) y probar un turno de `/web/chat`; (4) revocar la anterior en OmniRoute; (5) anotar la fecha en la bitácora de operaciones.
 - **Datos y términos del proveedor:** pendiente con negocio y legal (ADR-003 "Pendientes"). Hay que confirmar qué credencial tiene cargada OmniRoute, la residencia de los datos y si OmniRoute registra los prompts.
 
-**Variables nuevas de HU-021** (`Cubicador__*`, `Captura__AceptarVehiculoCliente`, `Pdf__PermitirCotizacionChat`,
-`Nexo__EnviarGrupoRutaId`, `Nexo__EnviarDatosCubicador`, `Nexo__EnviarCodigosCubicador` y los tres `CosteoNexo__*Conexos*`): ninguna está todavía en `infra/stack.dotnet.dokploy.yml`
-ni en `infra/stack.dotnet.staging.yml`, así que rige su valor por defecto. HU-023 (#176): las tres `Nexo__Enviar*` quedan
-**encendidas** por defecto (Nexo ya desplegó el contrato); declararlas en `false` solo si hace falta apagarlas de emergencia.
+**Variables nuevas de HU-021** (`Pdf__PermitirCotizacionChat` y los tres `CosteoNexo__*Conexos*`): no están en `infra/stack.dotnet.dokploy.yml`
+ni en `infra/stack.dotnet.staging.yml`, así que rige su valor por defecto. Las `Cubicador__*` ya están en los manifiestos. **HU-014
+(#188, decisión del 2026-10-19):** las tres `Nexo__Enviar*` y `Captura__AceptarVehiculoCliente` se declaran en los dos manifiestos con
+valor explícito (`EnviarGrupoRutaId=true`, `EnviarDatosCubicador=true`, **`EnviarCodigosCubicador=siempre`** desde HU-031.1 #194,
+decisión del 2026-10-20, y **`AceptarVehiculoCliente=true`**), para que un cambio del valor por defecto en el código no cambie un ambiente
+sin querer. Si Dokploy ya tiene cargada alguna de las cuatro, revisar que tenga ese valor: un `Nexo__EnviarCodigosCubicador=true` cargado
+antes se lee como `siempre`, que ahora es el valor buscado (ya no es un riesgo: Nexo tiene la bandeja de normalización, NEXO #322); un
+`false` o un `solo_conocidos` cargados antes dejan el ambiente en `solo_conocidos` (los códigos que nadie conoce viajan sin vehículo):
+**borrarla** o ponerla en `siempre`.
 **Base de datos:** antes de desplegar #176 conviene aplicar `db/scripts/07_motivo_busqueda_agotada.sql` (sin él el backend arranca
 igual: guarda `BUSQUEDA_AGOTADA` en NULL con un aviso y `/health/ready` solo lo informa). La autodetección del 07 lee la
 definición del CHECK en `sys.check_constraints`, así que `cotifly_app` necesita `GRANT VIEW DEFINITION ON SCHEMA::dbo_cotifly TO cotifly_app;`
@@ -160,7 +166,38 @@ definición del CHECK en `sys.check_constraints`, así que `cotifly_app` necesit
 otorga el permiso, con el 07 ya aplicado se declara `BaseDatos__MotivoBusquedaAgotada=habilitado` (ver la tabla de variables).
 HU-018.1 (#155): antes de desplegar se aplica `db/scripts/09_score_prioridad.sql` (`CotizacionesSolicitud.scorePrioridad DECIMAL(9,4) NULL`,
 idempotente, sin respaldo porque solo agrega una columna NULL). A diferencia del 07 **sí es obligatorio**: el backend mapea la columna y
-sin ella `/health/ready` responde 503 "esquema incompleto: falta 09" (§4.5). No lleva variable ni permiso nuevo. Para cambiar una hay que declararla en el manifiesto (y `Cubicador__ApiKey` como secreto) antes de cargarla en
+sin ella `/health/ready` responde 503 "esquema incompleto: falta 09" (§4.5). No lleva variable ni permiso nuevo.
+HU-028.1 (#183): antes de desplegar se aplica `db/scripts/10_rechazo_linea.sql` (rechazo de la línea por la Mesa de Costeo de Nexo en el
+camión: `motivoRechazo`, `rechazadaAt` y `'rechazada'` en los CHECK de `estadoCosteo`; idempotente, sin respaldo; **lo revisa
+@scalderon-bs**). **Obligatorio**, como el 09: sin él `/health/ready` responde 503 "esquema incompleto: falta 10". No lleva variable ni
+permiso nuevo. Requiere un Nexo con #320 para que haya rechazos; con un Nexo anterior la línea nunca llega rechazada y nada cambia.
+HU-030.1 (#184): antes de desplegar se aplica `db/scripts/11_peso_con_tara.sql` (`CotizacionLineasSolicitud.pesoConTaraKg DECIMAL(12,2) NULL`
+con su `CHECK` > 0; idempotente, sin respaldo porque solo agrega una columna NULL). **Obligatorio**, como el 09: el backend mapea la
+columna y sin ella `/health/ready` responde 503 "esquema incompleto: falta 11" (§4.5). No lleva variable ni permiso nuevo.
+
+HU-032 (#197): antes de desplegar se aplica `db/scripts/12_vehiculo_elegido.sql` (en la ruta, `tipoVehiculoElegido` y `carroceriaElegida NVARCHAR(100)
+NULL`; en la mercancía, `largoCm`/`anchoCm`/`altoCm` NULL con el CHECK "las tres NULL o las tres > 0"). El backend mapea las columnas: sin
+ellas `/health/ready` responde 503 "esquema incompleto: falta 12" (§4.5). `Captura__AceptarVehiculoCliente` (por defecto `true`) pasa a ser el
+interruptor de reversa del vehículo elegido (ADR-022): `false` vuelve al comportamiento anterior sin redesplegar.
+`Captura__ClasesSinVehiculoObligatorio` (por defecto solo `Contenedor`) define las clases de viaje que no exigen el vehículo; un valor que
+no es una clase de viaje de Nexo impide arrancar. **Folios anteriores:** la edición y la re-solicitud con `datos_carga` solo exigen el
+vehículo en una ruta nueva o que cambia (peso, mercancías, clase de viaje o vehículo elegido): un folio de Cupo anterior a HU-032 que solo
+trae el peso se sigue editando y re-solicitando sin vehículo mientras no cambie esa ruta.
+
+**Riesgo de despliegue: la huella de la `Idempotency-Key` (#191, B1 de la auditoría de HU-032).** La huella con la que se reconoce un
+reintento se calcula sobre la entrada ya convertida al registro de dominio (`clsEntradaCaptura`, `clsEntradaEdicionSolicitud`,
+`clsEntradaReSolicitudCosteo`), no sobre el JSON de la petición: cuando una versión agrega o cambia propiedades de esos registros (HU-032
+agregó el vehículo elegido, las medidas opcionales y propiedades calculadas como la cubicabilidad de la ruta), **la misma petición da otra
+huella antes y después del despliegue**. Durante las 24 h de vida de una clave, un reintento con la misma `Idempotency-Key` que cruza el
+despliegue (enviado antes, repetido después) responde **409 `IDEMPOTENCY_KEY_REUTILIZADA`** en vez de devolver el resultado guardado.
+No duplica nada (la primera ejecución ya quedó y el 409 no ejecuta otra vez), pero el frontend debe tratar ese 409 como "revisa el folio en
+Mis cotizaciones" y no reintentar con otra clave a ciegas. Mitigación: desplegar en un horario sin capturas en curso. Moverla al DTO de la
+petición no se hizo en HU-032: toca las firmas de las cuatro operaciones idempotentes (captura, conexos, re-solicitud y edición) y el DTO
+también cambia de forma entre versiones, así que no elimina el riesgo; queda como deuda.
+#191 (HU-026.1): antes de desplegar se aplica `db/scripts/06_idempotencia_captura.sql` (tabla `dbo_cotifly.CapturasIdempotentes`: la
+`Idempotency-Key` de la captura, los conexos, la re-solicitud y la edición, persistente y compartida entre réplicas). **Obligatorio**: sin la
+tabla `/health/ready` responde 503 "esquema incompleto: falta 06" (la API no degrada a memoria). No lleva variable ni permiso nuevo (la
+limpieza de las claves vencidas la hace la API cada hora). Para cambiar una hay que declararla en el manifiesto (y `Cubicador__ApiKey` como secreto) antes de cargarla en
 Dokploy. Todas están en `backend-dotnet/.env.example`.
 
 **Base de datos, HU-014.3 (#152):** el backend ya no expone `GET /web/metricas/actividad` ni `/web/metricas/ajustes-margen` (responden
@@ -183,8 +220,9 @@ cargan en Dokploy así:
 | `CosteoNexo__MaximoReintentosConexos`, `__IntervaloReintentoConexosMinutos`, `__EsperaMaximaCatalogoConexosHoras` | por defecto (`5`, `5`, `24`) | por defecto | Solo si hay que ajustarlas |
 | `Nexo__EnviarGrupoRutaId` | por defecto (`true`); `false` solo si Nexo rechaza el alta | por defecto (`true`) | HU-023.4, #176 |
 | `Nexo__EnviarDatosCubicador` | por defecto (`true`); `false` solo como interruptor de emergencia | por defecto (`true`) | HU-023.4, #176 |
-| `Nexo__EnviarCodigosCubicador` | por defecto (`true`); `false` solo como interruptor de emergencia | por defecto (`true`) | Nexo #297, #176 |
-| `Captura__AceptarVehiculoCliente` | `false` (solo `true` si negocio lo pide mientras no hay cubicador) | `false` | HU-021-FE.2; se retira con el cubicador |
+| `Nexo__EnviarCodigosCubicador` | `siempre` (manifiesto; Nexo ya tiene la bandeja de normalización, NEXO #322); `nunca` como emergencia | `siempre` (manifiesto) | Nexo #297, #176; decisiones del 2026-10-19 (#188) y del 2026-10-20 (#194) |
+| `Captura__AceptarVehiculoCliente` | `true` (manifiesto) | `true` (manifiesto) | HU-021-FE.2; decisión del 2026-10-19 (#188) |
+| `Captura__ClasesSinVehiculoObligatorio__0`, `__1`... | por defecto (solo `Contenedor`) | por defecto (solo `Contenedor`) | HU-032 (#197): solo si negocio exime otra clase de viaje (p. ej. `Carga Suelta`); se declaran las dos |
 | `Pdf__PermitirCotizacionChat` | `false` | `false` | Nunca se enciende fuera de las pruebas |
 
 ### Identidad compartida con Nexo (#172)
@@ -382,7 +420,7 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
 
 ### 4.5 Release paso a paso
 
-0. **Precondición de esquema: `db/migrations_mssql/0001`–`0010`, `db/scripts/02`, `db/scripts/pendientes/04` y `db/scripts/09` aplicados** en la base del ambiente (o la base instalada
+0. **Precondición de esquema: `db/migrations_mssql/0001`–`0010`, `db/scripts/02`, `db/scripts/03`, `db/scripts/pendientes/04`, `db/scripts/05`, `db/scripts/06`, `db/scripts/09`, `db/scripts/10` y `db/scripts/11` aplicados** en la base del ambiente (o la base instalada
    desde cero con `db/scripts/01_crear_esquema.sql` y `db/seeder/`, que equivale a `0001`–`0010`). Los aplica el DBA con
    un usuario administrador y `sqlcmd -I`; la app no aplica migraciones. Regla de siempre: **primero el script, después
    la imagen.** Sin el esquema completo, `/health/ready` responde `503` (tabla de abajo), Traefik no manda tráfico a la
@@ -396,17 +434,81 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
      `db/scripts/pendientes/04_cubicacion_segundo_plano.sql` (cola de la cubicación de la licitación en segundo plano,
      HU-023.5; **pendiente de revisión de scalderon-bs y del DBA**). El backend mapea las columnas de los dos: se aplican
      antes de la imagen.
+   - **HU-014 (#188): `db/scripts/03_orden_vehiculo_y_conexo_catalogo.sql` y `db/scripts/05_categoria_conexo.sql` van ANTES de la
+     imagen de #188.** Hasta #188 estaban en `db/scripts/pendientes/` sin mapear; ahora el backend mapea `ordenVehiculo` e
+     `idServicioConexoCatalogo` (03) y `categoriaServicioConexo` (05), y el ejecutador los corre por nombre (`02`, `03`, `05`, `07`…).
+     Sin ellos `/health/ready` responde 503 "falta 03" o "falta 05". Los dos son idempotentes; el 03 numera los camiones existentes
+     por `createdAt` y deja el mismo `CHECK` del motivo que el 07. **El DBA confirma antes del despliegue** que están aplicados en la
+     base compartida y en cada ambiente con esta consulta de solo lectura (las tres columnas deben dar un largo, no NULL):
+
+     ```sql
+     SELECT COL_LENGTH('dbo_cotifly.CotizacionVehiculosLineaSolicitud', 'ordenVehiculo')       AS ordenVehiculo_03,
+            COL_LENGTH('dbo_cotifly.CotizacionServiciosConexos', 'idServicioConexoCatalogo')   AS idServicioConexoCatalogo_03,
+            COL_LENGTH('dbo_cotifly.CotizacionServiciosConexos', 'categoriaServicioConexo')    AS categoriaServicioConexo_05,
+            (SELECT COUNT(*) FROM sys.indexes
+              WHERE name = 'uq_cotizacionVehiculosLineaSolicitud_lineaSolicitudId_ordenVehiculo') AS indiceUnico_03;
+     ```
+
+     Si falta alguno, se aplica con `sqlcmd -I` (o el ejecutador) antes de la imagen. Aplicarlos con la imagen anterior en marcha no
+     rompe nada: la versión anterior no lee esas columnas y escribe `ordenVehiculo` en NULL (el índice es filtrado).
    - HU-018.1 (#155): `db/scripts/09_score_prioridad.sql` (`scorePrioridad` de Nexo en la cabecera, idempotente; lo corre el
      ejecutador después del `08`). **El `09` va ANTES de la imagen** que trae la #155: el backend mapea la columna. Si la imagen
      sale sin él, la sonda de vida sigue en 200, Swarm retira la versión anterior y **toda la API queda en 503** en
      `/health/ready`: aplicar el `09` (un `ADD` de columna NULL, segundos) la recupera **sin redesplegar**, porque
      `/health/ready` revisa el esquema en cada consulta.
+   - **#191 (HU-026.1): `db/scripts/06_idempotencia_captura.sql` va ANTES de la imagen de #191** (lo aprueba y aplica el DBA). Crea
+     `dbo_cotifly.CapturasIdempotentes`, donde la API guarda cada `Idempotency-Key` (captura, conexos, re-solicitud y edición) con
+     su huella, su estado (`en_curso`, `terminada`, `libre`), su respuesta y, en la captura, el folio y el `solicitudNexoId`: un
+     reintento que cae en otra réplica o después de un reinicio ya no crea otra solicitud en Nexo (si la primera sigue en curso en
+     otra réplica, responde 409 `CAPTURA_EN_CURSO`). Hasta #191 estaba en
+     `db/scripts/pendientes/` sin usar; conserva su número y el ejecutador lo corre por nombre (`05`, `06`, `07`…). Es idempotente;
+     si encuentra la tabla de la propuesta anterior **vacía** la recrea, y con filas se detiene sin tocarla. Sin él, la imagen de
+     #191 queda en 503 "falta 06" (como con el `09`, aplicarlo la recupera sin redesplegar). Aplicarlo con la imagen anterior en
+     marcha no cambia nada (no lee la tabla). Verificación de solo lectura (dos valores no NULL y `1`):
+
+     ```sql
+     SELECT OBJECT_ID(N'dbo_cotifly.CapturasIdempotentes', N'U')                     AS tabla_06,
+            COL_LENGTH(N'dbo_cotifly.CapturasIdempotentes', N'resultado')            AS resultado_06,
+            (SELECT COUNT(*) FROM sys.key_constraints
+              WHERE name = N'uq_capturasIdempotentes_usuarioId_operacion_clave')     AS unico_06;
+     ```
+
+     Con la imagen de #191 la API puede correr con más de una réplica sin perder la idempotencia (antes exigía `replicas: 1`).
+   - **HU-028.1 (#183): `db/scripts/10_rechazo_linea.sql` va ANTES de la imagen de #183** (lo revisa @scalderon-bs y lo aplica el DBA;
+     lo corre el ejecutador después del `09`). Agrega al camión (`CotizacionVehiculosLineaSolicitud`) `motivoRechazo NVARCHAR(500)` y
+     `rechazadaAt DATETIMEOFFSET` (NULL), `'rechazada'` en los tres CHECK de `estadoCosteo` y el CHECK
+     `ck_cotizacionVehiculosLineaSolicitud_rechazo`. Idempotente, en una transacción, con verificación al final. Sin él la imagen de
+     #183 queda en 503 "falta 10" (como con el `09`, aplicarlo la recupera sin redesplegar). Aplicarlo con la imagen anterior en marcha
+     no cambia nada. Verificación de solo lectura (dos largos no NULL y `3`):
+
+     ```sql
+     SELECT COL_LENGTH(N'dbo_cotifly.CotizacionVehiculosLineaSolicitud', N'motivoRechazo') AS motivoRechazo_10,
+            COL_LENGTH(N'dbo_cotifly.CotizacionVehiculosLineaSolicitud', N'rechazadaAt')   AS rechazadaAt_10,
+            (SELECT COUNT(*) FROM sys.check_constraints
+              WHERE name IN (N'ck_cotizaciones_estadoCosteo', N'ck_cotizacionLineasSolicitud_estadoCosteo',
+                             N'ck_cotizacionVehiculosLineaSolicitud_estadoCosteo')
+                AND definition LIKE N'%''rechazada''%')                                    AS checks_con_rechazada_10;
+     ```
+
    - **Excepción, HU-014.3 (#152): el `08` va DESPUÉS de la imagen.** `db/scripts/08_retirar_vistas_actividad.sql` borra las
      vistas que lee la versión anterior. El ejecutador (`db/ejecutar-bd.*`) corre todos los `scripts/` en orden de nombre
      (`07`, `08`, `09`), así que si el DBA lo usa antes de la imagen para aplicar el `09` también aplica el `08`: no rompe nada
      que se use, solo los dos endpoints retirados de la versión anterior (`/web/metricas/actividad` y `/ajustes-margen`, que el
      frontend no consume) responden 500 hasta que sube la imagen nueva.
-   - Orden del release con #152 y #155 juntas: `09` → imagen → `08`.
+   - Orden del release con #152 y #155 juntas: `09` → imagen → `08`. Con #183 y #184 (integración 1021): `03` → `pendientes/04` → `05`
+     → `06` → `07` → `09` → `10` → `11` → imagen → `08`.
+   - **HU-030.1 (#184): `db/scripts/11_peso_con_tara.sql` va ANTES de la imagen de #184.** Agrega a la ruta
+     (`CotizacionLineasSolicitud`) la columna `pesoConTaraKg DECIMAL(12,2) NULL` y el `CHECK` `ck_cotizacionLineasSolicitud_pesoConTaraKg`
+     (`NULL` o > 0): el peso total con tara que escribe el comercial en una ruta `Contenedor`. Es un `ADD` de columna NULL, idempotente
+     y en una transacción; el ejecutador lo corre por nombre después del `09` (el número `10` es de #183). Sin él, la imagen de #184 queda
+     en 503 "falta 11" (como con el `09`, aplicarlo la recupera sin redesplegar). Aplicarlo con la imagen anterior en marcha no cambia
+     nada (no lee la columna). Verificación de solo lectura (un largo no NULL y `1`):
+
+     ```sql
+     SELECT COL_LENGTH(N'dbo_cotifly.CotizacionLineasSolicitud', N'pesoConTaraKg') AS pesoConTaraKg_11,
+            (SELECT COUNT(*) FROM sys.check_constraints
+              WHERE name = N'ck_cotizacionLineasSolicitud_pesoConTaraKg')          AS check_11;
+     ```
 
    **Errores de `/health/ready` (`503 {"status":"unavailable","detalle":"..."}`)** y qué hacer. La sonda compara las tablas y
    columnas que mapea el modelo EF con la base (más el `CHECK` de `estadoEnvio`); los mensajes viejos `falta 0004` a
@@ -420,8 +522,14 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
    | `esquema incompleto: falta 0009` | La base tiene el esquema anterior a HU-021 (`Cotizaciones`, sin `CotizacionesSolicitud`) | Aplicar `0009_reestructuracion_cotizaciones.sql` (con su respaldo `Respaldo0009_*`) y después el `0010` |
    | `esquema incompleto: falta 0010` | Está el `0009` pero faltan las columnas del `0010` (nombres de municipio, `solicitudNexoId`, `nombreServicioConexo`) o el `CHECK` `ck_cotizaciones_estadoEnvio` | Aplicar `0010_nombres_municipio.sql` |
    | `esquema incompleto: falta 02` | Faltan las columnas del cubicador (HU-023.3) | Aplicar `db/scripts/02_alter_cubicador.sql` |
+   | `esquema incompleto: falta 03` | Faltan `ordenVehiculo` o `idServicioConexoCatalogo` (HU-014, #188) | Aplicar `db/scripts/03_orden_vehiculo_y_conexo_catalogo.sql` |
    | `esquema incompleto: falta 04` | Faltan las columnas de la cubicación en segundo plano (HU-023.5) | Aplicar `db/scripts/pendientes/04_cubicacion_segundo_plano.sql`, con la aprobación del DBA |
+   | `esquema incompleto: falta 05` | Falta `CotizacionServiciosConexos.categoriaServicioConexo` (HU-014, #188) | Aplicar `db/scripts/05_categoria_conexo.sql` |
+   | `esquema incompleto: falta 06` | Falta la tabla `CapturasIdempotentes` (o tiene la forma de la propuesta de #173) (#191) | Aplicar `db/scripts/06_idempotencia_captura.sql`, con la aprobación del DBA |
    | `esquema incompleto: falta 09` | Falta `CotizacionesSolicitud.scorePrioridad` (HU-018.1, #155) | Aplicar `db/scripts/09_score_prioridad.sql` |
+   | `esquema incompleto: falta 10` | Faltan `motivoRechazo` o `rechazadaAt` del camión (HU-028.1, #183) | Aplicar `db/scripts/10_rechazo_linea.sql` |
+   | `esquema incompleto: falta 11` | Falta `CotizacionLineasSolicitud.pesoConTaraKg` (HU-030.1, #184) | Aplicar `db/scripts/11_peso_con_tara.sql` |
+   | `esquema incompleto: falta 12` | Faltan `tipoVehiculoElegido`/`carroceriaElegida` de la ruta (HU-032, #197) | Aplicar `db/scripts/12_vehiculo_elegido.sql` |
    | `esquema incompleto: falta Tabla.columna, ...` (hasta 5) | Falta otra tabla o columna del modelo (por ejemplo un script intermedio sin aplicar) | Comparar con `db/scripts/01_crear_esquema.sql` y aplicar el script que la trae (lista en `docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md` §A.5) |
 
 1. **Staging.** Merge a `QA` → el pipeline (o `publicar-imagen.sh --canal qa`) publica `sha-<corto>`. En Dokploy, stack
@@ -513,8 +621,12 @@ Internet / red corporativa
   rango propio dentro de la red (verificarlo con `docker network inspect dokploy-network` en staging), usar
   `ForwardedHeaders__ProxiesConocidos__0=<IP de Traefik>` (agregando esa línea al manifiesto, §5.4) o un CIDR más
   estrecho en `RedesConocidas`.
-- **Una réplica:** el barrido de sesiones y la Idempotency-Key viven en el proceso, y el volumen de PDFs es local
-  (ADR-012). Escalar exige un volumen compartido y el candado de correo en la base.
+- **Una réplica:** el barrido de sesiones vive en el proceso y el volumen de PDFs es local (ADR-012); la Idempotency-Key ya
+  no (#191: tabla `CapturasIdempotentes` del 06). Escalar exige un volumen compartido y el candado de correo en la base. También viven solo en memoria las cubicaciones
+  asíncronas (opción D) y, desde #181, el estado y el motivo pendiente de la línea de NEXO de cada camión
+  (`estado_linea_nexo`/`motivo_pendiente` de `GET .../costeo`): los escribe el polling y los lee la API del mismo proceso,
+  se pierden con un reinicio o un despliegue (vuelven con la siguiente consulta del polling) y con más réplicas una
+  réplica no vería lo que leyó el polling de otra. Escalar exige guardarlos en la base.
 - **TLS:** los labels de Traefik (router `websecure`, `certresolver=letsencrypt`, HSTS, puerto 8080 y healthcheck de
   `/health/ready`) están escritos; que el certificado funcione depende de HU-006.2.
   - **Versión de Traefik (informativo):** los manifiestos usan `traefik.docker.network`, la etiqueta de Traefik v2

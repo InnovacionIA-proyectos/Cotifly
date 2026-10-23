@@ -337,7 +337,7 @@ public sealed class clsPlanificadorCamionesCubicadorTests
     [InlineData(true)]
     public void LaBanderaDeRespaldoDecideSiElVehiculoDelClienteSeConservaOSeIgnora(bool aceptar)
     {
-        // HU-021.11 (#138): Captura:AceptarVehiculoCliente (apagada por defecto, decisión 7).
+        // HU-021.11 (#138): Captura:AceptarVehiculoCliente (encendida por defecto desde #188; apagada rige la decisión 7).
         var logger = new clsLoggerFalso<clsPlanificadorCamionesCubicadorTests>();
         var rutas = new List<clsLineaLicitacionEntrada?> { new(null, Ruta() with { TipoVehiculo = "3S3", Carroceria = "FURGON" }), null };
 
@@ -346,7 +346,15 @@ public sealed class clsPlanificadorCamionesCubicadorTests
         resultado[0]!.Linea.TipoVehiculo.Should().Be(aceptar ? "3S3" : null);
         resultado[0]!.Linea.Carroceria.Should().Be(aceptar ? "FURGON" : null);
         resultado[1].Should().BeNull();
-        logger.Registros.Should().ContainSingle(r => r.Nivel == (aceptar ? LogLevel.Information : LogLevel.Warning));
+        // HU-032 (#197): encendida, el vehículo elegido es parte normal de la captura (sin aviso en el log); apagada se ignora con un warning.
+        if (aceptar)
+        {
+            logger.Registros.Should().BeEmpty();
+        }
+        else
+        {
+            logger.Registros.Should().ContainSingle(r => r.Nivel == LogLevel.Warning);
+        }
     }
 
     [Fact]

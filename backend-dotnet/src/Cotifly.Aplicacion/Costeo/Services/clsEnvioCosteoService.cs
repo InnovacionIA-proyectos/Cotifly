@@ -1,7 +1,4 @@
 using System.Diagnostics;
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 using Cotifly.Aplicacion.Auditoria.Services;
 using Cotifly.Aplicacion.Comun;
 using Cotifly.Aplicacion.Clientes.Interfaces;
@@ -123,33 +120,56 @@ public sealed class clsEnvioCosteoService(
     /// <summary>Ámbito de las claves de idempotencia de la captura (con el comercial, #173).</summary>
     public const string OperacionIdempotencia = "capturar_costeo";
 
-    private static readonly JsonSerializerOptions _jsonHuella = new(JsonSerializerDefaults.Web);
-
-    public Task<clsResultado<clsCotizacionSolicitud>> CapturarUnaVezAsync(
+    public async Task<clsResultado<clsCotizacionSolicitud>> CapturarUnaVezAsync(
         Guid usuarioId, clsEntradaCaptura entrada, string? claveIdempotencia, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(entrada);
         if (claveIdempotencia is null || idempotencia is null)
         {
-            return CapturarAsync(usuarioId, entrada, cancellationToken);
+            return await CapturarAsync(usuarioId, entrada, cancellationToken);
         }
 
         var ambito = $"{OperacionIdempotencia}:{usuarioId}";
         var huella = Huella(entrada);
-        return idempotencia.EjecutarUnaVezAsync(
+
+        // #191: el almacén guarda la captura hecha (id y folio), no la entidad: la tabla del 06 la guarda como JSON. Si la acción corrió
+        // en esta petición se devuelve la cotización que dejó; si es una repetición, la guardada se lee por su folio.
+        clsCotizacionSolicitud? ejecutada = null;
+        var hecha = await idempotencia.EjecutarUnaVezAsync<clsCapturaHecha>(
             ambito,
             claveIdempotencia,
             huella,
-            ct => registroCapturas?.Buscar(ambito, claveIdempotencia) is { } previa
-                ? ReanudarAsync(previa, huella, usuarioId, ct)
-                : CapturarInternoAsync(usuarioId, entrada, ct, c => registroCapturas?.Registrar(ambito, claveIdempotencia,
-                    new clsCapturaIdempotente(huella, c.Id, c.Folio, c.SolicitudNexoId, reloj.AhoraUtc, c.ScorePrioridad))),
+            async ct =>
+            {
+                var previa = registroCapturas is null ? null : await registroCapturas.BuscarAsync(ambito, claveIdempotencia, ct);
+                var resultado = previa is not null
+                    ? await ReanudarAsync(previa, huella, usuarioId, ct)
+                    : await CapturarInternoAsync(usuarioId, entrada, ct, registroCapturas is null
+                        ? null
+                        : (c, ctRegistro) => registroCapturas.RegistrarAsync(ambito, claveIdempotencia,
+                            new clsCapturaIdempotente(huella, c.Id, c.Folio, c.SolicitudNexoId, reloj.AhoraUtc, c.ScorePrioridad), ctRegistro));
+                if (resultado.EsFallo)
+                {
+                    return resultado.Error;
+                }
+
+                ejecutada = resultado.Valor;
+                return new clsCapturaHecha(resultado.Valor.Id, resultado.Valor.Folio);
+            },
             r => r.EsExitoso,
             cancellationToken);
+        if (hecha.EsFallo)
+        {
+            return hecha.Error;
+        }
+
+        return ejecutada
+            ?? await cotizaciones.ObtenerPorFolioDelUsuarioAsync(hecha.Valor.Folio, usuarioId, cancellationToken)
+            ?? (clsResultado<clsCotizacionSolicitud>)new clsErrorDominio(clsCodigosError.CotizacionNoEncontrada, "Cotización no encontrada o no es tuya.");
     }
 
     /// <summary>Motivo (<c>detalle.motivo</c>) de <c>ESTADO_NO_PERMITE</c> cuando la primera captura con la clave no terminó (#173).</summary>
-    public const string MotivoCapturaEnCurso = "CAPTURA_EN_CURSO";
+    public const string MotivoCapturaEnCurso = clsCodigosAplicacion.MotivoCapturaEnCurso;
 
     /// <summary>
     /// #173: la clave ya tiene una captura registrada (folio confirmado) cuyo resultado no quedó guardado: la primera petición falló
@@ -184,8 +204,7 @@ public sealed class clsEnvioCosteoService(
     public static string Huella(clsEntradaCaptura entrada)
     {
         ArgumentNullException.ThrowIfNull(entrada);
-        var cuerpo = JsonSerializer.Serialize(entrada, _jsonHuella);
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(cuerpo)));
+        return clsHuellaIdempotencia.Calcular(entrada);
     }
 
     public Task<clsResultado<clsCotizacionSolicitud>> EnviarAsync(Guid usuarioId, clsEntradaSolicitudCosteo entrada, CancellationToken cancellationToken = default)
@@ -199,11 +218,12 @@ public sealed class clsEnvioCosteoService(
         CapturarInternoAsync(usuarioId, entrada, cancellationToken, null);
 
     /// <summary>
-    /// <see cref="CapturarAsync"/> con <paramref name="alConfirmar"/> (#173): se llama con la cotización recién confirmada ANTES de llamar a
-    /// Nexo y otra vez después del envío (con el <c>solicitudNexoId</c>, aunque el guardado posterior falle).
+    /// <see cref="CapturarAsync"/> con <paramref name="alConfirmar"/> (#173): se llama con la cotización recién guardada DENTRO de la
+    /// transacción que confirma el folio (#191: el folio y su clave quedan juntos o no queda ninguno), ANTES de llamar a Nexo, y otra vez
+    /// después del envío (con el <c>solicitudNexoId</c>, aunque el guardado posterior falle).
     /// </summary>
     private async Task<clsResultado<clsCotizacionSolicitud>> CapturarInternoAsync(
-        Guid usuarioId, clsEntradaCaptura entrada, CancellationToken cancellationToken, Action<clsCotizacionSolicitud>? alConfirmar)
+        Guid usuarioId, clsEntradaCaptura entrada, CancellationToken cancellationToken, Func<clsCotizacionSolicitud, CancellationToken, Task>? alConfirmar)
     {
         ArgumentNullException.ThrowIfNull(entrada);
         ArgumentNullException.ThrowIfNull(entrada.Encabezado);
@@ -213,7 +233,7 @@ public sealed class clsEnvioCosteoService(
             return new clsErrorDominio(clsCodigosError.ErrorInterno, "El envío a costeo exige el comercial autenticado.");
         }
 
-        var rutas = SinVehiculo(entrada.Rutas, logger, opcionesCaptura?.Value.AceptarVehiculoCliente ?? false);
+        var rutas = SinVehiculo(entrada.Rutas, logger, opcionesCaptura?.Value.AceptarVehiculoCliente ?? true);
         var nit = entrada.NitCliente?.Trim();
 
         // HU-021.6: todas las validaciones juntas (encabezado y cada ruta); el error trae el primero y detalle.errores trae todos.
@@ -298,6 +318,12 @@ public sealed class clsEnvioCosteoService(
             cotizacion.Valor.RegistrarCaptura(entrada.Encabezado, preparadas.Rutas);
             cotizaciones.Agregar(cotizacion.Valor);
             await unidadTrabajo.GuardarCambiosAsync(ct);
+            if (alConfirmar is not null)
+            {
+                // #191: la clave se registra con el folio en la misma transacción que lo confirma (la del candado del folio).
+                await alConfirmar(cotizacion.Valor, ct);
+            }
+
             return cotizacion.Valor;
         }, cancellationToken);
         if (creada.EsFallo)
@@ -309,42 +335,37 @@ public sealed class clsEnvioCosteoService(
         // entrada: el primer envío y el reintento mandan exactamente lo mismo a Nexo.
         // HU-021: las horas viajan en cada línea (la ruta las guarda); la cabecera no las tiene, así el reintento manda lo mismo.
         var encabezado = creada.Valor.EncabezadoSolicitud ?? entrada.Encabezado;
-        alConfirmar?.Invoke(creada.Valor);
         try
         {
             await EnviarANexoAsync(creada.Valor, encabezado, politica, usuarioId, reintento: false);
         }
         finally
         {
-            // #173: el solicitudNexoId queda registrado con la clave aunque falle el guardado posterior a Nexo.
-            alConfirmar?.Invoke(creada.Valor);
+            // #173: el solicitudNexoId queda registrado con la clave aunque falle el guardado posterior a Nexo (sin el token de la
+            // petición, como el envío).
+            if (alConfirmar is not null)
+            {
+                await alConfirmar(creada.Valor, CancellationToken.None);
+            }
         }
 
         return creada.Valor;
     }
 
     /// <summary>
-    /// Decisión 7 de HU-021 (HU-021.6): el comercial ya no digita vehículo ni carrocería (los define el cubicador o la Mesa de Costeo de
-    /// Nexo). Si una ruta los trae (cliente con el contrato anterior), se ignoran y queda un aviso en el log; la captura sigue.
-    /// Con la bandera de respaldo <see cref="clsOpcionesCaptura.AceptarVehiculoCliente"/> (#138) se conservan: los valida el catálogo de
-    /// Nexo como cualquier código y solo los usa el camión del respaldo (<see cref="clsPlanificadorCamionSinVehiculo"/>); si el cubicador
-    /// recomienda, manda el cubicador.
+    /// HU-032 (#197, ADR-022; revierte en parte la decisión 7 de HU-021): el vehículo y la carrocería que elige el comercial son el
+    /// respaldo del cubicador y se conservan (<see cref="clsOpcionesCaptura.AceptarVehiculoCliente"/>, encendida por defecto): una ruta sin
+    /// mercancías cubicables los usa (y los exige, salvo en Contenedor) y una que va al cubicador los usa si el cubicador no selecciona
+    /// vehículo o falla (<see cref="clsPlanificadorCamionesCubicador"/>). Con la bandera APAGADA (interruptor de reversa) rige la decisión 7:
+    /// se ignoran con un aviso en el log y la captura sigue. Lo comparten la captura, la licitación y la edición.
     /// </summary>
     public static IReadOnlyList<clsLineaLicitacionEntrada?> SinVehiculo(
-        IReadOnlyList<clsLineaLicitacionEntrada?> rutas, ILogger logger, bool aceptarVehiculoCliente = false)
+        IReadOnlyList<clsLineaLicitacionEntrada?> rutas, ILogger logger, bool aceptarVehiculoCliente = true)
     {
         ArgumentNullException.ThrowIfNull(rutas);
         ArgumentNullException.ThrowIfNull(logger);
         if (aceptarVehiculoCliente)
         {
-            var conVehiculo = rutas.Count(r => r?.Linea is { } l && (l.TipoVehiculo is not null || l.Carroceria is not null));
-            if (conVehiculo > 0)
-            {
-                logger.LogInformation(
-                    "{Rutas} ruta(s) traen tipo_vehiculo o carroceria y Captura:AceptarVehiculoCliente está encendida: se conservan para el camión del respaldo (sin cubicador).",
-                    conVehiculo);
-            }
-
             return rutas;
         }
 
@@ -362,7 +383,7 @@ public sealed class clsEnvioCosteoService(
         if (ignoradas > 0)
         {
             logger.LogWarning(
-                "{Rutas} ruta(s) traen tipo_vehiculo o carroceria: se ignoran (HU-021, decisión 7: los define el cubicador o la Mesa de Costeo de Nexo).",
+                "{Rutas} ruta(s) traen tipo_vehiculo o carroceria: se ignoran porque Captura:AceptarVehiculoCliente está apagada (decisión 7 de HU-021).",
                 ignoradas);
         }
 
@@ -370,20 +391,22 @@ public sealed class clsEnvioCosteoService(
     }
 
     /// <summary>
-    /// La misma regla (decisión 7) sobre los cambios de carga de la re-solicitud (<c>datos_carga</c>, HU-021.9): <c>tipo_vehiculo</c> y
-    /// <c>carroceria</c> se ignoran con un aviso en el log. Está junto a la de la captura. La bandera <see cref="clsOpcionesCaptura.AceptarVehiculoCliente"/> (#138) no aplica aquí: los camiones de la versión nueva salen del planificador o se copian.
+    /// La misma regla sobre los cambios de carga de la re-solicitud (<c>datos_carga</c>, HU-021.9). HU-032 (#197): con la bandera
+    /// <see cref="clsOpcionesCaptura.AceptarVehiculoCliente"/> encendida (por defecto) <c>tipo_vehiculo</c> y <c>carroceria</c> cambian el
+    /// vehículo elegido de la ruta; apagada se ignoran con un aviso en el log (decisión 7).
     /// </summary>
-    public static clsCambiosCarga SinVehiculo(clsCambiosCarga cambios, ILogger logger)
+    public static clsCambiosCarga SinVehiculo(clsCambiosCarga cambios, ILogger logger, bool aceptarVehiculoCliente = true)
     {
         ArgumentNullException.ThrowIfNull(cambios);
         ArgumentNullException.ThrowIfNull(logger);
-        if (!cambios.Presentes.Contains(clsCambiosCarga.CampoTipoVehiculo) && !cambios.Presentes.Contains(clsCambiosCarga.CampoCarroceria))
+        if (aceptarVehiculoCliente
+            || (!cambios.Presentes.Contains(clsCambiosCarga.CampoTipoVehiculo) && !cambios.Presentes.Contains(clsCambiosCarga.CampoCarroceria)))
         {
             return cambios;
         }
 
         logger.LogWarning(
-            "datos_carga trae tipo_vehiculo o carroceria: se ignoran (HU-021, decisión 7: los define el cubicador o la Mesa de Costeo de Nexo).");
+            "datos_carga trae tipo_vehiculo o carroceria: se ignoran porque Captura:AceptarVehiculoCliente está apagada (decisión 7 de HU-021).");
         var presentes = new HashSet<string>(cambios.Presentes, StringComparer.Ordinal);
         presentes.Remove(clsCambiosCarga.CampoTipoVehiculo);
         presentes.Remove(clsCambiosCarga.CampoCarroceria);
@@ -572,15 +595,18 @@ public sealed class clsEnvioCosteoService(
     public static string? NotaCamionesPorRuta(clsCotizacionSolicitud cotizacion)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        var rutas = cotizacion.RutasOrdenadas;
-        // HU-021.9: solo los camiones que viajan (un descartado en Nexo no se reenvía).
-        if (rutas.All(r => r.VehiculosQueCuentan.Count <= 1))
+        // HU-021.9: solo los camiones que viajan (un descartado en Nexo no se reenvía; HU-028.1, #183, decisión del 2026-10-20: uno
+        // rechazado por la Mesa tampoco). Una ruta con todos sus camiones rechazados no viaja: no sale en la nota.
+        var rutas = cotizacion.RutasOrdenadas.Where(r => r.ViajaANexo).ToList();
+        // Una ruta partida en varios camiones manda sus líneas sin posiciones aunque solo viaje uno (los demás rechazados o descartados): la
+        // nota se la explica a la Mesa.
+        if (rutas.All(r => r.VehiculosQueViajan.Count <= 1 && !r.LineasSinPosiciones))
         {
             return null;
         }
 
         var nota = "Cotifly: una línea por camión, en este orden. "
-            + string.Join(" ", rutas.Select(r => $"Ruta {r.Orden} ({r.Ruta}): {r.VehiculosQueCuentan.Count} {(r.VehiculosQueCuentan.Count == 1 ? "camión" : "camiones")}."))
+            + string.Join(" ", rutas.Select(r => $"Ruta {r.Orden} ({r.Ruta}): {r.VehiculosQueViajan.Count} {(r.VehiculosQueViajan.Count == 1 ? "camión" : "camiones")}."))
             + " " + AvisoSinPosiciones;
         return nota.Length <= LargoMaximoNotaCamiones ? nota : nota[..(LargoMaximoNotaCamiones - 1)] + "…";
     }
@@ -589,10 +615,20 @@ public sealed class clsEnvioCosteoService(
     /// Las rutas guardadas como líneas de la captura (en orden, cada una con sus mercancías y el vehículo de su camión): lo que se
     /// revalida con las reglas de la captura antes de reenviar (HU-021, "una ruta y un camión").
     /// </summary>
+    /// <remarks>
+    /// HU-014 (#188, revisión de M1): el vehículo y la carrocería de un camión del CUBICADOR (con <c>idRecomendacionVehiculo</c>) no son
+    /// datos digitados: son códigos del cubicador (<c>2S2</c>, <c>CAMA_BAJA</c>...) que Nexo puede no conocer, y lo que viaja de ellos lo
+    /// decide <c>Nexo:EnviarCodigosCubicador</c> al enviar (desde los camiones, no desde estas líneas). Por eso no pasan por el catálogo de
+    /// Nexo de la captura (M1): si pasaran, el reintento o la re-solicitud de una licitación cubicada respondería
+    /// <c>LICITACION_INVALIDA</c> ("requiere nueva carga") por un código que Cotifly nunca digitó. El vehículo del camión del respaldo
+    /// (sin recomendación, el digitado) sí se revalida.
+    /// </remarks>
     public static IReadOnlyList<clsLineaSolicitudCosteo> LineasGuardadas(clsCotizacionSolicitud cotizacion)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        return [.. cotizacion.RutasOrdenadas.Select(r => r.ALinea())];
+        return [.. cotizacion.RutasOrdenadas.Select(r => r.Vehiculos is [{ IdRecomendacionVehiculo: not null }]
+            ? r.ALinea() with { TipoVehiculo = null, Carroceria = null }
+            : r.ALinea())];
     }
 
     public async Task<clsResultado<clsCotizacionSolicitud>> ReintentarAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default)
@@ -615,10 +651,11 @@ public sealed class clsEnvioCosteoService(
 
         // #173: si la captura llegó a Nexo y el guardado posterior falló, el folio quedó en pendiente_envio sin solicitudNexoId. Si el
         // registro de la Idempotency-Key conoce el id de Nexo, se vincula (pendiente_costeo, el polling sigue) y NO se reenvía: reenviar
-        // duplicaría la solicitud. Sin registro (reinicio, otra réplica) se reenvía como antes: lo cubre la tabla propuesta en el 06.
+        // duplicaría la solicitud. Con la tabla del 06 (#191) el registro sobrevive a un reinicio y lo ven todas las réplicas.
         // HU-018.1 (#155): el scorePrioridad que Nexo devolvió con ese id viaja en el registro; si no lo tiene, queda null.
         if (cotizacion.SolicitudNexoId is null
-            && registroCapturas?.BuscarPorFolio(cotizacion.Folio) is { SolicitudNexoId: { } enNexo } capturaPrevia)
+            && registroCapturas is not null
+            && await registroCapturas.BuscarPorFolioAsync(cotizacion.Folio, cancellationToken) is { SolicitudNexoId: { } enNexo } capturaPrevia)
         {
             cotizacion.RegistrarEnvioCosteo(
                 enNexo, costeoCompleto: false, ahora, ahora.AddSeconds(opciones.Value.IntervaloInicialSegundos), capturaPrevia.ScorePrioridad);
@@ -752,7 +789,8 @@ public sealed class clsEnvioCosteoService(
         var cronometro = Stopwatch.StartNew();
 
         // HU-021 (CAMBIOS_BACKEND §5.3, #134): una línea por camión, ruta por ruta y en orden, cada una con los datos de su ruta y de su
-        // camión. Sin vehículo (sin selección automática) la línea viaja igual y la resuelve la Mesa: la solicitud nunca se parte. Mientras
+        // camión. Un camión sin vehículo (sin selección automática y sin vehículo elegido, HU-032) viaja igual y lo resuelve la Mesa: la
+        // solicitud nunca se parte. Mientras
         // Nexo no tenga el campo de ruta por línea (N1), la nota del encabezado le dice a la Mesa qué líneas son la misma ruta.
         // Cada línea lleva la línea de negocio de Nexo de SU ruta (#134); `politica` (la de la ruta 1 o la del formulario) solo evita volver a
         // leerla y sirve de respaldo para una ruta sin línea de negocio.
@@ -775,7 +813,10 @@ public sealed class clsEnvioCosteoService(
 
             // HU-023.4 (#159): lo que viajó (códigos del cubicador o no), en la misma transacción que el solicitudNexoId: el polling compara
             // contra esto y no contra la bandera actual.
-            cotizaciones.RegistrarEnvioNexo(new clsEnvioNexoRegistrado(cotizacion.Folio, creada.Id, creada.CodigosCubicadorEnviados));
+            cotizaciones.RegistrarEnvioNexo(new clsEnvioNexoRegistrado(cotizacion.Folio, creada.Id, creada.CodigosCubicadorEnviados)
+            {
+                EquivalenciasVehiculo = creada.EquivalenciasVehiculo,
+            });
         }
         else
         {
@@ -1021,3 +1062,9 @@ public sealed class clsEnvioCosteoService(
             + $"({(cotizacion.EstadoCosteo is { } estado ? clsCodigoEnum.ACodigo(estado) : "sin costeo en Nexo")}).",
             detalle);
 }
+
+/// <summary>
+/// #191: lo que el almacén de idempotencia guarda de una captura exitosa (la tabla del 06 lo guarda como JSON): la repetición lee la
+/// cotización por <see cref="Folio"/>.
+/// </summary>
+public sealed record clsCapturaHecha(Guid CotizacionId, string Folio);

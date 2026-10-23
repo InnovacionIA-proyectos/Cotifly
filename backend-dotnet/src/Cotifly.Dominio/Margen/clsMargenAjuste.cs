@@ -32,6 +32,21 @@ public sealed partial class clsMargenAjuste
     public Guid? UsuarioId { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
 
+    /// <summary>
+    /// HU-028 (#186, D6 del diseño): la ruta ajustada se quitó al editar la solicitud. El ajuste queda sin ruta (<c>lineaSolicitudId</c> en
+    /// <c>NULL</c>) y conserva la cotización y el folio como historial. Devuelve <c>true</c> si cambió.
+    /// </summary>
+    public bool DesvincularRuta()
+    {
+        if (LineaSolicitudId is null)
+        {
+            return false;
+        }
+
+        LineaSolicitudId = null;
+        return true;
+    }
+
     /// <summary>Margen con la escala de la columna: 4 decimales half-to-even (0.123456 → 0.1235).</summary>
     public static decimal RedondearMargen(decimal margen) => Math.Round(margen, Decimales, MidpointRounding.ToEven);
 

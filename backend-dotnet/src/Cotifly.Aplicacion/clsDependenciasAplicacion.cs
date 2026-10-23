@@ -4,6 +4,7 @@ using Cotifly.Aplicacion.Agente.Interfaces;
 using Cotifly.Aplicacion.Agente.Services;
 using Cotifly.Aplicacion.Auditoria.Services;
 using Cotifly.Aplicacion.Correo.Services;
+using Cotifly.Aplicacion.Costeo.Interfaces;
 using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Aplicacion.Cotizaciones.Services;
 using Cotifly.Aplicacion.Identidad.Interfaces;
@@ -65,6 +66,8 @@ public static class clsDependenciasAplicacion
         // autenticada del PDF, y administración de líneas (HU-004.9).
         servicios.AddScoped<IClsMisCotizacionesService, clsMisCotizacionesService>();
         servicios.AddScoped<IClsCotizacionesRegionalService, clsCotizacionesRegionalService>();
+        // HU-027.1 (#179): detalle por folio (dueño, o gerente de su regional en solo consulta).
+        servicios.AddScoped<IClsDetalleCotizacionService, clsDetalleCotizacionService>();
         servicios.AddScoped<IClsNuevaVersionService, clsNuevaVersionService>();
         servicios.AddScoped<IClsGeneradorFolioService, clsGeneradorFolioService>();
         servicios.AddScoped<IClsDescargaPdfService, clsDescargaPdfService>();
@@ -72,15 +75,20 @@ public static class clsDependenciasAplicacion
 
         // Costeo en Nexo (HU-005.5 a HU-005.14, ADR-015): envío de la solicitud y polling (el worker lo registra Infraestructura). El adaptador de Nexo lo registra Infraestructura.
         servicios.AddScoped<IClsValidadorCatalogosCaptura, clsValidadorCatalogosCaptura>();
+        servicios.AddScoped<CatalogosFlete.Services.IClsResolucionAliasService, CatalogosFlete.Services.clsResolucionAliasService>();
         servicios.AddScoped<IClsEnvioCosteoService, clsEnvioCosteoService>();
         servicios.AddScoped<IClsPollingCosteoService, clsPollingCosteoService>();
         servicios.AddSingleton<IClsPrecioCosteoService, clsPrecioCosteoService>();
+        // #181: estado y motivo pendiente de la línea de Nexo de cada camión, en memoria (los llena el polling; no van a la base).
+        servicios.AddSingleton<IClsSituacionLineasNexo, clsSituacionLineasNexoEnMemoria>();
         servicios.AddScoped<IClsCosteoCotizacionService, clsCosteoCotizacionService>();
         servicios.AddScoped<IClsAjusteMargenCosteoService, clsAjusteMargenCosteoService>();
         // HU-023.3 (#158): recalcular los camiones de una ruta con el cubicador antes de enviarla a Nexo.
         servicios.AddScoped<IClsRecalculoVehiculosService, clsRecalculoVehiculosService>();
         servicios.AddScoped<IClsServiciosConexosCosteoService, clsServiciosConexosCosteoService>();
         servicios.AddScoped<IClsReSolicitudCosteoService, clsReSolicitudCosteoService>();
+        // HU-028 (#186): editar la solicitud (GET y PUT /web/cotizaciones/{folio}/solicitud).
+        servicios.AddScoped<IClsEdicionSolicitudService, clsEdicionSolicitudService>();
 
         // Decisión 10 (HU-021.9): envío diferido de los conexos de las rutas a la cotización de Nexo, desde el polling.
         servicios.AddScoped<IClsEnvioConexosNexoService, clsEnvioConexosNexoService>();
@@ -90,8 +98,8 @@ public static class clsDependenciasAplicacion
         servicios.AddSingleton<clsAlmacenCategoriasConexos>();
         servicios.AddScoped<IClsCategoriasConexos, clsCategoriasConexosService>();
 
-        // #173: capturas con Idempotency-Key registradas antes de llamar a Nexo (el reintento nunca duplica la solicitud).
-        servicios.AddSingleton<IClsRegistroCapturasIdempotentes, clsRegistroCapturasIdempotentesEnMemoria>();
+        // #173: capturas con Idempotency-Key registradas antes de llamar a Nexo (el reintento nunca duplica la solicitud). #191: el
+        // registro (IClsRegistroCapturasIdempotentes) lo registra Infraestructura sobre la tabla del 06, junto con el almacén de la clave.
 
         // Captura por rutas (HU-021.6): validación común al formulario y a la licitación y el punto de extensión de los camiones. El
         // planificador (HU-021.5, #133) crea un camión por fila de la recomendación del cubicador (IClsCubicador, lo registra

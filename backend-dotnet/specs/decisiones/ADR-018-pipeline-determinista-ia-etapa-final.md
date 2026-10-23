@@ -12,13 +12,19 @@ El script `0009` reestructuró la cotización en solicitud → rutas → camione
 - **§3 (margen):** el ajuste es **por ruta**. `PUT .../costeo/margen` dice la ruta (`linea_orden` o `linea_solicitud_id`; con varias y sin ella, 400 `RUTA_REQUERIDA`), valida contra el sugerido de esa ruta y solo esa ruta necesita precio; el PDF sigue exigiendo todas las rutas con precio (decisión 9). `MargenAjustes.lineaSolicitudId` apunta a la ruta real.
 - **§4 y §12 (conexos):** el JSON `Cotizaciones.serviciosConexos` se reemplazó por filas de la ruta (`CotizacionServiciosConexos`: id, precio = costo de Nexo, cantidad). Quitar un conexo borra su fila (ya no hay `incluido`). A Nexo van pegados al primer camión vigente de la ruta, con envío diferido desde el polling (decisiones 3 y 10).
 - **§12 (margen sugerido):** `Cotizaciones.margenSugerido` se dividió en `margenPoliticaSugerido` y `margenSAPSugerido` por ruta.
-- **§12 (idempotencia):** la tabla de idempotencia, cuando se escale, va en el siguiente script libre (hoy el `0011`).
+- **§12 (idempotencia):** ~~la tabla de idempotencia, cuando se escale, va en el siguiente script libre (hoy el `0011`)~~. **#191
+  (HU-026.1):** va en `db/scripts/06_idempotencia_captura.sql` (`dbo_cotifly.CapturasIdempotentes`), que conserva el número con que se
+  propuso en #173. `IClsAlmacenIdempotencia` es `clsAlmacenIdempotenciaSql` (la de memoria queda para pruebas): un INSERT que choca con
+  `UNIQUE (usuarioId, operacion, clave)` reserva la clave entre réplicas; la petición simultánea de OTRA réplica recibe 409
+  `ESTADO_NO_PERMITE` (`CAPTURA_EN_CURSO`) en lugar de esperar (en la misma réplica un semáforo por clave la hace esperar, como antes); la toma vence en 10 min (huérfanas tras una caída); la respuesta que consume la clave se
+  guarda en JSON 24 h y una tarea horaria purga las vencidas. La huella compara los números por valor (`clsHuellaIdempotencia`). Sin la
+  tabla, `/health/ready` responde `falta 06` (no se degrada a memoria). La API ya no exige `replicas: 1` por la idempotencia.
 - **§12 (idempotencia de la captura, #173):** `POST /web/solicitudes-costeo` acepta `Idempotency-Key`. Antes de llamar a Nexo la clave
   queda registrada con el folio confirmado (`IClsRegistroCapturasIdempotentes`) y, en cuanto se conoce, con el `solicitudNexoId`: si la
   primera petición falla después de enviar a Nexo, el reintento con la misma clave **no vuelve a llamar a Nexo** (responde la cotización
-  guardada o 409 `ESTADO_NO_PERMITE` con `detalle.motivo = CAPTURA_EN_CURSO`, el folio y el id de Nexo). **Deuda:** todo vive en la
-  memoria del proceso y se pierde al reiniciar o en un despliegue `start-first`; la tabla persistente con `UNIQUE (usuarioId, clave)` está
-  propuesta en `db/scripts/pendientes/06_idempotencia_captura.sql` (sin mapear hasta su aprobación).
+  guardada o 409 `ESTADO_NO_PERMITE` con `detalle.motivo = CAPTURA_EN_CURSO`, el folio y el id de Nexo). ~~**Deuda:** todo vive en la
+  memoria del proceso~~ **#191:** el registro (`clsRegistroCapturasIdempotentesSql`) usa la misma fila de `CapturasIdempotentes` que
+  reserva la clave, y el folio se anota DENTRO de la transacción que lo confirma: sobrevive a un reinicio y lo ve cualquier réplica.
   `POST .../costeo/reintentar` consulta el mismo registro por folio: si la captura llegó a Nexo y el guardado posterior falló (folio en
   `pendiente_envio` sin `solicitudNexoId`), vincula ese id y deja la cotización en `pendiente_costeo` (el polling la sigue) **sin
   reenviar**. **Riesgo vigente:** si el registro ya no lo sabe (reinicio, otra réplica, más de 24 h), el reintento reenvía como antes y
@@ -122,7 +128,7 @@ Guardar los textos que redactó la IA (a) no contradice esta regla: son textos d
   3. Lee de nuevo la cotización, aplica el margen y deja el conexo incluido. Si Nexo lo agregó pero la relectura falla: 503 `NEXO_NO_DISPONIBLE` con `detalle.agregado_en_nexo = true`, sin reintentar el POST. El polling lo recoge.
 - **Línea sin cotización en Nexo:** si la línea existe en Cotifly pero no hay línea de la cotización de Nexo asociada (sin flete, o sin su id guardado), 409 `LINEA_SIN_COTIZACION_NEXO`, sin llamar a Nexo. **#99 debe guardar el id de la línea de la cotización de Nexo** (`clsCotizacionLineaDto.id`) junto a `lineaSolicitudId` en `clsLineaCosteoNexo` (`Cotifly.Dominio/Cotizaciones/clsCosteoConsultadoNexo.cs`). Hoy solo se guarda el `lineaSolicitudId`.
 - `items` de 1 a 20; vacío o con más de 20, 400 por esquema y sin llamar a Nexo. La regla de §11 aplica igual que en el margen.
-- Roles de Nexo para agregar: `Comercial`, `CoordinadorFletes` y `Admin` (confirmado en el código de Nexo según `docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md`; el swagger no lo declara). 403 → `NEXO_SIN_PERMISO`; 400/404 → `CONEXO_INVALIDO`; caído → `NEXO_NO_DISPONIBLE`.
+- Roles de Nexo para agregar: `Comercial` y `Admin`. Antes también `CoordinadorFletes` (confirmado en el código de Nexo según `docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md`; el swagger no lo declara); con NEXO#307 (S6-HU-25.1) ese rol pasa a `AdminBiblioteca` y sale de cotizaciones. El texto de `NEXO_SIN_PERMISO` nombra solo los roles vigentes (#180). 403 → `NEXO_SIN_PERMISO`; 400/404 → `CONEXO_INVALIDO`; caído → `NEXO_NO_DISPONIBLE`.
 - Las licitaciones no admiten conexos en esta iteración (409 `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION`): su PDF de pliego no los imprime (ADR-017 §6).
 - Excluir un conexo (`PUT .../servicios-conexos`) no lo borra en Nexo: el swagger no tiene DELETE de conexos y el total de Nexo puede diferir del PDF (pregunta abierta).
 
@@ -236,7 +242,7 @@ Con esto queda cerrado el pendiente "¿permitir regenerar el PDF tras ajustar?".
 - **Métricas.** `vAjustesMargenPorComercial` gana `numAjustesBajoSugerido` (`diferencia < 0`) y `GET /web/metricas/ajustes-margen` lo expone como `num_ajustes_bajo_sugerido`.
 - **No se reutiliza `IClsAjusteMargenService`** (chat, HU-003.4): guarda por su cuenta y pone un motivo por defecto. El ajuste del costeo confirma el ajuste, los precios, la invalidación del PDF y la versión en una sola transacción, y deja la justificación nula por encima del sugerido.
 - **Reversa del 0006:** `db/migrations_mssql/rollback/0006_textos_y_concurrencia_reversa.sql` (destructiva para esas columnas y el historial; primero se vuelve a la versión anterior de la aplicación).
-- **Idempotencia (#100, adoptada por #99).** `IClsAlmacenIdempotencia.EjecutarUnaVezAsync<T>(ambito, clave, huella, accion, seGuarda, ct)` es la única abstracción de `Idempotency-Key` del proyecto: `ambito = "{operacion}:{usuarioId}"`, `huella` = SHA-256 del folio y el cuerpo, semáforo por clave, 24 h de vigencia, purga de claves vencidas y fallidas, y `seGuarda` (por defecto, solo los éxitos) decide qué resultados consumen la clave. La implementación vigente es en memoria (`clsAlmacenIdempotenciaEnMemoria`) y vale mientras la API corre con `replicas: 1` (`infra/stack.dotnet.dokploy.yml`). Al escalar se crea la tabla de idempotencia con el siguiente script libre (hoy el `0011`: el `0009` es la reestructuración de HU-021 y el `0010`, los nombres de municipio; ver ADR-019) y una implementación SQL de la misma interfaz.
+- **Idempotencia (#100, adoptada por #99).** `IClsAlmacenIdempotencia.EjecutarUnaVezAsync<T>(ambito, clave, huella, accion, seGuarda, ct)` es la única abstracción de `Idempotency-Key` del proyecto: `ambito = "{operacion}:{usuarioId}"`, `huella` = SHA-256 del folio y el cuerpo, semáforo por clave, 24 h de vigencia, purga de claves vencidas y fallidas, y `seGuarda` (por defecto, solo los éxitos) decide qué resultados consumen la clave. Desde #191 la implementación es `clsAlmacenIdempotenciaSql` sobre `db/scripts/06_idempotencia_captura.sql` (ver la nota de §12 arriba); `clsAlmacenIdempotenciaEnMemoria` queda para las pruebas.
 
 ### 13. Decisiones de implementación (#99)
 

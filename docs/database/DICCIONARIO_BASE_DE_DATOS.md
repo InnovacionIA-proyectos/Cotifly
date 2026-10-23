@@ -82,6 +82,7 @@ camiones, los totales de costo, el margen y el precio.
 | `tipologia`, `claseViaje`, `claseContenedor`, `exclusivo`, `consolidado`, `retornaContenedor`, `levanteContenedorDiferente` | Condiciones del viaje y del contenedor (catálogos de Nexo) | Captura | Envío a Nexo |
 | `horasCargue`, `horasDescargue` | Horas de la ruta (0 a 240) | Captura | Nexo |
 | `pesoKg` | Peso total declarado de la ruta | Captura | Cubicador, respaldo de un camión |
+| `pesoConTaraKg` | Peso total de la ruta CON la tara de los contenedores (`decimal(12,2)`, NULL = sin tara; solo en una ruta `Contenedor`, nunca menor que la carga; script `11`, HU-030.1 #184) | Captura, edición | Nexo: peso de las líneas de la ruta (la tara repartida por partes iguales entre los camiones; esas líneas van sin posiciones). No va al cubicador |
 | `valorMercancia` | Valor de la mercancía (para el seguro; no es costo) | Captura | Nexo |
 | `valorLevanteContenedor` | Un levante; lo digita el comercial y se copia a cada camión (decisión 4) | Captura, `CambiarValorLevante` | Camiones |
 | `costoFletesTotal`, `costoRetornoContenedorTotal`, `costoLevanteContenedorTotal` | Suma de los camiones que cuentan | Dominio (polling) | Precio |

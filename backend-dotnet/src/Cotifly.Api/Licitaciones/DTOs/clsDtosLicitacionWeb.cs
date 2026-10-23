@@ -68,7 +68,7 @@ public sealed class clsLicitacionWebRequest
 /// <summary>
 /// <c>LineaLicitacionWeb</c>: los campos destino del mapeo (los de <c>CapturaLineaRequest</c>) y la fila del análisis. HU-021.6: cada
 /// fila es una ruta; puede traer su línea de negocio, los ids de las ciudades del contenedor, mercancías con <c>id_tipo_mercancia</c> y
-/// servicios conexos del catálogo de Nexo. Vehículo y carrocería ya no se mapean (decisión 7): si llegan, se ignoran.
+/// servicios conexos del catálogo de Nexo. HU-032 (#197): vehículo y carrocería son el vehículo elegido de la fila (respaldo del cubicador).
 /// </summary>
 public sealed class clsLineaLicitacionWebRequest
 {
@@ -94,10 +94,10 @@ public sealed class clsLineaLicitacionWebRequest
     /// <summary>Horas de descargue de esta fila (G5); sin valor, las del encabezado.</summary>
     public decimal? HorasDescargue { get; init; }
 
-    /// <summary>Obsoleto (decisión 7 de HU-021): se acepta y se ignora con un aviso en el log.</summary>
+    /// <summary>HU-032 (#197, ADR-022): el vehículo elegido de la ruta (código de Nexo). Obligatorio sin mercancías cubicables, salvo en Contenedor (<c>VEHICULO_REQUERIDO</c>); es el respaldo del cubicador: si el cubicador asigna, manda el cubicador. La carrocería es opcional.</summary>
     public string? TipoVehiculo { get; init; }
 
-    /// <summary>Obsoleto (decisión 7 de HU-021): se acepta y se ignora con un aviso en el log.</summary>
+    /// <summary>HU-032 (#197, ADR-022): el vehículo elegido de la ruta (código de Nexo). Obligatorio sin mercancías cubicables, salvo en Contenedor (<c>VEHICULO_REQUERIDO</c>); es el respaldo del cubicador: si el cubicador asigna, manda el cubicador. La carrocería es opcional.</summary>
     public string? Carroceria { get; init; }
     public string? Tipologia { get; init; }
     public string? ClaseViaje { get; init; }
@@ -116,6 +116,9 @@ public sealed class clsLineaLicitacionWebRequest
     public decimal? ValorAprovisionamiento { get; init; }
     public decimal? PesoKg { get; init; }
     public decimal? ValorMercancia { get; init; }
+
+    /// <summary>HU-030.1 (#184): peso total con tara de la fila (solo con <c>clase_viaje = Contenedor</c>), como en la captura.</summary>
+    public decimal? PesoConTaraKg { get; init; }
 
     /// <summary>Mercancías de la ruta (nombre anterior: <see cref="Posiciones"/>; si llegan las dos, valen estas).</summary>
     public IReadOnlyList<clsPosicionCargaWebRequest?>? Mercancias { get; init; }
@@ -148,6 +151,7 @@ public sealed class clsLineaLicitacionWebRequest
         ValorAprovisionamiento = ValorLevanteContenedor ?? ValorAprovisionamiento,
         PesoKg = PesoKg,
         ValorMercancia = ValorMercancia,
+        PesoConTaraKg = PesoConTaraKg,
         Posiciones = clsPosicionCargaWebRequest.APosiciones(Mercancias ?? Posiciones),
     };
 }

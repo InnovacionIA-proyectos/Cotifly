@@ -381,6 +381,66 @@ public sealed class clsCosteoNexoTests : IDisposable
     }
 
     [Fact]
+    public void Hu181_LaLineaTraeElEstadoYElMotivoPendienteDeNexo309()
+    {
+        // Nexo #309 (S6-HU-24.1): al final de clsLineaCosteoDto, opcionales; estadoLinea con minúscula inicial.
+        using var documento = JsonDocument.Parse(
+            """{"lineaId":"L1","clsRuta":"BUENAVENTURA → BOGOTA","peso":10000,"numeroLinea":1,"tieneReglaSoloSicetac":false,"estadoLinea":"porCostear","motivoPendiente":"SICE-TAC no se usa: el período más reciente cargado es 202609 y el del mes actual es 202610 (sin mes de gracia). El Administrador de Tarifas debe validar el flete.","lineaNegocio":null}""");
+
+        var linea = clsCosteoNexo.LeerLineaSolicitud(documento.RootElement);
+
+        linea.EstadoLinea.Should().Be("porCostear");
+        linea.MotivoPendiente.Should().StartWith("SICE-TAC no se usa");
+        linea.Situacion.Should().Be(new Dominio.Cotizaciones.clsSituacionLineaNexo("por_costear", linea.MotivoPendiente));
+        linea.NumeroLinea.Should().Be(1, "lo demás se lee igual");
+    }
+
+    [Fact]
+    public void Hu183_LaLineaRechazadaTraeElEstadoYElMotivoDelRechazoDeNexo320()
+    {
+        // Nexo #320 (S6-HU-24.3): estadoLinea = "rechazada" y motivoRechazo al final de clsLineaCosteoDto; ni quién ni cuándo.
+        using var documento = JsonDocument.Parse(
+            """{"lineaId":"L1","clsRuta":"A → B","peso":1,"numeroLinea":2,"estadoLinea":"rechazada","motivoPendiente":null,"motivoRechazo":"  Ruta sin operación  "}""");
+
+        var linea = clsCosteoNexo.LeerLineaSolicitud(documento.RootElement);
+
+        (linea.EstadoLinea, linea.MotivoRechazo).Should().Be(("rechazada", "  Ruta sin operación  "));
+        linea.Situacion.Rechazada.Should().BeTrue();
+        linea.Situacion.MotivoRechazo.Should().Be("Ruta sin operación");
+        linea.NumeroLinea.Should().Be(2, "lo demás se lee igual");
+    }
+
+    [Theory]
+    [InlineData("""{"lineaId":"L1","clsRuta":"A → B","peso":1,"estadoLinea":"porCostear"}""")]
+    [InlineData("""{"lineaId":"L1","clsRuta":"A → B","peso":1,"estadoLinea":"rechazada","motivoRechazo":7}""")]
+    public void Hu183_SinMotivoRechazoONoTextoQuedaEnNullSinError(string json)
+    {
+        // Un Nexo con #309 y sin #320 no lo manda; uno que lo mandara con otro tipo tampoco rompe la lectura.
+        using var documento = JsonDocument.Parse(json);
+
+        var linea = clsCosteoNexo.LeerLineaSolicitud(documento.RootElement);
+
+        linea.MotivoRechazo.Should().BeNull();
+        linea.Situacion.MotivoRechazo.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("""{"lineaId":"L1","clsRuta":"A → B","peso":1}""")]
+    [InlineData("""{"lineaId":"L1","clsRuta":"A → B","peso":1,"estadoLinea":null,"motivoPendiente":null}""")]
+    [InlineData("""{"lineaId":"L1","clsRuta":"A → B","peso":1,"estadoLinea":0,"motivoPendiente":{"texto":"x"}}""")]
+    public void Hu181_SinLosCamposDeNexo309OConOtroTipoQuedanEnNullSinError(string json)
+    {
+        // Un Nexo anterior a #309 no los manda; uno que mandara el enum como número tampoco rompe la lectura.
+        using var documento = JsonDocument.Parse(json);
+
+        var linea = clsCosteoNexo.LeerLineaSolicitud(documento.RootElement);
+
+        (linea.EstadoLinea, linea.MotivoPendiente).Should().Be(((string?)null, (string?)null));
+        linea.Situacion.Vacia.Should().BeTrue();
+        linea.Should().Be(new Dominio.Cotizaciones.clsLineaSolicitudNexo("L1", "A → B", null, 1m, null, null));
+    }
+
+    [Fact]
     public async Task ConLasBanderasApagadasLaLineaDelCubicadorVaSinVehiculoNiCamposNuevos()
     {
         // Contrato con Nexo #297 (S5-HU-20.5): con las banderas apagadas (interruptor de emergencia, HU-023 #176) no viajan grupoRutaId,
@@ -389,14 +449,14 @@ public sealed class clsCosteoNexoTests : IDisposable
         _nexo.Responder(HttpStatusCode.Created, Creada);
         var (solicitud, _) = SolicitudCubicada();
 
-        await Adaptador(enviarGrupoRutaId: false, enviarDatosCubicador: false, enviarCodigosCubicador: false).EnviarSolicitudAsync(_usuarioId, solicitud, Ct);
+        await Adaptador(enviarGrupoRutaId: false, enviarDatosCubicador: false, enviarCodigosCubicador: "nunca").EnviarSolicitudAsync(_usuarioId, solicitud, Ct);
 
         var cuerpo = _nexo.Peticiones.Single().Cuerpo!;
         cuerpo.Should().NotContain("grupoRutaId").And.NotContain("idRecomendacionVehiculo").And.NotContain("codigoTipoMercancia")
             .And.NotContain("referenciaRuta").And.NotContain("\"orden\"").And.NotContain("numeroLinea").And.NotContain("codigoMercancia");
         using var json = JsonDocument.Parse(cuerpo);
         var linea = json.RootElement.GetProperty("lineas").EnumerateArray().Single();
-        linea.TryGetProperty("tipoVehiculo", out _).Should().BeFalse("Nexo:EnviarCodigosCubicador apagada: sin vehículo");
+        linea.TryGetProperty("tipoVehiculo", out _).Should().BeFalse("Nexo:EnviarCodigosCubicador = nunca: sin vehículo");
         linea.TryGetProperty("carroceria", out _).Should().BeFalse();
         linea.GetProperty("peso").GetDecimal().Should().Be(28_500.5m, "un solo camión: el peso declarado de la ruta, no el del cubicador");
     }
@@ -407,7 +467,7 @@ public sealed class clsCosteoNexoTests : IDisposable
         _nexo.Responder(HttpStatusCode.Created, Creada);
         var (solicitud, ruta) = SolicitudCubicada();
 
-        await Adaptador(enviarGrupoRutaId: true, enviarDatosCubicador: true, enviarCodigosCubicador: true).EnviarSolicitudAsync(_usuarioId, solicitud, Ct);
+        await Adaptador(enviarGrupoRutaId: true, enviarDatosCubicador: true, enviarCodigosCubicador: "siempre").EnviarSolicitudAsync(_usuarioId, solicitud, Ct);
 
         var cuerpo = _nexo.Peticiones.Single().Cuerpo!;
         cuerpo.Should().NotContain("codigoTipoMercancia").And.NotContain("codigoMercancia").And.NotContain("\"orden\"");
@@ -429,7 +489,7 @@ public sealed class clsCosteoNexoTests : IDisposable
         _nexo.Responder(HttpStatusCode.Created, Creada);
         var (solicitud, _) = SolicitudCubicada();
 
-        await Adaptador(enviarGrupoRutaId: grupo, enviarDatosCubicador: cubicador, enviarCodigosCubicador: codigos).EnviarSolicitudAsync(_usuarioId, solicitud, Ct);
+        await Adaptador(enviarGrupoRutaId: grupo, enviarDatosCubicador: cubicador, enviarCodigosCubicador: codigos ? "siempre" : "nunca").EnviarSolicitudAsync(_usuarioId, solicitud, Ct);
 
         var cuerpo = _nexo.Peticiones.Single().Cuerpo!;
         cuerpo.Contains("\"grupoRutaId\"", StringComparison.Ordinal).Should().BeFalse(
@@ -444,7 +504,7 @@ public sealed class clsCosteoNexoTests : IDisposable
     {
         // Nexo #297 numera las líneas por el orden del arreglo (numeroLinea): ruta 1 con sus dos camiones del cubicador en el orden de la
         // recomendación y luego la ruta 2 (respaldo con Captura:AceptarVehiculoCliente: vehículo digitado, del catálogo de Nexo, sin
-        // recomendación), que SÍ lleva su vehículo aunque Nexo:EnviarCodigosCubicador esté apagada.
+        // recomendación), que SÍ lleva su vehículo aunque Nexo:EnviarCodigosCubicador sea "nunca".
         _nexo.Responder(HttpStatusCode.Created, Creada);
         var segunda = Guid.Parse("f6f8c1e0-0000-4000-8000-000000000006");
         var cotizacion = Dominio.Cotizaciones.clsCotizacionSolicitud.Crear(new Dominio.Cotizaciones.clsDatosCotizacion { Folio = "PCN-ORD-1" }).Valor;
@@ -458,7 +518,7 @@ public sealed class clsCosteoNexoTests : IDisposable
         var solicitud = new clsSolicitudNexo(clsClienteNexo.PorBp("15927"), cotizacion.EncabezadoSolicitud!,
             [.. cotizacion.LineasNexo().Select(l => l.Linea)], "PuertoAInterior");
 
-        await Adaptador(enviarGrupoRutaId: true, enviarDatosCubicador: true, enviarCodigosCubicador: false).EnviarSolicitudAsync(_usuarioId, solicitud, Ct);
+        await Adaptador(enviarGrupoRutaId: true, enviarDatosCubicador: true, enviarCodigosCubicador: "nunca").EnviarSolicitudAsync(_usuarioId, solicitud, Ct);
 
         using var json = JsonDocument.Parse(_nexo.Peticiones.Single().Cuerpo!);
         var lineas = json.RootElement.GetProperty("lineas").EnumerateArray().ToList();
@@ -471,14 +531,16 @@ public sealed class clsCosteoNexoTests : IDisposable
     }
 
     [Fact]
-    public void LasTresBanderasDelContratoDeNexoEstanEncendidasPorDefecto()
+    public void HU0311_GrupoRutaYDatosDelCubicadorEncendidosYCodigosDelCubicadorSiemprePorDefecto()
     {
-        // HU-023 (#176): Nexo ya desplegó grupoRutaId, idRecomendacionVehiculo, numeroLinea, la cuarentena y la normalización.
+        // HU-023 (#176): Nexo ya desplegó grupoRutaId, idRecomendacionVehiculo y numeroLinea. HU-031.1 (#194, decisión del 2026-10-20):
+        // los códigos del cubicador viajan siempre (resueltos por catálogo o alias; los demás, a la bandeja de normalización de Nexo).
         var opciones = new clsOpcionesNexo();
 
         opciones.EnviarGrupoRutaId.Should().BeTrue();
         opciones.EnviarDatosCubicador.Should().BeTrue();
-        opciones.EnviarCodigosCubicador.Should().BeTrue();
+        opciones.EnviarCodigosCubicador.Should().BeNull();
+        opciones.ModoCodigosCubicador.Should().Be(ModoCodigosCubicador.Siempre);
     }
 
     [Fact]
@@ -512,8 +574,8 @@ public sealed class clsCosteoNexoTests : IDisposable
         Guid.TryParse(grupos[1], out _).Should().BeTrue();
         lineas.Select(l => l.GetProperty("idRecomendacionVehiculo").GetString()).Should().Equal(
             r1.ToString("D"), r2a.ToString("D"), r2b.ToString("D"), r3.ToString("D"));
+        // HU-031.1 (#194): por defecto (siempre) y sin catálogo ni alias de Nexo, los códigos del cubicador viajan tal cual.
         lineas.Select(l => l.GetProperty("tipoVehiculo").GetString()).Should().Equal("3S3", "3S3", "C2", "2S2");
-        lineas.Select(l => l.GetProperty("carroceria").GetString()).Should().Equal("FURGON", "FURGON", "ESTACAS", "FURGON");
         lineas.Skip(1).Take(2).Select(l => l.GetProperty("peso").GetDecimal()).Should().Equal([20_000m, 4_000m], "con varios camiones, el peso de cada uno");
     }
 
@@ -546,6 +608,68 @@ public sealed class clsCosteoNexoTests : IDisposable
         clsCosteoNexo.LeerCotizacion(documento.RootElement)!.Conexos.Should().ContainSingle().Which.CotizacionLineaId.Should().Be("LC-7");
     }
 
+    // --- HU-028 (#186): rechazar la solicitud anterior al editarla ---
+
+    [Fact]
+    public async Task ElRechazoVaASolicitudesRechazarConElMotivoRecortadoA100YElComentario()
+    {
+        _nexo.Responder(HttpStatusCode.NoContent);
+
+        var resultado = await Adaptador().RechazarSolicitudAsync(_usuarioId, " SOL-9 ", new string('m', 120), "Reemplazada por la edición", Ct);
+
+        resultado.Valor.Should().Be(ResultadoRechazoNexo.Descartada);
+        var peticion = _nexo.Peticiones.Should().ContainSingle().Subject;
+        (peticion.Metodo, peticion.Url.AbsoluteUri, peticion.IdPortalUsuario).Should().Be(
+            (HttpMethod.Post, "http://nexo-test.local/api/solicitudes/SOL-9/rechazar", "1007"));
+        using var cuerpo = JsonDocument.Parse(peticion.Cuerpo!);
+        cuerpo.RootElement.GetProperty("motivo").GetString().Should().HaveLength(100);
+        cuerpo.RootElement.GetProperty("comentario").GetString().Should().Be("Reemplazada por la edición");
+    }
+
+    [Fact]
+    public async Task SinComentarioNoViajaElCampo()
+    {
+        _nexo.Responder(HttpStatusCode.NoContent);
+
+        await Adaptador().RechazarSolicitudAsync(_usuarioId, "SOL-9", "Edición de la solicitud desde Cotifly", "  ", Ct);
+
+        using var cuerpo = JsonDocument.Parse(_nexo.Peticiones.Single().Cuerpo!);
+        cuerpo.RootElement.TryGetProperty("comentario", out _).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Conflict, "SOLICITUD_YA_DESCARTADA", ResultadoRechazoNexo.YaDescartada)]
+    [InlineData(HttpStatusCode.NotFound, "SOLICITUD_NO_ENCONTRADA", ResultadoRechazoNexo.NoEncontrada)]
+    public async Task UnaSolicitudYaDescartadaOInexistenteNoQuedaViva(HttpStatusCode estado, string codigo, ResultadoRechazoNexo esperado)
+    {
+        _nexo.Responder(estado, $$"""{"code":"{{codigo}}","message":"x"}""");
+
+        var resultado = await Adaptador().RechazarSolicitudAsync(_usuarioId, "SOL-9", "Edición", null, Ct);
+
+        resultado.Valor.Should().Be(esperado);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Forbidden, "SOLICITUD_AJENA", clsCodigosError.NexoSinPermiso)]
+    [InlineData(HttpStatusCode.InternalServerError, "ERROR_INTERNO", clsCodigosError.CosteoNexoNoDisponible)]
+    [InlineData(HttpStatusCode.Conflict, "OTRO_CONFLICTO", clsCodigosError.CosteoNexoRechazada)]
+    public async Task OtroFalloDelRechazoEsUnError(HttpStatusCode estado, string codigo, string esperado)
+    {
+        _nexo.Responder(estado, $$"""{"code":"{{codigo}}","message":"x"}""");
+
+        var resultado = await Adaptador().RechazarSolicitudAsync(_usuarioId, "SOL-9", "Edición", null, Ct);
+
+        resultado.Error.Codigo.Should().Be(esperado);
+    }
+
+    [Fact]
+    public async Task SinNexoConfiguradoElRechazoNoEstaDisponible()
+    {
+        var resultado = await new clsCosteoNexoNoDisponible().RechazarSolicitudAsync(_usuarioId, "SOL-9", "Edición", null, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.CosteoNexoNoDisponible);
+    }
+
     private void UsuarioResuelto(clsUsuarioWeb? usuario) =>
         _usuarios.ObtenerPorIdAsync(_usuarioId, Arg.Any<CancellationToken>()).Returns(usuario);
 
@@ -554,7 +678,7 @@ public sealed class clsCosteoNexoTests : IDisposable
 
     private clsCosteoNexo Adaptador(
         string? url = clsNexoClientesFalso.UrlBase, Microsoft.Extensions.Logging.ILogger<clsCosteoNexo>? logger = null, bool enviarGrupoRutaId = true,
-        bool enviarDatosCubicador = true, bool enviarCodigosCubicador = true) =>
+        bool enviarDatosCubicador = true, string enviarCodigosCubicador = "siempre") =>
         new(_http, Options.Create(new clsOpcionesNexo
             {
                 UrlBase = url, EnviarGrupoRutaId = enviarGrupoRutaId, EnviarDatosCubicador = enviarDatosCubicador, EnviarCodigosCubicador = enviarCodigosCubicador,

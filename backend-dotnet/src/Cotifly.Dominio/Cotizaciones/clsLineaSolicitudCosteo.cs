@@ -53,6 +53,19 @@ public static class clsCodigosLineaSolicitud
 
     /// <summary>HU-023.3 (#158): el catálogo del cubicador marca la mercancía como no cubicable.</summary>
     public const string MercanciaNoCubicable = "MERCANCIA_NO_CUBICABLE";
+
+    /// <summary>
+    /// HU-030.1 (#184): el <c>peso_con_tara_kg</c> de la ruta es menor que su peso de carga (<c>peso_kg</c> o, sin él, la suma de las
+    /// mercancías): el peso con tara es la carga MÁS la tara de los contenedores. Con otra clase de viaje el campo es
+    /// <see cref="CampoNoAplica"/>.
+    /// </summary>
+    public const string PesoConTaraMenorQueCarga = "PESO_CON_TARA_MENOR_QUE_CARGA";
+
+    /// <summary>
+    /// HU-032 (#197): la ruta no se puede cubicar (no todas sus mercancías son cubicables, o solo trae el peso) y no trae
+    /// <c>tipo_vehiculo</c>. Salvo en Contenedor (Nexo deduce el vehículo), el vehículo elegido es obligatorio.
+    /// </summary>
+    public const string VehiculoRequerido = "VEHICULO_REQUERIDO";
 }
 
 /// <summary>Un error de un campo de la licitación: el campo (snake_case del contrato), su código y un mensaje legible.</summary>
@@ -126,6 +139,20 @@ public sealed record clsLineaSolicitudCosteo
     public decimal? ValorMercancia { get; init; }
 
     /// <summary>
+    /// HU-030.1 (#184): peso total CON la tara de los contenedores que escribe el comercial para la ruta (<c>peso_con_tara_kg</c>, kg);
+    /// <c>null</c> = sin tara (a Nexo va el peso de carga, como antes). Solo con <c>clase_viaje = Contenedor</c> y nunca menor que el peso
+    /// de carga (<see cref="PesoCarga"/>). No va al cubicador (que recibe el peso por mercancía, sin tara): solo cambia el <c>peso</c> de
+    /// las líneas de Nexo de la ruta, que entonces viajan sin posiciones (<see cref="clsLineaSolicitud.PesoLineaNexo"/>).
+    /// </summary>
+    public decimal? PesoConTaraKg { get; init; }
+
+    /// <summary>¿La ruta es de contenedor (<c>clase_viaje = Contenedor</c>, recortado, como se guarda)?</summary>
+    public bool EsContenedor => string.Equals(ClaseViaje?.Trim(), clsCatalogosCaptura.ClaseViajeContenedor, StringComparison.Ordinal);
+
+    /// <summary>Peso de la carga (sin tara): <see cref="PesoKg"/> o, sin él, la suma de las mercancías con peso; <c>null</c> si no hay.</summary>
+    public decimal? PesoCarga => PesoKg ?? (SumaPesoPosiciones is var suma && suma > 0 ? suma : null);
+
+    /// <summary>
     /// Horas de cargue propias de la línea (<c>horasCargue</c> de <c>CapturaLineaRequest</c>, G5 de HU-013.11); <c>null</c> = las del
     /// encabezado. Solo las licitaciones las traen por fila; el formulario de una línea usa las del encabezado.
     /// </summary>
@@ -162,6 +189,46 @@ public sealed record clsLineaSolicitudCosteo
 
     /// <summary>Suma <c>cantidad × pesoKg</c> de las posiciones con peso (la misma de Nexo).</summary>
     public decimal SumaPesoPosiciones => Posiciones.Where(p => p?.PesoKg is > 0).Sum(p => p.Cantidad * p.PesoKg!.Value);
+
+    /// <summary>
+    /// HU-032 (#197): cómo se cubica la ruta según sus mercancías (<see cref="clsPosicionCarga.EsCubicable"/>). Solo
+    /// <see cref="CubicabilidadRuta.Cubicable"/> llama al cubicador; en los demás casos la ruta usa el vehículo elegido.
+    /// </summary>
+    public CubicabilidadRuta Cubicabilidad
+    {
+        get
+        {
+            var mercancias = Posiciones.Where(p => p is not null).ToList();
+            if (mercancias.Count == 0)
+            {
+                return CubicabilidadRuta.SinMercancias;
+            }
+
+            var cubicables = mercancias.Count(p => p.EsCubicable);
+            return cubicables == mercancias.Count ? CubicabilidadRuta.Cubicable
+                : cubicables == 0 ? CubicabilidadRuta.NoCubicable
+                : CubicabilidadRuta.Mixta;
+        }
+    }
+
+    /// <summary>
+    /// HU-032 (#197): ¿la ruta exige el vehículo elegido? Sí cuando no se puede cubicar (no todas sus mercancías son cubicables) y su clase
+    /// de viaje no es una de <paramref name="clasesSinVehiculo"/> (<c>Captura:ClasesSinVehiculoObligatorio</c>; <c>null</c> = solo
+    /// <see cref="clsCatalogosCaptura.ClaseViajeContenedor"/>, el valor por defecto): en Cupo, Nexo no autocostea una línea sin vehículo
+    /// (COTIFLY-CONTRATO §4); en Contenedor lo deduce por peso y clase. La clase se compara recortada y exacta, como se guarda y como la
+    /// valida el catálogo de Nexo.
+    /// </summary>
+    public bool ExigeVehiculoElegido(IReadOnlyCollection<string>? clasesSinVehiculo = null) =>
+        Cubicabilidad != CubicabilidadRuta.Cubicable
+        && !(ClaseViaje?.Trim() is { Length: > 0 } clase
+             && (clasesSinVehiculo ?? clsCatalogosCaptura.ClasesSinVehiculoPorDefecto).Contains(clase, StringComparer.Ordinal));
+
+    /// <summary>
+    /// HU-032 (#197): las posiciones que pueden viajar a Nexo: todas, si todas traen sus tres medidas; ninguna si alguna es una mercancía
+    /// sin medidas (no cubicable). Mandar solo una parte descuadraría el peso de la línea contra la suma de sus posiciones
+    /// (<c>PESO_INCONSISTENTE</c> de Nexo, tolerancia 1 %): sin posiciones, a Nexo le basta el peso de la ruta.
+    /// </summary>
+    public IReadOnlyList<clsPosicionCarga> PosicionesParaNexo => Posiciones.All(p => p is not null && p.ConMedidas) ? Posiciones : [];
 
     /// <summary>
     /// Todos los errores de la línea (vacía si Nexo la aceptaría): obligatorios, largos, rangos con 2 decimales, posiciones y la
@@ -205,6 +272,7 @@ public sealed record clsLineaSolicitudCosteo
         Rango(errores, "valor_aprovisionamiento", ValorAprovisionamiento, 0m, clsSolicitudCosteo.MaximoValor);
         Rango(errores, "peso_kg", PesoKg, 0m, clsSolicitudCosteo.MaximoPeso);
         Rango(errores, "valor_mercancia", ValorMercancia, 0m, clsSolicitudCosteo.MaximoValor);
+        Rango(errores, clsSolicitudCosteo.CampoPesoConTara, PesoConTaraKg, 0m, clsSolicitudCosteo.MaximoPeso);
         Rango(errores, "horas_cargue", HorasCargue, 0m, clsSolicitudCosteo.MaximoHoras);
         Rango(errores, "horas_descargue", HorasDescargue, 0m, clsSolicitudCosteo.MaximoHoras);
         errores.AddRange(ErroresCondicionales());
@@ -255,7 +323,7 @@ public sealed record clsLineaSolicitudCosteo
     public IReadOnlyList<clsErrorCampo> ErroresCondicionales()
     {
         var errores = new List<clsErrorCampo>();
-        var esContenedor = string.Equals(ClaseViaje?.Trim(), clsCatalogosCaptura.ClaseViajeContenedor, StringComparison.Ordinal);
+        var esContenedor = EsContenedor;
         var conClase = !string.IsNullOrWhiteSpace(ClaseContenedor);
         if (conClase && !esContenedor)
         {
@@ -274,7 +342,32 @@ public sealed record clsLineaSolicitudCosteo
                 "El campo 'valor_aprovisionamiento' solo aplica con una ciudad_levante_contenedor distinta del origen."));
         }
 
+        errores.AddRange(ErroresPesoConTara());
         return errores;
+    }
+
+    /// <summary>
+    /// HU-030.1 (#184): <c>peso_con_tara_kg</c> solo con <c>clase_viaje = Contenedor</c> (<see cref="clsCodigosLineaSolicitud.CampoNoAplica"/>)
+    /// y nunca menor que el peso de carga (<see cref="clsCodigosLineaSolicitud.PesoConTaraMenorQueCarga"/>). El tope (Nexo: hasta
+    /// <see cref="clsSolicitudCosteo.MaximoPeso"/> kg con 2 decimales) lo revisa <see cref="Errores"/> con el rango de los demás pesos.
+    /// </summary>
+    private IEnumerable<clsErrorCampo> ErroresPesoConTara()
+    {
+        if (PesoConTaraKg is not { } conTara)
+        {
+            yield break;
+        }
+
+        if (!EsContenedor)
+        {
+            yield return new clsErrorCampo(clsSolicitudCosteo.CampoPesoConTara, clsCodigosLineaSolicitud.CampoNoAplica,
+                $"El campo '{clsSolicitudCosteo.CampoPesoConTara}' (peso total con tara) solo aplica con clase_viaje = {clsCatalogosCaptura.ClaseViajeContenedor}.");
+        }
+        else if (PesoCarga is { } carga && conTara < carga)
+        {
+            yield return new clsErrorCampo(clsSolicitudCosteo.CampoPesoConTara, clsCodigosLineaSolicitud.PesoConTaraMenorQueCarga,
+                $"El peso total con tara ({conTara:0.##} kg) no puede ser menor que el peso de la carga ({carga:0.##} kg): es la carga más la tara de los contenedores.");
+        }
     }
 
     /// <summary>

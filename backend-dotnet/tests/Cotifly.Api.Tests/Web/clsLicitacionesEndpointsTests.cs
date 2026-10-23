@@ -93,7 +93,10 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
     public async Task SinArchivoLaLicitacionSeCreaConJson()
     {
         var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
-        object[] lineas = [new { origen = "YUMBO", destino = "CALI", peso_kg = 1000 }, new { origen = "CALI", destino = "YUMBO", peso_kg = 2000 }];
+        object[] lineas =
+        [
+            new { origen = "YUMBO", destino = "CALI", peso_kg = 1000, tipo_vehiculo = "3S3" }, new { origen = "CALI", destino = "YUMBO", peso_kg = 2000, tipo_vehiculo = "2" },
+        ];
 
         using var respuesta = await _api.EnviarAsync(HttpMethod.Post, "/web/licitaciones", sesion.Access, clsPliegoMuestra.Json(clsCosteoEndpointsTests.Nit, lineas, hoja: null));
 
@@ -115,9 +118,9 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
         var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         object[] lineas =
         [
-            new { fila = 0, origen = "BUENAVENTURA", destino = "", peso_kg = 32000 },
-            new { fila = 1, origen = "CALI", destino = "CARTAGENA", peso_kg = 28000, valor_mercancia = 1.234 },
-            new { fila = 7, origen = "CUCUTA", destino = "BOGOTA, D.C.", peso_kg = 8000 },
+            new { fila = 0, origen = "BUENAVENTURA", destino = "", peso_kg = 32000, tipo_vehiculo = "3S3" },
+            new { fila = 1, origen = "CALI", destino = "CARTAGENA", peso_kg = 28000, valor_mercancia = 1.234, tipo_vehiculo = "3S3" },
+            new { fila = 7, origen = "CUCUTA", destino = "BOGOTA, D.C.", peso_kg = 8000, tipo_vehiculo = "2" },
         ];
 
         var json = await CrearAsync(sesion, lineas, clsPliegoMuestra.Excel(), HttpStatusCode.BadRequest);

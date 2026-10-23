@@ -6,12 +6,12 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Cotifly.Api.CatalogosFlete.Controllers;
 
-/// <summary>Catálogos de tipo de vehículo, tipo de carrocería y clase de viaje para el formulario de captura.</summary>
+/// <summary>Catálogos de tipo de vehículo, tipo de carrocería, clase de viaje y clase de contenedor para el formulario de captura.</summary>
 [Route("web/catalogos-flete")]
 public sealed class clsCatalogosFleteController(IClsContextoUsuario usuario, IClsCatalogosFleteProvider catalogos) : clsControladorWebBase(usuario)
 {
     /// <summary>
-    /// 200 los tres catálogos completos; 503 si los catálogos maestros de Nexo no están disponibles y no hay copia utilizable
+    /// 200 los cuatro catálogos (<c>clases_contenedor</c> puede venir vacía); 503 si los catálogos maestros de Nexo no están disponibles y no hay copia utilizable
     /// (<c>CATALOGOS_FLETE_NO_DISPONIBLE</c>).
     /// </summary>
     [HttpGet]

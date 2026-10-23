@@ -50,7 +50,7 @@ public sealed class clsCostosConexosNexo(clsCosteoNexo costeo) : IClsCostosConex
                     continue;
                 }
 
-                encontrados[id] = new clsCostoConexoNexo(id, clsCosteoNexo.Texto(fila, "tipoServicio"), costo);
+                encontrados[id] = new clsCostoConexoNexo(id, clsCosteoNexo.Texto(fila, "tipoServicio"), costo, clsCosteoNexo.Texto(fila, "categoria"));
                 pendientes.Remove(id);
             }
 

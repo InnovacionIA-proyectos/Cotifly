@@ -720,12 +720,36 @@ public sealed class clsEnvioCosteoServiceTests
     }
 
     [Fact]
-    public async Task ElVehiculoYLaCarroceriaQueLleganSeIgnoran()
+    public async Task HU032_ElVehiculoElegidoDeUnaRutaSinMercanciasSeConservaSeValidaYVaEnSuCamion()
     {
+        // HU-032 (#197): la ruta solo trae el peso: no se cubica y lleva el vehículo elegido (validado contra Nexo antes de guardar).
         var conVehiculo = Ruta(76109, "Buenaventura", 11001, "Bogotá D.C.");
         conVehiculo = conVehiculo with { Linea = conVehiculo.Linea with { TipoVehiculo = "3S3", Carroceria = "FURGON" } };
 
         var cotizacion = (await Servicio().CapturarAsync(_ana, Captura(conVehiculo), Ct)).Valor;
+
+        var camion = cotizacion.PrimeraRuta!.Vehiculos.Should().ContainSingle().Subject;
+        (camion.TipoVehiculo, camion.Carroceria).Should().Be(("3S3", "FURGON"));
+        (cotizacion.PrimeraRuta.TipoVehiculoElegido, cotizacion.PrimeraRuta.CarroceriaElegida).Should().Be(("3S3", "FURGON"));
+        await _catalogos.Received().ValidarLineasAsync(_ana,
+            Arg.Is<IReadOnlyList<clsLineaSolicitudCosteo>>(l => l.Any(x => x.TipoVehiculo == "3S3")), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ConLaBanderaApagadaElVehiculoYLaCarroceriaQueLleganSeIgnoran()
+    {
+        // HU-032 (#197): Captura:AceptarVehiculoCliente = false es el interruptor de reversa (comportamiento anterior: decisión 7).
+        var conVehiculo = Ruta(76109, "Buenaventura", 11001, "Bogotá D.C.");
+        conVehiculo = conVehiculo with { Linea = conVehiculo.Linea with { TipoVehiculo = "3S3", Carroceria = "FURGON" } };
+        var apagada = Options.Create(new clsOpcionesCaptura { AceptarVehiculoCliente = false });
+        var servicio = new clsEnvioCosteoService(
+            _cotizaciones, _politicas, _margen, _folios, _buscador, _nexo, _catalogos, _filas, _monedas, _unidad, _auditoria, _reloj,
+            Options.Create(_opciones), NullLogger<clsEnvioCosteoService>.Instance, new clsPrecioCosteoService(),
+            new clsCapturaRutasService(_filas, _costosConexos, new clsPlanificadorCamionSinVehiculo(), NullLogger<clsCapturaRutasService>.Instance,
+                opcionesCaptura: apagada),
+            apagada);
+
+        var cotizacion = (await servicio.CapturarAsync(_ana, Captura(conVehiculo), Ct)).Valor;
 
         var camion = cotizacion.PrimeraRuta!.Vehiculos.Should().ContainSingle().Subject;
         camion.TipoVehiculo.Should().BeNull();
@@ -1133,7 +1157,7 @@ public sealed class clsEnvioCosteoServiceTests
         var entrada = Captura(Ruta(76109, "Buenaventura", 11001, "Bogotá D.C."));
         var primera = () => servicio.CapturarUnaVezAsync(_ana, entrada, "clave-155-sc", Ct);
         await primera.Should().ThrowAsync<TimeoutException>();
-        registro.BuscarPorFolio(_creada!.Folio)!.ScorePrioridad.Should().Be(62.5m, "el registro guarda el score con el id de Nexo");
+        (await registro.BuscarPorFolioAsync(_creada!.Folio, Ct))!.ScorePrioridad.Should().Be(62.5m, "el registro guarda el score con el id de Nexo");
 
         var guardada = await FolioPendienteSinIdDeNexoAsync(entrada);
 
@@ -1155,8 +1179,8 @@ public sealed class clsEnvioCosteoServiceTests
         var servicio = ServicioIdempotente(registro);
         var entrada = Captura(Ruta(76109, "Buenaventura", 11001, "Bogotá D.C."));
         var guardada = await FolioPendienteSinIdDeNexoAsync(entrada);
-        registro.Registrar($"{clsEnvioCosteoService.OperacionIdempotencia}:{_ana}", "clave-anterior",
-            new clsCapturaIdempotente("huella", guardada.Id, guardada.Folio, "sol-previa", _reloj.AhoraUtc));
+        await registro.RegistrarAsync($"{clsEnvioCosteoService.OperacionIdempotencia}:{_ana}", "clave-anterior",
+            new clsCapturaIdempotente("huella", guardada.Id, guardada.Folio, "sol-previa", _reloj.AhoraUtc), Ct);
 
         var reintento = await servicio.ReintentarAsync(_ana, guardada.Folio, Ct);
 

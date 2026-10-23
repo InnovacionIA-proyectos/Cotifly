@@ -54,10 +54,10 @@ public sealed class clsSolicitudCosteoWebRequest
     public int? OrigenMunicipioId { get; init; }
     public int? DestinoMunicipioId { get; init; }
 
-    /// <summary>Obsoleto (decisión 7 de HU-021): se acepta y se ignora con un aviso en el log.</summary>
+    /// <summary>HU-032 (#197, ADR-022): el vehículo elegido de la ruta (código de Nexo). Obligatorio sin mercancías cubicables, salvo en Contenedor (<c>VEHICULO_REQUERIDO</c>); es el respaldo del cubicador: si el cubicador asigna, manda el cubicador. La carrocería es opcional.</summary>
     public string? TipoVehiculo { get; init; }
 
-    /// <summary>Obsoleto (decisión 7 de HU-021): se acepta y se ignora con un aviso en el log.</summary>
+    /// <summary>HU-032 (#197, ADR-022): el vehículo elegido de la ruta (código de Nexo). Obligatorio sin mercancías cubicables, salvo en Contenedor (<c>VEHICULO_REQUERIDO</c>); es el respaldo del cubicador: si el cubicador asigna, manda el cubicador. La carrocería es opcional.</summary>
     public string? Carroceria { get; init; }
     public string? Tipologia { get; init; }
     public string? ClaseViaje { get; init; }
@@ -179,9 +179,9 @@ public sealed class clsSolicitudCosteoWebRequest
 /// <summary>
 /// <c>RutaCapturaWeb</c> (HU-021.6): una ruta del formulario. Origen y destino con su id de municipio de <c>GET /web/municipios</c>
 /// (obligatorio; sin él, Cotifly lo resuelve por el nombre y si es ambiguo responde el error con los candidatos) y una copia del
-/// nombre; igual las ciudades de devolución y de levante del contenedor. Sin vehículo ni carrocería (decisión 7).
+/// nombre; igual las ciudades de devolución y de levante del contenedor. HU-032 (#197): con el vehículo elegido (respaldo del cubicador).
 /// </summary>
-public sealed class clsRutaCapturaWebRequest
+public class clsRutaCapturaWebRequest
 {
     /// <summary>Línea de negocio de la ruta; sin ella, la de la solicitud.</summary>
     public string? LineaNegocio { get; init; }
@@ -207,13 +207,19 @@ public sealed class clsRutaCapturaWebRequest
     public decimal? ValorLevanteContenedor { get; init; }
     public decimal? ValorMercancia { get; init; }
     public decimal? PesoKg { get; init; }
+
+    /// <summary>
+    /// HU-030.1 (#184): peso total de la ruta CON la tara de los contenedores (kg), opcional y solo con <c>clase_viaje = Contenedor</c>;
+    /// nunca menor que <see cref="PesoKg"/>. Valor inicial sugerido: el peso de carga. Va a Nexo repartido por camión; no al cubicador.
+    /// </summary>
+    public decimal? PesoConTaraKg { get; init; }
     public IReadOnlyList<clsPosicionCargaWebRequest?>? Mercancias { get; init; }
     public IReadOnlyList<clsConexoCapturaWebRequest?>? ServiciosConexos { get; init; }
 
-    /// <summary>Obsoleto (decisión 7 de HU-021): se acepta y se ignora con un aviso en el log.</summary>
+    /// <summary>HU-032 (#197, ADR-022): el vehículo elegido de la ruta (código de Nexo). Obligatorio sin mercancías cubicables, salvo en Contenedor (<c>VEHICULO_REQUERIDO</c>); es el respaldo del cubicador: si el cubicador asigna, manda el cubicador. La carrocería es opcional.</summary>
     public string? TipoVehiculo { get; init; }
 
-    /// <summary>Obsoleto (decisión 7 de HU-021): se acepta y se ignora con un aviso en el log.</summary>
+    /// <summary>HU-032 (#197, ADR-022): el vehículo elegido de la ruta (código de Nexo). Obligatorio sin mercancías cubicables, salvo en Contenedor (<c>VEHICULO_REQUERIDO</c>); es el respaldo del cubicador: si el cubicador asigna, manda el cubicador. La carrocería es opcional.</summary>
     public string? Carroceria { get; init; }
 
     public clsLineaLicitacionEntrada AEntrada() => new(
@@ -240,6 +246,7 @@ public sealed class clsRutaCapturaWebRequest
             ValorAprovisionamiento = ValorLevanteContenedor,
             PesoKg = PesoKg,
             ValorMercancia = ValorMercancia,
+            PesoConTaraKg = PesoConTaraKg,
             HorasCargue = HorasCargue,
             HorasDescargue = HorasDescargue,
             Posiciones = clsPosicionCargaWebRequest.APosiciones(Mercancias),
@@ -274,13 +281,18 @@ public sealed class clsPosicionCargaWebRequest
     public string? NombreMercancia { get; init; }
     public string? Descripcion { get; init; }
     public int Cantidad { get; init; } = 1;
-    public decimal LargoCm { get; init; }
-    public decimal AnchoCm { get; init; }
-    public decimal AltoCm { get; init; }
+
+    /// <summary>
+    /// Medidas en cm. HU-032 (#197): opcionales. Sin ninguna (ausentes o <c>null</c>) y sin <c>codigo_mercancia</c> la mercancía es "no
+    /// cubicable": se guarda, no viaja a Nexo como posición y la ruta usa el vehículo elegido. Si viene una, vienen las tres.
+    /// </summary>
+    public decimal? LargoCm { get; init; }
+    public decimal? AnchoCm { get; init; }
+    public decimal? AltoCm { get; init; }
     public decimal? PesoKg { get; init; }
 
     public clsPosicionCarga APosicion() => new(
-        NombreMercancia ?? Descripcion, Cantidad, LargoCm, AnchoCm, AltoCm, PesoKg, IdTipoMercancia,
+        NombreMercancia ?? Descripcion, Cantidad, LargoCm ?? 0m, AnchoCm ?? 0m, AltoCm ?? 0m, PesoKg, IdTipoMercancia,
         string.IsNullOrWhiteSpace(CodigoMercancia) ? null : CodigoMercancia.Trim());
 
     /// <summary>Las mercancías del contrato como posiciones del dominio (un elemento <c>null</c> se conserva: lo reporta la validación).</summary>
@@ -359,13 +371,22 @@ public sealed class clsDatosCargaWebRequest
     public bool? Consolidado { get; init; }
     public bool? RetornaContenedor { get; init; }
     public string? CiudadDevolucionContenedor { get; init; }
+
+    /// <summary>HU-028 (#186), defecto B: el id del municipio de devolución, como en la captura.</summary>
+    public int? CiudadDevolucionMunicipioId { get; init; }
     public bool? LevanteContenedorDiferente { get; init; }
     public string? CiudadLevanteContenedor { get; init; }
+
+    /// <summary>HU-028 (#186), defecto B: el id del municipio de levante.</summary>
+    public int? CiudadLevanteMunicipioId { get; init; }
     public decimal? ValorAprovisionamiento { get; init; }
     public decimal? HorasCargue { get; init; }
     public decimal? HorasDescargue { get; init; }
     public decimal? PesoKg { get; init; }
     public decimal? ValorMercancia { get; init; }
+
+    /// <summary>HU-030.1 (#184): peso total con tara de la ruta de contenedor (<c>null</c> lo quita).</summary>
+    public decimal? PesoConTaraKg { get; init; }
     public IReadOnlyList<clsPosicionCargaWebRequest>? Posiciones { get; init; }
 
     /// <summary>Cambios de carga del dominio a partir del JSON de <c>datos_carga</c> (nombres snake_case del contrato).</summary>
@@ -416,18 +437,20 @@ public sealed class clsDatosCargaWebRequest
             Consolidado = leido.Consolidado,
             RetornaContenedor = leido.RetornaContenedor,
             CiudadDevolucionContenedor = leido.CiudadDevolucionContenedor,
+            CiudadDevolucionMunicipioId = leido.CiudadDevolucionMunicipioId,
             LevanteContenedorDiferente = leido.LevanteContenedorDiferente,
             CiudadLevanteContenedor = leido.CiudadLevanteContenedor,
+            CiudadLevanteMunicipioId = leido.CiudadLevanteMunicipioId,
             ValorAprovisionamiento = leido.ValorAprovisionamiento,
             HorasCargue = leido.HorasCargue,
             HorasDescargue = leido.HorasDescargue,
             PesoKg = leido.PesoKg,
             ValorMercancia = leido.ValorMercancia,
+            PesoConTaraKg = leido.PesoConTaraKg,
             Posiciones = leido.Posiciones is null
                 ? null
-                : [.. leido.Posiciones.Select(p => p is null
-                    ? null!
-                    : new clsPosicionCarga(p.Descripcion, p.Cantidad, p.LargoCm, p.AnchoCm, p.AltoCm, p.PesoKg))],
+                // HU-028 (#186), defecto A: con codigo_mercancia y nombre_mercancia (antes se perdían y la -vN caía en el respaldo).
+                : [.. leido.Posiciones.Select(p => p is null ? null! : p.APosicion())],
         };
     }
 

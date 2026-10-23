@@ -86,10 +86,18 @@ public sealed record clsSolicitudNexo
 public sealed record clsSolicitudCreadaNexo(string Id, int Lineas, int FletesCalculados, int LineasPorCostear, bool CosteoEnProceso)
 {
     /// <summary>
-    /// HU-023.4: ¿las líneas de los camiones del cubicador llevaron sus códigos de vehículo y carrocería (<c>Nexo:EnviarCodigosCubicador</c>
-    /// al enviar)? El envío lo registra (<see cref="clsEnvioNexoRegistrado"/>) para que el polling compare contra lo que viajó.
+    /// HU-023.4: ¿las líneas de los camiones del cubicador llevaron TODAS sus códigos de vehículo y carrocería (<c>Nexo:EnviarCodigosCubicador</c>
+    /// = <c>siempre</c> al enviar)? Con <c>solo_conocidos</c> (HU-014 #188) unas sí y otras no: <c>false</c>, el caso seguro. El envío lo
+    /// registra (<see cref="clsEnvioNexoRegistrado"/>) para que el polling compare contra lo que viajó.
     /// </summary>
     public bool CodigosCubicadorEnviados { get; init; }
+
+    /// <summary>
+    /// HU-031.1 (#194): los códigos de vehículo de Cotifly que viajaron con otro código porque el diccionario de alias de Nexo los tradujo
+    /// (código de Cotifly → código enviado, <c>C2</c> → <c>2</c>). Vacío si ninguno. El envío lo registra con
+    /// <see cref="CodigosCubicadorEnviados"/> (<see cref="clsEnvioNexoRegistrado"/>).
+    /// </summary>
+    public IReadOnlyDictionary<string, string> EquivalenciasVehiculo { get; init; } = new Dictionary<string, string>();
 
     /// <summary>
     /// HU-018.1 (#155): <c>scorePrioridad</c> del <c>CapturaResultDto</c> (COTIFLY-CONTRATO.md §5); <c>null</c> si Nexo no lo mandó, vino

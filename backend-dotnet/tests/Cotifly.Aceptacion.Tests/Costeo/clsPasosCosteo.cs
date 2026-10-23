@@ -321,7 +321,7 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
             "costo" => "l.costoFinal",
             "margenAplicado" or "origenMargen" or "metodoCalculo" => $"l.{columna}",
             "pesoKg" or "tipoVehiculo" or "carroceria" =>
-                $"(SELECT TOP 1 v.{columna} FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v WHERE v.lineaSolicitudId = l.id ORDER BY v.createdAt, v.id)",
+                $"(SELECT TOP 1 v.{columna} FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v WHERE v.lineaSolicitudId = l.id ORDER BY IIF(v.ordenVehiculo IS NULL, 1, 0), v.ordenVehiculo, v.createdAt, v.id)",
             _ => $"c.{columna}",
         };
         return clsBaseDatosPruebas.EscalarAsync<string>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,

@@ -1,8 +1,5 @@
 using System.Diagnostics;
 using System.Globalization;
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 using Cotifly.Aplicacion.Auditoria.Services;
 using Cotifly.Aplicacion.Comun;
 using Cotifly.Aplicacion.Comun.Interfaces;
@@ -70,7 +67,6 @@ public sealed class clsServiciosConexosCosteoService(
     /// <summary>Operación del ámbito de la idempotencia (<c>"conexos:{usuarioId}"</c>).</summary>
     public const string OperacionIdempotencia = "conexos";
 
-    private static readonly JsonSerializerOptions _jsonHuella = new(JsonSerializerDefaults.Web);
 
     /// <summary>Herramienta de la auditoría (<c>EventosHerramienta.herramienta</c>).</summary>
     public const string HerramientaAuditoria = "agregar_servicios_conexos";
@@ -154,8 +150,7 @@ public sealed class clsServiciosConexosCosteoService(
     /// <summary>Huella de la petición para la idempotencia: folio e items tal como llegaron (SHA-256).</summary>
     public static string Huella(string folio, IReadOnlyList<clsConexoAgregarEntrada>? items)
     {
-        var cuerpo = JsonSerializer.Serialize(new { folio = folio?.Trim(), items }, _jsonHuella);
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(cuerpo)));
+        return clsHuellaIdempotencia.Calcular(new { folio = folio?.Trim(), items });
     }
 
     private async Task<clsResultado<clsCosteoCotizacion>> EjecutarAsync(
@@ -270,7 +265,7 @@ public sealed class clsServiciosConexosCosteoService(
                 $"La cotización {cotizacion.Folio} es una licitación: no admite servicios conexos en esta iteración.", MotivoLicitacion);
         }
 
-        if (!cotizacion.TieneCostoDisponible || cotizacion.Rutas.Any(r => r.MargenAplicado is null || r.MetodoCalculo is null))
+        if (!cotizacion.TieneCostoDisponible || cotizacion.RutasCotizables.Any(r => r.MargenAplicado is null || r.MetodoCalculo is null))
         {
             return new clsErrorDominio(clsCodigosError.CosteoNoListo,
                 $"La cotización {cotizacion.Folio} todavía no tiene el costeo de Nexo con margen aplicado: espera el costeo para agregar conexos.");
@@ -286,6 +281,12 @@ public sealed class clsServiciosConexosCosteoService(
         if (ruta.EsFallo)
         {
             return ruta.Error;
+        }
+
+        // HU-028.1 (#183): una ruta rechazada por la Mesa de Costeo no tiene precio: no admite conexos (409 RUTA_RECHAZADA).
+        if (cotizacion.ValidarRutaNoRechazada(ruta.Valor) is { } rechazada)
+        {
+            return rechazada;
         }
 
         return PrimerCamion(ruta.Valor)?.LineaSolicitudNexoId is null || cotizacion.CotizacionNexoId is null
@@ -330,12 +331,13 @@ public sealed class clsServiciosConexosCosteoService(
 
     /// <summary>
     /// Primer camión VIGENTE de la ruta, en el orden estable: el que lleva los conexos en Nexo (decisión 3). Un camión descartado (también
-    /// el que perdió su línea porque la Mesa la borró, #134) no recibe conexos: van al siguiente.
+    /// el que perdió su línea porque la Mesa la borró, #134) no recibe conexos: van al siguiente. HU-028.1 (#183): uno rechazado por la Mesa
+    /// tampoco (su línea no tiene fila en la cotización de Nexo): van al primer camión no rechazado.
     /// </summary>
     public static clsVehiculoLineaSolicitud? PrimerCamion(clsLineaSolicitud ruta)
     {
         ArgumentNullException.ThrowIfNull(ruta);
-        return ruta.VehiculosOrdenados.FirstOrDefault(v => v.EstadoCosteo != EstadoCosteo.Descartada);
+        return ruta.VehiculosOrdenados.FirstOrDefault(v => v.EstadoCosteo is not (EstadoCosteo.Descartada or EstadoCosteo.Rechazada));
     }
 
     private async Task<(clsResultado<clsCosteoCotizacion> Resultado, int Agregados, bool PdfInvalidado)> AgregarAsync(
@@ -463,7 +465,8 @@ public sealed class clsServiciosConexosCosteoService(
         {
             var cantidad = conexo.Cantidad > 0m ? decimal.Round(conexo.Cantidad, 2) : 1m;
             var precio = decimal.Round(conexo.ValorAplicado / cantidad, 2, MidpointRounding.ToEven);
-            return new clsCambioConexo(conexo.Id, conexo.Nombre ?? conexo.Categoria, precio, cantidad);
+            // HU-014 (#188): con el id del catálogo (servicioConexoId, script 03) y la categoría que informó Nexo (script 05).
+            return new clsCambioConexo(conexo.Id, conexo.Nombre ?? conexo.Categoria, precio, cantidad, conexo.ServicioConexoId, conexo.CategoriaInformada);
         }).ToList();
         return cotizacion.CambiarConexos(ruta.Orden, cambios, ahora);
     }

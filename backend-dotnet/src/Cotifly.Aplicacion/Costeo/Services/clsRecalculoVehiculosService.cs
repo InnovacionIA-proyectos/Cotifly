@@ -96,11 +96,15 @@ public sealed class clsRecalculoVehiculosService(
             return (new clsErrorDominio(clsCodigosError.EstadoNoPermite, MensajeYaEnNexo), ruta.Orden, null);
         }
 
-        var linea = ruta.ALinea() with { TipoVehiculo = null, Carroceria = null };
+        // HU-032 (#197): con el vehículo elegido de la ruta como respaldo (si el cubicador no escoge o falla, se valida contra Nexo y se usa).
+        var linea = ruta.ALineaConElegido();
         if (linea.Posiciones.Count == 0 || linea.Posiciones.Any(p => string.IsNullOrWhiteSpace(p.CodigoMercancia)))
         {
             return (new clsErrorDominio(clsCodigosError.SolicitudCosteoInvalida,
-                $"La ruta {ruta.Orden} tiene mercancías sin código del catálogo del cubicador (anteriores al cambio): vuelve a escogerlas."), ruta.Orden, null);
+                linea.Cubicabilidad == CubicabilidadRuta.Cubicable
+                    ? $"La ruta {ruta.Orden} tiene mercancías sin código del catálogo del cubicador (anteriores al cambio): vuelve a escogerlas."
+                    : $"La ruta {ruta.Orden} no tiene mercancías cubicables (con tipo de mercancía, medidas y peso): no se cubica y lleva el vehículo elegido."),
+                ruta.Orden, null);
         }
 
         var plan = await planificador.PlanificarAsync(usuarioId, ruta.Id, linea, cancellationToken);

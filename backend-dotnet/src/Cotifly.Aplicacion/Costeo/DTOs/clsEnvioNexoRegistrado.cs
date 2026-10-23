@@ -11,4 +11,11 @@ public sealed record clsEnvioNexoRegistrado(string Folio, string SolicitudNexoId
 {
     /// <summary>Herramienta con que se guarda en <c>EventosHerramienta</c>.</summary>
     public const string Herramienta = "envio_nexo_registrado";
+
+    /// <summary>
+    /// HU-031.1 (#194): los códigos de vehículo que viajaron traducidos por el diccionario de alias de Nexo (código de Cotifly → código
+    /// enviado). El polling compara el vehículo de la línea de Nexo contra el código enviado: sin esto, el emparejamiento no reconocería la
+    /// línea y la regla "la Mesa manda" (D2) tomaría la traducción como un cambio de la Mesa. Vacío si ninguno (o sin registro).
+    /// </summary>
+    public IReadOnlyDictionary<string, string> EquivalenciasVehiculo { get; init; } = new Dictionary<string, string>();
 }

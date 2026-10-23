@@ -43,4 +43,14 @@ public interface IClsCosteoNexo
     /// </summary>
     Task<clsResultado<clsCotizacionNexo>> MarcarResultadoAsync(
         Guid usuarioId, string cotizacionNexoId, clsResultadoNexo resultado, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// HU-028 (#186): rechaza (descarta) la solicitud en Nexo (<c>POST /api/solicitudes/{id}/rechazar</c> con
+    /// <c>{motivo (1-100), comentario? (hasta 500)}</c>; los textos más largos se recortan). 204 → <see cref="ResultadoRechazoNexo.Descartada"/>;
+    /// 409 <c>SOLICITUD_YA_DESCARTADA</c> → <see cref="ResultadoRechazoNexo.YaDescartada"/>; 404 <c>SOLICITUD_NO_ENCONTRADA</c> →
+    /// <see cref="ResultadoRechazoNexo.NoEncontrada"/>. 403 → <c>NEXO_SIN_PERMISO</c>; cualquier otro fallo (5xx, red, tiempo agotado, otro
+    /// 4xx) llega como error y la solicitud pudo quedar viva: quien llama no debe capturar otra. No se reintenta (POST).
+    /// </summary>
+    Task<clsResultado<ResultadoRechazoNexo>> RechazarSolicitudAsync(
+        Guid usuarioId, string solicitudId, string motivo, string? comentario, CancellationToken cancellationToken = default);
 }

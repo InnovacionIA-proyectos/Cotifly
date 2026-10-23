@@ -8,9 +8,10 @@ using Microsoft.Extensions.Logging;
 namespace Cotifly.Aplicacion.Costeo.Services;
 
 /// <summary>
-/// #173: categoría de cada conexo de la cotización según el catálogo de Nexo (<c>logistico</c>, <c>adicional</c>...). La tabla
-/// <c>CotizacionServiciosConexos</c> no la guarda (la columna está propuesta en <c>db/scripts/pendientes/05_categoria_conexo.sql</c>), así
-/// que se lee del catálogo al armar el costeo. Nunca falla ni espera a Nexo: responde con el índice en memoria; si está frío o le falta un
+/// #173: categoría de cada conexo de la cotización según el catálogo de Nexo (<c>logistico</c>, <c>adicional</c>...). HU-014 (#188): desde el
+/// script 05 la categoría se guarda con el conexo (<c>categoriaServicioConexo</c>) y el costeo usa esa; este servicio solo resuelve los
+/// conexos SIN categoría guardada (filas anteriores a #188), por el id del catálogo si la fila lo tiene (script 03) o por el guardado y el
+/// nombre. Nunca falla ni espera a Nexo: responde con el índice en memoria; si está frío o le falta un
 /// conexo, lo calienta EN SEGUNDO PLANO (la respuesta sale con la categoría de respaldo
 /// <see cref="clsCosteoCotizacionService.CategoriaConexo"/> y la siguiente ya trae la del catálogo). Así un GET o un PUT del costeo nunca
 /// paga las hasta 20 páginas del catálogo de Nexo.
@@ -115,7 +116,8 @@ public sealed class clsCategoriasConexosService(
         clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        var conexos = cotizacion.Rutas.SelectMany(r => r.Conexos).ToList();
+        // HU-014 (#188): los que ya traen la categoría guardada (script 05) no dependen del catálogo.
+        var conexos = cotizacion.Rutas.SelectMany(r => r.Conexos).Where(c => c.Categoria is null).ToList();
         if (conexos.Count == 0)
         {
             return Task.FromResult<IReadOnlyDictionary<string, string>>(new Dictionary<string, string>());
@@ -123,7 +125,7 @@ public sealed class clsCategoriasConexosService(
 
         var ahora = reloj.AhoraUtc;
         var indice = almacen.Vigente(ahora);
-        if ((indice is null || conexos.Any(c => indice.De(c.IdServicioConexo, c.Nombre) is null))
+        if ((indice is null || conexos.Any(c => De(indice, c) is null))
             && cotizacion.UsuarioId is { } usuarioId && almacen.ReservarIntento(ahora))
         {
             // #173 (observación del validador): no se espera a Nexo; se calienta el índice en segundo plano con su propio ámbito.
@@ -131,6 +133,18 @@ public sealed class clsCategoriasConexosService(
         }
 
         return Task.FromResult(Resolver(indice ?? almacen.Ultimo(), conexos));
+    }
+
+    /// <summary>
+    /// HU-027.1 (#179): las categorías que ya se conocen, sin leer el catálogo de Nexo NI calentarlo en segundo plano (a diferencia de
+    /// <see cref="CategoriasAsync"/>): el detalle por folio solo lee lo que Cotifly tiene guardado o en memoria. Los conexos con la
+    /// categoría guardada (script 05) no la necesitan; los demás que no estén en el índice usan la de respaldo.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> EnMemoria(clsAlmacenCategoriasConexos almacen, clsCotizacionSolicitud cotizacion)
+    {
+        ArgumentNullException.ThrowIfNull(almacen);
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        return Resolver(almacen.Ultimo(), [.. cotizacion.Rutas.SelectMany(r => r.Conexos).Where(c => c.Categoria is null)]);
     }
 
     private static IReadOnlyDictionary<string, string> Resolver(clsIndiceCategorias? indice, IReadOnlyList<clsServicioConexoRuta> conexos)
@@ -143,7 +157,7 @@ public sealed class clsCategoriasConexosService(
 
         foreach (var conexo in conexos)
         {
-            if (indice.De(conexo.IdServicioConexo, conexo.Nombre) is { } categoria)
+            if (De(indice, conexo) is { } categoria)
             {
                 categorias[conexo.IdServicioConexo] = categoria;
             }
@@ -151,6 +165,10 @@ public sealed class clsCategoriasConexosService(
 
         return categorias;
     }
+
+    /// <summary>Categoría de un conexo en el índice: por el id del catálogo si la fila lo tiene (script 03), si no por el guardado o el nombre.</summary>
+    private static string? De(clsIndiceCategorias indice, clsServicioConexoRuta conexo) =>
+        (conexo.IdServicioConexoCatalogo is { } catalogo ? indice.De(catalogo, null) : null) ?? indice.De(conexo.IdServicioConexo, conexo.Nombre);
 
     private async Task CalentarAsync(Guid usuarioId, string folio, DateTimeOffset ahora)
     {

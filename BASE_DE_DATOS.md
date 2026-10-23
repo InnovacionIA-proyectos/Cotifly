@@ -121,17 +121,24 @@ El diagrama completo, con todas las columnas y el resto de tablas, está en
 | `db/migrations_mssql/0009_reestructuracion_cotizaciones.sql` | HU-021: cabecera → rutas → camiones, mercancías y conexos en filas, con respaldo `Respaldo0009_*` |
 | `db/migrations_mssql/0010_nombres_municipio.sql` | Nombres de municipio de la ruta, `solicitudNexoId`, nombre del conexo y el CHECK de `estadoEnvio`. **Borrador pendiente de revisión de scalderon-bs** |
 | `db/scripts/02_alter_cubicador.sql` | HU-023.3: columnas de resultado de la cubicación y `codigoMercancia` en lugar de `idTipoMercancia`. Idempotente; el ejecutador lo corre después del `01` |
+| `db/scripts/03_orden_vehiculo_y_conexo_catalogo.sql` | HU-023.3 (#158), mapeado en HU-014 (#188): `ordenVehiculo` del camión (índice único filtrado por ruta), `idServicioConexoCatalogo` del conexo y el CHECK del motivo del `07`. Obligatorio: sin él `/health/ready` responde "falta 03". Se aplica antes de la imagen |
+| `db/scripts/05_categoria_conexo.sql` | #173, mapeado en HU-014 (#188): `categoriaServicioConexo` del conexo. Obligatorio: sin él `/health/ready` responde "falta 05". Se aplica antes de la imagen |
 | `db/scripts/07_motivo_busqueda_agotada.sql` | HU-023 (#176): quinto motivo `BUSQUEDA_AGOTADA` en el CHECK del motivo. Idempotente |
 | `db/scripts/08_retirar_vistas_actividad.sql` | HU-014.3 (#152): `DROP VIEW` de `vActividadPorComercial` y `vAjustesMargenPorComercial` si existen. Idempotente; lo aplica el DBA después de desplegar el backend sin el borrador de métricas |
 | `db/scripts/09_score_prioridad.sql` | HU-018.1 (#155): `CotizacionesSolicitud.scorePrioridad DECIMAL(9,4) NULL` (el `scorePrioridad` de Nexo). Obligatorio: el backend mapea la columna; sin él `/health/ready` responde "falta 09". Se aplica antes de la imagen |
-| `db/scripts/pendientes/03` a `06` | Propuestas pendientes de revisión de scalderon-bs y del DBA (orden del camión, cubicación en segundo plano, categoría del conexo e idempotencia de la captura). El ejecutador no las corre. El backend solo mapea el `04` |
+| `db/scripts/10_rechazo_linea.sql` | HU-028.2 (#182) / HU-028.1 (#183): rechazo de la línea por la Mesa de Costeo de Nexo (#320) en el camión: `motivoRechazo NVARCHAR(500) NULL`, `rechazadaAt DATETIMEOFFSET NULL`, `'rechazada'` en los tres CHECK de `estadoCosteo` y el CHECK del rechazo. **Pendiente de revisión de @scalderon-bs**. Obligatorio: el backend mapea las columnas; sin él `/health/ready` responde "falta 10". Se aplica antes de la imagen |
+| `db/scripts/11_peso_con_tara.sql` | HU-030.1 (#184): `CotizacionLineasSolicitud.pesoConTaraKg DECIMAL(12,2) NULL` con su CHECK (> 0): el peso con tara de una ruta `Contenedor`. Obligatorio: el backend mapea la columna; sin él `/health/ready` responde "falta 11". Se aplica antes de la imagen |
+| `db/scripts/12_vehiculo_elegido.sql` | HU-032 (#197): el vehículo elegido de la ruta (`tipoVehiculoElegido`, `carroceriaElegida`, NVARCHAR(100) NULL) y las medidas de la mercancía en NULL (CHECK: las tres NULL o las tres > 0). Obligatorio: el backend mapea las columnas; sin él `/health/ready` responde "falta 12". Se aplica antes de la imagen |
+| `db/scripts/pendientes/04` y `06` | Propuestas pendientes de revisión de scalderon-bs y del DBA (cubicación en segundo plano e idempotencia de la captura). El ejecutador no las corre. El backend mapea el `04` (sin él, "falta 04") |
 | `db/scripts/operacion/` | Scripts de datos de una sola vez (identidad compartida con Nexo, rol comercial). Los corre el DBA con aprobación |
 
 Detalle de cada script en [`ESQUEMA_OBJETIVO_SQLSERVER.md`](docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md) §A.5.
 
-**Precondición para desplegar el backend:** `0001` a `0010`, el `02` y el `pendientes/04` aplicados (o la instalación desde cero
-con el ejecutador, más el `04`). Si falta algo, `/health/ready` responde `503` y dice qué falta (`falta 0009`, `falta 0010`,
-`falta 02`, `falta 04`, `falta Tabla.columna`; ver [`DEPLOY.md`](DEPLOY.md) §4.5).
+**Precondición para desplegar el backend:** `0001` a `0010`, el `02`, el `03`, el `pendientes/04`, el `05`, el `06`, el `09`, el `10` y el `11`
+aplicados (o la instalación desde cero con el ejecutador, más el `04`). Si falta algo, `/health/ready` responde `503` y dice qué falta
+(`falta 0009`, `falta 0010`, `falta 02`, `falta 03`, `falta 04`, `falta 05`, `falta 06`, `falta 09`, `falta 10`, `falta 11`,
+`falta Tabla.columna`; ver [`DEPLOY.md`](DEPLOY.md) §4.5). Orden del release 1021: `03` → `pendientes/04` → `05` → `06` → `07` → `09` →
+`10` → `11` → imagen → `08`.
 
 ## 5. Cómo acceder
 
@@ -150,7 +157,8 @@ de pruebas están en [`DEPLOY.md`](DEPLOY.md) §6.
 
 | Pendiente | Quién lo resuelve |
 |---|---|
-| Revisión del `0010` y de `db/scripts/pendientes/03` a `06` | scalderon-bs y el DBA |
+| Revisión del `0010` y de `db/scripts/pendientes/04` y `06` | scalderon-bs y el DBA |
+| Confirmar que el `03` y el `05` están aplicados en la base compartida y en cada ambiente antes de la imagen de #188 (consulta en [`DEPLOY.md`](DEPLOY.md) §4.5) | DBA |
 | `TrqType` de SAP TM para `DevolucionContenedor` (falta en `db/seeder/02_sap_mapeo_trqtype.sql`; no se inventa) | Negocio o SAP |
 | Fijar `Roles.idRolExterno` de los roles de ClientePro en cada ambiente (`db/seeder/03_roles.sql`) | DBA |
 | Borrar el respaldo `dbo_cotifly_respaldo_20261008` de la base compartida cuando ya no se necesite | DBA |

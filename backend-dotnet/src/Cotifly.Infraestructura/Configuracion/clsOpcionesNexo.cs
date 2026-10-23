@@ -10,7 +10,7 @@ namespace Cotifly.Infraestructura.Configuracion;
 /// <see cref="Clientes.Services.clsBuscadorClientesNoDisponible"/>: no hay <c>[Required]</c> porque Nexo aún no es
 /// obligatorio en todos los ambientes.
 /// </summary>
-public sealed class clsOpcionesNexo
+public sealed class clsOpcionesNexo : IValidatableObject
 {
     public const string Seccion = "Nexo";
 
@@ -38,13 +38,67 @@ public sealed class clsOpcionesNexo
     public bool EnviarDatosCubicador { get; set; } = true;
 
     /// <summary>
-    /// ¿Viajan los códigos de vehículo y carrocería del cubicador (<c>2S2</c>, <c>FURGON</c>...) en <c>tipoVehiculo</c>/<c>carroceria</c>?
-    /// HU-023 (#176): por defecto <c>true</c>. Nexo ya desplegó la cuarentena de vehículos (S5-HU-18.4) y la normalización de S5-HU-20.5
-    /// (#297): un código que no conoce nace en cuarentena y no se duplica. La bandera queda como interruptor de emergencia: con
-    /// <c>false</c>, la línea de un camión del cubicador va sin vehículo ni carrocería y la resuelve la Mesa. No afecta al vehículo
-    /// digitado del respaldo (<c>Captura:AceptarVehiculoCliente</c>), que es del catálogo de Nexo y sí viaja.
+    /// <c>Nexo__EnviarCodigosCubicador</c>: ¿viajan los códigos de vehículo y carrocería del cubicador (<c>2S2</c>, <c>FURGON</c>...) en
+    /// <c>tipoVehiculo</c>/<c>carroceria</c> de la línea de un camión del cubicador? Antes de decidir, el código se resuelve contra el
+    /// catálogo oficial de Nexo (<c>GET /api/catalogos/tipos-vehiculo</c>, con la equivalencia de
+    /// <see cref="Dominio.Cotizaciones.clsVehiculoLineaSolicitud.MismoCodigo"/>) y, si no está, contra el diccionario de alias de Nexo
+    /// (HU-031.1 #194, NEXO #321: <c>C2</c> → <c>2</c>); lo resuelto viaja escrito como en Nexo y la línea se autocostea. Tres modos
+    /// (<see cref="ModoCodigosCubicador"/>):
+    /// <list type="bullet">
+    /// <item><c>siempre</c> (<b>por defecto</b> desde HU-031.1 #194, decisión del usuario del 2026-10-20, porque Nexo ya tiene la bandeja de
+    /// normalización, NEXO #322): viajan todos; el resuelto con su código oficial y el que ni el catálogo ni el alias conocen, tal cual
+    /// (Nexo lo pone en cuarentena y lo normaliza en su bandeja).</item>
+    /// <item><c>solo_conocidos</c> (el valor por defecto de HU-014 #188 hasta #194): el vehículo viaja solo si se resolvió (catálogo o alias);
+    /// la carrocería, solo si el vehículo viaja y está en la lista de carrocerías de Nexo. Si no, la línea va sin vehículo ni carrocería (no
+    /// nace en cuarentena) y la resuelve la Mesa de Costeo.</item>
+    /// <item><c>nunca</c>: ninguno viaja (interruptor de emergencia; ni siquiera se consulta el alias).</item>
+    /// </list>
+    /// Sin catálogo ni diccionario de Nexo (caídos y sin copia) el envío no falla: sigue con el modo configurado sin resolver nada (con
+    /// <c>siempre</c>, los códigos viajan tal cual). Compatibilidad con la bandera booleana anterior: <c>true</c> = <c>siempre</c> (ya es el
+    /// valor por defecto, así que un <c>true</c> que quede en Dokploy no es un riesgo); <c>false</c> = <c>solo_conocidos</c> (la intención
+    /// de <c>false</c> era no generar cuarentenas, y <c>solo_conocidos</c> tampoco las genera). Vacía = <c>siempre</c>. Cualquier otro valor
+    /// impide arrancar (<see cref="Validate"/>). El vehículo digitado del respaldo (<c>Captura:AceptarVehiculoCliente</c>, sin
+    /// <c>idRecomendacionVehiculo</c>) no depende del modo: la captura exige que sea un código de Nexo o un alias que resuelve a uno y viaja
+    /// siempre, resuelto.
     /// </summary>
-    public bool EnviarCodigosCubicador { get; set; } = true;
+    public string? EnviarCodigosCubicador { get; set; }
+
+    /// <summary>El modo de <see cref="EnviarCodigosCubicador"/>; un valor inválido se lee como el modo por defecto (y no deja arrancar).</summary>
+    public ModoCodigosCubicador ModoCodigosCubicador => LeerModo(EnviarCodigosCubicador) ?? ModoCodigosCubicador.Siempre;
+
+    /// <summary>
+    /// El modo escrito en <paramref name="valor"/> (sin distinguir mayúsculas, con <c>_</c>, <c>-</c> o espacio): <c>siempre</c> o
+    /// <c>true</c>; <c>solo_conocidos</c> o <c>false</c>; <c>nunca</c>; vacío = <c>siempre</c> (HU-031.1 #194). <c>null</c> si no es ninguno.
+    /// </summary>
+    public static ModoCodigosCubicador? LeerModo(string? valor)
+    {
+        if (string.IsNullOrWhiteSpace(valor))
+        {
+            return ModoCodigosCubicador.Siempre;
+        }
+
+        var limpio = valor.Trim().Replace('-', '_').Replace(' ', '_');
+        return limpio switch
+        {
+            _ when Igual(limpio, "siempre") || Igual(limpio, bool.TrueString) => ModoCodigosCubicador.Siempre,
+            _ when Igual(limpio, "solo_conocidos") || Igual(limpio, "soloconocidos") || Igual(limpio, bool.FalseString) => ModoCodigosCubicador.SoloConocidos,
+            _ when Igual(limpio, "nunca") => ModoCodigosCubicador.Nunca,
+            _ => null,
+        };
+
+        static bool Igual(string a, string b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Validación al arrancar (<c>ValidateDataAnnotations</c>): <see cref="EnviarCodigosCubicador"/> debe ser un modo conocido.</summary>
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        if (LeerModo(EnviarCodigosCubicador) is null)
+        {
+            yield return new ValidationResult(
+                $"Nexo:EnviarCodigosCubicador = '{EnviarCodigosCubicador}' no es válido: use siempre, solo_conocidos o nunca (true = siempre, false = solo_conocidos).",
+                [nameof(EnviarCodigosCubicador)]);
+        }
+    }
 
     /// <summary>
     /// Minutos que se reutiliza en memoria el catálogo de municipios de Nexo (HU-005.13: cambia muy poco y el agente lo consulta
@@ -67,4 +121,17 @@ public sealed class clsOpcionesNexo
     /// </summary>
     [Range(0, 168)]
     public int HorasCatalogosVencidos { get; set; } = 24;
+}
+
+/// <summary>Modos de <see cref="clsOpcionesNexo.EnviarCodigosCubicador"/> (HU-014, #188).</summary>
+public enum ModoCodigosCubicador
+{
+    /// <summary><c>solo_conocidos</c>: solo los códigos que el catálogo o el diccionario de alias de Nexo resuelven.</summary>
+    SoloConocidos,
+
+    /// <summary><c>siempre</c> (por defecto desde #194; también <c>true</c>): todos, resueltos si se puede; los demás, a cuarentena en Nexo.</summary>
+    Siempre,
+
+    /// <summary><c>nunca</c>: ninguno (interruptor de emergencia).</summary>
+    Nunca,
 }

@@ -18,9 +18,21 @@ namespace Cotifly.Infraestructura.Comun.Persistence;
 /// nombre del conexo);</item>
 /// <item><see cref="DescripcionEsquemaSin02"/>: solo faltan las columnas del cubicador de <c>db/scripts/02_alter_cubicador.sql</c>
 /// (HU-023.3, #158);</item>
+/// <item><see cref="DescripcionEsquemaSin03"/>: solo faltan <c>ordenVehiculo</c> o <c>idServicioConexoCatalogo</c> de
+/// <c>db/scripts/03_orden_vehiculo_y_conexo_catalogo.sql</c> (HU-014, #188);</item>
 /// <item><see cref="DescripcionEsquemaSin04"/>: solo faltan las columnas de la cubicación en segundo plano (HU-023.5, #160);</item>
+/// <item><see cref="DescripcionEsquemaSin05"/>: solo falta <c>categoriaServicioConexo</c> de <c>db/scripts/05_categoria_conexo.sql</c>
+/// (HU-014, #188);</item>
+/// <item><see cref="DescripcionEsquemaSin06"/>: solo falta la tabla <c>CapturasIdempotentes</c> (o alguna de sus columnas) de
+/// <c>db/scripts/06_idempotencia_captura.sql</c> (#191: la <c>Idempotency-Key</c> persistente; no se degrada a memoria);</item>
 /// <item><see cref="DescripcionEsquemaSin09"/>: solo falta <c>CotizacionesSolicitud.scorePrioridad</c> de
 /// <c>db/scripts/09_score_prioridad.sql</c> (HU-018.1, #155);</item>
+/// <item><see cref="DescripcionEsquemaSin10"/>: solo faltan <c>motivoRechazo</c> o <c>rechazadaAt</c> del camión de
+/// <c>db/scripts/10_rechazo_linea.sql</c> (HU-028.1, #183);</item>
+/// <item><see cref="DescripcionEsquemaSin11"/>: solo falta <c>CotizacionLineasSolicitud.pesoConTaraKg</c> de
+/// <c>db/scripts/11_peso_con_tara.sql</c> (HU-030.1, #184);</item>
+/// <item><see cref="DescripcionEsquemaSin12"/>: solo faltan <c>tipoVehiculoElegido</c> o <c>carroceriaElegida</c> de la ruta de
+/// <c>db/scripts/12_vehiculo_elegido.sql</c> (HU-032, #197; el mismo script deja las medidas de la mercancía en NULL);</item>
 /// <item>cualquier otra ausencia: <c>esquema incompleto: falta Tabla.columna</c> (las primeras, sin datos de conexión).</item>
 /// </list>
 /// La sonda tiene un tiempo máximo propio (<see cref="TiempoMaximo"/>). Las descripciones no incluyen la cadena ni el servidor.
@@ -55,7 +67,17 @@ public sealed class clsBaseDatosHealthCheck(
         "CotizacionLineasSolicitud.condicionada",
     };
 
-    /// <summary>HU-023.5 (#160): están el 0010 y el 02, pero no las columnas de la cubicación en segundo plano del <c>04</c>.</summary>
+    /// <summary>HU-014 (#188): están el 0010 y el 02, pero no las columnas de <c>db/scripts/03_orden_vehiculo_y_conexo_catalogo.sql</c>.</summary>
+    public const string DescripcionEsquemaSin03 = "esquema incompleto: falta 03";
+
+    /// <summary>Columnas que agrega <c>db/scripts/03_orden_vehiculo_y_conexo_catalogo.sql</c> (HU-023.3; las mapea el backend desde #188).</summary>
+    public static readonly IReadOnlySet<string> Columnas03 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "CotizacionVehiculosLineaSolicitud.ordenVehiculo",
+        "CotizacionServiciosConexos.idServicioConexoCatalogo",
+    };
+
+    /// <summary>HU-023.5 (#160): están el 0010, el 02 y el 03, pero no las columnas de la cubicación en segundo plano del <c>04</c>.</summary>
     public const string DescripcionEsquemaSin04 = "esquema incompleto: falta 04";
 
     /// <summary>Columnas que agrega <c>db/scripts/pendientes/04_cubicacion_segundo_plano.sql</c> (pendiente de @scalderon-bs y del DBA) (HU-023.5).</summary>
@@ -68,6 +90,43 @@ public sealed class clsBaseDatosHealthCheck(
         "CotizacionLineasSolicitud.avisosCubicacion",
     };
 
+    /// <summary>HU-014 (#188): está todo hasta el 04, pero no <c>categoriaServicioConexo</c> de <c>db/scripts/05_categoria_conexo.sql</c>.</summary>
+    public const string DescripcionEsquemaSin05 = "esquema incompleto: falta 05";
+
+    /// <summary>Columnas que agrega <c>db/scripts/05_categoria_conexo.sql</c> (#173; la mapea el backend desde #188).</summary>
+    public static readonly IReadOnlySet<string> Columnas05 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "CotizacionServiciosConexos.categoriaServicioConexo",
+    };
+
+    /// <summary>#191: está todo hasta el 05, pero no la tabla <c>CapturasIdempotentes</c> de <c>db/scripts/06_idempotencia_captura.sql</c>.</summary>
+    public const string DescripcionEsquemaSin06 = "esquema incompleto: falta 06";
+
+    /// <summary>
+    /// Columnas de <c>dbo_cotifly.CapturasIdempotentes</c> (<c>db/scripts/06_idempotencia_captura.sql</c>), mapeadas en el modelo EF
+    /// (<see cref="clsCapturaIdempotenteFila"/>) y usadas con SQL propio por <see cref="clsAlmacenIdempotenciaSql"/> y
+    /// <see cref="clsRegistroCapturasIdempotentesSql"/>.
+    /// </summary>
+    public static readonly IReadOnlySet<string> Columnas06 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "CapturasIdempotentes.id",
+        "CapturasIdempotentes.usuarioId",
+        "CapturasIdempotentes.operacion",
+        "CapturasIdempotentes.clave",
+        "CapturasIdempotentes.huella",
+        "CapturasIdempotentes.estado",
+        "CapturasIdempotentes.tomadaPor",
+        "CapturasIdempotentes.enCursoHasta",
+        "CapturasIdempotentes.resultado",
+        "CapturasIdempotentes.cotizacionId",
+        "CapturasIdempotentes.folio",
+        "CapturasIdempotentes.solicitudNexoId",
+        "CapturasIdempotentes.scorePrioridad",
+        "CapturasIdempotentes.createdAt",
+        "CapturasIdempotentes.updatedAt",
+        "CapturasIdempotentes.expiraAt",
+    };
+
     /// <summary>HU-018.1 (#155): está todo lo anterior, pero no la columna <c>scorePrioridad</c> de <c>db/scripts/09_score_prioridad.sql</c>.</summary>
     public const string DescripcionEsquemaSin09 = "esquema incompleto: falta 09";
 
@@ -75,6 +134,38 @@ public sealed class clsBaseDatosHealthCheck(
     public static readonly IReadOnlySet<string> Columnas09 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "CotizacionesSolicitud.scorePrioridad",
+    };
+
+    /// <summary>HU-028.1 (#183): está todo lo anterior, pero no las columnas del rechazo de <c>db/scripts/10_rechazo_linea.sql</c>.</summary>
+    public const string DescripcionEsquemaSin10 = "esquema incompleto: falta 10";
+
+    /// <summary>Columnas que agrega <c>db/scripts/10_rechazo_linea.sql</c> (HU-028.2, #182; las mapea el backend desde #183).</summary>
+    public static readonly IReadOnlySet<string> Columnas10 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "CotizacionVehiculosLineaSolicitud.motivoRechazo",
+        "CotizacionVehiculosLineaSolicitud.rechazadaAt",
+    };
+
+    /// <summary>HU-030.1 (#184): está todo lo anterior, pero no la columna <c>pesoConTaraKg</c> de <c>db/scripts/11_peso_con_tara.sql</c>.</summary>
+    public const string DescripcionEsquemaSin11 = "esquema incompleto: falta 11";
+
+    /// <summary>Columnas que agrega <c>db/scripts/11_peso_con_tara.sql</c> (HU-030.1).</summary>
+    public static readonly IReadOnlySet<string> Columnas11 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "CotizacionLineasSolicitud.pesoConTaraKg",
+    };
+
+    /// <summary>HU-032 (#197): está todo lo anterior, pero no las columnas del vehículo elegido de <c>db/scripts/12_vehiculo_elegido.sql</c>.</summary>
+    public const string DescripcionEsquemaSin12 = "esquema incompleto: falta 12";
+
+    /// <summary>
+    /// Columnas que agrega <c>db/scripts/12_vehiculo_elegido.sql</c> (HU-032). El mismo script (en la misma transacción) deja
+    /// <c>largoCm</c>, <c>anchoCm</c> y <c>altoCm</c> de la mercancía en NULL: con las columnas, también está eso.
+    /// </summary>
+    public static readonly IReadOnlySet<string> Columnas12 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "CotizacionLineasSolicitud.tipoVehiculoElegido",
+        "CotizacionLineasSolicitud.carroceriaElegida",
     };
 
     /// <summary>Prefijo de la descripción cuando falta otra tabla o columna del modelo.</summary>
@@ -208,14 +299,23 @@ public sealed class clsBaseDatosHealthCheck(
             return HealthCheckResult.Unhealthy(DescripcionEsquemaSin0009);
         }
 
-        // Faltan columnas de los ajustes que van después del 0009 (0010, 02 del cubicador, 04 y 09): se pide el primero que falta.
-        if (faltantes.All(f => Columnas0010.Contains(f) || Columnas02.Contains(f) || Columnas04.Contains(f) || Columnas09.Contains(f)))
+        // Faltan columnas de los ajustes que van después del 0009 (0010, 02 del cubicador, 03, 04, 05, 06, 09, 10, 11 y 12): se pide el
+        // primero que falta, en el orden en que se aplican.
+        if (faltantes.All(f => Columnas0010.Contains(f) || Columnas02.Contains(f) || Columnas03.Contains(f) || Columnas04.Contains(f)
+                               || Columnas05.Contains(f) || Columnas06.Contains(f) || Columnas09.Contains(f) || Columnas10.Contains(f)
+                               || Columnas11.Contains(f) || Columnas12.Contains(f)))
         {
             return HealthCheckResult.Unhealthy(
                 faltantes.Any(Columnas0010.Contains) ? DescripcionEsquemaSin0010
                 : faltantes.Any(Columnas02.Contains) ? DescripcionEsquemaSin02
+                : faltantes.Any(Columnas03.Contains) ? DescripcionEsquemaSin03
                 : faltantes.Any(Columnas04.Contains) ? DescripcionEsquemaSin04
-                : DescripcionEsquemaSin09);
+                : faltantes.Any(Columnas05.Contains) ? DescripcionEsquemaSin05
+                : faltantes.Any(Columnas06.Contains) ? DescripcionEsquemaSin06
+                : faltantes.Any(Columnas09.Contains) ? DescripcionEsquemaSin09
+                : faltantes.Any(Columnas10.Contains) ? DescripcionEsquemaSin10
+                : faltantes.Any(Columnas11.Contains) ? DescripcionEsquemaSin11
+                : DescripcionEsquemaSin12);
         }
 
         return HealthCheckResult.Unhealthy(PrefijoEsquemaIncompleto + string.Join(", ", faltantes.Order(StringComparer.Ordinal).Take(5)));
