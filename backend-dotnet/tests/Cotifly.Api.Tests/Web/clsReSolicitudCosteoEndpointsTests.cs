@@ -71,6 +71,7 @@ public sealed class clsReSolicitudCosteoEndpointsTests : IDisposable
     public async Task EntregadaConPdfSinEnviarSeReSolicitaEnElMismoFolioOlvidaElPrecioEInvalidaElPdf()
     {
         var (sesion, folio) = await EntregadaAsync();
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
         using (var pdf = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access))
         {
             pdf.StatusCode.Should().Be(HttpStatusCode.Created);

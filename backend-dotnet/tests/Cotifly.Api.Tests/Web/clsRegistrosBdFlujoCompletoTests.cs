@@ -220,6 +220,7 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
         await VerificarTotalesCuadranAsync(id);
 
         // ---------------------------------------------------------------- 4. PDF de pliego y correo
+        await _api.FinalizarSiCorrespondeAsync(ana.Access, folio); // HU-036.3: como el frontend
         using (var pdf = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", ana.Access))
         {
             await VerificarContratoAsync(pdf, "/web/cotizaciones/{folio}/costeo/pdf", _post, HttpStatusCode.Created);

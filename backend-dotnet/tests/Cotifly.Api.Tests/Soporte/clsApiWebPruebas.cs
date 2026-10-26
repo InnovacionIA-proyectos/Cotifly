@@ -436,6 +436,36 @@ public sealed class clsApiWebPruebas : IDisposable
     }
 
     /// <summary>
+    /// HU-036.3 (#207): lo que hace el frontend antes del PDF, los textos, el envío y el resultado: si el costeo de <paramref name="folio"/>
+    /// está listo (<c>autocosteo</c> o <c>entregada</c> con precio), sin finalizar y sin resultado, lo finaliza con el <c>ETag</c> vigente.
+    /// Si no corresponde (sin precio, ya finalizada, ajena, chat), no hace nada. Las pruebas de los candados no la usan.
+    /// </summary>
+    public async Task FinalizarSiCorrespondeAsync(string token, string folio)
+    {
+        using var costeo = await EnviarAsync(HttpMethod.Get, $"/web/cotizaciones/{folio}/costeo", token);
+        if (costeo.StatusCode != System.Net.HttpStatusCode.OK)
+        {
+            return;
+        }
+
+        using var json = JsonDocument.Parse(await costeo.Content.ReadAsStringAsync());
+        var raiz = json.RootElement;
+        var listo = raiz.GetProperty("estado_costeo").ValueKind == JsonValueKind.String
+                    && raiz.GetProperty("estado_costeo").GetString() is "autocosteo" or "entregada"
+                    && raiz.GetProperty("precio_final").ValueKind == JsonValueKind.Number;
+        var finalizada = raiz.TryGetProperty("finalizada_at", out var fecha) && fecha.ValueKind == JsonValueKind.String;
+        var conResultado = raiz.TryGetProperty("resultado", out var resultado) && resultado.ValueKind == JsonValueKind.String;
+        if (listo && !finalizada && !conResultado)
+        {
+            using var respuesta = await EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{folio}/finalizar", token, null, costeo.Headers.ETag?.Tag);
+            if (respuesta.StatusCode != System.Net.HttpStatusCode.OK)
+            {
+                throw new InvalidOperationException($"No se pudo finalizar {folio}: {(int)respuesta.StatusCode} {await respuesta.Content.ReadAsStringAsync()}");
+            }
+        }
+    }
+
+    /// <summary>
     /// Petición con <c>Authorization: Bearer</c> (si hay token), cuerpo JSON crudo (si viene) e <c>If-Match</c> (si viene, tal cual:
     /// la concurrencia optimista de HU-013, ADR-018 §8).
     /// </summary>

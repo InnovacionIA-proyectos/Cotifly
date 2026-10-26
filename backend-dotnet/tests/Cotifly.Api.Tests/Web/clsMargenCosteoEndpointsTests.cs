@@ -81,6 +81,7 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
         seleccion.Headers.ETag.Should().NotBeNull().And.NotBe(antes.Headers.ETag, "la selección cambia la fila y trae el ETag nuevo");
         elegida.GetProperty("servicios_conexos").EnumerateArray().Count(s => s.GetProperty("incluido").GetBoolean()).Should().Be(1);
 
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
         using var pdf = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
         var salida = await VerificarContratoAsync(pdf, "/web/cotizaciones/{folio}/costeo/pdf", _post, HttpStatusCode.Created);
         salida.GetProperty("folio").GetString().Should().Be(folio);
@@ -97,6 +98,7 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
         plano.Should().Contain("no incluyen el servicio de descargue").And.NotContain("no incluyen servicios de cargue ni descargue");
         plano.Should().Contain("máximo 4 horas para el cargue y 6,5 horas para el descargue");
 
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
         using var otra = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
         otra.StatusCode.Should().Be(HttpStatusCode.Conflict);
         await VerificarErrorNegocioAsync(otra, "PDF_YA_GENERADO");
@@ -108,6 +110,7 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
         var (sesion, folio) = await EnviarAsync();
         var luis = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
 
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
         using var pdf = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
         using var seleccion = await EnviarConVersionAsync(_put, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", sesion.Access, """{"incluidos":[]}""",
             await EtagAsync(sesion, folio));
@@ -165,6 +168,7 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
     public async Task AjustarConElPdfSinEnviarLoInvalidaYAlRegenerarloElAnteriorQuedaArchivado()
     {
         var (sesion, folio) = await CosteadaAsync();
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
         using var pdf = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
         pdf.StatusCode.Should().Be(HttpStatusCode.Created);
         var etagPdf = pdf.Headers.ETag?.Tag;
@@ -177,6 +181,7 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
 
         using var vencido = await EnviarConVersionAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access, null, etagPdf);
         vencido.StatusCode.Should().Be(HttpStatusCode.Conflict, "el If-Match opcional del PDF también se verifica");
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
         using var nuevo = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
         await VerificarContratoAsync(nuevo, "/web/cotizaciones/{folio}/costeo/pdf", _post, HttpStatusCode.Created);
 
@@ -193,6 +198,7 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
     public async Task ElegirConexosConElPdfGeneradoLoInvalidaEnLugarDeRechazar()
     {
         var (sesion, folio) = await CosteadaAsync();
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
         using var pdf = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
 
         using var seleccion = await EnviarConVersionAsync(_put, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", sesion.Access,
