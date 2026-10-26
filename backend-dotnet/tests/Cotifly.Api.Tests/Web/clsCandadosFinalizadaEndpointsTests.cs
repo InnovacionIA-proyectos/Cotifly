@@ -91,8 +91,8 @@ public sealed class clsCandadosFinalizadaEndpointsTests : IDisposable
         await _api.FinalizarAsync(sesion.Access, folio);
         using var costeo = await _api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", sesion.Access);
         var etag = costeo.Headers.ETag?.Tag;
-        using var json = JsonDocument.Parse(await costeo.Content.ReadAsStringAsync());
-        var rutaId = json.RootElement.GetProperty("rutas")[0].GetProperty("linea_solicitud_id").GetString();
+        var rutaId = (await VerificarContratoAsync(costeo, "/web/cotizaciones/{folio}/costeo", _get, HttpStatusCode.OK))
+            .GetProperty("rutas")[0].GetProperty("linea_solicitud_id").GetString();
         var precio = await PrecioAsync(folio);
         var peticionesNexo = _nexo.Peticiones.Count;
 
