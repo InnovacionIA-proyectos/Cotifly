@@ -38,6 +38,7 @@ public static class clsCalculadoraMetricas
             .Select(f => (decimal)(f.CosteoListoAt!.Value - f.CreatedAtVigente!.Value).TotalHours)
             .ToList();
         var numDiferencias = universo.Sum(f => f.NumDiferencias);
+        var montos = MontosDe(universo);
 
         return new clsIndicadoresMetricas
         {
@@ -51,15 +52,11 @@ public static class clsCalculadoraMetricas
             ConversionSobreCerradas = Fraccion(ganadas.Count, ganadas.Count + perdidas),
             MargenPromedio = margenes.Count == 0 ? null : Redondear(margenes.Average(), DecimalesFraccion),
             MargenPonderado = MargenPonderadoDe(universo.SelectMany(f => f.Rutas.Select(r => (f, r)))),
-            CosteoTotal = Redondear(universo.Sum(f => f.Costo ?? 0m), DecimalesMonto),
-            // B3 (#173): lo ganado sale de la versión ganada, no de la vigente.
-            CosteoGanadas = Redondear(ganadas.Sum(f => f.CostoResultado ?? 0m), DecimalesMonto),
-            ValorCotizadoCop = Redondear(universo.Sum(f => f.ValorCop ?? 0m), DecimalesMonto),
-            ValorGanadoCop = Redondear(ganadas.Sum(f => f.ValorResultadoCop ?? 0m), DecimalesMonto),
-            Ganancias = Redondear(
-                ganadas.Where(f => f.ValorResultadoCop.HasValue && f.CostoResultado.HasValue)
-                    .Sum(f => f.ValorResultadoCop!.Value - f.CostoResultado!.Value),
-                DecimalesMonto),
+            CosteoTotal = montos.CosteoTotal,
+            CosteoGanadas = montos.CosteoGanadas,
+            ValorCotizadoCop = montos.ValorCotizadoCop,
+            ValorGanadoCop = montos.ValorGanadoCop,
+            Ganancias = montos.Ganancias,
             CotizacionesUsd = universo.Count(f => !f.EsPesos),
             TiempoPromedioCotizacionHoras = tiempos.Count == 0 ? null : Redondear(tiempos.Average(), DecimalesHoras),
             DesviacionPromedioMargen = numDiferencias == 0
@@ -75,7 +72,10 @@ public static class clsCalculadoraMetricas
 
     /// <summary>
     /// Serie por mes de negocio (<paramref name="fechaNegocio"/> convierte la primera creación de la cadena a la fecha de Bogotá)
-    /// con todos los meses de <paramref name="desde"/> a <paramref name="hasta"/>, también los vacíos.
+    /// con todos los meses de <paramref name="desde"/> a <paramref name="hasta"/>, también los vacíos. HU-034.1 (#201): los montos de
+    /// cada mes (<c>valor_*</c>, <c>costeo_*</c> y <c>ganancias</c>) salen de <see cref="MontosDe"/>, la misma regla de
+    /// <see cref="Indicadores"/>, así que la suma de los meses del periodo da los montos de los indicadores del periodo (los montos de
+    /// origen tienen 2 decimales y el redondeo a 2 no los altera).
     /// </summary>
     public static IReadOnlyList<clsPuntoSerieMensual> SerieMensual(
         IEnumerable<clsCotizacionMetrica> filas, DateOnly desde, DateOnly hasta, Func<DateTimeOffset, DateOnly> fechaNegocio)
@@ -96,14 +96,17 @@ public static class clsCalculadoraMetricas
         {
             var clave = Mes(mes);
             var delMes = porMes.GetValueOrDefault(clave) ?? [];
-            var ganadas = delMes.Where(f => f.Ganada == true).ToList();
+            var montos = MontosDe(delMes);
             serie.Add(new clsPuntoSerieMensual(
                 clave,
                 delMes.Count,
-                ganadas.Count,
+                delMes.Count(f => f.Ganada == true),
                 delMes.Count(f => f.Ganada == false),
-                Redondear(delMes.Sum(f => f.ValorCop ?? 0m), DecimalesMonto),
-                Redondear(ganadas.Sum(f => f.ValorResultadoCop ?? 0m), DecimalesMonto)));
+                montos.ValorCotizadoCop,
+                montos.ValorGanadoCop,
+                montos.CosteoTotal,
+                montos.CosteoGanadas,
+                montos.Ganancias));
         }
 
         return serie;
@@ -190,6 +193,30 @@ public static class clsCalculadoraMetricas
             .ThenBy(l => l.LineaNegocioId)];
     }
 
+    /// <summary>
+    /// Montos en COP de un conjunto de cotizaciones, con una sola regla para los indicadores y para cada mes de la serie (HU-034.1, #201):
+    /// <list type="bullet">
+    /// <item><c>costeo_total</c> = Σ <see cref="clsCotizacionMetrica.Costo"/> (COP, nunca se convierte; sin las rutas rechazadas, #183);</item>
+    /// <item><c>valor_cotizado_cop</c> = Σ <see cref="clsCotizacionMetrica.ValorCop"/> (USD × TRM; en USD sin TRM no suma);</item>
+    /// <item>de las ganadas, la versión con el resultado (B3, #173): <c>costeo_ganadas</c> = Σ <see cref="clsCotizacionMetrica.CostoResultado"/>,
+    /// <c>valor_ganado_cop</c> = Σ <see cref="clsCotizacionMetrica.ValorResultadoCop"/> y <c>ganancias</c> = Σ(valor − costo) de las que
+    /// tienen ambos.</item>
+    /// </list>
+    /// </summary>
+    private static clsMontosMetricas MontosDe(IReadOnlyCollection<clsCotizacionMetrica> universo)
+    {
+        var ganadas = universo.Where(f => f.Ganada == true).ToList();
+        return new clsMontosMetricas(
+            Redondear(universo.Sum(f => f.Costo ?? 0m), DecimalesMonto),
+            Redondear(ganadas.Sum(f => f.CostoResultado ?? 0m), DecimalesMonto),
+            Redondear(universo.Sum(f => f.ValorCop ?? 0m), DecimalesMonto),
+            Redondear(ganadas.Sum(f => f.ValorResultadoCop ?? 0m), DecimalesMonto),
+            Redondear(
+                ganadas.Where(f => f.ValorResultadoCop.HasValue && f.CostoResultado.HasValue)
+                    .Sum(f => f.ValorResultadoCop!.Value - f.CostoResultado!.Value),
+                DecimalesMonto));
+    }
+
     /// <summary>Mes <c>AAAA-MM</c> de una fecha.</summary>
     public static string Mes(DateOnly fecha) => fecha.ToString("yyyy-MM", CultureInfo.InvariantCulture);
 
@@ -229,4 +256,8 @@ public static class clsCalculadoraMetricas
         denominador == 0 ? null : Redondear((decimal)numerador / denominador, DecimalesFraccion);
 
     private static decimal Redondear(decimal valor, int decimales) => Math.Round(valor, decimales, MidpointRounding.ToEven);
+
+    /// <summary>Montos en COP de <see cref="MontosDe"/>.</summary>
+    private readonly record struct clsMontosMetricas(
+        decimal CosteoTotal, decimal CosteoGanadas, decimal ValorCotizadoCop, decimal ValorGanadoCop, decimal Ganancias);
 }

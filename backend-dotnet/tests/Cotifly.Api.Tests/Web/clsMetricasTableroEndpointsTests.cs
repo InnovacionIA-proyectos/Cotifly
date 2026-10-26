@@ -252,6 +252,43 @@ public sealed class clsMetricasTableroEndpointsTests(clsEntornoApiWeb entorno)
         Cantidad(json).Should().Be(1);
     }
 
+    [Fact]
+    public async Task HU0341_LaSerieMensualTraeGananciasYCosteoPorMesEnAmbosTablerosYCuadraConLosIndicadores()
+    {
+        // #201: frontera de mes en Bogotá (23:30 del 31 de marzo es 1 de abril en UTC), USD con TRM y una ruta rechazada que no cuenta.
+        var occidente = Regional();
+        var ana = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial, occidente, "Ana Serie");
+        var gloria = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoGerente, occidente, "Gloria Serie");
+        await CrearAsync(ana.UsuarioId, "COP", 1_000_000m, 0m, 850_000m, true, "2026-03-10");
+        await CrearAsync(ana.UsuarioId, "COP", 2_000_000m, 0m, 1_700_000m, false, "2026-03-31T23:30:00-05:00");
+        var usd = await CrearAsync(ana.UsuarioId, "USD", 1_000m, 4_000m, 3_400_000m, true, "2026-04-05");
+        await clsBaseDatosPruebas.EjecutarAsync(entorno.BaseDatos.CadenaCotifly, $"""
+            INSERT INTO dbo_cotifly.CotizacionLineasSolicitud (cotizacionSolicitudId, orden, costoFinal, precioFinalLinea, estadoCosteo)
+            VALUES ('{usd.Id}', 2, 999999, NULL, N'rechazada');
+            """);
+
+        var regional = await RegionalAsync(gloria, "anio=2026");
+        using var respuesta = await Api.EnviarAsync(_get, $"/web/metricas/comercial?{Periodo}", ana.Access);
+        var comercial = await VerificarContratoAsync(respuesta, "/web/metricas/comercial", _get, HttpStatusCode.OK);
+
+        foreach (var json in new[] { regional, comercial })
+        {
+            var serie = json.GetProperty("serie_mensual").EnumerateArray().ToDictionary(p => p.GetProperty("mes").GetString()!);
+            serie.Should().HaveCount(12);
+            Montos(serie["2026-03"]).Should().Be((2_550_000m, 850_000m, 150_000m), "las dos de marzo, una ganada");
+            Montos(serie["2026-04"]).Should().Be((3_400_000m, 3_400_000m, 600_000m), "1.000 USD × 4.000 − 3.400.000, sin la ruta rechazada");
+            Montos(serie["2026-05"]).Should().Be((0m, 0m, 0m));
+            var indicadores = json.GetProperty("indicadores");
+            foreach (var campo in new[] { "cantidad", "ganadas", "perdidas", "valor_cotizado_cop", "valor_ganado_cop", "costeo_total", "costeo_ganadas", "ganancias" })
+            {
+                serie.Values.Sum(p => p.GetProperty(campo).GetDecimal()).Should().Be(indicadores.GetProperty(campo).GetDecimal(), campo);
+            }
+        }
+    }
+
+    private static (decimal CosteoTotal, decimal CosteoGanadas, decimal Ganancias) Montos(JsonElement punto) =>
+        (punto.GetProperty("costeo_total").GetDecimal(), punto.GetProperty("costeo_ganadas").GetDecimal(), punto.GetProperty("ganancias").GetDecimal());
+
     private async Task<JsonElement> RegionalAsync(clsSesionPrueba sesion, string consulta)
     {
         using var respuesta = await Api.EnviarAsync(_get, $"/web/metricas/regional?{consulta}", sesion.Access);

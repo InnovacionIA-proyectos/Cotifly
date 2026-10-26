@@ -235,6 +235,28 @@ public sealed class clsTableroMetricasServiceTests
         resultado.Comerciales.Should().HaveCount(3);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task HU0341_LaSerieDeLaRegionalTraeGananciasYCosteoPorMesYCuadraConLosIndicadores(bool filtrarPorLuis)
+    {
+        var (gerente, ana, luis) = PrepararRegional();
+        var abril = new DateTimeOffset(2026, 4, 2, 12, 0, 0, _bogota);
+        _metricas.ListarCotizacionesAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+            .Returns(new clsDatosMetricas(
+                [Fila(ana.Id, ganada: true), Fila(ana.Id, ganada: false), Fila(luis.Id, ganada: true), Fila(luis.Id, ganada: true) with { CreatedAt = abril }],
+                false));
+
+        var resultado = (await Servicio(gerente).ObtenerRegionalAsync(
+            new clsConsultaMetricas("2026-03-01", "2026-04-30", filtrarPorLuis ? luis.Id.ToString() : null), Ct)).Valor;
+
+        var marzo = filtrarPorLuis ? ("2026-03", 850_000m, 850_000m, 150_000m) : ("2026-03", 2_550_000m, 1_700_000m, 300_000m);
+        resultado.SerieMensual.Select(p => (p.Mes, p.CosteoTotal, p.CosteoGanadas, p.Ganancias))
+            .Should().Equal(marzo, ("2026-04", 850_000m, 850_000m, 150_000m));
+        (resultado.SerieMensual.Sum(p => p.CosteoTotal), resultado.SerieMensual.Sum(p => p.CosteoGanadas), resultado.SerieMensual.Sum(p => p.Ganancias))
+            .Should().Be((resultado.Indicadores.CosteoTotal, resultado.Indicadores.CosteoGanadas, resultado.Indicadores.Ganancias));
+    }
+
     [Fact]
     public async Task FiltrarPorAlguienFueraDeLaRegionalEsNoEncontrado()
     {
