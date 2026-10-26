@@ -374,4 +374,11 @@ public static class clsCodigosError
     /// cubicador por petición. Cotifly lo valida antes de llamar y traduce igual el 400 del cubicador. Se resuelve partiendo la carga. 400.
     /// </summary>
     public const string CubicacionDemasiadoGrande = "CUBICACION_DEMASIADO_GRANDE";
+
+    /// <summary>
+    /// HU-036.2 (#206): <c>POST .../finalizar</c> sobre una cotización cuyo <c>estado_costeo</c> no es <c>autocosteo</c> ni <c>entregada</c>
+    /// (sin el costeo de Nexo listo no hay precio que aceptar; el chat y las licitaciones sin costeo tampoco). 409; <c>detalle.estado_costeo</c>
+    /// trae el estado actual. Código nuevo del backend .NET.
+    /// </summary>
+    public const string CotizacionNoFinalizable = "COTIZACION_NO_FINALIZABLE";
 }

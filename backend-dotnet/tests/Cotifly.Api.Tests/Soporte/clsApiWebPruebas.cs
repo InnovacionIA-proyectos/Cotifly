@@ -422,6 +422,20 @@ public sealed class clsApiWebPruebas : IDisposable
     }
 
     /// <summary>
+    /// HU-036.2 (#206): el comercial finaliza <paramref name="folio"/> como lo hace el frontend (lee el <c>ETag</c> de
+    /// <c>GET .../costeo</c> y llama a <c>POST .../finalizar</c> con él). Lanza si la API no responde 200.
+    /// </summary>
+    public async Task FinalizarAsync(string token, string folio)
+    {
+        using var costeo = await EnviarAsync(HttpMethod.Get, $"/web/cotizaciones/{folio}/costeo", token);
+        using var respuesta = await EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{folio}/finalizar", token, null, costeo.Headers.ETag?.Tag);
+        if (respuesta.StatusCode != System.Net.HttpStatusCode.OK)
+        {
+            throw new InvalidOperationException($"No se pudo finalizar {folio}: {(int)respuesta.StatusCode} {await respuesta.Content.ReadAsStringAsync()}");
+        }
+    }
+
+    /// <summary>
     /// Petición con <c>Authorization: Bearer</c> (si hay token), cuerpo JSON crudo (si viene) e <c>If-Match</c> (si viene, tal cual:
     /// la concurrencia optimista de HU-013, ADR-018 §8).
     /// </summary>

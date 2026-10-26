@@ -103,6 +103,9 @@ public sealed record clsCosteoCotizacion(
     /// <summary>HU-033 (#199): último error al enviar el resultado pendiente, o por qué ya no se puede enviar.</summary>
     public string? ErrorSincronizacionResultadoNexo { get; init; }
 
+    /// <summary>HU-036.2 (#206): cuándo se finalizó la cotización (UTC); <c>null</c> sin finalizar. Ver <c>CotizacionResumen.finalizada_at</c>.</summary>
+    public DateTimeOffset? FinalizadaAt { get; init; }
+
     /// <summary>
     /// HU-021.8 (#135): las rutas en orden, cada una con su margen (aplicado, sugerido y origen), su precio y sus conexos. El ajuste de
     /// margen y los cambios de conexos dicen a cuál aplican con <c>linea_orden</c> o <c>linea_solicitud_id</c>. Nunca trae costos.
@@ -1266,6 +1269,7 @@ public sealed class clsCosteoCotizacionService(
             Resultado = cotizacion.Ganada switch { true => "ganada", false => "perdida", null => null },
             SincronizacionResultadoNexo = cotizacion.EstadoSincronizacionResultado,
             ErrorSincronizacionResultadoNexo = cotizacion.Ganada is null ? null : cotizacion.ErrorSincronizacionResultado,
+            FinalizadaAt = cotizacion.FinalizadaAt?.ToUniversalTime(),
             Rutas = [.. cotizacion.RutasOrdenadas.Select(r => RutaCosteo(cotizacion, r, estadosNexo, categorias, situaciones))],
         };
     }

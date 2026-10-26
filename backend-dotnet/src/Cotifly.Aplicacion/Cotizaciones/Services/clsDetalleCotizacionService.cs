@@ -126,7 +126,7 @@ public sealed class clsDetalleCotizacionService(
                 Utc(cotizacion.UpdatedAt == default ? null : cotizacion.UpdatedAt),
                 Utc(cotizacion.CosteoEnviadoAt),
                 Utc(cotizacion.CosteoListoAt),
-                Utc(cotizacion.MarcadoAt)),
+                Utc(cotizacion.MarcadoAt)) { FinalizadaAt = Utc(cotizacion.FinalizadaAt) },
             resumen,
             costeo,
             captura,

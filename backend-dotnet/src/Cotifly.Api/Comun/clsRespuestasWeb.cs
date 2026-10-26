@@ -85,6 +85,8 @@ public static class clsRespuestasWeb
         clsCodigosError.SinRutasCotizables,
         // HU-033 (#199): el envío no se puede reintentar en MailSender (no está fallido o MailSender no lo conoce).
         clsCodigosError.CorreoNoReintentable,
+        // HU-036.2 (#206): finalizar una cotización sin el costeo de Nexo listo.
+        clsCodigosError.CotizacionNoFinalizable,
         // D4 (E2E 2026-10-16): la misma Idempotency-Key con otro cuerpo (antes 400 ErrorWeb).
         clsCodigosAplicacion.IdempotencyKeyReutilizada,
     };

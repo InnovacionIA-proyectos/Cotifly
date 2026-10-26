@@ -1,0 +1,134 @@
+using System.Globalization;
+using System.Net;
+using System.Text.Json;
+using Cotifly.Aceptacion.Tests.Soporte;
+using Cotifly.Aceptacion.Tests.Web;
+using Cotifly.Pruebas.Comun;
+using Reqnroll;
+
+namespace Cotifly.Aceptacion.Tests.Costeo;
+
+/// <summary>
+/// Pasos de <c>specs/features/cotizacion_finalizada.feature</c> (HU-036): <c>POST /web/cotizaciones/{folio}/finalizar</c> contra la API real
+/// en memoria, SQL Server 2019 con el script 14 y el Nexo falso de <see cref="clsPasosCosteo"/>. Las mutaciones envían <c>If-Match</c>
+/// con la versión vigente de la fila (leída de la base) salvo que el paso diga otra cosa.
+/// </summary>
+[Binding]
+public sealed class clsPasosFinalizacion(clsContextoWeb web, clsPasosCosteo costeo, clsPasosAjusteMargen margen)
+{
+    /// <summary>La herramienta de la auditoría (<c>clsFinalizacionCotizacionService.HerramientaAuditoria</c>).</summary>
+    private const string HerramientaAuditoria = "finalizar_cotizacion";
+
+    private string? _finalizadaAtPrimera;
+    private string? _etagPrimera;
+
+    [Given("que {string} finalizó la cotización {string}")]
+    public async Task DadoQueFinalizo(string alias, string cotizacion)
+    {
+        await CuandoFinaliza(alias, cotizacion);
+        web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);
+        _finalizadaAtPrimera = web.UltimoJson().GetProperty("finalizada_at").GetString();
+        _etagPrimera = web.UltimoEtag;
+    }
+
+    [When("{string} finaliza la cotización {string}")]
+    public async Task CuandoFinaliza(string alias, string cotizacion) =>
+        await FinalizarAsync(alias, cotizacion, await VersionVigenteAsync(cotizacion));
+
+    [When("{string} finaliza la cotización {string} sin If-Match")]
+    public Task CuandoFinalizaSinIfMatch(string alias, string cotizacion) => FinalizarAsync(alias, cotizacion, null);
+
+    [When("{string} finaliza la cotización {string} con el ETag guardado")]
+    public Task CuandoFinalizaConElEtagGuardado(string alias, string cotizacion) =>
+        FinalizarAsync(alias, cotizacion, margen.EtagGuardado ?? throw new InvalidOperationException("No se guardó ningún ETag."));
+
+    [Given("Nexo cambia el flete de {string} a {int} y el polling lo registró")]
+    public async Task DadoQueNexoCambiaElFlete(string cotizacion, int flete)
+    {
+        var version = await VersionAsync(cotizacion);
+        costeo.Nexo.Costear((await costeo.Columna(cotizacion, "costeoId"))!, flete);
+        await web.Api.ProcesarPollingAsync(costeo.Folio(cotizacion));
+        (await VersionAsync(cotizacion)).Should().BeGreaterThan(version, "el polling aplicó el costo nuevo (cambio de negocio)");
+    }
+
+    [Then("la respuesta trae finalizada_at y un ETag nuevo")]
+    public void EntoncesTraeFinalizadaAt()
+    {
+        var json = web.UltimoJson();
+        json.GetProperty("finalizada_at").ValueKind.Should().Be(JsonValueKind.String);
+        web.UltimoEtag.Should().NotBeNullOrEmpty();
+    }
+
+    [Then("la respuesta trae el mismo finalizada_at y el mismo ETag de la primera finalización")]
+    public void EntoncesSinCambios()
+    {
+        web.UltimoJson().GetProperty("finalizada_at").GetString().Should().Be(_finalizadaAtPrimera);
+        web.UltimoEtag.Should().Be(_etagPrimera, "re-finalizar no sube la versión de negocio");
+    }
+
+    [Then("la cotización {string} queda finalizada por {string}")]
+    public async Task EntoncesQuedaFinalizada(string cotizacion, string alias)
+    {
+        (await costeo.Columna(cotizacion, "finalizadaAt")).Should().NotBeNull();
+        Guid.Parse((await costeo.Columna(cotizacion, "finalizadaPor"))!).Should().Be(web.Sesion(alias).UsuarioId);
+    }
+
+    [Then("la cotización {string} sigue sin finalizar")]
+    public async Task EntoncesSinFinalizar(string cotizacion)
+    {
+        (await costeo.Columna(cotizacion, "finalizadaAt")).Should().BeNull();
+        (await costeo.Columna(cotizacion, "finalizadaPor")).Should().BeNull();
+    }
+
+    [Then("el costeo y el detalle de {string} traen finalizada_at")]
+    public async Task EntoncesElCosteoYElDetalle(string cotizacion)
+    {
+        var dueno = await DuenoAsync(cotizacion);
+        var folio = costeo.Folio(cotizacion);
+        await web.EnviarAsync(HttpMethod.Get, $"/web/cotizaciones/{folio}/costeo", dueno);
+        web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);
+        var enCosteo = web.UltimoJson().GetProperty("finalizada_at").GetString();
+        enCosteo.Should().NotBeNullOrEmpty();
+
+        await web.EnviarAsync(HttpMethod.Get, $"/web/cotizaciones/{folio}", dueno);
+        web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);
+        var detalle = web.UltimoJson();
+        detalle.GetProperty("fechas").GetProperty("finalizada_at").GetString().Should().Be(enCosteo);
+        detalle.GetProperty("cotizacion").GetProperty("finalizada_at").GetString().Should().Be(enCosteo);
+        detalle.GetProperty("costeo").GetProperty("finalizada_at").GetString().Should().Be(enCosteo);
+    }
+
+    [Then("el detalle del error trae el estado de costeo {string}")]
+    public void EntoncesElEstadoDelError(string estado) =>
+        web.UltimoJson().GetProperty("error").GetProperty("detalle").GetProperty("estado_costeo").GetString().Should().Be(estado);
+
+    [Then("la finalización de {string} queda en la auditoría como exitosa")]
+    public async Task EntoncesAuditadaExitosa(string cotizacion) =>
+        (await EventosAsync(cotizacion, exito: true, codigo: null)).Should().Be(1);
+
+    [Then("la finalización de {string} queda en la auditoría como rechazada por {string}")]
+    public async Task EntoncesAuditadaRechazada(string cotizacion, string codigo) =>
+        (await EventosAsync(cotizacion, exito: false, codigo)).Should().Be(1);
+
+    private Task<int> EventosAsync(string cotizacion, bool exito, string? codigo) =>
+        clsBaseDatosPruebas.EscalarAsync<int>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
+            $"SELECT COUNT(*) FROM dbo_cotifly.EventosHerramienta WHERE herramienta = '{HerramientaAuditoria}' AND exito = {(exito ? 1 : 0)} "
+            + $"AND input LIKE '%{costeo.Folio(cotizacion)}%'" + (codigo is null ? string.Empty : $" AND outputResumen LIKE '%{codigo}%'"));
+
+    private async Task FinalizarAsync(string alias, string cotizacion, string? ifMatch) =>
+        await web.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{costeo.Folio(cotizacion)}/finalizar", web.Sesion(alias).Access, null, ifMatch);
+
+    private async Task<string> DuenoAsync(string cotizacion)
+    {
+        var usuarioId = Guid.Parse((await costeo.Columna(cotizacion, "usuarioId"))!);
+        return web.Sesiones.Values.First(s => s.UsuarioId == usuarioId).Access;
+    }
+
+    private Task<int> VersionAsync(string cotizacion) =>
+        clsBaseDatosPruebas.EscalarAsync<int>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
+            $"SELECT versionNegocio FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{costeo.Folio(cotizacion)}'");
+
+    /// <summary><c>If-Match</c> con la versión de negocio vigente (<c>versionNegocio</c>, entre comillas).</summary>
+    private async Task<string> VersionVigenteAsync(string cotizacion) =>
+        $"\"{(await VersionAsync(cotizacion)).ToString(CultureInfo.InvariantCulture)}\"";
+}

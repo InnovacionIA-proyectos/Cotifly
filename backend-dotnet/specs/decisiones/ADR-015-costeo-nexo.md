@@ -93,6 +93,29 @@ El tarifario de Google Drive se retiró: el costo de una cotización lo calcula 
 - **Solo COP en esta iteración.** Esta rama sale de `QA`, que todavía no tiene la TRM (frente de HU-012, #50 a #52, ADR-014). Cuando se integre, una cotización en USD debe pasar por `IClsPrecioService.CalcularAsync` con la moneda, fijar la TRM en el momento en que llega el costeo y pasar `trmAplicada` al PDF. **Pendiente de integración con HU-012.**
 - Selección de servicios conexos: `PUT /web/cotizaciones/{folio}/costeo/servicios-conexos`. PDF: `POST /web/cotizaciones/{folio}/costeo/pdf` arma el payload desde la cotización (flete con `precioFinal` y los conexos incluidos con su precio) y reutiliza el módulo PDF (HU-003.5); si ya tiene PDF responde `PDF_YA_GENERADO`.
 
+#### 5.1 Cotización finalizada (HU-036, #205 a #208, 2026-10-26)
+
+**Contexto.** Hasta HU-036 el único "candado" del precio era el PDF (arriba) y la entrega al cliente (envío o resultado, ADR-018 §11). Entre el
+costeo listo y el PDF, el precio podía cambiar por debajo del comercial (el polling, la Mesa entregando con otro valor) sin que él lo
+aceptara, y el PDF, el correo y el resultado salían sobre un precio que nadie había confirmado.
+
+**Decisión.**
+
+- **#206, el acto de finalizar.** `POST /web/cotizaciones/{folio}/finalizar` con `If-Match`, solo el dueño
+  (`clsFinalizacionCotizacionService`, regla en `clsCotizacionSolicitud.Finalizar`). Solo con el costeo de Nexo listo: `estadoCosteo` en
+  `autocosteo` o `entregada` (que todas las rutas tengan precio lo garantiza ya `clsResumenEstadoCosteo`; las rutas `rechazada` no
+  cuentan); si no, 409 **`COTIZACION_NO_FINALIZABLE`** (código nuevo, para no sobrecargar `ESTADO_NO_PERMITE`, con
+  `detalle.estado_costeo`). Re-finalizar es 200 sin cambios (idempotente, como re-marcar el mismo resultado); un `If-Match` que no
+  coincide es 409 `CONFLICTO_CONCURRENCIA`, como el resto de las mutaciones (también si ya estaba finalizada: primero la versión).
+- **Columnas propias, no un estado.** `finalizadaAt` y `finalizadaPor` (FK a `UsuariosWeb`, `UNIQUEIDENTIFIER` como su PK),
+  `db/scripts/14_cotizacion_finalizada.sql`. No es un valor de `estadoCosteo` a propósito: el polling deriva ese estado de Nexo en cada
+  vuelta y lo pisaría; la cotización finalizada sigue avanzando (`autocosteo` → `entregada`). Se expone como `finalizada_at` en
+  `CotizacionResumen`, `CosteoCotizacion` y `FechasCotizacion`.
+- **Concurrencia.** La finalización confirma con la versión del `If-Match` sobre la fila bloqueada y sube `versionNegocio`: si el polling
+  cambió el precio después de que el comercial lo leyó, la finalización pierde (409) y el comercial recarga; si la finalización gana, la
+  vuelta del polling que se cruzó no guarda y la siguiente ya ve la cotización finalizada.
+- **Sin backfill.** Las cotizaciones existentes quedan sin finalizar; el comercial las finaliza una por una (conteo en `DEPLOY.md` §4.5).
+
 ### 6. Resultado ganada/perdida (#42)
 
 - `POST /web/cotizaciones/{folio}/resultado` `{resultado, motivo?, comentario?}`, solo el dueño (404 si no, como el resto de `/web/cotizaciones`).

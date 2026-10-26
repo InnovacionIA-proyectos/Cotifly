@@ -79,6 +79,12 @@ public sealed record clsCotizacionResumen(
     public string? ErrorSincronizacionResultadoNexo { get; init; }
 
     /// <summary>
+    /// HU-036.2 (#206): cuándo el comercial finalizó la cotización (aceptó el precio), en UTC; <c>null</c> sin finalizar. Siempre se
+    /// serializa.
+    /// </summary>
+    public DateTimeOffset? FinalizadaAt { get; init; }
+
+    /// <summary>
     /// Solo en la respuesta de <c>POST /web/solicitudes-costeo</c> (HU-023.3, #158): por cada ruta que pasó por el cubicador, su resultado
     /// y sus avisos (mercancías condicionadas, advertencias y extradimensión, que no se guardan). <c>null</c> (no se serializa) si ninguna
     /// ruta llamó al cubicador o en el resto de respuestas.
@@ -141,6 +147,7 @@ public sealed record clsCotizacionResumen(
             ScorePrioridad = cotizacion.ScorePrioridad,
             SincronizacionResultadoNexo = cotizacion.EstadoSincronizacionResultado,
             ErrorSincronizacionResultadoNexo = cotizacion.Ganada is null ? null : cotizacion.ErrorSincronizacionResultado,
+            FinalizadaAt = cotizacion.FinalizadaAt?.ToUniversalTime(),
         };
     }
 }
