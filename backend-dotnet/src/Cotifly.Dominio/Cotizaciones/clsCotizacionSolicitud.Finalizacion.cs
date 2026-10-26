@@ -35,10 +35,20 @@ public sealed partial class clsCotizacionSolicitud
     /// </summary>
     public bool AdmiteFinalizar => TieneCostoDisponible;
 
+    /// <summary><c>detalle.motivo</c> de <c>COTIZACION_NO_FINALIZABLE</c> cuando Nexo agregó un conexo que Cotifly todavía no leyó.</summary>
+    public const string CodigoConexosPendientesDeLeer = "conexos_pendientes_de_leer";
+
+    /// <summary>Mensaje de <c>COTIZACION_NO_FINALIZABLE</c> con conexos de Nexo pendientes de leer (<see cref="ConexosPendientesDeLeer"/>).</summary>
+    public const string MotivoNoFinalizableConexosPendientes =
+        "Nexo agregó un servicio conexo que Cotifly todavía no leyó: espera la siguiente actualización del costeo para finalizar la cotización "
+        + "con su precio.";
+
     /// <summary>
     /// Finaliza la cotización por <paramref name="usuarioId"/> en <paramref name="ahora"/>. Devuelve <c>true</c> si la finalizó,
     /// <c>false</c> si ya estaba finalizada (idempotente: no cambia nada, conserva la fecha y el comercial de la primera vez) o
-    /// <c>COTIZACION_NO_FINALIZABLE</c> si el estado no lo admite (<see cref="AdmiteFinalizar"/>), con <c>detalle.estado_costeo</c>.
+    /// <c>COTIZACION_NO_FINALIZABLE</c> si el estado no lo admite (<see cref="AdmiteFinalizar"/>), con <c>detalle.estado_costeo</c>, o si
+    /// Nexo agregó un conexo que Cotifly todavía no leyó (<see cref="ConexosPendientesDeLeer"/>; <c>detalle.motivo</c> =
+    /// <see cref="CodigoConexosPendientesDeLeer"/>): el precio todavía no es el definitivo.
     /// </summary>
     public clsResultado<bool> Finalizar(Guid usuarioId, DateTimeOffset ahora)
     {
@@ -60,6 +70,20 @@ public sealed partial class clsCotizacionSolicitud
                 + "costeo de Nexo listo (autocosteo o entregada) y su precio.")
             {
                 Datos = new Dictionary<string, object?>(StringComparer.Ordinal) { ["estado_costeo"] = estado },
+            };
+        }
+
+        if (ConexosPendientesDeLeer)
+        {
+            // Validación HU-036: Nexo ya cobra un conexo que Cotifly todavía no leyó (HU-013.15, #135). Finalizar ahora congelaría un precio
+            // sin ese conexo y la siguiente lectura ya no lo importaría (#208): se espera a que el polling lo traiga.
+            return new clsErrorDominio(clsCodigosError.CotizacionNoFinalizable, MotivoNoFinalizableConexosPendientes)
+            {
+                Datos = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["estado_costeo"] = EstadoCosteo is { } e ? clsCodigoEnum.ACodigo(e) : null,
+                    ["motivo"] = CodigoConexosPendientesDeLeer,
+                },
             };
         }
 
