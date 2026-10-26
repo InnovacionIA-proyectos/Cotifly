@@ -80,6 +80,56 @@ public sealed class clsCandadosFinalizadaEndpointsTests : IDisposable
             .GetProperty("estado").GetString().Should().Be("encolado");
     }
 
+    /// <summary>
+    /// Validación HU-036: todo lo que cambia el precio o la solicitud de una cotización finalizada (sin enviar) responde 409
+    /// <c>PDF_YA_ENVIADO</c> con la versión nueva en <c>detalle</c>, sin tocar Nexo ni el precio; los textos del PDF y el PDF sí se permiten.
+    /// </summary>
+    [Fact]
+    public async Task FinalizadaConexosReSolicitudYRecalculoPidenVersionNuevaSinTocarNexoYLosTextosSiSeEditan()
+    {
+        var (sesion, folio) = await CosteadaAsync();
+        await _api.FinalizarAsync(sesion.Access, folio);
+        using var costeo = await _api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", sesion.Access);
+        var etag = costeo.Headers.ETag?.Tag;
+        using var json = JsonDocument.Parse(await costeo.Content.ReadAsStringAsync());
+        var rutaId = json.RootElement.GetProperty("rutas")[0].GetProperty("linea_solicitud_id").GetString();
+        var precio = await PrecioAsync(folio);
+        var peticionesNexo = _nexo.Peticiones.Count;
+
+        using var agregar = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", sesion.Access,
+            clsApiWebPruebas.Json(new { items = new[] { new { linea_orden = 1, servicio_id = "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d", cantidad = 1 } } }), etag);
+        await VersionNuevaAsync(agregar, "/web/cotizaciones/{folio}/costeo/servicios-conexos", _post, folio);
+        using var elegir = await _api.EnviarAsync(_put, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", sesion.Access,
+            clsApiWebPruebas.Json(new { incluidos = Array.Empty<string>() }), etag);
+        await VersionNuevaAsync(elegir, "/web/cotizaciones/{folio}/costeo/servicios-conexos", _put, folio);
+        using var reSolicitar = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/re-solicitar", sesion.Access,
+            clsApiWebPruebas.Json(new { motivo = "Actualizar el costo" }), etag);
+        await VersionNuevaAsync(reSolicitar, "/web/cotizaciones/{folio}/costeo/re-solicitar", _post, folio);
+        using var recalcular = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/rutas/{rutaId}/recalcular-vehiculos", sesion.Access, "{}", etag);
+        await VersionNuevaAsync(recalcular, "/web/cotizaciones/{folio}/rutas/{rutaId}/recalcular-vehiculos", _post, folio);
+
+        _nexo.Peticiones.Count.Should().Be(peticionesNexo, "ningún candado llama a Nexo");
+        (await PrecioAsync(folio)).Should().Be(precio, "el precio finalizado no cambia");
+
+        using var textos = await _api.EnviarAsync(_put, $"/web/cotizaciones/{folio}/costeo/textos", sesion.Access,
+            clsApiWebPruebas.Json(new { asunto = "Cotización de transporte", introduccion = "Presentamos la tarifa acordada para su carga." }), etag);
+        await VerificarContratoAsync(textos, "/web/cotizaciones/{folio}/costeo/textos", _put, HttpStatusCode.OK);
+        using var pdf = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
+        await VerificarContratoAsync(pdf, "/web/cotizaciones/{folio}/costeo/pdf", _post, HttpStatusCode.Created);
+    }
+
+    private static async Task VersionNuevaAsync(HttpResponseMessage respuesta, string ruta, HttpMethod metodo, string folio)
+    {
+        var error = (await VerificarContratoAsync(respuesta, ruta, metodo, HttpStatusCode.Conflict)).GetProperty("error");
+        error.GetProperty("codigo").GetString().Should().Be("PDF_YA_ENVIADO", ruta);
+        error.GetProperty("detalle").GetProperty("accion").GetString().Should().Be("nueva_version");
+        error.GetProperty("detalle").GetProperty("endpoint").GetString().Should().Be($"/web/cotizaciones/{folio}/costeo/re-solicitar");
+    }
+
+    private Task<decimal?> PrecioAsync(string folio) =>
+        clsBaseDatosPruebas.EscalarAsync<decimal?>(_baseDatos.CadenaCotifly,
+            $"SELECT precioFinal FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'");
+
     private static async Task NoFinalizadaAsync(HttpResponseMessage respuesta, string ruta, string folio)
     {
         var error = (await VerificarContratoAsync(respuesta, ruta, _post, HttpStatusCode.Conflict)).GetProperty("error");
