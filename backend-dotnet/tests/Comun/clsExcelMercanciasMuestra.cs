@@ -47,6 +47,25 @@ public static class clsExcelMercanciasMuestra
     });
 
     /// <summary>
+    /// El Excel normal de <paramref name="filas"/> filas más una hoja "Listas" oculta (<c>hidden</c>) antes de "Mercancías", como las listas
+    /// de validación que dejan muchos clientes.
+    /// </summary>
+    public static byte[] ConHojaOculta(int filas = 3)
+    {
+        using var memoria = new MemoryStream(Excel(filas));
+        using var libro = new XLWorkbook(memoria);
+        var listas = libro.Worksheets.Add("Listas", 1);
+        listas.Cell("A1").Value = "Tipo";
+        listas.Cell("B1").Value = "Unidad";
+        listas.Cell("C1").Value = "Grupo";
+        listas.Cell("A2").Value = "Caja";
+        listas.Visibility = XLWorksheetVisibility.Hidden;
+        using var salida = new MemoryStream();
+        libro.SaveAs(salida);
+        return salida.ToArray();
+    }
+
+    /// <summary>
     /// Una fila de bobinas con el peso como fórmula (<c>=B2*1000</c>, con el valor 2000 guardado, como lo deja Excel) y una fecha de
     /// despacho (2026-10-20) con formato de fecha colombiano.
     /// </summary>

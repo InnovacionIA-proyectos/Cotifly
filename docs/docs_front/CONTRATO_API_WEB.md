@@ -1758,7 +1758,8 @@ frontend mapea las columnas a los campos de la mercancía** igual que hoy con la
 - `multipart/form-data` con la parte `archivo` (`.xlsx` o `.xlsm`, hasta 10.420.224 bytes; cuerpo completo hasta 12 MB). Sin multipart:
   415 `ErrorWeb`. Rol: el de la captura (comercial o gerente).
 - Encabezado: la primera de las 15 primeras filas usadas con 3 valores distintos (si ninguna, la primera con datos). `filas_excel[i]` es
-  el número de fila de Excel de `filas[i]`. Celdas como texto con formato estable: números con punto y sin miles (`850.5`), fechas
+  el número de fila de Excel de `filas[i]`. Las hojas ocultas en Excel (`hidden` o `veryHidden`) se leen igual y vienen con
+  `oculta = true` (las visibles, `false`). Celdas como texto con formato estable: números con punto y sin miles (`850.5`), fechas
   `yyyy-MM-dd`, booleanos `true`/`false`; una fórmula trae el valor que Excel guardó (Cotifly no evalúa fórmulas).
 - Topes: 20 hojas (`hojas_truncadas`), 1000 filas por hoja (`filas_truncadas`, con `total_filas` real), 50 columnas
   (`columnas_truncadas`, con `total_columnas` real), 500 caracteres por celda (`celdas_recortadas`) y 100.000 celdas en la respuesta.
@@ -1784,6 +1785,7 @@ frontend mapea las columnas a los campos de la mercancía** igual que hoy con la
       "total_columnas": 6,
       "columnas_truncadas": false,
       "celdas_recortadas": false,
+      "oculta": false,
       "columna_mercancia": "Tipo de mercancía",
       "columna_codigo_mercancia": null,
       "mercancias": [

@@ -23,7 +23,10 @@ de Cabina de Fletes.
    `clsAnalizadorExcelNexo` ni nada de NEXO.
 3. **Grilla cruda y mapeo en el frontend.** La respuesta `AnalisisExcelMercancias` tiene la misma forma de `AnalisisExcel` (para reutilizar
    la pantalla de mapeo) más los indicadores de truncado. El encabezado usa la regla del pliego (primera de las 15 primeras filas con 3
-   valores distintos) con un respaldo (la primera fila con datos) para hojas de menos de 3 columnas.
+   valores distintos) con un respaldo (la primera fila con datos) para hojas de menos de 3 columnas. **Hojas ocultas** (decisión del
+   usuario, 2026-10-26): las hojas `hidden` y `veryHidden` no se omiten; se leen como las visibles y vienen con `oculta = true` (las
+   visibles, `false`). Un cliente puede dejar las mercancías en una hoja oculta, y omitirla haría perder datos sin aviso; el frontend
+   decide si las ofrece (sugerido: preseleccionar una visible y mostrar las ocultas al final).
 4. **Formato estable de las celdas**, sin cultura: números invariantes con 15 cifras significativas, fechas ISO, booleanos
    `true`/`false`. **Las fórmulas nunca se evalúan**: se devuelve el valor que Excel guardó (`CachedValue`); sin él, vacío. Evaluar
    fórmulas de un archivo no confiable es superficie de ataque y costo de CPU sin acotar.

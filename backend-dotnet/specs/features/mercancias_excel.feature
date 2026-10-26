@@ -35,6 +35,13 @@ Característica: Excel de mercancías de una ruta
     Entonces la respuesta tiene el estado 200 y cumple el esquema "AnalisisExcelMercancias" del contrato
     Y la fila 0 de la hoja "Mercancías" es "Bobinas|2|3|2|1|2000|2026-10-20"
 
+  Escenario: Una hoja oculta se lee y viene marcada como oculta
+    Cuando "ana" analiza un Excel de mercancías con una hoja oculta
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "AnalisisExcelMercancias" del contrato
+    Y la hoja "Listas" viene marcada como oculta
+    Y la hoja "Mercancías" viene marcada como visible
+    Y la hoja "Mercancías" trae 3 filas desde la fila 2 de Excel
+
   Escenario: Una hoja de más de 1000 filas llega truncada y lo dice
     Cuando "ana" analiza el Excel de mercancías de 1005 filas
     Entonces la respuesta tiene el estado 200 y cumple el esquema "AnalisisExcelMercancias" del contrato

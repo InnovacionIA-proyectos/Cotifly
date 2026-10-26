@@ -31,6 +31,8 @@ namespace Cotifly.Infraestructura.Mercancias.Services;
 /// <see cref="EsperaCupo"/>, <c>SERVICIO_OCUPADO</c>;</item>
 /// <item>la cancelación del llamador se respeta.</item>
 /// </list>
+/// <para><b>Hojas ocultas</b> (<c>hidden</c> y <c>veryHidden</c>): se leen como las visibles y vienen marcadas con
+/// <see cref="clsHojaExcelMercancias.Oculta"/> (decisión del usuario, #202).</para>
 /// <para><b>Formato estable</b> (sin depender de la cultura ni del formato visual de la celda): números invariantes con hasta 15 cifras
 /// significativas, fechas ISO (<c>yyyy-MM-dd</c> o <c>yyyy-MM-ddTHH:mm:ss</c>), duraciones <c>HH:mm:ss</c>, booleanos
 /// <c>true</c>/<c>false</c>, errores con su texto de Excel y el texto sin espacios al borde y con los saltos de línea como un espacio.</para>
@@ -425,7 +427,8 @@ public sealed class clsLectorGrillaExcelClosedXml : IClsLectorGrillaExcel, IDisp
             filas.Count < debajo.Count,
             ultimaColReal - primeraCol + 1,
             ultimaColReal > ultimaCol,
-            recortadas);
+            recortadas,
+            ws.Visibility != XLWorksheetVisibility.Visible);
     }
 
     /// <summary>

@@ -22,6 +22,9 @@ public sealed class clsPasosExcelMercancias(clsContextoWeb web, clsPasosCosteo c
     [When("{string} analiza el Excel de mercancías de {int} filas")]
     public Task CuandoAnaliza(string alias, int filas) => AnalizarAsync(alias, clsExcelMercanciasMuestra.Excel(filas), "mercancias.xlsx");
 
+    [When("{string} analiza un Excel de mercancías con una hoja oculta")]
+    public Task CuandoAnalizaConHojaOculta(string alias) => AnalizarAsync(alias, clsExcelMercanciasMuestra.ConHojaOculta(), "mercancias.xlsx");
+
     [When("{string} analiza un Excel de mercancías con una fórmula y una fecha")]
     public Task CuandoAnalizaConFormula(string alias) => AnalizarAsync(alias, clsExcelMercanciasMuestra.ConFormulaYFecha(), "mercancias.xlsx");
 
@@ -78,6 +81,12 @@ public sealed class clsPasosExcelMercancias(clsContextoWeb web, clsPasosCosteo c
         mercancia.GetProperty("sugerido").GetBoolean().Should().BeTrue();
         web.UltimoJson().GetProperty("catalogo_mercancias_disponible").GetBoolean().Should().BeTrue();
     }
+
+    [Then("la hoja {string} viene marcada como oculta")]
+    public void EntoncesOculta(string hoja) => Hoja(hoja).GetProperty("oculta").GetBoolean().Should().BeTrue();
+
+    [Then("la hoja {string} viene marcada como visible")]
+    public void EntoncesVisible(string hoja) => Hoja(hoja).GetProperty("oculta").GetBoolean().Should().BeFalse();
 
     [Then("el análisis no trae el catálogo de mercancías")]
     public void EntoncesSinCatalogo() => web.UltimoJson().GetProperty("catalogo_mercancias_disponible").GetBoolean().Should().BeFalse();

@@ -20,6 +20,8 @@ public sealed record clsAnalisisExcelMercancias(
 /// como texto con formato estable (cada una del ancho de <paramref name="Encabezados"/>), el número de fila de Excel de cada fila, el
 /// total real de filas y de columnas y lo que se truncó. <paramref name="ColumnaMercancia"/>, <paramref name="ColumnaCodigoMercancia"/>
 /// y <paramref name="Mercancias"/>: como en <see cref="clsHojaExcel"/> (HU-023.5), <c>null</c> si la hoja no tiene esas columnas.
+/// <paramref name="Oculta"/>: <c>true</c> si la hoja está oculta en Excel (<c>hidden</c> o <c>veryHidden</c>); se lee igual (decisión
+/// del usuario, #202) y el frontend decide si la ofrece.
 /// </summary>
 public sealed record clsHojaExcelMercancias(
     string Nombre,
@@ -32,6 +34,7 @@ public sealed record clsHojaExcelMercancias(
     int TotalColumnas,
     bool ColumnasTruncadas,
     bool CeldasRecortadas,
+    bool Oculta,
     string? ColumnaMercancia = null,
     string? ColumnaCodigoMercancia = null,
     IReadOnlyList<clsCodigoMercanciaFila>? Mercancias = null);

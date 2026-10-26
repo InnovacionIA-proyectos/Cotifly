@@ -3171,6 +3171,8 @@ paths:
         misma regla de las licitaciones); si ninguna los tiene, la primera fila con datos. `filas` son las filas no vacías debajo del
         encabezado, del ancho de `encabezados` (las celdas vacías van como `""`); `filas_excel[i]` es el número de fila de Excel
         (base 1) de `filas[i]`. Las celdas combinadas no se expanden (el valor queda en la primera). Las hojas sin datos no aparecen.
+        Las hojas ocultas en Excel (`hidden` y `veryHidden`) **se leen igual** y vienen con `oculta = true` (las visibles, `false`): el
+        frontend decide si las ofrece o las muestra al final.
 
         **Formato estable de las celdas** (independiente de la cultura y del formato visual de la celda): números con punto decimal,
         sin separador de miles y hasta 15 cifras significativas (`12000`, `1.25`, un porcentaje `15 %` llega como `0.15`); fechas
@@ -7705,7 +7707,7 @@ components:
     HojaExcelMercancias:
       type: object
       required: [nombre, fila_encabezado, encabezados, filas, filas_excel, total_filas, filas_truncadas, total_columnas,
-        columnas_truncadas, celdas_recortadas, columna_mercancia, columna_codigo_mercancia, mercancias]
+        columnas_truncadas, celdas_recortadas, oculta, columna_mercancia, columna_codigo_mercancia, mercancias]
       description: HU-035.1 (#202). Una hoja leída por Cotifly, con los mismos campos de `HojaExcel` y los indicadores de truncado.
       properties:
         nombre:
@@ -7751,6 +7753,11 @@ components:
         celdas_recortadas:
           type: boolean
           description: '`true` si alguna celda de esta hoja pasaba de 500 caracteres y se recortó.'
+        oculta:
+          type: boolean
+          description: |
+            `true` si la hoja está oculta en Excel (`hidden` o `veryHidden`, como las listas de validación); `false` si es visible.
+            Las ocultas se leen igual que las visibles (no se omiten): el frontend decide si las ofrece.
         columna_mercancia:
           type: string
           nullable: true

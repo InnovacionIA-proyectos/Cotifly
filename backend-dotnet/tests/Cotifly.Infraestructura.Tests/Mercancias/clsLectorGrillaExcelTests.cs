@@ -376,7 +376,7 @@ public sealed class clsLectorGrillaExcelTests : IDisposable
     }
 
     [Fact]
-    public async Task LasCeldasCombinadasTraenElValorSoloEnLaPrimeraYLasHojasOcultasSeLeen()
+    public async Task LasCeldasCombinadasTraenElValorSoloEnLaPrimeraYLasHojasOcultasSeLeenMarcadas()
     {
         var excel = Libro(l =>
         {
@@ -386,6 +386,10 @@ public sealed class clsLectorGrillaExcelTests : IDisposable
             oculta.Cell("C1").Value = "Grupo";
             oculta.Cell("A2").Value = "Caja";
             oculta.Visibility = XLWorksheetVisibility.VeryHidden;
+            var escondida = l.Worksheets.Add("Auxiliar");
+            escondida.Cell("A1").Value = "Unidad";
+            escondida.Cell("A2").Value = "kg";
+            escondida.Visibility = XLWorksheetVisibility.Hidden;
             var ws = l.Worksheets.Add("Mercancías");
             ws.Cell("A1").Value = "Tipo";
             ws.Cell("B1").Value = "Medidas (m)";
@@ -399,8 +403,9 @@ public sealed class clsLectorGrillaExcelTests : IDisposable
 
         var analisis = await LeerAsync(excel);
 
-        analisis.Hojas.Select(h => h.Nombre).Should().Equal("Listas", "Mercancías");
-        var hoja = analisis.Hojas[1];
+        analisis.Hojas.Select(h => (h.Nombre, h.Oculta)).Should().Equal(
+            [("Listas", true), ("Auxiliar", true), ("Mercancías", false)], "las ocultas (veryHidden y hidden) se leen y vienen marcadas");
+        var hoja = analisis.Hojas[2];
         hoja.Encabezados.Should().Equal("Tipo", "Medidas (m)", string.Empty, string.Empty, "Peso");
         hoja.Filas.Single().Should().Equal("Caja", "1", string.Empty, "3", "0.3");
     }

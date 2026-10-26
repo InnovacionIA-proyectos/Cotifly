@@ -44,7 +44,7 @@ public sealed class clsAnalisisExcelMercanciasServiceTests
 
     private static clsHojaExcelMercancias Hoja(string[] encabezados, params string[][] filas) =>
         new("Mercancías", 1, encabezados, [.. filas.Select(f => (IReadOnlyList<string>)f)], [.. Enumerable.Range(2, filas.Length)],
-            filas.Length, false, encabezados.Length, false, false);
+            filas.Length, false, encabezados.Length, false, false, false);
 
     [Theory]
     [InlineData(null, 0, clsCodigosError.ArchivoRequerido)]

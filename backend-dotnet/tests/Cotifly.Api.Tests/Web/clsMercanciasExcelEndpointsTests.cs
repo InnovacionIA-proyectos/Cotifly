@@ -57,6 +57,7 @@ public sealed class clsMercanciasExcelEndpointsTests : IDisposable
         var hoja = json.GetProperty("hojas")[0];
         hoja.GetProperty("nombre").GetString().Should().Be(clsExcelMercanciasMuestra.Hoja);
         hoja.GetProperty("fila_encabezado").GetInt32().Should().Be(1);
+        hoja.GetProperty("oculta").GetBoolean().Should().BeFalse();
         hoja.GetProperty("encabezados").EnumerateArray().Select(e => e.GetString()).Should().Equal(clsExcelMercanciasMuestra.Encabezados);
         hoja.GetProperty("filas")[0].EnumerateArray().Select(e => e.GetString()).Should().Equal("Cafe en estiba", "10", "1.2", "1", "1.5", "850.5");
         hoja.GetProperty("filas_excel").EnumerateArray().Select(e => e.GetInt32()).Should().Equal(2, 3, 4);
@@ -65,6 +66,21 @@ public sealed class clsMercanciasExcelEndpointsTests : IDisposable
         mercancias[0].GetProperty("codigo_mercancia").GetString().Should().Be("CAFE_EN_ESTIBAS");
         mercancias[0].GetProperty("sugerido").GetBoolean().Should().BeTrue();
         mercancias[1].GetProperty("codigo_mercancia").GetString().Should().Be("BOBINAS_DE_ACERO");
+        SinLlamarANexo();
+    }
+
+    [Fact]
+    public async Task UnaHojaOcultaSeLeeYVieneMarcada()
+    {
+        var api = Api();
+        var sesion = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+
+        using var respuesta = await api.EnviarContenidoAsync(_post, Ruta, sesion.Access,
+            clsApiWebPruebas.Archivo(clsExcelMercanciasMuestra.ConHojaOculta(), "mercancias.xlsx"));
+
+        var json = await VerificarContratoAsync(respuesta, Ruta, _post, HttpStatusCode.OK);
+        json.GetProperty("hojas").EnumerateArray().Select(h => (h.GetProperty("nombre").GetString(), h.GetProperty("oculta").GetBoolean()))
+            .Should().Equal(("Listas", true), (clsExcelMercanciasMuestra.Hoja, false));
         SinLlamarANexo();
     }
 
