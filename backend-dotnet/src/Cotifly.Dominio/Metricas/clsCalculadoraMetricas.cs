@@ -258,6 +258,6 @@ public static class clsCalculadoraMetricas
     private static decimal Redondear(decimal valor, int decimales) => Math.Round(valor, decimales, MidpointRounding.ToEven);
 
     /// <summary>Montos en COP de <see cref="MontosDe"/>.</summary>
-    private readonly record struct clsMontosMetricas(
+    private sealed record clsMontosMetricas(
         decimal CosteoTotal, decimal CosteoGanadas, decimal ValorCotizadoCop, decimal ValorGanadoCop, decimal Ganancias);
 }
