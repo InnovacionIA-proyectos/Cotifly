@@ -134,7 +134,11 @@ aceptara, y el PDF, el correo y el resultado salían sobre un precio que nadie h
   avanzando (`autocosteo` → `entregada`) y el precio, los costos y los conexos guardados no cambian. Con la cotización finalizada, si Nexo
   trae otro costo (o rechaza un camión que estaba costeado), `motivoEstadoCosteo` dice qué rutas cambiaron (orden y origen → destino, sin
   montos: `MotivoCambioDespuesDeFinalizar`) y el polling audita lo guardado frente a lo de Nexo por camión (`costeo_nexo_precio_congelado`).
-  El aviso cuenta como cambio de negocio (sube `versionNegocio`) solo cuando cambia: la misma diferencia en cada vuelta no se repite.
+  El aviso cuenta como cambio de negocio (sube `versionNegocio`) solo cuando cambia: la misma diferencia en cada vuelta no se repite;
+  si Nexo vuelve a los costos finalizados (o la Mesa deshace el rechazo), el aviso se quita (`QuitarAvisoCosteo`). Validación: con una
+  ruta rechazada después de finalizar, el total congelado ya no es la suma de las rutas que cuentan y el PDF responde `COSTEO_NO_LISTO`
+  con la versión nueva en `detalle` (ninguna lectura lo cuadra). Validación: tampoco se finaliza con un conexo de Nexo pendiente de leer
+  (#206), porque con el precio congelado el polling ya no lo importaría.
 - **#208, parte B (no es código).** `CosteoNexo:EdadMaximaHoras` sigue en 72. Subirlo por encima de lo que tarda la Mesa es una propuesta
   pendiente de acordar con Nexo (`DEPLOY.md` §2.2); cambiarlo no revive las cotizaciones ya vencidas.
 

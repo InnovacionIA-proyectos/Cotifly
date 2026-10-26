@@ -3124,7 +3124,7 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`SIN_RUTAS_COTIZABLES` (HU-028.1, #183, decisión D1: la Mesa de Costeo rechazó todas las rutas), `COSTEO_NO_LISTO` (alguna ruta NO rechazada sin precio; las rechazadas salen "Sin costeo", sin precio ni motivo, y no suman), `PDF_YA_GENERADO` (PDF vigente), `PDF_YA_ENVIADO`, `COTIZACION_NO_FINALIZADA` (HU-036.3, #207: el PDF sale con el precio que aceptó el comercial; `detalle` con la llamada a `.../finalizar`) o `CONFLICTO_CONCURRENCIA`'
+          description: '`SIN_RUTAS_COTIZABLES` (HU-028.1, #183, decisión D1: la Mesa de Costeo rechazó todas las rutas), `COSTEO_NO_LISTO` (alguna ruta NO rechazada sin precio; las rechazadas salen "Sin costeo", sin precio ni motivo, y no suman; con la cotización finalizada y una ruta rechazada después, el total congelado ya no cuadra: `detalle` trae la versión nueva, `accion = nueva_version`), `PDF_YA_GENERADO` (PDF vigente), `PDF_YA_ENVIADO`, `COTIZACION_NO_FINALIZADA` (HU-036.3, #207: el PDF sale con el precio que aceptó el comercial; `detalle` con la llamada a `.../finalizar`) o `CONFLICTO_CONCURRENCIA`'
           content:
             application/json:
               schema:

@@ -25,7 +25,8 @@ public interface IClsPrecioCosteoService
     /// Segunda parte (después de registrar el estado de la solicitud): recalcula los totales y el precio de cada ruta y de la solicitud
     /// (§9.1) y deja en <c>motivoEstadoCosteo</c> lo que impide el precio (camiones sin asociar, sin flete, sin margen, costo negativo o
     /// el costeo cambiado después del PDF o, HU-036.4, de finalizar: con las rutas que cambiaron). Devuelve <c>true</c> si el precio o los
-    /// totales cambiaron, o (HU-036.4) si cambió el aviso del costeo cambiado después de finalizar.
+    /// totales cambiaron, o (HU-036.4) si cambió el aviso del costeo cambiado después de finalizar (también cuando se quita porque Nexo
+    /// volvió a los costos finalizados).
     /// </summary>
     bool AplicarPrecio(clsCotizacionSolicitud cotizacion, clsCosteoConsultadoNexo foto, DateTimeOffset ahora);
 }
@@ -239,7 +240,9 @@ public sealed class clsPrecioCosteoService(ILogger<clsPrecioCosteoService>? logg
             var rutas = CambiosConPrecioCongelado(cotizacion, foto).Select(c => c.Ruta).Distinct().ToList();
             if (rutas.Count == 0)
             {
-                return false;
+                // Validación HU-036: Nexo volvió a los costos con que se finalizó (o la Mesa deshizo el rechazo): el aviso ya no aplica y
+                // se quita (cuenta como cambio una sola vez). Otro motivo no se toca.
+                return cotizacion.QuitarAvisoCosteo(PrefijoCambioDespuesDeFinalizar);
             }
 
             var anterior = cotizacion.MotivoEstadoCosteo;

@@ -5,6 +5,7 @@ using Cotifly.Aplicacion.Costeo.Interfaces;
 using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Aplicacion.Cotizaciones.DTOs;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
+using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Pruebas.Comun;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -135,6 +136,76 @@ public sealed class clsPrecioCongeladoFinalizadaTests
         cotizacion.PrimeraRuta.Conexos.Should().BeEmpty("el conexo cambiaría el precio finalizado");
         cotizacion.PrecioFinal.Should().Be(precio);
     }
+
+    // ------------------------------------------------------------------ Validación HU-036: el aviso se quita y la ruta rechazada después
+
+    [Fact]
+    public void SiNexoVuelveAlCostoFinalizadoElAvisoSeQuitaUnaSolaVez()
+    {
+        var cotizacion = Finalizada(2_000_000m);
+        Aplicar(cotizacion, clsCotizacionMuestra.Foto([2_500_000m]), _ahora.AddMinutes(5)).Should().BeTrue();
+        cotizacion.MotivoEstadoCosteo.Should().StartWith(clsPrecioCosteoService.PrefijoCambioDespuesDeFinalizar);
+
+        Aplicar(cotizacion, clsCotizacionMuestra.Foto([2_000_000m]), _ahora.AddMinutes(10)).Should().BeTrue("quitar el aviso es un cambio visible");
+
+        cotizacion.MotivoEstadoCosteo.Should().BeNull("Nexo volvió al costo con que se finalizó: el aviso ya no aplica");
+        Aplicar(cotizacion, clsCotizacionMuestra.Foto([2_000_000m]), _ahora.AddMinutes(15)).Should().BeFalse("ya no hay nada que quitar");
+    }
+
+    [Fact]
+    public void SinDiferenciasNoSeQuitaUnMotivoQueNoEsElAvisoDeLaFinalizacion()
+    {
+        var cotizacion = Finalizada(2_000_000m);
+        cotizacion.AdvertirCosteo("Otro aviso del costeo.");
+
+        Aplicar(cotizacion, clsCotizacionMuestra.Foto([2_000_000m]), _ahora.AddMinutes(5)).Should().BeFalse();
+
+        cotizacion.MotivoEstadoCosteo.Should().Be("Otro aviso del costeo.");
+        cotizacion.QuitarAvisoCosteo(clsPrecioCosteoService.PrefijoCambioDespuesDeFinalizar).Should().BeFalse();
+    }
+
+    [Fact]
+    public void SiLaMesaRechazaUnaRutaDespuesDeFinalizarElTotalSeConservaSeAvisaYElPdfPideVersionNueva()
+    {
+        var cotizacion = Finalizada(1_000_000m, 2_000_000m);
+        var precio = cotizacion.PrecioFinal;
+        clsCosteoCotizacionService.ValidarTotal(cotizacion, "COP").Should().BeNull();
+
+        Aplicar(cotizacion, FotoConRechazo(rechazada: true), _ahora.AddMinutes(5)).Should().BeTrue();
+
+        cotizacion.RutasOrdenadas[1].Rechazada.Should().BeTrue();
+        cotizacion.PrecioFinal.Should().Be(precio, "el total finalizado no cambia aunque la ruta 2 ya no cuente");
+        cotizacion.MotivoEstadoCosteo.Should().Be(clsPrecioCosteoService.MotivoCambioDespuesDeFinalizar([cotizacion.RutasOrdenadas[1]]));
+        var pdf = clsCosteoCotizacionService.ValidarTotal(cotizacion, "COP")!;
+        pdf.Codigo.Should().Be(clsCodigosError.CosteoNoListo);
+        pdf.Mensaje.Should().Contain("cambió después de finalizar").And.NotContain("espera la siguiente consulta");
+        pdf.Datos!["accion"].Should().Be("nueva_version", "ninguna lectura del costeo va a cuadrar el total congelado");
+
+        // La Mesa deshace el rechazo: el aviso se quita y el PDF vuelve a salir con el precio finalizado.
+        Aplicar(cotizacion, FotoConRechazo(rechazada: false), _ahora.AddMinutes(10)).Should().BeTrue();
+
+        cotizacion.RutasOrdenadas[1].Rechazada.Should().BeFalse();
+        cotizacion.MotivoEstadoCosteo.Should().BeNull();
+        cotizacion.PrecioFinal.Should().Be(precio);
+        clsCosteoCotizacionService.ValidarTotal(cotizacion, "COP").Should().BeNull();
+    }
+
+    /// <summary>Dos líneas costeadas (<c>L1</c> y <c>L2</c>) con los mismos fletes; <c>L2</c> rechazada por la Mesa o ya no.</summary>
+    private static clsCosteoConsultadoNexo FotoConRechazo(bool rechazada) =>
+        new("EnCosteo", ["L1", "L2"],
+            new clsCotizacionNexo("COT-1", "Borrador", "SinDefinir",
+                [new clsLineaCosteoNexo("L1", 1_000_000m, null, null, "CL1"), new clsLineaCosteoNexo("L2", 2_000_000m, null, null, "CL2")], []))
+        {
+            Detalle =
+            [
+                new clsLineaSolicitudNexo("L1", "A → B", null, null, null, null) { EstadoLinea = "porCostear" },
+                new clsLineaSolicitudNexo("L2", "C → D", null, null, null, null)
+                {
+                    EstadoLinea = rechazada ? "rechazada" : "porCostear",
+                    MotivoRechazo = rechazada ? "Sin cupo" : null,
+                },
+            ],
+        };
 
     // ------------------------------------------------------------------ Polling: la auditoría del valor que trajo Nexo
 
