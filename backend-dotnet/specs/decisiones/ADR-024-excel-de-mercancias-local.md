@@ -87,6 +87,15 @@ La auditoría de la #202 encontró que `POST /web/licitaciones/analizar-excel` a
    obligatoria, así que todo original que se guarda (y que la exportación abre después con ClosedXML) pasó los controles.
 5. **Tope de hojas** en el análisis: `filas_excel` se calcula para las primeras 20 hojas (las mismas del Excel de mercancías); las
    demás siguen en el análisis de NEXO, sin `filas_excel`.
+6. **Exportación (`GET /web/licitaciones/{folio}/excel`).** Los originales guardados antes de este cambio nunca pasaron los
+   controles, y `clsExportadorExcelLicitacionClosedXml` los abría con ClosedXML sin ellos. El exportador también usa
+   `clsLecturaExcelAcotada.LeerAsync` (el puerto `IClsExportadorExcelLicitacion` pasa a `GenerarAsync`): controles y cupo compartido
+   antes de abrir el original. Un original que no los pasa responde **400** `EXCEL_INVALIDO` o `ARCHIVO_DEMASIADO_GRANDE` con
+   `detalle.motivo`, el mismo 400 que el contrato ya declaraba para un original ilegible (`EXCEL_INVALIDO`/`EXCEL_SIN_DATOS`): se
+   descartó un 409 o 422 porque cambiaría el estado HTTP de los errores ya documentados de este endpoint, y mapear `EXCEL_INVALIDO`
+   a 409 en general rompería los endpoints de subida. Un original que ClosedXML abre pero no puede recorrer o guardar es
+   `EXCEL_INVALIDO` (`LIBRO_ILEGIBLE`), no un 500. Con el cupo lleno, 503 `SERVICIO_OCUPADO` (nuevo en este endpoint). Sin original
+   no se abre nada del cliente y no se toma el cupo. Sin códigos nuevos.
 
 ## Pendientes
 
@@ -96,4 +105,4 @@ La auditoría de la #202 encontró que `POST /web/licitaciones/analizar-excel` a
 | Confirmar los topes (20 hojas, 50 columnas, 1000 filas, 64 MB descomprimidos, 1.000.000 de elementos XML, 4 simultáneos) con el uso real | Usuario / frontend |
 | Integrar el endpoint en la pantalla "Líneas de solicitud" | Frontend (`clientepro-frontend`) |
 | HU-035.2: visto bueno del cupo único (4 lecturas de Excel por proceso para los dos endpoints), del tope de 20 hojas para `filas_excel` y de rechazar antes de NEXO un libro que Cotifly no abre | Usuario |
-| HU-035.2: los originales de licitación guardados antes de este cambio no pasaron los controles; la exportación los abre sin ellos | Usuario (¿revisarlos o aplicar los controles también al exportar?) |
+| HU-035.2: los originales de licitación guardados antes de este cambio que no pasen los controles ya no se exportan (400 con `detalle.motivo`, punto 6); si aparece alguno real, decidir si se exporta sin original | Usuario |

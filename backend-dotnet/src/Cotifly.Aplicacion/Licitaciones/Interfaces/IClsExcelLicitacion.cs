@@ -50,7 +50,12 @@ public interface IClsLectorExcelLicitacion
 /// arma una hoja con los campos mapeados y las mismas columnas. Nunca escribe costos de Nexo. <c>EXCEL_INVALIDO</c> o
 /// <c>EXCEL_SIN_DATOS</c> si el original ya no se puede leer.
 /// </summary>
+/// <remarks>
+/// HU-035.2 (#213): el original guardado pasa por los mismos controles y el mismo cupo que el Excel subido (ver
+/// <see cref="IClsLectorExcelLicitacion"/>): un original anterior a esos controles que no los pasa es <c>EXCEL_INVALIDO</c> o
+/// <c>ARCHIVO_DEMASIADO_GRANDE</c> con <c>detalle.motivo</c>; con el cupo lleno, <c>SERVICIO_OCUPADO</c>.
+/// </remarks>
 public interface IClsExportadorExcelLicitacion
 {
-    clsResultado<byte[]> Generar(clsExportacionLicitacion datos);
+    Task<clsResultado<byte[]>> GenerarAsync(clsExportacionLicitacion datos, CancellationToken cancellationToken = default);
 }

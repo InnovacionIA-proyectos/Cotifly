@@ -3501,6 +3501,12 @@ paths:
         escogió; y "Cubicando" o el error si la cubicación no terminó) y la hoja `Camiones Cotifly` con un camión por fila
         (línea, ruta, camión, vehículo, carrocería, peso, volumen, llenado de volumen y de peso, cubicación). La exportación de una
         cotización desde "Ver detalle" (HU-018.1, parte C) reusa esta misma función.
+
+        HU-035.2 (#213, ADR-024): el **original guardado** se abre con los mismos controles del Excel subido (firma, 1000 entradas,
+        64 MB descomprimidos, 1.000.000 de elementos XML sin DTD) y dentro del mismo cupo de lecturas de Excel del proceso. Un original
+        guardado antes de esos controles que no los pasa responde **400** `EXCEL_INVALIDO` o `ARCHIVO_DEMASIADO_GRANDE` con
+        `detalle.motivo` (los mismos motivos del análisis), como cualquier original ilegible; nunca un 500. Con el cupo lleno 15 s,
+        **503** `SERVICIO_OCUPADO` con `Retry-After`. Sin original no se toma el cupo.
       security:
         - bearer: []
       parameters:
@@ -3514,7 +3520,7 @@ paths:
                 type: string
                 format: binary
         '400':
-          description: '`EXCEL_INVALIDO` o `EXCEL_SIN_DATOS` si el original guardado ya no se puede leer'
+          description: '`EXCEL_INVALIDO` o `EXCEL_SIN_DATOS` si el original guardado ya no se puede leer. HU-035.2 (#213): también `EXCEL_INVALIDO` o `ARCHIVO_DEMASIADO_GRANDE` con `detalle.motivo` (`NO_ES_XLSX`, `CIFRADO_O_XLS`, `ZIP_INVALIDO`, `DEMASIADAS_ENTRADAS`, `SIN_LIBRO`, `LIBRO_ILEGIBLE`, `DESCOMPRIMIDO_EXCEDE_LIMITE`) si el original guardado no pasa los controles del Excel subido'
           content:
             application/json:
               schema:
@@ -3523,6 +3529,15 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
+        '503':
+          description: 'HU-035.2 (#213): `SERVICIO_OCUPADO` con `Retry-After` si el cupo de lecturas de Excel siguió lleno 15 s'
+          headers:
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
         '500':
           $ref: '#/components/responses/ErrorInterno'
 

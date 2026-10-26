@@ -106,7 +106,7 @@ public sealed class clsLicitacionService(
             : null;
         var nombres = await NombresCubicadorAsync(cotizacion, cancellationToken);
         var datos = DatosExportacion(cotizacion, archivo, reloj.AhoraUtc, nombres.Vehiculos, nombres.Carrocerias);
-        var generado = exportador.Generar(datos);
+        var generado = await exportador.GenerarAsync(datos, cancellationToken);
         if (generado.EsFallo)
         {
             return generado.Error;

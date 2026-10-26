@@ -90,7 +90,7 @@ public sealed class clsPdfPliegoTests
         var (cotizacion, _) = Pliego(3);
         var payload = clsCosteoCotizacionService.PayloadPliego(cotizacion, "Nacional", "COP");
         var datos = clsLicitacionService.DatosExportacion(cotizacion, null, _ahora);
-        var excel = new clsExportadorExcelLicitacionClosedXml().Generar(datos);
+        var excel = clsExportadorExcelLicitacionClosedXml.Generar(datos);
         excel.EsExitoso.Should().BeTrue();
         using var libro = new XLWorkbook(new MemoryStream(excel.Valor));
         var hoja = libro.Worksheet(clsExportadorExcelLicitacionClosedXml.HojaSinOriginal);

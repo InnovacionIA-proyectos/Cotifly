@@ -445,6 +445,60 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
         NexoNoRecibioElArchivo("cupo lleno");
     }
 
+    /// <summary>
+    /// HU-035.2 (#213), validación: un original guardado ANTES de los controles (aquí, reemplazado en la base) que no los pasa no tumba
+    /// la exportación: 400 con el código y el motivo de la lectura, nunca un 500 ni un cuelgue.
+    /// </summary>
+    [Theory]
+    [InlineData("bomba zip", "ARCHIVO_DEMASIADO_GRANDE", "DESCOMPRIMIDO_EXCEDE_LIMITE")]
+    [InlineData("libro denso", "ARCHIVO_DEMASIADO_GRANDE", "DESCOMPRIMIDO_EXCEDE_LIMITE")]
+    [InlineData("xxe", "EXCEL_INVALIDO", "LIBRO_ILEGIBLE")]
+    [InlineData("xls renombrado", "EXCEL_INVALIDO", "CIFRADO_O_XLS")]
+    public async Task LaExportacionDeUnOriginalGuardadoQueNoPasaLosControlesEs400ConSuMotivo(string caso, string codigo, string motivo)
+    {
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var folio = (await CrearAsync(sesion, clsPliegoMuestra.Lineas(), clsPliegoMuestra.Excel(), HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+        var malicioso = PliegoMalicioso(caso);
+        await clsBaseDatosPruebas.EjecutarAsync(_entorno.BaseDatos.CadenaCotifly, $"""
+            UPDATE a SET contenido = 0x{Convert.ToHexString(malicioso)}, tamanoBytes = {malicioso.Length}
+            FROM dbo_cotifly.CotizacionArchivosLicitacion a JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = a.cotizacionId
+            WHERE c.folio = '{folio}'
+            """);
+
+        using var respuesta = await _api.EnviarAsync(HttpMethod.Get, $"/web/licitaciones/{folio}/excel", sesion.Access);
+
+        var error = (await VerificarContratoAsync(respuesta, "/web/licitaciones/{folio}/excel", HttpMethod.Get, HttpStatusCode.BadRequest))
+            .GetProperty("error");
+        error.GetProperty("codigo").GetString().Should().Be(codigo, caso);
+        error.GetProperty("detalle").GetProperty("motivo").GetString().Should().Be(motivo, caso);
+    }
+
+    [Fact]
+    public async Task ConElCupoDeLecturasLlenoLaExportacionEs503ServicioOcupado()
+    {
+        using var api = clsApiWebPruebas.ConNexo(_entorno.BaseDatos, _nexo,
+            servicios: s => s.AddSingleton<Cotifly.Aplicacion.Licitaciones.Interfaces.IClsExportadorExcelLicitacion, clsExportadorOcupado>());
+        var sesion = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        using var alta = await api.EnviarContenidoAsync(HttpMethod.Post, "/web/licitaciones", sesion.Access,
+            clsApiWebPruebas.Licitacion(clsPliegoMuestra.Json(clsCosteoEndpointsTests.Nit, clsPliegoMuestra.Lineas()), clsPliegoMuestra.Excel()));
+        var folio = (await VerificarContratoAsync(alta, "/web/licitaciones", HttpMethod.Post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+
+        using var respuesta = await api.EnviarAsync(HttpMethod.Get, $"/web/licitaciones/{folio}/excel", sesion.Access);
+
+        (await VerificarContratoAsync(respuesta, "/web/licitaciones/{folio}/excel", HttpMethod.Get, HttpStatusCode.ServiceUnavailable))
+            .GetProperty("error").GetProperty("codigo").GetString().Should().Be("SERVICIO_OCUPADO");
+        respuesta.Headers.RetryAfter.Should().NotBeNull("el frontend reintenta tras Retry-After");
+    }
+
+    /// <summary>Exportador con el cupo siempre lleno (como el real cuando 4 lecturas no se liberan en 15 s).</summary>
+    private sealed class clsExportadorOcupado : Cotifly.Aplicacion.Licitaciones.Interfaces.IClsExportadorExcelLicitacion
+    {
+        public Task<Cotifly.Dominio.Comun.clsResultado<byte[]>> GenerarAsync(
+            Cotifly.Aplicacion.Licitaciones.DTOs.clsExportacionLicitacion datos, CancellationToken cancellationToken = default) =>
+            Task.FromResult<Cotifly.Dominio.Comun.clsResultado<byte[]>>(
+                new Cotifly.Dominio.Comun.clsErrorDominio(Cotifly.Dominio.Comun.clsCodigosError.ServicioOcupado, "Ocupado."));
+    }
+
     /// <summary>Lector con el cupo siempre lleno (como el real cuando 4 lecturas no se liberan en 15 s).</summary>
     private sealed class clsLectorLicitacionOcupado : Cotifly.Aplicacion.Licitaciones.Interfaces.IClsLectorExcelLicitacion
     {

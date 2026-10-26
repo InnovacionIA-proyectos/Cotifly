@@ -3,6 +3,7 @@ using ClosedXML.Excel;
 using Cotifly.Aplicacion.Licitaciones.DTOs;
 using Cotifly.Aplicacion.Licitaciones.Interfaces;
 using Cotifly.Dominio.Comun;
+using Cotifly.Infraestructura.Comun;
 
 namespace Cotifly.Infraestructura.Licitaciones.Services;
 
@@ -20,9 +21,18 @@ namespace Cotifly.Infraestructura.Licitaciones.Services;
 /// </list>
 /// Las líneas sin costeo llevan <see cref="SinCosteo"/> en la columna del precio, con fondo amarillo. Nunca escribe costos de Nexo (no
 /// los recibe). Siempre guarda <c>.xlsx</c>: ClosedXML no conserva las macros de un <c>.xlsm</c>.
+/// <para><b>Original guardado</b> (HU-035.2, #213): antes de abrirlo con ClosedXML pasa por los mismos controles del Excel subido
+/// (<see cref="clsLecturaExcelAcotada"/>: firma, 1000 entradas, 64 MB descomprimidos, 1.000.000 de elementos XML sin DTD) y por el cupo
+/// de lecturas de Excel del proceso. Un original guardado antes de esos controles que no los pasa responde <c>EXCEL_INVALIDO</c> o
+/// <c>ARCHIVO_DEMASIADO_GRANDE</c> con <c>detalle.motivo</c> (400, como un original ilegible), y el cupo lleno <c>SERVICIO_OCUPADO</c>
+/// (503); nunca un 500 ni una lectura sin tope. Sin original no se abre nada del cliente y no se toma el cupo.</para>
 /// </summary>
-public sealed class clsExportadorExcelLicitacionClosedXml : IClsExportadorExcelLicitacion
+public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada lectura) : IClsExportadorExcelLicitacion
 {
+    private const string Documento = "licitación (exportación)";
+
+    private readonly clsLecturaExcelAcotada _lectura = lectura ?? throw new ArgumentNullException(nameof(lectura));
+
     public const string HojaResumen = "Resumen Cotifly";
     public const string HojaSinOriginal = "Licitación";
     public const string SinCosteo = "SIN COSTEO";
@@ -61,34 +71,73 @@ public sealed class clsExportadorExcelLicitacionClosedXml : IClsExportadorExcelL
     /// <summary>Formato numérico de la moneda (ADR-014): pesos sin decimales, dólares con dos.</summary>
     public static string Formato(string moneda) => string.Equals(moneda, "COP", StringComparison.OrdinalIgnoreCase) ? "#,##0" : "#,##0.00";
 
-    public clsResultado<byte[]> Generar(clsExportacionLicitacion datos)
+    /// <summary>
+    /// Con original, dentro del cupo compartido y tras los controles del paquete (<see cref="clsLecturaExcelAcotada.LeerAsync{T}"/>);
+    /// sin original, directamente (no hay archivo del cliente que abrir).
+    /// </summary>
+    public Task<clsResultado<byte[]>> GenerarAsync(clsExportacionLicitacion datos, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(datos);
+        return datos.Original is { Length: > 0 } original
+            ? _lectura.LeerAsync(original, Documento, _ => GenerarVerificado(datos), cancellationToken)
+            : Task.FromResult(GenerarVerificado(datos));
+    }
+
+    /// <summary>Sin el cupo (sincrónica, pruebas): los controles del original (si lo hay) y después la generación.</summary>
+    internal static clsResultado<byte[]> Generar(clsExportacionLicitacion datos)
+    {
+        ArgumentNullException.ThrowIfNull(datos);
+        return datos.Original is { Length: > 0 } original && clsLecturaExcelAcotada.Verificar(original) is { } rechazo
+            ? rechazo
+            : GenerarVerificado(datos);
+    }
+
+    private static clsResultado<byte[]> GenerarVerificado(clsExportacionLicitacion datos)
+    {
         XLWorkbook libro;
         try
         {
             libro = datos.Original is { Length: > 0 } original ? new XLWorkbook(new MemoryStream(original, writable: false)) : new XLWorkbook();
         }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
+        catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
         {
-            return new clsErrorDominio(clsCodigosError.ExcelInvalido, "No se pudo leer el Excel original de la licitación.");
+            return clsLecturaExcelAcotada.Invalido(clsLecturaExcelAcotada.MotivoLibroIlegible);
         }
 
         using (libro)
         {
-            List<clsLineaExportacion> sinUbicar = [];
-            var escrito = datos.Original is { Length: > 0 } ? EscribirEnOriginal(libro, datos, sinUbicar) : EscribirSinOriginal(libro, datos);
-            if (escrito is not null)
+            if (datos.Original is not { Length: > 0 })
             {
-                return escrito;
+                return Escribir(libro, datos, original: false);
             }
 
-            EscribirResumen(libro, datos, sinUbicar);
-            EscribirCamiones(libro, datos);
-            using var memoria = new MemoryStream();
-            libro.SaveAs(memoria);
-            return ComoXlsx(memoria);
+            // Un original que ClosedXML abrió pero no puede recorrer o volver a guardar es un problema del archivo del cliente, no del
+            // servidor: EXCEL_INVALIDO (LIBRO_ILEGIBLE), como en la lectura (HU-035.2, #213).
+            try
+            {
+                return Escribir(libro, datos, original: true);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
+            {
+                return clsLecturaExcelAcotada.Invalido(clsLecturaExcelAcotada.MotivoLibroIlegible);
+            }
         }
+    }
+
+    private static clsResultado<byte[]> Escribir(XLWorkbook libro, clsExportacionLicitacion datos, bool original)
+    {
+        List<clsLineaExportacion> sinUbicar = [];
+        var escrito = original ? EscribirEnOriginal(libro, datos, sinUbicar) : EscribirSinOriginal(libro, datos);
+        if (escrito is not null)
+        {
+            return escrito;
+        }
+
+        EscribirResumen(libro, datos, sinUbicar);
+        EscribirCamiones(libro, datos);
+        using var memoria = new MemoryStream();
+        libro.SaveAs(memoria);
+        return ComoXlsx(memoria);
     }
 
     /// <summary>
