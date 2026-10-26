@@ -1839,7 +1839,7 @@ El comercial **acepta el precio** de la cotización y la finaliza. Columnas prop
 {
   "error": {
     "codigo": "COTIZACION_NO_FINALIZABLE",
-    "mensaje": "La cotización PCN-900555111-DG-26102026-001 no se puede finalizar en su estado actual (pendiente_costeo): solo se finaliza con el costeo de Nexo listo (autocosteo o entregada).",
+    "mensaje": "La cotización PCN-900555111-DG-26102026-001 no se puede finalizar en su estado actual (pendiente_costeo): solo se finaliza con el costeo de Nexo listo (autocosteo o entregada) y su precio.",
     "detalle": { "estado_costeo": "pendiente_costeo" }
   }
 }

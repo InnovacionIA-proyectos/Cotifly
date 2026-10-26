@@ -2055,7 +2055,8 @@ paths:
         de `GET .../costeo` o de "Mis cotizaciones"). Sin cuerpo.
 
         - Solo con el costeo de Nexo listo: `estado_costeo` en `autocosteo` o `entregada` (todas las rutas que cuentan tienen precio;
-          las `rechazada` no cuentan). En cualquier otro estado, 409 `COTIZACION_NO_FINALIZABLE` con `detalle.estado_costeo`.
+          las `rechazada` no cuentan) y con `precio_final` (una `entregada` que Cotifly todavía no leyó espera la relectura del
+          polling). En cualquier otro caso, 409 `COTIZACION_NO_FINALIZABLE` con `detalle.estado_costeo`.
         - Re-finalizar una ya finalizada es idempotente: 200 sin cambios (mismo `finalizada_at`, mismo `ETag`).
         - `If-Match` que no es la versión vigente: 409 `CONFLICTO_CONCURRENCIA`, sin cambios (también si ya estaba finalizada). Si
           el polling cambió el precio entre la lectura y el clic, la versión ya no coincide: el comercial recarga y nunca finaliza un

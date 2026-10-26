@@ -2344,7 +2344,8 @@ El comercial **acepta el precio** y finaliza la cotización. Desde ahí el preci
 
 - **Rol:** ambos (dueño). Una ajena responde 404.
 - **Headers:** `If-Match` **obligatorio** (el `ETag`/`row_version` de `GET .../costeo` o del detalle). Sin cuerpo.
-- Solo con el costeo de NEXO listo: `estado_costeo` en `autocosteo` o `entregada`.
+- Solo con el costeo de NEXO listo: `estado_costeo` en `autocosteo` o `entregada`, con `precio_final` (una `entregada` sin precio
+  espera la relectura del polling).
 - La finalización no cambia `estado_costeo`: sigue avanzando con NEXO (p. ej. `autocosteo` → `entregada`).
 
 | HTTP | Código | UI |

@@ -20,10 +20,13 @@ public sealed partial class clsCotizacionSolicitud
     public bool Finalizada => FinalizadaAt is not null;
 
     /// <summary>
-    /// ¿El estado admite finalizar? Solo con el costeo de Nexo listo: <c>autocosteo</c> o <c>entregada</c>. Que todas las rutas tengan
-    /// precio ya lo garantiza ese resumen (<see cref="clsResumenEstadoCosteo"/>, las rutas <c>rechazada</c> no cuentan): no se repite aquí.
+    /// ¿Se puede finalizar? Solo con el costeo de Nexo listo: <c>autocosteo</c> o <c>entregada</c> con su precio
+    /// (<see cref="TieneCostoDisponible"/>, la misma propiedad que exige el PDF). Que todas las rutas tengan precio ya lo garantiza el
+    /// resumen del estado (<see cref="clsResumenEstadoCosteo"/>, las rutas <c>rechazada</c> no cuentan): no se repite aquí. El precio de
+    /// la cabecera solo falta en una <c>entregada</c> que Cotifly todavía no leyó (<see cref="EntregadaSinPrecio"/>, HU-013.14): finalizarla
+    /// congelaría un precio vacío (#208), así que espera a la relectura.
     /// </summary>
-    public bool AdmiteFinalizar => EstadoCosteo is Cotizaciones.EstadoCosteo.Autocosteo or Cotizaciones.EstadoCosteo.Entregada;
+    public bool AdmiteFinalizar => TieneCostoDisponible;
 
     /// <summary>
     /// Finaliza la cotización por <paramref name="usuarioId"/> en <paramref name="ahora"/>. Devuelve <c>true</c> si la finalizó,
@@ -47,7 +50,7 @@ public sealed partial class clsCotizacionSolicitud
             var estado = EstadoCosteo is { } e ? clsCodigoEnum.ACodigo(e) : null;
             return new clsErrorDominio(clsCodigosError.CotizacionNoFinalizable,
                 $"La cotización {Folio} no se puede finalizar en su estado actual ({estado ?? "sin costeo en Nexo"}): solo se finaliza con el "
-                + "costeo de Nexo listo (autocosteo o entregada).")
+                + "costeo de Nexo listo (autocosteo o entregada) y su precio.")
             {
                 Datos = new Dictionary<string, object?>(StringComparer.Ordinal) { ["estado_costeo"] = estado },
             };

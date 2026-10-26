@@ -91,6 +91,23 @@ public sealed class clsCotizacionFinalizadaTests
     }
 
     [Fact]
+    public void UnaEntregadaQueCotiflyTodaviaNoLeyoNoSeFinalizaSinPrecio()
+    {
+        // HU-013.14: entregada en Nexo sin el precio leído (EntregadaSinPrecio). Finalizarla congelaría un precio vacío (#208).
+        var cotizacion = clsCotizacionMuestra.Formulario();
+        cotizacion.RegistrarEnvioCosteo("SOL-1", false, _ahora, _ahora);
+        cotizacion.RegistrarEntregaImplicita("COT-1");
+        cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.Entregada);
+        cotizacion.PrecioFinal.Should().BeNull();
+
+        var resultado = cotizacion.Finalizar(_ana, _ahora);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.CotizacionNoFinalizable);
+        resultado.Error.Datos!["estado_costeo"].Should().Be("entregada");
+        cotizacion.Finalizada.Should().BeFalse();
+    }
+
+    [Fact]
     public void LaCotizacionDelChatNoSeFinalizaYElDetalleLoDice()
     {
         var chat = clsCotizacionMuestra.Chat();
