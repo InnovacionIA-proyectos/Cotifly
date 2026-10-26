@@ -43,7 +43,7 @@ public sealed class clsCotizacionesRegionalService(
         }
 
         // La política GerenteComercial ya filtra en la Api; se revalida aquí por si el caso de uso se llama desde otro lado.
-        if (rol != RolInterno.GerenteComercial)
+        if (!rol.EsGerencial())
         {
             return new clsErrorDominio(clsCodigosAplicacion.SinPermiso, MensajeSinPermiso);
         }

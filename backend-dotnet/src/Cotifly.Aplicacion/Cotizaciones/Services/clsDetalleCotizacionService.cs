@@ -78,13 +78,13 @@ public sealed class clsDetalleCotizacionService(
         var soloLectura = false;
         if (cotizacion is null)
         {
-            if (usuario.Rol != RolInterno.GerenteComercial)
+            if (usuario.Rol is not { } rol || !rol.EsGerencial())
             {
                 return NoEncontrada();
             }
 
             cotizacion = await cotizaciones.ObtenerPorFolioAsync(folio, cancellationToken);
-            if (cotizacion is null || !await PermitidoAlGerenteAsync(usuarioId, folio, cotizacion, cancellationToken))
+            if (cotizacion is null || !await PermitidoAlGerenteAsync(usuarioId, rol, folio, cotizacion, cancellationToken))
             {
                 return NoEncontrada();
             }
@@ -176,13 +176,13 @@ public sealed class clsDetalleCotizacionService(
     /// ¿El dueño es miembro de la regional efectiva del gerente? La misma regla que el listado regional y el PDF; cualquier error de la
     /// regional niega (fail-closed). Queda en la auditoría, permitido o no.
     /// </summary>
-    private async Task<bool> PermitidoAlGerenteAsync(Guid gerenteId, string folio, clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken)
+    private async Task<bool> PermitidoAlGerenteAsync(Guid gerenteId, RolInterno rol, string folio, clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken)
     {
         var reloj = Stopwatch.StartNew();
         var (permitido, motivo) = await EsDeSuRegionalAsync(gerenteId, cotizacion, cancellationToken);
         await auditoria.RegistrarAsync(
             HerramientaAuditoria,
-            new { folio, usuario_id = gerenteId, rol = clsCodigoEnum.ACodigo(RolInterno.GerenteComercial) },
+            new { folio, usuario_id = gerenteId, rol = clsCodigoEnum.ACodigo(rol) },
             new { permitido, dueno_id = cotizacion.UsuarioId, motivo },
             permitido,
             (int)reloj.ElapsedMilliseconds,

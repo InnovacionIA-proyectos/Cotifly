@@ -104,6 +104,22 @@ public sealed class clsAuthEndpointTests(clsBaseDatosPruebas baseDatos) : IClass
     }
 
     [Fact]
+    public async Task UnComercialQueTambienEsDirectorEntraComoDirectorYUsaLoDelGerenteYLaConsola()
+    {
+        var persona = await PersonaAsync(clsBaseDatosPruebas.RolExternoComercial, clsBaseDatosPruebas.RolExternoDirector);
+        using var factory = Crear();
+        using var cliente = factory.CreateClient();
+
+        var login = await LoginAsync(cliente, persona);
+        using var gerencial = await GetConTokenAsync(cliente, "/pruebas/gerente", login.Access);
+        using var consola = await GetConTokenAsync(cliente, "/pruebas/comercial", login.Access);
+
+        gerencial.StatusCode.Should().Be(HttpStatusCode.OK, "el director usa todo lo del gerente (HU-037, #210)");
+        consola.StatusCode.Should().Be(HttpStatusCode.OK, "el director también usa la consola del comercial");
+        (await consola.Content.ReadAsStringAsync(Ct)).Should().Contain("\"rol\":\"director\"");
+    }
+
+    [Fact]
     public async Task UnaPersonaDesconocidaYUnaSinRolAutorizadoRecibenElMismo401Generico()
     {
         var sinRol = await PersonaAsync(clsBaseDatosPruebas.RolExternoSinMapeo);
@@ -319,11 +335,11 @@ public sealed class clsAuthEndpointTests(clsBaseDatosPruebas baseDatos) : IClass
         });
     }
 
-    /// <summary>Persona nueva en el almacén con un rol externo; devuelve su NOMBREUSUARIO.</summary>
-    private async Task<string> PersonaAsync(int rolExterno)
+    /// <summary>Persona nueva en el almacén con sus roles externos; devuelve su NOMBREUSUARIO.</summary>
+    private async Task<string> PersonaAsync(params int[] rolesExternos)
     {
         var nombre = $"api{Guid.NewGuid():N}"[..20];
-        await baseDatos.CrearPersonaExternaAsync(nombre, "Persona de prueba", $"{nombre}@boterosoto.com.co", rolExterno);
+        await baseDatos.CrearPersonaExternaAsync(nombre, "Persona de prueba", $"{nombre}@boterosoto.com.co", rolesExternos);
         return nombre;
     }
 

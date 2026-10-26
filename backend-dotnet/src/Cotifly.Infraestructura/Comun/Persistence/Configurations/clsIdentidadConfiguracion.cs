@@ -40,7 +40,7 @@ internal sealed class clsRolConfiguracion : IEntityTypeConfiguration<clsRol>
     public void Configure(EntityTypeBuilder<clsRol> builder)
     {
         builder.ToTable("Roles", t => t.HasCheckConstraint(
-            "ck_roles_codigo", "codigo IN ('comercial', 'gerente_comercial')"));
+            "ck_roles_codigo", "codigo IN ('comercial', 'gerente_comercial', 'director')"));
         builder.HasKey(r => r.Id).HasName("pk_roles");
         builder.Property(r => r.Id).Columna("id", "int").UseIdentityColumn();
         builder.Property(r => r.Codigo).Columna("codigo", "nvarchar(30)").HasMaxLength(30)

@@ -289,6 +289,29 @@ de Drive retirado), `TARIFA_*`, `S3_*` y `MINIO_*` (MinIO no se mantiene, ADR-01
 `SapTm__*`), `PDF_*` (reemplazadas por `Pdf__*`), `PUBLIC_HOST` (sigue como variable del manifiesto para Traefik, no
 de la app).
 
+### Rol director (HU-037, #209 a #212)
+
+El rol interno `director` (ADR-016 §11) usa todo lo del gerente comercial y ve todas las regionales. Tres piezas de base de datos, de
+Datos (@scalderon-bs), y una de backend:
+
+| Pieza | Qué es | Cuándo |
+|---|---|---|
+| `db/scripts/15_rol_director.sql` (#209, parte A) | CHECK `ck_roles_codigo` con `director` y la fila `director` activa con `idRolExterno = NULL`. Idempotente, en una transacción. Lo toma el ejecutador | **Junto con o después de la imagen de HU-037.2 (#210), nunca antes con una imagen vieja** (ver abajo). No lo exige `/health/ready`: no agrega columnas y sin él nadie entra como director (falla cerrado) |
+| `db/scripts/operacion/mapeo_prueba_rol_director_209.sql` (#209, parte B) | **Solo prueba / compartida:** `gerente_comercial` 31 → 25 (`ClienteProAdmin`, prestado, provisional) y **después** `director` → 31 (`ClienteProGerencial`). El orden importa: `uq_roles_idRolExterno` es único. Respaldo en `RespaldoRoles_209` | Después del 15. Lo corre Datos con `sqlcmd -I -b` |
+| Script de operación de **producción** (#212) | ⚠ **NO OLVIDAR antes de producción:** `comercial` 34, `gerente_comercial` 29 (`ClienteProRegional`), `director` 31 (`ClienteProGerencial`), confirmando antes los IDROLES reales y quién tiene hoy `ClienteProGerencial`. Lo escribe y corre Datos | En la ventana del despliegue a producción. Sin él, gerente y director quedan con el mapeo de prueba |
+| Imagen con HU-037.2 (#210) y HU-037.3 (#211) | Políticas, precedencia `director > gerente_comercial > comercial` (regla `precedencia_director`), alcance de todas las regionales, `GET /web/regionales` | Antes o junto con el 15 |
+
+**Orden y riesgo con una imagen anterior a HU-037.** El backend anterior convierte cada fila de `Roles` a su enum de dos valores: con la
+fila `director` presente, la lectura del catálogo falla y **el login de todos responde error** mientras corra esa imagen. Por eso el 15
+va con (o después de) la imagen nueva. Desde HU-037.2 el repositorio de roles ignora los códigos que no conoce, así que un rol futuro
+ya no tumba el login. Si el 15 ya está aplicado en un ambiente con una imagen vieja (en la compartida ya se aplicó, según #209),
+desplegar la imagen de HU-037 cuanto antes o, mientras tanto, poner `activo = 0` en la fila `director` (el catálogo solo lee roles
+activos).
+
+Quien hoy tenga el rol externo mapeado al gerente y pase a director (en prueba, el 31) tiene asignado `gerente_comercial` en
+`UsuariosRoles`: su siguiente login queda en revisión (`rol_externo_cambio`, 401) hasta que se le reasigne el rol, como cualquier cambio
+de rol (ADR-009).
+
 ### 2.3 Auditoría de secretos en el repositorio (2026-09-28)
 
 Búsqueda de contraseñas, claves, tokens, cadenas de conexión y archivos de credenciales en el árbol actual y en el
@@ -452,7 +475,7 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
 
 ### 4.5 Release paso a paso
 
-0. **Precondición de esquema: `db/migrations_mssql/0001`–`0010`, `db/scripts/02`, `db/scripts/03`, `db/scripts/pendientes/04`, `db/scripts/05`, `db/scripts/06`, `db/scripts/09`, `db/scripts/10`, `db/scripts/11`, `db/scripts/12` y `db/scripts/13` aplicados (el `07` es opcional y el `08` va después de la imagen)** en la base del ambiente (o la base instalada
+0. **Precondición de esquema: `db/migrations_mssql/0001`–`0010`, `db/scripts/02`, `db/scripts/03`, `db/scripts/pendientes/04`, `db/scripts/05`, `db/scripts/06`, `db/scripts/09`, `db/scripts/10`, `db/scripts/11`, `db/scripts/12` y `db/scripts/13` aplicados (el `07` es opcional, el `08` va después de la imagen y el `15`, del rol director, va con o después de la imagen de HU-037, §2.2 "Rol director")** en la base del ambiente (o la base instalada
    desde cero con `db/scripts/01_crear_esquema.sql` y `db/seeder/`, que equivale a `0001`–`0010`). Los aplica el DBA con
    un usuario administrador y `sqlcmd -I`; la app no aplica migraciones. Regla de siempre: **primero el script, después
    la imagen.** Sin el esquema completo, `/health/ready` responde `503` (tabla de abajo), Traefik no manda tráfico a la

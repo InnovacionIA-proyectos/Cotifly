@@ -61,7 +61,13 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
         Script07,
         // HU-014.3 (#152): retiro de las vistas del borrador de métricas (db/scripts/08, lo aplica el DBA).
         Script08,
+        // HU-037.1 (#209): el rol interno director (db/scripts/15: CHECK de Roles y la fila director sin rol externo). Va al final: no
+        // agrega columnas, así que no mueve los índices ScriptsHasta*/ScriptsSin07.
+        Script15,
     ];
+
+    /// <summary>HU-037.1 (#209): el 15 del rol director (relativa a <c>migrations_mssql</c>).</summary>
+    public const string Script15 = "../scripts_bd/15_rol_director.sql";
 
     /// <summary>HU-014.3 (#152): el 08 que retira las vistas del borrador de métricas (relativa a <c>migrations_mssql</c>).</summary>
     public const string Script08 = "../scripts_bd/08_retirar_vistas_actividad.sql";
@@ -186,6 +192,12 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     /// <summary>IDROLES externo de prueba mapeado a <c>gerente_comercial</c>.</summary>
     public const int RolExternoGerente = 31;
 
+    /// <summary>
+    /// HU-037 (#210): IDROLES externo de prueba mapeado a <c>director</c>. En la base compartida es el 31 (#209, provisional); aquí es
+    /// otro número para no mover el 31 del gerente que usan las demás pruebas.
+    /// </summary>
+    public const int RolExternoDirector = 33;
+
     /// <summary>IDROLES externo de prueba sin mapeo (no da acceso).</summary>
     public const int RolExternoSinMapeo = 40;
 
@@ -263,6 +275,8 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("12_vehiculo_elegido.sql"));
                 // HU-033 (#199): el 13 (MailSender y resultado diferido) va después del 12 por nombre.
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("13_correo_mailsender.sql"));
+                // HU-037.1 (#209): el 15 (rol director) va después del 13 por nombre.
+                await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("15_rol_director.sql"));
                 if (conSeeders)
                 {
                     foreach (var seeder in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "scripts_bd", "seeder"), "*.sql").Order(StringComparer.Ordinal))
@@ -312,6 +326,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("11_peso_con_tara.sql"));
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("12_vehiculo_elegido.sql"));
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("13_correo_mailsender.sql"));
+            await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("15_rol_director.sql"));
             foreach (var seeder in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "scripts_bd", "seeder"), "*.sql").Order(StringComparer.Ordinal))
             {
                 await EjecutarScriptAsync(CadenaCotifly, seeder);
@@ -347,7 +362,8 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
                 (102, 'LGOMEZ', 'Luis Gómez', 'lgomez@boterosoto.com.co', 'no-debe-leerse'),
                 (3000000000, 'FUERARANGO', 'ID fuera de INT', NULL, 'no-debe-leerse');
             INSERT INTO dbo.tblSAPRoles (IDROLES, DESCRIPCION) VALUES
-                ({RolExternoComercial}, 'COMERCIAL'), ({RolExternoGerente}, 'GERENTE COMERCIAL'), ({RolExternoSinMapeo}, 'CONSULTA');
+                ({RolExternoComercial}, 'COMERCIAL'), ({RolExternoGerente}, 'GERENTE COMERCIAL'), ({RolExternoDirector}, 'DIRECTOR'),
+                ({RolExternoSinMapeo}, 'CONSULTA');
             INSERT INTO dbo.tblSAPUsuarioRoles (IDUSUARIO, IDROLES) VALUES
                 (101, {RolExternoComercial}), (102, {RolExternoGerente}), (102, {RolExternoSinMapeo});
             """);
@@ -356,6 +372,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
         await EjecutarAsync(CadenaCotifly, $"""
             UPDATE dbo_cotifly.Roles SET idRolExterno = {RolExternoComercial} WHERE codigo = 'comercial';
             UPDATE dbo_cotifly.Roles SET idRolExterno = {RolExternoGerente} WHERE codigo = 'gerente_comercial';
+            UPDATE dbo_cotifly.Roles SET idRolExterno = {RolExternoDirector} WHERE codigo = 'director';
             """);
     }
 

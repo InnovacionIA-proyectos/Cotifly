@@ -26,8 +26,9 @@ public sealed record clsVerificacionIdentidad(clsIdentidadVerificada? Identidad,
 /// Verificación DOBLE de la identidad (ADR-009, decisión del 2026-09-25), común al login y al refresh:
 /// <list type="number">
 /// <item><b>Externa</b> (almacén corporativo, solo lectura): la persona existe y sus roles de ClientePro, traducidos con
-/// <c>Roles.idRolExterno</c>, dan <c>comercial</c> o <c>gerente_comercial</c>. Con ambos gana <c>gerente_comercial</c>
-/// (regla <see cref="clsMotivosAcceso.ReglaPrecedenciaGerente"/>, auditada).</item>
+/// <c>Roles.idRolExterno</c>, dan <c>comercial</c>, <c>gerente_comercial</c> o <c>director</c>. Con varios gana el de mayor alcance,
+/// <c>director</c> &gt; <c>gerente_comercial</c> &gt; <c>comercial</c> (reglas <see cref="clsMotivosAcceso.ReglaPrecedenciaDirector"/> y
+/// <see cref="clsMotivosAcceso.ReglaPrecedenciaGerente"/>, auditadas; HU-037, #210).</item>
 /// <item><b>Interna</b> (<c>dbo_cotifly</c>): el <c>NOMBREUSUARIO</c> del almacén (nunca el del request) ubica al usuario.
 /// Si no existe y el ID externo tampoco está vinculado a otra cuenta, se crea (JIT) con su asignación en
 /// <c>UsuariosRoles</c>. Si existe, su asignación activa debe ser el rol resuelto y su vínculo, el mismo ID externo.</item>
@@ -156,8 +157,9 @@ public sealed class clsVerificadorIdentidad(
 
     /// <summary>
     /// Traduce los roles externos con el catálogo (<c>Roles.idRolExterno</c>, solo roles activos y mapeados). Sin ninguno:
-    /// <c>null</c>. Con los dos roles internos gana <c>gerente_comercial</c> (regla explícita y auditada; si luego pierde el
-    /// rol de gerente, su asignación deja de coincidir y queda en revisión).
+    /// <c>null</c>. Con varios roles internos gana el de mayor alcance: <c>director</c> &gt; <c>gerente_comercial</c> &gt;
+    /// <c>comercial</c> (HU-037, #210; reglas explícitas y auditadas, <c>precedencia_director</c> y <c>precedencia_gerente_comercial</c>;
+    /// si luego pierde el rol que ganó, su asignación deja de coincidir y queda en revisión).
     /// </summary>
     public static (RolInterno? Rol, string? Regla) ResolverRol(IEnumerable<clsRol> catalogo, IEnumerable<clsRolExterno> rolesExternos)
     {
@@ -175,6 +177,7 @@ public sealed class clsVerificadorIdentidad(
         {
             0 => (null, null),
             1 => (mapeados[0], clsMotivosAcceso.ReglaMapeoUnico),
+            _ when mapeados.Contains(RolInterno.Director) => (RolInterno.Director, clsMotivosAcceso.ReglaPrecedenciaDirector),
             _ => (RolInterno.GerenteComercial, clsMotivosAcceso.ReglaPrecedenciaGerente),
         };
     }

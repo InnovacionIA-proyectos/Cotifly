@@ -66,6 +66,21 @@ public sealed class clsCasosWebTests
     }
 
     [Fact]
+    public async Task ElDirectorAdministraLasLineasComoElGerente()
+    {
+        var director = Usuario(RolInterno.Director);
+        var politica = clsMargenPolitica.Crear("Nacional", 0.15m).Valor;
+        _politicas.ObtenerPorIdAsync(3, Arg.Any<CancellationToken>()).Returns(politica);
+
+        var listar = await Admin(director).ListarAsync(Ct);
+        var editar = await Admin(director).ActualizarAsync(3, new clsCambioLineaNegocio(0.25m, "margen", true), Ct);
+
+        listar.EsExitoso.Should().BeTrue();
+        editar.Valor.Margen.Should().Be(0.25m);
+        await _unidadTrabajo.Received(1).GuardarCambiosAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task UnComercialNoAdministraLineasAunqueLlegueAlCasoDeUso()
     {
         var comercial = Usuario(RolInterno.Comercial);
