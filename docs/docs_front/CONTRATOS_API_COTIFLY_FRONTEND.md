@@ -3064,7 +3064,7 @@ Opciones del selector de regional del tablero (4.11.1) y del listado (4.11.2).
 
 Políticas de margen de todas las líneas de negocio (activas e inactivas).
 
-- **Rol:** `gerente_comercial`.
+- **Rol:** `gerente_comercial` o `director` (fila 64).
 
 ```json
 [
@@ -3084,7 +3084,7 @@ No hay un endpoint de líneas de negocio para el comercial: el selector de líne
 
 Edita margen, método y estado de una línea existente. No crea ni borra líneas. Queda auditado.
 
-- **Rol:** `gerente_comercial`. **Parámetro:** `id` (entero; uno no entero responde 404 `Recurso no encontrado.`).
+- **Rol:** `gerente_comercial` o `director` (fila 64). **Parámetro:** `id` (entero; uno no entero responde 404 `Recurso no encontrado.`).
 
 | Campo | Tipo | Obligatorio | Reglas |
 |---|---|---|---|
