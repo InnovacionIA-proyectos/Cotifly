@@ -108,6 +108,25 @@ public sealed class clsCotizacionFinalizadaTests
     }
 
     [Fact]
+    public void ConConexosDeNexoPendientesDeLeerNoSeFinalizaHastaQueElPollingLosTraiga()
+    {
+        // Validación HU-036: el conexo ya está en Nexo pero no en el precio de Cotifly; con el precio congelado (#208) nunca entraría.
+        var cotizacion = clsCotizacionMuestra.Costeada();
+        cotizacion.MarcarConexosPendientesDeLeer();
+
+        var resultado = cotizacion.Finalizar(_ana, _ahora);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.CotizacionNoFinalizable);
+        resultado.Error.Mensaje.Should().Be(clsCotizacionSolicitud.MotivoNoFinalizableConexosPendientes);
+        resultado.Error.Datos!["motivo"].Should().Be(clsCotizacionSolicitud.CodigoConexosPendientesDeLeer);
+        resultado.Error.Datos!["estado_costeo"].Should().Be("autocosteo");
+        cotizacion.Finalizada.Should().BeFalse();
+
+        cotizacion.QuitarMarcaConexosPendientes();
+        cotizacion.Finalizar(_ana, _ahora).Valor.Should().BeTrue("leídos los conexos, se finaliza");
+    }
+
+    [Fact]
     public void LaCotizacionDelChatNoSeFinalizaYElDetalleLoDice()
     {
         var chat = clsCotizacionMuestra.Chat();
