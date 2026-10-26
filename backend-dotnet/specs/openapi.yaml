@@ -2057,6 +2057,9 @@ paths:
         - Solo con el costeo de Nexo listo: `estado_costeo` en `autocosteo` o `entregada` (todas las rutas que cuentan tienen precio;
           las `rechazada` no cuentan) y con `precio_final` (una `entregada` que Cotifly todavía no leyó espera la relectura del
           polling). En cualquier otro caso, 409 `COTIZACION_NO_FINALIZABLE` con `detalle.estado_costeo`.
+        - Tampoco mientras Nexo tiene un servicio conexo que Cotifly todavía no leyó (`motivo_estado_costeo` de conexos pendientes):
+          409 `COTIZACION_NO_FINALIZABLE` con `detalle.motivo = conexos_pendientes_de_leer`; se finaliza después de la siguiente
+          lectura del costeo, que trae el conexo con su precio.
         - Re-finalizar una ya finalizada es idempotente: 200 sin cambios (mismo `finalizada_at`, mismo `ETag`).
         - `If-Match` que no es la versión vigente: 409 `CONFLICTO_CONCURRENCIA`, sin cambios (también si ya estaba finalizada). Si
           el polling cambió el precio entre la lectura y el clic, la versión ya no coincide: el comercial recarga y nunca finaliza un
@@ -4131,7 +4134,8 @@ components:
                 o el `-vN` pasaría de 50 caracteres; en la captura y la licitación solo si el folio armado no la cumple, lo que el
                 límite de 20 del NIT ya impide; el PDF no lo responde).
                 HU-036.2 (#206): `COTIZACION_NO_FINALIZABLE` (409 en `POST .../finalizar`: `estado_costeo` distinto de `autocosteo` y
-                `entregada`, sin el costeo de Nexo listo no hay precio que aceptar; `detalle.estado_costeo` trae el estado actual).
+                `entregada`, sin el costeo de Nexo listo no hay precio que aceptar; `detalle.estado_costeo` trae el estado actual; o
+                con un conexo de Nexo pendiente de leer, `detalle.motivo = conexos_pendientes_de_leer`).
               enum:
                 - MARGEN_FUENTE_NO_DISPONIBLE
                 - MARGEN_LINEA_DESCONOCIDA

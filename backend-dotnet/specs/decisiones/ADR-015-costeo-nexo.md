@@ -105,7 +105,8 @@ aceptara, y el PDF, el correo y el resultado salían sobre un precio que nadie h
   (`clsFinalizacionCotizacionService`, regla en `clsCotizacionSolicitud.Finalizar`). Solo con el costeo de Nexo listo: `estadoCosteo` en
   `autocosteo` o `entregada` (que todas las rutas tengan precio lo garantiza ya `clsResumenEstadoCosteo`; las rutas `rechazada` no
   cuentan); si no, 409 **`COTIZACION_NO_FINALIZABLE`** (código nuevo, para no sobrecargar `ESTADO_NO_PERMITE`, con
-  `detalle.estado_costeo`). Re-finalizar es 200 sin cambios (idempotente, como re-marcar el mismo resultado); un `If-Match` que no
+  `detalle.estado_costeo`). Tampoco con un conexo que Nexo ya tiene y Cotifly todavía no leyó (`ConexosPendientesDeLeer`, HU-013.15):
+  el mismo 409 con `detalle.motivo = conexos_pendientes_de_leer`, porque con el precio congelado (#208) ese conexo ya no entraría. Re-finalizar es 200 sin cambios (idempotente, como re-marcar el mismo resultado); un `If-Match` que no
   coincide es 409 `CONFLICTO_CONCURRENCIA`, como el resto de las mutaciones (también si ya estaba finalizada: primero la versión).
 - **Columnas propias, no un estado.** `finalizadaAt` y `finalizadaPor` (FK a `UsuariosWeb`, `UNIQUEIDENTIFIER` como su PK),
   `db/scripts/14_cotizacion_finalizada.sql`. No es un valor de `estadoCosteo` a propósito: el polling deriva ese estado de Nexo en cada

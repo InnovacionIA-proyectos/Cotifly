@@ -1827,6 +1827,9 @@ El comercial **acepta el precio** de la cotización y la finaliza. Columnas prop
 
 - Solo con el costeo de Nexo listo (`estado_costeo` en `autocosteo` o `entregada`). En otro estado, 409 `COTIZACION_NO_FINALIZABLE` con el
   estado actual en `detalle.estado_costeo`.
+- Tampoco mientras Nexo tiene un servicio conexo que Cotifly todavía no leyó (el aviso de conexos pendientes en `motivo_estado_costeo`):
+  409 `COTIZACION_NO_FINALIZABLE` con `detalle.motivo = "conexos_pendientes_de_leer"`. Se finaliza después de la siguiente lectura del
+  costeo, que trae el conexo con su precio (con la cotización finalizada el polling ya no lo importaría).
 - Re-finalizar una ya finalizada: 200 sin cambios (mismo `finalizada_at`, mismo `ETag`).
 - `If-Match` que no es la versión vigente: 409 `CONFLICTO_CONCURRENCIA` (también si ya estaba finalizada). Si el polling cambió el precio
   entre la lectura y el clic, la versión ya no coincide: el comercial recarga y nunca finaliza un precio que no vio.
