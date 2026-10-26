@@ -3675,9 +3675,9 @@ fila_excel, campo, codigo, mensaje}`.
 - **Nuevo** `POST /web/mercancias/analizar-excel` (4.4.11): Cotifly lee el Excel localmente (ClosedXML), **sin NEXO**, y devuelve la
   grilla cruda para que el frontend mapee tipo, cantidad, largo, ancho, alto y peso. Misma forma de `AnalisisExcel` más los indicadores
   de truncado; código de mercancía sugerido opcional (el cubicador caído no lo rompe).
-- Contra archivos maliciosos: revisión del paquete antes de abrirlo (bomba zip: más de 64 MB descomprimido o más de 1.000.000 de elementos XML), topes de hojas, filas,
-  columnas, largo de celda y celdas de la respuesta, fórmulas nunca evaluadas y un cupo de 4 análisis simultáneos (503
-  `SERVICIO_OCUPADO`). Todo error del archivo es 400 con código y `detalle.motivo`.
+- Contra archivos maliciosos: revisión del paquete antes de abrirlo (bomba zip: más de 64 MB descomprimido o más de 1.000.000 de
+  elementos XML), topes de hojas, filas, columnas, largo de celda y celdas de la respuesta, fórmulas nunca evaluadas y un cupo de 4
+  análisis simultáneos (503 `SERVICIO_OCUPADO`). Todo error del archivo es 400 con código y `detalle.motivo`.
 - Sin script de base de datos ni códigos de error nuevos. Son **53 endpoints**. Cambio con su "qué hacer": sección 7, fila 59 (la #201
   usará la 60).
 
