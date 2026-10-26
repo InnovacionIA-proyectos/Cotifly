@@ -59,6 +59,9 @@ public sealed class clsCorreoService(
     public const int MaxAsunto = 300;
     public const int MaxCuerpo = 5000;
 
+    /// <summary>HU-036.3 (#207): cierre del mensaje de <c>COTIZACION_NO_FINALIZADA</c> al enviar la cotización.</summary>
+    public const string AccionEnviar = "enviarla al cliente";
+
     /// <summary>Largo máximo del <c>X-Correlation-ID</c> que guarda MailSender.</summary>
     public const int LargoMaximoCorrelacion = 128;
 
@@ -101,6 +104,12 @@ public sealed class clsCorreoService(
 
         // La cotización se leyó antes del candado: otro envío pudo cambiar estadoEnvio mientras tanto.
         await cotizaciones.RecargarAsync(cotizacion, cancellationToken);
+
+        // HU-036.3 (#207): la cotización sale al cliente con el precio que aceptó el comercial.
+        if (cotizacion.ValidarFinalizadaAntesDe(AccionEnviar) is { } sinFinalizar)
+        {
+            return sinFinalizar;
+        }
 
         var recientes = await correos.ListarEnviadosDesdeAsync(cotizacion.Id, reloj.AhoraUtc - VentanaDuplicado, cancellationToken);
         if (recientes.Any(c => c.CuentaComoEnvio && c.TieneMismosPara(para)))

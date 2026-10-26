@@ -101,7 +101,7 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `Nexo__MinutosCacheMunicipios` | no | no | `60` | manifiesto | caché de la lista de municipios de Nexo (frente B) |
 | `Nexo__MinutosCacheCatalogos`, `Nexo__HorasCatalogosVencidos` | no | no | `30`, `24` | manifiesto (endurecimiento A, #199) | caché de los catálogos maestros de Nexo y horas que la última copia sirve de respaldo con Nexo caído (HU-013.10) |
 | `CosteoNexo__Habilitado` | no | no | staging **`false`**, producción `true` | manifiesto / Dokploy | polling del costeo en Nexo (HU-005.6/005.8). En staging queda apagado hasta que el DBA confirme que staging y producción **no** comparten `dbo_cotifly`: si la comparten, los workers de los dos stacks consultarían y actualizarían las mismas cotizaciones contra instancias distintas de Nexo. Sin `Nexo__UrlBase` no corre aunque esté en `true` |
-| `CosteoNexo__IntervaloInicialSegundos`, `__IntervaloMaximoMinutos`, `__FactorEdad`, `__EdadMaximaHoras` | no | no | `5`, `15`, `0.25`, `72` | manifiesto | ritmo del polling: primera consulta a los 5 s, espera creciente con la edad (25 %) hasta 15 min; pasadas 72 h queda `costeo_vencido`. Valores por confirmar con el equipo de Nexo (ADR-015) |
+| `CosteoNexo__IntervaloInicialSegundos`, `__IntervaloMaximoMinutos`, `__FactorEdad`, `__EdadMaximaHoras` | no | no | `5`, `15`, `0.25`, `72` | manifiesto | ritmo del polling: primera consulta a los 5 s, espera creciente con la edad (25 %) hasta 15 min; pasadas 72 h queda `costeo_vencido`. Valores por confirmar con el equipo de Nexo (ADR-015). **HU-036.4 (#208), parte B: propuesta pendiente de acordar con NEXO** subir `__EdadMaximaHoras` (rango 1-720) por encima de lo máximo que se demora la Mesa de Costeo en la práctica, para que una cotización no quede `costeo_vencido` mientras Nexo todavía la trabaja; hoy sigue en `72` y cambiarlo no revive las que ya vencieron |
 | `CosteoNexo__IntervaloTickSegundos`, `__Lote`, `__ReclamoSegundos` | no | no | `5`, `20`, `120` | manifiesto | cada cuánto revisa el worker la agenda, cotizaciones por vuelta y reclamo de una cotización en consulta (debe superar los 60 s de la consulta a Nexo) |
 | `Cubicador__UrlBase` | no | no | vacío | Dokploy (declarada en el manifiesto con `${Cubicador__UrlBase:-}`, endurecimiento A, #199) | HU-021.5 / HU-023.1: raíz del API del cubicador (sin barra final). Vacía, cada ruta queda con el camión del respaldo (el vehículo elegido si lo hay y es válido; si no, sin vehículo, ADR-022) y `GET /web/tipos-mercancia`, `/web/tipos-carroceria` y `/web/tipos-vehiculo` responden 503 |
 | `Cubicador__ApiKey` | **sí** (≥ 16) | con `Cubicador__UrlBase` | vacío | Dokploy (secreto; declarada en el manifiesto con `${Cubicador__ApiKey:-}`, sin valor real) | llave de Cotifly ante el cubicador (`Authorization: Bearer`), **una por ambiente** (QA y producción), distinta de la de Nexo; se entrega al equipo del cubicador por un canal seguro. Nunca llega al navegador |
@@ -491,7 +491,7 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
 
 ### 4.5 Release paso a paso
 
-0. **Precondición de esquema: `db/migrations_mssql/0001`–`0010`, `db/scripts/02`, `db/scripts/03`, `db/scripts/pendientes/04`, `db/scripts/05`, `db/scripts/06`, `db/scripts/09`, `db/scripts/10`, `db/scripts/11`, `db/scripts/12` y `db/scripts/13` aplicados (el `07` es opcional, el `08` va después de la imagen y el `15`, del rol director, va con o después de la imagen de HU-037, §2.2 "Rol director")** en la base del ambiente (o la base instalada
+0. **Precondición de esquema: `db/migrations_mssql/0001`–`0010`, `db/scripts/02`, `db/scripts/03`, `db/scripts/pendientes/04`, `db/scripts/05`, `db/scripts/06`, `db/scripts/09`, `db/scripts/10`, `db/scripts/11`, `db/scripts/12`, `db/scripts/13` y `db/scripts/14` aplicados (el `07` es opcional, el `08` va después de la imagen y el `15`, del rol director, va con o después de la imagen de HU-037, §2.2 "Rol director")** en la base del ambiente (o la base instalada
    desde cero con `db/scripts/01_crear_esquema.sql` y `db/seeder/`, que equivale a `0001`–`0010`). Los aplica el DBA con
    un usuario administrador y `sqlcmd -I`; la app no aplica migraciones. Regla de siempre: **primero el script, después
    la imagen.** Sin el esquema completo, `/health/ready` responde `503` (tabla de abajo), Traefik no manda tráfico a la
@@ -571,7 +571,9 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
      frontend no consume) responden 500 hasta que sube la imagen nueva.
    - Orden del release con #152 y #155 juntas: `09` → imagen → `08`. ~~Con #183 y #184 (integración 1021): `03` → `pendientes/04` → `05`
      → `06` → `07` → `09` → `10` → `11` → imagen → `08`.~~ Con HU-032 (#197) y HU-033 (#199): `03` → `pendientes/04` → `05` → `06`
-     → `07` → `09` → `10` → `11` → `12` → `13` → imagen → `08`.
+     → `07` → `09` → `10` → `11` → `12` → `13` → imagen → `08`. ~~Con HU-036 (#205 a #208): `…` → `13` → `14` → imagen → `08`.~~ Con HU-036 (#205 a #208) y HU-037 (#209 a #211) juntas
+     (integración 1027): `…` → `13` → `14` → `15` → imagen → `08`, con el `15` en la misma ventana que la imagen (nunca antes con una
+     imagen vieja, ver §2.2 "Rol director"). En la compartida el `15` ya está aplicado (#209) y el `14` está pendiente de @scalderon-bs.
    - **HU-030.1 (#184): `db/scripts/11_peso_con_tara.sql` va ANTES de la imagen de #184.** Agrega a la ruta
      (`CotizacionLineasSolicitud`) la columna `pesoConTaraKg DECIMAL(12,2) NULL` y el `CHECK` `ck_cotizacionLineasSolicitud_pesoConTaraKg`
      (`NULL` o > 0): el peso total con tara que escribe el comercial en una ruta `Contenedor`. Es un `ADD` de columna NULL, idempotente
@@ -583,6 +585,32 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
      SELECT COL_LENGTH(N'dbo_cotifly.CotizacionLineasSolicitud', N'pesoConTaraKg') AS pesoConTaraKg_11,
             (SELECT COUNT(*) FROM sys.check_constraints
               WHERE name = N'ck_cotizacionLineasSolicitud_pesoConTaraKg')          AS check_11;
+     ```
+
+   - **HU-036 (#205, #206): `db/scripts/14_cotizacion_finalizada.sql` va ANTES de la imagen de HU-036.** Es una **propuesta pendiente de
+     revisión de @scalderon-bs** (Datos, #205); el número `15` queda reservado para HU-037. Agrega a la cabecera (`CotizacionesSolicitud`)
+     `finalizadaAt DATETIMEOFFSET NULL` y `finalizadaPor UNIQUEIDENTIFIER NULL` con la FK `fk_cotizaciones_finalizadaPor` a
+     `UsuariosWeb(id)` (la PK de `UsuariosWeb` es `UNIQUEIDENTIFIER`, verificado en `01_crear_esquema.sql`; si en un ambiente no lo fuera,
+     el script se detiene sin tocar nada) y el CHECK `ck_cotizaciones_finalizada` (las dos NULL o las dos con valor). Idempotente, no
+     destructivo, en una transacción; el ejecutador lo corre por nombre después del `13`. Sin él la imagen de HU-036 queda en 503
+     "falta 14" (como con el `09`, aplicarlo la recupera sin redesplegar). Aplicarlo con la imagen anterior en marcha no cambia nada (no
+     lee las columnas). Verificación de solo lectura (dos largos no NULL, `1` y `1`):
+
+     ```sql
+     SELECT COL_LENGTH(N'dbo_cotifly.CotizacionesSolicitud', N'finalizadaAt')  AS finalizadaAt_14,
+            COL_LENGTH(N'dbo_cotifly.CotizacionesSolicitud', N'finalizadaPor') AS finalizadaPor_14,
+            (SELECT COUNT(*) FROM sys.foreign_keys WHERE name = N'fk_cotizaciones_finalizadaPor') AS fk_14,
+            (SELECT COUNT(*) FROM sys.check_constraints WHERE name = N'ck_cotizaciones_finalizada') AS check_14;
+     ```
+
+     **Sin backfill** (decisión del 2026-10-26): las cotizaciones existentes quedan sin finalizar. Las ya enviadas al cliente o con
+     resultado siguen protegidas como hoy. Las que están en `autocosteo`/`entregada` sin enviar ni resultado las finaliza el comercial una
+     por una antes de generar el PDF, enviarlas o marcar el resultado (HU-036.3, #207). Para avisarles cuántas son, antes de desplegar
+     (solo lectura):
+
+     ```sql
+     SELECT COUNT(*) FROM dbo_cotifly.CotizacionesSolicitud
+     WHERE estadoCosteo IN (N'autocosteo', N'entregada') AND estadoEnvio = N'sin_enviar' AND ganada IS NULL;
      ```
 
    **Errores de `/health/ready` (`503 {"status":"unavailable","detalle":"..."}`)** y qué hacer. La sonda compara las tablas y
@@ -606,6 +634,7 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
    | `esquema incompleto: falta 11` | Falta `CotizacionLineasSolicitud.pesoConTaraKg` (HU-030.1, #184) | Aplicar `db/scripts/11_peso_con_tara.sql` |
    | `esquema incompleto: falta 12` | Faltan `tipoVehiculoElegido`/`carroceriaElegida` de la ruta (HU-032, #197) | Aplicar `db/scripts/12_vehiculo_elegido.sql` |
    | `esquema incompleto: falta 13` | Faltan las columnas de MailSender en `Correos` o la sincronización del resultado en la cabecera (HU-033, #199) | Aplicar `db/scripts/13_correo_mailsender.sql` |
+   | `esquema incompleto: falta 14` | Faltan `finalizadaAt`/`finalizadaPor` de la cabecera (HU-036, #205) | Aplicar `db/scripts/14_cotizacion_finalizada.sql` |
    | `esquema incompleto: falta Tabla.columna, ...` (hasta 5) | Falta otra tabla o columna del modelo (por ejemplo un script intermedio sin aplicar) | Comparar con `db/scripts/01_crear_esquema.sql` y aplicar el script que la trae (lista en `docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md` §A.5) |
 
 1. **Staging.** Merge a `QA` → el pipeline (o `publicar-imagen.sh --canal qa`) publica `sha-<corto>`. En Dokploy, stack

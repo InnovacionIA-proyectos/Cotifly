@@ -124,10 +124,11 @@ Característica: Servicios conexos del catálogo de Nexo
     Entonces la respuesta tiene el estado 409 con el código de negocio "COSTEO_NO_LISTO"
 
   # Regla del PDF (ADR-018 §11)
-  Escenario: Con el PDF generado y sin enviar agregar un conexo invalida el PDF
+  # HU-036.3 (#207): finalizada no admite conexos (cotizacion_finalizada.feature); estos dos casos quedan para las anteriores a HU-036.
+  Escenario: Con el PDF generado antes de HU-036 y sin enviar agregar un conexo invalida el PDF
     Dado que "ana" envió a costeo el formulario ampliado del cliente "900555111" como "C1"
     Y Nexo costeó la solicitud de "C1" con un flete de 2550000 y el polling lo registró
-    Y que "ana" generó el PDF del costeo de "C1"
+    Y que "ana" generó el PDF del costeo de "C1" antes de HU-036, sin finalizarla
     Cuando "ana" agrega a "C1" en la línea 1 el servicio conexo "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d" con la cantidad 1
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CosteoCotizacion" del contrato
     Y el costeo de "C1" no tiene pdf_url y está marcado con pdf_desactualizado
@@ -140,10 +141,10 @@ Característica: Servicios conexos del catálogo de Nexo
     Entonces la respuesta tiene el estado 409 con el código de negocio "PDF_YA_ENVIADO"
     Y Nexo no recibió conexos para la cotización de "C1"
 
-  Escenario: Excluir un conexo con el PDF generado y sin enviar también invalida el PDF
+  Escenario: Excluir un conexo con el PDF generado antes de HU-036 y sin enviar también invalida el PDF
     Dado que "ana" envió a costeo el formulario ampliado del cliente "900555111" como "C1"
     Y Nexo costeó la solicitud de "C1" con un flete de 2550000 y el conexo "Cargue" de 85000 y el polling lo registró
-    Y que "ana" generó el PDF del costeo de "C1"
+    Y que "ana" generó el PDF del costeo de "C1" antes de HU-036, sin finalizarla
     Cuando "ana" deja incluidos en "C1" solo los servicios conexos ""
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CosteoCotizacion" del contrato
     Y el costeo de "C1" no tiene pdf_url y está marcado con pdf_desactualizado

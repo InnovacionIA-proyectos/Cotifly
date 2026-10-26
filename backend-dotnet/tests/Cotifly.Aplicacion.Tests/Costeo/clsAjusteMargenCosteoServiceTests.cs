@@ -133,6 +133,22 @@ public sealed class clsAjusteMargenCosteoServiceTests
     }
 
     [Fact]
+    public async Task HU0363_FinalizadaRespondePdfYaEnviadoConLaLlamadaParaCrearLaVersionSinTocarElPrecio()
+    {
+        _cotizacion.Finalizar(_ana, clsCotizacionMuestra.Ahora);
+        var precio = _cotizacion.PrecioFinal;
+
+        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, clsRutaIndicada.Ninguna, 0.18m, null, Version, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.PdfYaEnviado);
+        resultado.Error.Mensaje.Should().Contain("finalizada");
+        resultado.Error.Datos!["accion"].Should().Be("nueva_version");
+        _cotizacion.PrecioFinal.Should().Be(precio);
+        _ajustes.DidNotReceiveWithAnyArgs().Agregar(default!);
+        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
+    }
+
+    [Fact]
     public async Task ConOtraVersionRespondeConflictoSinTocarNada()
     {
         var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, clsRutaIndicada.Ninguna, 0.18m, null, 6, Ct);
@@ -284,5 +300,16 @@ public sealed class clsAjusteMargenCosteoServiceTests
         cotizacion.RegistrarConsultaCosteo(EstadoCosteo.Autocosteo, null, null);
         clsCotizacionMuestra.ConConexo(cotizacion, "CX-1", "Cargue", 85_000m);
         return clsCotizacionMuestra.ConVersionNegocio(cotizacion, Version);
+    }
+
+    /// <summary>
+    /// HU-036.3 (#207): <see cref="Costeada"/> ya finalizada por <paramref name="usuarioId"/> (el comercial aceptó el precio): la base de
+    /// las pruebas del PDF y de los textos, que exigen la cotización finalizada.
+    /// </summary>
+    public static clsCotizacionSolicitud Finalizada(Guid usuarioId, string folio)
+    {
+        var cotizacion = Costeada(usuarioId, folio);
+        cotizacion.Finalizar(usuarioId, clsCotizacionMuestra.Ahora).Valor.Should().BeTrue();
+        return cotizacion;
     }
 }

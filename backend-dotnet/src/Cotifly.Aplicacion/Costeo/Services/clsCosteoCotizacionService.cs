@@ -104,6 +104,9 @@ public sealed record clsCosteoCotizacion(
     /// <summary>HU-033 (#199): último error al enviar el resultado pendiente, o por qué ya no se puede enviar.</summary>
     public string? ErrorSincronizacionResultadoNexo { get; init; }
 
+    /// <summary>HU-036.2 (#206): cuándo se finalizó la cotización (UTC); <c>null</c> sin finalizar. Ver <c>CotizacionResumen.finalizada_at</c>.</summary>
+    public DateTimeOffset? FinalizadaAt { get; init; }
+
     /// <summary>
     /// HU-021.8 (#135): las rutas en orden, cada una con su margen (aplicado, sugerido y origen), su precio y sus conexos. El ajuste de
     /// margen y los cambios de conexos dicen a cuál aplican con <c>linea_orden</c> o <c>linea_solicitud_id</c>. HU-039.1 (#218): el único
@@ -310,6 +313,9 @@ public sealed class clsCosteoCotizacionService(
 
     /// <summary>Motivo de la versión nueva que sugiere <c>PDF_YA_ENVIADO</c> al elegir conexos de una cotización ya entregada.</summary>
     public const string MotivoVersionConexos = "Cambio de servicios conexos después del envío";
+
+    /// <summary>Validación HU-036 (#208): motivo de la versión nueva cuando el costeo de Nexo cambió después de finalizar.</summary>
+    public const string MotivoVersionCosteoCambiado = "El costeo de Nexo cambió después de finalizar";
 
     public async Task<clsResultado<clsCosteoCotizacion>> ObtenerAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default)
     {
@@ -983,6 +989,17 @@ public sealed class clsCosteoCotizacionService(
         }
 
         var suma = cotizables.Sum(r => r.PrecioFinalLinea!.Value);
+        if (suma != cotizacion.PrecioFinal && cotizacion.Finalizada)
+        {
+            // Validación HU-036 (#208): con el precio finalizado congelado la Mesa rechazó una ruta que cotizaba: ninguna lectura del
+            // costeo va a cuadrar el total, así que no se dice "espera": el PDF sale en una versión nueva con el costeo actual.
+            return clsReglaPdfCosteo.ConVersionNueva(
+                new clsErrorDominio(clsCodigosError.CosteoNoListo,
+                    $"El costeo de Nexo cambió después de finalizar la cotización {cotizacion.Folio} (la Mesa de Costeo rechazó una ruta): el "
+                    + "precio finalizado ya no es la suma de sus rutas. Crea una versión nueva para cotizar con el costeo actual."),
+                cotizacion.Folio, MotivoVersionCosteoCambiado);
+        }
+
         return suma == cotizacion.PrecioFinal
             ? null
             : new clsErrorDominio(clsCodigosError.CosteoNoListo,
@@ -1165,7 +1182,8 @@ public sealed class clsCosteoCotizacionService(
 
     /// <summary>
     /// Condiciones para generar el PDF: hay rutas que cotizar (HU-028.1, #183: con TODAS rechazadas por la Mesa, <c>SIN_RUTAS_COTIZABLES</c>,
-    /// decisión D1 de Nexo #320), costeo con precio, sin PDF vigente (<c>PDF_YA_GENERADO</c>) y sin envío (<c>PDF_YA_ENVIADO</c>).
+    /// decisión D1 de Nexo #320), costeo con precio, sin PDF vigente (<c>PDF_YA_GENERADO</c>), sin envío (<c>PDF_YA_ENVIADO</c>) y, desde
+    /// HU-036.3 (#207), finalizada (<c>COTIZACION_NO_FINALIZADA</c>: el PDF sale con el precio que aceptó el comercial).
     /// </summary>
     private static clsErrorDominio? Bloqueo(clsCotizacionSolicitud cotizacion)
     {
@@ -1185,8 +1203,11 @@ public sealed class clsCosteoCotizacionService(
             return new clsErrorDominio(clsCodigosError.PdfYaGenerado, $"La cotización {cotizacion.Folio} ya tiene PDF: genera una versión nueva para cambiarla.");
         }
 
-        return cotizacion.ValidarCambioEtapaFinal();
+        return cotizacion.ValidarEntregaAlCliente() ?? cotizacion.ValidarFinalizadaAntesDe(AccionPdf);
     }
+
+    /// <summary>HU-036.3 (#207): cierre del mensaje de <c>COTIZACION_NO_FINALIZADA</c> al generar el PDF.</summary>
+    public const string AccionPdf = "generar el PDF";
 
     /// <summary>
     /// #173: <see cref="Vista"/> con el estado del envío diferido de cada conexo a Nexo (<c>estado_nexo</c>), igual que
@@ -1285,6 +1306,7 @@ public sealed class clsCosteoCotizacionService(
             Resultado = cotizacion.Ganada switch { true => "ganada", false => "perdida", null => null },
             SincronizacionResultadoNexo = cotizacion.EstadoSincronizacionResultado,
             ErrorSincronizacionResultadoNexo = cotizacion.Ganada is null ? null : cotizacion.ErrorSincronizacionResultado,
+            FinalizadaAt = cotizacion.FinalizadaAt?.ToUniversalTime(),
             Rutas = [.. cotizacion.RutasOrdenadas.Select(r => RutaCosteo(cotizacion, r, estadosNexo, categorias, situaciones))],
         };
     }

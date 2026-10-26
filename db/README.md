@@ -12,7 +12,7 @@ dejarla con la configuración inicial.
   el `01` ya no crea las 2 vistas del borrador de métricas y el `08` las retira de las bases que ya las tienen.
 - **Verificación continua.** Las pruebas de integración (Testcontainers,
   `backend-dotnet/tests/Cotifly.Infraestructura.Tests/Persistencia/clsEsquemaTests.cs`) comprueban en cada corrida que la
-  instalación desde cero y las migraciones `0001` a `0010` (más el `02`, el `03`, el `pendientes/04`, el `05`, el `06`, el `07`, el `08`, el `09`, el `10`, el `11`, el `12` y el `13`) dejan el mismo esquema, que el `0010` es
+  instalación desde cero y las migraciones `0001` a `0010` (más el `02`, el `03`, el `pendientes/04`, el `05`, el `06`, el `07`, el `08`, el `09`, el `10`, el `11`, el `12`, el `13` y el `14`) dejan el mismo esquema, que el `0010` es
   idempotente y que el `0009` migra los datos del esquema anterior sin perder ajustes, correos ni auditoría.
 - **Scripts posteriores al `0010`** y lo que falta aprobar (aprobación, no prueba):
 
@@ -31,6 +31,7 @@ dejarla con la configuración inicial.
 | `scripts/11_peso_con_tara.sql` | HU-030.1 (#184) | En el ejecutador (orden de nombre, después del `09`; el `10` es de #183). `CotizacionLineasSolicitud.pesoConTaraKg DECIMAL(12,2) NULL` con su CHECK (> 0). **El backend mapea la columna**: sin él, `/health/ready` responde "esquema incompleto: falta 11". Se aplica antes de desplegar la imagen (ver abajo) |
 | `scripts/12_vehiculo_elegido.sql` | HU-032 (#197) | En el ejecutador (orden de nombre, después del `11`). Ruta: `tipoVehiculoElegido NVARCHAR(100) NULL` y `carroceriaElegida NVARCHAR(100) NULL` (el vehículo elegido, respaldo del cubicador); mercancía: `largoCm`/`anchoCm`/`altoCm` pasan a NULL con el CHECK "las tres NULL o las tres > 0" (mercancías no cubicables). Idempotente y en una transacción; imprime el CHECK anterior. **El backend mapea las columnas**: sin él, `/health/ready` responde "esquema incompleto: falta 12". Se aplica antes de desplegar la imagen |
 | `scripts/13_correo_mailsender.sql` | HU-033 (#199) | En el ejecutador (orden de nombre, después del `12`). `Correos`: el seguimiento de MailSender (`idMailSender`, `redirigidoA`, `intentosEntrega`, `enviadoAt`, `estadoActualizadoAt`, `siguienteConsultaAt`, `encoladoAt`, dos índices filtrados y el CHECK del estado con `encolado` y `enviando`); `CotizacionesSolicitud`: el resultado diferido a Nexo (`sincronizacionResultadoNexo`, `comentarioResultadoPendiente`, `resultadoSincronizadoAt`, `errorSincronizacionResultado`, `intentosSincronizacionResultado`). Idempotente, no destructivo. **El backend mapea las columnas**: sin él, `/health/ready` responde "esquema incompleto: falta 13". Se aplica antes de desplegar la imagen |
+| `scripts/14_cotizacion_finalizada.sql` | HU-036 (#205, #206) | **Propuesta pendiente de revisión de @scalderon-bs.** En el ejecutador (orden de nombre, después del `13`). `CotizacionesSolicitud`: `finalizadaAt DATETIMEOFFSET NULL` y `finalizadaPor UNIQUEIDENTIFIER NULL` (FK `fk_cotizaciones_finalizadaPor` a `UsuariosWeb(id)`, CHECK `ck_cotizaciones_finalizada`: las dos o ninguna). Sin backfill. Idempotente, no destructivo, en una transacción. **El backend mapea las columnas**: sin él, `/health/ready` responde "esquema incompleto: falta 14". Se aplica antes de desplegar la imagen |
 | `scripts/15_rol_director.sql` | HU-037.1 (#209) | En el ejecutador (orden de nombre, después del `13`; el `14` es de HU-036). **Propuesta del backend; la dueña es @scalderon-bs (Datos).** `ck_roles_codigo` admite `director` (el `01` ya lo trae) y agrega la fila `director` activa con `idRolExterno = NULL`. Idempotente, en una transacción, no pisa un `idRolExterno` ya fijado. **No lo exige `/health/ready`** (no agrega columnas; sin él nadie entra como director). Va **con o después** de la imagen de HU-037.2 (#210): una imagen anterior falla al leer el catálogo de roles con la fila `director` (ver `DEPLOY.md`, "Rol director"). El IDROLES lo fija un script de operación por ambiente: `operacion/mapeo_prueba_rol_director_209.sql` (prueba) y el de #212 (producción) |
 
 **`scripts/pendientes/04_cubicacion_segundo_plano.sql`** (HU-023.5, #160) agrega a la ruta la cola de la cubicación de la
@@ -122,12 +123,13 @@ y los documentos, y el 06 estaba libre en `scripts/`); solo depende del `01`. Id
 `SELECT/INSERT/UPDATE/DELETE` sobre el esquema).
 
 **Orden completo** de una base nueva: `01` (o `0001` a `0010`), `02`, `03`, `pendientes/04`, `05`, `06`, `07`, `08`, `09`, `10`, `11`,
-`12` y `13`. El entorno local (`backend-dotnet/scripts/levantar-local.ps1` / `.sh`) aplica los ajustes `02` en adelante (hoy `02`, `03`,
-`05`, `06`, `07`, `08`, `09`, `10`, `11`, `12` y `13`) y el `pendientes/04` en ese orden en cada arranque (son idempotentes). Con el `03` aplicado el CHECK del motivo ya es el del
+`12`, `13`, `14` y `15`. El entorno local (`backend-dotnet/scripts/levantar-local.ps1` / `.sh`) aplica los ajustes `02` en adelante (hoy `02`, `03`,
+`05`, `06`, `07`, `08`, `09`, `10`, `11`, `12`, `13`, `14` y `15`) y el `pendientes/04` en ese orden en cada arranque (son idempotentes). Con el `03` aplicado el CHECK del motivo ya es el del
 `07` (sin el `07`, la sonda no da el aviso del `07`).
 
-**Orden del release** sobre una base ya migrada: `03` → `pendientes/04` → `05` → `06` → `07` → `09` → `10` → `11` → `12` → `13` →
-imagen → `08`. El `10` (rechazo de la línea) toma un bloqueo de esquema al reemplazar los CHECK de `estadoCosteo`: mejor en una ventana
+**Orden del release** sobre una base ya migrada: `03` → `pendientes/04` → `05` → `06` → `07` → `09` → `10` → `11` → `12` → `13` → `14` → `15` →
+imagen → `08` (el `15` en la misma ventana que la imagen de HU-037, nunca antes con una imagen vieja; en la compartida ya está
+aplicado y el `14` está pendiente de @scalderon-bs). El `10` (rechazo de la línea) toma un bloqueo de esquema al reemplazar los CHECK de `estadoCosteo`: mejor en una ventana
 de poco tráfico. Detalle para el DBA: `DEPLOY.md` §4.
 
 ## Estructura
@@ -150,6 +152,7 @@ db/
 │   ├── 11_peso_con_tara.sql            peso con tara de la ruta de contenedor (se puede repetir)
 │   ├── 12_vehiculo_elegido.sql         vehículo elegido de la ruta y medidas NULL de la mercancía (se puede repetir)
 │   ├── 13_correo_mailsender.sql        seguimiento de MailSender en Correos y resultado diferido a Nexo (se puede repetir)
+│   ├── 14_cotizacion_finalizada.sql    cotización finalizada: finalizadaAt y finalizadaPor (propuesta; se puede repetir)
 │   ├── pendientes/            propuesta 04, pendiente de revisión (el ejecutador no la corre)
 │   └── operacion/             scripts de datos de una sola vez que corre el DBA con aprobación
 ├── seeder/
@@ -171,7 +174,7 @@ Necesitas `sqlcmd` y permiso para crear schemas, tablas e índices en la base.
 
 ```powershell
 cd db
-# Crea la base si no existe, el esquema (01 y los ajustes 02 a 13) y los seeders:
+# Crea la base si no existe, el esquema (01 y los ajustes 02 a 14) y los seeders:
 .\ejecutar-bd.ps1 -Servidor localhost -Base dbCotifly -CrearBase
 
 # Con usuario de SQL Server en vez de autenticación de Windows:
@@ -243,7 +246,7 @@ día se corren contra otra base, hay que cambiar esa línea. No aplica a la inst
    del DBA; el backend lo exige), `scripts/05_categoria_conexo.sql`, `scripts/06_idempotencia_captura.sql`,
    `scripts/07_motivo_busqueda_agotada.sql`, `scripts/08_retirar_vistas_actividad.sql`, `scripts/09_score_prioridad.sql`,
    `scripts/10_rechazo_linea.sql`, `scripts/11_peso_con_tara.sql`, `scripts/12_vehiculo_elegido.sql`,
-   `scripts/13_correo_mailsender.sql`, `seeder/01_lineas_negocio.sql`, `seeder/02_sap_mapeo_trqtype.sql` y `seeder/03_roles.sql`.
+   `scripts/13_correo_mailsender.sql`, `scripts/14_cotizacion_finalizada.sql`, `seeder/01_lineas_negocio.sql`, `seeder/02_sap_mapeo_trqtype.sql` y `seeder/03_roles.sql`.
 3. Si `dbo_cotifly` ya tiene tablas, el `01` avisa y no crea nada. Si falla otro paso, mira el error antes de seguir con
    los siguientes.
 
@@ -263,6 +266,7 @@ sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/10_rechazo_linea.
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/11_peso_con_tara.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/12_vehiculo_elegido.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/13_correo_mailsender.sql
+sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/14_cotizacion_finalizada.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i seeder/01_lineas_negocio.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i seeder/02_sap_mapeo_trqtype.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i seeder/03_roles.sql
@@ -342,6 +346,7 @@ Cambios pequeños al esquema que todavía no se consolidan en el `01`. Van como 
 | `11_peso_con_tara.sql` | HU-030.1 (#184) | `CotizacionLineasSolicitud.pesoConTaraKg DECIMAL(12,2) NULL` con el CHECK `ck_cotizacionLineasSolicitud_pesoConTaraKg` (> 0): el peso con tara de una ruta `Contenedor`. Idempotente, `ADD` de columna NULL en una transacción. Obligatorio: el backend mapea la columna |
 | `12_vehiculo_elegido.sql` | HU-032 (#197) | `CotizacionLineasSolicitud.tipoVehiculoElegido`/`carroceriaElegida NVARCHAR(100) NULL` y `CotizacionMercancias.largoCm/anchoCm/altoCm` NULL con el CHECK `ck_cotizacionPosiciones_medidas` (las tres NULL o las tres > 0). Idempotente, en una transacción. Obligatorio: el backend mapea las columnas |
 | `13_correo_mailsender.sql` | HU-033 (#199) | `Correos`: `idMailSender`, `redirigidoA`, `intentosEntrega`, `enviadoAt`, `estadoActualizadoAt`, `siguienteConsultaAt`, `encoladoAt` (NULL) con los índices filtrados `ix_correos_siguienteConsultaAt` y `ux_correos_idMailSender` y el CHECK `ck_correos_estado`; `CotizacionesSolicitud`: `sincronizacionResultadoNexo` (CHECK), `comentarioResultadoPendiente`, `resultadoSincronizadoAt`, `errorSincronizacionResultado` (NULL) e `intentosSincronizacionResultado` (NOT NULL DEFAULT 0, CHECK ≥ 0). Idempotente. Obligatorio: el backend mapea las columnas |
+| `14_cotizacion_finalizada.sql` | HU-036 (#205, #206) | `CotizacionesSolicitud.finalizadaAt DATETIMEOFFSET NULL` y `finalizadaPor UNIQUEIDENTIFIER NULL` con la FK `fk_cotizaciones_finalizadaPor` a `UsuariosWeb(id)` y el CHECK `ck_cotizaciones_finalizada` (las dos o ninguna). Idempotente, en una transacción, sin backfill. Obligatorio: el backend mapea las columnas. Propuesta pendiente de revisión de @scalderon-bs |
 | `15_rol_director.sql` | HU-037.1 (#209) | `Roles`: el CHECK `ck_roles_codigo` admite `director` (reemplazo solo si le falta; imprime el anterior) y la fila `director` (activa, `idRolExterno = NULL`). Idempotente. El `01` ya trae el CHECK con `director`; la fila la pone el 15 |
 
 El `02` se detiene sin tocar nada si `idTipoMercancia` todavía tiene valores (un uuid no se puede convertir a código).

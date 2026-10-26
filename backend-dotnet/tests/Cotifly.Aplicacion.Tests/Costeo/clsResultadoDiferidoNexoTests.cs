@@ -55,6 +55,7 @@ public sealed class clsResultadoDiferidoNexoTests
         // 1. El polling la deja en autocosteo (Nexo en Borrador) y el comercial marca ganada: Nexo responde COTIZACION_NO_ENTREGADA.
         await Polling().ProcesarAsync(Pendiente(), Ct);
         _cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.Autocosteo);
+        _cotizacion.Finalizar(_ana, _reloj.AhoraUtc).Valor.Should().BeTrue("HU-036.3: el comercial acepta el precio antes de marcar el resultado");
         var marcada = await Resultado().MarcarAsync(_ana, _cotizacion.Folio, "ganada", "Mejor tiempo", "Contrato firmado", Ct);
 
         marcada.EsExitoso.Should().BeTrue();

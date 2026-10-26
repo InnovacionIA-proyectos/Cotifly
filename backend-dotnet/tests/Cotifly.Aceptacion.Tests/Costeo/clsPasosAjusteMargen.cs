@@ -133,8 +133,24 @@ public sealed class clsPasosAjusteMargen(clsContextoWeb web, clsPasosCosteo cost
     }
 
     [When("{string} genera el PDF del costeo de {string}")]
-    public Task CuandoGeneraElPdf(string alias, string cotizacion) =>
-        web.EnviarAsync(HttpMethod.Post, $"{Ruta(cotizacion)}/pdf", web.Sesion(alias).Access);
+    public async Task CuandoGeneraElPdf(string alias, string cotizacion)
+    {
+        // HU-036.3 (#207): como el frontend, finaliza antes del PDF (la regla en sí la prueba cotizacion_finalizada.feature).
+        await costeo.FinalizarSiCorrespondeAsync(alias, costeo.Folio(cotizacion));
+        await web.EnviarAsync(HttpMethod.Post, $"{Ruta(cotizacion)}/pdf", web.Sesion(alias).Access);
+    }
+
+    /// <summary>
+    /// HU-036 (sin backfill): una cotización cuyo PDF se generó ANTES del script 14 y nunca se finalizó. Se arma con el flujo de hoy
+    /// (finalizar y generar) y se deja sin la finalización, como la deja el 14 sobre una fila existente.
+    /// </summary>
+    [Given("que {string} generó el PDF del costeo de {string} antes de HU-036, sin finalizarla")]
+    public async Task DadoQueGeneroElPdfSinFinalizar(string alias, string cotizacion)
+    {
+        await DadoQueGeneroElPdf(alias, cotizacion);
+        await clsBaseDatosPruebas.EjecutarAsync(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
+            $"UPDATE dbo_cotifly.CotizacionesSolicitud SET finalizadaAt = NULL, finalizadaPor = NULL WHERE folio = '{costeo.Folio(cotizacion)}'");
+    }
 
     [Given("que {string} generó el PDF del costeo de {string} y lo envió al cliente")]
     public async Task DadoQueLoEnvio(string alias, string cotizacion)
@@ -151,6 +167,7 @@ public sealed class clsPasosAjusteMargen(clsContextoWeb web, clsPasosCosteo cost
     {
         costeo.Nexo.Entregar((await costeo.Columna(cotizacion, "costeoId"))!);
         await web.Api.ProcesarPollingAsync(costeo.Folio(cotizacion));
+        await costeo.FinalizarSiCorrespondeAsync(alias, costeo.Folio(cotizacion)); // HU-036.3: finaliza antes del resultado
         await web.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{costeo.Folio(cotizacion)}/resultado", web.Sesion(alias).Access,
             clsApiWebPruebas.Json(new { resultado }));
         web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);

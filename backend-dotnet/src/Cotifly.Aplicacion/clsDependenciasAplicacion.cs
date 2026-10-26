@@ -122,6 +122,8 @@ public static class clsDependenciasAplicacion
         servicios.AddScoped<Redaccion.Services.IClsRedaccionCotizacionService, Redaccion.Services.clsRedaccionCotizacionService>();
         servicios.AddScoped<IClsTextosCosteoService, clsTextosCosteoService>();
         servicios.AddScoped<IClsResultadoCotizacionService, clsResultadoCotizacionService>();
+        // HU-036.2 (#206): finalizar la cotización (POST /web/cotizaciones/{folio}/finalizar).
+        servicios.AddScoped<IClsFinalizacionCotizacionService, clsFinalizacionCotizacionService>();
 
         // Licitaciones desde Excel (HU-011, ADR-017).
         servicios.AddScoped<Licitaciones.Services.IClsLicitacionService, Licitaciones.Services.clsLicitacionService>();

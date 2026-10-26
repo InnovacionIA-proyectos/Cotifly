@@ -94,6 +94,7 @@ public sealed class clsRechazoLineaEndpointsTests : IDisposable
         costeo.GetProperty("precio_final").ValueKind.Should().Be(JsonValueKind.Null);
         Rutas(costeo).Should().OnlyContain(r => r.GetProperty("estado_costeo").GetString() == "rechazada");
 
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
         using var pdf = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
         pdf.StatusCode.Should().Be(HttpStatusCode.Conflict);
         await VerificarErrorNegocioAsync(pdf, "SIN_RUTAS_COTIZABLES");

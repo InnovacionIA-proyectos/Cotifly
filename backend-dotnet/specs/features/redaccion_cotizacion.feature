@@ -18,6 +18,8 @@ Característica: Redacción del asunto y la introducción de la cotización
     Y el comercial "ana" con sesión en la regional "Occidente"
     Y "ana" envió a costeo el formulario ampliado del cliente "900555111" como "C1"
     Y Nexo costeó la solicitud de "C1" con un flete de 2550000 y el polling lo registró
+    # HU-036.3 (#207): los textos del PDF se redactan con la cotización finalizada.
+    Y que "ana" finalizó la cotización "C1"
 
   Escenario: La IA redacta y los textos quedan guardados con fuente ia
     Dado que el modelo responde el asunto "Cotización transporte Buenaventura - Bogotá" y una introducción válida

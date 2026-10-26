@@ -50,7 +50,7 @@ ClientePro (ya autenticado)
 
 ## 3. Endpoints
 
-Resumen de los endpoints de uso más frecuente; la lista completa (52) está en `CONTRATOS_API_COTIFLY_FRONTEND.md` §4.
+Resumen de los endpoints de uso más frecuente; la lista completa (55) está en `CONTRATOS_API_COTIFLY_FRONTEND.md` §4.
 
 | Método y ruta | Rol | Resumen |
 |---|---|---|
@@ -72,6 +72,7 @@ Resumen de los endpoints de uso más frecuente; la lista completa (52) está en 
 | `POST /web/cotizaciones/{folio}/correos/{correoId}/reintentar` | ambos (dueño) | HU-033 (#199): pide a MailSender reintentar un envío `fallido`; 409 `CORREO_NO_REINTENTABLE` si no aplica (no está `fallido`, ya se está reintentando por un doble clic, nunca llegó a MailSender o MailSender ya no lo conoce) |
 | `POST /web/cotizaciones/{folio}/seguimiento` | ambos | Marca ganada o perdida **solo** cotizaciones fuera de Nexo (`estado_costeo` `null`, `descartada` o `costeo_vencido`). Las de Nexo responden 409 `USAR_RESULTADO_NEXO`, con `detalle` = `{metodo, endpoint, requiere_if_match}` (HU-021.13) |
 | `POST /web/cotizaciones/{folio}/resultado` | ambos (dueño) | Marca ganada o perdida las cotizaciones de Nexo (primero en Nexo y, si responde 200, en Cotifly). Lleva `If-Match` (obligatorio en la perdida sin costeo: 428 si falta). `motivo` máximo 100 caracteres en una perdida; en una ganada no se valida. `motivo_rechazo` queda `"No aplica"` en una ganada (HU-021.13, alimenta HU-019.1). HU-033 (#199): si Nexo todavía no la tiene entregada, el resultado queda solo en Cotifly (`sincronizacion_resultado_nexo = pendiente`, 200) y se envía a Nexo una sola vez cuando la Mesa la entrega; el estado viene en `CotizacionResumen` y en el costeo |
+| `POST /web/cotizaciones/{folio}/finalizar` | ambos (dueño) | HU-036.2 (#206): el comercial acepta el precio y finaliza la cotización (`If-Match` obligatorio). Solo en `autocosteo` o `entregada` (409 `COTIZACION_NO_FINALIZABLE`); re-finalizar es 200 sin cambios. `finalizada_at` en el resumen, el costeo y el detalle. Ver §8.17 |
 | `GET /web/cotizaciones/{id}/nueva-version` | ambos | Datos para prellenar una nueva versión |
 | `GET /web/clientes/{nit}/destinatarios-previos` | ambos | `para`/`cc` del último envío a ese cliente |
 | `GET` / `PUT /web/usuario/telefono` | ambos | Teléfono que se imprime en el PDF |
@@ -1521,7 +1522,8 @@ frontend ya conoce, con sus mismas reglas y nombres:
     "updated_at": "2026-10-10T13:02:45.010+00:00",
     "costeo_enviado_at": "2026-10-09T15:20:12.004+00:00",
     "costeo_listo_at": "2026-10-09T15:24:40.118+00:00",
-    "marcado_at": "2026-10-10T13:02:45.010+00:00"
+    "marcado_at": "2026-10-10T13:02:45.010+00:00",
+    "finalizada_at": "2026-10-10T12:58:10.400+00:00"
   },
   "cotizacion": {
     "id": "5b0f8a3e-2c1d-4e6f-9a7b-3c2d1e0f9a8b",
@@ -1840,3 +1842,69 @@ Un archivo corrupto o malicioso es 400 con código, nunca 500 (`detalle.motivo` 
   }
 }
 ```
+
+### 8.17 Cotización finalizada: `POST /web/cotizaciones/{folio}/finalizar` (HU-036, #205 a #208)
+
+El comercial **acepta el precio** de la cotización y la finaliza. Columnas propias en la cabecera (`finalizadaAt`, `finalizadaPor`,
+`db/scripts/14_cotizacion_finalizada.sql`), no un `estado_costeo`: el estado sigue avanzando con Nexo.
+
+**#206, el endpoint.** `If-Match` obligatorio (428 sin él), solo el dueño (404 para una ajena), sin cuerpo.
+
+- Solo con el costeo de Nexo listo (`estado_costeo` en `autocosteo` o `entregada`). En otro estado, 409 `COTIZACION_NO_FINALIZABLE` con el
+  estado actual en `detalle.estado_costeo`.
+- Tampoco mientras Nexo tiene un servicio conexo que Cotifly todavía no leyó (el aviso de conexos pendientes en `motivo_estado_costeo`):
+  409 `COTIZACION_NO_FINALIZABLE` con `detalle.motivo = "conexos_pendientes_de_leer"`. Se finaliza después de la siguiente lectura del
+  costeo, que trae el conexo con su precio (con la cotización finalizada el polling ya no lo importaría).
+- Re-finalizar una ya finalizada: 200 sin cambios (mismo `finalizada_at`, mismo `ETag`).
+- `If-Match` que no es la versión vigente: 409 `CONFLICTO_CONCURRENCIA` (también si ya estaba finalizada). Si el polling cambió el precio
+  entre la lectura y el clic, la versión ya no coincide: el comercial recarga y nunca finaliza un precio que no vio.
+- 200 `CotizacionResumen` con `finalizada_at` (UTC) y el `ETag` nuevo. `finalizada_at` también viene en `CosteoCotizacion` y en
+  `GET /web/cotizaciones/{folio}` (`cotizacion`, `costeo` y `fechas.finalizada_at`).
+- Sin backfill: las cotizaciones anteriores al script 14 quedan sin finalizar y el comercial las finaliza una por una.
+
+<!-- respuesta: POST /web/cotizaciones/{folio}/finalizar 409 -->
+```json
+{
+  "error": {
+    "codigo": "COTIZACION_NO_FINALIZABLE",
+    "mensaje": "La cotización PCN-900555111-DG-26102026-001 no se puede finalizar en su estado actual (pendiente_costeo): solo se finaliza con el costeo de Nexo listo (autocosteo o entregada) y su precio.",
+    "detalle": { "estado_costeo": "pendiente_costeo" }
+  }
+}
+```
+
+**#207, los candados.**
+
+- **Después de finalizar** (como con una cotización enviada): margen, conexos (`PUT` y `POST .../servicios-conexos`), re-solicitar en el
+  mismo folio y recalcular los camiones de una ruta responden 409 `PDF_YA_ENVIADO` con la versión nueva en `detalle`
+  (`accion = nueva_version`), y `GET .../solicitud` devuelve `edicion.modo = nueva_version`. Los textos y el PDF SÍ se permiten
+  (hasta enviarla).
+- **Antes de finalizar:** `POST .../costeo/pdf`, `POST .../enviar`, `POST .../costeo/textos/redactar`, `PUT .../costeo/textos` y
+  `POST .../resultado` (solo con el costeo listo) responden 409 `COTIZACION_NO_FINALIZADA`. Excepciones: las enviadas o con resultado
+  anteriores a HU-036 (sin backfill), las del chat, la perdida antes del costeo (`pendiente_costeo`, `error_envio`) y `/seguimiento` en
+  `descartada` y `costeo_vencido`. El asistente queda bloqueado por las mismas reglas del dominio.
+
+<!-- respuesta: POST /web/cotizaciones/{folio}/costeo/pdf 409 -->
+```json
+{
+  "error": {
+    "codigo": "COTIZACION_NO_FINALIZADA",
+    "mensaje": "Finaliza la cotización PCN-900555111-DG-26102026-001 antes de generar el PDF: acepta su precio con \"Finalizar cotización\".",
+    "detalle": {
+      "accion": "finalizar",
+      "metodo": "POST",
+      "endpoint": "/web/cotizaciones/PCN-900555111-DG-26102026-001/finalizar"
+    }
+  }
+}
+```
+
+**#208, el precio congelado frente al polling.** Con la cotización finalizada el polling no cambia el precio aunque Nexo traiga otro
+costo (la Mesa entrega una ruta con otro valor, rechaza un camión ya costeado): el `estado_costeo` sigue avanzando, el precio y los
+costos guardados se conservan, Cotifly audita lo que trajo Nexo (`EventosHerramienta`, `costeo_nexo_precio_congelado`) y
+`motivo_estado_costeo` lo advierte con la ruta que cambió y sin montos, por ejemplo: "El costeo de Nexo cambió después de finalizar la
+cotización en la ruta 2 (BUENAVENTURA → BOGOTA, D.C.): el precio finalizado se conserva. Genera una versión nueva para cotizar con el
+costeo actual." Es el mismo mecanismo que ya existía con el PDF generado (ADR-015 §5). Si después Nexo vuelve a los costos con que se
+finalizó (o la Mesa deshace el rechazo), el aviso se quita. Si la Mesa rechazó una ruta que el precio finalizado incluía, el total ya no
+es la suma de las rutas que cuentan: `POST .../costeo/pdf` responde 409 `COSTEO_NO_LISTO` con la versión nueva en `detalle`
+(`accion = nueva_version`), no "espera la siguiente consulta".
