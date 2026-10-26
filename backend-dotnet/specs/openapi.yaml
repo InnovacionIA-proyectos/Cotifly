@@ -420,8 +420,9 @@ paths:
           estado del costeo, resultado (`ganada`, `motivo_rechazo`), `deadline` en UTC, `score_prioridad`, moneda y TRM, `pdf_url`, y el
           dueño en `comercial` (siempre presente aquí).
         - `costeo`: lo mismo que `GET .../costeo` (`CosteoCotizacion`): por ruta los camiones con vehículo, porcentajes de llenado y estado
-          del costeo, las mercancías, los conexos con precio, el margen, el precio y los avisos; `pdf_desactualizado`, `textos` y
-          `row_version`.
+          del costeo, las mercancías, los conexos con precio, el margen, el precio, el costo bruto (`costo_final`, HU-039.1, #218) y los
+          avisos; `pdf_desactualizado`, `textos` y `row_version`. El costo bruto es solo del dueño: con `solo_lectura = true` (gerente)
+          `costeo.rutas[].costo_final` es siempre `null`.
         - `captura`: cada ruta como la capturó el comercial (`RutaEditable`, la de `GET .../solicitud`): municipios por id y nombre y
           condiciones (tipología, clases, exclusivo, contenedor, horas, valores, peso). Se cruza con `costeo.rutas[]` por
           `linea_solicitud_id`. Los conexos salen con el id del catálogo guardado (aquí no se consulta Nexo).
@@ -2050,10 +2051,15 @@ paths:
       tags: [web]
       summary: Estado del costeo en Nexo, precio final y servicios conexos de la cotización
       description: |
-        HU-005.7 (ADR-015 §5). Solo precios: el costo bruto de Nexo nunca se muestra (ni aquí ni en "Mis
-        cotizaciones"); `precio_final` y el `precio` de cada servicio conexo salen del módulo de Precio con el margen
+        HU-005.7 (ADR-015 §5). `precio_final` y el `precio` de cada servicio conexo salen del módulo de Precio con el margen
         de la cotización (resuelto al enviarla: SAP TM con el BP o la política de la línea). `precio_final` es `null`
         mientras no haya costeo. Solo el dueño.
+
+        HU-039.1 (#218, reversa de ADR-015 §5 confirmada por la Gerencia Comercial el 2026-10-27): cada ruta trae su costo
+        bruto en `rutas[].costo_final`, **siempre en COP** aunque la cotización esté en USD, y `null` mientras la ruta no tenga
+        precio. Es el total de la ruta (sin desglose ni costos por camión o conexo) y no sale en "Mis cotizaciones", el PDF,
+        el correo, el Excel ni el chat. Las demás respuestas `CosteoCotizacion` del dueño (ajuste de margen, conexos,
+        recálculo de vehículos) también lo traen.
 
         HU-013 (ADR-018): trae además `margen_sugerido` y `origen_margen` (botón de ajuste de margen, HU-013.2),
         `trm_aplicada` (HU-013.7, TRM fijada al crear; 0 en COP), `textos` (asunto e introducción del PDF, HU-013.5), `pdf_desactualizado` (ADR-018 §11)
@@ -4922,7 +4928,8 @@ components:
       required: [folio, row_version, solo_lectura, tipo, notas, fechas, cotizacion, costeo, captura, totales]
       description: |
         HU-027.1 (#179). Respuesta de `GET /web/cotizaciones/{folio}`: la cabecera (`cotizacion`), el costeo por ruta (`costeo`), las rutas
-        capturadas (`captura`) y los totales, en una llamada. Nunca trae costos de Nexo.
+        capturadas (`captura`) y los totales, en una llamada. HU-039.1 (#218): el único costo es `costeo.rutas[].costo_final` (costo
+        bruto de la ruta en COP), y solo para el dueño; a un gerente comercial en solo consulta le sale siempre `null`.
       properties:
         folio:
           type: string
@@ -5873,9 +5880,10 @@ components:
 
     RutaCosteo:
       type: object
-      required: [linea_orden, linea_solicitud_id, origen, destino, estado_costeo, precio_final_linea, margen_aplicado, margen_sugerido, origen_margen, servicios_conexos, camiones, mercancias]
+      required: [linea_orden, linea_solicitud_id, origen, destino, estado_costeo, precio_final_linea, costo_final, margen_aplicado, margen_sugerido, origen_margen, servicios_conexos, camiones, mercancias]
       description: |
-        HU-021.8 (#135). Una ruta del costeo, sin costos. El ajuste de margen (`PUT .../costeo/margen`) y los cambios de
+        HU-021.8 (#135). Una ruta del costeo. Desde HU-039.1 (#218) trae su costo bruto (`costo_final`, en COP) para el dueño; nunca
+        el desglose (fletes, retorno, levante, conexos) ni el costo de cada camión o de cada conexo. El ajuste de margen (`PUT .../costeo/margen`) y los cambios de
         conexos (`PUT`/`POST .../costeo/servicios-conexos`) dicen a qué ruta aplican con `linea_orden` o `linea_solicitud_id`.
         HU-021.9 (#136): trae también su línea de negocio, su peso, sus camiones y sus mercancías.
       properties:
@@ -5980,6 +5988,17 @@ components:
           type: number
           nullable: true
           description: Precio de la ruta (fletes + retorno + levante + conexos, con el margen de la ruta); `null` sin costeo o rechazada (HU-028.1).
+        costo_final:
+          type: number
+          nullable: true
+          description: |
+            HU-039.1 (#218). Costo bruto de la ruta que costeó Nexo: fletes + retorno + levante + servicios conexos de los camiones que
+            cuentan (sin los `descartada` ni los `rechazada`), **sin margen**. **Siempre en COP (pesos), aunque la cotización esté en
+            USD**: el costeo de Nexo es en pesos y nunca se convierte (en USD `precio_final_linea` va en dólares con `trm_aplicada`, el
+            costo no). `null` en los mismos casos que `precio_final_linea` (sin costeo listo o ruta `rechazada`). Solo lo ve el dueño:
+            en `GET /web/cotizaciones/{folio}` consultado por un gerente comercial (`solo_lectura = true`) siempre es `null`. No sale
+            en el PDF, el correo, el Excel, el chat ni "Mis cotizaciones". Reversa de la regla de ADR-015 §5 ("el costo bruto nunca
+            llega al comercial"), confirmada por la Gerencia Comercial el 2026-10-27.
         margen_aplicado:
           type: number
           nullable: true
@@ -6214,7 +6233,8 @@ components:
           type: array
           description: |
             HU-021.8 (#135). Las rutas en orden, cada una con su margen (aplicado, sugerido y origen), su precio y sus conexos;
-            desde HU-021.9 (#136) también su línea de negocio, sus camiones y sus mercancías (nunca costos).
+            desde HU-021.9 (#136) también su línea de negocio, sus camiones y sus mercancías; desde HU-039.1 (#218) su costo bruto en
+            COP (`costo_final`, solo para el dueño; sin desglose ni costos por camión o conexo).
             `margen_aplicado`, `margen_sugerido` y `origen_margen` de primer nivel son los de la ruta 1 (compatibilidad).
           items:
             $ref: '#/components/schemas/RutaCosteo'
