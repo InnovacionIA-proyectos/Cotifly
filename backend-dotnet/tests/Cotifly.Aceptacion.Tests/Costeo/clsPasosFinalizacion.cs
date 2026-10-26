@@ -71,6 +71,9 @@ public sealed class clsPasosFinalizacion(clsContextoWeb web, clsPasosCosteo cost
         var json = web.UltimoJson();
         json.GetProperty("folio").GetString().Should().Be(costeo.Folio(cotizacion));
         json.GetProperty("edicion").GetProperty("modo").GetString().Should().Be(modo);
+        json.GetProperty("edicion").GetProperty("avisos").EnumerateArray()
+            .Should().Contain(av => av.GetProperty("mensaje").GetString()!.Contains("finalizada", StringComparison.Ordinal),
+                "el aviso dice por qué se crea una versión nueva");
     }
 
     [Then("el error pide finalizar la cotización {string} antes de {string}")]
