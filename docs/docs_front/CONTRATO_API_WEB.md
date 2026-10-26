@@ -1747,3 +1747,69 @@ viajó a Nexo:
 `GET .../solicitud` devuelve `rutas[].peso_con_tara_kg` (`null` = sin tara). En la edición, cambiar solo la tara no vuelve a cubicar
 (no cambia lo que recibe el cubicador), pero sí cambia lo que va a Nexo: según el estado, se aplica en sitio o como reemplazo, igual que
 cualquier otro campo de la ruta. Mandar `null` quita la tara.
+
+### 8.16 Excel de mercancías de una ruta: `POST /web/mercancias/analizar-excel` (HU-035.1, #202, ADR-024)
+
+Para importar las mercancías de **una ruta** (tipo, cantidad, largo, ancho, alto, peso) desde el Excel del cliente. **Cotifly lee el
+archivo localmente y nunca llama a NEXO**: no sirve `POST /web/licitaciones/analizar-excel`, que reenvía el archivo a NEXO y espera el
+formato de un pliego. La respuesta es la grilla cruda, con la misma forma de `AnalisisExcel` más los indicadores de truncado, y **el
+frontend mapea las columnas a los campos de la mercancía** igual que hoy con las rutas de una licitación.
+
+- `multipart/form-data` con la parte `archivo` (`.xlsx` o `.xlsm`, hasta 10.420.224 bytes; cuerpo completo hasta 12 MB). Sin multipart:
+  415 `ErrorWeb`. Rol: el de la captura (comercial o gerente).
+- Encabezado: la primera de las 15 primeras filas usadas con 3 valores distintos (si ninguna, la primera con datos). `filas_excel[i]` es
+  el número de fila de Excel de `filas[i]`. Celdas como texto con formato estable: números con punto y sin miles (`850.5`), fechas
+  `yyyy-MM-dd`, booleanos `true`/`false`; una fórmula trae el valor que Excel guardó (Cotifly no evalúa fórmulas).
+- Topes: 20 hojas (`hojas_truncadas`), 1000 filas por hoja (`filas_truncadas`, con `total_filas` real), 50 columnas
+  (`columnas_truncadas`, con `total_columnas` real), 500 caracteres por celda (`celdas_recortadas`) y 100.000 celdas en la respuesta.
+- `mercancias` y `catalogo_mercancias_disponible`: como en la licitación (HU-023.5), opcionales; con el cubicador caído el análisis no
+  falla.
+
+<!-- respuesta: POST /web/mercancias/analizar-excel 200 -->
+```json
+{
+  "archivo": "mercancias-ruta-1.xlsx",
+  "hojas": [
+    {
+      "nombre": "Mercancías",
+      "fila_encabezado": 1,
+      "encabezados": ["Tipo de mercancía", "Cantidad", "Largo (m)", "Ancho (m)", "Alto (m)", "Peso (kg)"],
+      "filas": [
+        ["Cafe en estiba", "10", "1.2", "1", "1.5", "850.5"],
+        ["Bobinas de acero", "2", "3", "2", "1", "2000"]
+      ],
+      "filas_excel": [2, 3],
+      "total_filas": 2,
+      "filas_truncadas": false,
+      "total_columnas": 6,
+      "columnas_truncadas": false,
+      "celdas_recortadas": false,
+      "columna_mercancia": "Tipo de mercancía",
+      "columna_codigo_mercancia": null,
+      "mercancias": [
+        { "fila": 0, "texto": "Cafe en estiba", "codigo_mercancia": "CAFE_EN_ESTIBAS", "nombre_mercancia": "Café en estibas", "sugerido": true, "origen": "parecido", "similitud": 0.93 },
+        { "fila": 1, "texto": "Bobinas de acero", "codigo_mercancia": "BOBINAS_DE_ACERO", "nombre_mercancia": "Bobinas de acero", "sugerido": true, "origen": "parecido", "similitud": 1 }
+      ]
+    }
+  ],
+  "total_hojas": 1,
+  "hojas_truncadas": false,
+  "catalogo_mercancias_disponible": true
+}
+```
+
+Un archivo corrupto o malicioso es 400 con código, nunca 500 (`detalle.motivo` dice la causa): `EXCEL_INVALIDO` (`NO_ES_XLSX`,
+`CIFRADO_O_XLS`, `ZIP_INVALIDO`, `SIN_LIBRO`, `DEMASIADAS_ENTRADAS`, `LIBRO_ILEGIBLE`), `ARCHIVO_DEMASIADO_GRANDE` (más de 9,9 MB, o
+`DESCOMPRIMIDO_EXCEDE_LIMITE`: más de 64 MB descomprimido, una bomba zip), `EXCEL_SIN_DATOS`, `FORMATO_NO_SOPORTADO` y
+`ARCHIVO_REQUERIDO`. 503 `SERVICIO_OCUPADO` (con `Retry-After`) si Cotifly ya analiza 4 archivos y el cupo no se libera en 15 s.
+
+<!-- respuesta: POST /web/mercancias/analizar-excel 400 -->
+```json
+{
+  "error": {
+    "codigo": "EXCEL_INVALIDO",
+    "mensaje": "No se pudo leer el archivo: no es un Excel (.xlsx o .xlsm) válido.",
+    "detalle": { "motivo": "NO_ES_XLSX" }
+  }
+}
+```

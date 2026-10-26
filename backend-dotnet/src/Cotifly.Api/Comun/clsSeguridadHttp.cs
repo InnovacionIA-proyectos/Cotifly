@@ -56,13 +56,22 @@ public sealed class clsOpcionesSeguridadHttp
 
     /// <summary>
     /// Tamaño máximo del cuerpo en <c>/web/licitaciones*</c> (HU-011, ADR-017): el Excel (hasta 10 MB) más el JSON de hasta 1000
-    /// líneas. Por defecto 12 MB; 413 al pasarlo.
+    /// líneas; desde HU-035.1 (#202) también en <c>POST /web/mercancias/analizar-excel</c> (<see cref="RutaExcelMercancias"/>). Por
+    /// defecto 12 MB; 413 al pasarlo.
     /// </summary>
     [Range(1024, 64 * 1024 * 1024)]
     public long LimiteCuerpoLicitacionBytes { get; set; } = 12 * 1024 * 1024;
 
     /// <summary>Prefijo de las rutas con el límite de <see cref="LimiteCuerpoLicitacionBytes"/>.</summary>
     public const string PrefijoLicitaciones = "/web/licitaciones";
+
+    /// <summary>HU-035.1 (#202): el análisis del Excel de mercancías, con el mismo límite de <see cref="LimiteCuerpoLicitacionBytes"/>.</summary>
+    public const string RutaExcelMercancias = "/web/mercancias/analizar-excel";
+
+    /// <summary>¿La ruta lleva un Excel (límite de <see cref="LimiteCuerpoLicitacionBytes"/>) y no el de <see cref="LimiteCuerpoWebBytes"/>?</summary>
+    public static bool LlevaExcel(PathString ruta) =>
+        ruta.StartsWithSegments(PrefijoLicitaciones, StringComparison.OrdinalIgnoreCase)
+        || ruta.StartsWithSegments(RutaExcelMercancias, StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>Valida <see cref="clsOpcionesCors"/>: orígenes bien formados y, en Production, al menos uno.</summary>
@@ -264,7 +273,7 @@ public static class clsSeguridadHttp
     private static async Task LimitarCuerpoAsync(HttpContext contexto, RequestDelegate siguiente)
     {
         var opciones = contexto.RequestServices.GetRequiredService<IOptions<clsOpcionesSeguridadHttp>>().Value;
-        var limite = contexto.Request.Path.StartsWithSegments(clsOpcionesSeguridadHttp.PrefijoLicitaciones, StringComparison.OrdinalIgnoreCase)
+        var limite = clsOpcionesSeguridadHttp.LlevaExcel(contexto.Request.Path)
             ? opciones.LimiteCuerpoLicitacionBytes
             : opciones.LimiteCuerpoWebBytes;
         if (contexto.Request.ContentLength > limite)

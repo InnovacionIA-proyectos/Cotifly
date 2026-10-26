@@ -18,6 +18,9 @@ public sealed class clsPasosCubicador(clsPasosCosteo costeo, clsContextoWeb web)
 {
     private readonly clsCubicadorFalso _cubicador = new();
 
+    /// <summary>El cubicador falso del escenario (HU-035.1, #202: los pasos del Excel de mercancías le agregan tipos).</summary>
+    public clsCubicadorFalso Cubicador => _cubicador;
+
     private static string Cadena => clsEntornoAceptacion.BaseDatos.CadenaCotifly;
 
     [Given("la API web de Cotifly conectada a Nexo con el cliente {string} de BP {string} y al cubicador")]

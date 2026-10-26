@@ -129,6 +129,9 @@ public static class clsDependenciasAplicacion
         servicios.AddScoped<Licitaciones.Services.IClsCubicacionLicitacionService, Licitaciones.Services.clsCubicacionLicitacionService>();
         servicios.AddScoped<Licitaciones.Services.IClsValidadorFilasLicitacion, Licitaciones.Services.clsValidadorFilasLicitacion>();
 
+        // HU-035.1 (#202, ADR-024): Excel de mercancías de una ruta, leído localmente sin Nexo (el lector lo registra Infraestructura).
+        servicios.AddScoped<Mercancias.Services.IClsAnalisisExcelMercanciasService, Mercancias.Services.clsAnalisisExcelMercanciasService>();
+
         // Tablero de métricas agregadas (HU-010.1, ADR-016) y regional del usuario (DimEjecutivo o UsuariosWeb.regional).
         servicios.AddScoped<IClsRegionalUsuario, clsRegionalUsuarioService>();
         servicios.AddScoped<IClsTableroMetricasService, clsTableroMetricasService>();

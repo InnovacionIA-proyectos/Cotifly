@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Fecha** | 2026-10-22 |
-| **Versión de referencia** | Rama `integracion-1019`: QA (PR #185, rama `hu-023-defectos-e2e-1016`, con D-1019-1) más #179 (HU-027.1, clases de contenedor), #180 (HU-025.1, textos de roles), #187 (HU-010.5, métricas por año y mes), #188 (HU-014, columnas 03/05 y "solo códigos conocidos") y #186 (HU-028, editar la solicitud); más la rama `179-detalle-por-folio` (#179 parte A, `GET /web/cotizaciones/{folio}`); más #181 (motivo pendiente), #183 (HU-028.1, rechazo de línea), #184 (HU-030.1, peso con tara), #191 (`Idempotency-Key` persistente), #194 (HU-031.1, alias de NEXO) y #197 (HU-032, vehículo elegido); más la rama `199-correo-mailsender` (HU-033, #199: correo por MailSender, total sin desglose y resultado diferido a NEXO), con los endurecimientos A y B de #199 integrados |
+| **Fecha** | 2026-10-26 |
+| **Versión de referencia** | Rama `integracion-1019`: QA (PR #185, rama `hu-023-defectos-e2e-1016`, con D-1019-1) más #179 (HU-027.1, clases de contenedor), #180 (HU-025.1, textos de roles), #187 (HU-010.5, métricas por año y mes), #188 (HU-014, columnas 03/05 y "solo códigos conocidos") y #186 (HU-028, editar la solicitud); más la rama `179-detalle-por-folio` (#179 parte A, `GET /web/cotizaciones/{folio}`); más #181 (motivo pendiente), #183 (HU-028.1, rechazo de línea), #184 (HU-030.1, peso con tara), #191 (`Idempotency-Key` persistente), #194 (HU-031.1, alias de NEXO) y #197 (HU-032, vehículo elegido); más la rama `199-correo-mailsender` (HU-033, #199: correo por MailSender, total sin desglose y resultado diferido a NEXO), con los endurecimientos A y B de #199 integrados; más la rama `202-excel-mercancias` (HU-035.1, #202: Excel de mercancías de una ruta leído en Cotifly, sin NEXO) |
 | **Audiencia** | Equipo de frontend del módulo Cotifly dentro de ClientePro (Angular 17.3.8) |
 | **Fuente de verdad** | El código del backend .NET y `backend-dotnet/specs/openapi.yaml`. Si este documento y el código no coinciden, manda el código. Los cambios de esta versión están en la sección 9 |
 
@@ -309,8 +309,9 @@ Consecuencias:
 | Límite | Valor | Respuesta |
 |---|---|---|
 | Cuerpo de cualquier petición a `/web/*` | 64 KB | 413 `ErrorWeb` |
-| Cuerpo de `/web/licitaciones*` | 12 MB | 413 `ErrorWeb` |
-| Archivo Excel de la licitación | 10 MB menos 64 KB (unos 9,9 MB) | 400 `ARCHIVO_DEMASIADO_GRANDE` |
+| Cuerpo de `/web/licitaciones*` y de `POST /web/mercancias/analizar-excel` | 12 MB | 413 `ErrorWeb` |
+| Archivo Excel de la licitación o de mercancías | 10 MB menos 64 KB (unos 9,9 MB) | 400 `ARCHIVO_DEMASIADO_GRANDE` |
+| Excel de mercancías descomprimido (HU-035.1) | 64 MB | 400 `ARCHIVO_DEMASIADO_GRANDE` (`detalle.motivo = DESCOMPRIMIDO_EXCEDE_LIMITE`) |
 | `/api/auth/*` (login, refresh y logout juntos) | 30 peticiones por minuto por IP | 429 `ErrorWeb` |
 | `POST /web/chat` | 20 turnos por minuto por comercial | 429 `ErrorWeb` |
 | Resto de `/web/*` | Sin límite propio | — |
@@ -789,11 +790,11 @@ Convenciones de esta sección:
   igual que una inexistente).
 - Todo `/web/*` y `/pdfs/*` exige `Authorization: Bearer <access>` y responde **401** `ErrorWeb` sin token o con uno vencido. Ese 401
   no se repite en cada tabla.
-- Todo `/web/*` con cuerpo exige `Content-Type: application/json` (salvo los multipart de licitaciones). Sin él: 415. Un cuerpo de
+- Todo `/web/*` con cuerpo exige `Content-Type: application/json` (salvo los multipart de licitaciones y del Excel de mercancías). Sin él: 415. Un cuerpo de
   más de 64 KB: 413. Un JSON mal formado o con tipos erróneos: 400 `ErrorWeb`. Tampoco se repiten.
 - `{folio}` es el folio de la cotización (hasta 50 caracteres), codificado con `encodeURIComponent`.
 
-Resumen (52 endpoints):
+Resumen (53 endpoints):
 
 | # | Método y ruta | Rol | Módulo |
 |---|---|---|---|
@@ -849,6 +850,7 @@ Resumen (52 endpoints):
 | 50 | `GET /web/alias/resolver` | Ambos | Catálogos (HU-031.1, #194) |
 | 51 | `GET /web/cotizaciones/{folio}/correos` | Ambos (dueño) | Correo (HU-033, #199) |
 | 52 | `POST /web/cotizaciones/{folio}/correos/{correoId}/reintentar` | Ambos (dueño) | Correo (HU-033, #199) |
+| 53 | `POST /web/mercancias/analizar-excel` | Ambos | Captura y costeo (HU-035.1, #202) |
 
 Retirados (responden 404): `GET /web/metricas/actividad`, `GET /web/metricas/ajustes-margen`, `POST /chat/events`, `POST /web/login`.
 
@@ -2054,6 +2056,65 @@ Respuesta `EdicionSolicitudResultado`: `modo`, `folio` (el resultante), `folio_o
 | 503 | `NEXO_NO_DISPONIBLE` (`detalle.motivo = RECHAZO_NEXO_FALLIDO`) | "NEXO no respondió; no se cambió nada". La versión subió: recargar antes de reintentar |
 | 503 | `CATALOGOS_FLETE_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE`, `CUBICADOR_NO_DISPONIBLE`, `TRM_NO_DISPONIBLE` | Reintentar; nada se guardó |
 | 503 | `SERVICIO_OCUPADO` | `nueva_version`: el candado del folio `-vN` siguió ocupado. Nada cambió, tampoco la versión de la original (endurecimiento B, #199): reintentar con el mismo `If-Match` |
+
+#### 4.4.11 `POST /web/mercancias/analizar-excel` (Excel de mercancías de una ruta, HU-035.1, #202)
+
+Lee el Excel con las mercancías de **una ruta** para llenar sus filas (tipo, cantidad, largo, ancho, alto, peso). **Cotifly lo lee
+localmente y nunca llama a NEXO** (no usar `POST /web/licitaciones/analizar-excel`, que reenvía el archivo a NEXO y espera un pliego).
+No guarda nada. La respuesta tiene la forma de `AnalisisExcel` (4.6.1) más los indicadores de truncado: el frontend reutiliza su
+pantalla de mapeo y **mapea las columnas a los campos de la mercancía**.
+
+- **Rol:** ambos (el de la captura). **Cuerpo:** `multipart/form-data` con la parte `archivo` (`.xlsx` o `.xlsm`, hasta unos 9,9 MB;
+  las macros nunca se ejecutan). Límite del cuerpo completo: 12 MB. Sin multipart: 415 `ErrorWeb`.
+- **Encabezado:** la primera de las 15 primeras filas usadas con al menos 3 valores distintos; si ninguna, la primera fila con datos.
+  `filas` son las filas no vacías debajo del encabezado, cada una del ancho de `encabezados` (celda vacía = `""`); `filas_excel[i]` es el
+  número de fila de Excel de `filas[i]` (mostrarlo al comercial). Las celdas combinadas no se expanden. Las hojas sin datos no vienen.
+- **Formato de las celdas** (estable, sin cultura): números con punto decimal y sin miles (`850.5`; un 15 % llega `0.15`), fechas
+  `yyyy-MM-dd` (con hora, `yyyy-MM-ddTHH:mm:ss`), duraciones `HH:mm:ss`, booleanos `true`/`false`, errores de Excel con su texto
+  (`#DIV/0!`), texto sin espacios al borde y con los saltos de línea como un espacio. **Una fórmula trae el valor que Excel guardó**
+  (Cotifly nunca evalúa fórmulas; sin valor guardado, `""`).
+- **Topes:** 20 hojas (`hojas_truncadas`, `total_hojas`), 1000 filas por hoja (`filas_truncadas`, `total_filas` real), 50 columnas
+  (`columnas_truncadas`, `total_columnas` real), 500 caracteres por celda (`celdas_recortadas`) y 100.000 celdas en toda la respuesta.
+  Si algo vino truncado, avisarlo ("Se muestran las primeras 1000 de N filas").
+- **Código de mercancía (opcional):** igual que en la licitación (HU-023.5): `columna_mercancia`, `columna_codigo_mercancia` y
+  `mercancias[]` con el código sugerido por fila (`sugerido = true` se confirma o se cambia). Con el cubicador caído no falla:
+  `catalogo_mercancias_disponible = false` y sin sugerencias.
+
+```json
+{
+  "archivo": "mercancias-ruta-1.xlsx",
+  "hojas": [
+    {
+      "nombre": "Mercancías",
+      "fila_encabezado": 1,
+      "encabezados": ["Tipo de mercancía", "Cantidad", "Largo (m)", "Ancho (m)", "Alto (m)", "Peso (kg)"],
+      "filas": [ ["Cafe en estiba", "10", "1.2", "1", "1.5", "850.5"] ],
+      "filas_excel": [2],
+      "total_filas": 1,
+      "filas_truncadas": false,
+      "total_columnas": 6,
+      "columnas_truncadas": false,
+      "celdas_recortadas": false,
+      "columna_mercancia": "Tipo de mercancía",
+      "columna_codigo_mercancia": null,
+      "mercancias": [
+        { "fila": 0, "texto": "Cafe en estiba", "codigo_mercancia": "CAFE_EN_ESTIBAS", "nombre_mercancia": "Café en estibas", "sugerido": true, "origen": "parecido", "similitud": 0.93 }
+      ]
+    }
+  ],
+  "total_hojas": 1,
+  "hojas_truncadas": false,
+  "catalogo_mercancias_disponible": true
+}
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `AnalisisExcelMercancias` | Pantalla de mapeo de columnas a tipo, cantidad, largo, ancho, alto y peso; mostrar `filas_excel[i]`; avisar si algo vino truncado |
+| 400 | `ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE` (también `detalle.motivo = DESCOMPRIMIDO_EXCEDE_LIMITE`), `EXCEL_INVALIDO` (`detalle.motivo`: `NO_ES_XLSX`, `CIFRADO_O_XLS`, `ZIP_INVALIDO`, `SIN_LIBRO`, `DEMASIADAS_ENTRADAS`, `LIBRO_ILEGIBLE`), `EXCEL_SIN_DATOS` | Mostrar `mensaje` y pedir otro archivo. Con `CIFRADO_O_XLS`: "Guárdalo como .xlsx sin contraseña" |
+| 413 | `ErrorWeb` | Más de 12 MB |
+| 415 | `ErrorWeb` | No se mandó como `multipart/form-data` |
+| 503 | `SERVICIO_OCUPADO` (con `Retry-After`) | Cotifly ya analiza 4 archivos y el cupo no se liberó en 15 s: reintentar |
 
 ### 4.5 Cotizaciones
 
@@ -3334,7 +3395,7 @@ parecido del catálogo, `sugerido = true`, con `similitud` de 0 a 1), `null` (si
 | Código | HTTP | Significado | Acción recomendada en la UI |
 |---|---|---|---|
 | `AJUSTE_MARGEN_INVALIDO` | 400 | Margen fuera de 0 a 0,99 o ausente | Validar el campo antes de enviar |
-| `ARCHIVO_DEMASIADO_GRANDE` | 400 | Excel de más de unos 9,9 MB | "El archivo supera 10 MB" |
+| `ARCHIVO_DEMASIADO_GRANDE` | 400 | Excel de más de unos 9,9 MB; en el Excel de mercancías (HU-035.1) también más de 64 MB descomprimido (`detalle.motivo = DESCOMPRIMIDO_EXCEDE_LIMITE`) | "El archivo supera 10 MB" |
 | `ARCHIVO_REQUERIDO` | 400 | Falta el Excel o está vacío | Pedir el archivo |
 | `CAMPO_NO_EDITABLE` | 400 | La edición cambia el cliente, el tipo o la línea de negocio de una ruta (HU-028) | Restaurar el campo de `detalle.campo` |
 | `CATALOGOS_FLETE_NO_DISPONIBLE` | 503 | Catálogos de NEXO caídos y sin copia de menos de 24 h | Deshabilitar selects, Reintentar; nada se guardó |
@@ -3363,7 +3424,7 @@ parecido del catálogo, `sugerido = true`, con `similitud` de 0 a 1), `null` (si
 | `DIMENSIONES_INVALIDAS` | 400 | Medida fuera de 0,1 a 999.999 o peso por bulto ≤ 0. En "Calcular cubicaje" con `detalle.item` (base 0) y `detalle.campo` (D1); también por un 422 del cubicador que señala una mercancía | Marcar el campo del ítem |
 | `ERROR_INTERNO` | 500 | Error no controlado del servidor (fila 57): mensaje genérico; `detalle.id_correlacion` para soporte. Antes salía como 400 o sin cuerpo | "Ocurrió un error. Reintenta" |
 | `ESTADO_NO_PERMITE` | 409 | El estado no admite la operación (ver `detalle.motivo`) | Según el motivo (sección 5.7) |
-| `EXCEL_INVALIDO` | 400 | No se pudo leer el Excel | Pedir otro archivo |
+| `EXCEL_INVALIDO` | 400 | No se pudo leer el Excel (en el Excel de mercancías, `detalle.motivo` dice por qué: 4.4.11) | Pedir otro archivo |
 | `EXCEL_SIN_DATOS` | 400 | Ninguna hoja con tabla, o la hoja no existe | Revisar el archivo o la hoja |
 | `FOLIO_CONSECUTIVO_AGOTADO` | 400 | Se usaron los 999 folios del día de esas iniciales | "Contacta a soporte" |
 | `FOLIO_INVALIDO` | 400 | Endurecimiento B (#199): el folio que arma el servidor no cumple ADR-011. En la práctica solo en la versión nueva (`re-solicitar` con `-vN` y `nueva_version` de `PUT .../solicitud`): folio de la original con otra forma o `-vN` de más de 50 caracteres. El PDF no lo responde | "Contacta a soporte" |
@@ -3521,6 +3582,7 @@ fila_excel, campo, codigo, mensaje}`.
 | 56 | **Auditoría QA total (2026-10-22): correcciones de coherencia documental.** Sin cambios de código ni de forma. Se alinean con el código: 52 endpoints; la redirección del correo al buzón de pruebas es el valor por defecto en todos los ambientes (solo producción con `Correo:Proteccion:Modo=ninguno` y `Correo:Proteccion:PermitirEnvioReal=true` escribe a los destinatarios reales); `CORREO_NO_REINTENTABLE` también por un reintento en curso (doble clic); `CORREO_ENVIO_FALLIDO` por tiempo agotado deja la cotización enviada (5 min de `CORREO_DUPLICADO`, historial "Resultado incierto:"); el PDF (de una ruta o del pliego) muestra el valor final por ruta con conexos y el total general, mientras la vista de la licitación y su Excel siguen sin conexos; casos exactos de `COTIZACION_NO_ENTREGADA` frente al resultado pendiente de sincronizar; `If-Match`, `Idempotency-Key` y `Location` de `PUT .../solicitud` y `POST /web/cubicacion`; `RUTA_RECHAZADA`/`SIN_RUTAS_COTIZABLES` (409) y `CLIENTE_BUSQUEDA_NO_DISPONIBLE` (503) en el mapeo HTTP; la fila 20 queda revertida por la 53 | Cambia (solo documentación) | Revisar el manejo de esos casos contra lo descrito; ningún contrato nuevo |
 | 57 | **Endurecimiento A (#199, 2026-10-22).** (a) **Nuevo 500 `ERROR_INTERNO`** en todo `/web/*` y `/pdfs/*` (respuesta común `ErrorInterno` del openapi): `ErrorNegocio` `{"error": {"codigo": "ERROR_INTERNO", "mensaje": "Ocurrió un error interno. Intenta de nuevo y, si se repite, contacta a soporte.", "detalle": {"id_correlacion": "..."}}}`: el único `detalle` es `id_correlacion`, el id de la petición en el log (sin datos técnicos) (antes un error no controlado salía sin cuerpo; `ERROR_INTERNO` de los casos de uso salía como **400**, y una restricción única no traducida salía como 400 `REGISTRO_DUPLICADO` con el nombre de la restricción). En `/api/auth/*` el 500 es `ErrorWeb` con el mismo texto. (b) **`POST .../enviar` de un folio ajeno o inexistente responde 404** antes que `CORREO_DESHABILITADO` (503) o `CORREO_INVALIDO` (400): ya no se pueden enumerar folios. (c) **`GET /web/licitaciones/{folio}`** de un folio que no es licitación (formulario o chat) responde **404** (antes 200), como el Excel y reintentar. (d) **Ids que no son UUID en la ruta** (`GET /web/cubicacion/{id}`, `POST .../rutas/{rutaId}/recalcular-vehiculos`) responden **404** `ErrorWeb` como uno inexistente (antes un 404 sin cuerpo y un 400 "Cuerpo inválido"). (e) **Contrato (`openapi.yaml`), solo documental:** 500 `ErrorInterno` declarado en todas las operaciones (`ErrorWeb` en `/api/auth/*`); 413 `CuerpoDemasiadoGrande` y 415 `TipoContenidoNoSoportado` como respuestas comunes de las operaciones con cuerpo; `Retry-After` en el 429; salen del enum `AJUSTE_ID_INVALIDO`, `TARIFA_FUENTE_NO_DISPONIBLE`, `TARIFA_CONFIG_INVALIDA` y `MUNICIPIO_ARGUMENTO_INVALIDO` (nunca se emitían); esquemas de entrada propios `TelefonoComercialWeb` (PUT del teléfono: `telefono` opcional, vacío borra) y `BorradorCorreoWeb` (vista previa: todo opcional); `ItemCubicacion` con sus rangos (cantidad 1-100.000, medidas 0,1-999.999, `peso_kg` obligatorio > 0, 2 decimales); `cantidad` de los conexos con 2 decimales (`multipleOf: 0.01`); topes de `LineaLicitacionWeb` (`tipo_vehiculo`/`carroceria` ≤ 100, montos ≤ 9.999.999.999.999,99) y su texto de HU-032 (el vehículo elegido ya no se ignora); `moneda` (`null` = COP, vacío es error) y `deadline` (sin zona, hora de Bogotá) de la licitación; tope del Excel 10 MB − 64 KB; 400/503 del cubicador (`CUBICADOR_NO_AUTORIZADO`, `CUBICADOR_RESPUESTA_INVALIDA` y los rechazos) en catálogos, captura, licitación, edición y re-solicitud; 409 de `servicios-conexos` con `CAPTURA_EN_CURSO` y `CONFLICTO_CONCURRENCIA` con `agregado_en_nexo = true`; `REGIONAL_*` también en `/web/cotizaciones/regional`; `ServicioConexoCatalogo.id` y `servicio_id` sin `format: uuid` (es el id de NEXO tal como viene); `VistaPreviaCorreo.resumen` anulable con `oneOf` | Cambia | Tratar el 500 como error genérico: mensaje "Ocurrió un error. Reintenta" sin mostrar nada técnico; mostrar `detalle.id_correlacion` como "código para soporte" si se quiere; no cerrar sesión. Ante `CONFLICTO_CONCURRENCIA` con `agregado_en_nexo = true` en conexos, recargar el costeo y NO repetir el POST. En `/enviar`, un 404 se trata como siempre ("no existe o no es tuya"); con una cotización propia los 503 y 400 siguen igual. Abrir la vista de licitación solo con folios de licitación |
 | 58 | **Endurecimiento B (#199, E2E 2026-10-22).** (a) `POST .../resultado`: DEF-C-1, ante `RESULTADO_YA_DEFINIDO` Cotifly **lee** NEXO (ya no hace `POST /api/cotizaciones`); OBS-C-2, repetir el mismo resultado ya `sincronizado` es 200 sin cambios y sin llamar a NEXO; una `perdida` en `pendiente_costeo` con la solicitud inexistente en NEXO queda `solo_cotifly` (antes 400 `COSTEO_NEXO_SOLICITUD_NO_ENCONTRADA`); el 404 de NEXO sobre su cotización es **409 `COTIZACION_NEXO_NO_ENCONTRADA`** (antes el 404 "no es tuya"). (b) `PUT .../solicitud` (reemplazo): `detalle.motivo` es siempre `RECHAZO_NEXO_FALLIDO`, también en el 403 `NEXO_SIN_PERMISO` (antes el texto crudo "HTTP 403 …"). (c) `nueva_version` y re-solicitar `-vN`: con 503 `SERVICIO_OCUPADO` la original **no** cambia (su `If-Match` sigue valiendo). (d) `POST /web/licitaciones/{folio}/cubicacion/reintentar` con `usar_respaldo`: aplica el vehículo elegido (`VEHICULO_ELEGIDO_USADO` / `VEHICULO_ELEGIDO_INVALIDO`). (e) 403 `NEXO_SIN_PERMISO` declarado en `POST /web/solicitudes-costeo`, `POST /web/licitaciones` y `re-solicitar` (catálogo de conexos). (f) `FOLIO_INVALIDO` en el enum. (g) PDF de una **spot** de varias rutas: sin "licitación" ni "pliego". (h) `TARIFA_FUENTE_NO_DISPONIBLE`, `TARIFA_CONFIG_INVALIDA` y `MUNICIPIO_ARGUMENTO_INVALIDO` se borran también del backend (del enum ya salieron en la fila 57). (i) Se documenta la diferencia intencional de precios de la licitación (vista y Excel desglosados; PDF y correo con el valor final) | Cambia / Agrega | Manejar 409 `COTIZACION_NEXO_NO_ENCONTRADA` en el botón de resultado; leer siempre `detalle.motivo = RECHAZO_NEXO_FALLIDO` en la edición; tras `SERVICIO_OCUPADO` reintentar con el mismo `If-Match`; mostrar los avisos del vehículo tras "Enviar con respaldo"; tratar el 403 `NEXO_SIN_PERMISO` en captura, licitación y re-solicitud ("avisar a soporte"); no comparar la vista de la licitación con el PDF |
+| 59 | **HU-035.1 (#202, ADR-024): nuevo `POST /web/mercancias/analizar-excel`.** Lee en Cotifly, **sin NEXO**, el Excel de mercancías de una ruta y devuelve la grilla cruda `AnalisisExcelMercancias` (misma forma de `AnalisisExcel` más `total_hojas`, `hojas_truncadas` y, por hoja, `filas_truncadas`, `total_columnas`, `columnas_truncadas` y `celdas_recortadas`; `filas_excel` siempre viene). Celdas con formato estable (números con punto, fechas ISO, fórmulas con su valor guardado). Código de mercancía sugerido opcional, como en la licitación. Archivos corruptos o maliciosos: 400 `EXCEL_INVALIDO` o `ARCHIVO_DEMASIADO_GRANDE` con `detalle.motivo` (nunca 500); 503 `SERVICIO_OCUPADO` con el cupo lleno. Mismo límite de 12 MB que las licitaciones. Sin códigos de error nuevos | Agrega | Para "Importar mercancías desde Excel" en las líneas de la solicitud usar este endpoint (no `licitaciones/analizar-excel`); reutilizar la pantalla de mapeo; mostrar `filas_excel[i]` y avisar el truncado; leer `detalle.motivo` en el 400 |
 
 ---
 
@@ -3607,6 +3669,17 @@ fila_excel, campo, codigo, mensaje}`.
 ---
 
 ## 9. Notas de versión
+
+**2026-10-26 (rama `202-excel-mercancias`, HU-035.1, #202, ADR-024).** Excel de mercancías de una ruta:
+
+- **Nuevo** `POST /web/mercancias/analizar-excel` (4.4.11): Cotifly lee el Excel localmente (ClosedXML), **sin NEXO**, y devuelve la
+  grilla cruda para que el frontend mapee tipo, cantidad, largo, ancho, alto y peso. Misma forma de `AnalisisExcel` más los indicadores
+  de truncado; código de mercancía sugerido opcional (el cubicador caído no lo rompe).
+- Contra archivos maliciosos: revisión del paquete antes de abrirlo (bomba zip: más de 64 MB descomprimido), topes de hojas, filas,
+  columnas, largo de celda y celdas de la respuesta, fórmulas nunca evaluadas y un cupo de 4 análisis simultáneos (503
+  `SERVICIO_OCUPADO`). Todo error del archivo es 400 con código y `detalle.motivo`.
+- Sin script de base de datos ni códigos de error nuevos. Son **53 endpoints**. Cambio con su "qué hacer": sección 7, fila 59 (la #201
+  usará la 60).
 
 **2026-10-22 (rama `199-correo-mailsender`, HU-033, #199, ADR-023).** Envío real por MailSender, total sin desglose y resultado diferido:
 

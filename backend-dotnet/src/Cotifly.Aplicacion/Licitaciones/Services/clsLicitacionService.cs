@@ -284,26 +284,9 @@ public sealed class clsLicitacionService(
             return analisis;
         }
 
-        IReadOnlyList<clsTipoMercanciaCubicador>? catalogo = null;
-        if (cubicador is { EstaConfigurado: true })
-        {
-            var leido = await cubicador.ListarTiposMercanciaAsync(cancellationToken);
-            if (leido.EsExitoso)
-            {
-                catalogo = leido.Valor;
-            }
-            else
-            {
-                logger.LogInformation("El catálogo de tipos de mercancía del cubicador no respondió ({Codigo}): el análisis va sin sugerencias de código.",
-                    leido.Error.Codigo);
-            }
-        }
-
-        var porCodigo = new Dictionary<string, clsTipoMercanciaCubicador>(StringComparer.OrdinalIgnoreCase);
-        foreach (var tipo in catalogo ?? [])
-        {
-            porCodigo.TryAdd(tipo.Codigo, tipo);
-        }
+        // HU-035.1 (#202): la lectura del catálogo y la detección viven en clsDetectorMercanciaExcel (compartidas con el Excel de mercancías).
+        var catalogo = await clsDetectorMercanciaExcel.CatalogoAsync(cubicador, logger, cancellationToken);
+        var porCodigo = clsDetectorMercanciaExcel.PorCodigo(catalogo);
 
         return analisis with
         {
@@ -319,7 +302,7 @@ public sealed class clsLicitacionService(
         };
     }
 
-    /// <summary>Por cada fila con mercancía (texto o código), su código (ver <see cref="clsCodigoMercanciaFila"/>).</summary>
+    /// <summary>Por cada fila con mercancía (texto o código), su código (<see cref="clsDetectorMercanciaExcel.Mercancias"/>).</summary>
     public static IReadOnlyList<clsCodigoMercanciaFila> MercanciasDeHoja(
         clsHojaExcel hoja,
         int? columnaTexto,
@@ -328,99 +311,14 @@ public sealed class clsLicitacionService(
         IReadOnlyDictionary<string, clsTipoMercanciaCubicador>? porCodigo = null)
     {
         ArgumentNullException.ThrowIfNull(hoja);
-        static string? Celda(IReadOnlyList<string> fila, int? columna) =>
-            columna is { } c && c < fila.Count && !string.IsNullOrWhiteSpace(fila[c]) ? fila[c].Trim() : null;
-
-        // Solo los tipos cubicables: uno que no se puede cubicar se rechazaría al guardar (HU-023.3).
-        var cubicables = catalogo?.Where(t => t.Cubicable).ToList();
-        var sugerencias = new Dictionary<string, clsMercanciaSugerida?>(StringComparer.Ordinal);
-        var resultado = new List<clsCodigoMercanciaFila>();
-        for (var i = 0; i < hoja.Filas.Count; i++)
-        {
-            var texto = Celda(hoja.Filas[i], columnaTexto);
-            var codigo = Celda(hoja.Filas[i], columnaCodigo);
-            if (codigo is not null)
-            {
-                // La columna de código del Excel se usa tal cual (la validación de la licitación revisa que exista en el catálogo).
-                var nombre = porCodigo is not null && porCodigo.TryGetValue(codigo, out var tipo) ? tipo.Nombre : null;
-                resultado.Add(new clsCodigoMercanciaFila(i, texto, codigo, nombre, Sugerido: false, clsCodigoMercanciaFila.OrigenExcel, null));
-                continue;
-            }
-
-            if (texto is null)
-            {
-                continue;
-            }
-
-            if (!sugerencias.TryGetValue(texto, out var sugerencia))
-            {
-                sugerencia = cubicables is null ? null : clsSugeridorMercancia.Sugerir(texto, cubicables);
-                sugerencias[texto] = sugerencia;
-            }
-
-            resultado.Add(sugerencia is null
-                ? new clsCodigoMercanciaFila(i, texto, null, null, Sugerido: false, null, null)
-                : new clsCodigoMercanciaFila(i, texto, sugerencia.Tipo.Codigo, sugerencia.Tipo.Nombre, Sugerido: true, clsCodigoMercanciaFila.OrigenParecido,
-                    Math.Round((decimal)sugerencia.Parecido, 4, MidpointRounding.AwayFromZero)));
-        }
-
-        return resultado;
+        return clsDetectorMercanciaExcel.Mercancias(hoja.Filas, columnaTexto, columnaCodigo, catalogo, porCodigo);
     }
 
-    /// <summary>
-    /// HU-023.5: índice de la columna con la descripción de la mercancía, por su encabezado (sin tildes ni mayúsculas): primero uno que
-    /// diga "mercancía", luego "PRODUCTO", "tipo de carga" o "carga", "commodity" y por último "descripción". <c>null</c> si no hay.
-    /// La columna de código (<see cref="ColumnaCodigoMercancia"/>) no cuenta.
-    /// </summary>
-    public static int? ColumnaMercancia(IReadOnlyList<string> encabezados)
-    {
-        ArgumentNullException.ThrowIfNull(encabezados);
-        var normalizados = encabezados.Select(e => clsSugeridorMercancia.Normalizar(e)).ToList();
-        Func<string, bool>[] reglas =
-        [
-            e => Palabras(e).Any(p => p.StartsWith("MERCANC", StringComparison.Ordinal)),
-            e => Palabras(e).Any(p => p.StartsWith("PRODUCTO", StringComparison.Ordinal)),
-            e => e is "CARGA" or "TIPO DE CARGA" or "DESCRIPCION DE LA CARGA" or "DESCRIPCION CARGA",
-            e => Palabras(e).Contains("COMMODITY"),
-            e => Palabras(e).Any(p => p.StartsWith("DESCRIPCION", StringComparison.Ordinal)),
-        ];
-        foreach (var regla in reglas)
-        {
-            for (var i = 0; i < normalizados.Count; i++)
-            {
-                if (!EsCodigo(normalizados[i]) && regla(normalizados[i]))
-                {
-                    return i;
-                }
-            }
-        }
+    /// <summary>HU-023.5: la columna de la descripción de la mercancía (<see cref="clsDetectorMercanciaExcel.ColumnaMercancia"/>).</summary>
+    public static int? ColumnaMercancia(IReadOnlyList<string> encabezados) => clsDetectorMercanciaExcel.ColumnaMercancia(encabezados);
 
-        return null;
-    }
-
-    /// <summary>
-    /// HU-023.5: índice de la columna con el código de la mercancía ("Código mercancía", "codigo_mercancia", "Cód. producto"...), o
-    /// <c>null</c>.
-    /// </summary>
-    public static int? ColumnaCodigoMercancia(IReadOnlyList<string> encabezados)
-    {
-        ArgumentNullException.ThrowIfNull(encabezados);
-        for (var i = 0; i < encabezados.Count; i++)
-        {
-            var normalizado = clsSugeridorMercancia.Normalizar(encabezados[i]);
-            if (EsCodigo(normalizado)
-                && Palabras(normalizado).Any(p => p.StartsWith("MERCANC", StringComparison.Ordinal) || p.StartsWith("PRODUCTO", StringComparison.Ordinal)))
-            {
-                return i;
-            }
-        }
-
-        return null;
-    }
-
-    private static string[] Palabras(string normalizado) => normalizado.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-
-    private static bool EsCodigo(string normalizado) => Palabras(normalizado).Any(p => p is "CODIGO" or "COD" or "CODE");
+    /// <summary>HU-023.5: la columna del código de la mercancía (<see cref="clsDetectorMercanciaExcel.ColumnaCodigoMercancia"/>).</summary>
+    public static int? ColumnaCodigoMercancia(IReadOnlyList<string> encabezados) => clsDetectorMercanciaExcel.ColumnaCodigoMercancia(encabezados);
 
     /// <summary>
     /// HU-013.15 (#124): agrega a cada hoja del análisis de Nexo el número de fila de Excel de cada una de sus filas (<c>filas_excel</c>),
