@@ -19,7 +19,8 @@ public interface IClsRecalculoVehiculosService
 {
     /// <summary>
     /// La vista del costeo con los camiones nuevos de la ruta, o el error: <c>COTIZACION_NO_ENCONTRADA</c>, <c>RUTA_INEXISTENTE</c>,
-    /// <c>CONFLICTO_CONCURRENCIA</c>, <c>ESTADO_NO_PERMITE</c> (la solicitud ya está en Nexo: usar re-solicitar con una versión nueva),
+    /// <c>CONFLICTO_CONCURRENCIA</c>, <c>PDF_YA_ENVIADO</c> (HU-036.3: entregada o finalizada; versión nueva en <c>detalle</c>),
+    /// <c>ESTADO_NO_PERMITE</c> (la solicitud ya está en Nexo: usar re-solicitar con una versión nueva),
     /// <c>SOLICITUD_COSTEO_INVALIDA</c> (mercancías sin código: el comercial las vuelve a escoger) o el error del cubicador.
     /// </summary>
     Task<clsResultado<clsCosteoCotizacion>> RecalcularAsync(
@@ -46,6 +47,9 @@ public sealed class clsRecalculoVehiculosService(
 {
     /// <summary>Herramienta de la auditoría del recálculo (<c>EventosHerramienta.herramienta</c>, desviación E1 de #174).</summary>
     public const string HerramientaAuditoria = "recalcular_vehiculos_ruta";
+
+    /// <summary>HU-036.3 (#207): motivo de la versión nueva que sugiere <c>PDF_YA_ENVIADO</c>.</summary>
+    public const string MotivoVersion = "Cambio de los camiones de la ruta después de finalizar o enviar";
 
     public const string MensajeYaEnNexo =
         "Los camiones de esta solicitud ya están en Nexo o se están enviando: para cambiarlos pide una versión nueva (POST .../costeo/re-solicitar) o espera el envío.";
@@ -91,6 +95,12 @@ public sealed class clsRecalculoVehiculosService(
         }
 
         var ruta = resuelta.Valor;
+        if (clsReglaPdfCosteo.Validar(cotizacion, MotivoVersion) is { } cerrada)
+        {
+            // HU-036.3 (#207): entregada o finalizada, los camiones cambian en una versión nueva (con la llamada en el detalle).
+            return (cerrada, ruta.Orden, null);
+        }
+
         if (!cotizacion.PuedeRecalcularCamiones(reloj.AhoraUtc))
         {
             return (new clsErrorDominio(clsCodigosError.EstadoNoPermite, MensajeYaEnNexo), ruta.Orden, null);

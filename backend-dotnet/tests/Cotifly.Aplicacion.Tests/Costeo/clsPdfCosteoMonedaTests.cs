@@ -179,6 +179,8 @@ public sealed class clsPdfCosteoMonedaTests
     private static clsCotizacionSolicitud Preparada(clsCotizacionSolicitud cotizacion)
     {
         cotizacion.ActualizarClienteDelCatalogo("CLIENTE S.A.S.", null);
+        // HU-036.3 (#207): el PDF se genera con la cotización finalizada.
+        cotizacion.Finalizar(cotizacion.UsuarioId ?? Guid.NewGuid(), clsCotizacionMuestra.Ahora);
         return cotizacion;
     }
 

@@ -1149,7 +1149,8 @@ public sealed class clsCosteoCotizacionService(
 
     /// <summary>
     /// Condiciones para generar el PDF: hay rutas que cotizar (HU-028.1, #183: con TODAS rechazadas por la Mesa, <c>SIN_RUTAS_COTIZABLES</c>,
-    /// decisión D1 de Nexo #320), costeo con precio, sin PDF vigente (<c>PDF_YA_GENERADO</c>) y sin envío (<c>PDF_YA_ENVIADO</c>).
+    /// decisión D1 de Nexo #320), costeo con precio, sin PDF vigente (<c>PDF_YA_GENERADO</c>), sin envío (<c>PDF_YA_ENVIADO</c>) y, desde
+    /// HU-036.3 (#207), finalizada (<c>COTIZACION_NO_FINALIZADA</c>: el PDF sale con el precio que aceptó el comercial).
     /// </summary>
     private static clsErrorDominio? Bloqueo(clsCotizacionSolicitud cotizacion)
     {
@@ -1169,8 +1170,11 @@ public sealed class clsCosteoCotizacionService(
             return new clsErrorDominio(clsCodigosError.PdfYaGenerado, $"La cotización {cotizacion.Folio} ya tiene PDF: genera una versión nueva para cambiarla.");
         }
 
-        return cotizacion.ValidarCambioEtapaFinal();
+        return cotizacion.ValidarEntregaAlCliente() ?? cotizacion.ValidarFinalizadaAntesDe(AccionPdf);
     }
+
+    /// <summary>HU-036.3 (#207): cierre del mensaje de <c>COTIZACION_NO_FINALIZADA</c> al generar el PDF.</summary>
+    public const string AccionPdf = "generar el PDF";
 
     /// <summary>
     /// #173: <see cref="Vista"/> con el estado del envío diferido de cada conexo a Nexo (<c>estado_nexo</c>), igual que

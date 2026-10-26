@@ -75,6 +75,7 @@ public sealed class clsPasosReSolicitudCosteo(clsContextoWeb web, clsPasosCosteo
     [Given("{string} marcó el resultado de {string} como {string} con el motivo {string}")]
     public async Task DadoElResultado(string alias, string cotizacion, string resultado, string motivo)
     {
+        await costeo.FinalizarSiCorrespondeAsync(alias, costeo.Folio(cotizacion)); // HU-036.3: finaliza antes del resultado
         await web.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{costeo.Folio(cotizacion)}/resultado", web.Sesion(alias).Access,
             clsApiWebPruebas.Json(new { resultado, motivo }));
         web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);

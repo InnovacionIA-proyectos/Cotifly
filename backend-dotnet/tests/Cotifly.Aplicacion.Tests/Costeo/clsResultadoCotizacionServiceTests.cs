@@ -43,6 +43,40 @@ public sealed class clsResultadoCotizacionServiceTests
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
+    [Theory]
+    [InlineData(EstadoCosteo.Autocosteo)]
+    [InlineData(EstadoCosteo.Entregada)]
+    public async Task HU0363_ConElCosteoListoSinFinalizarNoSeMarcaNiSeLlamaANexo(EstadoCosteo estado)
+    {
+        Estado(estado, null);
+        _cotizacion.Vehiculos[0].RegistrarCosteo(estado, 1_000_000m, null);
+        _cotizacion.RecalcularTotales(_reloj.AhoraUtc);
+        _cotizacion.TieneCostoDisponible.Should().BeTrue();
+
+        var resultado = await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "ganada", null, null, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.CotizacionNoFinalizada);
+        resultado.Error.Mensaje.Should().StartWith($"Finaliza la cotización {_cotizacion.Folio} antes de marcar el resultado");
+        _cotizacion.Ganada.Should().BeNull();
+        _nexo.ReceivedCalls().Should().BeEmpty();
+        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
+    }
+
+    [Fact]
+    public async Task HU0363_YaEnviadaAntesDeHu036ElResultadoNoExigeFinalizar()
+    {
+        // Sin backfill: una cotización enviada al cliente antes de HU-036 (sin finalizar) sigue marcando su resultado como siempre.
+        _cotizacion.Vehiculos[0].RegistrarCosteo(EstadoCosteo.Entregada, 2_000_000m, null);
+        _cotizacion.RecalcularTotales(_reloj.AhoraUtc);
+        _cotizacion.RegistrarEnvio();
+        _cotizacion.Finalizada.Should().BeFalse();
+
+        var resultado = await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "ganada", null, null, Ct);
+
+        resultado.EsExitoso.Should().BeTrue();
+        _cotizacion.Ganada.Should().BeTrue();
+    }
+
     [Fact]
     public async Task ConElOkDeNexoSeGuardaGanadaConMotivoNoAplicaYANexoVanElMotivoYElComentario()
     {
@@ -592,11 +626,14 @@ public sealed class clsResultadoCotizacionServiceTests
         _cotizacion.RegistrarConsultaCosteo(estado, "COT-1", siguiente);
     }
 
-    /// <summary>El polling ya aplicó el costeo: el camión con su flete y la ruta y la solicitud con el precio (margen guardado).</summary>
+    /// <summary>
+    /// El polling ya aplicó el costeo (el camión con su flete y la ruta y la solicitud con el precio, margen guardado) y, como lo hace el comercial antes de marcar el resultado (HU-036.3, #207), la cotización finalizada.
+    /// </summary>
     private void ConPrecio(EstadoCosteo estado, decimal flete)
     {
         _cotizacion.Vehiculos[0].RegistrarCosteo(estado, flete, null);
         _cotizacion.RecalcularTotales(_reloj.AhoraUtc);
+        _cotizacion.Finalizar(_ana, _reloj.AhoraUtc);
     }
 
     /// <summary>Foto de Nexo con la cotización entregada y la única línea costeada a 2.000.000.</summary>

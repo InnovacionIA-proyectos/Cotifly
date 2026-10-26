@@ -190,6 +190,20 @@ public sealed class clsConexosPorRutaServiceTests
         _cotizacion.RutasOrdenadas[1].Conexos.Should().HaveCount(2);
     }
 
+    [Fact]
+    public async Task HU0363_FinalizadaNoCambiaLosConexosYPideLaVersionNueva()
+    {
+        _cotizacion.Finalizar(_ana, clsCotizacionMuestra.Ahora).Valor.Should().BeTrue();
+
+        var finalizada = await Servicio().SeleccionarServiciosConexosAsync(_ana, "PCN-L1",
+            new clsCambioServiciosConexos(clsRutaIndicada.DeOrden(2), null, []), Version, Ct);
+
+        finalizada.Error.Codigo.Should().Be(clsCodigosError.PdfYaEnviado);
+        finalizada.Error.Datos!["accion"].Should().Be("nueva_version");
+        _cotizacion.RutasOrdenadas[1].Conexos.Should().HaveCount(2);
+        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
+    }
+
     private clsCosteoCotizacionService Servicio() => new(
         _cotizaciones, Substitute.For<IClsMargenPoliticaRepository>(), Substitute.For<IClsUsuarioWebRepository>(), Substitute.For<IClsGeneradorPdf>(),
         Substitute.For<IClsAlmacenPdf>(), _unidad, Substitute.For<IClsCalendarioNegocio>(), _auditoria, Options.Create(new clsOpcionesPdf()),

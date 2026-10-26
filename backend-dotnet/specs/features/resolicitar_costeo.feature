@@ -158,9 +158,10 @@ Característica: Re-solicitar el costeo a Nexo
     Y la respuesta trae el folio de "C1" con el sufijo "-v2" y la versión 2
     Y la cotización "C1" conserva su PDF enviado sin cambios
 
-  Escenario: En el mismo folio sin enviar, la re-solicitud invalida el PDF
+  # HU-036.3 (#207): finalizada no se re-solicita en el mismo folio (cotizacion_finalizada.feature); queda para las anteriores a HU-036.
+  Escenario: En el mismo folio sin enviar, la re-solicitud invalida el PDF generado antes de HU-036
     Dado que Nexo costeó la solicitud de "C1" con un flete de 2550000 y la entregó
-    Y que "ana" generó el PDF del costeo de "C1"
+    Y que "ana" generó el PDF del costeo de "C1" antes de HU-036, sin finalizarla
     Cuando "ana" re-solicita el costeo de "C1" con el motivo "Actualizar el costo"
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
     Y el costeo de "C1" no tiene pdf_url y está marcado con pdf_desactualizado

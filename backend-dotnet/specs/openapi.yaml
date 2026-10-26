@@ -518,7 +518,7 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`CONFLICTO_CONCURRENCIA`: la cotización cambió mientras se preparaba el envío o su PDF quedó desactualizado; no se envió nada'
+          description: '`CONFLICTO_CONCURRENCIA`: la cotización cambió mientras se preparaba el envío o su PDF quedó desactualizado; o (HU-036.3, #207) `COTIZACION_NO_FINALIZADA`: en el flujo de costeo, finaliza la cotización antes de enviarla al cliente (`detalle` con la llamada a `.../finalizar`); no se envió nada'
           content:
             application/json:
               schema:
@@ -2024,7 +2024,9 @@ paths:
             (HU-033). De Cotifly: `COSTEO_NO_LISTO` (chat, descartada o costeo vencido, que se marcan
             con `/seguimiento`; o todavía no enviada a Nexo), `RESULTADO_YA_DEFINIDO` (ya tiene resultado sin costeo) y
             `CONFLICTO_CONCURRENCIA` (`If-Match` que no coincide). Endurecimiento B (#199): `COTIZACION_NEXO_NO_ENCONTRADA` si Nexo
-            responde 404 `COTIZACION_NO_ENCONTRADA` (no reconoce su cotización del folio; `detalle.motivo` = ese código de Nexo)
+            responde 404 `COTIZACION_NO_ENCONTRADA` (no reconoce su cotización del folio; `detalle.motivo` = ese código de Nexo).
+            HU-036.3 (#207): `COTIZACION_NO_FINALIZADA` en `autocosteo` o `entregada` sin finalizar ni resultado ni envío (finaliza
+            antes de marcar el resultado; sin llamar a Nexo); antes del costeo no aplica
           content:
             application/json:
               schema:
@@ -2184,7 +2186,7 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`ESTADO_NO_PERMITE` (la solicitud ya está en Nexo) o `CONFLICTO_CONCURRENCIA`.'
+          description: '`ESTADO_NO_PERMITE` (la solicitud ya está en Nexo), `PDF_YA_ENVIADO` (HU-036.3, #207: enviada, con resultado o finalizada; `detalle` con la versión nueva) o `CONFLICTO_CONCURRENCIA`.'
           content:
             application/json:
               schema:
@@ -2982,7 +2984,7 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`TEXTOS_EDITADOS`, `PDF_YA_ENVIADO` o `CONFLICTO_CONCURRENCIA`'
+          description: '`TEXTOS_EDITADOS`, `PDF_YA_ENVIADO` (ya enviada o con resultado), `COTIZACION_NO_FINALIZADA` (HU-036.3, #207: los textos del PDF se redactan con la cotización finalizada) o `CONFLICTO_CONCURRENCIA`'
           content:
             application/json:
               schema:
@@ -3038,7 +3040,7 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`PDF_YA_ENVIADO` o `CONFLICTO_CONCURRENCIA`'
+          description: '`PDF_YA_ENVIADO` (ya enviada o con resultado), `COTIZACION_NO_FINALIZADA` (HU-036.3, #207: finaliza la cotización antes de editar los textos) o `CONFLICTO_CONCURRENCIA`'
           content:
             application/json:
               schema:
@@ -3119,7 +3121,7 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`SIN_RUTAS_COTIZABLES` (HU-028.1, #183, decisión D1: la Mesa de Costeo rechazó todas las rutas), `COSTEO_NO_LISTO` (alguna ruta NO rechazada sin precio; las rechazadas salen "Sin costeo", sin precio ni motivo, y no suman), `PDF_YA_GENERADO` (PDF vigente), `PDF_YA_ENVIADO` o `CONFLICTO_CONCURRENCIA`'
+          description: '`SIN_RUTAS_COTIZABLES` (HU-028.1, #183, decisión D1: la Mesa de Costeo rechazó todas las rutas), `COSTEO_NO_LISTO` (alguna ruta NO rechazada sin precio; las rechazadas salen "Sin costeo", sin precio ni motivo, y no suman), `PDF_YA_GENERADO` (PDF vigente), `PDF_YA_ENVIADO`, `COTIZACION_NO_FINALIZADA` (HU-036.3, #207: el PDF sale con el precio que aceptó el comercial; `detalle` con la llamada a `.../finalizar`) o `CONFLICTO_CONCURRENCIA`'
           content:
             application/json:
               schema:
@@ -4132,6 +4134,13 @@ components:
                 límite de 20 del NIT ya impide; el PDF no lo responde).
                 HU-036.2 (#206): `COTIZACION_NO_FINALIZABLE` (409 en `POST .../finalizar`: `estado_costeo` distinto de `autocosteo` y
                 `entregada`, sin el costeo de Nexo listo no hay precio que aceptar; `detalle.estado_costeo` trae el estado actual).
+                HU-036.3 (#207): `COTIZACION_NO_FINALIZADA` (409: "Finaliza la cotización antes de..."; `POST .../costeo/pdf`,
+                `POST .../enviar`, `POST .../costeo/textos/redactar`, `PUT .../costeo/textos` y `POST .../resultado` exigen la
+                cotización finalizada; `detalle` trae `accion = finalizar`, `metodo = POST` y `endpoint` = `.../finalizar`. No aplica a
+                las ya enviadas o con resultado ni a las del chat; en `/resultado`, solo con el costeo listo: antes del costeo siguen la
+                perdida solo en Cotifly y la ganada pendiente de sincronizar). Y `PDF_YA_ENVIADO` también con la cotización
+                **finalizada** (margen, conexos, conexos en Nexo, re-solicitud en el mismo folio y recálculo de camiones; la edición
+                pasa a `nueva_version`).
               enum:
                 - MARGEN_FUENTE_NO_DISPONIBLE
                 - MARGEN_LINEA_DESCONOCIDA
@@ -4151,6 +4160,7 @@ components:
                 - CORREO_DESHABILITADO
                 - CORREO_NO_REINTENTABLE
                 - COTIZACION_NO_FINALIZABLE
+                - COTIZACION_NO_FINALIZADA
                 - CORREO_INVALIDO
                 - CLIENTE_BUSQUEDA_NO_DISPONIBLE
                 - HERRAMIENTA_DESCONOCIDA

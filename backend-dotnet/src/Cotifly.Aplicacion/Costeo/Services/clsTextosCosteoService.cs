@@ -14,8 +14,9 @@ namespace Cotifly.Aplicacion.Costeo.Services;
 /// <summary>
 /// Asunto e introducción del PDF del costeo (HU-013.5, ADR-018 §2a y §11): <c>POST /web/cotizaciones/{folio}/costeo/textos/redactar</c>
 /// (la IA, con el texto estándar de respaldo) y <c>PUT .../costeo/textos</c> (el comercial). Solo el dueño
-/// (<c>COTIZACION_NO_ENCONTRADA</c> → 404); exigen la versión de la fila (<c>CONFLICTO_CONCURRENCIA</c>) y siguen la regla del PDF
-/// (<c>PDF_YA_ENVIADO</c>; si no se ha enviado, invalidan el PDF vigente).
+/// (<c>COTIZACION_NO_ENCONTRADA</c> → 404); exigen la versión de la fila (<c>CONFLICTO_CONCURRENCIA</c>), la cotización finalizada
+/// (HU-036.3, #207: <c>COTIZACION_NO_FINALIZADA</c>) y siguen la regla del PDF (<c>PDF_YA_ENVIADO</c> si ya se entregó al cliente; si no,
+/// invalidan el PDF vigente).
 /// </summary>
 public interface IClsTextosCosteoService
 {
@@ -53,6 +54,12 @@ public sealed class clsTextosCosteoService(
     /// <summary>Motivo de la versión nueva que sugiere <c>PDF_YA_ENVIADO</c>.</summary>
     public const string MotivoVersion = "Cambio de los textos del PDF después del envío";
 
+    /// <summary>HU-036.3 (#207): cierre del mensaje de <c>COTIZACION_NO_FINALIZADA</c> al redactar.</summary>
+    public const string AccionRedactar = "redactar los textos del PDF";
+
+    /// <summary>HU-036.3 (#207): cierre del mensaje de <c>COTIZACION_NO_FINALIZADA</c> al editar los textos.</summary>
+    public const string AccionEditar = "editar los textos del PDF";
+
     public async Task<clsResultado<clsTextosGuardados>> RedactarAsync(
         Guid usuarioId, string folio, bool sobrescribir, int versionEsperada, CancellationToken cancellationToken = default)
     {
@@ -67,9 +74,15 @@ public sealed class clsTextosCosteoService(
             return clsReglaPdfCosteo.Conflicto(cotizacion.Folio);
         }
 
-        if (clsReglaPdfCosteo.Validar(cotizacion, MotivoVersion) is { } entregada)
+        if (clsReglaPdfCosteo.ValidarEntrega(cotizacion, MotivoVersion) is { } entregada)
         {
             return entregada;
+        }
+
+        // HU-036.3 (#207): los textos del PDF se redactan con el precio ya aceptado.
+        if (cotizacion.ValidarFinalizadaAntesDe(AccionRedactar) is { } sinFinalizar)
+        {
+            return sinFinalizar;
         }
 
         if (!sobrescribir && clsTextosCotizacionJson.Leer(cotizacion.TextosCotizacion) is { Editado: true })
@@ -155,9 +168,14 @@ public sealed class clsTextosCosteoService(
             return (new clsErrorDominio(clsCodigosError.TextosCotizacionInvalidos, validacion.Mensaje!), false);
         }
 
-        if (clsReglaPdfCosteo.Validar(cotizacion, MotivoVersion) is { } entregada)
+        if (clsReglaPdfCosteo.ValidarEntrega(cotizacion, MotivoVersion) is { } entregada)
         {
             return (entregada, false);
+        }
+
+        if (cotizacion.ValidarFinalizadaAntesDe(AccionEditar) is { } sinFinalizar)
+        {
+            return (sinFinalizar, false);
         }
 
         var anteriores = clsTextosCotizacionJson.Leer(cotizacion.TextosCotizacion);

@@ -51,6 +51,40 @@ public sealed class clsPasosFinalizacion(clsContextoWeb web, clsPasosCosteo cost
         (await VersionAsync(cotizacion)).Should().BeGreaterThan(version, "el polling aplicó el costo nuevo (cambio de negocio)");
     }
 
+    [When("{string} pide directamente el PDF del costeo de {string}")]
+    public Task CuandoGeneraElPdfSinFinalizar(string alias, string cotizacion) =>
+        web.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{costeo.Folio(cotizacion)}/costeo/pdf", web.Sesion(alias).Access);
+
+    [When("{string} pide directamente marcar el resultado de {string} como {string}")]
+    public Task CuandoMarcaElResultadoSinFinalizar(string alias, string cotizacion, string resultado) =>
+        web.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{costeo.Folio(cotizacion)}/resultado", web.Sesion(alias).Access,
+            System.Text.Json.JsonSerializer.Serialize(new { resultado }));
+
+    [When("{string} consulta la solicitud {string} para editarla")]
+    public Task CuandoConsultaParaEditar(string alias, string cotizacion) =>
+        web.EnviarAsync(HttpMethod.Get, $"/web/cotizaciones/{costeo.Folio(cotizacion)}/solicitud", web.Sesion(alias).Access);
+
+    [Then("la solicitud {string} se edita como {string}")]
+    public void EntoncesSeEditaComo(string cotizacion, string modo)
+    {
+        web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);
+        var json = web.UltimoJson();
+        json.GetProperty("folio").GetString().Should().Be(costeo.Folio(cotizacion));
+        json.GetProperty("edicion").GetProperty("modo").GetString().Should().Be(modo);
+    }
+
+    [Then("el error pide finalizar la cotización {string} antes de {string}")]
+    public void EntoncesPideFinalizar(string cotizacion, string accion)
+    {
+        var folio = costeo.Folio(cotizacion);
+        var error = web.UltimoJson().GetProperty("error");
+        error.GetProperty("mensaje").GetString().Should().StartWith($"Finaliza la cotización {folio} antes de {accion}");
+        var detalle = error.GetProperty("detalle");
+        detalle.GetProperty("accion").GetString().Should().Be("finalizar");
+        detalle.GetProperty("metodo").GetString().Should().Be("POST");
+        detalle.GetProperty("endpoint").GetString().Should().Be($"/web/cotizaciones/{folio}/finalizar");
+    }
+
     [Then("la respuesta trae finalizada_at y un ETag nuevo")]
     public void EntoncesTraeFinalizadaAt()
     {

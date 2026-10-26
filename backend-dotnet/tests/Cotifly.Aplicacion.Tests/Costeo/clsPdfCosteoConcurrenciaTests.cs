@@ -36,7 +36,8 @@ public sealed class clsPdfCosteoConcurrenciaTests
     public clsPdfCosteoConcurrenciaTests()
     {
         // HU-021: la costeada ya viene del formulario (ruta 1 con la línea de negocio 3) y enviada a Nexo.
-        _cotizacion = clsAjusteMargenCosteoServiceTests.Costeada(_ana, "PCN-900555111-AP-05102026-009");
+        // HU-036.3 (#207): el PDF se genera con la cotización finalizada.
+        _cotizacion = clsAjusteMargenCosteoServiceTests.Finalizada(_ana, "PCN-900555111-AP-05102026-009");
         _cotizacion.ActualizarClienteDelCatalogo("CLIENTE S.A.S.", null);
         _politicas.ObtenerPorIdAsync(3, Arg.Any<CancellationToken>()).Returns(Cotifly.Dominio.Margen.clsMargenPolitica.Crear("Importacion", 0.15m).Valor);
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(_cotizacion.Folio, _ana, Arg.Any<CancellationToken>()).Returns(_cotizacion);
@@ -47,6 +48,31 @@ public sealed class clsPdfCosteoConcurrenciaTests
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    [Fact]
+    public async Task HU0363_SinFinalizarElPdfEsCotizacionNoFinalizadaYNoSeRenderiza()
+    {
+        var sinFinalizar = clsAjusteMargenCosteoServiceTests.Costeada(_ana, "PCN-900555111-AP-05102026-078");
+        _cotizaciones.ObtenerPorFolioDelUsuarioAsync(sinFinalizar.Folio, _ana, Arg.Any<CancellationToken>()).Returns(sinFinalizar);
+
+        var resultado = await Servicio().GenerarPdfAsync(_ana, sinFinalizar.Folio, null, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.CotizacionNoFinalizada);
+        resultado.Error.Mensaje.Should().StartWith($"Finaliza la cotización {sinFinalizar.Folio} antes de generar el PDF");
+        resultado.Error.Datos!["accion"].Should().Be("finalizar");
+        await _generador.DidNotReceiveWithAnyArgs().GenerarAsync(default!, Ct);
+        sinFinalizar.PdfPath.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task HU0363_FinalizadaYYaEnviadaElPdfSigueSiendoPdfYaEnviado()
+    {
+        _cotizacion.RegistrarEnvio();
+
+        var resultado = await Servicio().GenerarPdfAsync(_ana, _cotizacion.Folio, null, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.PdfYaEnviado);
+    }
 
     [Fact]
     public async Task SinIfMatchElPdfSeConfirmaContraLaVersionCargadaYSubeLaVersion()

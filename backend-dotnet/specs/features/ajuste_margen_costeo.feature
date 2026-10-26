@@ -87,8 +87,10 @@ Característica: Ajuste de margen sobre el costeo de Nexo
     Cuando "ana" ajusta el margen de "C2" a "0.18" sin justificación
     Entonces la respuesta tiene el estado 409 con el código de negocio "COSTEO_NO_LISTO"
 
-  Escenario: Con el PDF generado y sin enviar el ajuste invalida el PDF y se regenera en el mismo folio
-    Dado que "ana" generó el PDF del costeo de "C1"
+  # HU-036.3 (#207): una cotización finalizada ya no admite el ajuste (cotizacion_finalizada.feature). Este caso queda para las
+  # cotizaciones anteriores a HU-036 (sin backfill): PDF generado sin finalizar. Al regenerar el PDF, el paso finaliza primero.
+  Escenario: Con el PDF generado antes de HU-036 y sin enviar el ajuste invalida el PDF y se regenera en el mismo folio
+    Dado que "ana" generó el PDF del costeo de "C1" antes de HU-036, sin finalizarla
     Cuando "ana" ajusta el margen de "C1" a "0.18" sin justificación
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CosteoCotizacion" del contrato
     Y el costeo de "C1" no tiene pdf_url y está marcado con pdf_desactualizado

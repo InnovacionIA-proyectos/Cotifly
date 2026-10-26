@@ -31,7 +31,8 @@ public sealed class clsTextosCosteoServiceTests
 
     public clsTextosCosteoServiceTests()
     {
-        _cotizacion = clsAjusteMargenCosteoServiceTests.Costeada(_ana, "PCN-900555111-AP-05102026-001");
+        // HU-036.3 (#207): los textos del PDF se redactan con la cotización finalizada.
+        _cotizacion = clsAjusteMargenCosteoServiceTests.Finalizada(_ana, "PCN-900555111-AP-05102026-001");
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(_cotizacion.Folio, _ana, Arg.Any<CancellationToken>()).Returns(_cotizacion);
         _unidad.GuardarCambiosSiVersionAsync(_cotizacion.Id, Version, Arg.Any<CancellationToken>()).Returns(true);
         _redaccion.VersionPrompt.Returns("abcdef0123456789");
@@ -87,6 +88,33 @@ public sealed class clsTextosCosteoServiceTests
         editar.Error.Codigo.Should().Be(clsCodigosError.PdfYaEnviado);
         await _redaccion.DidNotReceiveWithAnyArgs().RedactarAsync(default!, default!, Ct);
         _cotizacion.TextosCotizacion.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task HU0363_SinFinalizarNoSeRedactaNiSeEditaYNoSeLlamaALaIa()
+    {
+        var sinFinalizar = clsAjusteMargenCosteoServiceTests.Costeada(_ana, "PCN-900555111-AP-05102026-077");
+        _cotizaciones.ObtenerPorFolioDelUsuarioAsync(sinFinalizar.Folio, _ana, Arg.Any<CancellationToken>()).Returns(sinFinalizar);
+
+        var redactar = await Servicio().RedactarAsync(_ana, sinFinalizar.Folio, false, Version, Ct);
+        var editar = await Servicio().EditarAsync(_ana, sinFinalizar.Folio, "Asunto", "Intro", Version, Ct);
+
+        redactar.Error.Codigo.Should().Be(clsCodigosError.CotizacionNoFinalizada);
+        redactar.Error.Mensaje.Should().StartWith($"Finaliza la cotización {sinFinalizar.Folio} antes de redactar los textos del PDF");
+        redactar.Error.Datos!["endpoint"].Should().Be($"/web/cotizaciones/{sinFinalizar.Folio}/finalizar");
+        editar.Error.Codigo.Should().Be(clsCodigosError.CotizacionNoFinalizada);
+        await _redaccion.DidNotReceiveWithAnyArgs().RedactarAsync(default!, default!, Ct);
+        sinFinalizar.TextosCotizacion.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task HU0363_FinalizadaYSinEnviarLosTextosSiSeGuardan()
+    {
+        _cotizacion.Finalizada.Should().BeTrue();
+
+        var editar = await Servicio().EditarAsync(_ana, _cotizacion.Folio, "Asunto", "Introducción", Version, Ct);
+
+        editar.EsExitoso.Should().BeTrue("finalizar no bloquea los textos: el PDF se redacta después de aceptar el precio");
     }
 
     [Fact]
@@ -291,6 +319,7 @@ public sealed class clsTextosCosteoServiceTests
     public async Task LaIaRecibeLasLineasDeNegocioYLosVehiculosDeLasRutas()
     {
         var pliego = clsCotizacionMuestra.LicitacionCosteada([1_000_000m, 2_000_000m], folio: "PCN-900555111-AP-05102026-030", usuarioId: _ana);
+        pliego.Finalizar(_ana, clsCotizacionMuestra.Ahora);
         typeof(clsLineaSolicitud).GetProperty(nameof(clsLineaSolicitud.LineaNegocioId))!.SetValue(pliego.RutasOrdenadas[1], 7);
         clsCotizacionMuestra.ConVersionNegocio(pliego, Version);
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(pliego.Folio, _ana, Arg.Any<CancellationToken>()).Returns(pliego);

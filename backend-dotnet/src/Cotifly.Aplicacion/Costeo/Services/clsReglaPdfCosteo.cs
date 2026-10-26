@@ -8,8 +8,9 @@ namespace Cotifly.Aplicacion.Costeo.Services;
 /// Regla del PDF de la etapa final del costeo (ADR-018 §11), compartida por el ajuste de margen y la selección de conexos (#98) y
 /// por los conexos en Nexo, la re-solicitud y los textos (#99, #100, #101):
 /// <list type="bullet">
-/// <item>ya entregada al cliente (enviada o con resultado): 409 <c>PDF_YA_ENVIADO</c> con la llamada para crear la versión
-/// <c>-vN</c> en <c>detalle</c> (<see cref="Validar"/>);</item>
+/// <item>ya entregada al cliente (enviada o con resultado) o, desde HU-036.3 (#207), finalizada: 409 <c>PDF_YA_ENVIADO</c> con la llamada
+/// para crear la versión <c>-vN</c> en <c>detalle</c> (<see cref="Validar"/>; los textos usan <see cref="ValidarEntrega"/>: se cambian
+/// con la cotización finalizada);</item>
 /// <item>si no, la acción se permite e invalida el PDF vigente, que queda en el historial (<see cref="InvalidarPdf"/>).</item>
 /// </list>
 /// </summary>
@@ -24,13 +25,26 @@ public static class clsReglaPdfCosteo
 
     /// <summary>
     /// <c>PDF_YA_ENVIADO</c> con su <c>detalle</c> (<c>accion = nueva_version</c>, <c>metodo</c>, <c>endpoint</c> y <c>cuerpo</c> con
-    /// <paramref name="motivoVersion"/> y <c>nueva_version = true</c>) si la cotización ya se entregó al cliente; si no, <c>null</c>.
+    /// <paramref name="motivoVersion"/> y <c>nueva_version = true</c>) si la cotización ya se entregó al cliente o (HU-036.3) está
+    /// finalizada (<see cref="clsCotizacionSolicitud.ValidarCambioEtapaFinal"/>); si no, <c>null</c>. Es el candado de lo que cambia el
+    /// precio: margen, conexos, conexos en Nexo, re-solicitud, recálculo de camiones.
     /// </summary>
     public static clsErrorDominio? Validar(clsCotizacionSolicitud cotizacion, string motivoVersion)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentException.ThrowIfNullOrWhiteSpace(motivoVersion);
         return cotizacion.ValidarCambioEtapaFinal() is { } error ? ConVersionNueva(error, cotizacion.Folio, motivoVersion) : null;
+    }
+
+    /// <summary>
+    /// HU-036.3 (#207): <see cref="Validar"/> solo por la entrega al cliente (<see cref="clsCotizacionSolicitud.ValidarEntregaAlCliente"/>),
+    /// para lo que se hace con la cotización ya finalizada y antes de entregarla: los textos del PDF.
+    /// </summary>
+    public static clsErrorDominio? ValidarEntrega(clsCotizacionSolicitud cotizacion, string motivoVersion)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        ArgumentException.ThrowIfNullOrWhiteSpace(motivoVersion);
+        return cotizacion.ValidarEntregaAlCliente() is { } error ? ConVersionNueva(error, cotizacion.Folio, motivoVersion) : null;
     }
 
     /// <summary>Agrega a un <c>PDF_YA_ENVIADO</c> del dominio la llamada para crear la versión nueva (contrato, ejemplo del 409).</summary>

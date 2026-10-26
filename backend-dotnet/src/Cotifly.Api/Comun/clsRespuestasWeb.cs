@@ -87,6 +87,8 @@ public static class clsRespuestasWeb
         clsCodigosError.CorreoNoReintentable,
         // HU-036.2 (#206): finalizar una cotización sin el costeo de Nexo listo.
         clsCodigosError.CotizacionNoFinalizable,
+        // HU-036.3 (#207): PDF, correo, resultado y textos exigen la cotización finalizada.
+        clsCodigosError.CotizacionNoFinalizada,
         // D4 (E2E 2026-10-16): la misma Idempotency-Key con otro cuerpo (antes 400 ErrorWeb).
         clsCodigosAplicacion.IdempotencyKeyReutilizada,
     };
