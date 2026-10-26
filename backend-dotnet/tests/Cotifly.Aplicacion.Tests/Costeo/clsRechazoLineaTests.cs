@@ -109,7 +109,9 @@ public sealed class clsRechazoLineaTests
             l => l.EstadoCosteo == "rechazada" && l.MotivoRechazo == "Motivo interno" && l.PrecioFinal == null);
 
         var vista = clsCosteoCotizacionService.Vista(cotizacion, null);
-        vista.Rutas[1].Should().Match<clsRutaCosteo>(r => r.EstadoCosteo == "rechazada" && r.MotivoRechazo == "Motivo interno" && r.PrecioFinalLinea == null);
+        vista.Rutas[1].Should().Match<clsRutaCosteo>(
+            r => r.EstadoCosteo == "rechazada" && r.MotivoRechazo == "Motivo interno" && r.PrecioFinalLinea == null && r.CostoFinal == null);
+        vista.Rutas[0].CostoFinal.Should().Be(1_000_000m, "HU-039.1 (#218): la ruta con precio trae su costo bruto");
         vista.Rutas[1].Camiones.Should().OnlyContain(c => c.EstadoCosteo == "rechazada" && c.MotivoRechazo == "Motivo interno" && c.RechazadaAt == _ahora);
         vista.Rutas[0].MotivoRechazo.Should().BeNull();
     }

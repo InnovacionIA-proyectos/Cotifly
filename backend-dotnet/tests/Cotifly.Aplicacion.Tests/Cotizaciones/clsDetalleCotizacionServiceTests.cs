@@ -170,6 +170,30 @@ public sealed class clsDetalleCotizacionServiceTests
             Arg.Is(clsDetalleCotizacionService.HerramientaAuditoria), Arg.Any<object?>(), Arg.Any<object?>(), Arg.Is(true), Arg.Any<int>(), Arg.Any<string?>());
     }
 
+    /// <summary>
+    /// HU-039.1 (#218): el costo bruto de la ruta (<c>costeo.rutas[].costo_final</c>) es solo del dueño. El gerente de su regional ve el
+    /// mismo detalle en solo consulta, pero con <c>costo_final</c> en <c>null</c> (decisión conservadora: hasta HU-039 el detalle nunca le
+    /// mostraba costos).
+    /// </summary>
+    [Fact]
+    public async Task ElDuenoVeElCostoBrutoDeLaRutaYElGerenteEnSoloConsultaNo()
+    {
+        var cotizacion = Cotizada("PCN-AP-01102026-005", _ana.Id);
+        _cotizaciones.ObtenerPorFolioDelUsuarioAsync(cotizacion.Folio, _ana.Id, Arg.Any<CancellationToken>()).Returns(cotizacion);
+        _cotizaciones.ObtenerPorFolioAsync(cotizacion.Folio, Arg.Any<CancellationToken>()).Returns(cotizacion);
+        _regionales.EsMiembroDeMiRegionalAsync(_gloria, _ana.Id, Arg.Any<CancellationToken>()).Returns(clsResultado<bool>.Exito(true));
+
+        var delDueno = (await Servicio(Comercial(_ana)).ObtenerAsync(cotizacion.Folio, Ct)).Valor;
+        var delGerente = (await Servicio(Gerente(_gloria)).ObtenerAsync(cotizacion.Folio, Ct)).Valor;
+
+        delDueno.SoloLectura.Should().BeFalse();
+        delDueno.Costeo.Rutas.Single().CostoFinal.Should().Be(100m);
+        delGerente.SoloLectura.Should().BeTrue();
+        delGerente.Costeo.Rutas.Single().CostoFinal.Should().BeNull("el gerente en solo consulta no ve el costo bruto");
+        delGerente.Costeo.Should().BeEquivalentTo(delDueno.Costeo.SinCostoFinal(), "solo cambia el costo");
+        delGerente.Totales.Should().Be(delDueno.Totales);
+    }
+
     [Fact]
     public async Task UnGerenteDeOtraRegionalRecibe404YQuedaAuditadoElRechazo()
     {

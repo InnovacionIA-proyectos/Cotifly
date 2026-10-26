@@ -120,7 +120,8 @@ public sealed class clsPasosAjusteMargen(clsContextoWeb web, clsPasosCosteo cost
         await CosteoAsync(cotizacion);
         foreach (var cuerpo in new[] { anterior, web.UltimoCuerpo })
         {
-            cuerpo.Should().NotContain(texto, "el costo de Nexo nunca llega al comercial").And.NotContain("\"costo\"");
+            // HU-039.1 (#218): el dueño ve el costo bruto de la ruta (`costo_final`), nunca el costo de un conexo ni un campo `costo`.
+            cuerpo.Should().NotContain(texto, "el costo de un conexo de Nexo nunca llega al comercial").And.NotContain("\"costo\"");
         }
     }
 

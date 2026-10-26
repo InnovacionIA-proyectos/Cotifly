@@ -111,6 +111,13 @@ public sealed class clsDetalleCotizacionService(
             cotizacion, opcionesPdf.Value.BaseUrl, estadosNexo, clsCategoriasConexosService.EnMemoria(categorias, cotizacion),
             situacionesNexo?.Obtener(cotizacion.Id));
 
+        // HU-039.1 (#218): el costo bruto de las rutas es solo del dueño; el gerente en solo consulta lo recibe en null (decisión
+        // conservadora: hasta HU-039 el detalle nunca le mostraba costos).
+        if (soloLectura)
+        {
+            costeo = costeo.SinCostoFinal();
+        }
+
         var politicasRuta = await PoliticasAsync(cotizacion, cancellationToken);
         var sinCatalogo = new Dictionary<string, clsCostoConexoNexo>();
         var captura = cotizacion.RutasOrdenadas.Select(r => clsEdicionSolicitudService.Editable(r, politicasRuta, sinCatalogo)).ToList();
