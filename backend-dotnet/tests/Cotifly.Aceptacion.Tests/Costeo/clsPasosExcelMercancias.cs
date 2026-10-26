@@ -31,6 +31,8 @@ public sealed class clsPasosExcelMercancias(clsContextoWeb web, clsPasosCosteo c
         "un archivo de texto renombrado a .xlsx" => AnalizarAsync(alias, clsExcelMercanciasMuestra.TextoRenombrado(), "mercancias.xlsx"),
         "un zip que no es un libro de Excel" => AnalizarAsync(alias, clsExcelMercanciasMuestra.ZipSinLibro(), "mercancias.xlsx"),
         "una bomba zip" => AnalizarAsync(alias, clsExcelMercanciasMuestra.BombaZip(), "mercancias.xlsx"),
+        "un libro pequeño con millones de celdas" => AnalizarAsync(alias, clsExcelMercanciasMuestra.Densa(4_000_000), "mercancias.xlsx"),
+        "un libro con una entidad externa (XXE)" => AnalizarAsync(alias, clsExcelMercanciasMuestra.ConEntidadExterna(), "mercancias.xlsx"),
         "un archivo .csv" => AnalizarAsync(alias, clsExcelMercanciasMuestra.TextoRenombrado(), "mercancias.csv"),
         "un libro sin datos" => AnalizarAsync(alias, clsExcelMercanciasMuestra.SinDatos(), "mercancias.xlsx"),
         _ => throw new ArgumentOutOfRangeException(nameof(archivo), archivo, "Archivo de prueba desconocido."),

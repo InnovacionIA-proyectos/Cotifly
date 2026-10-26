@@ -3182,8 +3182,8 @@ paths:
         (`filas_truncadas`; `total_filas` es el total real), 50 columnas desde la primera usada (`columnas_truncadas`;
         `total_columnas` es el ancho real), 500 caracteres por celda (`celdas_recortadas`) y 100.000 celdas en toda la respuesta (al
         pasarlo, las filas que faltan se cortan con `filas_truncadas = true`). Contra archivos maliciosos el paquete se revisa antes
-        de abrirlo: más de 64 MB descomprimido es `ARCHIVO_DEMASIADO_GRANDE` con `detalle.motivo = DESCOMPRIMIDO_EXCEDE_LIMITE`
-        (bomba zip); un archivo que no es un `.xlsx` válido es `EXCEL_INVALIDO`. Cotifly analiza hasta 4 archivos a la vez; si el
+        de abrirlo: más de 64 MB descomprimido o más de 1.000.000 de elementos XML (un libro pequeño con millones de celdas) es
+        `ARCHIVO_DEMASIADO_GRANDE` con `detalle.motivo = DESCOMPRIMIDO_EXCEDE_LIMITE` (bomba zip); un archivo que no es un `.xlsx` válido es `EXCEL_INVALIDO`. Cotifly analiza hasta 4 archivos a la vez; si el
         cupo sigue lleno 15 s, 503 `SERVICIO_OCUPADO` con `Retry-After`.
 
         **Código de mercancía (opcional).** Como en el análisis de licitaciones (HU-023.5), Cotifly reconoce la columna de la
@@ -3214,8 +3214,8 @@ paths:
         '400':
           description: |
             `ARCHIVO_REQUERIDO` (falta la parte `archivo` o viene vacía), `FORMATO_NO_SOPORTADO` (otra extensión),
-            `ARCHIVO_DEMASIADO_GRANDE` (más de 10.420.224 bytes, o más de 64 MB descomprimido con `detalle.motivo =
-            DESCOMPRIMIDO_EXCEDE_LIMITE`), `EXCEL_INVALIDO` (no es un `.xlsx`/`.xlsm` legible: corrupto, otro formato renombrado, un
+            `ARCHIVO_DEMASIADO_GRANDE` (más de 10.420.224 bytes, o más de 64 MB descomprimido o de 1.000.000 de elementos XML con
+            `detalle.motivo = DESCOMPRIMIDO_EXCEDE_LIMITE`), `EXCEL_INVALIDO` (no es un `.xlsx`/`.xlsm` legible: corrupto, otro formato renombrado, un
             `.xls` antiguo o protegido con contraseña, o un paquete con demasiadas entradas; `detalle.motivo` dice cuál) y
             `EXCEL_SIN_DATOS` (ninguna hoja tiene datos). Nunca un 500 por el contenido del archivo.
           content:

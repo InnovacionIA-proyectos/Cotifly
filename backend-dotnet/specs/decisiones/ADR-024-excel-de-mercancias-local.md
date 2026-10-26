@@ -29,7 +29,9 @@ de Cabina de Fletes.
    fórmulas de un archivo no confiable es superficie de ataque y costo de CPU sin acotar.
 5. **Robustez ante archivos maliciosos o corruptos** (siempre 400 con código, nunca 500): revisión del paquete antes de abrirlo (firma,
    1000 entradas, `xl/workbook.xml`, 64 MB descomprimidos contados leyendo de verdad: una bomba zip no llega a ClosedXML, que carga el
-   libro entero en memoria), topes de 20 hojas, 50 columnas, 1000 filas, 500 caracteres por celda y 100.000 celdas por respuesta, y un cupo
+   libro entero en memoria; y 1.000.000 de elementos XML en todo el libro, contados en flujo sin DTD: un libro de 200 KB con 4 millones
+   de celdas mínimas cabe en los 64 MB pero ocupaba más de 1 GB y 15 s de CPU en ClosedXML; con el tope, la lectura más pesada aceptada
+   ronda 270 MB), topes de 20 hojas, 50 columnas, 1000 filas, 500 caracteres por celda y 100.000 celdas por respuesta, y un cupo
    de 4 lecturas simultáneas por proceso (503 `SERVICIO_OCUPADO` tras 15 s). Sin códigos de error nuevos: `EXCEL_INVALIDO` y
    `ARCHIVO_DEMASIADO_GRANDE` con `detalle.motivo` (`NO_ES_XLSX`, `CIFRADO_O_XLS`, `ZIP_INVALIDO`, `SIN_LIBRO`, `DEMASIADAS_ENTRADAS`,
    `LIBRO_ILEGIBLE`, `DESCOMPRIMIDO_EXCEDE_LIMITE`).
@@ -62,5 +64,5 @@ de Cabina de Fletes.
 | Pendiente | Dueño |
 |---|---|
 | Visto bueno de la ruta (`/web/mercancias/analizar-excel`) y de reutilizar códigos con `detalle.motivo` en vez de códigos nuevos | Usuario |
-| Confirmar los topes (20 hojas, 50 columnas, 1000 filas, 64 MB descomprimidos, 4 simultáneos) con el uso real | Usuario / frontend |
+| Confirmar los topes (20 hojas, 50 columnas, 1000 filas, 64 MB descomprimidos, 1.000.000 de elementos XML, 4 simultáneos) con el uso real | Usuario / frontend |
 | Integrar el endpoint en la pantalla "Líneas de solicitud" | Frontend (`clientepro-frontend`) |

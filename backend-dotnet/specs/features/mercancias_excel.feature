@@ -50,6 +50,8 @@ Característica: Excel de mercancías de una ruta
       | un archivo de texto renombrado a .xlsx   | EXCEL_INVALIDO           |
       | un zip que no es un libro de Excel       | EXCEL_INVALIDO           |
       | una bomba zip                            | ARCHIVO_DEMASIADO_GRANDE |
+      | un libro pequeño con millones de celdas  | ARCHIVO_DEMASIADO_GRANDE |
+      | un libro con una entidad externa (XXE)   | EXCEL_INVALIDO           |
       | un archivo .csv                          | FORMATO_NO_SOPORTADO     |
       | un libro sin datos                       | EXCEL_SIN_DATOS          |
 

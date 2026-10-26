@@ -126,6 +126,67 @@ public static class clsExcelMercanciasMuestra
     /// <summary>Un zip con <c>xl/workbook.xml</c> que no es XML: abre como zip, pero ClosedXML no puede leerlo.</summary>
     public static byte[] LibroIlegible() => Zip(("[Content_Types].xml", 50), ("xl/workbook.xml", 50));
 
+    /// <summary>
+    /// Libro denso (validación de HU-035.1): la hoja "Mercancías" con <paramref name="celdas"/> celdas numéricas mínimas
+    /// (<c>&lt;c&gt;&lt;v&gt;1&lt;/v&gt;&lt;/c&gt;</c>, sin referencia, 50 por fila). Comprime a muy poco: 4 millones de celdas son unos
+    /// 200 KB.
+    /// </summary>
+    public static byte[] Densa(int celdas)
+    {
+        var xml = new StringBuilder("<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData>");
+        for (var hechas = 0; hechas < celdas; hechas += 50)
+        {
+            xml.Append("<row>");
+            for (var c = 0; c < Math.Min(50, celdas - hechas); c++)
+            {
+                xml.Append("<c><v>1</v></c>");
+            }
+
+            xml.Append("</row>");
+        }
+
+        return ConHojaXml(Excel(1), xml.Append("</sheetData></worksheet>").ToString());
+    }
+
+    /// <summary>
+    /// XXE (validación de HU-035.1): la hoja declara una entidad externa (<c>file:///etc/passwd</c>) y la usa en una celda. Un lector que
+    /// resolviera entidades devolvería el archivo del servidor.
+    /// </summary>
+    public static byte[] ConEntidadExterna() => ConHojaXml(Excel(1),
+        "<?xml version=\"1.0\"?><!DOCTYPE w [<!ENTITY e SYSTEM \"file:///etc/passwd\">]>"
+        + "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData><row r=\"1\">"
+        + "<c r=\"A1\" t=\"inlineStr\"><is><t>&e;</t></is></c><c r=\"B1\" t=\"inlineStr\"><is><t>b</t></is></c>"
+        + "<c r=\"C1\" t=\"inlineStr\"><is><t>c</t></is></c></row></sheetData></worksheet>");
+
+    /// <summary>
+    /// Cambia el XML de la primera hoja (<c>xl/worksheets/sheet1.xml</c>) de <paramref name="libro"/> por <paramref name="xmlHoja"/>,
+    /// copiando el resto del paquete tal cual.
+    /// </summary>
+    public static byte[] ConHojaXml(byte[] libro, string xmlHoja)
+    {
+        ArgumentNullException.ThrowIfNull(libro);
+        using var salida = new MemoryStream();
+        using (var origen = new ZipArchive(new MemoryStream(libro), ZipArchiveMode.Read))
+        using (var destino = new ZipArchive(salida, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            foreach (var entrada in origen.Entries)
+            {
+                using var escritura = destino.CreateEntry(entrada.FullName, CompressionLevel.SmallestSize).Open();
+                if (entrada.FullName == "xl/worksheets/sheet1.xml")
+                {
+                    escritura.Write(Encoding.UTF8.GetBytes(xmlHoja));
+                }
+                else
+                {
+                    using var lectura = entrada.Open();
+                    lectura.CopyTo(escritura);
+                }
+            }
+        }
+
+        return salida.ToArray();
+    }
+
     private static byte[] Zip(params (string Nombre, int Bytes)[] entradas)
     {
         using var memoria = new MemoryStream();

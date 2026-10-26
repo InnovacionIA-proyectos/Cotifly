@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Cotifly.Pruebas.Comun;
 using Cotifly.Pruebas.Web;
+using Microsoft.Extensions.DependencyInjection;
 using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 
 namespace Cotifly.Api.Tests.Web;
@@ -126,6 +127,9 @@ public sealed class clsMercanciasExcelEndpointsTests : IDisposable
         { "truncado", "mercancias.xlsx", "EXCEL_INVALIDO", "ZIP_INVALIDO" },
         { "libro ilegible", "mercancias.xlsm", "EXCEL_INVALIDO", "LIBRO_ILEGIBLE" },
         { "bomba zip", "mercancias.xlsx", "ARCHIVO_DEMASIADO_GRANDE", "DESCOMPRIMIDO_EXCEDE_LIMITE" },
+        { "densa", "mercancias.xlsx", "ARCHIVO_DEMASIADO_GRANDE", "DESCOMPRIMIDO_EXCEDE_LIMITE" },
+        { "xxe", "mercancias.xlsx", "EXCEL_INVALIDO", "LIBRO_ILEGIBLE" },
+        { "xls renombrado", "mercancias.xlsx", "EXCEL_INVALIDO", "CIFRADO_O_XLS" },
         { "sin datos", "mercancias.xlsx", "EXCEL_SIN_DATOS", null },
         { "csv", "mercancias.csv", "FORMATO_NO_SOPORTADO", null },
         { "vacío", "mercancias.xlsx", "ARCHIVO_REQUERIDO", null },
@@ -144,6 +148,9 @@ public sealed class clsMercanciasExcelEndpointsTests : IDisposable
             "truncado" => clsExcelMercanciasMuestra.Truncado(),
             "libro ilegible" => clsExcelMercanciasMuestra.LibroIlegible(),
             "bomba zip" => clsExcelMercanciasMuestra.BombaZip(),
+            "densa" => clsExcelMercanciasMuestra.Densa(4_000_000),
+            "xxe" => clsExcelMercanciasMuestra.ConEntidadExterna(),
+            "xls renombrado" => [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1, 0, 0, 0, 0],
             "sin datos" => clsExcelMercanciasMuestra.SinDatos(),
             "csv" => clsExcelMercanciasMuestra.TextoRenombrado(),
             _ => [],
@@ -220,6 +227,31 @@ public sealed class clsMercanciasExcelEndpointsTests : IDisposable
 
         (await VerificarContratoAsync(respuesta, Ruta, _post, HttpStatusCode.BadRequest))
             .GetProperty("error").GetProperty("codigo").GetString().Should().Be("ARCHIVO_DEMASIADO_GRANDE");
+    }
+
+    [Fact]
+    public async Task ConElCupoDeLecturasLlenoEs503ServicioOcupadoConRetryAfter()
+    {
+        var api = clsApiWebPruebas.ConNexo(_entorno.BaseDatos, _nexo, cubicador: _cubicador,
+            servicios: s => s.AddSingleton<Cotifly.Aplicacion.Mercancias.Interfaces.IClsLectorGrillaExcel, clsLectorOcupado>());
+        _apis.Add(api);
+        var sesion = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+
+        using var respuesta = await api.EnviarContenidoAsync(_post, Ruta, sesion.Access, clsApiWebPruebas.Archivo(clsExcelMercanciasMuestra.Excel(1), "m.xlsx"));
+
+        (await VerificarContratoAsync(respuesta, Ruta, _post, HttpStatusCode.ServiceUnavailable))
+            .GetProperty("error").GetProperty("codigo").GetString().Should().Be("SERVICIO_OCUPADO");
+        respuesta.Headers.RetryAfter.Should().NotBeNull("el frontend reintenta tras Retry-After");
+        SinLlamarANexo();
+    }
+
+    /// <summary>Lector con el cupo siempre lleno (como el real cuando 4 lecturas no se liberan en 15 s).</summary>
+    private sealed class clsLectorOcupado : Cotifly.Aplicacion.Mercancias.Interfaces.IClsLectorGrillaExcel
+    {
+        public Task<Cotifly.Dominio.Comun.clsResultado<Cotifly.Aplicacion.Mercancias.DTOs.clsAnalisisExcelMercancias>> LeerAsync(
+            string nombreArchivo, byte[] contenido, CancellationToken cancellationToken = default) =>
+            Task.FromResult<Cotifly.Dominio.Comun.clsResultado<Cotifly.Aplicacion.Mercancias.DTOs.clsAnalisisExcelMercancias>>(
+                new Cotifly.Dominio.Comun.clsErrorDominio(Cotifly.Dominio.Comun.clsCodigosError.ServicioOcupado, "Ocupado."));
     }
 
     public void Dispose()

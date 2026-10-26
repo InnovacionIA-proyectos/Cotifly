@@ -1,7 +1,9 @@
 using System.Globalization;
 using System.IO.Compression;
 using System.Text;
+using System.Xml;
 using ClosedXML.Excel;
+using DocumentFormat.OpenXml.Packaging;
 using Cotifly.Aplicacion.Mercancias.DTOs;
 using Cotifly.Aplicacion.Mercancias.Interfaces;
 using Cotifly.Dominio.Comun;
@@ -21,6 +23,8 @@ namespace Cotifly.Infraestructura.Mercancias.Services;
 /// <c>D0 CF 11 E0</c>), a lo sumo <see cref="MaximoEntradasZip"/> entradas, la parte <c>xl/workbook.xml</c> y, <b>descomprimiendo de
 /// verdad</b> (no se confía en el tamaño declarado), a lo sumo <see cref="MaximoDescomprimidoBytes"/> en total: así una bomba zip no
 /// llega a ClosedXML, que carga el libro entero en memoria;</item>
+/// <item>después, con un lector XML de flujo sin DTD, a lo sumo <see cref="MaximoElementosXml"/> elementos en todas las partes del libro:
+/// así un libro pequeño y muy denso (millones de celdas mínimas) tampoco llega a ClosedXML;</item>
 /// <item>las fórmulas nunca se evalúan: se devuelve el valor que Excel guardó (<see cref="IXLCell.CachedValue"/>);</item>
 /// <item>topes de hojas, columnas, filas, largo de celda y celdas de toda la respuesta, con el truncado indicado en la respuesta;</item>
 /// <item>a lo sumo <see cref="MaximoSimultaneos"/> lecturas a la vez (memoria del proceso); si el cupo no se libera en
@@ -56,6 +60,14 @@ public sealed class clsLectorGrillaExcelClosedXml : IClsLectorGrillaExcel, IDisp
 
     /// <summary>Entradas del paquete zip. Un libro normal tiene decenas.</summary>
     public const int MaximoEntradasZip = 1000;
+
+    /// <summary>
+    /// Elementos XML en todas las partes del libro (celdas, valores, cadenas compartidas, estilos...): acota la memoria de ClosedXML, que
+    /// crea un objeto por elemento. 64 MB de celdas mínimas (<c>&lt;c&gt;&lt;v&gt;1&lt;/v&gt;&lt;/c&gt;</c>) comprimen a unos 200 KB y
+    /// son casi 8 millones de elementos: más de 1 GB y 15 s de CPU por lectura. Un millón alcanza para unas 300.000 celdas (decenas de
+    /// miles de filas de mercancías) y deja la lectura en unos 200 MB.
+    /// </summary>
+    public const int MaximoElementosXml = 1_000_000;
 
     /// <summary>Lecturas simultáneas en el proceso.</summary>
     public const int MaximoSimultaneos = 4;
@@ -124,6 +136,12 @@ public sealed class clsLectorGrillaExcelClosedXml : IClsLectorGrillaExcel, IDisp
         {
             _logger.LogInformation("Excel de mercancías rechazado antes de abrirlo: {Codigo} ({Motivo}).", invalido.Codigo, invalido.Detalle);
             return invalido;
+        }
+
+        if (VerificarElementos(contenido, cancellationToken) is { } denso)
+        {
+            _logger.LogInformation("Excel de mercancías rechazado antes de abrirlo: {Codigo} ({Motivo}).", denso.Codigo, denso.Detalle);
+            return denso;
         }
 
         XLWorkbook libro;
@@ -221,6 +239,59 @@ public sealed class clsLectorGrillaExcelClosedXml : IClsLectorGrillaExcel, IDisp
         }
     }
 
+    /// <summary>
+    /// Cuenta los elementos XML de todas las partes XML del paquete (las mismas que abriría ClosedXML, resueltas por sus relaciones) con
+    /// un lector de flujo, sin DTD ni entidades externas. <c>ARCHIVO_DEMASIADO_GRANDE</c> (<see cref="MotivoDescomprimido"/>) si pasan
+    /// de <see cref="MaximoElementosXml"/>; <c>EXCEL_INVALIDO</c> (<see cref="MotivoLibroIlegible"/>) si una parte no es XML válido;
+    /// <c>null</c> si se puede abrir. Se llama después de <see cref="VerificarPaquete"/>: el contenido descomprimido ya está acotado.
+    /// </summary>
+    internal static clsErrorDominio? VerificarElementos(byte[] contenido, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(contenido);
+        var ajustes = new XmlReaderSettings
+        {
+            DtdProcessing = DtdProcessing.Prohibit,
+            XmlResolver = null,
+            IgnoreComments = true,
+            IgnoreWhitespace = true,
+            IgnoreProcessingInstructions = true,
+            CloseInput = true,
+        };
+        try
+        {
+            using var documento = SpreadsheetDocument.Open(new MemoryStream(contenido, writable: false), isEditable: false);
+            long elementos = 0;
+            foreach (var parte in documento.GetAllParts())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!parte.ContentType.Contains("xml", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                using var lector = XmlReader.Create(parte.GetStream(FileMode.Open, FileAccess.Read), ajustes);
+                while (lector.Read())
+                {
+                    if (lector.NodeType == XmlNodeType.Element && ++elementos > MaximoElementosXml)
+                    {
+                        return new clsErrorDominio(clsCodigosError.ArchivoDemasiadoGrande,
+                            "El Excel tiene demasiadas celdas para analizarlo: deja solo las hojas y filas de las mercancías.", MotivoDescomprimido);
+                    }
+                }
+            }
+
+            return null;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
+        {
+            return Invalido(MotivoLibroIlegible);
+        }
+    }
+
     private static clsErrorDominio Invalido(string motivo) => new(clsCodigosError.ExcelInvalido, MensajeInvalido, motivo);
 
     private static clsErrorDominio DemasiadoGrande() => new(clsCodigosError.ArchivoDemasiadoGrande,
@@ -296,7 +367,8 @@ public sealed class clsLectorGrillaExcelClosedXml : IClsLectorGrillaExcel, IDisp
                 var texto = Texto(celda);
                 if (texto.Length > MaximoLargoCelda)
                 {
-                    texto = texto[..MaximoLargoCelda];
+                    // Sin partir un emoji (par sustituto): una mitad suelta no es UTF-16 válido en el JSON.
+                    texto = texto[..(char.IsHighSurrogate(texto[MaximoLargoCelda - 1]) ? MaximoLargoCelda - 1 : MaximoLargoCelda)];
                     recortadas = true;
                 }
 

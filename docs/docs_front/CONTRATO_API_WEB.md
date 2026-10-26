@@ -1800,7 +1800,7 @@ frontend mapea las columnas a los campos de la mercancía** igual que hoy con la
 
 Un archivo corrupto o malicioso es 400 con código, nunca 500 (`detalle.motivo` dice la causa): `EXCEL_INVALIDO` (`NO_ES_XLSX`,
 `CIFRADO_O_XLS`, `ZIP_INVALIDO`, `SIN_LIBRO`, `DEMASIADAS_ENTRADAS`, `LIBRO_ILEGIBLE`), `ARCHIVO_DEMASIADO_GRANDE` (más de 9,9 MB, o
-`DESCOMPRIMIDO_EXCEDE_LIMITE`: más de 64 MB descomprimido, una bomba zip), `EXCEL_SIN_DATOS`, `FORMATO_NO_SOPORTADO` y
+`DESCOMPRIMIDO_EXCEDE_LIMITE`: más de 64 MB descomprimido o más de 1.000.000 de elementos XML, una bomba zip o un libro con millones de celdas), `EXCEL_SIN_DATOS`, `FORMATO_NO_SOPORTADO` y
 `ARCHIVO_REQUERIDO`. 503 `SERVICIO_OCUPADO` (con `Retry-After`) si Cotifly ya analiza 4 archivos y el cupo no se libera en 15 s.
 
 <!-- respuesta: POST /web/mercancias/analizar-excel 400 -->

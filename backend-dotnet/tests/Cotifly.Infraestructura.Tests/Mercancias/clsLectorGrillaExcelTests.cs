@@ -300,4 +300,127 @@ public sealed class clsLectorGrillaExcelTests : IDisposable
         cupo.Release();
         (await lector.LeerAsync("mercancias.xlsx", clsExcelMercanciasMuestra.Excel(1), Ct)).EsExitoso.Should().BeTrue("al liberarse el cupo se lee");
     }
+
+    // ---- Validación de HU-035.1 (#202): densidad, XXE, cupo con cancelación, fechas 1904, combinadas, hojas ocultas y recorte con emoji.
+
+    [Fact]
+    public async Task UnLibroPequenoPeroMuyDensoSeRechazaSinCargarloEnClosedXml()
+    {
+        // 4 millones de celdas mínimas: unos 200 KB comprimidos, 60 MB descomprimidos (pasa el tope de bytes) y más de 1 GB en ClosedXML.
+        var densa = clsExcelMercanciasMuestra.Densa(4_000_000);
+        densa.Length.Should().BeLessThan(1024 * 1024);
+        clsLectorGrillaExcelClosedXml.VerificarPaquete(densa, Ct).Should().BeNull("los bytes descomprimidos caben en los 64 MB");
+        GC.Collect();
+        var antes = GC.GetAllocatedBytesForCurrentThread();
+
+        var error = await FallaAsync(densa);
+
+        error.Codigo.Should().Be(clsCodigosError.ArchivoDemasiadoGrande);
+        error.Detalle.Should().Be(clsLectorGrillaExcelClosedXml.MotivoDescomprimido);
+        (GC.GetAllocatedBytesForCurrentThread() - antes).Should().BeLessThan(256L * 1024 * 1024, "se cuenta en flujo, sin abrir el libro en ClosedXML");
+    }
+
+    [Fact]
+    public async Task UnLibroDensoDentroDelTopeSeLee()
+    {
+        var hoja = (await LeerAsync(clsExcelMercanciasMuestra.Densa(200_000))).Hojas.Single();
+
+        (hoja.TotalFilas, hoja.Filas.Count, hoja.FilasTruncadas, hoja.TotalColumnas).Should().Be((3_999, 1_000, true, 50));
+    }
+
+    [Fact]
+    public void ElConteoDeElementosNoResuelveEntidadesExternas() =>
+        clsLectorGrillaExcelClosedXml.VerificarElementos(clsExcelMercanciasMuestra.ConEntidadExterna(), Ct)!.Detalle
+            .Should().Be(clsLectorGrillaExcelClosedXml.MotivoLibroIlegible, "un DTD no se procesa: el archivo no se lee");
+
+    [Fact]
+    public async Task UnaEntidadExternaNuncaLlegaALaRespuesta()
+    {
+        var resultado = await _lector.LeerAsync("mercancias.xlsx", clsExcelMercanciasMuestra.ConEntidadExterna(), Ct);
+
+        resultado.EsFallo.Should().BeTrue();
+        (resultado.Error.Codigo, resultado.Error.Detalle).Should().Be((clsCodigosError.ExcelInvalido, clsLectorGrillaExcelClosedXml.MotivoLibroIlegible));
+    }
+
+    [Fact]
+    public async Task LaCancelacionDuranteLaLecturaLiberaElCupo()
+    {
+        using var lector = new clsLectorGrillaExcelClosedXml(NullLogger<clsLectorGrillaExcelClosedXml>.Instance, TimeSpan.FromMilliseconds(50), simultaneos: 1);
+        var excel = clsExcelMercanciasMuestra.Densa(300_000);
+        using var cancelacion = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        cancelacion.CancelAfter(TimeSpan.FromMilliseconds(30));
+
+        var leer = () => lector.LeerAsync("mercancias.xlsx", excel, cancelacion.Token);
+
+        await leer.Should().ThrowAsync<OperationCanceledException>();
+        (await lector.LeerAsync("mercancias.xlsx", clsExcelMercanciasMuestra.Excel(1), Ct)).EsExitoso.Should().BeTrue("el cupo de 1 se liberó");
+    }
+
+    [Fact]
+    public async Task UnLibroConElSistemaDeFechas1904TraeLaFechaCorrecta()
+    {
+        var excel = clsExcelMercanciasMuestra.ConFormulaYFecha();
+        using var memoria = new MemoryStream();
+        memoria.Write(excel);
+        using (var documento = DocumentFormat.OpenXml.Packaging.SpreadsheetDocument.Open(memoria, true))
+        {
+            var libro = documento.WorkbookPart!.Workbook;
+            libro.WorkbookProperties ??= new DocumentFormat.OpenXml.Spreadsheet.WorkbookProperties();
+            libro.WorkbookProperties.Date1904 = true;
+            libro.Save();
+        }
+
+        var hoja = (await LeerAsync(memoria.ToArray())).Hojas.Single();
+
+        hoja.Filas.Single()[6].Should().Be("2030-10-21", "el mismo número de serie, contado desde 1904, son 1462 días más");
+    }
+
+    [Fact]
+    public async Task LasCeldasCombinadasTraenElValorSoloEnLaPrimeraYLasHojasOcultasSeLeen()
+    {
+        var excel = Libro(l =>
+        {
+            var oculta = l.Worksheets.Add("Listas");
+            oculta.Cell("A1").Value = "Tipo";
+            oculta.Cell("B1").Value = "Código";
+            oculta.Cell("C1").Value = "Grupo";
+            oculta.Cell("A2").Value = "Caja";
+            oculta.Visibility = XLWorksheetVisibility.VeryHidden;
+            var ws = l.Worksheets.Add("Mercancías");
+            ws.Cell("A1").Value = "Tipo";
+            ws.Cell("B1").Value = "Medidas (m)";
+            ws.Range("B1:D1").Merge();
+            ws.Cell("E1").Value = "Peso";
+            ws.Cell("A2").Value = "Caja";
+            ws.Cell("B2").Value = 1;
+            ws.Cell("D2").Value = 3;
+            ws.Cell("E2").Value = 0.1 + 0.2;
+        });
+
+        var analisis = await LeerAsync(excel);
+
+        analisis.Hojas.Select(h => h.Nombre).Should().Equal("Listas", "Mercancías");
+        var hoja = analisis.Hojas[1];
+        hoja.Encabezados.Should().Equal("Tipo", "Medidas (m)", string.Empty, string.Empty, "Peso");
+        hoja.Filas.Single().Should().Equal("Caja", "1", string.Empty, "3", "0.3");
+    }
+
+    [Fact]
+    public async Task UnaCeldaLargaConEmojiSeRecortaSinPartirElEmoji()
+    {
+        var texto = new string('a', clsLectorGrillaExcelClosedXml.MaximoLargoCelda - 1) + "🚚 y más";
+        var excel = Libro(l =>
+        {
+            var ws = l.Worksheets.Add("M");
+            ws.Cell("A1").Value = "Tipo";
+            ws.Cell("B1").Value = "Cantidad";
+            ws.Cell("C1").Value = "Peso";
+            ws.Cell("A2").Value = texto;
+        });
+
+        var hoja = (await LeerAsync(excel)).Hojas.Single();
+
+        hoja.CeldasRecortadas.Should().BeTrue();
+        hoja.Filas.Single()[0].Should().Be(new string('a', clsLectorGrillaExcelClosedXml.MaximoLargoCelda - 1));
+    }
 }

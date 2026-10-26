@@ -311,7 +311,7 @@ Consecuencias:
 | Cuerpo de cualquier petición a `/web/*` | 64 KB | 413 `ErrorWeb` |
 | Cuerpo de `/web/licitaciones*` y de `POST /web/mercancias/analizar-excel` | 12 MB | 413 `ErrorWeb` |
 | Archivo Excel de la licitación o de mercancías | 10 MB menos 64 KB (unos 9,9 MB) | 400 `ARCHIVO_DEMASIADO_GRANDE` |
-| Excel de mercancías descomprimido (HU-035.1) | 64 MB | 400 `ARCHIVO_DEMASIADO_GRANDE` (`detalle.motivo = DESCOMPRIMIDO_EXCEDE_LIMITE`) |
+| Excel de mercancías descomprimido (HU-035.1) | 64 MB o 1.000.000 de elementos XML (unas 300.000 celdas) | 400 `ARCHIVO_DEMASIADO_GRANDE` (`detalle.motivo = DESCOMPRIMIDO_EXCEDE_LIMITE`) |
 | `/api/auth/*` (login, refresh y logout juntos) | 30 peticiones por minuto por IP | 429 `ErrorWeb` |
 | `POST /web/chat` | 20 turnos por minuto por comercial | 429 `ErrorWeb` |
 | Resto de `/web/*` | Sin límite propio | — |
@@ -3395,7 +3395,7 @@ parecido del catálogo, `sugerido = true`, con `similitud` de 0 a 1), `null` (si
 | Código | HTTP | Significado | Acción recomendada en la UI |
 |---|---|---|---|
 | `AJUSTE_MARGEN_INVALIDO` | 400 | Margen fuera de 0 a 0,99 o ausente | Validar el campo antes de enviar |
-| `ARCHIVO_DEMASIADO_GRANDE` | 400 | Excel de más de unos 9,9 MB; en el Excel de mercancías (HU-035.1) también más de 64 MB descomprimido (`detalle.motivo = DESCOMPRIMIDO_EXCEDE_LIMITE`) | "El archivo supera 10 MB" |
+| `ARCHIVO_DEMASIADO_GRANDE` | 400 | Excel de más de unos 9,9 MB; en el Excel de mercancías (HU-035.1) también más de 64 MB descomprimido o con demasiadas celdas (`detalle.motivo = DESCOMPRIMIDO_EXCEDE_LIMITE`) | "El archivo supera 10 MB" |
 | `ARCHIVO_REQUERIDO` | 400 | Falta el Excel o está vacío | Pedir el archivo |
 | `CAMPO_NO_EDITABLE` | 400 | La edición cambia el cliente, el tipo o la línea de negocio de una ruta (HU-028) | Restaurar el campo de `detalle.campo` |
 | `CATALOGOS_FLETE_NO_DISPONIBLE` | 503 | Catálogos de NEXO caídos y sin copia de menos de 24 h | Deshabilitar selects, Reintentar; nada se guardó |
@@ -3675,7 +3675,7 @@ fila_excel, campo, codigo, mensaje}`.
 - **Nuevo** `POST /web/mercancias/analizar-excel` (4.4.11): Cotifly lee el Excel localmente (ClosedXML), **sin NEXO**, y devuelve la
   grilla cruda para que el frontend mapee tipo, cantidad, largo, ancho, alto y peso. Misma forma de `AnalisisExcel` más los indicadores
   de truncado; código de mercancía sugerido opcional (el cubicador caído no lo rompe).
-- Contra archivos maliciosos: revisión del paquete antes de abrirlo (bomba zip: más de 64 MB descomprimido), topes de hojas, filas,
+- Contra archivos maliciosos: revisión del paquete antes de abrirlo (bomba zip: más de 64 MB descomprimido o más de 1.000.000 de elementos XML), topes de hojas, filas,
   columnas, largo de celda y celdas de la respuesta, fórmulas nunca evaluadas y un cupo de 4 análisis simultáneos (503
   `SERVICIO_OCUPADO`). Todo error del archivo es 400 con código y `detalle.motivo`.
 - Sin script de base de datos ni códigos de error nuevos. Son **53 endpoints**. Cambio con su "qué hacer": sección 7, fila 59 (la #201
