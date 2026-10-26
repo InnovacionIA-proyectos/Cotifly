@@ -1,12 +1,15 @@
 /* ============================================================================
    Seeder 03 — Roles internos de Cotifly (dbo_cotifly.Roles)
    ============================================================================
-   Los dos roles nacen SIN rol externo (`idRolExterno` NULL): mientras sea NULL nadie puede
+   Los tres roles nacen SIN rol externo (`idRolExterno` NULL): mientras sea NULL nadie puede
    iniciar sesión con ese rol (falla cerrado). El DBA lo fija con los IDROLES de ClientePro
    (dbsolucionesti.dbo.tblSAPRoles.IDROLES):
 
        UPDATE dbo_cotifly.Roles SET idRolExterno = <IDROLES> WHERE codigo = 'comercial';
        UPDATE dbo_cotifly.Roles SET idRolExterno = <IDROLES> WHERE codigo = 'gerente_comercial';
+       UPDATE dbo_cotifly.Roles SET idRolExterno = <IDROLES> WHERE codigo = 'director';
+
+   'director' (HU-037.1, #209): ve todas las regionales, por jerarquía (no multi-rol).
 
    Idempotente: inserta solo el rol que falta; volver a correrlo no pisa los valores que el DBA
    ya haya fijado.
@@ -25,10 +28,11 @@ INSERT INTO dbo_cotifly.Roles (codigo, descripcion)
 SELECT v.codigo, v.descripcion
 FROM (VALUES
     (N'comercial',         N'Comercial'),
-    (N'gerente_comercial', N'Gerente comercial')
+    (N'gerente_comercial', N'Gerente comercial'),
+    (N'director',          N'Director')
 ) AS v (codigo, descripcion)
 WHERE NOT EXISTS (SELECT 1 FROM dbo_cotifly.Roles AS r WHERE r.codigo = v.codigo);
 GO
 
 /* Verificación: SELECT codigo, idRolExterno FROM dbo_cotifly.Roles ORDER BY codigo;
-   -- 2 filas; idRolExterno NULL hasta que el DBA lo fije. */
+   -- 3 filas; idRolExterno NULL hasta que el DBA lo fije. */

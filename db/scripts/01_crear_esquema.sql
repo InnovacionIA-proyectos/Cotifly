@@ -111,6 +111,8 @@ CREATE UNIQUE INDEX uq_usuariosWeb_idUsuarioExterno ON dbo_cotifly.UsuariosWeb (
 GO
 
 -- Roles internos y su rol externo de ClientePro (idRolExterno NULL = nadie entra con ese rol).
+-- 'director' (HU-037.1, #209): ve todas las regionales, por jerarquía (no multi-rol). Agregado aquí directo
+-- en vez de esperar a la consolidación del 01 (HU-024.2) porque es solo un valor más del CHECK.
 CREATE TABLE dbo_cotifly.Roles (
     id              INT IDENTITY(1,1)   NOT NULL,
     codigo          NVARCHAR(30)  COLLATE Latin1_General_100_CI_AS_SC_UTF8 NOT NULL,
@@ -120,7 +122,7 @@ CREATE TABLE dbo_cotifly.Roles (
     updatedAt       DATETIMEOFFSET      NOT NULL CONSTRAINT df_roles_updatedAt DEFAULT (SYSDATETIMEOFFSET()),
     CONSTRAINT pk_roles PRIMARY KEY (id),
     CONSTRAINT uq_roles_codigo UNIQUE (codigo),
-    CONSTRAINT ck_roles_codigo CHECK (codigo IN ('comercial', 'gerente_comercial'))
+    CONSTRAINT ck_roles_codigo CHECK (codigo IN ('comercial', 'gerente_comercial', 'director'))
 );
 GO
 
