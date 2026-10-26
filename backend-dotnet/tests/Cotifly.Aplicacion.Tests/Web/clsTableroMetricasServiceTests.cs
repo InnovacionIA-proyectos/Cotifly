@@ -258,6 +258,36 @@ public sealed class clsTableroMetricasServiceTests
     }
 
     [Fact]
+    public async Task HU0341_ConMesLaSerieTieneSoloEseMesYCuadraConLosIndicadores()
+    {
+        // HU-010.5 + #201: anio=2026&mes=3 -> un solo punto, igual a los indicadores del periodo.
+        var (gerente, ana, luis) = PrepararRegional();
+        _metricas.ListarCotizacionesAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+            .Returns(new clsDatosMetricas([Fila(ana.Id, ganada: true), Fila(ana.Id, ganada: false), Fila(luis.Id, ganada: true)], false));
+
+        var resultado = (await Servicio(gerente).ObtenerRegionalAsync(new clsConsultaMetricas(Anio: "2026", Mes: "3"), Ct)).Valor;
+
+        var punto = resultado.SerieMensual.Should().ContainSingle().Subject;
+        punto.Should().Be(new clsPuntoSerieMensual("2026-03", 3, 2, 1, 3_000_000m, 2_000_000m, 2_550_000m, 1_700_000m, 300_000m));
+        var indicadores = resultado.Indicadores;
+        (punto.Cantidad, punto.ValorCotizadoCop, punto.ValorGanadoCop, punto.CosteoTotal, punto.CosteoGanadas, punto.Ganancias).Should().Be(
+            (indicadores.Cantidad, indicadores.ValorCotizadoCop, indicadores.ValorGanadoCop, indicadores.CosteoTotal, indicadores.CosteoGanadas, indicadores.Ganancias));
+    }
+
+    [Fact]
+    public async Task HU0341_UnComercialSinCotizacionesTieneTodosLosMesesEnCero()
+    {
+        var comercial = Usuario(RolInterno.Comercial);
+        SinFilas();
+
+        var resultado = (await Servicio(comercial).ObtenerComercialAsync(new clsConsultaMetricas("2025-11-01", "2026-02-28"), Ct)).Valor;
+
+        resultado.SerieMensual.Select(p => p.Mes).Should().Equal("2025-11", "2025-12", "2026-01", "2026-02");
+        resultado.SerieMensual.Should().OnlyContain(p => p == new clsPuntoSerieMensual(p.Mes, 0, 0, 0, 0m, 0m, 0m, 0m, 0m));
+        (resultado.Indicadores.CosteoTotal, resultado.Indicadores.CosteoGanadas, resultado.Indicadores.Ganancias).Should().Be((0m, 0m, 0m));
+    }
+
+    [Fact]
     public async Task FiltrarPorAlguienFueraDeLaRegionalEsNoEncontrado()
     {
         var (gerente, _, _) = PrepararRegional();

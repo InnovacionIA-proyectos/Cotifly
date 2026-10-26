@@ -308,4 +308,88 @@ public sealed class clsCalculadoraMetricasTests
         });
         total.Ganancias.Should().NotBe(0m);
     }
+
+    [Fact]
+    public void HU0341_DiciembreYEneroDelAnioSiguienteSonMesesDistintosEnHoraDeBogota()
+    {
+        // 23:30 del 31 de diciembre en Bogotá ya es 1 de enero en UTC: cuenta en diciembre. 00:30 del 1 de enero cuenta en enero.
+        var diciembre = Fila(precio: 1_000_000m, costo: 900_000m, ganada: true, creada: new DateTimeOffset(2025, 12, 31, 23, 30, 0, _bogota));
+        var enero = Fila(precio: 2_000_000m, costo: 1_500_000m, ganada: true, creada: new DateTimeOffset(2026, 1, 1, 0, 30, 0, _bogota));
+        var eneroPerdida = Fila(precio: 700_000m, costo: 600_000m, ganada: false, creada: new DateTimeOffset(2026, 1, 31, 23, 59, 0, _bogota));
+
+        var serie = clsCalculadoraMetricas.SerieMensual([enero, diciembre, eneroPerdida], new DateOnly(2025, 12, 1), new DateOnly(2026, 1, 31), FechaBogota);
+
+        serie.Should().Equal(
+            new clsPuntoSerieMensual("2025-12", 1, 1, 0, 1_000_000m, 1_000_000m, 900_000m, 900_000m, 100_000m),
+            new clsPuntoSerieMensual("2026-01", 2, 1, 1, 2_700_000m, 2_000_000m, 2_100_000m, 1_500_000m, 500_000m));
+    }
+
+    [Fact]
+    public void HU0341_UnMesConGanadasPorDebajoDelCostoTieneGananciasNegativas()
+    {
+        // Una ganada vendida por debajo del costo resta: la serie no recorta en 0 (como indicadores.ganancias).
+        var serie = clsCalculadoraMetricas.SerieMensual(
+            [Fila(precio: 800_000m, costo: 1_000_000m, ganada: true), Fila(precio: 1_000_000m, costo: 900_000m, ganada: true)],
+            new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), FechaBogota);
+
+        serie.Single().Ganancias.Should().Be(-100_000m);
+    }
+
+    [Fact]
+    public void HU0341_MontosEnElTopeDeLaBaseNoSeDesbordanYCuadran()
+    {
+        // DECIMAL(18,2): 9.999.999.999.999.999,99 por fila; en USD, × una TRM de 5.000. 600 filas en 12 meses.
+        const decimal Tope = 9_999_999_999_999_999.99m;
+        var filas = Enumerable.Range(0, 600).Select(i =>
+        {
+            var creada = new DateTimeOffset(2026, (i % 12) + 1, 15, 12, 0, 0, _bogota);
+            return i % 3 == 0
+                ? Fila(precio: Tope, costo: Tope - 0.01m, ganada: true, moneda: "USD", trm: 5_000.25m, creada: creada)
+                : Fila(precio: Tope, costo: Tope, ganada: i % 3 == 1, creada: creada);
+        }).ToArray();
+
+        var serie = clsCalculadoraMetricas.SerieMensual(filas, new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31), FechaBogota);
+        var total = Indicadores(filas);
+
+        serie.Sum(p => p.CosteoTotal).Should().Be(total.CosteoTotal).And.Be((600 * Tope) - (200 * 0.01m));
+        serie.Sum(p => p.CosteoGanadas).Should().Be(total.CosteoGanadas);
+        serie.Sum(p => p.ValorCotizadoCop).Should().Be(total.ValorCotizadoCop);
+        serie.Sum(p => p.ValorGanadoCop).Should().Be(total.ValorGanadoCop);
+        serie.Sum(p => p.Ganancias).Should().Be(total.Ganancias)
+            .And.Be(200 * (Math.Round(Tope * 5_000.25m, 2, MidpointRounding.ToEven) - (Tope - 0.01m)), "las COP ganadas no ganan nada; las USD ganan precio × TRM − costo");
+    }
+
+    [Fact]
+    public void HU0341_ElRefactorAMontosDeNoCambiaLosIndicadores()
+    {
+        // Las fórmulas de los indicadores antes de #201, escritas a mano, contra filas al azar (USD con y sin TRM, B3, sin costo).
+        var azar = new Random(3401);
+        decimal? Monto() => azar.Next(8) == 0 ? null : azar.Next(1, 90_000_000) + (azar.Next(100) / 100m);
+        var filas = Enumerable.Range(0, 300).Select(_ =>
+        {
+            var usd = azar.Next(3) == 0;
+            var fila = Fila(
+                precio: Monto(),
+                costo: Monto(),
+                ganada: azar.Next(3) switch { 0 => true, 1 => false, _ => null },
+                moneda: usd ? "USD" : "COP",
+                trm: usd && azar.Next(5) > 0 ? 3_900m + (azar.Next(50_000) / 100m) : 0m);
+            return fila.Ganada == true && azar.Next(4) == 0
+                ? fila with { VersionResultado = new clsVersionResultadoMetrica(Monto(), usd ? "USD" : "COP", usd ? 4_100.37m : 0m, Monto()) }
+                : fila;
+        }).ToArray();
+        var ganadas = filas.Where(f => f.Ganada == true).ToList();
+
+        var indicadores = Indicadores(filas);
+
+        indicadores.CosteoTotal.Should().Be(Math.Round(filas.Sum(f => f.Costo ?? 0m), 2, MidpointRounding.ToEven));
+        indicadores.CosteoGanadas.Should().Be(Math.Round(ganadas.Sum(f => f.CostoResultado ?? 0m), 2, MidpointRounding.ToEven));
+        indicadores.ValorCotizadoCop.Should().Be(Math.Round(filas.Sum(f => f.ValorCop ?? 0m), 2, MidpointRounding.ToEven));
+        indicadores.ValorGanadoCop.Should().Be(Math.Round(ganadas.Sum(f => f.ValorResultadoCop ?? 0m), 2, MidpointRounding.ToEven));
+        indicadores.Ganancias.Should().Be(Math.Round(
+            ganadas.Where(f => f.ValorResultadoCop.HasValue && f.CostoResultado.HasValue).Sum(f => f.ValorResultadoCop!.Value - f.CostoResultado!.Value),
+            2,
+            MidpointRounding.ToEven));
+        indicadores.Ganancias.Should().NotBe(0m);
+    }
 }

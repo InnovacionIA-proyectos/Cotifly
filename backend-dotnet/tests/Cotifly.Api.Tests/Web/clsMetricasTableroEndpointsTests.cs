@@ -286,6 +286,61 @@ public sealed class clsMetricasTableroEndpointsTests(clsEntornoApiWeb entorno)
         }
     }
 
+    [Fact]
+    public async Task HU0341_LaSerieCruzaElAnioRespetaMesYLaVersionGanadaYNoMezclaOtrasRegionales()
+    {
+        // #201: diciembre (23:30 del 31 en Bogotá) frente a enero; en enero una cadena cuya v1 se ganó y cuya -v2 vigente no tiene
+        // precio ni costo (B3, #173); Marta, de otra regional, no entra en la serie del gerente ni en la de Ana.
+        var occidente = Regional();
+        var ana = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial, occidente, "Ana Cruce");
+        var gloria = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoGerente, occidente, "Gloria Cruce");
+        var marta = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial, Regional(), "Marta Cruce");
+        await CrearAsync(ana.UsuarioId, "COP", 1_000_000m, 0m, 800_000m, true, "2025-12-31T23:30:00-05:00");
+        var v1 = await CrearAsync(ana.UsuarioId, "COP", 600_000m, 0m, 500_000m, null, "2026-01-10");
+        await clsBaseDatosPruebas.EjecutarAsync(entorno.BaseDatos.CadenaCotifly, $"""
+            DECLARE @nueva UNIQUEIDENTIFIER = NEWID();
+            INSERT INTO dbo_cotifly.CotizacionesSolicitud (id, folio, usuarioId, precioFinal, moneda, trmAplicada, estadoEnvio, ganada, version, createdAt, updatedAt)
+            SELECT @nueva, CONCAT(folio, N'-v2'), usuarioId, NULL, moneda, trmAplicada, N'sin_enviar', NULL, 2, '2026-01-12T12:00:00-05:00', SYSDATETIMEOFFSET()
+            FROM dbo_cotifly.CotizacionesSolicitud WHERE id = '{v1.Id}';
+            INSERT INTO dbo_cotifly.CotizacionLineasSolicitud (cotizacionSolicitudId, orden, costoFinal, precioFinalLinea) VALUES (@nueva, 1, NULL, NULL);
+            UPDATE dbo_cotifly.CotizacionesSolicitud SET ganada = 1, marcadoAt = SYSDATETIMEOFFSET() WHERE id = '{v1.Id}';
+            """);
+        await CrearAsync(marta.UsuarioId, "COP", 9_000_000m, 0m, 1_000_000m, true, "2026-01-15");
+
+        var cruce = await RegionalAsync(gloria, "desde=2025-12-01&hasta=2026-01-31");
+        var enero = await RegionalAsync(gloria, "anio=2026&mes=1");
+        var diciembre = await RegionalAsync(gloria, "anio=2025&mes=12");
+        using var respuesta = await Api.EnviarAsync(_get, "/web/metricas/comercial?desde=2025-12-01&hasta=2026-01-31", ana.Access);
+        var deAna = await VerificarContratoAsync(respuesta, "/web/metricas/comercial", _get, HttpStatusCode.OK);
+
+        var puntoDiciembre = (Mes: "2025-12", Cantidad: 1, Ganadas: 1, Cotizado: 1_000_000m, Ganado: 1_000_000m, Costeo: 800_000m, CosteoGanadas: 800_000m, Ganancias: 200_000m);
+        var puntoEnero = (Mes: "2026-01", Cantidad: 1, Ganadas: 1, Cotizado: 0m, Ganado: 600_000m, Costeo: 0m, CosteoGanadas: 500_000m, Ganancias: 100_000m);
+        Serie(cruce).Should().Equal(puntoDiciembre, puntoEnero);
+        Serie(deAna).Should().Equal(puntoDiciembre, puntoEnero);
+        Serie(enero).Should().Equal(puntoEnero);
+        Serie(diciembre).Should().Equal(puntoDiciembre);
+        foreach (var json in new[] { cruce, enero, diciembre, deAna })
+        {
+            var indicadores = json.GetProperty("indicadores");
+            foreach (var campo in new[] { "cantidad", "ganadas", "perdidas", "valor_cotizado_cop", "valor_ganado_cop", "costeo_total", "costeo_ganadas", "ganancias" })
+            {
+                json.GetProperty("serie_mensual").EnumerateArray().Sum(p => p.GetProperty(campo).GetDecimal())
+                    .Should().Be(indicadores.GetProperty(campo).GetDecimal(), campo);
+            }
+        }
+    }
+
+    private static List<(string?, int, int, decimal, decimal, decimal, decimal, decimal)> Serie(JsonElement json) =>
+        [.. json.GetProperty("serie_mensual").EnumerateArray().Select(p => (
+            p.GetProperty("mes").GetString(),
+            p.GetProperty("cantidad").GetInt32(),
+            p.GetProperty("ganadas").GetInt32(),
+            p.GetProperty("valor_cotizado_cop").GetDecimal(),
+            p.GetProperty("valor_ganado_cop").GetDecimal(),
+            p.GetProperty("costeo_total").GetDecimal(),
+            p.GetProperty("costeo_ganadas").GetDecimal(),
+            p.GetProperty("ganancias").GetDecimal()))];
+
     private static (decimal CosteoTotal, decimal CosteoGanadas, decimal Ganancias) Montos(JsonElement punto) =>
         (punto.GetProperty("costeo_total").GetDecimal(), punto.GetProperty("costeo_ganadas").GetDecimal(), punto.GetProperty("ganancias").GetDecimal());
 
