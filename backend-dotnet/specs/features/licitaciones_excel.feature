@@ -182,3 +182,19 @@ Característica: Licitaciones desde Excel
     Cuando "ana" analiza el pliego de 3 filas
     Entonces la respuesta tiene el estado 503 con el código de negocio "COSTEO_NEXO_NO_DISPONIBLE"
     Y el detalle del error tiene el motivo "SESION_INVALIDA"
+
+  # HU-035.2 (#213) — El pliego pasa por los mismos controles del Excel subido que el de mercancías (#202), ANTES de Nexo: un archivo
+  # corrupto o malicioso es un 400 con código y motivo, nunca un 500, y nunca sale a Nexo.
+  Esquema del escenario: Un pliego corrupto o malicioso se rechaza antes de enviarlo a Nexo
+    Cuando "ana" analiza como pliego <archivo>
+    Entonces la respuesta tiene el estado 400 con el código de negocio "<codigo>"
+    Y el detalle del error tiene el motivo "<motivo>"
+    Y Nexo no recibió el archivo
+
+    Ejemplos:
+      | archivo                                  | codigo                   | motivo                      |
+      | una bomba zip                            | ARCHIVO_DEMASIADO_GRANDE | DESCOMPRIMIDO_EXCEDE_LIMITE |
+      | un libro pequeño con millones de celdas  | ARCHIVO_DEMASIADO_GRANDE | DESCOMPRIMIDO_EXCEDE_LIMITE |
+      | un libro con una entidad externa (XXE)   | EXCEL_INVALIDO           | LIBRO_ILEGIBLE              |
+      | un .xls antiguo renombrado a .xlsx       | EXCEL_INVALIDO           | CIFRADO_O_XLS               |
+      | un archivo de texto renombrado a .xlsx   | EXCEL_INVALIDO           | NO_ES_XLSX                  |

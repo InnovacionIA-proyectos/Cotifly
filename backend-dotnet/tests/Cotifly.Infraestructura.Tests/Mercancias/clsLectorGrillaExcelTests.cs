@@ -2,6 +2,7 @@ using System.Diagnostics;
 using ClosedXML.Excel;
 using Cotifly.Aplicacion.Mercancias.DTOs;
 using Cotifly.Dominio.Comun;
+using Cotifly.Infraestructura.Comun;
 using Cotifly.Infraestructura.Mercancias.Services;
 using Cotifly.Pruebas.Comun;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -16,11 +17,21 @@ namespace Cotifly.Infraestructura.Tests.Mercancias;
 public sealed class clsLectorGrillaExcelTests : IDisposable
 {
     private static readonly TimeSpan _tiempoMaximo = TimeSpan.FromSeconds(10);
-    private readonly clsLectorGrillaExcelClosedXml _lector = new(NullLogger<clsLectorGrillaExcelClosedXml>.Instance);
+    private readonly clsLecturaExcelAcotada _lectura = new(NullLogger<clsLecturaExcelAcotada>.Instance);
+    private readonly clsLectorGrillaExcelClosedXml _lector;
+
+    public clsLectorGrillaExcelTests() => _lector = new(_lectura, NullLogger<clsLectorGrillaExcelClosedXml>.Instance);
+
+    /// <summary>Un lector con su propio cupo de <paramref name="simultaneos"/> y una espera de 50 ms (pruebas del cupo).</summary>
+    private static (clsLecturaExcelAcotada Lectura, clsLectorGrillaExcelClosedXml Lector) ConCupo(int simultaneos)
+    {
+        var lectura = new clsLecturaExcelAcotada(NullLogger<clsLecturaExcelAcotada>.Instance, TimeSpan.FromMilliseconds(50), simultaneos);
+        return (lectura, new clsLectorGrillaExcelClosedXml(lectura, NullLogger<clsLectorGrillaExcelClosedXml>.Instance));
+    }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    public void Dispose() => _lector.Dispose();
+    public void Dispose() => _lectura.Dispose();
 
     private async Task<clsAnalisisExcelMercancias> LeerAsync(byte[] excel, string nombre = "mercancias.xlsx")
     {
@@ -244,12 +255,12 @@ public sealed class clsLectorGrillaExcelTests : IDisposable
 
     public static TheoryData<string, string, string> Corruptos() => new()
     {
-        { "texto", clsCodigosError.ExcelInvalido, clsLectorGrillaExcelClosedXml.MotivoNoEsXlsx },
-        { "ole", clsCodigosError.ExcelInvalido, clsLectorGrillaExcelClosedXml.MotivoCifradoOXls },
-        { "zip sin libro", clsCodigosError.ExcelInvalido, clsLectorGrillaExcelClosedXml.MotivoSinLibro },
-        { "truncado", clsCodigosError.ExcelInvalido, clsLectorGrillaExcelClosedXml.MotivoZipInvalido },
-        { "libro ilegible", clsCodigosError.ExcelInvalido, clsLectorGrillaExcelClosedXml.MotivoLibroIlegible },
-        { "bomba zip", clsCodigosError.ArchivoDemasiadoGrande, clsLectorGrillaExcelClosedXml.MotivoDescomprimido },
+        { "texto", clsCodigosError.ExcelInvalido, clsLecturaExcelAcotada.MotivoNoEsXlsx },
+        { "ole", clsCodigosError.ExcelInvalido, clsLecturaExcelAcotada.MotivoCifradoOXls },
+        { "zip sin libro", clsCodigosError.ExcelInvalido, clsLecturaExcelAcotada.MotivoSinLibro },
+        { "truncado", clsCodigosError.ExcelInvalido, clsLecturaExcelAcotada.MotivoZipInvalido },
+        { "libro ilegible", clsCodigosError.ExcelInvalido, clsLecturaExcelAcotada.MotivoLibroIlegible },
+        { "bomba zip", clsCodigosError.ArchivoDemasiadoGrande, clsLecturaExcelAcotada.MotivoDescomprimido },
     };
 
     [Theory]
@@ -280,7 +291,7 @@ public sealed class clsLectorGrillaExcelTests : IDisposable
         GC.Collect();
         var antes = GC.GetAllocatedBytesForCurrentThread();
 
-        var error = clsLectorGrillaExcelClosedXml.VerificarPaquete(bomba, Ct);
+        var error = clsLecturaExcelAcotada.VerificarPaquete(bomba, Ct);
 
         error!.Codigo.Should().Be(clsCodigosError.ArchivoDemasiadoGrande);
         (GC.GetAllocatedBytesForCurrentThread() - antes).Should().BeLessThan(16L * 1024 * 1024, "se descomprime por bloques, sin guardar el contenido");
@@ -289,9 +300,9 @@ public sealed class clsLectorGrillaExcelTests : IDisposable
     [Fact]
     public async Task ConElCupoLlenoRespondeServicioOcupadoSinLeer()
     {
-        using var lector = new clsLectorGrillaExcelClosedXml(NullLogger<clsLectorGrillaExcelClosedXml>.Instance, TimeSpan.FromMilliseconds(50), simultaneos: 1);
-        var campo = typeof(clsLectorGrillaExcelClosedXml).GetField("_cupo", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
-        var cupo = (SemaphoreSlim)campo.GetValue(lector)!;
+        var (lectura, lector) = ConCupo(simultaneos: 1);
+        using var _ = lectura;
+        var cupo = lectura.Cupo;
         await cupo.WaitAsync(Ct);
 
         var resultado = await lector.LeerAsync("mercancias.xlsx", clsExcelMercanciasMuestra.Excel(1), Ct);
@@ -309,14 +320,14 @@ public sealed class clsLectorGrillaExcelTests : IDisposable
         // 4 millones de celdas mínimas: unos 200 KB comprimidos, 60 MB descomprimidos (pasa el tope de bytes) y más de 1 GB en ClosedXML.
         var densa = clsExcelMercanciasMuestra.Densa(4_000_000);
         densa.Length.Should().BeLessThan(1024 * 1024);
-        clsLectorGrillaExcelClosedXml.VerificarPaquete(densa, Ct).Should().BeNull("los bytes descomprimidos caben en los 64 MB");
+        clsLecturaExcelAcotada.VerificarPaquete(densa, Ct).Should().BeNull("los bytes descomprimidos caben en los 64 MB");
         GC.Collect();
         var antes = GC.GetAllocatedBytesForCurrentThread();
 
         var error = await FallaAsync(densa);
 
         error.Codigo.Should().Be(clsCodigosError.ArchivoDemasiadoGrande);
-        error.Detalle.Should().Be(clsLectorGrillaExcelClosedXml.MotivoDescomprimido);
+        error.Detalle.Should().Be(clsLecturaExcelAcotada.MotivoDescomprimido);
         (GC.GetAllocatedBytesForCurrentThread() - antes).Should().BeLessThan(256L * 1024 * 1024, "se cuenta en flujo, sin abrir el libro en ClosedXML");
     }
 
@@ -330,8 +341,8 @@ public sealed class clsLectorGrillaExcelTests : IDisposable
 
     [Fact]
     public void ElConteoDeElementosNoResuelveEntidadesExternas() =>
-        clsLectorGrillaExcelClosedXml.VerificarElementos(clsExcelMercanciasMuestra.ConEntidadExterna(), Ct)!.Detalle
-            .Should().Be(clsLectorGrillaExcelClosedXml.MotivoLibroIlegible, "un DTD no se procesa: el archivo no se lee");
+        clsLecturaExcelAcotada.VerificarElementos(clsExcelMercanciasMuestra.ConEntidadExterna(), Ct)!.Detalle
+            .Should().Be(clsLecturaExcelAcotada.MotivoLibroIlegible, "un DTD no se procesa: el archivo no se lee");
 
     [Fact]
     public async Task UnaEntidadExternaNuncaLlegaALaRespuesta()
@@ -339,13 +350,14 @@ public sealed class clsLectorGrillaExcelTests : IDisposable
         var resultado = await _lector.LeerAsync("mercancias.xlsx", clsExcelMercanciasMuestra.ConEntidadExterna(), Ct);
 
         resultado.EsFallo.Should().BeTrue();
-        (resultado.Error.Codigo, resultado.Error.Detalle).Should().Be((clsCodigosError.ExcelInvalido, clsLectorGrillaExcelClosedXml.MotivoLibroIlegible));
+        (resultado.Error.Codigo, resultado.Error.Detalle).Should().Be((clsCodigosError.ExcelInvalido, clsLecturaExcelAcotada.MotivoLibroIlegible));
     }
 
     [Fact]
     public async Task LaCancelacionDuranteLaLecturaLiberaElCupo()
     {
-        using var lector = new clsLectorGrillaExcelClosedXml(NullLogger<clsLectorGrillaExcelClosedXml>.Instance, TimeSpan.FromMilliseconds(50), simultaneos: 1);
+        var (lectura, lector) = ConCupo(simultaneos: 1);
+        using var _ = lectura;
         var excel = clsExcelMercanciasMuestra.Densa(300_000);
         using var cancelacion = CancellationTokenSource.CreateLinkedTokenSource(Ct);
         cancelacion.CancelAfter(TimeSpan.FromMilliseconds(30));

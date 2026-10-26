@@ -1,12 +1,10 @@
 using System.Globalization;
-using System.IO.Compression;
 using System.Text;
-using System.Xml;
 using ClosedXML.Excel;
-using DocumentFormat.OpenXml.Packaging;
 using Cotifly.Aplicacion.Mercancias.DTOs;
 using Cotifly.Aplicacion.Mercancias.Interfaces;
 using Cotifly.Dominio.Comun;
+using Cotifly.Infraestructura.Comun;
 using Microsoft.Extensions.Logging;
 
 namespace Cotifly.Infraestructura.Mercancias.Services;
@@ -19,16 +17,11 @@ namespace Cotifly.Infraestructura.Mercancias.Services;
 /// <remarks>
 /// <para><b>Acotado contra archivos maliciosos o corruptos</b> (nunca un 500 por el contenido):</para>
 /// <list type="bullet">
-/// <item>antes de abrirlo, el paquete se revisa como zip: firma <c>PK</c> (un <c>.xls</c> antiguo o un libro cifrado empiezan por
-/// <c>D0 CF 11 E0</c>), a lo sumo <see cref="MaximoEntradasZip"/> entradas, la parte <c>xl/workbook.xml</c> y, <b>descomprimiendo de
-/// verdad</b> (no se confía en el tamaño declarado), a lo sumo <see cref="MaximoDescomprimidoBytes"/> en total: así una bomba zip no
-/// llega a ClosedXML, que carga el libro entero en memoria;</item>
-/// <item>después, con un lector XML de flujo sin DTD, a lo sumo <see cref="MaximoElementosXml"/> elementos en todas las partes del libro:
-/// así un libro pequeño y muy denso (millones de celdas mínimas) tampoco llega a ClosedXML;</item>
+/// <item>antes de abrirlo, los controles compartidos de <see cref="clsLecturaExcelAcotada"/> (HU-035.2, #213: los mismos del pliego de
+/// licitación): firma, 1000 entradas, 64 MB descomprimidos contados de verdad, 1.000.000 de elementos XML contados en flujo sin DTD y
+/// el cupo de lecturas simultáneas del proceso (<c>SERVICIO_OCUPADO</c>);</item>
 /// <item>las fórmulas nunca se evalúan: se devuelve el valor que Excel guardó (<see cref="IXLCell.CachedValue"/>);</item>
 /// <item>topes de hojas, columnas, filas, largo de celda y celdas de toda la respuesta, con el truncado indicado en la respuesta;</item>
-/// <item>a lo sumo <see cref="MaximoSimultaneos"/> lecturas a la vez (memoria del proceso); si el cupo no se libera en
-/// <see cref="EsperaCupo"/>, <c>SERVICIO_OCUPADO</c>;</item>
 /// <item>la cancelación del llamador se respeta.</item>
 /// </list>
 /// <para><b>Hojas ocultas</b> (<c>hidden</c> y <c>veryHidden</c>): se leen como las visibles y vienen marcadas con
@@ -37,7 +30,7 @@ namespace Cotifly.Infraestructura.Mercancias.Services;
 /// significativas, fechas ISO (<c>yyyy-MM-dd</c> o <c>yyyy-MM-ddTHH:mm:ss</c>), duraciones <c>HH:mm:ss</c>, booleanos
 /// <c>true</c>/<c>false</c>, errores con su texto de Excel y el texto sin espacios al borde y con los saltos de línea como un espacio.</para>
 /// </remarks>
-public sealed class clsLectorGrillaExcelClosedXml : IClsLectorGrillaExcel, IDisposable
+public sealed class clsLectorGrillaExcelClosedXml : IClsLectorGrillaExcel
 {
     /// <summary>Hojas que se leen (en el orden del libro).</summary>
     public const int MaximoHojas = 20;
@@ -57,95 +50,34 @@ public sealed class clsLectorGrillaExcelClosedXml : IClsLectorGrillaExcel, IDisp
     /// <summary>Filas usadas en las que se busca el encabezado (las mismas 15 de licitaciones).</summary>
     public const int FilasBusquedaEncabezado = 15;
 
-    /// <summary>Tamaño total descomprimido del paquete (bomba zip): 64 MB. Un Excel de mercancías real descomprime a unos pocos MB.</summary>
-    public const long MaximoDescomprimidoBytes = 64L * 1024 * 1024;
-
-    /// <summary>Entradas del paquete zip. Un libro normal tiene decenas.</summary>
-    public const int MaximoEntradasZip = 1000;
-
-    /// <summary>
-    /// Elementos XML en todas las partes del libro (celdas, valores, cadenas compartidas, estilos...): acota la memoria de ClosedXML, que
-    /// crea un objeto por elemento. 64 MB de celdas mínimas (<c>&lt;c&gt;&lt;v&gt;1&lt;/v&gt;&lt;/c&gt;</c>) comprimen a unos 200 KB y
-    /// son casi 8 millones de elementos: más de 1 GB y 15 s de CPU por lectura. Un millón alcanza para unas 300.000 celdas (decenas de
-    /// miles de filas de mercancías) y deja la lectura en unos 200 MB.
-    /// </summary>
-    public const int MaximoElementosXml = 1_000_000;
-
-    /// <summary>Lecturas simultáneas en el proceso.</summary>
-    public const int MaximoSimultaneos = 4;
-
-    /// <summary>Espera máxima por un lugar en el cupo de lecturas.</summary>
-    public static readonly TimeSpan EsperaCupo = TimeSpan.FromSeconds(15);
-
-    /// <summary>Motivo (<c>detalle.motivo</c>) de <c>ARCHIVO_DEMASIADO_GRANDE</c> cuando el paquete descomprimido pasa el tope.</summary>
-    public const string MotivoDescomprimido = "DESCOMPRIMIDO_EXCEDE_LIMITE";
-
-    /// <summary>Motivos de <c>EXCEL_INVALIDO</c>.</summary>
-    public const string MotivoNoEsXlsx = "NO_ES_XLSX";
-    public const string MotivoCifradoOXls = "CIFRADO_O_XLS";
-    public const string MotivoZipInvalido = "ZIP_INVALIDO";
-    public const string MotivoDemasiadasEntradas = "DEMASIADAS_ENTRADAS";
-    public const string MotivoSinLibro = "SIN_LIBRO";
-    public const string MotivoLibroIlegible = "LIBRO_ILEGIBLE";
-
-    private const string MensajeInvalido = "No se pudo leer el archivo: no es un Excel (.xlsx o .xlsm) válido.";
-
-    private readonly SemaphoreSlim _cupo;
-    private readonly TimeSpan _espera;
+    private readonly clsLecturaExcelAcotada _lectura;
     private readonly ILogger<clsLectorGrillaExcelClosedXml> _logger;
 
-    public clsLectorGrillaExcelClosedXml(ILogger<clsLectorGrillaExcelClosedXml> logger)
-        : this(logger, EsperaCupo, MaximoSimultaneos)
+    public clsLectorGrillaExcelClosedXml(clsLecturaExcelAcotada lectura, ILogger<clsLectorGrillaExcelClosedXml> logger)
     {
-    }
-
-    /// <summary>Con otra espera y otro cupo (pruebas).</summary>
-    internal clsLectorGrillaExcelClosedXml(ILogger<clsLectorGrillaExcelClosedXml> logger, TimeSpan espera, int simultaneos)
-    {
+        ArgumentNullException.ThrowIfNull(lectura);
         ArgumentNullException.ThrowIfNull(logger);
-        ArgumentOutOfRangeException.ThrowIfLessThan(simultaneos, 1);
+        _lectura = lectura;
         _logger = logger;
-        _espera = espera;
-        _cupo = new SemaphoreSlim(simultaneos, simultaneos);
     }
 
-    public async Task<clsResultado<clsAnalisisExcelMercancias>> LeerAsync(
+    /// <summary>Dentro del cupo compartido y tras los controles del paquete (<see cref="clsLecturaExcelAcotada.LeerAsync{T}"/>).</summary>
+    public Task<clsResultado<clsAnalisisExcelMercancias>> LeerAsync(
         string nombreArchivo, byte[] contenido, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(contenido);
-        if (!await _cupo.WaitAsync(_espera, cancellationToken))
-        {
-            _logger.LogWarning("Cupo de lecturas del Excel de mercancías lleno tras {Segundos} s: se responde SERVICIO_OCUPADO.", _espera.TotalSeconds);
-            return new clsErrorDominio(clsCodigosError.ServicioOcupado, "Hay muchos archivos analizándose en este momento: intenta de nuevo en unos segundos.");
-        }
-
-        try
-        {
-            return Leer(nombreArchivo ?? string.Empty, contenido, cancellationToken);
-        }
-        finally
-        {
-            _cupo.Release();
-        }
+        return _lectura.LeerAsync(contenido, "mercancías", ct => LeerVerificado(nombreArchivo ?? string.Empty, contenido, ct), cancellationToken);
     }
 
-    public void Dispose() => _cupo.Dispose();
+    /// <summary>Lectura sin el cupo (sincrónica, pruebas): primero los controles del paquete, después el libro.</summary>
+    internal clsResultado<clsAnalisisExcelMercancias> Leer(string nombreArchivo, byte[] contenido, CancellationToken cancellationToken = default) =>
+        clsLecturaExcelAcotada.Verificar(contenido, cancellationToken) is { } rechazo
+            ? rechazo
+            : LeerVerificado(nombreArchivo, contenido, cancellationToken);
 
-    /// <summary>Lectura sin el cupo (sincrónica): primero el paquete, después el libro.</summary>
-    internal clsResultado<clsAnalisisExcelMercancias> Leer(string nombreArchivo, byte[] contenido, CancellationToken cancellationToken = default)
+    /// <summary>El libro con ClosedXML, ya verificado (<see cref="clsLecturaExcelAcotada.Verificar"/>).</summary>
+    private clsResultado<clsAnalisisExcelMercancias> LeerVerificado(string nombreArchivo, byte[] contenido, CancellationToken cancellationToken)
     {
-        if (VerificarPaquete(contenido, cancellationToken) is { } invalido)
-        {
-            _logger.LogInformation("Excel de mercancías rechazado antes de abrirlo: {Codigo} ({Motivo}).", invalido.Codigo, invalido.Detalle);
-            return invalido;
-        }
-
-        if (VerificarElementos(contenido, cancellationToken) is { } denso)
-        {
-            _logger.LogInformation("Excel de mercancías rechazado antes de abrirlo: {Codigo} ({Motivo}).", denso.Codigo, denso.Detalle);
-            return denso;
-        }
-
         XLWorkbook libro;
         try
         {
@@ -158,7 +90,7 @@ public sealed class clsLectorGrillaExcelClosedXml : IClsLectorGrillaExcel, IDisp
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             _logger.LogInformation("ClosedXML no pudo abrir el Excel de mercancías ({Tipo}).", ex.GetType().Name);
-            return Invalido(MotivoLibroIlegible);
+            return clsLecturaExcelAcotada.Invalido(clsLecturaExcelAcotada.MotivoLibroIlegible);
         }
 
         using (libro)
@@ -175,129 +107,10 @@ public sealed class clsLectorGrillaExcelClosedXml : IClsLectorGrillaExcel, IDisp
             {
                 // Un libro que abre pero tiene partes inconsistentes: es del archivo, no del servidor.
                 _logger.LogInformation("ClosedXML no pudo leer las celdas del Excel de mercancías ({Tipo}).", ex.GetType().Name);
-                return Invalido(MotivoLibroIlegible);
+                return clsLecturaExcelAcotada.Invalido(clsLecturaExcelAcotada.MotivoLibroIlegible);
             }
         }
     }
-
-    /// <summary>
-    /// Revisa el paquete antes de abrirlo: firma, entradas, <c>xl/workbook.xml</c> y tamaño descomprimido REAL (leyendo cada entrada). <c>null</c>
-    /// si se puede abrir.
-    /// </summary>
-    internal static clsErrorDominio? VerificarPaquete(byte[] contenido, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(contenido);
-        if (contenido is [0xD0, 0xCF, 0x11, 0xE0, ..])
-        {
-            return new clsErrorDominio(clsCodigosError.ExcelInvalido,
-                "El archivo está protegido con contraseña o es un Excel antiguo (.xls): guárdalo como .xlsx sin contraseña.", MotivoCifradoOXls);
-        }
-
-        if (contenido is not [0x50, 0x4B, 0x03, 0x04, ..])
-        {
-            return Invalido(MotivoNoEsXlsx);
-        }
-
-        try
-        {
-            using var zip = new ZipArchive(new MemoryStream(contenido, writable: false), ZipArchiveMode.Read);
-            if (zip.Entries.Count > MaximoEntradasZip)
-            {
-                return Invalido(MotivoDemasiadasEntradas);
-            }
-
-            if (!zip.Entries.Any(e => string.Equals(e.FullName, "xl/workbook.xml", StringComparison.OrdinalIgnoreCase)))
-            {
-                return Invalido(MotivoSinLibro);
-            }
-
-            var buffer = new byte[81_920];
-            long total = 0;
-            foreach (var entrada in zip.Entries)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (entrada.Length > MaximoDescomprimidoBytes - total)
-                {
-                    return DemasiadoGrande();
-                }
-
-                using var flujo = entrada.Open();
-                int leidos;
-                while ((leidos = flujo.Read(buffer, 0, buffer.Length)) > 0)
-                {
-                    total += leidos;
-                    if (total > MaximoDescomprimidoBytes)
-                    {
-                        return DemasiadoGrande();
-                    }
-                }
-            }
-
-            return null;
-        }
-        catch (Exception ex) when (ex is InvalidDataException or IOException or NotSupportedException or ArgumentException)
-        {
-            return Invalido(MotivoZipInvalido);
-        }
-    }
-
-    /// <summary>
-    /// Cuenta los elementos XML de todas las partes XML del paquete (las mismas que abriría ClosedXML, resueltas por sus relaciones) con
-    /// un lector de flujo, sin DTD ni entidades externas. <c>ARCHIVO_DEMASIADO_GRANDE</c> (<see cref="MotivoDescomprimido"/>) si pasan
-    /// de <see cref="MaximoElementosXml"/>; <c>EXCEL_INVALIDO</c> (<see cref="MotivoLibroIlegible"/>) si una parte no es XML válido;
-    /// <c>null</c> si se puede abrir. Se llama después de <see cref="VerificarPaquete"/>: el contenido descomprimido ya está acotado.
-    /// </summary>
-    internal static clsErrorDominio? VerificarElementos(byte[] contenido, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(contenido);
-        var ajustes = new XmlReaderSettings
-        {
-            DtdProcessing = DtdProcessing.Prohibit,
-            XmlResolver = null,
-            IgnoreComments = true,
-            IgnoreWhitespace = true,
-            IgnoreProcessingInstructions = true,
-            CloseInput = true,
-        };
-        try
-        {
-            using var documento = SpreadsheetDocument.Open(new MemoryStream(contenido, writable: false), isEditable: false);
-            long elementos = 0;
-            foreach (var parte in documento.GetAllParts())
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (!parte.ContentType.Contains("xml", StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                using var lector = XmlReader.Create(parte.GetStream(FileMode.Open, FileAccess.Read), ajustes);
-                while (lector.Read())
-                {
-                    if (lector.NodeType == XmlNodeType.Element && ++elementos > MaximoElementosXml)
-                    {
-                        return new clsErrorDominio(clsCodigosError.ArchivoDemasiadoGrande,
-                            "El Excel tiene demasiadas celdas para analizarlo: deja solo las hojas y filas de las mercancías.", MotivoDescomprimido);
-                    }
-                }
-            }
-
-            return null;
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
-        {
-            return Invalido(MotivoLibroIlegible);
-        }
-    }
-
-    private static clsErrorDominio Invalido(string motivo) => new(clsCodigosError.ExcelInvalido, MensajeInvalido, motivo);
-
-    private static clsErrorDominio DemasiadoGrande() => new(clsCodigosError.ArchivoDemasiadoGrande,
-        "El contenido del Excel descomprimido supera 64 MB: deja solo las hojas y filas de las mercancías.", MotivoDescomprimido);
 
     private static clsResultado<clsAnalisisExcelMercancias> LeerLibro(string nombreArchivo, XLWorkbook libro, CancellationToken cancellationToken)
     {

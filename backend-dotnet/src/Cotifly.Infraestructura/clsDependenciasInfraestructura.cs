@@ -457,11 +457,13 @@ public static class clsDependenciasInfraestructura
             string.IsNullOrWhiteSpace(sp.GetRequiredService<IOptions<clsOpcionesNexo>>().Value.UrlBase)
                 ? sp.GetRequiredService<Licitaciones.Services.clsAnalizadorExcelNoDisponible>()
                 : sp.GetRequiredService<Licitaciones.Services.clsAnalizadorExcelNexo>());
+        // HU-035.2 (#213): los controles del Excel subido (bomba zip, libro denso, XXE) y el cupo de lecturas simultáneas son una sola
+        // pieza para el pliego y el Excel de mercancías. Singleton: el cupo es de todo el proceso.
+        servicios.TryAddSingleton<clsLecturaExcelAcotada>();
         servicios.TryAddSingleton<Aplicacion.Licitaciones.Interfaces.IClsLectorExcelLicitacion, Licitaciones.Services.clsLectorExcelLicitacionClosedXml>();
         servicios.TryAddSingleton<Aplicacion.Licitaciones.Interfaces.IClsExportadorExcelLicitacion, Licitaciones.Services.clsExportadorExcelLicitacionClosedXml>();
 
-        // HU-035.1 (#202, ADR-024): Excel de mercancías de una ruta, leído localmente (ClosedXML, sin Nexo). Singleton: su cupo de
-        // lecturas simultáneas es de todo el proceso.
+        // HU-035.1 (#202, ADR-024): Excel de mercancías de una ruta, leído localmente (ClosedXML, sin Nexo), con el cupo compartido.
         servicios.TryAddSingleton<Aplicacion.Mercancias.Interfaces.IClsLectorGrillaExcel, Mercancias.Services.clsLectorGrillaExcelClosedXml>();
     }
 

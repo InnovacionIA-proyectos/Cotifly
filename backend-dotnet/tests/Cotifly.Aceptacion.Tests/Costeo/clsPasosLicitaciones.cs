@@ -22,6 +22,21 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
     public Task CuandoAnaliza(string alias, int filas) =>
         web.EnviarAsync(HttpMethod.Post, "/web/licitaciones/analizar-excel", web.Sesion(alias).Access, clsApiWebPruebas.Archivo(clsPliegoMuestra.Excel(filas)));
 
+    [When(@"^""([^""]+)"" analiza como pliego (.+)$")]
+    public Task CuandoAnalizaPliegoMalicioso(string alias, string archivo)
+    {
+        byte[] contenido = archivo switch
+        {
+            "una bomba zip" => clsExcelMercanciasMuestra.BombaZip(),
+            "un libro pequeño con millones de celdas" => clsExcelMercanciasMuestra.Densa(4_000_000),
+            "un libro con una entidad externa (XXE)" => clsExcelMercanciasMuestra.ConEntidadExterna(),
+            "un .xls antiguo renombrado a .xlsx" => [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1, 0, 0, 0, 0],
+            "un archivo de texto renombrado a .xlsx" => clsExcelMercanciasMuestra.TextoRenombrado(),
+            _ => throw new ArgumentOutOfRangeException(nameof(archivo), archivo, "Archivo de prueba desconocido."),
+        };
+        return web.EnviarAsync(HttpMethod.Post, "/web/licitaciones/analizar-excel", web.Sesion(alias).Access, clsApiWebPruebas.Archivo(contenido));
+    }
+
     [Then("Nexo recibió el archivo para analizarlo")]
     public void EntoncesNexoRecibioElArchivo() => costeo.Nexo.UltimoArchivoAnalizado.Should().BeGreaterThan(0);
 
