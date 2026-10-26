@@ -69,7 +69,8 @@ La auditoría de la #202 encontró que `POST /web/licitaciones/analizar-excel` a
 1 GB y unos 15 s de CPU por lectura) podían tumbar el pod, y el archivo se enviaba a NEXO antes de leerlo en Cotifly.
 
 1. **Pieza compartida `clsLecturaExcelAcotada` (Infraestructura/Comun, singleton).** Sale del lector de mercancías y la usan los dos
-   lectores: `VerificarPaquete` (firma `PK`, 1000 entradas, `xl/workbook.xml`, 64 MB descomprimidos contados de verdad),
+   lectores: `VerificarPaquete` (firma `PK`, 1000 entradas, el libro (`xl/workbook.xml` o, si otra herramienta lo nombró distinto, la
+   parte a la que apunta la relación `officeDocument` de `_rels/.rels`, como lo abre ClosedXML), 64 MB descomprimidos contados de verdad),
    `VerificarElementos` (1.000.000 de elementos XML contados en flujo, sin DTD ni resolutor) y `LeerAsync<T>`, que dentro del cupo
    corre las dos verificaciones y después la lectura con ClosedXML del llamador. Mismos códigos y motivos (`EXCEL_INVALIDO` y
    `ARCHIVO_DEMASIADO_GRANDE` con `detalle.motivo`); sin códigos nuevos.

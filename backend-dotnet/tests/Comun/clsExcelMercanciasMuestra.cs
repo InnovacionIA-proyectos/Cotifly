@@ -122,6 +122,26 @@ public static class clsExcelMercanciasMuestra
     /// <summary>Un libro con una sola hoja vacía.</summary>
     public static byte[] SinDatos() => Guardar(l => l.Worksheets.Add("Vacía"));
 
+    /// <summary>
+    /// HU-035.2 (#213), validación: <paramref name="xlsx"/> convertido en <c>.xlsm</c> con macros por el SDK de Open XML, que deja el libro
+    /// en <c>xl/workbook2.xml</c> (no en <c>xl/workbook.xml</c> como Excel): un libro válido que ClosedXML abre por la relación
+    /// <c>officeDocument</c>.
+    /// </summary>
+    public static byte[] XlsmConLibroEnOtraParte(byte[] xlsx)
+    {
+        using var memoria = new MemoryStream();
+        memoria.Write(xlsx);
+        using (var documento = SpreadsheetDocument.Open(memoria, true))
+        {
+            documento.ChangeDocumentType(DocumentFormat.OpenXml.SpreadsheetDocumentType.MacroEnabledWorkbook);
+            var vba = documento.WorkbookPart!.AddNewPart<VbaProjectPart>();
+            using var macros = new MemoryStream([1, 2, 3, 4, 5, 6, 7, 8]);
+            vba.FeedData(macros);
+        }
+
+        return memoria.ToArray();
+    }
+
     /// <summary>Un archivo de texto con extensión <c>.xlsx</c>.</summary>
     public static byte[] TextoRenombrado() => Encoding.UTF8.GetBytes("tipo;cantidad;peso\ncafe;10;850\n");
 

@@ -15,7 +15,7 @@ namespace Cotifly.Infraestructura.Comun;
 /// <para>ClosedXML carga el libro entero en memoria (un objeto por elemento XML). Antes de abrirlo:</para>
 /// <list type="bullet">
 /// <item><see cref="VerificarPaquete"/>: firma <c>PK</c> (un <c>.xls</c> antiguo o un libro cifrado empiezan por <c>D0 CF 11 E0</c>), a lo
-/// sumo <see cref="MaximoEntradasZip"/> entradas, la parte <c>xl/workbook.xml</c> y, <b>descomprimiendo de verdad</b> (no se confía en el
+/// sumo <see cref="MaximoEntradasZip"/> entradas, el libro (<c>xl/workbook.xml</c> o la parte a la que apunta <c>_rels/.rels</c>) y, <b>descomprimiendo de verdad</b> (no se confía en el
 /// tamaño declarado), a lo sumo <see cref="MaximoDescomprimidoBytes"/> en total: una bomba zip no llega a ClosedXML;</item>
 /// <item><see cref="VerificarElementos"/>: con un lector XML de flujo sin DTD ni resolutor, a lo sumo <see cref="MaximoElementosXml"/>
 /// elementos en todas las partes del libro: un libro pequeño y muy denso (millones de celdas mínimas) tampoco llega a ClosedXML;</item>
@@ -60,6 +60,9 @@ public sealed class clsLecturaExcelAcotada : IDisposable
 
     /// <summary>Mensaje de <c>EXCEL_INVALIDO</c> (el motivo va en <c>detalle.motivo</c>).</summary>
     public const string MensajeInvalido = "No se pudo leer el archivo: no es un Excel (.xlsx o .xlsm) válido.";
+
+    /// <summary>Tope de <c>_rels/.rels</c> al buscar el libro: un archivo de relaciones real tiene unos cientos de bytes.</summary>
+    private const int MaximoRelacionesBytes = 64 * 1024;
 
     private readonly SemaphoreSlim _cupo;
     private readonly TimeSpan _espera;
@@ -122,7 +125,7 @@ public sealed class clsLecturaExcelAcotada : IDisposable
         VerificarPaquete(contenido, cancellationToken) ?? VerificarElementos(contenido, cancellationToken);
 
     /// <summary>
-    /// Revisa el paquete antes de abrirlo: firma, entradas, <c>xl/workbook.xml</c> y tamaño descomprimido REAL (leyendo cada entrada).
+    /// Revisa el paquete antes de abrirlo: firma, entradas, el libro (<c>xl/workbook.xml</c> o el de <c>_rels/.rels</c>) y tamaño descomprimido REAL (leyendo cada entrada).
     /// <c>null</c> si se puede abrir.
     /// </summary>
     public static clsErrorDominio? VerificarPaquete(byte[] contenido, CancellationToken cancellationToken = default)
@@ -147,7 +150,7 @@ public sealed class clsLecturaExcelAcotada : IDisposable
                 return Invalido(MotivoDemasiadasEntradas);
             }
 
-            if (!zip.Entries.Any(e => string.Equals(e.FullName, "xl/workbook.xml", StringComparison.OrdinalIgnoreCase)))
+            if (!TieneLibro(zip))
             {
                 return Invalido(MotivoSinLibro);
             }
@@ -233,6 +236,48 @@ public sealed class clsLecturaExcelAcotada : IDisposable
         {
             return Invalido(MotivoLibroIlegible);
         }
+    }
+
+    /// <summary>
+    /// ¿El paquete trae el libro? Excel lo guarda en <c>xl/workbook.xml</c>, pero otras herramientas (por ejemplo el SDK de Open XML al
+    /// convertir un <c>.xlsx</c> en <c>.xlsm</c>, que lo deja en <c>xl/workbook2.xml</c>) le ponen otro nombre: el libro es la parte a la
+    /// que apunta la relación <c>officeDocument</c> de <c>_rels/.rels</c> (como lo resuelve ClosedXML). Se lee ese archivo de relaciones
+    /// sin DTD y con un tope de bytes; si no se puede leer, vale el nombre de Excel.
+    /// </summary>
+    private static bool TieneLibro(ZipArchive zip)
+    {
+        bool Existe(string nombre) => zip.Entries.Any(e => string.Equals(e.FullName, nombre, StringComparison.OrdinalIgnoreCase));
+        if (Existe("xl/workbook.xml"))
+        {
+            return true;
+        }
+
+        var relaciones = zip.Entries.FirstOrDefault(e => string.Equals(e.FullName, "_rels/.rels", StringComparison.OrdinalIgnoreCase));
+        if (relaciones is null || relaciones.Length > MaximoRelacionesBytes)
+        {
+            return false;
+        }
+
+        try
+        {
+            var ajustes = new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null, MaxCharactersInDocument = MaximoRelacionesBytes };
+            using var lector = XmlReader.Create(relaciones.Open(), ajustes);
+            while (lector.Read())
+            {
+                if (lector.NodeType == XmlNodeType.Element && lector.LocalName == "Relationship"
+                    && lector.GetAttribute("Type") is { } tipo && tipo.EndsWith("/officeDocument", StringComparison.Ordinal)
+                    && lector.GetAttribute("Target") is { Length: > 0 } destino)
+                {
+                    return Existe(Uri.UnescapeDataString(destino).TrimStart('/'));
+                }
+            }
+        }
+        catch (Exception ex) when (ex is XmlException or InvalidDataException or IOException)
+        {
+            return false;
+        }
+
+        return false;
     }
 
     /// <summary><c>EXCEL_INVALIDO</c> con <paramref name="motivo"/> en <c>detalle.motivo</c>.</summary>

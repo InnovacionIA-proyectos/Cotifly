@@ -108,6 +108,25 @@ public sealed class clsLectorExcelLicitacionEndurecidoTests : IDisposable
         filas.Valor.Should().Equal(porHoja.Valor[clsPliegoMuestra.Hoja]);
     }
 
+    /// <summary>
+    /// Validación de #213: un libro válido cuyo libro no está en <c>xl/workbook.xml</c> (aquí un <c>.xlsm</c> del SDK de Open XML, con el
+    /// libro en <c>xl/workbook2.xml</c>) pasa los controles: el libro se busca por la relación <c>officeDocument</c>, como ClosedXML.
+    /// Antes era <c>SIN_LIBRO</c> y, en la exportación, un original que siempre se había exportado dejaba de exportarse.
+    /// </summary>
+    [Fact]
+    public async Task UnLibroValidoFueraDeXlWorkbookXmlPasaLosControlesEnLosDosLectores()
+    {
+        var pliego = clsExcelMercanciasMuestra.XlsmConLibroEnOtraParte(clsPliegoMuestra.Excel(3));
+        var mercancias = clsExcelMercanciasMuestra.XlsmConLibroEnOtraParte(clsExcelMercanciasMuestra.Excel(2));
+        var (lectura, _, lectorMercancias) = ConCupo(simultaneos: 1);
+        using var cupoPropio = lectura;
+
+        clsLecturaExcelAcotada.Verificar(pliego, Ct).Should().BeNull();
+        (await _lector.FilasDeDatosPorHojaAsync(pliego, Ct)).Valor[clsPliegoMuestra.Hoja].Should().HaveCount(3);
+        (await _lector.FilasDeDatosAsync(pliego, clsPliegoMuestra.Hoja, Ct)).Valor.Should().HaveCount(3);
+        (await lectorMercancias.LeerAsync("m.xlsm", mercancias, Ct)).Valor.Hojas.Single().Filas.Should().HaveCount(2);
+    }
+
     [Fact]
     public async Task ElAnalisisUbicaASoloLasPrimerasVeinteHojas()
     {
