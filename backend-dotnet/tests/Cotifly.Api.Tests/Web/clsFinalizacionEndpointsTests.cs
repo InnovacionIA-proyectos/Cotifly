@@ -103,6 +103,43 @@ public sealed class clsFinalizacionEndpointsTests : IDisposable
         await SinFinalizarAsync(folio);
     }
 
+    /// <summary>
+    /// Integración 1027 (HU-036 con HU-037 y HU-039.1): el director ve cualquier cotización en solo consulta, pero finalizar es solo del
+    /// dueño (404, igual que el comercial ajeno) y el costeo del dueño tampoco es suyo; en el detalle ve <c>finalizada_at</c> y el costo
+    /// bruto de las rutas le sale en <c>null</c>, como al gerente.
+    /// </summary>
+    [Fact]
+    public async Task ElDirectorNoFinalizaUnaAjenaYEnElDetalleVeFinalizadaAtSinElCostoBruto()
+    {
+        var (sesion, folio) = await EnviarAsync();
+        _nexo.Costear(_nexo.SolicitudesCreadas[^1], 2_550_000m);
+        await _api.ProcesarPollingAsync(folio);
+        var director = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoDirector, $"Dir-{Guid.NewGuid():N}"[..16]);
+
+        using var ajena = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/finalizar", director.Access, null, await EtagAsync(sesion.Access, folio));
+        await VerificarContratoAsync(ajena, Ruta, _post, HttpStatusCode.NotFound);
+        await SinFinalizarAsync(folio);
+        using var costeoAjeno = await _api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", director.Access);
+        await VerificarContratoAsync(costeoAjeno, "/web/cotizaciones/{folio}/costeo", _get, HttpStatusCode.NotFound);
+
+        await _api.FinalizarAsync(sesion.Access, folio);
+        using var deDueno = await _api.EnviarAsync(_get, $"/web/cotizaciones/{folio}", sesion.Access);
+        using var deDirector = await _api.EnviarAsync(_get, $"/web/cotizaciones/{folio}", director.Access);
+        var dueno = await VerificarContratoAsync(deDueno, "/web/cotizaciones/{folio}", _get, HttpStatusCode.OK);
+        var json = await VerificarContratoAsync(deDirector, "/web/cotizaciones/{folio}", _get, HttpStatusCode.OK);
+
+        json.GetProperty("solo_lectura").GetBoolean().Should().BeTrue();
+        var finalizadaAt = dueno.GetProperty("fechas").GetProperty("finalizada_at").GetString();
+        finalizadaAt.Should().NotBeNullOrEmpty();
+        json.GetProperty("fechas").GetProperty("finalizada_at").GetString().Should().Be(finalizadaAt);
+        json.GetProperty("cotizacion").GetProperty("finalizada_at").GetString().Should().Be(finalizadaAt);
+        json.GetProperty("costeo").GetProperty("finalizada_at").GetString().Should().Be(finalizadaAt);
+        dueno.GetProperty("costeo").GetProperty("rutas").EnumerateArray()
+            .Should().OnlyContain(r => r.GetProperty("costo_final").ValueKind == JsonValueKind.Number, "el dueño sí ve el costo bruto");
+        json.GetProperty("costeo").GetProperty("rutas").EnumerateArray()
+            .Should().OnlyContain(r => r.GetProperty("costo_final").ValueKind == JsonValueKind.Null, "el costo bruto es solo del dueño");
+    }
+
     private async Task SinFinalizarAsync(string folio) =>
         (await clsBaseDatosPruebas.EscalarAsync<int>(_baseDatos.CadenaCotifly,
             $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}' AND finalizadaAt IS NULL")).Should().Be(1);

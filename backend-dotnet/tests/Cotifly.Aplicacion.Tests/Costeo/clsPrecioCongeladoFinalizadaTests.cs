@@ -190,6 +190,36 @@ public sealed class clsPrecioCongeladoFinalizadaTests
         clsCosteoCotizacionService.ValidarTotal(cotizacion, "COP").Should().BeNull();
     }
 
+    // ------------------------------------------------------------------ Integración 1027: HU-039.1 (#218) con el precio congelado
+
+    [Fact]
+    public void ConLaCotizacionFinalizadaElCostoBrutoDeLaRutaEsElGuardadoYNoElNuevoDeNexo()
+    {
+        var cotizacion = Finalizada(2_000_000m);
+        var costo = clsCosteoCotizacionService.Vista(cotizacion, null).Rutas.Single().CostoFinal;
+        costo.Should().Be(cotizacion.PrimeraRuta!.CostoFinal).And.NotBeNull();
+
+        Aplicar(cotizacion, clsCotizacionMuestra.Foto([2_500_000m], estadoCotizacion: "Entregada"), _ahora.AddMinutes(5)).Should().BeTrue();
+
+        var ruta = clsCosteoCotizacionService.Vista(cotizacion, null).Rutas.Single();
+        ruta.CostoFinal.Should().Be(costo, "el costo bruto acompaña al precio congelado: es el costo con que se finalizó, no el nuevo de Nexo");
+        ruta.PrecioFinalLinea.Should().Be(cotizacion.PrimeraRuta.PrecioFinalLinea);
+    }
+
+    [Fact]
+    public void ConUnaRutaRechazadaDespuesDeFinalizarElCostoBrutoSigueAlPrecioCongelado()
+    {
+        var cotizacion = Finalizada(1_000_000m, 2_000_000m);
+        var antes = clsCosteoCotizacionService.Vista(cotizacion, null).Rutas.Select(r => (r.PrecioFinalLinea, r.CostoFinal)).ToList();
+
+        Aplicar(cotizacion, FotoConRechazo(rechazada: true), _ahora.AddMinutes(5)).Should().BeTrue();
+
+        var despues = clsCosteoCotizacionService.Vista(cotizacion, null).Rutas;
+        despues[1].EstadoCosteo.Should().Be("rechazada");
+        despues.Select(r => (r.PrecioFinalLinea, r.CostoFinal)).Should().Equal(antes,
+            "costo_final sale en los mismos casos que precio_final_linea: con el precio congelado los dos se conservan");
+    }
+
     /// <summary>Dos líneas costeadas (<c>L1</c> y <c>L2</c>) con los mismos fletes; <c>L2</c> rechazada por la Mesa o ya no.</summary>
     private static clsCosteoConsultadoNexo FotoConRechazo(bool rechazada) =>
         new("EnCosteo", ["L1", "L2"],

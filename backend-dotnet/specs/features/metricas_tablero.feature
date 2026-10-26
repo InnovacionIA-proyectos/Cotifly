@@ -149,6 +149,15 @@ Característica: Tablero de métricas del comercial y del gerente comercial
       | valor_ganado_cop | 9000000 |
     Y la lista de comerciales de las métricas incluye a "ana", "marta" y "dario"
 
+  # Integración 1027 (HU-034.1 con HU-037.3): con todas las regionales, la serie mensual del director usa las mismas cotizaciones que
+  # sus indicadores (las de todas las regionales) y la suma de los meses cuadra con ellos.
+  Escenario: La serie mensual del director con todas las regionales cuadra con sus indicadores
+    Dado el director "dario" con sesión en la regional "Sur"
+    Cuando "dario" consulta las métricas de su regional del año "2026"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "MetricasRegional" del contrato
+    Y las métricas son de todas las regionales
+    Y la suma de la serie mensual cuadra con los indicadores
+
   Escenario: El gerente no puede pedir el tablero de otra regional, pero sí la suya
     Cuando "gloria" consulta las métricas de la regional "Norte" del "2026-01-01" al "2026-12-31"
     Entonces la respuesta tiene el estado 403 con el código de negocio "REGIONAL_NO_PERMITIDA"

@@ -742,7 +742,8 @@ retorno + levante + conexos de los camiones que cuentan, **sin margen**). Va **s
 costeo de Nexo es en pesos y no se convierte; `precio_final_linea` sí va en dólares), y es `null` en los mismos casos que
 `precio_final_linea` (sin costeo o ruta `rechazada`). En el ejemplo, 4.500.000 y 3.000.000 (5.294.118 y 3.529.412 con el 15 %). Es solo
 del dueño: sale aquí, en las respuestas de margen, conexos y recálculo de vehículos y en `costeo` del detalle por folio (§8.14), donde
-el gerente en solo consulta lo recibe siempre en `null`. No hay desglose ni costo por camión o por conexo, y no sale en "Mis
+el gerente o el director en solo consulta lo reciben siempre en `null`. Con la cotización finalizada (§8.17) es el costo con que se
+finalizó, como el precio congelado. No hay desglose ni costo por camión o por conexo, y no sale en "Mis
 cotizaciones", el listado regional, el PDF, el correo, el Excel ni el asistente. Es una reversa de la regla de ADR-015 §5 ("el costo
 bruto nunca llega al comercial"), confirmada por la Gerencia Comercial el 2026-10-27.
 

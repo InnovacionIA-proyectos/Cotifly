@@ -6212,7 +6212,8 @@ components:
             cuentan (sin los `descartada` ni los `rechazada`), **sin margen**. **Siempre en COP (pesos), aunque la cotización esté en
             USD**: el costeo de Nexo es en pesos y nunca se convierte (en USD `precio_final_linea` va en dólares con `trm_aplicada`, el
             costo no). `null` en los mismos casos que `precio_final_linea` (sin costeo listo o ruta `rechazada`). Solo lo ve el dueño:
-            en `GET /web/cotizaciones/{folio}` consultado por un gerente comercial (`solo_lectura = true`) siempre es `null`. No sale
+            en `GET /web/cotizaciones/{folio}` consultado por un gerente comercial o por el director (`solo_lectura = true`) siempre es `null`. Con la
+            cotización finalizada (HU-036.4) es el costo con que se finalizó, como el precio congelado. No sale
             en el PDF, el correo, el Excel, el chat ni "Mis cotizaciones". Reversa de la regla de ADR-015 §5 ("el costo bruto nunca
             llega al comercial"), confirmada por la Gerencia Comercial el 2026-10-27.
         margen_aplicado:
