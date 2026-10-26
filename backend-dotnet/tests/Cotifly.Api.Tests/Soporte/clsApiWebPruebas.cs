@@ -436,6 +436,14 @@ public sealed class clsApiWebPruebas : IDisposable
     }
 
     /// <summary>
+    /// HU-036 (sin backfill): deja <paramref name="folio"/> como una cotización cuyo PDF se generó ANTES del script 14 y nunca se finalizó
+    /// (no cambia la versión de negocio).
+    /// </summary>
+    public async Task DesfinalizarComoAnteriorAHu036Async(string folio) =>
+        await clsBaseDatosPruebas.EjecutarAsync(_baseDatos.CadenaCotifly,
+            $"UPDATE dbo_cotifly.CotizacionesSolicitud SET finalizadaAt = NULL, finalizadaPor = NULL WHERE folio = N'{folio.Replace("'", "''", StringComparison.Ordinal)}';");
+
+    /// <summary>
     /// HU-036.3 (#207): lo que hace el frontend antes del PDF, los textos, el envío y el resultado: si el costeo de <paramref name="folio"/>
     /// está listo (<c>autocosteo</c> o <c>entregada</c> con precio), sin finalizar y sin resultado, lo finaliza con el <c>ETag</c> vigente.
     /// Si no corresponde (sin precio, ya finalizada, ajena, chat), no hace nada. Las pruebas de los candados no la usan.

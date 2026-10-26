@@ -173,6 +173,9 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
         pdf.StatusCode.Should().Be(HttpStatusCode.Created);
         var etagPdf = pdf.Headers.ETag?.Tag;
         etagPdf.Should().NotBeNullOrEmpty("el PDF también devuelve el ETag nuevo");
+        // HU-036 (sin backfill): el PDF se generó antes del script 14 y la cotización quedó sin finalizar; con ella finalizada el cambio
+        // sería 409 PDF_YA_ENVIADO (clsCandadosFinalizadaEndpointsTests).
+        await _api.DesfinalizarComoAnteriorAHu036Async(folio);
 
         using var ajuste = await EnviarConVersionAsync(_put, $"/web/cotizaciones/{folio}/costeo/margen", sesion.Access, """{"margen":0.18}""", etagPdf);
         var json = await VerificarContratoAsync(ajuste, "/web/cotizaciones/{folio}/costeo/margen", _put, HttpStatusCode.OK);
@@ -200,6 +203,9 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
         var (sesion, folio) = await CosteadaAsync();
         await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
         using var pdf = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
+        // HU-036 (sin backfill): el PDF se generó antes del script 14 y la cotización quedó sin finalizar; con ella finalizada el cambio
+        // sería 409 PDF_YA_ENVIADO (clsCandadosFinalizadaEndpointsTests).
+        await _api.DesfinalizarComoAnteriorAHu036Async(folio);
 
         using var seleccion = await EnviarConVersionAsync(_put, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", sesion.Access,
             """{"incluidos":[]}""", pdf.Headers.ETag?.Tag);
