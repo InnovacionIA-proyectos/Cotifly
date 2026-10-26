@@ -29,7 +29,7 @@
 - `/regional` no acepta una regional por parámetro: siempre es la del gerente.
 - Un `usuario_id` que no es de la regional (o no existe) responde **404** `ErrorWeb` "Comercial no encontrado en tu regional.", igual en los dos casos para no revelar usuarios de otras regionales.
 - `comerciales` trae siempre a todos los usuarios de la regional con sus indicadores (para el selector dinámico), aunque se filtre por `usuario_id`. El filtro aplica a `indicadores`, `serie_mensual` y `concentracion_ciudades`.
-- Ambos devuelven una `serie_mensual` (línea de tiempo por mes de Bogotá: cantidad, ganadas, perdidas y dinero) con todos los meses del periodo, también los vacíos. `/regional` agrega `concentracion_ciudades` y `lineas_negocio_activas`.
+- Ambos devuelven una `serie_mensual` (línea de tiempo por mes de Bogotá: cantidad, ganadas, perdidas y dinero) con todos los meses del periodo, también los vacíos. HU-034.1 (#201): el dinero de cada mes son los mismos montos de `indicadores` (`valor_cotizado_cop`, `valor_ganado_cop`, `costeo_total`, `costeo_ganadas` y `ganancias`, sección 4) calculados con la misma función sobre las cotizaciones del mes, así que la suma de los meses es exactamente el total del periodo (los montos de origen tienen 2 decimales). El criterio no cambia. `/regional` agrega `concentracion_ciudades` y `lineas_negocio_activas`.
 
 ### 2. Universo: una fila por cadena de versiones
 
