@@ -134,14 +134,15 @@ public sealed class clsIdentidadPersistenciaTests(clsBaseDatosPruebas baseDatos)
     }
 
     [Fact]
-    public async Task ElScript0002SiembraLosDosRolesInternosConSuCodigo()
+    public async Task ElScript0002SiembraLosDosRolesInternosYEl15ElDirectorConSuCodigo()
     {
         var roles = await ConsultarAsync(s => s.GetRequiredService<IClsRolRepository>().ListarActivosAsync(Ct));
         var codigos = await clsBaseDatosPruebas.EscalarAsync<int>(BaseDatos.CadenaCotifly,
             "SELECT COUNT(*) FROM dbo_cotifly.Roles WHERE codigo IN ('comercial', 'gerente_comercial')");
 
         codigos.Should().Be(2);
-        roles.Select(r => r.Codigo).Should().BeEquivalentTo([RolInterno.Comercial, RolInterno.GerenteComercial]);
+        roles.Select(r => r.Codigo).Should().BeEquivalentTo([RolInterno.Comercial, RolInterno.GerenteComercial, RolInterno.Director]);
+        roles.Single(r => r.Codigo == RolInterno.Director).IdRolExterno.Should().Be(clsBaseDatosPruebas.RolExternoDirector);
         roles.Single(r => r.Codigo == RolInterno.Comercial).IdRolExterno.Should().Be(clsBaseDatosPruebas.RolExternoComercial);
         roles.Single(r => r.Codigo == RolInterno.GerenteComercial).IdRolExterno.Should().Be(clsBaseDatosPruebas.RolExternoGerente);
     }
@@ -164,6 +165,28 @@ public sealed class clsIdentidadPersistenciaTests(clsBaseDatosPruebas baseDatos)
         asignados.Should().Equal(RolInterno.GerenteComercial);
         enBase.AsignadoAt.Should().Be(Reloj.AhoraUtc);
         enBase.Activo.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ListarTodosTraeATodosLosUsuariosYLosRolesSeLeenConMasDeDosMilIds()
+    {
+        // HU-037.3 (#211): el alcance del director sin regional (todos los usuarios) y sus roles, sin el tope de 2100 parámetros.
+        var uno = await CrearUsuarioAsync();
+        var dos = await CrearUsuarioAsync();
+        var gerente = (await ConsultarAsync(s => s.GetRequiredService<IClsRolRepository>().ListarActivosAsync(Ct)))
+            .Single(r => r.Codigo == RolInterno.GerenteComercial);
+        await EnAmbitoAsync(s =>
+        {
+            s.GetRequiredService<IClsRolRepository>().AgregarAsignacion(clsUsuarioRol.Asignar(dos, gerente.Id, Reloj.AhoraUtc).Valor);
+            return Task.CompletedTask;
+        });
+        List<Guid> muchos = [.. Enumerable.Range(0, 2500).Select(_ => Guid.NewGuid()), uno, dos];
+
+        var todos = await ConsultarAsync(s => s.GetRequiredService<IClsUsuarioWebRepository>().ListarTodosAsync(Ct));
+        var roles = await ConsultarAsync(s => s.GetRequiredService<IClsRolRepository>().ListarRolesDeUsuariosAsync(muchos, Ct));
+
+        todos.Select(u => u.Id).Should().Contain([uno, dos]);
+        roles.Should().Equal(new Dictionary<Guid, RolInterno> { [dos] = RolInterno.GerenteComercial });
     }
 
     [Fact]

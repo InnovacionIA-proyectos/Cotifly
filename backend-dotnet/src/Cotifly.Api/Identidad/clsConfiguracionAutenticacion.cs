@@ -14,11 +14,23 @@ namespace Cotifly.Api.Identidad;
 /// <summary>Políticas de autorización por rol interno (claim <c>rol</c>), para los endpoints de <c>/web/*</c>.</summary>
 public static class clsPoliticas
 {
-    /// <summary>Consola del comercial: <c>comercial</c> o <c>gerente_comercial</c> (el gerente también cotiza).</summary>
+    /// <summary>
+    /// Consola del comercial: <c>comercial</c>, <c>gerente_comercial</c> o <c>director</c> (el gerente y el director también cotizan;
+    /// HU-037, #210).
+    /// </summary>
     public const string Comercial = "Comercial";
 
-    /// <summary>Administración de márgenes y métricas: solo <c>gerente_comercial</c>.</summary>
+    /// <summary>
+    /// Administración de márgenes, tablero y listado de la regional: <c>gerente_comercial</c> o <c>director</c> (HU-037, #210: el
+    /// director usa todo lo del gerente; su alcance de regionales lo decide el caso de uso).
+    /// </summary>
     public const string GerenteComercial = "GerenteComercial";
+
+    /// <summary>Roles (claim <c>rol</c>) de la política <see cref="Comercial"/>.</summary>
+    internal static readonly string[] RolesComercial = ["comercial", "gerente_comercial", "director"];
+
+    /// <summary>Roles (claim <c>rol</c>) de la política <see cref="GerenteComercial"/>.</summary>
+    internal static readonly string[] RolesGerencial = ["gerente_comercial", "director"];
 }
 
 /// <summary>Límite de peticiones de <c>/api/auth/*</c> (sección <c>LimiteAuth</c>): ventana fija por IP.</summary>
@@ -74,8 +86,8 @@ public static class clsConfiguracionAutenticacion
             .Configure<IClsConfiguracionJwt>(Configurar);
 
         servicios.AddAuthorizationBuilder()
-            .AddPolicy(clsPoliticas.Comercial, p => p.RequireAuthenticatedUser().RequireRole("comercial", "gerente_comercial"))
-            .AddPolicy(clsPoliticas.GerenteComercial, p => p.RequireAuthenticatedUser().RequireRole("gerente_comercial"));
+            .AddPolicy(clsPoliticas.Comercial, p => p.RequireAuthenticatedUser().RequireRole(clsPoliticas.RolesComercial))
+            .AddPolicy(clsPoliticas.GerenteComercial, p => p.RequireAuthenticatedUser().RequireRole(clsPoliticas.RolesGerencial));
 
         servicios.AddHttpContextAccessor();
         servicios.AddScoped<IClsContextoUsuario, clsContextoUsuarioHttp>();

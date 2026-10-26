@@ -418,7 +418,9 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
         ArgumentNullException.ThrowIfNull(usuarioIds);
         ArgumentOutOfRangeException.ThrowIfLessThan(limite, 1);
         List<Guid?> ids = [.. usuarioIds.Distinct().Select(id => (Guid?)id)];
-        return ids.Count == 0 ? [] : await ListarConLineaAsync(c => ids.Contains(c.UsuarioId), limite, cancellationToken);
+        // HU-037.3 (#211): el director sin regional pide los de TODOS los usuarios. EF.Parameter manda la lista como un solo parámetro
+        // (OPENJSON), sin el tope de 2100 parámetros de SQL Server que tendría una lista expandida.
+        return ids.Count == 0 ? [] : await ListarConLineaAsync(c => EF.Parameter(ids).Contains(c.UsuarioId), limite, cancellationToken);
     }
 
     /// <summary>

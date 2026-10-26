@@ -134,6 +134,8 @@ public static class clsDependenciasAplicacion
 
         // Tablero de métricas agregadas (HU-010.1, ADR-016) y regional del usuario (DimEjecutivo o UsuariosWeb.regional).
         servicios.AddScoped<IClsRegionalUsuario, clsRegionalUsuarioService>();
+        // HU-037.3 (#211): GET /web/regionales (selector del director y del gerente).
+        servicios.AddScoped<IClsRegionalesService, clsRegionalesService>();
         servicios.AddScoped<IClsTableroMetricasService, clsTableroMetricasService>();
 
         // Asistente por folio (HU-013.6, #102, ADR-018 §2b; único agente desde HU-013.9, #105): loop manual sobre IChatClient + Kernel de
