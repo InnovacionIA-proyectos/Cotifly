@@ -105,7 +105,9 @@ public sealed class clsRolDirectorScriptTests(clsBaseDatosPruebas baseDatos) : c
             """);
         var opciones = new DbContextOptionsBuilder<clsCotiflyDbContext>().UseSqlServer(aislada.Cadena).Options;
         await using var contexto = new clsCotiflyDbContext(opciones);
-        IClsRolRepository repositorio = new clsRolRepository(contexto);
+        var logger = new clsLoggerFalso<clsRolRepository>();
+        IClsRolRepository repositorio = new clsRolRepository(contexto, logger);
+        var idAuditor = await Escalar<int>(aislada.Cadena, "SELECT id FROM dbo_cotifly.Roles WHERE codigo = N'auditor'");
         var usuario = Guid.Parse("6a1d6c0e-7f0a-4b8a-9a55-0b8f8d3c1e01");
 
         var activos = await repositorio.ListarActivosAsync(Ct);
@@ -115,6 +117,24 @@ public sealed class clsRolDirectorScriptTests(clsBaseDatosPruebas baseDatos) : c
         activos.Select(r => r.Codigo).Should().BeEquivalentTo([RolInterno.Comercial, RolInterno.GerenteComercial, RolInterno.Director]);
         asignados.Should().BeEmpty();
         porUsuario.Should().BeEmpty();
+        // No pasa en silencio: el catálogo avisa el id del rol ignorado (validación HU-037).
+        logger.Registros.Should().ContainSingle(r => r.Nivel == Microsoft.Extensions.Logging.LogLevel.Warning)
+            .Which.Mensaje.Should().Contain($"(id {idAuditor})").And.Contain("no conoce");
+    }
+
+    [Fact]
+    public async Task ConElCatalogoConocidoNoHayAvisoDeRolesIgnorados()
+    {
+        await using var aislada = await BaseDatos.CrearBaseInstaladaAsync("dbDirectorSinAviso");
+        await RolesAsync(aislada.Cadena, comercial: 32, gerente: 31);
+        var opciones = new DbContextOptionsBuilder<clsCotiflyDbContext>().UseSqlServer(aislada.Cadena).Options;
+        await using var contexto = new clsCotiflyDbContext(opciones);
+        var logger = new clsLoggerFalso<clsRolRepository>();
+
+        var activos = await new clsRolRepository(contexto, logger).ListarActivosAsync(Ct);
+
+        activos.Should().HaveCount(3);
+        logger.Registros.Should().BeEmpty();
     }
 
     /// <summary>"codigo=idRolExterno" de los tres roles, ordenado por código.</summary>

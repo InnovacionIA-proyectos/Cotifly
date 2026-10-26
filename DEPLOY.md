@@ -302,15 +302,31 @@ Datos (@scalderon-bs), y una de backend:
 | Imagen con HU-037.2 (#210) y HU-037.3 (#211) | Políticas, precedencia `director > gerente_comercial > comercial` (regla `precedencia_director`), alcance de todas las regionales, `GET /web/regionales` | Antes o junto con el 15 |
 
 **Orden y riesgo con una imagen anterior a HU-037.** El backend anterior convierte cada fila de `Roles` a su enum de dos valores: con la
-fila `director` presente, la lectura del catálogo falla y **el login de todos responde error** mientras corra esa imagen. Por eso el 15
-va con (o después de) la imagen nueva. Desde HU-037.2 el repositorio de roles ignora los códigos que no conoce, así que un rol futuro
-ya no tumba el login. Si el 15 ya está aplicado en un ambiente con una imagen vieja (en la compartida ya se aplicó, según #209),
-desplegar la imagen de HU-037 cuanto antes o, mientras tanto, poner `activo = 0` en la fila `director` (el catálogo solo lee roles
-activos).
+fila `director` presente **y activa** (aunque su `idRolExterno` siga en `NULL`), la lectura del catálogo lanza y **el login y el refresh de
+todos** responden el 401 genérico `{"error":"Credenciales inválidas"}` (en el log: `Error inesperado en el login` con
+`'director' no es un código válido de RolInterno`) mientras corra esa imagen. Comprobado en la validación de HU-037 con el código de
+`origin/QA` sobre SQL Server de Testcontainers. Por eso el 15 va con (o después de) la imagen nueva. Desde HU-037.2 el repositorio de
+roles ignora los códigos que no conoce (con un warning en el log que da el `id` del rol ignorado), así que un rol futuro ya no tumba el
+login. Si el 15 ya está aplicado en un ambiente con una imagen vieja (en la compartida ya se aplicó, según #209):
+
+- **Lo correcto:** desplegar la imagen de HU-037 (#210 y #211) cuanto antes.
+- **Mientras tanto:** `UPDATE dbo_cotifly.Roles SET activo = 0, updatedAt = SYSDATETIMEOFFSET() WHERE codigo = N'director';` (el
+  catálogo solo lee roles activos). Vuelven a entrar el comercial y el gerente cuyo rol externo siga mapeado a `gerente_comercial`; si ya
+  se corrió el mapeo de prueba (#209 parte B), quien tiene el 31 (`ClienteProGerencial`, ahora del director) **no** entra con la imagen
+  vieja (401) hasta desplegar la nueva. Con la imagen nueva, volver a `activo = 1`.
 
 Quien hoy tenga el rol externo mapeado al gerente y pase a director (en prueba, el 31) tiene asignado `gerente_comercial` en
-`UsuariosRoles`: su siguiente login queda en revisión (`rol_externo_cambio`, 401) hasta que se le reasigne el rol, como cualquier cambio
-de rol (ADR-009).
+`UsuariosRoles`: su siguiente login y su refresh quedan en revisión (`rol_externo_cambio`, 401) hasta que se le reasigne el rol, como
+cualquier cambio de rol (ADR-009). El access que ya tenía conserva su rol hasta vencer (60 minutos). La reasignación (DBA, con aprobación,
+una persona a la vez):
+
+```sql
+DECLARE @u UNIQUEIDENTIFIER = (SELECT id FROM dbo_cotifly.UsuariosWeb WHERE nombreUsuario = N'<NOMBREUSUARIO>');
+BEGIN TRANSACTION;
+UPDATE dbo_cotifly.UsuariosRoles SET activo = 0 WHERE usuarioId = @u AND activo = 1;
+INSERT INTO dbo_cotifly.UsuariosRoles (usuarioId, rolId) SELECT @u, id FROM dbo_cotifly.Roles WHERE codigo = N'director';
+COMMIT;
+```
 
 ### 2.3 Auditoría de secretos en el repositorio (2026-09-28)
 
