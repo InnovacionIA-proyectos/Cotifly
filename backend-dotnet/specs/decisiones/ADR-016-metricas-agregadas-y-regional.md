@@ -185,7 +185,8 @@ Gerencia pidió un rol por encima del gerente comercial que vea **todas** las re
   (`gerente_comercial` o `director`): `clsLineasNegocioAdminService`, `clsTableroMetricasService`, `clsCotizacionesRegionalService`,
   `clsDetalleCotizacionService` y `clsDescargaPdfService`. La auditoría de las consultas ajenas registra el rol real.
 - **Roles desconocidos:** el repositorio de roles solo lee los códigos que el backend conoce. Un rol nuevo en el catálogo con una imagen
-  vieja ya no tumba el login de todos (antes, la fila `director` con una imagen anterior a HU-037 hacía fallar la lectura del catálogo).
+  vieja ya no tumba el login de todos (antes, la fila `director` con una imagen anterior a HU-037 hacía fallar la lectura del catálogo, y
+  login y refresh respondían a todos el 401 genérico). Cada rol activo ignorado deja un warning con su `id` al leer el catálogo.
 - **IDROLES por ambiente** (scripts de operación de Datos, no del backend): prueba `gerente_comercial` 25 (provisional) y `director` 31
   (#209, parte B); producción `comercial` 34, `gerente_comercial` 29 y `director` 31 (#212). `uq_roles_idRolExterno` obliga a sacar al
   gerente del 31 antes de dárselo al director.

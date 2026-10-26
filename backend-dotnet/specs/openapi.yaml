@@ -456,8 +456,8 @@ paths:
 
         Solo lectura de lo que Cotifly tiene guardado: no consulta Nexo, no dispara el polling ni cambia la cotización.
 
-        Acceso: el **dueño**; o un `gerente_comercial` (o `director`, HU-037) cuya regional efectiva incluye al dueño (la misma regla que
-        `GET /web/cotizaciones/regional` y la descarga del PDF), que solo consulta (`solo_lectura = true`; las acciones siguen siendo del
+        Acceso: el **dueño**; un `director` (HU-037.3, #211), de cualquier regional; o un `gerente_comercial` cuya regional efectiva incluye
+        al dueño (la misma regla que `GET /web/cotizaciones/regional` y la descarga del PDF). Gerente y director solo consultan (`solo_lectura = true`; las acciones siguen siendo del
         dueño y a él le responden 404). Si la regional del gerente no se puede comprobar (sin regional o fuente caída) se niega. Cualquier
         otro usuario recibe 404, igual que si el folio no existiera.
       security:
@@ -3723,8 +3723,8 @@ paths:
       tags: [sistema]
       summary: Descarga el PDF de una cotización (inline)
       description: |
-        Requiere sesión. Solo el dueño de la cotización (o un gerente_comercial o director cuya regional efectiva
-        incluye al dueño, con la misma regla que `GET /web/cotizaciones/regional`; si la regional del gerente
+        Requiere sesión. Solo el dueño de la cotización, un director (HU-037.3, #211: de cualquier regional) o un gerente_comercial cuya
+        regional efectiva incluye al dueño (con la misma regla que `GET /web/cotizaciones/regional`; si la regional del gerente
         no se conoce o la fuente está caída, solo el dueño, 404 para el gerente) puede descargarlo. Como exige `Authorization`, el frontend lo descarga con HttpClient
         como blob (un `<a href>` directo no envía el header).
         En el backend Python este endpoint era público (hallazgo de seguridad corregido).

@@ -340,6 +340,56 @@ public sealed class clsTableroMetricasServiceTests
     }
 
     [Fact]
+    public async Task ElGerenteQuePideSuRegionalConOtraEscrituraNoFiltraUnComercialDeOtraRegional()
+    {
+        // Validación HU-037.3: ?regional= con la suya no amplía el alcance; un usuario_id de otra regional sigue siendo 404.
+        var (gerente, _, _) = PrepararRegional();
+        var marta = clsUsuarioWeb.Crear("marta", "Marta", null, "Norte", DateTimeOffset.UtcNow).Valor;
+
+        var resultado = await Servicio(gerente).ObtenerRegionalAsync(
+            new clsConsultaMetricas(UsuarioId: marta.Id.ToString(), Regional: "  oCCIDENTE "), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosAplicacion.NoEncontrado);
+        await _metricas.DidNotReceiveWithAnyArgs().ListarCotizacionesAsync(default!, default, default, Ct);
+    }
+
+    [Fact]
+    public async Task ElDirectorQueEligeUnaRegionalNoFiltraUnComercialDeOtra()
+    {
+        // Validación HU-037.3: con ?regional= el alcance del director es esa regional; un comercial de otra es 404.
+        PrepararRegional();
+        var dora = UsuarioWeb("dora", "Dora");
+        var marta = clsUsuarioWeb.Crear("marta", "Marta", null, "Norte", DateTimeOffset.UtcNow).Valor;
+        _usuarios.ObtenerPorIdAsync(dora.Id, Arg.Any<CancellationToken>()).Returns(dora);
+
+        var resultado = await Servicio(new clsUsuarioFalso(dora.Id, RolInterno.Director)).ObtenerRegionalAsync(
+            new clsConsultaMetricas(UsuarioId: marta.Id.ToString(), Regional: "Occidente"), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosAplicacion.NoEncontrado);
+        await _usuarios.DidNotReceiveWithAnyArgs().ListarTodosAsync(Ct);
+        await _metricas.DidNotReceiveWithAnyArgs().ListarCotizacionesAsync(default!, default, default, Ct);
+    }
+
+    [Fact]
+    public async Task ElDirectorQuePideUnaRegionalSinUsuariosRecibeElTableroVacio()
+    {
+        var dora = UsuarioWeb("dora", "Dora");
+        _usuarios.ObtenerPorIdAsync(dora.Id, Arg.Any<CancellationToken>()).Returns(dora);
+        _regionales.ListarMiembrosAsync("Inexistente", Arg.Any<CancellationToken>())
+            .Returns(clsResultado<IReadOnlyList<clsUsuarioWeb>>.Exito([]));
+        _roles.ListarRolesDeUsuariosAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<Guid, RolInterno>());
+        SinFilas();
+
+        var tablero = (await Servicio(new clsUsuarioFalso(dora.Id, RolInterno.Director))
+            .ObtenerRegionalAsync(new clsConsultaMetricas(Regional: " Inexistente "), Ct)).Valor;
+
+        tablero.Regional.Should().Be("Inexistente");
+        tablero.Comerciales.Should().BeEmpty();
+        tablero.Indicadores.Cantidad.Should().Be(0);
+    }
+
+    [Fact]
     public async Task UnUsuarioIdQueNoEsUuidEsSolicitudInvalida()
     {
         var resultado = await Servicio(Usuario(RolInterno.GerenteComercial)).ObtenerRegionalAsync(new clsConsultaMetricas(null, null, "luis"), Ct);
