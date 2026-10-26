@@ -165,6 +165,19 @@ public sealed class clsCandadosFinalizadaTests
     }
 
     [Fact]
+    public void ConConexosDeNexoPendientesDeLeerElCierreYElResultadoSiguenExigiendoFinalizar()
+    {
+        // Validación HU-036: mientras no se pueda finalizar por un conexo sin leer, el PDF, el correo, los textos y el resultado esperan;
+        // la regla del resultado no se apaga por no poder finalizar todavía.
+        var cotizacion = clsCotizacionMuestra.Costeada();
+        cotizacion.MarcarConexosPendientesDeLeer();
+
+        cotizacion.Finalizar(_ana, _ahora).Error.Codigo.Should().Be(clsCodigosError.CotizacionNoFinalizable);
+        cotizacion.ValidarFinalizadaAntesDelResultado()!.Codigo.Should().Be(clsCodigosError.CotizacionNoFinalizada);
+        cotizacion.ValidarFinalizadaAntesDe("generar el PDF")!.Codigo.Should().Be(clsCodigosError.CotizacionNoFinalizada);
+    }
+
+    [Fact]
     public void AntesDelCosteoElResultadoNoExigeFinalizar()
     {
         // HU-013.17 (perdida solo en Cotifly) y HU-033 (ganada pendiente de sincronizar en pendiente_costeo) siguen como antes.
