@@ -8,6 +8,9 @@
 # folio, recálculo de camiones) responde 409 PDF_YA_ENVIADO con la llamada para crear la versión nueva, y la edición pasa a
 # nueva_version. Antes de finalizar, el PDF, el correo, los textos del PDF y el resultado (con el costeo listo) responden 409
 # COTIZACION_NO_FINALIZADA ("Finaliza la cotización antes de..."). La perdida antes del costeo sigue sin exigir finalizar.
+# HU-036.4 (#208): con la cotización finalizada el polling no cambia el precio guardado: lo audita (costeo_nexo_precio_congelado) y lo
+# advierte en motivo_estado_costeo con la ruta que cambió; el estado_costeo sigue avanzando con Nexo (mismo mecanismo que el PDF generado,
+# ADR-015 §5).
 # Contrato en specs/openapi.yaml. Por HTTP contra la API real en memoria, SQL Server 2019 en Testcontainers (con el script 14) y el Nexo
 # falso (nunca el real). Pasos: tests/Cotifly.Aceptacion.Tests/Costeo/clsPasosFinalizacion.cs.
 @integracion
@@ -131,3 +134,23 @@ Característica: Cotización finalizada
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
     Y la cotización "C1" queda ganada "false" con el motivo "El cliente desistió"
     Y la cotización "C1" sigue sin finalizar
+
+  # ------------------------------------------------------------------ HU-036.4 (#208): precio congelado frente al polling
+
+  Escenario: Si la Mesa entrega con otro valor después de finalizar, el precio se conserva y se avisa qué ruta cambió
+    Dado Nexo costeó la solicitud de "C1" con un flete de 2550000 y el polling lo registró
+    Y que "ana" finalizó la cotización "C1"
+    Cuando Nexo cambia el flete de "C1" a 2800000 y entrega la cotización
+    Y el polling consulta a Nexo
+    Entonces la cotización "C1" queda en el estado de costeo "entregada"
+    Y el costeo de "C1" tiene el precio final 3000000 con el margen aplicado "0.15" y el origen "politica_linea"
+    Y el motivo del costeo de "C1" avisa que cambió la ruta 1
+    Y el costo de 2800000 que trajo Nexo para "C1" queda en la auditoría
+    Y ninguna respuesta del costeo de "C1" contiene el costo 2800000
+
+  Escenario: Sin finalizar, el mismo cambio de Nexo sí recalcula el precio
+    Dado Nexo costeó la solicitud de "C1" con un flete de 2550000 y el polling lo registró
+    Cuando Nexo cambia el flete de "C1" a 2800000 y entrega la cotización
+    Y el polling consulta a Nexo
+    Entonces la cotización "C1" queda en el estado de costeo "entregada"
+    Y el costeo de "C1" tiene el precio final 3294118 con el margen aplicado "0.15" y el origen "politica_linea"

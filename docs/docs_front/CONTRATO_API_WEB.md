@@ -1870,3 +1870,10 @@ El comercial **acepta el precio** de la cotización y la finaliza. Columnas prop
   }
 }
 ```
+
+**#208, el precio congelado frente al polling.** Con la cotización finalizada el polling no cambia el precio aunque Nexo traiga otro
+costo (la Mesa entrega una ruta con otro valor, rechaza un camión ya costeado): el `estado_costeo` sigue avanzando, el precio y los
+costos guardados se conservan, Cotifly audita lo que trajo Nexo (`EventosHerramienta`, `costeo_nexo_precio_congelado`) y
+`motivo_estado_costeo` lo advierte con la ruta que cambió y sin montos, por ejemplo: "El costeo de Nexo cambió después de finalizar la
+cotización en la ruta 2 (BUENAVENTURA → BOGOTA, D.C.): el precio finalizado se conserva. Genera una versión nueva para cotizar con el
+costeo actual." Es el mismo mecanismo que ya existía con el PDF generado (ADR-015 §5).

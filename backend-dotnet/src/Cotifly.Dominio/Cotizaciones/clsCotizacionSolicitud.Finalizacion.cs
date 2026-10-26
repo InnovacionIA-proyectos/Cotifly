@@ -20,6 +20,13 @@ public sealed partial class clsCotizacionSolicitud
     public bool Finalizada => FinalizadaAt is not null;
 
     /// <summary>
+    /// HU-036.4 (#208): ¿el polling conserva el precio guardado? Con PDF generado (precedente de ADR-015 §5) o con la cotización
+    /// finalizada. Los camiones solo actualizan su estado: el <c>estado_costeo</c> sigue avanzando con Nexo, el precio no cambia, y si
+    /// Nexo trae otro costo se audita y se advierte en <see cref="MotivoEstadoCosteo"/>.
+    /// </summary>
+    public bool PrecioCongelado => PdfPath is not null || Finalizada;
+
+    /// <summary>
     /// ¿Se puede finalizar? Solo con el costeo de Nexo listo: <c>autocosteo</c> o <c>entregada</c> con su precio
     /// (<see cref="TieneCostoDisponible"/>, la misma propiedad que exige el PDF). Que todas las rutas tengan precio ya lo garantiza el
     /// resumen del estado (<see cref="clsResumenEstadoCosteo"/>, las rutas <c>rechazada</c> no cuentan): no se repite aquí. El precio de

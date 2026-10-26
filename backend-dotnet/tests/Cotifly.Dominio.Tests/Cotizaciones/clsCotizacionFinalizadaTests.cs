@@ -142,6 +142,21 @@ public sealed class clsCotizacionFinalizadaTests
     }
 
     [Fact]
+    public void HU0364_ElPrecioQuedaCongeladoConLaFinalizacionOConElPdf()
+    {
+        // HU-036.4 (#208): el polling conserva el precio con la cotización finalizada, como con el PDF generado (ADR-015 §5).
+        var sinNada = clsCotizacionMuestra.Costeada();
+        var conPdf = clsCotizacionMuestra.Costeada();
+        conPdf.AsignarPdf("PCN-1.pdf");
+        var finalizada = clsCotizacionMuestra.Costeada();
+        finalizada.Finalizar(_ana, _ahora);
+
+        sinNada.PrecioCongelado.Should().BeFalse();
+        conPdf.PrecioCongelado.Should().BeTrue();
+        finalizada.PrecioCongelado.Should().BeTrue();
+    }
+
+    [Fact]
     public void LaVersionNuevaNaceSinFinalizar()
     {
         var cotizacion = clsCotizacionMuestra.Costeada();
