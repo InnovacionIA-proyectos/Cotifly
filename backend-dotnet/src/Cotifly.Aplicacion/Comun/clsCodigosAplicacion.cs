@@ -28,6 +28,12 @@ public static class clsCodigosAplicacion
     public const string RegionalNoDisponible = "REGIONAL_NO_DISPONIBLE";
 
     /// <summary>
+    /// HU-037.3 (#211): un <c>gerente_comercial</c> pidió con <c>?regional=</c> una regional que no es la suya. La Api responde 403 con
+    /// <c>ErrorNegocio</c> (no el 403 genérico de rol: el rol sí puede usar el endpoint, lo que no puede es esa regional).
+    /// </summary>
+    public const string RegionalNoPermitida = "REGIONAL_NO_PERMITIDA";
+
+    /// <summary>
     /// D4 (E2E 2026-10-16): la misma <c>Idempotency-Key</c> llegó con otro cuerpo (ADR-018 §8). Antes era 400 <c>ErrorWeb</c>
     /// (<c>{"error": "texto"}</c>); ahora 409 con <c>ErrorNegocio</c> y un código estable, como los demás conflictos de estado.
     /// </summary>

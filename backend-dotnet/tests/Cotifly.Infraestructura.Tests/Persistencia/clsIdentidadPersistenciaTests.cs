@@ -168,6 +168,28 @@ public sealed class clsIdentidadPersistenciaTests(clsBaseDatosPruebas baseDatos)
     }
 
     [Fact]
+    public async Task ListarTodosTraeATodosLosUsuariosYLosRolesSeLeenConMasDeDosMilIds()
+    {
+        // HU-037.3 (#211): el alcance del director sin regional (todos los usuarios) y sus roles, sin el tope de 2100 parámetros.
+        var uno = await CrearUsuarioAsync();
+        var dos = await CrearUsuarioAsync();
+        var gerente = (await ConsultarAsync(s => s.GetRequiredService<IClsRolRepository>().ListarActivosAsync(Ct)))
+            .Single(r => r.Codigo == RolInterno.GerenteComercial);
+        await EnAmbitoAsync(s =>
+        {
+            s.GetRequiredService<IClsRolRepository>().AgregarAsignacion(clsUsuarioRol.Asignar(dos, gerente.Id, Reloj.AhoraUtc).Valor);
+            return Task.CompletedTask;
+        });
+        List<Guid> muchos = [.. Enumerable.Range(0, 2500).Select(_ => Guid.NewGuid()), uno, dos];
+
+        var todos = await ConsultarAsync(s => s.GetRequiredService<IClsUsuarioWebRepository>().ListarTodosAsync(Ct));
+        var roles = await ConsultarAsync(s => s.GetRequiredService<IClsRolRepository>().ListarRolesDeUsuariosAsync(muchos, Ct));
+
+        todos.Select(u => u.Id).Should().Contain([uno, dos]);
+        roles.Should().Equal(new Dictionary<Guid, RolInterno> { [dos] = RolInterno.GerenteComercial });
+    }
+
+    [Fact]
     public async Task UnUsuarioNoPuedeTenerDosAsignacionesActivas()
     {
         var usuario = await CrearUsuarioAsync();

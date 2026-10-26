@@ -19,7 +19,8 @@ public sealed record clsArchivoPdf(string Nombre, byte[] Contenido);
 
 /// <summary>
 /// Descarga autenticada del PDF de una cotización (<c>GET /pdfs/{archivo}</c>; en el Python era público). Puede descargarlo el
-/// dueño de la cotización o un <c>gerente_comercial</c> cuya regional efectiva incluye al dueño; cualquier otro caso es
+/// dueño de la cotización, el <c>director</c> (cualquier regional, HU-037.3 #211) o un <c>gerente_comercial</c> cuya regional efectiva
+/// incluye al dueño; cualquier otro caso es
 /// <see cref="clsCodigosAplicacion.NoEncontrado"/> (404, igual que si no existiera).
 /// </summary>
 public interface IClsDescargaPdfService
@@ -73,8 +74,8 @@ public sealed partial class clsDescargaPdfService(
         if (!cotizacion.EsDe(usuarioId))
         {
             var reloj = Stopwatch.StartNew();
-            var (permitido, motivo) = usuario.Rol.EsGerencial()
-                ? await EsDeSuRegionalAsync(usuarioId, cotizacion, cancellationToken)
+            var (permitido, motivo) = usuario.Rol is { } rolGerencial && rolGerencial.EsGerencial()
+                ? await EsDeSuRegionalAsync(usuarioId, rolGerencial, cotizacion, cancellationToken)
                 : (false, null);
             await auditoria.RegistrarAsync(
                 HerramientaAuditoria,
@@ -97,7 +98,7 @@ public sealed partial class clsDescargaPdfService(
     /// ¿El dueño de <paramref name="cotizacion"/> es miembro de la regional efectiva del gerente? Cualquier error de la regional
     /// niega (fail-closed); <c>motivo</c> lleva su código para la auditoría.
     /// </summary>
-    private async Task<(bool Permitido, string? Motivo)> EsDeSuRegionalAsync(Guid gerenteId, clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken)
+    private async Task<(bool Permitido, string? Motivo)> EsDeSuRegionalAsync(Guid gerenteId, RolInterno rol, clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken)
     {
         if (cotizacion.UsuarioId is not { } duenoId)
         {
@@ -110,7 +111,8 @@ public sealed partial class clsDescargaPdfService(
             return (false, null);
         }
 
-        var miembro = await regionales.EsMiembroDeMiRegionalAsync(gerente, duenoId, cancellationToken);
+        // HU-037.3 (#211): el director descarga los de cualquier regional; el gerente, los de su regional (IClsRegionalUsuario).
+        var miembro = await regionales.PuedeVerDeAsync(gerente, rol, duenoId, cancellationToken);
         return miembro.EsFallo ? (false, miembro.Error.Codigo) : (miembro.Valor, null);
     }
 

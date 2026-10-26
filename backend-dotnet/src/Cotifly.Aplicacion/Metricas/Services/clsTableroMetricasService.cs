@@ -22,7 +22,8 @@ public interface IClsTableroMetricasService
 
     /// <summary>
     /// Indicadores de la regional del gerente (o de un comercial suyo con <c>usuario_id</c>), lista de comerciales, serie y
-    /// concentración por ciudad. Solo <c>gerente_comercial</c>.
+    /// concentración por ciudad. <c>gerente_comercial</c> (su regional) o <c>director</c> (todas, o la de <c>regional</c>; HU-037.3, #211),
+    /// con el alcance de <see cref="IClsRegionalUsuario.ResolverAlcanceAsync"/>.
     /// </summary>
     Task<clsResultado<clsMetricasRegional>> ObtenerRegionalAsync(clsConsultaMetricas consulta, CancellationToken cancellationToken = default);
 }
@@ -79,7 +80,7 @@ public sealed class clsTableroMetricasService(
 
         if (!rol.EsGerencial())
         {
-            return new clsErrorDominio(clsCodigosAplicacion.SinPermiso, "Solo el gerente comercial ve las métricas de la regional.");
+            return new clsErrorDominio(clsCodigosAplicacion.SinPermiso, "Solo el gerente comercial o el director ven las métricas de la regional.");
         }
 
         var periodo = ResolverPeriodo(consulta);
@@ -105,29 +106,25 @@ public sealed class clsTableroMetricasService(
             return ErrorNoAutenticado();
         }
 
-        var regional = await regionales.ResolverAsync(gerente, cancellationToken);
-        if (regional.EsFallo)
+        // HU-037.3 (#211): el alcance (la regional del gerente; todas o la elegida para el director) lo decide IClsRegionalUsuario.
+        var alcance = await regionales.ResolverAlcanceAsync(gerente, rol, consulta.Regional, cancellationToken);
+        if (alcance.EsFallo)
         {
-            return regional.Error;
+            return alcance.Error;
         }
 
-        var miembros = await regionales.ListarMiembrosAsync(regional.Valor.Regional, cancellationToken);
-        if (miembros.EsFallo)
-        {
-            return miembros.Error;
-        }
-
-        if (filtro is { } filtrado && miembros.Valor.All(m => m.Id != filtrado))
+        IReadOnlyList<clsUsuarioWeb> miembros = [.. alcance.Valor.Miembros.DistinctBy(m => m.Id)];
+        if (filtro is { } filtrado && miembros.All(m => m.Id != filtrado))
         {
             return new clsErrorDominio(clsCodigosAplicacion.NoEncontrado, MensajeComercialAjeno);
         }
 
-        var datos = await ListarAsync([.. miembros.Valor.Select(m => m.Id)], periodo.Valor, cancellationToken);
+        var datos = await ListarAsync([.. miembros.Select(m => m.Id)], periodo.Valor, cancellationToken);
         var porUsuario = datos.Filas.ToLookup(f => f.UsuarioId);
         IReadOnlyList<clsCotizacionMetrica> seleccion = filtro is { } uno ? [.. porUsuario[uno]] : datos.Filas;
 
-        var rolesMiembros = await roles.ListarRolesDeUsuariosAsync([.. miembros.Valor.Select(m => m.Id)], cancellationToken);
-        var comerciales = miembros.Valor
+        var rolesMiembros = await roles.ListarRolesDeUsuariosAsync([.. miembros.Select(m => m.Id)], cancellationToken);
+        var comerciales = miembros
             .OrderBy(m => m.NombreCompleto ?? m.NombreUsuario ?? string.Empty, StringComparer.CurrentCultureIgnoreCase)
             .ThenBy(m => m.Id)
             .Select(m => new clsComercialRegional(
@@ -140,8 +137,8 @@ public sealed class clsTableroMetricasService(
 
         return new clsMetricasRegional(
             periodo.Valor,
-            regional.Valor.Regional,
-            regional.Valor.Fuente,
+            alcance.Valor.Regional,
+            alcance.Valor.Fuente,
             filtro,
             Indicadores(seleccion, datos),
             await metricas.ContarLineasNegocioActivasAsync(cancellationToken),

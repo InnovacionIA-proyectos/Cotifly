@@ -50,6 +50,12 @@ Característica: Aislamiento de las cotizaciones por comercial
     Cuando "gloria" descarga el PDF de la cotización "B1"
     Entonces la respuesta tiene el estado 200 con un PDF
 
+  # HU-037.3 (#211): el director descarga el PDF de cualquier regional.
+  Escenario: El director descarga el PDF de un comercial de cualquier regional
+    Dado el director "dario" con sesión en la regional "Sur"
+    Cuando "dario" descarga el PDF de la cotización "B1"
+    Entonces la respuesta tiene el estado 200 con un PDF
+
   Escenario: Un gerente comercial de otra regional no descarga el PDF
     Cuando "hugo" descarga el PDF de la cotización "B1"
     Entonces la respuesta tiene el estado 404 con el error "Cotización no encontrada o no es tuya."

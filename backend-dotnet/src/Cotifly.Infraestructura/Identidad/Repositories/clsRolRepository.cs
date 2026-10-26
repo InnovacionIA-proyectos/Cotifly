@@ -55,7 +55,8 @@ public sealed class clsRolRepository(clsCotiflyDbContext contexto, ILogger<clsRo
         var ids = usuarios.Distinct().ToList();
         var filas = await (from asignacion in contexto.UsuariosRoles.AsNoTracking()
                            join rol in contexto.Roles.AsNoTracking() on asignacion.RolId equals rol.Id
-                           where ids.Contains(asignacion.UsuarioId) && asignacion.Activo && rol.Activo && _conocidos.Contains(rol.Codigo)
+                           // HU-037.3 (#211): con el director sin regional son todos los usuarios; un solo parámetro (OPENJSON), sin tope.
+                           where EF.Parameter(ids).Contains(asignacion.UsuarioId) && asignacion.Activo && rol.Activo && _conocidos.Contains(rol.Codigo)
                            orderby rol.Id
                            select new { asignacion.UsuarioId, rol.Codigo })
             .ToListAsync(cancellationToken);

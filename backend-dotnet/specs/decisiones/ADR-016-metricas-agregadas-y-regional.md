@@ -26,7 +26,7 @@
 
 - El rol sale del token (claim `rol`), nunca de una columna de `UsuariosWeb`. El caso de uso lo revalida (defensa en profundidad, como la administración de líneas).
 - Un `comercial` en `/regional` recibe 403 (`ErrorWeb`).
-- `/regional` no acepta una regional por parámetro: siempre es la del gerente.
+- `/regional` no acepta otra regional que la del gerente: siempre es la suya (HU-037.3 agrega `?regional=`: el gerente solo puede pedir la suya y el director cualquiera; sección 11).
 - Un `usuario_id` que no es de la regional (o no existe) responde **404** `ErrorWeb` "Comercial no encontrado en tu regional.", igual en los dos casos para no revelar usuarios de otras regionales.
 - `comerciales` trae siempre a todos los usuarios de la regional con sus indicadores (para el selector dinámico), aunque se filtre por `usuario_id`. El filtro aplica a `indicadores`, `serie_mensual` y `concentracion_ciudades`.
 - Ambos devuelven una `serie_mensual` (línea de tiempo por mes de Bogotá: cantidad, ganadas, perdidas y dinero) con todos los meses del periodo, también los vacíos. HU-034.1 (#201): el dinero de cada mes son los mismos montos de `indicadores` (`valor_cotizado_cop`, `valor_ganado_cop`, `costeo_total`, `costeo_ganadas` y `ganancias`, sección 4) calculados con la misma función sobre las cotizaciones del mes, así que la suma de los meses es exactamente el total del periodo (los montos de origen tienen 2 decimales). El criterio no cambia. `/regional` agrega `concentracion_ciudades` y `lineas_negocio_activas`.
@@ -190,6 +190,26 @@ Gerencia pidió un rol por encima del gerente comercial que vea **todas** las re
   (#209, parte B); producción `comercial` 34, `gerente_comercial` 29 y `director` 31 (#212). `uq_roles_idRolExterno` obliga a sacar al
   gerente del 31 antes de dárselo al director.
 - **`/health/ready` no exige el 15:** no agrega columnas; sin la fila `director` nadie entra con ese rol (falla cerrado).
+- **Alcance de todas las regionales (#211), centralizado en `IClsRegionalUsuario`** para que los cuatro consumidores (tablero, listado
+  regional, detalle y PDF ajenos) no repitan el `if` del rol:
+  - `ResolverAlcanceAsync(usuario, rol, regional?)` → `clsAlcanceRegional(Regional?, Fuente?, Miembros)`. Director sin `regional`: todos
+    los usuarios de `UsuariosWeb` (`Regional = null` = todas; no consulta `DimEjecutivo`). Director con `regional`: los miembros de esa
+    regional con la regla de la sección 6 (`Fuente = null`: la regional no sale de su usuario). Gerente: su regional efectiva; con
+    `regional` igual a la suya (sin mayúsculas ni espacios sobrantes) se acepta, con otra **403 `REGIONAL_NO_PERMITIDA`** (código nuevo,
+    `ErrorNegocio`: el rol sí puede usar el endpoint, lo que no puede es esa regional); sin regional sigue fallando cerrado
+    (`REGIONAL_NO_ASIGNADA` o `REGIONAL_NO_DISPONIBLE`). Otro rol: `SIN_PERMISO`.
+  - `PuedeVerDeAsync(usuario, rol, dueño)`: director siempre; gerente si el dueño es de su regional; otro rol, nunca. Lo usan el detalle
+    por folio y el PDF; la auditoría de esas consultas registra el rol real.
+  - `ListarRegionalesAsync(usuario, rol)` para `GET /web/regionales`: director, las regionales efectivas de todos los usuarios de Cotifly
+    (la misma fuente de la sección 6, sin repetir, ordenadas; una regional de `DimEjecutivo` sin usuarios en Cotifly no sale); gerente, la
+    suya; `DimEjecutivo` caída: 503.
+  - La regla vive en dos métodos estáticos (`ComponerAlcanceAsync`, `ComponerPermisoAsync`) sobre las operaciones básicas del puerto, para
+    que las pruebas de los consumidores apliquen la misma regla sobre un puerto simulado sin copiarla.
+- **Respuesta para el director:** `regional` y `fuente_regional` de `MetricasRegional` y `CotizacionesRegional` pasan a ser anulables
+  (`null` = todas; `fuente_regional` siempre `null` para el director). Para el gerente no cambian. El tope de 100 filas del listado es del
+  conjunto: el director sin regional ve las 100 más recientes de todas.
+- **Listas grandes de usuarios:** con el director sin regional, las consultas por lista de usuarios mandan la lista como un solo parámetro
+  (`EF.Parameter`, `OPENJSON`; el repositorio de métricas ya lo hacía), así no topan con el límite de 2100 parámetros de SQL Server.
 
 ## Alternativas consideradas
 

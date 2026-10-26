@@ -8,6 +8,7 @@ using Cotifly.Aplicacion.Metricas.Services;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Identidad;
 using Cotifly.Dominio.Metricas;
+using Cotifly.Aplicacion.Tests.Identidad;
 using NSubstitute;
 
 namespace Cotifly.Aplicacion.Tests.Web;
@@ -20,11 +21,17 @@ public sealed class clsTableroMetricasServiceTests
 {
     private static readonly TimeSpan _bogota = TimeSpan.FromHours(-5);
     private readonly IClsUsuarioWebRepository _usuarios = Substitute.For<IClsUsuarioWebRepository>();
-    private readonly IClsRegionalUsuario _regionales = Substitute.For<IClsRegionalUsuario>();
+    private readonly IClsRegionalUsuario _regionales;
     private readonly IClsMetricasRepository _metricas = Substitute.For<IClsMetricasRepository>();
     private readonly IClsRolRepository _roles = Substitute.For<IClsRolRepository>();
     private readonly IClsReloj _reloj = Substitute.For<IClsReloj>();
     private readonly clsCalendarioBogota _calendario = new(new DateOnly(2026, 9, 29));
+
+    public clsTableroMetricasServiceTests()
+    {
+        // HU-037.3 (#211): la regla real del alcance por rol sobre la regional simulada.
+        _regionales = clsRegionalSustituta.Crear(_usuarios);
+    }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -296,6 +303,39 @@ public sealed class clsTableroMetricasServiceTests
 
         resultado.Error.Codigo.Should().Be(clsCodigosAplicacion.NoEncontrado);
         resultado.Error.Mensaje.Should().Be(clsTableroMetricasService.MensajeComercialAjeno);
+        await _metricas.DidNotReceiveWithAnyArgs().ListarCotizacionesAsync(default!, default, default, Ct);
+    }
+
+    [Fact]
+    public async Task ElDirectorSinRegionalVeATodosYFiltraUnComercialDeCualquierRegional()
+    {
+        // HU-037.3 (#211): todas las regionales; regional y fuente en null.
+        var dora = UsuarioWeb("dora", "Dora");
+        var ana = UsuarioWeb("ana", "Ana");
+        var marta = clsUsuarioWeb.Crear("marta", "Marta", null, "Norte", DateTimeOffset.UtcNow).Valor;
+        _usuarios.ObtenerPorIdAsync(dora.Id, Arg.Any<CancellationToken>()).Returns(dora);
+        _usuarios.ListarTodosAsync(Arg.Any<CancellationToken>()).Returns([dora, ana, marta]);
+        _roles.ListarRolesDeUsuariosAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<Guid, RolInterno> { [dora.Id] = RolInterno.Director, [marta.Id] = RolInterno.Comercial });
+        SinFilas();
+
+        var tablero = (await Servicio(new clsUsuarioFalso(dora.Id, RolInterno.Director))
+            .ObtenerRegionalAsync(new clsConsultaMetricas(UsuarioId: marta.Id.ToString()), Ct)).Valor;
+
+        (tablero.Regional, tablero.FuenteRegional, tablero.UsuarioId).Should().Be(((string?)null, (string?)null, marta.Id));
+        tablero.Comerciales.Select(c => c.UsuarioId).Should().BeEquivalentTo([dora.Id, ana.Id, marta.Id]);
+        tablero.Comerciales.Single(c => c.UsuarioId == dora.Id).Rol.Should().Be("director");
+        await _regionales.DidNotReceiveWithAnyArgs().ResolverAsync(default!, Ct);
+    }
+
+    [Fact]
+    public async Task ElGerenteQuePideOtraRegionalEnElTableroRecibeRegionalNoPermitida()
+    {
+        var (gerente, _, _) = PrepararRegional();
+
+        var resultado = await Servicio(gerente).ObtenerRegionalAsync(new clsConsultaMetricas(Regional: "Norte"), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosAplicacion.RegionalNoPermitida);
         await _metricas.DidNotReceiveWithAnyArgs().ListarCotizacionesAsync(default!, default, default, Ct);
     }
 
