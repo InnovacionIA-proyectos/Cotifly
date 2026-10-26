@@ -13,8 +13,10 @@ namespace Cotifly.Arquitectura.Tests;
 /// <summary>
 /// HU-039.1 (#218): el costo bruto de la ruta (<see cref="clsRutaCosteo.CostoFinal"/>) solo sale por la vista del costeo del dueño
 /// (<c>GET .../costeo</c>, las acciones que la devuelven y el detalle). Reversa acotada de ADR-015 §5: ni el chat o asistente, ni el PDF, ni
-/// el correo, ni el Excel de la licitación, ni las métricas, ni "Mis cotizaciones" o el listado regional usan esa vista ni traen un costo
-/// propio en su respuesta.
+/// el correo, ni el Excel de la licitación, ni las métricas, ni "Mis cotizaciones" o el listado regional usan esa vista, y fuera de las
+/// métricas ninguno trae un costo propio en su respuesta. Las métricas sí traen sus agregados de costeo (<c>costeo_total</c>,
+/// <c>costeo_ganadas</c>, <c>ganancias</c>, HU-010 y HU-034): son sumas de periodo, no el costo de una ruta, y no empiezan por
+/// <c>Costo</c>, por eso pasan <see cref="LasRespuestasDeLosDemasCaminosNoTienenCampoDeCosto"/>.
 /// </summary>
 public sealed class clsCostoBrutoSinFugasTests
 {
@@ -70,6 +72,17 @@ public sealed class clsCostoBrutoSinFugasTests
     public void LasRespuestasDeLosDemasCaminosNoTienenCampoDeCosto(Type respuesta)
     {
         CamposConCosto(respuesta, respuesta.Name, []).Should().BeEmpty($"{respuesta.Name} no expone costos de Nexo");
+    }
+
+    /// <summary>
+    /// Validador (#218): en todo el árbol del detalle por folio (cabecera, costeo, captura y totales) el único campo de costo es el costo
+    /// bruto de las rutas del costeo, el que <c>SinCostoFinal()</c> pone en <c>null</c> para el gerente.
+    /// </summary>
+    [Fact]
+    public void ElDetalleSoloTraeElCostoBrutoEnLasRutasDeSuCosteo()
+    {
+        CamposConCosto(typeof(clsDetalleCotizacion), nameof(clsDetalleCotizacion), []).Should()
+            .Equal($"{nameof(clsDetalleCotizacion)}.{nameof(clsDetalleCotizacion.Costeo)}.{nameof(clsCosteoCotizacion.Rutas)}.{nameof(clsRutaCosteo.CostoFinal)}");
     }
 
     [Fact]

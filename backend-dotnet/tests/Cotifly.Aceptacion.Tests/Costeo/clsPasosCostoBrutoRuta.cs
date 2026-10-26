@@ -25,6 +25,10 @@ public sealed class clsPasosCostoBrutoRuta(clsContextoWeb web, clsPasosCosteo co
     public Task CuandoPrevisualiza(string alias, string cotizacion) =>
         web.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{costeo.Folio(cotizacion)}/correo/vista-previa", web.Sesion(alias).Access);
 
+    /// <summary>Validador (#218): el alias de la <c>-vN</c> que acaba de crear la re-solicitud (folio de la última respuesta).</summary>
+    [Then("la versión nueva de la respuesta queda registrada como {string}")]
+    public void EntoncesRegistraLaVersionNueva(string alias) => costeo.Registrar(alias, web.UltimoJson().GetProperty("folio").GetString()!);
+
     [Then("la ruta {int} de la respuesta no trae costo final ni precio final")]
     public void EntoncesSinCostoNiPrecio(int orden)
     {

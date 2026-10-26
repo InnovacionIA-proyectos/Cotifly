@@ -1,5 +1,6 @@
 using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Dominio.Cotizaciones;
+using Cotifly.Dominio.Margen;
 using Cotifly.Pruebas.Comun;
 
 namespace Cotifly.Aplicacion.Tests.Costeo;
@@ -78,5 +79,44 @@ public sealed class clsCostoBrutoRutaTests
         sinCosto.Should().BeEquivalentTo(vista, o => o.Excluding(v => v.Rutas));
         sinCosto.Rutas.Should().BeEquivalentTo(vista.Rutas, o => o.Excluding(r => r.CostoFinal));
         vista.Rutas.Should().OnlyContain(r => r.CostoFinal != null, "la vista del dueño no cambia");
+    }
+    /// <summary>
+    /// Validador (#218): el costo bruto que ve el dueño es exactamente el costo con el que se calculó el precio de la ruta (el mismo margen
+    /// y método dan el mismo precio, también en USD con la TRM fijada), y la suma de las rutas es el costo interno de la cotización.
+    /// </summary>
+    [Theory]
+    [InlineData("COP", 0)]
+    [InlineData("USD", 4000)]
+    public void ElCostoBrutoEsElCostoDelQueSaleElPrecioDeCadaRuta(string moneda, int trm)
+    {
+        var cotizacion = clsCotizacionMuestra.ConConexo(
+            clsCotizacionMuestra.LicitacionCosteada([1_234_567m, 2_345_678m, 987_654m], margen: 0.2m, moneda: moneda, trm: trm),
+            "CX-9", "Escolta", 123_456m, 3m, orden: 2);
+
+        var vista = clsCosteoCotizacionService.Vista(cotizacion, null);
+
+        vista.Rutas.Select(r => r.CostoFinal).Should().Equal(1_234_567m, 2_345_678m + 3 * 123_456m, 987_654m);
+        foreach (var ruta in vista.Rutas)
+        {
+            clsLineaSolicitud.PrecioCon(ruta.CostoFinal, ruta.MargenAplicado, "margen", moneda, trm, out var precio).Should().BeNull();
+            precio.Should().Be(ruta.PrecioFinalLinea, $"la ruta {ruta.LineaOrden} cobra su costo bruto con su margen");
+        }
+
+        vista.Rutas.Sum(r => r.CostoFinal).Should().Be(cotizacion.CostoFinal, "la suma de las rutas es el costo de la cotización");
+    }
+
+    /// <summary>Validador (#218): el costo bruto no cambia con el margen; solo cambia el precio.</summary>
+    [Fact]
+    public void AjustarElMargenNoCambiaElCostoBrutoSoloElPrecio()
+    {
+        var cotizacion = clsCotizacionMuestra.Costeada(flete: 2_550_000m);
+        var antes = clsCosteoCotizacionService.Vista(cotizacion, null).Rutas.Single();
+
+        cotizacion.PrimeraRuta!.RegistrarMargenCosteo(0.15m, 0.25m, OrigenMargen.Negociado, "margen");
+        cotizacion.RecalcularTotales(clsCotizacionMuestra.Ahora);
+        var despues = clsCosteoCotizacionService.Vista(cotizacion, null).Rutas.Single();
+
+        (antes.CostoFinal, antes.PrecioFinalLinea).Should().Be(((decimal?)2_550_000m, (decimal?)3_000_000m));
+        (despues.CostoFinal, despues.PrecioFinalLinea).Should().Be(((decimal?)2_550_000m, (decimal?)3_400_000m));
     }
 }

@@ -68,3 +68,20 @@ Característica: Costo bruto de la ruta para el dueño de la cotización
     Entonces la respuesta no contiene el costo 2550000
     Y el PDF de "C1" no contiene "2.550.000"
     Y el PDF de "C1" no contiene "2550000"
+
+  Escenario: La versión nueva muestra el costo bruto de su propio costeo y el ajuste de margen no lo cambia
+    Dado que "ana" envió a costeo el formulario ampliado del cliente "900555111" como "C1"
+    Y que Nexo costeó la solicitud de "C1" con un flete de 2550000 y la entregó
+    Cuando "ana" re-solicita el costeo de "C1" con el motivo "Nueva versión" y nueva_version "true"
+    Entonces la respuesta tiene el estado 201 y cumple el esquema "CotizacionResumen" del contrato
+    Y la versión nueva de la respuesta queda registrada como "C1v2"
+    Cuando "ana" consulta el costeo de "C1v2"
+    Entonces la ruta 1 de la respuesta no trae costo final ni precio final
+    Dado Nexo costeó la solicitud de "C1v2" con un flete de 2040000 y el polling lo registró
+    Cuando "ana" consulta el costeo de "C1v2"
+    Entonces la ruta 1 de la respuesta tiene el costo final 2040000 y el precio final 2400000
+    Cuando "ana" consulta el costeo de "C1"
+    Entonces la ruta 1 de la respuesta tiene el costo final 2550000 y el precio final 3000000
+    Cuando "ana" ajusta el margen de "C1v2" a "0.25" sin justificación
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "CosteoCotizacion" del contrato
+    Y la ruta 1 de la respuesta tiene el costo final 2040000 y el precio final 2720000
