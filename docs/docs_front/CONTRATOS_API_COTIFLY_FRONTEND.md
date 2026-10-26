@@ -3732,8 +3732,10 @@ Cotización finalizada:
 - Candados (#207): sin finalizar, el PDF, el envío, los textos y el resultado (con el costeo listo) responden 409
   `COTIZACION_NO_FINALIZADA` (código nuevo); ya finalizada, margen, conexos, re-solicitar en el mismo folio y recalcular camiones
   responden 409 `PDF_YA_ENVIADO` con la versión nueva, y la edición pasa a `nueva_version`.
-- Precio congelado (#208): con la cotización finalizada el polling no cambia el precio; `motivo_estado_costeo` avisa qué ruta cambió y
-  `estado_costeo` sigue avanzando. Configuración: `CosteoNexo__EdadMaximaHoras` sigue en 72 (subirlo es una propuesta pendiente de
+- Precio congelado (#208): con la cotización finalizada el polling no cambia el precio; `motivo_estado_costeo` avisa qué ruta cambió (y
+  el aviso se quita si NEXO vuelve a los costos finalizados) y `estado_costeo` sigue avanzando. Con una ruta rechazada después de
+  finalizar, el PDF responde 409 `COSTEO_NO_LISTO` con la versión nueva en `detalle`. No se finaliza con un conexo de NEXO pendiente de
+  leer (409 `COTIZACION_NO_FINALIZABLE`, `detalle.motivo = conexos_pendientes_de_leer`). Configuración: `CosteoNexo__EdadMaximaHoras` sigue en 72 (subirlo es una propuesta pendiente de
   acordar con NEXO, `DEPLOY.md` §2.2).
 - Requiere `db/scripts/14_cotizacion_finalizada.sql` (sin él, `/health/ready` responde "falta 14"). Sin backfill: las cotizaciones
   existentes las finaliza el comercial una por una. Sección 7, fila 63.
