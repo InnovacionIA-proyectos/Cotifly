@@ -2844,6 +2844,13 @@ Definiciones comunes (aplican a los dos tableros):
 - Montos en COP con 2 decimales (USD × TRM por fila). `valor_ganado_cop` es valor **cotizado** de las ganadas, no dinero recaudado:
   rotularlo "Valor ganado (COP)".
 - Conteos por cotización; valores por ruta (`por_linea_negocio` abre por ruta: su suma puede superar `cantidad`).
+- `serie_mensual` (HU-034.1, #201): un punto por mes del periodo (`AAAA-MM`, mes de Bogotá de la primera creación, también los meses
+  en 0) con `cantidad`, `ganadas`, `perdidas`, `valor_cotizado_cop`, `valor_ganado_cop` y, **nuevos**, `costeo_total`,
+  `costeo_ganadas` y `ganancias`, con la misma definición que en `indicadores` (COP o USD × TRM, sin rutas rechazadas, versión
+  vigente, lo ganado de la versión ganada). La suma de los meses es **exactamente** el valor de `indicadores` del mismo periodo.
+  "Ganancias por mes" = `ganancias` de cada punto; "mes actual vs. mes anterior" = los puntos cuyo `mes` es el mes en curso y el
+  anterior, buscados por `mes` y no por posición (con `anio` la serie llega hasta diciembre, con los meses futuros en 0; en enero el
+  mes anterior es del año pasado: pedir `desde`/`hasta` que cubran los dos meses).
 
 Parámetros comunes:
 
@@ -2870,8 +2877,10 @@ Indicadores de las cotizaciones propias.
     "desviacion_promedio_margen": -0.015, "desviacion_promedio_margen_abs": 0.025, "ajustes_margen": 2, "deadline_vencidas": 1
   },
   "serie_mensual": [
-    { "mes": "2026-08", "cantidad": 5, "ganadas": 1, "perdidas": 2, "valor_cotizado_cop": 18200000.00, "valor_ganado_cop": 4100000.00 },
-    { "mes": "2026-09", "cantidad": 7, "ganadas": 2, "perdidas": 2, "valor_cotizado_cop": 27110000.00, "valor_ganado_cop": 8300000.00 }
+    { "mes": "2026-08", "cantidad": 5, "ganadas": 1, "perdidas": 2, "valor_cotizado_cop": 18200000.00, "valor_ganado_cop": 4100000.00,
+      "costeo_total": 15400000.00, "costeo_ganadas": 3500000.00, "ganancias": 600000.00 },
+    { "mes": "2026-09", "cantidad": 7, "ganadas": 2, "perdidas": 2, "valor_cotizado_cop": 27110000.00, "valor_ganado_cop": 8300000.00,
+      "costeo_total": 23100000.00, "costeo_ganadas": 7040000.00, "ganancias": 1260000.00 }
   ],
   "por_linea_negocio": [
     { "linea_negocio_id": 1, "linea_negocio": "Nacional", "cotizaciones": 10, "ganadas": 3, "perdidas": 3, "rutas": 13,
@@ -2934,7 +2943,8 @@ parámetros.
     }
   ],
   "serie_mensual": [
-    { "mes": "2026-08", "cantidad": 18, "ganadas": 4, "perdidas": 5, "valor_cotizado_cop": 70100000.00, "valor_ganado_cop": 16400000.00 }
+    { "mes": "2026-08", "cantidad": 18, "ganadas": 4, "perdidas": 5, "valor_cotizado_cop": 70100000.00, "valor_ganado_cop": 16400000.00,
+      "costeo_total": 60000000.00, "costeo_ganadas": 14000000.00, "ganancias": 2400000.00 }
   ],
   "concentracion_ciudades": {
     "disponible": true,
@@ -3586,6 +3596,7 @@ fila_excel, campo, codigo, mensaje}`.
 | 57 | **Endurecimiento A (#199, 2026-10-22).** (a) **Nuevo 500 `ERROR_INTERNO`** en todo `/web/*` y `/pdfs/*` (respuesta común `ErrorInterno` del openapi): `ErrorNegocio` `{"error": {"codigo": "ERROR_INTERNO", "mensaje": "Ocurrió un error interno. Intenta de nuevo y, si se repite, contacta a soporte.", "detalle": {"id_correlacion": "..."}}}`: el único `detalle` es `id_correlacion`, el id de la petición en el log (sin datos técnicos) (antes un error no controlado salía sin cuerpo; `ERROR_INTERNO` de los casos de uso salía como **400**, y una restricción única no traducida salía como 400 `REGISTRO_DUPLICADO` con el nombre de la restricción). En `/api/auth/*` el 500 es `ErrorWeb` con el mismo texto. (b) **`POST .../enviar` de un folio ajeno o inexistente responde 404** antes que `CORREO_DESHABILITADO` (503) o `CORREO_INVALIDO` (400): ya no se pueden enumerar folios. (c) **`GET /web/licitaciones/{folio}`** de un folio que no es licitación (formulario o chat) responde **404** (antes 200), como el Excel y reintentar. (d) **Ids que no son UUID en la ruta** (`GET /web/cubicacion/{id}`, `POST .../rutas/{rutaId}/recalcular-vehiculos`) responden **404** `ErrorWeb` como uno inexistente (antes un 404 sin cuerpo y un 400 "Cuerpo inválido"). (e) **Contrato (`openapi.yaml`), solo documental:** 500 `ErrorInterno` declarado en todas las operaciones (`ErrorWeb` en `/api/auth/*`); 413 `CuerpoDemasiadoGrande` y 415 `TipoContenidoNoSoportado` como respuestas comunes de las operaciones con cuerpo; `Retry-After` en el 429; salen del enum `AJUSTE_ID_INVALIDO`, `TARIFA_FUENTE_NO_DISPONIBLE`, `TARIFA_CONFIG_INVALIDA` y `MUNICIPIO_ARGUMENTO_INVALIDO` (nunca se emitían); esquemas de entrada propios `TelefonoComercialWeb` (PUT del teléfono: `telefono` opcional, vacío borra) y `BorradorCorreoWeb` (vista previa: todo opcional); `ItemCubicacion` con sus rangos (cantidad 1-100.000, medidas 0,1-999.999, `peso_kg` obligatorio > 0, 2 decimales); `cantidad` de los conexos con 2 decimales (`multipleOf: 0.01`); topes de `LineaLicitacionWeb` (`tipo_vehiculo`/`carroceria` ≤ 100, montos ≤ 9.999.999.999.999,99) y su texto de HU-032 (el vehículo elegido ya no se ignora); `moneda` (`null` = COP, vacío es error) y `deadline` (sin zona, hora de Bogotá) de la licitación; tope del Excel 10 MB − 64 KB; 400/503 del cubicador (`CUBICADOR_NO_AUTORIZADO`, `CUBICADOR_RESPUESTA_INVALIDA` y los rechazos) en catálogos, captura, licitación, edición y re-solicitud; 409 de `servicios-conexos` con `CAPTURA_EN_CURSO` y `CONFLICTO_CONCURRENCIA` con `agregado_en_nexo = true`; `REGIONAL_*` también en `/web/cotizaciones/regional`; `ServicioConexoCatalogo.id` y `servicio_id` sin `format: uuid` (es el id de NEXO tal como viene); `VistaPreviaCorreo.resumen` anulable con `oneOf` | Cambia | Tratar el 500 como error genérico: mensaje "Ocurrió un error. Reintenta" sin mostrar nada técnico; mostrar `detalle.id_correlacion` como "código para soporte" si se quiere; no cerrar sesión. Ante `CONFLICTO_CONCURRENCIA` con `agregado_en_nexo = true` en conexos, recargar el costeo y NO repetir el POST. En `/enviar`, un 404 se trata como siempre ("no existe o no es tuya"); con una cotización propia los 503 y 400 siguen igual. Abrir la vista de licitación solo con folios de licitación |
 | 58 | **Endurecimiento B (#199, E2E 2026-10-22).** (a) `POST .../resultado`: DEF-C-1, ante `RESULTADO_YA_DEFINIDO` Cotifly **lee** NEXO (ya no hace `POST /api/cotizaciones`); OBS-C-2, repetir el mismo resultado ya `sincronizado` es 200 sin cambios y sin llamar a NEXO; una `perdida` en `pendiente_costeo` con la solicitud inexistente en NEXO queda `solo_cotifly` (antes 400 `COSTEO_NEXO_SOLICITUD_NO_ENCONTRADA`); el 404 de NEXO sobre su cotización es **409 `COTIZACION_NEXO_NO_ENCONTRADA`** (antes el 404 "no es tuya"). (b) `PUT .../solicitud` (reemplazo): `detalle.motivo` es siempre `RECHAZO_NEXO_FALLIDO`, también en el 403 `NEXO_SIN_PERMISO` (antes el texto crudo "HTTP 403 …"). (c) `nueva_version` y re-solicitar `-vN`: con 503 `SERVICIO_OCUPADO` la original **no** cambia (su `If-Match` sigue valiendo). (d) `POST /web/licitaciones/{folio}/cubicacion/reintentar` con `usar_respaldo`: aplica el vehículo elegido (`VEHICULO_ELEGIDO_USADO` / `VEHICULO_ELEGIDO_INVALIDO`). (e) 403 `NEXO_SIN_PERMISO` declarado en `POST /web/solicitudes-costeo`, `POST /web/licitaciones` y `re-solicitar` (catálogo de conexos). (f) `FOLIO_INVALIDO` en el enum. (g) PDF de una **spot** de varias rutas: sin "licitación" ni "pliego". (h) `TARIFA_FUENTE_NO_DISPONIBLE`, `TARIFA_CONFIG_INVALIDA` y `MUNICIPIO_ARGUMENTO_INVALIDO` se borran también del backend (del enum ya salieron en la fila 57). (i) Se documenta la diferencia intencional de precios de la licitación (vista y Excel desglosados; PDF y correo con el valor final) | Cambia / Agrega | Manejar 409 `COTIZACION_NEXO_NO_ENCONTRADA` en el botón de resultado; leer siempre `detalle.motivo = RECHAZO_NEXO_FALLIDO` en la edición; tras `SERVICIO_OCUPADO` reintentar con el mismo `If-Match`; mostrar los avisos del vehículo tras "Enviar con respaldo"; tratar el 403 `NEXO_SIN_PERMISO` en captura, licitación y re-solicitud ("avisar a soporte"); no comparar la vista de la licitación con el PDF |
 | 59 | **HU-035.1 (#202, ADR-024): nuevo `POST /web/mercancias/analizar-excel`.** Lee en Cotifly, **sin NEXO**, el Excel de mercancías de una ruta y devuelve la grilla cruda `AnalisisExcelMercancias` (misma forma de `AnalisisExcel` más `total_hojas`, `hojas_truncadas` y, por hoja, `filas_truncadas`, `total_columnas`, `columnas_truncadas`, `celdas_recortadas` y `oculta`; `filas_excel` siempre viene; las hojas ocultas en Excel se leen igual y vienen con `oculta = true`). Celdas con formato estable (números con punto, fechas ISO, fórmulas con su valor guardado). Código de mercancía sugerido opcional, como en la licitación. Archivos corruptos o maliciosos: 400 `EXCEL_INVALIDO` o `ARCHIVO_DEMASIADO_GRANDE` con `detalle.motivo` (nunca 500); 503 `SERVICIO_OCUPADO` con el cupo lleno. Mismo límite de 12 MB que las licitaciones. Sin códigos de error nuevos | Agrega | Para "Importar mercancías desde Excel" en las líneas de la solicitud usar este endpoint (no `licitaciones/analizar-excel`); reutilizar la pantalla de mapeo; mostrar `filas_excel[i]` y avisar el truncado; preseleccionar una hoja visible y marcar las de `oculta = true`; leer `detalle.motivo` en el 400 |
+| 60 | **HU-034.1 (#201, parte B): ganancias y costeo por mes.** `PuntoSerieMensual` (`serie_mensual` de `GET /web/metricas/regional` y de `GET /web/metricas/comercial`) trae tres campos **nuevos** por mes: `costeo_total`, `costeo_ganadas` y `ganancias`, con la definición exacta de `IndicadoresMetricas` (COP o USD × TRM; sin las rutas rechazadas por la Mesa; valores de la versión vigente y lo ganado de la versión ganada; mes de Bogotá de la primera creación). La suma de los meses es exactamente el valor de `indicadores` del mismo periodo. Ningún campo existente cambia | Agrega | Reemplazar la maqueta de "Ganancias por mes" (barras con `ganancias` de cada punto) y de "Ganancias del mes actual vs. mes anterior" (puntos del mes en curso y del anterior, buscados por `mes`) por los datos reales; no recalcular ganancias en el frontend |
 
 ---
 
@@ -3683,6 +3694,13 @@ fila_excel, campo, codigo, mensaje}`.
   análisis simultáneos (503 `SERVICIO_OCUPADO`). Todo error del archivo es 400 con código y `detalle.motivo`.
 - Sin script de base de datos ni códigos de error nuevos. Son **53 endpoints**. Cambio con su "qué hacer": sección 7, fila 59 (la #201
   usará la 60).
+
+**2026-10-26 (rama `201-ganancias-mensuales`, HU-034.1, #201 parte B).** Ganancias y costeo por mes en el tablero:
+
+- `serie_mensual` de `GET /web/metricas/regional` y de `GET /web/metricas/comercial` (esquema `PuntoSerieMensual`) trae, por mes,
+  `costeo_total`, `costeo_ganadas` y `ganancias`, con los mismos nombres y la misma definición que en `indicadores`. La suma de los
+  meses cuadra exactamente con `indicadores`. Cambio aditivo: ningún campo cambia ni desaparece. Con esto "Ganancias por mes" y "mes
+  actual vs. mes anterior" dejan de ser maqueta. Sección 7, fila 60, y 4.10.
 
 **2026-10-22 (rama `199-correo-mailsender`, HU-033, #199, ADR-023).** Envío real por MailSender, total sin desglose y resultado diferido:
 

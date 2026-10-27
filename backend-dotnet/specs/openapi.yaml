@@ -125,6 +125,10 @@ tags:
         `ajustes_margen`/`desviacion_promedio_margen` de los `MargenAjustes` de la ruta (`lineaSolicitudId`; un ajuste sin
         ruta va a la ruta 1). Por el redondeo por ruta, la suma de `valor_cotizado_cop` de la apertura puede diferir unos
         centavos de `indicadores.valor_cotizado_cop` en USD.
+      - `serie_mensual` (HU-034.1, #201): cada mes del periodo (America/Bogota, por la primera creación de la cadena) con
+        los conteos y los montos de arriba (`valor_cotizado_cop`, `valor_ganado_cop`, `costeo_total`, `costeo_ganadas`,
+        `ganancias`) calculados con la misma regla sobre las cotizaciones de ese mes. La suma de los meses es exactamente
+        el valor de `indicadores` del mismo periodo.
       - Montos en COP con 2 decimales; redondeo half-to-even.
       - Los servicios conexos ya están en `costoFinal` de la ruta (HU-021). Las ciudades del mapa son las de la ruta 1.
 
@@ -794,8 +798,10 @@ paths:
                   ajustes_margen: 2
                   deadline_vencidas: 1
                 serie_mensual:
-                  - {mes: '2026-08', cantidad: 5, ganadas: 1, perdidas: 2, valor_cotizado_cop: 18200000.00, valor_ganado_cop: 4100000.00}
-                  - {mes: '2026-09', cantidad: 7, ganadas: 2, perdidas: 2, valor_cotizado_cop: 27110000.00, valor_ganado_cop: 8300000.00}
+                  - {mes: '2026-08', cantidad: 5, ganadas: 1, perdidas: 2, valor_cotizado_cop: 18200000.00, valor_ganado_cop: 4100000.00,
+                     costeo_total: 15400000.00, costeo_ganadas: 3500000.00, ganancias: 600000.00}
+                  - {mes: '2026-09', cantidad: 7, ganadas: 2, perdidas: 2, valor_cotizado_cop: 27110000.00, valor_ganado_cop: 8300000.00,
+                     costeo_total: 23100000.00, costeo_ganadas: 7040000.00, ganancias: 1260000.00}
                 por_linea_negocio:
                   - {linea_negocio_id: 1, linea_negocio: Nacional, cotizaciones: 10, ganadas: 3, perdidas: 3, rutas: 13,
                      costeo_total: 30100000.00, costeo_ganadas: 8200000.00, valor_cotizado_cop: 35410000.00,
@@ -969,8 +975,10 @@ paths:
                       ajustes_margen: 0
                       deadline_vencidas: 0
                 serie_mensual:
-                  - {mes: '2026-08', cantidad: 18, ganadas: 4, perdidas: 5, valor_cotizado_cop: 70100000.00, valor_ganado_cop: 16400000.00}
-                  - {mes: '2026-09', cantidad: 22, ganadas: 5, perdidas: 6, valor_cotizado_cop: 84000000.00, valor_ganado_cop: 20500000.00}
+                  - {mes: '2026-08', cantidad: 18, ganadas: 4, perdidas: 5, valor_cotizado_cop: 70100000.00, valor_ganado_cop: 16400000.00,
+                     costeo_total: 60000000.00, costeo_ganadas: 14000000.00, ganancias: 2400000.00}
+                  - {mes: '2026-09', cantidad: 22, ganadas: 5, perdidas: 6, valor_cotizado_cop: 84000000.00, valor_ganado_cop: 20500000.00,
+                     costeo_total: 71000000.00, costeo_ganadas: 17370000.00, ganancias: 3130000.00}
                 concentracion_ciudades:
                   disponible: true
                   sin_destino: 4
@@ -5338,7 +5346,12 @@ components:
       description: |
         Un mes (America/Bogota, por la primera creación de la cadena) del periodo, para la línea de tiempo. La serie trae todos los meses del periodo en orden,
         también los que no tienen cotizaciones (en 0). Mismo universo y mismas definiciones que `IndicadoresMetricas`.
-      required: [mes, cantidad, ganadas, perdidas, valor_cotizado_cop, valor_ganado_cop]
+        HU-034.1 (#201): cada mes trae también `costeo_total`, `costeo_ganadas` y `ganancias`, con la definición exacta de
+        `IndicadoresMetricas` (COP, USD × TRM, sin rutas rechazadas, lo ganado de la versión ganada). Como todos los montos de
+        origen tienen 2 decimales, la suma de los meses de la serie es exactamente el valor de `indicadores` del mismo periodo
+        (para `cantidad`, `ganadas`, `perdidas`, `valor_cotizado_cop`, `valor_ganado_cop`, `costeo_total`, `costeo_ganadas` y
+        `ganancias`).
+      required: [mes, cantidad, ganadas, perdidas, valor_cotizado_cop, valor_ganado_cop, costeo_total, costeo_ganadas, ganancias]
       properties:
         mes:
           type: string
@@ -5354,6 +5367,17 @@ components:
           type: number
         valor_ganado_cop:
           type: number
+        costeo_total:
+          type: number
+          description: HU-034.1 (#201). SUM(`costo`) en COP de las cotizaciones del mes (como `IndicadoresMetricas.costeo_total`).
+        costeo_ganadas:
+          type: number
+          description: HU-034.1 (#201). SUM(`costo`) en COP de las ganadas del mes, de la versión ganada (como `IndicadoresMetricas.costeo_ganadas`).
+        ganancias:
+          type: number
+          description: |
+            HU-034.1 (#201). SUM(`valor_cop` − `costo`) de las ganadas del mes con precio y costo (como
+            `IndicadoresMetricas.ganancias`). Base de "Ganancias por mes" y "mes actual vs. mes anterior" del tablero.
 
     MetricaCiudad:
       type: object

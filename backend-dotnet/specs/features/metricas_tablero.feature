@@ -198,3 +198,44 @@ Característica: Tablero de métricas del comercial y del gerente comercial
     Y los indicadores son:
       | campo    | valor |
       | cantidad | 2     |
+
+  # HU-034.1 (#201), parte B: ganancias y costeo por mes en serie_mensual, con la regla de los indicadores (COP o USD × TRM, sin
+  # rutas rechazadas, versión vigente y lo ganado de la versión ganada, mes de Bogotá). La suma de los meses cuadra con los
+  # indicadores del periodo.
+  Escenario: La serie mensual del gerente trae las ganancias y el costeo de cada mes
+    Cuando "gloria" consulta las métricas de su regional del año "2026"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "MetricasRegional" del contrato
+    Y la serie mensual tiene estos montos:
+      | mes     | cantidad | ganadas | valor_cotizado_cop | valor_ganado_cop | costeo_total | costeo_ganadas | ganancias |
+      | 2026-03 | 2        | 1       | 3000000            | 1000000          | 2550000      | 850000         | 150000    |
+      | 2026-04 | 3        | 2       | 4500000            | 4500000          | 3800000      | 3800000        | 700000    |
+      | 2026-05 | 0        | 0       | 0                  | 0                | 0            | 0              | 0         |
+    Y la suma de la serie mensual cuadra con los indicadores
+
+  Escenario: Las ganancias de cada mes usan el mes de Bogotá y el filtro por comercial
+    Dado que "luis" tiene estas cotizaciones:
+      | cotizacion | moneda | precio | trm | costo | margen | resultado | creada                    |
+      | L2         | COP    | 100000 | 0   | 80000 | 0.20   | ganada    | 2026-04-30T23:30:00-05:00 |
+      | L3         | COP    | 100000 | 0   | 80000 | 0.20   | ganada    | 2026-05-01T00:30:00-05:00 |
+    Cuando "gloria" consulta las métricas de su regional del "2026-04-01" al "2026-05-31" filtradas por "luis"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "MetricasRegional" del contrato
+    Y la serie mensual tiene estos montos:
+      | mes     | cantidad | ganadas | costeo_total | costeo_ganadas | ganancias |
+      | 2026-04 | 2        | 2       | 480000       | 480000         | 120000    |
+      | 2026-05 | 1        | 1       | 80000        | 80000          | 20000     |
+    Y la suma de la serie mensual cuadra con los indicadores
+
+  Escenario: En la serie del comercial una ruta rechazada no cuenta y una cotización rehecha suma su versión vigente
+    Dado que la cotización "A1" tiene estas rutas:
+      | orden | linea       | costo  | precio | margen |
+      | 1     | Nacional    | 300000 | 350000 | 0.1429 |
+      | 2     | Importacion | 250000 | 300000 | 0.1667 |
+    Y que la Mesa de Costeo rechazó la ruta 2 de la cotización "A1"
+    Y que "ana" rehízo la cotización "A2" como versión 2 con precio 2100000 y costo 1750000
+    Cuando "ana" consulta sus métricas del "2026-01-01" al "2026-12-31"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "MetricasComercial" del contrato
+    Y la serie mensual tiene estos montos:
+      | mes     | cantidad | ganadas | perdidas | valor_cotizado_cop | valor_ganado_cop | costeo_total | costeo_ganadas | ganancias |
+      | 2026-03 | 2        | 1       | 1        | 2450000            | 350000           | 2050000      | 300000         | 50000     |
+      | 2026-04 | 2        | 1       | 0        | 4000000            | 4000000          | 3400000      | 3400000        | 600000    |
+    Y la suma de la serie mensual cuadra con los indicadores

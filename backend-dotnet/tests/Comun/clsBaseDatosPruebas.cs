@@ -6,7 +6,7 @@ namespace Cotifly.Pruebas.Comun;
 
 /// <summary>
 /// SQL Server 2019 en Testcontainers con el esquema real (ADR-008, ADR-010):
-/// crea <c>dbTarifario_Nexo_Pruebas</c>, aplica <c>db/migrations_mssql/0001</c> a <c>0010</c>, <c>db/scripts/02_alter_cubicador.sql</c>, el <c>03</c> (HU-014, #188), la propuesta <c>db/scripts/pendientes/04</c> (HU-023.5), el <c>05</c> (#188), el <c>06</c> (#191, Idempotency-Key), el <c>07</c>, el <c>08</c> (HU-014.3), el <c>09</c> (HU-018.1) y el <c>10</c> (HU-028.1, #183) y el <c>11</c> (HU-030.1, #184) partidos por <c>GO</c> (HU-021: el 0009
+/// crea <c>dbTarifario_Nexo_Pruebas</c>, aplica <c>db/migrations_mssql/0001</c> a <c>0010</c>, <c>db/scripts/02_alter_cubicador.sql</c>, el <c>03</c> (HU-014, #188), la propuesta <c>db/scripts/04</c> (HU-023.5), el <c>05</c> (#188), el <c>06</c> (#191, Idempotency-Key), el <c>07</c>, el <c>08</c> (HU-014.3), el <c>09</c> (HU-018.1) y el <c>10</c> (HU-028.1, #183) y el <c>11</c> (HU-030.1, #184) partidos por <c>GO</c> (HU-021: el 0009
 /// reestructura las cotizaciones en rutas y camiones y el 0010 agrega los nombres de municipio; las pruebas de esquema verifican además
 /// que <c>db/scripts/01_crear_esquema.sql</c> deja el mismo esquema, <see cref="CrearBaseInstaladaAsync"/>), y crea una <c>dbsolucionesti</c> falsa con las tres tablas del almacén corporativo y sus tipos reales:
 /// <c>dbo.tblSAPUsuariosApp</c> (ID NUMERIC, incluida la columna CLAVE, que el backend nunca debe leer),
@@ -35,7 +35,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
         // mapea sus columnas). OJO: deja el mismo CHECK que el 07, así que una base con ScriptsSin07 YA admite BUSQUEDA_AGOTADA; las
         // pruebas "sin el 07" usan CrearBaseSin07Async, que vuelve al CHECK del 02.
         Script03,
-        // HU-023.5 (#160): cola de la cubicación de la licitación en segundo plano (db/scripts/pendientes/04, pendiente de aprobación;
+        // HU-023.5 (#160): cola de la cubicación de la licitación en segundo plano (db/scripts/04, pendiente de aprobación;
         // el backend mapea sus columnas, así que las pruebas lo aplican en las dos cadenas).
         Script04,
         // HU-014 (#188): categoriaServicioConexo (db/scripts/05; el backend la mapea).
@@ -112,7 +112,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     public const string Script07 = "../scripts_bd/07_motivo_busqueda_agotada.sql";
 
     /// <summary>HU-023.5 (#160): la propuesta 04 de la cubicación en segundo plano (relativa a <c>migrations_mssql</c>).</summary>
-    public const string Script04 = "../scripts_bd/pendientes/04_cubicacion_segundo_plano.sql";
+    public const string Script04 = "../scripts_bd/04_cubicacion_segundo_plano.sql";
 
     /// <summary>
     /// Scripts hasta el 07 incluido (con el 09, el 10 y el 11, sin el 08): la base migrada que todavía tiene las vistas del borrador de métricas.
@@ -244,7 +244,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
                 // HU-014 (#188): el 03 va después del 02 por nombre, como en el ejecutador.
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("03_orden_vehiculo_y_conexo_catalogo.sql"));
                 // HU-023.5: la propuesta 04 (pendiente de aprobación) también, porque el backend mapea sus columnas.
-                await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("pendientes/04_cubicacion_segundo_plano.sql"));
+                await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("04_cubicacion_segundo_plano.sql"));
                 // HU-014 (#188): el 05 (categoría del conexo).
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("05_categoria_conexo.sql"));
                 // #191: el 06 (Idempotency-Key persistente) va después del 05 por nombre, como en el ejecutador.
@@ -302,7 +302,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("02_alter_cubicador.sql"));
             // HU-014 (#188): el 03, la propuesta pendiente 04 (HU-023.5, #160) y el 05: el backend mapea sus columnas.
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("03_orden_vehiculo_y_conexo_catalogo.sql"));
-            await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("pendientes/04_cubicacion_segundo_plano.sql"));
+            await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("04_cubicacion_segundo_plano.sql"));
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("05_categoria_conexo.sql"));
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("06_idempotencia_captura.sql"));
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("07_motivo_busqueda_agotada.sql"));
