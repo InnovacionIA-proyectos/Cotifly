@@ -133,6 +133,34 @@ public sealed class clsChatWebEndpointTests(clsEntornoApiWeb entorno)
             .Should().Be("Ocurrió un error interno procesando tu solicitud. Inténtalo de nuevo.");
     }
 
+    // DEF-1027-1 (#226, E2E real del 2026-10-27): con el proveedor caído (conexión rechazada), el SDK real reintenta y lanza un
+    // AggregateException ("Retry failed after 4 tries") que antes no se traducía: el chat respondía ERROR_INTERNO. Con la cadena real
+    // de la fábrica (respaldo y limitador), el turno responde 200 con IA_NO_DISPONIBLE y su texto, como dice el contrato.
+    [Fact]
+    public async Task ConElProveedorCaidoElTurnoEsIaNoDisponibleNoErrorInterno()
+    {
+        var opciones = new Cotifly.Infraestructura.Configuracion.clsOpcionesIA
+        {
+            Proveedor = Cotifly.Infraestructura.Configuracion.clsOpcionesIA.OpenAiCompatible,
+            Modelo = "modelo-caido",
+            Endpoint = "http://127.0.0.1:1/v1",
+            TimeoutSeg = 5,
+            Rpm = 0,
+        };
+        using var caido = Cotifly.Infraestructura.IA.Services.clsChatClientFactory.Crear(
+            opciones, Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance, TimeProvider.System);
+        using var api = new clsApiWebPruebas(entorno.BaseDatos, configurar: b => b.ConfigureTestServices(s => s.AddSingleton(caido)));
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var cotizacion = await api.CrearCotizacionAsync(ana.UsuarioId, conPdf: false);
+
+        using var respuesta = await api.EnviarAsync(_post, RutaChat, ana.Access, Mensaje("hola", SesionId(), cotizacion.Folio));
+
+        var json = await VerificarContratoAsync(respuesta, RutaChat, _post, HttpStatusCode.OK);
+        json.GetProperty("error").GetBoolean().Should().BeTrue();
+        json.GetProperty("codigo").GetString().Should().Be("IA_NO_DISPONIBLE");
+        json.GetProperty("texto").GetString().Should().Be(Cotifly.Aplicacion.Agente.Services.clsTextosAgente.IaNoDisponible);
+    }
+
     [Fact]
     public async Task SinProveedorConfiguradoElTurnoEsUnErrorControlado()
     {
