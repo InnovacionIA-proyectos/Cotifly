@@ -1,9 +1,11 @@
 using System.Diagnostics;
 using Cotifly.Aplicacion.Auditoria.Services;
 using Cotifly.Aplicacion.Comun.Interfaces;
+using Cotifly.Aplicacion.Costeo.Interfaces;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
+using Microsoft.Extensions.Logging;
 
 namespace Cotifly.Aplicacion.Costeo.Services;
 
@@ -40,7 +42,9 @@ public sealed class clsFinalizacionCotizacionService(
     IClsUnitOfWork unidadTrabajo,
     IClsReloj reloj,
     IClsAuditoriaService auditoria,
-    IClsEnvioConexosNexoService envioConexos) : IClsFinalizacionCotizacionService
+    IClsEnvioConexosNexoService envioConexos,
+    IClsServiciosConexosNexo nexo,
+    ILogger<clsFinalizacionCotizacionService> logger) : IClsFinalizacionCotizacionService
 {
     /// <summary>Herramienta de la auditoría de la finalización (<c>EventosHerramienta.herramienta</c>).</summary>
     public const string HerramientaAuditoria = "finalizar_cotizacion";
@@ -87,7 +91,9 @@ public sealed class clsFinalizacionCotizacionService(
             return (clsReglaPdfCosteo.Conflicto(cotizacion.Folio), false);
         }
 
-        var pendientesEnNexo = cotizacion.Finalizada ? 0 : await ConexosPendientesEnNexoAsync(cotizacion, cancellationToken);
+        var pendientesEnNexo = cotizacion.Finalizada || !cotizacion.AdmiteFinalizar || cotizacion.ConexosPendientesDeLeer
+            ? 0
+            : await ConexosPendientesEnNexoAsync(cotizacion, usuarioId, cancellationToken);
         var finalizada = cotizacion.Finalizar(usuarioId, reloj.AhoraUtc, pendientesEnNexo);
         if (finalizada.EsFallo)
         {
@@ -111,8 +117,33 @@ public sealed class clsFinalizacionCotizacionService(
     /// la cotización de Nexo: <c>estado_nexo = pendiente</c> en el registro del envío diferido (<see cref="IClsEnvioConexosNexoService.EstadosAsync"/>,
     /// el mismo que ve el comercial en el costeo). <c>incierto</c> y <c>fallido_definitivo</c> no cuentan: el polling ya no los reintenta y
     /// el costeo los muestra para revisarlos en Nexo.
+    /// <para>Validación #228: con alguno pendiente se RELEE la cotización de Nexo y los que ya muestra quedan <c>enviado</c>
+    /// (<see cref="IClsEnvioConexosNexoService.RegistrarConfirmadosAsync"/>) antes de contar otra vez. Un registro que se quedó en
+    /// <c>pendiente</c> aunque Nexo ya tenga el conexo (agregado con el POST antes de #228, o si su registro falló) bloquearía para siempre
+    /// una entregada, que el polling ya no consulta. Si Nexo no responde, se cuenta lo que dice el registro (falla cerrado).</para>
     /// </summary>
-    private async Task<int> ConexosPendientesEnNexoAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken)
+    private async Task<int> ConexosPendientesEnNexoAsync(clsCotizacionSolicitud cotizacion, Guid usuarioId, CancellationToken cancellationToken)
+    {
+        var pendientes = await ContarPendientesAsync(cotizacion, cancellationToken);
+        if (pendientes == 0 || cotizacion.CotizacionNexoId is not { } cotizacionNexoId)
+        {
+            return pendientes;
+        }
+
+        var leida = await nexo.LeerCotizacionAsync(usuarioId, cotizacionNexoId, cancellationToken);
+        if (leida.EsFallo)
+        {
+            logger.LogWarning("No se pudo releer la cotización de Nexo de {Folio} para confirmar {Pendientes} conexos pendientes ({Codigo}).",
+                cotizacion.Folio, pendientes, leida.Error.Codigo);
+            return pendientes;
+        }
+
+        await envioConexos.RegistrarConfirmadosAsync(cotizacion, leida.Valor, cancellationToken);
+        await unidadTrabajo.GuardarCambiosAsync(cancellationToken);
+        return await ContarPendientesAsync(cotizacion, cancellationToken);
+    }
+
+    private async Task<int> ContarPendientesAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken)
     {
         var rutas = cotizacion.RutasCotizables.Select(r => r.Id).ToHashSet();
         var estados = await envioConexos.EstadosAsync(cotizacion, cancellationToken);

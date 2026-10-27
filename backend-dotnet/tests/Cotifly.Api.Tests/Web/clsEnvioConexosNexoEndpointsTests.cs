@@ -212,6 +212,41 @@ public sealed class clsEnvioConexosNexoEndpointsTests : IDisposable
         _nexo.PeticionesConexos(_nexo.CotizacionDe(solicitud)!).Should().HaveCount(2, "el agregado no se reenvía");
     }
 
+    /// <summary>
+    /// Validación #228: un conexo agregado con el POST ANTES de #228 (o cuyo registro falló) quedó sin el registro <c>enviado</c>: se ve
+    /// <c>pendiente</c> aunque Nexo ya lo tiene, y en una entregada el polling ya no pasa. Finalizar relee Nexo, lo deja <c>enviado</c> y
+    /// finaliza; antes de la corrección quedaba bloqueada para siempre.
+    /// </summary>
+    [Fact]
+    public async Task Validacion228_UnPendienteQueNexoYaTieneNoBloqueaParaSiempreUnaEntregada()
+    {
+        var (sesion, folio) = await CapturarAsync();
+        var solicitud = _nexo.SolicitudesCreadas[^1];
+        _nexo.CostearLinea(solicitud, 0, 1_000_000m);
+        _nexo.Entregar(solicitud);
+        await _api.ProcesarPollingAsync(folio);
+        using (var agregar = await ConVersionAsync(_post, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", sesion.Access,
+                   clsApiWebPruebas.Json(new { items = new[] { new { linea_orden = 1, servicio_id = Almacenamiento, cantidad = 1 } } }), await EtagAsync(sesion, folio)))
+        {
+            agregar.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        // Como antes de #228: el POST no dejaba registro del envío diferido.
+        await clsBaseDatosPruebas.EjecutarAsync(_entorno.BaseDatos.CadenaCotifly,
+            $"WITH u AS (SELECT TOP 1 * FROM dbo_cotifly.EventosHerramienta WHERE herramienta = 'conexos_envio_nexo' AND input LIKE '%{folio}%' ORDER BY createdAt DESC) DELETE FROM u");
+        (await RutasAsync(sesion, folio))[0].GetProperty("servicios_conexos").EnumerateArray().Select(c => c.GetProperty("estado_nexo").GetString())
+            .Should().Contain("pendiente");
+        (await AgendadaAsync(folio)).Should().BeFalse("entregada: el polling ya no la consulta");
+        var postsAntes = _nexo.PeticionesConexos(_nexo.CotizacionDe(solicitud)!).Count;
+
+        await _api.FinalizarAsync(sesion.Access, folio);
+
+        (await FinalizadaAsync(folio)).Should().BeTrue();
+        (await RutasAsync(sesion, folio))[0].GetProperty("servicios_conexos").EnumerateArray().Select(c => c.GetProperty("estado_nexo").GetString())
+            .Should().OnlyContain(e => e == "enviado");
+        _nexo.PeticionesConexos(_nexo.CotizacionDe(solicitud)!).Should().HaveCount(postsAntes, "finalizar solo relee Nexo: no envía conexos");
+    }
+
     private Task<bool> FinalizadaAsync(string folio) => clsBaseDatosPruebas.EscalarAsync<bool>(_entorno.BaseDatos.CadenaCotifly,
         $"SELECT CAST(IIF(finalizadaAt IS NULL, 0, 1) AS bit) FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'");
 
