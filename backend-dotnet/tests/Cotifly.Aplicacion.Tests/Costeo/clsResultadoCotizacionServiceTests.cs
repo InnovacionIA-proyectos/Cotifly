@@ -695,6 +695,96 @@ public sealed class clsResultadoCotizacionServiceTests
         _cotizacion.ComentarioResultadoPendiente.Should().Be("Compró con la competencia");
     }
 
+    // Validación HU-018.1 (#155): el motivo se valida después de las respuestas que no escriben nada. Una descartada sigue siendo 409
+    // COSTEO_NO_LISTO (lleva a /seguimiento) aunque la perdida venga sin motivo, en vez de un 400 que lo oculta.
+    [Theory]
+    [InlineData(EstadoCosteo.Descartada, null)]
+    [InlineData(EstadoCosteo.CosteoVencido, "Precio alto")]
+    public async Task HU0181_UnaDescartadaOVencidaSigueSiendoCosteoNoListoAunqueElMotivoNoSeaDeLaLista(EstadoCosteo estado, string? motivo)
+    {
+        Estado(estado, null);
+
+        (await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "perdida", motivo, null, Ct)).Error.Codigo.Should().Be(clsCodigosError.CosteoNoListo);
+        _nexo.ReceivedCalls().Should().BeEmpty();
+    }
+
+    // HU-033 / OBS-C-2: repetir una perdida ya registrada (sincronizada o pendiente) es idempotente aunque el reintento no traiga el motivo.
+    [Theory]
+    [InlineData(null)]
+    [InlineData("Precio alto")]
+    public async Task HU0181_RepetirUnaPerdidaYaSincronizadaSinMotivoDeLaListaSigueSiendo200SinCambios(string? motivo)
+    {
+        _cotizacion.MarcarSeguimiento(false, "Valor muy alto", _reloj.AhoraUtc);
+        _cotizacion.MarcarResultadoSincronizado(_reloj.AhoraUtc);
+        var version = _cotizacion.VersionNegocio;
+
+        var repetido = await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "perdida", motivo, null, Ct);
+
+        repetido.Valor.Should().BeSameAs(_cotizacion);
+        _cotizacion.MotivoRechazo.Should().Be("Valor muy alto", "el motivo guardado no cambia");
+        _cotizacion.VersionNegocio.Should().Be(version);
+        _nexo.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task HU0181_RepetirUnaPerdidaPendienteDeSincronizarSinMotivoSigueSiendo200SinCambios()
+    {
+        Estado(EstadoCosteo.Autocosteo, null);
+        ConPrecio(EstadoCosteo.Autocosteo, 1_000_000m);
+        _nexo.MarcarResultadoAsync(_ana, "COT-1", Arg.Any<clsResultadoNexo>(), Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio(clsCodigosError.CotizacionNoEntregada, "Solo se puede marcar el resultado de una cotización entregada."));
+        (await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "perdida", "Otro", "Compró con la competencia", Ct)).EsExitoso.Should().BeTrue();
+        var version = _cotizacion.VersionNegocio;
+        _nexo.ClearReceivedCalls();
+
+        var repetido = await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "perdida", null, null, Ct);
+
+        repetido.Valor.ResultadoPendienteDeSincronizar.Should().BeTrue();
+        _cotizacion.MotivoRechazo.Should().Be("Otro: Compró con la competencia");
+        _cotizacion.ComentarioResultadoPendiente.Should().Be("Compró con la competencia");
+        _cotizacion.VersionNegocio.Should().Be(version);
+        _nexo.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task HU0181_SinMotivoDeLaListaNoSeTocaLaCotizacionNiSeLeeElCosteoEnNexo()
+    {
+        // En pendiente_costeo la perdida lee primero el costeo de Nexo: el motivo inválido se rechaza antes de esa lectura.
+        var cotizacion = SinCosteo(enError: false);
+
+        (await Servicio().MarcarAsync(_ana, cotizacion.Folio, "perdida", "El cliente desistió", null, versionEsperada: 0, Ct)).Error.Codigo
+            .Should().Be(clsCodigosError.MotivoNoPermitido);
+
+        _nexo.ReceivedCalls().Should().BeEmpty();
+        cotizacion.Ganada.Should().BeNull();
+        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
+    }
+
+    [Fact]
+    public async Task HU0181_UnMotivoConLaTildeAparteEsElDeLaListaYANexoViajaConSuEscritura()
+    {
+        var descompuesto = "Cliente desistió del servicio".Normalize(System.Text.NormalizationForm.FormD);
+        descompuesto.Should().NotBe("Cliente desistió del servicio");
+
+        (await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "perdida", descompuesto, null, Ct)).EsExitoso.Should().BeTrue();
+
+        _cotizacion.MotivoRechazo.Should().Be("Cliente desistió del servicio");
+        await _nexo.Received(1).MarcarResultadoAsync(_ana, "COT-1",
+            Arg.Is<clsResultadoNexo>(r => r.Motivo == "Cliente desistió del servicio"), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("Otro\u200B")] // con un espacio de ancho cero
+    [InlineData("Otr\u043E")] // con la "o" cirílica
+    [InlineData("Valor  muy alto")]
+    [InlineData("Valor muy alto.")]
+    public async Task HU0181_UnMotivoParecidoPeroDistintoNoSeAcepta(string motivo)
+    {
+        (await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "perdida", motivo, "comentario", Ct)).Error.Codigo
+            .Should().Be(clsCodigosError.MotivoNoPermitido);
+        _nexo.ReceivedCalls().Should().BeEmpty();
+    }
+
     private clsResultadoCotizacionService Servicio(IClsCatalogoMotivosPerdida? motivos = null) => new(
         _cotizaciones, _nexo, _unidad, _auditoria, _reloj, new clsPrecioCosteoService(), Options.Create(new clsOpcionesCosteoNexo()), motivos);
 

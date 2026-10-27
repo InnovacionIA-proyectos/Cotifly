@@ -298,7 +298,7 @@ Consecuencias:
   | `ETag` | `GET .../costeo` y las respuestas 2xx de las mutaciones de la etapa final | El `If-Match` de la siguiente mutación (sección 1.8) |
   | `Location` | 201 de `POST .../costeo/re-solicitar` y de `PUT .../solicitud` con `nueva_version` (versión `-vN`), y 202 de `POST /web/cubicacion` | Ruta del costeo de la versión nueva (`/web/cotizaciones/{folio nuevo}/costeo`) o de la cubicación en proceso (`/web/cubicacion/{id}`) |
   | `Retry-After` | 429 (segundos de la ventana), 503 `SERVICIO_OCUPADO` (`1`), 503 `CUBICADOR_OCUPADO` (`10`), 202 de `POST /web/cubicacion` y `GET /web/cubicacion/{id}` en proceso (`2`) | Cuánto esperar antes de reintentar o de volver a consultar |
-  | `Content-Disposition` | `GET /pdfs/{archivo}` y `GET /web/licitaciones/{folio}/excel` | Nombre del archivo descargado |
+  | `Content-Disposition` | `GET /pdfs/{archivo}`, `GET /web/licitaciones/{folio}/excel` y `GET /web/cotizaciones/{folio}/excel` | Nombre del archivo descargado |
 
 - Los encabezados CORS también van en las respuestas de error (401, 409, 413, 428, 429, 503...): el frontend puede leer el cuerpo
   y el estado de cualquier error.
@@ -2220,7 +2220,9 @@ tiene entregada, el resultado se guarda **solo en Cotifly** como pendiente y se 
 `Cliente desistió del servicio`, `Tiempo de respuesta vencido` y `Otro`). `Otro` exige `comentario`. Si no, **400
 `MOTIVO_NO_PERMITIDO`** con `detalle.motivos_permitidos` (la lista) y `detalle.requiere_comentario` (`true` si solo faltó el comentario),
 sin llamar a NEXO. Aplica también a la perdida solo en Cotifly y a la pendiente de sincronizar. Las cotizaciones marcadas antes con un
-motivo libre o sin motivo siguen igual: no se revalidan.
+motivo libre o sin motivo siguen igual: no se revalidan. El motivo se valida **después** de los errores que no dependen de él (404, 409
+`CONFLICTO_CONCURRENCIA`, `COSTEO_NO_LISTO` de las que se marcan con `/seguimiento`, `COTIZACION_NO_FINALIZADA`, `RESULTADO_YA_DEFINIDO`)
+y de la idempotencia: repetir la misma perdida ya registrada (sincronizada o pendiente) responde 200 sin cambios aunque no traiga motivo.
 
 Casos:
 

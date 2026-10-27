@@ -123,20 +123,6 @@ public sealed class clsResultadoCotizacionService(
             return Invalido($"'motivo' admite máximo {LargoMaximoMotivo} caracteres y 'comentario' {LargoMaximoComentario} (límites de Nexo).");
         }
 
-        // HU-018.1 (#155): en una perdida el motivo es de la lista (la de Nexo) y "Otro" exige comentario. A Nexo va el motivo de la lista
-        // y el comentario aparte, como antes; en Cotifly se guarda el motivo (con "Otro", "Otro: comentario"). Lo guardado antes no se revalida.
-        var motivoGuardado = motivo;
-        if (!ganada.Value)
-        {
-            var validado = _motivosPerdida.Validar(motivo, comentario);
-            if (validado.EsFallo)
-            {
-                return validado.Error;
-            }
-
-            (motivo, comentario, motivoGuardado) = (validado.Valor.Motivo, validado.Valor.Comentario, validado.Valor.ParaCotifly);
-        }
-
         var cotizacion = usuarioId == Guid.Empty || string.IsNullOrWhiteSpace(folio)
             ? null
             : await cotizaciones.ObtenerPorFolioDelUsuarioAsync(folio, usuarioId, cancellationToken);
@@ -185,6 +171,24 @@ public sealed class clsResultadoCotizacionService(
         {
             return new clsErrorDominio(clsCodigosError.ResultadoYaDefinido,
                 $"La cotización {cotizacion.Folio} ya tiene resultado registrado: crea una versión nueva para cambiarla.");
+        }
+
+        // HU-018.1 (#155): en una perdida el motivo es de la lista (la de Nexo) y "Otro" exige comentario. A Nexo va el motivo de la lista
+        // y el comentario aparte, como antes; en Cotifly se guarda el motivo (con "Otro", "Otro: comentario"). Lo guardado antes no se revalida.
+        // Se valida DESPUÉS de las respuestas que no escriben nada (404, CONFLICTO_CONCURRENCIA, COSTEO_NO_LISTO de las que se marcan con
+        // /seguimiento, COTIZACION_NO_FINALIZADA, el mismo resultado ya pendiente o sincronizado (200 idempotente, HU-033/OBS-C-2) y
+        // RESULTADO_YA_DEFINIDO) y ANTES de cualquier cambio o llamada a Nexo: repetir una perdida ya registrada sigue siendo idempotente
+        // aunque el reintento no traiga el motivo, y una descartada sigue respondiendo 409 COSTEO_NO_LISTO (que lleva a /seguimiento).
+        var motivoGuardado = motivo;
+        if (!ganada.Value)
+        {
+            var validado = _motivosPerdida.Validar(motivo, comentario);
+            if (validado.EsFallo)
+            {
+                return validado.Error;
+            }
+
+            (motivo, comentario, motivoGuardado) = (validado.Valor.Motivo, validado.Valor.Comentario, validado.Valor.ParaCotifly);
         }
 
         // ADR-019 (Riesgo 2): "en Nexo" sin el id de la solicitud (migrada sin respaldo) se trata como un envío fallido: queda en
