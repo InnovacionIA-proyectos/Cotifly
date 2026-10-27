@@ -198,6 +198,13 @@ public sealed class clsValidadorOpcionesCorreo(IHostEnvironment entorno) : IVali
             }
         }
 
+        // #228: el tope de destinatarios vale siempre (también con el correo deshabilitado, porque la vista previa lo aplica).
+        if (options.MaximoDestinatarios is < 1 or > clsOpcionesCorreo.LimiteMaximoDestinatarios)
+        {
+            errores.Add($"'{Prefijo}MaximoDestinatarios' debe estar entre 1 y {clsOpcionesCorreo.LimiteMaximoDestinatarios} "
+                        + $"(por defecto {clsOpcionesCorreo.MaximoDestinatariosPorDefecto}).");
+        }
+
         var seguimiento = options.Seguimiento ?? new clsOpcionesSeguimientoCorreo();
         if (seguimiento.IntervaloTickSegundos is < 1 or > 3600 || seguimiento.IntervaloConsultaSegundos is < 1 or > 3600)
         {

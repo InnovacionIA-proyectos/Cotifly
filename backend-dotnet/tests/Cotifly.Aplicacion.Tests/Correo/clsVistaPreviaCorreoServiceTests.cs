@@ -55,7 +55,7 @@ public sealed class clsVistaPreviaCorreoServiceTests
     }
 
     // DEF-1027B-2 (#228): la vista previa aplica la misma validación que el envío (asunto y direcciones sin caracteres de control, formato
-    // estricto y el tope de 20 destinatarios), así el comercial ve el error antes de enviar.
+    // estricto y el tope de destinatarios, 10 por defecto), así el comercial ve el error antes de enviar.
     [Theory]
     [InlineData(null, null, "Hola\r\nBcc: intruso@ejemplo.invalid", "CORREO_INVALIDO")]
     [InlineData(null, null, "Hola\0", "CORREO_INVALIDO")]
@@ -72,15 +72,38 @@ public sealed class clsVistaPreviaCorreoServiceTests
     }
 
     [Fact]
-    public async Task Tope228_LaVistaPreviaRechazaMasDe20Destinatarios()
+    public async Task Tope228_LaVistaPreviaRechazaMasDe10Destinatarios()
     {
-        var borrador = new clsBorradorCorreo([.. Enumerable.Range(1, 21).Select(i => $"c{i}@cliente.com")], null, null, null);
+        var borrador = new clsBorradorCorreo([.. Enumerable.Range(1, 6).Select(i => $"c{i}@cliente.com")],
+            [.. Enumerable.Range(1, 5).Select(i => $"k{i}@cliente.com")], null, null);
 
         var resultado = await Servicio().PrevisualizarAsync(_usuario, "PCN-V1", borrador, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.CorreoDemasiadosDestinatarios);
-        resultado.Error.Datos!["maximo"].Should().Be(clsCorreoService.MaxDestinatarios);
-        resultado.Error.Datos["recibidos"].Should().Be(21);
+        resultado.Error.Datos!["maximo"].Should().Be(10);
+        resultado.Error.Datos["recibidos"].Should().Be(11);
+    }
+
+    [Theory]
+    [InlineData(2, 3, false)]
+    [InlineData(2, 2, true)]
+    [InlineData(10, 10, true)]
+    public async Task Tope228_LaVistaPreviaUsaElTopeConfigurado(int maximo, int recibidos, bool valida)
+    {
+        _opciones.MaximoDestinatarios = maximo;
+        var borrador = new clsBorradorCorreo([.. Enumerable.Range(1, recibidos).Select(i => $"c{i}@cliente.com")], null, null, null);
+
+        var resultado = await Servicio().PrevisualizarAsync(_usuario, "PCN-V1", borrador, Ct);
+
+        if (valida)
+        {
+            resultado.EsExitoso.Should().BeTrue();
+        }
+        else
+        {
+            resultado.Error.Codigo.Should().Be(clsCodigosError.CorreoDemasiadosDestinatarios);
+            resultado.Error.Datos!["maximo"].Should().Be(maximo);
+        }
     }
 
     [Fact]

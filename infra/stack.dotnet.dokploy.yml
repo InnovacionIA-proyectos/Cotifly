@@ -233,6 +233,8 @@ services:
       Correo__Proteccion__Modo: ${Correo__Proteccion__Modo:-redirigir}
       Correo__Proteccion__PermitirEnvioReal: ${Correo__Proteccion__PermitirEnvioReal:-false}
       Correo__Proteccion__BuzonPruebas: ${Correo__Proteccion__BuzonPruebas:-}
+      # #228: tope de destinatarios entre para y cc (la copia oculta al comercial no cuenta). 1 a 100; fuera de rango no arranca.
+      Correo__MaximoDestinatarios: ${Correo__MaximoDestinatarios:-10}
       # Worker que consulta el estado en MailSender: tick, espera entre consultas del mismo correo, horas sin confirmación antes de
       # fallido, correos por vuelta y reserva de una réplica (rangos 1-3600, 1-3600, 1-720, 1-1000, 1-3600).
       Correo__Seguimiento__IntervaloTickSegundos: ${Correo__Seguimiento__IntervaloTickSegundos:-15}

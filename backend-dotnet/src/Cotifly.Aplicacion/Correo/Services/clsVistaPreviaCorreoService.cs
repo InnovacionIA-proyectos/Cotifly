@@ -34,7 +34,8 @@ public sealed class clsVistaPreviaCorreoService(
 
         // DEF-1027B-2 y tope (#228): la misma validación que el envío, sobre lo que trae el borrador (sin para, se precargan los previos).
         if (borrador is not null
-            && clsCorreoService.ValidarBorrador(borrador.Para, borrador.Cc, borrador.Asunto, borrador.Cuerpo, exigePara: false) is { } invalido)
+            && clsCorreoService.ValidarBorrador(
+                borrador.Para, borrador.Cc, borrador.Asunto, borrador.Cuerpo, exigePara: false, opciones.Value.MaximoDestinatarios) is { } invalido)
         {
             return invalido;
         }

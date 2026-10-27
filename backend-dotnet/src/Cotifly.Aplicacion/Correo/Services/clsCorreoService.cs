@@ -59,12 +59,6 @@ public sealed class clsCorreoService(
     public const int MaxAsunto = 300;
     public const int MaxCuerpo = 5000;
 
-    /// <summary>
-    /// #228: tope de destinatarios entre <c>para</c> y <c>cc</c> (sin contar la copia oculta al comercial). MailSender no tiene uno
-    /// (<c>EmailRequestValidator</c> solo valida el formato de cada dirección): lo fija Cotifly.
-    /// </summary>
-    public const int MaxDestinatarios = 20;
-
     /// <summary>DEF-1027B-2 (#228): mensaje de <c>CORREO_INVALIDO</c> para un asunto con saltos de línea u otros caracteres de control.</summary>
     public const string MensajeAsuntoConControl =
         "El asunto no puede tener saltos de línea ni otros caracteres de control (va como cabecera del correo): escríbelo en una sola línea.";
@@ -97,7 +91,7 @@ public sealed class clsCorreoService(
         }
 
         // DEF-1027B-2 (#228): el borrador se valida TAL COMO LLEGA (antes de recortar), así un CR/LF al final tampoco se sanea en silencio.
-        if (ValidarBorrador(entrada.Para, entrada.Cc, entrada.Asunto, entrada.Cuerpo, exigePara: true) is { } invalida)
+        if (ValidarBorrador(entrada.Para, entrada.Cc, entrada.Asunto, entrada.Cuerpo, exigePara: true, opciones.Value.MaximoDestinatarios) is { } invalida)
         {
             return invalida;
         }
@@ -342,15 +336,18 @@ public sealed class clsCorreoService(
     /// (<see cref="MensajeAsuntoConControl"/>). El asunto viaja como cabecera: se rechaza, no se sanea;</item>
     /// <item>un destinatario (<c>para</c> o <c>cc</c>) con caracteres de control, aunque solo tenga espacios alrededor:
     /// <c>CORREO_INVALIDO</c>;</item>
-    /// <item>más de <see cref="MaxDestinatarios"/> destinatarios entre <c>para</c> y <c>cc</c>: <c>CORREO_DEMASIADOS_DESTINATARIOS</c>
-    /// con <c>detalle.maximo</c> y <c>detalle.recibidos</c>;</item>
+    /// <item>más de <paramref name="maximoDestinatarios"/> destinatarios entre <c>para</c> y <c>cc</c> (sin contar la copia oculta al
+    /// comercial): <c>CORREO_DEMASIADOS_DESTINATARIOS</c> con <c>detalle.maximo</c> y <c>detalle.recibidos</c>. El tope es
+    /// <see cref="clsOpcionesCorreo.MaximoDestinatarios"/> (10 por defecto, <c>Correo__MaximoDestinatarios</c>): MailSender no tiene uno
+    /// (<c>EmailRequestValidator</c> solo valida el formato de cada dirección), lo fija Cotifly;</item>
     /// <item>el formato estricto de cada dirección (<see cref="clsCabecerasCorreo.EsDireccionValida"/>) y, si <paramref name="exigePara"/>,
     /// al menos un <c>para</c>: <c>CORREO_INVALIDO</c>;</item>
     /// <item>asunto de más de <see cref="MaxAsunto"/> o cuerpo de más de <see cref="MaxCuerpo"/> caracteres: <c>CORREO_INVALIDO</c>.</item>
     /// </list>
     /// El cuerpo no es una cabecera (va escapado en el HTML), así que admite saltos de línea.
     /// </summary>
-    public static clsErrorDominio? ValidarBorrador(IReadOnlyList<string>? para, IReadOnlyList<string>? cc, string? asunto, string? cuerpo, bool exigePara)
+    public static clsErrorDominio? ValidarBorrador(
+        IReadOnlyList<string>? para, IReadOnlyList<string>? cc, string? asunto, string? cuerpo, bool exigePara, int maximoDestinatarios)
     {
         if (clsCabecerasCorreo.TieneCaracteresDeControl(asunto))
         {
@@ -365,12 +362,12 @@ public sealed class clsCorreoService(
         var limpiosPara = Limpiar(para);
         var limpiosCc = Limpiar(cc);
         var recibidos = limpiosPara.Count + limpiosCc.Count;
-        if (recibidos > MaxDestinatarios)
+        if (recibidos > maximoDestinatarios)
         {
             return new clsErrorDominio(clsCodigosError.CorreoDemasiadosDestinatarios,
-                $"El correo admite hasta {MaxDestinatarios} destinatarios entre 'para' y 'cc' (llegaron {recibidos}).")
+                $"El correo admite hasta {maximoDestinatarios} destinatarios entre 'para' y 'cc' (llegaron {recibidos}).")
             {
-                Datos = new Dictionary<string, object?>(StringComparer.Ordinal) { ["maximo"] = MaxDestinatarios, ["recibidos"] = recibidos },
+                Datos = new Dictionary<string, object?>(StringComparer.Ordinal) { ["maximo"] = maximoDestinatarios, ["recibidos"] = recibidos },
             };
         }
 

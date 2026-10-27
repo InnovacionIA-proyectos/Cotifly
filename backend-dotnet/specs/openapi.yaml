@@ -521,9 +521,10 @@ paths:
           dígitos y los símbolos de un `atom` del RFC 5322, con puntos que no van al principio, al final ni seguidos),
           dominio de hasta 255 con al menos dos etiquetas de hasta 63 (letras, dígitos y guiones, sin literales IP), y hasta
           320 en total. Si no, 400 `CORREO_INVALIDO`;
-        - tope (#228): hasta **20 destinatarios entre `para` y `cc`** (la copia oculta al comercial no cuenta; MailSender no
-          tiene tope propio). Pasado el tope, 400 `CORREO_DEMASIADOS_DESTINATARIOS` (`ErrorNegocio`) con
-          `detalle = {maximo: 20, recibidos: N}`;
+        - tope (#228): hasta **10 destinatarios por defecto entre `para` y `cc`**, configurable con
+          `Correo__MaximoDestinatarios` (1 a 100; la copia oculta al comercial no cuenta; MailSender no tiene tope propio).
+          Pasado el tope, 400 `CORREO_DEMASIADOS_DESTINATARIOS` (`ErrorNegocio`) con `detalle = {maximo, recibidos}`, donde
+          `maximo` es el tope configurado: el frontend lo lee de ahí y no lo fija;
         - el transporte lo vuelve a revisar antes del POST a MailSender (defensa en profundidad): si algo se cuela, el correo
           no sale y responde 400 `CORREO_ENVIO_FALLIDO` (fila `fallido` en el historial).
         El orden es: dueño (404), correo deshabilitado (503), asunto con controles, destinatarios con controles, tope,
@@ -547,8 +548,8 @@ paths:
                 $ref: '#/components/schemas/RespuestaEnvio'
         '400':
           description: |
-            Error de negocio del envío: duplicado (`CORREO_DUPLICADO`), sin PDF (`CORREO_PDF_NO_ENCONTRADO`), más de 20
-            destinatarios entre `para` y `cc` (`CORREO_DEMASIADOS_DESTINATARIOS`, #228, con `detalle.maximo` y
+            Error de negocio del envío: duplicado (`CORREO_DUPLICADO`), sin PDF (`CORREO_PDF_NO_ENCONTRADO`), más
+            destinatarios entre `para` y `cc` que el tope (10 por defecto, configurable) (`CORREO_DEMASIADOS_DESTINATARIOS`, #228, con `detalle.maximo` y
             `detalle.recibidos`), MailSender lo
             rechazó (400/413/422), no está disponible o no respondió a tiempo (`CORREO_ENVIO_FALLIDO`; con tiempo agotado el
             correo pudo quedar encolado: la cotización queda enviada y el mismo envío cuenta 5 minutos para `CORREO_DUPLICADO`;
@@ -567,13 +568,13 @@ paths:
                   value:
                     error: "El asunto no puede tener saltos de línea ni otros caracteres de control (va como cabecera del correo): escríbelo en una sola línea."
                 demasiados_destinatarios:
-                  summary: Tope de 20 destinatarios (#228)
+                  summary: Tope de destinatarios, 10 por defecto (#228)
                   value:
                     error:
                       codigo: CORREO_DEMASIADOS_DESTINATARIOS
-                      mensaje: "El correo admite hasta 20 destinatarios entre 'para' y 'cc' (llegaron 60)."
+                      mensaje: "El correo admite hasta 10 destinatarios entre 'para' y 'cc' (llegaron 60)."
                       detalle:
-                        maximo: 20
+                        maximo: 10
                         recibidos: 60
         '401':
           $ref: '#/components/responses/SesionExpirada'
@@ -3798,7 +3799,7 @@ paths:
         total), la copia oculta al comercial (`copia_oculta`) y, en un ambiente de pruebas, `entorno_pruebas = true` con el
         buzón (`redirigido_a`) y el texto del aviso (`aviso`) para mostrarlo tal cual.
         #228: lo que trae el borrador se valida igual que en `POST .../enviar` (asunto y direcciones sin caracteres de
-        control, formato estricto de cada dirección, hasta 20 destinatarios entre `para` y `cc`, largos), después de
+        control, formato estricto de cada dirección, el tope de destinatarios entre `para` y `cc`, 10 por defecto, largos), después de
         comprobar el dueño. Sin `para` se precargan los destinatarios previos (no se exige `para`).
       security:
         - bearer: []
@@ -3820,8 +3821,8 @@ paths:
         '400':
           description: |
             #228: el borrador no pasaría el envío. `ErrorWeb` (`CORREO_INVALIDO`: asunto o dirección con caracteres de control,
-            dirección mal formada, asunto o cuerpo demasiado largos) o `ErrorNegocio` `CORREO_DEMASIADOS_DESTINATARIOS` (más de
-            20 entre `para` y `cc`, con `detalle.maximo` y `detalle.recibidos`).
+            dirección mal formada, asunto o cuerpo demasiado largos) o `ErrorNegocio` `CORREO_DEMASIADOS_DESTINATARIOS` (más
+            destinatarios entre `para` y `cc` que el tope, 10 por defecto y configurable, con `detalle.maximo` y `detalle.recibidos`).
           content:
             application/json:
               schema:
@@ -5298,7 +5299,8 @@ components:
       type: object
       required: [para]
       description: |
-        #228: hasta 20 destinatarios entre `para` y `cc` juntos (`CORREO_DEMASIADOS_DESTINATARIOS`); cada dirección es UNA
+        #228: hasta 10 destinatarios por defecto entre `para` y `cc` juntos, configurable con `Correo__MaximoDestinatarios`
+        (`CORREO_DEMASIADOS_DESTINATARIOS`, `detalle.maximo` trae el tope vigente); cada dirección es UNA
         dirección simple sin caracteres de control (ver `POST /web/cotizaciones/{folio}/enviar`).
       properties:
         para:

@@ -66,7 +66,7 @@ Resumen de los endpoints de uso más frecuente; la lista completa (55) está en 
 | `GET /web/cotizaciones/regional` | gerente_comercial o director | HU-016.1 (#154): cotizaciones de los comerciales de su regional (máx. 100), con la forma de `mis-cotizaciones` y el comercial dueño en cada fila. HU-037.3 (#211): el director ve todas o la de `?regional=`. Ver §8.10.1 |
 | `GET /web/regionales` | gerente_comercial o director | HU-037.3 (#211): regionales del selector (todas para el director, la suya para el gerente). Ver §8.10.1 |
 | `GET /web/cotizaciones/{folio}` | dueño, gerente de su regional o director | HU-027.1 (#179): detalle completo en una llamada (cabecera, costeo por ruta, rutas capturadas y totales) con el `ETag`; el gerente solo consulta. Ver §8.14 |
-| `POST /web/cotizaciones/{folio}/enviar` | ambos | Envía la cotización por correo con el PDF. HU-033 (#199): por MailSender; el 200 es "aceptado" (`estado = encolado`, `correo_id`, `redirigido_a`), el comercial va en copia oculta y el cuerpo lleva el precio por ruta y el total sin desglose. Por defecto, en todos los ambientes, va al buzón de pruebas con `[QA]` (`redirigido_a`); solo producción con `Correo:Proteccion:Modo=ninguno` y `Correo:Proteccion:PermitirEnvioReal=true` escribe a los destinatarios reales. 503 `ErrorNegocio` `CORREO_DESHABILITADO` si el correo está deshabilitado en el servidor. #228: asunto y direcciones sin caracteres de control y hasta 20 destinatarios entre `para` y `cc` (§8.18) |
+| `POST /web/cotizaciones/{folio}/enviar` | ambos | Envía la cotización por correo con el PDF. HU-033 (#199): por MailSender; el 200 es "aceptado" (`estado = encolado`, `correo_id`, `redirigido_a`), el comercial va en copia oculta y el cuerpo lleva el precio por ruta y el total sin desglose. Por defecto, en todos los ambientes, va al buzón de pruebas con `[QA]` (`redirigido_a`); solo producción con `Correo:Proteccion:Modo=ninguno` y `Correo:Proteccion:PermitirEnvioReal=true` escribe a los destinatarios reales. 503 `ErrorNegocio` `CORREO_DESHABILITADO` si el correo está deshabilitado en el servidor. #228: asunto y direcciones sin caracteres de control y hasta 10 destinatarios por defecto (configurable) entre `para` y `cc` (§8.18) |
 | `POST /web/cotizaciones/{folio}/correo/vista-previa` | ambos | Asunto, cuerpo y destinatarios sin enviar. HU-033: también `cuerpo_html`, `resumen` (precio por ruta y total), `copia_oculta` y el aviso de ambiente de pruebas (`entorno_pruebas`, `redirigido_a`, `aviso`). Al redirigir, `copia_oculta = null`: el correo sale sin CC ni CCO (OBS-1027-5 de #226). #228: valida el borrador igual que `enviar` (400) |
 | `GET /web/cotizaciones/{folio}/correos` | ambos (dueño) | HU-033 (#199): historial de envíos con el estado de MailSender (`encolado`, `enviando`, `enviado`, `fallido` con `error`) y `reintentable` |
 | `POST /web/cotizaciones/{folio}/correos/{correoId}/reintentar` | ambos (dueño) | HU-033 (#199): pide a MailSender reintentar un envío `fallido`; 409 `CORREO_NO_REINTENTABLE` si no aplica (no está `fallido`, ya se está reintentando por un doble clic, nunca llegó a MailSender o MailSender ya no lo conoce) |
@@ -1946,7 +1946,7 @@ entregó al relay; también aceptó 60 destinatarios en `para`. Desde #228, en `
 |---|---|
 | `asunto` con caracteres de control (CR, LF, NUL, tabulador, U+0085, U+2028, U+2029 y el resto de la categoría Unicode `Cc`), también al final | 400 `ErrorWeb` (`CORREO_INVALIDO`). No se recorta ni se limpia |
 | Una dirección de `para` o `cc` con caracteres de control (aunque solo sean un `\r\n` al final) | 400 `ErrorWeb` |
-| Más de **20** destinatarios entre `para` y `cc` (la copia oculta al comercial no cuenta; MailSender no tiene tope) | 400 `ErrorNegocio` `CORREO_DEMASIADOS_DESTINATARIOS`, `detalle = {maximo: 20, recibidos: N}` |
+| Más destinatarios entre `para` y `cc` que el tope: **10 por defecto**, configurable con `Correo__MaximoDestinatarios` (1 a 100; la copia oculta al comercial no cuenta; MailSender no tiene tope) | 400 `ErrorNegocio` `CORREO_DEMASIADOS_DESTINATARIOS`, `detalle = {maximo, recibidos}` con `maximo` = el tope vigente |
 | Una dirección que no es UNA dirección simple: parte local de 1 a 64 (letras, dígitos y los símbolos de un `atom` del RFC 5322, puntos no al borde ni seguidos), dominio de hasta 255 con al menos dos etiquetas de 1 a 63 (letras, dígitos, guiones no al borde), sin comas, punto y coma, espacios, comillas, ángulos, comentarios ni literales IP; hasta 320 en total | 400 `ErrorWeb` |
 | `asunto` de más de 300 o `cuerpo` de más de 5000 | 400 `ErrorWeb` (como antes) |
 
@@ -1966,8 +1966,8 @@ remitente corporativo, y un buzón o un remitente corporativo que no lo cumple i
 {
   "error": {
     "codigo": "CORREO_DEMASIADOS_DESTINATARIOS",
-    "mensaje": "El correo admite hasta 20 destinatarios entre 'para' y 'cc' (llegaron 60).",
-    "detalle": { "maximo": 20, "recibidos": 60 }
+    "mensaje": "El correo admite hasta 10 destinatarios entre 'para' y 'cc' (llegaron 60).",
+    "detalle": { "maximo": 10, "recibidos": 60 }
   }
 }
 ```

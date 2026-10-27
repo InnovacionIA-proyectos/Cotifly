@@ -575,36 +575,68 @@ public sealed class clsCorreoServiceTests : IDisposable
         await NoSeEnvioNadaAsync();
     }
 
-    // #228: MailSender no limita los destinatarios (EmailRequestValidator solo valida el formato): Cotifly fija 20 entre para y cc.
-    [Theory]
-    [InlineData(21, 0)]
-    [InlineData(15, 6)]
-    [InlineData(60, 0)]
-    public async Task Tope228_MasDe20DestinatariosEntreParaYCcSeRechazaConDetalle(int nPara, int nCc)
+    // #228: MailSender no limita los destinatarios (EmailRequestValidator solo valida el formato): Cotifly fija el tope entre para y cc,
+    // 10 por defecto y configurable con Correo__MaximoDestinatarios (decisión del 2026-10-27).
+    [Fact]
+    public void Tope228_ElTopePorDefectoEs10()
     {
-        var para = Enumerable.Range(1, nPara).Select(i => $"cliente{i}@empresa.com").ToArray();
-        var cc = Enumerable.Range(1, nCc).Select(i => $"copia{i}@empresa.com").ToArray();
+        new clsOpcionesCorreo().MaximoDestinatarios.Should().Be(10);
+        clsOpcionesCorreo.MaximoDestinatariosPorDefecto.Should().Be(10);
+    }
 
-        var resultado = await Servicio().EnviarAsync(Entrada(para: para, cc: cc), Ct);
+    [Theory]
+    [InlineData(11, 0)]
+    [InlineData(6, 5)]
+    [InlineData(60, 0)]
+    public async Task Tope228_MasDe10DestinatariosEntreParaYCcSeRechazaConDetalle(int nPara, int nCc)
+    {
+        var resultado = await Servicio().EnviarAsync(Entrada(para: Direcciones("cliente", nPara), cc: Direcciones("copia", nCc)), Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.CorreoDemasiadosDestinatarios);
-        resultado.Error.Datos!["maximo"].Should().Be(clsCorreoService.MaxDestinatarios);
+        resultado.Error.Datos!["maximo"].Should().Be(10);
         resultado.Error.Datos["recibidos"].Should().Be(nPara + nCc);
         await NoSeEnvioNadaAsync();
     }
 
     [Fact]
-    public async Task Tope228_Con20DestinatariosEntreParaYCcSiSeEnvia()
+    public async Task Tope228_Con10DestinatariosEntreParaYCcSiSeEnviaYLaCopiaOcultaNoCuenta()
     {
-        var para = Enumerable.Range(1, 12).Select(i => $"cliente{i}@empresa.com").ToArray();
-        var cc = Enumerable.Range(1, 8).Select(i => $"copia{i}@empresa.com").ToArray();
-
-        var resultado = await Servicio().EnviarAsync(Entrada(para: para, cc: cc), Ct);
+        var resultado = await Servicio().EnviarAsync(Entrada(para: Direcciones("cliente", 6), cc: Direcciones("copia", 4)), Ct);
 
         resultado.Valor.Enviado.Should().BeTrue();
-        _enviado!.Para.Should().HaveCount(12);
-        _enviado.Cc.Should().HaveCount(8);
+        _enviado!.Para.Should().HaveCount(6);
+        _enviado.Cc.Should().HaveCount(4);
+        _enviado.Bcc.Should().ContainSingle("la copia oculta al comercial va aparte y no cuenta en el tope");
     }
+
+    [Theory]
+    [InlineData(3, 4, false)]
+    [InlineData(3, 3, true)]
+    [InlineData(25, 25, true)]
+    [InlineData(25, 26, false)]
+    public async Task Tope228_ElTopeConfiguradoMandaYSaleEnElDetalle(int maximo, int recibidos, bool seEnvia)
+    {
+        _opciones.MaximoDestinatarios = maximo;
+
+        var resultado = await Servicio().EnviarAsync(Entrada(para: Direcciones("cliente", recibidos)), Ct);
+
+        if (seEnvia)
+        {
+            resultado.Valor.Enviado.Should().BeTrue();
+            _enviado!.Para.Should().HaveCount(recibidos);
+        }
+        else
+        {
+            resultado.Error.Codigo.Should().Be(clsCodigosError.CorreoDemasiadosDestinatarios);
+            resultado.Error.Datos!["maximo"].Should().Be(maximo);
+            resultado.Error.Datos["recibidos"].Should().Be(recibidos);
+            resultado.Error.Mensaje.Should().Contain($"hasta {maximo} destinatarios");
+            await NoSeEnvioNadaAsync();
+        }
+    }
+
+    private static string[] Direcciones(string prefijo, int cantidad) =>
+        [.. Enumerable.Range(1, cantidad).Select(i => $"{prefijo}{i}@empresa.com")];
 
     private async Task NoSeEnvioNadaAsync()
     {

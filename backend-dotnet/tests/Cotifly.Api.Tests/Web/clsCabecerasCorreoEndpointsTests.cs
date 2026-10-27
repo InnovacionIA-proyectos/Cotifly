@@ -10,7 +10,7 @@ namespace Cotifly.Api.Tests.Web;
 /// <summary>
 /// Validación de #228 (DEF-1027B-2, ADR-023): vectores de inyección de cabeceras en <c>POST .../enviar</c>, en la vista previa y en el
 /// reintento, por HTTP con SQL Server de pruebas y MailSender falso (registra el multipart; nunca sale un correo). Ningún vector llega a
-/// MailSender ni cambia el estado de envío; el tope de 20 no se salta con duplicados, mayúsculas ni repartiendo entre <c>para</c> y
+/// MailSender ni cambia el estado de envío; el tope (10 por defecto) no se salta con duplicados, mayúsculas ni repartiendo entre <c>para</c> y
 /// <c>cc</c>; un correo guardado antes de #228 con el asunto inyectado no se reintenta.
 /// </summary>
 [Collection(clsColeccionApiWeb.Nombre)]
@@ -144,10 +144,10 @@ public sealed class clsCabecerasCorreoEndpointsTests : IDisposable
         var ruta = $"/web/cotizaciones/{cotizacion.Folio}/enviar";
         object[] excedidos =
         [
-            new { para = Enumerable.Repeat("compras@cliente.com", 21).ToArray() },
-            new { para = Enumerable.Range(0, 21).Select(i => i % 2 == 0 ? "COMPRAS@CLIENTE.COM" : "compras@cliente.com").ToArray() },
-            new { para = Enumerable.Range(1, 10).Select(i => $"p{i}@cliente.com").ToArray(), cc = Enumerable.Range(1, 11).Select(i => $"c{i}@cliente.com").ToArray() },
-            new { para = new[] { "p@cliente.com" }, cc = Enumerable.Range(1, 20).Select(i => $"c{i}@cliente.com").ToArray() },
+            new { para = Enumerable.Repeat("compras@cliente.com", 11).ToArray() },
+            new { para = Enumerable.Range(0, 11).Select(i => i % 2 == 0 ? "COMPRAS@CLIENTE.COM" : "compras@cliente.com").ToArray() },
+            new { para = Enumerable.Range(1, 5).Select(i => $"p{i}@cliente.com").ToArray(), cc = Enumerable.Range(1, 6).Select(i => $"c{i}@cliente.com").ToArray() },
+            new { para = new[] { "p@cliente.com" }, cc = Enumerable.Range(1, 10).Select(i => $"c{i}@cliente.com").ToArray() },
         ];
 
         foreach (var cuerpo in excedidos)
@@ -155,7 +155,8 @@ public sealed class clsCabecerasCorreoEndpointsTests : IDisposable
             using var envio = await _api.EnviarAsync(_post, ruta, ana.Access, clsApiWebPruebas.Json(cuerpo));
             var error = (await VerificarContratoAsync(envio, "/web/cotizaciones/{folio}/enviar", _post, HttpStatusCode.BadRequest)).GetProperty("error");
             error.GetProperty("codigo").GetString().Should().Be("CORREO_DEMASIADOS_DESTINATARIOS");
-            error.GetProperty("detalle").GetProperty("recibidos").GetInt32().Should().Be(21);
+            error.GetProperty("detalle").GetProperty("maximo").GetInt32().Should().Be(10);
+            error.GetProperty("detalle").GetProperty("recibidos").GetInt32().Should().Be(11);
 
             using var vista = await _api.EnviarAsync(_post, $"/web/cotizaciones/{cotizacion.Folio}/correo/vista-previa", ana.Access, clsApiWebPruebas.Json(cuerpo));
             await VerificarErrorNegocioAsync(vista, "CORREO_DEMASIADOS_DESTINATARIOS");
@@ -163,11 +164,11 @@ public sealed class clsCabecerasCorreoEndpointsTests : IDisposable
 
         _api.MailSender.Recibidos.Should().BeEmpty();
 
-        // Las entradas vacías no cuentan y 20 justos sí salen.
+        // Las entradas vacías no cuentan y 10 justos sí salen.
         using var justo = await _api.EnviarAsync(_post, ruta, ana.Access, clsApiWebPruebas.Json(new
         {
-            para = Enumerable.Range(1, 10).Select(i => $"p{i}@cliente.com").Append("  ").ToArray(),
-            cc = Enumerable.Range(1, 10).Select(i => $"c{i}@cliente.com").Append(string.Empty).ToArray(),
+            para = Enumerable.Range(1, 5).Select(i => $"p{i}@cliente.com").Append("  ").ToArray(),
+            cc = Enumerable.Range(1, 5).Select(i => $"c{i}@cliente.com").Append(string.Empty).ToArray(),
         }));
         await VerificarContratoAsync(justo, "/web/cotizaciones/{folio}/enviar", _post, HttpStatusCode.OK);
         _api.MailSender.Recibidos.Should().ContainSingle();
