@@ -73,6 +73,76 @@ public sealed class clsIaCaidaTests
         clsChatClientConRespaldo.EsRecuperable(new AggregateException(new ArgumentException("x")), Ct).Should().BeFalse();
     }
 
+    /// <summary>
+    /// Validación de #226: un error del cliente (credenciales malas, 401/403, o un 400 de contenido) sigue sin ser indisponibilidad
+    /// aunque llegue dentro de un <see cref="AggregateException"/> o con un socket en su cadena: el código HTTP manda sobre la red.
+    /// </summary>
+    [Fact]
+    public void UnErrorDelClienteNoEsIndisponibilidadNiDentroDeUnAggregateException()
+    {
+        static HttpRequestException Http(System.Net.HttpStatusCode codigo) =>
+            new($"HTTP {(int)codigo}", new SocketException((int)SocketError.ConnectionReset), codigo);
+
+        clsChatClientConRespaldo.EsRecuperable(Http(System.Net.HttpStatusCode.Unauthorized), Ct).Should().BeFalse();
+        clsChatClientConRespaldo.EsRecuperable(new AggregateException(Http(System.Net.HttpStatusCode.Unauthorized)), Ct).Should().BeFalse();
+        clsChatClientConRespaldo.EsRecuperable(new AggregateException(Http(System.Net.HttpStatusCode.Forbidden)), Ct).Should().BeFalse();
+        clsChatClientConRespaldo.EsRecuperable(new InvalidOperationException("envoltura", Http(System.Net.HttpStatusCode.BadRequest)), Ct).Should().BeFalse();
+        clsChatClientConRespaldo.EsRecuperable(new AggregateException(Http(System.Net.HttpStatusCode.ServiceUnavailable)), Ct).Should().BeTrue("un 503 sí");
+    }
+
+    /// <summary>
+    /// Validación de #226: la cancelación del llamador no salta al respaldo aunque venga envuelta (en otra excepción o en un
+    /// <see cref="AggregateException"/> junto a un fallo de red), y con dos proveedores el respaldo no recibe la petición.
+    /// </summary>
+    [Fact]
+    public async Task LaCancelacionDelLlamadorEnvueltaNoPasaAlRespaldo()
+    {
+        using var cancelado = new CancellationTokenSource();
+        cancelado.Cancel();
+
+        clsChatClientConRespaldo.EsRecuperable(new InvalidOperationException("envoltura", new OperationCanceledException(cancelado.Token)), cancelado.Token)
+            .Should().BeFalse();
+        clsChatClientConRespaldo.EsRecuperable(new AggregateException(ConexionRechazada(), new TaskCanceledException("cancelada")), cancelado.Token)
+            .Should().BeFalse();
+
+        var respaldo = new clsClienteQueResponde("no debía responder");
+        var fallo = new AggregateException(new TaskCanceledException("cancelada", null, cancelado.Token));
+        using var cliente = new clsChatClientConRespaldo([new clsClienteQueFalla(fallo), respaldo], NullLogger<clsChatClientConRespaldo>.Instance);
+
+        (await ((Func<Task>)(async () => await cliente.GetResponseAsync("hola", cancellationToken: cancelado.Token)))
+            .Should().ThrowAsync<AggregateException>()).Which.Should().BeSameAs(fallo);
+        respaldo.Llamadas.Should().Be(0);
+    }
+
+    /// <summary>
+    /// Validación de #226: una cadena de internas cíclica (solo se puede armar por reflexión) o muy profunda no cuelga el filtro: el
+    /// recorrido tiene tope en <see cref="EsRecuperable"/>, en el código HTTP y en la lectura del 400 del gateway.
+    /// </summary>
+    [Fact]
+    public async Task UnaCadenaCiclicaOMuyProfundaNoCuelgaLaClasificacion()
+    {
+        var segunda = new InvalidOperationException("segunda");
+        var primera = new InvalidOperationException("primera", segunda);
+        typeof(Exception).GetField("_innerException", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .SetValue(segunda, primera);
+        var agregada = new AggregateException(primera, new AggregateException(primera));
+
+        // Sin tope, WaitAsync agota los 10 s (TimeoutException) en vez de colgar la suite.
+        var resultado = await Task.Run(() => (
+            clsChatClientConRespaldo.EsRecuperable(primera, Ct),
+            clsChatClientConRespaldo.EsRecuperable(agregada, Ct),
+            clsChatClientConRespaldo.Estado(primera)), Ct).WaitAsync(TimeSpan.FromSeconds(10), Ct);
+        resultado.Should().Be((false, false, (int?)null));
+
+        Exception profunda = new SocketException((int)SocketError.ConnectionRefused);
+        for (var i = 0; i < 200; i++)
+        {
+            profunda = new InvalidOperationException("nivel " + i, profunda);
+        }
+
+        clsChatClientConRespaldo.EsRecuperable(profunda, Ct).Should().BeFalse("más allá del tope no se busca la red caída");
+    }
+
     // De punta a punta con el SDK real (openai_compatible, el de OmniRoute) y un transporte que rechaza la conexión: los reintentos
     // del SDK terminan en IA_NO_DISPONIBLE, no en ERROR_INTERNO.
     [Fact]
@@ -119,8 +189,13 @@ public sealed class clsIaCaidaTests
 
     private sealed class clsClienteQueResponde(string texto) : IChatClient
     {
-        public Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, texto)));
+        public int Llamadas { get; private set; }
+
+        public Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
+        {
+            Llamadas++;
+            return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, texto)));
+        }
 
         public IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();

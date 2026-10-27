@@ -112,7 +112,8 @@ public sealed class clsChatClientConRespaldo : IChatClient
 
     /// <summary>
     /// La excepción, sus internas y, en un <see cref="AggregateException"/>, todas sus internas (en profundidad, con un tope para no
-    /// recorrer cadenas anómalas).
+    /// recorrer cadenas anómalas). El mismo tope tienen <see cref="Estado"/> y <see cref="SinCredenciales"/>: una cadena cíclica no
+    /// cuelga el filtro de excepciones.
     /// </summary>
     private static IEnumerable<Exception> Cadena(Exception error)
     {
@@ -136,7 +137,7 @@ public sealed class clsChatClientConRespaldo : IChatClient
         }
     }
 
-    private const int MaximoExcepcionesRecorridas = 64;
+    private const int MaximoExcepcionesRecorridas = clsEstadoHttpExcepcion.MaximoInternas;
 
     /// <summary>
     /// ¿El <c>error.message</c> del gateway EMPIEZA con <c>No credentials for provider:</c>? Se lee del cuerpo de la respuesta cruda de
@@ -145,7 +146,8 @@ public sealed class clsChatClientConRespaldo : IChatClient
     /// </summary>
     private static bool SinCredenciales(Exception error)
     {
-        for (var actual = error; actual is not null; actual = actual.InnerException)
+        var revisadas = 0;
+        for (var actual = error; actual is not null && revisadas < MaximoExcepcionesRecorridas; actual = actual.InnerException, revisadas++)
         {
             if (actual is ClientResultException resultado && MensajeDelCuerpo(CuerpoCrudo(resultado)) is { } delCuerpo)
             {
