@@ -263,8 +263,9 @@ public sealed class clsDirectorioEjecutivosIntegracionTests(clsBaseDatosPruebas 
     private static async Task<clsResultado<clsSesionEmitida>> LoginAsync(ServiceProvider proveedor, string nombreUsuario)
     {
         await using var ambito = proveedor.CreateAsyncScope();
-        return await ambito.ServiceProvider.GetRequiredService<IClsLoginClienteProService>()
+        var resultado = await ambito.ServiceProvider.GetRequiredService<IClsLoginClienteProService>()
             .IniciarSesionAsync(new clsSolicitudLoginClientePro(nombreUsuario), Ct);
+        return resultado.Coincidir<clsResultado<clsSesionEmitida>>(l => l.Sesion!, e => e);
     }
 
     private Task<string?> RegionalGuardadaAsync(string nombreUsuario) =>
