@@ -116,7 +116,8 @@ tags:
       - **Margen contra la política (HU-016.1, #154, decisiones del 2026-10-27):** el margen aplicado se compara con el margen de
         política de las **mismas rutas** (`margenPoliticaSugerido`, guardado en cada ruta al cotizar), calculado en el servidor.
         Rutas comparables = las de la versión vigente, sin las rechazadas, con `margenAplicado` y `margenPoliticaSugerido`.
-        `margen_politica_promedio` = promedio simple de su política; `margen_politica_ponderado` = SUM(política × `costoFinal`) /
+        `margen_politica_promedio` = promedio simple de su política; `margen_aplicado_promedio` = promedio simple de su margen
+        aplicado (las mismas rutas, para comparar simple contra simple); `margen_politica_ponderado` = SUM(política × `costoFinal`) /
         SUM(`costoFinal`) de las que tienen costo > 0; `desviacion_margen_politica` = SUM((aplicado − política) × `costoFinal`) /
         SUM(`costoFinal`) de esas mismas (el semáforo: verde ≥ 0, rojo < 0); `rutas_sin_margen_politica` = rutas con margen
         aplicado y sin política (no entran). Los márgenes son fracciones: la moneda y la TRM no los afectan.
@@ -871,6 +872,7 @@ paths:
                   ajustes_margen: 2
                   deadline_vencidas: 1
                   margen_politica_promedio: 0.15
+                  margen_aplicado_promedio: 0.1558
                   margen_politica_ponderado: 0.15
                   desviacion_margen_politica: 0.0061
                   rutas_sin_margen_politica: 0
@@ -1008,6 +1010,7 @@ paths:
                   ajustes_margen: 6
                   deadline_vencidas: 2
                   margen_politica_promedio: 0.15
+                  margen_aplicado_promedio: 0.1542
                   margen_politica_ponderado: 0.15
                   desviacion_margen_politica: 0.004
                   rutas_sin_margen_politica: 1
@@ -1039,6 +1042,7 @@ paths:
                       ajustes_margen: 2
                       deadline_vencidas: 1
                       margen_politica_promedio: 0.15
+                      margen_aplicado_promedio: 0.1558
                       margen_politica_ponderado: 0.15
                       desviacion_margen_politica: 0.0061
                       rutas_sin_margen_politica: 0
@@ -1069,6 +1073,7 @@ paths:
                       ajustes_margen: 0
                       deadline_vencidas: 0
                       margen_politica_promedio: null
+                      margen_aplicado_promedio: null
                       margen_politica_ponderado: null
                       desviacion_margen_politica: null
                       rutas_sin_margen_politica: 0
@@ -5571,7 +5576,7 @@ components:
                  conversion_sobre_cerradas, margen_promedio, margen_ponderado, costeo_total, costeo_ganadas, valor_cotizado_cop,
                  valor_ganado_cop, ganancias, cotizaciones_usd, tiempo_promedio_cotizacion_horas,
                  desviacion_promedio_margen, desviacion_promedio_margen_abs, ajustes_margen, deadline_vencidas,
-                 margen_politica_promedio, margen_politica_ponderado, desviacion_margen_politica, rutas_sin_margen_politica]
+                 margen_politica_promedio, margen_aplicado_promedio, margen_politica_ponderado, desviacion_margen_politica, rutas_sin_margen_politica]
       properties:
         cantidad:
           type: integer
@@ -5658,7 +5663,17 @@ components:
             cotizaron: rutas de la versión vigente, sin las rechazadas por la Mesa, con margen aplicado y con margen de política
             (4 decimales). `null` si no hay ninguna. Es la referencia de "Margen promedio" en "Mis cotizaciones" y en el tablero;
             no expone la tabla de políticas. `margen_promedio` NO es su par sobre las mismas rutas (es por cotización e incluye
-            las rutas sin política): no restarlos; el semáforo es `desviacion_margen_politica`.
+            las rutas sin política): no restarlos; su par es `margen_aplicado_promedio`. El semáforo es `desviacion_margen_politica`.
+        margen_aplicado_promedio:
+          type: number
+          nullable: true
+          description: |
+            HU-016.1 (#154, decisión del 2026-10-27). Promedio simple del margen aplicado (`margenAplicado`) de exactamente las
+            mismas rutas comparables de `margen_politica_promedio` (versión vigente, sin las rechazadas por la Mesa, con margen
+            aplicado y con margen de política; 4 decimales, half-to-even). `null` si no hay ninguna. Es el par directo de
+            `margen_politica_promedio`: aplicado simple contra política simple sobre las mismas rutas. No reemplaza a
+            `margen_promedio` (por cotización, incluye las rutas sin política) ni al semáforo (`desviacion_margen_politica`,
+            ponderado por costo).
         margen_politica_ponderado:
           type: number
           nullable: true

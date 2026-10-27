@@ -1474,6 +1474,7 @@ Ejemplo (del contrato): `PCN-DG-10082026-001` se crea el **10 de agosto** (v1, 1
 | `ajustes_margen` | int | Cantidad de esos ajustes |
 | `deadline_vencidas` | int o null | Sin resultado y con `deadline` anterior al momento de la consulta. **`null`** mientras la base no tenga la columna `deadline` (script `0004`) |
 | `margen_politica_promedio` | number o null | HU-016.1 (#154): promedio simple del margen de política (`margenPoliticaSugerido`) de las **mismas rutas** cotizadas (versión vigente, sin rechazadas, con margen aplicado y con política). `null` sin ninguna |
+| `margen_aplicado_promedio` | number o null | HU-016.1 (decisión del 2026-10-27): promedio simple del margen aplicado de **exactamente las mismas rutas** de `margen_politica_promedio`; su par directo para comparar simple contra simple. `null` sin ninguna |
 | `margen_politica_ponderado` | number o null | HU-016.1: esa política ponderada por `costoFinal` (rutas con costo > 0). `null` si ninguna tiene costo |
 | `desviacion_margen_politica` | number o null | HU-016.1: margen aplicado ponderado por costo menos la política ponderada, sobre las mismas rutas. **Semáforo:** verde ≥ 0, rojo < 0 |
 | `rutas_sin_margen_politica` | int | HU-016.1: rutas con margen aplicado y sin política guardada; no entran en la comparación (avisar si es > 0) |
@@ -1556,6 +1557,7 @@ Comprobación del `.feature` (comercial "ana", año 2026). A1 COP 1.000.000 gana
     "ajustes_margen": 2,
     "deadline_vencidas": 1,
     "margen_politica_promedio": 0.15,
+    "margen_aplicado_promedio": 0.1558,
     "margen_politica_ponderado": 0.15,
     "desviacion_margen_politica": 0.0061,
     "rutas_sin_margen_politica": 0
@@ -1593,6 +1595,7 @@ Comercial sin cotizaciones (200, estado vacío; construido con las reglas del co
     "desviacion_promedio_margen": null, "desviacion_promedio_margen_abs": null, "ajustes_margen": 0,
     "deadline_vencidas": null,
     "margen_politica_promedio": null,
+    "margen_aplicado_promedio": null,
     "margen_politica_ponderado": null,
     "desviacion_margen_politica": null,
     "rutas_sin_margen_politica": 0
@@ -1668,6 +1671,7 @@ Ejemplo exacto del spec (periodo 2026-08-01 a 2026-09-29):
     "ajustes_margen": 6,
     "deadline_vencidas": 2,
     "margen_politica_promedio": 0.15,
+    "margen_aplicado_promedio": 0.1542,
     "margen_politica_ponderado": 0.15,
     "desviacion_margen_politica": 0.004,
     "rutas_sin_margen_politica": 1
@@ -1701,6 +1705,7 @@ Ejemplo exacto del spec (periodo 2026-08-01 a 2026-09-29):
         "ajustes_margen": 2,
         "deadline_vencidas": 1,
         "margen_politica_promedio": 0.15,
+        "margen_aplicado_promedio": 0.1558,
         "margen_politica_ponderado": 0.15,
         "desviacion_margen_politica": 0.0061,
         "rutas_sin_margen_politica": 0
@@ -1734,6 +1739,7 @@ Ejemplo exacto del spec (periodo 2026-08-01 a 2026-09-29):
         "ajustes_margen": 0,
         "deadline_vencidas": 0,
         "margen_politica_promedio": null,
+        "margen_aplicado_promedio": null,
         "margen_politica_ponderado": null,
         "desviacion_margen_politica": null,
         "rutas_sin_margen_politica": 0

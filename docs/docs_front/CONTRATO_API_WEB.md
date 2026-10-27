@@ -133,6 +133,7 @@ Decisiones completas en `backend-dotnet/specs/decisiones/ADR-016-metricas-agrega
 | `desviacion_promedio_margen` / `desviacion_promedio_margen_abs` / `ajustes_margen` | Promedio de `MargenAjustes.diferencia` con signo / en valor absoluto, y cantidad de ajustes de la versión vigente |
 | `deadline_vencidas` | Sin resultado y con `deadline` ya vencido; `null` hasta que se aplique el script 0004 |
 | `margen_politica_promedio` | HU-016.1 (#154): promedio simple del `margenPoliticaSugerido` de las rutas comparables (versión vigente, sin rechazadas, con margen aplicado y con política). `null` sin ninguna. Ver §8.18 |
+| `margen_aplicado_promedio` | HU-016.1 (decisión del 2026-10-27): promedio simple del `margenAplicado` de exactamente las mismas rutas comparables de `margen_politica_promedio`; su par directo (aplicado simple contra política simple). `null` sin ninguna |
 | `margen_politica_ponderado` | HU-016.1: SUM(`margenPoliticaSugerido` × `costoFinal`) / SUM(`costoFinal`) de esas rutas con costo > 0. `null` si ninguna tiene costo |
 | `desviacion_margen_politica` | HU-016.1: SUM((`margenAplicado` − `margenPoliticaSugerido`) × `costoFinal`) / SUM(`costoFinal`) de las mismas rutas: aplicado ponderado menos política ponderada. **Semáforo:** verde ≥ 0, rojo < 0. No reemplaza a `desviacion_promedio_margen` |
 | `rutas_sin_margen_politica` | HU-016.1: rutas con margen aplicado y sin política guardada (anteriores a HU-021); no entran en la comparación |
@@ -1927,18 +1928,20 @@ Decisiones de la Gerencia Comercial del 2026-10-27: el "Margen promedio" de "Mis
 el promedio **simple** y el **ponderado por costo**, y el semáforo usa el **ponderado**. Todo es aditivo: ningún campo cambia.
 
 - `IndicadoresMetricas` (`indicadores` y `comerciales[].indicadores` de `GET /web/metricas/comercial` y `/regional`) trae
-  `margen_politica_promedio`, `margen_politica_ponderado`, `desviacion_margen_politica` y `rutas_sin_margen_politica` (definiciones
+  `margen_politica_promedio`, `margen_aplicado_promedio`, `margen_politica_ponderado`, `desviacion_margen_politica` y
+  `rutas_sin_margen_politica` (definiciones
   en §3.1). Mismo universo que el resto del tablero: versión vigente de cada cadena, sin las rutas rechazadas por la Mesa, el alcance del
   gerente (su regional) y del director (todas o `?regional=`), y `usuario_id` para filtrar. El margen es una fracción, así que la moneda
   y la TRM no lo cambian (el costo siempre está en COP).
 - Ejemplo: rutas con margen aplicado 10 %, 20 % y 30 %, política 15 %, 15 % y 25 % y costos 1M, 2M y 3M →
-  `margen_politica_promedio = 0.1833`, `margen_politica_ponderado = 0.2`, `desviacion_margen_politica = 0.0333` (verde).
+  `margen_politica_promedio = 0.1833`, `margen_aplicado_promedio = 0.2`, `margen_politica_ponderado = 0.2`, `desviacion_margen_politica = 0.0333` (verde).
 - "Margen aplicado ponderado por costo" para mostrar junto a la política: `margen_politica_ponderado + desviacion_margen_politica`.
   `margen_promedio` y `margen_ponderado` (sobre el precio) siguen como estaban. Con `rutas_sin_margen_politica > 0`, avisar que la
   comparación no incluye esas rutas.
-- `margen_promedio` **no** es el par de `margen_politica_promedio` sobre las mismas rutas: es el promedio por cotización (cada una con
-  su margen ponderado por el costo de sus rutas) e incluye las rutas sin política. Se pueden mostrar juntos como referencia, pero no
-  restarlos ni pintar el semáforo con ellos: el semáforo es solo `desviacion_margen_politica`.
+- "Margen aplicado simple" para mostrar junto a la política simple: `margen_aplicado_promedio` (mismas rutas que
+  `margen_politica_promedio`, se pueden restar). `margen_promedio` sigue siendo el promedio por cotización (cada una con su margen
+  ponderado por el costo de sus rutas) e incluye las rutas sin política: no se compara con la política. El semáforo es solo
+  `desviacion_margen_politica`.
 - **Nuevo** `GET /web/lineas-negocio` (comercial, gerente y director): las líneas activas para el desplegable de "Nueva solicitud",
   ordenadas por nombre, **sin margen ni método**. `linea_negocio` es el valor que se envía en `rutas[].linea_negocio`; `etiqueta` es el
   texto para mostrar. Se lee de la base en cada petición: una línea que la administración desactiva sale de inmediato.

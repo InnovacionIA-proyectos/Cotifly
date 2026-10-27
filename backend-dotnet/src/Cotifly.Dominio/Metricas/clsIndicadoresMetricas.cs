@@ -44,6 +44,14 @@ public sealed record clsIndicadoresMetricas
     public decimal? MargenPoliticaPromedio { get; init; }
 
     /// <summary>
+    /// HU-016.1 (#154, decisión del 2026-10-27): promedio simple del margen aplicado (<see cref="clsRutaMetrica.MargenAplicado"/>) de
+    /// exactamente las mismas rutas comparables de <see cref="MargenPoliticaPromedio"/>, para comparar aplicado simple contra política
+    /// simple. No reemplaza a <see cref="MargenPromedio"/>, que es por cotización e incluye las rutas sin política. 4 decimales;
+    /// <c>null</c> si no hay ninguna.
+    /// </summary>
+    public decimal? MargenAplicadoPromedio { get; init; }
+
+    /// <summary>
     /// HU-016.1 (#154): margen de política de esas rutas ponderado por <c>costoFinal</c> (las de costo &gt; 0). 4 decimales; <c>null</c> si
     /// ninguna tiene costo.
     /// </summary>

@@ -275,6 +275,7 @@ public sealed class clsMetricasTableroRepositoryTests(clsBaseDatosPruebas baseDa
         var indicadores = Cotifly.Dominio.Metricas.clsCalculadoraMetricas.Indicadores([fila], Reloj.AhoraUtc, deadlineDisponible: false);
         (indicadores.MargenPoliticaPromedio, indicadores.MargenPoliticaPonderado, indicadores.DesviacionMargenPolitica, indicadores.RutasSinMargenPolitica)
             .Should().Be((0.15m, 0.15m, -0.05m, 1));
+        indicadores.MargenAplicadoPromedio.Should().Be(0.10m, "solo la ruta 1: la 2 no tiene política y la 3 está rechazada");
     }
 
     [Fact]

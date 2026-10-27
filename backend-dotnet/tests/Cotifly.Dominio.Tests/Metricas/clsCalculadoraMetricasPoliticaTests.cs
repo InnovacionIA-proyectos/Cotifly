@@ -229,4 +229,74 @@ public sealed class clsCalculadoraMetricasPoliticaTests
         (indicadores.MargenPoliticaPromedio, indicadores.MargenPoliticaPonderado, indicadores.DesviacionMargenPolitica, indicadores.RutasSinMargenPolitica)
             .Should().Be((0.15m, 0.15m, 0.05m, 0));
     }
+
+    // ---- margen_aplicado_promedio (decisión del 2026-10-27): el aplicado simple sobre las mismas comparables que la política simple.
+
+    [Fact]
+    public void ElAplicadoPromedioEsElSimpleDeLasMismasRutasQueLaPoliticaPromedio()
+    {
+        var indicadores = Indicadores(Cotizacion(
+            Ruta(1, 1_000_000m, 0.10m, 0.15m),
+            Ruta(2, 2_000_000m, 0.20m, 0.15m),
+            Ruta(3, 3_000_000m, 0.30m, 0.25m)));
+
+        (indicadores.MargenAplicadoPromedio, indicadores.MargenPoliticaPromedio).Should().Be((0.2m, 0.1833m), "(0,10 + 0,20 + 0,30) / 3");
+    }
+
+    [Fact]
+    public void ElAplicadoPromedioDejaFueraLasRutasSinPoliticaAunqueElMargenPromedioLasCuente()
+    {
+        var indicadores = Indicadores(
+            Cotizacion(Ruta(1, 1_000_000m, 0.20m, 0.15m)) with { MargenAplicado = 0.20m },
+            Cotizacion(Ruta(1, 9_000_000m, 0.05m, null)) with { MargenAplicado = 0.05m });
+
+        indicadores.MargenAplicadoPromedio.Should().Be(0.2m, "la ruta sin política no es comparable");
+        indicadores.MargenPromedio.Should().Be(0.125m, "el margen_promedio por cotización sí la incluye");
+        indicadores.RutasSinMargenPolitica.Should().Be(1);
+    }
+
+    [Fact]
+    public void ElAplicadoPromedioNoMiraElCostoNiLasRutasSinAplicado()
+    {
+        var indicadores = Indicadores(
+            Cotizacion(Ruta(1, 2_000_000m, 0.20m, 0.10m)),
+            Cotizacion(Ruta(1, null, 0.15m, 0.30m, precio: 100m)),
+            Cotizacion(Ruta(1, -1_000_000m, 0.40m, 0.50m, precio: 100m)),
+            Cotizacion(Ruta(1, 5_000_000m, null, 0.40m, precio: 100m)));
+
+        indicadores.MargenAplicadoPromedio.Should().Be(0.25m, "(0,20 + 0,15 + 0,40) / 3: sin costo o con costo <= 0 también entra en el simple");
+        indicadores.MargenPoliticaPromedio.Should().Be(0.3m, "(0,10 + 0,30 + 0,50) / 3, las mismas rutas");
+    }
+
+    [Fact]
+    public void ElAplicadoPromedioEsNullSinRutasComparables()
+    {
+        Indicadores().MargenAplicadoPromedio.Should().BeNull();
+        Indicadores(Cotizacion(Ruta(1, 1_000_000m, 0.20m, null))).MargenAplicadoPromedio
+            .Should().BeNull("sin política no hay comparables, igual que margen_politica_promedio");
+    }
+
+    [Fact]
+    public void ElAplicadoPromedioRedondeaHalfToEvenA4Decimales()
+    {
+        // (0,1002 + 0,1003) / 2 = 0,10025 → 0,1002 (half-away-from-zero daría 0,1003).
+        var indicadores = Indicadores(
+            Cotizacion(Ruta(1, 1_000_000m, 0.1002m, 0.15m)),
+            Cotizacion(Ruta(1, 1_000_000m, 0.1003m, 0.15m)));
+
+        indicadores.MargenAplicadoPromedio.Should().Be(0.1002m);
+    }
+
+    [Fact]
+    public void ElAplicadoPromedioUsaLaVersionVigenteYNoLaGanada()
+    {
+        var cadena = Cotizacion(Ruta(1, 1_000_000m, 0.20m, 0.15m)) with
+        {
+            Ganada = true,
+            VersionResultado = new clsVersionResultadoMetrica(1_000_000m, "COP", 0m, 900_000m),
+            RutasResultado = [Ruta(1, 900_000m, 0.05m, 0.30m)],
+        };
+
+        Indicadores(cadena).MargenAplicadoPromedio.Should().Be(0.2m);
+    }
 }

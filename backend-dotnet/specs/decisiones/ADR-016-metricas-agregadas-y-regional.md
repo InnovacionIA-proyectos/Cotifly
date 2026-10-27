@@ -227,6 +227,10 @@ Decisiones de la Gerencia Comercial del 2026-10-27:
   - rutas **comparables** = las del universo del tablero (versión vigente de cada cadena, sin las rechazadas por la Mesa, #183) con
     `margenAplicado` (se cotizaron) y con `margenPoliticaSugerido`;
   - `margen_politica_promedio` = promedio simple de la política de las comparables;
+  - `margen_aplicado_promedio` (decisión del 2026-10-27, mismo día) = promedio simple del margen aplicado de **exactamente las mismas**
+    comparables, con el mismo redondeo (4 decimales, half-to-even) y `null` sin ninguna: es el par directo de
+    `margen_politica_promedio` (aplicado simple contra política simple). `margen_promedio` no sirve para eso porque es por cotización e
+    incluye las rutas sin política;
   - `margen_politica_ponderado` = Σ(política × `costoFinal`) / Σ `costoFinal` de las comparables con costo &gt; 0;
   - `desviacion_margen_politica` = Σ((aplicado − política) × `costoFinal`) / Σ `costoFinal` de esas mismas: el aplicado ponderado por
     costo menos la política ponderada, redondeado una sola vez (4 decimales, half-to-even). Semáforo: verde ≥ 0, rojo &lt; 0;
