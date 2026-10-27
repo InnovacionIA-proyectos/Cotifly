@@ -43,6 +43,10 @@ public interface IClsResultadoCotizacionService
 /// <c>motivo</c> queda en <c>motivoRechazo</c> en una perdida (en una ganada queda <c>"No aplica"</c>, HU-021.13). Límites de Nexo:
 /// <c>motivo</c> 100 y <c>comentario</c> 500 caracteres. El límite del motivo solo se valida en una perdida: en una ganada un
 /// motivo más largo no se rechaza ni se envía a Nexo (no se guarda en ningún lado).</para>
+/// <para><b>Motivo de pérdida de la lista (HU-018.1, #155).</b> En una perdida el <c>motivo</c> es obligatorio y de la lista configurada
+/// (<see cref="IClsCatalogoMotivosPerdida"/>, la de Nexo), y <c>Otro</c> exige <c>comentario</c>: si no, <c>MOTIVO_NO_PERMITIDO</c>
+/// (400). A Nexo va el motivo con la escritura de la lista y el comentario aparte (su contrato no cambia); con <c>Otro</c>, Cotifly guarda
+/// <c>"Otro: comentario"</c> en <c>motivoRechazo</c> para no perder la explicación. Los resultados guardados antes no se revalidan.</para>
 /// <para><b>Entrega implícita.</b> Si Nexo entrega la cotización al marcar el resultado (lo hacía antes de su issue #171), la
 /// respuesta trae <c>Entregada</c> y <c>estado_costeo</c> salta a <c>entregada</c> aunque estuviera en <c>autocosteo</c> o
 /// <c>pendiente_costeo</c>: es un estado válido, no una inconsistencia.</para>
@@ -74,8 +78,11 @@ public sealed class clsResultadoCotizacionService(
     IClsAuditoriaService auditoria,
     IClsReloj reloj,
     IClsPrecioCosteoService precioCosteo,
-    IOptions<clsOpcionesCosteoNexo> opciones) : IClsResultadoCotizacionService
+    IOptions<clsOpcionesCosteoNexo> opciones,
+    IClsCatalogoMotivosPerdida? motivosPerdida = null) : IClsResultadoCotizacionService
 {
+    private readonly IClsCatalogoMotivosPerdida _motivosPerdida = motivosPerdida ?? clsCatalogoMotivosPerdida.PorDefecto;
+
     public const string HerramientaAuditoria = "resultado_cotizacion_nexo";
 
     /// <summary>Evento de auditoría de la perdida solo en Cotifly (HU-013.17).</summary>
@@ -114,6 +121,20 @@ public sealed class clsResultadoCotizacionService(
         if (motivo is { Length: > LargoMaximoMotivo } || comentario is { Length: > LargoMaximoComentario })
         {
             return Invalido($"'motivo' admite máximo {LargoMaximoMotivo} caracteres y 'comentario' {LargoMaximoComentario} (límites de Nexo).");
+        }
+
+        // HU-018.1 (#155): en una perdida el motivo es de la lista (la de Nexo) y "Otro" exige comentario. A Nexo va el motivo de la lista
+        // y el comentario aparte, como antes; en Cotifly se guarda el motivo (con "Otro", "Otro: comentario"). Lo guardado antes no se revalida.
+        var motivoGuardado = motivo;
+        if (!ganada.Value)
+        {
+            var validado = _motivosPerdida.Validar(motivo, comentario);
+            if (validado.EsFallo)
+            {
+                return validado.Error;
+            }
+
+            (motivo, comentario, motivoGuardado) = (validado.Valor.Motivo, validado.Valor.Comentario, validado.Valor.ParaCotifly);
         }
 
         var cotizacion = usuarioId == Guid.Empty || string.IsNullOrWhiteSpace(folio)
@@ -176,7 +197,7 @@ public sealed class clsResultadoCotizacionService(
         // HU-013.17: Nexo no recibió la solicitud; si el cliente desistió, la perdida queda solo en Cotifly.
         if (cotizacion.EstadoCosteo == EstadoCosteo.ErrorEnvio)
         {
-            return await RegistrarPerdidaSinCosteoAsync(cotizacion, ganada.Value, motivo, versionEsperada);
+            return await RegistrarPerdidaSinCosteoAsync(cotizacion, ganada.Value, motivoGuardado, versionEsperada);
         }
 
         if (cotizacion.SolicitudNexoId is null)
@@ -203,7 +224,7 @@ public sealed class clsResultadoCotizacionService(
             {
                 // E2E 2026-10-22: Nexo CONFIRMA que ya no tiene la solicitud (404): no hay costeo que esperar. La perdida queda solo en
                 // Cotifly, como en error_envio (HU-013.17); antes respondía COSTEO_NEXO_SOLICITUD_NO_ENCONTRADA.
-                return await RegistrarPerdidaSinCosteoAsync(cotizacion, ganada.Value, motivo, versionEsperada);
+                return await RegistrarPerdidaSinCosteoAsync(cotizacion, ganada.Value, motivoGuardado, versionEsperada);
             }
 
             if (lectura.EsFallo)
@@ -220,8 +241,8 @@ public sealed class clsResultadoCotizacionService(
                 // Nexo CONFIRMA que no hay entrega: la perdida queda solo en Cotifly (HU-013.17, #127: el cliente desistió antes del costeo);
                 // la ganada queda pendiente de sincronizar y va a Nexo cuando la Mesa entregue (HU-033, #199).
                 return ganada.Value
-                    ? await RegistrarPendienteNexoAsync(cotizacion, ganada.Value, motivo, comentario, versionEsperada ?? cotizacion.VersionNegocio)
-                    : await RegistrarPerdidaSinCosteoAsync(cotizacion, ganada.Value, motivo, versionEsperada);
+                    ? await RegistrarPendienteNexoAsync(cotizacion, ganada.Value, motivoGuardado, comentario, versionEsperada ?? cotizacion.VersionNegocio)
+                    : await RegistrarPerdidaSinCosteoAsync(cotizacion, ganada.Value, motivoGuardado, versionEsperada);
             }
 
             previa = lectura.Valor;
@@ -243,7 +264,7 @@ public sealed class clsResultadoCotizacionService(
         if (marcada.EsFallo && marcada.Error.Codigo == clsCodigosError.CotizacionNoEntregada)
         {
             // HU-033 (#199): Nexo todavía no tiene la cotización entregada (autocosteo): el resultado queda solo en Cotifly, pendiente.
-            return await RegistrarPendienteNexoAsync(cotizacion, ganada.Value, motivo, comentario, versionEsperada ?? versionLeida);
+            return await RegistrarPendienteNexoAsync(cotizacion, ganada.Value, motivoGuardado, comentario, versionEsperada ?? versionLeida);
         }
 
         string? origenFoto = null;
@@ -252,12 +273,12 @@ public sealed class clsResultadoCotizacionService(
             // Nexo ya tiene el resultado: desde aquí sin el token de la petición (la lectura y la escritura local no se cortan).
             var (foto, origen) = await FotoParaAplicarAsync(cotizacion, usuarioId, previa, marcada.Valor);
             origenFoto = origen;
-            await RegistrarResultadoAsync(cotizacion, versionLeida, ganada.Value, motivo, marcada.Valor, foto);
+            await RegistrarResultadoAsync(cotizacion, versionLeida, ganada.Value, motivoGuardado, marcada.Valor, foto);
         }
 
         await auditoria.RegistrarAsync(
             HerramientaAuditoria,
-            new { folio = cotizacion.Folio, resultado = ganada.Value ? "ganada" : "perdida", motivo, cotizacion_nexo_id = cotizacion.CotizacionNexoId },
+            new { folio = cotizacion.Folio, resultado = ganada.Value ? "ganada" : "perdida", motivo = motivoGuardado, cotizacion_nexo_id = cotizacion.CotizacionNexoId },
             marcada.EsExitoso
                 ? (object)new
                 {

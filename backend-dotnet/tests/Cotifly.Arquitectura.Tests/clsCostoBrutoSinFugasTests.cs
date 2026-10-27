@@ -91,6 +91,113 @@ public sealed class clsCostoBrutoSinFugasTests
         CamposConCosto(typeof(clsRutaCosteo), nameof(clsRutaCosteo), []).Should().Equal($"{nameof(clsRutaCosteo)}.{nameof(clsRutaCosteo.CostoFinal)}");
     }
 
+    /// <summary>
+    /// HU-018.1 (#155, parte C): en el Excel de la cotización (<c>GET /web/cotizaciones/{folio}/excel</c>) todo campo de costo
+    /// (<c>Costo*</c>) o de margen (<c>Margen*</c>: con el margen y el precio se deduce el costo) cuelga de una propiedad <c>Interno</c>, que
+    /// es lo que <see cref="clsExcelCotizacion.SinCostos"/> quita para el gerente y el director. Un campo de costo nuevo fuera de
+    /// <c>Interno</c> rompe esta prueba antes de llegar al Excel del lector que no es dueño.
+    /// </summary>
+    [Fact]
+    public void ElExcelDeLaCotizacionSoloTraeCostosYMargenesDentroDeInterno()
+    {
+        var internos = CamposInternos(typeof(clsExcelCotizacion), nameof(clsExcelCotizacion), []).ToList();
+
+        internos.Should().NotBeEmpty("la versión del dueño sí trae costos y márgenes");
+        internos.Should().Contain($"{nameof(clsExcelCotizacion)}.{nameof(clsExcelCotizacion.Rutas)}.{nameof(clsExcelRuta.Interno)}.{nameof(clsExcelInternoRuta.CostoBruto)}");
+        internos.Where(c => !c.Split('.').Contains(nameof(clsExcelRuta.Interno))).Should()
+            .BeEmpty("el costo y el margen del Excel solo viajan dentro de Interno, que SinCostos() quita");
+    }
+
+    /// <summary>
+    /// HU-018.1 (#155, parte C): el Excel de la cotización no usa la vista del costeo (<see cref="clsCosteoCotizacion"/>): arma su propio
+    /// modelo desde lo guardado, con lo interno aparte.
+    /// </summary>
+    [Fact]
+    public void ElExcelDeLaCotizacionNoUsaLaVistaDelCosteo()
+    {
+        var prohibidos = _vistasConCosto.Select(t => t.FullName!).ToHashSet(StringComparer.Ordinal);
+        string[] excel =
+        [
+            typeof(Cotifly.Aplicacion.Cotizaciones.Services.clsExportacionCotizacionService).FullName!,
+            typeof(Cotifly.Infraestructura.Cotizaciones.Services.clsExportadorExcelCotizacionClosedXml).FullName!,
+        ];
+
+        var tipos = clsCapas.Modelo.Types.Where(t => excel.Any(e => t.FullName == e || t.FullName.StartsWith(e + "+", StringComparison.Ordinal))).ToList();
+
+        tipos.Select(t => t.FullName).Should().Contain(excel);
+        tipos.SelectMany(t => t.Dependencies).Where(d => prohibidos.Contains(d.Target.FullName)).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// HU-018.1 (#155, parte C): <see cref="clsExcelCotizacion.SinCostos"/> deja en <c>null</c> TODAS las propiedades <c>Interno</c> del
+    /// árbol (cabecera, rutas, camiones, conexos y totales), con todas llenas en la versión del dueño.
+    /// </summary>
+    [Fact]
+    public void SinCostosDejaElExcelDelLectorSinNadaInterno()
+    {
+        var interno = new clsExcelCotizacion(
+            "PCN-AB-01012026-001", "Cliente", "900111222", "Ana", "spot", "COP", 0m, "entregada", null, null, false, DateTimeOffset.UnixEpoch, false,
+            [
+                new clsExcelRuta(1, "Buenaventura", "Bogotá", "Costeada", false, null, 1000m, 1, 100m, 10m, 110m,
+                    [new clsExcelCamion(1, "3S3", "FURGON", 1000m, "Costeado", true, 100m, new clsExcelInternoCamion(80m, 0m, 0m, 80m, 0.2m))],
+                    [new clsExcelConexo("Cargue", "logistico", 1m, 10m, new clsExcelInternoConexo(8m))],
+                    new clsExcelInternoRuta(80m, 0m, 0m, 8m, 88m, 0.2m, 0.2m, "politica_linea", "margen")),
+            ],
+            new clsExcelTotales(1, 1, 0, 1000m, 100m, 10m, 110m, new clsExcelInternoTotales(88m)));
+
+        ValoresInternos(interno).Should().HaveCount(4, "la versión del dueño trae lo interno de la ruta, el camión, el conexo y los totales");
+        var lector = interno.SinCostos();
+
+        lector.SoloLectura.Should().BeTrue();
+        ValoresInternos(lector).Should().BeEmpty("el Excel del gerente y del director no lleva nada interno");
+        lector.Rutas[0].PrecioRuta.Should().Be(110m, "los precios se conservan");
+    }
+
+    /// <summary>Las propiedades <c>Interno</c> con valor en todo el árbol de <paramref name="valor"/>.</summary>
+    private static List<object> ValoresInternos(object? valor)
+    {
+        if (valor is null || valor is string || valor.GetType().Namespace?.StartsWith("Cotifly.", StringComparison.Ordinal) != true)
+        {
+            return valor is IEnumerable lista and not string ? [.. lista.Cast<object?>().SelectMany(ValoresInternos)] : [];
+        }
+
+        var encontrados = new List<object>();
+        foreach (var propiedad in valor.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                     .Where(p => p.GetIndexParameters().Length == 0 && p.Name != "EqualityContract"))
+        {
+            var hijo = propiedad.GetValue(valor);
+            if (propiedad.Name == nameof(clsExcelRuta.Interno) && hijo is not null)
+            {
+                encontrados.Add(hijo);
+            }
+
+            encontrados.AddRange(ValoresInternos(hijo));
+        }
+
+        return encontrados;
+    }
+
+    /// <summary>Rutas de los campos <c>Costo*</c> o <c>Margen*</c> en todo el árbol de <paramref name="tipo"/>.</summary>
+    private static IEnumerable<string> CamposInternos(Type tipo, string ruta, HashSet<Type> vistos)
+    {
+        if (Elemento(tipo) is { } elemento)
+        {
+            tipo = elemento;
+        }
+
+        if (tipo.Namespace?.StartsWith("Cotifly.", StringComparison.Ordinal) != true || !vistos.Add(tipo))
+        {
+            return [];
+        }
+
+        return tipo.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Where(p => p.GetIndexParameters().Length == 0 && p.Name != "EqualityContract")
+            .SelectMany(p => p.Name.StartsWith("Costo", StringComparison.Ordinal) || p.Name.StartsWith("Margen", StringComparison.Ordinal)
+                ? [$"{ruta}.{p.Name}"]
+                : CamposInternos(p.PropertyType, $"{ruta}.{p.Name}", vistos))
+            .ToList();
+    }
+
     private static bool EnCamino(string espacio, string camino) =>
         clsCapas.Todas.Select(a => $"{a.GetName().Name}.{camino}")
             .Any(raiz => espacio == raiz || espacio.StartsWith(raiz + ".", StringComparison.Ordinal));

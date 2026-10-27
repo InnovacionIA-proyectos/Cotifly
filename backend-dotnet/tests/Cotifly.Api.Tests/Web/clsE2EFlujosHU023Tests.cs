@@ -566,26 +566,26 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
 
         await api.FinalizarSiCorrespondeAsync(ana.Access, folio); // HU-036.3: como el frontend
         using (var perdida = await api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", ana.Access,
-            """{"resultado":"perdida","motivo":"Precio alto","comentario":"Pidió 5 % menos"}""", await EtagAsync(api, ana, folio)))
+            """{"resultado":"perdida","motivo":"Valor muy alto","comentario":"Pidió 5 % menos"}""", await EtagAsync(api, ana, folio)))
         {
             await VerificarContratoAsync(perdida, "/web/cotizaciones/{folio}/resultado", _post, HttpStatusCode.OK);
         }
 
         _nexo.Resultado(solicitud).Should().Be("Perdida");
         (await Fila($"SELECT CONCAT(CAST(ganada AS nvarchar(1)), '|', motivoRechazo, '|', estadoCosteo) FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'"))
-            .Should().Be("0|Precio alto|entregada", "el comentario no se guarda en Cotifly");
+            .Should().Be("0|Valor muy alto|entregada", "el comentario no se guarda en Cotifly");
 
         // Una descartada por la Mesa se cierra con el seguimiento interino.
         using var otra = await api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, clsCosteoEndpointsTests.Formulario());
         var folio2 = (await VerificarContratoAsync(otra, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
         _nexo.Descartar(_nexo.SolicitudesCreadas[^1]);
         await api.ProcesarPollingAsync(folio2);
-        using (var descartada = await api.EnviarAsync(_post, $"/web/cotizaciones/{folio2}/seguimiento", ana.Access, """{"ganada":false,"motivo_rechazo":"Descartada"}"""))
+        using (var descartada = await api.EnviarAsync(_post, $"/web/cotizaciones/{folio2}/seguimiento", ana.Access, """{"ganada":false,"motivo_rechazo":"Cliente desistió del servicio"}"""))
         {
             (await VerificarContratoAsync(descartada, "/web/cotizaciones/{folio}/seguimiento", _post, HttpStatusCode.OK)).GetProperty("ganada").GetBoolean().Should().BeFalse();
         }
 
-        (await Fila($"SELECT CONCAT(CAST(ganada AS nvarchar(1)), '|', motivoRechazo) FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio2}'")).Should().Be("0|Descartada");
+        (await Fila($"SELECT CONCAT(CAST(ganada AS nvarchar(1)), '|', motivoRechazo) FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio2}'")).Should().Be("0|Cliente desistió del servicio");
         using var mis = await api.EnviarAsync(_get, "/web/mis-cotizaciones", ana.Access);
         (await VerificarContratoAsync(mis, "/web/mis-cotizaciones", _get, HttpStatusCode.OK)).GetRawText().Should().Contain(folio).And.Contain(folio2);
     }

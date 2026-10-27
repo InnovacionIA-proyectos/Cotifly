@@ -101,6 +101,26 @@ public sealed class clsResultadoDiferidoNexoTests
         _cotizacion.SincronizacionResultado.Should().Be(SincronizacionResultadoNexo.Sincronizado);
     }
 
+    /// <summary>
+    /// HU-018.1 (#155): con "Otro" Cotifly guarda "Otro: comentario"; a Nexo va el motivo de la lista ("Otro") y el comentario aparte, y
+    /// un motivo libre guardado antes de la lista sale igual (no se revalida).
+    /// </summary>
+    [Theory]
+    [InlineData("Otro: Cerró la planta", "Cerró la planta", "Otro")]
+    [InlineData("Precio alto", null, "Precio alto")]
+    public async Task HU0181_UnaPerdidaPendienteConOtroViajaConElMotivoDeLaListaYElComentarioAparte(string guardado, string? comentario, string aNexo)
+    {
+        Autocosteo();
+        _cotizacion.RegistrarResultadoPendienteNexo(false, guardado, comentario, _reloj.AhoraUtc);
+        Entregada();
+
+        (await Sincronizacion().SincronizarAsync(_cotizacion, _reloj.AhoraUtc, Ct)).Should().BeTrue();
+
+        await _nexo.Received(1).MarcarResultadoAsync(_ana, "COT-1",
+            Arg.Is<clsResultadoNexo>(r => !r.Ganada && r.Motivo == aNexo && r.Comentario == comentario), Arg.Any<CancellationToken>());
+        _cotizacion.MotivoRechazo.Should().Be(guardado, "Cotifly conserva el motivo con su comentario");
+    }
+
     [Fact]
     public async Task SiNexoYaTieneOtroResultadoMandaNexoYQuedaAnotado()
     {
