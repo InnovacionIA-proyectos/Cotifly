@@ -22,6 +22,15 @@ public sealed class clsCabecerasCorreoTests
     [InlineData("Hola\u007Fmundo")]
     [InlineData("Hola\u001Bmundo")]
     [InlineData("Hola\r\n")]
+    // Validación #228: los demás separadores que algún parser trata como salto de línea (VT, FF, FS, GS, RS, US) y C1.
+    [InlineData("Hola\u000BBcc: x@y.com")]
+    [InlineData("Hola\u000CBcc: x@y.com")]
+    [InlineData("Hola\u001CBcc: x@y.com")]
+    [InlineData("Hola\u001DBcc: x@y.com")]
+    [InlineData("Hola\u001EBcc: x@y.com")]
+    [InlineData("Hola\u001FBcc: x@y.com")]
+    [InlineData("Hola\u008DBcc: x@y.com")]
+    [InlineData("\nBcc: x@y.com")]
     public void UnTextoConCaracteresDeControlNoVaEnUnaCabecera(string texto) =>
         clsCabecerasCorreo.TieneCaracteresDeControl(texto).Should().BeTrue();
 
@@ -31,6 +40,12 @@ public sealed class clsCabecerasCorreoTests
     [InlineData("Cotización PCN-001 — Botero Soto")]
     [InlineData("Ñandú, acción y café ☕ 👍🏽")]
     [InlineData("[QA] Cotización PCN-001")]
+    // Validación #228: texto literal, sin saltos reales. MailSender lo codifica como cualquier otro asunto; ninguno abre otra cabecera.
+    [InlineData("Hola%0d%0aBcc: x@y.com")]
+    [InlineData("Hola\\r\\nBcc: x@y.com")]
+    [InlineData("=?utf-8?q?Hola=0D=0ABcc:_x@y.com?=")]
+    [InlineData("Hola\u200BBcc")]
+    [InlineData("Hola\uFEFFBcc")]
     public void UnTextoSinCaracteresDeControlSiVa(string? texto) =>
         clsCabecerasCorreo.TieneCaracteresDeControl(texto).Should().BeFalse();
 
@@ -42,6 +57,10 @@ public sealed class clsCabecerasCorreoTests
     [InlineData("o'brien@empresa.ie")]
     [InlineData("josé@empresa.co")]
     [InlineData("x_y-z@mi-empresa.com")]
+    // Validación #228: dominios internacionalizados, en Unicode y en punycode.
+    [InlineData("usuario@bücher.de")]
+    [InlineData("usuario@xn--bcher-kva.de")]
+    [InlineData("usuario@empresa.xn--p1ai")]
     public void UnaDireccionValida(string email) => clsCabecerasCorreo.EsDireccionValida(email).Should().BeTrue();
 
     [Theory]
@@ -78,6 +97,25 @@ public sealed class clsCabecerasCorreoTests
     [InlineData(" cliente@empresa.com")]
     [InlineData("cliente\u200B@empresa.com")]
     [InlineData("cliente\u202E@empresa.com")]
+    // Validación #228: más vectores (ancho cero, BOM, NBSP, formas de ancho completo, marcas combinantes, emoji, ángulos y comentarios).
+    [InlineData("cliente\uFEFF@empresa.com")]
+    [InlineData("cliente@empresa\u200B.com")]
+    [InlineData("cliente\u2060@empresa.com")]
+    [InlineData("cliente\u00A0@empresa.com")]
+    [InlineData("cliente\uFF20empresa.com")]
+    [InlineData("cliente\uFF0Cotro@empresa.com")]
+    [InlineData("jose\u0301@empresa.com")]
+    [InlineData("cliente\uD83D\uDE00@empresa.com")]
+    [InlineData("<cliente@empresa.com>")]
+    [InlineData("cliente@empresa.com (Cliente)")]
+    [InlineData("cliente@(c)empresa.com")]
+    [InlineData("cliente@empresa.com>")]
+    [InlineData("a@b@c.com")]
+    [InlineData("cliente@empresa.com\u0085")]
+    [InlineData("cliente@empresa.com\u2029")]
+    [InlineData("cliente@empresa.com\tBcc")]
+    [InlineData("cliente@empresa.com\u000B")]
+    [InlineData("cliente@emp%0d%0aresa.com")]
     [InlineData("")]
     [InlineData(null)]
     public void UnaDireccionInvalida(string? email) => clsCabecerasCorreo.EsDireccionValida(email).Should().BeFalse();
