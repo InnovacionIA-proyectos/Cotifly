@@ -140,4 +140,6 @@ Característica: Envío de la cotización por correo
     Entonces la vista previa tiene el asunto "Cotización PCN-11102026 — Botero Soto" y adjunta "PCN-11102026.pdf"
     Y la vista previa trae precargado "compras@cliente.com"
     Y la vista previa avisa que es un ambiente de pruebas
+    # OBS-1027-5 (#226, ADR-023): al redirigir el correo sale sin CC ni CCO; la vista previa no anuncia la copia oculta al comercial.
+    Y la vista previa no anuncia la copia oculta porque al redirigir el correo sale sin CC ni CCO
     Y la vista previa no envía ningún correo

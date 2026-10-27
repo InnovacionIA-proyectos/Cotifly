@@ -195,6 +195,13 @@ public sealed class clsPasosCorreo(clsContextoEscenario contexto)
         correo.IdMailSender.Should().Be(contexto.MailSender.Recibidos[^1].Id);
     }
 
+    [Then("la vista previa no anuncia la copia oculta porque al redirigir el correo sale sin CC ni CCO")]
+    public void EntoncesLaVistaPreviaNoAnunciaCopiaOculta()
+    {
+        _vistaPrevia!.CopiaOculta.Should().BeNull();
+        _vistaPrevia.Aviso.Should().Contain("sin CC ni CCO");
+    }
+
     [Then("la vista previa avisa que es un ambiente de pruebas")]
     public void EntoncesLaVistaPreviaAvisa()
     {

@@ -12,7 +12,8 @@ public static class clsProteccionCorreo
 {
     /// <summary>Aviso de la vista previa cuando el ambiente redirige los correos.</summary>
     public static string AvisoVistaPrevia(string buzon) =>
-        $"Ambiente de pruebas: el correo NO llegará a los destinatarios; se redirige al buzón de pruebas {buzon} con el asunto marcado [QA].";
+        $"Ambiente de pruebas: el correo NO llegará a los destinatarios; se redirige al buzón de pruebas {buzon} con el asunto marcado [QA], "
+        + "sin CC ni CCO (tampoco la copia oculta al comercial).";
 
     /// <summary>
     /// El mensaje que sale al transporte y el buzón al que se redirigió (<c>null</c> si va a los destinatarios reales). Solo con
