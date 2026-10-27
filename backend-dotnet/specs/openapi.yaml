@@ -2481,6 +2481,111 @@ paths:
         '415':
           $ref: '#/components/responses/TipoContenidoNoSoportado'
 
+  /web/cotizaciones/{folio}/costeo/margen/lineas:
+    put:
+      operationId: ajustarMargenCosteoLineas
+      tags: [web]
+      summary: Aplica el mismo margen (o vuelve al sugerido) en varias rutas o en todas, en una sola operación
+      x-issue: '#231 (HU-041.1)'
+      description: |
+        HU-041.1 (#231, ADR-025). La versión masiva de `PUT .../costeo/margen`: las MISMAS reglas que una llamada por ruta, pero
+        atómica. Si una ruta no admite el cambio, **no cambia ninguna** y el error dice cuál la bloqueó en `detalle.linea_orden` y
+        `detalle.linea_solicitud_id` (más los datos propios del error, p. ej. `detalle.margen_sugerido` de `JUSTIFICACION_REQUERIDA`).
+
+        - **Rutas:** `lineas` (los `rutas[].linea_orden`, de 1 a 1000, sin repetir) o `todas: true` (las rutas cotizables: las
+          rechazadas por la Mesa de Costeo no cuentan; si no queda ninguna, 409 `SIN_RUTAS_COTIZABLES`). Exactamente una de las dos.
+          Una ruta pedida que no existe: 400 `RUTA_INEXISTENTE`; una pedida que la Mesa rechazó: 409 `RUTA_RECHAZADA`.
+        - **Margen:** `margen` (fracción de 0 a 0,99, el mismo para todas; 400 `AJUSTE_MARGEN_INVALIDO` fuera de rango) o
+          `revertir_sugerido: true` (cada ruta vuelve a SU `margen_sugerido` y `origen_margen` deja de ser `negociado`; una ruta sin
+          sugerido: 400 `AJUSTE_MARGEN_INVALIDO`). Exactamente una de las dos (si no, 400 `ErrorWeb`).
+        - `justificacion` es obligatoria si `margen` queda por debajo del sugerido de ALGUNA ruta elegida (400
+          `JUSTIFICACION_REQUERIDA` con esa ruta); se guarda en `MargenAjustes.motivo` de cada ruta ajustada.
+        - Cada ruta necesita precio (409 `COSTEO_NO_LISTO` con la ruta). Regla del PDF (ADR-018 §11) y cotización finalizada
+          (HU-036.3): 409 `PDF_YA_ENVIADO` con la llamada de la versión nueva en `detalle`.
+        - Con `margen`, cada ruta que cambia queda en `MargenAjustes` (con su ruta y su sugerido) y `origen_margen = negociado`,
+          como por ruta. Volver al sugerido no registra un ajuste negociado (queda en la auditoría).
+        - Las rutas que ya tienen ese margen no cambian; si ninguna cambia, 200 sin invalidar el PDF ni subir la versión.
+        - **Una sola** invalidación del PDF vigente y **una sola** entrada de auditoría (`EventosHerramienta`, herramienta
+          `ajustar_margen_costeo_lineas`, con las rutas cambiadas) por operación.
+        - `If-Match` **obligatorio** (428 / 409 `CONFLICTO_CONCURRENCIA`). `Idempotency-Key` opcional: la repetición con la misma
+          clave devuelve la respuesta guardada sin volver a ejecutar. Solo el dueño (404 si no es suya).
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/Folio'
+        - $ref: '#/components/parameters/IfMatchObligatorio'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MargenLineasWeb'
+            examples:
+              margen:
+                summary: El mismo margen en las rutas 1, 2 y 4
+                value:
+                  lineas: [1, 2, 4]
+                  margen: 0.2
+              revertir:
+                summary: Todas las rutas vuelven a su margen sugerido
+                value:
+                  todas: true
+                  revertir_sugerido: true
+      responses:
+        '200':
+          description: Margen aplicado en las rutas elegidas y precios recalculados (esas rutas y el total)
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CosteoCotizacion'
+        '400':
+          description: '`AJUSTE_MARGEN_INVALIDO`, `JUSTIFICACION_REQUERIDA` (con `detalle.margen_sugerido`) o `RUTA_INEXISTENTE` (`ErrorNegocio`, con `detalle.linea_orden` de la ruta que bloquea); `ErrorWeb` si la forma no es válida (`lineas` y `todas` juntas o ninguna, `margen` y `revertir_sugerido` juntos o ninguno, `lineas` vacía, repetida o con más de 1000) o la `Idempotency-Key` está fuera de largo'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorNegocio'
+                  - $ref: '#/components/schemas/ErrorWeb'
+              examples:
+                justificacion:
+                  value:
+                    error:
+                      codigo: JUSTIFICACION_REQUERIDA
+                      mensaje: "El margen 12 % queda por debajo del sugerido (15 %): escribe la justificación."
+                      detalle:
+                        margen_sugerido: 0.15
+                        linea_orden: 3
+                        linea_solicitud_id: "5b1f6a1e-2c3d-4e5f-8a9b-0c1d2e3f4a5b"
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '404':
+          $ref: '#/components/responses/NoEsTuya'
+        '409':
+          description: '`COSTEO_NO_LISTO` o `RUTA_RECHAZADA` (con `detalle.linea_orden` y `detalle.linea_solicitud_id` de la ruta que bloquea), `SIN_RUTAS_COTIZABLES`, `PDF_YA_ENVIADO` (enviada, con resultado o finalizada; `detalle` con la versión nueva), `CONFLICTO_CONCURRENCIA` o `IDEMPOTENCY_KEY_REUTILIZADA`; ninguna ruta cambia'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+              example:
+                error:
+                  codigo: COSTEO_NO_LISTO
+                  mensaje: "La cotización PCN-900555111-DG-05102026-001 todavía no tiene el costeo de Nexo con margen aplicado."
+                  detalle:
+                    linea_orden: 2
+                    linea_solicitud_id: "7c2e6b2f-3d4e-4f60-9b0c-1d2e3f4a5b6c"
+        '428':
+          $ref: '#/components/responses/PrecondicionRequerida'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
+
   /web/cotizaciones/{folio}/costeo/re-solicitar:
     post:
       operationId: reSolicitarCosteo
@@ -3076,6 +3181,166 @@ paths:
           $ref: '#/components/responses/NoEsTuya'
         '409':
           description: '`COSTEO_NO_LISTO` (todavía sin precio), `RUTA_RECHAZADA` (HU-028.1, #183: la ruta indicada fue rechazada por la Mesa de Costeo), `PDF_YA_ENVIADO` (ya enviada o con resultado) o `CONFLICTO_CONCURRENCIA`; sin cambios'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '428':
+          $ref: '#/components/responses/PrecondicionRequerida'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
+
+  /web/cotizaciones/{folio}/costeo/servicios-conexos/lineas:
+    post:
+      operationId: agregarServicioConexoLineas
+      tags: [web]
+      summary: Agrega un servicio conexo del catálogo a varias rutas o a todas, en una sola operación
+      x-issue: '#231 (HU-041.1)'
+      description: |
+        HU-041.1 (#231, ADR-025). Agrega el servicio `servicio_id` del catálogo de Nexo (`GET /web/servicios-conexos`), con la misma
+        `cantidad`, a las rutas elegidas (`lineas` o `todas: true`, como en `PUT .../costeo/margen/lineas`). Atómica: si una ruta no lo
+        admite, no cambia ninguna y el error trae `detalle.linea_orden` y `detalle.linea_solicitud_id` de la que bloqueó.
+
+        - Las mismas reglas que `POST .../costeo/servicios-conexos` por ruta: no en licitaciones (409 `ESTADO_NO_PERMITE`,
+          `detalle.motivo = LICITACION`), costeo con margen (409 `COSTEO_NO_LISTO`), regla del PDF y cotización finalizada (409
+          `PDF_YA_ENVIADO`), ruta no rechazada (409 `RUTA_RECHAZADA`) y con su línea en la cotización de Nexo (409
+          `LINEA_SIN_COTIZACION_NEXO`).
+        - **Nexo (ADR-025).** Cotifly NO llama al `POST` de conexos de Nexo dentro de esta petición (no podría deshacer un éxito
+          parcial: Nexo no tiene DELETE). El conexo se guarda en cada ruta con el **costo del catálogo de Nexo** (como un conexo
+          capturado con la ruta) y queda `estado_nexo = pendiente`; el envío diferido del polling lo lleva a la línea del primer camión
+          de cada ruta, una sola vez, y pasa a `enviado` (o `incierto` / `fallido_definitivo`, visibles en el costeo). Mientras quede
+          alguno `pendiente`, finalizar responde 409 `COTIZACION_NO_FINALIZABLE` (`conexos_pendientes_en_nexo`). El catálogo se
+          lee antes de cambiar nada: un servicio inactivo o inexistente es 400 `CONEXO_INVALIDO` (`detalle.motivo =
+          CONEXO_NO_ENCONTRADO`); Nexo caído, 503 `NEXO_NO_DISPONIBLE` (o 403 `NEXO_SIN_PERMISO`), sin cambios.
+        - Las rutas que ya tienen ese servicio no cambian (para cambiar su cantidad: `PUT .../costeo/servicios-conexos`); si todas lo
+          tienen, 200 sin cambios. En la respuesta cada conexo trae `servicio_id` (el id del catálogo) para reconocerlo entre rutas.
+        - **Una sola** invalidación del PDF vigente y **una sola** entrada de auditoría (`agregar_servicio_conexo_lineas`).
+        - `If-Match` **obligatorio** (428 / 409). `Idempotency-Key` opcional. Solo el dueño.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/Folio'
+        - $ref: '#/components/parameters/IfMatchObligatorio'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConexoLineasWeb'
+            example:
+              todas: true
+              servicio_id: "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d"
+              cantidad: 1
+      responses:
+        '200':
+          description: Conexo agregado a las rutas elegidas, con su precio (`estado_nexo = pendiente` hasta que el envío diferido lo lleve a Nexo)
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CosteoCotizacion'
+        '400':
+          description: '`CONEXO_INVALIDO` o `RUTA_INEXISTENTE` (`ErrorNegocio`); `ErrorWeb` si la forma no es válida (`lineas`/`todas`, `servicio_id` que no es UUID, `cantidad` fuera de 0,01 a 999.999,99) o la `Idempotency-Key` está fuera de largo'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorNegocio'
+                  - $ref: '#/components/schemas/ErrorWeb'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: '`NEXO_SIN_PERMISO` al leer el catálogo de conexos de Nexo; sin cambios'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '404':
+          $ref: '#/components/responses/NoEsTuya'
+        '409':
+          description: '`COSTEO_NO_LISTO`, `RUTA_RECHAZADA` o `LINEA_SIN_COTIZACION_NEXO` (con `detalle.linea_orden` y `detalle.linea_solicitud_id`), `ESTADO_NO_PERMITE` (licitación), `SIN_RUTAS_COTIZABLES`, `PDF_YA_ENVIADO`, `CONFLICTO_CONCURRENCIA` o `IDEMPOTENCY_KEY_REUTILIZADA`; ninguna ruta cambia'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '428':
+          $ref: '#/components/responses/PrecondicionRequerida'
+        '503':
+          description: '`NEXO_NO_DISPONIBLE`: no se pudo leer el catálogo de conexos de Nexo; sin cambios'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
+
+  /web/cotizaciones/{folio}/costeo/servicios-conexos/lineas/quitar:
+    post:
+      operationId: quitarServicioConexoLineas
+      tags: [web]
+      summary: Quita un servicio conexo de varias rutas o de todas, en una sola operación
+      x-issue: '#231 (HU-041.1)'
+      description: |
+        HU-041.1 (#231, ADR-025). Quita de las rutas elegidas (`lineas` o `todas: true`) el conexo cuyo `servicio_id` (id del catálogo,
+        `servicios_conexos[].servicio_id`) es el pedido: se BORRA su fila, como `PUT .../costeo/servicios-conexos` por ruta, y se
+        recalculan esas rutas y el total. Nexo no cambia (no hay DELETE de conexos; Cotifly es la fuente de los conexos). Atómica:
+        si una ruta no lo admite, no cambia ninguna y el error trae `detalle.linea_orden`.
+
+        - Las mismas reglas del `PUT` por ruta: costeo con precio (409 `COSTEO_NO_LISTO`), regla del PDF y cotización finalizada (409
+          `PDF_YA_ENVIADO`), ruta existente (400 `RUTA_INEXISTENTE`) y no rechazada (409 `RUTA_RECHAZADA`).
+        - Las rutas que no tienen ese servicio no cambian; si ninguna lo tiene, 200 sin cambios.
+        - **Una sola** invalidación del PDF vigente y **una sola** entrada de auditoría (`quitar_servicio_conexo_lineas`).
+        - `If-Match` **obligatorio** (428 / 409). `Idempotency-Key` opcional. Solo el dueño.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/Folio'
+        - $ref: '#/components/parameters/IfMatchObligatorio'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuitarConexoLineasWeb'
+            example:
+              lineas: [1, 3]
+              servicio_id: "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d"
+      responses:
+        '200':
+          description: Conexo quitado de las rutas elegidas y precios recalculados
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CosteoCotizacion'
+        '400':
+          description: '`RUTA_INEXISTENTE` (`ErrorNegocio`, con `detalle.linea_orden`); `ErrorWeb` si la forma no es válida o la `Idempotency-Key` está fuera de largo'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorNegocio'
+                  - $ref: '#/components/schemas/ErrorWeb'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '404':
+          $ref: '#/components/responses/NoEsTuya'
+        '409':
+          description: '`COSTEO_NO_LISTO`, `RUTA_RECHAZADA` (con la ruta en `detalle`), `SIN_RUTAS_COTIZABLES`, `PDF_YA_ENVIADO`, `CONFLICTO_CONCURRENCIA` o `IDEMPOTENCY_KEY_REUTILIZADA`; ninguna ruta cambia'
           content:
             application/json:
               schema:
@@ -6161,6 +6426,14 @@ components:
             reintentos, o el conexo no tiene servicio en el catálogo de Nexo ni por id ni por nombre: revisar en Nexo). En
             `GET .../costeo` y, desde #173, también en las respuestas de `PUT .../costeo/margen` y `PUT .../costeo/servicios-conexos`
             (igual que el GET). `null` antes de enviar la solicitud a Nexo y en las demás mutaciones.
+        servicio_id:
+          type: string
+          nullable: true
+          description: |
+            HU-041.1 (#231). Id del servicio en el CATÁLOGO de Nexo (el `id` de `GET /web/servicios-conexos`): identifica el mismo conexo
+            en varias rutas sin comparar por nombre y es el que piden `POST .../costeo/servicios-conexos/lineas` y `.../lineas/quitar`.
+            `id` puede ser el de la fila de la cotización de Nexo (conexo agregado o importado); `servicio_id` es siempre el del
+            catálogo. `null` en conexos guardados antes de #188 o si Nexo no lo informó.
 
     RutaCosteo:
       type: object
@@ -6597,6 +6870,96 @@ components:
           description: |
             Obligatoria (no vacía) si `margen` es menor que el `margen_sugerido` de la ruta; se guarda en
             `MargenAjustes.motivo`. Por encima del sugerido es opcional.
+
+    MargenLineasWeb:
+      type: object
+      description: |
+        HU-041.1 (#231). Cuerpo de `PUT /web/cotizaciones/{folio}/costeo/margen/lineas`. Exactamente una de `lineas` y `todas`, y
+        exactamente una de `margen` y `revertir_sugerido`.
+      properties:
+        lineas:
+          type: array
+          nullable: true
+          minItems: 1
+          maxItems: 1000
+          items:
+            type: integer
+            minimum: 1
+          description: Los `rutas[].linea_orden` a los que aplica, sin repetir. Alternativa a `todas`.
+        todas:
+          type: boolean
+          nullable: true
+          description: '`true`: todas las rutas cotizables (las rechazadas por la Mesa de Costeo no cuentan).'
+        margen:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 0.99
+          description: El margen para todas las rutas elegidas (fracción decimal, 0.18 = 18 %).
+        revertir_sugerido:
+          type: boolean
+          nullable: true
+          description: '`true`: cada ruta vuelve a su `margen_sugerido` (y `origen_margen` deja de ser `negociado`).'
+        justificacion:
+          type: string
+          nullable: true
+          maxLength: 500
+          description: Obligatoria (no vacía) si `margen` queda por debajo del `margen_sugerido` de alguna ruta elegida.
+
+    ConexoLineasWeb:
+      type: object
+      required: [servicio_id, cantidad]
+      description: |
+        HU-041.1 (#231). Cuerpo de `POST /web/cotizaciones/{folio}/costeo/servicios-conexos/lineas`. Exactamente una de `lineas` y
+        `todas`. Nunca lleva costos ni valores.
+      properties:
+        lineas:
+          type: array
+          nullable: true
+          minItems: 1
+          maxItems: 1000
+          items:
+            type: integer
+            minimum: 1
+          description: Los `rutas[].linea_orden` a los que aplica, sin repetir. Alternativa a `todas`.
+        todas:
+          type: boolean
+          nullable: true
+          description: '`true`: todas las rutas cotizables.'
+        servicio_id:
+          type: string
+          format: uuid
+          description: '`id` del servicio en `GET /web/servicios-conexos`.'
+        cantidad:
+          type: number
+          minimum: 0.01
+          maximum: 999999.99
+          description: Cantidad en cada ruta, hasta 2 decimales.
+
+    QuitarConexoLineasWeb:
+      type: object
+      required: [servicio_id]
+      description: |
+        HU-041.1 (#231). Cuerpo de `POST /web/cotizaciones/{folio}/costeo/servicios-conexos/lineas/quitar`. Exactamente una de `lineas`
+        y `todas`.
+      properties:
+        lineas:
+          type: array
+          nullable: true
+          minItems: 1
+          maxItems: 1000
+          items:
+            type: integer
+            minimum: 1
+          description: Los `rutas[].linea_orden` a los que aplica, sin repetir. Alternativa a `todas`.
+        todas:
+          type: boolean
+          nullable: true
+          description: '`true`: todas las rutas cotizables.'
+        servicio_id:
+          type: string
+          format: uuid
+          description: '`servicios_conexos[].servicio_id` (id del catálogo de Nexo) del conexo que se quita.'
 
     DatosCargaWeb:
       type: object

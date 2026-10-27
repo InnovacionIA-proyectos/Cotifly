@@ -134,6 +134,14 @@ public sealed record clsServicioConexoPrecio(
     /// en los PUT de margen y de conexos (#173); <c>null</c> antes de enviar la solicitud a Nexo y en las demás mutaciones.
     /// </summary>
     public string? EstadoNexo { get; init; }
+
+    /// <summary>
+    /// HU-041.1 (#231): id del servicio en el CATÁLOGO de Nexo (<c>servicio_id</c>, el mismo de <c>GET /web/servicios-conexos</c>), para que
+    /// el frontend reconozca el mismo conexo en varias rutas sin comparar por nombre. <see cref="Id"/> puede ser el de la fila de la
+    /// cotización de Nexo (conexo agregado con el POST o importado); este es siempre el del catálogo. <c>null</c> en las filas anteriores a
+    /// #188 y si Nexo no lo informó.
+    /// </summary>
+    public string? ServicioId { get; init; }
 }
 
 /// <summary>
@@ -1151,7 +1159,10 @@ public sealed class clsCosteoCotizacionService(
                 x.Conexo.Cantidad,
                 x.Precio!.Value,
                 true,
-                ruta.Orden))];
+                ruta.Orden)
+            {
+                ServicioId = x.Conexo.IdServicioConexoCatalogo,
+            })];
     }
 
     /// <summary>
