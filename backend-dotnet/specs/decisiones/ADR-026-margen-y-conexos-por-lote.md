@@ -48,9 +48,12 @@ varias líneas) no se pueden deshacer si Cotifly falla después: no hay forma de
    conexo se guarda en cada ruta con el **costo del catálogo de Nexo** (`IClsCostosConexosNexo`, leído antes de cambiar nada: Nexo caído
    es 503 sin cambios), igual que un conexo capturado con la ruta (decisión 3 de ADR-019), con el id del catálogo como
    `idServicioConexo` e `idServicioConexoCatalogo`. En la MISMA transacción queda, por ruta, el registro `en_espera` del envío diferido
-   (`clsEnvioConexosNexo`, ADR-019 decisión 10) y, si el polling estaba detenido (cotización entregada), la cotización vuelve a la agenda
-   solo para ese envío (`ProgramarRelecturaCosteo`; no se mueve una consulta ya agendada para no cruzarse con una réplica que la
-   reclamó). El envío diferido ya resuelve lo difícil: una sola vez por solicitud de Nexo, a la línea del primer camión vigente, registro
+   (`clsEnvioConexosNexo`, ADR-019 decisión 10) y la siguiente consulta del polling se adelanta a ahora (`ProgramarRelecturaCosteo`):
+   en autocosteo el intervalo crece hasta `CosteoNexo:IntervaloMaximoMinutos` (15 min) y, sin adelantarla, el conexo seguiría
+   `pendiente` (y finalizar bloqueado) hasta el siguiente ciclo; con el polling detenido (entregada) vuelve a la agenda solo para ese
+   envío. Una consulta reclamada por una réplica queda a lo sumo en ahora + `CosteoNexo:ReclamoSegundos`
+   (`ReclamarConsultaCosteoAsync`): solo se mueve una detenida o agendada más allá de dos veces ese plazo (holgura para el reloj de las
+   réplicas), así no se cruza con un reclamo vigente (validación, 2026-10-27). El envío diferido ya resuelve lo difícil: una sola vez por solicitud de Nexo, a la línea del primer camión vigente, registro
    `en_curso` antes del POST, relectura de un POST incierto, tope de reintentos y estados visibles (`pendiente`, `enviado`, `incierto`,
    `fallido_definitivo`). Mientras un conexo siga `pendiente`, finalizar responde 409 `COTIZACION_NO_FINALIZABLE`
    (`conexos_pendientes_en_nexo`, #228), así que el precio nunca se acepta con un conexo que Nexo no tiene. Quitar en lote, como el `PUT`
@@ -76,8 +79,9 @@ varias líneas) no se pueden deshacer si Cotifly falla después: no hay forma de
 
 - El frontend aplica el margen, vuelve al sugerido o agrega y quita un conexo en todas las rutas con una llamada y un `If-Match`; un
   fallo no deja la cotización a medias y dice qué ruta lo causó.
-- Un conexo agregado en lote se ve con precio de inmediato pero queda `pendiente` hasta el siguiente ciclo del polling (como uno
-  capturado). En una cotización entregada esto vuelve a agendarla solo para el envío.
+- Un conexo agregado en lote se ve con precio de inmediato pero queda `pendiente` hasta la siguiente consulta del polling, que se
+  adelanta a ese momento (segundos, con `CosteoNexo:IntervaloTickSegundos`). En una cotización entregada esto vuelve a agendarla solo
+  para el envío.
 - Sin script de base de datos ni configuración nueva; sin códigos de error nuevos.
 
 ## Pendientes

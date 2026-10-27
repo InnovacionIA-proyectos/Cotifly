@@ -68,7 +68,8 @@ public interface IClsCosteoLineasService
 /// dentro de la petición: el conexo se guarda en Cotifly con el costo del catálogo (como un conexo capturado con la ruta) y el envío
 /// diferido (<see cref="IClsEnvioConexosNexoService"/>) lo lleva a la línea del primer camión de cada ruta, una sola vez, con su registro
 /// y sus estados (<c>pendiente</c>, <c>enviado</c>, <c>incierto</c>, <c>fallido_definitivo</c>). En la misma transacción queda el registro
-/// <c>en_espera</c> de cada ruta y, si el polling estaba detenido (entregada), la cotización vuelve a la agenda solo para ese envío.</item>
+/// <c>en_espera</c> de cada ruta y la siguiente consulta del polling se adelanta a ahora (con el polling detenido, entregada, vuelve a la
+/// agenda solo para ese envío), salvo que una réplica la tenga reclamada.</item>
 /// <item><b>Idempotencia.</b> <c>Idempotency-Key</c> opcional (<see cref="IClsAlmacenIdempotencia"/>, persistente): la repetición con la
 /// misma clave devuelve la respuesta guardada sin ejecutar ni auditar otra vez. Sin clave, repetir la misma operación responde 200 sin
 /// cambios (las rutas ya están como se pidió).</item>
@@ -86,7 +87,8 @@ public sealed class clsCosteoLineasService(
     IClsCategoriasConexos categoriasConexos,
     IClsSituacionLineasNexo situacionesNexo,
     IClsReloj reloj,
-    ILogger<clsCosteoLineasService> logger) : IClsCosteoLineasService
+    ILogger<clsCosteoLineasService> logger,
+    IOptions<clsOpcionesCosteoNexo>? opcionesCosteo = null) : IClsCosteoLineasService
 {
     /// <summary>Herramienta de la auditoría del margen masivo (<c>EventosHerramienta.herramienta</c>).</summary>
     public const string HerramientaMargen = "ajustar_margen_costeo_lineas";
@@ -114,6 +116,9 @@ public sealed class clsCosteoLineasService(
 
     /// <summary>Motivo de la versión nueva que sugiere <c>PDF_YA_ENVIADO</c> en los conexos masivos.</summary>
     public const string MotivoVersionConexos = clsCosteoCotizacionService.MotivoVersionConexos;
+
+    /// <summary>Plazo del reclamo de una consulta del polling (<c>CosteoNexo:ReclamoSegundos</c>).</summary>
+    private TimeSpan Reclamo => (opcionesCosteo?.Value ?? new clsOpcionesCosteoNexo()).Reclamo;
 
     // ------------------------------------------------------------------ Margen
 
@@ -458,8 +463,8 @@ public sealed class clsCosteoLineasService(
             cambios.Add(new clsCambioConexoRuta(ruta.Orden, ruta.Id, null, cantidad));
         }
 
-        // ADR-026: el envío a Nexo es el diferido (outbox): un registro en_espera por ruta en esta misma escritura y, con el polling detenido,
-        // la cotización vuelve a la agenda solo para ese envío.
+        // ADR-026: el envío a Nexo es el diferido (outbox): un registro en_espera por ruta en esta misma escritura y la siguiente consulta
+        // del polling adelantada a ahora.
         await ProgramarEnvioAsync(cotizacion, destino, deCatalogo.Id, cancellationToken);
         var pdfInvalidado = clsReglaPdfCosteo.InvalidarPdf(cotizacion, MotivoInvalidacionPdf.ServiciosConexos, usuarioId, cotizaciones);
         cotizacion.IncrementarVersionNegocio();
@@ -484,8 +489,12 @@ public sealed class clsCosteoLineasService(
                 cotizacion.Folio, solicitud, ruta.Id, intento, clsEnvioConexosNexo.EnEspera, [servicio], []) { EsperaDesde = ahora });
         }
 
-        // Solo si el polling estaba detenido (entregada): mover una consulta ya agendada podría cruzarse con una réplica que la reclamó.
-        if (cotizacion.CosteoSiguienteConsultaAt is null)
+        // La consulta se adelanta a ahora para que el conexo llegue a Nexo en segundos y no en el siguiente ciclo del polling (en autocosteo
+        // el intervalo crece hasta CosteoNexo:IntervaloMaximoMinutos, y mientras tanto finalizar responde conexos_pendientes_en_nexo). Con
+        // el polling detenido (entregada) vuelve a la agenda solo para el envío. Una consulta que una réplica reclamó queda a lo sumo en
+        // ahora + Reclamo (ReclamarConsultaCosteoAsync): solo se mueve una detenida o agendada más allá de dos veces ese plazo (holgura
+        // para el reloj de las réplicas), así nunca se cruza con un reclamo vigente.
+        if (cotizacion.CosteoSiguienteConsultaAt is not { } siguiente || siguiente > ahora + (2 * Reclamo))
         {
             cotizacion.ProgramarRelecturaCosteo(ahora);
         }

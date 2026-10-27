@@ -250,6 +250,23 @@ public sealed class clsCosteoLineasServiceTests
         JsonSerializer.Serialize(_salidaAuditada).Should().Contain("\"rutas_cambiadas\":3").And.NotContain("85000");
     }
 
+    [Theory]
+    [InlineData(15 * 60, true)]
+    [InlineData(5 * 60, true)]
+    [InlineData(90, false)]
+    public async Task ConElPollingAgendadoLaConsultaSeAdelantaSalvoQueUnaReplicaLaTengaReclamada(int segundos, bool seAdelanta)
+    {
+        // Validación (ADR-026): en autocosteo el polling puede estar agendado hasta 15 min después; sin adelantarlo, el conexo sigue
+        // pendiente (y finalizar bloqueado) hasta entonces. Un reclamo vigente queda a lo sumo en ahora + Reclamo (120 s): no se toca.
+        var agendada = clsCotizacionMuestra.Ahora.AddSeconds(segundos);
+        _spot.ProgramarRelecturaCosteo(agendada);
+
+        var resultado = await Servicio().AgregarConexoAsync(_ana, FolioSpot, Conexo([1], Cargue, 1m), Version, null, Ct);
+
+        resultado.EsExitoso.Should().BeTrue(resultado.EsFallo ? resultado.Error.Mensaje : string.Empty);
+        _spot.CosteoSiguienteConsultaAt.Should().Be(seAdelanta ? clsCotizacionMuestra.Ahora : agendada);
+    }
+
     [Fact]
     public async Task UnaRutaQueYaTieneElConexoNoCambiaYSiTodasLoTienenNoSeGuardaNada()
     {

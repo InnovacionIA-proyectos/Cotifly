@@ -3213,8 +3213,8 @@ paths:
           `LINEA_SIN_COTIZACION_NEXO`).
         - **Nexo (ADR-026).** Cotifly NO llama al `POST` de conexos de Nexo dentro de esta petición (no podría deshacer un éxito
           parcial: Nexo no tiene DELETE). El conexo se guarda en cada ruta con el **costo del catálogo de Nexo** (como un conexo
-          capturado con la ruta) y queda `estado_nexo = pendiente`; el envío diferido del polling lo lleva a la línea del primer camión
-          de cada ruta, una sola vez, y pasa a `enviado` (o `incierto` / `fallido_definitivo`, visibles en el costeo). Mientras quede
+          capturado con la ruta) y queda `estado_nexo = pendiente`; la siguiente consulta del polling se adelanta a ese momento y el envío
+          diferido lo lleva a la línea del primer camión de cada ruta (en segundos), una sola vez, y pasa a `enviado` (o `incierto` / `fallido_definitivo`, visibles en el costeo). Mientras quede
           alguno `pendiente`, finalizar responde 409 `COTIZACION_NO_FINALIZABLE` (`conexos_pendientes_en_nexo`). El catálogo se
           lee antes de cambiar nada: un servicio inactivo o inexistente es 400 `CONEXO_INVALIDO` (`detalle.motivo =
           CONEXO_NO_ENCONTRADO`); Nexo caído, 503 `NEXO_NO_DISPONIBLE` (o 403 `NEXO_SIN_PERMISO`), sin cambios.

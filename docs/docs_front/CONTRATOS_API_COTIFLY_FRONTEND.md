@@ -2219,7 +2219,7 @@ operación atómica. Las mismas reglas que el `POST` por ruta (4.4.5). Si una ru
 
 | HTTP | Código | UI |
 |---|---|---|
-| 200 | `CosteoCotizacion` | Refrescar. El conexo aparece en cada ruta con su `precio`, su `servicio_id` y **`estado_nexo = pendiente`**: el envío diferido lo lleva a NEXO en el siguiente ciclo del polling y pasa a `enviado`. Las rutas que ya lo tenían no cambian |
+| 200 | `CosteoCotizacion` | Refrescar. El conexo aparece en cada ruta con su `precio`, su `servicio_id` y **`estado_nexo = pendiente`**: el envío diferido lo lleva a NEXO en segundos (Cotifly adelanta la siguiente consulta del polling) y pasa a `enviado`. Las rutas que ya lo tenían no cambian |
 | 400 | `ErrorWeb` | Forma (`lineas`/`todas`, `servicio_id` no UUID, `cantidad` fuera de rango) |
 | 400 | `CONEXO_INVALIDO` (`detalle.motivo = CONEXO_NO_ENCONTRADO`) | El servicio no está activo en el catálogo de NEXO |
 | 400 | `RUTA_INEXISTENTE` (`detalle.linea_orden`) | Recargar el costeo |
