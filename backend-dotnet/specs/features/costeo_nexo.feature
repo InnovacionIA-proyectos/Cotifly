@@ -95,10 +95,10 @@ Característica: Costeo de la cotización en Nexo
     Cuando "ana" envía a costeo el formulario ampliado del cliente "900555111" como "C1"
     Y Nexo costea la solicitud de "C1" con un flete de 2550000
     Y el polling consulta a Nexo
-    Y "ana" marca el resultado de "C1" como "perdida" con el motivo "Precio alto" y el comentario "Pidió 5 % menos"
+    Y "ana" marca el resultado de "C1" como "perdida" con el motivo "Valor muy alto" y el comentario "Pidió 5 % menos"
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
     Y la respuesta trae la sincronización del resultado "pendiente"
-    Y la cotización "C1" queda ganada "false" con el motivo "Precio alto"
+    Y la cotización "C1" queda ganada "false" con el motivo "Valor muy alto"
     Y Nexo no recibió ningún resultado de "C1"
     Cuando el polling consulta a Nexo
     Entonces Nexo no recibió ningún resultado de "C1"
@@ -146,16 +146,16 @@ Característica: Costeo de la cotización en Nexo
   # HU-013.17 (#127) — El cliente desiste antes del costeo: perdida solo en Cotifly
   Escenario: Si el cliente desiste antes del costeo la cotización queda perdida solo en Cotifly
     Cuando "ana" envía a costeo el formulario ampliado del cliente "900555111" como "C1"
-    Y "ana" marca "C1" como perdida porque "El cliente desistió"
+    Y "ana" marca "C1" como perdida porque "Cliente desistió del servicio"
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
-    Y la cotización "C1" queda ganada "false" con el motivo "El cliente desistió"
+    Y la cotización "C1" queda ganada "false" con el motivo "Cliente desistió del servicio"
     Y la cotización "C1" queda en el estado de costeo "pendiente_costeo"
     Y la cotización "C1" ya no se consulta en Nexo
     Y Nexo no recibió ningún resultado de "C1"
     Y las métricas de "ana" cuentan 1 perdida
     Cuando Nexo costea la solicitud de "C1" con un flete de 2550000
     Y el polling consulta a Nexo
-    Entonces la cotización "C1" queda ganada "false" con el motivo "El cliente desistió"
+    Entonces la cotización "C1" queda ganada "false" con el motivo "Cliente desistió del servicio"
     Y la cotización "C1" queda en el estado de costeo "pendiente_costeo"
 
   # HU-033 (#199): antes era COTIZACION_NO_ENTREGADA; la ganada sin costeo queda pendiente de sincronizar (la perdida sigue siendo #127).
