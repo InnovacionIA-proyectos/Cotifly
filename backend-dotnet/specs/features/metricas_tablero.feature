@@ -280,3 +280,56 @@ Característica: Tablero de métricas del comercial y del gerente comercial
       | 2026-03 | 2        | 1       | 1        | 2450000            | 350000           | 2050000      | 300000         | 50000     |
       | 2026-04 | 2        | 1       | 0        | 4000000            | 4000000          | 3400000      | 3400000        | 600000    |
     Y la suma de la serie mensual cuadra con los indicadores
+
+  # HU-016.1 (#154, parte B; decisiones P3 y P4 del 2026-10-27): el margen aplicado se compara con la política de las MISMAS rutas
+  # (margenPoliticaSugerido de cada ruta), calculada en el servidor. Rutas comparables: versión vigente, no rechazadas, con margen
+  # aplicado y con política. Simple: (0.15 + 0.15 + 0.25) / 3 = 0.1833. Ponderado por costo (1M, 2M y 3M): (0.15 + 0.30 + 0.75) / 6
+  # = 0.20. Desviación ponderada: ((0.10 − 0.15) × 1M + (0.20 − 0.15) × 2M + (0.30 − 0.25) × 3M) / 6M = 0.0333. La ruta 4, rechazada,
+  # no cuenta; la de P2 (en USD) no tiene política guardada y solo se cuenta en rutas_sin_margen_politica.
+  Escenario: El margen aplicado se compara con la política de las mismas rutas, en promedio simple y ponderado por costo
+    Dado el comercial "pedro" con sesión en la regional "Sur"
+    Y el gerente comercial "sofia" con sesión en la regional "Sur"
+    Y que "pedro" tiene estas cotizaciones:
+      | cotizacion | moneda | precio | trm  | costo   | margen | resultado | creada     |
+      | P1         | COP    | 1      | 0    | 1       | 0.10   | ganada    | 2026-05-10 |
+      | P2         | USD    | 300    | 4000 | 1000000 | 0.12   |           | 2026-05-12 |
+    Y que la cotización "P1" tiene estas rutas:
+      | orden | linea       | costo   | precio  | margen | politica |
+      | 1     | Nacional    | 1000000 | 1111111 | 0.10   | 0.15     |
+      | 2     | Importacion | 2000000 | 2500000 | 0.20   | 0.15     |
+      | 3     | Exportacion | 3000000 | 4285714 | 0.30   | 0.25     |
+      | 4     | Nacional    | 500000  | 600000  | 0.1667 | 0.15     |
+    Y que la Mesa de Costeo rechazó la ruta 4 de la cotización "P1"
+    Y que la cotización "P2" tiene estas rutas:
+      | orden | linea    | costo   | precio | margen | politica |
+      | 1     | Nacional | 1000000 | 300    | 0.12   |          |
+    Cuando "pedro" consulta sus métricas del "2026-01-01" al "2026-12-31"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "MetricasComercial" del contrato
+    Y los indicadores son:
+      | campo                      | valor  |
+      | cantidad                   | 2      |
+      | margen_politica_promedio   | 0.1833 |
+      | margen_politica_ponderado  | 0.2    |
+      | desviacion_margen_politica | 0.0333 |
+      | rutas_sin_margen_politica  | 1      |
+      | desviacion_promedio_margen | null   |
+    Cuando "sofia" consulta las métricas de su regional del "2026-01-01" al "2026-12-31" filtradas por "pedro"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "MetricasRegional" del contrato
+    Y los indicadores son:
+      | campo                      | valor  |
+      | margen_politica_promedio   | 0.1833 |
+      | margen_politica_ponderado  | 0.2    |
+      | desviacion_margen_politica | 0.0333 |
+      | rutas_sin_margen_politica  | 1      |
+
+  Escenario: Sin rutas comparables los campos contra la política vienen en null
+    Dado el comercial "pedro" con sesión en la regional "Sur"
+    Cuando "pedro" consulta sus métricas del "2026-01-01" al "2026-12-31"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "MetricasComercial" del contrato
+    Y los indicadores son:
+      | campo                      | valor |
+      | cantidad                   | 0     |
+      | margen_politica_promedio   | null  |
+      | margen_politica_ponderado  | null  |
+      | desviacion_margen_politica | null  |
+      | rutas_sin_margen_politica  | 0     |
