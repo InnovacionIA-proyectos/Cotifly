@@ -56,6 +56,7 @@ public sealed class clsDependenciasAplicacionTests
     [InlineData(typeof(IClsNuevaVersionService), typeof(clsNuevaVersionService), ServiceLifetime.Scoped)]
     [InlineData(typeof(IClsGeneradorFolioService), typeof(clsGeneradorFolioService), ServiceLifetime.Scoped)]
     [InlineData(typeof(IClsDescargaPdfService), typeof(clsDescargaPdfService), ServiceLifetime.Scoped)]
+    [InlineData(typeof(Cotifly.Aplicacion.Cotizaciones.Services.IClsAccesoCotizacionAjena), typeof(Cotifly.Aplicacion.Cotizaciones.Services.clsAccesoCotizacionAjenaService), ServiceLifetime.Scoped)]
     [InlineData(typeof(IClsLineasNegocioAdminService), typeof(clsLineasNegocioAdminService), ServiceLifetime.Scoped)]
     [InlineData(typeof(IClsAsistenteFolioRunner), typeof(clsAsistenteFolioRunner), ServiceLifetime.Scoped)]
     [InlineData(typeof(clsContextoAsistenteFolio), typeof(clsContextoAsistenteFolio), ServiceLifetime.Scoped)]
