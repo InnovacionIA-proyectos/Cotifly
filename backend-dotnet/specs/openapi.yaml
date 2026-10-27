@@ -674,7 +674,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorWeb'
         '409':
-          description: '`CORREO_NO_REINTENTABLE`: el envío no está `fallido`, ya se está reintentando, nunca llegó a MailSender o MailSender ya no lo conoce'
+          description: '`CORREO_NO_REINTENTABLE`: el envío no está `fallido`, ya se está reintentando, nunca llegó a MailSender, MailSender ya no lo conoce o (validación de #228) su asunto o un destinatario guardado tiene caracteres de control (un correo anterior a DEF-1027B-2: MailSender lo reenviaría con las cabeceras inyectadas; el historial lo muestra con `reintentable = false`)'
           content:
             application/json:
               schema:
@@ -2200,7 +2200,10 @@ paths:
           409 `COTIZACION_NO_FINALIZABLE` con `detalle.motivo = conexos_pendientes_en_nexo` y `detalle.conexos_pendientes` (cuántos);
           se finaliza cuando el polling lo deja `enviado`. `incierto` y `fallido_definitivo` no bloquean (ya no se reintentan; el
           costeo los muestra con `aviso_conexos_nexo` para revisarlos en Nexo). Un conexo agregado con
-          `POST .../costeo/servicios-conexos` queda `enviado` en el momento (Nexo lo creó y la relectura lo confirma). Si hay
+          `POST .../costeo/servicios-conexos` queda `enviado` en el momento (Nexo lo creó y la relectura lo confirma). Con
+          alguno `pendiente`, finalizar RELEE la cotización de Nexo y deja `enviado` lo que Nexo ya muestra antes de decidir (un
+          registro que quedó `pendiente` aunque Nexo tenga el conexo, p. ej. agregado antes de #228, no bloquea para siempre una
+          entregada); si Nexo no responde, cuenta el registro y responde el 409. Si hay
           conexos pendientes de leer, ese motivo va primero.
         - Re-finalizar una ya finalizada es idempotente: 200 sin cambios (mismo `finalizada_at`, mismo `ETag`).
         - `If-Match` que no es la versión vigente: 409 `CONFLICTO_CONCURRENCIA`, sin cambios (también si ya estaba finalizada). Si

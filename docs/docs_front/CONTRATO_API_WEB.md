@@ -1866,7 +1866,9 @@ El comercial **acepta el precio** de la cotización y la finaliza. Columnas prop
   `detalle.motivo = "conexos_pendientes_en_nexo"` y `detalle.conexos_pendientes`. Si no, el precio finalizado incluiría un conexo que Nexo
   no creó. Se finaliza cuando el polling lo deja `enviado`; `incierto` y `fallido_definitivo` no bloquean (no se reintentan y el costeo
   los muestra para revisarlos en Nexo). El conexo agregado con `POST .../costeo/servicios-conexos` ya sale `enviado` (Nexo lo creó y la
-  relectura lo confirma), así una entregada, que el polling ya no consulta, no queda bloqueada.
+  relectura lo confirma), así una entregada, que el polling ya no consulta, no queda bloqueada. Validación de #228: con algún conexo
+  `pendiente`, finalizar relee la cotización de Nexo y deja `enviado` lo que Nexo ya muestra antes de contar (un registro viejo que quedó
+  `pendiente` aunque Nexo tenga el conexo no bloquea para siempre); si Nexo no responde, cuenta el registro y responde el 409.
 - Re-finalizar una ya finalizada: 200 sin cambios (mismo `finalizada_at`, mismo `ETag`).
 - `If-Match` que no es la versión vigente: 409 `CONFLICTO_CONCURRENCIA` (también si ya estaba finalizada). Si el polling cambió el precio
   entre la lectura y el clic, la versión ya no coincide: el comercial recarga y nunca finaliza un precio que no vio.
@@ -1952,6 +1954,12 @@ El `cuerpo` no es una cabecera (va escapado dentro del HTML): admite saltos de l
 estado de envío. Como defensa en profundidad, el transporte vuelve a revisar el remitente, los destinatarios (`To`, `Cc`, `Bcc`), el asunto,
 el nombre del adjunto y el `X-Correlation-ID` antes del POST a MailSender: si algo se coló, no sale nada y el envío responde 400
 `CORREO_ENVIO_FALLIDO` (fila `fallido` en el historial).
+
+Validación de #228: `POST .../correos/{correoId}/reintentar` responde 409 `CORREO_NO_REINTENTABLE` (sin llamar a MailSender) si el asunto o
+un destinatario GUARDADO tiene caracteres de control: un correo aceptado antes de DEF-1027B-2 saldría otra vez con las cabeceras inyectadas,
+porque MailSender reintenta lo que guardó. El historial lo muestra con `reintentable = false`. El remitente del comercial (`From`), el
+buzón de pruebas y `Correo:MailSender:Remitente` usan el mismo formato estricto: un correo del comercial que no lo cumple sale con el
+remitente corporativo, y un buzón o un remitente corporativo que no lo cumple impide arrancar.
 
 <!-- respuesta: POST /web/cotizaciones/{folio}/enviar 400 (tope) -->
 ```json

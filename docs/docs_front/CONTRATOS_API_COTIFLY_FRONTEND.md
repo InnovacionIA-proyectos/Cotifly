@@ -3788,6 +3788,12 @@ fila_excel, campo, codigo, mensaje}`.
 - **Levante (DEF-1027B-3):** el `CAMPO_NO_APLICA` nombra `valor_levante_contenedor`.
 - **Finalizar:** con conexos en `estado_nexo = pendiente` (rutas que cuentan) es 409 `COTIZACION_NO_FINALIZABLE` con
   `detalle.motivo = conexos_pendientes_en_nexo` y `detalle.conexos_pendientes`. El conexo agregado con el POST queda `enviado` de inmediato.
+  Validación: con alguno `pendiente`, finalizar relee NEXO y deja `enviado` lo que NEXO ya muestra antes de contar (un registro viejo no
+  bloquea para siempre una entregada).
+- **Validación (seguridad):** `POST .../correos/{correoId}/reintentar` responde 409 `CORREO_NO_REINTENTABLE` si el asunto o un destinatario
+  guardado tiene caracteres de control (correo anterior a #228: MailSender lo reenviaría igual); el historial lo muestra con
+  `reintentable = false`. El `From` del comercial, el buzón de pruebas y el remitente corporativo usan el formato estricto de las
+  direcciones (el comercial que no lo cumple sale con el remitente corporativo).
 - Sin script de base de datos, sin configuración nueva y sin endpoints nuevos: siguen **55 endpoints**.
 
 **2026-10-27 (rama `226-correcciones-e2e-1027`, #226, E2E real del 2026-10-27).** Correcciones del E2E (fila 65 de §7):
