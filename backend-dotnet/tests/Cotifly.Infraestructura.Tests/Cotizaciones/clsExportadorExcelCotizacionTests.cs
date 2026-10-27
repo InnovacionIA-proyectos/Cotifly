@@ -85,6 +85,43 @@ public sealed class clsExportadorExcelCotizacionTests
         }
     }
 
+    /// <summary>
+    /// Validación HU-018.1 (#155): en la versión del gerente y el director no hay dónde esconder un costo o un margen: cada número del
+    /// libro es uno de los que ven todos (orden, pesos, camiones, cantidades, TRM y precios), y el paquete no trae fórmulas, comentarios,
+    /// nombres definidos, filas, columnas u hojas ocultas, ni el origen o el método del margen, ni el color de las columnas internas.
+    /// </summary>
+    [Fact]
+    public void LaVersionSinCostosNoEscondeNadaInternoEnNingunaParteDelPaquete()
+    {
+        var bytes = _exportador.Generar(Datos().SinCostos());
+
+        using (var libro = Abrir(bytes))
+        {
+            decimal[] visibles = [1m, 2m, 0m, 15_000m, 10_000m, 5000m, 255.29m, 54.96m, 310.25m, 3917.37m];
+            Numeros(libro).Should().OnlyContain(n => visibles.Contains(n), "ningún número fuera de los que ven todos");
+            libro.Worksheets.Select(h => h.Name).Should().Equal("Resumen", "Rutas", "Camiones", "Conexos");
+            libro.Worksheets.Should().OnlyContain(h => h.Visibility == XLWorksheetVisibility.Visible);
+            libro.DefinedNames.Should().BeEmpty();
+            foreach (var hoja in libro.Worksheets)
+            {
+                hoja.CellsUsed().Should().OnlyContain(c => !c.HasFormula && !c.HasComment, hoja.Name);
+                hoja.ColumnsUsed().Should().OnlyContain(c => !c.IsHidden, hoja.Name);
+                hoja.RowsUsed().Should().OnlyContain(f => !f.IsHidden, hoja.Name);
+            }
+        }
+
+        using var zip = new ZipArchive(new MemoryStream(bytes));
+        zip.Entries.Select(e => e.FullName).Should().NotContain(n => n.Contains("comment", StringComparison.OrdinalIgnoreCase));
+        foreach (var entrada in zip.Entries)
+        {
+            using var lector = new StreamReader(entrada.Open());
+            var texto = lector.ReadToEnd();
+            texto.Should().NotContain("politica_linea", entrada.FullName).And.NotContain(">margen<", entrada.FullName)
+                .And.NotContain("FCE4D6", entrada.FullName, "el color de las columnas internas no se usa")
+                .And.NotContain("<f>", entrada.FullName).And.NotContain("Costo", entrada.FullName);
+        }
+    }
+
     [Fact]
     public void CincuentaRutasConTresCamionesSeGeneranEnMenosDeDosSegundos()
     {

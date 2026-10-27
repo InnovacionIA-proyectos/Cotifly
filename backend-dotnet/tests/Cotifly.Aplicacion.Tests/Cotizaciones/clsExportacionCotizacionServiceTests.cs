@@ -113,6 +113,40 @@ public sealed class clsExportacionCotizacionServiceTests
             Arg.Is(clsExportacionCotizacionService.HerramientaAuditoria), Arg.Any<object?>(), Arg.Any<object?>(), Arg.Is(false), Arg.Any<int>(), Arg.Any<string?>());
     }
 
+    // Validación HU-018.1 (#155): sin regional comprobable (sin regional o fuente caída) se niega (fail-closed), queda auditado y no se
+    // genera nada; sin sesión, NoAutenticado sin leer la cotización.
+    [Theory]
+    [InlineData(Cotifly.Aplicacion.Comun.clsCodigosAplicacion.RegionalNoAsignada)]
+    [InlineData(Cotifly.Aplicacion.Comun.clsCodigosAplicacion.RegionalNoDisponible)]
+    public async Task UnGerenteSinRegionalComprobableRecibe404AuditadoYSinExcel(string codigo)
+    {
+        var cotizacion = clsCotizacionMuestra.LicitacionCosteada([1_000_000m], folio: "PCN-AP-27102026-009", usuarioId: _ana.Id);
+        _cotizaciones.ObtenerPorFolioAsync(cotizacion.Folio, Arg.Any<CancellationToken>()).Returns(cotizacion);
+        _regionales.EsMiembroDeMiRegionalAsync(_gloria, _ana.Id, Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio(codigo, "Sin regional"));
+
+        (await Servicio(new clsUsuarioFalso(_gloria.Id, RolInterno.GerenteComercial)).ExportarAsync(cotizacion.Folio, Ct)).Error.Codigo
+            .Should().Be(clsCodigosError.CotizacionNoEncontrada);
+        (await Servicio(new clsUsuarioFalso(null, null)).ExportarAsync(cotizacion.Folio, Ct)).EsFallo.Should().BeTrue();
+
+        _exportador.ReceivedCalls().Should().BeEmpty();
+        await _auditoria.Received(1).RegistrarAsync(
+            Arg.Is(clsExportacionCotizacionService.HerramientaAuditoria), Arg.Any<object?>(), Arg.Any<object?>(), Arg.Is(false), Arg.Any<int>(), Arg.Any<string?>());
+    }
+
+    // Validación HU-018.1 (#155): el Excel de una versión -vN es el de esa versión, con su folio en el nombre del archivo.
+    [Fact]
+    public async Task LaVersionNuevaSeExportaConSuFolio()
+    {
+        var cotizacion = clsCotizacionMuestra.LicitacionCosteada([1_000_000m], folio: "PCN-AP-27102026-010-v2", usuarioId: _ana.Id);
+        Propia(cotizacion);
+
+        var archivo = (await Servicio(Comercial(_ana)).ExportarAsync(cotizacion.Folio, Ct)).Valor;
+
+        archivo.Nombre.Should().Be("PCN-AP-27102026-010-v2.xlsx");
+        _escrito!.Folio.Should().Be("PCN-AP-27102026-010-v2");
+    }
+
     [Fact]
     public async Task SinPrecioEsCosteoNoListoYSinRutas404()
     {
