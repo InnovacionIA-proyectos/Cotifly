@@ -74,6 +74,36 @@ public sealed class clsPdfCosteoConcurrenciaTests
         resultado.Error.Codigo.Should().Be(clsCodigosError.PdfYaEnviado);
     }
 
+    // OBS-1027-6 (#226, E2E real del 2026-10-27): con el PDF vigente y la cotización ya entregada al cliente (enviada y, en el E2E, con
+    // resultado), el PDF responde PDF_YA_ENVIADO (crear una versión nueva), no PDF_YA_GENERADO: la entrega manda sobre el PDF vigente.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ConElPdfVigenteYYaEnviadaElPdfEsPdfYaEnviadoNoPdfYaGenerado(bool conResultado)
+    {
+        _cotizacion.AsignarPdf("/data/pdfs/" + _cotizacion.Folio + ".pdf");
+        _cotizacion.RegistrarEnvio();
+        if (conResultado)
+        {
+            _cotizacion.RegistrarResultadoPendienteNexo(true, null, null, clsCotizacionMuestra.Ahora);
+        }
+
+        var resultado = await Servicio().GenerarPdfAsync(_ana, _cotizacion.Folio, null, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.PdfYaEnviado);
+        await _generador.DidNotReceiveWithAnyArgs().GenerarAsync(default!, Ct);
+    }
+
+    [Fact]
+    public async Task ConElPdfVigenteSinEnviarSigueSiendoPdfYaGenerado()
+    {
+        _cotizacion.AsignarPdf("/data/pdfs/" + _cotizacion.Folio + ".pdf");
+
+        var resultado = await Servicio().GenerarPdfAsync(_ana, _cotizacion.Folio, null, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.PdfYaGenerado);
+    }
+
     [Fact]
     public async Task SinIfMatchElPdfSeConfirmaContraLaVersionCargadaYSubeLaVersion()
     {
