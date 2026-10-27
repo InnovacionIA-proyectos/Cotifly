@@ -176,6 +176,16 @@ Característica: Licitaciones desde Excel
     Y el detalle del error trae la línea válida "Nacional"
     Y Nexo no recibió ninguna solicitud
 
+  # OBS-1027-4 (#226, E2E real del 2026-10-27) — Con errores de fila y la línea "Licitaciones", el reporte trae todo en la misma
+  # respuesta: los errores de fila y el de la línea de negocio (antes aparecía en un segundo intento, al corregir las filas).
+  Escenario: Con errores de fila y la línea "Licitaciones" el reporte trae también el error de la línea
+    Cuando "ana" crea la licitación "L1" del cliente "900555111" con una fila sin destino y otra sin peso y la línea de negocio "Licitaciones"
+    Entonces la respuesta tiene el estado 400 con el reporte de la licitación
+    Y el reporte trae el código "LINEA_INCOMPLETA" en la línea 0 y el código "PESO_REQUERIDO" en la línea 2
+    Y el reporte trae el código "MARGEN_LINEA_DESCONOCIDA" del encabezado en el campo "linea_negocio"
+    Y el detalle del error trae la línea válida "Nacional"
+    Y Nexo no recibió ninguna solicitud
+
   # HU-013.15 (#124) — El detalle de un error de Nexo lleva solo su código, nunca su texto crudo (como el resto de los endpoints).
   Escenario: Si Nexo rechaza la sesión el análisis responde 503 solo con el código de Nexo
     Dado que Nexo responde 401 con el código "SESION_INVALIDA" al análisis del Excel

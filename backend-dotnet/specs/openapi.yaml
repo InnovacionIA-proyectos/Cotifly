@@ -8344,7 +8344,7 @@ components:
                  DEMASIADAS_POSICIONES, POSICION_INVALIDA, PESO_REQUERIDO, PESO_INCONSISTENTE, FILA_INVALIDA, CAMPO_NO_APLICA,
                  CODIGO_NO_CATALOGO, MUNICIPIO_AMBIGUO, MUNICIPIO_NO_ENCONTRADO, MUNICIPIO_INEXISTENTE, CONEXO_DUPLICADO,
                  CONEXO_NO_ENCONTRADO, DEMASIADOS_CONEXOS, TIPO_MERCANCIA_INEXISTENTE, MERCANCIA_DESCONOCIDA, MERCANCIA_NO_CUBICABLE,
-                 PESO_CON_TARA_MENOR_QUE_CARGA, VEHICULO_REQUERIDO]
+                 PESO_CON_TARA_MENOR_QUE_CARGA, VEHICULO_REQUERIDO, MARGEN_LINEA_DESCONOCIDA]
           description: |
             HU-013.11: `CODIGO_NO_CATALOGO` (el valor no es un código de catálogo, G2), `CAMPO_NO_APLICA` y `CAMPO_REQUERIDO` de las
             reglas condicionales (G3), `MUNICIPIO_AMBIGUO` y `MUNICIPIO_NO_ENCONTRADO` (G6, campo `origen` o `destino`).
@@ -8358,6 +8358,11 @@ components:
             `peso_con_tara_kg` (menor que el peso de carga) y `CAMPO_NO_APLICA` en `peso_con_tara_kg` sin `clase_viaje = Contenedor`.
             HU-032 (#197): `VEHICULO_REQUERIDO` en `tipo_vehiculo` cuando la ruta no se puede cubicar (solo peso, mercancías sin
             medidas ni código, o mixta), no es de Contenedor y no trae vehículo.
+            OBS-1027-4 (#226): `MARGEN_LINEA_DESCONOCIDA` en `linea_negocio` cuando, además de otros errores de fila, la línea de
+            negocio no da margen ("Licitaciones" del catálogo de Nexo, una que no existe o una inactiva): la del encabezado con
+            `indice = null` y la de una fila que trae la suya con su `indice`. El `mensaje` dice qué líneas usar y
+            `error.detalle.lineas_validas` las lista. Sin otros errores de fila sigue siendo el 400 `MARGEN_LINEA_DESCONOCIDA` de
+            `ErrorNegocio` (con `detalle.motivo = LINEA_DE_NEXO` para "Licitaciones").
         mensaje:
           type: string
 

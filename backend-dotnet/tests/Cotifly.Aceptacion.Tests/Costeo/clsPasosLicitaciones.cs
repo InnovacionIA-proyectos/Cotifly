@@ -84,6 +84,27 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
         return CrearAsync(alias, licitacion, clsPliegoMuestra.Json(nit, lineas), clsPliegoMuestra.Excel(3));
     }
 
+    [When("{string} crea la licitación {string} del cliente {string} con una fila sin destino y otra sin peso y la línea de negocio {string}")]
+    public Task CuandoCreaInvalidaConLinea(string alias, string licitacion, string nit, string linea)
+    {
+        object[] lineas =
+        [
+            new { fila = 0, origen = "BUENAVENTURA", destino = "", peso_kg = 32000 },
+            new { fila = 1, origen = "CALI", destino = "CARTAGENA", peso_kg = 28000 },
+            new { fila = 2, origen = "CUCUTA", destino = "BOGOTA, D.C." },
+        ];
+        return CrearAsync(alias, licitacion,
+            clsPliegoMuestra.Json(nit, lineas).Replace("\"linea_negocio\":\"Nacional\"", $"\"linea_negocio\":\"{linea}\"", StringComparison.Ordinal),
+            clsPliegoMuestra.Excel(3));
+    }
+
+    [Then("el reporte trae el código {string} del encabezado en el campo {string}")]
+    public void EntoncesElReporteTraeDelEncabezado(string codigo, string campo) =>
+        web.UltimoJson().GetProperty("errores").EnumerateArray()
+            .Where(e => e.GetProperty("indice").ValueKind == JsonValueKind.Null)
+            .Select(e => (e.GetProperty("campo").GetString(), e.GetProperty("codigo").GetString()))
+            .Should().ContainSingle().Which.Should().Be((campo, codigo));
+
     [Then("la respuesta tiene el estado {int} con el reporte de la licitación")]
     public void EntoncesElReporte(int estado)
     {

@@ -406,7 +406,20 @@ public sealed class clsLicitacionService(
         {
             // HU-013.11: con un catálogo caído se reportan igual los errores que se detectan sin él, con el código del catálogo en
             // detalle.motivo (lo que dependía de ese catálogo se valida al volver a enviarla). HU-013.15: cada error con su fila de Excel.
-            return clsResultadoLicitacion.Invalida(clsValidadorLicitacion.ConFilaExcel(validadas.Errores, filasExcel), validadas.NoDisponible?.Codigo);
+            // OBS-1027-4 (#226): en el mismo reporte, la línea de negocio que no da margen ("Licitaciones" de Nexo, una que no existe o
+            // inactiva), con las líneas válidas en detalle.lineas_validas; antes aparecía en un segundo intento, al corregir las filas.
+            var (deLinea, lineasValidas) = await ErroresDeLineaNegocioAsync(entrada, cancellationToken);
+            var invalida = clsResultadoLicitacion.Invalida(
+                clsValidadorLicitacion.ConFilaExcel([.. validadas.Errores, .. deLinea], filasExcel), validadas.NoDisponible?.Codigo);
+            return lineasValidas is null
+                ? invalida
+                : invalida with
+                {
+                    Error = invalida.Error! with
+                    {
+                        Datos = new Dictionary<string, object?>(StringComparer.Ordinal) { ["lineas_validas"] = lineasValidas },
+                    },
+                };
         }
 
         if (validadas.NoDisponible is { } noDisponible)
@@ -605,6 +618,58 @@ public sealed class clsLicitacionService(
             FinalizadaAt = cotizacion.FinalizadaAt?.ToUniversalTime(),
         };
     }
+
+    /// <summary>
+    /// OBS-1027-4 (#226): los errores de la línea de negocio para el reporte por fila, con la misma regla que el alta (sin política,
+    /// <see cref="clsMargenResolverService.LineaDesconocida"/> con la explicación de "Licitaciones"; inactiva,
+    /// <see cref="clsMargenResolverService.LineaInactiva"/>): la del encabezado con <c>indice = null</c> y la de cada fila que trae la suya
+    /// con su índice, en el campo <c>linea_negocio</c>. Devuelve también las líneas activas si hubo algún error (<c>null</c> si no). Una
+    /// línea vacía no se revisa aquí: ya la reporta la validación de las filas.
+    /// </summary>
+    private async Task<(List<clsErrorFilaLicitacion> Errores, IReadOnlyList<string>? LineasValidas)> ErroresDeLineaNegocioAsync(
+        clsEntradaLicitacion entrada, CancellationToken cancellationToken)
+    {
+        var errores = new List<clsErrorFilaLicitacion>();
+        var porNombre = new Dictionary<string, clsErrorDominio?>(StringComparer.OrdinalIgnoreCase);
+        IReadOnlyList<string>? activas = null;
+        var encabezado = entrada.LineaNegocio?.Trim();
+        var candidatas = new List<(int? Indice, int? Fila, string? Nombre)> { (null, null, encabezado) };
+        candidatas.AddRange((entrada.Lineas ?? []).Select((l, i) => ((int?)i, l?.Fila, l?.LineaNegocio)));
+        foreach (var (indice, fila, nombre) in candidatas)
+        {
+            // Una fila que repite la línea del encabezado no suma otro error: ya lo dice el del encabezado.
+            if (string.IsNullOrWhiteSpace(nombre)
+                || (indice is not null && string.Equals(nombre.Trim(), encabezado, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            var limpio = nombre.Trim();
+            if (!porNombre.TryGetValue(limpio, out var error))
+            {
+                var resuelta = await margen.ResolverLineaAsync(limpio, cancellationToken);
+                if (resuelta is null || !resuelta.Activa)
+                {
+                    activas ??= await margen.LineasActivasAsync(cancellationToken) ?? [];
+                }
+
+                error = resuelta is null
+                    ? clsMargenResolverService.LineaDesconocida(limpio, activas!, esLicitacion: true)
+                    : resuelta.Activa ? null : clsMargenResolverService.LineaInactiva(resuelta.LineaNegocio);
+                porNombre[limpio] = error;
+            }
+
+            if (error is not null)
+            {
+                errores.Add(new clsErrorFilaLicitacion(indice, fila, CampoLineaNegocio, error.Codigo, error.Mensaje));
+            }
+        }
+
+        return (errores, errores.Count == 0 ? null : activas);
+    }
+
+    /// <summary>Campo de los errores de la línea de negocio en el reporte de la licitación.</summary>
+    public const string CampoLineaNegocio = "linea_negocio";
 
     /// <summary>Vehículo de la ruta: el de su camión, o los de sus camiones separados por coma (HU-021).</summary>
     private static string? TipoVehiculo(clsLineaSolicitud ruta)
