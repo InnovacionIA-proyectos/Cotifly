@@ -580,6 +580,7 @@ recálculo de una ruta responden 409. Sin cubicador, como antes (sin `progreso_c
       ]
     }
   ],
+  "finalizada_at": null,
   "progreso_cubicacion": { "estado": "en_curso", "total": 1, "cubicadas": 0, "pendientes": 1, "fallidas": 0 },
   "cubicacion": null
 }
@@ -1859,8 +1860,9 @@ El comercial **acepta el precio** de la cotización y la finaliza. Columnas prop
 - Re-finalizar una ya finalizada: 200 sin cambios (mismo `finalizada_at`, mismo `ETag`).
 - `If-Match` que no es la versión vigente: 409 `CONFLICTO_CONCURRENCIA` (también si ya estaba finalizada). Si el polling cambió el precio
   entre la lectura y el clic, la versión ya no coincide: el comercial recarga y nunca finaliza un precio que no vio.
-- 200 `CotizacionResumen` con `finalizada_at` (UTC) y el `ETag` nuevo. `finalizada_at` también viene en `CosteoCotizacion` y en
-  `GET /web/cotizaciones/{folio}` (`cotizacion`, `costeo` y `fechas.finalizada_at`).
+- 200 `CotizacionResumen` con `finalizada_at` (UTC) y el `ETag` nuevo. `finalizada_at` también viene en `CosteoCotizacion`, en
+  `GET /web/cotizaciones/{folio}` (`cotizacion`, `costeo` y `fechas.finalizada_at`) y en `Licitacion` (`GET /web/licitaciones/{folio}`,
+  DEF-1027-2 de #226), siempre presente y `null` sin finalizar.
 - Sin backfill: las cotizaciones anteriores al script 14 quedan sin finalizar y el comercial las finaliza una por una.
 
 <!-- respuesta: POST /web/cotizaciones/{folio}/finalizar 409 -->
