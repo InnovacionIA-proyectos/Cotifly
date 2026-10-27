@@ -37,9 +37,24 @@ public sealed record clsIndicadoresMetricas
     public int? DeadlineVencidas { get; init; }
 }
 
-/// <summary>Un mes (fecha de negocio) de la serie del tablero (esquema <c>PuntoSerieMensual</c>).</summary>
+/// <summary>
+/// Un mes (fecha de negocio) de la serie del tablero (esquema <c>PuntoSerieMensual</c>). Los montos tienen la misma definición que en
+/// <see cref="clsIndicadoresMetricas"/>: la suma de los meses del periodo da los montos de los indicadores del periodo.
+/// </summary>
 /// <param name="Mes">Mes en formato <c>AAAA-MM</c>.</param>
-public sealed record clsPuntoSerieMensual(string Mes, int Cantidad, int Ganadas, int Perdidas, decimal ValorCotizadoCop, decimal ValorGanadoCop);
+/// <param name="CosteoTotal">HU-034.1 (#201): Σ <c>costo</c> en COP de las cotizaciones del mes.</param>
+/// <param name="CosteoGanadas">HU-034.1 (#201): Σ <c>costo</c> en COP de las ganadas del mes (el de la versión ganada).</param>
+/// <param name="Ganancias">HU-034.1 (#201): Σ(<c>valor_cop</c> − <c>costo</c>) de las ganadas del mes con precio y costo.</param>
+public sealed record clsPuntoSerieMensual(
+    string Mes,
+    int Cantidad,
+    int Ganadas,
+    int Perdidas,
+    decimal ValorCotizadoCop,
+    decimal ValorGanadoCop,
+    decimal CosteoTotal,
+    decimal CosteoGanadas,
+    decimal Ganancias);
 
 /// <summary>Cotizaciones con un municipio de origen o destino (esquema <c>MetricaCiudad</c>).</summary>
 public sealed record clsMetricaCiudad(string Ciudad, int Cantidad, int Ganadas, decimal ValorCotizadoCop, decimal ValorGanadoCop);
