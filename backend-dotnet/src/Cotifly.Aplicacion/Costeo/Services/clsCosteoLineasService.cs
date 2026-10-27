@@ -167,7 +167,7 @@ public sealed class clsCosteoLineasService(
             {
                 folio = cotizacion.Folio,
                 lineas = lineas.Valor,
-                todas = lineas.Valor is null,
+                todas = lineas.Valor.Count == 0,
                 margen = entrada.Margen,
                 revertir_sugerido = revertir,
                 justificacion = clsMargenAjuste.LimpiarJustificacion(entrada.Justificacion),
@@ -195,7 +195,7 @@ public sealed class clsCosteoLineasService(
     }
 
     private async Task<(clsResultado<clsCosteoCotizacion> Resultado, IReadOnlyList<clsCambioMargenRuta> Cambios, bool PdfInvalidado)> AplicarMargenAsync(
-        clsCotizacionSolicitud cotizacion, Guid usuarioId, IReadOnlyList<int>? lineas, decimal? margen, bool revertir, string? justificacion,
+        clsCotizacionSolicitud cotizacion, Guid usuarioId, IReadOnlyList<int> lineas, decimal? margen, bool revertir, string? justificacion,
         int versionEsperada, CancellationToken cancellationToken)
     {
         if (!cotizacion.TieneVersion(versionEsperada))
@@ -381,7 +381,7 @@ public sealed class clsCosteoLineasService(
             : await QuitarAsync(cotizacion, usuarioId, lineas.Valor, servicio, versionEsperada, cancellationToken);
         await auditoria.RegistrarAsync(
             agregar ? HerramientaAgregarConexo : HerramientaQuitarConexo,
-            new { folio = cotizacion.Folio, lineas = lineas.Valor, todas = lineas.Valor is null, servicio_id = servicio, cantidad = entrada.Cantidad },
+            new { folio = cotizacion.Folio, lineas = lineas.Valor, todas = lineas.Valor.Count == 0, servicio_id = servicio, cantidad = entrada.Cantidad },
             resultado.EsExitoso
                 // Sin montos: en qué rutas se agregó o se quitó.
                 ? (object)new
@@ -398,7 +398,7 @@ public sealed class clsCosteoLineasService(
     }
 
     private async Task<(clsResultado<clsCosteoCotizacion> Resultado, IReadOnlyList<clsCambioConexoRuta> Rutas, bool PdfInvalidado)> AgregarAsync(
-        clsCotizacionSolicitud cotizacion, Guid usuarioId, IReadOnlyList<int>? lineas, string servicio, decimal cantidad, int versionEsperada,
+        clsCotizacionSolicitud cotizacion, Guid usuarioId, IReadOnlyList<int> lineas, string servicio, decimal cantidad, int versionEsperada,
         CancellationToken cancellationToken)
     {
         if (!cotizacion.TieneVersion(versionEsperada))
@@ -495,7 +495,7 @@ public sealed class clsCosteoLineasService(
     }
 
     private async Task<(clsResultado<clsCosteoCotizacion> Resultado, IReadOnlyList<clsCambioConexoRuta> Rutas, bool PdfInvalidado)> QuitarAsync(
-        clsCotizacionSolicitud cotizacion, Guid usuarioId, IReadOnlyList<int>? lineas, string servicio, int versionEsperada,
+        clsCotizacionSolicitud cotizacion, Guid usuarioId, IReadOnlyList<int> lineas, string servicio, int versionEsperada,
         CancellationToken cancellationToken)
     {
         if (!cotizacion.TieneVersion(versionEsperada))
@@ -584,9 +584,9 @@ public sealed class clsCosteoLineasService(
 
     /// <summary>
     /// Forma de la selección: exactamente una de <c>lineas</c> (1 a <see cref="MaximoLineas"/> <c>linea_orden</c> ≥ 1, sin repetir) o
-    /// <c>todas: true</c>. Devuelve las líneas pedidas en orden, o <c>null</c> = todas.
+    /// <c>todas: true</c>. Devuelve las líneas pedidas en orden, o ninguna (lista vacía) = todas.
     /// </summary>
-    public static clsResultado<IReadOnlyList<int>?> ValidarSeleccion(clsSeleccionLineas? seleccion)
+    public static clsResultado<IReadOnlyList<int>> ValidarSeleccion(clsSeleccionLineas? seleccion)
     {
         var todas = seleccion?.Todas == true;
         var lista = seleccion?.Lineas;
@@ -597,7 +597,7 @@ public sealed class clsCosteoLineasService(
 
         if (todas)
         {
-            return clsResultado<IReadOnlyList<int>?>.Exito(null);
+            return clsResultado<IReadOnlyList<int>>.Exito([]);
         }
 
         if (lista!.Count == 0 || lista.Count > MaximoLineas)
@@ -619,16 +619,16 @@ public sealed class clsCosteoLineasService(
             }
         }
 
-        return clsResultado<IReadOnlyList<int>?>.Exito([.. vistas.Order()]);
+        return clsResultado<IReadOnlyList<int>>.Exito([.. vistas.Order()]);
     }
 
     /// <summary>
     /// Las rutas de la operación: las pedidas (cada una debe existir: si no, <c>RUTA_INEXISTENTE</c> con su <c>linea_orden</c>) o, con
     /// <c>todas</c>, las cotizables (sin las rechazadas por la Mesa; si no queda ninguna, <c>SIN_RUTAS_COTIZABLES</c>).
     /// </summary>
-    private static clsResultado<IReadOnlyList<clsLineaSolicitud>> Rutas(clsCotizacionSolicitud cotizacion, IReadOnlyList<int>? lineas)
+    private static clsResultado<IReadOnlyList<clsLineaSolicitud>> Rutas(clsCotizacionSolicitud cotizacion, IReadOnlyList<int> lineas)
     {
-        if (lineas is null)
+        if (lineas.Count == 0)
         {
             var cotizables = cotizacion.RutasCotizables;
             return cotizables.Count == 0
