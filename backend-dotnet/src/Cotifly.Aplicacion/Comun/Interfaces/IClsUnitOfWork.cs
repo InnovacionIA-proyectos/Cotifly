@@ -30,4 +30,14 @@ public interface IClsUnitOfWork
     /// </summary>
     /// <exception cref="clsViolacionUnicidadException">Igual que <see cref="GuardarCambiosAsync"/>.</exception>
     Task<bool> GuardarCambiosSiVersionAsync(Guid cotizacionId, int versionEsperada, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Endurecimiento B (#199): la comparación de <see cref="GuardarCambiosSiVersionAsync"/> DENTRO de una transacción ya abierta (la del
+    /// candado del folio, <see cref="IClsCandadoTransaccional"/>): bloquea la fila de la cotización (<c>UPDLOCK</c>) y compara su
+    /// <c>versionNegocio</c> con <paramref name="versionEsperada"/>, sin guardar ni confirmar nada. Lo que se guarde después en esa
+    /// transacción (con <see cref="GuardarCambiosAsync"/>) queda protegido hasta confirmarla, y si la transacción se deshace no queda nada.
+    /// <c>false</c> si la versión cambió, si la cotización no existe o si SQL Server eligió la transacción como víctima de un interbloqueo.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">No hay una transacción abierta.</exception>
+    Task<bool> VersionVigenteEnTransaccionAsync(Guid cotizacionId, int versionEsperada, CancellationToken cancellationToken = default);
 }

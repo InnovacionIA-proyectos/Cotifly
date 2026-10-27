@@ -45,18 +45,78 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
             .Should().Be("0", "el comentario solo se reenvía a Nexo");
     }
 
+    /// <summary>
+    /// HU-033 (#199, decisión 6): un borrador en Nexo (autocosteo) ya no es 409. El resultado queda solo en Cotifly, "pendiente" de
+    /// sincronizar; el polling, al ver la entrega de la Mesa, lo envía a Nexo una sola vez (con el comentario) y queda "sincronizado". El
+    /// estado se ve en el detalle, en el costeo y en "Mis cotizaciones".
+    /// </summary>
     [Fact]
-    public async Task UnBorradorEnNexoEs409CotizacionNoEntregadaSinCambioLocal()
+    public async Task UnBorradorEnNexoDejaElResultadoPendienteYSeSincronizaUnaVezCuandoNexoLoEntrega()
     {
-        var (sesion, folio, _) = await EnviarAsync(entregar: false);
+        var (sesion, folio, solicitud) = await EnviarAsync(entregar: false);
         var antes = _nexo.Peticiones.Count;
+
+        using var respuesta = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access,
+            """{"resultado":"ganada","comentario":"Contrato firmado"}""");
+        var json = await VerificarContratoAsync(respuesta, Ruta, _post, HttpStatusCode.OK);
+
+        json.GetProperty("ganada").GetBoolean().Should().BeTrue();
+        json.GetProperty("sincronizacion_resultado_nexo").GetString().Should().Be("pendiente");
+        _nexo.Peticiones.Count.Should().BeGreaterThan(antes, "en autocosteo se le pregunta a Nexo (pudo entregarse sin que el polling lo viera)");
+        _nexo.Resultado(solicitud).Should().Be("SinDefinir");
+        (await EscalarAsync(SqlSincronizacion(folio))).Should().Be("1|pendiente|Contrato firmado|0");
+        await VerEstadoEnLasVistasAsync(sesion, folio, "pendiente");
+
+        // Sin entrega el polling no envía nada; con la entrega, una sola vez.
+        await _api.ProcesarPollingAsync(folio);
+        _nexo.Resultado(solicitud).Should().Be("SinDefinir");
+        _nexo.Entregar(solicitud);
+        await _api.ProcesarPollingAsync(folio);
+        await _api.ProcesarPollingAsync(folio);
+
+        _nexo.Resultado(solicitud).Should().Be("Ganada");
+        var cotizacionNexo = await EscalarAsync($"SELECT cotizacionNexoId FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'");
+        _nexo.Llamadas(HttpMethod.Post, $"/api/cotizaciones/{cotizacionNexo}/resultado").Should().Be(2, "el intento del comercial (409) y el único envío del polling");
+        _nexo.Peticiones.Last(p => p.Url.AbsolutePath.EndsWith("/resultado", StringComparison.Ordinal)).Cuerpo.Should().Contain("Contrato firmado");
+        (await EscalarAsync(SqlSincronizacion(folio))).Should().Be("1|sincronizado|-|0");
+        (await EscalarAsync($"SELECT estadoCosteo FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'")).Should().Be("entregada");
+        await VerEstadoEnLasVistasAsync(sesion, folio, "sincronizado");
+    }
+
+    [Fact]
+    public async Task ConLaCotizacionEntregadaElResultadoQuedaSincronizadoDeUna()
+    {
+        var (sesion, folio, _) = await EnviarAsync(entregar: true);
 
         using var respuesta = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"ganada"}""");
 
-        respuesta.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        await VerificarErrorNegocioAsync(respuesta, "COTIZACION_NO_ENTREGADA");
-        _nexo.Peticiones.Count.Should().BeGreaterThan(antes, "en autocosteo se le pregunta a Nexo (pudo entregarse sin que el polling lo viera)");
-        (await EscalarAsync($"SELECT COALESCE(CAST(ganada AS nvarchar(5)), 'null') FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'")).Should().Be("null");
+        (await VerificarContratoAsync(respuesta, Ruta, _post, HttpStatusCode.OK)).GetProperty("sincronizacion_resultado_nexo").GetString().Should().Be("sincronizado");
+        (await EscalarAsync(SqlSincronizacion(folio))).Should().Be("1|sincronizado|-|0");
+    }
+
+    private static string SqlSincronizacion(string folio) =>
+        "SELECT CONCAT(CAST(ganada AS nvarchar(5)), '|', COALESCE(sincronizacionResultadoNexo, '-'), '|', COALESCE(comentarioResultadoPendiente, '-'), '|', "
+        + $"intentosSincronizacionResultado) FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'";
+
+    /// <summary>El estado de la sincronización en el detalle, el costeo y "Mis cotizaciones" (contrato incluido).</summary>
+    private async Task VerEstadoEnLasVistasAsync(clsSesionPrueba sesion, string folio, string estado)
+    {
+        using (var detalle = await _api.EnviarAsync(HttpMethod.Get, $"/web/cotizaciones/{folio}", sesion.Access))
+        {
+            (await VerificarContratoAsync(detalle, "/web/cotizaciones/{folio}", HttpMethod.Get, HttpStatusCode.OK))
+                .GetProperty("cotizacion").GetProperty("sincronizacion_resultado_nexo").GetString().Should().Be(estado);
+        }
+
+        using (var costeo = await _api.EnviarAsync(HttpMethod.Get, $"/web/cotizaciones/{folio}/costeo", sesion.Access))
+        {
+            var json = await VerificarContratoAsync(costeo, "/web/cotizaciones/{folio}/costeo", HttpMethod.Get, HttpStatusCode.OK);
+            json.GetProperty("sincronizacion_resultado_nexo").GetString().Should().Be(estado);
+            json.GetProperty("resultado").GetString().Should().Be("ganada");
+        }
+
+        using var lista = await _api.EnviarAsync(HttpMethod.Get, "/web/mis-cotizaciones", sesion.Access);
+        (await VerificarContratoAsync(lista, "/web/mis-cotizaciones", HttpMethod.Get, HttpStatusCode.OK)).GetProperty("cotizaciones").EnumerateArray()
+            .Single(c => c.GetProperty("folio").GetString() == folio).GetProperty("sincronizacion_resultado_nexo").GetString().Should().Be(estado);
     }
 
     [Fact]
@@ -279,6 +339,81 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
         (await contraria.Content.ReadAsStringAsync(Ct)).Should().Contain("RESULTADO_YA_DEFINIDO").And.Contain("ganada");
         _nexo.Resultado(solicitud).Should().Be("Ganada");
         (await EscalarAsync($"SELECT CAST(ganada AS nvarchar(5)) FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'")).Should().Be("1", "Cotifly queda igual que Nexo");
+    }
+
+    /// <summary>
+    /// DEF-C-1 (E2E 2026-10-22): perdida sobre una ganada sincronizada. Nexo responde 409 <c>RESULTADO_YA_DEFINIDO</c> y Cotifly LEE el
+    /// resultado de Nexo (<c>GET /api/cotizaciones/{id}</c>, el id ya conocido); antes hacía <c>POST /api/cotizaciones</c> ("crear o
+    /// recuperar", una escritura). Además (OBS-C-2) repetir la ganada ya sincronizada responde 200 sin volver a llamar a Nexo.
+    /// </summary>
+    [Fact]
+    public async Task ElResultadoYaDefinidoYElRepetidoNoEscribenDeMasEnNexo()
+    {
+        var (sesion, folio, solicitud) = await EnviarAsync(entregar: true);
+        var cotizacionNexo = _nexo.CotizacionDe(solicitud)!;
+        using (var ganada = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"ganada"}"""))
+        {
+            ganada.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        var crearAntes = _nexo.Llamadas(HttpMethod.Post, "/api/cotizaciones");
+        var marcarAntes = _nexo.Llamadas(HttpMethod.Post, $"/api/cotizaciones/{cotizacionNexo}/resultado");
+        marcarAntes.Should().Be(1);
+
+        using var repetida = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"ganada"}""");
+        (await VerificarContratoAsync(repetida, Ruta, _post, HttpStatusCode.OK)).GetProperty("sincronizacion_resultado_nexo").GetString()
+            .Should().Be("sincronizado");
+        _nexo.Llamadas(HttpMethod.Post, $"/api/cotizaciones/{cotizacionNexo}/resultado").Should().Be(marcarAntes, "OBS-C-2: idempotente en Cotifly");
+
+        using var contraria = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"perdida","motivo":"x"}""");
+        contraria.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        await VerificarErrorNegocioAsync(contraria, "RESULTADO_YA_DEFINIDO");
+
+        _nexo.Llamadas(HttpMethod.Post, $"/api/cotizaciones/{cotizacionNexo}/resultado").Should().Be(marcarAntes + 1, "la perdida sí se intenta en Nexo");
+        _nexo.Llamadas(HttpMethod.Post, "/api/cotizaciones").Should().Be(crearAntes, "DEF-C-1: ningún crear o recuperar");
+        _nexo.Llamadas(HttpMethod.Get, $"/api/cotizaciones/{cotizacionNexo}").Should().BeGreaterThan(0, "lee el resultado de Nexo por su id");
+        _nexo.Peticiones.Count(p => p.Metodo != HttpMethod.Get && p.Url.AbsolutePath.StartsWith("/api/cotizaciones", StringComparison.Ordinal))
+            .Should().Be(marcarAntes + 1, "las únicas escrituras en cotizaciones son los dos POST .../resultado");
+    }
+
+    /// <summary>
+    /// E2E 2026-10-22: una perdida en <c>pendiente_costeo</c> cuya solicitud Nexo ya no reconoce (404 <c>SOLICITUD_NO_ENCONTRADA</c>) queda
+    /// como perdida <c>solo_cotifly</c>, igual que en <c>error_envio</c> (antes respondía <c>COSTEO_NEXO_SOLICITUD_NO_ENCONTRADA</c>).
+    /// </summary>
+    [Fact]
+    public async Task LaPerdidaConLaSolicitudInexistenteEnNexoQuedaSoloEnCotifly()
+    {
+        var (sesion, folio, solicitud) = await EnviarSinPollingAsync();
+        _nexo.Olvidar(solicitud);
+        using var costeo = await _api.EnviarAsync(HttpMethod.Get, $"/web/cotizaciones/{folio}/costeo", sesion.Access);
+        var etag = costeo.Headers.ETag!.Tag;
+
+        using var respuesta = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access,
+            """{"resultado":"perdida","motivo":"El cliente desistió"}""", ifMatch: etag);
+
+        var json = await VerificarContratoAsync(respuesta, Ruta, _post, HttpStatusCode.OK);
+        json.GetProperty("ganada").GetBoolean().Should().BeFalse();
+        json.GetProperty("sincronizacion_resultado_nexo").GetString().Should().Be("solo_cotifly");
+        _nexo.Peticiones.Should().NotContain(p => p.Metodo != HttpMethod.Get && p.Url.AbsolutePath.StartsWith("/api/cotizaciones", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Endurecimiento B (#199): si Nexo ya no reconoce la cotización de Nexo del folio (404 <c>COTIZACION_NO_ENCONTRADA</c> al marcar), el
+    /// comercial recibe 409 <c>COTIZACION_NEXO_NO_ENCONTRADA</c> con el código de Nexo en <c>detalle.motivo</c>, no el 404 "no es tuya".
+    /// </summary>
+    [Fact]
+    public async Task SiNexoNoEncuentraLaCotizacionAlMarcarEs409ConSuCodigoYNoEl404NoEsTuya()
+    {
+        var (sesion, folio, solicitud) = await EnviarAsync(entregar: true);
+        _nexo.Olvidar(solicitud);
+
+        using var respuesta = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"ganada"}""");
+
+        respuesta.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        await VerificarErrorNegocioAsync(respuesta, "COTIZACION_NEXO_NO_ENCONTRADA");
+        using var json = JsonDocument.Parse(await respuesta.Content.ReadAsStringAsync(Ct));
+        json.RootElement.GetProperty("error").GetProperty("detalle").GetProperty("motivo").GetString().Should().Be("COTIZACION_NO_ENCONTRADA");
+        (await EscalarAsync($"SELECT COALESCE(CAST(ganada AS nvarchar(5)), 'null') FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'")).Should().Be("null");
     }
 
     /// <summary>La consulta de diagnóstico (solo lectura) documentada para el DBA en ADR-018 §17.</summary>

@@ -3,7 +3,8 @@ using System.Text.Json.Serialization;
 namespace Cotifly.Aplicacion.Clientes.DTOs;
 
 /// <summary>
-/// Resultado de <c>buscar_cliente</c> (ADR-005): si hubo una coincidencia exacta y los candidatos del catálogo de Nexo
+/// Resultado de la búsqueda de clientes (<c>GET /web/clientes</c>, ADR-005; antes también de la herramienta <c>buscar_cliente</c>,
+/// retirada con el agente legado en HU-013.9, #105): si hubo una coincidencia exacta y los candidatos del catálogo de Nexo
 /// (clientes de <c>DimBpSolicitante</c> y prospectos de <c>tblProspectos</c>, HU-005.2).
 /// </summary>
 /// <param name="Exacta">True si <paramref name="Candidatos"/> trae exactamente el cliente buscado (un solo candidato).</param>

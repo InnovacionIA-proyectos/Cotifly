@@ -88,6 +88,8 @@ public static class clsDependenciasInfraestructura
         servicios.AddOpcionesValidadas<clsOpcionesAlmacenPdf>(configuracion, clsOpcionesAlmacenPdf.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesAlmacenPdf>, clsValidadorOpcionesAlmacenPdf>();
         servicios.AddOpcionesValidadas<clsOpcionesCorreo>(configuracion, clsOpcionesCorreo.Seccion);
+        // HU-033 (#199): fuera de Production, con el correo habilitado, la protección "redirigir" con buzón de pruebas es obligatoria.
+        servicios.AddSingleton<IValidateOptions<clsOpcionesCorreo>, clsValidadorOpcionesCorreo>();
         servicios.AddOpcionesValidadas<clsOpcionesCorreoTransporte>(configuracion, clsOpcionesCorreoTransporte.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesCorreoTransporte>, clsValidadorOpcionesCorreoTransporte>();
         servicios.AddOpcionesValidadas<clsOpcionesJwt>(configuracion, clsOpcionesJwt.Seccion);
@@ -188,15 +190,32 @@ public static class clsDependenciasInfraestructura
     }
 
     /// <summary>
-    /// PDF (MigraDoc con fuentes embebidas, almacén en volumen) y transporte de correo elegido por <c>Correo:Modo</c> (#11).
+    /// PDF (MigraDoc con fuentes embebidas, almacén en volumen) y correo por MailSender (HU-033, #199, ADR-023): cliente HTTP tipado
+    /// <see cref="clsTransporteMailSender"/> con <c>Correo:MailSender:UrlBase</c> y su tubería (tiempo <c>TimeoutSegundos</c>, sin reintentar los
+    /// POST, sin registrar cabeceras), y el worker que consulta el estado de los correos encolados (<see cref="clsWorkerEstadoCorreos"/>).
     /// TryAdd: un adaptador registrado antes (pruebas) se respeta.
     /// </summary>
     private static void AgregarPdfYCorreo(IServiceCollection servicios)
     {
         servicios.TryAddSingleton<IClsGeneradorPdf, clsGeneradorPdfMigraDoc>();
         servicios.TryAddSingleton<IClsAlmacenPdf, clsAlmacenPdfVolumen>();
-        servicios.TryAddSingleton<clsTransporteSmtpRelay>();
-        servicios.TryAddSingleton<IClsTransporteCorreo>(clsFabricaTransporteCorreo.Crear);
+        var tuberia = servicios.AddHttpClient<clsTransporteMailSender>(clsTransporteMailSender.NombreCliente, (sp, cliente) =>
+            {
+                cliente.Timeout = Timeout.InfiniteTimeSpan; // el límite lo pone la tubería
+                var url = sp.GetRequiredService<IOptions<clsOpcionesCorreoTransporte>>().Value.MailSender.UrlBase;
+                if (Uri.TryCreate(url?.Trim().TrimEnd('/') + "/", UriKind.Absolute, out var raiz))
+                {
+                    cliente.BaseAddress = raiz;
+                }
+            })
+            .RedactLoggedHeaders(_ => true)
+            .AddStandardResilienceHandler();
+        servicios.AddOptions<HttpStandardResilienceOptions>(tuberia.PipelineName)
+            .Configure<IOptions<clsOpcionesCorreoTransporte>>((resiliencia, opciones) =>
+                clsTransporteMailSender.ConfigurarResiliencia(resiliencia, opciones.Value.MailSender.Timeout));
+        servicios.TryAddScoped<IClsTransporteCorreo>(sp => sp.GetRequiredService<clsTransporteMailSender>());
+        servicios.TryAddScoped<IClsSeguimientoCorreoExterno>(sp => sp.GetRequiredService<clsTransporteMailSender>());
+        servicios.AddHostedService<clsWorkerEstadoCorreos>();
     }
 
     /// <summary>

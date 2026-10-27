@@ -64,3 +64,18 @@ Característica: Margen y servicios conexos por ruta
     Y el costeo de "C1" tiene el precio final 3000000 con el margen aplicado "0.15" y el origen "politica_linea"
     Y la ruta 1 de "C1" no tiene servicios conexos guardados
     Y quedó auditado que se quitó el servicio conexo "Cargue" de "C1"
+
+  # HU-033 (#199): el PDF del costeo no desglosa. Cada ruta muestra su precio final (transporte + conexos, con el margen) y los conexos
+  # incluidos solo por nombre; el total va como "VALOR TOTAL DE LA COTIZACIÓN". (2.550.000 + 170.000) / (1 − 0,15) = 3.200.000.
+  Escenario: El PDF muestra el precio final de la ruta y el nombre del conexo sin el precio del conexo ni el transporte solo
+    Dado "ana" envió a costeo el formulario ampliado del cliente "900555111" como "C1"
+    Y Nexo costeó la solicitud de "C1" con un flete de 2550000 y el polling lo registró
+    Y que el costeo de "C1" trae el servicio conexo "Cargue en puerto" con un valor de Nexo de 170000
+    Cuando "ana" genera el PDF del costeo de "C1"
+    Entonces la respuesta tiene el estado 201 y cumple el esquema "SalidaPdf" del contrato
+    Y el PDF de "C1" contiene "$3.200.000"
+    Y el PDF de "C1" contiene "Cargue en puerto"
+    Y el PDF de "C1" contiene "VALOR TOTAL DE LA COTIZACIÓN"
+    Y el PDF de "C1" no contiene "$200.000"
+    Y el PDF de "C1" no contiene "$3.000.000"
+    Y el PDF de "C1" no contiene "2.550.000"

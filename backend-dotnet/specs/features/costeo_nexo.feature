@@ -89,13 +89,26 @@ Característica: Costeo de la cotización en Nexo
     Y Nexo registró la cotización de "C1" como "Ganada"
     Y la cotización "C1" queda ganada "true" con el motivo "No aplica"
 
-  Escenario: Si Nexo rechaza el resultado no cambia nada en Cotifly
+  # HU-033 (#199, ADR-023, decisión 6) — Resultado diferido: si Nexo todavía no tiene la cotización Entregada, el resultado queda solo en
+  # Cotifly ("pendiente de sincronizar") y el polling lo envía a Nexo una sola vez cuando la Mesa la entrega. Cotifly no llama a /entregar.
+  Escenario: Si Nexo todavía no la entregó el resultado queda pendiente y se envía una sola vez cuando la Mesa la entrega
     Cuando "ana" envía a costeo el formulario ampliado del cliente "900555111" como "C1"
     Y Nexo costea la solicitud de "C1" con un flete de 2550000
     Y el polling consulta a Nexo
-    Y "ana" marca el resultado de "C1" como "perdida" con el motivo "Precio alto" y el comentario "-"
-    Entonces la respuesta tiene el estado 409 con el código de negocio "COTIZACION_NO_ENTREGADA"
-    Y la cotización "C1" sigue sin resultado
+    Y "ana" marca el resultado de "C1" como "perdida" con el motivo "Precio alto" y el comentario "Pidió 5 % menos"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
+    Y la respuesta trae la sincronización del resultado "pendiente"
+    Y la cotización "C1" queda ganada "false" con el motivo "Precio alto"
+    Y Nexo no recibió ningún resultado de "C1"
+    Cuando el polling consulta a Nexo
+    Entonces Nexo no recibió ningún resultado de "C1"
+    Cuando Nexo entrega la cotización de "C1"
+    Y el polling consulta a Nexo
+    Entonces Nexo registró la cotización de "C1" como "Perdida"
+    Y el resultado de "C1" queda "sincronizado" con Nexo
+    # Dos envíos a Nexo en total: el del comercial (409 COTIZACION_NO_ENTREGADA) y el único del polling tras la entrega.
+    Cuando el polling consulta a Nexo
+    Entonces Nexo recibió 2 envíos del resultado de "C1"
 
   # HU-013.14 (ADR-018 §17) — Consistencia del costeo al entregar y al registrar el resultado
   Escenario: Si Nexo costea en la misma petición el formulario ya responde con el precio
@@ -145,11 +158,15 @@ Característica: Costeo de la cotización en Nexo
     Entonces la cotización "C1" queda ganada "false" con el motivo "El cliente desistió"
     Y la cotización "C1" queda en el estado de costeo "pendiente_costeo"
 
-  Escenario: Sin costeo de Nexo no se puede marcar ganada
+  # HU-033 (#199): antes era COTIZACION_NO_ENTREGADA; la ganada sin costeo queda pendiente de sincronizar (la perdida sigue siendo #127).
+  Escenario: Sin costeo de Nexo la ganada queda pendiente de sincronizar con Nexo
     Cuando "ana" envía a costeo el formulario ampliado del cliente "900555111" como "C1"
     Y "ana" marca el resultado de "C1" como "ganada" con el motivo "Mejor precio" y el comentario "-"
-    Entonces la respuesta tiene el estado 409 con el código de negocio "COTIZACION_NO_ENTREGADA"
-    Y la cotización "C1" sigue sin resultado
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
+    Y la respuesta trae la sincronización del resultado "pendiente"
+    Y la cotización "C1" queda ganada "true" con el motivo "No aplica"
+    Y la cotización "C1" queda en el estado de costeo "pendiente_costeo"
+    Y Nexo no recibió ningún resultado de "C1"
 
   # HU-018.1 (#155) — "Ver detalle": la fecha límite (cabecera) y el scorePrioridad que Nexo da al crear la solicitud
   Escenario: Ver detalle muestra la fecha límite y el score de prioridad que Nexo dio al crear la solicitud

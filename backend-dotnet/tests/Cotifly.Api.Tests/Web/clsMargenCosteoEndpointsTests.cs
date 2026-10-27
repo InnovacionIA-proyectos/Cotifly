@@ -88,7 +88,9 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
         using var descarga = await _api.EnviarAsync(_get, $"/pdfs/{folio}.pdf", sesion.Access);
         descarga.StatusCode.Should().Be(HttpStatusCode.OK);
         var texto = clsLectorPdf.Leer(await descarga.Content.ReadAsByteArrayAsync(Ct)).Texto;
-        texto.Should().Contain("Cargue en puerto").And.Contain("3.000.000").And.NotContain("Escolta", "solo los conexos incluidos");
+        // HU-033 (#199): el valor final de la ruta con el conexo incluido (2.550.000 / 0,85 + 170.000 / 0,85) y el conexo sin precio aparte.
+        texto.Should().Contain("Cargue en puerto").And.Contain("3.200.000").And.NotContain("Escolta", "solo los conexos incluidos");
+        texto.Should().NotContain("$3.000.000", "sin desglose: el transporte solo no se imprime").And.NotContain("$200.000", "ni el precio del conexo");
         texto.Should().NotContain("2.550.000", "el PDF lleva el precio con margen, no el costo de Nexo");
         // #173: la nota usa las horas capturadas (4 h de cargue y 6,5 h de descargue) y no dice que no incluye el cargue (va itemizado).
         var plano = System.Text.RegularExpressions.Regex.Replace(texto, @"\s+", " ");
@@ -179,7 +181,8 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
         await VerificarContratoAsync(nuevo, "/web/cotizaciones/{folio}/costeo/pdf", _post, HttpStatusCode.Created);
 
         using var descarga = await _api.EnviarAsync(_get, $"/pdfs/{folio}.pdf", sesion.Access);
-        clsLectorPdf.Leer(await descarga.Content.ReadAsByteArrayAsync(Ct)).Texto.Should().Contain("3.109.756", "el PDF nuevo lleva el precio ajustado");
+        // HU-033 (#199): el valor final de la ruta con el margen ajustado (2.550.000 / 0,82 + el Cargue 170.000 / 0,82), sin desglose.
+        clsLectorPdf.Leer(await descarga.Content.ReadAsByteArrayAsync(Ct)).Texto.Should().Contain("3.317.073", "el PDF nuevo lleva el precio ajustado");
         File.Exists(Path.Combine(Configuracion("Pdf:StorageDir"), $"{folio}-h1.pdf")).Should().BeTrue("el PDF invalidado se conserva archivado");
         using var costeo = await _api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", sesion.Access);
         (await VerificarContratoAsync(costeo, "/web/cotizaciones/{folio}/costeo", _get, HttpStatusCode.OK))

@@ -130,6 +130,28 @@ public sealed partial class clsUnitOfWork(clsCotiflyDbContext contexto) : IClsUn
         contexto.ChangeTracker.Clear();
     }
 
+    public async Task<bool> VersionVigenteEnTransaccionAsync(Guid cotizacionId, int versionEsperada, CancellationToken cancellationToken = default)
+    {
+        if (contexto.Database.CurrentTransaction is null)
+        {
+            throw new InvalidOperationException("La comparación de versión dentro de la transacción exige una transacción abierta (la del candado del folio).");
+        }
+
+        try
+        {
+            // Mismo bloqueo que GuardarCambiosSiVersionAsync (la cabecera primero): la fila queda retenida hasta confirmar o deshacer.
+            var actual = await contexto.Database
+                .SqlQuery<int?>($"SELECT versionNegocio AS [Value] FROM dbo_cotifly.CotizacionesSolicitud WITH (UPDLOCK, ROWLOCK) WHERE id = {cotizacionId}")
+                .FirstOrDefaultAsync(cancellationToken);
+            return actual == versionEsperada;
+        }
+        catch (Exception ex) when (EsInterbloqueo(ex))
+        {
+            // Víctima de un interbloqueo: SQL Server ya deshizo la transacción; para el llamador es un CONFLICTO_CONCURRENCIA.
+            return false;
+        }
+    }
+
     /// <summary>
     /// Nombre de la restricción en el mensaje de SQL Server (entre comillas simples; en cualquier idioma
     /// el nombre aparece citado). Se toma el primer identificador con prefijo de restricción del esquema.

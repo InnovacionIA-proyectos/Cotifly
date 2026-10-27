@@ -201,8 +201,8 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
     public async Task HU0301_ConEl10PeroSinEl11EsUnhealthyPorqueLeFaltaEl11()
     {
         // HU-030.1 (#184): el modelo EF mapea CotizacionLineasSolicitud.pesoConTaraKg de db/scripts/11_peso_con_tara.sql. Integración 1021:
-        // la base llega hasta el 10 (Scripts[ScriptsSin07 - 2], #183); hasta el 09 la sonda pide primero el 10.
-        await using var sin11 = await baseDatos.CrearBaseConScriptsAsync("dbSin11", clsBaseDatosPruebas.ScriptsSin07 - 2);
+        // la base llega hasta el 10 (Scripts[ScriptsSin07 - 3], #183); hasta el 09 la sonda pide primero el 10.
+        await using var sin11 = await baseDatos.CrearBaseConScriptsAsync("dbSin11", clsBaseDatosPruebas.ScriptsSin07 - 3);
 
         var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin11.Cadena);
 
@@ -214,12 +214,25 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
     public async Task HU032_ConEl11PeroSinEl12EsUnhealthyPorqueLeFaltaEl12()
     {
         // HU-032 (#197): el modelo EF mapea tipoVehiculoElegido y carroceriaElegida de la ruta (db/scripts/12_vehiculo_elegido.sql).
-        await using var sin12 = await baseDatos.CrearBaseConScriptsAsync("dbSin12", clsBaseDatosPruebas.ScriptsSin07 - 1);
+        await using var sin12 = await baseDatos.CrearBaseConScriptsAsync("dbSin12", clsBaseDatosPruebas.ScriptsSin07 - 2);
 
         var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin12.Cadena);
 
         resultado.Status.Should().Be(HealthStatus.Unhealthy);
         resultado.Description.Should().Be("esquema incompleto: falta 12");
+    }
+
+    [Fact]
+    public async Task HU033_ConEl12PeroSinEl13EsUnhealthyPorqueLeFaltaEl13()
+    {
+        // HU-033 (#199): el modelo EF mapea el seguimiento de MailSender (Correos) y el resultado diferido a Nexo (cabecera) de
+        // db/scripts/13_correo_mailsender.sql.
+        await using var sin13 = await baseDatos.CrearBaseConScriptsAsync("dbSin13", clsBaseDatosPruebas.ScriptsSin07 - 1);
+
+        var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin13.Cadena);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be("esquema incompleto: falta 13");
     }
 
     [Fact]

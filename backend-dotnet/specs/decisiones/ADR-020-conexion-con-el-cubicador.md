@@ -3,6 +3,9 @@
 - **Estado:** Aceptada (2026-10-09; HU-023.2 y HU-023.4 agregadas el 2026-10-13; HU-031.1, alias de Nexo, el 2026-10-20). Parte de la milestone HU-023 (#156 a #160).
 - **Reemplaza:** el contrato provisional de la integración con el cubicador de ADR-019 (sección "Integración con el cubicador",
   HU-021.5, #133). Lo demás de ADR-019 sigue vigente.
+- **Reemplazada en parte por [ADR-022](ADR-022-vehiculo-elegido-respaldo-cubicador.md) (HU-032, #197, 2026-10-21):** la bandera
+  `Captura:AceptarVehiculoCliente` (el vehículo elegido es el respaldo del cubicador, obligatorio sin mercancías cubicables salvo
+  `Captura:ClasesSinVehiculoObligatorio`; la bandera queda como interruptor de reversa, ADR-022 §11).
 - **Fuentes:** `docs/backlog/2026-10-08_HU_Sprint5_Cotifly_Backend.md` (HU-023, decisiones del 2026-10-08),
   `docs/conexion_nexo/2026-10-08_PETICIONES_AL_CUBICADOR.md` (peticiones P1 a P7) y la hoja de ruta del cubicador del 2026-10-08
   (contrato, sección 2). Esos dos borradores no se versionaron en este repositorio: la fuente de verdad es la milestone HU-023
@@ -53,7 +56,11 @@ fallo silencioso que describe la hoja de ruta.
 
 ### Tiempos, reintentos y salud
 
-- `Cubicador:TiempoEsperaSegundos` pasa de 15 a **30** (el objetivo del cubicador es 10 s). El `POST` nunca se reintenta; los `GET`
+- ~~`Cubicador:TiempoEsperaSegundos` pasa de 15 a **30** (el objetivo del cubicador es 10 s).~~ **[Revisado en el E2E 2026-10-16]** Hoy
+  `Cubicador:TiempoEsperaSegundos` = **15** y solo limita los GET (catálogos y sonda); el `POST /recomendaciones` tiene su propio límite,
+  `Cubicador:TiempoEsperaRecomendacionSegundos` = **90** (de 1 a 300, no menor que `TiempoEsperaSegundos` ni mayor que
+  `PresupuestoCapturaSegundos` = 180), con reconsulta por GET si no responde (`EsperaAntesReconsultaSegundos` = 5,
+  `TiempoEsperaReconsultaSegundos` = 60) y un cupo global `MaximoConcurrente` = 1 (`EsperaMaximaCupoSegundos` = 60) (`clsOpcionesCubicador`). El `POST` nunca se reintenta; los `GET`
   de catálogo sí (2 veces), con su tope propio `Cubicador:TiempoMaximoCatalogoSegundos`.
 - **Sonda `cubicador`** en `/health/ready` (P7): con `Cubicador:RutaSalud` (vacía por defecto mientras el cubicador no publique su
   endpoint de salud) hace un `GET` liviano. Si falla, solo saca a Cotifly de servicio con `Cubicador:RespaldoSiFalla = false`; con el
@@ -65,9 +72,11 @@ fallo silencioso que describe la hoja de ruta.
   `comentario_condicion`, `activo` e `id` (uuid, obsoleto: solo traduce el `id_tipo_mercancia` anterior).
 - Nuevos `GET /web/tipos-carroceria` y `GET /web/tipos-vehiculo` (P1; mientras no exista, 503). Los tres con la caché genérica
   `clsCacheCatalogoCubicador<TFila>` (`Cubicador:MinutosCacheCatalogos`).
-- **Validación de códigos** (`clsValidadorCatalogosCaptura`): `tipo_vehiculo` y `carroceria` aceptan los códigos **activos** del
-  cubicador. Si el código no está ahí, o el cubicador no está configurado o no responde, se validan como el vehículo digitado del
+- **Validación de códigos** (`clsValidadorCatalogosCaptura`): ~~`tipo_vehiculo` y `carroceria` aceptan los códigos **activos** del
+  cubicador. Si el código no está ahí, o el cubicador no está configurado o no responde,~~ se validan como el vehículo digitado del
   respaldo: el vehículo contra el catálogo maestro de Nexo y la carrocería contra la lista fija `clsCatalogosCaptura.Carrocerias`.
+  [Revertido en HU-014 (#188, M1): ya no basta el catálogo del cubicador; solo vale un código del catálogo de Nexo o, desde HU-031.1
+  (#194), un alias de Nexo que resuelve a uno.]
 - **Clase de contenedor (lo que le quedaba a HU-015.1):** se quitó la lista fija de 5 códigos. Se valida contra
   `GET /api/catalogos/clases-contenedor` de Nexo (con caché; sin Nexo, `CATALOGOS_FLETE_NO_DISPONIBLE` como la clase de viaje), más la
   lista provisional de extradimensionado (G15) mientras Nexo no la formalice. Como `clases-contenedor` es un catálogo opcional de Nexo
@@ -110,7 +119,7 @@ corre después del 01 (y en `-Auto` sobre una base existente).
   pero no depende de esas columnas y aplica igual sobre el `01` de la cadena; no trae la columna de orden del camión
   (`ordenVehiculo`) ni el id del catálogo del conexo (#136); y su `ck_cotizacionLineasSolicitud_motivoSinSeleccion` acepta un motivo con
   `resultadoCubicacion` NULL (`NULL = 'SIN_SELECCION_AUTOMATICA'` es UNKNOWN y el CHECK pasa; el backend no lo permite). Las tres
-  correcciones van en `db/scripts/pendientes/03_orden_vehiculo_y_conexo_catalogo.sql` (índice único filtrado
+  correcciones van en ~~`db/scripts/pendientes/03_orden_vehiculo_y_conexo_catalogo.sql`~~ [hoy `db/scripts/03_orden_vehiculo_y_conexo_catalogo.sql`, en la carpeta del ejecutador y con sus columnas mapeadas en EF (`ordenVehiculo`, `idServicioConexoCatalogo`)] (índice único filtrado
   `(lineaSolicitudId, ordenVehiculo)`, CHECK con `ISNULL` y consulta de verificación), **pendiente de revisión de @scalderon-bs**: fuera
   de la carpeta que corre el ejecutador; el backend no mapea sus columnas, así que las filas nuevas quedarían en NULL. Una prueba la
   aplica en una base aislada y la verifica idempotente.
@@ -130,8 +139,8 @@ corre después del 01 (y en `-Auto` sobre una base existente).
   sigue leyendo el catálogo.
 - **Categoría del conexo (#173).** La tabla `CotizacionServiciosConexos` no guarda la categoría del catálogo de Nexo; el costeo la lee del
   catálogo (`clsCategoriasConexosService`, índice en memoria de 30 min, por id del catálogo o por nombre) y usa `logistico` solo si el
-  catálogo no responde o no tiene el conexo. La columna para guardarla está propuesta en `db/scripts/pendientes/05_categoria_conexo.sql`
-  (pendiente de revisión; no se mapea).
+  catálogo no responde o no tiene el conexo. La columna para guardarla está propuesta en ~~`db/scripts/pendientes/05_categoria_conexo.sql`
+  (pendiente de revisión; no se mapea)~~ [hoy `db/scripts/05_categoria_conexo.sql`; `categoriaServicioConexo` está mapeada en EF].
 - **Ejecutador con `-Auto`:** corre los ajustes (`02` en adelante) en **cada** arranque; el 02 es idempotente y no hace nada la segunda
   vez. En una base anterior al `0009` (sin `CotizacionMercancias`) su precondición se detiene con error y el ejecutador también (`-b`):
   hay que migrar primero con `0009` y `0010`.
@@ -219,8 +228,11 @@ caído el análisis no falla (`catalogo_mercancias_disponible = false`).
   `DIMENSIONES_INVALIDAS`, respuesta inválida...) no se acepta con respaldo (auditoría): se corrige la carga en una versión nueva.
 - **Conexos:** cuelgan de la ruta, no del camión: reemplazar el camión provisional no los toca, y el envío diferido (decisión 10) los
   manda a la línea del primer camión real (prueba `LosConexosQuedanEnLaRuta...`).
-- **Captura:AceptarVehiculoCliente (#138):** como en el camino síncrono, con la bandera el vehículo del cliente (el del camión
-  provisional) llega al respaldo; si el cubicador recomienda, manda el cubicador.
+- **Captura:AceptarVehiculoCliente (#138):** ~~como en el camino síncrono, con la bandera el vehículo del cliente (el del camión
+  provisional) llega al respaldo; si el cubicador recomienda, manda el cubicador.~~ [Reemplazado por ADR-022 §9 (HU-032): la ruta guarda
+  el vehículo elegido y el camión provisional va **sin** vehículo (el elegido aún no se validó); si el cubicador no asigna, el respaldo
+  usa el elegido (validado en ese momento); si asigna, manda el cubicador. Las filas sin mercancías cubicables no esperan al cubicador:
+  se planifican al crearlas con el elegido.]
 - **Progreso:** `GET /web/licitaciones/{folio}` trae `progreso_cubicacion` (`en_curso`, `con_fallas` o `completa`, con total,
   cubicadas, pendientes y fallidas), por ruta `estado_cubicacion`, `error_cubicacion`, el resultado y los `camiones`, y `cubicacion[]` con
   los avisos. No se agregó un endpoint de progreso aparte.
@@ -240,15 +252,20 @@ genera el mismo Excel para cualquier cotización propia con rutas: es la que deb
 
 ### Riesgos
 
-- `Cubicador:MaximoParalelo` es un supuesto (4) hasta que el cubicador conteste P6. Cada llamada en curso ocupa una conexión a SQL
+- ~~`Cubicador:MaximoParalelo` es un supuesto (4) hasta que el cubicador conteste P6.~~ **[Revisado en el E2E 2026-10-16]** Hoy
+  `Cubicador:MaximoParalelo` = **1** por defecto (el cubicador calcula una carga a la vez) y al arrancar se valida que no supere
+  `Cubicador:MaximoConcurrente` (1), el cupo global del proceso (`clsOpcionesCubicacionLicitacion`). Cada llamada en curso ocupa una conexión a SQL
   Server sin pool (el cupo).
 - **FIFO:** las rutas se atienden en orden de llegada (`createdAt`, índice `(cubicacionDisponibleAt, createdAt)`): una licitación
   grande ocupa todos los cupos y la siguiente espera a que termine (no hay reparto justo entre licitaciones).
 - **"El último gana" en la cabecera:** varias rutas de la misma licitación se guardan en paralelo (cada una con su réplica o tarea) y
   cada guardado recalcula los totales; si la cabecera cambia, el último guardado gana. Es inocuo: mientras se cubica no hay flete y el
   precio de la cabecera es `null` en todos los guardados; el envío a Nexo recarga la cotización con el candado del envío.
-- `Cubicador:ReclamoSegundos` debe ser mayor que `Cubicador:TiempoEsperaSegundos` + 30 s (se valida al arrancar): si el reclamo
-  venciera durante la llamada, otra réplica repetiría la ruta.
+- `Cubicador:ReclamoSegundos` debe ser mayor que ~~`Cubicador:TiempoEsperaSegundos` + 30 s~~ lo que puede durar la llamada de una ruta
+  más 30 s (se valida al arrancar): si el reclamo venciera durante la llamada, otra réplica repetiría la ruta. **[Revisado en el E2E
+  2026-10-16]** La llamada es `EsperaMaximaCupoSegundos` + `TiempoEsperaRecomendacionSegundos` + 2 + `EsperaAntesReconsultaSegundos` +
+  `TiempoEsperaReconsultaSegundos` (60 + 90 + 2 + 5 + 60 = 217 con los valores por defecto), así que el mínimo es 247; `ReclamoSegundos`
+  vale **300** por defecto (`clsValidadorOpcionesCubicacionLicitacion`).
 - La cubicación en segundo plano no sube `versionNegocio`: un ETag leído durante la cubicación sigue valiendo, pero las mutaciones que
   dependen de los camiones están bloqueadas mientras tanto.
 - **Esquema pendiente:** el cambio está en `db/scripts/pendientes/04_cubicacion_segundo_plano.sql` (con respaldo previo, pendiente de
@@ -352,7 +369,8 @@ payload idéntico con las banderas apagadas (salvo el encabezado y la regla del 
 separado, el límite de 40, emparejamiento de dos camiones idénticos de la misma ruta con y sin los campos nuevos, peso de un camión con
 el del cubicador a más del 1 % y el 429 sin reintento con el bloqueo compartido entre los dos clientes de Nexo.
 
-**Encender las banderas** cuando Nexo despliegue su rama `QA` en el ambiente correspondiente: su swagger declara
+~~**Encender las banderas** cuando Nexo despliegue su rama `QA` en el ambiente correspondiente:~~ [Hecho en HU-023 (#176): las tres
+banderas quedaron encendidas por defecto, ver la sección de #176.] su swagger declara
 `additionalProperties: false`, así que mandarlas antes podría hacer que rechace el alta. Primero `Nexo__EnviarGrupoRutaId`, luego
 `Nexo__EnviarDatosCubicador`, y verificar con el GET que vuelven en `lineas[]`. `Nexo__EnviarCodigosCubicador` solo cuando Nexo
 despliegue la cuarentena de vehículos (S5-HU-18.4) y #297.
@@ -434,7 +452,9 @@ normalización de nombres.
 ### NEXO
 
 - **Banderas encendidas por defecto.** `Nexo:EnviarGrupoRutaId`, `Nexo:EnviarDatosCubicador` y `Nexo:EnviarCodigosCubicador` pasan a
-  `true`: quedan solo como **interruptor de emergencia**. Reemplaza lo de "apagada por defecto" de las secciones de HU-023.4 y #297.
+  `true`: quedan solo como **interruptor de emergencia**. [Nota: después `Nexo:EnviarCodigosCubicador` pasó a tres modos (`siempre`,
+  `solo_conocidos`, `nunca`; HU-014 #188) y desde HU-031.1 (#194) el valor por defecto es **`siempre`** (`true` = `siempre`), ver las
+  secciones de #188 y #194.] Reemplaza lo de "apagada por defecto" de las secciones de HU-023.4 y #297.
   El polling sigue comparando contra lo que viajó (`envio_nexo_registrado`), no contra la bandera actual.
 - **`grupoRutaId` = `null` para la línea suelta** (contrato §3.3): una ruta con un solo camión no lleva grupo; una ruta con varios lleva
   el id de la ruta de Cotifly (un GUID por recomendación, igual en todas sus líneas) y sus líneas van contiguas (se arman ruta por ruta).
@@ -491,9 +511,10 @@ normalización de nombres.
 Reemplaza "bandera apagada = no mandar nada", que dejaba el 100 % de las rutas Cupo en `PorCostear` y costeaba Carga suelta y
 Extradimensionado con el piso SICE-TAC sin revisión (`COTIFLY-CONTRATO.md` §4). Decisión: **"Enviar solo códigos conocidos."**
 
-- **`Nexo:EnviarCodigosCubicador` pasa a tener tres modos**: `solo_conocidos` (por defecto y en los manifiestos), `siempre` y `nunca`.
+- **`Nexo:EnviarCodigosCubicador` pasa a tener tres modos**: `solo_conocidos` (~~por defecto y en los manifiestos~~ [desde HU-031.1, #194,
+  el defecto y el valor de los manifiestos es `siempre`]), `siempre` y `nunca`.
   Compatibilidad con el booleano: `true` = `siempre`; `false` = `solo_conocidos` (la intención de `false` era no generar cuarentenas, y
-  `solo_conocidos` tampoco las genera; así un ambiente que ya tenía `false` recibe la decisión nueva). Vacía = `solo_conocidos`. Otro
+  `solo_conocidos` tampoco las genera; así un ambiente que ya tenía `false` recibe la decisión nueva). Vacía = ~~`solo_conocidos`~~ `siempre` (desde #194). Otro
   valor no deja arrancar (`clsOpcionesNexo : IValidatableObject`, validado con `ValidateDataAnnotations` + `ValidateOnStart`). Se eligió el
   texto (`string`) y no un `enum` enlazado para que `true`/`false` sigan funcionando sin error de enlace.
 - **"Conocido"** (`clsCodigosConocidosNexo`, Dominio): el código del cubicador está en el `codigo` de `GET /api/catalogos/tipos-vehiculo`

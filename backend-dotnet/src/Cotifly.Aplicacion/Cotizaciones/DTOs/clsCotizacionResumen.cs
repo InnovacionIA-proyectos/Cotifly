@@ -68,6 +68,17 @@ public sealed record clsCotizacionResumen(
     public decimal? ScorePrioridad { get; init; }
 
     /// <summary>
+    /// HU-033 (#199): estado del resultado ganada/perdida frente a Nexo: <c>null</c> sin resultado; <c>pendiente</c> (guardado solo en
+    /// Cotifly, se envía a Nexo cuando la Mesa entregue: "pendiente de sincronizar con NEXO"); <c>sincronizado</c>; <c>no_sincronizable</c>
+    /// (ya no se podrá enviar: ver <see cref="ErrorSincronizacionResultadoNexo"/>); <c>solo_cotifly</c> (nunca va a Nexo: perdida antes del
+    /// costeo, cotización sin Nexo, descartada o vencida). Siempre se serializa.
+    /// </summary>
+    public string? SincronizacionResultadoNexo { get; init; }
+
+    /// <summary>HU-033 (#199): último error al enviar el resultado pendiente, o por qué ya no se puede enviar; <c>null</c> si no hay.</summary>
+    public string? ErrorSincronizacionResultadoNexo { get; init; }
+
+    /// <summary>
     /// Solo en la respuesta de <c>POST /web/solicitudes-costeo</c> (HU-023.3, #158): por cada ruta que pasó por el cubicador, su resultado
     /// y sus avisos (mercancías condicionadas, advertencias y extradimensión, que no se guardan). <c>null</c> (no se serializa) si ninguna
     /// ruta llamó al cubicador o en el resto de respuestas.
@@ -128,6 +139,8 @@ public sealed record clsCotizacionResumen(
         {
             Deadline = cotizacion.Deadline?.ToUniversalTime(),
             ScorePrioridad = cotizacion.ScorePrioridad,
+            SincronizacionResultadoNexo = cotizacion.EstadoSincronizacionResultado,
+            ErrorSincronizacionResultadoNexo = cotizacion.Ganada is null ? null : cotizacion.ErrorSincronizacionResultado,
         };
     }
 }

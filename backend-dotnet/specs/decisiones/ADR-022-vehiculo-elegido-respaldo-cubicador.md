@@ -154,6 +154,18 @@ Las filas con todas sus mercancías cubicables se cubican en segundo plano (HU-0
 aún no se validó) y la ruta guarda el elegido para el respaldo. Las filas sin mercancías cubicables no esperan al cubicador: se planifican al
 crearlas con el elegido.
 
+**Reintento con respaldo (endurecimiento B de #199, 2026-10-22).** `POST /web/licitaciones/{folio}/cubicacion/reintentar` con
+`usar_respaldo = true` sobre una ruta que falló por una caída del cubicador aplica la **misma** regla que el camino en segundo plano (§5,
+validación tardía), sin volver a llamar al cubicador (`IClsPlanificadorCamiones.PlanificarRespaldoAsync`):
+
+- elegido que es código de NEXO (catálogo o alias) → el camión lleva el elegido, escrito como en NEXO, y el aviso `VEHICULO_ELEGIDO_USADO`
+  (causa "El cubicador no estuvo disponible");
+- elegido que no es de NEXO → el camión va sin vehículo (o sin la carrocería) con `VEHICULO_ELEGIDO_INVALIDO`;
+- sin elegido, o con `Captura:AceptarVehiculoCliente` apagada → sin vehículo y sin aviso, como antes.
+
+Antes de este cambio el reintento aceptaba el camión provisional sin vehículo aunque la ruta tuviera un elegido. Un rechazo de los datos
+del cubicador sigue sin aceptarse con el respaldo (`ESTADO_NO_PERMITE`).
+
 ### 10. Emparejamiento del camión del respaldo
 
 Un camión sin `idRecomendacionVehiculo` se asocia **por ruta y peso** cuando esa combinación es única en la cotización (un solo camión

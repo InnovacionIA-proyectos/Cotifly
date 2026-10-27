@@ -23,6 +23,23 @@ public static class clsTextosEstandar
         string Facturacion);
 
     public const string TituloTarifa = "NUESTRA TARIFA PARA SU SOLICITUD ES:";
+
+    /// <summary>
+    /// HU-033 (#199, decisión 5): etiqueta del total general al final de la tarifa del PDF y en el resumen del correo. El total es la suma del
+    /// precio final de cada ruta (transporte y servicios conexos incluidos), sin desglose.
+    /// </summary>
+    public const string EtiquetaTotalGeneral = "VALOR TOTAL DE LA COTIZACIÓN";
+
+    /// <summary>
+    /// HU-033 (#199): leyenda de impuestos del total, la misma en el PDF y en el correo. El PDF no traía ninguna: este texto es el que se
+    /// propone y queda pendiente de validación de negocio (un solo lugar para cambiarlo).
+    /// </summary>
+    public const string LeyendaImpuestos =
+        "Valores por viaje según las rutas cotizadas, con los servicios conexos incluidos. No incluyen impuestos, tasas ni contribuciones "
+        + "que se causen según la normativa vigente.";
+
+    /// <summary>HU-033 (#199): nota del total general del PDF: el precio de cada ruta ya incluye su transporte y sus servicios conexos.</summary>
+    public const string NotaTotalGeneral = "El valor de cada ruta incluye el transporte y los servicios conexos indicados; el total es la suma de las rutas.";
     public const string TituloTablaPorDefecto = "COTIZACIÓN — BSSL";
     public const string PrefijoOrigen = "ORIGEN Y/O LUGAR DE CARGUE: ";
     public const string TituloDetalleAdicional = "Detalle adicional del servicio";
@@ -205,6 +222,21 @@ public static class clsTextosEstandar
     public static string AsuntoLicitacion(string? referencia, int rutas) => referencia is null
         ? $"presentación oferta de servicios de Transporte para su licitación ({rutas} rutas)"
         : $"presentación oferta de servicios de Transporte para la licitación {referencia} ({rutas} rutas)";
+
+    /// <summary>
+    /// OBS-C-3 (E2E 2026-10-22, endurecimiento B de #199): asunto estándar del PDF de varias rutas según el tipo de la solicitud. Solo una
+    /// licitación dice "para su licitación" (<see cref="AsuntoLicitacion"/>); una cotización spot de varias rutas (formulario) dice
+    /// "presentación oferta de servicios de Transporte (N rutas)".
+    /// </summary>
+    public static string AsuntoVariasRutas(bool esLicitacion, int rutas) => esLicitacion
+        ? AsuntoLicitacion(null, rutas)
+        : $"presentación oferta de servicios de Transporte ({rutas} rutas)";
+
+    /// <summary>Título del resumen de una licitación de varias rutas (HU-011.5).</summary>
+    public const string TituloResumenPliego = "RESUMEN DEL PLIEGO";
+
+    /// <summary>OBS-C-3 (endurecimiento B de #199): título del resumen de una cotización spot de varias rutas (no es un pliego).</summary>
+    public const string TituloResumenRutas = "RESUMEN DE LAS RUTAS";
 
     /// <summary>
     /// Introducción estándar de la variante (párrafos separados por una línea en blanco), la misma que imprime el PDF sin textos de la

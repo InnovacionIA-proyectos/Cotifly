@@ -78,7 +78,7 @@ Invoke-RestMethod -Uri http://localhost:8080/web/mis-cotizaciones -Headers @{ Au
 
 Variables opcionales de los scripts: `COTIFLY_SQL_SA_PASSWORD` y `COTIFLY_SQL_APP_PASSWORD` (contraseñas de desarrollo por defecto), `COTIFLY_PUERTO_API` (8080), `COTIFLY_PUERTO_SQL` (14333), `COTIFLY_API_IMAGEN` (`cotifly-api:dev`), `COTIFLY_SQL_IMAGEN`, `COTIFLY_SQLCMD_IMAGEN` (por defecto la misma de SQL Server) y `COTIFLY_SQLCMD_RUTA` (`/opt/mssql-tools18/bin/sqlcmd`). `COTIFLY_SQL_APP_PASSWORD` no admite comillas, punto y coma ni espacios (romperían el literal `N'...'` del `CREATE LOGIN` o la cadena de conexión): el script la rechaza antes de empezar. `mcr.microsoft.com/mssql-tools18` no existe como imagen en MCR y `mcr.microsoft.com/mssql-tools` (sqlcmd 13, 2017) está obsoleta, por eso se usa el `sqlcmd` 18 que ya trae la imagen de SQL Server. Si se cambia una contraseña después de generar `.env.local`, borrar ese archivo para regenerarlo.
 
-Sin `IA__Proveedor`, `POST /web/chat` responde 200 `{texto, error: true}` (agente sin configurar). El correo queda deshabilitado (`CORREO_DESHABILITADO`); para probar el envío hace falta un relay SMTP alcanzable desde el contenedor.
+Sin `IA__Proveedor`, `POST /web/chat` responde 200 `{texto, error: true}` (agente sin configurar). El correo queda deshabilitado (`CORREO_DESHABILITADO`); para probar el envío hace falta un MailSender alcanzable desde el contenedor (`Correo__Habilitado=true`, `Correo__MailSender__UrlBase`).
 
 Los scripts solo crean y borran recursos con el prefijo `cotifly-local-` (nunca `docker prune`).
 

@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using Cotifly.Pruebas.Comun;
@@ -16,17 +15,12 @@ namespace Cotifly.Api.Tests.Web;
 public sealed class clsCarreraAjusteEnvioTests : IAsyncDisposable
 {
     private readonly clsNexoFalso _nexo = new clsNexoFalso().ConCliente(clsCosteoEndpointsTests.Nit, "LONGYIN S.A.S.");
-    private readonly clsServidorSmtpFalso _relay = new();
     private readonly clsApiWebPruebas _api;
 
     public clsCarreraAjusteEnvioTests(clsEntornoApiWeb entorno) =>
         _api = clsApiWebPruebas.ConNexo(entorno.BaseDatos, _nexo, new Dictionary<string, string?>
         {
             ["Correo:Habilitado"] = "true",
-            ["Correo:Modo"] = "smtp_relay",
-            ["Correo:SmtpRelay:Host"] = clsServidorSmtpFalso.Host,
-            ["Correo:SmtpRelay:Port"] = _relay.Puerto.ToString(CultureInfo.InvariantCulture),
-            ["Correo:SmtpRelay:TimeoutSeg"] = "10",
         });
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -84,10 +78,10 @@ public sealed class clsCarreraAjusteEnvioTests : IAsyncDisposable
         return documento.RootElement.GetProperty("error").GetProperty("codigo").GetString();
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         _api.Dispose();
         _nexo.Dispose();
-        await _relay.DisposeAsync();
+        return ValueTask.CompletedTask;
     }
 }

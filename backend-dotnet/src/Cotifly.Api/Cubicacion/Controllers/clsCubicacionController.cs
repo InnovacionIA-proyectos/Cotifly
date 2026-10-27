@@ -78,12 +78,13 @@ public sealed class clsCubicacionController(
     /// <c>Retry-After</c>), <c>completada</c> (con <c>resultado</c>) o <c>fallida</c> (con <c>error</c>); 404 si no existe, venció (se
     /// guardan <c>Cubicador:RetencionCubicacionMinutos</c>, o se perdieron al reiniciar Cotifly) o es de otro usuario.
     /// </summary>
-    [HttpGet("{id:guid}")]
+    [HttpGet("{id}")]
     [ProducesResponseType<clsEstadoCubicacionWeb>(StatusCodes.Status200OK)]
     [ProducesResponseType<clsErrorWeb>(StatusCodes.Status404NotFound)]
-    public IActionResult Consultar(Guid id)
+    public IActionResult Consultar(string id)
     {
-        if (rapida.Obtener(UsuarioId, id) is not { } cubicacion)
+        // Endurecimiento A (#199): un id que no es un GUID responde el mismo 404 ErrorWeb (antes un 404 de enrutamiento sin cuerpo).
+        if (!Guid.TryParse(id, out var guid) || rapida.Obtener(UsuarioId, guid) is not { } cubicacion)
         {
             return NotFound(new clsErrorWeb(MensajeNoEncontrada));
         }

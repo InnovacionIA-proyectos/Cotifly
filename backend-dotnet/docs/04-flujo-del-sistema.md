@@ -142,9 +142,10 @@ flowchart TD
     dup -- sí --> dupl[400 CORREO_DUPLICADO]
     dup -- no --> pdf{¿Existe el PDF en el almacén?}
     pdf -- no --> sinpdf[400 CORREO_PDF_NO_ENCONTRADO]
-    pdf -- sí --> relay[Relay SMTP<br/>From = correo del comercial]
-    relay -- falla --> fallido[Fila Correos fallido<br/>400 CORREO_ENVIO_FALLIDO]
-    relay -- ok --> ok[Fila Correos enviado + destinatarios<br/>estadoEnvio: enviada o reenviada]
+    pdf -- sí --> relay[MailSender POST /api/v1/emails<br/>From = correo del comercial]
+    relay -- no acepta --> fallido[Fila Correos fallido<br/>CORREO_ENVIO_FALLIDO]
+    relay -- 202 --> ok[Fila Correos encolado + destinatarios<br/>estadoEnvio: enviada o reenviada]
+    ok --> worker[Worker de correos: GET /api/v1/emails/id<br/>enviando, enviado o fallido]
 ```
 
 `GET /web/clientes/{nit}/destinatarios-previos` prediligencia los destinatarios del último envío exitoso del comercial a ese NIT.

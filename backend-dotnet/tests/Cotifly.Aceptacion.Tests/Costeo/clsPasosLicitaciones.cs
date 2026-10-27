@@ -204,7 +204,8 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
 
     [Then("el PDF del pliego trae el resumen de {int} rutas con su total")]
     public void EntoncesResumenPdf(int rutas) =>
-        clsLectorPdf.Leer(web.UltimoContenido).Texto.Should().Contain("RESUMEN DEL PLIEGO").And.Contain($"TOTAL DEL PLIEGO ({rutas} RUTAS, SIN SERVICIOS CONEXOS)");
+        // HU-033 (#199): el total del resumen es el total general (con los conexos), y se repite al final de la tarifa.
+        clsLectorPdf.Leer(web.UltimoContenido).Texto.Should().Contain("RESUMEN DEL PLIEGO").And.Contain($"VALOR TOTAL DE LA COTIZACIÓN ({rutas} RUTAS)");
 
     [Then("el PDF del pliego no contiene el costo {int} de Nexo")]
     public void EntoncesPdfSinCosto(int costo) =>

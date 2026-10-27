@@ -228,7 +228,9 @@ public sealed class clsValidadorRespuestaAgente : IClsValidadorRespuestaAgente
         texto.Append("Reglas: tipo es ").Append(string.Join(" | ", clsReglasRespuestaAgente.Tipos)).Append("; ")
             .Append($"texto en español, de 1 a {clsRespuestaAgenteEstructurada.LargoMaximoTexto} caracteres; ")
             .Append("requiere_confirmacion es true solo con previsualizacion o confirmacion_requerida; ")
-            .Append("previsualizacion solo si calcular_precio ya dio un precio y no hay un origen o destino con municipios por confirmar; ")
+            // Endurecimiento B (#199): calcular_precio era del agente retirado (#105); el asistente no calcula precios y la regla
+            // PrevisualizacionSinPrecio rechaza toda previsualizacion, así que el prompt lo dice igual.
+            .Append("no uses previsualizacion: el asistente no calcula precios (responde con conversacional); ")
             .Append("acciones_sugeridas (").Append(string.Join(", ", clsReglasRespuestaAgente.Acciones))
             .Append(") solo con una previsualización pendiente de confirmar, si no null; ")
             .Append("no escribas montos ni folios que no estén, tal cual, en las salidas de las herramientas o en el estado resuelto.");

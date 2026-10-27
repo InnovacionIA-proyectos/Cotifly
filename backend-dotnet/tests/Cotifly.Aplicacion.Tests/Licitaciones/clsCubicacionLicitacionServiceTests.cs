@@ -50,6 +50,9 @@ public sealed class clsCubicacionLicitacionServiceTests
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(_licitacion.Folio, _usuario, Arg.Any<CancellationToken>()).Returns(_licitacion);
         _politicas.ObtenerPorIdAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns((clsMargenPolitica?)null);
         Responder(Plan("3S3"));
+        // Endurecimiento B (#199): el respaldo del reintento con usar_respaldo (por defecto, el camión sin vehículo del planificador).
+        _planificador.PlanificarRespaldoAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<clsLineaSolicitudCosteo>(), Arg.Any<CancellationToken>())
+            .Returns(ci => clsResultado<clsPlanRuta>.Exito(new clsPlanRuta([new clsCamionPlaneado(null, null, ci.ArgAt<clsLineaSolicitudCosteo>(2).PesoKg)])));
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -466,6 +469,41 @@ public sealed class clsCubicacionLicitacionServiceTests
         resultado.EsExitoso.Should().BeTrue();
         Ruta(1).EstadoCubicacion.Should().Be(EstadoCubicacion.Cubicada);
         Ruta(1).Vehiculos.Should().ContainSingle().Which.TipoVehiculo.Should().BeNull("la Mesa de Costeo resuelve el vehículo");
+        await EnviosANexo(1);
+    }
+
+    /// <summary>
+    /// Endurecimiento B (#199, HU-032, ADR-022): con <c>usar_respaldo</c> la ruta caída lleva el respaldo del planificador con el vehículo
+    /// ELEGIDO de la ruta (como el camino en segundo plano): el camión con ese vehículo y el aviso <c>VEHICULO_ELEGIDO_USADO</c>, o sin
+    /// vehículo con <c>VEHICULO_ELEGIDO_INVALIDO</c>. Antes aceptaba el camión provisional sin vehículo.
+    /// </summary>
+    [Theory]
+    [InlineData("3S3", clsAvisosVehiculo.ElegidoUsado)]
+    [InlineData(null, clsAvisosVehiculo.ElegidoInvalido)]
+    public async Task ReintentarConRespaldoAplicaElVehiculoElegidoDeLaRutaConSuAviso(string? final, string codigoAviso)
+    {
+        var servicio = Servicio(maximoIntentos: 1);
+        await servicio.CubicarAsync(Cola(2), Ct);
+        Fallar(clsCodigosError.CubicadorNoDisponible);
+        (await servicio.CubicarAsync(Cola(1), Ct)).Should().Be(ResultadoCubicacionRuta.Fallida);
+        clsLineaSolicitudCosteo? entrada = null;
+        var aviso = codigoAviso == clsAvisosVehiculo.ElegidoUsado
+            ? clsAvisosVehiculo.Usado(new clsVehiculoAviso("3S3", "FURGON"), clsPlanificadorCamionesCubicador.CausaNoDisponible)
+            : clsAvisosVehiculo.Invalido(new clsVehiculoAviso("XYZ", null), new clsVehiculoAviso(null, null), clsPlanificadorCamionesCubicador.CausaNoDisponible);
+        _planificador.PlanificarRespaldoAsync(_usuario, Ruta(1).Id, Arg.Do<clsLineaSolicitudCosteo>(l => entrada = l), Arg.Any<CancellationToken>())
+            .Returns(clsResultado<clsPlanRuta>.Exito(new clsPlanRuta([new clsCamionPlaneado(final, final is null ? null : "FURGON", 10_000m)], null, [aviso])));
+
+        var resultado = await servicio.ReintentarAsync(_usuario, _licitacion.Folio, usarRespaldo: true, Ct);
+
+        resultado.EsExitoso.Should().BeTrue();
+        entrada.Should().NotBeNull("el respaldo se pide con la ruta y su vehículo elegido");
+        entrada!.PesoKg.Should().Be(Ruta(1).ALineaConElegido().PesoKg);
+        Ruta(1).EstadoCubicacion.Should().Be(EstadoCubicacion.Cubicada);
+        Ruta(1).ErrorCubicacion.Should().BeNull();
+        Ruta(1).Vehiculos.Should().ContainSingle().Which.TipoVehiculo.Should().Be(final);
+        Ruta(1).AvisosCubicacion!.Advertencias.Should().ContainSingle().Which.Codigo.Should().Be(codigoAviso);
+        _planificador.ReceivedCalls().Count(c => c.GetMethodInfo().Name == nameof(IClsPlanificadorCamiones.PlanificarEnSegundoPlanoAsync))
+            .Should().Be(2, "el reintento con respaldo no vuelve a llamar al cubicador");
         await EnviosANexo(1);
     }
 

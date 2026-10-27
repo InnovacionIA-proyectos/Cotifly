@@ -25,9 +25,12 @@ public sealed class clsContratoPrecioMargenTests
         var codigosContrato = esquemas["ErrorNegocio"].Properties!["error"].Properties!["codigo"].Enum!
             .Select(e => e!.GetValue<string>()).ToList();
 
+        // Endurecimiento A (#199): solo las constantes que el código emite; las que nadie usa (TARIFA_*, MUNICIPIO_ARGUMENTO_INVALIDO)
+        // salieron del enum. La comparación exacta (en los dos sentidos) la hace clsContratoReflexionTests.
         var codigos = typeof(clsCodigosError).GetFields(BindingFlags.Public | BindingFlags.Static)
             .Where(f => f.IsLiteral)
-            .Select(f => (string)f.GetRawConstantValue()!);
+            .Select(f => (string)f.GetRawConstantValue()!)
+            .Where(clsContratoReflexionTests.LiteralesDelIl().Contains);
 
         codigos.Should().NotBeEmpty().And.OnlyContain(c => codigosContrato.Contains(c));
         codigosContrato.Should().Contain(clsCodigosError.AjusteMargenInvalido, "código nuevo de #10 agregado al contrato");

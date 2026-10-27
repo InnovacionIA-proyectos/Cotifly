@@ -307,7 +307,8 @@ public sealed class clsCubicacionLicitacionService(
 
         var cronometro = Stopwatch.StartNew();
         var versionLeida = cotizacion.VersionNegocio;
-        var cambiadas = cotizacion.ReintentarCubicacionFallida(usarRespaldo);
+        var respaldos = usarRespaldo ? await RespaldosAsync(cotizacion, usuarioId, cancellationToken) : null;
+        var cambiadas = cotizacion.ReintentarCubicacionFallida(usarRespaldo, respaldos);
         if (cambiadas == 0)
         {
             var error = new clsErrorDominio(clsCodigosError.EstadoNoPermite,
@@ -324,6 +325,41 @@ public sealed class clsCubicacionLicitacionService(
         var enviada = usarRespaldo && await EnviarSiListaAsync(cotizacion, esperarCandado: true, versionLeida, cancellationToken);
         await AuditarReintentoAsync(cotizacion, usarRespaldo, new { rutas = cambiadas, enviada_a_nexo = enviada }, exito: true, cronometro);
         return cotizacion;
+    }
+
+    /// <summary>
+    /// Endurecimiento B (#199, HU-032, ADR-022): el respaldo de cada ruta fallida por una caída del cubicador, como en segundo plano
+    /// (<see cref="CubicarAsync"/>): el vehículo ELEGIDO de la ruta validado contra Nexo (<see cref="IClsPlanificadorCamiones.PlanificarRespaldoAsync"/>,
+    /// sin llamar al cubicador) con su aviso, o sin vehículo con <c>Captura:AceptarVehiculoCliente</c> apagada. Antes el reintento aceptaba
+    /// el camión provisional sin vehículo aunque la ruta tuviera un elegido. Si el respaldo de una ruta falla, esa ruta queda con el camión
+    /// sin vehículo (lo de siempre).
+    /// </summary>
+    private async Task<IReadOnlyDictionary<Guid, clsPlanRuta>?> RespaldosAsync(
+        clsCotizacionSolicitud cotizacion, Guid usuarioId, CancellationToken cancellationToken)
+    {
+        if (!cotizacion.AdmiteReintentoCubicacion)
+        {
+            return null;
+        }
+
+        var aceptarElegido = opcionesCaptura?.Value.AceptarVehiculoCliente != false;
+        var respaldos = new Dictionary<Guid, clsPlanRuta>();
+        foreach (var ruta in cotizacion.RutasOrdenadas.Where(r => r.FalloPorCaidaDelCubicador))
+        {
+            var entrada = aceptarElegido ? ruta.ALineaConElegido() : ruta.ALinea() with { TipoVehiculo = null, Carroceria = null };
+            var plan = await planificador.PlanificarRespaldoAsync(cotizacion.UsuarioId ?? usuarioId, ruta.Id, entrada, cancellationToken);
+            if (plan.EsExitoso)
+            {
+                respaldos[ruta.Id] = plan.Valor;
+            }
+            else
+            {
+                logger.LogWarning("La licitación {Folio}: no se pudo armar el respaldo de la ruta {Ruta} ({Codigo}); queda con el camión sin vehículo.",
+                    cotizacion.Folio, ruta.Orden, plan.Error.Codigo);
+            }
+        }
+
+        return respaldos;
     }
 
     private Task AuditarReintentoAsync(clsCotizacionSolicitud cotizacion, bool usarRespaldo, object salida, bool exito, Stopwatch cronometro) =>

@@ -65,14 +65,16 @@ public sealed class clsApiWebPruebas : IDisposable
             ["Trm:Url"] = clsTrmFalso.Url,
             ["Trm:UrlDolarApi"] = clsDolarApiFalso.Url,
         };
+        // HU-033 (#199): el correo sale por MailSender, y en las pruebas por el MailSender FALSO (nunca a la red ni a un buzón real). Fuera
+        // de Production la protección "redirigir" exige el buzón de pruebas. Con el correo habilitado el MailSender falso empieza CAÍDO: un
+        // envío propio termina en CORREO_ENVIO_FALLIDO y uno ajeno se rechaza antes (404); las pruebas que envían lo levantan (Caido = false).
+        valores["Correo:MailSender:UrlBase"] = clsMailSenderFalso.UrlBase;
+        valores["Correo:Proteccion:BuzonPruebas"] = clsMailSenderFalso.BuzonPruebas;
+        valores["Correo:Seguimiento:IntervaloTickSegundos"] = "3600"; // el worker de correos no corre solo: las pruebas lo llaman
         if (correoHabilitado)
         {
-            // Relay inalcanzable: un envío propio termina en CORREO_ENVIO_FALLIDO; uno ajeno se rechaza antes (404).
             valores["Correo:Habilitado"] = "true";
-            valores["Correo:Modo"] = "smtp_relay";
-            valores["Correo:SmtpRelay:Host"] = "127.0.0.1";
-            valores["Correo:SmtpRelay:Port"] = "1";
-            valores["Correo:SmtpRelay:TimeoutSeg"] = "2";
+            MailSender.Caido = true;
         }
 
         foreach (var (clave, valor) in extra ?? new Dictionary<string, string?>())
@@ -86,13 +88,31 @@ public sealed class clsApiWebPruebas : IDisposable
             b.ConfigureAppConfiguration((_, configuracion) => configuracion.AddInMemoryCollection(valores));
 
             // Reloj de la API con horas explícitas por flujo (CrearCotizacionAsync con creadaEn, #117); sin fijar, el del sistema.
-            b.ConfigureTestServices(s => s.AddSingleton<IClsReloj>(sp => new clsRelojFijable(sp.GetRequiredService<TimeProvider>())));
+            b.ConfigureTestServices(s =>
+            {
+                s.AddSingleton<IClsReloj>(sp => new clsRelojFijable(sp.GetRequiredService<TimeProvider>()));
+                s.AddHttpClient(Cotifly.Infraestructura.Correo.Services.clsTransporteMailSender.NombreCliente)
+                    .ConfigurePrimaryHttpMessageHandler(() => MailSender);
+
+                // Auditoría QA 2026-10-22: el worker de correos hace una vuelta de la agenda COMPLETA al arrancar (antes del primer tick) y
+                // la base es compartida: con el correo habilitado, una API de prueba consultaba en SU MailSender falso los correos de otros
+                // escenarios (404) y los dejaba fallidos (intermitentes en correo.feature). Las pruebas procesan sus correos con
+                // ProcesarCorreosAsync, así que el worker no se registra en la API de pruebas.
+                foreach (var worker in s.Where(d => d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService)
+                             && d.ImplementationType == typeof(Cotifly.Infraestructura.Correo.Services.clsWorkerEstadoCorreos)).ToList())
+                {
+                    s.Remove(worker);
+                }
+            });
             configurar?.Invoke(b);
         });
         Cliente = Factory.CreateClient();
     }
 
     public WebApplicationFactory<Program> Factory { get; }
+
+    /// <summary>HU-033 (#199): MailSender falso de esta API (nunca envía correos reales).</summary>
+    public clsMailSenderFalso MailSender { get; } = new();
 
     /// <summary>
     /// API con <c>Nexo:UrlBase</c> apuntando al Nexo falso (ADR-015): los clientes HTTP <c>Nexo</c> (búsquedas) y <c>NexoCosteo</c>
@@ -273,6 +293,43 @@ public sealed class clsApiWebPruebas : IDisposable
     }
 
     /// <summary>
+    /// HU-033 (#199): una vuelta del worker de correos (<c>clsWorkerEstadoCorreos</c>) solo con los correos de <paramref name="folio"/> que
+    /// siguen en curso: les vence la consulta y consulta su estado en el MailSender falso. Devuelve cuántos procesó.
+    /// </summary>
+    public async Task<int> ProcesarCorreosAsync(string folio)
+    {
+        var folioSql = folio.Replace("'", "''", StringComparison.Ordinal);
+        var vencida = new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        await clsBaseDatosPruebas.EjecutarAsync(_baseDatos.CadenaCotifly,
+            "UPDATE c SET siguienteConsultaAt = '2000-01-01T00:00:00+00:00' FROM dbo_cotifly.Correos c JOIN dbo_cotifly.CotizacionesSolicitud s "
+            + $"ON s.id = c.cotizacionId WHERE s.folio = N'{folioSql}' AND c.siguienteConsultaAt IS NOT NULL;");
+        var ids = new List<Guid>();
+        await using (var conexion = new Microsoft.Data.SqlClient.SqlConnection(_baseDatos.CadenaCotifly))
+        {
+            await conexion.OpenAsync();
+            await using var comando = new Microsoft.Data.SqlClient.SqlCommand(
+                "SELECT c.id FROM dbo_cotifly.Correos c JOIN dbo_cotifly.CotizacionesSolicitud s ON s.id = c.cotizacionId "
+                + $"WHERE s.folio = N'{folioSql}' AND c.siguienteConsultaAt IS NOT NULL;", conexion);
+            await using var lector = await comando.ExecuteReaderAsync();
+            while (await lector.ReadAsync())
+            {
+                ids.Add(lector.GetGuid(0));
+            }
+        }
+
+        var procesados = 0;
+        foreach (var id in ids)
+        {
+            await using var ambito = Factory.Services.CreateAsyncScope();
+            var resultado = await ambito.ServiceProvider.GetRequiredService<Aplicacion.Correo.Services.IClsSeguimientoCorreosService>()
+                .ProcesarAsync(new Aplicacion.Correo.Repositories.clsConsultaCorreoPendiente(id, vencida), CancellationToken.None);
+            procesados += resultado == Aplicacion.Correo.Services.ResultadoConsultaCorreo.NoReclamado ? 0 : 1;
+        }
+
+        return procesados;
+    }
+
+    /// <summary>
     /// HU-023.5 (#160): vueltas del procesador de la cubicación en segundo plano (<c>clsWorkerCubicacionLicitacion.ProcesarLoteAsync</c>)
     /// solo con las rutas de la licitación <paramref name="folio"/>, hasta que no quede ninguna pendiente con el turno vencido ni reclamada
     /// por un instante (otra réplica de la prueba la está cubicando), o hasta <paramref name="limite"/> (30 s por defecto). Se espera por
@@ -429,6 +486,7 @@ public sealed class clsApiWebPruebas : IDisposable
     {
         Cliente.Dispose();
         Factory.Dispose();
+        MailSender.Dispose();
     }
 
     /// <summary>Fábrica con el entorno de pruebas (no Production: sin CORS obligatorio ni secretos).</summary>

@@ -133,6 +133,17 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
         Guid usuarioId, Guid rutaId, clsLineaSolicitudCosteo ruta, CancellationToken cancellationToken = default) =>
         PlanificarAsync(usuarioId, rutaId, ruta, ocupadoEsError: true, cancellationToken);
 
+    /// <summary>
+    /// Endurecimiento B (#199): el respaldo por caída del cubicador sin llamarlo (<c>usar_respaldo</c> de la licitación): el mismo
+    /// <see cref="RespaldoAsync"/> que usa el camino en segundo plano, con la causa <see cref="CausaNoDisponible"/>.
+    /// </summary>
+    public Task<clsResultado<clsPlanRuta>> PlanificarRespaldoAsync(
+        Guid usuarioId, Guid rutaId, clsLineaSolicitudCosteo ruta, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(ruta);
+        return RespaldoAsync(usuarioId, ruta, null, CausaNoDisponible, cancellationToken);
+    }
+
     private async Task<clsResultado<clsPlanRuta>> PlanificarAsync(
         Guid usuarioId, Guid rutaId, clsLineaSolicitudCosteo ruta, bool ocupadoEsError, CancellationToken cancellationToken)
     {

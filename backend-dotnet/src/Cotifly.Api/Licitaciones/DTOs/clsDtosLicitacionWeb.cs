@@ -67,7 +67,8 @@ public sealed class clsLicitacionWebRequest
 
 /// <summary>
 /// <c>LineaLicitacionWeb</c>: los campos destino del mapeo (los de <c>CapturaLineaRequest</c>) y la fila del análisis. HU-021.6: cada
-/// fila es una ruta; puede traer su línea de negocio, los ids de las ciudades del contenedor, mercancías con <c>id_tipo_mercancia</c> y
+/// fila es una ruta; puede traer su línea de negocio, los ids de las ciudades del contenedor, mercancías con <c>codigo_mercancia</c> (o
+/// <c>id_tipo_mercancia</c> obsoleto) y
 /// servicios conexos del catálogo de Nexo. HU-032 (#197): vehículo y carrocería son el vehículo elegido de la fila (respaldo del cubicador).
 /// </summary>
 public sealed class clsLineaLicitacionWebRequest

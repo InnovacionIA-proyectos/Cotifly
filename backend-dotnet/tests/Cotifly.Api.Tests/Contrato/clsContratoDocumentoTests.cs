@@ -109,7 +109,8 @@ public sealed class clsContratoDocumentoTests(clsCotiflyApiFactory factory) : IC
     [Fact]
     public async Task LosRequiredNoAnulablesDeLasRespuestasNoSonAnulablesEnLosDtos()
     {
-        var porTipo = clsContratoRutasTests.MapaDtos.ToDictionary(m => m.Dto, m => m.Esquema);
+        // Un DTO puede tener dos esquemas (clsEnvioWebRequest: EnvioWeb y BorradorCorreoWeb); aquí solo se miran las respuestas.
+        var porTipo = clsContratoRutasTests.MapaDtos.DistinctBy(m => m.Dto).ToDictionary(m => m.Dto, m => m.Esquema);
         var respuestas = new HashSet<Type>();
         foreach (var tipo in Acciones().SelectMany(a => a.Respuestas).Select(r => r.Type).OfType<Type>())
         {

@@ -3,9 +3,9 @@ using System.ComponentModel.DataAnnotations;
 namespace Cotifly.Infraestructura.Configuracion;
 
 /// <summary>
-/// Cubicador (motor de selección de vehículos; sección <c>Cubicador</c>, HU-021.5, #133). Sin <see cref="UrlBase"/> (valor por defecto,
-/// porque el cubicador real aún no tiene <c>POST /recomendaciones</c>, C1) se registra <c>clsCubicadorNoDisponible</c> y la captura crea un
-/// camión sin vehículo por ruta. Con <see cref="UrlBase"/>, <see cref="ApiKey"/> es obligatoria: viaja como
+/// Cubicador (motor de selección de vehículos; sección <c>Cubicador</c>, HU-021.5, #133). Sin <see cref="UrlBase"/> (valor por defecto:
+/// cubicador no configurado) se registra <c>clsCubicadorNoDisponible</c> y la captura crea un camión por ruta con el vehículo elegido de la
+/// ruta (HU-032, #197; sin vehículo si la ruta no lo trae o con <c>Captura:AceptarVehiculoCliente</c> apagada). Con <see cref="UrlBase"/>, <see cref="ApiKey"/> es obligatoria: viaja como
 /// <c>Authorization: Bearer {ApiKey}</c> (C5). Reglas en <see cref="clsValidadorOpcionesCubicador"/>; ningún mensaje ni log incluye la llave.
 /// </summary>
 public sealed class clsOpcionesCubicador
@@ -98,9 +98,9 @@ public sealed class clsOpcionesCubicador
     public int MinutosCacheCatalogos { get; set; } = 30;
 
     /// <summary>
-    /// Si el cubicador configurado falla en la captura (caído, sin respuesta a tiempo, respuesta inválida), ¿la ruta sigue con un camión
-    /// sin vehículo (respaldo, con un warning en el log)? Por defecto <c>true</c> (regla del coordinador, ADR-019): el cubicador real ya está
-    /// conectado y una caída no detiene la captura; con <c>Captura:AceptarVehiculoCliente</c> ese camión lleva el vehículo digitado. Con
+    /// Si el cubicador configurado falla en la captura (caído, sin respuesta a tiempo, respuesta inválida), ¿la ruta sigue con el camión
+    /// del respaldo (el vehículo elegido si lo hay y es válido; si no, sin vehículo, ADR-022; con un warning en el log)? Por defecto <c>true</c> (regla del coordinador, ADR-019): el cubicador real ya está
+    /// conectado y una caída no detiene la captura; con <c>Captura:AceptarVehiculoCliente</c> ese camión lleva el vehículo elegido (HU-032). Con
     /// <c>false</c> la captura falla con <c>CUBICADOR_NO_DISPONIBLE</c> y no se guarda ni se envía nada a Nexo (regla de la issue #133).
     /// </summary>
     public bool RespaldoSiFalla { get; set; } = true;
@@ -126,7 +126,7 @@ public sealed class clsOpcionesCubicador
     /// Ruta del endpoint de salud del cubicador bajo <see cref="UrlBase"/> (petición P7, por ejemplo <c>/health</c>). Vacía (por
     /// defecto, mientras el cubicador no lo publique) = <c>/health/ready</c> no consulta el cubicador. Con valor, la sonda
     /// <c>cubicador</c> hace un GET liviano: si falla y <see cref="RespaldoSiFalla"/> es <c>false</c>, Cotifly no está listo; con el
-    /// respaldo encendido solo queda un warning (la captura sigue con camiones sin vehículo).
+    /// respaldo encendido solo queda un warning (la captura sigue con el camión del respaldo).
     /// </summary>
     public string? RutaSalud { get; set; }
 }

@@ -629,8 +629,9 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         descarga.StatusCode.Should().Be(HttpStatusCode.OK);
         var texto = clsLectorPdf.Leer(await descarga.Content.ReadAsByteArrayAsync(Ct)).Texto;
         // La cabecera "Varias" es el payload del pliego (sin texto propio en el documento); cada sección lleva la línea de su ruta.
-        texto.Should().Contain("licitación (2 rutas)").And.Contain("RUTA 1: PLIEGO DE TRANSPORTE IMPORTACION")
-            .And.Contain("RUTA 2: PLIEGO DE TRANSPORTE EXPORTACION").And.Contain("1 × Tractocamión 3S3 - Furgón", "HU-023.1: el PDF muestra los nombres del catálogo del cubicador, en el orden del cubicador")
+        // OBS-C-3 (endurecimiento B de #199): es una cotización spot de dos rutas (formulario): no dice "licitación" ni "pliego".
+        texto.Should().Contain("Transporte (2 rutas)").And.Contain("RESUMEN DE LAS RUTAS").And.Contain("RUTA 1: TARIFA DE TRANSPORTE IMPORTACION")
+            .And.Contain("RUTA 2: TARIFA DE TRANSPORTE EXPORTACION").And.NotContainEquivalentOf("licitación").And.Contain("1 × Tractocamión 3S3 - Furgón", "HU-023.1: el PDF muestra los nombres del catálogo del cubicador, en el orden del cubicador")
             .And.NotContain("3S3 - FURGON");
 
         // 7. La Mesa entrega y el comercial pide una versión nueva: conserva los tres camiones en orden y el respaldo, y los conexos viajan
@@ -792,6 +793,9 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         sinIfMatch.StatusCode.Should().Be(HttpStatusCode.PreconditionRequired);
         using var recalculo = await ConVersionAsync(api, _post, ruta, ana.Access, "{}", await EtagAsync(api, ana, folio));
         var costeo = await VerificarContratoAsync(recalculo, "/web/cotizaciones/{folio}/rutas/{rutaId}/recalcular-vehiculos", _post, HttpStatusCode.OK);
+        // Endurecimiento A (#199): un id de ruta que no es un GUID es 404, como una ruta que no existe (antes 400 "Cuerpo inválido").
+        using var noGuid = await ConVersionAsync(api, _post, $"/web/cotizaciones/{folio}/rutas/no-es-guid/recalcular-vehiculos", ana.Access, "{}", await EtagAsync(api, ana, folio));
+        await VerificarContratoAsync(noGuid, "/web/cotizaciones/{folio}/rutas/{rutaId}/recalcular-vehiculos", _post, HttpStatusCode.NotFound);
 
         costeo.GetProperty("rutas")[0].GetProperty("camiones").EnumerateArray().Select(c => c.GetProperty("tipo_vehiculo").GetString())
             .Should().Equal("2S2", "C2");
@@ -937,9 +941,11 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         using var descarga = await api.EnviarAsync(_get, new Uri(new Uri("http://localhost"), pdfJson.GetProperty("pdf_url").GetString()!).AbsolutePath, ana.Access);
         descarga.StatusCode.Should().Be(HttpStatusCode.OK);
         var texto = clsLectorPdf.Leer(await descarga.Content.ReadAsByteArrayAsync(Ct)).Texto;
-        // Tarifa por viaje de cada ruta SIN conexos (1.800.000 / 0,85) y el conexo aparte con su precio (150.000 / 0,85).
-        texto.Should().Contain("RESUMEN DEL PLIEGO").And.Contain("$2.117.647").And.Contain("$823.529").And.Contain("$500.000")
-            .And.Contain("TOTAL DEL PLIEGO (3 RUTAS, SIN SERVICIOS CONEXOS) $3.441.176").And.Contain("Cargue en puerto: $176.471");
+        // HU-033 (#199): el valor FINAL de cada ruta (la ruta 1 con su conexo: 1.800.000 / 0,85 + 150.000 / 0,85), el total general y el
+        // conexo como incluido, sin precio aparte.
+        texto.Should().Contain("RESUMEN DEL PLIEGO").And.Contain("$2.294.118").And.Contain("$823.529").And.Contain("$500.000")
+            .And.Contain("VALOR TOTAL DE LA COTIZACIÓN (3 RUTAS) $3.617.647").And.Contain("Cargue en puerto (ruta 1)");
+        texto.Should().NotContain("$2.117.647", "sin desglose: el transporte sin el conexo no se imprime").And.NotContain("$176.471", "ni el precio del conexo");
         texto.Should().Contain("1 × Tractocamión 3S3 - Furgón, 1", "los dos camiones de la ruta 1 en el orden del cubicador, con los nombres del catálogo (HU-023.1)")
             .And.Contain("× Tractocamión 2S3 - Estacas (28000 KG)");
         foreach (var costo in new[] { "$1.000.000", "$800.000", "$700.000", "$400.000", "$1.950.000" })
@@ -947,7 +953,7 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
             texto.Should().NotContain(costo, "los costos de Nexo nunca van al PDF");
         }
 
-        // 7. Excel exportado: las columnas del cliente y la tarifa por viaje de cada ruta (sin conexos, igual que el PDF).
+        // 7. Excel exportado: las columnas del cliente y la tarifa por viaje de cada ruta (sin conexos; el PDF, HU-033, imprime el valor final).
         using (var excel = await api.EnviarAsync(_get, $"/web/licitaciones/{folio}/excel", ana.Access))
         {
             excel.StatusCode.Should().Be(HttpStatusCode.OK);

@@ -18,8 +18,8 @@ info:
       de rol, el 404 (no existe o no es tuya), el 413, el 415, el 429 y el 400 de validación del cuerpo (`Cuerpo inválido...`,
       `CORREO_INVALIDO`, teléfono, seguimiento, `Idempotency-Key` fuera de largo). `ErrorNegocio`
       (`{"error": {"codigo", "mensaje", "detalle?"}}`): el resto de errores de negocio de `/web/*`, que son la mayoría (400 con
-      código, 409 de estado, `CONFLICTO_CONCURRENCIA` e `IDEMPOTENCY_KEY_REUTILIZADA`, 428 `PRECONDICION_REQUERIDA`, 403 `NEXO_SIN_PERMISO` y los 503 de
-      dependencias). Un mismo estado puede traer cualquiera de las dos (por ejemplo, el 400 de `POST /web/solicitudes-costeo`):
+      código, 409 de estado, `CONFLICTO_CONCURRENCIA` e `IDEMPOTENCY_KEY_REUTILIZADA`, 428 `PRECONDICION_REQUERIDA`, 403 `NEXO_SIN_PERMISO`, los 503 de
+      dependencias y el 500 `ERROR_INTERNO`, respuesta común `ErrorInterno`; en `/api/auth/*` el 500 es `ErrorWeb`). Un mismo estado puede traer cualquiera de las dos (por ejemplo, el 400 de `POST /web/solicitudes-costeo`):
       el cliente distingue por el tipo de `error` (texto u objeto). El servidor nunca responde 412.
     - CORS (#12, deuda de #178): el navegador puede enviar `Authorization`, `Content-Type`, `If-Match` e `Idempotency-Key`
       (métodos `GET`, `POST` y `PUT`) y leer `ETag`, `Location`, `Retry-After` y `Content-Disposition`
@@ -32,16 +32,20 @@ info:
     - **AVISO PARA EL FRONTEND (HU-021, ADR-019): `precio_final` de la cotización YA INCLUYE los servicios
       conexos.** Es la suma de las rutas, y el precio de cada ruta es su costo (fletes, retorno, levante y
       conexos) con el margen. NO sumarle el `precio` de los conexos: se cobrarían dos veces. El `precio` de
-      cada conexo es informativo (el desglose del PDF). La excepción son la licitación (`Licitacion.precio_final`
-      y `lineas[].precio_final`), el Excel y el PDF del pliego: allí cada fila es la tarifa del transporte y el
-      total va sin conexos, que se listan aparte una sola vez. Tarifa + conexos = precio de la ruta, exacto.
+      cada conexo es informativo (desglose en pantalla). La excepción son la vista de la licitación
+      (`Licitacion.precio_final` y `lineas[].precio_final`) y su Excel: allí cada fila es la tarifa del transporte y
+      el total va sin conexos, que se listan aparte una sola vez. Tarifa + conexos = precio de la ruta, exacto. El
+      PDF (de una ruta o del pliego), desde HU-033 (#199), imprime el valor final de cada ruta (conexos incluidos,
+      sin desglose) y el total general "VALOR TOTAL DE LA COTIZACIÓN".
     - Concurrencia optimista (HU-013, ADR-018 §8): `GET /web/cotizaciones/{folio}/costeo` devuelve el
       encabezado `ETag` (y `row_version` en el cuerpo), y toda respuesta 200 o 201 de una mutación del
       costeo trae el `ETag` nuevo. Las mutaciones de la etapa final (margen, conexos POST y PUT,
-      re-solicitar, textos y redactar) EXIGEN `If-Match` con ese valor: sin él responden 428
-      `PRECONDICION_REQUERIDA`; si la cotización cambió entretanto, 409 `CONFLICTO_CONCURRENCIA`, sin
-      cambios. `POST .../costeo/pdf` lo acepta opcional. `POST .../costeo/servicios-conexos` y
-      `POST .../costeo/re-solicitar` aceptan además `Idempotency-Key` (doble clic). Rige desde el
+      re-solicitar, textos y redactar), el recálculo de vehículos y la edición (`PUT .../solicitud`) EXIGEN
+      `If-Match` con ese valor: sin él responden 428 `PRECONDICION_REQUERIDA`; si la cotización cambió
+      entretanto, 409 `CONFLICTO_CONCURRENCIA`, sin cambios. `POST .../costeo/pdf` lo acepta opcional.
+      `POST /web/solicitudes-costeo`, `POST .../costeo/servicios-conexos`, `POST .../costeo/re-solicitar` y
+      `PUT .../solicitud` aceptan además `Idempotency-Key` (doble clic). `POST /web/cubicacion` no usa ninguno
+      de los dos (202 con `Location` y `Retry-After` si sigue calculando). Rige desde el
       script `0006` (columna `versionNegocio`), que entrega #98 (HU-013.2). El valor es opaco: el cliente
       lo guarda y lo reenvía tal cual. Solo cambia con cambios de negocio (margen, conexos, textos,
       re-solicitud, PDF, o el polling cuando cambia el estado, el costo o el precio), no con cada consulta.
@@ -169,6 +173,10 @@ paths:
           $ref: '#/components/responses/CredencialesInvalidas'
         '429':
           $ref: '#/components/responses/DemasiadasPeticiones'
+        '500':
+          $ref: '#/components/responses/ErrorInternoAuth'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /api/auth/refresh:
     post:
@@ -196,6 +204,10 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '429':
           $ref: '#/components/responses/DemasiadasPeticiones'
+        '500':
+          $ref: '#/components/responses/ErrorInternoAuth'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /api/auth/logout:
     post:
@@ -217,6 +229,10 @@ paths:
           description: Sesión cerrada
         '429':
           $ref: '#/components/responses/DemasiadasPeticiones'
+        '500':
+          $ref: '#/components/responses/ErrorInternoAuth'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/chat:
     post:
@@ -309,6 +325,12 @@ paths:
                 error: "Sesión no encontrada."
         '429':
           $ref: '#/components/responses/DemasiadasPeticiones'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/mis-cotizaciones:
     get:
@@ -327,6 +349,8 @@ paths:
                 $ref: '#/components/schemas/MisCotizaciones'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/regional:
     get:
@@ -376,6 +400,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}:
     get:
@@ -422,6 +448,8 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/enviar:
     post:
@@ -430,8 +458,24 @@ paths:
       summary: Envía la cotización al cliente por correo con el PDF adjunto
       description: |
         El remitente es el comercial autenticado. Solo puede enviar cotizaciones propias
-        (si no es suya responde 404, igual que si no existe). Un envío idéntico a los
-        mismos destinatarios en los últimos 5 minutos se rechaza como duplicado.
+        (si no es suya responde 404, igual que si no existe). Endurecimiento A (#199): el dueño se comprueba ANTES que
+        todo lo demás, así que un folio ajeno o inexistente responde 404 aunque el correo esté deshabilitado (antes 503
+        `CORREO_DESHABILITADO`) o los destinatarios sean inválidos (antes 400 `CORREO_INVALIDO`): esas respuestas ya no
+        permiten saber qué folios existen. Un envío idéntico a los
+        mismos destinatarios en los últimos 5 minutos se rechaza como duplicado (cuenta
+        un envío `enviado` o todavía en curso: `encolado`/`enviando`; un `fallido` no).
+
+        HU-033 (#199, ADR-023): el correo sale por el microservicio interno MailSender. El 200 significa que MailSender
+        lo ACEPTÓ (202) y quedó `encolado` (`estado`); la entrega al relay se confirma después y se ve en
+        `GET /web/cotizaciones/{folio}/correos` (`enviado` o `fallido` con su error). `message_id` es el id del correo en
+        MailSender y `correo_id` el del envío en Cotifly (historial y reintento). El comercial va en copia oculta.
+        El cuerpo va en HTML con un bloque fijo después del texto del comercial: el precio de cada ruta y el VALOR
+        TOTAL de la cotización, sin desglose, con la leyenda de impuestos del PDF.
+        Por defecto, en todos los ambientes (`Correo:Proteccion:Modo=redirigir`), el correo va SOLO al buzón de pruebas
+        (sin CC ni CCO), con `[QA]` en el asunto y los destinatarios originales en el cuerpo; `redirigido_a` trae ese buzón.
+        Solo producción con `Correo:Proteccion:Modo=ninguno` y `Correo:Proteccion:PermitirEnvioReal=true` escribe a los
+        destinatarios reales. En la base y
+        en el historial quedan los destinatarios originales.
 
         Concurrencia (HU-013.2, ADR-018 §12): antes de que el correo salga, la cotización queda marcada como enviada
         con control de versión; si un ajuste (margen, conexos) la cambió entretanto, o su PDF quedó desactualizado,
@@ -448,13 +492,17 @@ paths:
               $ref: '#/components/schemas/EnvioWeb'
       responses:
         '200':
-          description: Correo enviado
+          description: MailSender aceptó el correo (queda `encolado`; la entrega se sigue en el historial)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/RespuestaEnvio'
         '400':
-          description: Error de negocio del envío (duplicado, sin PDF, fallo SMTP, validación)
+          description: |
+            Error de negocio del envío: duplicado (`CORREO_DUPLICADO`), sin PDF (`CORREO_PDF_NO_ENCONTRADO`), MailSender lo
+            rechazó (400/413/422), no está disponible o no respondió a tiempo (`CORREO_ENVIO_FALLIDO`; con tiempo agotado el
+            correo pudo quedar encolado: la cotización queda enviada y el mismo envío cuenta 5 minutos para `CORREO_DUPLICADO`;
+            también si el ambiente redirige sin buzón de pruebas: no sale nada), o validación (`ErrorWeb`)
           content:
             application/json:
               schema:
@@ -472,7 +520,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
         '503':
-          description: El envío de correo está deshabilitado (`Correo:Habilitado=false`, valor por defecto)
+          description: El envío de correo está deshabilitado (`Correo:Habilitado=false`, valor por defecto); solo con una cotización propia
           content:
             application/json:
               schema:
@@ -481,6 +529,98 @@ paths:
                 error:
                   codigo: CORREO_DESHABILITADO
                   mensaje: "El envío de correo está deshabilitado."
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
+
+  /web/cotizaciones/{folio}/correos:
+    get:
+      operationId: historialCorreos
+      tags: [web]
+      summary: Historial de envíos de la cotización con el estado de MailSender
+      description: |
+        HU-033 (#199, ADR-023). Los envíos de la cotización, del más reciente al más antiguo, con el estado que reporta
+        MailSender: `encolado` (aceptado, sin entregar), `enviando` (entregando o con un reintento programado por un error
+        transitorio), `enviado` (el relay lo aceptó: `enviado_at`) o `fallido` (rechazado al encolarlo, reintentos agotados
+        o sin confirmación en 24 h: `error`). Un worker de Cotifly consulta MailSender cada 30 s mientras el envío está en
+        curso. Los destinatarios son los ORIGINALES aunque el correo se haya redirigido al buzón de pruebas
+        (`redirigido_a`). Solo el dueño; una cotización ajena es 404.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/Folio'
+      responses:
+        '200':
+          description: Historial de envíos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistorialCorreos'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '404':
+          $ref: '#/components/responses/NoEsTuya'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+
+  /web/cotizaciones/{folio}/correos/{correoId}/reintentar:
+    post:
+      operationId: reintentarCorreo
+      tags: [web]
+      summary: Pide a MailSender que reintente un envío fallido
+      description: |
+        HU-033 (#199, ADR-023). Los reintentos de entrega los hace MailSender solo (hasta 5, con espera exponencial); este
+        endpoint pide uno más (`POST /api/v1/emails/{id}/retry`) para un envío `fallido` que MailSender conoce
+        (`reintentable = true`). El envío vuelve a `encolado` y el worker sigue su estado. Un envío que se rechazó al
+        encolarlo (sin id de MailSender) no se reintenta: se envía de nuevo con `POST .../enviar`. Solo el dueño.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/Folio'
+        - name: correoId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: MailSender aceptó el reintento (el envío vuelve a `encolado`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvioCorreo'
+        '400':
+          description: '`CORREO_ENVIO_FALLIDO`: MailSender no respondió o no está disponible'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '404':
+          description: La cotización no es suya o el envío no es de ella
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWeb'
+        '409':
+          description: '`CORREO_NO_REINTENTABLE`: el envío no está `fallido`, ya se está reintentando, nunca llegó a MailSender o MailSender ya no lo conoce'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '503':
+          description: '`CORREO_DESHABILITADO`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/seguimiento:
     post:
@@ -529,6 +669,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/admin/lineas-negocio:
     get:
@@ -550,6 +696,8 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '403':
           $ref: '#/components/responses/SinPermiso'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/admin/lineas-negocio/{id}:
     put:
@@ -590,6 +738,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorWeb'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/metricas/comercial:
     get:
@@ -661,6 +815,8 @@ paths:
                 error: "El parámetro 'desde' debe ser una fecha AAAA-MM-DD."
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/metricas/regional:
     get:
@@ -870,6 +1026,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/usuario/telefono:
     get:
@@ -887,6 +1045,8 @@ paths:
                 $ref: '#/components/schemas/TelefonoComercial'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
     put:
       operationId: guardarTelefono
       tags: [web]
@@ -903,7 +1063,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/TelefonoComercial'
+              $ref: '#/components/schemas/TelefonoComercialWeb'
       responses:
         '200':
           description: Teléfono guardado
@@ -915,6 +1075,12 @@ paths:
           $ref: '#/components/responses/Validacion'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/cotizaciones/{id}/nueva-version:
     get:
@@ -946,6 +1112,8 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/clientes:
     get:
@@ -994,6 +1162,8 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/municipios:
     get:
@@ -1042,6 +1212,8 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/tipos-mercancia:
     get:
@@ -1073,11 +1245,14 @@ paths:
           description: |
             `CUBICADOR_NO_DISPONIBLE`: el cubicador no está configurado (`Cubicador:UrlBase` vacía, el valor por defecto mientras
             no exista) o no respondió. El formulario puede seguir con los tipos que ya conoce: sin catálogo, la captura conserva el
-            nombre que manda el cliente.
+            nombre que manda el cliente. `CUBICADOR_NO_AUTORIZADO` (el cubicador rechazó la llave de Cotifly, 401/403) o
+            `CUBICADOR_RESPUESTA_INVALIDA` (la respuesta no cumple el contrato): avisar a soporte, no es la sesión del comercial.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/tipos-carroceria:
     get:
@@ -1102,11 +1277,13 @@ paths:
         '401':
           $ref: '#/components/responses/SesionExpirada'
         '503':
-          description: '`CUBICADOR_NO_DISPONIBLE`: el cubicador no está configurado o no respondió.'
+          description: '`CUBICADOR_NO_DISPONIBLE`: el cubicador no está configurado o no respondió; `CUBICADOR_NO_AUTORIZADO` (rechazó la llave de Cotifly) o `CUBICADOR_RESPUESTA_INVALIDA` (respuesta fuera del contrato).'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/tipos-vehiculo:
     get:
@@ -1133,11 +1310,14 @@ paths:
         '503':
           description: |
             `CUBICADOR_NO_DISPONIBLE`: el cubicador no está configurado, no respondió o no publica `GET /vehiculos-catalogo`
-            (petición P1).
+            (petición P1). `CUBICADOR_NO_AUTORIZADO` (rechazó la llave de Cotifly) o `CUBICADOR_RESPUESTA_INVALIDA` (respuesta fuera
+            del contrato).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/catalogos-flete:
     get:
@@ -1195,6 +1375,8 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/alias/resolver:
     get:
@@ -1264,6 +1446,8 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cubicacion:
     post:
@@ -1397,6 +1581,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/cubicacion/{id}:
     get:
@@ -1413,7 +1603,8 @@ paths:
 
         Solo el comercial que la pidió la ve. Se guarda en la memoria de Cotifly `Cubicador:RetencionCubicacionMinutos` (15 min)
         desde su último cambio: vencida, de otro usuario, inexistente o perdida porque Cotifly se reinició, responde **404** igual
-        (sin distinguir): el front vuelve a calcular.
+        (sin distinguir): el front vuelve a calcular. Endurecimiento A (#199): un `id` que no es un UUID también es ese 404 (antes un
+        404 sin cuerpo).
       security:
         - bearer: []
       parameters:
@@ -1436,13 +1627,15 @@ paths:
         '401':
           $ref: '#/components/responses/SesionExpirada'
         '404':
-          description: '`ErrorWeb`: la cubicación no existe, venció, se perdió al reiniciar Cotifly o es de otro usuario'
+          description: '`ErrorWeb`: la cubicación no existe, venció, se perdió al reiniciar Cotifly, es de otro usuario o el `id` no es un UUID'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorWeb'
               example:
                 error: 'La cubicación no existe, ya venció o no es tuya: vuelve a calcular el cubicaje.'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/solicitudes-costeo:
     post:
@@ -1585,7 +1778,10 @@ paths:
             `POSICION_INVALIDA` va en `mercancias[i].<subcampo>` (índice base 0: `cantidad`, `largo_cm`, `ancho_cm`, `alto_cm`,
             `peso_kg`, `descripcion` o `codigo_mercancia`) y su mensaje nombra la mercancía en base 1 (`Mercancía 1: ...`), sin
             índices; `DEMASIADAS_POSICIONES` va en `mercancias` (antes `posiciones[i]` y `posiciones`, E2E 2026-10-16).
-            Nada queda guardado. `ErrorWeb` si el cuerpo no es JSON válido.
+            Rechazos del cubicador (HU-023.1; endurecimiento A, #199): `ErrorNegocio` con su propio código, `MERCANCIAS_REQUERIDAS`,
+            `MERCANCIA_DESCONOCIDA`, `MERCANCIA_NO_CUBICABLE`, `DIMENSIONES_INVALIDAS`, `POSICION_INVALIDA`, `CUBICACION_DEMASIADO_GRANDE`
+            o `CUBICADOR_PETICION_RECHAZADA`, con `detalle.ruta`, `detalle.item` (base 0) y `detalle.campo` cuando se sabe; nunca van al
+            respaldo. Nada queda guardado. `ErrorWeb` si el cuerpo no es JSON válido.
           content:
             application/json:
               schema:
@@ -1610,13 +1806,15 @@ paths:
             `CATALOGOS_FLETE_NO_DISPONIBLE`: los catálogos maestros de Nexo no están disponibles (Nexo caído o sin configurar, el
             comercial sin `idUsuarioExterno`) y no hay una copia de menos de `Nexo:HorasCatalogosVencidos`. Nada queda guardado.
             HU-021.6: `MUNICIPIOS_NO_DISPONIBLE` si alguna ruta necesita el catálogo de municipios (un municipio sin id, o con id y
-            sin nombre) y Nexo no responde; `NEXO_NO_DISPONIBLE` (o 403 `NEXO_SIN_PERMISO`) si la ruta trae servicios conexos y no se
-            pudo leer su costo en el catálogo de Nexo. Nada queda guardado.
+            sin nombre) y Nexo no responde; `NEXO_NO_DISPONIBLE` (o 403 `NEXO_SIN_PERMISO`, ver el 403) si la ruta trae servicios
+            conexos y no se pudo leer su costo en el catálogo de Nexo. Nada queda guardado.
             HU-021.5: `CUBICADOR_NO_DISPONIBLE` solo con `Cubicador:RespaldoSiFalla = false`, si el cubicador configurado no pudo
             recomendar los vehículos de una ruta ("no se pudo calcular los vehículos"); nada queda guardado ni se envía a Nexo. Con el
             valor por defecto (`true`) la ruta sigue con un camión sin vehículo.
             También si se agota `Cubicador:PresupuestoCapturaSegundos` (una licitación hace un POST por fila). El 503 no trae el detalle
             interno (estado HTTP, ruta del cubicador): queda en el log con el evento `CUBICADOR_RESPALDO`.
+            `CUBICADOR_NO_AUTORIZADO` (el cubicador rechazó la llave de Cotifly) y `CUBICADOR_RESPUESTA_INVALIDA` (respuesta fuera del
+            contrato) son 503 SIEMPRE, también con el respaldo encendido: nunca van al respaldo y nada queda guardado.
             `SERVICIO_OCUPADO` (#125): el candado del folio siguió ocupado tras los reintentos; nada queda guardado, se puede
             reintentar.
           headers:
@@ -1628,6 +1826,23 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: |
+            `NEXO_SIN_PERMISO` (endurecimiento B de #199): Nexo respondió 403 al leer el costo de los servicios conexos de una ruta
+            en su catálogo (`GET /api/servicios-conexos`: el comercial no tiene el rol `Comercial` ni `Admin` en Nexo). Nada queda
+            guardado ni se captura en Nexo; `detalle.motivo` trae solo el código de Nexo. `ErrorWeb` si el rol de Cotifly no alcanza.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorNegocio'
+                  - $ref: '#/components/schemas/ErrorWeb'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/cotizaciones/{folio}/costeo/reintentar:
     post:
@@ -1687,6 +1902,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/resultado:
     post:
@@ -1698,8 +1915,21 @@ paths:
         primero `POST /api/cotizaciones/{id}/resultado` de Nexo (`{id}` = la cotización de Nexo de la solicitud) y,
         **solo si Nexo responde 200**, `ganada` y `motivo_rechazo` en Cotifly (perdida: `motivo`; ganada: `"No aplica"`,
         HU-021.13; a Nexo se le envía `motivo` tal como llega). `comentario` se reenvía a
-        Nexo y no se guarda en Cotifly. `409` de Nexo (`RESULTADO_YA_DEFINIDO`, `COTIZACION_NO_ENTREGADA`) o Nexo caído
-        (`503`) no cambian nada local; el frontend puede deshabilitar el botón cuando `ganada` ya tiene valor.
+        Nexo y no se guarda en Cotifly. `409` de Nexo (`RESULTADO_YA_DEFINIDO`) o Nexo caído (`503`) no cambian nada local;
+        el frontend puede deshabilitar el botón cuando `ganada` ya tiene valor. `COTIZACION_NO_ENTREGADA` ya no es un error
+        (HU-033, abajo).
+
+        **Resultado diferido (HU-033, #199, ADR-023).** Si Nexo todavía no tiene la cotización Entregada (en `autocosteo`
+        Nexo responde `409 COTIZACION_NO_ENTREGADA`; en `pendiente_costeo` Cotifly lo confirma leyendo el costeo), el
+        resultado se guarda SOLO en Cotifly y responde 200 con `sincronizacion_resultado_nexo = pendiente` ("pendiente de
+        sincronizar con NEXO"); el `comentario` se guarda para enviarlo después. El polling sigue consultando la solicitud
+        y, cuando ve que la Mesa de Costeo la entregó, envía el resultado a Nexo UNA vez (idempotente) y queda `sincronizado`.
+        Cotifly nunca entrega la cotización en Nexo (no llama a `/entregar`). Si Nexo descarta la solicitud, el costeo vence,
+        pasan 30 días sin entrega o se agotan 10 intentos fallidos, queda `no_sincronizable` (solo en Cotifly, con
+        `error_sincronizacion_resultado_nexo`). Si al sincronizar Nexo ya tenía otro resultado, manda Nexo (como en
+        `RESULTADO_YA_DEFINIDO`) y queda anotado. Mientras está pendiente, otro `/resultado` con el mismo valor es 200 sin
+        cambios y con otro valor es 409 `RESULTADO_YA_DEFINIDO`. Excepción: la perdida en `pendiente_costeo` sigue siendo
+        la "perdida solo en Cotifly" de HU-013.17 (abajo), que nunca se sincroniza.
 
         Entrega implícita: si Nexo entrega la cotización al marcar el resultado, `estado_costeo` salta a `entregada`
         aunque estuviera en `autocosteo` o `pendiente_costeo`; es un estado válido. Desde su issue #171, Nexo exige que la
@@ -1712,8 +1942,8 @@ paths:
         el resultado se registra igual (Nexo ya lo tiene), `estado_costeo` conserva su valor (nunca `entregada` sin
         precio) y el polling aplica el precio en segundos: el frontend sigue consultando `GET .../costeo` mientras
         `precio_final` sea `null`. En `pendiente_costeo`, Cotifly lee primero el costeo de Nexo y reutiliza esa lectura:
-        solo si Nexo ya la entregó le pide el resultado; si no, una `ganada` es 409 `COTIZACION_NO_ENTREGADA` y una
-        `perdida` queda solo en Cotifly (abajo).
+        solo si Nexo ya la entregó le pide el resultado; si no, una `ganada` queda pendiente de sincronizar (HU-033, arriba)
+        y una `perdida` queda solo en Cotifly (abajo).
 
         **Resultado ya definido en Nexo (HU-013.14).** Si Nexo responde `RESULTADO_YA_DEFINIDO` (otro resultado quedó en
         Nexo y no en Cotifly), Cotifly lee el resultado de Nexo, lo guarda y responde ese 409 con
@@ -1725,10 +1955,23 @@ paths:
         obligatorio (400 si falta) e `If-Match` obligatorio (428 sin él, 409 `CONFLICTO_CONCURRENCIA` si no coincide).
         No se envía a Nexo, se detiene el polling y `motivo_estado_costeo` lo indica ("Perdida solo en Cotifly ...").
         Si Nexo costea después, el resultado no cambia. Cuenta en las métricas como perdida y queda en la auditoría
-        (`resultado_cotizacion_sin_costeo`). Una `ganada` en esos estados es 409 `COTIZACION_NO_ENTREGADA`.
+        (`resultado_cotizacion_sin_costeo`) y `sincronizacion_resultado_nexo` es `solo_cotifly`. Una `ganada` en `error_envio`
+        es 409 `COTIZACION_NO_ENTREGADA` (Nexo no recibió la solicitud); en `pendiente_costeo` queda pendiente (HU-033).
 
         `If-Match` es opcional en el resto (compatibilidad); si viene y no coincide, 409 `CONFLICTO_CONCURRENCIA`. El 200
         devuelve el `ETag` nuevo.
+
+        **Endurecimiento B (#199, E2E 2026-10-22).**
+        - DEF-C-1: ante `RESULTADO_YA_DEFINIDO` Cotifly **lee** el resultado de Nexo (`GET /api/cotizaciones/{id}` con el id que ya
+          conoce, o `GET /api/cotizaciones/por-solicitud/{id}`); ya no escribe en Nexo con `POST /api/cotizaciones` ("crear o
+          recuperar"). Lo mismo cuando todavía no conoce el id de la cotización de Nexo: si Nexo aún no la tiene, es como una cotización
+          no entregada (pendiente de sincronizar en `autocosteo`). El "crear o recuperar" queda solo para un Nexo sin la ruta de lectura.
+        - OBS-C-2: repetir el **mismo** resultado que ya está `sincronizado` responde 200 sin cambios (mismo `ETag`) y sin llamar a
+          Nexo. Otro valor sigue yendo a Nexo, que manda (409 `RESULTADO_YA_DEFINIDO`).
+        - Una `perdida` en `pendiente_costeo` cuya solicitud Nexo ya no reconoce (404) queda como perdida `solo_cotifly` (mismas
+          reglas: `motivo` e `If-Match`), igual que en `error_envio`; antes respondía `COSTEO_NEXO_SOLICITUD_NO_ENCONTRADA`.
+        - Si Nexo responde 404 `COTIZACION_NO_ENCONTRADA` al marcar (no reconoce la cotización de Nexo del folio), es 409
+          `COTIZACION_NEXO_NO_ENCONTRADA` con el código de Nexo en `detalle.motivo`, sin cambio local; nunca el 404 "no es tuya".
       security:
         - bearer: []
       parameters:
@@ -1765,11 +2008,15 @@ paths:
         '409':
           description: |
             Sin cambio local, salvo `RESULTADO_YA_DEFINIDO` de Nexo, que deja en Cotifly el resultado de Nexo (`detalle.motivo`).
-            De Nexo: `RESULTADO_YA_DEFINIDO`, `COTIZACION_NO_ENTREGADA` (también sin pedirle el resultado a Nexo en
-            `pendiente_envio`, y para una `ganada` en `error_envio` o en `pendiente_costeo` sin la entrega en Nexo) y
-            `SOLICITUD_NO_TRANSICIONABLE`. De Cotifly: `COSTEO_NO_LISTO` (chat, descartada o costeo vencido, que se marcan
+            De Nexo: `RESULTADO_YA_DEFINIDO` y `SOLICITUD_NO_TRANSICIONABLE`. `COTIZACION_NO_ENTREGADA` lo responde Cotifly sin
+            pedirle el resultado a Nexo: en `pendiente_envio` (ya con solicitud en Nexo), para una `ganada` en `error_envio` y
+            para una `ganada` en `pendiente_costeo` si la lectura del costeo de Nexo falla con un error que no es de
+            disponibilidad (Nexo caído o lento es 503). Cuando Nexo responde `COTIZACION_NO_ENTREGADA` (`autocosteo`) o
+            confirma que no hay entrega (una `ganada` en `pendiente_costeo`), ya no es 409: 200 pendiente de sincronizar
+            (HU-033). De Cotifly: `COSTEO_NO_LISTO` (chat, descartada o costeo vencido, que se marcan
             con `/seguimiento`; o todavía no enviada a Nexo), `RESULTADO_YA_DEFINIDO` (ya tiene resultado sin costeo) y
-            `CONFLICTO_CONCURRENCIA` (`If-Match` que no coincide)
+            `CONFLICTO_CONCURRENCIA` (`If-Match` que no coincide). Endurecimiento B (#199): `COTIZACION_NEXO_NO_ENCONTRADA` si Nexo
+            responde 404 `COTIZACION_NO_ENCONTRADA` (no reconoce su cotización del folio; `detalle.motivo` = ese código de Nexo)
           content:
             application/json:
               schema:
@@ -1782,6 +2029,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/cotizaciones/{folio}/costeo:
     get:
@@ -1816,6 +2069,8 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/rutas/{rutaId}/recalcular-vehiculos:
     post:
@@ -1839,7 +2094,9 @@ paths:
         - name: rutaId
           in: path
           required: true
-          description: '`linea_solicitud_id` de la ruta (de `rutas[]` de `CosteoCotizacion`).'
+          description: |
+            `linea_solicitud_id` de la ruta (de `rutas[]` de `CosteoCotizacion`). Endurecimiento A (#199): un valor que no es un UUID
+            responde 404 `NoEsTuya`, como una ruta que no existe (antes 400 "Cuerpo inválido").
           schema:
             type: string
             format: uuid
@@ -1884,6 +2141,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/costeo/margen:
     put:
@@ -2002,6 +2261,12 @@ paths:
                       nueva_version: true
         '428':
           $ref: '#/components/responses/PrecondicionRequerida'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/cotizaciones/{folio}/costeo/re-solicitar:
     post:
@@ -2110,7 +2375,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/CotizacionResumen'
         '400':
-          description: '`SOLICITUD_COSTEO_INVALIDA` (`motivo` vacío o largo, `datos_carga` vacío, fuera de los límites de Nexo o incoherente, reglas de peso), `TRM_NO_DISPONIBLE` (versión nueva en USD sin TRM del día) o, en una licitación, `LICITACION_INVALIDA` con `detalle.motivo = LICITACION_REQUIERE_NUEVA_CARGA` y `detalle.errores[]` (sus filas guardadas ya no cumplen las reglas de captura, HU-013.11: ni el mismo folio ni la `-vN` se pueden enviar; crear una licitación nueva) (`ErrorNegocio`); `ErrorWeb` si el cuerpo no es JSON válido. Nada cambia. Con un catálogo de Nexo caído al revalidar una licitación, 503 `CATALOGOS_FLETE_NO_DISPONIBLE` o `MUNICIPIOS_NO_DISPONIBLE`'
+          description: '`SOLICITUD_COSTEO_INVALIDA` (`motivo` vacío o largo, `datos_carga` vacío, fuera de los límites de Nexo o incoherente, reglas de peso), `TRM_NO_DISPONIBLE` (versión nueva en USD sin TRM del día), `FOLIO_INVALIDO` (versión nueva: el folio de la original no tiene la forma de ADR-011, p. ej. migrado, o el `-vN` pasaría de 50 caracteres; endurecimiento B de #199) o, en una licitación, `LICITACION_INVALIDA` con `detalle.motivo = LICITACION_REQUIERE_NUEVA_CARGA` y `detalle.errores[]` (sus filas guardadas ya no cumplen las reglas de captura, HU-013.11: ni el mismo folio ni la `-vN` se pueden enviar; crear una licitación nueva) (`ErrorNegocio`); `ErrorWeb` si el cuerpo no es JSON válido. Nada cambia. Con un catálogo de Nexo caído al revalidar una licitación, 503 `CATALOGOS_FLETE_NO_DISPONIBLE` o `MUNICIPIOS_NO_DISPONIBLE`'
           content:
             application/json:
               schema:
@@ -2119,6 +2384,17 @@ paths:
                   - $ref: '#/components/schemas/ErrorWeb'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: |
+            `NEXO_SIN_PERMISO` (endurecimiento B de #199): Nexo respondió 403 al leer el costo de los servicios conexos de una ruta
+            en su catálogo (la versión nueva copia los conexos con el costo de hoy) (`GET /api/servicios-conexos`: el comercial no tiene el rol `Comercial` ni `Admin` en Nexo). Nada queda
+            guardado ni se crea la versión ni se captura en Nexo; `detalle.motivo` trae solo el código de Nexo. `ErrorWeb` si el rol de Cotifly no alcanza.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorNegocio'
+                  - $ref: '#/components/schemas/ErrorWeb'
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
@@ -2134,7 +2410,10 @@ paths:
             Licitación (HU-013.11): `CATALOGOS_FLETE_NO_DISPONIBLE` (sin catálogo maestro de Nexo ni copia de 24 h para revalidar las
             filas guardadas) o `MUNICIPIOS_NO_DISPONIBLE` (alguna fila guardada sin id de municipio y el catálogo no responde). Nada
             cambia ni se envía a Nexo. `SERVICIO_OCUPADO` (#125) si el candado del folio de la versión `-vN` siguió ocupado tras
-            los reintentos: no se creó la versión.
+            los reintentos: no se creó la versión. Endurecimiento B (#199): la reserva de la original va dentro de ese candado, así
+            que con `SERVICIO_OCUPADO` **nada cambia**: la `versionNegocio` de la original no sube y su `If-Match` sigue valiendo.
+            Cubicador (endurecimiento A, #199): `CUBICADOR_NO_DISPONIBLE` (sin respaldo), `CUBICADOR_NO_AUTORIZADO` o
+            `CUBICADOR_RESPUESTA_INVALIDA` al volver a pedir los camiones; nada cambia.
           headers:
             Retry-After:
               $ref: '#/components/headers/RetryAfter'
@@ -2142,6 +2421,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/cotizaciones/{folio}/solicitud:
     get:
@@ -2180,6 +2465,8 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
     put:
       operationId: editarSolicitud
       tags: [web]
@@ -2202,9 +2489,11 @@ paths:
           (`POST /api/solicitudes/{id}/rechazar`, motivo "Edición de la solicitud desde Cotifly"; si ya estaba descartada o Nexo no la
           conoce, sigue) y solo entonces aplica la edición, invalida el PDF (`pdf_desactualizado`) y captura de nuevo en el **mismo
           folio**. Si el rechazo falla, **no** se captura otra solicitud: 503 `NEXO_NO_DISPONIBLE` (403 `NEXO_SIN_PERMISO`) con
-          `detalle.motivo = RECHAZO_NEXO_FALLIDO` y `detalle.version_negocio` (la versión subió: recargar).
+          `detalle.motivo = RECHAZO_NEXO_FALLIDO` y `detalle.version_negocio` (la versión subió: recargar). Endurecimiento B (#199):
+          `detalle.motivo` es siempre `RECHAZO_NEXO_FALLIDO`, también en el 403; el texto técnico de Nexo solo va al log.
         - `nueva_version`: ya entregada al cliente o con resultado. Se crea `-vN` (201 y `Location`) con lo editado y el margen
-          negociado de las rutas que se conservan; la original no cambia ni se rechaza en Nexo.
+          negociado de las rutas que se conservan; la original no cambia ni se rechaza en Nexo. Endurecimiento B (#199): la reserva
+          de la original va dentro del candado del folio `-vN`; con 503 `SERVICIO_OCUPADO` nada cambia (ni su `versionNegocio`).
         - Las licitaciones no se editan en esta fase (409 `ESTADO_NO_PERMITE`, `detalle.motivo = LICITACION`).
 
         **Validación y camiones:** las mismas reglas que `POST /web/solicitudes-costeo` (todos los errores en `detalle.errores`) y el
@@ -2262,7 +2551,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/EdicionSolicitudResultado'
         '400':
-          description: '`CAMPO_NO_EDITABLE` (`detalle.campo`, `detalle.campos`, `detalle.errores`), `SOLICITUD_COSTEO_INVALIDA` (`detalle.errores` por ruta y campo: reglas de la captura, `RUTA_INEXISTENTE`, `RUTA_REPETIDA`, `RUTAS_REORDENADAS`, `motivo` largo), un rechazo del cubicador (`MERCANCIA_DESCONOCIDA`...) o `TRM_NO_DISPONIBLE`. Nada cambia'
+          description: '`CAMPO_NO_EDITABLE` (`detalle.campo`, `detalle.campos`, `detalle.errores`), `SOLICITUD_COSTEO_INVALIDA` (`detalle.errores` por ruta y campo: reglas de la captura, `RUTA_INEXISTENTE`, `RUTA_REPETIDA`, `RUTAS_REORDENADAS`, `motivo` largo), un rechazo del cubicador (`MERCANCIA_DESCONOCIDA`...), `TRM_NO_DISPONIBLE` o, en `nueva_version`, `FOLIO_INVALIDO` (el folio de la original no tiene la forma de ADR-011 o el `-vN` pasaría de 50 caracteres). Nada cambia'
           content:
             application/json:
               schema:
@@ -2272,7 +2561,7 @@ paths:
         '401':
           $ref: '#/components/responses/SesionExpirada'
         '403':
-          description: '`NEXO_SIN_PERMISO`: Nexo no deja rechazar la solicitud anterior (rol o solicitud ajena). Nada se capturó'
+          description: '`NEXO_SIN_PERMISO`: Nexo no deja rechazar la solicitud anterior (rol o solicitud ajena), con `detalle.motivo = RECHAZO_NEXO_FALLIDO` (nunca el texto de Nexo; endurecimiento B de #199), o Nexo respondió 403 al leer el costo de los conexos en su catálogo. Nada se capturó'
           content:
             application/json:
               schema:
@@ -2288,11 +2577,17 @@ paths:
         '428':
           $ref: '#/components/responses/PrecondicionRequerida'
         '503':
-          description: '`NEXO_NO_DISPONIBLE` con `detalle.motivo = RECHAZO_NEXO_FALLIDO` (el rechazo de la solicitud anterior falló: no se capturó otra), `CATALOGOS_FLETE_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE`, `NEXO_NO_DISPONIBLE` (conexos) o `CUBICADOR_NO_DISPONIBLE`. Nada se aplicó'
+          description: '`NEXO_NO_DISPONIBLE` con `detalle.motivo = RECHAZO_NEXO_FALLIDO` (el rechazo de la solicitud anterior falló: no se capturó otra), `CATALOGOS_FLETE_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE`, `NEXO_NO_DISPONIBLE` (conexos), `CUBICADOR_NO_DISPONIBLE` (sin respaldo), `CUBICADOR_NO_AUTORIZADO`, `CUBICADOR_RESPUESTA_INVALIDA` o `SERVICIO_OCUPADO` (`nueva_version`: el candado del folio `-vN` siguió ocupado; la original no cambia, su `If-Match` sigue valiendo). Nada se aplicó'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/servicios-conexos:
     get:
@@ -2361,6 +2656,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/costeo/servicios-conexos:
     post:
@@ -2463,7 +2760,16 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`COSTEO_NO_LISTO`, `RUTA_RECHAZADA` (HU-028.1, #183: la Mesa de Costeo rechazó la ruta), `LINEA_SIN_COTIZACION_NEXO`, `PDF_YA_ENVIADO`, `ESTADO_NO_PERMITE` (`detalle.motivo = LICITACION` o `VARIAS_RUTAS`: cambios de carga con más de una ruta), `CONFLICTO_CONCURRENCIA` o `IDEMPOTENCY_KEY_REUTILIZADA` (la misma `Idempotency-Key` con otro cuerpo; antes 400 `ErrorWeb`); sin cambios'
+          description: |
+            `COSTEO_NO_LISTO`, `RUTA_RECHAZADA` (HU-028.1, #183: la Mesa de Costeo rechazó la ruta), `LINEA_SIN_COTIZACION_NEXO`,
+            `PDF_YA_ENVIADO`, `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION`, `CONFLICTO_CONCURRENCIA` o
+            `IDEMPOTENCY_KEY_REUTILIZADA` (la misma `Idempotency-Key` con otro cuerpo; antes 400 `ErrorWeb`): sin cambios.
+            Endurecimiento A (#199):
+            - `ESTADO_NO_PERMITE` con `detalle.motivo = CAPTURA_EN_CURSO` (y `detalle.folio`): otra petición con la misma
+              `Idempotency-Key` sigue en curso en otra réplica; no se ejecuta nada. Esperar y repetir con la misma clave.
+            - `CONFLICTO_CONCURRENCIA` con `detalle.agregado_en_nexo = true`: la cotización cambió DESPUÉS de que Nexo agregó el
+              conexo. El conexo SÍ quedó en Nexo (el polling lo trae a Cotifly): recargar el costeo y NO repetir el POST (Nexo no
+              tiene DELETE; la misma `Idempotency-Key` devuelve esta misma respuesta).
           content:
             application/json:
               schema:
@@ -2476,6 +2782,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
     put:
       operationId: seleccionarServiciosConexos
       tags: [web]
@@ -2557,6 +2869,12 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '428':
           $ref: '#/components/responses/PrecondicionRequerida'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/cotizaciones/{folio}/costeo/textos/redactar:
     post:
@@ -2611,6 +2929,8 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '428':
           $ref: '#/components/responses/PrecondicionRequerida'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/costeo/textos:
     put:
@@ -2665,6 +2985,12 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '428':
           $ref: '#/components/responses/PrecondicionRequerida'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/cotizaciones/{folio}/costeo/pdf:
     post:
@@ -2673,7 +2999,8 @@ paths:
       summary: Genera el PDF de la cotización con el precio sobre el costeo de Nexo
       description: |
         HU-005.7, módulo PDF de HU-003.5. El payload lo arma el servidor desde la cotización: una fila con origen,
-        destino, vehículo y `precio_final`, y los servicios conexos de la ruta, cada uno con su precio. Solo el dueño.
+        destino, vehículo y el valor final de la ruta (HU-033: conexos incluidos, sin desglose), los servicios conexos
+        listados como incluidos sin precio y el "VALOR TOTAL DE LA COTIZACIÓN" al final. Solo el dueño.
         Desde HU-013 (ADR-018 §11, #98) ya no es "una sola vez": mientras la cotización no se haya enviado ni tenga resultado,
         los ajustes (margen, conexos, textos, re-solicitar en el mismo folio) invalidan el PDF (`pdf_desactualizado = true`) y
         se regenera aquí (el anterior queda en el historial). Con el PDF vigente responde `PDF_YA_GENERADO`; ya enviada o con
@@ -2681,10 +3008,17 @@ paths:
 
         **Por ruta (HU-021.9, #136).** Con una ruta, el PDF sale de la ruta y sus camiones: origen, destino, los camiones
         agrupados ("2 × 3S3 - FURGON (20000 KG)"; un camión sin vehículo es "Vehículo por definir" y uno descartado en Nexo no
-        se imprime) y la tarifa del transporte de la ruta; los servicios conexos van aparte con su precio (tarifa + conexos =
-        precio de la ruta). Con **más de una ruta** (formulario o licitación) sale con el layout de pliego: resumen con una
-        fila por ruta (número, ruta, vehículo y peso, tarifa) y el total del pliego sin servicios conexos, y luego **una
-        sección por ruta** con su título (y la línea de negocio de la ruta), su origen, su destino, sus camiones y su tarifa.
+        se imprime) y el valor final de la ruta (HU-033, #199: transporte y conexos con su margen, sin desglose; los
+        conexos se listan como incluidos, sin precio). Con **más de una ruta** (formulario o licitación) sale con el layout
+        de pliego: resumen con una fila por ruta (número, ruta, vehículo y peso, valor final) y "VALOR TOTAL DE LA
+        COTIZACIÓN (N RUTAS)" (antes la tarifa sin conexos y "TOTAL DEL PLIEGO (N RUTAS, SIN SERVICIOS CONEXOS)"), y luego
+        **una sección por ruta** con su título (y la línea de negocio de la ruta), su origen, su destino, sus camiones y su
+        valor final. Una ruta rechazada por la Mesa sale "Sin costeo" y no suma. OBS-C-3 (endurecimiento B de #199): los textos
+        dependen del tipo. Una **licitación** dice "presentación oferta de servicios de Transporte para su licitación (N rutas)",
+        "RESUMEN DEL PLIEGO" y "RUTA n: PLIEGO DE TRANSPORTE …"; una cotización **spot** de varias rutas (formulario) dice
+        "presentación oferta de servicios de Transporte (N rutas)", "RESUMEN DE LAS RUTAS" y "RUTA n: TARIFA DE TRANSPORTE …".
+        `POST /web/cotizaciones/{folio}/costeo/pdf` no responde `FOLIO_INVALIDO`: su `PDF_YA_ENVIADO` lleva a la versión nueva
+        (`re-solicitar`), que sí puede.
         Con más de 20 rutas solo trae el resumen (hasta 1000 rutas). Una licitación de una sola fila sale con el PDF de una
         ruta. En los dos casos el PDF exige que **todas** las rutas tengan precio y que `precio_final` sea la suma de sus
         `precio_final_linea` (con los conexos incluidos); si no, `COSTEO_NO_LISTO` (el ajuste de margen es por ruta, el PDF no).
@@ -2739,6 +3073,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/licitaciones/analizar-excel:
     post:
@@ -2750,7 +3086,7 @@ paths:
         `POST {Nexo:UrlBase}/api/captura-solicitudes/analizar-excel` con la identidad del comercial y devuelve las hojas con
         su fila de encabezado, los encabezados y hasta 1000 filas como texto, para que el frontend mapee las columnas a los
         campos destino. Ni Nexo ni Cotifly guardan el archivo en este paso. `multipart/form-data` con el campo `archivo`
-        (`.xlsx` o `.xlsm`, máximo 10 MB). El cuerpo completo de `/web/licitaciones*` admite hasta
+        (`.xlsx` o `.xlsm`, máximo 10 MB menos 64 KB: 10.420.224 bytes). El cuerpo completo de `/web/licitaciones*` admite hasta
         `SeguridadHttp:LimiteCuerpoLicitacionBytes` (12 MB por defecto; 413 al pasarlo).
 
         **Código de mercancía (HU-023.5, #160).** Cotifly reconoce en cada hoja la columna de la mercancía (encabezado con
@@ -2785,7 +3121,7 @@ paths:
         '400':
           description: |
             `ARCHIVO_REQUERIDO` (falta o vacío), `FORMATO_NO_SOPORTADO` (otra extensión), `ARCHIVO_DEMASIADO_GRANDE` (más de
-            10 MB), y de Nexo `EXCEL_INVALIDO` (no se pudo leer) o `EXCEL_SIN_DATOS` (ninguna hoja con tabla).
+            10 MB menos 64 KB, 10.420.224 bytes), y de Nexo `EXCEL_INVALIDO` (no se pudo leer) o `EXCEL_SIN_DATOS` (ninguna hoja con tabla).
             `COSTEO_NEXO_RECHAZADA` para otro 4xx de Nexo. Un 413 de Nexo también es `ARCHIVO_DEMASIADO_GRANDE`: Cotifly acepta
             hasta 10 MB menos 64 KB para que el archivo con el sobre multipart quepa en el límite de 10 MB de Nexo.
           content:
@@ -2812,6 +3148,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/licitaciones:
     post:
@@ -2890,9 +3230,17 @@ paths:
             línea no existe, o está inactiva: `detalle.motivo` lo dice; HU-013.15: en los dos casos `detalle.lineas_validas` trae las
             líneas activas de Cotifly y, con `linea_negocio = Licitaciones` (la línea del catálogo de Nexo, que no da margen), `detalle.motivo =
             LINEA_DE_NEXO`), `FOLIO_CONSECUTIVO_AGOTADO`, `TRM_NO_DISPONIBLE` con
-            `moneda = USD`). `ErrorWeb` si el cuerpo no
-            es JSON válido. Si Nexo responde 403 al alta, la licitación queda igual en `error_envio` con el motivo
-            `NEXO_SIN_PERMISO` (201).
+            `moneda = USD`). `ARCHIVO_DEMASIADO_GRANDE`: el Excel pasa de 10 MB menos 64 KB (10.420.224 bytes). Endurecimiento A
+            (#199): con `Cubicador:LicitacionEnSegundoPlano = false` (no es el valor por defecto) las filas se cubican al crear y un
+            rechazo del cubicador es 400 `ErrorNegocio` con su código (`MERCANCIAS_REQUERIDAS`, `MERCANCIA_DESCONOCIDA`,
+            `MERCANCIA_NO_CUBICABLE`, `DIMENSIONES_INVALIDAS`, `POSICION_INVALIDA`, `CUBICACION_DEMASIADO_GRANDE`,
+            `CUBICADOR_PETICION_RECHAZADA`); en segundo plano (por defecto) esos rechazos quedan en la fila (`estado_cubicacion =
+            fallida`, `error_cubicacion`) y el 201 sale igual. Un código de mercancía desconocido o no cubicable se reporta por fila en
+            `ReporteLicitacionInvalida`. `ErrorWeb` si el cuerpo no
+            es JSON válido. Si Nexo responde 403 al **alta** (`POST /api/captura-solicitudes`), la licitación queda igual creada (201)
+            en `error_envio` y `motivo_estado_costeo` dice que el usuario no tiene permiso en Nexo (Cabina de Fletes). En cambio, un
+            403 del **catálogo de conexos** (filas con `servicios_conexos`) ocurre antes de guardar: 403 `NEXO_SIN_PERMISO` y nada se
+            crea (endurecimiento B de #199).
           content:
             application/json:
               schema:
@@ -2902,12 +3250,25 @@ paths:
                   - $ref: '#/components/schemas/ErrorWeb'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: |
+            `NEXO_SIN_PERMISO` (endurecimiento B de #199): Nexo respondió 403 al leer el costo de los servicios conexos de una ruta
+            en su catálogo (`GET /api/servicios-conexos`: el comercial no tiene el rol `Comercial` ni `Admin` en Nexo). Nada queda
+            guardado ni se captura en Nexo; `detalle.motivo` trae solo el código de Nexo. `ErrorWeb` si el rol de Cotifly no alcanza.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorNegocio'
+                  - $ref: '#/components/schemas/ErrorWeb'
         '503':
           description: |
             HU-013.11: `CATALOGOS_FLETE_NO_DISPONIBLE` (alguna fila trae `tipo_vehiculo` o `clase_viaje` y no hay catálogo maestro
             de Nexo ni una copia de menos de 24 h para validarlos) o `MUNICIPIOS_NO_DISPONIBLE` (alguna fila sin id de municipio y el
             catálogo de municipios no responde). Nada se guarda. `SERVICIO_OCUPADO` (#125) si el candado del folio siguió ocupado
-            tras los reintentos: nada se guarda y se puede reintentar.
+            tras los reintentos: nada se guarda y se puede reintentar. Endurecimiento A (#199): solo con
+            `Cubicador:LicitacionEnSegundoPlano = false`, `CUBICADOR_NO_DISPONIBLE` (con `Cubicador:RespaldoSiFalla = false`),
+            `CUBICADOR_NO_AUTORIZADO` o `CUBICADOR_RESPUESTA_INVALIDA`; nada se guarda.
           headers:
             Retry-After:
               $ref: '#/components/headers/RetryAfter'
@@ -2921,6 +3282,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorWeb'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/licitaciones/{folio}:
     get:
@@ -2932,6 +3297,8 @@ paths:
         tiene `precio_final = null`. Solo el dueño. HU-023.5 (#160): trae los camiones de cada ruta (`lineas[].camiones`), el
         estado de su cubicación en segundo plano (`lineas[].estado_cubicacion`, `error_cubicacion`), el progreso
         (`progreso_cubicacion`) y los avisos del cubicador por ruta (`cubicacion`, la misma forma de `POST /web/solicitudes-costeo`).
+        Endurecimiento A (#199): un folio que no es una licitación (formulario o chat) responde 404, como el Excel y reintentar
+        (antes respondía 200).
       security:
         - bearer: []
       parameters:
@@ -2947,6 +3314,8 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/licitaciones/{folio}/cubicacion/reintentar:
     post:
@@ -2956,8 +3325,11 @@ paths:
       description: |
         HU-023.5 (#160). Las rutas con `estado_cubicacion = fallida` vuelven a la cola del cubicador. Con `usar_respaldo = true`,
         solo las que fallaron porque el cubicador no respondió (`error_cubicacion` empieza por `CUBICADOR_NO_DISPONIBLE`) se
-        aceptan con el camión provisional sin vehículo (lo resuelve la Mesa de Costeo de Nexo) y, si ya no queda ninguna pendiente
-        ni fallida, la licitación se envía a Nexo en la misma petición. Un rechazo de la petición (mercancía o medidas) no se acepta
+        aceptan con el respaldo, sin volver a llamar al cubicador, y, si ya no queda ninguna pendiente ni fallida, la licitación se
+        envía a Nexo en la misma petición. Endurecimiento B (#199, HU-032, ADR-022 §9): el respaldo es el mismo del camino en
+        segundo plano: con el vehículo elegido de la ruta (`tipo_vehiculo`) y válido en Nexo, el camión lo lleva con el aviso
+        `VEHICULO_ELEGIDO_USADO`; si no es un código de Nexo, va sin vehículo con `VEHICULO_ELEGIDO_INVALIDO`; sin elegido, sin
+        vehículo (lo resuelve la Mesa de Costeo de Nexo). Los avisos salen en la ruta (`cubicacion`, `avisos_cubicacion`). Un rechazo de la petición (mercancía o medidas) no se acepta
         con respaldo: esconde un dato malo (HU-023.1). Solo antes de enviarla a Nexo. Cuerpo opcional.
       security:
         - bearer: []
@@ -2973,7 +3345,7 @@ paths:
                 usar_respaldo:
                   type: boolean
                   nullable: true
-                  description: '`true` = aceptar las rutas que fallaron por una caída del cubicador con un camión sin vehículo en vez de volver a llamar al cubicador.'
+                  description: '`true` = aceptar las rutas que fallaron por una caída del cubicador con el respaldo (el vehículo elegido de la ruta si es de Nexo, si no sin vehículo) en vez de volver a llamar al cubicador.'
       responses:
         '200':
           description: La licitación con su progreso
@@ -2997,6 +3369,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /web/licitaciones/{folio}/excel:
     get:
@@ -3041,6 +3419,8 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/clientes/{nit}/destinatarios-previos:
     get:
@@ -3072,13 +3452,19 @@ paths:
                 $ref: '#/components/schemas/ErrorWeb'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/cotizaciones/{folio}/correo/vista-previa:
     post:
       operationId: previsualizarCorreo
       tags: [web]
       summary: Renderiza el correo sin enviarlo
-      description: Devuelve asunto, cuerpo y destinatarios prediligenciados para el modal de confirmación.
+      description: |
+        Devuelve asunto, cuerpo y destinatarios prediligenciados para el modal de confirmación. HU-033 (#199): también el
+        cuerpo en HTML tal como lo recibe el cliente (`cuerpo_html`), el resumen sin desglose (`resumen`: precio por ruta y
+        total), la copia oculta al comercial (`copia_oculta`) y, en un ambiente de pruebas, `entorno_pruebas = true` con el
+        buzón (`redirigido_a`) y el texto del aviso (`aviso`) para mostrarlo tal cual.
       security:
         - bearer: []
       parameters:
@@ -3088,7 +3474,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/EnvioWeb'
+              $ref: '#/components/schemas/BorradorCorreoWeb'
       responses:
         '200':
           description: Vista previa
@@ -3100,6 +3486,12 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
 
   /pdfs/{archivo}:
     get:
@@ -3145,6 +3537,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorWeb'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /health:
     get:
@@ -3311,7 +3705,8 @@ components:
       description: |
         Segundos que conviene esperar antes de reintentar o volver a consultar. Con `SERVICIO_OCUPADO` (#125) siempre 1; con
         `CUBICADOR_OCUPADO` (opción C) 10; en el 202 de `POST /web/cubicacion` y en `GET /web/cubicacion/{id}` con `en_proceso`
-        (opción D) 2. Las demás causas del 503 no lo envían.
+        (opción D) 2; en el 429 (endurecimiento A, #199) lo que falta para que se abra la ventana del límite. Las demás causas del
+        503 no lo envían.
       schema:
         type: integer
       example: 1
@@ -3366,11 +3761,65 @@ components:
           example:
             error: "Cotización no encontrada o no es tuya."
     DemasiadasPeticiones:
-      description: Límite de peticiones alcanzado
+      description: |
+        Límite de peticiones alcanzado (`/api/auth/*`: `LimiteAuth`; `/web/chat`: `LimiteChat`). Endurecimiento A (#199): trae
+        `Retry-After` con los segundos que faltan para que se abra la ventana.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorWeb'
+          example:
+            error: "Demasiadas peticiones. Intenta de nuevo en unos segundos."
+    CuerpoDemasiadoGrande:
+      description: |
+        Endurecimiento A (#199): el cuerpo supera el límite de `/web/*` (`SeguridadHttp:LimiteCuerpoWebBytes`, 64 KB por defecto;
+        12 MB en `/web/licitaciones*`, `SeguridadHttp:LimiteCuerpoLicitacionBytes`). `ErrorWeb`; no se procesa nada.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorWeb'
+          example:
+            error: "El cuerpo de la petición es demasiado grande."
+    TipoContenidoNoSoportado:
+      description: |
+        Endurecimiento A (#199): el cuerpo no viene como `application/json` (o como `multipart/form-data` donde el endpoint lo pide).
+        `ErrorWeb`; no se procesa nada.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorWeb'
+          example:
+            error: "Cuerpo inválido: envía JSON con Content-Type: application/json."
+    ErrorInterno:
+      description: |
+        Endurecimiento A (#199): error interno no controlado (una excepción, o un error que no es del cliente como una restricción
+        única que el caso de uso no tradujo). Siempre `ErrorNegocio` con `codigo = ERROR_INTERNO`, un mensaje genérico y, como único
+        `detalle`, `id_correlacion` (el id de la petición en el log del servidor: dárselo a soporte); nunca el mensaje de la excepción
+        ni la traza, que quedan solo en el log con ese id. Una petición que el cliente abortó no recibe respuesta. Reintentar más tarde; si se repite,
+        reportar a soporte la hora y la operación.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorNegocio'
+          example:
+            error:
+              codigo: ERROR_INTERNO
+              mensaje: "Ocurrió un error interno. Intenta de nuevo y, si se repite, contacta a soporte."
+              detalle:
+                id_correlacion: "0HNPGF5LGM4MM:00000001"
+    ErrorInternoAuth:
+      description: |
+        Endurecimiento A (#199): error interno no controlado en `/api/auth/*`. `ErrorWeb` con el mismo mensaje genérico (la única forma
+        de error de ese grupo); el detalle queda solo en el log del servidor.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorWeb'
+          example:
+            error: "Ocurrió un error interno. Intenta de nuevo y, si se repite, contacta a soporte."
 
   schemas:
     Nulo:
@@ -3410,7 +3859,9 @@ components:
                 con ese folio; el Python versionaba el folio en silencio, en .NET el folio lo
                 genera HU-003.6 y la colisión se informa), `FOLIO_CONSECUTIVO_AGOTADO` (HU-003.6:
                 ya se usaron los 999 folios del día de esas iniciales, ADR-011), `CORREO_DESHABILITADO` (HU-003.5:
-                `Correo:Habilitado=false`, el valor por defecto; en `/web/*` se responde 503),
+                `Correo:Habilitado=false`, el valor por defecto; en `/web/*` se responde 503), `CORREO_NO_REINTENTABLE`
+                (HU-033, #199: 409 en `POST .../correos/{correoId}/reintentar`: el envío no está `fallido`, nunca llegó a
+                MailSender o MailSender ya no lo conoce),
                 `CORREO_INVALIDO` (HU-003.5: destinatarios `para`/`cc` inválidos o vacíos, asunto
                 de más de 300 caracteres o cuerpo de más de 5000; lo devuelve la herramienta
                 `enviar_correo`, y en `POST /web/cotizaciones/{folio}/enviar` va como `ErrorWeb` 400),
@@ -3425,9 +3876,11 @@ components:
                 cubicaje", la captura, el recálculo de vehículos y la licitación, siempre con el cubicador configurado) y `TRM_NO_DISPONIBLE`
                 (HU-012.1/HU-012.2, ADR-014: ninguna fuente de la TRM entregó una TRM válida para el día; por defecto
                 DolarApi y, de respaldo, los datos abiertos de la Superintendencia Financiera; no se cotiza en USD y el
-                comercial puede reintentar o cotizar en COP; en `POST /web/licitaciones` con `moneda = USD` también). Solo en la herramienta
-                `resolver_municipio` del agente (HU-005.13), nunca en `/web/*`: `MUNICIPIO_ARGUMENTO_INVALIDO`
-                (`campo` distinto de `origen`/`destino` o `texto` vacío; no se consulta Nexo).
+                comercial puede reintentar o cotizar en COP; en `POST /web/licitaciones` con `moneda = USD` también). Endurecimiento A
+                (#199): se retiran del enum los códigos que ningún código emite (`AJUSTE_ID_INVALIDO`, `TARIFA_FUENTE_NO_DISPONIBLE`,
+                `TARIFA_CONFIG_INVALIDA` y `MUNICIPIO_ARGUMENTO_INVALIDO`, este último de la herramienta `resolver_municipio`, retirada
+                con el agente legado en HU-013.9; los tres de tarifa y municipio, además, se borraron del backend en el endurecimiento B);
+                `clsContratoReflexionTests` exige que cada valor del enum lo emita algún código.
                 Costeo en Nexo (ADR-015): `SOLICITUD_COSTEO_INVALIDA` (formulario ampliado fuera de los límites de
                 Nexo), `COSTEO_NEXO_NO_DISPONIBLE` (Nexo sin configurar, 5xx, red, circuito abierto o el comercial sin
                 `idUsuarioExterno`), `COSTEO_NEXO_TIEMPO_AGOTADO` (Nexo no respondió a tiempo), `COSTEO_NEXO_RECHAZADA`
@@ -3456,7 +3909,7 @@ components:
                 `COTIZACION_NO_ENTREGADA` (409, sin cambio local) y `USAR_RESULTADO_NEXO` (409: `/seguimiento`
                 sobre una cotización que pasó por Nexo).
                 `PRECIO_INVALIDO` queda solo para el cálculo de precio.
-                Solo en `GET /web/metricas/regional` (HU-010.1, ADR-016): `REGIONAL_NO_ASIGNADA` (409: el gerente no
+                En `GET /web/metricas/regional` (HU-010.1, ADR-016) y en `GET /web/cotizaciones/regional` (HU-016.1, #154): `REGIONAL_NO_ASIGNADA` (409: el gerente no
                 tiene regional en `DimEjecutivo` ni en `UsuariosWeb.regional`) y `REGIONAL_NO_DISPONIBLE` (503: la
                 conexión a `DimEjecutivo` está configurada pero falla).
                 Licitaciones (HU-011, ADR-017): `ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `EXCEL_INVALIDO` y `EXCEL_SIN_DATOS`
@@ -3487,9 +3940,17 @@ components:
                 camiones; no admite ajuste de margen ni de conexos; `detalle` trae `linea_orden`, `linea_solicitud_id` y
                 `motivo_rechazo`) y `SIN_RUTAS_COTIZABLES` (409: la Mesa rechazó todas las rutas; `POST .../costeo/pdf` no genera
                 el PDF, decisión D1).
+                Endurecimiento A (#199): `ERROR_INTERNO` es 500 (antes salía como 400) y lo emiten tanto los casos de uso (por ejemplo,
+                el comercial autenticado no existe en `UsuariosWeb`) como el manejador global de errores no controlados, siempre con un
+                mensaje genérico y con `detalle.id_correlacion` como único detalle (respuesta común `ErrorInterno`). Una restricción única que el caso de uso no tradujo
+                (`REGISTRO_DUPLICADO` interno) también sale como 500 `ERROR_INTERNO`, sin el nombre de la restricción.
+                Endurecimiento B (#199): `COTIZACION_NEXO_NO_ENCONTRADA` (409 en `POST .../resultado`: Nexo respondió 404
+                `COTIZACION_NO_ENCONTRADA`, no reconoce la cotización de Nexo del folio; `detalle.motivo` = ese código; nunca el 404
+                "no es tuya") y `FOLIO_INVALIDO` (400: el folio que arma el servidor no cumple ADR-011; en la práctica solo en la
+                versión nueva de `re-solicitar` y en `nueva_version` de `PUT .../solicitud` si el folio de la original no tiene esa forma
+                o el `-vN` pasaría de 50 caracteres; en la captura y la licitación solo si el folio armado no la cumple, lo que el
+                límite de 20 del NIT ya impide; el PDF no lo responde).
               enum:
-                - TARIFA_FUENTE_NO_DISPONIBLE
-                - TARIFA_CONFIG_INVALIDA
                 - MARGEN_FUENTE_NO_DISPONIBLE
                 - MARGEN_LINEA_DESCONOCIDA
                 - PRECIO_INVALIDO
@@ -3501,11 +3962,12 @@ components:
                 - CORREO_PDF_NO_ENCONTRADO
                 - CORREO_ENVIO_FALLIDO
                 - AJUSTE_COTIZACION_INVALIDA
-                - AJUSTE_ID_INVALIDO
                 - AJUSTE_MARGEN_INVALIDO
                 - FOLIO_DUPLICADO
                 - FOLIO_CONSECUTIVO_AGOTADO
+                - FOLIO_INVALIDO
                 - CORREO_DESHABILITADO
+                - CORREO_NO_REINTENTABLE
                 - CORREO_INVALIDO
                 - CLIENTE_BUSQUEDA_NO_DISPONIBLE
                 - HERRAMIENTA_DESCONOCIDA
@@ -3518,6 +3980,7 @@ components:
                 - COSTEO_NEXO_RECHAZADA
                 - COSTEO_NEXO_SOLICITUD_INVALIDA
                 - COSTEO_NEXO_SOLICITUD_NO_ENCONTRADA
+                - COTIZACION_NEXO_NO_ENCONTRADA
                 - COSTEO_NO_REINTENTABLE
                 - COSTEO_NO_LISTO
                 - PDF_YA_GENERADO
@@ -3526,7 +3989,6 @@ components:
                 - USAR_RESULTADO_NEXO
                 - SOLICITUD_NO_TRANSICIONABLE
                 - TRM_NO_DISPONIBLE
-                - MUNICIPIO_ARGUMENTO_INVALIDO
                 - REGIONAL_NO_ASIGNADA
                 - REGIONAL_NO_DISPONIBLE
                 - ARCHIVO_REQUERIDO
@@ -4013,6 +4475,20 @@ components:
             `POST /api/captura-solicitudes`), con hasta 4 decimales. Nexo no fija la escala (su ejemplo trae 62.5): mostrarlo tal
             cual. `null` si Nexo no lo mandó, si la solicitud no se ha enviado o si se envió antes del script 09. Siempre presente.
             Es el de la creación: no se actualiza después (`scoreUrgencia` por solicitud sigue bloqueado, ADR-016).
+        sincronizacion_resultado_nexo:
+          type: string
+          nullable: true
+          enum: [pendiente, sincronizado, no_sincronizable, solo_cotifly, null]
+          description: |
+            HU-033 (#199, ADR-023). Estado del resultado ganada/perdida frente a Nexo: `null` sin resultado; `pendiente`
+            ("pendiente de sincronizar con NEXO": guardado solo en Cotifly hasta que la Mesa entregue la cotización);
+            `sincronizado` (Nexo lo tiene); `no_sincronizable` (ya no se podrá enviar: ver `error_sincronizacion_resultado_nexo`);
+            `solo_cotifly` (nunca va a Nexo: perdida antes del costeo de HU-013.17, cotización sin Nexo, descartada o vencida).
+            Siempre presente.
+        error_sincronizacion_resultado_nexo:
+          type: string
+          nullable: true
+          description: HU-033. Último error al enviar el resultado pendiente, o por qué ya no se puede enviar. Siempre presente.
         conexos_descartados:
           type: array
           deprecated: true
@@ -4453,6 +4929,34 @@ components:
           nullable: true
           maxLength: 5000
 
+    BorradorCorreoWeb:
+      type: object
+      description: |
+        Endurecimiento A (#199): cuerpo opcional de `POST .../correo/vista-previa` (antes `EnvioWeb`, que exige `para`). Todo es
+        opcional: sin `para` (o vacío) se usan los destinatarios del último envío del comercial a ese cliente; sin `asunto` ni
+        `cuerpo`, los de la plantilla. No se valida ni se envía nada.
+      properties:
+        para:
+          type: array
+          nullable: true
+          items:
+            type: string
+            maxLength: 320
+        cc:
+          type: array
+          nullable: true
+          items:
+            type: string
+            maxLength: 320
+        asunto:
+          type: string
+          nullable: true
+          maxLength: 300
+        cuerpo:
+          type: string
+          nullable: true
+          maxLength: 5000
+
     RespuestaEnvio:
       type: object
       required: [enviado]
@@ -4460,9 +4964,133 @@ components:
         enviado:
           type: boolean
           enum: [true]
+          description: HU-033. MailSender aceptó el correo (202); la entrega se sigue en el historial.
         message_id:
           type: string
           nullable: true
+          description: HU-033. Id del correo en MailSender.
+        correo_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: HU-033. Id del envío en Cotifly (historial y reintento).
+        estado:
+          type: string
+          nullable: true
+          enum: [encolado, enviando, enviado, fallido, null]
+          description: HU-033. Estado del envío al responder (`encolado`).
+        redirigido_a:
+          type: string
+          nullable: true
+          description: HU-033. Buzón de pruebas al que se redirigió (por defecto en todos los ambientes); `null` si va a los destinatarios reales (solo producción con `Modo=ninguno` y `PermitirEnvioReal=true`).
+
+    EnvioCorreo:
+      type: object
+      description: HU-033 (#199). Un envío del historial de la cotización con el estado de MailSender.
+      required: [id, created_at, estado, para, cc, reintentable]
+      properties:
+        id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        estado:
+          type: string
+          enum: [encolado, enviando, enviado, fallido]
+        para:
+          type: array
+          items:
+            type: string
+          description: Destinatarios originales.
+        cc:
+          type: array
+          items:
+            type: string
+        asunto:
+          type: string
+          nullable: true
+        error:
+          type: string
+          nullable: true
+          description: Último error de MailSender (`lastError`) o por qué quedó `fallido`.
+        intentos:
+          type: integer
+          nullable: true
+          description: Intentos de entrega al relay que lleva MailSender.
+        enviado_at:
+          type: string
+          format: date-time
+          nullable: true
+        estado_actualizado_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Última consulta del estado en MailSender.
+        redirigido_a:
+          type: string
+          nullable: true
+        id_mail_sender:
+          type: string
+          nullable: true
+          description: Id del correo en MailSender (`null` si se rechazó al encolarlo).
+        reintentable:
+          type: boolean
+          description: '`fallido` y conocido por MailSender: admite `POST .../correos/{correoId}/reintentar`.'
+
+    HistorialCorreos:
+      type: object
+      required: [folio, correos]
+      properties:
+        folio:
+          type: string
+        correos:
+          type: array
+          items:
+            $ref: '#/components/schemas/EnvioCorreo'
+
+    ResumenCorreo:
+      type: object
+      description: |
+        HU-033 (#199, decisión 5). Bloque fijo del correo para el cliente: el precio final de cada ruta (transporte y conexos
+        incluidos) y el total general, sin desglose (nunca costo, margen, flete ni conexos con precio).
+      required: [moneda, total, total_texto, rutas, leyenda]
+      properties:
+        moneda:
+          type: string
+          enum: [COP, USD]
+        total:
+          type: number
+        total_texto:
+          type: string
+          description: Con el formato del PDF (`$3.294.798`, `US$996,35`).
+        rutas:
+          type: array
+          items:
+            $ref: '#/components/schemas/RutaResumenCorreo'
+        leyenda:
+          type: string
+          description: Leyenda de impuestos (la misma del PDF).
+        nota_moneda:
+          type: string
+          nullable: true
+          description: En USD, la nota de TRM mínima del PDF.
+
+    RutaResumenCorreo:
+      type: object
+      required: [orden, ruta, precio_texto]
+      properties:
+        orden:
+          type: integer
+        ruta:
+          type: string
+          description: '"Origen → Destino".'
+        precio:
+          type: number
+          nullable: true
+          description: Precio final de la ruta; `null` si la Mesa de Costeo la rechazó (`precio_texto` = "Sin costeo").
+        precio_texto:
+          type: string
 
     SeguimientoWeb:
       type: object
@@ -4825,11 +5453,24 @@ components:
     TelefonoComercial:
       type: object
       required: [telefono]
+      description: Respuesta de `GET` y `PUT /web/usuario/telefono`. El teléfono guardado (recortado) o `null` si no hay.
       properties:
         telefono:
           type: string
           nullable: true
           pattern: '^\+?[0-9 ]{7,20}$'
+
+    TelefonoComercialWeb:
+      type: object
+      description: |
+        Endurecimiento A (#199): cuerpo de `PUT /web/usuario/telefono` (antes compartía `TelefonoComercial`). `telefono` es opcional:
+        ausente, `null`, vacío o solo espacios BORRAN el teléfono. Con valor, se recorta y debe cumplir `^\+?[0-9 ]{7,20}$`; si no,
+        400 `ErrorWeb` (`TELEFONO_INVALIDO`).
+      properties:
+        telefono:
+          type: string
+          nullable: true
+          pattern: '^\s*(\+?[0-9 ]{7,20})?\s*$'
 
     Destinatarios:
       type: object
@@ -5397,6 +6038,20 @@ components:
           description: |
             HU-018.1 (#155). `scorePrioridad` que Nexo devolvió al crear la solicitud (hasta 4 decimales; escala de Nexo, mostrarlo
             tal cual). `null` si Nexo no lo mandó, si no se ha enviado o si se envió antes del script 09. Siempre presente.
+        resultado:
+          type: string
+          nullable: true
+          enum: [ganada, perdida, null]
+          description: HU-033 (#199). Resultado registrado (`null` si no tiene).
+        sincronizacion_resultado_nexo:
+          type: string
+          nullable: true
+          enum: [pendiente, sincronizado, no_sincronizable, solo_cotifly, null]
+          description: HU-033 (#199). Igual que en `CotizacionResumen`.
+        error_sincronizacion_resultado_nexo:
+          type: string
+          nullable: true
+          description: HU-033. Igual que en `CotizacionResumen`.
         textos:
           description: HU-013.5. Asunto e introducción guardados para el PDF, o `null` si todavía no hay (el PDF usa los estándar).
           oneOf:
@@ -5458,6 +6113,8 @@ components:
           type: number
           minimum: 0.01
           maximum: 999999.99
+          multipleOf: 0.01
+          description: Hasta 2 decimales (más decimales es 400).
 
     AjusteMargenWeb:
       type: object
@@ -5642,12 +6299,13 @@ components:
           description: HU-021.8. La ruta por su id (`rutas[].linea_solicitud_id`); alternativa a `linea_orden`.
         servicio_id:
           type: string
-          format: uuid
-          description: '`id` de `ServicioConexoCatalogo` (`servicioConexoId` de Nexo).'
+          description: '`id` de `ServicioConexoCatalogo` (`servicioConexoId` de Nexo), tal como lo entrega Nexo.'
         cantidad:
           type: number
           minimum: 0.01
           maximum: 999999.99
+          multipleOf: 0.01
+          description: Hasta 2 decimales (más decimales es 400 `ErrorWeb`).
 
     AgregarServiciosConexosWeb:
       type: object
@@ -5672,7 +6330,9 @@ components:
       properties:
         id:
           type: string
-          format: uuid
+          description: |
+            Id del servicio en el catálogo de NEXO tal como lo entrega NEXO (Cotifly no lo interpreta ni garantiza su formato).
+            Endurecimiento A (#199): sin `format: uuid`.
         codigo:
           type: string
           nullable: true
@@ -5863,7 +6523,8 @@ components:
           exclusiveMinimum: true
           minimum: 0
           maximum: 99999.99
-          description: Unidades del servicio (hasta 2 decimales).
+          multipleOf: 0.01
+          description: Unidades del servicio (hasta 2 decimales; más es `VALOR_FUERA_DE_RANGO`).
 
     RutaCapturaWeb:
       type: object
@@ -6944,11 +7605,13 @@ components:
           Cotifly nunca elige entre candidatos. El texto se guarda y viaja tal como vino, junto al id.
         - **Horas (G5).** `horas_cargue`/`horas_descargue` de la fila, si vienen, viajan en esa línea; si no, las del encabezado.
 
-        HU-021.6 (#132, ADR-019): cada fila es una **ruta** con un camión sin vehículo (hasta el cubicador, #133). Puede traer su
-        `linea_negocio` (sin ella, la de la licitación), las ciudades de devolución y de levante por id + nombre (con solo el nombre
-        se resuelven como el origen), `mercancias` con `id_tipo_mercancia` obligatorio y `servicios_conexos` del catálogo de Nexo
-        (`ConexoCapturaWeb`). **`tipo_vehiculo` y `carroceria` se retiraron del mapeo del Excel** (decisión 7): si llegan, se
-        ignoran (salvo la bandera `Captura:AceptarVehiculoCliente`, igual que en `RutaCapturaWeb`). Una fila con solo el id de municipio copia el nombre del catálogo.
+        HU-021.6 (#132, ADR-019): cada fila es una **ruta**. Puede traer su `linea_negocio` (sin ella, la de la licitación), las
+        ciudades de devolución y de levante por id + nombre (con solo el nombre se resuelven como el origen), `mercancias` con
+        `codigo_mercancia` (HU-023) y `servicios_conexos` del catálogo de Nexo (`ConexoCapturaWeb`). Una fila con solo el id de
+        municipio copia el nombre del catálogo. HU-032 (#197, endurecimiento A #199 corrige este texto): `tipo_vehiculo` y
+        `carroceria` YA NO se ignoran: son el vehículo elegido de la fila, con las mismas reglas que `RutaCapturaWeb` (respaldo del
+        cubicador y obligatorio en una fila sin mercancías cubicables, salvo Contenedor; `Captura:AceptarVehiculoCliente = false`
+        los vuelve a ignorar). Los montos (`valor_*`) van de 0 a 9.999.999.999.999,99 y los pesos hasta 999.999,99, con 2 decimales.
 
         Los valores se guardan recortados y el primer envío, el reintento y la re-solicitud mandan exactamente lo guardado.
       properties:
@@ -6999,6 +7662,7 @@ components:
         tipo_vehiculo:
           type: string
           nullable: true
+          maxLength: 100
           description: |
             HU-032 (#197): el vehículo elegido de la fila, con la misma regla que `RutaCapturaWeb.tipo_vehiculo`. Una fila con todas sus
             mercancías cubicables se cubica en segundo plano (camión provisional sin vehículo; el elegido es el respaldo); una fila
@@ -7007,6 +7671,7 @@ components:
         carroceria:
           type: string
           nullable: true
+          maxLength: 100
           description: HU-032 (#197). La carrocería elegida (opcional). Igual que `RutaCapturaWeb.carroceria`.
         tipologia:
           type: string
@@ -7054,11 +7719,13 @@ components:
           type: number
           nullable: true
           minimum: 0
+          maximum: 9999999999999.99
           description: HU-021.6. Valor de un levante (nombre nuevo de `valor_aprovisionamiento`; si llegan los dos, vale este).
         valor_aprovisionamiento:
           type: number
           nullable: true
           minimum: 0
+          maximum: 9999999999999.99
         peso_kg:
           type: number
           nullable: true
@@ -7080,6 +7747,7 @@ components:
           type: number
           nullable: true
           minimum: 0
+          maximum: 9999999999999.99
         mercancias:
           type: array
           nullable: true
@@ -7124,6 +7792,10 @@ components:
           type: string
           format: date-time
           nullable: true
+          description: |
+            Endurecimiento A (#199). Opcional. ISO 8601: con zona se respeta; sin zona (o solo la fecha, `2026-10-31`) se interpreta en
+            hora de Bogotá (-05:00). No se valida que sea futura. En la respuesta (`Licitacion.deadline`) vuelve en UTC (D5). Un
+            valor que no es ISO es 400 `ErrorWeb` ("Cuerpo inválido").
         notas:
           type: string
           nullable: true
@@ -7153,7 +7825,8 @@ components:
           description: |
             Opcional (ADR-014 §5). Moneda de la licitación: `COP` por defecto. Con `USD` los precios se convierten con la TRM
             del día de creación (`trm_aplicada` de `Licitacion`) y el PDF de pliego lleva la nota de TRM mínima. Se acepta
-            sin distinguir mayúsculas ni espacios al borde.
+            sin distinguir mayúsculas ni espacios al borde. Endurecimiento A (#199): `null` o ausente es `COP`; un texto vacío o
+            cualquier otro valor es un error de la licitación (`ReporteLicitacionInvalida`, `VALOR_FUERA_DE_RANGO` en `moneda`).
         lineas:
           type: array
           minItems: 1
@@ -7262,8 +7935,8 @@ components:
           type: number
           nullable: true
           description: |
-            Tarifa del transporte de la línea con su margen, SIN servicios conexos (la misma del Excel y del PDF del pliego;
-            HU-021); `null` mientras no tiene flete o si está `rechazada` (HU-028.1). Nunca el costo de Nexo.
+            Tarifa del transporte de la línea con su margen, SIN servicios conexos (la misma del Excel; HU-021; el PDF del
+            pliego, desde HU-033, imprime el valor final de la ruta con conexos); `null` mientras no tiene flete o si está `rechazada` (HU-028.1). Nunca el costo de Nexo.
         estado_cubicacion:
           type: string
           nullable: true
@@ -7416,7 +8089,7 @@ components:
 
     ItemCubicacion:
       type: object
-      required: [cantidad, largo_cm, ancho_cm, alto_cm]
+      required: [cantidad, largo_cm, ancho_cm, alto_cm, peso_kg]
       description: |
         HU-023.2 (#157). Un bulto o grupo de bultos idénticos. Debe traer `codigo_mercancia` o, mientras el frontend no tenga el
         desplegable, `descripcion` (se resuelve al tipo más parecido del catálogo); sin ninguno de los dos, 400 `MERCANCIA_DESCONOCIDA`.
@@ -7433,20 +8106,38 @@ components:
           description: Texto libre de la mercancía; solo se usa si no viene `codigo_mercancia`.
         cantidad:
           type: integer
-          description: Cuántos bultos idénticos con estas medidas.
+          minimum: 1
+          maximum: 100000
+          description: |
+            Cuántos bultos idénticos con estas medidas (1 a 100.000; fuera de rango, 400 `POSICION_INVALIDA` con `detalle.item` y
+            `detalle.campo`). La suma de las cantidades de todos los ítems no puede pasar de 10.000 (`CUBICACION_DEMASIADO_GRANDE`).
         largo_cm:
           type: number
-          description: Largo en centímetros.
+          minimum: 0.1
+          maximum: 999999
+          multipleOf: 0.01
+          description: Largo en centímetros (0,1 a 999.999, hasta 2 decimales; fuera de rango, 400 `DIMENSIONES_INVALIDAS`).
         ancho_cm:
           type: number
-          description: Ancho en centímetros.
+          minimum: 0.1
+          maximum: 999999
+          multipleOf: 0.01
+          description: Ancho en centímetros (0,1 a 999.999, hasta 2 decimales).
         alto_cm:
           type: number
-          description: Alto en centímetros.
+          minimum: 0.1
+          maximum: 999999
+          multipleOf: 0.01
+          description: Alto en centímetros (0,1 a 999.999, hasta 2 decimales).
         peso_kg:
           type: number
-          nullable: true
-          description: Peso en kilogramos de cada bulto.
+          exclusiveMinimum: true
+          minimum: 0
+          maximum: 999999.99
+          multipleOf: 0.01
+          description: |
+            Peso en kilogramos de cada bulto: obligatorio, mayor que 0 y hasta 999.999,99 con 2 decimales (sin él, o en 0, 400
+            `DIMENSIONES_INVALIDAS` con `detalle.campo = peso_kg`; endurecimiento A, #199: antes el contrato lo declaraba anulable).
 
     CubicacionRequest:
       type: object
@@ -7748,6 +8439,32 @@ components:
         adjunto:
           type: string
           description: Nombre del PDF que se adjuntará.
+        cuerpo_html:
+          type: string
+          nullable: true
+          description: HU-033. El cuerpo en HTML tal como lo recibe el cliente (texto, resumen con el total y firma).
+        resumen:
+          description: |
+            HU-033. Precio por ruta y total, sin desglose; `null` si la cotización todavía no tiene total. Endurecimiento A (#199):
+            `oneOf` con `Nulo` (en OAS 3.0.3 `nullable: true` sin `type` no admite `null`).
+          oneOf:
+            - $ref: '#/components/schemas/ResumenCorreo'
+            - $ref: '#/components/schemas/Nulo'
+        copia_oculta:
+          type: string
+          nullable: true
+          description: HU-033. Copia oculta que se agrega al enviar (el comercial), o `null` si no tiene correo o ya va en para/cc.
+        entorno_pruebas:
+          type: boolean
+          description: HU-033. El ambiente redirige los correos al buzón de pruebas (mostrar el aviso).
+        redirigido_a:
+          type: string
+          nullable: true
+          description: HU-033. Buzón de pruebas; `null` en producción.
+        aviso:
+          type: string
+          nullable: true
+          description: HU-033. Texto del aviso de pruebas para mostrar tal cual; `null` en producción.
 
     DatosNuevaVersion:
       type: object

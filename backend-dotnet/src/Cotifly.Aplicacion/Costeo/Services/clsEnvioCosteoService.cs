@@ -38,8 +38,9 @@ public interface IClsEnvioCosteoService
     /// <summary>
     /// Captura por rutas (HU-021.6): valida TODO junto (<c>SOLICITUD_COSTEO_INVALIDA</c> con <c>detalle.errores</c>: cliente, moneda,
     /// encabezado, y por ruta línea de negocio, límites de Nexo, códigos de catálogo, municipios con id obligatorio, mercancías con
-    /// <c>id_tipo_mercancia</c> y conexos del catálogo de Nexo), resuelve la línea de negocio de cada ruta (<c>MARGEN_LINEA_DESCONOCIDA</c>),
-    /// crea la cotización con sus rutas, sus camiones (uno por vehículo que recomiende el cubicador, #133, o uno sin vehículo de respaldo) y
+    /// <c>codigo_mercancia</c> (o <c>id_tipo_mercancia</c> obsoleto) y conexos del catálogo de Nexo), resuelve la línea de negocio de cada
+    /// ruta (<c>MARGEN_LINEA_DESCONOCIDA</c>), crea la cotización con sus rutas, sus camiones (uno por vehículo que recomiende el
+    /// cubicador, #133, o uno de respaldo con el vehículo elegido, HU-032, o sin vehículo) y
     /// sus conexos con el costo de Nexo, la
     /// confirma y la envía a Nexo como en <see cref="EnviarAsync"/>. 503 si un catálogo de Nexo no responde (<c>CATALOGOS_FLETE_NO_DISPONIBLE</c>,
     /// <c>MUNICIPIOS_NO_DISPONIBLE</c> o <c>NEXO_NO_DISPONIBLE</c> para los conexos): nada se guarda.

@@ -1,11 +1,12 @@
 # Diccionario de datos — `dbo_cotifly` (SQL Server)
 
-> **Estado:** vigente desde HU-021 · **Dueño:** Duban Guerra (backend) y scalderon-bs (datos) · **Actualizado:** 2026-10-13 (HU-021.14)
+> **Estado:** vigente desde HU-021 · **Dueño:** Duban Guerra (backend) y scalderon-bs (datos) · **Actualizado:** 2026-10-22 (ajustes `02` a `13`, HU-033)
 
 Qué significa cada columna de las tablas de cotizaciones, quién la escribe y quién la lee. Los tipos, nulos, restricciones e
 índices están en [`ESQUEMA_OBJETIVO_SQLSERVER.md`](ESQUEMA_OBJETIVO_SQLSERVER.md) (Parte A, con el diagrama ER); la decisión
 de diseño, en [ADR-019](../../backend-dotnet/specs/decisiones/ADR-019-reestructuracion-rutas-y-camiones.md). Fuente de verdad:
-`db/scripts/01_crear_esquema.sql` (= `0001` a `0010`) y el modelo EF
+`db/scripts/01_crear_esquema.sql` (= `0001` a `0010`), los ajustes `db/scripts/02` a `13` y `db/scripts/pendientes/04`, y el
+modelo EF
 (`backend-dotnet/src/Cotifly.Infraestructura/Comun/Persistence/Configurations/`).
 
 ## 1. Para qué sirve esta base
@@ -19,8 +20,10 @@ solo la foto de lo que se usó.
 
 1. **Captura** (`POST /web/solicitudes-costeo` o licitación por Excel): se crea la cabecera (`CotizacionesSolicitud`) con
    una fila por ruta (`CotizacionLineasSolicitud`), sus mercancías y sus conexos. El cubicador recomienda los camiones de
-   cada ruta y se crea una fila por camión (`CotizacionVehiculosLineaSolicitud`). Sin cubicador, la ruta queda con un
-   camión sin vehículo que resuelve la Mesa de Costeo de Nexo. Cubica el sistema donde nace la solicitud: si nace en
+   cada ruta y se crea una fila por camión (`CotizacionVehiculosLineaSolicitud`). Si la ruta no se puede cubicar (solo peso o
+   mercancías sin medidas), si no hay cubicador o si el cubicador no selecciona vehículo o no responde, la ruta queda con un
+   camión con el vehículo elegido por el comercial (`tipoVehiculoElegido`/`carroceriaElegida`, HU-032, ADR-022) o, si no eligió
+   ninguno, sin vehículo (lo resuelve la Mesa de Costeo de Nexo). Cubica el sistema donde nace la solicitud: si nace en
    Cotifly, Cotifly llama al cubicador; Nexo no vuelve a cubicar lo que le llega de Cotifly.
 2. **Envío a Nexo:** una línea de Nexo por camión. La cabecera guarda `solicitudNexoId`.
 3. **Polling:** empareja cada camión con su línea de Nexo (`lineaSolicitudNexoId`), guarda su flete, retorno y estado, y
@@ -28,8 +31,12 @@ solo la foto de lo que se usó.
    de la ruta (decisión 10); el registro de cada envío va en `EventosHerramienta`.
 4. **Ajustes del comercial** (margen por ruta, conexos, levante, textos): suben `versionNegocio`, recalculan la ruta y la
    cabecera y siguen la regla del PDF (ADR-018). El ajuste de margen queda en `MargenAjustes` con su ruta.
-5. **PDF y correo:** `pdfPath`, `CotizacionPdfsHistorial`, `Correos` y `CorreoDestinatarios`.
-6. **Resultado:** `ganada`, `motivoRechazo`, `marcadoAt`.
+5. **PDF y correo:** `pdfPath`, `CotizacionPdfsHistorial`, `Correos` y `CorreoDestinatarios`. El correo sale por el
+   microservicio MailSender (HU-033, ADR-023): Cotifly guarda el id que devuelve (`idMailSender`) y un worker consulta su estado
+   (`encolado` → `enviando` → `enviado` o `fallido`) según la agenda `siguienteConsultaAt`.
+6. **Resultado:** `ganada`, `motivoRechazo`, `marcadoAt`. Si el comercial lo marca antes de que Nexo entregue la cotización, queda
+   solo en Cotifly (`sincronizacionResultadoNexo = pendiente`) y el polling del costeo lo envía a Nexo una sola vez cuando la Mesa
+   la entregue (resultado diferido, HU-033).
 
 ## 3. `CotizacionesSolicitud` — la cabecera
 
@@ -58,6 +65,9 @@ la línea; ahora esos datos son de la ruta.
 | `textosCotizacion` | JSON con asunto e introducción del PDF (IA con respaldo estándar) | Redacción (ADR-018) | PDF, correo |
 | `estadoEnvio` | `sin_enviar`, `enviada`, `reenviada` | Correo | Regla del PDF, métricas |
 | `ganada`, `motivoRechazo`, `marcadoAt` | Resultado del negocio | Seguimiento | Métricas |
+| `sincronizacionResultadoNexo` | Estado del envío del resultado a Nexo: `pendiente` (marcado antes de la entrega en Nexo), `sincronizado` o `no_sincronizable`. NULL = sin resultado o anterior al script `13` (HU-033) | Resultado, polling del costeo (`clsSincronizacionResultadoNexoService`) | API, polling |
+| `comentarioResultadoPendiente` | Comentario que se enviará a Nexo con el resultado pendiente (hasta 500, límite de Nexo; `13`) | Resultado | Polling (envío diferido) |
+| `resultadoSincronizadoAt`, `errorSincronizacionResultado`, `intentosSincronizacionResultado` | Cuándo Nexo aceptó el resultado, el último error (o por qué ya no se puede enviar) y los intentos fallidos (`13`) | Polling del costeo | API, polling (reintentos hasta `CosteoNexo:MaximoFallosSincronizacionResultado`) |
 | `usuarioId` | Comercial dueño | Captura | Autorización, métricas |
 | `spaceId`, `threadId` | Hilo de origen (legado de Google Chat, retirado en #105) | Solo la cotización legada del chat (`clsGenerarPdfService`, apagada por defecto con `Pdf:PermitirCotizacionChat`) | Lectura de cotizaciones antiguas |
 | `createdAt`, `updatedAt` | Marcas de tiempo | Interceptor de EF | Listados |
@@ -91,7 +101,10 @@ camiones, los totales de costo, el margen y el precio.
 | `margenPoliticaSugerido`, `margenSAPSugerido` | Margen sugerido por la política de la línea y por SAP TM (fracción). El vigente es el de SAP si existe | Envío (resolución del margen) | Ajuste de margen, asistente |
 | `margenAplicado`, `origenMargen`, `metodoCalculo` | Margen con el que se calcula el precio, de dónde salió (`sap_tm`, `politica_linea`, `negociado`) y el método (`margen` o `markup`) | Envío; ajuste por ruta (decisiones 6 y 9) | Precio, métricas |
 | `precioFinalLinea` | `costoFinal` con el margen, en la moneda de la cabecera | Dominio | PDF, cabecera, métricas |
-| `estadoCosteo` | Resumen del estado de sus camiones | Dominio | Cabecera, API |
+| `estadoCosteo` | Resumen del estado de sus camiones (8 estados; `rechazada` si lo están todos sus camiones vigentes, script `10`) | Dominio | Cabecera, API |
+| `tipoVehiculoElegido`, `carroceriaElegida` | Vehículo que eligió el comercial en la captura: respaldo del cubicador (script `12`, HU-032, ADR-022). Se conserva en la edición y la re-solicitud aunque el cubicador o la Mesa cambien el del camión. NULL = no eligió | Captura, edición | Planificador de camiones (respaldo), API |
+| `idRecomendacion`, `resultadoCubicacion`, `motivoSinSeleccion`, `condicionada` | Resultado de la cubicación de la ruta (script `02`): la corrida del cubicador, `ASIGNADO` o `SIN_SELECCION_AUTOMATICA`, el motivo (5 valores, con `BUSQUEDA_AGOTADA` del `07`) y si lleva mercancías condicionadas | Captura, recálculo | API, Nexo |
+| `estadoCubicacion`, `cubicacionIntentos`, `cubicacionDisponibleAt`, `errorCubicacion`, `avisosCubicacion` | Cola de la cubicación en segundo plano de la licitación (`pendientes/04`, HU-023.5): `pendiente`/`cubicada`/`fallida`, intentos, desde cuándo se puede tomar, último error y avisos del cubicador (JSON) | Captura de la licitación, worker de cubicación | Worker, API |
 
 ## 5. `CotizacionVehiculosLineaSolicitud` — el camión
 
@@ -101,27 +114,28 @@ Una fila por camión. Si el cubicador recomienda 7 camiones para una ruta, son 7
 |---|---|---|---|
 | `lineaSolicitudId` | Ruta del camión | Captura | Agregado |
 | `idRecomendacionVehiculo` | Fila de la recomendación del cubicador; NULL si no salió de una | Captura (cubicador) | Trazabilidad con el cubicador |
-| `tipoVehiculo`, `carroceria` | Código del vehículo (por ejemplo `3S3`) y carrocería. Los define el cubicador o la Mesa de Costeo de Nexo, no el comercial (decisión 7). NULL = sin selección automática | Captura; polling (si la Mesa los pone o cambia) | Envío a Nexo, emparejamiento, PDF |
+| `tipoVehiculo`, `carroceria` | Código del vehículo (por ejemplo `3S3`) y carrocería que VIAJA: el del cubicador, el elegido por el comercial cuando la ruta va al respaldo (HU-032, reemplaza la decisión 7) o el que puso la Mesa de Costeo de Nexo. NULL = sin vehículo (lo resuelve la Mesa) | Captura; polling (si la Mesa los pone o cambia) | Envío a Nexo, emparejamiento, PDF |
 | `pesoKg` | Peso total del camión | Captura | Nexo, emparejamiento |
 | `costoFlete`, `costoRetornoContenedor` | Lo que cobra Nexo por el camión | Polling | Totales de la ruta |
 | `costoLevanteContenedor` | Copia del levante de la ruta | Captura, `CambiarValorLevante` | Totales de la ruta |
 | `lineaSolicitudNexoId` | Línea de Nexo emparejada con este camión | Polling (emparejamiento) | Polling, envío de conexos |
-| `estadoCosteo` | Estado del camión (los 7 estados). `descartada` = la Mesa borró su línea; no cuenta en totales ni se reenvía | Envío, polling | Resumen de la ruta |
-| `createdAt` | Además de la marca de tiempo, lleva el orden de la recomendación (`ahora + orden × 1 ms`) | Interceptor de EF | Orden de los camiones |
+| `estadoCosteo` | Estado del camión (los 8 estados). `descartada` = la Mesa borró su línea; no cuenta en totales ni se reenvía. `rechazada` = la Mesa rechazó su línea (script `10`, HU-028) | Envío, polling | Resumen de la ruta |
+| `motivoRechazo`, `rechazadaAt` | Motivo del rechazo que mandó Nexo y cuándo lo vio Cotifly (script `10`). Solo con el camión `rechazada` | Polling | API, asistente |
+| `ordenVehiculo` | Orden del camión en su ruta, 1..n (script `03`); el primero lleva los conexos en Nexo. NULL en filas anteriores (se ordenan por `createdAt`) | Captura, recálculo, re-solicitud, `-vN` | Orden de los camiones, envío de conexos |
+| `volumenTotalM3`, `porcentajeLlenadoVolumen`, `porcentajeLlenadoPeso` | Volumen y llenado del camión según el cubicador (script `02`) | Captura (cubicador) | API, PDF |
+| `createdAt` | Marca de tiempo; antes de `ordenVehiculo` también llevaba el orden (`ahora + orden × 1 ms`) | Interceptor de EF | Orden de las filas anteriores al `03` |
 
 ## 6. `CotizacionMercancias` — lo que se va a mandar (ex `CotizacionPosiciones`)
 
 | Columna | Qué es | Quién la escribe | Quién la lee |
 |---|---|---|---|
 | `lineaSolicitudId`, `orden` | Ruta y posición | Captura | Agregado |
-| `codigoMercancia` | Código del tipo de mercancía del catálogo del cubicador (`GET /web/tipos-mercancia`), por ejemplo `BEBIDAS`. Reemplaza a `idTipoMercancia` desde el `02`. Obligatorio en toda captura nueva | Captura | Cubicador |
+| `codigoMercancia` | Código del tipo de mercancía del catálogo del cubicador (`GET /web/tipos-mercancia`), por ejemplo `BEBIDAS`. Reemplaza a `idTipoMercancia` desde el `02`. La captura lo exige solo en las mercancías cubicables (con medidas) con el cubicador configurado; NULL en las no cubicables (HU-032) | Captura | Cubicador |
 | `nombreMercancia` | Copia del nombre del catálogo (si el catálogo no responde, el que mandó el cliente) | Captura | PDF, asistente |
-| `cantidad`, `largoCm`, `anchoCm`, `altoCm`, `pesoKg` | Unidades y medidas | Captura | Cubicador; posiciones hacia Nexo cuando la ruta tiene un solo camión |
+| `cantidad`, `largoCm`, `anchoCm`, `altoCm`, `pesoKg` | Unidades y medidas. Desde el script `12` (HU-032) las tres medidas pueden ser NULL juntas: mercancía "no cubicable" (solo descripción, cantidad o peso) | Captura | Cubicador; posiciones hacia Nexo cuando la ruta tiene un solo camión |
 
-> **HU-023:** `db/scripts/02_alter_cubicador.sql` agrega además el resultado de la cubicación en la ruta (`idRecomendacion`,
-> `resultadoCubicacion`, `motivoSinSeleccion`, `condicionada`) y el llenado en el camión (`volumenTotalM3`,
-> `porcentajeLlenadoVolumen`, `porcentajeLlenadoPeso`). `db/scripts/pendientes/04_cubicacion_segundo_plano.sql` agrega en la
-> ruta la cola de la cubicación en segundo plano. El detalle está en la cabecera de cada script.
+> El detalle de cada ajuste (`02`, `03`, `pendientes/04`, `05`, `10`, `11`, `12`, `13`) está en la cabecera de su script en
+> `db/scripts/`; los tipos y restricciones, en `ESQUEMA_OBJETIVO_SQLSERVER.md` §A.4.
 
 ## 7. `CotizacionServiciosConexos` — conexos de la ruta
 
@@ -134,6 +148,8 @@ Son de la ruta, no del camión: la cantidad ya dice cuántos. Reemplazan el JSON
 | `nombreServicioConexo` | Copia del nombre (0010) | Igual | PDF |
 | `precio` | Costo unitario de Nexo al momento de capturar, antes del margen. No se vuelve a cotizar | Captura (catálogo de Nexo), `-vN` (catálogo refrescado) | Totales y precio de la ruta |
 | `cantidad` | Cantidad | Captura, `PUT` | Totales, Nexo |
+| `idServicioConexoCatalogo` | Id del catálogo de Nexo del conexo (script `03`, HU-014 #188). NULL en filas anteriores (se resuelven por id o por nombre) | Captura, importación desde Nexo, `-vN` | `clsResolutorConexosCatalogo` |
+| `categoriaServicioConexo` | Categoría del catálogo de Nexo (`logistico`, `adicional`...; script `05`). NULL en filas anteriores (sale del catálogo al armar el costeo) | Captura, importación, `-vN` | Costeo |
 
 Quitar un conexo borra su fila (no hay columna `incluido`). El estado del envío a Nexo (`pendiente`, `enviado`, `incierto`,
 `fallido_definitivo`) no tiene columna: se lee de los registros `conexos_envio_nexo` de `EventosHerramienta`.
@@ -145,7 +161,8 @@ Quitar un conexo borra su fila (no hay columna `incluido`). El estado del envío
 | `MargenAjustes` | Cada ajuste de margen de un comercial: `margenPolitica` (el sugerido de la ruta), `margenAplicado`, `diferencia`, `motivo` y la ruta (`lineaSolicitudId`). Base de las métricas por ruta |
 | `CotizacionArchivosLicitacion` | El Excel original del pliego (hasta 10 MB), con su SHA-256 y la hoja usada |
 | `CotizacionPdfsHistorial` | Los PDF anteriores de una cotización y por qué se invalidaron (`ajuste_margen`, `servicios_conexos`, `textos`, `re_solicitud`) |
-| `Correos`, `CorreoDestinatarios` | Cada envío del PDF al cliente, su estado y sus destinatarios (`para`, `cc`) |
+| `Correos`, `CorreoDestinatarios` | Cada envío del PDF al cliente, su estado y sus destinatarios (`para`, `cc`). Desde el script `13` (HU-033, MailSender): `estado` `encolado` \| `enviando` \| `enviado` \| `fallido` (CHECK), `idMailSender` (id del correo en MailSender, único), `redirigidoA` (buzón de pruebas fuera de producción; los destinatarios guardados siguen siendo los originales), `intentosEntrega`, `enviadoAt`, `estadoActualizadoAt`, `siguienteConsultaAt` (agenda del worker; NULL = estado final) y `encoladoAt` (última aceptación de MailSender) |
+| `CapturasIdempotentes` | Claves `Idempotency-Key` persistentes (script `06`, #191): una fila por clave, comercial y operación (`capturar_costeo`, `conexos`, `re_solicitar_costeo`, `editar_solicitud`), con la huella del cuerpo, el estado (`en_curso`, `terminada`, `libre`), la respuesta guardada y, en la captura, el folio y el `solicitudNexoId` para que un reintento no vuelva a crear la solicitud en Nexo. Vencen a las 24 h; la API las purga |
 | `EventosHerramienta` | Auditoría de herramientas y registros de proceso: `conexos_envio_nexo`, `conexos_pendientes_nexo`, `cambiar_servicios_conexos` (JSON en `input`/`outputResumen`, sin montos al asistente) |
 | `EventosConversacion`, `Sesiones` | Historial y estado del asistente por folio |
 | `UsuariosWeb`, `Roles`, `UsuariosRoles`, `TokensRefresco`, `TokensRevocados` | Identidad: usuarios de ClientePro, rol interno, refresh tokens (hash) y access tokens revocados |

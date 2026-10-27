@@ -263,6 +263,31 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
         noLicitacion.StatusCode.Should().Be(HttpStatusCode.NotFound, "una cotización spot de una línea no es una licitación");
     }
 
+    /// <summary>
+    /// Endurecimiento A (#199): <c>GET /web/licitaciones/{folio}</c> de un folio de formulario (o del chat) responde 404, como el Excel y
+    /// reintentar: antes respondía 200 con la vista de licitación de una cotización que no lo es.
+    /// </summary>
+    [Fact]
+    public async Task LaVistaDeLicitacionSoloAbreLicitaciones()
+    {
+        var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var folio = (await CrearAsync(ana, clsPliegoMuestra.Lineas(), clsPliegoMuestra.Excel(), HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+        var delChat = await _api.CrearCotizacionAsync(ana.UsuarioId, conPdf: false);
+        using var formulario = await _api.EnviarAsync(HttpMethod.Post, "/web/solicitudes-costeo", ana.Access, clsCosteoEndpointsTests.Formulario());
+        var spot = (await VerificarContratoAsync(formulario, "/web/solicitudes-costeo", HttpMethod.Post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+
+        using var licitacion = await _api.EnviarAsync(HttpMethod.Get, $"/web/licitaciones/{folio}", ana.Access);
+        using var deFormulario = await _api.EnviarAsync(HttpMethod.Get, $"/web/licitaciones/{spot}", ana.Access);
+        using var deChat = await _api.EnviarAsync(HttpMethod.Get, $"/web/licitaciones/{delChat.Folio}", ana.Access);
+
+        licitacion.StatusCode.Should().Be(HttpStatusCode.OK);
+        foreach (var respuesta in new[] { deFormulario, deChat })
+        {
+            await VerificarContratoAsync(respuesta, "/web/licitaciones/{folio}", HttpMethod.Get, HttpStatusCode.NotFound);
+            (await respuesta.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).Should().Be("""{"error":"Cotización no encontrada o no es tuya."}""");
+        }
+    }
+
     [Fact]
     public async Task NingunaParteDelExcelExportadoTraeCostosDeNexo()
     {
@@ -314,7 +339,7 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
         descarga.StatusCode.Should().Be(HttpStatusCode.OK);
         var texto = clsLectorPdf.Leer(await descarga.Content.ReadAsByteArrayAsync(TestContext.Current.CancellationToken)).Texto;
 
-        texto.Should().Contain("RESUMEN DEL PLIEGO").And.Contain("TOTAL DEL PLIEGO (3 RUTAS, SIN SERVICIOS CONEXOS)").And.Contain("$4.529.412");
+        texto.Should().Contain("RESUMEN DEL PLIEGO").And.Contain("VALOR TOTAL DE LA COTIZACIÓN (3 RUTAS)").And.Contain("$4.529.412");
         texto.Should().ContainEquivalentOf("Cartagena").And.Contain("$1.176.471").And.Contain("$2.352.941").And.Contain("$1.000.000");
         texto.Should().NotContain("$850.000").And.NotContain("$2.000.000", "los fletes de Nexo nunca van al PDF");
     }

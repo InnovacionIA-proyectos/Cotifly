@@ -130,6 +130,10 @@ public sealed class clsCubicacionAsincronaEndpointsTests : IDisposable
         using var ajena = await api.EnviarAsync(_get, $"/web/cubicacion/{id}", luis);
         using var inexistente = await api.EnviarAsync(_get, $"/web/cubicacion/{Guid.NewGuid()}", ana);
         using var sinSesion = await api.EnviarAsync(_get, $"/web/cubicacion/{id}", null);
+        // Endurecimiento A (#199): un id que no es un GUID da el mismo 404 ErrorWeb (antes un 404 de enrutamiento sin cuerpo).
+        using var noGuid = await api.EnviarAsync(_get, "/web/cubicacion/no-es-guid", ana);
+        await VerificarContratoAsync(noGuid, RutaConsulta, _get, HttpStatusCode.NotFound);
+        (await noGuid.Content.ReadAsStringAsync(Ct)).Should().Be(await inexistente.Content.ReadAsStringAsync(Ct));
 
         await VerificarContratoAsync(ajena, RutaConsulta, _get, HttpStatusCode.NotFound);
         await VerificarContratoAsync(inexistente, RutaConsulta, _get, HttpStatusCode.NotFound);

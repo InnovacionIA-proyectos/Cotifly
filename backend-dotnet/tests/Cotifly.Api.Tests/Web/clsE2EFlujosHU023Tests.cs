@@ -30,7 +30,6 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
         .ConCliente(clsCosteoEndpointsTests.Nit, "LONGYIN S.A.S.")
         .ConServicioConexo(Cargue, Cargue, "Cargue en puerto", "logistico", "UND", 150_000m);
     private readonly clsCubicadorFalso _cubicador = new();
-    private readonly clsServidorSmtpFalso _relay = new();
     private readonly List<clsApiWebPruebas> _apis = [];
 
     public clsE2EFlujosHU023Tests(clsEntornoApiWebInstalada entorno)
@@ -171,7 +170,11 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
 
         (await Fila($"SELECT CONCAT(estadoEnvio, '|', IIF(pdfPath IS NULL, '-', 'P'), '|', pdfDesactualizado) FROM dbo_cotifly.CotizacionesSolicitud WHERE id = '{id}'"))
             .Should().Be("enviada|P|0");
-        (await Escalar<int>($"SELECT COUNT(*) FROM dbo_cotifly.Correos WHERE cotizacionId = '{id}' AND estado = 'enviado'")).Should().Be(1);
+        // HU-033 (#199): MailSender lo encola (202) y el worker de correos confirma la entrega.
+        (await Escalar<int>($"SELECT COUNT(*) FROM dbo_cotifly.Correos WHERE cotizacionId = '{id}' AND estado = 'encolado' AND idMailSender IS NOT NULL")).Should().Be(1);
+        api.MailSender.Entregar(api.MailSender.Recibidos[^1].Id);
+        (await api.ProcesarCorreosAsync(folio)).Should().Be(1);
+        (await Escalar<int>($"SELECT COUNT(*) FROM dbo_cotifly.Correos WHERE cotizacionId = '{id}' AND estado = 'enviado' AND siguienteConsultaAt IS NULL")).Should().Be(1);
 
         // 6. Ya enviada: re-solicitar en el mismo folio es PDF_YA_ENVIADO; con nueva_version crea la -v2 sin tocar la original.
         using (var mismo = await api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/re-solicitar", ana.Access,
@@ -592,7 +595,6 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
 
         _nexo.Dispose();
         _cubicador.Dispose();
-        await _relay.DisposeAsync();
     }
 
     private clsApiWebPruebas Api(
@@ -613,10 +615,6 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
         if (correo)
         {
             extra["Correo:Habilitado"] = "true";
-            extra["Correo:Modo"] = "smtp_relay";
-            extra["Correo:SmtpRelay:Host"] = clsServidorSmtpFalso.Host;
-            extra["Correo:SmtpRelay:Port"] = _relay.Puerto.ToString(CultureInfo.InvariantCulture);
-            extra["Correo:SmtpRelay:TimeoutSeg"] = "10";
         }
 
         var api = clsApiWebPruebas.ConNexo(_bd, _nexo, extra, dolarApi: dolarApi, modelo: modelo, cubicador: conCubicador ? _cubicador : null);

@@ -1,95 +1,207 @@
+using System.Net.Mail;
+using Cotifly.Aplicacion.Correo.Services;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace Cotifly.Infraestructura.Configuracion;
 
 /// <summary>
-/// Transporte del correo (sección <c>Correo</c>, la misma de <c>clsOpcionesCorreo</c> de Aplicación). Port de
-/// <c>correo_modo</c> y <c>smtp_relay_*</c> de <c>shared/config.py</c>.
+/// Transporte del correo (sección <c>Correo</c>, la misma de <c>clsOpcionesCorreo</c> de Aplicación). HU-033 (#199, ADR-023): el único
+/// transporte es el microservicio interno MailSender (<c>POST /api/v1/emails</c>, multipart, 202 con un id), que encola el correo, lo
+/// entrega por el relay corporativo y lo reintenta. Los modos <c>smtp_relay</c> (MailKit directo al relay), <c>smtp</c> y
+/// <c>wscorreos</c> se retiraron: con el correo habilitado la API no arranca con ellos.
 /// </summary>
-/// <remarks>
-/// Solo <c>smtp_relay</c> está implementado (relay interno de Botero Soto, Microsoft ESMTP sin AUTH ni STARTTLS, control
-/// por red/IP). <c>wscorreos</c> (SOAP) y <c>smtp</c> (SMTP con auth/TLS) no se portan hasta que el equipo confirme cuál es
-/// el transporte real de producción (D3, checklist de #11); con <c>Habilitado=true</c> y uno de esos modos la API no arranca.
-/// </remarks>
 public sealed class clsOpcionesCorreoTransporte
 {
     public const string Seccion = "Correo";
-    public const string ModoSmtpRelay = "smtp_relay";
-    public const string ModoWsCorreos = "wscorreos";
-    public const string ModoSmtp = "smtp";
+    public const string ModoMailSender = "mailsender";
 
     /// <summary>Mismo valor que <c>clsOpcionesCorreo.Habilitado</c>: las reglas del transporte solo aplican si está habilitado.</summary>
     public bool Habilitado { get; set; }
 
-    /// <summary><c>smtp_relay</c> (por defecto, como el Python) | <c>wscorreos</c> | <c>smtp</c>.</summary>
-    public string? Modo { get; set; } = ModoSmtpRelay;
+    /// <summary><c>mailsender</c> (el único; por defecto).</summary>
+    public string? Modo { get; set; } = ModoMailSender;
 
-    public clsOpcionesSmtpRelay SmtpRelay { get; set; } = new();
+    /// <summary>MailSender (<c>Correo:MailSender</c>).</summary>
+    public clsOpcionesMailSender MailSender { get; set; } = new();
 
-    /// <summary><see cref="Modo"/> sin espacios y en minúsculas; vacío equivale a <c>smtp_relay</c>.</summary>
-    public string ModoNormalizado => string.IsNullOrWhiteSpace(Modo) ? ModoSmtpRelay : Modo.Trim().ToLowerInvariant();
+    /// <summary><see cref="Modo"/> sin espacios y en minúsculas; vacío equivale a <c>mailsender</c>.</summary>
+    public string ModoNormalizado => string.IsNullOrWhiteSpace(Modo) ? ModoMailSender : Modo.Trim().ToLowerInvariant();
 }
 
-/// <summary>Relay SMTP interno (<c>Correo:SmtpRelay</c>).</summary>
-public sealed class clsOpcionesSmtpRelay
+/// <summary>
+/// HU-033: <c>Correo:MailSender</c>. La URL va SOLO en configuración (variable <c>Correo__MailSender__UrlBase</c> del stack); MailSender no
+/// tiene autenticación (red interna), así que no hay secreto.
+/// </summary>
+public sealed class clsOpcionesMailSender
 {
-    /// <summary>Host del relay (en el Python, <c>10.10.40.62</c>). Obligatorio con el correo habilitado.</summary>
-    public string? Host { get; set; }
+    /// <summary>Raíz de MailSender (sin <c>/api/v1</c>). Obligatoria con el correo habilitado.</summary>
+    public string? UrlBase { get; set; }
 
-    public int Port { get; set; } = 25;
+    /// <summary>Tiempo máximo de cada llamada a MailSender (segundos, por defecto 15). El 202 llega en cuanto encola.</summary>
+    public int TimeoutSegundos { get; set; } = 15;
 
-    /// <summary>Remitente cuando el comercial no tiene correo en <c>UsuariosWeb</c>.</summary>
-    public string FromFallback { get; set; } = "notificaciones@boterosoto.com.co";
+    /// <summary>El <c>From</c> es el correo del comercial (por defecto; las respuestas del cliente le llegan a él).</summary>
+    public const string RemitenteComercial = "comercial";
 
-    /// <summary>Tiempo máximo de cada operación con el relay (el Python usaba 20 s).</summary>
-    public int TimeoutSeg { get; set; } = 20;
+    /// <summary>El <c>From</c> es siempre <see cref="Remitente"/> (el comercial va en la firma del cuerpo y en copia oculta).</summary>
+    public const string RemitenteCorporativo = "corporativo";
+
+    /// <summary>
+    /// Remitente corporativo: el <c>From</c> con <see cref="ModoRemitente"/>=<c>corporativo</c>, o cuando el correo del comercial falta, no es
+    /// válido o su dominio no está en <see cref="DominiosRemitente"/>. MailSender acepta cualquier dirección válida en <c>From</c> (no tiene
+    /// lista blanca); quien decide es el relay corporativo (SPF/DMARC del dominio).
+    /// </summary>
+    public string Remitente { get; set; } = "notificaciones@boterosoto.com.co";
+
+    /// <summary>
+    /// HU-033 (auditoría #199): de quién es el <c>From</c>. <c>comercial</c> (por defecto): el correo del comercial, porque MailSender no tiene
+    /// <c>Reply-To</c> y así las respuestas le llegan a él. <c>corporativo</c>: siempre <see cref="Remitente"/>, para cuando SPF/DMARC del
+    /// dominio no autoricen al relay a enviar como cada comercial (un 550 5.7.1 es un fallo permanente).
+    /// </summary>
+    public string ModoRemitente { get; set; } = RemitenteComercial;
+
+    /// <summary>
+    /// Dominios con los que el comercial puede ir en el <c>From</c> (separados por coma; por defecto <c>boterosoto.com.co</c>): un correo de
+    /// otro dominio (personal, de un aliado) fallaría DMARC, así que sale con <see cref="Remitente"/>.
+    /// </summary>
+    public string DominiosRemitente { get; set; } = "boterosoto.com.co";
+
+    /// <summary><see cref="ModoRemitente"/> sin espacios y en minúsculas; vacío equivale a <c>comercial</c>.</summary>
+    public string ModoRemitenteNormalizado =>
+        string.IsNullOrWhiteSpace(ModoRemitente) ? RemitenteComercial : ModoRemitente.Trim().ToLowerInvariant();
+
+    /// <summary>
+    /// El <c>From</c> del mensaje: el correo del comercial si el modo es <c>comercial</c> y es UNA dirección válida de un dominio permitido;
+    /// si no, <see cref="Remitente"/>. Nunca devuelve una dirección mal formada que MailSender rechazaría (422) o el relay no aceptaría.
+    /// </summary>
+    public string ElegirRemitente(string? correoComercial)
+    {
+        if (ModoRemitenteNormalizado != RemitenteComercial || string.IsNullOrWhiteSpace(correoComercial))
+        {
+            return Remitente;
+        }
+
+        var candidato = correoComercial.Trim();
+        if (!MailAddress.TryCreate(candidato, out var direccion) || !string.Equals(direccion.Address, candidato, StringComparison.OrdinalIgnoreCase))
+        {
+            return Remitente;
+        }
+
+        var dominios = DominiosRemitente.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return dominios.Length == 0 || dominios.Contains(direccion.Host, StringComparer.OrdinalIgnoreCase) ? candidato : Remitente;
+    }
+
+    /// <summary><c>Low</c>, <c>Normal</c> (por defecto) o <c>High</c>: cabeceras <c>Priority</c>/<c>Importance</c>/<c>X-Priority</c>.</summary>
+    public string Prioridad { get; set; } = "Normal";
+
+    public TimeSpan Timeout => TimeSpan.FromSeconds(TimeoutSegundos);
 }
 
-/// <summary>Reglas de <see cref="clsOpcionesCorreoTransporte"/>; con el correo deshabilitado solo se revisa que el modo exista.</summary>
+/// <summary>Reglas de <see cref="clsOpcionesCorreoTransporte"/>; con el correo deshabilitado no se revisa nada (un modo heredado no impide arrancar).</summary>
 public sealed class clsValidadorOpcionesCorreoTransporte : IValidateOptions<clsOpcionesCorreoTransporte>
 {
     private const string Prefijo = clsOpcionesCorreoTransporte.Seccion + ":";
+    private static readonly string[] _prioridades = ["Low", "Normal", "High"];
 
     public ValidateOptionsResult Validate(string? name, clsOpcionesCorreoTransporte options)
     {
         ArgumentNullException.ThrowIfNull(options);
-        var modo = options.ModoNormalizado;
-        if (modo is not (clsOpcionesCorreoTransporte.ModoSmtpRelay or clsOpcionesCorreoTransporte.ModoWsCorreos or clsOpcionesCorreoTransporte.ModoSmtp))
-        {
-            return ValidateOptionsResult.Fail($"'{Prefijo}Modo' no es válido: use '{clsOpcionesCorreoTransporte.ModoSmtpRelay}'.");
-        }
-
         if (!options.Habilitado)
         {
             return ValidateOptionsResult.Success;
         }
 
-        if (modo != clsOpcionesCorreoTransporte.ModoSmtpRelay)
+        if (options.ModoNormalizado != clsOpcionesCorreoTransporte.ModoMailSender)
         {
             return ValidateOptionsResult.Fail(
-                $"'{Prefijo}Modo={modo}' no está implementado en el backend .NET (pendiente de confirmar el transporte real, D3): use '{clsOpcionesCorreoTransporte.ModoSmtpRelay}' o deshabilite el correo.");
+                $"'{Prefijo}Modo={options.ModoNormalizado}' ya no existe (HU-033, ADR-023): el correo sale por MailSender. Use '{clsOpcionesCorreoTransporte.ModoMailSender}'.");
         }
 
         var errores = new List<string>();
-        if (string.IsNullOrWhiteSpace(options.SmtpRelay.Host))
+        var mailSender = options.MailSender;
+        if (!Uri.TryCreate(mailSender.UrlBase, UriKind.Absolute, out var url) || url.Scheme is not ("http" or "https"))
         {
-            errores.Add($"'{Prefijo}SmtpRelay:Host' es obligatorio con {Prefijo}Habilitado=true.");
+            errores.Add($"'{Prefijo}MailSender:UrlBase' es obligatorio con {Prefijo}Habilitado=true y debe ser una URL http(s) absoluta.");
         }
 
-        if (string.IsNullOrWhiteSpace(options.SmtpRelay.FromFallback) || !options.SmtpRelay.FromFallback.Contains('@', StringComparison.Ordinal))
+        if (!MailAddress.TryCreate(mailSender.Remitente, out _))
         {
-            errores.Add($"'{Prefijo}SmtpRelay:FromFallback' debe ser un correo.");
+            errores.Add($"'{Prefijo}MailSender:Remitente' debe ser un correo válido.");
         }
 
-        // DataAnnotations no valida objetos anidados: los rangos se revisan aquí.
-        if (options.SmtpRelay.Port is < 1 or > 65535)
+        if (mailSender.TimeoutSegundos is < 1 or > 120)
         {
-            errores.Add($"'{Prefijo}SmtpRelay:Port' debe estar entre 1 y 65535.");
+            errores.Add($"'{Prefijo}MailSender:TimeoutSegundos' debe estar entre 1 y 120.");
         }
 
-        if (options.SmtpRelay.TimeoutSeg is < 1 or > 300)
+        if (!_prioridades.Contains(mailSender.Prioridad, StringComparer.Ordinal))
         {
-            errores.Add($"'{Prefijo}SmtpRelay:TimeoutSeg' debe estar entre 1 y 300 segundos.");
+            errores.Add($"'{Prefijo}MailSender:Prioridad' debe ser Low, Normal o High.");
+        }
+
+        if (mailSender.ModoRemitenteNormalizado is not (clsOpcionesMailSender.RemitenteComercial or clsOpcionesMailSender.RemitenteCorporativo))
+        {
+            errores.Add($"'{Prefijo}MailSender:ModoRemitente' debe ser '{clsOpcionesMailSender.RemitenteComercial}' o '{clsOpcionesMailSender.RemitenteCorporativo}'.");
+        }
+
+        return errores.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(errores);
+    }
+}
+
+/// <summary>
+/// HU-033 (#199, decisión 3): reglas de <see cref="clsOpcionesCorreo"/>. La protección es segura por defecto y NO depende del ambiente (QA y
+/// staging corren como <c>Production</c>): con el correo habilitado, el envío real exige las dos llaves <c>Proteccion:Modo=ninguno</c> y
+/// <c>Proteccion:PermitirEnvioReal=true</c> (una sin la otra impide arrancar) y, además, <c>Production</c>; en cualquier otro caso se redirige
+/// y el <c>BuzonPruebas</c> válido es obligatorio. El modo siempre debe ser uno conocido.
+/// </summary>
+public sealed class clsValidadorOpcionesCorreo(IHostEnvironment entorno) : IValidateOptions<clsOpcionesCorreo>
+{
+    private const string Prefijo = clsOpcionesCorreo.Seccion + ":";
+
+    public ValidateOptionsResult Validate(string? name, clsOpcionesCorreo options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        var errores = new List<string>();
+        var proteccion = options.Proteccion ?? new clsOpcionesProteccionCorreo();
+        var modo = proteccion.ModoNormalizado;
+        if (modo is not (clsOpcionesProteccionCorreo.ModoRedirigir or clsOpcionesProteccionCorreo.ModoNinguno))
+        {
+            errores.Add($"'{Prefijo}Proteccion:Modo' debe ser '{clsOpcionesProteccionCorreo.ModoRedirigir}' o '{clsOpcionesProteccionCorreo.ModoNinguno}'.");
+        }
+        else if (options.Habilitado)
+        {
+            var ninguno = modo == clsOpcionesProteccionCorreo.ModoNinguno;
+            if (ninguno != proteccion.PermitirEnvioReal)
+            {
+                // Las dos llaves van juntas: una sola es casi siempre un error de configuración (y nunca habilita el envío real).
+                errores.Add($"El envío a destinatarios reales exige las dos llaves juntas: '{Prefijo}Proteccion:Modo={clsOpcionesProteccionCorreo.ModoNinguno}' "
+                            + $"y '{Prefijo}Proteccion:PermitirEnvioReal=true'. Para redirigir al buzón de pruebas deje Modo={clsOpcionesProteccionCorreo.ModoRedirigir} "
+                            + "y PermitirEnvioReal=false.");
+            }
+
+            if (!entorno.IsProduction() && (ninguno || proteccion.PermitirEnvioReal))
+            {
+                errores.Add($"Fuera de Production (ambiente '{entorno.EnvironmentName}') '{Prefijo}Proteccion:Modo' debe ser "
+                            + $"'{clsOpcionesProteccionCorreo.ModoRedirigir}' y PermitirEnvioReal=false: ningún correo de pruebas puede llegar a un cliente.");
+            }
+
+            if (proteccion.Redirige && clsProteccionCorreo.BuzonValido(proteccion) is null)
+            {
+                errores.Add($"'{Prefijo}Proteccion:BuzonPruebas' es obligatorio (un solo correo válido) mientras el correo se redirige "
+                            + $"('{Prefijo}Proteccion:Modo={clsOpcionesProteccionCorreo.ModoRedirigir}', el valor por defecto).");
+            }
+        }
+
+        var seguimiento = options.Seguimiento ?? new clsOpcionesSeguimientoCorreo();
+        if (seguimiento.IntervaloTickSegundos is < 1 or > 3600 || seguimiento.IntervaloConsultaSegundos is < 1 or > 3600)
+        {
+            errores.Add($"'{Prefijo}Seguimiento:IntervaloTickSegundos' e 'IntervaloConsultaSegundos' deben estar entre 1 y 3600.");
+        }
+
+        if (seguimiento.EdadMaximaHoras is < 1 or > 720 || seguimiento.Lote is < 1 or > 1000 || seguimiento.ReclamoSegundos is < 1 or > 3600)
+        {
+            errores.Add($"'{Prefijo}Seguimiento': EdadMaximaHoras entre 1 y 720, Lote entre 1 y 1000 y ReclamoSegundos entre 1 y 3600.");
         }
 
         return errores.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(errores);

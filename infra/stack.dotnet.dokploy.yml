@@ -30,7 +30,9 @@
 # TLS), así que no sirve hasta que HU-006.2 lo resuelva. Después, la restricción de nodo puede quitarse solo con un
 # volumen de PDFs compartido entre nodos (ADR-012).
 #
-# Variables: todas llegan del entorno del stack en Dokploy (DEPLOY.md §2); ninguna tiene valor real aquí. Las
+# Variables: todas llegan del entorno del stack en Dokploy (DEPLOY.md §2); ninguna tiene valor real aquí. Endurecimiento A (#199):
+# se declaran TODAS las opciones que el backend valida al arrancar, con el valor por defecto del código (lo verifica la prueba
+# clsManifiestosDespliegueTests contra las clases de opciones). Las
 # obligatorias usan ${VAR:?}: sin ellas "docker stack deploy" falla antes de tocar el servicio. Una variable que no
 # aparece en este archivo NO llega al contenedor aunque esté en Dokploy (p. ej. un tercer respaldo IA__Fallbacks__2__*: agregarlo aquí).
 #
@@ -68,6 +70,15 @@ services:
       Identidad__TablaUsuarios: ${Identidad__TablaUsuarios:-tblSAPUsuariosApp}
       Identidad__TablaUsuarioRoles: ${Identidad__TablaUsuarioRoles:-tblSAPUsuarioRoles}
       Identidad__TablaRoles: ${Identidad__TablaRoles:-tblSAPRoles}
+      # HU-023 (#176): script 07 del motivo BUSQUEDA_AGOTADA. auto (detecta; exige VIEW DEFINITION), habilitado o deshabilitado.
+      BaseDatos__MotivoBusquedaAgotada: ${BaseDatos__MotivoBusquedaAgotada:-auto}
+      # Candado del folio en SQL Server (sp_getapplock, #125): esperas, reintentos y límite de los comandos.
+      CandadoSql__EsperaMilisegundos: ${CandadoSql__EsperaMilisegundos:-5000}
+      CandadoSql__MargenRespuestaMilisegundos: ${CandadoSql__MargenRespuestaMilisegundos:-15000}
+      CandadoSql__GraciaCancelacionMilisegundos: ${CandadoSql__GraciaCancelacionMilisegundos:-5000}
+      CandadoSql__ComandoSegundos: ${CandadoSql__ComandoSegundos:-120}
+      CandadoSql__Intentos: ${CandadoSql__Intentos:-3}
+      CandadoSql__PausaBaseMilisegundos: ${CandadoSql__PausaBaseMilisegundos:-200}
 
       # Regional del comercial (ADR-016, ADR-008): OPCIONAL, solo lectura de DWCubosEBSSAP (dbo.DimEjecutivo). El login la
       # llena y la refresca en UsuariosWeb.regional (#81) y el tablero del gerente la lee en vivo (#45).
@@ -103,6 +114,8 @@ services:
       ForwardedHeaders__RedesConocidas__0: ${ForwardedHeaders__RedesConocidas__0:?falta ForwardedHeaders__RedesConocidas__0}
       ForwardedHeaders__LimiteSaltos: ${ForwardedHeaders__LimiteSaltos:-1}
       SeguridadHttp__LimiteCuerpoWebBytes: ${SeguridadHttp__LimiteCuerpoWebBytes:-65536}
+      # HU-011: Excel de licitación (10 MB) + JSON. ForwardedHeaders__ProxiesConocidos__N no se declara: vacía no arranca y basta la red.
+      SeguridadHttp__LimiteCuerpoLicitacionBytes: ${SeguridadHttp__LimiteCuerpoLicitacionBytes:-12582912}
 
       # SAP TM (HU-009). Vacío = política de la línea. SapTm__Pass: secreto, solo con odata.
       SapTm__SalesOrgDefault: ${SapTm__SalesOrgDefault:-50000005}
@@ -117,6 +130,9 @@ services:
       # Nexo__UrlBase es la RAÍZ del servicio (https://<host-nexo>), sin "/api": el cliente agrega las rutas /api/...
       Nexo__UrlBase: ${Nexo__UrlBase:-}
       Nexo__MinutosCacheMunicipios: ${Nexo__MinutosCacheMunicipios:-60}
+      # HU-013.10: caché de los catálogos maestros de Nexo y horas que la última copia sirve de respaldo con Nexo caído.
+      Nexo__MinutosCacheCatalogos: ${Nexo__MinutosCacheCatalogos:-30}
+      Nexo__HorasCatalogosVencidos: ${Nexo__HorasCatalogosVencidos:-24}
       # HU-014 (#188): banderas de Nexo y de la captura con valor EXPLÍCITO, para que un cambio del valor por defecto del código no
       # cambie el ambiente sin querer. HU-031.1 (#194, decisión del 2026-10-20): EnviarCodigosCubicador en siempre (Nexo ya tiene la
       # bandeja de normalización, NEXO #322): el código del cubicador se resuelve con el catálogo y el diccionario de alias de Nexo y
@@ -127,6 +143,10 @@ services:
       Nexo__EnviarDatosCubicador: ${Nexo__EnviarDatosCubicador:-true}
       Nexo__EnviarCodigosCubicador: ${Nexo__EnviarCodigosCubicador:-siempre}
       Captura__AceptarVehiculoCliente: ${Captura__AceptarVehiculoCliente:-true}
+      # HU-032 (#197): clases de viaje que no exigen el vehículo elegido (la lista REEMPLAZA a la de por defecto, solo Contenedor; los
+      # vacíos no cuentan). Para eximir también Carga Suelta: __0=Contenedor y __1=Carga Suelta. Un valor desconocido no arranca.
+      Captura__ClasesSinVehiculoObligatorio__0: ${Captura__ClasesSinVehiculoObligatorio__0:-Contenedor}
+      Captura__ClasesSinVehiculoObligatorio__1: ${Captura__ClasesSinVehiculoObligatorio__1:-}
       # Polling del costeo en Nexo (HU-005.6/005.8, clsOpcionesCosteoNexo). Encendido en producción; sin Nexo__UrlBase no
       # corre de todos modos. Staging lo trae apagado mientras no se confirme que no comparte dbo_cotifly (DEPLOY.md §2.2).
       CosteoNexo__Habilitado: ${CosteoNexo__Habilitado:-true}
@@ -137,6 +157,49 @@ services:
       CosteoNexo__IntervaloTickSegundos: ${CosteoNexo__IntervaloTickSegundos:-5}
       CosteoNexo__Lote: ${CosteoNexo__Lote:-20}
       CosteoNexo__ReclamoSegundos: ${CosteoNexo__ReclamoSegundos:-120}
+      CosteoNexo__LecturaInmediataSegundos: ${CosteoNexo__LecturaInmediataSegundos:-6}
+      CosteoNexo__MaximoFallosRelectura: ${CosteoNexo__MaximoFallosRelectura:-10}
+      # HU-021.9: envío diferido de los conexos a Nexo (intentos, espera entre reintentos y horas esperando el catálogo).
+      CosteoNexo__MaximoReintentosConexos: ${CosteoNexo__MaximoReintentosConexos:-5}
+      CosteoNexo__IntervaloReintentoConexosMinutos: ${CosteoNexo__IntervaloReintentoConexosMinutos:-5}
+      CosteoNexo__EsperaMaximaCatalogoConexosHoras: ${CosteoNexo__EsperaMaximaCatalogoConexosHoras:-24}
+      # HU-033: sincronización diferida del resultado con Nexo.
+      CosteoNexo__MaximoFallosSincronizacionResultado: ${CosteoNexo__MaximoFallosSincronizacionResultado:-10}
+      CosteoNexo__EdadMaximaSincronizacionResultadoDias: ${CosteoNexo__EdadMaximaSincronizacionResultadoDias:-30}
+
+      # Cubicador (HU-021.5, HU-023; opciones C y D del E2E 2026-10-16). Sin UrlBase el cubicador queda sin configurar: cada ruta va al
+      # camión del respaldo y los catálogos del cubicador responden 503. UrlBase y ApiKey solo en Dokploy; ApiKey es SECRETO, obligatoria
+      # con UrlBase y de al menos 16 caracteres en Production (una por ambiente). RespaldoSiFalla: el valor del código (true); DEPLOY.md
+      # recomienda false en producción con URL. Al arrancar se valida la coherencia de los tiempos (DEPLOY.md §2.2).
+      Cubicador__UrlBase: ${Cubicador__UrlBase:-}
+      Cubicador__ApiKey: ${Cubicador__ApiKey:-}
+      Cubicador__RutaSalud: ${Cubicador__RutaSalud:-}
+      Cubicador__RespaldoSiFalla: ${Cubicador__RespaldoSiFalla:-true}
+      Cubicador__TiempoEsperaSegundos: ${Cubicador__TiempoEsperaSegundos:-15}
+      Cubicador__TiempoEsperaRecomendacionSegundos: ${Cubicador__TiempoEsperaRecomendacionSegundos:-90}
+      Cubicador__EsperaAntesReconsultaSegundos: ${Cubicador__EsperaAntesReconsultaSegundos:-5}
+      Cubicador__TiempoEsperaReconsultaSegundos: ${Cubicador__TiempoEsperaReconsultaSegundos:-60}
+      Cubicador__MaximoConcurrente: ${Cubicador__MaximoConcurrente:-1}
+      Cubicador__EsperaMaximaCupoSegundos: ${Cubicador__EsperaMaximaCupoSegundos:-60}
+      Cubicador__EsperaSincronaCubicacionSegundos: ${Cubicador__EsperaSincronaCubicacionSegundos:-8}
+      Cubicador__RetencionCubicacionMinutos: ${Cubicador__RetencionCubicacionMinutos:-15}
+      Cubicador__MaximoCubicacionesEnMemoria: ${Cubicador__MaximoCubicacionesEnMemoria:-500}
+      Cubicador__MinutosCacheCatalogos: ${Cubicador__MinutosCacheCatalogos:-30}
+      Cubicador__PresupuestoCapturaSegundos: ${Cubicador__PresupuestoCapturaSegundos:-180}
+      Cubicador__TiempoMaximoCatalogoSegundos: ${Cubicador__TiempoMaximoCatalogoSegundos:-10}
+      # Licitación cubicada en segundo plano (HU-023.5, #160; exige db/scripts/pendientes/04). MaximoParalelo <= MaximoConcurrente.
+      Cubicador__LicitacionEnSegundoPlano: ${Cubicador__LicitacionEnSegundoPlano:-true}
+      Cubicador__ProcesadorHabilitado: ${Cubicador__ProcesadorHabilitado:-true}
+      Cubicador__MaximoParalelo: ${Cubicador__MaximoParalelo:-1}
+      Cubicador__IntervaloTickSegundos: ${Cubicador__IntervaloTickSegundos:-5}
+      Cubicador__LoteRutas: ${Cubicador__LoteRutas:-50}
+      Cubicador__ReclamoSegundos: ${Cubicador__ReclamoSegundos:-300}
+      Cubicador__MaximoIntentos: ${Cubicador__MaximoIntentos:-3}
+      Cubicador__EsperaReintentoSegundos: ${Cubicador__EsperaReintentoSegundos:-30}
+      # "Calcular cubicaje" (HU-023.2, #157): parecido de la descripción con el catálogo y el plan B de la sugerencia legada.
+      Cubicacion__ParecidoMinimoMercancia: ${Cubicacion__ParecidoMinimoMercancia:-0.7}
+      Cubicacion__MargenAmbiguedadMercancia: ${Cubicacion__MargenAmbiguedadMercancia:-0.05}
+      Cubicacion__IncluirSugerenciaLegada: ${Cubicacion__IncluirSugerenciaLegada:-false}
 
       # TRM del día (frente C, ADR-014): DolarApi con respaldo en los datos abiertos de la Superintendencia Financiera.
       # Salida a co.dolarapi.com:443 y www.datos.gov.co:443. Las URL vacías impiden arrancar: por eso llevan valor por defecto.
@@ -150,14 +213,33 @@ services:
       Pdf__StorageModo: volumen
       Pdf__StorageDir: /data/pdfs
       Pdf__BaseUrl: ${Pdf__BaseUrl:-}
+      Pdf__TiempoEsperaRenderSegundos: ${Pdf__TiempoEsperaRenderSegundos:-30}
+      # Fijo (no se lee del entorno): la cotización legada del chat está retirada (HU-021.6); solo las pruebas la encienden.
+      Pdf__PermitirCotizacionChat: "false"
 
-      # Correo (D3): deshabilitado por defecto; relay interno sin AUTH.
+      # Correo (HU-033, #199, ADR-023): deshabilitado por defecto; sale por el microservicio interno MailSender (URL solo en Dokploy).
       Correo__Habilitado: ${Correo__Habilitado:-false}
-      Correo__Modo: ${Correo__Modo:-smtp_relay}
-      Correo__SmtpRelay__Host: ${Correo__SmtpRelay__Host:-}
-      Correo__SmtpRelay__Port: ${Correo__SmtpRelay__Port:-25}
-      Correo__SmtpRelay__FromFallback: ${Correo__SmtpRelay__FromFallback:-notificaciones@boterosoto.com.co}
-      Correo__SmtpRelay__TimeoutSeg: ${Correo__SmtpRelay__TimeoutSeg:-20}
+      Correo__Modo: mailsender
+      Correo__MailSender__UrlBase: ${Correo__MailSender__UrlBase:-}
+      Correo__MailSender__TimeoutSegundos: ${Correo__MailSender__TimeoutSegundos:-15}
+      Correo__MailSender__Remitente: ${Correo__MailSender__Remitente:-notificaciones@boterosoto.com.co}
+      # From: "comercial" (su correo, si es de DominiosRemitente) o "corporativo" (siempre Remitente). Ver 03-infraestructura (SPF/DMARC).
+      Correo__MailSender__ModoRemitente: ${Correo__MailSender__ModoRemitente:-comercial}
+      Correo__MailSender__DominiosRemitente: ${Correo__MailSender__DominiosRemitente:-boterosoto.com.co}
+      # Low, Normal o High (cabeceras Priority/Importance/X-Priority).
+      Correo__MailSender__Prioridad: ${Correo__MailSender__Prioridad:-Normal}
+      # Protección SEGURA POR DEFECTO (auditoría #199): todo va al buzón de pruebas salvo las DOS llaves juntas, solo para salir en
+      # vivo y con SPF/DMARC revisados: Correo__Proteccion__Modo=ninguno Y Correo__Proteccion__PermitirEnvioReal=true.
+      Correo__Proteccion__Modo: ${Correo__Proteccion__Modo:-redirigir}
+      Correo__Proteccion__PermitirEnvioReal: ${Correo__Proteccion__PermitirEnvioReal:-false}
+      Correo__Proteccion__BuzonPruebas: ${Correo__Proteccion__BuzonPruebas:-}
+      # Worker que consulta el estado en MailSender: tick, espera entre consultas del mismo correo, horas sin confirmación antes de
+      # fallido, correos por vuelta y reserva de una réplica (rangos 1-3600, 1-3600, 1-720, 1-1000, 1-3600).
+      Correo__Seguimiento__IntervaloTickSegundos: ${Correo__Seguimiento__IntervaloTickSegundos:-15}
+      Correo__Seguimiento__IntervaloConsultaSegundos: ${Correo__Seguimiento__IntervaloConsultaSegundos:-30}
+      Correo__Seguimiento__EdadMaximaHoras: ${Correo__Seguimiento__EdadMaximaHoras:-24}
+      Correo__Seguimiento__Lote: ${Correo__Seguimiento__Lote:-50}
+      Correo__Seguimiento__ReclamoSegundos: ${Correo__Seguimiento__ReclamoSegundos:-60}
 
       # Agente de IA (ADR-003). Sin proveedor el agente no responde. IA__ApiKey: secreto.
       # Con OmniRoute (#84; docs/03 "OmniRoute"): IA__Proveedor=openai_compatible,
@@ -176,6 +258,9 @@ services:
       IA__Rpm: ${IA__Rpm:-8}
       IA__TimeoutSeg: ${IA__TimeoutSeg:-60}
       IA__TiempoRedaccionSegundos: ${IA__TiempoRedaccionSegundos:-15}
+      IA__EsperaMaximaRpmSegundos: ${IA__EsperaMaximaRpmSegundos:-20}
+      IA__PropuestaDirecta: ${IA__PropuestaDirecta:-true}
+      IA__RespuestaFinalEnLoop: ${IA__RespuestaFinalEnLoop:-true}
       # Respaldos (ante 429, 5xx, red caída o el 400 "No credentials for provider" de OmniRoute). Vacíos = sin respaldo.
       # Con OmniRoute: 0 = gemini/gemini-3.5-flash, 1 = gemini/gemini-3-flash-preview (mismo endpoint y clave). ApiKey: secreto.
       IA__Fallbacks__0__Proveedor: ${IA__Fallbacks__0__Proveedor:-}

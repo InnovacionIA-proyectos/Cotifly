@@ -234,6 +234,17 @@ public static class clsSeguridadHttp
     /// </summary>
     private static Task AgregarEncabezadosSeguridad(HttpContext contexto, RequestDelegate siguiente)
     {
+        AplicarEncabezadosSeguridad(contexto);
+        return siguiente(contexto);
+    }
+
+    /// <summary>
+    /// Pone los encabezados de seguridad en la respuesta. Lo usa también <see cref="clsManejadorErroresNoControlados"/>: el middleware de
+    /// excepciones limpia la respuesta (encabezados incluidos) antes de escribir el 500.
+    /// </summary>
+    public static void AplicarEncabezadosSeguridad(HttpContext contexto)
+    {
+        ArgumentNullException.ThrowIfNull(contexto);
         var encabezados = contexto.Response.Headers;
         encabezados.XContentTypeOptions = "nosniff";
         encabezados.XFrameOptions = "DENY";
@@ -244,8 +255,6 @@ public static class clsSeguridadHttp
         {
             encabezados.CacheControl = "no-store";
         }
-
-        return siguiente(contexto);
     }
 
     /// <summary>

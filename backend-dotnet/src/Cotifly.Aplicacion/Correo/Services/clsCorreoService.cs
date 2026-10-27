@@ -16,24 +16,29 @@ namespace Cotifly.Aplicacion.Correo.Services;
 
 /// <summary>
 /// Implementación de <see cref="IClsCorreoService"/> (port de <c>ServicioCorreo</c> de <c>mcp_server/correo.py</c> y de
-/// <c>enviar_cotizacion</c> de <c>orquestador/web.py</c>). Invariantes:
+/// <c>enviar_cotizacion</c> de <c>orquestador/web.py</c>; HU-033, #199, ADR-023: el transporte es MailSender). Invariantes:
 /// <list type="bullet">
-/// <item>Ningún correo sale sin el comercial autenticado (<c>confirmado_por</c>), que además debe ser el dueño de la cotización.</item>
-/// <item>Deduplicación: un envío exitoso a los mismos destinatarios <c>para</c> (sin distinguir mayúsculas ni orden) en los
-/// últimos 5 minutos se rechaza; los fallidos no cuentan. La regla vive aquí, no en el repositorio (deuda de ADR-008), y se
-/// mide con <see cref="IClsReloj"/>. Los envíos de una misma cotización se serializan (<see cref="clsCandadoEnvios"/>) y, dentro
-/// del candado, la cotización se recarga de la base: dos envíos simultáneos a destinatarios distintos dejan <c>enviada</c> y luego
-/// <c>reenviada</c>, no dos veces <c>enviada</c>.</item>
+/// <item>Ningún correo sale sin el comercial autenticado (<c>confirmado_por</c>), que además debe ser el dueño de la cotización. El dueño se
+/// comprueba antes que nada más (correo deshabilitado, destinatarios): un folio ajeno o inexistente siempre es <c>COTIZACION_NO_ENCONTRADA</c>.</item>
+/// <item>Deduplicación: un envío a los mismos destinatarios <c>para</c> (sin distinguir mayúsculas ni orden) en los últimos 5 minutos que
+/// salió o sigue en curso en MailSender (<c>enviado</c>, <c>encolado</c>, <c>enviando</c>) se rechaza; los fallidos no cuentan. La regla
+/// vive aquí, no en el repositorio (deuda de ADR-008), y se mide con <see cref="IClsReloj"/>. Los envíos de una misma cotización se
+/// serializan (<see cref="clsCandadoEnvios"/>) y, dentro del candado, la cotización se recarga de la base.</item>
 /// <item>El PDF sale del almacén; sin PDF → <c>CORREO_PDF_NO_ENCONTRADO</c>.</item>
-/// <item>Remitente y <c>Reply-To</c>: el correo del comercial en <c>UsuariosWeb</c>.</item>
-/// <item>Envío exitoso: fila <c>enviado</c> con sus destinatarios y <c>estadoEnvio</c> <c>sin_enviar</c> → <c>enviada</c> y
-/// <c>enviada</c>/<c>reenviada</c> → <c>reenviada</c> (corrige el bug del Python, que siempre escribía <c>enviada</c>).</item>
-/// <item>Fallo del transporte: fila <c>fallido</c> con el error, en una transacción propia (no hay otros cambios pendientes),
-/// y <c>CORREO_ENVIO_FALLIDO</c>; el estado de envío no cambia.</item>
+/// <item>Remitente: el correo del comercial en <c>UsuariosWeb</c> (MailSender no admite <c>Reply-To</c>: así las respuestas le llegan a
+/// él). Copia oculta: el mismo comercial (decisión 4), salvo que ya esté en <c>para</c> o <c>cc</c>.</item>
+/// <item>Cuerpo HTML con el bloque fijo del resumen: precio por ruta y total, sin desglose (decisión 5).</item>
+/// <item>Fuera de producción (<c>Correo:Proteccion:Modo=redirigir</c>) el mensaje va solo al buzón de pruebas, con <c>[QA]</c> en el asunto
+/// y los destinatarios originales en el cuerpo (<see cref="clsProteccionCorreo"/>); en la base quedan los originales y el buzón.</item>
+/// <item>MailSender acepta (202): fila <c>encolado</c> con su id y la consulta agendada (el worker de correos la lleva a <c>enviado</c> o
+/// <c>fallido</c>); <c>estadoEnvio</c> <c>sin_enviar</c> → <c>enviada</c> y <c>enviada</c>/<c>reenviada</c> → <c>reenviada</c>. Un fallo
+/// posterior en MailSender NO devuelve el estado de envío: el comercial reintenta el mismo correo (<c>POST .../correos/{id}/reintentar</c>).</item>
+/// <item>MailSender no acepta (400/413/422, caído o sin respuesta): fila <c>fallido</c> con el error, en una transacción propia, y
+/// <c>CORREO_ENVIO_FALLIDO</c>; la reserva del estado de envío se deshace.</item>
 /// <item>Concurrencia (ADR-018 §12): antes de enviar, el estado de envío se RESERVA (enviada/reenviada, versión de negocio + 1)
 /// con <c>GuardarCambiosSiVersionAsync</c> sobre la versión leída. Así un ajuste de margen o de conexos concurrente pierde
 /// (<c>CONFLICTO_CONCURRENCIA</c> o <c>PDF_YA_ENVIADO</c>) y nunca invalida un PDF que ya está saliendo; si el ajuste ganó antes, el
-/// envío responde <c>CONFLICTO_CONCURRENCIA</c> sin enviar nada. Si el transporte falla, la reserva se deshace.</item>
+/// envío responde <c>CONFLICTO_CONCURRENCIA</c> sin enviar nada.</item>
 /// </list>
 /// </summary>
 public sealed class clsCorreoService(
@@ -54,12 +59,23 @@ public sealed class clsCorreoService(
     public const int MaxAsunto = 300;
     public const int MaxCuerpo = 5000;
 
+    /// <summary>Largo máximo del <c>X-Correlation-ID</c> que guarda MailSender.</summary>
+    public const int LargoMaximoCorrelacion = 128;
+
     public async Task<clsResultado<clsSalidaEnvioCorreo>> EnviarAsync(clsEntradaEnviarCorreo entrada, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(entrada);
         if (entrada.UsuarioId == Guid.Empty)
         {
             return new clsErrorDominio(clsCodigosError.ConfirmacionRequerida, "Falta 'confirmado_por': el envío no está autorizado.");
+        }
+
+        // Endurecimiento A (#199): primero el dueño. Un folio ajeno o inexistente responde 404 antes que CORREO_DESHABILITADO (503) o
+        // CORREO_INVALIDO (400), que si no dejarían enumerar los folios de otros comerciales (como en reintentar).
+        var cotizacion = await BuscarCotizacionAsync(entrada, cancellationToken);
+        if (cotizacion is null)
+        {
+            return new clsErrorDominio(clsCodigosError.CotizacionNoEncontrada, "Cotización no encontrada o no es tuya.");
         }
 
         if (!opciones.Value.Habilitado)
@@ -79,12 +95,6 @@ public sealed class clsCorreoService(
             return invalida;
         }
 
-        var cotizacion = await BuscarCotizacionAsync(entrada, cancellationToken);
-        if (cotizacion is null)
-        {
-            return new clsErrorDominio(clsCodigosError.CotizacionNoEncontrada, "Cotización no encontrada o no es tuya.");
-        }
-
         var usuario = await usuarios.ObtenerPorIdAsync(entrada.UsuarioId, cancellationToken);
 
         using var turno = await candado.TomarAsync(cotizacion.Id, cancellationToken);
@@ -93,7 +103,7 @@ public sealed class clsCorreoService(
         await cotizaciones.RecargarAsync(cotizacion, cancellationToken);
 
         var recientes = await correos.ListarEnviadosDesdeAsync(cotizacion.Id, reloj.AhoraUtc - VentanaDuplicado, cancellationToken);
-        if (recientes.Any(c => c.TieneMismosPara(para)))
+        if (recientes.Any(c => c.CuentaComoEnvio && c.TieneMismosPara(para)))
         {
             return new clsErrorDominio(clsCodigosError.CorreoDuplicado, "Envío duplicado a los mismos destinatarios en menos de 5 minutos.");
         }
@@ -112,15 +122,42 @@ public sealed class clsCorreoService(
         }
 
         asunto ??= clsPlantillaCorreo.AsuntoPorDefecto(cotizacion.Folio);
-        cuerpo ??= clsPlantillaCorreo.CuerpoPorDefecto;
-        var mensaje = new clsMensajeCorreo(
+        var texto = cuerpo ?? clsPlantillaCorreo.CuerpoPorDefecto;
+        var correoId = Guid.NewGuid();
+        var resumen = clsPlantillaCorreo.Resumen(cotizacion);
+        var firma = clsPlantillaCorreo.FirmaComercial(usuario?.NombreCompleto, usuario?.Email, usuario?.Telefono);
+        var original = new clsMensajeCorreo(
             usuario?.Email,
             para,
             cc,
             asunto,
-            cuerpo,
-            clsPlantillaCorreo.Html(cuerpo),
-            new clsAdjuntoCorreo(NombreAdjunto(cotizacion), pdf));
+            texto,
+            clsPlantillaCorreo.Html(texto, resumen, firmaComercial: firma),
+            new clsAdjuntoCorreo(NombreAdjunto(cotizacion), pdf))
+        {
+            Bcc = CopiaOculta(usuario?.Email, para, cc) is { } bcc ? [bcc] : [],
+            IdCorrelacion = IdCorrelacion(cotizacion.Folio, correoId),
+            Metadatos = new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["origen"] = "cotifly",
+                ["folio"] = cotizacion.Folio,
+                ["correo_id"] = correoId.ToString("D"),
+                ["cotizacion_id"] = cotizacion.Id.ToString("D"),
+            },
+        };
+        clsMensajeCorreo mensaje;
+        string? redirigidoA;
+        try
+        {
+            (mensaje, redirigidoA) = clsProteccionCorreo.Aplicar(
+                original, opciones.Value.Proteccion, aviso => clsPlantillaCorreo.Html(texto, resumen, aviso, firma));
+        }
+        catch (InvalidOperationException ex)
+        {
+            // Falla cerrado (HU-033): hay que redirigir y no hay buzón válido. Nada sale y la cotización no cambia.
+            logger.LogError("Correo de la cotización {Folio} bloqueado por la protección: {Motivo}", cotizacion.Folio, ex.Message);
+            return new clsErrorDominio(clsCodigosError.CorreoEnvioFallido, ex.Message);
+        }
 
         // Reserva del envío (ADR-018 §12): sube la versión y deja la cotización enviada antes de que el correo salga.
         var estadoAnterior = cotizacion.EstadoEnvio;
@@ -133,21 +170,58 @@ public sealed class clsCorreoService(
                 $"La cotización {cotizacion.Folio} cambió mientras se preparaba el envío: recárgala y vuelve a intentarlo.");
         }
 
-        string messageId;
+        clsEnvioAceptado aceptado;
         try
         {
-            messageId = await transporte.EnviarAsync(mensaje, cancellationToken);
+            aceptado = await transporte.EnviarAsync(mensaje, cancellationToken);
         }
         catch (clsEnvioCorreoException ex)
         {
-            logger.LogWarning("Falló el envío de la cotización {Folio} por {Modo}: {Motivo}", cotizacion.Folio, transporte.Modo, ex.Message);
+            logger.LogWarning("Falló el envío de la cotización {Folio} por {Modo} (incierto: {Incierto}): {Motivo}",
+                cotizacion.Folio, transporte.Modo, ex.Incierto, ex.Message);
+            if (ex.Incierto)
+            {
+                // Auditoría #199: MailSender no respondió al POST y pudo encolarlo. La reserva se CONSERVA (el PDF pudo salir: es la foto
+                // entregada) y la fila incierta cuenta para la deduplicación de 5 minutos, así un reenvío inmediato no duplica el correo.
+                await RegistrarFallidoAsync(cotizacion, correoId, para, cc, asunto, entrada.UsuarioId, clsCorreo.PrefijoIncierto + ex.Message, redirigidoA);
+                return new clsErrorDominio(clsCodigosError.CorreoEnvioFallido, ex.Message);
+            }
+
             await DeshacerReservaAsync(cotizacion, estadoAnterior);
-            await RegistrarFallidoAsync(cotizacion, para, cc, asunto, entrada.UsuarioId, ex.Message);
+            await RegistrarFallidoAsync(cotizacion, correoId, para, cc, asunto, entrada.UsuarioId, ex.Message, redirigidoA);
             return new clsErrorDominio(clsCodigosError.CorreoEnvioFallido, ex.Message);
         }
 
-        var registrado = await RegistrarEnviadoAsync(cotizacion, para, cc, asunto, entrada.UsuarioId, messageId);
-        return new clsSalidaEnvioCorreo(Enviado: true, messageId, registrado);
+        var registrado = await RegistrarAceptadoAsync(cotizacion, correoId, para, cc, asunto, entrada.UsuarioId, aceptado, redirigidoA);
+        var idExterno = aceptado.IdExterno?.ToString("D") ?? aceptado.MessageId ?? string.Empty;
+        return new clsSalidaEnvioCorreo(Enviado: true, idExterno, registrado)
+        {
+            CorreoId = correoId,
+            Estado = clsCodigoEnum.ACodigo(aceptado.Estado),
+            RedirigidoA = redirigidoA,
+        };
+    }
+
+    /// <summary><c>X-Correlation-ID</c> de MailSender: <c>{folio}:{id del correo en Cotifly}</c> (MailSender guarda hasta 128).</summary>
+    public static string IdCorrelacion(string folio, Guid correoId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(folio);
+        var id = $"{folio.Trim()}:{correoId:D}";
+        return id.Length <= LargoMaximoCorrelacion ? id : id[^LargoMaximoCorrelacion..];
+    }
+
+    /// <summary>Copia oculta al comercial (decisión 4): su correo, salvo que no tenga uno válido o ya esté en <c>para</c> o <c>cc</c>.</summary>
+    public static string? CopiaOculta(string? correoComercial, IReadOnlyList<string> para, IReadOnlyList<string> cc)
+    {
+        ArgumentNullException.ThrowIfNull(para);
+        ArgumentNullException.ThrowIfNull(cc);
+        if (string.IsNullOrWhiteSpace(correoComercial) || clsCorreoDestinatario.Crear(Guid.NewGuid(), correoComercial, TipoDestinatario.Cc).EsFallo)
+        {
+            return null;
+        }
+
+        var normalizado = clsCorreoDestinatario.Normalizar(correoComercial);
+        return para.Concat(cc).Any(d => clsCorreoDestinatario.Normalizar(d) == normalizado) ? null : correoComercial.Trim();
     }
 
     private Task<clsCotizacionSolicitud?> BuscarCotizacionAsync(clsEntradaEnviarCorreo entrada, CancellationToken cancellationToken)
@@ -162,19 +236,24 @@ public sealed class clsCorreoService(
             : cotizaciones.ObtenerPorFolioDelUsuarioAsync(entrada.Folio, entrada.UsuarioId, cancellationToken);
     }
 
-    private async Task<bool> RegistrarEnviadoAsync(clsCotizacionSolicitud cotizacion, IReadOnlyList<string> para, IReadOnlyList<string> cc, string asunto, Guid usuarioId, string messageId)
+    private async Task<bool> RegistrarAceptadoAsync(
+        clsCotizacionSolicitud cotizacion, Guid correoId, IReadOnlyList<string> para, IReadOnlyList<string> cc, string asunto, Guid usuarioId,
+        clsEnvioAceptado aceptado, string? redirigidoA)
     {
         try
         {
-            var correo = clsCorreo.Crear(cotizacion.Id, para, EstadoCorreo.Enviado, asunto, cc, usuarioId, messageId).Valor;
+            var correo = clsCorreo.Crear(cotizacion.Id, para, aceptado.Estado, asunto, cc, usuarioId, aceptado.MessageId,
+                id: correoId, idMailSender: aceptado.IdExterno, redirigidoA: redirigidoA,
+                siguienteConsultaAt: reloj.AhoraUtc + opciones.Value.Seguimiento.Intervalo, encoladoAt: reloj.AhoraUtc).Valor;
             correos.Agregar(correo);
             await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None); // el estado de envío ya quedó en la reserva
             return true;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // El correo ya salió: se informa como enviado para que el comercial no lo reenvíe.
-            logger.LogError(ex, "El correo de la cotización {Folio} salió ({MessageId}) pero no se pudo registrar en la base.", cotizacion.Folio, messageId);
+            // MailSender ya lo aceptó: se informa como enviado para que el comercial no lo reenvíe.
+            logger.LogError(ex, "MailSender aceptó el correo de la cotización {Folio} ({IdExterno}) pero no se pudo registrar en la base.",
+                cotizacion.Folio, aceptado.IdExterno);
             return false;
         }
     }
@@ -212,11 +291,14 @@ public sealed class clsCorreoService(
         logger.LogError("No se pudo deshacer la reserva del envío de la cotización {Folio}: queda marcada como enviada.", cotizacion.Folio);
     }
 
-    private async Task RegistrarFallidoAsync(clsCotizacionSolicitud cotizacion, IReadOnlyList<string> para, IReadOnlyList<string> cc, string asunto, Guid usuarioId, string error)
+    private async Task RegistrarFallidoAsync(
+        clsCotizacionSolicitud cotizacion, Guid correoId, IReadOnlyList<string> para, IReadOnlyList<string> cc, string asunto, Guid usuarioId,
+        string error, string? redirigidoA)
     {
         try
         {
-            var correo = clsCorreo.Crear(cotizacion.Id, para, EstadoCorreo.Fallido, asunto, cc, usuarioId, error: error).Valor;
+            var correo = clsCorreo.Crear(cotizacion.Id, para, EstadoCorreo.Fallido, asunto, cc, usuarioId, error: error,
+                id: correoId, redirigidoA: redirigidoA).Valor;
             correos.Agregar(correo);
             await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
         }

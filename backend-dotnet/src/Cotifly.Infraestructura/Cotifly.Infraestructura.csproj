@@ -17,7 +17,6 @@
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
     <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" />
     <PackageReference Include="PDFsharp-MigraDoc" />
-    <PackageReference Include="MailKit" />
     <!-- Excel de licitaciones (HU-011, ADR-017): lectura del original y exportación con los precios. MIT. -->
     <PackageReference Include="ClosedXML" />
     <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />

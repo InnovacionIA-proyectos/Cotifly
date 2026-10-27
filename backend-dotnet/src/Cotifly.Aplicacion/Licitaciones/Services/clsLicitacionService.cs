@@ -116,9 +116,9 @@ public sealed class clsLicitacionService(
     }
 
     /// <summary>
-    /// Datos de la exportación (HU-021: una fila por ruta): la tarifa del transporte de la ruta (sin conexos, la misma del PDF del pliego),
+    /// Datos de la exportación (HU-021: una fila por ruta): la tarifa del transporte de la ruta (sin conexos; desde HU-033 el PDF del pliego, en cambio, imprime el valor final de la ruta con los conexos incluidos),
     /// estado legible y los servicios conexos de las rutas con su precio, aparte. El total es la suma de las tarifas (sin conexos), como
-    /// el resumen del PDF: los conexos no se cobran dos veces. Origen y destino son los nombres copiados de la ruta; el vehículo, el de su camión (o los de sus camiones). El costo de
+    /// el resumen anterior a HU-033: los conexos no se cobran dos veces. Origen y destino son los nombres copiados de la ruta; el vehículo, el de su camión (o los de sus camiones). El costo de
     /// Nexo no entra a este objeto: el exportador no lo puede escribir. HU-023.5 (#160): cada línea lleva sus camiones con el nombre del
     /// vehículo y de la carrocería del catálogo del cubicador (<paramref name="vehiculos"/> y <paramref name="carrocerias"/>, por código; si
     /// no están, el código) y el estado de su cubicación.
@@ -652,7 +652,8 @@ public sealed class clsLicitacionService(
         var cotizacion = usuarioId == Guid.Empty || string.IsNullOrWhiteSpace(folio)
             ? null
             : await cotizaciones.ObtenerPorFolioDelUsuarioAsync(folio, usuarioId, cancellationToken);
-        if (cotizacion is null)
+        // Endurecimiento A (#199): un folio de formulario no es una licitación: 404, como reintentar y el Excel.
+        if (cotizacion is null || cotizacion.TipoSolicitud != TipoSolicitud.Licitacion)
         {
             return new clsErrorDominio(clsCodigosError.CotizacionNoEncontrada, "Cotización no encontrada o no es tuya.");
         }
@@ -662,8 +663,8 @@ public sealed class clsLicitacionService(
     }
 
     /// <summary>
-    /// Vista de la licitación, una fila por ruta (solo precios: el costo de Nexo de cada ruta nunca sale). Como el Excel y el PDF del
-    /// pliego, el precio de cada fila es la tarifa del transporte y el total su suma, sin servicios conexos (que se ven aparte en el
+    /// Vista de la licitación, una fila por ruta (solo precios: el costo de Nexo de cada ruta nunca sale). Como el Excel (no como el PDF del
+    /// pliego, que desde HU-033 imprime el valor final con conexos), el precio de cada fila es la tarifa del transporte y el total su suma, sin servicios conexos (que se ven aparte en el
     /// costeo): HU-021, el precio de la ruta ya los incluye.
     /// </summary>
     public static clsLicitacion Vista(clsCotizacionSolicitud cotizacion, clsArchivoLicitacionResumen? archivo)

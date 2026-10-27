@@ -1,16 +1,21 @@
 using Cotifly.Aplicacion.Correo.DTOs;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
+using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Dominio.Comun;
+using Microsoft.Extensions.Options;
 
 namespace Cotifly.Aplicacion.Correo.Services;
 
 /// <summary>
-/// Implementación de <see cref="IClsVistaPreviaCorreoService"/>: mismo asunto, cuerpo y adjunto que usaría
-/// <see cref="clsCorreoService"/>, sin tocar el transporte ni la base.
+/// Implementación de <see cref="IClsVistaPreviaCorreoService"/>: mismo asunto, cuerpo, resumen y adjunto que usaría
+/// <see cref="clsCorreoService"/>, sin tocar el transporte ni la base. HU-033 (#199): trae el cuerpo en HTML con el resumen (precio por
+/// ruta y total, sin desglose), la copia oculta al comercial y, si el ambiente redirige los correos, el aviso "ambiente de pruebas".
 /// </summary>
 public sealed class clsVistaPreviaCorreoService(
     IClsCotizacionRepository cotizaciones,
-    IClsDestinatariosPreviosService destinatariosPrevios) : IClsVistaPreviaCorreoService
+    IClsDestinatariosPreviosService destinatariosPrevios,
+    IClsUsuarioWebRepository usuarios,
+    IOptions<clsOpcionesCorreo> opciones) : IClsVistaPreviaCorreoService
 {
     public async Task<clsResultado<clsVistaPreviaCorreo>> PrevisualizarAsync(
         Guid usuarioId, string folio, clsBorradorCorreo? borrador = null, CancellationToken cancellationToken = default)
@@ -40,7 +45,21 @@ public sealed class clsVistaPreviaCorreoService(
 
         var cuerpo = string.IsNullOrWhiteSpace(borrador?.Cuerpo) ? clsPlantillaCorreo.CuerpoPorDefecto : borrador.Cuerpo.Trim();
         var asunto = string.IsNullOrWhiteSpace(borrador?.Asunto) ? clsPlantillaCorreo.AsuntoPorDefecto(cotizacion.Folio) : borrador.Asunto.Trim();
-        return new clsVistaPreviaCorreo(asunto, cuerpo, para, cc, clsCorreoService.NombreAdjunto(cotizacion));
+        var resumen = clsPlantillaCorreo.Resumen(cotizacion);
+        var usuario = await usuarios.ObtenerPorIdAsync(usuarioId, cancellationToken);
+        var proteccion = opciones.Value.Proteccion;
+        // HU-033: se redirige salvo con las dos llaves del envío real; sin un buzón válido el envío no sale (la vista previa lo avisa).
+        var redirige = proteccion.Redirige;
+        var buzon = redirige ? clsProteccionCorreo.BuzonValido(proteccion) : null;
+        return new clsVistaPreviaCorreo(asunto, cuerpo, para, cc, clsCorreoService.NombreAdjunto(cotizacion))
+        {
+            CuerpoHtml = clsPlantillaCorreo.Html(cuerpo, resumen, firmaComercial: clsPlantillaCorreo.FirmaComercial(usuario?.NombreCompleto, usuario?.Email, usuario?.Telefono)),
+            Resumen = resumen,
+            CopiaOculta = clsCorreoService.CopiaOculta(usuario?.Email, para, cc),
+            EntornoPruebas = redirige,
+            RedirigidoA = buzon,
+            Aviso = !redirige ? null : buzon is null ? clsProteccionCorreo.MensajeSinBuzon : clsProteccionCorreo.AvisoVistaPrevia(buzon),
+        };
     }
 
     private static List<string> Limpiar(IReadOnlyList<string>? emails) =>

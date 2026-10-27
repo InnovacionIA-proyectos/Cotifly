@@ -420,7 +420,7 @@
       "Frase": "Cargue y",
       "Pagina": 2,
       "X": 50.18,
-      "Y": 332.76
+      "Y": 289.82
     },
     "encabezado": {
       "Frase": "[imagen]",
@@ -432,13 +432,13 @@
       "Frase": "Cordialmente,",
       "Pagina": 2,
       "X": 39.68,
-      "Y": 314.62
+      "Y": 271.68
     },
     "firmante": {
       "Frase": "Ana P\u00E9rez",
       "Pagina": 2,
       "X": 39.68,
-      "Y": 298.81
+      "Y": 255.88
     },
     "pie": {
       "Frase": "Principal: Carrera 42",
@@ -465,10 +465,16 @@
       "Y": 590.62
     },
     "total": {
-      "Frase": "TOTAL DEL PLIEGO",
+      "Frase": "VALOR TOTAL DE LA",
       "Pagina": 2,
-      "X": 252.89,
+      "X": 293.42,
       "Y": 647.35
+    },
+    "totalGeneralNota": {
+      "Frase": "El valor de cada ruta",
+      "Pagina": 2,
+      "X": 39.68,
+      "Y": 337.74
     }
   }
 }

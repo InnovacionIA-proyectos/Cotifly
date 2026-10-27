@@ -7,8 +7,9 @@ namespace Cotifly.Aplicacion.Costeo.DTOs;
 /// Entrada de <c>POST /web/solicitudes-costeo</c> por rutas (HU-021.6): el cliente del buscador, la línea de negocio por defecto (la de
 /// cada ruta la reemplaza), el encabezado (tipo, deadline, notas y horas por defecto), las rutas y la moneda. Cada ruta es una
 /// <see cref="clsLineaLicitacionEntrada"/> sin fila de Excel: origen y destino (id de municipio + nombre), condiciones del contenedor,
-/// horas, levante, valor de la mercancía, peso, mercancías (con <c>id_tipo_mercancia</c>) y servicios conexos. Sin vehículo ni
-/// carrocería (decisión 7): si llegan, se ignoran.
+/// horas, levante, valor de la mercancía, peso, mercancías (con <c>codigo_mercancia</c>, o <c>id_tipo_mercancia</c> obsoleto; sin
+/// medidas ni código si son no cubicables) y servicios conexos. Vehículo y carrocería son el vehículo elegido de la ruta (HU-032, #197,
+/// reemplaza la decisión 7): respaldo del cubicador cuando la ruta no se puede cubicar o el cubicador no selecciona vehículo.
 /// </summary>
 public sealed record clsEntradaCaptura(
     string? NitCliente,

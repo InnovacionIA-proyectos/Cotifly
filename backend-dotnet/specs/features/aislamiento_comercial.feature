@@ -10,7 +10,7 @@ Característica: Aislamiento de las cotizaciones por comercial
   Para que ningún otro comercial vea precios, clientes ni correos que no le corresponden
 
   Antecedentes:
-    # Con el correo habilitado el envío llega hasta la regla de dueño (deshabilitado respondería 503 antes); el relay de
+    # Con el correo habilitado el envío llega hasta la regla de dueño (deshabilitado respondería 503 antes); el MailSender falso de
     # pruebas no se alcanza nunca porque ningún envío de estos escenarios es de una cotización propia.
     Dado la API web de Cotifly con el envío de correo habilitado
     Y el comercial "ana" con sesión en la regional "Occidente"
