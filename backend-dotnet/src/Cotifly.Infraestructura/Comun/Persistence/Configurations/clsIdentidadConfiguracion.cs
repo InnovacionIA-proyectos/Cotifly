@@ -56,7 +56,10 @@ internal sealed class clsRolConfiguracion : IEntityTypeConfiguration<clsRol>
     }
 }
 
-/// <summary><c>dbo_cotifly.UsuariosRoles</c> (script 0002 §2bis): un rol una vez por usuario y una sola asignación activa.</summary>
+/// <summary>
+/// <c>dbo_cotifly.UsuariosRoles</c> (script 0002 §2bis): un rol una vez por usuario. HU-040.1 (#229): el script 16 retiró
+/// <c>uq_usuariosRoles_usuarioId_activo</c>, así que un usuario puede tener varias asignaciones activas (una por rol).
+/// </summary>
 internal sealed class clsUsuarioRolConfiguracion : IEntityTypeConfiguration<clsUsuarioRol>
 {
     public void Configure(EntityTypeBuilder<clsUsuarioRol> builder)
@@ -72,9 +75,6 @@ internal sealed class clsUsuarioRolConfiguracion : IEntityTypeConfiguration<clsU
         builder.Property(r => r.RevisadoAt).Fecha("revisadoAt");
 
         builder.HasIndex(r => new { r.UsuarioId, r.RolId }).IsUnique().HasDatabaseName("uq_usuariosRoles_usuarioId_rolId");
-        builder.HasIndex(r => r.UsuarioId).IsUnique()
-            .HasFilter("[activo] = 1")
-            .HasDatabaseName("uq_usuariosRoles_usuarioId_activo");
         builder.HasOne<clsUsuarioWeb>().WithMany().HasForeignKey(r => r.UsuarioId)
             .HasConstraintName("fk_usuariosRoles_usuarioId").OnDelete(DeleteBehavior.NoAction);
         builder.HasOne<clsRol>().WithMany().HasForeignKey(r => r.RolId)
@@ -84,12 +84,17 @@ internal sealed class clsUsuarioRolConfiguracion : IEntityTypeConfiguration<clsU
     }
 }
 
-/// <summary><c>dbo_cotifly.TokensRefresco</c> (script 0002 §3).</summary>
+/// <summary><c>dbo_cotifly.TokensRefresco</c> (script 0002 §3; <c>rolSesion</c> y su CHECK, script 16, HU-040.1).</summary>
 internal sealed class clsTokenRefrescoConfiguracion : IEntityTypeConfiguration<clsTokenRefresco>
 {
     public void Configure(EntityTypeBuilder<clsTokenRefresco> builder)
     {
-        builder.ToTable("TokensRefresco", t => t.HasCheckConstraint("ck_tokensRefresco_vigencia", "expiraAt > createdAt"));
+        builder.ToTable("TokensRefresco", t =>
+        {
+            t.HasCheckConstraint("ck_tokensRefresco_vigencia", "expiraAt > createdAt");
+            t.HasCheckConstraint(
+                "ck_tokensRefresco_rolSesion", "rolSesion IS NULL OR rolSesion IN ('comercial', 'gerente_comercial', 'director')");
+        });
         builder.HasKey(t => t.Id).HasName("pk_tokensRefresco");
         builder.Property(t => t.Id).Columna("id", "uniqueidentifier").ValueGeneratedNever();
         builder.Property(t => t.UsuarioId).Columna("usuarioId", "uniqueidentifier");
@@ -101,6 +106,8 @@ internal sealed class clsTokenRefrescoConfiguracion : IEntityTypeConfiguration<c
         builder.Property(t => t.ExpiraAt).Fecha("expiraAt");
         builder.Property(t => t.RevocadoAt).Fecha("revocadoAt");
         builder.Property(t => t.ReemplazadoPorId).Columna("reemplazadoPorId", "uniqueidentifier");
+        builder.Property(t => t.RolSesion).Columna("rolSesion", "nvarchar(30)").HasMaxLength(30)
+            .HasConversion(new clsConvertidorCodigoEnum<RolInterno>());
 
         builder.HasIndex(t => t.TokenHash).IsUnique().HasDatabaseName("uq_tokensRefresco_tokenHash");
         builder.HasIndex(t => t.UsuarioId).HasDatabaseName("ix_tokensRefresco_usuarioId");

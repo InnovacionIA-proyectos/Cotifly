@@ -103,7 +103,7 @@ public sealed class clsRefreshTokenService(
                     }
                     else if (verificacion.Identidad is { } valida)
                     {
-                        var plano = clsEmisionSesion.NuevoRefresh(usuario.Id, ahora, token.ExpiraAt - ahora, token.FamiliaId, out var nuevo);
+                        var plano = clsEmisionSesion.NuevoRefresh(usuario.Id, ahora, token.ExpiraAt - ahora, token.FamiliaId, valida.Rol, out var nuevo);
                         if (await tokens.RotarAsync(token.Id, nuevo, ahora, cancellationToken))
                         {
                             sesion = clsEmisionSesion.Emitir(emisor, valida.Usuario, valida.Rol, plano);

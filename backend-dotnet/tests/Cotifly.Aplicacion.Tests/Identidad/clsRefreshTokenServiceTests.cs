@@ -137,6 +137,23 @@ public sealed class clsRefreshTokenServiceTests
     }
 
     [Fact]
+    public async Task HU0401_ConDosAsignacionesActivasElRefreshRotaConLaJerarquiaYGuardaElRol()
+    {
+        // HU-040.1 (#229): un usuario con dos asignaciones activas renueva igual que hoy (jerarquía) y el refresh nuevo lleva el rol.
+        _e.PersonaExterna("JEFE", 200, clsEscenarioIdentidad.RolExternoComercial, clsEscenarioIdentidad.RolExternoGerente);
+        var usuario = _e.UsuarioLocal("JEFE", 200, RolInterno.Comercial, RolInterno.GerenteComercial);
+        var token = clsTokenRefresco.Emitir(usuario.Id, clsTokenOpaco.Hash(RefreshPlano), _e.Reloj.AhoraUtc, TimeSpan.FromDays(30)).Valor;
+        _e.Tokens.ObtenerPorHashAsync(clsTokenOpaco.Hash(RefreshPlano), Arg.Any<CancellationToken>()).Returns(token);
+        clsTokenRefresco? nuevo = null;
+        _e.Tokens.RotarAsync(token.Id, Arg.Do<clsTokenRefresco>(t => nuevo = t), _e.Reloj.AhoraUtc, Arg.Any<CancellationToken>()).Returns(true);
+
+        var resultado = await _e.Refresh().RenovarAsync(RefreshPlano, Ct);
+
+        resultado.Valor.Usuario.Rol.Should().Be("gerente_comercial");
+        nuevo!.RolSesion.Should().Be(RolInterno.GerenteComercial);
+    }
+
+    [Fact]
     public async Task ConElAlmacenCaidoElRefreshFallaCerrado()
     {
         SesionVigente();

@@ -60,7 +60,9 @@ public sealed class clsRolRepository(clsCotiflyDbContext contexto, ILogger<clsRo
                            orderby rol.Id
                            select new { asignacion.UsuarioId, rol.Codigo })
             .ToListAsync(cancellationToken);
-        return filas.GroupBy(f => f.UsuarioId).ToDictionary(g => g.Key, g => g.First().Codigo);
+        // HU-040.1 (#229): con varias asignaciones activas se informa la de mayor alcance (director > gerente_comercial > comercial, el
+        // orden del enum), la misma jerarquía del login de rol único.
+        return filas.GroupBy(f => f.UsuarioId).ToDictionary(g => g.Key, g => g.Max(f => f.Codigo));
     }
 
     public void AgregarAsignacion(clsUsuarioRol asignacion)

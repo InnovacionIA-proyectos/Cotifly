@@ -213,6 +213,41 @@ public sealed class clsLoginClienteProServiceTests
     }
 
     [Fact]
+    public async Task HU0401_ConDosAsignacionesActivasRespaldadasEntraConLaJerarquiaYGuardaElRolEnElRefresh()
+    {
+        // HU-040.1 (#229): el esquema ya admite varias asignaciones activas; hasta HU-040.2 el login sigue con la jerarquía.
+        _e.PersonaExterna("JEFE", 200, clsEscenarioIdentidad.RolExternoComercial, clsEscenarioIdentidad.RolExternoGerente);
+        _e.UsuarioLocal("JEFE", 200, RolInterno.Comercial, RolInterno.GerenteComercial);
+        clsTokenRefresco? refresh = null;
+        _e.Tokens.When(t => t.Agregar(Arg.Any<clsTokenRefresco>())).Do(c => refresh = c.Arg<clsTokenRefresco>());
+
+        var resultado = await _e.Login().IniciarSesionAsync(new clsSolicitudLoginClientePro("JEFE"), Ct);
+
+        resultado.Valor.Usuario.Rol.Should().Be("gerente_comercial");
+        refresh!.RolSesion.Should().Be(RolInterno.GerenteComercial);
+        _e.Roles.DidNotReceiveWithAnyArgs().AgregarAsignacion(default!);
+        _e.SalidaAuditada(clsCodigosAcceso.HerramientaLogin).GetProperty("regla").GetString().Should().Be(clsMotivosAcceso.ReglaPrecedenciaGerente);
+    }
+
+    [Theory]
+    [InlineData(new[] { clsEscenarioIdentidad.RolExternoGerente }, "la asignación de comercial ya no tiene su rol externo")]
+    [InlineData(new[] { clsEscenarioIdentidad.RolExternoComercial }, "el rol de la jerarquía (comercial) está, pero la de gerente perdió su rol externo")]
+    [InlineData(new[] { clsEscenarioIdentidad.RolExternoComercial, clsEscenarioIdentidad.RolExternoGerente, clsEscenarioIdentidad.RolExternoDirector },
+        "la jerarquía da director, que no está asignado")]
+    public async Task HU0401_ConDosAsignacionesActivasSiElConjuntoNoCoincideEsRolExternoCambio(int[] externos, string motivo)
+    {
+        _e.PersonaExterna("JEFE", 200, externos);
+        var usuario = _e.UsuarioLocal("JEFE", 200, RolInterno.Comercial, RolInterno.GerenteComercial);
+
+        var resultado = await _e.Login().IniciarSesionAsync(new clsSolicitudLoginClientePro("JEFE"), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosAcceso.CredencialesInvalidas, motivo);
+        _e.SalidaAuditada(clsCodigosAcceso.HerramientaLogin).GetProperty("motivo").GetString().Should().Be(clsMotivosAcceso.RolExternoCambio);
+        _e.SalidaAuditada(clsCodigosAcceso.HerramientaLogin).GetProperty("usuario_id").GetGuid().Should().Be(usuario.Id);
+        _e.Tokens.DidNotReceiveWithAnyArgs().Agregar(default!);
+    }
+
+    [Fact]
     public async Task SinAsignacionActivaSeRechaza()
     {
         _e.PersonaExterna("APEREZ", 101, clsEscenarioIdentidad.RolExternoComercial);

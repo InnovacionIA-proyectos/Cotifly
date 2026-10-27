@@ -31,7 +31,9 @@ public sealed record clsVerificacionIdentidad(clsIdentidadVerificada? Identidad,
 /// <see cref="clsMotivosAcceso.ReglaPrecedenciaGerente"/>, auditadas; HU-037, #210).</item>
 /// <item><b>Interna</b> (<c>dbo_cotifly</c>): el <c>NOMBREUSUARIO</c> del almacén (nunca el del request) ubica al usuario.
 /// Si no existe y el ID externo tampoco está vinculado a otra cuenta, se crea (JIT) con su asignación en
-/// <c>UsuariosRoles</c>. Si existe, su asignación activa debe ser el rol resuelto y su vínculo, el mismo ID externo.</item>
+/// <c>UsuariosRoles</c>. Si existe, el rol resuelto debe estar entre sus asignaciones activas, cada asignación activa debe seguir
+/// respaldada por un rol externo vigente y su vínculo debe ser el mismo ID externo. HU-040.1 (#229, script 16): el esquema admite
+/// varias asignaciones activas; con una sola, la regla es la de siempre (la asignación es exactamente el rol resuelto).</item>
 /// </list>
 /// Cualquier diferencia de rol o de <c>NOMBREUSUARIO</c> es un rechazo con motivo; eso nunca se re-sincroniza solo. Los fallos
 /// del almacén son <see cref="clsMotivosAcceso.AlmacenNoDisponible"/> (fail-closed). Los fallos de <c>dbo_cotifly</c> se propagan.
@@ -86,6 +88,7 @@ public sealed class clsVerificadorIdentidad(
         }
 
         var catalogo = await roles.ListarActivosAsync(cancellationToken);
+        var mapeados = RolesMapeados(catalogo, rolesExternos);
         var (rolResuelto, regla) = ResolverRol(catalogo, rolesExternos);
         if (rolResuelto is not { } rol)
         {
@@ -127,7 +130,10 @@ public sealed class clsVerificadorIdentidad(
             return Rechazo(clsMotivosAcceso.SinAsignacionActiva, regla, porNombre.Id);
         }
 
-        if (asignados.Count != 1 || asignados[0] != rol)
+        // HU-040.1 (#229): se compara contra el CONJUNTO de asignaciones activas. El rol resuelto (jerarquía) debe estar asignado y
+        // ninguna asignación activa puede haber perdido su rol externo. Con una sola asignación equivale a la regla anterior
+        // (asignación == rol resuelto); con dos o más se entra con el rol de la jerarquía hasta que HU-040.2 deje elegir.
+        if (!asignados.Contains(rol) || asignados.Any(a => !mapeados.Contains(a)))
         {
             return Rechazo(clsMotivosAcceso.RolExternoCambio, regla, porNombre.Id);
         }
@@ -163,15 +169,7 @@ public sealed class clsVerificadorIdentidad(
     /// </summary>
     public static (RolInterno? Rol, string? Regla) ResolverRol(IEnumerable<clsRol> catalogo, IEnumerable<clsRolExterno> rolesExternos)
     {
-        ArgumentNullException.ThrowIfNull(catalogo);
-        ArgumentNullException.ThrowIfNull(rolesExternos);
-
-        var externos = rolesExternos.Select(r => r.IdRol).ToHashSet();
-        var mapeados = catalogo
-            .Where(r => r.Activo && r.IdRolExterno is { } id && externos.Contains(id))
-            .Select(r => r.Codigo)
-            .Distinct()
-            .ToList();
+        var mapeados = RolesMapeados(catalogo, rolesExternos);
 
         return mapeados.Count switch
         {
@@ -180,6 +178,23 @@ public sealed class clsVerificadorIdentidad(
             _ when mapeados.Contains(RolInterno.Director) => (RolInterno.Director, clsMotivosAcceso.ReglaPrecedenciaDirector),
             _ => (RolInterno.GerenteComercial, clsMotivosAcceso.ReglaPrecedenciaGerente),
         };
+    }
+
+    /// <summary>
+    /// Roles internos a los que dan derecho los roles externos (<c>Roles.idRolExterno</c>, solo roles activos y mapeados), sin
+    /// repetir y en el orden de la jerarquía (<c>comercial</c>, <c>gerente_comercial</c>, <c>director</c>).
+    /// </summary>
+    public static IReadOnlyList<RolInterno> RolesMapeados(IEnumerable<clsRol> catalogo, IEnumerable<clsRolExterno> rolesExternos)
+    {
+        ArgumentNullException.ThrowIfNull(catalogo);
+        ArgumentNullException.ThrowIfNull(rolesExternos);
+
+        var externos = rolesExternos.Select(r => r.IdRol).ToHashSet();
+        return [.. catalogo
+            .Where(r => r.Activo && r.IdRolExterno is { } id && externos.Contains(id))
+            .Select(r => r.Codigo)
+            .Distinct()
+            .Order()];
     }
 
     /// <summary>
