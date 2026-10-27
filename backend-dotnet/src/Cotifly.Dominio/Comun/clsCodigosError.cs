@@ -59,8 +59,8 @@ public static class clsCodigosError
     public const string CorreoDuplicado = "CORREO_DUPLICADO";
 
     /// <summary>
-    /// #228: el correo trae más de 20 destinatarios entre <c>para</c> y <c>cc</c> (400 <c>ErrorNegocio</c>, <c>detalle.maximo</c> y
-    /// <c>detalle.recibidos</c>), en el envío y en la vista previa.
+    /// #228: el correo trae más destinatarios entre <c>para</c> y <c>cc</c> que el tope (<c>Correo:MaximoDestinatarios</c>, 10 por
+    /// defecto): 400 <c>ErrorNegocio</c> con <c>detalle.maximo</c> y <c>detalle.recibidos</c>, en el envío y en la vista previa.
     /// </summary>
     public const string CorreoDemasiadosDestinatarios = "CORREO_DEMASIADOS_DESTINATARIOS";
 

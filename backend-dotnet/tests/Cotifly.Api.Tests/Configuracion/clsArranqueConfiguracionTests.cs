@@ -1,3 +1,4 @@
+using Cotifly.Aplicacion.Correo.Services;
 using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Infraestructura.Configuracion;
 using Microsoft.AspNetCore.Hosting;
@@ -113,6 +114,41 @@ public sealed class clsArranqueConfiguracionTests
         var opciones = factory.Services.GetRequiredService<IOptions<clsOpcionesCaptura>>().Value;
 
         opciones.ClasesSinVehiculo.Should().Equal("Contenedor");
+    }
+
+    // --- #228 (decisión del 2026-10-27): Correo:MaximoDestinatarios ---
+
+    [Fact]
+    public void SinConfigurarElTopeDeDestinatariosEs10()
+    {
+        using var factory = new clsCotiflyApiFactory();
+
+        factory.Services.GetRequiredService<IOptions<clsOpcionesCorreo>>().Value.MaximoDestinatarios.Should().Be(10);
+    }
+
+    [Theory]
+    [InlineData("1", 1)]
+    [InlineData("25", 25)]
+    [InlineData("100", 100)]
+    public void ElTopeDeDestinatariosSeLeeDeLaConfiguracion(string valor, int esperado)
+    {
+        using var factory = Crear(new() { ["Correo:MaximoDestinatarios"] = valor });
+
+        factory.Services.GetRequiredService<IOptions<clsOpcionesCorreo>>().Value.MaximoDestinatarios.Should().Be(esperado);
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("-5")]
+    [InlineData("101")]
+    [InlineData("100000")]
+    public void UnTopeDeDestinatariosFueraDe1A100ImpideArrancar(string valor)
+    {
+        using var factory = Crear(new() { ["Correo:MaximoDestinatarios"] = valor });
+
+        var arrancar = () => factory.CreateClient();
+
+        arrancar.Should().Throw<OptionsValidationException>().WithMessage("*Correo:MaximoDestinatarios*");
     }
 
     private static Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> Crear(Dictionary<string, string?> valores) =>

@@ -179,10 +179,15 @@ destinatarios en `para`.
   entrada con `,` o `;` en varias). Parte local de 1 a 64 caracteres (letras, incluidas las no ASCII, dígitos y los símbolos de un `atom`
   del RFC 5322; puntos que no van al borde ni seguidos); dominio de hasta 255 con al menos dos etiquetas de 1 a 63 (letras, dígitos y
   guiones que no van al borde; sin literales IP); hasta 320 en total. Los caracteres de formato (ancho cero, bidi) tampoco pasan.
-- **Tope de 20 destinatarios entre `para` y `cc`.** MailSender no tiene tope (`EmailRequestValidator` solo valida el formato y el tamaño
-  de los adjuntos), así que lo fija Cotifly: 20 cubren el caso comercial (comprador, jefe, copias internas) y cortan el uso como lista
-  de distribución. La copia oculta al comercial no cuenta. Pasado el tope, 400 `ErrorNegocio` `CORREO_DEMASIADOS_DESTINATARIOS` (código
+- **Tope de destinatarios entre `para` y `cc`: 10 por defecto, configurable** (decisión del 2026-10-27; antes 20 fijo). MailSender no
+  tiene tope (`EmailRequestValidator` solo valida el formato y el tamaño de los adjuntos), así que lo fija Cotifly: 10 cubren el caso
+  comercial (comprador, jefe, copias internas) y cortan el uso como lista de distribución. Se ajusta sin desplegar código con
+  `Correo__MaximoDestinatarios` (`clsOpcionesCorreo.MaximoDestinatarios`, de 1 a 100; fuera de rango la API no arranca, como el resto
+  de las opciones de correo) y `detalle.maximo` trae siempre el valor vigente. La copia oculta al comercial no cuenta. Pasado el tope, 400 `ErrorNegocio` `CORREO_DEMASIADOS_DESTINATARIOS` (código
   nuevo, para poder llevar `detalle = {maximo, recibidos}`; `CORREO_INVALIDO` sale como `ErrorWeb`, sin `detalle`).
+  El tope se aplica al redactar (envío y vista previa): el reintento (`POST .../correos/{id}/reintentar`) pide a MailSender el mismo
+  correo que ya aceptó, con sus destinatarios, y no lo vuelve a medir contra el tope vigente (bajar `Correo__MaximoDestinatarios` no
+  bloquea reintentar un envío anterior).
 - **Misma validación en la vista previa** (`clsCorreoService.ValidarBorrador`), después de comprobar el dueño; sin `para` no se exige
   (se precargan los destinatarios previos).
 - **Orden en el envío:** dueño (404), `CORREO_DESHABILITADO` (503), asunto con controles, destinatarios con controles, tope, formato de
