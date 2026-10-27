@@ -50,6 +50,14 @@ no conoce `RolInterno.Director` y tumbaba el login de todos al encontrar esa fil
   de todos, sin depender de coordinar despliegues en el orden correcto cada vez. La opción 2 es más frágil:
   exige disciplina operativa nueva cada vez que se agregue un rol, justo lo que ya falló una vez en la base
   compartida el 2026-10-26.
+- [x] **PR #219 cerrada (2026-10-27)**, a pedido mío — Kevin (QA) la cerró y dejó el motivo en el comentario
+  (el defecto de arriba + que la rama quedó 50 commits detrás de `QA`). No se perdió nada: la rama
+  `209-hu-0371-datos-rol-director-en-la-base` sigue existiendo con sus commits.
+- [ ] **Falta montar la PR nueva**, con los mismos 4 archivos (`01_crear_esquema.sql`, `15_rol_director.sql`,
+  `db/scripts/operacion/mapeo_prueba_rol_director_209.sql`, `seeder/03_roles.sql`) pero reconstruida desde
+  `QA` actual (limpia, sin los 50 commits de atraso). **Antes de abrirla, decidir:** ¿hablo primero con Duban
+  sobre la opción 1 (arriba) para que quede resuelto desde esta misma PR, o la abro ya con el mismo
+  contenido de antes y la opción 1 se resuelve aparte en #210?
 - [ ] **Confirmar la decisión de jerarquía vs. multi-rol de verdad:** ya se implementó jerarquía (un solo
   rol en el token, el más alto; el front deja elegir la vista). El multi-rol real quedó como deuda técnica
   en **HU-040** (milestone #32: issues [#229](https://github.com/InnovacionIA-proyectos/Cotifly/issues/229)
