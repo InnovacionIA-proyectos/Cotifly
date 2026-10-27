@@ -82,10 +82,10 @@ public sealed class clsLicitacionService(
     IClsFijacionMonedaService monedas,
     IClsCapturaRutasService captura,
     ILogger<clsLicitacionService> logger,
+    Cotizaciones.Services.IClsAccesoCotizacionAjena ajenas,
     IOptions<clsOpcionesCaptura>? opcionesCaptura = null,
     IClsCubicador? cubicador = null,
-    IOptions<clsOpcionesCubicacionLicitacion>? opcionesCubicacion = null,
-    Cotizaciones.Services.IClsAccesoCotizacionAjena? ajenas = null) : IClsLicitacionService
+    IOptions<clsOpcionesCubicacionLicitacion>? opcionesCubicacion = null) : IClsLicitacionService
 {
     public const string TipoXlsx = clsArchivoLicitacion.TipoXlsx;
 
@@ -115,12 +115,13 @@ public sealed class clsLicitacionService(
         }
 
         var propia = await cotizaciones.ObtenerPorFolioDelUsuarioAsync(folio, usuarioId, cancellationToken);
-        if (propia is not null || herramienta is null || ajenas is null)
+        if (propia is not null || herramienta is null)
         {
             return (propia, false);
         }
 
-        var ajena = await ajenas.ObtenerAsync(usuarioId, folio, herramienta, cancellationToken);
+        // Solo licitaciones: un folio spot de la regional no se audita como "permitido" para responder 404 después (#201, validación).
+        var ajena = await ajenas.ObtenerAsync(usuarioId, folio, herramienta, TipoSolicitud.Licitacion, cancellationToken);
         return (ajena, ajena is not null);
     }
 
@@ -605,7 +606,7 @@ public sealed class clsLicitacionService(
         }
 
         var archivo = await cotizaciones.ObtenerResumenArchivoLicitacionAsync(cotizacion.Id, cancellationToken);
-        // HU-034.1 (#201): la vista ya no trae costos; para el gerente o el director cambia solo solo_lectura.
+        // HU-034.1 (#201): la vista nunca trajo costos; para el gerente o el director cambia solo solo_lectura.
         return Vista(cotizacion, archivo) with { SoloLectura = soloLectura };
     }
 

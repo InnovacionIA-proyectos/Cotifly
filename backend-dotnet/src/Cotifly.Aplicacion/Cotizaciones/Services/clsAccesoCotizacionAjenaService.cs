@@ -22,9 +22,12 @@ public interface IClsAccesoCotizacionAjena
     /// La cotización <paramref name="folio"/> si <paramref name="usuarioId"/> (el usuario autenticado) es gerencial y puede verla; si no,
     /// <c>null</c> (quien llama responde 404, igual que si no existiera). Un comercial ni siquiera carga la cotización y no se audita. Con un
     /// rol gerencial, cada intento sobre una cotización que existe queda en la auditoría con <paramref name="herramienta"/>, permitido o
-    /// no; si la regional no se puede comprobar (sin regional o fuente caída) se niega (fail-closed) con el código en <c>motivo</c>.
+    /// no; si la regional no se puede comprobar (sin regional o fuente caída) se niega (fail-closed) con el código en <c>motivo</c>. Con
+    /// <paramref name="tipo"/>, una cotización de otro tipo (p. ej. un folio spot pedido como licitación) es <c>null</c> ANTES de auditar:
+    /// quien llama la iba a responder 404, así que no queda un "permitido" falso en la auditoría.
     /// </summary>
-    Task<clsCotizacionSolicitud?> ObtenerAsync(Guid usuarioId, string folio, string herramienta, CancellationToken cancellationToken = default);
+    Task<clsCotizacionSolicitud?> ObtenerAsync(
+        Guid usuarioId, string folio, string herramienta, TipoSolicitud? tipo = null, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Implementación de <see cref="IClsAccesoCotizacionAjena"/>.</summary>
@@ -35,7 +38,8 @@ public sealed class clsAccesoCotizacionAjenaService(
     IClsRegionalUsuario regionales,
     IClsAuditoriaService auditoria) : IClsAccesoCotizacionAjena
 {
-    public async Task<clsCotizacionSolicitud?> ObtenerAsync(Guid usuarioId, string folio, string herramienta, CancellationToken cancellationToken = default)
+    public async Task<clsCotizacionSolicitud?> ObtenerAsync(
+        Guid usuarioId, string folio, string herramienta, TipoSolicitud? tipo = null, CancellationToken cancellationToken = default)
     {
         // Solo para el usuario de la petición: el rol sale de su sesión.
         if (usuario.UsuarioId != usuarioId || usuario.Rol is not { } rol || !rol.EsGerencial() || string.IsNullOrWhiteSpace(folio))
@@ -44,7 +48,8 @@ public sealed class clsAccesoCotizacionAjenaService(
         }
 
         var cotizacion = await cotizaciones.ObtenerPorFolioAsync(folio, cancellationToken);
-        if (cotizacion is null || cotizacion.EsDe(usuarioId))
+        // #201 (validación): el tipo se filtra antes de auditar; si no, un folio spot pedido como licitación quedaba "permitido" y luego 404.
+        if (cotizacion is null || cotizacion.EsDe(usuarioId) || (tipo is not null && cotizacion.TipoSolicitud != tipo))
         {
             return null;
         }

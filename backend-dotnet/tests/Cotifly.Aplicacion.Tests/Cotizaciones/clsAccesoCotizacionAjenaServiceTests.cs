@@ -8,6 +8,7 @@ using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Aplicacion.Identidad.Services;
 using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Dominio.Identidad;
+using Cotifly.Pruebas.Comun;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -46,7 +47,7 @@ public sealed class clsAccesoCotizacionAjenaServiceTests
         var (_, dueno) = Registrar("dueno", regionalDueno, RolInterno.Comercial);
         var cotizacion = Cotizacion("LIC-1", dueno.Id);
 
-        var resultado = await Acceso(gerente).ObtenerAsync(gerente.UsuarioId!.Value, "LIC-1", Herramienta, Ct);
+        var resultado = await Acceso(gerente).ObtenerAsync(gerente.UsuarioId!.Value, "LIC-1", Herramienta, cancellationToken: Ct);
 
         resultado.Should().BeSameAs(permitido ? cotizacion : null);
         await _auditoria.Received(1).RegistrarAsync(Herramienta, Arg.Any<object>(), Arg.Any<object>(), permitido, Arg.Any<int>(), null);
@@ -59,7 +60,7 @@ public sealed class clsAccesoCotizacionAjenaServiceTests
         var (_, dueno) = Registrar("dueno", "Occidente", RolInterno.Comercial);
         Cotizacion("LIC-2", dueno.Id);
 
-        var resultado = await Acceso(gerente).ObtenerAsync(gerente.UsuarioId!.Value, "LIC-2", Herramienta, Ct);
+        var resultado = await Acceso(gerente).ObtenerAsync(gerente.UsuarioId!.Value, "LIC-2", Herramienta, cancellationToken: Ct);
 
         resultado.Should().BeNull();
         await _auditoria.Received(1).RegistrarAsync(
@@ -81,7 +82,7 @@ public sealed class clsAccesoCotizacionAjenaServiceTests
         _directorio.ListarNombresUsuarioAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).ThrowsAsync(new TimeoutException());
         Cotizacion("LIC-3", dueno.Id);
 
-        var resultado = await Acceso(gerente).ObtenerAsync(gerente.UsuarioId!.Value, "LIC-3", Herramienta, Ct);
+        var resultado = await Acceso(gerente).ObtenerAsync(gerente.UsuarioId!.Value, "LIC-3", Herramienta, cancellationToken: Ct);
 
         resultado.Should().BeNull();
         await _auditoria.Received(1).RegistrarAsync(
@@ -100,7 +101,7 @@ public sealed class clsAccesoCotizacionAjenaServiceTests
         var (_, dueno) = Registrar("comercial.norte", "Norte", RolInterno.Comercial);
         var cotizacion = Cotizacion("LIC-4", dueno.Id);
 
-        var resultado = await Acceso(director).ObtenerAsync(director.UsuarioId!.Value, "LIC-4", Herramienta, Ct);
+        var resultado = await Acceso(director).ObtenerAsync(director.UsuarioId!.Value, "LIC-4", Herramienta, cancellationToken: Ct);
 
         resultado.Should().BeSameAs(cotizacion);
         await _auditoria.Received(1).RegistrarAsync(
@@ -114,7 +115,7 @@ public sealed class clsAccesoCotizacionAjenaServiceTests
         var (_, dueno) = Registrar("ana", "Occidente", RolInterno.Comercial);
         Cotizacion("LIC-5", dueno.Id);
 
-        var resultado = await Acceso(comercial).ObtenerAsync(comercial.UsuarioId!.Value, "LIC-5", Herramienta, Ct);
+        var resultado = await Acceso(comercial).ObtenerAsync(comercial.UsuarioId!.Value, "LIC-5", Herramienta, cancellationToken: Ct);
 
         resultado.Should().BeNull();
         await _cotizaciones.DidNotReceiveWithAnyArgs().ObtenerPorFolioAsync(default!, Ct);
@@ -129,12 +130,48 @@ public sealed class clsAccesoCotizacionAjenaServiceTests
         Cotizacion("LIC-6", dueno.Id);
         Cotizacion("LIC-7", usuarioDirector.Id);
 
-        var deOtro = await Acceso(director).ObtenerAsync(Guid.NewGuid(), "LIC-6", Herramienta, Ct);
-        var propia = await Acceso(director).ObtenerAsync(usuarioDirector.Id, "LIC-7", Herramienta, Ct);
-        var inexistente = await Acceso(director).ObtenerAsync(usuarioDirector.Id, "LIC-X", Herramienta, Ct);
-        var vacia = await Acceso(director).ObtenerAsync(usuarioDirector.Id, " ", Herramienta, Ct);
+        var deOtro = await Acceso(director).ObtenerAsync(Guid.NewGuid(), "LIC-6", Herramienta, cancellationToken: Ct);
+        var propia = await Acceso(director).ObtenerAsync(usuarioDirector.Id, "LIC-7", Herramienta, cancellationToken: Ct);
+        var inexistente = await Acceso(director).ObtenerAsync(usuarioDirector.Id, "LIC-X", Herramienta, cancellationToken: Ct);
+        var vacia = await Acceso(director).ObtenerAsync(usuarioDirector.Id, " ", Herramienta, cancellationToken: Ct);
 
         new[] { deOtro, propia, inexistente, vacia }.Should().AllSatisfy(c => c.Should().BeNull());
+        await _auditoria.DidNotReceiveWithAnyArgs().RegistrarAsync(default!, default!, default!, default, default, default);
+    }
+
+    [Theory]
+    [InlineData(RolInterno.GerenteComercial)]
+    [InlineData(RolInterno.Director)]
+    public async Task UnFolioDeOtroTipoNoSeAuditaComoPermitidoNiSeDevuelve(RolInterno rol)
+    {
+        // #201 (validación): el folio spot de su regional pedido como licitación respondía 404 pero quedaba auditado como "permitido".
+        var (gerencial, _) = Registrar("gerencial", "Occidente", rol);
+        var (_, dueno) = Registrar("dueno", "Occidente", RolInterno.Comercial);
+        var spot = Cotizacion("SPOT-1", dueno.Id, TipoSolicitud.Spot);
+        var licitacion = Cotizacion("LIC-8", dueno.Id, TipoSolicitud.Licitacion);
+
+        var comoLicitacion = await Acceso(gerencial).ObtenerAsync(gerencial.UsuarioId!.Value, "SPOT-1", Herramienta, TipoSolicitud.Licitacion, Ct);
+        _auditoria.ClearReceivedCalls();
+        var sinFiltro = await Acceso(gerencial).ObtenerAsync(gerencial.UsuarioId!.Value, "SPOT-1", Herramienta, cancellationToken: Ct);
+        var deSuTipo = await Acceso(gerencial).ObtenerAsync(gerencial.UsuarioId!.Value, "LIC-8", Herramienta, TipoSolicitud.Licitacion, Ct);
+
+        comoLicitacion.Should().BeNull();
+        sinFiltro.Should().BeSameAs(spot);
+        deSuTipo.Should().BeSameAs(licitacion);
+        await _auditoria.Received(2).RegistrarAsync(Herramienta, Arg.Any<object>(), Arg.Any<object>(), true, Arg.Any<int>(), null);
+        await _auditoria.DidNotReceive().RegistrarAsync(Herramienta, Arg.Any<object>(), Arg.Any<object>(), false, Arg.Any<int>(), null);
+    }
+
+    [Fact]
+    public async Task UnFolioDeOtroTipoNoSeAuditaNiSiquieraNegado()
+    {
+        var (gerente, _) = Registrar("gerente.norte", "Norte", RolInterno.GerenteComercial);
+        var (_, dueno) = Registrar("dueno", "Occidente", RolInterno.Comercial);
+        Cotizacion("SPOT-2", dueno.Id, TipoSolicitud.Spot);
+
+        var resultado = await Acceso(gerente).ObtenerAsync(gerente.UsuarioId!.Value, "SPOT-2", Herramienta, TipoSolicitud.Licitacion, Ct);
+
+        resultado.Should().BeNull();
         await _auditoria.DidNotReceiveWithAnyArgs().RegistrarAsync(default!, default!, default!, default, default, default);
     }
 
@@ -149,9 +186,16 @@ public sealed class clsAccesoCotizacionAjenaServiceTests
         return (new clsUsuarioFalso(usuarioWeb.Id, rol), usuarioWeb);
     }
 
-    private clsCotizacionSolicitud Cotizacion(string folio, Guid dueno)
+    private clsCotizacionSolicitud Cotizacion(string folio, Guid dueno, TipoSolicitud? tipo = null)
     {
         var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = folio, UsuarioId = dueno }).Valor;
+        if (tipo is { } t)
+        {
+            cotizacion.RegistrarSolicitudLicitacion(
+                new clsEncabezadoSolicitudCosteo { Tipo = t, Deadline = clsSolicitudCosteoMuestra.Deadline },
+                [clsSolicitudCosteoMuestra.RutaCaptura()], null, 3);
+        }
+
         _cotizaciones.ObtenerPorFolioAsync(folio, Arg.Any<CancellationToken>()).Returns(cotizacion);
         return cotizacion;
     }
