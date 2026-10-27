@@ -136,7 +136,8 @@ GO
    Usuarios con más de una asignación activa (los que tendrán selector de rol con HU-040.2):
      SELECT usuarioId, COUNT(*) AS activas FROM dbo_cotifly.UsuariosRoles WHERE activo = 1 GROUP BY usuarioId HAVING COUNT(*) > 1;
 
-   Reversa (solo con una imagen anterior a HU-040.1; con ella, /health/ready vuelve a 503 "falta 16"). Volver a crear el índice
+   Reversa: solo DESPUÉS de volver a una imagen anterior a HU-040.1 (la de HU-040.1 o posterior queda en 503 "falta 16" sin la
+   columna, y su login falla al guardar el refresh). Volver a crear el índice
    exige antes dejar UNA asignación activa por usuario (la consulta anterior debe devolver 0 filas), si no el CREATE falla:
      ALTER TABLE dbo_cotifly.TokensRefresco DROP CONSTRAINT ck_tokensRefresco_rolSesion;
      ALTER TABLE dbo_cotifly.TokensRefresco DROP COLUMN rolSesion;

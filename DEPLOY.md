@@ -348,10 +348,16 @@ Habilitar el multi-rol de una persona que ya existe (Datos, con aprobación; sus
 
 ```sql
 DECLARE @u UNIQUEIDENTIFIER = (SELECT id FROM dbo_cotifly.UsuariosWeb WHERE nombreUsuario = N'<NOMBREUSUARIO>');
+DECLARE @r INT = (SELECT id FROM dbo_cotifly.Roles WHERE codigo = N'<rol>' AND activo = 1);
+-- Si ya tuvo ese rol (fila inactiva por uq_usuariosRoles_usuarioId_rolId), se reactiva; si no, se agrega.
+UPDATE dbo_cotifly.UsuariosRoles SET activo = 1 WHERE usuarioId = @u AND rolId = @r AND activo = 0;
 INSERT INTO dbo_cotifly.UsuariosRoles (usuarioId, rolId)
-    SELECT @u, r.id FROM dbo_cotifly.Roles r
-    WHERE r.codigo = N'<rol>' AND NOT EXISTS (SELECT 1 FROM dbo_cotifly.UsuariosRoles ur WHERE ur.usuarioId = @u AND ur.rolId = r.id);
+    SELECT @u, @r WHERE @u IS NOT NULL AND @r IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM dbo_cotifly.UsuariosRoles ur WHERE ur.usuarioId = @u AND ur.rolId = @r);
 ```
+
+Retirar un rol de una persona multi-rol: `UPDATE dbo_cotifly.UsuariosRoles SET activo = 0 WHERE usuarioId = @u AND rolId = @r;` (con
+#230, sus sesiones con ese rol dejan de renovarse: el refresh responde 401 `rol_externo_cambio`; el access vigente dura hasta que vence).
 
 ### 2.3 Auditoría de secretos en el repositorio (2026-09-28)
 
