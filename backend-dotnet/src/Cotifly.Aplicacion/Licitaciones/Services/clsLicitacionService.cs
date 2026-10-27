@@ -602,6 +602,7 @@ public sealed class clsLicitacionService(
             Cotizaciones.DTOs.clsCubicacionRutaResumen.De(cotizacion))
         {
             LineasRechazadas = ordenadas.Count(l => l.Rechazada),
+            FinalizadaAt = cotizacion.FinalizadaAt?.ToUniversalTime(),
         };
     }
 

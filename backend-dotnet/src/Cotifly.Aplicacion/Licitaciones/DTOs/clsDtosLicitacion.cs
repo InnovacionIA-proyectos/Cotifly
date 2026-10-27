@@ -159,6 +159,12 @@ public sealed record clsLicitacion(
     /// ni suman en <c>precio_final</c>.
     /// </summary>
     public int LineasRechazadas { get; init; }
+
+    /// <summary>
+    /// HU-036.2 (#206, DEF-1027-2 de #226): cuándo el comercial finalizó la licitación, en UTC; <c>null</c> sin finalizar. Siempre se
+    /// serializa, como en <c>CotizacionResumen</c> y <c>CosteoCotizacion</c>.
+    /// </summary>
+    public DateTimeOffset? FinalizadaAt { get; init; }
 }
 
 /// <summary>

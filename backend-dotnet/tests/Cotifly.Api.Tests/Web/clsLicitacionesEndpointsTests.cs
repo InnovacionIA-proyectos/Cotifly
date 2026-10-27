@@ -174,6 +174,34 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
         completa.GetRawText().Should().NotContain("850000").And.NotContain("costo");
     }
 
+    /// <summary>
+    /// DEF-1027-2 (#226, HU-036.2): la vista de la licitación (la del polling) trae <c>finalizada_at</c> siempre, <c>null</c> sin finalizar
+    /// y, tras <c>POST .../finalizar</c>, la misma fecha que el resumen y el costeo, para habilitar "Finalizar" sin pedir el costeo.
+    /// </summary>
+    [Fact]
+    public async Task LaVistaDeLaLicitacionTraeFinalizadaAtNullSinFinalizarYLaFechaAlFinalizar()
+    {
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var folio = (await CrearAsync(sesion, clsPliegoMuestra.Lineas(), clsPliegoMuestra.Excel(), HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+        var solicitud = _nexo.SolicitudesCreadas[^1];
+        _nexo.CostearLinea(solicitud, 0, 1_000_000m);
+        _nexo.CostearLinea(solicitud, 1, 2_000_000m);
+        _nexo.CostearLinea(solicitud, 2, 850_000m);
+        await _api.ProcesarPollingAsync(folio);
+
+        var antes = await VistaAsync(sesion, folio);
+        antes.TryGetProperty("finalizada_at", out var sinFinalizar).Should().BeTrue("finalizada_at siempre se serializa");
+        sinFinalizar.ValueKind.Should().Be(JsonValueKind.Null);
+
+        using var costeo = await _api.EnviarAsync(HttpMethod.Get, $"/web/cotizaciones/{folio}/costeo", sesion.Access);
+        using var finalizar = await _api.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{folio}/finalizar", sesion.Access, null, costeo.Headers.ETag?.Tag);
+        var finalizadaAt = (await VerificarContratoAsync(finalizar, "/web/cotizaciones/{folio}/finalizar", HttpMethod.Post, HttpStatusCode.OK))
+            .GetProperty("finalizada_at").GetString();
+        finalizadaAt.Should().NotBeNullOrEmpty();
+
+        (await VistaAsync(sesion, folio)).GetProperty("finalizada_at").GetString().Should().Be(finalizadaAt);
+    }
+
     [Fact]
     public async Task ConMasDeDiezLineasNexoCosteaEnSegundoPlanoYElPollingLasSigue()
     {
