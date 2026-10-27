@@ -62,6 +62,42 @@ de Cabina de Fletes.
 - Sin script de base de datos ni configuración nueva. El cupo de 4 lecturas es por réplica.
 - Un Excel generado por una herramienta que no guarda los valores de las fórmulas trae esas celdas vacías.
 
+## HU-035.2 (#213): el pliego de licitación con los mismos controles
+
+La auditoría de la #202 encontró que `POST /web/licitaciones/analizar-excel` abría el pliego con ClosedXML
+(`clsLectorExcelLicitacionClosedXml`, para `filas_excel`) sin estos controles: una bomba zip o un libro denso de unos 186 KB (más de
+1 GB y unos 15 s de CPU por lectura) podían tumbar el pod, y el archivo se enviaba a NEXO antes de leerlo en Cotifly.
+
+1. **Pieza compartida `clsLecturaExcelAcotada` (Infraestructura/Comun, singleton).** Sale del lector de mercancías y la usan los dos
+   lectores: `VerificarPaquete` (firma `PK`, 1000 entradas, el libro (`xl/workbook.xml` o, si otra herramienta lo nombró distinto, la
+   parte a la que apunta la relación `officeDocument` de `_rels/.rels`, como lo abre ClosedXML), 64 MB descomprimidos contados de verdad),
+   `VerificarElementos` (1.000.000 de elementos XML contados en flujo, sin DTD ni resolutor) y `LeerAsync<T>`, que dentro del cupo
+   corre las dos verificaciones y después la lectura con ClosedXML del llamador. Mismos códigos y motivos (`EXCEL_INVALIDO` y
+   `ARCHIVO_DEMASIADO_GRANDE` con `detalle.motivo`); sin códigos nuevos.
+2. **Un solo cupo de 4 lecturas por proceso**, compartido por el Excel de mercancías y el pliego: el riesgo es la memoria del proceso,
+   que es una sola. Lleno 15 s: 503 `SERVICIO_OCUPADO` con `Retry-After`. La cancelación libera el cupo.
+3. **Orden del flujo de `POST /web/licitaciones/analizar-excel`:** validación del nombre y el tamaño → **lectura local** (cupo,
+   controles y ubicación de las filas de las primeras 20 hojas con la regla de NEXO) → NEXO → cruce de `filas_excel` con las hojas de
+   NEXO → sugerencias del catálogo. Antes la lectura local iba después de NEXO y sus fallos se ignoraban. Ahora un rechazo de los
+   controles, el cupo lleno o un libro que ClosedXML no puede abrir (`LIBRO_ILEGIBLE`) responden **antes de NEXO**: NEXO nunca recibe
+   basura ni bombas, y como NEXO usa la misma versión de ClosedXML, un libro que Cotifly no abre tampoco lo habría leído NEXO. El libro
+   se lee una sola vez y el cupo se libera antes de llamar a NEXO (que puede tardar segundos), así una espera de NEXO no ocupa el
+   cupo. Se descartó leer después de NEXO (mandaría el archivo sin revisar) y verificar antes pero leer después (descomprime dos veces y
+   ocupa el cupo dos veces).
+4. **`POST /web/licitaciones`** usa el mismo lector para la hoja del archivo: también pasa por los controles. Con archivo la hoja es
+   obligatoria, así que todo original que se guarda (y que la exportación abre después con ClosedXML) pasó los controles.
+5. **Tope de hojas** en el análisis: `filas_excel` se calcula para las primeras 20 hojas (las mismas del Excel de mercancías); las
+   demás siguen en el análisis de NEXO, sin `filas_excel`.
+6. **Exportación (`GET /web/licitaciones/{folio}/excel`).** Los originales guardados antes de este cambio nunca pasaron los
+   controles, y `clsExportadorExcelLicitacionClosedXml` los abría con ClosedXML sin ellos. El exportador también usa
+   `clsLecturaExcelAcotada.LeerAsync` (el puerto `IClsExportadorExcelLicitacion` pasa a `GenerarAsync`): controles y cupo compartido
+   antes de abrir el original. Un original que no los pasa responde **400** `EXCEL_INVALIDO` o `ARCHIVO_DEMASIADO_GRANDE` con
+   `detalle.motivo`, el mismo 400 que el contrato ya declaraba para un original ilegible (`EXCEL_INVALIDO`/`EXCEL_SIN_DATOS`): se
+   descartó un 409 o 422 porque cambiaría el estado HTTP de los errores ya documentados de este endpoint, y mapear `EXCEL_INVALIDO`
+   a 409 en general rompería los endpoints de subida. Un original que ClosedXML abre pero no puede recorrer o guardar es
+   `EXCEL_INVALIDO` (`LIBRO_ILEGIBLE`), no un 500. Con el cupo lleno, 503 `SERVICIO_OCUPADO` (nuevo en este endpoint). Sin original
+   no se abre nada del cliente y no se toma el cupo. Sin códigos nuevos.
+
 ## Pendientes
 
 | Pendiente | Dueño |
@@ -69,3 +105,5 @@ de Cabina de Fletes.
 | Visto bueno de la ruta (`/web/mercancias/analizar-excel`) y de reutilizar códigos con `detalle.motivo` en vez de códigos nuevos | Usuario |
 | Confirmar los topes (20 hojas, 50 columnas, 1000 filas, 64 MB descomprimidos, 1.000.000 de elementos XML, 4 simultáneos) con el uso real | Usuario / frontend |
 | Integrar el endpoint en la pantalla "Líneas de solicitud" | Frontend (`clientepro-frontend`) |
+| HU-035.2: visto bueno del cupo único (4 lecturas de Excel por proceso para los dos endpoints), del tope de 20 hojas para `filas_excel` y de rechazar antes de NEXO un libro que Cotifly no abre | Usuario |
+| HU-035.2: los originales de licitación guardados antes de este cambio que no pasen los controles ya no se exportan (400 con `detalle.motivo`, punto 6); si aparece alguno real, decidir si se exporta sin original | Usuario |

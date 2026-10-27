@@ -26,7 +26,6 @@ public sealed class clsExcelLicitacionTests : IDisposable
     private readonly clsNexoFalso _nexo = new();
     private readonly HttpClient _http;
     private readonly IClsUsuarioWebRepository _usuarios = Substitute.For<IClsUsuarioWebRepository>();
-    private readonly clsLectorExcelLicitacionClosedXml _lector = new();
 
     public clsExcelLicitacionTests()
     {
@@ -40,7 +39,7 @@ public sealed class clsExcelLicitacionTests : IDisposable
     [Fact]
     public void LasFilasDeDatosSaltanLaPortadaElEncabezadoYLasFilasVacias()
     {
-        var filas = _lector.FilasDeDatos(clsPliegoMuestra.Excel(4), clsPliegoMuestra.Hoja, TestContext.Current.CancellationToken);
+        var filas = clsLectorExcelLicitacionClosedXml.FilasDeDatos(clsPliegoMuestra.Excel(4), clsPliegoMuestra.Hoja, TestContext.Current.CancellationToken);
 
         filas.EsExitoso.Should().BeTrue();
         filas.Valor.Should().Equal(Enumerable.Range(0, 4).Select(clsPliegoMuestra.FilaExcel), "la fila 6 está vacía y no cuenta, como en Nexo");
@@ -63,14 +62,14 @@ public sealed class clsExcelLicitacionTests : IDisposable
         using var memoria = new MemoryStream();
         libro.SaveAs(memoria);
 
-        _lector.FilasDeDatos(memoria.ToArray(), "H", TestContext.Current.CancellationToken).Valor.Should().Equal(3);
+        clsLectorExcelLicitacionClosedXml.FilasDeDatos(memoria.ToArray(), "H", TestContext.Current.CancellationToken).Valor.Should().Equal(3);
     }
 
     [Fact]
     public void UnArchivoIlegibleOUnaHojaInexistenteSonErroresDeNegocio()
     {
-        _lector.FilasDeDatos([1, 2, 3], "Pliego", TestContext.Current.CancellationToken).Error.Codigo.Should().Be(clsCodigosError.ExcelInvalido);
-        _lector.FilasDeDatos(clsPliegoMuestra.Excel(), "Otra", TestContext.Current.CancellationToken).Error.Codigo.Should().Be(clsCodigosError.ExcelSinDatos);
+        clsLectorExcelLicitacionClosedXml.FilasDeDatos([1, 2, 3], "Pliego", TestContext.Current.CancellationToken).Error.Codigo.Should().Be(clsCodigosError.ExcelInvalido);
+        clsLectorExcelLicitacionClosedXml.FilasDeDatos(clsPliegoMuestra.Excel(), "Otra", TestContext.Current.CancellationToken).Error.Codigo.Should().Be(clsCodigosError.ExcelSinDatos);
     }
 
     [Fact]
@@ -125,11 +124,11 @@ public sealed class clsExcelLicitacionTests : IDisposable
     [Fact]
     public void LasFilasDeDatosPorHojaTraenLasFilasDelExcelDeCadaHojaConEncabezado()
     {
-        var porHoja = _lector.FilasDeDatosPorHoja(clsPliegoMuestra.Excel(3), Ct);
+        var porHoja = clsLectorExcelLicitacionClosedXml.FilasDeDatosPorHoja(clsPliegoMuestra.Excel(3), Ct);
 
         porHoja.Valor.Keys.Should().Equal(clsPliegoMuestra.Hoja);
         porHoja.Valor[clsPliegoMuestra.Hoja].Should().Equal(4, 5, 7);
-        _lector.FilasDeDatosPorHoja([1, 2, 3], Ct).Error.Codigo.Should().Be(clsCodigosError.ExcelInvalido);
+        clsLectorExcelLicitacionClosedXml.FilasDeDatosPorHoja([1, 2, 3], Ct).Error.Codigo.Should().Be(clsCodigosError.ExcelInvalido);
     }
 
     [Fact]
@@ -146,9 +145,9 @@ public sealed class clsExcelLicitacionTests : IDisposable
         using var memoria = new MemoryStream();
         libro.SaveAs(memoria);
 
-        var porHoja = _lector.FilasDeDatosPorHoja(memoria.ToArray(), Ct);
+        var porHoja = clsLectorExcelLicitacionClosedXml.FilasDeDatosPorHoja(memoria.ToArray(), Ct);
 
-        _lector.FilasDeDatos(memoria.ToArray(), "Combinadas", Ct).Error.Codigo.Should().Be(clsCodigosError.ExcelInvalido);
+        clsLectorExcelLicitacionClosedXml.FilasDeDatos(memoria.ToArray(), "Combinadas", Ct).Error.Codigo.Should().Be(clsCodigosError.ExcelInvalido);
         porHoja.EsExitoso.Should().BeTrue("una hoja con demasiadas combinadas solo queda fuera");
         porHoja.Valor.Keys.Should().Equal(clsPliegoMuestra.Hoja);
         porHoja.Valor[clsPliegoMuestra.Hoja].Should().Equal(4, 5, 7);

@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using Cotifly.Pruebas.Comun;
 using Cotifly.Pruebas.Web;
+using Microsoft.Extensions.DependencyInjection;
 using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 
 namespace Cotifly.Api.Tests.Web;
@@ -361,6 +362,156 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
         texto.Should().ContainEquivalentOf("Buenaventura").And.ContainEquivalentOf("Bogotá, D.C.").And.Contain("$1.176.474",
             "la licitación de una línea sale como pliego con su ruta (HU-021.6: con el nombre del catálogo de municipios)");
         texto.Should().NotContain("$1.000.003", "el flete de Nexo nunca va al PDF");
+    }
+
+    // ---- HU-035.2 (#213): el pliego pasa por los controles del Excel subido (los del Excel de mercancías) ANTES de Nexo.
+
+    public static TheoryData<string, string, string> PliegosMaliciosos() => new()
+    {
+        { "bomba zip", "ARCHIVO_DEMASIADO_GRANDE", "DESCOMPRIMIDO_EXCEDE_LIMITE" },
+        { "libro denso", "ARCHIVO_DEMASIADO_GRANDE", "DESCOMPRIMIDO_EXCEDE_LIMITE" },
+        { "xxe", "EXCEL_INVALIDO", "LIBRO_ILEGIBLE" },
+        { "xls renombrado", "EXCEL_INVALIDO", "CIFRADO_O_XLS" },
+        { "texto", "EXCEL_INVALIDO", "NO_ES_XLSX" },
+        { "zip sin libro", "EXCEL_INVALIDO", "SIN_LIBRO" },
+        { "libro ilegible", "EXCEL_INVALIDO", "LIBRO_ILEGIBLE" },
+    };
+
+    private static byte[] PliegoMalicioso(string caso) => caso switch
+    {
+        "bomba zip" => clsExcelMercanciasMuestra.BombaZip(),
+        "libro denso" => clsExcelMercanciasMuestra.Densa(4_000_000),
+        "xxe" => clsExcelMercanciasMuestra.ConEntidadExterna(),
+        "xls renombrado" => [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1, 0, 0, 0, 0],
+        "texto" => clsExcelMercanciasMuestra.TextoRenombrado(),
+        "zip sin libro" => clsExcelMercanciasMuestra.ZipSinLibro(),
+        "libro ilegible" => clsExcelMercanciasMuestra.LibroIlegible(),
+        _ => throw new ArgumentOutOfRangeException(nameof(caso), caso, "Caso desconocido."),
+    };
+
+    private void NexoNoRecibioElArchivo(string caso)
+    {
+        _nexo.UltimoArchivoAnalizado.Should().BeNull(caso);
+        _nexo.Peticiones.Should().NotContain(p => p.Metodo == HttpMethod.Post, "un rechazo de los controles nunca sale a Nexo ({0})", caso);
+    }
+
+    [Theory]
+    [MemberData(nameof(PliegosMaliciosos))]
+    public async Task UnPliegoMaliciosoSeRechazaEnElAnalisisAntesDeNexo(string caso, string codigo, string motivo)
+    {
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+
+        using var respuesta = await _api.EnviarContenidoAsync(HttpMethod.Post, "/web/licitaciones/analizar-excel", sesion.Access,
+            clsApiWebPruebas.Archivo(PliegoMalicioso(caso)));
+
+        var error = (await VerificarContratoAsync(respuesta, "/web/licitaciones/analizar-excel", HttpMethod.Post, HttpStatusCode.BadRequest))
+            .GetProperty("error");
+        error.GetProperty("codigo").GetString().Should().Be(codigo, caso);
+        error.GetProperty("detalle").GetProperty("motivo").GetString().Should().Be(motivo, caso);
+        NexoNoRecibioElArchivo(caso);
+    }
+
+    [Theory]
+    [InlineData("bomba zip", "ARCHIVO_DEMASIADO_GRANDE", "DESCOMPRIMIDO_EXCEDE_LIMITE")]
+    [InlineData("libro denso", "ARCHIVO_DEMASIADO_GRANDE", "DESCOMPRIMIDO_EXCEDE_LIMITE")]
+    [InlineData("xls renombrado", "EXCEL_INVALIDO", "CIFRADO_O_XLS")]
+    public async Task UnaLicitacionConUnPliegoMaliciosoSeRechazaSinGuardarNiLlamarANexo(string caso, string codigo, string motivo)
+    {
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+
+        using var respuesta = await _api.EnviarContenidoAsync(HttpMethod.Post, "/web/licitaciones", sesion.Access,
+            clsApiWebPruebas.Licitacion(clsPliegoMuestra.Json(clsCosteoEndpointsTests.Nit, clsPliegoMuestra.Lineas()), PliegoMalicioso(caso)));
+
+        var error = (await VerificarContratoAsync(respuesta, "/web/licitaciones", HttpMethod.Post, HttpStatusCode.BadRequest)).GetProperty("error");
+        error.GetProperty("codigo").GetString().Should().Be(codigo, caso);
+        error.GetProperty("detalle").GetProperty("motivo").GetString().Should().Be(motivo, caso);
+        _nexo.SolicitudesCreadas.Should().BeEmpty();
+        (await EscalarAsync($"SELECT CAST(COUNT(*) AS nvarchar(10)) FROM dbo_cotifly.CotizacionesSolicitud WHERE usuarioId = '{sesion.UsuarioId}'")).Should().Be("0");
+    }
+
+    [Fact]
+    public async Task ConElCupoDeLecturasLlenoElAnalisisEs503ServicioOcupadoSinLlamarANexo()
+    {
+        using var api = clsApiWebPruebas.ConNexo(_entorno.BaseDatos, _nexo,
+            servicios: s => s.AddSingleton<Cotifly.Aplicacion.Licitaciones.Interfaces.IClsLectorExcelLicitacion, clsLectorLicitacionOcupado>());
+        var sesion = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+
+        using var respuesta = await api.EnviarContenidoAsync(HttpMethod.Post, "/web/licitaciones/analizar-excel", sesion.Access,
+            clsApiWebPruebas.Archivo(clsPliegoMuestra.Excel()));
+
+        (await VerificarContratoAsync(respuesta, "/web/licitaciones/analizar-excel", HttpMethod.Post, HttpStatusCode.ServiceUnavailable))
+            .GetProperty("error").GetProperty("codigo").GetString().Should().Be("SERVICIO_OCUPADO");
+        respuesta.Headers.RetryAfter.Should().NotBeNull("el frontend reintenta tras Retry-After");
+        NexoNoRecibioElArchivo("cupo lleno");
+    }
+
+    /// <summary>
+    /// HU-035.2 (#213), validación: un original guardado ANTES de los controles (aquí, reemplazado en la base) que no los pasa no tumba
+    /// la exportación: 400 con el código y el motivo de la lectura, nunca un 500 ni un cuelgue.
+    /// </summary>
+    [Theory]
+    [InlineData("bomba zip", "ARCHIVO_DEMASIADO_GRANDE", "DESCOMPRIMIDO_EXCEDE_LIMITE")]
+    [InlineData("libro denso", "ARCHIVO_DEMASIADO_GRANDE", "DESCOMPRIMIDO_EXCEDE_LIMITE")]
+    [InlineData("xxe", "EXCEL_INVALIDO", "LIBRO_ILEGIBLE")]
+    [InlineData("xls renombrado", "EXCEL_INVALIDO", "CIFRADO_O_XLS")]
+    public async Task LaExportacionDeUnOriginalGuardadoQueNoPasaLosControlesEs400ConSuMotivo(string caso, string codigo, string motivo)
+    {
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var folio = (await CrearAsync(sesion, clsPliegoMuestra.Lineas(), clsPliegoMuestra.Excel(), HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+        var malicioso = PliegoMalicioso(caso);
+        await clsBaseDatosPruebas.EjecutarAsync(_entorno.BaseDatos.CadenaCotifly, $"""
+            UPDATE a SET contenido = 0x{Convert.ToHexString(malicioso)}, tamanoBytes = {malicioso.Length}
+            FROM dbo_cotifly.CotizacionArchivosLicitacion a JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = a.cotizacionId
+            WHERE c.folio = '{folio}'
+            """);
+
+        using var respuesta = await _api.EnviarAsync(HttpMethod.Get, $"/web/licitaciones/{folio}/excel", sesion.Access);
+
+        var error = (await VerificarContratoAsync(respuesta, "/web/licitaciones/{folio}/excel", HttpMethod.Get, HttpStatusCode.BadRequest))
+            .GetProperty("error");
+        error.GetProperty("codigo").GetString().Should().Be(codigo, caso);
+        error.GetProperty("detalle").GetProperty("motivo").GetString().Should().Be(motivo, caso);
+    }
+
+    [Fact]
+    public async Task ConElCupoDeLecturasLlenoLaExportacionEs503ServicioOcupado()
+    {
+        using var api = clsApiWebPruebas.ConNexo(_entorno.BaseDatos, _nexo,
+            servicios: s => s.AddSingleton<Cotifly.Aplicacion.Licitaciones.Interfaces.IClsExportadorExcelLicitacion, clsExportadorOcupado>());
+        var sesion = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        using var alta = await api.EnviarContenidoAsync(HttpMethod.Post, "/web/licitaciones", sesion.Access,
+            clsApiWebPruebas.Licitacion(clsPliegoMuestra.Json(clsCosteoEndpointsTests.Nit, clsPliegoMuestra.Lineas()), clsPliegoMuestra.Excel()));
+        var folio = (await VerificarContratoAsync(alta, "/web/licitaciones", HttpMethod.Post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+
+        using var respuesta = await api.EnviarAsync(HttpMethod.Get, $"/web/licitaciones/{folio}/excel", sesion.Access);
+
+        (await VerificarContratoAsync(respuesta, "/web/licitaciones/{folio}/excel", HttpMethod.Get, HttpStatusCode.ServiceUnavailable))
+            .GetProperty("error").GetProperty("codigo").GetString().Should().Be("SERVICIO_OCUPADO");
+        respuesta.Headers.RetryAfter.Should().NotBeNull("el frontend reintenta tras Retry-After");
+    }
+
+    /// <summary>Exportador con el cupo siempre lleno (como el real cuando 4 lecturas no se liberan en 15 s).</summary>
+    private sealed class clsExportadorOcupado : Cotifly.Aplicacion.Licitaciones.Interfaces.IClsExportadorExcelLicitacion
+    {
+        public Task<Cotifly.Dominio.Comun.clsResultado<byte[]>> GenerarAsync(
+            Cotifly.Aplicacion.Licitaciones.DTOs.clsExportacionLicitacion datos, CancellationToken cancellationToken = default) =>
+            Task.FromResult<Cotifly.Dominio.Comun.clsResultado<byte[]>>(
+                new Cotifly.Dominio.Comun.clsErrorDominio(Cotifly.Dominio.Comun.clsCodigosError.ServicioOcupado, "Ocupado."));
+    }
+
+    /// <summary>Lector con el cupo siempre lleno (como el real cuando 4 lecturas no se liberan en 15 s).</summary>
+    private sealed class clsLectorLicitacionOcupado : Cotifly.Aplicacion.Licitaciones.Interfaces.IClsLectorExcelLicitacion
+    {
+        private static readonly Cotifly.Dominio.Comun.clsErrorDominio _ocupado =
+            new(Cotifly.Dominio.Comun.clsCodigosError.ServicioOcupado, "Ocupado.");
+
+        public Task<Cotifly.Dominio.Comun.clsResultado<IReadOnlyList<int>>> FilasDeDatosAsync(
+            byte[] contenido, string hoja, CancellationToken cancellationToken = default) =>
+            Task.FromResult<Cotifly.Dominio.Comun.clsResultado<IReadOnlyList<int>>>(_ocupado);
+
+        public Task<Cotifly.Dominio.Comun.clsResultado<IReadOnlyDictionary<string, IReadOnlyList<int>>>> FilasDeDatosPorHojaAsync(
+            byte[] contenido, CancellationToken cancellationToken = default) =>
+            Task.FromResult<Cotifly.Dominio.Comun.clsResultado<IReadOnlyDictionary<string, IReadOnlyList<int>>>>(_ocupado);
     }
 
     private async Task<JsonElement> CrearAsync(clsSesionPrueba sesion, object[] lineas, byte[] excel, HttpStatusCode esperado)

@@ -16,7 +16,6 @@ public sealed class clsLectorExcelAcotadoTests
 {
     private const long MemoriaMaxima = 400L * 1024 * 1024;
     private static readonly TimeSpan _tiempoMaximo = TimeSpan.FromSeconds(10);
-    private readonly clsLectorExcelLicitacionClosedXml _lector = new();
 
     /// <summary>Agrega a la hoja del pliego una combinada (con valor en su primera celda) o una celda lejana, editando el XML.</summary>
     private static byte[] Malicioso(string? combinada = null, string? celdaLejana = null)
@@ -57,7 +56,7 @@ public sealed class clsLectorExcelAcotadoTests
         GC.Collect();
         var antes = GC.GetAllocatedBytesForCurrentThread();
         var reloj = Stopwatch.StartNew();
-        var resultado = _lector.FilasDeDatos(archivo, clsPliegoMuestra.Hoja, TestContext.Current.CancellationToken);
+        var resultado = clsLectorExcelLicitacionClosedXml.FilasDeDatos(archivo, clsPliegoMuestra.Hoja, TestContext.Current.CancellationToken);
         reloj.Stop();
         return (resultado, reloj.Elapsed, GC.GetAllocatedBytesForCurrentThread() - antes);
     }
@@ -98,7 +97,7 @@ public sealed class clsLectorExcelAcotadoTests
         using var cancelado = new CancellationTokenSource();
         cancelado.Cancel();
 
-        var leer = () => _lector.FilasDeDatos(clsPliegoMuestra.Excel(3), clsPliegoMuestra.Hoja, cancelado.Token);
+        var leer = () => clsLectorExcelLicitacionClosedXml.FilasDeDatos(clsPliegoMuestra.Excel(3), clsPliegoMuestra.Hoja, cancelado.Token);
 
         leer.Should().Throw<OperationCanceledException>();
     }
@@ -122,7 +121,7 @@ public sealed class clsLectorExcelAcotadoTests
         };
 
         var nexo = clsAnalizadorNexoReferencia.Analizar(archivo).Single(h => h.Nombre == hoja);
-        var filas = _lector.FilasDeDatos(archivo, hoja, TestContext.Current.CancellationToken);
+        var filas = clsLectorExcelLicitacionClosedXml.FilasDeDatos(archivo, hoja, TestContext.Current.CancellationToken);
 
         filas.EsExitoso.Should().BeTrue();
         filas.Valor.Should().HaveCount(nexo.Filas.Count);

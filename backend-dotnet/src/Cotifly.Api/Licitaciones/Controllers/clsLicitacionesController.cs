@@ -148,12 +148,15 @@ public sealed class clsLicitacionesController(
     /// <summary>
     /// 200 xlsx: el Excel original del cliente con las columnas de precio final, estado, servicios conexos y camiones (HU-011.3, HU-023.5),
     /// más las hojas "Resumen Cotifly" y "Camiones Cotifly"; sin original, una hoja con los campos mapeados. Nunca trae costos de Nexo. 404
-    /// si no es suya o no es licitación.
+    /// si no es suya o no es licitación. HU-035.2 (#213): el original guardado pasa por los controles del Excel subido (400
+    /// <c>EXCEL_INVALIDO</c> o <c>ARCHIVO_DEMASIADO_GRANDE</c> con <c>detalle.motivo</c>) y por el cupo de lecturas (503
+    /// <c>SERVICIO_OCUPADO</c> con <c>Retry-After</c>).
     /// </summary>
     [HttpGet("licitaciones/{folio}/excel")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<clsErrorWeb>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> Exportar(string folio, CancellationToken cancellationToken)
     {
         var resultado = await licitaciones.ExportarAsync(UsuarioId, folio, cancellationToken);

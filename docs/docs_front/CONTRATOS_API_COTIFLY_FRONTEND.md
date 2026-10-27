@@ -2342,6 +2342,10 @@ Analiza el Excel del pliego para mapear sus columnas. No guarda nada.
 
 - **Rol:** ambos. **Cuerpo:** `multipart/form-data` con la parte `archivo` (`.xlsx` o `.xlsm`, hasta unos 9,9 MB). Límite del cuerpo
   completo: 12 MB.
+- **Controles del archivo (HU-035.2, #213):** antes de enviarlo a NEXO, Cotifly revisa el archivo con los mismos controles del Excel de
+  mercancías (4.4.11): un archivo corrupto o malicioso (bomba zip, libro con millones de celdas, entidad externa, `.xls` antiguo o
+  cifrado renombrado) es 400 `EXCEL_INVALIDO` o `ARCHIVO_DEMASIADO_GRANDE` con `detalle.motivo` y **nunca llega a NEXO**. Si Cotifly ya
+  analiza 4 archivos (de licitación o de mercancías) y el cupo no se libera en 15 s: 503 `SERVICIO_OCUPADO` con `Retry-After`.
 
 ```json
 {
@@ -2368,10 +2372,10 @@ Analiza el Excel del pliego para mapear sus columnas. No guarda nada.
 | HTTP | Código | UI |
 |---|---|---|
 | 200 | `AnalisisExcel` | Pantalla de mapeo. Mostrar al comercial `filas_excel[i]` (número de fila del Excel), no el índice. Las mercancías con `sugerido = true` se muestran como sugeridas: el comercial las confirma o las cambia. Con `catalogo_mercancias_disponible = false` no hay sugerencias |
-| 400 | `ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE`, `EXCEL_INVALIDO`, `EXCEL_SIN_DATOS`, `COSTEO_NEXO_RECHAZADA` | Mostrar `mensaje` |
+| 400 | `ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE` (también `detalle.motivo = DESCOMPRIMIDO_EXCEDE_LIMITE`), `EXCEL_INVALIDO` (de Cotifly con `detalle.motivo`: `NO_ES_XLSX`, `CIFRADO_O_XLS`, `ZIP_INVALIDO`, `SIN_LIBRO`, `DEMASIADAS_ENTRADAS`, `LIBRO_ILEGIBLE`; o de NEXO), `EXCEL_SIN_DATOS`, `COSTEO_NEXO_RECHAZADA` | Mostrar `mensaje`. Con `CIFRADO_O_XLS`: "Guárdalo como .xlsx sin contraseña" |
 | 403 | `NEXO_SIN_PERMISO` | El comercial no tiene el rol requerido en NEXO |
 | 413 | `ErrorWeb` | Más de 12 MB |
-| 503 | `COSTEO_NEXO_NO_DISPONIBLE`, `COSTEO_NEXO_TIEMPO_AGOTADO` | Reintentar |
+| 503 | `COSTEO_NEXO_NO_DISPONIBLE`, `COSTEO_NEXO_TIEMPO_AGOTADO`; `SERVICIO_OCUPADO` (con `Retry-After`, HU-035.2) | Reintentar (con `SERVICIO_OCUPADO`, tras `Retry-After`) |
 
 #### 4.6.2 `POST /web/licitaciones`
 
@@ -2546,7 +2550,9 @@ Descarga el Excel original del cliente con columnas agregadas: `Precio final Cot
 |---|---|---|
 | 200 | Binario xlsx | Descargar |
 | 400 | `EXCEL_INVALIDO`, `EXCEL_SIN_DATOS` (JSON) | El original guardado ya no se puede leer |
+| 400 | `EXCEL_INVALIDO` o `ARCHIVO_DEMASIADO_GRANDE` con `detalle.motivo` (HU-035.2, #213) | El original guardado no pasa los controles del Excel subido (por ejemplo, uno guardado antes de esos controles): "No se puede exportar el Excel original de esta licitación" |
 | 404 | `ErrorWeb` (JSON) | No es tuya o no es licitación |
+| 503 | `SERVICIO_OCUPADO` con `Retry-After` (HU-035.2, #213) | Cupo de lecturas de Excel lleno: reintentar tras `Retry-After` |
 
 ### 4.7 PDF
 
@@ -3597,6 +3603,7 @@ fila_excel, campo, codigo, mensaje}`.
 | 58 | **Endurecimiento B (#199, E2E 2026-10-22).** (a) `POST .../resultado`: DEF-C-1, ante `RESULTADO_YA_DEFINIDO` Cotifly **lee** NEXO (ya no hace `POST /api/cotizaciones`); OBS-C-2, repetir el mismo resultado ya `sincronizado` es 200 sin cambios y sin llamar a NEXO; una `perdida` en `pendiente_costeo` con la solicitud inexistente en NEXO queda `solo_cotifly` (antes 400 `COSTEO_NEXO_SOLICITUD_NO_ENCONTRADA`); el 404 de NEXO sobre su cotización es **409 `COTIZACION_NEXO_NO_ENCONTRADA`** (antes el 404 "no es tuya"). (b) `PUT .../solicitud` (reemplazo): `detalle.motivo` es siempre `RECHAZO_NEXO_FALLIDO`, también en el 403 `NEXO_SIN_PERMISO` (antes el texto crudo "HTTP 403 …"). (c) `nueva_version` y re-solicitar `-vN`: con 503 `SERVICIO_OCUPADO` la original **no** cambia (su `If-Match` sigue valiendo). (d) `POST /web/licitaciones/{folio}/cubicacion/reintentar` con `usar_respaldo`: aplica el vehículo elegido (`VEHICULO_ELEGIDO_USADO` / `VEHICULO_ELEGIDO_INVALIDO`). (e) 403 `NEXO_SIN_PERMISO` declarado en `POST /web/solicitudes-costeo`, `POST /web/licitaciones` y `re-solicitar` (catálogo de conexos). (f) `FOLIO_INVALIDO` en el enum. (g) PDF de una **spot** de varias rutas: sin "licitación" ni "pliego". (h) `TARIFA_FUENTE_NO_DISPONIBLE`, `TARIFA_CONFIG_INVALIDA` y `MUNICIPIO_ARGUMENTO_INVALIDO` se borran también del backend (del enum ya salieron en la fila 57). (i) Se documenta la diferencia intencional de precios de la licitación (vista y Excel desglosados; PDF y correo con el valor final) | Cambia / Agrega | Manejar 409 `COTIZACION_NEXO_NO_ENCONTRADA` en el botón de resultado; leer siempre `detalle.motivo = RECHAZO_NEXO_FALLIDO` en la edición; tras `SERVICIO_OCUPADO` reintentar con el mismo `If-Match`; mostrar los avisos del vehículo tras "Enviar con respaldo"; tratar el 403 `NEXO_SIN_PERMISO` en captura, licitación y re-solicitud ("avisar a soporte"); no comparar la vista de la licitación con el PDF |
 | 59 | **HU-035.1 (#202, ADR-024): nuevo `POST /web/mercancias/analizar-excel`.** Lee en Cotifly, **sin NEXO**, el Excel de mercancías de una ruta y devuelve la grilla cruda `AnalisisExcelMercancias` (misma forma de `AnalisisExcel` más `total_hojas`, `hojas_truncadas` y, por hoja, `filas_truncadas`, `total_columnas`, `columnas_truncadas`, `celdas_recortadas` y `oculta`; `filas_excel` siempre viene; las hojas ocultas en Excel se leen igual y vienen con `oculta = true`). Celdas con formato estable (números con punto, fechas ISO, fórmulas con su valor guardado). Código de mercancía sugerido opcional, como en la licitación. Archivos corruptos o maliciosos: 400 `EXCEL_INVALIDO` o `ARCHIVO_DEMASIADO_GRANDE` con `detalle.motivo` (nunca 500); 503 `SERVICIO_OCUPADO` con el cupo lleno. Mismo límite de 12 MB que las licitaciones. Sin códigos de error nuevos | Agrega | Para "Importar mercancías desde Excel" en las líneas de la solicitud usar este endpoint (no `licitaciones/analizar-excel`); reutilizar la pantalla de mapeo; mostrar `filas_excel[i]` y avisar el truncado; preseleccionar una hoja visible y marcar las de `oculta = true`; leer `detalle.motivo` en el 400 |
 | 60 | **HU-034.1 (#201, parte B): ganancias y costeo por mes.** `PuntoSerieMensual` (`serie_mensual` de `GET /web/metricas/regional` y de `GET /web/metricas/comercial`) trae tres campos **nuevos** por mes: `costeo_total`, `costeo_ganadas` y `ganancias`, con la definición exacta de `IndicadoresMetricas` (COP o USD × TRM; sin las rutas rechazadas por la Mesa; valores de la versión vigente y lo ganado de la versión ganada; mes de Bogotá de la primera creación). La suma de los meses es exactamente el valor de `indicadores` del mismo periodo. Ningún campo existente cambia | Agrega | Reemplazar la maqueta de "Ganancias por mes" (barras con `ganancias` de cada punto) y de "Ganancias del mes actual vs. mes anterior" (puntos del mes en curso y del anterior, buscados por `mes`) por los datos reales; no recalcular ganancias en el frontend |
+| 61 | **HU-035.2 (#213): el Excel del pliego pasa por los controles del Excel de mercancías antes de NEXO.** `POST /web/licitaciones/analizar-excel` (y la lectura del archivo en `POST /web/licitaciones`) revisan el archivo con la misma pieza que `POST /web/mercancias/analizar-excel`: firma, 1000 entradas, 64 MB descomprimidos, 1.000.000 de elementos XML (sin DTD) y un cupo de 4 lecturas simultáneas **compartido** con el Excel de mercancías. Un archivo corrupto o malicioso es 400 `EXCEL_INVALIDO` o `ARCHIVO_DEMASIADO_GRANDE` con `detalle.motivo` (los mismos motivos de la fila 59) y **ya no llega a NEXO**; un libro que Cotifly no puede abrir también se rechaza antes de NEXO (`LIBRO_ILEGIBLE`; antes lo rechazaba NEXO con `EXCEL_INVALIDO` sin motivo). **Nuevo:** 503 `SERVICIO_OCUPADO` con `Retry-After` en el análisis y al crear una licitación con archivo. `filas_excel` se calcula para las primeras 20 hojas. **`GET /web/licitaciones/{folio}/excel`** abre el original guardado con los mismos controles y dentro del mismo cupo: un original guardado antes de este cambio que no los pasa responde 400 `EXCEL_INVALIDO` o `ARCHIVO_DEMASIADO_GRANDE` con `detalle.motivo` (el mismo 400 de un original ilegible, nunca un 500), y el cupo lleno 503 `SERVICIO_OCUPADO` con `Retry-After` (nuevo en este endpoint). Sin códigos de error nuevos | Cambia | Leer `detalle.motivo` en el 400 del análisis (mismo manejo que el Excel de mercancías); tratar el 503 `SERVICIO_OCUPADO` reintentando tras `Retry-After`, también en la descarga del Excel de la licitación |
 
 ---
 
@@ -3683,6 +3690,15 @@ fila_excel, campo, codigo, mensaje}`.
 ---
 
 ## 9. Notas de versión
+
+**2026-10-26 (rama `213-excel-licitacion-endurecido`, HU-035.2, #213, ADR-024 §HU-035.2).** Endurecimiento del Excel del pliego:
+
+- `POST /web/licitaciones/analizar-excel` revisa el archivo **en Cotifly, antes de enviarlo a NEXO**, con los mismos controles del Excel
+  de mercancías (bomba zip, libro con millones de celdas, XXE, `.xls` renombrado): 400 `EXCEL_INVALIDO` o `ARCHIVO_DEMASIADO_GRANDE`
+  con `detalle.motivo`, y NEXO no recibe el archivo. `POST /web/licitaciones` aplica los mismos controles al leer la hoja del archivo.
+- Cupo de 4 lecturas de Excel simultáneas compartido con `POST /web/mercancias/analizar-excel`: 503 `SERVICIO_OCUPADO` con
+  `Retry-After` si no se libera en 15 s.
+- Sin script de base de datos, sin configuración nueva ni códigos de error nuevos. Sigue en **53 endpoints**. Sección 7, fila 61.
 
 **2026-10-26 (rama `202-excel-mercancias`, HU-035.1, #202, ADR-024).** Excel de mercancías de una ruta:
 

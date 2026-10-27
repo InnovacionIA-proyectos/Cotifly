@@ -1,6 +1,7 @@
 using ClosedXML.Excel;
 using Cotifly.Aplicacion.Licitaciones.Interfaces;
 using Cotifly.Dominio.Comun;
+using Cotifly.Infraestructura.Comun;
 
 namespace Cotifly.Infraestructura.Licitaciones.Services;
 
@@ -11,6 +12,10 @@ namespace Cotifly.Infraestructura.Licitaciones.Services;
 /// regla, esta clase debe cambiar igual (lo cubre la prueba de paridad con el pliego de ejemplo).
 /// </summary>
 /// <remarks>
+/// <para><b>Antes de abrirlo</b> (HU-035.2, #213), los controles compartidos de <see cref="clsLecturaExcelAcotada"/>, los mismos del Excel
+/// de mercancías (#202): firma <c>PK</c>, 1000 entradas, 64 MB descomprimidos contados de verdad (bomba zip), 1.000.000 de elementos XML
+/// contados en flujo sin DTD ni resolutor (libro denso, XXE) y el cupo de lecturas simultáneas del proceso (<c>SERVICIO_OCUPADO</c>).
+/// Un libro que ClosedXML no puede abrir o leer es <c>EXCEL_INVALIDO</c> con <c>detalle.motivo = LIBRO_ILEGIBLE</c>, nunca un 500.</para>
 /// <para><b>Acotado contra archivos maliciosos</b> (a diferencia de Nexo, que recorre todo el rango usado): una celda lejana
 /// (<c>XFD3000</c>) o una combinada enorme (<c>A2:XFD1048576</c>) harían recorrer o expandir millones de celdas. Aquí:</para>
 /// <list type="bullet">
@@ -18,11 +23,12 @@ namespace Cotifly.Infraestructura.Licitaciones.Services;
 /// <item>las combinadas no se expanden: se consultan como rangos, recortados a ese rectángulo, y más de <see cref="MaximoCombinadas"/>
 /// es <c>EXCEL_INVALIDO</c>;</item>
 /// <item>se detiene al encontrar <see cref="MaximoFilasDatos"/> filas con datos (las mismas 1000 que devuelve el análisis de Nexo);</item>
-/// <item>la cancelación del llamador se respeta.</item>
+/// <item>en el análisis se ubican a lo sumo <see cref="MaximoHojas"/> hojas (las demás quedan sin <c>filas_excel</c>);</item>
+/// <item>la cancelación del llamador se respeta y libera el cupo.</item>
 /// </list>
 /// <para>En un pliego normal (menos de 200 columnas) el resultado es idéntico al de Nexo.</para>
 /// </remarks>
-public sealed class clsLectorExcelLicitacionClosedXml : IClsLectorExcelLicitacion
+public sealed class clsLectorExcelLicitacionClosedXml(clsLecturaExcelAcotada lectura) : IClsLectorExcelLicitacion
 {
     /// <summary>Filas usadas en las que se busca el encabezado (las mismas 15 de Nexo).</summary>
     public const int FilasBusquedaEncabezado = 15;
@@ -36,24 +42,45 @@ public sealed class clsLectorExcelLicitacionClosedXml : IClsLectorExcelLicitacio
     /// <summary>Rangos combinados por hoja que se aceptan.</summary>
     public const int MaximoCombinadas = 10_000;
 
+    /// <summary>Hojas que se ubican en el análisis (en el orden del libro), las mismas 20 del Excel de mercancías.</summary>
+    public const int MaximoHojas = 20;
+
     /// <summary>Última columna de Excel (<c>XFD</c>).</summary>
     public const int UltimaColumnaExcel = 16_384;
 
-    public clsResultado<IReadOnlyList<int>> FilasDeDatos(byte[] contenido, string hoja, CancellationToken cancellationToken = default)
+    private const string Documento = "licitación";
+
+    private readonly clsLecturaExcelAcotada _lectura = lectura ?? throw new ArgumentNullException(nameof(lectura));
+
+    public Task<clsResultado<IReadOnlyList<int>>> FilasDeDatosAsync(byte[] contenido, string hoja, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(contenido);
         ArgumentException.ThrowIfNullOrWhiteSpace(hoja);
-        XLWorkbook libro;
-        try
-        {
-            libro = new XLWorkbook(new MemoryStream(contenido, writable: false));
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            return new clsErrorDominio(clsCodigosError.ExcelInvalido, "No se pudo leer el archivo Excel.");
-        }
+        return _lectura.LeerAsync(contenido, Documento, ct => FilasDeDatosVerificadas(contenido, hoja, ct), cancellationToken);
+    }
 
-        using (libro)
+    public Task<clsResultado<IReadOnlyDictionary<string, IReadOnlyList<int>>>> FilasDeDatosPorHojaAsync(
+        byte[] contenido, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(contenido);
+        return _lectura.LeerAsync(contenido, Documento, ct => FilasDeDatosPorHojaVerificadas(contenido, ct), cancellationToken);
+    }
+
+    /// <summary>Sin el cupo (sincrónica, pruebas): los controles del paquete y después la lectura de <see cref="FilasDeDatosAsync"/>.</summary>
+    internal static clsResultado<IReadOnlyList<int>> FilasDeDatos(byte[] contenido, string hoja, CancellationToken cancellationToken = default) =>
+        clsLecturaExcelAcotada.Verificar(contenido, cancellationToken) is { } rechazo
+            ? rechazo
+            : FilasDeDatosVerificadas(contenido, hoja, cancellationToken);
+
+    /// <summary>Sin el cupo (sincrónica, pruebas): los controles del paquete y después la lectura de <see cref="FilasDeDatosPorHojaAsync"/>.</summary>
+    internal static clsResultado<IReadOnlyDictionary<string, IReadOnlyList<int>>> FilasDeDatosPorHoja(
+        byte[] contenido, CancellationToken cancellationToken = default) =>
+        clsLecturaExcelAcotada.Verificar(contenido, cancellationToken) is { } rechazo
+            ? rechazo
+            : FilasDeDatosPorHojaVerificadas(contenido, cancellationToken);
+
+    private static clsResultado<IReadOnlyList<int>> FilasDeDatosVerificadas(byte[] contenido, string hoja, CancellationToken cancellationToken) =>
+        ConLibro<IReadOnlyList<int>>(contenido, cancellationToken, libro =>
         {
             if (!libro.TryGetWorksheet(hoja, out var hojaExcel))
             {
@@ -69,27 +96,17 @@ public sealed class clsLectorExcelLicitacionClosedXml : IClsLectorExcelLicitacio
             return detectado is not null
                 ? clsResultado<IReadOnlyList<int>>.Exito(detectado.Datos)
                 : new clsErrorDominio(clsCodigosError.ExcelSinDatos, $"La hoja '{hoja}' no tiene una fila de encabezado con datos.");
-        }
-    }
+        });
 
-    public clsResultado<IReadOnlyDictionary<string, IReadOnlyList<int>>> FilasDeDatosPorHoja(byte[] contenido, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(contenido);
-        XLWorkbook libro;
-        try
-        {
-            libro = new XLWorkbook(new MemoryStream(contenido, writable: false));
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            return new clsErrorDominio(clsCodigosError.ExcelInvalido, "No se pudo leer el archivo Excel.");
-        }
-
-        using (libro)
+    private static clsResultado<IReadOnlyDictionary<string, IReadOnlyList<int>>> FilasDeDatosPorHojaVerificadas(
+        byte[] contenido, CancellationToken cancellationToken) =>
+        ConLibro<IReadOnlyDictionary<string, IReadOnlyList<int>>>(contenido, cancellationToken, libro =>
         {
             var porHoja = new Dictionary<string, IReadOnlyList<int>>(StringComparer.Ordinal);
-            foreach (var hoja in libro.Worksheets)
+            foreach (var hoja in libro.Worksheets.Take(MaximoHojas))
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 // Una hoja que no se puede ubicar (por ejemplo, demasiadas combinadas) no tumba las demás: solo queda fuera.
                 var detectado = Detectar(hoja, out var error, cancellationToken);
                 if (error is null && detectado is not null)
@@ -99,6 +116,34 @@ public sealed class clsLectorExcelLicitacionClosedXml : IClsLectorExcelLicitacio
             }
 
             return clsResultado<IReadOnlyDictionary<string, IReadOnlyList<int>>>.Exito(porHoja);
+        });
+
+    /// <summary>
+    /// Abre el libro (ya verificado) y le aplica <paramref name="leer"/>. Si ClosedXML no puede abrirlo o leerlo, <c>EXCEL_INVALIDO</c>
+    /// (<see cref="clsLecturaExcelAcotada.MotivoLibroIlegible"/>): el problema es del archivo, no del servidor. La cancelación se propaga.
+    /// </summary>
+    private static clsResultado<T> ConLibro<T>(byte[] contenido, CancellationToken cancellationToken, Func<XLWorkbook, clsResultado<T>> leer)
+    {
+        XLWorkbook libro;
+        try
+        {
+            libro = new XLWorkbook(new MemoryStream(contenido, writable: false));
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
+        {
+            return clsLecturaExcelAcotada.Invalido(clsLecturaExcelAcotada.MotivoLibroIlegible);
+        }
+
+        using (libro)
+        {
+            try
+            {
+                return leer(libro);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
+            {
+                return clsLecturaExcelAcotada.Invalido(clsLecturaExcelAcotada.MotivoLibroIlegible);
+            }
         }
     }
 

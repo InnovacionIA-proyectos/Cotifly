@@ -12,8 +12,6 @@ namespace Cotifly.Infraestructura.Tests.Licitaciones;
 /// </summary>
 public sealed class clsExportadorExcelLicitacionTests
 {
-    private readonly clsExportadorExcelLicitacionClosedXml _exportador = new();
-
     private static clsExportacionLicitacion Datos(byte[]? original, string moneda = "COP", decimal trm = 0m, decimal? total = null, bool conexos = true) => new(
         "PCN-900555111-DG-01102026-001", "Agencia JF", "900555111", moneda, trm, total, clsPliegoMuestra.Hoja, original,
         [
@@ -28,7 +26,7 @@ public sealed class clsExportadorExcelLicitacionTests
     {
         var original = clsPliegoMuestra.Excel(3);
 
-        var exportado = _exportador.Generar(Datos(original));
+        var exportado = clsExportadorExcelLicitacionClosedXml.Generar(Datos(original));
 
         exportado.EsExitoso.Should().BeTrue();
         using var antes = new XLWorkbook(new MemoryStream(original));
@@ -71,7 +69,7 @@ public sealed class clsExportadorExcelLicitacionTests
             ],
         };
 
-        using var libro = new XLWorkbook(new MemoryStream(_exportador.Generar(datos).Valor));
+        using var libro = new XLWorkbook(new MemoryStream(clsExportadorExcelLicitacionClosedXml.Generar(datos).Valor));
 
         var hoja = libro.Worksheet(clsPliegoMuestra.Hoja);
         hoja.Cell(clsPliegoMuestra.FilaExcel(2), 7).GetString().Should().Be(clsExportadorExcelLicitacionClosedXml.SinCosteo);
@@ -94,7 +92,7 @@ public sealed class clsExportadorExcelLicitacionTests
             Lineas = [new clsLineaExportacion(1, 0, "A", "B", "3S3", 1m, "Rechazada en NEXO", null) { Rechazada = true }],
         };
 
-        using var libro = new XLWorkbook(new MemoryStream(_exportador.Generar(datos).Valor));
+        using var libro = new XLWorkbook(new MemoryStream(clsExportadorExcelLicitacionClosedXml.Generar(datos).Valor));
 
         libro.Worksheet(clsExportadorExcelLicitacionClosedXml.HojaResumen).CellsUsed().Select(c => c.GetFormattedString())
             .Should().Contain(clsExportadorExcelLicitacionClosedXml.TodasRechazadas);
@@ -103,7 +101,7 @@ public sealed class clsExportadorExcelLicitacionTests
     [Fact]
     public void ElResumenTraeElTotalSoloSiTodasLasLineasTienenPrecioYLosConexosConSuPrecio()
     {
-        using var libro = new XLWorkbook(new MemoryStream(_exportador.Generar(Datos(clsPliegoMuestra.Excel(3), total: 9m)).Valor));
+        using var libro = new XLWorkbook(new MemoryStream(clsExportadorExcelLicitacionClosedXml.Generar(Datos(clsPliegoMuestra.Excel(3), total: 9m)).Valor));
         var resumen = libro.Worksheet(clsExportadorExcelLicitacionClosedXml.HojaResumen);
         var textos = resumen.CellsUsed().Select(c => c.GetFormattedString()).ToList();
 
@@ -122,7 +120,7 @@ public sealed class clsExportadorExcelLicitacionTests
             PrecioTotal = 297.84m,
         };
 
-        using var libro = new XLWorkbook(new MemoryStream(_exportador.Generar(datos).Valor));
+        using var libro = new XLWorkbook(new MemoryStream(clsExportadorExcelLicitacionClosedXml.Generar(datos).Valor));
 
         var hoja = libro.Worksheet(clsPliegoMuestra.Hoja);
         hoja.Cell(3, 7).GetString().Should().Be("Precio final Cotifly (USD)");
@@ -133,7 +131,7 @@ public sealed class clsExportadorExcelLicitacionTests
     [Fact]
     public void SinOriginalArmaUnaHojaConLosCamposMapeados()
     {
-        using var libro = new XLWorkbook(new MemoryStream(_exportador.Generar(Datos(null, conexos: false)).Valor));
+        using var libro = new XLWorkbook(new MemoryStream(clsExportadorExcelLicitacionClosedXml.Generar(Datos(null, conexos: false)).Valor));
 
         var hoja = libro.Worksheet(clsExportadorExcelLicitacionClosedXml.HojaSinOriginal);
         hoja.Cell(1, 2).GetString().Should().Be("Origen");
@@ -146,7 +144,7 @@ public sealed class clsExportadorExcelLicitacionTests
     [Fact]
     public void UnOriginalIlegibleOSinLaHojaEsUnErrorDeNegocio()
     {
-        _exportador.Generar(Datos([1, 2, 3])).Error.Codigo.Should().Be(clsCodigosError.ExcelInvalido);
-        _exportador.Generar(Datos(clsPliegoMuestra.Excel()) with { Hoja = "Otra" }).Error.Codigo.Should().Be(clsCodigosError.ExcelSinDatos);
+        clsExportadorExcelLicitacionClosedXml.Generar(Datos([1, 2, 3])).Error.Codigo.Should().Be(clsCodigosError.ExcelInvalido);
+        clsExportadorExcelLicitacionClosedXml.Generar(Datos(clsPliegoMuestra.Excel()) with { Hoja = "Otra" }).Error.Codigo.Should().Be(clsCodigosError.ExcelSinDatos);
     }
 }

@@ -3106,6 +3106,15 @@ paths:
         confirma o lo cambia** antes de mandarlo en `POST /web/licitaciones`. Sin nada parecido (similitud menor que 0,5) el código
         queda `null`. Sin cubicador o con su catálogo caído el análisis no falla: `catalogo_mercancias_disponible = false` y solo
         se usa la columna de código.
+
+        **Controles del archivo ANTES de Nexo (HU-035.2, #213).** Cotifly lee primero el archivo con los mismos controles del Excel
+        de mercancías (`POST /web/mercancias/analizar-excel`, ADR-024): firma `PK` (un `.xls` antiguo o cifrado renombrado es
+        `EXCEL_INVALIDO` con `detalle.motivo = CIFRADO_O_XLS`), a lo sumo 1000 entradas en el zip, 64 MB descomprimidos contados de
+        verdad (bomba zip) y 1.000.000 de elementos XML contados en flujo sin DTD ni entidades externas (libro denso, XXE). Un archivo
+        que no pasa, o que Cotifly no puede abrir, se rechaza con 400 y **nunca se envía a Nexo**. La misma lectura calcula
+        `filas_excel` (de las primeras 20 hojas), y después el archivo va a Nexo; el cupo de lecturas se libera antes de llamar a
+        Nexo. Cotifly lee hasta 4 archivos de Excel a la vez (cupo compartido con el Excel de mercancías); si el cupo sigue lleno 15
+        s, 503 `SERVICIO_OCUPADO` con `Retry-After`.
       security:
         - bearer: []
       requestBody:
@@ -3129,7 +3138,10 @@ paths:
         '400':
           description: |
             `ARCHIVO_REQUERIDO` (falta o vacío), `FORMATO_NO_SOPORTADO` (otra extensión), `ARCHIVO_DEMASIADO_GRANDE` (más de
-            10 MB menos 64 KB, 10.420.224 bytes), y de Nexo `EXCEL_INVALIDO` (no se pudo leer) o `EXCEL_SIN_DATOS` (ninguna hoja con tabla).
+            10 MB menos 64 KB, 10.420.224 bytes; o, de los controles de Cotifly, `detalle.motivo = DESCOMPRIMIDO_EXCEDE_LIMITE`: más
+            de 64 MB descomprimido o más de 1.000.000 de elementos XML), `EXCEL_INVALIDO` de los controles de Cotifly, antes de Nexo,
+            con `detalle.motivo` (`NO_ES_XLSX`, `CIFRADO_O_XLS`, `ZIP_INVALIDO`, `SIN_LIBRO`, `DEMASIADAS_ENTRADAS`,
+            `LIBRO_ILEGIBLE`), y de Nexo `EXCEL_INVALIDO` (no se pudo leer) o `EXCEL_SIN_DATOS` (ninguna hoja con tabla).
             `COSTEO_NEXO_RECHAZADA` para otro 4xx de Nexo. Un 413 de Nexo también es `ARCHIVO_DEMASIADO_GRANDE`: Cotifly acepta
             hasta 10 MB menos 64 KB para que el archivo con el sobre multipart quepa en el límite de 10 MB de Nexo.
           content:
@@ -3151,7 +3163,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorWeb'
         '503':
-          description: '`COSTEO_NEXO_NO_DISPONIBLE` o `COSTEO_NEXO_TIEMPO_AGOTADO`. Como en el resto de los endpoints, `detalle.motivo` lleva solo el código de Nexo (por ejemplo `SESION_INVALIDA`, o `HTTP 401` si Nexo no manda código), nunca su texto (HU-013.15, #124)'
+          description: '`COSTEO_NEXO_NO_DISPONIBLE` o `COSTEO_NEXO_TIEMPO_AGOTADO`. Como en el resto de los endpoints, `detalle.motivo` lleva solo el código de Nexo (por ejemplo `SESION_INVALIDA`, o `HTTP 401` si Nexo no manda código), nunca su texto (HU-013.15, #124). HU-035.2 (#213): `SERVICIO_OCUPADO` con `Retry-After` si el cupo de lecturas de Excel siguió lleno 15 s (el archivo no se envió a Nexo)'
           content:
             application/json:
               schema:
@@ -3324,8 +3336,8 @@ paths:
         '400':
           description: |
             `ReporteLicitacionInvalida` (`LICITACION_INVALIDA` con todas las filas que fallaron; nada queda guardado), o
-            `ErrorNegocio` (`ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE`, `EXCEL_INVALIDO`,
-            `EXCEL_SIN_DATOS` si la hoja no existe, `EXCEL_INVALIDO` también con más de 10.000 rangos combinados, `MARGEN_LINEA_DESCONOCIDA` (la
+            `ErrorNegocio` (`ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE`, `EXCEL_INVALIDO`; HU-035.2,
+            #213: el archivo pasa por los controles del análisis y un rechazo trae su `detalle.motivo`; `EXCEL_SIN_DATOS` si la hoja no existe, `EXCEL_INVALIDO` también con más de 10.000 rangos combinados, `MARGEN_LINEA_DESCONOCIDA` (la
             línea no existe, o está inactiva: `detalle.motivo` lo dice; HU-013.15: en los dos casos `detalle.lineas_validas` trae las
             líneas activas de Cotifly y, con `linea_negocio = Licitaciones` (la línea del catálogo de Nexo, que no da margen), `detalle.motivo =
             LINEA_DE_NEXO`), `FOLIO_CONSECUTIVO_AGOTADO`, `TRM_NO_DISPONIBLE` con
@@ -3365,7 +3377,8 @@ paths:
             HU-013.11: `CATALOGOS_FLETE_NO_DISPONIBLE` (alguna fila trae `tipo_vehiculo` o `clase_viaje` y no hay catálogo maestro
             de Nexo ni una copia de menos de 24 h para validarlos) o `MUNICIPIOS_NO_DISPONIBLE` (alguna fila sin id de municipio y el
             catálogo de municipios no responde). Nada se guarda. `SERVICIO_OCUPADO` (#125) si el candado del folio siguió ocupado
-            tras los reintentos: nada se guarda y se puede reintentar. Endurecimiento A (#199): solo con
+            tras los reintentos: nada se guarda y se puede reintentar; también (HU-035.2, #213) si el cupo de lecturas de Excel siguió
+            lleno 15 s al leer el archivo. Endurecimiento A (#199): solo con
             `Cubicador:LicitacionEnSegundoPlano = false`, `CUBICADOR_NO_DISPONIBLE` (con `Cubicador:RespaldoSiFalla = false`),
             `CUBICADOR_NO_AUTORIZADO` o `CUBICADOR_RESPUESTA_INVALIDA`; nada se guarda.
           headers:
@@ -3496,6 +3509,12 @@ paths:
         escogió; y "Cubicando" o el error si la cubicación no terminó) y la hoja `Camiones Cotifly` con un camión por fila
         (línea, ruta, camión, vehículo, carrocería, peso, volumen, llenado de volumen y de peso, cubicación). La exportación de una
         cotización desde "Ver detalle" (HU-018.1, parte C) reusa esta misma función.
+
+        HU-035.2 (#213, ADR-024): el **original guardado** se abre con los mismos controles del Excel subido (firma, 1000 entradas,
+        64 MB descomprimidos, 1.000.000 de elementos XML sin DTD) y dentro del mismo cupo de lecturas de Excel del proceso. Un original
+        guardado antes de esos controles que no los pasa responde **400** `EXCEL_INVALIDO` o `ARCHIVO_DEMASIADO_GRANDE` con
+        `detalle.motivo` (los mismos motivos del análisis), como cualquier original ilegible; nunca un 500. Con el cupo lleno 15 s,
+        **503** `SERVICIO_OCUPADO` con `Retry-After`. Sin original no se toma el cupo.
       security:
         - bearer: []
       parameters:
@@ -3509,7 +3528,7 @@ paths:
                 type: string
                 format: binary
         '400':
-          description: '`EXCEL_INVALIDO` o `EXCEL_SIN_DATOS` si el original guardado ya no se puede leer'
+          description: '`EXCEL_INVALIDO` o `EXCEL_SIN_DATOS` si el original guardado ya no se puede leer. HU-035.2 (#213): también `EXCEL_INVALIDO` o `ARCHIVO_DEMASIADO_GRANDE` con `detalle.motivo` (`NO_ES_XLSX`, `CIFRADO_O_XLS`, `ZIP_INVALIDO`, `DEMASIADAS_ENTRADAS`, `SIN_LIBRO`, `LIBRO_ILEGIBLE`, `DESCOMPRIMIDO_EXCEDE_LIMITE`) si el original guardado no pasa los controles del Excel subido'
           content:
             application/json:
               schema:
@@ -3518,6 +3537,15 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
+        '503':
+          description: 'HU-035.2 (#213): `SERVICIO_OCUPADO` con `Retry-After` si el cupo de lecturas de Excel siguió lleno 15 s'
+          headers:
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
         '500':
           $ref: '#/components/responses/ErrorInterno'
 

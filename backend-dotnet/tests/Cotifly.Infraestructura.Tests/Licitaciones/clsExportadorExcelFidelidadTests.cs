@@ -17,8 +17,6 @@ namespace Cotifly.Infraestructura.Tests.Licitaciones;
 /// </summary>
 public sealed class clsExportadorExcelFidelidadTests
 {
-    private readonly clsExportadorExcelLicitacionClosedXml _exportador = new();
-
     private static clsExportacionLicitacion Datos(byte[]? original, string hoja = clsPliegoMuestra.Hoja, string? cliente = "Agencia JF",
         IReadOnlyList<clsLineaExportacion>? lineas = null, IReadOnlyList<clsConexoExportacion>? conexos = null) => new(
         "PCN-900555111-DG-01102026-001", cliente, "900555111", "COP", 0m, null, hoja, original,
@@ -51,7 +49,7 @@ public sealed class clsExportadorExcelFidelidadTests
             vba.FeedData(s);
         }
 
-        var exportado = _exportador.Generar(Datos(m.ToArray()));
+        var exportado = clsExportadorExcelLicitacionClosedXml.Generar(Datos(m.ToArray()));
         exportado.EsExitoso.Should().BeTrue(exportado.EsFallo ? exportado.Error.Mensaje : "");
         using var zip = new ZipArchive(new MemoryStream(exportado.Valor));
         using var tipos = new StreamReader(zip.GetEntry("[Content_Types].xml")!.Open());
@@ -66,10 +64,10 @@ public sealed class clsExportadorExcelFidelidadTests
     {
         var datos = Datos(clsPliegoMuestra.Excel(3), cliente: "=HYPERLINK(\"http://x\",\"a\")",
             conexos: [new clsConexoExportacion("=cmd|' /C calc'!A0", "x", 1m, 1m)]);
-        using var libro = new XLWorkbook(new MemoryStream(_exportador.Generar(datos).Valor));
+        using var libro = new XLWorkbook(new MemoryStream(clsExportadorExcelLicitacionClosedXml.Generar(datos).Valor));
         libro.Worksheets.SelectMany(h => h.CellsUsed()).Where(c => c.HasFormula).Should().BeEmpty();
         // also in raw xml: no <f> elements
-        using var zip = new ZipArchive(new MemoryStream(_exportador.Generar(datos).Valor));
+        using var zip = new ZipArchive(new MemoryStream(clsExportadorExcelLicitacionClosedXml.Generar(datos).Valor));
         foreach (var e in zip.Entries.Where(e => e.FullName.StartsWith("xl/worksheets/", StringComparison.Ordinal)))
         {
             using var r = new StreamReader(e.Open());
@@ -81,7 +79,7 @@ public sealed class clsExportadorExcelFidelidadTests
     public void SinOriginalUnaRutaConIgualNoEsFormula()
     {
         var datos = Datos(null, lineas: [new clsLineaExportacion(1, null, "=1+2", "@SUM(1)", "+x", null, "Costeada", 1m)]);
-        using var libro = new XLWorkbook(new MemoryStream(_exportador.Generar(datos).Valor));
+        using var libro = new XLWorkbook(new MemoryStream(clsExportadorExcelLicitacionClosedXml.Generar(datos).Valor));
         libro.Worksheets.SelectMany(h => h.CellsUsed()).Where(c => c.HasFormula).Should().BeEmpty();
     }
 
@@ -104,7 +102,7 @@ public sealed class clsExportadorExcelFidelidadTests
         ws.Column(2).Width = 33;
         var original = Guardar(libro);
 
-        var r = _exportador.Generar(Datos(original));
+        var r = clsExportadorExcelLicitacionClosedXml.Generar(Datos(original));
         r.EsExitoso.Should().BeTrue();
         using var d = new XLWorkbook(new MemoryStream(r.Valor));
         var h = d.Worksheet(clsPliegoMuestra.Hoja);
@@ -130,7 +128,7 @@ public sealed class clsExportadorExcelFidelidadTests
         ws.Cell(20, 10).Value = "Pie en J20";
         var original = Guardar(libro);
 
-        using var d = new XLWorkbook(new MemoryStream(_exportador.Generar(Datos(original)).Valor));
+        using var d = new XLWorkbook(new MemoryStream(clsExportadorExcelLicitacionClosedXml.Generar(Datos(original)).Valor));
         var h = d.Worksheet(clsPliegoMuestra.Hoja);
         h.Cell(1, 12).GetString().Should().Be("Nota del cliente en L1");
         h.Cell(20, 10).GetString().Should().Be("Pie en J20");
@@ -145,7 +143,7 @@ public sealed class clsExportadorExcelFidelidadTests
         ws.Cell(9, 4).Value = "TOTAL";
         ws.Cell(9, 5).FormulaA1 = "SUM(E4:E8)";
         var original = Guardar(libro);
-        using var d = new XLWorkbook(new MemoryStream(_exportador.Generar(Datos(original)).Valor));
+        using var d = new XLWorkbook(new MemoryStream(clsExportadorExcelLicitacionClosedXml.Generar(Datos(original)).Valor));
         d.Worksheet(clsPliegoMuestra.Hoja).Cell(9, 8).GetString().Should().BeEmpty("la fila de totales no es una ruta");
     }
 
@@ -158,7 +156,7 @@ public sealed class clsExportadorExcelFidelidadTests
         for (var i = 0; i < 3; i++) { ws.Cell(i + 2, 1).Value = i + 1; ws.Cell(i + 2, 2).Value = "A" + i; ws.Cell(i + 2, 3).Value = "B" + i; }
         ws.Range(1, 1, 4, 3).CreateTable("TablaRutas");
         var original = Guardar(libro);
-        var r = _exportador.Generar(Datos(original, hoja: "Rutas", lineas:
+        var r = clsExportadorExcelLicitacionClosedXml.Generar(Datos(original, hoja: "Rutas", lineas:
             [new clsLineaExportacion(1, 0, "A0", "B0", null, null, "Costeada", 10m), new clsLineaExportacion(2, 1, "A1", "B1", null, null, "Costeada", 20m)]));
         r.EsExitoso.Should().BeTrue();
         using var d = new XLWorkbook(new MemoryStream(r.Valor));
@@ -173,7 +171,7 @@ public sealed class clsExportadorExcelFidelidadTests
         var lineas = Enumerable.Range(0, 1000).Select(i => new clsLineaExportacion(i + 1, i, "A", "B", "3S3", 1000m, i % 3 == 0 ? "Pendiente de costeo" : "Costeada", i % 3 == 0 ? null : 1_000_000m + i)).ToList();
         var reloj = Stopwatch.StartNew();
         var memoriaAntes = GC.GetAllocatedBytesForCurrentThread();
-        var r = _exportador.Generar(Datos(original, lineas: lineas));
+        var r = clsExportadorExcelLicitacionClosedXml.Generar(Datos(original, lineas: lineas));
         reloj.Stop();
         var asignado = GC.GetAllocatedBytesForCurrentThread() - memoriaAntes;
         r.EsExitoso.Should().BeTrue();
@@ -188,7 +186,7 @@ public sealed class clsExportadorExcelFidelidadTests
     [Fact]
     public void UnaLineaConFilaFueraDelPliegoApareceEnElResumen()
     {
-        var r = _exportador.Generar(Datos(clsPliegoMuestra.Excel(3), lineas:
+        var r = clsExportadorExcelLicitacionClosedXml.Generar(Datos(clsPliegoMuestra.Excel(3), lineas:
             [new clsLineaExportacion(1, 0, "A", "B", null, null, "Costeada", 1m), new clsLineaExportacion(2, 5, "C", "D", null, null, "Costeada", 2m)]));
         using var d = new XLWorkbook(new MemoryStream(r.Valor));
         d.Worksheets.SelectMany(h => h.CellsUsed()).Should().Contain(c => c.DataType == XLDataType.Number && c.GetValue<decimal>() == 2m, "la línea 2 debe aparecer en algún lado");
@@ -199,7 +197,7 @@ public sealed class clsExportadorExcelFidelidadTests
     {
         using var libro = new XLWorkbook(new MemoryStream(clsPliegoMuestra.Excel(3)));
         libro.Worksheets.Add("Resumen Cotifly").Cell(1, 1).Value = "del cliente";
-        var r = _exportador.Generar(Datos(Guardar(libro)));
+        var r = clsExportadorExcelLicitacionClosedXml.Generar(Datos(Guardar(libro)));
         using var d = new XLWorkbook(new MemoryStream(r.Valor));
         d.Worksheet("Resumen Cotifly").Cell(1, 1).GetString().Should().Be("del cliente");
         d.Worksheets.Select(w => w.Name).Should().Contain("Resumen Cotifly 2");
@@ -208,7 +206,7 @@ public sealed class clsExportadorExcelFidelidadTests
     [Fact]
     public void NingunaParteDelPaqueteTraeCostos()
     {
-        var r = _exportador.Generar(Datos(clsPliegoMuestra.Excel(3)));
+        var r = clsExportadorExcelLicitacionClosedXml.Generar(Datos(clsPliegoMuestra.Excel(3)));
         using var zip = new ZipArchive(new MemoryStream(r.Valor));
         foreach (var e in zip.Entries)
         {

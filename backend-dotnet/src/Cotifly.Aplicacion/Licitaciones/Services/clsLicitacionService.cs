@@ -106,7 +106,7 @@ public sealed class clsLicitacionService(
             : null;
         var nombres = await NombresCubicadorAsync(cotizacion, cancellationToken);
         var datos = DatosExportacion(cotizacion, archivo, reloj.AhoraUtc, nombres.Vehiculos, nombres.Carrocerias);
-        var generado = exportador.Generar(datos);
+        var generado = await exportador.GenerarAsync(datos, cancellationToken);
         if (generado.EsFallo)
         {
             return generado.Error;
@@ -264,10 +264,19 @@ public sealed class clsLicitacionService(
             return invalido;
         }
 
+        // HU-035.2 (#213): la lectura local va ANTES de Nexo. Pasa por los controles del Excel subido (bomba zip, libro denso, XXE, .xls
+        // renombrado, cupo de lecturas): un rechazo responde aquí y el archivo nunca sale a Nexo. Se lee una sola vez, con el cupo
+        // liberado antes de llamar a Nexo (que puede tardar), y sus filas de Excel se cruzan después con el análisis de Nexo.
+        var porHoja = await lector.FilasDeDatosPorHojaAsync(archivo.Contenido, cancellationToken);
+        if (porHoja.EsFallo)
+        {
+            return porHoja.Error;
+        }
+
         var analisis = await analizador.AnalizarAsync(usuarioId, clsArchivoLicitacion.NombreLimpio(archivo.Nombre), archivo.Contenido, cancellationToken);
         return analisis.EsFallo
             ? analisis
-            : await ConMercanciasAsync(ConFilasExcel(analisis.Valor, archivo.Contenido, cancellationToken), cancellationToken);
+            : await ConMercanciasAsync(ConFilasExcel(analisis.Valor, porHoja.Valor), cancellationToken);
     }
 
     /// <summary>
@@ -323,25 +332,17 @@ public sealed class clsLicitacionService(
     /// <summary>
     /// HU-013.15 (#124): agrega a cada hoja del análisis de Nexo el número de fila de Excel de cada una de sus filas (<c>filas_excel</c>),
     /// con la misma regla de detección (<see cref="IClsLectorExcelLicitacion"/>), para que el frontend muestre la numeración del archivo
-    /// del comercial. Si Cotifly no puede leer el archivo, todas quedan sin <c>filas_excel</c>; si una hoja no se puede ubicar o no
-    /// cuadra con lo que devolvió Nexo (otro total de filas), solo esa queda sin él y las demás lo conservan: el análisis nunca falla
-    /// por esto.
+    /// del comercial. <paramref name="porHoja"/> es la lectura local, hecha antes de llamar a Nexo (HU-035.2, #213: si Cotifly no puede
+    /// leer el archivo, se rechaza antes de Nexo). Si una hoja no se pudo ubicar (o pasa de las 20 que se ubican) o no cuadra con lo que
+    /// devolvió Nexo (otro total de filas), solo esa queda sin <c>filas_excel</c> y las demás lo conservan.
     /// </summary>
-    private clsAnalisisExcel ConFilasExcel(clsAnalisisExcel analisis, byte[] contenido, CancellationToken cancellationToken)
-    {
-        var porHoja = lector.FilasDeDatosPorHoja(contenido, cancellationToken);
-        if (porHoja.EsFallo)
+    private static clsAnalisisExcel ConFilasExcel(clsAnalisisExcel analisis, IReadOnlyDictionary<string, IReadOnlyList<int>> porHoja) =>
+        analisis with
         {
-            return analisis;
-        }
-
-        return analisis with
-        {
-            Hojas = [.. analisis.Hojas.Select(h => porHoja.Valor.TryGetValue(h.Nombre, out var filas) && Cuadra(filas.Count, h)
+            Hojas = [.. analisis.Hojas.Select(h => porHoja.TryGetValue(h.Nombre, out var filas) && Cuadra(filas.Count, h)
                 ? h with { FilasExcel = [.. filas.Take(h.Filas.Count)] }
                 : h)],
         };
-    }
 
     /// <summary>
     /// ¿Las filas con datos que ubicó Cotifly cuadran con la hoja de Nexo? Se compara con el total real (<c>TotalFilas</c>), no con
@@ -378,6 +379,8 @@ public sealed class clsLicitacionService(
         };
 
         // El archivo se valida primero (un archivo ilegible invalida todas las filas) y se cuenta su hoja con la regla de Nexo.
+        // HU-035.2 (#213): la lectura pasa por los controles del Excel subido. Con archivo la hoja es obligatoria (sin ella, el reporte
+        // no deja guardar nada): todo original que se guarda, y que la exportación abre después con ClosedXML, los pasó.
         IReadOnlyList<int>? filasExcel = null;
         if (entrada.Archivo is { } archivo)
         {
@@ -388,7 +391,7 @@ public sealed class clsLicitacionService(
 
             if (!string.IsNullOrWhiteSpace(entrada.Hoja) && entrada.Hoja.Trim().Length <= clsArchivoLicitacion.LargoHoja)
             {
-                var filas = lector.FilasDeDatos(archivo.Contenido, entrada.Hoja.Trim(), cancellationToken);
+                var filas = await lector.FilasDeDatosAsync(archivo.Contenido, entrada.Hoja.Trim(), cancellationToken);
                 if (filas.EsFallo)
                 {
                     return clsResultadoLicitacion.Fallo(filas.Error);
