@@ -172,6 +172,8 @@ public sealed class clsCorreoServiceTests : IDisposable
     [InlineData("")]
     [InlineData("sin-arroba")]
     [InlineData("qa@pruebas.local,cliente@empresa.com")]
+    [InlineData("\"qa pruebas\"@pruebas.local")] // Validación #228: MailAddress lo acepta; el transporte lo bloquearía
+    [InlineData("qa@localhost")]
     public async Task AuditoriaSiHayQueRedirigirYNoHayBuzonValidoNoSaleNada(string? buzon)
     {
         // Falla cerrado: antes, sin buzón el mensaje salía SIN redirigir a los destinatarios reales.

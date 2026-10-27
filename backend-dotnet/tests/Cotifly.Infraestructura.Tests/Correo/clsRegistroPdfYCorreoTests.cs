@@ -82,7 +82,29 @@ public sealed class clsRegistroPdfYCorreoTests
         resultado.FailureMessage.Should().Contain("MailSender:Remitente").And.Contain("MailSender:TimeoutSegundos").And.Contain("MailSender:Prioridad").And.Contain("MailSender:ModoRemitente");
     }
 
+    /// <summary>
+    /// Validación #228: el remitente corporativo debe pasar el formato estricto con que el transporte revisa el <c>From</c>; antes bastaba
+    /// MailAddress (acepta un nombre con ángulos o un dominio de una etiqueta) y ningún correo habría salido.
+    /// </summary>
     [Theory]
+    [InlineData("Notificaciones <notificaciones@boterosoto.com.co>")]
+    [InlineData("notificaciones@intranet")]
+    [InlineData(" notificaciones@boterosoto.com.co")]
+    [InlineData("\"notificaciones\"@boterosoto.com.co")]
+    public void Validacion228_ElRemitenteCorporativoUsaElFormatoEstricto(string remitente)
+    {
+        var resultado = new clsValidadorOpcionesCorreoTransporte().Validate(null, new clsOpcionesCorreoTransporte
+        {
+            Habilitado = true,
+            MailSender = new clsOpcionesMailSender { UrlBase = "http://mailsender.local", Remitente = remitente },
+        });
+
+        resultado.Failed.Should().BeTrue();
+        resultado.FailureMessage.Should().Contain("MailSender:Remitente");
+    }
+
+    [Theory]
+    [InlineData("Development", true, "redirigir", "qa@localhost", false, "Proteccion:BuzonPruebas")]
     [InlineData("Development", true, "redirigir", "qa@pruebas.local", false, null)]
     [InlineData("Staging", true, "redirigir", "qa@pruebas.local", false, null)]
     [InlineData("Staging", true, "ninguno", null, true, "debe ser 'redirigir'")]

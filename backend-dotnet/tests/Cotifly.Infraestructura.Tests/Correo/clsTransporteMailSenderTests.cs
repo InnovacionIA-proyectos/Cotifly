@@ -105,6 +105,12 @@ public sealed class clsTransporteMailSenderTests : IDisposable
     [InlineData("corporativo", "boterosoto.com.co", "nvargas@boterosoto.com.co", "notificaciones@boterosoto.com.co")]
     [InlineData("CORPORATIVO", "", "nvargas@boterosoto.com.co", "notificaciones@boterosoto.com.co")]
     [InlineData("comercial", "", "nvargas@cualquiera.com", "nvargas@cualquiera.com")]
+    // Validación #228: lo que MailAddress acepta pero VerificarCabeceras bloquearía sale con el corporativo (no falla el envío).
+    [InlineData("comercial", "boterosoto.com.co", "\"n vargas\"@boterosoto.com.co", "notificaciones@boterosoto.com.co")]
+    [InlineData("comercial", "", "nvargas@intranet", "notificaciones@boterosoto.com.co")]
+    [InlineData("comercial", "", "nvargas@[10.0.0.1]", "notificaciones@boterosoto.com.co")]
+    [InlineData("comercial", "boterosoto.com.co", "nvargas@boterosoto.com.co\r\nBcc: intruso@ejemplo.invalid", "notificaciones@boterosoto.com.co")]
+    [InlineData("comercial", "boterosoto.com.co", "nvargas\u200B@boterosoto.com.co", "notificaciones@boterosoto.com.co")]
     public void AuditoriaElRemitenteSeEligePorModoYDominio(string modo, string dominios, string comercial, string esperado)
     {
         var opciones = new Cotifly.Infraestructura.Configuracion.clsOpcionesMailSender { ModoRemitente = modo, DominiosRemitente = dominios };
