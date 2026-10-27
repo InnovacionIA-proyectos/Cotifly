@@ -2195,6 +2195,13 @@ paths:
         - Tampoco mientras Nexo tiene un servicio conexo que Cotifly todavía no leyó (`motivo_estado_costeo` de conexos pendientes):
           409 `COTIZACION_NO_FINALIZABLE` con `detalle.motivo = conexos_pendientes_de_leer`; se finaliza después de la siguiente
           lectura del costeo, que trae el conexo con su precio.
+        - #228: tampoco mientras un servicio conexo de una ruta que cuenta (no `rechazada`) todavía no está en la cotización de
+          Nexo, es decir con `servicios_conexos[].estado_nexo = pendiente` (el envío diferido no lo ha mandado o se reintentará):
+          409 `COTIZACION_NO_FINALIZABLE` con `detalle.motivo = conexos_pendientes_en_nexo` y `detalle.conexos_pendientes` (cuántos);
+          se finaliza cuando el polling lo deja `enviado`. `incierto` y `fallido_definitivo` no bloquean (ya no se reintentan; el
+          costeo los muestra con `aviso_conexos_nexo` para revisarlos en Nexo). Un conexo agregado con
+          `POST .../costeo/servicios-conexos` queda `enviado` en el momento (Nexo lo creó y la relectura lo confirma). Si hay
+          conexos pendientes de leer, ese motivo va primero.
         - Re-finalizar una ya finalizada es idempotente: 200 sin cambios (mismo `finalizada_at`, mismo `ETag`).
         - `If-Match` que no es la versión vigente: 409 `CONFLICTO_CONCURRENCIA`, sin cambios (también si ya estaba finalizada). Si
           el polling cambió el precio entre la lectura y el clic, la versión ya no coincide: el comercial recarga y nunca finaliza un
@@ -2224,7 +2231,7 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`COTIZACION_NO_FINALIZABLE` (`estado_costeo` distinto de `autocosteo` y `entregada`; `detalle.estado_costeo`) o `CONFLICTO_CONCURRENCIA`; sin cambios.'
+          description: '`COTIZACION_NO_FINALIZABLE` (`estado_costeo` distinto de `autocosteo` y `entregada`, con `detalle.estado_costeo`; o `detalle.motivo` = `conexos_pendientes_de_leer` o, #228, `conexos_pendientes_en_nexo` con `detalle.conexos_pendientes`) o `CONFLICTO_CONCURRENCIA`; sin cambios.'
           content:
             application/json:
               schema:
@@ -4302,7 +4309,8 @@ components:
                 límite de 20 del NIT ya impide; el PDF no lo responde).
                 HU-036.2 (#206): `COTIZACION_NO_FINALIZABLE` (409 en `POST .../finalizar`: `estado_costeo` distinto de `autocosteo` y
                 `entregada`, sin el costeo de Nexo listo no hay precio que aceptar; `detalle.estado_costeo` trae el estado actual; o
-                con un conexo de Nexo pendiente de leer, `detalle.motivo = conexos_pendientes_de_leer`).
+                con un conexo de Nexo pendiente de leer, `detalle.motivo = conexos_pendientes_de_leer`; #228: o con conexos que todavía
+                no están en Nexo, `estado_nexo = pendiente`, `detalle.motivo = conexos_pendientes_en_nexo` y `detalle.conexos_pendientes`).
                 HU-036.3 (#207): `COTIZACION_NO_FINALIZADA` (409: "Finaliza la cotización antes de..."; `POST .../costeo/pdf`,
                 `POST .../enviar`, `POST .../costeo/textos/redactar`, `PUT .../costeo/textos` y `POST .../resultado` exigen la
                 cotización finalizada; `detalle` trae `accion = finalizar`, `metodo = POST` y `endpoint` = `.../finalizar`. No aplica a

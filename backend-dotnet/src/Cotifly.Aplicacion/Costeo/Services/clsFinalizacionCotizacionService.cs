@@ -16,7 +16,8 @@ public interface IClsFinalizacionCotizacionService
     /// <summary>
     /// La cotización finalizada (o la misma sin cambios si ya lo estaba: idempotente), o el error: <c>COTIZACION_NO_ENCONTRADA</c> (no
     /// existe o no es del comercial), <c>CONFLICTO_CONCURRENCIA</c> (el <c>If-Match</c> no es la versión vigente, también si ya estaba
-    /// finalizada) o <c>COTIZACION_NO_FINALIZABLE</c> (<c>estado_costeo</c> distinto de <c>autocosteo</c> y <c>entregada</c>).
+    /// finalizada) o <c>COTIZACION_NO_FINALIZABLE</c> (<c>estado_costeo</c> distinto de <c>autocosteo</c> y <c>entregada</c>, conexos de Nexo
+    /// pendientes de leer o, #228, conexos que todavía no están en Nexo: <c>detalle.motivo = conexos_pendientes_en_nexo</c>).
     /// </summary>
     Task<clsResultado<clsCotizacionSolicitud>> FinalizarAsync(
         Guid usuarioId, string folio, int versionEsperada, CancellationToken cancellationToken = default);
@@ -38,7 +39,8 @@ public sealed class clsFinalizacionCotizacionService(
     IClsCotizacionRepository cotizaciones,
     IClsUnitOfWork unidadTrabajo,
     IClsReloj reloj,
-    IClsAuditoriaService auditoria) : IClsFinalizacionCotizacionService
+    IClsAuditoriaService auditoria,
+    IClsEnvioConexosNexoService envioConexos) : IClsFinalizacionCotizacionService
 {
     /// <summary>Herramienta de la auditoría de la finalización (<c>EventosHerramienta.herramienta</c>).</summary>
     public const string HerramientaAuditoria = "finalizar_cotizacion";
@@ -85,7 +87,8 @@ public sealed class clsFinalizacionCotizacionService(
             return (clsReglaPdfCosteo.Conflicto(cotizacion.Folio), false);
         }
 
-        var finalizada = cotizacion.Finalizar(usuarioId, reloj.AhoraUtc);
+        var pendientesEnNexo = cotizacion.Finalizada ? 0 : await ConexosPendientesEnNexoAsync(cotizacion, cancellationToken);
+        var finalizada = cotizacion.Finalizar(usuarioId, reloj.AhoraUtc, pendientesEnNexo);
         if (finalizada.EsFallo)
         {
             return (finalizada.Error, false);
@@ -101,5 +104,18 @@ public sealed class clsFinalizacionCotizacionService(
         return await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, versionEsperada, cancellationToken)
             ? (cotizacion, true)
             : (clsReglaPdfCosteo.Conflicto(cotizacion.Folio), false);
+    }
+
+    /// <summary>
+    /// #228: conexos de las rutas cotizables (las rechazadas por la Mesa no cuentan: su conexo nunca llegará a Nexo) que todavía no están en
+    /// la cotización de Nexo: <c>estado_nexo = pendiente</c> en el registro del envío diferido (<see cref="IClsEnvioConexosNexoService.EstadosAsync"/>,
+    /// el mismo que ve el comercial en el costeo). <c>incierto</c> y <c>fallido_definitivo</c> no cuentan: el polling ya no los reintenta y
+    /// el costeo los muestra para revisarlos en Nexo.
+    /// </summary>
+    private async Task<int> ConexosPendientesEnNexoAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken)
+    {
+        var rutas = cotizacion.RutasCotizables.Select(r => r.Id).ToHashSet();
+        var estados = await envioConexos.EstadosAsync(cotizacion, cancellationToken);
+        return estados.Count(e => rutas.Contains(e.Key.Ruta) && e.Value == clsEnvioConexosNexoService.VisiblePendiente);
     }
 }
