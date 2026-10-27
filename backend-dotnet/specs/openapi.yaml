@@ -8949,7 +8949,9 @@ components:
         copia_oculta:
           type: string
           nullable: true
-          description: HU-033. Copia oculta que se agrega al enviar (el comercial), o `null` si no tiene correo o ya va en para/cc.
+          description: |
+            HU-033. Copia oculta que se agrega al enviar (el comercial), o `null` si no tiene correo o ya va en para/cc. OBS-1027-5
+            (#226, ADR-023): con `entorno_pruebas = true` siempre es `null`, porque el correo redirigido sale sin CC ni CCO.
         entorno_pruebas:
           type: boolean
           description: HU-033. El ambiente redirige los correos al buzón de pruebas (mostrar el aviso).
