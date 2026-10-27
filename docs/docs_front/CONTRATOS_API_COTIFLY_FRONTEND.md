@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Fecha** | 2026-10-26 |
-| **Versión de referencia** | Rama `integracion-1019`: QA (PR #185, rama `hu-023-defectos-e2e-1016`, con D-1019-1) más #179 (HU-027.1, clases de contenedor), #180 (HU-025.1, textos de roles), #187 (HU-010.5, métricas por año y mes), #188 (HU-014, columnas 03/05 y "solo códigos conocidos") y #186 (HU-028, editar la solicitud); más la rama `179-detalle-por-folio` (#179 parte A, `GET /web/cotizaciones/{folio}`); más #181 (motivo pendiente), #183 (HU-028.1, rechazo de línea), #184 (HU-030.1, peso con tara), #191 (`Idempotency-Key` persistente), #194 (HU-031.1, alias de NEXO) y #197 (HU-032, vehículo elegido); más la rama `199-correo-mailsender` (HU-033, #199: correo por MailSender, total sin desglose y resultado diferido a NEXO), con los endurecimientos A y B de #199 integrados; más la rama `202-excel-mercancias` (HU-035.1, #202: Excel de mercancías de una ruta leído en Cotifly, sin NEXO); más las ramas `210-rol-director-permisos` y `211-director-todas-regionales` (HU-037: rol `director` y todas las regionales) |
+| **Fecha** | 2026-10-27 |
+| **Versión de referencia** | Rama `integracion-1019`: QA (PR #185, rama `hu-023-defectos-e2e-1016`, con D-1019-1) más #179 (HU-027.1, clases de contenedor), #180 (HU-025.1, textos de roles), #187 (HU-010.5, métricas por año y mes), #188 (HU-014, columnas 03/05 y "solo códigos conocidos") y #186 (HU-028, editar la solicitud); más la rama `179-detalle-por-folio` (#179 parte A, `GET /web/cotizaciones/{folio}`); más #181 (motivo pendiente), #183 (HU-028.1, rechazo de línea), #184 (HU-030.1, peso con tara), #191 (`Idempotency-Key` persistente), #194 (HU-031.1, alias de NEXO) y #197 (HU-032, vehículo elegido); más la rama `199-correo-mailsender` (HU-033, #199: correo por MailSender, total sin desglose y resultado diferido a NEXO), con los endurecimientos A y B de #199 integrados; más la rama `202-excel-mercancias` (HU-035.1, #202: Excel de mercancías de una ruta leído en Cotifly, sin NEXO); más las ramas `210-rol-director-permisos` y `211-director-todas-regionales` (HU-037: rol `director` y todas las regionales); más las ramas `229-multiples-roles-activos` y `230-elegir-rol-login` (HU-040: multi-rol, elegir el rol al entrar) |
 | **Audiencia** | Equipo de frontend del módulo Cotifly dentro de ClientePro (Angular 17.3.8) |
 | **Fuente de verdad** | El código del backend .NET y `backend-dotnet/specs/openapi.yaml`. Si este documento y el código no coinciden, manda el código. Los cambios de esta versión están en la sección 9 |
 
@@ -345,11 +345,26 @@ En el servidor, el login revalida la identidad contra el almacén corporativo de
 Cotifly y ubica o crea al usuario en Cotifly. Cualquier rechazo responde el mismo 401 genérico (anti-enumeración). La verificación se
 repite en cada refresh.
 
+**Multi-rol (HU-040, #230, ADR-025, fila 66 de §7).** Una persona con varios roles en Cotifly (por ejemplo comercial y gerente comercial)
+**elige** con cuál entra: el login no emite tokens sino un ticket de elección, y la sesión la emite `POST /api/auth/elegir-rol`. Con un
+solo rol todo es igual que antes.
+
 ### 2.2 Login con ClientePro
 
 `POST /api/auth/login-clientepro` con `{"idUsuario": "...", "nombreUsuario": "...", "roles": [...]}`. Solo `idUsuario` decide: el
 servidor lo busca primero como nombre de usuario corporativo y, si no aparece y es un entero, como id numérico. `nombreUsuario` y
 `roles` son informativos y **nunca** deciden el acceso. Detalle en la sección 4.1.
+
+La respuesta 200 tiene **dos formas** (HU-040.2):
+
+| Forma | Cuándo | Qué hacer |
+|---|---|---|
+| `LoginResponse` (`access`, `refresh`, `user`, `debeCambiarPassword`) | La persona tiene un solo rol (el caso de casi todos) | Igual que antes: guardar los tokens y `user` |
+| `EleccionRolRequerida` (`requiereEleccionRol: true`, `ticketEleccion`, `ticketExpiraAt`, `roles[]`, `user`) | La persona tiene dos o más roles | Mostrar el selector con `roles[].descripcion` y llamar a `POST /api/auth/elegir-rol` con `{ticket: ticketEleccion, rol: roles[i].codigo}` (4.1.4). **No trae tokens** |
+
+Distinguirlas por `requiereEleccionRol === true` (o por la ausencia de `access`). El ticket vence a los **5 minutos** (`ticketExpiraAt`) y
+es de **un solo uso**: si vence, se usó o la elección responde 401, volver a llamar al login (es silencioso: la identidad la da
+ClientePro). El ticket no es un access: no abre ningún endpoint. Guardarlo solo en memoria, nunca en la URL ni en logs.
 
 ### 2.3 JWT
 
@@ -357,7 +372,7 @@ servidor lo busca primero como nombre de usuario corporativo y, si no aparece y 
 |---|---|
 | Algoritmo | HS256 |
 | Vigencia del access | 60 minutos (configurable de 1 a 1440). Tolerancia de reloj del servidor: 30 s |
-| Claims propios | `sub` (UUID del usuario en Cotifly, el mismo `user.id`), `jti` (id del token), `username`, `rol` (`comercial`, `gerente_comercial` o `director`, fila 64) |
+| Claims propios | `sub` (UUID del usuario en Cotifly, el mismo `user.id`), `jti` (id del token), `username`, `rol` (`comercial`, `gerente_comercial` o `director`, fila 64; con multi-rol, el **elegido**, fila 66) |
 | Claims estándar | `iss`, `aud`, `exp` (y los de tiempo que agregue el emisor) |
 | Revocación | Por `jti` en el logout |
 
@@ -371,6 +386,7 @@ login (o el claim `rol`), no los roles de ClientePro.
 | El refresh vence a los **30 días del login** (configurable). La rotación **no** extiende la vigencia | A los 30 días hay que volver a hacer login SSO aunque se use a diario |
 | Se rota en cada uso: `POST /api/auth/refresh` devuelve un par nuevo y el refresh anterior deja de servir | Reemplazar **los dos** tokens con la respuesta |
 | Reusar un refresh ya rotado se trata como robo de sesión | 401. Hacer el refresh en *single-flight* (una sola petición en vuelo) y no compartir el refresh entre pestañas sin coordinarlo |
+| HU-040.2: el refresh **conserva el rol de la sesión** (el elegido); no vuelve a preguntar | Si le quitaron ese rol, 401: volver a entrar (el login ofrecerá los roles que le queden) |
 
 Recomendación de almacenamiento: access en memoria (o `sessionStorage` si debe sobrevivir a un F5) y refresh en `sessionStorage`
 (una sesión por pestaña). Nunca en la URL, en logs ni en cookies. La API no usa cookies.
@@ -389,8 +405,10 @@ Recomendación de almacenamiento: access en memoria (o `sessionStorage` si debe 
 | `director` (HU-037, fila 64) | Todo lo del gerente comercial, pero sobre **todas** las regionales: tablero y listado de todas o de la que elija (`?regional=`, opciones de `GET /web/regionales`), detalle y PDF de cotizaciones de cualquier regional (solo consulta), políticas de margen y su propia consola de comercial |
 
 **No existe un rol `admin`.** La administración de márgenes es del `gerente_comercial` y del `director`. Un usuario que no resuelve a
-uno de estos tres roles no puede iniciar sesión (401). Con varios roles de ClientePro gana el de mayor alcance: `director` >
-`gerente_comercial` > `comercial`.
+uno de estos tres roles no puede iniciar sesión (401). **Rol único** (una asignación en Cotifly): con varios roles de ClientePro gana el de
+mayor alcance, `director` > `gerente_comercial` > `comercial`. **Multi-rol** (HU-040, fila 66): quien tiene varias asignaciones en
+Cotifly (o entra por primera vez con varios roles de ClientePro) elige el rol al entrar y la sesión queda limitada a ese rol; para
+cambiarlo, cerrar sesión y volver a entrar.
 
 Las acciones sobre una cotización (costeo, margen, conexos, PDF, envío, resultado, nueva versión) exigen ser el **dueño**: el gerente
 recibe 404 sobre una cotización de otro comercial, aunque sea de su regional. La única excepción es la descarga del PDF.
@@ -402,6 +420,7 @@ recibe 404 sobre una cotización de otro comercial, aunque sea de su regional. L
 | 401 `Inicia sesión de nuevo.` en `/web/*` o `/pdfs/*` | Refresh **una sola vez** (single-flight) y repetir la petición original |
 | 401 en `/api/auth/refresh` | Hacer login SSO silencioso (`login-clientepro` con la identidad de ClientePro) |
 | 401 `Credenciales inválidas` en `/api/auth/login-clientepro` | No reintentar. Mostrar "No tienes acceso a Cotifly con tu usuario de ClientePro" |
+| 401 `Inicia sesión de nuevo.` en `/api/auth/elegir-rol` (HU-040.2) | Ticket vencido o ya usado, o el rol ya no está disponible: volver a llamar al login (una vez) y mostrar el selector de nuevo |
 | 403 `No tienes permiso para esta operación.` | No refrescar. Ocultar la opción para ese rol |
 | 503 `CUBICADOR_NO_AUTORIZADO` | **No** es la sesión del comercial (es la llave de Cotifly ante el cubicador). No cerrar sesión |
 
@@ -422,7 +441,12 @@ sequenceDiagram
     participant CP as ClientePro (Angular)
     participant API as API Cotifly
     CP->>API: POST /api/auth/login-clientepro {idUsuario}
-    alt identidad y rol válidos
+    alt identidad válida con varios roles (HU-040.2)
+        API-->>CP: 200 {requiereEleccionRol:true, ticketEleccion, ticketExpiraAt, roles, user}
+        CP->>CP: selector de rol
+        CP->>API: POST /api/auth/elegir-rol {ticket, rol}
+        API-->>CP: 200 {access, refresh, user (rol elegido), debeCambiarPassword:false}
+    else identidad y rol único válidos
         API-->>CP: 200 {access, refresh, user, debeCambiarPassword:false}
         CP->>API: GET /web/usuario/telefono (Bearer)
         API-->>CP: 200 {telefono} o {telefono:null}
@@ -888,7 +912,7 @@ Retirados (responden 404): `GET /web/metricas/actividad`, `GET /web/metricas/aju
 { "idUsuario": "APEREZ", "nombreUsuario": "Ana Pérez", "roles": ["32"] }
 ```
 
-Respuesta **200** (`LoginResponse`):
+Respuesta **200** con un solo rol (`LoginResponse`):
 
 ```json
 {
@@ -906,9 +930,25 @@ Respuesta **200** (`LoginResponse`):
 }
 ```
 
+Respuesta **200** con varios roles (`EleccionRolRequerida`, HU-040.2): sin tokens.
+
+```json
+{
+  "requiereEleccionRol": true,
+  "ticketEleccion": "eyJhbGciOiJIUzI1NiIsInR5cCI6ImVsZWNjaW9uLXJvbCtqd3QifQ...",
+  "ticketExpiraAt": "2026-10-27T15:05:00+00:00",
+  "roles": [
+    { "codigo": "comercial", "descripcion": "Comercial" },
+    { "codigo": "gerente_comercial", "descripcion": "Gerente comercial" }
+  ],
+  "user": { "id": "968c9f61-b1f1-44a8-bb23-7a3d31d7d602", "username": "APEREZ", "nombre_completo": "Ana Pérez" }
+}
+```
+
 | HTTP | Cuerpo | UI |
 |---|---|---|
 | 200 | `LoginResponse` | Guardar los tokens y `user`. Si `user.ubicacion` es `null`, el gerente no tiene regional (sus vistas regionales responderán 409) |
+| 200 | `EleccionRolRequerida` (HU-040.2, `requiereEleccionRol: true`, sin tokens) | Selector de rol y `POST /api/auth/elegir-rol` (4.1.4) antes de `ticketExpiraAt` |
 | 400 | `ErrorWeb` (falta `idUsuario`, JSON inválido) | Error de programación |
 | 401 | `{"error":"Credenciales inválidas"}` (cualquier rechazo: usuario inexistente, sin rol autorizado, almacén caído) | "No tienes acceso a Cotifly". No reintentar en bucle |
 | 429 | `ErrorWeb` | Esperar 60 s |
@@ -933,6 +973,27 @@ Respuesta **200** (`LoginResponse`):
 |---|---|
 | 204 | Siempre (exista o no el token). Borrar los tokens locales |
 | 429 | Borrar los tokens igual |
+
+#### 4.1.4 `POST /api/auth/elegir-rol` (HU-040.2, #230)
+
+- **Rol:** público (no requiere Bearer). Mismo límite de `/api/auth/*` que el login. **camelCase.**
+- **Cuerpo:** `{"ticket": "<ticketEleccion del login>", "rol": "<roles[i].codigo>"}`.
+
+| Campo | Tipo | Obligatorio | Reglas |
+|---|---|---|---|
+| `ticket` | string | Sí | El `ticketEleccion` de `EleccionRolRequerida`. Opaco; de un solo uso; vence a los 5 minutos |
+| `rol` | string | Sí | `comercial`, `gerente_comercial` o `director`, y uno de los `roles[].codigo` que ofreció el login |
+
+```json
+{ "ticket": "eyJhbGciOiJIUzI1NiIsInR5cCI6ImVsZWNjaW9uLXJvbCtqd3QifQ...", "rol": "gerente_comercial" }
+```
+
+| HTTP | Cuerpo | UI |
+|---|---|---|
+| 200 | `LoginResponse` con `user.rol` = el elegido | Guardar los tokens y `user` como en el login. El refresh conserva este rol |
+| 400 | `ErrorWeb` (falta `ticket`, o `rol` no es un código de rol) | Error de programación |
+| 401 | `{"error":"Inicia sesión de nuevo."}` (ticket vencido, alterado o ya usado; rol no ofrecido; le quitaron el rol entre el login y la elección) | Volver a llamar al login una vez y mostrar el selector de nuevo. El ticket queda gastado aunque la elección falle |
+| 429 | `ErrorWeb` | Esperar |
 
 ### 4.2 Catálogos
 
@@ -3679,6 +3740,7 @@ fila_excel, campo, codigo, mensaje}`.
 | 62 | **HU-039.1 (#218): costo bruto de la ruta para el dueño.** `RutaCosteo` (`rutas[]` de `GET /web/cotizaciones/{folio}/costeo`, de las demás respuestas `CosteoCotizacion` del dueño: margen, conexos, recálculo de vehículos, y de `costeo.rutas[]` de `GET /web/cotizaciones/{folio}`) trae el campo **nuevo** `costo_final`: el costo bruto de la ruta que costeó NEXO (fletes + retorno + levante + conexos, sin margen), **siempre en COP aunque la cotización esté en USD**, y `null` en los mismos casos que `precio_final_linea` (sin costeo o ruta `rechazada`). Solo el dueño: en el detalle de un gerente (`solo_lectura = true`) sale siempre `null`. No hay desglose ni costo por camión o conexo, y el costo no sale en "Mis cotizaciones", el listado regional, el PDF, el correo, el Excel ni el asistente. Reversa de la regla "el costo bruto nunca llega al comercial" (ADR-015 §5), confirmada por la Gerencia Comercial el 2026-10-27. Con la cotización finalizada (fila 63) `costo_final` es el costo con que se finalizó, como el precio congelado: no cambia con lo que traiga NEXO después. Ningún campo existente cambia | Agrega | Conectar el chip "Total costeo" a `rutas[].costo_final` (o a su suma, solo si todas las rutas cotizables lo traen); formatearlo siempre como pesos, sin la moneda de la cotización; "—" con `null`; no mostrarlo con `solo_lectura` |
 | 63 | **HU-036 (#205 a #208): cotización finalizada.** (a) **#206: nuevo `POST /web/cotizaciones/{folio}/finalizar`** (4.5.6) con `If-Match` obligatorio, solo el dueño: el comercial acepta el precio. Solo con `estado_costeo` en `autocosteo` o `entregada`; si no, **409 `COTIZACION_NO_FINALIZABLE`** (código nuevo, `detalle.estado_costeo`). Re-finalizar es 200 sin cambios; `If-Match` viejo, 409 `CONFLICTO_CONCURRENCIA`. Campo nuevo **`finalizada_at`** (UTC, `null` sin finalizar) en `CotizacionResumen` ("Mis cotizaciones", listado regional, detalle, respuestas de resultado y re-solicitud), `CosteoCotizacion`, `FechasCotizacion` (`GET /web/cotizaciones/{folio}`) y `Licitacion` (`GET /web/licitaciones/{folio}` y las respuestas de alta y de reintento de la cubicación; DEF-1027-2 de #226). Las cotizaciones existentes quedan sin finalizar (sin backfill). Requiere `db/scripts/14_cotizacion_finalizada.sql`. (b) **#207, candados.** Después de finalizar: margen, conexos (`PUT` y `POST .../servicios-conexos`), re-solicitar en el mismo folio y recalcular camiones responden **409 `PDF_YA_ENVIADO`** con `detalle.accion = nueva_version` (como una enviada), y `GET .../solicitud` devuelve `edicion.modo = nueva_version`. Antes de finalizar: `POST .../costeo/pdf`, `POST .../enviar`, `POST .../costeo/textos/redactar`, `PUT .../costeo/textos` y `POST .../resultado` (este último solo con el costeo listo) responden **409 `COTIZACION_NO_FINALIZADA`** (código nuevo) con "Finaliza la cotización … antes de …" y `detalle` = `{accion: finalizar, metodo: POST, endpoint: …/finalizar}`. No aplica a las ya enviadas o con resultado (anteriores a HU-036), a las del chat ni a la perdida antes del costeo (`pendiente_costeo`/`error_envio`) ni a `/seguimiento` en `descartada`/`costeo_vencido`. El asistente queda bloqueado por las mismas reglas. (c) **#208, precio congelado.** Con la cotización finalizada el polling **no** cambia el precio aunque NEXO traiga otro costo (por ejemplo, la Mesa entrega una ruta con otro valor): `estado_costeo` sigue avanzando (`autocosteo` → `entregada`), el precio se conserva y `motivo_estado_costeo` lo advierte con la ruta que cambió ("El costeo de Nexo cambió después de finalizar la cotización en la ruta N (Origen → Destino): el precio finalizado se conserva. Genera una versión nueva…"), sin montos; el aviso se quita si NEXO vuelve a los costos finalizados. Con una ruta rechazada después de finalizar, `POST .../costeo/pdf` responde 409 `COSTEO_NO_LISTO` con `detalle.accion = nueva_version`. No se finaliza con un conexo de NEXO pendiente de leer (409 `COTIZACION_NO_FINALIZABLE`, `detalle.motivo = conexos_pendientes_de_leer`). Mismo mecanismo que el PDF generado | Agrega / Cambia | Botón "Finalizar cotización" (aceptar el precio) habilitado con `estado_costeo` en `autocosteo`/`entregada`, `precio_final` y `finalizada_at = null`; enviar el `ETag` vigente; ante `CONFLICTO_CONCURRENCIA`, recargar y volver a confirmar con el precio nuevo; mostrar "Finalizada el …" con `finalizada_at`. Con `finalizada_at = null`: deshabilitar PDF, textos, envío y resultado (o, ante `COTIZACION_NO_FINALIZADA`, ofrecer "Finalizar" con `detalle.endpoint`). Con `finalizada_at`: deshabilitar margen, conexos, re-solicitar en el mismo folio, recalcular y editar en sitio (ofrecer la versión nueva de `detalle`). Mostrar `motivo_estado_costeo` como aviso cuando empieza por "El costeo de Nexo cambió después de finalizar la cotización" (ofrecer la versión nueva) |
 | 64 | **HU-037 (#210, #211): rol `director`, alcance de todas las regionales y `GET /web/regionales`.** (a) Nuevo valor `director` en `rol` (`user.rol` del login y claim `rol` del token) y en `comerciales[].rol` del tablero. Con varios roles de ClientePro gana `director` > `gerente_comercial` > `comercial`. El director usa todo lo del gerente (tablero, listado regional, políticas de margen) y su propia consola de comercial. (b) `GET /web/metricas/regional` y `GET /web/cotizaciones/regional` aceptan `?regional=` (opcional): el director ve **todas** sin él (`regional` y `fuente_regional` en `null`) o solo la elegida con él (`fuente_regional` en `null`); `usuario_id` del director puede ser de cualquier regional. El gerente sigue viendo solo la suya: `?regional=` con la suya se acepta y con otra responde **403 `REGIONAL_NO_PERMITIDA`** (`ErrorNegocio`, código nuevo). (c) **Nuevo** `GET /web/regionales` (4.11.3): todas para el director, la suya para el gerente, 403 para el comercial. (d) El detalle por folio y el PDF de una cotización de cualquier regional son visibles para el director (solo consulta). (e) `regional` y `fuente_regional` de `CotizacionesRegional` y `MetricasRegional` pasan a ser anulables (solo para el director). Son **55 endpoints** con `POST .../finalizar` de la fila 63 | Agrega / Cambia | Tratar `director` como un gerente en el menú; para el director, selector de regional con la opción "Todas" (sin `regional`) y las de `GET /web/regionales`, y mostrar "Todas las regionales" cuando `regional` venga `null`; manejar el 403 `REGIONAL_NO_PERMITIDA` (no ofrecer otras regionales al gerente); tipar `regional` y `fuente_regional` como `string \| null` |
+| 66 | **HU-040 (#229, #230, ADR-025): multi-rol, elegir el rol al entrar.** (a) `POST /api/auth/login-clientepro` 200 puede responder **`EleccionRolRequerida`** (`requiereEleccionRol: true`, `ticketEleccion`, `ticketExpiraAt`, `roles[]` con `codigo` y `descripcion`, `user` sin rol) **sin tokens** cuando la persona tiene varios roles en Cotifly (o entra por primera vez con varios roles de ClientePro); con un solo rol la respuesta es la misma de siempre. (b) **Nuevo `POST /api/auth/elegir-rol`** `{ticket, rol}` → 200 `LoginResponse` con el rol elegido; 400 cuerpo inválido; 401 `Inicia sesión de nuevo.` para todo rechazo; 429. Ticket de un solo uso, 5 minutos. (c) El refresh conserva el rol elegido y responde 401 si se lo quitaron. (d) Con varios roles ya **no** gana el de mayor alcance: la jerarquía queda para el rol único | Agrega | Detectar `requiereEleccionRol`, mostrar el selector y llamar a `elegir-rol`; ante 401 en `elegir-rol`, volver a hacer login |
 | 65 | **E2E real del 2026-10-27 (#226): correcciones.** (a) **DEF-1027-1:** `POST /web/chat` con el proveedor de IA caído (conexión rechazada o tiempo agotado tras los reintentos del SDK) responde 200 `RespuestaChatError` con `codigo = IA_NO_DISPONIBLE` y su texto, no `ERROR_INTERNO`. (b) **DEF-1027-3:** la respuesta 200 de `POST .../costeo/servicios-conexos` trae el `estado_nexo` (y la categoría) de cada conexo igual que el `GET .../costeo` inmediato (antes `null`). (c) **OBS-1027-5 (ADR-023):** con `entorno_pruebas = true` (modo `redirigir`) la vista previa del correo trae `copia_oculta = null` y el `aviso` dice "sin CC ni CCO": el correo redirigido sale solo al buzón de pruebas, sin copia oculta al comercial. (d) **OBS-1027-6:** el PDF de una cotización ya enviada (o con resultado) con PDF vigente responde 409 `PDF_YA_ENVIADO`, no `PDF_YA_GENERADO`: la entrega gana. (e) **OBS-1027-4:** `POST /web/licitaciones` con errores de fila y una línea de negocio que no da margen ("Licitaciones" de NEXO, inexistente o inactiva) responde un solo 400 `LICITACION_INVALIDA` con **todo**: los errores de fila y, en `errores[]`, `MARGEN_LINEA_DESCONOCIDA` en `campo = linea_negocio` (la del encabezado con `indice = null`; la de una fila que trae la suya, con su `indice`), con `error.detalle.lineas_validas`. Valor nuevo en el enum `ErrorFilaLicitacion.codigo` (cambio aditivo: un cliente que no lo conozca lo pinta como cualquier error de fila con su `mensaje`). Sin otros errores de fila sigue siendo el 400 `MARGEN_LINEA_DESCONOCIDA` de siempre. Sin script de base de datos ni endpoints nuevos | Agrega / Cambia | (a) Con `IA_NO_DISPONIBLE` mostrar "Asistente no disponible" (ya previsto); (b) se puede pintar el estado del conexo con la respuesta del POST sin pedir el costeo; (c) mostrar "Recibirás una copia oculta" solo si `copia_oculta` no es `null`; (d) ante `PDF_YA_ENVIADO` ofrecer la versión nueva; (e) pintar `MARGEN_LINEA_DESCONOCIDA` con `indice = null` como error del encabezado (selector de línea de negocio, con `error.detalle.lineas_validas`) junto a los de las filas |
 
 ---
@@ -3767,6 +3829,18 @@ fila_excel, campo, codigo, mensaje}`.
 ---
 
 ## 9. Notas de versión
+
+**2026-10-27 (ramas `229-multiples-roles-activos` y `230-elegir-rol-login`, HU-040, #229 y #230, ADR-025).** Multi-rol (fila 66 de §7):
+
+- **Login con varios roles:** 200 `EleccionRolRequerida` sin tokens (selector); con un rol, `LoginResponse` como siempre. Distinguir por
+  `requiereEleccionRol`.
+- **Nuevo `POST /api/auth/elegir-rol`** (4.1.4): `{ticket, rol}` → 200 `LoginResponse`; ticket de un solo uso que vence a los 5 minutos;
+  todo rechazo es 401 `Inicia sesión de nuevo.`
+- **Refresh:** conserva el rol de la sesión; 401 si se lo quitaron (volver a entrar).
+- Quien hoy entra con un rol no nota nada. El multi-rol de un usuario existente lo habilita Datos; las altas con varios roles de ClientePro
+  ya nacen multi-rol.
+- Script de base de datos `16_multiples_roles_activos.sql` (antes de la imagen; `/health/ready` "falta 16"). Sin configuración nueva.
+  **56 endpoints** (uno nuevo).
 
 **2026-10-27 (rama `226-correcciones-e2e-1027`, #226, E2E real del 2026-10-27).** Correcciones del E2E (fila 65 de §7):
 

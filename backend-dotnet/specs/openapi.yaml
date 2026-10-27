@@ -25,7 +25,9 @@ info:
       (métodos `GET`, `POST` y `PUT`) y leer `ETag`, `Location`, `Retry-After` y `Content-Disposition`
       (`Access-Control-Expose-Headers`). Ningún otro encabezado propio pasa el preflight; no hay id de correlación.
     - Autenticación: `Authorization: Bearer <access>` emitido por
-      `POST /api/auth/login-clientepro` (patrón "Login SSO — Cliente Pro").
+      `POST /api/auth/login-clientepro` (patrón "Login SSO — Cliente Pro"). HU-040.2 (#230, ADR-025): si la persona
+      tiene varios roles, el login responde 200 `EleccionRolRequerida` (sin tokens) y el access lo emite
+      `POST /api/auth/elegir-rol` con el rol elegido.
     - Las operaciones marcadas con `x-estado: pendiente` tienen el contrato acordado y todavía no
       están implementadas; `x-issue` dice qué issue las implementa. Mientras tanto la prueba de
       contrato las lista en `clsContratoRutasTests.PendientesDeImplementar` (HU-013, ADR-018).
@@ -150,9 +152,17 @@ paths:
         como `ID` numérico. El `NOMBREUSUARIO` de la fila encontrada (nunca el que
         envía el cliente) es la clave para ubicar o crear al usuario en `UsuariosWeb`
         (aprovisionamiento just-in-time). Luego traduce sus roles externos a roles
-        internos y exige `comercial`, `gerente_comercial` o `director` (HU-037, #210). Con varios roles externos mapeados
-        gana el de mayor alcance: `director` > `gerente_comercial` > `comercial` (regla auditada: `precedencia_director` o
-        `precedencia_gerente_comercial`).
+        internos y exige `comercial`, `gerente_comercial` o `director` (HU-037, #210).
+
+        **HU-040.2 (#230, ADR-025), multi-rol.** La respuesta 200 tiene dos formas; el frontend las distingue por
+        `requiereEleccionRol`:
+        - **Un solo rol** (`LoginResponse`, sin `requiereEleccionRol`): igual que siempre, con `access` y `refresh`. Es el
+          caso de quien tiene una sola asignación activa en Cotifly; si tiene varios roles externos, aplica la jerarquía
+          `director` > `gerente_comercial` > `comercial` (regla auditada `precedencia_director` o `precedencia_gerente_comercial`).
+        - **Varios roles** (`EleccionRolRequerida`, `requiereEleccionRol: true`): quien tiene dos o más asignaciones activas
+          (o entra por primera vez con varios roles externos mapeados). NO trae tokens: trae `roles` (código y descripción),
+          `user` (sin rol) y `ticketEleccion`, un ticket de UN SOLO USO que vence en 5 minutos (`ticketExpiraAt`). El
+          frontend muestra el selector y llama a `POST /api/auth/elegir-rol`. Si el ticket vence, se vuelve a llamar al login.
         Cualquier falla (usuario inexistente, rol no autorizado, almacén caído) responde
         el mismo 401 genérico.
       security: []
@@ -168,7 +178,83 @@ paths:
               roles: ["32"]
       responses:
         '200':
-          description: Sesión emitida
+          description: |
+            Sesión emitida (`LoginResponse`, un solo rol) o elección de rol pendiente (`EleccionRolRequerida`, varios roles,
+            sin tokens; HU-040.2).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/LoginResponse'
+                  - $ref: '#/components/schemas/EleccionRolRequerida'
+              examples:
+                rolUnico:
+                  summary: Un solo rol (igual que antes de HU-040)
+                  value:
+                    access: "eyJhbGciOiJIUzI1NiIs..."
+                    refresh: "q8Jm1..."
+                    user:
+                      id: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+                      username: "JPEREZ"
+                      email: "jperez@boterosoto.com.co"
+                      nombre_completo: "Juan Pérez"
+                      rol: comercial
+                      ubicacion: "Antioquia"
+                    debeCambiarPassword: false
+                variosRoles:
+                  summary: Varios roles (HU-040.2)
+                  value:
+                    requiereEleccionRol: true
+                    ticketEleccion: "eyJhbGciOiJIUzI1NiIsInR5cCI6ImVsZWNjaW9uLXJvbCtqd3QifQ..."
+                    ticketExpiraAt: "2026-10-27T15:05:00+00:00"
+                    roles:
+                      - codigo: comercial
+                        descripcion: Comercial
+                      - codigo: gerente_comercial
+                        descripcion: Gerente comercial
+                    user:
+                      id: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+                      username: "JPEREZ"
+                      nombre_completo: "Juan Pérez"
+        '400':
+          $ref: '#/components/responses/Validacion'
+        '401':
+          $ref: '#/components/responses/CredencialesInvalidas'
+        '429':
+          $ref: '#/components/responses/DemasiadasPeticiones'
+        '500':
+          $ref: '#/components/responses/ErrorInternoAuth'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
+
+  /api/auth/elegir-rol:
+    post:
+      operationId: elegirRol
+      tags: [auth]
+      summary: Elige el rol con el que entra una persona con varios roles (HU-040.2)
+      description: |
+        **HU-040.2 (#230, ADR-025).** Recibe el `ticketEleccion` de la respuesta `EleccionRolRequerida` del login y el
+        `rol` elegido (uno de los `roles[].codigo` ofrecidos). El ticket es de UN SOLO USO: se consume en la primera
+        llamada aunque la elección falle (un segundo intento con el mismo ticket es 401; hay que volver a llamar al login).
+        Antes de emitir, el servidor revalida contra ClientePro y las asignaciones de Cotifly que la persona siga teniendo
+        ese rol. Emite `access` (claim `rol` = el elegido) y `refresh`; el refresh conserva el rol elegido (no vuelve a
+        preguntar) y revalida en cada renovación que siga vigente (si se lo quitaron, 401 "Inicia sesión de nuevo.").
+        Para cambiar de rol: cerrar sesión y volver a entrar. Mismo límite de peticiones por IP que el login (429).
+        Todo rechazo (ticket vencido, alterado, ya usado o de otra sesión; rol no ofrecido o retirado) responde el mismo
+        401 `{"error":"Inicia sesión de nuevo."}`; el motivo queda en la auditoría (`elegir_rol`).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ElegirRolRequest'
+            example:
+              ticket: "eyJhbGciOiJIUzI1NiIsInR5cCI6ImVsZWNjaW9uLXJvbCtqd3QifQ..."
+              rol: gerente_comercial
+      responses:
+        '200':
+          description: Sesión emitida con el rol elegido
           content:
             application/json:
               schema:
@@ -176,7 +262,7 @@ paths:
         '400':
           $ref: '#/components/responses/Validacion'
         '401':
-          $ref: '#/components/responses/CredencialesInvalidas'
+          $ref: '#/components/responses/SesionExpirada'
         '429':
           $ref: '#/components/responses/DemasiadasPeticiones'
         '500':
@@ -191,7 +277,8 @@ paths:
       summary: Rota el refresh token y emite un par nuevo
       description: |
         El refresh token se invalida al usarse (rotación). Reutilizar un refresh ya
-        rotado se trata como posible robo de sesión: responde 401.
+        rotado se trata como posible robo de sesión: responde 401. HU-040.2 (#230): el par nuevo
+        conserva el rol de la sesión (el elegido en `elegir-rol` o el único); si ya no lo tiene, 401.
       security: []
       requestBody:
         required: true
@@ -4407,6 +4494,71 @@ components:
           type: string
           nullable: true
           description: Regional del usuario (`UsuariosWeb.regional`), que el login llena y refresca desde DimEjecutivo cuando está conectada (#81). null si el usuario no está en esa tabla y nadie la asignó, o si no hay conexión; una falla de DimEjecutivo nunca hace fallar el login.
+
+    ElegirRolRequest:
+      type: object
+      required: [ticket, rol]
+      description: HU-040.2 (#230). El ticket de `EleccionRolRequerida` y el código del rol elegido.
+      properties:
+        ticket:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          description: '`ticketEleccion` del login. Opaco para el frontend; de un solo uso; vence en 5 minutos.'
+        rol:
+          type: string
+          enum: [comercial, gerente_comercial, director]
+          description: Uno de los `roles[].codigo` que ofreció el login.
+
+    EleccionRolRequerida:
+      type: object
+      required: [requiereEleccionRol, ticketEleccion, ticketExpiraAt, roles, user]
+      description: |
+        HU-040.2 (#230, ADR-025): respuesta 200 del login cuando la persona tiene varios roles. Sin tokens: el
+        frontend muestra `roles` y llama a `POST /api/auth/elegir-rol` antes de `ticketExpiraAt`.
+      properties:
+        requiereEleccionRol:
+          type: boolean
+          description: Siempre `true`. Es lo que distingue esta respuesta de `LoginResponse`.
+        ticketEleccion:
+          type: string
+          description: Ticket de un solo uso para `POST /api/auth/elegir-rol`. No es un access token (no abre ningún endpoint).
+        ticketExpiraAt:
+          type: string
+          format: date-time
+          description: Vencimiento del ticket (5 minutos después del login).
+        roles:
+          type: array
+          minItems: 2
+          items:
+            $ref: '#/components/schemas/RolDisponible'
+          description: Roles entre los que elige, en el orden comercial, gerente_comercial, director.
+        user:
+          $ref: '#/components/schemas/UsuarioEleccion'
+
+    RolDisponible:
+      type: object
+      required: [codigo, descripcion]
+      properties:
+        codigo:
+          type: string
+          enum: [comercial, gerente_comercial, director]
+        descripcion:
+          type: string
+          description: Nombre para mostrar (catálogo de roles de Cotifly).
+
+    UsuarioEleccion:
+      type: object
+      required: [id, username, nombre_completo]
+      description: Quién está eligiendo (todavía sin rol).
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        nombre_completo:
+          type: string
 
     LoginResponse:
       type: object

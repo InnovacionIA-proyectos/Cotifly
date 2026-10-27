@@ -72,6 +72,9 @@ public sealed partial class clsContratoEjemplosDocTests
             // HU-035.1 (#202): Excel de mercancías de una ruta, leído en Cotifly sin Nexo.
             "respuesta: POST /web/mercancias/analizar-excel 200",
             "respuesta: POST /web/mercancias/analizar-excel 400",
+            // HU-040.2 (#230): selector de rol del login multi-rol.
+            "esquema: EleccionRolRequerida",
+            "esquema: ElegirRolRequest",
         ]);
     }
 
