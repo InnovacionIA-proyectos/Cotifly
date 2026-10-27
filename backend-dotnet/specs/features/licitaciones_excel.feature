@@ -88,7 +88,7 @@ Característica: Licitaciones desde Excel
       | 2     | tipologia               | CODIGO_NO_CATALOGO      |
       | 3     | clase_contenedor        | CAMPO_REQUERIDO         |
       | 4     | clase_contenedor        | CAMPO_NO_APLICA         |
-      | 4     | valor_aprovisionamiento | CAMPO_NO_APLICA         |
+      | 4     | valor_levante_contenedor | CAMPO_NO_APLICA        |
       | 5     | origen                  | MUNICIPIO_AMBIGUO       |
       | 6     | destino                 | MUNICIPIO_NO_ENCONTRADO |
     Y Nexo no recibió ninguna solicitud
