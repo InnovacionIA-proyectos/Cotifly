@@ -185,6 +185,9 @@ destinatarios en `para`.
   `Correo__MaximoDestinatarios` (`clsOpcionesCorreo.MaximoDestinatarios`, de 1 a 100; fuera de rango la API no arranca, como el resto
   de las opciones de correo) y `detalle.maximo` trae siempre el valor vigente. La copia oculta al comercial no cuenta. Pasado el tope, 400 `ErrorNegocio` `CORREO_DEMASIADOS_DESTINATARIOS` (código
   nuevo, para poder llevar `detalle = {maximo, recibidos}`; `CORREO_INVALIDO` sale como `ErrorWeb`, sin `detalle`).
+  El tope se aplica al redactar (envío y vista previa): el reintento (`POST .../correos/{id}/reintentar`) pide a MailSender el mismo
+  correo que ya aceptó, con sus destinatarios, y no lo vuelve a medir contra el tope vigente (bajar `Correo__MaximoDestinatarios` no
+  bloquea reintentar un envío anterior).
 - **Misma validación en la vista previa** (`clsCorreoService.ValidarBorrador`), después de comprobar el dueño; sin `para` no se exige
   (se precargan los destinatarios previos).
 - **Orden en el envío:** dueño (404), `CORREO_DESHABILITADO` (503), asunto con controles, destinatarios con controles, tope, formato de
