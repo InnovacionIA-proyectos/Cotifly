@@ -3040,7 +3040,7 @@ parámetros.
         "ganancias": 1860000.00, "cotizaciones_usd": 1, "tiempo_promedio_cotizacion_horas": 5.75,
         "desviacion_promedio_margen": -0.015, "desviacion_promedio_margen_abs": 0.025, "ajustes_margen": 2, "deadline_vencidas": 1,
         "margen_politica_promedio": 0.15, "margen_aplicado_promedio": 0.1558, "margen_politica_ponderado": 0.15,
-    "desviacion_margen_politica": 0.0061, "rutas_sin_margen_politica": 0
+        "desviacion_margen_politica": 0.0061, "rutas_sin_margen_politica": 0
       }
     }
   ],
