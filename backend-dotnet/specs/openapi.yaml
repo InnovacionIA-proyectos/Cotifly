@@ -2490,7 +2490,7 @@ paths:
       summary: Aplica el mismo margen (o vuelve al sugerido) en varias rutas o en todas, en una sola operación
       x-issue: '#231 (HU-041.1)'
       description: |
-        HU-041.1 (#231, ADR-025). La versión masiva de `PUT .../costeo/margen`: las MISMAS reglas que una llamada por ruta, pero
+        HU-041.1 (#231, ADR-026). La versión masiva de `PUT .../costeo/margen`: las MISMAS reglas que una llamada por ruta, pero
         atómica. Si una ruta no admite el cambio, **no cambia ninguna** y el error dice cuál la bloqueó en `detalle.linea_orden` y
         `detalle.linea_solicitud_id` (más los datos propios del error, p. ej. `detalle.margen_sugerido` de `JUSTIFICACION_REQUERIDA`).
 
@@ -3203,7 +3203,7 @@ paths:
       summary: Agrega un servicio conexo del catálogo a varias rutas o a todas, en una sola operación
       x-issue: '#231 (HU-041.1)'
       description: |
-        HU-041.1 (#231, ADR-025). Agrega el servicio `servicio_id` del catálogo de Nexo (`GET /web/servicios-conexos`), con la misma
+        HU-041.1 (#231, ADR-026). Agrega el servicio `servicio_id` del catálogo de Nexo (`GET /web/servicios-conexos`), con la misma
         `cantidad`, a las rutas elegidas (`lineas` o `todas: true`, como en `PUT .../costeo/margen/lineas`). Atómica: si una ruta no lo
         admite, no cambia ninguna y el error trae `detalle.linea_orden` y `detalle.linea_solicitud_id` de la que bloqueó.
 
@@ -3211,7 +3211,7 @@ paths:
           `detalle.motivo = LICITACION`), costeo con margen (409 `COSTEO_NO_LISTO`), regla del PDF y cotización finalizada (409
           `PDF_YA_ENVIADO`), ruta no rechazada (409 `RUTA_RECHAZADA`) y con su línea en la cotización de Nexo (409
           `LINEA_SIN_COTIZACION_NEXO`).
-        - **Nexo (ADR-025).** Cotifly NO llama al `POST` de conexos de Nexo dentro de esta petición (no podría deshacer un éxito
+        - **Nexo (ADR-026).** Cotifly NO llama al `POST` de conexos de Nexo dentro de esta petición (no podría deshacer un éxito
           parcial: Nexo no tiene DELETE). El conexo se guarda en cada ruta con el **costo del catálogo de Nexo** (como un conexo
           capturado con la ruta) y queda `estado_nexo = pendiente`; el envío diferido del polling lo lleva a la línea del primer camión
           de cada ruta, una sola vez, y pasa a `enviado` (o `incierto` / `fallido_definitivo`, visibles en el costeo). Mientras quede
@@ -3294,7 +3294,7 @@ paths:
       summary: Quita un servicio conexo de varias rutas o de todas, en una sola operación
       x-issue: '#231 (HU-041.1)'
       description: |
-        HU-041.1 (#231, ADR-025). Quita de las rutas elegidas (`lineas` o `todas: true`) el conexo cuyo `servicio_id` (id del catálogo,
+        HU-041.1 (#231, ADR-026). Quita de las rutas elegidas (`lineas` o `todas: true`) el conexo cuyo `servicio_id` (id del catálogo,
         `servicios_conexos[].servicio_id`) es el pedido: se BORRA su fila, como `PUT .../costeo/servicios-conexos` por ruta, y se
         recalculan esas rutas y el total. Nexo no cambia (no hay DELETE de conexos; Cotifly es la fuente de los conexos). Atómica:
         si una ruta no lo admite, no cambia ninguna y el error trae `detalle.linea_orden`.

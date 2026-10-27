@@ -17,7 +17,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Aplicacion.Costeo.Services;
 
 /// <summary>
-/// HU-041.1 (#231, ADR-025): margen y servicios conexos para varias rutas (o todas) de la cotización en UNA operación. Cada operación
+/// HU-041.1 (#231, ADR-026): margen y servicios conexos para varias rutas (o todas) de la cotización en UNA operación. Cada operación
 /// cumple las mismas reglas que N llamadas a los endpoints por ruta (<c>PUT .../costeo/margen</c>, <c>POST</c> y <c>PUT
 /// .../costeo/servicios-conexos</c>), pero es atómica: si una ruta no admite el cambio no cambia ninguna y el error dice cuál la bloqueó
 /// (<c>detalle.linea_orden</c> y <c>detalle.linea_solicitud_id</c>). El PDF vigente se invalida una sola vez y queda una sola entrada de
@@ -39,7 +39,7 @@ public interface IClsCosteoLineasService
     /// <summary>
     /// <c>POST /web/cotizaciones/{folio}/costeo/servicios-conexos/lineas</c>: agrega un servicio del catálogo de Nexo, con su costo del
     /// catálogo, a las rutas elegidas (las que ya lo tienen no cambian). Queda <c>estado_nexo = pendiente</c> y el envío diferido lo lleva a
-    /// Nexo (ADR-025). Además de los de <see cref="AjustarMargenAsync"/>: <c>ESTADO_NO_PERMITE</c> (409, licitación),
+    /// Nexo (ADR-026). Además de los de <see cref="AjustarMargenAsync"/>: <c>ESTADO_NO_PERMITE</c> (409, licitación),
     /// <c>LINEA_SIN_COTIZACION_NEXO</c> (409), <c>CONEXO_INVALIDO</c> (400, el servicio no está activo en el catálogo) y los de Nexo al leer
     /// el catálogo (<c>NEXO_NO_DISPONIBLE</c> 503, <c>NEXO_SIN_PERMISO</c> 403), sin cambiar nada.
     /// </summary>
@@ -57,7 +57,7 @@ public interface IClsCosteoLineasService
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>Implementación de <see cref="IClsCosteoLineasService"/> (ver ADR-025).</summary>
+/// <summary>Implementación de <see cref="IClsCosteoLineasService"/> (ver ADR-026).</summary>
 /// <remarks>
 /// <list type="bullet">
 /// <item><b>Todo o nada.</b> Primero se validan TODAS las rutas sin tocar la cotización (con las mismas reglas del dominio que usan los
@@ -458,7 +458,7 @@ public sealed class clsCosteoLineasService(
             cambios.Add(new clsCambioConexoRuta(ruta.Orden, ruta.Id, null, cantidad));
         }
 
-        // ADR-025: el envío a Nexo es el diferido (outbox): un registro en_espera por ruta en esta misma escritura y, con el polling detenido,
+        // ADR-026: el envío a Nexo es el diferido (outbox): un registro en_espera por ruta en esta misma escritura y, con el polling detenido,
         // la cotización vuelve a la agenda solo para ese envío.
         await ProgramarEnvioAsync(cotizacion, destino, deCatalogo.Id, cancellationToken);
         var pdfInvalidado = clsReglaPdfCosteo.InvalidarPdf(cotizacion, MotivoInvalidacionPdf.ServiciosConexos, usuarioId, cotizaciones);

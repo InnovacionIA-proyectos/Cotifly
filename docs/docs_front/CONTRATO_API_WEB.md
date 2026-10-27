@@ -1972,7 +1972,7 @@ remitente corporativo, y un buzón o un remitente corporativo que no lo cumple i
 }
 ```
 
-### 8.19 Margen y conexos de varias rutas en una operación (HU-041.1, #231, ADR-025)
+### 8.19 Margen y conexos de varias rutas en una operación (HU-041.1, #231, ADR-026)
 
 Tres endpoints nuevos, atómicos, con las mismas reglas que sus equivalentes por ruta (8.7 y 8.8): `PUT .../costeo/margen/lineas`,
 `POST .../costeo/servicios-conexos/lineas` y `POST .../costeo/servicios-conexos/lineas/quitar`. Las rutas se eligen con `lineas` (los

@@ -19,7 +19,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// HU-041.1 (#231, ADR-025): margen y servicios conexos para varias rutas en una operación. Licitación de 5 rutas al 15 % (flete 850.000
+/// HU-041.1 (#231, ADR-026): margen y servicios conexos para varias rutas en una operación. Licitación de 5 rutas al 15 % (flete 850.000
 /// cada una: precio 1.000.000) para el margen y un formulario de 3 rutas para los conexos (las licitaciones no los admiten). Todo o nada:
 /// una ruta que no admite el cambio deja todas como estaban y el error dice cuál; una invalidación del PDF y una auditoría por operación.
 /// </summary>

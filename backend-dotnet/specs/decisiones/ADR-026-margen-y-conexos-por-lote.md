@@ -1,4 +1,4 @@
-# ADR-025 — Margen y servicios conexos para varias rutas en una operación (HU-041.1)
+# ADR-026 — Margen y servicios conexos para varias rutas en una operación (HU-041.1)
 
 - **Estado:** Propuesta (2026-10-27). Issue #231 (HU-041.1), milestone HU-041. Pendiente del visto bueno del usuario (ver Pendientes).
 - **Relacionadas:** ADR-015 (costeo con Nexo), ADR-018 §3, §4, §8, §11 y §13 (margen, conexos, `If-Match`, regla del PDF, reserva de la

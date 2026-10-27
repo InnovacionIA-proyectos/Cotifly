@@ -1,5 +1,5 @@
 # language: es
-# HU-041.1 (#231, ADR-025) — Margen y servicios conexos para varias rutas en UNA operación: PUT /web/cotizaciones/{folio}/costeo/margen/lineas
+# HU-041.1 (#231, ADR-026) — Margen y servicios conexos para varias rutas en UNA operación: PUT /web/cotizaciones/{folio}/costeo/margen/lineas
 # y POST /web/cotizaciones/{folio}/costeo/servicios-conexos/lineas. Las mismas reglas que por ruta, pero atómicas: si una ruta no admite el
 # cambio no cambia ninguna y el error dice cuál. Una invalidación del PDF y una auditoría por operación. Contrato en specs/openapi.yaml
 # (MargenLineasWeb, ConexoLineasWeb, ServicioConexoCosteo.servicio_id). Por HTTP contra la API real en memoria, SQL Server 2019 en

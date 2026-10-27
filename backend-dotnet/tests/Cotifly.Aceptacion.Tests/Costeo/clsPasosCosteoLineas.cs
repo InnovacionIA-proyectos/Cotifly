@@ -10,7 +10,7 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Costeo;
 
 /// <summary>
-/// Pasos de <c>specs/features/margen_conexos_lineas.feature</c> (HU-041.1, #231, ADR-025): margen y servicios conexos para varias rutas en
+/// Pasos de <c>specs/features/margen_conexos_lineas.feature</c> (HU-041.1, #231, ADR-026): margen y servicios conexos para varias rutas en
 /// una operación, por HTTP. Reutiliza las cotizaciones del formulario de <see cref="clsPasosCosteo"/> y las licitaciones de
 /// <see cref="clsPasosLicitaciones"/>. Las mutaciones envían <c>If-Match</c> con la versión vigente leída de la base.
 /// </summary>
