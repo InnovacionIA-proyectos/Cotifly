@@ -571,6 +571,32 @@ public sealed class clsEnvioConexosNexoEndpointsTests : IDisposable
         elegida.GetProperty("servicios_conexos")[0].GetProperty("categoria").GetString().Should().Be("adicional");
     }
 
+    /// <summary>
+    /// DEF-1027-3 (#226, E2E real del 2026-10-27): la respuesta de <c>POST .../costeo/servicios-conexos</c> trae el <c>estado_nexo</c> (y
+    /// la categoría) de cada conexo igual que el <c>GET .../costeo</c> inmediato; antes salía <c>null</c>.
+    /// </summary>
+    [Fact]
+    public async Task ElPostDeConexosTraeElEstadoNexoComoElGet()
+    {
+        var (sesion, folio) = await CapturarAsync();
+        _nexo.CostearLinea(_nexo.SolicitudesCreadas[^1], 0, 1_000_000m);
+        await _api.ProcesarPollingAsync(folio);
+
+        using var agregar = await ConVersionAsync(_post, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", sesion.Access,
+            clsApiWebPruebas.Json(new { items = new[] { new { linea_orden = 1, servicio_id = Almacenamiento, cantidad = 1 } } }), await EtagAsync(sesion, folio));
+        var post = await VerificarContratoAsync(agregar, "/web/cotizaciones/{folio}/costeo/servicios-conexos", _post, HttpStatusCode.OK);
+        var get = (await RutasAsync(sesion, folio))[0].GetProperty("servicios_conexos");
+
+        static Dictionary<string, (string? Estado, string? Categoria)> Conexos(JsonElement lista) => lista.EnumerateArray()
+            .ToDictionary(c => c.GetProperty("nombre").GetString()!, c => (c.GetProperty("estado_nexo").GetString(), c.GetProperty("categoria").GetString()));
+
+        var delGet = Conexos(get);
+        delGet.Should().HaveCount(2).And.ContainKeys("Cargue en puerto", "Almacenamiento");
+        delGet.Values.Should().OnlyContain(c => c.Estado != null, "el GET informa el estado de cada conexo");
+        Conexos(post.GetProperty("rutas")[0].GetProperty("servicios_conexos")).Should().Equal(delGet, "la respuesta del POST es la del GET");
+        Conexos(post.GetProperty("servicios_conexos")).Should().Equal(delGet);
+    }
+
     private async Task<HttpResponseMessage> EnviarConVersionAsync(clsApiWebPruebas api, HttpMethod metodo, string ruta, string token, string cuerpo, string? ifMatch)
     {
         using var peticion = new HttpRequestMessage(metodo, ruta);
