@@ -8329,7 +8329,7 @@ components:
     Licitacion:
       type: object
       required: [folio, cliente_nombre, nit_cliente, deadline, estado_costeo, motivo_estado_costeo, moneda, trm_aplicada,
-                 precio_final, lineas_costeadas, lineas_pendientes, archivo_nombre, hoja, lineas]
+                 precio_final, lineas_costeadas, lineas_pendientes, archivo_nombre, hoja, lineas, finalizada_at]
       description: |
         Licitación vista por el comercial (HU-011.2). Solo precios. Sin `referencia` desde HU-021.11 (#138, decisión 1: siempre
         era `null`).
@@ -8386,6 +8386,14 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/LineaLicitacion'
+        finalizada_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            HU-036.2 (#206, DEF-1027-2 de #226). Cuándo el comercial finalizó la licitación (`POST .../finalizar`), ISO 8601 en UTC;
+            `null` sin finalizar. Siempre presente, igual que en `CotizacionResumen` y `CosteoCotizacion`: la vista del polling
+            habilita "Finalizar" y aplica los candados de la finalizada sin pedir el costeo.
         progreso_cubicacion:
           type: object
           nullable: true
