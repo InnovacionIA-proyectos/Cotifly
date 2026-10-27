@@ -32,7 +32,7 @@ public sealed class clsLicitacionesController(
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> AnalizarExcel(CancellationToken cancellationToken)
     {
-        var archivo = Request.HasFormContentType ? await LeerArchivoAsync(cancellationToken) : null;
+        var archivo = Request.HasFormContentType ? await clsArchivoMultipart.LeerParteAsync(Request, ParteArchivo, cancellationToken) : null;
         var resultado = await licitaciones.AnalizarAsync(UsuarioId, archivo ?? new clsArchivoSubido(null, []), cancellationToken);
         return resultado.Coincidir<IActionResult>(a => Ok(a), Error);
     }
@@ -58,7 +58,7 @@ public sealed class clsLicitacionesController(
                 cuerpo = string.IsNullOrWhiteSpace(json) ? null : JsonSerializer.Deserialize<clsLicitacionWebRequest>(json, clsJsonWeb.Opciones);
                 if (formulario.Files.GetFile(ParteArchivo) is { } subido)
                 {
-                    archivo = await LeerAsync(subido, cancellationToken);
+                    archivo = await clsArchivoMultipart.LeerAsync(subido, cancellationToken);
                 }
             }
             else
@@ -158,32 +158,5 @@ public sealed class clsLicitacionesController(
     {
         var resultado = await licitaciones.ExportarAsync(UsuarioId, folio, cancellationToken);
         return resultado.Coincidir<IActionResult>(a => File(a.Contenido, a.TipoContenido, a.Nombre), Error);
-    }
-
-    private async Task<clsArchivoSubido?> LeerArchivoAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            var formulario = await Request.ReadFormAsync(cancellationToken);
-            return formulario.Files.GetFile(ParteArchivo) is { } subido ? await LeerAsync(subido, cancellationToken) : null;
-        }
-        catch (InvalidDataException)
-        {
-            return null;
-        }
-    }
-
-    /// <summary>Lee el archivo hasta 10 MB + 1 byte (lo que pase se reporta como <c>ARCHIVO_DEMASIADO_GRANDE</c>).</summary>
-    private static async Task<clsArchivoSubido> LeerAsync(IFormFile subido, CancellationToken cancellationToken)
-    {
-        if (subido.Length > clsArchivoLicitacion.TamanoMaximoBytes)
-        {
-            return new clsArchivoSubido(subido.FileName, new byte[clsArchivoLicitacion.TamanoMaximoBytes + 1]);
-        }
-
-        using var memoria = new MemoryStream((int)Math.Max(subido.Length, 0));
-        await using var flujo = subido.OpenReadStream();
-        await flujo.CopyToAsync(memoria, cancellationToken);
-        return new clsArchivoSubido(subido.FileName, memoria.ToArray());
     }
 }

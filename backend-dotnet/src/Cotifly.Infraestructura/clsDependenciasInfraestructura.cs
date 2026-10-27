@@ -459,6 +459,10 @@ public static class clsDependenciasInfraestructura
                 : sp.GetRequiredService<Licitaciones.Services.clsAnalizadorExcelNexo>());
         servicios.TryAddSingleton<Aplicacion.Licitaciones.Interfaces.IClsLectorExcelLicitacion, Licitaciones.Services.clsLectorExcelLicitacionClosedXml>();
         servicios.TryAddSingleton<Aplicacion.Licitaciones.Interfaces.IClsExportadorExcelLicitacion, Licitaciones.Services.clsExportadorExcelLicitacionClosedXml>();
+
+        // HU-035.1 (#202, ADR-024): Excel de mercancías de una ruta, leído localmente (ClosedXML, sin Nexo). Singleton: su cupo de
+        // lecturas simultáneas es de todo el proceso.
+        servicios.TryAddSingleton<Aplicacion.Mercancias.Interfaces.IClsLectorGrillaExcel, Mercancias.Services.clsLectorGrillaExcelClosedXml>();
     }
 
     /// <summary>

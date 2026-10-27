@@ -3161,6 +3161,97 @@ paths:
         '415':
           $ref: '#/components/responses/TipoContenidoNoSoportado'
 
+  /web/mercancias/analizar-excel:
+    post:
+      operationId: analizarExcelMercancias
+      tags: [web]
+      summary: Lee en Cotifly el Excel de mercancías de una ruta y devuelve su grilla cruda (sin Nexo, no guarda nada)
+      description: |
+        HU-035.1 (#202, ADR-024). Para importar las mercancías de UNA ruta (tipo, cantidad, largo, ancho, alto, peso) desde un Excel
+        del comercial. **Cotifly lee el archivo localmente (ClosedXML) y nunca llama a Nexo**: a diferencia de
+        `POST /web/licitaciones/analizar-excel`, no espera el formato de un pliego. Devuelve, por hoja, el encabezado detectado, los
+        encabezados y las filas con datos como texto; **el frontend mapea las columnas a los campos de la mercancía**, igual que con las
+        rutas de una licitación. Ni Cotifly ni nadie guarda el archivo. `multipart/form-data` con el campo `archivo` (`.xlsx` o
+        `.xlsm`, máximo 10 MB menos 64 KB: 10.420.224 bytes; las macros nunca se ejecutan). El cuerpo completo admite hasta
+        `SeguridadHttp:LimiteCuerpoLicitacionBytes` (12 MB por defecto; 413 al pasarlo). Rol: el de la captura (comercial o gerente).
+
+        **Lectura.** El encabezado de cada hoja es la primera de sus 15 primeras filas usadas con al menos 3 valores distintos (la
+        misma regla de las licitaciones); si ninguna los tiene, la primera fila con datos. `filas` son las filas no vacías debajo del
+        encabezado, del ancho de `encabezados` (las celdas vacías van como `""`); `filas_excel[i]` es el número de fila de Excel
+        (base 1) de `filas[i]`. Las celdas combinadas no se expanden (el valor queda en la primera). Las hojas sin datos no aparecen.
+        Las hojas ocultas en Excel (`hidden` y `veryHidden`) **se leen igual** y vienen con `oculta = true` (las visibles, `false`): el
+        frontend decide si las ofrece o las muestra al final.
+
+        **Formato estable de las celdas** (independiente de la cultura y del formato visual de la celda): números con punto decimal,
+        sin separador de miles y hasta 15 cifras significativas (`12000`, `1.25`, un porcentaje `15 %` llega como `0.15`); fechas
+        `yyyy-MM-dd` (con hora, `yyyy-MM-ddTHH:mm:ss`); duraciones `HH:mm:ss`; booleanos `true`/`false`; errores de Excel como su
+        texto (`#DIV/0!`); el texto sin espacios al borde y con los saltos de línea como un espacio. **Una celda con fórmula trae el
+        valor que Excel guardó** al último guardado (Cotifly nunca evalúa fórmulas); sin valor guardado, `""`.
+
+        **Topes** (el truncado se indica en la respuesta): hasta 20 hojas con datos (`hojas_truncadas`), 1000 filas por hoja
+        (`filas_truncadas`; `total_filas` es el total real), 50 columnas desde la primera usada (`columnas_truncadas`;
+        `total_columnas` es el ancho real), 500 caracteres por celda (`celdas_recortadas`) y 100.000 celdas en toda la respuesta (al
+        pasarlo, las filas que faltan se cortan con `filas_truncadas = true`). Contra archivos maliciosos el paquete se revisa antes
+        de abrirlo: más de 64 MB descomprimido o más de 1.000.000 de elementos XML (un libro pequeño con millones de celdas) es
+        `ARCHIVO_DEMASIADO_GRANDE` con `detalle.motivo = DESCOMPRIMIDO_EXCEDE_LIMITE` (bomba zip); un archivo que no es un `.xlsx` válido es `EXCEL_INVALIDO`. Cotifly analiza hasta 4 archivos a la vez; si el
+        cupo sigue lleno 15 s, 503 `SERVICIO_OCUPADO` con `Retry-After`.
+
+        **Código de mercancía (opcional).** Como en el análisis de licitaciones (HU-023.5), Cotifly reconoce la columna de la
+        mercancía ("mercancía", "producto", "tipo de carga", "commodity" o "descripción") y la del código ("código mercancía",
+        "cód. producto"...) y sugiere en `hojas[h].mercancias` el `codigo_mercancia` de cada fila contra el catálogo del cubicador
+        (solo tipos cubicables). El catálogo es opcional: sin cubicador o con él caído el análisis **no falla**
+        (`catalogo_mercancias_disponible = false`, solo se usa la columna de código).
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [archivo]
+              properties:
+                archivo:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Grilla cruda de las hojas con datos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalisisExcelMercancias'
+        '400':
+          description: |
+            `ARCHIVO_REQUERIDO` (falta la parte `archivo` o viene vacía), `FORMATO_NO_SOPORTADO` (otra extensión),
+            `ARCHIVO_DEMASIADO_GRANDE` (más de 10.420.224 bytes, o más de 64 MB descomprimido o de 1.000.000 de elementos XML con
+            `detalle.motivo = DESCOMPRIMIDO_EXCEDE_LIMITE`), `EXCEL_INVALIDO` (no es un `.xlsx`/`.xlsm` legible: corrupto, otro formato renombrado, un
+            `.xls` antiguo o protegido con contraseña, o un paquete con demasiadas entradas; `detalle.motivo` dice cuál) y
+            `EXCEL_SIN_DATOS` (ninguna hoja tiene datos). Nunca un 500 por el contenido del archivo.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
+        '503':
+          description: '`SERVICIO_OCUPADO`: el cupo de análisis simultáneos siguió lleno 15 s (trae `Retry-After`). Reintentar'
+          headers:
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+
   /web/licitaciones:
     post:
       operationId: crearLicitacion
@@ -3784,7 +3875,8 @@ components:
     CuerpoDemasiadoGrande:
       description: |
         Endurecimiento A (#199): el cuerpo supera el límite de `/web/*` (`SeguridadHttp:LimiteCuerpoWebBytes`, 64 KB por defecto;
-        12 MB en `/web/licitaciones*`, `SeguridadHttp:LimiteCuerpoLicitacionBytes`). `ErrorWeb`; no se procesa nada.
+        12 MB en `/web/licitaciones*` y, desde HU-035.1, en `POST /web/mercancias/analizar-excel`, `SeguridadHttp:LimiteCuerpoLicitacionBytes`).
+        `ErrorWeb`; no se procesa nada.
       content:
         application/json:
           schema:
@@ -7607,6 +7699,103 @@ components:
         catalogo_mercancias_disponible:
           type: boolean
           description: HU-023.5. `false` sin cubicador o con su catálogo caído (no hay sugerencias por parecido).
+
+    AnalisisExcelMercancias:
+      type: object
+      required: [archivo, hojas, total_hojas, hojas_truncadas, catalogo_mercancias_disponible]
+      description: |
+        HU-035.1 (#202, ADR-024). Grilla cruda del Excel de mercancías de una ruta, leída por Cotifly (sin Nexo). Es la misma forma de
+        `AnalisisExcel` (mismos `archivo`, `hojas[].nombre`, `fila_encabezado`, `encabezados`, `filas`, `total_filas`, `filas_excel`,
+        `columna_mercancia`, `columna_codigo_mercancia`, `mercancias` y `catalogo_mercancias_disponible`) más los indicadores de
+        truncado, para que el frontend reutilice su pantalla de mapeo.
+      properties:
+        archivo:
+          type: string
+          description: Nombre del archivo subido (sin rutas del cliente).
+        hojas:
+          type: array
+          description: Las hojas con datos, en el orden del libro (hasta 20).
+          items:
+            $ref: '#/components/schemas/HojaExcelMercancias'
+        total_hojas:
+          type: integer
+          minimum: 0
+          description: Hojas del libro (con y sin datos).
+        hojas_truncadas:
+          type: boolean
+          description: '`true` si el libro tiene más de 20 hojas: solo se leyeron las 20 primeras.'
+        catalogo_mercancias_disponible:
+          type: boolean
+          description: '`false` sin cubicador, con su catálogo caído o sin columna de mercancía (no hay sugerencias por parecido).'
+
+    HojaExcelMercancias:
+      type: object
+      required: [nombre, fila_encabezado, encabezados, filas, filas_excel, total_filas, filas_truncadas, total_columnas,
+        columnas_truncadas, celdas_recortadas, oculta, columna_mercancia, columna_codigo_mercancia, mercancias]
+      description: HU-035.1 (#202). Una hoja leída por Cotifly, con los mismos campos de `HojaExcel` y los indicadores de truncado.
+      properties:
+        nombre:
+          type: string
+        fila_encabezado:
+          type: integer
+          minimum: 1
+          description: Fila de Excel (base 1) del encabezado detectado.
+        encabezados:
+          type: array
+          maxItems: 50
+          description: Texto de cada columna del encabezado, desde la primera columna usada; `""` si la celda está vacía.
+          items:
+            type: string
+        filas:
+          type: array
+          maxItems: 1000
+          description: Filas con datos debajo del encabezado, cada una del ancho de `encabezados`, como texto con formato estable.
+          items:
+            type: array
+            items:
+              type: string
+        filas_excel:
+          type: array
+          maxItems: 1000
+          description: Número de fila de Excel (base 1) de cada elemento de `filas`, en el mismo orden (`filas_excel[i]` para `filas[i]`).
+          items:
+            type: integer
+        total_filas:
+          type: integer
+          minimum: 0
+          description: Filas con datos de la hoja debajo del encabezado (el total real, aunque `filas` traiga menos).
+        filas_truncadas:
+          type: boolean
+          description: '`true` si `filas` trae menos que `total_filas` (más de 1000 filas o el tope de 100.000 celdas de la respuesta).'
+        total_columnas:
+          type: integer
+          minimum: 0
+          description: Ancho real usado de la hoja (desde la primera hasta la última columna con datos).
+        columnas_truncadas:
+          type: boolean
+          description: '`true` si la hoja tiene más de 50 columnas: solo vienen las 50 primeras.'
+        celdas_recortadas:
+          type: boolean
+          description: '`true` si alguna celda de esta hoja pasaba de 500 caracteres y se recortó.'
+        oculta:
+          type: boolean
+          description: |
+            `true` si la hoja está oculta en Excel (`hidden` o `veryHidden`, como las listas de validación); `false` si es visible.
+            Las ocultas se leen igual que las visibles (no se omiten): el frontend decide si las ofrece.
+        columna_mercancia:
+          type: string
+          nullable: true
+          description: Encabezado que Cotifly reconoció como la descripción de la mercancía; `null` si no hay.
+        columna_codigo_mercancia:
+          type: string
+          nullable: true
+          description: Encabezado que Cotifly reconoció como el código de la mercancía; `null` si no hay.
+        mercancias:
+          type: array
+          nullable: true
+          description: Código de mercancía de cada fila con mercancía; `null` si la hoja no tiene columna de mercancía ni de código.
+          items:
+            $ref: '#/components/schemas/CodigoMercanciaFila'
 
     LineaLicitacionWeb:
       type: object

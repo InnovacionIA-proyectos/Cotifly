@@ -572,6 +572,9 @@ Una licitación es **una solicitud con una ruta por fila del Excel** (`dbo_cotif
 | `clsExportadorExcelLicitacionClosedXml` | Infraestructura | Exportación (HU-011.3): el original con tres columnas de Cotifly a la derecha y la hoja `Resumen Cotifly`; recibe solo precios y estados (`clsExportacionLicitacion`), nunca costos |
 | `clsCosteoCotizacionService.PayloadPliego` / `ResumenPliego` / `ValidarTotal` | Aplicacion | PDF de pliego (HU-011.5; por ruta desde HU-021.9): una sección por ruta con su línea de negocio, sus camiones y su tarifa, resumen de rutas y total sin conexos; los conexos aparte. `ValidarTotal`: todas las rutas con precio y `precioFinal` = Σ `precioFinalLinea` (una ruta y pliego) |
 | `clsBloquePliego` | Infraestructura | Bloque MigraDoc del resumen del pliego (`VarianteDocumento.Pliego`, sobre el diseño multi-sección) |
+| `clsLectorGrillaExcelClosedXml` | Infraestructura | HU-035.1 (#202): Excel de mercancías como grilla cruda, local (ClosedXML), acotado contra bombas zip y archivos corruptos; nunca Nexo |
+| `clsAnalisisExcelMercanciasService` / `clsDetectorMercanciaExcel` | Aplicacion | HU-035.1: valida el archivo (`clsArchivoExcel`, Dominio), lee la grilla y sugiere el código de mercancía con el catálogo del cubicador (opcional); el detector lo comparte con las licitaciones |
+| `clsMercanciasExcelController` | Api | `POST /web/mercancias/analizar-excel` (multipart, rol de la captura) |
 | `clsLicitacionesController` | Api | `/web/licitaciones/analizar-excel`, `/web/licitaciones` (multipart o JSON), `/web/licitaciones/{folio}` y `/web/licitaciones/{folio}/excel` |
 
 Flujo: subir → Nexo analiza → el frontend mapea → `POST /web/licitaciones` valida todo → guarda y confirma → envía a Nexo (una línea por camión) → el polling (`clsWorkerCosteoNexo`, sin cambios de agenda) empareja los camiones y deriva el estado y el precio de cada ruta.

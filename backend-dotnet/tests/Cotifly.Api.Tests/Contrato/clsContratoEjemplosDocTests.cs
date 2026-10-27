@@ -67,6 +67,9 @@ public sealed partial class clsContratoEjemplosDocTests
             // HU-030.1 (#184): peso con tara de las cargas contenerizadas.
             "esquema: RutaCapturaWeb",
             "esquema: CamionCosteo",
+            // HU-035.1 (#202): Excel de mercancías de una ruta, leído en Cotifly sin Nexo.
+            "respuesta: POST /web/mercancias/analizar-excel 200",
+            "respuesta: POST /web/mercancias/analizar-excel 400",
         ]);
     }
 
