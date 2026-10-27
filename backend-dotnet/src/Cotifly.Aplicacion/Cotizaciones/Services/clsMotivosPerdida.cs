@@ -45,11 +45,14 @@ public sealed class clsOpcionesResultado
 
     /// <summary>Los motivos vigentes: los configurados (recortados, sin vacíos ni repetidos) o la lista de NEXO.</summary>
     public IReadOnlyList<string> Motivos =>
-        (MotivosPerdida ?? []).Where(m => !string.IsNullOrWhiteSpace(m)).Select(m => m.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList()
+        (MotivosPerdida ?? []).Where(m => !string.IsNullOrWhiteSpace(m)).Select(m => m.Trim().Normalize(System.Text.NormalizationForm.FormC))
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList()
             is { Count: > 0 } configurados ? configurados : MotivosPorDefecto;
 
     /// <summary>El motivo que exige comentario, recortado.</summary>
-    public string ConComentario => string.IsNullOrWhiteSpace(MotivoConComentario) ? MotivoConComentarioPorDefecto : MotivoConComentario.Trim();
+    public string ConComentario => string.IsNullOrWhiteSpace(MotivoConComentario)
+        ? MotivoConComentarioPorDefecto
+        : MotivoConComentario.Trim().Normalize(System.Text.NormalizationForm.FormC);
 
     /// <summary>Los errores de la configuración (vacío si es válida). Los valida <c>clsValidadorOpcionesResultado</c> al arrancar.</summary>
     public IReadOnlyList<string> Errores()
@@ -148,8 +151,10 @@ public sealed class clsCatalogoMotivosPerdida(IOptions<clsOpcionesResultado> opc
     public string? MotivoParaNexo(string? guardado)
     {
         var conComentario = _opciones.ConComentario;
+        // Con la escritura de la LISTA (la que espera Nexo y la del envío directo), no la de Resultado:MotivoConComentario, que se compara
+        // sin distinguir mayúsculas: con MotivoConComentario = "otro" y la lista "Otro", a Nexo va "Otro".
         return guardado is not null && guardado.StartsWith(conComentario + Separador, StringComparison.OrdinalIgnoreCase)
-            ? conComentario
+            ? _opciones.Motivos.FirstOrDefault(m => string.Equals(m, conComentario, StringComparison.OrdinalIgnoreCase)) ?? conComentario
             : guardado;
     }
 
@@ -162,5 +167,10 @@ public sealed class clsCatalogoMotivosPerdida(IOptions<clsOpcionesResultado> opc
         },
     };
 
-    private static string? Normalizar(string? texto) => string.IsNullOrWhiteSpace(texto) ? null : texto.Trim();
+    /// <summary>
+    /// Recorta y lleva a la forma Unicode compuesta (NFC): "desistió" escrito con la tilde aparte (NFD, p. ej. desde macOS) es el mismo
+    /// motivo de la lista y a Nexo viaja con la escritura de la lista.
+    /// </summary>
+    private static string? Normalizar(string? texto) =>
+        string.IsNullOrWhiteSpace(texto) ? null : texto.Trim().Normalize(System.Text.NormalizationForm.FormC);
 }

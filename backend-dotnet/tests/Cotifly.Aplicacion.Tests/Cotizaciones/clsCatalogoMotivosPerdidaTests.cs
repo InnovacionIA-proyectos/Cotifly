@@ -61,6 +61,32 @@ public sealed class clsCatalogoMotivosPerdidaTests
         Catalogo().MotivoParaNexo(guardado).Should().Be(aNexo);
     }
 
+    // Validación HU-018.1 (#155): con Resultado:MotivoConComentario en otra escritura que la lista, a Nexo va la de la lista (la del envío
+    // directo), también en la sincronización diferida.
+    [Fact]
+    public void ConElMotivoConComentarioEnOtraEscrituraANexoVaLaDeLaLista()
+    {
+        var catalogo = Catalogo(new clsOpcionesResultado { MotivosPerdida = ["Plazo", "Otra razón"], MotivoConComentario = "OTRA RAZÓN" });
+
+        var validado = catalogo.Validar("otra razón", "Se fue").Valor;
+
+        validado.Motivo.Should().Be("Otra razón");
+        validado.ParaCotifly.Should().Be("Otra razón: Se fue");
+        catalogo.MotivoParaNexo(validado.ParaCotifly).Should().Be("Otra razón", "como en el envío directo");
+    }
+
+    // Validación HU-018.1 (#155): la tilde aparte (NFD) es el mismo motivo, en la lista configurada y en lo que llega.
+    [Fact]
+    public void ElMotivoYLaListaSeComparanEnLaFormaUnicodeCompuesta()
+    {
+        var nfd = System.Text.NormalizationForm.FormD;
+        var catalogo = Catalogo(new clsOpcionesResultado { MotivosPerdida = ["Cliente desistió".Normalize(nfd), "Otro"] });
+
+        catalogo.Listar().Motivos[0].Motivo.Should().Be("Cliente desistió", "la lista se publica en NFC");
+        catalogo.Validar("Cliente desistió", null).Valor.Motivo.Should().Be("Cliente desistió");
+        Catalogo().Validar("Cliente desistió del servicio".Normalize(nfd), null).Valor.Motivo.Should().Be("Cliente desistió del servicio");
+    }
+
     [Fact]
     public void LaConfiguracionReemplazaLaListaYSeValidaAlArrancar()
     {
