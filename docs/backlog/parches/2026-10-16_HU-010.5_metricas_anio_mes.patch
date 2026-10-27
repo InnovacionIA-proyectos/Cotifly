@@ -1,0 +1,307 @@
+diff --git a/backend-dotnet/docs/07-api.md b/backend-dotnet/docs/07-api.md
+index 8538544..a4ca9cd 100644
+--- a/backend-dotnet/docs/07-api.md
++++ b/backend-dotnet/docs/07-api.md
+@@ -75,7 +75,7 @@ El contrato congelado es `specs/openapi.yaml` (#17), fuente de verdad (SDD, ADR-
+ | GET | `/web/admin/lineas-negocio` | `200 [LineaNegocio]` (todas); `403` salvo `gerente_comercial` |
+ | PUT | `/web/admin/lineas-negocio/{id}` | `200 LineaNegocio` (auditado); `400` (margen fuera de 0–0,99, método, campo faltante, número como texto); `403`; `404` |
+ | GET | `/web/metricas/comercial?desde&hasta` | `200 MetricasComercial` `{periodo, usuario_id, indicadores, serie_mensual}` de las cotizaciones propias (comercial o gerente); `400 ErrorWeb` fechas no `AAAA-MM-DD`, `hasta < desde` o más de 3 años. Una fila por cadena de versiones: valores de la vigente, periodo por la primera creación y resultado más reciente de la cadena. Definiciones en el tag `metricas` del contrato y en [ADR-016](../specs/decisiones/ADR-016-metricas-agregadas-y-regional.md) |
+-| GET | `/web/metricas/regional?desde&hasta&usuario_id` | Solo `gerente_comercial`. `200 MetricasRegional` `{periodo, regional, fuente_regional, usuario_id, indicadores, lineas_negocio_activas, comerciales, serie_mensual, concentracion_ciudades}` de su regional (o de un comercial de ella; el gerente aparece en `comerciales` con su `rol` y sus cotizaciones cuentan en el agregado); `400` fechas o `usuario_id` no UUID; `403` comercial; `404 ErrorWeb` `Comercial no encontrado en tu regional.`; `409 ErrorNegocio` `REGIONAL_NO_ASIGNADA`; `503 ErrorNegocio` `REGIONAL_NO_DISPONIBLE` |
++| GET | `/web/metricas/regional?desde&hasta&usuario_id&anio&mes` | Solo `gerente_comercial`. `200 MetricasRegional` `{periodo, regional, fuente_regional, usuario_id, indicadores, lineas_negocio_activas, comerciales, serie_mensual, concentracion_ciudades}` de su regional (o de un comercial de ella; el gerente aparece en `comerciales` con su `rol` y sus cotizaciones cuentan en el agregado); `400` fechas, `usuario_id` no UUID, `mes` sin `anio` o `mes` fuera de 1-12; `403` comercial; `404 ErrorWeb` `Comercial no encontrado en tu regional.`; `409 ErrorNegocio` `REGIONAL_NO_ASIGNADA`; `503 ErrorNegocio` `REGIONAL_NO_DISPONIBLE`. `anio`/`mes` (HU-010.3) son un atajo del periodo para el selector del tablero, alternativo a `desde`/`hasta`: `anio` solo = ese año completo; `anio` + `mes` = ese mes completo; ninguno de los dos = año en curso hasta hoy (sin cambios) |
+ | GET | `/web/metricas/actividad` | **Borrador obsoleto.** `200 [ActividadComercial]`: el comercial su fila; el gerente su regional |
+ | GET | `/web/metricas/ajustes-margen` | **Borrador obsoleto.** `200 [AjustesMargenComercial]`, mismo alcance |
+ | GET | `/pdfs/{archivo}` | `200 application/pdf` inline (dueño o gerente de su regional, con Bearer); `401` (sin sesión); `404 ErrorWeb` (no existe o no es tuyo) |
+diff --git a/backend-dotnet/specs/features/metricas_tablero.feature b/backend-dotnet/specs/features/metricas_tablero.feature
+index 60ed777..eb819f5 100644
+--- a/backend-dotnet/specs/features/metricas_tablero.feature
++++ b/backend-dotnet/specs/features/metricas_tablero.feature
+@@ -132,3 +132,27 @@ Característica: Tablero de métricas del comercial y del gerente comercial
+     Dado el gerente comercial "hugo" con sesión y sin regional
+     Cuando "hugo" consulta las métricas de su regional del "2026-01-01" al "2026-12-31"
+     Entonces la respuesta tiene el estado 409 con el código de negocio "REGIONAL_NO_ASIGNADA"
++
++  # HU-010.3: `anio`/`mes` son un atajo del periodo del tablero del gerente, alternativo a `desde`/`hasta` (ADR-016 §5 extendida).
++  Escenario: El gerente filtra su regional por año y por año más mes
++    Dado que "ana" tiene estas cotizaciones:
++      | cotizacion | moneda | precio | trm | costo  | margen | resultado | creada     |
++      | A5         | COP    | 500000 | 0   | 400000 | 0.20   | ganada    | 2025-02-10 |
++    Cuando "gloria" consulta las métricas de su regional del año 2025
++    Entonces la respuesta tiene el estado 200
++    Y los indicadores son:
++      | campo    | valor |
++      | cantidad | 1     |
++    Cuando "gloria" consulta las métricas de su regional del año 2025 y el mes 2
++    Entonces la respuesta tiene el estado 200
++    Y los indicadores son:
++      | campo    | valor |
++      | cantidad | 1     |
++
++  Escenario: El mes sin año responde 400
++    Cuando "gloria" consulta las métricas de su regional con el mes 5 sin año
++    Entonces la respuesta tiene el estado 400 con un ErrorWeb
++
++  Escenario: El mes fuera de 1-12 responde 400 aunque venga con año
++    Cuando "gloria" consulta las métricas de su regional del año 2026 y el mes 13
++    Entonces la respuesta tiene el estado 400 con un ErrorWeb
+diff --git a/backend-dotnet/specs/openapi.yaml b/backend-dotnet/specs/openapi.yaml
+index 76c7666..cff7698 100644
+--- a/backend-dotnet/specs/openapi.yaml
++++ b/backend-dotnet/specs/openapi.yaml
+@@ -575,6 +575,10 @@ paths:
+         - `usuario_id` filtra `indicadores`, `serie_mensual` y `concentracion_ciudades` a un comercial. Si no es de la
+           regional (o no existe) responde 404, igual en los dos casos. `comerciales` trae siempre a todos los de la
+           regional (para el selector), cada uno con su `rol` y sus indicadores del periodo.
++        - `anio`/`mes` (HU-010.3) son un atajo del periodo para el selector año/mes del tablero, alternativo a
++          `desde`/`hasta`: si `anio` llega, reemplaza por completo el rango (no se combinan con `desde`/`hasta`).
++          Solo `anio`: ese año completo (1 de enero a 31 de diciembre). `anio` + `mes`: ese mes completo. `mes` sin
++          `anio`: 400. `mes` fuera de 1-12: 400. Ninguno de los dos: año en curso hasta hoy (sin cambios).
+         - El propio gerente es miembro de su regional: aparece en `comerciales` (con `rol: gerente_comercial`) y sus
+           cotizaciones cuentan en el agregado de la regional.
+         - `concentracion_ciudades` agrupa por el municipio de destino (`por_destino`, el que usa el mapa) y también por
+@@ -595,6 +599,24 @@ paths:
+           schema:
+             type: string
+             format: uuid
++        - name: anio
++          in: query
++          required: false
++          description: |
++            Año completo (HU-010.3), atajo de periodo alternativo a `desde`/`hasta`: reemplaza el rango por ese año
++            entero, o por `mes` si también llega. Ausente junto con `mes`: año en curso (sin cambios).
++          schema:
++            type: integer
++          example: 2026
++        - name: mes
++          in: query
++          required: false
++          description: Mes (1-12) del año `anio`. Requiere `anio`; sin él, 400.
++          schema:
++            type: integer
++            minimum: 1
++            maximum: 12
++          example: 9
+       responses:
+         '200':
+           description: Indicadores de la regional (o del comercial filtrado)
+diff --git a/backend-dotnet/src/Cotifly.Api/Metricas/Controllers/clsMetricasController.cs b/backend-dotnet/src/Cotifly.Api/Metricas/Controllers/clsMetricasController.cs
+index 12dfa1e..1ada4dd 100644
+--- a/backend-dotnet/src/Cotifly.Api/Metricas/Controllers/clsMetricasController.cs
++++ b/backend-dotnet/src/Cotifly.Api/Metricas/Controllers/clsMetricasController.cs
+@@ -31,9 +31,14 @@ public sealed class clsMetricasController(
+     }
+ 
+     /// <summary>
+-    /// 200 <c>MetricasRegional</c>; 400 fechas o <c>usuario_id</c> inválidos; 403 si no es gerente; 404 comercial fuera de la
+-    /// regional; 409 <c>REGIONAL_NO_ASIGNADA</c>; 503 <c>REGIONAL_NO_DISPONIBLE</c>.
++    /// 200 <c>MetricasRegional</c>; 400 fechas, <c>usuario_id</c>, <c>anio</c> o <c>mes</c> inválidos; 403 si no es gerente; 404
++    /// comercial fuera de la regional; 409 <c>REGIONAL_NO_ASIGNADA</c>; 503 <c>REGIONAL_NO_DISPONIBLE</c>.
+     /// </summary>
++    /// <param name="anio">
++    /// Año completo (HU-010.3), alternativa a <c>desde</c>/<c>hasta</c>: reemplaza el periodo por ese año entero, o por
++    /// <paramref name="mes"/> si también llega. Ausente junto con <paramref name="mes"/>: año en curso (sin cambios).
++    /// </param>
++    /// <param name="mes">Mes (1-12) del año <paramref name="anio"/>. Requiere <paramref name="anio"/>; sin él, 400.</param>
+     [HttpGet("regional")]
+     [Authorize(Policy = clsPoliticas.GerenteComercial)]
+     [ProducesResponseType<clsMetricasRegional>(StatusCodes.Status200OK)]
+@@ -46,9 +51,11 @@ public sealed class clsMetricasController(
+         [FromQuery] string? desde,
+         [FromQuery] string? hasta,
+         [FromQuery(Name = "usuario_id")] string? usuarioId,
++        [FromQuery] int? anio,
++        [FromQuery] int? mes,
+         CancellationToken cancellationToken)
+     {
+-        var resultado = await tablero.ObtenerRegionalAsync(new clsConsultaMetricas(desde, hasta, usuarioId), cancellationToken);
++        var resultado = await tablero.ObtenerRegionalAsync(new clsConsultaMetricas(desde, hasta, usuarioId, anio, mes), cancellationToken);
+         return resultado.Coincidir<IActionResult>(m => Ok(m), Error);
+     }
+ 
+diff --git a/backend-dotnet/src/Cotifly.Aplicacion/Metricas/DTOs/clsTableroMetricas.cs b/backend-dotnet/src/Cotifly.Aplicacion/Metricas/DTOs/clsTableroMetricas.cs
+index 7e451aa..16f2dc0 100644
+--- a/backend-dotnet/src/Cotifly.Aplicacion/Metricas/DTOs/clsTableroMetricas.cs
++++ b/backend-dotnet/src/Cotifly.Aplicacion/Metricas/DTOs/clsTableroMetricas.cs
+@@ -2,8 +2,12 @@ using Cotifly.Dominio.Metricas;
+ 
+ namespace Cotifly.Aplicacion.Metricas.DTOs;
+ 
+-/// <summary>Parámetros de consulta del tablero tal como llegan (<c>desde</c>, <c>hasta</c>, <c>usuario_id</c>); los valida el caso de uso.</summary>
+-public sealed record clsConsultaMetricas(string? Desde = null, string? Hasta = null, string? UsuarioId = null);
++/// <summary>
++/// Parámetros de consulta del tablero tal como llegan (<c>desde</c>, <c>hasta</c>, <c>usuario_id</c>, <c>anio</c>, <c>mes</c>); los
++/// valida el caso de uso. <c>anio</c>/<c>mes</c> son un atajo del periodo (HU-010.3) solo para <c>/web/metricas/regional</c>: si
++/// <c>Anio</c> llega, reemplaza a <c>Desde</c>/<c>Hasta</c> (ver <see cref="Cotifly.Aplicacion.Metricas.Services.clsTableroMetricasService.ResolverPeriodo"/>).
++/// </summary>
++public sealed record clsConsultaMetricas(string? Desde = null, string? Hasta = null, string? UsuarioId = null, int? Anio = null, int? Mes = null);
+ 
+ /// <summary>Periodo aplicado (esquema <c>PeriodoMetricas</c>).</summary>
+ public sealed record clsPeriodoMetricas(DateOnly Desde, DateOnly Hasta, string ZonaHoraria);
+diff --git a/backend-dotnet/src/Cotifly.Aplicacion/Metricas/Services/clsTableroMetricasService.cs b/backend-dotnet/src/Cotifly.Aplicacion/Metricas/Services/clsTableroMetricasService.cs
+index 86197af..d592ddb 100644
+--- a/backend-dotnet/src/Cotifly.Aplicacion/Metricas/Services/clsTableroMetricasService.cs
++++ b/backend-dotnet/src/Cotifly.Aplicacion/Metricas/Services/clsTableroMetricasService.cs
+@@ -152,9 +152,40 @@ public sealed class clsTableroMetricasService(
+     /// Periodo de la consulta en fechas de negocio: por defecto del 1 de enero del año en curso a hoy. 400 si una fecha no es
+     /// <c>AAAA-MM-DD</c>, si <c>hasta</c> es anterior a <c>desde</c> o si el rango supera <see cref="AniosMaximos"/> años.
+     /// </summary>
++    /// <remarks>
++    /// HU-010.3 (tablero del gerente, <c>/web/metricas/regional</c>): <c>anio</c>/<c>mes</c> son un atajo del periodo, pensado
++    /// para el selector año/mes del frontend en vez del rango <c>desde</c>/<c>hasta</c>. Si <c>consulta.Anio</c> llega, reemplaza
++    /// por completo a <c>desde</c>/<c>hasta</c> (no se combinan): sin <c>mes</c>, es el año completo (1 de enero a 31 de
++    /// diciembre); con <c>mes</c>, ese mes completo. Sin <c>Anio</c> ni <c>Mes</c>, el comportamiento es exactamente el de antes.
++    /// </remarks>
+     public clsResultado<clsPeriodoMetricas> ResolverPeriodo(clsConsultaMetricas consulta)
+     {
+         ArgumentNullException.ThrowIfNull(consulta);
++
++        if (consulta.Mes is { } mesSinValidar && (mesSinValidar < 1 || mesSinValidar > 12))
++        {
++            return Invalida("El parámetro 'mes' debe estar entre 1 y 12.");
++        }
++
++        if (consulta.Mes is not null && consulta.Anio is null)
++        {
++            return Invalida("El parámetro 'mes' requiere 'anio'.");
++        }
++
++        if (consulta.Anio is { } anio)
++        {
++            if (anio < DateOnly.MinValue.Year || anio > DateOnly.MaxValue.Year)
++            {
++                return Invalida("El parámetro 'anio' no es válido.");
++            }
++
++            var (desdeAnio, hastaAnio) = consulta.Mes is { } mes
++                ? (new DateOnly(anio, mes, 1), new DateOnly(anio, mes, DateTime.DaysInMonth(anio, mes)))
++                : (new DateOnly(anio, 1, 1), new DateOnly(anio, 12, 31));
++
++            return new clsPeriodoMetricas(desdeAnio, hastaAnio, calendario.ZonaHoraria);
++        }
++
+         var hoy = calendario.Hoy;
+ 
+         if (!LeerFecha(consulta.Desde, "desde", new DateOnly(hoy.Year, 1, 1), out var desde, out var errorDesde))
+diff --git a/backend-dotnet/tests/Cotifly.Aceptacion.Tests/Web/clsPasosMetricas.cs b/backend-dotnet/tests/Cotifly.Aceptacion.Tests/Web/clsPasosMetricas.cs
+index c74de31..c27efd6 100644
+--- a/backend-dotnet/tests/Cotifly.Aceptacion.Tests/Web/clsPasosMetricas.cs
++++ b/backend-dotnet/tests/Cotifly.Aceptacion.Tests/Web/clsPasosMetricas.cs
+@@ -99,6 +99,19 @@ public sealed class clsPasosMetricas(clsContextoWeb web)
+         web.EnviarAsync(_get, $"/web/metricas/regional?desde={desde}&hasta={hasta}&usuario_id={web.Sesion(comercial).UsuarioId}",
+             web.Sesion(alias).Access);
+ 
++    // HU-010.3: `anio`/`mes` son un atajo del periodo (ADR-016 §5 extendida), alternativo a `desde`/`hasta`.
++    [When("{string} consulta las métricas de su regional del año {int}")]
++    public Task CuandoConsultaLaRegionalPorAnio(string alias, int anio) =>
++        web.EnviarAsync(_get, $"/web/metricas/regional?anio={anio}", web.Sesion(alias).Access);
++
++    [When("{string} consulta las métricas de su regional del año {int} y el mes {int}")]
++    public Task CuandoConsultaLaRegionalPorAnioYMes(string alias, int anio, int mes) =>
++        web.EnviarAsync(_get, $"/web/metricas/regional?anio={anio}&mes={mes}", web.Sesion(alias).Access);
++
++    [When("{string} consulta las métricas de su regional con el mes {int} sin año")]
++    public Task CuandoConsultaLaRegionalConMesSinAnio(string alias, int mes) =>
++        web.EnviarAsync(_get, $"/web/metricas/regional?mes={mes}", web.Sesion(alias).Access);
++
+     [Then("los indicadores son:")]
+     public void EntoncesLosIndicadores(DataTable tabla)
+     {
+diff --git a/backend-dotnet/tests/Cotifly.Api.Tests/Web/clsMetricasTableroEndpointsTests.cs b/backend-dotnet/tests/Cotifly.Api.Tests/Web/clsMetricasTableroEndpointsTests.cs
+index 94cb46b..5181110 100644
+--- a/backend-dotnet/tests/Cotifly.Api.Tests/Web/clsMetricasTableroEndpointsTests.cs
++++ b/backend-dotnet/tests/Cotifly.Api.Tests/Web/clsMetricasTableroEndpointsTests.cs
+@@ -165,6 +165,42 @@ public sealed class clsMetricasTableroEndpointsTests(clsEntornoApiWeb entorno)
+         await VerificarContratoAsync(respuesta, "/web/metricas/regional", _get, HttpStatusCode.BadRequest);
+     }
+ 
++    [Fact]
++    public async Task ElGerenteFiltraLaRegionalPorAnioYPorAnioMasMes()
++    {
++        // HU-010.3: `anio`/`mes` son un atajo del periodo, alternativo a `desde`/`hasta` (ADR-016 §5 extendida).
++        var occidente = Regional();
++        var gloria = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoGerente, occidente, "Gloria Anio");
++        await CrearAsync(gloria.UsuarioId, "COP", 1_000_000m, 0m, 850_000m, true, "2024-02-10");
++        await CrearAsync(gloria.UsuarioId, "COP", 2_000_000m, 0m, 1_700_000m, true, "2024-06-15");
++        await CrearAsync(gloria.UsuarioId, "COP", 3_000_000m, 0m, 2_500_000m, true, "2025-02-20");
++
++        using var porAnio = await Api.EnviarAsync(_get, "/web/metricas/regional?anio=2024", gloria.Access);
++        var deEseAnio = await VerificarContratoAsync(porAnio, "/web/metricas/regional", _get, HttpStatusCode.OK);
++        using var porAnioYMes = await Api.EnviarAsync(_get, "/web/metricas/regional?anio=2024&mes=2", gloria.Access);
++        var deEseMes = await VerificarContratoAsync(porAnioYMes, "/web/metricas/regional", _get, HttpStatusCode.OK);
++
++        deEseAnio.GetProperty("periodo").GetProperty("desde").GetString().Should().Be("2024-01-01");
++        deEseAnio.GetProperty("periodo").GetProperty("hasta").GetString().Should().Be("2024-12-31");
++        deEseAnio.GetProperty("indicadores").GetProperty("cantidad").GetInt32().Should().Be(2, "las dos de 2024, no la de 2025");
++        deEseMes.GetProperty("periodo").GetProperty("desde").GetString().Should().Be("2024-02-01");
++        deEseMes.GetProperty("periodo").GetProperty("hasta").GetString().Should().Be("2024-02-29");
++        deEseMes.GetProperty("indicadores").GetProperty("cantidad").GetInt32().Should().Be(1, "solo la de febrero de 2024");
++    }
++
++    [Theory]
++    [InlineData("mes=5")]
++    [InlineData("anio=2026&mes=0")]
++    [InlineData("anio=2026&mes=13")]
++    public async Task MesSinAnioOFueraDeRangoResponde400(string query)
++    {
++        var gloria = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoGerente, Regional());
++
++        using var respuesta = await Api.EnviarAsync(_get, $"/web/metricas/regional?{query}", gloria.Access);
++
++        await VerificarContratoAsync(respuesta, "/web/metricas/regional", _get, HttpStatusCode.BadRequest);
++    }
++
+     /// <summary>Cotización del comercial con los valores del tablero fijados por SQL (moneda, TRM, precio, costo, resultado, fecha).</summary>
+     private async Task<clsCotizacionPrueba> CrearAsync(Guid usuarioId, string moneda, decimal precio, decimal trm, decimal costo, bool? ganada, string creada)
+     {
+diff --git a/backend-dotnet/tests/Cotifly.Aplicacion.Tests/Web/clsTableroMetricasServiceTests.cs b/backend-dotnet/tests/Cotifly.Aplicacion.Tests/Web/clsTableroMetricasServiceTests.cs
+index 40c1996..e4562ae 100644
+--- a/backend-dotnet/tests/Cotifly.Aplicacion.Tests/Web/clsTableroMetricasServiceTests.cs
++++ b/backend-dotnet/tests/Cotifly.Aplicacion.Tests/Web/clsTableroMetricasServiceTests.cs
+@@ -59,6 +59,48 @@ public sealed class clsTableroMetricasServiceTests
+         await _metricas.DidNotReceiveWithAnyArgs().ListarCotizacionesAsync(default!, default, default, Ct);
+     }
+ 
++    [Fact]
++    public void UnAnioDistintoAlActualFiltraPorEseAnioCompleto()
++    {
++        var resultado = Servicio(Usuario(RolInterno.Comercial)).ResolverPeriodo(new clsConsultaMetricas(Anio: 2024));
++
++        resultado.Valor.Should().Be(new clsPeriodoMetricas(new DateOnly(2024, 1, 1), new DateOnly(2024, 12, 31), "America/Bogota"));
++    }
++
++    [Fact]
++    public void AnioYMesFiltranPorEseMesCompleto()
++    {
++        var resultado = Servicio(Usuario(RolInterno.Comercial)).ResolverPeriodo(new clsConsultaMetricas(Anio: 2026, Mes: 2));
++
++        resultado.Valor.Should().Be(new clsPeriodoMetricas(new DateOnly(2026, 2, 1), new DateOnly(2026, 2, 28), "America/Bogota"));
++    }
++
++    [Fact]
++    public void MesSinAnioEsSolicitudInvalida()
++    {
++        var resultado = Servicio(Usuario(RolInterno.Comercial)).ResolverPeriodo(new clsConsultaMetricas(Mes: 5));
++
++        resultado.Error.Codigo.Should().Be(clsCodigosAplicacion.SolicitudInvalida);
++    }
++
++    [Theory]
++    [InlineData(0)]
++    [InlineData(13)]
++    public void MesFueraDeRangoEsSolicitudInvalida(int mes)
++    {
++        var resultado = Servicio(Usuario(RolInterno.Comercial)).ResolverPeriodo(new clsConsultaMetricas(Anio: 2026, Mes: mes));
++
++        resultado.Error.Codigo.Should().Be(clsCodigosAplicacion.SolicitudInvalida);
++    }
++
++    [Fact]
++    public void SinAnioNiMesElPeriodoNoCambia()
++    {
++        var resultado = Servicio(Usuario(RolInterno.Comercial)).ResolverPeriodo(new clsConsultaMetricas());
++
++        resultado.Valor.Should().Be(new clsPeriodoMetricas(new DateOnly(2026, 1, 1), new DateOnly(2026, 9, 29), "America/Bogota"));
++    }
++
+     [Fact]
+     public async Task SinSesionNoHayMetricas()
+     {
