@@ -149,6 +149,28 @@ public sealed class clsPasosMetricas(clsContextoWeb web)
         ArgumentNullException.ThrowIfNull(tabla);
         web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);
         var indicadores = web.UltimoJson().GetProperty("indicadores");
+        ComprobarIndicadores(indicadores, tabla);
+    }
+
+    /// <summary>
+    /// HU-016.1 (#154, validación): los <c>indicadores</c> de un comercial en <c>comerciales[]</c> de <c>/web/metricas/regional</c>, con la
+    /// misma tabla <c>campo | valor</c> de "los indicadores son".
+    /// </summary>
+    [Then("los indicadores de {string} en la lista de comerciales son:")]
+    public void EntoncesLosIndicadoresDelComercial(string alias, DataTable tabla)
+    {
+        ArgumentNullException.ThrowIfNull(tabla);
+        web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);
+        var id = web.Sesion(alias).UsuarioId.ToString();
+        var indicadores = web.UltimoJson().GetProperty("comerciales").EnumerateArray()
+            .Single(c => string.Equals(c.GetProperty("usuario_id").GetString(), id, StringComparison.OrdinalIgnoreCase))
+            .GetProperty("indicadores");
+        ComprobarIndicadores(indicadores, tabla);
+    }
+
+    /// <summary>Cada fila <c>campo | valor</c> contra <paramref name="indicadores"/> (<c>null</c> = JSON null).</summary>
+    private static void ComprobarIndicadores(JsonElement indicadores, DataTable tabla)
+    {
         foreach (var fila in tabla.Rows)
         {
             var valor = indicadores.GetProperty(fila["campo"]);

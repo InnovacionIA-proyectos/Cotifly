@@ -1068,9 +1068,9 @@ paths:
                       desviacion_promedio_margen_abs: null
                       ajustes_margen: 0
                       deadline_vencidas: 0
-                      margen_politica_promedio: 0.15
-                      margen_politica_ponderado: 0.15
-                      desviacion_margen_politica: 0.001
+                      margen_politica_promedio: null
+                      margen_politica_ponderado: null
+                      desviacion_margen_politica: null
                       rutas_sin_margen_politica: 0
                 serie_mensual:
                   - {mes: '2026-08', cantidad: 18, ganadas: 4, perdidas: 5, valor_cotizado_cop: 70100000.00, valor_ganado_cop: 16400000.00,
@@ -5657,7 +5657,8 @@ components:
             (`margenPoliticaSugerido`, el de la línea de negocio guardado en la ruta al cotizar) de las **mismas rutas** que se
             cotizaron: rutas de la versión vigente, sin las rechazadas por la Mesa, con margen aplicado y con margen de política
             (4 decimales). `null` si no hay ninguna. Es la referencia de "Margen promedio" en "Mis cotizaciones" y en el tablero;
-            no expone la tabla de políticas.
+            no expone la tabla de políticas. `margen_promedio` NO es su par sobre las mismas rutas (es por cotización e incluye
+            las rutas sin política): no restarlos; el semáforo es `desviacion_margen_politica`.
         margen_politica_ponderado:
           type: number
           nullable: true

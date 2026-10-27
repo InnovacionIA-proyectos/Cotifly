@@ -1936,6 +1936,9 @@ el promedio **simple** y el **ponderado por costo**, y el semáforo usa el **pon
 - "Margen aplicado ponderado por costo" para mostrar junto a la política: `margen_politica_ponderado + desviacion_margen_politica`.
   `margen_promedio` y `margen_ponderado` (sobre el precio) siguen como estaban. Con `rutas_sin_margen_politica > 0`, avisar que la
   comparación no incluye esas rutas.
+- `margen_promedio` **no** es el par de `margen_politica_promedio` sobre las mismas rutas: es el promedio por cotización (cada una con
+  su margen ponderado por el costo de sus rutas) e incluye las rutas sin política. Se pueden mostrar juntos como referencia, pero no
+  restarlos ni pintar el semáforo con ellos: el semáforo es solo `desviacion_margen_politica`.
 - **Nuevo** `GET /web/lineas-negocio` (comercial, gerente y director): las líneas activas para el desplegable de "Nueva solicitud",
   ordenadas por nombre, **sin margen ni método**. `linea_negocio` es el valor que se envía en `rutas[].linea_negocio`; `etiqueta` es el
   texto para mostrar. Se lee de la base en cada petición: una línea que la administración desactiva sale de inmediato.

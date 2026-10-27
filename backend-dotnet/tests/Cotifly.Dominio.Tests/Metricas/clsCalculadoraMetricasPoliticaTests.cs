@@ -152,4 +152,81 @@ public sealed class clsCalculadoraMetricasPoliticaTests
         indicadores.DesviacionPromedioMargen.Should().Be(0.05m, "sigue promediando solo los ajustes negociados (ADR-016)");
         indicadores.DesviacionMargenPolitica.Should().Be(0m, "(0,05 × 1M − 0,05 × 1M) / 2M");
     }
+
+    // ---- Validación de HU-016.1 (#154): casos límite.
+
+    [Fact]
+    public void UnaSolaRutaDaSuPropiaPoliticaYSuDiferencia()
+    {
+        var indicadores = Indicadores(Cotizacion(Ruta(1, 2_500_000m, 0.12m, 0.15m)));
+
+        (indicadores.MargenPoliticaPromedio, indicadores.MargenPoliticaPonderado, indicadores.DesviacionMargenPolitica, indicadores.RutasSinMargenPolitica)
+            .Should().Be((0.15m, 0.15m, -0.03m, 0));
+    }
+
+    [Fact]
+    public void ElRedondeoEsHalfToEvenA4Decimales()
+    {
+        // (0,1002 + 0,1003) / 2 = 0,10025: half-to-even da 0,1002 (half-away-from-zero daría 0,1003).
+        var indicadores = Indicadores(
+            Cotizacion(Ruta(1, 1_000_000m, 0.1002m, 0.1002m)),
+            Cotizacion(Ruta(1, 1_000_000m, 0.1003m, 0.1003m)));
+
+        indicadores.MargenPoliticaPromedio.Should().Be(0.1002m);
+        indicadores.MargenPoliticaPonderado.Should().Be(0.1002m);
+        indicadores.DesviacionMargenPolitica.Should().Be(0m);
+    }
+
+    [Fact]
+    public void LaPoliticaPonderadaMasLaDesviacionDaElAplicadoPonderadoPorCostoConUnaUnidadDeRedondeo()
+    {
+        // Costos que no dividen exacto: el aplicado ponderado derivado (§8.18) difiere a lo sumo en 0,0001 del exacto.
+        var rutas = new[] { Ruta(1, 1_234_567m, 0.1371m, 0.15m), Ruta(2, 7_654_321m, 0.2219m, 0.18m), Ruta(3, 333_333m, 0.05m, 0.25m) };
+        var indicadores = Indicadores(Cotizacion(rutas));
+
+        var aplicadoExacto = rutas.Sum(r => r.MargenAplicado!.Value * r.Costo!.Value) / rutas.Sum(r => r.Costo!.Value);
+        (indicadores.MargenPoliticaPonderado!.Value + indicadores.DesviacionMargenPolitica!.Value - aplicadoExacto)
+            .Should().BeInRange(-0.0001m, 0.0001m);
+    }
+
+    [Fact]
+    public void UnCostoNegativoNoPesaComoUnoPositivo()
+    {
+        // Un costo <= 0 (dato corrupto) no entra al ponderado: el denominador no puede anularse ni cambiar de signo.
+        var indicadores = Indicadores(
+            Cotizacion(Ruta(1, 1_000_000m, 0.20m, 0.10m)),
+            Cotizacion(Ruta(1, -1_000_000m, 0.20m, 0.40m, precio: 100m)));
+
+        indicadores.MargenPoliticaPonderado.Should().Be(0.1m);
+        indicadores.DesviacionMargenPolitica.Should().Be(0.1m);
+        indicadores.MargenPoliticaPromedio.Should().Be(0.25m, "el simple no mira el costo");
+    }
+
+    [Fact]
+    public void LaComparacionUsaLasRutasDeLaVersionVigenteYNoLasDeLaVersionGanada()
+    {
+        // La ganada es una versión anterior (B3, #173): lo ganado sale de sus rutas, pero el margen aplicado es el de la vigente.
+        var cadena = Cotizacion(Ruta(1, 1_000_000m, 0.20m, 0.15m)) with
+        {
+            Ganada = true,
+            VersionResultado = new clsVersionResultadoMetrica(1_000_000m, "COP", 0m, 900_000m),
+            RutasResultado = [Ruta(1, 900_000m, 0.05m, 0.30m)],
+        };
+
+        var indicadores = Indicadores(cadena);
+
+        (indicadores.MargenPoliticaPromedio, indicadores.MargenPoliticaPonderado, indicadores.DesviacionMargenPolitica)
+            .Should().Be((0.15m, 0.15m, 0.05m));
+    }
+
+    [Fact]
+    public void UnaRutaConPoliticaYSinAplicadoNoEntraAunqueTengaCosto()
+    {
+        var indicadores = Indicadores(
+            Cotizacion(Ruta(1, 1_000_000m, 0.20m, 0.15m)),
+            Cotizacion(Ruta(1, 5_000_000m, null, 0.40m, precio: 100m)));
+
+        (indicadores.MargenPoliticaPromedio, indicadores.MargenPoliticaPonderado, indicadores.DesviacionMargenPolitica, indicadores.RutasSinMargenPolitica)
+            .Should().Be((0.15m, 0.15m, 0.05m, 0));
+    }
 }

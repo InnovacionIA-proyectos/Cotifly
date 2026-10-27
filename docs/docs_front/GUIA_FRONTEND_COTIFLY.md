@@ -1554,7 +1554,11 @@ Comprobación del `.feature` (comercial "ana", año 2026). A1 COP 1.000.000 gana
     "desviacion_promedio_margen": -0.015,
     "desviacion_promedio_margen_abs": 0.025,
     "ajustes_margen": 2,
-    "deadline_vencidas": 1
+    "deadline_vencidas": 1,
+    "margen_politica_promedio": 0.15,
+    "margen_politica_ponderado": 0.15,
+    "desviacion_margen_politica": 0.0061,
+    "rutas_sin_margen_politica": 0
   },
   "serie_mensual": [
     { "mes": "2026-08", "cantidad": 5, "ganadas": 1, "perdidas": 2, "valor_cotizado_cop": 18200000.00, "valor_ganado_cop": 4100000.00 },
@@ -1587,7 +1591,11 @@ Comercial sin cotizaciones (200, estado vacío; construido con las reglas del co
     "costeo_total": 0, "costeo_ganadas": 0, "valor_cotizado_cop": 0, "valor_ganado_cop": 0, "ganancias": 0,
     "cotizaciones_usd": 0, "tiempo_promedio_cotizacion_horas": null,
     "desviacion_promedio_margen": null, "desviacion_promedio_margen_abs": null, "ajustes_margen": 0,
-    "deadline_vencidas": null
+    "deadline_vencidas": null,
+    "margen_politica_promedio": null,
+    "margen_politica_ponderado": null,
+    "desviacion_margen_politica": null,
+    "rutas_sin_margen_politica": 0
   },
   "serie_mensual": [
     { "mes": "2026-08", "cantidad": 0, "ganadas": 0, "perdidas": 0, "valor_cotizado_cop": 0, "valor_ganado_cop": 0 },
@@ -1658,7 +1666,11 @@ Ejemplo exacto del spec (periodo 2026-08-01 a 2026-09-29):
     "desviacion_promedio_margen": -0.0125,
     "desviacion_promedio_margen_abs": 0.021,
     "ajustes_margen": 6,
-    "deadline_vencidas": 2
+    "deadline_vencidas": 2,
+    "margen_politica_promedio": 0.15,
+    "margen_politica_ponderado": 0.15,
+    "desviacion_margen_politica": 0.004,
+    "rutas_sin_margen_politica": 1
   },
   "comerciales": [
     {
@@ -1687,7 +1699,11 @@ Ejemplo exacto del spec (periodo 2026-08-01 a 2026-09-29):
         "desviacion_promedio_margen": -0.015,
         "desviacion_promedio_margen_abs": 0.025,
         "ajustes_margen": 2,
-        "deadline_vencidas": 1
+        "deadline_vencidas": 1,
+        "margen_politica_promedio": 0.15,
+        "margen_politica_ponderado": 0.15,
+        "desviacion_margen_politica": 0.0061,
+        "rutas_sin_margen_politica": 0
       }
     },
     {
@@ -1716,7 +1732,11 @@ Ejemplo exacto del spec (periodo 2026-08-01 a 2026-09-29):
         "desviacion_promedio_margen": null,
         "desviacion_promedio_margen_abs": null,
         "ajustes_margen": 0,
-        "deadline_vencidas": 0
+        "deadline_vencidas": 0,
+        "margen_politica_promedio": null,
+        "margen_politica_ponderado": null,
+        "desviacion_margen_politica": null,
+        "rutas_sin_margen_politica": 0
       }
     }
   ],

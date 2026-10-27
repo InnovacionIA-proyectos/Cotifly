@@ -333,3 +333,69 @@ Característica: Tablero de métricas del comercial y del gerente comercial
       | margen_politica_ponderado  | null  |
       | desviacion_margen_politica | null  |
       | rutas_sin_margen_politica  | 0     |
+
+  # HU-016.1 (#154, validación): el alcance de la comparación con la política es el del resto del tablero (el comercial lo suyo, el
+  # gerente su regional, el director la que elige o el comercial que filtra) y solo cuenta la versión vigente. Rutas comparables de
+  # "ana": A1 (1M, aplicado 0.20, política 0.10), A2 rehecha como v2 (3M, 0.15, 0.40; la v1 de 1,7M no cuenta) y A3 (3,4M, 0.15,
+  # 0.15); A4 no tiene margen. Simple (0.10 + 0.40 + 0.15) / 3 = 0.2167; ponderado 1,81M / 7,4M = 0.2446; desviación
+  # (0.10 × 1M − 0.25 × 3M) / 7,4M = −0.0878. "luis" (L1: 0,4M, 0.20, 0.15) se suma en la regional; "marta" es de otra regional.
+  Escenario: La comparación con la política respeta el alcance de cada rol y cuenta solo la versión vigente
+    Dado el director "dario" con sesión en la regional "Sur"
+    Y que la cotización "A1" tiene estas rutas:
+      | orden | linea    | costo   | precio  | margen | politica |
+      | 1     | Nacional | 1000000 | 1250000 | 0.20   | 0.10     |
+    Y que la cotización "A2" tiene estas rutas:
+      | orden | linea    | costo   | precio  | margen | politica |
+      | 1     | Nacional | 1700000 | 2000000 | 0.15   | 0.40     |
+    Y que "ana" rehízo la cotización "A2" como versión 2 con precio 3529412 y costo 3000000
+    Y que la cotización "M1" tiene estas rutas:
+      | orden | linea    | costo   | precio  | margen | politica |
+      | 1     | Nacional | 2000000 | 2222222 | 0.10   | 0.30     |
+    Cuando "ana" consulta sus métricas del "2026-01-01" al "2026-12-31"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "MetricasComercial" del contrato
+    Y los indicadores son:
+      | campo                      | valor   |
+      | margen_politica_promedio   | 0.2167  |
+      | margen_politica_ponderado  | 0.2446  |
+      | desviacion_margen_politica | -0.0878 |
+      | rutas_sin_margen_politica  | 0       |
+    Cuando "gloria" consulta las métricas de su regional del "2026-01-01" al "2026-12-31"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "MetricasRegional" del contrato
+    Y los indicadores son:
+      | campo                      | valor   |
+      | margen_politica_promedio   | 0.2     |
+      | margen_politica_ponderado  | 0.2397  |
+      | desviacion_margen_politica | -0.0808 |
+      | rutas_sin_margen_politica  | 0       |
+    Y los indicadores de "luis" en la lista de comerciales son:
+      | campo                      | valor |
+      | margen_politica_promedio   | 0.15  |
+      | margen_politica_ponderado  | 0.15  |
+      | desviacion_margen_politica | 0.05  |
+    Y los indicadores de "gloria" en la lista de comerciales son:
+      | campo                      | valor |
+      | margen_politica_promedio   | null  |
+      | margen_politica_ponderado  | null  |
+      | desviacion_margen_politica | null  |
+      | rutas_sin_margen_politica  | 0     |
+    Cuando "gloria" consulta las métricas de su regional del "2026-01-01" al "2026-12-31" filtradas por "ana"
+    Entonces la respuesta tiene el estado 200
+    Y los indicadores son:
+      | campo                      | valor   |
+      | margen_politica_ponderado  | 0.2446  |
+      | desviacion_margen_politica | -0.0878 |
+    Cuando "dario" consulta las métricas de la regional "Norte" del "2026-01-01" al "2026-12-31"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "MetricasRegional" del contrato
+    Y los indicadores son:
+      | campo                      | valor |
+      | margen_politica_promedio   | 0.3   |
+      | margen_politica_ponderado  | 0.3   |
+      | desviacion_margen_politica | -0.2  |
+    Cuando "dario" consulta las métricas de su regional del "2026-01-01" al "2026-12-31" filtradas por "ana"
+    Entonces la respuesta tiene el estado 200
+    Y las métricas son de todas las regionales
+    Y los indicadores son:
+      | campo                      | valor   |
+      | margen_politica_promedio   | 0.2167  |
+      | margen_politica_ponderado  | 0.2446  |
+      | desviacion_margen_politica | -0.0878 |

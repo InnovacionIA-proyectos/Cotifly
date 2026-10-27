@@ -2935,7 +2935,9 @@ Definiciones comunes (aplican a los dos tableros):
   `margen_politica_ponderado + desviacion_margen_politica`. `rutas_sin_margen_politica` = rutas con margen aplicado y sin política
   (anteriores a HU-021), que no entran: si es > 0, avisar que la comparación está incompleta. Fracciones con 4 decimales; `null` sin
   rutas comparables (o, el ponderado y la desviación, sin rutas con costo). La moneda no los cambia (el costo siempre está en COP).
-  `desviacion_promedio_margen` (solo los ajustes negociados, ADR-016) no cambia. Ejemplo: rutas 10/20/30 % con política 15/15/25 % y
+  `margen_promedio` no es el par de `margen_politica_promedio` sobre las mismas rutas (es por cotización e incluye las rutas sin
+  política): mostrarlos juntos solo como referencia, sin restarlos. `desviacion_promedio_margen` (solo los ajustes negociados, ADR-016)
+  no cambia. Ejemplo: rutas 10/20/30 % con política 15/15/25 % y
   costos 1M/2M/3M → `0.1833`, `0.2` y `0.0333` (verde).
 
 Parámetros comunes:
