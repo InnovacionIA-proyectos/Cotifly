@@ -30,14 +30,26 @@ no conoce `RolInterno.Director` y tumbaba el login de todos al encontrar esa fil
 - [ ] **¿Cuándo sale HU-037.2 (#210)?** Mientras no esté, `director` sigue apagado en prueba.
 - [ ] **Cuando salga #210:** pasar la cuenta `dguerra` de `gerente_comercial` a `director` en
   `UsuariosRoles` (si no, el login la rechaza por `rol_externo_cambio`). Procedimiento completo abajo.
-- [ ] **Hallazgo nuevo sobre `15_rol_director.sql` (PR #219):** el script inserta la fila `director` sin
-  fijar `activo` explícitamente, así que toma el `DEFAULT (1)` de la tabla (`01_crear_esquema.sql:121`) —
-  **queda activa**, no apagada. El comentario del script asume que `idRolExterno = NULL` alcanza para que
-  "nadie entre con ese rol", pero ya vimos que no es así: el crash real pasa en `ListarActivosAsync()` al
-  convertir el código `director` a `RolInterno` para *cualquier* fila activa, sin importar si tiene
-  `idRolExterno`. Si este script corre en un ambiente antes de que el backend tenga HU-037.2, se repite el
-  mismo incidente del 2026-10-26. **Pedirle a Duban que agregue `activo = 0` explícito al INSERT**, o que
-  confirme que el orden de despliegue nunca lo permite.
+- [x] **Hallazgo de `15_rol_director.sql` (PR #219), ahora CONFIRMADO por QA (2026-10-27) — defecto
+  bloqueante, no se recomienda mergear:** el script (y `seeder/03_roles.sql`) insertan la fila `director`
+  sin fijar `activo` explícitamente, así que toma el `DEFAULT (1)` de la tabla — queda activa, no apagada.
+  QA corrió la suite completa contra la PR: 11 pruebas de `Cotifly.Api.Tests` fallan al 100 % (login real
+  contra la API) con `ArgumentException: 'director' no es un código válido de RolInterno` en
+  `clsCodigoEnum.DesdeCodigo`, llamado desde `clsRolRepository.ListarActivosAsync()` en cada login — el 401
+  genérico le pega a **cualquier** usuario, no solo a quien tendría el rol nuevo. Es exactamente el
+  incidente del 2026-10-26, ahora reproducido de forma determinista en CI.
+  **Decisión pendiente, QA propone dos caminos (no la toma QA, la toma el equipo):**
+  1. Que `ListarActivosAsync()`/`clsCodigoEnum.DesdeCodigo` **ignoren (filtren)** un rol activo sin
+     equivalente en el enum, en vez de lanzar — cualquier rol nuevo en BD queda inofensivo hasta que el
+     backend lo soporte.
+  2. Desplegar siempre juntos #219 (BD) y #210 (backend, HU-037.2) para que nunca exista una ventana con el
+     rol activo sin el enum que lo respalde.
+  **Mi recomendación para pasarle a Duban: la opción 1.** Es el mismo principio de "falla cerrado" que ya
+  usa `idRolExterno = NULL` en el seeder (`03_roles.sql`: "mientras sea NULL nadie puede iniciar sesión con
+  ese rol") — extenderlo al código del rol hace que agregar un rol nuevo en BD nunca pueda tumbar el login
+  de todos, sin depender de coordinar despliegues en el orden correcto cada vez. La opción 2 es más frágil:
+  exige disciplina operativa nueva cada vez que se agregue un rol, justo lo que ya falló una vez en la base
+  compartida el 2026-10-26.
 - [ ] **Confirmar la decisión de jerarquía vs. multi-rol de verdad:** ya se implementó jerarquía (un solo
   rol en el token, el más alto; el front deja elegir la vista). El multi-rol real quedó como deuda técnica
   en **HU-040** (milestone #32: issues [#229](https://github.com/InnovacionIA-proyectos/Cotifly/issues/229)
