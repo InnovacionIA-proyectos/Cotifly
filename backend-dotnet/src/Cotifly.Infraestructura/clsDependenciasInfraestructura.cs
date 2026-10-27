@@ -178,6 +178,8 @@ public static class clsDependenciasInfraestructura
     {
         servicios.TryAddSingleton<IClsConfiguracionJwt, clsConfiguracionJwt>();
         servicios.TryAddSingleton<IClsEmisorTokens, clsEmisorTokensJwt>();
+        // HU-040.2 (#230, ADR-025): ticket de elección del rol (JWT de 5 minutos con clave derivada).
+        servicios.TryAddSingleton<IClsEmisorTicketEleccion, clsEmisorTicketEleccionJwt>();
         servicios.TryAddScoped<IClsAlmacenIdentidadExterno, clsAlmacenIdentidadSolucionesTi>();
         servicios.AddHostedService<clsLimpiezaTokensHostedService>();
 
