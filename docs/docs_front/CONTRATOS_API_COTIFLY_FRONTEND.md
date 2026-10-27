@@ -1838,7 +1838,7 @@ Agrega conexos del catálogo a una ruta. Se agregan en NEXO (fuente del costo) y
 
 | HTTP | Código | UI |
 |---|---|---|
-| 200 | `CosteoCotizacion` | Refrescar. El conexo nuevo queda en `servicios_conexos` con su `precio` e `incluido = true` |
+| 200 | `CosteoCotizacion` | Refrescar. El conexo nuevo queda en `servicios_conexos` con su `precio` e `incluido = true`; cada conexo trae el mismo `estado_nexo` que `GET .../costeo` (DEF-1027-3 de #226) |
 | 400 | `ErrorWeb` | `items` vacío, más de 20, fuera de rango o de rutas distintas; `Idempotency-Key` fuera de 8 a 64 caracteres |
 | 400 | `CONEXO_INVALIDO` (`detalle.motivo` = código de NEXO) | El servicio no se pudo agregar. **Recargar el costeo** antes de reintentar (el `row_version` ya cambió) |
 | 400 | `RUTA_REQUERIDA`, `RUTA_INEXISTENTE` | Selector de ruta |
@@ -2536,7 +2536,7 @@ Error **400** por filas (`ReporteLicitacionInvalida`, nada queda guardado):
 | 201 | `Licitacion` | Con `progreso_cubicacion.estado = en_curso`: mostrar el avance (`cubicadas` de `total`) y consultar `GET /web/licitaciones/{folio}` cada 3 a 5 s. Sin `progreso_cubicacion` (sin cubicador): ya salió a NEXO; seguir con el polling del costeo. `estado_costeo = error_envio` (también con un 403 de NEXO): mostrar el motivo y Reintentar |
 | 400 | `LICITACION_INVALIDA` con `errores[]` | Pintar cada error en su fila: usar `fila_excel` (fila que ve el comercial) o, si es `null`, "línea `indice + 1`". `indice = null` = error del encabezado. Si `error.detalle.motivo` trae `CATALOGOS_FLETE_NO_DISPONIBLE` o `MUNICIPIOS_NO_DISPONIBLE`, lo que dependía de ese catálogo se valida al reenviar |
 | 400 | `ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE`, `EXCEL_INVALIDO`, `EXCEL_SIN_DATOS`, `FOLIO_CONSECUTIVO_AGOTADO`, `TRM_NO_DISPONIBLE` | Mostrar `mensaje` |
-| 400 | `MARGEN_LINEA_DESCONOCIDA` (`detalle.lineas_validas`, `detalle.motivo`) | Ofrecer las líneas válidas |
+| 400 | `MARGEN_LINEA_DESCONOCIDA` (`detalle.lineas_validas`, `detalle.motivo`) | Ofrecer las líneas válidas. Si además hay errores de fila, llega dentro del `LICITACION_INVALIDA`: en `errores[]` con `campo = linea_negocio` (`indice = null` = la del encabezado) y `error.detalle.lineas_validas` (OBS-1027-4 de #226) |
 | 400 | `ErrorWeb` | JSON inválido |
 | 403 | `NEXO_SIN_PERMISO` | Filas con `servicios_conexos`: NEXO respondió 403 al leer su costo. Nada se creó: avisar a soporte. Un 403 en el **alta** sí crea la licitación en `error_envio` (201) (endurecimiento B, #199) |
 | 413 | `ErrorWeb` | Excel + JSON de más de 12 MB |
@@ -2617,7 +2617,7 @@ DE TRANSPORTE …". Este endpoint no responde `FOLIO_INVALIDO`.
 | 404 | `ErrorWeb` | — |
 | 409 | `COSTEO_NO_LISTO` | Todas las rutas deben tener precio |
 | 409 | `PDF_YA_GENERADO` | Ya hay un PDF vigente: descargarlo. Solo se regenera con `pdf_desactualizado = true` |
-| 409 | `PDF_YA_ENVIADO` | Ya enviada o con resultado: versión nueva |
+| 409 | `PDF_YA_ENVIADO` | Ya enviada o con resultado: versión nueva. Gana sobre `PDF_YA_GENERADO` (OBS-1027-6 de #226) |
 | 409 | `CONFLICTO_CONCURRENCIA` | Solo si se envió `If-Match`: recargar |
 | 503 | `PDF_RENDER_NO_DISPONIBLE` | Transitorio (los PDF se generan uno a la vez, con espera de hasta 30 s): Reintentar. No se guardó nada |
 
@@ -2692,10 +2692,10 @@ Renderiza el correo sin enviarlo.
     "leyenda": "Valores por viaje según las rutas cotizadas, con los servicios conexos incluidos. No incluyen impuestos, ...",
     "nota_moneda": null
   },
-  "copia_oculta": "comercial@boterosoto.com.co",
+  "copia_oculta": null,
   "entorno_pruebas": true,
   "redirigido_a": "<buzón de pruebas>",
-  "aviso": "Ambiente de pruebas: el correo NO llegará a los destinatarios; se redirige al buzón de pruebas ... con el asunto marcado [QA]."
+  "aviso": "Ambiente de pruebas: el correo NO llegará a los destinatarios; se redirige al buzón de pruebas ... con el asunto marcado [QA], sin CC ni CCO (tampoco la copia oculta al comercial)."
 }
 ```
 
@@ -2703,7 +2703,7 @@ Renderiza el correo sin enviarlo.
 |---|---|
 | `cuerpo_html` | Vista previa fiel de lo que recibe el cliente (renderizar en un `iframe` sin scripts o como HTML confiable del backend) |
 | `resumen` | Precio por ruta y total, sin desglose; `null` si la cotización todavía no tiene total. Una ruta rechazada trae `precio = null` y `precio_texto = "Sin costeo"` |
-| `copia_oculta` | "Recibirás una copia oculta en ..." |
+| `copia_oculta` | "Recibirás una copia oculta en ..." solo si no es `null`. Con `entorno_pruebas = true` siempre es `null`: el correo redirigido sale sin CC ni CCO (OBS-1027-5 de #226, ADR-023) |
 | `entorno_pruebas`, `redirigido_a`, `aviso` | Con `entorno_pruebas = true`, mostrar `aviso` tal cual en un recuadro de advertencia |
 
 | HTTP | UI |
@@ -3451,7 +3451,7 @@ parecido del catálogo, `sugerido = true`, con `similitud` de 0 a 1), `null` (si
 
 | Código | Qué pasó | Qué ofrecer |
 |---|---|---|
-| `IA_NO_DISPONIBLE` | Fallaron todos los modelos de IA | "Asistente no disponible"; los botones del detalle siguen funcionando |
+| `IA_NO_DISPONIBLE` | Fallaron todos los modelos de IA (también con el proveedor caído: conexión rechazada o tiempo agotado tras los reintentos, DEF-1027-1 de #226) | "Asistente no disponible"; los botones del detalle siguen funcionando |
 | `LIMITE_MODELO` | Límite del proveedor de IA o de Cotifly | Reenviar en unos segundos |
 | `TURNO_EN_CURSO` | Otro mensaje de la misma conversación sigue en curso | Esperar la respuesta anterior |
 | `MAX_ITERACIONES` | El asistente necesitó demasiados pasos | Pedir una cosa a la vez |
@@ -3679,6 +3679,7 @@ fila_excel, campo, codigo, mensaje}`.
 | 62 | **HU-039.1 (#218): costo bruto de la ruta para el dueño.** `RutaCosteo` (`rutas[]` de `GET /web/cotizaciones/{folio}/costeo`, de las demás respuestas `CosteoCotizacion` del dueño: margen, conexos, recálculo de vehículos, y de `costeo.rutas[]` de `GET /web/cotizaciones/{folio}`) trae el campo **nuevo** `costo_final`: el costo bruto de la ruta que costeó NEXO (fletes + retorno + levante + conexos, sin margen), **siempre en COP aunque la cotización esté en USD**, y `null` en los mismos casos que `precio_final_linea` (sin costeo o ruta `rechazada`). Solo el dueño: en el detalle de un gerente (`solo_lectura = true`) sale siempre `null`. No hay desglose ni costo por camión o conexo, y el costo no sale en "Mis cotizaciones", el listado regional, el PDF, el correo, el Excel ni el asistente. Reversa de la regla "el costo bruto nunca llega al comercial" (ADR-015 §5), confirmada por la Gerencia Comercial el 2026-10-27. Con la cotización finalizada (fila 63) `costo_final` es el costo con que se finalizó, como el precio congelado: no cambia con lo que traiga NEXO después. Ningún campo existente cambia | Agrega | Conectar el chip "Total costeo" a `rutas[].costo_final` (o a su suma, solo si todas las rutas cotizables lo traen); formatearlo siempre como pesos, sin la moneda de la cotización; "—" con `null`; no mostrarlo con `solo_lectura` |
 | 63 | **HU-036 (#205 a #208): cotización finalizada.** (a) **#206: nuevo `POST /web/cotizaciones/{folio}/finalizar`** (4.5.6) con `If-Match` obligatorio, solo el dueño: el comercial acepta el precio. Solo con `estado_costeo` en `autocosteo` o `entregada`; si no, **409 `COTIZACION_NO_FINALIZABLE`** (código nuevo, `detalle.estado_costeo`). Re-finalizar es 200 sin cambios; `If-Match` viejo, 409 `CONFLICTO_CONCURRENCIA`. Campo nuevo **`finalizada_at`** (UTC, `null` sin finalizar) en `CotizacionResumen` ("Mis cotizaciones", listado regional, detalle, respuestas de resultado y re-solicitud), `CosteoCotizacion`, `FechasCotizacion` (`GET /web/cotizaciones/{folio}`) y `Licitacion` (`GET /web/licitaciones/{folio}` y las respuestas de alta y de reintento de la cubicación; DEF-1027-2 de #226). Las cotizaciones existentes quedan sin finalizar (sin backfill). Requiere `db/scripts/14_cotizacion_finalizada.sql`. (b) **#207, candados.** Después de finalizar: margen, conexos (`PUT` y `POST .../servicios-conexos`), re-solicitar en el mismo folio y recalcular camiones responden **409 `PDF_YA_ENVIADO`** con `detalle.accion = nueva_version` (como una enviada), y `GET .../solicitud` devuelve `edicion.modo = nueva_version`. Antes de finalizar: `POST .../costeo/pdf`, `POST .../enviar`, `POST .../costeo/textos/redactar`, `PUT .../costeo/textos` y `POST .../resultado` (este último solo con el costeo listo) responden **409 `COTIZACION_NO_FINALIZADA`** (código nuevo) con "Finaliza la cotización … antes de …" y `detalle` = `{accion: finalizar, metodo: POST, endpoint: …/finalizar}`. No aplica a las ya enviadas o con resultado (anteriores a HU-036), a las del chat ni a la perdida antes del costeo (`pendiente_costeo`/`error_envio`) ni a `/seguimiento` en `descartada`/`costeo_vencido`. El asistente queda bloqueado por las mismas reglas. (c) **#208, precio congelado.** Con la cotización finalizada el polling **no** cambia el precio aunque NEXO traiga otro costo (por ejemplo, la Mesa entrega una ruta con otro valor): `estado_costeo` sigue avanzando (`autocosteo` → `entregada`), el precio se conserva y `motivo_estado_costeo` lo advierte con la ruta que cambió ("El costeo de Nexo cambió después de finalizar la cotización en la ruta N (Origen → Destino): el precio finalizado se conserva. Genera una versión nueva…"), sin montos; el aviso se quita si NEXO vuelve a los costos finalizados. Con una ruta rechazada después de finalizar, `POST .../costeo/pdf` responde 409 `COSTEO_NO_LISTO` con `detalle.accion = nueva_version`. No se finaliza con un conexo de NEXO pendiente de leer (409 `COTIZACION_NO_FINALIZABLE`, `detalle.motivo = conexos_pendientes_de_leer`). Mismo mecanismo que el PDF generado | Agrega / Cambia | Botón "Finalizar cotización" (aceptar el precio) habilitado con `estado_costeo` en `autocosteo`/`entregada`, `precio_final` y `finalizada_at = null`; enviar el `ETag` vigente; ante `CONFLICTO_CONCURRENCIA`, recargar y volver a confirmar con el precio nuevo; mostrar "Finalizada el …" con `finalizada_at`. Con `finalizada_at = null`: deshabilitar PDF, textos, envío y resultado (o, ante `COTIZACION_NO_FINALIZADA`, ofrecer "Finalizar" con `detalle.endpoint`). Con `finalizada_at`: deshabilitar margen, conexos, re-solicitar en el mismo folio, recalcular y editar en sitio (ofrecer la versión nueva de `detalle`). Mostrar `motivo_estado_costeo` como aviso cuando empieza por "El costeo de Nexo cambió después de finalizar la cotización" (ofrecer la versión nueva) |
 | 64 | **HU-037 (#210, #211): rol `director`, alcance de todas las regionales y `GET /web/regionales`.** (a) Nuevo valor `director` en `rol` (`user.rol` del login y claim `rol` del token) y en `comerciales[].rol` del tablero. Con varios roles de ClientePro gana `director` > `gerente_comercial` > `comercial`. El director usa todo lo del gerente (tablero, listado regional, políticas de margen) y su propia consola de comercial. (b) `GET /web/metricas/regional` y `GET /web/cotizaciones/regional` aceptan `?regional=` (opcional): el director ve **todas** sin él (`regional` y `fuente_regional` en `null`) o solo la elegida con él (`fuente_regional` en `null`); `usuario_id` del director puede ser de cualquier regional. El gerente sigue viendo solo la suya: `?regional=` con la suya se acepta y con otra responde **403 `REGIONAL_NO_PERMITIDA`** (`ErrorNegocio`, código nuevo). (c) **Nuevo** `GET /web/regionales` (4.11.3): todas para el director, la suya para el gerente, 403 para el comercial. (d) El detalle por folio y el PDF de una cotización de cualquier regional son visibles para el director (solo consulta). (e) `regional` y `fuente_regional` de `CotizacionesRegional` y `MetricasRegional` pasan a ser anulables (solo para el director). Son **55 endpoints** con `POST .../finalizar` de la fila 63 | Agrega / Cambia | Tratar `director` como un gerente en el menú; para el director, selector de regional con la opción "Todas" (sin `regional`) y las de `GET /web/regionales`, y mostrar "Todas las regionales" cuando `regional` venga `null`; manejar el 403 `REGIONAL_NO_PERMITIDA` (no ofrecer otras regionales al gerente); tipar `regional` y `fuente_regional` como `string \| null` |
+| 65 | **E2E real del 2026-10-27 (#226): correcciones.** (a) **DEF-1027-1:** `POST /web/chat` con el proveedor de IA caído (conexión rechazada o tiempo agotado tras los reintentos del SDK) responde 200 `RespuestaChatError` con `codigo = IA_NO_DISPONIBLE` y su texto, no `ERROR_INTERNO`. (b) **DEF-1027-3:** la respuesta 200 de `POST .../costeo/servicios-conexos` trae el `estado_nexo` (y la categoría) de cada conexo igual que el `GET .../costeo` inmediato (antes `null`). (c) **OBS-1027-5 (ADR-023):** con `entorno_pruebas = true` (modo `redirigir`) la vista previa del correo trae `copia_oculta = null` y el `aviso` dice "sin CC ni CCO": el correo redirigido sale solo al buzón de pruebas, sin copia oculta al comercial. (d) **OBS-1027-6:** el PDF de una cotización ya enviada (o con resultado) con PDF vigente responde 409 `PDF_YA_ENVIADO`, no `PDF_YA_GENERADO`: la entrega gana. (e) **OBS-1027-4:** `POST /web/licitaciones` con errores de fila y una línea de negocio que no da margen ("Licitaciones" de NEXO, inexistente o inactiva) responde un solo 400 `LICITACION_INVALIDA` con **todo**: los errores de fila y, en `errores[]`, `MARGEN_LINEA_DESCONOCIDA` en `campo = linea_negocio` (la del encabezado con `indice = null`; la de una fila que trae la suya, con su `indice`), con `error.detalle.lineas_validas`. Valor nuevo en el enum `ErrorFilaLicitacion.codigo`. Sin otros errores de fila sigue siendo el 400 `MARGEN_LINEA_DESCONOCIDA` de siempre. Sin script de base de datos ni endpoints nuevos | Agrega / Cambia | (a) Con `IA_NO_DISPONIBLE` mostrar "Asistente no disponible" (ya previsto); (b) se puede pintar el estado del conexo con la respuesta del POST sin pedir el costeo; (c) mostrar "Recibirás una copia oculta" solo si `copia_oculta` no es `null`; (d) ante `PDF_YA_ENVIADO` ofrecer la versión nueva; (e) pintar `MARGEN_LINEA_DESCONOCIDA` con `indice = null` como error del encabezado (selector de línea de negocio, con `error.detalle.lineas_validas`) junto a los de las filas |
 
 ---
 
@@ -3766,6 +3767,21 @@ fila_excel, campo, codigo, mensaje}`.
 ---
 
 ## 9. Notas de versión
+
+**2026-10-27 (rama `226-correcciones-e2e-1027`, #226, E2E real del 2026-10-27).** Correcciones del E2E (fila 65 de §7):
+
+- **Asistente sin IA (DEF-1027-1):** con el proveedor caído (conexión rechazada o tiempo agotado tras los reintentos), `POST /web/chat`
+  responde 200 con `codigo = IA_NO_DISPONIBLE` y su texto, como dice el contrato (antes `ERROR_INTERNO`).
+- **Conexos (DEF-1027-3):** la respuesta de `POST .../costeo/servicios-conexos` trae el `estado_nexo` y la categoría de cada conexo, igual
+  que el `GET .../costeo` (antes `estado_nexo = null`).
+- **Correo (OBS-1027-5, ADR-023):** al redirigir (`entorno_pruebas = true`) la vista previa trae `copia_oculta = null` y el `aviso` dice
+  "sin CC ni CCO", como lo que realmente sale. En producción no cambia.
+- **PDF (OBS-1027-6):** una cotización ya enviada o con resultado y con PDF vigente responde 409 `PDF_YA_ENVIADO` (antes `PDF_YA_GENERADO`).
+- **Licitación (OBS-1027-4):** con errores de fila y una línea de negocio que no da margen, el 400 `LICITACION_INVALIDA` trae también
+  `MARGEN_LINEA_DESCONOCIDA` en `errores[]` (`campo = linea_negocio`, `indice = null` si es la del encabezado) y
+  `error.detalle.lineas_validas`: una sola ida y vuelta. Valor nuevo en el enum `ErrorFilaLicitacion.codigo`.
+- Además, `Licitacion` (`GET /web/licitaciones/{folio}`) trae `finalizada_at` (DEF-1027-2, en la rama `206-endpoint-finalizar`; fila 63).
+- Sin script de base de datos, sin configuración nueva y sin endpoints nuevos: siguen **55 endpoints**.
 
 **2026-10-26 (rama `218-costo-bruto-ruta`, HU-039.1, #218, ADR-015 §5).** Costo bruto de la ruta para el dueño (fila 62 de §7):
 

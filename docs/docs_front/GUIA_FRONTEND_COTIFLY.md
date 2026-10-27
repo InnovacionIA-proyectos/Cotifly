@@ -815,7 +815,7 @@ gerente (sección 5.6). Si la fuente de la regional está caída, el listado res
   "adjunto": "PCN-9000472281-DG-29092026-004.pdf",
   "cuerpo_html": "<div ...>...</div>",
   "resumen": { "moneda": "COP", "total": 3000000, "total_texto": "$3.000.000", "rutas": [ { "orden": 1, "ruta": "Buenaventura → Bogotá, D.C.", "precio": 3000000, "precio_texto": "$3.000.000" } ], "leyenda": "...", "nota_moneda": null },
-  "copia_oculta": "comercial@boterosoto.com.co",
+  "copia_oculta": null,
   "entorno_pruebas": true,
   "redirigido_a": "<buzón de pruebas>",
   "aviso": "Ambiente de pruebas: el correo NO llegará a los destinatarios; ..."
@@ -824,6 +824,8 @@ gerente (sección 5.6). Si la fuente de la regional está caída, el listado res
 
 - 404 si no es tuya.
 - Con `entorno_pruebas = true`, mostrar `aviso` en un recuadro de advertencia en el modal. `cuerpo_html` es la vista fiel del correo.
+- `copia_oculta`: anunciar "Recibirás una copia oculta" solo si no es `null`. Al redirigir (`entorno_pruebas = true`) siempre es `null`:
+  el correo sale solo al buzón de pruebas, sin CC ni CCO (OBS-1027-5 de #226, ADR-023).
 
 **`POST /web/cotizaciones/{folio}/enviar`**
 
