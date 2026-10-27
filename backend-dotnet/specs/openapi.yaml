@@ -3207,7 +3207,7 @@ paths:
         Desde HU-013 (ADR-018 §11, #98) ya no es "una sola vez": mientras la cotización no se haya enviado ni tenga resultado,
         los ajustes (margen, conexos, textos, re-solicitar en el mismo folio) invalidan el PDF (`pdf_desactualizado = true`) y
         se regenera aquí (el anterior queda en el historial). Con el PDF vigente responde `PDF_YA_GENERADO`; ya enviada o con
-        resultado, `PDF_YA_ENVIADO` (versión `-vN`).
+        resultado, `PDF_YA_ENVIADO` (versión `-vN`, con la llamada en `detalle` desde #228).
 
         **Por ruta (HU-021.9, #136).** Con una ruta, el PDF sale de la ruta y sus camiones: origen, destino, los camiones
         agrupados ("2 × 3S3 - FURGON (20000 KG)"; un camión sin vehículo es "Vehículo por definir" y uno descartado en Nexo no
@@ -3262,7 +3262,7 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`SIN_RUTAS_COTIZABLES` (HU-028.1, #183, decisión D1: la Mesa de Costeo rechazó todas las rutas), `COSTEO_NO_LISTO` (alguna ruta NO rechazada sin precio; las rechazadas salen "Sin costeo", sin precio ni motivo, y no suman; con la cotización finalizada y una ruta rechazada después, el total congelado ya no cuadra: `detalle` trae la versión nueva, `accion = nueva_version`), `PDF_YA_GENERADO` (PDF vigente), `PDF_YA_ENVIADO`, `COTIZACION_NO_FINALIZADA` (HU-036.3, #207: el PDF sale con el precio que aceptó el comercial; `detalle` con la llamada a `.../finalizar`) o `CONFLICTO_CONCURRENCIA`'
+          description: '`SIN_RUTAS_COTIZABLES` (HU-028.1, #183, decisión D1: la Mesa de Costeo rechazó todas las rutas), `COSTEO_NO_LISTO` (alguna ruta NO rechazada sin precio; las rechazadas salen "Sin costeo", sin precio ni motivo, y no suman; con la cotización finalizada y una ruta rechazada después, el total congelado ya no cuadra: `detalle` trae la versión nueva, `accion = nueva_version`), `PDF_YA_GENERADO` (PDF vigente), `PDF_YA_ENVIADO` (ya enviada o con resultado; DEF-1027B-1, #228: `detalle` con la llamada para crear la versión nueva, igual que margen y conexos: `accion = nueva_version`, `metodo = POST`, `endpoint = /web/cotizaciones/{folio}/costeo/re-solicitar` y `cuerpo = {motivo: "Generar el PDF después del envío", nueva_version: true}`), `COTIZACION_NO_FINALIZADA` (HU-036.3, #207: el PDF sale con el precio que aceptó el comercial; `detalle` con la llamada a `.../finalizar`) o `CONFLICTO_CONCURRENCIA`'
           content:
             application/json:
               schema:

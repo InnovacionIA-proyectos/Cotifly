@@ -1200,8 +1200,9 @@ public sealed class clsCosteoCotizacionService(
         }
 
         // OBS-1027-6 (#226): la entrega al cliente manda sobre el PDF vigente. Una enviada (o con resultado) con su PDF responde
-        // PDF_YA_ENVIADO (crear una versión nueva), no PDF_YA_GENERADO, que solo aplica antes de entregarla.
-        if (cotizacion.ValidarEntregaAlCliente() is { } entregada)
+        // PDF_YA_ENVIADO (crear una versión nueva), no PDF_YA_GENERADO, que solo aplica antes de entregarla. DEF-1027B-1 (#228): con la
+        // llamada para crear la versión nueva en detalle, como margen, conexos, textos y re-solicitar.
+        if (clsReglaPdfCosteo.ValidarEntrega(cotizacion, MotivoVersionPdf) is { } entregada)
         {
             return entregada;
         }
@@ -1216,6 +1217,9 @@ public sealed class clsCosteoCotizacionService(
 
     /// <summary>HU-036.3 (#207): cierre del mensaje de <c>COTIZACION_NO_FINALIZADA</c> al generar el PDF.</summary>
     public const string AccionPdf = "generar el PDF";
+
+    /// <summary>DEF-1027B-1 (#228): motivo de la versión nueva que sugiere el <c>PDF_YA_ENVIADO</c> del PDF.</summary>
+    public const string MotivoVersionPdf = "Generar el PDF después del envío";
 
     /// <summary>
     /// #173: <see cref="Vista"/> con el estado del envío diferido de cada conexo a Nexo (<c>estado_nexo</c>), igual que
