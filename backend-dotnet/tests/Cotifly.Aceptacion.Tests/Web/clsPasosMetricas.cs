@@ -86,6 +86,22 @@ public sealed class clsPasosMetricas(clsContextoWeb web)
         await clsBaseDatosPruebas.EjecutarAsync(CadenaCotifly, sentencias.ToString());
     }
 
+    /// <summary>
+    /// HU-034.1 (#201): la Mesa de Costeo rechaza una ruta (HU-028.1, #183): queda sin precio y la cabecera suma solo las rutas no
+    /// rechazadas, como la deja el dominio. El costo de la ruta se conserva para comprobar que el tablero no lo cuenta.
+    /// </summary>
+    [Given("que la Mesa de Costeo rechazó la ruta {int} de la cotización {string}")]
+    public Task DadoLaRutaRechazada(int orden, string alias) =>
+        clsBaseDatosPruebas.EjecutarAsync(CadenaCotifly, $"""
+            DECLARE @id UNIQUEIDENTIFIER = '{web.Cotizacion(alias).Id}';
+            UPDATE dbo_cotifly.CotizacionLineasSolicitud SET estadoCosteo = N'rechazada', precioFinalLinea = NULL
+            WHERE cotizacionSolicitudId = @id AND orden = {orden};
+            UPDATE dbo_cotifly.CotizacionesSolicitud
+            SET precioFinal = (SELECT SUM(precioFinalLinea) FROM dbo_cotifly.CotizacionLineasSolicitud
+                               WHERE cotizacionSolicitudId = @id AND (estadoCosteo IS NULL OR estadoCosteo <> N'rechazada'))
+            WHERE id = @id;
+            """);
+
     [When("{string} consulta sus métricas del {string} al {string}")]
     public Task CuandoConsultaSusMetricas(string alias, string desde, string hasta) =>
         web.EnviarAsync(_get, $"/web/metricas/comercial?desde={desde}&hasta={hasta}", web.Sesion(alias).Access);
@@ -185,6 +201,38 @@ public sealed class clsPasosMetricas(clsContextoWeb web)
         var punto = web.UltimoJson().GetProperty("serie_mensual").EnumerateArray().Single(p => p.GetProperty("mes").GetString() == mes);
         punto.GetProperty("cantidad").GetInt32().Should().Be(cantidad);
         punto.GetProperty("ganadas").GetInt32().Should().Be(ganadas);
+    }
+
+    /// <summary>HU-034.1 (#201): cada fila es un mes de <c>serie_mensual</c>; una celda vacía no se comprueba.</summary>
+    [Then("la serie mensual tiene estos montos:")]
+    public void EntoncesLosMontosDeLaSerie(DataTable tabla)
+    {
+        ArgumentNullException.ThrowIfNull(tabla);
+        web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);
+        var serie = web.UltimoJson().GetProperty("serie_mensual").EnumerateArray()
+            .ToDictionary(p => p.GetProperty("mes").GetString() ?? string.Empty, StringComparer.Ordinal);
+        foreach (var fila in tabla.Rows)
+        {
+            serie.Should().ContainKey(fila["mes"]);
+            var punto = serie[fila["mes"]];
+            foreach (var campo in tabla.Header.Where(c => c != "mes" && !string.IsNullOrWhiteSpace(fila[c])))
+            {
+                punto.GetProperty(campo).GetDecimal().Should().Be(decimal.Parse(fila[campo], CultureInfo.InvariantCulture), $"{fila["mes"]}.{campo}");
+            }
+        }
+    }
+
+    /// <summary>HU-034.1 (#201): la suma de los meses de la serie es exactamente el valor de los indicadores del periodo.</summary>
+    [Then("la suma de la serie mensual cuadra con los indicadores")]
+    public void EntoncesLaSerieCuadra()
+    {
+        var json = web.UltimoJson();
+        var serie = json.GetProperty("serie_mensual").EnumerateArray().ToList();
+        var indicadores = json.GetProperty("indicadores");
+        foreach (var campo in new[] { "cantidad", "ganadas", "perdidas", "valor_cotizado_cop", "valor_ganado_cop", "costeo_total", "costeo_ganadas", "ganancias" })
+        {
+            serie.Sum(p => p.GetProperty(campo).GetDecimal()).Should().Be(indicadores.GetProperty(campo).GetDecimal(), campo);
+        }
     }
 
     [Then("la regional de las métricas es {string}")]

@@ -138,7 +138,7 @@ Identidades para QA:
 - `ganancias = valor_ganado_cop − costeo_ganadas`, cuando todas las ganadas tienen precio y costo y ninguna en USD tiene TRM 0.
 
 **Gráficas.**
-- `serie_mensual` trae un punto por mes del periodo (`AAAA-MM`, también los meses vacíos), con cantidad, ganadas, perdidas, valor cotizado y valor ganado.
+- `serie_mensual` trae un punto por mes del periodo (`AAAA-MM`, también los meses vacíos), con cantidad, ganadas, perdidas, valor cotizado, valor ganado y (HU-034.1, #201) `costeo_total`, `costeo_ganadas` y `ganancias`, con las mismas definiciones de los indicadores: la suma de los meses es exactamente el valor de `indicadores` del periodo. Sirven para "Ganancias por mes" y "mes actual vs. mes anterior".
 - `concentracion_ciudades.por_destino` (municipio de destino, el que usa el mapa) y `por_origen` traen cantidad, ganadas y valor por municipio, con el texto del catálogo de Nexo.
   - `disponible` es `false` hasta que se aplique el script 0004 (columnas `origen`/`destino`).
   - Las cotizaciones sin ciudad cuentan en `sin_destino`/`sin_origen`.
