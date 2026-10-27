@@ -561,7 +561,7 @@ Regla para `errores` del chat (En QA): reaccionar solo a los códigos conocidos 
 
 Todos los de `/web/*` exigen `Authorization: Bearer`, responden 401 `ErrorWeb` sin token y usan snake_case. "Ambos" = `comercial` o `gerente_comercial`; cada uno ve **solo lo suyo**, salvo donde se indique.
 
-Resumen (parcial; los 52 endpoints están en `CONTRATOS_API_COTIFLY_FRONTEND.md` §4):
+Resumen (parcial; los 55 endpoints están en `CONTRATOS_API_COTIFLY_FRONTEND.md` §4):
 
 | Método y ruta | Rol | Estado |
 |---|---|---|
