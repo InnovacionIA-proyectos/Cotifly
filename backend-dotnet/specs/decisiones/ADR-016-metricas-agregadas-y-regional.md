@@ -2,7 +2,7 @@
 
 - **Estado:** Propuesta (definiciones pendientes de validar con Gerencia Comercial; la fuente de la regional ya está verificada en #81, faltan la credencial en el despliegue y la salida de red, ver Pendientes)
 - **Fecha:** 2026-09-29
-- **Issue / HU:** #45 (HU-010.1), #81 (HU-003.6, regional en el login) y HU-037 (#209 a #212, rol Director: sección 11). Consumidores: clientepro-frontend #50 (HU-010.2, tablero del comercial), #51 (HU-010.3, tablero del gerente) y #52 (HU-010.4, QA de cálculos). Relacionada con ADR-009 (rol en el token), ADR-011 (folio y versiones), ADR-014 (TRM y cotizaciones en USD) y ADR-015 (costeo de Nexo, script 0004).
+- **Issue / HU:** #45 (HU-010.1), #81 (HU-003.6, regional en el login) HU-037 (#209 a #212, rol Director: sección 11) y HU-016.1 (#154 parte B, margen contra la política: sección 12). Consumidores: clientepro-frontend #50 (HU-010.2, tablero del comercial), #51 (HU-010.3, tablero del gerente) y #52 (HU-010.4, QA de cálculos). Relacionada con ADR-009 (rol en el token), ADR-011 (folio y versiones), ADR-014 (TRM y cotizaciones en USD) y ADR-015 (costeo de Nexo, script 0004).
 
 ## Contexto
 
@@ -212,6 +212,35 @@ Gerencia pidió un rol por encima del gerente comercial que vea **todas** las re
 - **Listas grandes de usuarios:** con el director sin regional, las consultas por lista de usuarios mandan la lista como un solo parámetro
   (`EF.Parameter`, `OPENJSON`; el repositorio de métricas ya lo hacía), así no topan con el límite de 2100 parámetros de SQL Server.
 
+### 12. Margen contra la política de las mismas rutas (HU-016.1, #154, parte B)
+
+`desviacion_promedio_margen` (sección 4) solo promedia `MargenAjustes.diferencia`, que se escribe cuando el comercial **negocia** un
+margen: un comercial que nunca ajusta no tiene referencia. Gerencia pidió (Sara, 2026-10-05) comparar el margen aplicado con la política.
+Decisiones de la Gerencia Comercial del 2026-10-27:
+
+- **P3: la referencia es la política de las mismas rutas**, calculada en el servidor. Cada ruta guarda al cotizarse
+  `CotizacionLineasSolicitud.margenPoliticaSugerido` (el margen de la política de su línea en ese momento), así que se compara lo mismo
+  con lo mismo (si la política cambia después, las rutas viejas conservan la suya) y la tabla `MargenesPolitica` no se expone. Sin script
+  de base de datos.
+- **P4: los dos promedios**, y el semáforo con el ponderado. Campos nuevos (aditivos) de `IndicadoresMetricas`, también en
+  `comerciales[].indicadores`:
+  - rutas **comparables** = las del universo del tablero (versión vigente de cada cadena, sin las rechazadas por la Mesa, #183) con
+    `margenAplicado` (se cotizaron) y con `margenPoliticaSugerido`;
+  - `margen_politica_promedio` = promedio simple de la política de las comparables;
+  - `margen_politica_ponderado` = Σ(política × `costoFinal`) / Σ `costoFinal` de las comparables con costo &gt; 0;
+  - `desviacion_margen_politica` = Σ((aplicado − política) × `costoFinal`) / Σ `costoFinal` de esas mismas: el aplicado ponderado por
+    costo menos la política ponderada, redondeado una sola vez (4 decimales, half-to-even). Semáforo: verde ≥ 0, rojo &lt; 0;
+  - `rutas_sin_margen_politica` = rutas con margen aplicado y sin política (datos anteriores a HU-021): no entran y se cuentan para que la
+    UI avise que la comparación está incompleta.
+  - Los márgenes son fracciones y el costo siempre está en COP: la moneda y la TRM no los afectan. El alcance (gerente, director,
+    `usuario_id`) y el periodo son los del resto del tablero.
+- **`desviacion_promedio_margen` no cambia** (opción B de la issue descartada): sigue siendo "solo ajustes negociados" y la usan otros
+  reportes.
+- **P4b: catálogo de líneas sin margen.** `GET /web/lineas-negocio` (política `Comercial`) devuelve las líneas activas
+  `[{linea_negocio, etiqueta}]` para el desplegable de "Nueva solicitud" (hoy fijo en el frontend, sin `DevolucionContenedor`). Nunca trae
+  el margen ni el método. Se lee de la base en cada petición (6 a 8 filas por clave primaria): sin caché, un cambio de la administración
+  se ve de inmediato.
+
 ## Alternativas consideradas
 
 - **Contar todas las versiones** (nota del backlog del 2026-09-24): infla las métricas con cada cotización rehecha. Se expone como `versiones` para quien la necesite.
@@ -223,6 +252,12 @@ Gerencia pidió un rol por encima del gerente comercial que vea **todas** las re
 - **Sincronizar `UsuariosWeb.regional` en cada login como única fuente** (propuesta original de #45): metería una tercera base externa en el camino crítico del login (ADR-009 es fail-closed). En #81 se adoptó **además** de la consulta en vivo del tablero, pero sin bloquear: la búsqueda tiene un límite corto y cualquier fallo solo deja un warning (sección 6, "Regional en el login"). El tablero sigue consultando en vivo.
 - **Un DbContext `clsRegionalDbContext` y un puerto nuevo `IClsAlmacenRegionalExterno` para el login** (lo que sugería #81): habría dos accesos a la misma tabla con reglas de cruce que podrían divergir (quitar el dominio, mayúsculas, filas ambiguas) y dos cachés. Se reutilizó el adaptador de #45 (SQL parametrizado con `Microsoft.Data.SqlClient`): la tabla es de solo lectura, se leen dos columnas y un DbContext de EF no aporta nada (sin seguimiento de cambios, sin modelo que validar). La intención de la issue se mantiene: `DimEjecutivo` de solo lectura detrás de un puerto de Aplicación.
 - **Dejar en NULL la regional del usuario que no aparece en `DimEjecutivo`:** borraría la regional que el DBA puso a mano a quien no es ejecutivo (por ejemplo, un gerente fuera de la tabla), y el tablero le respondería 409. Se conserva el valor existente.
+- **Exponer `MargenesPolitica` al comercial para que el cliente promedie (opción A de #154):** compararía el margen de las rutas con el
+  promedio de **todas** las líneas, aunque el comercial cotice casi solo una, y con la política de hoy y no la del momento de cotizar.
+  Descartada por la Gerencia (P3); el catálogo del desplegable va sin margen (P4b).
+- **Redefinir `desviacion_promedio_margen` (opción B de #154):** cambiaría el significado de un campo publicado. Descartada: se agregan campos.
+- **Comparar la política con `margen_ponderado`:** ese campo es el margen sobre el precio ponderado por el precio; la decisión P4 pide
+  ponderar por costo, así que la desviación ponderada se calcula con el aplicado y la política de las mismas rutas y el mismo peso.
 - **Filtrar un comercial ajeno con 200 vacío en vez de 404:** confunde al frontend (un selector con un id mal armado parecería "sin datos"). Se usa 404 como en el resto de `/web/*`.
 
 ## Consecuencias
@@ -244,6 +279,6 @@ Gerencia pidió un rol por encima del gerente comercial que vea **todas** las re
 | Validar las definiciones: versión vigente vs. todas las versiones, `conversion` sobre el total, `costeo_total` sobre todo el universo, `ganancias` solo de ganadas y periodo por defecto (año en curso) | Gerencia Comercial (Sara / scalderon-bs) |
 | Contrato de Nexo para el "score de urgencia" por solicitud (el deadline vencido ya se calcula con el 0004) | Equipo de Nexo |
 | ~~Integrar los servicios conexos (ADR-015) en precio y costo del tablero~~: resuelto con HU-021 (están en `costoFinal` de la ruta) | Duban |
-| Validar con Gerencia Comercial la apertura por línea de negocio (sección 10) y si `margen_promedio` debe pasar a ser el ponderado por ruta | Gerencia Comercial (Sara / scalderon-bs) |
+| Validar con Gerencia Comercial la apertura por línea de negocio (sección 10) y si `margen_promedio` debe pasar a ser el ponderado por ruta (HU-016.1 agrega el aplicado ponderado por costo de forma derivable: `margen_politica_ponderado + desviacion_margen_politica`, sección 12) | Gerencia Comercial (Sara / scalderon-bs) |
 | ~~Pasar la descarga de PDF ajenos y `LoginResponse.ubicacion` a `IClsRegionalUsuario`~~: resuelto en #81 con la columna refrescada en cada login (sección 6, "Convergencia"). "Mis cotizaciones" del gerente lee la columna | Duban (HU-004.5) |
 | Aplicar el 0004 para que el mapa por ciudad y `deadline_vencidas` tengan datos | DBA (ADR-015) |

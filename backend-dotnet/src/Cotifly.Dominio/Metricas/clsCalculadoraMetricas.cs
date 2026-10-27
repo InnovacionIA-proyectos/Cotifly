@@ -39,6 +39,7 @@ public static class clsCalculadoraMetricas
             .ToList();
         var numDiferencias = universo.Sum(f => f.NumDiferencias);
         var montos = MontosDe(universo);
+        var politica = PoliticaDe(universo.SelectMany(f => f.Rutas));
 
         return new clsIndicadoresMetricas
         {
@@ -67,6 +68,10 @@ public static class clsCalculadoraMetricas
                 : Redondear(universo.Sum(f => f.SumaDiferenciasAbsolutas ?? 0m) / numDiferencias, DecimalesFraccion),
             AjustesMargen = universo.Sum(f => f.NumAjustes),
             DeadlineVencidas = deadlineDisponible ? universo.Count(f => f.Ganada is null && f.Deadline < ahora) : null,
+            MargenPoliticaPromedio = politica.Promedio,
+            MargenPoliticaPonderado = politica.Ponderado,
+            DesviacionMargenPolitica = politica.Desviacion,
+            RutasSinMargenPolitica = politica.SinPolitica,
         };
     }
 
@@ -252,10 +257,34 @@ public static class clsCalculadoraMetricas
         return precio == 0m ? null : Redondear((precio - validas.Sum(x => x.Costo!.Value)) / precio, DecimalesFraccion);
     }
 
+    /// <summary>
+    /// HU-016.1 (#154, decisiones P3 y P4 del 2026-10-27): el margen aplicado contra la política de las MISMAS rutas. Comparables = las
+    /// rutas con margen aplicado y con política (el universo ya trae solo las de la versión vigente y sin las rechazadas). Simple sobre
+    /// todas ellas; ponderado y desviación sobre las que tienen costo &gt; 0 (el costo siempre está en COP, así que la moneda y la TRM no
+    /// influyen). La desviación es Σ((aplicado − política) × costo) / Σ costo, redondeada una sola vez.
+    /// </summary>
+    private static clsComparacionPolitica PoliticaDe(IEnumerable<clsRutaMetrica> rutas)
+    {
+        var cotizadas = rutas.Where(r => r.MargenAplicado.HasValue).ToList();
+        var comparables = cotizadas.Where(r => r.MargenPolitica.HasValue).ToList();
+        var conCosto = comparables.Where(r => r.Costo > 0m).ToList();
+        var costo = conCosto.Sum(r => r.Costo!.Value);
+        return new clsComparacionPolitica(
+            comparables.Count == 0 ? null : Redondear(comparables.Average(r => r.MargenPolitica!.Value), DecimalesFraccion),
+            costo == 0m ? null : Redondear(conCosto.Sum(r => r.MargenPolitica!.Value * r.Costo!.Value) / costo, DecimalesFraccion),
+            costo == 0m
+                ? null
+                : Redondear(conCosto.Sum(r => (r.MargenAplicado!.Value - r.MargenPolitica!.Value) * r.Costo!.Value) / costo, DecimalesFraccion),
+            cotizadas.Count - comparables.Count);
+    }
+
     private static decimal? Fraccion(int numerador, int denominador) =>
         denominador == 0 ? null : Redondear((decimal)numerador / denominador, DecimalesFraccion);
 
     private static decimal Redondear(decimal valor, int decimales) => Math.Round(valor, decimales, MidpointRounding.ToEven);
+
+    /// <summary>Resultado de <see cref="PoliticaDe"/>.</summary>
+    private sealed record clsComparacionPolitica(decimal? Promedio, decimal? Ponderado, decimal? Desviacion, int SinPolitica);
 
     /// <summary>Montos en COP de <see cref="MontosDe"/>.</summary>
     private sealed record clsMontosMetricas(

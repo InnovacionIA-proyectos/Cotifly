@@ -255,6 +255,29 @@ public sealed class clsMetricasTableroRepositoryTests(clsBaseDatosPruebas baseDa
     }
 
     [Fact]
+    public async Task CadaRutaTraeSuMargenDePoliticaYLaRechazadaNoSale()
+    {
+        // HU-016.1 (#154): la referencia del margen aplicado es el margenPoliticaSugerido de cada ruta de la versión vigente.
+        var ana = await CrearUsuarioAsync();
+        var cotizacion = NuevaCotizacion(ana);
+        await GuardarAsync(cotizacion);
+        await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly, $"""
+            DECLARE @id UNIQUEIDENTIFIER = '{cotizacion.Id}';
+            UPDATE dbo_cotifly.CotizacionLineasSolicitud SET costoFinal = 1000000, margenAplicado = 0.10, margenPoliticaSugerido = 0.15
+            WHERE cotizacionSolicitudId = @id AND orden = 1;
+            INSERT INTO dbo_cotifly.CotizacionLineasSolicitud (cotizacionSolicitudId, orden, costoFinal, margenAplicado, margenPoliticaSugerido, estadoCosteo) VALUES
+                (@id, 2, 3000000, 0.20, NULL, NULL), (@id, 3, 500000, 0.30, 0.25, N'rechazada');
+            """);
+
+        var fila = (await ListarAsync([ana], Reloj.AhoraUtc.AddDays(-1), Reloj.AhoraUtc.AddDays(1))).Filas.Should().ContainSingle().Subject;
+
+        fila.Rutas.Select(r => (r.Orden, r.MargenAplicado, r.MargenPolitica)).Should().Equal((1, 0.10m, 0.15m), (2, 0.20m, (decimal?)null));
+        var indicadores = Cotifly.Dominio.Metricas.clsCalculadoraMetricas.Indicadores([fila], Reloj.AhoraUtc, deadlineDisponible: false);
+        (indicadores.MargenPoliticaPromedio, indicadores.MargenPoliticaPonderado, indicadores.DesviacionMargenPolitica, indicadores.RutasSinMargenPolitica)
+            .Should().Be((0.15m, 0.15m, -0.05m, 1));
+    }
+
+    [Fact]
     public async Task SinCotizacionesNoConsultaRutas()
     {
         var ana = await CrearUsuarioAsync();

@@ -50,7 +50,7 @@ ClientePro (ya autenticado)
 
 ## 3. Endpoints
 
-Resumen de los endpoints de uso más frecuente; la lista completa (55) está en `CONTRATOS_API_COTIFLY_FRONTEND.md` §4.
+Resumen de los endpoints de uso más frecuente; la lista completa (56) está en `CONTRATOS_API_COTIFLY_FRONTEND.md` §4.
 
 | Método y ruta | Rol | Resumen |
 |---|---|---|
@@ -76,6 +76,7 @@ Resumen de los endpoints de uso más frecuente; la lista completa (55) está en 
 | `GET /web/cotizaciones/{id}/nueva-version` | ambos | Datos para prellenar una nueva versión |
 | `GET /web/clientes/{nit}/destinatarios-previos` | ambos | `para`/`cc` del último envío a ese cliente |
 | `GET` / `PUT /web/usuario/telefono` | ambos | Teléfono que se imprime en el PDF |
+| `GET /web/lineas-negocio` | ambos | HU-016.1 (#154): líneas de negocio **activas** para el desplegable "Línea de negocio" de cada ruta en "Nueva solicitud" (`[{linea_negocio, etiqueta}]`), **sin margen**. Reemplaza el catálogo fijo del frontend. Ver §8.18 |
 | `GET /web/admin/lineas-negocio` | gerente_comercial o director | Políticas de margen |
 | `PUT /web/admin/lineas-negocio/{id}` | gerente_comercial o director | Edita margen, método y estado |
 | `GET /web/metricas/comercial` | ambos | Tablero del comercial (HU-010.2): indicadores y serie mensual de sus cotizaciones. Ver §3.1 |
@@ -131,6 +132,10 @@ Decisiones completas en `backend-dotnet/specs/decisiones/ADR-016-metricas-agrega
 | `tiempo_promedio_cotizacion_horas` | Promedio de `costeoListoAt` − `createdAt` (versión vigente), en horas; sin las filas incoherentes (`costeoListoAt` antes de `createdAt`) |
 | `desviacion_promedio_margen` / `desviacion_promedio_margen_abs` / `ajustes_margen` | Promedio de `MargenAjustes.diferencia` con signo / en valor absoluto, y cantidad de ajustes de la versión vigente |
 | `deadline_vencidas` | Sin resultado y con `deadline` ya vencido; `null` hasta que se aplique el script 0004 |
+| `margen_politica_promedio` | HU-016.1 (#154): promedio simple del `margenPoliticaSugerido` de las rutas comparables (versión vigente, sin rechazadas, con margen aplicado y con política). `null` sin ninguna. Ver §8.18 |
+| `margen_politica_ponderado` | HU-016.1: SUM(`margenPoliticaSugerido` × `costoFinal`) / SUM(`costoFinal`) de esas rutas con costo > 0. `null` si ninguna tiene costo |
+| `desviacion_margen_politica` | HU-016.1: SUM((`margenAplicado` − `margenPoliticaSugerido`) × `costoFinal`) / SUM(`costoFinal`) de las mismas rutas: aplicado ponderado menos política ponderada. **Semáforo:** verde ≥ 0, rojo < 0. No reemplaza a `desviacion_promedio_margen` |
+| `rutas_sin_margen_politica` | HU-016.1: rutas con margen aplicado y sin política guardada (anteriores a HU-021); no entran en la comparación |
 | `lineas_negocio_activas` (solo `/regional`) | `MargenesPolitica.isActive = 1` |
 
 `valor_cop` es `precioFinal` en COP; en USD, `round(precioFinal × trmAplicada, 2)`. No es el `precio_cop` de la TRM (ADR-014, el precio en pesos antes de convertir), que se recalcula del costo y el margen y puede diferir unos pesos. El costo ya está en COP y nunca se convierte. Montos con 2 decimales; fracciones de 0 a 1 con 4 decimales; redondeo half-to-even.
@@ -1914,3 +1919,35 @@ costeo actual." Es el mismo mecanismo que ya existía con el PDF generado (ADR-0
 finalizó (o la Mesa deshace el rechazo), el aviso se quita. Si la Mesa rechazó una ruta que el precio finalizado incluía, el total ya no
 es la suma de las rutas que cuentan: `POST .../costeo/pdf` responde 409 `COSTEO_NO_LISTO` con la versión nueva en `detalle`
 (`accion = nueva_version`), no "espera la siguiente consulta".
+
+### 8.18 Margen contra la política y desplegable de líneas (HU-016.1, #154, parte B)
+
+Decisiones de la Gerencia Comercial del 2026-10-27: el "Margen promedio" de "Mis cotizaciones" y del tablero se compara con la
+**política de margen de las mismas rutas** que se cotizaron, calculada en el servidor (no se expone la tabla de políticas); se muestran
+el promedio **simple** y el **ponderado por costo**, y el semáforo usa el **ponderado**. Todo es aditivo: ningún campo cambia.
+
+- `IndicadoresMetricas` (`indicadores` y `comerciales[].indicadores` de `GET /web/metricas/comercial` y `/regional`) trae
+  `margen_politica_promedio`, `margen_politica_ponderado`, `desviacion_margen_politica` y `rutas_sin_margen_politica` (definiciones
+  en §3.1). Mismo universo que el resto del tablero: versión vigente de cada cadena, sin las rutas rechazadas por la Mesa, el alcance del
+  gerente (su regional) y del director (todas o `?regional=`), y `usuario_id` para filtrar. El margen es una fracción, así que la moneda
+  y la TRM no lo cambian (el costo siempre está en COP).
+- Ejemplo: rutas con margen aplicado 10 %, 20 % y 30 %, política 15 %, 15 % y 25 % y costos 1M, 2M y 3M →
+  `margen_politica_promedio = 0.1833`, `margen_politica_ponderado = 0.2`, `desviacion_margen_politica = 0.0333` (verde).
+- "Margen aplicado ponderado por costo" para mostrar junto a la política: `margen_politica_ponderado + desviacion_margen_politica`.
+  `margen_promedio` y `margen_ponderado` (sobre el precio) siguen como estaban. Con `rutas_sin_margen_politica > 0`, avisar que la
+  comparación no incluye esas rutas.
+- **Nuevo** `GET /web/lineas-negocio` (comercial, gerente y director): las líneas activas para el desplegable de "Nueva solicitud",
+  ordenadas por nombre, **sin margen ni método**. `linea_negocio` es el valor que se envía en `rutas[].linea_negocio`; `etiqueta` es el
+  texto para mostrar. Se lee de la base en cada petición: una línea que la administración desactiva sale de inmediato.
+
+<!-- respuesta: GET /web/lineas-negocio 200 -->
+```json
+[
+  { "linea_negocio": "DevolucionContenedor", "etiqueta": "Devolución Contenedor" },
+  { "linea_negocio": "Distribucion", "etiqueta": "Distribución" },
+  { "linea_negocio": "Exportacion", "etiqueta": "Exportación" },
+  { "linea_negocio": "Importacion", "etiqueta": "Importación" },
+  { "linea_negocio": "Internacional", "etiqueta": "Internacional" },
+  { "linea_negocio": "Nacional", "etiqueta": "Nacional" }
+]
+```

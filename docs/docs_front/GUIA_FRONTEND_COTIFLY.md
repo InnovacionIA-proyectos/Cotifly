@@ -1473,6 +1473,10 @@ Ejemplo (del contrato): `PCN-DG-10082026-001` se crea el **10 de agosto** (v1, 1
 | `desviacion_promedio_margen_abs` | number o null | Promedio del **valor absoluto** de esas diferencias (magnitud de la negociación, sin que se compensen subidas y bajadas). `null` sin ajustes |
 | `ajustes_margen` | int | Cantidad de esos ajustes |
 | `deadline_vencidas` | int o null | Sin resultado y con `deadline` anterior al momento de la consulta. **`null`** mientras la base no tenga la columna `deadline` (script `0004`) |
+| `margen_politica_promedio` | number o null | HU-016.1 (#154): promedio simple del margen de política (`margenPoliticaSugerido`) de las **mismas rutas** cotizadas (versión vigente, sin rechazadas, con margen aplicado y con política). `null` sin ninguna |
+| `margen_politica_ponderado` | number o null | HU-016.1: esa política ponderada por `costoFinal` (rutas con costo > 0). `null` si ninguna tiene costo |
+| `desviacion_margen_politica` | number o null | HU-016.1: margen aplicado ponderado por costo menos la política ponderada, sobre las mismas rutas. **Semáforo:** verde ≥ 0, rojo < 0 |
+| `rutas_sin_margen_politica` | int | HU-016.1: rutas con margen aplicado y sin política guardada; no entran en la comparación (avisar si es > 0) |
 
 Solo en `/regional`: `lineas_negocio_activas` (int) = líneas de `MargenesPolitica` con `isActive = 1`. No depende del periodo ni de la regional.
 
