@@ -328,6 +328,31 @@ INSERT INTO dbo_cotifly.UsuariosRoles (usuarioId, rolId) SELECT @u, id FROM dbo_
 COMMIT;
 ```
 
+### Multi-rol (HU-040, #229 y #230)
+
+`db/scripts/16_multiples_roles_activos.sql` (#229, propuesta pendiente de revisión de @scalderon-bs) retira el índice único
+`uq_usuariosRoles_usuarioId_activo`: una persona puede tener varias asignaciones activas en `UsuariosRoles` (una por rol; la unicidad
+usuario + rol sigue). Además agrega `TokensRefresco.rolSesion` (el rol con el que se emitió la sesión). No cambia ninguna fila.
+
+- **Va antes de la imagen de HU-040.1**: esa imagen mapea `rolSesion` y sin el 16 queda en 503 "falta 16" (aplicarlo la recupera sin
+  redesplegar).
+- **Es seguro con la imagen anterior** (a diferencia del 15): mientras nadie agregue una segunda asignación activa, todo usuario sigue con
+  una y el alta JIT de esa imagen crea una sola; `rolSesion` queda NULL. Si Datos agrega una segunda asignación activa con la imagen
+  anterior en marcha, esa imagen rechaza solo a ese usuario (401 genérico, `rol_externo_cambio`), falla cerrado. Probado con las pruebas
+  de Testcontainers de #229 (login y refresh con una y con dos asignaciones activas sobre la base con el 16).
+- Con la imagen de HU-040.1 (#229) quien tenga dos asignaciones activas entra con la jerarquía (`director` > `gerente_comercial` >
+  `comercial`) si TODAS sus asignaciones activas siguen respaldadas por un rol de ClientePro; si alguna perdió su rol externo, 401
+  `rol_externo_cambio`, como hoy. La elección del rol al entrar llega con HU-040.2 (#230).
+
+Habilitar el multi-rol de una persona que ya existe (Datos, con aprobación; sus roles de ClientePro deben estar todos mapeados):
+
+```sql
+DECLARE @u UNIQUEIDENTIFIER = (SELECT id FROM dbo_cotifly.UsuariosWeb WHERE nombreUsuario = N'<NOMBREUSUARIO>');
+INSERT INTO dbo_cotifly.UsuariosRoles (usuarioId, rolId)
+    SELECT @u, r.id FROM dbo_cotifly.Roles r
+    WHERE r.codigo = N'<rol>' AND NOT EXISTS (SELECT 1 FROM dbo_cotifly.UsuariosRoles ur WHERE ur.usuarioId = @u AND ur.rolId = r.id);
+```
+
 ### 2.3 Auditoría de secretos en el repositorio (2026-09-28)
 
 Búsqueda de contraseñas, claves, tokens, cadenas de conexión y archivos de credenciales en el árbol actual y en el
@@ -574,6 +599,8 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
      → `07` → `09` → `10` → `11` → `12` → `13` → imagen → `08`. ~~Con HU-036 (#205 a #208): `…` → `13` → `14` → imagen → `08`.~~ Con HU-036 (#205 a #208) y HU-037 (#209 a #211) juntas
      (integración 1027): `…` → `13` → `14` → `15` → imagen → `08`, con el `15` en la misma ventana que la imagen (nunca antes con una
      imagen vieja, ver §2.2 "Rol director"). En la compartida el `15` ya está aplicado (#209) y el `14` está pendiente de @scalderon-bs.
+     Con HU-040 (#229, #230): `…` → `13` → `14` → `15` → `16` → imagen → `08`. El `16` va ANTES de la imagen (la imagen de HU-040.1 lo
+     exige: "falta 16") y, a diferencia del `15`, es seguro con la imagen anterior (ver abajo, "Multi-rol").
    - **HU-030.1 (#184): `db/scripts/11_peso_con_tara.sql` va ANTES de la imagen de #184.** Agrega a la ruta
      (`CotizacionLineasSolicitud`) la columna `pesoConTaraKg DECIMAL(12,2) NULL` y el `CHECK` `ck_cotizacionLineasSolicitud_pesoConTaraKg`
      (`NULL` o > 0): el peso total con tara que escribe el comercial en una ruta `Contenedor`. Es un `ADD` de columna NULL, idempotente
@@ -635,6 +662,7 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
    | `esquema incompleto: falta 12` | Faltan `tipoVehiculoElegido`/`carroceriaElegida` de la ruta (HU-032, #197) | Aplicar `db/scripts/12_vehiculo_elegido.sql` |
    | `esquema incompleto: falta 13` | Faltan las columnas de MailSender en `Correos` o la sincronización del resultado en la cabecera (HU-033, #199) | Aplicar `db/scripts/13_correo_mailsender.sql` |
    | `esquema incompleto: falta 14` | Faltan `finalizadaAt`/`finalizadaPor` de la cabecera (HU-036, #205) | Aplicar `db/scripts/14_cotizacion_finalizada.sql` |
+   | `esquema incompleto: falta 16` | Falta `TokensRefresco.rolSesion` (HU-040.1, #229) | Aplicar `db/scripts/16_multiples_roles_activos.sql` |
    | `esquema incompleto: falta Tabla.columna, ...` (hasta 5) | Falta otra tabla o columna del modelo (por ejemplo un script intermedio sin aplicar) | Comparar con `db/scripts/01_crear_esquema.sql` y aplicar el script que la trae (lista en `docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md` §A.5) |
 
 1. **Staging.** Merge a `QA` → el pipeline (o `publicar-imagen.sh --canal qa`) publica `sha-<corto>`. En Dokploy, stack
