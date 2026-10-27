@@ -223,7 +223,10 @@ Excel. Decisiones:
   caída se niega (fail-closed). Cualquier negativa es 404, igual que un folio inexistente.
 - **Auditoría:** cada intento gerencial sobre una licitación ajena que existe, permitido o no, queda en `EventosHerramienta` con
   `consultar_licitacion` (vista) o `exportar_excel_licitacion` (Excel), con el folio, el usuario, el rol real, el dueño y el motivo de la
-  negativa (`REGIONAL_NO_ASIGNADA`, `REGIONAL_NO_DISPONIBLE`). Ni el dueño ni un comercial ajeno se auditan, como en el detalle.
+  negativa (`REGIONAL_NO_ASIGNADA`, `REGIONAL_NO_DISPONIBLE`). Ni el dueño ni un comercial ajeno se auditan, como en el detalle. Un folio
+  que no es licitación (p. ej. un spot de la regional pedido por `/web/licitaciones/{folio}`) responde 404 sin evento: el tipo se filtra
+  antes de auditar, para no dejar un "permitido" que terminó en 404. El rol es el de la sesión (el del access token, como en el detalle y el
+  PDF): si le quitan el rol de gerente, el token vigente lo conserva hasta vencer y el login siguiente se rechaza (`rol_externo_cambio`).
 - **Solo lectura:** `Licitacion.solo_lectura` (aditivo, siempre presente) es `true` para el gerente y el director y `false` para el dueño,
   igual que `DetalleCotizacion.solo_lectura`. Las mutaciones no cambian: reintentar la cubicación (con o sin `usar_respaldo`), reintentar
   el envío y finalizar siguen filtrando por dueño y les responden 404.
