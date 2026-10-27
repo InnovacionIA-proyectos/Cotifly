@@ -141,6 +141,110 @@ public sealed class clsLicitacionSoloLecturaEndpointsTests : IDisposable
             .Should().Be("pendiente_costeo|abierta", "nada cambió");
     }
 
+    /// <summary>
+    /// Validación #201: ninguna otra acción sobre la licitación ajena responde algo distinto de 404/403 al gerente de la regional o al
+    /// director (ni 409, que delataría que la cargó), aunque manden el <c>If-Match</c> vigente; el costeo (con costos) sigue siendo solo
+    /// del dueño, y nada cambia en la base ni se llama a Nexo.
+    /// </summary>
+    [Fact]
+    public async Task NiElGerenteNiElDirectorTocanNingunaAccionNiElCosteoDeLaLicitacionAjena()
+    {
+        var occidente = Regional();
+        var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial, occidente);
+        var gloria = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoGerente, occidente);
+        var dario = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoDirector, Regional());
+        var folio = await LicitacionCosteadaAsync(ana);
+        using var costeoDueno = await _api.EnviarAsync(HttpMethod.Get, $"/web/cotizaciones/{folio}/costeo", ana.Access);
+        costeoDueno.StatusCode.Should().Be(HttpStatusCode.OK);
+        var rutaId = JsonDocument.Parse(await costeoDueno.Content.ReadAsStringAsync(Ct)).RootElement
+            .GetProperty("rutas")[0].GetProperty("linea_solicitud_id").GetString();
+        using var solicitudDueno = await _api.EnviarAsync(HttpMethod.Get, $"/web/cotizaciones/{folio}/solicitud", ana.Access);
+        var cuerpoSolicitud = await solicitudDueno.Content.ReadAsStringAsync(Ct);
+        var id = await clsBaseDatosPruebas.EscalarAsync<Guid>(_entorno.BaseDatos.CadenaCotifly,
+            $"SELECT id FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'");
+        var antes = await HuellaAsync(folio);
+        var peticionesNexo = _nexo.Peticiones.Count;
+
+        foreach (var sesion in new[] { gloria, dario })
+        {
+            using var detalle = await _api.EnviarAsync(HttpMethod.Get, $"/web/cotizaciones/{folio}", sesion.Access);
+            detalle.StatusCode.Should().Be(HttpStatusCode.OK);
+            var etag = detalle.Headers.ETag!.Tag;
+            var acciones = new (HttpMethod Metodo, string Ruta, string? Cuerpo)[]
+            {
+                (HttpMethod.Get, $"/web/cotizaciones/{folio}/costeo", null),
+                (HttpMethod.Get, $"/web/cotizaciones/{folio}/solicitud", null),
+                (HttpMethod.Get, $"/web/cotizaciones/{id}/nueva-version", null),
+                (HttpMethod.Put, $"/web/cotizaciones/{folio}/costeo/margen", """{"margen":0.5}"""),
+                (HttpMethod.Post, $"/web/cotizaciones/{folio}/costeo/servicios-conexos",
+                    """{"items":[{"linea_orden":1,"servicio_id":"6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d","cantidad":1}]}"""),
+                (HttpMethod.Put, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", """{"incluidos":[]}"""),
+                (HttpMethod.Post, $"/web/cotizaciones/{folio}/costeo/re-solicitar", """{"motivo":"Actualizar el costo"}"""),
+                (HttpMethod.Post, $"/web/cotizaciones/{folio}/rutas/{rutaId}/recalcular-vehiculos", "{}"),
+                (HttpMethod.Put, $"/web/cotizaciones/{folio}/solicitud", cuerpoSolicitud),
+                (HttpMethod.Post, $"/web/cotizaciones/{folio}/costeo/textos/redactar", "{}"),
+                (HttpMethod.Put, $"/web/cotizaciones/{folio}/costeo/textos", """{"asunto":"Otro asunto","introduccion":"Otra introducción del PDF."}"""),
+                (HttpMethod.Post, $"/web/cotizaciones/{folio}/costeo/pdf", null),
+                (HttpMethod.Post, $"/web/cotizaciones/{folio}/resultado", """{"resultado":"ganada"}"""),
+                (HttpMethod.Post, $"/web/cotizaciones/{folio}/seguimiento", """{"ganada":true}"""),
+                (HttpMethod.Post, $"/web/cotizaciones/{folio}/enviar", """{"para":["compras@cliente.com"]}"""),
+            };
+            foreach (var (metodo, ruta, cuerpo) in acciones)
+            {
+                using var respuesta = await _api.EnviarAsync(metodo, ruta, sesion.Access, cuerpo, etag);
+                respuesta.StatusCode.Should().BeOneOf(
+                    [HttpStatusCode.NotFound, HttpStatusCode.Forbidden], $"{metodo} {ruta}: {await respuesta.Content.ReadAsStringAsync(Ct)}");
+                (await respuesta.Content.ReadAsStringAsync(Ct)).Should().NotContain("1000007").And.NotContain("170007");
+            }
+        }
+
+        (await HuellaAsync(folio)).Should().Be(antes, "nada cambió en la licitación");
+        _nexo.Peticiones.Count.Should().Be(peticionesNexo, "ninguna acción ajena llega a Nexo");
+    }
+
+    [Fact]
+    public async Task UnFolioSpotDeLaRegionalPedidoComoLicitacionDa404SinQuedarAuditadoComoPermitido()
+    {
+        var occidente = Regional();
+        var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial, occidente);
+        var gloria = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoGerente, occidente);
+        var dario = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoDirector, Regional());
+        using var alta = await _api.EnviarAsync(HttpMethod.Post, "/web/solicitudes-costeo", ana.Access, clsCosteoEndpointsTests.Formulario());
+        alta.StatusCode.Should().Be(HttpStatusCode.Created);
+        var spot = JsonDocument.Parse(await alta.Content.ReadAsStringAsync(Ct)).RootElement.GetProperty("folio").GetString()!;
+
+        foreach (var sesion in new[] { gloria, dario })
+        {
+            using var detalle = await _api.EnviarAsync(HttpMethod.Get, $"/web/cotizaciones/{spot}", sesion.Access);
+            detalle.StatusCode.Should().Be(HttpStatusCode.OK, "el detalle del spot sí lo puede ver");
+            using var vista = await Get(spot, sesion);
+            using var excel = await _api.EnviarAsync(HttpMethod.Get, $"/web/licitaciones/{spot}/excel", sesion.Access);
+            foreach (var respuesta in new[] { vista, excel })
+            {
+                respuesta.StatusCode.Should().Be(HttpStatusCode.NotFound);
+                (await respuesta.Content.ReadAsStringAsync(Ct)).Should().Be(NoEsTuya);
+            }
+        }
+
+        (await clsBaseDatosPruebas.EscalarAsync<int>(_entorno.BaseDatos.CadenaCotifly,
+                $"SELECT COUNT(*) FROM dbo_cotifly.EventosHerramienta WHERE herramienta IN ('consultar_licitacion', 'exportar_excel_licitacion') AND input LIKE '%{spot}%'"))
+            .Should().Be(0, "un folio que no es licitación no deja un acceso (ni permitido ni negado) a la licitación");
+    }
+
+    /// <summary>Todo lo que una acción cambiaría en la cotización, sus rutas y sus conexos.</summary>
+    private Task<string?> HuellaAsync(string folio) =>
+        clsBaseDatosPruebas.EscalarAsync<string>(_entorno.BaseDatos.CadenaCotifly,
+            $"""
+            SELECT CONCAT(c.estadoCosteo, '|', c.precioFinal, '|', c.ganada, '|', c.textosCotizacion, '|', c.pdfPath, '|', c.finalizadaAt, '|',
+                          c.version, '|', c.versionNegocio, '|', c.updatedAt, '|',
+                          (SELECT COUNT(*) FROM dbo_cotifly.CotizacionesSolicitud o WHERE o.usuarioId = c.usuarioId), '|',
+                          (SELECT STRING_AGG(CONCAT(l.orden, ':', l.precioFinalLinea, ':', l.margenAplicado, ':', l.costoFinal), ',')
+                             FROM dbo_cotifly.CotizacionLineasSolicitud l WHERE l.cotizacionSolicitudId = c.id), '|',
+                          (SELECT COUNT(*) FROM dbo_cotifly.CotizacionServiciosConexos s
+                             JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = s.lineaSolicitudId WHERE l.cotizacionSolicitudId = c.id))
+              FROM dbo_cotifly.CotizacionesSolicitud c WHERE c.folio = '{folio}'
+            """);
+
     /// <summary>Licitación de 3 rutas con la 1 costeada (flete <see cref="Flete"/>) y un conexo con costo <see cref="CostoConexo"/>.</summary>
     private async Task<string> LicitacionCosteadaAsync(clsSesionPrueba sesion)
     {
