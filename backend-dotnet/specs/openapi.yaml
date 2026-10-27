@@ -511,6 +511,23 @@ paths:
         Concurrencia (HU-013.2, ADR-018 §12): antes de que el correo salga, la cotización queda marcada como enviada
         con control de versión; si un ajuste (margen, conexos) la cambió entretanto, o su PDF quedó desactualizado,
         responde 409 `CONFLICTO_CONCURRENCIA` sin enviar nada. Si el transporte falla, la marca se deshace.
+
+        Seguridad de las cabeceras (DEF-1027B-2, #228, ADR-023): el asunto y las direcciones viajan como cabeceras del correo,
+        así que se validan TAL COMO LLEGAN (antes de recortar) y nunca se sanean en silencio:
+        - un `asunto` con caracteres de control (CR, LF, NUL, tabulador, U+0085, U+2028, U+2029 y los demás de la categoría
+          Unicode `Cc`) es 400 `CORREO_INVALIDO` (`ErrorWeb`), también si solo están al final;
+        - cada dirección de `para` y `cc` es UNA dirección simple `parte-local@dominio`: sin caracteres de control, sin
+          comas, punto y coma, espacios, comillas, ángulos ni comentarios; parte local de hasta 64 caracteres (letras,
+          dígitos y los símbolos de un `atom` del RFC 5322, con puntos que no van al principio, al final ni seguidos),
+          dominio de hasta 255 con al menos dos etiquetas de hasta 63 (letras, dígitos y guiones, sin literales IP), y hasta
+          320 en total. Si no, 400 `CORREO_INVALIDO`;
+        - tope (#228): hasta **20 destinatarios entre `para` y `cc`** (la copia oculta al comercial no cuenta; MailSender no
+          tiene tope propio). Pasado el tope, 400 `CORREO_DEMASIADOS_DESTINATARIOS` (`ErrorNegocio`) con
+          `detalle = {maximo: 20, recibidos: N}`;
+        - el transporte lo vuelve a revisar antes del POST a MailSender (defensa en profundidad): si algo se cuela, el correo
+          no sale y responde 400 `CORREO_ENVIO_FALLIDO` (fila `fallido` en el historial).
+        El orden es: dueño (404), correo deshabilitado (503), asunto con controles, destinatarios con controles, tope,
+        formato de las direcciones, largos. Nada de esto llama a MailSender ni cambia el estado de envío.
       security:
         - bearer: []
       parameters:
@@ -530,16 +547,34 @@ paths:
                 $ref: '#/components/schemas/RespuestaEnvio'
         '400':
           description: |
-            Error de negocio del envío: duplicado (`CORREO_DUPLICADO`), sin PDF (`CORREO_PDF_NO_ENCONTRADO`), MailSender lo
+            Error de negocio del envío: duplicado (`CORREO_DUPLICADO`), sin PDF (`CORREO_PDF_NO_ENCONTRADO`), más de 20
+            destinatarios entre `para` y `cc` (`CORREO_DEMASIADOS_DESTINATARIOS`, #228, con `detalle.maximo` y
+            `detalle.recibidos`), MailSender lo
             rechazó (400/413/422), no está disponible o no respondió a tiempo (`CORREO_ENVIO_FALLIDO`; con tiempo agotado el
             correo pudo quedar encolado: la cotización queda enviada y el mismo envío cuenta 5 minutos para `CORREO_DUPLICADO`;
-            también si el ambiente redirige sin buzón de pruebas: no sale nada), o validación (`ErrorWeb`)
+            también si el ambiente redirige sin buzón de pruebas, o si el transporte encuentra una cabecera inválida: no sale
+            nada), o validación (`ErrorWeb`, código interno `CORREO_INVALIDO`: sin `para`, una dirección mal formada o con
+            caracteres de control, un asunto con caracteres de control, asunto o cuerpo demasiado largos)
           content:
             application/json:
               schema:
                 oneOf:
                   - $ref: '#/components/schemas/ErrorNegocio'
                   - $ref: '#/components/schemas/ErrorWeb'
+              examples:
+                asunto_con_saltos:
+                  summary: DEF-1027B-2 (#228)
+                  value:
+                    error: "El asunto no puede tener saltos de línea ni otros caracteres de control (va como cabecera del correo): escríbelo en una sola línea."
+                demasiados_destinatarios:
+                  summary: Tope de 20 destinatarios (#228)
+                  value:
+                    error:
+                      codigo: CORREO_DEMASIADOS_DESTINATARIOS
+                      mensaje: "El correo admite hasta 20 destinatarios entre 'para' y 'cc' (llegaron 60)."
+                      detalle:
+                        maximo: 20
+                        recibidos: 60
         '401':
           $ref: '#/components/responses/SesionExpirada'
         '404':
@@ -3752,6 +3787,9 @@ paths:
         cuerpo en HTML tal como lo recibe el cliente (`cuerpo_html`), el resumen sin desglose (`resumen`: precio por ruta y
         total), la copia oculta al comercial (`copia_oculta`) y, en un ambiente de pruebas, `entorno_pruebas = true` con el
         buzón (`redirigido_a`) y el texto del aviso (`aviso`) para mostrarlo tal cual.
+        #228: lo que trae el borrador se valida igual que en `POST .../enviar` (asunto y direcciones sin caracteres de
+        control, formato estricto de cada dirección, hasta 20 destinatarios entre `para` y `cc`, largos), después de
+        comprobar el dueño. Sin `para` se precargan los destinatarios previos (no se exige `para`).
       security:
         - bearer: []
       parameters:
@@ -3769,6 +3807,17 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VistaPreviaCorreo'
+        '400':
+          description: |
+            #228: el borrador no pasaría el envío. `ErrorWeb` (`CORREO_INVALIDO`: asunto o dirección con caracteres de control,
+            dirección mal formada, asunto o cuerpo demasiado largos) o `ErrorNegocio` `CORREO_DEMASIADOS_DESTINATARIOS` (más de
+            20 entre `para` y `cc`, con `detalle.maximo` y `detalle.recibidos`).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorNegocio'
+                  - $ref: '#/components/schemas/ErrorWeb'
         '401':
           $ref: '#/components/responses/SesionExpirada'
         '404':
@@ -4270,6 +4319,7 @@ components:
                 - CONFIRMACION_REQUERIDA
                 - COTIZACION_NO_ENCONTRADA
                 - CORREO_DUPLICADO
+                - CORREO_DEMASIADOS_DESTINATARIOS
                 - CORREO_PDF_NO_ENCONTRADO
                 - CORREO_ENVIO_FALLIDO
                 - AJUSTE_COTIZACION_INVALIDA
@@ -5236,16 +5286,21 @@ components:
     EnvioWeb:
       type: object
       required: [para]
+      description: |
+        #228: hasta 20 destinatarios entre `para` y `cc` juntos (`CORREO_DEMASIADOS_DESTINATARIOS`); cada dirección es UNA
+        dirección simple sin caracteres de control (ver `POST /web/cotizaciones/{folio}/enviar`).
       properties:
         para:
           type: array
           minItems: 1
+          maxItems: 20
           items:
             type: string
             format: email
             maxLength: 320
         cc:
           type: array
+          maxItems: 20
           items:
             type: string
             format: email
@@ -5255,7 +5310,9 @@ components:
           type: string
           nullable: true
           maxLength: 300
-          description: Por defecto "Cotización {folio} — Botero Soto".
+          description: |
+            Por defecto "Cotización {folio} — Botero Soto". DEF-1027B-2 (#228): una sola línea, sin caracteres de control
+            (CR, LF, NUL, tabulador, U+0085, U+2028, U+2029...): si no, 400 `CORREO_INVALIDO`.
         cuerpo:
           type: string
           nullable: true

@@ -525,6 +525,85 @@ public sealed class clsCorreoServiceTests : IDisposable
         (await Servicio().EnviarAsync(Entrada(cuerpo: new string('a', 5001)), Ct)).Error.Codigo.Should().Be(clsCorreo.CodigoError);
     }
 
+    // DEF-1027B-2 (#228, E2E real del 2026-10-27B): "Hola\r\nBcc: intruso@ejemplo.invalid" llegó a MailSender y al relay SMTP. Un asunto
+    // con caracteres de control se RECHAZA (no se sanea en silencio), también al final (antes, el Trim lo limpiaba).
+    [Theory]
+    [InlineData("Hola\r\nBcc: intruso@ejemplo.invalid")]
+    [InlineData("Hola\nBcc: intruso@ejemplo.invalid")]
+    [InlineData("Hola\rmundo")]
+    [InlineData("Hola\0mundo")]
+    [InlineData("Hola\tmundo")]
+    [InlineData("Cotización PCN-C1\r\n")]
+    public async Task DEF1027B2_UnAsuntoConCaracteresDeControlSeRechazaSinEnviar(string asunto)
+    {
+        var resultado = await Servicio().EnviarAsync(Entrada(asunto: asunto), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCorreo.CodigoError);
+        resultado.Error.Mensaje.Should().Be(clsCorreoService.MensajeAsuntoConControl);
+        await NoSeEnvioNadaAsync();
+        _cotizacion.EstadoEnvio.Should().NotBe(EstadoEnvio.Enviada);
+    }
+
+    [Theory]
+    [InlineData(0x0085)]
+    [InlineData(0x2028)]
+    [InlineData(0x2029)]
+    [InlineData(0x007F)]
+    public async Task DEF1027B2_TambienSeRechazanLosSaltosUnicodeYLosDemasControles(int caracter)
+    {
+        var resultado = await Servicio().EnviarAsync(Entrada(asunto: "Hola" + (char)caracter + "Bcc: intruso@ejemplo.invalid"), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCorreo.CodigoError);
+        await NoSeEnvioNadaAsync();
+    }
+
+    [Theory]
+    [InlineData(new[] { "cliente@empresa.com\r\nBcc: intruso@ejemplo.invalid" }, null)]
+    [InlineData(new[] { "cliente@empresa.com\r\n" }, null)]
+    [InlineData(new[] { "\r\n" }, null)]
+    [InlineData(new[] { "cliente@empresa.com" }, "jefe@empresa.com\nBcc: intruso@ejemplo.invalid")]
+    [InlineData(new[] { "cliente@empresa.com" }, "jefe@empresa.com\0")]
+    [InlineData(new[] { "cliente@empresa.com" }, "jefe@localhost")]
+    [InlineData(new[] { "cliente@empresa.com, intruso@ejemplo.invalid" }, null)]
+    public async Task DEF1027B2_UnaDireccionConControlesOMalFormadaSeRechazaSinEnviar(string[] para, string? cc)
+    {
+        var resultado = await Servicio().EnviarAsync(Entrada(para: para, cc: cc is null ? null : [cc]), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCorreo.CodigoError);
+        await NoSeEnvioNadaAsync();
+    }
+
+    // #228: MailSender no limita los destinatarios (EmailRequestValidator solo valida el formato): Cotifly fija 20 entre para y cc.
+    [Theory]
+    [InlineData(21, 0)]
+    [InlineData(15, 6)]
+    [InlineData(60, 0)]
+    public async Task Tope228_MasDe20DestinatariosEntreParaYCcSeRechazaConDetalle(int nPara, int nCc)
+    {
+        var para = Enumerable.Range(1, nPara).Select(i => $"cliente{i}@empresa.com").ToArray();
+        var cc = Enumerable.Range(1, nCc).Select(i => $"copia{i}@empresa.com").ToArray();
+
+        var resultado = await Servicio().EnviarAsync(Entrada(para: para, cc: cc), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.CorreoDemasiadosDestinatarios);
+        resultado.Error.Datos!["maximo"].Should().Be(clsCorreoService.MaxDestinatarios);
+        resultado.Error.Datos["recibidos"].Should().Be(nPara + nCc);
+        await NoSeEnvioNadaAsync();
+    }
+
+    [Fact]
+    public async Task Tope228_Con20DestinatariosEntreParaYCcSiSeEnvia()
+    {
+        var para = Enumerable.Range(1, 12).Select(i => $"cliente{i}@empresa.com").ToArray();
+        var cc = Enumerable.Range(1, 8).Select(i => $"copia{i}@empresa.com").ToArray();
+
+        var resultado = await Servicio().EnviarAsync(Entrada(para: para, cc: cc), Ct);
+
+        resultado.Valor.Enviado.Should().BeTrue();
+        _enviado!.Para.Should().HaveCount(12);
+        _enviado.Cc.Should().HaveCount(8);
+    }
+
     private async Task NoSeEnvioNadaAsync()
     {
         await _transporte.DidNotReceiveWithAnyArgs().EnviarAsync(default!, Ct);

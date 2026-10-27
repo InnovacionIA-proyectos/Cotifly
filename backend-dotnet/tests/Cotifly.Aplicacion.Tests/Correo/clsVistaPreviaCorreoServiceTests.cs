@@ -54,6 +54,43 @@ public sealed class clsVistaPreviaCorreoServiceTests
         vista.Adjunto.Should().Be("PCN-V1.pdf");
     }
 
+    // DEF-1027B-2 (#228): la vista previa aplica la misma validación que el envío (asunto y direcciones sin caracteres de control, formato
+    // estricto y el tope de 20 destinatarios), así el comercial ve el error antes de enviar.
+    [Theory]
+    [InlineData(null, null, "Hola\r\nBcc: intruso@ejemplo.invalid", "CORREO_INVALIDO")]
+    [InlineData(null, null, "Hola\0", "CORREO_INVALIDO")]
+    [InlineData("cliente@empresa.com\r\nBcc: intruso@ejemplo.invalid", null, null, "CORREO_INVALIDO")]
+    [InlineData("cliente@empresa.com", "jefe@empresa.com\n", null, "CORREO_INVALIDO")]
+    [InlineData("cliente@empresa.com,intruso@ejemplo.invalid", null, null, "CORREO_INVALIDO")]
+    public async Task DEF1027B2_LaVistaPreviaRechazaLoQueElEnvioRechazaria(string? para, string? cc, string? asunto, string codigo)
+    {
+        var borrador = new clsBorradorCorreo(para is null ? null : [para], cc is null ? null : [cc], asunto, null);
+
+        var resultado = await Servicio().PrevisualizarAsync(_usuario, "PCN-V1", borrador, Ct);
+
+        resultado.Error.Codigo.Should().Be(codigo);
+    }
+
+    [Fact]
+    public async Task Tope228_LaVistaPreviaRechazaMasDe20Destinatarios()
+    {
+        var borrador = new clsBorradorCorreo([.. Enumerable.Range(1, 21).Select(i => $"c{i}@cliente.com")], null, null, null);
+
+        var resultado = await Servicio().PrevisualizarAsync(_usuario, "PCN-V1", borrador, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.CorreoDemasiadosDestinatarios);
+        resultado.Error.Datos!["maximo"].Should().Be(clsCorreoService.MaxDestinatarios);
+        resultado.Error.Datos["recibidos"].Should().Be(21);
+    }
+
+    [Fact]
+    public async Task UnaCotizacionAjenaEsNoEncontradaAntesQueUnBorradorInvalido()
+    {
+        var resultado = await Servicio().PrevisualizarAsync(Guid.NewGuid(), "PCN-V1", new clsBorradorCorreo(null, null, "Hola\r\nBcc: x@y.com", null), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.CotizacionNoEncontrada);
+    }
+
     [Fact]
     public async Task LoQueTraeElBorradorManda()
     {
