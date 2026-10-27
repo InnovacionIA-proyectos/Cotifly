@@ -43,8 +43,9 @@ info:
       re-solicitar, textos y redactar), el recálculo de vehículos y la edición (`PUT .../solicitud`) EXIGEN
       `If-Match` con ese valor: sin él responden 428 `PRECONDICION_REQUERIDA`; si la cotización cambió
       entretanto, 409 `CONFLICTO_CONCURRENCIA`, sin cambios. `POST .../costeo/pdf` lo acepta opcional.
-      `POST /web/solicitudes-costeo`, `POST .../costeo/servicios-conexos`, `POST .../costeo/re-solicitar` y
-      `PUT .../solicitud` aceptan además `Idempotency-Key` (doble clic). `POST /web/cubicacion` no usa ninguno
+      `POST /web/solicitudes-costeo`, `POST .../costeo/servicios-conexos`, `POST .../costeo/re-solicitar`,
+      `PUT .../solicitud` y las operaciones en lote de HU-041.1 (`PUT .../costeo/margen/lineas`,
+      `POST .../costeo/servicios-conexos/lineas` y `.../lineas/quitar`) aceptan además `Idempotency-Key` (doble clic). `POST /web/cubicacion` no usa ninguno
       de los dos (202 con `Location` y `Retry-After` si sigue calculando). Rige desde el
       script `0006` (columna `versionNegocio`), que entrega #98 (HU-013.2). El valor es opaco: el cliente
       lo guarda y lo reenvía tal cual. Solo cambia con cambios de negocio (margen, conexos, textos,
