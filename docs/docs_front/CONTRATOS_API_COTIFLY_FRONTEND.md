@@ -3796,21 +3796,12 @@ fila_excel, campo, codigo, mensaje}`.
   costos (las métricas conservan sus agregados de HU-010 y HU-034).
 - Reversa de la regla "el costo bruto nunca llega al comercial" de ADR-015 §5, confirmada por Sara (Gerencia Comercial) el 2026-10-27.
 
-**2026-10-26 (ramas `210-rol-director-permisos` y `211-director-todas-regionales`, HU-037, #210 y #211, ADR-016 §11).** Rol Director:
-
-- Nuevo rol interno `director` (gana a `gerente_comercial` y a `comercial` cuando la persona tiene varios roles en ClientePro). Usa todo
-  lo del gerente y ve **todas** las regionales: tablero y listado de todas o de la que elija con `?regional=`, detalle y PDF de cualquier
-  regional (solo consulta).
-- **Nuevo** `GET /web/regionales` (4.11.3) para el selector. El gerente no puede pedir otra regional: 403 `REGIONAL_NO_PERMITIDA` (código
-  nuevo). `regional` y `fuente_regional` pueden venir `null` (director viendo todas).
-- Base de datos: `db/scripts/15_rol_director.sql` (Datos, #209). Son **55 endpoints** con `POST .../finalizar` de HU-036. Sección 7, fila 64 (la 62 y la 63 son de otras HUs).
-
 **2026-10-26 (ramas `206-endpoint-finalizar`, `207-candados-finalizada` y `208-precio-congelado-finalizada`, HU-036, #205 a #208).**
 Cotización finalizada:
 
 - **Nuevo** `POST /web/cotizaciones/{folio}/finalizar` (4.5.6, #206): el comercial acepta el precio con `If-Match`. Solo en `autocosteo` o
   `entregada` (si no, 409 `COTIZACION_NO_FINALIZABLE`, código nuevo); re-finalizar es 200 sin cambios. `finalizada_at` en
-  `CotizacionResumen`, `CosteoCotizacion` y `FechasCotizacion`. Son **55 endpoints** con `GET /web/regionales` de HU-037.
+  `CotizacionResumen`, `CosteoCotizacion` y `FechasCotizacion`. Son **55 endpoints**.
 - Candados (#207): sin finalizar, el PDF, el envío, los textos y el resultado (con el costeo listo) responden 409
   `COTIZACION_NO_FINALIZADA` (código nuevo); ya finalizada, margen, conexos, re-solicitar en el mismo folio y recalcular camiones
   responden 409 `PDF_YA_ENVIADO` con la versión nueva, y la edición pasa a `nueva_version`.
@@ -3823,6 +3814,16 @@ Cotización finalizada:
   #226): la vista de la licitación habilita "Finalizar" y aplica los candados sin pedir el costeo. Sección 7, fila 63.
 - Requiere `db/scripts/14_cotizacion_finalizada.sql` (sin él, `/health/ready` responde "falta 14"). Sin backfill: las cotizaciones
   existentes las finaliza el comercial una por una. Sección 7, fila 63.
+
+**2026-10-26 (ramas `210-rol-director-permisos` y `211-director-todas-regionales`, HU-037, #210 y #211, ADR-016 §11).** Rol Director:
+
+- Nuevo rol interno `director` (gana a `gerente_comercial` y a `comercial` cuando la persona tiene varios roles en ClientePro). Usa todo
+  lo del gerente y ve **todas** las regionales: tablero y listado de todas o de la que elija con `?regional=`, detalle y PDF de cualquier
+  regional (solo consulta).
+- **Nuevo** `GET /web/regionales` (4.11.3) para el selector. El gerente no puede pedir otra regional: 403 `REGIONAL_NO_PERMITIDA` (código
+  nuevo). `regional` y `fuente_regional` pueden venir `null` (director viendo todas).
+- Base de datos: `db/scripts/15_rol_director.sql` (Datos, #209). Son **54 endpoints** (antes de sumar el de finalizar). Sección 7,
+  fila 64 (la 62 y la 63 son de otras HUs).
 
 **2026-10-26 (rama `213-excel-licitacion-endurecido`, HU-035.2, #213, ADR-024 §HU-035.2).** Endurecimiento del Excel del pliego:
 
