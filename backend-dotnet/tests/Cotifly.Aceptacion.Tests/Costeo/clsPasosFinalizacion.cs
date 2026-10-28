@@ -88,6 +88,28 @@ public sealed class clsPasosFinalizacion(clsContextoWeb web, clsPasosCosteo cost
         detalle.GetProperty("endpoint").GetString().Should().Be($"/web/cotizaciones/{folio}/finalizar");
     }
 
+    [When("Nexo cambia el flete de {string} a {int} y entrega la cotización")]
+    public async Task CuandoNexoCambiaYEntrega(string cotizacion, int flete)
+    {
+        var solicitud = (await costeo.Columna(cotizacion, "costeoId"))!;
+        costeo.Nexo.Costear(solicitud, flete);
+        costeo.Nexo.Entregar(solicitud);
+    }
+
+    [Then("el motivo del costeo de {string} avisa que cambió la ruta {int}")]
+    public async Task EntoncesElMotivoAvisaLaRuta(string cotizacion, int ruta)
+    {
+        var motivo = await costeo.Columna(cotizacion, "motivoEstadoCosteo");
+        motivo.Should().StartWith("El costeo de Nexo cambió después de finalizar la cotización").And.Contain($"la ruta {ruta} (");
+    }
+
+    [Then("el costo de {int} que trajo Nexo para {string} queda en la auditoría")]
+    public async Task EntoncesElCostoAuditado(int costo, string cotizacion) =>
+        (await clsBaseDatosPruebas.EscalarAsync<int>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
+            "SELECT COUNT(*) FROM dbo_cotifly.EventosHerramienta WHERE herramienta = 'costeo_nexo_precio_congelado' AND exito = 1 "
+            + $"AND input LIKE '%{costeo.Folio(cotizacion)}%' AND outputResumen LIKE '%{costo.ToString(CultureInfo.InvariantCulture)}%'"))
+        .Should().Be(1);
+
     [Then("la respuesta trae finalizada_at y un ETag nuevo")]
     public void EntoncesTraeFinalizadaAt()
     {

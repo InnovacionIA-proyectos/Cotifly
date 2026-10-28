@@ -15,15 +15,18 @@ public interface IClsPrecioCosteoService
 {
     /// <summary>
     /// Primera parte de una lectura de Nexo: asocia cada camión sin id con su línea de Nexo (por contenido), y le registra el estado
-    /// derivado y, si la solicitud no tiene PDF, el flete y el retorno; cada ruta resume el estado de sus camiones. Con PDF solo cambian
-    /// los estados (el precio de la versión se conserva, ADR-015 §5). Devuelve <c>true</c> si algo cambió.
+    /// derivado y, si el precio no está congelado, el flete y el retorno; cada ruta resume el estado de sus camiones. Con PDF o, desde
+    /// HU-036.4 (#208), con la cotización finalizada (<see cref="clsCotizacionSolicitud.PrecioCongelado"/>) solo cambian los estados (el
+    /// precio se conserva, ADR-015 §5). Devuelve <c>true</c> si algo cambió.
     /// </summary>
     bool ActualizarCamiones(clsCotizacionSolicitud cotizacion, clsCosteoConsultadoNexo foto, DateTimeOffset ahora);
 
     /// <summary>
     /// Segunda parte (después de registrar el estado de la solicitud): recalcula los totales y el precio de cada ruta y de la solicitud
     /// (§9.1) y deja en <c>motivoEstadoCosteo</c> lo que impide el precio (camiones sin asociar, sin flete, sin margen, costo negativo o
-    /// el costeo cambiado después del PDF). Devuelve <c>true</c> si el precio o los totales cambiaron.
+    /// el costeo cambiado después del PDF o, HU-036.4, de finalizar: con las rutas que cambiaron). Devuelve <c>true</c> si el precio o los
+    /// totales cambiaron, o (HU-036.4) si cambió el aviso del costeo cambiado después de finalizar (también cuando se quita porque Nexo
+    /// volvió a los costos finalizados).
     /// </summary>
     bool AplicarPrecio(clsCotizacionSolicitud cotizacion, clsCosteoConsultadoNexo foto, DateTimeOffset ahora);
 }
@@ -41,6 +44,59 @@ public sealed class clsPrecioCosteoService(ILogger<clsPrecioCosteoService>? logg
 
     public const string MotivoCambioDespuesDelPdf =
         "El costeo de Nexo cambió después de generar el PDF: el precio de esta versión se conserva. Genera una versión nueva para cotizar con el costeo actual.";
+
+    /// <summary>HU-036.4 (#208): inicio del motivo cuando Nexo trae otro costo para una cotización finalizada.</summary>
+    public const string PrefijoCambioDespuesDeFinalizar = "El costeo de Nexo cambió después de finalizar la cotización";
+
+    /// <summary>
+    /// HU-036.4 (#208): motivo visible en "Mis cotizaciones" cuando Nexo trae otro costo para una cotización finalizada, con las rutas que
+    /// cambiaron (su orden y su origen y destino, sin montos: el costo de Nexo nunca llega al comercial).
+    /// </summary>
+    public static string MotivoCambioDespuesDeFinalizar(IReadOnlyList<clsLineaSolicitud> rutas)
+    {
+        ArgumentNullException.ThrowIfNull(rutas);
+        var descritas = rutas.OrderBy(r => r.Orden).Select(r => $"{r.Orden} ({r.Ruta})").ToList();
+        var cuales = descritas.Count == 1
+            ? $"la ruta {descritas[0]}"
+            : $"las rutas {string.Join(", ", descritas.Take(descritas.Count - 1))} y {descritas[^1]}";
+        return $"{PrefijoCambioDespuesDeFinalizar} en {cuales}: el precio finalizado se conserva. Genera una versión nueva para cotizar con el costeo actual.";
+    }
+
+    /// <summary>
+    /// HU-036.4 (#208): lo que Nexo trajo distinto de lo guardado en cada camión de una cotización con el precio congelado (para la
+    /// auditoría; el comercial solo ve el motivo). Un camión rechazado por la Mesa que conservaba el flete también cuenta (Nexo lo dejó sin
+    /// costo). Vacío si nada cambió o si la foto no trae la cotización de Nexo.
+    /// </summary>
+    public static IReadOnlyList<clsCambioCosteoCongelado> CambiosConPrecioCongelado(clsCotizacionSolicitud cotizacion, clsCosteoConsultadoNexo foto)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        ArgumentNullException.ThrowIfNull(foto);
+        var cambios = new List<clsCambioCosteoCongelado>();
+        foreach (var ruta in cotizacion.RutasOrdenadas)
+        {
+            foreach (var camion in ruta.VehiculosOrdenados)
+            {
+                if (camion.Rechazado && camion.CostoFlete is not null)
+                {
+                    cambios.Add(new clsCambioCosteoCongelado(ruta, camion.Id, camion.CostoFlete, null, camion.CostoRetornoContenedor, null, Rechazado: true));
+                    continue;
+                }
+
+                if (foto.Cotizacion is null || camion.Rechazado
+                    || clsDerivacionEstadoCosteo.CostosCamion(foto, camion.LineaSolicitudNexoId) is not { } costos)
+                {
+                    continue;
+                }
+
+                if (costos.Flete != camion.CostoFlete || costos.Retorno != (camion.CostoRetornoContenedor ?? 0m))
+                {
+                    cambios.Add(new clsCambioCosteoCongelado(ruta, camion.Id, camion.CostoFlete, costos.Flete, camion.CostoRetornoContenedor, costos.Retorno, Rechazado: false));
+                }
+            }
+        }
+
+        return cambios;
+    }
 
     /// <summary>Motivo cuando hay camiones que no se pudieron asociar con certeza a las líneas de Nexo (quedan sin precio y sin total).</summary>
     public static string MotivoSinAsociar(int sinAsociar, int total) =>
@@ -125,10 +181,11 @@ public sealed class clsPrecioCosteoService(ILogger<clsPrecioCosteoService>? logg
             Avisar(cotizacion, emparejamiento);
         }
 
-        // Con PDF el precio de la versión se conserva: los camiones solo actualizan su estado (ADR-015 §5). La raíz aplica la lectura,
-        // resume las rutas y recalcula los totales (ADR-019: nadie cambia los camiones por fuera del agregado). Un camión descartado no
-        // se lee (regla del núcleo): sigue descartado, sin línea de Nexo, y no cuenta en el estado ni en los totales de su ruta.
-        var conPdf = cotizacion.PdfPath is not null;
+        // Con PDF o con la cotización finalizada (HU-036.4, #208) el precio se conserva: los camiones solo actualizan su estado (ADR-015
+        // §5). La raíz aplica la lectura, resume las rutas y recalcula los totales (ADR-019: nadie cambia los camiones por fuera del
+        // agregado). Un camión descartado no se lee (regla del núcleo): sigue descartado, sin línea de Nexo, y no cuenta en el estado ni en
+        // los totales de su ruta.
+        var conPdf = cotizacion.PrecioCongelado;
         var lecturas = Vigentes(cotizacion).Select(camion =>
         {
             var estado = clsDerivacionEstadoCosteo.DerivarLinea(foto, camion.LineaSolicitudNexoId);
@@ -176,6 +233,23 @@ public sealed class clsPrecioCosteoService(ILogger<clsPrecioCosteoService>? logg
         var camiones = Vigentes(cotizacion);
         var varios = camiones.Count > 1;
         var sinAsociar = camiones.Count(c => c.LineaSolicitudNexoId is null);
+        if (cotizacion.Finalizada)
+        {
+            // HU-036.4 (#208): el precio finalizado se conserva; el motivo dice qué rutas cambiaron (sin montos). Solo cuenta como cambio
+            // (sube la versión y se audita) cuando el aviso cambia: la misma diferencia en cada vuelta no vuelve a avisar.
+            var rutas = CambiosConPrecioCongelado(cotizacion, foto).Select(c => c.Ruta).Distinct().ToList();
+            if (rutas.Count == 0)
+            {
+                // Validación HU-036: Nexo volvió a los costos con que se finalizó (o la Mesa deshizo el rechazo): el aviso ya no aplica y
+                // se quita (cuenta como cambio una sola vez). Otro motivo no se toca.
+                return cotizacion.QuitarAvisoCosteo(PrefijoCambioDespuesDeFinalizar);
+            }
+
+            var anterior = cotizacion.MotivoEstadoCosteo;
+            cotizacion.AdvertirCosteo(MotivoCambioDespuesDeFinalizar(rutas));
+            return !string.Equals(anterior, cotizacion.MotivoEstadoCosteo, StringComparison.Ordinal);
+        }
+
         if (cotizacion.PdfPath is not null)
         {
             if (CambioDespuesDelPdf(cotizacion, foto))
@@ -276,3 +350,10 @@ public sealed class clsPrecioCosteoService(ILogger<clsPrecioCosteoService>? logg
             ? null
             : foto.Detalle.FirstOrDefault(d => string.Equals(d.Id, lineaSolicitudNexoId, StringComparison.OrdinalIgnoreCase));
 }
+
+/// <summary>
+/// HU-036.4 (#208): lo que Nexo trajo para un camión de una cotización con el precio congelado: lo guardado (con lo que se finalizó o se
+/// generó el PDF) frente a lo de Nexo. Solo para la auditoría interna: el costo de Nexo nunca llega al comercial.
+/// </summary>
+public sealed record clsCambioCosteoCongelado(
+    clsLineaSolicitud Ruta, Guid CamionId, decimal? FleteGuardado, decimal? FleteNexo, decimal? RetornoGuardado, decimal? RetornoNexo, bool Rechazado);

@@ -314,6 +314,9 @@ public sealed class clsCosteoCotizacionService(
     /// <summary>Motivo de la versión nueva que sugiere <c>PDF_YA_ENVIADO</c> al elegir conexos de una cotización ya entregada.</summary>
     public const string MotivoVersionConexos = "Cambio de servicios conexos después del envío";
 
+    /// <summary>Validación HU-036 (#208): motivo de la versión nueva cuando el costeo de Nexo cambió después de finalizar.</summary>
+    public const string MotivoVersionCosteoCambiado = "El costeo de Nexo cambió después de finalizar";
+
     public async Task<clsResultado<clsCosteoCotizacion>> ObtenerAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default)
     {
         var cotizacion = await PropiaAsync(usuarioId, folio, cancellationToken);
@@ -986,6 +989,17 @@ public sealed class clsCosteoCotizacionService(
         }
 
         var suma = cotizables.Sum(r => r.PrecioFinalLinea!.Value);
+        if (suma != cotizacion.PrecioFinal && cotizacion.Finalizada)
+        {
+            // Validación HU-036 (#208): con el precio finalizado congelado la Mesa rechazó una ruta que cotizaba: ninguna lectura del
+            // costeo va a cuadrar el total, así que no se dice "espera": el PDF sale en una versión nueva con el costeo actual.
+            return clsReglaPdfCosteo.ConVersionNueva(
+                new clsErrorDominio(clsCodigosError.CosteoNoListo,
+                    $"El costeo de Nexo cambió después de finalizar la cotización {cotizacion.Folio} (la Mesa de Costeo rechazó una ruta): el "
+                    + "precio finalizado ya no es la suma de sus rutas. Crea una versión nueva para cotizar con el costeo actual."),
+                cotizacion.Folio, MotivoVersionCosteoCambiado);
+        }
+
         return suma == cotizacion.PrecioFinal
             ? null
             : new clsErrorDominio(clsCodigosError.CosteoNoListo,
