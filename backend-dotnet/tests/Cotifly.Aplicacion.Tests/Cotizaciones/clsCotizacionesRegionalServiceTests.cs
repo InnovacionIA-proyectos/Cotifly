@@ -11,6 +11,7 @@ using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Dominio.Identidad;
 using Cotifly.Dominio.Margen;
 using Microsoft.Extensions.Options;
+using Cotifly.Aplicacion.Tests.Identidad;
 using NSubstitute;
 
 namespace Cotifly.Aplicacion.Tests.Cotizaciones;
@@ -22,15 +23,21 @@ namespace Cotifly.Aplicacion.Tests.Cotizaciones;
 public sealed class clsCotizacionesRegionalServiceTests
 {
     private readonly IClsUsuarioWebRepository _usuarios = Substitute.For<IClsUsuarioWebRepository>();
-    private readonly IClsRegionalUsuario _regionales = Substitute.For<IClsRegionalUsuario>();
+    private readonly IClsRegionalUsuario _regionales;
     private readonly IClsCotizacionRepository _cotizaciones = Substitute.For<IClsCotizacionRepository>();
+
+    public clsCotizacionesRegionalServiceTests()
+    {
+        // HU-037.3 (#211): la regla real del alcance por rol sobre la regional simulada.
+        _regionales = clsRegionalSustituta.Crear(_usuarios);
+    }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
     public async Task SinSesionNoHayListado()
     {
-        var resultado = await Servicio(new clsUsuarioFalso(null, null)).ListarAsync(Ct);
+        var resultado = await Servicio(new clsUsuarioFalso(null, null)).ListarAsync(null, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosAplicacion.NoAutenticado);
     }
@@ -38,7 +45,7 @@ public sealed class clsCotizacionesRegionalServiceTests
     [Fact]
     public async Task UnComercialNoVeLaRegionalAunqueLlegueAlCasoDeUso()
     {
-        var resultado = await Servicio(new clsUsuarioFalso(Guid.NewGuid(), RolInterno.Comercial)).ListarAsync(Ct);
+        var resultado = await Servicio(new clsUsuarioFalso(Guid.NewGuid(), RolInterno.Comercial)).ListarAsync(null, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosAplicacion.SinPermiso);
         await _regionales.DidNotReceiveWithAnyArgs().ResolverAsync(default!, Ct);
@@ -48,7 +55,7 @@ public sealed class clsCotizacionesRegionalServiceTests
     [Fact]
     public async Task UnGerenteQueYaNoExisteEsNoAutenticado()
     {
-        var resultado = await Servicio(new clsUsuarioFalso(Guid.NewGuid(), RolInterno.GerenteComercial)).ListarAsync(Ct);
+        var resultado = await Servicio(new clsUsuarioFalso(Guid.NewGuid(), RolInterno.GerenteComercial)).ListarAsync(null, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosAplicacion.NoAutenticado);
     }
@@ -63,7 +70,7 @@ public sealed class clsCotizacionesRegionalServiceTests
         _regionales.ResolverAsync(gloria, Arg.Any<CancellationToken>())
             .Returns(clsResultado<clsRegionalResuelta>.Fallo(new clsErrorDominio(codigo, "sin regional")));
 
-        var resultado = await Servicio(Gerente(gloria)).ListarAsync(Ct);
+        var resultado = await Servicio(Gerente(gloria)).ListarAsync(null, Ct);
 
         resultado.Error.Codigo.Should().Be(codigo);
         await _cotizaciones.DidNotReceiveWithAnyArgs().ListarPorUsuariosAsync(default!, default, Ct);
@@ -76,7 +83,7 @@ public sealed class clsCotizacionesRegionalServiceTests
         _regionales.ListarMiembrosAsync("Occidente", Arg.Any<CancellationToken>())
             .Returns(clsResultado<IReadOnlyList<clsUsuarioWeb>>.Fallo(new clsErrorDominio(clsCodigosAplicacion.RegionalNoDisponible, "caída")));
 
-        var resultado = await Servicio(Gerente(gloria)).ListarAsync(Ct);
+        var resultado = await Servicio(Gerente(gloria)).ListarAsync(null, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosAplicacion.RegionalNoDisponible);
         await _cotizaciones.DidNotReceiveWithAnyArgs().ListarPorUsuariosAsync(default!, default, Ct);
@@ -94,7 +101,7 @@ public sealed class clsCotizacionesRegionalServiceTests
             .Returns([new clsCotizacionConLinea(deLuis, clsCotizacionConLinea.Varias, 0.18m, OrigenMargen.SapTm),
                       new clsCotizacionConLinea(deAna, "Nacional", 0.15m, OrigenMargen.PoliticaLinea)]);
 
-        var lista = (await Servicio(Gerente(gloria)).ListarAsync(Ct)).Valor;
+        var lista = (await Servicio(Gerente(gloria)).ListarAsync(null, Ct)).Valor;
 
         await _cotizaciones.Received(1).ListarPorUsuariosAsync(
             Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Order().SequenceEqual(new[] { ana.Id, luis.Id, gloria.Id }.Order())),
@@ -121,7 +128,7 @@ public sealed class clsCotizacionesRegionalServiceTests
             .Returns([new clsCotizacionConLinea(Cotizacion("PCN-MA-01102026-001", Guid.NewGuid()), "Nacional"),
                       new clsCotizacionConLinea(Cotizacion("PCN-AN-01102026-001", ana.Id), "Nacional")]);
 
-        var lista = (await Servicio(Gerente(gloria)).ListarAsync(Ct)).Valor;
+        var lista = (await Servicio(Gerente(gloria)).ListarAsync(null, Ct)).Valor;
 
         lista.Cotizaciones.Should().ContainSingle().Which.Folio.Should().Be("PCN-AN-01102026-001");
         lista.Total.Should().Be(1);
@@ -133,9 +140,71 @@ public sealed class clsCotizacionesRegionalServiceTests
         var gloria = PrepararRegional([]);
         _cotizaciones.ListarPorUsuariosAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([]);
 
-        var lista = (await Servicio(Gerente(gloria)).ListarAsync(Ct)).Valor;
+        var lista = (await Servicio(Gerente(gloria)).ListarAsync(null, Ct)).Valor;
 
         (lista.Total, lista.Cotizaciones.Count).Should().Be((0, 0));
+    }
+
+    [Fact]
+    public async Task ElDirectorSinRegionalVeLasDeTodosLosUsuariosConRegionalYFuenteNulas()
+    {
+        var ana = UsuarioWeb("ana", "Ana");
+        var marta = UsuarioWeb("marta", "Marta");
+        var dora = UsuarioWeb("dora", "Dora");
+        _usuarios.ObtenerPorIdAsync(dora.Id, Arg.Any<CancellationToken>()).Returns(dora);
+        _usuarios.ListarTodosAsync(Arg.Any<CancellationToken>()).Returns([ana, marta, dora]);
+        _cotizaciones.ListarPorUsuariosAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([new clsCotizacionConLinea(Cotizacion("PCN-MA-01102026-001", marta.Id), "Nacional"),
+                      new clsCotizacionConLinea(Cotizacion("PCN-AN-01102026-001", ana.Id), "Nacional")]);
+
+        var lista = (await Servicio(Director(dora)).ListarAsync(null, Ct)).Valor;
+
+        (lista.Regional, lista.FuenteRegional, lista.Total).Should().Be(((string?)null, (string?)null, 2));
+        lista.Cotizaciones.Select(c => c.Comercial!.UsuarioId).Should().Equal(marta.Id, ana.Id);
+        await _cotizaciones.Received(1).ListarPorUsuariosAsync(
+            Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Order().SequenceEqual(new[] { ana.Id, marta.Id, dora.Id }.Order())),
+            IClsCotizacionRepository.LimitePorDefecto, Arg.Any<CancellationToken>());
+        await _regionales.DidNotReceiveWithAnyArgs().ResolverAsync(default!, Ct);
+    }
+
+    [Fact]
+    public async Task ElDirectorQueEligeUnaRegionalVeSoloLasDeEsaRegional()
+    {
+        var marta = UsuarioWeb("marta", "Marta");
+        var dora = UsuarioWeb("dora", "Dora");
+        _usuarios.ObtenerPorIdAsync(dora.Id, Arg.Any<CancellationToken>()).Returns(dora);
+        _regionales.ListarMiembrosAsync("Norte", Arg.Any<CancellationToken>()).Returns(clsResultado<IReadOnlyList<clsUsuarioWeb>>.Exito([marta]));
+        _cotizaciones.ListarPorUsuariosAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([new clsCotizacionConLinea(Cotizacion("PCN-MA-01102026-001", marta.Id), "Nacional")]);
+
+        var lista = (await Servicio(Director(dora)).ListarAsync(" Norte ", Ct)).Valor;
+
+        (lista.Regional, lista.FuenteRegional, lista.Total).Should().Be(("Norte", (string?)null, 1));
+        await _cotizaciones.Received(1).ListarPorUsuariosAsync(
+            Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.SequenceEqual(new[] { marta.Id })), Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ElGerenteQuePideOtraRegionalRecibeRegionalNoPermitidaYNoSeConsultanCotizaciones()
+    {
+        var gloria = PrepararRegional([]);
+
+        var resultado = await Servicio(Gerente(gloria)).ListarAsync("Norte", Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosAplicacion.RegionalNoPermitida);
+        await _regionales.DidNotReceiveWithAnyArgs().ListarMiembrosAsync(default!, Ct);
+        await _cotizaciones.DidNotReceiveWithAnyArgs().ListarPorUsuariosAsync(default!, default, Ct);
+    }
+
+    [Fact]
+    public async Task ElGerenteQuePideSuPropiaRegionalLaVe()
+    {
+        var gloria = PrepararRegional([]);
+        _cotizaciones.ListarPorUsuariosAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([]);
+
+        var lista = (await Servicio(Gerente(gloria)).ListarAsync("occidente", Ct)).Valor;
+
+        lista.Regional.Should().Be("Occidente");
     }
 
     /// <summary>El gerente "gloria" de la regional "Occidente", cuyos miembros son ella y <paramref name="comerciales"/>.</summary>
@@ -167,6 +236,8 @@ public sealed class clsCotizacionesRegionalServiceTests
         clsUsuarioWeb.Crear(nombre, nombreCompleto, null, "Occidente", DateTimeOffset.UtcNow).Valor;
 
     private static clsUsuarioFalso Gerente(clsUsuarioWeb usuario) => new(usuario.Id, RolInterno.GerenteComercial);
+
+    private static clsUsuarioFalso Director(clsUsuarioWeb usuario) => new(usuario.Id, RolInterno.Director);
 
     private clsCotizacionesRegionalService Servicio(IClsContextoUsuario usuario) =>
         new(usuario, _usuarios, _regionales, _cotizaciones, Options.Create(new clsOpcionesPdf { BaseUrl = "https://api.cotifly/" }));

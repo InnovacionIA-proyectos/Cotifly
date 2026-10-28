@@ -46,6 +46,8 @@ public sealed partial class clsContratoEjemplosDocTests
             "respuesta: GET /web/cotizaciones/{id}/nueva-version 200",
             // HU-016.1 (#154): listado regional del gerente comercial.
             "respuesta: GET /web/cotizaciones/regional 200",
+            // HU-037.3 (#211): regionales del selector del director y del gerente.
+            "respuesta: GET /web/regionales 200",
             "esquema: LicitacionWeb",
             // HU-023.2 (#157): "Calcular cubicaje" contra el cubicador.
             "esquema: CubicacionRequest",

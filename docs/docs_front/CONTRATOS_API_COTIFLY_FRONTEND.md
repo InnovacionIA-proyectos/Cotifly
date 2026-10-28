@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Fecha** | 2026-10-26 |
-| **Versión de referencia** | Rama `integracion-1019`: QA (PR #185, rama `hu-023-defectos-e2e-1016`, con D-1019-1) más #179 (HU-027.1, clases de contenedor), #180 (HU-025.1, textos de roles), #187 (HU-010.5, métricas por año y mes), #188 (HU-014, columnas 03/05 y "solo códigos conocidos") y #186 (HU-028, editar la solicitud); más la rama `179-detalle-por-folio` (#179 parte A, `GET /web/cotizaciones/{folio}`); más #181 (motivo pendiente), #183 (HU-028.1, rechazo de línea), #184 (HU-030.1, peso con tara), #191 (`Idempotency-Key` persistente), #194 (HU-031.1, alias de NEXO) y #197 (HU-032, vehículo elegido); más la rama `199-correo-mailsender` (HU-033, #199: correo por MailSender, total sin desglose y resultado diferido a NEXO), con los endurecimientos A y B de #199 integrados; más la rama `202-excel-mercancias` (HU-035.1, #202: Excel de mercancías de una ruta leído en Cotifly, sin NEXO) |
+| **Versión de referencia** | Rama `integracion-1019`: QA (PR #185, rama `hu-023-defectos-e2e-1016`, con D-1019-1) más #179 (HU-027.1, clases de contenedor), #180 (HU-025.1, textos de roles), #187 (HU-010.5, métricas por año y mes), #188 (HU-014, columnas 03/05 y "solo códigos conocidos") y #186 (HU-028, editar la solicitud); más la rama `179-detalle-por-folio` (#179 parte A, `GET /web/cotizaciones/{folio}`); más #181 (motivo pendiente), #183 (HU-028.1, rechazo de línea), #184 (HU-030.1, peso con tara), #191 (`Idempotency-Key` persistente), #194 (HU-031.1, alias de NEXO) y #197 (HU-032, vehículo elegido); más la rama `199-correo-mailsender` (HU-033, #199: correo por MailSender, total sin desglose y resultado diferido a NEXO), con los endurecimientos A y B de #199 integrados; más la rama `202-excel-mercancias` (HU-035.1, #202: Excel de mercancías de una ruta leído en Cotifly, sin NEXO); más las ramas `210-rol-director-permisos` y `211-director-todas-regionales` (HU-037: rol `director` y todas las regionales) |
 | **Audiencia** | Equipo de frontend del módulo Cotifly dentro de ClientePro (Angular 17.3.8) |
 | **Fuente de verdad** | El código del backend .NET y `backend-dotnet/specs/openapi.yaml`. Si este documento y el código no coinciden, manda el código. Los cambios de esta versión están en la sección 9 |
 
@@ -192,7 +192,7 @@ arriba. `detalle` es opcional y es un objeto: por lo general `{"motivo": "<códi
 | HTTP | Códigos |
 |---|---|
 | 400 | Todos los códigos de negocio no listados abajo (`SOLICITUD_COSTEO_INVALIDA`, `RUTA_REQUERIDA`, `JUSTIFICACION_REQUERIDA`, `MERCANCIA_DESCONOCIDA`, `TRM_NO_DISPONIBLE`, `POSICION_INVALIDA`, `CUBICADOR_PETICION_RECHAZADA`...) |
-| 403 | `NEXO_SIN_PERMISO` |
+| 403 | `NEXO_SIN_PERMISO`, `REGIONAL_NO_PERMITIDA` (fila 64) |
 | 409 | `COSTEO_NO_REINTENTABLE`, `COSTEO_NO_LISTO`, `PDF_YA_GENERADO`, `TEXTOS_EDITADOS`, `RESULTADO_YA_DEFINIDO`, `COTIZACION_NO_ENTREGADA`, `USAR_RESULTADO_NEXO`, `SOLICITUD_NO_TRANSICIONABLE`, `CONFLICTO_CONCURRENCIA`, `PDF_YA_ENVIADO`, `LINEA_SIN_COTIZACION_NEXO`, `ESTADO_NO_PERMITE`, `RUTA_RECHAZADA`, `SIN_RUTAS_COTIZABLES`, `REGIONAL_NO_ASIGNADA`, `IDEMPOTENCY_KEY_REUTILIZADA`, `CORREO_NO_REINTENTABLE` |
 | 428 | `PRECONDICION_REQUERIDA` |
 | 500 | `ERROR_INTERNO` (fila 57; en `/api/auth/*` es `ErrorWeb`) |
@@ -357,7 +357,7 @@ servidor lo busca primero como nombre de usuario corporativo y, si no aparece y 
 |---|---|
 | Algoritmo | HS256 |
 | Vigencia del access | 60 minutos (configurable de 1 a 1440). Tolerancia de reloj del servidor: 30 s |
-| Claims propios | `sub` (UUID del usuario en Cotifly, el mismo `user.id`), `jti` (id del token), `username`, `rol` (`comercial` o `gerente_comercial`) |
+| Claims propios | `sub` (UUID del usuario en Cotifly, el mismo `user.id`), `jti` (id del token), `username`, `rol` (`comercial`, `gerente_comercial` o `director`, fila 64) |
 | Claims estándar | `iss`, `aud`, `exp` (y los de tiempo que agregue el emisor) |
 | Revocación | Por `jti` en el logout |
 
@@ -386,9 +386,11 @@ Recomendación de almacenamiento: access en memoria (o `sessionStorage` si debe 
 |---|---|
 | `comercial` | Toda la consola del comercial (`/web/*`) sobre **sus** cotizaciones; su tablero (`/web/metricas/comercial`); descargar sus PDF |
 | `gerente_comercial` | Todo lo del comercial (también cotiza y ve lo suyo) **más**: listado de cotizaciones de su regional (`/web/cotizaciones/regional`), tablero de la regional (`/web/metricas/regional`), políticas de margen (`/web/admin/lineas-negocio`) y descargar los PDF de los comerciales de su regional |
+| `director` (HU-037, fila 64) | Todo lo del gerente comercial, pero sobre **todas** las regionales: tablero y listado de todas o de la que elija (`?regional=`, opciones de `GET /web/regionales`), detalle y PDF de cotizaciones de cualquier regional (solo consulta), políticas de margen y su propia consola de comercial |
 
-**No existe un rol `admin`.** La administración de márgenes es del `gerente_comercial`. Un usuario que no resuelve a uno de estos dos
-roles no puede iniciar sesión (401).
+**No existe un rol `admin`.** La administración de márgenes es del `gerente_comercial` y del `director`. Un usuario que no resuelve a
+uno de estos tres roles no puede iniciar sesión (401). Con varios roles de ClientePro gana el de mayor alcance: `director` >
+`gerente_comercial` > `comercial`.
 
 Las acciones sobre una cotización (costeo, margen, conexos, PDF, envío, resultado, nueva versión) exigen ser el **dueño**: el gerente
 recibe 404 sobre una cotización de otro comercial, aunque sea de su regional. La única excepción es la descarga del PDF.
@@ -789,7 +791,7 @@ flowchart TD
 
 Convenciones de esta sección:
 
-- **Rol "ambos"** = `comercial` o `gerente_comercial`. "Dueño" = solo el comercial que creó la cotización (una ajena responde 404,
+- **Rol "ambos"** = `comercial`, `gerente_comercial` o `director`. "Dueño" = solo el comercial que creó la cotización (una ajena responde 404,
   igual que una inexistente).
 - Todo `/web/*` y `/pdfs/*` exige `Authorization: Bearer <access>` y responde **401** `ErrorWeb` sin token o con uno vencido. Ese 401
   no se repite en cada tabla.
@@ -797,7 +799,7 @@ Convenciones de esta sección:
   más de 64 KB: 413. Un JSON mal formado o con tipos erróneos: 400 `ErrorWeb`. Tampoco se repiten.
 - `{folio}` es el folio de la cotización (hasta 50 caracteres), codificado con `encodeURIComponent`.
 
-Resumen (53 endpoints):
+Resumen (54 endpoints):
 
 | # | Método y ruta | Rol | Módulo |
 |---|---|---|---|
@@ -839,21 +841,22 @@ Resumen (53 endpoints):
 | 36 | `POST /web/cotizaciones/{folio}/enviar` | Ambos (dueño) | Correo |
 | 37 | `POST /web/chat` | Ambos | Asistente IA |
 | 38 | `GET /web/metricas/comercial` | Ambos | Métricas |
-| 39 | `GET /web/metricas/regional` | `gerente_comercial` | Regional |
-| 40 | `GET /web/cotizaciones/regional` | `gerente_comercial` | Regional |
-| 41 | `GET /web/admin/lineas-negocio` | `gerente_comercial` | Administración |
-| 42 | `PUT /web/admin/lineas-negocio/{id}` | `gerente_comercial` | Administración |
+| 39 | `GET /web/metricas/regional` | `gerente_comercial` o `director` | Regional |
+| 40 | `GET /web/cotizaciones/regional` | `gerente_comercial` o `director` | Regional |
+| 41 | `GET /web/admin/lineas-negocio` | `gerente_comercial` o `director` | Administración |
+| 42 | `PUT /web/admin/lineas-negocio/{id}` | `gerente_comercial` o `director` | Administración |
 | 43 | `GET /web/usuario/telefono` | Ambos | Usuario |
 | 44 | `PUT /web/usuario/telefono` | Ambos | Usuario |
 | 45 | `GET /health` | Público | Health |
 | 46 | `GET /health/ready` | Público | Health |
 | 47 | `GET /web/cotizaciones/{folio}/solicitud` | Ambos (dueño) | Captura y costeo (HU-028) |
 | 48 | `PUT /web/cotizaciones/{folio}/solicitud` | Ambos (dueño) | Captura y costeo (HU-028) |
-| 49 | `GET /web/cotizaciones/{folio}` | Dueño o gerente de su regional (solo consulta) | Cotizaciones (HU-027.1, #179) |
+| 49 | `GET /web/cotizaciones/{folio}` | Dueño, gerente de su regional o director (solo consulta) | Cotizaciones (HU-027.1, #179) |
 | 50 | `GET /web/alias/resolver` | Ambos | Catálogos (HU-031.1, #194) |
 | 51 | `GET /web/cotizaciones/{folio}/correos` | Ambos (dueño) | Correo (HU-033, #199) |
 | 52 | `POST /web/cotizaciones/{folio}/correos/{correoId}/reintentar` | Ambos (dueño) | Correo (HU-033, #199) |
 | 53 | `POST /web/mercancias/analizar-excel` | Ambos | Captura y costeo (HU-035.1, #202) |
+| 54 | `GET /web/regionales` | `gerente_comercial` o `director` | Regional (HU-037.3, #211) |
 
 Retirados (responden 404): `GET /web/metricas/actividad`, `GET /web/metricas/ajustes-margen`, `POST /chat/events`, `POST /web/login`.
 
@@ -2310,7 +2313,8 @@ hace falta combinar `GET /web/mis-cotizaciones` (cliente, NIT, `estado_envio`, `
 `CONTRATO_API_WEB.md` §8.14.
 
 - **Rol:** el dueño; o un `gerente_comercial` cuya regional efectiva incluye al dueño (la misma regla que 4.11.2 y que la descarga del
-  PDF), en **solo consulta**. Cualquier otro usuario: 404, igual que si no existiera.
+  PDF); o un `director`, de cualquier regional (fila 64). Siempre en **solo consulta**. Cualquier otro usuario: 404, igual que si no
+  existiera.
 - **Solo lectura de lo guardado:** no consulta NEXO ni dispara el polling.
 
 **200 `DetalleCotizacion`** con `ETag` (= `row_version`). Es una composición de modelos que el frontend ya conoce:
@@ -2593,8 +2597,8 @@ UX: antes de generarlo, confirmar el teléfono del comercial (`GET`/`PUT /web/us
 
 Descarga el PDF (inline).
 
-- **Rol:** el dueño, o un `gerente_comercial` cuya regional incluye al dueño (si la regional del gerente no se conoce o la fuente está
-  caída, 404 para el gerente).
+- **Rol:** el dueño, un `gerente_comercial` cuya regional incluye al dueño (si la regional del gerente no se conoce o la fuente está
+  caída, 404 para el gerente) o un `director`, de cualquier regional (fila 64).
 - **Parámetro:** `archivo` con patrón `^[A-Za-z0-9_-]+\.pdf$`. Tomarlo de `pdf_url`, nunca construirlo a mano.
 
 | HTTP | Cuerpo | UI |
@@ -2906,19 +2910,25 @@ Indicadores de las cotizaciones propias.
 | 200 | Tarjetas, gráfica con `serie_mensual` (trae todos los meses, también en 0) y apertura por línea. Sin cotizaciones: ceros, promedios en `null` ("—") y `por_linea_negocio` vacía |
 | 400 | `ErrorWeb` (por ejemplo `El parámetro 'desde' debe ser una fecha AAAA-MM-DD.`): fechas inválidas, invertidas o rango de más de 3 años |
 
-### 4.11 Regional (solo `gerente_comercial`)
+### 4.11 Regional (`gerente_comercial` y `director`)
 
-La regional es **siempre** la del gerente autenticado, resuelta en el servidor (no se manda por parámetro). El gerente es miembro de su
-regional: sus cotizaciones también cuentan y salen.
+Para el **gerente**, la regional es **siempre** la suya, resuelta en el servidor. Puede mandar `?regional=` con la suya (sin importar
+mayúsculas ni espacios); con otra recibe **403 `REGIONAL_NO_PERMITIDA`**. El gerente es miembro de su regional: sus cotizaciones también
+cuentan y salen.
+
+Para el **director** (HU-037.3, #211, fila 64): sin `regional` ve **todas** las regionales (todos los usuarios de Cotifly) y la respuesta
+trae `regional` y `fuente_regional` en `null`; con `?regional=X` ve solo esa (`regional = X`, `fuente_regional` en `null`). Las opciones
+del selector salen de 4.11.3 (`GET /web/regionales`). Una regional sin usuarios responde 200 vacío.
 
 #### 4.11.1 `GET /web/metricas/regional`
 
-- **Rol:** `gerente_comercial`.
+- **Rol:** `gerente_comercial` o `director`.
 
 | Parámetro | En | Obligatorio | Reglas |
 |---|---|---|---|
 | `desde`, `hasta` | query | No | Como en 4.10 |
-| `usuario_id` | query | No | UUID de un comercial de la regional: filtra `indicadores`, `serie_mensual`, `concentracion_ciudades` y `por_linea_negocio` |
+| `usuario_id` | query | No | UUID de un comercial del alcance (la regional; para el director sin `regional`, de cualquier regional): filtra `indicadores`, `serie_mensual`, `concentracion_ciudades` y `por_linea_negocio` |
+| `regional` | query | No | HU-037.3 (#211). Director: la regional a ver (sin ella, todas). Gerente: solo la suya (otra: 403 `REGIONAL_NO_PERMITIDA`). Vacía equivale a no mandarla |
 | `anio` | query | No | HU-010.5 (#187). Entero de 2020 al año en curso más uno. El periodo es ese **año completo** (1 de enero a 31 de diciembre, fechas de Bogotá). Si llega, **reemplaza** a `desde`/`hasta` (se ignoran, no se combinan) |
 | `mes` | query | No | HU-010.5. Entero de 1 a 12; **exige `anio`**. El periodo es ese **mes completo** de `anio` (fechas de Bogotá) |
 
@@ -2974,9 +2984,10 @@ parámetros.
 
 | HTTP | Código | UI |
 |---|---|---|
-| 200 | `MetricasRegional` | `comerciales` trae a **todos** los de la regional (también el gerente), aunque se filtre: usarlo para el selector. Mapa con `concentracion_ciudades.por_destino`; con `disponible = false`, ocultar el mapa |
+| 200 | `MetricasRegional` | `comerciales` trae a **todos** los del alcance (también el gerente), aunque se filtre: usarlo para el selector. Mapa con `concentracion_ciudades.por_destino`; con `disponible = false`, ocultar el mapa. Director sin `regional`: `regional` y `fuente_regional` vienen `null` ("Todas las regionales") |
 | 400 | `ErrorWeb` | Fechas inválidas o `usuario_id` que no es UUID |
-| 403 | `ErrorWeb` | No es gerente: no mostrar la vista |
+| 403 | `ErrorWeb` | No es gerente ni director: no mostrar la vista |
+| 403 | `REGIONAL_NO_PERMITIDA` (`ErrorNegocio`) | El gerente pidió otra regional: no ofrecerle el selector de regionales |
 | 404 | `ErrorWeb` `Comercial no encontrado en tu regional.` | Quitar el filtro |
 | 409 | `REGIONAL_NO_ASIGNADA` | Estado vacío con el `mensaje` ("Tu usuario no tiene una regional asignada..."). Sin reintento automático |
 | 503 | `REGIONAL_NO_DISPONIBLE` | "No se pudo consultar tu regional" con Reintentar |
@@ -2987,8 +2998,9 @@ UX: la regional se reutiliza 60 s en el servidor; cambiar el selector no la vuel
 
 Vista "Todas las cotizaciones" del gerente: las cotizaciones de los comerciales de su regional.
 
-- **Rol:** `gerente_comercial`. Sin parámetros. Máximo 100 **en total**, de la más reciente a la más antigua. Sin filtros ni paginación:
-  filtrar por `comercial.usuario_id` en el cliente.
+- **Rol:** `gerente_comercial` o `director`. Parámetro opcional `regional` (HU-037.3, #211; mismas reglas que en 4.11.1). Máximo 100
+  **en total**, de la más reciente a la más antigua. Sin más filtros ni paginación: filtrar por `comercial.usuario_id` en el cliente.
+  Para el director sin `regional`, son las 100 más recientes de todas las regionales.
 
 ```json
 {
@@ -3027,8 +3039,28 @@ Vista "Todas las cotizaciones" del gerente: las cotizaciones de los comerciales 
 | HTTP | Código | UI |
 |---|---|---|
 | 200 | `CotizacionesRegional` | Filas de **consulta**: las acciones que exigen ser dueño (costeo, resultado, envío, versión nueva) responden 404 al gerente sobre cotizaciones ajenas. La descarga del PDF sí funciona. Mostrar `comercial.nombre_completo` (o `nombre_usuario` si es `null`) |
-| 403 | `ErrorWeb` | No es gerente |
+| 403 | `ErrorWeb` | No es gerente ni director |
+| 403 | `REGIONAL_NO_PERMITIDA` (`ErrorNegocio`) | El gerente pidió otra regional |
 | 409 | `REGIONAL_NO_ASIGNADA` | Estado vacío explicativo |
+| 503 | `REGIONAL_NO_DISPONIBLE` | Reintentar |
+
+#### 4.11.3 `GET /web/regionales` (HU-037.3, #211)
+
+Opciones del selector de regional del tablero (4.11.1) y del listado (4.11.2).
+
+- **Rol:** `director` (todas) o `gerente_comercial` (solo la suya); un `comercial` recibe 403.
+- **Fuente:** la misma de la regional efectiva: la de cada usuario de Cotifly en `DimEjecutivo` o, si no aparece, su
+  `UsuariosWeb.regional`. Sin repetir (sin importar mayúsculas ni espacios) y ordenadas. Una regional sin usuarios en Cotifly no sale.
+
+```json
+{ "regionales": ["ANTIOQUIA", "CENTRO", "OCCIDENTE"] }
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `Regionales` | Director: opción "Todas" (sin `regional`) más estas. Gerente: una sola, la suya (no hace falta mostrar el selector) |
+| 403 | `ErrorWeb` | No es gerente ni director |
+| 409 | `REGIONAL_NO_ASIGNADA` | Gerente sin regional: estado vacío explicativo |
 | 503 | `REGIONAL_NO_DISPONIBLE` | Reintentar |
 
 ### 4.12 Administración y usuario
@@ -3037,7 +3069,7 @@ Vista "Todas las cotizaciones" del gerente: las cotizaciones de los comerciales 
 
 Políticas de margen de todas las líneas de negocio (activas e inactivas).
 
-- **Rol:** `gerente_comercial`.
+- **Rol:** `gerente_comercial` o `director` (fila 64).
 
 ```json
 [
@@ -3057,7 +3089,7 @@ No hay un endpoint de líneas de negocio para el comercial: el selector de líne
 
 Edita margen, método y estado de una línea existente. No crea ni borra líneas. Queda auditado.
 
-- **Rol:** `gerente_comercial`. **Parámetro:** `id` (entero; uno no entero responde 404 `Recurso no encontrado.`).
+- **Rol:** `gerente_comercial` o `director` (fila 64). **Parámetro:** `id` (entero; uno no entero responde 404 `Recurso no encontrado.`).
 
 | Campo | Tipo | Obligatorio | Reglas |
 |---|---|---|---|
@@ -3475,6 +3507,7 @@ parecido del catálogo, `sugerido = true`, con `similitud` de 0 a 1), `null` (si
 | `PDF_YA_GENERADO` | 409 | Ya hay un PDF vigente | Descargarlo |
 | `PRECONDICION_REQUERIDA` | 428 | Falta `If-Match` | Error de programación: enviar el encabezado |
 | `REGIONAL_NO_ASIGNADA` | 409 | El gerente no tiene regional | Estado vacío explicativo |
+| `REGIONAL_NO_PERMITIDA` | 403 | El gerente pidió con `?regional=` una regional que no es la suya (HU-037.3, fila 64) | No ofrecerle otras regionales |
 | `REGIONAL_NO_DISPONIBLE` | 503 | Fuente de la regional caída | Reintentar |
 | `RESULTADO_YA_DEFINIDO` | 409 | NEXO (o Cotifly) ya tiene un resultado | Mostrar y recargar |
 | `RUTA_INEXISTENTE` | 400 | La ruta no es de la cotización | Recargar el costeo |
@@ -3611,6 +3644,7 @@ fila_excel, campo, codigo, mensaje}`.
 | 60 | **HU-034.1 (#201, parte B): ganancias y costeo por mes.** `PuntoSerieMensual` (`serie_mensual` de `GET /web/metricas/regional` y de `GET /web/metricas/comercial`) trae tres campos **nuevos** por mes: `costeo_total`, `costeo_ganadas` y `ganancias`, con la definición exacta de `IndicadoresMetricas` (COP o USD × TRM; sin las rutas rechazadas por la Mesa; valores de la versión vigente y lo ganado de la versión ganada; mes de Bogotá de la primera creación). La suma de los meses es exactamente el valor de `indicadores` del mismo periodo. Ningún campo existente cambia | Agrega | Reemplazar la maqueta de "Ganancias por mes" (barras con `ganancias` de cada punto) y de "Ganancias del mes actual vs. mes anterior" (puntos del mes en curso y del anterior, buscados por `mes`) por los datos reales; no recalcular ganancias en el frontend |
 | 61 | **HU-035.2 (#213): el Excel del pliego pasa por los controles del Excel de mercancías antes de NEXO.** `POST /web/licitaciones/analizar-excel` (y la lectura del archivo en `POST /web/licitaciones`) revisan el archivo con la misma pieza que `POST /web/mercancias/analizar-excel`: firma, 1000 entradas, 64 MB descomprimidos, 1.000.000 de elementos XML (sin DTD) y un cupo de 4 lecturas simultáneas **compartido** con el Excel de mercancías. Un archivo corrupto o malicioso es 400 `EXCEL_INVALIDO` o `ARCHIVO_DEMASIADO_GRANDE` con `detalle.motivo` (los mismos motivos de la fila 59) y **ya no llega a NEXO**; un libro que Cotifly no puede abrir también se rechaza antes de NEXO (`LIBRO_ILEGIBLE`; antes lo rechazaba NEXO con `EXCEL_INVALIDO` sin motivo). **Nuevo:** 503 `SERVICIO_OCUPADO` con `Retry-After` en el análisis y al crear una licitación con archivo. `filas_excel` se calcula para las primeras 20 hojas. **`GET /web/licitaciones/{folio}/excel`** abre el original guardado con los mismos controles y dentro del mismo cupo: un original guardado antes de este cambio que no los pasa responde 400 `EXCEL_INVALIDO` o `ARCHIVO_DEMASIADO_GRANDE` con `detalle.motivo` (el mismo 400 de un original ilegible, nunca un 500), y el cupo lleno 503 `SERVICIO_OCUPADO` con `Retry-After` (nuevo en este endpoint). Sin códigos de error nuevos | Cambia | Leer `detalle.motivo` en el 400 del análisis (mismo manejo que el Excel de mercancías); tratar el 503 `SERVICIO_OCUPADO` reintentando tras `Retry-After`, también en la descarga del Excel de la licitación |
 | 62 | **HU-039.1 (#218): costo bruto de la ruta para el dueño.** `RutaCosteo` (`rutas[]` de `GET /web/cotizaciones/{folio}/costeo`, de las demás respuestas `CosteoCotizacion` del dueño: margen, conexos, recálculo de vehículos, y de `costeo.rutas[]` de `GET /web/cotizaciones/{folio}`) trae el campo **nuevo** `costo_final`: el costo bruto de la ruta que costeó NEXO (fletes + retorno + levante + conexos, sin margen), **siempre en COP aunque la cotización esté en USD**, y `null` en los mismos casos que `precio_final_linea` (sin costeo o ruta `rechazada`). Solo el dueño: en el detalle de un gerente (`solo_lectura = true`) sale siempre `null`. No hay desglose ni costo por camión o conexo, y el costo no sale en "Mis cotizaciones", el listado regional, el PDF, el correo, el Excel ni el asistente. Reversa de la regla "el costo bruto nunca llega al comercial" (ADR-015 §5), confirmada por la Gerencia Comercial el 2026-10-27. Ningún campo existente cambia | Agrega | Conectar el chip "Total costeo" a `rutas[].costo_final` (o a su suma, solo si todas las rutas cotizables lo traen); formatearlo siempre como pesos, sin la moneda de la cotización; "—" con `null`; no mostrarlo con `solo_lectura` |
+| 64 | **HU-037 (#210, #211): rol `director`, alcance de todas las regionales y `GET /web/regionales`.** (a) Nuevo valor `director` en `rol` (`user.rol` del login y claim `rol` del token) y en `comerciales[].rol` del tablero. Con varios roles de ClientePro gana `director` > `gerente_comercial` > `comercial`. El director usa todo lo del gerente (tablero, listado regional, políticas de margen) y su propia consola de comercial. (b) `GET /web/metricas/regional` y `GET /web/cotizaciones/regional` aceptan `?regional=` (opcional): el director ve **todas** sin él (`regional` y `fuente_regional` en `null`) o solo la elegida con él (`fuente_regional` en `null`); `usuario_id` del director puede ser de cualquier regional. El gerente sigue viendo solo la suya: `?regional=` con la suya se acepta y con otra responde **403 `REGIONAL_NO_PERMITIDA`** (`ErrorNegocio`, código nuevo). (c) **Nuevo** `GET /web/regionales` (4.11.3): todas para el director, la suya para el gerente, 403 para el comercial. (d) El detalle por folio y el PDF de una cotización de cualquier regional son visibles para el director (solo consulta). (e) `regional` y `fuente_regional` de `CotizacionesRegional` y `MetricasRegional` pasan a ser anulables (solo para el director). Son **54 endpoints** | Agrega / Cambia | Tratar `director` como un gerente en el menú; para el director, selector de regional con la opción "Todas" (sin `regional`) y las de `GET /web/regionales`, y mostrar "Todas las regionales" cuando `regional` venga `null`; manejar el 403 `REGIONAL_NO_PERMITIDA` (no ofrecer otras regionales al gerente); tipar `regional` y `fuente_regional` como `string \| null` |
 
 ---
 
@@ -3698,6 +3732,15 @@ fila_excel, campo, codigo, mensaje}`.
 ---
 
 ## 9. Notas de versión
+
+**2026-10-26 (ramas `210-rol-director-permisos` y `211-director-todas-regionales`, HU-037, #210 y #211, ADR-016 §11).** Rol Director:
+
+- Nuevo rol interno `director` (gana a `gerente_comercial` y a `comercial` cuando la persona tiene varios roles en ClientePro). Usa todo
+  lo del gerente y ve **todas** las regionales: tablero y listado de todas o de la que elija con `?regional=`, detalle y PDF de cualquier
+  regional (solo consulta).
+- **Nuevo** `GET /web/regionales` (4.11.3) para el selector. El gerente no puede pedir otra regional: 403 `REGIONAL_NO_PERMITIDA` (código
+  nuevo). `regional` y `fuente_regional` pueden venir `null` (director viendo todas).
+- Base de datos: `db/scripts/15_rol_director.sql` (Datos, #209). Son **54 endpoints**. Sección 7, fila 64 (la 62 y la 63 son de otras HUs).
 
 **2026-10-26 (rama `218-costo-bruto-ruta`, HU-039.1, #218, ADR-015 §5).** Costo bruto de la ruta para el dueño (fila 62 de §7):
 

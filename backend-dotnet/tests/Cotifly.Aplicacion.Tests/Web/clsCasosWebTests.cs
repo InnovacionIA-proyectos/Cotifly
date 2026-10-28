@@ -177,6 +177,25 @@ public sealed class clsCasosWebTests
     }
 
     [Fact]
+    public async Task ElDirectorDescargaElPdfDeCualquierRegionalAunqueLaFuenteEsteCaidaYQuedaAuditado()
+    {
+        // HU-037.3 (#211): el director no tiene alcance regional que comprobar.
+        var (director, _) = Registrar("director", null, RolInterno.Director);
+        var (_, dueno) = Registrar("comercial.norte", "Norte", RolInterno.Comercial);
+        _directorio.Configurado.Returns(true);
+        _directorio.ObtenerRegionalesAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>()).ThrowsAsync(new TimeoutException());
+        CotizacionConPdf("PCN-DG-25092026-009", dueno.Id);
+
+        var resultado = await Descarga(director).ObtenerAsync("PCN-DG-25092026-009.pdf", Ct);
+
+        resultado.Valor.Contenido.Should().Equal(1, 2, 3);
+        await _auditoria.Received(1).RegistrarAsync(
+            clsDescargaPdfService.HerramientaAuditoria,
+            Arg.Is<object>(e => e.ToString()!.Contains("rol = director", StringComparison.Ordinal)),
+            Arg.Any<object>(), true, Arg.Any<int>(), null);
+    }
+
+    [Fact]
     public async Task ElGerenteAnteriorNoDescargaAunqueUsuariosWebSigaDiciendoSuRegional()
     {
         var (gerenteAnterior, _) = Registrar("gerente.norte", "Norte", RolInterno.GerenteComercial);

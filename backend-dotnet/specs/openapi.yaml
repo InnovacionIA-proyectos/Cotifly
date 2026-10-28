@@ -18,7 +18,7 @@ info:
       de rol, el 404 (no existe o no es tuya), el 413, el 415, el 429 y el 400 de validación del cuerpo (`Cuerpo inválido...`,
       `CORREO_INVALIDO`, teléfono, seguimiento, `Idempotency-Key` fuera de largo). `ErrorNegocio`
       (`{"error": {"codigo", "mensaje", "detalle?"}}`): el resto de errores de negocio de `/web/*`, que son la mayoría (400 con
-      código, 409 de estado, `CONFLICTO_CONCURRENCIA` e `IDEMPOTENCY_KEY_REUTILIZADA`, 428 `PRECONDICION_REQUERIDA`, 403 `NEXO_SIN_PERMISO`, los 503 de
+      código, 409 de estado, `CONFLICTO_CONCURRENCIA` e `IDEMPOTENCY_KEY_REUTILIZADA`, 428 `PRECONDICION_REQUERIDA`, 403 `NEXO_SIN_PERMISO` y `REGIONAL_NO_PERMITIDA`, los 503 de
       dependencias y el 500 `ERROR_INTERNO`, respuesta común `ErrorInterno`; en `/api/auth/*` el 500 es `ErrorWeb`). Un mismo estado puede traer cualquiera de las dos (por ejemplo, el 400 de `POST /web/solicitudes-costeo`):
       el cliente distingue por el tipo de `error` (texto u objeto). El servidor nunca responde 412.
     - CORS (#12, deuda de #178): el navegador puede enviar `Authorization`, `Content-Type`, `If-Match` e `Idempotency-Key`
@@ -362,26 +362,33 @@ paths:
     get:
       operationId: listarCotizacionesRegional
       tags: [web]
-      summary: Lista las cotizaciones de los comerciales de la regional del gerente comercial (HU-016.1)
+      summary: Lista las cotizaciones de los comerciales de la regional del gerente comercial, o de todas para el director (HU-016.1, HU-037)
       description: |
         HU-016.1 (#154). Vista "Todas las cotizaciones" del gerente: fila por fila, con la misma forma que
         `GET /web/mis-cotizaciones` (`CotizacionResumen`) y, en cada fila, el comercial dueño (`comercial`).
 
         - Solo `gerente_comercial` o `director` (claim `rol` del token; HU-037, #210; un `comercial` recibe 403).
-        - El alcance es SIEMPRE la regional del usuario autenticado, resuelta en el servidor con la misma regla que
-          `GET /web/metricas/regional` (`DimEjecutivo` cuando está conectada; si no, `UsuariosWeb.regional`). No se acepta
-          una regional por parámetro y nunca se devuelven cotizaciones de otra regional.
+        - **`gerente_comercial`:** el alcance es SIEMPRE su regional, resuelta en el servidor con la misma regla que
+          `GET /web/metricas/regional` (`DimEjecutivo` cuando está conectada; si no, `UsuariosWeb.regional`). Nunca se devuelven
+          cotizaciones de otra regional. `?regional=` con su propia regional se acepta (sin distinguir mayúsculas ni espacios
+          sobrantes); con otra, 403 `REGIONAL_NO_PERMITIDA` (HU-037.3, #211).
+        - **`director` (HU-037.3, #211):** sin `regional`, las cotizaciones de **todos** los usuarios (todas las regionales,
+          `regional` y `fuente_regional` en `null`); con `?regional=X`, solo las de los miembros de X (con la misma regla de la
+          regional efectiva; `fuente_regional` en `null`). Las regionales posibles salen de `GET /web/regionales`. Una regional sin
+          miembros responde 200 con la lista vacía.
         - El propio gerente es miembro de su regional: sus cotizaciones también salen.
-        - Sin regional asignada: 409 `REGIONAL_NO_ASIGNADA` (nunca se devuelven todas las regionales). Fuente de la
-          regional configurada pero caída: 503 `REGIONAL_NO_DISPONIBLE`.
+        - Gerente sin regional asignada: 409 `REGIONAL_NO_ASIGNADA` (nunca se devuelven todas las regionales). Fuente de la
+          regional configurada pero caída: 503 `REGIONAL_NO_DISPONIBLE` (también para el director que filtra por `regional`).
         - Máximo 100 en total (no por comercial), de la más reciente a la más antigua (`createdAt` y, a igualdad, `folio`
           descendente), como "Mis cotizaciones". Sin filtros ni paginación.
         - `linea_negocio` es la de la ruta 1 (o `Varias`) y `precio_final` el de la cabecera, como en "Mis cotizaciones".
       security:
         - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/RegionalFiltro'
       responses:
         '200':
-          description: Cotizaciones de la regional del gerente
+          description: Cotizaciones de la regional del gerente (o de todas, o de la elegida, para el director)
           content:
             application/json:
               schema:
@@ -389,7 +396,24 @@ paths:
         '401':
           $ref: '#/components/responses/SesionExpirada'
         '403':
-          $ref: '#/components/responses/SinPermiso'
+          description: |
+            `ErrorWeb` "No tienes permiso para esta operación." si el rol no es `gerente_comercial` ni `director`. HU-037.3 (#211):
+            `ErrorNegocio` `REGIONAL_NO_PERMITIDA` si un `gerente_comercial` pide con `regional` una regional que no es la suya.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
+              examples:
+                rol:
+                  value:
+                    error: "No tienes permiso para esta operación."
+                otraRegional:
+                  value:
+                    error:
+                      codigo: REGIONAL_NO_PERMITIDA
+                      mensaje: "Solo puedes consultar tu propia regional."
         '409':
           description: El gerente no tiene regional asignada (`REGIONAL_NO_ASIGNADA`)
           content:
@@ -433,8 +457,8 @@ paths:
 
         Solo lectura de lo que Cotifly tiene guardado: no consulta Nexo, no dispara el polling ni cambia la cotización.
 
-        Acceso: el **dueño**; o un `gerente_comercial` (o `director`, HU-037) cuya regional efectiva incluye al dueño (la misma regla que
-        `GET /web/cotizaciones/regional` y la descarga del PDF), que solo consulta (`solo_lectura = true`; las acciones siguen siendo del
+        Acceso: el **dueño**; un `director` (HU-037.3, #211), de cualquier regional; o un `gerente_comercial` cuya regional efectiva incluye
+        al dueño (la misma regla que `GET /web/cotizaciones/regional` y la descarga del PDF). Gerente y director solo consultan (`solo_lectura = true`; las acciones siguen siendo del
         dueño y a él le responden 404). Si la regional del gerente no se puede comprobar (sin regional o fuente caída) se niega. Cualquier
         otro usuario recibe 404, igual que si el folio no existiera.
       security:
@@ -831,17 +855,23 @@ paths:
     get:
       operationId: obtenerMetricasRegional
       tags: [metricas]
-      summary: Métricas de la regional del gerente comercial (tablero del gerente, HU-010.3)
+      summary: Métricas de la regional del gerente comercial, o de todas para el director (tablero, HU-010.3, HU-037)
       description: |
-        Solo `gerente_comercial` o `director` (claim `rol` del token; HU-037, #210; un `comercial` recibe 403). El alcance es SIEMPRE la regional
-        del usuario autenticado, resuelta en el servidor (`DWCubosEBSSAP.DimEjecutivo` cuando está conectada; si no,
-        `UsuariosWeb.regional`, que fija el DBA; ADR-016). No se acepta una regional por parámetro.
+        Solo `gerente_comercial` o `director` (claim `rol` del token; HU-037, #210; un `comercial` recibe 403).
+        - **`gerente_comercial`:** el alcance es SIEMPRE su regional, resuelta en el servidor (`DWCubosEBSSAP.DimEjecutivo`
+          cuando está conectada; si no, `UsuariosWeb.regional`, que fija el DBA; ADR-016). `?regional=` con su propia regional
+          se acepta; con otra, 403 `REGIONAL_NO_PERMITIDA` (HU-037.3, #211).
+        - **`director` (HU-037.3, #211; ADR-016 §11):** sin `regional`, todas las regionales (todos los usuarios de Cotifly;
+          `regional` y `fuente_regional` en `null`); con `?regional=X`, solo los miembros de X (`regional = X`,
+          `fuente_regional` en `null`). Las regionales posibles salen de `GET /web/regionales`.
 
-        - Sin regional asignada: 409 `REGIONAL_NO_ASIGNADA` (nunca se devuelven todas las regionales).
-        - Fuente de la regional configurada pero caída: 503 `REGIONAL_NO_DISPONIBLE`.
-        - `usuario_id` filtra `indicadores`, `serie_mensual` y `concentracion_ciudades` a un comercial. Si no es de la
-          regional (o no existe) responde 404, igual en los dos casos. `comerciales` trae siempre a todos los de la
-          regional (para el selector), cada uno con su `rol` y sus indicadores del periodo.
+        - Gerente sin regional asignada: 409 `REGIONAL_NO_ASIGNADA` (nunca se devuelven todas las regionales).
+        - Fuente de la regional configurada pero caída: 503 `REGIONAL_NO_DISPONIBLE` (también para el director que filtra por
+          `regional`).
+        - `usuario_id` filtra `indicadores`, `serie_mensual` y `concentracion_ciudades` a un comercial. Si no está en el
+          alcance (la regional del gerente, la regional elegida por el director o, para el director sin `regional`, cualquier
+          usuario de Cotifly) o no existe, responde 404, igual en los dos casos. `comerciales` trae siempre a todos los del
+          alcance (para el selector), cada uno con su `rol` y sus indicadores del periodo.
         - El propio gerente es miembro de su regional: aparece en `comerciales` (con `rol: gerente_comercial`) y sus
           cotizaciones cuentan en el agregado de la regional.
         - `concentracion_ciudades` agrupa por el municipio de destino (`por_destino`, el que usa el mapa) y también por
@@ -864,10 +894,13 @@ paths:
         - name: usuario_id
           in: query
           required: false
-          description: Id (`UsuariosWeb.id`) de un comercial de la regional para filtrar los indicadores.
+          description: |
+            Id (`UsuariosWeb.id`) de un comercial del alcance para filtrar los indicadores (para el director sin `regional`, de
+            cualquier regional).
           schema:
             type: string
             format: uuid
+        - $ref: '#/components/parameters/RegionalFiltro'
         - name: anio
           in: query
           required: false
@@ -1012,9 +1045,26 @@ paths:
         '401':
           $ref: '#/components/responses/SesionExpirada'
         '403':
-          $ref: '#/components/responses/SinPermiso'
+          description: |
+            `ErrorWeb` "No tienes permiso para esta operación." si el rol no es `gerente_comercial` ni `director`. HU-037.3 (#211):
+            `ErrorNegocio` `REGIONAL_NO_PERMITIDA` si un `gerente_comercial` pide con `regional` una regional que no es la suya.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
+              examples:
+                rol:
+                  value:
+                    error: "No tienes permiso para esta operación."
+                otraRegional:
+                  value:
+                    error:
+                      codigo: REGIONAL_NO_PERMITIDA
+                      mensaje: "Solo puedes consultar tu propia regional."
         '404':
-          description: El `usuario_id` no es un comercial de la regional del gerente (o no existe)
+          description: El `usuario_id` no está en el alcance (la regional del gerente o la elegida por el director) o no existe
           content:
             application/json:
               schema:
@@ -1031,6 +1081,51 @@ paths:
                 error:
                   codigo: REGIONAL_NO_ASIGNADA
                   mensaje: "Tu usuario no tiene una regional asignada. Pide al administrador que la registre."
+        '503':
+          description: La fuente de la regional (`DimEjecutivo`) está configurada pero no responde (`REGIONAL_NO_DISPONIBLE`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+
+  /web/regionales:
+    get:
+      operationId: listarRegionales
+      tags: [metricas]
+      summary: Regionales que el usuario puede consultar (selector del tablero y del listado regional, HU-037.3)
+      x-issue: '#211 (HU-037.3)'
+      description: |
+        HU-037.3 (#211). Las regionales para el selector de `GET /web/metricas/regional` y `GET /web/cotizaciones/regional`
+        (parámetro `regional`). La fuente es la misma de la regional efectiva (ADR-016 §6): la de cada usuario de Cotifly en
+        `DimEjecutivo` cuando está conectada y, si no aparece, su `UsuariosWeb.regional`.
+        - **`director`:** las regionales efectivas de todos los usuarios de Cotifly, sin repetir (sin distinguir mayúsculas ni
+          espacios sobrantes), ordenadas por nombre. Una regional de `DimEjecutivo` sin ningún usuario en Cotifly no sale.
+        - **`gerente_comercial`:** solo la suya (409 `REGIONAL_NO_ASIGNADA` si no la tiene).
+        - **`comercial`:** 403.
+        - Fuente de la regional configurada pero caída: 503 `REGIONAL_NO_DISPONIBLE` (fail-closed: no se mezcla con la de respaldo).
+      security:
+        - bearer: []
+      responses:
+        '200':
+          description: Regionales visibles para el usuario
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Regionales'
+              example:
+                regionales: [ANTIOQUIA, CENTRO, OCCIDENTE]
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '409':
+          description: El gerente no tiene regional asignada (`REGIONAL_NO_ASIGNADA`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
         '503':
           description: La fuente de la regional (`DimEjecutivo`) está configurada pero no responde (`REGIONAL_NO_DISPONIBLE`)
           content:
@@ -3634,8 +3729,8 @@ paths:
       tags: [sistema]
       summary: Descarga el PDF de una cotización (inline)
       description: |
-        Requiere sesión. Solo el dueño de la cotización (o un gerente_comercial o director cuya regional efectiva
-        incluye al dueño, con la misma regla que `GET /web/cotizaciones/regional`; si la regional del gerente
+        Requiere sesión. Solo el dueño de la cotización, un director (HU-037.3, #211: de cualquier regional) o un gerente_comercial cuya
+        regional efectiva incluye al dueño (con la misma regla que `GET /web/cotizaciones/regional`; si la regional del gerente
         no se conoce o la fuente está caída, solo el dueño, 404 para el gerente) puede descargarlo. Como exige `Authorization`, el frontend lo descarga con HttpClient
         como blob (un `<a href>` directo no envía el header).
         En el backend Python este endpoint era público (hallazgo de seguridad corregido).
@@ -3755,6 +3850,18 @@ components:
         Se acepta cualquier folio existente (también los heredados del Python, como
         `PCN-23072026`), por eso no se valida con un patrón.
       example: PCN-DG-25092026-001
+    RegionalFiltro:
+      name: regional
+      in: query
+      required: false
+      description: |
+        HU-037.3 (#211). Regional a consultar (una de `GET /web/regionales`; se compara sin mayúsculas ni espacios sobrantes).
+        `director`: sin ella, todas las regionales; con ella, solo esa. `gerente_comercial`: solo se acepta la suya (otra: 403
+        `REGIONAL_NO_PERMITIDA`). Vacía o solo espacios equivale a no enviarla.
+      schema:
+        type: string
+        maxLength: 200
+      example: OCCIDENTE
     DesdeMetricas:
       name: desde
       in: query
@@ -4047,7 +4154,8 @@ components:
                 `PRECIO_INVALIDO` queda solo para el cálculo de precio.
                 En `GET /web/metricas/regional` (HU-010.1, ADR-016) y en `GET /web/cotizaciones/regional` (HU-016.1, #154): `REGIONAL_NO_ASIGNADA` (409: el gerente no
                 tiene regional en `DimEjecutivo` ni en `UsuariosWeb.regional`) y `REGIONAL_NO_DISPONIBLE` (503: la
-                conexión a `DimEjecutivo` está configurada pero falla).
+                conexión a `DimEjecutivo` está configurada pero falla). HU-037.3 (#211): `REGIONAL_NO_PERMITIDA` (403: un
+                `gerente_comercial` pidió con `?regional=` una regional que no es la suya; el director puede pedir cualquiera).
                 Licitaciones (HU-011, ADR-017): `ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `EXCEL_INVALIDO` y `EXCEL_SIN_DATOS`
                 (mismos códigos que Nexo en `analizar-excel`), `ARCHIVO_DEMASIADO_GRANDE` (más de 10 MB) y
                 `LICITACION_INVALIDA` (filas inválidas; el detalle viaja en `ReporteLicitacionInvalida`), `MARGEN_LINEA_DESCONOCIDA` en
@@ -4127,6 +4235,7 @@ components:
                 - TRM_NO_DISPONIBLE
                 - REGIONAL_NO_ASIGNADA
                 - REGIONAL_NO_DISPONIBLE
+                - REGIONAL_NO_PERMITIDA
                 - ARCHIVO_REQUERIDO
                 - FORMATO_NO_SOPORTADO
                 - ARCHIVO_DEMASIADO_GRANDE
@@ -4909,10 +5018,15 @@ components:
       properties:
         regional:
           type: string
-          description: Regional del gerente, resuelta en el servidor.
+          nullable: true
+          description: |
+            Regional del gerente, resuelta en el servidor. HU-037.3 (#211): para el `director`, la regional que pidió con
+            `?regional=` o `null` si ve todas.
         fuente_regional:
           type: string
-          enum: [dim_ejecutivo, usuarios_web]
+          nullable: true
+          enum: [dim_ejecutivo, usuarios_web, null]
+          description: De dónde salió la regional del gerente. `null` para el `director` (la regional no se resuelve de su usuario).
         total:
           type: integer
           description: Cuántas filas trae `cotizaciones` (máximo 100).
@@ -5571,11 +5685,17 @@ components:
           $ref: '#/components/schemas/PeriodoMetricas'
         regional:
           type: string
-          description: Regional del gerente autenticado.
+          nullable: true
+          description: |
+            Regional del gerente autenticado. HU-037.3 (#211): para el `director`, la regional que pidió con `?regional=` o `null`
+            si ve todas.
         fuente_regional:
           type: string
-          enum: [dim_ejecutivo, usuarios_web]
-          description: De dónde salió la regional (`DWCubosEBSSAP.DimEjecutivo` o `UsuariosWeb.regional`).
+          nullable: true
+          enum: [dim_ejecutivo, usuarios_web, null]
+          description: |
+            De dónde salió la regional del gerente (`DWCubosEBSSAP.DimEjecutivo` o `UsuariosWeb.regional`). `null` para el
+            `director` (la regional no se resuelve de su usuario).
         usuario_id:
           type: string
           format: uuid
@@ -5588,7 +5708,9 @@ components:
           description: Líneas de `MargenesPolitica` con `isActive = 1` (no depende del periodo ni de la regional).
         comerciales:
           type: array
-          description: Todos los usuarios de la regional (también el gerente), ordenados por nombre, aunque se filtre por `usuario_id`.
+          description: |
+            Todos los usuarios del alcance (la regional, también el gerente; para el director sin `regional`, todos los usuarios),
+            ordenados por nombre, aunque se filtre por `usuario_id`.
           items:
             $ref: '#/components/schemas/ComercialRegional'
         serie_mensual:
@@ -5602,6 +5724,17 @@ components:
           description: Apertura por línea de negocio, por ruta, de la regional o del comercial filtrado (como `indicadores`).
           items:
             $ref: '#/components/schemas/MetricaLineaNegocio'
+
+    Regionales:
+      type: object
+      required: [regionales]
+      description: HU-037.3 (#211). Respuesta de `GET /web/regionales`.
+      properties:
+        regionales:
+          type: array
+          description: Regionales visibles para el usuario, sin repetir y ordenadas por nombre (el gerente, solo la suya).
+          items:
+            type: string
 
     TelefonoComercial:
       type: object

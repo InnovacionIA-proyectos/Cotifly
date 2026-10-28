@@ -124,6 +124,38 @@ Característica: Tablero de métricas del comercial y del gerente comercial
     Cuando "gloria" consulta las métricas de su regional del "2026-01-01" al "2026-12-31" filtradas por "marta"
     Entonces la respuesta tiene el estado 404 con el error "Comercial no encontrado en tu regional."
 
+  # HU-037.3 (#211): el director ve todas las regionales (o la que elige) y filtra un comercial de cualquiera; el gerente solo la suya.
+  Escenario: El director ve el tablero de la regional que elige
+    Dado el director "dario" con sesión en la regional "Sur"
+    Cuando "dario" consulta las métricas de la regional "Occidente" del "2026-01-01" al "2026-12-31"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "MetricasRegional" del contrato
+    Y la regional de las métricas es "Occidente"
+    Y los comerciales de las métricas son "ana", "luis" y "gloria"
+    Y los indicadores son:
+      | campo            | valor   |
+      | cantidad         | 5       |
+      | ganadas          | 3       |
+      | valor_ganado_cop | 5500000 |
+
+  Escenario: El director sin regional ve todas y filtra por un comercial de cualquier regional
+    Dado el director "dario" con sesión en la regional "Sur"
+    Cuando "dario" consulta las métricas de su regional del "2026-01-01" al "2026-12-31" filtradas por "marta"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "MetricasRegional" del contrato
+    Y las métricas son de todas las regionales
+    Y los indicadores son:
+      | campo            | valor   |
+      | cantidad         | 1       |
+      | ganadas          | 1       |
+      | valor_ganado_cop | 9000000 |
+    Y la lista de comerciales de las métricas incluye a "ana", "marta" y "dario"
+
+  Escenario: El gerente no puede pedir el tablero de otra regional, pero sí la suya
+    Cuando "gloria" consulta las métricas de la regional "Norte" del "2026-01-01" al "2026-12-31"
+    Entonces la respuesta tiene el estado 403 con el código de negocio "REGIONAL_NO_PERMITIDA"
+    Cuando "gloria" consulta las métricas de la regional "Occidente" del "2026-01-01" al "2026-12-31"
+    Entonces la respuesta tiene el estado 200
+    Y la regional de las métricas es "Occidente"
+
   Escenario: Un comercial no puede ver las métricas de la regional
     Cuando "ana" consulta las métricas de su regional del "2026-01-01" al "2026-12-31"
     Entonces la respuesta tiene el estado 403 con el error "No tienes permiso para esta operación."
