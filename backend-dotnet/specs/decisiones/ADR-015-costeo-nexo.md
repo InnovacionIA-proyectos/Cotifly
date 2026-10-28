@@ -118,6 +118,18 @@ aceptara, y el PDF, el correo y el resultado salían sobre un precio que nadie h
   cambió el precio después de que el comercial lo leyó, la finalización pierde (409) y el comercial recarga; si la finalización gana, la
   vuelta del polling que se cruzó no guarda y la siguiente ya ve la cotización finalizada.
 - **Sin backfill.** Las cotizaciones existentes quedan sin finalizar; el comercial las finaliza una por una (conteo en `DEPLOY.md` §4.5).
+- **#207, candados después de finalizar.** La regla del PDF de ADR-018 §11 se amplía en UN solo lugar:
+  `clsCotizacionSolicitud.ValidarCambioEtapaFinal` = entregada al cliente **o finalizada** → `PDF_YA_ENVIADO` con la versión nueva
+  (`clsReglaPdfCosteo.Validar`). Así quedan bloqueados, sin repetir el candado en cada servicio, el margen, los conexos, los conexos en
+  Nexo, la re-solicitud en el mismo folio, el levante y el recálculo de camiones (`ReemplazarCamionesDeRuta` y su servicio). La edición
+  resuelve `NuevaVersion` con la cotización finalizada (`ModoEdicion`, decisión de Sara). Los textos y el PDF usan la regla anterior
+  (`ValidarEntregaAlCliente`): se hacen DESPUÉS de finalizar y hasta enviarla.
+- **#207, candados antes de finalizar.** El PDF, el envío por correo y los textos (`ValidarFinalizadaAntesDe`) y el resultado
+  (`ValidarFinalizadaAntesDelResultado`) responden 409 **`COTIZACION_NO_FINALIZADA`** (código nuevo; "Finaliza la cotización antes
+  de…", con la llamada a `.../finalizar` en `detalle`). Es validación de dominio: el asistente queda bloqueado sin tocarlo. No aplica a
+  las entregadas al cliente antes de HU-036 (sin backfill) ni a las del chat. En el resultado solo aplica con el costeo listo
+  (`AdmiteFinalizar`): la perdida antes del costeo (HU-013.17), la ganada pendiente de sincronizar en `pendiente_costeo` (HU-033) y la
+  perdida por `/seguimiento` en `descartada` y `costeo_vencido` (decisión de Sara) siguen como antes.
 
 ### 6. Resultado ganada/perdida (#42)
 

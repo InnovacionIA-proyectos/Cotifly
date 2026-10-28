@@ -234,8 +234,9 @@ public static class clsCodigosError
     public const string TextosEditados = "TEXTOS_EDITADOS";
 
     /// <summary>
-    /// Regla del PDF (ADR-018 §11): la cotización ya se envió al cliente o tiene resultado; para cambiarla se crea la versión
-    /// <c>-vN</c> (409; <c>detalle</c> trae la llamada a <c>re-solicitar</c> con <c>nueva_version</c>). Código nuevo del backend .NET.
+    /// Regla del PDF (ADR-018 §11): la cotización ya se envió al cliente o tiene resultado (HU-036.3, #207: o ya está finalizada); para
+    /// cambiarla se crea la versión <c>-vN</c> (409; <c>detalle</c> trae la llamada a <c>re-solicitar</c> con <c>nueva_version</c>). Código
+    /// nuevo del backend .NET.
     /// </summary>
     public const string PdfYaEnviado = "PDF_YA_ENVIADO";
 
@@ -381,4 +382,12 @@ public static class clsCodigosError
     /// trae el estado actual. Código nuevo del backend .NET.
     /// </summary>
     public const string CotizacionNoFinalizable = "COTIZACION_NO_FINALIZABLE";
+
+    /// <summary>
+    /// HU-036.3 (#207): el PDF, el envío por correo, el resultado o los textos del PDF exigen la cotización finalizada ("Finaliza la
+    /// cotización antes de..."). 409; <c>detalle</c> trae la llamada para finalizar (<c>accion = finalizar</c>, <c>metodo</c>,
+    /// <c>endpoint</c>). No aplica a las ya entregadas al cliente (anteriores a HU-036) ni a las que no pasan por Nexo. Código nuevo del
+    /// backend .NET.
+    /// </summary>
+    public const string CotizacionNoFinalizada = "COTIZACION_NO_FINALIZADA";
 }

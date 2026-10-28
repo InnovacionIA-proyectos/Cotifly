@@ -8,7 +8,8 @@ namespace Cotifly.Dominio.Cotizaciones;
 /// cotización y se envía.</item>
 /// <item><see cref="Reemplazo"/>: ya está en Nexo, sin entregar al cliente y sin resultado. Se rechaza la solicitud anterior en Nexo y se
 /// captura de nuevo en el mismo folio; el PDF queda invalidado.</item>
-/// <item><see cref="NuevaVersion"/>: ya entregada al cliente o con resultado. Se crea la versión <c>-vN</c> y la original no cambia.</item>
+/// <item><see cref="NuevaVersion"/>: ya entregada al cliente o con resultado, o (HU-036.3, #207) finalizada. Se crea la versión <c>-vN</c> y la
+/// original no cambia.</item>
 /// </list>
 /// </summary>
 public enum ModoEdicionSolicitud

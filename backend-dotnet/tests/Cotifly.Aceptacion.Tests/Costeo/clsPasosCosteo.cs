@@ -183,9 +183,13 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
     }
 
     [When("{string} marca el resultado de {string} como {string} con el motivo {string} y el comentario {string}")]
-    public Task CuandoMarcaResultado(string alias, string cotizacion, string resultado, string motivo, string comentario) =>
-        web.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{Folio(cotizacion)}/resultado", web.Sesion(alias).Access,
+    public async Task CuandoMarcaResultado(string alias, string cotizacion, string resultado, string motivo, string comentario)
+    {
+        // HU-036.3 (#207): con el costeo listo el comercial finaliza antes de marcar el resultado.
+        await FinalizarSiCorrespondeAsync(alias, Folio(cotizacion));
+        await web.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{Folio(cotizacion)}/resultado", web.Sesion(alias).Access,
             clsApiWebPruebas.Json(new { resultado, motivo, comentario }));
+    }
 
     [Then("Nexo registró la cotización de {string} como {string}")]
     public async Task EntoncesNexoRegistro(string cotizacion, string resultado) =>
@@ -294,6 +298,42 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
 
     /// <summary>Nexo falso del escenario (lo usan los pasos del polling y del resultado).</summary>
     public clsNexoFalso Nexo => _nexo;
+
+    /// <summary>
+    /// HU-036.3 (#207): lo que hace el frontend antes del PDF y del resultado: si el costeo de <paramref name="folio"/> está listo
+    /// (<c>autocosteo</c> o <c>entregada</c> con precio), sin finalizar y sin entregar al cliente, el comercial lo finaliza con el
+    /// <c>ETag</c> vigente. Si no corresponde (sin precio, ya finalizada, chat), no hace nada. Las respuestas de estas llamadas no quedan
+    /// como la última del escenario.
+    /// </summary>
+    public async Task FinalizarSiCorrespondeAsync(string alias, string folio)
+    {
+        var token = web.Sesion(alias).Access;
+        using var lectura = new HttpRequestMessage(HttpMethod.Get, $"/web/cotizaciones/{folio}/costeo");
+        lectura.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        using var costeo = await web.Api.Cliente.SendAsync(lectura);
+        if (costeo.StatusCode != HttpStatusCode.OK)
+        {
+            return;
+        }
+
+        using var json = System.Text.Json.JsonDocument.Parse(await costeo.Content.ReadAsStringAsync());
+        var raiz = json.RootElement;
+        var estado = raiz.GetProperty("estado_costeo").ValueKind == System.Text.Json.JsonValueKind.String ? raiz.GetProperty("estado_costeo").GetString() : null;
+        var listo = estado is "autocosteo" or "entregada" && raiz.GetProperty("precio_final").ValueKind == System.Text.Json.JsonValueKind.Number;
+        var finalizada = raiz.TryGetProperty("finalizada_at", out var fecha) && fecha.ValueKind == System.Text.Json.JsonValueKind.String;
+        var entregada = raiz.TryGetProperty("resultado", out var resultado) && resultado.ValueKind == System.Text.Json.JsonValueKind.String;
+        if (!listo || finalizada || entregada)
+        {
+            return;
+        }
+
+        using var finalizar = new HttpRequestMessage(HttpMethod.Post, $"/web/cotizaciones/{folio}/finalizar");
+        finalizar.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        finalizar.Headers.TryAddWithoutValidation("If-Match", costeo.Headers.ETag?.Tag);
+        using var respuesta = await web.Api.Cliente.SendAsync(finalizar);
+        // Una enviada al cliente sin resultado (antes de HU-036) responde 200 igual; lo único inesperado es un error.
+        respuesta.StatusCode.Should().Be(HttpStatusCode.OK, await respuesta.Content.ReadAsStringAsync());
+    }
 
     /// <summary>
     /// HU-021 (decisión 3): el dueño de <paramref name="cotizacion"/> agrega en Cotifly (ruta 1) un conexo de costo <paramref name="valor"/>;

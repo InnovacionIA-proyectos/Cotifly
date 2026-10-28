@@ -236,6 +236,7 @@ public sealed class clsCorreoServiceTests : IDisposable
     public async Task ElCuerpoLlevaElTotalDeLaCotizacionSinDesglose()
     {
         var costeada = clsCotizacionMuestra.Costeada(folio: "PCN-C2", usuarioId: _comercial.Id);
+        costeada.Finalizar(_comercial.Id, clsCotizacionMuestra.Ahora); // HU-036.3 (#207): sale al cliente con el precio aceptado
         costeada.AsignarPdf("/data/pdfs/PCN-C2.pdf");
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync("PCN-C2", _comercial.Id, Arg.Any<CancellationToken>()).Returns(costeada);
         _almacen.LeerPorReferenciaAsync("/data/pdfs/PCN-C2.pdf", Arg.Any<CancellationToken>()).Returns("%PDF-1.4"u8.ToArray());
@@ -248,6 +249,22 @@ public sealed class clsCorreoServiceTests : IDisposable
             .And.Contain(System.Net.WebUtility.HtmlEncode(clsPlantillaCorreo.EtiquetaTotal))
             .And.Contain(total + " COP").And.Contain(System.Net.WebUtility.HtmlEncode(Cotifly.Aplicacion.Pdf.Services.clsTextosEstandar.LeyendaImpuestos));
         _enviado.CuerpoHtml.Should().NotContainAny("Costo", "costo", "Margen", "margen", "Flete", "flete");
+    }
+
+    [Fact]
+    public async Task HU0363_EnElFlujoDeCosteoSinFinalizarNoSeEnviaNiLlegaAMailSender()
+    {
+        var costeada = clsCotizacionMuestra.Costeada(folio: "PCN-C3", usuarioId: _comercial.Id);
+        costeada.AsignarPdf("/data/pdfs/PCN-C3.pdf");
+        _cotizaciones.ObtenerPorFolioDelUsuarioAsync("PCN-C3", _comercial.Id, Arg.Any<CancellationToken>()).Returns(costeada);
+        _almacen.LeerPorReferenciaAsync("/data/pdfs/PCN-C3.pdf", Arg.Any<CancellationToken>()).Returns("%PDF-1.4"u8.ToArray());
+
+        var resultado = await Servicio().EnviarAsync(new clsEntradaEnviarCorreo(_comercial.Id, ["cliente@empresa.com"], Folio: "PCN-C3"), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.CotizacionNoFinalizada);
+        resultado.Error.Mensaje.Should().StartWith("Finaliza la cotización PCN-C3 antes de enviarla al cliente");
+        _enviado.Should().BeNull("no llega a MailSender");
+        costeada.EstadoEnvio.Should().Be(EstadoEnvio.SinEnviar);
     }
 
     [Fact]

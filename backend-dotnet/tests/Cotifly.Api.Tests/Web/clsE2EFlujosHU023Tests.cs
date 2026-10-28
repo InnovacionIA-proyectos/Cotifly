@@ -158,6 +158,7 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
         precio.Should().Be(2_647_059m + 857_143m);
 
         // 5. PDF y correo.
+        await api.FinalizarSiCorrespondeAsync(ana.Access, folio); // HU-036.3: como el frontend
         using (var pdf = await api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", ana.Access))
         {
             await VerificarContratoAsync(pdf, "/web/cotizaciones/{folio}/costeo/pdf", _post, HttpStatusCode.Created);
@@ -215,6 +216,7 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
         await api.ProcesarPollingAsync(folioV2);
         var precioV2 = await Escalar<decimal>($"SELECT precioFinal FROM dbo_cotifly.CotizacionesSolicitud WHERE id = '{idV2}'");
         precioV2.Should().BePositive();
+        await api.FinalizarSiCorrespondeAsync(ana.Access, folioV2); // HU-036.3: como el frontend
         using (var ganada = await api.EnviarAsync(_post, $"/web/cotizaciones/{folioV2}/resultado", ana.Access, """{"resultado":"ganada"}""",
             await EtagAsync(api, ana, folioV2)))
         {
@@ -291,6 +293,7 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
             WHERE c.id = '{id}' GROUP BY c.estadoCosteo, c.precioFinal
             """)).Should().Be("autocosteo|20000000.00|10", "10 rutas de 1.700.000 con el 15 % de Nacional");
 
+        await api.FinalizarSiCorrespondeAsync(ana.Access, folio); // HU-036.3: como el frontend
         using (var pdf = await api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", ana.Access))
         {
             await VerificarContratoAsync(pdf, "/web/cotizaciones/{folio}/costeo/pdf", _post, HttpStatusCode.Created);
@@ -561,6 +564,7 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
             await VerificarErrorNegocioAsync(seguimiento, "USAR_RESULTADO_NEXO");
         }
 
+        await api.FinalizarSiCorrespondeAsync(ana.Access, folio); // HU-036.3: como el frontend
         using (var perdida = await api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", ana.Access,
             """{"resultado":"perdida","motivo":"Precio alto","comentario":"Pidió 5 % menos"}""", await EtagAsync(api, ana, folio)))
         {

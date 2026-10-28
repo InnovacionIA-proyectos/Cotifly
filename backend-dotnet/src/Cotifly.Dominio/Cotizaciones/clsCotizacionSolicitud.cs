@@ -1124,12 +1124,19 @@ public sealed partial class clsCotizacionSolicitud
 
     /// <summary>
     /// HU-023.3 (#158): reemplaza los camiones de la ruta <paramref name="rutaId"/> por el plan nuevo del cubicador (con su resultado) y
-    /// recalcula los totales. Solo con <see cref="PuedeRecalcularCamiones"/> (nunca enviada a Nexo y sin envío en curso):
-    /// <c>ESTADO_NO_PERMITE</c> si no; <c>RUTA_INEXISTENTE</c> si la ruta no es de esta cotización.
+    /// recalcula los totales. <c>PDF_YA_ENVIADO</c> si ya se entregó al cliente o está finalizada (<see cref="ValidarCambioEtapaFinal"/>,
+    /// HU-036.3); solo con <see cref="PuedeRecalcularCamiones"/> (nunca enviada a Nexo y sin envío en curso): <c>ESTADO_NO_PERMITE</c> si
+    /// no; <c>RUTA_INEXISTENTE</c> si la ruta no es de esta cotización.
     /// </summary>
     public clsResultado<clsLineaSolicitud> ReemplazarCamionesDeRuta(Guid rutaId, clsPlanRuta plan, DateTimeOffset ahora)
     {
         ArgumentNullException.ThrowIfNull(plan);
+        if (ValidarCambioEtapaFinal() is { } cerrada)
+        {
+            // HU-036.3 (#207): entregada o finalizada, los camiones solo cambian en una versión nueva.
+            return cerrada;
+        }
+
         if (!PuedeRecalcularCamiones(ahora))
         {
             return new clsErrorDominio(clsCodigosError.EstadoNoPermite,
@@ -1258,10 +1265,23 @@ public sealed partial class clsCotizacionSolicitud
     // ------------------------------------------------------------------ Regla del PDF y etapa final (ADR-018 §11)
 
     /// <summary>
-    /// Regla del PDF (ADR-018 §11) para toda acción de la etapa final (margen, conexos, textos, re-solicitud en el mismo folio): ya
-    /// entregada al cliente (<see cref="EntregadaAlCliente"/>) responde <c>PDF_YA_ENVIADO</c>; si no, <c>null</c>.
+    /// Regla del PDF (ADR-018 §11) para toda acción que cambia el precio en la etapa final (margen, conexos, conexos en Nexo, re-solicitud
+    /// en el mismo folio, recálculo de camiones y edición en sitio): ya entregada al cliente (<see cref="EntregadaAlCliente"/>) o, desde
+    /// HU-036.3 (#207), ya finalizada (<see cref="Finalizada"/>: el comercial aceptó el precio) responde <c>PDF_YA_ENVIADO</c>; si no,
+    /// <c>null</c>. Los textos y el PDF NO usan esta regla: se permiten (y se exigen) con la cotización finalizada
+    /// (<see cref="ValidarEntregaAlCliente"/> y <see cref="ValidarFinalizadaAntesDe"/>).
     /// </summary>
-    public clsErrorDominio? ValidarCambioEtapaFinal() => EntregadaAlCliente
+    public clsErrorDominio? ValidarCambioEtapaFinal() =>
+        ValidarEntregaAlCliente()
+        ?? (Finalizada
+            ? new clsErrorDominio(clsCodigosError.PdfYaEnviado, "La cotización ya está finalizada: crea una versión nueva para cambiarla.")
+            : null);
+
+    /// <summary>
+    /// <c>PDF_YA_ENVIADO</c> solo si ya se entregó al cliente (enviada o con resultado): la regla de ADR-018 §11 tal como era antes de
+    /// HU-036, para lo que se hace DESPUÉS de finalizar y antes de entregar (el PDF y sus textos).
+    /// </summary>
+    public clsErrorDominio? ValidarEntregaAlCliente() => EntregadaAlCliente
         ? new clsErrorDominio(clsCodigosError.PdfYaEnviado,
             Ganada is null
                 ? "La cotización ya se envió al cliente: crea una versión nueva para cambiarla."

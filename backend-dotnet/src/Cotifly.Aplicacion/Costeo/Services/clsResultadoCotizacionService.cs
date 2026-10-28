@@ -20,7 +20,7 @@ public interface IClsResultadoCotizacionService
     /// <summary>
     /// Dos escrituras: primero Nexo y, solo si responde 200, <c>ganada</c>, <c>motivoRechazo</c> y <c>marcadoAt</c> en Cotifly.
     /// Errores: <c>COTIZACION_NO_ENCONTRADA</c> (404), <c>SEGUIMIENTO_INVALIDO</c> (400), <c>COSTEO_NO_LISTO</c> (409: no está en
-    /// Nexo), <c>RESULTADO_YA_DEFINIDO</c> y <c>COTIZACION_NO_ENTREGADA</c> (409) y
+    /// Nexo), <c>RESULTADO_YA_DEFINIDO</c>, <c>COTIZACION_NO_ENTREGADA</c> y (HU-036.3, #207) <c>COTIZACION_NO_FINALIZADA</c> (409) y
     /// <c>COSTEO_NEXO_NO_DISPONIBLE</c>/<c>COSTEO_NEXO_TIEMPO_AGOTADO</c> (503, sin cambio local). Si el costeo no estaba aplicado,
     /// lo relee y aplica el precio en la misma escritura del resultado (HU-013.14, ADR-018 §17). Sin <c>If-Match</c>.
     /// </summary>
@@ -133,6 +133,13 @@ public sealed class clsResultadoCotizacionService(
         {
             return new clsErrorDominio(clsCodigosError.CosteoNoListo,
                 $"La cotización {cotizacion.Folio} no tiene resultado en Nexo (chat, descartada o costeo vencido): márcalo con el seguimiento de Cotifly.");
+        }
+
+        // HU-036.3 (#207): con el costeo listo, el resultado se marca sobre el precio que aceptó el comercial. Antes del costeo siguen la
+        // perdida solo en Cotifly (HU-013.17) y la ganada pendiente de sincronizar (HU-033).
+        if (cotizacion.ValidarFinalizadaAntesDelResultado() is { } sinFinalizar)
+        {
+            return sinFinalizar;
         }
 
         // HU-033 (#199): ya hay un resultado esperando la entrega de Nexo. El mismo valor es idempotente (200 sin cambios); otro valor no.

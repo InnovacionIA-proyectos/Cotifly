@@ -203,6 +203,7 @@ public sealed class clsDetalleCotizacionEndpointsTests : IDisposable
         _nexo.CostearLinea(solicitud, 1, 800_000m);
         _nexo.Entregar(solicitud);
         await _api.ProcesarPollingAsync(folio);
+        await _api.FinalizarSiCorrespondeAsync(ana.Access, folio); // HU-036.3: como el frontend
         using (var resultado = await _api.EnviarAsync(_post, $"{Ruta(folio)}/resultado", ana.Access, """{"resultado":"ganada","motivo":"Precio"}"""))
         {
             resultado.StatusCode.Should().Be(HttpStatusCode.OK, await resultado.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));

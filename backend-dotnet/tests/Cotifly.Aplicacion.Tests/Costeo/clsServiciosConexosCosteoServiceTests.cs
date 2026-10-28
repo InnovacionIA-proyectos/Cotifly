@@ -237,6 +237,18 @@ public sealed class clsServiciosConexosCosteoServiceTests
     }
 
     [Fact]
+    public async Task HU0363_FinalizadaRespondePdfYaEnviadoSinLlamarANexo()
+    {
+        _cotizacion.Finalizar(_ana, clsCotizacionMuestra.Ahora);
+
+        var resultado = await Servicio().AgregarAsync(_ana, _cotizacion.Folio, [Item(1, Almacenamiento, 1m)], Version, null, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.PdfYaEnviado);
+        resultado.Error.Datos!["accion"].Should().Be("nueva_version");
+        _nexo.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task ConElPdfGeneradoSinEnviarLoInvalidaYLoDejaEnElHistorial()
     {
         _cotizacion.AsignarPdf("/data/pdfs/PCN-1.pdf");

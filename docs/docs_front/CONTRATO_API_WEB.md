@@ -1874,3 +1874,29 @@ El comercial **acepta el precio** de la cotización y la finaliza. Columnas prop
   }
 }
 ```
+
+**#207, los candados.**
+
+- **Después de finalizar** (como con una cotización enviada): margen, conexos (`PUT` y `POST .../servicios-conexos`), re-solicitar en el
+  mismo folio y recalcular los camiones de una ruta responden 409 `PDF_YA_ENVIADO` con la versión nueva en `detalle`
+  (`accion = nueva_version`), y `GET .../solicitud` devuelve `edicion.modo = nueva_version`. Los textos y el PDF SÍ se permiten
+  (hasta enviarla).
+- **Antes de finalizar:** `POST .../costeo/pdf`, `POST .../enviar`, `POST .../costeo/textos/redactar`, `PUT .../costeo/textos` y
+  `POST .../resultado` (solo con el costeo listo) responden 409 `COTIZACION_NO_FINALIZADA`. Excepciones: las enviadas o con resultado
+  anteriores a HU-036 (sin backfill), las del chat, la perdida antes del costeo (`pendiente_costeo`, `error_envio`) y `/seguimiento` en
+  `descartada` y `costeo_vencido`. El asistente queda bloqueado por las mismas reglas del dominio.
+
+<!-- respuesta: POST /web/cotizaciones/{folio}/costeo/pdf 409 -->
+```json
+{
+  "error": {
+    "codigo": "COTIZACION_NO_FINALIZADA",
+    "mensaje": "Finaliza la cotización PCN-900555111-DG-26102026-001 antes de generar el PDF: acepta su precio con \"Finalizar cotización\".",
+    "detalle": {
+      "accion": "finalizar",
+      "metodo": "POST",
+      "endpoint": "/web/cotizaciones/PCN-900555111-DG-26102026-001/finalizar"
+    }
+  }
+}
+```

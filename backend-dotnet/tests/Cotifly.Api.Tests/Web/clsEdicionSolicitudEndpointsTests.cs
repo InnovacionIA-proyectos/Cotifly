@@ -172,6 +172,7 @@ public sealed class clsEdicionSolicitudEndpointsTests : IDisposable
     public async Task YaConResultadoSeCreaLaVersionNuevaYLaOriginalNoCambia()
     {
         var (sesion, folio) = await EntregadaAsync();
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
         using (var resultado = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access,
                    """{"resultado":"ganada","motivo":"Precio"}"""))
         {

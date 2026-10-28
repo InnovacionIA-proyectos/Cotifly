@@ -71,11 +71,15 @@ public sealed class clsReSolicitudCosteoEndpointsTests : IDisposable
     public async Task EntregadaConPdfSinEnviarSeReSolicitaEnElMismoFolioOlvidaElPrecioEInvalidaElPdf()
     {
         var (sesion, folio) = await EntregadaAsync();
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
         using (var pdf = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access))
         {
             pdf.StatusCode.Should().Be(HttpStatusCode.Created);
         }
 
+        // HU-036 (sin backfill): el PDF se generó antes del script 14 y la cotización quedó sin finalizar; con ella finalizada el cambio
+        // sería 409 PDF_YA_ENVIADO (clsCandadosFinalizadaEndpointsTests).
+        await _api.DesfinalizarComoAnteriorAHu036Async(folio);
         using var respuesta = await ReSolicitarAsync(sesion, folio, """{"motivo":"El cliente pidió actualizar el valor"}""", await EtagAsync(sesion, folio));
 
         var json = await VerificarContratoAsync(respuesta, Ruta, _post, HttpStatusCode.OK);

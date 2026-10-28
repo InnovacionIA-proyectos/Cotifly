@@ -102,6 +102,7 @@ public sealed class clsServiciosConexosEndpointsTests : IDisposable
     {
         var (sesion, folio, solicitud) = await CosteadaAsync();
         var etag = await EtagAsync(sesion, folio);
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
         using var pdf = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
 
         using var sinIfMatch = await AgregarAsync(sesion, folio, Cuerpo(1, Almacenamiento, 1), null);

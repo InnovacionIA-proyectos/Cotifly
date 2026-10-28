@@ -210,6 +210,7 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
     [When("{string} genera el PDF de la licitación {string}")]
     public async Task CuandoGeneraPdf(string alias, string licitacion)
     {
+        await costeo.FinalizarSiCorrespondeAsync(alias, Folio(licitacion)); // HU-036.3: finaliza antes del PDF
         await web.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{Folio(licitacion)}/costeo/pdf", web.Sesion(alias).Access);
         web.UltimoEstado.Should().Be(HttpStatusCode.Created, web.UltimoCuerpo);
         var ruta = new Uri(new Uri("http://localhost"), web.UltimoJson().GetProperty("pdf_url").GetString()!).AbsolutePath;

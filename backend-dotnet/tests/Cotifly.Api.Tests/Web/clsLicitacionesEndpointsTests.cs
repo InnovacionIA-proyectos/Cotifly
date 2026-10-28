@@ -351,6 +351,7 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
         var folio = (await CrearAsync(sesion, clsPliegoMuestra.Lineas(), clsPliegoMuestra.Excel(), HttpStatusCode.Created)).GetProperty("folio").GetString()!;
         var solicitud = _nexo.SolicitudesCreadas[^1];
 
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
         using (var temprano = await _api.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access))
         {
             temprano.StatusCode.Should().Be(HttpStatusCode.Conflict, "sin todas las líneas costeadas no hay PDF del pliego");
@@ -361,6 +362,7 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
         _nexo.CostearLinea(solicitud, 2, 850_000m);
         await _api.ProcesarPollingAsync(folio);
 
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
         using var respuesta = await _api.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
         var json = await VerificarContratoAsync(respuesta, "/web/cotizaciones/{folio}/costeo/pdf", HttpMethod.Post, HttpStatusCode.Created);
         var ruta = new Uri(new Uri("http://localhost"), json.GetProperty("pdf_url").GetString()!).AbsolutePath;
@@ -381,6 +383,7 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
         _nexo.CostearLinea(_nexo.SolicitudesCreadas[^1], 0, 1_000_003m);
         await _api.ProcesarPollingAsync(folio);
 
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
         using var respuesta = await _api.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
         var json = await VerificarContratoAsync(respuesta, "/web/cotizaciones/{folio}/costeo/pdf", HttpMethod.Post, HttpStatusCode.Created);
         var ruta = new Uri(new Uri("http://localhost"), json.GetProperty("pdf_url").GetString()!).AbsolutePath;
