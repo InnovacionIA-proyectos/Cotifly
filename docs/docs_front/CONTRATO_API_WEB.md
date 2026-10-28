@@ -631,6 +631,7 @@ primer nivel son los de la ruta 1:
       "estado_costeo": "autocosteo",
       "peso_kg": 28500.5,
       "precio_final_linea": 5294118,
+      "costo_final": 4500000,
       "margen_aplicado": 0.15,
       "margen_sugerido": 0.15,
       "origen_margen": "politica_linea",
@@ -657,6 +658,7 @@ primer nivel son los de la ruta 1:
       "estado_costeo": "autocosteo",
       "peso_kg": 9000,
       "precio_final_linea": 3529412,
+      "costo_final": 3000000,
       "margen_aplicado": 0.15,
       "margen_sugerido": 0.18,
       "origen_margen": "negociado",
@@ -733,6 +735,15 @@ Nexo en vez del código (`Estacas`): mostrarlo tal cual. Si la Mesa cambia de ve
 tenía, `porcentaje_llenado_volumen` y `porcentaje_llenado_peso` pasan a `null` (el cubicador los calculó para el vehículo anterior y ya
 no corresponden; tampoco salen en el Excel de la licitación); `peso_kg` y `volumen_total_m3` se conservan porque son de la carga. Un
 cambio solo de escritura o un camión vacío que la Mesa llena no los toca, y si la Mesa vuelve al vehículo original no se recuperan.
+
+**Costo bruto de la ruta (HU-039.1, #218).** Cada `rutas[]` trae `costo_final`: el costo bruto que costeó Nexo para la ruta (fletes +
+retorno + levante + conexos de los camiones que cuentan, **sin margen**). Va **siempre en COP**, también en una cotización en USD (el
+costeo de Nexo es en pesos y no se convierte; `precio_final_linea` sí va en dólares), y es `null` en los mismos casos que
+`precio_final_linea` (sin costeo o ruta `rechazada`). En el ejemplo, 4.500.000 y 3.000.000 (5.294.118 y 3.529.412 con el 15 %). Es solo
+del dueño: sale aquí, en las respuestas de margen, conexos y recálculo de vehículos y en `costeo` del detalle por folio (§8.14), donde
+el gerente en solo consulta lo recibe siempre en `null`. No hay desglose ni costo por camión o por conexo, y no sale en "Mis
+cotizaciones", el listado regional, el PDF, el correo, el Excel ni el asistente. Es una reversa de la regla de ADR-015 §5 ("el costo
+bruto nunca llega al comercial"), confirmada por la Gerencia Comercial el 2026-10-27.
 
 `deadline` y `score_prioridad` (HU-018.1, #155) son de la **cabecera** (toda la solicitud), no de cada ruta, y vienen siempre
 (también en las respuestas de las mutaciones): `deadline` es la fecha límite del formulario en UTC (`null` si no se dio) y
@@ -1485,6 +1496,9 @@ frontend ya conoce, con sus mismas reglas y nombres:
   resultado, edición, generar el PDF, correo) le siguen respondiendo 404 porque son del dueño; ocultarlas o deshabilitarlas (descargar
   el PDF de `pdf_url` sí puede, §5.6 de la guía). Si la regional del
   gerente no se puede comprobar, se niega. Cualquier otro usuario recibe 404, igual que si el folio no existiera.
+- **Costo bruto solo para el dueño (HU-039.1, #218).** `costeo.rutas[].costo_final` (§8.6, siempre en COP) lo ve el dueño; con
+  `solo_lectura = true` sale siempre en `null`. Es la opción conservadora: hasta HU-039 el detalle nunca le mostraba costos al gerente
+  (las métricas regionales solo le muestran agregados).
 - **Solo lee lo guardado.** No consulta NEXO ni dispara el polling: el estado del costeo es el último que leyó el polling. Para ver un
   cambio de NEXO, volver a pedir el detalle más tarde.
 - **Diferencias con los endpoints de origen** (por no consultar NEXO): en `captura[].servicios_conexos[]` el `id_servicio_conexo` es el
@@ -1565,6 +1579,7 @@ frontend ya conoce, con sus mismas reglas y nombres:
         "estado_costeo": "entregada",
         "peso_kg": 28500.5,
         "precio_final_linea": 5294118,
+        "costo_final": 4500000,
         "margen_aplicado": 0.15,
         "margen_sugerido": 0.15,
         "origen_margen": "politica_linea",
@@ -1591,6 +1606,7 @@ frontend ya conoce, con sus mismas reglas y nombres:
         "estado_costeo": "entregada",
         "peso_kg": 12500,
         "precio_final_linea": 3529412,
+        "costo_final": 3000000,
         "margen_aplicado": 0.15,
         "margen_sugerido": 0.15,
         "origen_margen": "politica_linea",

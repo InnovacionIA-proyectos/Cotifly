@@ -139,8 +139,11 @@ Reglas de dinero que la UI debe respetar:
 - El **PDF** (de una ruta o del pliego) ya no sigue esa excepción (HU-033, #199): muestra el **valor final de cada ruta** (transporte y
   conexos incluidos, sin desglose; los conexos se listan como incluidos, sin precio) y el total general "VALOR TOTAL DE LA COTIZACIÓN"
   (en el resumen del pliego, "VALOR TOTAL DE LA COTIZACIÓN (N RUTAS)").
-- El costo de NEXO **nunca** llega al frontend (salvo `costo` de `DatosNuevaVersion`, que es informativo, y los agregados de las
-  métricas).
+- El costo de NEXO **nunca** llega al frontend (salvo `costo` de `DatosNuevaVersion`, que es informativo, los agregados de las
+  métricas y, desde HU-039.1, #218, el costo bruto de cada ruta en `rutas[].costo_final` del costeo, solo para el dueño).
+- **`rutas[].costo_final` va SIEMPRE en COP, también en una cotización en USD** (el costeo de NEXO es en pesos y no se convierte):
+  formatearlo como pesos (`$ 4.500.000`), nunca con la moneda de la cotización, y no compararlo con `precio_final_linea` en USD sin
+  convertir. Es el costo bruto (sin margen) y sale `null` cuando la ruta no tiene precio.
 - En USD, `precio_final` y el `precio` de los conexos llegan en dólares, convertidos con la `trm_aplicada` fijada al crear la
   cotización.
 
@@ -1654,6 +1657,7 @@ polling.
       "destino": "Bogotá D.C.",
       "estado_costeo": "autocosteo",
       "precio_final_linea": 5294118,
+      "costo_final": 4500000,
       "margen_aplicado": 0.15,
       "margen_sugerido": 0.15,
       "origen_margen": "politica_linea",
@@ -1684,6 +1688,7 @@ polling.
       "destino": "Yumbo",
       "estado_costeo": "autocosteo",
       "precio_final_linea": 3529412,
+      "costo_final": 3000000,
       "margen_aplicado": 0.15,
       "margen_sugerido": 0.18,
       "origen_margen": "negociado",
@@ -2317,7 +2322,7 @@ hace falta combinar `GET /web/mis-cotizaciones` (cliente, NIT, `estado_envio`, `
 | Campo | Modelo | Contenido |
 |---|---|---|
 | `cotizacion` | `CotizacionResumen` (4.5.1) | Cabecera: folio, versión, cliente y NIT, `estado_envio`, `estado_costeo`, `ganada` y `motivo_rechazo`, `deadline` (UTC), `score_prioridad`, moneda y TRM, `pdf_url`; `comercial` (el dueño) siempre viene |
-| `costeo` | `CosteoCotizacion` (4.4.3) | Rutas con camiones (vehículo, porcentajes de llenado, estado), mercancías, conexos con precio y `estado_nexo`, margen, precio y avisos; `pdf_desactualizado`, `textos`, `row_version` |
+| `costeo` | `CosteoCotizacion` (4.4.3) | Rutas con camiones (vehículo, porcentajes de llenado, estado), mercancías, conexos con precio y `estado_nexo`, margen, precio, costo bruto en COP (`costo_final`, HU-039.1: `null` siempre para el gerente en `solo_lectura`) y avisos; `pdf_desactualizado`, `textos`, `row_version` |
 | `captura` | `RutaEditable[]` (4.4.10) | Cada ruta como se capturó: municipios por id y nombre y condiciones. Se cruza con `costeo.rutas[]` por `linea_solicitud_id` |
 | `tipo`, `notas` | | `spot` / `licitacion` (`null` en las del chat) y las notas |
 | `fechas` | `FechasCotizacion` | `created_at`, `updated_at`, `costeo_enviado_at`, `costeo_listo_at`, `marcado_at` (UTC, `null` si no aplica) |
@@ -3220,6 +3225,7 @@ Notación: `?` = puede ser `null` (el campo viene igual). **(omitible)** = el ca
 | `origen`, `destino` | string? | — |
 | `estado_costeo` | enum? | Estado de la ruta |
 | `precio_final_linea` | número? | Precio de la ruta (con sus conexos) |
+| `costo_final` | número? | HU-039.1 (#218): costo bruto de la ruta (fletes + retorno + levante + conexos, **sin margen**), **siempre en COP** aunque la cotización esté en USD. `null` cuando `precio_final_linea` es `null` (sin costeo o `rechazada`). Solo el dueño: en el detalle de un gerente (`solo_lectura = true`) siempre `null`. Sin desglose ni costo por camión o conexo |
 | `margen_aplicado`, `margen_sugerido`, `origen_margen` | número?, número?, enum? | Por debajo del sugerido, el ajuste exige justificación |
 | `peso_kg` | número? | Peso declarado de la ruta |
 | `peso_con_tara_kg` | número? | HU-030.1 (#184): peso total con tara de una ruta `Contenedor` (el que escribió el comercial); `null` = sin tara |
@@ -3637,6 +3643,7 @@ fila_excel, campo, codigo, mensaje}`.
 | 59 | **HU-035.1 (#202, ADR-024): nuevo `POST /web/mercancias/analizar-excel`.** Lee en Cotifly, **sin NEXO**, el Excel de mercancías de una ruta y devuelve la grilla cruda `AnalisisExcelMercancias` (misma forma de `AnalisisExcel` más `total_hojas`, `hojas_truncadas` y, por hoja, `filas_truncadas`, `total_columnas`, `columnas_truncadas`, `celdas_recortadas` y `oculta`; `filas_excel` siempre viene; las hojas ocultas en Excel se leen igual y vienen con `oculta = true`). Celdas con formato estable (números con punto, fechas ISO, fórmulas con su valor guardado). Código de mercancía sugerido opcional, como en la licitación. Archivos corruptos o maliciosos: 400 `EXCEL_INVALIDO` o `ARCHIVO_DEMASIADO_GRANDE` con `detalle.motivo` (nunca 500); 503 `SERVICIO_OCUPADO` con el cupo lleno. Mismo límite de 12 MB que las licitaciones. Sin códigos de error nuevos | Agrega | Para "Importar mercancías desde Excel" en las líneas de la solicitud usar este endpoint (no `licitaciones/analizar-excel`); reutilizar la pantalla de mapeo; mostrar `filas_excel[i]` y avisar el truncado; preseleccionar una hoja visible y marcar las de `oculta = true`; leer `detalle.motivo` en el 400 |
 | 60 | **HU-034.1 (#201, parte B): ganancias y costeo por mes.** `PuntoSerieMensual` (`serie_mensual` de `GET /web/metricas/regional` y de `GET /web/metricas/comercial`) trae tres campos **nuevos** por mes: `costeo_total`, `costeo_ganadas` y `ganancias`, con la definición exacta de `IndicadoresMetricas` (COP o USD × TRM; sin las rutas rechazadas por la Mesa; valores de la versión vigente y lo ganado de la versión ganada; mes de Bogotá de la primera creación). La suma de los meses es exactamente el valor de `indicadores` del mismo periodo. Ningún campo existente cambia | Agrega | Reemplazar la maqueta de "Ganancias por mes" (barras con `ganancias` de cada punto) y de "Ganancias del mes actual vs. mes anterior" (puntos del mes en curso y del anterior, buscados por `mes`) por los datos reales; no recalcular ganancias en el frontend |
 | 61 | **HU-035.2 (#213): el Excel del pliego pasa por los controles del Excel de mercancías antes de NEXO.** `POST /web/licitaciones/analizar-excel` (y la lectura del archivo en `POST /web/licitaciones`) revisan el archivo con la misma pieza que `POST /web/mercancias/analizar-excel`: firma, 1000 entradas, 64 MB descomprimidos, 1.000.000 de elementos XML (sin DTD) y un cupo de 4 lecturas simultáneas **compartido** con el Excel de mercancías. Un archivo corrupto o malicioso es 400 `EXCEL_INVALIDO` o `ARCHIVO_DEMASIADO_GRANDE` con `detalle.motivo` (los mismos motivos de la fila 59) y **ya no llega a NEXO**; un libro que Cotifly no puede abrir también se rechaza antes de NEXO (`LIBRO_ILEGIBLE`; antes lo rechazaba NEXO con `EXCEL_INVALIDO` sin motivo). **Nuevo:** 503 `SERVICIO_OCUPADO` con `Retry-After` en el análisis y al crear una licitación con archivo. `filas_excel` se calcula para las primeras 20 hojas. **`GET /web/licitaciones/{folio}/excel`** abre el original guardado con los mismos controles y dentro del mismo cupo: un original guardado antes de este cambio que no los pasa responde 400 `EXCEL_INVALIDO` o `ARCHIVO_DEMASIADO_GRANDE` con `detalle.motivo` (el mismo 400 de un original ilegible, nunca un 500), y el cupo lleno 503 `SERVICIO_OCUPADO` con `Retry-After` (nuevo en este endpoint). Sin códigos de error nuevos | Cambia | Leer `detalle.motivo` en el 400 del análisis (mismo manejo que el Excel de mercancías); tratar el 503 `SERVICIO_OCUPADO` reintentando tras `Retry-After`, también en la descarga del Excel de la licitación |
+| 62 | **HU-039.1 (#218): costo bruto de la ruta para el dueño.** `RutaCosteo` (`rutas[]` de `GET /web/cotizaciones/{folio}/costeo`, de las demás respuestas `CosteoCotizacion` del dueño: margen, conexos, recálculo de vehículos, y de `costeo.rutas[]` de `GET /web/cotizaciones/{folio}`) trae el campo **nuevo** `costo_final`: el costo bruto de la ruta que costeó NEXO (fletes + retorno + levante + conexos, sin margen), **siempre en COP aunque la cotización esté en USD**, y `null` en los mismos casos que `precio_final_linea` (sin costeo o ruta `rechazada`). Solo el dueño: en el detalle de un gerente (`solo_lectura = true`) sale siempre `null`. No hay desglose ni costo por camión o conexo, y el costo no sale en "Mis cotizaciones", el listado regional, el PDF, el correo, el Excel ni el asistente. Reversa de la regla "el costo bruto nunca llega al comercial" (ADR-015 §5), confirmada por la Gerencia Comercial el 2026-10-27. Ningún campo existente cambia | Agrega | Conectar el chip "Total costeo" a `rutas[].costo_final` (o a su suma, solo si todas las rutas cotizables lo traen); formatearlo siempre como pesos, sin la moneda de la cotización; "—" con `null`; no mostrarlo con `solo_lectura` |
 | 64 | **HU-037 (#210, #211): rol `director`, alcance de todas las regionales y `GET /web/regionales`.** (a) Nuevo valor `director` en `rol` (`user.rol` del login y claim `rol` del token) y en `comerciales[].rol` del tablero. Con varios roles de ClientePro gana `director` > `gerente_comercial` > `comercial`. El director usa todo lo del gerente (tablero, listado regional, políticas de margen) y su propia consola de comercial. (b) `GET /web/metricas/regional` y `GET /web/cotizaciones/regional` aceptan `?regional=` (opcional): el director ve **todas** sin él (`regional` y `fuente_regional` en `null`) o solo la elegida con él (`fuente_regional` en `null`); `usuario_id` del director puede ser de cualquier regional. El gerente sigue viendo solo la suya: `?regional=` con la suya se acepta y con otra responde **403 `REGIONAL_NO_PERMITIDA`** (`ErrorNegocio`, código nuevo). (c) **Nuevo** `GET /web/regionales` (4.11.3): todas para el director, la suya para el gerente, 403 para el comercial. (d) El detalle por folio y el PDF de una cotización de cualquier regional son visibles para el director (solo consulta). (e) `regional` y `fuente_regional` de `CotizacionesRegional` y `MetricasRegional` pasan a ser anulables (solo para el director). Son **54 endpoints** | Agrega / Cambia | Tratar `director` como un gerente en el menú; para el director, selector de regional con la opción "Todas" (sin `regional`) y las de `GET /web/regionales`, y mostrar "Todas las regionales" cuando `regional` venga `null`; manejar el 403 `REGIONAL_NO_PERMITIDA` (no ofrecer otras regionales al gerente); tipar `regional` y `fuente_regional` como `string \| null` |
 
 ---
@@ -3692,7 +3699,8 @@ fila_excel, campo, codigo, mensaje}`.
       `completada`, `fallida` y 404 = volver a calcular), el 503 `CUBICADOR_OCUPADO` con `Retry-After`, los 400 con `detalle.item` y
       `detalle.campo` y `CUBICADOR_PETICION_RECHAZADA`.
 - [ ] Polling del costeo cada 15 a 30 s con las reglas de 3.4, pausado con la pestaña oculta.
-- [ ] Vista de costeo por ruta: precio total = `precio_final` (no sumar conexos), margen y sugerido por ruta, camiones con nombre del catálogo,
+- [ ] Vista de costeo por ruta: precio total = `precio_final` (no sumar conexos), margen y sugerido por ruta, costo bruto de la ruta
+      (`costo_final`, siempre en COP; "—" con `null`; oculto en el detalle del gerente), camiones con nombre del catálogo,
       `mensaje_sin_seleccion`, `aviso_margen`, `aviso_conexos_nexo`; porcentajes de llenado en `null` → "—".
 - [ ] Ajuste de margen con justificación por debajo del sugerido; selector de ruta con `RUTA_REQUERIDA`.
 - [ ] Conexos: buscador, agregar (POST) y quitar o cambiar cantidad (PUT con `conexos`); manejo de `agregado_en_nexo`.
@@ -3733,6 +3741,16 @@ fila_excel, campo, codigo, mensaje}`.
 - **Nuevo** `GET /web/regionales` (4.11.3) para el selector. El gerente no puede pedir otra regional: 403 `REGIONAL_NO_PERMITIDA` (código
   nuevo). `regional` y `fuente_regional` pueden venir `null` (director viendo todas).
 - Base de datos: `db/scripts/15_rol_director.sql` (Datos, #209). Son **54 endpoints**. Sección 7, fila 64 (la 62 y la 63 son de otras HUs).
+
+**2026-10-26 (rama `218-costo-bruto-ruta`, HU-039.1, #218, ADR-015 §5).** Costo bruto de la ruta para el dueño (fila 62 de §7):
+
+- `RutaCosteo.costo_final` (nuevo, número o `null`) en `GET /web/cotizaciones/{folio}/costeo`, en las demás respuestas
+  `CosteoCotizacion` del dueño y en `costeo.rutas[]` del detalle por folio: fletes + retorno + levante + conexos de la ruta, sin margen.
+- **Unidad: siempre COP**, también en una cotización en USD (el `precio_final_linea` sí va en dólares).
+- `null` en los mismos casos que `precio_final_linea`; siempre `null` para el gerente en solo consulta (`solo_lectura = true`).
+- No sale por ningún otro camino: "Mis cotizaciones", listado regional, PDF, correo, Excel de la licitación y asistente siguen sin
+  costos (las métricas conservan sus agregados de HU-010 y HU-034).
+- Reversa de la regla "el costo bruto nunca llega al comercial" de ADR-015 §5, confirmada por Sara (Gerencia Comercial) el 2026-10-27.
 
 **2026-10-26 (rama `213-excel-licitacion-endurecido`, HU-035.2, #213, ADR-024 §HU-035.2).** Endurecimiento del Excel del pliego:
 
