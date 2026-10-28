@@ -60,7 +60,7 @@ public sealed class clsCapturaRutasTests
         var linea = Ruta() with { CiudadLevanteMunicipioId = levanteId, OrigenMunicipioId = origenId, CiudadLevanteContenedor = levante, Origen = origen };
 
         linea.LevanteDistintoDelOrigen.Should().Be(distinto);
-        (linea with { ValorAprovisionamiento = 150_000m }).ErroresCondicionales().Any(e => e.Campo == "valor_aprovisionamiento").Should().Be(!distinto);
+        (linea with { ValorAprovisionamiento = 150_000m }).ErroresCondicionales().Any(e => e.Campo == "valor_levante_contenedor").Should().Be(!distinto);
     }
 
     [Fact]

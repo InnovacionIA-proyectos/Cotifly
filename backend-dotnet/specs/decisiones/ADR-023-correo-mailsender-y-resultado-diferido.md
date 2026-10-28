@@ -160,6 +160,47 @@ y no destructivo; obligatorio ("falta 13" en `/health/ready`).
   `pendiente_costeo` con la solicitud que NEXO ya no reconoce (404) queda `solo_cotifly`, como en `error_envio`; y el 404
   `COTIZACION_NO_ENCONTRADA` de NEXO al marcar es 409 `COTIZACION_NEXO_NO_ENCONTRADA`, no el 404 "no es tuya".
 
+### 9. Seguridad de las cabeceras y tope de destinatarios (#228, E2E real 2026-10-27B)
+
+**Problema (DEF-1027B-2).** `POST .../enviar` aceptó `asunto = "Hola\r\nBcc: intruso@ejemplo.invalid"`, lo pasó tal cual a MailSender y
+el relay lo encoló. MailSender guarda el asunto como texto y no valida caracteres de control; con el modo `ninguno` (producción) un
+salto de línea en una cabecera permite inyectar otras (un `Bcc` oculto, un `Reply-To`) o romper el asunto. También aceptó 60
+destinatarios en `para`.
+
+**Decisión.**
+
+- **Rechazar, no sanear.** Lo que viaja como cabecera (asunto y direcciones) se valida TAL COMO LLEGA, antes de recortar. Un carácter de
+  control (categoría Unicode `Cc`: CR, LF, NUL, tabulador, U+007F a U+009F con NEL U+0085) o un separador de línea o de párrafo (U+2028,
+  U+2029) es 400 `CORREO_INVALIDO` (`ErrorWeb`), también si solo está al final (antes el `Trim` lo limpiaba en silencio). Sanear
+  cambiaría lo que el comercial escribió sin decírselo; rechazar le muestra el error en el formulario. El `cuerpo` no es una cabecera: va
+  escapado dentro del HTML y admite saltos de línea.
+- **Direcciones estrictas** (`clsCabecerasCorreo.EsDireccionValida`, la usa `clsCorreoDestinatario.Crear`): UNA dirección simple
+  `parte-local@dominio`, sin nombre para mostrar, comillas, comentarios, ángulos, espacios, comas ni punto y coma (MailSender separa una
+  entrada con `,` o `;` en varias). Parte local de 1 a 64 caracteres (letras, incluidas las no ASCII, dígitos y los símbolos de un `atom`
+  del RFC 5322; puntos que no van al borde ni seguidos); dominio de hasta 255 con al menos dos etiquetas de 1 a 63 (letras, dígitos y
+  guiones que no van al borde; sin literales IP); hasta 320 en total. Los caracteres de formato (ancho cero, bidi) tampoco pasan.
+- **Tope de destinatarios entre `para` y `cc`: 10 por defecto, configurable** (decisión del 2026-10-27; antes 20 fijo). MailSender no
+  tiene tope (`EmailRequestValidator` solo valida el formato y el tamaño de los adjuntos), así que lo fija Cotifly: 10 cubren el caso
+  comercial (comprador, jefe, copias internas) y cortan el uso como lista de distribución. Se ajusta sin desplegar código con
+  `Correo__MaximoDestinatarios` (`clsOpcionesCorreo.MaximoDestinatarios`, de 1 a 100; fuera de rango la API no arranca, como el resto
+  de las opciones de correo) y `detalle.maximo` trae siempre el valor vigente. La copia oculta al comercial no cuenta. Pasado el tope, 400 `ErrorNegocio` `CORREO_DEMASIADOS_DESTINATARIOS` (código
+  nuevo, para poder llevar `detalle = {maximo, recibidos}`; `CORREO_INVALIDO` sale como `ErrorWeb`, sin `detalle`).
+  El tope se aplica al redactar (envío y vista previa): el reintento (`POST .../correos/{id}/reintentar`) pide a MailSender el mismo
+  correo que ya aceptó, con sus destinatarios, y no lo vuelve a medir contra el tope vigente (bajar `Correo__MaximoDestinatarios` no
+  bloquea reintentar un envío anterior).
+- **Misma validación en la vista previa** (`clsCorreoService.ValidarBorrador`), después de comprobar el dueño; sin `para` no se exige
+  (se precargan los destinatarios previos).
+- **Orden en el envío:** dueño (404), `CORREO_DESHABILITADO` (503), asunto con controles, destinatarios con controles, tope, formato de
+  las direcciones (y al menos un `para`), largos. Ninguno llama a MailSender ni toca el estado de envío.
+- **Defensa en profundidad en el transporte.** `clsTransporteMailSender.VerificarCabeceras` revisa, antes de armar el POST multipart,
+  el `From` elegido, `To`, `Cc`, `Bcc`, `Subject`, el nombre del adjunto y el `X-Correlation-ID`. Si algo se coló (otro llamador, un dato
+  viejo de la base, la protección), lanza `clsEnvioCorreoException` NO incierta: el caso de uso deshace la reserva, deja la fila
+  `fallido` y responde 400 `CORREO_ENVIO_FALLIDO`. El log nombra el campo, nunca su valor.
+
+**Alternativas descartadas.** Sanear (quitar los saltos o cambiarlos por espacios): oculta el problema y cambia el asunto sin avisar.
+Codificar el asunto (RFC 2047) en Cotifly: es trabajo de MailSender y del relay, y no protege las direcciones. Delegar todo a MailSender:
+hoy no valida controles y es otro repositorio (queda como recomendación para su equipo).
+
 ## Consecuencias
 
 - Hay que cargar en Dokploy `Correo__MailSender__UrlBase` y el buzón de pruebas, aplicar el 13 y, para producción, autorizar la IP de

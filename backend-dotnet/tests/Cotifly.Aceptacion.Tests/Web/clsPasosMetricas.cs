@@ -65,7 +65,8 @@ public sealed class clsPasosMetricas(clsContextoWeb web)
 
     /// <summary>
     /// HU-021.10: reemplaza los valores de la ruta 1 y agrega las demás rutas con su línea de negocio (por nombre); la cabecera queda con la
-    /// suma de los precios, como la deja el dominio.
+    /// suma de los precios, como la deja el dominio. HU-016.1 (#154): con la columna <c>politica</c>, el <c>margenPoliticaSugerido</c> de
+    /// cada ruta (vacía = <c>NULL</c>); sin ella, la ruta 1 conserva el suyo y las demás quedan sin política.
     /// </summary>
     [Given("que la cotización {string} tiene estas rutas:")]
     public async Task DadoLasRutas(string alias, DataTable tabla)
@@ -77,9 +78,11 @@ public sealed class clsPasosMetricas(clsContextoWeb web)
         {
             var linea = $"(SELECT id FROM dbo_cotifly.MargenesPolitica WHERE lineaNegocio = N'{fila["linea"]}')";
             var (costo, precio, margen) = (Numero(fila["costo"]) ?? "NULL", Numero(fila["precio"]) ?? "NULL", Numero(fila["margen"]) ?? "NULL");
+            var conPolitica = tabla.Header.Contains("politica");
+            var politica = conPolitica ? Numero(fila["politica"]) ?? "NULL" : "NULL";
             sentencias.AppendLine(fila["orden"] == "1"
-                ? $"UPDATE dbo_cotifly.CotizacionLineasSolicitud SET lineaNegocioId = {linea}, costoFinal = {costo}, precioFinalLinea = {precio}, margenAplicado = {margen} WHERE cotizacionSolicitudId = @id AND orden = 1;"
-                : $"INSERT INTO dbo_cotifly.CotizacionLineasSolicitud (cotizacionSolicitudId, orden, lineaNegocioId, costoFinal, precioFinalLinea, margenAplicado) VALUES (@id, {int.Parse(fila["orden"], CultureInfo.InvariantCulture)}, {linea}, {costo}, {precio}, {margen});");
+                ? $"UPDATE dbo_cotifly.CotizacionLineasSolicitud SET lineaNegocioId = {linea}, costoFinal = {costo}, precioFinalLinea = {precio}, margenAplicado = {margen}{(conPolitica ? $", margenPoliticaSugerido = {politica}" : string.Empty)} WHERE cotizacionSolicitudId = @id AND orden = 1;"
+                : $"INSERT INTO dbo_cotifly.CotizacionLineasSolicitud (cotizacionSolicitudId, orden, lineaNegocioId, costoFinal, precioFinalLinea, margenAplicado, margenPoliticaSugerido) VALUES (@id, {int.Parse(fila["orden"], CultureInfo.InvariantCulture)}, {linea}, {costo}, {precio}, {margen}, {politica});");
         }
 
         sentencias.AppendLine("UPDATE dbo_cotifly.CotizacionesSolicitud SET precioFinal = (SELECT SUM(precioFinalLinea) FROM dbo_cotifly.CotizacionLineasSolicitud WHERE cotizacionSolicitudId = @id) WHERE id = @id;");
@@ -146,6 +149,28 @@ public sealed class clsPasosMetricas(clsContextoWeb web)
         ArgumentNullException.ThrowIfNull(tabla);
         web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);
         var indicadores = web.UltimoJson().GetProperty("indicadores");
+        ComprobarIndicadores(indicadores, tabla);
+    }
+
+    /// <summary>
+    /// HU-016.1 (#154, validación): los <c>indicadores</c> de un comercial en <c>comerciales[]</c> de <c>/web/metricas/regional</c>, con la
+    /// misma tabla <c>campo | valor</c> de "los indicadores son".
+    /// </summary>
+    [Then("los indicadores de {string} en la lista de comerciales son:")]
+    public void EntoncesLosIndicadoresDelComercial(string alias, DataTable tabla)
+    {
+        ArgumentNullException.ThrowIfNull(tabla);
+        web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);
+        var id = web.Sesion(alias).UsuarioId.ToString();
+        var indicadores = web.UltimoJson().GetProperty("comerciales").EnumerateArray()
+            .Single(c => string.Equals(c.GetProperty("usuario_id").GetString(), id, StringComparison.OrdinalIgnoreCase))
+            .GetProperty("indicadores");
+        ComprobarIndicadores(indicadores, tabla);
+    }
+
+    /// <summary>Cada fila <c>campo | valor</c> contra <paramref name="indicadores"/> (<c>null</c> = JSON null).</summary>
+    private static void ComprobarIndicadores(JsonElement indicadores, DataTable tabla)
+    {
         foreach (var fila in tabla.Rows)
         {
             var valor = indicadores.GetProperty(fila["campo"]);

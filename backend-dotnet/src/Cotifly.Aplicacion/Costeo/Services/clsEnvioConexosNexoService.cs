@@ -41,6 +41,14 @@ public interface IClsEnvioConexosNexoService
     /// tiene solicitud de Nexo.
     /// </summary>
     Task<IReadOnlyDictionary<(Guid Ruta, string Conexo), string>> EstadosAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// #228: deja como <see cref="clsEnvioConexosNexo.Enviado"/> los conexos de las rutas que <paramref name="cotizacionNexo"/> (recién leída
+    /// después de <c>POST .../costeo/servicios-conexos</c>) ya muestra y que todavía no figuraban enviados: Nexo los creó en ese momento, así
+    /// que no quedan <c>pendiente</c> esperando un polling que, en una cotización entregada, ya no pasa. No guarda: el registro sale con la
+    /// unidad de trabajo del llamador. Nunca llama a Nexo.
+    /// </summary>
+    Task RegistrarConfirmadosAsync(clsCotizacionSolicitud cotizacion, clsCotizacionNexo cotizacionNexo, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -189,6 +197,34 @@ public sealed class clsEnvioConexosNexoService(
         }
 
         return visibles;
+    }
+
+    public async Task RegistrarConfirmadosAsync(
+        clsCotizacionSolicitud cotizacion, clsCotizacionNexo cotizacionNexo, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        ArgumentNullException.ThrowIfNull(cotizacionNexo);
+        if (cotizacion.SolicitudNexoId is not { } solicitud || cotizacion.Rutas.All(r => r.Conexos.Count == 0))
+        {
+            return;
+        }
+
+        var registros = await cotizaciones.ListarEnviosConexosNexoAsync(cotizacion.Folio, solicitud, cancellationToken);
+        foreach (var ruta in cotizacion.RutasOrdenadas.Where(r => r.Conexos.Count > 0))
+        {
+            var deRuta = registros.Where(r => r.LineaSolicitudId == ruta.Id).ToList();
+            var estados = Estados(deRuta);
+            var confirmados = ruta.Conexos
+                .Where(c => estados.GetValueOrDefault(c.IdServicioConexo) != clsEnvioConexosNexo.Enviado
+                            && EstaEnNexo(cotizacion, ruta, cotizacionNexo, c.IdServicioConexo))
+                .Select(c => c.IdServicioConexo)
+                .ToList();
+            if (confirmados.Count > 0)
+            {
+                var intento = (deRuta.Count == 0 ? 0 : deRuta.Max(r => r.Intento)) + 1;
+                cotizaciones.RegistrarEnvioConexosNexo(Registro(cotizacion, solicitud, ruta, intento, clsEnvioConexosNexo.Enviado, confirmados, cotizacionNexo));
+            }
+        }
     }
 
     /// <summary>

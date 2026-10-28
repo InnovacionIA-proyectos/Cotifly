@@ -113,6 +113,14 @@ tags:
         se descartan las filas con `costeoListoAt` anterior a `createdAt`.
       - `desviacion_promedio_margen` = promedio de `MargenAjustes.diferencia` (negociado − política) de los ajustes de la
         versión vigente; `desviacion_promedio_margen_abs` = promedio de su valor absoluto; `ajustes_margen` = cuántos.
+      - **Margen contra la política (HU-016.1, #154, decisiones del 2026-10-27):** el margen aplicado se compara con el margen de
+        política de las **mismas rutas** (`margenPoliticaSugerido`, guardado en cada ruta al cotizar), calculado en el servidor.
+        Rutas comparables = las de la versión vigente, sin las rechazadas, con `margenAplicado` y `margenPoliticaSugerido`.
+        `margen_politica_promedio` = promedio simple de su política; `margen_aplicado_promedio` = promedio simple de su margen
+        aplicado (las mismas rutas, para comparar simple contra simple); `margen_politica_ponderado` = SUM(política × `costoFinal`) /
+        SUM(`costoFinal`) de las que tienen costo > 0; `desviacion_margen_politica` = SUM((aplicado − política) × `costoFinal`) /
+        SUM(`costoFinal`) de esas mismas (el semáforo: verde ≥ 0, rojo < 0); `rutas_sin_margen_politica` = rutas con margen
+        aplicado y sin política (no entran). Los márgenes son fracciones: la moneda y la TRM no los afectan.
       - `deadline_vencidas` = sin resultado y con `deadline` anterior al momento de la consulta. `null` mientras el
         esquema no tenga la columna `deadline` (script 0004).
       - `por_linea_negocio` (apertura por ruta): una fila por línea de negocio de las rutas (la de `null` agrupa las
@@ -565,6 +573,24 @@ paths:
         Concurrencia (HU-013.2, ADR-018 §12): antes de que el correo salga, la cotización queda marcada como enviada
         con control de versión; si un ajuste (margen, conexos) la cambió entretanto, o su PDF quedó desactualizado,
         responde 409 `CONFLICTO_CONCURRENCIA` sin enviar nada. Si el transporte falla, la marca se deshace.
+
+        Seguridad de las cabeceras (DEF-1027B-2, #228, ADR-023): el asunto y las direcciones viajan como cabeceras del correo,
+        así que se validan TAL COMO LLEGAN (antes de recortar) y nunca se sanean en silencio:
+        - un `asunto` con caracteres de control (CR, LF, NUL, tabulador, U+0085, U+2028, U+2029 y los demás de la categoría
+          Unicode `Cc`) es 400 `CORREO_INVALIDO` (`ErrorWeb`), también si solo están al final;
+        - cada dirección de `para` y `cc` es UNA dirección simple `parte-local@dominio`: sin caracteres de control, sin
+          comas, punto y coma, espacios, comillas, ángulos ni comentarios; parte local de hasta 64 caracteres (letras,
+          dígitos y los símbolos de un `atom` del RFC 5322, con puntos que no van al principio, al final ni seguidos),
+          dominio de hasta 255 con al menos dos etiquetas de hasta 63 (letras, dígitos y guiones, sin literales IP), y hasta
+          320 en total. Si no, 400 `CORREO_INVALIDO`;
+        - tope (#228): hasta **10 destinatarios por defecto entre `para` y `cc`**, configurable con
+          `Correo__MaximoDestinatarios` (1 a 100; la copia oculta al comercial no cuenta; MailSender no tiene tope propio).
+          Pasado el tope, 400 `CORREO_DEMASIADOS_DESTINATARIOS` (`ErrorNegocio`) con `detalle = {maximo, recibidos}`, donde
+          `maximo` es el tope configurado: el frontend lo lee de ahí y no lo fija;
+        - el transporte lo vuelve a revisar antes del POST a MailSender (defensa en profundidad): si algo se cuela, el correo
+          no sale y responde 400 `CORREO_ENVIO_FALLIDO` (fila `fallido` en el historial).
+        El orden es: dueño (404), correo deshabilitado (503), asunto con controles, destinatarios con controles, tope,
+        formato de las direcciones, largos. Nada de esto llama a MailSender ni cambia el estado de envío.
       security:
         - bearer: []
       parameters:
@@ -584,16 +610,34 @@ paths:
                 $ref: '#/components/schemas/RespuestaEnvio'
         '400':
           description: |
-            Error de negocio del envío: duplicado (`CORREO_DUPLICADO`), sin PDF (`CORREO_PDF_NO_ENCONTRADO`), MailSender lo
+            Error de negocio del envío: duplicado (`CORREO_DUPLICADO`), sin PDF (`CORREO_PDF_NO_ENCONTRADO`), más
+            destinatarios entre `para` y `cc` que el tope (10 por defecto, configurable) (`CORREO_DEMASIADOS_DESTINATARIOS`, #228, con `detalle.maximo` y
+            `detalle.recibidos`), MailSender lo
             rechazó (400/413/422), no está disponible o no respondió a tiempo (`CORREO_ENVIO_FALLIDO`; con tiempo agotado el
             correo pudo quedar encolado: la cotización queda enviada y el mismo envío cuenta 5 minutos para `CORREO_DUPLICADO`;
-            también si el ambiente redirige sin buzón de pruebas: no sale nada), o validación (`ErrorWeb`)
+            también si el ambiente redirige sin buzón de pruebas, o si el transporte encuentra una cabecera inválida: no sale
+            nada), o validación (`ErrorWeb`, código interno `CORREO_INVALIDO`: sin `para`, una dirección mal formada o con
+            caracteres de control, un asunto con caracteres de control, asunto o cuerpo demasiado largos)
           content:
             application/json:
               schema:
                 oneOf:
                   - $ref: '#/components/schemas/ErrorNegocio'
                   - $ref: '#/components/schemas/ErrorWeb'
+              examples:
+                asunto_con_saltos:
+                  summary: DEF-1027B-2 (#228)
+                  value:
+                    error: "El asunto no puede tener saltos de línea ni otros caracteres de control (va como cabecera del correo): escríbelo en una sola línea."
+                demasiados_destinatarios:
+                  summary: Tope de destinatarios, 10 por defecto (#228)
+                  value:
+                    error:
+                      codigo: CORREO_DEMASIADOS_DESTINATARIOS
+                      mensaje: "El correo admite hasta 10 destinatarios entre 'para' y 'cc' (llegaron 60)."
+                      detalle:
+                        maximo: 10
+                        recibidos: 60
         '401':
           $ref: '#/components/responses/SesionExpirada'
         '404':
@@ -693,7 +737,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorWeb'
         '409':
-          description: '`CORREO_NO_REINTENTABLE`: el envío no está `fallido`, ya se está reintentando, nunca llegó a MailSender o MailSender ya no lo conoce'
+          description: '`CORREO_NO_REINTENTABLE`: el envío no está `fallido`, ya se está reintentando, nunca llegó a MailSender, MailSender ya no lo conoce o (validación de #228) su asunto o un destinatario guardado tiene caracteres de control (un correo anterior a DEF-1027B-2: MailSender lo reenviaría con las cabeceras inyectadas; el historial lo muestra con `reintentable = false`)'
           content:
             application/json:
               schema:
@@ -772,6 +816,45 @@ paths:
           $ref: '#/components/responses/CuerpoDemasiadoGrande'
         '415':
           $ref: '#/components/responses/TipoContenidoNoSoportado'
+
+  /web/lineas-negocio:
+    get:
+      operationId: listarLineasNegocioActivas
+      tags: [web]
+      summary: Líneas de negocio activas para el desplegable de la captura (sin margen)
+      x-issue: '#154 (HU-016.1, parte B)'
+      description: |
+        HU-016.1 (#154, decisión P4b del 2026-10-27). Las líneas de negocio **activas** de Cotifly (`MargenesPolitica` con
+        `isActive = 1`), ordenadas por nombre, para el desplegable "Línea de negocio" de cada ruta en "Nueva solicitud" (reemplaza
+        el catálogo fijo del frontend; trae, por ejemplo, `DevolucionContenedor`). Roles `comercial`, `gerente_comercial` y
+        `director`. **Nunca trae el margen ni el método de la política**: la política de margen solo la ve la administración
+        (`GET /web/admin/lineas-negocio`). `linea_negocio` es el valor que se envía en `RutaCapturaWeb.linea_negocio`;
+        `etiqueta` es el texto para mostrar (con tildes y espacios). Se lee de la base en cada petición: un cambio de la
+        administración (activar o desactivar una línea) se ve de inmediato.
+      security:
+        - bearer: []
+      responses:
+        '200':
+          description: Líneas de negocio activas, ordenadas por `linea_negocio`
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LineaNegocioOpcion'
+              example:
+                - {linea_negocio: DevolucionContenedor, etiqueta: Devolución Contenedor}
+                - {linea_negocio: Distribucion, etiqueta: Distribución}
+                - {linea_negocio: Exportacion, etiqueta: Exportación}
+                - {linea_negocio: Importacion, etiqueta: Importación}
+                - {linea_negocio: Internacional, etiqueta: Internacional}
+                - {linea_negocio: Nacional, etiqueta: Nacional}
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
 
   /web/admin/lineas-negocio:
     get:
@@ -890,6 +973,11 @@ paths:
                   desviacion_promedio_margen_abs: 0.025
                   ajustes_margen: 2
                   deadline_vencidas: 1
+                  margen_politica_promedio: 0.15
+                  margen_aplicado_promedio: 0.1558
+                  margen_politica_ponderado: 0.15
+                  desviacion_margen_politica: 0.0061
+                  rutas_sin_margen_politica: 0
                 serie_mensual:
                   - {mes: '2026-08', cantidad: 5, ganadas: 1, perdidas: 2, valor_cotizado_cop: 18200000.00, valor_ganado_cop: 4100000.00,
                      costeo_total: 15400000.00, costeo_ganadas: 3500000.00, ganancias: 600000.00}
@@ -1023,6 +1111,11 @@ paths:
                   desviacion_promedio_margen_abs: 0.021
                   ajustes_margen: 6
                   deadline_vencidas: 2
+                  margen_politica_promedio: 0.15
+                  margen_aplicado_promedio: 0.1542
+                  margen_politica_ponderado: 0.15
+                  desviacion_margen_politica: 0.004
+                  rutas_sin_margen_politica: 1
                 comerciales:
                   - usuario_id: 5f0c2a8e-4b1d-4c55-9a51-2f7d0c1e9b10
                     nombre_usuario: APEREZ
@@ -1050,6 +1143,11 @@ paths:
                       desviacion_promedio_margen_abs: 0.025
                       ajustes_margen: 2
                       deadline_vencidas: 1
+                      margen_politica_promedio: 0.15
+                      margen_aplicado_promedio: 0.1558
+                      margen_politica_ponderado: 0.15
+                      desviacion_margen_politica: 0.0061
+                      rutas_sin_margen_politica: 0
                   - usuario_id: 0b7e4c1a-9d2f-4e8b-a3c5-6f1d2e3a4b5c
                     nombre_usuario: GRAMIREZ
                     nombre_completo: Gloria Ramírez
@@ -1076,6 +1174,11 @@ paths:
                       desviacion_promedio_margen_abs: null
                       ajustes_margen: 0
                       deadline_vencidas: 0
+                      margen_politica_promedio: null
+                      margen_aplicado_promedio: null
+                      margen_politica_ponderado: null
+                      desviacion_margen_politica: null
+                      rutas_sin_margen_politica: 0
                 serie_mensual:
                   - {mes: '2026-08', cantidad: 18, ganadas: 4, perdidas: 5, valor_cotizado_cop: 70100000.00, valor_ganado_cop: 16400000.00,
                      costeo_total: 60000000.00, costeo_ganadas: 14000000.00, ganancias: 2400000.00}
@@ -1963,7 +2066,7 @@ paths:
             posiciones, o la regla de peso de Nexo: `detalle.motivo` = `PESO_REQUERIDO` si la línea no trae peso > 0 ni
             posiciones con peso, `PESO_INCONSISTENTE` si el peso difiere más del 1 % de `sum(cantidad × peso_kg)`; HU-013.10:
             un catálogo que no es código de catálogo, `clase_contenedor` sin `clase_viaje = Contenedor` o sin ella con
-            `Contenedor`, `valor_aprovisionamiento` sin una `ciudad_levante_contenedor` distinta del origen; el mensaje nombra
+            `Contenedor`, `valor_levante_contenedor` (ex `valor_aprovisionamiento`; el error lo nombra así desde #228) sin una `ciudad_levante_contenedor` distinta del origen; el mensaje nombra
             el campo), `MARGEN_LINEA_DESCONOCIDA` (la línea no existe o está inactiva) o `FOLIO_CONSECUTIVO_AGOTADO`.
             Con `moneda = USD` (HU-013.7): `TRM_NO_DISPONIBLE` si ninguna fuente de la TRM respondió; `moneda` con otro valor
             es `SOLICITUD_COSTEO_INVALIDA` (el mensaje nombra el campo `moneda`).
@@ -2255,6 +2358,16 @@ paths:
         - Tampoco mientras Nexo tiene un servicio conexo que Cotifly todavía no leyó (`motivo_estado_costeo` de conexos pendientes):
           409 `COTIZACION_NO_FINALIZABLE` con `detalle.motivo = conexos_pendientes_de_leer`; se finaliza después de la siguiente
           lectura del costeo, que trae el conexo con su precio.
+        - #228: tampoco mientras un servicio conexo de una ruta que cuenta (no `rechazada`) todavía no está en la cotización de
+          Nexo, es decir con `servicios_conexos[].estado_nexo = pendiente` (el envío diferido no lo ha mandado o se reintentará):
+          409 `COTIZACION_NO_FINALIZABLE` con `detalle.motivo = conexos_pendientes_en_nexo` y `detalle.conexos_pendientes` (cuántos);
+          se finaliza cuando el polling lo deja `enviado`. `incierto` y `fallido_definitivo` no bloquean (ya no se reintentan; el
+          costeo los muestra con `aviso_conexos_nexo` para revisarlos en Nexo). Un conexo agregado con
+          `POST .../costeo/servicios-conexos` queda `enviado` en el momento (Nexo lo creó y la relectura lo confirma). Con
+          alguno `pendiente`, finalizar RELEE la cotización de Nexo y deja `enviado` lo que Nexo ya muestra antes de decidir (un
+          registro que quedó `pendiente` aunque Nexo tenga el conexo, p. ej. agregado antes de #228, no bloquea para siempre una
+          entregada); si Nexo no responde, cuenta el registro y responde el 409. Si hay
+          conexos pendientes de leer, ese motivo va primero.
         - Re-finalizar una ya finalizada es idempotente: 200 sin cambios (mismo `finalizada_at`, mismo `ETag`).
         - `If-Match` que no es la versión vigente: 409 `CONFLICTO_CONCURRENCIA`, sin cambios (también si ya estaba finalizada). Si
           el polling cambió el precio entre la lectura y el clic, la versión ya no coincide: el comercial recarga y nunca finaliza un
@@ -2284,7 +2397,7 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`COTIZACION_NO_FINALIZABLE` (`estado_costeo` distinto de `autocosteo` y `entregada`; `detalle.estado_costeo`) o `CONFLICTO_CONCURRENCIA`; sin cambios.'
+          description: '`COTIZACION_NO_FINALIZABLE` (`estado_costeo` distinto de `autocosteo` y `entregada`, con `detalle.estado_costeo`; o `detalle.motivo` = `conexos_pendientes_de_leer` o, #228, `conexos_pendientes_en_nexo` con `detalle.conexos_pendientes`) o `CONFLICTO_CONCURRENCIA`; sin cambios.'
           content:
             application/json:
               schema:
@@ -3267,7 +3380,7 @@ paths:
         Desde HU-013 (ADR-018 §11, #98) ya no es "una sola vez": mientras la cotización no se haya enviado ni tenga resultado,
         los ajustes (margen, conexos, textos, re-solicitar en el mismo folio) invalidan el PDF (`pdf_desactualizado = true`) y
         se regenera aquí (el anterior queda en el historial). Con el PDF vigente responde `PDF_YA_GENERADO`; ya enviada o con
-        resultado, `PDF_YA_ENVIADO` (versión `-vN`).
+        resultado, `PDF_YA_ENVIADO` (versión `-vN`, con la llamada en `detalle` desde #228).
 
         **Por ruta (HU-021.9, #136).** Con una ruta, el PDF sale de la ruta y sus camiones: origen, destino, los camiones
         agrupados ("2 × 3S3 - FURGON (20000 KG)"; un camión sin vehículo es "Vehículo por definir" y uno descartado en Nexo no
@@ -3322,7 +3435,7 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`SIN_RUTAS_COTIZABLES` (HU-028.1, #183, decisión D1: la Mesa de Costeo rechazó todas las rutas), `COSTEO_NO_LISTO` (alguna ruta NO rechazada sin precio; las rechazadas salen "Sin costeo", sin precio ni motivo, y no suman; con la cotización finalizada y una ruta rechazada después, el total congelado ya no cuadra: `detalle` trae la versión nueva, `accion = nueva_version`), `PDF_YA_GENERADO` (PDF vigente), `PDF_YA_ENVIADO`, `COTIZACION_NO_FINALIZADA` (HU-036.3, #207: el PDF sale con el precio que aceptó el comercial; `detalle` con la llamada a `.../finalizar`) o `CONFLICTO_CONCURRENCIA`'
+          description: '`SIN_RUTAS_COTIZABLES` (HU-028.1, #183, decisión D1: la Mesa de Costeo rechazó todas las rutas), `COSTEO_NO_LISTO` (alguna ruta NO rechazada sin precio; las rechazadas salen "Sin costeo", sin precio ni motivo, y no suman; con la cotización finalizada y una ruta rechazada después, el total congelado ya no cuadra: `detalle` trae la versión nueva, `accion = nueva_version`), `PDF_YA_GENERADO` (PDF vigente), `PDF_YA_ENVIADO` (ya enviada o con resultado; DEF-1027B-1, #228: `detalle` con la llamada para crear la versión nueva, igual que margen y conexos: `accion = nueva_version`, `metodo = POST`, `endpoint = /web/cotizaciones/{folio}/costeo/re-solicitar` y `cuerpo = {motivo: "Generar el PDF después del envío", nueva_version: true}`), `COTIZACION_NO_FINALIZADA` (HU-036.3, #207: el PDF sale con el precio que aceptó el comercial; `detalle` con la llamada a `.../finalizar`) o `CONFLICTO_CONCURRENCIA`'
           content:
             application/json:
               schema:
@@ -3666,6 +3779,14 @@ paths:
         (`progreso_cubicacion`) y los avisos del cubicador por ruta (`cubicacion`, la misma forma de `POST /web/solicitudes-costeo`).
         Endurecimiento A (#199): un folio que no es una licitación (formulario o chat) responde 404, como el Excel y reintentar
         (antes respondía 200).
+
+        HU-034.1 (#201, parte A). Acceso: el **dueño**; un `director` (HU-037.3, #211), de cualquier regional; o un `gerente_comercial`
+        cuya regional efectiva incluye al dueño (la misma regla que `GET /web/cotizaciones/{folio}` y la descarga del PDF). Gerente y
+        director solo consultan (`solo_lectura = true`): reintentar la cubicación (con o sin `usar_respaldo`), reintentar el envío y
+        las demás acciones siguen siendo del dueño y a ellos les responden 404. La vista es la misma del dueño: nunca trae costos. Si
+        la regional del gerente no se puede comprobar (sin regional o fuente caída) se niega (fail-closed). Cada consulta de un
+        gerente o director a una licitación ajena, permitida o no, queda en la auditoría (`consultar_licitacion`). Cualquier otro
+        usuario recibe 404, igual que si el folio no existiera.
       security:
         - bearer: []
       parameters:
@@ -3757,7 +3878,13 @@ paths:
         precio). Sin archivo original genera una hoja `Licitación` con los campos mapeados. **Nunca incluye el costo de Nexo.**
         Se puede exportar en cualquier momento. Siempre un `.xlsx` real: un `.xlsm` se convierte sin macros, y gráficos,
         imágenes o tablas dinámicas del original pueden perderse. El total del resumen es sin servicios conexos. `Sin enviar`
-        solo marca filas entre la primera y la última línea enviada. Solo el dueño y solo licitaciones (404 si no).
+        solo marca filas entre la primera y la última línea enviada. Solo licitaciones (404 si no).
+
+        HU-034.1 (#201, parte A). Acceso: el dueño, un `director` (cualquier regional) o un `gerente_comercial` de la regional del
+        dueño, con la regla de `GET /web/licitaciones/{folio}` (fail-closed, 404 para cualquier otro). Gerente y director reciben **el
+        mismo archivo que el dueño**: la exportación nunca tuvo costos (ni el flete de Nexo, ni el costo de los conexos, ni el margen),
+        así que no hay nada que quitar. Cada descarga de un gerente o director de una licitación ajena, permitida o no, queda en la
+        auditoría (`exportar_excel_licitacion`).
 
         HU-023.5 (#160): agrega también la columna `Camiones Cotifly` (un camión por línea de la celda: vehículo y carrocería con
         el nombre del catálogo del cubicador, peso y llenado de volumen; "Sin vehículo (Mesa de Costeo)" si el cubicador no
@@ -3847,6 +3974,9 @@ paths:
         cuerpo en HTML tal como lo recibe el cliente (`cuerpo_html`), el resumen sin desglose (`resumen`: precio por ruta y
         total), la copia oculta al comercial (`copia_oculta`) y, en un ambiente de pruebas, `entorno_pruebas = true` con el
         buzón (`redirigido_a`) y el texto del aviso (`aviso`) para mostrarlo tal cual.
+        #228: lo que trae el borrador se valida igual que en `POST .../enviar` (asunto y direcciones sin caracteres de
+        control, formato estricto de cada dirección, el tope de destinatarios entre `para` y `cc`, 10 por defecto, largos), después de
+        comprobar el dueño. Sin `para` se precargan los destinatarios previos (no se exige `para`).
       security:
         - bearer: []
       parameters:
@@ -3864,6 +3994,17 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VistaPreviaCorreo'
+        '400':
+          description: |
+            #228: el borrador no pasaría el envío. `ErrorWeb` (`CORREO_INVALIDO`: asunto o dirección con caracteres de control,
+            dirección mal formada, asunto o cuerpo demasiado largos) o `ErrorNegocio` `CORREO_DEMASIADOS_DESTINATARIOS` (más
+            destinatarios entre `para` y `cc` que el tope, 10 por defecto y configurable, con `detalle.maximo` y `detalle.recibidos`).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorNegocio'
+                  - $ref: '#/components/schemas/ErrorWeb'
         '401':
           $ref: '#/components/responses/SesionExpirada'
         '404':
@@ -4351,7 +4492,8 @@ components:
                 límite de 20 del NIT ya impide; el PDF no lo responde).
                 HU-036.2 (#206): `COTIZACION_NO_FINALIZABLE` (409 en `POST .../finalizar`: `estado_costeo` distinto de `autocosteo` y
                 `entregada`, sin el costeo de Nexo listo no hay precio que aceptar; `detalle.estado_costeo` trae el estado actual; o
-                con un conexo de Nexo pendiente de leer, `detalle.motivo = conexos_pendientes_de_leer`).
+                con un conexo de Nexo pendiente de leer, `detalle.motivo = conexos_pendientes_de_leer`; #228: o con conexos que todavía
+                no están en Nexo, `estado_nexo = pendiente`, `detalle.motivo = conexos_pendientes_en_nexo` y `detalle.conexos_pendientes`).
                 HU-036.3 (#207): `COTIZACION_NO_FINALIZADA` (409: "Finaliza la cotización antes de..."; `POST .../costeo/pdf`,
                 `POST .../enviar`, `POST .../costeo/textos/redactar`, `PUT .../costeo/textos` y `POST .../resultado` exigen la
                 cotización finalizada; `detalle` trae `accion = finalizar`, `metodo = POST` y `endpoint` = `.../finalizar`. No aplica a
@@ -4368,6 +4510,7 @@ components:
                 - CONFIRMACION_REQUERIDA
                 - COTIZACION_NO_ENCONTRADA
                 - CORREO_DUPLICADO
+                - CORREO_DEMASIADOS_DESTINATARIOS
                 - CORREO_PDF_NO_ENCONTRADO
                 - CORREO_ENVIO_FALLIDO
                 - AJUSTE_COTIZACION_INVALIDA
@@ -5335,16 +5478,22 @@ components:
     EnvioWeb:
       type: object
       required: [para]
+      description: |
+        #228: hasta 10 destinatarios por defecto entre `para` y `cc` juntos, configurable con `Correo__MaximoDestinatarios`
+        (`CORREO_DEMASIADOS_DESTINATARIOS`, `detalle.maximo` trae el tope vigente); cada dirección es UNA
+        dirección simple sin caracteres de control (ver `POST /web/cotizaciones/{folio}/enviar`).
       properties:
         para:
           type: array
           minItems: 1
+          maxItems: 20
           items:
             type: string
             format: email
             maxLength: 320
         cc:
           type: array
+          maxItems: 20
           items:
             type: string
             format: email
@@ -5354,7 +5503,9 @@ components:
           type: string
           nullable: true
           maxLength: 300
-          description: Por defecto "Cotización {folio} — Botero Soto".
+          description: |
+            Por defecto "Cotización {folio} — Botero Soto". DEF-1027B-2 (#228): una sola línea, sin caracteres de control
+            (CR, LF, NUL, tabulador, U+0085, U+2028, U+2029...): si no, 400 `CORREO_INVALIDO`.
         cuerpo:
           type: string
           nullable: true
@@ -5567,6 +5718,20 @@ components:
           format: date-time
           nullable: true
 
+    LineaNegocioOpcion:
+      type: object
+      description: |
+        HU-016.1 (#154). Una línea de negocio activa para el desplegable de la captura (`GET /web/lineas-negocio`). Sin margen ni
+        método: la política de margen no sale de la administración.
+      required: [linea_negocio, etiqueta]
+      properties:
+        linea_negocio:
+          type: string
+          description: Nombre de la línea en Cotifly (`MargenesPolitica.lineaNegocio`); el valor de `RutaCapturaWeb.linea_negocio`.
+        etiqueta:
+          type: string
+          description: Texto para mostrar (con tildes y espacios, ej. `Devolución Contenedor`); si no hay uno conocido, el mismo `linea_negocio`.
+
     ActualizarLineaNegocio:
       type: object
       required: [margen, metodo_calculo, is_active]
@@ -5605,7 +5770,8 @@ components:
       required: [cantidad, versiones, ganadas, perdidas, sin_resultado, pendientes_por_cotizar, conversion,
                  conversion_sobre_cerradas, margen_promedio, margen_ponderado, costeo_total, costeo_ganadas, valor_cotizado_cop,
                  valor_ganado_cop, ganancias, cotizaciones_usd, tiempo_promedio_cotizacion_horas,
-                 desviacion_promedio_margen, desviacion_promedio_margen_abs, ajustes_margen, deadline_vencidas]
+                 desviacion_promedio_margen, desviacion_promedio_margen_abs, ajustes_margen, deadline_vencidas,
+                 margen_politica_promedio, margen_aplicado_promedio, margen_politica_ponderado, desviacion_margen_politica, rutas_sin_margen_politica]
       properties:
         cantidad:
           type: integer
@@ -5683,6 +5849,48 @@ components:
           type: integer
           nullable: true
           description: Sin resultado y con `deadline` anterior al momento de la consulta. `null` si el esquema no tiene la columna `deadline` (script 0004).
+        margen_politica_promedio:
+          type: number
+          nullable: true
+          description: |
+            HU-016.1 (#154, decisiones P3 y P4 del 2026-10-27). Promedio simple del margen de política
+            (`margenPoliticaSugerido`, el de la línea de negocio guardado en la ruta al cotizar) de las **mismas rutas** que se
+            cotizaron: rutas de la versión vigente, sin las rechazadas por la Mesa, con margen aplicado y con margen de política
+            (4 decimales). `null` si no hay ninguna. Es la referencia de "Margen promedio" en "Mis cotizaciones" y en el tablero;
+            no expone la tabla de políticas. `margen_promedio` NO es su par sobre las mismas rutas (es por cotización e incluye
+            las rutas sin política): no restarlos; su par es `margen_aplicado_promedio`. El semáforo es `desviacion_margen_politica`.
+        margen_aplicado_promedio:
+          type: number
+          nullable: true
+          description: |
+            HU-016.1 (#154, decisión del 2026-10-27). Promedio simple del margen aplicado (`margenAplicado`) de exactamente las
+            mismas rutas comparables de `margen_politica_promedio` (versión vigente, sin las rechazadas por la Mesa, con margen
+            aplicado y con margen de política; 4 decimales, half-to-even). `null` si no hay ninguna. Es el par directo de
+            `margen_politica_promedio`: aplicado simple contra política simple sobre las mismas rutas. No reemplaza a
+            `margen_promedio` (por cotización, incluye las rutas sin política) ni al semáforo (`desviacion_margen_politica`,
+            ponderado por costo).
+        margen_politica_ponderado:
+          type: number
+          nullable: true
+          description: |
+            HU-016.1 (#154). Margen de política de esas mismas rutas ponderado por su costo: SUM(`margenPoliticaSugerido` ×
+            `costoFinal`) / SUM(`costoFinal`) de las que tienen costo > 0 (el costo siempre en COP; 4 decimales). `null` si
+            ninguna tiene costo. Base del semáforo (`desviacion_margen_politica`).
+        desviacion_margen_politica:
+          type: number
+          nullable: true
+          description: |
+            HU-016.1 (#154). Margen aplicado menos margen de política, los dos ponderados por costo sobre las mismas rutas de
+            `margen_politica_ponderado`: SUM((`margenAplicado` − `margenPoliticaSugerido`) × `costoFinal`) / SUM(`costoFinal`)
+            (4 decimales). Semáforo: verde si es ≥ 0 (el comercial cotiza por encima de la política), rojo si es < 0. `null` si
+            ninguna ruta tiene costo. No reemplaza a `desviacion_promedio_margen`, que solo promedia los ajustes negociados
+            (ADR-016).
+        rutas_sin_margen_politica:
+          type: integer
+          description: |
+            HU-016.1 (#154). Rutas del universo (versión vigente, no rechazadas) con margen aplicado pero sin margen de política
+            guardado (datos anteriores a HU-021): no entran en los tres campos anteriores. Sirve para avisar que la comparación
+            está incompleta.
 
     PuntoSerieMensual:
       type: object
@@ -7153,7 +7361,7 @@ components:
           maximum: 9999999999999.99
           description: |
             Valor de UN levante del contenedor en la ruta (ex `valor_aprovisionamiento`); se copia a cada camión (decisión 4). Solo
-            con una ciudad de levante distinta del origen (G3): sin ella es `CAMPO_NO_APLICA` en `valor_aprovisionamiento`.
+            con una ciudad de levante distinta del origen (G3): sin ella es `CAMPO_NO_APLICA` en `valor_levante_contenedor` (DEF-1027B-3, #228; antes nombraba `valor_aprovisionamiento`).
         valor_mercancia:
           type: number
           nullable: true
@@ -7716,7 +7924,7 @@ components:
           maximum: 9999999999999.99
           description: |
             Valor de UN levante del contenedor en la ruta (ex `valor_aprovisionamiento`); se copia a cada camión (decisión 4). Solo
-            con una ciudad de levante distinta del origen (G3): sin ella es `CAMPO_NO_APLICA` en `valor_aprovisionamiento`.
+            con una ciudad de levante distinta del origen (G3): sin ella es `CAMPO_NO_APLICA` en `valor_levante_contenedor` (DEF-1027B-3, #228; antes nombraba `valor_aprovisionamiento`).
         valor_mercancia:
           type: number
           nullable: true
@@ -8219,7 +8427,7 @@ components:
           provisional `CNT20.FT`, `CNT20.OP`, `CNT40.FT` y `CNT40.OP`). Un texto libre del pliego (`Tractomula`, `3s3`) es
           `CODIGO_NO_CATALOGO` en esa fila: el frontend mapea los valores del pliego a los códigos de `GET /web/catalogos-flete`.
         - **Condicionales (G3).** `clase_contenedor` es obligatoria con `clase_viaje = Contenedor` (`CAMPO_REQUERIDO`) y solo se
-          admite con ella (`CAMPO_NO_APLICA`); `valor_aprovisionamiento` solo con una `ciudad_levante_contenedor` distinta del
+          admite con ella (`CAMPO_NO_APLICA`); `valor_levante_contenedor` (ex `valor_aprovisionamiento`; el error lo nombra así desde #228) solo con una `ciudad_levante_contenedor` distinta del
           origen (`CAMPO_NO_APLICA`).
         - **Municipios (G6).** Si la fila no trae `origen_municipio_id`/`destino_municipio_id`, Cotifly resuelve el texto de
           `origen`/`destino` en el catálogo de `GET /web/municipios` con la regla determinista de HU-005.13 (sin tildes ni
@@ -8630,7 +8838,7 @@ components:
     Licitacion:
       type: object
       required: [folio, cliente_nombre, nit_cliente, deadline, estado_costeo, motivo_estado_costeo, moneda, trm_aplicada,
-                 precio_final, lineas_costeadas, lineas_pendientes, archivo_nombre, hoja, lineas, finalizada_at]
+                 precio_final, lineas_costeadas, lineas_pendientes, archivo_nombre, hoja, lineas, finalizada_at, solo_lectura]
       description: |
         Licitación vista por el comercial (HU-011.2). Solo precios. Sin `referencia` desde HU-021.11 (#138, decisión 1: siempre
         era `null`).
@@ -8695,6 +8903,12 @@ components:
             HU-036.2 (#206, DEF-1027-2 de #226). Cuándo el comercial finalizó la licitación (`POST .../finalizar`), ISO 8601 en UTC;
             `null` sin finalizar. Siempre presente, igual que en `CotizacionResumen` y `CosteoCotizacion`: la vista del polling
             habilita "Finalizar" y aplica los candados de la finalizada sin pedir el costeo.
+        solo_lectura:
+          type: boolean
+          description: |
+            HU-034.1 (#201, parte A). `true` si quien consulta es un gerente comercial de la regional del dueño o un director: solo
+            consulta (ocultar o deshabilitar reintentar la cubicación, reintentar el envío, finalizar y demás acciones). `false` para el
+            dueño (también en la respuesta de `POST /web/licitaciones` y de reintentar). Igual que `DetalleCotizacion.solo_lectura`.
         progreso_cubicacion:
           type: object
           nullable: true

@@ -9,11 +9,25 @@ public sealed class clsOpcionesCorreo
 {
     public const string Seccion = "Correo";
 
+    /// <summary>#228 (decisión del 2026-10-27): tope de destinatarios por defecto entre <c>para</c> y <c>cc</c>.</summary>
+    public const int MaximoDestinatariosPorDefecto = 10;
+
+    /// <summary>#228: valor más alto que admite <see cref="MaximoDestinatarios"/>; uno mayor (o menor que 1) impide arrancar.</summary>
+    public const int LimiteMaximoDestinatarios = 100;
+
     /// <summary>
     /// Si es <c>false</c> (por defecto, igual que el Python: "funcionalidad diferida") ningún correo sale y el envío responde
     /// <c>CORREO_DESHABILITADO</c>; la vista previa, los destinatarios previos y el historial siguen funcionando.
     /// </summary>
     public bool Habilitado { get; set; }
+
+    /// <summary>
+    /// #228 (decisión del 2026-10-27): tope de destinatarios entre <c>para</c> y <c>cc</c> juntos, sin contar la copia oculta al comercial
+    /// (<c>Correo:MaximoDestinatarios</c>, variable <c>Correo__MaximoDestinatarios</c>). Por defecto <see cref="MaximoDestinatariosPorDefecto"/>;
+    /// de 1 a <see cref="LimiteMaximoDestinatarios"/>, o la API no arranca. Pasado el tope, el envío y la vista previa responden
+    /// <c>CORREO_DEMASIADOS_DESTINATARIOS</c> con <c>detalle.maximo</c> = este valor. MailSender no tiene tope propio.
+    /// </summary>
+    public int MaximoDestinatarios { get; set; } = MaximoDestinatariosPorDefecto;
 
     /// <summary>Protección de los ambientes que no son producción (<c>Correo:Proteccion</c>).</summary>
     public clsOpcionesProteccionCorreo Proteccion { get; set; } = new();

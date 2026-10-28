@@ -59,14 +59,25 @@ public sealed partial class clsCotizacionSolicitud
         "Nexo agregó un servicio conexo que Cotifly todavía no leyó: espera la siguiente actualización del costeo para finalizar la cotización "
         + "con su precio.";
 
+    /// <summary><c>detalle.motivo</c> de <c>COTIZACION_NO_FINALIZABLE</c> con conexos que todavía no están en la cotización de Nexo (#228).</summary>
+    public const string CodigoConexosPendientesEnNexo = "conexos_pendientes_en_nexo";
+
+    /// <summary>Mensaje de <c>COTIZACION_NO_FINALIZABLE</c> con conexos que todavía no están en la cotización de Nexo (#228).</summary>
+    public const string MotivoNoFinalizableConexosEnNexo =
+        "Hay servicios conexos que todavía no están en la cotización de Nexo (estado_nexo = pendiente): espera la siguiente actualización "
+        + "del costeo para finalizar la cotización con un precio que Nexo respalde.";
+
     /// <summary>
     /// Finaliza la cotización por <paramref name="usuarioId"/> en <paramref name="ahora"/>. Devuelve <c>true</c> si la finalizó,
     /// <c>false</c> si ya estaba finalizada (idempotente: no cambia nada, conserva la fecha y el comercial de la primera vez) o
-    /// <c>COTIZACION_NO_FINALIZABLE</c> si el estado no lo admite (<see cref="AdmiteFinalizar"/>), con <c>detalle.estado_costeo</c>, o si
+    /// <c>COTIZACION_NO_FINALIZABLE</c> si el estado no lo admite (<see cref="AdmiteFinalizar"/>), con <c>detalle.estado_costeo</c>, si
     /// Nexo agregó un conexo que Cotifly todavía no leyó (<see cref="ConexosPendientesDeLeer"/>; <c>detalle.motivo</c> =
-    /// <see cref="CodigoConexosPendientesDeLeer"/>): el precio todavía no es el definitivo.
+    /// <see cref="CodigoConexosPendientesDeLeer"/>) o (#228) si <paramref name="conexosPendientesEnNexo"/> conexos de Cotifly todavía no
+    /// están en la cotización de Nexo (<c>estado_nexo = pendiente</c>; <c>detalle.motivo</c> = <see cref="CodigoConexosPendientesEnNexo"/>
+    /// y <c>detalle.conexos_pendientes</c>): en los dos casos el precio todavía no es el definitivo. El estado de cada conexo en Nexo vive
+    /// fuera del agregado (el registro del envío diferido): lo cuenta el caso de uso.
     /// </summary>
-    public clsResultado<bool> Finalizar(Guid usuarioId, DateTimeOffset ahora)
+    public clsResultado<bool> Finalizar(Guid usuarioId, DateTimeOffset ahora, int conexosPendientesEnNexo = 0)
     {
         if (usuarioId == Guid.Empty)
         {
@@ -99,6 +110,21 @@ public sealed partial class clsCotizacionSolicitud
                 {
                     ["estado_costeo"] = EstadoCosteo is { } e ? clsCodigoEnum.ACodigo(e) : null,
                     ["motivo"] = CodigoConexosPendientesDeLeer,
+                },
+            };
+        }
+
+        if (conexosPendientesEnNexo > 0)
+        {
+            // #228 (E2E real 2026-10-27B): el conexo está en el precio de Cotifly pero Nexo todavía no lo creó (el envío diferido de la
+            // decisión 10 lo manda cuando el polling ve la línea). Finalizar ahora congelaría un precio con un conexo que Nexo no tiene.
+            return new clsErrorDominio(clsCodigosError.CotizacionNoFinalizable, MotivoNoFinalizableConexosEnNexo)
+            {
+                Datos = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["estado_costeo"] = EstadoCosteo is { } e ? clsCodigoEnum.ACodigo(e) : null,
+                    ["motivo"] = CodigoConexosPendientesEnNexo,
+                    ["conexos_pendientes"] = conexosPendientesEnNexo,
                 },
             };
         }

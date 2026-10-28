@@ -126,6 +126,41 @@ public sealed class clsCotizacionFinalizadaTests
         cotizacion.Finalizar(_ana, _ahora).Valor.Should().BeTrue("leídos los conexos, se finaliza");
     }
 
+    /// <summary>
+    /// #228 (observación del E2E real 2026-10-27B): con un conexo que todavía no está en la cotización de Nexo (<c>estado_nexo =
+    /// pendiente</c>) el precio finalizado incluiría un conexo que Nexo no creó. Igual que con los pendientes de leer: 409 con su motivo.
+    /// </summary>
+    [Fact]
+    public void ConConexosPendientesEnNexoNoSeFinalizaHastaQueNexoLosTenga()
+    {
+        var cotizacion = clsCotizacionMuestra.Costeada();
+
+        var resultado = cotizacion.Finalizar(_ana, _ahora, conexosPendientesEnNexo: 2);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.CotizacionNoFinalizable);
+        resultado.Error.Mensaje.Should().Be(clsCotizacionSolicitud.MotivoNoFinalizableConexosEnNexo);
+        resultado.Error.Datos!["motivo"].Should().Be(clsCotizacionSolicitud.CodigoConexosPendientesEnNexo);
+        resultado.Error.Datos!["estado_costeo"].Should().Be("autocosteo");
+        resultado.Error.Datos!["conexos_pendientes"].Should().Be(2);
+        cotizacion.Finalizada.Should().BeFalse();
+
+        cotizacion.Finalizar(_ana, _ahora, conexosPendientesEnNexo: 0).Valor.Should().BeTrue("con los conexos en Nexo, se finaliza");
+    }
+
+    [Fact]
+    public void LosPendientesDeLeerGananALosPendientesEnNexoYUnaFinalizadaNoLosMira()
+    {
+        var cotizacion = clsCotizacionMuestra.Costeada();
+        cotizacion.MarcarConexosPendientesDeLeer();
+
+        cotizacion.Finalizar(_ana, _ahora, conexosPendientesEnNexo: 1).Error.Datos!["motivo"]
+            .Should().Be(clsCotizacionSolicitud.CodigoConexosPendientesDeLeer);
+
+        cotizacion.QuitarMarcaConexosPendientes();
+        cotizacion.Finalizar(_ana, _ahora).Valor.Should().BeTrue();
+        cotizacion.Finalizar(_ana, _ahora, conexosPendientesEnNexo: 3).Valor.Should().BeFalse("re-finalizar es idempotente");
+    }
+
     [Fact]
     public void LaCotizacionDelChatNoSeFinalizaYElDetalleLoDice()
     {

@@ -167,6 +167,8 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         (typeof(Cotifly.Aplicacion.Cotizaciones.Services.clsMotivoPerdida), "MotivoPerdida"),
         (typeof(clsDatosNuevaVersion), "DatosNuevaVersion"),
         (typeof(clsLineaNegocioAdmin), "LineaNegocio"),
+        // HU-016.1 (#154): GET /web/lineas-negocio, el desplegable de la captura sin margen.
+        (typeof(Cotifly.Aplicacion.Administracion.DTOs.clsLineaNegocioOpcion), "LineaNegocioOpcion"),
         (typeof(clsMetricasComercial), "MetricasComercial"),
         (typeof(clsMetricasRegional), "MetricasRegional"),
         // HU-037.3 (#211): GET /web/regionales.

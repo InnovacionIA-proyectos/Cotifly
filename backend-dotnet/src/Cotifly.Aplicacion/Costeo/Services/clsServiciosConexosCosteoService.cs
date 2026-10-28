@@ -436,6 +436,17 @@ public sealed class clsServiciosConexosCosteoService(
 
         var agregados = importados.Valor;
 
+        // #228: Nexo ya tiene los conexos (los creó este POST): quedan enviados en el registro del envío diferido, en la misma escritura.
+        // Si no, estado_nexo = pendiente bloquearía finalizar, y en una entregada el polling ya no pasa para confirmarlos.
+        try
+        {
+            await envioConexos.RegistrarConfirmadosAsync(cotizacion, cotizacionNexo, CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "No se pudo registrar como enviados a Nexo los conexos agregados en {Folio}; el polling los confirma.", cotizacion.Folio);
+        }
+
         var pdfInvalidado = clsReglaPdfCosteo.InvalidarPdf(cotizacion, MotivoInvalidacionPdf.ServiciosConexos, usuarioId, cotizaciones);
         if (!await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, reservada, CancellationToken.None))
         {
