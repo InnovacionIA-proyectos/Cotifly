@@ -24,6 +24,12 @@ public sealed record clsRutaMetrica
     public decimal? MargenAplicado { get; init; }
 
     /// <summary>
+    /// HU-016.1 (#154): <c>margenPoliticaSugerido</c> de la ruta, el margen de política de su línea guardado al cotizar; <c>null</c> en
+    /// datos anteriores a HU-021. Es la referencia con que se compara el margen aplicado en el tablero.
+    /// </summary>
+    public decimal? MargenPolitica { get; init; }
+
+    /// <summary>
     /// <c>MargenAjustes</c> de la ruta (<c>lineaSolicitudId</c>). Un ajuste de la cotización sin ruta (o con una ruta que no es suya)
     /// cuenta en la ruta 1, igual que la migración del 0009: así la suma de las rutas da los ajustes de la cotización.
     /// </summary>

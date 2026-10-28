@@ -1262,6 +1262,18 @@ public sealed partial class clsCotizacionSolicitud
         return recalculo.EsFallo ? recalculo.Error : cambio | recalculo.Valor;
     }
 
+    /// <summary>
+    /// HU-041.1 (#231): vuelve la ruta <paramref name="ordenRuta"/> a su margen sugerido (<see cref="clsLineaSolicitud.RestaurarMargenSugerido"/>)
+    /// y recalcula esa ruta y la cabecera. Devuelve si algo cambió, o el error del módulo de precio.
+    /// </summary>
+    public clsResultado<bool> RestaurarMargenSugerido(int ordenRuta, DateTimeOffset ahora)
+    {
+        var ruta = RutaDeOrden(ordenRuta);
+        var cambio = ruta.RestaurarMargenSugerido();
+        var recalculo = RecalcularRuta(ruta, ahora);
+        return recalculo.EsFallo ? recalculo.Error : cambio | recalculo.Valor;
+    }
+
     // ------------------------------------------------------------------ Regla del PDF y etapa final (ADR-018 §11)
 
     /// <summary>

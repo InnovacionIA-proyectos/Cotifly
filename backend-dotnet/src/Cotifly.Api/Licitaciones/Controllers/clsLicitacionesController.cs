@@ -13,7 +13,8 @@ namespace Cotifly.Api.Licitaciones.Controllers;
 /// <summary>
 /// Licitaciones desde Excel (HU-011, ADR-017, <c>specs/openapi.yaml</c>): analizar el pliego en Nexo, crear la licitación con sus
 /// líneas mapeadas y verla. El cuerpo se lee a mano (multipart o JSON) para que la sesión se valide antes que el tipo de contenido
-/// y el límite del cuerpo sea el de <c>SeguridadHttp:LimiteCuerpoLicitacionBytes</c>. Solo cotizaciones propias.
+/// y el límite del cuerpo sea el de <c>SeguridadHttp:LimiteCuerpoLicitacionBytes</c>. Solo cotizaciones propias, salvo la vista y el
+/// Excel, que también ven el gerente de la regional del dueño y el director en solo lectura (HU-034.1, #201).
 /// </summary>
 [Route("web")]
 public sealed class clsLicitacionesController(
@@ -103,7 +104,8 @@ public sealed class clsLicitacionesController(
 
     /// <summary>
     /// 200 <c>Licitacion</c> con el estado y el precio de cada línea (nunca el costo de Nexo), sus camiones y el progreso de la cubicación en
-    /// segundo plano (HU-023.5: <c>progreso_cubicacion</c>, para consultarlo cada pocos segundos mientras esté <c>en_curso</c>); 404 si no es suya.
+    /// segundo plano (HU-023.5: <c>progreso_cubicacion</c>, para consultarlo cada pocos segundos mientras esté <c>en_curso</c>). HU-034.1
+    /// (#201): también para el director y el gerente de la regional del dueño, con <c>solo_lectura = true</c>; 404 para cualquier otro.
     /// </summary>
     [HttpGet("licitaciones/{folio}")]
     [ProducesResponseType<clsLicitacion>(StatusCodes.Status200OK)]
@@ -147,8 +149,8 @@ public sealed class clsLicitacionesController(
 
     /// <summary>
     /// 200 xlsx: el Excel original del cliente con las columnas de precio final, estado, servicios conexos y camiones (HU-011.3, HU-023.5),
-    /// más las hojas "Resumen Cotifly" y "Camiones Cotifly"; sin original, una hoja con los campos mapeados. Nunca trae costos de Nexo. 404
-    /// si no es suya o no es licitación. HU-035.2 (#213): el original guardado pasa por los controles del Excel subido (400
+    /// más las hojas "Resumen Cotifly" y "Camiones Cotifly"; sin original, una hoja con los campos mapeados. Nunca trae costos de Nexo. HU-034.1
+    /// (#201): el mismo archivo para el director y el gerente de la regional del dueño. 404 si no la puede ver o no es licitación. HU-035.2 (#213): el original guardado pasa por los controles del Excel subido (400
     /// <c>EXCEL_INVALIDO</c> o <c>ARCHIVO_DEMASIADO_GRANDE</c> con <c>detalle.motivo</c>) y por el cupo de lecturas (503
     /// <c>SERVICIO_OCUPADO</c> con <c>Retry-After</c>).
     /// </summary>

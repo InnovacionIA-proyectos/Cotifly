@@ -224,12 +224,12 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
         Reloj.Avanzar(TimeSpan.FromHours(2));
 
         var marcada = await ConsultarAsync(s => s.GetRequiredService<IClsSeguimientoService>()
-            .MarcarAsync(ana, cotizacion.Folio, false, "Precio alto", Ct));
+            .MarcarAsync(ana, cotizacion.Folio, false, "Valor muy alto", Ct));
         marcada.EsExitoso.Should().BeTrue();
         var leida = await ConsultarAsync(s => s.GetRequiredService<IClsCotizacionRepository>().ObtenerPorFolioAsync(cotizacion.Folio, Ct));
 
         leida!.Ganada.Should().BeFalse();
-        leida.MotivoRechazo.Should().Be("Precio alto");
+        leida.MotivoRechazo.Should().Be("Valor muy alto");
         leida.MarcadoAt.Should().Be(Reloj.AhoraUtc);
         leida.UpdatedAt.Should().Be(Reloj.AhoraUtc, "el interceptor fija updatedAt con el reloj de la aplicación");
         leida.CreatedAt.Should().Be(creada, "createdAt no cambia al modificar");

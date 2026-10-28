@@ -58,6 +58,12 @@ public static class clsCodigosError
     /// <summary>Ya se envió la cotización a los mismos destinatarios <c>para</c> hace menos de 5 minutos.</summary>
     public const string CorreoDuplicado = "CORREO_DUPLICADO";
 
+    /// <summary>
+    /// #228: el correo trae más destinatarios entre <c>para</c> y <c>cc</c> que el tope (<c>Correo:MaximoDestinatarios</c>, 10 por
+    /// defecto): 400 <c>ErrorNegocio</c> con <c>detalle.maximo</c> y <c>detalle.recibidos</c>, en el envío y en la vista previa.
+    /// </summary>
+    public const string CorreoDemasiadosDestinatarios = "CORREO_DEMASIADOS_DESTINATARIOS";
+
     /// <summary>La cotización no tiene PDF en el almacén para adjuntar.</summary>
     public const string CorreoPdfNoEncontrado = "CORREO_PDF_NO_ENCONTRADO";
 
@@ -390,4 +396,12 @@ public static class clsCodigosError
     /// backend .NET.
     /// </summary>
     public const string CotizacionNoFinalizada = "COTIZACION_NO_FINALIZADA";
+
+    /// <summary>
+    /// HU-018.1 (#155, parte B): al marcar <c>perdida</c> (<c>POST .../resultado</c> o <c>POST .../seguimiento</c>) el motivo es obligatorio y
+    /// debe ser uno de la lista configurada (<c>Resultado:MotivosPerdida</c>, la de NEXO, <c>GET /web/motivos-perdida</c>), y el motivo
+    /// <c>Otro</c> exige <c>comentario</c>. 400; <c>detalle.motivos_permitidos</c> trae la lista y <c>detalle.requiere_comentario</c> si
+    /// solo faltó el comentario. Código nuevo del backend .NET.
+    /// </summary>
+    public const string MotivoNoPermitido = "MOTIVO_NO_PERMITIDO";
 }

@@ -155,6 +155,12 @@ public sealed record clsLicitacion(
     IReadOnlyList<Cotizaciones.DTOs.clsCubicacionRutaResumen>? Cubicacion = null)
 {
     /// <summary>
+    /// HU-034.1 (#201, parte A): <c>true</c> si quien consulta no es el dueño sino el director o el gerente comercial de su regional (solo
+    /// consulta: las acciones siguen siendo del dueño); <c>false</c> para el dueño. Igual que <c>DetalleCotizacion.solo_lectura</c>.
+    /// </summary>
+    public bool SoloLectura { get; init; }
+
+    /// <summary>
     /// HU-028.1 (#183): líneas (rutas) rechazadas por la Mesa de Costeo de Nexo. No son pendientes (<c>lineas_pendientes</c> no las cuenta)
     /// ni suman en <c>precio_final</c>.
     /// </summary>

@@ -388,6 +388,15 @@ public sealed class clsNexoFalso : HttpMessageHandler
         }
     }
 
+    /// <summary>HU-018.1 (#155): el <c>motivo</c> y el <c>comentario</c> con que se marcó el resultado (<c>null</c> si no hay).</summary>
+    public (string? Motivo, string? Comentario) MotivoDelResultado(string solicitudId)
+    {
+        lock (_candado)
+        {
+            return _solicitudes.TryGetValue(solicitudId, out var s) && s.Cotizacion is { } c ? (c.Motivo, c.Comentario) : (null, null);
+        }
+    }
+
     /// <summary>Id de la cotización de Nexo de la solicitud (o <c>null</c> si todavía no hay).</summary>
     public string? CotizacionDe(string solicitudId)
     {
