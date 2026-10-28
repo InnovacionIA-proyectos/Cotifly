@@ -67,11 +67,11 @@ tags:
   - name: web
     description: Consola de cotización del comercial
   - name: admin
-    description: Administración de políticas de margen (rol gerente_comercial)
+    description: Administración de políticas de margen (roles gerente_comercial y director, HU-037)
   - name: metricas
     description: |
       Tablero de métricas agregadas (HU-010.1, ADR-016). `GET /web/metricas/comercial` (las cotizaciones
-      propias) y `GET /web/metricas/regional` (solo `gerente_comercial`: su regional, filtrable por comercial).
+      propias) y `GET /web/metricas/regional` (`gerente_comercial` o `director`, HU-037: su regional, filtrable por comercial).
       El borrador anterior (`/web/metricas/actividad` y `/web/metricas/ajustes-margen`) se retiró en HU-014.3 (#152).
 
       Definiciones (recalculables a mano sobre `dbo_cotifly`, ver `docs/docs_front/CONTRATO_API_WEB.md` §3.1):
@@ -150,7 +150,9 @@ paths:
         como `ID` numérico. El `NOMBREUSUARIO` de la fila encontrada (nunca el que
         envía el cliente) es la clave para ubicar o crear al usuario en `UsuariosWeb`
         (aprovisionamiento just-in-time). Luego traduce sus roles externos a roles
-        internos y exige `comercial` o `gerente_comercial`.
+        internos y exige `comercial`, `gerente_comercial` o `director` (HU-037, #210). Con varios roles externos mapeados
+        gana el de mayor alcance: `director` > `gerente_comercial` > `comercial` (regla auditada: `precedencia_director` o
+        `precedencia_gerente_comercial`).
         Cualquier falla (usuario inexistente, rol no autorizado, almacén caído) responde
         el mismo 401 genérico.
       security: []
@@ -365,7 +367,7 @@ paths:
         HU-016.1 (#154). Vista "Todas las cotizaciones" del gerente: fila por fila, con la misma forma que
         `GET /web/mis-cotizaciones` (`CotizacionResumen`) y, en cada fila, el comercial dueño (`comercial`).
 
-        - Solo `gerente_comercial` (claim `rol` del token; un `comercial` recibe 403).
+        - Solo `gerente_comercial` o `director` (claim `rol` del token; HU-037, #210; un `comercial` recibe 403).
         - El alcance es SIEMPRE la regional del usuario autenticado, resuelta en el servidor con la misma regla que
           `GET /web/metricas/regional` (`DimEjecutivo` cuando está conectada; si no, `UsuariosWeb.regional`). No se acepta
           una regional por parámetro y nunca se devuelven cotizaciones de otra regional.
@@ -431,7 +433,7 @@ paths:
 
         Solo lectura de lo que Cotifly tiene guardado: no consulta Nexo, no dispara el polling ni cambia la cotización.
 
-        Acceso: el **dueño**; o un `gerente_comercial` cuya regional efectiva incluye al dueño (la misma regla que
+        Acceso: el **dueño**; o un `gerente_comercial` (o `director`, HU-037) cuya regional efectiva incluye al dueño (la misma regla que
         `GET /web/cotizaciones/regional` y la descarga del PDF), que solo consulta (`solo_lectura = true`; las acciones siguen siendo del
         dueño y a él le responden 404). Si la regional del gerente no se puede comprobar (sin regional o fuente caída) se niega. Cualquier
         otro usuario recibe 404, igual que si el folio no existiera.
@@ -756,8 +758,8 @@ paths:
       tags: [metricas]
       summary: Métricas de las cotizaciones propias (tablero del comercial, HU-010.2)
       description: |
-        Indicadores de las cotizaciones del usuario autenticado (roles `comercial` y `gerente_comercial`: el gerente
-        también cotiza y aquí ve solo las suyas). El rol sale del claim `rol` del access token, emitido en el login SSO
+        Indicadores de las cotizaciones del usuario autenticado (roles `comercial`, `gerente_comercial` y `director`: el gerente
+        y el director también cotizan y aquí ven solo las suyas). El rol sale del claim `rol` del access token, emitido en el login SSO
         con la verificación doble de ClientePro (ADR-009); no se lee de `UsuariosWeb`. Definiciones en el tag
         `metricas`. Un comercial sin cotizaciones recibe 200 con ceros, `null` en los promedios y la serie con cada mes
         en 0 (el frontend muestra el estado vacío).
@@ -831,7 +833,7 @@ paths:
       tags: [metricas]
       summary: Métricas de la regional del gerente comercial (tablero del gerente, HU-010.3)
       description: |
-        Solo `gerente_comercial` (claim `rol` del token; un `comercial` recibe 403). El alcance es SIEMPRE la regional
+        Solo `gerente_comercial` o `director` (claim `rol` del token; HU-037, #210; un `comercial` recibe 403). El alcance es SIEMPRE la regional
         del usuario autenticado, resuelta en el servidor (`DWCubosEBSSAP.DimEjecutivo` cuando está conectada; si no,
         `UsuariosWeb.regional`, que fija el DBA; ADR-016). No se acepta una regional por parámetro.
 
@@ -3632,7 +3634,7 @@ paths:
       tags: [sistema]
       summary: Descarga el PDF de una cotización (inline)
       description: |
-        Requiere sesión. Solo el dueño de la cotización (o un gerente_comercial cuya regional efectiva
+        Requiere sesión. Solo el dueño de la cotización (o un gerente_comercial o director cuya regional efectiva
         incluye al dueño, con la misma regla que `GET /web/cotizaciones/regional`; si la regional del gerente
         no se conoce o la fuente está caída, solo el dueño, 404 para el gerente) puede descargarlo. Como exige `Authorization`, el frontend lo descarga con HttpClient
         como blob (un `<a href>` directo no envía el header).
@@ -3738,7 +3740,7 @@ components:
       bearerFormat: JWT
       description: |
         JWT HS256, 60 minutos. Claims: `sub` (UUID del usuario en `UsuariosWeb`),
-        `jti`, `username`, `rol` (`comercial` | `gerente_comercial`).
+        `jti`, `username`, `rol` (`comercial` | `gerente_comercial` | `director`).
 
   parameters:
     Folio:
@@ -4222,7 +4224,7 @@ components:
           type: string
         rol:
           type: string
-          enum: [comercial, gerente_comercial]
+          enum: [comercial, gerente_comercial, director]
         ubicacion:
           type: string
           nullable: true
@@ -5556,7 +5558,7 @@ components:
         rol:
           type: string
           nullable: true
-          description: "`comercial`, `gerente_comercial` o `null`: rol interno asignado en `UsuariosRoles` (se fija en el login SSO, ADR-009); `null` si no tiene asignación activa."
+          description: "`comercial`, `gerente_comercial`, `director` (HU-037) o `null`: rol interno asignado en `UsuariosRoles` (se fija en el login SSO, ADR-009); `null` si no tiene asignación activa."
         indicadores:
           $ref: '#/components/schemas/IndicadoresMetricas'
 

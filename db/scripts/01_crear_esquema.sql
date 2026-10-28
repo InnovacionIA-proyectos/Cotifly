@@ -120,7 +120,8 @@ CREATE TABLE dbo_cotifly.Roles (
     updatedAt       DATETIMEOFFSET      NOT NULL CONSTRAINT df_roles_updatedAt DEFAULT (SYSDATETIMEOFFSET()),
     CONSTRAINT pk_roles PRIMARY KEY (id),
     CONSTRAINT uq_roles_codigo UNIQUE (codigo),
-    CONSTRAINT ck_roles_codigo CHECK (codigo IN ('comercial', 'gerente_comercial'))
+    -- HU-037 (#209): 'director' (el 15 lo agrega en las bases ya instaladas).
+    CONSTRAINT ck_roles_codigo CHECK (codigo IN ('comercial', 'gerente_comercial', 'director'))
 );
 GO
 

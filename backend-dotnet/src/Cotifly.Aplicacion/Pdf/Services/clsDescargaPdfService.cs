@@ -73,7 +73,7 @@ public sealed partial class clsDescargaPdfService(
         if (!cotizacion.EsDe(usuarioId))
         {
             var reloj = Stopwatch.StartNew();
-            var (permitido, motivo) = usuario.Rol == RolInterno.GerenteComercial
+            var (permitido, motivo) = usuario.Rol.EsGerencial()
                 ? await EsDeSuRegionalAsync(usuarioId, cotizacion, cancellationToken)
                 : (false, null);
             await auditoria.RegistrarAsync(

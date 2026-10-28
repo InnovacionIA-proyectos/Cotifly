@@ -33,6 +33,10 @@ public sealed class clsPasosWeb(clsContextoWeb web)
     [Given("el gerente comercial {string} con sesión en la regional {string}")]
     public Task DadoElGerente(string alias, string regional) => IniciarSesionAsync(alias, clsBaseDatosPruebas.RolExternoGerente, regional);
 
+    /// <summary>HU-037 (#210): sesión con el rol externo de director de las pruebas (<see cref="clsBaseDatosPruebas.RolExternoDirector"/>).</summary>
+    [Given("el director {string} con sesión en la regional {string}")]
+    public Task DadoElDirector(string alias, string regional) => IniciarSesionAsync(alias, clsBaseDatosPruebas.RolExternoDirector, regional);
+
     [Given("que {string} tiene la cotización web {string} del cliente {string} con su PDF")]
     public async Task DadoLaCotizacion(string alias, string cotizacion, string nit) =>
         web.Cotizaciones[cotizacion] = await web.Api.CrearCotizacionAsync(web.Sesion(alias).UsuarioId, nit, creadaEn: web.SiguienteHoraCreacion());

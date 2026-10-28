@@ -77,7 +77,7 @@ public sealed class clsTableroMetricasService(
             return ErrorNoAutenticado();
         }
 
-        if (rol != RolInterno.GerenteComercial)
+        if (!rol.EsGerencial())
         {
             return new clsErrorDominio(clsCodigosAplicacion.SinPermiso, "Solo el gerente comercial ve las métricas de la regional.");
         }

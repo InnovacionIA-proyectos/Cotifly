@@ -104,6 +104,76 @@ public sealed class clsAuthEndpointTests(clsBaseDatosPruebas baseDatos) : IClass
     }
 
     [Fact]
+    public async Task UnComercialQueTambienEsDirectorEntraComoDirectorYUsaLoDelGerenteYLaConsola()
+    {
+        var persona = await PersonaAsync(clsBaseDatosPruebas.RolExternoComercial, clsBaseDatosPruebas.RolExternoDirector);
+        using var factory = Crear();
+        using var cliente = factory.CreateClient();
+
+        var login = await LoginAsync(cliente, persona);
+        using var gerencial = await GetConTokenAsync(cliente, "/pruebas/gerente", login.Access);
+        using var consola = await GetConTokenAsync(cliente, "/pruebas/comercial", login.Access);
+
+        gerencial.StatusCode.Should().Be(HttpStatusCode.OK, "el director usa todo lo del gerente (HU-037, #210)");
+        consola.StatusCode.Should().Be(HttpStatusCode.OK, "el director también usa la consola del comercial");
+        (await consola.Content.ReadAsStringAsync(Ct)).Should().Contain("\"rol\":\"director\"");
+    }
+
+    [Fact]
+    public async Task UnDirectorNuevoSeDaDeAltaConSuRolYVuelveAEntrarComoDirector()
+    {
+        // Validación HU-037 (JIT): el alta crea la asignación `director` en UsuariosRoles y el segundo login la encuentra igual.
+        var persona = await PersonaAsync(clsBaseDatosPruebas.RolExternoDirector);
+        using var factory = Crear();
+        using var cliente = factory.CreateClient();
+
+        var primero = await LoginAsync(cliente, persona);
+        var segundo = await LoginAsync(cliente, persona);
+        using var gerencial = await GetConTokenAsync(cliente, "/pruebas/gerente", segundo.Access);
+        var asignado = await clsBaseDatosPruebas.EscalarAsync<string>(baseDatos.CadenaCotifly, $"""
+            SELECT STRING_AGG(r.codigo, ',') FROM dbo_cotifly.UsuariosRoles ur
+            JOIN dbo_cotifly.Roles r ON r.id = ur.rolId JOIN dbo_cotifly.UsuariosWeb u ON u.id = ur.usuarioId
+            WHERE u.nombreUsuario = N'{persona}' AND ur.activo = 1
+            """);
+
+        primero.Access.Should().NotBeNullOrEmpty();
+        gerencial.StatusCode.Should().Be(HttpStatusCode.OK);
+        asignado.Should().Be("director");
+    }
+
+    [Fact]
+    public async Task UnGerenteQuePasaADirectorEnClienteProQuedaEnRevisionHastaQueSeLeReasigneElRol()
+    {
+        // Validación HU-037: ascender (o degradar) en ClientePro no cambia solo el rol de Cotifly. El login y el refresh se rechazan
+        // (rol_externo_cambio) hasta que el DBA reasigna UsuariosRoles. El access ya emitido conserva su rol hasta vencer (60 min,
+        // JWT sin estado, ADR-009): es el riesgo residual documentado.
+        var nombre = $"api{Guid.NewGuid():N}"[..20];
+        var idExterno = await baseDatos.CrearPersonaExternaAsync(nombre, "Persona de prueba", $"{nombre}@boterosoto.com.co", clsBaseDatosPruebas.RolExternoGerente);
+        using var factory = Crear();
+        using var cliente = factory.CreateClient();
+        var comoGerente = await LoginAsync(cliente, nombre);
+
+        await baseDatos.CambiarRolesExternosAsync(idExterno, clsBaseDatosPruebas.RolExternoDirector);
+        using var relogin = await cliente.PostAsJsonAsync("/api/auth/login-clientepro", new { idUsuario = nombre }, Ct);
+        using var refresh = await cliente.PostAsJsonAsync("/api/auth/refresh", new { refresh = comoGerente.Refresh }, Ct);
+        using var accesoViejo = await GetConTokenAsync(cliente, "/pruebas/comercial", comoGerente.Access);
+
+        relogin.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        refresh.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await accesoViejo.Content.ReadAsStringAsync(Ct)).Should().Contain("\"rol\":\"gerente_comercial\"", "el access viejo no gana el rol nuevo");
+
+        // La reasignación del DBA (desactivar la asignación anterior y crear la de director) le devuelve el acceso, ya como director.
+        await clsBaseDatosPruebas.EjecutarAsync(baseDatos.CadenaCotifly, $"""
+            DECLARE @u UNIQUEIDENTIFIER = (SELECT id FROM dbo_cotifly.UsuariosWeb WHERE nombreUsuario = N'{nombre}');
+            UPDATE dbo_cotifly.UsuariosRoles SET activo = 0 WHERE usuarioId = @u AND activo = 1;
+            INSERT INTO dbo_cotifly.UsuariosRoles (usuarioId, rolId) SELECT @u, id FROM dbo_cotifly.Roles WHERE codigo = N'director';
+            """);
+        var comoDirector = await LoginAsync(cliente, nombre);
+        using var consola = await GetConTokenAsync(cliente, "/pruebas/comercial", comoDirector.Access);
+        (await consola.Content.ReadAsStringAsync(Ct)).Should().Contain("\"rol\":\"director\"");
+    }
+
+    [Fact]
     public async Task UnaPersonaDesconocidaYUnaSinRolAutorizadoRecibenElMismo401Generico()
     {
         var sinRol = await PersonaAsync(clsBaseDatosPruebas.RolExternoSinMapeo);
@@ -319,11 +389,11 @@ public sealed class clsAuthEndpointTests(clsBaseDatosPruebas baseDatos) : IClass
         });
     }
 
-    /// <summary>Persona nueva en el almacén con un rol externo; devuelve su NOMBREUSUARIO.</summary>
-    private async Task<string> PersonaAsync(int rolExterno)
+    /// <summary>Persona nueva en el almacén con sus roles externos; devuelve su NOMBREUSUARIO.</summary>
+    private async Task<string> PersonaAsync(params int[] rolesExternos)
     {
         var nombre = $"api{Guid.NewGuid():N}"[..20];
-        await baseDatos.CrearPersonaExternaAsync(nombre, "Persona de prueba", $"{nombre}@boterosoto.com.co", rolExterno);
+        await baseDatos.CrearPersonaExternaAsync(nombre, "Persona de prueba", $"{nombre}@boterosoto.com.co", rolesExternos);
         return nombre;
     }
 

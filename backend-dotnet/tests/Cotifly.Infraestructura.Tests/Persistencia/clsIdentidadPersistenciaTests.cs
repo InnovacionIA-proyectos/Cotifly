@@ -134,14 +134,15 @@ public sealed class clsIdentidadPersistenciaTests(clsBaseDatosPruebas baseDatos)
     }
 
     [Fact]
-    public async Task ElScript0002SiembraLosDosRolesInternosConSuCodigo()
+    public async Task ElScript0002SiembraLosDosRolesInternosYEl15ElDirectorConSuCodigo()
     {
         var roles = await ConsultarAsync(s => s.GetRequiredService<IClsRolRepository>().ListarActivosAsync(Ct));
         var codigos = await clsBaseDatosPruebas.EscalarAsync<int>(BaseDatos.CadenaCotifly,
             "SELECT COUNT(*) FROM dbo_cotifly.Roles WHERE codigo IN ('comercial', 'gerente_comercial')");
 
         codigos.Should().Be(2);
-        roles.Select(r => r.Codigo).Should().BeEquivalentTo([RolInterno.Comercial, RolInterno.GerenteComercial]);
+        roles.Select(r => r.Codigo).Should().BeEquivalentTo([RolInterno.Comercial, RolInterno.GerenteComercial, RolInterno.Director]);
+        roles.Single(r => r.Codigo == RolInterno.Director).IdRolExterno.Should().Be(clsBaseDatosPruebas.RolExternoDirector);
         roles.Single(r => r.Codigo == RolInterno.Comercial).IdRolExterno.Should().Be(clsBaseDatosPruebas.RolExternoComercial);
         roles.Single(r => r.Codigo == RolInterno.GerenteComercial).IdRolExterno.Should().Be(clsBaseDatosPruebas.RolExternoGerente);
     }

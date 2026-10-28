@@ -2,7 +2,7 @@
 
 - **Estado:** Propuesta (definiciones pendientes de validar con Gerencia Comercial; la fuente de la regional ya está verificada en #81, faltan la credencial en el despliegue y la salida de red, ver Pendientes)
 - **Fecha:** 2026-09-29
-- **Issue / HU:** #45 (HU-010.1) y #81 (HU-003.6, regional en el login). Consumidores: clientepro-frontend #50 (HU-010.2, tablero del comercial), #51 (HU-010.3, tablero del gerente) y #52 (HU-010.4, QA de cálculos). Relacionada con ADR-009 (rol en el token), ADR-011 (folio y versiones), ADR-014 (TRM y cotizaciones en USD) y ADR-015 (costeo de Nexo, script 0004).
+- **Issue / HU:** #45 (HU-010.1), #81 (HU-003.6, regional en el login) y HU-037 (#209 a #212, rol Director: sección 11). Consumidores: clientepro-frontend #50 (HU-010.2, tablero del comercial), #51 (HU-010.3, tablero del gerente) y #52 (HU-010.4, QA de cálculos). Relacionada con ADR-009 (rol en el token), ADR-011 (folio y versiones), ADR-014 (TRM y cotizaciones en USD) y ADR-015 (costeo de Nexo, script 0004).
 
 ## Contexto
 
@@ -167,6 +167,29 @@ Decisión 8 del 2026-10-08 (HU-021): una solicitud (`CotizacionesSolicitud`) tie
   - Orden: `valor_cotizado_cop` descendente, luego el nombre; la fila sin línea al final.
 - **Implementación:** el repositorio hace una segunda consulta con las rutas de las versiones vigentes (`OPENJSON` de ids, `OUTER APPLY` a `MargenAjustes`) y la calculadora de dominio agrega (`clsCalculadoraMetricas.PorLineaNegocio`). No hace falta un cambio de esquema.
 - **Alternativa descartada: contar rutas.** Inflaría `cantidad` y la conversión con cada ruta de una licitación (una solicitud de 20 rutas ganada no son 20 cotizaciones ganadas).
+
+### 11. Rol Director (HU-037, #209 a #212)
+
+Gerencia pidió un rol por encima del gerente comercial que vea **todas** las regionales. Decisiones (2026-10-26):
+
+- **Tercer rol interno `director`** (`RolInterno.Director`; catálogo `dbo_cotifly.Roles` con el script 15, #209). El rol sigue saliendo del
+  token (claim `rol`), nunca de una columna de `UsuariosWeb` (ADR-009).
+- **Precedencia `director` > `gerente_comercial` > `comercial`** cuando varios roles externos de una persona están mapeados. Es una regla
+  explícita y auditada, como la del gerente: `precedencia_director` (y `precedencia_gerente_comercial` sin director). Si la persona pierde
+  el rol que ganó, su asignación en `UsuariosRoles` deja de coincidir y queda en revisión (`rol_externo_cambio`).
+- **Permisos (#210): el director usa todo lo del gerente.** Se agrega `director` a las políticas existentes en vez de crear otra:
+  `Comercial` (consola del comercial: `comercial`, `gerente_comercial`, `director`) y `GerenteComercial` (tablero y listado regional,
+  administración de líneas de negocio y márgenes: `gerente_comercial`, `director`). Una política aparte duplicaría los mismos endpoints
+  y obligaría a repetir los atributos; el alcance distinto (todas las regionales) no es de la política, es del caso de uso.
+- **Defensa en profundidad:** los casos de uso que revalidaban `Rol == GerenteComercial` usan `RolInterno.EsGerencial()`
+  (`gerente_comercial` o `director`): `clsLineasNegocioAdminService`, `clsTableroMetricasService`, `clsCotizacionesRegionalService`,
+  `clsDetalleCotizacionService` y `clsDescargaPdfService`. La auditoría de las consultas ajenas registra el rol real.
+- **Roles desconocidos:** el repositorio de roles solo lee los códigos que el backend conoce. Un rol nuevo en el catálogo con una imagen
+  vieja ya no tumba el login de todos (antes, la fila `director` con una imagen anterior a HU-037 hacía fallar la lectura del catálogo).
+- **IDROLES por ambiente** (scripts de operación de Datos, no del backend): prueba `gerente_comercial` 25 (provisional) y `director` 31
+  (#209, parte B); producción `comercial` 34, `gerente_comercial` 29 y `director` 31 (#212). `uq_roles_idRolExterno` obliga a sacar al
+  gerente del 31 antes de dárselo al director.
+- **`/health/ready` no exige el 15:** no agrega columnas; sin la fila `director` nadie entra con ese rol (falla cerrado).
 
 ## Alternativas consideradas
 
