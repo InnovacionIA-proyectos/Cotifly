@@ -1,6 +1,6 @@
 # Diccionario de datos — `dbo_cotifly` (SQL Server)
 
-> **Estado:** vigente desde HU-021 · **Dueño:** Duban Guerra (backend) y scalderon-bs (datos) · **Actualizado:** 2026-10-22 (ajustes `02` a `13`, HU-033)
+> **Estado:** vigente desde HU-021 · **Dueño:** Duban Guerra (backend) y scalderon-bs (datos) · **Actualizado:** 2026-10-28 (`SapMargenCliente`/`SapMargenSyncLog`, HU-042.1 #242; `SapMapeoTrqType.lineaNegocioId`, deuda técnica #247)
 
 Qué significa cada columna de las tablas de cotizaciones, quién la escribe y quién la lee. Los tipos, nulos, restricciones e
 índices están en [`ESQUEMA_OBJETIVO_SQLSERVER.md`](ESQUEMA_OBJETIVO_SQLSERVER.md) (Parte A, con el diagrama ER); la decisión
@@ -167,4 +167,6 @@ Quitar un conexo borra su fila (no hay columna `incluido`). El estado del envío
 | `EventosConversacion`, `Sesiones` | Historial y estado del asistente por folio |
 | `UsuariosWeb`, `Roles`, `UsuariosRoles`, `TokensRefresco`, `TokensRevocados` | Identidad: usuarios de ClientePro, rol interno, refresh tokens (hash) y access tokens revocados |
 | `MargenesPolitica` | Líneas de negocio, margen de política y nombre equivalente en Nexo (`mapeoLineasNexo`). Desde el `0009`: Nacional, Distribucion, Importacion, Exportacion, Internacional y DevolucionContenedor (salen ITR, Almacenamiento y Almacenamiento3PL) |
-| `SapMapeoTrqType` | TrqType de SAP TM → línea de negocio. Falta el de `DevolucionContenedor` (lo da negocio o SAP) |
+| `SapMapeoTrqType` | TrqType de SAP TM → línea de negocio. Clave `(trqType, salesOrg)`; `salesOrg=''` es el comodín (gana la fila específica si existe, `salesOrg DESC`). `lineaNegocioId` (FK a `MargenesPolitica.id`, script `18`, deuda técnica #247): hoy conviven con `lineaNegocio` (texto, el original) mientras el backend se adapta a leer por id en vez de por texto — `lineaNegocio` se retira en un script futuro. Falta el TrqType de `DevolucionContenedor` (lo da negocio o SAP) |
+| `SapMargenCliente` | Copia local del margen recomendado de SAP TM (`RentabClienteSet`), sincronizada a diario por un job fuera de `backend-dotnet` (HU-042.1, #242; no la lee el backend todavía, eso es HU-042.2, #243). Clave de negocio única `(salesOrgId, trqType, bpSap)` + `id` propio; `bpSap` es el BP del cliente en SAP (`OrderPartyId`); `nit` ya resuelto por BP contra el DW `DWCubosOperacionesEBS.dbo.DimBpSolicitante`, para cruzar directo con `nitCliente` de `CotizacionesSolicitud` sin que el backend tenga que resolverlo aparte; `margenRecomendado` es el valor completo que manda SAP; `activo` es soft delete (si SAP deja de traer un combo, se desactiva, no se borra) |
+| `SapMargenSyncLog` | Log de corridas del job de `SapMargenCliente` (HU-042.1, #242): append-only, una fila por ejecución (no por registro de SAP), con cuándo empezó/terminó, cuántas filas insertó/actualizó/desactivó, y el resultado (`ok`/`error`/`omitido`) |
