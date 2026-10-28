@@ -366,7 +366,7 @@ trabajo de **Datos (@scalderon-bs)**, separado de `backend-dotnet` — **no se d
 releases de Duban en Dokploy, y no lo lee la app** (por eso no está en `scripts/pendientes/` ni lo exige `/health/ready`).
 
 **Objetos** (`scripts/17_sap_margen_sincronizacion.sql`):
-- `SapMargenCliente` — estado actual: `id` propio (INT IDENTITY, igual que `Roles`/`MargenesPolitica`) como PK, con
+- `SapMargenCliente` — estado actual: `id` propio (`UNIQUEIDENTIFIER`, igual que `SapMargenSyncLog`) como PK, con
   `(salesOrgId, trqType, bpSap)` como restricción única (la clave de negocio). `trqType` es el código crudo de SAP; el
   nombre de la línea de negocio se obtiene cruzando con `SapMapeoTrqType`, no se duplica aquí. Más `nit` (resuelto por BP,
   para cruzar directo con `CotizacionesSolicitud` sin que el backend tenga que resolverlo aparte), `margenRecomendado` (el
@@ -375,12 +375,13 @@ releases de Duban en Dokploy, y no lo lee la app** (por eso no está en `scripts
   propia conexión, la llena y la llama desde ahí; desaparece sola al cerrar la conexión (sin `TRUNCATE` manual y sin que
   dos corridas puedan pisarse mientras cargan datos, porque cada una tiene la suya, privada).
 - `SapMargenSyncLog` — log de corridas (append-only, una fila por ejecución, no por registro de SAP), inspirado en
-  `fo_snapshot_sync_log` de EmbarQA/`etl-sap`.
+  `fo_snapshot_sync_log` de EmbarQA/`etl-sap`. `id` es `UNIQUEIDENTIFIER` (no serial), igual que la mayoría de las tablas
+  de evento/log del esquema (`EventosConversacion`, `TokensRefresco`...).
 - `sp_sincronizar_margen_sap` — hace el `MERGE` (alta, actualización solo si cambió el valor, soft delete de lo que ya no
   viene) y escribe el log, todo en una transacción con `sp_getapplock` para que no se solapen dos corridas.
 
 **El job** (`jobs/sincronizar_margen_sap.ps1`) trae el set completo de SAP (~1500 registros, sin paginar), resuelve el
-`nit` de cada BP contra `dbo.DimBpSolicitante` en el DW `DWCubosOperacionesEBS` (10.10.40.24,1433, usuario de solo lectura
+`nit` de cada BP contra `dbo.DimBPSolicitante` en el DW `DWCubosOperacionesEBS` (10.10.40.24,1433, usuario de solo lectura
 `consultascubos` — **base distinta** de `DWCubosEBSSAP`, la de `ConnectionStrings:Regional` que ya usa el backend para
 `DimEjecutivo`: no se puede reusar esa conexión), vuelca todo al staging y llama al stored procedure.
 
@@ -405,9 +406,26 @@ conexión al destino también es login SQL, no autenticación de Windows — mis
 ningún servicio.
 
 **El esquema (tablas, SP y la FK de `SapMapeoTrqType`, scripts `17` y `18`) ya está aplicado en la base compartida de
-pruebas (2026-10-28).** Lo que falta es solo la parte operativa del job: confirmar que el servidor de SQL Server tenga
-ruta de red a `sap-tm-prd.boterosoto.local:8000` y a `10.10.40.24,1433`, llenar `jobs/.env` ahí, y el script que registra
-el job en SQL Agent (`sp_add_job` / `sp_add_jobstep` / `sp_add_schedule`), que todavía no se ha escrito.
+pruebas (2026-10-28), y el job ya se probó de punta a punta a mano** (1276 filas sincronizadas, 100% con `nit` resuelto).
+En esa prueba aparecieron y se corrigieron 2 bugs: la tabla del DW es `dbo.DimBPSolicitante` (BP en mayúsculas, no
+`DimBpSolicitante`), y había un choque de collation entre `#SapMargenStage` (nace con el collation del servidor/tempdb) y
+`SapMargenCliente` (el de esta base) — se corrigió con `COLLATE DATABASE_DEFAULT` en las columnas de texto de la temporal.
+
+### Cómo probarlo a mano (ya hecho una vez, 2026-10-28)
+1. Entrar al servidor de SQL Server por Escritorio Remoto (RDP) — **no por red, hay que estar dentro de esa máquina**:
+   el job termina corriendo ahí (vía SQL Agent), así que el archivo y sus credenciales tienen que vivir ahí también.
+2. Crear una carpeta, por ejemplo `C:\Jobs\SapMargenSap\`.
+3. Copiar ahí `jobs/sincronizar_margen_sap.ps1` y el `jobs/.env` real (con las claves ya llenas) — **no** `.env.example`.
+4. Abrir PowerShell en esa carpeta y correr `.\sincronizar_margen_sap.ps1` directamente, a mano.
+5. Verificar en la base: `SELECT COUNT(*) FROM dbo_cotifly.SapMargenCliente;` y `SELECT TOP 1 * FROM dbo_cotifly.SapMargenSyncLog ORDER BY iniciadoAt DESC;` — debe haber filas y la última corrida debe decir `status = 'ok'`.
+
+**Nota:** este probado se hizo primero desde una máquina que *no* era el servidor (con `COTIFLY_SQL_SERVER`, `NEXO_DW_SQL_SERVER` y `SAP_TM_URL` apuntando por red a sus hosts reales, no a `.`) — eso sirve para confirmar que la lógica del script funciona, pero **no reemplaza instalarlo en el servidor real**: el SQL Agent Job en sí solo puede ejecutar un archivo que esté físicamente en su propio disco.
+
+### Lo que falta (pendiente)
+Confirmar que el servidor de SQL Server tenga ruta de red a `sap-tm-prd.boterosoto.local:8000` y a `10.10.40.24,1433`
+(ya confirmado para una máquina de desarrollo; falta confirmarlo específicamente desde el servidor), y escribir el script
+que registra el job en SQL Agent (`sp_add_job` / `sp_add_jobstep` / `sp_add_schedule` / `sp_add_jobserver`), que todavía
+no existe.
 
 ## Mantener esto en sincronía
 

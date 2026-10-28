@@ -23,11 +23,11 @@ BEGIN TRANSACTION;
 
 IF OBJECT_ID(N'dbo_cotifly.SapMargenCliente', N'U') IS NULL
 BEGIN
-    -- id propio (igual que Roles/MargenesPolitica, INT IDENTITY) además de la clave de negocio, que queda
+    -- id propio (UNIQUEIDENTIFIER, igual que SapMargenSyncLog) además de la clave de negocio, que queda
     -- como restricción única en vez de PK.
     CREATE TABLE dbo_cotifly.SapMargenCliente
     (
-        id                INT IDENTITY(1, 1) NOT NULL CONSTRAINT pk_sapMargenCliente PRIMARY KEY,
+        id                UNIQUEIDENTIFIER NOT NULL CONSTRAINT df_sapMargenCliente_id DEFAULT (NEWID()) CONSTRAINT pk_sapMargenCliente PRIMARY KEY,
         salesOrgId        NVARCHAR(20)     NOT NULL,
         trqType           NVARCHAR(8)      NOT NULL,
         bpSap             NVARCHAR(20)     NOT NULL,
@@ -55,7 +55,7 @@ BEGIN
     -- dbo_prueba.fo_snapshot_sync_log de EmbarQA/etl-sap).
     CREATE TABLE dbo_cotifly.SapMargenSyncLog
     (
-        id                BIGINT IDENTITY(1, 1) NOT NULL CONSTRAINT pk_sapMargenSyncLog PRIMARY KEY,
+        id                UNIQUEIDENTIFIER NOT NULL CONSTRAINT df_sapMargenSyncLog_id DEFAULT (NEWID()) CONSTRAINT pk_sapMargenSyncLog PRIMARY KEY,
         iniciadoAt        DATETIMEOFFSET  NOT NULL CONSTRAINT df_sapMargenSyncLog_iniciadoAt DEFAULT (SYSDATETIMEOFFSET()),
         finalizadoAt      DATETIMEOFFSET  NULL,
         filasInsertadas   INT             NULL,

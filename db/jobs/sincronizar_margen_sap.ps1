@@ -11,7 +11,7 @@
        cambiarlo a 60, por ejemplo, es solo cambiar la variable).
     1. Trae el set completo de RentabClienteSet de SAP TM (confirmado por curl: sin $filter
        trae todo, ~1500 registros, no hace falta paginar).
-    2. Resuelve el NIT de cada BP contra el DW de Nexo (DimBpSolicitante) para que la fila
+    2. Resuelve el NIT de cada BP contra el DW de Nexo (DimBPSolicitante) para que la fila
        ya quede cruzable directo con CotizacionesSolicitud, sin que el backend tenga que
        resolverlo aparte.
     3. Vuelca todo a una tabla temporal #SapMargenStage (crear + bulk insert) en la base destino — no es
@@ -24,7 +24,7 @@
     rastro (mismo criterio que fo-sync-worker de EmbarQA con 'worker_ciclo').
 
 .NOTES
-    DW: dbo.DimBpSolicitante vive en DWCubosOperacionesEBS (10.10.40.24,1433), usuario de solo
+    DW: dbo.DimBPSolicitante vive en DWCubosOperacionesEBS (10.10.40.24,1433), usuario de solo
     lectura 'consultascubos' (confirmado 2026-10-28; es una base DISTINTA de DWCubosEBSSAP, la de
     ConnectionStrings:Regional que ya usa el backend para DimEjecutivo — no se puede reusar esa
     conexión). Columnas BP y NIT tomadas del encabezado real de SSMS.
@@ -76,7 +76,7 @@ $sapUrl      = Variable-Requerida 'SAP_TM_URL'              # ej. http://sap-tm-
 $sapUsuario  = Variable-Requerida 'SAP_TM_USER'
 $sapClave    = Variable-Requerida 'SAP_TM_PASSWORD'
 
-# --- DW DWCubosOperacionesEBS (NIT por BP, tabla dbo.DimBpSolicitante). Host/puerto/usuario ya
+# --- DW DWCubosOperacionesEBS (NIT por BP, tabla dbo.DimBPSolicitante). Host/puerto/usuario ya
 #     confirmados (10.10.40.24, 1433, consultascubos) y quedan de valor por defecto; solo la clave
 #     es obligatoria por variable de entorno (la coloca Datos, nunca en este archivo). ---
 $dwServer    = Variable-Opcional  'NEXO_DW_SQL_SERVER' '10.10.40.24'
@@ -151,7 +151,7 @@ try {
         throw "SAP TM devolvió 0 registros; no se sincroniza nada (posible respuesta inesperada, revisar antes de reintentar)."
     }
 
-    # 2) DW DWCubosOperacionesEBS: NIT por BP, dbo.DimBpSolicitante (BP, NIT confirmados por pantallazo
+    # 2) DW DWCubosOperacionesEBS: NIT por BP, dbo.DimBPSolicitante (BP, NIT confirmados por pantallazo
     #    de SSMS 2026-10-28). En lotes de 500 y parametrizado (mismo límite y criterio que
     #    clsDirectorioEjecutivosDimEjecutivo.cs: SQL Server admite 2100 parámetros, se deja margen).
     $tamanoLote = 500
@@ -170,7 +170,7 @@ try {
                 $cmdDw.Parameters[$nombre].Value = $lote[$j]
                 $nombre
             }
-            $cmdDw.CommandText = "SELECT BP, NIT FROM dbo.DimBpSolicitante WHERE BP IN ($($nombresParametro -join ','))"
+            $cmdDw.CommandText = "SELECT BP, NIT FROM dbo.DimBPSolicitante WHERE BP IN ($($nombresParametro -join ','))"
             $lector = $cmdDw.ExecuteReader()
             while ($lector.Read()) {
                 $nitPorBp[$lector['BP'].ToString()] = $lector['NIT'].ToString()
@@ -207,13 +207,17 @@ try {
         # crea en cada corrida y desaparece sola al cerrar $cnDestino. El SP de abajo la ve porque se ejecuta
         # en esta misma conexión/sesión (por eso bulk copy y EXEC tienen que compartir $cnDestino).
         $cmdCrearStage = $cnDestino.CreateCommand()
+        # COLLATE DATABASE_DEFAULT en las columnas de texto: una tabla temporal (#...) nace con el collation
+        # por defecto del SERVIDOR (tempdb), no el de esta base — si esta base tiene un collation distinto
+        # (aquí, Modern_Spanish_CI_AS vs. el del servidor), el MERGE del SP falla con "collation conflict"
+        # al comparar contra dbo_cotifly.SapMargenCliente. Con DATABASE_DEFAULT quedan iguales.
         $cmdCrearStage.CommandText = @"
 CREATE TABLE #SapMargenStage
 (
-    salesOrgId        NVARCHAR(20)  NOT NULL,
-    trqType           NVARCHAR(8)   NOT NULL,
-    bpSap             NVARCHAR(20)  NOT NULL,
-    nit               NVARCHAR(20)  NULL,
+    salesOrgId        NVARCHAR(20)  COLLATE DATABASE_DEFAULT NOT NULL,
+    trqType           NVARCHAR(8)   COLLATE DATABASE_DEFAULT NOT NULL,
+    bpSap             NVARCHAR(20)  COLLATE DATABASE_DEFAULT NOT NULL,
+    nit               NVARCHAR(20)  COLLATE DATABASE_DEFAULT NULL,
     margenRecomendado DECIMAL(9, 4) NOT NULL,
     CONSTRAINT pk_sapMargenStageTemp PRIMARY KEY (salesOrgId, trqType, bpSap)
 );
