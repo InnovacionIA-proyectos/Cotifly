@@ -77,6 +77,8 @@ public static class clsDependenciasAplicacion
         servicios.AddScoped<IClsGeneradorFolioService, clsGeneradorFolioService>();
         servicios.AddScoped<IClsDescargaPdfService, clsDescargaPdfService>();
         servicios.AddScoped<IClsLineasNegocioAdminService, clsLineasNegocioAdminService>();
+        // HU-016.1 (#154): catálogo de líneas activas para el desplegable de la captura (sin margen).
+        servicios.AddScoped<IClsLineasNegocioCatalogoService, clsLineasNegocioCatalogoService>();
 
         // Costeo en Nexo (HU-005.5 a HU-005.14, ADR-015): envío de la solicitud y polling (el worker lo registra Infraestructura). El adaptador de Nexo lo registra Infraestructura.
         servicios.AddScoped<IClsValidadorCatalogosCaptura, clsValidadorCatalogosCaptura>();

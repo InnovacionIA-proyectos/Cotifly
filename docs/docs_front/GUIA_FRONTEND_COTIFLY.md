@@ -1473,6 +1473,11 @@ Ejemplo (del contrato): `PCN-DG-10082026-001` se crea el **10 de agosto** (v1, 1
 | `desviacion_promedio_margen_abs` | number o null | Promedio del **valor absoluto** de esas diferencias (magnitud de la negociación, sin que se compensen subidas y bajadas). `null` sin ajustes |
 | `ajustes_margen` | int | Cantidad de esos ajustes |
 | `deadline_vencidas` | int o null | Sin resultado y con `deadline` anterior al momento de la consulta. **`null`** mientras la base no tenga la columna `deadline` (script `0004`) |
+| `margen_politica_promedio` | number o null | HU-016.1 (#154): promedio simple del margen de política (`margenPoliticaSugerido`) de las **mismas rutas** cotizadas (versión vigente, sin rechazadas, con margen aplicado y con política). `null` sin ninguna |
+| `margen_aplicado_promedio` | number o null | HU-016.1 (decisión del 2026-10-27): promedio simple del margen aplicado de **exactamente las mismas rutas** de `margen_politica_promedio`; su par directo para comparar simple contra simple. `null` sin ninguna |
+| `margen_politica_ponderado` | number o null | HU-016.1: esa política ponderada por `costoFinal` (rutas con costo > 0). `null` si ninguna tiene costo |
+| `desviacion_margen_politica` | number o null | HU-016.1: margen aplicado ponderado por costo menos la política ponderada, sobre las mismas rutas. **Semáforo:** verde ≥ 0, rojo < 0 |
+| `rutas_sin_margen_politica` | int | HU-016.1: rutas con margen aplicado y sin política guardada; no entran en la comparación (avisar si es > 0) |
 
 Solo en `/regional`: `lineas_negocio_activas` (int) = líneas de `MargenesPolitica` con `isActive = 1`. No depende del periodo ni de la regional.
 
@@ -1550,7 +1555,12 @@ Comprobación del `.feature` (comercial "ana", año 2026). A1 COP 1.000.000 gana
     "desviacion_promedio_margen": -0.015,
     "desviacion_promedio_margen_abs": 0.025,
     "ajustes_margen": 2,
-    "deadline_vencidas": 1
+    "deadline_vencidas": 1,
+    "margen_politica_promedio": 0.15,
+    "margen_aplicado_promedio": 0.1558,
+    "margen_politica_ponderado": 0.15,
+    "desviacion_margen_politica": 0.0061,
+    "rutas_sin_margen_politica": 0
   },
   "serie_mensual": [
     { "mes": "2026-08", "cantidad": 5, "ganadas": 1, "perdidas": 2, "valor_cotizado_cop": 18200000.00, "valor_ganado_cop": 4100000.00 },
@@ -1583,7 +1593,12 @@ Comercial sin cotizaciones (200, estado vacío; construido con las reglas del co
     "costeo_total": 0, "costeo_ganadas": 0, "valor_cotizado_cop": 0, "valor_ganado_cop": 0, "ganancias": 0,
     "cotizaciones_usd": 0, "tiempo_promedio_cotizacion_horas": null,
     "desviacion_promedio_margen": null, "desviacion_promedio_margen_abs": null, "ajustes_margen": 0,
-    "deadline_vencidas": null
+    "deadline_vencidas": null,
+    "margen_politica_promedio": null,
+    "margen_aplicado_promedio": null,
+    "margen_politica_ponderado": null,
+    "desviacion_margen_politica": null,
+    "rutas_sin_margen_politica": 0
   },
   "serie_mensual": [
     { "mes": "2026-08", "cantidad": 0, "ganadas": 0, "perdidas": 0, "valor_cotizado_cop": 0, "valor_ganado_cop": 0 },
@@ -1654,7 +1669,12 @@ Ejemplo exacto del spec (periodo 2026-08-01 a 2026-09-29):
     "desviacion_promedio_margen": -0.0125,
     "desviacion_promedio_margen_abs": 0.021,
     "ajustes_margen": 6,
-    "deadline_vencidas": 2
+    "deadline_vencidas": 2,
+    "margen_politica_promedio": 0.15,
+    "margen_aplicado_promedio": 0.1542,
+    "margen_politica_ponderado": 0.15,
+    "desviacion_margen_politica": 0.004,
+    "rutas_sin_margen_politica": 1
   },
   "comerciales": [
     {
@@ -1683,7 +1703,12 @@ Ejemplo exacto del spec (periodo 2026-08-01 a 2026-09-29):
         "desviacion_promedio_margen": -0.015,
         "desviacion_promedio_margen_abs": 0.025,
         "ajustes_margen": 2,
-        "deadline_vencidas": 1
+        "deadline_vencidas": 1,
+        "margen_politica_promedio": 0.15,
+        "margen_aplicado_promedio": 0.1558,
+        "margen_politica_ponderado": 0.15,
+        "desviacion_margen_politica": 0.0061,
+        "rutas_sin_margen_politica": 0
       }
     },
     {
@@ -1712,7 +1737,12 @@ Ejemplo exacto del spec (periodo 2026-08-01 a 2026-09-29):
         "desviacion_promedio_margen": null,
         "desviacion_promedio_margen_abs": null,
         "ajustes_margen": 0,
-        "deadline_vencidas": 0
+        "deadline_vencidas": 0,
+        "margen_politica_promedio": null,
+        "margen_aplicado_promedio": null,
+        "margen_politica_ponderado": null,
+        "desviacion_margen_politica": null,
+        "rutas_sin_margen_politica": 0
       }
     }
   ],
