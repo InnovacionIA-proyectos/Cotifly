@@ -13,16 +13,19 @@ namespace Cotifly.Aplicacion.Cotizaciones.Services;
 
 /// <summary>
 /// Listado regional del gerente comercial (HU-016.1, #154; <c>GET /web/cotizaciones/regional</c>): las cotizaciones de los miembros de su
-/// regional, fila por fila, con la forma de "Mis cotizaciones" y el comercial dueño. La regional se resuelve en el servidor con
-/// <see cref="IClsRegionalUsuario"/> (la misma regla que <c>GET /web/metricas/regional</c>); nunca se acepta por parámetro.
+/// regional, fila por fila, con la forma de "Mis cotizaciones" y el comercial dueño. El alcance se resuelve en el servidor con
+/// <see cref="IClsRegionalUsuario.ResolverAlcanceAsync"/> (la misma regla que <c>GET /web/metricas/regional</c>): el gerente solo la suya;
+/// el director todas o la que pide con <c>?regional=</c> (HU-037.3, #211).
 /// </summary>
 public interface IClsCotizacionesRegionalService
 {
     /// <summary>
-    /// Cotizaciones de la regional del usuario autenticado. Errores: <c>NO_AUTENTICADO</c>, <c>SIN_PERMISO</c> (no es
-    /// <c>gerente_comercial</c>), <c>REGIONAL_NO_ASIGNADA</c> y <c>REGIONAL_NO_DISPONIBLE</c>.
+    /// Cotizaciones del alcance del usuario autenticado (<see cref="IClsRegionalUsuario.ResolverAlcanceAsync"/>): la regional del gerente;
+    /// para el director, todas o la de <paramref name="regional"/> (HU-037.3, #211). Errores: <c>NO_AUTENTICADO</c>, <c>SIN_PERMISO</c> (no
+    /// es <c>gerente_comercial</c> ni <c>director</c>), <c>REGIONAL_NO_PERMITIDA</c> (el gerente pidió otra regional),
+    /// <c>REGIONAL_NO_ASIGNADA</c> y <c>REGIONAL_NO_DISPONIBLE</c>.
     /// </summary>
-    Task<clsResultado<clsCotizacionesRegional>> ListarAsync(CancellationToken cancellationToken = default);
+    Task<clsResultado<clsCotizacionesRegional>> ListarAsync(string? regional = null, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Implementación de <see cref="IClsCotizacionesRegionalService"/>.</summary>
@@ -33,9 +36,9 @@ public sealed class clsCotizacionesRegionalService(
     IClsCotizacionRepository cotizaciones,
     IOptions<clsOpcionesPdf> opcionesPdf) : IClsCotizacionesRegionalService
 {
-    public const string MensajeSinPermiso = "Solo el gerente comercial ve las cotizaciones de la regional.";
+    public const string MensajeSinPermiso = "Solo el gerente comercial o el director ven las cotizaciones de la regional.";
 
-    public async Task<clsResultado<clsCotizacionesRegional>> ListarAsync(CancellationToken cancellationToken = default)
+    public async Task<clsResultado<clsCotizacionesRegional>> ListarAsync(string? regional = null, CancellationToken cancellationToken = default)
     {
         if (usuario.UsuarioId is not { } usuarioId || usuario.Rol is not { } rol)
         {
@@ -43,7 +46,7 @@ public sealed class clsCotizacionesRegionalService(
         }
 
         // La política GerenteComercial ya filtra en la Api; se revalida aquí por si el caso de uso se llama desde otro lado.
-        if (rol != RolInterno.GerenteComercial)
+        if (!rol.EsGerencial())
         {
             return new clsErrorDominio(clsCodigosAplicacion.SinPermiso, MensajeSinPermiso);
         }
@@ -54,19 +57,14 @@ public sealed class clsCotizacionesRegionalService(
             return ErrorNoAutenticado();
         }
 
-        var regional = await regionales.ResolverAsync(gerente, cancellationToken);
-        if (regional.EsFallo)
+        // HU-037.3 (#211): el alcance (la regional del gerente; todas o la elegida para el director) lo decide IClsRegionalUsuario.
+        var alcance = await regionales.ResolverAlcanceAsync(gerente, rol, regional, cancellationToken);
+        if (alcance.EsFallo)
         {
-            return regional.Error;
+            return alcance.Error;
         }
 
-        var miembros = await regionales.ListarMiembrosAsync(regional.Valor.Regional, cancellationToken);
-        if (miembros.EsFallo)
-        {
-            return miembros.Error;
-        }
-
-        var porId = miembros.Valor.GroupBy(m => m.Id).ToDictionary(g => g.Key, g => g.First());
+        var porId = alcance.Valor.Miembros.GroupBy(m => m.Id).ToDictionary(g => g.Key, g => g.First());
         var filas = await cotizaciones.ListarPorUsuariosAsync([.. porId.Keys], IClsCotizacionRepository.LimitePorDefecto, cancellationToken);
         var baseUrl = opcionesPdf.Value.BaseUrl;
         var resumen = new List<clsCotizacionResumen>(filas.Count);
@@ -82,7 +80,7 @@ public sealed class clsCotizacionesRegionalService(
             }
         }
 
-        return new clsCotizacionesRegional(regional.Valor.Regional, regional.Valor.Fuente, resumen.Count, resumen);
+        return new clsCotizacionesRegional(alcance.Valor.Regional, alcance.Valor.Fuente, resumen.Count, resumen);
     }
 
     private static clsErrorDominio ErrorNoAutenticado() => new(clsCodigosAplicacion.NoAutenticado, "Inicia sesión de nuevo.");

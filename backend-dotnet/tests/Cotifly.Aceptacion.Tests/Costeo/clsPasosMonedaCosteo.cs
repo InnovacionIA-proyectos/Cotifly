@@ -97,7 +97,7 @@ public sealed partial class clsPasosMonedaCosteo(clsContextoWeb web, clsPasosCos
     public async Task EntoncesElCostoEnPesos(string cotizacion, int costo)
     {
         Decimal((await costeo.Columna(cotizacion, "costo"))!).Should().Be(costo, "el costo de Nexo siempre se guarda en pesos");
-        (await CosteoAsync(cotizacion)).ToString().Should().NotContain("\"costo\"", "el costo nunca llega al comercial");
+        (await CosteoAsync(cotizacion)).ToString().Should().NotContain("\"costo\"", "solo el costo bruto de la ruta (costo_final, HU-039.1) llega al dueño");
     }
 
     [Then(@"^el servicio conexo ""([^""]+)"" de ""([^""]+)"" tiene el precio (\d+\.\d+)$")]

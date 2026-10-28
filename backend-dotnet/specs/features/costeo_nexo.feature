@@ -70,7 +70,7 @@ Característica: Costeo de la cotización en Nexo
     Entonces la cotización "C1" queda en el estado de costeo "costeo_vencido" con un motivo que menciona "72 h"
 
   # HU-005.7 — Margen sobre el costeo y "Mis cotizaciones"
-  Escenario: El costeo de Nexo pasa por el margen antes de mostrarse y el costo bruto nunca llega al comercial
+  Escenario: El costeo de Nexo pasa por el margen antes de mostrarse y el costo bruto no sale en Mis cotizaciones
     Cuando "ana" envía a costeo el formulario ampliado del cliente "900555111" como "C1"
     Entonces "Mis cotizaciones" de "ana" muestra "C1" sin precio final
     Cuando Nexo costea la solicitud de "C1" con un flete de 2550000

@@ -43,7 +43,8 @@ public sealed class clsCotizacionesController(
 
     /// <summary>
     /// HU-016.1 (#154). 200 <c>CotizacionesRegional</c>: las de los miembros de la regional del gerente, máximo 100, de la más reciente a
-    /// la más antigua; 403 si no es gerente; 409 <c>REGIONAL_NO_ASIGNADA</c>; 503 <c>REGIONAL_NO_DISPONIBLE</c>.
+    /// la más antigua; 403 si no es gerente ni director, o <c>REGIONAL_NO_PERMITIDA</c> si el gerente pide otra regional; 409
+    /// <c>REGIONAL_NO_ASIGNADA</c>; 503 <c>REGIONAL_NO_DISPONIBLE</c>. HU-037.3 (#211): el director ve todas o la de <c>regional</c>.
     /// </summary>
     [HttpGet("cotizaciones/regional")]
     [Authorize(Policy = clsPoliticas.GerenteComercial)]
@@ -52,9 +53,9 @@ public sealed class clsCotizacionesController(
     [ProducesResponseType<clsErrorWeb>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status409Conflict)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status503ServiceUnavailable)]
-    public async Task<IActionResult> ListarRegional(CancellationToken cancellationToken)
+    public async Task<IActionResult> ListarRegional([FromQuery(Name = "regional")] string? regionalPedida, CancellationToken cancellationToken)
     {
-        var resultado = await regional.ListarAsync(cancellationToken);
+        var resultado = await regional.ListarAsync(regionalPedida, cancellationToken);
         return resultado.Coincidir<IActionResult>(r => Ok(r), Error);
     }
 

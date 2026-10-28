@@ -56,6 +56,20 @@ public sealed class clsListadoRegionalIntegracionTests(clsBaseDatosPruebas baseD
     }
 
     [Fact]
+    public async Task ConMasDeDosMilUsuariosNoChocaConElTopeDeParametrosDeSqlServer()
+    {
+        // HU-037.3 (#211): el director sin regional pide las de todos los usuarios; la lista viaja como un solo parámetro.
+        var ana = await CrearUsuarioAsync();
+        var deAna = NuevaCotizacion(ana);
+        await GuardarAsync(deAna);
+        List<Guid> usuarios = [.. Enumerable.Range(0, 2500).Select(_ => Guid.NewGuid()), ana];
+
+        var filas = await ConsultarAsync(s => s.GetRequiredService<IClsCotizacionRepository>().ListarPorUsuariosAsync(usuarios, 100, Ct));
+
+        filas.Should().ContainSingle().Which.Cotizacion.Folio.Should().Be(deAna.Folio);
+    }
+
+    [Fact]
     public async Task SinUsuariosDevuelveUnaListaVacia()
     {
         await GuardarAsync(NuevaCotizacion(await CrearUsuarioAsync()));

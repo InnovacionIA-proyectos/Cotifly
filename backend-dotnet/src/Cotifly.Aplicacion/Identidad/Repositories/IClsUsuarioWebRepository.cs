@@ -27,4 +27,10 @@ public interface IClsUsuarioWebRepository
     /// </summary>
     Task<IReadOnlyList<clsUsuarioWeb>> ListarPorRegionalONombresAsync(
         string regional, IReadOnlyCollection<string> nombresUsuario, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// HU-037.3 (#211): todos los usuarios de <c>UsuariosWeb</c> (solo lectura), el alcance del director sin regional elegida. La tabla
+    /// tiene a las personas que entraron a Cotifly (decenas o cientos), así que no se pagina.
+    /// </summary>
+    Task<IReadOnlyList<clsUsuarioWeb>> ListarTodosAsync(CancellationToken cancellationToken = default);
 }

@@ -28,8 +28,8 @@ public sealed class clsCodigoEnumTests
         clsCodigoEnum.Codigos<EstadoSesion>().Should().Equal("activa", "archivada");
 
     [Fact]
-    public void RolInternoUsaComercialGerenteComercial() =>
-        clsCodigoEnum.Codigos<RolInterno>().Should().Equal("comercial", "gerente_comercial");
+    public void RolInternoUsaComercialGerenteComercialDirector() =>
+        clsCodigoEnum.Codigos<RolInterno>().Should().Equal("comercial", "gerente_comercial", "director");
 
     [Fact]
     public void TipoDestinatarioUsaParaCc() =>

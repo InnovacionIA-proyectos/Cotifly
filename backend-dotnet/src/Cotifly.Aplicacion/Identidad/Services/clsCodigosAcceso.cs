@@ -66,4 +66,7 @@ public static class clsMotivosAcceso
     // Reglas de resolución del rol interno (nunca implícitas: quedan en la auditoría).
     public const string ReglaMapeoUnico = "mapeo_unico";
     public const string ReglaPrecedenciaGerente = "precedencia_gerente_comercial";
+
+    /// <summary>HU-037 (#210): con el rol de director y otro rol mapeado gana <c>director</c>.</summary>
+    public const string ReglaPrecedenciaDirector = "precedencia_director";
 }

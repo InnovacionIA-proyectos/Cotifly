@@ -66,6 +66,21 @@ public sealed class clsCasosWebTests
     }
 
     [Fact]
+    public async Task ElDirectorAdministraLasLineasComoElGerente()
+    {
+        var director = Usuario(RolInterno.Director);
+        var politica = clsMargenPolitica.Crear("Nacional", 0.15m).Valor;
+        _politicas.ObtenerPorIdAsync(3, Arg.Any<CancellationToken>()).Returns(politica);
+
+        var listar = await Admin(director).ListarAsync(Ct);
+        var editar = await Admin(director).ActualizarAsync(3, new clsCambioLineaNegocio(0.25m, "margen", true), Ct);
+
+        listar.EsExitoso.Should().BeTrue();
+        editar.Valor.Margen.Should().Be(0.25m);
+        await _unidadTrabajo.Received(1).GuardarCambiosAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task UnComercialNoAdministraLineasAunqueLlegueAlCasoDeUso()
     {
         var comercial = Usuario(RolInterno.Comercial);
@@ -159,6 +174,25 @@ public sealed class clsCasosWebTests
 
         resultado.Valor.Contenido.Should().Equal(1, 2, 3);
         await _auditoria.Received(1).RegistrarAsync(clsDescargaPdfService.HerramientaAuditoria, Arg.Any<object>(), Arg.Any<object>(), true, Arg.Any<int>(), null);
+    }
+
+    [Fact]
+    public async Task ElDirectorDescargaElPdfDeCualquierRegionalAunqueLaFuenteEsteCaidaYQuedaAuditado()
+    {
+        // HU-037.3 (#211): el director no tiene alcance regional que comprobar.
+        var (director, _) = Registrar("director", null, RolInterno.Director);
+        var (_, dueno) = Registrar("comercial.norte", "Norte", RolInterno.Comercial);
+        _directorio.Configurado.Returns(true);
+        _directorio.ObtenerRegionalesAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>()).ThrowsAsync(new TimeoutException());
+        CotizacionConPdf("PCN-DG-25092026-009", dueno.Id);
+
+        var resultado = await Descarga(director).ObtenerAsync("PCN-DG-25092026-009.pdf", Ct);
+
+        resultado.Valor.Contenido.Should().Equal(1, 2, 3);
+        await _auditoria.Received(1).RegistrarAsync(
+            clsDescargaPdfService.HerramientaAuditoria,
+            Arg.Is<object>(e => e.ToString()!.Contains("rol = director", StringComparison.Ordinal)),
+            Arg.Any<object>(), true, Arg.Any<int>(), null);
     }
 
     [Fact]
