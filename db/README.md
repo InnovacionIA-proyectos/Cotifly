@@ -411,21 +411,39 @@ En esa prueba aparecieron y se corrigieron 2 bugs: la tabla del DW es `dbo.DimBP
 `DimBpSolicitante`), y había un choque de collation entre `#SapMargenStage` (nace con el collation del servidor/tempdb) y
 `SapMargenCliente` (el de esta base) — se corrigió con `COLLATE DATABASE_DEFAULT` en las columnas de texto de la temporal.
 
-### Cómo probarlo a mano (ya hecho una vez, 2026-10-28)
-1. Entrar al servidor de SQL Server por Escritorio Remoto (RDP) — **no por red, hay que estar dentro de esa máquina**:
-   el job termina corriendo ahí (vía SQL Agent), así que el archivo y sus credenciales tienen que vivir ahí también.
-2. Crear una carpeta, por ejemplo `C:\Jobs\SapMargenSap\`.
-3. Copiar ahí `jobs/sincronizar_margen_sap.ps1` y el `jobs/.env` real (con las claves ya llenas) — **no** `.env.example`.
-4. Abrir PowerShell en esa carpeta y correr `.\sincronizar_margen_sap.ps1` directamente, a mano.
-5. Verificar en la base: `SELECT COUNT(*) FROM dbo_cotifly.SapMargenCliente;` y `SELECT TOP 1 * FROM dbo_cotifly.SapMargenSyncLog ORDER BY iniciadoAt DESC;` — debe haber filas y la última corrida debe decir `status = 'ok'`.
+### Cómo correrlo a mano (probado varias veces, 2026-10-28)
+Sirve para confirmar que el script funciona (llama a SAP, al DW, hace el upsert) sin esperar a tenerlo instalado.
+Se puede correr así desde cualquier máquina con red hacia SAP, el DW y la base destino — no hace falta que sea el
+servidor de SQL Server para esta parte (solo para dejarlo *instalado*, ver abajo):
 
-**Nota:** este probado se hizo primero desde una máquina que *no* era el servidor (con `COTIFLY_SQL_SERVER`, `NEXO_DW_SQL_SERVER` y `SAP_TM_URL` apuntando por red a sus hosts reales, no a `.`) — eso sirve para confirmar que la lógica del script funciona, pero **no reemplaza instalarlo en el servidor real**: el SQL Agent Job en sí solo puede ejecutar un archivo que esté físicamente en su propio disco.
+1. Copiar `jobs/.env.example` a `jobs/.env` en la misma carpeta y llenar los valores reales (nunca subir `.env` al repo,
+   ya queda ignorado por git).
+2. Abrir PowerShell en `db/jobs/` y correr `.\sincronizar_margen_sap.ps1`.
+3. Debe imprimir `Sincronización de margen SAP: N filas procesadas.`
+4. Verificar en la base: `SELECT COUNT(*) FROM dbo_cotifly.SapMargenCliente;` y
+   `SELECT TOP 1 * FROM dbo_cotifly.SapMargenSyncLog ORDER BY iniciadoAt DESC;` — debe haber filas y la última corrida
+   debe decir `status = 'ok'`.
 
-### Lo que falta (pendiente)
-Confirmar que el servidor de SQL Server tenga ruta de red a `sap-tm-prd.boterosoto.local:8000` y a `10.10.40.24,1433`
-(ya confirmado para una máquina de desarrollo; falta confirmarlo específicamente desde el servidor), y escribir el script
-que registra el job en SQL Agent (`sp_add_job` / `sp_add_jobstep` / `sp_add_schedule` / `sp_add_jobserver`), que todavía
-no existe.
+Dos bugs reales que aparecieron la primera vez y ya están corregidos en el script (quedan acá por si alguien los
+reencuentra en otro ambiente): (1) la tabla del DW es `dbo.DimBPSolicitante`, con "BP" en mayúsculas; (2) choque de
+collation entre `#SapMargenStage` (nace con el collation del servidor/tempdb) y `SapMargenCliente` (el de esta base) —
+se corrigió con `COLLATE DATABASE_DEFAULT` en las columnas de texto de la temporal.
+
+### Cómo instalarlo (que corra solo, automático)
+No basta con correrlo a mano una vez: para que quede como SQL Agent Job hace falta que el **archivo** viva físicamente
+en el servidor de SQL Server, y que alguien con permiso lo **registre** en SQL Agent. Son dos requisitos separados:
+
+1. **El archivo tiene que estar en el servidor.** Copiar `jobs/sincronizar_margen_sap.ps1` y el `jobs/.env` real (con
+   las claves ya llenas, no `.env.example`) a una carpeta del servidor de SQL Server (ej. `C:\Jobs\SapMargenSap\`).
+   Esto requiere acceso por Escritorio Remoto (RDP) a esa máquina — no se puede hacer por red, el job solo puede
+   ejecutar un archivo que esté en su propio disco.
+2. **Alguien con permiso tiene que registrar el job.** Correr `scripts/operacion/instalar_sql_agent_job_margen_sap.sql`
+   contra ese servidor (ajustando la ruta del paso 1 si se usó otra carpeta). Esto requiere ser `sysadmin` o pertenecer
+   al rol `SQLAgentUserRole` de `msdb` — verificado que @scalderon-bs hoy no tiene ninguno de los dos.
+
+**Bloqueado hoy por esos dos permisos** (ni RDP al servidor ni rol de SQL Agent) — ver
+`docs/backlog/2026-10-28_PENDIENTES_SARA.md`. Hace falta un DBA/admin que haga los dos pasos, o que le dé esos accesos
+a Datos para hacerlo directamente.
 
 ## Mantener esto en sincronía
 
