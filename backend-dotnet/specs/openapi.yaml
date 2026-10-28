@@ -3638,6 +3638,14 @@ paths:
         (`progreso_cubicacion`) y los avisos del cubicador por ruta (`cubicacion`, la misma forma de `POST /web/solicitudes-costeo`).
         Endurecimiento A (#199): un folio que no es una licitación (formulario o chat) responde 404, como el Excel y reintentar
         (antes respondía 200).
+
+        HU-034.1 (#201, parte A). Acceso: el **dueño**; un `director` (HU-037.3, #211), de cualquier regional; o un `gerente_comercial`
+        cuya regional efectiva incluye al dueño (la misma regla que `GET /web/cotizaciones/{folio}` y la descarga del PDF). Gerente y
+        director solo consultan (`solo_lectura = true`): reintentar la cubicación (con o sin `usar_respaldo`), reintentar el envío y
+        las demás acciones siguen siendo del dueño y a ellos les responden 404. La vista es la misma del dueño: nunca trae costos. Si
+        la regional del gerente no se puede comprobar (sin regional o fuente caída) se niega (fail-closed). Cada consulta de un
+        gerente o director a una licitación ajena, permitida o no, queda en la auditoría (`consultar_licitacion`). Cualquier otro
+        usuario recibe 404, igual que si el folio no existiera.
       security:
         - bearer: []
       parameters:
@@ -3729,7 +3737,13 @@ paths:
         precio). Sin archivo original genera una hoja `Licitación` con los campos mapeados. **Nunca incluye el costo de Nexo.**
         Se puede exportar en cualquier momento. Siempre un `.xlsx` real: un `.xlsm` se convierte sin macros, y gráficos,
         imágenes o tablas dinámicas del original pueden perderse. El total del resumen es sin servicios conexos. `Sin enviar`
-        solo marca filas entre la primera y la última línea enviada. Solo el dueño y solo licitaciones (404 si no).
+        solo marca filas entre la primera y la última línea enviada. Solo licitaciones (404 si no).
+
+        HU-034.1 (#201, parte A). Acceso: el dueño, un `director` (cualquier regional) o un `gerente_comercial` de la regional del
+        dueño, con la regla de `GET /web/licitaciones/{folio}` (fail-closed, 404 para cualquier otro). Gerente y director reciben **el
+        mismo archivo que el dueño**: la exportación nunca tuvo costos (ni el flete de Nexo, ni el costo de los conexos, ni el margen),
+        así que no hay nada que quitar. Cada descarga de un gerente o director de una licitación ajena, permitida o no, queda en la
+        auditoría (`exportar_excel_licitacion`).
 
         HU-023.5 (#160): agrega también la columna `Camiones Cotifly` (un camión por línea de la celda: vehículo y carrocería con
         el nombre del catálogo del cubicador, peso y llenado de volumen; "Sin vehículo (Mesa de Costeo)" si el cubicador no
@@ -8614,7 +8628,7 @@ components:
     Licitacion:
       type: object
       required: [folio, cliente_nombre, nit_cliente, deadline, estado_costeo, motivo_estado_costeo, moneda, trm_aplicada,
-                 precio_final, lineas_costeadas, lineas_pendientes, archivo_nombre, hoja, lineas, finalizada_at]
+                 precio_final, lineas_costeadas, lineas_pendientes, archivo_nombre, hoja, lineas, finalizada_at, solo_lectura]
       description: |
         Licitación vista por el comercial (HU-011.2). Solo precios. Sin `referencia` desde HU-021.11 (#138, decisión 1: siempre
         era `null`).
@@ -8679,6 +8693,12 @@ components:
             HU-036.2 (#206, DEF-1027-2 de #226). Cuándo el comercial finalizó la licitación (`POST .../finalizar`), ISO 8601 en UTC;
             `null` sin finalizar. Siempre presente, igual que en `CotizacionResumen` y `CosteoCotizacion`: la vista del polling
             habilita "Finalizar" y aplica los candados de la finalizada sin pedir el costeo.
+        solo_lectura:
+          type: boolean
+          description: |
+            HU-034.1 (#201, parte A). `true` si quien consulta es un gerente comercial de la regional del dueño o un director: solo
+            consulta (ocultar o deshabilitar reintentar la cubicación, reintentar el envío, finalizar y demás acciones). `false` para el
+            dueño (también en la respuesta de `POST /web/licitaciones` y de reintentar). Igual que `DetalleCotizacion.solo_lectura`.
         progreso_cubicacion:
           type: object
           nullable: true

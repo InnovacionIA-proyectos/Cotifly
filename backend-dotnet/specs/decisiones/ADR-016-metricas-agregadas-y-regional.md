@@ -2,7 +2,7 @@
 
 - **Estado:** Propuesta (definiciones pendientes de validar con Gerencia Comercial; la fuente de la regional ya está verificada en #81, faltan la credencial en el despliegue y la salida de red, ver Pendientes)
 - **Fecha:** 2026-09-29
-- **Issue / HU:** #45 (HU-010.1), #81 (HU-003.6, regional en el login) HU-037 (#209 a #212, rol Director: sección 11) y HU-016.1 (#154 parte B, margen contra la política: sección 12). Consumidores: clientepro-frontend #50 (HU-010.2, tablero del comercial), #51 (HU-010.3, tablero del gerente) y #52 (HU-010.4, QA de cálculos). Relacionada con ADR-009 (rol en el token), ADR-011 (folio y versiones), ADR-014 (TRM y cotizaciones en USD) y ADR-015 (costeo de Nexo, script 0004).
+- **Issue / HU:** #45 (HU-010.1), #81 (HU-003.6, regional en el login) HU-037 (#209 a #212, rol Director: sección 11), HU-034.1 (#201 parte A, licitación en solo consulta: sección 12) y HU-016.1 (#154 parte B, margen contra la política: sección 13). Consumidores: clientepro-frontend #50 (HU-010.2, tablero del comercial), #51 (HU-010.3, tablero del gerente) y #52 (HU-010.4, QA de cálculos). Relacionada con ADR-009 (rol en el token), ADR-011 (folio y versiones), ADR-014 (TRM y cotizaciones en USD) y ADR-015 (costeo de Nexo, script 0004).
 
 ## Contexto
 
@@ -212,7 +212,36 @@ Gerencia pidió un rol por encima del gerente comercial que vea **todas** las re
 - **Listas grandes de usuarios:** con el director sin regional, las consultas por lista de usuarios mandan la lista como un solo parámetro
   (`EF.Parameter`, `OPENJSON`; el repositorio de métricas ya lo hacía), así no topan con el límite de 2100 parámetros de SQL Server.
 
-### 12. Margen contra la política de las mismas rutas (HU-016.1, #154, parte B)
+### 12. Licitación en solo consulta para el gerente y el director (HU-034.1, #201 parte A)
+
+Negocio pidió el 2026-10-27 que el gerente (su regional) y el director (cualquier regional) vean la licitación de un comercial y bajen su
+Excel. Decisiones:
+
+- **Misma regla que el detalle y el PDF:** `GET /web/licitaciones/{folio}` y `GET /web/licitaciones/{folio}/excel` usan
+  `PuedeVerDeAsync` (sección 11). El dueño primero (la consulta filtra por dueño: un comercial ajeno nunca carga el agregado de otro); si no
+  es suya y el rol es gerencial, `IClsAccesoCotizacionAjena` carga la cotización por folio y aplica la regla. Sin regional o con la fuente
+  caída se niega (fail-closed). Cualquier negativa es 404, igual que un folio inexistente.
+- **Auditoría:** cada intento gerencial sobre una licitación ajena que existe, permitido o no, queda en `EventosHerramienta` con
+  `consultar_licitacion` (vista) o `exportar_excel_licitacion` (Excel), con el folio, el usuario, el rol real, el dueño y el motivo de la
+  negativa (`REGIONAL_NO_ASIGNADA`, `REGIONAL_NO_DISPONIBLE`). Ni el dueño ni un comercial ajeno se auditan, como en el detalle. Un folio
+  que no es licitación (p. ej. un spot de la regional pedido por `/web/licitaciones/{folio}`) responde 404 sin evento: el tipo se filtra
+  antes de auditar, para no dejar un "permitido" que terminó en 404. El rol es el de la sesión (el del access token, como en el detalle y el
+  PDF): si le quitan el rol de gerente, el token vigente lo conserva hasta vencer y el login siguiente se rechaza (`rol_externo_cambio`).
+- **Solo lectura:** `Licitacion.solo_lectura` (aditivo, siempre presente) es `true` para el gerente y el director y `false` para el dueño,
+  igual que `DetalleCotizacion.solo_lectura`. Las mutaciones no cambian: reintentar la cubicación (con o sin `usar_respaldo`), reintentar
+  el envío y finalizar siguen filtrando por dueño y les responden 404.
+- **Sin costo, sin quitar nada:** la vista y el Excel de la licitación nunca tuvieron costos (solo precios con margen; el exportador no
+  recibe el costo de Nexo, `clsExportacionLicitacion`). Por eso, con el criterio de `SinCostoFinal()` de HU-039.1 (#218: quien no es el
+  dueño no recibe el costo bruto), no hay nada que ocultar: el gerente y el director reciben **lo mismo que el dueño**, salvo
+  `solo_lectura`. Columnas del Excel: las del pliego, `Precio final Cotifly ({moneda})`, `Estado costeo Cotifly`, `Servicios conexos
+  Cotifly` (nombre, cantidad y precio) y `Camiones Cotifly`, más las hojas `Resumen Cotifly` (folio, cliente, NIT, moneda, TRM, líneas,
+  total sin conexos, conexos con precio, fecha de generación) y `Camiones Cotifly` (vehículo, carrocería, peso, volumen, llenado). Ninguna
+  permite deducir el costo: no hay margen ni costo por ruta, camión o conexo. Si algún día el Excel lleva costos, la exportación para quien
+  no es dueño debe quitarlos (la variante ya existe: `solo_lectura` sale del mismo punto, `CargarAsync`).
+- **Fuera de alcance:** el Excel de "Ver detalle" de una cotización no licitación (`ExportarCotizacionAsync`, sin endpoint propio) sigue
+  siendo solo del dueño. `GET .../costeo` también (el frontend usa el detalle por folio).
+
+### 13. Margen contra la política de las mismas rutas (HU-016.1, #154, parte B)
 
 `desviacion_promedio_margen` (sección 4) solo promedia `MargenAjustes.diferencia`, que se escribe cuando el comercial **negocia** un
 margen: un comercial que nunca ajusta no tiene referencia. Gerencia pidió (Sara, 2026-10-05) comparar el margen aplicado con la política.

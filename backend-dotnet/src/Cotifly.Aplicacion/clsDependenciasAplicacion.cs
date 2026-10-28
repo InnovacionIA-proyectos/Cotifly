@@ -71,6 +71,8 @@ public static class clsDependenciasAplicacion
         servicios.AddScoped<IClsCotizacionesRegionalService, clsCotizacionesRegionalService>();
         // HU-027.1 (#179): detalle por folio (dueño, o gerente de su regional en solo consulta).
         servicios.AddScoped<IClsDetalleCotizacionService, clsDetalleCotizacionService>();
+        // HU-034.1 (#201): la licitación ajena en solo lectura (gerente de la regional o director), con la regla del detalle.
+        servicios.AddScoped<IClsAccesoCotizacionAjena, clsAccesoCotizacionAjenaService>();
         servicios.AddScoped<IClsNuevaVersionService, clsNuevaVersionService>();
         servicios.AddScoped<IClsGeneradorFolioService, clsGeneradorFolioService>();
         servicios.AddScoped<IClsDescargaPdfService, clsDescargaPdfService>();

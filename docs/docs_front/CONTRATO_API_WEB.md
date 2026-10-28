@@ -589,6 +589,7 @@ recálculo de una ruta responden 409. Sin cubicador, como antes (sin `progreso_c
     }
   ],
   "finalizada_at": null,
+  "solo_lectura": false,
   "progreso_cubicacion": { "estado": "en_curso", "total": 1, "cubicadas": 0, "pendientes": 1, "fallidas": 0 },
   "cubicacion": null
 }
@@ -603,6 +604,14 @@ sugerido y que el comercial lo confirme o lo cambie** antes de mandarlo en `merc
 
 **Excel (`GET /web/licitaciones/{folio}/excel`).** Agrega la columna `Camiones Cotifly` (un camión por línea de la celda) y la hoja
 `Camiones Cotifly` (un camión por fila).
+
+**Gerente y director, en solo consulta (HU-034.1, #201 parte A).** `GET /web/licitaciones/{folio}` y `GET /web/licitaciones/{folio}/excel`
+también responden al gerente comercial cuya regional incluye al dueño y al director (cualquier regional), con la regla del detalle por
+folio (8.14) y del PDF: si la regional del gerente no se puede comprobar, 404, igual que a un comercial ajeno. `Licitacion` trae
+`solo_lectura` (nuevo, siempre presente): `false` para el dueño (también en el 201 del alta y en reintentar) y `true` para ellos; con
+`true`, esconder "Reintentar cubicación", "Enviar sin vehículo", reintentar el envío y "Finalizar" (les responden 404) y dejar "Descargar
+Excel". La vista y el Excel son los mismos del dueño: nunca tuvieron costos. Cada acceso ajeno queda en la auditoría
+(`consultar_licitacion`, `exportar_excel_licitacion`).
 
 ### 8.6 Costeo: `GET /web/cotizaciones/{folio}/costeo`
 

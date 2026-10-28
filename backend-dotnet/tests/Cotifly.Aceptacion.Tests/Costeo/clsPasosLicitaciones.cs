@@ -18,6 +18,9 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
 {
     private readonly Dictionary<string, string> _folios = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>HU-034.1 (#201): el último Excel de la licitación que bajó cada usuario (alias), para comparar el del dueño con los demás.</summary>
+    public Dictionary<string, byte[]> Excels { get; } = new(StringComparer.OrdinalIgnoreCase);
+
     [When("{string} analiza el pliego de {int} filas")]
     public Task CuandoAnaliza(string alias, int filas) =>
         web.EnviarAsync(HttpMethod.Post, "/web/licitaciones/analizar-excel", web.Sesion(alias).Access, clsApiWebPruebas.Archivo(clsPliegoMuestra.Excel(filas)));
@@ -40,6 +43,7 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
     [Then("Nexo recibió el archivo para analizarlo")]
     public void EntoncesNexoRecibioElArchivo() => costeo.Nexo.UltimoArchivoAnalizado.Should().BeGreaterThan(0);
 
+    [Given("{string} crea la licitación {string} del cliente {string} con el pliego de {int} filas mapeadas")]
     [When("{string} crea la licitación {string} del cliente {string} con el pliego de {int} filas mapeadas")]
     public Task CuandoCrea(string alias, string licitacion, string nit, int filas) =>
         CrearAsync(alias, licitacion, clsPliegoMuestra.Json(nit, clsPliegoMuestra.Lineas(filas)), clsPliegoMuestra.Excel(filas));
@@ -143,6 +147,7 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
             $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionArchivosLicitacion a JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = a.cotizacionId WHERE c.folio = '{Folio(licitacion)}' AND a.hoja = N'{clsPliegoMuestra.Hoja}'"))
             .Should().Be(1);
 
+    [Given("Nexo costea las líneas {int} y {int} de {string} con un flete de {int}")]
     [When("Nexo costea las líneas {int} y {int} de {string} con un flete de {int}")]
     public async Task CuandoCosteaDos(int a, int b, string licitacion, int flete)
     {
@@ -154,6 +159,7 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
     [When("Nexo costea las líneas {int} de {string} con un flete de {int}")]
     public async Task CuandoCosteaUna(int a, string licitacion, int flete) => costeo.Nexo.CostearLinea(await CosteoIdAsync(licitacion), a - 1, flete);
 
+    [Given("el polling consulta a Nexo por {string}")]
     [When("el polling consulta a Nexo por {string}")]
     public Task CuandoPolling(string licitacion) => web.Api.ProcesarPollingAsync(Folio(licitacion));
 
@@ -194,6 +200,7 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
     {
         await web.EnviarAsync(HttpMethod.Get, $"/web/licitaciones/{Folio(licitacion)}/excel", web.Sesion(alias).Access);
         web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);
+        Excels[alias] = web.UltimoContenido;
     }
 
     [Then("el Excel conserva las columnas originales del pliego")]
