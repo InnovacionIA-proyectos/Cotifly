@@ -33,6 +33,7 @@ dejarla con la configuración inicial.
 | `scripts/13_correo_mailsender.sql` | HU-033 (#199) | En el ejecutador (orden de nombre, después del `12`). `Correos`: el seguimiento de MailSender (`idMailSender`, `redirigidoA`, `intentosEntrega`, `enviadoAt`, `estadoActualizadoAt`, `siguienteConsultaAt`, `encoladoAt`, dos índices filtrados y el CHECK del estado con `encolado` y `enviando`); `CotizacionesSolicitud`: el resultado diferido a Nexo (`sincronizacionResultadoNexo`, `comentarioResultadoPendiente`, `resultadoSincronizadoAt`, `errorSincronizacionResultado`, `intentosSincronizacionResultado`). Idempotente, no destructivo. **El backend mapea las columnas**: sin él, `/health/ready` responde "esquema incompleto: falta 13". Se aplica antes de desplegar la imagen |
 | `scripts/14_cotizacion_finalizada.sql` | HU-036 (#205, #206) | **Propuesta pendiente de revisión de @scalderon-bs.** En el ejecutador (orden de nombre, después del `13`). `CotizacionesSolicitud`: `finalizadaAt DATETIMEOFFSET NULL` y `finalizadaPor UNIQUEIDENTIFIER NULL` (FK `fk_cotizaciones_finalizadaPor` a `UsuariosWeb(id)`, CHECK `ck_cotizaciones_finalizada`: las dos o ninguna). Sin backfill. Idempotente, no destructivo, en una transacción. **El backend mapea las columnas**: sin él, `/health/ready` responde "esquema incompleto: falta 14". Se aplica antes de desplegar la imagen |
 | `scripts/15_rol_director.sql` | HU-037.1 (#209) | En el ejecutador (orden de nombre, después del `13`; el `14` es de HU-036). **Propuesta del backend; la dueña es @scalderon-bs (Datos).** `ck_roles_codigo` admite `director` (el `01` ya lo trae) y agrega la fila `director` activa con `idRolExterno = NULL`. Idempotente, en una transacción, no pisa un `idRolExterno` ya fijado. **No lo exige `/health/ready`** (no agrega columnas; sin él nadie entra como director). Va **con o después** de la imagen de HU-037.2 (#210): una imagen anterior falla al leer el catálogo de roles con la fila `director` (ver `DEPLOY.md`, "Rol director"). El IDROLES lo fija un script de operación por ambiente: `operacion/mapeo_prueba_rol_director_209.sql` (prueba) y el de #212 (producción) |
+| `scripts/16_multiples_roles_activos.sql` | HU-040.1 (#229) | **Propuesta pendiente de revisión de @scalderon-bs.** En el ejecutador (orden de nombre, después del `15`). `UsuariosRoles`: retira el índice único filtrado `uq_usuariosRoles_usuarioId_activo` (varias asignaciones activas por usuario, una por rol: multi-rol, HU-040) y conserva `uq_usuariosRoles_usuarioId_rolId`; imprime la definición anterior. `TokensRefresco`: `rolSesion NVARCHAR(30) NULL` (el rol de la sesión, que el refresh conserva) con el CHECK `ck_tokensRefresco_rolSesion`. Idempotente, no destructivo (no cambia filas); se detiene sin tocar nada si falta la unicidad usuario + rol. **El backend mapea `rolSesion`**: sin él, `/health/ready` responde "esquema incompleto: falta 16". Se aplica antes de desplegar la imagen; es seguro con la imagen anterior (ver la cabecera del script) |
 
 **`scripts/pendientes/04_cubicacion_segundo_plano.sql`** (HU-023.5, #160) agrega a la ruta la cola de la cubicación de la
 licitación en segundo plano (`estadoCubicacion`, `cubicacionIntentos`, `cubicacionDisponibleAt`, `errorCubicacion`,
@@ -153,6 +154,8 @@ db/
 │   ├── 12_vehiculo_elegido.sql         vehículo elegido de la ruta y medidas NULL de la mercancía (se puede repetir)
 │   ├── 13_correo_mailsender.sql        seguimiento de MailSender en Correos y resultado diferido a Nexo (se puede repetir)
 │   ├── 14_cotizacion_finalizada.sql    cotización finalizada: finalizadaAt y finalizadaPor (propuesta; se puede repetir)
+│   ├── 15_rol_director.sql             rol interno director (se puede repetir)
+│   ├── 16_multiples_roles_activos.sql  varias asignaciones activas por usuario y rolSesion del refresh (propuesta; se puede repetir)
 │   ├── pendientes/            propuesta 04, pendiente de revisión (el ejecutador no la corre)
 │   └── operacion/             scripts de datos de una sola vez que corre el DBA con aprobación
 ├── seeder/
@@ -246,7 +249,8 @@ día se corren contra otra base, hay que cambiar esa línea. No aplica a la inst
    del DBA; el backend lo exige), `scripts/05_categoria_conexo.sql`, `scripts/06_idempotencia_captura.sql`,
    `scripts/07_motivo_busqueda_agotada.sql`, `scripts/08_retirar_vistas_actividad.sql`, `scripts/09_score_prioridad.sql`,
    `scripts/10_rechazo_linea.sql`, `scripts/11_peso_con_tara.sql`, `scripts/12_vehiculo_elegido.sql`,
-   `scripts/13_correo_mailsender.sql`, `scripts/14_cotizacion_finalizada.sql`, `seeder/01_lineas_negocio.sql`, `seeder/02_sap_mapeo_trqtype.sql` y `seeder/03_roles.sql`.
+   `scripts/13_correo_mailsender.sql`, `scripts/14_cotizacion_finalizada.sql`, `scripts/15_rol_director.sql`,
+   `scripts/16_multiples_roles_activos.sql`, `seeder/01_lineas_negocio.sql`, `seeder/02_sap_mapeo_trqtype.sql` y `seeder/03_roles.sql`.
 3. Si `dbo_cotifly` ya tiene tablas, el `01` avisa y no crea nada. Si falla otro paso, mira el error antes de seguir con
    los siguientes.
 
@@ -267,6 +271,8 @@ sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/11_peso_con_tara.
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/12_vehiculo_elegido.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/13_correo_mailsender.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/14_cotizacion_finalizada.sql
+sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/15_rol_director.sql
+sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/16_multiples_roles_activos.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i seeder/01_lineas_negocio.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i seeder/02_sap_mapeo_trqtype.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i seeder/03_roles.sql
@@ -348,6 +354,7 @@ Cambios pequeños al esquema que todavía no se consolidan en el `01`. Van como 
 | `13_correo_mailsender.sql` | HU-033 (#199) | `Correos`: `idMailSender`, `redirigidoA`, `intentosEntrega`, `enviadoAt`, `estadoActualizadoAt`, `siguienteConsultaAt`, `encoladoAt` (NULL) con los índices filtrados `ix_correos_siguienteConsultaAt` y `ux_correos_idMailSender` y el CHECK `ck_correos_estado`; `CotizacionesSolicitud`: `sincronizacionResultadoNexo` (CHECK), `comentarioResultadoPendiente`, `resultadoSincronizadoAt`, `errorSincronizacionResultado` (NULL) e `intentosSincronizacionResultado` (NOT NULL DEFAULT 0, CHECK ≥ 0). Idempotente. Obligatorio: el backend mapea las columnas |
 | `14_cotizacion_finalizada.sql` | HU-036 (#205, #206) | `CotizacionesSolicitud.finalizadaAt DATETIMEOFFSET NULL` y `finalizadaPor UNIQUEIDENTIFIER NULL` con la FK `fk_cotizaciones_finalizadaPor` a `UsuariosWeb(id)` y el CHECK `ck_cotizaciones_finalizada` (las dos o ninguna). Idempotente, en una transacción, sin backfill. Obligatorio: el backend mapea las columnas. Propuesta pendiente de revisión de @scalderon-bs |
 | `15_rol_director.sql` | HU-037.1 (#209) | `Roles`: el CHECK `ck_roles_codigo` admite `director` (reemplazo solo si le falta; imprime el anterior) y la fila `director` (activa, `idRolExterno = NULL`). Idempotente. El `01` ya trae el CHECK con `director`; la fila la pone el 15 |
+| `16_multiples_roles_activos.sql` | HU-040.1 (#229) | `UsuariosRoles`: retira `uq_usuariosRoles_usuarioId_activo` (varias asignaciones activas por usuario; `uq_usuariosRoles_usuarioId_rolId` sigue) e imprime su definición. `TokensRefresco.rolSesion NVARCHAR(30) NULL` con el CHECK `ck_tokensRefresco_rolSesion`. Idempotente, no cambia filas. Obligatorio: el backend mapea `rolSesion`. El `01` ya trae el estado final. Propuesta pendiente de revisión de @scalderon-bs |
 
 El `02` se detiene sin tocar nada si `idTipoMercancia` todavía tiene valores (un uuid no se puede convertir a código).
 Cuando el diseño se estabilice, estos cambios se pasan al `01` y el script se retira.

@@ -128,7 +128,8 @@ GO
 CREATE UNIQUE INDEX uq_roles_idRolExterno ON dbo_cotifly.Roles (idRolExterno) WHERE idRolExterno IS NOT NULL;
 GO
 
--- Rol interno asignado a cada usuario (a lo sumo una asignación activa por usuario).
+-- Rol interno asignado a cada usuario. HU-040.1 (#229, script 16): varias asignaciones activas por usuario (una por rol, multi-rol);
+-- uq_usuariosRoles_usuarioId_rolId impide asignar el mismo rol dos veces.
 CREATE TABLE dbo_cotifly.UsuariosRoles (
     id              INT IDENTITY(1,1)   NOT NULL,
     usuarioId       UNIQUEIDENTIFIER    NOT NULL,
@@ -145,9 +146,6 @@ CREATE TABLE dbo_cotifly.UsuariosRoles (
 );
 GO
 
-CREATE UNIQUE INDEX uq_usuariosRoles_usuarioId_activo ON dbo_cotifly.UsuariosRoles (usuarioId) WHERE activo = 1;
-GO
-
 -- Refresh tokens opacos: solo se guarda el SHA-256 en hexadecimal (64 caracteres).
 CREATE TABLE dbo_cotifly.TokensRefresco (
     id                  UNIQUEIDENTIFIER    NOT NULL CONSTRAINT df_tokensRefresco_id DEFAULT (NEWID()),
@@ -158,11 +156,14 @@ CREATE TABLE dbo_cotifly.TokensRefresco (
     expiraAt            DATETIMEOFFSET      NOT NULL,
     revocadoAt          DATETIMEOFFSET      NULL,
     reemplazadoPorId    UNIQUEIDENTIFIER    NULL,
+    -- HU-040.1 (#229, script 16): rol interno con el que se emitió la sesión (el refresh lo conserva). NULL: emitido antes del 16.
+    rolSesion           NVARCHAR(30)  COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL,
     CONSTRAINT pk_tokensRefresco PRIMARY KEY (id),
     CONSTRAINT uq_tokensRefresco_tokenHash UNIQUE (tokenHash),
     CONSTRAINT fk_tokensRefresco_usuarioId FOREIGN KEY (usuarioId) REFERENCES dbo_cotifly.UsuariosWeb (id),
     CONSTRAINT fk_tokensRefresco_reemplazadoPorId FOREIGN KEY (reemplazadoPorId) REFERENCES dbo_cotifly.TokensRefresco (id),
-    CONSTRAINT ck_tokensRefresco_vigencia CHECK (expiraAt > createdAt)
+    CONSTRAINT ck_tokensRefresco_vigencia CHECK (expiraAt > createdAt),
+    CONSTRAINT ck_tokensRefresco_rolSesion CHECK (rolSesion IS NULL OR rolSesion IN ('comercial', 'gerente_comercial', 'director'))
 );
 GO
 

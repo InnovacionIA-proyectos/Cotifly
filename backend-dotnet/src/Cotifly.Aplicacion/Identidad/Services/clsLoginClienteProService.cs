@@ -72,7 +72,7 @@ public sealed class clsLoginClienteProService(
             {
                 identidad.Usuario.RegistrarSesion(ahora);
                 var emitida = clsEmisionSesion.Emitir(emisor, identidad.Usuario, identidad.Rol, clsEmisionSesion.NuevoRefresh(
-                    identidad.Usuario.Id, ahora, configuracion.VigenciaRefresh, familiaId: null, out var refresh));
+                    identidad.Usuario.Id, ahora, configuracion.VigenciaRefresh, familiaId: null, identidad.Rol, out var refresh));
                 tokens.Agregar(refresh);
                 try
                 {
@@ -120,12 +120,15 @@ public sealed class clsLoginClienteProService(
 /// <summary>Armado común de la sesión del login y del refresh.</summary>
 internal static class clsEmisionSesion
 {
-    /// <summary>Genera un refresh opaco y su entidad (solo con el hash). <paramref name="familiaId"/> nulo inicia familia.</summary>
+    /// <summary>
+    /// Genera un refresh opaco y su entidad (solo con el hash). <paramref name="familiaId"/> nulo inicia familia. <paramref name="rol"/>
+    /// es el rol de la sesión (HU-040.1, <c>TokensRefresco.rolSesion</c>).
+    /// </summary>
     public static string NuevoRefresh(
-        Guid usuarioId, DateTimeOffset ahora, TimeSpan vigencia, Guid? familiaId, out clsTokenRefresco entidad)
+        Guid usuarioId, DateTimeOffset ahora, TimeSpan vigencia, Guid? familiaId, RolInterno rol, out clsTokenRefresco entidad)
     {
         var plano = clsTokenOpaco.Generar();
-        var emitido = clsTokenRefresco.Emitir(usuarioId, clsTokenOpaco.Hash(plano), ahora, vigencia, familiaId);
+        var emitido = clsTokenRefresco.Emitir(usuarioId, clsTokenOpaco.Hash(plano), ahora, vigencia, familiaId, rol);
         entidad = emitido.EsExitoso
             ? emitido.Valor
             : throw new InvalidOperationException($"No se pudo emitir el refresh: {emitido.Error.Mensaje}");

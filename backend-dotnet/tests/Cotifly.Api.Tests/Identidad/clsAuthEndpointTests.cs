@@ -174,6 +174,48 @@ public sealed class clsAuthEndpointTests(clsBaseDatosPruebas baseDatos) : IClass
     }
 
     [Fact]
+    public async Task HU0401_ConElScript16LoginYRefreshSiguenIgualConUnaYConDosAsignacionesActivas()
+    {
+        // HU-040.1 (#229): la base de pruebas tiene el 16 (sin uq_usuariosRoles_usuarioId_activo). Una persona con un rol y otra a la que
+        // Datos le agregó una segunda asignación activa (comercial + gerente, los dos respaldados en ClientePro) entran y renuevan como
+        // hoy: la segunda con la jerarquía (gerente_comercial). Cada refresh guarda el rol de la sesión (TokensRefresco.rolSesion).
+        var uno = await PersonaAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var dos = await PersonaAsync(clsBaseDatosPruebas.RolExternoGerente);
+        using var factory = Crear();
+        using var cliente = factory.CreateClient();
+        await LoginAsync(cliente, dos);
+        await clsBaseDatosPruebas.EjecutarAsync(baseDatos.CadenaCotifly, $"""
+            INSERT INTO dbo_cotifly.UsuariosRoles (usuarioId, rolId)
+                SELECT u.id, r.id FROM dbo_cotifly.UsuariosWeb u CROSS JOIN dbo_cotifly.Roles r
+                WHERE u.nombreUsuario = N'{dos}' AND r.codigo = N'comercial';
+            """);
+        var idExternoDos = await clsBaseDatosPruebas.EscalarAsync<long>(baseDatos.CadenaCotifly,
+            $"SELECT idUsuarioExterno FROM dbo_cotifly.UsuariosWeb WHERE nombreUsuario = N'{dos}'");
+        await baseDatos.CambiarRolesExternosAsync(idExternoDos, clsBaseDatosPruebas.RolExternoComercial, clsBaseDatosPruebas.RolExternoGerente);
+
+        foreach (var (persona, rol) in new[] { (uno, "comercial"), (dos, "gerente_comercial") })
+        {
+            var login = await LoginAsync(cliente, persona);
+            using var renovacion = await cliente.PostAsJsonAsync("/api/auth/refresh", new { refresh = login.Refresh }, Ct);
+            using var par = await JsonAsync(renovacion);
+            using var consola = await GetConTokenAsync(cliente, "/pruebas/comercial", par.RootElement.GetProperty("access").GetString());
+
+            renovacion.StatusCode.Should().Be(HttpStatusCode.OK, $"{persona} renueva con el 16 aplicado");
+            par.RootElement.GetProperty("user").GetProperty("rol").GetString().Should().Be(rol);
+            (await consola.Content.ReadAsStringAsync(Ct)).Should().Contain($"\"rol\":\"{rol}\"");
+            (await clsBaseDatosPruebas.EscalarAsync<string>(baseDatos.CadenaCotifly, $"""
+                SELECT STRING_AGG(r.rol, ',') FROM (SELECT DISTINCT COALESCE(t.rolSesion, 'NULL') AS rol FROM dbo_cotifly.TokensRefresco t
+                JOIN dbo_cotifly.UsuariosWeb u ON u.id = t.usuarioId WHERE u.nombreUsuario = N'{persona}' AND t.revocadoAt IS NULL) r
+                """)).Should().Be(rol, "los refresh vigentes guardan el rol de la sesión");
+        }
+
+        (await clsBaseDatosPruebas.EscalarAsync<int>(baseDatos.CadenaCotifly, $"""
+            SELECT COUNT(*) FROM dbo_cotifly.UsuariosRoles ur JOIN dbo_cotifly.UsuariosWeb u ON u.id = ur.usuarioId
+            WHERE u.nombreUsuario = N'{dos}' AND ur.activo = 1
+            """)).Should().Be(2, "el login no toca las asignaciones");
+    }
+
+    [Fact]
     public async Task UnaPersonaDesconocidaYUnaSinRolAutorizadoRecibenElMismo401Generico()
     {
         var sinRol = await PersonaAsync(clsBaseDatosPruebas.RolExternoSinMapeo);

@@ -60,6 +60,9 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
         // HU-036 (#205, #206): finalizadaAt y finalizadaPor en la cabecera (db/scripts/14; el backend los mapea). Como el 13, va antes del
         // 07 en esta lista.
         Script14,
+        // HU-040.1 (#229): varias asignaciones activas por usuario y TokensRefresco.rolSesion (db/scripts/16; el backend mapea rolSesion).
+        // Como el 14, va antes del 07 en esta lista.
+        Script16,
         // HU-023 (#176): BUSQUEDA_AGOTADA en el CHECK del motivo (db/scripts/07, lo aplica @scalderon-bs).
         Script07,
         // HU-014.3 (#152): retiro de las vistas del borrador de métricas (db/scripts/08, lo aplica el DBA).
@@ -68,6 +71,9 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
         // agrega columnas, así que no mueve los índices ScriptsHasta*/ScriptsSin07.
         Script15,
     ];
+
+    /// <summary>HU-040.1 (#229): el 16 de las asignaciones activas múltiples y el rol de la sesión (relativa a <c>migrations_mssql</c>).</summary>
+    public const string Script16 = "../scripts_bd/16_multiples_roles_activos.sql";
 
     /// <summary>HU-037.1 (#209): el 15 del rol director (relativa a <c>migrations_mssql</c>).</summary>
     public const string Script15 = "../scripts_bd/15_rol_director.sql";
@@ -130,17 +136,17 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     /// Scripts hasta el 07 incluido (con el 09, el 10 y el 11, sin el 08): la base migrada que todavía tiene las vistas del borrador de métricas.
     /// <c>Scripts[ScriptsHasta07 - 1]</c> es el 07 (lo verifica <c>clsEsquemaTests</c>).
     /// </summary>
-    public const int ScriptsHasta07 = 22;
+    public const int ScriptsHasta07 = 23;
 
     /// <summary>
     /// Todos los scripts anteriores al 07 en <see cref="Scripts"/> (sin el 07 ni los que van después). <c>Scripts[ScriptsSin07]</c> es el 07
     /// (lo verifica <c>clsEsquemaTests</c>). Si otra rama agrega un script que el backend mapea, va antes del 07 en la lista y este número
-    /// sube (hoy llega hasta el 14: <c>Scripts[ScriptsSin07 - 1]</c> es el 14, HU-036 #205; antes el 13, HU-033 #199; el 12, HU-032 #197, antes el 11,
+    /// sube (hoy llega hasta el 16: <c>Scripts[ScriptsSin07 - 1]</c> es el 16, HU-040.1 #229; antes el 14, HU-036 #205; el 13, HU-033 #199; el 12, HU-032 #197, antes el 11,
     /// HU-030.1 #184, y antes el 10, HU-028.1 #183).
     /// HU-014 (#188): incluye el 03, que deja el CHECK del 07; para una base que de verdad no admite BUSQUEDA_AGOTADA,
     /// <see cref="CrearBaseSin07Async"/>.
     /// </summary>
-    public const int ScriptsSin07 = 21;
+    public const int ScriptsSin07 = 22;
 
     /// <summary>
     /// HU-014 (#188): el CHECK del motivo tal como lo deja el <c>02</c> (4 motivos, sin <c>BUSQUEDA_AGOTADA</c> ni <c>ISNULL</c>). Con el 03
@@ -285,6 +291,8 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("14_cotizacion_finalizada.sql"));
                 // HU-037.1 (#209): el 15 (rol director) va después del 14 por nombre.
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("15_rol_director.sql"));
+                // HU-040.1 (#229): el 16 (multi-rol) va después del 15 por nombre.
+                await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("16_multiples_roles_activos.sql"));
                 if (conSeeders)
                 {
                     foreach (var seeder in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "scripts_bd", "seeder"), "*.sql").Order(StringComparer.Ordinal))
@@ -336,6 +344,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("13_correo_mailsender.sql"));
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("14_cotizacion_finalizada.sql"));
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("15_rol_director.sql"));
+            await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("16_multiples_roles_activos.sql"));
             foreach (var seeder in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "scripts_bd", "seeder"), "*.sql").Order(StringComparer.Ordinal))
             {
                 await EjecutarScriptAsync(CadenaCotifly, seeder);
