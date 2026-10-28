@@ -6,7 +6,10 @@ namespace Cotifly.Aplicacion.Metricas.DTOs;
 /// Parámetros de consulta del tablero tal como llegan (<c>desde</c>, <c>hasta</c>, <c>usuario_id</c> y, solo en la regional, <c>anio</c> y
 /// <c>mes</c> de HU-010.5); los valida el caso de uso.
 /// </summary>
-public sealed record clsConsultaMetricas(string? Desde = null, string? Hasta = null, string? UsuarioId = null, string? Anio = null, string? Mes = null);
+/// <param name="Regional">HU-037.3 (#211): regional pedida con <c>?regional=</c> (solo <c>/regional</c>; el alcance lo decide
+/// <c>IClsRegionalUsuario.ResolverAlcanceAsync</c>).</param>
+public sealed record clsConsultaMetricas(
+    string? Desde = null, string? Hasta = null, string? UsuarioId = null, string? Anio = null, string? Mes = null, string? Regional = null);
 
 /// <summary>Periodo aplicado (esquema <c>PeriodoMetricas</c>).</summary>
 public sealed record clsPeriodoMetricas(DateOnly Desde, DateOnly Hasta, string ZonaHoraria);
@@ -21,15 +24,17 @@ public sealed record clsMetricasComercial(
     IReadOnlyList<clsMetricaLineaNegocio> PorLineaNegocio);
 
 /// <summary>Un usuario de la regional con su rol y sus indicadores (esquema <c>ComercialRegional</c>).</summary>
-/// <param name="Rol"><c>comercial</c>, <c>gerente_comercial</c> o <c>null</c>: rol interno asignado en <c>UsuariosRoles</c> (ADR-009).</param>
+/// <param name="Rol"><c>comercial</c>, <c>gerente_comercial</c>, <c>director</c> o <c>null</c>: rol interno asignado en <c>UsuariosRoles</c> (ADR-009).</param>
 public sealed record clsComercialRegional(Guid UsuarioId, string? NombreUsuario, string? NombreCompleto, string? Rol, clsIndicadoresMetricas Indicadores);
 
 /// <summary><c>GET /web/metricas/regional</c> (esquema <c>MetricasRegional</c>).</summary>
+/// <param name="Regional">La regional del alcance; <c>null</c> si el director ve todas (HU-037.3, #211).</param>
+/// <param name="FuenteRegional">De dónde salió la regional del gerente; <c>null</c> para el director.</param>
 /// <param name="PorLineaNegocio">Apertura por línea de negocio, por ruta, de la regional o del comercial filtrado (HU-021.10).</param>
 public sealed record clsMetricasRegional(
     clsPeriodoMetricas Periodo,
-    string Regional,
-    string FuenteRegional,
+    string? Regional,
+    string? FuenteRegional,
     Guid? UsuarioId,
     clsIndicadoresMetricas Indicadores,
     int LineasNegocioActivas,

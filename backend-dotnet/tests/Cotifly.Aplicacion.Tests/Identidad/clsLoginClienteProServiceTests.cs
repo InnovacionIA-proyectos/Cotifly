@@ -314,6 +314,30 @@ public sealed class clsLoginClienteProServiceTests
     }
 
     [Fact]
+    public void ElDirectorGanaALosDemasRolesConSuReglaAuditada()
+    {
+        var catalogo = _e.Catalogo;
+        var director = clsEscenarioIdentidad.RolExternoDirector;
+
+        clsVerificadorIdentidad.ResolverRol(catalogo, [new clsRolExterno(director, null)]).Should().Be((RolInterno.Director, clsMotivosAcceso.ReglaMapeoUnico));
+        clsVerificadorIdentidad.ResolverRol(catalogo, [new clsRolExterno(32, null), new clsRolExterno(director, null)])
+            .Should().Be((RolInterno.Director, clsMotivosAcceso.ReglaPrecedenciaDirector));
+        clsVerificadorIdentidad.ResolverRol(catalogo, [new clsRolExterno(director, null), new clsRolExterno(31, null)])
+            .Should().Be((RolInterno.Director, clsMotivosAcceso.ReglaPrecedenciaDirector));
+        clsVerificadorIdentidad.ResolverRol(catalogo, [new clsRolExterno(31, null), new clsRolExterno(32, null), new clsRolExterno(director, null)])
+            .Should().Be((RolInterno.Director, clsMotivosAcceso.ReglaPrecedenciaDirector));
+    }
+
+    [Fact]
+    public void UnDirectorInactivoNoGanaYElGerenteSigueConSuRegla()
+    {
+        _e.Director.Desactivar();
+
+        clsVerificadorIdentidad.ResolverRol(_e.Catalogo, [new clsRolExterno(31, null), new clsRolExterno(clsEscenarioIdentidad.RolExternoDirector, null)])
+            .Should().Be((RolInterno.GerenteComercial, clsMotivosAcceso.ReglaMapeoUnico));
+    }
+
+    [Fact]
     public void UnRolInternoInactivoNoDaAcceso()
     {
         _e.Gerente.Desactivar();

@@ -15,6 +15,35 @@ public sealed class clsPasosCotizacionesRegional(clsContextoWeb web)
     public Task CuandoConsultaLaRegional(string alias) =>
         web.EnviarAsync(HttpMethod.Get, "/web/cotizaciones/regional", web.Sesion(alias).Access);
 
+    /// <summary>HU-037.3 (#211): <c>?regional=</c> con el nombre real de la regional (alias del escenario).</summary>
+    [When("{string} consulta las cotizaciones de la regional {string}")]
+    public Task CuandoConsultaUnaRegional(string alias, string regional) =>
+        web.EnviarAsync(HttpMethod.Get, $"/web/cotizaciones/regional?regional={Uri.EscapeDataString(web.Regional(regional))}", web.Sesion(alias).Access);
+
+    [When("{string} consulta las regionales disponibles")]
+    public Task CuandoConsultaLasRegionales(string alias) => web.EnviarAsync(HttpMethod.Get, "/web/regionales", web.Sesion(alias).Access);
+
+    [Then("el listado regional es de todas las regionales")]
+    public void EntoncesTodas()
+    {
+        web.UltimoJson().GetProperty("regional").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null);
+        web.UltimoJson().GetProperty("fuente_regional").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null);
+    }
+
+    [Then("el listado regional es de la regional {string}")]
+    public void EntoncesDeLaRegional(string regional)
+    {
+        web.UltimoJson().GetProperty("regional").GetString().Should().Be(web.Regional(regional));
+        web.UltimoJson().GetProperty("fuente_regional").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null);
+    }
+
+    [Then("las regionales disponibles incluyen {string}, {string} y {string}")]
+    public void EntoncesIncluyen(string una, string dos, string tres) =>
+        Regionales().Should().Contain([web.Regional(una), web.Regional(dos), web.Regional(tres)]);
+
+    [Then("las regionales disponibles son solo {string}")]
+    public void EntoncesSolo(string regional) => Regionales().Should().Equal(web.Regional(regional));
+
     [Then("el listado regional trae en orden las cotizaciones {string}, {string} y {string}")]
     public void EntoncesElOrden(string primera, string segunda, string tercera) =>
         Filas().Select(f => f.GetProperty("folio").GetString()).Should()
@@ -30,4 +59,6 @@ public sealed class clsPasosCotizacionesRegional(clsContextoWeb web)
     }
 
     private List<System.Text.Json.JsonElement> Filas() => [.. web.UltimoJson().GetProperty("cotizaciones").EnumerateArray()];
+
+    private List<string?> Regionales() => [.. web.UltimoJson().GetProperty("regionales").EnumerateArray().Select(r => r.GetString())];
 }

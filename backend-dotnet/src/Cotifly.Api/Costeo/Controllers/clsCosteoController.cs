@@ -101,7 +101,10 @@ public sealed class clsCosteoController(
         return resultado.EsFallo ? Error(resultado.Error) : Ok(await misCotizaciones.ResumirAsync(resultado.Valor, CancellationToken.None));
     }
 
-    /// <summary>200 <c>CosteoCotizacion</c> (estado, precio final y servicios conexos con su precio; nunca el costo de Nexo); 404 si no es suya.</summary>
+    /// <summary>
+    /// 200 <c>CosteoCotizacion</c> (estado, precio final y servicios conexos con su precio; de los costos de Nexo solo el bruto de cada
+    /// ruta, HU-039.1, #218); 404 si no es suya.
+    /// </summary>
     [HttpGet("cotizaciones/{folio}/costeo")]
     [ProducesResponseType<clsCosteoCotizacion>(StatusCodes.Status200OK)]
     [ProducesResponseType<clsErrorWeb>(StatusCodes.Status404NotFound)]

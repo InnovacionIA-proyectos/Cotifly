@@ -10,7 +10,8 @@ namespace Cotifly.Aplicacion.Cotizaciones.DTOs;
 /// <list type="bullet">
 /// <item><see cref="Cotizacion"/>: la fila de "Mis cotizaciones" (<c>CotizacionResumen</c>) con el comercial dueño (<c>comercial</c>).</item>
 /// <item><see cref="Costeo"/>: lo mismo que <c>GET .../costeo</c> (<c>CosteoCotizacion</c>): rutas con camiones, porcentajes, mercancías,
-/// conexos con precio, margen, precio por ruta y avisos; <c>pdf_desactualizado</c> y <c>textos</c>.</item>
+/// conexos con precio, margen, precio por ruta, costo bruto por ruta (HU-039.1, #218: solo el dueño; con <see cref="SoloLectura"/> va
+/// en <c>null</c>) y avisos; <c>pdf_desactualizado</c> y <c>textos</c>.</item>
 /// <item><see cref="Captura"/>: cada ruta como la capturó el comercial (<c>RutaEditable</c> de <c>GET .../solicitud</c>): municipios por id
 /// y nombre y condiciones. Se cruza con <c>costeo.rutas[]</c> por <c>linea_solicitud_id</c>.</item>
 /// </list>

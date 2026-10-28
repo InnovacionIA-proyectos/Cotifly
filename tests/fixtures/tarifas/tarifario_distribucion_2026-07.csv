@@ -1,0 +1,5 @@
+ Origen ,Ciudad Destino,Tipo Vehículo,Tipo de Carga,Valor Flete,Moneda,Vigente hasta
+BOGOTA,BOGOTA,SENCILLO,carga_seca,350.000,COP,2026-07
+BOGOTA,SOACHA,SENCILLO,carga_seca,280.000,COP,2026-07
+MEDELLIN,MEDELLIN,SENCILLO,carga_seca,300.000,COP,2026-07
+CALI,YUMBO,SENCILLO,carga_seca,250.000,COP,2026-07

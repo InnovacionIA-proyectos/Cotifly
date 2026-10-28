@@ -35,6 +35,10 @@
 
 SET NOCOUNT ON;
 GO
+SET QUOTED_IDENTIFIER ON;
+GO
+SET ANSI_NULLS ON;
+GO
 
 -- =============================================================================
 -- 0. Precondición

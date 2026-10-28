@@ -147,7 +147,11 @@ public sealed class clsDetalleCotizacionEndpointsTests : IDisposable
         deGerente.GetProperty("solo_lectura").GetBoolean().Should().BeTrue();
         deGerente.GetProperty("cotizacion").GetProperty("comercial").GetProperty("usuario_id").GetString().Should().Be(ana.UsuarioId.ToString());
         deGerente.GetProperty("cotizacion").GetProperty("comercial").GetProperty("nombre_completo").GetString().Should().Be("Ana Occidente");
-        deGerente.GetProperty("costeo").GetRawText().Should().Be(deDueno.GetProperty("costeo").GetRawText(), "el gerente ve lo mismo que el dueño");
+        // HU-039.1 (#218): el gerente ve el mismo costeo que el dueño salvo el costo bruto de las rutas, que solo es del dueño.
+        deDueno.GetProperty("costeo").GetProperty("rutas")[0].GetProperty("costo_final").GetDecimal().Should().Be(1_000_000m);
+        deGerente.GetProperty("costeo").GetProperty("rutas").EnumerateArray()
+            .Should().OnlyContain(r => r.GetProperty("costo_final").ValueKind == JsonValueKind.Null);
+        SinCostoFinal(deGerente.GetProperty("costeo")).Should().Be(SinCostoFinal(deDueno.GetProperty("costeo")), "el gerente ve lo mismo que el dueño");
         foreach (var negada in new[] { otraRegional, gerenteSinRegional, ajeno, inexistente })
         {
             var cuerpo = await VerificarContratoAsync(negada, Contrato, _get, HttpStatusCode.NotFound);
@@ -322,5 +326,17 @@ public sealed class clsDetalleCotizacionEndpointsTests : IDisposable
     {
         _api.Dispose();
         _nexo.Dispose();
+    }
+
+    /// <summary>El costeo serializado sin <c>rutas[].costo_final</c> (HU-039.1: el único campo que cambia entre el dueño y el gerente).</summary>
+    private static string SinCostoFinal(JsonElement costeo)
+    {
+        var nodo = JsonNode.Parse(costeo.GetRawText())!;
+        foreach (var ruta in nodo["rutas"]!.AsArray())
+        {
+            ruta!.AsObject().Remove("costo_final");
+        }
+
+        return nodo.ToJsonString();
     }
 }

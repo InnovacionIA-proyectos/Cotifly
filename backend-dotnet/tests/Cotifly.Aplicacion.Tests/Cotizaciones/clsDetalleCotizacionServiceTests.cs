@@ -15,6 +15,7 @@ using Cotifly.Dominio.Identidad;
 using Cotifly.Dominio.Margen;
 using Cotifly.Pruebas.Comun;
 using Microsoft.Extensions.Options;
+using Cotifly.Aplicacion.Tests.Identidad;
 using NSubstitute;
 
 namespace Cotifly.Aplicacion.Tests.Cotizaciones;
@@ -30,7 +31,7 @@ public sealed class clsDetalleCotizacionServiceTests
 
     private readonly IClsCotizacionRepository _cotizaciones = Substitute.For<IClsCotizacionRepository>();
     private readonly IClsUsuarioWebRepository _usuarios = Substitute.For<IClsUsuarioWebRepository>();
-    private readonly IClsRegionalUsuario _regionales = Substitute.For<IClsRegionalUsuario>();
+    private readonly IClsRegionalUsuario _regionales;
     private readonly IClsMargenPoliticaRepository _politicas = Substitute.For<IClsMargenPoliticaRepository>();
     private readonly IClsEnvioConexosNexoService _envioConexos = Substitute.For<IClsEnvioConexosNexoService>();
     private readonly IClsAuditoriaService _auditoria = Substitute.For<IClsAuditoriaService>();
@@ -40,6 +41,7 @@ public sealed class clsDetalleCotizacionServiceTests
 
     public clsDetalleCotizacionServiceTests()
     {
+        _regionales = clsRegionalSustituta.Crear(_usuarios);
         _politicas.ListarAsync(Arg.Any<CancellationToken>()).Returns([_nacional]);
         _politicas.ObtenerPorIdAsync(Linea, Arg.Any<CancellationToken>()).Returns(_nacional);
         _usuarios.ObtenerPorIdAsync(_ana.Id, Arg.Any<CancellationToken>()).Returns(_ana);
@@ -168,6 +170,49 @@ public sealed class clsDetalleCotizacionServiceTests
         detalle.Cotizacion.Comercial.Should().Be(new clsComercialCotizacion(_ana.Id, "ana", "Ana Pérez"), "el dueño, no el gerente");
         await _auditoria.Received(1).RegistrarAsync(
             Arg.Is(clsDetalleCotizacionService.HerramientaAuditoria), Arg.Any<object?>(), Arg.Any<object?>(), Arg.Is(true), Arg.Any<int>(), Arg.Any<string?>());
+    }
+
+    /// <summary>
+    /// HU-039.1 (#218): el costo bruto de la ruta (<c>costeo.rutas[].costo_final</c>) es solo del dueño. El gerente de su regional ve el
+    /// mismo detalle en solo consulta, pero con <c>costo_final</c> en <c>null</c> (decisión conservadora: hasta HU-039 el detalle nunca le
+    /// mostraba costos).
+    /// </summary>
+    [Fact]
+    public async Task ElDuenoVeElCostoBrutoDeLaRutaYElGerenteEnSoloConsultaNo()
+    {
+        var cotizacion = Cotizada("PCN-AP-01102026-005", _ana.Id);
+        _cotizaciones.ObtenerPorFolioDelUsuarioAsync(cotizacion.Folio, _ana.Id, Arg.Any<CancellationToken>()).Returns(cotizacion);
+        _cotizaciones.ObtenerPorFolioAsync(cotizacion.Folio, Arg.Any<CancellationToken>()).Returns(cotizacion);
+        _regionales.EsMiembroDeMiRegionalAsync(_gloria, _ana.Id, Arg.Any<CancellationToken>()).Returns(clsResultado<bool>.Exito(true));
+
+        var delDueno = (await Servicio(Comercial(_ana)).ObtenerAsync(cotizacion.Folio, Ct)).Valor;
+        var delGerente = (await Servicio(Gerente(_gloria)).ObtenerAsync(cotizacion.Folio, Ct)).Valor;
+
+        delDueno.SoloLectura.Should().BeFalse();
+        delDueno.Costeo.Rutas.Single().CostoFinal.Should().Be(100m);
+        delGerente.SoloLectura.Should().BeTrue();
+        delGerente.Costeo.Rutas.Single().CostoFinal.Should().BeNull("el gerente en solo consulta no ve el costo bruto");
+        delGerente.Costeo.Should().BeEquivalentTo(delDueno.Costeo.SinCostoFinal(), "solo cambia el costo");
+        delGerente.Totales.Should().Be(delDueno.Totales);
+    }
+
+    [Fact]
+    public async Task ElDirectorVeLaDeCualquierRegionalEnSoloConsultaYQuedaAuditadoConSuRol()
+    {
+        // HU-037.3 (#211): sin consultar regionales (el director no tiene alcance regional).
+        var dora = UsuarioWeb("dora", "Dora");
+        _usuarios.ObtenerPorIdAsync(dora.Id, Arg.Any<CancellationToken>()).Returns(dora);
+        var cotizacion = Cotizada("PCN-AP-01102026-001", _ana.Id);
+        _cotizaciones.ObtenerPorFolioAsync(cotizacion.Folio, Arg.Any<CancellationToken>()).Returns(cotizacion);
+
+        var detalle = (await Servicio(new clsUsuarioFalso(dora.Id, RolInterno.Director)).ObtenerAsync(cotizacion.Folio, Ct)).Valor;
+
+        detalle.SoloLectura.Should().BeTrue();
+        await _regionales.DidNotReceiveWithAnyArgs().EsMiembroDeMiRegionalAsync(default!, default, Ct);
+        await _auditoria.Received(1).RegistrarAsync(
+            Arg.Is(clsDetalleCotizacionService.HerramientaAuditoria),
+            Arg.Is<object?>(e => e!.ToString()!.Contains("rol = director", StringComparison.Ordinal)),
+            Arg.Any<object?>(), Arg.Is(true), Arg.Any<int>(), Arg.Any<string?>());
     }
 
     [Fact]

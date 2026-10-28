@@ -22,7 +22,8 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Aplicacion.Costeo.Services;
 
 /// <summary>
-/// Costeo de una cotización del comercial en la consola (HU-005.7, ADR-015 §5): verlo (solo precios, nunca el costo de Nexo),
+/// Costeo de una cotización del comercial en la consola (HU-005.7, ADR-015 §5): verlo (precios y, desde HU-039.1, #218, el costo bruto
+/// de cada ruta; nunca el costo de cada camión o conexo),
 /// elegir los servicios conexos que se incluyen y generar el PDF con el módulo de HU-003.5. Solo cotizaciones propias
 /// (<c>COTIZACION_NO_ENCONTRADA</c> → 404). Las mutaciones exigen la versión de la fila (<c>If-Match</c>, ADR-018 §8) y siguen la
 /// regla del PDF (ADR-018 §11, <see cref="clsReglaPdfCosteo"/>).
@@ -54,8 +55,8 @@ public interface IClsCosteoCotizacionService
 }
 
 /// <summary>
-/// <c>CosteoCotizacion</c>: estado del costeo y precios (sin costos de Nexo; HU-021: <see cref="PrecioFinal"/> es la suma del precio de
-/// las rutas, que ya incluye sus conexos), el margen sugerido y su origen (HU-013.2), si el PDF
+/// <c>CosteoCotizacion</c>: estado del costeo y precios (de los costos de Nexo, solo el bruto de cada ruta, HU-039.1; HU-021:
+/// <see cref="PrecioFinal"/> es la suma del precio de las rutas, que ya incluye sus conexos), el margen sugerido y su origen (HU-013.2), si el PDF
 /// quedó desactualizado (ADR-018 §11), la versión de la fila (<c>row_version</c>, también en el <c>ETag</c>), la TRM fijada al crear
 /// (<see cref="TrmAplicada"/>, HU-013.7; en USD los precios ya vienen convertidos con esa TRM) y el asunto y la introducción guardados
 /// para el PDF (<c>textos</c>, HU-013.5; <c>null</c> si todavía no hay).
@@ -108,9 +109,16 @@ public sealed record clsCosteoCotizacion(
 
     /// <summary>
     /// HU-021.8 (#135): las rutas en orden, cada una con su margen (aplicado, sugerido y origen), su precio y sus conexos. El ajuste de
-    /// margen y los cambios de conexos dicen a cuál aplican con <c>linea_orden</c> o <c>linea_solicitud_id</c>. Nunca trae costos.
+    /// margen y los cambios de conexos dicen a cuál aplican con <c>linea_orden</c> o <c>linea_solicitud_id</c>. HU-039.1 (#218): el único
+    /// costo que trae es el costo bruto de cada ruta (<see cref="clsRutaCosteo.CostoFinal"/>), solo para el dueño.
     /// </summary>
     public IReadOnlyList<clsRutaCosteo> Rutas { get; init; } = [];
+
+    /// <summary>
+    /// HU-039.1 (#218): la misma vista sin el costo bruto de las rutas (<see cref="clsRutaCosteo.CostoFinal"/> en <c>null</c>), para quien
+    /// la consulta sin ser el dueño (el gerente comercial en solo consulta del detalle).
+    /// </summary>
+    public clsCosteoCotizacion SinCostoFinal() => this with { Rutas = [.. Rutas.Select(r => r with { CostoFinal = null })] };
 }
 
 /// <summary>
@@ -129,9 +137,10 @@ public sealed record clsServicioConexoPrecio(
 }
 
 /// <summary>
-/// <c>RutaCosteo</c> (HU-021.8, #135): una ruta del costeo como la ve el comercial, sin costos. <see cref="MargenSugerido"/> es el de SAP
-/// TM o, si no hay, el de la política de su línea (<c>margenSAPSugerido</c> o <c>margenPoliticaSugerido</c>): por debajo de él el ajuste
-/// de ESTA ruta exige justificación.
+/// <c>RutaCosteo</c> (HU-021.8, #135): una ruta del costeo como la ve el comercial. <see cref="MargenSugerido"/> es el de SAP TM o, si no
+/// hay, el de la política de su línea (<c>margenSAPSugerido</c> o <c>margenPoliticaSugerido</c>): por debajo de él el ajuste de ESTA ruta
+/// exige justificación. Hasta HU-039 no traía costos (HU-021.8, #135); desde HU-039.1 (#218) trae el costo bruto de la ruta
+/// (<see cref="CostoFinal"/>), sin desglose ni costos por camión o por conexo.
 /// </summary>
 public sealed record clsRutaCosteo(
     int LineaOrden,
@@ -145,6 +154,16 @@ public sealed record clsRutaCosteo(
     string? OrigenMargen,
     IReadOnlyList<clsServicioConexoPrecio> ServiciosConexos)
 {
+    /// <summary>
+    /// HU-039.1 (#218): costo bruto de la ruta que costeó Nexo (<see cref="clsLineaSolicitud.CostoFinal"/>: fletes + retorno + levante +
+    /// conexos de los camiones que cuentan, sin margen), <b>siempre en COP</b> aunque la cotización esté en USD (el costeo de Nexo es en
+    /// pesos y nunca se convierte). <c>null</c> en los mismos casos que <see cref="PrecioFinalLinea"/> (sin costeo listo o ruta
+    /// <c>rechazada</c>). Solo lo ve el dueño: el detalle del gerente en solo consulta lo deja en <c>null</c>
+    /// (<see cref="clsCosteoCotizacion.SinCostoFinal"/>). Reversa de la regla de ADR-015 §5, confirmada por la Gerencia Comercial el
+    /// 2026-10-27.
+    /// </summary>
+    public decimal? CostoFinal { get; init; }
+
     /// <summary>HU-021.9 (#136): línea de negocio de la ruta (id de <c>MargenesPolitica</c>; define su margen).</summary>
     public int? LineaNegocioId { get; init; }
 
@@ -1253,8 +1272,8 @@ public sealed class clsCosteoCotizacionService(
         "No se pudo leer el estado de los conexos en Nexo de {Folio} después de guardar; la respuesta sale sin estado_nexo.");
 
     /// <summary>
-    /// <c>CosteoCotizacion</c> de la cotización (sin costos de Nexo). La comparten el costeo, el ajuste de margen y las demás acciones de
-    /// la etapa final. <paramref name="situaciones"/> (#181) es lo que Nexo dice de la línea de cada camión (por id de camión), si se conoce.
+    /// <c>CosteoCotizacion</c> de la cotización (de los costos de Nexo, solo el costo bruto de cada ruta, HU-039.1, #218). La comparten
+    /// el costeo, el ajuste de margen y las demás acciones de la etapa final. <paramref name="situaciones"/> (#181) es lo que Nexo dice de la línea de cada camión (por id de camión), si se conoce.
     /// </summary>
     public static clsCosteoCotizacion Vista(
         clsCotizacionSolicitud cotizacion, string? baseUrlPdf, IReadOnlyDictionary<(Guid Ruta, string Conexo), string>? estadosNexo = null,
@@ -1294,7 +1313,8 @@ public sealed class clsCosteoCotizacionService(
 
     /// <summary>
     /// <c>RutaCosteo</c> (HU-021.8; rehecha en HU-021.9, #136): la ruta con su margen, su precio, sus conexos, sus camiones y sus
-    /// mercancías, como la ve el comercial (nunca costos de Nexo).
+    /// mercancías, como la ve el comercial. De los costos de Nexo solo lleva el costo bruto de la ruta (HU-039.1, #218), nunca el de cada
+    /// camión o conexo.
     /// </summary>
     public static clsRutaCosteo RutaCosteo(
         clsCotizacionSolicitud cotizacion, clsLineaSolicitud ruta, IReadOnlyDictionary<(Guid Ruta, string Conexo), string>? estadosNexo = null,
@@ -1319,6 +1339,8 @@ public sealed class clsCosteoCotizacionService(
             ruta.OrigenMargen is { } origenRuta ? clsCodigoEnum.ACodigo(origenRuta) : null,
             conexos)
         {
+            // HU-039.1 (#218): el costo bruto sale con el precio, como el margen aplicado (nunca un costo sin precio).
+            CostoFinal = ruta.PrecioFinalLinea is null ? null : ruta.CostoFinal,
             MargenSapAnomalo = ruta.MargenSapAnomalo,
             // HU-028.1 (#183): los motivos del rechazo de sus camiones (la ruta puede seguir con precio por los no rechazados).
             MotivoRechazo = ruta.MotivoRechazo,

@@ -101,7 +101,10 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script14, "ScriptsSin07 llega hasta el 14 (el backend mapea la cotización finalizada)");
         scripts[clsBaseDatosPruebas.ScriptsSin07].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsSin07 corta justo antes del 07");
         scripts[clsBaseDatosPruebas.ScriptsHasta07 - 1].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsHasta07 incluye el 07");
-        scripts[clsBaseDatosPruebas.ScriptsHasta07..].Should().ContainSingle().Which.Should().Be(clsBaseDatosPruebas.Script08, "después del 07 solo va el 08");
+        // HU-037.1 (#209): el 15 (rol director) va al final, después del 08: no agrega columnas y clsRolDirectorScriptTests usa
+        // Scripts.Length - 1 como "la base sin el 15".
+        scripts[clsBaseDatosPruebas.ScriptsHasta07..].Should().Equal([clsBaseDatosPruebas.Script08, clsBaseDatosPruebas.Script15],
+            "después del 07 van el 08 y el 15");
     }
 
     [Fact]

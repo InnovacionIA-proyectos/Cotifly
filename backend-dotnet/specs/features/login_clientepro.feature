@@ -3,12 +3,13 @@
 # ClientePro ya autenticó a la persona; Cotifly revalida en cada login:
 #   1. Externo (dbsolucionesti, solo lectura): la persona existe en tblSAPUsuariosApp (idUsuario como
 #      NOMBREUSUARIO y, si no, como ID) y sus roles de tblSAPUsuarioRoles, traducidos con Roles.idRolExterno,
-#      dan un rol interno (comercial | gerente_comercial).
+#      dan un rol interno (comercial | gerente_comercial | director; HU-037, #210).
 #   2. Interno (dbo_cotifly): en el primer ingreso se crea el usuario (JIT) y se le asigna ese rol en
 #      UsuariosRoles; en los siguientes, el rol externo actual debe coincidir con el asignado y el NOMBREUSUARIO
 #      con el del usuario vinculado. Si algo difiere: 401 genérico y auditoría, hasta que se revise.
 # Los roles del body nunca deciden. Cualquier falla responde el mismo 401 "Credenciales inválidas".
 # Roles externos de las pruebas (los mismos IDROLES de dbSolucionesTI_Prueba, ADR-009): 32 = ClienteProComercial, 31 = ClienteProGerencial, 40 = sin mapeo.
+# HU-037 (#210): 33 = director en estas pruebas (en la compartida el director es el 31 y el gerente el 25, provisional, #209).
 @integracion
 Característica: Login SSO desde ClientePro con verificación doble
   Como comercial de Botero Soto que ya inició sesión en ClientePro
@@ -71,6 +72,19 @@ Característica: Login SSO desde ClientePro con verificación doble
     Cuando "hugo.sso" inicia sesión desde ClientePro
     Entonces la sesión se emite con el rol "gerente_comercial"
     Y el acceso de "hugo.sso" queda auditado con la regla "precedencia_gerente_comercial"
+
+  # HU-037 (#210): precedencia director > gerente_comercial > comercial, auditada igual que la del gerente.
+  Escenario: Con los roles externos de comercial y director entra como director y la regla queda auditada
+    Dado la persona "dora.sso" con ID externo 5120 y nombre "Dora SSO" en el almacén corporativo con los roles externos "32,33"
+    Cuando "dora.sso" inicia sesión desde ClientePro
+    Entonces la sesión se emite con el rol "director"
+    Y el acceso de "dora.sso" queda auditado con la regla "precedencia_director"
+
+  Escenario: El primer ingreso de un director crea el usuario con el rol director
+    Dado la persona "dino.sso" con ID externo 5121 y nombre "Dino SSO" en el almacén corporativo con los roles externos "33"
+    Cuando "dino.sso" inicia sesión desde ClientePro
+    Entonces la sesión se emite con el rol "director"
+    Y el acceso de "dino.sso" queda auditado con la regla "mapeo_unico"
 
   Escenario: Una persona que no existe en el almacén no entra
     Cuando "nadie.sso" inicia sesión desde ClientePro

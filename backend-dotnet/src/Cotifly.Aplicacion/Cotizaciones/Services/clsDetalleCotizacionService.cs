@@ -28,7 +28,8 @@ public interface IClsDetalleCotizacionService
     /// El detalle de <paramref name="folio"/> para el usuario autenticado. Acceso:
     /// <list type="bullet">
     /// <item>el dueño, siempre;</item>
-    /// <item>un <c>gerente_comercial</c> cuya regional efectiva incluye al dueño, solo consulta (<c>solo_lectura = true</c>), con la misma
+    /// <item>el <c>director</c> (cualquier regional, HU-037.3 #211) o un <c>gerente_comercial</c> cuya regional efectiva incluye al dueño
+    /// (<see cref="IClsRegionalUsuario.PuedeVerDeAsync"/>), solo consulta (<c>solo_lectura = true</c>), con la misma
     /// regla que <c>GET /web/cotizaciones/regional</c> y el PDF (<see cref="IClsRegionalUsuario.EsMiembroDeMiRegionalAsync"/>). Si la
     /// regional no se puede comprobar (sin regional o fuente caída) se niega (fail-closed). Cada consulta de un gerente a una cotización
     /// ajena, permitida o no, queda en la auditoría (<see cref="clsDetalleCotizacionService.HerramientaAuditoria"/>);</item>
@@ -78,13 +79,13 @@ public sealed class clsDetalleCotizacionService(
         var soloLectura = false;
         if (cotizacion is null)
         {
-            if (usuario.Rol != RolInterno.GerenteComercial)
+            if (usuario.Rol is not { } rol || !rol.EsGerencial())
             {
                 return NoEncontrada();
             }
 
             cotizacion = await cotizaciones.ObtenerPorFolioAsync(folio, cancellationToken);
-            if (cotizacion is null || !await PermitidoAlGerenteAsync(usuarioId, folio, cotizacion, cancellationToken))
+            if (cotizacion is null || !await PermitidoAlGerenteAsync(usuarioId, rol, folio, cotizacion, cancellationToken))
             {
                 return NoEncontrada();
             }
@@ -110,6 +111,13 @@ public sealed class clsDetalleCotizacionService(
         var costeo = clsCosteoCotizacionService.Vista(
             cotizacion, opcionesPdf.Value.BaseUrl, estadosNexo, clsCategoriasConexosService.EnMemoria(categorias, cotizacion),
             situacionesNexo?.Obtener(cotizacion.Id));
+
+        // HU-039.1 (#218): el costo bruto de las rutas es solo del dueño; el gerente en solo consulta lo recibe en null (decisión
+        // conservadora: hasta HU-039 el detalle nunca le mostraba costos).
+        if (soloLectura)
+        {
+            costeo = costeo.SinCostoFinal();
+        }
 
         var politicasRuta = await PoliticasAsync(cotizacion, cancellationToken);
         var sinCatalogo = new Dictionary<string, clsCostoConexoNexo>();
@@ -176,13 +184,13 @@ public sealed class clsDetalleCotizacionService(
     /// ¿El dueño es miembro de la regional efectiva del gerente? La misma regla que el listado regional y el PDF; cualquier error de la
     /// regional niega (fail-closed). Queda en la auditoría, permitido o no.
     /// </summary>
-    private async Task<bool> PermitidoAlGerenteAsync(Guid gerenteId, string folio, clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken)
+    private async Task<bool> PermitidoAlGerenteAsync(Guid gerenteId, RolInterno rol, string folio, clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken)
     {
         var reloj = Stopwatch.StartNew();
-        var (permitido, motivo) = await EsDeSuRegionalAsync(gerenteId, cotizacion, cancellationToken);
+        var (permitido, motivo) = await EsDeSuRegionalAsync(gerenteId, rol, cotizacion, cancellationToken);
         await auditoria.RegistrarAsync(
             HerramientaAuditoria,
-            new { folio, usuario_id = gerenteId, rol = clsCodigoEnum.ACodigo(RolInterno.GerenteComercial) },
+            new { folio, usuario_id = gerenteId, rol = clsCodigoEnum.ACodigo(rol) },
             new { permitido, dueno_id = cotizacion.UsuarioId, motivo },
             permitido,
             (int)reloj.ElapsedMilliseconds,
@@ -190,7 +198,7 @@ public sealed class clsDetalleCotizacionService(
         return permitido;
     }
 
-    private async Task<(bool Permitido, string? Motivo)> EsDeSuRegionalAsync(Guid gerenteId, clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken)
+    private async Task<(bool Permitido, string? Motivo)> EsDeSuRegionalAsync(Guid gerenteId, RolInterno rol, clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken)
     {
         if (cotizacion.UsuarioId is not { } duenoId)
         {
@@ -203,7 +211,8 @@ public sealed class clsDetalleCotizacionService(
             return (false, null);
         }
 
-        var miembro = await regionales.EsMiembroDeMiRegionalAsync(gerente, duenoId, cancellationToken);
+        // HU-037.3 (#211): el director ve las de cualquier regional; el gerente, las de su regional (IClsRegionalUsuario).
+        var miembro = await regionales.PuedeVerDeAsync(gerente, rol, duenoId, cancellationToken);
         return miembro.EsFallo ? (false, miembro.Error.Codigo) : (miembro.Valor, null);
     }
 

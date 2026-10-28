@@ -24,7 +24,8 @@ public sealed class clsCorregirRolComercialScriptTests(clsBaseDatosPruebas baseD
         (await Escalar(aislada.Cadena, "SELECT idRolExterno FROM dbo_cotifly.Roles WHERE codigo = 'gerente_comercial'")).Should().Be(31);
         (await Escalar(aislada.Cadena, "SELECT idRolExterno FROM dbo_cotifly.RespaldoRoles_173 WHERE codigo = 'comercial' AND respaldadoAt IS NOT NULL"))
             .Should().Be(34);
-        (await Escalar(aislada.Cadena, "SELECT COUNT(*) FROM dbo_cotifly.RespaldoRoles_173")).Should().Be(2);
+        // Respalda todas las filas: comercial, gerente_comercial y director (script 15, HU-037.1).
+        (await Escalar(aislada.Cadena, "SELECT COUNT(*) FROM dbo_cotifly.RespaldoRoles_173")).Should().Be(3);
 
         await clsBaseDatosPruebas.EjecutarScriptAsync(aislada.Cadena, Script);
 

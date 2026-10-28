@@ -2,7 +2,7 @@
 
 Contrato congelado que consume el módulo Angular de ClientePro (HU-004, `clientepro-frontend`) y que implementa el backend .NET 10 (HU-003). La fuente de verdad es [`backend-dotnet/specs/openapi.yaml`](../../backend-dotnet/specs/openapi.yaml); este documento resume lo que el frontend necesita saber para integrarse sin leer el código.
 
-> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-22
+> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-26
 
 - Fecha de congelamiento: 2026-09-24
 - Issue: #17 (HU-004.1)
@@ -38,7 +38,7 @@ ClientePro (ya autenticado)
 | Tema | Regla |
 |---|---|
 | Identidad | El backend revalida `idUsuario` contra el almacén corporativo (`tblSAPUsuariosApp`) en cada login, primero como `NOMBREUSUARIO` y luego como `ID`. El `NOMBREUSUARIO` de esa fila (no el que envía el cliente) ubica o crea al usuario en `UsuariosWeb`. `nombreUsuario` y `roles` del request son informativos y nunca deciden el acceso. |
-| Roles | `comercial` (cotiza y ve lo suyo) y `gerente_comercial` (tablero de su regional y políticas de margen). Ambos pueden iniciar sesión. El rol viaja en el claim `rol` del JWT y en `user.rol`. El `gerente_comercial` también puede usar la consola del comercial (cotiza y ve lo suyo); un `comercial` en `/web/admin/*` recibe 403. |
+| Roles | `comercial` (cotiza y ve lo suyo), `gerente_comercial` (tablero de su regional y políticas de margen) y, desde HU-037 (#210, #211), `director` (todo lo del gerente sobre **todas** las regionales). Los tres pueden iniciar sesión; con varios roles de ClientePro gana `director` > `gerente_comercial` > `comercial`. El rol viaja en el claim `rol` del JWT y en `user.rol`. El `gerente_comercial` y el `director` también pueden usar la consola del comercial (cotizan y ven lo suyo); un `comercial` en `/web/admin/*` recibe 403. |
 | Access token | JWT HS256, 60 minutos. Claims: `sub` (UUID de `UsuariosWeb`), `jti`, `username`, `rol`. |
 | Refresh token | Opaco, 30 días, se rota en cada uso. Reutilizar uno ya rotado responde 401. |
 | Almacenamiento en el cliente | Guardar `access` y `refresh` fuera de logs y de la URL. |
@@ -63,8 +63,9 @@ Resumen de los endpoints de uso más frecuente; la lista completa (52) está en 
 | `GET /web/alias/resolver` | ambos | HU-031.1 (#194): traduce un tipo de vehículo o una clase de contenedor escritos a mano al código oficial de Nexo (catálogo y diccionario de alias), en lote (`?tipo=vehiculo&texto=TB&texto=3s3`, hasta 200). `{tipo, resultados: [{texto, reconocido, codigo, fuente}]}`; 503 `CATALOGOS_FLETE_NO_DISPONIBLE` si Nexo no responde. Ver `CONTRATOS_API_COTIFLY_FRONTEND.md` §4.2.8 |
 | `GET /web/municipios` | ambos | Buscador de origen y destino (`?q=&departamento=`, máx. 50) o catálogo completo sin filtros. 503 `MUNICIPIOS_NO_DISPONIBLE` si Nexo no responde (antes 400). Ver §8.1, fila 5 |
 | `GET /web/mis-cotizaciones` | ambos | Cotizaciones propias (máx. 100) |
-| `GET /web/cotizaciones/regional` | gerente_comercial | HU-016.1 (#154): cotizaciones de los comerciales de su regional (máx. 100), con la forma de `mis-cotizaciones` y el comercial dueño en cada fila. Ver §8.10.1 |
-| `GET /web/cotizaciones/{folio}` | dueño o gerente de su regional | HU-027.1 (#179): detalle completo en una llamada (cabecera, costeo por ruta, rutas capturadas y totales) con el `ETag`; el gerente solo consulta. Ver §8.14 |
+| `GET /web/cotizaciones/regional` | gerente_comercial o director | HU-016.1 (#154): cotizaciones de los comerciales de su regional (máx. 100), con la forma de `mis-cotizaciones` y el comercial dueño en cada fila. HU-037.3 (#211): el director ve todas o la de `?regional=`. Ver §8.10.1 |
+| `GET /web/regionales` | gerente_comercial o director | HU-037.3 (#211): regionales del selector (todas para el director, la suya para el gerente). Ver §8.10.1 |
+| `GET /web/cotizaciones/{folio}` | dueño, gerente de su regional o director | HU-027.1 (#179): detalle completo en una llamada (cabecera, costeo por ruta, rutas capturadas y totales) con el `ETag`; el gerente solo consulta. Ver §8.14 |
 | `POST /web/cotizaciones/{folio}/enviar` | ambos | Envía la cotización por correo con el PDF. HU-033 (#199): por MailSender; el 200 es "aceptado" (`estado = encolado`, `correo_id`, `redirigido_a`), el comercial va en copia oculta y el cuerpo lleva el precio por ruta y el total sin desglose. Por defecto, en todos los ambientes, va al buzón de pruebas con `[QA]` (`redirigido_a`); solo producción con `Correo:Proteccion:Modo=ninguno` y `Correo:Proteccion:PermitirEnvioReal=true` escribe a los destinatarios reales. 503 `ErrorNegocio` `CORREO_DESHABILITADO` si el correo está deshabilitado en el servidor |
 | `POST /web/cotizaciones/{folio}/correo/vista-previa` | ambos | Asunto, cuerpo y destinatarios sin enviar. HU-033: también `cuerpo_html`, `resumen` (precio por ruta y total), `copia_oculta` y el aviso de ambiente de pruebas (`entorno_pruebas`, `redirigido_a`, `aviso`) |
 | `GET /web/cotizaciones/{folio}/correos` | ambos (dueño) | HU-033 (#199): historial de envíos con el estado de MailSender (`encolado`, `enviando`, `enviado`, `fallido` con `error`) y `reintentable` |
@@ -75,16 +76,16 @@ Resumen de los endpoints de uso más frecuente; la lista completa (52) está en 
 | `GET /web/cotizaciones/{id}/nueva-version` | ambos | Datos para prellenar una nueva versión |
 | `GET /web/clientes/{nit}/destinatarios-previos` | ambos | `para`/`cc` del último envío a ese cliente |
 | `GET` / `PUT /web/usuario/telefono` | ambos | Teléfono que se imprime en el PDF |
-| `GET /web/admin/lineas-negocio` | gerente_comercial | Políticas de margen |
-| `PUT /web/admin/lineas-negocio/{id}` | gerente_comercial | Edita margen, método y estado |
+| `GET /web/admin/lineas-negocio` | gerente_comercial o director | Políticas de margen |
+| `PUT /web/admin/lineas-negocio/{id}` | gerente_comercial o director | Edita margen, método y estado |
 | `GET /web/metricas/comercial` | ambos | Tablero del comercial (HU-010.2): indicadores y serie mensual de sus cotizaciones. Ver §3.1 |
-| `GET /web/metricas/regional` | gerente_comercial | Tablero del gerente (HU-010.3): su regional, filtrable por `usuario_id` y por `anio`/`mes` (HU-010.5), con lista de comerciales, serie mensual y concentración por ciudad. Ver §3.1 |
+| `GET /web/metricas/regional` | gerente_comercial o director | Tablero del gerente (HU-010.3; el director, de todas o de la de `?regional=`, HU-037.3): su regional, filtrable por `usuario_id` y por `anio`/`mes` (HU-010.5), con lista de comerciales, serie mensual y concentración por ciudad. Ver §3.1 |
 | `GET /web/metricas/actividad` y `GET /web/metricas/ajustes-margen` | — | **Retirados (HU-014.3, #152):** responden 404. Eran el borrador del tablero; usar `/web/metricas/comercial` y `/regional` |
-| `GET /pdfs/{archivo}` | dueño o gerente de su regional | Descarga del PDF. Exige `Authorization`, así que se baja con HttpClient como blob, no con un `<a href>`. El enlace firmado `?t=` (ADR-011) se retiró en #105 junto con Google Chat |
+| `GET /pdfs/{archivo}` | dueño, gerente de su regional o director | Descarga del PDF. Exige `Authorization`, así que se baja con HttpClient como blob, no con un `<a href>`. El enlace firmado `?t=` (ADR-011) se retiró en #105 junto con Google Chat |
 
 Todos los campos de `/web/*` van en snake_case, incluidos los de los endpoints nuevos, en la respuesta **y en el cuerpo de la petición** (`motivo_rechazo`, `metodo_calculo`, `is_active`; un `motivoRechazo` se ignora). Los campos `nullable` siempre vienen, con `null` si no tienen valor. Un número enviado como texto (`"margen": "0.2"`) es un cuerpo inválido (400).
 
-"Ambos" = `comercial` o `gerente_comercial`; cada uno ve solo sus cotizaciones. El gerente puede descargar los PDF de los comerciales de su regional; si su regional aún no se conoce, solo los suyos (fail-closed).
+"Ambos" = `comercial`, `gerente_comercial` o `director`; cada uno ve solo sus cotizaciones. El gerente puede descargar los PDF de los comerciales de su regional; si su regional aún no se conoce, solo los suyos (fail-closed). El director, los de cualquier regional (HU-037.3, #211).
 
 **Folio** (ADR-011, aprobado el 2026-09-25, con iniciales desde el mismo día): lo genera siempre el servidor, `PCN-[{nitCliente}-]{INICIALES}-DDMMAAAA-{NNN}[-vN]`: NIT solo con dígitos cuando la cotización lo tiene, dos letras con las iniciales del comercial (primer nombre + primer apellido, sin tildes; p. ej. "Duban Guerra Castro" → `DG`), fecha de Bogotá, `NNN` consecutivo diario de esas iniciales (`001`…`999`; dos comerciales con las mismas iniciales comparten la secuencia) y `-vN` solo en versiones nuevas (sobre el folio de la v1). Ejemplos: `PCN-DG-25092026-001`, `PCN-9000472281-DG-25092026-002`, `PCN-9000472281-DG-25092026-002-v2`. Máximo 50 caracteres. El frontend no debe asumir el formato para nada distinto de mostrarlo.
 
@@ -97,8 +98,8 @@ Decisiones completas en `backend-dotnet/specs/decisiones/ADR-016-metricas-agrega
 
 **Quién ve qué.** El rol sale del token de la sesión (claim `rol`, emitido en el login SSO con la verificación doble de ClientePro); no se lee de ninguna columna.
 - `/comercial`: las cotizaciones propias (también para un gerente, que cotiza).
-- `/regional`: solo `gerente_comercial` (un comercial recibe 403). Siempre la regional del gerente autenticado; no se puede pedir otra.
-  - `comerciales` trae a todos los usuarios de la regional, **incluido el gerente**, cada uno con su `rol` (`comercial`, `gerente_comercial` o `null`) y sus indicadores, para el selector.
+- `/regional`: `gerente_comercial` o `director` (un comercial recibe 403). Para el gerente, siempre su regional: `?regional=` con la suya se acepta y con otra responde 403 `ErrorNegocio` `REGIONAL_NO_PERMITIDA` (HU-037.3, #211). Para el director, todas las regionales sin `?regional=` (`regional` y `fuente_regional` en `null`) o solo la elegida con él; su `usuario_id` puede ser de cualquier regional. Las regionales del selector salen de `GET /web/regionales` (director: todas; gerente: la suya; comercial: 403).
+  - `comerciales` trae a todos los usuarios del alcance, **incluido el gerente**, cada uno con su `rol` (`comercial`, `gerente_comercial`, `director` o `null`) y sus indicadores, para el selector.
   - Las cotizaciones del gerente cuentan en el agregado de la regional.
   - `usuario_id` recalcula `indicadores`, `serie_mensual` y `concentracion_ciudades` para ese comercial. Si no es de la regional: 404 `{"error":"Comercial no encontrado en tu regional."}`.
 - Gerente sin regional: 409 `ErrorNegocio` `REGIONAL_NO_ASIGNADA` (el frontend muestra "tu usuario no tiene regional asignada"). Fuente de la regional caída: 503 `REGIONAL_NO_DISPONIBLE` (reintentar más tarde). La regional resuelta se reutiliza 60 s, así que cambiar el selector no vuelve a consultarla.
@@ -254,7 +255,7 @@ no existe: las cotizaciones se crean solo con el formulario (`POST /web/solicitu
 | Código | Significado para el frontend |
 |---|---|
 | 401 | Sesión vencida o revocada: intentar refresh una vez. |
-| 403 | El rol no permite la operación (por ejemplo, un comercial en `/web/admin/*`). |
+| 403 | El rol no permite la operación (por ejemplo, un comercial en `/web/admin/*`): `ErrorWeb`. HU-037.3 (#211): un gerente que pide con `?regional=` otra regional recibe `ErrorNegocio` `REGIONAL_NO_PERMITIDA`. |
 | 404 | No existe o no es del usuario. Son indistinguibles a propósito (mismo cuerpo `{"error":"Cotización no encontrada o no es tuya."}`, también en `/pdfs`). |
 | 413 | El cuerpo de una petición a `/web/*` supera 64 KB. |
 | 429 | Demasiadas peticiones: reintentar después de unos segundos. |
@@ -632,6 +633,7 @@ primer nivel son los de la ruta 1:
       "estado_costeo": "autocosteo",
       "peso_kg": 28500.5,
       "precio_final_linea": 5294118,
+      "costo_final": 4500000,
       "margen_aplicado": 0.15,
       "margen_sugerido": 0.15,
       "origen_margen": "politica_linea",
@@ -658,6 +660,7 @@ primer nivel son los de la ruta 1:
       "estado_costeo": "autocosteo",
       "peso_kg": 9000,
       "precio_final_linea": 3529412,
+      "costo_final": 3000000,
       "margen_aplicado": 0.15,
       "margen_sugerido": 0.18,
       "origen_margen": "negociado",
@@ -734,6 +737,15 @@ Nexo en vez del código (`Estacas`): mostrarlo tal cual. Si la Mesa cambia de ve
 tenía, `porcentaje_llenado_volumen` y `porcentaje_llenado_peso` pasan a `null` (el cubicador los calculó para el vehículo anterior y ya
 no corresponden; tampoco salen en el Excel de la licitación); `peso_kg` y `volumen_total_m3` se conservan porque son de la carga. Un
 cambio solo de escritura o un camión vacío que la Mesa llena no los toca, y si la Mesa vuelve al vehículo original no se recuperan.
+
+**Costo bruto de la ruta (HU-039.1, #218).** Cada `rutas[]` trae `costo_final`: el costo bruto que costeó Nexo para la ruta (fletes +
+retorno + levante + conexos de los camiones que cuentan, **sin margen**). Va **siempre en COP**, también en una cotización en USD (el
+costeo de Nexo es en pesos y no se convierte; `precio_final_linea` sí va en dólares), y es `null` en los mismos casos que
+`precio_final_linea` (sin costeo o ruta `rechazada`). En el ejemplo, 4.500.000 y 3.000.000 (5.294.118 y 3.529.412 con el 15 %). Es solo
+del dueño: sale aquí, en las respuestas de margen, conexos y recálculo de vehículos y en `costeo` del detalle por folio (§8.14), donde
+el gerente en solo consulta lo recibe siempre en `null`. No hay desglose ni costo por camión o por conexo, y no sale en "Mis
+cotizaciones", el listado regional, el PDF, el correo, el Excel ni el asistente. Es una reversa de la regla de ADR-015 §5 ("el costo
+bruto nunca llega al comercial"), confirmada por la Gerencia Comercial el 2026-10-27.
 
 `deadline` y `score_prioridad` (HU-018.1, #155) son de la **cabecera** (toda la solicitud), no de cada ruta, y vienen siempre
 (también en las respuestas de las mutaciones): `deadline` es la fecha límite del formulario en UTC (`null` si no se dio) y
@@ -890,9 +902,17 @@ líneas distintas), y `precio_final` es la suma de las rutas, con conexos:
 
 ### 8.10.1 Listado regional del gerente: `GET /web/cotizaciones/regional` (HU-016.1, #154)
 
-Vista "Todas las cotizaciones" del gerente comercial. Solo `gerente_comercial` (un `comercial` recibe 403). La regional es la del
-gerente, resuelta en el servidor con la misma regla que `GET /web/metricas/regional`; no se manda por parámetro y nunca salen
-cotizaciones de otra regional. El propio gerente es miembro de su regional, así que sus cotizaciones también salen.
+Vista "Todas las cotizaciones" del gerente comercial. Solo `gerente_comercial` o `director` (un `comercial` recibe 403). Para el gerente,
+la regional es la suya, resuelta en el servidor con la misma regla que `GET /web/metricas/regional`; nunca salen cotizaciones de otra
+regional (`?regional=` con otra: 403 `REGIONAL_NO_PERMITIDA`). El propio gerente es miembro de su regional, así que sus cotizaciones
+también salen. HU-037.3 (#211): el director ve las de todas las regionales sin `?regional=` (`regional` y `fuente_regional` en `null`) o
+solo las de la elegida; las opciones salen de `GET /web/regionales` (`{"regionales": ["..."]}`: todas para el director, la suya para el
+gerente, 403 para el comercial; 409 `REGIONAL_NO_ASIGNADA` y 503 `REGIONAL_NO_DISPONIBLE` como aquí).
+
+<!-- respuesta: GET /web/regionales 200 -->
+```json
+{ "regionales": ["ANTIOQUIA", "CENTRO", "OCCIDENTE"] }
+```
 
 - Cada fila es un `CotizacionResumen` (la misma forma de `GET /web/mis-cotizaciones`: línea de la ruta 1 o `Varias`, `precio_final` de
   la cabecera) más `comercial` = `{usuario_id, nombre_usuario, nombre_completo}` del dueño. `comercial` solo viene en este endpoint y en el detalle por folio (§8.14).
@@ -1458,7 +1478,7 @@ frontend ya conoce, con sus mismas reglas y nombres:
 | `tipo`, `notas`, `fechas` | | Tipo de la solicitud, notas, y `created_at`, `updated_at`, `costeo_enviado_at`, `costeo_listo_at`, `marcado_at` (UTC) |
 | `totales` | `TotalesCotizacion` | `rutas`, `camiones` (los que cuentan en el precio), `peso_kg`, `precio_transporte`, `precio_conexos` y `precio_final` (`transporte + conexos = final`; `null` mientras alguna ruta no tenga precio) |
 | `row_version` | | La versión de la fila (también en el `ETag`) para el `If-Match` de las acciones que siguen |
-| `solo_lectura` | | `true` si lo consulta un gerente de la regional del dueño |
+| `solo_lectura` | | `true` si lo consulta un gerente de la regional del dueño o un director |
 
 - **Qué fuente usar.** Algunos datos vienen en más de un bloque; siempre valen lo mismo, pero úsese uno solo para cada cosa:
 
@@ -1473,11 +1493,14 @@ frontend ya conoce, con sus mismas reglas y nombres:
   | Prellenar "Editar solicitud" y el cuerpo del `PUT` | `GET .../solicitud` (resuelve los conexos contra el catálogo de NEXO) | `captura` |
   | `If-Match` de la acción siguiente | `row_version` o el `ETag` | |
 
-- **Acceso.** El dueño ve su cotización. Un `gerente_comercial` ve la de un comercial de su regional efectiva (la misma regla que
+- **Acceso.** El dueño ve su cotización. Un `director` ve la de cualquier regional (HU-037.3, #211) y un `gerente_comercial` la de un comercial de su regional efectiva (la misma regla que
   `GET /web/cotizaciones/regional` y la descarga del PDF) en **solo consulta**: `solo_lectura = true`, y las acciones (margen, conexos,
   resultado, edición, generar el PDF, correo) le siguen respondiendo 404 porque son del dueño; ocultarlas o deshabilitarlas (descargar
   el PDF de `pdf_url` sí puede, §5.6 de la guía). Si la regional del
   gerente no se puede comprobar, se niega. Cualquier otro usuario recibe 404, igual que si el folio no existiera.
+- **Costo bruto solo para el dueño (HU-039.1, #218).** `costeo.rutas[].costo_final` (§8.6, siempre en COP) lo ve el dueño; con
+  `solo_lectura = true` sale siempre en `null`. Es la opción conservadora: hasta HU-039 el detalle nunca le mostraba costos al gerente
+  (las métricas regionales solo le muestran agregados).
 - **Solo lee lo guardado.** No consulta NEXO ni dispara el polling: el estado del costeo es el último que leyó el polling. Para ver un
   cambio de NEXO, volver a pedir el detalle más tarde.
 - **Diferencias con los endpoints de origen** (por no consultar NEXO): en `captura[].servicios_conexos[]` el `id_servicio_conexo` es el
@@ -1559,6 +1582,7 @@ frontend ya conoce, con sus mismas reglas y nombres:
         "estado_costeo": "entregada",
         "peso_kg": 28500.5,
         "precio_final_linea": 5294118,
+        "costo_final": 4500000,
         "margen_aplicado": 0.15,
         "margen_sugerido": 0.15,
         "origen_margen": "politica_linea",
@@ -1585,6 +1609,7 @@ frontend ya conoce, con sus mismas reglas y nombres:
         "estado_costeo": "entregada",
         "peso_kg": 12500,
         "precio_final_linea": 3529412,
+        "costo_final": 3000000,
         "margen_aplicado": 0.15,
         "margen_sugerido": 0.15,
         "origen_margen": "politica_linea",
