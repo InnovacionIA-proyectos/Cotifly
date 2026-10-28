@@ -2075,3 +2075,43 @@ remitente corporativo, y un buzón o un remitente corporativo que no lo cumple i
   }
 }
 ```
+
+### 8.19 Margen y conexos de varias rutas en una operación (HU-041.1, #231, ADR-026)
+
+Tres endpoints nuevos, atómicos, con las mismas reglas que sus equivalentes por ruta (8.7 y 8.8): `PUT .../costeo/margen/lineas`,
+`POST .../costeo/servicios-conexos/lineas` y `POST .../costeo/servicios-conexos/lineas/quitar`. Las rutas se eligen con `lineas` (los
+`rutas[].linea_orden`, de 1 a 1000, sin repetir) o con `todas: true` (las rutas cotizables). Si una ruta no admite el cambio, **no cambia
+ninguna** y el error trae `detalle.linea_orden` y `detalle.linea_solicitud_id`. `If-Match` obligatorio, `Idempotency-Key` opcional; una
+invalidación del PDF y una auditoría por operación. El conexo agregado en lote queda con el costo del catálogo de NEXO y
+`estado_nexo = pendiente` hasta que el envío diferido lo lleve a NEXO; cada conexo del costeo trae `servicio_id` (id del catálogo).
+
+<!-- esquema: MargenLineasWeb -->
+```json
+{ "lineas": [1, 2, 4], "margen": 0.2, "justificacion": null }
+```
+
+<!-- esquema: MargenLineasWeb -->
+```json
+{ "todas": true, "revertir_sugerido": true }
+```
+
+<!-- esquema: ConexoLineasWeb -->
+```json
+{ "todas": true, "servicio_id": "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d", "cantidad": 1 }
+```
+
+<!-- esquema: QuitarConexoLineasWeb -->
+```json
+{ "lineas": [1, 3], "servicio_id": "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d" }
+```
+
+<!-- respuesta: PUT /web/cotizaciones/{folio}/costeo/margen/lineas 409 -->
+```json
+{
+  "error": {
+    "codigo": "COSTEO_NO_LISTO",
+    "mensaje": "La cotización PCN-900555111-DG-27102026-001 todavía no tiene el costeo de Nexo con margen aplicado.",
+    "detalle": { "linea_orden": 4, "linea_solicitud_id": "7d6c5b4a-3e2f-4a1b-9c8d-0e1f2a3b4c5d" }
+  }
+}
+```

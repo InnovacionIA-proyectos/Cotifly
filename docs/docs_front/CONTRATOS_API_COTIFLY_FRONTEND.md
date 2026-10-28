@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Fecha** | 2026-10-26 |
-| **Versión de referencia** | Rama `integracion-1019`: QA (PR #185, rama `hu-023-defectos-e2e-1016`, con D-1019-1) más #179 (HU-027.1, clases de contenedor), #180 (HU-025.1, textos de roles), #187 (HU-010.5, métricas por año y mes), #188 (HU-014, columnas 03/05 y "solo códigos conocidos") y #186 (HU-028, editar la solicitud); más la rama `179-detalle-por-folio` (#179 parte A, `GET /web/cotizaciones/{folio}`); más #181 (motivo pendiente), #183 (HU-028.1, rechazo de línea), #184 (HU-030.1, peso con tara), #191 (`Idempotency-Key` persistente), #194 (HU-031.1, alias de NEXO) y #197 (HU-032, vehículo elegido); más la rama `199-correo-mailsender` (HU-033, #199: correo por MailSender, total sin desglose y resultado diferido a NEXO), con los endurecimientos A y B de #199 integrados; más la rama `202-excel-mercancias` (HU-035.1, #202: Excel de mercancías de una ruta leído en Cotifly, sin NEXO); más las ramas `210-rol-director-permisos` y `211-director-todas-regionales` (HU-037: rol `director` y todas las regionales) |
+| **Fecha** | 2026-10-27 |
+| **Versión de referencia** | Rama `integracion-1019`: QA (PR #185, rama `hu-023-defectos-e2e-1016`, con D-1019-1) más #179 (HU-027.1, clases de contenedor), #180 (HU-025.1, textos de roles), #187 (HU-010.5, métricas por año y mes), #188 (HU-014, columnas 03/05 y "solo códigos conocidos") y #186 (HU-028, editar la solicitud); más la rama `179-detalle-por-folio` (#179 parte A, `GET /web/cotizaciones/{folio}`); más #181 (motivo pendiente), #183 (HU-028.1, rechazo de línea), #184 (HU-030.1, peso con tara), #191 (`Idempotency-Key` persistente), #194 (HU-031.1, alias de NEXO) y #197 (HU-032, vehículo elegido); más la rama `199-correo-mailsender` (HU-033, #199: correo por MailSender, total sin desglose y resultado diferido a NEXO), con los endurecimientos A y B de #199 integrados; más la rama `202-excel-mercancias` (HU-035.1, #202: Excel de mercancías de una ruta leído en Cotifly, sin NEXO); más las ramas `210-rol-director-permisos` y `211-director-todas-regionales` (HU-037: rol `director` y todas las regionales); más la rama `231-margen-conexos-masivos` (HU-041.1, #231: margen y conexos de varias rutas en una operación) |
 | **Audiencia** | Equipo de frontend del módulo Cotifly dentro de ClientePro (Angular 17.3.8) |
 | **Fuente de verdad** | El código del backend .NET y `backend-dotnet/specs/openapi.yaml`. Si este documento y el código no coinciden, manda el código. Los cambios de esta versión están en la sección 9 |
 
@@ -809,7 +809,7 @@ Convenciones de esta sección:
   más de 64 KB: 413. Un JSON mal formado o con tipos erróneos: 400 `ErrorWeb`. Tampoco se repiten.
 - `{folio}` es el folio de la cotización (hasta 50 caracteres), codificado con `encodeURIComponent`.
 
-Resumen (58 endpoints):
+Resumen (61 endpoints):
 
 | # | Método y ruta | Rol | Módulo |
 |---|---|---|---|
@@ -871,6 +871,9 @@ Resumen (58 endpoints):
 | 56 | `GET /web/lineas-negocio` | Ambos | Catálogos (HU-016.1, #154) |
 | 57 | `GET /web/motivos-perdida` | Ambos | Cotizaciones (HU-018.1, #155) |
 | 58 | `GET /web/cotizaciones/{folio}/excel` | Dueño (interno), gerente de su regional o director (sin costos) | Cotizaciones (HU-018.1, #155) |
+| 59 | `PUT /web/cotizaciones/{folio}/costeo/margen/lineas` | Ambos (dueño) | Captura y costeo (HU-041.1, #231) |
+| 60 | `POST /web/cotizaciones/{folio}/costeo/servicios-conexos/lineas` | Ambos (dueño) | Captura y costeo (HU-041.1, #231) |
+| 61 | `POST /web/cotizaciones/{folio}/costeo/servicios-conexos/lineas/quitar` | Ambos (dueño) | Captura y costeo (HU-041.1, #231) |
 
 Retirados (responden 404): `GET /web/metricas/actividad`, `GET /web/metricas/ajustes-margen`, `POST /chat/events`, `POST /web/login`.
 
@@ -1680,7 +1683,7 @@ polling.
   "margen_aplicado": 0.15,
   "moneda": "COP",
   "servicios_conexos": [
-    { "id": "3f2b9c1e-7a4d-4e8b-9c6f-1a2b3c4d5e6f", "nombre": "Cargue con montacargas", "categoria": "logistico", "cantidad": 2, "precio": 470588, "incluido": true, "linea_orden": 1, "estado_nexo": "enviado" }
+    { "id": "3f2b9c1e-7a4d-4e8b-9c6f-1a2b3c4d5e6f", "nombre": "Cargue con montacargas", "categoria": "logistico", "cantidad": 2, "precio": 470588, "incluido": true, "linea_orden": 1, "estado_nexo": "enviado", "servicio_id": "3f2b9c1e-7a4d-4e8b-9c6f-1a2b3c4d5e6f" }
   ],
   "pdf_url": null,
   "margen_sugerido": 0.15,
@@ -1704,7 +1707,7 @@ polling.
       "margen_sugerido": 0.15,
       "origen_margen": "politica_linea",
       "servicios_conexos": [
-        { "id": "3f2b9c1e-7a4d-4e8b-9c6f-1a2b3c4d5e6f", "nombre": "Cargue con montacargas", "categoria": "logistico", "cantidad": 2, "precio": 470588, "incluido": true, "linea_orden": 1, "estado_nexo": "enviado" }
+        { "id": "3f2b9c1e-7a4d-4e8b-9c6f-1a2b3c4d5e6f", "nombre": "Cargue con montacargas", "categoria": "logistico", "cantidad": 2, "precio": 470588, "incluido": true, "linea_orden": 1, "estado_nexo": "enviado", "servicio_id": "3f2b9c1e-7a4d-4e8b-9c6f-1a2b3c4d5e6f" }
       ],
       "linea_negocio_id": 3,
       "peso_kg": 28500,
@@ -1779,6 +1782,9 @@ Notas:
   vehículo original no se recuperan. Tampoco salen en el Excel de la licitación. Lo mismo aplica a `lineas[].camiones[]` de la licitación.
 - `estado_nexo` de un conexo (`pendiente`, `enviado`, `incierto`, `fallido_definitivo`) y `aviso_conexos_nexo` son informativos: no
   reintentar nada desde el frontend.
+- `servicio_id` de un conexo (HU-041.1, #231) es el id del **catálogo** de NEXO: el mismo servicio en varias rutas tiene el mismo
+  `servicio_id` (el `id` puede ser el de la fila de NEXO y cambiar entre rutas). Usarlo para agrupar y para 4.4.13 y 4.4.14; `null` en
+  conexos guardados antes de #188.
 - `avisos_cubicacion` aparece solo si la ruta tiene avisos del cubicador; si no, se omite.
 
 #### 4.4.4 `PUT /web/cotizaciones/{folio}/costeo/margen`
@@ -1844,6 +1850,8 @@ Error `PDF_YA_ENVIADO` (trae la llamada para crear la versión nueva):
 | 409 | `PDF_YA_ENVIADO` | Ofrecer "Crear versión nueva" con `detalle.metodo`, `detalle.endpoint` y `detalle.cuerpo` (con `If-Match` e `Idempotency-Key`) |
 | 409 | `CONFLICTO_CONCURRENCIA` | Recargar y repetir |
 | 428 | `PRECONDICION_REQUERIDA` | Falta `If-Match` |
+
+Para aplicar el mismo margen a varias rutas (o volver al sugerido) en una sola operación: 4.4.12 (HU-041.1).
 
 Notas: ajustar al mismo margen vigente responde 200 sin registrar un ajuste ni invalidar el PDF. El margen ajustado deja
 `origen_margen = negociado` (badge "Ajuste fuera de política"). Si otras rutas siguen en costeo, `precio_final` queda en `null` hasta
@@ -1913,7 +1921,8 @@ Quita conexos de una ruta o cambia su cantidad. Debe venir **exactamente una** d
 | 409 | `COSTEO_NO_LISTO`, `PDF_YA_ENVIADO`, `CONFLICTO_CONCURRENCIA` | Ver la tabla del margen |
 | 428 | `PRECONDICION_REQUERIDA` | — |
 
-Nota: quitar o cambiar un conexo no lo cambia en NEXO; el precio al cliente es el de Cotifly.
+Nota: quitar o cambiar un conexo no lo cambia en NEXO; el precio al cliente es el de Cotifly. Para agregar o quitar el mismo conexo
+en varias rutas en una sola operación: 4.4.13 y 4.4.14 (HU-041.1).
 
 #### 4.4.7 `POST /web/cotizaciones/{folio}/costeo/re-solicitar` ("Cotizar costo")
 
@@ -2168,6 +2177,120 @@ pantalla de mapeo y **mapea las columnas a los campos de la mercancía**.
 | 413 | `ErrorWeb` | Más de 12 MB |
 | 415 | `ErrorWeb` | No se mandó como `multipart/form-data` |
 | 503 | `SERVICIO_OCUPADO` (con `Retry-After`) | Cotifly ya analiza 4 archivos y el cupo no se liberó en 15 s: reintentar |
+
+#### 4.4.12 `PUT /web/cotizaciones/{folio}/costeo/margen/lineas` (margen de varias rutas, HU-041.1, #231)
+
+Aplica el **mismo margen** a varias rutas (o a todas) o las **devuelve a su margen sugerido**, en una sola operación atómica. Las mismas
+reglas que `PUT .../costeo/margen` por ruta (4.4.4): si una ruta no admite el cambio, **no cambia ninguna** y el error dice cuál la bloqueó
+en `detalle.linea_orden` y `detalle.linea_solicitud_id` (más los datos propios del error, p. ej. `detalle.margen_sugerido`).
+
+- **Rol:** ambos (dueño). **Headers:** `If-Match` **obligatorio**; `Idempotency-Key` opcional (un UUID por clic).
+
+| Campo | Tipo | Obligatorio | Reglas |
+|---|---|---|---|
+| `lineas` | entero[] o null | Una de las dos | Los `rutas[].linea_orden` (1 a 1000, sin repetir) |
+| `todas` | bool o null | Una de las dos | `true`: todas las rutas cotizables (las rechazadas por la Mesa no cuentan) |
+| `margen` | número o null | Uno de los dos | Fracción de 0 a 0,99, el mismo para todas las rutas elegidas |
+| `revertir_sugerido` | bool o null | Uno de los dos | `true`: cada ruta vuelve a SU `margen_sugerido` y `origen_margen` deja de ser `negociado` |
+| `justificacion` | string o null | Condicional | Hasta 500. **Obligatoria** si `margen` queda por debajo del sugerido de alguna ruta elegida |
+
+```json
+{ "lineas": [1, 2, 4], "margen": 0.2 }
+```
+
+```json
+{ "todas": true, "revertir_sugerido": true }
+```
+
+Error de la ruta que bloquea (ninguna ruta cambió):
+
+```json
+{
+  "error": {
+    "codigo": "COSTEO_NO_LISTO",
+    "mensaje": "La cotización PCN-900555111-DG-15102026-001 todavía no tiene el costeo de Nexo con margen aplicado.",
+    "detalle": { "linea_orden": 2, "linea_solicitud_id": "7d6c5b4a-3e2f-4a1b-9c8d-0e1f2a3b4c5d" }
+  }
+}
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `CosteoCotizacion` | Refrescar con la respuesta y guardar el `ETag`. Si ninguna ruta cambia (ya tenían ese margen), 200 sin invalidar el PDF ni subir la versión |
+| 400 | `ErrorWeb` | `lineas` y `todas` juntas o ninguna; `margen` y `revertir_sugerido` juntos o ninguno; `lineas` vacía, repetida o con más de 1000; `Idempotency-Key` fuera de 8 a 64 |
+| 400 | `AJUSTE_MARGEN_INVALIDO` | Fuera de 0 a 0,99, o (al revertir) una ruta sin sugerido (`detalle.linea_orden`) |
+| 400 | `JUSTIFICACION_REQUERIDA` (`detalle.margen_sugerido`, `detalle.linea_orden`, `detalle.linea_solicitud_id`) | Abrir el campo de justificación |
+| 400 | `RUTA_INEXISTENTE` (`detalle.linea_orden`) | Recargar el costeo |
+| 404 | `ErrorWeb` | — |
+| 409 | `COSTEO_NO_LISTO`, `RUTA_RECHAZADA` (con la ruta en `detalle`) | Señalar la ruta que bloquea; ninguna cambió |
+| 409 | `SIN_RUTAS_COTIZABLES` | Con `todas`: la Mesa rechazó todas las rutas |
+| 409 | `PDF_YA_ENVIADO` | Enviada, con resultado o finalizada: "Crear versión nueva" con `detalle` |
+| 409 | `CONFLICTO_CONCURRENCIA`, `IDEMPOTENCY_KEY_REUTILIZADA` | Recargar y repetir / generar otra clave |
+| 428 | `PRECONDICION_REQUERIDA` | Falta `If-Match` |
+
+Notas: con `margen`, cada ruta que cambia deja su fila en `MargenAjustes` (como por ruta) y queda `negociado`. Volver al sugerido no
+cuenta como ajuste negociado. El PDF vigente se invalida **una vez** y queda **una** entrada de auditoría por operación.
+
+#### 4.4.13 `POST /web/cotizaciones/{folio}/costeo/servicios-conexos/lineas` (un conexo en varias rutas, HU-041.1, #231)
+
+Agrega el servicio `servicio_id` del catálogo (`GET /web/servicios-conexos`), con la misma `cantidad`, a varias rutas o a todas, en una
+operación atómica. Las mismas reglas que el `POST` por ruta (4.4.5). Si una ruta no lo admite, no cambia ninguna (`detalle.linea_orden`).
+
+- **Rol:** ambos (dueño). **Headers:** `If-Match` **obligatorio**; `Idempotency-Key` opcional.
+
+| Campo | Tipo | Obligatorio | Reglas |
+|---|---|---|---|
+| `lineas` / `todas` | entero[] / bool | Una de las dos | Como en 4.4.12 |
+| `servicio_id` | string (UUID) | Sí | `id` de `GET /web/servicios-conexos` |
+| `cantidad` | número | Sí | 0,01 a 999.999,99, hasta 2 decimales |
+
+```json
+{ "todas": true, "servicio_id": "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d", "cantidad": 1 }
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `CosteoCotizacion` | Refrescar. El conexo aparece en cada ruta con su `precio`, su `servicio_id` y **`estado_nexo = pendiente`**: el envío diferido lo lleva a NEXO en segundos (Cotifly adelanta la siguiente consulta del polling) y pasa a `enviado`. Las rutas que ya lo tenían no cambian |
+| 400 | `ErrorWeb` | Forma (`lineas`/`todas`, `servicio_id` no UUID, `cantidad` fuera de rango) |
+| 400 | `CONEXO_INVALIDO` (`detalle.motivo = CONEXO_NO_ENCONTRADO`) | El servicio no está activo en el catálogo de NEXO |
+| 400 | `RUTA_INEXISTENTE` (`detalle.linea_orden`) | Recargar el costeo |
+| 403 | `NEXO_SIN_PERMISO` | Avisar a soporte (nada cambió) |
+| 404 | `ErrorWeb` | — |
+| 409 | `COSTEO_NO_LISTO`, `RUTA_RECHAZADA`, `LINEA_SIN_COTIZACION_NEXO` (con la ruta en `detalle`) | Señalar la ruta que bloquea; ninguna cambió |
+| 409 | `ESTADO_NO_PERMITE` (`detalle.motivo = LICITACION`), `SIN_RUTAS_COTIZABLES`, `PDF_YA_ENVIADO`, `CONFLICTO_CONCURRENCIA`, `IDEMPOTENCY_KEY_REUTILIZADA` | Como en el `POST` por ruta |
+| 428 | `PRECONDICION_REQUERIDA` | — |
+| 503 | `NEXO_NO_DISPONIBLE` | No se pudo leer el catálogo de NEXO; nada cambió: reintentar |
+
+Diferencias con el `POST` por ruta (ADR-026): Cotifly **no** llama a NEXO dentro de la petición (no podría deshacer un éxito parcial). El
+precio del conexo es el costo del catálogo de NEXO (como un conexo capturado con la ruta). Mientras quede alguno `pendiente`, "Finalizar"
+responde 409 `COTIZACION_NO_FINALIZABLE` (`conexos_pendientes_en_nexo`): esperar el refresco del costeo. A diferencia del `POST` por ruta, el
+`row_version` **no** cambia si la operación falla.
+
+#### 4.4.14 `POST /web/cotizaciones/{folio}/costeo/servicios-conexos/lineas/quitar` (quitar un conexo de varias rutas, HU-041.1, #231)
+
+Quita de varias rutas (o de todas) el conexo con ese `servicio_id` (`servicios_conexos[].servicio_id`): se borra su fila, como el `PUT` por
+ruta (4.4.6). NEXO no cambia. Atómica, con `detalle.linea_orden` de la ruta que bloquea.
+
+- **Rol:** ambos (dueño). **Headers:** `If-Match` **obligatorio**; `Idempotency-Key` opcional.
+
+| Campo | Tipo | Obligatorio | Reglas |
+|---|---|---|---|
+| `lineas` / `todas` | entero[] / bool | Una de las dos | Como en 4.4.12 |
+| `servicio_id` | string (UUID) | Sí | `servicios_conexos[].servicio_id` |
+
+```json
+{ "lineas": [1, 3], "servicio_id": "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d" }
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `CosteoCotizacion` | Refrescar. Las rutas sin ese conexo no cambian; si ninguna lo tenía, 200 sin cambios |
+| 400 | `ErrorWeb`, `RUTA_INEXISTENTE` | Forma / recargar |
+| 404 | `ErrorWeb` | — |
+| 409 | `COSTEO_NO_LISTO`, `RUTA_RECHAZADA`, `SIN_RUTAS_COTIZABLES`, `PDF_YA_ENVIADO`, `CONFLICTO_CONCURRENCIA`, `IDEMPOTENCY_KEY_REUTILIZADA` | Como en 4.4.12 |
+| 428 | `PRECONDICION_REQUERIDA` | — |
+
+Un conexo guardado antes de #188 trae `servicio_id = null`: no se puede quitar en lote; usar el `PUT` por ruta con su `id`.
 
 ### 4.5 Cotizaciones
 
@@ -3393,8 +3516,8 @@ Notación: `?` = puede ser `null` (el campo viene igual). **(omitible)** = el ca
 | `margen_sap_anomalo` | bool | SAP TM propuso un margen fuera de [0, 60 %]: se usó la política |
 | `aviso_margen` | string? | Explicación cuando `margen_sap_anomalo = true` |
 
-**`ServicioConexoCosteo`**: `{id, nombre?, categoria, cantidad, precio, incluido, linea_orden?, estado_nexo?}`. `precio` ya tiene el margen
-de la ruta; nunca trae costo. `incluido` siempre `true`.
+**`ServicioConexoCosteo`**: `{id, nombre?, categoria, cantidad, precio, incluido, linea_orden?, estado_nexo?, servicio_id?}`. `precio` ya tiene el margen
+de la ruta; nunca trae costo. `incluido` siempre `true`. `servicio_id` (HU-041.1): id del servicio en el catálogo de NEXO, igual entre rutas.
 
 **`Licitacion`** (`deadline` en UTC): `{folio, cliente_nombre?, nit_cliente?, deadline?, estado_costeo?, motivo_estado_costeo?, moneda, trm_aplicada,
 precio_final?, lineas_costeadas, lineas_pendientes, archivo_nombre?, hoja?, lineas[], finalizada_at?, solo_lectura, progreso_cubicacion?, cubicacion?}`.
@@ -3810,6 +3933,7 @@ fila_excel, campo, codigo, mensaje}`.
 | 67 | **HU-016.1 (#154, parte B): margen contra la política y desplegable de líneas.** (a) `IndicadoresMetricas` (`indicadores` y `comerciales[].indicadores` de `GET /web/metricas/comercial` y `/regional`) trae cinco campos **nuevos**: `margen_politica_promedio` (promedio simple de la política de las mismas rutas cotizadas), `margen_aplicado_promedio` (promedio simple del margen aplicado de esas mismas rutas, el par directo del anterior), `margen_politica_ponderado` (la política ponderada por `costoFinal`), `desviacion_margen_politica` (aplicado ponderado por costo menos política ponderada, sobre las mismas rutas) y `rutas_sin_margen_politica` (rutas sin política guardada, que no entran). Mismo universo del tablero: versión vigente, sin rutas rechazadas, alcance del gerente y del director, `usuario_id`. Decisiones de la Gerencia Comercial del 2026-10-27: la referencia es la política de las **mismas rutas**, calculada en el servidor (la tabla de políticas no se expone), y el semáforo usa el **ponderado**. `desviacion_promedio_margen` (ajustes negociados, ADR-016) no cambia. (b) **Nuevo `GET /web/lineas-negocio`** (4.2.9; comercial, gerente y director): líneas activas `[{linea_negocio, etiqueta}]`, **sin margen**, para el desplegable de "Nueva solicitud". Son **56 endpoints**. Sin script de base de datos, sin configuración nueva ni códigos de error nuevos. Ningún campo existente cambia | Agrega | (a) En "Margen promedio" de "Mis cotizaciones" y del tablero mostrar la política junto al margen aplicado de las mismas rutas: en simple `margen_aplicado_promedio` contra `margen_politica_promedio` y en ponderado `margen_politica_ponderado + desviacion_margen_politica` contra `margen_politica_ponderado`; semáforo verde con `desviacion_margen_politica ≥ 0` y rojo si es negativa; "—" con `null`; con `rutas_sin_margen_politica > 0`, una nota de comparación incompleta; no calcular la política en el cliente. (b) Llenar el desplegable "Línea de negocio" de cada ruta con `GET /web/lineas-negocio` (mostrar `etiqueta`, enviar `linea_negocio`) y retirar el catálogo fijo |
 | 68 | **HU-018.1 (#155): motivo de pérdida de una lista y Excel de la cotización.** (a) **Nuevo `GET /web/motivos-perdida`** (4.5.7): la lista obligatoria de motivos de pérdida (por defecto la de NEXO: `Valor muy alto`, `Flete fuera de rango de plaza`, `Cliente desistió del servicio`, `Tiempo de respuesta vencido`, `Otro`; configurable con `Resultado:MotivosPerdida`), con `requiere_comentario` en `Otro`. (b) Al marcar `perdida`, `POST .../resultado` (`motivo`) y `POST .../seguimiento` (`motivo_rechazo`) exigen un motivo de la lista y, con `Otro`, `comentario`: si no, **400 `MOTIVO_NO_PERMITIDO`** (`ErrorNegocio`, código nuevo, con `detalle.motivos_permitidos` y `detalle.requiere_comentario`), sin llamar a NEXO. A NEXO viajan el motivo con la escritura de la lista y el comentario aparte (su contrato no cambia); con `Otro`, `motivo_rechazo` queda `"Otro: {comentario}"`. `/seguimiento` acepta el campo nuevo `comentario` y sigue siendo el camino de las del chat, `descartada` y `costeo_vencido`. Las perdidas guardadas antes (motivo libre o sin motivo) no se revalidan. (c) **Nuevo `GET /web/cotizaciones/{folio}/excel`** (4.5.8): xlsx con `Resumen`, `Rutas`, `Camiones` y `Conexos`. El dueño recibe la versión interna (costos de NEXO en COP, márgenes y precios por ruta y por camión, conexos y totales); el gerente de su regional y el director, la misma **sin ninguna columna de costo ni de margen**; los demás, 404; sin `precio_final`, 409 `COSTEO_NO_LISTO`. Respeta el precio congelado y las rutas rechazadas. Son **58 endpoints** | Rompe / Agrega | Llenar el selector de "Marcar perdida" con `GET /web/motivos-perdida` (el texto libre ya no se acepta) y pedir el comentario con `Otro`; manejar el 400 `MOTIVO_NO_PERMITIDO`. Botón "Exportar Excel" en "Ver detalle" (blob, `{folio}.xlsx`), también para el gerente y el director, deshabilitado sin precio |
 | 69 | **HU-034.1 (#201, parte A): la licitación para el gerente y el director, en solo consulta.** `GET /web/licitaciones/{folio}` (4.6.3) y `GET /web/licitaciones/{folio}/excel` (4.6.5) se abren, además del dueño, al `gerente_comercial` cuya regional efectiva incluye al dueño y al `director` (cualquier regional), con la misma regla del detalle por folio y del PDF: si la regional del gerente no se puede comprobar (sin regional o fuente caída) responde 404, igual que un comercial ajeno o un folio inexistente. Campo **nuevo** `solo_lectura` (booleano, siempre presente) en `Licitacion`: `false` para el dueño (también en las respuestas de `POST /web/licitaciones` y de reintentar la cubicación) y `true` para el gerente o el director. Las acciones siguen siendo del dueño: reintentar la cubicación (con o sin `usar_respaldo`), reintentar el envío y finalizar les responden 404. **Sin costos:** la vista y el Excel nunca los tuvieron (solo precios con margen), así que el gerente y el director reciben exactamente lo mismo que el dueño, salvo `solo_lectura`. Cada consulta o descarga de un gerente o director sobre una licitación ajena, permitida o no, queda en la auditoría (`consultar_licitacion`, `exportar_excel_licitacion`). Sin endpoints nuevos ni códigos de error nuevos; siguen **55 endpoints** | Agrega | Desde el listado regional, abrir la licitación con `GET /web/licitaciones/{folio}`; con `solo_lectura = true`, esconder "Reintentar cubicación", "Enviar sin vehículo", reintentar el envío y "Finalizar", y dejar "Descargar Excel" |
+| 71 | **HU-041.1 (#231, ADR-026): margen y servicios conexos de varias rutas en una operación.** Tres endpoints **nuevos** (4.4.12 a 4.4.14): `PUT .../costeo/margen/lineas` (el mismo `margen` o `revertir_sugerido: true` para `lineas` o `todas`), `POST .../costeo/servicios-conexos/lineas` (agrega `servicio_id` con `cantidad`) y `POST .../costeo/servicios-conexos/lineas/quitar`. Las mismas reglas que por ruta, pero atómicas: si una ruta no admite el cambio no cambia ninguna y el error trae `detalle.linea_orden` y `detalle.linea_solicitud_id`. `If-Match` obligatorio, `Idempotency-Key` opcional, una invalidación del PDF y una auditoría por operación. El conexo en lote va a NEXO por el envío diferido: sale `estado_nexo = pendiente` con el costo del catálogo. `ServicioConexoCosteo` trae **`servicio_id`** (id del catálogo, nuevo y anulable). Sin códigos de error nuevos ni script de base de datos; son **61 endpoints** | Agrega | Botones "Aplicar a todas" y "Volver al sugerido en todas" con un solo `If-Match`; agrupar conexos por `servicio_id`; ante un error con `detalle.linea_orden` señalar esa ruta (nada cambió); tras agregar en lote, mostrar `pendiente` hasta el refresco del costeo y no habilitar "Finalizar" mientras tanto |
 
 ---
 
@@ -3901,6 +4025,20 @@ fila_excel, campo, codigo, mensaje}`.
 ---
 
 ## 9. Notas de versión
+
+**2026-10-27 (rama `231-margen-conexos-masivos`, HU-041.1, #231, ADR-026).** Margen y conexos de varias rutas en una operación (fila 71 de §7):
+
+- **Nuevos** `PUT /web/cotizaciones/{folio}/costeo/margen/lineas`, `POST .../costeo/servicios-conexos/lineas` y
+  `POST .../costeo/servicios-conexos/lineas/quitar` (4.4.12 a 4.4.14). Selección con `lineas` (1 a 1000 `linea_orden`) o `todas: true`
+  (las rutas cotizables). Todo o nada: la ruta que bloquea viene en `detalle.linea_orden` y `detalle.linea_solicitud_id`.
+- **Revertir al sugerido:** `revertir_sugerido: true` deja cada ruta en su `margen_sugerido` con `origen_margen` del sugerido (no
+  `negociado`); no registra un ajuste negociado.
+- **Conexos en lote y NEXO:** sin `POST` síncrono a NEXO; el conexo queda con el costo del catálogo y `estado_nexo = pendiente` hasta que
+  el envío diferido lo lleve a la línea del primer camión de cada ruta (una vez). Finalizar espera a que no quede ninguno `pendiente`.
+- **`ServicioConexoCosteo.servicio_id`** (nuevo, anulable): id del catálogo de NEXO, el mismo en todas las rutas.
+- Una invalidación del PDF y una auditoría por operación (`ajustar_margen_costeo_lineas`, `agregar_servicio_conexo_lineas`,
+  `quitar_servicio_conexo_lineas`). Los endpoints por ruta no cambian.
+- Sin script de base de datos, sin configuración nueva y sin códigos de error nuevos. Son **58 endpoints**.
 
 **2026-10-27 (rama `228-correcciones-e2e-1027b`, #228, E2E real del 2026-10-27B).** Correcciones del E2E (fila 66 de §7):
 

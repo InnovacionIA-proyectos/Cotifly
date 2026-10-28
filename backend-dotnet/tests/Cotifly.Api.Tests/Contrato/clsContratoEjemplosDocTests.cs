@@ -74,6 +74,11 @@ public sealed partial class clsContratoEjemplosDocTests
             "respuesta: POST /web/mercancias/analizar-excel 400",
             // HU-016.1 (#154, parte B): desplegable de líneas de negocio activas, sin margen.
             "respuesta: GET /web/lineas-negocio 200",
+            // HU-041.1 (#231): margen y conexos de varias rutas en una operación.
+            "esquema: MargenLineasWeb",
+            "esquema: ConexoLineasWeb",
+            "esquema: QuitarConexoLineasWeb",
+            "respuesta: PUT /web/cotizaciones/{folio}/costeo/margen/lineas 409",
         ]);
     }
 

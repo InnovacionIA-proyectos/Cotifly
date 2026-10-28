@@ -99,6 +99,8 @@ public static class clsDependenciasAplicacion
         // HU-023.3 (#158): recalcular los camiones de una ruta con el cubicador antes de enviarla a Nexo.
         servicios.AddScoped<IClsRecalculoVehiculosService, clsRecalculoVehiculosService>();
         servicios.AddScoped<IClsServiciosConexosCosteoService, clsServiciosConexosCosteoService>();
+        // HU-041.1 (#231, ADR-026): margen y conexos para varias rutas en una operación.
+        servicios.AddScoped<IClsCosteoLineasService, clsCosteoLineasService>();
         servicios.AddScoped<IClsReSolicitudCosteoService, clsReSolicitudCosteoService>();
         // HU-028 (#186): editar la solicitud (GET y PUT /web/cotizaciones/{folio}/solicitud).
         servicios.AddScoped<IClsEdicionSolicitudService, clsEdicionSolicitudService>();
