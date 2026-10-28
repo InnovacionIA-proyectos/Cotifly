@@ -39,6 +39,25 @@ public sealed class clsRechazoLineaTests
         clsServiciosConexosCosteoService.PrimerCamion(segunda).Should().BeSameAs(vigente, "el rechazado no recibe conexos");
     }
 
+    /// <summary>
+    /// HU-039.1 (#218, validador): con un camión rechazado y otro vigente, el costo bruto de la ruta es solo el del vigente (el mismo con
+    /// el que se calcula su precio), y la otra ruta trae el suyo.
+    /// </summary>
+    [Fact]
+    public void ConUnCamionRechazadoElCostoBrutoDeLaRutaEsSoloElDeLosQueCuentan()
+    {
+        var cotizacion = DosRutas();
+        Aplicar(cotizacion, Foto("EnCosteo", [Linea("N-1", "A"), Linea("N-2", "C", rechazo: "Sin cupo"), Linea("N-3", "C")],
+            [("N-1", 1_000_000m), ("N-3", 500_000m)]));
+
+        var vista = clsCosteoCotizacionService.Vista(cotizacion, null);
+
+        vista.Rutas.Select(r => (r.EstadoCosteo, r.CostoFinal, r.PrecioFinalLinea)).Should().Equal(
+            ("autocosteo", (decimal?)1_000_000m, (decimal?)1_176_471m),
+            ("autocosteo", (decimal?)500_000m, (decimal?)588_235m));
+        vista.Rutas[1].MotivoRechazo.Should().Be("Sin cupo");
+    }
+
     [Fact]
     public void UnaRutaConTodosSusCamionesRechazadosQuedaRechazadaSinPrecioYNoBloqueaLaCotizacion()
     {
@@ -109,7 +128,9 @@ public sealed class clsRechazoLineaTests
             l => l.EstadoCosteo == "rechazada" && l.MotivoRechazo == "Motivo interno" && l.PrecioFinal == null);
 
         var vista = clsCosteoCotizacionService.Vista(cotizacion, null);
-        vista.Rutas[1].Should().Match<clsRutaCosteo>(r => r.EstadoCosteo == "rechazada" && r.MotivoRechazo == "Motivo interno" && r.PrecioFinalLinea == null);
+        vista.Rutas[1].Should().Match<clsRutaCosteo>(
+            r => r.EstadoCosteo == "rechazada" && r.MotivoRechazo == "Motivo interno" && r.PrecioFinalLinea == null && r.CostoFinal == null);
+        vista.Rutas[0].CostoFinal.Should().Be(1_000_000m, "HU-039.1 (#218): la ruta con precio trae su costo bruto");
         vista.Rutas[1].Camiones.Should().OnlyContain(c => c.EstadoCosteo == "rechazada" && c.MotivoRechazo == "Motivo interno" && c.RechazadaAt == _ahora);
         vista.Rutas[0].MotivoRechazo.Should().BeNull();
     }
