@@ -106,11 +106,13 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
     /// <c>MargenAjustes</c> (HU-021.10, decisión 8). Un ajuste cuenta en la ruta de su <c>lineaSolicitudId</c>; si no tiene ruta, o la
     /// ruta no es de su cotización, cuenta en la primera ruta (menor <c>orden</c>), como la migración del 0009. Así la suma de las rutas
     /// da exactamente los ajustes de la cotización (<c>OUTER APPLY</c> por <c>cotizacionId</c> de <see cref="SqlCotizaciones"/>). HU-028.1
-    /// (#183): las rutas <c>rechazada</c> no salen (no tienen precio; una ruta rechazada no admite ajustes de margen).
+    /// (#183): las rutas <c>rechazada</c> no salen (no tienen precio; una ruta rechazada no admite ajustes de margen). HU-016.1 (#154): cada
+    /// ruta trae también su <c>margenPoliticaSugerido</c>, la referencia del margen aplicado (sin script: la columna es del esquema base).
     /// </summary>
     private const string SqlRutas = """
         WITH rutas AS (
             SELECT l.id, l.cotizacionSolicitudId, l.orden, l.lineaNegocioId, mp.lineaNegocio, l.costoFinal, l.precioFinalLinea, l.margenAplicado,
+                   l.margenPoliticaSugerido,
                    ROW_NUMBER() OVER (PARTITION BY l.cotizacionSolicitudId ORDER BY l.orden, l.id) AS posicion
             FROM dbo_cotifly.CotizacionLineasSolicitud l
             LEFT JOIN dbo_cotifly.MargenesPolitica mp ON mp.id = l.lineaNegocioId
@@ -119,6 +121,7 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
         )
         SELECT r.cotizacionSolicitudId AS CotizacionId, r.orden AS Orden, r.lineaNegocioId AS LineaNegocioId, r.lineaNegocio AS LineaNegocio,
                r.costoFinal AS Costo, r.precioFinalLinea AS PrecioFinal, r.margenAplicado AS MargenAplicado,
+               r.margenPoliticaSugerido AS MargenPolitica,
                a.numAjustes AS NumAjustes, a.numDiferencias AS NumDiferencias, a.sumaDiferencias AS SumaDiferencias
         FROM rutas r
         OUTER APPLY (
@@ -218,6 +221,7 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
                 Costo = f.Costo,
                 PrecioFinal = f.PrecioFinal,
                 MargenAplicado = f.MargenAplicado,
+                MargenPolitica = f.MargenPolitica,
                 NumAjustes = f.NumAjustes,
                 NumDiferencias = f.NumDiferencias,
                 SumaDiferencias = f.SumaDiferencias,
@@ -305,6 +309,10 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
         public decimal? Costo { get; set; }
         public decimal? PrecioFinal { get; set; }
         public decimal? MargenAplicado { get; set; }
+
+        /// <summary>HU-016.1 (#154): <c>margenPoliticaSugerido</c> de la ruta.</summary>
+        public decimal? MargenPolitica { get; set; }
+
         public int NumAjustes { get; set; }
         public int NumDiferencias { get; set; }
         public decimal? SumaDiferencias { get; set; }

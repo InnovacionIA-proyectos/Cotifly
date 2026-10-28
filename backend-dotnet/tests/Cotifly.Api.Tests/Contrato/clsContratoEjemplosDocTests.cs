@@ -72,6 +72,8 @@ public sealed partial class clsContratoEjemplosDocTests
             // HU-035.1 (#202): Excel de mercancías de una ruta, leído en Cotifly sin Nexo.
             "respuesta: POST /web/mercancias/analizar-excel 200",
             "respuesta: POST /web/mercancias/analizar-excel 400",
+            // HU-016.1 (#154, parte B): desplegable de líneas de negocio activas, sin margen.
+            "respuesta: GET /web/lineas-negocio 200",
         ]);
     }
 

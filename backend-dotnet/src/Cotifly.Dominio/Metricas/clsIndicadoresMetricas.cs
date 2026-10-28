@@ -35,6 +35,37 @@ public sealed record clsIndicadoresMetricas
 
     /// <summary>Sin resultado y con <c>deadline</c> anterior a ahora; <c>null</c> si el esquema no tiene la columna (script 0004).</summary>
     public int? DeadlineVencidas { get; init; }
+
+    /// <summary>
+    /// HU-016.1 (#154, decisiones P3 y P4 del 2026-10-27): promedio simple del margen de política (<see cref="clsRutaMetrica.MargenPolitica"/>)
+    /// de las rutas comparables, las mismas que se cotizaron: versión vigente, sin las rechazadas, con margen aplicado y con política.
+    /// 4 decimales; <c>null</c> si no hay ninguna.
+    /// </summary>
+    public decimal? MargenPoliticaPromedio { get; init; }
+
+    /// <summary>
+    /// HU-016.1 (#154, decisión del 2026-10-27): promedio simple del margen aplicado (<see cref="clsRutaMetrica.MargenAplicado"/>) de
+    /// exactamente las mismas rutas comparables de <see cref="MargenPoliticaPromedio"/>, para comparar aplicado simple contra política
+    /// simple. No reemplaza a <see cref="MargenPromedio"/>, que es por cotización e incluye las rutas sin política. 4 decimales;
+    /// <c>null</c> si no hay ninguna.
+    /// </summary>
+    public decimal? MargenAplicadoPromedio { get; init; }
+
+    /// <summary>
+    /// HU-016.1 (#154): margen de política de esas rutas ponderado por <c>costoFinal</c> (las de costo &gt; 0). 4 decimales; <c>null</c> si
+    /// ninguna tiene costo.
+    /// </summary>
+    public decimal? MargenPoliticaPonderado { get; init; }
+
+    /// <summary>
+    /// HU-016.1 (#154): Σ((aplicado − política) × costo) / Σ costo de las mismas rutas de <see cref="MargenPoliticaPonderado"/>, es decir, el
+    /// margen aplicado ponderado por costo menos la política ponderada por costo. Base del semáforo (verde ≥ 0). No reemplaza a
+    /// <see cref="DesviacionPromedioMargen"/>, que solo promedia los ajustes negociados (ADR-016).
+    /// </summary>
+    public decimal? DesviacionMargenPolitica { get; init; }
+
+    /// <summary>HU-016.1 (#154): rutas con margen aplicado y sin margen de política guardado; no entran en la comparación.</summary>
+    public int RutasSinMargenPolitica { get; init; }
 }
 
 /// <summary>

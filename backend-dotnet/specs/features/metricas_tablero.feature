@@ -280,3 +280,136 @@ Característica: Tablero de métricas del comercial y del gerente comercial
       | 2026-03 | 2        | 1       | 1        | 2450000            | 350000           | 2050000      | 300000         | 50000     |
       | 2026-04 | 2        | 1       | 0        | 4000000            | 4000000          | 3400000      | 3400000        | 600000    |
     Y la suma de la serie mensual cuadra con los indicadores
+
+  # HU-016.1 (#154, parte B; decisiones P3 y P4 del 2026-10-27): el margen aplicado se compara con la política de las MISMAS rutas
+  # (margenPoliticaSugerido de cada ruta), calculada en el servidor. Rutas comparables: versión vigente, no rechazadas, con margen
+  # aplicado y con política. Simple: (0.15 + 0.15 + 0.25) / 3 = 0.1833. Ponderado por costo (1M, 2M y 3M): (0.15 + 0.30 + 0.75) / 6
+  # = 0.20. Desviación ponderada: ((0.10 − 0.15) × 1M + (0.20 − 0.15) × 2M + (0.30 − 0.25) × 3M) / 6M = 0.0333. La ruta 4, rechazada,
+  # no cuenta; la de P2 (en USD) no tiene política guardada y solo se cuenta en rutas_sin_margen_politica. margen_aplicado_promedio
+  # (decisión del 2026-10-27) es el simple del aplicado de esas mismas rutas: (0.10 + 0.20 + 0.30) / 3 = 0.2 (con la rechazada sería
+  # 0.1917 y con la de P2, 0.18).
+  Escenario: El margen aplicado se compara con la política de las mismas rutas, en promedio simple y ponderado por costo
+    Dado el comercial "pedro" con sesión en la regional "Sur"
+    Y el gerente comercial "sofia" con sesión en la regional "Sur"
+    Y que "pedro" tiene estas cotizaciones:
+      | cotizacion | moneda | precio | trm  | costo   | margen | resultado | creada     |
+      | P1         | COP    | 1      | 0    | 1       | 0.10   | ganada    | 2026-05-10 |
+      | P2         | USD    | 300    | 4000 | 1000000 | 0.12   |           | 2026-05-12 |
+    Y que la cotización "P1" tiene estas rutas:
+      | orden | linea       | costo   | precio  | margen | politica |
+      | 1     | Nacional    | 1000000 | 1111111 | 0.10   | 0.15     |
+      | 2     | Importacion | 2000000 | 2500000 | 0.20   | 0.15     |
+      | 3     | Exportacion | 3000000 | 4285714 | 0.30   | 0.25     |
+      | 4     | Nacional    | 500000  | 600000  | 0.1667 | 0.15     |
+    Y que la Mesa de Costeo rechazó la ruta 4 de la cotización "P1"
+    Y que la cotización "P2" tiene estas rutas:
+      | orden | linea    | costo   | precio | margen | politica |
+      | 1     | Nacional | 1000000 | 300    | 0.12   |          |
+    Cuando "pedro" consulta sus métricas del "2026-01-01" al "2026-12-31"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "MetricasComercial" del contrato
+    Y los indicadores son:
+      | campo                      | valor  |
+      | cantidad                   | 2      |
+      | margen_aplicado_promedio   | 0.2    |
+      | margen_politica_promedio   | 0.1833 |
+      | margen_politica_ponderado  | 0.2    |
+      | desviacion_margen_politica | 0.0333 |
+      | rutas_sin_margen_politica  | 1      |
+      | desviacion_promedio_margen | null   |
+    Cuando "sofia" consulta las métricas de su regional del "2026-01-01" al "2026-12-31" filtradas por "pedro"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "MetricasRegional" del contrato
+    Y los indicadores son:
+      | campo                      | valor  |
+      | margen_aplicado_promedio   | 0.2    |
+      | margen_politica_promedio   | 0.1833 |
+      | margen_politica_ponderado  | 0.2    |
+      | desviacion_margen_politica | 0.0333 |
+      | rutas_sin_margen_politica  | 1      |
+
+  Escenario: Sin rutas comparables los campos contra la política vienen en null
+    Dado el comercial "pedro" con sesión en la regional "Sur"
+    Cuando "pedro" consulta sus métricas del "2026-01-01" al "2026-12-31"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "MetricasComercial" del contrato
+    Y los indicadores son:
+      | campo                      | valor |
+      | cantidad                   | 0     |
+      | margen_aplicado_promedio   | null  |
+      | margen_politica_promedio   | null  |
+      | margen_politica_ponderado  | null  |
+      | desviacion_margen_politica | null  |
+      | rutas_sin_margen_politica  | 0     |
+
+  # HU-016.1 (#154, validación): el alcance de la comparación con la política es el del resto del tablero (el comercial lo suyo, el
+  # gerente su regional, el director la que elige o el comercial que filtra) y solo cuenta la versión vigente. Rutas comparables de
+  # "ana": A1 (1M, aplicado 0.20, política 0.10), A2 rehecha como v2 (3M, 0.15, 0.40; la v1 de 1,7M no cuenta) y A3 (3,4M, 0.15,
+  # 0.15); A4 no tiene margen. Simple (0.10 + 0.40 + 0.15) / 3 = 0.2167; ponderado 1,81M / 7,4M = 0.2446; desviación
+  # (0.10 × 1M − 0.25 × 3M) / 7,4M = −0.0878. "luis" (L1: 0,4M, 0.20, 0.15) se suma en la regional; "marta" es de otra regional.
+  # Aplicado simple de las mismas rutas: ana (0.20 + 0.15 + 0.15) / 3 = 0.1667 (contando la v1 de A2 sería 0.1625); regional
+  # (0.20 + 0.15 + 0.15 + 0.20) / 4 = 0.175; "marta" (M1, Norte) 0.10.
+  Escenario: La comparación con la política respeta el alcance de cada rol y cuenta solo la versión vigente
+    Dado el director "dario" con sesión en la regional "Sur"
+    Y que la cotización "A1" tiene estas rutas:
+      | orden | linea    | costo   | precio  | margen | politica |
+      | 1     | Nacional | 1000000 | 1250000 | 0.20   | 0.10     |
+    Y que la cotización "A2" tiene estas rutas:
+      | orden | linea    | costo   | precio  | margen | politica |
+      | 1     | Nacional | 1700000 | 2000000 | 0.15   | 0.40     |
+    Y que "ana" rehízo la cotización "A2" como versión 2 con precio 3529412 y costo 3000000
+    Y que la cotización "M1" tiene estas rutas:
+      | orden | linea    | costo   | precio  | margen | politica |
+      | 1     | Nacional | 2000000 | 2222222 | 0.10   | 0.30     |
+    Cuando "ana" consulta sus métricas del "2026-01-01" al "2026-12-31"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "MetricasComercial" del contrato
+    Y los indicadores son:
+      | campo                      | valor   |
+      | margen_aplicado_promedio   | 0.1667  |
+      | margen_politica_promedio   | 0.2167  |
+      | margen_politica_ponderado  | 0.2446  |
+      | desviacion_margen_politica | -0.0878 |
+      | rutas_sin_margen_politica  | 0       |
+    Cuando "gloria" consulta las métricas de su regional del "2026-01-01" al "2026-12-31"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "MetricasRegional" del contrato
+    Y los indicadores son:
+      | campo                      | valor   |
+      | margen_aplicado_promedio   | 0.175   |
+      | margen_politica_promedio   | 0.2     |
+      | margen_politica_ponderado  | 0.2397  |
+      | desviacion_margen_politica | -0.0808 |
+      | rutas_sin_margen_politica  | 0       |
+    Y los indicadores de "luis" en la lista de comerciales son:
+      | campo                      | valor |
+      | margen_aplicado_promedio   | 0.2   |
+      | margen_politica_promedio   | 0.15  |
+      | margen_politica_ponderado  | 0.15  |
+      | desviacion_margen_politica | 0.05  |
+    Y los indicadores de "gloria" en la lista de comerciales son:
+      | campo                      | valor |
+      | margen_aplicado_promedio   | null  |
+      | margen_politica_promedio   | null  |
+      | margen_politica_ponderado  | null  |
+      | desviacion_margen_politica | null  |
+      | rutas_sin_margen_politica  | 0     |
+    Cuando "gloria" consulta las métricas de su regional del "2026-01-01" al "2026-12-31" filtradas por "ana"
+    Entonces la respuesta tiene el estado 200
+    Y los indicadores son:
+      | campo                      | valor   |
+      | margen_aplicado_promedio   | 0.1667  |
+      | margen_politica_ponderado  | 0.2446  |
+      | desviacion_margen_politica | -0.0878 |
+    Cuando "dario" consulta las métricas de la regional "Norte" del "2026-01-01" al "2026-12-31"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "MetricasRegional" del contrato
+    Y los indicadores son:
+      | campo                      | valor |
+      | margen_aplicado_promedio   | 0.1   |
+      | margen_politica_promedio   | 0.3   |
+      | margen_politica_ponderado  | 0.3   |
+      | desviacion_margen_politica | -0.2  |
+    Cuando "dario" consulta las métricas de su regional del "2026-01-01" al "2026-12-31" filtradas por "ana"
+    Entonces la respuesta tiene el estado 200
+    Y las métricas son de todas las regionales
+    Y los indicadores son:
+      | campo                      | valor   |
+      | margen_aplicado_promedio   | 0.1667  |
+      | margen_politica_promedio   | 0.2167  |
+      | margen_politica_ponderado  | 0.2446  |
+      | desviacion_margen_politica | -0.0878 |
