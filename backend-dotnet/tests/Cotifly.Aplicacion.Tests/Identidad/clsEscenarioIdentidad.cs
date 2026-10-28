@@ -19,12 +19,14 @@ internal sealed class clsEscenarioIdentidad
 {
     public const int RolExternoComercial = 32;
     public const int RolExternoGerente = 31;
+    public const int RolExternoDirector = 33;
     public const int RolExternoSinMapeo = 40;
 
     public clsEscenarioIdentidad()
     {
         Comercial = ConId(clsRol.Crear(RolInterno.Comercial, "Comercial", RolExternoComercial).Valor, 1);
         Gerente = ConId(clsRol.Crear(RolInterno.GerenteComercial, "Gerente comercial", RolExternoGerente).Valor, 2);
+        Director = ConId(clsRol.Crear(RolInterno.Director, "Director comercial", RolExternoDirector).Valor, 3);
         Roles.ListarActivosAsync(Arg.Any<CancellationToken>()).Returns(_ => (IReadOnlyList<clsRol>)Catalogo);
         Roles.ListarRolesAsignadosAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(Array.Empty<RolInterno>());
         Almacen.ObtenerRolesAsync(Arg.Any<long>(), Arg.Any<CancellationToken>()).Returns(Array.Empty<clsRolExterno>());
@@ -55,7 +57,10 @@ internal sealed class clsEscenarioIdentidad
 
     public clsRol Comercial { get; }
     public clsRol Gerente { get; }
-    public List<clsRol> Catalogo => [Comercial, Gerente];
+
+    /// <summary>HU-037 (#210): <c>director</c> ↔ IDROLES 33 (valor de prueba; en la compartida es 31, #209).</summary>
+    public clsRol Director { get; }
+    public List<clsRol> Catalogo => [Comercial, Gerente, Director];
 
     public clsVerificadorIdentidad Verificador() => new(Almacen, Roles, Usuarios, Directorio, LoggerVerificador);
 

@@ -116,7 +116,8 @@ public static class clsRespuestasWeb
                 or clsCodigosError.CubicadorNoDisponible or clsCodigosError.CubicadorRespuestaInvalida or clsCodigosError.CubicadorNoAutorizado =>
                 new ObjectResult(clsErrorNegocioWeb.Desde(error)) { StatusCode = StatusCodes.Status503ServiceUnavailable },
             clsCodigosAplicacion.RegionalNoAsignada => new ConflictObjectResult(clsErrorNegocioWeb.Desde(error)),
-            clsCodigosError.NexoSinPermiso => new ObjectResult(clsErrorNegocioWeb.Desde(error)) { StatusCode = StatusCodes.Status403Forbidden },
+            clsCodigosError.NexoSinPermiso or clsCodigosAplicacion.RegionalNoPermitida =>
+                new ObjectResult(clsErrorNegocioWeb.Desde(error)) { StatusCode = StatusCodes.Status403Forbidden },
             // Endurecimiento A (#199): un error interno es 500, nunca 400; REGISTRO_DUPLICADO (una restricción única que el caso de uso no
             // tradujo) también, sin el nombre técnico de la restricción: el detalle queda solo en el log.
             clsCodigosError.ErrorInterno or clsViolacionUnicidadException.CodigoRegistroDuplicado => new clsResultadoErrorInterno(error),

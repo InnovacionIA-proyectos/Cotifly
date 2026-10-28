@@ -235,6 +235,24 @@ public sealed class clsPasosMetricas(clsContextoWeb web)
         }
     }
 
+    /// <summary>HU-037.3 (#211): <c>?regional=</c> con el nombre real de la regional (alias del escenario).</summary>
+    [When("{string} consulta las métricas de la regional {string} del {string} al {string}")]
+    public Task CuandoConsultaUnaRegional(string alias, string regional, string desde, string hasta) =>
+        web.EnviarAsync(_get, $"/web/metricas/regional?desde={desde}&hasta={hasta}&regional={Uri.EscapeDataString(web.Regional(regional))}",
+            web.Sesion(alias).Access);
+
+    [Then("las métricas son de todas las regionales")]
+    public void EntoncesTodas()
+    {
+        web.UltimoJson().GetProperty("regional").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null);
+        web.UltimoJson().GetProperty("fuente_regional").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null);
+    }
+
+    [Then("la lista de comerciales de las métricas incluye a {string}, {string} y {string}")]
+    public void EntoncesIncluye(string uno, string dos, string tres) =>
+        web.UltimoJson().GetProperty("comerciales").EnumerateArray().Select(c => c.GetProperty("usuario_id").GetString())
+            .Should().Contain([.. new[] { uno, dos, tres }.Select(a => web.Sesion(a).UsuarioId.ToString())]);
+
     [Then("la regional de las métricas es {string}")]
     public void EntoncesLaRegional(string alias) => web.UltimoJson().GetProperty("regional").GetString().Should().Be(web.Regional(alias));
 

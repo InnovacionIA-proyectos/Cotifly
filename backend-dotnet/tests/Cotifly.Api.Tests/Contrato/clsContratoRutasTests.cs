@@ -166,6 +166,8 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         (typeof(clsLineaNegocioAdmin), "LineaNegocio"),
         (typeof(clsMetricasComercial), "MetricasComercial"),
         (typeof(clsMetricasRegional), "MetricasRegional"),
+        // HU-037.3 (#211): GET /web/regionales.
+        (typeof(Cotifly.Aplicacion.Identidad.Services.clsRegionales), "Regionales"),
         (typeof(clsComercialRegional), "ComercialRegional"),
         (typeof(clsPeriodoMetricas), "PeriodoMetricas"),
         (typeof(Cotifly.Dominio.Metricas.clsIndicadoresMetricas), "IndicadoresMetricas"),
