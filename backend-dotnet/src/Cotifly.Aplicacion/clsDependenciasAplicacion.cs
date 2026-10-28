@@ -55,6 +55,8 @@ public static class clsDependenciasAplicacion
         servicios.AddScoped<IClsSeguimientoCorreosService, clsSeguimientoCorreosService>();
         servicios.AddScoped<IClsDestinatariosPreviosService, clsDestinatariosPreviosService>();
         servicios.AddScoped<IClsTelefonoComercialService, clsTelefonoComercialService>();
+        // HU-018.1 (#155): lista de motivos de pérdida (Resultado:MotivosPerdida) para /resultado, /seguimiento y la sincronización.
+        servicios.AddSingleton<IClsCatalogoMotivosPerdida, clsCatalogoMotivosPerdida>();
         servicios.AddScoped<IClsSeguimientoService, clsSeguimientoService>();
 
         // Login SSO ClientePro con verificación doble, refresh y logout (HU-003.6, #12). Cada intento se audita.
@@ -71,10 +73,16 @@ public static class clsDependenciasAplicacion
         servicios.AddScoped<IClsCotizacionesRegionalService, clsCotizacionesRegionalService>();
         // HU-027.1 (#179): detalle por folio (dueño, o gerente de su regional en solo consulta).
         servicios.AddScoped<IClsDetalleCotizacionService, clsDetalleCotizacionService>();
+        // HU-034.1 (#201): la licitación ajena en solo lectura (gerente de la regional o director), con la regla del detalle.
+        servicios.AddScoped<IClsAccesoCotizacionAjena, clsAccesoCotizacionAjenaService>();
+        // HU-018.1 (#155, parte C): Excel de la cotización (dueño: versión interna; gerente y director: sin costos ni márgenes).
+        servicios.AddScoped<IClsExportacionCotizacionService, clsExportacionCotizacionService>();
         servicios.AddScoped<IClsNuevaVersionService, clsNuevaVersionService>();
         servicios.AddScoped<IClsGeneradorFolioService, clsGeneradorFolioService>();
         servicios.AddScoped<IClsDescargaPdfService, clsDescargaPdfService>();
         servicios.AddScoped<IClsLineasNegocioAdminService, clsLineasNegocioAdminService>();
+        // HU-016.1 (#154): catálogo de líneas activas para el desplegable de la captura (sin margen).
+        servicios.AddScoped<IClsLineasNegocioCatalogoService, clsLineasNegocioCatalogoService>();
 
         // Costeo en Nexo (HU-005.5 a HU-005.14, ADR-015): envío de la solicitud y polling (el worker lo registra Infraestructura). El adaptador de Nexo lo registra Infraestructura.
         servicios.AddScoped<IClsValidadorCatalogosCaptura, clsValidadorCatalogosCaptura>();

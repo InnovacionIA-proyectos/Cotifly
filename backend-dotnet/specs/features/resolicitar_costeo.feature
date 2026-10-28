@@ -145,7 +145,7 @@ Característica: Re-solicitar el costeo a Nexo
 
   Escenario: Con resultado registrado no se re-solicita en el mismo folio
     Dado que Nexo costeó la solicitud de "C1" con un flete de 2550000 y la entregó
-    Y "ana" marcó el resultado de "C1" como "perdida" con el motivo "Precio alto"
+    Y "ana" marcó el resultado de "C1" como "perdida" con el motivo "Valor muy alto"
     Cuando "ana" re-solicita el costeo de "C1" con el motivo "Reintentar con otro precio"
     Entonces la respuesta tiene el estado 409 con el código de negocio "PDF_YA_ENVIADO"
     Y el detalle del error indica la acción "nueva_version" con "POST" al endpoint de re-solicitud de "C1" y nueva_version "true"

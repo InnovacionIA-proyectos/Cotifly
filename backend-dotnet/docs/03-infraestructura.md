@@ -124,6 +124,7 @@ Resumen de todas las variables de [`.env.example`](../.env.example). "Production
 | `Cubicador__LicitacionEnSegundoPlano`, `__ProcesadorHabilitado`, `__MaximoParalelo`, `__IntervaloTickSegundos`, `__LoteRutas`, `__ReclamoSegundos`, `__MaximoIntentos`, `__EsperaReintentoSegundos` (licitación en segundo plano, HU-023.5) | `true`, `true`, `1`, `5`, `50`, `300`, `3`, `30` | no | no (`MaximoParalelo` ≤ `Cubicador__MaximoConcurrente` y `ReclamoSegundos` mayor que la duración de una llamada + 30 s; si no, no arranca) | [Cubicador](#cubicador) |
 | `Captura__AceptarVehiculoCliente` | `true` (#188) | no | no | [Cubicador](#cubicador) |
 | `Captura__ClasesSinVehiculoObligatorio__0`, `__1`... | solo `Contenedor` (HU-032, #197) | no | no (una clase de viaje de Nexo; otra no arranca) | [Cubicador](#cubicador) |
+| `Resultado__MotivosPerdida__0`, `__1`... y `Resultado__MotivoConComentario` | la lista de Nexo y `Otro` (HU-018.1, #155) | no | no (100 caracteres por motivo; el de comentario en la lista; si no, no arranca) | — |
 | `BaseDatos__MotivoBusquedaAgotada` | `auto` (detecta el script `07`) | no | no (`auto`, `habilitado` o `deshabilitado`; otro valor no arranca) | [3.3](#33-base-de-datos) |
 | `Cubicacion__IncluirSugerenciaLegada` | `false` (plan B del corte de HU-023.2: `POST /web/cubicacion` agrega `sugerencia` con la forma anterior) | no | no | [Cubicador](#cubicador) |
 | `Pdf__PermitirCotizacionChat` | `false` (`COTIZACION_CHAT_RETIRADA`) | no | no | [PDF y correo](#pdf-y-correo) |

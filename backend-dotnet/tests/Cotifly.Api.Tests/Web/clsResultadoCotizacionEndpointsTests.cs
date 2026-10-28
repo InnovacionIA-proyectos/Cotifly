@@ -36,11 +36,11 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
 
         await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
         using var respuesta = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access,
-            """{"resultado":"perdida","motivo":"Precio alto","comentario":"Pidió 5 % menos"}""");
+            """{"resultado":"perdida","motivo":"Valor muy alto","comentario":"Pidió 5 % menos"}""");
         var json = await VerificarContratoAsync(respuesta, Ruta, _post, HttpStatusCode.OK);
 
         json.GetProperty("ganada").GetBoolean().Should().BeFalse();
-        json.GetProperty("motivo_rechazo").GetString().Should().Be("Precio alto");
+        json.GetProperty("motivo_rechazo").GetString().Should().Be("Valor muy alto");
         _nexo.Resultado(solicitud).Should().Be("Perdida");
         (await EscalarAsync($"SELECT CAST(COUNT(*) AS nvarchar(10)) FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}' AND motivoRechazo LIKE '%menos%'"))
             .Should().Be("0", "el comentario solo se reenvía a Nexo");
@@ -132,8 +132,8 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
         await _api.ProcesarPollingAsync(folio);
 
         await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
-        using var resultado = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"perdida"}""");
-        using var seguimiento = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/seguimiento", sesion.Access, """{"ganada":false,"motivo_rechazo":"Descartada"}""");
+        using var resultado = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"perdida","motivo":"Cliente desistió del servicio"}""");
+        using var seguimiento = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/seguimiento", sesion.Access, """{"ganada":false,"motivo_rechazo":"Cliente desistió del servicio"}""");
 
         resultado.StatusCode.Should().Be(HttpStatusCode.Conflict);
         await VerificarErrorNegocioAsync(resultado, "COSTEO_NO_LISTO");
@@ -149,7 +149,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
         primera.StatusCode.Should().Be(HttpStatusCode.OK);
 
         await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
-        using var segunda = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"perdida","motivo":"x"}""");
+        using var segunda = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"perdida","motivo":"Valor muy alto"}""");
 
         segunda.StatusCode.Should().Be(HttpStatusCode.Conflict);
         await VerificarErrorNegocioAsync(segunda, "RESULTADO_YA_DEFINIDO");
@@ -237,7 +237,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
         var consultasAntes = Consultas(solicitud);
 
         await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
-        using var respuesta = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"perdida","motivo":"Precio"}""");
+        using var respuesta = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"perdida","motivo":"Valor muy alto"}""");
 
         (await VerificarContratoAsync(respuesta, Ruta, _post, HttpStatusCode.OK)).GetProperty("precio_final").GetDecimal().Should().Be(3_000_000m);
         Consultas(solicitud).Should().Be(consultasAntes, "con el precio ya aplicado no se relee el costeo");
@@ -299,7 +299,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
     public async Task LaPerdidaSinCosteoQuedaSoloEnCotiflyConIfMatchYCuentaEnLasMetricas()
     {
         var (sesion, folio, solicitud) = await EnviarSinPollingAsync();
-        var cuerpo = """{"resultado":"perdida","motivo":"El cliente desistió"}""";
+        var cuerpo = """{"resultado":"perdida","motivo":"Cliente desistió del servicio"}""";
 
         await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
         using var sinIfMatch = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, cuerpo);
@@ -347,7 +347,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
             $"UPDATE dbo_cotifly.CotizacionesSolicitud SET ganada = NULL, marcadoAt = NULL WHERE folio = '{folio}'");
 
         await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
-        using var contraria = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"perdida","motivo":"x"}""");
+        using var contraria = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"perdida","motivo":"Valor muy alto"}""");
 
         contraria.StatusCode.Should().Be(HttpStatusCode.Conflict);
         (await contraria.Content.ReadAsStringAsync(Ct)).Should().Contain("RESULTADO_YA_DEFINIDO").And.Contain("ganada");
@@ -382,7 +382,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
         _nexo.Llamadas(HttpMethod.Post, $"/api/cotizaciones/{cotizacionNexo}/resultado").Should().Be(marcarAntes, "OBS-C-2: idempotente en Cotifly");
 
         await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
-        using var contraria = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"perdida","motivo":"x"}""");
+        using var contraria = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"perdida","motivo":"Valor muy alto"}""");
         contraria.StatusCode.Should().Be(HttpStatusCode.Conflict);
         await VerificarErrorNegocioAsync(contraria, "RESULTADO_YA_DEFINIDO");
 
@@ -407,7 +407,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
 
         await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
         using var respuesta = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access,
-            """{"resultado":"perdida","motivo":"El cliente desistió"}""", ifMatch: etag);
+            """{"resultado":"perdida","motivo":"Cliente desistió del servicio"}""", ifMatch: etag);
 
         var json = await VerificarContratoAsync(respuesta, Ruta, _post, HttpStatusCode.OK);
         json.GetProperty("ganada").GetBoolean().Should().BeFalse();
