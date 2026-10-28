@@ -134,16 +134,17 @@ El diagrama completo, con todas las columnas y el resto de tablas, está en
 | `db/scripts/11_peso_con_tara.sql` | HU-030.1 (#184): `CotizacionLineasSolicitud.pesoConTaraKg DECIMAL(12,2) NULL` con su CHECK (> 0): el peso con tara de una ruta `Contenedor`. Obligatorio: el backend mapea la columna; sin él `/health/ready` responde "falta 11". Se aplica antes de la imagen |
 | `db/scripts/12_vehiculo_elegido.sql` | HU-032 (#197): el vehículo elegido de la ruta (`tipoVehiculoElegido`, `carroceriaElegida`, NVARCHAR(100) NULL) y las medidas de la mercancía en NULL (CHECK: las tres NULL o las tres > 0). Obligatorio: el backend mapea las columnas; sin él `/health/ready` responde "falta 12". Se aplica antes de la imagen |
 | `db/scripts/13_correo_mailsender.sql` | HU-033 (#199, ADR-023): en `Correos`, el seguimiento de MailSender (`idMailSender` con índice único filtrado, `redirigidoA`, `intentosEntrega`, `enviadoAt`, `estadoActualizadoAt`, `siguienteConsultaAt` con índice filtrado, `encoladoAt`) y el CHECK `ck_correos_estado` (`encolado`, `enviando`, `enviado`, `fallido`); en `CotizacionesSolicitud`, el resultado diferido a Nexo (`sincronizacionResultadoNexo` con CHECK, `comentarioResultadoPendiente`, `resultadoSincronizadoAt`, `errorSincronizacionResultado`, `intentosSincronizacionResultado`). Obligatorio: el backend mapea las columnas; sin él `/health/ready` responde "falta 13". Se aplica antes de la imagen |
+| `db/scripts/14_cotizacion_finalizada.sql` | HU-036 (#205, #206): la cotización finalizada en `CotizacionesSolicitud` (`finalizadaAt DATETIMEOFFSET NULL`, `finalizadaPor UNIQUEIDENTIFIER NULL` con FK a `UsuariosWeb(id)` y el CHECK `ck_cotizaciones_finalizada`). Sin backfill. Propuesta pendiente de revisión de @scalderon-bs. Obligatorio: el backend mapea las columnas; sin él `/health/ready` responde "falta 14". Se aplica antes de la imagen |
 | `db/scripts/pendientes/04_cubicacion_segundo_plano.sql` | HU-023.5 (#160): cola de la cubicación de la licitación en segundo plano. Propuesta pendiente de revisión de scalderon-bs y del DBA; el ejecutador no la corre (`levantar-local` sí, en local). El backend la mapea: sin ella, "falta 04" |
 | `db/scripts/operacion/` | Scripts de datos de una sola vez (identidad compartida con Nexo, rol comercial). Los corre el DBA con aprobación |
 
 Detalle de cada script en [`ESQUEMA_OBJETIVO_SQLSERVER.md`](docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md) §A.5.
 
 **Precondición para desplegar el backend:** `0001` a `0010`, el `02`, el `03`, el `pendientes/04`, el `05`, el `06`, el `09`, el `10`,
-el `11`, el `12` y el `13` aplicados (o la instalación desde cero con el ejecutador, más el `04`). Si falta algo, `/health/ready` responde
+el `11`, el `12`, el `13` y el `14` aplicados (o la instalación desde cero con el ejecutador, más el `04`). Si falta algo, `/health/ready` responde
 `503` y dice qué falta (`falta 0002`, `falta 0009`, `falta 0010`, `falta 02`, `falta 03`, `falta 04`, `falta 05`, `falta 06`, `falta 09`,
-`falta 10`, `falta 11`, `falta 12`, `falta 13`, `falta Tabla.columna`; ver [`DEPLOY.md`](DEPLOY.md) §4.5). Orden del release: `03` →
-`pendientes/04` → `05` → `06` → `07` → `09` → `10` → `11` → `12` → `13` → imagen → `08`.
+`falta 10`, `falta 11`, `falta 12`, `falta 13`, `falta 14`, `falta Tabla.columna`; ver [`DEPLOY.md`](DEPLOY.md) §4.5). Orden del release: `03` →
+`pendientes/04` → `05` → `06` → `07` → `09` → `10` → `11` → `12` → `13` → `14` → imagen → `08`.
 
 ## 5. Cómo acceder
 

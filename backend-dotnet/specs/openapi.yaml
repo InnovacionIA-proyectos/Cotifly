@@ -2142,6 +2142,61 @@ paths:
         '415':
           $ref: '#/components/responses/TipoContenidoNoSoportado'
 
+  /web/cotizaciones/{folio}/finalizar:
+    post:
+      operationId: finalizarCotizacion
+      tags: [web]
+      summary: El comercial acepta el precio y finaliza la cotización
+      x-issue: '#206 (HU-036.2)'
+      description: |
+        HU-036.2 (#206). El comercial acepta el precio de la cotización y la **finaliza**. Solo el dueño, con `If-Match` (el `ETag`
+        de `GET .../costeo` o de "Mis cotizaciones"). Sin cuerpo.
+
+        - Solo con el costeo de Nexo listo: `estado_costeo` en `autocosteo` o `entregada` (todas las rutas que cuentan tienen precio;
+          las `rechazada` no cuentan) y con `precio_final` (una `entregada` que Cotifly todavía no leyó espera la relectura del
+          polling). En cualquier otro caso, 409 `COTIZACION_NO_FINALIZABLE` con `detalle.estado_costeo`.
+        - Tampoco mientras Nexo tiene un servicio conexo que Cotifly todavía no leyó (`motivo_estado_costeo` de conexos pendientes):
+          409 `COTIZACION_NO_FINALIZABLE` con `detalle.motivo = conexos_pendientes_de_leer`; se finaliza después de la siguiente
+          lectura del costeo, que trae el conexo con su precio.
+        - Re-finalizar una ya finalizada es idempotente: 200 sin cambios (mismo `finalizada_at`, mismo `ETag`).
+        - `If-Match` que no es la versión vigente: 409 `CONFLICTO_CONCURRENCIA`, sin cambios (también si ya estaba finalizada). Si
+          el polling cambió el precio entre la lectura y el clic, la versión ya no coincide: el comercial recarga y nunca finaliza un
+          precio que no vio.
+        - La finalización va en columnas propias (`finalizadaAt`, `finalizadaPor`, script `14`), no en `estado_costeo`: el estado
+          sigue avanzando con Nexo (p. ej. `autocosteo` → `entregada`).
+        - La respuesta trae `finalizada_at` (también en `CosteoCotizacion` y en `GET /web/cotizaciones/{folio}`).
+
+        Cada finalización, o su rechazo, queda en `EventosHerramienta` (`finalizar_cotizacion`, sin montos).
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/Folio'
+        - $ref: '#/components/parameters/IfMatchObligatorio'
+      responses:
+        '200':
+          description: Cotización finalizada (o ya lo estaba)
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CotizacionResumen'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '404':
+          $ref: '#/components/responses/NoEsTuya'
+        '409':
+          description: '`COTIZACION_NO_FINALIZABLE` (`estado_costeo` distinto de `autocosteo` y `entregada`; `detalle.estado_costeo`) o `CONFLICTO_CONCURRENCIA`; sin cambios.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '428':
+          $ref: '#/components/responses/PrecondicionRequerida'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+
   /web/cotizaciones/{folio}/costeo:
     get:
       operationId: obtenerCosteo
@@ -4194,6 +4249,9 @@ components:
                 versión nueva de `re-solicitar` y en `nueva_version` de `PUT .../solicitud` si el folio de la original no tiene esa forma
                 o el `-vN` pasaría de 50 caracteres; en la captura y la licitación solo si el folio armado no la cumple, lo que el
                 límite de 20 del NIT ya impide; el PDF no lo responde).
+                HU-036.2 (#206): `COTIZACION_NO_FINALIZABLE` (409 en `POST .../finalizar`: `estado_costeo` distinto de `autocosteo` y
+                `entregada`, sin el costeo de Nexo listo no hay precio que aceptar; `detalle.estado_costeo` trae el estado actual; o
+                con un conexo de Nexo pendiente de leer, `detalle.motivo = conexos_pendientes_de_leer`).
               enum:
                 - MARGEN_FUENTE_NO_DISPONIBLE
                 - MARGEN_LINEA_DESCONOCIDA
@@ -4212,6 +4270,7 @@ components:
                 - FOLIO_INVALIDO
                 - CORREO_DESHABILITADO
                 - CORREO_NO_REINTENTABLE
+                - COTIZACION_NO_FINALIZABLE
                 - CORREO_INVALIDO
                 - CLIENTE_BUSQUEDA_NO_DISPONIBLE
                 - HERRAMIENTA_DESCONOCIDA
@@ -4734,6 +4793,13 @@ components:
           type: string
           nullable: true
           description: HU-033. Último error al enviar el resultado pendiente, o por qué ya no se puede enviar. Siempre presente.
+        finalizada_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            HU-036.2 (#206). Cuándo el comercial finalizó la cotización (`POST .../finalizar`: aceptó el precio), ISO 8601 en UTC.
+            `null` sin finalizar (las anteriores al script `14` no tienen backfill). Siempre presente.
         conexos_descartados:
           type: array
           deprecated: true
@@ -5087,7 +5153,7 @@ components:
 
     FechasCotizacion:
       type: object
-      required: [created_at, updated_at, costeo_enviado_at, costeo_listo_at, marcado_at]
+      required: [created_at, updated_at, costeo_enviado_at, costeo_listo_at, marcado_at, finalizada_at]
       description: HU-027.1 (#179). Fechas de la cabecera, ISO 8601 en UTC.
       properties:
         created_at:
@@ -5114,6 +5180,11 @@ components:
           format: date-time
           nullable: true
           description: Cuándo se marcó el resultado (ganada o perdida); `null` sin resultado.
+        finalizada_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: HU-036.2 (#206). Cuándo el comercial finalizó la cotización; `null` sin finalizar.
 
     TotalesCotizacion:
       type: object
@@ -6350,6 +6421,11 @@ components:
           type: string
           nullable: true
           description: HU-033. Igual que en `CotizacionResumen`.
+        finalizada_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: HU-036.2 (#206). Cuándo se finalizó la cotización; `null` sin finalizar. Igual que en `CotizacionResumen`.
         textos:
           description: HU-013.5. Asunto e introducción guardados para el PDF, o `null` si todavía no hay (el PDF usa los estándar).
           oneOf:
@@ -8398,7 +8474,7 @@ components:
     Licitacion:
       type: object
       required: [folio, cliente_nombre, nit_cliente, deadline, estado_costeo, motivo_estado_costeo, moneda, trm_aplicada,
-                 precio_final, lineas_costeadas, lineas_pendientes, archivo_nombre, hoja, lineas]
+                 precio_final, lineas_costeadas, lineas_pendientes, archivo_nombre, hoja, lineas, finalizada_at]
       description: |
         Licitación vista por el comercial (HU-011.2). Solo precios. Sin `referencia` desde HU-021.11 (#138, decisión 1: siempre
         era `null`).
@@ -8455,6 +8531,14 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/LineaLicitacion'
+        finalizada_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            HU-036.2 (#206, DEF-1027-2 de #226). Cuándo el comercial finalizó la licitación (`POST .../finalizar`), ISO 8601 en UTC;
+            `null` sin finalizar. Siempre presente, igual que en `CotizacionResumen` y `CosteoCotizacion`: la vista del polling
+            habilita "Finalizar" y aplica los candados de la finalizada sin pedir el costeo.
         progreso_cubicacion:
           type: object
           nullable: true

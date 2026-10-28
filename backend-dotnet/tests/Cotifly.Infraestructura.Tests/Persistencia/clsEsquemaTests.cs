@@ -94,10 +94,11 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         scripts[clsBaseDatosPruebas.ScriptsHasta05 - 1].Should().Be(clsBaseDatosPruebas.Script05, "ScriptsHasta05 incluye el 05 y no el 06");
         scripts[clsBaseDatosPruebas.ScriptsHasta06 - 1].Should().Be(clsBaseDatosPruebas.Script06, "ScriptsHasta06 incluye el 06 y no el 09");
         scripts[clsBaseDatosPruebas.ScriptsHasta09 - 1].Should().Be(clsBaseDatosPruebas.Script09, "ScriptsHasta09 incluye el 09 y no el 10 ni el 11");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 4].Should().Be(clsBaseDatosPruebas.Script10, "ScriptsSin07 incluye el 10 (el backend mapea el rechazo)");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 3].Should().Be(clsBaseDatosPruebas.Script11, "ScriptsSin07 incluye el 11 (el backend mapea pesoConTaraKg)");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 2].Should().Be(clsBaseDatosPruebas.Script12, "ScriptsSin07 incluye el 12 (el backend mapea el vehículo elegido)");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script13, "ScriptsSin07 llega hasta el 13 (el backend mapea MailSender y el resultado diferido)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 5].Should().Be(clsBaseDatosPruebas.Script10, "ScriptsSin07 incluye el 10 (el backend mapea el rechazo)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 4].Should().Be(clsBaseDatosPruebas.Script11, "ScriptsSin07 incluye el 11 (el backend mapea pesoConTaraKg)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 3].Should().Be(clsBaseDatosPruebas.Script12, "ScriptsSin07 incluye el 12 (el backend mapea el vehículo elegido)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 2].Should().Be(clsBaseDatosPruebas.Script13, "ScriptsSin07 incluye el 13 (el backend mapea MailSender y el resultado diferido)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script14, "ScriptsSin07 llega hasta el 14 (el backend mapea la cotización finalizada)");
         scripts[clsBaseDatosPruebas.ScriptsSin07].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsSin07 corta justo antes del 07");
         scripts[clsBaseDatosPruebas.ScriptsHasta07 - 1].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsHasta07 incluye el 07");
         // HU-037.1 (#209): el 15 (rol director) va al final, después del 08: no agrega columnas y clsRolDirectorScriptTests usa
@@ -308,6 +309,50 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         (await clsBaseDatosPruebas.EscalarAsync<int>(instalada.Cadena,
                 "SELECT COUNT(*) FROM sys.indexes WHERE name IN (N'ix_correos_siguienteConsultaAt', N'ux_correos_idMailSender') AND has_filter = 1"))
             .Should().Be(2);
+    }
+
+    [Fact]
+    public async Task HU036_ElScript14EsIdempotenteYDejaLaFinalizacionConSuFkAUsuariosWebYSuCheck()
+    {
+        // HU-036 (#205): finalizadaAt y finalizadaPor (UNIQUEIDENTIFIER, el tipo de UsuariosWeb.id) en la cabecera, la FK y el CHECK.
+        await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem14", clsBaseDatosPruebas.Scripts.Length);
+        await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script14);
+
+        await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbIdem14Inst");
+        await ReaplicarYVerificarIdempotenciaAsync(instalada.Cadena, clsBaseDatosPruebas.Script14);
+        foreach (var cadena in new[] { migrada.Cadena, instalada.Cadena })
+        {
+            (await LeerAsync(
+                    "SELECT CONCAT(c.name, '|', TYPE_NAME(c.user_type_id), '|', c.is_nullable) FROM sys.columns c "
+                    + "WHERE c.object_id = OBJECT_ID(N'dbo_cotifly.CotizacionesSolicitud') AND c.name IN (N'finalizadaAt', N'finalizadaPor')",
+                    r => r.GetString(0), cadena))
+                .Should().BeEquivalentTo(["finalizadaAt|datetimeoffset|1", "finalizadaPor|uniqueidentifier|1"]);
+            (await clsBaseDatosPruebas.EscalarAsync<string>(cadena,
+                    "SELECT CONCAT(OBJECT_NAME(fk.referenced_object_id), '.', COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id)) "
+                    + "FROM sys.foreign_keys fk JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id "
+                    + "WHERE fk.name = N'fk_cotizaciones_finalizadaPor'"))
+                .Should().Be("UsuariosWeb.id");
+            (await clsBaseDatosPruebas.EscalarAsync<int>(cadena,
+                    "SELECT COUNT(*) FROM sys.check_constraints WHERE name = N'ck_cotizaciones_finalizada' AND is_not_trusted = 0"))
+                .Should().Be(1);
+        }
+    }
+
+    [Fact]
+    public async Task HU036_ElScript14SeAplicaSobreUnaBaseConDatosSinTocarlos()
+    {
+        // HU-036 (#205): sin backfill. Sobre una base hasta el 13 con una cotización ya escrita, el 14 la deja sin finalizar.
+        await using var baseConDatos = await BaseDatos.CrearBaseConScriptsAsync("dbDatos14", clsBaseDatosPruebas.ScriptsSin07 - 1);
+        var cotizacion = Guid.NewGuid();
+        await clsBaseDatosPruebas.EjecutarAsync(baseConDatos.Cadena,
+            $"INSERT INTO dbo_cotifly.CotizacionesSolicitud (id, folio, estadoCosteo) VALUES ('{cotizacion}', 'COT-F14', 'autocosteo');");
+
+        await clsBaseDatosPruebas.AplicarScriptAsync(baseConDatos.Cadena, clsBaseDatosPruebas.Script14);
+
+        (await clsBaseDatosPruebas.EscalarAsync<string>(baseConDatos.Cadena,
+                "SELECT CONCAT(estadoCosteo, '|', IIF(finalizadaAt IS NULL, 'null', 'valor'), '|', IIF(finalizadaPor IS NULL, 'null', 'valor')) "
+                + $"FROM dbo_cotifly.CotizacionesSolicitud WHERE id = '{cotizacion}'"))
+            .Should().Be("autocosteo|null|null");
     }
 
     [Fact]

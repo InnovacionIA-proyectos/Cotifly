@@ -36,6 +36,9 @@ internal sealed class clsCotizacionSolicitudConfiguracion : IEntityTypeConfigura
             t.HasCheckConstraint("ck_cotizaciones_sincronizacionResultadoNexo",
                 "sincronizacionResultadoNexo IS NULL OR sincronizacionResultadoNexo IN ('pendiente', 'sincronizado', 'no_sincronizable')");
             t.HasCheckConstraint("ck_cotizaciones_intentosSincronizacionResultado", "intentosSincronizacionResultado >= 0");
+            // HU-036 (#205): db/scripts/14_cotizacion_finalizada.sql (las dos NULL o las dos con valor).
+            t.HasCheckConstraint("ck_cotizaciones_finalizada",
+                "(finalizadaAt IS NULL AND finalizadaPor IS NULL) OR (finalizadaAt IS NOT NULL AND finalizadaPor IS NOT NULL)");
         });
 
         builder.HasKey(c => c.Id).HasName("pk_cotizaciones");
@@ -84,6 +87,9 @@ internal sealed class clsCotizacionSolicitudConfiguracion : IEntityTypeConfigura
         builder.Property(c => c.ErrorSincronizacionResultado).Columna("errorSincronizacionResultado", "nvarchar(1000)")
             .HasMaxLength(clsCotizacionSolicitud.LargoMaximoErrorSincronizacion);
         builder.Property(c => c.IntentosSincronizacionResultado).Columna("intentosSincronizacionResultado", "int");
+        // HU-036 (#205, #206): cotización finalizada, db/scripts/14_cotizacion_finalizada.sql (sin él, /health/ready dice "falta 14").
+        builder.Property(c => c.FinalizadaAt).Fecha("finalizadaAt");
+        builder.Property(c => c.FinalizadaPor).Columna("finalizadaPor", "uniqueidentifier");
         builder.Property(c => c.MotivoEstadoCosteo).Columna("motivoEstadoCosteo", "nvarchar(1000)").HasMaxLength(clsCotizacionSolicitud.LargoMaximoMotivoCosteo);
         builder.Property(c => c.CosteoEnviadoAt).Fecha("costeoEnviadoAt");
         builder.Property(c => c.CosteoSiguienteConsultaAt).Fecha("costeoSiguienteConsultaAt");
@@ -100,6 +106,8 @@ internal sealed class clsCotizacionSolicitudConfiguracion : IEntityTypeConfigura
 
         builder.HasOne<clsUsuarioWeb>().WithMany().HasForeignKey(c => c.UsuarioId)
             .HasConstraintName("fk_cotizaciones_usuarioId").OnDelete(DeleteBehavior.NoAction);
+        builder.HasOne<clsUsuarioWeb>().WithMany().HasForeignKey(c => c.FinalizadaPor)
+            .HasConstraintName("fk_cotizaciones_finalizadaPor").OnDelete(DeleteBehavior.NoAction);
 
         // El agregado: las rutas se leen y se guardan con la cabecera (backing field _rutas). ClientCascade: en la base la FK es
         // NO ACTION; EF borra en memoria lo que se quita del agregado (p. ej. un conexo) en vez de dejarlo huérfano.
@@ -110,6 +118,8 @@ internal sealed class clsCotizacionSolicitudConfiguracion : IEntityTypeConfigura
         builder.Ignore(c => c.PrimeraRuta);
         builder.Ignore(c => c.Vehiculos);
         builder.Ignore(c => c.RutasCotizables);
+        builder.Ignore(c => c.Finalizada);
+        builder.Ignore(c => c.AdmiteFinalizar);
     }
 }
 

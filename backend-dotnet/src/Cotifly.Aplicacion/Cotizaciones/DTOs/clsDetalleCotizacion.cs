@@ -40,7 +40,11 @@ public sealed record clsDetalleCotizacion(
 /// <param name="CosteoListoAt">Cuándo quedó lista con precio; <c>null</c> sin costeo.</param>
 /// <param name="MarcadoAt">Cuándo se marcó el resultado (ganada o perdida); <c>null</c> sin resultado.</param>
 public sealed record clsFechasCotizacion(
-    DateTimeOffset? CreatedAt, DateTimeOffset? UpdatedAt, DateTimeOffset? CosteoEnviadoAt, DateTimeOffset? CosteoListoAt, DateTimeOffset? MarcadoAt);
+    DateTimeOffset? CreatedAt, DateTimeOffset? UpdatedAt, DateTimeOffset? CosteoEnviadoAt, DateTimeOffset? CosteoListoAt, DateTimeOffset? MarcadoAt)
+{
+    /// <summary>HU-036.2 (#206): cuándo el comercial finalizó la cotización; <c>null</c> sin finalizar. Siempre se serializa.</summary>
+    public DateTimeOffset? FinalizadaAt { get; init; }
+}
 
 /// <summary>
 /// <c>TotalesCotizacion</c> (#179): conteos y precios de toda la solicitud, derivados de <c>costeo.rutas[]</c> con las reglas del costeo y
