@@ -1,5 +1,5 @@
 /* ============================================================================
-   Cotifly — 16: precio de venta en los conexos (PROPUESTA, pendiente de revisión de @scalderon-bs)
+   Cotifly — 19: precio de venta en los conexos (PROPUESTA, pendiente de revisión de @scalderon-bs)
    ============================================================================
    HU-043.1 (#245). La consume HU-043.2. Origen: plan "Precio de venta de los servicios conexos"
    (2026-10-28, docs/backlog/2026-10-28_ISSUES-PRECIO-VENTA-CONEXOS.md en NEXO); relacionada con
@@ -27,7 +27,7 @@
    en la misma fila; no se pierde información.
 
    Cómo ejecutarlo (-b detiene el script en el primer error). Sin USE: corre sobre la base que se indique.
-     sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i 16_precio_venta_conexos.sql
+     sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i 19_precio_venta_conexos.sql
    ============================================================================ */
 
 SET NOCOUNT ON;
@@ -58,7 +58,7 @@ BEGIN TRY
 END TRY
 BEGIN CATCH
     IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
-    PRINT N'16 NO se aplicó: se deshizo todo. Error:';
+    PRINT N'19 NO se aplicó: se deshizo todo. Error:';
     THROW;
 END CATCH;
 GO
@@ -89,12 +89,12 @@ BEGIN TRY
 END TRY
 BEGIN CATCH
     IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
-    PRINT N'16 NO se aplicó completo (backfill, NOT NULL y CHECK de precioVenta): se deshizo este paso. Error:';
+    PRINT N'19 NO se aplicó completo (backfill, NOT NULL y CHECK de precioVenta): se deshizo este paso. Error:';
     THROW;
 END CATCH;
 GO
 
-PRINT N'16 aplicado: precioVenta en CotizacionServiciosConexos.';
+PRINT N'19 aplicado: precioVenta en CotizacionServiciosConexos.';
 GO
 
 /* ============================================================================

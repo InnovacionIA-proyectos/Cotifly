@@ -147,6 +147,7 @@ Son de la ruta, no del camión: la cantidad ya dice cuántos. Reemplazan el JSON
 | `idServicioConexo` | Id del catálogo de Nexo (capturados o copiados a una `-vN`) o id de la fila de la cotización de Nexo (agregados o importados desde Nexo). Único por ruta | Captura, `POST`/`PUT .../servicios-conexos`, polling (#124) | Envío diferido a Nexo (`clsResolutorConexosCatalogo`) |
 | `nombreServicioConexo` | Copia del nombre (0010) | Igual | PDF |
 | `precio` | Costo unitario de Nexo al momento de capturar, antes del margen. No se vuelve a cotizar | Captura (catálogo de Nexo), `-vN` (catálogo refrescado) | Totales y precio de la ruta |
+| `precioVenta` | Precio de venta al cliente (HU-043.1, #245; script `16`). En las filas existentes arranca igual a `precio` (backfill); de ahí en adelante lo ajusta lo que decida HU-043.2 | Captura (hasta HU-043.2: igual a `precio`) | HU-043.2 (pendiente) |
 | `cantidad` | Cantidad | Captura, `PUT` | Totales, Nexo |
 | `idServicioConexoCatalogo` | Id del catálogo de Nexo del conexo (script `03`, HU-014 #188). NULL en filas anteriores (se resuelven por id o por nombre) | Captura, importación desde Nexo, `-vN` | `clsResolutorConexosCatalogo` |
 | `categoriaServicioConexo` | Categoría del catálogo de Nexo (`logistico`, `adicional`...; script `05`). NULL en filas anteriores (sale del catálogo al armar el costeo) | Captura, importación, `-vN` | Costeo |
