@@ -162,6 +162,9 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         (typeof(clsDetalleCotizacion), "DetalleCotizacion"),
         (typeof(clsFechasCotizacion), "FechasCotizacion"),
         (typeof(clsTotalesCotizacion), "TotalesCotizacion"),
+        // HU-018.1 (#155, parte B): lista de motivos de pérdida.
+        (typeof(Cotifly.Aplicacion.Cotizaciones.Services.clsMotivosPerdida), "MotivosPerdida"),
+        (typeof(Cotifly.Aplicacion.Cotizaciones.Services.clsMotivoPerdida), "MotivoPerdida"),
         (typeof(clsDatosNuevaVersion), "DatosNuevaVersion"),
         (typeof(clsLineaNegocioAdmin), "LineaNegocio"),
         // HU-016.1 (#154): GET /web/lineas-negocio, el desplegable de la captura sin margen.

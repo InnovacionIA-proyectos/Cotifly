@@ -73,6 +73,8 @@ Resumen de los endpoints de uso más frecuente; la lista completa (56) está en 
 | `POST /web/cotizaciones/{folio}/seguimiento` | ambos | Marca ganada o perdida **solo** cotizaciones fuera de Nexo (`estado_costeo` `null`, `descartada` o `costeo_vencido`). Las de Nexo responden 409 `USAR_RESULTADO_NEXO`, con `detalle` = `{metodo, endpoint, requiere_if_match}` (HU-021.13) |
 | `POST /web/cotizaciones/{folio}/resultado` | ambos (dueño) | Marca ganada o perdida las cotizaciones de Nexo (primero en Nexo y, si responde 200, en Cotifly). Lleva `If-Match` (obligatorio en la perdida sin costeo: 428 si falta). `motivo` máximo 100 caracteres en una perdida; en una ganada no se valida. `motivo_rechazo` queda `"No aplica"` en una ganada (HU-021.13, alimenta HU-019.1). HU-033 (#199): si Nexo todavía no la tiene entregada, el resultado queda solo en Cotifly (`sincronizacion_resultado_nexo = pendiente`, 200) y se envía a Nexo una sola vez cuando la Mesa la entrega; el estado viene en `CotizacionResumen` y en el costeo |
 | `POST /web/cotizaciones/{folio}/finalizar` | ambos (dueño) | HU-036.2 (#206): el comercial acepta el precio y finaliza la cotización (`If-Match` obligatorio). Solo en `autocosteo` o `entregada` (409 `COTIZACION_NO_FINALIZABLE`); re-finalizar es 200 sin cambios. `finalizada_at` en el resumen, el costeo y el detalle. Ver §8.17 |
+| `GET /web/motivos-perdida` | ambos | HU-018.1 (#155): lista obligatoria de motivos de pérdida (la de Nexo por defecto, configurable con `Resultado:MotivosPerdida`), con `requiere_comentario` en `Otro`. Ver §8.9 |
+| `GET /web/cotizaciones/{folio}/excel` | dueño, gerente de su regional o director | HU-018.1 (#155): xlsx de la cotización (`Resumen`, `Rutas`, `Camiones`, `Conexos`). El dueño recibe costos (COP) y márgenes por ruta y por camión; el gerente y el director, el mismo **sin ninguna columna de costo ni de margen**. 404 a los demás; 409 `COSTEO_NO_LISTO` sin precio. Ver §8.9.1 |
 | `GET /web/cotizaciones/{id}/nueva-version` | ambos | Datos para prellenar una nueva versión |
 | `GET /web/clientes/{nit}/destinatarios-previos` | ambos | `para`/`cc` del último envío a ese cliente |
 | `GET` / `PUT /web/usuario/telefono` | ambos | Teléfono que se imprime en el PDF |
@@ -829,10 +831,46 @@ Encabezado `If-Match: "7"` (obligatorio en la perdida sin costeo; opcional en el
 
 <!-- esquema: ResultadoWeb -->
 ```json
-{ "resultado": "perdida", "motivo": "Precio por encima del presupuesto del cliente", "comentario": "El cliente cerró con otro proveedor." }
+{ "resultado": "perdida", "motivo": "Otro", "comentario": "El cliente cerró con otro proveedor." }
 ```
 
 Responde 200 `CotizacionResumen` con el `ETag` nuevo; una ganada queda con `motivo_rechazo: "No aplica"`.
+
+**Motivo de pérdida de la lista (HU-018.1, #155).** En una `perdida` (aquí y en `/seguimiento` con `motivo_rechazo`) el motivo es
+obligatorio y debe ser uno de `GET /web/motivos-perdida` (sin distinguir mayúsculas); `Otro` exige `comentario` (en `/seguimiento`, el
+campo nuevo `comentario`). A Nexo viajan el motivo con la escritura de la lista y el comentario aparte, como antes; con `Otro`, Cotifly
+guarda `motivo_rechazo = "Otro: {comentario}"` (en el ejemplo, `"Otro: El cliente cerró con otro proveedor."`). Con otro motivo, el
+comentario solo va a Nexo. Las perdidas guardadas antes (motivo libre o sin motivo) no se revalidan.
+
+<!-- esquema: MotivosPerdida -->
+```json
+{
+  "motivos": [
+    { "motivo": "Valor muy alto", "requiere_comentario": false },
+    { "motivo": "Flete fuera de rango de plaza", "requiere_comentario": false },
+    { "motivo": "Cliente desistió del servicio", "requiere_comentario": false },
+    { "motivo": "Tiempo de respuesta vencido", "requiere_comentario": false },
+    { "motivo": "Otro", "requiere_comentario": true }
+  ]
+}
+```
+
+Un motivo fuera de la lista, o `Otro` sin comentario, responde 400 sin llamar a Nexo (`requiere_comentario = true` si solo faltó el
+comentario):
+
+<!-- esquema: ErrorNegocio -->
+```json
+{
+  "error": {
+    "codigo": "MOTIVO_NO_PERMITIDO",
+    "mensaje": "El motivo 'Precio alto' no está en la lista de motivos de pérdida: elige uno de la lista.",
+    "detalle": {
+      "motivos_permitidos": ["Valor muy alto", "Flete fuera de rango de plaza", "Cliente desistió del servicio", "Tiempo de respuesta vencido", "Otro"],
+      "requiere_comentario": false
+    }
+  }
+}
+```
 
 Endurecimiento B (#199, E2E 2026-10-22): repetir el mismo resultado ya `sincronizado` es 200 sin cambios y sin llamar a Nexo; ante
 `RESULTADO_YA_DEFINIDO` Cotifly **lee** el resultado de Nexo (ya no `POST /api/cotizaciones`); una perdida en `pendiente_costeo` con la
@@ -855,6 +893,20 @@ solicitud que Nexo ya no reconoce queda `solo_cotifly`; y si Nexo no reconoce la
   }
 }
 ```
+
+### 8.9.1 Excel de la cotización: `GET /web/cotizaciones/{folio}/excel` (HU-018.1, #155)
+
+Un `.xlsx` con las hojas `Resumen`, `Rutas`, `Camiones` y `Conexos` (como blob; nombre `{folio}.xlsx` en `Content-Disposition`), con la
+regla de acceso del detalle por folio:
+
+| Quién | Qué recibe |
+|---|---|
+| Dueño | Versión interna: por ruta, `Costo fletes`, `Costo retorno`, `Costo levante`, `Costo conexos` y `Costo bruto` (COP), `Margen aplicado`, `Margen sugerido`, `Origen del margen`, `Método de cálculo` y los precios; por camión, sus costos, el margen y el precio de su transporte; por conexo, su costo y su precio; `Costo bruto total (COP)` en el resumen |
+| Gerente de su regional y director | El mismo Excel en solo lectura **sin ninguna columna de costo ni de margen** (con el margen y el precio se deduce el costo). Queda en la auditoría |
+| Cualquier otro | 404 `ErrorWeb` |
+
+Sin `precio_final`, 409 `COSTEO_NO_LISTO`. Respeta el precio congelado (cotización finalizada o con PDF) y las rutas rechazadas por la
+Mesa (sin precio, sin conexos, no suman). Nunca un costo sin su precio. Solo lee lo que Cotifly guardó.
 
 ### 8.10 "Mis cotizaciones" y la nueva versión
 

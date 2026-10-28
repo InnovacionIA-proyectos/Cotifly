@@ -55,6 +55,8 @@ public static class clsDependenciasAplicacion
         servicios.AddScoped<IClsSeguimientoCorreosService, clsSeguimientoCorreosService>();
         servicios.AddScoped<IClsDestinatariosPreviosService, clsDestinatariosPreviosService>();
         servicios.AddScoped<IClsTelefonoComercialService, clsTelefonoComercialService>();
+        // HU-018.1 (#155): lista de motivos de pérdida (Resultado:MotivosPerdida) para /resultado, /seguimiento y la sincronización.
+        servicios.AddSingleton<IClsCatalogoMotivosPerdida, clsCatalogoMotivosPerdida>();
         servicios.AddScoped<IClsSeguimientoService, clsSeguimientoService>();
 
         // Login SSO ClientePro con verificación doble, refresh y logout (HU-003.6, #12). Cada intento se audita.
@@ -73,6 +75,8 @@ public static class clsDependenciasAplicacion
         servicios.AddScoped<IClsDetalleCotizacionService, clsDetalleCotizacionService>();
         // HU-034.1 (#201): la licitación ajena en solo lectura (gerente de la regional o director), con la regla del detalle.
         servicios.AddScoped<IClsAccesoCotizacionAjena, clsAccesoCotizacionAjenaService>();
+        // HU-018.1 (#155, parte C): Excel de la cotización (dueño: versión interna; gerente y director: sin costos ni márgenes).
+        servicios.AddScoped<IClsExportacionCotizacionService, clsExportacionCotizacionService>();
         servicios.AddScoped<IClsNuevaVersionService, clsNuevaVersionService>();
         servicios.AddScoped<IClsGeneradorFolioService, clsGeneradorFolioService>();
         servicios.AddScoped<IClsDescargaPdfService, clsDescargaPdfService>();

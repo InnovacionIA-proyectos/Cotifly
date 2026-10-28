@@ -44,6 +44,8 @@ public sealed class clsDependenciasAplicacionTests
     [InlineData(typeof(IClsDestinatariosPreviosService), typeof(clsDestinatariosPreviosService), ServiceLifetime.Scoped)]
     [InlineData(typeof(IClsTelefonoComercialService), typeof(clsTelefonoComercialService), ServiceLifetime.Scoped)]
     [InlineData(typeof(IClsSeguimientoService), typeof(clsSeguimientoService), ServiceLifetime.Scoped)]
+    [InlineData(typeof(IClsCatalogoMotivosPerdida), typeof(clsCatalogoMotivosPerdida), ServiceLifetime.Singleton)]
+    [InlineData(typeof(IClsExportacionCotizacionService), typeof(clsExportacionCotizacionService), ServiceLifetime.Scoped)]
     [InlineData(typeof(IClsAuditoriaService), typeof(clsAuditoriaService), ServiceLifetime.Singleton)]
     [InlineData(typeof(clsCandadoEnvios), typeof(clsCandadoEnvios), ServiceLifetime.Singleton)]
     [InlineData(typeof(clsVerificadorIdentidad), typeof(clsVerificadorIdentidad), ServiceLifetime.Scoped)]

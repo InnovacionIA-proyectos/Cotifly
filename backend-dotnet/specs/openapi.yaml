@@ -490,6 +490,60 @@ paths:
         '500':
           $ref: '#/components/responses/ErrorInterno'
 
+  /web/cotizaciones/{folio}/excel:
+    get:
+      operationId: exportarExcelCotizacion
+      tags: [web]
+      summary: Descarga el Excel de la cotización ("Ver detalle")
+      x-issue: '#155 (HU-018.1, parte C)'
+      description: |
+        HU-018.1 (#155, parte C). Un `.xlsx` (ClosedXML) con cuatro hojas: `Resumen` (folio, cliente, NIT, comercial, tipo, moneda y TRM
+        en USD, estado del costeo, resultado, si está finalizada y con el precio congelado, la versión del archivo y los totales), `Rutas`
+        (una fila por ruta con su estado, el motivo de rechazo de la Mesa, peso, camiones que cuentan, precio del transporte, de los
+        conexos y de la ruta, y una fila `Total`), `Camiones` (una fila por camión: vehículo, carrocería, peso, estado, si cuenta en el
+        precio y el precio de su transporte, que es su costo con el margen de la ruta) y `Conexos` (una fila por servicio conexo con su
+        precio). Precios en la moneda de la cotización (COP sin decimales, USD con dos); `Sin precio` donde no hay.
+
+        **Dos versiones según quién lo descarga** (la misma regla de acceso de `GET /web/cotizaciones/{folio}`):
+        - el **dueño** recibe la versión **interna**: además, por ruta, `Costo fletes`, `Costo retorno`, `Costo levante`, `Costo conexos`,
+          `Costo bruto` (todos `(COP)`: el costeo de Nexo nunca se convierte), `Margen aplicado`, `Margen sugerido`, `Origen del margen` y
+          `Método de cálculo`; por camión, sus costos y el margen; por conexo, su costo; y el `Costo bruto total (COP)` en el resumen. Las
+          columnas internas tienen otro color en el encabezado. Como en el costeo (HU-039.1, #218), nunca un costo sin su precio: una ruta
+          rechazada o un camión que no cuenta salen sin costos;
+        - el **gerente comercial** de la regional del dueño y el **director** (HU-037) reciben el mismo Excel en **solo lectura y sin
+          ninguna columna de costo ni de margen** (ni sus encabezados: con el margen y el precio se deduce el costo). La versión dice
+          `Solo lectura (sin costos ni márgenes)`. Cada descarga suya, permitida o no, queda en la auditoría
+          (`exportar_excel_cotizacion`);
+        - cualquier otro usuario recibe 404, igual que si el folio no existiera.
+
+        Solo lee lo que Cotifly guardó (ni Nexo ni el cubicador). Con la cotización finalizada o con PDF (HU-036) los precios y los costos
+        son los congelados. Las rutas rechazadas por la Mesa de Costeo (HU-028.1) salen sin precio, sin conexos y no suman en los totales.
+        Requiere el costeo listo: sin `precio_final`, 409 `COSTEO_NO_LISTO`. No toma el cupo de lecturas de Excel (solo escribe).
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/Folio'
+      responses:
+        '200':
+          description: 'El Excel de la cotización (`Content-Disposition` attachment, nombre `{folio}.xlsx`)'
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '404':
+          $ref: '#/components/responses/NoEsTuya'
+        '409':
+          description: '`COSTEO_NO_LISTO`: la cotización todavía no tiene `precio_final` (costeo sin terminar)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+
   /web/cotizaciones/{folio}/enviar:
     post:
       operationId: enviarCotizacion
@@ -712,6 +766,9 @@ paths:
         Interino hasta HU-005.14, que lo reemplaza por `POST /web/cotizaciones/{folio}/resultado`
         (registra también en Nexo, agrega `comentario` y no permite cambiar el
         resultado una vez definido).
+
+        HU-018.1 (#155): una perdida exige `motivo_rechazo` de la lista de `GET /web/motivos-perdida` y, con `Otro`, `comentario`
+        (400 `MOTIVO_NO_PERMITIDO`). Sigue siendo el camino de las cotizaciones del chat, `descartada` y `costeo_vencido`.
       security:
         - bearer: []
       parameters:
@@ -730,7 +787,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/CotizacionResumen'
         '400':
-          $ref: '#/components/responses/Validacion'
+          description: |
+            `motivo_rechazo` de más de 2000 caracteres o `comentario` de más de 500 (`ErrorWeb`). HU-018.1 (#155): al marcar
+            `ganada = false`, `MOTIVO_NO_PERMITIDO` (`ErrorNegocio`) si el motivo falta, no es de la lista de `GET /web/motivos-perdida`
+            o es `Otro` sin `comentario`.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
         '401':
           $ref: '#/components/responses/SesionExpirada'
         '404':
@@ -1528,6 +1594,35 @@ paths:
         '500':
           $ref: '#/components/responses/ErrorInterno'
 
+  /web/motivos-perdida:
+    get:
+      operationId: listarMotivosPerdida
+      tags: [web]
+      summary: Motivos de pérdida para marcar una cotización como perdida
+      x-issue: '#155 (HU-018.1, parte B)'
+      description: |
+        HU-018.1 (#155, parte B). La lista **obligatoria** de motivos de pérdida, en su orden: la de NEXO (`Valor muy alto`,
+        `Flete fuera de rango de plaza`, `Cliente desistió del servicio`, `Tiempo de respuesta vencido` y `Otro`), configurable con
+        `Resultado:MotivosPerdida` (la configuración reemplaza a la lista; cada motivo, máximo 100 caracteres). `requiere_comentario` marca
+        el motivo que exige `comentario` (`Otro`, configurable con `Resultado:MotivoConComentario`).
+
+        Al marcar `perdida` (`POST .../resultado` con `motivo`, o `POST .../seguimiento` con `motivo_rechazo`) el motivo debe ser
+        exactamente uno de estos (sin distinguir mayúsculas); si no, 400 `MOTIVO_NO_PERMITIDO`. No consulta NEXO ni depende de él: el
+        frontend puede pedirla una vez por sesión.
+      security:
+        - bearer: []
+      responses:
+        '200':
+          description: La lista de motivos de pérdida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MotivosPerdida'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+
   /web/catalogos-flete:
     get:
       operationId: obtenerCatalogosFlete
@@ -2203,7 +2298,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/CotizacionResumen'
         '400':
-          description: '`resultado` que no es `ganada`/`perdida`, `motivo`/`comentario` fuera de los límites de Nexo (100 y 500) o `motivo` vacío en la perdida sin costeo (`ErrorWeb`); `COSTEO_NEXO_RECHAZADA` si Nexo responde otro 4xx (`ErrorNegocio`, código de Nexo en `detalle.motivo`); sin cambio local'
+          description: '`resultado` que no es `ganada`/`perdida` o `motivo`/`comentario` fuera de los límites de Nexo (100 y 500) (`ErrorWeb`); HU-018.1 (#155): en una `perdida`, `MOTIVO_NO_PERMITIDO` si el `motivo` falta, no es de la lista de `GET /web/motivos-perdida` o es `Otro` sin `comentario` (`ErrorNegocio` con `detalle.motivos_permitidos` y `detalle.requiere_comentario`), sin llamar a Nexo; `COSTEO_NEXO_RECHAZADA` si Nexo responde otro 4xx (`ErrorNegocio`, código de Nexo en `detalle.motivo`); sin cambio local'
           content:
             application/json:
               schema:
@@ -4348,7 +4443,10 @@ components:
                 `detalle.campo = codigo_mercancia` cuando se sabe qué mercancía es (en la captura, también `detalle.ruta`).
                 Resultado en Nexo (HU-005.14), con el mismo código de Nexo: `RESULTADO_YA_DEFINIDO` y
                 `COTIZACION_NO_ENTREGADA` (409, sin cambio local) y `USAR_RESULTADO_NEXO` (409: `/seguimiento`
-                sobre una cotización que pasó por Nexo).
+                sobre una cotización que pasó por Nexo). HU-018.1 (#155): `MOTIVO_NO_PERMITIDO` (400 en `POST .../resultado` y
+                `POST .../seguimiento` al marcar `perdida`: el motivo falta o no es de la lista de `GET /web/motivos-perdida`, o es
+                `Otro` sin `comentario`; `detalle.motivos_permitidos` trae la lista y `detalle.requiere_comentario` si solo faltó el
+                comentario).
                 `PRECIO_INVALIDO` queda solo para el cálculo de precio.
                 En `GET /web/metricas/regional` (HU-010.1, ADR-016) y en `GET /web/cotizaciones/regional` (HU-016.1, #154): `REGIONAL_NO_ASIGNADA` (409: el gerente no
                 tiene regional en `DimEjecutivo` ni en `UsuariosWeb.regional`) y `REGIONAL_NO_DISPONIBLE` (503: la
@@ -4486,6 +4584,7 @@ components:
                 - RUTA_RECHAZADA
                 - SIN_RUTAS_COTIZABLES
                 - ERROR_INTERNO
+                - MOTIVO_NO_PERMITIDO
             mensaje:
               type: string
             detalle:
@@ -5585,7 +5684,19 @@ components:
           type: string
           nullable: true
           maxLength: 2000
-          description: Solo se guarda con `ganada = false`. Con `ganada = true` queda `"No aplica"` y con `ganada = null`, vacío (HU-021.13).
+          description: |
+            Solo se guarda con `ganada = false`. Con `ganada = true` queda `"No aplica"` y con `ganada = null`, vacío (HU-021.13).
+            HU-018.1 (#155): con `ganada = false` es **obligatorio** y debe ser uno de `GET /web/motivos-perdida` (sin distinguir
+            mayúsculas; se guarda con la escritura de la lista); si no, 400 `MOTIVO_NO_PERMITIDO`. Con `Otro` se guarda
+            `"Otro: {comentario}"`. Las cotizaciones marcadas antes con un motivo libre o sin motivo no se revalidan.
+        comentario:
+          type: string
+          nullable: true
+          maxLength: 500
+          description: |
+            HU-018.1 (#155): explicación del motivo. **Obligatorio con el motivo `Otro`** (`requiere_comentario = true` en
+            `GET /web/motivos-perdida`; si falta, 400 `MOTIVO_NO_PERMITIDO` con `detalle.requiere_comentario = true`). Con otro motivo
+            no se guarda.
 
     LineaNegocio:
       type: object
@@ -6174,6 +6285,29 @@ components:
           type: string
           nullable: true
 
+    MotivosPerdida:
+      type: object
+      required: [motivos]
+      description: HU-018.1 (#155). Respuesta de `GET /web/motivos-perdida`.
+      properties:
+        motivos:
+          type: array
+          items:
+            $ref: '#/components/schemas/MotivoPerdida'
+
+    MotivoPerdida:
+      type: object
+      required: [motivo, requiere_comentario]
+      properties:
+        motivo:
+          type: string
+          maxLength: 100
+          description: El texto exacto que se envía en `motivo` (`/resultado`) o en `motivo_rechazo` (`/seguimiento`).
+          example: Valor muy alto
+        requiere_comentario:
+          type: boolean
+          description: '`true` en el motivo que exige `comentario` (`Otro`).'
+
     OpcionCatalogo:
       type: object
       required: [valor, etiqueta]
@@ -6254,14 +6388,20 @@ components:
           type: string
           nullable: true
           description: |
-            Perdida: máximo 100 caracteres (límite de Nexo, si no 400); se guarda en `motivo_rechazo` y se envía a Nexo. Obligatorio
-            en la perdida solo en Cotifly (HU-013.17). Ganada (HU-021.13): no se valida el largo ni se guarda (`motivo_rechazo` queda
-            `"No aplica"`); a Nexo se envía solo si tiene 100 caracteres o menos.
+            Perdida: máximo 100 caracteres (límite de Nexo, si no 400); se guarda en `motivo_rechazo` y se envía a Nexo. Ganada
+            (HU-021.13): no se valida el largo ni se guarda (`motivo_rechazo` queda `"No aplica"`); a Nexo se envía solo si tiene 100
+            caracteres o menos. HU-018.1 (#155): en una perdida (también la perdida solo en Cotifly de HU-013.17 y la pendiente de
+            sincronizar de HU-033) es **obligatorio** y debe ser uno de `GET /web/motivos-perdida` (sin distinguir mayúsculas); si no,
+            400 `MOTIVO_NO_PERMITIDO`. A Nexo va con la escritura de la lista (su contrato no cambia). Con `Otro`, Cotifly guarda
+            `"Otro: {comentario}"` en `motivo_rechazo` y a Nexo van `motivo = "Otro"` y el `comentario` aparte. Las cotizaciones
+            marcadas antes con un motivo libre o sin motivo no se revalidan.
         comentario:
           type: string
           nullable: true
           maxLength: 500
-          description: Solo se reenvía a Nexo; no se guarda en Cotifly.
+          description: |
+            Se reenvía a Nexo; no se guarda en Cotifly salvo con el motivo `Otro` (HU-018.1, #155), donde es **obligatorio** (400
+            `MOTIVO_NO_PERMITIDO` con `detalle.requiere_comentario = true`) y queda en `motivo_rechazo` como `"Otro: {comentario}"`.
 
     ServicioConexoCosteo:
       type: object

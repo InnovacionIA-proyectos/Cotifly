@@ -147,6 +147,16 @@ services:
       # vacíos no cuentan). Para eximir también Carga Suelta: __0=Contenedor y __1=Carga Suelta. Un valor desconocido no arranca.
       Captura__ClasesSinVehiculoObligatorio__0: ${Captura__ClasesSinVehiculoObligatorio__0:-Contenedor}
       Captura__ClasesSinVehiculoObligatorio__1: ${Captura__ClasesSinVehiculoObligatorio__1:-}
+      # HU-018.1 (#155): motivos de pérdida (GET /web/motivos-perdida). Vacíos = la lista de Nexo (Valor muy alto, Flete fuera de rango de
+      # plaza, Cliente desistió del servicio, Tiempo de respuesta vencido, Otro); la lista configurada la REEMPLAZA. Máximo 100 caracteres por
+      # motivo. MotivoConComentario (vacío = Otro) exige comentario y debe estar en la lista; si no, la API no arranca.
+      Resultado__MotivosPerdida__0: ${Resultado__MotivosPerdida__0:-}
+      Resultado__MotivosPerdida__1: ${Resultado__MotivosPerdida__1:-}
+      Resultado__MotivosPerdida__2: ${Resultado__MotivosPerdida__2:-}
+      Resultado__MotivosPerdida__3: ${Resultado__MotivosPerdida__3:-}
+      Resultado__MotivosPerdida__4: ${Resultado__MotivosPerdida__4:-}
+      Resultado__MotivosPerdida__5: ${Resultado__MotivosPerdida__5:-}
+      Resultado__MotivoConComentario: ${Resultado__MotivoConComentario:-}
       # Polling del costeo en Nexo (HU-005.6/005.8, clsOpcionesCosteoNexo). Encendido en producción; sin Nexo__UrlBase no
       # corre de todos modos. Staging lo trae apagado mientras no se confirme que no comparte dbo_cotifly (DEPLOY.md §2.2).
       CosteoNexo__Habilitado: ${CosteoNexo__Habilitado:-true}

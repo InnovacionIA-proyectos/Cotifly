@@ -232,7 +232,7 @@ public sealed class clsDetalleCotizacionEndpointsTests : IDisposable
                      (_get, $"{Ruta(folio)}/costeo", null),
                      (_get, $"{Ruta(folio)}/solicitud", null),
                      (HttpMethod.Put, $"{Ruta(folio)}/costeo/margen", """{"margen":0.3,"linea_orden":1}"""),
-                     (_post, $"{Ruta(folio)}/resultado", """{"resultado":"perdida","motivo":"Precio"}"""),
+                     (_post, $"{Ruta(folio)}/resultado", """{"resultado":"perdida","motivo":"Valor muy alto"}"""),
                  })
         {
             using var accion = await _api.EnviarAsync(metodo, ruta, gloria.Access, cuerpo, tras.GetProperty("row_version").GetString());

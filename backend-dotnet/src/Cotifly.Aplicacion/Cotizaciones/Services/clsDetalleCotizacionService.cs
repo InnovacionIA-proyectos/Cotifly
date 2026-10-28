@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Cotifly.Aplicacion.Auditoria.Services;
 using Cotifly.Aplicacion.Comun;
 using Cotifly.Aplicacion.Comun.Interfaces;
@@ -12,7 +11,6 @@ using Cotifly.Aplicacion.Margen.Repositories;
 using Cotifly.Aplicacion.Pdf.Services;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
-using Cotifly.Dominio.Identidad;
 using Cotifly.Dominio.Margen;
 using Microsoft.Extensions.Options;
 
@@ -62,38 +60,13 @@ public sealed class clsDetalleCotizacionService(
     /// <summary>Herramienta de la auditoría de las consultas de un gerente a una cotización ajena (<c>EventosHerramienta.herramienta</c>).</summary>
     public const string HerramientaAuditoria = "consultar_detalle_cotizacion";
 
+    /// <summary>La regla de acceso del detalle, compartida con el Excel de la cotización (HU-018.1, #155).</summary>
+    private readonly clsAccesoLecturaCotizacion _acceso = new(usuario, cotizaciones, usuarios, regionales, auditoria);
+
     public async Task<clsResultado<clsDetalleCotizacion>> ObtenerAsync(string folio, CancellationToken cancellationToken = default)
     {
-        if (usuario.UsuarioId is not { } usuarioId)
-        {
-            return new clsErrorDominio(clsCodigosAplicacion.NoAutenticado, "Inicia sesión de nuevo.");
-        }
-
-        if (string.IsNullOrWhiteSpace(folio))
-        {
-            return NoEncontrada();
-        }
-
-        // El dueño primero (la consulta filtra por dueño): un comercial ajeno nunca carga el agregado de otro.
-        var cotizacion = await cotizaciones.ObtenerPorFolioDelUsuarioAsync(folio, usuarioId, cancellationToken);
-        var soloLectura = false;
-        if (cotizacion is null)
-        {
-            if (usuario.Rol is not { } rol || !rol.EsGerencial())
-            {
-                return NoEncontrada();
-            }
-
-            cotizacion = await cotizaciones.ObtenerPorFolioAsync(folio, cancellationToken);
-            if (cotizacion is null || !await PermitidoAlGerenteAsync(usuarioId, rol, folio, cotizacion, cancellationToken))
-            {
-                return NoEncontrada();
-            }
-
-            soloLectura = true;
-        }
-
-        return await DetalleAsync(cotizacion, soloLectura, cancellationToken);
+        var leida = await _acceso.ObtenerAsync(folio, HerramientaAuditoria, cancellationToken);
+        return leida.EsFallo ? leida.Error : await DetalleAsync(leida.Valor.Cotizacion, leida.Valor.SoloLectura, cancellationToken);
     }
 
     private async Task<clsDetalleCotizacion> DetalleAsync(clsCotizacionSolicitud cotizacion, bool soloLectura, CancellationToken cancellationToken)
@@ -180,43 +153,5 @@ public sealed class clsDetalleCotizacionService(
         return lineas.ToDictionary(id => id, id => todas.FirstOrDefault(p => p.Id == id));
     }
 
-    /// <summary>
-    /// ¿El dueño es miembro de la regional efectiva del gerente? La misma regla que el listado regional y el PDF; cualquier error de la
-    /// regional niega (fail-closed). Queda en la auditoría, permitido o no.
-    /// </summary>
-    private async Task<bool> PermitidoAlGerenteAsync(Guid gerenteId, RolInterno rol, string folio, clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken)
-    {
-        var reloj = Stopwatch.StartNew();
-        var (permitido, motivo) = await EsDeSuRegionalAsync(gerenteId, rol, cotizacion, cancellationToken);
-        await auditoria.RegistrarAsync(
-            HerramientaAuditoria,
-            new { folio, usuario_id = gerenteId, rol = clsCodigoEnum.ACodigo(rol) },
-            new { permitido, dueno_id = cotizacion.UsuarioId, motivo },
-            permitido,
-            (int)reloj.ElapsedMilliseconds,
-            null);
-        return permitido;
-    }
-
-    private async Task<(bool Permitido, string? Motivo)> EsDeSuRegionalAsync(Guid gerenteId, RolInterno rol, clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken)
-    {
-        if (cotizacion.UsuarioId is not { } duenoId)
-        {
-            return (false, null);
-        }
-
-        var gerente = await usuarios.ObtenerPorIdAsync(gerenteId, cancellationToken);
-        if (gerente is null)
-        {
-            return (false, null);
-        }
-
-        // HU-037.3 (#211): el director ve las de cualquier regional; el gerente, las de su regional (IClsRegionalUsuario).
-        var miembro = await regionales.PuedeVerDeAsync(gerente, rol, duenoId, cancellationToken);
-        return miembro.EsFallo ? (false, miembro.Error.Codigo) : (miembro.Valor, null);
-    }
-
     private static DateTimeOffset? Utc(DateTimeOffset? fecha) => fecha?.ToUniversalTime();
-
-    private static clsErrorDominio NoEncontrada() => new(clsCodigosError.CotizacionNoEncontrada, "Cotización no encontrada o no es tuya.");
 }

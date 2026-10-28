@@ -22,9 +22,9 @@ Característica: Consola web del comercial
 
   Escenario: Marcar una cotización como perdida devuelve su resumen actualizado
     Dado que "ana" tiene la cotización web "A1" del cliente "900111222" con su PDF
-    Cuando "ana" marca la cotización "A1" como ganada "false" con el motivo "Precio alto"
+    Cuando "ana" marca la cotización "A1" como ganada "false" con el motivo "Valor muy alto"
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
-    Y la respuesta trae ganada "false" y motivo_rechazo "Precio alto"
+    Y la respuesta trae ganada "false" y motivo_rechazo "Valor muy alto"
 
   # HU-021.13 (propuesta de refactor de BD §2.1): ganada no deja motivo_rechazo en null, lo deja en "No aplica".
   Escenario: Marcar una cotización como ganada deja el motivo de rechazo en "No aplica"
