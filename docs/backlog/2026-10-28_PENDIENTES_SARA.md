@@ -21,3 +21,9 @@ corrido a mano varias veces desde una máquina de desarrollo, con datos reales (
 **Qué falta hacer:** pedirle a un DBA/admin que (a) copie los 2 archivos al servidor en una carpeta
 (ej. `C:\Jobs\SapMargenSap\`) y (b) corra `instalar_sql_agent_job_margen_sap.sql` (ajustando la ruta
 si usa otra carpeta) — o que me dé esos dos permisos para hacerlo yo.
+
+**2026-10-28, actualización:** ya tengo a alguien que puede hacerlo (RDP + permisos). **Pendiente:
+enviarle** `sincronizar_margen_sap.ps1`, `.env.example` (que él mismo llene con las claves reales ya
+en el servidor — no pasarle las claves por chat) y `db/scripts/operacion/instalar_sql_agent_job_margen_sap.sql`,
+más las instrucciones paso a paso (carpeta `C:\Jobs\SapMargenSap\`, probar a mano primero, luego
+correr el script de instalación, verificar con `sp_start_job` + `sp_help_jobhistory`).
