@@ -521,6 +521,7 @@ Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA
 | `CORREO_PDF_NO_ENCONTRADO` | 400 en `/enviar` | La cotización no tiene PDF | Deshabilitar "Enviar" si `pdf_url` es null | En QA |
 | `CORREO_ENVIO_FALLIDO` | 400 en `/enviar` y en `.../reintentar` | MailSender rechazó el correo o no respondió (HU-033) | Mostrar `mensaje`; en `/enviar`, si no respondió a tiempo, el correo pudo quedar encolado: la cotización **queda enviada**, durante 5 minutos reenviar a los mismos destinatarios responde `CORREO_DUPLICADO` y la fila del historial queda `fallido` con un `error` que empieza por "Resultado incierto:" (revisar el buzón antes de enviar de nuevo) | En QA |
 | `CORREO_NO_REINTENTABLE` | 409 en `.../correos/{id}/reintentar` | HU-033: el envío no está fallido, ya se está reintentando (doble clic), nunca llegó a MailSender o MailSender ya no lo conoce | Ofrecer enviar de nuevo | Nuevo (#199) |
+| `CORREO_DEMASIADOS_DESTINATARIOS` | 400 en `/enviar` y en la vista previa | #228: más destinatarios entre `para` y `cc` que el tope (10 por defecto, configurable con `Correo__MaximoDestinatarios`; la copia oculta no cuenta). `detalle = {maximo, recibidos}` | "Puedes enviar a máximo {maximo} destinatarios" (leer `detalle.maximo`, no fijarlo) | Nuevo (#228) |
 | `CORREO_DESHABILITADO` | 503 en `/enviar` | El correo está apagado en el servidor (`Correo:Habilitado=false`, por defecto) | "El envío de correo no está habilitado en este ambiente" | En QA |
 | `CORREO_INVALIDO` | 400 `ErrorWeb` (sin código) en `/enviar` | Destinatarios inválidos o vacíos, asunto de más de 300 o cuerpo de más de 5000 | Validar en el formulario antes de enviar | En QA |
 | `FOLIO_DUPLICADO` | chat | Colisión de folio | "Reintenta" | En QA |
@@ -830,13 +831,14 @@ gerente (sección 5.6). Si la fuente de la regional está caída, el listado res
 **`POST /web/cotizaciones/{folio}/enviar`**
 
 - Request (`EnvioWeb`): `para` (string[], al menos 1, correos de hasta 320), `cc` (string[], por defecto []), `asunto` (string o null, hasta 300; por defecto "Cotización {folio} — Botero Soto") y `cuerpo` (string o null, hasta 5000).
+- #228: cada entrada de `para` y `cc` es UNA dirección simple (sin comas, punto y coma, espacios, comillas, ángulos ni caracteres de control) y el `asunto` va en una sola línea. Entre `para` y `cc` juntos caben como máximo **10 destinatarios por defecto** (configurable en el servidor con `Correo__MaximoDestinatarios`; la copia oculta al comercial no cuenta): limitar los chips del formulario a 10 y, tras un 400 `CORREO_DEMASIADOS_DESTINATARIOS`, a `detalle.maximo`. La vista previa valida lo mismo.
 
 ```json
 { "para": ["compras@cliente.com"], "cc": ["gerente@boterosoto.com.co"], "asunto": null, "cuerpo": null }
 ```
 
 - 200 `{"enviado": true, "message_id": "<id en MailSender>", "correo_id": "<id del envío>", "estado": "encolado", "redirigido_a": null}`: decir "Correo en camino".
-- Errores: 400 `ErrorWeb` (destinatarios, asunto o cuerpo inválidos); 400 `ErrorNegocio` (`CORREO_DUPLICADO`, `CORREO_PDF_NO_ENCONTRADO`, `CORREO_ENVIO_FALLIDO` si MailSender lo rechazó, no está disponible o no respondió; si no respondió a tiempo, el correo pudo quedar encolado: la cotización **queda enviada**, durante 5 minutos reenviar a los mismos destinatarios responde `CORREO_DUPLICADO` y la fila del historial queda `fallido` con un `error` que empieza por "Resultado incierto:" (revisar el buzón antes de enviar de nuevo)); 404; 409 `CONFLICTO_CONCURRENCIA`; 503 `CORREO_DESHABILITADO`.
+- Errores: 400 `ErrorWeb` (destinatarios, asunto o cuerpo inválidos); 400 `ErrorNegocio` (`CORREO_DUPLICADO`, `CORREO_PDF_NO_ENCONTRADO`, `CORREO_DEMASIADOS_DESTINATARIOS` con `detalle = {maximo, recibidos}`, `CORREO_ENVIO_FALLIDO` si MailSender lo rechazó, no está disponible o no respondió; si no respondió a tiempo, el correo pudo quedar encolado: la cotización **queda enviada**, durante 5 minutos reenviar a los mismos destinatarios responde `CORREO_DUPLICADO` y la fila del historial queda `fallido` con un `error` que empieza por "Resultado incierto:" (revisar el buzón antes de enviar de nuevo)); 404; 409 `CONFLICTO_CONCURRENCIA`; 503 `CORREO_DESHABILITADO`.
 - El remitente es el comercial del token (también en copia oculta). Tras un 200, `estado_envio` pasa a `enviada` y luego a `reenviada`. Refrescar la fila con `GET /web/mis-cotizaciones` (el envío no devuelve la fila).
 
 **`GET /web/cotizaciones/{folio}/correos`** (HU-033)

@@ -264,6 +264,30 @@ public sealed class clsCosteoEndpointsTests : IDisposable
             .Should().BeEquivalentTo([("ciudad_devolucion_contenedor", "CAMPO_NO_APLICA"), ("peso_kg", "CAMPO_NO_APLICA")]);
     }
 
+    /// <summary>
+    /// DEF-1027B-3 (#228, E2E real 2026-10-27B): el CAMPO_NO_APLICA del levante nombraba el campo heredado <c>valor_aprovisionamiento</c>
+    /// aunque el cliente envió <c>valor_levante_contenedor</c>: el front no podía marcar el campo. Ahora nombra el del contrato.
+    /// </summary>
+    [Fact]
+    public async Task DEF1027B3_ElValorDelLevanteSinLevanteDistintoNombraValorLevanteContenedor()
+    {
+        var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var cuerpo = Formulario().Replace("\"levante_contenedor_diferente\":false", "\"levante_contenedor_diferente\":false,\"valor_levante_contenedor\":500000",
+            StringComparison.Ordinal);
+        cuerpo.Should().Contain("valor_levante_contenedor");
+
+        using var respuesta = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, cuerpo);
+
+        var json = await VerificarContratoAsync(respuesta, "/web/solicitudes-costeo", _post, HttpStatusCode.BadRequest);
+        var error = json.GetProperty("error");
+        error.GetProperty("codigo").GetString().Should().Be("SOLICITUD_COSTEO_INVALIDA");
+        var detalle = error.GetProperty("detalle").GetProperty("errores").EnumerateArray().Should().ContainSingle().Subject;
+        detalle.GetProperty("campo").GetString().Should().Be("valor_levante_contenedor");
+        detalle.GetProperty("codigo").GetString().Should().Be("CAMPO_NO_APLICA");
+        detalle.GetProperty("mensaje").GetString().Should().Contain("'valor_levante_contenedor'").And.NotContain("'valor_aprovisionamiento' solo");
+        _nexo.Peticiones.Should().NotContain(p => p.Metodo == _post);
+    }
+
     [Fact]
     public async Task SinNexoConfiguradoUnMunicipioSinIdNoSePuedeResolverYNoSeGuarda()
     {

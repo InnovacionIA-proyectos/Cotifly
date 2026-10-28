@@ -1,4 +1,5 @@
 using Cotifly.Aplicacion.Correo.DTOs;
+using Cotifly.Dominio.Correo;
 
 namespace Cotifly.Aplicacion.Correo.Services;
 
@@ -57,7 +58,8 @@ public static class clsProteccionCorreo
     {
         ArgumentNullException.ThrowIfNull(opciones);
         var buzon = opciones.BuzonPruebas?.Trim();
-        return !string.IsNullOrEmpty(buzon) && System.Net.Mail.MailAddress.TryCreate(buzon, out var direccion)
+        // Validación #228: también el formato estricto que el transporte exige al To; si no, todo correo redirigido se bloquearía allí.
+        return !string.IsNullOrEmpty(buzon) && clsCabecerasCorreo.EsDireccionValida(buzon) && System.Net.Mail.MailAddress.TryCreate(buzon, out var direccion)
                && string.Equals(direccion.Address, buzon, StringComparison.OrdinalIgnoreCase)
             ? buzon
             : null;

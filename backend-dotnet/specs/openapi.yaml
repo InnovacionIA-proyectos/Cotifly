@@ -519,6 +519,24 @@ paths:
         Concurrencia (HU-013.2, ADR-018 §12): antes de que el correo salga, la cotización queda marcada como enviada
         con control de versión; si un ajuste (margen, conexos) la cambió entretanto, o su PDF quedó desactualizado,
         responde 409 `CONFLICTO_CONCURRENCIA` sin enviar nada. Si el transporte falla, la marca se deshace.
+
+        Seguridad de las cabeceras (DEF-1027B-2, #228, ADR-023): el asunto y las direcciones viajan como cabeceras del correo,
+        así que se validan TAL COMO LLEGAN (antes de recortar) y nunca se sanean en silencio:
+        - un `asunto` con caracteres de control (CR, LF, NUL, tabulador, U+0085, U+2028, U+2029 y los demás de la categoría
+          Unicode `Cc`) es 400 `CORREO_INVALIDO` (`ErrorWeb`), también si solo están al final;
+        - cada dirección de `para` y `cc` es UNA dirección simple `parte-local@dominio`: sin caracteres de control, sin
+          comas, punto y coma, espacios, comillas, ángulos ni comentarios; parte local de hasta 64 caracteres (letras,
+          dígitos y los símbolos de un `atom` del RFC 5322, con puntos que no van al principio, al final ni seguidos),
+          dominio de hasta 255 con al menos dos etiquetas de hasta 63 (letras, dígitos y guiones, sin literales IP), y hasta
+          320 en total. Si no, 400 `CORREO_INVALIDO`;
+        - tope (#228): hasta **10 destinatarios por defecto entre `para` y `cc`**, configurable con
+          `Correo__MaximoDestinatarios` (1 a 100; la copia oculta al comercial no cuenta; MailSender no tiene tope propio).
+          Pasado el tope, 400 `CORREO_DEMASIADOS_DESTINATARIOS` (`ErrorNegocio`) con `detalle = {maximo, recibidos}`, donde
+          `maximo` es el tope configurado: el frontend lo lee de ahí y no lo fija;
+        - el transporte lo vuelve a revisar antes del POST a MailSender (defensa en profundidad): si algo se cuela, el correo
+          no sale y responde 400 `CORREO_ENVIO_FALLIDO` (fila `fallido` en el historial).
+        El orden es: dueño (404), correo deshabilitado (503), asunto con controles, destinatarios con controles, tope,
+        formato de las direcciones, largos. Nada de esto llama a MailSender ni cambia el estado de envío.
       security:
         - bearer: []
       parameters:
@@ -538,16 +556,34 @@ paths:
                 $ref: '#/components/schemas/RespuestaEnvio'
         '400':
           description: |
-            Error de negocio del envío: duplicado (`CORREO_DUPLICADO`), sin PDF (`CORREO_PDF_NO_ENCONTRADO`), MailSender lo
+            Error de negocio del envío: duplicado (`CORREO_DUPLICADO`), sin PDF (`CORREO_PDF_NO_ENCONTRADO`), más
+            destinatarios entre `para` y `cc` que el tope (10 por defecto, configurable) (`CORREO_DEMASIADOS_DESTINATARIOS`, #228, con `detalle.maximo` y
+            `detalle.recibidos`), MailSender lo
             rechazó (400/413/422), no está disponible o no respondió a tiempo (`CORREO_ENVIO_FALLIDO`; con tiempo agotado el
             correo pudo quedar encolado: la cotización queda enviada y el mismo envío cuenta 5 minutos para `CORREO_DUPLICADO`;
-            también si el ambiente redirige sin buzón de pruebas: no sale nada), o validación (`ErrorWeb`)
+            también si el ambiente redirige sin buzón de pruebas, o si el transporte encuentra una cabecera inválida: no sale
+            nada), o validación (`ErrorWeb`, código interno `CORREO_INVALIDO`: sin `para`, una dirección mal formada o con
+            caracteres de control, un asunto con caracteres de control, asunto o cuerpo demasiado largos)
           content:
             application/json:
               schema:
                 oneOf:
                   - $ref: '#/components/schemas/ErrorNegocio'
                   - $ref: '#/components/schemas/ErrorWeb'
+              examples:
+                asunto_con_saltos:
+                  summary: DEF-1027B-2 (#228)
+                  value:
+                    error: "El asunto no puede tener saltos de línea ni otros caracteres de control (va como cabecera del correo): escríbelo en una sola línea."
+                demasiados_destinatarios:
+                  summary: Tope de destinatarios, 10 por defecto (#228)
+                  value:
+                    error:
+                      codigo: CORREO_DEMASIADOS_DESTINATARIOS
+                      mensaje: "El correo admite hasta 10 destinatarios entre 'para' y 'cc' (llegaron 60)."
+                      detalle:
+                        maximo: 10
+                        recibidos: 60
         '401':
           $ref: '#/components/responses/SesionExpirada'
         '404':
@@ -647,7 +683,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorWeb'
         '409':
-          description: '`CORREO_NO_REINTENTABLE`: el envío no está `fallido`, ya se está reintentando, nunca llegó a MailSender o MailSender ya no lo conoce'
+          description: '`CORREO_NO_REINTENTABLE`: el envío no está `fallido`, ya se está reintentando, nunca llegó a MailSender, MailSender ya no lo conoce o (validación de #228) su asunto o un destinatario guardado tiene caracteres de control (un correo anterior a DEF-1027B-2: MailSender lo reenviaría con las cabeceras inyectadas; el historial lo muestra con `reintentable = false`)'
           content:
             application/json:
               schema:
@@ -1935,7 +1971,7 @@ paths:
             posiciones, o la regla de peso de Nexo: `detalle.motivo` = `PESO_REQUERIDO` si la línea no trae peso > 0 ni
             posiciones con peso, `PESO_INCONSISTENTE` si el peso difiere más del 1 % de `sum(cantidad × peso_kg)`; HU-013.10:
             un catálogo que no es código de catálogo, `clase_contenedor` sin `clase_viaje = Contenedor` o sin ella con
-            `Contenedor`, `valor_aprovisionamiento` sin una `ciudad_levante_contenedor` distinta del origen; el mensaje nombra
+            `Contenedor`, `valor_levante_contenedor` (ex `valor_aprovisionamiento`; el error lo nombra así desde #228) sin una `ciudad_levante_contenedor` distinta del origen; el mensaje nombra
             el campo), `MARGEN_LINEA_DESCONOCIDA` (la línea no existe o está inactiva) o `FOLIO_CONSECUTIVO_AGOTADO`.
             Con `moneda = USD` (HU-013.7): `TRM_NO_DISPONIBLE` si ninguna fuente de la TRM respondió; `moneda` con otro valor
             es `SOLICITUD_COSTEO_INVALIDA` (el mensaje nombra el campo `moneda`).
@@ -2227,6 +2263,16 @@ paths:
         - Tampoco mientras Nexo tiene un servicio conexo que Cotifly todavía no leyó (`motivo_estado_costeo` de conexos pendientes):
           409 `COTIZACION_NO_FINALIZABLE` con `detalle.motivo = conexos_pendientes_de_leer`; se finaliza después de la siguiente
           lectura del costeo, que trae el conexo con su precio.
+        - #228: tampoco mientras un servicio conexo de una ruta que cuenta (no `rechazada`) todavía no está en la cotización de
+          Nexo, es decir con `servicios_conexos[].estado_nexo = pendiente` (el envío diferido no lo ha mandado o se reintentará):
+          409 `COTIZACION_NO_FINALIZABLE` con `detalle.motivo = conexos_pendientes_en_nexo` y `detalle.conexos_pendientes` (cuántos);
+          se finaliza cuando el polling lo deja `enviado`. `incierto` y `fallido_definitivo` no bloquean (ya no se reintentan; el
+          costeo los muestra con `aviso_conexos_nexo` para revisarlos en Nexo). Un conexo agregado con
+          `POST .../costeo/servicios-conexos` queda `enviado` en el momento (Nexo lo creó y la relectura lo confirma). Con
+          alguno `pendiente`, finalizar RELEE la cotización de Nexo y deja `enviado` lo que Nexo ya muestra antes de decidir (un
+          registro que quedó `pendiente` aunque Nexo tenga el conexo, p. ej. agregado antes de #228, no bloquea para siempre una
+          entregada); si Nexo no responde, cuenta el registro y responde el 409. Si hay
+          conexos pendientes de leer, ese motivo va primero.
         - Re-finalizar una ya finalizada es idempotente: 200 sin cambios (mismo `finalizada_at`, mismo `ETag`).
         - `If-Match` que no es la versión vigente: 409 `CONFLICTO_CONCURRENCIA`, sin cambios (también si ya estaba finalizada). Si
           el polling cambió el precio entre la lectura y el clic, la versión ya no coincide: el comercial recarga y nunca finaliza un
@@ -2256,7 +2302,7 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`COTIZACION_NO_FINALIZABLE` (`estado_costeo` distinto de `autocosteo` y `entregada`; `detalle.estado_costeo`) o `CONFLICTO_CONCURRENCIA`; sin cambios.'
+          description: '`COTIZACION_NO_FINALIZABLE` (`estado_costeo` distinto de `autocosteo` y `entregada`, con `detalle.estado_costeo`; o `detalle.motivo` = `conexos_pendientes_de_leer` o, #228, `conexos_pendientes_en_nexo` con `detalle.conexos_pendientes`) o `CONFLICTO_CONCURRENCIA`; sin cambios.'
           content:
             application/json:
               schema:
@@ -3239,7 +3285,7 @@ paths:
         Desde HU-013 (ADR-018 §11, #98) ya no es "una sola vez": mientras la cotización no se haya enviado ni tenga resultado,
         los ajustes (margen, conexos, textos, re-solicitar en el mismo folio) invalidan el PDF (`pdf_desactualizado = true`) y
         se regenera aquí (el anterior queda en el historial). Con el PDF vigente responde `PDF_YA_GENERADO`; ya enviada o con
-        resultado, `PDF_YA_ENVIADO` (versión `-vN`).
+        resultado, `PDF_YA_ENVIADO` (versión `-vN`, con la llamada en `detalle` desde #228).
 
         **Por ruta (HU-021.9, #136).** Con una ruta, el PDF sale de la ruta y sus camiones: origen, destino, los camiones
         agrupados ("2 × 3S3 - FURGON (20000 KG)"; un camión sin vehículo es "Vehículo por definir" y uno descartado en Nexo no
@@ -3294,7 +3340,7 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`SIN_RUTAS_COTIZABLES` (HU-028.1, #183, decisión D1: la Mesa de Costeo rechazó todas las rutas), `COSTEO_NO_LISTO` (alguna ruta NO rechazada sin precio; las rechazadas salen "Sin costeo", sin precio ni motivo, y no suman; con la cotización finalizada y una ruta rechazada después, el total congelado ya no cuadra: `detalle` trae la versión nueva, `accion = nueva_version`), `PDF_YA_GENERADO` (PDF vigente), `PDF_YA_ENVIADO`, `COTIZACION_NO_FINALIZADA` (HU-036.3, #207: el PDF sale con el precio que aceptó el comercial; `detalle` con la llamada a `.../finalizar`) o `CONFLICTO_CONCURRENCIA`'
+          description: '`SIN_RUTAS_COTIZABLES` (HU-028.1, #183, decisión D1: la Mesa de Costeo rechazó todas las rutas), `COSTEO_NO_LISTO` (alguna ruta NO rechazada sin precio; las rechazadas salen "Sin costeo", sin precio ni motivo, y no suman; con la cotización finalizada y una ruta rechazada después, el total congelado ya no cuadra: `detalle` trae la versión nueva, `accion = nueva_version`), `PDF_YA_GENERADO` (PDF vigente), `PDF_YA_ENVIADO` (ya enviada o con resultado; DEF-1027B-1, #228: `detalle` con la llamada para crear la versión nueva, igual que margen y conexos: `accion = nueva_version`, `metodo = POST`, `endpoint = /web/cotizaciones/{folio}/costeo/re-solicitar` y `cuerpo = {motivo: "Generar el PDF después del envío", nueva_version: true}`), `COTIZACION_NO_FINALIZADA` (HU-036.3, #207: el PDF sale con el precio que aceptó el comercial; `detalle` con la llamada a `.../finalizar`) o `CONFLICTO_CONCURRENCIA`'
           content:
             application/json:
               schema:
@@ -3833,6 +3879,9 @@ paths:
         cuerpo en HTML tal como lo recibe el cliente (`cuerpo_html`), el resumen sin desglose (`resumen`: precio por ruta y
         total), la copia oculta al comercial (`copia_oculta`) y, en un ambiente de pruebas, `entorno_pruebas = true` con el
         buzón (`redirigido_a`) y el texto del aviso (`aviso`) para mostrarlo tal cual.
+        #228: lo que trae el borrador se valida igual que en `POST .../enviar` (asunto y direcciones sin caracteres de
+        control, formato estricto de cada dirección, el tope de destinatarios entre `para` y `cc`, 10 por defecto, largos), después de
+        comprobar el dueño. Sin `para` se precargan los destinatarios previos (no se exige `para`).
       security:
         - bearer: []
       parameters:
@@ -3850,6 +3899,17 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VistaPreviaCorreo'
+        '400':
+          description: |
+            #228: el borrador no pasaría el envío. `ErrorWeb` (`CORREO_INVALIDO`: asunto o dirección con caracteres de control,
+            dirección mal formada, asunto o cuerpo demasiado largos) o `ErrorNegocio` `CORREO_DEMASIADOS_DESTINATARIOS` (más
+            destinatarios entre `para` y `cc` que el tope, 10 por defecto y configurable, con `detalle.maximo` y `detalle.recibidos`).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorNegocio'
+                  - $ref: '#/components/schemas/ErrorWeb'
         '401':
           $ref: '#/components/responses/SesionExpirada'
         '404':
@@ -4334,7 +4394,8 @@ components:
                 límite de 20 del NIT ya impide; el PDF no lo responde).
                 HU-036.2 (#206): `COTIZACION_NO_FINALIZABLE` (409 en `POST .../finalizar`: `estado_costeo` distinto de `autocosteo` y
                 `entregada`, sin el costeo de Nexo listo no hay precio que aceptar; `detalle.estado_costeo` trae el estado actual; o
-                con un conexo de Nexo pendiente de leer, `detalle.motivo = conexos_pendientes_de_leer`).
+                con un conexo de Nexo pendiente de leer, `detalle.motivo = conexos_pendientes_de_leer`; #228: o con conexos que todavía
+                no están en Nexo, `estado_nexo = pendiente`, `detalle.motivo = conexos_pendientes_en_nexo` y `detalle.conexos_pendientes`).
                 HU-036.3 (#207): `COTIZACION_NO_FINALIZADA` (409: "Finaliza la cotización antes de..."; `POST .../costeo/pdf`,
                 `POST .../enviar`, `POST .../costeo/textos/redactar`, `PUT .../costeo/textos` y `POST .../resultado` exigen la
                 cotización finalizada; `detalle` trae `accion = finalizar`, `metodo = POST` y `endpoint` = `.../finalizar`. No aplica a
@@ -4351,6 +4412,7 @@ components:
                 - CONFIRMACION_REQUERIDA
                 - COTIZACION_NO_ENCONTRADA
                 - CORREO_DUPLICADO
+                - CORREO_DEMASIADOS_DESTINATARIOS
                 - CORREO_PDF_NO_ENCONTRADO
                 - CORREO_ENVIO_FALLIDO
                 - AJUSTE_COTIZACION_INVALIDA
@@ -5317,16 +5379,22 @@ components:
     EnvioWeb:
       type: object
       required: [para]
+      description: |
+        #228: hasta 10 destinatarios por defecto entre `para` y `cc` juntos, configurable con `Correo__MaximoDestinatarios`
+        (`CORREO_DEMASIADOS_DESTINATARIOS`, `detalle.maximo` trae el tope vigente); cada dirección es UNA
+        dirección simple sin caracteres de control (ver `POST /web/cotizaciones/{folio}/enviar`).
       properties:
         para:
           type: array
           minItems: 1
+          maxItems: 20
           items:
             type: string
             format: email
             maxLength: 320
         cc:
           type: array
+          maxItems: 20
           items:
             type: string
             format: email
@@ -5336,7 +5404,9 @@ components:
           type: string
           nullable: true
           maxLength: 300
-          description: Por defecto "Cotización {folio} — Botero Soto".
+          description: |
+            Por defecto "Cotización {folio} — Botero Soto". DEF-1027B-2 (#228): una sola línea, sin caracteres de control
+            (CR, LF, NUL, tabulador, U+0085, U+2028, U+2029...): si no, 400 `CORREO_INVALIDO`.
         cuerpo:
           type: string
           nullable: true
@@ -7151,7 +7221,7 @@ components:
           maximum: 9999999999999.99
           description: |
             Valor de UN levante del contenedor en la ruta (ex `valor_aprovisionamiento`); se copia a cada camión (decisión 4). Solo
-            con una ciudad de levante distinta del origen (G3): sin ella es `CAMPO_NO_APLICA` en `valor_aprovisionamiento`.
+            con una ciudad de levante distinta del origen (G3): sin ella es `CAMPO_NO_APLICA` en `valor_levante_contenedor` (DEF-1027B-3, #228; antes nombraba `valor_aprovisionamiento`).
         valor_mercancia:
           type: number
           nullable: true
@@ -7714,7 +7784,7 @@ components:
           maximum: 9999999999999.99
           description: |
             Valor de UN levante del contenedor en la ruta (ex `valor_aprovisionamiento`); se copia a cada camión (decisión 4). Solo
-            con una ciudad de levante distinta del origen (G3): sin ella es `CAMPO_NO_APLICA` en `valor_aprovisionamiento`.
+            con una ciudad de levante distinta del origen (G3): sin ella es `CAMPO_NO_APLICA` en `valor_levante_contenedor` (DEF-1027B-3, #228; antes nombraba `valor_aprovisionamiento`).
         valor_mercancia:
           type: number
           nullable: true
@@ -8217,7 +8287,7 @@ components:
           provisional `CNT20.FT`, `CNT20.OP`, `CNT40.FT` y `CNT40.OP`). Un texto libre del pliego (`Tractomula`, `3s3`) es
           `CODIGO_NO_CATALOGO` en esa fila: el frontend mapea los valores del pliego a los códigos de `GET /web/catalogos-flete`.
         - **Condicionales (G3).** `clase_contenedor` es obligatoria con `clase_viaje = Contenedor` (`CAMPO_REQUERIDO`) y solo se
-          admite con ella (`CAMPO_NO_APLICA`); `valor_aprovisionamiento` solo con una `ciudad_levante_contenedor` distinta del
+          admite con ella (`CAMPO_NO_APLICA`); `valor_levante_contenedor` (ex `valor_aprovisionamiento`; el error lo nombra así desde #228) solo con una `ciudad_levante_contenedor` distinta del
           origen (`CAMPO_NO_APLICA`).
         - **Municipios (G6).** Si la fila no trae `origen_municipio_id`/`destino_municipio_id`, Cotifly resuelve el texto de
           `origen`/`destino` en el catálogo de `GET /web/municipios` con la regla determinista de HU-005.13 (sin tildes ni

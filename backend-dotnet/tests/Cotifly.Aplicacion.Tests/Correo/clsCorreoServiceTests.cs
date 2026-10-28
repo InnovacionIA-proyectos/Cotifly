@@ -172,6 +172,8 @@ public sealed class clsCorreoServiceTests : IDisposable
     [InlineData("")]
     [InlineData("sin-arroba")]
     [InlineData("qa@pruebas.local,cliente@empresa.com")]
+    [InlineData("\"qa pruebas\"@pruebas.local")] // Validación #228: MailAddress lo acepta; el transporte lo bloquearía
+    [InlineData("qa@localhost")]
     public async Task AuditoriaSiHayQueRedirigirYNoHayBuzonValidoNoSaleNada(string? buzon)
     {
         // Falla cerrado: antes, sin buzón el mensaje salía SIN redirigir a los destinatarios reales.
@@ -524,6 +526,117 @@ public sealed class clsCorreoServiceTests : IDisposable
         (await Servicio().EnviarAsync(Entrada(asunto: new string('a', 301)), Ct)).Error.Codigo.Should().Be(clsCorreo.CodigoError);
         (await Servicio().EnviarAsync(Entrada(cuerpo: new string('a', 5001)), Ct)).Error.Codigo.Should().Be(clsCorreo.CodigoError);
     }
+
+    // DEF-1027B-2 (#228, E2E real del 2026-10-27B): "Hola\r\nBcc: intruso@ejemplo.invalid" llegó a MailSender y al relay SMTP. Un asunto
+    // con caracteres de control se RECHAZA (no se sanea en silencio), también al final (antes, el Trim lo limpiaba).
+    [Theory]
+    [InlineData("Hola\r\nBcc: intruso@ejemplo.invalid")]
+    [InlineData("Hola\nBcc: intruso@ejemplo.invalid")]
+    [InlineData("Hola\rmundo")]
+    [InlineData("Hola\0mundo")]
+    [InlineData("Hola\tmundo")]
+    [InlineData("Cotización PCN-C1\r\n")]
+    public async Task DEF1027B2_UnAsuntoConCaracteresDeControlSeRechazaSinEnviar(string asunto)
+    {
+        var resultado = await Servicio().EnviarAsync(Entrada(asunto: asunto), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCorreo.CodigoError);
+        resultado.Error.Mensaje.Should().Be(clsCorreoService.MensajeAsuntoConControl);
+        await NoSeEnvioNadaAsync();
+        _cotizacion.EstadoEnvio.Should().NotBe(EstadoEnvio.Enviada);
+    }
+
+    [Theory]
+    [InlineData(0x0085)]
+    [InlineData(0x2028)]
+    [InlineData(0x2029)]
+    [InlineData(0x007F)]
+    public async Task DEF1027B2_TambienSeRechazanLosSaltosUnicodeYLosDemasControles(int caracter)
+    {
+        var resultado = await Servicio().EnviarAsync(Entrada(asunto: "Hola" + (char)caracter + "Bcc: intruso@ejemplo.invalid"), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCorreo.CodigoError);
+        await NoSeEnvioNadaAsync();
+    }
+
+    [Theory]
+    [InlineData(new[] { "cliente@empresa.com\r\nBcc: intruso@ejemplo.invalid" }, null)]
+    [InlineData(new[] { "cliente@empresa.com\r\n" }, null)]
+    [InlineData(new[] { "\r\n" }, null)]
+    [InlineData(new[] { "cliente@empresa.com" }, "jefe@empresa.com\nBcc: intruso@ejemplo.invalid")]
+    [InlineData(new[] { "cliente@empresa.com" }, "jefe@empresa.com\0")]
+    [InlineData(new[] { "cliente@empresa.com" }, "jefe@localhost")]
+    [InlineData(new[] { "cliente@empresa.com, intruso@ejemplo.invalid" }, null)]
+    public async Task DEF1027B2_UnaDireccionConControlesOMalFormadaSeRechazaSinEnviar(string[] para, string? cc)
+    {
+        var resultado = await Servicio().EnviarAsync(Entrada(para: para, cc: cc is null ? null : [cc]), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCorreo.CodigoError);
+        await NoSeEnvioNadaAsync();
+    }
+
+    // #228: MailSender no limita los destinatarios (EmailRequestValidator solo valida el formato): Cotifly fija el tope entre para y cc,
+    // 10 por defecto y configurable con Correo__MaximoDestinatarios (decisión del 2026-10-27).
+    [Fact]
+    public void Tope228_ElTopePorDefectoEs10()
+    {
+        new clsOpcionesCorreo().MaximoDestinatarios.Should().Be(10);
+        clsOpcionesCorreo.MaximoDestinatariosPorDefecto.Should().Be(10);
+    }
+
+    [Theory]
+    [InlineData(11, 0)]
+    [InlineData(6, 5)]
+    [InlineData(60, 0)]
+    public async Task Tope228_MasDe10DestinatariosEntreParaYCcSeRechazaConDetalle(int nPara, int nCc)
+    {
+        var resultado = await Servicio().EnviarAsync(Entrada(para: Direcciones("cliente", nPara), cc: Direcciones("copia", nCc)), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.CorreoDemasiadosDestinatarios);
+        resultado.Error.Datos!["maximo"].Should().Be(10);
+        resultado.Error.Datos["recibidos"].Should().Be(nPara + nCc);
+        await NoSeEnvioNadaAsync();
+    }
+
+    [Fact]
+    public async Task Tope228_Con10DestinatariosEntreParaYCcSiSeEnviaYLaCopiaOcultaNoCuenta()
+    {
+        var resultado = await Servicio().EnviarAsync(Entrada(para: Direcciones("cliente", 6), cc: Direcciones("copia", 4)), Ct);
+
+        resultado.Valor.Enviado.Should().BeTrue();
+        _enviado!.Para.Should().HaveCount(6);
+        _enviado.Cc.Should().HaveCount(4);
+        _enviado.Bcc.Should().ContainSingle("la copia oculta al comercial va aparte y no cuenta en el tope");
+    }
+
+    [Theory]
+    [InlineData(3, 4, false)]
+    [InlineData(3, 3, true)]
+    [InlineData(25, 25, true)]
+    [InlineData(25, 26, false)]
+    public async Task Tope228_ElTopeConfiguradoMandaYSaleEnElDetalle(int maximo, int recibidos, bool seEnvia)
+    {
+        _opciones.MaximoDestinatarios = maximo;
+
+        var resultado = await Servicio().EnviarAsync(Entrada(para: Direcciones("cliente", recibidos)), Ct);
+
+        if (seEnvia)
+        {
+            resultado.Valor.Enviado.Should().BeTrue();
+            _enviado!.Para.Should().HaveCount(recibidos);
+        }
+        else
+        {
+            resultado.Error.Codigo.Should().Be(clsCodigosError.CorreoDemasiadosDestinatarios);
+            resultado.Error.Datos!["maximo"].Should().Be(maximo);
+            resultado.Error.Datos["recibidos"].Should().Be(recibidos);
+            resultado.Error.Mensaje.Should().Contain($"hasta {maximo} destinatarios");
+            await NoSeEnvioNadaAsync();
+        }
+    }
+
+    private static string[] Direcciones(string prefijo, int cantidad) =>
+        [.. Enumerable.Range(1, cantidad).Select(i => $"{prefijo}{i}@empresa.com")];
 
     private async Task NoSeEnvioNadaAsync()
     {

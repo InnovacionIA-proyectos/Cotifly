@@ -78,6 +78,10 @@ public sealed class clsCandadosFinalizadaEndpointsTests : IDisposable
         using var finalizada = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/enviar", sesion.Access, cuerpo);
         (await VerificarContratoAsync(finalizada, "/web/cotizaciones/{folio}/enviar", _post, HttpStatusCode.OK))
             .GetProperty("estado").GetString().Should().Be("encolado");
+
+        // DEF-1027B-1 (#228, E2E real 2026-10-27B): el 409 PDF_YA_ENVIADO del PDF trae la llamada para la versión nueva en detalle.
+        using var pdfEnviada = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
+        await VersionNuevaAsync(pdfEnviada, "/web/cotizaciones/{folio}/costeo/pdf", _post, folio);
     }
 
     /// <summary>

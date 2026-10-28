@@ -66,8 +66,8 @@ Resumen de los endpoints de uso más frecuente; la lista completa (56) está en 
 | `GET /web/cotizaciones/regional` | gerente_comercial o director | HU-016.1 (#154): cotizaciones de los comerciales de su regional (máx. 100), con la forma de `mis-cotizaciones` y el comercial dueño en cada fila. HU-037.3 (#211): el director ve todas o la de `?regional=`. Ver §8.10.1 |
 | `GET /web/regionales` | gerente_comercial o director | HU-037.3 (#211): regionales del selector (todas para el director, la suya para el gerente). Ver §8.10.1 |
 | `GET /web/cotizaciones/{folio}` | dueño, gerente de su regional o director | HU-027.1 (#179): detalle completo en una llamada (cabecera, costeo por ruta, rutas capturadas y totales) con el `ETag`; el gerente solo consulta. Ver §8.14 |
-| `POST /web/cotizaciones/{folio}/enviar` | ambos | Envía la cotización por correo con el PDF. HU-033 (#199): por MailSender; el 200 es "aceptado" (`estado = encolado`, `correo_id`, `redirigido_a`), el comercial va en copia oculta y el cuerpo lleva el precio por ruta y el total sin desglose. Por defecto, en todos los ambientes, va al buzón de pruebas con `[QA]` (`redirigido_a`); solo producción con `Correo:Proteccion:Modo=ninguno` y `Correo:Proteccion:PermitirEnvioReal=true` escribe a los destinatarios reales. 503 `ErrorNegocio` `CORREO_DESHABILITADO` si el correo está deshabilitado en el servidor |
-| `POST /web/cotizaciones/{folio}/correo/vista-previa` | ambos | Asunto, cuerpo y destinatarios sin enviar. HU-033: también `cuerpo_html`, `resumen` (precio por ruta y total), `copia_oculta` y el aviso de ambiente de pruebas (`entorno_pruebas`, `redirigido_a`, `aviso`). Al redirigir, `copia_oculta = null`: el correo sale sin CC ni CCO (OBS-1027-5 de #226) |
+| `POST /web/cotizaciones/{folio}/enviar` | ambos | Envía la cotización por correo con el PDF. HU-033 (#199): por MailSender; el 200 es "aceptado" (`estado = encolado`, `correo_id`, `redirigido_a`), el comercial va en copia oculta y el cuerpo lleva el precio por ruta y el total sin desglose. Por defecto, en todos los ambientes, va al buzón de pruebas con `[QA]` (`redirigido_a`); solo producción con `Correo:Proteccion:Modo=ninguno` y `Correo:Proteccion:PermitirEnvioReal=true` escribe a los destinatarios reales. 503 `ErrorNegocio` `CORREO_DESHABILITADO` si el correo está deshabilitado en el servidor. #228: asunto y direcciones sin caracteres de control y hasta 10 destinatarios por defecto (configurable) entre `para` y `cc` (§8.18) |
+| `POST /web/cotizaciones/{folio}/correo/vista-previa` | ambos | Asunto, cuerpo y destinatarios sin enviar. HU-033: también `cuerpo_html`, `resumen` (precio por ruta y total), `copia_oculta` y el aviso de ambiente de pruebas (`entorno_pruebas`, `redirigido_a`, `aviso`). Al redirigir, `copia_oculta = null`: el correo sale sin CC ni CCO (OBS-1027-5 de #226). #228: valida el borrador igual que `enviar` (400) |
 | `GET /web/cotizaciones/{folio}/correos` | ambos (dueño) | HU-033 (#199): historial de envíos con el estado de MailSender (`encolado`, `enviando`, `enviado`, `fallido` con `error`) y `reintentable` |
 | `POST /web/cotizaciones/{folio}/correos/{correoId}/reintentar` | ambos (dueño) | HU-033 (#199): pide a MailSender reintentar un envío `fallido`; 409 `CORREO_NO_REINTENTABLE` si no aplica (no está `fallido`, ya se está reintentando por un doble clic, nunca llegó a MailSender o MailSender ya no lo conoce) |
 | `POST /web/cotizaciones/{folio}/seguimiento` | ambos | Marca ganada o perdida **solo** cotizaciones fuera de Nexo (`estado_costeo` `null`, `descartada` o `costeo_vencido`). Las de Nexo responden 409 `USAR_RESULTADO_NEXO`, con `detalle` = `{metodo, endpoint, requiere_if_match}` (HU-021.13) |
@@ -186,7 +186,8 @@ Reglas para el frontend (HU-013.10, #106):
   memoria), 503 `CATALOGOS_FLETE_NO_DISPONIBLE` y no se guarda nada. Sin Nexo configurado en el servidor, un formulario con
   `tipo_vehiculo` o `clase_viaje` siempre recibe ese 503.
 - **Condicionales:** `clase_contenedor` es obligatoria con `clase_viaje = Contenedor` y no se admite con otra clase;
-  `valor_aprovisionamiento` solo con una `ciudad_levante_contenedor` distinta del origen.
+  `valor_levante_contenedor` (ex `valor_aprovisionamiento`) solo con una `ciudad_levante_contenedor` distinta del origen. DEF-1027B-3
+  (#228): el `CAMPO_NO_APLICA` nombra `valor_levante_contenedor` en `campo` y en `mensaje` (antes el nombre heredado).
 - **`deadline`:** ISO 8601. Sin zona se toma en hora de Bogotá; una fecha sola (`2026-10-10`) es el inicio de ese día en
   Bogotá (`2026-10-10T00:00:00-05:00`). Para otra hora, enviarla con `-05:00`.
 - **Campos nuevos:** `notas` (nota para la Mesa de Nexo, máx. 2000), `origen_municipio_id` y `destino_municipio_id` (el `id`
@@ -1875,6 +1876,14 @@ El comercial **acepta el precio** de la cotización y la finaliza. Columnas prop
 - Tampoco mientras Nexo tiene un servicio conexo que Cotifly todavía no leyó (el aviso de conexos pendientes en `motivo_estado_costeo`):
   409 `COTIZACION_NO_FINALIZABLE` con `detalle.motivo = "conexos_pendientes_de_leer"`. Se finaliza después de la siguiente lectura del
   costeo, que trae el conexo con su precio (con la cotización finalizada el polling ya no lo importaría).
+- #228: tampoco mientras un servicio conexo de una ruta que cuenta (no `rechazada`) tiene `estado_nexo = pendiente` (todavía no está en la
+  cotización de Nexo: el envío diferido no lo ha mandado o lo reintentará): 409 `COTIZACION_NO_FINALIZABLE` con
+  `detalle.motivo = "conexos_pendientes_en_nexo"` y `detalle.conexos_pendientes`. Si no, el precio finalizado incluiría un conexo que Nexo
+  no creó. Se finaliza cuando el polling lo deja `enviado`; `incierto` y `fallido_definitivo` no bloquean (no se reintentan y el costeo
+  los muestra para revisarlos en Nexo). El conexo agregado con `POST .../costeo/servicios-conexos` ya sale `enviado` (Nexo lo creó y la
+  relectura lo confirma), así una entregada, que el polling ya no consulta, no queda bloqueada. Validación de #228: con algún conexo
+  `pendiente`, finalizar relee la cotización de Nexo y deja `enviado` lo que Nexo ya muestra antes de contar (un registro viejo que quedó
+  `pendiente` aunque Nexo tenga el conexo no bloquea para siempre); si Nexo no responde, cuenta el registro y responde el 409.
 - Re-finalizar una ya finalizada: 200 sin cambios (mismo `finalizada_at`, mismo `ETag`).
 - `If-Match` que no es la versión vigente: 409 `CONFLICTO_CONCURRENCIA` (también si ya estaba finalizada). Si el polling cambió el precio
   entre la lectura y el clic, la versión ya no coincide: el comercial recarga y nunca finaliza un precio que no vio.
@@ -1894,12 +1903,24 @@ El comercial **acepta el precio** de la cotización y la finaliza. Columnas prop
 }
 ```
 
+<!-- respuesta: POST /web/cotizaciones/{folio}/finalizar 409 (conexos pendientes en Nexo, #228) -->
+```json
+{
+  "error": {
+    "codigo": "COTIZACION_NO_FINALIZABLE",
+    "mensaje": "Hay servicios conexos que todavía no están en la cotización de Nexo (estado_nexo = pendiente): espera la siguiente actualización del costeo para finalizar la cotización con un precio que Nexo respalde.",
+    "detalle": { "estado_costeo": "autocosteo", "motivo": "conexos_pendientes_en_nexo", "conexos_pendientes": 1 }
+  }
+}
+```
+
 **#207, los candados.**
 
 - **Después de finalizar** (como con una cotización enviada): margen, conexos (`PUT` y `POST .../servicios-conexos`), re-solicitar en el
   mismo folio y recalcular los camiones de una ruta responden 409 `PDF_YA_ENVIADO` con la versión nueva en `detalle`
   (`accion = nueva_version`), y `GET .../solicitud` devuelve `edicion.modo = nueva_version`. Los textos y el PDF SÍ se permiten
-  (hasta enviarla).
+  (hasta enviarla). Ya enviada (o con resultado), el PDF también responde 409 `PDF_YA_ENVIADO` y, desde #228 (DEF-1027B-1), con la misma
+  llamada en `detalle` (`cuerpo.motivo = "Generar el PDF después del envío"`).
 - **Antes de finalizar:** `POST .../costeo/pdf`, `POST .../enviar`, `POST .../costeo/textos/redactar`, `PUT .../costeo/textos` y
   `POST .../resultado` (solo con el costeo listo) responden 409 `COTIZACION_NO_FINALIZADA`. Excepciones: las enviadas o con resultado
   anteriores a HU-036 (sin backfill), las del chat, la perdida antes del costeo (`pendiente_costeo`, `error_envio`) y `/seguimiento` en
@@ -1965,4 +1986,40 @@ el promedio **simple** y el **ponderado por costo**, y el semáforo usa el **pon
   { "linea_negocio": "Internacional", "etiqueta": "Internacional" },
   { "linea_negocio": "Nacional", "etiqueta": "Nacional" }
 ]
+```
+
+### 8.19 Correo: seguridad de las cabeceras y tope de destinatarios (#228, ADR-023)
+
+E2E real del 2026-10-27B (DEF-1027B-2): `POST .../enviar` aceptó `asunto = "Hola\r\nBcc: intruso@ejemplo.invalid"` y MailSender lo
+entregó al relay; también aceptó 60 destinatarios en `para`. Desde #228, en `POST /web/cotizaciones/{folio}/enviar` y en
+`POST .../correo/vista-previa` (en este orden, después del dueño y, en el envío, de `CORREO_DESHABILITADO`):
+
+| Regla | Respuesta |
+|---|---|
+| `asunto` con caracteres de control (CR, LF, NUL, tabulador, U+0085, U+2028, U+2029 y el resto de la categoría Unicode `Cc`), también al final | 400 `ErrorWeb` (`CORREO_INVALIDO`). No se recorta ni se limpia |
+| Una dirección de `para` o `cc` con caracteres de control (aunque solo sean un `\r\n` al final) | 400 `ErrorWeb` |
+| Más destinatarios entre `para` y `cc` que el tope: **10 por defecto**, configurable con `Correo__MaximoDestinatarios` (1 a 100; la copia oculta al comercial no cuenta; MailSender no tiene tope) | 400 `ErrorNegocio` `CORREO_DEMASIADOS_DESTINATARIOS`, `detalle = {maximo, recibidos}` con `maximo` = el tope vigente |
+| Una dirección que no es UNA dirección simple: parte local de 1 a 64 (letras, dígitos y los símbolos de un `atom` del RFC 5322, puntos no al borde ni seguidos), dominio de hasta 255 con al menos dos etiquetas de 1 a 63 (letras, dígitos, guiones no al borde), sin comas, punto y coma, espacios, comillas, ángulos, comentarios ni literales IP; hasta 320 en total | 400 `ErrorWeb` |
+| `asunto` de más de 300 o `cuerpo` de más de 5000 | 400 `ErrorWeb` (como antes) |
+
+El `cuerpo` no es una cabecera (va escapado dentro del HTML): admite saltos de línea. Nada de lo anterior llama a MailSender ni cambia el
+estado de envío. Como defensa en profundidad, el transporte vuelve a revisar el remitente, los destinatarios (`To`, `Cc`, `Bcc`), el asunto,
+el nombre del adjunto y el `X-Correlation-ID` antes del POST a MailSender: si algo se coló, no sale nada y el envío responde 400
+`CORREO_ENVIO_FALLIDO` (fila `fallido` en el historial).
+
+Validación de #228: `POST .../correos/{correoId}/reintentar` responde 409 `CORREO_NO_REINTENTABLE` (sin llamar a MailSender) si el asunto o
+un destinatario GUARDADO tiene caracteres de control: un correo aceptado antes de DEF-1027B-2 saldría otra vez con las cabeceras inyectadas,
+porque MailSender reintenta lo que guardó. El historial lo muestra con `reintentable = false`. El remitente del comercial (`From`), el
+buzón de pruebas y `Correo:MailSender:Remitente` usan el mismo formato estricto: un correo del comercial que no lo cumple sale con el
+remitente corporativo, y un buzón o un remitente corporativo que no lo cumple impide arrancar.
+
+<!-- respuesta: POST /web/cotizaciones/{folio}/enviar 400 (tope) -->
+```json
+{
+  "error": {
+    "codigo": "CORREO_DEMASIADOS_DESTINATARIOS",
+    "mensaje": "El correo admite hasta 10 destinatarios entre 'para' y 'cc' (llegaron 60).",
+    "detalle": { "maximo": 10, "recibidos": 60 }
+  }
+}
 ```

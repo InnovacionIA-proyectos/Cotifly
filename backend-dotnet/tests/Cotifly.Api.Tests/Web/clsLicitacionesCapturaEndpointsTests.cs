@@ -60,7 +60,7 @@ public sealed class clsLicitacionesCapturaEndpointsTests : IDisposable
                 (3, "tipologia", "CODIGO_NO_CATALOGO"),
                 (4, "clase_contenedor", "CAMPO_NO_APLICA"),
                 (5, "clase_contenedor", "CAMPO_REQUERIDO"),
-                (6, "valor_aprovisionamiento", "CAMPO_NO_APLICA"),
+                (6, "valor_levante_contenedor", "CAMPO_NO_APLICA"), // DEF-1027B-3 (#228): el nombre del contrato aunque llegue el viejo
                 (7, "origen", "MUNICIPIO_AMBIGUO"),
                 (8, "destino", "MUNICIPIO_NO_ENCONTRADO"),
                 (9, "clase_contenedor", "CAMPO_NO_APLICA"),
