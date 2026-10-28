@@ -25,13 +25,13 @@ enlazan en vez de repetirlo. El punto de entrada general es el [`README.md`](../
 | Despliegue (Docker Swarm y Dokploy) | [`DEPLOY.md`](../DEPLOY.md) | Manifiestos en [`infra/`](../infra/), diagnóstico TLS en [`infra/HU-006.1-diagnostico-tls.md`](infra/HU-006.1-diagnostico-tls.md) |
 | Operación y soporte | [`backend-dotnet/docs/10-operacion.md`](../backend-dotnet/docs/10-operacion.md) | — |
 | Pruebas | [`backend-dotnet/docs/08-testing.md`](../backend-dotnet/docs/08-testing.md) | Matrices de QA de [HU-021](../backend-dotnet/docs/qa/MATRIZ_PRUEBAS_HU021.md) y [HU-023](../backend-dotnet/docs/qa/MATRIZ_PRUEBAS_HU023.md), [regresión manual](../backend-dotnet/docs/qa/regresion-manual.md) |
-| Backlog | Milestones e issues de GitHub (fuente de verdad) | Borrador vigente: [`backlog/2026-10-07_HU_Sprint5_Cotifly.md`](backlog/2026-10-07_HU_Sprint5_Cotifly.md) (HU-014 a HU-022) |
+| Backlog | Milestones e issues de GitHub (fuente de verdad) | Histórico (2026-09-29 a 2026-10-27): [`backlog/backlog_cotifly.md`](backlog/backlog_cotifly.md) |
 
 ## Carpetas de `docs/`
 
 | Carpeta | Qué tiene |
 |---|---|
-| [`backlog/`](backlog/) | Borradores de HU vigentes. Cada archivo lleva al inicio la fecha en que se creó (`AAAA-MM-DD_...`) |
+| [`backlog/`](backlog/) | Backlog histórico (`backlog_cotifly.md`), pendientes vigentes por persona (`AAAA-MM-DD_PENDIENTES_*.md`) y borradores de HU activos |
 | [`conexion_nexo/`](conexion_nexo/) | Mapeo de campos, preguntas y peticiones a Nexo y al cubicador, formato del Excel de licitación y próximos alcances |
 | [`database/`](database/) | Documentación de la base de datos. Los scripts, seeders y el ejecutador están en [`db/`](../db/) |
 | [`docs_front/`](docs_front/) | Lo que consume el frontend: contrato de la API web, guía del frontend, referencia consolidada de contratos y manual de ClientePro |
