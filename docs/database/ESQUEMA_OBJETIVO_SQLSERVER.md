@@ -1,6 +1,6 @@
 # Esquema de la base de datos — SQL Server 2019 (`dbo_cotifly`)
 
-> **Estado:** vigente desde HU-021 · **Dueño:** Duban Guerra (backend) y scalderon-bs (datos) · **Actualizado:** 2026-10-28 (scripts `17`/`18`: `SapMargenCliente`/`SapMargenSyncLog` HU-042.1 #242, `SapMapeoTrqType.lineaNegocioId` deuda técnica #247)
+> **Estado:** vigente desde HU-021 · **Dueño:** Duban Guerra (backend) y scalderon-bs (datos) · **Actualizado:** 2026-10-28 (scripts `17`/`18`: `SapMargenCliente`/`SapMargenSyncLog` HU-042.1 #242, `SapMapeoTrqType.lineaNegocioId` HU-042.4, #247)
 
 Este documento describe la Parte A; la Parte B se archivó:
 
@@ -433,7 +433,7 @@ Sin cambios de estructura en HU-021 (salvo el catálogo de líneas de negocio de
 | Tabla | Clave | Columnas |
 |---|---|---|
 | `MargenesPolitica` | `id` int identity; único `lineaNegocio` | `mapeoLineasNexo`, `margen` dec(9,4), `metodoCalculo` (`'margen'`), `isActive`, `updatedAt` |
-| `SapMapeoTrqType` | (`trqType`, `salesOrg`) | `lineaNegocio` (texto, original), `lineaNegocioId` int NOT NULL FK `MargenesPolitica(id)` (script `18`, deuda técnica #247 — conviven mientras el backend se adapta a leer por id; `lineaNegocio` se retira después), `activo` |
+| `SapMapeoTrqType` | (`trqType`, `salesOrg`) | `lineaNegocio` (texto, original), `lineaNegocioId` int NOT NULL FK `MargenesPolitica(id)` (script `18`, HU-042.4, #247 — conviven mientras el backend se adapta a leer por id; `lineaNegocio` se retira después), `activo` |
 | `SapMargenCliente` | `id` uid; único (`salesOrgId`, `trqType`, `bpSap`) | `nit` nv(20) nulo (resuelto por BP contra el DW `DWCubosOperacionesEBS.dbo.DimBPSolicitante`), `margenRecomendado` dec(9,4), `activo` (soft delete), `creadoAt`, `actualizadoAt`. Script `17` (HU-042.1, #242); no la lee `backend-dotnet` todavía (HU-042.2, #243) |
 | `SapMargenSyncLog` | `id` uid | Log append-only de las corridas del job de `SapMargenCliente`: `iniciadoAt`, `finalizadoAt`, `filasInsertadas`, `filasActualizadas`, `filasDesactivadas`, `status` (CHECK `ok`\|`error`\|`omitido`), `mensajeError`. Script `17` |
 | `UsuariosWeb` | `id` uid | `nombreUsuario` (único filtrado), `nombreCompleto`, `email`, `telefono`, `regional`, `createdAt`, `ultimaSesion`, `idUsuarioExterno` bigint (único filtrado) |
@@ -480,7 +480,7 @@ retiraron en HU-014.3 (#152) con `db/scripts/08_retirar_vistas_actividad.sql`, j
 | `db/scripts/13_correo_mailsender.sql` | **HU-033 (#199):** `Correos.idMailSender UNIQUEIDENTIFIER NULL` (índice único filtrado `ux_correos_idMailSender`), `redirigidoA NVARCHAR(320)`, `intentosEntrega INT`, `enviadoAt`, `estadoActualizadoAt`, `siguienteConsultaAt DATETIMEOFFSET` (índice filtrado `ix_correos_siguienteConsultaAt`), `encoladoAt DATETIMEOFFSET` (última aceptación de MailSender, auditoría #199) y el CHECK `ck_correos_estado`; `CotizacionesSolicitud.sincronizacionResultadoNexo NVARCHAR(20)` (CHECK `pendiente`/`sincronizado`/`no_sincronizable`), `comentarioResultadoPendiente NVARCHAR(500)`, `resultadoSincronizadoAt`, `errorSincronizacionResultado NVARCHAR(1000)` e `intentosSincronizacionResultado INT NOT NULL DEFAULT 0` (CHECK ≥ 0). Idempotente; obligatorio ("falta 13") |
 | `db/scripts/14_cotizacion_finalizada.sql` | **HU-036 (#205, #206):** `CotizacionesSolicitud.finalizadaAt DATETIMEOFFSET NULL` y `finalizadaPor UNIQUEIDENTIFIER NULL` (FK `fk_cotizaciones_finalizadaPor` a `UsuariosWeb(id)`, el tipo de su PK), con el CHECK `ck_cotizaciones_finalizada` (las dos NULL o las dos con valor). Aparte de `estadoCosteo` a propósito: el polling lo deriva de Nexo en cada vuelta. Sin backfill. Idempotente; obligatorio ("falta 14"). Propuesta pendiente de revisión de @scalderon-bs |
 | `db/scripts/17_sap_margen_sincronizacion.sql` | **HU-042.1 (#242):** crea `SapMargenCliente`, `SapMargenSyncLog` y el stored procedure `sp_sincronizar_margen_sap`. **No lo corre el ejecutador, no lo exige `/health/ready`: no lo lee `backend-dotnet`.** Dueña @scalderon-bs (Datos); ya aplicado en la base compartida de pruebas (2026-10-28) |
-| `db/scripts/18_sap_mapeo_fk_margenes_politica.sql` | **Deuda técnica, #247 (sin HU):** agrega `SapMapeoTrqType.lineaNegocioId INT NOT NULL` con FK a `MargenesPolitica(id)`, con backfill por texto verificado (se detiene si algo no cruza). No borra `lineaNegocio` (texto) todavía — transición en 2 pasos, hasta que el backend (#247) deje de leerla. Idempotente; ya aplicado en la base compartida de pruebas (2026-10-28) |
+| `db/scripts/18_sap_mapeo_fk_margenes_politica.sql` | **HU-042.4, #247:** agrega `SapMapeoTrqType.lineaNegocioId INT NOT NULL` con FK a `MargenesPolitica(id)`, con backfill por texto verificado (se detiene si algo no cruza). No borra `lineaNegocio` (texto) todavía — transición en 2 pasos, hasta que el backend (#247) deje de leerla. Idempotente; ya aplicado en la base compartida de pruebas (2026-10-28) |
 
 Las columnas de los ajustes `02`, `03`, `pendientes/04`, `05`, `09`, `10`, `11`, `12`, `13` y `14` están en las tablas de §A.4 (marcadas
 con el número del script) y la tabla del `06` en §A.4.6.1; el detalle de cada cambio está en la cabecera de su script. Además,
