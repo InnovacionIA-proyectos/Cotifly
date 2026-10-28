@@ -83,10 +83,18 @@ public sealed class clsChatClientConRespaldo : IChatClient
     /// ¿Vale la pena probar otro proveedor? 429, 5xx, red caída o tiempo agotado (no la cancelación del llamador), y el 400 de un
     /// gateway sin credenciales para el proveedor (<see cref="SinCredencialesDelGateway"/>).
     /// </summary>
+    /// <remarks>
+    /// DEF-1027-1 (#226, E2E real del 2026-10-27): con el proveedor caído, el SDK de OpenAI agota sus reintentos y lanza un
+    /// <see cref="AggregateException"/> ("Retry failed after 4 tries") con una <see cref="ClientResultException"/> sin estado HTTP por
+    /// intento, que envuelve el <see cref="HttpRequestException"/> con la <see cref="System.Net.Sockets.SocketException"/>. Antes solo se
+    /// miraba la excepción y su primera interna, así que eso no era indisponibilidad y el chat respondía <c>ERROR_INTERNO</c>. Ahora se
+    /// recorre toda la cadena (también las internas de un <see cref="AggregateException"/>) buscando la red caída, el socket o el tiempo
+    /// agotado.
+    /// </remarks>
     public static bool EsRecuperable(Exception error, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(error);
-        if (error is OperationCanceledException && cancellationToken.IsCancellationRequested)
+        if (cancellationToken.IsCancellationRequested && Cadena(error).Any(e => e is OperationCanceledException))
         {
             return false;
         }
@@ -98,9 +106,38 @@ public sealed class clsChatClientConRespaldo : IChatClient
             return estado is 404 or 408 or 429 || estado >= 500 || (estado == 400 && SinCredenciales(error));
         }
 
-        return error is HttpRequestException or TimeoutException or TaskCanceledException
-               || error.InnerException is HttpRequestException or TimeoutException or IOException;
+        return Cadena(error).Any(e => e is HttpRequestException or TimeoutException or TaskCanceledException or IOException
+            or System.Net.Sockets.SocketException);
     }
+
+    /// <summary>
+    /// La excepción, sus internas y, en un <see cref="AggregateException"/>, todas sus internas (en profundidad, con un tope para no
+    /// recorrer cadenas anómalas). El mismo tope tienen <see cref="Estado"/> y <see cref="SinCredenciales"/>: una cadena cíclica no
+    /// cuelga el filtro de excepciones.
+    /// </summary>
+    private static IEnumerable<Exception> Cadena(Exception error)
+    {
+        var pendientes = new Stack<Exception>();
+        pendientes.Push(error);
+        for (var vistos = 0; pendientes.Count > 0 && vistos < MaximoExcepcionesRecorridas; vistos++)
+        {
+            var actual = pendientes.Pop();
+            yield return actual;
+            if (actual is AggregateException agregada)
+            {
+                foreach (var interna in agregada.InnerExceptions.Reverse())
+                {
+                    pendientes.Push(interna);
+                }
+            }
+            else if (actual.InnerException is { } interna)
+            {
+                pendientes.Push(interna);
+            }
+        }
+    }
+
+    private const int MaximoExcepcionesRecorridas = clsEstadoHttpExcepcion.MaximoInternas;
 
     /// <summary>
     /// ¿El <c>error.message</c> del gateway EMPIEZA con <c>No credentials for provider:</c>? Se lee del cuerpo de la respuesta cruda de
@@ -109,7 +146,8 @@ public sealed class clsChatClientConRespaldo : IChatClient
     /// </summary>
     private static bool SinCredenciales(Exception error)
     {
-        for (var actual = error; actual is not null; actual = actual.InnerException)
+        var revisadas = 0;
+        for (var actual = error; actual is not null && revisadas < MaximoExcepcionesRecorridas; actual = actual.InnerException, revisadas++)
         {
             if (actual is ClientResultException resultado && MensajeDelCuerpo(CuerpoCrudo(resultado)) is { } delCuerpo)
             {

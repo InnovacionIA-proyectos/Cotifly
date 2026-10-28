@@ -123,12 +123,13 @@ y los documentos, y el 06 estaba libre en `scripts/`); solo depende del `01`. Id
 `SELECT/INSERT/UPDATE/DELETE` sobre el esquema).
 
 **Orden completo** de una base nueva: `01` (o `0001` a `0010`), `02`, `03`, `pendientes/04`, `05`, `06`, `07`, `08`, `09`, `10`, `11`,
-`12`, `13` y `14`. El entorno local (`backend-dotnet/scripts/levantar-local.ps1` / `.sh`) aplica los ajustes `02` en adelante (hoy `02`, `03`,
-`05`, `06`, `07`, `08`, `09`, `10`, `11`, `12`, `13` y `14`) y el `pendientes/04` en ese orden en cada arranque (son idempotentes). Con el `03` aplicado el CHECK del motivo ya es el del
+`12`, `13`, `14` y `15`. El entorno local (`backend-dotnet/scripts/levantar-local.ps1` / `.sh`) aplica los ajustes `02` en adelante (hoy `02`, `03`,
+`05`, `06`, `07`, `08`, `09`, `10`, `11`, `12`, `13`, `14` y `15`) y el `pendientes/04` en ese orden en cada arranque (son idempotentes). Con el `03` aplicado el CHECK del motivo ya es el del
 `07` (sin el `07`, la sonda no da el aviso del `07`).
 
-**Orden del release** sobre una base ya migrada: `03` → `pendientes/04` → `05` → `06` → `07` → `09` → `10` → `11` → `12` → `13` → `14` →
-imagen → `08`. El `10` (rechazo de la línea) toma un bloqueo de esquema al reemplazar los CHECK de `estadoCosteo`: mejor en una ventana
+**Orden del release** sobre una base ya migrada: `03` → `pendientes/04` → `05` → `06` → `07` → `09` → `10` → `11` → `12` → `13` → `14` → `15` →
+imagen → `08` (el `15` en la misma ventana que la imagen de HU-037, nunca antes con una imagen vieja; en la compartida ya está
+aplicado y el `14` está pendiente de @scalderon-bs). El `10` (rechazo de la línea) toma un bloqueo de esquema al reemplazar los CHECK de `estadoCosteo`: mejor en una ventana
 de poco tráfico. Detalle para el DBA: `DEPLOY.md` §4.
 
 ## Estructura

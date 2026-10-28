@@ -133,6 +133,86 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
         (await EscalarAsync($"SELECT CAST(COUNT(*) AS nvarchar(10)) FROM dbo_cotifly.CotizacionesSolicitud WHERE usuarioId = '{sesion.UsuarioId}'")).Should().Be("0");
     }
 
+    /// <summary>
+    /// OBS-1027-4 (#226, E2E real del 2026-10-27): con errores de fila y la línea "Licitaciones" de Nexo (o una fila con una línea que
+    /// no existe), el reporte trae todo en la misma respuesta: los errores de fila y <c>MARGEN_LINEA_DESCONOCIDA</c> en
+    /// <c>linea_negocio</c> (del encabezado, <c>indice = null</c>, o de la fila), con las líneas válidas en <c>detalle.lineas_validas</c>.
+    /// Antes la línea solo se informaba al corregir las filas (dos idas y vueltas).
+    /// </summary>
+    [Fact]
+    public async Task ConErroresDeFilaYLaLineaLicitacionesElReporteTraeTambienElErrorDeLaLinea()
+    {
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        object[] lineas =
+        [
+            new { fila = 0, origen = "BUENAVENTURA", destino = "", peso_kg = 32000, tipo_vehiculo = "3S3" },
+            new { fila = 1, origen = "CALI", destino = "CARTAGENA", peso_kg = 28000, tipo_vehiculo = "3S3", linea_negocio = "Inexistente" },
+            new { fila = 2, origen = "CUCUTA", destino = "BOGOTA, D.C.", peso_kg = 8000, tipo_vehiculo = "2" },
+        ];
+        using var respuesta = await _api.EnviarContenidoAsync(HttpMethod.Post, "/web/licitaciones", sesion.Access, clsApiWebPruebas.Licitacion(
+            clsPliegoMuestra.Json(clsCosteoEndpointsTests.Nit, lineas).Replace("\"linea_negocio\":\"Nacional\"", "\"linea_negocio\":\"Licitaciones\"", StringComparison.Ordinal),
+            clsPliegoMuestra.Excel()));
+
+        var json = await VerificarContratoAsync(respuesta, "/web/licitaciones", HttpMethod.Post, HttpStatusCode.BadRequest);
+
+        json.GetProperty("error").GetProperty("codigo").GetString().Should().Be("LICITACION_INVALIDA");
+        json.GetProperty("errores").EnumerateArray()
+            .Select(e => (e.GetProperty("indice").ValueKind == JsonValueKind.Null ? (int?)null : e.GetProperty("indice").GetInt32(), e.GetProperty("campo").GetString(), e.GetProperty("codigo").GetString()))
+            .Should().BeEquivalentTo(new (int?, string?, string?)[]
+            {
+                (0, "destino", "LINEA_INCOMPLETA"),
+                (null, "linea_negocio", "MARGEN_LINEA_DESCONOCIDA"),
+                (1, "linea_negocio", "MARGEN_LINEA_DESCONOCIDA"),
+            });
+        json.GetProperty("errores").EnumerateArray().Single(e => e.GetProperty("indice").ValueKind == JsonValueKind.Null)
+            .GetProperty("mensaje").GetString().Should().Contain("'Licitaciones' es una línea de negocio del catálogo de Nexo").And.Contain("Nacional");
+        json.GetProperty("error").GetProperty("detalle").GetProperty("lineas_validas").EnumerateArray().Select(l => l.GetString()).Should().Contain("Nacional");
+        _nexo.SolicitudesCreadas.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Validación de OBS-1027-4 (#226): el reporte no duplica y su orden es estable. Primero los errores de las filas (en su orden) y
+    /// después los de la línea de negocio: el del encabezado y uno por cada fila que trae una línea distinta que no da margen. Una fila
+    /// que repite la línea del encabezado (sin importar mayúsculas) no suma otro error; dos filas con la misma línea inválida, uno cada
+    /// una. Dos envíos iguales dan el mismo reporte.
+    /// </summary>
+    [Fact]
+    public async Task ElReporteConLaLineaDeNegocioNoDuplicaYTieneOrdenEstable()
+    {
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        object[] lineas =
+        [
+            new { fila = 0, origen = "BUENAVENTURA", destino = "", peso_kg = 32000, tipo_vehiculo = "3S3" },
+            new { fila = 1, origen = "CALI", destino = "CARTAGENA", peso_kg = 28000, tipo_vehiculo = "3S3", linea_negocio = "licitaciones" },
+            new { fila = 2, origen = "CUCUTA", destino = "BOGOTA, D.C.", peso_kg = 8000, tipo_vehiculo = "2", linea_negocio = "Inexistente" },
+            new { fila = 3, origen = "CALI", destino = "BOGOTA, D.C.", peso_kg = 8000, tipo_vehiculo = "2", linea_negocio = "inexistente " },
+        ];
+        var json = clsPliegoMuestra.Json(clsCosteoEndpointsTests.Nit, lineas)
+            .Replace("\"linea_negocio\":\"Nacional\"", "\"linea_negocio\":\"Licitaciones\"", StringComparison.Ordinal);
+
+        async Task<JsonElement> EnviarAsync()
+        {
+            using var respuesta = await _api.EnviarContenidoAsync(HttpMethod.Post, "/web/licitaciones", sesion.Access,
+                clsApiWebPruebas.Licitacion(json, clsPliegoMuestra.Excel(4)));
+            return (await VerificarContratoAsync(respuesta, "/web/licitaciones", HttpMethod.Post, HttpStatusCode.BadRequest)).GetProperty("errores");
+        }
+
+        var primero = await EnviarAsync();
+        var segundo = await EnviarAsync();
+
+        primero.EnumerateArray()
+            .Select(e => (e.GetProperty("indice").ValueKind == JsonValueKind.Null ? (int?)null : e.GetProperty("indice").GetInt32(), e.GetProperty("campo").GetString(), e.GetProperty("codigo").GetString()))
+            .Should().Equal(new (int?, string?, string?)[]
+            {
+                (0, "destino", "LINEA_INCOMPLETA"),
+                (null, "linea_negocio", "MARGEN_LINEA_DESCONOCIDA"),
+                (2, "linea_negocio", "MARGEN_LINEA_DESCONOCIDA"),
+                (3, "linea_negocio", "MARGEN_LINEA_DESCONOCIDA"),
+            });
+        segundo.GetRawText().Should().Be(primero.GetRawText(), "el mismo envío da el mismo reporte, en el mismo orden");
+        _nexo.SolicitudesCreadas.Should().BeEmpty();
+    }
+
     [Fact]
     public async Task UnaHojaQueNoEstaEnElArchivoEsExcelSinDatos()
     {

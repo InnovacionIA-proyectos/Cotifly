@@ -132,7 +132,9 @@ public sealed class clsCorreoMailSenderEndpointsTests : IDisposable
         json.GetProperty("entorno_pruebas").GetBoolean().Should().BeTrue();
         json.GetProperty("redirigido_a").GetString().Should().Be(clsMailSenderFalso.BuzonPruebas);
         json.GetProperty("aviso").GetString().Should().Contain("Ambiente de pruebas");
-        json.GetProperty("copia_oculta").GetString().Should().Be(ana.NombreUsuario + "@boterosoto.com.co");
+        // OBS-1027-5 (#226): al redirigir el correo sale sin CC ni CCO, así que la vista previa no anuncia la copia oculta al comercial.
+        json.GetProperty("copia_oculta").ValueKind.Should().Be(JsonValueKind.Null);
+        json.GetProperty("aviso").GetString().Should().Contain("sin CC ni CCO");
         json.GetProperty("cuerpo_html").GetString().Should().Contain("Botero Soto</b>");
         _api.MailSender.Recibidos.Should().BeEmpty("la vista previa no envía nada");
     }

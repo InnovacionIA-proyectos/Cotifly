@@ -6212,7 +6212,8 @@ components:
             cuentan (sin los `descartada` ni los `rechazada`), **sin margen**. **Siempre en COP (pesos), aunque la cotización esté en
             USD**: el costeo de Nexo es en pesos y nunca se convierte (en USD `precio_final_linea` va en dólares con `trm_aplicada`, el
             costo no). `null` en los mismos casos que `precio_final_linea` (sin costeo listo o ruta `rechazada`). Solo lo ve el dueño:
-            en `GET /web/cotizaciones/{folio}` consultado por un gerente comercial (`solo_lectura = true`) siempre es `null`. No sale
+            en `GET /web/cotizaciones/{folio}` consultado por un gerente comercial o por el director (`solo_lectura = true`) siempre es `null`. Con la
+            cotización finalizada (HU-036.4) es el costo con que se finalizó, como el precio congelado. No sale
             en el PDF, el correo, el Excel, el chat ni "Mis cotizaciones". Reversa de la regla de ADR-015 §5 ("el costo bruto nunca
             llega al comercial"), confirmada por la Gerencia Comercial el 2026-10-27.
         margen_aplicado:
@@ -8343,7 +8344,7 @@ components:
                  DEMASIADAS_POSICIONES, POSICION_INVALIDA, PESO_REQUERIDO, PESO_INCONSISTENTE, FILA_INVALIDA, CAMPO_NO_APLICA,
                  CODIGO_NO_CATALOGO, MUNICIPIO_AMBIGUO, MUNICIPIO_NO_ENCONTRADO, MUNICIPIO_INEXISTENTE, CONEXO_DUPLICADO,
                  CONEXO_NO_ENCONTRADO, DEMASIADOS_CONEXOS, TIPO_MERCANCIA_INEXISTENTE, MERCANCIA_DESCONOCIDA, MERCANCIA_NO_CUBICABLE,
-                 PESO_CON_TARA_MENOR_QUE_CARGA, VEHICULO_REQUERIDO]
+                 PESO_CON_TARA_MENOR_QUE_CARGA, VEHICULO_REQUERIDO, MARGEN_LINEA_DESCONOCIDA]
           description: |
             HU-013.11: `CODIGO_NO_CATALOGO` (el valor no es un código de catálogo, G2), `CAMPO_NO_APLICA` y `CAMPO_REQUERIDO` de las
             reglas condicionales (G3), `MUNICIPIO_AMBIGUO` y `MUNICIPIO_NO_ENCONTRADO` (G6, campo `origen` o `destino`).
@@ -8357,6 +8358,11 @@ components:
             `peso_con_tara_kg` (menor que el peso de carga) y `CAMPO_NO_APLICA` en `peso_con_tara_kg` sin `clase_viaje = Contenedor`.
             HU-032 (#197): `VEHICULO_REQUERIDO` en `tipo_vehiculo` cuando la ruta no se puede cubicar (solo peso, mercancías sin
             medidas ni código, o mixta), no es de Contenedor y no trae vehículo.
+            OBS-1027-4 (#226): `MARGEN_LINEA_DESCONOCIDA` en `linea_negocio` cuando, además de otros errores de fila, la línea de
+            negocio no da margen ("Licitaciones" del catálogo de Nexo, una que no existe o una inactiva): la del encabezado con
+            `indice = null` y la de una fila que trae la suya con su `indice`. El `mensaje` dice qué líneas usar y
+            `error.detalle.lineas_validas` las lista. Sin otros errores de fila sigue siendo el 400 `MARGEN_LINEA_DESCONOCIDA` de
+            `ErrorNegocio` (con `detalle.motivo = LINEA_DE_NEXO` para "Licitaciones").
         mensaje:
           type: string
 
@@ -8943,7 +8949,9 @@ components:
         copia_oculta:
           type: string
           nullable: true
-          description: HU-033. Copia oculta que se agrega al enviar (el comercial), o `null` si no tiene correo o ya va en para/cc.
+          description: |
+            HU-033. Copia oculta que se agrega al enviar (el comercial), o `null` si no tiene correo o ya va en para/cc. OBS-1027-5
+            (#226, ADR-023): con `entorno_pruebas = true` siempre es `null`, porque el correo redirigido sale sin CC ni CCO.
         entorno_pruebas:
           type: boolean
           description: HU-033. El ambiente redirige los correos al buzón de pruebas (mostrar el aviso).

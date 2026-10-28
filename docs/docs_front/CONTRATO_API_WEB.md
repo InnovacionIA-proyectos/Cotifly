@@ -50,7 +50,7 @@ ClientePro (ya autenticado)
 
 ## 3. Endpoints
 
-Resumen de los endpoints de uso más frecuente; la lista completa (52) está en `CONTRATOS_API_COTIFLY_FRONTEND.md` §4.
+Resumen de los endpoints de uso más frecuente; la lista completa (55) está en `CONTRATOS_API_COTIFLY_FRONTEND.md` §4.
 
 | Método y ruta | Rol | Resumen |
 |---|---|---|
@@ -67,7 +67,7 @@ Resumen de los endpoints de uso más frecuente; la lista completa (52) está en 
 | `GET /web/regionales` | gerente_comercial o director | HU-037.3 (#211): regionales del selector (todas para el director, la suya para el gerente). Ver §8.10.1 |
 | `GET /web/cotizaciones/{folio}` | dueño, gerente de su regional o director | HU-027.1 (#179): detalle completo en una llamada (cabecera, costeo por ruta, rutas capturadas y totales) con el `ETag`; el gerente solo consulta. Ver §8.14 |
 | `POST /web/cotizaciones/{folio}/enviar` | ambos | Envía la cotización por correo con el PDF. HU-033 (#199): por MailSender; el 200 es "aceptado" (`estado = encolado`, `correo_id`, `redirigido_a`), el comercial va en copia oculta y el cuerpo lleva el precio por ruta y el total sin desglose. Por defecto, en todos los ambientes, va al buzón de pruebas con `[QA]` (`redirigido_a`); solo producción con `Correo:Proteccion:Modo=ninguno` y `Correo:Proteccion:PermitirEnvioReal=true` escribe a los destinatarios reales. 503 `ErrorNegocio` `CORREO_DESHABILITADO` si el correo está deshabilitado en el servidor |
-| `POST /web/cotizaciones/{folio}/correo/vista-previa` | ambos | Asunto, cuerpo y destinatarios sin enviar. HU-033: también `cuerpo_html`, `resumen` (precio por ruta y total), `copia_oculta` y el aviso de ambiente de pruebas (`entorno_pruebas`, `redirigido_a`, `aviso`) |
+| `POST /web/cotizaciones/{folio}/correo/vista-previa` | ambos | Asunto, cuerpo y destinatarios sin enviar. HU-033: también `cuerpo_html`, `resumen` (precio por ruta y total), `copia_oculta` y el aviso de ambiente de pruebas (`entorno_pruebas`, `redirigido_a`, `aviso`). Al redirigir, `copia_oculta = null`: el correo sale sin CC ni CCO (OBS-1027-5 de #226) |
 | `GET /web/cotizaciones/{folio}/correos` | ambos (dueño) | HU-033 (#199): historial de envíos con el estado de MailSender (`encolado`, `enviando`, `enviado`, `fallido` con `error`) y `reintentable` |
 | `POST /web/cotizaciones/{folio}/correos/{correoId}/reintentar` | ambos (dueño) | HU-033 (#199): pide a MailSender reintentar un envío `fallido`; 409 `CORREO_NO_REINTENTABLE` si no aplica (no está `fallido`, ya se está reintentando por un doble clic, nunca llegó a MailSender o MailSender ya no lo conoce) |
 | `POST /web/cotizaciones/{folio}/seguimiento` | ambos | Marca ganada o perdida **solo** cotizaciones fuera de Nexo (`estado_costeo` `null`, `descartada` o `costeo_vencido`). Las de Nexo responden 409 `USAR_RESULTADO_NEXO`, con `detalle` = `{metodo, endpoint, requiere_if_match}` (HU-021.13) |
@@ -231,6 +231,8 @@ no existe: las cotizaciones se crean solo con el formulario (`POST /web/solicitu
 - `precio`, `margen` y `pdf` son **obsoletos** y siempre `null`. `cotizacion_origen_id` y `moneda` del request son **obsoletos**: se aceptan y se ignoran (ya no producen 400 ni 404).
 - `errores` (`[{herramienta, codigo}]`): errores de negocio de las herramientas del turno, con los códigos de `ErrorNegocio`.
 - Un fallo interno responde **200** con `error: true`. El frontend muestra `texto` tal cual. Esto incluye el límite de peticiones del proveedor de IA.
+- Con el proveedor de IA caído (conexión rechazada, red o tiempo agotado, también tras los reintentos del SDK) el `codigo` es
+  `IA_NO_DISPONIBLE`, nunca `ERROR_INTERNO` (DEF-1027-1 de #226).
 - 429 es otra cosa: el límite de peticiones de la propia API de Cotifly (por defecto 20 turnos por minuto y comercial, `LimiteChat`).
 - 400 `{"error":"Cuerpo inválido. Revisa: mensaje."}` si `mensaje` está vacío o tiene más de 8000 caracteres.
 - 400 `{"error":"sesion_id inválido"}` si no cumple `^[A-Za-z0-9_-]{8,64}$`.
@@ -743,7 +745,8 @@ retorno + levante + conexos de los camiones que cuentan, **sin margen**). Va **s
 costeo de Nexo es en pesos y no se convierte; `precio_final_linea` sí va en dólares), y es `null` en los mismos casos que
 `precio_final_linea` (sin costeo o ruta `rechazada`). En el ejemplo, 4.500.000 y 3.000.000 (5.294.118 y 3.529.412 con el 15 %). Es solo
 del dueño: sale aquí, en las respuestas de margen, conexos y recálculo de vehículos y en `costeo` del detalle por folio (§8.14), donde
-el gerente en solo consulta lo recibe siempre en `null`. No hay desglose ni costo por camión o por conexo, y no sale en "Mis
+el gerente o el director en solo consulta lo reciben siempre en `null`. Con la cotización finalizada (§8.17) es el costo con que se
+finalizó, como el precio congelado. No hay desglose ni costo por camión o por conexo, y no sale en "Mis
 cotizaciones", el listado regional, el PDF, el correo, el Excel ni el asistente. Es una reversa de la regla de ADR-015 §5 ("el costo
 bruto nunca llega al comercial"), confirmada por la Gerencia Comercial el 2026-10-27.
 
@@ -801,7 +804,8 @@ unitario de Nexo.
 { "items": [ { "linea_orden": 2, "servicio_id": "8b1f3c2a-0d4e-4f5a-9b6c-7d8e9f0a1b2c", "cantidad": 1 } ] }
 ```
 
-Los dos responden 200 `CosteoCotizacion`, o 400 `RUTA_REQUERIDA`/`RUTA_INEXISTENTE` como en 8.7.
+Los dos responden 200 `CosteoCotizacion`, o 400 `RUTA_REQUERIDA`/`RUTA_INEXISTENTE` como en 8.7. Las dos respuestas traen el
+`estado_nexo` y la categoría de cada conexo igual que `GET .../costeo` (#173 para el `PUT`; DEF-1027-3 de #226 para el `POST`).
 
 ### 8.9 Resultado: `POST /web/cotizaciones/{folio}/resultado`
 

@@ -571,7 +571,9 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
      frontend no consume) responden 500 hasta que sube la imagen nueva.
    - Orden del release con #152 y #155 juntas: `09` → imagen → `08`. ~~Con #183 y #184 (integración 1021): `03` → `pendientes/04` → `05`
      → `06` → `07` → `09` → `10` → `11` → imagen → `08`.~~ Con HU-032 (#197) y HU-033 (#199): `03` → `pendientes/04` → `05` → `06`
-     → `07` → `09` → `10` → `11` → `12` → `13` → imagen → `08`. Con HU-036 (#205 a #208): `…` → `13` → `14` → imagen → `08`.
+     → `07` → `09` → `10` → `11` → `12` → `13` → imagen → `08`. ~~Con HU-036 (#205 a #208): `…` → `13` → `14` → imagen → `08`.~~ Con HU-036 (#205 a #208) y HU-037 (#209 a #211) juntas
+     (integración 1027): `…` → `13` → `14` → `15` → imagen → `08`, con el `15` en la misma ventana que la imagen (nunca antes con una
+     imagen vieja, ver §2.2 "Rol director"). En la compartida el `15` ya está aplicado (#209) y el `14` está pendiente de @scalderon-bs.
    - **HU-030.1 (#184): `db/scripts/11_peso_con_tara.sql` va ANTES de la imagen de #184.** Agrega a la ruta
      (`CotizacionLineasSolicitud`) la columna `pesoConTaraKg DECIMAL(12,2) NULL` y el `CHECK` `ck_cotizacionLineasSolicitud_pesoConTaraKg`
      (`NULL` o > 0): el peso total con tara que escribe el comercial en una ruta `Contenedor`. Es un `ADD` de columna NULL, idempotente

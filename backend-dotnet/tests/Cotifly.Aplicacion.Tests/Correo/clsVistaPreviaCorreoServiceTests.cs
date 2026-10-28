@@ -83,6 +83,26 @@ public sealed class clsVistaPreviaCorreoServiceTests
         vista.Aviso.Should().Contain("Ambiente de pruebas").And.Contain("qa@pruebas.local");
     }
 
+    /// <summary>
+    /// OBS-1027-5 (#226, ADR-023): al redirigir, el correo sale solo al buzón de pruebas, sin CC ni CCO. La vista previa ya no anuncia
+    /// la copia oculta al comercial (<c>copia_oculta = null</c>) y el aviso lo dice; con el envío real sigue anunciándola.
+    /// </summary>
+    [Fact]
+    public async Task AlRedirigirLaVistaPreviaNoAnunciaLaCopiaOcultaQueNoSeEnvia()
+    {
+        var comercial = clsUsuarioWeb.Crear("nvargas", "Nathaly Vargas", "nvargas@boterosoto.com.co", null, clsCotizacionMuestra.Ahora).Valor;
+        var costeada = clsCotizacionMuestra.Costeada(folio: "PCN-V3", usuarioId: comercial.Id);
+        _cotizaciones.ObtenerPorFolioDelUsuarioAsync("PCN-V3", comercial.Id, Arg.Any<CancellationToken>()).Returns(costeada);
+        _usuarios.ObtenerPorIdAsync(comercial.Id, Arg.Any<CancellationToken>()).Returns(comercial);
+        _opciones.Proteccion = new clsOpcionesProteccionCorreo { Modo = "redirigir", BuzonPruebas = "qa@pruebas.local" };
+
+        var vista = (await Servicio().PrevisualizarAsync(comercial.Id, "PCN-V3", null, Ct)).Valor;
+
+        vista.EntornoPruebas.Should().BeTrue();
+        vista.CopiaOculta.Should().BeNull("al redirigir no sale ninguna copia oculta");
+        vista.Aviso.Should().Contain("sin CC ni CCO");
+    }
+
     [Fact]
     public async Task LaVistaPreviaTraeElResumenConElTotalYLaCopiaOcultaAlComercial()
     {
