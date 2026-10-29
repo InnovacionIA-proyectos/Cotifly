@@ -22,7 +22,7 @@ El rol se obtiene del almacén corporativo de ClientePro (`dbsolucionesti`) en c
 - **Login SSO desde ClientePro** con verificación doble, access JWT de 60 minutos, refresh rotado de 30 días y logout que revoca ambos.
 - **Asistente IA por folio, agnóstico al proveedor** (`POST /web/chat` con `folio`): consulta la cotización y propone ajustes de margen, re-solicitudes del costeo y servicios conexos que el comercial confirma; ningún monto llega al modelo ([ADR-003](../specs/decisiones/ADR-003-orquestacion-ia-agnostica.md), [ADR-018](../specs/decisiones/ADR-018-pipeline-determinista-ia-etapa-final.md)). El agente cotizador con slot filling ([ADR-004](../specs/decisiones/ADR-004-estado-conversacion-slot-filling.md)) y el webhook de Google Chat se retiraron en HU-013.9 (#105).
 - **Validador de la respuesta final** del agente con JSON Schema, un reintento y respaldo controlado (HU-003.10).
-- **Margen** desde SAP TM (export JSON u OData en vivo) con respaldo en la política de la línea, y margen negociado auditado.
+- **Margen** desde SAP TM (la copia local que sincroniza Datos a diario, HU-042) con respaldo en la política de la línea, y margen negociado auditado.
 - **Precio** por margen o markup con redondeo half-to-even sobre `decimal`.
 - **PDF** de la cotización con PDFsharp-MigraDoc (una tarifa o varias secciones), folio generado por el servidor ([ADR-011](../specs/decisiones/ADR-011-folio-e-identidad-google-chat.md)) y almacén en volumen.
 - **Correo** por el relay interno con vista previa, destinatarios previos, deduplicación de 5 minutos y estado `enviada`/`reenviada`.
@@ -40,7 +40,7 @@ El rol se obtiene del almacén corporativo de ClientePro (`dbsolucionesti`) en c
 | #8 | HU-003.2 | Solución, capas, convenciones, configuración validada al arrancar, `GET /health` y `GET /health/ready` |
 | #9 | HU-003.3 | Modelo de dominio y persistencia EF Core Database First sobre SQL Server 2019 |
 | #10 | HU-003.4 | Módulos Precio, Margen (incluido el margen negociado) y Tarifas |
-| #13 | HU-003.7 | Fuentes reales de SAP TM (export JSON y OData en vivo), elegidas por `SapTm:Modo` |
+| #13 | HU-003.7 | Fuentes reales de SAP TM (export JSON y OData en vivo), elegidas por `SapTm:Modo`; reemplazadas por la copia local en HU-042.2 (#243, ADR-027) |
 | #11 | HU-003.5 | PDF, correo y auditoría; teléfono del comercial y seguimiento como casos de uso |
 | #27 | HU-006.3 | `Dockerfile` multi-stage con runtime chiseled, sonda propia y usuario no root |
 | #12 parte A | HU-003.6 | Login SSO ClientePro con verificación doble, refresh y logout (`/api/auth/*`) |

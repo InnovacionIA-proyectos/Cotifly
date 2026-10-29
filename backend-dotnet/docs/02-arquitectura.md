@@ -12,7 +12,7 @@ Contenido:
 - [2.4 Convenciones de nombres](#24-convenciones-de-nombres)
 - [2.5 Modelo de dominio y persistencia](#25-modelo-de-dominio-y-persistencia)
 - [2.6 Precio, margen y tarifas](#26-precio-margen-y-tarifas)
-- [2.7 Fuentes de SAP TM](#27-fuentes-de-sap-tm)
+- [2.7 Margen de SAP TM: copia local](#27-margen-de-sap-tm-copia-local)
 - [2.8 PDF, correo y auditoría](#28-pdf-correo-y-auditoría)
 - [2.9 Identidad: login SSO con verificación doble](#29-identidad-login-sso-con-verificación-doble)
 - [2.10 API web](#210-api-web)
@@ -34,10 +34,9 @@ flowchart LR
         api[Cotifly.Api<br/>ASP.NET Core 10]
     end
     subgraph sql[SQL Server 2019 corporativo]
-        dbc[(dbTarifario_Nexo_Pruebas<br/>esquema dbo_cotifly)]
+        dbc[(dbTarifario_Nexo_Pruebas<br/>esquema dbo_cotifly<br/>incluye la copia local del margen de SAP TM)]
         dbi[(dbsolucionesti<br/>solo lectura)]
     end
-    sap[SAP TM<br/>export JSON u OData]
     llm[Proveedor LLM]
     mails[MailSender<br/>microservicio interno de correo]
     nexo[Nexo<br/>clientes, municipios, catálogos, cubicación]
@@ -47,7 +46,6 @@ flowchart LR
     front -- "HTTPS /api/auth, /web, /pdfs" --> api
     api --> dbc
     api --> dbi
-    api --> sap
     api --> llm
     api -- "HTTP POST /api/v1/emails" --> mails
     api -- "HTTPS con X-Portal-clsUsuario-Id" --> nexo
@@ -208,46 +206,40 @@ Base de datos, scripts de esquema y permisos: [03-infraestructura](03-infraestru
 | `Comun/clsCodigosError` | Dominio | Códigos del esquema `ErrorNegocio` (verificados contra `openapi.yaml`) |
 | `Precio/clsConversorMoneda` | Dominio | Monedas `COP` y `USD` (otra → `PRECIO_INVALIDO`), decimales por moneda (0 y 2) y `PesosADolares`: `round(precio_cop / trm, 2)` half-to-even sobre `decimal` (HU-012.2) |
 | `IClsPrecioService` / `clsPrecioService` → `clsSalidaPrecio` | Aplicacion | Cálculo del precio (lo usan el costeo, el ajuste de margen y las propuestas del asistente; era `calcular_precio` del agente legado), salida `SalidaPrecio` `{precio, costo, margen, metodo, utilidad, moneda, trm_aplicada, precio_cop, trm_fuente}`. `CalcularAsync` calcula en pesos y, en USD, convierte con la TRM de `IClsProveedorTrm` para la fecha de `IClsCalendarioNegocio` (costo y utilidad siguen en COP; TRM caída → `TRM_NO_DISPONIBLE`, sin precio). `TrmDelDiaAsync` y `EnMoneda` los usaba `registrar_ajuste_margen` del agente legado (retirado en HU-013.9) |
-| `IClsMargenResolverService` / `clsMargenResolverService` → `clsMargenResuelto` (`Salida`: `clsSalidaMargen`) | Aplicacion | Margen sugerido (lo usan el envío del costeo, las licitaciones y el PDF; era `obtener_margen` del agente legado), mismo orden que el Python: línea → TrqType (`IClsSapMapeoRepository`, la organización específica gana al comodín) → si hay **BP** y TrqType, `IClsFuenteMargen` por (salesOrg, TrqType, BP) → `sap_tm`; sin BP no consulta SAP (ADR-004); sin BP, sin TrqType, sin registro o con la fuente no configurada → `politica_linea` con el motivo en `detalle`; sin política → `MARGEN_LINEA_DESCONOCIDA`; fuente configurada pero caída → `politica_linea` con el motivo "SAP TM no disponible" y un warning (decisión de #13; `MARGEN_FUENTE_NO_DISPONIBLE` solo si además la línea no tiene política). Devuelve además `LineaNegocioId`, `MargenPolitica` y `MetodoCalculo` para el estado (ADR-004) |
+| `IClsMargenResolverService` / `clsMargenResolverService` → `clsMargenResuelto` (`Salida`: `clsSalidaMargen`) | Aplicacion | Margen sugerido (lo usan el envío del costeo, las licitaciones y el PDF; era `obtener_margen` del agente legado): línea → política (por nombre, sin tildes) → TrqType por el **id** de la política (`IClsSapMapeoRepository`, HU-042.4; la organización específica gana al comodín; sin política no hay TrqType) → si hay **BP** y TrqType, `IClsFuenteMargen` por (salesOrg, TrqType, BP) → `sap_tm` con el detalle "SAP TM (tabla local, actualizado AAAA-MM-DD)" y, si la última sincronización supera `SapTm:AvisoSincronizacionHoras`, el aviso; sin BP no consulta SAP (ADR-004); sin BP, sin TrqType, sin registro (o fila inactiva) o con la copia nunca sincronizada → `politica_linea` con el motivo en `detalle`; sin política → `MARGEN_LINEA_DESCONOCIDA`; fuente caída → `politica_linea` con el motivo "SAP TM no disponible" y un warning (decisión de #13). Devuelve además `LineaNegocioId`, `MargenPolitica` y `MetodoCalculo` para el estado (ADR-004) |
 | `IClsAjusteMargenService` / `clsAjusteMargenService` → `clsSalidaAjusteMargen` | Aplicacion | Margen negociado: redondea a 4 decimales y valida por método (`AJUSTE_MARGEN_INVALIDO`, código nuevo agregado a `ErrorNegocio`; `PRECIO_INVALIDO` queda solo para el cálculo de precio), registra `MargenAjustes` con el comercial (`usuarioId`) y la cotización (debe ser suya; si no, `AJUSTE_COTIZACION_INVALIDA`), devuelve origen `negociado` y, si viene costo, el precio con el margen manual (sin recalcular la política) |
-| `IClsFuenteMargen` (Strategy) / `clsOpcionesMargen` (`SapTm:SalesOrgDefault`, por defecto `50000005`) | Aplicacion | Puerto de SAP TM: devuelve el `Value` crudo (13.5 = 13,5 %) o `null`; el resolver lo divide por 100 una sola vez. Adaptadores `export_json` / `odata` en #13 (abajo) |
+| `IClsFuenteMargen` / `clsConsultaMargenSap` / `clsOpcionesMargen` (`SapTm:SalesOrgDefault`, por defecto `50000005`; `SapTm:AvisoSincronizacionHoras`, por defecto 48) | Aplicacion | Puerto de SAP TM (HU-042.2): `ConsultarAsync` responde `NoConfigurada`, `SinRegistro` o `ConValor` con el porcentaje crudo (13.5 = 13,5 %), la fecha de la fila y la de la última sincronización; el resolver divide por 100 una sola vez. Adaptador: la copia local (§2.7) |
 | `Precio/Interfaces/IClsProveedorTrm` → `clsTrm` | Aplicacion | TRM vigente en una fecha de negocio (HU-012.1, ADR-014): `{Valor, VigenciaDesde, VigenciaHasta, Fuente}` (`dolarapi` o `superfinanciera`) o `TRM_NO_DISPONIBLE`; nunca lanza por la fuente |
 | `Precio/Services/clsProveedorTrmDolarApi` | Infraestructura | Fuente principal (`Trm:UrlDolarApi`, por defecto `https://co.dolarapi.com/v1/trm`): valida `unidad = COP`, `nombre = TRM`, `valor` en [500, 20000] (4 decimales half-to-even) y a ±10 % de la última TRM conocida (`clsMemoriaTrm`), cuerpo ≤ 16 KB y `fechaActualizacion` del día pedido antes de las 12:00 en Bogotá (después puede ser la TRM de mañana); vigencia = el día pedido. Cliente con nombre `TrmDolarApi`, `clsResilienciaTrm` con `Trm:TiempoEsperaDolarApiSegundos`; fallo → `TRM_NO_DISPONIBLE` con un warning |
 | `Precio/Services/clsProveedorTrmConRespaldo` | Infraestructura | Cadena `Trm:Proveedor = dolarapi_con_respaldo` (por defecto): DolarApi y, solo si falla, la Superintendencia (warning con la fuente usada); las dos caídas → `TRM_NO_DISPONIBLE` con los dos motivos. Con `dolarapi` o `superfinanciera` se registra solo esa fuente |
 | `Precio/Services/clsProveedorTrmSuperfinanciera` | Infraestructura | Datos abiertos de la Superintendencia Financiera (`Trm:Url`, conjunto `32sa-8pi3`): SoQL `vigenciadesde <= F AND vigenciahasta >= F`, orden descendente, 1 fila, así los fines de semana y festivos reciben la TRM del rango que los cubre. Cliente con nombre `Trm` (`IHttpClientFactory`, se crea por consulta), resiliencia estándar con `Trm:TiempoEsperaSegundos` en total, un tercio por intento y 2 reintentos; fallo → `TRM_NO_DISPONIBLE` con un warning |
 | `Precio/Services/clsProveedorTrmEnCache` | Infraestructura | Decorador singleton registrado como `IClsProveedorTrm`, encima de la cadena: caché por fecha de negocio (America/Bogota): la primera TRM válida del día queda fija hasta las 00:00 del día siguiente (una fecha pasada, 6 horas), registra cada TRM en `clsMemoriaTrm`, consulta compartida por fecha (los simultáneos reciben el mismo resultado, también un fallo) y caché negativa de 20 s |
-| `Margen/Services/clsFuenteMargenNoConfigurada` | Infraestructura | Fuente con `SapTm:Modo` vacío (valor por defecto): `EstaConfigurada = false` y devuelve `null` (no lanza); el resolver usa la política con el detalle "SAP TM no configurado: se usa la política de la línea" |
 
-Diferencias deliberadas con el Python: la línea se resuelve sin tildes ni espacios (la collation `CI_AS` distingue tildes); los textos de `detalle` son los del Python (`(cliente nuevo)`, `(sin registro en SAP TM)`, `Margen propuesto SAP TM para cliente X en OPTN: 13.5%`, con el `Value` tal como llega de SAP, igual que el `f"{value}%"` del Python, corregido en #13) salvo el caso sin BP (`cliente nuevo: sin BP de SAP, no se consulta SAP TM`, ADR-004) y los de SAP no configurado o no disponible; los márgenes del ajuste y su diferencia se redondean a 4 decimales (escala de `DECIMAL(9,4)`) y no a 6; el margen negociado se valida por método (el Python no validaba, código `AJUSTE_MARGEN_INVALIDO`) y un motivo vacío se registra como `Ajuste manual del comercial`; empates exactos de medio peso (ver arriba).
+Diferencias deliberadas con el Python: la línea se resuelve sin tildes ni espacios (la collation `CI_AS` distingue tildes); los textos de `detalle` son los del Python (`(cliente nuevo)`, `(sin registro en SAP TM)`; el de SAP pasó a `Margen propuesto SAP TM (tabla local, actualizado 2026-10-28) para cliente X en OPTN: 13.5%` en HU-042.2, con el valor sin ceros a la derecha) salvo el caso sin BP (`cliente nuevo: sin BP de SAP, no se consulta SAP TM`, ADR-004) y los de SAP no configurado o no disponible; los márgenes del ajuste y su diferencia se redondean a 4 decimales (escala de `DECIMAL(9,4)`) y no a 6; el margen negociado se valida por método (el Python no validaba, código `AJUSTE_MARGEN_INVALIDO`) y un motivo vacío se registra como `Ajuste manual del comercial`; empates exactos de medio peso (ver arriba).
 
 **PDF y trazabilidad en USD (HU-012.2):** `clsGenerarPdfService` exige que el `PrecioFinal` de la trazabilidad sea el precio en pesos (costo y margen) convertido con su `TrmAplicada`, y compara la tarifa impresa con centavos. La cabecera (`CotizacionesSolicitud` desde el 0009) guarda `moneda`, `precioFinal` en esa moneda y `trmAplicada` (0 en COP, nunca nula; `DECIMAL(18,4)` del script 0001). Los costos de Nexo, en pesos, son de la ruta y del camión; cada precio se calcula en pesos y se convierte con la `trmAplicada` de la cabecera (ADR-019).
 
 Las decisiones de negocio que siguen abiertas en este módulo están en [10-operacion](10-operacion.md#107-decisiones-pendientes). El orden de resolución del margen se muestra como diagrama en [04-flujo-del-sistema](04-flujo-del-sistema.md#45-resolución-del-margen).
 
-## 2.7 Fuentes de SAP TM
+## 2.7 Margen de SAP TM: copia local
 
-**Fuentes de SAP TM (#13, HU-003.7).** Port de `mcp_server/margen/export_fuente.py`, `odata_fuente.py` y `construir_resolver`, con paridad verificada contra `test_export_*`, `test_odata_*`, `test_construir_resolver_*` y `test_conmutacion_export_a_odata_misma_salida` ([08-testing](08-testing.md)). Detalle operativo en [03-infraestructura](03-infraestructura.md).
+**HU-042.2 (#243) y HU-042.4 (#247), [ADR-027](../specs/decisiones/ADR-027-margen-sap-tabla-local.md).** El margen recomendado de SAP TM
+(`RentabClienteSet`) ya no se consulta en vivo ni de un export montado: sale de `dbo_cotifly.SapMargenCliente`, la copia que sincroniza a
+diario el job de Datos (HU-042.1, #242; `db/jobs/`, SQL Server Agent). Cotifly no tiene red ni credenciales hacia SAP. Los modos
+`export_json`/`odata` de #13 (HU-003.7) se retiraron con sus adaptadores, su fábrica, sus opciones y sus pruebas.
 
 | Pieza | Capa | Qué hace |
 |---|---|---|
-| `Configuracion/clsOpcionesSapTm` + `clsValidadorOpcionesSapTm` | Infraestructura | Misma sección `SapTm` que `clsOpcionesMargen`: `Modo` (`export_json` \| `odata` \| vacío), `ExportPath`, `Url`, `SapClient` (opcional, 3 dígitos), `User`, `Pass` (`[clsSecreto(LargoMinimo = 8, Opcional = true)]`). Valida al arrancar según el modo |
-| `Margen/Services/clsFabricaFuenteMargen` | Infraestructura | `construir_resolver`: registra `IClsFuenteMargen` (transitorio, `TryAdd`) y elige el adaptador por `SapTm:Modo` al resolver |
-| `Margen/Services/clsFuenteMargenExportJson` | Infraestructura | `export_json`: indexa `d.results` por (SalesOrgId, TrqType, OrderPartyId); singleton con caché que se recarga al cambiar la fecha o el tamaño del archivo; archivo ausente o malformado → `clsFuenteMargenNoDisponibleException` |
-| `Margen/Services/clsFuenteMargenOData` | Infraestructura | `odata`: cliente HTTP tipado (`IHttpClientFactory`, nombre `SapTm`) con `AddStandardResilienceHandler` (10 s en total, 4 s por intento, 2 reintentos ante 5xx/408/429/red/timeout), Basic auth y `$filter` escapado; sin resultados → `null`; error → `clsFuenteMargenNoDisponibleException` |
-| `Margen/Services/clsAvisosArranqueSapTm` | Infraestructura | `IHostedService` con avisos que no impiden arrancar: `Production` con `SapTm:Modo` vacío ("todos los márgenes salen de la política de la línea") y `export_json` cuyo archivo todavía no existe (se recoge en caliente cuando aparece) |
-| `Margen/Services/clsFormatoRentabSap` (interno) | Infraestructura | Lectura común de `{"d":{"results":[...]}}`: identificadores como texto, `Value` como texto (`"13.5"`, formato OData v2 de `Edm.Decimal`) o número JSON |
+| `Margen/Services/clsFuenteMargenTablaLocal` | Infraestructura | Única `IClsFuenteMargen` (scoped, `TryAdd`). Sin ninguna corrida `ok` en `SapMargenSyncLog` → `NoConfigurada` (no lee la tabla). Si no, busca la fila `activo = 1` por organización y TrqType (recortados, mayúsculas) y BP **sin ceros a la izquierda en los dos lados**, con el índice único `(salesOrgId, trqType, bpSap)` y el final del BP; devuelve el porcentaje, `actualizadoAt` y la última sincronización. Error de base → `clsFuenteMargenNoDisponibleException`. `AsNoTracking`, sin caché |
+| `Comun/Persistence/clsSapMargenClienteFila`, `clsSapMargenSyncLogFila` (+ `clsSapMargenConfiguracion`) | Infraestructura | Mapeo de solo lectura de las dos tablas del `db/scripts/17` (CHECK del estado e índices incluidos). Sus columnas de texto heredan la collation de la base (`clsCotiflyDbContext.TablasConCollationDeLaBase`) |
+| `Margen/clsSapMapeoTrqType.LineaNegocioId` (+ `clsSapMapeoRepository`) | Dominio / Infraestructura | HU-042.4: FK a `MargenesPolitica(id)` (`db/scripts/18`); `TrqTypeDeAsync(lineaNegocioId, salesOrg)` y `LineaDeAsync` (nombre por el id) con el comodín `IN (@org, '') ORDER BY salesOrg DESC`. La columna `lineaNegocio` (texto) sigue mapeada mientras exista |
+| `Margen/Services/clsAvisosArranqueSapTm` | Infraestructura | `IHostedService`: un warning "variable obsoleta, se ignora" por cada `SapTm__Modo`, `__Url`, `__User`, `__Pass`, `__SapClient` o `__ExportPath` que llegue con valor (nombre, nunca el valor). No impide arrancar |
 
-Diferencias deliberadas con el Python:
-- **SAP caído → política de la línea (decisión de #13).** El Python respondía `MARGEN_FUENTE_NO_DISPONIBLE` sin respaldo. .NET sigue el Gherkin de negocio de HU-009 ("Resiliencia si SAP no responde": cae a la política sin romper el flujo de cotización). El detalle dice "SAP TM no disponible: se usa la política de la línea" y queda un warning en el log. `MARGEN_FUENTE_NO_DISPONIBLE` sigue en el contrato, pero solo sale si SAP falla y además la línea no tiene política.
-- **Detalle con el `Value` crudo:** `…en OPTN: 13.5%`, como el `f"{value}%"` del Python (en #10 se imprimía con 2 decimales fijos, `13.50%`).
-- **Inyección en el filtro OData corregida:** el Python armaba `$filter` con un f-string sin escapar (un BP `15927' or 1 eq 1` cambiaba la consulta). .NET escribe cada valor como literal OData, con la comilla simple duplicada, y codifica el filtro para URL (`Uri.EscapeDataString`), así un valor no puede cerrar el literal ni agregar parámetros.
-- **Modo por defecto vacío** (fuente no configurada, política de la línea), no `export_json` con el archivo de muestra; un modo desconocido no arranca (el Python caía a `export_json`).
-- **Caché del export:** el Python leía el archivo una vez por proceso. .NET lo relee cuando cambia (fecha o tamaño revisados en cada consulta), sin TTL ni `FileSystemWatcher`, y descarta la caché si el archivo desaparece o queda ilegible: nunca sirve un export viejo.
-- **Resiliencia:** el Python hacía un solo intento de 10 s; .NET reintenta los fallos transitorios dentro del mismo límite de 10 s y distingue la cancelación del llamador (se propaga) de una caída de SAP.
-- **Validación:** `odata` exige `Url`, `User` y `Pass` (el Python aceptaba OData sin autenticación); el `Value` de un export o de una respuesta debe ser numérico. Una fila malformada invalida todo el export (en el Python salía una excepción de pydantic no controlada).
-- **`SapTm:SapClient`** (nuevo, opcional, 3 dígitos): agrega `&sap-client=NNN` a la consulta OData. El Python no lo soportaba.
-- **Logs:** un fallo de SAP deja una sola línea de warning (motivo, TrqType y organización) sin traza; la excepción completa queda en Debug, y los eventos de Polly de esta tubería (reintentos, timeouts) bajan a Debug (`TelemetryOptions.SeverityProvider` filtrado por el pipeline `SapTm-standard`).
-- Los mensajes no incluyen la ruta del export ni credenciales; la ruta va al log.
+Reglas que se conservan: sin BP no se busca (ADR-004); el anómalo fuera de [0, 60 %] se marca y el envío a Nexo aplica la política
+(#139); una fuente caída cae a la política con "SAP TM no disponible" y un warning; `origen` sigue siendo `sap_tm`. Lo nuevo: cada
+cliente recibe su propia fila (el modo `odata` tomaba `results[0]`), el detalle dice de dónde y de cuándo es el dato, y la copia no
+caduca (si la última sincronización exitosa supera `SapTm:AvisoSincronizacionHoras`, el detalle lo avisa y el margen se usa igual).
+`/health/ready` exige el `17` y el `18` ("falta 17", "falta 18").
 
 ## 2.8 PDF, correo y auditoría
 
