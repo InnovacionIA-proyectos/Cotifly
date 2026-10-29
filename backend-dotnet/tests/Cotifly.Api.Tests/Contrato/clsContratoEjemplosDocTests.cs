@@ -46,6 +46,8 @@ public sealed partial class clsContratoEjemplosDocTests
             "respuesta: GET /web/cotizaciones/{id}/nueva-version 200",
             // HU-016.1 (#154): listado regional del gerente comercial.
             "respuesta: GET /web/cotizaciones/regional 200",
+            // HU-037.3 (#211): regionales del selector del director y del gerente.
+            "respuesta: GET /web/regionales 200",
             "esquema: LicitacionWeb",
             // HU-023.2 (#157): "Calcular cubicaje" contra el cubicador.
             "esquema: CubicacionRequest",
@@ -70,6 +72,16 @@ public sealed partial class clsContratoEjemplosDocTests
             // HU-035.1 (#202): Excel de mercancías de una ruta, leído en Cotifly sin Nexo.
             "respuesta: POST /web/mercancias/analizar-excel 200",
             "respuesta: POST /web/mercancias/analizar-excel 400",
+            // HU-016.1 (#154, parte B): desplegable de líneas de negocio activas, sin margen.
+            "respuesta: GET /web/lineas-negocio 200",
+            // HU-041.1 (#231): margen y conexos de varias rutas en una operación.
+            "esquema: MargenLineasWeb",
+            "esquema: ConexoLineasWeb",
+            "esquema: QuitarConexoLineasWeb",
+            "respuesta: PUT /web/cotizaciones/{folio}/costeo/margen/lineas 409",
+            // HU-040.2 (#230): selector de rol del login multi-rol.
+            "esquema: EleccionRolRequerida",
+            "esquema: ElegirRolRequest",
         ]);
     }
 

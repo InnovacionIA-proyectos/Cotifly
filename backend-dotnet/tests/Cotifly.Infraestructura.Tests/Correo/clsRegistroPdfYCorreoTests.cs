@@ -82,7 +82,29 @@ public sealed class clsRegistroPdfYCorreoTests
         resultado.FailureMessage.Should().Contain("MailSender:Remitente").And.Contain("MailSender:TimeoutSegundos").And.Contain("MailSender:Prioridad").And.Contain("MailSender:ModoRemitente");
     }
 
+    /// <summary>
+    /// Validación #228: el remitente corporativo debe pasar el formato estricto con que el transporte revisa el <c>From</c>; antes bastaba
+    /// MailAddress (acepta un nombre con ángulos o un dominio de una etiqueta) y ningún correo habría salido.
+    /// </summary>
     [Theory]
+    [InlineData("Notificaciones <notificaciones@boterosoto.com.co>")]
+    [InlineData("notificaciones@intranet")]
+    [InlineData(" notificaciones@boterosoto.com.co")]
+    [InlineData("\"notificaciones\"@boterosoto.com.co")]
+    public void Validacion228_ElRemitenteCorporativoUsaElFormatoEstricto(string remitente)
+    {
+        var resultado = new clsValidadorOpcionesCorreoTransporte().Validate(null, new clsOpcionesCorreoTransporte
+        {
+            Habilitado = true,
+            MailSender = new clsOpcionesMailSender { UrlBase = "http://mailsender.local", Remitente = remitente },
+        });
+
+        resultado.Failed.Should().BeTrue();
+        resultado.FailureMessage.Should().Contain("MailSender:Remitente");
+    }
+
+    [Theory]
+    [InlineData("Development", true, "redirigir", "qa@localhost", false, "Proteccion:BuzonPruebas")]
     [InlineData("Development", true, "redirigir", "qa@pruebas.local", false, null)]
     [InlineData("Staging", true, "redirigir", "qa@pruebas.local", false, null)]
     [InlineData("Staging", true, "ninguno", null, true, "debe ser 'redirigir'")]
@@ -120,6 +142,48 @@ public sealed class clsRegistroPdfYCorreoTests
             resultado.Failed.Should().BeTrue();
             resultado.FailureMessage.Should().Contain(error);
         }
+    }
+
+    // #228 (decisión del 2026-10-27): el tope de destinatarios es 10 por defecto, configurable de 1 a 100, y se valida aunque el correo
+    // esté deshabilitado (la vista previa también lo aplica).
+    [Theory]
+    [InlineData(10, true, null)]
+    [InlineData(1, false, null)]
+    [InlineData(100, true, null)]
+    [InlineData(0, false, "MaximoDestinatarios")]
+    [InlineData(-1, true, "MaximoDestinatarios")]
+    [InlineData(101, false, "MaximoDestinatarios")]
+    public void Tope228_ElTopeDeDestinatariosSeValida(int maximo, bool habilitado, string? error)
+    {
+        var resultado = new clsValidadorOpcionesCorreo(new clsEntornoFalso("Development")).Validate(null, new clsOpcionesCorreo
+        {
+            Habilitado = habilitado,
+            MaximoDestinatarios = maximo,
+            Proteccion = new clsOpcionesProteccionCorreo { BuzonPruebas = "qa@pruebas.local" },
+        });
+
+        if (error is null)
+        {
+            resultado.Succeeded.Should().BeTrue(resultado.FailureMessage);
+        }
+        else
+        {
+            resultado.Failed.Should().BeTrue();
+            resultado.FailureMessage.Should().Contain(error).And.Contain("entre 1 y 100");
+        }
+    }
+
+    [Fact]
+    public void Tope228_ElTopeSeLeeDeCorreoMaximoDestinatarios()
+    {
+        using var porDefecto = Proveedor();
+        using var configurado = Proveedor(new Dictionary<string, string?> { ["Correo:MaximoDestinatarios"] = "15" });
+        using var invalido = Proveedor(new Dictionary<string, string?> { ["Correo:MaximoDestinatarios"] = "0" });
+
+        porDefecto.GetRequiredService<IOptions<clsOpcionesCorreo>>().Value.MaximoDestinatarios.Should().Be(10);
+        configurado.GetRequiredService<IOptions<clsOpcionesCorreo>>().Value.MaximoDestinatarios.Should().Be(15);
+        var leer = () => invalido.GetRequiredService<IOptions<clsOpcionesCorreo>>().Value;
+        leer.Should().Throw<OptionsValidationException>().Which.Message.Should().Contain("Correo:MaximoDestinatarios");
     }
 
     [Fact]

@@ -120,6 +120,92 @@ public sealed class clsCorreoMailSenderEndpointsTests : IDisposable
             .Should().Be("fallido|-");
     }
 
+    /// <summary>
+    /// DEF-1027B-2 (#228, E2E real 2026-10-27B): el asunto "Hola\r\nBcc: intruso@ejemplo.invalid" respondió 200 y llegó al relay. Ahora es 400
+    /// <c>ErrorWeb</c> sin llamar a MailSender ni tocar el estado de envío; lo mismo una dirección con CR/LF o con una coma.
+    /// </summary>
+    [Fact]
+    public async Task DEF1027B2_UnAsuntoOUnaDireccionConSaltosDeLineaEs400SinLlegarAMailSender()
+    {
+        var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var cotizacion = await _api.CrearCotizacionAsync(ana.UsuarioId, "900111556");
+        var ruta = $"/web/cotizaciones/{cotizacion.Folio}/enviar";
+        object[] cuerpos =
+        [
+            new { para = new[] { "x@ejemplo.invalid" }, asunto = "Hola\r\nBcc: intruso@ejemplo.invalid", cuerpo = "x" },
+            new { para = new[] { "x@ejemplo.invalid\r\nBcc: intruso@ejemplo.invalid" } },
+            new { para = new[] { "x@ejemplo.invalid" }, cc = new[] { "y@ejemplo.invalid, intruso@ejemplo.invalid" } },
+        ];
+
+        foreach (var cuerpo in cuerpos)
+        {
+            using var envio = await _api.EnviarAsync(_post, ruta, ana.Access, clsApiWebPruebas.Json(cuerpo));
+            (await VerificarContratoAsync(envio, "/web/cotizaciones/{folio}/enviar", _post, HttpStatusCode.BadRequest))
+                .GetProperty("error").ValueKind.Should().Be(JsonValueKind.String, "CORREO_INVALIDO es ErrorWeb");
+        }
+
+        using var vista = await _api.EnviarAsync(_post, $"/web/cotizaciones/{cotizacion.Folio}/correo/vista-previa", ana.Access,
+            clsApiWebPruebas.Json(new { asunto = "Hola\r\nBcc: intruso@ejemplo.invalid" }));
+        await VerificarContratoAsync(vista, "/web/cotizaciones/{folio}/correo/vista-previa", _post, HttpStatusCode.BadRequest);
+
+        _api.MailSender.Recibidos.Should().BeEmpty();
+        (await EscalarAsync($"SELECT estadoEnvio FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{cotizacion.Folio}'")).Should().Be("sin_enviar");
+        (await EscalarAsync($"SELECT CONCAT(COUNT(*), '') FROM dbo_cotifly.Correos c JOIN dbo_cotifly.CotizacionesSolicitud s ON s.id = c.cotizacionId WHERE s.folio = '{cotizacion.Folio}'"))
+            .Should().Be("0");
+    }
+
+    /// <summary>
+    /// #228: el E2E aceptó 60 destinatarios en <c>para</c>. Tope entre <c>para</c> y <c>cc</c>, 10 por defecto (decisión del 2026-10-27):
+    /// 400 <c>ErrorNegocio</c> con detalle.
+    /// </summary>
+    [Fact]
+    public async Task Tope228_MasDe10DestinatariosEs400ConDetalleYNoLlegaAMailSender()
+    {
+        var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var cotizacion = await _api.CrearCotizacionAsync(ana.UsuarioId, "900111557");
+
+        using var envio = await _api.EnviarAsync(_post, $"/web/cotizaciones/{cotizacion.Folio}/enviar", ana.Access,
+            clsApiWebPruebas.Json(new { para = Enumerable.Range(1, 60).Select(i => $"c{i}@ejemplo.invalid").ToArray() }));
+
+        var error = (await VerificarContratoAsync(envio, "/web/cotizaciones/{folio}/enviar", _post, HttpStatusCode.BadRequest)).GetProperty("error");
+        error.GetProperty("codigo").GetString().Should().Be("CORREO_DEMASIADOS_DESTINATARIOS");
+        error.GetProperty("detalle").GetProperty("maximo").GetInt32().Should().Be(10);
+        error.GetProperty("detalle").GetProperty("recibidos").GetInt32().Should().Be(60);
+        _api.MailSender.Recibidos.Should().BeEmpty();
+    }
+
+    /// <summary>#228: con <c>Correo:MaximoDestinatarios</c> configurado, el tope y <c>detalle.maximo</c> son ese valor (envío y vista previa).</summary>
+    [Fact]
+    public async Task Tope228_ElTopeConfiguradoMandaEnElEnvioYEnLaVistaPrevia()
+    {
+        using var api = new clsApiWebPruebas(_entorno.BaseDatos, correoHabilitado: true,
+            extra: new Dictionary<string, string?> { ["Correo:MaximoDestinatarios"] = "3" });
+        api.MailSender.Caido = false;
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var cotizacion = await api.CrearCotizacionAsync(ana.UsuarioId, "900111558");
+        var cuatro = clsApiWebPruebas.Json(new { para = new[] { "a@cliente.com", "b@cliente.com" }, cc = new[] { "c@cliente.com", "d@cliente.com" } });
+
+        using var vista = await api.EnviarAsync(_post, $"/web/cotizaciones/{cotizacion.Folio}/correo/vista-previa", ana.Access, cuatro);
+        using var envio = await api.EnviarAsync(_post, $"/web/cotizaciones/{cotizacion.Folio}/enviar", ana.Access, cuatro);
+
+        foreach (var respuesta in new[] { vista, envio })
+        {
+            respuesta.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            using var documento = JsonDocument.Parse(await respuesta.Content.ReadAsStringAsync(Ct));
+            var error = documento.RootElement.GetProperty("error");
+            error.GetProperty("codigo").GetString().Should().Be("CORREO_DEMASIADOS_DESTINATARIOS");
+            error.GetProperty("detalle").GetProperty("maximo").GetInt32().Should().Be(3);
+            error.GetProperty("detalle").GetProperty("recibidos").GetInt32().Should().Be(4);
+        }
+
+        api.MailSender.Recibidos.Should().BeEmpty();
+
+        using var justo = await api.EnviarAsync(_post, $"/web/cotizaciones/{cotizacion.Folio}/enviar", ana.Access,
+            clsApiWebPruebas.Json(new { para = new[] { "a@cliente.com", "b@cliente.com" }, cc = new[] { "c@cliente.com" } }));
+        justo.StatusCode.Should().Be(HttpStatusCode.OK, await justo.Content.ReadAsStringAsync(Ct));
+        api.MailSender.Recibidos.Should().ContainSingle();
+    }
+
     [Fact]
     public async Task LaVistaPreviaAvisaQueEsUnAmbienteDePruebas()
     {
@@ -132,7 +218,9 @@ public sealed class clsCorreoMailSenderEndpointsTests : IDisposable
         json.GetProperty("entorno_pruebas").GetBoolean().Should().BeTrue();
         json.GetProperty("redirigido_a").GetString().Should().Be(clsMailSenderFalso.BuzonPruebas);
         json.GetProperty("aviso").GetString().Should().Contain("Ambiente de pruebas");
-        json.GetProperty("copia_oculta").GetString().Should().Be(ana.NombreUsuario + "@boterosoto.com.co");
+        // OBS-1027-5 (#226): al redirigir el correo sale sin CC ni CCO, así que la vista previa no anuncia la copia oculta al comercial.
+        json.GetProperty("copia_oculta").ValueKind.Should().Be(JsonValueKind.Null);
+        json.GetProperty("aviso").GetString().Should().Contain("sin CC ni CCO");
         json.GetProperty("cuerpo_html").GetString().Should().Contain("Botero Soto</b>");
         _api.MailSender.Recibidos.Should().BeEmpty("la vista previa no envía nada");
     }

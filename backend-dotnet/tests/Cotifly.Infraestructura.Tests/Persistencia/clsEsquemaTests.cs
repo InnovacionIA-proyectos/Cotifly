@@ -94,13 +94,18 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         scripts[clsBaseDatosPruebas.ScriptsHasta05 - 1].Should().Be(clsBaseDatosPruebas.Script05, "ScriptsHasta05 incluye el 05 y no el 06");
         scripts[clsBaseDatosPruebas.ScriptsHasta06 - 1].Should().Be(clsBaseDatosPruebas.Script06, "ScriptsHasta06 incluye el 06 y no el 09");
         scripts[clsBaseDatosPruebas.ScriptsHasta09 - 1].Should().Be(clsBaseDatosPruebas.Script09, "ScriptsHasta09 incluye el 09 y no el 10 ni el 11");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 4].Should().Be(clsBaseDatosPruebas.Script10, "ScriptsSin07 incluye el 10 (el backend mapea el rechazo)");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 3].Should().Be(clsBaseDatosPruebas.Script11, "ScriptsSin07 incluye el 11 (el backend mapea pesoConTaraKg)");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 2].Should().Be(clsBaseDatosPruebas.Script12, "ScriptsSin07 incluye el 12 (el backend mapea el vehículo elegido)");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script13, "ScriptsSin07 llega hasta el 13 (el backend mapea MailSender y el resultado diferido)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 6].Should().Be(clsBaseDatosPruebas.Script10, "ScriptsSin07 incluye el 10 (el backend mapea el rechazo)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 5].Should().Be(clsBaseDatosPruebas.Script11, "ScriptsSin07 incluye el 11 (el backend mapea pesoConTaraKg)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 4].Should().Be(clsBaseDatosPruebas.Script12, "ScriptsSin07 incluye el 12 (el backend mapea el vehículo elegido)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 3].Should().Be(clsBaseDatosPruebas.Script13, "ScriptsSin07 incluye el 13 (el backend mapea MailSender y el resultado diferido)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 2].Should().Be(clsBaseDatosPruebas.Script14, "ScriptsSin07 incluye el 14 (el backend mapea la cotización finalizada)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script16, "ScriptsSin07 llega hasta el 16 (el backend mapea TokensRefresco.rolSesion)");
         scripts[clsBaseDatosPruebas.ScriptsSin07].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsSin07 corta justo antes del 07");
         scripts[clsBaseDatosPruebas.ScriptsHasta07 - 1].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsHasta07 incluye el 07");
-        scripts[clsBaseDatosPruebas.ScriptsHasta07..].Should().ContainSingle().Which.Should().Be(clsBaseDatosPruebas.Script08, "después del 07 solo va el 08");
+        // HU-037.1 (#209): el 15 (rol director) va al final, después del 08: no agrega columnas y clsRolDirectorScriptTests usa
+        // Scripts.Length - 1 como "la base sin el 15".
+        scripts[clsBaseDatosPruebas.ScriptsHasta07..].Should().Equal([clsBaseDatosPruebas.Script08, clsBaseDatosPruebas.Script15],
+            "después del 07 van el 08 y el 15");
     }
 
     [Fact]
@@ -305,6 +310,132 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         (await clsBaseDatosPruebas.EscalarAsync<int>(instalada.Cadena,
                 "SELECT COUNT(*) FROM sys.indexes WHERE name IN (N'ix_correos_siguienteConsultaAt', N'ux_correos_idMailSender') AND has_filter = 1"))
             .Should().Be(2);
+    }
+
+    [Fact]
+    public async Task HU036_ElScript14EsIdempotenteYDejaLaFinalizacionConSuFkAUsuariosWebYSuCheck()
+    {
+        // HU-036 (#205): finalizadaAt y finalizadaPor (UNIQUEIDENTIFIER, el tipo de UsuariosWeb.id) en la cabecera, la FK y el CHECK.
+        await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem14", clsBaseDatosPruebas.Scripts.Length);
+        await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script14);
+
+        await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbIdem14Inst");
+        await ReaplicarYVerificarIdempotenciaAsync(instalada.Cadena, clsBaseDatosPruebas.Script14);
+        foreach (var cadena in new[] { migrada.Cadena, instalada.Cadena })
+        {
+            (await LeerAsync(
+                    "SELECT CONCAT(c.name, '|', TYPE_NAME(c.user_type_id), '|', c.is_nullable) FROM sys.columns c "
+                    + "WHERE c.object_id = OBJECT_ID(N'dbo_cotifly.CotizacionesSolicitud') AND c.name IN (N'finalizadaAt', N'finalizadaPor')",
+                    r => r.GetString(0), cadena))
+                .Should().BeEquivalentTo(["finalizadaAt|datetimeoffset|1", "finalizadaPor|uniqueidentifier|1"]);
+            (await clsBaseDatosPruebas.EscalarAsync<string>(cadena,
+                    "SELECT CONCAT(OBJECT_NAME(fk.referenced_object_id), '.', COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id)) "
+                    + "FROM sys.foreign_keys fk JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id "
+                    + "WHERE fk.name = N'fk_cotizaciones_finalizadaPor'"))
+                .Should().Be("UsuariosWeb.id");
+            (await clsBaseDatosPruebas.EscalarAsync<int>(cadena,
+                    "SELECT COUNT(*) FROM sys.check_constraints WHERE name = N'ck_cotizaciones_finalizada' AND is_not_trusted = 0"))
+                .Should().Be(1);
+        }
+    }
+
+    [Fact]
+    public async Task HU036_ElScript14SeAplicaSobreUnaBaseConDatosSinTocarlos()
+    {
+        // HU-036 (#205): sin backfill. Sobre una base hasta el 13 con una cotización ya escrita, el 14 la deja sin finalizar.
+        await using var baseConDatos = await BaseDatos.CrearBaseConScriptsAsync("dbDatos14", clsBaseDatosPruebas.ScriptsSin07 - 2);
+        var cotizacion = Guid.NewGuid();
+        await clsBaseDatosPruebas.EjecutarAsync(baseConDatos.Cadena,
+            $"INSERT INTO dbo_cotifly.CotizacionesSolicitud (id, folio, estadoCosteo) VALUES ('{cotizacion}', 'COT-F14', 'autocosteo');");
+
+        await clsBaseDatosPruebas.AplicarScriptAsync(baseConDatos.Cadena, clsBaseDatosPruebas.Script14);
+
+        (await clsBaseDatosPruebas.EscalarAsync<string>(baseConDatos.Cadena,
+                "SELECT CONCAT(estadoCosteo, '|', IIF(finalizadaAt IS NULL, 'null', 'valor'), '|', IIF(finalizadaPor IS NULL, 'null', 'valor')) "
+                + $"FROM dbo_cotifly.CotizacionesSolicitud WHERE id = '{cotizacion}'"))
+            .Should().Be("autocosteo|null|null");
+    }
+
+    [Fact]
+    public async Task HU0401_ElScript16EsIdempotenteSobreUnaBaseMigradaYSobreUnaInstalacionDesdeCero()
+    {
+        // HU-040.1 (#229): sin uq_usuariosRoles_usuarioId_activo, con uq_usuariosRoles_usuarioId_rolId y TokensRefresco.rolSesion con su CHECK.
+        await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem16", clsBaseDatosPruebas.Scripts.Length);
+        await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script16);
+
+        await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbIdem16Inst");
+        await ReaplicarYVerificarIdempotenciaAsync(instalada.Cadena, clsBaseDatosPruebas.Script16);
+        foreach (var cadena in new[] { migrada.Cadena, instalada.Cadena })
+        {
+            (await LeerAsync(
+                    "SELECT CONCAT(name, '|', is_unique) FROM sys.indexes WHERE object_id = OBJECT_ID(N'dbo_cotifly.UsuariosRoles') AND name LIKE N'uq[_]%'",
+                    r => r.GetString(0), cadena))
+                .Should().BeEquivalentTo(["uq_usuariosRoles_usuarioId_rolId|1"]);
+            (await clsBaseDatosPruebas.EscalarAsync<string>(cadena,
+                    "SELECT CONCAT(TYPE_NAME(c.user_type_id), '|', c.max_length, '|', c.is_nullable) FROM sys.columns c "
+                    + "WHERE c.object_id = OBJECT_ID(N'dbo_cotifly.TokensRefresco') AND c.name = N'rolSesion'"))
+                .Should().Be("nvarchar|60|1");
+            (await clsBaseDatosPruebas.EscalarAsync<int>(cadena,
+                    "SELECT COUNT(*) FROM sys.check_constraints WHERE name = N'ck_tokensRefresco_rolSesion' AND is_not_trusted = 0"))
+                .Should().Be(1);
+        }
+    }
+
+    [Fact]
+    public async Task HU0401_ElScript16SeAplicaSobreUnaBaseConDatosSinTocarlosYDespuesAdmiteDosAsignacionesActivas()
+    {
+        // HU-040.1 (#229): no destructivo. Sobre una base hasta el 14 (sin el 16) con un usuario, su asignación activa y un refresh, el 16
+        // no cambia ninguna fila; el refresh queda con rolSesion NULL. Antes del 16 la segunda asignación activa choca con el índice; después
+        // entra, y el mismo rol dos veces sigue prohibido.
+        await using var baseConDatos = await BaseDatos.CrearBaseConScriptsAsync("dbDatos16", clsBaseDatosPruebas.ScriptsSin07 - 1);
+        var usuario = Guid.NewGuid();
+        await clsBaseDatosPruebas.EjecutarAsync(baseConDatos.Cadena, $"""
+            IF NOT EXISTS (SELECT 1 FROM dbo_cotifly.Roles WHERE codigo = 'comercial')
+                INSERT INTO dbo_cotifly.Roles (codigo, descripcion) VALUES (N'comercial', N'Comercial');
+            IF NOT EXISTS (SELECT 1 FROM dbo_cotifly.Roles WHERE codigo = 'gerente_comercial')
+                INSERT INTO dbo_cotifly.Roles (codigo, descripcion) VALUES (N'gerente_comercial', N'Gerente comercial');
+            INSERT INTO dbo_cotifly.UsuariosWeb (id, nombreUsuario) VALUES ('{usuario}', N'multi.rol.16');
+            INSERT INTO dbo_cotifly.UsuariosRoles (usuarioId, rolId, activo)
+                SELECT '{usuario}', id, 1 FROM dbo_cotifly.Roles WHERE codigo = N'comercial';
+            INSERT INTO dbo_cotifly.TokensRefresco (usuarioId, tokenHash, familiaId, expiraAt)
+                VALUES ('{usuario}', REPLICATE('e', 64), NEWID(), DATEADD(DAY, 30, SYSDATETIMEOFFSET()));
+            """);
+        const string SegundaActiva = """
+            INSERT INTO dbo_cotifly.UsuariosRoles (usuarioId, rolId, activo)
+                SELECT u.id, r.id, 1 FROM dbo_cotifly.UsuariosWeb u CROSS JOIN dbo_cotifly.Roles r
+                WHERE u.nombreUsuario = N'multi.rol.16' AND r.codigo = N'gerente_comercial';
+            """;
+        var antesDel16 = () => clsBaseDatosPruebas.EjecutarAsync(baseConDatos.Cadena, SegundaActiva);
+        (await antesDel16.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("uq_usuariosRoles_usuarioId_activo");
+        var huellaAntes = await HuellaIdentidadAsync(baseConDatos.Cadena);
+
+        await clsBaseDatosPruebas.AplicarScriptAsync(baseConDatos.Cadena, clsBaseDatosPruebas.Script16);
+
+        (await HuellaIdentidadAsync(baseConDatos.Cadena)).Should().Equal(huellaAntes, "el 16 no cambia ninguna fila existente");
+        (await clsBaseDatosPruebas.EscalarAsync<int>(baseConDatos.Cadena,
+                $"SELECT COUNT(*) FROM dbo_cotifly.TokensRefresco WHERE usuarioId = '{usuario}' AND rolSesion IS NULL"))
+            .Should().Be(1);
+        await clsBaseDatosPruebas.EjecutarAsync(baseConDatos.Cadena, SegundaActiva);
+        (await clsBaseDatosPruebas.EscalarAsync<int>(baseConDatos.Cadena,
+                $"SELECT COUNT(*) FROM dbo_cotifly.UsuariosRoles WHERE usuarioId = '{usuario}' AND activo = 1"))
+            .Should().Be(2);
+        var mismoRol = () => clsBaseDatosPruebas.EjecutarAsync(baseConDatos.Cadena, SegundaActiva);
+        (await mismoRol.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("uq_usuariosRoles_usuarioId_rolId");
+    }
+
+    [Fact]
+    public async Task HU0401_ElScript16NoAflojaNadaSiFaltaLaUnicidadDeUsuarioYRol()
+    {
+        // HU-040.1 (#229): sin uq_usuariosRoles_usuarioId_rolId se podría duplicar el mismo rol activo: el 16 se detiene sin cambiar nada.
+        await using var aislada = await BaseDatos.CrearBaseConScriptsAsync("dbPre16", clsBaseDatosPruebas.ScriptsSin07 - 1);
+        await clsBaseDatosPruebas.EjecutarAsync(aislada.Cadena,
+            "ALTER TABLE dbo_cotifly.UsuariosRoles DROP CONSTRAINT uq_usuariosRoles_usuarioId_rolId;");
+        var esquemaAntes = await FotoEsquemaAsync(aislada.Cadena);
+
+        var aplicar = () => clsBaseDatosPruebas.AplicarScriptAsync(aislada.Cadena, clsBaseDatosPruebas.Script16);
+
+        (await aplicar.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("uq_usuariosRoles_usuarioId_rolId");
+        (await FotoEsquemaAsync(aislada.Cadena)).Should().Equal(esquemaAntes);
     }
 
     [Fact]
@@ -988,7 +1119,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         bd.Should().Contain(x => x.StartsWith("CotizacionesSolicitud:ix_cotizaciones_costeoSiguienteConsultaAt unico=False", StringComparison.Ordinal)
             && x.EndsWith("filtro=costeosiguienteconsultaatisnotnull", StringComparison.Ordinal));
         bd.Should().Contain(x => x.StartsWith("UsuariosWeb:uq_usuariosWeb_nombreUsuario", StringComparison.Ordinal) && x.EndsWith("filtro=nombreusuarioisnotnull", StringComparison.Ordinal));
-        bd.Should().Contain(x => x.StartsWith("UsuariosRoles:uq_usuariosRoles_usuarioId_activo unico=True", StringComparison.Ordinal) && x.EndsWith("filtro=activo=1", StringComparison.Ordinal));
+        // HU-040.1 (#229): el 16 retira la unicidad de la asignación activa (multi-rol) y conserva la de usuario + rol.
+        bd.Should().NotContain(x => x.Contains("uq_usuariosRoles_usuarioId_activo", StringComparison.Ordinal));
+        bd.Should().Contain(x => x.StartsWith("UsuariosRoles:uq_usuariosRoles_usuarioId_rolId unico=True claves=(usuarioId,rolId)", StringComparison.Ordinal));
         bd.Should().Contain(x => x.StartsWith("Roles:uq_roles_idRolExterno unico=True", StringComparison.Ordinal) && x.EndsWith("filtro=idrolexternoisnotnull", StringComparison.Ordinal));
     }
 
@@ -1284,6 +1417,18 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         (await FotoEsquemaAsync(cadena)).Should().Equal(esquemaAntes, $"re-aplicar el {script} no debe cambiar columnas, claves, índices, CHECK ni defaults");
         (await FilasPorTablaAsync(cadena)).Should().Equal(filasAntes, $"re-aplicar el {script} no debe agregar ni quitar filas en ninguna tabla");
     }
+
+    /// <summary>HU-040.1 (#229): filas de UsuariosWeb, UsuariosRoles y TokensRefresco (sin rolSesion, que el 16 agrega), ordenadas.</summary>
+    private Task<List<string>> HuellaIdentidadAsync(string cadena) =>
+        LeerAsync(
+            """
+            SELECT CONCAT('U|', id, '|', nombreUsuario) COLLATE Latin1_General_100_BIN2 FROM dbo_cotifly.UsuariosWeb
+            UNION ALL SELECT CONCAT('R|', id, '|', usuarioId, '|', rolId, '|', activo, '|', asignadoAt) COLLATE Latin1_General_100_BIN2 FROM dbo_cotifly.UsuariosRoles
+            UNION ALL SELECT CONCAT('T|', id, '|', usuarioId, '|', tokenHash, '|', familiaId, '|', expiraAt, '|', revocadoAt) COLLATE Latin1_General_100_BIN2 FROM dbo_cotifly.TokensRefresco
+            ORDER BY 1
+            """,
+            r => r.GetString(0),
+            cadena);
 
     /// <summary>"Tabla=filas" de cada tabla de dbo_cotifly, ordenado (COUNT exacto, no la estimación de sys.partitions).</summary>
     private async Task<List<string>> FilasPorTablaAsync(string cadena)

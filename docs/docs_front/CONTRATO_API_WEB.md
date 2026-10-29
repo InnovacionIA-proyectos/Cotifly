@@ -28,7 +28,10 @@ Cotifly no tiene login propio. ClientePro autentica a la persona y le pasa su id
 ```
 ClientePro (ya autenticado)
   └─ POST /api/auth/login-clientepro  { idUsuario, nombreUsuario?, roles? }
-       └─ 200 { access, refresh, user, debeCambiarPassword:false }
+       └─ 200 { access, refresh, user, debeCambiarPassword:false }          (un solo rol)
+       └─ 200 { requiereEleccionRol:true, ticketEleccion, ticketExpiraAt,   (varios roles, HU-040.2: sin tokens)
+                roles[], user }
+            └─ POST /api/auth/elegir-rol { ticket, rol }  → 200 { access, refresh, user, ... } con el rol elegido
   └─ Authorization: Bearer <access>   en cada llamada a /web/*
   └─ 401 → POST /api/auth/refresh { refresh }  (una sola vez)
        └─ 401 otra vez → volver al login de ClientePro
@@ -38,23 +41,45 @@ ClientePro (ya autenticado)
 | Tema | Regla |
 |---|---|
 | Identidad | El backend revalida `idUsuario` contra el almacén corporativo (`tblSAPUsuariosApp`) en cada login, primero como `NOMBREUSUARIO` y luego como `ID`. El `NOMBREUSUARIO` de esa fila (no el que envía el cliente) ubica o crea al usuario en `UsuariosWeb`. `nombreUsuario` y `roles` del request son informativos y nunca deciden el acceso. |
-| Roles | `comercial` (cotiza y ve lo suyo) y `gerente_comercial` (tablero de su regional y políticas de margen). Ambos pueden iniciar sesión. El rol viaja en el claim `rol` del JWT y en `user.rol`. El `gerente_comercial` también puede usar la consola del comercial (cotiza y ve lo suyo); un `comercial` en `/web/admin/*` recibe 403. |
+| Roles | `comercial` (cotiza y ve lo suyo), `gerente_comercial` (tablero de su regional y políticas de margen) y, desde HU-037 (#210, #211), `director` (todo lo del gerente sobre **todas** las regionales). Los tres pueden iniciar sesión. Rol único (una asignación en Cotifly): con varios roles de ClientePro gana `director` > `gerente_comercial` > `comercial`. Multi-rol (HU-040, ADR-025): con varias asignaciones (o un primer ingreso con varios roles de ClientePro) la persona elige el rol con `POST /api/auth/elegir-rol` y la sesión queda limitada a ese rol; el refresh lo conserva. El rol viaja en el claim `rol` del JWT y en `user.rol`. El `gerente_comercial` y el `director` también pueden usar la consola del comercial (cotizan y ven lo suyo); un `comercial` en `/web/admin/*` recibe 403. |
 | Access token | JWT HS256, 60 minutos. Claims: `sub` (UUID de `UsuariosWeb`), `jti`, `username`, `rol`. |
 | Refresh token | Opaco, 30 días, se rota en cada uso. Reutilizar uno ya rotado responde 401. |
 | Almacenamiento en el cliente | Guardar `access` y `refresh` fuera de logs y de la URL. |
 | Primer ingreso | Si `GET /web/usuario/telefono` devuelve `telefono: null`, pedir el teléfono con el modal obligatorio de HU-004.3 y guardarlo con `PUT /web/usuario/telefono`. En la práctica equivale a "la fila se acaba de crear": el teléfono solo se captura en ese modal. |
-| Errores de login | Siempre el mismo 401 `{"error":"Credenciales inválidas"}`, sin importar la causa (anti-enumeración). |
+| Errores de login | Siempre el mismo 401 `{"error":"Credenciales inválidas"}`, sin importar la causa (anti-enumeración). En `elegir-rol`, 401 `{"error":"Inicia sesión de nuevo."}`: volver a llamar al login. |
+| Selector de rol (HU-040.2) | Ejemplos validados contra el contrato abajo. |
+
+<!-- esquema: EleccionRolRequerida -->
+```json
+{
+  "requiereEleccionRol": true,
+  "ticketEleccion": "eyJhbGciOiJIUzI1NiIsInR5cCI6ImVsZWNjaW9uLXJvbCtqd3QifQ...",
+  "ticketExpiraAt": "2026-10-27T15:05:00+00:00",
+  "roles": [
+    { "codigo": "comercial", "descripcion": "Comercial" },
+    { "codigo": "gerente_comercial", "descripcion": "Gerente comercial" }
+  ],
+  "user": { "id": "968c9f61-b1f1-44a8-bb23-7a3d31d7d602", "username": "APEREZ", "nombre_completo": "Ana Pérez" }
+}
+```
+
+<!-- esquema: ElegirRolRequest -->
+```json
+{ "ticket": "eyJhbGciOiJIUzI1NiIsInR5cCI6ImVsZWNjaW9uLXJvbCtqd3QifQ...", "rol": "gerente_comercial" }
+```
+
 | Menú vs login | Ambos roles inician sesión. La regla de HU-004 "solo el comercial ve Cotizador" es del menú, no del login. |
 
 **Auth actual en Python, que se reemplaza:** `POST /web/login {email, nombre}` aceptaba cualquier correo `@boterosoto.com.co` sin contraseña y devolvía `{token, email, nombre}` con un token HMAC de 12 horas. Está desactivado (501) desde HU-002.2.
 
 ## 3. Endpoints
 
-Resumen de los endpoints de uso más frecuente; la lista completa (52) está en `CONTRATOS_API_COTIFLY_FRONTEND.md` §4.
+Resumen de los endpoints de uso más frecuente; la lista completa (56) está en `CONTRATOS_API_COTIFLY_FRONTEND.md` §4.
 
 | Método y ruta | Rol | Resumen |
 |---|---|---|
-| `POST /api/auth/login-clientepro` | público | Emite la sesión |
+| `POST /api/auth/login-clientepro` | público | Emite la sesión (un rol) o pide elegir el rol (varios, HU-040.2) |
+| `POST /api/auth/elegir-rol` | público (con el ticket del login) | HU-040.2 (#230): emite la sesión con el rol elegido; ticket de un solo uso, 5 minutos |
 | `POST /api/auth/refresh` | público | Rota el refresh token (429 si se pasa el límite de `/api/auth/*`) |
 | `POST /api/auth/logout` | cualquiera | Revoca la sesión, siempre 204 (salvo 429 por el límite de `/api/auth/*`) |
 | `POST /web/chat` | ambos | Turno del agente cotizador (ya no crea cotizaciones, ADR-018) |
@@ -63,27 +88,32 @@ Resumen de los endpoints de uso más frecuente; la lista completa (52) está en 
 | `GET /web/alias/resolver` | ambos | HU-031.1 (#194): traduce un tipo de vehículo o una clase de contenedor escritos a mano al código oficial de Nexo (catálogo y diccionario de alias), en lote (`?tipo=vehiculo&texto=TB&texto=3s3`, hasta 200). `{tipo, resultados: [{texto, reconocido, codigo, fuente}]}`; 503 `CATALOGOS_FLETE_NO_DISPONIBLE` si Nexo no responde. Ver `CONTRATOS_API_COTIFLY_FRONTEND.md` §4.2.8 |
 | `GET /web/municipios` | ambos | Buscador de origen y destino (`?q=&departamento=`, máx. 50) o catálogo completo sin filtros. 503 `MUNICIPIOS_NO_DISPONIBLE` si Nexo no responde (antes 400). Ver §8.1, fila 5 |
 | `GET /web/mis-cotizaciones` | ambos | Cotizaciones propias (máx. 100) |
-| `GET /web/cotizaciones/regional` | gerente_comercial | HU-016.1 (#154): cotizaciones de los comerciales de su regional (máx. 100), con la forma de `mis-cotizaciones` y el comercial dueño en cada fila. Ver §8.10.1 |
-| `GET /web/cotizaciones/{folio}` | dueño o gerente de su regional | HU-027.1 (#179): detalle completo en una llamada (cabecera, costeo por ruta, rutas capturadas y totales) con el `ETag`; el gerente solo consulta. Ver §8.14 |
-| `POST /web/cotizaciones/{folio}/enviar` | ambos | Envía la cotización por correo con el PDF. HU-033 (#199): por MailSender; el 200 es "aceptado" (`estado = encolado`, `correo_id`, `redirigido_a`), el comercial va en copia oculta y el cuerpo lleva el precio por ruta y el total sin desglose. Por defecto, en todos los ambientes, va al buzón de pruebas con `[QA]` (`redirigido_a`); solo producción con `Correo:Proteccion:Modo=ninguno` y `Correo:Proteccion:PermitirEnvioReal=true` escribe a los destinatarios reales. 503 `ErrorNegocio` `CORREO_DESHABILITADO` si el correo está deshabilitado en el servidor |
-| `POST /web/cotizaciones/{folio}/correo/vista-previa` | ambos | Asunto, cuerpo y destinatarios sin enviar. HU-033: también `cuerpo_html`, `resumen` (precio por ruta y total), `copia_oculta` y el aviso de ambiente de pruebas (`entorno_pruebas`, `redirigido_a`, `aviso`) |
+| `GET /web/cotizaciones/regional` | gerente_comercial o director | HU-016.1 (#154): cotizaciones de los comerciales de su regional (máx. 100), con la forma de `mis-cotizaciones` y el comercial dueño en cada fila. HU-037.3 (#211): el director ve todas o la de `?regional=`. Ver §8.10.1 |
+| `GET /web/regionales` | gerente_comercial o director | HU-037.3 (#211): regionales del selector (todas para el director, la suya para el gerente). Ver §8.10.1 |
+| `GET /web/cotizaciones/{folio}` | dueño, gerente de su regional o director | HU-027.1 (#179): detalle completo en una llamada (cabecera, costeo por ruta, rutas capturadas y totales) con el `ETag`; el gerente solo consulta. Ver §8.14 |
+| `POST /web/cotizaciones/{folio}/enviar` | ambos | Envía la cotización por correo con el PDF. HU-033 (#199): por MailSender; el 200 es "aceptado" (`estado = encolado`, `correo_id`, `redirigido_a`), el comercial va en copia oculta y el cuerpo lleva el precio por ruta y el total sin desglose. Por defecto, en todos los ambientes, va al buzón de pruebas con `[QA]` (`redirigido_a`); solo producción con `Correo:Proteccion:Modo=ninguno` y `Correo:Proteccion:PermitirEnvioReal=true` escribe a los destinatarios reales. 503 `ErrorNegocio` `CORREO_DESHABILITADO` si el correo está deshabilitado en el servidor. #228: asunto y direcciones sin caracteres de control y hasta 10 destinatarios por defecto (configurable) entre `para` y `cc` (§8.18) |
+| `POST /web/cotizaciones/{folio}/correo/vista-previa` | ambos | Asunto, cuerpo y destinatarios sin enviar. HU-033: también `cuerpo_html`, `resumen` (precio por ruta y total), `copia_oculta` y el aviso de ambiente de pruebas (`entorno_pruebas`, `redirigido_a`, `aviso`). Al redirigir, `copia_oculta = null`: el correo sale sin CC ni CCO (OBS-1027-5 de #226). #228: valida el borrador igual que `enviar` (400) |
 | `GET /web/cotizaciones/{folio}/correos` | ambos (dueño) | HU-033 (#199): historial de envíos con el estado de MailSender (`encolado`, `enviando`, `enviado`, `fallido` con `error`) y `reintentable` |
 | `POST /web/cotizaciones/{folio}/correos/{correoId}/reintentar` | ambos (dueño) | HU-033 (#199): pide a MailSender reintentar un envío `fallido`; 409 `CORREO_NO_REINTENTABLE` si no aplica (no está `fallido`, ya se está reintentando por un doble clic, nunca llegó a MailSender o MailSender ya no lo conoce) |
 | `POST /web/cotizaciones/{folio}/seguimiento` | ambos | Marca ganada o perdida **solo** cotizaciones fuera de Nexo (`estado_costeo` `null`, `descartada` o `costeo_vencido`). Las de Nexo responden 409 `USAR_RESULTADO_NEXO`, con `detalle` = `{metodo, endpoint, requiere_if_match}` (HU-021.13) |
 | `POST /web/cotizaciones/{folio}/resultado` | ambos (dueño) | Marca ganada o perdida las cotizaciones de Nexo (primero en Nexo y, si responde 200, en Cotifly). Lleva `If-Match` (obligatorio en la perdida sin costeo: 428 si falta). `motivo` máximo 100 caracteres en una perdida; en una ganada no se valida. `motivo_rechazo` queda `"No aplica"` en una ganada (HU-021.13, alimenta HU-019.1). HU-033 (#199): si Nexo todavía no la tiene entregada, el resultado queda solo en Cotifly (`sincronizacion_resultado_nexo = pendiente`, 200) y se envía a Nexo una sola vez cuando la Mesa la entrega; el estado viene en `CotizacionResumen` y en el costeo |
+| `POST /web/cotizaciones/{folio}/finalizar` | ambos (dueño) | HU-036.2 (#206): el comercial acepta el precio y finaliza la cotización (`If-Match` obligatorio). Solo en `autocosteo` o `entregada` (409 `COTIZACION_NO_FINALIZABLE`); re-finalizar es 200 sin cambios. `finalizada_at` en el resumen, el costeo y el detalle. Ver §8.17 |
+| `GET /web/motivos-perdida` | ambos | HU-018.1 (#155): lista obligatoria de motivos de pérdida (la de Nexo por defecto, configurable con `Resultado:MotivosPerdida`), con `requiere_comentario` en `Otro`. Ver §8.9 |
+| `GET /web/cotizaciones/{folio}/excel` | dueño, gerente de su regional o director | HU-018.1 (#155): xlsx de la cotización (`Resumen`, `Rutas`, `Camiones`, `Conexos`). El dueño recibe costos (COP) y márgenes por ruta y por camión; el gerente y el director, el mismo **sin ninguna columna de costo ni de margen**. 404 a los demás; 409 `COSTEO_NO_LISTO` sin precio. Ver §8.9.1 |
 | `GET /web/cotizaciones/{id}/nueva-version` | ambos | Datos para prellenar una nueva versión |
 | `GET /web/clientes/{nit}/destinatarios-previos` | ambos | `para`/`cc` del último envío a ese cliente |
 | `GET` / `PUT /web/usuario/telefono` | ambos | Teléfono que se imprime en el PDF |
-| `GET /web/admin/lineas-negocio` | gerente_comercial | Políticas de margen |
-| `PUT /web/admin/lineas-negocio/{id}` | gerente_comercial | Edita margen, método y estado |
+| `GET /web/lineas-negocio` | ambos | HU-016.1 (#154): líneas de negocio **activas** para el desplegable "Línea de negocio" de cada ruta en "Nueva solicitud" (`[{linea_negocio, etiqueta}]`), **sin margen**. Reemplaza el catálogo fijo del frontend. Ver §8.18 |
+| `GET /web/admin/lineas-negocio` | gerente_comercial o director | Políticas de margen |
+| `PUT /web/admin/lineas-negocio/{id}` | gerente_comercial o director | Edita margen, método y estado |
 | `GET /web/metricas/comercial` | ambos | Tablero del comercial (HU-010.2): indicadores y serie mensual de sus cotizaciones. Ver §3.1 |
-| `GET /web/metricas/regional` | gerente_comercial | Tablero del gerente (HU-010.3): su regional, filtrable por `usuario_id` y por `anio`/`mes` (HU-010.5), con lista de comerciales, serie mensual y concentración por ciudad. Ver §3.1 |
+| `GET /web/metricas/regional` | gerente_comercial o director | Tablero del gerente (HU-010.3; el director, de todas o de la de `?regional=`, HU-037.3): su regional, filtrable por `usuario_id` y por `anio`/`mes` (HU-010.5), con lista de comerciales, serie mensual y concentración por ciudad. Ver §3.1 |
 | `GET /web/metricas/actividad` y `GET /web/metricas/ajustes-margen` | — | **Retirados (HU-014.3, #152):** responden 404. Eran el borrador del tablero; usar `/web/metricas/comercial` y `/regional` |
-| `GET /pdfs/{archivo}` | dueño o gerente de su regional | Descarga del PDF. Exige `Authorization`, así que se baja con HttpClient como blob, no con un `<a href>`. El enlace firmado `?t=` (ADR-011) se retiró en #105 junto con Google Chat |
+| `GET /pdfs/{archivo}` | dueño, gerente de su regional o director | Descarga del PDF. Exige `Authorization`, así que se baja con HttpClient como blob, no con un `<a href>`. El enlace firmado `?t=` (ADR-011) se retiró en #105 junto con Google Chat |
 
 Todos los campos de `/web/*` van en snake_case, incluidos los de los endpoints nuevos, en la respuesta **y en el cuerpo de la petición** (`motivo_rechazo`, `metodo_calculo`, `is_active`; un `motivoRechazo` se ignora). Los campos `nullable` siempre vienen, con `null` si no tienen valor. Un número enviado como texto (`"margen": "0.2"`) es un cuerpo inválido (400).
 
-"Ambos" = `comercial` o `gerente_comercial`; cada uno ve solo sus cotizaciones. El gerente puede descargar los PDF de los comerciales de su regional; si su regional aún no se conoce, solo los suyos (fail-closed).
+"Ambos" = `comercial`, `gerente_comercial` o `director`; cada uno ve solo sus cotizaciones. El gerente puede descargar los PDF de los comerciales de su regional; si su regional aún no se conoce, solo los suyos (fail-closed). El director, los de cualquier regional (HU-037.3, #211).
 
 **Folio** (ADR-011, aprobado el 2026-09-25, con iniciales desde el mismo día): lo genera siempre el servidor, `PCN-[{nitCliente}-]{INICIALES}-DDMMAAAA-{NNN}[-vN]`: NIT solo con dígitos cuando la cotización lo tiene, dos letras con las iniciales del comercial (primer nombre + primer apellido, sin tildes; p. ej. "Duban Guerra Castro" → `DG`), fecha de Bogotá, `NNN` consecutivo diario de esas iniciales (`001`…`999`; dos comerciales con las mismas iniciales comparten la secuencia) y `-vN` solo en versiones nuevas (sobre el folio de la v1). Ejemplos: `PCN-DG-25092026-001`, `PCN-9000472281-DG-25092026-002`, `PCN-9000472281-DG-25092026-002-v2`. Máximo 50 caracteres. El frontend no debe asumir el formato para nada distinto de mostrarlo.
 
@@ -96,8 +126,8 @@ Decisiones completas en `backend-dotnet/specs/decisiones/ADR-016-metricas-agrega
 
 **Quién ve qué.** El rol sale del token de la sesión (claim `rol`, emitido en el login SSO con la verificación doble de ClientePro); no se lee de ninguna columna.
 - `/comercial`: las cotizaciones propias (también para un gerente, que cotiza).
-- `/regional`: solo `gerente_comercial` (un comercial recibe 403). Siempre la regional del gerente autenticado; no se puede pedir otra.
-  - `comerciales` trae a todos los usuarios de la regional, **incluido el gerente**, cada uno con su `rol` (`comercial`, `gerente_comercial` o `null`) y sus indicadores, para el selector.
+- `/regional`: `gerente_comercial` o `director` (un comercial recibe 403). Para el gerente, siempre su regional: `?regional=` con la suya se acepta y con otra responde 403 `ErrorNegocio` `REGIONAL_NO_PERMITIDA` (HU-037.3, #211). Para el director, todas las regionales sin `?regional=` (`regional` y `fuente_regional` en `null`) o solo la elegida con él; su `usuario_id` puede ser de cualquier regional. Las regionales del selector salen de `GET /web/regionales` (director: todas; gerente: la suya; comercial: 403).
+  - `comerciales` trae a todos los usuarios del alcance, **incluido el gerente**, cada uno con su `rol` (`comercial`, `gerente_comercial`, `director` o `null`) y sus indicadores, para el selector.
   - Las cotizaciones del gerente cuentan en el agregado de la regional.
   - `usuario_id` recalcula `indicadores`, `serie_mensual` y `concentracion_ciudades` para ese comercial. Si no es de la regional: 404 `{"error":"Comercial no encontrado en tu regional."}`.
 - Gerente sin regional: 409 `ErrorNegocio` `REGIONAL_NO_ASIGNADA` (el frontend muestra "tu usuario no tiene regional asignada"). Fuente de la regional caída: 503 `REGIONAL_NO_DISPONIBLE` (reintentar más tarde). La regional resuelta se reutiliza 60 s, así que cambiar el selector no vuelve a consultarla.
@@ -129,6 +159,11 @@ Decisiones completas en `backend-dotnet/specs/decisiones/ADR-016-metricas-agrega
 | `tiempo_promedio_cotizacion_horas` | Promedio de `costeoListoAt` − `createdAt` (versión vigente), en horas; sin las filas incoherentes (`costeoListoAt` antes de `createdAt`) |
 | `desviacion_promedio_margen` / `desviacion_promedio_margen_abs` / `ajustes_margen` | Promedio de `MargenAjustes.diferencia` con signo / en valor absoluto, y cantidad de ajustes de la versión vigente |
 | `deadline_vencidas` | Sin resultado y con `deadline` ya vencido; `null` hasta que se aplique el script 0004 |
+| `margen_politica_promedio` | HU-016.1 (#154): promedio simple del `margenPoliticaSugerido` de las rutas comparables (versión vigente, sin rechazadas, con margen aplicado y con política). `null` sin ninguna. Ver §8.18 |
+| `margen_aplicado_promedio` | HU-016.1 (decisión del 2026-10-27): promedio simple del `margenAplicado` de exactamente las mismas rutas comparables de `margen_politica_promedio`; su par directo (aplicado simple contra política simple). `null` sin ninguna |
+| `margen_politica_ponderado` | HU-016.1: SUM(`margenPoliticaSugerido` × `costoFinal`) / SUM(`costoFinal`) de esas rutas con costo > 0. `null` si ninguna tiene costo |
+| `desviacion_margen_politica` | HU-016.1: SUM((`margenAplicado` − `margenPoliticaSugerido`) × `costoFinal`) / SUM(`costoFinal`) de las mismas rutas: aplicado ponderado menos política ponderada. **Semáforo:** verde ≥ 0, rojo < 0. No reemplaza a `desviacion_promedio_margen` |
+| `rutas_sin_margen_politica` | HU-016.1: rutas con margen aplicado y sin política guardada (anteriores a HU-021); no entran en la comparación |
 | `lineas_negocio_activas` (solo `/regional`) | `MargenesPolitica.isActive = 1` |
 
 `valor_cop` es `precioFinal` en COP; en USD, `round(precioFinal × trmAplicada, 2)`. No es el `precio_cop` de la TRM (ADR-014, el precio en pesos antes de convertir), que se recalcula del costo y el margen y puede diferir unos pesos. El costo ya está en COP y nunca se convierte. Montos con 2 decimales; fracciones de 0 a 1 con 4 decimales; redondeo half-to-even.
@@ -178,7 +213,8 @@ Reglas para el frontend (HU-013.10, #106):
   memoria), 503 `CATALOGOS_FLETE_NO_DISPONIBLE` y no se guarda nada. Sin Nexo configurado en el servidor, un formulario con
   `tipo_vehiculo` o `clase_viaje` siempre recibe ese 503.
 - **Condicionales:** `clase_contenedor` es obligatoria con `clase_viaje = Contenedor` y no se admite con otra clase;
-  `valor_aprovisionamiento` solo con una `ciudad_levante_contenedor` distinta del origen.
+  `valor_levante_contenedor` (ex `valor_aprovisionamiento`) solo con una `ciudad_levante_contenedor` distinta del origen. DEF-1027B-3
+  (#228): el `CAMPO_NO_APLICA` nombra `valor_levante_contenedor` en `campo` y en `mensaje` (antes el nombre heredado).
 - **`deadline`:** ISO 8601. Sin zona se toma en hora de Bogotá; una fecha sola (`2026-10-10`) es el inicio de ese día en
   Bogotá (`2026-10-10T00:00:00-05:00`). Para otra hora, enviarla con `-05:00`.
 - **Campos nuevos:** `notas` (nota para la Mesa de Nexo, máx. 2000), `origen_municipio_id` y `destino_municipio_id` (el `id`
@@ -229,6 +265,8 @@ no existe: las cotizaciones se crean solo con el formulario (`POST /web/solicitu
 - `precio`, `margen` y `pdf` son **obsoletos** y siempre `null`. `cotizacion_origen_id` y `moneda` del request son **obsoletos**: se aceptan y se ignoran (ya no producen 400 ni 404).
 - `errores` (`[{herramienta, codigo}]`): errores de negocio de las herramientas del turno, con los códigos de `ErrorNegocio`.
 - Un fallo interno responde **200** con `error: true`. El frontend muestra `texto` tal cual. Esto incluye el límite de peticiones del proveedor de IA.
+- Con el proveedor de IA caído (conexión rechazada, red o tiempo agotado, también tras los reintentos del SDK) el `codigo` es
+  `IA_NO_DISPONIBLE`, nunca `ERROR_INTERNO` (DEF-1027-1 de #226).
 - 429 es otra cosa: el límite de peticiones de la propia API de Cotifly (por defecto 20 turnos por minuto y comercial, `LimiteChat`).
 - 400 `{"error":"Cuerpo inválido. Revisa: mensaje."}` si `mensaje` está vacío o tiene más de 8000 caracteres.
 - 400 `{"error":"sesion_id inválido"}` si no cumple `^[A-Za-z0-9_-]{8,64}$`.
@@ -253,7 +291,7 @@ no existe: las cotizaciones se crean solo con el formulario (`POST /web/solicitu
 | Código | Significado para el frontend |
 |---|---|
 | 401 | Sesión vencida o revocada: intentar refresh una vez. |
-| 403 | El rol no permite la operación (por ejemplo, un comercial en `/web/admin/*`). |
+| 403 | El rol no permite la operación (por ejemplo, un comercial en `/web/admin/*`): `ErrorWeb`. HU-037.3 (#211): un gerente que pide con `?regional=` otra regional recibe `ErrorNegocio` `REGIONAL_NO_PERMITIDA`. |
 | 404 | No existe o no es del usuario. Son indistinguibles a propósito (mismo cuerpo `{"error":"Cotización no encontrada o no es tuya."}`, también en `/pdfs`). |
 | 413 | El cuerpo de una petición a `/web/*` supera 64 KB. |
 | 429 | Demasiadas peticiones: reintentar después de unos segundos. |
@@ -578,6 +616,8 @@ recálculo de una ruta responden 409. Sin cubicador, como antes (sin `progreso_c
       ]
     }
   ],
+  "finalizada_at": null,
+  "solo_lectura": false,
   "progreso_cubicacion": { "estado": "en_curso", "total": 1, "cubicadas": 0, "pendientes": 1, "fallidas": 0 },
   "cubicacion": null
 }
@@ -592,6 +632,14 @@ sugerido y que el comercial lo confirme o lo cambie** antes de mandarlo en `merc
 
 **Excel (`GET /web/licitaciones/{folio}/excel`).** Agrega la columna `Camiones Cotifly` (un camión por línea de la celda) y la hoja
 `Camiones Cotifly` (un camión por fila).
+
+**Gerente y director, en solo consulta (HU-034.1, #201 parte A).** `GET /web/licitaciones/{folio}` y `GET /web/licitaciones/{folio}/excel`
+también responden al gerente comercial cuya regional incluye al dueño y al director (cualquier regional), con la regla del detalle por
+folio (8.14) y del PDF: si la regional del gerente no se puede comprobar, 404, igual que a un comercial ajeno. `Licitacion` trae
+`solo_lectura` (nuevo, siempre presente): `false` para el dueño (también en el 201 del alta y en reintentar) y `true` para ellos; con
+`true`, esconder "Reintentar cubicación", "Enviar sin vehículo", reintentar el envío y "Finalizar" (les responden 404) y dejar "Descargar
+Excel". La vista y el Excel son los mismos del dueño: nunca tuvieron costos. Cada acceso ajeno queda en la auditoría
+(`consultar_licitacion`, `exportar_excel_licitacion`).
 
 ### 8.6 Costeo: `GET /web/cotizaciones/{folio}/costeo`
 
@@ -740,7 +788,8 @@ retorno + levante + conexos de los camiones que cuentan, **sin margen**). Va **s
 costeo de Nexo es en pesos y no se convierte; `precio_final_linea` sí va en dólares), y es `null` en los mismos casos que
 `precio_final_linea` (sin costeo o ruta `rechazada`). En el ejemplo, 4.500.000 y 3.000.000 (5.294.118 y 3.529.412 con el 15 %). Es solo
 del dueño: sale aquí, en las respuestas de margen, conexos y recálculo de vehículos y en `costeo` del detalle por folio (§8.14), donde
-el gerente en solo consulta lo recibe siempre en `null`. No hay desglose ni costo por camión o por conexo, y no sale en "Mis
+el gerente o el director en solo consulta lo reciben siempre en `null`. Con la cotización finalizada (§8.17) es el costo con que se
+finalizó, como el precio congelado. No hay desglose ni costo por camión o por conexo, y no sale en "Mis
 cotizaciones", el listado regional, el PDF, el correo, el Excel ni el asistente. Es una reversa de la regla de ADR-015 §5 ("el costo
 bruto nunca llega al comercial"), confirmada por la Gerencia Comercial el 2026-10-27.
 
@@ -798,7 +847,8 @@ unitario de Nexo.
 { "items": [ { "linea_orden": 2, "servicio_id": "8b1f3c2a-0d4e-4f5a-9b6c-7d8e9f0a1b2c", "cantidad": 1 } ] }
 ```
 
-Los dos responden 200 `CosteoCotizacion`, o 400 `RUTA_REQUERIDA`/`RUTA_INEXISTENTE` como en 8.7.
+Los dos responden 200 `CosteoCotizacion`, o 400 `RUTA_REQUERIDA`/`RUTA_INEXISTENTE` como en 8.7. Las dos respuestas traen el
+`estado_nexo` y la categoría de cada conexo igual que `GET .../costeo` (#173 para el `PUT`; DEF-1027-3 de #226 para el `POST`).
 
 ### 8.9 Resultado: `POST /web/cotizaciones/{folio}/resultado`
 
@@ -806,10 +856,46 @@ Encabezado `If-Match: "7"` (obligatorio en la perdida sin costeo; opcional en el
 
 <!-- esquema: ResultadoWeb -->
 ```json
-{ "resultado": "perdida", "motivo": "Precio por encima del presupuesto del cliente", "comentario": "El cliente cerró con otro proveedor." }
+{ "resultado": "perdida", "motivo": "Otro", "comentario": "El cliente cerró con otro proveedor." }
 ```
 
 Responde 200 `CotizacionResumen` con el `ETag` nuevo; una ganada queda con `motivo_rechazo: "No aplica"`.
+
+**Motivo de pérdida de la lista (HU-018.1, #155).** En una `perdida` (aquí y en `/seguimiento` con `motivo_rechazo`) el motivo es
+obligatorio y debe ser uno de `GET /web/motivos-perdida` (sin distinguir mayúsculas); `Otro` exige `comentario` (en `/seguimiento`, el
+campo nuevo `comentario`). A Nexo viajan el motivo con la escritura de la lista y el comentario aparte, como antes; con `Otro`, Cotifly
+guarda `motivo_rechazo = "Otro: {comentario}"` (en el ejemplo, `"Otro: El cliente cerró con otro proveedor."`). Con otro motivo, el
+comentario solo va a Nexo. Las perdidas guardadas antes (motivo libre o sin motivo) no se revalidan.
+
+<!-- esquema: MotivosPerdida -->
+```json
+{
+  "motivos": [
+    { "motivo": "Valor muy alto", "requiere_comentario": false },
+    { "motivo": "Flete fuera de rango de plaza", "requiere_comentario": false },
+    { "motivo": "Cliente desistió del servicio", "requiere_comentario": false },
+    { "motivo": "Tiempo de respuesta vencido", "requiere_comentario": false },
+    { "motivo": "Otro", "requiere_comentario": true }
+  ]
+}
+```
+
+Un motivo fuera de la lista, o `Otro` sin comentario, responde 400 sin llamar a Nexo (`requiere_comentario = true` si solo faltó el
+comentario):
+
+<!-- esquema: ErrorNegocio -->
+```json
+{
+  "error": {
+    "codigo": "MOTIVO_NO_PERMITIDO",
+    "mensaje": "El motivo 'Precio alto' no está en la lista de motivos de pérdida: elige uno de la lista.",
+    "detalle": {
+      "motivos_permitidos": ["Valor muy alto", "Flete fuera de rango de plaza", "Cliente desistió del servicio", "Tiempo de respuesta vencido", "Otro"],
+      "requiere_comentario": false
+    }
+  }
+}
+```
 
 Endurecimiento B (#199, E2E 2026-10-22): repetir el mismo resultado ya `sincronizado` es 200 sin cambios y sin llamar a Nexo; ante
 `RESULTADO_YA_DEFINIDO` Cotifly **lee** el resultado de Nexo (ya no `POST /api/cotizaciones`); una perdida en `pendiente_costeo` con la
@@ -832,6 +918,20 @@ solicitud que Nexo ya no reconoce queda `solo_cotifly`; y si Nexo no reconoce la
   }
 }
 ```
+
+### 8.9.1 Excel de la cotización: `GET /web/cotizaciones/{folio}/excel` (HU-018.1, #155)
+
+Un `.xlsx` con las hojas `Resumen`, `Rutas`, `Camiones` y `Conexos` (como blob; nombre `{folio}.xlsx` en `Content-Disposition`), con la
+regla de acceso del detalle por folio:
+
+| Quién | Qué recibe |
+|---|---|
+| Dueño | Versión interna: por ruta, `Costo fletes`, `Costo retorno`, `Costo levante`, `Costo conexos` y `Costo bruto` (COP), `Margen aplicado`, `Margen sugerido`, `Origen del margen`, `Método de cálculo` y los precios; por camión, sus costos, el margen y el precio de su transporte; por conexo, su costo y su precio; `Costo bruto total (COP)` en el resumen |
+| Gerente de su regional y director | El mismo Excel en solo lectura **sin ninguna columna de costo ni de margen** (con el margen y el precio se deduce el costo). Queda en la auditoría |
+| Cualquier otro | 404 `ErrorWeb` |
+
+Sin `precio_final`, 409 `COSTEO_NO_LISTO`. Respeta el precio congelado (cotización finalizada o con PDF) y las rutas rechazadas por la
+Mesa (sin precio, sin conexos, no suman). Nunca un costo sin su precio. Solo lee lo que Cotifly guardó.
 
 ### 8.10 "Mis cotizaciones" y la nueva versión
 
@@ -899,9 +999,17 @@ líneas distintas), y `precio_final` es la suma de las rutas, con conexos:
 
 ### 8.10.1 Listado regional del gerente: `GET /web/cotizaciones/regional` (HU-016.1, #154)
 
-Vista "Todas las cotizaciones" del gerente comercial. Solo `gerente_comercial` (un `comercial` recibe 403). La regional es la del
-gerente, resuelta en el servidor con la misma regla que `GET /web/metricas/regional`; no se manda por parámetro y nunca salen
-cotizaciones de otra regional. El propio gerente es miembro de su regional, así que sus cotizaciones también salen.
+Vista "Todas las cotizaciones" del gerente comercial. Solo `gerente_comercial` o `director` (un `comercial` recibe 403). Para el gerente,
+la regional es la suya, resuelta en el servidor con la misma regla que `GET /web/metricas/regional`; nunca salen cotizaciones de otra
+regional (`?regional=` con otra: 403 `REGIONAL_NO_PERMITIDA`). El propio gerente es miembro de su regional, así que sus cotizaciones
+también salen. HU-037.3 (#211): el director ve las de todas las regionales sin `?regional=` (`regional` y `fuente_regional` en `null`) o
+solo las de la elegida; las opciones salen de `GET /web/regionales` (`{"regionales": ["..."]}`: todas para el director, la suya para el
+gerente, 403 para el comercial; 409 `REGIONAL_NO_ASIGNADA` y 503 `REGIONAL_NO_DISPONIBLE` como aquí).
+
+<!-- respuesta: GET /web/regionales 200 -->
+```json
+{ "regionales": ["ANTIOQUIA", "CENTRO", "OCCIDENTE"] }
+```
 
 - Cada fila es un `CotizacionResumen` (la misma forma de `GET /web/mis-cotizaciones`: línea de la ruta 1 o `Varias`, `precio_final` de
   la cabecera) más `comercial` = `{usuario_id, nombre_usuario, nombre_completo}` del dueño. `comercial` solo viene en este endpoint y en el detalle por folio (§8.14).
@@ -1467,7 +1575,7 @@ frontend ya conoce, con sus mismas reglas y nombres:
 | `tipo`, `notas`, `fechas` | | Tipo de la solicitud, notas, y `created_at`, `updated_at`, `costeo_enviado_at`, `costeo_listo_at`, `marcado_at` (UTC) |
 | `totales` | `TotalesCotizacion` | `rutas`, `camiones` (los que cuentan en el precio), `peso_kg`, `precio_transporte`, `precio_conexos` y `precio_final` (`transporte + conexos = final`; `null` mientras alguna ruta no tenga precio) |
 | `row_version` | | La versión de la fila (también en el `ETag`) para el `If-Match` de las acciones que siguen |
-| `solo_lectura` | | `true` si lo consulta un gerente de la regional del dueño |
+| `solo_lectura` | | `true` si lo consulta un gerente de la regional del dueño o un director |
 
 - **Qué fuente usar.** Algunos datos vienen en más de un bloque; siempre valen lo mismo, pero úsese uno solo para cada cosa:
 
@@ -1482,7 +1590,7 @@ frontend ya conoce, con sus mismas reglas y nombres:
   | Prellenar "Editar solicitud" y el cuerpo del `PUT` | `GET .../solicitud` (resuelve los conexos contra el catálogo de NEXO) | `captura` |
   | `If-Match` de la acción siguiente | `row_version` o el `ETag` | |
 
-- **Acceso.** El dueño ve su cotización. Un `gerente_comercial` ve la de un comercial de su regional efectiva (la misma regla que
+- **Acceso.** El dueño ve su cotización. Un `director` ve la de cualquier regional (HU-037.3, #211) y un `gerente_comercial` la de un comercial de su regional efectiva (la misma regla que
   `GET /web/cotizaciones/regional` y la descarga del PDF) en **solo consulta**: `solo_lectura = true`, y las acciones (margen, conexos,
   resultado, edición, generar el PDF, correo) le siguen respondiendo 404 porque son del dueño; ocultarlas o deshabilitarlas (descargar
   el PDF de `pdf_url` sí puede, §5.6 de la guía). Si la regional del
@@ -1512,7 +1620,8 @@ frontend ya conoce, con sus mismas reglas y nombres:
     "updated_at": "2026-10-10T13:02:45.010+00:00",
     "costeo_enviado_at": "2026-10-09T15:20:12.004+00:00",
     "costeo_listo_at": "2026-10-09T15:24:40.118+00:00",
-    "marcado_at": "2026-10-10T13:02:45.010+00:00"
+    "marcado_at": "2026-10-10T13:02:45.010+00:00",
+    "finalizada_at": "2026-10-10T12:58:10.400+00:00"
   },
   "cotizacion": {
     "id": "5b0f8a3e-2c1d-4e6f-9a7b-3c2d1e0f9a8b",
@@ -1828,6 +1937,206 @@ Un archivo corrupto o malicioso es 400 con código, nunca 500 (`detalle.motivo` 
     "codigo": "EXCEL_INVALIDO",
     "mensaje": "No se pudo leer el archivo: no es un Excel (.xlsx o .xlsm) válido.",
     "detalle": { "motivo": "NO_ES_XLSX" }
+  }
+}
+```
+
+### 8.17 Cotización finalizada: `POST /web/cotizaciones/{folio}/finalizar` (HU-036, #205 a #208)
+
+El comercial **acepta el precio** de la cotización y la finaliza. Columnas propias en la cabecera (`finalizadaAt`, `finalizadaPor`,
+`db/scripts/14_cotizacion_finalizada.sql`), no un `estado_costeo`: el estado sigue avanzando con Nexo.
+
+**#206, el endpoint.** `If-Match` obligatorio (428 sin él), solo el dueño (404 para una ajena), sin cuerpo.
+
+- Solo con el costeo de Nexo listo (`estado_costeo` en `autocosteo` o `entregada`). En otro estado, 409 `COTIZACION_NO_FINALIZABLE` con el
+  estado actual en `detalle.estado_costeo`.
+- Tampoco mientras Nexo tiene un servicio conexo que Cotifly todavía no leyó (el aviso de conexos pendientes en `motivo_estado_costeo`):
+  409 `COTIZACION_NO_FINALIZABLE` con `detalle.motivo = "conexos_pendientes_de_leer"`. Se finaliza después de la siguiente lectura del
+  costeo, que trae el conexo con su precio (con la cotización finalizada el polling ya no lo importaría).
+- #228: tampoco mientras un servicio conexo de una ruta que cuenta (no `rechazada`) tiene `estado_nexo = pendiente` (todavía no está en la
+  cotización de Nexo: el envío diferido no lo ha mandado o lo reintentará): 409 `COTIZACION_NO_FINALIZABLE` con
+  `detalle.motivo = "conexos_pendientes_en_nexo"` y `detalle.conexos_pendientes`. Si no, el precio finalizado incluiría un conexo que Nexo
+  no creó. Se finaliza cuando el polling lo deja `enviado`; `incierto` y `fallido_definitivo` no bloquean (no se reintentan y el costeo
+  los muestra para revisarlos en Nexo). El conexo agregado con `POST .../costeo/servicios-conexos` ya sale `enviado` (Nexo lo creó y la
+  relectura lo confirma), así una entregada, que el polling ya no consulta, no queda bloqueada. Validación de #228: con algún conexo
+  `pendiente`, finalizar relee la cotización de Nexo y deja `enviado` lo que Nexo ya muestra antes de contar (un registro viejo que quedó
+  `pendiente` aunque Nexo tenga el conexo no bloquea para siempre); si Nexo no responde, cuenta el registro y responde el 409.
+- Re-finalizar una ya finalizada: 200 sin cambios (mismo `finalizada_at`, mismo `ETag`).
+- `If-Match` que no es la versión vigente: 409 `CONFLICTO_CONCURRENCIA` (también si ya estaba finalizada). Si el polling cambió el precio
+  entre la lectura y el clic, la versión ya no coincide: el comercial recarga y nunca finaliza un precio que no vio.
+- 200 `CotizacionResumen` con `finalizada_at` (UTC) y el `ETag` nuevo. `finalizada_at` también viene en `CosteoCotizacion`, en
+  `GET /web/cotizaciones/{folio}` (`cotizacion`, `costeo` y `fechas.finalizada_at`) y en `Licitacion` (`GET /web/licitaciones/{folio}`,
+  DEF-1027-2 de #226), siempre presente y `null` sin finalizar.
+- Sin backfill: las cotizaciones anteriores al script 14 quedan sin finalizar y el comercial las finaliza una por una.
+
+<!-- respuesta: POST /web/cotizaciones/{folio}/finalizar 409 -->
+```json
+{
+  "error": {
+    "codigo": "COTIZACION_NO_FINALIZABLE",
+    "mensaje": "La cotización PCN-900555111-DG-26102026-001 no se puede finalizar en su estado actual (pendiente_costeo): solo se finaliza con el costeo de Nexo listo (autocosteo o entregada) y su precio.",
+    "detalle": { "estado_costeo": "pendiente_costeo" }
+  }
+}
+```
+
+<!-- respuesta: POST /web/cotizaciones/{folio}/finalizar 409 (conexos pendientes en Nexo, #228) -->
+```json
+{
+  "error": {
+    "codigo": "COTIZACION_NO_FINALIZABLE",
+    "mensaje": "Hay servicios conexos que todavía no están en la cotización de Nexo (estado_nexo = pendiente): espera la siguiente actualización del costeo para finalizar la cotización con un precio que Nexo respalde.",
+    "detalle": { "estado_costeo": "autocosteo", "motivo": "conexos_pendientes_en_nexo", "conexos_pendientes": 1 }
+  }
+}
+```
+
+**#207, los candados.**
+
+- **Después de finalizar** (como con una cotización enviada): margen, conexos (`PUT` y `POST .../servicios-conexos`), re-solicitar en el
+  mismo folio y recalcular los camiones de una ruta responden 409 `PDF_YA_ENVIADO` con la versión nueva en `detalle`
+  (`accion = nueva_version`), y `GET .../solicitud` devuelve `edicion.modo = nueva_version`. Los textos y el PDF SÍ se permiten
+  (hasta enviarla). Ya enviada (o con resultado), el PDF también responde 409 `PDF_YA_ENVIADO` y, desde #228 (DEF-1027B-1), con la misma
+  llamada en `detalle` (`cuerpo.motivo = "Generar el PDF después del envío"`).
+- **Antes de finalizar:** `POST .../costeo/pdf`, `POST .../enviar`, `POST .../costeo/textos/redactar`, `PUT .../costeo/textos` y
+  `POST .../resultado` (solo con el costeo listo) responden 409 `COTIZACION_NO_FINALIZADA`. Excepciones: las enviadas o con resultado
+  anteriores a HU-036 (sin backfill), las del chat, la perdida antes del costeo (`pendiente_costeo`, `error_envio`) y `/seguimiento` en
+  `descartada` y `costeo_vencido`. El asistente queda bloqueado por las mismas reglas del dominio.
+
+<!-- respuesta: POST /web/cotizaciones/{folio}/costeo/pdf 409 -->
+```json
+{
+  "error": {
+    "codigo": "COTIZACION_NO_FINALIZADA",
+    "mensaje": "Finaliza la cotización PCN-900555111-DG-26102026-001 antes de generar el PDF: acepta su precio con \"Finalizar cotización\".",
+    "detalle": {
+      "accion": "finalizar",
+      "metodo": "POST",
+      "endpoint": "/web/cotizaciones/PCN-900555111-DG-26102026-001/finalizar"
+    }
+  }
+}
+```
+
+**#208, el precio congelado frente al polling.** Con la cotización finalizada el polling no cambia el precio aunque Nexo traiga otro
+costo (la Mesa entrega una ruta con otro valor, rechaza un camión ya costeado): el `estado_costeo` sigue avanzando, el precio y los
+costos guardados se conservan, Cotifly audita lo que trajo Nexo (`EventosHerramienta`, `costeo_nexo_precio_congelado`) y
+`motivo_estado_costeo` lo advierte con la ruta que cambió y sin montos, por ejemplo: "El costeo de Nexo cambió después de finalizar la
+cotización en la ruta 2 (BUENAVENTURA → BOGOTA, D.C.): el precio finalizado se conserva. Genera una versión nueva para cotizar con el
+costeo actual." Es el mismo mecanismo que ya existía con el PDF generado (ADR-015 §5). Si después Nexo vuelve a los costos con que se
+finalizó (o la Mesa deshace el rechazo), el aviso se quita. Si la Mesa rechazó una ruta que el precio finalizado incluía, el total ya no
+es la suma de las rutas que cuentan: `POST .../costeo/pdf` responde 409 `COSTEO_NO_LISTO` con la versión nueva en `detalle`
+(`accion = nueva_version`), no "espera la siguiente consulta".
+
+### 8.18 Margen contra la política y desplegable de líneas (HU-016.1, #154, parte B)
+
+Decisiones de la Gerencia Comercial del 2026-10-27: el "Margen promedio" de "Mis cotizaciones" y del tablero se compara con la
+**política de margen de las mismas rutas** que se cotizaron, calculada en el servidor (no se expone la tabla de políticas); se muestran
+el promedio **simple** y el **ponderado por costo**, y el semáforo usa el **ponderado**. Todo es aditivo: ningún campo cambia.
+
+- `IndicadoresMetricas` (`indicadores` y `comerciales[].indicadores` de `GET /web/metricas/comercial` y `/regional`) trae
+  `margen_politica_promedio`, `margen_aplicado_promedio`, `margen_politica_ponderado`, `desviacion_margen_politica` y
+  `rutas_sin_margen_politica` (definiciones
+  en §3.1). Mismo universo que el resto del tablero: versión vigente de cada cadena, sin las rutas rechazadas por la Mesa, el alcance del
+  gerente (su regional) y del director (todas o `?regional=`), y `usuario_id` para filtrar. El margen es una fracción, así que la moneda
+  y la TRM no lo cambian (el costo siempre está en COP).
+- Ejemplo: rutas con margen aplicado 10 %, 20 % y 30 %, política 15 %, 15 % y 25 % y costos 1M, 2M y 3M →
+  `margen_politica_promedio = 0.1833`, `margen_aplicado_promedio = 0.2`, `margen_politica_ponderado = 0.2`, `desviacion_margen_politica = 0.0333` (verde).
+- "Margen aplicado ponderado por costo" para mostrar junto a la política: `margen_politica_ponderado + desviacion_margen_politica`.
+  `margen_promedio` y `margen_ponderado` (sobre el precio) siguen como estaban. Con `rutas_sin_margen_politica > 0`, avisar que la
+  comparación no incluye esas rutas.
+- "Margen aplicado simple" para mostrar junto a la política simple: `margen_aplicado_promedio` (mismas rutas que
+  `margen_politica_promedio`, se pueden restar). `margen_promedio` sigue siendo el promedio por cotización (cada una con su margen
+  ponderado por el costo de sus rutas) e incluye las rutas sin política: no se compara con la política. El semáforo es solo
+  `desviacion_margen_politica`.
+- **Nuevo** `GET /web/lineas-negocio` (comercial, gerente y director): las líneas activas para el desplegable de "Nueva solicitud",
+  ordenadas por nombre, **sin margen ni método**. `linea_negocio` es el valor que se envía en `rutas[].linea_negocio`; `etiqueta` es el
+  texto para mostrar. Se lee de la base en cada petición: una línea que la administración desactiva sale de inmediato.
+
+<!-- respuesta: GET /web/lineas-negocio 200 -->
+```json
+[
+  { "linea_negocio": "DevolucionContenedor", "etiqueta": "Devolución Contenedor" },
+  { "linea_negocio": "Distribucion", "etiqueta": "Distribución" },
+  { "linea_negocio": "Exportacion", "etiqueta": "Exportación" },
+  { "linea_negocio": "Importacion", "etiqueta": "Importación" },
+  { "linea_negocio": "Internacional", "etiqueta": "Internacional" },
+  { "linea_negocio": "Nacional", "etiqueta": "Nacional" }
+]
+```
+
+### 8.19 Correo: seguridad de las cabeceras y tope de destinatarios (#228, ADR-023)
+
+E2E real del 2026-10-27B (DEF-1027B-2): `POST .../enviar` aceptó `asunto = "Hola\r\nBcc: intruso@ejemplo.invalid"` y MailSender lo
+entregó al relay; también aceptó 60 destinatarios en `para`. Desde #228, en `POST /web/cotizaciones/{folio}/enviar` y en
+`POST .../correo/vista-previa` (en este orden, después del dueño y, en el envío, de `CORREO_DESHABILITADO`):
+
+| Regla | Respuesta |
+|---|---|
+| `asunto` con caracteres de control (CR, LF, NUL, tabulador, U+0085, U+2028, U+2029 y el resto de la categoría Unicode `Cc`), también al final | 400 `ErrorWeb` (`CORREO_INVALIDO`). No se recorta ni se limpia |
+| Una dirección de `para` o `cc` con caracteres de control (aunque solo sean un `\r\n` al final) | 400 `ErrorWeb` |
+| Más destinatarios entre `para` y `cc` que el tope: **10 por defecto**, configurable con `Correo__MaximoDestinatarios` (1 a 100; la copia oculta al comercial no cuenta; MailSender no tiene tope) | 400 `ErrorNegocio` `CORREO_DEMASIADOS_DESTINATARIOS`, `detalle = {maximo, recibidos}` con `maximo` = el tope vigente |
+| Una dirección que no es UNA dirección simple: parte local de 1 a 64 (letras, dígitos y los símbolos de un `atom` del RFC 5322, puntos no al borde ni seguidos), dominio de hasta 255 con al menos dos etiquetas de 1 a 63 (letras, dígitos, guiones no al borde), sin comas, punto y coma, espacios, comillas, ángulos, comentarios ni literales IP; hasta 320 en total | 400 `ErrorWeb` |
+| `asunto` de más de 300 o `cuerpo` de más de 5000 | 400 `ErrorWeb` (como antes) |
+
+El `cuerpo` no es una cabecera (va escapado dentro del HTML): admite saltos de línea. Nada de lo anterior llama a MailSender ni cambia el
+estado de envío. Como defensa en profundidad, el transporte vuelve a revisar el remitente, los destinatarios (`To`, `Cc`, `Bcc`), el asunto,
+el nombre del adjunto y el `X-Correlation-ID` antes del POST a MailSender: si algo se coló, no sale nada y el envío responde 400
+`CORREO_ENVIO_FALLIDO` (fila `fallido` en el historial).
+
+Validación de #228: `POST .../correos/{correoId}/reintentar` responde 409 `CORREO_NO_REINTENTABLE` (sin llamar a MailSender) si el asunto o
+un destinatario GUARDADO tiene caracteres de control: un correo aceptado antes de DEF-1027B-2 saldría otra vez con las cabeceras inyectadas,
+porque MailSender reintenta lo que guardó. El historial lo muestra con `reintentable = false`. El remitente del comercial (`From`), el
+buzón de pruebas y `Correo:MailSender:Remitente` usan el mismo formato estricto: un correo del comercial que no lo cumple sale con el
+remitente corporativo, y un buzón o un remitente corporativo que no lo cumple impide arrancar.
+
+<!-- respuesta: POST /web/cotizaciones/{folio}/enviar 400 (tope) -->
+```json
+{
+  "error": {
+    "codigo": "CORREO_DEMASIADOS_DESTINATARIOS",
+    "mensaje": "El correo admite hasta 10 destinatarios entre 'para' y 'cc' (llegaron 60).",
+    "detalle": { "maximo": 10, "recibidos": 60 }
+  }
+}
+```
+
+### 8.19 Margen y conexos de varias rutas en una operación (HU-041.1, #231, ADR-026)
+
+Tres endpoints nuevos, atómicos, con las mismas reglas que sus equivalentes por ruta (8.7 y 8.8): `PUT .../costeo/margen/lineas`,
+`POST .../costeo/servicios-conexos/lineas` y `POST .../costeo/servicios-conexos/lineas/quitar`. Las rutas se eligen con `lineas` (los
+`rutas[].linea_orden`, de 1 a 1000, sin repetir) o con `todas: true` (las rutas cotizables). Si una ruta no admite el cambio, **no cambia
+ninguna** y el error trae `detalle.linea_orden` y `detalle.linea_solicitud_id`. `If-Match` obligatorio, `Idempotency-Key` opcional; una
+invalidación del PDF y una auditoría por operación. El conexo agregado en lote queda con el costo del catálogo de NEXO y
+`estado_nexo = pendiente` hasta que el envío diferido lo lleve a NEXO; cada conexo del costeo trae `servicio_id` (id del catálogo).
+
+<!-- esquema: MargenLineasWeb -->
+```json
+{ "lineas": [1, 2, 4], "margen": 0.2, "justificacion": null }
+```
+
+<!-- esquema: MargenLineasWeb -->
+```json
+{ "todas": true, "revertir_sugerido": true }
+```
+
+<!-- esquema: ConexoLineasWeb -->
+```json
+{ "todas": true, "servicio_id": "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d", "cantidad": 1 }
+```
+
+<!-- esquema: QuitarConexoLineasWeb -->
+```json
+{ "lineas": [1, 3], "servicio_id": "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d" }
+```
+
+<!-- respuesta: PUT /web/cotizaciones/{folio}/costeo/margen/lineas 409 -->
+```json
+{
+  "error": {
+    "codigo": "COSTEO_NO_LISTO",
+    "mensaje": "La cotización PCN-900555111-DG-27102026-001 todavía no tiene el costeo de Nexo con margen aplicado.",
+    "detalle": { "linea_orden": 4, "linea_solicitud_id": "7d6c5b4a-3e2f-4a1b-9c8d-0e1f2a3b4c5d" }
   }
 }
 ```

@@ -101,7 +101,7 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `Nexo__MinutosCacheMunicipios` | no | no | `60` | manifiesto | caché de la lista de municipios de Nexo (frente B) |
 | `Nexo__MinutosCacheCatalogos`, `Nexo__HorasCatalogosVencidos` | no | no | `30`, `24` | manifiesto (endurecimiento A, #199) | caché de los catálogos maestros de Nexo y horas que la última copia sirve de respaldo con Nexo caído (HU-013.10) |
 | `CosteoNexo__Habilitado` | no | no | staging **`false`**, producción `true` | manifiesto / Dokploy | polling del costeo en Nexo (HU-005.6/005.8). En staging queda apagado hasta que el DBA confirme que staging y producción **no** comparten `dbo_cotifly`: si la comparten, los workers de los dos stacks consultarían y actualizarían las mismas cotizaciones contra instancias distintas de Nexo. Sin `Nexo__UrlBase` no corre aunque esté en `true` |
-| `CosteoNexo__IntervaloInicialSegundos`, `__IntervaloMaximoMinutos`, `__FactorEdad`, `__EdadMaximaHoras` | no | no | `5`, `15`, `0.25`, `72` | manifiesto | ritmo del polling: primera consulta a los 5 s, espera creciente con la edad (25 %) hasta 15 min; pasadas 72 h queda `costeo_vencido`. Valores por confirmar con el equipo de Nexo (ADR-015) |
+| `CosteoNexo__IntervaloInicialSegundos`, `__IntervaloMaximoMinutos`, `__FactorEdad`, `__EdadMaximaHoras` | no | no | `5`, `15`, `0.25`, `72` | manifiesto | ritmo del polling: primera consulta a los 5 s, espera creciente con la edad (25 %) hasta 15 min; pasadas 72 h queda `costeo_vencido`. Valores por confirmar con el equipo de Nexo (ADR-015). **HU-036.4 (#208), parte B: propuesta pendiente de acordar con NEXO** subir `__EdadMaximaHoras` (rango 1-720) por encima de lo máximo que se demora la Mesa de Costeo en la práctica, para que una cotización no quede `costeo_vencido` mientras Nexo todavía la trabaja; hoy sigue en `72` y cambiarlo no revive las que ya vencieron |
 | `CosteoNexo__IntervaloTickSegundos`, `__Lote`, `__ReclamoSegundos` | no | no | `5`, `20`, `120` | manifiesto | cada cuánto revisa el worker la agenda, cotizaciones por vuelta y reclamo de una cotización en consulta (debe superar los 60 s de la consulta a Nexo) |
 | `Cubicador__UrlBase` | no | no | vacío | Dokploy (declarada en el manifiesto con `${Cubicador__UrlBase:-}`, endurecimiento A, #199) | HU-021.5 / HU-023.1: raíz del API del cubicador (sin barra final). Vacía, cada ruta queda con el camión del respaldo (el vehículo elegido si lo hay y es válido; si no, sin vehículo, ADR-022) y `GET /web/tipos-mercancia`, `/web/tipos-carroceria` y `/web/tipos-vehiculo` responden 503 |
 | `Cubicador__ApiKey` | **sí** (≥ 16) | con `Cubicador__UrlBase` | vacío | Dokploy (secreto; declarada en el manifiesto con `${Cubicador__ApiKey:-}`, sin valor real) | llave de Cotifly ante el cubicador (`Authorization: Bearer`), **una por ambiente** (QA y producción), distinta de la de Nexo; se entrega al equipo del cubicador por un canal seguro. Nunca llega al navegador |
@@ -141,6 +141,7 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `Correo__Proteccion__Modo` | no | fuera de Production con el correo habilitado debe ser `redirigir` | `redirigir` | manifiesto (staging: **fijo** en `redirigir`) | todo correo va solo al buzón de pruebas, con `[QA]` en el asunto y los destinatarios originales en el cuerpo. `ninguno` solo en producción, al salir en vivo y **junto con** `Correo__Proteccion__PermitirEnvioReal=true` (segunda llave). Un modo desconocido no arranca |
 | `Correo__Proteccion__PermitirEnvioReal` | no | con el correo habilitado va con `Modo`: `true` solo con `ninguno` y `false` con `redirigir` (una llave sin la otra no arranca); fuera de Production, `false` | `false` | manifiesto (staging: **fijo** en `false`) | HU-033 (ADR-023 §3), segunda llave del envío real: solo `Modo=ninguno` **y** `PermitirEnvioReal=true` (y `Production`) mandan el correo a los destinatarios reales; en cualquier otro caso se redirige al buzón de pruebas |
 | `Correo__Proteccion__BuzonPruebas` | no | con `redirigir` y el correo habilitado (un correo válido) | vacío | Dokploy | **buzón de pruebas por definir**; sin él la API no arranca con el correo habilitado y `redirigir` |
+| `Correo__MaximoDestinatarios` | no | de 1 a 100 (fuera de rango no arranca) | `10` | manifiesto | #228 (decisión del 2026-10-27): tope de destinatarios entre `para` y `cc` juntos (la copia oculta al comercial no cuenta); pasado el tope, 400 `CORREO_DEMASIADOS_DESTINATARIOS` con `detalle.maximo` = este valor |
 | `Correo__Seguimiento__IntervaloTickSegundos`, `__IntervaloConsultaSegundos`, `__EdadMaximaHoras`, `__Lote`, `__ReclamoSegundos` | no | rangos: 1-3600, 1-3600, 1-720, 1-1000 y 1-3600 (fuera de rango no arranca) | `15`, `30`, `24`, `50`, `60` | manifiesto (endurecimiento A, #199) | worker que consulta el estado en MailSender: cada cuánto despierta, espera entre consultas del mismo correo, horas sin confirmación antes de `fallido`, correos por vuelta y segundos que una réplica reserva un correo mientras lo consulta |
 | `IA__Proveedor`, `IA__Modelo`, `IA__Endpoint` | no | no (sin proveedor el agente no responde) | vacío | Dokploy | ADR-003. Con OmniRoute (gateway LLM interno, #84): `IA__Proveedor=openai_compatible`, `IA__Endpoint=http://llm-services-omniroute.10-10-40-17.sslip.io/v1` (HTTP dentro de la red interna, sin TLS; exige salida del worker hacia `10.10.40.17:80`) y `IA__Modelo=gemini/gemini-3.5-flash-lite`. Matriz de modelos en [docs/03](backend-dotnet/docs/03-infraestructura.md#omniroute). **Nunca** un gateway web no oficial de los que lista OmniRoute (`duckduckgo-web`, `theoldllm`, `veoaifree-web`, `chipotle`): riesgo de confidencialidad |
 | `IA__ApiKey` | **sí** (≥ 16) | según el proveedor (obligatoria con openai, azure_openai, gemini y anthropic); si tiene valor, en Production no puede ser un placeholder ni tener menos de 16 caracteres | vacío | Dokploy | **secreto de Dokploy**, nunca en el repositorio ni en el manifiesto. Con OmniRoute es la clave del gateway (`Authorization: Bearer`); como el tráfico va por HTTP, solo debe viajar dentro de la red interna. La clave usada en las pruebas del 2026-10-01 se compartió por chat: **rotarla** antes de cargarla en staging |
@@ -288,6 +289,76 @@ de Drive retirado), `TARIFA_*`, `S3_*` y `MINIO_*` (MinIO no se mantiene, ADR-01
 `SMTP_*`/`SMTP_RELAY_*`/`CORREO_*` (reemplazadas por `Correo__*`), `SAP_TM_*`/`SAP_SALES_ORG_DEFAULT` (reemplazadas por
 `SapTm__*`), `PDF_*` (reemplazadas por `Pdf__*`), `PUBLIC_HOST` (sigue como variable del manifiesto para Traefik, no
 de la app).
+
+### Rol director (HU-037, #209 a #212)
+
+El rol interno `director` (ADR-016 §11) usa todo lo del gerente comercial y ve todas las regionales. Tres piezas de base de datos, de
+Datos (@scalderon-bs), y una de backend:
+
+| Pieza | Qué es | Cuándo |
+|---|---|---|
+| `db/scripts/15_rol_director.sql` (#209, parte A) | CHECK `ck_roles_codigo` con `director` y la fila `director` activa con `idRolExterno = NULL`. Idempotente, en una transacción. Lo toma el ejecutador | **Junto con o después de la imagen de HU-037.2 (#210), nunca antes con una imagen vieja** (ver abajo). No lo exige `/health/ready`: no agrega columnas y sin él nadie entra como director (falla cerrado) |
+| `db/scripts/operacion/mapeo_prueba_rol_director_209.sql` (#209, parte B) | **Solo prueba / compartida:** `gerente_comercial` 31 → 25 (`ClienteProAdmin`, prestado, provisional) y **después** `director` → 31 (`ClienteProGerencial`). El orden importa: `uq_roles_idRolExterno` es único. Respaldo en `RespaldoRoles_209` | Después del 15. Lo corre Datos con `sqlcmd -I -b` |
+| Script de operación de **producción** (#212) | ⚠ **NO OLVIDAR antes de producción:** `comercial` 34, `gerente_comercial` 29 (`ClienteProRegional`), `director` 31 (`ClienteProGerencial`), confirmando antes los IDROLES reales y quién tiene hoy `ClienteProGerencial`. Lo escribe y corre Datos | En la ventana del despliegue a producción. Sin él, gerente y director quedan con el mapeo de prueba |
+| Imagen con HU-037.2 (#210) y HU-037.3 (#211) | Políticas, precedencia `director > gerente_comercial > comercial` (regla `precedencia_director`), alcance de todas las regionales, `GET /web/regionales` | Antes o junto con el 15 |
+
+**Orden y riesgo con una imagen anterior a HU-037.** El backend anterior convierte cada fila de `Roles` a su enum de dos valores: con la
+fila `director` presente **y activa** (aunque su `idRolExterno` siga en `NULL`), la lectura del catálogo lanza y **el login y el refresh de
+todos** responden el 401 genérico `{"error":"Credenciales inválidas"}` (en el log: `Error inesperado en el login` con
+`'director' no es un código válido de RolInterno`) mientras corra esa imagen. Comprobado en la validación de HU-037 con el código de
+`origin/QA` sobre SQL Server de Testcontainers. Por eso el 15 va con (o después de) la imagen nueva. Desde HU-037.2 el repositorio de
+roles ignora los códigos que no conoce (con un warning en el log que da el `id` del rol ignorado), así que un rol futuro ya no tumba el
+login. Si el 15 ya está aplicado en un ambiente con una imagen vieja (en la compartida ya se aplicó, según #209):
+
+- **Lo correcto:** desplegar la imagen de HU-037 (#210 y #211) cuanto antes.
+- **Mientras tanto:** `UPDATE dbo_cotifly.Roles SET activo = 0, updatedAt = SYSDATETIMEOFFSET() WHERE codigo = N'director';` (el
+  catálogo solo lee roles activos). Vuelven a entrar el comercial y el gerente cuyo rol externo siga mapeado a `gerente_comercial`; si ya
+  se corrió el mapeo de prueba (#209 parte B), quien tiene el 31 (`ClienteProGerencial`, ahora del director) **no** entra con la imagen
+  vieja (401) hasta desplegar la nueva. Con la imagen nueva, volver a `activo = 1`.
+
+Quien hoy tenga el rol externo mapeado al gerente y pase a director (en prueba, el 31) tiene asignado `gerente_comercial` en
+`UsuariosRoles`: su siguiente login y su refresh quedan en revisión (`rol_externo_cambio`, 401) hasta que se le reasigne el rol, como
+cualquier cambio de rol (ADR-009). El access que ya tenía conserva su rol hasta vencer (60 minutos). La reasignación (DBA, con aprobación,
+una persona a la vez):
+
+```sql
+DECLARE @u UNIQUEIDENTIFIER = (SELECT id FROM dbo_cotifly.UsuariosWeb WHERE nombreUsuario = N'<NOMBREUSUARIO>');
+BEGIN TRANSACTION;
+UPDATE dbo_cotifly.UsuariosRoles SET activo = 0 WHERE usuarioId = @u AND activo = 1;
+INSERT INTO dbo_cotifly.UsuariosRoles (usuarioId, rolId) SELECT @u, id FROM dbo_cotifly.Roles WHERE codigo = N'director';
+COMMIT;
+```
+
+### Multi-rol (HU-040, #229 y #230)
+
+`db/scripts/16_multiples_roles_activos.sql` (#229, propuesta pendiente de revisión de @scalderon-bs) retira el índice único
+`uq_usuariosRoles_usuarioId_activo`: una persona puede tener varias asignaciones activas en `UsuariosRoles` (una por rol; la unicidad
+usuario + rol sigue). Además agrega `TokensRefresco.rolSesion` (el rol con el que se emitió la sesión). No cambia ninguna fila.
+
+- **Va antes de la imagen de HU-040.1**: esa imagen mapea `rolSesion` y sin el 16 queda en 503 "falta 16" (aplicarlo la recupera sin
+  redesplegar).
+- **Es seguro con la imagen anterior** (a diferencia del 15): mientras nadie agregue una segunda asignación activa, todo usuario sigue con
+  una y el alta JIT de esa imagen crea una sola; `rolSesion` queda NULL. Si Datos agrega una segunda asignación activa con la imagen
+  anterior en marcha, esa imagen rechaza solo a ese usuario (401 genérico, `rol_externo_cambio`), falla cerrado. Probado con las pruebas
+  de Testcontainers de #229 (login y refresh con una y con dos asignaciones activas sobre la base con el 16).
+- Con la imagen de HU-040.1 (#229) quien tenga dos asignaciones activas entra con la jerarquía (`director` > `gerente_comercial` >
+  `comercial`) si TODAS sus asignaciones activas siguen respaldadas por un rol de ClientePro; si alguna perdió su rol externo, 401
+  `rol_externo_cambio`, como hoy. La elección del rol al entrar llega con HU-040.2 (#230).
+
+Habilitar el multi-rol de una persona que ya existe (Datos, con aprobación; sus roles de ClientePro deben estar todos mapeados):
+
+```sql
+DECLARE @u UNIQUEIDENTIFIER = (SELECT id FROM dbo_cotifly.UsuariosWeb WHERE nombreUsuario = N'<NOMBREUSUARIO>');
+DECLARE @r INT = (SELECT id FROM dbo_cotifly.Roles WHERE codigo = N'<rol>' AND activo = 1);
+-- Si ya tuvo ese rol (fila inactiva por uq_usuariosRoles_usuarioId_rolId), se reactiva; si no, se agrega.
+UPDATE dbo_cotifly.UsuariosRoles SET activo = 1 WHERE usuarioId = @u AND rolId = @r AND activo = 0;
+INSERT INTO dbo_cotifly.UsuariosRoles (usuarioId, rolId)
+    SELECT @u, @r WHERE @u IS NOT NULL AND @r IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM dbo_cotifly.UsuariosRoles ur WHERE ur.usuarioId = @u AND ur.rolId = @r);
+```
+
+Retirar un rol de una persona multi-rol: `UPDATE dbo_cotifly.UsuariosRoles SET activo = 0 WHERE usuarioId = @u AND rolId = @r;` (con
+#230, sus sesiones con ese rol dejan de renovarse: el refresh responde 401 `rol_externo_cambio`; el access vigente dura hasta que vence).
 
 ### 2.3 Auditoría de secretos en el repositorio (2026-09-28)
 
@@ -452,7 +523,7 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
 
 ### 4.5 Release paso a paso
 
-0. **Precondición de esquema: `db/migrations_mssql/0001`–`0010`, `db/scripts/02`, `db/scripts/03`, `db/scripts/pendientes/04`, `db/scripts/05`, `db/scripts/06`, `db/scripts/09`, `db/scripts/10`, `db/scripts/11`, `db/scripts/12` y `db/scripts/13` aplicados (el `07` es opcional y el `08` va después de la imagen)** en la base del ambiente (o la base instalada
+0. **Precondición de esquema: `db/migrations_mssql/0001`–`0010`, `db/scripts/02`, `db/scripts/03`, `db/scripts/pendientes/04`, `db/scripts/05`, `db/scripts/06`, `db/scripts/09`, `db/scripts/10`, `db/scripts/11`, `db/scripts/12`, `db/scripts/13` y `db/scripts/14` aplicados (el `07` es opcional, el `08` va después de la imagen y el `15`, del rol director, va con o después de la imagen de HU-037, §2.2 "Rol director")** en la base del ambiente (o la base instalada
    desde cero con `db/scripts/01_crear_esquema.sql` y `db/seeder/`, que equivale a `0001`–`0010`). Los aplica el DBA con
    un usuario administrador y `sqlcmd -I`; la app no aplica migraciones. Regla de siempre: **primero el script, después
    la imagen.** Sin el esquema completo, `/health/ready` responde `503` (tabla de abajo), Traefik no manda tráfico a la
@@ -532,7 +603,11 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
      frontend no consume) responden 500 hasta que sube la imagen nueva.
    - Orden del release con #152 y #155 juntas: `09` → imagen → `08`. ~~Con #183 y #184 (integración 1021): `03` → `pendientes/04` → `05`
      → `06` → `07` → `09` → `10` → `11` → imagen → `08`.~~ Con HU-032 (#197) y HU-033 (#199): `03` → `pendientes/04` → `05` → `06`
-     → `07` → `09` → `10` → `11` → `12` → `13` → imagen → `08`.
+     → `07` → `09` → `10` → `11` → `12` → `13` → imagen → `08`. ~~Con HU-036 (#205 a #208): `…` → `13` → `14` → imagen → `08`.~~ Con HU-036 (#205 a #208) y HU-037 (#209 a #211) juntas
+     (integración 1027): `…` → `13` → `14` → `15` → imagen → `08`, con el `15` en la misma ventana que la imagen (nunca antes con una
+     imagen vieja, ver §2.2 "Rol director"). En la compartida el `15` ya está aplicado (#209) y el `14` está pendiente de @scalderon-bs.
+     Con HU-040 (#229, #230): `…` → `13` → `14` → `15` → `16` → imagen → `08`. El `16` va ANTES de la imagen (la imagen de HU-040.1 lo
+     exige: "falta 16") y, a diferencia del `15`, es seguro con la imagen anterior (ver abajo, "Multi-rol").
    - **HU-030.1 (#184): `db/scripts/11_peso_con_tara.sql` va ANTES de la imagen de #184.** Agrega a la ruta
      (`CotizacionLineasSolicitud`) la columna `pesoConTaraKg DECIMAL(12,2) NULL` y el `CHECK` `ck_cotizacionLineasSolicitud_pesoConTaraKg`
      (`NULL` o > 0): el peso total con tara que escribe el comercial en una ruta `Contenedor`. Es un `ADD` de columna NULL, idempotente
@@ -544,6 +619,32 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
      SELECT COL_LENGTH(N'dbo_cotifly.CotizacionLineasSolicitud', N'pesoConTaraKg') AS pesoConTaraKg_11,
             (SELECT COUNT(*) FROM sys.check_constraints
               WHERE name = N'ck_cotizacionLineasSolicitud_pesoConTaraKg')          AS check_11;
+     ```
+
+   - **HU-036 (#205, #206): `db/scripts/14_cotizacion_finalizada.sql` va ANTES de la imagen de HU-036.** Es una **propuesta pendiente de
+     revisión de @scalderon-bs** (Datos, #205); el número `15` queda reservado para HU-037. Agrega a la cabecera (`CotizacionesSolicitud`)
+     `finalizadaAt DATETIMEOFFSET NULL` y `finalizadaPor UNIQUEIDENTIFIER NULL` con la FK `fk_cotizaciones_finalizadaPor` a
+     `UsuariosWeb(id)` (la PK de `UsuariosWeb` es `UNIQUEIDENTIFIER`, verificado en `01_crear_esquema.sql`; si en un ambiente no lo fuera,
+     el script se detiene sin tocar nada) y el CHECK `ck_cotizaciones_finalizada` (las dos NULL o las dos con valor). Idempotente, no
+     destructivo, en una transacción; el ejecutador lo corre por nombre después del `13`. Sin él la imagen de HU-036 queda en 503
+     "falta 14" (como con el `09`, aplicarlo la recupera sin redesplegar). Aplicarlo con la imagen anterior en marcha no cambia nada (no
+     lee las columnas). Verificación de solo lectura (dos largos no NULL, `1` y `1`):
+
+     ```sql
+     SELECT COL_LENGTH(N'dbo_cotifly.CotizacionesSolicitud', N'finalizadaAt')  AS finalizadaAt_14,
+            COL_LENGTH(N'dbo_cotifly.CotizacionesSolicitud', N'finalizadaPor') AS finalizadaPor_14,
+            (SELECT COUNT(*) FROM sys.foreign_keys WHERE name = N'fk_cotizaciones_finalizadaPor') AS fk_14,
+            (SELECT COUNT(*) FROM sys.check_constraints WHERE name = N'ck_cotizaciones_finalizada') AS check_14;
+     ```
+
+     **Sin backfill** (decisión del 2026-10-26): las cotizaciones existentes quedan sin finalizar. Las ya enviadas al cliente o con
+     resultado siguen protegidas como hoy. Las que están en `autocosteo`/`entregada` sin enviar ni resultado las finaliza el comercial una
+     por una antes de generar el PDF, enviarlas o marcar el resultado (HU-036.3, #207). Para avisarles cuántas son, antes de desplegar
+     (solo lectura):
+
+     ```sql
+     SELECT COUNT(*) FROM dbo_cotifly.CotizacionesSolicitud
+     WHERE estadoCosteo IN (N'autocosteo', N'entregada') AND estadoEnvio = N'sin_enviar' AND ganada IS NULL;
      ```
 
    **Errores de `/health/ready` (`503 {"status":"unavailable","detalle":"..."}`)** y qué hacer. La sonda compara las tablas y
@@ -567,6 +668,8 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
    | `esquema incompleto: falta 11` | Falta `CotizacionLineasSolicitud.pesoConTaraKg` (HU-030.1, #184) | Aplicar `db/scripts/11_peso_con_tara.sql` |
    | `esquema incompleto: falta 12` | Faltan `tipoVehiculoElegido`/`carroceriaElegida` de la ruta (HU-032, #197) | Aplicar `db/scripts/12_vehiculo_elegido.sql` |
    | `esquema incompleto: falta 13` | Faltan las columnas de MailSender en `Correos` o la sincronización del resultado en la cabecera (HU-033, #199) | Aplicar `db/scripts/13_correo_mailsender.sql` |
+   | `esquema incompleto: falta 14` | Faltan `finalizadaAt`/`finalizadaPor` de la cabecera (HU-036, #205) | Aplicar `db/scripts/14_cotizacion_finalizada.sql` |
+   | `esquema incompleto: falta 16` | Falta `TokensRefresco.rolSesion` (HU-040.1, #229) | Aplicar `db/scripts/16_multiples_roles_activos.sql` |
    | `esquema incompleto: falta Tabla.columna, ...` (hasta 5) | Falta otra tabla o columna del modelo (por ejemplo un script intermedio sin aplicar) | Comparar con `db/scripts/01_crear_esquema.sql` y aplicar el script que la trae (lista en `docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md` §A.5) |
 
 1. **Staging.** Merge a `QA` → el pipeline (o `publicar-imagen.sh --canal qa`) publica `sha-<corto>`. En Dokploy, stack

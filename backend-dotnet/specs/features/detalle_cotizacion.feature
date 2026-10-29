@@ -27,6 +27,13 @@ Característica: Detalle de una cotización por folio
     Entonces la respuesta tiene el estado 200 y cumple el esquema "DetalleCotizacion" del contrato
     Y el detalle es de la cotización "A1", su dueño es "ana" y es de solo consulta
 
+  # HU-037.3 (#211): el director ve el detalle de cualquier regional, en solo consulta.
+  Escenario: El director ve en solo consulta el detalle de una cotización de otra regional
+    Dado el director "dario" con sesión en la regional "Sur"
+    Cuando "dario" consulta el detalle de la cotización "A1"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "DetalleCotizacion" del contrato
+    Y el detalle es de la cotización "A1", su dueño es "ana" y es de solo consulta
+
   Escenario: Un gerente de otra regional y un comercial ajeno no la ven
     Cuando "hugo" consulta el detalle de la cotización "A1"
     Entonces la respuesta tiene el estado 404 con el error "Cotización no encontrada o no es tuya."

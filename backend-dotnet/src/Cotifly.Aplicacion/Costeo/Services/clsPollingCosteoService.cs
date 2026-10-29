@@ -79,6 +79,12 @@ public sealed class clsPollingCosteoService(
     /// <summary>Evento de auditoría de una consulta fallida.</summary>
     public const string HerramientaErrorConsulta = "costeo_nexo_consulta";
 
+    /// <summary>
+    /// HU-036.4 (#208): evento de auditoría cuando Nexo trae otro costo para una cotización finalizada (el precio se conserva): lo
+    /// guardado y lo de Nexo por camión, con su ruta.
+    /// </summary>
+    public const string HerramientaPrecioCongelado = "costeo_nexo_precio_congelado";
+
     public Task<IReadOnlyList<clsConsultaCosteoPendiente>> PendientesAsync(CancellationToken cancellationToken = default) =>
         cotizaciones.ListarConsultasCosteoPendientesAsync(reloj.AhoraUtc, opciones.Value.Lote, cancellationToken);
 
@@ -268,12 +274,19 @@ public sealed class clsPollingCosteoService(
         }
 
         // ADR-017 y HU-021: el estado y el costo se derivan por camión, el precio por ruta y el total en la solicitud. El precio se aplica
-        // aunque la cotización ya tenga resultado ganada/perdida (HU-013.14): solo el PDF congela el precio.
+        // aunque la cotización ya tenga resultado ganada/perdida (HU-013.14): solo el PDF y (HU-036.4, #208) la finalización congelan el
+        // precio.
         // HU-021.8 (#135): con conexos pendientes de leer, la ruta pedida y los conexos que Nexo ya tenía antes del POST.
         var pendientes = cotizacion.ConexosPendientesDeLeer
             ? await cotizaciones.ObtenerConexosPendientesNexoAsync(cotizacion.Folio, CancellationToken.None)
             : null;
+        var motivoAntes = cotizacion.MotivoEstadoCosteo;
         var cambio = clsLecturaCosteo.AplicarFoto(cotizacion, consulta.Valor, ahora, config, precioCosteo, pendientes);
+
+        // HU-036.4 (#208): con la cotización finalizada el precio no cambia; lo que trajo Nexo se audita (una vez por aviso nuevo).
+        var congelados = cotizacion.Finalizada && !string.Equals(motivoAntes, cotizacion.MotivoEstadoCosteo, StringComparison.Ordinal)
+            ? clsPrecioCosteoService.CambiosConPrecioCongelado(cotizacion, consulta.Valor)
+            : Array.Empty<clsCambioCosteoCongelado>();
 
         // Una relectura pasada la edad máxima que sigue sin costeo se vence ahora, después de leerla (HU-013.14).
         if (relectura && cotizacion.EstadoCosteo == EstadoCosteo.PendienteCosteo && clsAgendaPollingCosteo.Vencida(ahora, enviadaAt, config))
@@ -309,6 +322,11 @@ public sealed class clsPollingCosteoService(
         if (cambio)
         {
             await AuditarCambioAsync(cotizacion, anterior, (int)cronometro.ElapsedMilliseconds);
+        }
+
+        if (congelados.Count > 0)
+        {
+            await AuditarPrecioCongeladoAsync(cotizacion, congelados, (int)cronometro.ElapsedMilliseconds);
         }
 
         // HU-033 (#199): la Mesa entregó y hay un resultado pendiente: se envía a Nexo una sola vez (escritura versionada aparte).
@@ -380,6 +398,32 @@ public sealed class clsPollingCosteoService(
         EstadoCosteo.CosteoVencido => "El costeo en Nexo venció sin entrega: el resultado queda solo en Cotifly.",
         _ => "La cotización ya no está en el costeo de Nexo: el resultado queda solo en Cotifly.",
     };
+
+    /// <summary>HU-036.4 (#208): el costo que trajo Nexo para una cotización finalizada, frente al guardado, por camión y ruta.</summary>
+    private Task AuditarPrecioCongeladoAsync(clsCotizacionSolicitud cotizacion, IReadOnlyList<clsCambioCosteoCongelado> cambios, int duracionMs) =>
+        auditoria.RegistrarAsync(
+            HerramientaPrecioCongelado,
+            new { folio = cotizacion.Folio, costeo_id = cotizacion.SolicitudNexoId, finalizada_at = cotizacion.FinalizadaAt },
+            new
+            {
+                estado_costeo = cotizacion.EstadoCosteo is { } e ? clsCodigoEnum.ACodigo(e) : null,
+                precio_final = cotizacion.PrecioFinal,
+                motivo = cotizacion.MotivoEstadoCosteo,
+                camiones = cambios.Select(c => new
+                {
+                    linea_orden = c.Ruta.Orden,
+                    linea_solicitud_id = c.Ruta.Id,
+                    camion_id = c.CamionId,
+                    flete_guardado = c.FleteGuardado,
+                    flete_nexo = c.FleteNexo,
+                    retorno_guardado = c.RetornoGuardado,
+                    retorno_nexo = c.RetornoNexo,
+                    rechazado = c.Rechazado,
+                }).ToList(),
+            },
+            exito: true,
+            duracionMs,
+            cotizacion.ThreadId);
 
     private Task AuditarCambioAsync(clsCotizacionSolicitud cotizacion, EstadoCosteo? anterior, int duracionMs) =>
         auditoria.RegistrarAsync(

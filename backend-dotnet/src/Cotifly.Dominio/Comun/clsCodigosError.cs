@@ -58,6 +58,12 @@ public static class clsCodigosError
     /// <summary>Ya se envió la cotización a los mismos destinatarios <c>para</c> hace menos de 5 minutos.</summary>
     public const string CorreoDuplicado = "CORREO_DUPLICADO";
 
+    /// <summary>
+    /// #228: el correo trae más destinatarios entre <c>para</c> y <c>cc</c> que el tope (<c>Correo:MaximoDestinatarios</c>, 10 por
+    /// defecto): 400 <c>ErrorNegocio</c> con <c>detalle.maximo</c> y <c>detalle.recibidos</c>, en el envío y en la vista previa.
+    /// </summary>
+    public const string CorreoDemasiadosDestinatarios = "CORREO_DEMASIADOS_DESTINATARIOS";
+
     /// <summary>La cotización no tiene PDF en el almacén para adjuntar.</summary>
     public const string CorreoPdfNoEncontrado = "CORREO_PDF_NO_ENCONTRADO";
 
@@ -234,8 +240,9 @@ public static class clsCodigosError
     public const string TextosEditados = "TEXTOS_EDITADOS";
 
     /// <summary>
-    /// Regla del PDF (ADR-018 §11): la cotización ya se envió al cliente o tiene resultado; para cambiarla se crea la versión
-    /// <c>-vN</c> (409; <c>detalle</c> trae la llamada a <c>re-solicitar</c> con <c>nueva_version</c>). Código nuevo del backend .NET.
+    /// Regla del PDF (ADR-018 §11): la cotización ya se envió al cliente o tiene resultado (HU-036.3, #207: o ya está finalizada); para
+    /// cambiarla se crea la versión <c>-vN</c> (409; <c>detalle</c> trae la llamada a <c>re-solicitar</c> con <c>nueva_version</c>). Código
+    /// nuevo del backend .NET.
     /// </summary>
     public const string PdfYaEnviado = "PDF_YA_ENVIADO";
 
@@ -374,4 +381,27 @@ public static class clsCodigosError
     /// cubicador por petición. Cotifly lo valida antes de llamar y traduce igual el 400 del cubicador. Se resuelve partiendo la carga. 400.
     /// </summary>
     public const string CubicacionDemasiadoGrande = "CUBICACION_DEMASIADO_GRANDE";
+
+    /// <summary>
+    /// HU-036.2 (#206): <c>POST .../finalizar</c> sobre una cotización cuyo <c>estado_costeo</c> no es <c>autocosteo</c> ni <c>entregada</c>
+    /// (sin el costeo de Nexo listo no hay precio que aceptar; el chat y las licitaciones sin costeo tampoco). 409; <c>detalle.estado_costeo</c>
+    /// trae el estado actual. Código nuevo del backend .NET.
+    /// </summary>
+    public const string CotizacionNoFinalizable = "COTIZACION_NO_FINALIZABLE";
+
+    /// <summary>
+    /// HU-036.3 (#207): el PDF, el envío por correo, el resultado o los textos del PDF exigen la cotización finalizada ("Finaliza la
+    /// cotización antes de..."). 409; <c>detalle</c> trae la llamada para finalizar (<c>accion = finalizar</c>, <c>metodo</c>,
+    /// <c>endpoint</c>). No aplica a las ya entregadas al cliente (anteriores a HU-036) ni a las que no pasan por Nexo. Código nuevo del
+    /// backend .NET.
+    /// </summary>
+    public const string CotizacionNoFinalizada = "COTIZACION_NO_FINALIZADA";
+
+    /// <summary>
+    /// HU-018.1 (#155, parte B): al marcar <c>perdida</c> (<c>POST .../resultado</c> o <c>POST .../seguimiento</c>) el motivo es obligatorio y
+    /// debe ser uno de la lista configurada (<c>Resultado:MotivosPerdida</c>, la de NEXO, <c>GET /web/motivos-perdida</c>), y el motivo
+    /// <c>Otro</c> exige <c>comentario</c>. 400; <c>detalle.motivos_permitidos</c> trae la lista y <c>detalle.requiere_comentario</c> si
+    /// solo faltó el comentario. Código nuevo del backend .NET.
+    /// </summary>
+    public const string MotivoNoPermitido = "MOTIVO_NO_PERMITIDO";
 }

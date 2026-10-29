@@ -24,6 +24,9 @@ public sealed class clsUsuarioWebRepository(clsCotiflyDbContext contexto) : ICls
         return contexto.UsuariosWeb.FirstOrDefaultAsync(u => u.NombreUsuario == buscado, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<clsUsuarioWeb>> ListarTodosAsync(CancellationToken cancellationToken = default) =>
+        await contexto.UsuariosWeb.AsNoTracking().OrderBy(u => u.Id).ToListAsync(cancellationToken);
+
     public Task<clsUsuarioWeb?> ObtenerPorIdUsuarioExternoAsync(long idUsuarioExterno, CancellationToken cancellationToken = default) =>
         contexto.UsuariosWeb.FirstOrDefaultAsync(u => u.IdUsuarioExterno == idUsuarioExterno, cancellationToken);
 

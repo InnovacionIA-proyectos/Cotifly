@@ -10,7 +10,7 @@
                       puerto 14333 solo en 127.0.0.1 para SSMS o Azure Data Studio)
       3. Esquema      con sqlcmd 18 (/opt/mssql-tools18, incluido en la misma imagen de SQL Server 2019):
                         - bases dbTarifario_Nexo_Pruebas y dbsolucionesti            (scripts/sql/dev-01-bases.sql)
-                        - dbo_cotifly al esquema vigente (0001 a 0010, y luego 02, 03, pendientes/04, 05, 06, 07, 08, 09, 10, 11, 12 y 13): base vacía -> db/scripts/01_crear_esquema.sql;
+                        - dbo_cotifly al esquema vigente (0001 a 0010, y luego 02, 03, pendientes/04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14 y 15): base vacía -> db/scripts/01_crear_esquema.sql;
                           esquema anterior a HU-021 (Cotizaciones) -> 0002 a 0010; ya migrada -> solo el 0010 (idempotente)
                           y después los ajustes db/scripts/02_*.sql en adelante más el pendientes/04, por nombre (se pueden repetir)
                         - seeders de db/seeder/ (idempotentes: líneas de negocio, mapeo SAP, roles)

@@ -18,6 +18,9 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
 {
     private readonly Dictionary<string, string> _folios = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>HU-034.1 (#201): el último Excel de la licitación que bajó cada usuario (alias), para comparar el del dueño con los demás.</summary>
+    public Dictionary<string, byte[]> Excels { get; } = new(StringComparer.OrdinalIgnoreCase);
+
     [When("{string} analiza el pliego de {int} filas")]
     public Task CuandoAnaliza(string alias, int filas) =>
         web.EnviarAsync(HttpMethod.Post, "/web/licitaciones/analizar-excel", web.Sesion(alias).Access, clsApiWebPruebas.Archivo(clsPliegoMuestra.Excel(filas)));
@@ -40,6 +43,7 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
     [Then("Nexo recibió el archivo para analizarlo")]
     public void EntoncesNexoRecibioElArchivo() => costeo.Nexo.UltimoArchivoAnalizado.Should().BeGreaterThan(0);
 
+    [Given("{string} crea la licitación {string} del cliente {string} con el pliego de {int} filas mapeadas")]
     [When("{string} crea la licitación {string} del cliente {string} con el pliego de {int} filas mapeadas")]
     public Task CuandoCrea(string alias, string licitacion, string nit, int filas) =>
         CrearAsync(alias, licitacion, clsPliegoMuestra.Json(nit, clsPliegoMuestra.Lineas(filas)), clsPliegoMuestra.Excel(filas));
@@ -84,6 +88,27 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
         return CrearAsync(alias, licitacion, clsPliegoMuestra.Json(nit, lineas), clsPliegoMuestra.Excel(3));
     }
 
+    [When("{string} crea la licitación {string} del cliente {string} con una fila sin destino y otra sin peso y la línea de negocio {string}")]
+    public Task CuandoCreaInvalidaConLinea(string alias, string licitacion, string nit, string linea)
+    {
+        object[] lineas =
+        [
+            new { fila = 0, origen = "BUENAVENTURA", destino = "", peso_kg = 32000 },
+            new { fila = 1, origen = "CALI", destino = "CARTAGENA", peso_kg = 28000 },
+            new { fila = 2, origen = "CUCUTA", destino = "BOGOTA, D.C." },
+        ];
+        return CrearAsync(alias, licitacion,
+            clsPliegoMuestra.Json(nit, lineas).Replace("\"linea_negocio\":\"Nacional\"", $"\"linea_negocio\":\"{linea}\"", StringComparison.Ordinal),
+            clsPliegoMuestra.Excel(3));
+    }
+
+    [Then("el reporte trae el código {string} del encabezado en el campo {string}")]
+    public void EntoncesElReporteTraeDelEncabezado(string codigo, string campo) =>
+        web.UltimoJson().GetProperty("errores").EnumerateArray()
+            .Where(e => e.GetProperty("indice").ValueKind == JsonValueKind.Null)
+            .Select(e => (e.GetProperty("campo").GetString(), e.GetProperty("codigo").GetString()))
+            .Should().ContainSingle().Which.Should().Be((campo, codigo));
+
     [Then("la respuesta tiene el estado {int} con el reporte de la licitación")]
     public void EntoncesElReporte(int estado)
     {
@@ -122,6 +147,7 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
             $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionArchivosLicitacion a JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = a.cotizacionId WHERE c.folio = '{Folio(licitacion)}' AND a.hoja = N'{clsPliegoMuestra.Hoja}'"))
             .Should().Be(1);
 
+    [Given("Nexo costea las líneas {int} y {int} de {string} con un flete de {int}")]
     [When("Nexo costea las líneas {int} y {int} de {string} con un flete de {int}")]
     public async Task CuandoCosteaDos(int a, int b, string licitacion, int flete)
     {
@@ -133,6 +159,7 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
     [When("Nexo costea las líneas {int} de {string} con un flete de {int}")]
     public async Task CuandoCosteaUna(int a, string licitacion, int flete) => costeo.Nexo.CostearLinea(await CosteoIdAsync(licitacion), a - 1, flete);
 
+    [Given("el polling consulta a Nexo por {string}")]
     [When("el polling consulta a Nexo por {string}")]
     public Task CuandoPolling(string licitacion) => web.Api.ProcesarPollingAsync(Folio(licitacion));
 
@@ -173,6 +200,7 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
     {
         await web.EnviarAsync(HttpMethod.Get, $"/web/licitaciones/{Folio(licitacion)}/excel", web.Sesion(alias).Access);
         web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);
+        Excels[alias] = web.UltimoContenido;
     }
 
     [Then("el Excel conserva las columnas originales del pliego")]
@@ -210,6 +238,7 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
     [When("{string} genera el PDF de la licitación {string}")]
     public async Task CuandoGeneraPdf(string alias, string licitacion)
     {
+        await costeo.FinalizarSiCorrespondeAsync(alias, Folio(licitacion)); // HU-036.3: finaliza antes del PDF
         await web.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{Folio(licitacion)}/costeo/pdf", web.Sesion(alias).Access);
         web.UltimoEstado.Should().Be(HttpStatusCode.Created, web.UltimoCuerpo);
         var ruta = new Uri(new Uri("http://localhost"), web.UltimoJson().GetProperty("pdf_url").GetString()!).AbsolutePath;

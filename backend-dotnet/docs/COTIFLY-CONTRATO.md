@@ -151,6 +151,14 @@ Una línea **sin `tipoVehiculo`** se acepta. Pero:
 | ¿Mandamos número de orden de las líneas? | **No.** NEXO numera por el orden del arreglo (§3.2) |
 | ¿Cómo llegan los códigos del Cubicador? | En `tipoVehiculo` y `carroceria`; uno desconocido nace en cuarentena (§3.4) |
 
+### HU-036.4 (#208): la cotización finalizada y la lectura del costeo
+
+Cotifly sigue leyendo `GET /api/solicitudes/{id}` igual con la cotización finalizada en Cotifly (el comercial aceptó el precio): deriva el
+estado (por ejemplo, de `Borrador` a `Entregada`), pero **no** cambia el precio ni los costos guardados aunque la Mesa de Costeo entregue
+una línea con otro valor; lo audita y avisa al comercial, que crea una versión nueva si quiere cotizar con el costo actual. Para Nexo no
+cambia nada del contrato. Pendiente de acordar con Nexo: subir la edad máxima del polling (`CosteoNexo:EdadMaximaHoras`, hoy 72 h) por
+encima de lo que tarda la Mesa en la práctica.
+
 ## 7. Checklist para Cotifly
 
 - [ ] Una línea por camión recomendado, con `tipoVehiculo` = `codigoVehiculo` y `carroceria` = `codigoCarroceria`.

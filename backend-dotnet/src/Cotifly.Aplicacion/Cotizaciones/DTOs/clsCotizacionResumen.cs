@@ -79,6 +79,12 @@ public sealed record clsCotizacionResumen(
     public string? ErrorSincronizacionResultadoNexo { get; init; }
 
     /// <summary>
+    /// HU-036.2 (#206): cuándo el comercial finalizó la cotización (aceptó el precio), en UTC; <c>null</c> sin finalizar. Siempre se
+    /// serializa.
+    /// </summary>
+    public DateTimeOffset? FinalizadaAt { get; init; }
+
+    /// <summary>
     /// Solo en la respuesta de <c>POST /web/solicitudes-costeo</c> (HU-023.3, #158): por cada ruta que pasó por el cubicador, su resultado
     /// y sus avisos (mercancías condicionadas, advertencias y extradimensión, que no se guardan). <c>null</c> (no se serializa) si ninguna
     /// ruta llamó al cubicador o en el resto de respuestas.
@@ -141,6 +147,7 @@ public sealed record clsCotizacionResumen(
             ScorePrioridad = cotizacion.ScorePrioridad,
             SincronizacionResultadoNexo = cotizacion.EstadoSincronizacionResultado,
             ErrorSincronizacionResultadoNexo = cotizacion.Ganada is null ? null : cotizacion.ErrorSincronizacionResultado,
+            FinalizadaAt = cotizacion.FinalizadaAt?.ToUniversalTime(),
         };
     }
 }
@@ -167,7 +174,9 @@ public sealed record clsComercialCotizacion(Guid UsuarioId, string? NombreUsuari
 /// <c>MisCotizaciones</c> y el comercial dueño en cada fila. Máximo 100 en total, de la más reciente a la más antigua.
 /// </summary>
 /// <param name="FuenteRegional"><c>dim_ejecutivo</c> o <c>usuarios_web</c> (de dónde salió la regional del gerente).</param>
-public sealed record clsCotizacionesRegional(string Regional, string FuenteRegional, int Total, IReadOnlyList<clsCotizacionResumen> Cotizaciones);
+/// <param name="Regional">La regional del alcance; <c>null</c> si el director ve todas (HU-037.3, #211).</param>
+/// <param name="FuenteRegional">De dónde salió la regional del gerente; <c>null</c> para el director.</param>
+public sealed record clsCotizacionesRegional(string? Regional, string? FuenteRegional, int Total, IReadOnlyList<clsCotizacionResumen> Cotizaciones);
 
 /// <summary>
 /// <c>DatosNuevaVersion</c>: datos de una cotización existente para prellenar una versión nueva. No se persiste nada;

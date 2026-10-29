@@ -158,6 +158,99 @@ public sealed class clsEnvioConexosNexoEndpointsTests : IDisposable
     }
 
     /// <summary>
+    /// #228 (observación del E2E real 2026-10-27B): con un conexo que Nexo todavía no tiene (<c>estado_nexo = pendiente</c>: el envío diferido
+    /// falló y se reintentará) finalizar es 409 <c>COTIZACION_NO_FINALIZABLE</c> con <c>detalle.motivo = conexos_pendientes_en_nexo</c>, sin
+    /// tocar nada. Cuando el polling lo deja en Nexo (<c>enviado</c>), se finaliza.
+    /// </summary>
+    [Fact]
+    public async Task Obs228_ConUnConexoPendienteEnNexoNoSeFinalizaHastaQueElPollingLoEnvie()
+    {
+        var (sesion, folio) = await CapturarAsync();
+        var solicitud = _nexo.SolicitudesCreadas[^1];
+        _nexo.CostearLinea(solicitud, 0, 1_000_000m);
+        _nexo.ConexosFalla = HttpStatusCode.Forbidden; // Nexo no lo aplica: queda por reintentar (pendiente)
+        await _api.ProcesarPollingAsync(folio);
+        (await RutasAsync(sesion, folio))[0].GetProperty("servicios_conexos")[0].GetProperty("estado_nexo").GetString().Should().Be("pendiente");
+
+        using var bloqueada = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/finalizar", sesion.Access, null, await EtagAsync(sesion, folio));
+        var error = (await VerificarContratoAsync(bloqueada, "/web/cotizaciones/{folio}/finalizar", _post, HttpStatusCode.Conflict)).GetProperty("error");
+        error.GetProperty("codigo").GetString().Should().Be("COTIZACION_NO_FINALIZABLE");
+        error.GetProperty("detalle").GetProperty("motivo").GetString().Should().Be("conexos_pendientes_en_nexo");
+        error.GetProperty("detalle").GetProperty("conexos_pendientes").GetInt32().Should().Be(1);
+        (await FinalizadaAsync(folio)).Should().BeFalse();
+
+        _nexo.ConexosFalla = null;
+        await _api.ProcesarPollingAsync(folio);
+        (await RutasAsync(sesion, folio))[0].GetProperty("servicios_conexos")[0].GetProperty("estado_nexo").GetString().Should().Be("enviado");
+        await _api.FinalizarAsync(sesion.Access, folio);
+        (await FinalizadaAsync(folio)).Should().BeTrue();
+    }
+
+    /// <summary>
+    /// #228: un conexo agregado con <c>POST .../costeo/servicios-conexos</c> ya está en Nexo (Nexo lo creó y la relectura lo confirma): queda
+    /// <c>enviado</c> en el momento, no <c>pendiente</c>. Si no, en una cotización entregada (el polling ya no la consulta) quedaría
+    /// <c>pendiente</c> para siempre y nunca se podría finalizar.
+    /// </summary>
+    [Fact]
+    public async Task Obs228_UnConexoAgregadoPorElPostQuedaEnviadoYNoImpideFinalizarUnaEntregada()
+    {
+        var (sesion, folio) = await CapturarAsync();
+        var solicitud = _nexo.SolicitudesCreadas[^1];
+        _nexo.CostearLinea(solicitud, 0, 1_000_000m);
+        _nexo.Entregar(solicitud);
+        await _api.ProcesarPollingAsync(folio);
+        (await AgendadaAsync(folio)).Should().BeFalse("entregada y con el conexo capturado ya en Nexo: el polling se detiene");
+
+        using var agregar = await ConVersionAsync(_post, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", sesion.Access,
+            clsApiWebPruebas.Json(new { items = new[] { new { linea_orden = 1, servicio_id = Almacenamiento, cantidad = 1 } } }), await EtagAsync(sesion, folio));
+        var post = await VerificarContratoAsync(agregar, "/web/cotizaciones/{folio}/costeo/servicios-conexos", _post, HttpStatusCode.OK);
+        post.GetProperty("rutas")[0].GetProperty("servicios_conexos").EnumerateArray().Select(c => c.GetProperty("estado_nexo").GetString())
+            .Should().OnlyContain(e => e == "enviado", "los dos están en Nexo: el capturado por el envío diferido y el agregado por el POST");
+
+        await _api.FinalizarAsync(sesion.Access, folio);
+        (await FinalizadaAsync(folio)).Should().BeTrue();
+        _nexo.PeticionesConexos(_nexo.CotizacionDe(solicitud)!).Should().HaveCount(2, "el agregado no se reenvía");
+    }
+
+    /// <summary>
+    /// Validación #228: un conexo agregado con el POST ANTES de #228 (o cuyo registro falló) quedó sin el registro <c>enviado</c>: se ve
+    /// <c>pendiente</c> aunque Nexo ya lo tiene, y en una entregada el polling ya no pasa. Finalizar relee Nexo, lo deja <c>enviado</c> y
+    /// finaliza; antes de la corrección quedaba bloqueada para siempre.
+    /// </summary>
+    [Fact]
+    public async Task Validacion228_UnPendienteQueNexoYaTieneNoBloqueaParaSiempreUnaEntregada()
+    {
+        var (sesion, folio) = await CapturarAsync();
+        var solicitud = _nexo.SolicitudesCreadas[^1];
+        _nexo.CostearLinea(solicitud, 0, 1_000_000m);
+        _nexo.Entregar(solicitud);
+        await _api.ProcesarPollingAsync(folio);
+        using (var agregar = await ConVersionAsync(_post, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", sesion.Access,
+                   clsApiWebPruebas.Json(new { items = new[] { new { linea_orden = 1, servicio_id = Almacenamiento, cantidad = 1 } } }), await EtagAsync(sesion, folio)))
+        {
+            agregar.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        // Como antes de #228: el POST no dejaba registro del envío diferido.
+        await clsBaseDatosPruebas.EjecutarAsync(_entorno.BaseDatos.CadenaCotifly,
+            $"WITH u AS (SELECT TOP 1 * FROM dbo_cotifly.EventosHerramienta WHERE herramienta = 'conexos_envio_nexo' AND input LIKE '%{folio}%' ORDER BY createdAt DESC) DELETE FROM u");
+        (await RutasAsync(sesion, folio))[0].GetProperty("servicios_conexos").EnumerateArray().Select(c => c.GetProperty("estado_nexo").GetString())
+            .Should().Contain("pendiente");
+        (await AgendadaAsync(folio)).Should().BeFalse("entregada: el polling ya no la consulta");
+        var postsAntes = _nexo.PeticionesConexos(_nexo.CotizacionDe(solicitud)!).Count;
+
+        await _api.FinalizarAsync(sesion.Access, folio);
+
+        (await FinalizadaAsync(folio)).Should().BeTrue();
+        (await RutasAsync(sesion, folio))[0].GetProperty("servicios_conexos").EnumerateArray().Select(c => c.GetProperty("estado_nexo").GetString())
+            .Should().OnlyContain(e => e == "enviado");
+        _nexo.PeticionesConexos(_nexo.CotizacionDe(solicitud)!).Should().HaveCount(postsAntes, "finalizar solo relee Nexo: no envía conexos");
+    }
+
+    private Task<bool> FinalizadaAsync(string folio) => clsBaseDatosPruebas.EscalarAsync<bool>(_entorno.BaseDatos.CadenaCotifly,
+        $"SELECT CAST(IIF(finalizadaAt IS NULL, 0, 1) AS bit) FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'");
+
+    /// <summary>
     /// Corrección de la segunda validación de #136: un conexo agregado con el POST queda guardado con el id de la FILA de la cotización de
     /// Nexo. En esa misma solicitud no se reenvía (ya está); en la solicitud nueva de la re-solicitud (mismo folio) y en la -vN viaja con el
     /// id del CATÁLOGO, junto con el capturado, en un solo POST que Nexo acepta.
@@ -569,6 +662,32 @@ public sealed class clsEnvioConexosNexoEndpointsTests : IDisposable
         var elegida = await VerificarContratoAsync(seleccion, "/web/cotizaciones/{folio}/costeo/servicios-conexos", HttpMethod.Put, HttpStatusCode.OK);
         elegida.GetProperty("rutas")[0].GetProperty("servicios_conexos")[0].GetProperty("estado_nexo").GetString().Should().Be("enviado");
         elegida.GetProperty("servicios_conexos")[0].GetProperty("categoria").GetString().Should().Be("adicional");
+    }
+
+    /// <summary>
+    /// DEF-1027-3 (#226, E2E real del 2026-10-27): la respuesta de <c>POST .../costeo/servicios-conexos</c> trae el <c>estado_nexo</c> (y
+    /// la categoría) de cada conexo igual que el <c>GET .../costeo</c> inmediato; antes salía <c>null</c>.
+    /// </summary>
+    [Fact]
+    public async Task ElPostDeConexosTraeElEstadoNexoComoElGet()
+    {
+        var (sesion, folio) = await CapturarAsync();
+        _nexo.CostearLinea(_nexo.SolicitudesCreadas[^1], 0, 1_000_000m);
+        await _api.ProcesarPollingAsync(folio);
+
+        using var agregar = await ConVersionAsync(_post, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", sesion.Access,
+            clsApiWebPruebas.Json(new { items = new[] { new { linea_orden = 1, servicio_id = Almacenamiento, cantidad = 1 } } }), await EtagAsync(sesion, folio));
+        var post = await VerificarContratoAsync(agregar, "/web/cotizaciones/{folio}/costeo/servicios-conexos", _post, HttpStatusCode.OK);
+        var get = (await RutasAsync(sesion, folio))[0].GetProperty("servicios_conexos");
+
+        static Dictionary<string, (string? Estado, string? Categoria)> Conexos(JsonElement lista) => lista.EnumerateArray()
+            .ToDictionary(c => c.GetProperty("nombre").GetString()!, c => (c.GetProperty("estado_nexo").GetString(), c.GetProperty("categoria").GetString()));
+
+        var delGet = Conexos(get);
+        delGet.Should().HaveCount(2).And.ContainKeys("Cargue en puerto", "Almacenamiento");
+        delGet.Values.Should().OnlyContain(c => c.Estado != null, "el GET informa el estado de cada conexo");
+        Conexos(post.GetProperty("rutas")[0].GetProperty("servicios_conexos")).Should().Equal(delGet, "la respuesta del POST es la del GET");
+        Conexos(post.GetProperty("servicios_conexos")).Should().Equal(delGet);
     }
 
     private async Task<HttpResponseMessage> EnviarConVersionAsync(clsApiWebPruebas api, HttpMethod metodo, string ruta, string token, string cuerpo, string? ifMatch)

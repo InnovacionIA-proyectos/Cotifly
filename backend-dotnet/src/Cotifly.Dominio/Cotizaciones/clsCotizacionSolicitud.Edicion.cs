@@ -27,7 +27,7 @@ public sealed partial class clsCotizacionSolicitud
     /// <list type="number">
     /// <item>sin formulario de costeo (chat): <see cref="MotivoEdicionSinFormulario"/>;</item>
     /// <item>licitación: <see cref="MotivoEdicionLicitacion"/> (fase 2);</item>
-    /// <item>entregada al cliente o con resultado: <see cref="ModoEdicionSolicitud.NuevaVersion"/>;</item>
+    /// <item>entregada al cliente o con resultado, o (HU-036.3, #207) finalizada: <see cref="ModoEdicionSolicitud.NuevaVersion"/>;</item>
     /// <item>cubicación en segundo plano en curso o fallida: <see cref="MotivoEdicionCubicacionEnCurso"/>;</item>
     /// <item><c>pendiente_envio</c> reciente (menos de <see cref="EsperaReenvioPendiente"/>): <see cref="MotivoEdicionEnvioEnCurso"/>;</item>
     /// <item>sin <see cref="SolicitudNexoId"/>: <see cref="ModoEdicionSolicitud.EnSitio"/>; con él, <see cref="ModoEdicionSolicitud.Reemplazo"/>
@@ -47,7 +47,8 @@ public sealed partial class clsCotizacionSolicitud
                 "es una licitación y su edición llega en una fase posterior; mientras tanto, re-solicita el costeo o carga el pliego de nuevo");
         }
 
-        if (EntregadaAlCliente)
+        // HU-036.3 (#207, decisión de Sara): la finalizada (precio aceptado) se edita como la entregada, en una versión nueva.
+        if (EntregadaAlCliente || Finalizada)
         {
             return ModoEdicionSolicitud.NuevaVersion;
         }
@@ -205,7 +206,7 @@ public sealed partial class clsCotizacionSolicitud
     {
         if (ModoEdicion(DateTimeOffset.MaxValue) is { EsExitoso: true, Valor: ModoEdicionSolicitud.NuevaVersion })
         {
-            throw new InvalidOperationException($"La cotización {Folio} ya se entregó al cliente: se edita en una versión nueva.");
+            throw new InvalidOperationException($"La cotización {Folio} ya se entregó al cliente o está finalizada: se edita en una versión nueva.");
         }
 
         if (edicion.Rutas.Count == 0)

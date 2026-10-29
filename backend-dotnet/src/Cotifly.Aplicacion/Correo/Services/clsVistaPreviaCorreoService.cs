@@ -9,7 +9,8 @@ namespace Cotifly.Aplicacion.Correo.Services;
 /// <summary>
 /// Implementación de <see cref="IClsVistaPreviaCorreoService"/>: mismo asunto, cuerpo, resumen y adjunto que usaría
 /// <see cref="clsCorreoService"/>, sin tocar el transporte ni la base. HU-033 (#199): trae el cuerpo en HTML con el resumen (precio por
-/// ruta y total, sin desglose), la copia oculta al comercial y, si el ambiente redirige los correos, el aviso "ambiente de pruebas".
+/// ruta y total, sin desglose), la copia oculta al comercial y, si el ambiente redirige los correos, el aviso "ambiente de pruebas"
+/// (entonces sin copia oculta: el correo redirigido sale sin CC ni CCO, OBS-1027-5 de #226).
 /// </summary>
 public sealed class clsVistaPreviaCorreoService(
     IClsCotizacionRepository cotizaciones,
@@ -29,6 +30,14 @@ public sealed class clsVistaPreviaCorreoService(
         if (cotizacion is null)
         {
             return NoEncontrada();
+        }
+
+        // DEF-1027B-2 y tope (#228): la misma validación que el envío, sobre lo que trae el borrador (sin para, se precargan los previos).
+        if (borrador is not null
+            && clsCorreoService.ValidarBorrador(
+                borrador.Para, borrador.Cc, borrador.Asunto, borrador.Cuerpo, exigePara: false, opciones.Value.MaximoDestinatarios) is { } invalido)
+        {
+            return invalido;
         }
 
         var para = Limpiar(borrador?.Para);
@@ -55,7 +64,9 @@ public sealed class clsVistaPreviaCorreoService(
         {
             CuerpoHtml = clsPlantillaCorreo.Html(cuerpo, resumen, firmaComercial: clsPlantillaCorreo.FirmaComercial(usuario?.NombreCompleto, usuario?.Email, usuario?.Telefono)),
             Resumen = resumen,
-            CopiaOculta = clsCorreoService.CopiaOculta(usuario?.Email, para, cc),
+            // OBS-1027-5 (#226, ADR-023): al redirigir el correo sale solo al buzón de pruebas, sin CC ni CCO (clsProteccionCorreo): la
+            // vista previa no anuncia una copia oculta que no se envía.
+            CopiaOculta = redirige ? null : clsCorreoService.CopiaOculta(usuario?.Email, para, cc),
             EntornoPruebas = redirige,
             RedirigidoA = buzon,
             Aviso = !redirige ? null : buzon is null ? clsProteccionCorreo.MensajeSinBuzon : clsProteccionCorreo.AvisoVistaPrevia(buzon),

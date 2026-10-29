@@ -73,6 +73,10 @@ de base en un ambiente con usuarios exige soltar una vez los vínculos `idUsuari
 
 ### Regla de precedencia cuando hay dos roles
 
+> **Reemplazada en parte por [ADR-025](ADR-025-multi-rol-eleccion-al-entrar.md) (HU-040, #229 y #230).** La precedencia sigue vigente
+> solo para el **rol único** (usuario con una asignación activa). Con dos o más asignaciones activas, o en un alta con varios roles
+> externos, la persona **elige** el rol al entrar (`POST /api/auth/elegir-rol`) y el refresh conserva el rol elegido.
+
 Si los roles externos de una persona mapean a **`comercial` y `gerente_comercial` a la vez, gana `gerente_comercial`**. Es la regla `precedencia_gerente_comercial` y queda escrita en la auditoría de cada login (con un solo rol la regla es `mapeo_unico`), así nunca es implícita.
 
 Por qué no rechazar la ambigüedad: en ClientePro es normal que un gerente conserve también el rol de comercial, y rechazarlo dejaría fuera a todos los gerentes. El riesgo de dar más privilegio del debido está acotado por la verificación doble: la asignación queda en `gerente_comercial`; si después pierde el rol de gerente en ClientePro, el rol resuelto pasa a `comercial`, deja de coincidir y el acceso queda en revisión (`rol_externo_cambio`).
@@ -99,7 +103,7 @@ Por qué no rechazar la ambigüedad: en ClientePro es normal que un gerente cons
 | Tabla / columna | Propósito |
 |---|---|
 | `Roles` | Rol interno (`codigo` único, `comercial` \| `gerente_comercial`), `descripcion`, `idRolExterno` (IDROLES de ClientePro, único si no es NULL), `activo`, `updatedAt`. Sembrada con los dos roles **sin rol externo** |
-| `UsuariosRoles` | Rol interno asignado a cada usuario: `usuarioId`, `rolId`, `asignadoAt`, `activo`, `revisadoPor`, `revisadoAt`. Único (`usuarioId`, `rolId`) y **una sola asignación activa por usuario** (índice único filtrado) |
+| `UsuariosRoles` | Rol interno asignado a cada usuario: `usuarioId`, `rolId`, `asignadoAt`, `activo`, `revisadoPor`, `revisadoAt`. Único (`usuarioId`, `rolId`). ~~Una sola asignación activa por usuario (índice único filtrado)~~: HU-040.1 (#229, script 16) retiró `uq_usuariosRoles_usuarioId_activo`; un usuario puede tener varias asignaciones activas, una por rol (multi-rol, HU-040) |
 | `UsuariosWeb.idUsuarioExterno` | BIGINT NULL, único filtrado: vínculo con `tblSAPUsuariosApp.ID` para detectar renombres. **No es clave de búsqueda** (la búsqueda sigue siendo solo por `nombreUsuario`, HU-003.6) |
 | `TokensRefresco` | Hash del refresh, familia, vencimiento, revocación y encadenamiento de rotación |
 | `TokensRevocados` | `jti` revocados hasta su vencimiento |

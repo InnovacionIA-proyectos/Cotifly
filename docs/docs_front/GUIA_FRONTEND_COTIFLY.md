@@ -521,6 +521,7 @@ Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA
 | `CORREO_PDF_NO_ENCONTRADO` | 400 en `/enviar` | La cotización no tiene PDF | Deshabilitar "Enviar" si `pdf_url` es null | En QA |
 | `CORREO_ENVIO_FALLIDO` | 400 en `/enviar` y en `.../reintentar` | MailSender rechazó el correo o no respondió (HU-033) | Mostrar `mensaje`; en `/enviar`, si no respondió a tiempo, el correo pudo quedar encolado: la cotización **queda enviada**, durante 5 minutos reenviar a los mismos destinatarios responde `CORREO_DUPLICADO` y la fila del historial queda `fallido` con un `error` que empieza por "Resultado incierto:" (revisar el buzón antes de enviar de nuevo) | En QA |
 | `CORREO_NO_REINTENTABLE` | 409 en `.../correos/{id}/reintentar` | HU-033: el envío no está fallido, ya se está reintentando (doble clic), nunca llegó a MailSender o MailSender ya no lo conoce | Ofrecer enviar de nuevo | Nuevo (#199) |
+| `CORREO_DEMASIADOS_DESTINATARIOS` | 400 en `/enviar` y en la vista previa | #228: más destinatarios entre `para` y `cc` que el tope (10 por defecto, configurable con `Correo__MaximoDestinatarios`; la copia oculta no cuenta). `detalle = {maximo, recibidos}` | "Puedes enviar a máximo {maximo} destinatarios" (leer `detalle.maximo`, no fijarlo) | Nuevo (#228) |
 | `CORREO_DESHABILITADO` | 503 en `/enviar` | El correo está apagado en el servidor (`Correo:Habilitado=false`, por defecto) | "El envío de correo no está habilitado en este ambiente" | En QA |
 | `CORREO_INVALIDO` | 400 `ErrorWeb` (sin código) en `/enviar` | Destinatarios inválidos o vacíos, asunto de más de 300 o cuerpo de más de 5000 | Validar en el formulario antes de enviar | En QA |
 | `FOLIO_DUPLICADO` | chat | Colisión de folio | "Reintenta" | En QA |
@@ -561,7 +562,7 @@ Regla para `errores` del chat (En QA): reaccionar solo a los códigos conocidos 
 
 Todos los de `/web/*` exigen `Authorization: Bearer`, responden 401 `ErrorWeb` sin token y usan snake_case. "Ambos" = `comercial` o `gerente_comercial`; cada uno ve **solo lo suyo**, salvo donde se indique.
 
-Resumen (parcial; los 52 endpoints están en `CONTRATOS_API_COTIFLY_FRONTEND.md` §4):
+Resumen (parcial; los 55 endpoints están en `CONTRATOS_API_COTIFLY_FRONTEND.md` §4):
 
 | Método y ruta | Rol | Estado |
 |---|---|---|
@@ -815,7 +816,7 @@ gerente (sección 5.6). Si la fuente de la regional está caída, el listado res
   "adjunto": "PCN-9000472281-DG-29092026-004.pdf",
   "cuerpo_html": "<div ...>...</div>",
   "resumen": { "moneda": "COP", "total": 3000000, "total_texto": "$3.000.000", "rutas": [ { "orden": 1, "ruta": "Buenaventura → Bogotá, D.C.", "precio": 3000000, "precio_texto": "$3.000.000" } ], "leyenda": "...", "nota_moneda": null },
-  "copia_oculta": "comercial@boterosoto.com.co",
+  "copia_oculta": null,
   "entorno_pruebas": true,
   "redirigido_a": "<buzón de pruebas>",
   "aviso": "Ambiente de pruebas: el correo NO llegará a los destinatarios; ..."
@@ -824,17 +825,20 @@ gerente (sección 5.6). Si la fuente de la regional está caída, el listado res
 
 - 404 si no es tuya.
 - Con `entorno_pruebas = true`, mostrar `aviso` en un recuadro de advertencia en el modal. `cuerpo_html` es la vista fiel del correo.
+- `copia_oculta`: anunciar "Recibirás una copia oculta" solo si no es `null`. Al redirigir (`entorno_pruebas = true`) siempre es `null`:
+  el correo sale solo al buzón de pruebas, sin CC ni CCO (OBS-1027-5 de #226, ADR-023).
 
 **`POST /web/cotizaciones/{folio}/enviar`**
 
 - Request (`EnvioWeb`): `para` (string[], al menos 1, correos de hasta 320), `cc` (string[], por defecto []), `asunto` (string o null, hasta 300; por defecto "Cotización {folio} — Botero Soto") y `cuerpo` (string o null, hasta 5000).
+- #228: cada entrada de `para` y `cc` es UNA dirección simple (sin comas, punto y coma, espacios, comillas, ángulos ni caracteres de control) y el `asunto` va en una sola línea. Entre `para` y `cc` juntos caben como máximo **10 destinatarios por defecto** (configurable en el servidor con `Correo__MaximoDestinatarios`; la copia oculta al comercial no cuenta): limitar los chips del formulario a 10 y, tras un 400 `CORREO_DEMASIADOS_DESTINATARIOS`, a `detalle.maximo`. La vista previa valida lo mismo.
 
 ```json
 { "para": ["compras@cliente.com"], "cc": ["gerente@boterosoto.com.co"], "asunto": null, "cuerpo": null }
 ```
 
 - 200 `{"enviado": true, "message_id": "<id en MailSender>", "correo_id": "<id del envío>", "estado": "encolado", "redirigido_a": null}`: decir "Correo en camino".
-- Errores: 400 `ErrorWeb` (destinatarios, asunto o cuerpo inválidos); 400 `ErrorNegocio` (`CORREO_DUPLICADO`, `CORREO_PDF_NO_ENCONTRADO`, `CORREO_ENVIO_FALLIDO` si MailSender lo rechazó, no está disponible o no respondió; si no respondió a tiempo, el correo pudo quedar encolado: la cotización **queda enviada**, durante 5 minutos reenviar a los mismos destinatarios responde `CORREO_DUPLICADO` y la fila del historial queda `fallido` con un `error` que empieza por "Resultado incierto:" (revisar el buzón antes de enviar de nuevo)); 404; 409 `CONFLICTO_CONCURRENCIA`; 503 `CORREO_DESHABILITADO`.
+- Errores: 400 `ErrorWeb` (destinatarios, asunto o cuerpo inválidos); 400 `ErrorNegocio` (`CORREO_DUPLICADO`, `CORREO_PDF_NO_ENCONTRADO`, `CORREO_DEMASIADOS_DESTINATARIOS` con `detalle = {maximo, recibidos}`, `CORREO_ENVIO_FALLIDO` si MailSender lo rechazó, no está disponible o no respondió; si no respondió a tiempo, el correo pudo quedar encolado: la cotización **queda enviada**, durante 5 minutos reenviar a los mismos destinatarios responde `CORREO_DUPLICADO` y la fila del historial queda `fallido` con un `error` que empieza por "Resultado incierto:" (revisar el buzón antes de enviar de nuevo)); 404; 409 `CONFLICTO_CONCURRENCIA`; 503 `CORREO_DESHABILITADO`.
 - El remitente es el comercial del token (también en copia oculta). Tras un 200, `estado_envio` pasa a `enviada` y luego a `reenviada`. Refrescar la fila con `GET /web/mis-cotizaciones` (el envío no devuelve la fila).
 
 **`GET /web/cotizaciones/{folio}/correos`** (HU-033)
@@ -1471,6 +1475,11 @@ Ejemplo (del contrato): `PCN-DG-10082026-001` se crea el **10 de agosto** (v1, 1
 | `desviacion_promedio_margen_abs` | number o null | Promedio del **valor absoluto** de esas diferencias (magnitud de la negociación, sin que se compensen subidas y bajadas). `null` sin ajustes |
 | `ajustes_margen` | int | Cantidad de esos ajustes |
 | `deadline_vencidas` | int o null | Sin resultado y con `deadline` anterior al momento de la consulta. **`null`** mientras la base no tenga la columna `deadline` (script `0004`) |
+| `margen_politica_promedio` | number o null | HU-016.1 (#154): promedio simple del margen de política (`margenPoliticaSugerido`) de las **mismas rutas** cotizadas (versión vigente, sin rechazadas, con margen aplicado y con política). `null` sin ninguna |
+| `margen_aplicado_promedio` | number o null | HU-016.1 (decisión del 2026-10-27): promedio simple del margen aplicado de **exactamente las mismas rutas** de `margen_politica_promedio`; su par directo para comparar simple contra simple. `null` sin ninguna |
+| `margen_politica_ponderado` | number o null | HU-016.1: esa política ponderada por `costoFinal` (rutas con costo > 0). `null` si ninguna tiene costo |
+| `desviacion_margen_politica` | number o null | HU-016.1: margen aplicado ponderado por costo menos la política ponderada, sobre las mismas rutas. **Semáforo:** verde ≥ 0, rojo < 0 |
+| `rutas_sin_margen_politica` | int | HU-016.1: rutas con margen aplicado y sin política guardada; no entran en la comparación (avisar si es > 0) |
 
 Solo en `/regional`: `lineas_negocio_activas` (int) = líneas de `MargenesPolitica` con `isActive = 1`. No depende del periodo ni de la regional.
 
@@ -1548,7 +1557,12 @@ Comprobación del `.feature` (comercial "ana", año 2026). A1 COP 1.000.000 gana
     "desviacion_promedio_margen": -0.015,
     "desviacion_promedio_margen_abs": 0.025,
     "ajustes_margen": 2,
-    "deadline_vencidas": 1
+    "deadline_vencidas": 1,
+    "margen_politica_promedio": 0.15,
+    "margen_aplicado_promedio": 0.1558,
+    "margen_politica_ponderado": 0.15,
+    "desviacion_margen_politica": 0.0061,
+    "rutas_sin_margen_politica": 0
   },
   "serie_mensual": [
     { "mes": "2026-08", "cantidad": 5, "ganadas": 1, "perdidas": 2, "valor_cotizado_cop": 18200000.00, "valor_ganado_cop": 4100000.00 },
@@ -1581,7 +1595,12 @@ Comercial sin cotizaciones (200, estado vacío; construido con las reglas del co
     "costeo_total": 0, "costeo_ganadas": 0, "valor_cotizado_cop": 0, "valor_ganado_cop": 0, "ganancias": 0,
     "cotizaciones_usd": 0, "tiempo_promedio_cotizacion_horas": null,
     "desviacion_promedio_margen": null, "desviacion_promedio_margen_abs": null, "ajustes_margen": 0,
-    "deadline_vencidas": null
+    "deadline_vencidas": null,
+    "margen_politica_promedio": null,
+    "margen_aplicado_promedio": null,
+    "margen_politica_ponderado": null,
+    "desviacion_margen_politica": null,
+    "rutas_sin_margen_politica": 0
   },
   "serie_mensual": [
     { "mes": "2026-08", "cantidad": 0, "ganadas": 0, "perdidas": 0, "valor_cotizado_cop": 0, "valor_ganado_cop": 0 },
@@ -1652,7 +1671,12 @@ Ejemplo exacto del spec (periodo 2026-08-01 a 2026-09-29):
     "desviacion_promedio_margen": -0.0125,
     "desviacion_promedio_margen_abs": 0.021,
     "ajustes_margen": 6,
-    "deadline_vencidas": 2
+    "deadline_vencidas": 2,
+    "margen_politica_promedio": 0.15,
+    "margen_aplicado_promedio": 0.1542,
+    "margen_politica_ponderado": 0.15,
+    "desviacion_margen_politica": 0.004,
+    "rutas_sin_margen_politica": 1
   },
   "comerciales": [
     {
@@ -1681,7 +1705,12 @@ Ejemplo exacto del spec (periodo 2026-08-01 a 2026-09-29):
         "desviacion_promedio_margen": -0.015,
         "desviacion_promedio_margen_abs": 0.025,
         "ajustes_margen": 2,
-        "deadline_vencidas": 1
+        "deadline_vencidas": 1,
+        "margen_politica_promedio": 0.15,
+        "margen_aplicado_promedio": 0.1558,
+        "margen_politica_ponderado": 0.15,
+        "desviacion_margen_politica": 0.0061,
+        "rutas_sin_margen_politica": 0
       }
     },
     {
@@ -1710,7 +1739,12 @@ Ejemplo exacto del spec (periodo 2026-08-01 a 2026-09-29):
         "desviacion_promedio_margen": null,
         "desviacion_promedio_margen_abs": null,
         "ajustes_margen": 0,
-        "deadline_vencidas": 0
+        "deadline_vencidas": 0,
+        "margen_politica_promedio": null,
+        "margen_aplicado_promedio": null,
+        "margen_politica_ponderado": null,
+        "desviacion_margen_politica": null,
+        "rutas_sin_margen_politica": 0
       }
     }
   ],

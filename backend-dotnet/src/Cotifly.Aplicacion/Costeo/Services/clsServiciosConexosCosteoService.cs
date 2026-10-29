@@ -9,6 +9,7 @@ using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Pdf.Services;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Cotifly.Aplicacion.Costeo.Services;
@@ -62,8 +63,15 @@ public sealed class clsServiciosConexosCosteoService(
     IClsUnitOfWork unidadTrabajo,
     IClsAuditoriaService auditoria,
     IOptions<clsOpcionesPdf> opcionesPdf,
-    IClsAlmacenIdempotencia idempotencia) : IClsServiciosConexosCosteoService
+    IClsAlmacenIdempotencia idempotencia,
+    IClsEnvioConexosNexoService envioConexos,
+    ILogger<clsServiciosConexosCosteoService> logger,
+    IClsCategoriasConexos categoriasConexos,
+    IClsSituacionLineasNexo situacionesNexo) : IClsServiciosConexosCosteoService
 {
+    // #226 (validación de DEF-1027-3): las dependencias de la vista con estados son obligatorias. Opcionales, un registro que faltara
+    // en DI devolvía otra vez estado_nexo = null en silencio; obligatorias, el contenedor falla al resolver el servicio.
+
     /// <summary>Operación del ámbito de la idempotencia (<c>"conexos:{usuarioId}"</c>).</summary>
     public const string OperacionIdempotencia = "conexos";
 
@@ -428,6 +436,17 @@ public sealed class clsServiciosConexosCosteoService(
 
         var agregados = importados.Valor;
 
+        // #228: Nexo ya tiene los conexos (los creó este POST): quedan enviados en el registro del envío diferido, en la misma escritura.
+        // Si no, estado_nexo = pendiente bloquearía finalizar, y en una entregada el polling ya no pasa para confirmarlos.
+        try
+        {
+            await envioConexos.RegistrarConfirmadosAsync(cotizacion, cotizacionNexo, CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "No se pudo registrar como enviados a Nexo los conexos agregados en {Folio}; el polling los confirma.", cotizacion.Folio);
+        }
+
         var pdfInvalidado = clsReglaPdfCosteo.InvalidarPdf(cotizacion, MotivoInvalidacionPdf.ServiciosConexos, usuarioId, cotizaciones);
         if (!await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, reservada, CancellationToken.None))
         {
@@ -435,7 +454,11 @@ public sealed class clsServiciosConexosCosteoService(
             return (AgregadoEnNexo(clsReglaPdfCosteo.Conflicto(cotizacion.Folio), true), 0, false);
         }
 
-        return (clsCosteoCotizacionService.Vista(cotizacion, opcionesPdf.Value.BaseUrl), agregados, pdfInvalidado);
+        // DEF-1027-3 (#226): la misma vista que GET .../costeo y los PUT (#173): con el estado_nexo de cada conexo, la categoría del
+        // catálogo y la situación de las líneas en Nexo (antes salía estado_nexo = null). Ya se guardó: sin el token del cliente.
+        return (await clsCosteoCotizacionService.VistaConEstadosAsync(
+            cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, logger, CancellationToken.None, categoriasConexos,
+            situacionesNexo.Obtener(cotizacion.Id)), agregados, pdfInvalidado);
     }
 
     /// <summary>¿La cotización releída tiene conexos que no estaban antes del POST? (confirma un efecto incierto).</summary>

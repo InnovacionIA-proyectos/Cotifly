@@ -59,6 +59,13 @@ public sealed class clsCorreoService(
     public const int MaxAsunto = 300;
     public const int MaxCuerpo = 5000;
 
+    /// <summary>DEF-1027B-2 (#228): mensaje de <c>CORREO_INVALIDO</c> para un asunto con saltos de línea u otros caracteres de control.</summary>
+    public const string MensajeAsuntoConControl =
+        "El asunto no puede tener saltos de línea ni otros caracteres de control (va como cabecera del correo): escríbelo en una sola línea.";
+
+    /// <summary>HU-036.3 (#207): cierre del mensaje de <c>COTIZACION_NO_FINALIZADA</c> al enviar la cotización.</summary>
+    public const string AccionEnviar = "enviarla al cliente";
+
     /// <summary>Largo máximo del <c>X-Correlation-ID</c> que guarda MailSender.</summary>
     public const int LargoMaximoCorrelacion = 128;
 
@@ -83,17 +90,16 @@ public sealed class clsCorreoService(
             return new clsErrorDominio(clsCodigosError.CorreoDeshabilitado, "El envío de correo desde Cotifly está deshabilitado (Correo:Habilitado=false).");
         }
 
+        // DEF-1027B-2 (#228): el borrador se valida TAL COMO LLEGA (antes de recortar), así un CR/LF al final tampoco se sanea en silencio.
+        if (ValidarBorrador(entrada.Para, entrada.Cc, entrada.Asunto, entrada.Cuerpo, exigePara: true, opciones.Value.MaximoDestinatarios) is { } invalida)
+        {
+            return invalida;
+        }
+
         var para = Limpiar(entrada.Para);
         var cc = Limpiar(entrada.Cc);
         var asunto = string.IsNullOrWhiteSpace(entrada.Asunto) ? null : entrada.Asunto.Trim();
         var cuerpo = string.IsNullOrWhiteSpace(entrada.Cuerpo) ? null : entrada.Cuerpo.Trim();
-        var invalida = ValidarDestinatarios(para, cc)
-                       ?? (asunto is { Length: > MaxAsunto } ? Invalido($"El asunto supera {MaxAsunto} caracteres.") : null)
-                       ?? (cuerpo is { Length: > MaxCuerpo } ? Invalido($"El cuerpo supera {MaxCuerpo} caracteres.") : null);
-        if (invalida is not null)
-        {
-            return invalida;
-        }
 
         var usuario = await usuarios.ObtenerPorIdAsync(entrada.UsuarioId, cancellationToken);
 
@@ -101,6 +107,12 @@ public sealed class clsCorreoService(
 
         // La cotización se leyó antes del candado: otro envío pudo cambiar estadoEnvio mientras tanto.
         await cotizaciones.RecargarAsync(cotizacion, cancellationToken);
+
+        // HU-036.3 (#207): la cotización sale al cliente con el precio que aceptó el comercial.
+        if (cotizacion.ValidarFinalizadaAntesDe(AccionEnviar) is { } sinFinalizar)
+        {
+            return sinFinalizar;
+        }
 
         var recientes = await correos.ListarEnviadosDesdeAsync(cotizacion.Id, reloj.AhoraUtc - VentanaDuplicado, cancellationToken);
         if (recientes.Any(c => c.CuentaComoEnvio && c.TieneMismosPara(para)))
@@ -315,6 +327,65 @@ public sealed class clsCorreoService(
         var nombre = string.IsNullOrWhiteSpace(cotizacion.PdfPath) ? null : Path.GetFileName(cotizacion.PdfPath.Replace('\\', '/'));
         return string.IsNullOrWhiteSpace(nombre) ? $"{cotizacion.Folio}.pdf" : nombre;
     }
+
+    /// <summary>
+    /// DEF-1027B-2 y tope (#228, ADR-023): el borrador del comercial (<c>EnvioWeb</c>) tal como llega, antes de recortar nada. Lo usan el
+    /// envío y la vista previa, en este orden:
+    /// <list type="number">
+    /// <item>asunto con caracteres de control (CR, LF, NUL, tabulador, U+0085, U+2028, U+2029...): <c>CORREO_INVALIDO</c>
+    /// (<see cref="MensajeAsuntoConControl"/>). El asunto viaja como cabecera: se rechaza, no se sanea;</item>
+    /// <item>un destinatario (<c>para</c> o <c>cc</c>) con caracteres de control, aunque solo tenga espacios alrededor:
+    /// <c>CORREO_INVALIDO</c>;</item>
+    /// <item>más de <paramref name="maximoDestinatarios"/> destinatarios entre <c>para</c> y <c>cc</c> (sin contar la copia oculta al
+    /// comercial): <c>CORREO_DEMASIADOS_DESTINATARIOS</c> con <c>detalle.maximo</c> y <c>detalle.recibidos</c>. El tope es
+    /// <see cref="clsOpcionesCorreo.MaximoDestinatarios"/> (10 por defecto, <c>Correo__MaximoDestinatarios</c>): MailSender no tiene uno
+    /// (<c>EmailRequestValidator</c> solo valida el formato de cada dirección), lo fija Cotifly;</item>
+    /// <item>el formato estricto de cada dirección (<see cref="clsCabecerasCorreo.EsDireccionValida"/>) y, si <paramref name="exigePara"/>,
+    /// al menos un <c>para</c>: <c>CORREO_INVALIDO</c>;</item>
+    /// <item>asunto de más de <see cref="MaxAsunto"/> o cuerpo de más de <see cref="MaxCuerpo"/> caracteres: <c>CORREO_INVALIDO</c>.</item>
+    /// </list>
+    /// El cuerpo no es una cabecera (va escapado en el HTML), así que admite saltos de línea.
+    /// </summary>
+    public static clsErrorDominio? ValidarBorrador(
+        IReadOnlyList<string>? para, IReadOnlyList<string>? cc, string? asunto, string? cuerpo, bool exigePara, int maximoDestinatarios)
+    {
+        if (clsCabecerasCorreo.TieneCaracteresDeControl(asunto))
+        {
+            return Invalido(MensajeAsuntoConControl);
+        }
+
+        if ((para ?? []).Concat(cc ?? []).Any(clsCabecerasCorreo.TieneCaracteresDeControl))
+        {
+            return Invalido(clsCorreoDestinatario.MensajeConCaracteresDeControl);
+        }
+
+        var limpiosPara = Limpiar(para);
+        var limpiosCc = Limpiar(cc);
+        var recibidos = limpiosPara.Count + limpiosCc.Count;
+        if (recibidos > maximoDestinatarios)
+        {
+            return new clsErrorDominio(clsCodigosError.CorreoDemasiadosDestinatarios,
+                $"El correo admite hasta {maximoDestinatarios} destinatarios entre 'para' y 'cc' (llegaron {recibidos}).")
+            {
+                Datos = new Dictionary<string, object?>(StringComparer.Ordinal) { ["maximo"] = maximoDestinatarios, ["recibidos"] = recibidos },
+            };
+        }
+
+        var destinatarios = exigePara || limpiosPara.Count > 0 ? ValidarDestinatarios(limpiosPara, limpiosCc) : ValidarFormato(limpiosCc, TipoDestinatario.Cc);
+        if (destinatarios is not null)
+        {
+            return destinatarios;
+        }
+
+        var asuntoLimpio = string.IsNullOrWhiteSpace(asunto) ? null : asunto.Trim();
+        var cuerpoLimpio = string.IsNullOrWhiteSpace(cuerpo) ? null : cuerpo.Trim();
+        return asuntoLimpio is { Length: > MaxAsunto } ? Invalido($"El asunto supera {MaxAsunto} caracteres.")
+            : cuerpoLimpio is { Length: > MaxCuerpo } ? Invalido($"El cuerpo supera {MaxCuerpo} caracteres.")
+            : null;
+    }
+
+    private static clsErrorDominio? ValidarFormato(IReadOnlyList<string> emails, TipoDestinatario tipo) =>
+        emails.Select(e => clsCorreoDestinatario.Crear(Guid.NewGuid(), e, tipo)).FirstOrDefault(d => d.EsFallo)?.Error;
 
     /// <summary>Destinatarios válidos según las reglas del dominio (<c>clsCorreoDestinatario</c>); al menos un <c>para</c>.</summary>
     public static clsErrorDominio? ValidarDestinatarios(IReadOnlyList<string> para, IReadOnlyList<string> cc)

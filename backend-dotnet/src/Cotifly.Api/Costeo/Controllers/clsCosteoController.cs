@@ -24,8 +24,32 @@ public sealed class clsCosteoController(
     IClsResultadoCotizacionService resultadoCotizacion,
     IClsReSolicitudCosteoService reSolicitud,
     ILogger<clsCosteoController> logger,
-    IClsRecalculoVehiculosService recalculoVehiculos) : clsControladorWebBase(usuario)
+    IClsRecalculoVehiculosService recalculoVehiculos,
+    IClsFinalizacionCotizacionService finalizacion) : clsControladorWebBase(usuario)
 {
+    /// <summary>
+    /// HU-036.2 (#206): el comercial acepta el precio y finaliza la cotización. 200 <c>CotizacionResumen</c> con <c>finalizada_at</c> (y el
+    /// <c>ETag</c> nuevo; re-finalizar es 200 sin cambios con el mismo <c>ETag</c>); 404 si no es suya; 409 <c>COTIZACION_NO_FINALIZABLE</c>
+    /// (<c>estado_costeo</c> distinto de <c>autocosteo</c> y <c>entregada</c>) o <c>CONFLICTO_CONCURRENCIA</c>; 428 sin <c>If-Match</c>.
+    /// </summary>
+    [HttpPost("cotizaciones/{folio}/finalizar")]
+    [clsRequiereIfMatch]
+    [ProducesResponseType<clsCotizacionResumen>(StatusCodes.Status200OK)]
+    [ProducesResponseType<clsErrorWeb>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status409Conflict)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status428PreconditionRequired)]
+    public async Task<IActionResult> Finalizar(string folio, CancellationToken cancellationToken)
+    {
+        var resultado = await finalizacion.FinalizarAsync(UsuarioId, folio, clsConcurrenciaHttp.VersionDe(HttpContext), cancellationToken);
+        if (resultado.EsFallo)
+        {
+            return Error(resultado.Error);
+        }
+
+        clsConcurrenciaHttp.EscribirEtag(Response, resultado.Valor.VersionNegocio.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        return Ok(await misCotizaciones.ResumirAsync(resultado.Valor, CancellationToken.None));
+    }
+
     /// <summary>
     /// HU-023.3 (#158): 200 <c>CosteoCotizacion</c> con los camiones de la ruta recalculados por el cubicador (cuando cambiaron sus
     /// mercancías o su peso, antes de enviar a Nexo); 400 <c>SOLICITUD_COSTEO_INVALIDA</c> (mercancías sin código), <c>RUTA_INEXISTENTE</c>

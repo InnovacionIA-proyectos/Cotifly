@@ -623,6 +623,7 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         ajustado[1].GetProperty("precio_final_linea").GetDecimal().Should().Be(857_143m, "600.000 / (1 − 0,30)");
 
         // 6. PDF de pliego: dos rutas de dos líneas de negocio.
+        await api.FinalizarSiCorrespondeAsync(ana.Access, folio); // HU-036.3: como el frontend
         using var pdf = await api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", ana.Access);
         await VerificarContratoAsync(pdf, "/web/cotizaciones/{folio}/costeo/pdf", _post, HttpStatusCode.Created);
         using var descarga = await api.EnviarAsync(_get, $"/pdfs/{folio}.pdf", ana.Access);
@@ -656,6 +657,7 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         // 8. Ganada por /resultado: motivo "No aplica" (#140).
         _nexo.Entregar(nueva);
         await api.ProcesarPollingAsync(folioNuevo);
+        await api.FinalizarSiCorrespondeAsync(ana.Access, folioNuevo); // HU-036.3: como el frontend
         using var resultado = await api.EnviarAsync(_post, $"/web/cotizaciones/{folioNuevo}/resultado", ana.Access, """{"resultado":"ganada"}""");
         var marcada = await VerificarContratoAsync(resultado, "/web/cotizaciones/{folio}/resultado", _post, HttpStatusCode.OK);
         marcada.GetProperty("ganada").GetBoolean().Should().BeTrue();
@@ -936,6 +938,7 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         }
 
         // 6. PDF de pliego: una sección por ruta, los camiones de la ruta 1 en orden y ningún costo de Nexo.
+        await api.FinalizarSiCorrespondeAsync(ana.Access, folio); // HU-036.3: como el frontend
         using var pdf = await api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", ana.Access);
         var pdfJson = await VerificarContratoAsync(pdf, "/web/cotizaciones/{folio}/costeo/pdf", _post, HttpStatusCode.Created);
         using var descarga = await api.EnviarAsync(_get, new Uri(new Uri("http://localhost"), pdfJson.GetProperty("pdf_url").GetString()!).AbsolutePath, ana.Access);
@@ -976,6 +979,7 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         // 9. La Mesa entrega y el comercial la marca ganada.
         _nexo.Entregar(solicitud);
         await api.ProcesarPollingAsync(folio);
+        await api.FinalizarSiCorrespondeAsync(ana.Access, folio); // HU-036.3: como el frontend
         using var resultado = await api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", ana.Access, """{"resultado":"ganada"}""");
         var marcada = await VerificarContratoAsync(resultado, "/web/cotizaciones/{folio}/resultado", _post, HttpStatusCode.OK);
         marcada.GetProperty("ganada").GetBoolean().Should().BeTrue();

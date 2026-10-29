@@ -88,7 +88,7 @@ Característica: Licitaciones desde Excel
       | 2     | tipologia               | CODIGO_NO_CATALOGO      |
       | 3     | clase_contenedor        | CAMPO_REQUERIDO         |
       | 4     | clase_contenedor        | CAMPO_NO_APLICA         |
-      | 4     | valor_aprovisionamiento | CAMPO_NO_APLICA         |
+      | 4     | valor_levante_contenedor | CAMPO_NO_APLICA        |
       | 5     | origen                  | MUNICIPIO_AMBIGUO       |
       | 6     | destino                 | MUNICIPIO_NO_ENCONTRADO |
     Y Nexo no recibió ninguna solicitud
@@ -173,6 +173,16 @@ Característica: Licitaciones desde Excel
     Cuando "ana" crea la licitación "L1" del cliente "900555111" con el pliego de 3 filas mapeadas y la línea de negocio "Licitaciones"
     Entonces la respuesta tiene el estado 400 con el código de negocio "MARGEN_LINEA_DESCONOCIDA"
     Y el detalle del error tiene el motivo "LINEA_DE_NEXO"
+    Y el detalle del error trae la línea válida "Nacional"
+    Y Nexo no recibió ninguna solicitud
+
+  # OBS-1027-4 (#226, E2E real del 2026-10-27) — Con errores de fila y la línea "Licitaciones", el reporte trae todo en la misma
+  # respuesta: los errores de fila y el de la línea de negocio (antes aparecía en un segundo intento, al corregir las filas).
+  Escenario: Con errores de fila y la línea "Licitaciones" el reporte trae también el error de la línea
+    Cuando "ana" crea la licitación "L1" del cliente "900555111" con una fila sin destino y otra sin peso y la línea de negocio "Licitaciones"
+    Entonces la respuesta tiene el estado 400 con el reporte de la licitación
+    Y el reporte trae el código "LINEA_INCOMPLETA" en la línea 0 y el código "PESO_REQUERIDO" en la línea 2
+    Y el reporte trae el código "MARGEN_LINEA_DESCONOCIDA" del encabezado en el campo "linea_negocio"
     Y el detalle del error trae la línea válida "Nacional"
     Y Nexo no recibió ninguna solicitud
 

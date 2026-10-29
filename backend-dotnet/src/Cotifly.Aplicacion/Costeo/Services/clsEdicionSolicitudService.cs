@@ -829,8 +829,10 @@ public sealed class clsEdicionSolicitudService(
         var avisos = new List<clsAvisoEdicion>();
         if (modo == ModoEdicionSolicitud.NuevaVersion)
         {
-            avisos.Add(new clsAvisoEdicion(clsAvisoEdicion.CreaVersionNueva,
-                "La cotización ya se entregó al cliente o tiene resultado: la edición crea una versión nueva y la original no cambia."));
+            // HU-036.3 (#207): la finalizada (precio aceptado) que todavía no se entregó también se edita en una versión nueva.
+            avisos.Add(new clsAvisoEdicion(clsAvisoEdicion.CreaVersionNueva, cotizacion.EntregadaAlCliente
+                ? "La cotización ya se entregó al cliente o tiene resultado: la edición crea una versión nueva y la original no cambia."
+                : "La cotización ya está finalizada: la edición crea una versión nueva y la original no cambia."));
             return avisos;
         }
 

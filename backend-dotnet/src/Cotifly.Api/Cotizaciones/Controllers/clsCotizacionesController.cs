@@ -21,8 +21,32 @@ public sealed class clsCotizacionesController(
     IClsSeguimientoService seguimiento,
     IClsNuevaVersionService nuevaVersion,
     IClsCotizacionesRegionalService regional,
-    IClsDetalleCotizacionService detalle) : clsControladorWebBase(usuario)
+    IClsDetalleCotizacionService detalle,
+    IClsCatalogoMotivosPerdida motivosPerdida,
+    IClsExportacionCotizacionService exportacion) : clsControladorWebBase(usuario)
 {
+    /// <summary>
+    /// HU-018.1 (#155, parte C). 200 xlsx de la cotización: el dueño recibe la versión interna (por ruta y por camión: costo, margen,
+    /// precio, conexos y totales); el gerente de su regional y el director, la misma en solo lectura y sin costos ni márgenes. 404 en
+    /// cualquier otro caso (o sin rutas); 409 <c>COSTEO_NO_LISTO</c> sin precio.
+    /// </summary>
+    [HttpGet("cotizaciones/{folio}/excel")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType<clsErrorWeb>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<clsErrorWeb>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Excel(string folio, CancellationToken cancellationToken) =>
+        (await exportacion.ExportarAsync(folio, cancellationToken)).Coincidir<IActionResult>(a => File(a.Contenido, a.TipoContenido, a.Nombre), Error);
+
+    /// <summary>
+    /// HU-018.1 (#155, parte B). 200 <c>MotivosPerdida</c>: la lista configurada de motivos de pérdida (la de Nexo), en su orden, con el
+    /// que exige comentario (<c>Otro</c>). No depende de Nexo.
+    /// </summary>
+    [HttpGet("motivos-perdida")]
+    [ProducesResponseType<clsMotivosPerdida>(StatusCodes.Status200OK)]
+    [ProducesResponseType<clsErrorWeb>(StatusCodes.Status401Unauthorized)]
+    public IActionResult MotivosPerdida() => Ok(motivosPerdida.Listar());
+
     /// <summary>
     /// HU-027.1 (#179). 200 <c>DetalleCotizacion</c> con el <c>ETag</c>: cabecera, costeo por ruta, rutas capturadas y totales en una llamada
     /// ("Ver detalle"). El dueño, o un gerente comercial de la regional del dueño en solo consulta; 404 en cualquier otro caso.
@@ -43,7 +67,8 @@ public sealed class clsCotizacionesController(
 
     /// <summary>
     /// HU-016.1 (#154). 200 <c>CotizacionesRegional</c>: las de los miembros de la regional del gerente, máximo 100, de la más reciente a
-    /// la más antigua; 403 si no es gerente; 409 <c>REGIONAL_NO_ASIGNADA</c>; 503 <c>REGIONAL_NO_DISPONIBLE</c>.
+    /// la más antigua; 403 si no es gerente ni director, o <c>REGIONAL_NO_PERMITIDA</c> si el gerente pide otra regional; 409
+    /// <c>REGIONAL_NO_ASIGNADA</c>; 503 <c>REGIONAL_NO_DISPONIBLE</c>. HU-037.3 (#211): el director ve todas o la de <c>regional</c>.
     /// </summary>
     [HttpGet("cotizaciones/regional")]
     [Authorize(Policy = clsPoliticas.GerenteComercial)]
@@ -52,13 +77,16 @@ public sealed class clsCotizacionesController(
     [ProducesResponseType<clsErrorWeb>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status409Conflict)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status503ServiceUnavailable)]
-    public async Task<IActionResult> ListarRegional(CancellationToken cancellationToken)
+    public async Task<IActionResult> ListarRegional([FromQuery(Name = "regional")] string? regionalPedida, CancellationToken cancellationToken)
     {
-        var resultado = await regional.ListarAsync(cancellationToken);
+        var resultado = await regional.ListarAsync(regionalPedida, cancellationToken);
         return resultado.Coincidir<IActionResult>(r => Ok(r), Error);
     }
 
-    /// <summary>200 <c>CotizacionResumen</c>; 400 motivo de más de 2000 caracteres; 404 si no es suya.</summary>
+    /// <summary>
+    /// 200 <c>CotizacionResumen</c>; 400 motivo de más de 2000 caracteres o comentario de más de 500, y (HU-018.1, #155) en una perdida
+    /// <c>MOTIVO_NO_PERMITIDO</c> si el motivo no es de la lista o <c>Otro</c> viene sin comentario; 404 si no es suya.
+    /// </summary>
     [HttpPost("cotizaciones/{folio}/seguimiento")]
     [ProducesResponseType<clsCotizacionResumen>(StatusCodes.Status200OK)]
     [ProducesResponseType<clsErrorWeb>(StatusCodes.Status400BadRequest)]
@@ -67,7 +95,7 @@ public sealed class clsCotizacionesController(
     public async Task<IActionResult> MarcarSeguimiento(string folio, [FromBody] clsSeguimientoWebRequest cuerpo, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(cuerpo);
-        var resultado = await seguimiento.MarcarAsync(UsuarioId, folio, cuerpo.Ganada, cuerpo.MotivoRechazo, cancellationToken);
+        var resultado = await seguimiento.MarcarAsync(UsuarioId, folio, cuerpo.Ganada, cuerpo.MotivoRechazo, cuerpo.Comentario, cancellationToken);
         return resultado.EsFallo ? Error(resultado.Error) : Ok(await misCotizaciones.ResumirAsync(resultado.Valor, cancellationToken));
     }
 

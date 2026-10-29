@@ -12,6 +12,7 @@ using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Dominio.Margen;
 using Cotifly.Pruebas.Comun;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 
@@ -31,6 +32,9 @@ public sealed class clsServiciosConexosCosteoServiceTests
     private readonly IClsServiciosConexosNexo _nexo = Substitute.For<IClsServiciosConexosNexo>();
     private readonly IClsUnitOfWork _unidad = Substitute.For<IClsUnitOfWork>();
     private readonly IClsAuditoriaService _auditoria = Substitute.For<IClsAuditoriaService>();
+    private readonly IClsEnvioConexosNexoService _envioConexos = Substitute.For<IClsEnvioConexosNexoService>();
+    private readonly IClsCategoriasConexos _categorias = Substitute.For<IClsCategoriasConexos>();
+    private readonly IClsSituacionLineasNexo _situaciones = Substitute.For<IClsSituacionLineasNexo>();
     private readonly clsPrecioService _precios = new(Substitute.For<IClsProveedorTrm>(), Substitute.For<IClsCalendarioNegocio>());
     private readonly Guid _ana = Guid.NewGuid();
     private readonly clsCotizacionSolicitud _cotizacion;
@@ -49,6 +53,28 @@ public sealed class clsServiciosConexosCosteoServiceTests
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    /// <summary>
+    /// DEF-1027-3 (#226): la respuesta del POST trae el <c>estado_nexo</c> de cada conexo con el estado del envío diferido (el que no
+    /// aparece en los estados, <c>pendiente</c>), igual que <c>GET .../costeo</c>. Las dependencias son obligatorias: sin ellas no hay
+    /// servicio, en vez de una respuesta con <c>estado_nexo = null</c>.
+    /// </summary>
+    [Fact]
+    public async Task AgregarRespondeConElEstadoNexoDeCadaConexoComoElGet()
+    {
+        _envioConexos.EstadosAsync(_cotizacion, Arg.Any<CancellationToken>()).Returns(
+            new Dictionary<(Guid Ruta, string Conexo), string> { [(_cotizacion.PrimeraRuta!.Id, "CX-2")] = clsEnvioConexosNexoService.VisibleEnviado });
+
+        var resultado = await Servicio().AgregarAsync(_ana, _cotizacion.Folio, [Item(1, Almacenamiento, 2m)], Version, null, Ct);
+
+        resultado.EsExitoso.Should().BeTrue(resultado.EsFallo ? resultado.Error.Mensaje : null);
+        resultado.Valor.ServiciosConexos.Single(s => s.Id == "CX-2").EstadoNexo.Should().Be(clsEnvioConexosNexoService.VisibleEnviado);
+        resultado.Valor.ServiciosConexos.Single(s => s.Id == "CX-1").EstadoNexo.Should().Be(clsEnvioConexosNexoService.VisiblePendiente);
+        resultado.Valor.Rutas[0].ServiciosConexos.Select(s => s.EstadoNexo).Should().OnlyContain(e => e != null);
+        _situaciones.Received().Obtener(_cotizacion.Id);
+        typeof(clsServiciosConexosCosteoService).GetConstructors().Single().GetParameters().Should()
+            .OnlyContain(p => !p.HasDefaultValue, "ninguna dependencia es opcional: un registro faltante falla al resolver, no en silencio");
+    }
 
     [Fact]
     public async Task AgregarLoCreaEnNexoConElLineaIdDeSuCotizacionYLeAplicaElMargenComoElModuloDePrecio()
@@ -237,6 +263,18 @@ public sealed class clsServiciosConexosCosteoServiceTests
     }
 
     [Fact]
+    public async Task HU0363_FinalizadaRespondePdfYaEnviadoSinLlamarANexo()
+    {
+        _cotizacion.Finalizar(_ana, clsCotizacionMuestra.Ahora);
+
+        var resultado = await Servicio().AgregarAsync(_ana, _cotizacion.Folio, [Item(1, Almacenamiento, 1m)], Version, null, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.PdfYaEnviado);
+        resultado.Error.Datos!["accion"].Should().Be("nueva_version");
+        _nexo.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task ConElPdfGeneradoSinEnviarLoInvalidaYLoDejaEnElHistorial()
     {
         _cotizacion.AsignarPdf("/data/pdfs/PCN-1.pdf");
@@ -382,7 +420,8 @@ public sealed class clsServiciosConexosCosteoServiceTests
     {
         var almacen = Substitute.For<IClsAlmacenIdempotencia>();
         var servicio = new clsServiciosConexosCosteoService(
-            _cotizaciones, _nexo, _unidad, _auditoria, Options.Create(new clsOpcionesPdf()), almacen);
+            _cotizaciones, _nexo, _unidad, _auditoria, Options.Create(new clsOpcionesPdf()), almacen, _envioConexos,
+            NullLogger<clsServiciosConexosCosteoService>.Instance, _categorias, _situaciones);
 
         await servicio.AgregarAsync(_ana, _cotizacion.Folio, [Item(1, Almacenamiento, 1m)], Version, "clave-12345", Ct);
 
@@ -460,7 +499,8 @@ public sealed class clsServiciosConexosCosteoServiceTests
     }
 
     private clsServiciosConexosCosteoService Servicio() =>
-        new(_cotizaciones, _nexo, _unidad, _auditoria, Options.Create(new clsOpcionesPdf()), Substitute.For<IClsAlmacenIdempotencia>());
+        new(_cotizaciones, _nexo, _unidad, _auditoria, Options.Create(new clsOpcionesPdf()), Substitute.For<IClsAlmacenIdempotencia>(),
+            _envioConexos, NullLogger<clsServiciosConexosCosteoService>.Instance, _categorias, _situaciones);
 
     private static readonly clsConexoNexo _cx2 = new("CX-2", "Almacenamiento", "logistico", 2m, 240_000m);
 

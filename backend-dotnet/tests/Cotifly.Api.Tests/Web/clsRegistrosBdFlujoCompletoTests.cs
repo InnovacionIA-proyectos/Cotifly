@@ -86,7 +86,8 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
         (await clsBaseDatosPruebas.EscalarAsync<string>(Cadena,
             "SELECT STRING_AGG(CONCAT(lineaNegocio, '=', ISNULL(mapeoLineasNexo, '-')), ',') WITHIN GROUP (ORDER BY lineaNegocio) FROM dbo_cotifly.MargenesPolitica"))
             .Should().Be("DevolucionContenedor=DevolucionContenedor,Distribucion=-,Exportacion=InteriorAPuerto,Importacion=PuertoAInterior,Internacional=Andino,Nacional=Nacional");
-        (await clsBaseDatosPruebas.EscalarAsync<int>(Cadena, "SELECT COUNT(*) FROM dbo_cotifly.Roles")).Should().Be(2);
+        // HU-037.1 (#209): comercial y gerente_comercial del seeder, más director del script 15.
+        (await clsBaseDatosPruebas.EscalarAsync<int>(Cadena, "SELECT COUNT(*) FROM dbo_cotifly.Roles")).Should().Be(3);
     }
 
     [Fact]
@@ -220,6 +221,7 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
         await VerificarTotalesCuadranAsync(id);
 
         // ---------------------------------------------------------------- 4. PDF de pliego y correo
+        await _api.FinalizarSiCorrespondeAsync(ana.Access, folio); // HU-036.3: como el frontend
         using (var pdf = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", ana.Access))
         {
             await VerificarContratoAsync(pdf, "/web/cotizaciones/{folio}/costeo/pdf", _post, HttpStatusCode.Created);

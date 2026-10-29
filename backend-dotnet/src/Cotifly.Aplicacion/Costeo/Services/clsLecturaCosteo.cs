@@ -35,7 +35,8 @@ public static class clsLecturaCosteo
         // uno a su ruta (la del camión cuya línea los lleva, #134; si no se sabe, la ruta pedida) y se quita la marca. Fuera de esa marca el
         // polling no importa conexos (decisión 3).
         var importarConexos = cotizacion.ConexosPendientesDeLeer;
-        if (importarConexos && cotizacion.PdfPath is null && foto.Cotizacion is { } nexo)
+        // HU-036.4 (#208): con el precio congelado (PDF o finalizada) los conexos de Nexo tampoco entran (cambiarían el precio).
+        if (importarConexos && !cotizacion.PrecioCongelado && foto.Cotizacion is { } nexo)
         {
             var nuevos = ConexosNuevos(cotizacion, nexo, pendientes);
             if (nuevos.Ruta is { } ruta && nuevos.Conexos.Count > 0)

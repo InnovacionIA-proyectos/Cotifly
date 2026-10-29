@@ -1,4 +1,5 @@
 using Cotifly.Aplicacion.Correo.DTOs;
+using Cotifly.Dominio.Correo;
 
 namespace Cotifly.Aplicacion.Correo.Services;
 
@@ -12,7 +13,8 @@ public static class clsProteccionCorreo
 {
     /// <summary>Aviso de la vista previa cuando el ambiente redirige los correos.</summary>
     public static string AvisoVistaPrevia(string buzon) =>
-        $"Ambiente de pruebas: el correo NO llegará a los destinatarios; se redirige al buzón de pruebas {buzon} con el asunto marcado [QA].";
+        $"Ambiente de pruebas: el correo NO llegará a los destinatarios; se redirige al buzón de pruebas {buzon} con el asunto marcado [QA], "
+        + "sin CC ni CCO (tampoco la copia oculta al comercial).";
 
     /// <summary>
     /// El mensaje que sale al transporte y el buzón al que se redirigió (<c>null</c> si va a los destinatarios reales). Solo con
@@ -56,7 +58,8 @@ public static class clsProteccionCorreo
     {
         ArgumentNullException.ThrowIfNull(opciones);
         var buzon = opciones.BuzonPruebas?.Trim();
-        return !string.IsNullOrEmpty(buzon) && System.Net.Mail.MailAddress.TryCreate(buzon, out var direccion)
+        // Validación #228: también el formato estricto que el transporte exige al To; si no, todo correo redirigido se bloquearía allí.
+        return !string.IsNullOrEmpty(buzon) && clsCabecerasCorreo.EsDireccionValida(buzon) && System.Net.Mail.MailAddress.TryCreate(buzon, out var direccion)
                && string.Equals(direccion.Address, buzon, StringComparison.OrdinalIgnoreCase)
             ? buzon
             : null;

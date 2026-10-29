@@ -89,6 +89,14 @@ public sealed class clsHistorialCorreosService(
                 : "Este envío nunca llegó a MailSender (se rechazó al encolarlo): envíalo de nuevo.");
         }
 
+        // DEF-1027B-2 (#228, validación): MailSender reintenta el correo TAL COMO LO GUARDÓ (asunto y destinatarios incluidos). Uno aceptado
+        // antes de #228 con un asunto o una dirección con saltos de línea saldría otra vez con las cabeceras inyectadas: no se reintenta.
+        if (TieneCabecerasInyectadas(correo))
+        {
+            logger.LogWarning("Reintento del correo {CorreoId} bloqueado: su asunto o un destinatario tiene caracteres de control (DEF-1027B-2).", correo.Id);
+            return new clsErrorDominio(clsCodigosError.CorreoNoReintentable, MensajeCabecerasInyectadas);
+        }
+
         var cronometro = Stopwatch.StartNew();
         var reclamo = reloj.AhoraUtc;
         // Auditoría #199: un solo /retry por fallo. Sin la reserva, un doble clic (o dos réplicas) pedían dos reintentos y MailSender
@@ -150,7 +158,23 @@ public sealed class clsHistorialCorreosService(
             correo.EstadoActualizadoAt,
             correo.RedirigidoA,
             correo.IdMailSender?.ToString("D"),
-            correo.EsReintentable);
+            correo.EsReintentable && !TieneCabecerasInyectadas(correo));
+    }
+
+    /// <summary>Mensaje de <c>CORREO_NO_REINTENTABLE</c> para un correo guardado con caracteres de control en una cabecera (#228).</summary>
+    public const string MensajeCabecerasInyectadas =
+        "Este envío no se puede reintentar: su asunto o un destinatario tiene saltos de línea u otros caracteres de control. Envíalo de nuevo "
+        + "con un asunto de una sola línea.";
+
+    /// <summary>
+    /// #228: ¿el correo guardado tiene caracteres de control en el asunto o en un destinatario? Solo pasa con datos anteriores a la
+    /// validación de DEF-1027B-2 (hoy el envío los rechaza con 400).
+    /// </summary>
+    public static bool TieneCabecerasInyectadas(clsCorreo correo)
+    {
+        ArgumentNullException.ThrowIfNull(correo);
+        return clsCabecerasCorreo.TieneCaracteresDeControl(correo.Asunto)
+               || correo.Para.Concat(correo.Cc).Any(clsCabecerasCorreo.TieneCaracteresDeControl);
     }
 
     private static string IdCorrelacion(string folio, clsCorreo correo) => clsCorreoService.IdCorrelacion(folio, correo.Id);

@@ -2,7 +2,7 @@
 
 - **Estado:** Propuesta (definiciones pendientes de validar con Gerencia Comercial; la fuente de la regional ya está verificada en #81, faltan la credencial en el despliegue y la salida de red, ver Pendientes)
 - **Fecha:** 2026-09-29
-- **Issue / HU:** #45 (HU-010.1) y #81 (HU-003.6, regional en el login). Consumidores: clientepro-frontend #50 (HU-010.2, tablero del comercial), #51 (HU-010.3, tablero del gerente) y #52 (HU-010.4, QA de cálculos). Relacionada con ADR-009 (rol en el token), ADR-011 (folio y versiones), ADR-014 (TRM y cotizaciones en USD) y ADR-015 (costeo de Nexo, script 0004).
+- **Issue / HU:** #45 (HU-010.1), #81 (HU-003.6, regional en el login) HU-037 (#209 a #212, rol Director: sección 11), HU-034.1 (#201 parte A, licitación en solo consulta: sección 12) y HU-016.1 (#154 parte B, margen contra la política: sección 13). Consumidores: clientepro-frontend #50 (HU-010.2, tablero del comercial), #51 (HU-010.3, tablero del gerente) y #52 (HU-010.4, QA de cálculos). Relacionada con ADR-009 (rol en el token), ADR-011 (folio y versiones), ADR-014 (TRM y cotizaciones en USD) y ADR-015 (costeo de Nexo, script 0004).
 
 ## Contexto
 
@@ -26,7 +26,7 @@
 
 - El rol sale del token (claim `rol`), nunca de una columna de `UsuariosWeb`. El caso de uso lo revalida (defensa en profundidad, como la administración de líneas).
 - Un `comercial` en `/regional` recibe 403 (`ErrorWeb`).
-- `/regional` no acepta una regional por parámetro: siempre es la del gerente.
+- `/regional` no acepta otra regional que la del gerente: siempre es la suya (HU-037.3 agrega `?regional=`: el gerente solo puede pedir la suya y el director cualquiera; sección 11).
 - Un `usuario_id` que no es de la regional (o no existe) responde **404** `ErrorWeb` "Comercial no encontrado en tu regional.", igual en los dos casos para no revelar usuarios de otras regionales.
 - `comerciales` trae siempre a todos los usuarios de la regional con sus indicadores (para el selector dinámico), aunque se filtre por `usuario_id`. El filtro aplica a `indicadores`, `serie_mensual` y `concentracion_ciudades`.
 - Ambos devuelven una `serie_mensual` (línea de tiempo por mes de Bogotá: cantidad, ganadas, perdidas y dinero) con todos los meses del periodo, también los vacíos. HU-034.1 (#201): el dinero de cada mes son los mismos montos de `indicadores` (`valor_cotizado_cop`, `valor_ganado_cop`, `costeo_total`, `costeo_ganadas` y `ganancias`, sección 4) calculados con la misma función sobre las cotizaciones del mes, así que la suma de los meses es exactamente el total del periodo (los montos de origen tienen 2 decimales). El criterio no cambia. `/regional` agrega `concentracion_ciudades` y `lineas_negocio_activas`.
@@ -168,6 +168,113 @@ Decisión 8 del 2026-10-08 (HU-021): una solicitud (`CotizacionesSolicitud`) tie
 - **Implementación:** el repositorio hace una segunda consulta con las rutas de las versiones vigentes (`OPENJSON` de ids, `OUTER APPLY` a `MargenAjustes`) y la calculadora de dominio agrega (`clsCalculadoraMetricas.PorLineaNegocio`). No hace falta un cambio de esquema.
 - **Alternativa descartada: contar rutas.** Inflaría `cantidad` y la conversión con cada ruta de una licitación (una solicitud de 20 rutas ganada no son 20 cotizaciones ganadas).
 
+### 11. Rol Director (HU-037, #209 a #212)
+
+Gerencia pidió un rol por encima del gerente comercial que vea **todas** las regionales. Decisiones (2026-10-26):
+
+- **Tercer rol interno `director`** (`RolInterno.Director`; catálogo `dbo_cotifly.Roles` con el script 15, #209). El rol sigue saliendo del
+  token (claim `rol`), nunca de una columna de `UsuariosWeb` (ADR-009).
+- **Precedencia `director` > `gerente_comercial` > `comercial`** cuando varios roles externos de una persona están mapeados. Es una regla
+  explícita y auditada, como la del gerente: `precedencia_director` (y `precedencia_gerente_comercial` sin director). HU-040 (ADR-025): la
+  precedencia queda solo para el rol único; con varias asignaciones activas la persona elige el rol al entrar. Si la persona pierde
+  el rol que ganó, su asignación en `UsuariosRoles` deja de coincidir y queda en revisión (`rol_externo_cambio`).
+- **Permisos (#210): el director usa todo lo del gerente.** Se agrega `director` a las políticas existentes en vez de crear otra:
+  `Comercial` (consola del comercial: `comercial`, `gerente_comercial`, `director`) y `GerenteComercial` (tablero y listado regional,
+  administración de líneas de negocio y márgenes: `gerente_comercial`, `director`). Una política aparte duplicaría los mismos endpoints
+  y obligaría a repetir los atributos; el alcance distinto (todas las regionales) no es de la política, es del caso de uso.
+- **Defensa en profundidad:** los casos de uso que revalidaban `Rol == GerenteComercial` usan `RolInterno.EsGerencial()`
+  (`gerente_comercial` o `director`): `clsLineasNegocioAdminService`, `clsTableroMetricasService`, `clsCotizacionesRegionalService`,
+  `clsDetalleCotizacionService` y `clsDescargaPdfService`. La auditoría de las consultas ajenas registra el rol real.
+- **Roles desconocidos:** el repositorio de roles solo lee los códigos que el backend conoce. Un rol nuevo en el catálogo con una imagen
+  vieja ya no tumba el login de todos (antes, la fila `director` con una imagen anterior a HU-037 hacía fallar la lectura del catálogo, y
+  login y refresh respondían a todos el 401 genérico). Cada rol activo ignorado deja un warning con su `id` al leer el catálogo.
+- **IDROLES por ambiente** (scripts de operación de Datos, no del backend): prueba `gerente_comercial` 25 (provisional) y `director` 31
+  (#209, parte B); producción `comercial` 34, `gerente_comercial` 29 y `director` 31 (#212). `uq_roles_idRolExterno` obliga a sacar al
+  gerente del 31 antes de dárselo al director.
+- **`/health/ready` no exige el 15:** no agrega columnas; sin la fila `director` nadie entra con ese rol (falla cerrado).
+- **Alcance de todas las regionales (#211), centralizado en `IClsRegionalUsuario`** para que los cuatro consumidores (tablero, listado
+  regional, detalle y PDF ajenos) no repitan el `if` del rol:
+  - `ResolverAlcanceAsync(usuario, rol, regional?)` → `clsAlcanceRegional(Regional?, Fuente?, Miembros)`. Director sin `regional`: todos
+    los usuarios de `UsuariosWeb` (`Regional = null` = todas; no consulta `DimEjecutivo`). Director con `regional`: los miembros de esa
+    regional con la regla de la sección 6 (`Fuente = null`: la regional no sale de su usuario). Gerente: su regional efectiva; con
+    `regional` igual a la suya (sin mayúsculas ni espacios sobrantes) se acepta, con otra **403 `REGIONAL_NO_PERMITIDA`** (código nuevo,
+    `ErrorNegocio`: el rol sí puede usar el endpoint, lo que no puede es esa regional); sin regional sigue fallando cerrado
+    (`REGIONAL_NO_ASIGNADA` o `REGIONAL_NO_DISPONIBLE`). Otro rol: `SIN_PERMISO`.
+  - `PuedeVerDeAsync(usuario, rol, dueño)`: director siempre; gerente si el dueño es de su regional; otro rol, nunca. Lo usan el detalle
+    por folio y el PDF; la auditoría de esas consultas registra el rol real.
+  - `ListarRegionalesAsync(usuario, rol)` para `GET /web/regionales`: director, las regionales efectivas de todos los usuarios de Cotifly
+    (la misma fuente de la sección 6, sin repetir, ordenadas; una regional de `DimEjecutivo` sin usuarios en Cotifly no sale); gerente, la
+    suya; `DimEjecutivo` caída: 503.
+  - La regla vive en dos métodos estáticos (`ComponerAlcanceAsync`, `ComponerPermisoAsync`) sobre las operaciones básicas del puerto, para
+    que las pruebas de los consumidores apliquen la misma regla sobre un puerto simulado sin copiarla.
+- **Respuesta para el director:** `regional` y `fuente_regional` de `MetricasRegional` y `CotizacionesRegional` pasan a ser anulables
+  (`null` = todas; `fuente_regional` siempre `null` para el director). Para el gerente no cambian. El tope de 100 filas del listado es del
+  conjunto: el director sin regional ve las 100 más recientes de todas.
+- **Listas grandes de usuarios:** con el director sin regional, las consultas por lista de usuarios mandan la lista como un solo parámetro
+  (`EF.Parameter`, `OPENJSON`; el repositorio de métricas ya lo hacía), así no topan con el límite de 2100 parámetros de SQL Server.
+
+### 12. Licitación en solo consulta para el gerente y el director (HU-034.1, #201 parte A)
+
+Negocio pidió el 2026-10-27 que el gerente (su regional) y el director (cualquier regional) vean la licitación de un comercial y bajen su
+Excel. Decisiones:
+
+- **Misma regla que el detalle y el PDF:** `GET /web/licitaciones/{folio}` y `GET /web/licitaciones/{folio}/excel` usan
+  `PuedeVerDeAsync` (sección 11). El dueño primero (la consulta filtra por dueño: un comercial ajeno nunca carga el agregado de otro); si no
+  es suya y el rol es gerencial, `IClsAccesoCotizacionAjena` carga la cotización por folio y aplica la regla. Sin regional o con la fuente
+  caída se niega (fail-closed). Cualquier negativa es 404, igual que un folio inexistente.
+- **Auditoría:** cada intento gerencial sobre una licitación ajena que existe, permitido o no, queda en `EventosHerramienta` con
+  `consultar_licitacion` (vista) o `exportar_excel_licitacion` (Excel), con el folio, el usuario, el rol real, el dueño y el motivo de la
+  negativa (`REGIONAL_NO_ASIGNADA`, `REGIONAL_NO_DISPONIBLE`). Ni el dueño ni un comercial ajeno se auditan, como en el detalle. Un folio
+  que no es licitación (p. ej. un spot de la regional pedido por `/web/licitaciones/{folio}`) responde 404 sin evento: el tipo se filtra
+  antes de auditar, para no dejar un "permitido" que terminó en 404. El rol es el de la sesión (el del access token, como en el detalle y el
+  PDF): si le quitan el rol de gerente, el token vigente lo conserva hasta vencer y el login siguiente se rechaza (`rol_externo_cambio`).
+- **Solo lectura:** `Licitacion.solo_lectura` (aditivo, siempre presente) es `true` para el gerente y el director y `false` para el dueño,
+  igual que `DetalleCotizacion.solo_lectura`. Las mutaciones no cambian: reintentar la cubicación (con o sin `usar_respaldo`), reintentar
+  el envío y finalizar siguen filtrando por dueño y les responden 404.
+- **Sin costo, sin quitar nada:** la vista y el Excel de la licitación nunca tuvieron costos (solo precios con margen; el exportador no
+  recibe el costo de Nexo, `clsExportacionLicitacion`). Por eso, con el criterio de `SinCostoFinal()` de HU-039.1 (#218: quien no es el
+  dueño no recibe el costo bruto), no hay nada que ocultar: el gerente y el director reciben **lo mismo que el dueño**, salvo
+  `solo_lectura`. Columnas del Excel: las del pliego, `Precio final Cotifly ({moneda})`, `Estado costeo Cotifly`, `Servicios conexos
+  Cotifly` (nombre, cantidad y precio) y `Camiones Cotifly`, más las hojas `Resumen Cotifly` (folio, cliente, NIT, moneda, TRM, líneas,
+  total sin conexos, conexos con precio, fecha de generación) y `Camiones Cotifly` (vehículo, carrocería, peso, volumen, llenado). Ninguna
+  permite deducir el costo: no hay margen ni costo por ruta, camión o conexo. Si algún día el Excel lleva costos, la exportación para quien
+  no es dueño debe quitarlos (la variante ya existe: `solo_lectura` sale del mismo punto, `CargarAsync`).
+- **Fuera de alcance:** el Excel de "Ver detalle" de una cotización no licitación (`ExportarCotizacionAsync`, sin endpoint propio) sigue
+  siendo solo del dueño. `GET .../costeo` también (el frontend usa el detalle por folio).
+
+### 13. Margen contra la política de las mismas rutas (HU-016.1, #154, parte B)
+
+`desviacion_promedio_margen` (sección 4) solo promedia `MargenAjustes.diferencia`, que se escribe cuando el comercial **negocia** un
+margen: un comercial que nunca ajusta no tiene referencia. Gerencia pidió (Sara, 2026-10-05) comparar el margen aplicado con la política.
+Decisiones de la Gerencia Comercial del 2026-10-27:
+
+- **P3: la referencia es la política de las mismas rutas**, calculada en el servidor. Cada ruta guarda al cotizarse
+  `CotizacionLineasSolicitud.margenPoliticaSugerido` (el margen de la política de su línea en ese momento), así que se compara lo mismo
+  con lo mismo (si la política cambia después, las rutas viejas conservan la suya) y la tabla `MargenesPolitica` no se expone. Sin script
+  de base de datos.
+- **P4: los dos promedios**, y el semáforo con el ponderado. Campos nuevos (aditivos) de `IndicadoresMetricas`, también en
+  `comerciales[].indicadores`:
+  - rutas **comparables** = las del universo del tablero (versión vigente de cada cadena, sin las rechazadas por la Mesa, #183) con
+    `margenAplicado` (se cotizaron) y con `margenPoliticaSugerido`;
+  - `margen_politica_promedio` = promedio simple de la política de las comparables;
+  - `margen_aplicado_promedio` (decisión del 2026-10-27, mismo día) = promedio simple del margen aplicado de **exactamente las mismas**
+    comparables, con el mismo redondeo (4 decimales, half-to-even) y `null` sin ninguna: es el par directo de
+    `margen_politica_promedio` (aplicado simple contra política simple). `margen_promedio` no sirve para eso porque es por cotización e
+    incluye las rutas sin política;
+  - `margen_politica_ponderado` = Σ(política × `costoFinal`) / Σ `costoFinal` de las comparables con costo &gt; 0;
+  - `desviacion_margen_politica` = Σ((aplicado − política) × `costoFinal`) / Σ `costoFinal` de esas mismas: el aplicado ponderado por
+    costo menos la política ponderada, redondeado una sola vez (4 decimales, half-to-even). Semáforo: verde ≥ 0, rojo &lt; 0;
+  - `rutas_sin_margen_politica` = rutas con margen aplicado y sin política (datos anteriores a HU-021): no entran y se cuentan para que la
+    UI avise que la comparación está incompleta.
+  - Los márgenes son fracciones y el costo siempre está en COP: la moneda y la TRM no los afectan. El alcance (gerente, director,
+    `usuario_id`) y el periodo son los del resto del tablero.
+- **`desviacion_promedio_margen` no cambia** (opción B de la issue descartada): sigue siendo "solo ajustes negociados" y la usan otros
+  reportes.
+- **P4b: catálogo de líneas sin margen.** `GET /web/lineas-negocio` (política `Comercial`) devuelve las líneas activas
+  `[{linea_negocio, etiqueta}]` para el desplegable de "Nueva solicitud" (hoy fijo en el frontend, sin `DevolucionContenedor`). Nunca trae
+  el margen ni el método. Se lee de la base en cada petición (6 a 8 filas por clave primaria): sin caché, un cambio de la administración
+  se ve de inmediato.
+
 ## Alternativas consideradas
 
 - **Contar todas las versiones** (nota del backlog del 2026-09-24): infla las métricas con cada cotización rehecha. Se expone como `versiones` para quien la necesite.
@@ -179,6 +286,12 @@ Decisión 8 del 2026-10-08 (HU-021): una solicitud (`CotizacionesSolicitud`) tie
 - **Sincronizar `UsuariosWeb.regional` en cada login como única fuente** (propuesta original de #45): metería una tercera base externa en el camino crítico del login (ADR-009 es fail-closed). En #81 se adoptó **además** de la consulta en vivo del tablero, pero sin bloquear: la búsqueda tiene un límite corto y cualquier fallo solo deja un warning (sección 6, "Regional en el login"). El tablero sigue consultando en vivo.
 - **Un DbContext `clsRegionalDbContext` y un puerto nuevo `IClsAlmacenRegionalExterno` para el login** (lo que sugería #81): habría dos accesos a la misma tabla con reglas de cruce que podrían divergir (quitar el dominio, mayúsculas, filas ambiguas) y dos cachés. Se reutilizó el adaptador de #45 (SQL parametrizado con `Microsoft.Data.SqlClient`): la tabla es de solo lectura, se leen dos columnas y un DbContext de EF no aporta nada (sin seguimiento de cambios, sin modelo que validar). La intención de la issue se mantiene: `DimEjecutivo` de solo lectura detrás de un puerto de Aplicación.
 - **Dejar en NULL la regional del usuario que no aparece en `DimEjecutivo`:** borraría la regional que el DBA puso a mano a quien no es ejecutivo (por ejemplo, un gerente fuera de la tabla), y el tablero le respondería 409. Se conserva el valor existente.
+- **Exponer `MargenesPolitica` al comercial para que el cliente promedie (opción A de #154):** compararía el margen de las rutas con el
+  promedio de **todas** las líneas, aunque el comercial cotice casi solo una, y con la política de hoy y no la del momento de cotizar.
+  Descartada por la Gerencia (P3); el catálogo del desplegable va sin margen (P4b).
+- **Redefinir `desviacion_promedio_margen` (opción B de #154):** cambiaría el significado de un campo publicado. Descartada: se agregan campos.
+- **Comparar la política con `margen_ponderado`:** ese campo es el margen sobre el precio ponderado por el precio; la decisión P4 pide
+  ponderar por costo, así que la desviación ponderada se calcula con el aplicado y la política de las mismas rutas y el mismo peso.
 - **Filtrar un comercial ajeno con 200 vacío en vez de 404:** confunde al frontend (un selector con un id mal armado parecería "sin datos"). Se usa 404 como en el resto de `/web/*`.
 
 ## Consecuencias
@@ -200,6 +313,6 @@ Decisión 8 del 2026-10-08 (HU-021): una solicitud (`CotizacionesSolicitud`) tie
 | Validar las definiciones: versión vigente vs. todas las versiones, `conversion` sobre el total, `costeo_total` sobre todo el universo, `ganancias` solo de ganadas y periodo por defecto (año en curso) | Gerencia Comercial (Sara / scalderon-bs) |
 | Contrato de Nexo para el "score de urgencia" por solicitud (el deadline vencido ya se calcula con el 0004) | Equipo de Nexo |
 | ~~Integrar los servicios conexos (ADR-015) en precio y costo del tablero~~: resuelto con HU-021 (están en `costoFinal` de la ruta) | Duban |
-| Validar con Gerencia Comercial la apertura por línea de negocio (sección 10) y si `margen_promedio` debe pasar a ser el ponderado por ruta | Gerencia Comercial (Sara / scalderon-bs) |
+| Validar con Gerencia Comercial la apertura por línea de negocio (sección 10) y si `margen_promedio` debe pasar a ser el ponderado por ruta (HU-016.1 agrega el aplicado ponderado por costo de forma derivable: `margen_politica_ponderado + desviacion_margen_politica`, sección 12) | Gerencia Comercial (Sara / scalderon-bs) |
 | ~~Pasar la descarga de PDF ajenos y `LoginResponse.ubicacion` a `IClsRegionalUsuario`~~: resuelto en #81 con la columna refrescada en cada login (sección 6, "Convergencia"). "Mis cotizaciones" del gerente lee la columna | Duban (HU-004.5) |
 | Aplicar el 0004 para que el mapa por ciudad y `deadline_vencidas` tengan datos | DBA (ADR-015) |

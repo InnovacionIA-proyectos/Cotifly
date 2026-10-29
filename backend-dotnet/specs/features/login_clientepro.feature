@@ -3,12 +3,13 @@
 # ClientePro ya autenticó a la persona; Cotifly revalida en cada login:
 #   1. Externo (dbsolucionesti, solo lectura): la persona existe en tblSAPUsuariosApp (idUsuario como
 #      NOMBREUSUARIO y, si no, como ID) y sus roles de tblSAPUsuarioRoles, traducidos con Roles.idRolExterno,
-#      dan un rol interno (comercial | gerente_comercial).
+#      dan un rol interno (comercial | gerente_comercial | director; HU-037, #210).
 #   2. Interno (dbo_cotifly): en el primer ingreso se crea el usuario (JIT) y se le asigna ese rol en
 #      UsuariosRoles; en los siguientes, el rol externo actual debe coincidir con el asignado y el NOMBREUSUARIO
 #      con el del usuario vinculado. Si algo difiere: 401 genérico y auditoría, hasta que se revise.
 # Los roles del body nunca deciden. Cualquier falla responde el mismo 401 "Credenciales inválidas".
 # Roles externos de las pruebas (los mismos IDROLES de dbSolucionesTI_Prueba, ADR-009): 32 = ClienteProComercial, 31 = ClienteProGerencial, 40 = sin mapeo.
+# HU-037 (#210): 33 = director en estas pruebas (en la compartida el director es el 31 y el gerente el 25, provisional, #209).
 @integracion
 Característica: Login SSO desde ClientePro con verificación doble
   Como comercial de Botero Soto que ya inició sesión en ClientePro
@@ -66,11 +67,60 @@ Característica: Login SSO desde ClientePro con verificación doble
     Cuando "gabi.sso" inicia sesión desde ClientePro declarando los roles "31"
     Entonces la sesión se emite con el rol "comercial"
 
-  Escenario: Con los dos roles externos gana Gerente Comercial y la regla queda auditada
+  # HU-040.2 (#230, ADR-025): con varios roles ya no gana el de mayor alcance: el login no emite sesión y la persona elige.
+  Escenario: Con los roles externos de comercial y gerente el primer ingreso pide elegir y entra con el rol elegido
     Dado la persona "hugo.sso" con ID externo 5108 y nombre "Hugo SSO" en el almacén corporativo con los roles externos "32,31"
     Cuando "hugo.sso" inicia sesión desde ClientePro
+    Entonces el login pide elegir entre los roles "comercial,gerente_comercial"
+    Y el usuario "hugo.sso" tiene asignados los roles "comercial,gerente_comercial"
+    Y el acceso de "hugo.sso" queda auditado con la regla "multi_rol"
+    Cuando "hugo.sso" elige el rol "comercial"
+    Entonces la sesión se emite con el rol "comercial"
+    Y la elección de "hugo.sso" queda auditada como aceptada
+
+  Escenario: Con los roles externos de comercial y director elige director
+    Dado la persona "dora.sso" con ID externo 5120 y nombre "Dora SSO" en el almacén corporativo con los roles externos "32,33"
+    Cuando "dora.sso" inicia sesión desde ClientePro
+    Entonces el login pide elegir entre los roles "comercial,director"
+    Cuando "dora.sso" elige el rol "director"
+    Entonces la sesión se emite con el rol "director"
+
+  # HU-040.2: rol único. Quien ya tiene una sola asignación sigue con la jerarquía (director > gerente_comercial > comercial).
+  Escenario: Quien ya tenía una sola asignación entra como siempre aunque tenga varios roles externos
+    Dado la persona "lola.sso" con ID externo 5122 y nombre "Lola SSO" en el almacén corporativo con los roles externos "31"
+    Y "lola.sso" ya inició sesión una vez
+    Y en el almacén corporativo "lola.sso" pasa a tener los roles externos "32,31"
+    Cuando "lola.sso" inicia sesión desde ClientePro
     Entonces la sesión se emite con el rol "gerente_comercial"
-    Y el acceso de "hugo.sso" queda auditado con la regla "precedencia_gerente_comercial"
+    Y el acceso de "lola.sso" queda auditado con la regla "precedencia_gerente_comercial"
+
+  Escenario: El ticket de elección es de un solo uso
+    Dado la persona "memo.sso" con ID externo 5123 y nombre "Memo SSO" en el almacén corporativo con los roles externos "32,31"
+    Y "memo.sso" inició sesión desde ClientePro
+    Y "memo.sso" elige el rol "comercial"
+    Cuando "memo.sso" vuelve a elegir el rol "gerente_comercial" con el mismo ticket
+    Entonces la elección responde sesión expirada
+    Y la elección de "memo.sso" queda auditada como rechazada por "ticket_reutilizado"
+
+  Escenario: El ticket de elección vence a los cinco minutos
+    Dado la persona "nico.sso" con ID externo 5124 y nombre "Nico SSO" en el almacén corporativo con los roles externos "32,31"
+    Y "nico.sso" inició sesión desde ClientePro
+    Y pasaron 6 minutos
+    Cuando "nico.sso" elige el rol "comercial"
+    Entonces la elección responde sesión expirada
+
+  Escenario: El refresh conserva el rol elegido
+    Dado la persona "olga.sso" con ID externo 5125 y nombre "Olga SSO" en el almacén corporativo con los roles externos "32,31"
+    Y "olga.sso" inició sesión desde ClientePro
+    Y "olga.sso" elige el rol "comercial"
+    Cuando "olga.sso" renueva su sesión
+    Entonces la renovación emite un par nuevo con el rol "comercial"
+
+  Escenario: El primer ingreso de un director crea el usuario con el rol director
+    Dado la persona "dino.sso" con ID externo 5121 y nombre "Dino SSO" en el almacén corporativo con los roles externos "33"
+    Cuando "dino.sso" inicia sesión desde ClientePro
+    Entonces la sesión se emite con el rol "director"
+    Y el acceso de "dino.sso" queda auditado con la regla "mapeo_unico"
 
   Escenario: Una persona que no existe en el almacén no entra
     Cuando "nadie.sso" inicia sesión desde ClientePro

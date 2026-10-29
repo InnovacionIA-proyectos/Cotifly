@@ -162,10 +162,17 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         (typeof(clsDetalleCotizacion), "DetalleCotizacion"),
         (typeof(clsFechasCotizacion), "FechasCotizacion"),
         (typeof(clsTotalesCotizacion), "TotalesCotizacion"),
+        // HU-018.1 (#155, parte B): lista de motivos de pérdida.
+        (typeof(Cotifly.Aplicacion.Cotizaciones.Services.clsMotivosPerdida), "MotivosPerdida"),
+        (typeof(Cotifly.Aplicacion.Cotizaciones.Services.clsMotivoPerdida), "MotivoPerdida"),
         (typeof(clsDatosNuevaVersion), "DatosNuevaVersion"),
         (typeof(clsLineaNegocioAdmin), "LineaNegocio"),
+        // HU-016.1 (#154): GET /web/lineas-negocio, el desplegable de la captura sin margen.
+        (typeof(Cotifly.Aplicacion.Administracion.DTOs.clsLineaNegocioOpcion), "LineaNegocioOpcion"),
         (typeof(clsMetricasComercial), "MetricasComercial"),
         (typeof(clsMetricasRegional), "MetricasRegional"),
+        // HU-037.3 (#211): GET /web/regionales.
+        (typeof(Cotifly.Aplicacion.Identidad.Services.clsRegionales), "Regionales"),
         (typeof(clsComercialRegional), "ComercialRegional"),
         (typeof(clsPeriodoMetricas), "PeriodoMetricas"),
         (typeof(Cotifly.Dominio.Metricas.clsIndicadoresMetricas), "IndicadoresMetricas"),
@@ -203,6 +210,10 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         (typeof(Cotifly.Api.Costeo.DTOs.clsSeleccionServiciosConexosWebRequest), "SeleccionServiciosConexos"),
         (typeof(Cotifly.Api.Costeo.DTOs.clsResultadoWebRequest), "ResultadoWeb"),
         (typeof(Cotifly.Api.Costeo.DTOs.clsAjusteMargenWebRequest), "AjusteMargenWeb"),
+        // HU-041.1 (#231): margen y conexos para varias rutas en una operación.
+        (typeof(Cotifly.Api.Costeo.DTOs.clsMargenLineasWebRequest), "MargenLineasWeb"),
+        (typeof(Cotifly.Api.Costeo.DTOs.clsConexoLineasWebRequest), "ConexoLineasWeb"),
+        (typeof(Cotifly.Api.Costeo.DTOs.clsQuitarConexoLineasWebRequest), "QuitarConexoLineasWeb"),
         (typeof(Cotifly.Aplicacion.Redaccion.DTOs.clsTextosCotizacion), "TextosCotizacion"),
         (typeof(Cotifly.Api.Costeo.DTOs.clsTextosCotizacionWebRequest), "TextosCotizacionWeb"),
         (typeof(Cotifly.Api.Costeo.DTOs.clsAgregarServiciosConexosWebRequest), "AgregarServiciosConexosWeb"),

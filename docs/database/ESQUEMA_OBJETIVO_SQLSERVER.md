@@ -436,8 +436,8 @@ Sin cambios de estructura en HU-021 (salvo el catálogo de líneas de negocio de
 | `SapMapeoTrqType` | (`trqType`, `salesOrg`) | `lineaNegocio`, `activo` |
 | `UsuariosWeb` | `id` uid | `nombreUsuario` (único filtrado), `nombreCompleto`, `email`, `telefono`, `regional`, `createdAt`, `ultimaSesion`, `idUsuarioExterno` bigint (único filtrado) |
 | `Roles` | `id` int identity; único `codigo` | CHECK `codigo` en `comercial`, `gerente_comercial`; `descripcion`, `idRolExterno` (único filtrado), `activo`, `updatedAt` |
-| `UsuariosRoles` | `id` int identity; único (`usuarioId`, `rolId`) | `asignadoAt`, `activo` (una activa por usuario, índice filtrado), `revisadoPor`, `revisadoAt` |
-| `TokensRefresco` | `id` uid; único `tokenHash` char(64) BIN2 | `usuarioId`, `familiaId`, `createdAt`, `expiraAt` (CHECK > `createdAt`), `revocadoAt`, `reemplazadoPorId` |
+| `UsuariosRoles` | `id` int identity; único (`usuarioId`, `rolId`) | `asignadoAt`, `activo` (varias activas por usuario, una por rol, desde el 16, HU-040.1), `revisadoPor`, `revisadoAt` |
+| `TokensRefresco` | `id` uid; único `tokenHash` char(64) BIN2 | `usuarioId`, `familiaId`, `createdAt`, `expiraAt` (CHECK > `createdAt`), `revocadoAt`, `reemplazadoPorId`, `rolSesion` (16, HU-040.1: CHECK NULL o código de `Roles`) |
 | `TokensRevocados` | `jti` nv(64) | `usuarioId`, `expiraAt` (índice), `createdAt` |
 | `Sesiones` | (`spaceId`, `threadId`) | `estado` (CHECK `activa` \| `archivada`), `ultimaActividad`, `estadoAgente` (JSON), `usuarioId` |
 | `EventosConversacion` | `id` uid | `spaceId`, `threadId` (FK a `Sesiones`), `usuarioId`, `rol`, `contenido`, `herramientas` (JSON), `createdAt` |
@@ -476,8 +476,11 @@ retiraron en HU-014.3 (#152) con `db/scripts/08_retirar_vistas_actividad.sql`, j
 | `db/scripts/11_peso_con_tara.sql` | **HU-030.1 (#184):** `CotizacionLineasSolicitud.pesoConTaraKg DECIMAL(12,2) NULL` con el CHECK `ck_cotizacionLineasSolicitud_pesoConTaraKg` (> 0): el peso con tara de una ruta `Contenedor`. Idempotente; lo corre el ejecutador después del `09`; el backend lo exige (`falta 11`) |
 | `db/scripts/12_vehiculo_elegido.sql` | **HU-032 (#197):** `CotizacionLineasSolicitud.tipoVehiculoElegido`/`carroceriaElegida NVARCHAR(100) NULL` y medidas de `CotizacionMercancias` en NULL (CHECK: las tres NULL o las tres > 0). Idempotente; lo corre el ejecutador después del `11`; el backend lo exige (`falta 12`) |
 | `db/scripts/13_correo_mailsender.sql` | **HU-033 (#199):** `Correos.idMailSender UNIQUEIDENTIFIER NULL` (índice único filtrado `ux_correos_idMailSender`), `redirigidoA NVARCHAR(320)`, `intentosEntrega INT`, `enviadoAt`, `estadoActualizadoAt`, `siguienteConsultaAt DATETIMEOFFSET` (índice filtrado `ix_correos_siguienteConsultaAt`), `encoladoAt DATETIMEOFFSET` (última aceptación de MailSender, auditoría #199) y el CHECK `ck_correos_estado`; `CotizacionesSolicitud.sincronizacionResultadoNexo NVARCHAR(20)` (CHECK `pendiente`/`sincronizado`/`no_sincronizable`), `comentarioResultadoPendiente NVARCHAR(500)`, `resultadoSincronizadoAt`, `errorSincronizacionResultado NVARCHAR(1000)` e `intentosSincronizacionResultado INT NOT NULL DEFAULT 0` (CHECK ≥ 0). Idempotente; obligatorio ("falta 13") |
+| `db/scripts/14_cotizacion_finalizada.sql` | **HU-036 (#205, #206):** `CotizacionesSolicitud.finalizadaAt DATETIMEOFFSET NULL` y `finalizadaPor UNIQUEIDENTIFIER NULL` (FK `fk_cotizaciones_finalizadaPor` a `UsuariosWeb(id)`, el tipo de su PK), con el CHECK `ck_cotizaciones_finalizada` (las dos NULL o las dos con valor). Aparte de `estadoCosteo` a propósito: el polling lo deriva de Nexo en cada vuelta. Sin backfill. Idempotente; obligatorio ("falta 14"). Propuesta pendiente de revisión de @scalderon-bs |
 
-Las columnas de los ajustes `02`, `03`, `pendientes/04`, `05`, `09`, `10`, `11`, `12` y `13` están en las tablas de §A.4 (marcadas
+| `db/scripts/16_multiples_roles_activos.sql` | **HU-040.1 (#229):** `UsuariosRoles` sin `uq_usuariosRoles_usuarioId_activo` (varias asignaciones activas por usuario, una por rol; `uq_usuariosRoles_usuarioId_rolId` sigue) y `TokensRefresco.rolSesion NVARCHAR(30) NULL` con el CHECK `ck_tokensRefresco_rolSesion` (NULL o un código de `Roles`). No cambia filas. Idempotente; obligatorio ("falta 16"). Propuesta pendiente de revisión de @scalderon-bs |
+
+Las columnas de los ajustes `02`, `03`, `pendientes/04`, `05`, `09`, `10`, `11`, `12`, `13`, `14` y `16` están en las tablas de §A.4 (marcadas
 con el número del script) y la tabla del `06` en §A.4.6.1; el detalle de cada cambio está en la cabecera de su script. Además,
 `db/scripts/operacion/` guarda scripts de operación puntual (no cambian el esquema) y `db/migrations_mssql/rollback/` la reversa
 del `0006`.

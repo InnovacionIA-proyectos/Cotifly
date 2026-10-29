@@ -203,6 +203,7 @@ public sealed class clsDetalleCotizacionEndpointsTests : IDisposable
         _nexo.CostearLinea(solicitud, 1, 800_000m);
         _nexo.Entregar(solicitud);
         await _api.ProcesarPollingAsync(folio);
+        await _api.FinalizarSiCorrespondeAsync(ana.Access, folio); // HU-036.3: como el frontend
         using (var resultado = await _api.EnviarAsync(_post, $"{Ruta(folio)}/resultado", ana.Access, """{"resultado":"ganada","motivo":"Precio"}"""))
         {
             resultado.StatusCode.Should().Be(HttpStatusCode.OK, await resultado.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
@@ -231,7 +232,7 @@ public sealed class clsDetalleCotizacionEndpointsTests : IDisposable
                      (_get, $"{Ruta(folio)}/costeo", null),
                      (_get, $"{Ruta(folio)}/solicitud", null),
                      (HttpMethod.Put, $"{Ruta(folio)}/costeo/margen", """{"margen":0.3,"linea_orden":1}"""),
-                     (_post, $"{Ruta(folio)}/resultado", """{"resultado":"perdida","motivo":"Precio"}"""),
+                     (_post, $"{Ruta(folio)}/resultado", """{"resultado":"perdida","motivo":"Valor muy alto"}"""),
                  })
         {
             using var accion = await _api.EnviarAsync(metodo, ruta, gloria.Access, cuerpo, tras.GetProperty("row_version").GetString());

@@ -85,6 +85,10 @@ public static class clsRespuestasWeb
         clsCodigosError.SinRutasCotizables,
         // HU-033 (#199): el envío no se puede reintentar en MailSender (no está fallido o MailSender no lo conoce).
         clsCodigosError.CorreoNoReintentable,
+        // HU-036.2 (#206): finalizar una cotización sin el costeo de Nexo listo.
+        clsCodigosError.CotizacionNoFinalizable,
+        // HU-036.3 (#207): PDF, correo, resultado y textos exigen la cotización finalizada.
+        clsCodigosError.CotizacionNoFinalizada,
         // D4 (E2E 2026-10-16): la misma Idempotency-Key con otro cuerpo (antes 400 ErrorWeb).
         clsCodigosAplicacion.IdempotencyKeyReutilizada,
     };
@@ -112,7 +116,8 @@ public static class clsRespuestasWeb
                 or clsCodigosError.CubicadorNoDisponible or clsCodigosError.CubicadorRespuestaInvalida or clsCodigosError.CubicadorNoAutorizado =>
                 new ObjectResult(clsErrorNegocioWeb.Desde(error)) { StatusCode = StatusCodes.Status503ServiceUnavailable },
             clsCodigosAplicacion.RegionalNoAsignada => new ConflictObjectResult(clsErrorNegocioWeb.Desde(error)),
-            clsCodigosError.NexoSinPermiso => new ObjectResult(clsErrorNegocioWeb.Desde(error)) { StatusCode = StatusCodes.Status403Forbidden },
+            clsCodigosError.NexoSinPermiso or clsCodigosAplicacion.RegionalNoPermitida =>
+                new ObjectResult(clsErrorNegocioWeb.Desde(error)) { StatusCode = StatusCodes.Status403Forbidden },
             // Endurecimiento A (#199): un error interno es 500, nunca 400; REGISTRO_DUPLICADO (una restricción única que el caso de uso no
             // tradujo) también, sin el nombre técnico de la restricción: el detalle queda solo en el log.
             clsCodigosError.ErrorInterno or clsViolacionUnicidadException.CodigoRegistroDuplicado => new clsResultadoErrorInterno(error),

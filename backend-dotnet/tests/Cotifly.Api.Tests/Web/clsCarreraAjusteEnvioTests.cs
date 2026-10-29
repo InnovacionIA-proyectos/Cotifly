@@ -67,6 +67,7 @@ public sealed class clsCarreraAjusteEnvioTests : IAsyncDisposable
         var folio = altaJson.RootElement.GetProperty("folio").GetString()!;
         _nexo.Costear(_nexo.SolicitudesCreadas[^1], 2_550_000m);
         await _api.ProcesarPollingAsync(folio);
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
         using var pdf = await _api.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
         pdf.StatusCode.Should().Be(HttpStatusCode.Created, await pdf.Content.ReadAsStringAsync(Ct));
         return (sesion, folio, pdf.Headers.ETag!.Tag);
