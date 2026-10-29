@@ -1,4 +1,5 @@
 using System.Globalization;
+using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Margen.DTOs;
 using Cotifly.Aplicacion.Margen.Exceptions;
 using Cotifly.Aplicacion.Margen.Interfaces;
@@ -13,16 +14,17 @@ namespace Cotifly.Aplicacion.Margen.Services;
 /// <summary>
 /// Port de <c>MargenResolver</c> (<c>mcp_server/margen/servicio.py</c>), en el mismo orden:
 /// <list type="number">
-/// <item>Línea → TrqType con <c>SapMapeoTrqType</c> (la fila de la organización pedida gana sobre el comodín <c>''</c>).</item>
-/// <item>Si hay BP del cliente y TrqType: consulta la fuente SAP TM por (salesOrg, TrqType, BP). Con valor →
-/// <c>sap_tm</c>, valor/100 a 6 decimales y anomalía fuera de [0, 60 %].</item>
-/// <item>Sin BP no se consulta SAP (ADR-004, nunca con el NIT); sin BP, sin TrqType, sin registro en SAP o con la
-/// fuente no configurada (<c>SapTm:Modo</c> vacío) → política de la línea (<c>politica_linea</c>) con el motivo en <c>detalle</c>.</item>
-/// <item>Si una fuente configurada falla (export ausente, SAP caído, timeout) → política de la línea con el motivo
-/// "SAP TM no disponible" y un warning en el log (decisión de #13, Gherkin "Resiliencia si SAP no responde" de HU-009:
-/// la cotización no se interrumpe). El Python devolvía el error sin respaldo.</item>
-/// <item>Sin política → <c>MARGEN_LINEA_DESCONOCIDA</c>, salvo que además SAP haya fallado: entonces
-/// <c>MARGEN_FUENTE_NO_DISPONIBLE</c> (SAP era la única fuente posible).</item>
+/// <item>Línea → política (<c>MargenesPolitica</c>, por nombre) → TrqType con <c>SapMapeoTrqType</c> por el id de la política
+/// (HU-042.4, #247; la fila de la organización pedida gana sobre el comodín <c>''</c>). Sin política no hay TrqType.</item>
+/// <item>Si hay BP del cliente y TrqType: consulta la copia local de SAP TM (HU-042.2, #243, ADR-027) por (salesOrg, TrqType, BP).
+/// Con valor → <c>sap_tm</c>, valor/100 a 6 decimales y anomalía fuera de [0, 60 %]; el detalle dice que viene de la tabla local, la
+/// fecha de la fila y, si la última sincronización exitosa es vieja, un aviso (el dato se usa igual).</item>
+/// <item>Sin BP no se consulta SAP (ADR-004, nunca con el NIT); sin BP, sin TrqType, sin registro (o fila inactiva) o con la
+/// copia nunca sincronizada (no configurada) → política de la línea (<c>politica_linea</c>) con el motivo en <c>detalle</c>.</item>
+/// <item>Si la fuente falla (base caída, tiempo agotado) → política de la línea con el motivo "SAP TM no disponible" y un warning en
+/// el log (decisión de #13, Gherkin "Resiliencia si SAP no responde" de HU-009: la cotización no se interrumpe).</item>
+/// <item>Sin política → <c>MARGEN_LINEA_DESCONOCIDA</c>. Antes de HU-042.4 un TrqType mapeado por texto permitía un margen de SAP sin
+/// política; con la FK eso ya no es posible y <c>MARGEN_FUENTE_NO_DISPONIBLE</c> no lo devuelve el resolver.</item>
 /// </list>
 /// A diferencia del Python, el nombre de la línea se compara sin tildes, mayúsculas ni espacios
 /// contra las líneas de <c>MargenesPolitica</c> (la collation <c>CI_AS</c> distingue tildes, deuda de ADR-008).
@@ -32,6 +34,7 @@ public sealed class clsMargenResolverService(
     IClsSapMapeoRepository mapeo,
     IClsFuenteMargen fuente,
     IOptions<clsOpcionesMargen> opciones,
+    IClsReloj reloj,
     ILogger<clsMargenResolverService> logger) : IClsMargenResolverService
 {
     /// <summary>Sin BP del cliente (prospecto o cliente no identificado): no se consulta SAP TM (ADR-004).</summary>
@@ -40,13 +43,14 @@ public sealed class clsMargenResolverService(
     /// <summary>Con BP, pero sin TrqType mapeado o sin fila en SAP TM (texto del Python).</summary>
     public const string MotivoSinRegistro = "sin registro en SAP TM";
 
-    /// <summary>La fuente SAP TM no está configurada (<c>SapTm:Modo</c> vacío).</summary>
+    /// <summary>La copia local de SAP TM nunca se sincronizó (ninguna corrida <c>ok</c> del job de Datos, HU-042.2): ambiente sin job.</summary>
     public const string MotivoNoConfigurado = "SAP TM no configurado: se usa la política de la línea";
 
-    /// <summary>La fuente SAP TM está configurada pero falló (decisión de #13: respaldo en la política).</summary>
+    /// <summary>La fuente SAP TM no se pudo leer (decisión de #13: respaldo en la política).</summary>
     public const string MotivoNoDisponible = "SAP TM no disponible: se usa la política de la línea";
 
     private readonly string _salesOrgDefault = opciones.Value.SalesOrgDefault.Trim();
+    private readonly int _avisoSincronizacionHoras = opciones.Value.AvisoSincronizacionHoras;
 
     public async Task<clsResultado<clsMargenResuelto>> ResolverAsync(clsEntradaMargen entrada, CancellationToken cancellationToken = default)
     {
@@ -72,30 +76,33 @@ public sealed class clsMargenResolverService(
         var metodo = politica is null || string.IsNullOrWhiteSpace(politica.MetodoCalculo)
             ? clsReglaMargen.MetodoMargen
             : politica.MetodoCalculo.Trim();
-        var trqType = await mapeo.TrqTypeDeAsync(linea, salesOrg, cancellationToken);
 
-        // 1) SAP TM: solo con BP del cliente, TrqType mapeado y fuente configurada.
-        clsFuenteMargenNoDisponibleException? caidaSap = null;
-        if (bp is not null && trqType is not null && fuente.EstaConfigurada)
+        // HU-042.4 (#247): el TrqType se busca por el id de la política (FK de SapMapeoTrqType), no por el texto. Sin política no hay
+        // TrqType, así que tampoco se consulta SAP TM.
+        var trqType = politica is null ? null : await mapeo.TrqTypeDeAsync(politica.Id, salesOrg, cancellationToken);
+
+        // 1) SAP TM (copia local, HU-042.2): solo con BP del cliente y TrqType mapeado.
+        clsConsultaMargenSap? consulta = null;
+        var caidaSap = false;
+        if (politica is not null && bp is not null && trqType is not null)
         {
-            decimal? valor = null;
             try
             {
-                valor = await fuente.ObtenerValorAsync(salesOrg, trqType, bp, cancellationToken);
+                consulta = await fuente.ConsultarAsync(salesOrg, trqType, bp, cancellationToken);
             }
             catch (clsFuenteMargenNoDisponibleException ex)
             {
-                caidaSap = ex;
+                caidaSap = true;
                 logger.LogWarning(
                     "SAP TM ({Modo}) no disponible para {TrqType} en {SalesOrg}: {Motivo} Se usa la política de la línea.",
                     fuente.Modo, trqType, salesOrg, ex.Message);
             }
 
-            if (valor is { } porcentaje)
+            if (consulta is { Estado: EstadoConsultaMargenSap.ConValor, Porcentaje: { } porcentaje })
             {
                 var margenSap = clsReglasMargen.NormalizarValorSap(porcentaje);
                 var anomaloSap = clsReglasMargen.EsAnomalo(margenSap);
-                var detalleSap = $"Margen propuesto SAP TM para cliente {bp} en {trqType}: {porcentaje.ToString(CultureInfo.InvariantCulture)}%";
+                var detalleSap = DetalleSap(consulta, bp, trqType, porcentaje);
                 if (anomaloSap)
                 {
                     detalleSap += " — ANÓMALO (fuera de [0, 60%]): validar antes de aplicar.";
@@ -104,8 +111,8 @@ public sealed class clsMargenResolverService(
                 return new clsMargenResuelto(
                     new clsSalidaMargen(margenSap, clsCodigoEnum.ACodigo(OrigenMargen.SapTm), trqType, anomaloSap, detalleSap),
                     linea,
-                    politica?.Id,
-                    politica is null ? null : clsReglasMargen.Redondear(politica.Margen),
+                    politica.Id,
+                    clsReglasMargen.Redondear(politica.Margen),
                     metodo);
             }
         }
@@ -113,22 +120,17 @@ public sealed class clsMargenResolverService(
         // 2) Respaldo: política de la línea.
         if (politica is null)
         {
-            if (caidaSap is not null)
-            {
-                return new clsErrorDominio(clsCodigosError.MargenFuenteNoDisponible, caidaSap.Message);
-            }
-
             return new clsErrorDominio(clsCodigosError.MargenLineaDesconocida, $"Sin mapeo ni política para la línea '{lineaRecibida}'.");
         }
 
         var margen = clsReglasMargen.Redondear(politica.Margen);
         // Textos del Python ("cliente nuevo", "sin registro en SAP TM"); el de "sin BP" agrega el motivo de ADR-004.
-        var motivo = (bp, trqType, fuente.EstaConfigurada) switch
+        var motivo = (bp, trqType, consulta?.Estado) switch
         {
-            _ when caidaSap is not null => MotivoNoDisponible,
+            _ when caidaSap => MotivoNoDisponible,
             (null, _, _) => MotivoSinBp,
             (_, null, _) => MotivoSinRegistro,
-            (_, _, false) => MotivoNoConfigurado,
+            (_, _, EstadoConsultaMargenSap.NoConfigurada) => MotivoNoConfigurado,
             _ => MotivoSinRegistro,
         };
 
@@ -143,6 +145,26 @@ public sealed class clsMargenResolverService(
             politica.Id,
             margen,
             metodo);
+    }
+
+    /// <summary>
+    /// HU-042.2 (#243): detalle de un margen de SAP TM leído de la copia local, con la fecha en que cambió la fila (en la zona de la
+    /// propia fila) y, si la última sincronización exitosa tiene más de <see cref="clsOpcionesMargen.AvisoSincronizacionHoras"/>, el aviso
+    /// de que puede estar desactualizado (el dato se usa igual: la copia no caduca).
+    /// </summary>
+    private string DetalleSap(clsConsultaMargenSap consulta, string bp, string trqType, decimal porcentaje)
+    {
+        var fuenteTexto = consulta.ActualizadoAt is { } actualizado
+            ? $"SAP TM (tabla local, actualizado {actualizado.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)})"
+            : "SAP TM (tabla local)";
+        var detalle = $"Margen propuesto {fuenteTexto} para cliente {bp} en {trqType}: {clsReglasMargen.Texto(porcentaje)}%";
+        if (consulta.UltimaSincronizacion is { } ultima && reloj.AhoraUtc - ultima > TimeSpan.FromHours(_avisoSincronizacionHoras))
+        {
+            detalle += string.Create(CultureInfo.InvariantCulture,
+                $" — sincronización con más de {_avisoSincronizacionHoras} h (última: {ultima.ToString("yyyy-MM-dd HH:mm zzz", CultureInfo.InvariantCulture)}): el dato puede estar desactualizado.");
+        }
+
+        return detalle;
     }
 
     /// <summary>Detalle de <c>MARGEN_LINEA_DESCONOCIDA</c> cuando la línea existe pero está inactiva (#41).</summary>

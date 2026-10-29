@@ -25,7 +25,11 @@ internal sealed class clsMargenPoliticaConfiguracion : IEntityTypeConfiguration<
     }
 }
 
-/// <summary><c>dbo_cotifly.SapMapeoTrqType</c> (script 0001 §2), PK compuesta.</summary>
+/// <summary>
+/// <c>dbo_cotifly.SapMapeoTrqType</c> (script 0001 §2), PK compuesta. HU-042.4 (#247, <c>db/scripts/18_sap_mapeo_fk_margenes_politica.sql</c>):
+/// <c>lineaNegocioId</c> con su FK a <c>MargenesPolitica</c> (sin el 18, <c>/health/ready</c> dice "falta 18"); <c>lineaNegocio</c> (texto)
+/// sigue mapeada mientras exista en la tabla.
+/// </summary>
 internal sealed class clsSapMapeoTrqTypeConfiguracion : IEntityTypeConfiguration<clsSapMapeoTrqType>
 {
     public void Configure(EntityTypeBuilder<clsSapMapeoTrqType> builder)
@@ -35,8 +39,11 @@ internal sealed class clsSapMapeoTrqTypeConfiguracion : IEntityTypeConfiguration
         builder.Property(m => m.TrqType).Columna("trqType", "nvarchar(8)").HasMaxLength(8);
         builder.Property(m => m.SalesOrg).Columna("salesOrg", "nvarchar(12)").HasMaxLength(12);
         builder.Property(m => m.LineaNegocio).Columna("lineaNegocio", "nvarchar(40)").HasMaxLength(clsMargenPolitica.LargoMaximoLinea).IsRequired();
+        builder.Property(m => m.LineaNegocioId).Columna("lineaNegocioId", "int");
         builder.Property(m => m.Activo).Columna("activo", "bit");
         builder.Ignore(m => m.EsComodin);
+        builder.HasOne<clsMargenPolitica>().WithMany().HasForeignKey(m => m.LineaNegocioId)
+            .HasConstraintName("fk_sapMapeoTrqType_lineaNegocioId").OnDelete(DeleteBehavior.NoAction);
     }
 }
 

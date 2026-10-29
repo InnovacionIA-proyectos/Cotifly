@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using Cotifly.Aplicacion.Margen.DTOs;
 using Cotifly.Aplicacion.Margen.Interfaces;
 using Cotifly.Pruebas.Comun;
 using Cotifly.Pruebas.Web;
@@ -123,6 +124,37 @@ public sealed class clsMargenSapAnomaloEndpointsTests : IDisposable
         ruta.GetProperty("aviso_margen").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
+    /// <summary>
+    /// HU-042.2 (#243): lo mismo con la fuente real, la copia local <c>SapMargenCliente</c> que sincroniza Datos (sin reemplazo de la
+    /// fuente). El BP del cliente es único (y llega con ceros a la izquierda) para no tocar otras pruebas; la corrida <c>ok</c> sembrada
+    /// solo cambia el motivo de las demás pruebas de "no configurado" a "sin registro" (ninguna lo verifica en esta colección).
+    /// </summary>
+    [Fact]
+    public async Task HU0422_ConLaCopiaLocalUnMargenSapAnomaloTambienUsaLaPoliticaYQuedaAvisado()
+    {
+        var bp = $"77{Random.Shared.Next(100_000, 999_999)}";
+        await clsBaseDatosPruebas.EjecutarAsync(_entorno.BaseDatos.CadenaCotifly, $"""
+            IF NOT EXISTS (SELECT 1 FROM dbo_cotifly.SapMargenSyncLog WHERE status = N'ok')
+                INSERT INTO dbo_cotifly.SapMargenSyncLog (iniciadoAt, finalizadoAt, filasInsertadas, filasActualizadas, filasDesactivadas, status)
+                VALUES (SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET(), 1, 0, 0, N'ok');
+            INSERT INTO dbo_cotifly.SapMargenCliente (salesOrgId, trqType, bpSap, nit, margenRecomendado)
+            VALUES (N'50000005', N'OPIM', N'{bp}', N'{clsCosteoEndpointsTests.Nit}', 75);
+            """);
+        using var nexo = new clsNexoFalso().ConCliente(clsCosteoEndpointsTests.Nit, "LONGYIN S.A.S.", bp: "000" + bp);
+        using var api = clsApiWebPruebas.ConNexo(_entorno.BaseDatos, nexo);
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+
+        using var envio = await api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, clsCosteoEndpointsTests.Formulario());
+        var folio = (await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+
+        (await MargenRutasAsync(folio)).Should().Equal(["1|politica_linea|0.1500|0.7500"], "el 75 % de la copia local no se aplica a ciegas");
+        using var costeo = await api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", ana.Access);
+        var ruta = (await VerificarContratoAsync(costeo, "/web/cotizaciones/{folio}/costeo", _get, HttpStatusCode.OK))
+            .GetProperty("rutas").EnumerateArray().Should().ContainSingle().Subject;
+        ruta.GetProperty("margen_sap_anomalo").GetBoolean().Should().BeTrue();
+        ruta.GetProperty("aviso_margen").GetString().Should().Contain("75 %").And.Contain("política");
+    }
+
     public void Dispose()
     {
         _api.Dispose();
@@ -150,14 +182,12 @@ public sealed class clsMargenSapAnomaloEndpointsTests : IDisposable
         return costeo.Headers.ETag?.Tag;
     }
 
-    /// <summary>SAP TM configurado que responde siempre el mismo <c>Value</c> (porcentaje de SAP: 75 = 75 %).</summary>
+    /// <summary>Copia local de SAP TM que responde siempre el mismo margen (porcentaje de SAP: 75 = 75 %; HU-042.2).</summary>
     private sealed class clsFuenteMargenFija(decimal valor) : IClsFuenteMargen
     {
         public string Modo => "fija";
 
-        public bool EstaConfigurada => true;
-
-        public Task<decimal?> ObtenerValorAsync(string salesOrg, string trqType, string bpCliente, CancellationToken cancellationToken = default) =>
-            Task.FromResult<decimal?>(valor);
+        public Task<clsConsultaMargenSap> ConsultarAsync(string salesOrg, string trqType, string bpCliente, CancellationToken cancellationToken = default) =>
+            Task.FromResult(clsConsultaMargenSap.ConValor(valor));
     }
 }

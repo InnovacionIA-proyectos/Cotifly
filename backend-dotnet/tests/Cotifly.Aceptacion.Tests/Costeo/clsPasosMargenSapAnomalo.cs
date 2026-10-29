@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using Cotifly.Aceptacion.Tests.Soporte;
 using Cotifly.Aceptacion.Tests.Web;
+using Cotifly.Aplicacion.Margen.DTOs;
 using Cotifly.Aplicacion.Margen.Interfaces;
 using Cotifly.Pruebas.Web;
 using Microsoft.Extensions.DependencyInjection;
@@ -40,14 +41,12 @@ public sealed class clsPasosMargenSapAnomalo(clsPasosCosteo costeo, clsContextoW
         ruta.GetProperty("aviso_margen").GetString().Should().Contain(margen).And.Contain("política");
     }
 
-    /// <summary>SAP TM configurado que responde siempre el mismo <c>Value</c> (porcentaje de SAP: 75 = 75 %).</summary>
+    /// <summary>Copia local de SAP TM que responde siempre el mismo margen (porcentaje de SAP: 75 = 75 %; HU-042.2).</summary>
     private sealed class clsFuenteMargenFija(decimal valor) : IClsFuenteMargen
     {
         public string Modo => "fija";
 
-        public bool EstaConfigurada => true;
-
-        public Task<decimal?> ObtenerValorAsync(string salesOrg, string trqType, string bpCliente, CancellationToken cancellationToken = default) =>
-            Task.FromResult<decimal?>(valor);
+        public Task<clsConsultaMargenSap> ConsultarAsync(string salesOrg, string trqType, string bpCliente, CancellationToken cancellationToken = default) =>
+            Task.FromResult(clsConsultaMargenSap.ConValor(valor));
     }
 }

@@ -52,6 +52,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Http.Resilience;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Polly.Telemetry;
 
@@ -82,8 +83,6 @@ public static class clsDependenciasInfraestructura
         servicios.AddOpcionesValidadas<clsOpcionesIdentidad>(configuracion, clsOpcionesIdentidad.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesRegional>(configuracion, clsOpcionesRegional.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesMargen>(configuracion, clsOpcionesMargen.Seccion);
-        servicios.AddOpcionesValidadas<clsOpcionesSapTm>(configuracion, clsOpcionesSapTm.Seccion);
-        servicios.AddSingleton<IValidateOptions<clsOpcionesSapTm>, clsValidadorOpcionesSapTm>();
         servicios.AddOpcionesValidadas<clsOpcionesPdf>(configuracion, clsOpcionesPdf.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesAlmacenPdf>(configuracion, clsOpcionesAlmacenPdf.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesAlmacenPdf>, clsValidadorOpcionesAlmacenPdf>();
@@ -133,8 +132,9 @@ public static class clsDependenciasInfraestructura
 
         AgregarPersistencia(servicios);
 
-        // Fuente externa de Margen (#13). TryAdd: un adaptador registrado antes (pruebas, HU-005) se respeta.
-        AgregarFuenteMargen(servicios);
+        // Fuente del margen de SAP TM: la copia local que sincroniza Datos (HU-042.2, #243). TryAdd: un adaptador registrado antes
+        // (pruebas) se respeta.
+        AgregarFuenteMargen(servicios, configuracion);
 
         // TRM oficial del día para cotizar en USD (HU-012.1, ADR-014).
         AgregarTrm(servicios);
@@ -224,31 +224,18 @@ public static class clsDependenciasInfraestructura
     }
 
     /// <summary>
-    /// Fuente SAP TM elegida por <c>SapTm:Modo</c> al resolver (<see cref="clsFabricaFuenteMargen"/>): <c>export_json</c>,
-    /// <c>odata</c> o, sin modo, la no configurada (#10). El cliente OData es tipado (<c>IHttpClientFactory</c>) con la tubería
-    /// estándar de resiliencia (10 s en total, reintentos ante fallos transitorios) y sin registrar cabeceras en los logs.
+    /// Fuente del margen de SAP TM (HU-042.2, #243, ADR-027): <see cref="clsFuenteMargenTablaLocal"/>, que lee la copia local
+    /// <c>dbo_cotifly.SapMargenCliente</c> con el <c>DbContext</c> de la petición (scoped). Ya no hay modos ni cliente HTTP a SAP. Las variables
+    /// del modo en vivo que se retiraron (<see cref="clsAvisosArranqueSapTm.VariablesObsoletas"/>) no impiden arrancar: el servicio alojado
+    /// avisa que se ignoran.
     /// </summary>
-    private static void AgregarFuenteMargen(IServiceCollection servicios)
+    private static void AgregarFuenteMargen(IServiceCollection servicios, IConfiguration configuracion)
     {
-        servicios.TryAddSingleton<clsFuenteMargenNoConfigurada>();
-        servicios.TryAddSingleton<clsFuenteMargenExportJson>();
-        servicios.AddHttpClient<clsFuenteMargenOData>(clsFuenteMargenOData.NombreCliente)
-            .RedactLoggedHeaders(_ => true)
-            .AddStandardResilienceHandler(clsFuenteMargenOData.ConfigurarResiliencia);
-        servicios.TryAddTransient<IClsFuenteMargen>(clsFabricaFuenteMargen.Crear);
+        servicios.TryAddScoped<IClsFuenteMargen, clsFuenteMargenTablaLocal>();
 
-        // Los eventos de Polly de cada intento (reintento, timeout) traen la traza completa: en esta tubería bajan a
-        // Debug; el adaptador deja una sola línea de warning por consulta fallida.
-        servicios.Configure<TelemetryOptions>(telemetria =>
-        {
-            var anterior = telemetria.SeverityProvider;
-            telemetria.SeverityProvider = argumentos =>
-                argumentos.Source.PipelineName?.StartsWith(clsFuenteMargenOData.NombreCliente + "-", StringComparison.Ordinal) == true
-                    ? ResilienceEventSeverity.Debug
-                    : anterior?.Invoke(argumentos) ?? argumentos.Event.Severity;
-        });
-
-        servicios.AddHostedService<clsAvisosArranqueSapTm>();
+        var obsoletas = clsAvisosArranqueSapTm.VariablesObsoletas(configuracion);
+        servicios.AddHostedService(proveedor =>
+            new clsAvisosArranqueSapTm(obsoletas, proveedor.GetRequiredService<ILogger<clsAvisosArranqueSapTm>>()));
     }
 
     /// <summary>
@@ -256,7 +243,7 @@ public static class clsDependenciasInfraestructura
     /// <see cref="clsProveedorTrmEnCache"/>, todo singleton. Por defecto DolarApi (<see cref="clsProveedorTrmDolarApi"/>) con respaldo en los
     /// datos abiertos de la Superintendencia Financiera (<see cref="clsProveedorTrmSuperfinanciera"/>). Cada fuente tiene su cliente HTTP con
     /// nombre (se crea por consulta con <c>IHttpClientFactory</c>), la tubería estándar de resiliencia con el tiempo de
-    /// <c>Trm:TiempoEsperaSegundos</c> y sin registrar cabeceras. Los eventos de Polly de cada intento bajan a Debug, como en SAP TM. TryAdd:
+    /// <c>Trm:TiempoEsperaSegundos</c> y sin registrar cabeceras. Los eventos de Polly de cada intento bajan a Debug. TryAdd:
     /// un adaptador registrado antes (pruebas) se respeta.
     /// </summary>
     private static void AgregarTrm(IServiceCollection servicios)

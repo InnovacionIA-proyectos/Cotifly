@@ -7,6 +7,12 @@ namespace Cotifly.Dominio.Margen;
 /// PK compuesta (<see cref="TrqType"/>, <see cref="SalesOrg"/>); <c>SalesOrg = ""</c> es el comodín
 /// y una fila con organización específica tiene prioridad sobre él.
 /// </summary>
+/// <remarks>
+/// HU-042.4 (#247, script <c>db/scripts/18_sap_mapeo_fk_margenes_politica.sql</c>): la línea se relaciona por
+/// <see cref="LineaNegocioId"/> (FK a <c>MargenesPolitica(id)</c>, el mismo id de <c>CotizacionLineasSolicitud.lineaNegocioId</c>).
+/// <see cref="LineaNegocio"/> (texto) sigue en la tabla mientras dura la transición en dos pasos: el backend ya no la usa para
+/// resolver, solo la escribe al crear un mapeo porque la columna es <c>NOT NULL</c>. Datos la retira en un script posterior.
+/// </remarks>
 public sealed class clsSapMapeoTrqType
 {
     public const string CodigoError = "MAPEO_TRQTYPE_INVALIDO";
@@ -18,15 +24,25 @@ public sealed class clsSapMapeoTrqType
 
     public string TrqType { get; private set; } = string.Empty;
     public string SalesOrg { get; private set; } = SalesOrgComodin;
+
+    /// <summary>Id de la línea en <c>MargenesPolitica</c> (HU-042.4): la relación que usa el backend.</summary>
+    public int LineaNegocioId { get; private set; }
+
+    /// <summary>Nombre de la línea en texto (columna de transición, de solo lectura para la resolución; HU-042.4).</summary>
     public string LineaNegocio { get; private set; } = string.Empty;
     public bool Activo { get; private set; }
 
     public bool EsComodin => SalesOrg.Length == 0;
 
-    public static clsResultado<clsSapMapeoTrqType> Crear(string trqType, string lineaNegocio, string? salesOrg = SalesOrgComodin)
+    /// <summary>
+    /// Mapeo activo del TrqType a la línea <paramref name="lineaNegocioId"/> (id de <c>MargenesPolitica</c>). <paramref name="lineaNegocio"/>
+    /// es el nombre de esa misma línea, para la columna de texto que todavía existe (HU-042.4).
+    /// </summary>
+    public static clsResultado<clsSapMapeoTrqType> Crear(string trqType, int lineaNegocioId, string lineaNegocio, string? salesOrg = SalesOrgComodin)
     {
         var error = clsValidacion.Primero(
             clsValidacion.Requerido(CodigoError, "trqType", trqType, 8),
+            lineaNegocioId > 0 ? null : new clsErrorDominio(CodigoError, "El campo 'lineaNegocioId' debe ser el id de una línea de negocio."),
             clsValidacion.Requerido(CodigoError, "lineaNegocio", lineaNegocio, clsMargenPolitica.LargoMaximoLinea),
             clsValidacion.LargoMaximo(CodigoError, "salesOrg", salesOrg?.Trim(), 12));
 
@@ -39,6 +55,7 @@ public sealed class clsSapMapeoTrqType
         {
             TrqType = trqType.Trim().ToUpperInvariant(),
             SalesOrg = salesOrg?.Trim() ?? SalesOrgComodin,
+            LineaNegocioId = lineaNegocioId,
             LineaNegocio = lineaNegocio.Trim(),
             Activo = true,
         };

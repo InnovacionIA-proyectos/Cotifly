@@ -35,8 +35,41 @@ public sealed class clsPasosMargen(clsContextoEscenario contexto)
     [Given("que SAP TM no está configurado")]
     public void DadoQueSapNoEstaConfigurado() => contexto.FuenteSap.EstaConfigurada = false;
 
-    [Given("que SAP TM se lee en modo {string} con la muestra del Python")]
-    public void DadoQueSapSeLeeEnModo(string modo) => contexto.UsarFuenteSapReal(modo);
+    /// <summary>
+    /// HU-042.2 (#243): fin de la única corrida <c>ok</c> del job que se siembra en la base de aceptación. Todos los escenarios usan la misma
+    /// (es la última <c>ok</c> de la tabla) y mueven el reloj del escenario para que quede "hace N horas".
+    /// </summary>
+    private static readonly DateTimeOffset _sincronizacionCopia = new(2026, 9, 24, 6, 0, 0, TimeSpan.FromHours(-5));
+
+    private const string SincronizacionCopiaSql = "2026-09-24T06:00:00-05:00";
+
+    [Given("la copia local de SAP TM sincronizada hace {int} horas")]
+    public async Task DadoLaCopiaLocalSincronizada(int horas)
+    {
+        await clsBaseDatosPruebas.EjecutarAsync(clsEntornoAceptacion.BaseDatos.CadenaCotifly, $"""
+            IF NOT EXISTS (SELECT 1 FROM dbo_cotifly.SapMargenSyncLog WHERE status = N'ok' AND iniciadoAt = '{SincronizacionCopiaSql}')
+                INSERT INTO dbo_cotifly.SapMargenSyncLog (iniciadoAt, finalizadoAt, filasInsertadas, filasActualizadas, filasDesactivadas, status)
+                VALUES ('{SincronizacionCopiaSql}', '{SincronizacionCopiaSql}', 0, 0, 0, N'ok');
+            """);
+        contexto.Reloj.AhoraUtc = _sincronizacionCopia.AddHours(horas).ToUniversalTime();
+        contexto.UsarCopiaLocalSap();
+    }
+
+    [Given("en la copia local el cliente {string} tiene margen {string} % en {string}")]
+    public Task DadoElClienteEnLaCopiaLocal(string bp, string porcentaje, string trqType) => SembrarFilaAsync(bp, porcentaje, trqType, activo: true);
+
+    [Given("en la copia local el cliente {string} está inactivo en {string}")]
+    public Task DadoElClienteInactivoEnLaCopiaLocal(string bp, string trqType) => SembrarFilaAsync(bp, "11", trqType, activo: false);
+
+    private static Task SembrarFilaAsync(string bp, string porcentaje, string trqType, bool activo) =>
+        clsBaseDatosPruebas.EjecutarAsync(clsEntornoAceptacion.BaseDatos.CadenaCotifly, $"""
+            MERGE dbo_cotifly.SapMargenCliente AS d
+            USING (SELECT N'50000005' AS salesOrgId, N'{trqType}' AS trqType, N'{bp}' AS bpSap) AS o
+                ON d.salesOrgId = o.salesOrgId AND d.trqType = o.trqType AND d.bpSap = o.bpSap
+            WHEN MATCHED THEN UPDATE SET margenRecomendado = {porcentaje}, activo = {(activo ? 1 : 0)}, actualizadoAt = '2026-09-23T08:00:00-05:00'
+            WHEN NOT MATCHED THEN INSERT (salesOrgId, trqType, bpSap, margenRecomendado, activo, creadoAt, actualizadoAt)
+                VALUES (o.salesOrgId, o.trqType, o.bpSap, {porcentaje}, {(activo ? 1 : 0)}, '2026-09-01T08:00:00-05:00', '2026-09-23T08:00:00-05:00');
+            """);
 
     [When("pido el margen de la línea {string} para el BP {string}")]
     public Task CuandoPidoElMargenConBp(string linea, string bp) => ResolverAsync(new clsEntradaMargen(linea, bp));
@@ -83,9 +116,8 @@ public sealed class clsPasosMargen(clsContextoEscenario contexto)
     [Then("SAP TM no fue consultado")]
     public void EntoncesSapNoFueConsultado() => contexto.FuenteSap.Consultas.Should().BeEmpty();
 
-    [Then("SAP TM recibió el filtro OData {string}")]
-    public void EntoncesSapRecibioElFiltro(string filtro) =>
-        clsSapTmFalso.FiltroDe(contexto.SapFalso.Peticiones.Should().ContainSingle().Subject.Url).Should().Be(filtro);
+    [Then("el detalle no menciona {string}")]
+    public void EntoncesElDetalleNoMenciona(string texto) => Resuelto().Salida.Detalle.Should().NotContain(texto);
 
     [Then("la línea resuelta es {string} con TrqType {string}")]
     public void EntoncesLaLineaResuelta(string linea, string trqType)

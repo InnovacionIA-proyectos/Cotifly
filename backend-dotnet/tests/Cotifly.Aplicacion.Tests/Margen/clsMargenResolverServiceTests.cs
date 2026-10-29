@@ -35,19 +35,33 @@ public sealed class clsMargenResolverServiceTests
     private readonly IClsSapMapeoRepository _mapeo = Substitute.For<IClsSapMapeoRepository>();
     private readonly clsFuenteMargenMuestra _fuente = new();
     private readonly clsLoggerFalso<clsMargenResolverService> _logger = new();
-    private readonly List<clsMargenPolitica> _lineas = [.. _trqTypeSemilla.Keys.Select(l => clsMargenPolitica.Crear(l, 0.15m).Valor)];
+    private readonly clsRelojFalso _reloj = new();
+
+    // HU-042.4 (#247): cada política tiene su id (1, 2, ...) y el mapeo responde el TrqType por ese id, como la FK de SapMapeoTrqType.
+    private readonly List<clsMargenPolitica> _lineas = [.. _trqTypeSemilla.Keys.Select((l, i) => ConId(clsMargenPolitica.Crear(l, 0.15m).Valor, i + 1))];
 
     public clsMargenResolverServiceTests()
     {
         _politicas.ListarAsync(Arg.Any<CancellationToken>()).Returns(_ => Task.FromResult<IReadOnlyList<clsMargenPolitica>>(_lineas));
-        _mapeo.TrqTypeDeAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(ci => Task.FromResult<string?>(_trqTypeSemilla.GetValueOrDefault(ci.ArgAt<string>(0))));
+        _mapeo.TrqTypeDeAsync(Arg.Any<int>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ci => Task.FromResult(_lineas.FirstOrDefault(l => l.Id == ci.ArgAt<int>(0)) is { } linea
+                ? _trqTypeSemilla.GetValueOrDefault(linea.LineaNegocio)
+                : null));
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    private clsMargenResolverService Resolver(IClsFuenteMargen? fuente = null, string salesOrgDefault = "50000005") =>
-        new(_politicas, _mapeo, fuente ?? _fuente, Options.Create(new clsOpcionesMargen { SalesOrgDefault = salesOrgDefault }), _logger);
+    private int IdDe(string linea) => _lineas.Single(l => l.LineaNegocio == linea).Id;
+
+    private clsMargenResolverService Resolver(IClsFuenteMargen? fuente = null, string salesOrgDefault = "50000005", int avisoHoras = 48) =>
+        new(_politicas, _mapeo, fuente ?? _fuente,
+            Options.Create(new clsOpcionesMargen { SalesOrgDefault = salesOrgDefault, AvisoSincronizacionHoras = avisoHoras }), _reloj, _logger);
+
+    private static clsMargenPolitica ConId(clsMargenPolitica politica, int id)
+    {
+        typeof(clsMargenPolitica).GetProperty(nameof(clsMargenPolitica.Id))!.SetValue(politica, id);
+        return politica;
+    }
 
     private async Task<clsSalidaMargen> ResolverOk(string linea, string? bp = null, string? salesOrg = null)
     {
@@ -66,7 +80,7 @@ public sealed class clsMargenResolverServiceTests
         r.Margen.Should().Be(0.135m);
         r.TrqType.Should().Be("OPTN");
         r.Anomalo.Should().BeFalse();
-        r.Detalle.Should().Be("Margen propuesto SAP TM para cliente 15927 en OPTN: 13.5%");
+        r.Detalle.Should().Be("Margen propuesto SAP TM (tabla local, actualizado 2026-09-23) para cliente 15927 en OPTN: 13.5%");
         _fuente.Consultas.Should().Equal(("50000005", "OPTN", "15927"));
     }
 
@@ -105,7 +119,8 @@ public sealed class clsMargenResolverServiceTests
         r.Origen.Should().Be("sap_tm");
         r.Margen.Should().Be(-0.192m);
         r.Anomalo.Should().BeTrue();
-        r.Detalle.Should().Be("Margen propuesto SAP TM para cliente 5000 en OPTN: -19.2% — ANÓMALO (fuera de [0, 60%]): validar antes de aplicar.");
+        r.Detalle.Should().Be(
+            "Margen propuesto SAP TM (tabla local, actualizado 2026-09-23) para cliente 5000 en OPTN: -19.2% — ANÓMALO (fuera de [0, 60%]): validar antes de aplicar.");
     }
 
     // test_resolver_marca_anomalo_atipico
@@ -127,7 +142,7 @@ public sealed class clsMargenResolverServiceTests
         r.Origen.Should().Be("sap_tm");
         r.Margen.Should().Be(0.15m);
         r.TrqType.Should().Be("OHUB");
-        await _mapeo.Received(1).TrqTypeDeAsync("Almacenamiento", "50000010", Arg.Any<CancellationToken>());
+        await _mapeo.Received(1).TrqTypeDeAsync(IdDe("Almacenamiento"), "50000010", Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -186,16 +201,19 @@ public sealed class clsMargenResolverServiceTests
             .Which.Mensaje.Should().Contain("SAP TM").And.Contain("OPTN").And.Contain("timeout simulado");
     }
 
+    // HU-042.4 (#247): sin política no hay TrqType (el mapeo se busca por el id de la política), así que no se consulta SAP y una fuente
+    // caída ya no cambia el error: es MARGEN_LINEA_DESCONOCIDA (antes, MARGEN_FUENTE_NO_DISPONIBLE).
     [Fact]
-    public async Task SiLaFuenteSapFallaYLaLineaNoTienePoliticaSeDevuelveMargenFuenteNoDisponible()
+    public async Task SiLaLineaNoTienePoliticaNoSeConsultaSapAunqueLaFuenteEsteCaida()
     {
         _fuente.NoDisponible = true;
         _lineas.RemoveAll(l => l.LineaNegocio == "Nacional");
 
         var resultado = await Resolver().ResolverAsync(new clsEntradaMargen("Nacional", "15927"), Ct);
 
-        resultado.Error.Codigo.Should().Be(clsCodigosError.MargenFuenteNoDisponible);
-        resultado.Error.Mensaje.Should().Contain("SAP TM");
+        resultado.Error.Codigo.Should().Be(clsCodigosError.MargenLineaDesconocida);
+        _fuente.Consultas.Should().BeEmpty();
+        await _mapeo.DidNotReceive().TrqTypeDeAsync(Arg.Any<int>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -220,7 +238,7 @@ public sealed class clsMargenResolverServiceTests
     [Fact]
     public async Task ConBpPeroSinTrqTypeMapeadoSeUsaLaPoliticaSinConsultarSap()
     {
-        _mapeo.TrqTypeDeAsync("ITR", Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult<string?>(null));
+        _mapeo.TrqTypeDeAsync(IdDe("ITR"), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult<string?>(null));
 
         var r = await ResolverOk("ITR", "4110");
 
@@ -230,7 +248,7 @@ public sealed class clsMargenResolverServiceTests
         _fuente.Consultas.Should().BeEmpty();
     }
 
-    // Deuda de ADR-008: la línea se resuelve sin tildes, mayúsculas ni espacios.
+    // HU-042.2 (#243): una copia local que nunca se sincronizó (ambiente sin el job de Datos) es "no configurado", no "caído".
     [Fact]
     public async Task ConLaFuenteNoConfiguradaSeUsaLaPoliticaSinError()
     {
@@ -242,9 +260,11 @@ public sealed class clsMargenResolverServiceTests
         r.Margen.Should().Be(0.15m);
         r.TrqType.Should().Be("OPTN");
         r.Detalle.Should().Be("Política de línea Nacional (SAP TM no configurado: se usa la política de la línea): 0.15.");
-        _fuente.Consultas.Should().BeEmpty("una fuente no configurada no se consulta");
+        _fuente.Consultas.Should().BeEmpty("una copia nunca sincronizada no se lee");
+        _logger.Registros.Should().BeEmpty("no configurado no es una caída");
     }
 
+    // Deuda de ADR-008: la línea se resuelve sin tildes, mayúsculas ni espacios.
     [Theory]
     [InlineData("distribución", "Distribucion", "OPDS")]
     [InlineData("ALMACENAMIENTO 3PL", "Almacenamiento3PL", "OH3P")]
@@ -258,7 +278,7 @@ public sealed class clsMargenResolverServiceTests
         resultado.Valor.LineaNegocio.Should().Be(canonica);
         resultado.Valor.Salida.TrqType.Should().Be(trqType);
         resultado.Valor.Salida.Detalle.Should().StartWith($"Política de línea {canonica} ");
-        await _mapeo.Received(1).TrqTypeDeAsync(canonica, "50000005", Arg.Any<CancellationToken>());
+        await _mapeo.Received(1).TrqTypeDeAsync(IdDe(canonica), "50000005", Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -275,36 +295,103 @@ public sealed class clsMargenResolverServiceTests
         resultado.Valor.Salida.TrqType.Should().BeNull();
     }
 
+    // HU-042.4 (#247): antes un TrqType mapeado por texto daba un margen de SAP sin política; con la FK, sin política no hay TrqType.
     [Fact]
-    public async Task ConRegistroSapPeroSinPoliticaElOrigenSigueSiendoSapTm()
+    public async Task SinPoliticaNoHayTrqTypeNiSeConsultaSap()
     {
-        // Paridad: el Python consulta SAP antes de buscar la política; solo sin valor exige la política.
-        _mapeo.TrqTypeDeAsync("Aérea", Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult<string?>("OAIR"));
         var fuente = Substitute.For<IClsFuenteMargen>();
-        fuente.EstaConfigurada.Returns(true);
-        fuente.ObtenerValorAsync("50000005", "OAIR", "777", Arg.Any<CancellationToken>()).Returns(Task.FromResult<decimal?>(10m));
 
         var resultado = await Resolver(fuente).ResolverAsync(new clsEntradaMargen("Aérea", "777"), Ct);
 
-        resultado.Valor.Salida.Origen.Should().Be("sap_tm");
-        resultado.Valor.Salida.Margen.Should().Be(0.1m);
-        resultado.Valor.LineaNegocioId.Should().BeNull();
-        resultado.Valor.MargenPolitica.Should().BeNull();
-        resultado.Valor.MetodoCalculo.Should().Be("margen");
+        resultado.Error.Codigo.Should().Be(clsCodigosError.MargenLineaDesconocida);
+        await fuente.DidNotReceive().ConsultarAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task SinPoliticaLaExcepcionDeFuenteSeTraduceConSuMensaje()
+    public async Task ElTrqTypeSeBuscaPorElIdDeLaPoliticaYLaOrganizacion()
+    {
+        await ResolverOk("Exportacion", "704", "50000005");
+
+        await _mapeo.Received(1).TrqTypeDeAsync(IdDe("Exportacion"), "50000005", Arg.Any<CancellationToken>());
+    }
+
+    // HU-042.2 (#243): la copia local no caduca; con la última sincronización exitosa más vieja que SapTm:AvisoSincronizacionHoras el
+    // detalle lo avisa y el margen de SAP se usa igual.
+    [Fact]
+    public async Task ConLaSincronizacionViejaSeUsaElMargenDeSapYElDetalleLoAvisa()
+    {
+        _fuente.UltimaSincronizacion = _reloj.AhoraUtc.AddHours(-49);
+
+        var r = await ResolverOk("Nacional", "15927");
+
+        r.Origen.Should().Be("sap_tm");
+        r.Margen.Should().Be(0.135m);
+        r.Detalle.Should().StartWith("Margen propuesto SAP TM (tabla local, actualizado 2026-09-23) para cliente 15927 en OPTN: 13.5% — ")
+            .And.Contain("sincronización con más de 48 h")
+            .And.EndWith("el dato puede estar desactualizado.");
+    }
+
+    [Theory]
+    [InlineData(48, false)]
+    [InlineData(47, true)]
+    public async Task ElAvisoDeSincronizacionUsaElUmbralDeLasOpciones(int umbralHoras, bool avisa)
+    {
+        _fuente.UltimaSincronizacion = _reloj.AhoraUtc.AddHours(-48);
+
+        var resultado = await Resolver(avisoHoras: umbralHoras).ResolverAsync(new clsEntradaMargen("Nacional", "15927"), Ct);
+
+        resultado.Valor.Salida.Detalle.Contains($"sincronización con más de {umbralHoras} h", StringComparison.Ordinal).Should().Be(avisa);
+    }
+
+    [Fact]
+    public async Task UnMargenAnomaloConSincronizacionViejaLlevaLosDosAvisos()
+    {
+        _fuente.UltimaSincronizacion = _reloj.AhoraUtc.AddDays(-5);
+
+        var r = await ResolverOk("Nacional", "5000");
+
+        r.Anomalo.Should().BeTrue();
+        r.Detalle.Should().Contain("sincronización con más de 48 h").And.EndWith("— ANÓMALO (fuera de [0, 60%]): validar antes de aplicar.");
+    }
+
+    [Fact]
+    public async Task SinFechasDeLaFuenteElDetalleSoloDiceTablaLocal()
     {
         var fuente = Substitute.For<IClsFuenteMargen>();
-        fuente.EstaConfigurada.Returns(true);
-        fuente.ObtenerValorAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns<Task<decimal?>>(_ => throw new clsFuenteMargenNoDisponibleException("export ausente"));
-        _lineas.RemoveAll(l => l.LineaNegocio == "Nacional");
+        fuente.ConsultarAsync("50000005", "OPTN", "15927", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(clsConsultaMargenSap.ConValor(13.5m)));
 
         var resultado = await Resolver(fuente).ResolverAsync(new clsEntradaMargen("Nacional", "15927"), Ct);
 
-        resultado.Error.Should().Be(new clsErrorDominio(clsCodigosError.MargenFuenteNoDisponible, "export ausente"));
+        resultado.Valor.Salida.Detalle.Should().Be("Margen propuesto SAP TM (tabla local) para cliente 15927 en OPTN: 13.5%");
+    }
+
+    [Fact]
+    public async Task ElPorcentajeConLaEscalaDeLaColumnaSeMuestraSinCerosALaDerecha()
+    {
+        var fuente = Substitute.For<IClsFuenteMargen>();
+        fuente.ConsultarAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(clsConsultaMargenSap.ConValor(13.5000m, clsFuenteMargenMuestra.ActualizadoMuestra)));
+
+        var r = (await Resolver(fuente).ResolverAsync(new clsEntradaMargen("Nacional", "15927"), Ct)).Valor.Salida;
+
+        r.Margen.Should().Be(0.135m);
+        r.Detalle.Should().EndWith("OPTN: 13.5%");
+    }
+
+    [Fact]
+    public async Task ConLaCopiaCaidaElMotivoEsNoDisponibleYSeRegistraUnWarning()
+    {
+        var fuente = Substitute.For<IClsFuenteMargen>();
+        fuente.Modo.Returns("tabla_local");
+        fuente.ConsultarAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns<Task<clsConsultaMargenSap>>(_ => throw new clsFuenteMargenNoDisponibleException("No se pudo leer la copia local del margen de SAP TM."));
+
+        var r = (await Resolver(fuente).ResolverAsync(new clsEntradaMargen("Nacional", "15927"), Ct)).Valor.Salida;
+
+        r.Origen.Should().Be("politica_linea");
+        r.Detalle.Should().Contain(clsMargenResolverService.MotivoNoDisponible);
+        _logger.Registros.Should().ContainSingle(l => l.Nivel == LogLevel.Warning).Which.Mensaje.Should().Contain("tabla_local");
     }
 
     [Fact]
