@@ -8,9 +8,9 @@ namespace Cotifly.Aplicacion.Margen.Services;
 public interface IClsMargenResolverService
 {
     /// <summary>
-    /// Resuelve el margen de la línea. Si SAP TM no se puede leer, usa la política de la línea (#13). Errores:
-    /// <c>MARGEN_LINEA_DESCONOCIDA</c> (sin mapeo ni política) y <c>MARGEN_FUENTE_NO_DISPONIBLE</c> (SAP TM falló y la
-    /// línea no tiene política).
+    /// Resuelve el margen de la línea. Si SAP TM no se puede leer, usa la política de la línea (#13). Error:
+    /// <c>MARGEN_LINEA_DESCONOCIDA</c> (sin política o línea inactiva). <c>MARGEN_FUENTE_NO_DISPONIBLE</c> se retiró en HU-042.4 (#247):
+    /// sin política no hay TrqType, así que una caída de SAP siempre tiene la política de respaldo.
     /// </summary>
     Task<clsResultado<clsMargenResuelto>> ResolverAsync(clsEntradaMargen entrada, CancellationToken cancellationToken = default);
 

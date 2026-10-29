@@ -4855,7 +4855,6 @@ components:
                 **finalizada** (margen, conexos, conexos en Nexo, re-solicitud en el mismo folio y recálculo de camiones; la edición
                 pasa a `nueva_version`).
               enum:
-                - MARGEN_FUENTE_NO_DISPONIBLE
                 - MARGEN_LINEA_DESCONOCIDA
                 - PRECIO_INVALIDO
                 - PDF_PAYLOAD_INVALIDO

@@ -507,7 +507,7 @@ Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA
 
 | Código | Dónde aparece | Significado | UX sugerida | Estado |
 |---|---|---|---|---|
-| `MARGEN_FUENTE_NO_DISPONIBLE` | chat | SAP caído y la línea no tiene política | "No se pudo obtener el margen. Intenta más tarde" | En QA |
+| ~~`MARGEN_FUENTE_NO_DISPONIBLE`~~ (retirado en HU-042.4, #247) | chat | ~~SAP caído y la línea no tiene política~~ ya no ocurre: sin política no se consulta SAP | "No se pudo obtener el margen. Intenta más tarde" | En QA |
 | `MARGEN_LINEA_DESCONOCIDA` | chat; 400 en `solicitudes-costeo` | La línea no existe o está inactiva | Marcar el campo línea: "Línea no disponible" | En QA |
 | `PRECIO_INVALIDO` | chat | Datos de precio inválidos (costo o margen fuera de rango, moneda desconocida) | Mostrar el texto del agente | En QA |
 | `AJUSTE_MARGEN_INVALIDO` | chat | Margen negociado fuera de rango (negativo o 1 o más con método `margen`) | "Margen fuera de rango" | En QA |

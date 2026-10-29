@@ -7,9 +7,6 @@ namespace Cotifly.Dominio.Comun;
 /// </summary>
 public static class clsCodigosError
 {
-    /// <summary>La fuente de margen (SAP TM) no respondió o no está configurada.</summary>
-    public const string MargenFuenteNoDisponible = "MARGEN_FUENTE_NO_DISPONIBLE";
-
     /// <summary>La línea de negocio no tiene mapeo TrqType ni política de margen.</summary>
     public const string MargenLineaDesconocida = "MARGEN_LINEA_DESCONOCIDA";
 

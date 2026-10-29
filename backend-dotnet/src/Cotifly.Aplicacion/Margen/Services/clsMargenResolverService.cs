@@ -24,7 +24,7 @@ namespace Cotifly.Aplicacion.Margen.Services;
 /// <item>Si la fuente falla (base caída, tiempo agotado) → política de la línea con el motivo "SAP TM no disponible" y un warning en
 /// el log (decisión de #13, Gherkin "Resiliencia si SAP no responde" de HU-009: la cotización no se interrumpe).</item>
 /// <item>Sin política → <c>MARGEN_LINEA_DESCONOCIDA</c>. Antes de HU-042.4 un TrqType mapeado por texto permitía un margen de SAP sin
-/// política; con la FK eso ya no es posible y <c>MARGEN_FUENTE_NO_DISPONIBLE</c> no lo devuelve el resolver.</item>
+/// política; con la FK eso ya no es posible y el código <c>MARGEN_FUENTE_NO_DISPONIBLE</c> se retiró del contrato.</item>
 /// </list>
 /// A diferencia del Python, el nombre de la línea se compara sin tildes, mayúsculas ni espacios
 /// contra las líneas de <c>MargenesPolitica</c> (la collation <c>CI_AS</c> distingue tildes, deuda de ADR-008).

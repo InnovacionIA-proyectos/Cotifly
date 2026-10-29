@@ -53,7 +53,8 @@ Por otro lado, `SapMapeoTrqType.lineaNegocio` era texto libre que debía coincid
    `LineaDeAsync` (que devuelve el nombre de `MargenesPolitica` cruzando por el id) mantienen el comodín
    `salesOrg IN (@org, '') ORDER BY salesOrg DESC`. El resolver busca la política por nombre (sin tildes ni mayúsculas, como antes) y pasa
    `politica.Id`. **Sin política no hay TrqType**: ya no existe el caso "margen de SAP para una línea sin política" del Python, y el
-   resolver deja de devolver `MARGEN_FUENTE_NO_DISPONIBLE` (una línea desconocida es `MARGEN_LINEA_DESCONOCIDA`). La columna de texto
+   código `MARGEN_FUENTE_NO_DISPONIBLE` ya no lo emite nadie y se retira del contrato (`ErrorNegocio.codigo` en `openapi.yaml`, la prueba de
+   reflexión exige que el enum sea exactamente lo que el código emite); una línea desconocida es `MARGEN_LINEA_DESCONOCIDA`. La columna de texto
    sigue en la tabla (se escribe al crear un mapeo porque es `NOT NULL`) hasta que Datos la retire.
 9. **Esquema y readiness.** EF mapea `SapMargenCliente`, `SapMargenSyncLog` (con el CHECK del estado y sus índices) y `lineaNegocioId`:
    sin el `17` o el `18`, `/health/ready` responde "falta 17" o "falta 18". Las columnas de texto del `17` no fijan `COLLATE` y heredan la
