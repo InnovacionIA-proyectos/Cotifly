@@ -30,6 +30,12 @@ public sealed class clsPasosIdentidad(clsContextoEscenario contexto)
     private readonly Dictionary<string, string> _refreshAnterior = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _usuariosDimEjecutivo = new(StringComparer.OrdinalIgnoreCase);
     private clsResultado<clsSesionEmitida>? _login;
+
+    /// <summary>HU-040.2 (#230): la elección pendiente del último login (varios roles), o <c>null</c>.</summary>
+    private clsEleccionRolPendiente? _eleccion;
+
+    /// <summary>HU-040.2 (#230): el ticket de la última elección (para probar que es de un solo uso).</summary>
+    private string? _ticketUsado;
     private clsResultado<clsSesionEmitida>? _renovacion;
     private IReadOnlyList<clsResultado<clsSesionEmitida>> _renovacionesSimultaneas = [];
     private Exception? _errorLogout;
@@ -49,8 +55,62 @@ public sealed class clsPasosIdentidad(clsContextoEscenario contexto)
     public async Task DadoYaInicioSesion(string nombreUsuario)
     {
         var resultado = await LoginAsync(Real(nombreUsuario));
+        if (_eleccion is not null)
+        {
+            // HU-040.2 (#230): con varios roles el login deja la elección pendiente (sin sesión).
+            return;
+        }
+
         resultado.EsExitoso.Should().BeTrue(resultado.EsFallo ? resultado.Error.Mensaje : null);
         _sesiones[nombreUsuario] = resultado.Valor;
+    }
+
+    [Given("pasaron {int} minutos")]
+    public void DadoPasaronMinutos(int minutos) => contexto.Reloj.Avanzar(TimeSpan.FromMinutes(minutos));
+
+    [Given("{string} elige el rol {string}")]
+    [When("{string} elige el rol {string}")]
+    public async Task CuandoEligeElRol(string nombreUsuario, string rol)
+    {
+        _ticketUsado = _eleccion!.Ticket;
+        _login = await ElegirAsync(_ticketUsado, rol);
+        if (_login.EsExitoso)
+        {
+            _sesiones[nombreUsuario] = _login.Valor;
+        }
+    }
+
+    [When("{string} vuelve a elegir el rol {string} con el mismo ticket")]
+    public async Task CuandoVuelveAElegir(string nombreUsuario, string rol) => _login = await ElegirAsync(_ticketUsado!, rol);
+
+    [Then("el login pide elegir entre los roles {string}")]
+    public void EntoncesElLoginPideElegir(string roles)
+    {
+        _eleccion.Should().NotBeNull("con varios roles el login no emite sesión");
+        _eleccion!.Roles.Select(r => r.Codigo).Should().Equal(roles.Split(',', StringSplitOptions.TrimEntries));
+        _eleccion.Ticket.Should().NotBeNullOrEmpty();
+        _eleccion.ExpiraAt.Should().Be(DateTimeOffset.FromUnixTimeSeconds(contexto.Reloj.AhoraUtc.AddMinutes(5).ToUnixTimeSeconds()));
+    }
+
+    [Then("la elección responde sesión expirada")]
+    public void EntoncesLaEleccionRespondeSesionExpirada() =>
+        _login!.Error.Should().Be(new clsErrorDominio(clsCodigosAcceso.SesionExpirada, "Inicia sesión de nuevo."));
+
+    [Then("la elección de {string} queda auditada como aceptada")]
+    public async Task EntoncesEleccionAceptada(string nombreUsuario) =>
+        (await EventosAccesoAsync(nombreUsuario, clsCodigosAcceso.HerramientaEleccionRol)).Should().Contain(e => e.Exito && e.Resultado == "aceptado");
+
+    [Then("la elección de {string} queda auditada como rechazada por {string}")]
+    public async Task EntoncesEleccionRechazada(string nombreUsuario, string motivo) =>
+        (await EventosAccesoAsync(nombreUsuario, clsCodigosAcceso.HerramientaEleccionRol))
+            .Should().Contain(e => !e.Exito && e.Resultado == "rechazado" && e.Motivo == motivo);
+
+    [Then("el usuario {string} tiene asignados los roles {string}")]
+    public async Task EntoncesTieneAsignadosLosRoles(string nombreUsuario, string roles)
+    {
+        var usuario = await UsuarioAsync(nombreUsuario);
+        var asignados = await ContextoConsultaAsync(s => s.GetRequiredService<IClsRolRepository>().ListarRolesAsignadosAsync(usuario!.Id));
+        asignados.Select(r => clsCodigoEnum.ACodigo(r)).Should().BeEquivalentTo(roles.Split(',', StringSplitOptions.TrimEntries));
     }
 
     [Given("en el almacén corporativo {string} pasa a tener los roles externos {string}")]
@@ -314,9 +374,20 @@ public sealed class clsPasosIdentidad(clsContextoEscenario contexto)
     private static int[] Roles(string roles) =>
         [.. roles.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Select(r => int.Parse(r, CultureInfo.InvariantCulture))];
 
-    private Task<clsResultado<clsSesionEmitida>> LoginAsync(string idUsuario, IReadOnlyList<string>? roles = null) =>
-        ContextoConsultaAsync(s => s.GetRequiredService<IClsLoginClienteProService>()
+    private async Task<clsResultado<clsSesionEmitida>> LoginAsync(string idUsuario, IReadOnlyList<string>? roles = null)
+    {
+        var resultado = await ContextoConsultaAsync(s => s.GetRequiredService<IClsLoginClienteProService>()
             .IniciarSesionAsync(new clsSolicitudLoginClientePro(idUsuario, "Nombre informativo", roles)));
+        _eleccion = resultado.EsExitoso ? resultado.Valor.Eleccion : null;
+
+        // HU-040.2 (#230): con varios roles el login no emite sesión (queda la elección pendiente en _eleccion).
+        return resultado.Coincidir<clsResultado<clsSesionEmitida>>(
+            l => l.Sesion is { } sesion ? sesion : new clsErrorDominio("ELECCION_PENDIENTE", "Elección de rol pendiente."),
+            e => e);
+    }
+
+    private Task<clsResultado<clsSesionEmitida>> ElegirAsync(string ticket, string rol) =>
+        ContextoConsultaAsync(s => s.GetRequiredService<IClsEleccionRolService>().ElegirAsync(new clsSolicitudElegirRol(ticket, rol)));
 
     private async Task CerrarAsync(clsSolicitudLogout solicitud)
     {
@@ -360,12 +431,13 @@ public sealed class clsPasosIdentidad(clsContextoEscenario contexto)
     }
 
     /// <summary>Eventos de login auditados en el hilo <c>auth/{usuario}</c> (el reloj falso no permite ordenarlos por fecha).</summary>
-    private async Task<IReadOnlyList<(bool Exito, string? Resultado, string? Motivo, string? Regla)>> EventosAccesoAsync(string nombreUsuario)
+    private async Task<IReadOnlyList<(bool Exito, string? Resultado, string? Motivo, string? Regla)>> EventosAccesoAsync(
+        string nombreUsuario, string herramienta = clsCodigosAcceso.HerramientaLogin)
     {
         var eventos = await ContextoConsultaAsync(s => s.GetRequiredService<IClsAuditoriaRepository>()
             .ListarPorThreadAsync(clsCodigosAcceso.PrefijoHilo + Real(nombreUsuario)));
         return [.. eventos
-            .Where(e => e.Herramienta == clsCodigosAcceso.HerramientaLogin)
+            .Where(e => e.Herramienta == herramienta)
             .Select(e =>
             {
                 using var salida = JsonDocument.Parse(e.OutputResumen!);

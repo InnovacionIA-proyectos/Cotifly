@@ -137,20 +137,58 @@ public sealed class clsRefreshTokenServiceTests
     }
 
     [Fact]
-    public async Task HU0401_ConDosAsignacionesActivasElRefreshRotaConLaJerarquiaYGuardaElRol()
+    public async Task HU0402_ElRefreshConservaElRolElegidoAunqueLaJerarquiaDigaOtro()
     {
-        // HU-040.1 (#229): un usuario con dos asignaciones activas renueva igual que hoy (jerarquía) y el refresh nuevo lleva el rol.
-        _e.PersonaExterna("JEFE", 200, clsEscenarioIdentidad.RolExternoComercial, clsEscenarioIdentidad.RolExternoGerente);
-        var usuario = _e.UsuarioLocal("JEFE", 200, RolInterno.Comercial, RolInterno.GerenteComercial);
-        var token = clsTokenRefresco.Emitir(usuario.Id, clsTokenOpaco.Hash(RefreshPlano), _e.Reloj.AhoraUtc, TimeSpan.FromDays(30)).Valor;
-        _e.Tokens.ObtenerPorHashAsync(clsTokenOpaco.Hash(RefreshPlano), Arg.Any<CancellationToken>()).Returns(token);
+        // HU-040.2 (#230): eligió comercial teniendo también gerente: el refresh no vuelve a preguntar ni sube a gerente.
+        var (_, token) = SesionMultiRol(RolInterno.Comercial);
         clsTokenRefresco? nuevo = null;
         _e.Tokens.RotarAsync(token.Id, Arg.Do<clsTokenRefresco>(t => nuevo = t), _e.Reloj.AhoraUtc, Arg.Any<CancellationToken>()).Returns(true);
 
         var resultado = await _e.Refresh().RenovarAsync(RefreshPlano, Ct);
 
-        resultado.Valor.Usuario.Rol.Should().Be("gerente_comercial");
-        nuevo!.RolSesion.Should().Be(RolInterno.GerenteComercial);
+        resultado.Valor.Usuario.Rol.Should().Be("comercial");
+        nuevo!.RolSesion.Should().Be(RolInterno.Comercial);
+        _e.Emisor.Received(1).EmitirAcceso(Arg.Any<Guid>(), "JEFE", RolInterno.Comercial);
+    }
+
+    [Fact]
+    public async Task HU0402_SiLeRetiraronElRolElegidoElRefreshEsRolExternoCambio()
+    {
+        // Eligió gerente; después Datos le retiró esa asignación (le queda comercial): 401 como hoy, con rol_externo_cambio.
+        var (usuario, _) = SesionMultiRol(RolInterno.GerenteComercial);
+        _e.Roles.ListarRolesAsignadosAsync(usuario.Id, Arg.Any<CancellationToken>()).Returns([RolInterno.Comercial]);
+        _e.PersonaExterna("JEFE", 200, clsEscenarioIdentidad.RolExternoComercial);
+
+        var resultado = await _e.Refresh().RenovarAsync(RefreshPlano, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosAcceso.SesionExpirada);
+        _e.SalidaAuditada(clsCodigosAcceso.HerramientaRefresh).GetProperty("motivo").GetString().Should().Be(clsMotivosAcceso.RolExternoCambio);
+        await _e.Tokens.DidNotReceiveWithAnyArgs().RotarAsync(default, default!, default, Ct);
+    }
+
+    [Fact]
+    public async Task HU0402_UnRefreshSinRolDeUnUsuarioQueAhoraTieneVariosRolesPideVolverAEntrar()
+    {
+        // Refresh emitido antes del script 16 (rolSesion NULL): con varios roles no se adivina cuál; 401 eleccion_rol_requerida.
+        var (_, _) = SesionMultiRol(rolSesion: null);
+
+        var resultado = await _e.Refresh().RenovarAsync(RefreshPlano, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosAcceso.SesionExpirada);
+        _e.SalidaAuditada(clsCodigosAcceso.HerramientaRefresh).GetProperty("motivo").GetString().Should().Be(clsMotivosAcceso.EleccionRolRequerida);
+    }
+
+    [Fact]
+    public async Task HU0402_UnRefreshSinRolDeUnUsuarioConRolUnicoRotaComoHoyYGuardaElRol()
+    {
+        var (_, token) = SesionVigente();
+        clsTokenRefresco? nuevo = null;
+        _e.Tokens.RotarAsync(token.Id, Arg.Do<clsTokenRefresco>(t => nuevo = t), _e.Reloj.AhoraUtc, Arg.Any<CancellationToken>()).Returns(true);
+
+        var resultado = await _e.Refresh().RenovarAsync(RefreshPlano, Ct);
+
+        resultado.Valor.Usuario.Rol.Should().Be("comercial");
+        nuevo!.RolSesion.Should().Be(RolInterno.Comercial);
     }
 
     [Fact]
@@ -186,6 +224,16 @@ public sealed class clsRefreshTokenServiceTests
 
         resultado.Error.Codigo.Should().Be(clsCodigosAcceso.SesionExpirada);
         _e.LoggerRefresh.Registros.Should().Contain(r => r.Nivel == LogLevel.Error);
+    }
+
+    /// <summary>JEFE (ID externo 200, comercial y gerente en ClientePro y en Cotifly) con un refresh vigente con <paramref name="rolSesion"/>.</summary>
+    private (clsUsuarioWeb Usuario, clsTokenRefresco Token) SesionMultiRol(RolInterno? rolSesion)
+    {
+        _e.PersonaExterna("JEFE", 200, clsEscenarioIdentidad.RolExternoComercial, clsEscenarioIdentidad.RolExternoGerente);
+        var usuario = _e.UsuarioLocal("JEFE", 200, RolInterno.Comercial, RolInterno.GerenteComercial);
+        var token = clsTokenRefresco.Emitir(usuario.Id, clsTokenOpaco.Hash(RefreshPlano), _e.Reloj.AhoraUtc, TimeSpan.FromDays(30), rolSesion: rolSesion).Valor;
+        _e.Tokens.ObtenerPorHashAsync(clsTokenOpaco.Hash(RefreshPlano), Arg.Any<CancellationToken>()).Returns(token);
+        return (usuario, token);
     }
 
     /// <summary>APEREZ (ID externo 101, comercial) con un refresh vigente de 30 días emitido ahora.</summary>

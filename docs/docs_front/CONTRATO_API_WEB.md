@@ -28,7 +28,10 @@ Cotifly no tiene login propio. ClientePro autentica a la persona y le pasa su id
 ```
 ClientePro (ya autenticado)
   └─ POST /api/auth/login-clientepro  { idUsuario, nombreUsuario?, roles? }
-       └─ 200 { access, refresh, user, debeCambiarPassword:false }
+       └─ 200 { access, refresh, user, debeCambiarPassword:false }          (un solo rol)
+       └─ 200 { requiereEleccionRol:true, ticketEleccion, ticketExpiraAt,   (varios roles, HU-040.2: sin tokens)
+                roles[], user }
+            └─ POST /api/auth/elegir-rol { ticket, rol }  → 200 { access, refresh, user, ... } con el rol elegido
   └─ Authorization: Bearer <access>   en cada llamada a /web/*
   └─ 401 → POST /api/auth/refresh { refresh }  (una sola vez)
        └─ 401 otra vez → volver al login de ClientePro
@@ -38,12 +41,33 @@ ClientePro (ya autenticado)
 | Tema | Regla |
 |---|---|
 | Identidad | El backend revalida `idUsuario` contra el almacén corporativo (`tblSAPUsuariosApp`) en cada login, primero como `NOMBREUSUARIO` y luego como `ID`. El `NOMBREUSUARIO` de esa fila (no el que envía el cliente) ubica o crea al usuario en `UsuariosWeb`. `nombreUsuario` y `roles` del request son informativos y nunca deciden el acceso. |
-| Roles | `comercial` (cotiza y ve lo suyo), `gerente_comercial` (tablero de su regional y políticas de margen) y, desde HU-037 (#210, #211), `director` (todo lo del gerente sobre **todas** las regionales). Los tres pueden iniciar sesión; con varios roles de ClientePro gana `director` > `gerente_comercial` > `comercial`. El rol viaja en el claim `rol` del JWT y en `user.rol`. El `gerente_comercial` y el `director` también pueden usar la consola del comercial (cotizan y ven lo suyo); un `comercial` en `/web/admin/*` recibe 403. |
+| Roles | `comercial` (cotiza y ve lo suyo), `gerente_comercial` (tablero de su regional y políticas de margen) y, desde HU-037 (#210, #211), `director` (todo lo del gerente sobre **todas** las regionales). Los tres pueden iniciar sesión. Rol único (una asignación en Cotifly): con varios roles de ClientePro gana `director` > `gerente_comercial` > `comercial`. Multi-rol (HU-040, ADR-025): con varias asignaciones (o un primer ingreso con varios roles de ClientePro) la persona elige el rol con `POST /api/auth/elegir-rol` y la sesión queda limitada a ese rol; el refresh lo conserva. El rol viaja en el claim `rol` del JWT y en `user.rol`. El `gerente_comercial` y el `director` también pueden usar la consola del comercial (cotizan y ven lo suyo); un `comercial` en `/web/admin/*` recibe 403. |
 | Access token | JWT HS256, 60 minutos. Claims: `sub` (UUID de `UsuariosWeb`), `jti`, `username`, `rol`. |
 | Refresh token | Opaco, 30 días, se rota en cada uso. Reutilizar uno ya rotado responde 401. |
 | Almacenamiento en el cliente | Guardar `access` y `refresh` fuera de logs y de la URL. |
 | Primer ingreso | Si `GET /web/usuario/telefono` devuelve `telefono: null`, pedir el teléfono con el modal obligatorio de HU-004.3 y guardarlo con `PUT /web/usuario/telefono`. En la práctica equivale a "la fila se acaba de crear": el teléfono solo se captura en ese modal. |
-| Errores de login | Siempre el mismo 401 `{"error":"Credenciales inválidas"}`, sin importar la causa (anti-enumeración). |
+| Errores de login | Siempre el mismo 401 `{"error":"Credenciales inválidas"}`, sin importar la causa (anti-enumeración). En `elegir-rol`, 401 `{"error":"Inicia sesión de nuevo."}`: volver a llamar al login. |
+| Selector de rol (HU-040.2) | Ejemplos validados contra el contrato abajo. |
+
+<!-- esquema: EleccionRolRequerida -->
+```json
+{
+  "requiereEleccionRol": true,
+  "ticketEleccion": "eyJhbGciOiJIUzI1NiIsInR5cCI6ImVsZWNjaW9uLXJvbCtqd3QifQ...",
+  "ticketExpiraAt": "2026-10-27T15:05:00+00:00",
+  "roles": [
+    { "codigo": "comercial", "descripcion": "Comercial" },
+    { "codigo": "gerente_comercial", "descripcion": "Gerente comercial" }
+  ],
+  "user": { "id": "968c9f61-b1f1-44a8-bb23-7a3d31d7d602", "username": "APEREZ", "nombre_completo": "Ana Pérez" }
+}
+```
+
+<!-- esquema: ElegirRolRequest -->
+```json
+{ "ticket": "eyJhbGciOiJIUzI1NiIsInR5cCI6ImVsZWNjaW9uLXJvbCtqd3QifQ...", "rol": "gerente_comercial" }
+```
+
 | Menú vs login | Ambos roles inician sesión. La regla de HU-004 "solo el comercial ve Cotizador" es del menú, no del login. |
 
 **Auth actual en Python, que se reemplaza:** `POST /web/login {email, nombre}` aceptaba cualquier correo `@boterosoto.com.co` sin contraseña y devolvía `{token, email, nombre}` con un token HMAC de 12 horas. Está desactivado (501) desde HU-002.2.
@@ -54,7 +78,8 @@ Resumen de los endpoints de uso más frecuente; la lista completa (56) está en 
 
 | Método y ruta | Rol | Resumen |
 |---|---|---|
-| `POST /api/auth/login-clientepro` | público | Emite la sesión |
+| `POST /api/auth/login-clientepro` | público | Emite la sesión (un rol) o pide elegir el rol (varios, HU-040.2) |
+| `POST /api/auth/elegir-rol` | público (con el ticket del login) | HU-040.2 (#230): emite la sesión con el rol elegido; ticket de un solo uso, 5 minutos |
 | `POST /api/auth/refresh` | público | Rota el refresh token (429 si se pasa el límite de `/api/auth/*`) |
 | `POST /api/auth/logout` | cualquiera | Revoca la sesión, siempre 204 (salvo 429 por el límite de `/api/auth/*`) |
 | `POST /web/chat` | ambos | Turno del agente cotizador (ya no crea cotizaciones, ADR-018) |

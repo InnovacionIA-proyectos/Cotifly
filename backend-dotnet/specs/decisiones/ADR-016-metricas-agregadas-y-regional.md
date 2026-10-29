@@ -175,7 +175,8 @@ Gerencia pidió un rol por encima del gerente comercial que vea **todas** las re
 - **Tercer rol interno `director`** (`RolInterno.Director`; catálogo `dbo_cotifly.Roles` con el script 15, #209). El rol sigue saliendo del
   token (claim `rol`), nunca de una columna de `UsuariosWeb` (ADR-009).
 - **Precedencia `director` > `gerente_comercial` > `comercial`** cuando varios roles externos de una persona están mapeados. Es una regla
-  explícita y auditada, como la del gerente: `precedencia_director` (y `precedencia_gerente_comercial` sin director). Si la persona pierde
+  explícita y auditada, como la del gerente: `precedencia_director` (y `precedencia_gerente_comercial` sin director). HU-040 (ADR-025): la
+  precedencia queda solo para el rol único; con varias asignaciones activas la persona elige el rol al entrar. Si la persona pierde
   el rol que ganó, su asignación en `UsuariosRoles` deja de coincidir y queda en revisión (`rol_externo_cambio`).
 - **Permisos (#210): el director usa todo lo del gerente.** Se agrega `director` a las políticas existentes en vez de crear otra:
   `Comercial` (consola del comercial: `comercial`, `gerente_comercial`, `director`) y `GerenteComercial` (tablero y listado regional,

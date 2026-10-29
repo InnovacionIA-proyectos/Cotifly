@@ -63,6 +63,8 @@ public static class clsDependenciasAplicacion
         servicios.AddScoped<clsVerificadorIdentidad>();
         servicios.AddScoped<IClsVerificadorIdentidad>(sp => sp.GetRequiredService<clsVerificadorIdentidad>());
         servicios.AddScoped<IClsLoginClienteProService, clsLoginClienteProService>();
+        // HU-040.2 (#230, ADR-025): elegir el rol al entrar (multi-rol), con el ticket de un solo uso del login.
+        servicios.AddScoped<IClsEleccionRolService, clsEleccionRolService>();
         servicios.AddScoped<IClsRefreshTokenService, clsRefreshTokenService>();
         servicios.AddScoped<IClsLogoutService, clsLogoutService>();
         servicios.AddSingleton<IClsRevocacionAccesos, clsCacheTokensRevocados>();

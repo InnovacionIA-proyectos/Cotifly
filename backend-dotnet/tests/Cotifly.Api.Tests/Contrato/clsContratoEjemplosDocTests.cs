@@ -79,6 +79,9 @@ public sealed partial class clsContratoEjemplosDocTests
             "esquema: ConexoLineasWeb",
             "esquema: QuitarConexoLineasWeb",
             "respuesta: PUT /web/cotizaciones/{folio}/costeo/margen/lineas 409",
+            // HU-040.2 (#230): selector de rol del login multi-rol.
+            "esquema: EleccionRolRequerida",
+            "esquema: ElegirRolRequest",
         ]);
     }
 

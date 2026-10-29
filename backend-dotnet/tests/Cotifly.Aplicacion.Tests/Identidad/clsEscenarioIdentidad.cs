@@ -34,6 +34,12 @@ internal sealed class clsEscenarioIdentidad
         Configuracion.VigenciaRefresh.Returns(TimeSpan.FromDays(30));
         Emisor.EmitirAcceso(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<RolInterno>())
             .Returns(c => new clsTokenAccesoEmitido($"jwt-{c.ArgAt<RolInterno>(2)}", $"jti-{Guid.NewGuid():N}", Reloj.AhoraUtc.AddMinutes(60)));
+        // HU-040.2 (#230): el ticket simulado es "ticket-{usuario}-{roles}" y vence en 5 minutos.
+        Tickets.Vigencia.Returns(TimeSpan.FromMinutes(5));
+        Tickets.Emitir(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<RolInterno>>())
+            .Returns(c => new clsTicketEleccionEmitido(
+                $"ticket-{c.ArgAt<Guid>(0):N}-{string.Join('+', c.ArgAt<IReadOnlyList<RolInterno>>(2))}", $"{Guid.NewGuid():N}", Reloj.AhoraUtc.AddMinutes(5)));
+        Tickets.ValidarAsync(Arg.Any<string>()).Returns(((clsTicketEleccionValido?)null, clsMotivosAcceso.TicketInvalido));
     }
 
     public clsRelojFalso Reloj { get; } = new();
@@ -47,6 +53,9 @@ internal sealed class clsEscenarioIdentidad
     public IClsTokenRevocadoRepository Revocados { get; } = Substitute.For<IClsTokenRevocadoRepository>();
     public IClsRevocacionAccesos Revocacion { get; } = Substitute.For<IClsRevocacionAccesos>();
     public IClsEmisorTokens Emisor { get; } = Substitute.For<IClsEmisorTokens>();
+
+    /// <summary>HU-040.2 (#230): ticket de elección del rol (simulado; la firma real se prueba en Infraestructura).</summary>
+    public IClsEmisorTicketEleccion Tickets { get; } = Substitute.For<IClsEmisorTicketEleccion>();
     public IClsConfiguracionJwt Configuracion { get; } = Substitute.For<IClsConfiguracionJwt>();
     public IClsUnitOfWork UnidadTrabajo { get; } = Substitute.For<IClsUnitOfWork>();
     public IClsAuditoriaService Auditoria { get; } = Substitute.For<IClsAuditoriaService>();
@@ -54,6 +63,7 @@ internal sealed class clsEscenarioIdentidad
     public clsLoggerFalso<clsLoginClienteProService> LoggerLogin { get; } = new();
     public clsLoggerFalso<clsRefreshTokenService> LoggerRefresh { get; } = new();
     public clsLoggerFalso<clsLogoutService> LoggerLogout { get; } = new();
+    public clsLoggerFalso<clsEleccionRolService> LoggerEleccion { get; } = new();
 
     public clsRol Comercial { get; }
     public clsRol Gerente { get; }
@@ -65,10 +75,26 @@ internal sealed class clsEscenarioIdentidad
     public clsVerificadorIdentidad Verificador() => new(Almacen, Roles, Usuarios, Directorio, LoggerVerificador);
 
     public clsLoginClienteProService Login() =>
-        new(Verificador(), Tokens, Emisor, Configuracion, UnidadTrabajo, Reloj, Auditoria, LoggerLogin);
+        new(Verificador(), Tokens, Emisor, Tickets, Configuracion, UnidadTrabajo, Reloj, Auditoria, LoggerLogin);
 
     public clsRefreshTokenService Refresh() =>
         new(Verificador(), Tokens, Usuarios, Emisor, Reloj, Auditoria, LoggerRefresh);
+
+    /// <summary>HU-040.2 (#230): <c>POST /api/auth/elegir-rol</c>.</summary>
+    public clsEleccionRolService Eleccion() =>
+        new(Verificador(), Tickets, Revocados, Tokens, Usuarios, Emisor, Configuracion, UnidadTrabajo, Reloj, Auditoria, LoggerEleccion);
+
+    /// <summary>
+    /// HU-040.2 (#230): el ticket <paramref name="ticket"/> es válido para <paramref name="usuario"/> con <paramref name="roles"/> ofrecidos
+    /// y un <c>jti</c> fijo (devuelto).
+    /// </summary>
+    public string TicketValido(string ticket, clsUsuarioWeb usuario, params RolInterno[] roles)
+    {
+        var jti = Guid.NewGuid().ToString("N");
+        Tickets.ValidarAsync(ticket).Returns(((clsTicketEleccionValido?)new clsTicketEleccionValido(
+            usuario.Id, usuario.NombreUsuario!, jti, Reloj.AhoraUtc.AddMinutes(5), roles), (string?)null));
+        return jti;
+    }
 
     public clsLogoutService Logout() =>
         new(Tokens, Revocados, Revocacion, UnidadTrabajo, Reloj, Auditoria, LoggerLogout);
