@@ -18,7 +18,8 @@ namespace Cotifly.Aplicacion.Licitaciones.Services;
 
 /// <summary>
 /// Licitaciones desde Excel (HU-011.2, ADR-017): analizar el pliego en Nexo, crear la cotización con sus N líneas y enviarla a Nexo
-/// como UNA solicitud, y verla línea por línea. Solo cotizaciones propias (<c>COTIZACION_NO_ENCONTRADA</c> → 404).
+/// como UNA solicitud, y verla línea por línea. Solo cotizaciones propias (<c>COTIZACION_NO_ENCONTRADA</c> → 404), salvo la vista y el
+/// Excel de la licitación (HU-034.1, #201): también el gerente de la regional del dueño y el director, en solo lectura.
 /// </summary>
 public interface IClsLicitacionService
 {
@@ -45,14 +46,17 @@ public interface IClsLicitacionService
 
     /// <summary>
     /// La licitación con el estado y el precio de cada línea (nunca el costo de Nexo). HU-023.5 (#160): con los camiones de cada ruta, el
-    /// progreso de la cubicación en segundo plano y los avisos del cubicador.
+    /// progreso de la cubicación en segundo plano y los avisos del cubicador. HU-034.1 (#201, parte A): además del dueño, la ve en solo
+    /// lectura (<see cref="clsLicitacion.SoloLectura"/>) el usuario autenticado si es el director o el gerente de la regional del dueño
+    /// (<see cref="Cotizaciones.Services.IClsAccesoCotizacionAjena"/>, auditado con <see cref="clsLicitacionService.HerramientaConsulta"/>).
     /// </summary>
     Task<clsResultado<clsLicitacion>> ObtenerAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Excel de la licitación con los resultados (HU-011.3): el original del cliente con las columnas de Cotifly agregadas (o una hoja
     /// nueva si no hay original). Se puede exportar en cualquier momento: las líneas sin costeo quedan marcadas. <c>COTIZACION_NO_ENCONTRADA</c>
-    /// si no es suya o no tiene líneas.
+    /// si no es suya o no tiene líneas. HU-034.1 (#201, parte A): el director o el gerente de la regional del dueño reciben el mismo
+    /// archivo (nunca trae costos), auditado con <see cref="clsLicitacionService.HerramientaExcel"/>.
     /// </summary>
     Task<clsResultado<clsArchivoExportado>> ExportarAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default);
 
@@ -78,11 +82,18 @@ public sealed class clsLicitacionService(
     IClsFijacionMonedaService monedas,
     IClsCapturaRutasService captura,
     ILogger<clsLicitacionService> logger,
+    Cotizaciones.Services.IClsAccesoCotizacionAjena ajenas,
     IOptions<clsOpcionesCaptura>? opcionesCaptura = null,
     IClsCubicador? cubicador = null,
     IOptions<clsOpcionesCubicacionLicitacion>? opcionesCubicacion = null) : IClsLicitacionService
 {
     public const string TipoXlsx = clsArchivoLicitacion.TipoXlsx;
+
+    /// <summary>HU-034.1 (#201): auditoría de la consulta de una licitación ajena (gerente o director), permitida o no.</summary>
+    public const string HerramientaConsulta = "consultar_licitacion";
+
+    /// <summary>HU-034.1 (#201): auditoría de la descarga del Excel de una licitación ajena (gerente o director), permitida o no.</summary>
+    public const string HerramientaExcel = "exportar_excel_licitacion";
 
     public Task<clsResultado<clsArchivoExportado>> ExportarAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default) =>
         ExportarAsync(usuarioId, folio, soloLicitacion: true, cancellationToken);
@@ -90,12 +101,36 @@ public sealed class clsLicitacionService(
     public Task<clsResultado<clsArchivoExportado>> ExportarCotizacionAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default) =>
         ExportarAsync(usuarioId, folio, soloLicitacion: false, cancellationToken);
 
+    /// <summary>
+    /// La cotización propia de <paramref name="usuarioId"/> o, si no es suya y hay <paramref name="herramienta"/>, la ajena que puede ver en
+    /// solo lectura (HU-034.1, #201: director o gerente de la regional del dueño, auditado). El dueño primero: un comercial ajeno nunca
+    /// carga el agregado de otro.
+    /// </summary>
+    private async Task<(clsCotizacionSolicitud? Cotizacion, bool SoloLectura)> CargarAsync(
+        Guid usuarioId, string folio, string? herramienta, CancellationToken cancellationToken)
+    {
+        if (usuarioId == Guid.Empty || string.IsNullOrWhiteSpace(folio))
+        {
+            return (null, false);
+        }
+
+        var propia = await cotizaciones.ObtenerPorFolioDelUsuarioAsync(folio, usuarioId, cancellationToken);
+        if (propia is not null || herramienta is null)
+        {
+            return (propia, false);
+        }
+
+        // Solo licitaciones: un folio spot de la regional no se audita como "permitido" para responder 404 después (#201, validación).
+        var ajena = await ajenas.ObtenerAsync(usuarioId, folio, herramienta, TipoSolicitud.Licitacion, cancellationToken);
+        return (ajena, ajena is not null);
+    }
+
     private async Task<clsResultado<clsArchivoExportado>> ExportarAsync(
         Guid usuarioId, string folio, bool soloLicitacion, CancellationToken cancellationToken)
     {
-        var cotizacion = usuarioId == Guid.Empty || string.IsNullOrWhiteSpace(folio)
-            ? null
-            : await cotizaciones.ObtenerPorFolioDelUsuarioAsync(folio, usuarioId, cancellationToken);
+        // HU-034.1 (#201): el Excel de la licitación también para el gerente de la regional y el director (el mismo archivo: no trae
+        // costos); el de "Ver detalle" (ExportarCotizacionAsync) sigue siendo solo del dueño.
+        var (cotizacion, _) = await CargarAsync(usuarioId, folio, soloLicitacion ? HerramientaExcel : null, cancellationToken);
         if (cotizacion is null || cotizacion.Rutas.Count == 0 || (soloLicitacion && cotizacion.TipoSolicitud != TipoSolicitud.Licitacion))
         {
             return new clsErrorDominio(clsCodigosError.CotizacionNoEncontrada, "Cotización no encontrada o no es tuya.");
@@ -563,9 +598,7 @@ public sealed class clsLicitacionService(
 
     public async Task<clsResultado<clsLicitacion>> ObtenerAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default)
     {
-        var cotizacion = usuarioId == Guid.Empty || string.IsNullOrWhiteSpace(folio)
-            ? null
-            : await cotizaciones.ObtenerPorFolioDelUsuarioAsync(folio, usuarioId, cancellationToken);
+        var (cotizacion, soloLectura) = await CargarAsync(usuarioId, folio, HerramientaConsulta, cancellationToken);
         // Endurecimiento A (#199): un folio de formulario no es una licitación: 404, como reintentar y el Excel.
         if (cotizacion is null || cotizacion.TipoSolicitud != TipoSolicitud.Licitacion)
         {
@@ -573,7 +606,8 @@ public sealed class clsLicitacionService(
         }
 
         var archivo = await cotizaciones.ObtenerResumenArchivoLicitacionAsync(cotizacion.Id, cancellationToken);
-        return Vista(cotizacion, archivo);
+        // HU-034.1 (#201): la vista nunca trajo costos; para el gerente o el director cambia solo solo_lectura.
+        return Vista(cotizacion, archivo) with { SoloLectura = soloLectura };
     }
 
     /// <summary>

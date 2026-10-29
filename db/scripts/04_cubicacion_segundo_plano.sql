@@ -1,12 +1,9 @@
 /* ============================================================================
-   Cotifly — 04 (PROPUESTA): cubicación de la licitación en segundo plano
+   Cotifly — 04: cubicación de la licitación en segundo plano
    ============================================================================
-   *** PENDIENTE DE REVISIÓN DE @scalderon-bs Y DE APROBACIÓN DEL DBA. NO APLICAR SIN ESA APROBACIÓN. ***
-   *** No ejecutar en tbsdatacenter (ni en ningún ambiente real) sin esa aprobación.                    ***
-   Está en db/scripts/pendientes/ a propósito: el ejecutador (ejecutar-bd.ps1 / .sh) no entra a esta
-   carpeta. A diferencia del 03, el backend SÍ mapea estas columnas (HU-023.5, #160): sin este script
-   /health/ready responde "esquema incompleto: falta 04" y el PR de la #160 NO se fusiona hasta que se
-   apliquen el 0010 y este 04. Al aprobarlo, @scalderon-bs lo mueve a db/scripts/ (o lo consolida en el 01).
+   Aprobado y aplicado en la base compartida el 2026-10-13 (HU-024.1, organización de scripts). Movido de
+   db/scripts/pendientes/ a db/scripts/. El backend SÍ mapea estas columnas (HU-023.5, #160): sin ellas
+   /health/ready respondía "esquema incompleto: falta 04".
 
    HU-023.5 (#160), ADR-020. Una licitación son muchas rutas y cada una es una llamada al cubicador de hasta
    10 s: Cotifly ya no las cubica mientras el comercial espera. La licitación se guarda con un camión

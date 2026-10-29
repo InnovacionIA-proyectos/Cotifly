@@ -102,6 +102,15 @@ public sealed record clsEncabezadoSolicitudCosteo
 /// </summary>
 public sealed record clsLineaSolicitudCosteo
 {
+    /// <summary>
+    /// DEF-1027B-3 (#228): nombre del contrato del valor de un levante (<c>rutas[]</c> de la captura y filas de la licitación); los errores
+    /// de <see cref="ValorAprovisionamiento"/> lo nombran así.
+    /// </summary>
+    public const string CampoValorLevante = "valor_levante_contenedor";
+
+    /// <summary>Nombre anterior de <see cref="CampoValorLevante"/> (formato plano y <c>datos_carga</c>); solo se menciona en el mensaje.</summary>
+    public const string CampoValorLevanteAnterior = "valor_aprovisionamiento";
+
     public required string Origen { get; init; }
     public required string Destino { get; init; }
 
@@ -269,7 +278,7 @@ public sealed record clsLineaSolicitudCosteo
         Largo(errores, "clase_contenedor", ClaseContenedor, clsSolicitudCosteo.LargoClaseContenedor);
         Largo(errores, "ciudad_devolucion_contenedor", CiudadDevolucionContenedor, clsSolicitudCosteo.LargoCiudad);
         Largo(errores, "ciudad_levante_contenedor", CiudadLevanteContenedor, clsSolicitudCosteo.LargoCiudad);
-        Rango(errores, "valor_aprovisionamiento", ValorAprovisionamiento, 0m, clsSolicitudCosteo.MaximoValor);
+        Rango(errores, CampoValorLevante, ValorAprovisionamiento, 0m, clsSolicitudCosteo.MaximoValor);
         Rango(errores, "peso_kg", PesoKg, 0m, clsSolicitudCosteo.MaximoPeso);
         Rango(errores, "valor_mercancia", ValorMercancia, 0m, clsSolicitudCosteo.MaximoValor);
         Rango(errores, clsSolicitudCosteo.CampoPesoConTara, PesoConTaraKg, 0m, clsSolicitudCosteo.MaximoPeso);
@@ -338,8 +347,9 @@ public sealed record clsLineaSolicitudCosteo
 
         if (ValorAprovisionamiento is not null && !LevanteDistintoDelOrigen)
         {
-            errores.Add(new clsErrorCampo("valor_aprovisionamiento", clsCodigosLineaSolicitud.CampoNoAplica,
-                "El campo 'valor_aprovisionamiento' solo aplica con una ciudad_levante_contenedor distinta del origen."));
+            // DEF-1027B-3 (#228): el campo del contrato (rutas[] y licitación), no el heredado que el cliente ya no envía.
+            errores.Add(new clsErrorCampo(CampoValorLevante, clsCodigosLineaSolicitud.CampoNoAplica,
+                $"El campo '{CampoValorLevante}' (antes '{CampoValorLevanteAnterior}') solo aplica con una ciudad_levante_contenedor distinta del origen."));
         }
 
         errores.AddRange(ErroresPesoConTara());

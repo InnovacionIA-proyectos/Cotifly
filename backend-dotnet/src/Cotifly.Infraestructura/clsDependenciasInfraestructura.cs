@@ -103,6 +103,9 @@ public static class clsDependenciasInfraestructura
         servicios.AddOpcionesValidadas<clsOpcionesCosteoNexo>(configuracion, clsOpcionesCosteoNexo.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesCaptura>(configuracion, clsOpcionesCaptura.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesCaptura>, clsValidadorOpcionesCaptura>();
+        // HU-018.1 (#155): lista de motivos de pérdida (por defecto la de Nexo) y el motivo que exige comentario.
+        servicios.AddOpcionesValidadas<Aplicacion.Cotizaciones.Services.clsOpcionesResultado>(configuracion, Aplicacion.Cotizaciones.Services.clsOpcionesResultado.Seccion);
+        servicios.AddSingleton<IValidateOptions<Aplicacion.Cotizaciones.Services.clsOpcionesResultado>, clsValidadorOpcionesResultado>();
         // HU-032 (#197, M1): warning al arrancar si la lista de clases exentas no incluye Contenedor (no lo impide).
         servicios.AddHostedService<clsAvisosArranqueCaptura>();
         servicios.AddOpcionesValidadas<clsOpcionesTrm>(configuracion, clsOpcionesTrm.Seccion);
@@ -464,6 +467,8 @@ public static class clsDependenciasInfraestructura
         servicios.TryAddSingleton<clsLecturaExcelAcotada>();
         servicios.TryAddSingleton<Aplicacion.Licitaciones.Interfaces.IClsLectorExcelLicitacion, Licitaciones.Services.clsLectorExcelLicitacionClosedXml>();
         servicios.TryAddSingleton<Aplicacion.Licitaciones.Interfaces.IClsExportadorExcelLicitacion, Licitaciones.Services.clsExportadorExcelLicitacionClosedXml>();
+        // HU-018.1 (#155, parte C): Excel de la cotización ("Ver detalle"). Solo escribe (no abre archivos del cliente): sin el cupo de lecturas.
+        servicios.TryAddSingleton<Aplicacion.Cotizaciones.Interfaces.IClsExportadorExcelCotizacion, Cotizaciones.Services.clsExportadorExcelCotizacionClosedXml>();
 
         // HU-035.1 (#202, ADR-024): Excel de mercancías de una ruta, leído localmente (ClosedXML, sin Nexo), con el cupo compartido.
         servicios.TryAddSingleton<Aplicacion.Mercancias.Interfaces.IClsLectorGrillaExcel, Mercancias.Services.clsLectorGrillaExcelClosedXml>();

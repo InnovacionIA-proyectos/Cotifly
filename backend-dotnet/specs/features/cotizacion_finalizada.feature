@@ -130,9 +130,9 @@ Característica: Cotización finalizada
     Y Nexo no recibió ningún resultado de "C1"
 
   Escenario: Antes del costeo la perdida solo en Cotifly no exige finalizar
-    Cuando "ana" marca "C1" como perdida porque "El cliente desistió"
+    Cuando "ana" marca "C1" como perdida porque "Cliente desistió del servicio"
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
-    Y la cotización "C1" queda ganada "false" con el motivo "El cliente desistió"
+    Y la cotización "C1" queda ganada "false" con el motivo "Cliente desistió del servicio"
     Y la cotización "C1" sigue sin finalizar
 
   # ------------------------------------------------------------------ HU-036.4 (#208): precio congelado frente al polling

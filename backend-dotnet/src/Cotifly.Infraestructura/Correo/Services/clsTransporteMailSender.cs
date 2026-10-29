@@ -46,6 +46,10 @@ public sealed class clsTransporteMailSender(HttpClient http, IOptions<clsOpcione
     public const string MensajeTiempoAgotado =
         "MailSender no respondió a tiempo: el correo pudo quedar encolado. Revisa el historial de envíos (o el buzón) antes de volver a enviarlo.";
 
+    /// <summary>Mensaje de <see cref="clsEnvioCorreoException"/> cuando <see cref="VerificarCabeceras"/> bloquea el correo.</summary>
+    public const string MensajeCabeceraInvalida =
+        "El correo no se envió: una cabecera (remitente, destinatarios, asunto o adjunto) tiene caracteres de control o una dirección inválida";
+
     private static readonly JsonSerializerOptions _json = new(JsonSerializerDefaults.Web);
 
     public string Modo => clsOpcionesCorreoTransporte.ModoMailSender;
@@ -54,6 +58,7 @@ public sealed class clsTransporteMailSender(HttpClient http, IOptions<clsOpcione
     {
         ArgumentNullException.ThrowIfNull(mensaje);
         var config = opciones.Value.MailSender;
+        VerificarCabeceras(mensaje, config.ElegirRemitente(mensaje.Remitente));
         using var formulario = Formulario(mensaje, config);
         using var peticion = new HttpRequestMessage(HttpMethod.Post, RutaCorreos) { Content = formulario };
         Correlacion(peticion, mensaje.IdCorrelacion);
@@ -143,6 +148,32 @@ public sealed class clsTransporteMailSender(HttpClient http, IOptions<clsOpcione
         5 or 6 => EstadoCorreo.Fallido,
         _ => EstadoCorreo.Encolado, // 0 Draft, 1 Queued (y uno desconocido: se sigue consultando)
     };
+
+    /// <summary>
+    /// DEF-1027B-2 (#228, ADR-023): defensa en profundidad antes del POST multipart. Todo lo que MailSender pone en una cabecera del correo
+    /// (<c>From</c>, <c>To</c>, <c>Cc</c>, <c>Bcc</c>, <c>Subject</c>, el nombre del adjunto) y el <c>X-Correlation-ID</c> se revisa otra vez:
+    /// sin caracteres de control y, en las direcciones, una sola dirección con formato estricto (<see cref="clsCabecerasCorreo"/>). Si algo
+    /// se coló (otro llamador, un dato viejo), <see cref="clsEnvioCorreoException"/> NO incierta: el correo no sale. El log nombra el campo,
+    /// nunca su valor.
+    /// </summary>
+    internal void VerificarCabeceras(clsMensajeCorreo mensaje, string remitente)
+    {
+        var campo = !clsCabecerasCorreo.EsDireccionValida(remitente) ? "From"
+            : mensaje.Para.Count == 0 || !mensaje.Para.All(clsCabecerasCorreo.EsDireccionValida) ? "To"
+            : !mensaje.Cc.All(clsCabecerasCorreo.EsDireccionValida) ? "Cc"
+            : !mensaje.Bcc.All(clsCabecerasCorreo.EsDireccionValida) ? "Bcc"
+            : string.IsNullOrWhiteSpace(mensaje.Asunto) || clsCabecerasCorreo.TieneCaracteresDeControl(mensaje.Asunto) ? "Subject"
+            : clsCabecerasCorreo.TieneCaracteresDeControl(mensaje.Adjunto.Nombre) ? "Attachments"
+            : clsCabecerasCorreo.TieneCaracteresDeControl(mensaje.IdCorrelacion) ? HeaderCorrelacion
+            : null;
+        if (campo is null)
+        {
+            return;
+        }
+
+        logger.LogError("Correo bloqueado antes de MailSender: el campo {Campo} no es una cabecera válida (DEF-1027B-2).", campo);
+        throw new clsEnvioCorreoException($"{MensajeCabeceraInvalida} ({campo}).");
+    }
 
     /// <summary>El formulario multipart de <c>CreateEmailForm</c> (un campo por destinatario).</summary>
     internal static MultipartFormDataContent Formulario(clsMensajeCorreo mensaje, clsOpcionesMailSender config)

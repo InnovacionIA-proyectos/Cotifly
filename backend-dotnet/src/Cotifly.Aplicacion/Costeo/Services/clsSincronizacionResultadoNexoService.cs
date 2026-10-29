@@ -42,8 +42,12 @@ public sealed class clsSincronizacionResultadoNexoService(
     IClsCosteoNexo nexo,
     IClsAuditoriaService auditoria,
     IOptions<clsOpcionesCosteoNexo> opciones,
-    ILogger<clsSincronizacionResultadoNexoService> logger) : IClsSincronizacionResultadoNexoService
+    ILogger<clsSincronizacionResultadoNexoService> logger,
+    Cotizaciones.Services.IClsCatalogoMotivosPerdida? motivosPerdida = null) : IClsSincronizacionResultadoNexoService
 {
+    private readonly Cotizaciones.Services.IClsCatalogoMotivosPerdida _motivosPerdida =
+        motivosPerdida ?? Cotizaciones.Services.clsCatalogoMotivosPerdida.PorDefecto;
+
     /// <summary>Evento de auditoría de cada envío del resultado pendiente.</summary>
     public const string HerramientaSincronizacion = "resultado_cotizacion_sincronizacion_nexo";
 
@@ -80,7 +84,8 @@ public sealed class clsSincronizacionResultadoNexoService(
             cotizacion.RegistrarCotizacionNexo(cotizacionNexoId);
         }
 
-        var motivo = ganada ? null : Normalizar(cotizacion.MotivoRechazo);
+        // HU-018.1 (#155): con "Otro" Cotifly guarda "Otro: comentario"; a Nexo va "Otro" y el comentario aparte (el pendiente).
+        var motivo = ganada ? null : _motivosPerdida.MotivoParaNexo(Normalizar(cotizacion.MotivoRechazo));
         var marcada = await nexo.MarcarResultadoAsync(
             usuarioId, cotizacionNexoId, new clsResultadoNexo(ganada, motivo, cotizacion.ComentarioResultadoPendiente), CancellationToken.None);
         if (marcada.EsExitoso)

@@ -147,6 +147,16 @@ services:
       # vacíos no cuentan). Para eximir también Carga Suelta: __0=Contenedor y __1=Carga Suelta. Un valor desconocido no arranca.
       Captura__ClasesSinVehiculoObligatorio__0: ${Captura__ClasesSinVehiculoObligatorio__0:-Contenedor}
       Captura__ClasesSinVehiculoObligatorio__1: ${Captura__ClasesSinVehiculoObligatorio__1:-}
+      # HU-018.1 (#155): motivos de pérdida (GET /web/motivos-perdida). Vacíos = la lista de Nexo (Valor muy alto, Flete fuera de rango de
+      # plaza, Cliente desistió del servicio, Tiempo de respuesta vencido, Otro); la lista configurada la REEMPLAZA. Máximo 100 caracteres por
+      # motivo. MotivoConComentario (vacío = Otro) exige comentario y debe estar en la lista; si no, la API no arranca.
+      Resultado__MotivosPerdida__0: ${Resultado__MotivosPerdida__0:-}
+      Resultado__MotivosPerdida__1: ${Resultado__MotivosPerdida__1:-}
+      Resultado__MotivosPerdida__2: ${Resultado__MotivosPerdida__2:-}
+      Resultado__MotivosPerdida__3: ${Resultado__MotivosPerdida__3:-}
+      Resultado__MotivosPerdida__4: ${Resultado__MotivosPerdida__4:-}
+      Resultado__MotivosPerdida__5: ${Resultado__MotivosPerdida__5:-}
+      Resultado__MotivoConComentario: ${Resultado__MotivoConComentario:-}
       # Polling del costeo en Nexo (HU-005.6/005.8, clsOpcionesCosteoNexo). Encendido en producción; sin Nexo__UrlBase no
       # corre de todos modos. Staging lo trae apagado mientras no se confirme que no comparte dbo_cotifly (DEPLOY.md §2.2).
       CosteoNexo__Habilitado: ${CosteoNexo__Habilitado:-true}
@@ -233,6 +243,8 @@ services:
       Correo__Proteccion__Modo: ${Correo__Proteccion__Modo:-redirigir}
       Correo__Proteccion__PermitirEnvioReal: ${Correo__Proteccion__PermitirEnvioReal:-false}
       Correo__Proteccion__BuzonPruebas: ${Correo__Proteccion__BuzonPruebas:-}
+      # #228: tope de destinatarios entre para y cc (la copia oculta al comercial no cuenta). 1 a 100; fuera de rango no arranca.
+      Correo__MaximoDestinatarios: ${Correo__MaximoDestinatarios:-10}
       # Worker que consulta el estado en MailSender: tick, espera entre consultas del mismo correo, horas sin confirmación antes de
       # fallido, correos por vuelta y reserva de una réplica (rangos 1-3600, 1-3600, 1-720, 1-1000, 1-3600).
       Correo__Seguimiento__IntervaloTickSegundos: ${Correo__Seguimiento__IntervaloTickSegundos:-15}

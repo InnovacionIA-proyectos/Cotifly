@@ -1,5 +1,6 @@
 using System.Net.Mail;
 using Cotifly.Aplicacion.Correo.Services;
+using Cotifly.Dominio.Correo;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
@@ -82,8 +83,11 @@ public sealed class clsOpcionesMailSender
             return Remitente;
         }
 
+        // Validación #228: además, el formato estricto de las cabeceras (clsCabecerasCorreo). Una dirección que MailAddress acepta pero el
+        // transporte bloquearía (parte local entre comillas, dominio de una sola etiqueta) sale con el remitente corporativo, no falla el envío.
         var candidato = correoComercial.Trim();
-        if (!MailAddress.TryCreate(candidato, out var direccion) || !string.Equals(direccion.Address, candidato, StringComparison.OrdinalIgnoreCase))
+        if (!clsCabecerasCorreo.EsDireccionValida(candidato) || !MailAddress.TryCreate(candidato, out var direccion)
+            || !string.Equals(direccion.Address, candidato, StringComparison.OrdinalIgnoreCase))
         {
             return Remitente;
         }
@@ -125,9 +129,10 @@ public sealed class clsValidadorOpcionesCorreoTransporte : IValidateOptions<clsO
             errores.Add($"'{Prefijo}MailSender:UrlBase' es obligatorio con {Prefijo}Habilitado=true y debe ser una URL http(s) absoluta.");
         }
 
-        if (!MailAddress.TryCreate(mailSender.Remitente, out _))
+        // Validación #228: el mismo formato estricto que el transporte exige al From (si no, ningún correo saldría).
+        if (!clsCabecerasCorreo.EsDireccionValida(mailSender.Remitente))
         {
-            errores.Add($"'{Prefijo}MailSender:Remitente' debe ser un correo válido.");
+            errores.Add($"'{Prefijo}MailSender:Remitente' debe ser un correo válido (una sola dirección, sin nombre ni espacios).");
         }
 
         if (mailSender.TimeoutSegundos is < 1 or > 120)
@@ -191,6 +196,13 @@ public sealed class clsValidadorOpcionesCorreo(IHostEnvironment entorno) : IVali
                 errores.Add($"'{Prefijo}Proteccion:BuzonPruebas' es obligatorio (un solo correo válido) mientras el correo se redirige "
                             + $"('{Prefijo}Proteccion:Modo={clsOpcionesProteccionCorreo.ModoRedirigir}', el valor por defecto).");
             }
+        }
+
+        // #228: el tope de destinatarios vale siempre (también con el correo deshabilitado, porque la vista previa lo aplica).
+        if (options.MaximoDestinatarios is < 1 or > clsOpcionesCorreo.LimiteMaximoDestinatarios)
+        {
+            errores.Add($"'{Prefijo}MaximoDestinatarios' debe estar entre 1 y {clsOpcionesCorreo.LimiteMaximoDestinatarios} "
+                        + $"(por defecto {clsOpcionesCorreo.MaximoDestinatariosPorDefecto}).");
         }
 
         var seguimiento = options.Seguimiento ?? new clsOpcionesSeguimientoCorreo();

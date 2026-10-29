@@ -63,3 +63,30 @@ Característica: Administración de líneas de negocio
   Escenario: Editar una línea que no existe responde 404
     Cuando "gloria" actualiza la línea con id 999999 con margen 0.2, método "margen" y activa "true"
     Entonces la respuesta tiene el estado 404
+
+  # HU-016.1 (#154, decisión P4b del 2026-10-27): catálogo de líneas para el desplegable de "Nueva solicitud", sin margen.
+  Escenario: El comercial lista las líneas activas para el desplegable, sin la política de margen
+    Dado la línea de negocio de prueba "LineaApagada" con margen 0.3, método "margen" e inactiva
+    Cuando "ana" lista las líneas de negocio activas
+    Entonces la respuesta tiene el estado 200
+    Y el listado de líneas activas cumple el esquema "LineaNegocioOpcion" del contrato
+    Y el listado de líneas activas incluye las 6 líneas sembradas y "LineaAdmin"
+    Y el listado de líneas activas no incluye "LineaApagada"
+    Y ninguna línea del listado activo trae margen ni método de cálculo
+    Y la línea "DevolucionContenedor" del listado activo tiene la etiqueta "Devolución Contenedor"
+
+  Escenario: Una línea que la administración desactiva sale del desplegable de inmediato
+    Cuando "gloria" actualiza la línea "LineaAdmin" con margen 0.15, método "margen" y activa "false"
+    Entonces la respuesta tiene el estado 200
+    Cuando "ana" lista las líneas de negocio activas
+    Entonces la respuesta tiene el estado 200
+    Y el listado de líneas activas no incluye "LineaAdmin"
+
+  Escenario: El gerente y el director también ven el desplegable
+    Dado el director "dario" con sesión en la regional "Norte"
+    Cuando "gloria" lista las líneas de negocio activas
+    Entonces la respuesta tiene el estado 200
+    Y el listado de líneas activas incluye las 6 líneas sembradas y "LineaAdmin"
+    Cuando "dario" lista las líneas de negocio activas
+    Entonces la respuesta tiene el estado 200
+    Y el listado de líneas activas incluye las 6 líneas sembradas y "LineaAdmin"

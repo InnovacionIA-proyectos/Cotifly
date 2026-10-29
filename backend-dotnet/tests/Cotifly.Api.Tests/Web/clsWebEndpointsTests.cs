@@ -86,16 +86,17 @@ public sealed class clsWebEndpointsTests(clsEntornoApiWeb entorno)
         var cotizacion = await Api.CrearCotizacionAsync(ana.UsuarioId, "900111222");
         var ruta = $"/web/cotizaciones/{cotizacion.Folio}/seguimiento";
 
-        using var perdida = await Api.EnviarAsync(_post, ruta, ana.Access, clsApiWebPruebas.Json(new { ganada = false, motivo_rechazo = "Precio alto" }));
+        using var perdida = await Api.EnviarAsync(_post, ruta, ana.Access, clsApiWebPruebas.Json(new { ganada = false, motivo_rechazo = "Valor muy alto" }));
         var json = await VerificarContratoAsync(perdida, "/web/cotizaciones/{folio}/seguimiento", _post, HttpStatusCode.OK);
-        using var camel = await Api.EnviarAsync(_post, ruta, ana.Access, clsApiWebPruebas.Json(new { ganada = false, motivoRechazo = "no se lee" }));
-        var jsonCamel = await VerificarContratoAsync(camel, "/web/cotizaciones/{folio}/seguimiento", _post, HttpStatusCode.OK);
+        using var camel = await Api.EnviarAsync(_post, ruta, ana.Access, clsApiWebPruebas.Json(new { ganada = false, motivoRechazo = "Valor muy alto" }));
+        var jsonCamel = await VerificarContratoAsync(camel, "/web/cotizaciones/{folio}/seguimiento", _post, HttpStatusCode.BadRequest);
 
         json.GetProperty("ganada").GetBoolean().Should().BeFalse();
-        json.GetProperty("motivo_rechazo").GetString().Should().Be("Precio alto");
+        json.GetProperty("motivo_rechazo").GetString().Should().Be("Valor muy alto");
         json.GetProperty("linea_negocio").GetString().Should().Be("Nacional");
-        jsonCamel.GetProperty("ganada").GetBoolean().Should().BeFalse();
-        jsonCamel.GetProperty("motivo_rechazo").ValueKind.Should().Be(JsonValueKind.Null, "el cuerpo de /web/* se lee en snake_case: motivoRechazo no existe");
+        // HU-018.1 (#155): sin motivo_rechazo la perdida es MOTIVO_NO_PERMITIDO; con motivoRechazo (camelCase) el motivo no llega.
+        jsonCamel.GetProperty("error").GetProperty("codigo").GetString().Should()
+            .Be("MOTIVO_NO_PERMITIDO", "el cuerpo de /web/* se lee en snake_case: motivoRechazo no existe");
     }
 
     [Theory]

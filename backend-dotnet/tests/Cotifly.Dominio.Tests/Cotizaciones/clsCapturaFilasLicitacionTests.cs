@@ -32,7 +32,7 @@ public sealed class clsCapturaFilasLicitacionTests
     [InlineData("buenaventura ")]
     public void ElAprovisionamientoSoloAplicaConUnLevanteDistintoDelOrigen(string? levante) =>
         (Linea() with { CiudadLevanteContenedor = levante, ValorAprovisionamiento = 150_000m }).Errores().Select(e => (e.Campo, e.Codigo))
-            .Should().Equal(("valor_aprovisionamiento", clsCodigosLineaSolicitud.CampoNoAplica));
+            .Should().Equal(("valor_levante_contenedor", clsCodigosLineaSolicitud.CampoNoAplica));
 
     [Fact]
     public void ConLevanteDistintoElAprovisionamientoSeAcepta() =>
@@ -41,7 +41,7 @@ public sealed class clsCapturaFilasLicitacionTests
     [Fact]
     public void UnaFilaReportaJuntosLosErroresDeContenedorYDeAprovisionamiento() =>
         (Linea() with { ClaseViaje = "Cupo", ClaseContenedor = "CNT40.HC", ValorAprovisionamiento = 1m }).Errores().Select(e => e.Campo)
-            .Should().Equal("clase_contenedor", "valor_aprovisionamiento");
+            .Should().Equal("clase_contenedor", "valor_levante_contenedor");
 
     [Fact]
     public void ElFormularioUsaLaMismaReglaConElMismoMensaje()
