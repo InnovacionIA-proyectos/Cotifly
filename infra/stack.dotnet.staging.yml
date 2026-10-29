@@ -122,14 +122,11 @@ services:
       # HU-011: Excel de licitación (10 MB) + JSON. ForwardedHeaders__ProxiesConocidos__N no se declara: vacía no arranca y basta la red.
       SeguridadHttp__LimiteCuerpoLicitacionBytes: ${SeguridadHttp__LimiteCuerpoLicitacionBytes:-12582912}
 
-      # SAP TM (HU-009). Vacío = política de la línea. SapTm__Pass: secreto, solo con odata.
+      # SAP TM (HU-042.2, ADR-027): el margen sale de la copia local dbo_cotifly.SapMargenCliente que sincroniza el job de Datos;
+      # la API ya no se conecta a SAP (sin Modo/Url/User/Pass). AvisoSincronizacionHoras: el detalle avisa si la última sincronización
+      # exitosa es más vieja (el dato se usa igual).
       SapTm__SalesOrgDefault: ${SapTm__SalesOrgDefault:-50000005}
-      SapTm__Modo: ${SapTm__Modo:-}
-      SapTm__ExportPath: ${SapTm__ExportPath:-}
-      SapTm__Url: ${SapTm__Url:-}
-      SapTm__User: ${SapTm__User:-}
-      SapTm__SapClient: ${SapTm__SapClient:-}
-      SapTm__Pass: ${SapTm__Pass:-}
+      SapTm__AvisoSincronizacionHoras: ${SapTm__AvisoSincronizacionHoras:-48}
 
       # Nexo (HU-005): sin token; URL del ambiente de pruebas de Nexo en staging.
       # Nexo__UrlBase es la RAÍZ del servicio (https://<host-nexo>), sin "/api": el cliente agrega las rutas /api/...

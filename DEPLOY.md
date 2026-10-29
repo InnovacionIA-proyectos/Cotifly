@@ -38,8 +38,8 @@ distinto, por ejemplo un gestor de secretos):
 
 1. **Variables de entorno de Dokploy por servicio** (pestaña *Environment* del compose de tipo *stack*). Dokploy las
    guarda en su base y las escribe en el `.env` con el que hace `docker stack deploy`; el manifiesto solo las
-   referencia como `${Variable}` y nunca lleva el valor. Así llegan las cadenas de conexión, `Jwt__SigningKey`,
-   `IA__ApiKey` y `SapTm__Pass`.
+   referencia como `${Variable}` y nunca lleva el valor. Así llegan las cadenas de conexión, `Jwt__SigningKey` e
+   `IA__ApiKey` (`SapTm__Pass` se retiró en HU-042.2: la API ya no se conecta a SAP, ADR-027).
 2. **Sin secretos de Docker Swarm.** El único que había era la cuenta de servicio de Google Chat (`GChat__SaJson`,
    secreto `cotifly_gchat_sa_v1`), retirada con Google Chat en HU-013.9 (#105, ADR-018 §15). Tras desplegar la versión
    sin Google Chat, borrar el secreto en el manager: `docker secret rm cotifly_gchat_sa_v1 cotifly_staging_gchat_sa_v1`
@@ -93,10 +93,8 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `SeguridadHttp__LimiteCuerpoWebBytes` | no | no | `65536` | manifiesto | |
 | `SeguridadHttp__LimiteCuerpoLicitacionBytes` | no | no | `12582912` | manifiesto | HU-011: Excel de licitación (10 MB) + JSON. Traefik no debe cortar antes (sin límite de cuerpo propio en el router) |
 | `SapTm__SalesOrgDefault` | no | no | `50000005` | manifiesto | |
-| `SapTm__Modo` | no | no (aviso) | vacío | Dokploy | vacío, `export_json` u `odata` (HU-009) |
-| `SapTm__ExportPath` | no | con `export_json` | vacío | Dokploy | archivo montado de solo lectura |
-| `SapTm__Url`, `SapTm__User`, `SapTm__SapClient` | no | `Url` y `User` con `odata` | vacío | Dokploy | |
-| `SapTm__Pass` | **sí** (≥ 8) | con `odata` | vacío | Dokploy | no definirla si no se usa `odata` |
+| `SapTm__AvisoSincronizacionHoras` | no | no (> 0) | `48` | manifiesto | HU-042.2 (#243): horas desde la última sincronización exitosa de la copia local del margen de SAP a partir de las cuales el detalle lo avisa (el dato se usa igual) |
+| ~~`SapTm__Modo`, `__ExportPath`, `__Url`, `__User`, `__SapClient`, `__Pass`~~ | — | — | — | — | **Retiradas en HU-042.2 (ADR-027):** el margen sale de `dbo_cotifly.SapMargenCliente`, que llena el job de Datos. Si siguen cargadas en Dokploy, borrarlas; si llegan al contenedor, la API arranca y avisa "variable obsoleta, se ignora" |
 | `Nexo__UrlBase` | no | no | vacío | Dokploy | **raíz** del servicio (`https://<host-nexo>`), sin `/api`: el cliente agrega las rutas `/api/...`. Sin ella la búsqueda de clientes responde `*_NO_DISPONIBLE`, el costeo no corre y `POST /web/solicitudes-costeo` rechaza con 503 `CATALOGOS_FLETE_NO_DISPONIBLE` todo formulario con `tipo_vehiculo` o `clase_viaje` (no hay catálogo contra el cual validarlos, HU-013.10) |
 | `Nexo__MinutosCacheMunicipios` | no | no | `60` | manifiesto | caché de la lista de municipios de Nexo (frente B) |
 | `Nexo__MinutosCacheCatalogos`, `Nexo__HorasCatalogosVencidos` | no | no | `30`, `24` | manifiesto (endurecimiento A, #199) | caché de los catálogos maestros de Nexo y horas que la última copia sirve de respaldo con Nexo caído (HU-013.10) |
@@ -287,7 +285,7 @@ Variables del Python que **no** pasan al backend .NET (se retiran; no cargarlas 
 (reemplazadas por `IA__*`), `GCHAT_*` y `GOOGLE_SA_JSON` (Google Chat retirado en #105), y `DRIVE_TARIFARIO_*` (tarifario
 de Drive retirado), `TARIFA_*`, `S3_*` y `MINIO_*` (MinIO no se mantiene, ADR-012), `SHEETS_*` (diferida, ADR-012),
 `SMTP_*`/`SMTP_RELAY_*`/`CORREO_*` (reemplazadas por `Correo__*`), `SAP_TM_*`/`SAP_SALES_ORG_DEFAULT` (reemplazadas por
-`SapTm__*`), `PDF_*` (reemplazadas por `Pdf__*`), `PUBLIC_HOST` (sigue como variable del manifiesto para Traefik, no
+`SapTm__*`; de esas solo quedan `SalesOrgDefault` y `AvisoSincronizacionHoras` desde HU-042.2), `PDF_*` (reemplazadas por `Pdf__*`), `PUBLIC_HOST` (sigue como variable del manifiesto para Traefik, no
 de la app).
 
 ### Rol director (HU-037, #209 a #212)
@@ -328,6 +326,20 @@ UPDATE dbo_cotifly.UsuariosRoles SET activo = 0 WHERE usuarioId = @u AND activo 
 INSERT INTO dbo_cotifly.UsuariosRoles (usuarioId, rolId) SELECT @u, id FROM dbo_cotifly.Roles WHERE codigo = N'director';
 COMMIT;
 ```
+
+### Margen de SAP desde la copia local (HU-042, #242, #243, #247; ADR-027)
+
+Desde HU-042.2 la API **no se conecta a SAP TM**: el margen recomendado sale de `dbo_cotifly.SapMargenCliente`, la copia que mantiene
+el job diario de Datos (`db/jobs/sincronizar_margen_sap.ps1`, SQL Server Agent en el servidor de base de datos; sus credenciales de SAP
+viven en `db/jobs/.env` de ese servidor, no en Dokploy).
+
+- **Antes de la imagen:** `db/scripts/17_sap_margen_sincronizacion.sql` y `db/scripts/18_sap_mapeo_fk_margenes_politica.sql` (sin ellos,
+  `/health/ready` responde 503 "falta 17"/"falta 18"; aplicarlos la recupera sin redesplegar).
+- **Variables:** borrar de Dokploy `SapTm__Modo`, `__ExportPath`, `__Url`, `__User`, `__SapClient` y `__Pass` (los manifiestos ya no las
+  pasan; si llegan, la API avisa "variable obsoleta, se ignora"). Nueva opcional: `SapTm__AvisoSincronizacionHoras` (48 por defecto).
+- **Sin el job** (ninguna corrida `ok` en `SapMargenSyncLog`) todo margen sale de la política de la línea con el detalle "SAP TM no
+  configurado": es el comportamiento esperado en local y en un QA sin el job.
+- **Después de desplegar:** avisar a Datos (@scalderon-bs) para el script que retira `SapMapeoTrqType.lineaNegocio` (texto), #247.
 
 ### Multi-rol (HU-040, #229 y #230)
 
@@ -404,7 +416,7 @@ solo *sí* o *no* (y para las variables no secretas puede llevar el valor). Los 
 | `IA__Fallbacks__0__*`, `IA__Fallbacks__1__*` | `ApiKey` sí | negocio (ADR-003). Propuesta con OmniRoute: `gemini/gemini-3.5-flash` y `gemini/gemini-3-flash-preview` | no | Negocio / Backend | fallbacks de LiteLLM |
 | `IA__SoportaJsonSchema` / `IA__MaxTokens` | no | con OmniRoute y Gemini: `false` y `1500` (§2.2) | no | Backend | `LLM_MAX_TOKENS` |
 | `Nexo__UrlBase` | no | equipo de Nexo (URL de producción, no la de pruebas) | no | Backend / Nexo | — |
-| `SapTm__Modo` (+ `ExportPath` o `Url`/`User`/`Pass`) | `Pass` sí | SAP / infraestructura (HU-009) | no | SAP / Backend | `SAP_TM_*` |
+| ~~`SapTm__Modo` (+ `ExportPath` o `Url`/`User`/`Pass`)~~ | — | retiradas en HU-042.2 (ADR-027): las credenciales de SAP las usa el job de Datos en el servidor SQL (`db/jobs/.env`), no la API | no aplica | Datos | `SAP_TM_*` |
 | `Correo__Habilitado` / `Correo__MailSender__UrlBase` / `Correo__Proteccion__BuzonPruebas` | no | Backend (URL de MailSender) y negocio (buzón de pruebas, por definir) | no | Backend | `CORREO_*`, `SMTP_RELAY_HOST` (retiradas: el relay lo usa MailSender) |
 | `MCP_AUTH_TOKEN`, `INTERNAL_API_TOKEN`, `S3_*`, `DRIVE_*`, `SHEETS_*` | — | se retiran (§2.2) | no aplica | Backend | sí |
 
@@ -608,6 +620,9 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
      imagen vieja, ver §2.2 "Rol director"). En la compartida el `15` ya está aplicado (#209) y el `14` está pendiente de @scalderon-bs.
      Con HU-040 (#229, #230): `…` → `13` → `14` → `15` → `16` → imagen → `08`. El `16` va ANTES de la imagen (la imagen de HU-040.1 lo
      exige: "falta 16") y, a diferencia del `15`, es seguro con la imagen anterior (ver abajo, "Multi-rol").
+     Con HU-042 (#242, #243, #247): `…` → `16` → `17` → `18` → imagen → `08`. El `17` y el `18` (de Datos, ya aplicados en la compartida
+     el 2026-10-28) van ANTES de la imagen de HU-042.2: la imagen mapea sus tablas y `SapMapeoTrqType.lineaNegocioId` ("falta 17",
+     "falta 18"). Los dos son seguros con la imagen anterior (tablas nuevas; el 18 deja la columna de texto). Ver abajo, "Margen de SAP".
    - **HU-030.1 (#184): `db/scripts/11_peso_con_tara.sql` va ANTES de la imagen de #184.** Agrega a la ruta
      (`CotizacionLineasSolicitud`) la columna `pesoConTaraKg DECIMAL(12,2) NULL` y el `CHECK` `ck_cotizacionLineasSolicitud_pesoConTaraKg`
      (`NULL` o > 0): el peso total con tara que escribe el comercial en una ruta `Contenedor`. Es un `ADD` de columna NULL, idempotente
@@ -670,6 +685,8 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
    | `esquema incompleto: falta 13` | Faltan las columnas de MailSender en `Correos` o la sincronización del resultado en la cabecera (HU-033, #199) | Aplicar `db/scripts/13_correo_mailsender.sql` |
    | `esquema incompleto: falta 14` | Faltan `finalizadaAt`/`finalizadaPor` de la cabecera (HU-036, #205) | Aplicar `db/scripts/14_cotizacion_finalizada.sql` |
    | `esquema incompleto: falta 16` | Falta `TokensRefresco.rolSesion` (HU-040.1, #229) | Aplicar `db/scripts/16_multiples_roles_activos.sql` |
+   | `esquema incompleto: falta 17` | Faltan `SapMargenCliente`/`SapMargenSyncLog`, la copia local del margen de SAP (HU-042.1 #242, la lee HU-042.2 #243) | Aplicar `db/scripts/17_sap_margen_sincronizacion.sql` |
+   | `esquema incompleto: falta 18` | Falta `SapMapeoTrqType.lineaNegocioId` (HU-042.4, #247) | Aplicar `db/scripts/18_sap_mapeo_fk_margenes_politica.sql` |
    | `esquema incompleto: falta Tabla.columna, ...` (hasta 5) | Falta otra tabla o columna del modelo (por ejemplo un script intermedio sin aplicar) | Comparar con `db/scripts/01_crear_esquema.sql` y aplicar el script que la trae (lista en `docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md` §A.5) |
 
 1. **Staging.** Merge a `QA` → el pipeline (o `publicar-imagen.sh --canal qa`) publica `sha-<corto>`. En Dokploy, stack
@@ -722,7 +739,7 @@ Internet / red corporativa
   cotifly-api (1 réplica, anclada al worker TBSNODO1-DKP)
         ├── volumen cotifly_pdfs → /data/pdfs
         └── red "salida" (overlay con egreso) → tbsdatacenter:1433 (SQL Server 2019, externo)
-                                              → proveedor LLM, Nexo, SAP TM, cubicador, MailSender (él entrega por el relay SMTP),
+                                              → proveedor LLM, Nexo, cubicador, MailSender (él entrega por el relay SMTP),
                                                 TRM en co.dolarapi.com:443 y www.datos.gov.co:443
 ```
 
@@ -740,7 +757,7 @@ Internet / red corporativa
   | Python | .NET | Para qué |
   |---|---|---|
   | `web` / `dokploy-network` (Traefik) | `edge` = `dokploy-network` (externa) | Solo entrada desde Traefik. Es el único servicio del stack en esa red |
-  | `bot-edge` (overlay con egreso) | `salida` (overlay propia, no interna) | Salida a internet y a la red corporativa: LLM, Nexo, SAP TM, TRM (`co.dolarapi.com` y `www.datos.gov.co`), relay, SQL Server |
+  | `bot-edge` (overlay con egreso) | `salida` (overlay propia, no interna) | Salida a internet y a la red corporativa: LLM, Nexo, TRM (`co.dolarapi.com` y `www.datos.gov.co`), relay, SQL Server |
   | `bot-back` (overlay `internal: true`) | — | No hace falta: no hay servicios internos. Si vuelve alguno (MinIO, ADR-012), va en una overlay interna sin labels de Traefik |
 
 - **Healthchecks:** el del stack es el mismo de la imagen, en forma exec (`dotnet /app/Cotifly.Api.dll --healthcheck`,
@@ -817,7 +834,7 @@ Opcionales con valor vacío = "no configurada" (verificado en el código de cada
 (vacía, se usa lo que ya haya en `UsuariosWeb.regional`; con valor, el login la llena y refresca (#81) y el tablero
 del gerente la lee en vivo (#45), y necesita salida desde el worker a `10.10.40.24:1433` y un usuario SQL de solo
 lectura con `SELECT` únicamente sobre `dbo.DimEjecutivo`, pendiente con el DBA), `Nexo__UrlBase`, `IA__Proveedor`,
-`SapTm__Modo`, `Pdf__BaseUrl`. En cambio
+`Pdf__BaseUrl`. En cambio
 `Regional__Esquema`, `__Tabla`, `__ColumnaUsuario`, `__ColumnaRegional` y `__Dominio` son identificadores obligatorios:
 el manifiesto trae los valores por defecto de `clsOpcionesRegional` (`dbo`, `DimEjecutivo`, `USUARIO`, `REGIONAL`,
 `boterosoto`) y no deben cargarse vacías en Dokploy. **Ojo:** como el manifiesto siempre manda la variable, su valor por
