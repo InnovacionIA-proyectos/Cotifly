@@ -95,6 +95,39 @@ public sealed class clsPdfCosteoConcurrenciaTests
     }
 
     /// <summary>
+    /// DEF-1027B-1 (#228, E2E real del 2026-10-27B): el 409 <c>PDF_YA_ENVIADO</c> del PDF llegaba sin <c>detalle</c>. Trae la llamada para
+    /// crear la versión nueva, igual que margen, conexos, textos y re-solicitar (contrato §4.5).
+    /// </summary>
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task DEF1027B1_ElPdfYaEnviadoTraeLaLlamadaParaLaVersionNueva(bool conPdf, bool conResultado)
+    {
+        if (conPdf)
+        {
+            _cotizacion.AsignarPdf("/data/pdfs/" + _cotizacion.Folio + ".pdf");
+        }
+
+        _cotizacion.RegistrarEnvio();
+        if (conResultado)
+        {
+            _cotizacion.RegistrarResultadoPendienteNexo(true, null, null, clsCotizacionMuestra.Ahora);
+        }
+
+        var error = (await Servicio().GenerarPdfAsync(_ana, _cotizacion.Folio, null, Ct)).Error;
+
+        error.Codigo.Should().Be(clsCodigosError.PdfYaEnviado);
+        error.Datos.Should().NotBeNull();
+        error.Datos!["accion"].Should().Be("nueva_version");
+        error.Datos["metodo"].Should().Be("POST");
+        error.Datos["endpoint"].Should().Be($"/web/cotizaciones/{_cotizacion.Folio}/costeo/re-solicitar");
+        var cuerpo = error.Datos["cuerpo"].Should().BeAssignableTo<IReadOnlyDictionary<string, object?>>().Subject;
+        cuerpo["motivo"].Should().Be(clsCosteoCotizacionService.MotivoVersionPdf);
+        cuerpo["nueva_version"].Should().Be(true);
+    }
+
+    /// <summary>
     /// Validación de OBS-1027-6 (#226): la precedencia nueva no cambia los demás casos. Una enviada ANTES de HU-036 (sin finalizar, sin
     /// backfill) responde <c>PDF_YA_ENVIADO</c> con o sin PDF vigente (nunca <c>COTIZACION_NO_FINALIZADA</c>), y una sin finalizar ni
     /// enviada con PDF vigente sigue siendo <c>PDF_YA_GENERADO</c> (el PDF vigente sigue antes de la finalización).

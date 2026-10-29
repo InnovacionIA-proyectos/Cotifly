@@ -34,11 +34,11 @@ public sealed class clsSeguimientoServiceTests
     [Fact]
     public async Task ElDuenoMarcaLaCotizacionConMotivoYFecha()
     {
-        var resultado = await Servicio().MarcarAsync(_ana, "PCN-S1", false, "Precio alto", Ct);
+        var resultado = await Servicio().MarcarAsync(_ana, "PCN-S1", false, "Valor muy alto", Ct);
 
         resultado.Valor.Should().BeSameAs(_cotizacion);
         _cotizacion.Ganada.Should().BeFalse();
-        _cotizacion.MotivoRechazo.Should().Be("Precio alto");
+        _cotizacion.MotivoRechazo.Should().Be("Valor muy alto");
         _cotizacion.MarcadoAt.Should().Be(_reloj.AhoraUtc);
         await _unidadTrabajo.Received(1).GuardarCambiosAsync(Arg.Any<CancellationToken>());
     }
@@ -59,7 +59,7 @@ public sealed class clsSeguimientoServiceTests
     [Fact]
     public async Task QuitarElResultadoDejaElMotivoVacio()
     {
-        await Servicio().MarcarAsync(_ana, "PCN-S1", false, "Precio alto", Ct);
+        await Servicio().MarcarAsync(_ana, "PCN-S1", false, "Valor muy alto", Ct);
 
         await Servicio().MarcarAsync(_ana, "PCN-S1", null, "Precio alto", Ct);
 
@@ -96,7 +96,7 @@ public sealed class clsSeguimientoServiceTests
     {
         var cotizacion = EnFlujo("PCN-D1", estado);
 
-        (await Servicio().MarcarAsync(_ana, "PCN-D1", false, "Cliente desistió", Ct)).Valor.Ganada.Should().BeFalse();
+        (await Servicio().MarcarAsync(_ana, "PCN-D1", false, "Cliente desistió del servicio", Ct)).Valor.Ganada.Should().BeFalse();
     }
 
     private clsCotizacionSolicitud EnFlujo(string folio, EstadoCosteo estado)
@@ -127,6 +127,40 @@ public sealed class clsSeguimientoServiceTests
         }, "HU-021.13: el frontend no tiene que adivinar el endpoint");
         enNexo.Ganada.Should().BeNull();
         await _unidadTrabajo.DidNotReceiveWithAnyArgs().GuardarCambiosAsync(Ct);
+    }
+
+    // HU-018.1 (#155, parte B): la perdida exige un motivo de la lista y "Otro" un comentario, también en /seguimiento.
+    [Theory]
+    [InlineData(null)]
+    [InlineData("Precio alto")]
+    public async Task HU0181_UnaPerdidaConUnMotivoFueraDeLaListaSeRechaza(string? motivo)
+    {
+        var resultado = await Servicio().MarcarAsync(_ana, "PCN-S1", false, motivo, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.MotivoNoPermitido);
+        _cotizacion.Ganada.Should().BeNull();
+        await _unidadTrabajo.DidNotReceiveWithAnyArgs().GuardarCambiosAsync(Ct);
+    }
+
+    [Theory]
+    [InlineData(EstadoCosteo.Descartada)]
+    [InlineData(EstadoCosteo.CosteoVencido)]
+    public async Task HU0181_ConOtroElComentarioEsObligatorioYSeGuardaConElMotivo(EstadoCosteo estado)
+    {
+        var cotizacion = EnFlujo("PCN-D2", estado);
+
+        (await Servicio().MarcarAsync(_ana, "PCN-D2", false, "Otro", null, Ct)).Error.Datos!["requiere_comentario"].Should().Be(true);
+        (await Servicio().MarcarAsync(_ana, "PCN-D2", false, "otro", " Se fue con la competencia ", Ct)).Valor.Ganada.Should().BeFalse();
+
+        cotizacion.MotivoRechazo.Should().Be("Otro: Se fue con la competencia", "estas nunca van a Nexo: el comentario no se pierde");
+    }
+
+    [Fact]
+    public async Task HU0181_UnComentarioDemasiadoLargoSeRechaza()
+    {
+        var resultado = await Servicio().MarcarAsync(_ana, "PCN-S1", false, "Otro", new string('c', 501), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsSeguimientoService.CodigoSeguimientoInvalido);
     }
 
     [Fact]

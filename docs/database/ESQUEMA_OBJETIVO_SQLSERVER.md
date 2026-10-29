@@ -438,8 +438,8 @@ Sin cambios de estructura en HU-021 (salvo el catálogo de líneas de negocio de
 | `SapMargenSyncLog` | `id` uid | Log append-only de las corridas del job de `SapMargenCliente`: `iniciadoAt`, `finalizadoAt`, `filasInsertadas`, `filasActualizadas`, `filasDesactivadas`, `status` (CHECK `ok`\|`error`\|`omitido`), `mensajeError`. Script `17` |
 | `UsuariosWeb` | `id` uid | `nombreUsuario` (único filtrado), `nombreCompleto`, `email`, `telefono`, `regional`, `createdAt`, `ultimaSesion`, `idUsuarioExterno` bigint (único filtrado) |
 | `Roles` | `id` int identity; único `codigo` | CHECK `codigo` en `comercial`, `gerente_comercial`; `descripcion`, `idRolExterno` (único filtrado), `activo`, `updatedAt` |
-| `UsuariosRoles` | `id` int identity; único (`usuarioId`, `rolId`) | `asignadoAt`, `activo` (una activa por usuario, índice filtrado), `revisadoPor`, `revisadoAt` |
-| `TokensRefresco` | `id` uid; único `tokenHash` char(64) BIN2 | `usuarioId`, `familiaId`, `createdAt`, `expiraAt` (CHECK > `createdAt`), `revocadoAt`, `reemplazadoPorId` |
+| `UsuariosRoles` | `id` int identity; único (`usuarioId`, `rolId`) | `asignadoAt`, `activo` (varias activas por usuario, una por rol, desde el 16, HU-040.1), `revisadoPor`, `revisadoAt` |
+| `TokensRefresco` | `id` uid; único `tokenHash` char(64) BIN2 | `usuarioId`, `familiaId`, `createdAt`, `expiraAt` (CHECK > `createdAt`), `revocadoAt`, `reemplazadoPorId`, `rolSesion` (16, HU-040.1: CHECK NULL o código de `Roles`) |
 | `TokensRevocados` | `jti` nv(64) | `usuarioId`, `expiraAt` (índice), `createdAt` |
 | `Sesiones` | (`spaceId`, `threadId`) | `estado` (CHECK `activa` \| `archivada`), `ultimaActividad`, `estadoAgente` (JSON), `usuarioId` |
 | `EventosConversacion` | `id` uid | `spaceId`, `threadId` (FK a `Sesiones`), `usuarioId`, `rol`, `contenido`, `herramientas` (JSON), `createdAt` |
@@ -482,7 +482,9 @@ retiraron en HU-014.3 (#152) con `db/scripts/08_retirar_vistas_actividad.sql`, j
 | `db/scripts/17_sap_margen_sincronizacion.sql` | **HU-042.1 (#242):** crea `SapMargenCliente`, `SapMargenSyncLog` y el stored procedure `sp_sincronizar_margen_sap`. **No lo corre el ejecutador, no lo exige `/health/ready`: no lo lee `backend-dotnet`.** Dueña @scalderon-bs (Datos); ya aplicado en la base compartida de pruebas (2026-10-28) |
 | `db/scripts/18_sap_mapeo_fk_margenes_politica.sql` | **HU-042.4, #247:** agrega `SapMapeoTrqType.lineaNegocioId INT NOT NULL` con FK a `MargenesPolitica(id)`, con backfill por texto verificado (se detiene si algo no cruza). No borra `lineaNegocio` (texto) todavía — transición en 2 pasos, hasta que el backend (#247) deje de leerla. Idempotente; ya aplicado en la base compartida de pruebas (2026-10-28) |
 
-Las columnas de los ajustes `02`, `03`, `pendientes/04`, `05`, `09`, `10`, `11`, `12`, `13` y `14` están en las tablas de §A.4 (marcadas
+| `db/scripts/16_multiples_roles_activos.sql` | **HU-040.1 (#229):** `UsuariosRoles` sin `uq_usuariosRoles_usuarioId_activo` (varias asignaciones activas por usuario, una por rol; `uq_usuariosRoles_usuarioId_rolId` sigue) y `TokensRefresco.rolSesion NVARCHAR(30) NULL` con el CHECK `ck_tokensRefresco_rolSesion` (NULL o un código de `Roles`). No cambia filas. Idempotente; obligatorio ("falta 16"). Propuesta pendiente de revisión de @scalderon-bs |
+
+Las columnas de los ajustes `02`, `03`, `pendientes/04`, `05`, `09`, `10`, `11`, `12`, `13`, `14` y `16` están en las tablas de §A.4 (marcadas
 con el número del script) y la tabla del `06` en §A.4.6.1; el detalle de cada cambio está en la cabecera de su script. Además,
 `db/scripts/operacion/` guarda scripts de operación puntual (no cambian el esquema) y `db/migrations_mssql/rollback/` la reversa
 del `0006`.

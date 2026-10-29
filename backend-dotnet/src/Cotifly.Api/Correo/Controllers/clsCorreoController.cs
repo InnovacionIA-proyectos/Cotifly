@@ -21,7 +21,8 @@ public sealed class clsCorreoController(
 {
     /// <summary>
     /// 200 <c>RespuestaEnvio</c> (MailSender aceptó el correo: queda <c>encolado</c>); 400 <c>ErrorWeb</c> (destinatarios, asunto o cuerpo
-    /// inválidos) o <c>ErrorNegocio</c> (duplicado, sin PDF, MailSender lo rechazó o no respondió); 404 si no es suya; 409 si la cotización
+    /// inválidos; #228: también un asunto o una dirección con caracteres de control) o <c>ErrorNegocio</c> (duplicado, sin PDF, más de 20
+    /// destinatarios con <c>CORREO_DEMASIADOS_DESTINATARIOS</c>, MailSender lo rechazó o no respondió); 404 si no es suya; 409 si la cotización
     /// cambió; 503 <c>ErrorNegocio</c> <c>CORREO_DESHABILITADO</c>.
     /// </summary>
     [HttpPost("enviar")]
@@ -81,9 +82,14 @@ public sealed class clsCorreoController(
         return resultado.Coincidir<IActionResult>(c => Ok(c), Error);
     }
 
-    /// <summary>200 <c>VistaPreviaCorreo</c> (no envía nada; el cuerpo es opcional); 404 si no es suya.</summary>
+    /// <summary>
+    /// 200 <c>VistaPreviaCorreo</c> (no envía nada; el cuerpo es opcional); 404 si no es suya. #228: el borrador se valida como en el
+    /// envío: 400 <c>ErrorWeb</c> (asunto o destinatarios con caracteres de control, direcciones mal formadas, largos) o <c>ErrorNegocio</c>
+    /// <c>CORREO_DEMASIADOS_DESTINATARIOS</c>.
+    /// </summary>
     [HttpPost("correo/vista-previa")]
     [ProducesResponseType<clsVistaPreviaCorreo>(StatusCodes.Status200OK)]
+    [ProducesResponseType<clsErrorWeb>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<clsErrorWeb>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> VistaPrevia(
         string folio,

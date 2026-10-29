@@ -31,6 +31,12 @@ public static class clsCodigosAcceso
     public const string HerramientaRefresh = "refresh_sesion";
     public const string HerramientaLogout = "logout";
 
+    /// <summary>HU-040.2 (#230): <c>POST /api/auth/elegir-rol</c> (cada elección, aceptada o rechazada).</summary>
+    public const string HerramientaEleccionRol = "elegir_rol";
+
+    /// <summary>HU-040.2 (#230): largo máximo del ticket de elección que se intenta validar (un JWT HS256 pequeño).</summary>
+    public const int LargoMaximoTicket = 4096;
+
     /// <summary>Prefijo del hilo de auditoría de acceso: <c>auth/{idUsuario}</c>.</summary>
     public const string PrefijoHilo = "auth/";
 
@@ -48,6 +54,12 @@ public static class clsMotivosAcceso
     public const string Renovado = "renovado";
     public const string SesionCerrada = "sesion_cerrada";
 
+    /// <summary>HU-040.2 (#230): la verificación pasó con varios roles; se emitió el ticket de elección, todavía sin sesión.</summary>
+    public const string EleccionRolPendiente = "eleccion_rol_pendiente";
+
+    /// <summary>HU-040.2 (#230): sesión emitida con el rol elegido.</summary>
+    public const string RolElegido = "rol_elegido";
+
     // Rechazos (todos responden el mismo 401 genérico).
     public const string UsuarioNoEncontrado = "usuario_no_encontrado";
     public const string AlmacenNoDisponible = "almacen_no_disponible";
@@ -63,10 +75,25 @@ public static class clsMotivosAcceso
     public const string RefreshReutilizado = "refresh_reutilizado";
     public const string RotacionConcurrente = "rotacion_concurrente";
 
+    // HU-040.2 (#230): rechazos de la elección del rol (todos responden el mismo 401 "Inicia sesión de nuevo.").
+    public const string TicketInvalido = "ticket_invalido";
+    public const string TicketVencido = "ticket_vencido";
+    public const string TicketReutilizado = "ticket_reutilizado";
+    public const string RolNoDisponible = "rol_no_disponible";
+
+    /// <summary>HU-040.2 (#230): refresh anterior al 16 (sin <c>rolSesion</c>) de un usuario que ahora tiene varios roles: debe elegir.</summary>
+    public const string EleccionRolRequerida = "eleccion_rol_requerida";
+
     // Reglas de resolución del rol interno (nunca implícitas: quedan en la auditoría).
     public const string ReglaMapeoUnico = "mapeo_unico";
     public const string ReglaPrecedenciaGerente = "precedencia_gerente_comercial";
 
     /// <summary>HU-037 (#210): con el rol de director y otro rol mapeado gana <c>director</c>.</summary>
     public const string ReglaPrecedenciaDirector = "precedencia_director";
+
+    /// <summary>
+    /// HU-040.2 (#230, ADR-025): el usuario tiene varias asignaciones activas (o es un alta con varios roles externos): no gana ninguno,
+    /// elige con cuál entra.
+    /// </summary>
+    public const string ReglaMultiRol = "multi_rol";
 }

@@ -141,6 +141,7 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `Correo__Proteccion__Modo` | no | fuera de Production con el correo habilitado debe ser `redirigir` | `redirigir` | manifiesto (staging: **fijo** en `redirigir`) | todo correo va solo al buzón de pruebas, con `[QA]` en el asunto y los destinatarios originales en el cuerpo. `ninguno` solo en producción, al salir en vivo y **junto con** `Correo__Proteccion__PermitirEnvioReal=true` (segunda llave). Un modo desconocido no arranca |
 | `Correo__Proteccion__PermitirEnvioReal` | no | con el correo habilitado va con `Modo`: `true` solo con `ninguno` y `false` con `redirigir` (una llave sin la otra no arranca); fuera de Production, `false` | `false` | manifiesto (staging: **fijo** en `false`) | HU-033 (ADR-023 §3), segunda llave del envío real: solo `Modo=ninguno` **y** `PermitirEnvioReal=true` (y `Production`) mandan el correo a los destinatarios reales; en cualquier otro caso se redirige al buzón de pruebas |
 | `Correo__Proteccion__BuzonPruebas` | no | con `redirigir` y el correo habilitado (un correo válido) | vacío | Dokploy | **buzón de pruebas por definir**; sin él la API no arranca con el correo habilitado y `redirigir` |
+| `Correo__MaximoDestinatarios` | no | de 1 a 100 (fuera de rango no arranca) | `10` | manifiesto | #228 (decisión del 2026-10-27): tope de destinatarios entre `para` y `cc` juntos (la copia oculta al comercial no cuenta); pasado el tope, 400 `CORREO_DEMASIADOS_DESTINATARIOS` con `detalle.maximo` = este valor |
 | `Correo__Seguimiento__IntervaloTickSegundos`, `__IntervaloConsultaSegundos`, `__EdadMaximaHoras`, `__Lote`, `__ReclamoSegundos` | no | rangos: 1-3600, 1-3600, 1-720, 1-1000 y 1-3600 (fuera de rango no arranca) | `15`, `30`, `24`, `50`, `60` | manifiesto (endurecimiento A, #199) | worker que consulta el estado en MailSender: cada cuánto despierta, espera entre consultas del mismo correo, horas sin confirmación antes de `fallido`, correos por vuelta y segundos que una réplica reserva un correo mientras lo consulta |
 | `IA__Proveedor`, `IA__Modelo`, `IA__Endpoint` | no | no (sin proveedor el agente no responde) | vacío | Dokploy | ADR-003. Con OmniRoute (gateway LLM interno, #84): `IA__Proveedor=openai_compatible`, `IA__Endpoint=http://llm-services-omniroute.10-10-40-17.sslip.io/v1` (HTTP dentro de la red interna, sin TLS; exige salida del worker hacia `10.10.40.17:80`) y `IA__Modelo=gemini/gemini-3.5-flash-lite`. Matriz de modelos en [docs/03](backend-dotnet/docs/03-infraestructura.md#omniroute). **Nunca** un gateway web no oficial de los que lista OmniRoute (`duckduckgo-web`, `theoldllm`, `veoaifree-web`, `chipotle`): riesgo de confidencialidad |
 | `IA__ApiKey` | **sí** (≥ 16) | según el proveedor (obligatoria con openai, azure_openai, gemini y anthropic); si tiene valor, en Production no puede ser un placeholder ni tener menos de 16 caracteres | vacío | Dokploy | **secreto de Dokploy**, nunca en el repositorio ni en el manifiesto. Con OmniRoute es la clave del gateway (`Authorization: Bearer`); como el tráfico va por HTTP, solo debe viajar dentro de la red interna. La clave usada en las pruebas del 2026-10-01 se compartió por chat: **rotarla** antes de cargarla en staging |
@@ -327,6 +328,37 @@ UPDATE dbo_cotifly.UsuariosRoles SET activo = 0 WHERE usuarioId = @u AND activo 
 INSERT INTO dbo_cotifly.UsuariosRoles (usuarioId, rolId) SELECT @u, id FROM dbo_cotifly.Roles WHERE codigo = N'director';
 COMMIT;
 ```
+
+### Multi-rol (HU-040, #229 y #230)
+
+`db/scripts/16_multiples_roles_activos.sql` (#229, propuesta pendiente de revisión de @scalderon-bs) retira el índice único
+`uq_usuariosRoles_usuarioId_activo`: una persona puede tener varias asignaciones activas en `UsuariosRoles` (una por rol; la unicidad
+usuario + rol sigue). Además agrega `TokensRefresco.rolSesion` (el rol con el que se emitió la sesión). No cambia ninguna fila.
+
+- **Va antes de la imagen de HU-040.1**: esa imagen mapea `rolSesion` y sin el 16 queda en 503 "falta 16" (aplicarlo la recupera sin
+  redesplegar).
+- **Es seguro con la imagen anterior** (a diferencia del 15): mientras nadie agregue una segunda asignación activa, todo usuario sigue con
+  una y el alta JIT de esa imagen crea una sola; `rolSesion` queda NULL. Si Datos agrega una segunda asignación activa con la imagen
+  anterior en marcha, esa imagen rechaza solo a ese usuario (401 genérico, `rol_externo_cambio`), falla cerrado. Probado con las pruebas
+  de Testcontainers de #229 (login y refresh con una y con dos asignaciones activas sobre la base con el 16).
+- Con la imagen de HU-040.1 (#229) quien tenga dos asignaciones activas entra con la jerarquía (`director` > `gerente_comercial` >
+  `comercial`) si TODAS sus asignaciones activas siguen respaldadas por un rol de ClientePro; si alguna perdió su rol externo, 401
+  `rol_externo_cambio`, como hoy. La elección del rol al entrar llega con HU-040.2 (#230).
+
+Habilitar el multi-rol de una persona que ya existe (Datos, con aprobación; sus roles de ClientePro deben estar todos mapeados):
+
+```sql
+DECLARE @u UNIQUEIDENTIFIER = (SELECT id FROM dbo_cotifly.UsuariosWeb WHERE nombreUsuario = N'<NOMBREUSUARIO>');
+DECLARE @r INT = (SELECT id FROM dbo_cotifly.Roles WHERE codigo = N'<rol>' AND activo = 1);
+-- Si ya tuvo ese rol (fila inactiva por uq_usuariosRoles_usuarioId_rolId), se reactiva; si no, se agrega.
+UPDATE dbo_cotifly.UsuariosRoles SET activo = 1 WHERE usuarioId = @u AND rolId = @r AND activo = 0;
+INSERT INTO dbo_cotifly.UsuariosRoles (usuarioId, rolId)
+    SELECT @u, @r WHERE @u IS NOT NULL AND @r IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM dbo_cotifly.UsuariosRoles ur WHERE ur.usuarioId = @u AND ur.rolId = @r);
+```
+
+Retirar un rol de una persona multi-rol: `UPDATE dbo_cotifly.UsuariosRoles SET activo = 0 WHERE usuarioId = @u AND rolId = @r;` (con
+#230, sus sesiones con ese rol dejan de renovarse: el refresh responde 401 `rol_externo_cambio`; el access vigente dura hasta que vence).
 
 ### 2.3 Auditoría de secretos en el repositorio (2026-09-28)
 
@@ -574,6 +606,8 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
      → `07` → `09` → `10` → `11` → `12` → `13` → imagen → `08`. ~~Con HU-036 (#205 a #208): `…` → `13` → `14` → imagen → `08`.~~ Con HU-036 (#205 a #208) y HU-037 (#209 a #211) juntas
      (integración 1027): `…` → `13` → `14` → `15` → imagen → `08`, con el `15` en la misma ventana que la imagen (nunca antes con una
      imagen vieja, ver §2.2 "Rol director"). En la compartida el `15` ya está aplicado (#209) y el `14` está pendiente de @scalderon-bs.
+     Con HU-040 (#229, #230): `…` → `13` → `14` → `15` → `16` → imagen → `08`. El `16` va ANTES de la imagen (la imagen de HU-040.1 lo
+     exige: "falta 16") y, a diferencia del `15`, es seguro con la imagen anterior (ver abajo, "Multi-rol").
    - **HU-030.1 (#184): `db/scripts/11_peso_con_tara.sql` va ANTES de la imagen de #184.** Agrega a la ruta
      (`CotizacionLineasSolicitud`) la columna `pesoConTaraKg DECIMAL(12,2) NULL` y el `CHECK` `ck_cotizacionLineasSolicitud_pesoConTaraKg`
      (`NULL` o > 0): el peso total con tara que escribe el comercial en una ruta `Contenedor`. Es un `ADD` de columna NULL, idempotente
@@ -635,6 +669,7 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
    | `esquema incompleto: falta 12` | Faltan `tipoVehiculoElegido`/`carroceriaElegida` de la ruta (HU-032, #197) | Aplicar `db/scripts/12_vehiculo_elegido.sql` |
    | `esquema incompleto: falta 13` | Faltan las columnas de MailSender en `Correos` o la sincronización del resultado en la cabecera (HU-033, #199) | Aplicar `db/scripts/13_correo_mailsender.sql` |
    | `esquema incompleto: falta 14` | Faltan `finalizadaAt`/`finalizadaPor` de la cabecera (HU-036, #205) | Aplicar `db/scripts/14_cotizacion_finalizada.sql` |
+   | `esquema incompleto: falta 16` | Falta `TokensRefresco.rolSesion` (HU-040.1, #229) | Aplicar `db/scripts/16_multiples_roles_activos.sql` |
    | `esquema incompleto: falta Tabla.columna, ...` (hasta 5) | Falta otra tabla o columna del modelo (por ejemplo un script intermedio sin aplicar) | Comparar con `db/scripts/01_crear_esquema.sql` y aplicar el script que la trae (lista en `docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md` §A.5) |
 
 1. **Staging.** Merge a `QA` → el pipeline (o `publicar-imagen.sh --canal qa`) publica `sha-<corto>`. En Dokploy, stack

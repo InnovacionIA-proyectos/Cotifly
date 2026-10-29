@@ -4,6 +4,7 @@
 - **Fecha:** 2026-09-28
 - **Issue / HU:** #24 (HU-005.8), #21 (HU-005.5), #22 (HU-005.6), #23 (HU-005.7), #42 (HU-005.14). Relacionada con ADR-003 (el LLM no pone números), ADR-004 (estado de la conversación), ADR-005 (búsqueda de clientes en Nexo), ADR-008 (esquema solo por scripts) y ADR-011 (folio).
 - **Nota de numeración:** ADR-013 es el despliegue en Dokploy y ADR-014 la TRM (HU-012); esta queda como ADR-015.
+- **Actualización 2026-10-27 (HU-018.1, #155):** el motivo de una perdida sale de una lista configurable (la de Nexo) y `Otro` exige comentario (§6.1); el Excel de la cotización (`GET /web/cotizaciones/{folio}/excel`) lleva los costos solo en la versión del dueño (§5.2).
 - **Actualización 2026-10-27 (HU-039.1, #218):** reversa parcial de §5: el dueño ve el costo bruto de cada ruta (`rutas[].costo_final`, en COP), confirmada por la Gerencia Comercial (ver §5).
 - **Actualización 2026-10-05 (ADR-018, HU-013):** este flujo pasa a ser el ÚNICO cotizador. ADR-018 le agrega el ajuste de margen, los servicios conexos agregados en Nexo, la re-solicitud del costeo, los textos del PDF, la moneda en el formulario y la concurrencia con `If-Match`. También retira el chat como creador de cotizaciones (§7 de esta ADR queda superado). El mapeo de campos Nexo ↔ Cotifly verificado contra el código está en `docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md`, y el mapeo de los estados de Nexo con `estado_costeo` en ADR-018 §9.
 
@@ -144,6 +145,27 @@ aceptara, y el PDF, el correo y el resultado salían sobre un precio que nadie h
 - **#208, parte B (no es código).** `CosteoNexo:EdadMaximaHoras` sigue en 72. Subirlo por encima de lo que tarda la Mesa es una propuesta
   pendiente de acordar con Nexo (`DEPLOY.md` §2.2); cambiarlo no revive las cotizaciones ya vencidas.
 
+
+#### 5.2 Excel de la cotización (HU-018.1, #155, 2026-10-27)
+
+**Decisión del usuario (2026-10-27).** `GET /web/cotizaciones/{folio}/excel` (ClosedXML, como el de la licitación) tiene dos versiones con
+la regla de acceso del detalle por folio:
+
+- **Dueño: versión interna.** Por ruta y por camión, con los costos de Nexo (siempre en COP), el margen, el precio, los conexos (costo y
+  precio) y los totales. Es una ampliación deliberada de la reversa de §5 (#218), que en la vista del costeo solo da el costo bruto de la
+  ruta: el Excel interno sí abre el costo por camión y por conexo para el dueño. Como en §5, nunca un costo sin su precio (una ruta
+  rechazada o un camión que no cuenta salen sin costos).
+- **Gerente comercial de la regional del dueño y director: la misma sin nada interno.** Ni una columna de costo ni una de margen (con el
+  margen y el precio se deduce el costo), con el criterio de `SinCostoFinal()` de #218. Cada descarga queda en la auditoría
+  (`exportar_excel_cotizacion`).
+- **Cualquier otro: 404.** Sin precio, 409 `COSTEO_NO_LISTO`.
+
+**Cómo se garantiza.** Todo lo interno del modelo del Excel (`clsExcelCotizacion`) cuelga de propiedades `Interno` que `SinCostos()` pone en
+`null`, y el exportador no escribe ni los encabezados de esas columnas sin ellas. `clsCostoBrutoSinFugasTests` exige que ningún campo
+`Costo*` ni `Margen*` del modelo quede fuera de un `Interno`, que `SinCostos()` no deje nada interno y que el Excel no use la vista del
+costeo. Solo lee lo guardado: con la cotización finalizada o con PDF los precios y los costos son los congelados (§5.1). Solo escribe, así
+que no usa el cupo de lecturas de Excel (`clsLecturaExcelAcotada`).
+
 ### 6. Resultado ganada/perdida (#42)
 
 - `POST /web/cotizaciones/{folio}/resultado` `{resultado, motivo?, comentario?}`, solo el dueño (404 si no, como el resto de `/web/cotizaciones`).
@@ -153,6 +175,24 @@ aceptara, y el PDF, el correo y el resultado salían sobre un precio que nadie h
 - `POST /web/cotizaciones/{folio}/seguimiento` (interino) se conserva por compatibilidad con el frontend y queda marcado como obsoleto en el contrato. Se decide por el flujo de costeo (`estadoCosteo` con valor), no por `costeoId` (lo llena también el chat con la referencia de la tarifa y lo traen filas del Python): en el flujo de costeo responde 409 `USAR_RESULTADO_NEXO`, **salvo `descartada` y `costeo_vencido`**, que se marcan solo en Cotifly porque Nexo no les acepta resultado. Las del chat (`estadoCosteo` nulo) siguen como antes.
 - `POST .../resultado` sobre una cotización que no está en `autocosteo` ni `entregada` responde `COTIZACION_NO_ENTREGADA` sin llamar a Nexo (no se crea un borrador vacío solo para que lo rechace). `SOLICITUD_NO_TRANSICIONABLE` de Nexo pasa como 409; 404 `COTIZACION_NO_ENCONTRADA` como 404; 401/403 de Nexo son configuración (identidad o rol del comercial): 503 `COSTEO_NEXO_NO_DISPONIBLE` con una línea de error en el log; otro 4xx, 400 `COSTEO_NEXO_RECHAZADA`.
 - `POST .../costeo/reintentar` no se permite si la cotización ya tiene resultado (`ganada` con valor).
+
+#### 6.1 Motivo de pérdida de una lista (HU-018.1, #155, 2026-10-27)
+
+**Decisión del usuario (2026-10-27, P5 = a).** Al marcar `perdida`, el motivo es **obligatorio** y sale de una lista configurable
+(`Resultado:MotivosPerdida`; por defecto la de Nexo, `mesa-costeo-page.component.ts`: `Valor muy alto`, `Flete fuera de rango de
+plaza`, `Cliente desistió del servicio`, `Tiempo de respuesta vencido` y `Otro`). `Otro` (`Resultado:MotivoConComentario`) exige comentario.
+
+- Se valida en `/resultado` (también en la perdida solo en Cotifly y en la pendiente de sincronizar) y en `/seguimiento`, que sigue siendo
+  el camino de las del chat, `descartada` y `costeo_vencido`: 400 `MOTIVO_NO_PERMITIDO` (código nuevo) con `detalle.motivos_permitidos` y
+  `detalle.requiere_comentario`, sin llamar a Nexo. Se compara sin distinguir mayúsculas y se guarda con la escritura de la lista.
+- **Compatibilidad con Nexo:** su contrato no cambia. Viajan `motivo` (el de la lista) y `comentario` aparte, como antes; la sincronización
+  diferida (HU-033) separa el motivo de lo guardado.
+- **En Cotifly:** `motivoRechazo` guarda el motivo; con `Otro`, `"Otro: {comentario}"` (en `/seguimiento` esas cotizaciones nunca van a
+  Nexo, y así el comentario no se pierde). Con otro motivo el comentario solo va a Nexo (HU-005.14). Sin script: `motivoRechazo` ya es
+  `NVARCHAR(MAX)`.
+- Lo guardado antes (motivo libre o sin motivo) no se revalida: sigue siendo válido.
+- La lista se publica en `GET /web/motivos-perdida`, que no depende de Nexo (por eso no va en `GET /web/catalogos-flete`, que responde 503
+  cuando Nexo no tiene copia utilizable).
 
 ### 7. Agente de chat
 

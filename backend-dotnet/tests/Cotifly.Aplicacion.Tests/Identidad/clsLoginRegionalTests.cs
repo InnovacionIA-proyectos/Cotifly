@@ -30,7 +30,7 @@ public sealed class clsLoginRegionalTests
         var resultado = await _e.Login().IniciarSesionAsync(new clsSolicitudLoginClientePro("APEREZ"), Ct);
 
         creado!.Regional.Should().Be("Occidente");
-        resultado.Valor.Usuario.Ubicacion.Should().Be("Occidente", "LoginResponse.user.ubicacion lee la columna recién llenada");
+        resultado.Valor.Sesion!.Usuario.Ubicacion.Should().Be("Occidente", "LoginResponse.user.ubicacion lee la columna recién llenada");
     }
 
     [Fact]
@@ -60,7 +60,7 @@ public sealed class clsLoginRegionalTests
         usuario.Regional.Should().Be("Occidente", "antes era Antioquia: DimEjecutivo manda");
         usuario.NombreCompleto.Should().Be("Nombre de APEREZ");
         usuario.Email.Should().Be("aperez@boterosoto.com.co");
-        resultado.Valor.Usuario.Should().Be(new clsUsuarioSesion(
+        resultado.Valor.Sesion!.Usuario.Should().Be(new clsUsuarioSesion(
             usuario.Id, "APEREZ", "aperez@boterosoto.com.co", "Nombre de APEREZ", "comercial", "Occidente"));
         await _e.UnidadTrabajo.Received(1).GuardarCambiosAsync(Arg.Any<CancellationToken>());
     }
@@ -101,7 +101,7 @@ public sealed class clsLoginRegionalTests
         var resultado = await _e.Login().IniciarSesionAsync(new clsSolicitudLoginClientePro("APEREZ"), Ct);
 
         usuario.Regional.Should().Be("Antioquia", "la regional que fijó el DBA a mano no se borra");
-        resultado.Valor.Usuario.Ubicacion.Should().Be("Antioquia");
+        resultado.Valor.Sesion!.Usuario.Ubicacion.Should().Be("Antioquia");
     }
 
     [Fact]

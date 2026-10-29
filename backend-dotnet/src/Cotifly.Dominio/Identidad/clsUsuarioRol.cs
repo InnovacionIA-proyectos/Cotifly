@@ -7,7 +7,8 @@ namespace Cotifly.Dominio.Identidad;
 /// login (JIT) con el rol que resulta de su rol externo; en los siguientes el rol externo actual debe coincidir con la
 /// asignación activa, y si no, el acceso se rechaza hasta que un gerente o administrador la revise
 /// (<see cref="RevisadoPor"/>, <see cref="RevisadoAt"/>). La asignación nunca se re-sincroniza sola.
-/// El esquema permite una sola asignación activa por usuario.
+/// HU-040.1 (#229, script 16): un usuario puede tener varias asignaciones activas, una por rol (multi-rol); el mismo rol no se
+/// asigna dos veces (<c>uq_usuariosRoles_usuarioId_rolId</c>).
 /// </summary>
 public sealed class clsUsuarioRol
 {

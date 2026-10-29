@@ -79,6 +79,57 @@ public sealed class clsPasosAdmin(clsContextoWeb web)
         MargenDe(resultado, "despues").Should().Be(decimal.Parse(despues, CultureInfo.InvariantCulture));
     }
 
+    /// <summary>HU-016.1 (#154): una línea de prueba inactiva (no debe salir en el desplegable).</summary>
+    [Given(@"^la línea de negocio de prueba ""([^""]+)"" con margen " + Numero + @", método ""([^""]+)"" e inactiva$")]
+    public async Task DadoLaLineaDePruebaInactiva(string alias, string margen, string metodo)
+    {
+        var nombre = $"{alias}{Guid.NewGuid():N}"[..Math.Min(alias.Length + 12, 40)];
+        var id = await clsBaseDatosPruebas.EscalarAsync<int>(clsEntornoAceptacion.BaseDatos.CadenaCotifly, $"""
+            INSERT INTO dbo_cotifly.MargenesPolitica (lineaNegocio, margen, metodoCalculo, isActive) VALUES (N'{nombre}', {margen}, N'{metodo}', 0);
+            SELECT CAST(SCOPE_IDENTITY() AS int);
+            """);
+        web.Lineas[alias] = (id, nombre);
+    }
+
+    [When("{string} lista las líneas de negocio activas")]
+    public Task CuandoListaLasActivas(string alias) => web.EnviarAsync(HttpMethod.Get, "/web/lineas-negocio", web.Sesion(alias).Access);
+
+    [Then("el listado de líneas activas cumple el esquema {string} del contrato")]
+    public async Task EntoncesElListadoActivoCumpleElEsquema(string esquema)
+    {
+        var deContrato = await clsValidadorEsquemaOpenApi.EsquemaRespuestaAsync("/web/lineas-negocio", HttpMethod.Get, System.Net.HttpStatusCode.OK);
+        clsValidadorEsquemaOpenApi.Validar(web.UltimoCuerpo, deContrato).Should().BeEmpty();
+        var elemento = await clsValidadorEsquemaOpenApi.EsquemaAsync(esquema);
+        foreach (var linea in web.UltimoJson().EnumerateArray())
+        {
+            clsValidadorEsquemaOpenApi.Validar(linea.GetRawText(), elemento).Should().BeEmpty();
+        }
+    }
+
+    [Then("el listado de líneas activas incluye las 6 líneas sembradas y {string}")]
+    public void EntoncesElListadoActivoIncluye(string alias) =>
+        NombresActivos().Should().Contain(
+            ["Nacional", "Distribucion", "Importacion", "Exportacion", "Internacional", "DevolucionContenedor", web.Lineas[alias].Nombre]);
+
+    [Then("el listado de líneas activas no incluye {string}")]
+    public void EntoncesElListadoActivoNoIncluye(string alias) => NombresActivos().Should().NotContain(web.Lineas[alias].Nombre);
+
+    [Then("ninguna línea del listado activo trae margen ni método de cálculo")]
+    public void EntoncesSinMargen() =>
+        web.UltimoJson().EnumerateArray().SelectMany(l => l.EnumerateObject().Select(p => p.Name)).Distinct()
+            .Should().BeEquivalentTo(["linea_negocio", "etiqueta"], "la política de margen no sale de la administración");
+
+    [Then("la línea {string} del listado activo tiene la etiqueta {string}")]
+    public void EntoncesLaEtiqueta(string linea, string etiqueta) =>
+        web.UltimoJson().EnumerateArray().Single(l => l.GetProperty("linea_negocio").GetString() == linea)
+            .GetProperty("etiqueta").GetString().Should().Be(etiqueta);
+
+    private List<string?> NombresActivos()
+    {
+        web.UltimoEstado.Should().Be(System.Net.HttpStatusCode.OK, web.UltimoCuerpo);
+        return [.. web.UltimoJson().EnumerateArray().Select(l => l.GetProperty("linea_negocio").GetString())];
+    }
+
     private Task Actualizar(string alias, int id, string cuerpo) =>
         web.EnviarAsync(HttpMethod.Put, $"/web/admin/lineas-negocio/{id}", web.Sesion(alias).Access, cuerpo);
 

@@ -1235,6 +1235,37 @@ public sealed partial class clsLineaSolicitud
     }
 
     /// <summary>
+    /// HU-041.1 (#231): ¿qué cambiaría <see cref="RestaurarMargenSugerido"/>? El margen sugerido vigente de la ruta y su origen
+    /// (<c>sap_tm</c> o <c>politica_linea</c>), o <c>null</c> si la ruta no tiene sugerido al que volver.
+    /// </summary>
+    public (decimal Margen, OrigenMargen Origen)? MargenSugeridoParaRestaurar =>
+        SugeridoVigente is { } sugerido && (OrigenMargenSugerido ?? OrigenMargen) is { } origen && origen != Margen.OrigenMargen.Negociado
+            ? (sugerido, origen)
+            : null;
+
+    /// <summary>
+    /// HU-041.1 (#231): "revertir al sugerido". El margen vuelve al sugerido vigente de la ruta (<see cref="SugeridoVigente"/>) y el origen
+    /// al de ese sugerido (<c>sap_tm</c> o <c>politica_linea</c>), así que la ruta deja de figurar como negociada. No toca los sugeridos ni
+    /// recalcula el precio (<see cref="RecalcularTotales"/>). Devuelve <c>false</c> si ya estaba en el sugerido con ese origen.
+    /// </summary>
+    public bool RestaurarMargenSugerido()
+    {
+        if (MargenSugeridoParaRestaurar is not { } sugerido)
+        {
+            throw new InvalidOperationException($"La ruta {Orden} no tiene margen sugerido al que volver.");
+        }
+
+        if (MargenAplicado == sugerido.Margen && OrigenMargen == sugerido.Origen)
+        {
+            return false;
+        }
+
+        MargenAplicado = sugerido.Margen;
+        OrigenMargen = sugerido.Origen;
+        return true;
+    }
+
+    /// <summary>
     /// Versión nueva (ADR-018 §5, decisión del 2026-10-06): un margen ajustado por el comercial en la ruta equivalente de la versión
     /// anterior se copia (el envío lo conserva y solo refresca el sugerido).
     /// </summary>

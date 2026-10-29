@@ -5,6 +5,7 @@ using Cotifly.Aplicacion.Identidad.DTOs;
 using Cotifly.Aplicacion.Identidad.Interfaces;
 using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Dominio.Comun;
+using Cotifly.Dominio.Identidad;
 using Microsoft.Extensions.Logging;
 
 namespace Cotifly.Aplicacion.Identidad.Services;
@@ -26,6 +27,9 @@ public interface IClsRefreshTokenService
 /// Excepción: si fue rotado hace menos de <see cref="GraciaRotacionConcurrente"/>, es la otra mitad de dos renovaciones
 /// simultáneas del mismo cliente (dos pestañas): 401 sin revocar nada.</item>
 /// <item>Vuelve a hacer la verificación doble (almacén, rol externo, asignación, vínculo); si ya no pasa, 401.</item>
+/// <item>HU-040.2 (#230, ADR-025): conserva el rol de la sesión (<c>TokensRefresco.rolSesion</c>, el elegido o el único) y exige que siga
+/// entre los roles disponibles; si se lo quitaron, 401 <c>rol_externo_cambio</c>. Un refresh anterior al 16 (sin rol) de quien hoy tiene
+/// varios roles no adivina: 401 <c>eleccion_rol_requerida</c> (vuelve a entrar y elige). El rol viaja en el refresh nuevo.</item>
 /// <item>Rota de forma atómica (<see cref="IClsTokenRefrescoRepository.RotarAsync"/>): el nuevo hereda la familia y el
 /// vencimiento absoluto (30 días desde el login; la rotación no extiende la sesión). Si otra renovación ganó: 401.</item>
 /// </list>
@@ -103,15 +107,23 @@ public sealed class clsRefreshTokenService(
                     }
                     else if (verificacion.Identidad is { } valida)
                     {
-                        var plano = clsEmisionSesion.NuevoRefresh(usuario.Id, ahora, token.ExpiraAt - ahora, token.FamiliaId, out var nuevo);
-                        if (await tokens.RotarAsync(token.Id, nuevo, ahora, cancellationToken))
+                        var (rolSesion, rechazoRol) = RolDeLaSesion(token, valida);
+                        if (rolSesion is not { } rol)
                         {
-                            sesion = clsEmisionSesion.Emitir(emisor, valida.Usuario, valida.Rol, plano);
-                            motivo = clsMotivosAcceso.Renovado;
+                            motivo = rechazoRol!;
                         }
                         else
                         {
-                            motivo = clsMotivosAcceso.RotacionConcurrente;
+                            var plano = clsEmisionSesion.NuevoRefresh(usuario.Id, ahora, token.ExpiraAt - ahora, token.FamiliaId, rol, out var nuevo);
+                            if (await tokens.RotarAsync(token.Id, nuevo, ahora, cancellationToken))
+                            {
+                                sesion = clsEmisionSesion.Emitir(emisor, valida.Usuario, rol, plano);
+                                motivo = clsMotivosAcceso.Renovado;
+                            }
+                            else
+                            {
+                                motivo = clsMotivosAcceso.RotacionConcurrente;
+                            }
                         }
                     }
                 }
@@ -138,5 +150,19 @@ public sealed class clsRefreshTokenService(
             nombreUsuario is null ? null : clsCodigosAcceso.PrefijoHilo + nombreUsuario);
 
         return sesion is null ? clsCodigosAcceso.ErrorSesionExpirada() : sesion;
+    }
+
+    /// <summary>
+    /// HU-040.2 (#230): el rol con el que se renueva. Con <c>rolSesion</c>, ese mismo si sigue disponible (si no, <c>rol_externo_cambio</c>).
+    /// Sin él (refresh anterior al script 16), el rol único de la verificación, o <c>eleccion_rol_requerida</c> si ahora tiene varios.
+    /// </summary>
+    private static (RolInterno? Rol, string? Motivo) RolDeLaSesion(clsTokenRefresco token, clsIdentidadVerificada identidad)
+    {
+        if (token.RolSesion is { } guardado)
+        {
+            return identidad.PuedeEntrarCon(guardado) ? (guardado, null) : (null, clsMotivosAcceso.RolExternoCambio);
+        }
+
+        return identidad.RequiereEleccion ? (null, clsMotivosAcceso.EleccionRolRequerida) : (identidad.Rol, null);
     }
 }

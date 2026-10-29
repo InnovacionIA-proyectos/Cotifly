@@ -1,10 +1,12 @@
 using Cotifly.Aplicacion.Auditoria.Services;
 using Cotifly.Aplicacion.Comun.Interfaces;
+using Cotifly.Aplicacion.Costeo.Interfaces;
 using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Pruebas.Comun;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 namespace Cotifly.Aplicacion.Tests.Costeo;
@@ -21,6 +23,8 @@ public sealed class clsFinalizacionCotizacionServiceTests
     private readonly IClsUnitOfWork _unidad = Substitute.For<IClsUnitOfWork>();
     private readonly IClsAuditoriaService _auditoria = Substitute.For<IClsAuditoriaService>();
     private readonly IClsReloj _reloj = Substitute.For<IClsReloj>();
+    private readonly IClsEnvioConexosNexoService _envioConexos = Substitute.For<IClsEnvioConexosNexoService>();
+    private readonly IClsServiciosConexosNexo _nexo = Substitute.For<IClsServiciosConexosNexo>();
     private readonly Guid _ana = Guid.NewGuid();
     private readonly clsCotizacionSolicitud _cotizacion;
 
@@ -30,11 +34,16 @@ public sealed class clsFinalizacionCotizacionServiceTests
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(_cotizacion.Folio, _ana, Arg.Any<CancellationToken>()).Returns(_cotizacion);
         _unidad.GuardarCambiosSiVersionAsync(_cotizacion.Id, Version, Arg.Any<CancellationToken>()).Returns(true);
         _reloj.AhoraUtc.Returns(_ahora);
+        _envioConexos.EstadosAsync(Arg.Any<clsCotizacionSolicitud>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<(Guid, string), string>());
+        _nexo.LeerCotizacionAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio(clsCodigosError.NexoNoDisponible, "Nexo no responde."));
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    private clsFinalizacionCotizacionService Servicio() => new(_cotizaciones, _unidad, _reloj, _auditoria);
+    private clsFinalizacionCotizacionService Servicio() => new(_cotizaciones, _unidad, _reloj, _auditoria, _envioConexos, _nexo,
+        NullLogger<clsFinalizacionCotizacionService>.Instance);
 
     [Fact]
     public async Task FinalizaConLaVersionVigenteSubeLaVersionGuardaYAudita()
@@ -105,6 +114,68 @@ public sealed class clsFinalizacionCotizacionServiceTests
             Arg.Any<object?>(), Arg.Any<object?>(), false, Arg.Any<int>(), Arg.Any<string?>());
     }
 
+    /// <summary>
+    /// #228: un conexo de una ruta cotizable con <c>estado_nexo = pendiente</c> (todavía no está en la cotización de Nexo) impide finalizar:
+    /// 409 <c>COTIZACION_NO_FINALIZABLE</c> con <c>detalle.motivo = conexos_pendientes_en_nexo</c>, sin guardar. Los enviados, inciertos o
+    /// fallidos definitivos no lo impiden (ya no se esperan del polling).
+    /// </summary>
+    [Fact]
+    public async Task ConUnConexoPendienteEnNexoEsNoFinalizableYNoGuarda()
+    {
+        var ruta = _cotizacion.PrimeraRuta!;
+        _envioConexos.EstadosAsync(_cotizacion, Arg.Any<CancellationToken>()).Returns(new Dictionary<(Guid, string), string>
+        {
+            [(ruta.Id, "CNX-1")] = clsEnvioConexosNexoService.VisibleEnviado,
+            [(ruta.Id, "CNX-2")] = clsEnvioConexosNexoService.VisiblePendiente,
+            [(ruta.Id, "CNX-3")] = clsEnvioConexosNexoService.VisibleIncierto,
+        });
+
+        var resultado = await Servicio().FinalizarAsync(_ana, _cotizacion.Folio, Version, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.CotizacionNoFinalizable);
+        resultado.Error.Datos!["motivo"].Should().Be(clsCotizacionSolicitud.CodigoConexosPendientesEnNexo);
+        resultado.Error.Datos!["conexos_pendientes"].Should().Be(1);
+        _cotizacion.Finalizada.Should().BeFalse();
+        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
+        await _auditoria.Received(1).RegistrarAsync(clsFinalizacionCotizacionService.HerramientaAuditoria,
+            Arg.Any<object?>(), Arg.Any<object?>(), false, Arg.Any<int>(), Arg.Any<string?>());
+    }
+
+    [Fact]
+    public async Task ConLosConexosEnviadosInciertosOFallidosSiSeFinaliza()
+    {
+        var ruta = _cotizacion.PrimeraRuta!;
+        _envioConexos.EstadosAsync(_cotizacion, Arg.Any<CancellationToken>()).Returns(new Dictionary<(Guid, string), string>
+        {
+            [(ruta.Id, "CNX-1")] = clsEnvioConexosNexoService.VisibleEnviado,
+            [(ruta.Id, "CNX-2")] = clsEnvioConexosNexoService.VisibleIncierto,
+            [(ruta.Id, "CNX-3")] = clsEnvioConexosNexoService.VisibleFallidoDefinitivo,
+        });
+
+        (await Servicio().FinalizarAsync(_ana, _cotizacion.Folio, Version, Ct)).EsExitoso.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task UnConexoPendienteDeUnaRutaQueNoEstaEnLaCotizacionNoCuenta()
+    {
+        // Una ruta rechazada por la Mesa (o un id que ya no es de la cotización) nunca tendrá su conexo en Nexo: no bloquea para siempre.
+        _envioConexos.EstadosAsync(_cotizacion, Arg.Any<CancellationToken>()).Returns(new Dictionary<(Guid, string), string>
+        {
+            [(Guid.NewGuid(), "CNX-1")] = clsEnvioConexosNexoService.VisiblePendiente,
+        });
+
+        (await Servicio().FinalizarAsync(_ana, _cotizacion.Folio, Version, Ct)).EsExitoso.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ReFinalizarNoConsultaLosConexos()
+    {
+        _cotizacion.Finalizar(_ana, _ahora.AddHours(-1));
+
+        (await Servicio().FinalizarAsync(_ana, _cotizacion.Folio, Version, Ct)).EsExitoso.Should().BeTrue();
+        await _envioConexos.DidNotReceiveWithAnyArgs().EstadosAsync(default!, Ct);
+    }
+
     [Fact]
     public async Task UnaAjenaOInexistenteEsNoEncontradaSinAuditar()
     {
@@ -115,5 +186,51 @@ public sealed class clsFinalizacionCotizacionServiceTests
         sinUsuario.Error.Codigo.Should().Be(clsCodigosError.CotizacionNoEncontrada);
         _cotizacion.Finalizada.Should().BeFalse();
         await _auditoria.DidNotReceiveWithAnyArgs().RegistrarAsync(default!, default, default, default, default, default);
+    }
+
+    /// <summary>
+    /// Validación #228: un registro en <c>pendiente</c> aunque Nexo YA tenga el conexo (agregado con el POST antes de #228, o con el registro
+    /// fallido) bloqueaba para siempre una entregada, que el polling ya no consulta. Finalizar relee Nexo, deja enviados los que muestra y
+    /// cuenta otra vez.
+    /// </summary>
+    [Fact]
+    public async Task Validacion228_UnPendienteQueNexoYaMuestraSeConfirmaAlFinalizarYNoBloquea()
+    {
+        _cotizacion.RegistrarCotizacionNexo("COT-228");
+        var ruta = _cotizacion.PrimeraRuta!;
+        var leida = new clsCotizacionNexo(_cotizacion.CotizacionNexoId!, clsCotizacionNexo.EstadoEntregada, "SinDefinir", [], []);
+        _nexo.LeerCotizacionAsync(_ana, _cotizacion.CotizacionNexoId!, Arg.Any<CancellationToken>()).Returns(leida);
+        _envioConexos.EstadosAsync(_cotizacion, Arg.Any<CancellationToken>()).Returns(
+            new Dictionary<(Guid, string), string> { [(ruta.Id, "CNX-1")] = clsEnvioConexosNexoService.VisiblePendiente },
+            new Dictionary<(Guid, string), string> { [(ruta.Id, "CNX-1")] = clsEnvioConexosNexoService.VisibleEnviado });
+
+        var resultado = await Servicio().FinalizarAsync(_ana, _cotizacion.Folio, Version, Ct);
+
+        resultado.EsExitoso.Should().BeTrue();
+        await _envioConexos.Received(1).RegistrarConfirmadosAsync(_cotizacion, leida, Arg.Any<CancellationToken>());
+        await _unidad.Received(1).GuardarCambiosAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Validacion228_SiNexoNoRespondeLaRelecturaElPendienteSigueBloqueando()
+    {
+        _cotizacion.RegistrarCotizacionNexo("COT-228");
+        var ruta = _cotizacion.PrimeraRuta!;
+        _envioConexos.EstadosAsync(_cotizacion, Arg.Any<CancellationToken>()).Returns(
+            new Dictionary<(Guid, string), string> { [(ruta.Id, "CNX-1")] = clsEnvioConexosNexoService.VisiblePendiente });
+
+        var resultado = await Servicio().FinalizarAsync(_ana, _cotizacion.Folio, Version, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.CotizacionNoFinalizable);
+        resultado.Error.Datos!["motivo"].Should().Be(clsCotizacionSolicitud.CodigoConexosPendientesEnNexo);
+        await _envioConexos.DidNotReceiveWithAnyArgs().RegistrarConfirmadosAsync(default!, default!, Ct);
+        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosAsync(Ct);
+    }
+
+    [Fact]
+    public async Task Validacion228_SinPendientesNoSeLlamaANexo()
+    {
+        (await Servicio().FinalizarAsync(_ana, _cotizacion.Folio, Version, Ct)).EsExitoso.Should().BeTrue();
+        await _nexo.DidNotReceiveWithAnyArgs().LeerCotizacionAsync(default, default!, Ct);
     }
 }

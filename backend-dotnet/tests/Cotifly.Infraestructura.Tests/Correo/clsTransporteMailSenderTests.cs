@@ -105,6 +105,12 @@ public sealed class clsTransporteMailSenderTests : IDisposable
     [InlineData("corporativo", "boterosoto.com.co", "nvargas@boterosoto.com.co", "notificaciones@boterosoto.com.co")]
     [InlineData("CORPORATIVO", "", "nvargas@boterosoto.com.co", "notificaciones@boterosoto.com.co")]
     [InlineData("comercial", "", "nvargas@cualquiera.com", "nvargas@cualquiera.com")]
+    // Validación #228: lo que MailAddress acepta pero VerificarCabeceras bloquearía sale con el corporativo (no falla el envío).
+    [InlineData("comercial", "boterosoto.com.co", "\"n vargas\"@boterosoto.com.co", "notificaciones@boterosoto.com.co")]
+    [InlineData("comercial", "", "nvargas@intranet", "notificaciones@boterosoto.com.co")]
+    [InlineData("comercial", "", "nvargas@[10.0.0.1]", "notificaciones@boterosoto.com.co")]
+    [InlineData("comercial", "boterosoto.com.co", "nvargas@boterosoto.com.co\r\nBcc: intruso@ejemplo.invalid", "notificaciones@boterosoto.com.co")]
+    [InlineData("comercial", "boterosoto.com.co", "nvargas\u200B@boterosoto.com.co", "notificaciones@boterosoto.com.co")]
     public void AuditoriaElRemitenteSeEligePorModoYDominio(string modo, string dominios, string comercial, string esperado)
     {
         var opciones = new Cotifly.Infraestructura.Configuracion.clsOpcionesMailSender { ModoRemitente = modo, DominiosRemitente = dominios };
@@ -145,6 +151,43 @@ public sealed class clsTransporteMailSenderTests : IDisposable
         error.Message.Should().Contain(motivo);
         error.Incierto.Should().BeFalse();
         _mailSender.Recibidos.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// DEF-1027B-2 (#228): defensa en profundidad. Aunque el caso de uso ya lo rechaza, si algo con caracteres de control o una dirección
+    /// mal formada llega al transporte (otro llamador, un dato viejo de la base), NO sale el POST multipart: excepción controlada, no
+    /// incierta (MailSender no recibió nada).
+    /// </summary>
+    [Theory]
+    [InlineData("asunto")]
+    [InlineData("asunto_unicode")]
+    [InlineData("para")]
+    [InlineData("para_lista")]
+    [InlineData("cc")]
+    [InlineData("bcc")]
+    [InlineData("adjunto")]
+    [InlineData("correlacion")]
+    public async Task DEF1027B2_UnaCabeceraInvalidaNoLlegaAMailSender(string campo)
+    {
+        var mensaje = Mensaje();
+        mensaje = campo switch
+        {
+            "asunto" => mensaje with { Asunto = "Hola\r\nBcc: intruso@ejemplo.invalid" },
+            "asunto_unicode" => mensaje with { Asunto = "Hola" + (char)0x2028 + "Bcc: intruso@ejemplo.invalid" },
+            "para" => mensaje with { Para = ["cliente@empresa.com\r\nBcc: intruso@ejemplo.invalid"] },
+            "para_lista" => mensaje with { Para = ["cliente@empresa.com,intruso@ejemplo.invalid"] },
+            "cc" => mensaje with { Cc = ["jefe@empresa.com\n"] },
+            "bcc" => mensaje with { Bcc = ["nvargas@boterosoto.com.co\0"] },
+            "adjunto" => mensaje with { Adjunto = new clsAdjuntoCorreo("PCN-1\r\n.pdf", [1]) },
+            _ => mensaje with { IdCorrelacion = "PCN-1\r\nX-Otra: 1" },
+        };
+
+        var enviar = () => Transporte.EnviarAsync(mensaje, Ct);
+
+        var error = (await enviar.Should().ThrowAsync<clsEnvioCorreoException>()).Which;
+        error.Incierto.Should().BeFalse();
+        error.Message.Should().Contain(clsTransporteMailSender.MensajeCabeceraInvalida);
+        _mailSender.Correlaciones.Should().BeEmpty("el POST multipart no sale");
     }
 
     [Fact]
