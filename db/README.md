@@ -35,6 +35,8 @@ dejarla con la configuración inicial.
 | `scripts/19_precio_venta_conexos.sql` | HU-043.1 (#245) | Ya aplicado en la base compartida de pruebas (2026-10-28), corrido dos veces sin error; dueña @scalderon-bs (Datos). `CotizacionServiciosConexos.precioVenta DECIMAL(18,2) NOT NULL`, junto a `precio` (costo unitario). Backfill `precioVenta = precio` en las filas existentes; amplía `ck_cotizacionServiciosConexos_montos` con `precioVenta >= 0`. Idempotente, en una transacción. No depende de otro ajuste; HU-043.2 (backend) la consume |
 | `scripts/15_rol_director.sql` | HU-037.1 (#209) | En el ejecutador (orden de nombre, después del `13`; el `14` es de HU-036). **Propuesta del backend; la dueña es @scalderon-bs (Datos).** `ck_roles_codigo` admite `director` (el `01` ya lo trae) y agrega la fila `director` activa con `idRolExterno = NULL`. Idempotente, en una transacción, no pisa un `idRolExterno` ya fijado. **No lo exige `/health/ready`** (no agrega columnas; sin él nadie entra como director). Va **con o después** de la imagen de HU-037.2 (#210): una imagen anterior falla al leer el catálogo de roles con la fila `director` (ver `DEPLOY.md`, "Rol director"). El IDROLES lo fija un script de operación por ambiente: `operacion/mapeo_prueba_rol_director_209.sql` (prueba) y el de #212 (producción) |
 | `scripts/16_multiples_roles_activos.sql` | HU-040.1 (#229) | **Propuesta pendiente de revisión de @scalderon-bs.** En el ejecutador (orden de nombre, después del `15`). `UsuariosRoles`: retira el índice único filtrado `uq_usuariosRoles_usuarioId_activo` (varias asignaciones activas por usuario, una por rol: multi-rol, HU-040) y conserva `uq_usuariosRoles_usuarioId_rolId`; imprime la definición anterior. `TokensRefresco`: `rolSesion NVARCHAR(30) NULL` (el rol de la sesión, que el refresh conserva) con el CHECK `ck_tokensRefresco_rolSesion`. Idempotente, no destructivo (no cambia filas); se detiene sin tocar nada si falta la unicidad usuario + rol. **El backend mapea `rolSesion`**: sin él, `/health/ready` responde "esquema incompleto: falta 16". Se aplica antes de desplegar la imagen; es seguro con la imagen anterior (ver la cabecera del script) |
+| `scripts/17_sap_margen_sincronizacion.sql` | HU-042.1 (#242) | **No lo corre el ejecutador, no lo exige `/health/ready`: no lo lee backend-dotnet.** Ya aplicado en la base compartida de pruebas (2026-10-28); dueña @scalderon-bs (Datos). Crea `SapMargenCliente`, `SapMargenSyncLog` y el stored procedure `sp_sincronizar_margen_sap` (copia local del margen recomendado de SAP TM; el staging es una tabla temporal `#SapMargenStage` que arma el propio job, no un objeto fijo del esquema). Idempotente. El job que lo alimenta vive en `jobs/sincronizar_margen_sap.ps1` — ver sección "Job de sincronización del margen de SAP" abajo |
+| `scripts/18_sap_mapeo_fk_margenes_politica.sql` | HU-042.4 (#247) | Ya aplicado en la base compartida de pruebas (2026-10-28), backfill verificado; dueña @scalderon-bs (Datos). `SapMapeoTrqType.lineaNegocio` (texto libre) pasa a tener también `lineaNegocioId INT NOT NULL` con FK a `MargenesPolitica(id)` — igual patrón que `CotizacionLineasSolicitud.lineaNegocioId`. Backfill por texto con verificación (se detiene si algo no cruza). **No borra `lineaNegocio` todavía**: transición en 2 pasos a propósito, hasta que el backend (HU-042.4, #247, @dguerraBSSL) deje de leerla como texto. Idempotente, en una transacción |
 
 **`scripts/pendientes/04_cubicacion_segundo_plano.sql`** (HU-023.5, #160) agrega a la ruta la cola de la cubicación de la
 licitación en segundo plano (`estadoCubicacion`, `cubicacionIntentos`, `cubicacionDisponibleAt`, `errorCubicacion`,
@@ -157,9 +159,13 @@ db/
 │   ├── 14_cotizacion_finalizada.sql    cotización finalizada: finalizadaAt y finalizadaPor (propuesta; se puede repetir)
 │   ├── 15_rol_director.sql             rol interno director (se puede repetir)
 │   ├── 16_multiples_roles_activos.sql  varias asignaciones activas por usuario y rolSesion del refresh (propuesta; se puede repetir)
+│   ├── 17_sap_margen_sincronizacion.sql tablas y SP de la copia local del margen de SAP (no lo corre el ejecutador)
+│   ├── 18_sap_mapeo_fk_margenes_politica.sql  SapMapeoTrqType.lineaNegocioId (FK a MargenesPolitica, no lo corre el ejecutador)
 │   ├── 19_precio_venta_conexos.sql     precioVenta de CotizacionServiciosConexos (se puede repetir)
 │   ├── pendientes/            propuesta 04, pendiente de revisión (el ejecutador no la corre)
 │   └── operacion/             scripts de datos de una sola vez que corre el DBA con aprobación
+├── jobs/
+│   └── sincronizar_margen_sap.ps1   paso de PowerShell del SQL Server Agent Job de HU-042.1 (no lo corre el ejecutador)
 ├── seeder/
 │   ├── 01_lineas_negocio.sql      líneas de negocio y su margen de política
 │   ├── 02_sap_mapeo_trqtype.sql   mapeo del TrqType de SAP TM a la línea de negocio
@@ -361,6 +367,92 @@ Cambios pequeños al esquema que todavía no se consolidan en el `01`. Van como 
 
 El `02` se detiene sin tocar nada si `idTipoMercancia` todavía tiene valores (un uuid no se puede convertir a código).
 Cuando el diseño se estabilice, estos cambios se pasan al `01` y el script se retira.
+
+## Job de sincronización del margen de SAP (HU-042.1, #242)
+
+Copia local del margen recomendado de SAP TM (`RentabClienteSet`), para no depender de una llamada en vivo a SAP. Es
+trabajo de **Datos (@scalderon-bs)**, separado de `backend-dotnet` — **no se despliega con el backend, no depende de los
+releases de Duban en Dokploy, y no lo lee la app** (por eso no está en `scripts/pendientes/` ni lo exige `/health/ready`).
+
+**Objetos** (`scripts/17_sap_margen_sincronizacion.sql`):
+- `SapMargenCliente` — estado actual: `id` propio (`UNIQUEIDENTIFIER`, igual que `SapMargenSyncLog`) como PK, con
+  `(salesOrgId, trqType, bpSap)` como restricción única (la clave de negocio). `trqType` es el código crudo de SAP; el
+  nombre de la línea de negocio se obtiene cruzando con `SapMapeoTrqType`, no se duplica aquí. Más `nit` (resuelto por BP,
+  para cruzar directo con `CotizacionesSolicitud` sin que el backend tenga que resolverlo aparte), `margenRecomendado` (el
+  número completo que manda SAP) y `activo` (soft delete: si SAP deja de traer un combo, se desactiva, no se borra).
+- `#SapMargenStage` — **no es una tabla fija del esquema**: el job de PowerShell la crea como tabla temporal local en su
+  propia conexión, la llena y la llama desde ahí; desaparece sola al cerrar la conexión (sin `TRUNCATE` manual y sin que
+  dos corridas puedan pisarse mientras cargan datos, porque cada una tiene la suya, privada).
+- `SapMargenSyncLog` — log de corridas (append-only, una fila por ejecución, no por registro de SAP), inspirado en
+  `fo_snapshot_sync_log` de EmbarQA/`etl-sap`. `id` es `UNIQUEIDENTIFIER` (no serial), igual que la mayoría de las tablas
+  de evento/log del esquema (`EventosConversacion`, `TokensRefresco`...).
+- `sp_sincronizar_margen_sap` — hace el `MERGE` (alta, actualización solo si cambió el valor, soft delete de lo que ya no
+  viene) y escribe el log, todo en una transacción con `sp_getapplock` para que no se solapen dos corridas.
+
+**El job** (`jobs/sincronizar_margen_sap.ps1`) trae el set completo de SAP (~1500 registros, sin paginar), resuelve el
+`nit` de cada BP contra `dbo.DimBPSolicitante` en el DW `DWCubosOperacionesEBS` (10.10.40.24,1433, usuario de solo lectura
+`consultascubos` — **base distinta** de `DWCubosEBSSAP`, la de `ConnectionStrings:Regional` que ya usa el backend para
+`DimEjecutivo`: no se puede reusar esa conexión), vuelca todo al staging y llama al stored procedure.
+
+**Cómo corre: un SQL Server Agent Job, instalado una sola vez por servidor.** No es un worker ni un servicio que haya que
+mantener prendido — es un job nativo de SQL Server Agent (como un cron del motor de base de datos). Una vez creado, sigue
+corriendo solo mientras el servidor de SQL Server esté encendido, sin relación ninguna con los despliegues del backend. Si
+en el futuro hay un SQL Server de producción aparte del de pruebas, el job se instala ahí también (una vez, igual que
+aplicar un script de BD).
+
+**El intervalo real es dinámico, por variable de entorno, no por el horario del job.** El SQL Agent Job se programa para
+*intentar* correr seguido (cada hora); el propio script revisa en `SapMargenSyncLog` cuándo fue la última corrida exitosa
+y, si fue hace menos de `SYNC_INTERVAL_MINUTOS` (1440 = 24h por defecto), sale sin hacer nada. Para cambiar la
+frecuencia (por ejemplo, a cada 60 min) solo hay que cambiar esa variable de entorno — no hay que tocar ni recrear el
+horario del job.
+
+**Credenciales: archivo `.env`, mismo patrón que `backend-dotnet/.env`.** `jobs/.env.example` se versiona con placeholders;
+copiarlo a `jobs/.env` en el servidor de SQL Server y llenarlo con los valores reales (`SAP_TM_URL`, `SAP_TM_USER`,
+`SAP_TM_PASSWORD`, `NEXO_DW_SQL_PASSWORD`, `COTIFLY_SQL_DATABASE`, `COTIFLY_SQL_USER`, `COTIFLY_SQL_PASSWORD`). La
+conexión al destino también es login SQL, no autenticación de Windows — mismo criterio que usa el propio backend para
+`ConnectionStrings:Cotifly` (`clsOpcionesConexiones.cs`). `jobs/.env` queda ignorado por git (lo cubre el
+`.gitignore` de la raíz) y el script lo carga solo al arrancar — no requiere variables de entorno de Windows ni reiniciar
+ningún servicio.
+
+**El esquema (tablas, SP y la FK de `SapMapeoTrqType`, scripts `17` y `18`) ya está aplicado en la base compartida de
+pruebas (2026-10-28), y el job ya se probó de punta a punta a mano** (1276 filas sincronizadas, 100% con `nit` resuelto).
+En esa prueba aparecieron y se corrigieron 2 bugs: la tabla del DW es `dbo.DimBPSolicitante` (BP en mayúsculas, no
+`DimBpSolicitante`), y había un choque de collation entre `#SapMargenStage` (nace con el collation del servidor/tempdb) y
+`SapMargenCliente` (el de esta base) — se corrigió con `COLLATE DATABASE_DEFAULT` en las columnas de texto de la temporal.
+
+### Cómo correrlo a mano (probado varias veces, 2026-10-28)
+Sirve para confirmar que el script funciona (llama a SAP, al DW, hace el upsert) sin esperar a tenerlo instalado.
+Se puede correr así desde cualquier máquina con red hacia SAP, el DW y la base destino — no hace falta que sea el
+servidor de SQL Server para esta parte (solo para dejarlo *instalado*, ver abajo):
+
+1. Copiar `jobs/.env.example` a `jobs/.env` en la misma carpeta y llenar los valores reales (nunca subir `.env` al repo,
+   ya queda ignorado por git).
+2. Abrir PowerShell en `db/jobs/` y correr `.\sincronizar_margen_sap.ps1`.
+3. Debe imprimir `Sincronización de margen SAP: N filas procesadas.`
+4. Verificar en la base: `SELECT COUNT(*) FROM dbo_cotifly.SapMargenCliente;` y
+   `SELECT TOP 1 * FROM dbo_cotifly.SapMargenSyncLog ORDER BY iniciadoAt DESC;` — debe haber filas y la última corrida
+   debe decir `status = 'ok'`.
+
+Dos bugs reales que aparecieron la primera vez y ya están corregidos en el script (quedan acá por si alguien los
+reencuentra en otro ambiente): (1) la tabla del DW es `dbo.DimBPSolicitante`, con "BP" en mayúsculas; (2) choque de
+collation entre `#SapMargenStage` (nace con el collation del servidor/tempdb) y `SapMargenCliente` (el de esta base) —
+se corrigió con `COLLATE DATABASE_DEFAULT` en las columnas de texto de la temporal.
+
+### Cómo instalarlo (que corra solo, automático)
+No basta con correrlo a mano una vez: para que quede como SQL Agent Job hace falta que el **archivo** viva físicamente
+en el servidor de SQL Server, y que alguien con permiso lo **registre** en SQL Agent. Son dos requisitos separados:
+
+1. **El archivo tiene que estar en el servidor.** Copiar `jobs/sincronizar_margen_sap.ps1` y el `jobs/.env` real (con
+   las claves ya llenas, no `.env.example`) a una carpeta del servidor de SQL Server (ej. `C:\Jobs\SapMargenSap\`).
+   Esto requiere acceso por Escritorio Remoto (RDP) a esa máquina — no se puede hacer por red, el job solo puede
+   ejecutar un archivo que esté en su propio disco.
+2. **Alguien con permiso tiene que registrar el job.** Correr `scripts/operacion/instalar_sql_agent_job_margen_sap.sql`
+   contra ese servidor (ajustando la ruta del paso 1 si se usó otra carpeta). Esto requiere ser `sysadmin` o pertenecer
+   al rol `SQLAgentUserRole` de `msdb` — verificado que @scalderon-bs hoy no tiene ninguno de los dos.
+
+**Bloqueado hoy por esos dos permisos** (ni RDP al servidor ni rol de SQL Agent) — ver
+`docs/backlog/2026-10-28_PENDIENTES_SARA.md`. Hace falta un DBA/admin que haga los dos pasos, o que le dé esos accesos
+a Datos para hacerlo directamente.
 
 ## Mantener esto en sincronía
 

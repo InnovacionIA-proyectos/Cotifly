@@ -14,31 +14,38 @@ namespace Cotifly.Aplicacion.Identidad.Services;
 /// <summary>
 /// <c>POST /api/auth/login-clientepro</c> (patrón "Login SSO — Cliente Pro", ADR-009). Errores:
 /// <see cref="clsCodigosAcceso.SolicitudInvalida"/> (400) y <see cref="clsCodigosAcceso.CredencialesInvalidas"/> (401
-/// genérico para todo rechazo; el motivo real queda en la auditoría y en el log).
+/// genérico para todo rechazo; el motivo real queda en la auditoría y en el log). HU-040.2 (#230, ADR-025): con un solo rol devuelve la
+/// sesión como siempre; con varios, la elección pendiente (ticket de un solo uso para <c>POST /api/auth/elegir-rol</c>), sin sesión.
 /// </summary>
 public interface IClsLoginClienteProService
 {
-    Task<clsResultado<clsSesionEmitida>> IniciarSesionAsync(clsSolicitudLoginClientePro solicitud, CancellationToken cancellationToken = default);
+    Task<clsResultado<clsResultadoLogin>> IniciarSesionAsync(clsSolicitudLoginClientePro solicitud, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
 /// Implementación de <see cref="IClsLoginClienteProService"/>: valida el cuerpo, hace la verificación doble
 /// (<see cref="clsVerificadorIdentidad"/>, con alta JIT en el primer ingreso), actualiza <c>ultimaSesion</c>, emite el
-/// access (JWT) y el refresh opaco (se guarda su SHA-256, nueva familia) y audita cada intento en
+/// access (JWT) y el refresh opaco (se guarda su SHA-256, nueva familia, con el rol de la sesión) y audita cada intento en
 /// <c>EventosHerramienta</c> (herramienta <c>login_clientepro</c>, hilo <c>auth/{idUsuario}</c>). Cualquier excepción
 /// inesperada también responde el 401 genérico (fail-closed); solo la cancelación del llamador se propaga.
+/// <para>
+/// HU-040.2 (#230, ADR-025): si la persona tiene varios roles disponibles NO se emite sesión: se guardan el alta y los datos corporativos
+/// refrescados, se emite el ticket de elección (<see cref="IClsEmisorTicketEleccion"/>, 5 minutos, un solo uso) y se audita
+/// <c>eleccion_rol_pendiente</c> con los roles ofrecidos. <c>ultimaSesion</c> se actualiza cuando elige.
+/// </para>
 /// </summary>
 public sealed class clsLoginClienteProService(
     clsVerificadorIdentidad verificador,
     IClsTokenRefrescoRepository tokens,
     IClsEmisorTokens emisor,
+    IClsEmisorTicketEleccion tickets,
     IClsConfiguracionJwt configuracion,
     IClsUnitOfWork unidadTrabajo,
     IClsReloj reloj,
     IClsAuditoriaService auditoria,
     ILogger<clsLoginClienteProService> logger) : IClsLoginClienteProService
 {
-    public async Task<clsResultado<clsSesionEmitida>> IniciarSesionAsync(
+    public async Task<clsResultado<clsResultadoLogin>> IniciarSesionAsync(
         clsSolicitudLoginClientePro solicitud, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(solicitud);
@@ -60,7 +67,7 @@ public sealed class clsLoginClienteProService(
         string motivo;
         string? regla = null;
         Guid? usuarioRechazado = null;
-        clsSesionEmitida? sesion = null;
+        clsResultadoLogin? resultado = null;
         try
         {
             var ahora = reloj.AhoraUtc;
@@ -70,14 +77,30 @@ public sealed class clsLoginClienteProService(
             usuarioRechazado = verificacion.UsuarioIdRechazado;
             if (verificacion.Identidad is { } identidad)
             {
-                identidad.Usuario.RegistrarSesion(ahora);
-                var emitida = clsEmisionSesion.Emitir(emisor, identidad.Usuario, identidad.Rol, clsEmisionSesion.NuevoRefresh(
-                    identidad.Usuario.Id, ahora, configuracion.VigenciaRefresh, familiaId: null, identidad.Rol, out var refresh));
-                tokens.Agregar(refresh);
+                clsResultadoLogin emitido;
+                if (identidad.RequiereEleccion)
+                {
+                    // HU-040.2 (#230): sin sesión todavía. El ticket va ligado al usuario y a los roles que se le ofrecen.
+                    emitido = clsResultadoLogin.ConEleccion(EleccionPendiente(identidad));
+                }
+                else
+                {
+                    identidad.Usuario.RegistrarSesion(ahora);
+                    var sesion = clsEmisionSesion.Emitir(emisor, identidad.Usuario, identidad.Rol, clsEmisionSesion.NuevoRefresh(
+                        identidad.Usuario.Id, ahora, configuracion.VigenciaRefresh, familiaId: null, identidad.Rol, out var refresh));
+                    tokens.Agregar(refresh);
+                    emitido = clsResultadoLogin.ConSesion(sesion);
+                }
+
                 try
                 {
+                    // Con elección pendiente se guardan igual el alta JIT (usuario y asignaciones) y los datos corporativos refrescados.
                     await unidadTrabajo.GuardarCambiosAsync(cancellationToken);
-                    sesion = emitida;
+                    resultado = emitido;
+                    if (emitido.Eleccion is not null)
+                    {
+                        motivo = clsMotivosAcceso.EleccionRolPendiente;
+                    }
                 }
                 catch (clsViolacionUnicidadException ex)
                 {
@@ -95,7 +118,7 @@ public sealed class clsLoginClienteProService(
         {
             logger.LogError(ex, "Error inesperado en el login de '{IdUsuario}'.", idUsuario);
             motivo = clsMotivosAcceso.ErrorInterno;
-            sesion = null;
+            resultado = null;
         }
 
         await auditoria.RegistrarAsync(
@@ -103,17 +126,32 @@ public sealed class clsLoginClienteProService(
             new { IdUsuario = idUsuario, NombreUsuarioInformado = solicitud.NombreUsuario, RolesInformados = solicitud.Roles },
             new
             {
-                Resultado = sesion is null ? "rechazado" : "aceptado",
+                Resultado = resultado is null ? "rechazado" : resultado.Eleccion is null ? "aceptado" : "eleccion_pendiente",
                 Motivo = motivo,
                 Regla = regla,
-                UsuarioId = sesion?.Usuario.Id ?? usuarioRechazado,
-                Rol = sesion?.Usuario.Rol,
+                UsuarioId = resultado?.Sesion?.Usuario.Id ?? resultado?.Eleccion?.UsuarioId ?? usuarioRechazado,
+                Rol = resultado?.Sesion?.Usuario.Rol,
+                RolesDisponibles = resultado?.Eleccion?.Roles.Select(r => r.Codigo).ToList(),
             },
-            sesion is not null,
+            resultado is not null,
             clsEmisionSesion.DuracionMs(inicio),
             clsCodigosAcceso.PrefijoHilo + idUsuario);
 
-        return sesion is null ? clsCodigosAcceso.ErrorCredencialesInvalidas() : sesion;
+        return resultado is null ? clsCodigosAcceso.ErrorCredencialesInvalidas() : resultado;
+    }
+
+    private clsEleccionRolPendiente EleccionPendiente(clsIdentidadVerificada identidad)
+    {
+        var nombreUsuario = identidad.Usuario.NombreUsuario
+            ?? throw new InvalidOperationException("El usuario verificado no tiene nombreUsuario.");
+        var ticket = tickets.Emitir(identidad.Usuario.Id, nombreUsuario, [.. identidad.RolesDisponibles.Select(r => r.Codigo)]);
+        return new clsEleccionRolPendiente(
+            ticket.Ticket,
+            ticket.ExpiraAt,
+            [.. identidad.RolesDisponibles.Select(r => new clsRolDisponible(clsCodigoEnum.ACodigo(r.Codigo), r.Descripcion ?? clsCodigoEnum.ACodigo(r.Codigo)))],
+            identidad.Usuario.Id,
+            nombreUsuario,
+            identidad.Usuario.NombreCompleto ?? nombreUsuario);
     }
 }
 

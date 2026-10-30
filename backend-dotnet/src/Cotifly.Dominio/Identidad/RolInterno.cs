@@ -4,7 +4,8 @@ namespace Cotifly.Dominio.Identidad;
 /// Rol interno de Cotifly (HU-010, ADR-009): <c>comercial</c> | <c>gerente_comercial</c> | <c>director</c> (HU-037, ADR-016 §11).
 /// Catálogo en <c>dbo_cotifly.Roles</c> (con su rol externo de ClientePro) y asignación por usuario en
 /// <c>dbo_cotifly.UsuariosRoles</c> (script 0002; <c>director</c> llega con el script 15). Viaja en el claim <c>rol</c> del JWT.
-/// Con varios roles externos mapeados gana <c>director</c> &gt; <c>gerente_comercial</c> &gt; <c>comercial</c>.
+/// Rol único: con varios roles externos mapeados gana <c>director</c> &gt; <c>gerente_comercial</c> &gt; <c>comercial</c>. Multi-rol
+/// (HU-040, ADR-025): con varias asignaciones activas la persona elige el rol al entrar.
 /// </summary>
 public enum RolInterno
 {

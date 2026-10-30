@@ -54,7 +54,8 @@ public sealed class clsLoginClienteProServiceTests
 
         var resultado = await _e.Login().IniciarSesionAsync(new clsSolicitudLoginClientePro("APEREZ", "Ana (informativo)"), Ct);
 
-        var sesion = resultado.Valor;
+        var sesion = resultado.Valor.Sesion!;
+        resultado.Valor.Eleccion.Should().BeNull("con un solo rol no hay selector");
         creado!.NombreUsuario.Should().Be("APEREZ");
         creado.NombreCompleto.Should().Be("Nombre de APEREZ");
         creado.Email.Should().Be("aperez@boterosoto.com.co");
@@ -81,7 +82,7 @@ public sealed class clsLoginClienteProServiceTests
 
         var resultado = await _e.Login().IniciarSesionAsync(new clsSolicitudLoginClientePro("102", "OTRO NOMBRE"), Ct);
 
-        resultado.Valor.Usuario.Username.Should().Be("LGOMEZ");
+        resultado.Valor.Sesion!.Usuario.Username.Should().Be("LGOMEZ");
         await _e.Usuarios.Received(1).ObtenerPorNombreUsuarioAsync("LGOMEZ", Arg.Any<CancellationToken>());
         await _e.Usuarios.DidNotReceive().ObtenerPorNombreUsuarioAsync("OTRO NOMBRE", Arg.Any<CancellationToken>());
     }
@@ -155,26 +156,41 @@ public sealed class clsLoginClienteProServiceTests
         var resultado = await _e.Login().IniciarSesionAsync(
             new clsSolicitudLoginClientePro("APEREZ", null, ["31", "gerente_comercial"]), Ct);
 
-        resultado.Valor.Usuario.Rol.Should().Be("comercial");
+        resultado.Valor.Sesion!.Usuario.Rol.Should().Be("comercial");
         var entrada = _e.EntradaAuditada(clsCodigosAcceso.HerramientaLogin);
         entrada.GetProperty("roles_informados").EnumerateArray().Select(r => r.GetString()).Should().Equal("31", "gerente_comercial");
     }
 
     [Fact]
-    public async Task ConLosDosRolesExternosGanaGerenteComercialYLaReglaQuedaAuditada()
+    public async Task HU0402_UnAltaConDosRolesExternosAsignaAmbosYPideElegirSinEmitirSesion()
     {
+        // HU-040.2 (#230, ADR-025): ya no gana gerente_comercial: el alta asigna los dos roles y el login devuelve el selector.
         _e.PersonaExterna("JEFE", 200, clsEscenarioIdentidad.RolExternoComercial, clsEscenarioIdentidad.RolExternoGerente);
-        clsUsuarioRol? asignado = null;
-        _e.Roles.When(r => r.AgregarAsignacion(Arg.Any<clsUsuarioRol>())).Do(c => asignado = c.Arg<clsUsuarioRol>());
+        var asignados = new List<clsUsuarioRol>();
+        _e.Roles.When(r => r.AgregarAsignacion(Arg.Any<clsUsuarioRol>())).Do(c => asignados.Add(c.Arg<clsUsuarioRol>()));
+        clsUsuarioWeb? creado = null;
+        _e.Usuarios.When(u => u.Agregar(Arg.Any<clsUsuarioWeb>())).Do(c => creado = c.Arg<clsUsuarioWeb>());
 
         var resultado = await _e.Login().IniciarSesionAsync(new clsSolicitudLoginClientePro("JEFE"), Ct);
 
-        resultado.Valor.Usuario.Rol.Should().Be("gerente_comercial");
-        asignado!.RolId.Should().Be(_e.Gerente.Id);
+        resultado.Valor.Sesion.Should().BeNull("con varios roles no hay sesión hasta elegir");
+        var eleccion = resultado.Valor.Eleccion!;
+        eleccion.Roles.Select(r => r.Codigo).Should().Equal("comercial", "gerente_comercial");
+        eleccion.Roles[1].Descripcion.Should().Be("Gerente comercial");
+        eleccion.Ticket.Should().Be($"ticket-{creado!.Id:N}-Comercial+GerenteComercial");
+        eleccion.ExpiraAt.Should().Be(_e.Reloj.AhoraUtc.AddMinutes(5));
+        eleccion.UsuarioId.Should().Be(creado.Id);
+        asignados.Select(a => a.RolId).Should().BeEquivalentTo([_e.Comercial.Id, _e.Gerente.Id]);
+        _e.Tokens.DidNotReceiveWithAnyArgs().Agregar(default!);
+        _e.Emisor.DidNotReceiveWithAnyArgs().EmitirAcceso(default, default!, default);
+        await _e.UnidadTrabajo.Received(1).GuardarCambiosAsync(Arg.Any<CancellationToken>());
         var salida = _e.SalidaAuditada(clsCodigosAcceso.HerramientaLogin);
-        salida.GetProperty("regla").GetString().Should().Be(clsMotivosAcceso.ReglaPrecedenciaGerente);
-        salida.GetProperty("resultado").GetString().Should().Be("aceptado");
-        salida.GetProperty("rol").GetString().Should().Be("gerente_comercial");
+        salida.GetProperty("resultado").GetString().Should().Be("eleccion_pendiente");
+        salida.GetProperty("motivo").GetString().Should().Be(clsMotivosAcceso.EleccionRolPendiente);
+        salida.GetProperty("regla").GetString().Should().Be(clsMotivosAcceso.ReglaMultiRol);
+        salida.GetProperty("roles_disponibles").EnumerateArray().Select(r => r.GetString()).Should().Equal("comercial", "gerente_comercial");
+        salida.GetProperty("usuario_id").GetGuid().Should().Be(creado.Id);
+        _e.EventoAuditado(clsCodigosAcceso.HerramientaLogin).Exito.Should().BeTrue();
     }
 
     [Fact]
@@ -185,8 +201,8 @@ public sealed class clsLoginClienteProServiceTests
 
         var resultado = await _e.Login().IniciarSesionAsync(new clsSolicitudLoginClientePro("APEREZ"), Ct);
 
-        resultado.Valor.Usuario.Id.Should().Be(usuario.Id);
-        resultado.Valor.Usuario.Ubicacion.Should().Be("Antioquia");
+        resultado.Valor.Sesion!.Usuario.Id.Should().Be(usuario.Id);
+        resultado.Valor.Sesion!.Usuario.Ubicacion.Should().Be("Antioquia");
         usuario.UltimaSesion.Should().Be(_e.Reloj.AhoraUtc);
         _e.Usuarios.DidNotReceiveWithAnyArgs().Agregar(default!);
         _e.Roles.DidNotReceiveWithAnyArgs().AgregarAsignacion(default!);
@@ -213,19 +229,39 @@ public sealed class clsLoginClienteProServiceTests
     }
 
     [Fact]
-    public async Task HU0401_ConDosAsignacionesActivasRespaldadasEntraConLaJerarquiaYGuardaElRolEnElRefresh()
+    public async Task HU0402_ConDosAsignacionesActivasRespaldadasPideElegirYNoEmiteSesion()
     {
-        // HU-040.1 (#229): el esquema ya admite varias asignaciones activas; hasta HU-040.2 el login sigue con la jerarquía.
+        // HU-040.1 (#229) dejaba entrar con la jerarquía; HU-040.2 (#230): con dos asignaciones activas se elige.
         _e.PersonaExterna("JEFE", 200, clsEscenarioIdentidad.RolExternoComercial, clsEscenarioIdentidad.RolExternoGerente);
-        _e.UsuarioLocal("JEFE", 200, RolInterno.Comercial, RolInterno.GerenteComercial);
+        var usuario = _e.UsuarioLocal("JEFE", 200, RolInterno.Comercial, RolInterno.GerenteComercial);
+        var sesionAnterior = usuario.UltimaSesion;
+
+        var resultado = await _e.Login().IniciarSesionAsync(new clsSolicitudLoginClientePro("JEFE"), Ct);
+
+        resultado.Valor.Sesion.Should().BeNull();
+        resultado.Valor.Eleccion!.Roles.Select(r => r.Codigo).Should().Equal("comercial", "gerente_comercial");
+        _e.Tickets.Received(1).Emitir(usuario.Id, "JEFE", Arg.Is<IReadOnlyList<RolInterno>>(r => r.SequenceEqual(new[] { RolInterno.Comercial, RolInterno.GerenteComercial })));
+        usuario.UltimaSesion.Should().Be(sesionAnterior);
+        _e.Roles.DidNotReceiveWithAnyArgs().AgregarAsignacion(default!);
+        _e.Tokens.DidNotReceiveWithAnyArgs().Agregar(default!);
+        _e.SalidaAuditada(clsCodigosAcceso.HerramientaLogin).GetProperty("regla").GetString().Should().Be(clsMotivosAcceso.ReglaMultiRol);
+    }
+
+    [Fact]
+    public async Task HU0402_UnUsuarioConUnSoloRolEntraIgualQueHoySinSelectorAunqueTengaVariosRolesExternos()
+    {
+        // Rol único (una asignación activa): la jerarquía de siempre, sesión directa y el refresh con el rol de la sesión.
+        _e.PersonaExterna("JEFE", 200, clsEscenarioIdentidad.RolExternoComercial, clsEscenarioIdentidad.RolExternoGerente);
+        _e.UsuarioLocal("JEFE", 200, RolInterno.GerenteComercial);
         clsTokenRefresco? refresh = null;
         _e.Tokens.When(t => t.Agregar(Arg.Any<clsTokenRefresco>())).Do(c => refresh = c.Arg<clsTokenRefresco>());
 
         var resultado = await _e.Login().IniciarSesionAsync(new clsSolicitudLoginClientePro("JEFE"), Ct);
 
-        resultado.Valor.Usuario.Rol.Should().Be("gerente_comercial");
+        resultado.Valor.Eleccion.Should().BeNull();
+        resultado.Valor.Sesion!.Usuario.Rol.Should().Be("gerente_comercial");
         refresh!.RolSesion.Should().Be(RolInterno.GerenteComercial);
-        _e.Roles.DidNotReceiveWithAnyArgs().AgregarAsignacion(default!);
+        _e.Tickets.DidNotReceiveWithAnyArgs().Emitir(default, default!, default!);
         _e.SalidaAuditada(clsCodigosAcceso.HerramientaLogin).GetProperty("regla").GetString().Should().Be(clsMotivosAcceso.ReglaPrecedenciaGerente);
     }
 
