@@ -3,22 +3,22 @@ using Cotifly.Dominio.Comun;
 namespace Cotifly.Aplicacion.Agente.DTOs;
 
 /// <summary>
-/// Lo que devuelve una herramienta del agente (<c>KernelFunction</c> del plugin <c>cotizador</c>, ADR-003). Separa lo que ve el
-/// modelo (<see cref="Salida"/> con el mismo contrato de <c>specs/openapi.yaml</c>, o el error estructurado) de los datos tipados
-/// que usa <c>clsEstadoConversacionService</c> para actualizar el estado (<see cref="Detalle"/>, ADR-004).
+/// Lo que devuelve una herramienta del asistente (<c>KernelFunction</c> del plugin <c>asistente</c>, ADR-003 y ADR-018). Separa lo
+/// que ve el modelo (<see cref="Salida"/>, sin montos de dinero, o el error estructurado) de los datos tipados del turno que nunca
+/// van al modelo (<see cref="Detalle"/>).
 /// </summary>
 public sealed record clsResultadoHerramienta
 {
     /// <summary>Nombre de la herramienta (<c>buscar_cliente</c>, <c>obtener_margen</c>...).</summary>
     public required string Herramienta { get; init; }
 
-    /// <summary>Salida del contrato hacia el modelo si terminó bien (<c>SalidaPrecio</c>, <c>SalidaMargen</c>, <c>SalidaPdf</c>...).</summary>
+    /// <summary>Salida del contrato hacia el modelo si terminó bien (por ejemplo la consulta de la cotización o la propuesta).</summary>
     public object? Salida { get; init; }
 
     /// <summary>Error de negocio (<c>{"error": {codigo, mensaje, detalle?}}</c> hacia el modelo), o <c>null</c> si terminó bien.</summary>
     public clsErrorDominio? Error { get; init; }
 
-    /// <summary>Datos tipados para el estado (ej. <c>clsMargenResuelto</c>, <c>clsSalidaAjusteMargen</c>); nunca van al modelo.</summary>
+    /// <summary>Datos tipados del turno (por defecto, la misma salida); nunca van al modelo.</summary>
     public object? Detalle { get; init; }
 
     /// <summary>

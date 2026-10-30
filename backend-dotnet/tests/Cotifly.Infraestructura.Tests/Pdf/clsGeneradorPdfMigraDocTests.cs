@@ -1,8 +1,11 @@
 using System.Text;
+using Cotifly.Aplicacion.Comun.Exceptions;
 using Cotifly.Aplicacion.Pdf.DTOs;
 using Cotifly.Aplicacion.Pdf.Services;
 using Cotifly.Infraestructura.Pdf.Services;
 using Cotifly.Pruebas.Comun;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace Cotifly.Infraestructura.Tests.Pdf;
 
@@ -12,6 +15,7 @@ namespace Cotifly.Infraestructura.Tests.Pdf;
 /// con teléfono, bloque aduanero solo en Internacional, variante multi, fuentes embebidas (solo Liberation Sans),
 /// texto literal sin HTML. Deja los 3 PDF de la comparación visual de #11 en <c>tests/artefactos/</c> (no versionados).
 /// </summary>
+[Collection(clsColeccionRenderPdf.Nombre)]
 public sealed class clsGeneradorPdfMigraDocTests
 {
     private static readonly clsGeneradorPdfMigraDoc _generador = new();
@@ -252,6 +256,85 @@ public sealed class clsGeneradorPdfMigraDocTests
         var segundo = Generar(clsDocumentosPrueba.Nacional()).Lector;
 
         segundo.Paginas.Should().Equal(primero.Paginas);
+        segundo.Disposicion.Should().Equal(primero.Disposicion, "cada letra queda en la misma posición");
+    }
+
+    // #92, #95: PDFsharp-MigraDoc comparte estado global entre renders. Sin el candado del generador, renders simultáneos
+    // (peticiones concurrentes en producción, clases de prueba en paralelo) sacaban el mismo documento con otra maquetación:
+    // espacios medidos con la fuente de otro documento, palabras corridas y saltos de línea distintos.
+    [Fact]
+    public async Task LosRendersSimultaneosDanLaMismaMaquetacionQueUnRenderSolo()
+    {
+        var referencia = Generar(clsDocumentosPrueba.Nacional()).Lector;
+        var resultados = new System.Collections.Concurrent.ConcurrentBag<clsLectorPdf>();
+
+        await Parallel.ForAsync(0, 48, new ParallelOptions { MaxDegreeOfParallelism = Math.Max(4, Environment.ProcessorCount) }, async (i, ct) =>
+        {
+            var documento = (i % 4) switch
+            {
+                0 => clsDocumentosPrueba.Nacional(),
+                1 => clsDocumentosPrueba.Multi(),
+                2 => clsDocumentosPrueba.Internacional(),
+                _ => clsDocumentosPrueba.Dolares(),
+            };
+            // Mitad por el puerto async (peticiones) y mitad por el render síncrono: comparten el mismo turno.
+            var pdf = i % 8 < 4 ? await _generador.GenerarAsync(documento, ct) : _generador.Generar(documento);
+            var lector = clsLectorPdf.Leer(pdf.Contenido);
+            if (i % 4 == 0)
+            {
+                resultados.Add(lector);
+            }
+        });
+
+        resultados.Should().HaveCount(12);
+        foreach (var lector in resultados)
+        {
+            lector.Paginas.Should().Equal(referencia.Paginas);
+            lector.Disposicion.Should().Equal(referencia.Disposicion, "un render concurrente no cambia la posición de ninguna letra");
+        }
+    }
+
+    // #92, #95: el turno de render tiene espera acotada; si no llega a tiempo, error transitorio y el generador sigue sano.
+    [Fact]
+    public async Task SiElTurnoDeRenderNoLlegaATiempoLanzaRenderOcupado()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var generador = new clsGeneradorPdfMigraDoc(
+            Options.Create(new clsOpcionesPdf { TiempoEsperaRenderSegundos = 1 }), NullLogger<clsGeneradorPdfMigraDoc>.Instance);
+
+        await clsGeneradorPdfMigraDoc.TurnoDeRender.WaitAsync(ct);
+        try
+        {
+            var generar = () => generador.GenerarAsync(clsDocumentosPrueba.Nacional(), ct);
+            (await generar.Should().ThrowAsync<clsRenderPdfOcupadoException>()).Which.Espera.Should().BeGreaterThanOrEqualTo(TimeSpan.FromMilliseconds(900));
+        }
+        finally
+        {
+            clsGeneradorPdfMigraDoc.TurnoDeRender.Release();
+        }
+
+        // Con la espera por defecto (30 s), no con la de 1 s: el turno es de proceso y otras clases de este ensamblado que no están en
+        // la colección RenderPdf (pliego, correo con PDF...) pueden tomarlo justo al liberarlo; bajo carga su render pasa de 1 s y la
+        // prueba fallaba aquí con RenderOcupado aunque el turno se hubiera liberado bien. Si la espera fallida dejara el turno tomado,
+        // esto seguiría fallando (a los 30 s).
+        (await _generador.GenerarAsync(clsDocumentosPrueba.Nacional(), ct)).Paginas.Should().Be(3, "al liberarse el turno renderiza normal");
+    }
+
+    [Fact]
+    public async Task CancelarMientrasEsperaElTurnoNoRenderiza()
+    {
+        using var cancelacion = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        await clsGeneradorPdfMigraDoc.TurnoDeRender.WaitAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            var generar = _generador.GenerarAsync(clsDocumentosPrueba.Nacional(), cancelacion.Token);
+            await cancelacion.CancelAsync();
+            await ((Func<Task>)(() => generar)).Should().ThrowAsync<OperationCanceledException>();
+        }
+        finally
+        {
+            clsGeneradorPdfMigraDoc.TurnoDeRender.Release();
+        }
     }
 
     [Fact]

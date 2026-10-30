@@ -1,4 +1,3 @@
-using Cotifly.Aplicacion.Metricas.DTOs;
 using Cotifly.Aplicacion.Metricas.Repositories;
 using Cotifly.Pruebas.Comun;
 using Microsoft.Extensions.DependencyInjection;
@@ -6,84 +5,77 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
-/// Vistas de métricas (<c>vActividadPorComercial</c> corregida por el 0003, <c>vAjustesMargenPorComercial</c>) leídas con el
-/// JOIN a <c>UsuariosWeb</c> y filtradas por comercial o regional.
+/// Lectura del tablero de métricas (<see cref="IClsMetricasRepository.ListarCotizacionesAsync"/>) contra la base real. Las pruebas de
+/// las vistas del borrador (<c>vActividadPorComercial</c>, <c>vAjustesMargenPorComercial</c>) se retiraron con ellas (HU-014.3, #152).
 /// </summary>
 [Collection(clsColeccionSqlServer.Nombre)]
 [Trait("Categoria", "Integracion")]
 public sealed class clsMetricasRepositoryTests(clsBaseDatosPruebas baseDatos) : clsPruebaIntegracion(baseDatos)
 {
+    /// <summary>
+    /// B3 (#173): se crea la <c>-v2</c> (vigente, todavía sin precio) y DESPUÉS se marca ganada la original. El tablero muestra la cadena con
+    /// los datos de la vigente, pero el valor ganado y la ganancia salen de la versión ganada (antes daban 0).
+    /// </summary>
     [Fact]
-    public async Task LaActividadCuentaEnviadasYReenviadasYTraeElNombreDelComercial()
+    public async Task ElValorGanadoSaleDeLaVersionGanadaAunqueLaVigenteSeaLaV2SinPrecio()
     {
         var ana = await CrearUsuarioAsync();
-        var enviada = NuevaCotizacion(ana);
-        var reenviada = NuevaCotizacion(ana);
-        await GuardarAsync(enviada);
-        await GuardarAsync(reenviada);
-        await GuardarAsync(NuevaCotizacion(ana));
+        var folio = $"PCN-B3-{Guid.NewGuid():N}"[..30];
+        var original = NuevaCotizacion(ana, folio, 2_000_000m);
+        await GuardarAsync(original);
+        var v2 = NuevaCotizacion(ana, folio + "-v2", 999m);
+        await GuardarAsync(v2);
         await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly, $"""
-            UPDATE dbo_cotifly.Cotizaciones SET estadoEnvio = 'enviada' WHERE id = '{enviada.Id}';
-            UPDATE dbo_cotifly.Cotizaciones SET estadoEnvio = 'reenviada' WHERE id = '{reenviada.Id}';
-            INSERT INTO dbo_cotifly.MargenAjustes (id, cotizacionId, folio, margenPolitica, margenAplicado, diferencia, motivo, usuarioId, createdAt)
-            VALUES (NEWID(), '{enviada.Id}', '{enviada.Folio}', 0.15, 0.12, -0.03, N'Ajuste', '{ana}', SYSDATETIMEOFFSET());
+            UPDATE dbo_cotifly.CotizacionesSolicitud SET version = 2, precioFinal = NULL WHERE id = '{v2.Id}';
+            UPDATE dbo_cotifly.CotizacionLineasSolicitud SET costoFinal = NULL, precioFinalLinea = NULL WHERE cotizacionSolicitudId = '{v2.Id}';
+            UPDATE dbo_cotifly.CotizacionesSolicitud SET ganada = 1, marcadoAt = SYSDATETIMEOFFSET() WHERE id = '{original.Id}';
             """);
 
-        var filas = await Repositorio(r => r.ListarActividadAsync(clsAlcanceMetricas.DelUsuario(ana), Ct));
+        var datos = await ConsultarAsync(s => s.GetRequiredService<IClsMetricasRepository>()
+            .ListarCotizacionesAsync([ana], Reloj.AhoraUtc.AddDays(-1), Reloj.AhoraUtc.AddDays(1), Ct));
 
-        filas.Should().ContainSingle().Which.Should().BeEquivalentTo(new
-        {
-            UsuarioId = ana,
-            NombreCompleto = "Comercial de prueba",
-            NumCotizaciones = 3,
-            NumCotizacionesEnviadas = 2,
-            NumAjustes = 1,
-            UltimaCotizacion = Reloj.AhoraUtc,
-        });
+        var fila = datos.Filas.Should().ContainSingle("una fila por cadena de versiones").Subject;
+        fila.Versiones.Should().Be(2);
+        fila.PrecioFinal.Should().BeNull("los datos de la fila son los de la vigente (-v2)");
+        fila.Ganada.Should().BeTrue();
+        var indicadores = Cotifly.Dominio.Metricas.clsCalculadoraMetricas.Indicadores(datos.Filas, Reloj.AhoraUtc, deadlineDisponible: false);
+        indicadores.ValorGanadoCop.Should().Be(2_000_000m, "el valor ganado es el de la versión ganada, no el de la vigente");
+        indicadores.CosteoGanadas.Should().Be(1_275_000m);
+        indicadores.Ganancias.Should().Be(725_000m);
+        fila.RutasResultado.Should().ContainSingle("las rutas de la versión ganada (la v1) vienen aparte");
+        Cotifly.Dominio.Metricas.clsCalculadoraMetricas.PorLineaNegocio(datos.Filas).Sum(l => l.ValorGanadoCop)
+            .Should().Be(2_000_000m, "la apertura por línea cuadra con el total");
     }
 
+    /// <summary>
+    /// HU-028.1 (#183), hallazgo B2: un ajuste de margen hecho en una ruta que la Mesa de Costeo rechazó después no cuenta en ninguna ruta (la
+    /// ruta rechazada no sale): tampoco en la cabecera. Con todas las rutas rechazadas, un ajuste sin ruta tampoco (no hay ruta que lo lleve).
+    /// </summary>
     [Fact]
-    public async Task PorRegionalSoloSalenLosComercialesDeEsaRegional()
-    {
-        var regional = $"R-{Guid.NewGuid():N}"[..12];
-        var ana = await CrearUsuarioAsync();
-        var luis = await CrearUsuarioAsync();
-        var otro = await CrearUsuarioAsync();
-        await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly,
-            $"UPDATE dbo_cotifly.UsuariosWeb SET regional = '{regional}' WHERE id IN ('{ana}', '{luis}');");
-        foreach (var usuario in new[] { ana, luis, otro })
-        {
-            await GuardarAsync(NuevaCotizacion(usuario));
-        }
-
-        var actividad = await Repositorio(r => r.ListarActividadAsync(clsAlcanceMetricas.DeLaRegional(regional), Ct));
-
-        actividad.Select(f => f.UsuarioId).Should().BeEquivalentTo([ana, luis]);
-    }
-
-    [Fact]
-    public async Task LosAjustesSeAgrupanPorComercialYLinea()
+    public async Task HU0281_LosAjustesDeUnaRutaRechazadaNoCuentanNiEnLaCabeceraNiEnLasRutas()
     {
         var ana = await CrearUsuarioAsync();
         var cotizacion = NuevaCotizacion(ana);
         await GuardarAsync(cotizacion);
+        var ruta = cotizacion.PrimeraRuta!.Id;
         await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly, $"""
-            INSERT INTO dbo_cotifly.MargenAjustes (id, cotizacionId, folio, margenPolitica, margenAplicado, diferencia, motivo, usuarioId, createdAt)
-            VALUES (NEWID(), '{cotizacion.Id}', '{cotizacion.Folio}', 0.15, 0.12, -0.03, N'A', '{ana}', SYSDATETIMEOFFSET()),
-                   (NEWID(), '{cotizacion.Id}', '{cotizacion.Folio}', 0.15, 0.10, -0.05, N'B', '{ana}', SYSDATETIMEOFFSET());
+            INSERT INTO dbo_cotifly.MargenAjustes (id, cotizacionId, lineaSolicitudId, folio, margenPolitica, margenAplicado, diferencia, motivo, usuarioId, createdAt)
+            VALUES (NEWID(), '{cotizacion.Id}', '{ruta}', '{cotizacion.Folio}', 0.15, 0.20, 0.05, N'En la ruta', '{ana}', SYSDATETIMEOFFSET()),
+                   (NEWID(), '{cotizacion.Id}', NULL, '{cotizacion.Folio}', 0.15, 0.12, -0.03, N'Sin ruta', '{ana}', SYSDATETIMEOFFSET());
             """);
 
-        var filas = await Repositorio(r => r.ListarAjustesMargenAsync(clsAlcanceMetricas.DelUsuario(ana), Ct));
+        var antes = await FilaAsync(ana);
+        (antes.NumAjustes, antes.Rutas.Sum(r => r.NumAjustes)).Should().Be((2, 2), "sin rechazo, la cabecera y las rutas cuadran");
 
-        var fila = filas.Should().ContainSingle().Subject;
-        fila.LineaNegocio.Should().Be("Nacional");
-        fila.NumAjustes.Should().Be(2);
-        fila.DiferenciaPromedio.Should().Be(-0.04m);
-        fila.DiferenciaMin.Should().Be(-0.05m);
-        fila.DiferenciaMax.Should().Be(-0.03m);
-        fila.NombreCompleto.Should().Be("Comercial de prueba");
+        await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly,
+            $"UPDATE dbo_cotifly.CotizacionLineasSolicitud SET estadoCosteo = N'rechazada', costoFinal = NULL, precioFinalLinea = NULL WHERE id = '{ruta}';");
+
+        var despues = await FilaAsync(ana);
+        despues.Rutas.Should().BeEmpty("la ruta rechazada no sale en las métricas");
+        despues.NumAjustes.Should().Be(0, "la cabecera suma lo mismo que sus rutas");
     }
 
-    private Task<IReadOnlyList<T>> Repositorio<T>(Func<IClsMetricasRepository, Task<IReadOnlyList<T>>> consulta) =>
-        ConsultarAsync(s => consulta(s.GetRequiredService<IClsMetricasRepository>()));
+    private async Task<Cotifly.Dominio.Metricas.clsCotizacionMetrica> FilaAsync(Guid usuario) =>
+        (await ConsultarAsync(s => s.GetRequiredService<IClsMetricasRepository>()
+            .ListarCotizacionesAsync([usuario], Reloj.AhoraUtc.AddDays(-1), Reloj.AhoraUtc.AddDays(1), Ct))).Filas.Should().ContainSingle().Subject;
 }

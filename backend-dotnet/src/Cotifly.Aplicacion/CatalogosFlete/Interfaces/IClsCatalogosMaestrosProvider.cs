@@ -5,7 +5,7 @@ namespace Cotifly.Aplicacion.CatalogosFlete.Interfaces;
 
 /// <summary>
 /// Puerto de los catálogos maestros de Nexo (HU-013.10, G1). La implementación real consulta <c>GET /api/catalogos/tipos-vehiculo</c>,
-/// <c>clases-viaje</c>, <c>clases-contenedor</c> y <c>lineas-negocio</c> con <c>X-Portal-Usuario-Id</c> del comercial y los guarda en
+/// <c>clases-viaje</c>, <c>clases-contenedor</c> y <c>lineas-negocio</c> con <c>X-Portal-clsUsuario-Id</c> del comercial y los guarda en
 /// memoria (ver <c>clsCatalogosMaestrosEnCache</c>). Sin Nexo configurado responde <c>CATALOGOS_FLETE_NO_DISPONIBLE</c>.
 /// </summary>
 public interface IClsCatalogosMaestrosProvider

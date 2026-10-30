@@ -1,7 +1,7 @@
 # ADR-009 — Autenticación: patrón "Login SSO — Cliente Pro"
 
-- **Estado:** Aceptada. D8 (fuente de roles del lado servidor) resuelto el 2026-09-25 con la verificación doble. Quedan pendientes los IDROLES reales y la revisión del script 0002.
-- **Fecha:** 2026-09-24 (actualizada el 2026-09-25 con la implementación de #12)
+- **Estado:** Aceptada. D8 (fuente de roles del lado servidor) resuelto el 2026-09-25 con la verificación doble. IDROLES de QA verificados el 2026-10-14 (#173): comercial = 32, gerente_comercial = 31. Queda pendiente la revisión del script 0002 y los IDROLES de producción.
+- **Fecha:** 2026-09-24 (actualizada el 2026-09-25 con la implementación de #12, el 2026-10-13 con la base de identidad compartida con Nexo, #172, y el 2026-10-14 con la tabla de equivalencias de roles, #173)
 - **Issue / HU:** #7 (HU-003.1). Se implementa en #12 (HU-003.6, parte A). El contrato está en #17 (`openapi.yaml`, `/api/auth/*`).
 
 ## Contexto
@@ -12,11 +12,30 @@
 - El backlog dice que el rol "se consulta en vivo desde la sesión de ClientePro". HU-003.6 describe el aprovisionamiento buscando solo por `nombreUsuario` en `UsuariosWeb`.
 - **D8 resuelto (2026-09-25):** los roles de ClientePro viven en `dbsolucionesti`, junto a los usuarios:
 
-| Tabla (`dbsolucionesti`, esquema `dbo` asumido, configurable) | Columnas que usa Cotifly | Tipo real |
+| Tabla (base de identidad del portal, esquema `dbo`, configurable) | Columnas que usa Cotifly | Tipo real |
 |---|---|---|
-| `tblSAPUsuariosApp` | `ID`, `NOMBREUSUARIO`, `DESCRIPCIONUSUARIO`, `EMAIL` (**nunca `CLAVE`**) | `ID` NUMERIC; textos VARCHAR(50/250/100) |
-| `tblSAPUsuarioRoles` | `ID`, `IDUSUARIO` (→ `tblSAPUsuariosApp.ID`), `IDROLES` (→ `tblSAPRoles.IDROLES`) | INT |
-| `tblSAPRoles` | `IDROLES`, `DESCRIPCION` (solo informativa) | INT, VARCHAR(50) |
+| `tblSAPUsuariosApp` | `ID`, `NOMBREUSUARIO`, `DESCRIPCIONUSUARIO`, `EMAIL` (**nunca `CLAVE`**) | `ID` `numeric(18,0)`; textos VARCHAR(50/250/100) (por confirmar en `dbSolucionesTI_Prueba`) |
+| `tblSAPUsuarioRoles` | `IDUSUARIO` (→ `tblSAPUsuariosApp.ID`), `IDROLES` (→ `tblSAPRoles.IDROLES`). Desde #172 la columna `ID` no se lee | `int` |
+| `tblSAPRoles` | `IDROLES`, `DESCRIPCION` (solo informativa) | `int`, VARCHAR(50) |
+
+### Base de identidad: la misma que Nexo en cada ambiente (#172, 2026-10-13)
+
+**Regla:** `ConnectionStrings:Identidad` de Cotifly apunta a la misma base que `ConnectionStrings:IdentidadPortal` de Nexo, en cada
+ambiente. Motivo: Cotifly guarda el `ID` de `tblSAPUsuariosApp` en `UsuariosWeb.idUsuarioExterno` y lo manda a Nexo en
+`X-Portal-clsUsuario-Id`, y Nexo valida ese número contra su propia base. Si las bases difieren, los `ID` también (en las pruebas del
+2026-10-13, dguerra era 430 en `dbsolucionesti` y 10123 en el portal) y Nexo responde 401.
+
+| Ambiente | Base |
+|---|---|
+| QA / staging | `dbSolucionesTI_Prueba` (la de Nexo QA, `IdentidadPortalDbContext`) |
+| Producción | la misma que use Nexo en producción (**por confirmar**) |
+| Local y pruebas | `dbsolucionesti` falsa, con los tipos de `dbSolucionesTI_Prueba` |
+
+Los tipos de la tabla de arriba son los que Nexo verificó con `sys.columns` en `dbSolucionesTI_Prueba` (2026-09-01): `ID`
+`numeric(18,0)`, `IDUSUARIO` e `IDROLES` `int`. Cotifly ya los mapeaba así. Lo único que cambió en el código es que
+`tblSAPUsuarioRoles` se mapea con la clave compuesta (`IDUSUARIO`, `IDROLES`), como en Nexo, sin depender de una columna `ID`. El cambio
+de base en un ambiente con usuarios exige soltar una vez los vínculos `idUsuarioExterno` viejos y revisar `Roles.idRolExterno`
+(pasos en `DEPLOY.md`, "Identidad compartida con Nexo").
 
 ## Decisión
 
@@ -33,9 +52,9 @@
    - **Primer ingreso (no existe):** si el `ID` externo tampoco está vinculado a otra cuenta, se crea (JIT) con UUID nuevo, `nombreCompleto = DESCRIPCIONUSUARIO`, `email = EMAIL`, `regional` de `DimEjecutivo` (#81, ADR-016 §6; NULL si no aparece o la fuente no responde), `idUsuarioExterno = ID` y una asignación activa en **`UsuariosRoles`** con el rol interno resuelto.
    - **Ingresos siguientes:** la asignación activa debe ser exactamente el rol resuelto y el vínculo (`idUsuarioExterno`) el mismo `ID`. Si difieren: **401 genérico y auditoría**; no se re-sincroniza solo. Un gerente o administrador lo revisa (`UsuariosRoles.revisadoPor`, `revisadoAt`; la pantalla o el procedimiento de revisión queda fuera de esta parte).
    - Si todo coincide se actualiza `ultimaSesion` (y, si la cuenta no tenía vínculo, se vincula).
-   - **Datos corporativos (#81, solo en el login):** también se refrescan `nombreCompleto` y `email` desde el almacén y `regional` desde `DimEjecutivo` (`clsUsuarioWeb.ActualizarDatos`; un valor vacío no borra el existente). No deciden si la persona entra: la regla de que rol y `NOMBREUSUARIO` deben coincidir no cambia, y un login rechazado no toca nada. La consulta a `DimEjecutivo` nunca bloquea el login (límite corto; si falla, warning y sigue). El refresh y Google Chat no los refrescan. Dos matices:
+   - **Datos corporativos (#81, solo en el login):** también se refrescan `nombreCompleto` y `email` desde el almacén y `regional` desde `DimEjecutivo` (`clsUsuarioWeb.ActualizarDatos`; un valor vacío no borra el existente). No deciden si la persona entra: la regla de que rol y `NOMBREUSUARIO` deben coincidir no cambia, y un login rechazado no toca nada. La consulta a `DimEjecutivo` nunca bloquea el login (límite corto; si falla, warning y sigue). El refresh no los refresca (Google Chat tampoco lo hacía, hasta su retiro en HU-013.9, #105). Dos matices:
      - **La regional sí decide el alcance de los datos del gerente** (qué comerciales ve en el tablero y de quiénes descarga PDF, ADR-016 §6): `DimEjecutivo` es una fuente de autorización de alcance, no de acceso.
-     - **El correo es la identidad en Google Chat** (ADR-011): si el almacén trae otro `EMAIL`, desde ese login Google Chat reconoce a la persona por el correo nuevo y deja de reconocerla por el anterior. Queda un warning con el nombre de usuario (sin los correos) para poder rastrearlo.
+     - **El correo era la identidad en Google Chat** (ADR-011; Google Chat se retiró en HU-013.9, #105): si el almacén traía otro `EMAIL`, desde ese login Google Chat reconocía a la persona por el correo nuevo y dejaba de reconocerla por el anterior. Queda un warning con el nombre de usuario (sin los correos) para poder rastrearlo.
 3. **Los `roles` y el `nombreUsuario` del body nunca deciden nada.** Solo se auditan.
 
 **Motivos auditados** (hacia afuera todos son el mismo 401 `{"error":"Credenciales inválidas"}`):
@@ -53,6 +72,10 @@
 | `error_interno` | Cualquier otra excepción (por ejemplo, `dbo_cotifly` caída): también 401 |
 
 ### Regla de precedencia cuando hay dos roles
+
+> **Reemplazada en parte por [ADR-025](ADR-025-multi-rol-eleccion-al-entrar.md) (HU-040, #229 y #230).** La precedencia sigue vigente
+> solo para el **rol único** (usuario con una asignación activa). Con dos o más asignaciones activas, o en un alta con varios roles
+> externos, la persona **elige** el rol al entrar (`POST /api/auth/elegir-rol`) y el refresh conserva el rol elegido.
 
 Si los roles externos de una persona mapean a **`comercial` y `gerente_comercial` a la vez, gana `gerente_comercial`**. Es la regla `precedencia_gerente_comercial` y queda escrita en la auditoría de cada login (con un solo rol la regla es `mapeo_unico`), así nunca es implícita.
 
@@ -80,7 +103,7 @@ Por qué no rechazar la ambigüedad: en ClientePro es normal que un gerente cons
 | Tabla / columna | Propósito |
 |---|---|
 | `Roles` | Rol interno (`codigo` único, `comercial` \| `gerente_comercial`), `descripcion`, `idRolExterno` (IDROLES de ClientePro, único si no es NULL), `activo`, `updatedAt`. Sembrada con los dos roles **sin rol externo** |
-| `UsuariosRoles` | Rol interno asignado a cada usuario: `usuarioId`, `rolId`, `asignadoAt`, `activo`, `revisadoPor`, `revisadoAt`. Único (`usuarioId`, `rolId`) y **una sola asignación activa por usuario** (índice único filtrado) |
+| `UsuariosRoles` | Rol interno asignado a cada usuario: `usuarioId`, `rolId`, `asignadoAt`, `activo`, `revisadoPor`, `revisadoAt`. Único (`usuarioId`, `rolId`). ~~Una sola asignación activa por usuario (índice único filtrado)~~: HU-040.1 (#229, script 16) retiró `uq_usuariosRoles_usuarioId_activo`; un usuario puede tener varias asignaciones activas, una por rol (multi-rol, HU-040) |
 | `UsuariosWeb.idUsuarioExterno` | BIGINT NULL, único filtrado: vínculo con `tblSAPUsuariosApp.ID` para detectar renombres. **No es clave de búsqueda** (la búsqueda sigue siendo solo por `nombreUsuario`, HU-003.6) |
 | `TokensRefresco` | Hash del refresh, familia, vencimiento, revocación y encadenamiento de rotación |
 | `TokensRevocados` | `jti` revocados hasta su vencimiento |
@@ -95,6 +118,30 @@ UPDATE dbo_cotifly.Roles SET idRolExterno = <IDROLES de Gerente Comercial> WHERE
 ```
 
 Re-ejecutar el 0002 no pisa esos valores.
+
+### Equivalencias de roles (verificadas en `dbSolucionesTI_Prueba` el 2026-10-14, #173)
+
+| `tblSAPRoles.IDROLES` | `DESCRIPCION` | Rol interno de Cotifly (`Roles.codigo`) |
+|---|---|---|
+| **32** | `ClienteProComercial` | `comercial` |
+| **31** | `ClienteProGerencial` | `gerente_comercial` |
+| 34 | `AdministracionZonasGeocerca` | ninguno (**no** es el comercial) |
+| 23, 24, 25, 53… | `TarifasComercial`, `TarifasAdministrador`, `ClienteProAdmin`, `AdminNEXO`… | ninguno |
+
+El E2E real del 2026-10-14 encontró `comercial = 34` en `dbo_cotifly.Roles` de la base compartida: venía del seed de
+desarrollo (`scripts/sql/dev-03-roles-y-login.sql`, que usaba 34/35 como IDROLES inventados). Con eso ningún comercial real
+entraba como comercial, y quien tuviera el rol de geocerca habría entrado como comercial. El 31 del gerente sí estaba bien.
+
+- El seed de desarrollo, la `dbsolucionesti` falsa (`dev-02-identidad.sql`), las pruebas (`clsBaseDatosPruebas`,
+  `clsEscenarioIdentidad`) y los `.feature` usan ahora 32 y 31, los mismos de QA. El 40 de las pruebas es un rol cualquiera sin mapeo.
+- La base compartida se corrige con `db/scripts/operacion/corregir_rol_comercial_32.sql` (**requiere aprobación; lo ejecuta el
+  DBA**): respalda `Roles`, cambia 34 → 32 solo en `codigo = 'comercial'`, es idempotente y trae su consulta de verificación.
+- Con 31 y 32 mapeados, una persona que tenga los dos (como dguerra) entra como `gerente_comercial` por la regla de precedencia.
+  Después del script, quien solo tenía el 34 (y ningún otro rol mapeado) recibe 401 `sin_rol_autorizado` en el siguiente login o
+  refresh: ningún rol externo suyo mapea, así que no se llega a comparar con su asignación (no es `rol_externo_cambio`). Quien tenga una
+  asignación `comercial` y además el 31 resuelve `gerente_comercial` y queda en revisión (`rol_externo_cambio`), como cualquier cambio
+  de rol.
+- Producción: confirmar los IDROLES de la base de identidad de producción antes de fijarlos; no se asume que sean los mismos.
 
 ## Desviaciones
 
@@ -112,7 +159,7 @@ Re-ejecutar el 0002 no pisa esos valores.
 
 ## Consecuencias
 
-- El login y el refresh dependen de `dbsolucionesti`. Si falla, se deniega el acceso.
+- El login y el refresh dependen de la base de identidad del portal (la de Nexo: `dbSolucionesTI_Prueba` en QA). Si falla, se deniega el acceso.
 - Mientras los `IDROLES` no estén fijados en `Roles`, nadie entra (bloquea HU-004 y el corte, ADR-001).
 - Con varias réplicas, un logout tarda hasta 60 s en verse en las demás (el access vive 60 min); el límite de peticiones es por proceso y, detrás de Traefik, `RemoteIpAddress` es el proxy salvo que se configuren los encabezados reenviados (pendiente HU-006).
 
@@ -140,9 +187,10 @@ Mitigaciones a acordar con ClientePro (scalderon-bs), en orden de preferencia:
 
 | Pendiente | Dueño |
 |---|---|
-| `IDROLES` reales de "Comercial" y "Gerente Comercial" (`UPDATE dbo_cotifly.Roles ...`) | Equipo ClientePro (scalderon-bs) + DBA |
+| `IDROLES` de producción de "Comercial" y "Gerente Comercial" (en QA: 32 y 31, #173) y aplicar `db/scripts/operacion/corregir_rol_comercial_32.sql` en la base compartida | Equipo ClientePro (scalderon-bs) + DBA |
 | Revisión y aplicación del script 0002 (`Roles`, `UsuariosRoles`, `UsuariosWeb.idUsuarioExterno` en lugar de `RolesMapeo`) | Sara + scalderon-bs |
-| Esquema real de las tres tablas en `dbsolucionesti` y permisos de `cotifly_app` (SELECT sin `CLAVE`) | DBA |
+| Esquema real de las tres tablas en `dbSolucionesTI_Prueba` (textos; `ID`, `IDUSUARIO` e `IDROLES` ya los verificó Nexo) y permisos de `cotifly_app` (SELECT sin `CLAVE`) | DBA |
+| Base de identidad de producción (la misma que use Nexo en producción) y `ConnectionStrings:IdentidadPortal` configurada en Nexo QA (#172) | Duban con el equipo de Nexo |
 | Procedimiento o pantalla para revisar un acceso rechazado por `rol_externo_cambio` / `nombre_usuario_cambio` | Negocio (HU-010) |
 | ~~Regional desde `DWCubosEBSSAP.DimEjecutivo`~~: implementada en #81 (ADR-016 §6). El login la llena y la refresca sin bloquearse (fuera de la verificación doble: no decide el acceso). Falta cargar `ConnectionStrings__Regional` en Dokploy y abrir la red; mientras tanto `ubicacion` sale `null` o con la regional que puso el DBA | Infraestructura (#81) |
 | ~~`UseForwardedHeaders` con los proxies de Traefik para que el límite sea por IP real~~ | Implementado en #12 parte B (`ForwardedHeaders:*`, apagado por defecto); falta activarlo en Dokploy con la red de Traefik (HU-006.6) |

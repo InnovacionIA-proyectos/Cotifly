@@ -2,11 +2,11 @@
 # HU-013.6 (#102, ADR-018) — Asistente IA por folio: POST /web/chat exige folio y responde {texto, accion_propuesta?}.
 # Herramientas de solo lectura o propuesta (consultar_cotizacion, proponer_ajuste_margen, proponer_re_solicitud,
 # buscar_servicio_conexo). La IA nunca ejecuta cambios: el frontend confirma la acción propuesta llamando al endpoint
-# determinista con el cuerpo exacto y If-Match = row_version. La creación de cotizaciones por chat se retira
-# (Chat:CreacionHabilitada=false). Con un IChatClient guionizado, la API real en memoria y SQL Server 2019 en Testcontainers.
-# @pendiente @ignore: escenario SDD de HU-013.1 (#97); Reqnroll los genera como omitidos hasta que #102 enlace los pasos y
-# quite las dos etiquetas.
-@integracion @pendiente @ignore
+# determinista con el cuerpo exacto y If-Match = row_version. La creación de cotizaciones por chat se retiró (HU-013.9, #105: sin
+# agente legado ni flag Chat:CreacionHabilitada; sin folio siempre FOLIO_REQUERIDO). Con un IChatClient guionizado, la API real en memoria y SQL Server 2019 en Testcontainers.
+# Pasos en Cotifly.Aceptacion.Tests/Agente/clsPasosAsistenteFolio.cs (#102). El modelo nunca escribe montos: su texto se valida
+# contra cifras de dinero y nada de lo que ve las respalda; los montos solo van en el resumen que arma el servidor.
+@integracion
 Característica: Asistente IA sobre una cotización (folio)
   Como comercial de Botero Soto
   Quiero conversar con el asistente sobre una cotización ya creada y confirmar lo que me propone
@@ -29,7 +29,7 @@ Característica: Asistente IA sobre una cotización (folio)
     Entonces la respuesta tiene el estado 404
 
   Escenario: Una consulta responde solo texto, sin acción propuesta
-    Dado que el modelo consulta la cotización y responde "La cotización está costeada en 3.000.000 COP."
+    Dado que el modelo consulta la cotización y responde "La cotización está costeada y lista para generar el PDF."
     Cuando "ana" escribe en el chat "¿En qué va la cotización?" sobre el folio de "C1"
     Entonces la respuesta tiene el estado 200 y cumple el esquema "RespuestaChat" del contrato
     Y la respuesta del chat no trae acción propuesta
@@ -57,6 +57,10 @@ Característica: Asistente IA sobre una cotización (folio)
     Cuando "ana" escribe en el chat "Bájalo al 12 %, tiene otra oferta" sobre el folio de "C1"
     Entonces la acción propuesta es "ajustar_margen" con "PUT" al endpoint del margen de "C1" y el cuerpo con el margen "0.12"
     Y el cuerpo de la acción propuesta trae la justificación "El cliente tiene una oferta más baja"
+    Y el resumen de la acción propuesta menciona "«El cliente tiene una oferta más baja»"
+    Cuando "ana" confirma la acción propuesta
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "CosteoCotizacion" del contrato
+    Y queda un ajuste de margen de "C1" de "0.15" a "0.12" por "ana" con la justificación "El cliente tiene una oferta más baja"
 
   Escenario: Confirmar una propuesta vieja responde conflicto de concurrencia
     Dado que el modelo propone ajustar el margen a "0.18"
@@ -74,14 +78,55 @@ Característica: Asistente IA sobre una cotización (folio)
     Y el cuerpo de la acción propuesta trae en la línea 1 el servicio "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d" con la cantidad 2
     Y ninguna respuesta del chat contiene el campo "costo_unitario"
     Y Nexo no recibió conexos para la cotización de "C1"
+    Cuando "ana" confirma la acción propuesta
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "CosteoCotizacion" del contrato
+    Y Nexo recibió 1 petición de conexos para la cotización de "C1"
+    Y el servicio conexo "Almacenamiento" de "C1" está incluido con el precio 117647
 
-  Escenario: El asistente propone re-solicitar el costeo con cambios de carga
-    Dado que el polling consultó a Nexo 73 horas después del envío y "C1" quedó en "costeo_vencido"
-    Y que el modelo propone re-solicitar el costeo con el motivo "El cliente cambió el peso" y el peso 28000
-    Cuando "ana" escribe en el chat "El cliente ahora manda 28 toneladas, vuelve a pedir el costo" sobre el folio de "C1"
+  # El peso nuevo es 28400: la regla de peso de Nexo (1 %) se aplica contra las posiciones guardadas (28500 kg), igual que al confirmar.
+  Escenario: El asistente propone re-solicitar el costeo con cambios de carga y confirmarla crea la versión nueva
+    Dado que Nexo costeó la solicitud de "C1" con un flete de 2550000 y la entregó
+    Y que el modelo propone re-solicitar el costeo con el motivo "El cliente cambió el peso" y el peso 28400
+    Cuando "ana" escribe en el chat "El cliente ahora manda 28,4 toneladas, vuelve a pedir el costo" sobre el folio de "C1"
     Entonces la acción propuesta es "re_solicitar_costeo" con "POST" al endpoint de re-solicitud de "C1"
-    Y el cuerpo de la acción propuesta trae el motivo "El cliente cambió el peso" y el peso 28000
+    Y el cuerpo de la acción propuesta trae el motivo "El cliente cambió el peso" y el peso 28400
+    Y el resumen de la acción propuesta menciona "«El cliente cambió el peso»"
     Y Nexo no recibió otra solicitud para "C1"
+    Cuando "ana" confirma la acción propuesta
+    Entonces la respuesta tiene el estado 201 y cumple el esquema "CotizacionResumen" del contrato
+    Y Nexo recibió la solicitud de la versión nueva con el peso 28400
+
+  Escenario: Un peso que no cuadra con las posiciones no se propone
+    Dado que Nexo costeó la solicitud de "C1" con un flete de 2550000 y la entregó
+    Y que el modelo intenta re-solicitar el costeo con el motivo "El cliente cambió el peso" y el peso 28000
+    Cuando "ana" escribe en el chat "Ahora son 28 toneladas, vuelve a pedir el costo" sobre el folio de "C1"
+    Entonces la respuesta tiene el estado 200
+    Y la respuesta del chat no trae acción propuesta
+    Y el error de herramienta del turno es "SOLICITUD_COSTEO_INVALIDA"
+    Y Nexo no recibió otra solicitud para "C1"
+
+  Escenario: El asistente propone re-solicitar en el mismo folio y confirmarla lo reenvía a Nexo
+    Dado que Nexo costeó la solicitud de "C1" con un flete de 2550000 y la entregó
+    Y que el modelo propone re-solicitar el costeo con el motivo "El cliente pidió actualizar el flete" sin cambios de carga
+    Cuando "ana" escribe en el chat "Vuelve a pedir el costo a Nexo" sobre el folio de "C1"
+    Entonces la acción propuesta es "re_solicitar_costeo" con "POST" al endpoint de re-solicitud de "C1"
+    Y el cuerpo de la acción propuesta no trae datos de carga
+    Cuando "ana" confirma la acción propuesta
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
+    Y la cotización "C1" queda en el estado de costeo "pendiente_costeo"
+
+  # HU-021.9 (#136; rehace #124): el comercial ve en el resumen, ANTES de confirmar, qué conexos se conservan (solo nombres, sin montos).
+  Escenario: La propuesta de re-solicitar en el mismo folio avisa los servicios conexos que se conservan
+    Dado que Nexo costeó la solicitud de "C1" con el conexo "Cargue" de 85000
+    Y que Nexo costeó la solicitud de "C1" con un flete de 2550000 y la entregó
+    Y que el modelo propone re-solicitar el costeo con el motivo "El cliente pidió actualizar el flete" sin cambios de carga
+    Cuando "ana" escribe en el chat "Vuelve a pedir el costo a Nexo" sobre el folio de "C1"
+    Entonces la acción propuesta es "re_solicitar_costeo" con "POST" al endpoint de re-solicitud de "C1"
+    Y el resumen de la acción propuesta menciona "Se conservan los servicios conexos «Cargue» con su costo y siguen en el precio."
+    Cuando "ana" confirma la acción propuesta
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
+    Y la respuesta avisa que se conservan los servicios conexos "Cargue"
+    Y Nexo no recibió ninguna petición para agregar conexos
 
   Escenario: Si el modelo intenta una herramienta retirada no se ejecuta
     Dado que el modelo pide la herramienta "calcular_precio"
@@ -91,7 +136,7 @@ Característica: Asistente IA sobre una cotización (folio)
     Y el costeo de "C1" tiene el precio final 3000000 con el margen aplicado "0.15" y el origen "politica_linea"
 
   Escenario: El chat ya no crea cotizaciones
-    Dado que la creación por chat está deshabilitada
+    Dado que la creación por chat se retiró
     Y que el modelo pide la herramienta "generar_pdf"
     Cuando "ana" escribe en el chat "Cotiza Bogotá a Medellín tractomula" sobre el folio de "C1"
     Entonces "ana" tiene 1 cotización en "Mis cotizaciones"
@@ -109,4 +154,4 @@ Característica: Asistente IA sobre una cotización (folio)
     Y ningún mensaje enviado al modelo contiene "costo", "2550000", "3000000", "85000" ni "100000"
     Y ninguna respuesta del chat contiene el campo "costo" ni los valores 2550000 ni 85000
     Y los campos precio, margen y pdf de la respuesta del chat son null
-    Y el resumen de la acción propuesta lo armó el servidor con el precio 3109756
+    Y el resumen de la acción propuesta lo armó el servidor con el precio 3213415

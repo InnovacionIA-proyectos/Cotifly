@@ -29,9 +29,11 @@ public sealed class clsWebEndpointsTests(clsEntornoApiWeb entorno)
     {
         var ana = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         var luis = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
-        var primera = await Api.CrearCotizacionAsync(ana.UsuarioId, "900111222");
-        await Task.Delay(20, Ct);
-        var segunda = await Api.CrearCotizacionAsync(ana.UsuarioId, "900111222");
+        // Horas explícitas (#117): el reloj del contenedor de pruebas llega a saltar hacia atrás, así que una espera real no
+        // garantiza que la segunda quede con un createdAt posterior.
+        var hora = clsRelojFijable.HoraBase();
+        var primera = await Api.CrearCotizacionAsync(ana.UsuarioId, "900111222", creadaEn: hora);
+        var segunda = await Api.CrearCotizacionAsync(ana.UsuarioId, "900111222", creadaEn: hora.AddMinutes(1));
         var ajena = await Api.CrearCotizacionAsync(luis.UsuarioId, "800333444");
 
         using var respuesta = await Api.EnviarAsync(_get, "/web/mis-cotizaciones", ana.Access);
@@ -73,7 +75,7 @@ public sealed class clsWebEndpointsTests(clsEntornoApiWeb entorno)
         noExiste.StatusCode.Should().Be(HttpStatusCode.NotFound);
         (await noExiste.Content.ReadAsStringAsync(Ct)).Should().Be(NoEsTuya);
         var estado = await clsBaseDatosPruebas.EscalarAsync<string>(entorno.BaseDatos.CadenaCotifly,
-            $"SELECT CONCAT(estadoEnvio, '|', COALESCE(CAST(ganada AS nvarchar(5)), 'null')) FROM dbo_cotifly.Cotizaciones WHERE id = '{deLuis.Id}'");
+            $"SELECT CONCAT(estadoEnvio, '|', COALESCE(CAST(ganada AS nvarchar(5)), 'null')) FROM dbo_cotifly.CotizacionesSolicitud WHERE id = '{deLuis.Id}'");
         estado.Should().Be("sin_enviar|null", "el intento de otro comercial no cambia la cotización");
     }
 
@@ -84,16 +86,17 @@ public sealed class clsWebEndpointsTests(clsEntornoApiWeb entorno)
         var cotizacion = await Api.CrearCotizacionAsync(ana.UsuarioId, "900111222");
         var ruta = $"/web/cotizaciones/{cotizacion.Folio}/seguimiento";
 
-        using var perdida = await Api.EnviarAsync(_post, ruta, ana.Access, clsApiWebPruebas.Json(new { ganada = false, motivo_rechazo = "Precio alto" }));
+        using var perdida = await Api.EnviarAsync(_post, ruta, ana.Access, clsApiWebPruebas.Json(new { ganada = false, motivo_rechazo = "Valor muy alto" }));
         var json = await VerificarContratoAsync(perdida, "/web/cotizaciones/{folio}/seguimiento", _post, HttpStatusCode.OK);
-        using var camel = await Api.EnviarAsync(_post, ruta, ana.Access, clsApiWebPruebas.Json(new { ganada = true, motivoRechazo = "no se lee" }));
-        var jsonCamel = await VerificarContratoAsync(camel, "/web/cotizaciones/{folio}/seguimiento", _post, HttpStatusCode.OK);
+        using var camel = await Api.EnviarAsync(_post, ruta, ana.Access, clsApiWebPruebas.Json(new { ganada = false, motivoRechazo = "Valor muy alto" }));
+        var jsonCamel = await VerificarContratoAsync(camel, "/web/cotizaciones/{folio}/seguimiento", _post, HttpStatusCode.BadRequest);
 
         json.GetProperty("ganada").GetBoolean().Should().BeFalse();
-        json.GetProperty("motivo_rechazo").GetString().Should().Be("Precio alto");
+        json.GetProperty("motivo_rechazo").GetString().Should().Be("Valor muy alto");
         json.GetProperty("linea_negocio").GetString().Should().Be("Nacional");
-        jsonCamel.GetProperty("ganada").GetBoolean().Should().BeTrue();
-        jsonCamel.GetProperty("motivo_rechazo").ValueKind.Should().Be(JsonValueKind.Null, "el cuerpo de /web/* se lee en snake_case: motivoRechazo no existe");
+        // HU-018.1 (#155): sin motivo_rechazo la perdida es MOTIVO_NO_PERMITIDO; con motivoRechazo (camelCase) el motivo no llega.
+        jsonCamel.GetProperty("error").GetProperty("codigo").GetString().Should()
+            .Be("MOTIVO_NO_PERMITIDO", "el cuerpo de /web/* se lee en snake_case: motivoRechazo no existe");
     }
 
     [Theory]
@@ -203,6 +206,34 @@ public sealed class clsWebEndpointsTests(clsEntornoApiWeb entorno)
         jsonSinPara.GetProperty("error").ValueKind.Should().Be(JsonValueKind.String, "CORREO_INVALIDO va como ErrorWeb");
         var jsonRelay = await VerificarContratoAsync(relayCaido, "/web/cotizaciones/{folio}/enviar", _post, HttpStatusCode.BadRequest);
         jsonRelay.GetProperty("error").GetProperty("codigo").GetString().Should().Be("CORREO_ENVIO_FALLIDO", "los errores del envío van como ErrorNegocio");
+    }
+
+    /// <summary>
+    /// Endurecimiento A (#199): <c>/enviar</c> de un folio ajeno o inexistente responde 404 antes que <c>CORREO_DESHABILITADO</c> (503) o
+    /// <c>CORREO_INVALIDO</c> (400): con esas respuestas se podía saber qué folios existen.
+    /// </summary>
+    [Fact]
+    public async Task ElEnvioDeUnFolioAjenoOInexistenteResponde404AntesQueDeshabilitadoOInvalido()
+    {
+        var ana = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var luis = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var deLuis = await Api.CrearCotizacionAsync(luis.UsuarioId, "900111222");
+        var valido = clsApiWebPruebas.Json(new { para = new[] { "cliente@empresa.com" } });
+        var invalido = clsApiWebPruebas.Json(new { para = new[] { "no-es-correo" } });
+
+        foreach (var folio in new[] { deLuis.Folio, "PCN-XX-01011999-999" })
+        {
+            var ruta = $"/web/cotizaciones/{folio}/enviar";
+            using var deshabilitado = await entorno.ApiSinCorreo.EnviarAsync(_post, ruta, ana.Access, valido);
+            using var deshabilitadoEInvalido = await entorno.ApiSinCorreo.EnviarAsync(_post, ruta, ana.Access, invalido);
+            using var conInvalido = await Api.EnviarAsync(_post, ruta, ana.Access, invalido);
+
+            foreach (var respuesta in new[] { deshabilitado, deshabilitadoEInvalido, conInvalido })
+            {
+                respuesta.StatusCode.Should().Be(HttpStatusCode.NotFound, folio);
+                (await respuesta.Content.ReadAsStringAsync(Ct)).Should().Be("""{"error":"Cotización no encontrada o no es tuya."}""");
+            }
+        }
     }
 
     [Fact]

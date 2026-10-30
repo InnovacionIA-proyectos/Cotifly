@@ -10,7 +10,10 @@
                       puerto 14333 solo en 127.0.0.1 para SSMS o Azure Data Studio)
       3. Esquema      con sqlcmd 18 (/opt/mssql-tools18, incluido en la misma imagen de SQL Server 2019):
                         - bases dbTarifario_Nexo_Pruebas y dbsolucionesti            (scripts/sql/dev-01-bases.sql)
-                        - db/migrations_mssql/0001 (solo si dbo_cotifly no existe), 0002, 0003 y 0004 (idempotentes)
+                        - dbo_cotifly al esquema vigente (0001 a 0010, y luego 02, 03, pendientes/04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14 y 15): base vacía -> db/scripts/01_crear_esquema.sql;
+                          esquema anterior a HU-021 (Cotizaciones) -> 0002 a 0010; ya migrada -> solo el 0010 (idempotente)
+                          y después los ajustes db/scripts/02_*.sql en adelante más el pendientes/04, por nombre (se pueden repetir)
+                        - seeders de db/seeder/ (idempotentes: líneas de negocio, mapeo SAP, roles)
                         - dbsolucionesti FALSA con usuarios y roles de prueba          (scripts/sql/dev-02-identidad.sql)
                         - IDROLES de desarrollo en Roles y login cotifly_app con permisos mínimos
                                                                                        (scripts/sql/dev-03-roles-y-login.sql)
@@ -58,6 +61,7 @@ function Valor([string]$Nombre, [string]$PorDefecto) {
 $DirScripts = $PSScriptRoot
 $DirBackend = (Resolve-Path (Join-Path $DirScripts '..')).Path
 $DirMigraciones = (Resolve-Path (Join-Path $DirBackend '..\db\migrations_mssql')).Path
+$DirDb = (Resolve-Path (Join-Path $DirBackend '..\db')).Path
 
 $Red = 'cotifly-local'
 $SqlContenedor = 'cotifly-local-sql'
@@ -105,7 +109,7 @@ function Existe([string[]]$Argumentos) {
 function SqlcmdArchivo([string]$Base, [string]$RutaEnContenedor, [string[]]$Entorno = @(),
                        [string]$Usuario = 'sa', [string]$Clave = $ClaveSa) {
     $argumentos = @('run', '--rm', '--network', $Red,
-        '-v', "$(Join-Path $DirScripts 'sql'):/sql:ro", '-v', "${DirMigraciones}:/migraciones:ro")
+        '-v', "$(Join-Path $DirScripts 'sql'):/sql:ro", '-v', "${DirMigraciones}:/migraciones:ro", '-v', "${DirDb}:/db:ro")
     foreach ($e in $Entorno) { $argumentos += @('-e', $e) }
     $argumentos += @('--entrypoint', $RutaSqlcmd, $ImagenSqlcmd, '-S', $SqlContenedor, '-U', $Usuario, '-P', $Clave, '-C',
         '-d', $Base, '-b', '-I', '-r0', '-i', $RutaEnContenedor)
@@ -174,16 +178,47 @@ Write-Host ' listo'
 # ----------------------------------------------------------------------------- esquema y datos
 Paso 'Bases, esquema dbo_cotifly y dbsolucionesti de desarrollo'
 SqlcmdArchivo 'master' '/sql/dev-01-bases.sql'
-if ((SqlcmdEscalar 'dbTarifario_Nexo_Pruebas' "SELECT COUNT(*) FROM sys.schemas WHERE name = 'dbo_cotifly'") -eq '0') {
-    Write-Host 'aplicando 0001_script_bd_cotifly_sqlserver.sql'
-    SqlcmdArchivo 'dbTarifario_Nexo_Pruebas' '/migraciones/0001_script_bd_cotifly_sqlserver.sql'
+# Esquema vigente (HU-021, ADR-019): 0001 a 0010. Se puede correr las veces que haga falta:
+#   - dbo_cotifly sin tablas -> instalación desde cero (db/scripts/01_crear_esquema.sql, equivale a 0001-0010);
+#   - con el esquema anterior (tabla Cotizaciones, p. ej. un volumen de antes de HU-021) -> migraciones 0002 a 0010
+#     (el 0003 y el 0004 exigen Cotizaciones, por eso no se repiten sobre una base ya migrada);
+#   - ya migrada (CotizacionesSolicitud) -> solo el 0010, idempotente.
+# Después van los ajustes db/scripts/02_*.sql en adelante (hoy el 02 del cubicador, HU-023.3; el 03 del orden del camión y el id del
+# catálogo del conexo y el 05 de la categoría del conexo, HU-014 #188: el backend mapea sus columnas, sin ellos /health/ready da 503
+# "falta 03" o "falta 05"; el 07 de BUSQUEDA_AGOTADA, HU-023 #176; el 08 que retira las vistas del borrador de métricas, HU-014.3 #152;
+# el 09 de scorePrioridad, HU-018.1 #155, el 10 del rechazo de la línea, HU-028.1 #183, y el 11 del peso con tara, HU-030.1 #184: el
+# backend mapea sus columnas, sin ellos /health/ready da 503 "falta 09", "falta 10" o "falta 11"), en orden de nombre,
+# igual que db/ejecutar-bd.*: cada uno revisa si su cambio ya está, así que se pueden repetir.
+# De db/scripts/pendientes/ solo entra el 04_cubicacion_segundo_plano.sql (HU-023.5, el backend mapea sus columnas: sin él
+# /health/ready da 503 "falta 04"), intercalado por nombre: queda 02, 03, pendientes/04, 05, 06, 07, 08, 09, 10, 11, 12, 13. El resto de pendientes/ no se corre.
+$tablas = SqlcmdEscalar 'dbTarifario_Nexo_Pruebas' "SELECT COUNT(*) FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.name = 'dbo_cotifly'"
+$viejo = SqlcmdEscalar 'dbTarifario_Nexo_Pruebas' "SELECT CASE WHEN OBJECT_ID(N'dbo_cotifly.Cotizaciones', N'U') IS NULL THEN 0 ELSE 1 END"
+if ($tablas -eq '0') {
+    Write-Host 'aplicando db/scripts/01_crear_esquema.sql (instalación desde cero, 0001 a 0010)'
+    SqlcmdArchivo 'dbTarifario_Nexo_Pruebas' '/db/scripts/01_crear_esquema.sql'
+} elseif ($viejo -eq '1') {
+    Write-Host 'dbo_cotifly tiene el esquema anterior a HU-021: se aplican 0002 a 0010'
+    foreach ($script in @('0002_identidad_estado_agente.sql', '0003_metricas_reenviadas.sql', '0004_costeo_nexo.sql',
+                          '0005_lineas_solicitud.sql', '0006_textos_y_concurrencia.sql', '0007_captura_nexo_campos.sql',
+                          '0008_horas_por_linea.sql', '0009_reestructuracion_cotizaciones.sql', '0010_nombres_municipio.sql')) {
+        Write-Host "aplicando $script"
+        SqlcmdArchivo 'dbTarifario_Nexo_Pruebas' "/migraciones/$script"
+    }
 } else {
-    # Después del 0002 el 0001 no se re-ejecuta (ver encabezado del 0002 y ADR-008).
-    Write-Host 'dbo_cotifly ya existe: se omite el 0001'
+    Write-Host 'dbo_cotifly ya está migrado: se aplica solo el 0010 (idempotente)'
+    SqlcmdArchivo 'dbTarifario_Nexo_Pruebas' '/migraciones/0010_nombres_municipio.sql'
 }
-foreach ($script in @('0002_identidad_estado_agente.sql', '0003_metricas_reenviadas.sql', '0004_costeo_nexo.sql')) {
-    Write-Host "aplicando $script"
-    SqlcmdArchivo 'dbTarifario_Nexo_Pruebas' "/migraciones/$script"
+$ajustes = @(Get-ChildItem -Path (Join-Path $DirDb 'scripts') -File -Filter '*.sql' |
+    Where-Object { $_.Name -match '^\d{2}_' -and $_.Name -notmatch '^01_' }) +
+    @(Get-Item -Path (Join-Path $DirDb 'scripts\pendientes\04_cubicacion_segundo_plano.sql')) | Sort-Object Name
+foreach ($ajuste in $ajustes) {
+    $relativo = $ajuste.FullName.Substring($DirDb.Length + 1).Replace('\', '/')
+    Write-Host "aplicando db/$relativo (ajuste, se puede repetir)"
+    SqlcmdArchivo 'dbTarifario_Nexo_Pruebas' "/db/$relativo"
+}
+foreach ($seeder in @('01_lineas_negocio.sql', '02_sap_mapeo_trqtype.sql', '03_roles.sql')) {
+    Write-Host "sembrando $seeder"
+    SqlcmdArchivo 'dbTarifario_Nexo_Pruebas' "/db/seeder/$seeder"
 }
 Write-Host 'aplicando dbsolucionesti de desarrollo'
 SqlcmdArchivo 'dbsolucionesti' '/sql/dev-02-identidad.sql'

@@ -85,6 +85,26 @@ public sealed record clsSolicitudNexo
 /// <param name="CosteoEnProceso">True si Nexo difirió el auto-costeo a segundo plano (más de 10 líneas).</param>
 public sealed record clsSolicitudCreadaNexo(string Id, int Lineas, int FletesCalculados, int LineasPorCostear, bool CosteoEnProceso)
 {
+    /// <summary>
+    /// HU-023.4: ¿las líneas de los camiones del cubicador llevaron TODAS sus códigos de vehículo y carrocería (<c>Nexo:EnviarCodigosCubicador</c>
+    /// = <c>siempre</c> al enviar)? Con <c>solo_conocidos</c> (HU-014 #188) unas sí y otras no: <c>false</c>, el caso seguro. El envío lo
+    /// registra (<see cref="clsEnvioNexoRegistrado"/>) para que el polling compare contra lo que viajó.
+    /// </summary>
+    public bool CodigosCubicadorEnviados { get; init; }
+
+    /// <summary>
+    /// HU-031.1 (#194): los códigos de vehículo de Cotifly que viajaron con otro código porque el diccionario de alias de Nexo los tradujo
+    /// (código de Cotifly → código enviado, <c>C2</c> → <c>2</c>). Vacío si ninguno. El envío lo registra con
+    /// <see cref="CodigosCubicadorEnviados"/> (<see cref="clsEnvioNexoRegistrado"/>).
+    /// </summary>
+    public IReadOnlyDictionary<string, string> EquivalenciasVehiculo { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>
+    /// HU-018.1 (#155): <c>scorePrioridad</c> del <c>CapturaResultDto</c> (COTIFLY-CONTRATO.md §5); <c>null</c> si Nexo no lo mandó, vino
+    /// en <c>null</c> o no es un número. Se guarda en la cabecera (<c>CotizacionesSolicitud.scorePrioridad</c>, script 09).
+    /// </summary>
+    public decimal? ScorePrioridad { get; init; }
+
     /// <summary>¿Nexo ya costeó todas las líneas? (la cotización nace en <c>autocosteo</c>).</summary>
     public bool CosteoCompleto => !CosteoEnProceso && Lineas > 0 && LineasPorCostear == 0;
 }

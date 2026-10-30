@@ -22,15 +22,15 @@ public interface IClsUsuarioWebRepository
     Task<clsUsuarioWeb?> ObtenerPorIdUsuarioExternoAsync(long idUsuarioExterno, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Usuario por <c>email</c> (sin distinguir mayúsculas): identidad de Google Chat (ADR-011 §2). <c>null</c> si no existe o si
-    /// el correo está repetido (no se adivina a cuál comercial pertenece).
-    /// </summary>
-    Task<clsUsuarioWeb?> ObtenerPorEmailAsync(string email, CancellationToken cancellationToken = default);
-
-    /// <summary>
     /// Usuarios con <c>regional</c> igual a <paramref name="regional"/> (recortada, sin distinguir mayúsculas) o cuyo
     /// <c>nombreUsuario</c> está en <paramref name="nombresUsuario"/> (candidatos a miembros de una regional, HU-010.1).
     /// </summary>
     Task<IReadOnlyList<clsUsuarioWeb>> ListarPorRegionalONombresAsync(
         string regional, IReadOnlyCollection<string> nombresUsuario, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// HU-037.3 (#211): todos los usuarios de <c>UsuariosWeb</c> (solo lectura), el alcance del director sin regional elegida. La tabla
+    /// tiene a las personas que entraron a Cotifly (decenas o cientos), así que no se pagina.
+    /// </summary>
+    Task<IReadOnlyList<clsUsuarioWeb>> ListarTodosAsync(CancellationToken cancellationToken = default);
 }

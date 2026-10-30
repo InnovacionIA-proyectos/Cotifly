@@ -4,8 +4,8 @@
 # en Testcontainers y un Nexo falso. Margen sugerido de la cotización: 15 % (política de la línea), método "margen":
 # precio = costo / (1 - margen), a pesos enteros. Los pasos de mutación envían If-Match con el ETag vigente salvo que el
 # escenario diga otra cosa (ADR-018 §8). Regla del PDF: ADR-018 §11.
-# Pasos: tests/Cotifly.Aceptacion.Tests/Costeo/clsPasosAjusteMargen.cs (#98). El escenario en USD sigue con @pendiente @ignore
-# hasta que #103 (HU-013.7) agregue la moneda al formulario de costeo.
+# Pasos: tests/Cotifly.Aceptacion.Tests/Costeo/clsPasosAjusteMargen.cs (#98); los de la moneda del escenario en USD, en
+# clsPasosMonedaCosteo.cs (#103, HU-013.7).
 @integracion
 Característica: Ajuste de margen sobre el costeo de Nexo
   Como comercial de Botero Soto
@@ -30,7 +30,6 @@ Característica: Ajuste de margen sobre el costeo de Nexo
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CosteoCotizacion" del contrato
     Y el costeo de "C1" tiene el precio final 2897727 con el margen aplicado "0.12" y el origen "negociado"
     Y queda un ajuste de margen de "C1" de "0.15" a "0.12" por "ana" con la justificación "Cliente estratégico; la competencia cotizó más bajo"
-    Y las métricas de ajustes de "ana" marcan 1 ajuste por debajo del sugerido
 
   Escenario: Bajar el margen por debajo del sugerido sin justificación se rechaza
     Cuando "ana" ajusta el margen de "C1" a "0.10" sin justificación
@@ -74,9 +73,8 @@ Característica: Ajuste de margen sobre el costeo de Nexo
     Entonces el servicio conexo "Cargue" de "C1" tiene el precio 106250
     Y ninguna respuesta del costeo de "C1" contiene el costo 85000
 
-  # Pendiente de #103 (HU-013.7): el formulario de costeo todavía no acepta "moneda". La conversión con la TRM fijada ya la cubre
-  # la prueba unitaria clsAjusteMargenCosteoServiceTests.EnDolaresConvierteConLaTrmFijadaDeLaCotizacion.
-  @pendiente @ignore
+  # HU-013.7 (#103): 2.550.000 / (1 - 0,18) = 3.109.756 pesos / 4.000 = 777,44 USD, con la TRM fijada al crear y no la del día.
+  @trm
   Escenario: En USD el ajuste usa la TRM ya fijada, nunca una nueva
     Dado que "ana" envió a costeo en "USD" el formulario del cliente "900555111" como "U1" con la TRM 4000
     Y Nexo costeó la solicitud de "U1" con un flete de 2550000 y el polling lo registró
@@ -89,8 +87,10 @@ Característica: Ajuste de margen sobre el costeo de Nexo
     Cuando "ana" ajusta el margen de "C2" a "0.18" sin justificación
     Entonces la respuesta tiene el estado 409 con el código de negocio "COSTEO_NO_LISTO"
 
-  Escenario: Con el PDF generado y sin enviar el ajuste invalida el PDF y se regenera en el mismo folio
-    Dado que "ana" generó el PDF del costeo de "C1"
+  # HU-036.3 (#207): una cotización finalizada ya no admite el ajuste (cotizacion_finalizada.feature). Este caso queda para las
+  # cotizaciones anteriores a HU-036 (sin backfill): PDF generado sin finalizar. Al regenerar el PDF, el paso finaliza primero.
+  Escenario: Con el PDF generado antes de HU-036 y sin enviar el ajuste invalida el PDF y se regenera en el mismo folio
+    Dado que "ana" generó el PDF del costeo de "C1" antes de HU-036, sin finalizarla
     Cuando "ana" ajusta el margen de "C1" a "0.18" sin justificación
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CosteoCotizacion" del contrato
     Y el costeo de "C1" no tiene pdf_url y está marcado con pdf_desactualizado

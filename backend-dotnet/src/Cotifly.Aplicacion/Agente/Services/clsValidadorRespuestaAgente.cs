@@ -18,7 +18,8 @@ namespace Cotifly.Aplicacion.Agente.Services;
 /// <c>ChatResponseFormat.ForJsonSchema</c> sobre <see cref="clsRespuestaAgenteEstructurada"/> y una instrucción final con las
 /// reglas (en el modo sin esquema, también el esquema).</item>
 /// <item>Validación manual con <see cref="clsReglasRespuestaAgente"/> (forma, tipos, enums, largos, acciones, montos y folios).</item>
-/// <item>Si no valida: <b>un</b> reintento con la respuesta inválida y un mensaje de corrección que enumera los fallos.</item>
+/// <item>Si no valida: <b>un</b> reintento con la respuesta inválida y un mensaje de corrección que enumera los fallos (salvo con
+/// <see cref="clsContextoValidacionRespuesta.ReintentarSiFalla"/> en false: el asistente ya armó una propuesta, HU-013.16).</item>
 /// <item>Si vuelve a fallar: respaldo <c>{tipo: error, texto: clsTextosAgente.RespuestaNoEstructurada}</c>.</item>
 /// </list>
 /// Proveedores sin JSON Schema: <c>IA:SoportaJsonSchema=false</c> pide la respuesta sin formato (el esquema va en la instrucción).
@@ -49,15 +50,18 @@ public sealed class clsValidadorRespuestaAgente : IClsValidadorRespuestaAgente
     private readonly Counter<long> _reintentos;
     private readonly Counter<long> _respaldos;
     private readonly Counter<long> _esquemaRechazado;
-    private long _sinEsquemaHastaTicks;
+    private readonly clsInterruptorJsonSchema _interruptor;
 
+    /// <param name="interruptor">Apagado del esquema compartido con el redactor de textos (HU-013.5); sin él, uno propio.</param>
     public clsValidadorRespuestaAgente(
-        IOptions<clsOpcionesAgente> opciones, ILogger<clsValidadorRespuestaAgente> logger, IMeterFactory medidores, IClsReloj reloj)
+        IOptions<clsOpcionesAgente> opciones, ILogger<clsValidadorRespuestaAgente> logger, IMeterFactory medidores, IClsReloj reloj,
+        clsInterruptorJsonSchema? interruptor = null)
     {
         ArgumentNullException.ThrowIfNull(medidores);
         _opciones = opciones;
         _logger = logger;
         _reloj = reloj;
+        _interruptor = interruptor ?? new clsInterruptorJsonSchema();
         Medidor = medidores.Create(NombreMedidor);
         _invalidas = Medidor.CreateCounter<long>(MetricaInvalidas, description: "Respuestas finales del modelo que no pasaron la validación (etiqueta motivo).");
         _reintentos = Medidor.CreateCounter<long>(MetricaReintentos, description: "Reintentos de la respuesta final por validación fallida.");
@@ -84,7 +88,8 @@ public sealed class clsValidadorRespuestaAgente : IClsValidadorRespuestaAgente
         var correccion = new List<ChatMessage>();
         var motivos = new List<string>();
         var llamadas = 0;
-        for (var intento = 1; intento <= 2; intento++)
+        var intentos = contexto.ReintentarSiFalla ? 2 : 1;
+        for (var intento = 1; intento <= intentos; intento++)
         {
             var (crudo, hechas) = await PedirAsync(chat, mensajes, correccion, cancellationToken);
             llamadas += hechas;
@@ -102,8 +107,8 @@ public sealed class clsValidadorRespuestaAgente : IClsValidadorRespuestaAgente
             }
 
             _logger.LogWarning(
-                "La respuesta final del agente no pasó la validación (intento {Intento} de 2): {Motivos}.", intento, string.Join(", ", codigos));
-            if (intento == 1)
+                "La respuesta final del agente no pasó la validación (intento {Intento} de {Intentos}): {Motivos}.", intento, intentos, string.Join(", ", codigos));
+            if (intento < intentos)
             {
                 _reintentos.Add(1);
                 correccion.Add(new ChatMessage(ChatRole.Assistant, Eco(crudo)));
@@ -112,15 +117,15 @@ public sealed class clsValidadorRespuestaAgente : IClsValidadorRespuestaAgente
         }
 
         _respaldos.Add(1);
-        _logger.LogWarning("La respuesta final del agente no se pudo validar tras el reintento; se responde el error controlado.");
-        return new clsRespuestaFinalAgente(clsRespuestaAgenteEstructurada.Respaldo(clsTextosAgente.RespuestaNoEstructurada), llamadas, 1, true, motivos);
+        _logger.LogWarning("La respuesta final del agente no se pudo validar en {Intentos} intento(s); se responde el error controlado.", intentos);
+        return new clsRespuestaFinalAgente(clsRespuestaAgenteEstructurada.Respaldo(clsTextosAgente.RespuestaNoEstructurada), llamadas, intentos - 1, true, motivos);
     }
 
     /// <summary>Una llamada sin herramientas; con el esquema si el proveedor lo admite. Devuelve el texto y las llamadas hechas.</summary>
     private async Task<(string? Texto, int Llamadas)> PedirAsync(
         IChatClient chat, IReadOnlyList<ChatMessage> mensajes, List<ChatMessage> correccion, CancellationToken cancellationToken)
     {
-        var conEsquema = _opciones.Value.SoportaJsonSchema && _reloj.AhoraUtc.UtcTicks >= Interlocked.Read(ref _sinEsquemaHastaTicks);
+        var conEsquema = _opciones.Value.SoportaJsonSchema && _interruptor.Habilitado(_reloj.AhoraUtc);
         try
         {
             var respuesta = await chat.GetResponseAsync(Conversacion(mensajes, correccion, conEsquema), Opciones(conEsquema), cancellationToken);
@@ -129,7 +134,7 @@ public sealed class clsValidadorRespuestaAgente : IClsValidadorRespuestaAgente
         catch (Exception ex) when (conEsquema && !cancellationToken.IsCancellationRequested && EsEsquemaNoSoportado(ex))
         {
             var minutos = _opciones.Value.MinutosSinJsonSchema;
-            Interlocked.Exchange(ref _sinEsquemaHastaTicks, _reloj.AhoraUtc.AddMinutes(minutos).UtcTicks);
+            _interruptor.Apagar(_reloj.AhoraUtc.AddMinutes(minutos));
             _esquemaRechazado.Add(1);
             _logger.LogWarning(
                 "El proveedor de IA rechazó response_format con JSON Schema ({Tipo}, estado {Estado}); la respuesta final se pide sin formato durante {Minutos} min y se valida igual.",
@@ -223,7 +228,9 @@ public sealed class clsValidadorRespuestaAgente : IClsValidadorRespuestaAgente
         texto.Append("Reglas: tipo es ").Append(string.Join(" | ", clsReglasRespuestaAgente.Tipos)).Append("; ")
             .Append($"texto en español, de 1 a {clsRespuestaAgenteEstructurada.LargoMaximoTexto} caracteres; ")
             .Append("requiere_confirmacion es true solo con previsualizacion o confirmacion_requerida; ")
-            .Append("previsualizacion solo si calcular_precio ya dio un precio y no hay un origen o destino con municipios por confirmar; ")
+            // Endurecimiento B (#199): calcular_precio era del agente retirado (#105); el asistente no calcula precios y la regla
+            // PrevisualizacionSinPrecio rechaza toda previsualizacion, así que el prompt lo dice igual.
+            .Append("no uses previsualizacion: el asistente no calcula precios (responde con conversacional); ")
             .Append("acciones_sugeridas (").Append(string.Join(", ", clsReglasRespuestaAgente.Acciones))
             .Append(") solo con una previsualización pendiente de confirmar, si no null; ")
             .Append("no escribas montos ni folios que no estén, tal cual, en las salidas de las herramientas o en el estado resuelto.");

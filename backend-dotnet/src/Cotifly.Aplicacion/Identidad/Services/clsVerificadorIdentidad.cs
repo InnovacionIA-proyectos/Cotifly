@@ -8,9 +8,23 @@ namespace Cotifly.Aplicacion.Identidad.Services;
 
 /// <summary>Identidad que pasó la verificación doble.</summary>
 /// <param name="Usuario">Usuario de <c>UsuariosWeb</c> (seguido por el contexto: si es nuevo, falta confirmarlo).</param>
-/// <param name="Rol">Rol interno resuelto (igual al asignado).</param>
+/// <param name="Rol">
+/// Rol interno de la jerarquía (<c>director</c> &gt; <c>gerente_comercial</c> &gt; <c>comercial</c>). Con un solo rol disponible es el
+/// rol de la sesión; con varios (<see cref="RequiereEleccion"/>) NO se usa para emitir: la persona elige (HU-040.2, ADR-025).
+/// </param>
 /// <param name="EsNuevo"><c>true</c> si se creó en esta verificación (primer ingreso, JIT).</param>
-public sealed record clsIdentidadVerificada(clsUsuarioWeb Usuario, RolInterno Rol, bool EsNuevo);
+/// <param name="RolesDisponibles">
+/// HU-040.2 (#230): roles con los que puede entrar, del catálogo y en el orden de la jerarquía. Uno (<see cref="Rol"/>) en el caso de
+/// rol único; varios si tiene dos o más asignaciones activas (todas respaldadas por ClientePro) o si es un alta con varios roles externos.
+/// </param>
+public sealed record clsIdentidadVerificada(clsUsuarioWeb Usuario, RolInterno Rol, bool EsNuevo, IReadOnlyList<clsRol> RolesDisponibles)
+{
+    /// <summary>HU-040.2 (#230): con varios roles disponibles el login no emite sesión: la persona elige con cuál entra.</summary>
+    public bool RequiereEleccion => RolesDisponibles.Count > 1;
+
+    /// <summary><c>true</c> si <paramref name="rol"/> está entre <see cref="RolesDisponibles"/>.</summary>
+    public bool PuedeEntrarCon(RolInterno rol) => RolesDisponibles.Any(r => r.Codigo == rol);
+}
 
 /// <summary>Resultado de la verificación: la identidad o el motivo del rechazo, más la regla de rol aplicada.</summary>
 /// <param name="UsuarioIdRechazado">
@@ -26,11 +40,17 @@ public sealed record clsVerificacionIdentidad(clsIdentidadVerificada? Identidad,
 /// Verificación DOBLE de la identidad (ADR-009, decisión del 2026-09-25), común al login y al refresh:
 /// <list type="number">
 /// <item><b>Externa</b> (almacén corporativo, solo lectura): la persona existe y sus roles de ClientePro, traducidos con
-/// <c>Roles.idRolExterno</c>, dan <c>comercial</c> o <c>gerente_comercial</c>. Con ambos gana <c>gerente_comercial</c>
-/// (regla <see cref="clsMotivosAcceso.ReglaPrecedenciaGerente"/>, auditada).</item>
+/// <c>Roles.idRolExterno</c>, dan <c>comercial</c>, <c>gerente_comercial</c> o <c>director</c>. Con varios gana el de mayor alcance,
+/// <c>director</c> &gt; <c>gerente_comercial</c> &gt; <c>comercial</c> (reglas <see cref="clsMotivosAcceso.ReglaPrecedenciaDirector"/> y
+/// <see cref="clsMotivosAcceso.ReglaPrecedenciaGerente"/>, auditadas; HU-037, #210).</item>
 /// <item><b>Interna</b> (<c>dbo_cotifly</c>): el <c>NOMBREUSUARIO</c> del almacén (nunca el del request) ubica al usuario.
 /// Si no existe y el ID externo tampoco está vinculado a otra cuenta, se crea (JIT) con su asignación en
-/// <c>UsuariosRoles</c>. Si existe, su asignación activa debe ser el rol resuelto y su vínculo, el mismo ID externo.</item>
+/// <c>UsuariosRoles</c> (HU-040.2: una por cada rol externo mapeado). Si existe, el rol de la jerarquía debe estar entre sus asignaciones
+/// activas, cada asignación activa debe seguir respaldada por un rol externo vigente y su vínculo debe ser el mismo ID externo. HU-040.1
+/// (#229, script 16): el esquema admite varias asignaciones activas; con una sola, la regla es la de siempre (la asignación es exactamente
+/// el rol resuelto).</item>
+/// <item><b>Roles disponibles</b> (HU-040.2, #230, ADR-025): con una asignación activa, el rol de la jerarquía (rol único, igual que
+/// antes); con dos o más, todas ellas (regla <see cref="clsMotivosAcceso.ReglaMultiRol"/>): la persona elige al entrar.</item>
 /// </list>
 /// Cualquier diferencia de rol o de <c>NOMBREUSUARIO</c> es un rechazo con motivo; eso nunca se re-sincroniza solo. Los fallos
 /// del almacén son <see cref="clsMotivosAcceso.AlmacenNoDisponible"/> (fail-closed). Los fallos de <c>dbo_cotifly</c> se propagan.
@@ -56,7 +76,7 @@ public sealed class clsVerificadorIdentidad(
     /// <param name="idUsuario">Identidad a revalidar (como <c>NOMBREUSUARIO</c> y, si no, como <c>ID</c>).</param>
     /// <param name="permitirAlta">
     /// <c>true</c> en el login: alta JIT y refresco de los datos corporativos (nombre, correo y regional). <c>false</c> en el
-    /// refresh y en Google Chat: el usuario ya debe existir y no se toca.
+    /// refresh: el usuario ya debe existir y no se toca.
     /// </param>
     /// <param name="ahora">Instante de la operación.</param>
     /// <param name="cancellationToken">Cancelación del llamador.</param>
@@ -85,6 +105,7 @@ public sealed class clsVerificadorIdentidad(
         }
 
         var catalogo = await roles.ListarActivosAsync(cancellationToken);
+        var mapeados = RolesMapeados(catalogo, rolesExternos);
         var (rolResuelto, regla) = ResolverRol(catalogo, rolesExternos);
         if (rolResuelto is not { } rol)
         {
@@ -108,10 +129,16 @@ public sealed class clsVerificadorIdentidad(
             var regional = await BuscarRegionalAsync(externo.NombreUsuario, cancellationToken);
             var nuevo = clsUsuarioWeb.Crear(
                 externo.NombreUsuario, externo.NombreCompleto, externo.Email, regional, ahora, externo.IdUsuarioExterno);
-            var asignacion = clsUsuarioRol.Asignar(nuevo.Valor.Id, catalogo.First(r => r.Codigo == rol).Id, ahora);
             usuarios.Agregar(nuevo.Valor);
-            roles.AgregarAsignacion(asignacion.Valor);
-            return new clsVerificacionIdentidad(new clsIdentidadVerificada(nuevo.Valor, rol, EsNuevo: true), clsMotivosAcceso.AltaJit, regla);
+            // HU-040.2 (#230): el alta asigna TODOS los roles externos mapeados (multi-rol desde el primer ingreso); con uno solo, uno.
+            var disponiblesAlta = Disponibles(catalogo, mapeados);
+            foreach (var disponible in disponiblesAlta)
+            {
+                roles.AgregarAsignacion(clsUsuarioRol.Asignar(nuevo.Valor.Id, disponible.Id, ahora).Valor);
+            }
+
+            return new clsVerificacionIdentidad(
+                new clsIdentidadVerificada(nuevo.Valor, rol, EsNuevo: true, disponiblesAlta), clsMotivosAcceso.AltaJit, ReglaDe(disponiblesAlta, regla));
         }
 
         if (porNombre.IdUsuarioExterno is { } vinculado && vinculado != externo.IdUsuarioExterno)
@@ -126,7 +153,10 @@ public sealed class clsVerificadorIdentidad(
             return Rechazo(clsMotivosAcceso.SinAsignacionActiva, regla, porNombre.Id);
         }
 
-        if (asignados.Count != 1 || asignados[0] != rol)
+        // HU-040.1 (#229): se compara contra el CONJUNTO de asignaciones activas. El rol resuelto (jerarquía) debe estar asignado y
+        // ninguna asignación activa puede haber perdido su rol externo. Con una sola asignación equivale a la regla anterior
+        // (asignación == rol resuelto). HU-040.2 (#230): la regla no cambia; lo que cambia es que con dos o más se elige el rol.
+        if (!asignados.Contains(rol) || asignados.Any(a => !mapeados.Contains(a)))
         {
             return Rechazo(clsMotivosAcceso.RolExternoCambio, regla, porNombre.Id);
         }
@@ -144,39 +174,53 @@ public sealed class clsVerificadorIdentidad(
             porNombre.ActualizarDatos(externo.NombreCompleto, externo.Email, regional);
             if (!string.Equals(correoAnterior, porNombre.Email, StringComparison.OrdinalIgnoreCase))
             {
-                // El correo es la identidad en Google Chat (ADR-011): se deja rastro del cambio, sin los valores.
+                // El correo es el remitente y el contacto del comercial: se deja rastro del cambio, sin los valores.
                 logger.LogWarning(
-                    "El correo de '{NombreUsuario}' cambió en el almacén corporativo: su identidad en Google Chat pasa a ser el correo nuevo.",
+                    "El correo de '{NombreUsuario}' cambió en el almacén corporativo: sus cotizaciones nuevas salen con el correo nuevo.",
                     externo.NombreUsuario);
             }
         }
 
-        return new clsVerificacionIdentidad(new clsIdentidadVerificada(porNombre, rol, EsNuevo: false), clsMotivosAcceso.UsuarioExistente, regla);
+        // HU-040.2 (#230): con una asignación activa, rol único (la jerarquía, como antes); con varias, todas: elige al entrar.
+        var disponibles = asignados.Count == 1 ? Disponibles(catalogo, [rol]) : Disponibles(catalogo, asignados);
+        return new clsVerificacionIdentidad(
+            new clsIdentidadVerificada(porNombre, rol, EsNuevo: false, disponibles), clsMotivosAcceso.UsuarioExistente, ReglaDe(disponibles, regla));
     }
 
     /// <summary>
     /// Traduce los roles externos con el catálogo (<c>Roles.idRolExterno</c>, solo roles activos y mapeados). Sin ninguno:
-    /// <c>null</c>. Con los dos roles internos gana <c>gerente_comercial</c> (regla explícita y auditada; si luego pierde el
-    /// rol de gerente, su asignación deja de coincidir y queda en revisión).
+    /// <c>null</c>. Con varios roles internos gana el de mayor alcance: <c>director</c> &gt; <c>gerente_comercial</c> &gt;
+    /// <c>comercial</c> (HU-037, #210; reglas explícitas y auditadas, <c>precedencia_director</c> y <c>precedencia_gerente_comercial</c>;
+    /// si luego pierde el rol que ganó, su asignación deja de coincidir y queda en revisión).
     /// </summary>
     public static (RolInterno? Rol, string? Regla) ResolverRol(IEnumerable<clsRol> catalogo, IEnumerable<clsRolExterno> rolesExternos)
     {
-        ArgumentNullException.ThrowIfNull(catalogo);
-        ArgumentNullException.ThrowIfNull(rolesExternos);
-
-        var externos = rolesExternos.Select(r => r.IdRol).ToHashSet();
-        var mapeados = catalogo
-            .Where(r => r.Activo && r.IdRolExterno is { } id && externos.Contains(id))
-            .Select(r => r.Codigo)
-            .Distinct()
-            .ToList();
+        var mapeados = RolesMapeados(catalogo, rolesExternos);
 
         return mapeados.Count switch
         {
             0 => (null, null),
             1 => (mapeados[0], clsMotivosAcceso.ReglaMapeoUnico),
+            _ when mapeados.Contains(RolInterno.Director) => (RolInterno.Director, clsMotivosAcceso.ReglaPrecedenciaDirector),
             _ => (RolInterno.GerenteComercial, clsMotivosAcceso.ReglaPrecedenciaGerente),
         };
+    }
+
+    /// <summary>
+    /// Roles internos a los que dan derecho los roles externos (<c>Roles.idRolExterno</c>, solo roles activos y mapeados), sin
+    /// repetir y en el orden de la jerarquía (<c>comercial</c>, <c>gerente_comercial</c>, <c>director</c>).
+    /// </summary>
+    public static IReadOnlyList<RolInterno> RolesMapeados(IEnumerable<clsRol> catalogo, IEnumerable<clsRolExterno> rolesExternos)
+    {
+        ArgumentNullException.ThrowIfNull(catalogo);
+        ArgumentNullException.ThrowIfNull(rolesExternos);
+
+        var externos = rolesExternos.Select(r => r.IdRol).ToHashSet();
+        return [.. catalogo
+            .Where(r => r.Activo && r.IdRolExterno is { } id && externos.Contains(id))
+            .Select(r => r.Codigo)
+            .Distinct()
+            .Order()];
     }
 
     /// <summary>
@@ -228,12 +272,23 @@ public sealed class clsVerificadorIdentidad(
         }
     }
 
+    /// <summary>Roles del catálogo con esos códigos, en el orden de la jerarquía (comercial, gerente_comercial, director).</summary>
+    private static List<clsRol> Disponibles(IEnumerable<clsRol> catalogo, IEnumerable<RolInterno> codigos)
+    {
+        var buscados = codigos.ToHashSet();
+        return [.. catalogo.Where(r => buscados.Contains(r.Codigo)).OrderBy(r => r.Codigo)];
+    }
+
+    /// <summary>HU-040.2 (#230): con varios roles disponibles la regla auditada es <see cref="clsMotivosAcceso.ReglaMultiRol"/>.</summary>
+    private static string? ReglaDe(IReadOnlyCollection<clsRol> disponibles, string? regla) =>
+        disponibles.Count > 1 ? clsMotivosAcceso.ReglaMultiRol : regla;
+
     private static clsVerificacionIdentidad Rechazo(string motivo, string? regla = null, Guid? usuarioId = null) => new(null, motivo, regla, usuarioId);
 }
 
 /// <summary>
-/// Verificación doble de la identidad (login, refresh y, desde #12 parte C, cada turno de Google Chat). Interfaz para poder
-/// simularla en las pruebas del procesamiento de Google Chat.
+/// Verificación doble de la identidad (login y refresh; hasta HU-013.9 también cada turno de Google Chat, retirado). Interfaz
+/// para poder simularla en las pruebas.
 /// </summary>
 public interface IClsVerificadorIdentidad
 {

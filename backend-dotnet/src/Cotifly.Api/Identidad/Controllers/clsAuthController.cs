@@ -12,7 +12,7 @@ using Microsoft.AspNetCore.RateLimiting;
 namespace Cotifly.Api.Identidad.Controllers;
 
 /// <summary>
-/// Login SSO desde ClientePro, refresh y logout (<c>/api/auth/*</c> de <c>specs/openapi.yaml</c>, ADR-009). Sin lógica de
+/// Login SSO desde ClientePro, elección del rol (HU-040.2, ADR-025), refresh y logout (<c>/api/auth/*</c> de <c>specs/openapi.yaml</c>, ADR-009). Sin lógica de
 /// negocio: delega en los casos de uso de Aplicación. Límite de peticiones por IP (<see cref="clsConfiguracionAutenticacion.PoliticaLimiteAuth"/>).
 /// </summary>
 [ApiController]
@@ -24,7 +24,10 @@ public sealed class clsAuthController : ControllerBase
     /// <summary>Largo máximo del cuerpo de refresh/logout que se intenta leer.</summary>
     private const long LargoMaximoCuerpo = 4096;
 
-    /// <summary>200 <c>LoginResponse</c>; 400 cuerpo inválido; 401 <c>{"error":"Credenciales inválidas"}</c>.</summary>
+    /// <summary>
+    /// 200 <c>LoginResponse</c> (un solo rol) o 200 <c>EleccionRolRequerida</c> (varios roles, HU-040.2: sin sesión, con el ticket de
+    /// <c>elegir-rol</c>); 400 cuerpo inválido; 401 <c>{"error":"Credenciales inválidas"}</c>.
+    /// </summary>
     [HttpPost("login-clientepro")]
     [ProducesResponseType<clsLoginResponse>(StatusCodes.Status200OK, "application/json")]
     [ProducesResponseType<clsErrorWeb>(StatusCodes.Status400BadRequest, "application/json")]
@@ -41,10 +44,36 @@ public sealed class clsAuthController : ControllerBase
             new clsSolicitudLoginClientePro(cuerpo.IdUsuario, cuerpo.NombreUsuario, cuerpo.Roles), cancellationToken);
 
         return resultado.Coincidir<IActionResult>(
-            sesion => Ok(clsLoginResponse.Desde(sesion)),
+            login => login.Eleccion is { } eleccion ? Ok(clsEleccionRolResponse.Desde(eleccion)) : Ok(clsLoginResponse.Desde(login.Sesion!)),
             error => error.Codigo == clsCodigosAcceso.SolicitudInvalida
                 ? BadRequest(new clsErrorWeb(error.Mensaje))
                 : Unauthorized(new clsErrorWeb(clsCodigosAcceso.MensajeCredencialesInvalidas)));
+    }
+
+    /// <summary>
+    /// HU-040.2 (#230, ADR-025): 200 <c>LoginResponse</c> con el rol elegido; 400 cuerpo inválido (sin ticket o un <c>rol</c> que no es un
+    /// código de rol); 401 <c>{"error":"Inicia sesión de nuevo."}</c> para todo rechazo (ticket vencido, inválido o ya usado, rol no
+    /// ofrecido o retirado). El ticket se consume aunque la elección falle. Mismo límite de peticiones por IP que el login.
+    /// </summary>
+    [HttpPost("elegir-rol")]
+    [ProducesResponseType<clsLoginResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<clsErrorWeb>(StatusCodes.Status400BadRequest, "application/json")]
+    [ProducesResponseType<clsErrorWeb>(StatusCodes.Status401Unauthorized, "application/json")]
+    public async Task<IActionResult> ElegirRol(
+        [FromBody] clsElegirRolRequest cuerpo,
+        [FromServices] IClsEleccionRolService servicio,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(cuerpo);
+        ArgumentNullException.ThrowIfNull(servicio);
+
+        var resultado = await servicio.ElegirAsync(new clsSolicitudElegirRol(cuerpo.Ticket, cuerpo.Rol), cancellationToken);
+
+        return resultado.Coincidir<IActionResult>(
+            sesion => Ok(clsLoginResponse.Desde(sesion)),
+            error => error.Codigo == clsCodigosAcceso.SolicitudInvalida
+                ? BadRequest(new clsErrorWeb(error.Mensaje))
+                : Unauthorized(new clsErrorWeb(clsCodigosAcceso.MensajeSesionExpirada)));
     }
 
     /// <summary>200 <c>LoginResponse</c> con el par rotado; cualquier otro caso (incluido un cuerpo inválido) 401.</summary>

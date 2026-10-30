@@ -21,11 +21,32 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
     private readonly clsTrmFalso _superfinanciera = new();
     private readonly Dictionary<string, string> _folios = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Tiempo máximo del redactor en la API de aceptación (<c>IA:TiempoRedaccionSegundos</c>; en producción, 15).</summary>
+    public const int TiempoRedaccionSegundos = 1;
+
+    /// <summary>Modelo guionizado del escenario (HU-013.5): la API nunca llama a un proveedor de IA real.</summary>
+    public clsChatClientGuionizado Modelo { get; } = new();
+
     [Given("la API web de Cotifly conectada a Nexo con el cliente {string} de BP {string}")]
     public void DadoLaApiConNexo(string nit, string bp)
     {
         _nexo.ConCliente(nit, $"CLIENTE {nit} S.A.S.", "cliente", bp);
-        web.Iniciar(clsApiWebPruebas.ConNexo(clsEntornoAceptacion.BaseDatos, _nexo, dolarApi: _dolarApi, superfinanciera: _superfinanciera));
+        web.Iniciar(clsApiWebPruebas.ConNexo(clsEntornoAceptacion.BaseDatos, _nexo, dolarApi: _dolarApi, superfinanciera: _superfinanciera, modelo: Modelo,
+            extra: new Dictionary<string, string?> { ["IA:TiempoRedaccionSegundos"] = TiempoRedaccionSegundos.ToString(System.Globalization.CultureInfo.InvariantCulture) }));
+    }
+
+    /// <summary>HU-023.4 (#159): la misma API con <c>Nexo:EnviarGrupoRutaId</c> y <c>Nexo:EnviarDatosCubicador</c> encendidas.</summary>
+    [Given("la API web de Cotifly conectada a Nexo con el grupo de ruta y los datos del cubicador y el cliente {string} de BP {string}")]
+    public void DadoLaApiConNexoYDatosDelCubicador(string nit, string bp)
+    {
+        _nexo.ConCliente(nit, $"CLIENTE {nit} S.A.S.", "cliente", bp);
+        web.Iniciar(clsApiWebPruebas.ConNexo(clsEntornoAceptacion.BaseDatos, _nexo, dolarApi: _dolarApi, superfinanciera: _superfinanciera, modelo: Modelo,
+            extra: new Dictionary<string, string?>
+            {
+                ["IA:TiempoRedaccionSegundos"] = TiempoRedaccionSegundos.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["Nexo:EnviarGrupoRutaId"] = "true",
+                ["Nexo:EnviarDatosCubicador"] = "true",
+            }));
     }
 
     [Given("que DolarApi publica hoy la TRM {string}")]
@@ -53,9 +74,15 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
     }
 
     [When("{string} envía a costeo el formulario ampliado del cliente {string} como {string}")]
-    public async Task CuandoEnviaACosteo(string alias, string nit, string cotizacion)
+    public Task CuandoEnviaACosteo(string alias, string nit, string cotizacion) => EnviarACosteoAsync(alias, nit, cotizacion, null);
+
+    /// <summary>
+    /// <c>POST /web/solicitudes-costeo</c> con el formulario ampliado; <paramref name="moneda"/> (HU-013.7) solo viaja si no es <c>null</c>.
+    /// Con 201 asocia el alias al folio del servidor.
+    /// </summary>
+    public async Task EnviarACosteoAsync(string alias, string nit, string cotizacion, string? moneda, string? deadline = null)
     {
-        await web.EnviarAsync(HttpMethod.Post, "/web/solicitudes-costeo", web.Sesion(alias).Access, Formulario(nit));
+        await web.EnviarAsync(HttpMethod.Post, "/web/solicitudes-costeo", web.Sesion(alias).Access, Formulario(nit, moneda, deadline));
         if (web.UltimoEstado == HttpStatusCode.Created)
         {
             _folios[cotizacion] = web.UltimoJson().GetProperty("folio").GetString()!;
@@ -156,9 +183,13 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
     }
 
     [When("{string} marca el resultado de {string} como {string} con el motivo {string} y el comentario {string}")]
-    public Task CuandoMarcaResultado(string alias, string cotizacion, string resultado, string motivo, string comentario) =>
-        web.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{Folio(cotizacion)}/resultado", web.Sesion(alias).Access,
+    public async Task CuandoMarcaResultado(string alias, string cotizacion, string resultado, string motivo, string comentario)
+    {
+        // HU-036.3 (#207): con el costeo listo el comercial finaliza antes de marcar el resultado.
+        await FinalizarSiCorrespondeAsync(alias, Folio(cotizacion));
+        await web.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{Folio(cotizacion)}/resultado", web.Sesion(alias).Access,
             clsApiWebPruebas.Json(new { resultado, motivo, comentario }));
+    }
 
     [Then("Nexo registró la cotización de {string} como {string}")]
     public async Task EntoncesNexoRegistro(string cotizacion, string resultado) =>
@@ -171,6 +202,21 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
         (await Columna(cotizacion, "motivoRechazo")).Should().Be(motivo);
     }
 
+    [Then("la respuesta trae la sincronización del resultado {string}")]
+    public void EntoncesLaRespuestaTraeLaSincronizacion(string estado) =>
+        web.UltimoJson().GetProperty("sincronizacion_resultado_nexo").GetString().Should().Be(estado);
+
+    [Then("el resultado de {string} queda {string} con Nexo")]
+    public async Task EntoncesElResultadoQueda(string cotizacion, string estado) =>
+        (await Columna(cotizacion, "sincronizacionResultadoNexo")).Should().Be(estado);
+
+    [Then("Nexo recibió {int} envíos del resultado de {string}")]
+    public async Task EntoncesNexoRecibioResultados(int cantidad, string cotizacion)
+    {
+        var cotizacionNexo = await Columna(cotizacion, "cotizacionNexoId");
+        _nexo.Llamadas(HttpMethod.Post, $"/api/cotizaciones/{cotizacionNexo}/resultado").Should().Be(cantidad, "el resultado pendiente se envía una sola vez");
+    }
+
     [Then("la cotización {string} sigue sin resultado")]
     public async Task EntoncesSinResultado(string cotizacion)
     {
@@ -178,8 +224,137 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
         (await Columna(cotizacion, "motivoRechazo")).Should().BeNull();
     }
 
+    // HU-013.14 (ADR-018 §17): consistencia del costeo al entregar y al registrar el resultado.
+    [Given("que Nexo costea la solicitud en la misma petición del alta")]
+    public void DadoQueNexoAutoCostea() => _nexo.AutoCostear = true;
+
+    [Given("que Nexo no responde la consulta del costeo después de registrar el resultado")]
+    public void DadoQueFallaLaRelectura() => _nexo.FallarConsultaTrasResultado = true;
+
+    /// <summary>
+    /// Estado de una fila de antes de la opción A (ADR-018 §17): <c>autocosteo</c> sin precio ni línea asociada a Nexo, así el
+    /// resultado necesita releer el costeo.
+    /// </summary>
+    [When("la cotización {string} está en autocosteo sin el costo leído")]
+    public Task CuandoAutocosteoSinCosto(string cotizacion) =>
+        clsBaseDatosPruebas.EjecutarAsync(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
+            $"UPDATE dbo_cotifly.CotizacionesSolicitud SET estadoCosteo = 'autocosteo', precioFinal = NULL WHERE folio = '{Folio(cotizacion)}'; "
+            + "UPDATE l SET estadoCosteo = 'autocosteo', costoFletesTotal = NULL, costoFinal = NULL, precioFinalLinea = NULL FROM dbo_cotifly.CotizacionLineasSolicitud l "
+            + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{Folio(cotizacion)}'; "
+            + "UPDATE v SET estadoCosteo = 'autocosteo', costoFlete = NULL, lineaSolicitudNexoId = NULL FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v "
+            + "JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = v.lineaSolicitudId "
+            + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{Folio(cotizacion)}';");
+
+    [When("Nexo vuelve a responder la consulta del costeo")]
+    public void CuandoVuelveLaConsulta() => _nexo.FallarConsultaTrasResultado = false;
+
+    [Then("la respuesta trae el estado de costeo {string} con el precio final {int}")]
+    public void EntoncesLaRespuestaConPrecio(string estado, int precio)
+    {
+        var json = web.UltimoJson();
+        json.GetProperty("estado_costeo").GetString().Should().Be(estado);
+        json.GetProperty("precio_final").GetDecimal().Should().Be(precio);
+    }
+
+    [Then("la respuesta trae el estado de costeo {string} sin precio final")]
+    public void EntoncesLaRespuestaSinPrecio(string estado)
+    {
+        var json = web.UltimoJson();
+        json.GetProperty("estado_costeo").GetString().Should().Be(estado);
+        json.GetProperty("precio_final").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null);
+    }
+
+    // HU-013.17 (#127): perdida solo en Cotifly cuando el cliente desiste antes del costeo.
+    [When("{string} marca {string} como perdida porque {string}")]
+    public async Task CuandoMarcaPerdidaSinCosteo(string alias, string cotizacion, string motivo)
+    {
+        await web.EnviarAsync(HttpMethod.Get, $"/web/cotizaciones/{Folio(cotizacion)}/costeo", web.Sesion(alias).Access);
+        var etag = web.UltimoEtag;
+        await web.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{Folio(cotizacion)}/resultado", web.Sesion(alias).Access,
+            clsApiWebPruebas.Json(new { resultado = "perdida", motivo }), etag);
+    }
+
+    [Then("Nexo no recibió ningún resultado de {string}")]
+    public async Task EntoncesNexoSinResultado(string cotizacion) =>
+        _nexo.Resultado((await Columna(cotizacion, "costeoId"))!).Should().Be("SinDefinir");
+
+    [Then("las métricas de {string} cuentan {int} perdida")]
+    public async Task EntoncesLasMetricasCuentanPerdidas(string alias, int perdidas)
+    {
+        await web.EnviarAsync(HttpMethod.Get, "/web/metricas/comercial", web.Sesion(alias).Access);
+        web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);
+        web.UltimoJson().GetProperty("indicadores").GetProperty("perdidas").GetInt32().Should().Be(perdidas);
+    }
+
+    [Then("las métricas de {string} cuentan {int} ganada por un valor de {int}")]
+    public async Task EntoncesLasMetricasCuentan(string alias, int ganadas, int valor)
+    {
+        await web.EnviarAsync(HttpMethod.Get, "/web/metricas/comercial", web.Sesion(alias).Access);
+        web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);
+        var indicadores = web.UltimoJson().GetProperty("indicadores");
+        indicadores.GetProperty("ganadas").GetInt32().Should().Be(ganadas);
+        indicadores.GetProperty("valor_ganado_cop").GetDecimal().Should().Be(valor);
+    }
+
     /// <summary>Nexo falso del escenario (lo usan los pasos del polling y del resultado).</summary>
     public clsNexoFalso Nexo => _nexo;
+
+    /// <summary>
+    /// HU-036.3 (#207): lo que hace el frontend antes del PDF y del resultado: si el costeo de <paramref name="folio"/> está listo
+    /// (<c>autocosteo</c> o <c>entregada</c> con precio), sin finalizar y sin entregar al cliente, el comercial lo finaliza con el
+    /// <c>ETag</c> vigente. Si no corresponde (sin precio, ya finalizada, chat), no hace nada. Las respuestas de estas llamadas no quedan
+    /// como la última del escenario.
+    /// </summary>
+    public async Task FinalizarSiCorrespondeAsync(string alias, string folio)
+    {
+        var token = web.Sesion(alias).Access;
+        using var lectura = new HttpRequestMessage(HttpMethod.Get, $"/web/cotizaciones/{folio}/costeo");
+        lectura.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        using var costeo = await web.Api.Cliente.SendAsync(lectura);
+        if (costeo.StatusCode != HttpStatusCode.OK)
+        {
+            return;
+        }
+
+        using var json = System.Text.Json.JsonDocument.Parse(await costeo.Content.ReadAsStringAsync());
+        var raiz = json.RootElement;
+        var estado = raiz.GetProperty("estado_costeo").ValueKind == System.Text.Json.JsonValueKind.String ? raiz.GetProperty("estado_costeo").GetString() : null;
+        var listo = estado is "autocosteo" or "entregada" && raiz.GetProperty("precio_final").ValueKind == System.Text.Json.JsonValueKind.Number;
+        var finalizada = raiz.TryGetProperty("finalizada_at", out var fecha) && fecha.ValueKind == System.Text.Json.JsonValueKind.String;
+        var entregada = raiz.TryGetProperty("resultado", out var resultado) && resultado.ValueKind == System.Text.Json.JsonValueKind.String;
+        if (!listo || finalizada || entregada)
+        {
+            return;
+        }
+
+        using var finalizar = new HttpRequestMessage(HttpMethod.Post, $"/web/cotizaciones/{folio}/finalizar");
+        finalizar.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        finalizar.Headers.TryAddWithoutValidation("If-Match", costeo.Headers.ETag?.Tag);
+        using var respuesta = await web.Api.Cliente.SendAsync(finalizar);
+        // Una enviada al cliente sin resultado (antes de HU-036) responde 200 igual; lo único inesperado es un error.
+        respuesta.StatusCode.Should().Be(HttpStatusCode.OK, await respuesta.Content.ReadAsStringAsync());
+    }
+
+    /// <summary>
+    /// HU-021 (decisión 3): el dueño de <paramref name="cotizacion"/> agrega en Cotifly (ruta 1) un conexo de costo <paramref name="valor"/>;
+    /// Cotifly lo crea en Nexo y guarda el valor que Nexo calcula. El polling ya no importa los conexos que aparezcan en Nexo.
+    /// </summary>
+    public async Task AgregarConexoEnCotiflyAsync(string cotizacion, string nombre, decimal valor)
+    {
+        var usuarioId = Guid.Parse((await Columna(cotizacion, "usuarioId"))!);
+        var dueno = web.Sesiones.Values.First(s => s.UsuarioId == usuarioId);
+        await web.Api.AgregarConexoAsync(_nexo, dueno.Access, Folio(cotizacion), nombre, valor);
+        ConexosAgregadosPorLaPrueba++;
+    }
+
+    /// <summary>Conexos que la propia prueba agregó en Cotifly (cada uno es un <c>POST .../conexos</c> a Nexo).</summary>
+    public int ConexosAgregadosPorLaPrueba { get; private set; }
+
+    /// <summary>Fuente principal de la TRM del escenario (DolarApi falsa, HU-013.7).</summary>
+    public clsDolarApiFalso DolarApi => _dolarApi;
+
+    /// <summary>Fuente de respaldo de la TRM del escenario (Superfinanciera falsa, HU-013.7).</summary>
+    public clsTrmFalso Superfinanciera => _superfinanciera;
 
     /// <summary>Asocia el alias de la cotización al folio que devolvió el servidor (pasos de otros archivos, HU-013.10).</summary>
     public void Registrar(string cotizacion, string folio) => _folios[cotizacion] = folio;
@@ -187,9 +362,35 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
     public string Folio(string cotizacion) =>
         _folios.TryGetValue(cotizacion, out var folio) ? folio : throw new InvalidOperationException($"No se envió la cotización '{cotizacion}'.");
 
-    public Task<string?> Columna(string cotizacion, string columna) =>
-        clsBaseDatosPruebas.EscalarAsync<string>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-            $"SELECT CAST({columna} AS nvarchar(max)) FROM dbo_cotifly.Cotizaciones WHERE folio = '{Folio(cotizacion)}'");
+    public Task<string?> Columna(string cotizacion, string columna) => ColumnaDelFolio(Folio(cotizacion), columna);
+
+    /// <summary>
+    /// Una columna de la cotización <paramref name="folio"/>. HU-021: <c>costeoId</c> es <c>solicitudNexoId</c>; el costo, el margen y su
+    /// origen, los de la ruta 1; la carga (peso, vehículo, carrocería), la de su primer camión; el resto, de la cabecera.
+    /// </summary>
+    public static Task<string?> ColumnaDelFolio(string folio, string columna)
+    {
+        var expresion = columna switch
+        {
+            "costeoId" => "c.solicitudNexoId",
+            "costo" => "l.costoFinal",
+            "margenAplicado" or "origenMargen" or "metodoCalculo" => $"l.{columna}",
+            "pesoKg" or "tipoVehiculo" or "carroceria" =>
+                $"(SELECT TOP 1 v.{columna} FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v WHERE v.lineaSolicitudId = l.id ORDER BY IIF(v.ordenVehiculo IS NULL, 1, 0), v.ordenVehiculo, v.createdAt, v.id)",
+            _ => $"c.{columna}",
+        };
+        return clsBaseDatosPruebas.EscalarAsync<string>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
+            $"SELECT CAST({expresion} AS nvarchar(max)) FROM dbo_cotifly.CotizacionesSolicitud c "
+            + $"LEFT JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.cotizacionSolicitudId = c.id AND l.orden = 1 WHERE c.folio = '{folio}'");
+    }
+
+    private static string Formulario(string nit, string? moneda, string? deadline = null)
+    {
+        var json = Formulario(nit);
+        json = moneda is null ? json : json[..json.LastIndexOf('}')] + ",\"moneda\":" + System.Text.Json.JsonSerializer.Serialize(moneda) + "}";
+        // HU-018.1 (#155): la fecha límite del formulario (cabecera).
+        return deadline is null ? json : json[..json.LastIndexOf('}')] + ",\"deadline\":" + System.Text.Json.JsonSerializer.Serialize(deadline) + "}";
+    }
 
     private static string Formulario(string nit) => clsApiWebPruebas.Json(new
     {
@@ -199,17 +400,23 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
         referencia = "OC-7788",
         origen = "Buenaventura",
         destino = "Bogotá D.C.",
-        tipo_vehiculo = "3S3",
-        carroceria = "PORTACONTENEDORES",
         clase_viaje = "Contenedor",
         clase_contenedor = "CNT40.HC",
         peso_kg = 28500,
+
+        // Formato plano anterior (una ruta, HU-021.6 lo conserva): los municipios se resuelven por nombre y cada mercancía lleva su tipo.
         posiciones = new object[]
         {
-            new { descripcion = "Estiba", cantidad = 20, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = 1425 },
-            new { largo_cm = 1200, ancho_cm = 235, alto_cm = 269 },
+            new { codigo_mercancia = CodigoMercancia, descripcion = "Estiba", cantidad = 20, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = 1424.95m },
+            new { codigo_mercancia = CodigoMercancia, largo_cm = 1200, ancho_cm = 235, alto_cm = 269, peso_kg = 1 },
         },
     });
+
+    /// <summary>Tipo de mercancía del catálogo del cubicador de las mercancías del formulario (HU-021.6).</summary>
+    public const string TipoMercancia = "6f1c2a52-8d1e-4f5b-9a63-0c1b2d3e4f50";
+
+    /// <summary>HU-023.3: código del tipo de mercancía en el catálogo del cubicador (lo que manda el contrato nuevo).</summary>
+    public const string CodigoMercancia = "CAFE_EN_ESTIBAS";
 
     public void Dispose()
     {

@@ -24,8 +24,12 @@
     <PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.12" />
     <!-- PDF de la cotización (#11, ADR-006). MIT; build multiplataforma (sin GDI ni WPF), fuentes vía IFontResolver. -->
     <PackageVersion Include="PDFsharp-MigraDoc" Version="6.2.4" />
-    <!-- Transporte SMTP del correo (#11, relay interno). MIT; trae MimeKit (MIT) y BouncyCastle.Cryptography (MIT). -->
-    <PackageVersion Include="MailKit" Version="4.18.0" />
+    <!--
+      Fijación transitiva (CentralPackageTransitivePinningEnabled): System.Security.Cryptography.Pkcs 10.0.0 tiene GHSA-2fmv-rv2c-59x7
+      (moderada) y GHSA-846f-f764-76mx (alta); si algún paquete lo trae, se sube al último parche de la línea 10.0.x. MIT. (Lo traía
+      MimeKit con MailKit, el transporte SMTP directo que HU-033, #199, retiró: el correo sale por MailSender, HTTP.)
+    -->
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
     <!--
       Excel de licitaciones (HU-011, ADR-017): ClosedXML en la MISMA versión que Nexo (0.104.2, sin vulnerabilidades conocidas en OSV al 2026-10-01) para que la detección de filas coincida. MIT; trae
       DocumentFormat.OpenXml, ClosedXML.Parser, ExcelNumberFormat y RBush (MIT) y SixLabors.Fonts (Apache-2.0). SixLabors.Fonts

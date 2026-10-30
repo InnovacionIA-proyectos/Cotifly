@@ -3,6 +3,7 @@ using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Cotizaciones.Services;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
+using Cotifly.Dominio.Margen;
 using Cotifly.Pruebas.Comun;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -90,7 +91,7 @@ public sealed class clsFolioIntegracionTests(clsBaseDatosPruebas baseDatos) : cl
         var dia = UsarDiaPropio();
         var ana = await CrearUsuarioAsync(nombreCompleto: "Ana Duarte Gómez");
         await GuardarAsync(NuevaCotizacion(ana, $"PCN-AD-{dia}-004"));
-        await GuardarAsync(clsCotizacion.Crear(new clsDatosCotizacion { Folio = $"PCN-AD-{dia}-004-v2", Version = 2, UsuarioId = ana }).Valor);
+        await GuardarAsync(clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = $"PCN-AD-{dia}-004-v2", Version = 2, UsuarioId = ana }).Valor);
         await GuardarAsync(NuevaCotizacion(ana, $"PCN-800111222-AD-{dia}-006"));
         await GuardarAsync(NuevaCotizacion(ana, $"PCN-ZAD-{dia}-900"));
         await GuardarAsync(NuevaCotizacion(ana, $"PCN-LP-{dia}-950"));
@@ -137,7 +138,7 @@ public sealed class clsFolioIntegracionTests(clsBaseDatosPruebas baseDatos) : cl
         var versiones = await Task.WhenAll(Enumerable.Range(0, 5).Select(_ => CrearVersionAsync(ana, idV1)));
         var maxima = await ConsultarAsync(s => s.GetRequiredService<IClsCotizacionRepository>().ObtenerVersionMaximaAsync(v1.Valor, Ct));
         var columnaVersion = await clsBaseDatosPruebas.EscalarAsync<int>(BaseDatos.CadenaCotifly,
-            $"SELECT version FROM dbo_cotifly.Cotizaciones WHERE folio = '{v1.Valor}-v6'");
+            $"SELECT version FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{v1.Valor}-v6'");
 
         versiones.Should().OnlyContain(r => r.EsExitoso);
         versiones.Select(r => r.Valor).Should().BeEquivalentTo(Enumerable.Range(2, 5).Select(n => $"PCN-CP-{dia}-001-v{n}"));
@@ -155,7 +156,7 @@ public sealed class clsFolioIntegracionTests(clsBaseDatosPruebas baseDatos) : cl
 
         var v2 = await CrearVersionAsync(ana, heredada.Id);
         var columnaVersion = await clsBaseDatosPruebas.EscalarAsync<int>(BaseDatos.CadenaCotifly,
-            $"SELECT version FROM dbo_cotifly.Cotizaciones WHERE folio = 'PCN-{dia}-001-v2'");
+            $"SELECT version FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = 'PCN-{dia}-001-v2'");
 
         v2.Valor.Should().Be($"PCN-{dia}-001-v2");
         columnaVersion.Should().Be(2);
@@ -167,8 +168,8 @@ public sealed class clsFolioIntegracionTests(clsBaseDatosPruebas baseDatos) : cl
         var ana = await CrearUsuarioAsync();
         var sufijo = Guid.NewGuid().ToString("N")[..8];
         await GuardarAsync(NuevaCotizacion(ana, $"LEG_{sufijo}"));
-        await GuardarAsync(clsCotizacion.Crear(new clsDatosCotizacion { Folio = $"LEG_{sufijo}-v3", Version = 3, UsuarioId = ana }).Valor);
-        await GuardarAsync(clsCotizacion.Crear(new clsDatosCotizacion { Folio = $"LEGX{sufijo}-v9", Version = 9, UsuarioId = ana }).Valor);
+        await GuardarAsync(clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = $"LEG_{sufijo}-v3", Version = 3, UsuarioId = ana }).Valor);
+        await GuardarAsync(clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = $"LEGX{sufijo}-v9", Version = 9, UsuarioId = ana }).Valor);
 
         var maxima = await ConsultarAsync(s => s.GetRequiredService<IClsCotizacionRepository>().ObtenerVersionMaximaAsync($"LEG_{sufijo}", Ct));
 
@@ -193,7 +194,7 @@ public sealed class clsFolioIntegracionTests(clsBaseDatosPruebas baseDatos) : cl
         var ana = await CrearUsuarioAsync();
         var luis = await CrearUsuarioAsync();
         var conLinea = NuevaCotizacion(ana);
-        var sinLinea = clsCotizacion.Crear(new clsDatosCotizacion { Folio = FolioUnico(), UsuarioId = ana }).Valor;
+        var sinLinea = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = FolioUnico(), UsuarioId = ana }).Valor;
         await GuardarAsync(conLinea);
         Reloj.Avanzar(TimeSpan.FromSeconds(1));
         await GuardarAsync(sinLinea);
@@ -202,6 +203,29 @@ public sealed class clsFolioIntegracionTests(clsBaseDatosPruebas baseDatos) : cl
         var filas = await ConsultarAsync(s => s.GetRequiredService<IClsCotizacionRepository>().ListarConLineaPorUsuarioAsync(ana, 100, Ct));
 
         filas.Select(f => (f.Cotizacion.Folio, f.LineaNegocio)).Should().Equal((sinLinea.Folio, (string?)null), (conLinea.Folio, "Nacional"));
+    }
+
+    /// <summary>
+    /// HU-021.9 (#136): con rutas de líneas de negocio distintas, "Mis cotizaciones" dice "Varias"; el margen y su origen son los de la
+    /// ruta 1 (los de cada ruta están en el costeo). Contra SQL Server real.
+    /// </summary>
+    [Fact]
+    public async Task ElListadoDiceVariasConRutasDeLineasDistintasYTraeElMargenDeLaRuta1()
+    {
+        var ana = await CrearUsuarioAsync();
+        var varias = Cotifly.Pruebas.Comun.clsCotizacionMuestra.Licitacion(2, FolioUnico(), ana, lineaNegocioId: 1);
+        typeof(clsLineaSolicitud).GetProperty(nameof(clsLineaSolicitud.LineaNegocioId))!.SetValue(varias.RutasOrdenadas[1], 3);
+        varias.RutasOrdenadas[0].RegistrarMargenCosteo(0.15m, 0.18m, OrigenMargen.SapTm, "margen");
+        varias.RutasOrdenadas[1].RegistrarMargenCosteo(0.15m, 0.15m, OrigenMargen.PoliticaLinea, "margen");
+        var una = Cotifly.Pruebas.Comun.clsCotizacionMuestra.Licitacion(2, FolioUnico(), ana, lineaNegocioId: 3);
+        await GuardarAsync(varias);
+        await GuardarAsync(una);
+
+        var filas = await ConsultarAsync(s => s.GetRequiredService<IClsCotizacionRepository>().ListarConLineaPorUsuarioAsync(ana, 100, Ct));
+
+        var deVarias = filas.Single(f => f.Cotizacion.Id == varias.Id);
+        (deVarias.LineaNegocio, deVarias.MargenAplicado, deVarias.OrigenMargen).Should().Be(("Varias", 0.18m, OrigenMargen.SapTm));
+        filas.Single(f => f.Cotizacion.Id == una.Id).LineaNegocio.Should().Be("Importacion");
     }
 
     private async Task<clsResultado<string>> CrearAsync(Guid usuarioId, string? nit)
@@ -222,7 +246,7 @@ public sealed class clsFolioIntegracionTests(clsBaseDatosPruebas baseDatos) : cl
         var servicios = ambito.ServiceProvider;
         return await servicios.GetRequiredService<IClsGeneradorFolioService>().CrearNuevaVersionAsync<string>(usuarioId, origen, async (folio, ct) =>
         {
-            var nueva = clsCotizacion.Crear(new clsDatosCotizacion { Folio = folio.Valor, Version = folio.Version, UsuarioId = usuarioId }).Valor;
+            var nueva = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = folio.Valor, Version = folio.Version, UsuarioId = usuarioId }).Valor;
             servicios.GetRequiredService<IClsCotizacionRepository>().Agregar(nueva);
             await servicios.GetRequiredService<IClsUnitOfWork>().GuardarCambiosAsync(ct);
             return folio.Valor;

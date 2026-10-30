@@ -8,7 +8,8 @@ namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
 /// <c>GET /pdfs/{archivo}</c> (dueño o gerente de la regional), administración de líneas (solo <c>gerente_comercial</c>,
-/// auditada) y métricas en borrador (alcance por rol y regional) por HTTP contra la base real.
+/// auditada) por HTTP contra la base real. Las métricas del borrador (<c>/web/metricas/actividad</c> y
+/// <c>/ajustes-margen</c>) se retiraron en HU-014.3 (#152); el tablero vigente se prueba en <c>metricas_tablero.feature</c>.
 /// </summary>
 [Collection(clsColeccionApiWeb.Nombre)]
 [Trait("Categoria", "Integracion")]
@@ -92,7 +93,7 @@ public sealed class clsPdfAdminMetricasEndpointsTests(clsEntornoApiWeb entorno)
         var json = await VerificarContratoAsync(respuesta, "/web/admin/lineas-negocio", _get, HttpStatusCode.OK);
 
         json.EnumerateArray().Select(l => l.GetProperty("linea_negocio").GetString()).Should().Contain(
-            ["Nacional", "Distribucion", "Importacion", "Exportacion", "Internacional", "Almacenamiento", "Almacenamiento3PL", "ITR"]);
+            ["Nacional", "Distribucion", "Importacion", "Exportacion", "Internacional", "DevolucionContenedor"]); // HU-021: el 0009 retira Almacenamiento, Almacenamiento3PL e ITR
     }
 
     [Fact]
@@ -163,69 +164,20 @@ public sealed class clsPdfAdminMetricasEndpointsTests(clsEntornoApiWeb entorno)
         await VerificarContratoAsync(respuesta, "/web/admin/lineas-negocio/{id}", _put, HttpStatusCode.NotFound);
     }
 
-    [Fact]
-    public async Task LasMetricasDeActividadRespetanElAlcancePorRolYCuentanLasReenviadas()
+    [Theory]
+    [InlineData("/web/metricas/actividad")]
+    [InlineData("/web/metricas/ajustes-margen")]
+    public async Task LasMetricasDelBorradorSeRetiraronYResponden404(string ruta)
     {
-        var occidente = Regional();
-        var ana = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial, occidente, "Ana Métricas");
-        var luis = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial, occidente, "Luis Métricas");
-        var gloria = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoGerente, occidente);
-        var hugo = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoGerente, Regional());
-        var sinRegional = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoGerente);
-        var enviada = await Api.CrearCotizacionAsync(ana.UsuarioId);
-        var reenviada = await Api.CrearCotizacionAsync(ana.UsuarioId);
-        await Api.CrearCotizacionAsync(ana.UsuarioId);
-        await Api.CrearCotizacionAsync(luis.UsuarioId);
-        await Api.CrearCotizacionAsync(sinRegional.UsuarioId);
-        await clsBaseDatosPruebas.EjecutarAsync(entorno.BaseDatos.CadenaCotifly, $"""
-            UPDATE dbo_cotifly.Cotizaciones SET estadoEnvio = 'enviada' WHERE id = '{enviada.Id}';
-            UPDATE dbo_cotifly.Cotizaciones SET estadoEnvio = 'reenviada' WHERE id = '{reenviada.Id}';
-            """);
-
-        var deAna = await ActividadAsync(ana.Access);
-        var deGloria = await ActividadAsync(gloria.Access);
-        var deHugo = await ActividadAsync(hugo.Access);
-        var deSinRegional = await ActividadAsync(sinRegional.Access);
-
-        deAna.Should().ContainSingle();
-        deAna[0].GetProperty("usuario_id").GetString().Should().Be(ana.UsuarioId.ToString());
-        deAna[0].GetProperty("nombre_completo").GetString().Should().Be("Ana Métricas");
-        deAna[0].GetProperty("num_cotizaciones").GetInt32().Should().Be(3);
-        deAna[0].GetProperty("num_cotizaciones_enviadas").GetInt32().Should().Be(2, "enviada y reenviada cuentan (script 0003)");
-        deGloria.Select(f => f.GetProperty("usuario_id").GetString()).Should().BeEquivalentTo([ana.UsuarioId.ToString(), luis.UsuarioId.ToString()]);
-        deHugo.Should().BeEmpty("otra regional sin cotizaciones");
-        deSinRegional.Select(f => f.GetProperty("usuario_id").GetString()).Should().Equal(sinRegional.UsuarioId.ToString());
-    }
-
-    [Fact]
-    public async Task LasMetricasDeAjustesCumplenElContratoYSoloMuestranLasDelComercial()
-    {
+        // HU-014.3 (#152): el borrador del tablero ya no existe, ni para el comercial ni para el gerente.
         var ana = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
-        var luis = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
-        var deAna = await Api.CrearCotizacionAsync(ana.UsuarioId);
-        var deLuis = await Api.CrearCotizacionAsync(luis.UsuarioId);
-        await clsBaseDatosPruebas.EjecutarAsync(entorno.BaseDatos.CadenaCotifly, $"""
-            INSERT INTO dbo_cotifly.MargenAjustes (id, cotizacionId, folio, margenPolitica, margenAplicado, diferencia, motivo, usuarioId, createdAt)
-            VALUES (NEWID(), '{deAna.Id}', '{deAna.Folio}', 0.15, 0.12, -0.03, N'Cliente estratégico', '{ana.UsuarioId}', SYSDATETIMEOFFSET()),
-                   (NEWID(), '{deLuis.Id}', '{deLuis.Folio}', 0.15, 0.10, -0.05, N'Competencia', '{luis.UsuarioId}', SYSDATETIMEOFFSET());
-            """);
+        var gloria = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoGerente, Regional());
 
-        using var respuesta = await Api.EnviarAsync(_get, "/web/metricas/ajustes-margen", ana.Access);
-        var json = await VerificarContratoAsync(respuesta, "/web/metricas/ajustes-margen", _get, HttpStatusCode.OK);
+        using var comercial = await Api.EnviarAsync(_get, ruta, ana.Access);
+        using var gerente = await Api.EnviarAsync(_get, ruta, gloria.Access);
 
-        var filas = json.EnumerateArray().ToList();
-        filas.Should().ContainSingle();
-        filas[0].GetProperty("usuario_id").GetString().Should().Be(ana.UsuarioId.ToString());
-        filas[0].GetProperty("linea_negocio").GetString().Should().Be("Nacional");
-        filas[0].GetProperty("num_ajustes").GetInt32().Should().Be(1);
-        filas[0].GetProperty("diferencia_promedio").GetDecimal().Should().Be(-0.03m);
-    }
-
-    private async Task<List<JsonElement>> ActividadAsync(string token)
-    {
-        using var respuesta = await Api.EnviarAsync(_get, "/web/metricas/actividad", token);
-        var json = await VerificarContratoAsync(respuesta, "/web/metricas/actividad", _get, HttpStatusCode.OK);
-        return [.. json.EnumerateArray()];
+        comercial.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        gerente.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     /// <summary>Línea propia de la prueba (no se tocan las 8 sembradas, que usan otras pruebas).</summary>

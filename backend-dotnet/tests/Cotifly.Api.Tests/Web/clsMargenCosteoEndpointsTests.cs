@@ -37,10 +37,11 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
         var antes = await FilaAsync(sesion, folio);
         antes.GetProperty("precio_final").ValueKind.Should().Be(JsonValueKind.Null);
 
-        // Nexo costea con 2.550.000 (flete + retorno) y un conexo de 170.000; la línea Importacion tiene política 15 %.
+        // Nexo costea con 2.550.000 (flete + retorno); el comercial agrega en Cotifly un conexo de 170.000 (HU-021, decisión 3); la línea
+        // Importacion tiene política 15 %.
         _nexo.Costear(_nexo.SolicitudesCreadas[^1], 2_000_000m, retorno: 550_000m);
-        _nexo.AgregarConexo(_nexo.SolicitudesCreadas[^1], "Cargue", 170_000m);
         await _api.ProcesarPollingAsync(folio);
+        await AgregarConexoAsync(sesion, folio, "Cargue", 170_000m);
 
         using var lista = await _api.EnviarAsync(_get, "/web/mis-cotizaciones", sesion.Access);
         var cuerpoLista = await lista.Content.ReadAsStringAsync(Ct);
@@ -50,8 +51,8 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
 
         var fila = (await FilaAsync(sesion, folio));
         fila.GetProperty("estado_costeo").GetString().Should().Be("autocosteo");
-        fila.GetProperty("precio_final").GetDecimal().Should().Be(3_000_000m, "2.550.000 / (1 - 0,15), del módulo de Precio");
-        json.GetProperty("precio_final").GetDecimal().Should().Be(3_000_000m);
+        fila.GetProperty("precio_final").GetDecimal().Should().Be(3_200_000m, "(2.550.000 + 170.000) / (1 - 0,15): HU-021, el precio de la ruta incluye los conexos");
+        json.GetProperty("precio_final").GetDecimal().Should().Be(3_200_000m);
         json.GetProperty("servicios_conexos")[0].GetProperty("precio").GetDecimal().Should().Be(200_000m);
         foreach (var cuerpo in new[] { cuerpoLista, cuerpoCosteo })
         {
@@ -65,9 +66,9 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
     {
         var (sesion, folio) = await EnviarAsync();
         _nexo.Costear(_nexo.SolicitudesCreadas[^1], 2_550_000m);
-        _nexo.AgregarConexo(_nexo.SolicitudesCreadas[^1], "Cargue en puerto", 170_000m);
-        _nexo.AgregarConexo(_nexo.SolicitudesCreadas[^1], "Escolta", 85_000m, "adicional");
         await _api.ProcesarPollingAsync(folio);
+        await AgregarConexoAsync(sesion, folio, "Cargue en puerto", 170_000m);
+        await AgregarConexoAsync(sesion, folio, "Escolta", 85_000m);
         using var antes = await _api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", sesion.Access);
         var servicios = (await VerificarContratoAsync(antes, "/web/cotizaciones/{folio}/costeo", _get, HttpStatusCode.OK))
             .GetProperty("servicios_conexos").EnumerateArray().ToList();
@@ -80,6 +81,7 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
         seleccion.Headers.ETag.Should().NotBeNull().And.NotBe(antes.Headers.ETag, "la selección cambia la fila y trae el ETag nuevo");
         elegida.GetProperty("servicios_conexos").EnumerateArray().Count(s => s.GetProperty("incluido").GetBoolean()).Should().Be(1);
 
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
         using var pdf = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
         var salida = await VerificarContratoAsync(pdf, "/web/cotizaciones/{folio}/costeo/pdf", _post, HttpStatusCode.Created);
         salida.GetProperty("folio").GetString().Should().Be(folio);
@@ -87,9 +89,16 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
         using var descarga = await _api.EnviarAsync(_get, $"/pdfs/{folio}.pdf", sesion.Access);
         descarga.StatusCode.Should().Be(HttpStatusCode.OK);
         var texto = clsLectorPdf.Leer(await descarga.Content.ReadAsByteArrayAsync(Ct)).Texto;
-        texto.Should().Contain("Cargue en puerto").And.Contain("3.000.000").And.NotContain("Escolta", "solo los conexos incluidos");
+        // HU-033 (#199): el valor final de la ruta con el conexo incluido (2.550.000 / 0,85 + 170.000 / 0,85) y el conexo sin precio aparte.
+        texto.Should().Contain("Cargue en puerto").And.Contain("3.200.000").And.NotContain("Escolta", "solo los conexos incluidos");
+        texto.Should().NotContain("$3.000.000", "sin desglose: el transporte solo no se imprime").And.NotContain("$200.000", "ni el precio del conexo");
         texto.Should().NotContain("2.550.000", "el PDF lleva el precio con margen, no el costo de Nexo");
+        // #173: la nota usa las horas capturadas (4 h de cargue y 6,5 h de descargue) y no dice que no incluye el cargue (va itemizado).
+        var plano = System.Text.RegularExpressions.Regex.Replace(texto, @"\s+", " ");
+        plano.Should().Contain("no incluyen el servicio de descargue").And.NotContain("no incluyen servicios de cargue ni descargue");
+        plano.Should().Contain("máximo 4 horas para el cargue y 6,5 horas para el descargue");
 
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
         using var otra = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
         otra.StatusCode.Should().Be(HttpStatusCode.Conflict);
         await VerificarErrorNegocioAsync(otra, "PDF_YA_GENERADO");
@@ -101,6 +110,7 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
         var (sesion, folio) = await EnviarAsync();
         var luis = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
 
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
         using var pdf = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
         using var seleccion = await EnviarConVersionAsync(_put, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", sesion.Access, """{"incluidos":[]}""",
             await EtagAsync(sesion, folio));
@@ -126,7 +136,7 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
 
         using var ajuste = await EnviarConVersionAsync(_put, ruta, sesion.Access, """{"margen":0.18}""", etag);
         var json = await VerificarContratoAsync(ajuste, "/web/cotizaciones/{folio}/costeo/margen", _put, HttpStatusCode.OK);
-        json.GetProperty("precio_final").GetDecimal().Should().Be(3_109_756m, "2.550.000 / (1 - 0,18)");
+        json.GetProperty("precio_final").GetDecimal().Should().Be(3_317_073m, "(2.550.000 + 170.000) / (1 - 0,18): el precio incluye los conexos (HU-021)");
         json.GetProperty("margen_aplicado").GetDecimal().Should().Be(0.18m);
         json.GetProperty("margen_sugerido").GetDecimal().Should().Be(0.15m);
         json.GetProperty("origen_margen").GetString().Should().Be("negociado");
@@ -158,10 +168,14 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
     public async Task AjustarConElPdfSinEnviarLoInvalidaYAlRegenerarloElAnteriorQuedaArchivado()
     {
         var (sesion, folio) = await CosteadaAsync();
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
         using var pdf = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
         pdf.StatusCode.Should().Be(HttpStatusCode.Created);
         var etagPdf = pdf.Headers.ETag?.Tag;
         etagPdf.Should().NotBeNullOrEmpty("el PDF también devuelve el ETag nuevo");
+        // HU-036 (sin backfill): el PDF se generó antes del script 14 y la cotización quedó sin finalizar; con ella finalizada el cambio
+        // sería 409 PDF_YA_ENVIADO (clsCandadosFinalizadaEndpointsTests).
+        await _api.DesfinalizarComoAnteriorAHu036Async(folio);
 
         using var ajuste = await EnviarConVersionAsync(_put, $"/web/cotizaciones/{folio}/costeo/margen", sesion.Access, """{"margen":0.18}""", etagPdf);
         var json = await VerificarContratoAsync(ajuste, "/web/cotizaciones/{folio}/costeo/margen", _put, HttpStatusCode.OK);
@@ -170,11 +184,13 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
 
         using var vencido = await EnviarConVersionAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access, null, etagPdf);
         vencido.StatusCode.Should().Be(HttpStatusCode.Conflict, "el If-Match opcional del PDF también se verifica");
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
         using var nuevo = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
         await VerificarContratoAsync(nuevo, "/web/cotizaciones/{folio}/costeo/pdf", _post, HttpStatusCode.Created);
 
         using var descarga = await _api.EnviarAsync(_get, $"/pdfs/{folio}.pdf", sesion.Access);
-        clsLectorPdf.Leer(await descarga.Content.ReadAsByteArrayAsync(Ct)).Texto.Should().Contain("3.109.756", "el PDF nuevo lleva el precio ajustado");
+        // HU-033 (#199): el valor final de la ruta con el margen ajustado (2.550.000 / 0,82 + el Cargue 170.000 / 0,82), sin desglose.
+        clsLectorPdf.Leer(await descarga.Content.ReadAsByteArrayAsync(Ct)).Texto.Should().Contain("3.317.073", "el PDF nuevo lleva el precio ajustado");
         File.Exists(Path.Combine(Configuracion("Pdf:StorageDir"), $"{folio}-h1.pdf")).Should().BeTrue("el PDF invalidado se conserva archivado");
         using var costeo = await _api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", sesion.Access);
         (await VerificarContratoAsync(costeo, "/web/cotizaciones/{folio}/costeo", _get, HttpStatusCode.OK))
@@ -185,7 +201,11 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
     public async Task ElegirConexosConElPdfGeneradoLoInvalidaEnLugarDeRechazar()
     {
         var (sesion, folio) = await CosteadaAsync();
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
         using var pdf = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
+        // HU-036 (sin backfill): el PDF se generó antes del script 14 y la cotización quedó sin finalizar; con ella finalizada el cambio
+        // sería 409 PDF_YA_ENVIADO (clsCandadosFinalizadaEndpointsTests).
+        await _api.DesfinalizarComoAnteriorAHu036Async(folio);
 
         using var seleccion = await EnviarConVersionAsync(_put, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", sesion.Access,
             """{"incluidos":[]}""", pdf.Headers.ETag?.Tag);
@@ -193,6 +213,51 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
         var json = await VerificarContratoAsync(seleccion, "/web/cotizaciones/{folio}/costeo/servicios-conexos", _put, HttpStatusCode.OK);
         json.GetProperty("pdf_desactualizado").GetBoolean().Should().BeTrue();
         json.GetProperty("pdf_url").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task PorRutaElMargenYLosConexosIndicanLaRutaYQuitarUnConexoQuedaAuditado()
+    {
+        // HU-021.8 (#135): una sola ruta (la ruta es opcional); el margen y los conexos dicen la ruta con linea_orden o su id.
+        var (sesion, folio) = await CosteadaAsync();
+        using var costeo = await _api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", sesion.Access);
+        var vista = await VerificarContratoAsync(costeo, "/web/cotizaciones/{folio}/costeo", _get, HttpStatusCode.OK);
+        var ruta = vista.GetProperty("rutas").EnumerateArray().Single();
+        ruta.GetProperty("linea_orden").GetInt32().Should().Be(1);
+        ruta.GetProperty("precio_final_linea").GetDecimal().Should().Be(3_200_000m);
+        var rutaId = ruta.GetProperty("linea_solicitud_id").GetString()!;
+        var conexo = ruta.GetProperty("servicios_conexos")[0].GetProperty("id").GetString()!;
+
+        using var otraRuta = await EnviarConVersionAsync(_put, $"/web/cotizaciones/{folio}/costeo/margen", sesion.Access,
+            """{"margen":0.18,"linea_orden":2}""", costeo.Headers.ETag?.Tag);
+        otraRuta.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await VerificarErrorNegocioAsync(otraRuta, "RUTA_INEXISTENTE");
+
+        using var margen = await EnviarConVersionAsync(_put, $"/web/cotizaciones/{folio}/costeo/margen", sesion.Access,
+            clsApiWebPruebas.Json(new { margen = 0.18m, linea_solicitud_id = rutaId }), costeo.Headers.ETag?.Tag);
+        var ajustado = await VerificarContratoAsync(margen, "/web/cotizaciones/{folio}/costeo/margen", _put, HttpStatusCode.OK);
+        ajustado.GetProperty("rutas")[0].GetProperty("margen_aplicado").GetDecimal().Should().Be(0.18m);
+        (await clsBaseDatosPruebas.EscalarAsync<int>(Configuracion("ConnectionStrings:Cotifly"),
+            $"SELECT COUNT(*) FROM dbo_cotifly.MargenAjustes WHERE folio = '{folio}' AND lineaSolicitudId = '{rutaId}'"))
+            .Should().Be(1, "el ajuste guarda la ruta real");
+
+        using var cantidad = await EnviarConVersionAsync(_put, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", sesion.Access,
+            clsApiWebPruebas.Json(new { linea_orden = 1, conexos = new[] { new { id = conexo, cantidad = 2 } } }), margen.Headers.ETag?.Tag);
+        var conDos = await VerificarContratoAsync(cantidad, "/web/cotizaciones/{folio}/costeo/servicios-conexos", _put, HttpStatusCode.OK);
+        conDos.GetProperty("servicios_conexos")[0].GetProperty("cantidad").GetDecimal().Should().Be(2m);
+        conDos.GetProperty("precio_final").GetDecimal().Should().Be(3_524_390m, "(2.550.000 + 2 × 170.000) / (1 - 0,18)");
+
+        using var quitar = await EnviarConVersionAsync(_put, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", sesion.Access,
+            """{"conexos":[]}""", cantidad.Headers.ETag?.Tag);
+        var sinConexos = await VerificarContratoAsync(quitar, "/web/cotizaciones/{folio}/costeo/servicios-conexos", _put, HttpStatusCode.OK);
+        sinConexos.GetProperty("servicios_conexos").GetArrayLength().Should().Be(0);
+        sinConexos.GetProperty("precio_final").GetDecimal().Should().Be(3_109_756m);
+        (await clsBaseDatosPruebas.EscalarAsync<int>(Configuracion("ConnectionStrings:Cotifly"),
+            $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionServiciosConexos WHERE lineaSolicitudId = '{rutaId}'"))
+            .Should().Be(0, "quitar un conexo borra su fila");
+        (await clsBaseDatosPruebas.EscalarAsync<int>(Configuracion("ConnectionStrings:Cotifly"),
+            $"SELECT COUNT(*) FROM dbo_cotifly.EventosHerramienta WHERE herramienta = 'cambiar_servicios_conexos' AND exito = 1 AND input LIKE '%{folio}%'"))
+            .Should().Be(2, "cada cambio de conexos queda auditado");
     }
 
     [Fact]
@@ -215,14 +280,30 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
         (await EtagAsync(sesion, folio)).Should().NotBe(ajuste.Headers.ETag!.Tag, "un costo nuevo de Nexo sí es un cambio de negocio");
     }
 
-    /// <summary>Cotización enviada y costeada por Nexo: flete 2.550.000 y un conexo de 170.000 (precio 3.000.000 con el 15 %).</summary>
+    /// <summary>
+    /// Cotización enviada y costeada por Nexo (flete 2.550.000: transporte de 3.000.000 con el 15 %) y un conexo de 170.000 que el
+    /// comercial agrega en Cotifly (precio total 3.200.000).
+    /// </summary>
     private async Task<(clsSesionPrueba Sesion, string Folio)> CosteadaAsync()
     {
         var (sesion, folio) = await EnviarAsync();
         _nexo.Costear(_nexo.SolicitudesCreadas[^1], 2_550_000m);
-        _nexo.AgregarConexo(_nexo.SolicitudesCreadas[^1], "Cargue", 170_000m);
         await _api.ProcesarPollingAsync(folio);
+        await AgregarConexoAsync(sesion, folio, "Cargue", 170_000m);
         return (sesion, folio);
+    }
+
+    /// <summary>
+    /// HU-021 (decisión 3): los conexos los agrega el comercial en Cotifly (<c>POST .../servicios-conexos</c>), que los crea en Nexo y
+    /// guarda el valor que Nexo calcula; el polling ya no los importa.
+    /// </summary>
+    private async Task AgregarConexoAsync(clsSesionPrueba sesion, string folio, string nombre, decimal costo)
+    {
+        var id = Guid.NewGuid().ToString();
+        _nexo.ConServicioConexo(id, $"SC-{id[..8]}", nombre, "logistico", "servicio", costo);
+        using var respuesta = await EnviarConVersionAsync(_post, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", sesion.Access,
+            clsApiWebPruebas.Json(new { items = new[] { new { linea_orden = 1, servicio_id = id, cantidad = 1 } } }), await EtagAsync(sesion, folio));
+        respuesta.StatusCode.Should().Be(HttpStatusCode.OK, await respuesta.Content.ReadAsStringAsync(Ct));
     }
 
     private async Task<string?> EtagAsync(clsSesionPrueba sesion, string folio)

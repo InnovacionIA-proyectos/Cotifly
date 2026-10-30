@@ -19,6 +19,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Cotifly.Pruebas.Web;
 
@@ -47,7 +48,8 @@ public sealed class clsApiWebPruebas : IDisposable
         clsBaseDatosPruebas baseDatos,
         bool correoHabilitado = false,
         IDictionary<string, string?>? extra = null,
-        Action<IWebHostBuilder>? configurar = null)
+        Action<IWebHostBuilder>? configurar = null,
+        string entorno = "Pruebas")
     {
         ArgumentNullException.ThrowIfNull(baseDatos);
         _baseDatos = baseDatos;
@@ -63,14 +65,16 @@ public sealed class clsApiWebPruebas : IDisposable
             ["Trm:Url"] = clsTrmFalso.Url,
             ["Trm:UrlDolarApi"] = clsDolarApiFalso.Url,
         };
+        // HU-033 (#199): el correo sale por MailSender, y en las pruebas por el MailSender FALSO (nunca a la red ni a un buzón real). Fuera
+        // de Production la protección "redirigir" exige el buzón de pruebas. Con el correo habilitado el MailSender falso empieza CAÍDO: un
+        // envío propio termina en CORREO_ENVIO_FALLIDO y uno ajeno se rechaza antes (404); las pruebas que envían lo levantan (Caido = false).
+        valores["Correo:MailSender:UrlBase"] = clsMailSenderFalso.UrlBase;
+        valores["Correo:Proteccion:BuzonPruebas"] = clsMailSenderFalso.BuzonPruebas;
+        valores["Correo:Seguimiento:IntervaloTickSegundos"] = "3600"; // el worker de correos no corre solo: las pruebas lo llaman
         if (correoHabilitado)
         {
-            // Relay inalcanzable: un envío propio termina en CORREO_ENVIO_FALLIDO; uno ajeno se rechaza antes (404).
             valores["Correo:Habilitado"] = "true";
-            valores["Correo:Modo"] = "smtp_relay";
-            valores["Correo:SmtpRelay:Host"] = "127.0.0.1";
-            valores["Correo:SmtpRelay:Port"] = "1";
-            valores["Correo:SmtpRelay:TimeoutSeg"] = "2";
+            MailSender.Caido = true;
         }
 
         foreach (var (clave, valor) in extra ?? new Dictionary<string, string?>())
@@ -80,7 +84,26 @@ public sealed class clsApiWebPruebas : IDisposable
 
         Factory = new clsFabricaApiWeb().WithWebHostBuilder(b =>
         {
+            b.UseEnvironment(entorno);
             b.ConfigureAppConfiguration((_, configuracion) => configuracion.AddInMemoryCollection(valores));
+
+            // Reloj de la API con horas explícitas por flujo (CrearCotizacionAsync con creadaEn, #117); sin fijar, el del sistema.
+            b.ConfigureTestServices(s =>
+            {
+                s.AddSingleton<IClsReloj>(sp => new clsRelojFijable(sp.GetRequiredService<TimeProvider>()));
+                s.AddHttpClient(Cotifly.Infraestructura.Correo.Services.clsTransporteMailSender.NombreCliente)
+                    .ConfigurePrimaryHttpMessageHandler(() => MailSender);
+
+                // Auditoría QA 2026-10-22: el worker de correos hace una vuelta de la agenda COMPLETA al arrancar (antes del primer tick) y
+                // la base es compartida: con el correo habilitado, una API de prueba consultaba en SU MailSender falso los correos de otros
+                // escenarios (404) y los dejaba fallidos (intermitentes en correo.feature). Las pruebas procesan sus correos con
+                // ProcesarCorreosAsync, así que el worker no se registra en la API de pruebas.
+                foreach (var worker in s.Where(d => d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService)
+                             && d.ImplementationType == typeof(Cotifly.Infraestructura.Correo.Services.clsWorkerEstadoCorreos)).ToList())
+                {
+                    s.Remove(worker);
+                }
+            });
             configurar?.Invoke(b);
         });
         Cliente = Factory.CreateClient();
@@ -88,21 +111,41 @@ public sealed class clsApiWebPruebas : IDisposable
 
     public WebApplicationFactory<Program> Factory { get; }
 
+    /// <summary>HU-033 (#199): MailSender falso de esta API (nunca envía correos reales).</summary>
+    public clsMailSenderFalso MailSender { get; } = new();
+
     /// <summary>
     /// API con <c>Nexo:UrlBase</c> apuntando al Nexo falso (ADR-015): los clientes HTTP <c>Nexo</c> (búsquedas) y <c>NexoCosteo</c>
     /// (costeo) usan <paramref name="nexo"/> como manejador primario, sin salir a la red. Con <paramref name="dolarApi"/> y
-    /// <paramref name="superfinanciera"/>, las fuentes de la TRM (ADR-014) también son falsas.
+    /// <paramref name="superfinanciera"/>, las fuentes de la TRM (ADR-014) también son falsas. Con <paramref name="modelo"/>, el
+    /// <c>IChatClient</c> (agente y redactor de textos, HU-013.5) es ese doble: nunca un proveedor real. Con <paramref name="cubicador"/>
+    /// (HU-021.5, #133), <c>Cubicador:UrlBase</c> y <c>Cubicador:ApiKey</c> apuntan al cubicador falso y su cliente HTTP lo usa como manejador.
+    /// Con <paramref name="servicios"/>, reemplazos adicionales de DI (por ejemplo, una fuente de margen SAP TM fija, #139).
     /// </summary>
     public static clsApiWebPruebas ConNexo(
         clsBaseDatosPruebas baseDatos,
         clsNexoFalso nexo,
         IDictionary<string, string?>? extra = null,
         HttpMessageHandler? dolarApi = null,
-        HttpMessageHandler? superfinanciera = null)
+        HttpMessageHandler? superfinanciera = null,
+        Microsoft.Extensions.AI.IChatClient? modelo = null,
+        HttpMessageHandler? cubicador = null,
+        Action<IServiceCollection>? servicios = null)
     {
         ArgumentNullException.ThrowIfNull(nexo);
         // El worker del polling queda apagado por defecto: las pruebas procesan la agenda cuando quieren (ProcesarPollingAsync).
         var valores = new Dictionary<string, string?> { ["Nexo:UrlBase"] = clsNexoFalso.UrlBase, ["CosteoNexo:Habilitado"] = "false" };
+        if (cubicador is not null)
+        {
+            valores["Cubicador:UrlBase"] = clsCubicadorFalso.UrlBase;
+            valores["Cubicador:ApiKey"] = clsCubicadorFalso.ApiKey;
+
+            // HU-023.5 (#160): el procesador de la cubicación en segundo plano queda apagado; las pruebas lo corren cuando quieren
+            // (ProcesarCubicacionAsync), solo con las rutas de su licitación.
+            valores["Cubicador:ProcesadorHabilitado"] = "false";
+            valores["Cubicador:LoteRutas"] = "1000";
+        }
+
         foreach (var (clave, valor) in extra ?? new Dictionary<string, string?>())
         {
             valores[clave] = valor;
@@ -112,15 +155,27 @@ public sealed class clsApiWebPruebas : IDisposable
         {
             s.AddHttpClient("Nexo").ConfigurePrimaryHttpMessageHandler(() => nexo);
             s.AddHttpClient("NexoCosteo").ConfigurePrimaryHttpMessageHandler(() => nexo);
+            if (cubicador is not null)
+            {
+                s.AddHttpClient(Cotifly.Infraestructura.Cubicacion.Services.clsCubicadorHttp.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => cubicador);
+            }
+
             if (dolarApi is not null)
             {
                 s.AddHttpClient(Cotifly.Infraestructura.Precio.Services.clsProveedorTrmDolarApi.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => dolarApi);
+            }
+
+            if (modelo is not null)
+            {
+                s.AddSingleton(modelo);
             }
 
             if (superfinanciera is not null)
             {
                 s.AddHttpClient(Cotifly.Infraestructura.Precio.Services.clsProveedorTrmSuperfinanciera.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => superfinanciera);
             }
+
+            servicios?.Invoke(s);
         }));
     }
 
@@ -153,10 +208,13 @@ public sealed class clsApiWebPruebas : IDisposable
 
     /// <summary>
     /// Cotización del comercial con folio del servidor (<see cref="IClsGeneradorFolioService"/>), línea, precio y, si se pide,
-    /// su PDF en el almacén (<c>pdfPath</c>).
+    /// su PDF en el almacén (<c>pdfPath</c>). Con <paramref name="creadaEn"/>, ese es su <c>createdAt</c> (reloj fijado solo para esta
+    /// creación, <see cref="clsRelojFijable"/>): las pruebas de orden no dependen del reloj real (#117).
     /// </summary>
-    public async Task<clsCotizacionPrueba> CrearCotizacionAsync(Guid usuarioId, string? nit = null, bool conPdf = true, string linea = "Nacional")
+    public async Task<clsCotizacionPrueba> CrearCotizacionAsync(
+        Guid usuarioId, string? nit = null, bool conPdf = true, string linea = "Nacional", DateTimeOffset? creadaEn = null)
     {
+        using var hora = creadaEn is { } fijada ? clsRelojFijable.Fijar(fijada) : null;
         await using var ambito = Factory.Services.CreateAsyncScope();
         var servicios = ambito.ServiceProvider;
         var politica = await servicios.GetRequiredService<IClsMargenPoliticaRepository>().ObtenerPorLineaAsync(linea)
@@ -165,7 +223,7 @@ public sealed class clsApiWebPruebas : IDisposable
         var repositorio = servicios.GetRequiredService<Aplicacion.Cotizaciones.Repositories.IClsCotizacionRepository>();
         var unidad = servicios.GetRequiredService<IClsUnitOfWork>();
 
-        var resultado = await servicios.GetRequiredService<IClsGeneradorFolioService>().CrearConFolioNuevoAsync<clsCotizacion>(usuarioId, nit, async (folio, ct) =>
+        var resultado = await servicios.GetRequiredService<IClsGeneradorFolioService>().CrearConFolioNuevoAsync<clsCotizacionSolicitud>(usuarioId, nit, async (folio, ct) =>
         {
             string? referencia = null;
             if (conPdf)
@@ -173,19 +231,12 @@ public sealed class clsApiWebPruebas : IDisposable
                 referencia = await almacen.GuardarNuevoAsync($"{folio.Valor}.pdf", PdfMinimo, ct);
             }
 
-            var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion
+            var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion
             {
                 Folio = folio.Valor,
                 Version = folio.Version,
-                LineaNegocioId = politica.Id,
                 NitCliente = nit,
                 ClienteNombre = nit is null ? null : $"Cliente {nit}",
-                Costo = 1_000_000m,
-                MargenPolitica = 0.15m,
-                MargenAplicado = 0.15m,
-                OrigenMargen = OrigenMargen.PoliticaLinea,
-                MetodoCalculo = "margen",
-                PrecioFinal = 1_176_471m,
                 UsuarioId = usuarioId,
                 PdfPath = referencia,
             });
@@ -194,9 +245,12 @@ public sealed class clsApiWebPruebas : IDisposable
                 return cotizacion.Error;
             }
 
+            // HU-021: como la del chat, una ruta con la línea de negocio, el margen y el precio, y un camión con el flete.
+            cotizacion.Valor.RegistrarCotizacionChat(politica.Id, 1_000_000m, 0.15m, 0.15m, OrigenMargen.PoliticaLinea, "margen", 1_176_471m);
+
             repositorio.Agregar(cotizacion.Valor);
             await unidad.GuardarCambiosAsync(ct);
-            return clsResultado<clsCotizacion>.Exito(cotizacion.Valor);
+            return clsResultado<clsCotizacionSolicitud>.Exito(cotizacion.Valor);
         });
 
         if (resultado.EsFallo)
@@ -220,13 +274,13 @@ public sealed class clsApiWebPruebas : IDisposable
             ? $", costeoEnviadoAt = DATEADD(SECOND, -{(long)hace.TotalSeconds}, SYSDATETIMEOFFSET())"
             : string.Empty;
         await clsBaseDatosPruebas.EjecutarAsync(_baseDatos.CadenaCotifly,
-            $"UPDATE dbo_cotifly.Cotizaciones SET costeoSiguienteConsultaAt = '2000-01-01T00:00:00+00:00'{envio} WHERE folio = N'{folioSql}' AND costeoSiguienteConsultaAt IS NOT NULL;");
+            $"UPDATE dbo_cotifly.CotizacionesSolicitud SET costeoSiguienteConsultaAt = '2000-01-01T00:00:00+00:00'{envio} WHERE folio = N'{folioSql}' AND costeoSiguienteConsultaAt IS NOT NULL;");
 
         // Solo la cotización de ESTA prueba (como lo haría el worker con ella): la agenda es compartida entre pruebas que corren en
         // paralelo, y procesar el lote completo consultaba cotizaciones de otra prueba contra este Nexo falso (que no las conoce:
         // 404 → costeo_vencido en la otra prueba).
         var id = await clsBaseDatosPruebas.EscalarAsync<Guid?>(_baseDatos.CadenaCotifly,
-            $"SELECT id FROM dbo_cotifly.Cotizaciones WHERE folio = N'{folioSql}' AND costeoSiguienteConsultaAt IS NOT NULL;");
+            $"SELECT id FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = N'{folioSql}' AND costeoSiguienteConsultaAt IS NOT NULL;");
         if (id is not { } cotizacionId)
         {
             return 0;
@@ -238,6 +292,107 @@ public sealed class clsApiWebPruebas : IDisposable
         return resultado == Aplicacion.Costeo.Services.ResultadoConsultaCosteo.NoReclamada ? 0 : 1;
     }
 
+    /// <summary>
+    /// HU-033 (#199): una vuelta del worker de correos (<c>clsWorkerEstadoCorreos</c>) solo con los correos de <paramref name="folio"/> que
+    /// siguen en curso: les vence la consulta y consulta su estado en el MailSender falso. Devuelve cuántos procesó.
+    /// </summary>
+    public async Task<int> ProcesarCorreosAsync(string folio)
+    {
+        var folioSql = folio.Replace("'", "''", StringComparison.Ordinal);
+        var vencida = new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        await clsBaseDatosPruebas.EjecutarAsync(_baseDatos.CadenaCotifly,
+            "UPDATE c SET siguienteConsultaAt = '2000-01-01T00:00:00+00:00' FROM dbo_cotifly.Correos c JOIN dbo_cotifly.CotizacionesSolicitud s "
+            + $"ON s.id = c.cotizacionId WHERE s.folio = N'{folioSql}' AND c.siguienteConsultaAt IS NOT NULL;");
+        var ids = new List<Guid>();
+        await using (var conexion = new Microsoft.Data.SqlClient.SqlConnection(_baseDatos.CadenaCotifly))
+        {
+            await conexion.OpenAsync();
+            await using var comando = new Microsoft.Data.SqlClient.SqlCommand(
+                "SELECT c.id FROM dbo_cotifly.Correos c JOIN dbo_cotifly.CotizacionesSolicitud s ON s.id = c.cotizacionId "
+                + $"WHERE s.folio = N'{folioSql}' AND c.siguienteConsultaAt IS NOT NULL;", conexion);
+            await using var lector = await comando.ExecuteReaderAsync();
+            while (await lector.ReadAsync())
+            {
+                ids.Add(lector.GetGuid(0));
+            }
+        }
+
+        var procesados = 0;
+        foreach (var id in ids)
+        {
+            await using var ambito = Factory.Services.CreateAsyncScope();
+            var resultado = await ambito.ServiceProvider.GetRequiredService<Aplicacion.Correo.Services.IClsSeguimientoCorreosService>()
+                .ProcesarAsync(new Aplicacion.Correo.Repositories.clsConsultaCorreoPendiente(id, vencida), CancellationToken.None);
+            procesados += resultado == Aplicacion.Correo.Services.ResultadoConsultaCorreo.NoReclamado ? 0 : 1;
+        }
+
+        return procesados;
+    }
+
+    /// <summary>
+    /// HU-023.5 (#160): vueltas del procesador de la cubicación en segundo plano (<c>clsWorkerCubicacionLicitacion.ProcesarLoteAsync</c>)
+    /// solo con las rutas de la licitación <paramref name="folio"/>, hasta que no quede ninguna pendiente con el turno vencido ni reclamada
+    /// por un instante (otra réplica de la prueba la está cubicando), o hasta <paramref name="limite"/> (30 s por defecto). Se espera por
+    /// tiempo y no por número de vueltas: una vuelta sin cupo libre no procesa nada y se repite tras una pausa corta. Devuelve cuántas rutas
+    /// procesó esta réplica.
+    /// </summary>
+    public async Task<int> ProcesarCubicacionAsync(string folio, TimeSpan? limite = null)
+    {
+        var id = await IdCotizacionAsync(folio);
+        var ambitos = Factory.Services.GetRequiredService<IServiceScopeFactory>();
+        var logger = Factory.Services.GetRequiredService<ILoggerFactory>().CreateLogger("ProcesarCubicacion");
+        var total = 0;
+        // Reloj monotónico: con DateTime.UtcNow un salto del reloj del contenedor (WSL2) cortaba la espera antes de tiempo.
+        var reloj = System.Diagnostics.Stopwatch.StartNew();
+        var plazo = limite ?? TimeSpan.FromSeconds(30);
+        while (reloj.Elapsed < plazo)
+        {
+            var procesadas = await Cotifly.Infraestructura.Cubicacion.Services.clsWorkerCubicacionLicitacion.ProcesarLoteAsync(ambitos, logger, id, CancellationToken.None);
+            total += procesadas;
+            // Pendientes con el turno vencido, o reclamadas hace poco (en curso en otra réplica: menos de 2 min de reclamo restante).
+            var porTerminar = await clsBaseDatosPruebas.EscalarAsync<int>(_baseDatos.CadenaCotifly,
+                "SELECT COUNT(*) FROM dbo_cotifly.CotizacionLineasSolicitud WHERE estadoCubicacion = N'pendiente' "
+                + "AND (cubicacionDisponibleAt IS NULL OR cubicacionDisponibleAt <= DATEADD(SECOND, 125, SYSDATETIMEOFFSET()) AND cubicacionIntentos = 0 "
+                + $"OR cubicacionDisponibleAt <= SYSDATETIMEOFFSET()) AND cotizacionSolicitudId = '{id}';");
+            if (porTerminar == 0)
+            {
+                break;
+            }
+
+            if (procesadas == 0)
+            {
+                await Task.Delay(50);
+            }
+        }
+
+        return total;
+    }
+
+    /// <summary>Id de la cotización <paramref name="folio"/>.</summary>
+    public async Task<Guid> IdCotizacionAsync(string folio) =>
+        await clsBaseDatosPruebas.EscalarAsync<Guid>(_baseDatos.CadenaCotifly,
+            $"SELECT id FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = N'{folio.Replace("'", "''", StringComparison.Ordinal)}';");
+
+    /// <summary>
+    /// Dos (o más) réplicas del worker procesan a la vez la misma cotización vencida en la agenda, cada una en su propio ámbito de DI
+    /// (HU-021.9: el reclamo de la agenda deja pasar a una sola). Devuelve el resultado de cada una.
+    /// </summary>
+    public async Task<IReadOnlyList<Aplicacion.Costeo.Services.ResultadoConsultaCosteo>> ProcesarPollingEnParaleloAsync(string folio, int replicas)
+    {
+        var folioSql = folio.Replace("'", "''", StringComparison.Ordinal);
+        await clsBaseDatosPruebas.EjecutarAsync(_baseDatos.CadenaCotifly,
+            $"UPDATE dbo_cotifly.CotizacionesSolicitud SET costeoSiguienteConsultaAt = '2000-01-01T00:00:00+00:00' WHERE folio = N'{folioSql}' AND costeoSiguienteConsultaAt IS NOT NULL;");
+        var id = await clsBaseDatosPruebas.EscalarAsync<Guid>(_baseDatos.CadenaCotifly,
+            $"SELECT id FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = N'{folioSql}';");
+        var pendiente = new Aplicacion.Cotizaciones.DTOs.clsConsultaCosteoPendiente(id, new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        return await Task.WhenAll(Enumerable.Range(0, replicas).Select(async _ =>
+        {
+            await using var ambito = Factory.Services.CreateAsyncScope();
+            return await ambito.ServiceProvider.GetRequiredService<Aplicacion.Costeo.Services.IClsPollingCosteoService>()
+                .ProcesarAsync(pendiente, CancellationToken.None);
+        }));
+    }
+
     /// <summary>Registra en <c>Correos</c> un envío exitoso de la cotización (para los destinatarios previos).</summary>
     public async Task RegistrarEnvioAsync(Guid cotizacionId, Guid usuarioId, string para)
     {
@@ -245,6 +400,77 @@ public sealed class clsApiWebPruebas : IDisposable
         var correo = clsCorreo.Crear(cotizacionId, [para], EstadoCorreo.Enviado, "Cotización", [], usuarioId, $"<{Guid.NewGuid():N}@pruebas>").Valor;
         ambito.ServiceProvider.GetRequiredService<IClsCorreoRepository>().Agregar(correo);
         await ambito.ServiceProvider.GetRequiredService<IClsUnitOfWork>().GuardarCambiosAsync();
+    }
+
+    /// <summary>
+    /// HU-021 (decisión 3): agrega en la ruta 1 de <paramref name="folio"/> un conexo de costo <paramref name="costo"/> como lo hace el
+    /// comercial (<c>POST .../servicios-conexos</c>, que lo crea en Nexo y guarda el valor que Nexo calcula). El polling ya no importa
+    /// los conexos de Nexo. Lanza si la API no responde 200.
+    /// </summary>
+    public async Task AgregarConexoAsync(clsNexoFalso nexo, string token, string folio, string nombre, decimal costo)
+    {
+        ArgumentNullException.ThrowIfNull(nexo);
+        var id = Guid.NewGuid().ToString();
+        nexo.ConServicioConexo(id, $"SC-{id[..8]}", nombre, "logistico", "servicio", costo);
+        using var costeo = await EnviarAsync(HttpMethod.Get, $"/web/cotizaciones/{folio}/costeo", token);
+        using var respuesta = await EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", token,
+            Json(new { items = new[] { new { linea_orden = 1, servicio_id = id, cantidad = 1 } } }), costeo.Headers.ETag?.Tag);
+        if (respuesta.StatusCode != System.Net.HttpStatusCode.OK)
+        {
+            throw new InvalidOperationException($"No se pudo agregar el conexo {nombre}: {(int)respuesta.StatusCode} {await respuesta.Content.ReadAsStringAsync()}");
+        }
+    }
+
+    /// <summary>
+    /// HU-036.2 (#206): el comercial finaliza <paramref name="folio"/> como lo hace el frontend (lee el <c>ETag</c> de
+    /// <c>GET .../costeo</c> y llama a <c>POST .../finalizar</c> con él). Lanza si la API no responde 200.
+    /// </summary>
+    public async Task FinalizarAsync(string token, string folio)
+    {
+        using var costeo = await EnviarAsync(HttpMethod.Get, $"/web/cotizaciones/{folio}/costeo", token);
+        using var respuesta = await EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{folio}/finalizar", token, null, costeo.Headers.ETag?.Tag);
+        if (respuesta.StatusCode != System.Net.HttpStatusCode.OK)
+        {
+            throw new InvalidOperationException($"No se pudo finalizar {folio}: {(int)respuesta.StatusCode} {await respuesta.Content.ReadAsStringAsync()}");
+        }
+    }
+
+    /// <summary>
+    /// HU-036 (sin backfill): deja <paramref name="folio"/> como una cotización cuyo PDF se generó ANTES del script 14 y nunca se finalizó
+    /// (no cambia la versión de negocio).
+    /// </summary>
+    public async Task DesfinalizarComoAnteriorAHu036Async(string folio) =>
+        await clsBaseDatosPruebas.EjecutarAsync(_baseDatos.CadenaCotifly,
+            $"UPDATE dbo_cotifly.CotizacionesSolicitud SET finalizadaAt = NULL, finalizadaPor = NULL WHERE folio = N'{folio.Replace("'", "''", StringComparison.Ordinal)}';");
+
+    /// <summary>
+    /// HU-036.3 (#207): lo que hace el frontend antes del PDF, los textos, el envío y el resultado: si el costeo de <paramref name="folio"/>
+    /// está listo (<c>autocosteo</c> o <c>entregada</c> con precio), sin finalizar y sin resultado, lo finaliza con el <c>ETag</c> vigente.
+    /// Si no corresponde (sin precio, ya finalizada, ajena, chat), no hace nada. Las pruebas de los candados no la usan.
+    /// </summary>
+    public async Task FinalizarSiCorrespondeAsync(string token, string folio)
+    {
+        using var costeo = await EnviarAsync(HttpMethod.Get, $"/web/cotizaciones/{folio}/costeo", token);
+        if (costeo.StatusCode != System.Net.HttpStatusCode.OK)
+        {
+            return;
+        }
+
+        using var json = JsonDocument.Parse(await costeo.Content.ReadAsStringAsync());
+        var raiz = json.RootElement;
+        var listo = raiz.GetProperty("estado_costeo").ValueKind == JsonValueKind.String
+                    && raiz.GetProperty("estado_costeo").GetString() is "autocosteo" or "entregada"
+                    && raiz.GetProperty("precio_final").ValueKind == JsonValueKind.Number;
+        var finalizada = raiz.TryGetProperty("finalizada_at", out var fecha) && fecha.ValueKind == JsonValueKind.String;
+        var conResultado = raiz.TryGetProperty("resultado", out var resultado) && resultado.ValueKind == JsonValueKind.String;
+        if (listo && !finalizada && !conResultado)
+        {
+            using var respuesta = await EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{folio}/finalizar", token, null, costeo.Headers.ETag?.Tag);
+            if (respuesta.StatusCode != System.Net.HttpStatusCode.OK)
+            {
+                throw new InvalidOperationException($"No se pudo finalizar {folio}: {(int)respuesta.StatusCode} {await respuesta.Content.ReadAsStringAsync()}");
+            }
+        }
     }
 
     /// <summary>
@@ -312,6 +538,7 @@ public sealed class clsApiWebPruebas : IDisposable
     {
         Cliente.Dispose();
         Factory.Dispose();
+        MailSender.Dispose();
     }
 
     /// <summary>Fábrica con el entorno de pruebas (no Production: sin CORS obligatorio ni secretos).</summary>

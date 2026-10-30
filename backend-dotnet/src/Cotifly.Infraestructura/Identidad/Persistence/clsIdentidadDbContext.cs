@@ -6,20 +6,25 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Identidad.Persistence;
 
 /// <summary>
-/// Contexto de SOLO LECTURA sobre <c>dbsolucionesti</c> (ADR-008): usuarios corporativos (<c>tblSAPUsuariosApp</c>), sus
+/// Contexto de SOLO LECTURA sobre la base de identidad del portal (ADR-008, ADR-009 §identidad compartida con Nexo, #172):
+/// la misma que lee Nexo en cada ambiente (QA: <c>dbSolucionesTI_Prueba</c>; el nombre va solo en <c>ConnectionStrings:Identidad</c>): usuarios corporativos (<c>tblSAPUsuariosApp</c>), sus
 /// roles (<c>tblSAPUsuarioRoles</c>) y el catálogo de roles de ClientePro (<c>tblSAPRoles</c>) para la verificación doble
 /// del login (ADR-009). Sin tracking y <c>SaveChanges</c> lanza <see cref="InvalidOperationException"/>. La garantía real
 /// de solo lectura son los permisos del login <c>cotifly_app</c> (SELECT sobre estas columnas; CLAVE nunca se mapea).
 /// Las filas son tipos internos: fuera de Infraestructura se expone el puerto <c>IClsAlmacenIdentidadExterno</c>.
 /// </summary>
 /// <remarks>
-/// Tipos reales: <c>tblSAPUsuariosApp.ID</c> es NUMERIC (se lee como <see cref="decimal"/>), mientras que
-/// <c>tblSAPUsuarioRoles.IDUSUARIO</c> e <c>IDROLES</c> y <c>tblSAPRoles.IDROLES</c> son INT. Los textos son VARCHAR y se
-/// mapean sin Unicode para que los parámetros sean VARCHAR (sin conversión implícita que impida usar índices).
+/// Tipos reales, los mismos que Nexo verificó contra <c>sys.columns</c> de <c>dbSolucionesTI_Prueba</c> (2026-09-01,
+/// <c>IdentidadPortalDbContext</c>): <c>tblSAPUsuariosApp.ID</c> es <c>numeric(18,0)</c> (se lee como <see cref="decimal"/> y el
+/// almacén lo convierte a <see cref="long"/>), mientras que <c>tblSAPUsuarioRoles.IDUSUARIO</c> e <c>IDROLES</c> y
+/// <c>tblSAPRoles.IDROLES</c> son <c>int</c>. <c>tblSAPUsuarioRoles</c> se mapea con la clave compuesta (<c>IDUSUARIO</c>,
+/// <c>IDROLES</c>), igual que en Nexo: Cotifly no lee ninguna columna <c>ID</c> de esa tabla, así que funciona tenga o no tenga una
+/// (#172). Los textos se mapean como VARCHAR sin Unicode para que los parámetros sean VARCHAR (sin conversión implícita que impida
+/// usar índices); si la columna real fuera NVARCHAR, SQL Server convierte el parámetro y la lectura no cambia.
 /// </remarks>
 public sealed class clsIdentidadDbContext : DbContext
 {
-    public const string MensajeSoloLectura = "clsIdentidadDbContext es de solo lectura: dbsolucionesti no se modifica desde Cotifly.";
+    public const string MensajeSoloLectura = "clsIdentidadDbContext es de solo lectura: la base de identidad del portal no se modifica desde Cotifly.";
 
     public clsIdentidadDbContext(DbContextOptions<clsIdentidadDbContext> options, IOptions<clsOpcionesIdentidad> opciones)
         : base(options)
@@ -80,8 +85,8 @@ public sealed class clsIdentidadDbContext : DbContext
         modelBuilder.Entity<clsFilaUsuarioRolSap>(e =>
         {
             e.ToTable(TablaUsuarioRoles, Esquema);
-            e.HasKey(r => r.Id);
-            e.Property(r => r.Id).HasColumnName("ID").HasColumnType("int").ValueGeneratedNever();
+            // Clave compuesta (como Nexo): la columna ID de tblSAPUsuarioRoles no se mapea ni se lee (#172).
+            e.HasKey(r => new { r.IdUsuario, r.IdRoles });
             e.Property(r => r.IdUsuario).HasColumnName("IDUSUARIO").HasColumnType("int");
             e.Property(r => r.IdRoles).HasColumnName("IDROLES").HasColumnType("int");
         });
@@ -105,10 +110,9 @@ internal sealed class clsFilaUsuarioSap
     public string? Email { get; set; }
 }
 
-/// <summary>Fila de <c>tblSAPUsuarioRoles</c> (<c>IDUSUARIO</c> → <c>tblSAPUsuariosApp.ID</c>, <c>IDROLES</c> → <c>tblSAPRoles</c>).</summary>
+/// <summary>Fila de <c>tblSAPUsuarioRoles</c> (<c>IDUSUARIO</c> → <c>tblSAPUsuariosApp.ID</c>, <c>IDROLES</c> → <c>tblSAPRoles</c>), sin su <c>ID</c>.</summary>
 internal sealed class clsFilaUsuarioRolSap
 {
-    public int Id { get; set; }
     public int IdUsuario { get; set; }
     public int IdRoles { get; set; }
 }

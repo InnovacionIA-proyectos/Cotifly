@@ -62,6 +62,9 @@ catch (Exception ex) when (esProcesoPropio)
     return 1;
 }
 
+// Endurecimiento A (#199): primero, para atrapar lo que escape de todo lo demás. 500 ErrorNegocio ERROR_INTERNO (ErrorWeb en /api/*), sin
+// detalles técnicos, con la excepción en el log junto al id de correlación de la petición.
+app.UseManejadorErroresNoControlados();
 app.UseSeguridadHttp();
 app.UseAuthentication();
 app.UseAuthorization();

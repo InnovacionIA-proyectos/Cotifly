@@ -19,7 +19,6 @@ public sealed class clsSolicitudCosteoTests
     {
         (Valida() with { Origen = new string('a', 151) }).Validar().Should().NotBeNull();
         (Valida() with { ClaseContenedor = new string('a', 21) }).Validar()!.Mensaje.Should().Contain("clase_contenedor");
-        (Valida() with { Referencia = new string('a', 201) }).Validar()!.Mensaje.Should().Contain("referencia");
     }
 
     [Fact]
@@ -88,13 +87,13 @@ public sealed class clsSolicitudCosteoTests
     [Fact]
     public void UnRechazoDefinitivoDeNexoNoSeReenvia()
     {
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-DG-28092026-002" }).Valor;
-        cotizacion.RegistrarSolicitudCosteo(Valida());
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-DG-28092026-002" }).Valor;
+        cotizacion.RegistrarSolicitudCosteo(Valida(), 3);
 
         cotizacion.RegistrarErrorEnvioCosteo("Nexo rechazó los datos (HTTP 400 PESO_INCONSISTENTE)", definitivo: true);
 
         cotizacion.ErrorEnvioDefinitivo.Should().BeTrue();
-        cotizacion.MotivoEstadoCosteo.Should().StartWith(clsCotizacion.PrefijoRechazoDefinitivo);
+        cotizacion.MotivoEstadoCosteo.Should().StartWith(clsCotizacionSolicitud.PrefijoRechazoDefinitivo);
         cotizacion.PuedeReenviarCosteo(DateTimeOffset.MaxValue).Should().BeFalse();
         cotizacion.RegistrarErrorEnvioCosteo("Nexo caído");
         cotizacion.PuedeReenviarCosteo(DateTimeOffset.MaxValue).Should().BeTrue();
@@ -113,7 +112,7 @@ public sealed class clsSolicitudCosteoTests
     public void CadaPosicionSeValidaConSuNumero()
     {
         var solicitud = Valida() with { Posiciones = [new clsPosicionCarga(null, 1, 10m, 10m, 10m, null), new clsPosicionCarga(null, 0, 10m, 10m, 10m, null)] };
-        solicitud.Validar()!.Mensaje.Should().Contain("posición 2");
+        solicitud.Validar()!.Mensaje.Should().StartWith("Mercancía 2: la cantidad", "D6: la mercancía en base 1, sin índices");
 
         (Valida() with { Posiciones = [new clsPosicionCarga(null, 1, 0.05m, 10m, 10m, null)] }).Validar()!.Mensaje.Should().Contain("largo_cm");
     }
@@ -126,25 +125,30 @@ public sealed class clsSolicitudCosteoTests
     }
 
     [Fact]
-    public void RegistrarLaSolicitudDejaLaCotizacionPendienteDeEnvioYLaReconstruyeIgual()
+    public void RegistrarLaSolicitudDejaLaRutaYSuCamionPendientesDeEnvioYLaReconstruyeIgual()
     {
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-DG-28092026-001" }).Valor;
-        var solicitud = Valida() with { Referencia = "  OC-1  " };
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-DG-28092026-001" }).Valor;
+        var solicitud = Valida();
 
-        cotizacion.RegistrarSolicitudCosteo(solicitud);
-        var posiciones = clsCotizacionPosicion.Desde(cotizacion.Id, solicitud.Posiciones);
+        var ruta = cotizacion.RegistrarSolicitudCosteo(solicitud, 3);
 
         cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.PendienteEnvio);
-        posiciones.Select(p => p.Orden).Should().Equal(1, 2);
-        cotizacion.SolicitudCosteo(posiciones).Should().BeEquivalentTo(solicitud with { Referencia = "OC-1" });
+        cotizacion.Rutas.Should().ContainSingle().Which.Should().BeSameAs(ruta);
+        (ruta.Orden, ruta.RutaOrigenIndice, ruta.LineaNegocioId, ruta.EstadoCosteo).Should().Be((1, 0, 3, EstadoCosteo.PendienteEnvio));
+        ruta.Vehiculos.Should().ContainSingle().Which.EstadoCosteo.Should().Be(EstadoCosteo.PendienteEnvio);
+        ruta.MercanciasOrdenadas.Select(p => p.Orden).Should().Equal(1, 2);
+        clsSolicitudCosteo.Desde(cotizacion.EncabezadoSolicitud!, ruta.ALinea())
+            .Should().BeEquivalentTo(
+                solicitud with { RetornaContenedor = solicitud.RetornaContenedor ?? false, LevanteContenedorDiferente = solicitud.LevanteContenedorDiferente ?? false },
+                "lo guardado (cabecera + ruta + camión + mercancías) reconstruye el formulario; retorno y levante ya no aceptan vacío (0009)");
     }
 
     [Fact]
     public void RegistrarUnaSolicitudInvalidaLanza()
     {
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-DG-28092026-001" }).Valor;
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-DG-28092026-001" }).Valor;
 
-        var registrar = () => cotizacion.RegistrarSolicitudCosteo(Valida() with { Origen = " " });
+        var registrar = () => cotizacion.RegistrarSolicitudCosteo(Valida() with { Origen = " " }, 3);
 
         registrar.Should().Throw<ArgumentException>();
         cotizacion.EstadoCosteo.Should().BeNull();

@@ -11,9 +11,16 @@ namespace Cotifly.Aplicacion.Comun;
 /// </summary>
 public static class clsEstadoHttpExcepcion
 {
+    /// <summary>
+    /// Tope de excepciones internas que se revisan (#226): una cadena anómala (cíclica, armada por reflexión) no deja el filtro de
+    /// excepciones del respaldo de IA en un ciclo infinito.
+    /// </summary>
+    public const int MaximoInternas = 64;
+
     public static int? Estado(Exception? error)
     {
-        for (var actual = error; actual is not null; actual = actual.InnerException)
+        var revisadas = 0;
+        for (var actual = error; actual is not null && revisadas < MaximoInternas; actual = actual.InnerException, revisadas++)
         {
             if (actual is HttpRequestException { StatusCode: { } codigo })
             {

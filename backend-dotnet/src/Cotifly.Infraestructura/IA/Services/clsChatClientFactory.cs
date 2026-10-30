@@ -47,10 +47,11 @@ public static class clsChatClientFactory
         var cadena = new List<IChatClient> { CrearProveedor(opciones.Principal(), opciones.TimeoutSeg) };
         cadena.AddRange(opciones.FallbacksConfigurados().Select(f => CrearProveedor(f, opciones.TimeoutSeg)));
 
-        IChatClient cliente = cadena.Count == 1 ? cadena[0] : new clsChatClientConRespaldo(cadena, registros.CreateLogger<clsChatClientConRespaldo>());
+        // Siempre con el decorador de respaldo, también con un solo proveedor: así su caída llega como IA_NO_DISPONIBLE (HU-013.16).
+        IChatClient cliente = new clsChatClientConRespaldo(cadena, registros.CreateLogger<clsChatClientConRespaldo>());
         if (opciones.Rpm > 0)
         {
-            cliente = new clsChatClientLimitado(cliente, new clsLimitadorRpm(opciones.Rpm, tiempo));
+            cliente = new clsChatClientLimitado(cliente, new clsLimitadorRpm(opciones.Rpm, tiempo, esperaMaxima: TimeSpan.FromSeconds(opciones.EsperaMaximaRpmSegundos)), registros.CreateLogger<clsChatClientLimitado>());
         }
 
         return new ChatClientBuilder(cliente).UseLogging(registros).Build();

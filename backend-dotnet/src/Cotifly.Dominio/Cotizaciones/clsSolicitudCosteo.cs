@@ -16,7 +16,6 @@ public sealed record clsSolicitudCosteo
     public const int LargoCatalogo = 100;
     public const int LargoCorto = 50;
     public const int LargoClaseContenedor = 20;
-    public const int LargoReferencia = 200;
     public const int LargoNotas = 2000;
     public const int MaximoPosiciones = 200;
     public const decimal MaximoHoras = 240m;
@@ -32,10 +31,11 @@ public sealed record clsSolicitudCosteo
     /// <summary>Código de Nexo (va en el detalle): el peso difiere más del 1 % de la suma de las posiciones.</summary>
     public const string PesoInconsistente = "PESO_INCONSISTENTE";
 
+    /// <summary>HU-030.1 (#184): nombre en el contrato del peso total con tara de una ruta de contenedor.</summary>
+    public const string CampoPesoConTara = "peso_con_tara_kg";
+
     public required TipoSolicitud Tipo { get; init; }
     public DateTimeOffset? Deadline { get; init; }
-    public decimal? ValorEstimado { get; init; }
-    public string? Referencia { get; init; }
     public decimal? HorasCargue { get; init; }
     public decimal? HorasDescargue { get; init; }
 
@@ -65,6 +65,9 @@ public sealed record clsSolicitudCosteo
     public decimal? PesoKg { get; init; }
     public decimal? ValorMercancia { get; init; }
 
+    /// <summary>HU-030.1 (#184): peso total con tara (ver <see cref="clsLineaSolicitudCosteo.PesoConTaraKg"/>).</summary>
+    public decimal? PesoConTaraKg { get; init; }
+
     /// <summary>Posiciones de cubicaje (bultos), en el orden del formulario.</summary>
     public IReadOnlyList<clsPosicionCarga> Posiciones { get; init; } = [];
 
@@ -74,7 +77,6 @@ public sealed record clsSolicitudCosteo
         var error = clsValidacion.Primero(
             clsValidacion.Requerido(CodigoError, "origen", Origen, LargoCiudad),
             clsValidacion.Requerido(CodigoError, "destino", Destino, LargoCiudad),
-            clsValidacion.LargoMaximo(CodigoError, "referencia", Referencia, LargoReferencia),
             clsValidacion.LargoMaximo(CodigoError, "notas", Notas, LargoNotas),
             IdMunicipio("origen_municipio_id", OrigenMunicipioId),
             IdMunicipio("destino_municipio_id", DestinoMunicipioId),
@@ -85,12 +87,12 @@ public sealed record clsSolicitudCosteo
             clsValidacion.LargoMaximo(CodigoError, "clase_contenedor", ClaseContenedor, LargoClaseContenedor),
             clsValidacion.LargoMaximo(CodigoError, "ciudad_devolucion_contenedor", CiudadDevolucionContenedor, LargoCiudad),
             clsValidacion.LargoMaximo(CodigoError, "ciudad_levante_contenedor", CiudadLevanteContenedor, LargoCiudad),
-            Rango("valor_estimado", ValorEstimado, 0m, MaximoValor),
             Rango("horas_cargue", HorasCargue, 0m, MaximoHoras),
             Rango("horas_descargue", HorasDescargue, 0m, MaximoHoras),
             Rango("valor_aprovisionamiento", ValorAprovisionamiento, 0m, MaximoValor),
             Rango("peso_kg", PesoKg, 0m, MaximoPeso),
             Rango("valor_mercancia", ValorMercancia, 0m, MaximoValor),
+            Rango(CampoPesoConTara, PesoConTaraKg, 0m, MaximoPeso),
             Posiciones.Count > MaximoPosiciones
                 ? new clsErrorDominio(CodigoError, $"Una solicitud admite máximo {MaximoPosiciones} posiciones.")
                 : null);
@@ -98,7 +100,7 @@ public sealed record clsSolicitudCosteo
         return error
             ?? ValidarCondicionales()
             ?? Posiciones.Select((p, i) => p is null
-                ? new clsErrorDominio(CodigoError, $"La posición {i + 1} está vacía.")
+                ? new clsErrorDominio(CodigoError, $"La mercancía {i + 1} está vacía.")
                 : p.Validar(i + 1)).FirstOrDefault(e => e is not null)
             ?? ValidarPeso();
     }
@@ -106,31 +108,10 @@ public sealed record clsSolicitudCosteo
     /// <summary>
     /// Validaciones condicionales de la captura (G3, HU-013.10): <c>clase_contenedor</c> solo con <c>clase_viaje = Contenedor</c>
     /// y obligatoria con ella, y <c>valor_aprovisionamiento</c> solo con una <c>ciudad_levante_contenedor</c> distinta del origen
-    /// (Nexo lo descarta en otro caso).
+    /// (Nexo lo descarta en otro caso). La regla es la de cada fila de una licitación (<see cref="clsLineaSolicitudCosteo.ErroresCondicionales"/>).
     /// </summary>
-    private clsErrorDominio? ValidarCondicionales()
-    {
-        var esContenedor = string.Equals(ClaseViaje?.Trim(), clsCatalogosCaptura.ClaseViajeContenedor, StringComparison.Ordinal);
-        var conClase = !string.IsNullOrWhiteSpace(ClaseContenedor);
-        if (conClase && !esContenedor)
-        {
-            return new clsErrorDominio(CodigoError,
-                $"El campo 'clase_contenedor' solo aplica con clase_viaje = {clsCatalogosCaptura.ClaseViajeContenedor}.");
-        }
-
-        if (esContenedor && !conClase)
-        {
-            return new clsErrorDominio(CodigoError,
-                $"El campo 'clase_contenedor' es obligatorio con clase_viaje = {clsCatalogosCaptura.ClaseViajeContenedor}.");
-        }
-
-        var levanteDistinto = !string.IsNullOrWhiteSpace(CiudadLevanteContenedor)
-            && !string.Equals(CiudadLevanteContenedor.Trim(), Origen?.Trim(), StringComparison.OrdinalIgnoreCase);
-        return ValorAprovisionamiento is not null && !levanteDistinto
-            ? new clsErrorDominio(CodigoError,
-                "El campo 'valor_aprovisionamiento' solo aplica con una ciudad_levante_contenedor distinta del origen.")
-            : null;
-    }
+    private clsErrorDominio? ValidarCondicionales() =>
+        ALinea().ErroresCondicionales() is [var primero, ..] ? new clsErrorDominio(CodigoError, primero.Mensaje) : null;
 
     /// <summary>Id de municipio de Nexo: entero positivo si viene.</summary>
     internal static clsErrorDominio? IdMunicipio(string campo, int? valor) =>
@@ -141,8 +122,6 @@ public sealed record clsSolicitudCosteo
     {
         Tipo = Tipo,
         Deadline = Deadline,
-        ValorEstimado = ValorEstimado,
-        Referencia = Referencia,
         HorasCargue = HorasCargue,
         HorasDescargue = HorasDescargue,
         Notas = Notas,
@@ -169,6 +148,7 @@ public sealed record clsSolicitudCosteo
         ValorAprovisionamiento = ValorAprovisionamiento,
         PesoKg = PesoKg,
         ValorMercancia = ValorMercancia,
+        PesoConTaraKg = PesoConTaraKg,
         Posiciones = Posiciones,
     };
 
@@ -181,10 +161,10 @@ public sealed record clsSolicitudCosteo
         {
             Tipo = encabezado.Tipo,
             Deadline = encabezado.Deadline,
-            ValorEstimado = encabezado.ValorEstimado,
-            Referencia = encabezado.Referencia,
-            HorasCargue = encabezado.HorasCargue,
-            HorasDescargue = encabezado.HorasDescargue,
+
+            // G5 (HU-013.11): las horas de la línea, si las trae, son las que viajan a Nexo; si no, las del encabezado.
+            HorasCargue = linea.HorasCargue ?? encabezado.HorasCargue,
+            HorasDescargue = linea.HorasDescargue ?? encabezado.HorasDescargue,
             Notas = encabezado.Notas,
             Origen = linea.Origen,
             Destino = linea.Destino,
@@ -204,6 +184,7 @@ public sealed record clsSolicitudCosteo
             ValorAprovisionamiento = linea.ValorAprovisionamiento,
             PesoKg = linea.PesoKg,
             ValorMercancia = linea.ValorMercancia,
+            PesoConTaraKg = linea.PesoConTaraKg,
             Posiciones = linea.Posiciones,
         };
     }
@@ -250,25 +231,134 @@ public sealed record clsSolicitudCosteo
 }
 
 /// <summary>Pieza o bulto a transportar (<c>CapturaPosicionRequest</c> de Nexo), dimensiones en centímetros y peso en kilogramos.</summary>
-public sealed record clsPosicionCarga(string? Descripcion, int Cantidad, decimal LargoCm, decimal AnchoCm, decimal AltoCm, decimal? PesoKg)
+/// <remarks>
+/// <paramref name="Descripcion"/> se guarda como <c>nombreMercancia</c>. <paramref name="CodigoMercancia"/> es el código estable del
+/// catálogo del cubicador (HU-023: lo que viaja en <c>POST /recomendaciones</c> y lo que se guarda, HU-023.3). <paramref name="IdTipoMercancia"/>
+/// es el uuid del catálogo que mandaba el contrato anterior (<c>id_tipo_mercancia</c>, obsoleto): la captura lo traduce al código con
+/// el catálogo y ya no se guarda (el script <c>02</c> quitó la columna).
+/// </remarks>
+public sealed record clsPosicionCarga(
+    string? Descripcion, int Cantidad, decimal LargoCm, decimal AnchoCm, decimal AltoCm, decimal? PesoKg, Guid? IdTipoMercancia = null,
+    string? CodigoMercancia = null)
 {
+    /// <summary>Largo máximo de <see cref="CodigoMercancia"/> (<c>CotizacionMercancias.codigoMercancia NVARCHAR(64)</c>, script 02).</summary>
+    public const int LargoCodigoMercancia = 64;
+
     public const int LargoDescripcion = 200;
     public const int CantidadMaxima = 100_000;
     public const decimal MedidaMinima = 0.1m;
     public const decimal MedidaMaxima = 999_999m;
 
+    /// <summary>Subcampo de la cantidad en <see cref="clsErrorPosicion.Campo"/>.</summary>
+    public const string CampoCantidad = "cantidad";
+
     /// <summary>Primer error de la posición número <paramref name="numero"/> (1 = la primera), o <c>null</c>.</summary>
-    public clsErrorDominio? Validar(int numero)
+    public clsErrorDominio? Validar(int numero) =>
+        PrimerError(numero) is { } error ? new clsErrorDominio(clsSolicitudCosteo.CodigoError, error.Mensaje) : null;
+
+    /// <summary>
+    /// Primer error de la mercancía número <paramref name="numero"/> (1 = la primera) con el subcampo que lo causa
+    /// (<c>descripcion</c>, <c>codigo_mercancia</c>, <see cref="CampoCantidad"/>, <c>largo_cm</c>, <c>ancho_cm</c>, <c>alto_cm</c> o
+    /// <c>peso_kg</c>), o <c>null</c>. D6 (E2E 2026-10-16): el mensaje nombra la mercancía en lenguaje natural con el número base 1
+    /// ("Mercancía 2: …") y nunca una ruta con índice (<c>posiciones[2]</c>), que chocaba con el campo base 0 del error; el campo con índice
+    /// lo arma quien reporta (<c>mercancias[i]</c>, base 0, como el resto de errores de la captura). La misma regla la usa
+    /// "Calcular cubicaje" (D1) antes de llamar al cubicador.
+    /// </summary>
+    public clsErrorPosicion? PrimerError(int numero)
     {
         var codigo = clsSolicitudCosteo.CodigoError;
-        return clsValidacion.Primero(
-            clsValidacion.LargoMaximo(codigo, $"posiciones[{numero}].descripcion", Descripcion, LargoDescripcion),
-            Cantidad is < 1 or > CantidadMaxima
-                ? new clsErrorDominio(codigo, $"La cantidad de la posición {numero} debe estar entre 1 y {CantidadMaxima}.")
-                : null,
-            clsSolicitudCosteo.Rango($"posiciones[{numero}].largo_cm", LargoCm, MedidaMinima, MedidaMaxima),
-            clsSolicitudCosteo.Rango($"posiciones[{numero}].ancho_cm", AnchoCm, MedidaMinima, MedidaMaxima),
-            clsSolicitudCosteo.Rango($"posiciones[{numero}].alto_cm", AltoCm, MedidaMinima, MedidaMaxima),
-            clsSolicitudCosteo.Rango($"posiciones[{numero}].peso_kg", PesoKg, 0m, clsSolicitudCosteo.MaximoPeso));
+        var prefijo = $"Mercancía {numero.ToString(System.Globalization.CultureInfo.InvariantCulture)}: ";
+        clsErrorPosicion? Con(string campo, clsErrorDominio? error) =>
+            error is null ? null : new clsErrorPosicion(campo, prefijo + char.ToLowerInvariant(error.Mensaje[0]) + error.Mensaje[1..]);
+
+        return Con("descripcion", clsValidacion.LargoMaximo(codigo, "descripcion", Descripcion, LargoDescripcion))
+            ?? Con("codigo_mercancia", clsValidacion.LargoMaximo(codigo, "codigo_mercancia", CodigoMercancia, LargoCodigoMercancia))
+            ?? (Cantidad is < 1 or > CantidadMaxima
+                ? new clsErrorPosicion(CampoCantidad, $"{prefijo}la cantidad debe estar entre 1 y {CantidadMaxima}.")
+                : null)
+            ?? ErrorMedidas(prefijo, Con)
+            ?? Con("peso_kg", clsSolicitudCosteo.Rango("peso_kg", PesoKg, 0m, clsSolicitudCosteo.MaximoPeso))
+            // HU-023 (#176): la mercancía que viaja al cubicador (con tipo de mercancía) exige peso por unidad mayor que 0. También rige al
+            // revalidar lo guardado (reintento, re-solicitud): una ruta anterior a la regla con tipo de mercancía y sin peso no se reenvía y
+            // responde este mensaje; se corrige con una versión nueva (re-solicitar con la carga completa). Auditoría B2: se deja así a
+            // propósito (relajarla solo al revalidar exige llevar una bandera por las tres rutas de validación).
+            ?? (VaAlCubicador() && PesoKg is not > 0m
+                ? new clsErrorPosicion("peso_kg", $"{prefijo}el peso por unidad (peso_kg) debe ser mayor que 0: el cubicador lo exige.")
+                : null);
+    }
+
+    /// <summary>¿La posición viaja al cubicador? (trae su tipo de mercancía: el código o, en la transición, el uuid anterior).</summary>
+    public bool VaAlCubicador() => !string.IsNullOrWhiteSpace(CodigoMercancia) || IdTipoMercancia is { } id && id != Guid.Empty;
+
+    /// <summary>HU-032 (#197): ¿no trae ninguna medida? (el contrato manda 0 cuando <c>largo_cm</c>, <c>ancho_cm</c> y <c>alto_cm</c> no vienen).</summary>
+    public bool SinMedidas => LargoCm == 0m && AnchoCm == 0m && AltoCm == 0m;
+
+    /// <summary>HU-032 (#197): ¿trae las tres medidas? Solo una mercancía con medidas viaja a Nexo como posición.</summary>
+    public bool ConMedidas => LargoCm > 0m && AnchoCm > 0m && AltoCm > 0m;
+
+    /// <summary>
+    /// HU-032 (#197): ¿se puede cubicar? Trae su tipo de mercancía (código o, en la transición, el uuid), las tres medidas y el peso por
+    /// unidad mayor que 0: es lo que el cubicador necesita.
+    /// </summary>
+    public bool EsCubicable => VaAlCubicador() && ConMedidas && PesoKg is > 0m;
+
+    /// <summary>
+    /// HU-032 (#197): mercancía "no cubicable" que se acepta: no trae NINGUNA medida ni tipo de mercancía (solo descripción, cantidad o
+    /// peso). Se guarda con la ruta y no viaja como posición a Nexo; la ruta no se cubica y usa el vehículo elegido.
+    /// </summary>
+    public bool EsNoCubicable => SinMedidas && !VaAlCubicador();
+
+    /// <summary>
+    /// HU-032 (#197): las medidas de la mercancía. Sin ninguna medida y sin tipo de mercancía es una mercancía no cubicable (válida). Con
+    /// tipo de mercancía y sin medidas es un error: el comercial escogió la mercancía para cubicarla y el cubicador las necesita (si no las
+    /// conoce, quita el código). Medidas parciales (por ejemplo, largo sin ancho) son un dato mal digitado: error en la primera que falta.
+    /// Las que vienen deben estar entre <see cref="MedidaMinima"/> y <see cref="MedidaMaxima"/>.
+    /// </summary>
+    private clsErrorPosicion? ErrorMedidas(string prefijo, Func<string, clsErrorDominio?, clsErrorPosicion?> con)
+    {
+        if (SinMedidas)
+        {
+            return VaAlCubicador()
+                ? new clsErrorPosicion("largo_cm",
+                    $"{prefijo}trae el tipo de mercancía pero no sus medidas: escribe largo, ancho y alto en cm (el cubicador las necesita) o quita el código de mercancía.")
+                : null;
+        }
+
+        foreach (var (campo, valor) in new[] { ("largo_cm", LargoCm), ("ancho_cm", AnchoCm), ("alto_cm", AltoCm) })
+        {
+            if (valor == 0m)
+            {
+                return new clsErrorPosicion(campo,
+                    $"{prefijo}faltan medidas ({campo}): escribe largo, ancho y alto en cm, o deja las tres vacías si no las conoces.");
+            }
+        }
+
+        return con("largo_cm", clsSolicitudCosteo.Rango("largo_cm", LargoCm, MedidaMinima, MedidaMaxima))
+            ?? con("ancho_cm", clsSolicitudCosteo.Rango("ancho_cm", AnchoCm, MedidaMinima, MedidaMaxima))
+            ?? con("alto_cm", clsSolicitudCosteo.Rango("alto_cm", AltoCm, MedidaMinima, MedidaMaxima));
     }
 }
+
+/// <summary>
+/// HU-032 (#197): cómo se cubica una ruta según sus mercancías (<see cref="clsLineaSolicitudCosteo.Cubicabilidad"/>).
+/// </summary>
+public enum CubicabilidadRuta
+{
+    /// <summary>La ruta no trae mercancías (solo el peso): no se cubica; usa el vehículo elegido.</summary>
+    SinMercancias,
+
+    /// <summary>Todas sus mercancías son cubicables (<see cref="clsPosicionCarga.EsCubicable"/>): se llama al cubicador.</summary>
+    Cubicable,
+
+    /// <summary>Ninguna es cubicable: no se cubica; usa el vehículo elegido.</summary>
+    NoCubicable,
+
+    /// <summary>Unas sí y otras no: no se cubica; usa el vehículo elegido con el aviso <c>MERCANCIAS_NO_CUBICABLES</c>.</summary>
+    Mixta,
+}
+
+/// <summary>
+/// Error de una mercancía (<see cref="clsPosicionCarga.PrimerError"/>): <paramref name="Campo"/> es el subcampo del contrato
+/// (<c>cantidad</c>, <c>largo_cm</c>…) y <paramref name="Mensaje"/> el texto para el comercial, con el número de la mercancía en base 1.
+/// </summary>
+public sealed record clsErrorPosicion(string Campo, string Mensaje);

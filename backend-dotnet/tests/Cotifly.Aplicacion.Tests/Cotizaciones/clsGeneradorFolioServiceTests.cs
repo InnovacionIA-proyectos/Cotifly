@@ -128,7 +128,7 @@ public sealed class clsGeneradorFolioServiceTests
     [Fact]
     public async Task LaVersionNuevaEsLaMaximaDeLaFamiliaMasUnoSobreElFolioBase()
     {
-        var v2 = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-DG-25092026-004-v2", Version = 2, UsuarioId = _duban }).Valor;
+        var v2 = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-DG-25092026-004-v2", Version = 2, UsuarioId = _duban }).Valor;
         _cotizaciones.ObtenerPorIdDelUsuarioAsync(v2.Id, _duban, Arg.Any<CancellationToken>()).Returns(v2);
         _cotizaciones.ObtenerVersionMaximaAsync("PCN-DG-25092026-004", Arg.Any<CancellationToken>()).Returns(3);
 
@@ -142,7 +142,7 @@ public sealed class clsGeneradorFolioServiceTests
     [Fact]
     public async Task LaVersionNuevaDeUnFolioHeredadoSinInicialesLlevaV2SobreSuBase()
     {
-        var heredada = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-900123456-25092026-001", UsuarioId = _duban }).Valor;
+        var heredada = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-900123456-25092026-001", UsuarioId = _duban }).Valor;
         _cotizaciones.ObtenerPorIdDelUsuarioAsync(heredada.Id, _duban, Arg.Any<CancellationToken>()).Returns(heredada);
         _cotizaciones.ObtenerVersionMaximaAsync("PCN-900123456-25092026-001", Arg.Any<CancellationToken>()).Returns(1);
 

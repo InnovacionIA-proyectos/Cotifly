@@ -1,0 +1,480 @@
+{
+  "Dolares": {
+    "asunto": {
+      "Frase": "Asunto: presentaci\u00F3n",
+      "Pagina": 1,
+      "X": 45.35,
+      "Y": 620.07
+    },
+    "condiciones": {
+      "Frase": "Facturaci\u00F3n y forma",
+      "Pagina": 3,
+      "X": 45.35,
+      "Y": 733.1
+    },
+    "encabezado": {
+      "Frase": "[imagen]",
+      "Pagina": 1,
+      "X": 489.83,
+      "Y": 766.76
+    },
+    "encabezadoTabla": {
+      "Frase": "DESTINO TIPO DE",
+      "Pagina": 2,
+      "X": 61.82,
+      "Y": 639.66
+    },
+    "fecha": {
+      "Frase": "Yumbo, 19 de marzo",
+      "Pagina": 1,
+      "X": 45.35,
+      "Y": 734.87
+    },
+    "filaTarifa": {
+      "Frase": "US$996,35",
+      "Pagina": 2,
+      "X": 244.75,
+      "Y": 618.15
+    },
+    "firma": {
+      "Frase": "Cordialmente,",
+      "Pagina": 3,
+      "X": 45.35,
+      "Y": 303.77
+    },
+    "firmante": {
+      "Frase": "Nathaly Vargas Garcia",
+      "Pagina": 3,
+      "X": 45.35,
+      "Y": 276.77
+    },
+    "incluyen": {
+      "Frase": "Estas tarifas incluyen",
+      "Pagina": 2,
+      "X": 45.35,
+      "Y": 403.13
+    },
+    "noIncluyen": {
+      "Frase": "Estas tarifas no incluyen",
+      "Pagina": 2,
+      "X": 306.64,
+      "Y": 403.13
+    },
+    "nota": {
+      "Frase": "Nota: Las tarifas",
+      "Pagina": 2,
+      "X": 45.35,
+      "Y": 566.53
+    },
+    "notaTrm": {
+      "Frase": "Esta cotizaci\u00F3n est\u00E1 bajo",
+      "Pagina": 2,
+      "X": 45.35,
+      "Y": 447.52
+    },
+    "origenTabla": {
+      "Frase": "ORIGEN Y/O LUGAR",
+      "Pagina": 2,
+      "X": 214.8,
+      "Y": 659.02
+    },
+    "pie": {
+      "Frase": "Principal: Carrera 42",
+      "Pagina": 1,
+      "X": 156.6,
+      "Y": 29.55
+    },
+    "referencia": {
+      "Frase": "PCN-USD-1",
+      "Pagina": 1,
+      "X": 500.92,
+      "Y": 690.19
+    },
+    "tituloTarifa": {
+      "Frase": "NUESTRA TARIFA PARA",
+      "Pagina": 2,
+      "X": 45.35,
+      "Y": 733.1
+    },
+    "vigencia": {
+      "Frase": "Vigencia",
+      "Pagina": 3,
+      "X": 45.35,
+      "Y": 411.35
+    }
+  },
+  "Internacional": {
+    "asunto": {
+      "Frase": "Asunto: presentaci\u00F3n",
+      "Pagina": 1,
+      "X": 45.35,
+      "Y": 620.07
+    },
+    "condiciones": {
+      "Frase": "Facturaci\u00F3n y forma",
+      "Pagina": 3,
+      "X": 45.35,
+      "Y": 733.1
+    },
+    "encabezado": {
+      "Frase": "[imagen]",
+      "Pagina": 1,
+      "X": 489.83,
+      "Y": 766.76
+    },
+    "encabezadoTabla": {
+      "Frase": "DESTINO TIPO DE",
+      "Pagina": 2,
+      "X": 61.82,
+      "Y": 639.66
+    },
+    "fecha": {
+      "Frase": "Yumbo, 19 de marzo",
+      "Pagina": 1,
+      "X": 45.35,
+      "Y": 734.87
+    },
+    "filaTarifa": {
+      "Frase": "$10.365.854",
+      "Pagina": 2,
+      "X": 242.66,
+      "Y": 618.15
+    },
+    "firma": {
+      "Frase": "Cordialmente,",
+      "Pagina": 3,
+      "X": 45.35,
+      "Y": 259.52
+    },
+    "firmante": {
+      "Frase": "Nathaly Vargas Garcia",
+      "Pagina": 3,
+      "X": 45.35,
+      "Y": 232.52
+    },
+    "incluyen": {
+      "Frase": "Estas tarifas incluyen",
+      "Pagina": 2,
+      "X": 45.35,
+      "Y": 256.88
+    },
+    "noIncluyen": {
+      "Frase": "Estas tarifas no incluyen",
+      "Pagina": 2,
+      "X": 306.64,
+      "Y": 256.88
+    },
+    "nota": {
+      "Frase": "Nota: Las tarifas",
+      "Pagina": 2,
+      "X": 45.35,
+      "Y": 595.78
+    },
+    "notaAduana": {
+      "Frase": "Datos aduaneros",
+      "Pagina": 2,
+      "X": 45.35,
+      "Y": 463.51
+    },
+    "origenTabla": {
+      "Frase": "ORIGEN Y/O LUGAR",
+      "Pagina": 2,
+      "X": 212.3,
+      "Y": 659.02
+    },
+    "pie": {
+      "Frase": "Principal: Carrera 42",
+      "Pagina": 1,
+      "X": 156.6,
+      "Y": 29.55
+    },
+    "referencia": {
+      "Frase": "PCN-24092026",
+      "Pagina": 1,
+      "X": 487.88,
+      "Y": 690.19
+    },
+    "tituloTarifa": {
+      "Frase": "NUESTRA TARIFA PARA",
+      "Pagina": 2,
+      "X": 45.35,
+      "Y": 733.1
+    },
+    "vigencia": {
+      "Frase": "Vigencia",
+      "Pagina": 3,
+      "X": 45.35,
+      "Y": 367.1
+    }
+  },
+  "Multi": {
+    "asunto": {
+      "Frase": "Asunto: presentaci\u00F3n",
+      "Pagina": 1,
+      "X": 39.68,
+      "Y": 633.73
+    },
+    "condiciones": {
+      "Frase": "Facturaci\u00F3n y forma",
+      "Pagina": 1,
+      "X": 39.68,
+      "Y": 516.99
+    },
+    "encabezado": {
+      "Frase": "[imagen]",
+      "Pagina": 1,
+      "X": 436.54,
+      "Y": 726.86
+    },
+    "fecha": {
+      "Frase": "Yumbo, 19 de marzo",
+      "Pagina": 1,
+      "X": 39.68,
+      "Y": 736.51
+    },
+    "filaTramo1": {
+      "Frase": "$3.000.000",
+      "Pagina": 2,
+      "X": 247.5,
+      "Y": 654.85
+    },
+    "filaTramo2": {
+      "Frase": "$1.200.000",
+      "Pagina": 2,
+      "X": 247.5,
+      "Y": 564.55
+    },
+    "firma": {
+      "Frase": "Cordialmente,",
+      "Pagina": 2,
+      "X": 39.69,
+      "Y": 480.63
+    },
+    "firmante": {
+      "Frase": "Nathaly Vargas Garcia",
+      "Pagina": 2,
+      "X": 39.69,
+      "Y": 464.83
+    },
+    "incluyen": {
+      "Frase": "Estas tarifas incluyen",
+      "Pagina": 2,
+      "X": 39.68,
+      "Y": 544.15
+    },
+    "nota": {
+      "Frase": "Nota: Tarifa sujeta",
+      "Pagina": 2,
+      "X": 39.68,
+      "Y": 639.92
+    },
+    "pie": {
+      "Frase": "Principal: Carrera 42",
+      "Pagina": 1,
+      "X": 152.95,
+      "Y": 29.55
+    },
+    "referencia": {
+      "Frase": "PCN-19032026-v2",
+      "Pagina": 1,
+      "X": 480.54,
+      "Y": 692.63
+    },
+    "tituloTarifa": {
+      "Frase": "NUESTRA TARIFA PARA",
+      "Pagina": 2,
+      "X": 39.68,
+      "Y": 734.37
+    },
+    "tramo1": {
+      "Frase": "TRAMO 1",
+      "Pagina": 2,
+      "X": 275.89,
+      "Y": 710.8
+    },
+    "tramo2": {
+      "Frase": "TRAMO 2",
+      "Pagina": 2,
+      "X": 275.89,
+      "Y": 620.5
+    }
+  },
+  "Nacional": {
+    "asunto": {
+      "Frase": "Asunto: presentaci\u00F3n",
+      "Pagina": 1,
+      "X": 45.35,
+      "Y": 620.07
+    },
+    "condiciones": {
+      "Frase": "Facturaci\u00F3n y forma",
+      "Pagina": 3,
+      "X": 45.35,
+      "Y": 733.1
+    },
+    "encabezado": {
+      "Frase": "[imagen]",
+      "Pagina": 1,
+      "X": 489.83,
+      "Y": 766.76
+    },
+    "encabezadoTabla": {
+      "Frase": "DESTINO TIPO DE",
+      "Pagina": 2,
+      "X": 61.82,
+      "Y": 639.66
+    },
+    "fecha": {
+      "Frase": "Yumbo, 19 de marzo",
+      "Pagina": 1,
+      "X": 45.35,
+      "Y": 734.87
+    },
+    "filaTarifa": {
+      "Frase": "$3.000.000",
+      "Pagina": 2,
+      "X": 244.74,
+      "Y": 618.15
+    },
+    "firma": {
+      "Frase": "Cordialmente,",
+      "Pagina": 3,
+      "X": 45.35,
+      "Y": 303.77
+    },
+    "firmante": {
+      "Frase": "Nathaly Vargas Garcia",
+      "Pagina": 3,
+      "X": 45.35,
+      "Y": 276.77
+    },
+    "incluyen": {
+      "Frase": "Estas tarifas incluyen",
+      "Pagina": 2,
+      "X": 45.35,
+      "Y": 403.88
+    },
+    "noIncluyen": {
+      "Frase": "Estas tarifas no incluyen",
+      "Pagina": 2,
+      "X": 306.64,
+      "Y": 403.88
+    },
+    "nota": {
+      "Frase": "Nota: Las tarifas",
+      "Pagina": 2,
+      "X": 45.35,
+      "Y": 514.78
+    },
+    "notaTiempos": {
+      "Frase": "Tiempos log\u00EDsticos:",
+      "Pagina": 2,
+      "X": 45.35,
+      "Y": 448.27
+    },
+    "origenTabla": {
+      "Frase": "ORIGEN Y/O LUGAR",
+      "Pagina": 2,
+      "X": 214.8,
+      "Y": 659.02
+    },
+    "pie": {
+      "Frase": "Principal: Carrera 42",
+      "Pagina": 1,
+      "X": 156.6,
+      "Y": 29.55
+    },
+    "referencia": {
+      "Frase": "PCN-19032026",
+      "Pagina": 1,
+      "X": 487.88,
+      "Y": 690.19
+    },
+    "tituloTarifa": {
+      "Frase": "NUESTRA TARIFA PARA",
+      "Pagina": 2,
+      "X": 45.35,
+      "Y": 733.1
+    },
+    "vigencia": {
+      "Frase": "Vigencia",
+      "Pagina": 3,
+      "X": 45.35,
+      "Y": 411.35
+    }
+  },
+  "Pliego": {
+    "asunto": {
+      "Frase": "Asunto:",
+      "Pagina": 1,
+      "X": 39.68,
+      "Y": 656.56
+    },
+    "condiciones": {
+      "Frase": "Facturaci\u00F3n y forma",
+      "Pagina": 1,
+      "X": 39.68,
+      "Y": 539.82
+    },
+    "conexos": {
+      "Frase": "Cargue y",
+      "Pagina": 2,
+      "X": 50.18,
+      "Y": 289.82
+    },
+    "encabezado": {
+      "Frase": "[imagen]",
+      "Pagina": 1,
+      "X": 436.54,
+      "Y": 726.86
+    },
+    "firma": {
+      "Frase": "Cordialmente,",
+      "Pagina": 2,
+      "X": 39.68,
+      "Y": 271.68
+    },
+    "firmante": {
+      "Frase": "Ana P\u00E9rez",
+      "Pagina": 2,
+      "X": 39.68,
+      "Y": 255.88
+    },
+    "pie": {
+      "Frase": "Principal: Carrera 42",
+      "Pagina": 1,
+      "X": 152.95,
+      "Y": 29.55
+    },
+    "referencia": {
+      "Frase": "PCN-900555111-AP-01102026-001",
+      "Pagina": 1,
+      "X": 411.99,
+      "Y": 692.63
+    },
+    "resumen": {
+      "Frase": "RESUMEN DEL PLIEGO",
+      "Pagina": 2,
+      "X": 39.68,
+      "Y": 734.37
+    },
+    "tablaOrigen": {
+      "Frase": "PLIEGO DE TRANSPORTE",
+      "Pagina": 2,
+      "X": 240.47,
+      "Y": 590.62
+    },
+    "total": {
+      "Frase": "VALOR TOTAL DE LA",
+      "Pagina": 2,
+      "X": 293.42,
+      "Y": 647.35
+    },
+    "totalGeneralNota": {
+      "Frase": "El valor de cada ruta",
+      "Pagina": 2,
+      "X": 39.68,
+      "Y": 337.74
+    }
+  }
+}

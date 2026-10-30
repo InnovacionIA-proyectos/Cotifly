@@ -1,6 +1,7 @@
 /* ============================================================================
    Cotifly — SOLO DESARROLLO LOCAL (scripts/levantar-local.*, #14). Nunca en QA ni producción.
-   1. Fija en dbo_cotifly.Roles los IDROLES de desarrollo (34 comercial, 35 gerente_comercial). En el entorno
+   1. Fija en dbo_cotifly.Roles los IDROLES de dbSolucionesTI_Prueba (32 ClienteProComercial → comercial, 31 ClienteProGerencial →
+      gerente_comercial; #173: el 34 es AdministracionZonasGeocerca, no el comercial). En el entorno
       real lo hace el DBA con los IDROLES de ClientePro (ADR-009); sin eso nadie entra (fail-closed).
    2. Crea el SQL login de servicio cotifly_app con los permisos MÍNIMOS que se piden al DBA
       (docs/03-infraestructura.md §3.3), así el entorno local prueba también esa receta:
@@ -15,8 +16,8 @@
    ============================================================================ */
 SET NOCOUNT ON;
 GO
-UPDATE [dbTarifario_Nexo_Pruebas].dbo_cotifly.Roles SET idRolExterno = 34 WHERE codigo = 'comercial';
-UPDATE [dbTarifario_Nexo_Pruebas].dbo_cotifly.Roles SET idRolExterno = 35 WHERE codigo = 'gerente_comercial';
+UPDATE [dbTarifario_Nexo_Pruebas].dbo_cotifly.Roles SET idRolExterno = 32 WHERE codigo = 'comercial';
+UPDATE [dbTarifario_Nexo_Pruebas].dbo_cotifly.Roles SET idRolExterno = 31 WHERE codigo = 'gerente_comercial';
 GO
 IF SUSER_ID(N'cotifly_app') IS NULL
     CREATE LOGIN [cotifly_app] WITH PASSWORD = N'$(ClaveApp)', CHECK_POLICY = OFF, DEFAULT_DATABASE = [dbTarifario_Nexo_Pruebas];
@@ -37,6 +38,7 @@ GO
 IF USER_ID(N'cotifly_app') IS NULL
     CREATE USER [cotifly_app] FOR LOGIN [cotifly_app];
 GRANT SELECT ON dbo.tblSAPUsuariosApp (ID, NOMBREUSUARIO, DESCRIPCIONUSUARIO, EMAIL) TO [cotifly_app];
-GRANT SELECT ON dbo.tblSAPUsuarioRoles (ID, IDUSUARIO, IDROLES) TO [cotifly_app];
+-- Sin ID (#172): Cotifly solo lee IDUSUARIO e IDROLES, y la tabla de dbSolucionesTI_Prueba puede no tenerla.
+GRANT SELECT ON dbo.tblSAPUsuarioRoles (IDUSUARIO, IDROLES) TO [cotifly_app];
 GRANT SELECT ON dbo.tblSAPRoles (IDROLES, DESCRIPCION) TO [cotifly_app];
 GO

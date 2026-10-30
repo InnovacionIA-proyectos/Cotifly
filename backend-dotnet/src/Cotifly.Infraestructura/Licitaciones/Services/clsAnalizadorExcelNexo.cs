@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
@@ -17,7 +16,7 @@ namespace Cotifly.Infraestructura.Licitaciones.Services;
 
 /// <summary>
 /// Análisis del Excel de licitación en Nexo (HU-011.2, ADR-017): <c>POST {Nexo:UrlBase}/api/captura-solicitudes/analizar-excel</c>,
-/// multipart con el campo <c>archivo</c>, identidad <c>X-Portal-Usuario-Id</c> del comercial. Usa el cliente HTTP
+/// multipart con el campo <c>archivo</c>, identidad <c>X-Portal-clsUsuario-Id</c> del comercial. Usa el cliente HTTP
 /// <see cref="clsCosteoNexo.NombreCliente"/> (30 s, POST sin reintentos). Nexo no persiste nada. Nunca lanza por Nexo: 400 con
 /// <c>ARCHIVO_REQUERIDO</c>, <c>FORMATO_NO_SOPORTADO</c>, <c>EXCEL_INVALIDO</c> o <c>EXCEL_SIN_DATOS</c> pasa con ese código;
 /// tiempo agotado → <c>COSTEO_NEXO_TIEMPO_AGOTADO</c>; 401/403, 5xx, red o JSON inválido → <c>COSTEO_NEXO_NO_DISPONIBLE</c>; otro
@@ -58,7 +57,7 @@ public sealed class clsAnalizadorExcelNexo(
             nombreArchivo.EndsWith(".xlsm", StringComparison.OrdinalIgnoreCase) ? clsArchivoLicitacion.TipoXlsm : clsArchivoLicitacion.TipoXlsx);
         multipart.Add(archivo, "archivo", string.IsNullOrWhiteSpace(nombreArchivo) ? "licitacion.xlsx" : nombreArchivo);
         peticion.Content = multipart;
-        peticion.Headers.Add("X-Portal-Usuario-Id", idUsuarioExterno.ToString(CultureInfo.InvariantCulture));
+        clsIdentidadNexo.Identificar(peticion, idUsuarioExterno);
         peticion.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
         try
@@ -75,13 +74,16 @@ public sealed class clsAnalizadorExcelNexo(
                     return new clsErrorDominio(codigo, mensaje ?? "Nexo no pudo leer el archivo.");
                 }
 
+                // HU-013.15 (#124): el detalle lleva solo el código de Nexo (o "HTTP 401"), nunca su texto crudo, igual que el resto de
+                // los endpoints (clsServiciosConexosNexo.SoloCodigo); el texto completo queda en el log.
+                var soloCodigo = clsServiciosConexosNexo.SoloCodigo(detalle);
                 return respuesta.StatusCode switch
                 {
-                    HttpStatusCode.Forbidden => new clsErrorDominio(clsCodigosError.NexoSinPermiso, clsCosteoNexo.MensajeSinPermiso, detalle),
-                    HttpStatusCode.Unauthorized => new clsErrorDominio(clsCodigosError.CosteoNexoNoDisponible, clsCosteoNexo.MensajeNoDisponible, detalle),
+                    HttpStatusCode.Forbidden => new clsErrorDominio(clsCodigosError.NexoSinPermiso, clsCosteoNexo.MensajeSinPermiso, soloCodigo),
+                    HttpStatusCode.Unauthorized => new clsErrorDominio(clsCodigosError.CosteoNexoNoDisponible, clsCosteoNexo.MensajeNoDisponible, soloCodigo),
                     HttpStatusCode.RequestEntityTooLarge => new clsErrorDominio(clsCodigosError.ArchivoDemasiadoGrande,
-                        "Nexo rechazó el archivo por tamaño (máximo 10 MB con el envío).", detalle),
-                    _ => new clsErrorDominio(clsCodigosError.CosteoNexoRechazada, "Nexo rechazó el análisis del archivo.", detalle),
+                        "Nexo rechazó el archivo por tamaño (máximo 10 MB con el envío).", soloCodigo),
+                    _ => new clsErrorDominio(clsCodigosError.CosteoNexoRechazada, "Nexo rechazó el análisis del archivo.", soloCodigo),
                 };
             }
 

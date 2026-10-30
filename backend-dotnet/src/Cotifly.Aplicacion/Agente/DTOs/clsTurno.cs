@@ -1,27 +1,21 @@
 namespace Cotifly.Aplicacion.Agente.DTOs;
 
 /// <summary>
-/// Un mensaje del comercial para el agente, venga de la consola web o de Google Chat.
+/// Un mensaje del comercial para el asistente por folio (HU-013.6, #102): la sesión queda ligada al comercial y al folio.
 /// </summary>
-/// <param name="Mensaje">Texto del comercial (máximo 8000 caracteres, contrato <c>MensajeWeb</c>).</param>
-/// <param name="SpaceId">Space de Google Chat, o <c>web/{sesion_id}</c> en la consola web (ADR-004 §6).</param>
-/// <param name="ThreadId">Hilo de Google Chat, o <c>web/{sesion_id}</c> en la consola web.</param>
-/// <param name="UsuarioId">Comercial en <c>UsuariosWeb</c> (del token en la web, del email en Google Chat, ADR-011). Nunca del LLM.</param>
-/// <param name="CotizacionOrigenId">
-/// Cotización del comercial de la que parte una nueva versión (<c>cotizacion_origen_id</c> de <c>MensajeWeb</c>): siembra el estado para
-/// que <c>generar_pdf</c> cree <c>-vN</c>. Se valida el dueño.
-/// </param>
-/// <param name="Moneda">
-/// Moneda del selector del formulario web (<c>COP</c> | <c>USD</c>, <c>moneda</c> de <c>MensajeWeb</c>, HU-012.2), ya validada por el canal; <c>null</c>
-/// si no vino. Queda en el estado y manda sobre la que pida el modelo.
-/// </param>
-public sealed record clsSolicitudTurno(string Mensaje, string SpaceId, string ThreadId, Guid UsuarioId, Guid? CotizacionOrigenId = null, string? Moneda = null);
+/// <param name="Mensaje">Texto del comercial (máximo 8000 caracteres).</param>
+/// <param name="SpaceId">Agrupa la conversación de la consola (<c>web/{sesion_id}</c>).</param>
+/// <param name="ThreadId">Hilo de ESTA cotización (<c>web/{sesion_id}/{folio}</c>): otro folio con el mismo <c>sesion_id</c> es otro hilo.</param>
+/// <param name="UsuarioId">Comercial del token (nunca del LLM).</param>
+/// <param name="Folio">Cotización sobre la que trabaja el asistente; debe ser del comercial.</param>
+public sealed record clsSolicitudTurnoFolio(string Mensaje, string SpaceId, string ThreadId, Guid UsuarioId, string Folio);
 
-/// <summary>Salida de un turno del agente (port de <c>ResultadoTurno</c> de <c>orquestador/agente.py</c>).</summary>
+/// <summary>Salida de un turno del asistente (port de <c>ResultadoTurno</c> de <c>orquestador/agente.py</c>).</summary>
 /// <param name="Texto">Respuesta final para el comercial (redactada en la llamada final sin herramientas y validada).</param>
 /// <param name="Iteraciones">Llamadas al modelo del turno (incluida la llamada final).</param>
 /// <param name="HerramientasInvocadas">Herramientas ejecutadas, en orden (las inexistentes que pidió el modelo no cuentan).</param>
-/// <param name="DetenerPor">Motivo de fin del loop que informó el proveedor (<c>stop</c>, <c>length</c>...).</param>
+/// <param name="DetenerPor">Motivo de fin del loop que informó el proveedor (<c>stop</c>, <c>length</c>...), o <c>propuesta</c> si una ronda
+/// de herramientas armó una propuesta y el turno pasó directo a la respuesta final (HU-013.16).</param>
 /// <param name="Salidas">Resultado de cada herramienta pedida, en orden (incluye las rechazadas y las inexistentes).</param>
 public sealed record clsResultadoTurno(
     string Texto,
@@ -39,7 +33,7 @@ public sealed record clsResultadoTurno(
 
     /// <summary>
     /// True si el modelo no produjo una respuesta válida ni con el reintento y <see cref="Texto"/> es el respaldo controlado del
-    /// validador: los canales lo muestran como error (<c>200 {texto, error: true}</c> en <c>/web/chat</c>).
+    /// validador: <c>/web/chat</c> lo muestra como error (<c>200 {texto, error: true}</c>) si no hubo propuesta.
     /// </summary>
     public bool EsRespaldo { get; init; }
 
@@ -47,38 +41,34 @@ public sealed record clsResultadoTurno(
     public int ReintentosRespuesta { get; init; }
 
     /// <summary>
-    /// Última salida de la herramienta <paramref name="herramienta"/> en el turno si terminó bien y es del tipo pedido (como
-    /// <c>ultima_salida</c> + <c>_ok</c> del Python: si la última terminó con error, no hay salida).
+    /// Acción que el asistente por folio PROPUSO en el turno (HU-013.6, #102), armada por el servidor, o <c>null</c>.
     /// </summary>
-    public TSalida? UltimaSalida<TSalida>(string herramienta) where TSalida : class
-    {
-        for (var i = Salidas.Count - 1; i >= 0; i--)
-        {
-            var salida = Salidas[i];
-            if (salida.Herramienta == herramienta)
-            {
-                return salida.EsExitoso ? salida.Salida as TSalida : null;
-            }
-        }
+    public clsAccionPropuesta? AccionPropuesta { get; init; }
 
-        return null;
-    }
+    /// <summary>
+    /// HU-013.16 (#126): de dónde salió la respuesta final: <c>loop</c> (la respuesta sin herramientas ya era válida),
+    /// <c>llamada_final</c> (la llamada aparte del validador) o <c>null</c> en un turno que no llegó a cerrarse.
+    /// </summary>
+    public string? Cierre { get; init; }
 }
 
 /// <summary>
-/// Nombres de las herramientas del plugin <c>cotizador</c> tal como las ve el modelo (los del Python, en snake_case). Los
-/// parámetros van en camelCase (firma unificada del plan: <c>lineaNegocio</c>, <c>pesoKg</c>...).
+/// Nombres de las herramientas tal como las ve el modelo (los del Python, en snake_case). Los parámetros van en camelCase (firma
+/// unificada del plan: <c>lineaNegocio</c>, <c>pesoKg</c>...). El agente cotizador legado (plugin <c>cotizador</c>) se retiró en
+/// HU-013.9 (#105): sus herramientas <c>buscar_cliente</c>, <c>resolver_municipio</c>, <c>buscar_tarifa</c>, <c>obtener_margen</c>,
+/// <c>calcular_precio</c> y <c>enviar_correo</c> ya no existen (endurecimiento B de #199: se quitaron sus constantes);
+/// <c>consultar_cotizacion</c> la usa el asistente por folio y otras se citan en las acciones sugeridas.
 /// </summary>
 public static class clsNombresHerramientas
 {
     public const string Plugin = "cotizador";
-    public const string BuscarCliente = "buscar_cliente";
-    public const string ResolverMunicipio = "resolver_municipio";
-    public const string BuscarTarifa = "buscar_tarifa";
-    public const string ObtenerMargen = "obtener_margen";
-    public const string CalcularPrecio = "calcular_precio";
     public const string RegistrarAjusteMargen = "registrar_ajuste_margen";
     public const string GenerarPdf = "generar_pdf";
-    public const string EnviarCorreo = "enviar_correo";
     public const string ConsultarCotizacion = "consultar_cotizacion";
+
+    /// <summary>Plugin del asistente por folio (HU-013.6, #102): solo lectura y propuesta.</summary>
+    public const string PluginAsistente = "asistente";
+    public const string ProponerAjusteMargen = "proponer_ajuste_margen";
+    public const string ProponerReSolicitud = "proponer_re_solicitud";
+    public const string BuscarServicioConexo = "buscar_servicio_conexo";
 }

@@ -55,12 +55,18 @@ public static class clsPliegoMuestra
         return memoria.ToArray();
     }
 
-    /// <summary>Líneas mapeadas (objetos anónimos snake_case) de las <paramref name="filas"/> filas del pliego.</summary>
+    /// <summary>
+    /// Líneas mapeadas (objetos anónimos snake_case) de las <paramref name="filas"/> filas del pliego. HU-032 (#197): cada fila lleva su
+    /// vehículo elegido (código de Nexo): una fila solo con el peso no se cubica y lo exige.
+    /// </summary>
     public static object[] Lineas(int filas = 3) =>
         [.. Enumerable.Range(0, filas).Select(i =>
         {
             var (origen, destino, vehiculo, toneladas) = Ruta(i);
-            return (object)new { fila = i, origen, destino, tipo_vehiculo = vehiculo, tipologia = "CargaSeca", peso_kg = toneladas * 1000m, valor_mercancia = 50_000_000m };
+            return (object)new
+            {
+                fila = i, origen, destino, tipologia = "CargaSeca", peso_kg = toneladas * 1000m, valor_mercancia = 50_000_000m, tipo_vehiculo = vehiculo,
+            };
         })];
 
     /// <summary>JSON de <c>POST /web/licitaciones</c> con las líneas dadas.</summary>

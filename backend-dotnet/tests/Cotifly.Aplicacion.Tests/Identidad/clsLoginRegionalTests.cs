@@ -11,7 +11,7 @@ namespace Cotifly.Aplicacion.Tests.Identidad;
 /// <summary>
 /// Regional y datos corporativos en el login (#81, ADR-016 §6): el alta JIT toma la regional de <c>DimEjecutivo</c>, cada login
 /// siguiente la refresca junto con nombre y correo, un usuario ausente conserva la que tenga, y la fuente caída, lenta o sin
-/// configurar nunca bloquea el login. El refresh y Google Chat no la consultan.
+/// configurar nunca bloquea el login. El refresh no la consulta.
 /// </summary>
 public sealed class clsLoginRegionalTests
 {
@@ -30,7 +30,7 @@ public sealed class clsLoginRegionalTests
         var resultado = await _e.Login().IniciarSesionAsync(new clsSolicitudLoginClientePro("APEREZ"), Ct);
 
         creado!.Regional.Should().Be("Occidente");
-        resultado.Valor.Usuario.Ubicacion.Should().Be("Occidente", "LoginResponse.user.ubicacion lee la columna recién llenada");
+        resultado.Valor.Sesion!.Usuario.Ubicacion.Should().Be("Occidente", "LoginResponse.user.ubicacion lee la columna recién llenada");
     }
 
     [Fact]
@@ -60,7 +60,7 @@ public sealed class clsLoginRegionalTests
         usuario.Regional.Should().Be("Occidente", "antes era Antioquia: DimEjecutivo manda");
         usuario.NombreCompleto.Should().Be("Nombre de APEREZ");
         usuario.Email.Should().Be("aperez@boterosoto.com.co");
-        resultado.Valor.Usuario.Should().Be(new clsUsuarioSesion(
+        resultado.Valor.Sesion!.Usuario.Should().Be(new clsUsuarioSesion(
             usuario.Id, "APEREZ", "aperez@boterosoto.com.co", "Nombre de APEREZ", "comercial", "Occidente"));
         await _e.UnidadTrabajo.Received(1).GuardarCambiosAsync(Arg.Any<CancellationToken>());
     }
@@ -68,14 +68,14 @@ public sealed class clsLoginRegionalTests
     [Fact]
     public async Task SiElCorreoCambiaEnElLoginQuedaUnAvisoSinLosValores()
     {
-        // El correo es la identidad en Google Chat (ADR-011): el cambio se registra solo con el nombre de usuario.
+        // El cambio de correo se registra solo con el nombre de usuario, sin los valores.
         _e.PersonaExterna("APEREZ", 101, clsEscenarioIdentidad.RolExternoComercial);
         _e.UsuarioLocal("APEREZ", 101, RolInterno.Comercial);
 
         await _e.Login().IniciarSesionAsync(new clsSolicitudLoginClientePro("APEREZ"), Ct);
 
         var aviso = _e.LoggerVerificador.Registros.Should().ContainSingle(r => r.Nivel == LogLevel.Warning).Subject;
-        aviso.Mensaje.Should().Contain("APEREZ").And.Contain("Google Chat");
+        aviso.Mensaje.Should().Contain("APEREZ").And.Contain("correo nuevo");
         aviso.Mensaje.Should().NotContain("local@boterosoto.com.co").And.NotContain("aperez@boterosoto.com.co");
     }
 
@@ -101,7 +101,7 @@ public sealed class clsLoginRegionalTests
         var resultado = await _e.Login().IniciarSesionAsync(new clsSolicitudLoginClientePro("APEREZ"), Ct);
 
         usuario.Regional.Should().Be("Antioquia", "la regional que fijó el DBA a mano no se borra");
-        resultado.Valor.Usuario.Ubicacion.Should().Be("Antioquia");
+        resultado.Valor.Sesion!.Usuario.Ubicacion.Should().Be("Antioquia");
     }
 
     [Fact]
@@ -196,7 +196,7 @@ public sealed class clsLoginRegionalTests
     }
 
     [Fact]
-    public async Task ElRefreshYGoogleChatNoConsultanDimEjecutivoNiCambianDatos()
+    public async Task ElRefreshSinAltaNoConsultaDimEjecutivoNiCambiaDatos()
     {
         _e.PersonaExterna("APEREZ", 101, clsEscenarioIdentidad.RolExternoComercial);
         var usuario = _e.UsuarioLocal("APEREZ", 101, RolInterno.Comercial);

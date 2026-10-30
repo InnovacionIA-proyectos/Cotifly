@@ -25,7 +25,7 @@ public interface IClsValidadorRespuestaAgente
 }
 
 /// <summary>Datos del turno contra los que se valida la respuesta final (nada de esto sale del LLM).</summary>
-/// <param name="Estado">Estado resuelto al terminar el loop (costo, precio, folio, previsualización pendiente).</param>
+/// <param name="Estado">Estado de la conversación (el folio de la cotización: respalda los folios del texto; no tiene montos).</param>
 /// <param name="Salidas">Resultados de las herramientas del turno, en orden.</param>
 /// <param name="MensajesDelComercial">Mensajes del comercial en la conversación (un monto que él escribió puede repetirse).</param>
 /// <param name="HerramientasDeclaradas">Herramientas declaradas al modelo en el turno (una acción sugerida debe corresponder a una).</param>
@@ -33,7 +33,15 @@ public sealed record clsContextoValidacionRespuesta(
     clsEstadoConversacion Estado,
     IReadOnlyList<clsResultadoHerramienta> Salidas,
     IReadOnlyList<string> MensajesDelComercial,
-    IReadOnlyCollection<string> HerramientasDeclaradas);
+    IReadOnlyCollection<string> HerramientasDeclaradas)
+{
+    /// <summary>
+    /// ¿Se reintenta una vez si la respuesta no valida? Por defecto true. HU-013.16 (#126): el asistente lo apaga cuando el turno ya
+    /// armó una propuesta, porque esa respuesta tiene su texto fijo del servidor (<c>clsTextosAgente.PropuestaSinTexto</c>) y el
+    /// reintento solo agregaba una llamada.
+    /// </summary>
+    public bool ReintentarSiFalla { get; init; } = true;
+}
 
 /// <summary>Resultado de <see cref="IClsValidadorRespuestaAgente.ObtenerRespuestaFinalAsync"/>.</summary>
 /// <param name="Respuesta">Respuesta validada, o el respaldo <c>{tipo: error}</c>.</param>

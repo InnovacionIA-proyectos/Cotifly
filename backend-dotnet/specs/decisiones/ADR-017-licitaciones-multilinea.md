@@ -1,9 +1,20 @@
 # ADR-017 — Licitaciones desde Excel y cotizaciones de varias líneas
 
-- **Estado:** Propuesta (formato y preguntas de negocio pendientes de aprobación de Gerencia Comercial; script 0005 pendiente de aprobación de scalderon-bs y del DBA; varios puntos con Nexo, ver Pendientes)
+- **Estado:** Propuesta; reemplazada en parte por [ADR-019](ADR-019-reestructuracion-rutas-y-camiones.md) (HU-021: rutas y camiones; ver la sección siguiente). Formato y preguntas de negocio pendientes de aprobación de Gerencia Comercial; script 0005 pendiente de aprobación de scalderon-bs y del DBA; varios puntos con Nexo, ver Pendientes
 - **Fecha:** 2026-10-01
 - **Issue / HU:** #46 (HU-011.1), #47 (HU-011.2), #48 (HU-011.3) y #49 (HU-011.5). Amplía ADR-015 (costeo en Nexo, que dejó la deuda "HU-011 multi-línea"). Relacionada con ADR-006 (PDF), ADR-008 (esquema solo por scripts), ADR-011 (folio) y ADR-014 (TRM y USD).
 - **Nota de numeración:** ADR-016 es la de métricas (HU-010.1); esta queda como ADR-017.
+
+## Reemplazado en parte por ADR-019 (HU-021, 2026-10-08)
+
+El script `0009` reestructuró la cotización en solicitud → rutas → camiones y [ADR-019](ADR-019-reestructuracion-rutas-y-camiones.md) fija cómo lo usa el código. De esta ADR quedan reemplazados:
+
+- **Fila del Excel (§2):** cada fila es una **ruta** (`CotizacionLineasSolicitud`), con sus camiones en `CotizacionVehiculosLineaSolicitud` (los del cubicador o, de respaldo, un camión sin vehículo con el peso de la ruta). `filaOrigen` pasa a `rutaOrigenIndice`. A Nexo viaja una línea por camión, no por fila.
+- **Columnas de línea de `Cotizaciones` (§2 y §7):** el `0009` las borró (`origen`, `destino`, `costo`, `lineaNegocioId`…); son de la ruta. Ya no hay espejo de la línea 1 en la cabecera, y la tabla de §7 queda cumplida.
+- **Vehículo y carrocería (§1):** salieron del mapeo del Excel y del formulario; los define el cubicador o la Mesa de Costeo de Nexo (decisión 7). `valor_estimado` y `referencia` salieron del encabezado (decisión 1).
+- **Margen, línea de negocio y conexos (§3 y §5):** cada fila trae su línea de negocio y su margen; los conexos son filas de la ruta (`CotizacionServiciosConexos`) y no "de toda la licitación" ni JSON. El precio de la ruta incluye sus conexos; el total del pliego y del Excel sigue siendo la suma de las tarifas, con los conexos aparte.
+- **`/health/ready`:** ya no responde `falta 0005` (ver ADR-019, "Sonda `/health/ready`").
+- **Por qué:** una fila de licitación puede salir en varios camiones y cada ruta puede tener otra línea de negocio; el modelo de una línea por fila no lo admitía.
 
 ## Contexto
 
@@ -17,7 +28,7 @@
 ### 1. Formato del Excel (HU-011.1, #46)
 
 - **Cotifly no impone plantilla.** Reutiliza el flujo de Nexo de analizar y mapear: el comercial sube el pliego, Cotifly reenvía el archivo al análisis de Nexo, el frontend mapea las columnas a los campos destino y envía las líneas ya mapeadas. Cualquier plantilla de cliente sirve sin cambios de código.
-- Los campos destino son los de `CapturaLineaRequest` de Nexo, con los nombres y límites de `POST /web/solicitudes-costeo`; el encabezado (cliente, línea de negocio, `deadline`, `valor_estimado`, `referencia`, horas) lo llena el comercial. El detalle completo (tipos, obligatoriedad, catálogos, validación por fila, columnas de la exportación y un ejemplo) está en `docs/HU-011-formato-excel-licitacion.md`.
+- Los campos destino son los de `CapturaLineaRequest` de Nexo, con los nombres y límites de `POST /web/solicitudes-costeo`; el encabezado (cliente, línea de negocio, `deadline`, `valor_estimado`, `referencia`, horas) lo llena el comercial. El detalle completo (tipos, obligatoriedad, catálogos, validación por fila, columnas de la exportación y un ejemplo) está en `docs/conexion_nexo/HU-011-formato-excel-licitacion.md`.
 - La validación por fila replica `CapturarSolicitudValidador` de Nexo y se ejecuta entera antes de guardar: el reporte trae todas las filas con error (índice, fila, campo y código), no solo la primera.
 
 ### 2. Modelo multi-línea (HU-011.2, #47): script 0005
@@ -39,7 +50,7 @@
 - **Estado por línea:** la misma regla de ADR-015 §4 (`clsDerivacionEstadoCosteo.DerivarLinea`): `Descartada` y `Entregada` aplican a todas; si no, la línea con flete queda `autocosteo` y la que no, `pendiente_costeo`. El estado de la cotización no cambia de regla (todas con flete → `autocosteo`). Con la edad máxima, las líneas sin flete pasan a `costeo_vencido` con la cotización.
 - **Margen y precio por línea:** el margen se resuelve una vez al enviar (una línea de negocio por licitación) y se aplica a cada línea en cuanto tiene flete, aunque otras sigan pendientes. Un costo negativo de Nexo no se usa ni rompe el polling: la línea queda sin precio y se advierte (como HU-005.7). La cotización suma los precios **ya redondeados** de sus líneas (no recalcula el margen sobre la suma de costos) y **sin servicios conexos**, solo cuando todas las líneas están asociadas y tienen flete; si Nexo la entrega con líneas sin flete, la cotización no tiene precio total y queda el motivo. Con PDF ya generado los precios se conservan (solo cambia el estado). **Con una sola línea se usa exactamente la regla de HU-005.7** (mismo precio, mismos mensajes y el mismo "cambió"), lo verifica una prueba de equivalencia.
 - **Servicios conexos:** siguen por cotización, como en Nexo (pregunta abierta con negocio). No suman al total de la licitación: el Excel y el PDF rotulan el total "sin servicios conexos" y listan los conexos aparte.
-- **Línea de negocio que viaja a Nexo:** el `mapeoLineasNexo` de la línea de Cotifly que elige el comercial, en cada línea. Nexo tiene además `LineaNegocio=Licitaciones`. **Pregunta abierta a Nexo y a negocio:** si una licitación debe viajar con `Licitaciones` (y cómo afecta la tarifa y la bandeja de la Mesa).
+- **Línea de negocio que viaja a Nexo:** el `mapeoLineasNexo` de la línea de Cotifly que elige el comercial, en cada línea. Nexo tiene además `LineaNegocio=Licitaciones`. **Pregunta abierta a Nexo y a negocio:** si una licitación debe viajar con `Licitaciones` (y cómo afecta la tarifa y la bandeja de la Mesa). Mientras no se defina, "Licitaciones" no es una línea de Cotifly y crear con ella responde 400 `MARGEN_LINEA_DESCONOCIDA` con las líneas válidas (ADR-018 §18, #124).
 - **Líneas que Nexo nunca costea:** en una prueba real de Nexo (HU-13.4, pliego de 15 líneas) 3 quedaron sin flete. Hoy la licitación queda sin total y sin PDF. **Pregunta abierta a negocio:** permitir excluir una línea de la cotización, o un PDF parcial que la marque "no cotizada".
 - **Moneda:** solo COP, como el costeo de ADR-015 §5; el modelo ya guarda `moneda` y `trmAplicada` por cotización para cuando el costeo soporte USD.
 
@@ -51,7 +62,7 @@
 - Los cuerpos se leen a mano (no `[FromForm]`) para que la sesión se valide antes que el tipo de contenido; límite de cuerpo propio de 12 MB (`SeguridadHttp:LimiteCuerpoLicitacionBytes`, 413 al pasarlo). Mismos roles y aislamiento por dueño que el resto de `/web/*`.
 - **Lectura acotada del Excel** (`clsLectorExcelLicitacionClosedXml`): una celda lejana (`XFD3000`) o una combinada enorme (`A2:XFD1048576`) hacían recorrer o expandir millones de celdas (segundos y GB de memoria, o el proceso caído). Ahora solo se leen las celdas con contenido de las primeras 200 columnas, las combinadas se consultan como rangos recortados (sin expandirlas; más de 10.000 es `EXCEL_INVALIDO`), se ubican como máximo 1000 filas con datos y se respeta la cancelación. En un pliego normal el resultado es idéntico al de Nexo (prueba de paridad con el pliego de 300 líneas de Nexo y un oráculo copiado de su `ExcelSolicitudesAdapter`).
 - **ClosedXML 0.104.2**, la misma versión de Nexo (sin vulnerabilidades conocidas en OSV al 2026-10-01): la detección de encabezados depende de `RangeUsed` y del formato de las celdas, así que usar la misma versión evita diferencias sutiles. Si Nexo sube de versión, se sube aquí y se corre la prueba de paridad.
-- **Doble envío:** dos `POST /web/licitaciones` iguales crean dos licitaciones (y dos solicitudes en Nexo). No se implementa `Idempotency-Key` en esta iteración: exigiría una tabla nueva de claves por usuario (otro cambio de esquema para el DBA) y coordinarla entre réplicas, para un caso que el frontend evita bloqueando el botón mientras la petición está en curso (hasta unos 30 s). Queda como **responsabilidad documentada del frontend** (`docs/GUIA_FRONTEND_COTIFLY.md` §5.24); si aparecen duplicados en producción, se agrega el encabezado con su tabla.
+- **Doble envío:** dos `POST /web/licitaciones` iguales crean dos licitaciones (y dos solicitudes en Nexo). No se implementa `Idempotency-Key` en esta iteración: exigiría una tabla nueva de claves por usuario (otro cambio de esquema para el DBA) y coordinarla entre réplicas, para un caso que el frontend evita bloqueando el botón mientras la petición está en curso (hasta unos 30 s). Queda como **responsabilidad documentada del frontend** (`docs/docs_front/GUIA_FRONTEND_COTIFLY.md` §5.24); si aparecen duplicados en producción, se agrega el encabezado con su tabla.
 
 ### 5. Exportación del Excel con resultados (HU-011.3, #48)
 
@@ -95,7 +106,7 @@
 - **Analizar el Excel en Cotifly en vez de en Nexo:** duplicaría el analizador; se reutiliza el de Nexo y Cotifly solo porta la detección de filas para ubicar la fila al exportar.
 - **Guardar el Excel original en disco o en el almacén de PDF:** otro volumen que respaldar y otro control de acceso; en la base queda con la cotización, con el mismo aislamiento por dueño y los mismos respaldos.
 - **Usar `exportar-excel` de Nexo y agregarle columnas:** no es el archivo del cliente y trae los costos de Nexo; descartada.
-- **Endpoint `lineas:bulk` de Nexo (cabecera + carga masiva):** es de `CoordinadorFletes` y `Admin`, no del comercial, y no resuelve rutas por texto libre; `captura-solicitudes` con `lineas[]` sí.
+- **Endpoint `lineas:bulk` de Nexo (cabecera + carga masiva):** es solo de `Admin` desde NEXO#307 (decisión D5; antes `CoordinadorFletes` y `Admin`), no del comercial, y no resuelve rutas por texto libre; `captura-solicitudes` con `lineas[]` sí.
 
 ## Consecuencias
 

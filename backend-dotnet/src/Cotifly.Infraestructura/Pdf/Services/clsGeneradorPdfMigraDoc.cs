@@ -1,5 +1,11 @@
+using System.Diagnostics;
+using Cotifly.Aplicacion.Comun.Exceptions;
 using Cotifly.Aplicacion.Pdf.DTOs;
 using Cotifly.Aplicacion.Pdf.Interfaces;
+using Cotifly.Aplicacion.Pdf.Services;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using MigraDoc.DocumentObjectModel;
 using MigraDoc.Rendering;
 using static Cotifly.Infraestructura.Pdf.Services.clsEstilosPdf;
@@ -20,13 +26,85 @@ namespace Cotifly.Infraestructura.Pdf.Services;
 /// aproximan con tablas; los márgenes CSS que se colapsaban se suman como espacio antes/después. Fuente Liberation Sans
 /// (métricas de Arial, la alternativa del CSS) en lugar de Stilu, sin licencia disponible.
 /// </remarks>
-public sealed class clsGeneradorPdfMigraDoc : IClsGeneradorPdf
+public sealed partial class clsGeneradorPdfMigraDoc : IClsGeneradorPdf
 {
-    public clsGeneradorPdfMigraDoc() => clsResolvedorFuentes.Registrar();
+    /// <summary>
+    /// Turno de render del proceso (#92, #95, ADR-006). PDFsharp-MigraDoc 6.2 comparte estado global entre documentos al medir
+    /// y escribir el texto: con dos renders a la vez, el mismo documento sale con otra maquetación (espacios medidos con la
+    /// fuente de otro documento, palabras corridas hasta cientos de puntos, saltos de línea distintos). El generador es
+    /// singleton y lo usan peticiones concurrentes, así que el turno es de proceso, no de instancia. Dentro solo hay CPU:
+    /// armado del modelo, render y guardado en memoria; el almacén y la base van fuera.
+    /// </summary>
+    private static readonly SemaphoreSlim _turno = new(1, 1);
 
+    /// <summary>El turno de render del proceso (pruebas: ocuparlo para comprobar la espera acotada).</summary>
+    internal static SemaphoreSlim TurnoDeRender => _turno;
+
+    private readonly TimeSpan _esperaMaxima;
+    private readonly ILogger<clsGeneradorPdfMigraDoc> _logger;
+
+    /// <summary>Con la espera por defecto (30 s) y sin log (pruebas).</summary>
+    public clsGeneradorPdfMigraDoc()
+        : this(Options.Create(new clsOpcionesPdf()), NullLogger<clsGeneradorPdfMigraDoc>.Instance)
+    {
+    }
+
+    public clsGeneradorPdfMigraDoc(IOptions<clsOpcionesPdf> opciones, ILogger<clsGeneradorPdfMigraDoc> logger)
+    {
+        ArgumentNullException.ThrowIfNull(opciones);
+        ArgumentNullException.ThrowIfNull(logger);
+        clsResolvedorFuentes.Registrar();
+        _esperaMaxima = TimeSpan.FromSeconds(opciones.Value.TiempoEsperaRenderSegundos);
+        _logger = logger;
+    }
+
+    public async Task<clsPdfGenerado> GenerarAsync(clsDocumentoCotizacion documento, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(documento);
+        var reloj = Stopwatch.StartNew();
+        if (!await _turno.WaitAsync(_esperaMaxima, cancellationToken).ConfigureAwait(false))
+        {
+            LogTurnoAgotado(_logger, documento.Referencia, reloj.ElapsedMilliseconds);
+            throw new clsRenderPdfOcupadoException(reloj.Elapsed);
+        }
+
+        var espera = reloj.ElapsedMilliseconds;
+        try
+        {
+            reloj.Restart();
+            var pdf = Renderizar(documento);
+            LogRender(_logger, documento.Referencia, espera, reloj.ElapsedMilliseconds, pdf.Paginas);
+            return pdf;
+        }
+        finally
+        {
+            _turno.Release();
+        }
+    }
+
+    /// <summary>Render síncrono con el mismo turno (pruebas y herramientas): espera sin límite.</summary>
     public clsPdfGenerado Generar(clsDocumentoCotizacion documento)
     {
         ArgumentNullException.ThrowIfNull(documento);
+        _turno.Wait();
+        try
+        {
+            return Renderizar(documento);
+        }
+        finally
+        {
+            _turno.Release();
+        }
+    }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "PDF {Referencia} renderizado: espera de turno {EsperaMs} ms, render {RenderMs} ms, {Paginas} páginas.")]
+    private static partial void LogRender(ILogger logger, string referencia, long esperaMs, long renderMs, int paginas);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "PDF {Referencia} sin turno de render tras {EsperaMs} ms: el generador sigue ocupado.")]
+    private static partial void LogTurnoAgotado(ILogger logger, string referencia, long esperaMs);
+
+    private static clsPdfGenerado Renderizar(clsDocumentoCotizacion documento)
+    {
         var modelo = Construir(documento);
 
         var renderizador = new PdfDocumentRenderer { Document = modelo };
@@ -65,7 +143,7 @@ public sealed class clsGeneradorPdfMigraDoc : IClsGeneradorPdf
             clsBloqueCondiciones.Agregar(seccion, documento, diseno);
             seccion.AddPageBreak();
 
-            // HU-011.5: el pliego abre con el resumen de todas sus rutas y el total; luego las tablas por origen.
+            // HU-011.5: el pliego abre con el resumen de todas sus rutas y el total; luego una sección por ruta (HU-021.9).
             if (documento.Variante == VarianteDocumento.Pliego && documento.Pliego is { } pliego)
             {
                 clsBloquePliego.Agregar(seccion, pliego, diseno);

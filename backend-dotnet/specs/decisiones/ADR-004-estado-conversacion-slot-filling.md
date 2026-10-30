@@ -1,6 +1,7 @@
 # ADR-004 — Estado de conversación estructurado (slot-filling)
 
 - **Estado:** Aceptada (las columnas nuevas en BD dependen del script 0002, ver Pendientes)
+- **Nota de estado (HU-013.9, #105):** retirada en la práctica junto con el agente cotizador legado y Google Chat. Se borraron `clsEstadoConversacionService`, `clsInyeccionEstadoFilter`, `clsHerramientasCotizador` y `clsAgenteRunner`; `clsEstadoConversacion` queda solo con `FolioEnProgreso`, `CotizacionId`, `Version` y `Moneda` (el JSON antiguo de `Sesiones.estadoAgente` se sigue leyendo y los campos retirados se ignoran). El asistente por folio de ADR-018 no necesita slot-filling: opera sobre una cotización ya armada por el pipeline determinista. Lo que sigue es la decisión histórica.
 - **Fecha:** 2026-09-24
 - **Issue / HU:** #7 (HU-003.1). Se implementa en #12 (HU-003.6), tanto en `/web/chat` como en Google Chat.
 

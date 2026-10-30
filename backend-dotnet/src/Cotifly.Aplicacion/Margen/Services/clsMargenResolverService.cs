@@ -152,6 +152,37 @@ public sealed class clsMargenResolverService(
     public static clsErrorDominio LineaInactiva(string linea) =>
         new(clsCodigosError.MargenLineaDesconocida, $"La línea '{linea}' está inactiva: no se puede cotizar con ella.", DetalleLineaInactiva);
 
+    /// <summary>Línea de negocio de Nexo para licitaciones (catálogo <c>GET /api/catalogos/lineas-negocio</c>); no es una línea de Cotifly.</summary>
+    public const string LineaNexoLicitaciones = "Licitaciones";
+
+    /// <summary><c>detalle.motivo</c> de <c>MARGEN_LINEA_DESCONOCIDA</c> cuando llega "Licitaciones" (la línea de Nexo) en una licitación.</summary>
+    public const string DetalleLineaDeNexo = "LINEA_DE_NEXO";
+
+    /// <summary>
+    /// <c>MARGEN_LINEA_DESCONOCIDA</c> con las líneas que sí se pueden usar (HU-013.15, #124) en <c>detalle.lineas_validas</c>. Con
+    /// <paramref name="esLicitacion"/> y la línea "Licitaciones" del catálogo de Nexo, el mensaje explica que esa línea es de Nexo y
+    /// no da margen (<c>detalle.motivo = LINEA_DE_NEXO</c>): una licitación se crea con la línea de Cotifly que da el margen (decisión
+    /// del 2026-10-08, pregunta abierta en <c>docs/conexion_nexo/HU-013-preguntas-nexo.md</c>).
+    /// </summary>
+    public static clsErrorDominio LineaDesconocida(string? linea, IReadOnlyList<string> activas, bool esLicitacion = false)
+    {
+        ArgumentNullException.ThrowIfNull(activas);
+        var recibida = (linea ?? string.Empty).Trim();
+        var lista = activas.Count == 0 ? string.Empty : $" Usa una de estas: {string.Join(", ", activas)}.";
+        var deNexo = esLicitacion && clsReglasMargen.MismaLinea(recibida, LineaNexoLicitaciones);
+        var mensaje = deNexo
+            ? $"'{LineaNexoLicitaciones}' es una línea de negocio del catálogo de Nexo, no de Cotifly: una licitación se crea con la línea de "
+              + "negocio de Cotifly que le da el margen (la misma para todas sus filas)." + lista
+            : $"La línea de negocio '{recibida}' no existe en Cotifly." + lista;
+        return new clsErrorDominio(clsCodigosError.MargenLineaDesconocida, mensaje, deNexo ? DetalleLineaDeNexo : null)
+        {
+            Datos = new Dictionary<string, object?>(StringComparer.Ordinal) { ["lineas_validas"] = activas },
+        };
+    }
+
+    public async Task<IReadOnlyList<string>> LineasActivasAsync(CancellationToken cancellationToken = default) =>
+        [.. (await politicas.ListarAsync(cancellationToken)).Where(p => p.Activa).Select(p => p.LineaNegocio).Order(StringComparer.Ordinal)];
+
     public Task<clsMargenPolitica?> ResolverLineaAsync(string? lineaNegocio, CancellationToken cancellationToken = default)
     {
         var linea = lineaNegocio?.Trim() ?? string.Empty;

@@ -44,6 +44,8 @@ public sealed class clsDependenciasAplicacionTests
     [InlineData(typeof(IClsDestinatariosPreviosService), typeof(clsDestinatariosPreviosService), ServiceLifetime.Scoped)]
     [InlineData(typeof(IClsTelefonoComercialService), typeof(clsTelefonoComercialService), ServiceLifetime.Scoped)]
     [InlineData(typeof(IClsSeguimientoService), typeof(clsSeguimientoService), ServiceLifetime.Scoped)]
+    [InlineData(typeof(IClsCatalogoMotivosPerdida), typeof(clsCatalogoMotivosPerdida), ServiceLifetime.Singleton)]
+    [InlineData(typeof(IClsExportacionCotizacionService), typeof(clsExportacionCotizacionService), ServiceLifetime.Scoped)]
     [InlineData(typeof(IClsAuditoriaService), typeof(clsAuditoriaService), ServiceLifetime.Singleton)]
     [InlineData(typeof(clsCandadoEnvios), typeof(clsCandadoEnvios), ServiceLifetime.Singleton)]
     [InlineData(typeof(clsVerificadorIdentidad), typeof(clsVerificadorIdentidad), ServiceLifetime.Scoped)]
@@ -52,18 +54,18 @@ public sealed class clsDependenciasAplicacionTests
     [InlineData(typeof(IClsLogoutService), typeof(clsLogoutService), ServiceLifetime.Scoped)]
     [InlineData(typeof(IClsRevocacionAccesos), typeof(clsCacheTokensRevocados), ServiceLifetime.Singleton)]
     [InlineData(typeof(IClsMisCotizacionesService), typeof(clsMisCotizacionesService), ServiceLifetime.Scoped)]
+    [InlineData(typeof(IClsCotizacionesRegionalService), typeof(clsCotizacionesRegionalService), ServiceLifetime.Scoped)]
     [InlineData(typeof(IClsNuevaVersionService), typeof(clsNuevaVersionService), ServiceLifetime.Scoped)]
     [InlineData(typeof(IClsGeneradorFolioService), typeof(clsGeneradorFolioService), ServiceLifetime.Scoped)]
     [InlineData(typeof(IClsDescargaPdfService), typeof(clsDescargaPdfService), ServiceLifetime.Scoped)]
+    [InlineData(typeof(Cotifly.Aplicacion.Cotizaciones.Services.IClsAccesoCotizacionAjena), typeof(Cotifly.Aplicacion.Cotizaciones.Services.clsAccesoCotizacionAjenaService), ServiceLifetime.Scoped)]
     [InlineData(typeof(IClsLineasNegocioAdminService), typeof(clsLineasNegocioAdminService), ServiceLifetime.Scoped)]
-    [InlineData(typeof(IClsMetricasService), typeof(clsMetricasService), ServiceLifetime.Scoped)]
-    [InlineData(typeof(IClsAgenteRunner), typeof(clsAgenteRunner), ServiceLifetime.Scoped)]
-    [InlineData(typeof(clsContextoTurnoAgente), typeof(clsContextoTurnoAgente), ServiceLifetime.Scoped)]
-    [InlineData(typeof(clsHerramientasCotizador), typeof(clsHerramientasCotizador), ServiceLifetime.Scoped)]
-    [InlineData(typeof(IClsEstadoConversacionService), typeof(clsEstadoConversacionService), ServiceLifetime.Singleton)]
+    [InlineData(typeof(IClsLineasNegocioCatalogoService), typeof(clsLineasNegocioCatalogoService), ServiceLifetime.Scoped)]
+    [InlineData(typeof(IClsAsistenteFolioRunner), typeof(clsAsistenteFolioRunner), ServiceLifetime.Scoped)]
+    [InlineData(typeof(clsContextoAsistenteFolio), typeof(clsContextoAsistenteFolio), ServiceLifetime.Scoped)]
+    [InlineData(typeof(clsHerramientasAsistenteFolio), typeof(clsHerramientasAsistenteFolio), ServiceLifetime.Scoped)]
     [InlineData(typeof(IClsValidadorRespuestaAgente), typeof(clsValidadorRespuestaAgente), ServiceLifetime.Singleton)]
-    [InlineData(typeof(IClsProcesadorEventoChat), typeof(clsProcesadorEventoChat), ServiceLifetime.Scoped)]
-    [InlineData(typeof(IClsDescargaPdfFirmadaService), typeof(clsDescargaPdfFirmadaService), ServiceLifetime.Scoped)]
+    [InlineData(typeof(Cotifly.Aplicacion.Cubicacion.Interfaces.IClsCalculoCubicajeService), typeof(Cotifly.Aplicacion.Cubicacion.Services.clsCalculoCubicajeService), ServiceLifetime.Scoped)]
     public void AddAplicacionRegistraLosCasosDeUso(Type servicio, Type implementacion, ServiceLifetime ciclo)
     {
         var servicios = new ServiceCollection();
@@ -73,6 +75,22 @@ public sealed class clsDependenciasAplicacionTests
         servicios.Should().ContainSingle(d => d.ServiceType == servicio)
             .Which.Should().Match<ServiceDescriptor>(d => d.ImplementationType == implementacion && d.Lifetime == ciclo);
     }
+
+    // HU-013.9 (#105): el agente cotizador legado, el slot-filling y el procesamiento de Google Chat ya no se registran.
+    [Theory]
+    [InlineData("Cotifly.Aplicacion.Agente.Services.IClsAgenteRunner")]
+    [InlineData("Cotifly.Aplicacion.Agente.Services.IClsEstadoConversacionService")]
+    [InlineData("Cotifly.Aplicacion.Agente.Services.IClsProcesadorEventoChat")]
+    [InlineData("Cotifly.Aplicacion.Agente.Herramientas.clsHerramientasCotizador")]
+    [InlineData("Cotifly.Aplicacion.Agente.Services.clsContextoTurnoAgente")]
+    [InlineData("Cotifly.Aplicacion.Agente.Services.clsOpcionesChat")]
+    public void ElAgenteLegadoYGoogleChatYaNoExisten(string tipo) =>
+        typeof(clsDependenciasAplicacion).Assembly.GetType(tipo).Should().BeNull();
+
+    /// <summary>HU-023.2 (#157): el puerto de la cubicación rápida de Nexo se retiró; "Calcular cubicaje" usa el cubicador.</summary>
+    [Fact]
+    public void ElPuertoDeLaCubicacionDeNexoYaNoExiste() =>
+        typeof(clsDependenciasAplicacion).Assembly.GetType("Cotifly.Aplicacion.Cubicacion.Interfaces.IClsCubicacionProvider").Should().BeNull();
 
     /// <summary>Los casos de uso auditados (#11) se registran como decorador sobre la implementación concreta.</summary>
     [Theory]

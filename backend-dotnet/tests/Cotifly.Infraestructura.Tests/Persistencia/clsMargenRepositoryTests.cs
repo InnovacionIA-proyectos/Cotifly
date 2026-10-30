@@ -16,7 +16,7 @@ public sealed class clsMargenRepositoryTests(clsBaseDatosPruebas baseDatos) : cl
     [Theory]
     [InlineData("Nacional")]
     [InlineData("nacional")]
-    [InlineData(" ITR ")]
+    [InlineData(" Exportacion ")]
     public async Task LaPoliticaDeUnaLineaSembradaSeObtienePorNombreSinDistinguirMayusculas(string linea)
     {
         var politica = await ConsultarAsync(s => s.GetRequiredService<IClsMargenPoliticaRepository>().ObtenerPorLineaAsync(linea, Ct));
@@ -36,7 +36,7 @@ public sealed class clsMargenRepositoryTests(clsBaseDatosPruebas baseDatos) : cl
     }
 
     [Fact]
-    public async Task LaPoliticaSeObtienePorIdYSeListanLasOchoLineasOrdenadas()
+    public async Task LaPoliticaSeObtienePorIdYSeListanLasLineasOrdenadas()
     {
         var (porId, todas) = await ConsultarAsync(async s =>
         {
@@ -47,7 +47,9 @@ public sealed class clsMargenRepositoryTests(clsBaseDatosPruebas baseDatos) : cl
 
         porId!.LineaNegocio.Should().Be("Nacional");
         porId.MapeoLineasNexo.Should().Be("Nacional");
-        todas.Select(l => l.LineaNegocio).Should().Contain(["Almacenamiento", "ITR", "Nacional"]).And.BeInAscendingOrder(StringComparer.OrdinalIgnoreCase);
+        // HU-021 (§10): el 0009 retira Almacenamiento, Almacenamiento3PL e ITR y agrega DevolucionContenedor.
+        todas.Select(l => l.LineaNegocio).Should().Contain(["DevolucionContenedor", "Importacion", "Nacional"]).And.NotContain("ITR")
+            .And.BeInAscendingOrder(StringComparer.OrdinalIgnoreCase);
     }
 
     [Fact]

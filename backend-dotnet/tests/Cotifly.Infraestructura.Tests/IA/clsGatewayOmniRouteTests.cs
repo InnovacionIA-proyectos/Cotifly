@@ -189,7 +189,7 @@ public sealed class clsGatewayOmniRouteTests
         new clsValidadorOpcionesIA(new clsEntornoFalso("Production")).Validate(null, opciones).Succeeded.Should().BeTrue();
         opciones.FallbacksConfigurados().Should().BeEmpty();
         using var cliente = clsChatClientFactory.Crear(opciones, NullLoggerFactory.Instance, TimeProvider.System);
-        cliente.GetService<clsChatClientConRespaldo>().Should().BeNull("sin respaldos configurados no hay cadena de respaldo");
+        cliente.GetService<clsChatClientConRespaldo>().Should().NotBeNull("siempre hay decorador de respaldo, aunque con un solo proveedor: su caída llega como IA_NO_DISPONIBLE (HU-013.16)");
     }
 
     [Fact]

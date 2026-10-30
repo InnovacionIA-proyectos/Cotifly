@@ -1,10 +1,25 @@
 # ADR-015 — Costeo en Nexo: persistencia, envío, polling, margen y resultado
 
-- **Estado:** Aceptada (se implementa por partes: #24 persistencia, #21 envío, #22 polling, #23 margen y "Mis cotizaciones", #42 resultado). Varios puntos quedan pendientes de confirmar con el equipo de Nexo (ver Pendientes).
+- **Estado:** Aceptada; reemplazada en parte por [ADR-019](ADR-019-reestructuracion-rutas-y-camiones.md) (HU-021: rutas y camiones; ver la sección siguiente). Se implementó por partes: #24 persistencia, #21 envío, #22 polling, #23 margen y "Mis cotizaciones", #42 resultado. Varios puntos quedan pendientes de confirmar con el equipo de Nexo (ver Pendientes).
 - **Fecha:** 2026-09-28
 - **Issue / HU:** #24 (HU-005.8), #21 (HU-005.5), #22 (HU-005.6), #23 (HU-005.7), #42 (HU-005.14). Relacionada con ADR-003 (el LLM no pone números), ADR-004 (estado de la conversación), ADR-005 (búsqueda de clientes en Nexo), ADR-008 (esquema solo por scripts) y ADR-011 (folio).
 - **Nota de numeración:** ADR-013 es el despliegue en Dokploy y ADR-014 la TRM (HU-012); esta queda como ADR-015.
-- **Actualización 2026-10-05 (ADR-018, HU-013):** este flujo pasa a ser el ÚNICO cotizador. ADR-018 le agrega el ajuste de margen, los servicios conexos agregados en Nexo, la re-solicitud del costeo, los textos del PDF, la moneda en el formulario y la concurrencia con `If-Match`. También retira el chat como creador de cotizaciones (§7 de esta ADR queda superado). El mapeo de campos Nexo ↔ Cotifly verificado contra el código está en `docs/HU-005.1-mapeo-campos-nexo.md`, y el mapeo de los estados de Nexo con `estado_costeo` en ADR-018 §9.
+- **Actualización 2026-10-27 (HU-018.1, #155):** el motivo de una perdida sale de una lista configurable (la de Nexo) y `Otro` exige comentario (§6.1); el Excel de la cotización (`GET /web/cotizaciones/{folio}/excel`) lleva los costos solo en la versión del dueño (§5.2).
+- **Actualización 2026-10-27 (HU-039.1, #218):** reversa parcial de §5: el dueño ve el costo bruto de cada ruta (`rutas[].costo_final`, en COP), confirmada por la Gerencia Comercial (ver §5).
+- **Actualización 2026-10-05 (ADR-018, HU-013):** este flujo pasa a ser el ÚNICO cotizador. ADR-018 le agrega el ajuste de margen, los servicios conexos agregados en Nexo, la re-solicitud del costeo, los textos del PDF, la moneda en el formulario y la concurrencia con `If-Match`. También retira el chat como creador de cotizaciones (§7 de esta ADR queda superado). El mapeo de campos Nexo ↔ Cotifly verificado contra el código está en `docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md`, y el mapeo de los estados de Nexo con `estado_costeo` en ADR-018 §9.
+
+## Reemplazado en parte por ADR-019 (HU-021, 2026-10-08)
+
+El script `0009` reestructuró la cotización en solicitud → rutas → camiones y [ADR-019](ADR-019-reestructuracion-rutas-y-camiones.md) fija cómo lo usa el código. De esta ADR quedan reemplazados:
+
+- **Id de la solicitud de Nexo:** `Cotizaciones.costeoId` pasa a `CotizacionesSolicitud.solicitudNexoId` (script `0010`). `costeoUltimaConsultaAt` ya no existe (lo borró el `0009`). Donde esta ADR dice `costeoId` o `Cotizaciones`, léase `solicitudNexoId` y `CotizacionesSolicitud`.
+- **Unidad (§1):** ya no es "una cotización = una línea". El costo, el margen y el precio son de la ruta (`CotizacionLineasSolicitud`: `costoFinal`, `margenAplicado`, `precioFinalLinea`); `precioFinal` de la cabecera es la suma de las rutas. El margen sugerido se divide en `margenPoliticaSugerido` y `margenSAPSugerido` por ruta.
+- **Envío (§3):** a Nexo viaja **una línea por camión** (`CotizacionVehiculosLineaSolicitud`), con la línea de negocio de su ruta. `valorEstimado` y `referencia` ya no viajan (decisión 1).
+- **Estados (§2 y §4):** el estado de costeo se guarda en cada camión y se resume en la ruta y en la cabecera ("el más atrasado", `clsResumenEstadoCosteo`). Los códigos y la derivación desde Nexo no cambian.
+- **Servicios conexos (§1 y §5):** el JSON `serviciosConexos` se reemplazó por filas de la ruta (`CotizacionServiciosConexos`), con el costo de Nexo como precio, y suman al precio de la ruta (decisión 3).
+- **Por qué:** con varias rutas y varios camiones por ruta, Nexo costea cada camión por separado y el margen depende de la línea de negocio de cada ruta.
+
+El `/health/ready` ya no responde `falta 0004`: hoy solo informa `falta 0002`, `falta 0009`, `falta 0010` o `falta Tabla.columna` (ADR-019, "Sonda `/health/ready`").
 
 ## Contexto
 
@@ -14,7 +29,7 @@ El tarifario de Google Drive se retiró: el costo de una cotización lo calcula 
 - **Errores:** siempre `{code, message, timestamp, details?}`.
 - **Alta:** `POST /api/captura-solicitudes` (`Comercial`, `Admin`) con `CapturaSolicitudRequest` → `201 CapturaResultDto {id, lineas, rutasCreadas, vehiculosCreados, scorePrioridad, fletesCalculados, lineasPorCostear, costeoEnProceso}`. Con 10 líneas o menos, Nexo auto-costea en la misma petición (consulta sus bibliotecas y crea una cotización `Borrador` con los fletes que encuentre); con más, lo hace en segundo plano.
 - **No existe `GET /api/captura-solicitudes/{id}`** (lo que suponía la HU-005.6). El estado de la solicitud sale de `GET /api/solicitudes/{id}` (`SolicitudCosteoDto`: `solicitud.estado` = `Pendiente|EnCosteo|Entregada|Descartada` y `solicitud.lineas[].id`). Los fletes viven en la cotización de Nexo, que se obtiene con `POST /api/cotizaciones {solicitudId}` ("crear o recuperar": devuelve la entregada si la solicitud ya se entregó, el borrador existente si hay uno, o crea un borrador vacío) → `CotizacionDto {id, estado: Borrador|Entregada, resultado, total, lineas[{lineaSolicitudId, valorFlete, valorAprovisionamiento, valorRetornoContenedor}], conexos[{nombre, categoria, cantidad, valorAplicado}]}`.
-- **Resultado:** `POST /api/cotizaciones/{id}/resultado` (`Comercial`, `AdminTarifas`, `CoordinadorFletes`, `Admin`), donde `{id}` es el id de la **cotización** de Nexo (no el de la solicitud, como decía la HU-005.14), con `{resultado: "ganada"|"perdida", motivo?, comentario?}` → `200 CotizacionDto`. Re-marcar el mismo resultado es idempotente; cambiarlo responde `409 RESULTADO_YA_DEFINIDO`. **Desde la issue #171 de Nexo ya no hay "entrega implícita":** una cotización en `Borrador` responde `409 COTIZACION_NO_ENTREGADA`; solo `POST /api/cotizaciones/{id}/entregar` (roles `AdminTarifas`, `CoordinadorFletes`, `Admin`) la entrega.
+- **Resultado:** `POST /api/cotizaciones/{id}/resultado` (`Comercial`, `AdminTarifas`, `Admin` (NEXO#307, S6-HU-25.1: `CoordinadorFletes` pasa a `AdminBiblioteca` y sale de cotizaciones; antes también lo admitía)), donde `{id}` es el id de la **cotización** de Nexo (no el de la solicitud, como decía la HU-005.14), con `{resultado: "ganada"|"perdida", motivo?, comentario?}` → `200 CotizacionDto`. Re-marcar el mismo resultado es idempotente; cambiarlo responde `409 RESULTADO_YA_DEFINIDO`. **Desde la issue #171 de Nexo ya no hay "entrega implícita":** una cotización en `Borrador` responde `409 COTIZACION_NO_ENTREGADA`; solo `POST /api/cotizaciones/{id}/entregar` (roles `AdminTarifas` y `Admin`; `CoordinadorFletes` sale con NEXO#307) la entrega.
 - **Regla de `estado_costeo` (HU-005.7):** la "atención" de la bandeja de Nexo (`EfSolicitudesCatalogoRepository`) cruza cada línea de la solicitud contra las líneas de cotización por `LineaSolicitudId`.
 
 ## Decisión
@@ -23,7 +38,7 @@ El tarifario de Google Drive se retiró: el costo de una cotización lo calcula 
 
 - **Una cotización de Cotifly = una solicitud de Nexo con una sola línea.** `Cotizaciones` guarda un solo costo y un solo precio (ADR-004, "Números del PDF"); las licitaciones de muchas líneas quedan fuera de esta iteración.
 - Script `db/migrations_mssql/0004_costeo_nexo.sql` (idempotente, **pendiente de aprobación de scalderon-bs y del DBA**, coordinado con HU-002 como el 0002 y el 0003):
-  - 22 columnas del formulario ampliado en `Cotizaciones` (encabezado y línea de `CapturaSolicitudRequest`, nombres del mapeo aprobado en `docs/MAPEO_CAMPOS_NEXO_COTIFLY.md`);
+  - 22 columnas del formulario ampliado en `Cotizaciones` (encabezado y línea de `CapturaSolicitudRequest`, nombres del mapeo aprobado en `docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md`);
   - 7 columnas de seguimiento: `cotizacionNexoId`, `motivoEstadoCosteo`, `costeoEnviadoAt`, `costeoUltimaConsultaAt`, `costeoSiguienteConsultaAt` (agenda del polling, índice filtrado), `costeoConsultasFallidas` y `serviciosConexos` (JSON, `CHECK ISJSON`);
   - tabla `CotizacionPosiciones` (cubicaje, 1 a N, centímetros y kilogramos como Nexo).
 - Las columnas `costeoId`, `nitCliente` y `estadoCosteo` del 0001 se usan tal cual. `estadoCosteo` pasa a ser el enum `EstadoCosteo` (códigos snake_case).
@@ -75,20 +90,109 @@ El tarifario de Google Drive se retiró: el costo de una cotización lo calcula 
 
 - El margen se resuelve **al enviar** (ahí está el BP): `IClsMargenResolverService` con la línea y el BP → `margenPolitica`, `margenAplicado`, `origenMargen`, `metodoCalculo` y `lineaNegocioId` quedan en la cotización.
 - Cuando el polling ve el costeo completo (`autocosteo` o `entregada`): `costo` = flete + aprovisionamiento + retorno del contenedor de la línea; `precioFinal` = `IClsPrecioService.Calcular(costo, margenAplicado, metodo)` (HU-003.4); `costeoListoAt`. Cada servicio conexo guarda su precio con el mismo margen y método, e `incluido = true` por defecto.
-- Si el costeo cambia después, el precio se recalcula mientras no haya PDF; con PDF ya generado se conserva, se audita y `motivoEstadoCosteo` lo advierte (el comercial genera una versión nueva).
+- Si el costeo cambia después, el precio se recalcula mientras no haya PDF ni la cotización esté finalizada; con PDF ya generado o
+  finalizada (HU-036.4, #208, §5.1) se conserva, se audita y `motivoEstadoCosteo` lo advierte (el comercial genera una versión nueva).
 - **El costo bruto de Nexo nunca llega al comercial como precio:** `CotizacionResumen` no tiene costo y `precio_final` sigue `null` hasta que pasa por Margen/Precio; `GET /web/cotizaciones/{folio}/costeo` solo devuelve precios.
+  - **Reversa parcial (2026-10-27, HU-039.1, #218).** Sara (Gerencia Comercial) confirmó el 2026-10-27 revertir la regla "el costo bruto nunca llega al comercial": el **dueño** de la cotización ve el costo bruto de cada ruta en `rutas[].costo_final` de `GET /web/cotizaciones/{folio}/costeo` (y de las demás respuestas `CosteoCotizacion` y del `costeo` del detalle por folio). Se mantiene lo demás: el costo nunca se muestra **como precio** (`precio_final` sigue saliendo de Margen/Precio), va **siempre en COP** aunque la cotización esté en USD, es `null` mientras la ruta no tenga precio, no hay desglose ni costo por camión o por conexo, el gerente en solo consulta lo recibe en `null` (decisión conservadora) y no sale en `CotizacionResumen` ("Mis cotizaciones" y listado regional), el PDF, el correo, el Excel ni el asistente (pruebas en `clsCostoBrutoSinFugasTests` y `costo_bruto_ruta.feature`).
 - **Solo COP en esta iteración.** Esta rama sale de `QA`, que todavía no tiene la TRM (frente de HU-012, #50 a #52, ADR-014). Cuando se integre, una cotización en USD debe pasar por `IClsPrecioService.CalcularAsync` con la moneda, fijar la TRM en el momento en que llega el costeo y pasar `trmAplicada` al PDF. **Pendiente de integración con HU-012.**
 - Selección de servicios conexos: `PUT /web/cotizaciones/{folio}/costeo/servicios-conexos`. PDF: `POST /web/cotizaciones/{folio}/costeo/pdf` arma el payload desde la cotización (flete con `precioFinal` y los conexos incluidos con su precio) y reutiliza el módulo PDF (HU-003.5); si ya tiene PDF responde `PDF_YA_GENERADO`.
+
+#### 5.1 Cotización finalizada (HU-036, #205 a #208, 2026-10-26)
+
+**Contexto.** Hasta HU-036 el único "candado" del precio era el PDF (arriba) y la entrega al cliente (envío o resultado, ADR-018 §11). Entre el
+costeo listo y el PDF, el precio podía cambiar por debajo del comercial (el polling, la Mesa entregando con otro valor) sin que él lo
+aceptara, y el PDF, el correo y el resultado salían sobre un precio que nadie había confirmado.
+
+**Decisión.**
+
+- **#206, el acto de finalizar.** `POST /web/cotizaciones/{folio}/finalizar` con `If-Match`, solo el dueño
+  (`clsFinalizacionCotizacionService`, regla en `clsCotizacionSolicitud.Finalizar`). Solo con el costeo de Nexo listo: `estadoCosteo` en
+  `autocosteo` o `entregada` (que todas las rutas tengan precio lo garantiza ya `clsResumenEstadoCosteo`; las rutas `rechazada` no
+  cuentan); si no, 409 **`COTIZACION_NO_FINALIZABLE`** (código nuevo, para no sobrecargar `ESTADO_NO_PERMITE`, con
+  `detalle.estado_costeo`). Tampoco con un conexo que Nexo ya tiene y Cotifly todavía no leyó (`ConexosPendientesDeLeer`, HU-013.15):
+  el mismo 409 con `detalle.motivo = conexos_pendientes_de_leer`, porque con el precio congelado (#208) ese conexo ya no entraría. Re-finalizar es 200 sin cambios (idempotente, como re-marcar el mismo resultado); un `If-Match` que no
+  coincide es 409 `CONFLICTO_CONCURRENCIA`, como el resto de las mutaciones (también si ya estaba finalizada: primero la versión).
+- **Columnas propias, no un estado.** `finalizadaAt` y `finalizadaPor` (FK a `UsuariosWeb`, `UNIQUEIDENTIFIER` como su PK),
+  `db/scripts/14_cotizacion_finalizada.sql`. No es un valor de `estadoCosteo` a propósito: el polling deriva ese estado de Nexo en cada
+  vuelta y lo pisaría; la cotización finalizada sigue avanzando (`autocosteo` → `entregada`). Se expone como `finalizada_at` en
+  `CotizacionResumen`, `CosteoCotizacion` y `FechasCotizacion`.
+- **Concurrencia.** La finalización confirma con la versión del `If-Match` sobre la fila bloqueada y sube `versionNegocio`: si el polling
+  cambió el precio después de que el comercial lo leyó, la finalización pierde (409) y el comercial recarga; si la finalización gana, la
+  vuelta del polling que se cruzó no guarda y la siguiente ya ve la cotización finalizada.
+- **Sin backfill.** Las cotizaciones existentes quedan sin finalizar; el comercial las finaliza una por una (conteo en `DEPLOY.md` §4.5).
+- **#207, candados después de finalizar.** La regla del PDF de ADR-018 §11 se amplía en UN solo lugar:
+  `clsCotizacionSolicitud.ValidarCambioEtapaFinal` = entregada al cliente **o finalizada** → `PDF_YA_ENVIADO` con la versión nueva
+  (`clsReglaPdfCosteo.Validar`). Así quedan bloqueados, sin repetir el candado en cada servicio, el margen, los conexos, los conexos en
+  Nexo, la re-solicitud en el mismo folio, el levante y el recálculo de camiones (`ReemplazarCamionesDeRuta` y su servicio). La edición
+  resuelve `NuevaVersion` con la cotización finalizada (`ModoEdicion`, decisión de Sara). Los textos y el PDF usan la regla anterior
+  (`ValidarEntregaAlCliente`): se hacen DESPUÉS de finalizar y hasta enviarla.
+- **#207, candados antes de finalizar.** El PDF, el envío por correo y los textos (`ValidarFinalizadaAntesDe`) y el resultado
+  (`ValidarFinalizadaAntesDelResultado`) responden 409 **`COTIZACION_NO_FINALIZADA`** (código nuevo; "Finaliza la cotización antes
+  de…", con la llamada a `.../finalizar` en `detalle`). Es validación de dominio: el asistente queda bloqueado sin tocarlo. No aplica a
+  las entregadas al cliente antes de HU-036 (sin backfill) ni a las del chat. En el resultado solo aplica con el costeo listo
+  (`AdmiteFinalizar`): la perdida antes del costeo (HU-013.17), la ganada pendiente de sincronizar en `pendiente_costeo` (HU-033) y la
+  perdida por `/seguimiento` en `descartada` y `costeo_vencido` (decisión de Sara) siguen como antes.
+- **#208, precio congelado frente al polling.** `clsCotizacionSolicitud.PrecioCongelado` = PDF generado **o** finalizada. Con él, la
+  lectura de Nexo solo registra el estado de los camiones (`clsPrecioCosteoService.ActualizarCamiones`): el `estadoCosteo` sigue
+  avanzando (`autocosteo` → `entregada`) y el precio, los costos y los conexos guardados no cambian. Con la cotización finalizada, si Nexo
+  trae otro costo (o rechaza un camión que estaba costeado), `motivoEstadoCosteo` dice qué rutas cambiaron (orden y origen → destino, sin
+  montos: `MotivoCambioDespuesDeFinalizar`) y el polling audita lo guardado frente a lo de Nexo por camión (`costeo_nexo_precio_congelado`).
+  El aviso cuenta como cambio de negocio (sube `versionNegocio`) solo cuando cambia: la misma diferencia en cada vuelta no se repite;
+  si Nexo vuelve a los costos finalizados (o la Mesa deshace el rechazo), el aviso se quita (`QuitarAvisoCosteo`). Validación: con una
+  ruta rechazada después de finalizar, el total congelado ya no es la suma de las rutas que cuentan y el PDF responde `COSTEO_NO_LISTO`
+  con la versión nueva en `detalle` (ninguna lectura lo cuadra). Validación: tampoco se finaliza con un conexo de Nexo pendiente de leer
+  (#206), porque con el precio congelado el polling ya no lo importaría.
+- **#208, parte B (no es código).** `CosteoNexo:EdadMaximaHoras` sigue en 72. Subirlo por encima de lo que tarda la Mesa es una propuesta
+  pendiente de acordar con Nexo (`DEPLOY.md` §2.2); cambiarlo no revive las cotizaciones ya vencidas.
+
+
+#### 5.2 Excel de la cotización (HU-018.1, #155, 2026-10-27)
+
+**Decisión del usuario (2026-10-27).** `GET /web/cotizaciones/{folio}/excel` (ClosedXML, como el de la licitación) tiene dos versiones con
+la regla de acceso del detalle por folio:
+
+- **Dueño: versión interna.** Por ruta y por camión, con los costos de Nexo (siempre en COP), el margen, el precio, los conexos (costo y
+  precio) y los totales. Es una ampliación deliberada de la reversa de §5 (#218), que en la vista del costeo solo da el costo bruto de la
+  ruta: el Excel interno sí abre el costo por camión y por conexo para el dueño. Como en §5, nunca un costo sin su precio (una ruta
+  rechazada o un camión que no cuenta salen sin costos).
+- **Gerente comercial de la regional del dueño y director: la misma sin nada interno.** Ni una columna de costo ni una de margen (con el
+  margen y el precio se deduce el costo), con el criterio de `SinCostoFinal()` de #218. Cada descarga queda en la auditoría
+  (`exportar_excel_cotizacion`).
+- **Cualquier otro: 404.** Sin precio, 409 `COSTEO_NO_LISTO`.
+
+**Cómo se garantiza.** Todo lo interno del modelo del Excel (`clsExcelCotizacion`) cuelga de propiedades `Interno` que `SinCostos()` pone en
+`null`, y el exportador no escribe ni los encabezados de esas columnas sin ellas. `clsCostoBrutoSinFugasTests` exige que ningún campo
+`Costo*` ni `Margen*` del modelo quede fuera de un `Interno`, que `SinCostos()` no deje nada interno y que el Excel no use la vista del
+costeo. Solo lee lo guardado: con la cotización finalizada o con PDF los precios y los costos son los congelados (§5.1). Solo escribe, así
+que no usa el cupo de lecturas de Excel (`clsLecturaExcelAcotada`).
 
 ### 6. Resultado ganada/perdida (#42)
 
 - `POST /web/cotizaciones/{folio}/resultado` `{resultado, motivo?, comentario?}`, solo el dueño (404 si no, como el resto de `/web/cotizaciones`).
 - Dos escrituras: primero Nexo (`POST /api/cotizaciones/{cotizacionNexoId}/resultado`; si Cotifly aún no tiene `cotizacionNexoId`, lo recupera con `POST /api/cotizaciones {solicitudId}`), y **solo con 200** se actualizan `ganada`, `motivoRechazo` (= `motivo`) y `marcadoAt`. `comentario` se reenvía a Nexo y no se persiste en Cotifly (decisión de la HU-005.14).
-- `409 RESULTADO_YA_DEFINIDO` y `409 COTIZACION_NO_ENTREGADA` de Nexo → 409 `ErrorNegocio` con el mismo código y **ningún cambio local**. Nexo caído → 503 `COSTEO_NEXO_NO_DISPONIBLE`, sin cambio local.
+- `409 COTIZACION_NO_ENTREGADA` de Nexo → 409 `ErrorNegocio` con el mismo código y ningún cambio local. `409 RESULTADO_YA_DEFINIDO` de Nexo → 409 con el mismo código, pero **con un cambio local**: ADR-018 §17 (corrección "Resultado ya definido en Nexo", #123) lo matiza. Cotifly lee el resultado que tiene Nexo, lo guarda con `versionNegocio` si difiere del suyo (Nexo es la fuente de verdad del resultado) y responde el 409 con ese resultado en `detalle` (`clsResultadoCotizacionService`). Nexo caído → 503 `COSTEO_NEXO_NO_DISPONIBLE`, sin cambio local.
 - **Entrega implícita:** la HU-005.14 la describía (marcar el resultado sobre un `Borrador` lo entregaba sin correo). Nexo la eliminó (issue #171): hoy ese caso responde `COTIZACION_NO_ENTREGADA`. Si Nexo la restableciera, `estado_costeo` puede saltar a `entregada` en el mismo momento de marcar el resultado aunque antes estuviera en `autocosteo` o `pendiente_costeo`: Cotifly lo trata como un estado válido (el polling y este endpoint derivan el estado de la respuesta de Nexo), nunca como una inconsistencia.
 - `POST /web/cotizaciones/{folio}/seguimiento` (interino) se conserva por compatibilidad con el frontend y queda marcado como obsoleto en el contrato. Se decide por el flujo de costeo (`estadoCosteo` con valor), no por `costeoId` (lo llena también el chat con la referencia de la tarifa y lo traen filas del Python): en el flujo de costeo responde 409 `USAR_RESULTADO_NEXO`, **salvo `descartada` y `costeo_vencido`**, que se marcan solo en Cotifly porque Nexo no les acepta resultado. Las del chat (`estadoCosteo` nulo) siguen como antes.
 - `POST .../resultado` sobre una cotización que no está en `autocosteo` ni `entregada` responde `COTIZACION_NO_ENTREGADA` sin llamar a Nexo (no se crea un borrador vacío solo para que lo rechace). `SOLICITUD_NO_TRANSICIONABLE` de Nexo pasa como 409; 404 `COTIZACION_NO_ENCONTRADA` como 404; 401/403 de Nexo son configuración (identidad o rol del comercial): 503 `COSTEO_NEXO_NO_DISPONIBLE` con una línea de error en el log; otro 4xx, 400 `COSTEO_NEXO_RECHAZADA`.
 - `POST .../costeo/reintentar` no se permite si la cotización ya tiene resultado (`ganada` con valor).
+
+#### 6.1 Motivo de pérdida de una lista (HU-018.1, #155, 2026-10-27)
+
+**Decisión del usuario (2026-10-27, P5 = a).** Al marcar `perdida`, el motivo es **obligatorio** y sale de una lista configurable
+(`Resultado:MotivosPerdida`; por defecto la de Nexo, `mesa-costeo-page.component.ts`: `Valor muy alto`, `Flete fuera de rango de
+plaza`, `Cliente desistió del servicio`, `Tiempo de respuesta vencido` y `Otro`). `Otro` (`Resultado:MotivoConComentario`) exige comentario.
+
+- Se valida en `/resultado` (también en la perdida solo en Cotifly y en la pendiente de sincronizar) y en `/seguimiento`, que sigue siendo
+  el camino de las del chat, `descartada` y `costeo_vencido`: 400 `MOTIVO_NO_PERMITIDO` (código nuevo) con `detalle.motivos_permitidos` y
+  `detalle.requiere_comentario`, sin llamar a Nexo. Se compara sin distinguir mayúsculas y se guarda con la escritura de la lista.
+- **Compatibilidad con Nexo:** su contrato no cambia. Viajan `motivo` (el de la lista) y `comentario` aparte, como antes; la sincronización
+  diferida (HU-033) separa el motivo de lo guardado.
+- **En Cotifly:** `motivoRechazo` guarda el motivo; con `Otro`, `"Otro: {comentario}"` (en `/seguimiento` esas cotizaciones nunca van a
+  Nexo, y así el comentario no se pierde). Con otro motivo el comentario solo va a Nexo (HU-005.14). Sin script: `motivoRechazo` ya es
+  `NVARCHAR(MAX)`.
+- Lo guardado antes (motivo libre o sin motivo) no se revalida: sigue siendo válido.
+- La lista se publica en `GET /web/motivos-perdida`, que no depende de Nexo (por eso no va en `GET /web/catalogos-flete`, que responde 503
+  cuando Nexo no tiene copia utilizable).
 
 ### 7. Agente de chat
 
@@ -111,7 +215,7 @@ No se agrega una herramienta `enviar_a_costeo` en esta iteración. La HU-005.5 e
 - "Mis cotizaciones" muestra el estado real del costeo (`estado_costeo` y `motivo_estado_costeo`), y `precio_final` solo cuando pasó por el margen.
 - Las cotizaciones del chat (costo manual) no cambian: `estado_costeo = null`, sin polling.
 - El 0004 debe aplicarse antes de desplegar esta versión (la readiness lo exige).
-- La primera consulta del polling crea en Nexo el borrador vacío de una solicitud que no se auto-costeó (lo mismo que hace la Mesa de Nexo al abrirla). Es **una sola vez por solicitud**: las consultas siguientes recuperan ese mismo borrador ("crear o recuperar").
+- ~~La primera consulta del polling crea en Nexo el borrador vacío de una solicitud que no se auto-costeó.~~ **Reemplazado (E2E real 2026-10-16):** el "crear o recuperar" es una escritura y el polling la hacía en cada ciclo (69 `POST /api/cotizaciones` en 20 min para 5 solicitudes). Ahora el polling solo lee: `GET /api/cotizaciones/{cotizacionNexoId}` si ya lo guardó, o `GET /api/cotizaciones/por-solicitud/{solicitudId}` (Nexo S5-HU-20.1, #286: 200 o 204 sin crear nada). La cotización la crean el autocosteo o la Mesa; el `POST` queda para marcar el resultado sin id conocido y para un Nexo sin la ruta de lectura (una vez por solicitud: después se lee por el id guardado).
 - **Efecto de `GET /api/solicitudes/{id}` en Nexo:** abrir la solicitud la pasa de `Pendiente` a `EnCosteo` (`ObtenerCosteoQuery`). La primera consulta del polling (a los 5 s) cambia así la bandeja de la Mesa y los KPIs de Nexo ("pendientes" vs "en costeo") aunque nadie la haya abierto. Pendiente con Nexo (ver Pendientes).
 - **Ambientes con base compartida:** si staging y producción de Nexo comparten base, el polling de un staging de Cotifly consultaría (y cambiaría de estado) solicitudes reales. Staging corre con `CosteoNexo__Habilitado=false` hasta que el DBA confirme esquemas separados.
 - **PDF en `autocosteo`:** se permite generar el PDF con el costeo automático, sin esperar a que el coordinador entregue (`entregada`). Pendiente de confirmar con negocio si debe exigirse `entregada`.
@@ -132,7 +236,7 @@ No se agrega una herramienta `enviar_a_costeo` en esta iteración. La HU-005.5 e
 | Intervalo de polling que acepta Nexo (por defecto 5 s al inicio, hasta 15 min, 72 h de edad máxima) y límites de rate limiting | Equipo de Nexo |
 | Clave de idempotencia o referencia externa en el alta, para reintentar sin riesgo de duplicar tras un tiempo agotado | Equipo de Nexo |
 | Cómo enviar prospectos (Nexo exige `clienteId` o `clienteBp`; el buscador de Cotifly no expone el `clienteId` de Nexo) | Duban + equipo de Nexo |
-| Identidad y rol con que Cotifly marca el resultado (hoy el comercial; Nexo exige `Comercial`, `AdminTarifas`, `CoordinadorFletes` o `Admin`) y confirmar que la entrega implícita no vuelve (issue #171 de Nexo) | Duban + equipo de Nexo |
+| Identidad y rol con que Cotifly marca el resultado (hoy el comercial; Nexo exige `Comercial`, `AdminTarifas` o `Admin`; `CoordinadorFletes` sale con NEXO#307) y confirmar que la entrega implícita no vuelve (issue #171 de Nexo) | Duban + equipo de Nexo |
 | Si los servicios conexos llevan el mismo margen que el flete | Negocio (Gerencia Comercial) |
 | Precio en USD sobre el costeo: `IClsPrecioService.CalcularAsync` con la moneda, TRM fijada al llegar el costeo y `trmAplicada` en el PDF (hoy solo COP) | Duban (integración con HU-012, #50 a #52) |
 | Probar contra Nexo real que marcar "ganada" alimenta la Biblioteca de Tarifas Ganadas (`TarifaHistorica`) | Duban + equipo de Nexo |

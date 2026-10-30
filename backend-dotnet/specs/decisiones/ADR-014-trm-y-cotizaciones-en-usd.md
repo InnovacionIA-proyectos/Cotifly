@@ -1,12 +1,20 @@
 # ADR-014 — TRM del día y cotizaciones en dólares
 
-- **Estado:** Aceptada. La revisión del 2026-10-05 (fuente DolarApi con respaldo, nota del PDF y licitaciones en USD) la pidió negocio; ver "Revisión del 2026-10-05".
+- **Estado:** Aceptada; reemplazada en parte por ADR-019 (dónde se guarda y cómo se suma el precio). La revisión del 2026-10-05 (fuente DolarApi con respaldo, nota del PDF y licitaciones en USD) la pidió negocio; ver "Revisión del 2026-10-05".
 - **Fecha:** 2026-09-28, revisada el 2026-10-05
 - **Issue / HU:** #50 (HU-012.1), #51 (HU-012.2), #52 (HU-012.3). Relacionada con ADR-003 (el LLM no pone números), ADR-004 (estado de la conversación), ADR-006 (PDF), ADR-017 (licitaciones) y HU-010 (métricas en COP con `trmAplicada`).
 
+## Reemplazado en parte por ADR-019 (HU-021, 2026-10-08)
+
+[ADR-019](ADR-019-reestructuracion-rutas-y-camiones.md) (script `0009`) reorganizó la cotización en solicitud → rutas → camiones. Para esta ADR:
+
+- **Sigue vigente:** la fuente de la TRM, su caché y redondeo, la conversión `round(precio_cop / trm, 2)`, la nota del PDF y la regla de la TRM fija (mismo folio) o refrescada (`-vN`). La moneda y la TRM siguen siendo de la cabecera: `CotizacionesSolicitud.moneda` y `CotizacionesSolicitud.trmAplicada` (antes `Cotizaciones.*`).
+- **Reemplazado:** el precio ya no es uno por cotización. Cada ruta calcula su `precioFinalLinea` (en la moneda y con la TRM de la cabecera, `clsCalculadoraPrecio`) sobre su `costoFinal`, que incluye los servicios conexos de la ruta. `precioFinal` de la cabecera es la suma de los `precioFinalLinea` (NULL mientras alguna ruta no tenga precio). Donde este texto dice "precio de cada línea" o "el total es la suma de las líneas", léase ruta.
+- **Por qué:** con varias rutas y varios camiones por ruta, el costo lo da Nexo por camión y el margen depende de la línea de negocio de cada ruta (ADR-019, "Agregado y reglas").
+
 ## Contexto
 
-HU-012 pide cotizar en dólares con la TRM del día. Las reglas del backlog (`docs/HU_Backlog_Cotifly_ClientePro.md`, HU-012) son:
+HU-012 pide cotizar en dólares con la TRM del día. Las reglas del backlog (`docs/archivo/backlog/2026-09-21_HU_Backlog_Cotifly_ClientePro.md`, HU-012) son:
 
 - si `moneda="USD"`, el precio se convierte con la TRM del día de la cotización y esa TRM queda guardada en `Cotizaciones.trmAplicada`;
 - con `moneda="COP"`, `trmAplicada` es 0 y nunca `null`;
@@ -93,7 +101,7 @@ Así los sábados, domingos y festivos reciben la TRM del rango que los cubre (l
 - La TRM se fija al calcular el precio (el que ve el comercial en la previsualización) y es la misma que se guarda con el PDF, siempre que siga vigente al confirmar: si hoy ya está fuera de su rango de vigencia, el servidor recalcula con la TRM vigente y vuelve a previsualizar. El LLM nunca la aporta (ADR-003).
 - Con `moneda="COP"`: `trm_aplicada = 0`.
 - Si la TRM falla, `calcular_precio` (y el ajuste de margen en USD) devuelve `TRM_NO_DISPONIBLE` y no hay precio en el estado: no se puede generar el PDF en USD.
-- La moneda la elige el comercial: en la consola web, con el campo opcional `moneda` (`COP|USD`) de `MensajeWeb` (selector de HU-012.4) y de `LicitacionWeb` (§5); en Google Chat, cuando lo pide en su mensaje. La detalla #51.
+- La moneda la elige el comercial: en la consola web, con el campo opcional `moneda` (`COP|USD`) de `MensajeWeb` (selector de HU-012.4) y de `LicitacionWeb` (§5); en Google Chat, cuando lo pedía en su mensaje (Google Chat y el agente cotizador se retiraron en HU-013.9, #105; desde entonces el `moneda` de `MensajeWeb` se ignora y la moneda sale del formulario de costeo). La detalla #51.
 
 ### 4. PDF (HU-012.3)
 
@@ -113,6 +121,8 @@ La tabla muestra `US$` con 2 decimales. Debajo de la tabla, en un recuadro y **s
 - la licitación queda en `USD` con esa `trmAplicada`. El polling del costeo calcula el precio de cada línea en pesos y lo convierte con esa TRM (`round(precio_cop / trm, 2)`); el total es la suma de las líneas en USD y los servicios conexos también van en USD;
 - el PDF de pliego en USD sale con la misma nota del §4 (ya no se rechaza);
 - el Excel exportado indica la moneda en la columna del precio (`Precio final Cotifly (USD)`) y la TRM en el resumen.
+
+**Re-solicitud y versiones (HU-013.4, #100; decisión del usuario del 2026-10-06).** La TRM fijada de una cotización no cambia mientras siga siendo la misma cotización: re-solicitar el costeo en el mismo folio y `.../costeo/reintentar` conservan la moneda y la `trmAplicada`. En cambio, la versión nueva `-vN` es una cotización nueva: copia la moneda pero **vuelve a fijar la TRM del día** (`IClsFijacionMonedaService.FijarAsync`) antes de reservar la versión de la original y antes de llamar a Nexo; sin TRM, `TRM_NO_DISPONIBLE` (400, igual que el formulario y las licitaciones) y no se crea nada (ni la reserva, ni la `-vN`, ni la captura). Re-solicitar en el mismo folio y reintentar conservan la moneda y la TRM fijadas.
 
 ## Alternativas consideradas
 

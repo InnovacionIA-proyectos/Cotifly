@@ -34,7 +34,8 @@ public sealed class clsCacheCatalogoMunicipios
 /// <summary>
 /// Decorador de <see cref="IClsMunicipiosProvider"/> que reutiliza el catálogo de Nexo durante <c>Nexo:MinutosCacheMunicipios</c>
 /// (HU-005.13). <c>clsFabricaMunicipios</c> lo pone delante de <see cref="clsMunicipiosNexo"/> cuando Nexo está configurado y los
-/// minutos son mayores que cero. Lo usan <c>GET /web/municipios</c> y la herramienta <c>resolver_municipio</c> del agente.
+/// minutos son mayores que cero. Lo usan <c>GET /web/municipios</c> y la validación de la captura y de licitaciones (la herramienta
+/// <c>resolver_municipio</c> del agente legado se retiró en HU-013.9, #105).
 /// </summary>
 /// <remarks>
 /// <list type="bullet">
@@ -61,6 +62,11 @@ public sealed class clsMunicipiosEnCache(
     ILogger<clsMunicipiosEnCache> logger)
     : IClsMunicipiosProvider
 {
+    /// <summary>HU-023 (#176): la búsqueda (<c>/ciudades</c>) no se guarda en memoria: va directo a Nexo.</summary>
+    public Task<clsResultado<IReadOnlyList<clsMunicipio>>> BuscarAsync(
+        Guid usuarioId, string? texto, string? departamento, CancellationToken cancellationToken = default) =>
+        interno.BuscarAsync(usuarioId, texto, departamento, cancellationToken);
+
     public Task<clsResultado<IReadOnlyList<clsMunicipio>>> ObtenerAsync(Guid usuarioId, CancellationToken cancellationToken = default)
     {
         if (Vigente() is { } foto)

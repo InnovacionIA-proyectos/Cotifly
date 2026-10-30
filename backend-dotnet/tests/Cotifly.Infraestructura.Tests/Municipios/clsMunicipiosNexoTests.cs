@@ -1,5 +1,6 @@
 using System.Net;
 using Cotifly.Aplicacion.Identidad.Repositories;
+using Cotifly.Aplicacion.Municipios.DTOs;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Identidad;
 using Cotifly.Infraestructura.Configuracion;
@@ -48,6 +49,29 @@ public sealed class clsMunicipiosNexoTests : IDisposable
         peticion.IdPortalUsuario.Should().Be("1007");
         peticion.Accept.Should().Be("application/json");
     }
+
+    [Fact]
+    public async Task LaBusquedaVaContraCiudadesConElTextoYElDepartamentoYCompletaElPais()
+    {
+        // HU-023 (#176, contrato con Nexo §3.1): los ids de origen/destino salen de GET /api/captura-solicitudes/ciudades (sin "pais").
+        _nexo.ResponderCandidatos(
+            """
+            [{"id":5001,"codigoDane":"05001","municipio":"Medellín","departamento":"Antioquia","nombreTarifasPlaza":null,"zonaTarificacion":null}]
+            """);
+
+        var resultado = await Proveedor().BuscarAsync(_usuarioId, " medellín ", "Antioquia", Ct);
+
+        var peticion = _nexo.Peticiones.Should().ContainSingle().Subject;
+        peticion.Url.AbsolutePath.Should().Be("/api/captura-solicitudes/ciudades");
+        peticion.Url.Query.Should().Be("?departamento=Antioquia&q=medell%C3%ADn");
+        peticion.IdPortalUsuario.Should().Be("1007");
+        resultado.Valor.Should().ContainSingle().Which.Should().Be(new clsMunicipio(5001, "05001", "Medellín", "Antioquia", "Colombia"));
+    }
+
+    [Fact]
+    public void LaBusquedaSinFiltrosNoMandaQuery() =>
+        clsMunicipiosNexo.ConstruirUrlCiudades(clsNexoClientesFalso.UrlBase, " ", null).AbsoluteUri
+            .Should().Be(clsNexoClientesFalso.UrlBase + "/api/captura-solicitudes/ciudades");
 
     [Fact]
     public async Task MapeaLosMunicipiosConTodosSusCampos()
@@ -119,6 +143,8 @@ public sealed class clsMunicipiosNexoTests : IDisposable
     [InlineData(HttpStatusCode.InternalServerError)]
     [InlineData(HttpStatusCode.Unauthorized)]
     [InlineData(HttpStatusCode.NotFound)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    [InlineData(HttpStatusCode.TooManyRequests)]
     public async Task UnErrorHttpEsMunicipiosNoDisponible(HttpStatusCode estado)
     {
         _nexo.Responder(estado);
@@ -154,6 +180,17 @@ public sealed class clsMunicipiosNexoTests : IDisposable
         _nexo.Fallar(new HttpRequestException("Connection refused"));
 
         (await Proveedor().ObtenerAsync(_usuarioId, Ct)).Error.Codigo.Should().Be(clsCodigosError.MunicipiosNoDisponible);
+    }
+
+    [Fact]
+    public async Task UnTiempoAgotadoQueNoPidioElLlamadorEsMunicipiosNoDisponible()
+    {
+        // Así llega el tiempo agotado de HttpClient (deuda de #122: GET /web/municipios lo traduce a 503).
+        _nexo.Fallar(new TaskCanceledException("Tiempo agotado (prueba).", new TimeoutException()))
+            .Fallar(new TaskCanceledException("Tiempo agotado (prueba).", new TimeoutException()));
+
+        (await Proveedor().ObtenerAsync(_usuarioId, Ct)).Error.Codigo.Should().Be(clsCodigosError.MunicipiosNoDisponible);
+        (await Proveedor().BuscarAsync(_usuarioId, "bog", null, Ct)).Error.Codigo.Should().Be(clsCodigosError.MunicipiosNoDisponible);
     }
 
     [Fact]

@@ -9,8 +9,10 @@ namespace Cotifly.Api.Comun;
 
 /// <summary>
 /// CORS del frontend Angular de ClientePro (sección <c>Cors</c>, contrato §6). Orígenes exactos
-/// (<c>https://host[:puerto]</c>, sin ruta ni comodines); métodos GET/POST/PUT; encabezados <c>Authorization</c> y
-/// <c>Content-Type</c>; sin cookies ni credenciales. En Production la lista es obligatoria.
+/// (<c>https://host[:puerto]</c>, sin ruta ni comodines); métodos GET/POST/PUT; encabezados <c>Authorization</c>,
+/// <c>Content-Type</c>, <c>If-Match</c> e <c>Idempotency-Key</c>; expone <c>ETag</c>, <c>Location</c>, <c>Retry-After</c> y
+/// <c>Content-Disposition</c> (<see cref="clsSeguridadHttp.EncabezadosCors"/>, <see cref="clsSeguridadHttp.EncabezadosExpuestosCors"/>);
+/// sin cookies ni credenciales. En Production la lista es obligatoria.
 /// </summary>
 public sealed class clsOpcionesCors
 {
@@ -54,13 +56,22 @@ public sealed class clsOpcionesSeguridadHttp
 
     /// <summary>
     /// Tamaño máximo del cuerpo en <c>/web/licitaciones*</c> (HU-011, ADR-017): el Excel (hasta 10 MB) más el JSON de hasta 1000
-    /// líneas. Por defecto 12 MB; 413 al pasarlo.
+    /// líneas; desde HU-035.1 (#202) también en <c>POST /web/mercancias/analizar-excel</c> (<see cref="RutaExcelMercancias"/>). Por
+    /// defecto 12 MB; 413 al pasarlo.
     /// </summary>
     [Range(1024, 64 * 1024 * 1024)]
     public long LimiteCuerpoLicitacionBytes { get; set; } = 12 * 1024 * 1024;
 
     /// <summary>Prefijo de las rutas con el límite de <see cref="LimiteCuerpoLicitacionBytes"/>.</summary>
     public const string PrefijoLicitaciones = "/web/licitaciones";
+
+    /// <summary>HU-035.1 (#202): el análisis del Excel de mercancías, con el mismo límite de <see cref="LimiteCuerpoLicitacionBytes"/>.</summary>
+    public const string RutaExcelMercancias = "/web/mercancias/analizar-excel";
+
+    /// <summary>¿La ruta lleva un Excel (límite de <see cref="LimiteCuerpoLicitacionBytes"/>) y no el de <see cref="LimiteCuerpoWebBytes"/>?</summary>
+    public static bool LlevaExcel(PathString ruta) =>
+        ruta.StartsWithSegments(PrefijoLicitaciones, StringComparison.OrdinalIgnoreCase)
+        || ruta.StartsWithSegments(RutaExcelMercancias, StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>Valida <see cref="clsOpcionesCors"/>: orígenes bien formados y, en Production, al menos uno.</summary>
@@ -141,8 +152,17 @@ public static class clsSeguridadHttp
     /// <summary>Métodos que admite CORS (los del contrato).</summary>
     public static readonly string[] MetodosCors = ["GET", "POST", "PUT"];
 
-    /// <summary>Encabezados que admite CORS.</summary>
-    public static readonly string[] EncabezadosCors = ["Authorization", "Content-Type"];
+    /// <summary>
+    /// Encabezados que admite CORS: los de autenticación y cuerpo, el <c>If-Match</c> de la concurrencia optimista (ADR-018 §8) y la
+    /// <c>Idempotency-Key</c> de la captura, los conexos y la re-solicitud (#173). Lista explícita, nunca cualquier encabezado.
+    /// </summary>
+    public static readonly string[] EncabezadosCors = ["Authorization", "Content-Type", "If-Match", "Idempotency-Key"];
+
+    /// <summary>
+    /// Encabezados de respuesta que el navegador deja leer a ClientePro (otro origen): el <c>ETag</c> que vuelve en <c>If-Match</c>, el
+    /// <c>Location</c> del 201 de la re-solicitud, el <c>Retry-After</c> de los 429 y 503 y el <c>Content-Disposition</c> de las descargas.
+    /// </summary>
+    public static readonly string[] EncabezadosExpuestosCors = ["ETag", "Location", "Retry-After", "Content-Disposition"];
 
     /// <summary>Tiempo que el navegador puede cachear la respuesta del preflight.</summary>
     public static readonly TimeSpan CachePreflight = TimeSpan.FromMinutes(10);
@@ -171,6 +191,7 @@ public static class clsSeguridadHttp
                 .WithOrigins([.. opciones.Value.OrigenesPermitidos.Select(o => o.Trim())])
                 .WithMethods(MetodosCors)
                 .WithHeaders(EncabezadosCors)
+                .WithExposedHeaders(EncabezadosExpuestosCors)
                 .DisallowCredentials()
                 .SetPreflightMaxAge(CachePreflight)));
 
@@ -222,6 +243,17 @@ public static class clsSeguridadHttp
     /// </summary>
     private static Task AgregarEncabezadosSeguridad(HttpContext contexto, RequestDelegate siguiente)
     {
+        AplicarEncabezadosSeguridad(contexto);
+        return siguiente(contexto);
+    }
+
+    /// <summary>
+    /// Pone los encabezados de seguridad en la respuesta. Lo usa también <see cref="clsManejadorErroresNoControlados"/>: el middleware de
+    /// excepciones limpia la respuesta (encabezados incluidos) antes de escribir el 500.
+    /// </summary>
+    public static void AplicarEncabezadosSeguridad(HttpContext contexto)
+    {
+        ArgumentNullException.ThrowIfNull(contexto);
         var encabezados = contexto.Response.Headers;
         encabezados.XContentTypeOptions = "nosniff";
         encabezados.XFrameOptions = "DENY";
@@ -232,8 +264,6 @@ public static class clsSeguridadHttp
         {
             encabezados.CacheControl = "no-store";
         }
-
-        return siguiente(contexto);
     }
 
     /// <summary>
@@ -243,7 +273,7 @@ public static class clsSeguridadHttp
     private static async Task LimitarCuerpoAsync(HttpContext contexto, RequestDelegate siguiente)
     {
         var opciones = contexto.RequestServices.GetRequiredService<IOptions<clsOpcionesSeguridadHttp>>().Value;
-        var limite = contexto.Request.Path.StartsWithSegments(clsOpcionesSeguridadHttp.PrefijoLicitaciones, StringComparison.OrdinalIgnoreCase)
+        var limite = clsOpcionesSeguridadHttp.LlevaExcel(contexto.Request.Path)
             ? opciones.LimiteCuerpoLicitacionBytes
             : opciones.LimiteCuerpoWebBytes;
         if (contexto.Request.ContentLength > limite)

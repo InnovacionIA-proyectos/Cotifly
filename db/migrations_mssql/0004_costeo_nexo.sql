@@ -6,7 +6,7 @@
    (EF Core Database First: el esquema SOLO cambia con scripts
    `db/migrations_mssql/000N_*.sql`; no hay migraciones EF). Diseño del flujo:
    backend-dotnet/specs/decisiones/ADR-015. Mapeo de campos aprobado con negocio:
-   docs/MAPEO_CAMPOS_NEXO_COTIFLY.md.
+   docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md.
 
    *** PENDIENTE DE APROBACIÓN — igual que el 0002 y el 0003, no ejecutar en
        tbsdatacenter sin el visto bueno de scalderon-bs y del DBA (coordinación

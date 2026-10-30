@@ -1,0 +1,4 @@
+ Origen ,Ciudad Destino,Tipo Vehículo,Tipo de Carga,Valor Flete,Moneda,Vigente hasta
+BOGOTA,QUITO,TRACTOMULA,carga_seca,8.500.000,COP,2026-07
+CUCUTA,CARACAS,SENCILLO,carga_seca,4.200.000,COP,2026-07
+BOGOTA,PANAMA,TRACTOMULA,contenedor_20,9.800.000,COP,2026-07

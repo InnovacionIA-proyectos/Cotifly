@@ -39,9 +39,70 @@ public sealed class clsSeguridadHttpTests
     }
 
     [Theory]
+    [InlineData("PUT", "authorization,content-type,if-match")]
+    [InlineData("POST", "authorization,content-type,if-match,idempotency-key")]
+    public async Task ElPreflightPermiteIfMatchEIdempotencyKey(string metodo, string encabezados)
+    {
+        using var factory = Crear(new() { ["Cors:OrigenesPermitidos:0"] = OrigenClientePro });
+        using var cliente = factory.CreateClient();
+
+        using var respuesta = await PreflightAsync(cliente, OrigenClientePro, metodo, encabezados);
+
+        respuesta.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        respuesta.Headers.GetValues("Access-Control-Allow-Origin").Should().Equal(OrigenClientePro);
+        var permitidos = string.Join(",", respuesta.Headers.GetValues("Access-Control-Allow-Headers")).ToLowerInvariant();
+        foreach (var encabezado in encabezados.Split(','))
+        {
+            permitidos.Should().Contain(encabezado, "el frontend en otro origen envía {0}", encabezado);
+        }
+    }
+
+    [Fact]
+    public async Task UnaRespuestaDeUnOrigenPermitidoExponeETagLocationRetryAfterYContentDisposition()
+    {
+        using var factory = Crear(new() { ["Cors:OrigenesPermitidos:0"] = OrigenClientePro });
+        using var cliente = factory.CreateClient();
+        using var peticion = new HttpRequestMessage(HttpMethod.Get, "/web/mis-cotizaciones");
+        peticion.Headers.Add("Origin", OrigenClientePro);
+
+        using var respuesta = await cliente.SendAsync(peticion, Ct);
+
+        var expuestos = string.Join(",", respuesta.Headers.GetValues("Access-Control-Expose-Headers")).Split(',', StringSplitOptions.TrimEntries);
+        expuestos.Should().BeEquivalentTo(["ETag", "Location", "Retry-After", "Content-Disposition"], "lista explícita, sin comodín");
+    }
+
+    [Fact]
+    public async Task UnPreflightDeUnOrigenNoPermitidoConIfMatchSeRechaza()
+    {
+        using var factory = Crear(new() { ["Cors:OrigenesPermitidos:0"] = OrigenClientePro });
+        using var cliente = factory.CreateClient();
+
+        using var respuesta = await PreflightAsync(cliente, "https://otro-sitio.com", "PUT", "if-match,idempotency-key");
+
+        respuesta.Headers.Contains("Access-Control-Allow-Origin").Should().BeFalse();
+        respuesta.Headers.Contains("Access-Control-Allow-Headers").Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task UnaRespuestaAUnOrigenNoPermitidoNoExponeEncabezados()
+    {
+        using var factory = Crear(new() { ["Cors:OrigenesPermitidos:0"] = OrigenClientePro });
+        using var cliente = factory.CreateClient();
+        using var peticion = new HttpRequestMessage(HttpMethod.Get, "/web/mis-cotizaciones");
+        peticion.Headers.Add("Origin", "https://otro-sitio.com");
+
+        using var respuesta = await cliente.SendAsync(peticion, Ct);
+
+        respuesta.Headers.Contains("Access-Control-Allow-Origin").Should().BeFalse();
+        respuesta.Headers.Contains("Access-Control-Expose-Headers").Should().BeFalse();
+    }
+
+    [Theory]
     [InlineData("https://otro-sitio.com", "GET", "authorization")]
     [InlineData(OrigenClientePro, "DELETE", "authorization")]
     [InlineData(OrigenClientePro, "GET", "x-otro-encabezado")]
+    [InlineData(OrigenClientePro, "GET", "x-correlation-id")]
+    [InlineData(OrigenClientePro, "PATCH", "authorization")]
     public async Task UnPreflightFueraDeLaPoliticaNoRecibePermisoCors(string origen, string metodo, string encabezados)
     {
         using var factory = Crear(new() { ["Cors:OrigenesPermitidos:0"] = OrigenClientePro });

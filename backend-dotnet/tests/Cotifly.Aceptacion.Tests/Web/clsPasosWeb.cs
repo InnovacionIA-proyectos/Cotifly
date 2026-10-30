@@ -33,9 +33,13 @@ public sealed class clsPasosWeb(clsContextoWeb web)
     [Given("el gerente comercial {string} con sesión en la regional {string}")]
     public Task DadoElGerente(string alias, string regional) => IniciarSesionAsync(alias, clsBaseDatosPruebas.RolExternoGerente, regional);
 
+    /// <summary>HU-037 (#210): sesión con el rol externo de director de las pruebas (<see cref="clsBaseDatosPruebas.RolExternoDirector"/>).</summary>
+    [Given("el director {string} con sesión en la regional {string}")]
+    public Task DadoElDirector(string alias, string regional) => IniciarSesionAsync(alias, clsBaseDatosPruebas.RolExternoDirector, regional);
+
     [Given("que {string} tiene la cotización web {string} del cliente {string} con su PDF")]
     public async Task DadoLaCotizacion(string alias, string cotizacion, string nit) =>
-        web.Cotizaciones[cotizacion] = await web.Api.CrearCotizacionAsync(web.Sesion(alias).UsuarioId, nit);
+        web.Cotizaciones[cotizacion] = await web.Api.CrearCotizacionAsync(web.Sesion(alias).UsuarioId, nit, creadaEn: web.SiguienteHoraCreacion());
 
     [Given("que {string} ya envió la cotización {string} a {string}")]
     public Task DadoQueYaEnvio(string alias, string cotizacion, string para) =>
@@ -67,7 +71,7 @@ public sealed class clsPasosWeb(clsContextoWeb web)
     public async Task EntoncesSigueIgual(string cotizacion)
     {
         var estado = await clsBaseDatosPruebas.EscalarAsync<string>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-            $"SELECT CONCAT(estadoEnvio, '|', COALESCE(CAST(ganada AS nvarchar(5)), 'null')) FROM dbo_cotifly.Cotizaciones WHERE id = '{web.Cotizacion(cotizacion).Id}'");
+            $"SELECT CONCAT(estadoEnvio, '|', COALESCE(CAST(ganada AS nvarchar(5)), 'null')) FROM dbo_cotifly.CotizacionesSolicitud WHERE id = '{web.Cotizacion(cotizacion).Id}'");
         estado.Should().Be("sin_enviar|null");
     }
 
@@ -78,9 +82,6 @@ public sealed class clsPasosWeb(clsContextoWeb web)
     [When("{string} descarga el PDF de la cotización {string}")]
     public Task CuandoDescarga(string alias, string cotizacion) =>
         web.EnviarAsync(_get, $"/pdfs/{web.Cotizacion(cotizacion).ArchivoPdf}", web.Sesion(alias).Access);
-
-    [When("{string} consulta las métricas de actividad")]
-    public Task CuandoConsultaMetricas(string alias) => web.EnviarAsync(_get, "/web/metricas/actividad", web.Sesion(alias).Access);
 
     [When("{string} marca la cotización {string} como ganada {string} con el motivo {string}")]
     public Task CuandoMarca(string alias, string cotizacion, string ganada, string motivo) =>
@@ -217,16 +218,6 @@ public sealed class clsPasosWeb(clsContextoWeb web)
         json.GetProperty("cc").GetArrayLength().Should().Be(0);
     }
 
-    [Then("las métricas incluyen solo a {string}")]
-    public void EntoncesSoloA(string alias) => UsuariosDeMetricas().Should().Equal(web.Sesion(alias).UsuarioId.ToString());
-
-    [Then("las métricas incluyen a {string} y a {string}")]
-    public void EntoncesAYA(string uno, string otro) =>
-        UsuariosDeMetricas().Should().BeEquivalentTo([web.Sesion(uno).UsuarioId.ToString(), web.Sesion(otro).UsuarioId.ToString()]);
-
-    [Then("las métricas están vacías")]
-    public void EntoncesVacias() => UsuariosDeMetricas().Should().BeEmpty();
-
     private async Task IniciarSesionAsync(string alias, int rolExterno, string regional) =>
         web.Sesiones[alias] = await web.Api.IniciarSesionAsync(rolExterno, web.Regional(regional), $"Persona {alias}");
 
@@ -240,14 +231,6 @@ public sealed class clsPasosWeb(clsContextoWeb web)
     {
         web.UltimoEstado.Should().Be(HttpStatusCode.OK);
         return [.. web.UltimoJson().GetProperty("cotizaciones").EnumerateArray().Select(c => c.GetProperty("folio").GetString())];
-    }
-
-    private List<string?> UsuariosDeMetricas()
-    {
-        web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);
-        var json = web.UltimoJson();
-        json.ValueKind.Should().Be(JsonValueKind.Array);
-        return [.. json.EnumerateArray().Select(f => f.GetProperty("usuario_id").GetString())];
     }
 
     private Task OperarAsync(string operacion, string token, clsCotizacionPrueba cotizacion) => operacion switch

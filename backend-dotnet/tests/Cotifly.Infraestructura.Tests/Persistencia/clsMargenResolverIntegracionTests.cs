@@ -32,9 +32,6 @@ public sealed class clsMargenResolverIntegracionTests : clsPruebaIntegracion
         { "OPIM", "Importacion" },
         { "OPEX", "Exportacion" },
         { "OPTI", "Internacional" },
-        { "OHUB", "Almacenamiento" },
-        { "OH3P", "Almacenamiento3PL" },
-        { "OPSC", "ITR" },
     };
 
     private Task<clsResultado<clsMargenResuelto>> ResolverAsync(string linea, string? bp = null, string? salesOrg = null) =>
@@ -97,11 +94,15 @@ public sealed class clsMargenResolverIntegracionTests : clsPruebaIntegracion
     [Fact]
     public async Task SeRespetaLaOrganizacionDeVentasPedida()
     {
-        var r = (await ResolverAsync("Almacenamiento", "3301", "50000010")).Valor.Salida;
+        // HU-021: Almacenamiento (OHUB, organización 50000010) salió del catálogo con el 0009; se prueba con Nacional, cuyo registro
+        // de SAP TM es de la organización 50000005: pedida esa, hay margen de SAP; pedida otra, no lo hay.
+        var r = (await ResolverAsync("Nacional", "15927", "50000005")).Valor.Salida;
+        var otra = (await ResolverAsync("Nacional", "15927", "50000010")).Valor.Salida;
 
         r.Origen.Should().Be("sap_tm");
-        r.Margen.Should().Be(0.15m);
-        r.TrqType.Should().Be("OHUB");
+        r.Margen.Should().Be(0.135m);
+        r.TrqType.Should().Be("OPTN");
+        otra.Origen.Should().Be("politica_linea", "en la organización 50000010 el cliente no tiene registro");
     }
 
     // test_resolver_linea_desconocida
@@ -129,7 +130,7 @@ public sealed class clsMargenResolverIntegracionTests : clsPruebaIntegracion
     [InlineData("Distribución", "Distribucion", "OPDS")]
     [InlineData("importación", "Importacion", "OPIM")]
     [InlineData("  EXPORTACIÓN ", "Exportacion", "OPEX")]
-    [InlineData("ALMACENAMIENTO 3PL", "Almacenamiento3PL", "OH3P")]
+    [InlineData("  NACIONAL ", "Nacional", "OPTN")]
     public async Task UnaLineaConTildesSeResuelveALaLineaSembrada(string recibida, string canonica, string trqType)
     {
         var resuelto = (await ResolverAsync(recibida)).Valor;

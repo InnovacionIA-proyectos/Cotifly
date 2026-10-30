@@ -45,6 +45,61 @@ public sealed class clsOpcionesCosteoNexo : IValidatableObject
     [Range(61, 3600)]
     public int ReclamoSegundos { get; set; } = 120;
 
+    /// <summary>
+    /// Tiempo máximo (s) de la lectura del costeo en la misma petición del alta, cuando Nexo ya costeó todas las líneas (HU-013.14,
+    /// ADR-018 §17). Si no alcanza, la cotización responde <c>pendiente_costeo</c> y el polling la completa.
+    /// </summary>
+    [Range(1, 30)]
+    public int LecturaInmediataSegundos { get; set; } = 6;
+
+    /// <summary>
+    /// Fallos seguidos con los que el polling deja de releer una cotización que solo se consulta para completar el precio (entregada
+    /// sin precio o con resultado registrado sin costo leído, HU-013.14): deja el motivo y para.
+    /// </summary>
+    [Range(1, 100)]
+    public int MaximoFallosRelectura { get; set; } = 10;
+
+    /// <summary>
+    /// Decisión 10 (HU-021.9): intentos fallidos del envío diferido de un conexo a Nexo antes de dejarlo <c>fallido_definitivo</c> (con un
+    /// warning y visible en el costeo). También acota los reintentos de una cotización ya entregada.
+    /// </summary>
+    [Range(1, 100)]
+    public int MaximoReintentosConexos { get; set; } = 5;
+
+    /// <summary>Espera entre reintentos del envío de conexos de una cotización que el polling ya no consulta (entregada).</summary>
+    [Range(1, 1440)]
+    public int IntervaloReintentoConexosMinutos { get; set; } = 5;
+
+    public TimeSpan IntervaloReintentoConexos => TimeSpan.FromMinutes(IntervaloReintentoConexosMinutos);
+
+    /// <summary>
+    /// HU-021.9 (#136): horas que un conexo puede seguir <c>en_espera</c> (el catálogo de conexos o la cotización de Nexo no responden
+    /// antes del POST), contadas desde el inicio de la espera. Pasadas, queda <c>fallido_definitivo</c> con su aviso y la cotización sale
+    /// de la agenda. Mientras espera, el reintento de una cotización entregada se espacia 5, 15 y 60 minutos (máximo).
+    /// </summary>
+    [Range(1, 720)]
+    public int EsperaMaximaCatalogoConexosHoras { get; set; } = 24;
+
+    public TimeSpan EsperaMaximaCatalogoConexos => TimeSpan.FromHours(EsperaMaximaCatalogoConexosHoras);
+
+    /// <summary>
+    /// HU-033 (#199): envíos fallidos seguidos del resultado pendiente a Nexo (Nexo caído o con error) antes de dejarlo
+    /// <c>no_sincronizable</c>. Entre intentos se espera <see cref="IntervaloReintentoConexosMinutos"/>.
+    /// </summary>
+    [Range(1, 100)]
+    public int MaximoFallosSincronizacionResultado { get; set; } = 10;
+
+    /// <summary>
+    /// HU-033 (#199): días que el polling sigue consultando una cotización con un resultado pendiente de sincronizar (aunque haya pasado
+    /// <see cref="EdadMaximaHoras"/>), esperando a que la Mesa de Costeo la entregue. Pasados, el resultado queda <c>no_sincronizable</c>.
+    /// </summary>
+    [Range(1, 365)]
+    public int EdadMaximaSincronizacionResultadoDias { get; set; } = 30;
+
+    public TimeSpan EdadMaximaSincronizacionResultado => TimeSpan.FromDays(EdadMaximaSincronizacionResultadoDias);
+
+    public TimeSpan LecturaInmediata => TimeSpan.FromSeconds(LecturaInmediataSegundos);
+
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
         if (IntervaloMaximoMinutos * 60 < IntervaloInicialSegundos)

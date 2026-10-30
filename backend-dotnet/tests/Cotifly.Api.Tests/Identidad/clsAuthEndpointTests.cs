@@ -6,6 +6,8 @@ using System.Text.Json;
 using Cotifly.Pruebas.Comun;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Cotifly.Aplicacion.Comun.Interfaces;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.JsonWebTokens;
@@ -35,7 +37,7 @@ public sealed class clsAuthEndpointTests(clsBaseDatosPruebas baseDatos) : IClass
         using var factory = Crear();
         using var cliente = factory.CreateClient();
 
-        using var respuesta = await cliente.PostAsJsonAsync("/api/auth/login-clientepro", new { idUsuario = nombre, roles = new[] { "35" } }, Ct);
+        using var respuesta = await cliente.PostAsJsonAsync("/api/auth/login-clientepro", new { idUsuario = nombre, roles = new[] { "31" } }, Ct);
         using var json = await JsonAsync(respuesta);
 
         respuesta.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -101,6 +103,332 @@ public sealed class clsAuthEndpointTests(clsBaseDatosPruebas baseDatos) : IClass
         (await prohibido.Content.ReadAsStringAsync(Ct)).Should().Be("""{"error":"No tienes permiso para esta operación."}""");
         permitido.StatusCode.Should().Be(HttpStatusCode.OK);
         gerenteComoComercial.StatusCode.Should().Be(HttpStatusCode.OK, "el gerente también usa la consola del comercial");
+    }
+
+    [Fact]
+    public async Task HU0402_UnComercialQueTambienEsDirectorEligeDirectorYUsaLoDelGerenteYLaConsola()
+    {
+        // HU-040.2 (#230): ya no gana director por jerarquía: el login ofrece los dos roles y entra con el que elige.
+        var persona = await PersonaAsync(clsBaseDatosPruebas.RolExternoComercial, clsBaseDatosPruebas.RolExternoDirector);
+        using var factory = Crear();
+        using var cliente = factory.CreateClient();
+
+        var eleccion = await LoginConEleccionAsync(cliente, persona);
+        var login = await ElegirAsync(cliente, eleccion.Ticket, "director");
+        using var gerencial = await GetConTokenAsync(cliente, "/pruebas/gerente", login.Access);
+        using var consola = await GetConTokenAsync(cliente, "/pruebas/comercial", login.Access);
+
+        eleccion.Roles.Should().Equal("comercial", "director");
+        gerencial.StatusCode.Should().Be(HttpStatusCode.OK, "el director usa todo lo del gerente (HU-037, #210)");
+        consola.StatusCode.Should().Be(HttpStatusCode.OK, "el director también usa la consola del comercial");
+        (await consola.Content.ReadAsStringAsync(Ct)).Should().Contain("\"rol\":\"director\"");
+    }
+
+    [Fact]
+    public async Task HU0402_ConDosRolesElLoginNoEmiteSesionYResponde200ConElSelectorDelContrato()
+    {
+        var persona = await PersonaAsync(clsBaseDatosPruebas.RolExternoComercial, clsBaseDatosPruebas.RolExternoGerente);
+        using var factory = Crear();
+        using var cliente = factory.CreateClient();
+
+        using var respuesta = await cliente.PostAsJsonAsync("/api/auth/login-clientepro", new { idUsuario = persona }, Ct);
+        using var json = await JsonAsync(respuesta);
+
+        respuesta.StatusCode.Should().Be(HttpStatusCode.OK);
+        var esquemas = await EsquemasAsync();
+        Verificar(json.RootElement, esquemas["EleccionRolRequerida"]);
+        Verificar(json.RootElement.GetProperty("user"), esquemas["UsuarioEleccion"]);
+        Verificar(json.RootElement.GetProperty("roles")[0], esquemas["RolDisponible"]);
+        json.RootElement.TryGetProperty("access", out _).Should().BeFalse("no hay sesión hasta elegir");
+        json.RootElement.TryGetProperty("refresh", out _).Should().BeFalse();
+        json.RootElement.GetProperty("requiereEleccionRol").GetBoolean().Should().BeTrue();
+        json.RootElement.GetProperty("roles").EnumerateArray().Select(r => r.GetProperty("codigo").GetString()).Should().Equal("comercial", "gerente_comercial");
+        json.RootElement.GetProperty("user").GetProperty("username").GetString().Should().Be(persona);
+        json.RootElement.GetProperty("ticketExpiraAt").GetDateTimeOffset().Should().BeCloseTo(DateTimeOffset.UtcNow.AddMinutes(5), TimeSpan.FromSeconds(30));
+        (await clsBaseDatosPruebas.EscalarAsync<int>(baseDatos.CadenaCotifly, $"""
+            SELECT COUNT(*) FROM dbo_cotifly.TokensRefresco t JOIN dbo_cotifly.UsuariosWeb u ON u.id = t.usuarioId WHERE u.nombreUsuario = N'{persona}'
+            """)).Should().Be(0, "el login con varios roles no emite refresh");
+        (await clsBaseDatosPruebas.EscalarAsync<string>(baseDatos.CadenaCotifly, $"""
+            SELECT STRING_AGG(r.codigo, ',') WITHIN GROUP (ORDER BY r.id) FROM dbo_cotifly.UsuariosRoles ur
+            JOIN dbo_cotifly.Roles r ON r.id = ur.rolId JOIN dbo_cotifly.UsuariosWeb u ON u.id = ur.usuarioId
+            WHERE u.nombreUsuario = N'{persona}' AND ur.activo = 1
+            """)).Should().Be("comercial,gerente_comercial", "el alta asigna los dos roles");
+
+        // El ticket no es un access: no abre ningún endpoint protegido.
+        using var conTicket = await GetConTokenAsync(cliente, "/pruebas/comercial", json.RootElement.GetProperty("ticketEleccion").GetString());
+        conTicket.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task HU0402_ElegirEmiteUnTokenLimitadoAlRolElegidoYElRefreshLoConserva()
+    {
+        // Elige comercial teniendo también gerente: el access y cada renovación quedan como comercial (no sube por jerarquía).
+        var persona = await PersonaAsync(clsBaseDatosPruebas.RolExternoComercial, clsBaseDatosPruebas.RolExternoGerente);
+        using var factory = Crear();
+        using var cliente = factory.CreateClient();
+
+        var eleccion = await LoginConEleccionAsync(cliente, persona);
+        using var elegido = await cliente.PostAsJsonAsync("/api/auth/elegir-rol", new { ticket = eleccion.Ticket, rol = "comercial" }, Ct);
+        using var par = await JsonAsync(elegido);
+        var access = par.RootElement.GetProperty("access").GetString();
+        using var gerencial = await GetConTokenAsync(cliente, "/pruebas/gerente", access);
+        using var renovacion = await cliente.PostAsJsonAsync("/api/auth/refresh", new { refresh = par.RootElement.GetProperty("refresh").GetString() }, Ct);
+        using var renovado = await JsonAsync(renovacion);
+
+        elegido.StatusCode.Should().Be(HttpStatusCode.OK);
+        Verificar(par.RootElement, (await EsquemasAsync())["LoginResponse"]);
+        par.RootElement.GetProperty("user").GetProperty("rol").GetString().Should().Be("comercial");
+        gerencial.StatusCode.Should().Be(HttpStatusCode.Forbidden, "eligió comercial: no usa lo del gerente en esta sesión");
+        renovacion.StatusCode.Should().Be(HttpStatusCode.OK);
+        renovado.RootElement.GetProperty("user").GetProperty("rol").GetString().Should().Be("comercial", "el refresh no vuelve a preguntar ni cambia de rol");
+        (await EventoAsync("elegir_rol", persona)).Should().Contain("\"resultado\":\"aceptado\"").And.Contain("\"motivo\":\"rol_elegido\"");
+        (await EventoAsync("login_clientepro", persona)).Should().Contain("\"resultado\":\"eleccion_pendiente\"").And.Contain("\"regla\":\"multi_rol\"");
+    }
+
+    [Fact]
+    public async Task HU0402_UnTicketYaUsadoEs401InclusoConOtroRolYDosUsosSimultaneosSoloUnoGana()
+    {
+        var persona = await PersonaAsync(clsBaseDatosPruebas.RolExternoComercial, clsBaseDatosPruebas.RolExternoGerente);
+        using var factory = Crear();
+        using var cliente = factory.CreateClient();
+
+        var eleccion = await LoginConEleccionAsync(cliente, persona);
+        await ElegirAsync(cliente, eleccion.Ticket, "comercial");
+        using var reuso = await cliente.PostAsJsonAsync("/api/auth/elegir-rol", new { ticket = eleccion.Ticket, rol = "gerente_comercial" }, Ct);
+
+        reuso.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await reuso.Content.ReadAsStringAsync(Ct)).Should().Be("""{"error":"Inicia sesión de nuevo."}""");
+        (await EventoAsync("elegir_rol", persona)).Should().Contain("\"motivo\":\"ticket_reutilizado\"");
+
+        var otra = await LoginConEleccionAsync(cliente, persona);
+        var simultaneos = await Task.WhenAll(Enumerable.Range(0, 4).Select(_ =>
+            cliente.PostAsJsonAsync("/api/auth/elegir-rol", new { ticket = otra.Ticket, rol = "gerente_comercial" }, Ct)));
+        try
+        {
+            simultaneos.Count(r => r.StatusCode == HttpStatusCode.OK).Should().Be(1, "el ticket es de un solo uso aunque lleguen a la vez");
+            simultaneos.Count(r => r.StatusCode == HttpStatusCode.Unauthorized).Should().Be(3);
+        }
+        finally
+        {
+            foreach (var respuesta in simultaneos)
+            {
+                respuesta.Dispose();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task HU0402_UnRolNoOfrecidoUnTicketAlteradoOUnAccessComoTicketSon401()
+    {
+        var persona = await PersonaAsync(clsBaseDatosPruebas.RolExternoComercial, clsBaseDatosPruebas.RolExternoGerente);
+        var unico = await PersonaAsync(clsBaseDatosPruebas.RolExternoComercial);
+        using var factory = Crear();
+        using var cliente = factory.CreateClient();
+        var accessAjeno = (await LoginAsync(cliente, unico)).Access;
+
+        var eleccion = await LoginConEleccionAsync(cliente, persona);
+        using var noOfrecido = await cliente.PostAsJsonAsync("/api/auth/elegir-rol", new { ticket = eleccion.Ticket, rol = "director" }, Ct);
+        var otra = await LoginConEleccionAsync(cliente, persona);
+        var partes = otra.Ticket.Split('.');
+        using var alterado = await cliente.PostAsJsonAsync("/api/auth/elegir-rol", new { ticket = $"{partes[0]}.{partes[1]}.{partes[2][..^2]}AA", rol = "gerente_comercial" }, Ct);
+        using var conAccess = await cliente.PostAsJsonAsync("/api/auth/elegir-rol", new { ticket = accessAjeno, rol = "comercial" }, Ct);
+        using var despues = await cliente.PostAsJsonAsync("/api/auth/elegir-rol", new { ticket = eleccion.Ticket, rol = "comercial" }, Ct);
+
+        foreach (var respuesta in new[] { noOfrecido, alterado, conAccess, despues })
+        {
+            respuesta.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+            (await respuesta.Content.ReadAsStringAsync(Ct)).Should().Be("""{"error":"Inicia sesión de nuevo."}""");
+        }
+
+        var eventos = await EventoAsync("elegir_rol", persona);
+        eventos.Should().Contain("rol_no_disponible").And.NotContain("exito=true");
+        // Un ticket alterado o un access no identifican a nadie: el rechazo queda auditado sin hilo.
+        (await EventoAsync("elegir_rol", persona: null)).Should().Contain("ticket_invalido");
+    }
+
+    [Fact]
+    public async Task HU0402_SiLeQuitanElRolEnClienteProEntreElLoginYLaEleccionEs401()
+    {
+        var nombre = $"api{Guid.NewGuid():N}"[..20];
+        var idExterno = await baseDatos.CrearPersonaExternaAsync(nombre, "Persona de prueba", $"{nombre}@boterosoto.com.co",
+            clsBaseDatosPruebas.RolExternoComercial, clsBaseDatosPruebas.RolExternoGerente);
+        using var factory = Crear();
+        using var cliente = factory.CreateClient();
+
+        var eleccion = await LoginConEleccionAsync(cliente, nombre);
+        await baseDatos.CambiarRolesExternosAsync(idExterno, clsBaseDatosPruebas.RolExternoComercial);
+        using var respuesta = await cliente.PostAsJsonAsync("/api/auth/elegir-rol", new { ticket = eleccion.Ticket, rol = "gerente_comercial" }, Ct);
+
+        respuesta.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await EventoAsync("elegir_rol", nombre)).Should().Contain("\"motivo\":\"rol_externo_cambio\"");
+    }
+
+    [Fact]
+    public async Task HU0402_SiLeQuitanElRolElegidoElRefreshEs401ComoHoy()
+    {
+        var nombre = $"api{Guid.NewGuid():N}"[..20];
+        var idExterno = await baseDatos.CrearPersonaExternaAsync(nombre, "Persona de prueba", $"{nombre}@boterosoto.com.co",
+            clsBaseDatosPruebas.RolExternoComercial, clsBaseDatosPruebas.RolExternoGerente);
+        using var factory = Crear();
+        using var cliente = factory.CreateClient();
+        var eleccion = await LoginConEleccionAsync(cliente, nombre);
+        var sesion = await ElegirAsync(cliente, eleccion.Ticket, "gerente_comercial");
+
+        await baseDatos.CambiarRolesExternosAsync(idExterno, clsBaseDatosPruebas.RolExternoComercial);
+        using var renovacion = await cliente.PostAsJsonAsync("/api/auth/refresh", new { refresh = sesion.Refresh }, Ct);
+
+        renovacion.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await EventoAsync("refresh_sesion", nombre)).Should().Contain("\"motivo\":\"rol_externo_cambio\"");
+    }
+
+    [Fact]
+    public async Task HU0402_UnTicketVencidoEs401()
+    {
+        var persona = await PersonaAsync(clsBaseDatosPruebas.RolExternoComercial, clsBaseDatosPruebas.RolExternoGerente);
+        var reloj = new clsRelojFalso(DateTimeOffset.UtcNow);
+        using var factory = Crear(reloj: reloj);
+        using var cliente = factory.CreateClient();
+
+        var eleccion = await LoginConEleccionAsync(cliente, persona);
+        reloj.Avanzar(TimeSpan.FromMinutes(5) + TimeSpan.FromSeconds(1));
+        using var respuesta = await cliente.PostAsJsonAsync("/api/auth/elegir-rol", new { ticket = eleccion.Ticket, rol = "comercial" }, Ct);
+
+        respuesta.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await EventoAsync("elegir_rol", persona: null)).Should().Contain("\"motivo\":\"ticket_vencido\"");
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("""{"ticket":"x"}""")]
+    [InlineData("""{"ticket":"x","rol":"administrador"}""")]
+    [InlineData("{no es json")]
+    public async Task HU0402_UnCuerpoDeElegirRolInvalidoResponde400ConErrorWeb(string cuerpo)
+    {
+        using var factory = Crear();
+        using var cliente = factory.CreateClient();
+
+        using var respuesta = await cliente.PostAsync(new Uri("/api/auth/elegir-rol", UriKind.Relative),
+            new StringContent(cuerpo, Encoding.UTF8, "application/json"), Ct);
+        using var json = await JsonAsync(respuesta);
+
+        respuesta.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        json.RootElement.EnumerateObject().Select(p => p.Name).Should().Equal("error");
+    }
+
+    [Fact]
+    public async Task HU0402_ElegirRolTieneElMismoLimiteDePeticionesPorIpQueElLogin()
+    {
+        using var factory = Crear(new Dictionary<string, string?> { ["LimiteAuth:PeticionesPorVentana"] = "2", ["LimiteAuth:VentanaSegundos"] = "60" });
+        using var cliente = factory.CreateClient();
+
+        var estados = new List<HttpStatusCode>();
+        for (var i = 0; i < 3; i++)
+        {
+            using var respuesta = await cliente.PostAsJsonAsync("/api/auth/elegir-rol", new { ticket = "x.y.z", rol = "comercial" }, Ct);
+            estados.Add(respuesta.StatusCode);
+        }
+
+        estados.Should().Equal(HttpStatusCode.Unauthorized, HttpStatusCode.Unauthorized, HttpStatusCode.TooManyRequests);
+    }
+
+    [Fact]
+    public async Task UnDirectorNuevoSeDaDeAltaConSuRolYVuelveAEntrarComoDirector()
+    {
+        // Validación HU-037 (JIT): el alta crea la asignación `director` en UsuariosRoles y el segundo login la encuentra igual.
+        var persona = await PersonaAsync(clsBaseDatosPruebas.RolExternoDirector);
+        using var factory = Crear();
+        using var cliente = factory.CreateClient();
+
+        var primero = await LoginAsync(cliente, persona);
+        var segundo = await LoginAsync(cliente, persona);
+        using var gerencial = await GetConTokenAsync(cliente, "/pruebas/gerente", segundo.Access);
+        var asignado = await clsBaseDatosPruebas.EscalarAsync<string>(baseDatos.CadenaCotifly, $"""
+            SELECT STRING_AGG(r.codigo, ',') FROM dbo_cotifly.UsuariosRoles ur
+            JOIN dbo_cotifly.Roles r ON r.id = ur.rolId JOIN dbo_cotifly.UsuariosWeb u ON u.id = ur.usuarioId
+            WHERE u.nombreUsuario = N'{persona}' AND ur.activo = 1
+            """);
+
+        primero.Access.Should().NotBeNullOrEmpty();
+        gerencial.StatusCode.Should().Be(HttpStatusCode.OK);
+        asignado.Should().Be("director");
+    }
+
+    [Fact]
+    public async Task UnGerenteQuePasaADirectorEnClienteProQuedaEnRevisionHastaQueSeLeReasigneElRol()
+    {
+        // Validación HU-037: ascender (o degradar) en ClientePro no cambia solo el rol de Cotifly. El login y el refresh se rechazan
+        // (rol_externo_cambio) hasta que el DBA reasigna UsuariosRoles. El access ya emitido conserva su rol hasta vencer (60 min,
+        // JWT sin estado, ADR-009): es el riesgo residual documentado.
+        var nombre = $"api{Guid.NewGuid():N}"[..20];
+        var idExterno = await baseDatos.CrearPersonaExternaAsync(nombre, "Persona de prueba", $"{nombre}@boterosoto.com.co", clsBaseDatosPruebas.RolExternoGerente);
+        using var factory = Crear();
+        using var cliente = factory.CreateClient();
+        var comoGerente = await LoginAsync(cliente, nombre);
+
+        await baseDatos.CambiarRolesExternosAsync(idExterno, clsBaseDatosPruebas.RolExternoDirector);
+        using var relogin = await cliente.PostAsJsonAsync("/api/auth/login-clientepro", new { idUsuario = nombre }, Ct);
+        using var refresh = await cliente.PostAsJsonAsync("/api/auth/refresh", new { refresh = comoGerente.Refresh }, Ct);
+        using var accesoViejo = await GetConTokenAsync(cliente, "/pruebas/comercial", comoGerente.Access);
+
+        relogin.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        refresh.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await accesoViejo.Content.ReadAsStringAsync(Ct)).Should().Contain("\"rol\":\"gerente_comercial\"", "el access viejo no gana el rol nuevo");
+
+        // La reasignación del DBA (desactivar la asignación anterior y crear la de director) le devuelve el acceso, ya como director.
+        await clsBaseDatosPruebas.EjecutarAsync(baseDatos.CadenaCotifly, $"""
+            DECLARE @u UNIQUEIDENTIFIER = (SELECT id FROM dbo_cotifly.UsuariosWeb WHERE nombreUsuario = N'{nombre}');
+            UPDATE dbo_cotifly.UsuariosRoles SET activo = 0 WHERE usuarioId = @u AND activo = 1;
+            INSERT INTO dbo_cotifly.UsuariosRoles (usuarioId, rolId) SELECT @u, id FROM dbo_cotifly.Roles WHERE codigo = N'director';
+            """);
+        var comoDirector = await LoginAsync(cliente, nombre);
+        using var consola = await GetConTokenAsync(cliente, "/pruebas/comercial", comoDirector.Access);
+        (await consola.Content.ReadAsStringAsync(Ct)).Should().Contain("\"rol\":\"director\"");
+    }
+
+    [Fact]
+    public async Task HU0401_ConElScript16LoginYRefreshFuncionanConUnaYConDosAsignacionesActivas()
+    {
+        // HU-040.1 (#229) y HU-040.2 (#230): la base de pruebas tiene el 16. Una persona con un rol entra y renueva como siempre (sin
+        // selector); a otra Datos le agregó una segunda asignación activa (comercial + gerente, las dos respaldadas en ClientePro): elige y
+        // renueva con el rol elegido. Cada refresh guarda el rol de la sesión (TokensRefresco.rolSesion).
+        var uno = await PersonaAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var dos = await PersonaAsync(clsBaseDatosPruebas.RolExternoGerente);
+        using var factory = Crear();
+        using var cliente = factory.CreateClient();
+        await LoginAsync(cliente, dos);
+        await clsBaseDatosPruebas.EjecutarAsync(baseDatos.CadenaCotifly, $"""
+            INSERT INTO dbo_cotifly.UsuariosRoles (usuarioId, rolId)
+                SELECT u.id, r.id FROM dbo_cotifly.UsuariosWeb u CROSS JOIN dbo_cotifly.Roles r
+                WHERE u.nombreUsuario = N'{dos}' AND r.codigo = N'comercial';
+            """);
+        var idExternoDos = await clsBaseDatosPruebas.EscalarAsync<long>(baseDatos.CadenaCotifly,
+            $"SELECT idUsuarioExterno FROM dbo_cotifly.UsuariosWeb WHERE nombreUsuario = N'{dos}'");
+        await baseDatos.CambiarRolesExternosAsync(idExternoDos, clsBaseDatosPruebas.RolExternoComercial, clsBaseDatosPruebas.RolExternoGerente);
+
+        var sesionUno = await LoginAsync(cliente, uno);
+        var eleccionDos = await LoginConEleccionAsync(cliente, dos);
+        var sesionDos = await ElegirAsync(cliente, eleccionDos.Ticket, "gerente_comercial");
+
+        foreach (var (persona, refresh, rol) in new[] { (uno, sesionUno.Refresh, "comercial"), (dos, sesionDos.Refresh, "gerente_comercial") })
+        {
+            using var renovacion = await cliente.PostAsJsonAsync("/api/auth/refresh", new { refresh }, Ct);
+            using var par = await JsonAsync(renovacion);
+            using var consola = await GetConTokenAsync(cliente, "/pruebas/comercial", par.RootElement.GetProperty("access").GetString());
+
+            renovacion.StatusCode.Should().Be(HttpStatusCode.OK, $"{persona} renueva con el 16 aplicado");
+            par.RootElement.GetProperty("user").GetProperty("rol").GetString().Should().Be(rol);
+            (await consola.Content.ReadAsStringAsync(Ct)).Should().Contain($"\"rol\":\"{rol}\"");
+            (await clsBaseDatosPruebas.EscalarAsync<string>(baseDatos.CadenaCotifly, $"""
+                SELECT STRING_AGG(r.rol, ',') FROM (SELECT DISTINCT COALESCE(t.rolSesion, 'NULL') AS rol FROM dbo_cotifly.TokensRefresco t
+                JOIN dbo_cotifly.UsuariosWeb u ON u.id = t.usuarioId WHERE u.nombreUsuario = N'{persona}' AND t.revocadoAt IS NULL) r
+                """)).Should().Be(rol, "los refresh vigentes guardan el rol de la sesión");
+        }
+
+        eleccionDos.Roles.Should().Equal("comercial", "gerente_comercial");
+        (await clsBaseDatosPruebas.EscalarAsync<int>(baseDatos.CadenaCotifly, $"""
+            SELECT COUNT(*) FROM dbo_cotifly.UsuariosRoles ur JOIN dbo_cotifly.UsuariosWeb u ON u.id = ur.usuarioId
+            WHERE u.nombreUsuario = N'{dos}' AND ur.activo = 1
+            """)).Should().Be(2, "el login no toca las asignaciones");
     }
 
     [Fact]
@@ -297,7 +625,7 @@ public sealed class clsAuthEndpointTests(clsBaseDatosPruebas baseDatos) : IClass
         cuerpo.Should().Be("""{"error":"Demasiadas peticiones. Intenta de nuevo en unos segundos."}""");
     }
 
-    private WebApplicationFactory<Program> Crear(IDictionary<string, string?>? extra = null)
+    private WebApplicationFactory<Program> Crear(IDictionary<string, string?>? extra = null, IClsReloj? reloj = null)
     {
         var valores = new Dictionary<string, string?>
         {
@@ -316,14 +644,45 @@ public sealed class clsAuthEndpointTests(clsBaseDatosPruebas baseDatos) : IClass
         {
             b.ConfigureAppConfiguration((_, configuracion) => configuracion.AddInMemoryCollection(valores));
             b.ConfigureServices(s => s.AddControllers().AddApplicationPart(typeof(clsProtegidoPruebaController).Assembly));
+            if (reloj is not null)
+            {
+                // HU-040.2 (#230): el ticket de elección vence con el reloj de la aplicación.
+                b.ConfigureTestServices(s => s.AddSingleton(reloj));
+            }
         });
     }
 
-    /// <summary>Persona nueva en el almacén con un rol externo; devuelve su NOMBREUSUARIO.</summary>
-    private async Task<string> PersonaAsync(int rolExterno)
+    /// <summary>HU-040.2 (#230): login de una persona con varios roles: el ticket y los códigos de los roles ofrecidos.</summary>
+    private static async Task<(string Ticket, List<string?> Roles)> LoginConEleccionAsync(HttpClient cliente, string idUsuario)
+    {
+        using var respuesta = await cliente.PostAsJsonAsync("/api/auth/login-clientepro", new { idUsuario }, Ct);
+        respuesta.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = await JsonAsync(respuesta);
+        json.RootElement.GetProperty("requiereEleccionRol").GetBoolean().Should().BeTrue();
+        return (json.RootElement.GetProperty("ticketEleccion").GetString()!,
+            [.. json.RootElement.GetProperty("roles").EnumerateArray().Select(r => r.GetProperty("codigo").GetString())]);
+    }
+
+    /// <summary>HU-040.2 (#230): <c>POST /api/auth/elegir-rol</c> que debe responder 200.</summary>
+    private static async Task<(string Access, string Refresh)> ElegirAsync(HttpClient cliente, string ticket, string rol)
+    {
+        using var respuesta = await cliente.PostAsJsonAsync("/api/auth/elegir-rol", new { ticket, rol }, Ct);
+        respuesta.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = await JsonAsync(respuesta);
+        return (json.RootElement.GetProperty("access").GetString()!, json.RootElement.GetProperty("refresh").GetString()!);
+    }
+
+    /// <summary>Eventos de auditoría de <paramref name="herramienta"/> en el hilo <c>auth/{persona}</c>: "exito|outputResumen" por fila.</summary>
+    private async Task<string> EventoAsync(string herramienta, string? persona) =>
+        await clsBaseDatosPruebas.EscalarAsync<string>(baseDatos.CadenaCotifly,
+            "SELECT STRING_AGG(CONCAT(IIF(exito = 1, 'exito=true ', 'exito=false '), outputResumen), ' | ') FROM dbo_cotifly.EventosHerramienta "
+            + $"WHERE herramienta = N'{herramienta}' AND " + (persona is null ? "threadId IS NULL" : $"threadId = N'auth/{persona}'")) ?? string.Empty;
+
+    /// <summary>Persona nueva en el almacén con sus roles externos; devuelve su NOMBREUSUARIO.</summary>
+    private async Task<string> PersonaAsync(params int[] rolesExternos)
     {
         var nombre = $"api{Guid.NewGuid():N}"[..20];
-        await baseDatos.CrearPersonaExternaAsync(nombre, "Persona de prueba", $"{nombre}@boterosoto.com.co", rolExterno);
+        await baseDatos.CrearPersonaExternaAsync(nombre, "Persona de prueba", $"{nombre}@boterosoto.com.co", rolesExternos);
         return nombre;
     }
 

@@ -1,4 +1,5 @@
 using Cotifly.Dominio.Cotizaciones;
+using Cotifly.Dominio.Margen;
 
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
@@ -61,18 +62,17 @@ public sealed class clsDerivacionEstadoCosteoTests
     public void UnaConsultaQueCambiaElEstadoReiniciaLosFallosYGuardaLaCotizacionDeNexo()
     {
         var cotizacion = Enviada();
-        cotizacion.RegistrarFalloConsultaCosteo(_ahora, _ahora.AddSeconds(10));
+        cotizacion.RegistrarFalloConsultaCosteo(_ahora.AddSeconds(10));
         cotizacion.CosteoConsultasFallidas.Should().Be(1);
 
-        var cambio = cotizacion.RegistrarConsultaCosteo(EstadoCosteo.Autocosteo, "COT-9", _ahora.AddMinutes(1), _ahora.AddMinutes(2));
+        var cambio = Consultar(cotizacion, EstadoCosteo.Autocosteo, "COT-9", _ahora.AddMinutes(2));
 
         cambio.Should().BeTrue();
         cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.Autocosteo);
         cotizacion.CotizacionNexoId.Should().Be("COT-9");
         cotizacion.CosteoConsultasFallidas.Should().Be(0);
-        cotizacion.CosteoUltimaConsultaAt.Should().Be(_ahora.AddMinutes(1));
         cotizacion.CosteoSiguienteConsultaAt.Should().Be(_ahora.AddMinutes(2));
-        cotizacion.RegistrarConsultaCosteo(EstadoCosteo.Autocosteo, null, _ahora.AddMinutes(2), null).Should().BeFalse("la misma foto no es un cambio");
+        Consultar(cotizacion, EstadoCosteo.Autocosteo, null, null).Should().BeFalse("la misma foto no es un cambio");
         cotizacion.CotizacionNexoId.Should().Be("COT-9", "una respuesta sin id no borra el que ya se conocía");
     }
 
@@ -87,7 +87,7 @@ public sealed class clsDerivacionEstadoCosteoTests
         sinCosteo.SeConsultaEnNexo.Should().BeFalse();
 
         var conCosteo = Enviada();
-        conCosteo.RegistrarConsultaCosteo(EstadoCosteo.Autocosteo, "COT-1", _ahora, _ahora.AddMinutes(1));
+        Consultar(conCosteo, EstadoCosteo.Autocosteo, "COT-1", _ahora.AddMinutes(1));
         conCosteo.VencerPollingCosteo("x").Should().BeFalse();
         conCosteo.EstadoCosteo.Should().Be(EstadoCosteo.Autocosteo);
         conCosteo.CosteoSiguienteConsultaAt.Should().BeNull();
@@ -105,13 +105,73 @@ public sealed class clsDerivacionEstadoCosteoTests
         cotizacion.CosteoSiguienteConsultaAt.Should().BeNull();
     }
 
-    private static clsCotizacion Enviada()
+    [Fact]
+    public void UnaEntregadaSinPrecioNiPdfQuedaMarcadaParaRelecturaHastaQueTengaPrecio()
     {
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-DG-28092026-001" }).Valor;
-        cotizacion.RegistrarSolicitudCosteo(new clsSolicitudCosteo { Tipo = TipoSolicitud.Spot, Origen = "Cali", Destino = "Bogotá", PesoKg = 1_000m });
+        // HU-013.14 (ADR-018 §17): el rastro del resultado registrado antes de leer el costeo.
+        var cotizacion = Enviada();
+        cotizacion.EntregadaSinPrecio.Should().BeFalse("pendiente_costeo todavía no es entregada");
+
+        Consultar(cotizacion, EstadoCosteo.Entregada, "COT-1", null);
+        cotizacion.EntregadaSinPrecio.Should().BeTrue();
+        cotizacion.SeConsultaEnNexo.Should().BeFalse("entregada sigue siendo terminal para el polling normal");
+
+        cotizacion.ProgramarRelecturaCosteo(_ahora.AddSeconds(1));
+        cotizacion.CosteoSiguienteConsultaAt.Should().Be(_ahora.AddSeconds(1));
+        cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.Entregada, "agendar la relectura no cambia el estado");
+        cotizacion.VersionNegocio.Should().Be(0, "ni la versión de negocio");
+
+        var ruta = cotizacion.PrimeraRuta!;
+        ruta.RegistrarMargenCosteo(0.15m, 0.15m, OrigenMargen.PoliticaLinea, "margen");
+        ruta.Vehiculos[0].RegistrarCosteo(EstadoCosteo.Entregada, 1_000_000m, null);
+        cotizacion.RecalcularTotales(_ahora);
+        cotizacion.PrecioFinal.Should().Be(1_176_471m, "1.000.000 / (1 - 0,15), redondeado a pesos");
+        cotizacion.EntregadaSinPrecio.Should().BeFalse();
+    }
+
+    [Fact]
+    public void LaPerdidaSinCosteoQuedaSoloEnCotiflyDetieneElPollingYNoSeRepite()
+    {
+        // HU-013.17 (#127): el cliente desistió antes del costeo de Nexo.
+        var cotizacion = Enviada();
+        cotizacion.AdmitePerdidaSinCosteo.Should().BeTrue();
+
+        cotizacion.RegistrarPerdidaSinCosteo("  El cliente desistió ", _ahora);
+
+        cotizacion.Ganada.Should().BeFalse();
+        cotizacion.MotivoRechazo.Should().Be("El cliente desistió");
+        cotizacion.MarcadoAt.Should().Be(_ahora);
+        cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo);
+        cotizacion.CosteoSiguienteConsultaAt.Should().BeNull();
+        cotizacion.PerdidaSoloEnCotifly.Should().BeTrue();
+        cotizacion.MotivoEstadoCosteo.Should().StartWith(clsCotizacionSolicitud.PrefijoPerdidaSoloEnCotifly);
+        cotizacion.RequiereRelecturaCosteo.Should().BeFalse();
+        cotizacion.AdmitePerdidaSinCosteo.Should().BeFalse("ya tiene resultado");
+        cotizacion.Invoking(c => c.RegistrarPerdidaSinCosteo("otra", _ahora)).Should().Throw<InvalidOperationException>();
+
+        var entregada = Enviada();
+        Consultar(entregada, EstadoCosteo.Entregada, "COT-1", null);
+        entregada.Invoking(c => c.RegistrarPerdidaSinCosteo("x", _ahora)).Should().Throw<InvalidOperationException>("con costeo entregado va a Nexo");
+    }
+
+    private static clsCotizacionSolicitud Enviada()
+    {
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-DG-28092026-001" }).Valor;
+        cotizacion.RegistrarSolicitudCosteo(new clsSolicitudCosteo { Tipo = TipoSolicitud.Spot, Origen = "Cali", Destino = "Bogotá", PesoKg = 1_000m }, 3);
         cotizacion.RegistrarEnvioCosteo("SOL-1", costeoCompleto: false, _ahora, _ahora.AddSeconds(5));
         cotizacion.SeConsultaEnNexo.Should().BeTrue();
         return cotizacion;
+    }
+
+    /// <summary>Como el polling (HU-021): primero el estado de cada camión, después la solicitud resume a sus rutas.</summary>
+    private static bool Consultar(clsCotizacionSolicitud cotizacion, EstadoCosteo estado, string? cotizacionNexoId, DateTimeOffset? siguiente)
+    {
+        foreach (var ruta in cotizacion.Rutas)
+        {
+            ruta.RegistrarEstadoCamiones(estado);
+        }
+
+        return cotizacion.RegistrarConsultaCosteo(estado, cotizacionNexoId, siguiente);
     }
 
     private static clsCosteoConsultadoNexo Foto(string estado, IReadOnlyList<string> lineas, clsCotizacionNexo? cotizacion) => new(estado, lineas, cotizacion);

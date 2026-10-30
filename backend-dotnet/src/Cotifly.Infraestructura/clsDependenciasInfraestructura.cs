@@ -22,7 +22,6 @@ using Cotifly.Aplicacion.Municipios.Interfaces;
 using Cotifly.Aplicacion.Pdf.Interfaces;
 using Cotifly.Aplicacion.Pdf.Services;
 using Cotifly.Aplicacion.Precio.Interfaces;
-using Cotifly.Aplicacion.Tarifas.Interfaces;
 using Cotifly.Infraestructura.Agente.Repositories;
 using Cotifly.Infraestructura.Agente.Services;
 using Cotifly.Infraestructura.Auditoria.Repositories;
@@ -46,7 +45,6 @@ using Cotifly.Infraestructura.Metricas.Repositories;
 using Cotifly.Infraestructura.Municipios.Services;
 using Cotifly.Infraestructura.Pdf.Services;
 using Cotifly.Infraestructura.Precio.Services;
-using Cotifly.Infraestructura.Tarifas.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -74,11 +72,13 @@ public static class clsDependenciasInfraestructura
         ArgumentNullException.ThrowIfNull(servicios);
         ArgumentNullException.ThrowIfNull(configuracion);
 
-        // Opciones (cada HU agrega las suyas aquí: #12 Jwt, luego IA/GChat...).
+        // Opciones (cada HU agrega las suyas aquí: #12 Jwt, luego IA, Nexo, TRM...).
         servicios.AddOpcionesValidadas<clsOpcionesZona>(configuracion, clsOpcionesZona.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesZona>, clsValidadorOpcionesZona>();
         servicios.AddOpcionesValidadas<clsOpcionesConexiones>(configuracion, clsOpcionesConexiones.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesConexiones>, clsValidadorOpcionesConexiones>();
+        servicios.AddOpcionesValidadas<clsOpcionesBaseDatos>(configuracion, clsOpcionesBaseDatos.Seccion);
+        servicios.AddSingleton<IValidateOptions<clsOpcionesBaseDatos>, clsValidadorOpcionesBaseDatos>();
         servicios.AddOpcionesValidadas<clsOpcionesIdentidad>(configuracion, clsOpcionesIdentidad.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesRegional>(configuracion, clsOpcionesRegional.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesMargen>(configuracion, clsOpcionesMargen.Seccion);
@@ -88,40 +88,62 @@ public static class clsDependenciasInfraestructura
         servicios.AddOpcionesValidadas<clsOpcionesAlmacenPdf>(configuracion, clsOpcionesAlmacenPdf.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesAlmacenPdf>, clsValidadorOpcionesAlmacenPdf>();
         servicios.AddOpcionesValidadas<clsOpcionesCorreo>(configuracion, clsOpcionesCorreo.Seccion);
+        // HU-033 (#199): fuera de Production, con el correo habilitado, la protección "redirigir" con buzón de pruebas es obligatoria.
+        servicios.AddSingleton<IValidateOptions<clsOpcionesCorreo>, clsValidadorOpcionesCorreo>();
         servicios.AddOpcionesValidadas<clsOpcionesCorreoTransporte>(configuracion, clsOpcionesCorreoTransporte.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesCorreoTransporte>, clsValidadorOpcionesCorreoTransporte>();
         servicios.AddOpcionesValidadas<clsOpcionesJwt>(configuracion, clsOpcionesJwt.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesJwt>, clsValidadorOpcionesJwt>();
         servicios.AddOpcionesValidadas<clsOpcionesAgente>(configuracion, clsOpcionesAgente.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesSesiones>(configuracion, clsOpcionesSesiones.Seccion);
+        servicios.AddOpcionesValidadas<Aplicacion.Redaccion.Services.clsOpcionesRedaccion>(configuracion, Aplicacion.Redaccion.Services.clsOpcionesRedaccion.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesIA>(configuracion, clsOpcionesIA.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesIA>, clsValidadorOpcionesIA>();
-        servicios.AddOpcionesValidadas<clsOpcionesGoogleChat>(configuracion, clsOpcionesGoogleChat.Seccion);
-        servicios.AddSingleton<IValidateOptions<clsOpcionesGoogleChat>, clsValidadorOpcionesGoogleChat>();
-        servicios.AddOpcionesValidadas<clsOpcionesFirmaUrlPdf>(configuracion, clsOpcionesFirmaUrlPdf.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesNexo>(configuracion, clsOpcionesNexo.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesCosteoNexo>(configuracion, clsOpcionesCosteoNexo.Seccion);
+        servicios.AddOpcionesValidadas<clsOpcionesCaptura>(configuracion, clsOpcionesCaptura.Seccion);
+        servicios.AddSingleton<IValidateOptions<clsOpcionesCaptura>, clsValidadorOpcionesCaptura>();
+        // HU-018.1 (#155): lista de motivos de pérdida (por defecto la de Nexo) y el motivo que exige comentario.
+        servicios.AddOpcionesValidadas<Aplicacion.Cotizaciones.Services.clsOpcionesResultado>(configuracion, Aplicacion.Cotizaciones.Services.clsOpcionesResultado.Seccion);
+        servicios.AddSingleton<IValidateOptions<Aplicacion.Cotizaciones.Services.clsOpcionesResultado>, clsValidadorOpcionesResultado>();
+        // HU-032 (#197, M1): warning al arrancar si la lista de clases exentas no incluye Contenedor (no lo impide).
+        servicios.AddHostedService<clsAvisosArranqueCaptura>();
         servicios.AddOpcionesValidadas<clsOpcionesTrm>(configuracion, clsOpcionesTrm.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesTrm>, clsValidadorOpcionesTrm>();
+        servicios.AddOpcionesValidadas<clsOpcionesCandadoSql>(configuracion, clsOpcionesCandadoSql.Seccion);
+        servicios.AddOpcionesValidadas<clsOpcionesCubicador>(configuracion, clsOpcionesCubicador.Seccion);
+        // HU-023.2 (#157): "Calcular cubicaje" (parecido de la descripción y el plan B de la sugerencia legada).
+        servicios.AddOpcionesValidadas<Aplicacion.Cubicacion.Services.clsOpcionesCubicacion>(configuracion, Aplicacion.Cubicacion.Services.clsOpcionesCubicacion.Seccion);
+        servicios.AddSingleton<IValidateOptions<clsOpcionesCubicador>, clsValidadorOpcionesCubicador>();
+        servicios.AddOpcionesValidadas<Aplicacion.Licitaciones.Services.clsOpcionesCubicacionLicitacion>(
+            configuracion, Aplicacion.Licitaciones.Services.clsOpcionesCubicacionLicitacion.Seccion);
+        servicios.AddSingleton<IValidateOptions<Aplicacion.Licitaciones.Services.clsOpcionesCubicacionLicitacion>, clsValidadorOpcionesCubicacionLicitacion>();
 
         // Adaptadores de puertos transversales.
         servicios.TryAddSingleton(TimeProvider.System);
         servicios.TryAddSingleton<IClsReloj, clsRelojSistema>();
         servicios.TryAddSingleton<IClsCalendarioNegocio, clsCalendarioNegocio>();
 
+        // Idempotency-Key de la captura y de las mutaciones de la etapa final (ADR-018 §8, #100, #173). #191: en la tabla del 06
+        // (dbo_cotifly.CapturasIdempotentes), compartida entre réplicas y a prueba de reinicios; sin la tabla, /health/ready dice
+        // "falta 06" (no se degrada a memoria). El registro de la captura en curso usa la misma fila, dentro de la transacción del folio.
+        servicios.TryAddSingleton<IClsAlmacenIdempotencia, clsAlmacenIdempotenciaSql>();
+        servicios.TryAddScoped<IClsRegistroCapturasIdempotentes, clsRegistroCapturasIdempotentesSql>();
+        servicios.AddHostedService<clsLimpiezaIdempotenciaHostedService>();
+
         AgregarPersistencia(servicios);
 
-        // Fuentes externas de Margen (#13) y Tarifas (#10). TryAdd: un adaptador registrado antes (pruebas, HU-005) se respeta.
+        // Fuente externa de Margen (#13). TryAdd: un adaptador registrado antes (pruebas, HU-005) se respeta.
         AgregarFuenteMargen(servicios);
-        servicios.TryAddSingleton<IClsTarifaProvider, clsTarifaProviderNoDisponible>();
 
         // TRM oficial del día para cotizar en USD (HU-012.1, ADR-014).
         AgregarTrm(servicios);
 
-        // Catálogos del formulario de captura que también proxean Nexo (municipios, tipos de vehículo/carrocería/viaje).
+        // Catálogos del formulario de captura que también proxean Nexo (municipios, tipos de vehículo/carrocería/viaje). La cubicación
+        // rápida de Nexo (POST /api/cubicacion) se retiró en HU-023.2 (#157): "Calcular cubicaje" usa el cubicador (AgregarCubicador).
         AgregarMunicipios(servicios);
         AgregarCatalogosFlete(servicios);
-        AgregarCubicacion(servicios);
+        AgregarCubicador(servicios);
         AgregarCosteo(servicios);
 
         AgregarPdfYCorreo(servicios);
@@ -134,24 +156,20 @@ public static class clsDependenciasInfraestructura
     }
 
     /// <summary>
-    /// Agente (#12 parte C, ADR-003/ADR-011): <see cref="IChatClient"/> por <c>IA:Proveedor</c>, búsqueda de clientes en Nexo
-    /// (HU-005.2, elegida por <c>Nexo:UrlBase</c>: ver <see cref="AgregarBuscadorClientes"/>), Google Chat (verificación del JWT,
-    /// cola, worker y publicador con la cuenta de servicio), URL firmada del PDF y barrido de sesiones inactivas. TryAdd: un
-    /// adaptador registrado antes (pruebas) se respeta.
+    /// Asistente IA (#12 parte C, ADR-003, ADR-018): <see cref="IChatClient"/> por <c>IA:Proveedor</c>, redactor del PDF, búsqueda de
+    /// clientes en Nexo (HU-005.2, elegida por <c>Nexo:UrlBase</c>: ver <see cref="AgregarBuscadorClientes"/>),
+    /// candado por sesión y barrido de sesiones inactivas. Google Chat (webhook, cola, worker y publicador) se retiró en HU-013.9 (#105).
+    /// TryAdd: un adaptador registrado antes (pruebas) se respeta.
     /// </summary>
     private static void AgregarAgente(IServiceCollection servicios)
     {
         servicios.TryAddSingleton<IChatClient>(clsChatClientFactory.Crear);
-        AgregarBuscadorClientes(servicios);
-        servicios.TryAddSingleton<IClsFirmaUrlPdf, clsFirmaUrlPdfHmac>();
 
-        servicios.AddHttpClient(clsVerificadorJwtGoogleChat.NombreCliente, c => c.Timeout = TimeSpan.FromSeconds(30)).RedactLoggedHeaders(_ => true);
-        servicios.TryAddSingleton<IClsVerificadorJwtGoogleChat, clsVerificadorJwtGoogleChat>();
-        servicios.TryAddSingleton<clsTokenCuentaServicioGoogle>();
-        servicios.TryAddSingleton<IClsPublicadorChat, clsPublicadorGoogleChat>();
-        servicios.TryAddSingleton<IClsColaEventosChat, clsColaEventosChat>();
+        // Redactor del asunto y la introducción del PDF (HU-013.5) sobre el mismo IChatClient; el respaldo lo aplica Aplicación.
+        servicios.TryAddScoped<Aplicacion.Redaccion.Interfaces.IClsRedactorCotizacion, Redaccion.Services.clsRedactorCotizacionLlm>();
+        AgregarBuscadorClientes(servicios);
+
         servicios.TryAddSingleton<IClsCandadoSesion, clsCandadoSesionSql>();
-        servicios.AddHostedService<clsWorkerEventosChat>();
         servicios.AddHostedService<clsBarridoSesionesHostedService>();
     }
 
@@ -163,6 +181,8 @@ public static class clsDependenciasInfraestructura
     {
         servicios.TryAddSingleton<IClsConfiguracionJwt, clsConfiguracionJwt>();
         servicios.TryAddSingleton<IClsEmisorTokens, clsEmisorTokensJwt>();
+        // HU-040.2 (#230, ADR-025): ticket de elección del rol (JWT de 5 minutos con clave derivada).
+        servicios.TryAddSingleton<IClsEmisorTicketEleccion, clsEmisorTicketEleccionJwt>();
         servicios.TryAddScoped<IClsAlmacenIdentidadExterno, clsAlmacenIdentidadSolucionesTi>();
         servicios.AddHostedService<clsLimpiezaTokensHostedService>();
 
@@ -175,15 +195,32 @@ public static class clsDependenciasInfraestructura
     }
 
     /// <summary>
-    /// PDF (MigraDoc con fuentes embebidas, almacén en volumen) y transporte de correo elegido por <c>Correo:Modo</c> (#11).
+    /// PDF (MigraDoc con fuentes embebidas, almacén en volumen) y correo por MailSender (HU-033, #199, ADR-023): cliente HTTP tipado
+    /// <see cref="clsTransporteMailSender"/> con <c>Correo:MailSender:UrlBase</c> y su tubería (tiempo <c>TimeoutSegundos</c>, sin reintentar los
+    /// POST, sin registrar cabeceras), y el worker que consulta el estado de los correos encolados (<see cref="clsWorkerEstadoCorreos"/>).
     /// TryAdd: un adaptador registrado antes (pruebas) se respeta.
     /// </summary>
     private static void AgregarPdfYCorreo(IServiceCollection servicios)
     {
         servicios.TryAddSingleton<IClsGeneradorPdf, clsGeneradorPdfMigraDoc>();
         servicios.TryAddSingleton<IClsAlmacenPdf, clsAlmacenPdfVolumen>();
-        servicios.TryAddSingleton<clsTransporteSmtpRelay>();
-        servicios.TryAddSingleton<IClsTransporteCorreo>(clsFabricaTransporteCorreo.Crear);
+        var tuberia = servicios.AddHttpClient<clsTransporteMailSender>(clsTransporteMailSender.NombreCliente, (sp, cliente) =>
+            {
+                cliente.Timeout = Timeout.InfiniteTimeSpan; // el límite lo pone la tubería
+                var url = sp.GetRequiredService<IOptions<clsOpcionesCorreoTransporte>>().Value.MailSender.UrlBase;
+                if (Uri.TryCreate(url?.Trim().TrimEnd('/') + "/", UriKind.Absolute, out var raiz))
+                {
+                    cliente.BaseAddress = raiz;
+                }
+            })
+            .RedactLoggedHeaders(_ => true)
+            .AddStandardResilienceHandler();
+        servicios.AddOptions<HttpStandardResilienceOptions>(tuberia.PipelineName)
+            .Configure<IOptions<clsOpcionesCorreoTransporte>>((resiliencia, opciones) =>
+                clsTransporteMailSender.ConfigurarResiliencia(resiliencia, opciones.Value.MailSender.Timeout));
+        servicios.TryAddScoped<IClsTransporteCorreo>(sp => sp.GetRequiredService<clsTransporteMailSender>());
+        servicios.TryAddScoped<IClsSeguimientoCorreoExterno>(sp => sp.GetRequiredService<clsTransporteMailSender>());
+        servicios.AddHostedService<clsWorkerEstadoCorreos>();
     }
 
     /// <summary>
@@ -275,14 +312,16 @@ public static class clsDependenciasInfraestructura
     /// <summary>
     /// Búsqueda de clientes elegida por <c>Nexo:UrlBase</c> al resolver (<see cref="clsFabricaBuscadorClientes"/>): configurada
     /// → <see cref="clsBuscadorClientesNexo"/>; vacía → <see cref="clsBuscadorClientesNoDisponible"/> (#10, HU-005.2). Cliente
-    /// tipado con la tubería estándar de resiliencia (8 s en total) y sin registrar el header <c>X-Portal-Usuario-Id</c> en los
+    /// tipado con la tubería estándar de resiliencia (8 s en total) y sin registrar el header <c>X-Portal-clsUsuario-Id</c> en los
     /// logs. TryAdd: un adaptador registrado antes (pruebas) se respeta.
     /// </summary>
     private static void AgregarBuscadorClientes(IServiceCollection servicios)
     {
         servicios.TryAddScoped<clsBuscadorClientesNoDisponible>();
+        AgregarCupoNexo(servicios);
         servicios.AddHttpClient<clsBuscadorClientesNexo>(clsBuscadorClientesNexo.NombreCliente)
             .RedactLoggedHeaders(_ => true)
+            .AddHttpMessageHandler<clsCupoNexoHandler>()
             .AddStandardResilienceHandler(clsBuscadorClientesNexo.ConfigurarResiliencia);
         servicios.TryAddScoped<IClsBuscadorClientes>(clsFabricaBuscadorClientes.Crear);
     }
@@ -322,23 +361,61 @@ public static class clsDependenciasInfraestructura
         servicios.AddHttpClient<clsCatalogosMaestrosNexo>(clsBuscadorClientesNexo.NombreCliente);
         servicios.TryAddScoped<IClsCatalogosMaestrosProvider>(clsFabricaCatalogosMaestros.Crear);
 
+        // HU-031.1 (#194): diccionario de alias de Nexo (NEXO #321), mismo cliente HTTP y las mismas reglas de caché que los maestros.
+        servicios.TryAddSingleton<clsCacheAliasNexo>();
+        servicios.AddHttpClient<clsAliasNexo>(clsBuscadorClientesNexo.NombreCliente);
+        servicios.TryAddScoped<IClsAliasNexoProvider>(clsFabricaAliasNexo.Crear);
+
         servicios.TryAddScoped<clsCatalogosFleteNoDisponible>();
         servicios.TryAddScoped<clsCatalogosFleteNexo>();
         servicios.TryAddScoped<IClsCatalogosFleteProvider>(clsFabricaCatalogosFlete.Crear);
     }
 
     /// <summary>
-    /// Cubicación rápida elegida por <c>Nexo:UrlBase</c> al resolver (<see cref="clsFabricaCubicacion.Crear"/>):
-    /// configurada → <see cref="clsCubicacionNexo"/>; vacía → <see cref="clsCubicacionNoDisponible"/>. Mismo cliente
-    /// HTTP tipado (nombre <see cref="clsBuscadorClientesNexo.NombreCliente"/>) que la búsqueda de clientes: es el
-    /// mismo servicio Nexo. No repite la configuración de resiliencia/redacción por la misma razón que
-    /// <see cref="AgregarMunicipios"/>. TryAdd: un adaptador registrado antes (pruebas) se respeta.
+    /// Cubicador (HU-021.5, #133) elegido por <c>Cubicador:UrlBase</c> al resolver (<see cref="clsFabricaCubicador.Crear"/>): configurado →
+    /// <see cref="clsCubicadorHttp"/>; vacío → <see cref="clsCubicadorNoDisponible"/> (la captura crea un camión sin vehículo por ruta). Cliente
+    /// HTTP propio (<see cref="clsCubicadorHttp.NombreCliente"/>) con su tubería: <c>Cubicador:TiempoEsperaSegundos</c> para las consultas y
+    /// <c>Cubicador:TiempoEsperaRecomendacionSegundos</c> para el POST (D3b), sin
+    /// reintentar los POST y sin registrar cabeceras (la llave viaja en <c>Authorization</c>). Los eventos de Polly de cada intento bajan a
+    /// Debug, como en SAP TM. Los catálogos (tipos de mercancía, carrocerías y vehículos, HU-023.1) se guardan en <see cref="clsCacheCatalogoCubicador{TFila}"/> (singleton por catálogo). TryAdd: un
+    /// adaptador registrado antes (pruebas) se respeta.
     /// </summary>
-    private static void AgregarCubicacion(IServiceCollection servicios)
+    private static void AgregarCubicador(IServiceCollection servicios)
     {
-        servicios.TryAddScoped<clsCubicacionNoDisponible>();
-        servicios.AddHttpClient<clsCubicacionNexo>(clsBuscadorClientesNexo.NombreCliente);
-        servicios.TryAddScoped<IClsCubicacionProvider>(clsFabricaCubicacion.Crear);
+        servicios.TryAddScoped<clsCubicadorNoDisponible>();
+        servicios.TryAddSingleton(typeof(clsCacheCatalogoCubicador<>));
+        // Opción C: un solo cupo global por proceso para POST /recomendaciones (Cubicador:MaximoConcurrente).
+        servicios.TryAddSingleton<clsCupoLlamadasCubicador>();
+        // Sin el límite de 100 s del HttpClient: los límites los pone la tubería (el POST puede esperar hasta 300 s).
+        var tuberia = servicios.AddHttpClient<clsCubicadorHttp>(clsCubicadorHttp.NombreCliente, cliente => cliente.Timeout = Timeout.InfiniteTimeSpan)
+            .RedactLoggedHeaders(_ => true)
+            .AddStandardResilienceHandler();
+        servicios.AddOptions<HttpStandardResilienceOptions>(tuberia.PipelineName)
+            .Configure<IOptions<clsOpcionesCubicador>>((resiliencia, opciones) =>
+                clsCubicadorHttp.ConfigurarResiliencia(resiliencia, TimeSpan.FromSeconds(opciones.Value.TiempoEsperaSegundos),
+                    TimeSpan.FromSeconds(opciones.Value.TiempoEsperaRecomendacionSegundos),
+                    TimeSpan.FromSeconds(opciones.Value.TiempoEsperaReconsultaSegundos)));
+        servicios.TryAddScoped<IClsCubicador>(clsFabricaCubicador.Crear);
+
+        // Opción D: "Calcular cubicaje" asíncrono (202 y GET /web/cubicacion/{id}). Una réplica de la API (infra/stack.dotnet.*.yml):
+        // las cubicaciones viven en memoria; con más réplicas haría falta una tabla compartida.
+        servicios.TryAddSingleton<IClsAlmacenCubicacionesRapidas, clsAlmacenCubicacionesRapidasMemoria>();
+        servicios.TryAddSingleton<clsCubicacionRapidaService>();
+        servicios.TryAddSingleton<IClsCubicacionRapidaService>(sp => sp.GetRequiredService<clsCubicacionRapidaService>());
+        servicios.AddHostedService(sp => sp.GetRequiredService<clsCubicacionRapidaService>());
+
+        // HU-023.5 (#160): cubicación de la licitación en segundo plano, con cupos de llamadas compartidos entre réplicas (P6).
+        servicios.TryAddScoped<IClsCupoCubicador, clsCupoCubicadorSql>();
+        servicios.AddHostedService<clsWorkerCubicacionLicitacion>();
+
+        servicios.Configure<TelemetryOptions>(telemetria =>
+        {
+            var anterior = telemetria.SeverityProvider;
+            telemetria.SeverityProvider = argumentos =>
+                argumentos.Source.PipelineName?.StartsWith(clsCubicadorHttp.NombreCliente + "-", StringComparison.Ordinal) == true
+                    ? ResilienceEventSeverity.Debug
+                    : anterior?.Invoke(argumentos) ?? argumentos.Event.Severity;
+        });
     }
 
     /// <summary>
@@ -351,11 +428,31 @@ public static class clsDependenciasInfraestructura
     private static void AgregarCosteo(IServiceCollection servicios)
     {
         servicios.TryAddScoped<clsCosteoNexoNoDisponible>();
+        AgregarCupoNexo(servicios);
         servicios.AddHttpClient<clsCosteoNexo>(clsCosteoNexo.NombreCliente)
             .RedactLoggedHeaders(_ => true)
+            .AddHttpMessageHandler<clsCupoNexoHandler>()
             .AddStandardResilienceHandler(clsCosteoNexo.ConfigurarResiliencia);
         servicios.TryAddScoped<IClsCosteoNexo>(clsFabricaCosteoNexo.Crear);
         servicios.AddHostedService<clsWorkerCosteoNexo>();
+
+        // Servicios conexos de Nexo (HU-013.3, ADR-018 §4): mismo cliente NexoCosteo y misma identidad, vía clsCosteoNexo.
+        servicios.TryAddScoped<clsServiciosConexosNoDisponible>();
+        servicios.TryAddScoped<Aplicacion.Costeo.Interfaces.IClsServiciosConexosNexo>(sp =>
+            string.IsNullOrWhiteSpace(sp.GetRequiredService<IOptions<clsOpcionesNexo>>().Value.UrlBase)
+                ? sp.GetRequiredService<clsServiciosConexosNoDisponible>()
+                : new clsServiciosConexosNexo(sp.GetRequiredService<clsCosteoNexo>()));
+
+        // Costo unitario de los conexos del catálogo para capturarlos con la ruta (HU-021.6, decisión 3): mismo cliente y misma identidad.
+        // Con caché en memoria de 5 minutos (clsAlmacenCostosConexos): el precio guardado es el costo de Nexo al capturar.
+        servicios.TryAddSingleton<clsAlmacenCostosConexos>();
+        servicios.TryAddScoped<Aplicacion.Costeo.Interfaces.IClsCostosConexosNexo>(sp =>
+            string.IsNullOrWhiteSpace(sp.GetRequiredService<IOptions<clsOpcionesNexo>>().Value.UrlBase)
+                ? new clsCostosConexosNoDisponible()
+                : new clsCostosConexosEnCache(
+                    new clsCostosConexosNexo(sp.GetRequiredService<clsCosteoNexo>()),
+                    sp.GetRequiredService<clsAlmacenCostosConexos>(),
+                    sp.GetRequiredService<Aplicacion.Comun.Interfaces.IClsReloj>()));
 
         // Licitaciones (HU-011, ADR-017): el análisis del Excel va a Nexo por el mismo cliente NexoCosteo (POST sin reintentos);
         // sin Nexo:UrlBase responde COSTEO_NEXO_NO_DISPONIBLE. La lectura del original es local (ClosedXML).
@@ -365,13 +462,34 @@ public static class clsDependenciasInfraestructura
             string.IsNullOrWhiteSpace(sp.GetRequiredService<IOptions<clsOpcionesNexo>>().Value.UrlBase)
                 ? sp.GetRequiredService<Licitaciones.Services.clsAnalizadorExcelNoDisponible>()
                 : sp.GetRequiredService<Licitaciones.Services.clsAnalizadorExcelNexo>());
+        // HU-035.2 (#213): los controles del Excel subido (bomba zip, libro denso, XXE) y el cupo de lecturas simultáneas son una sola
+        // pieza para el pliego y el Excel de mercancías. Singleton: el cupo es de todo el proceso.
+        servicios.TryAddSingleton<clsLecturaExcelAcotada>();
         servicios.TryAddSingleton<Aplicacion.Licitaciones.Interfaces.IClsLectorExcelLicitacion, Licitaciones.Services.clsLectorExcelLicitacionClosedXml>();
         servicios.TryAddSingleton<Aplicacion.Licitaciones.Interfaces.IClsExportadorExcelLicitacion, Licitaciones.Services.clsExportadorExcelLicitacionClosedXml>();
+        // HU-018.1 (#155, parte C): Excel de la cotización ("Ver detalle"). Solo escribe (no abre archivos del cliente): sin el cupo de lecturas.
+        servicios.TryAddSingleton<Aplicacion.Cotizaciones.Interfaces.IClsExportadorExcelCotizacion, Cotizaciones.Services.clsExportadorExcelCotizacionClosedXml>();
+
+        // HU-035.1 (#202, ADR-024): Excel de mercancías de una ruta, leído localmente (ClosedXML, sin Nexo), con el cupo compartido.
+        servicios.TryAddSingleton<Aplicacion.Mercancias.Interfaces.IClsLectorGrillaExcel, Mercancias.Services.clsLectorGrillaExcelClosedXml>();
+    }
+
+    /// <summary>
+    /// Cupo de lecturas de Nexo (HU-023.4, #159): un bloqueo para todo Cotifly tras un 429 (Nexo limita por rol) y el manejador que lo
+    /// aplica en los dos clientes de Nexo, por fuera de la tubería de resiliencia. Idempotente (lo piden clientes y costeo).
+    /// </summary>
+    private static void AgregarCupoNexo(IServiceCollection servicios)
+    {
+        servicios.TryAddSingleton<clsCupoNexo>();
+        servicios.TryAddTransient<clsCupoNexoHandler>();
     }
 
     private static void AgregarPersistencia(IServiceCollection servicios)
     {
         servicios.AddSingleton<clsMarcasTiempoInterceptor>();
+        // HU-023 (#176): BUSQUEDA_AGOTADA se guarda tal cual con el script 07 y, sin él, en NULL con un aviso (autodetectado).
+        servicios.TryAddSingleton<clsDetectorMotivosBd>();
+        servicios.AddSingleton<clsMotivoSinSeleccionInterceptor>();
 
         // dbo_cotifly: lectura y escritura (ADR-008). Sin cadena (fuera de Production) la API arranca
         // igual y /health/ready responde 503.
@@ -379,10 +497,11 @@ public static class clsDependenciasInfraestructura
         {
             var cadena = proveedor.GetRequiredService<IOptions<clsOpcionesConexiones>>().Value.Cotifly;
             ConfigurarSqlServer(opciones, cadena);
-            opciones.AddInterceptors(proveedor.GetRequiredService<clsMarcasTiempoInterceptor>());
+            opciones.AddInterceptors(
+                proveedor.GetRequiredService<clsMotivoSinSeleccionInterceptor>(), proveedor.GetRequiredService<clsMarcasTiempoInterceptor>());
         });
 
-        // dbsolucionesti: solo lectura (usuarios y roles de ClientePro para el login, #12).
+        // Base de identidad del portal (la misma de Nexo; QA: dbSolucionesTI_Prueba, #172): solo lectura (login, #12).
         servicios.AddDbContext<clsIdentidadDbContext>((proveedor, opciones) =>
             ConfigurarSqlServer(opciones, proveedor.GetRequiredService<IOptions<clsOpcionesConexiones>>().Value.Identidad));
 
@@ -402,7 +521,8 @@ public static class clsDependenciasInfraestructura
         servicios.AddScoped<IClsCandadoTransaccional, clsCandadoTransaccionalSql>();
 
         servicios.AddHealthChecks()
-            .AddCheck<clsBaseDatosHealthCheck>(clsBaseDatosHealthCheck.Nombre, tags: [EtiquetaReadiness]);
+            .AddCheck<clsBaseDatosHealthCheck>(clsBaseDatosHealthCheck.Nombre, tags: [EtiquetaReadiness])
+            .AddCheck<clsCubicadorHealthCheck>(clsCubicadorHealthCheck.Nombre, tags: [EtiquetaReadiness]);
     }
 
     private static void ConfigurarSqlServer(DbContextOptionsBuilder opciones, string? cadena)

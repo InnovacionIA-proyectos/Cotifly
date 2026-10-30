@@ -51,6 +51,13 @@ public sealed partial class clsGenerarPdfService(
             throw new ArgumentException("generar_pdf exige el comercial autenticado (usuarioId).", nameof(entrada));
         }
 
+        // HU-021.6: la cotización "del chat" (sin municipios) se salta la decisión 2; apagada por defecto (Pdf:PermitirCotizacionChat).
+        if (!opciones.Value.PermitirCotizacionChat)
+        {
+            return new clsErrorDominio(clsCodigosError.CotizacionChatRetirada,
+                "Crear cotizaciones desde el chat está retirado: créala con el formulario de costeo (POST /web/solicitudes-costeo).");
+        }
+
         var payload = entrada.Cotizacion;
         var folio = clsTextoSeguro.LimpiarLinea(entrada.Folio);
         var errorFolio = ValidarFolio(folio);
@@ -92,7 +99,7 @@ public sealed partial class clsGenerarPdfService(
                       ?? clsTextoSeguro.LimpiarLinea(payload.MetodoCalculo)
                       ?? clsTextoSeguro.LimpiarLinea(politica.MetodoCalculo)
                       ?? clsReglaMargen.MetodoMargen).ToLowerInvariant();
-        var moneda = (clsTextoSeguro.LimpiarLinea(traza.Moneda) ?? clsCotizacion.MonedaPesos).ToUpperInvariant();
+        var moneda = (clsTextoSeguro.LimpiarLinea(traza.Moneda) ?? clsCotizacionSolicitud.MonedaPesos).ToUpperInvariant();
 
         var cotizacion = CrearCotizacion(entrada, traza, folio!, politica, metodo, moneda);
         if (cotizacion.EsFallo)
@@ -120,7 +127,12 @@ public sealed partial class clsGenerarPdfService(
         clsPdfGenerado pdf;
         try
         {
-            pdf = generador.Generar(documento.Valor);
+            pdf = await generador.GenerarAsync(documento.Valor, cancellationToken);
+        }
+        catch (clsRenderPdfOcupadoException)
+        {
+            // El turno de render no llegó a tiempo (#92/#95): ya quedó en el log del generador; es transitorio (503).
+            return new clsErrorDominio(clsCodigosError.PdfRenderNoDisponible, "El generador de PDF está ocupado. Reintenta en unos segundos.");
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -146,7 +158,14 @@ public sealed partial class clsGenerarPdfService(
         catch (clsViolacionUnicidadException ex)
         {
             await almacen.EliminarAsync(nombre, CancellationToken.None);
-            return ex.Error.Codigo == clsCodigosError.FolioDuplicado ? FolioDuplicado(folio!) : ex.Error;
+            if (ex.Error.Codigo == clsCodigosError.FolioDuplicado)
+            {
+                return FolioDuplicado(folio!);
+            }
+
+            // Endurecimiento A (#199): otra restricción única no es un error del cliente; su nombre técnico queda solo en el log.
+            LogRestriccionInesperada(logger, folio!, ex.Restriccion ?? "(desconocida)");
+            return new clsErrorDominio(clsCodigosError.ErrorInterno, "No se pudo registrar el PDF de la cotización.");
         }
         catch
         {
@@ -168,11 +187,11 @@ public sealed partial class clsGenerarPdfService(
                 "Falta el folio de la cotización: lo genera el servidor (ADR-011) y llega en la entrada; la 'referencia' del payload no se usa.");
         }
 
-        if (folio.Length > clsCotizacion.LargoMaximoFolio || !ExpresionFolio().IsMatch(folio))
+        if (folio.Length > clsCotizacionSolicitud.LargoMaximoFolio || !ExpresionFolio().IsMatch(folio))
         {
             return new clsErrorDominio(
                 clsCodigosError.PdfPayloadInvalido,
-                $"El folio '{folio}' no es válido: máximo {clsCotizacion.LargoMaximoFolio} caracteres entre letras, números, '-' y '_'.");
+                $"El folio '{folio}' no es válido: máximo {clsCotizacionSolicitud.LargoMaximoFolio} caracteres entre letras, números, '-' y '_'.");
         }
 
         return null;
@@ -259,7 +278,7 @@ public sealed partial class clsGenerarPdfService(
         return null;
     }
 
-    private static clsResultado<clsCotizacion> CrearCotizacion(
+    private static clsResultado<clsCotizacionSolicitud> CrearCotizacion(
         clsEntradaGenerarPdf entrada, clsTrazabilidadCotizacion traza, string folio, clsMargenPolitica politica, string metodo, string moneda)
     {
         OrigenMargen? origenMargen = null;
@@ -284,29 +303,32 @@ public sealed partial class clsGenerarPdfService(
             origenCliente = origen;
         }
 
-        var creada = clsCotizacion.Crear(new clsDatosCotizacion
+        if (clsCotizacionSolicitud.ValidarCotizacionChat(traza.Costo, traza.MargenPolitica, traza.MargenAplicado, metodo, traza.PrecioFinal) is { } invalida)
+        {
+            return Invalido(invalida.Mensaje);
+        }
+
+        var creada = clsCotizacionSolicitud.Crear(new clsDatosCotizacion
         {
             Folio = folio,
             Version = entrada.Version,
-            LineaNegocioId = politica.Id,
             ClienteNombre = clsTextoSeguro.LimpiarLinea(entrada.Cotizacion.Cliente),
             NitCliente = clsTextoSeguro.LimpiarLinea(traza.NitCliente),
             OrigenCliente = origenCliente,
-            CosteoId = clsTextoSeguro.LimpiarLinea(traza.CosteoId),
-            Costo = traza.Costo,
-            MargenPolitica = traza.MargenPolitica,
-            MargenAplicado = traza.MargenAplicado,
-            OrigenMargen = origenMargen,
-            MetodoCalculo = metodo,
-            PrecioFinal = traza.PrecioFinal,
             Moneda = moneda,
             TrmAplicada = traza.TrmAplicada,
             UsuarioId = entrada.UsuarioId,
             SpaceId = clsTextoSeguro.LimpiarLinea(entrada.SpaceId),
             ThreadId = clsTextoSeguro.LimpiarLinea(entrada.ThreadId),
         });
+        if (creada.EsFallo)
+        {
+            return Invalido(creada.Error.Mensaje);
+        }
 
-        return creada.EsExitoso ? creada : Invalido(creada.Error.Mensaje);
+        // HU-021 (CAMBIOS_BACKEND §2): el chat también crea una ruta (línea de negocio, margen y precio) y un camión (costo del flete).
+        creada.Valor.RegistrarCotizacionChat(politica.Id, traza.Costo, traza.MargenPolitica, traza.MargenAplicado, origenMargen, metodo, traza.PrecioFinal);
+        return creada;
     }
 
     private string UrlPdf(string nombre) => clsUrlPdf.Construir(opciones.Value.BaseUrl, nombre);
@@ -315,6 +337,9 @@ public sealed partial class clsGenerarPdfService(
         new(clsCodigosError.FolioDuplicado, $"Ya existe una cotización con el folio {folio}.", detalle);
 
     private static clsErrorDominio Invalido(string mensaje) => new(clsCodigosError.PdfPayloadInvalido, mensaje);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "El PDF {Folio} chocó con la restricción única {Restriccion} al registrarse: se responde ERROR_INTERNO.")]
+    private static partial void LogRestriccionInesperada(ILogger logger, string folio, string restriccion);
 
     [GeneratedRegex(@"^[A-Za-z0-9_-]+\z", RegexOptions.CultureInvariant)]
     private static partial Regex ExpresionFolio();

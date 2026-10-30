@@ -114,7 +114,7 @@ public sealed class clsLineasNegocioAdminService(
 
     private clsErrorDominio? ValidarGerente() => usuario.UsuarioId is null
         ? new clsErrorDominio(clsCodigosAplicacion.NoAutenticado, "Inicia sesión de nuevo.")
-        : usuario.Rol == RolInterno.GerenteComercial
+        : usuario.Rol.EsGerencial()
             ? null
             : new clsErrorDominio(clsCodigosAplicacion.SinPermiso, "No tienes permiso para esta operación.");
 

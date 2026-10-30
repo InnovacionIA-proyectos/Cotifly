@@ -7,15 +7,6 @@ namespace Cotifly.Dominio.Comun;
 /// </summary>
 public static class clsCodigosError
 {
-    /// <summary>No hay fuente de costeo disponible (el tarifario de Drive se retiró; Nexo llega con HU-005).</summary>
-    public const string TarifaFuenteNoDisponible = "TARIFA_FUENTE_NO_DISPONIBLE";
-
-    /// <summary>
-    /// La fuente de costeo devolvió una tarifa inválida para cotizar (ej. en una moneda distinta de COP: el costo siempre es en pesos,
-    /// HU-012.2). Mismo código que el Python para la configuración inválida del tarifario.
-    /// </summary>
-    public const string TarifaConfigInvalida = "TARIFA_CONFIG_INVALIDA";
-
     /// <summary>La fuente de margen (SAP TM) no respondió o no está configurada.</summary>
     public const string MargenFuenteNoDisponible = "MARGEN_FUENTE_NO_DISPONIBLE";
 
@@ -67,6 +58,12 @@ public static class clsCodigosError
     /// <summary>Ya se envió la cotización a los mismos destinatarios <c>para</c> hace menos de 5 minutos.</summary>
     public const string CorreoDuplicado = "CORREO_DUPLICADO";
 
+    /// <summary>
+    /// #228: el correo trae más destinatarios entre <c>para</c> y <c>cc</c> que el tope (<c>Correo:MaximoDestinatarios</c>, 10 por
+    /// defecto): 400 <c>ErrorNegocio</c> con <c>detalle.maximo</c> y <c>detalle.recibidos</c>, en el envío y en la vista previa.
+    /// </summary>
+    public const string CorreoDemasiadosDestinatarios = "CORREO_DEMASIADOS_DESTINATARIOS";
+
     /// <summary>La cotización no tiene PDF en el almacén para adjuntar.</summary>
     public const string CorreoPdfNoEncontrado = "CORREO_PDF_NO_ENCONTRADO";
 
@@ -79,12 +76,18 @@ public static class clsCodigosError
     /// </summary>
     public const string CorreoDeshabilitado = "CORREO_DESHABILITADO";
 
+    /// <summary>
+    /// HU-033 (#199): el correo no se puede reintentar en MailSender: no está <c>fallido</c>, nunca llegó a MailSender (se rechazó al
+    /// encolarlo: hay que enviarlo de nuevo) o MailSender ya no lo conoce. 409.
+    /// </summary>
+    public const string CorreoNoReintentable = "CORREO_NO_REINTENTABLE";
+
     /// <summary>Fallo inesperado (ej. el comercial autenticado no existe en <c>UsuariosWeb</c>).</summary>
     public const string ErrorInterno = "ERROR_INTERNO";
 
     /// <summary>
-    /// La búsqueda de clientes (HU-005.2, endpoint de Nexo) aún no está conectada (ADR-005): el agente sigue sin cliente resuelto.
-    /// Código nuevo del backend .NET (#12).
+    /// La búsqueda de clientes de Nexo (HU-005.2, ADR-005; <c>clsBuscadorClientesNexo</c>) no está disponible: <c>Nexo:UrlBase</c> vacía o
+    /// Nexo no respondió. <c>GET /web/clientes</c> responde 503. Código nuevo del backend .NET (#12).
     /// </summary>
     public const string ClienteBusquedaNoDisponible = "CLIENTE_BUSQUEDA_NO_DISPONIBLE";
 
@@ -105,26 +108,12 @@ public static class clsCodigosError
     public const string CatalogosFleteNoDisponible = "CATALOGOS_FLETE_NO_DISPONIBLE";
 
     /// <summary>
-    /// <c>POST /web/cubicacion</c> sin <c>items</c> (falta o viene vacío): mismo código que usa Nexo
-    /// (<c>ITEMS_REQUERIDOS</c> en <c>POST /api/cubicacion</c>) para no introducir uno nuevo por el mismo motivo.
+    /// <c>POST /web/cubicacion</c> sin <c>items</c> (falta o viene vacío). Nació con la cubicación rápida de Nexo; se conserva con
+    /// "Calcular cubicaje" contra el cubicador (HU-023.2, #157). <c>CUBICACION_NO_DISPONIBLE</c> se retiró con esa cubicación (ahora
+    /// son los del cubicador); <c>CUBICACION_DEMASIADO_GRANDE</c> volvió en HU-023 (#176) con el tope de 10.000 unidades del cubicador.
     /// Código nuevo del backend .NET.
     /// </summary>
     public const string ItemsRequeridos = "ITEMS_REQUERIDOS";
-
-    /// <summary>
-    /// La cubicación rápida (<c>POST /web/cubicacion</c>, endpoint de Nexo) no está disponible: Nexo sin configurar,
-    /// sin respuesta o el comercial sin <c>idUsuarioExterno</c>; mismas causas que
-    /// <see cref="MunicipiosNoDisponible"/>. Código nuevo del backend .NET.
-    /// </summary>
-    public const string CubicacionNoDisponible = "CUBICACION_NO_DISPONIBLE";
-
-    /// <summary>
-    /// Nexo rechazó la solicitud de cubicación con 400 (el Cubicador la evaluó y no la aceptó: el motivo típico es
-    /// superar el límite de bultos por solicitud, pero Nexo devuelve el mismo código de validación genérico
-    /// <c>CUBICACION_INVALIDA</c> para cualquier rechazo de Cubicador, incluidas medidas inválidas — no distingue el
-    /// motivo exacto en su respuesta). Código nuevo del backend .NET.
-    /// </summary>
-    public const string CubicacionDemasiadoGrande = "CUBICACION_DEMASIADO_GRANDE";
 
     /// <summary>
     /// El formulario ampliado del costeo (<c>POST /web/solicitudes-costeo</c>) no cumple los límites de Nexo (ADR-015). Mismo
@@ -158,6 +147,13 @@ public static class clsCodigosError
     /// motivo, en vez de reintentar hasta la edad máxima (ADR-015 §4). Código nuevo del backend .NET.
     /// </summary>
     public const string CosteoNexoSolicitudNoEncontrada = "COSTEO_NEXO_SOLICITUD_NO_ENCONTRADA";
+
+    /// <summary>
+    /// Endurecimiento B (#199, E2E 2026-10-22): Nexo respondió 404 <c>COTIZACION_NO_ENCONTRADA</c> sobre la cotización de Nexo de un folio
+    /// del comercial (por ejemplo, al marcar el resultado). Es 409, nunca el 404 "no es tuya": la cotización sí es del comercial en
+    /// Cotifly y lo que falta es la de Nexo. El código de Nexo va en <c>detalle.motivo</c>. Código nuevo del backend .NET.
+    /// </summary>
+    public const string CotizacionNexoNoEncontrada = "COTIZACION_NEXO_NO_ENCONTRADA";
 
     /// <summary>
     /// <c>POST /web/cotizaciones/{folio}/costeo/reintentar</c> sobre una cotización que no está en <c>error_envio</c> ni en
@@ -196,12 +192,6 @@ public static class clsCodigosError
     public const string SolicitudNoTransicionable = "SOLICITUD_NO_TRANSICIONABLE";
 
     /// <summary>
-    /// La herramienta <c>resolver_municipio</c> (HU-005.13) recibió un <c>campo</c> que no es <c>origen</c> ni <c>destino</c>, o un
-    /// <c>texto</c> vacío: el modelo debe corregir la llamada. Se responde sin consultar Nexo. Código nuevo del backend .NET.
-    /// </summary>
-    public const string MunicipioArgumentoInvalido = "MUNICIPIO_ARGUMENTO_INVALIDO";
-
-    /// <summary>
     /// Licitaciones desde Excel (HU-011.2, ADR-017): falta el archivo o viene vacío. Mismo código que usa Nexo en
     /// <c>analizar-excel</c>.
     /// </summary>
@@ -238,8 +228,21 @@ public static class clsCodigosError
     public const string JustificacionRequerida = "JUSTIFICACION_REQUERIDA";
 
     /// <summary>
-    /// Regla del PDF (ADR-018 §11): la cotización ya se envió al cliente o tiene resultado; para cambiarla se crea la versión
-    /// <c>-vN</c> (409; <c>detalle</c> trae la llamada a <c>re-solicitar</c> con <c>nueva_version</c>). Código nuevo del backend .NET.
+    /// HU-013.5 (ADR-018 §2a): el asunto o la introducción del PDF que escribió el comercial están vacíos, son muy largos (120 y 900
+    /// caracteres) o traen URL o correos (400). Código nuevo del backend .NET.
+    /// </summary>
+    public const string TextosCotizacionInvalidos = "TEXTOS_COTIZACION_INVALIDOS";
+
+    /// <summary>
+    /// HU-013.5: se pidió a la IA redactar sobre textos que el comercial ya editó; el frontend confirma con él y repite con
+    /// <c>?sobrescribir=true</c> (409). Código nuevo del backend .NET.
+    /// </summary>
+    public const string TextosEditados = "TEXTOS_EDITADOS";
+
+    /// <summary>
+    /// Regla del PDF (ADR-018 §11): la cotización ya se envió al cliente o tiene resultado (HU-036.3, #207: o ya está finalizada); para
+    /// cambiarla se crea la versión <c>-vN</c> (409; <c>detalle</c> trae la llamada a <c>re-solicitar</c> con <c>nueva_version</c>). Código
+    /// nuevo del backend .NET.
     /// </summary>
     public const string PdfYaEnviado = "PDF_YA_ENVIADO";
 
@@ -249,6 +252,156 @@ public static class clsCodigosError
     /// </summary>
     public const string ConflictoConcurrencia = "CONFLICTO_CONCURRENCIA";
 
+    /// <summary>
+    /// #125: otra operación retiene el candado del folio (<c>sp_getapplock</c>) más allá de los intentos configurados
+    /// (<c>CandadoSql</c>); nada se guardó y se puede reintentar (503). Código nuevo del backend .NET.
+    /// </summary>
+    public const string ServicioOcupado = "SERVICIO_OCUPADO";
+
     /// <summary>Falta <c>If-Match</c> en una mutación de la etapa final del costeo (428, ADR-018 §8). Código nuevo del backend .NET.</summary>
     public const string PrecondicionRequerida = "PRECONDICION_REQUERIDA";
+
+    /// <summary>
+    /// HU-013.3 (ADR-018 §4): Nexo no responde a la consulta del catálogo de servicios conexos o a agregarlos (sin configurar, caído, sin
+    /// respuesta a tiempo o el comercial sin <c>idUsuarioExterno</c>); 503. Código nuevo del backend .NET.
+    /// </summary>
+    public const string NexoNoDisponible = "NEXO_NO_DISPONIBLE";
+
+    /// <summary>
+    /// HU-013.3: el conexo no se puede agregar (la <c>linea_orden</c> no existe en la cotización, o Nexo respondió 400/404 al agregarlo,
+    /// con su código en <c>detalle.motivo</c>); 400. Código nuevo del backend .NET.
+    /// </summary>
+    public const string ConexoInvalido = "CONEXO_INVALIDO";
+
+    /// <summary>
+    /// HU-013.3: la línea existe en Cotifly pero no tiene línea en la cotización de Nexo (sin flete, o sin el id de la línea de Nexo
+    /// guardado); 409, sin llamar a Nexo. Código nuevo del backend .NET.
+    /// </summary>
+    public const string LineaSinCotizacionNexo = "LINEA_SIN_COTIZACION_NEXO";
+
+    /// <summary>
+    /// HU-021.8 (#135, decisión 6): la cotización tiene varias rutas y la petición (margen o conexos) no dice a cuál aplica; 400 con
+    /// <c>detalle.rutas</c> (<c>linea_orden</c>, <c>linea_solicitud_id</c>, origen y destino de cada una, sin montos). Código nuevo del
+    /// backend .NET.
+    /// </summary>
+    public const string RutaRequerida = "RUTA_REQUERIDA";
+
+    /// <summary>
+    /// HU-021.8 (#135): la ruta indicada (<c>linea_orden</c> o <c>linea_solicitud_id</c>) no es de la cotización, o las dos no son la
+    /// misma ruta; 400, sin cambios. Código nuevo del backend .NET.
+    /// </summary>
+    public const string RutaInexistente = "RUTA_INEXISTENTE";
+
+    /// <summary>
+    /// HU-028.1 (#183, Nexo #320): la ruta indicada fue rechazada por la Mesa de Costeo de Nexo (todos sus camiones): no tiene precio, así
+    /// que no admite ajuste de margen ni servicios conexos; 409 con <c>detalle.linea_orden</c>, <c>detalle.linea_solicitud_id</c> y
+    /// <c>detalle.motivo_rechazo</c>. Código nuevo del backend .NET.
+    /// </summary>
+    public const string RutaRechazada = "RUTA_RECHAZADA";
+
+    /// <summary>
+    /// HU-028.1 (#183, decisión D1 de Nexo #320): la Mesa de Costeo rechazó TODAS las rutas de la cotización: no hay nada que cotizar y el
+    /// PDF no se genera; 409. Código nuevo del backend .NET.
+    /// </summary>
+    public const string SinRutasCotizables = "SIN_RUTAS_COTIZABLES";
+
+    /// <summary>
+    /// HU-013 (ADR-018 §4 y §5): el estado o el tipo de la cotización no permite la acción (una licitación no admite conexos, con
+    /// <c>detalle.motivo = LICITACION</c>; re-solicitar con un costeo en curso); 409. Código nuevo del backend .NET.
+    /// </summary>
+    public const string EstadoNoPermite = "ESTADO_NO_PERMITE";
+
+    /// <summary>
+    /// HU-028 (#186): la edición de la solicitud intenta cambiar un campo bloqueado (el cliente, el <c>tipo</c> spot/licitación o la
+    /// línea de negocio de una ruta; o una ruta nueva con una línea que la solicitud no tiene); 400 con <c>detalle.campo</c> (el primero)
+    /// y <c>detalle.campos</c> (todos). Nada cambia. Código nuevo del backend .NET.
+    /// </summary>
+    public const string CampoNoEditable = "CAMPO_NO_EDITABLE";
+
+    /// <summary>
+    /// HU-013.6 (#102, ADR-018 §2b): <c>POST /web/chat</c> sin <c>folio</c> (o vacío): el asistente solo trabaja sobre una cotización
+    /// ya creada (la creación por chat se retiró, HU-013.9); 400. Código nuevo del backend .NET.
+    /// </summary>
+    public const string FolioRequerido = "FOLIO_REQUERIDO";
+
+    /// <summary>HU-021.6: crear una cotización desde el chat está retirado (<c>Pdf:PermitirCotizacionChat = false</c>).</summary>
+    public const string CotizacionChatRetirada = "COTIZACION_CHAT_RETIRADA";
+
+    /// <summary>
+    /// HU-021.5 (#133): el cubicador no pudo recomendar los vehículos (sin configurar, caído, sin respuesta a tiempo, respuesta inválida
+    /// o rechazo) o su catálogo de tipos de mercancía no está disponible (<c>GET /web/tipos-mercancia</c>); 503. En la captura solo llega
+    /// al cliente con <c>Cubicador:RespaldoSiFalla = false</c>: por defecto la ruta sigue con un camión sin vehículo. Código nuevo del
+    /// backend .NET.
+    /// </summary>
+    public const string CubicadorNoDisponible = "CUBICADOR_NO_DISPONIBLE";
+
+    /// <summary>
+    /// Opción C (E2E 2026-10-16, D3): todas las llamadas permitidas a <c>POST /recomendaciones</c> (<c>Cubicador:MaximoConcurrente</c>, 1 por
+    /// defecto) siguen en curso y no se liberó ninguna dentro de <c>Cubicador:EsperaMaximaCupoSegundos</c>. Nada se pidió al cubicador; se
+    /// puede reintentar: 503 con <c>Retry-After</c>. En la captura, el recálculo y la licitación cuenta como una caída (respaldo o
+    /// <c>CUBICADOR_NO_DISPONIBLE</c>); en "Calcular cubicaje" llega tal cual.
+    /// </summary>
+    public const string CubicadorOcupado = "CUBICADOR_OCUPADO";
+
+    /// <summary>
+    /// HU-023.1 (#156): el cubicador respondió 200 pero la respuesta no cumple el contrato (por ejemplo <c>ASIGNADO</c> con un vehículo
+    /// sin peso, volumen, porcentajes o códigos; un resultado o un motivo desconocido; un porcentaje fuera de 0 a 100). Se rechaza para no
+    /// guardar datos incompletos (el fallo silencioso): no se guarda nada y nunca va al respaldo. 503.
+    /// </summary>
+    public const string CubicadorRespuestaInvalida = "CUBICADOR_RESPUESTA_INVALIDA";
+
+    /// <summary>
+    /// D1 (E2E 2026-10-16): el cubicador rechazó con 422 (validación de su esquema) los datos de <c>POST /recomendaciones</c> y el
+    /// rechazo no señala una medida, un peso o una cantidad de una mercancía (esos llegan como <c>DIMENSIONES_INVALIDAS</c> o
+    /// <c>POSICION_INVALIDA</c> con <c>detalle.item</c>). Es un rechazo de los datos, no una caída: 400, nunca va al respaldo.
+    /// </summary>
+    public const string CubicadorPeticionRechazada = "CUBICADOR_PETICION_RECHAZADA";
+
+    /// <summary>
+    /// HU-023.1 (#156): el cubicador rechazó la llave de Cotifly (401 <c>NO_AUTORIZADO</c> del contrato). Es un problema de configuración
+    /// de Cotifly (<c>Cubicador:ApiKey</c>), no de la sesión del comercial: 503, nunca 401. Nunca va al respaldo (auditoría de HU-023): la
+    /// captura falla aunque <c>Cubicador:RespaldoSiFalla</c> esté encendido.
+    /// </summary>
+    public const string CubicadorNoAutorizado = "CUBICADOR_NO_AUTORIZADO";
+
+    /// <summary>HU-023.1 (#156): 400 del cubicador, la ruta no trae mercancías (<c>MERCANCIAS_REQUERIDAS</c>). 400.</summary>
+    public const string MercanciasRequeridas = "MERCANCIAS_REQUERIDAS";
+
+    /// <summary>HU-023.1 (#156): 400 del cubicador, un <c>codigoMercancia</c> no está en su catálogo (<c>MERCANCIA_DESCONOCIDA</c>). 400.</summary>
+    public const string MercanciaDesconocida = "MERCANCIA_DESCONOCIDA";
+
+    /// <summary>HU-023.1 (#156): 400 del cubicador, la mercancía no se puede cubicar (<c>MERCANCIA_NO_CUBICABLE</c>). 400.</summary>
+    public const string MercanciaNoCubicable = "MERCANCIA_NO_CUBICABLE";
+
+    /// <summary>HU-023.1 (#156): 400 del cubicador, medidas o peso inválidos (<c>DIMENSIONES_INVALIDAS</c>). 400.</summary>
+    public const string DimensionesInvalidas = "DIMENSIONES_INVALIDAS";
+
+    /// <summary>
+    /// HU-023 (#176): la ruta pide más de <c>10.000</c> unidades en total (suma de <c>cantidad</c> de sus mercancías), el tope del
+    /// cubicador por petición. Cotifly lo valida antes de llamar y traduce igual el 400 del cubicador. Se resuelve partiendo la carga. 400.
+    /// </summary>
+    public const string CubicacionDemasiadoGrande = "CUBICACION_DEMASIADO_GRANDE";
+
+    /// <summary>
+    /// HU-036.2 (#206): <c>POST .../finalizar</c> sobre una cotización cuyo <c>estado_costeo</c> no es <c>autocosteo</c> ni <c>entregada</c>
+    /// (sin el costeo de Nexo listo no hay precio que aceptar; el chat y las licitaciones sin costeo tampoco). 409; <c>detalle.estado_costeo</c>
+    /// trae el estado actual. Código nuevo del backend .NET.
+    /// </summary>
+    public const string CotizacionNoFinalizable = "COTIZACION_NO_FINALIZABLE";
+
+    /// <summary>
+    /// HU-036.3 (#207): el PDF, el envío por correo, el resultado o los textos del PDF exigen la cotización finalizada ("Finaliza la
+    /// cotización antes de..."). 409; <c>detalle</c> trae la llamada para finalizar (<c>accion = finalizar</c>, <c>metodo</c>,
+    /// <c>endpoint</c>). No aplica a las ya entregadas al cliente (anteriores a HU-036) ni a las que no pasan por Nexo. Código nuevo del
+    /// backend .NET.
+    /// </summary>
+    public const string CotizacionNoFinalizada = "COTIZACION_NO_FINALIZADA";
+
+    /// <summary>
+    /// HU-018.1 (#155, parte B): al marcar <c>perdida</c> (<c>POST .../resultado</c> o <c>POST .../seguimiento</c>) el motivo es obligatorio y
+    /// debe ser uno de la lista configurada (<c>Resultado:MotivosPerdida</c>, la de NEXO, <c>GET /web/motivos-perdida</c>), y el motivo
+    /// <c>Otro</c> exige <c>comentario</c>. 400; <c>detalle.motivos_permitidos</c> trae la lista y <c>detalle.requiere_comentario</c> si
+    /// solo faltó el comentario. Código nuevo del backend .NET.
+    /// </summary>
+    public const string MotivoNoPermitido = "MOTIVO_NO_PERMITIDO";
 }

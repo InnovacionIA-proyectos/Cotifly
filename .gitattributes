@@ -1,0 +1,3 @@
+# El ejecutador de la base de datos corre dentro de un contenedor Linux (servicio db-init del docker-compose.yml)
+# montando la carpeta del repo: con CRLF, bash falla ("bad interpreter"). Se fuerza LF aunque core.autocrlf esté activo.
+db/ejecutar-bd.sh text eol=lf

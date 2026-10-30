@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using Cotifly.Aceptacion.Tests.Soporte;
@@ -17,13 +18,32 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
 {
     private readonly Dictionary<string, string> _folios = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>HU-034.1 (#201): el último Excel de la licitación que bajó cada usuario (alias), para comparar el del dueño con los demás.</summary>
+    public Dictionary<string, byte[]> Excels { get; } = new(StringComparer.OrdinalIgnoreCase);
+
     [When("{string} analiza el pliego de {int} filas")]
     public Task CuandoAnaliza(string alias, int filas) =>
         web.EnviarAsync(HttpMethod.Post, "/web/licitaciones/analizar-excel", web.Sesion(alias).Access, clsApiWebPruebas.Archivo(clsPliegoMuestra.Excel(filas)));
 
+    [When(@"^""([^""]+)"" analiza como pliego (.+)$")]
+    public Task CuandoAnalizaPliegoMalicioso(string alias, string archivo)
+    {
+        byte[] contenido = archivo switch
+        {
+            "una bomba zip" => clsExcelMercanciasMuestra.BombaZip(),
+            "un libro pequeño con millones de celdas" => clsExcelMercanciasMuestra.Densa(4_000_000),
+            "un libro con una entidad externa (XXE)" => clsExcelMercanciasMuestra.ConEntidadExterna(),
+            "un .xls antiguo renombrado a .xlsx" => [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1, 0, 0, 0, 0],
+            "un archivo de texto renombrado a .xlsx" => clsExcelMercanciasMuestra.TextoRenombrado(),
+            _ => throw new ArgumentOutOfRangeException(nameof(archivo), archivo, "Archivo de prueba desconocido."),
+        };
+        return web.EnviarAsync(HttpMethod.Post, "/web/licitaciones/analizar-excel", web.Sesion(alias).Access, clsApiWebPruebas.Archivo(contenido));
+    }
+
     [Then("Nexo recibió el archivo para analizarlo")]
     public void EntoncesNexoRecibioElArchivo() => costeo.Nexo.UltimoArchivoAnalizado.Should().BeGreaterThan(0);
 
+    [Given("{string} crea la licitación {string} del cliente {string} con el pliego de {int} filas mapeadas")]
     [When("{string} crea la licitación {string} del cliente {string} con el pliego de {int} filas mapeadas")]
     public Task CuandoCrea(string alias, string licitacion, string nit, int filas) =>
         CrearAsync(alias, licitacion, clsPliegoMuestra.Json(nit, clsPliegoMuestra.Lineas(filas)), clsPliegoMuestra.Excel(filas));
@@ -68,6 +88,27 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
         return CrearAsync(alias, licitacion, clsPliegoMuestra.Json(nit, lineas), clsPliegoMuestra.Excel(3));
     }
 
+    [When("{string} crea la licitación {string} del cliente {string} con una fila sin destino y otra sin peso y la línea de negocio {string}")]
+    public Task CuandoCreaInvalidaConLinea(string alias, string licitacion, string nit, string linea)
+    {
+        object[] lineas =
+        [
+            new { fila = 0, origen = "BUENAVENTURA", destino = "", peso_kg = 32000 },
+            new { fila = 1, origen = "CALI", destino = "CARTAGENA", peso_kg = 28000 },
+            new { fila = 2, origen = "CUCUTA", destino = "BOGOTA, D.C." },
+        ];
+        return CrearAsync(alias, licitacion,
+            clsPliegoMuestra.Json(nit, lineas).Replace("\"linea_negocio\":\"Nacional\"", $"\"linea_negocio\":\"{linea}\"", StringComparison.Ordinal),
+            clsPliegoMuestra.Excel(3));
+    }
+
+    [Then("el reporte trae el código {string} del encabezado en el campo {string}")]
+    public void EntoncesElReporteTraeDelEncabezado(string codigo, string campo) =>
+        web.UltimoJson().GetProperty("errores").EnumerateArray()
+            .Where(e => e.GetProperty("indice").ValueKind == JsonValueKind.Null)
+            .Select(e => (e.GetProperty("campo").GetString(), e.GetProperty("codigo").GetString()))
+            .Should().ContainSingle().Which.Should().Be((campo, codigo));
+
     [Then("la respuesta tiene el estado {int} con el reporte de la licitación")]
     public void EntoncesElReporte(int estado)
     {
@@ -103,9 +144,10 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
     [Then("el Excel original de {string} quedó guardado")]
     public async Task EntoncesExcelGuardado(string licitacion) =>
         (await clsBaseDatosPruebas.EscalarAsync<int>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-            $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionArchivosLicitacion a JOIN dbo_cotifly.Cotizaciones c ON c.id = a.cotizacionId WHERE c.folio = '{Folio(licitacion)}' AND a.hoja = N'{clsPliegoMuestra.Hoja}'"))
+            $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionArchivosLicitacion a JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = a.cotizacionId WHERE c.folio = '{Folio(licitacion)}' AND a.hoja = N'{clsPliegoMuestra.Hoja}'"))
             .Should().Be(1);
 
+    [Given("Nexo costea las líneas {int} y {int} de {string} con un flete de {int}")]
     [When("Nexo costea las líneas {int} y {int} de {string} con un flete de {int}")]
     public async Task CuandoCosteaDos(int a, int b, string licitacion, int flete)
     {
@@ -117,6 +159,7 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
     [When("Nexo costea las líneas {int} de {string} con un flete de {int}")]
     public async Task CuandoCosteaUna(int a, string licitacion, int flete) => costeo.Nexo.CostearLinea(await CosteoIdAsync(licitacion), a - 1, flete);
 
+    [Given("el polling consulta a Nexo por {string}")]
     [When("el polling consulta a Nexo por {string}")]
     public Task CuandoPolling(string licitacion) => web.Api.ProcesarPollingAsync(Folio(licitacion));
 
@@ -142,7 +185,7 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
     [Then("la licitación {string} queda en el estado {string}")]
     public async Task EntoncesEstado(string licitacion, string estado) =>
         (await clsBaseDatosPruebas.EscalarAsync<string>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-            $"SELECT estadoCosteo FROM dbo_cotifly.Cotizaciones WHERE folio = '{Folio(licitacion)}'")).Should().Be(estado);
+            $"SELECT estadoCosteo FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{Folio(licitacion)}'")).Should().Be(estado);
 
     [When("{string} reintenta el envío de la licitación {string}")]
     public async Task CuandoReintenta(string alias, string licitacion)
@@ -157,6 +200,7 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
     {
         await web.EnviarAsync(HttpMethod.Get, $"/web/licitaciones/{Folio(licitacion)}/excel", web.Sesion(alias).Access);
         web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);
+        Excels[alias] = web.UltimoContenido;
     }
 
     [Then("el Excel conserva las columnas originales del pliego")]
@@ -194,6 +238,7 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
     [When("{string} genera el PDF de la licitación {string}")]
     public async Task CuandoGeneraPdf(string alias, string licitacion)
     {
+        await costeo.FinalizarSiCorrespondeAsync(alias, Folio(licitacion)); // HU-036.3: finaliza antes del PDF
         await web.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{Folio(licitacion)}/costeo/pdf", web.Sesion(alias).Access);
         web.UltimoEstado.Should().Be(HttpStatusCode.Created, web.UltimoCuerpo);
         var ruta = new Uri(new Uri("http://localhost"), web.UltimoJson().GetProperty("pdf_url").GetString()!).AbsolutePath;
@@ -203,16 +248,189 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
 
     [Then("el PDF del pliego trae el resumen de {int} rutas con su total")]
     public void EntoncesResumenPdf(int rutas) =>
-        clsLectorPdf.Leer(web.UltimoContenido).Texto.Should().Contain("RESUMEN DEL PLIEGO").And.Contain($"TOTAL DEL PLIEGO ({rutas} RUTAS, SIN SERVICIOS CONEXOS)");
+        // HU-033 (#199): el total del resumen es el total general (con los conexos), y se repite al final de la tarifa.
+        clsLectorPdf.Leer(web.UltimoContenido).Texto.Should().Contain("RESUMEN DEL PLIEGO").And.Contain($"VALOR TOTAL DE LA COTIZACIÓN ({rutas} RUTAS)");
 
     [Then("el PDF del pliego no contiene el costo {int} de Nexo")]
     public void EntoncesPdfSinCosto(int costo) =>
         clsLectorPdf.Leer(web.UltimoContenido).Texto.Should().NotContain(
             "$" + costo.ToString("N0", System.Globalization.CultureInfo.InvariantCulture).Replace(",", ".", StringComparison.Ordinal));
 
+    // HU-013.11 (#108): reglas de captura por fila.
+    private static readonly string[] _columnasNumericas = ["valor_aprovisionamiento", "horas_cargue", "horas_descargue"];
+    private static readonly string[] _columnasEnteras = ["origen_municipio_id", "destino_municipio_id"];
+
+    [Given("que el catálogo de municipios de Nexo no responde")]
+    public void DadoMunicipiosCaidos() => costeo.Nexo.MunicipiosFalla = HttpStatusCode.ServiceUnavailable;
+
+    [When("{string} crea la licitación {string} del cliente {string} con estas filas:")]
+    public Task CuandoCreaConFilas(string alias, string licitacion, string nit, DataTable tabla)
+    {
+        ArgumentNullException.ThrowIfNull(tabla);
+        object[] lineas = [.. tabla.Rows.Select(fila =>
+        {
+            // HU-032 (#197): una fila solo con el peso exige el vehículo elegido (salvo Contenedor).
+            var linea = new Dictionary<string, object?> { ["peso_kg"] = 28_000m, ["tipo_vehiculo"] = "3S3" };
+            foreach (var (columna, valor) in fila.Where(c => !string.IsNullOrWhiteSpace(c.Value)))
+            {
+                linea[columna] = _columnasNumericas.Contains(columna) ? decimal.Parse(valor, CultureInfo.InvariantCulture)
+                    : _columnasEnteras.Contains(columna) ? (object)int.Parse(valor, CultureInfo.InvariantCulture)
+                    : valor;
+            }
+
+            return (object)linea;
+        })];
+        return CrearAsync(alias, licitacion, clsPliegoMuestra.Json(nit, lineas, hoja: null), null);
+    }
+
+    [Then("el reporte trae exactamente estos errores:")]
+    public void EntoncesElReporteTraeExactamente(DataTable tabla)
+    {
+        ArgumentNullException.ThrowIfNull(tabla);
+        var errores = web.UltimoJson().GetProperty("errores").EnumerateArray()
+            .Select(e => (e.GetProperty("indice").GetInt32(), e.GetProperty("campo").GetString(), e.GetProperty("codigo").GetString()))
+            .ToList();
+        errores.Should().BeEquivalentTo(tabla.Rows.Select(f => (int.Parse(f["linea"], CultureInfo.InvariantCulture), f["campo"], f["codigo"])));
+    }
+
+    [Then("la línea {int} que recibió Nexo trae {string} igual a {string}")]
+    public void EntoncesLaLineaTrae(int linea, string campo, string valor) =>
+        LineaDeLaUltimaAlta(linea)[campo]!.GetValue<string>().Should().Be(valor);
+
+    [Then(@"^la línea (\d+) que recibió Nexo trae los municipios (\d+) y (\d+) con ([\d.]+) horas de cargue y ([\d.]+) de descargue$")]
+    public void EntoncesLaLineaTraeMunicipiosYHoras(int linea, int origen, int destino, string cargue, string descargue)
+    {
+        var nodo = LineaDeLaUltimaAlta(linea);
+        nodo["origenMunicipioId"]!.GetValue<int>().Should().Be(origen);
+        nodo["destinoMunicipioId"]!.GetValue<int>().Should().Be(destino);
+        nodo["horasCargue"]!.GetValue<decimal>().Should().Be(decimal.Parse(cargue, CultureInfo.InvariantCulture));
+        nodo["horasDescargue"]!.GetValue<decimal>().Should().Be(decimal.Parse(descargue, CultureInfo.InvariantCulture));
+    }
+
+    [Then("la línea {int} que recibió Nexo trae los municipios {int} y {int} sin horas propias")]
+    public void EntoncesLaLineaTraeMunicipiosSinHoras(int linea, int origen, int destino)
+    {
+        var nodo = LineaDeLaUltimaAlta(linea);
+        nodo["origenMunicipioId"]!.GetValue<int>().Should().Be(origen);
+        nodo["destinoMunicipioId"]!.GetValue<int>().Should().Be(destino);
+        nodo["horasCargue"].Should().BeNull("sin horas en la fila ni en el encabezado no viajan");
+        nodo["horasDescargue"].Should().BeNull();
+    }
+
+    [Then("el primer envío y el reintento mandaron a Nexo la misma solicitud")]
+    public void EntoncesMismaSolicitud()
+    {
+        var altas = costeo.Nexo.Peticiones
+            .Where(p => p.Metodo == HttpMethod.Post && p.Url.AbsolutePath == "/api/captura-solicitudes")
+            .Select(p => Canonico(p.Cuerpo!))
+            .ToList();
+        altas.Should().HaveCount(2).And.OnlyContain(a => a == altas[0], "el reintento reenvía lo guardado, normalizado");
+    }
+
+    // --- HU-013.15 (#124): numeración del Excel, línea "Licitaciones" de Nexo y detalle de los errores de Nexo ---
+
+    [Given("que Nexo analiza el pliego de {int} filas de la hoja {string}")]
+    public void DadoQueNexoAnaliza(int filas, string hoja) => costeo.Nexo.Analisis = new
+    {
+        archivo = "pliego.xlsx",
+        hojas = new[]
+        {
+            new
+            {
+                nombre = hoja,
+                filaEncabezado = 3,
+                encabezados = new[] { "ITEM", "CIUDAD ORIGEN", "CIUDAD DESTINO", "TIPO VEHÍCULO", "TON", "OBSERVACIONES" },
+                filas = Enumerable.Range(0, filas).Select(i => new[] { (i + 1).ToString(CultureInfo.InvariantCulture), clsPliegoMuestra.Ruta(i).Origen }).ToArray(),
+                totalFilas = filas,
+            },
+        },
+    };
+
+    [Then("la hoja {string} del análisis trae las filas del Excel {int}, {int} y {int}")]
+    public void EntoncesFilasDelExcel(string hoja, int a, int b, int c) =>
+        web.UltimoJson().GetProperty("hojas").EnumerateArray().Single(h => h.GetProperty("nombre").GetString() == hoja)
+            .GetProperty("filas_excel").EnumerateArray().Select(f => f.GetInt32()).Should().Equal(a, b, c);
+
+    [When("{string} crea la licitación {string} del cliente {string} con el pliego de {int} filas, la última sin peso y una línea de más")]
+    public Task CuandoCreaConFilaDeMas(string alias, string licitacion, string nit, int filas)
+    {
+        var lineas = Enumerable.Range(0, filas + 1).Select(i =>
+        {
+            // La línea de más repite la ruta de la primera (municipios conocidos): su único error es la fila que no existe.
+            var (origen, destino, vehiculo, toneladas) = clsPliegoMuestra.Ruta(i % filas);
+            var linea = new Dictionary<string, object?>
+            {
+                ["fila"] = i, ["origen"] = origen, ["destino"] = destino, ["tipologia"] = "CargaSeca",
+                ["valor_mercancia"] = 50_000_000m, ["tipo_vehiculo"] = vehiculo,
+            };
+            if (i != filas - 1)
+            {
+                linea["peso_kg"] = toneladas * 1000m;
+            }
+
+            return (object)linea;
+        }).ToArray();
+        return CrearAsync(alias, licitacion, clsPliegoMuestra.Json(nit, lineas), clsPliegoMuestra.Excel(filas));
+    }
+
+    [Then("el reporte trae estos errores con la fila del Excel:")]
+    public void EntoncesErroresConFilaExcel(DataTable tabla)
+    {
+        ArgumentNullException.ThrowIfNull(tabla);
+        var errores = web.UltimoJson().GetProperty("errores").EnumerateArray()
+            .Select(e => (e.GetProperty("indice").GetInt32(), e.GetProperty("codigo").GetString(),
+                e.GetProperty("fila_excel").ValueKind == JsonValueKind.Null ? (int?)null : e.GetProperty("fila_excel").GetInt32()))
+            .ToList();
+        errores.Should().BeEquivalentTo(tabla.Rows.Select(f => (int.Parse(f["linea"], CultureInfo.InvariantCulture), f["codigo"],
+            string.IsNullOrWhiteSpace(f["fila_excel"]) ? (int?)null : int.Parse(f["fila_excel"], CultureInfo.InvariantCulture))));
+    }
+
+    [Then("el mensaje del error de la línea {int} es {string}")]
+    public void EntoncesMensajeDelError(int linea, string mensaje) =>
+        web.UltimoJson().GetProperty("errores").EnumerateArray()
+            .Single(e => e.GetProperty("indice").ValueKind == JsonValueKind.Number && e.GetProperty("indice").GetInt32() == linea)
+            .GetProperty("mensaje").GetString().Should().Be(mensaje);
+
+    [When("{string} crea la licitación {string} del cliente {string} con el pliego de {int} filas mapeadas y la línea de negocio {string}")]
+    public Task CuandoCreaConLinea(string alias, string licitacion, string nit, int filas, string linea) =>
+        CrearAsync(alias, licitacion,
+            clsPliegoMuestra.Json(nit, clsPliegoMuestra.Lineas(filas)).Replace("\"linea_negocio\":\"Nacional\"", $"\"linea_negocio\":\"{linea}\"", StringComparison.Ordinal),
+            clsPliegoMuestra.Excel(filas));
+
+    [Then("el detalle del error trae la línea válida {string}")]
+    public void EntoncesLineaValida(string linea) =>
+        web.UltimoJson().GetProperty("error").GetProperty("detalle").GetProperty("lineas_validas").EnumerateArray()
+            .Select(l => l.GetString()).Should().Contain(linea);
+
+    [Given("que Nexo responde {int} con el código {string} al análisis del Excel")]
+    public void DadoQueElAnalisisFalla(int estado, string codigo)
+    {
+        costeo.Nexo.AnalisisFalla = (HttpStatusCode)estado;
+        costeo.Nexo.CodigoAnalisisFalla = codigo;
+    }
+
+    private System.Text.Json.Nodes.JsonNode LineaDeLaUltimaAlta(int linea) =>
+        (costeo.Nexo.UltimaAlta ?? throw new InvalidOperationException("Nexo no recibió ningún alta."))["lineas"]![linea - 1]!;
+
+    /// <summary>JSON con los números sin ceros decimales a la derecha (la escala de un DECIMAL releído no es contenido).</summary>
+    private static string Canonico(string json)
+    {
+        static System.Text.Json.Nodes.JsonNode? Normalizar(System.Text.Json.Nodes.JsonNode? nodo) => nodo switch
+        {
+            System.Text.Json.Nodes.JsonObject o => new System.Text.Json.Nodes.JsonObject(
+                o.Select(p => new KeyValuePair<string, System.Text.Json.Nodes.JsonNode?>(p.Key, Normalizar(p.Value)))),
+            System.Text.Json.Nodes.JsonArray a => new System.Text.Json.Nodes.JsonArray([.. a.Select(Normalizar)]),
+            System.Text.Json.Nodes.JsonValue v when v.GetValueKind() == JsonValueKind.Number =>
+                System.Text.Json.Nodes.JsonValue.Create(v.GetValue<decimal>() / 1.000000000000000000000000000000000m),
+            _ => nodo?.DeepClone(),
+        };
+
+        return Normalizar(System.Text.Json.Nodes.JsonNode.Parse(json))!.ToJsonString();
+    }
+
     private ClosedXML.Excel.XLWorkbook Libro() => new(new MemoryStream(web.UltimoContenido));
 
-    private async Task CrearAsync(string alias, string licitacion, string json, byte[] archivo)
+    private async Task CrearAsync(string alias, string licitacion, string json, byte[]? archivo)
     {
         await web.EnviarAsync(HttpMethod.Post, "/web/licitaciones", web.Sesion(alias).Access, clsApiWebPruebas.Licitacion(json, archivo));
         if (web.UltimoEstado == HttpStatusCode.Created)
@@ -221,14 +439,15 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
         }
     }
 
-    private string Folio(string licitacion) =>
+    /// <summary>Folio real de la licitación del escenario (lo usan también los pasos de servicios conexos, HU-013.3).</summary>
+    public string Folio(string licitacion) =>
         _folios.TryGetValue(licitacion, out var folio) ? folio : throw new InvalidOperationException($"No se creó la licitación '{licitacion}'.");
 
     private async Task<string> CosteoIdAsync(string licitacion) =>
         (await clsBaseDatosPruebas.EscalarAsync<string>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-            $"SELECT costeoId FROM dbo_cotifly.Cotizaciones WHERE folio = '{Folio(licitacion)}'"))!;
+            $"SELECT solicitudNexoId FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{Folio(licitacion)}'"))!;
 
     private Task<int> LineasAsync(string licitacion, string condicion) =>
         clsBaseDatosPruebas.EscalarAsync<int>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-            $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionLineasSolicitud l JOIN dbo_cotifly.Cotizaciones c ON c.id = l.cotizacionId WHERE c.folio = '{Folio(licitacion)}' AND {condicion}");
+            $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionLineasSolicitud l JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{Folio(licitacion)}' AND {condicion}");
 }

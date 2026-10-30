@@ -12,20 +12,8 @@ public static class clsTextosAgente
     /// <summary>Cualquier otro fallo interno del turno (texto de <c>orquestador/web.py</c>).</summary>
     public const string ErrorInterno = "Ocurrió un error interno procesando tu solicitud. Inténtalo de nuevo.";
 
-    /// <summary>Acuse del webhook de Google Chat (<c>_RECIBO</c> de <c>orquestador/webhook.py</c>).</summary>
-    public const string Recibo = "Recibí tu solicitud, la estoy procesando…";
-
-    /// <summary>Email de Google Chat sin comercial en <c>UsuariosWeb</c> (ADR-011): no se cotiza.</summary>
-    public const string SinIdentidad = "Ingresa primero a Cotifly desde ClientePro.";
-
-    /// <summary>El hilo de Chat ya es la cotización de otro comercial (la sesión queda ligada a su dueño, ADR-004 §6).</summary>
-    public const string HiloAjeno = "Este hilo pertenece a la cotización de otro comercial. Abre un hilo nuevo para cotizar.";
-
     /// <summary><c>sesion_id</c> de otro usuario en <c>POST /web/chat</c> (404 del contrato).</summary>
     public const string SesionNoEncontrada = "Sesión no encontrada.";
-
-    /// <summary>La cola del webhook está llena: se acusa el evento pero no se procesa.</summary>
-    public const string ColaLlena = "Estoy atendiendo muchas solicitudes en este momento. Reenvía tu mensaje en un minuto.";
 
     /// <summary>
     /// ¿El fallo es el límite de peticiones del proveedor (HTTP 429)? Misma heurística que el Python (tipo <c>RateLimit*</c> o
@@ -55,19 +43,56 @@ public static class clsTextosAgente
 
     /// <summary>
     /// Respaldo del validador de la respuesta final (HU-003.10, #16): el modelo no produjo una respuesta válida ni con el reintento.
-    /// Sale como error controlado (<c>200 {texto, error: true}</c> en <c>/web/chat</c>, texto simple en Google Chat).
+    /// Sale como error controlado (<c>200 {texto, error: true}</c> en <c>/web/chat</c>).
     /// </summary>
     public const string RespuestaNoEstructurada =
         "No pude estructurar la respuesta. Reenvía tu mensaje o reformúlalo; lo que ya calculé en esta conversación no se pierde.";
 
+    /// <summary>
+    /// HU-013.6 (#102): el turno armó una acción propuesta pero el modelo no dio un texto válido ni con el reintento. La propuesta (con
+    /// su resumen del servidor) sale igual con este texto.
+    /// </summary>
+    public const string PropuestaSinTexto = "Preparé una propuesta para esta cotización: revisa el resumen y, si estás de acuerdo, confírmala con el botón.";
+
     /// <summary>Otro mensaje de la misma conversación todavía se está procesando (candado por sesión).</summary>
     public const string TurnoEnCurso = "Todavía estoy respondiendo tu mensaje anterior en esta conversación. Espera la respuesta y vuelve a escribir.";
+
+    /// <summary>
+    /// HU-013.16 (#126): el modelo pidió herramientas sin parar hasta <c>IA:MaxIteraciones</c> y el turno se cortó sin respuesta ni
+    /// propuesta. La pregunta del comercial y las herramientas que alcanzaron a correr quedan en la conversación.
+    /// </summary>
+    public const string MaxIteraciones =
+        "No pude completar tu solicitud: necesité demasiados pasos y la detuve. Reformúlala en un mensaje más corto o pide una cosa a la vez; la conversación no se pierde.";
+
+    /// <summary>HU-013.16 (#126): todos los modelos de IA fallaron por indisponibilidad (no por el límite de peticiones).</summary>
+    public const string IaNoDisponible =
+        "El asistente de IA no está disponible en este momento. Inténtalo en unos minutos; mientras tanto puedes ajustar la cotización desde su detalle.";
+
+    // Códigos de RespuestaChatError.codigo (HU-013.16): el frontend decide qué mostrar sin leer el texto.
+    public const string CodigoIaNoDisponible = "IA_NO_DISPONIBLE";
+    public const string CodigoLimiteModelo = "LIMITE_MODELO";
+    public const string CodigoTurnoEnCurso = "TURNO_EN_CURSO";
+    public const string CodigoMaxIteraciones = "MAX_ITERACIONES";
+    public const string CodigoErrorInterno = "ERROR_INTERNO";
+    public const string CodigoRespuestaNoEstructurada = "RESPUESTA_NO_ESTRUCTURADA";
 
     /// <summary>Texto para el comercial ante un fallo del turno.</summary>
     public static string ParaFallo(Exception error) => error switch
     {
         Exceptions.clsTurnoEnCursoException => TurnoEnCurso,
+        Exceptions.clsMaxIteracionesExcedidasException => MaxIteraciones,
         _ when EsLimiteDePeticiones(error) => LimiteModelo,
+        Exceptions.clsIaNoDisponibleException => IaNoDisponible,
         _ => ErrorInterno,
+    };
+
+    /// <summary>Código de <c>RespuestaChatError</c> para un fallo del turno (el mismo criterio que <see cref="ParaFallo"/>).</summary>
+    public static string CodigoDeFallo(Exception error) => error switch
+    {
+        Exceptions.clsTurnoEnCursoException => CodigoTurnoEnCurso,
+        Exceptions.clsMaxIteracionesExcedidasException => CodigoMaxIteraciones,
+        _ when EsLimiteDePeticiones(error) => CodigoLimiteModelo,
+        Exceptions.clsIaNoDisponibleException => CodigoIaNoDisponible,
+        _ => CodigoErrorInterno,
     };
 }

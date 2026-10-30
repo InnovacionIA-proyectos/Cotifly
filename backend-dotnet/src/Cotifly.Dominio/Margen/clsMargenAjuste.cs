@@ -21,6 +21,9 @@ public sealed partial class clsMargenAjuste
 
     public Guid Id { get; private set; }
     public Guid? CotizacionId { get; private set; }
+
+    /// <summary>Ruta a la que se le ajustó el margen (<c>lineaSolicitudId</c>, script 0009, HU-021); <c>null</c> en el ajuste del chat.</summary>
+    public Guid? LineaSolicitudId { get; private set; }
     public string? Folio { get; private set; }
     public decimal? MargenPolitica { get; private set; }
     public decimal? MargenAplicado { get; private set; }
@@ -28,6 +31,21 @@ public sealed partial class clsMargenAjuste
     public string? Motivo { get; private set; }
     public Guid? UsuarioId { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
+
+    /// <summary>
+    /// HU-028 (#186, D6 del diseño): la ruta ajustada se quitó al editar la solicitud. El ajuste queda sin ruta (<c>lineaSolicitudId</c> en
+    /// <c>NULL</c>) y conserva la cotización y el folio como historial. Devuelve <c>true</c> si cambió.
+    /// </summary>
+    public bool DesvincularRuta()
+    {
+        if (LineaSolicitudId is null)
+        {
+            return false;
+        }
+
+        LineaSolicitudId = null;
+        return true;
+    }
 
     /// <summary>Margen con la escala de la columna: 4 decimales half-to-even (0.123456 → 0.1235).</summary>
     public static decimal RedondearMargen(decimal margen) => Math.Round(margen, Decimales, MidpointRounding.ToEven);
@@ -44,7 +62,8 @@ public sealed partial class clsMargenAjuste
         Guid? usuarioId = null,
         Guid? cotizacionId = null,
         string? folio = null,
-        string? metodoCalculo = clsReglaMargen.MetodoMargen)
+        string? metodoCalculo = clsReglaMargen.MetodoMargen,
+        Guid? lineaSolicitudId = null)
     {
         var politica = RedondearMargen(margenPolitica);
         var aplicado = RedondearMargen(margenAplicado);
@@ -62,6 +81,7 @@ public sealed partial class clsMargenAjuste
         {
             Id = Guid.NewGuid(),
             CotizacionId = cotizacionId,
+            LineaSolicitudId = lineaSolicitudId,
             Folio = clsValidacion.Normalizar(folio),
             MargenPolitica = politica,
             MargenAplicado = aplicado,
@@ -110,7 +130,8 @@ public sealed partial class clsMargenAjuste
         Guid usuarioId,
         Guid cotizacionId,
         string folio,
-        string? metodoCalculo = clsReglaMargen.MetodoMargen)
+        string? metodoCalculo = clsReglaMargen.MetodoMargen,
+        Guid? lineaSolicitudId = null)
     {
         var sugerido = RedondearMargen(margenSugerido);
         var aplicado = RedondearMargen(margenAplicado);
@@ -130,6 +151,7 @@ public sealed partial class clsMargenAjuste
         {
             Id = Guid.NewGuid(),
             CotizacionId = cotizacionId,
+            LineaSolicitudId = lineaSolicitudId,
             Folio = clsValidacion.Normalizar(folio),
             MargenPolitica = sugerido,
             MargenAplicado = aplicado,

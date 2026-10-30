@@ -30,6 +30,16 @@ public sealed class clsCosteoEndpointsTests : IDisposable
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     /// <summary>Cuerpo <c>SolicitudCosteoWeb</c> completo (snake_case escrito a mano, como lo manda el frontend).</summary>
+    /// <summary>Tipo de mercancía del catálogo del cubicador que llevan las mercancías del formulario de prueba.</summary>
+    public const string TipoMercancia = "6f1c2a52-8d1e-4f5b-9a63-0c1b2d3e4f50";
+
+    /// <summary>HU-023.3: código del tipo de mercancía en el catálogo del cubicador (lo que manda el contrato nuevo).</summary>
+    public const string CodigoMercancia = "CAFE_EN_ESTIBAS";
+
+    /// <summary>
+    /// Formulario por rutas (HU-021.6, <c>RutaCapturaWeb</c>): una ruta Buenaventura → Bogotá con los ids de municipio del Nexo falso y
+    /// mercancías con su tipo. Sin vehículo ni carrocería (decisión 7); <c>valor_estimado</c> y <c>referencia</c> se aceptan y se ignoran.
+    /// </summary>
     public static string Formulario(string nit = Nit, string linea = "Importacion") => clsApiWebPruebas.Json(new
     {
         tipo = "spot",
@@ -41,26 +51,31 @@ public sealed class clsCosteoEndpointsTests : IDisposable
         referencia = "OC-7788",
         horas_cargue = 4,
         horas_descargue = 6.5,
-        origen = "Buenaventura",
-        destino = "Bogotá D.C.",
-        tipo_vehiculo = "3S3",
-        carroceria = "PORTACONTENEDORES",
-        tipologia = "Contenedor",
-        clase_viaje = "Contenedor",
-        clase_contenedor = "CNT40.HC",
-        exclusivo = true,
-        consolidado = false,
-        retorna_contenedor = true,
-        ciudad_devolucion_contenedor = "Buenaventura",
-        levante_contenedor_diferente = false,
-        ciudad_levante_contenedor = (string?)null,
-        valor_aprovisionamiento = (decimal?)null,
-        peso_kg = 28500.5,
-        valor_mercancia = 250000000,
-        posiciones = new object[]
+        rutas = new object[]
         {
-            new { descripcion = "Estiba de café", cantidad = 20, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = 1425 },
-            new { largo_cm = 1200, ancho_cm = 235, alto_cm = 269 },
+            new
+            {
+                origen_municipio_id = 76109,
+                origen = "Buenaventura",
+                destino_municipio_id = 11001,
+                destino = "Bogotá D.C.",
+                tipologia = "Contenedor",
+                clase_viaje = "Contenedor",
+                clase_contenedor = "CNT40.HC",
+                exclusivo = true,
+                consolidado = false,
+                retorna_contenedor = true,
+                ciudad_devolucion_municipio_id = 76109,
+                ciudad_devolucion_contenedor = "Buenaventura",
+                levante_contenedor_diferente = false,
+                peso_kg = 28500.5,
+                valor_mercancia = 250000000,
+                mercancias = new object[]
+                {
+                    new { codigo_mercancia = CodigoMercancia, nombre_mercancia = "Estiba de café", cantidad = 20, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = 1424.95m },
+                    new { codigo_mercancia = CodigoMercancia, largo_cm = 1200, ancho_cm = 235, alto_cm = 269, peso_kg = 1 },
+                },
+            },
         },
     });
 
@@ -84,11 +99,62 @@ public sealed class clsCosteoEndpointsTests : IDisposable
         alta["clienteBp"]!.GetValue<string>().Should().Be("15927");
         alta["lineas"]![0]!["posiciones"]!.AsArray().Should().HaveCount(2);
         var peticion = _nexo.Peticiones.Last(p => p.Metodo == _post);
-        peticion.IdPortalUsuario.Should().NotBeNullOrEmpty("Nexo identifica al comercial por X-Portal-Usuario-Id");
+        peticion.IdPortalUsuario.Should().NotBeNullOrEmpty("Nexo identifica al comercial por X-Portal-clsUsuario-Id");
 
         var fila = await clsBaseDatosPruebas.EscalarAsync<string>(_entorno.BaseDatos.CadenaCotifly,
-            $"SELECT CONCAT(costeoId, '|', estadoCosteo, '|', (SELECT COUNT(*) FROM dbo_cotifly.CotizacionPosiciones p WHERE p.cotizacionId = c.id)) FROM dbo_cotifly.Cotizaciones c WHERE folio = '{json.GetProperty("folio").GetString()}'");
-        fila.Should().Be($"{_nexo.SolicitudesCreadas[^1]}|pendiente_costeo|2");
+            $"SELECT CONCAT(solicitudNexoId, '|', estadoCosteo, '|', (SELECT COUNT(*) FROM dbo_cotifly.CotizacionMercancias p JOIN dbo_cotifly.CotizacionLineasSolicitud lp ON lp.id = p.lineaSolicitudId WHERE lp.cotizacionSolicitudId = c.id)) FROM dbo_cotifly.CotizacionesSolicitud c WHERE folio = '{json.GetProperty("folio").GetString()}'");
+        fila.Should().Be($"{_nexo.SolicitudesCreadas[^1]}|pendiente_costeo|2", "HU-021: el id de la solicitud de Nexo va en solicitudNexoId (0010)");
+    }
+
+    /// <summary>
+    /// HU-018.1 (#155): "Ver detalle" muestra el <c>deadline</c> del formulario (cabecera) y el <c>scorePrioridad</c> que Nexo devolvió al
+    /// crear la solicitud, en <c>GET .../costeo</c> y en <c>CotizacionResumen</c> (respuesta del envío y "Mis cotizaciones").
+    /// </summary>
+    [Fact]
+    public async Task HU0181_ElCosteoYElResumenTraenElDeadlineYElScorePrioridadDeNexo()
+    {
+        var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        _nexo.ScorePrioridadAlta = 62.5m;
+
+        using var envio = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, Formulario());
+        var resumen = await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created);
+        var folio = resumen.GetProperty("folio").GetString()!;
+        resumen.GetProperty("deadline").GetString().Should().Be("2026-10-15T22:00:00+00:00", "el formulario manda 2026-10-15T17:00:00-05:00 y la API responde en UTC");
+        resumen.GetProperty("score_prioridad").GetDecimal().Should().Be(62.5m);
+
+        using var costeo = await _api.EnviarAsync(HttpMethod.Get, $"/web/cotizaciones/{folio}/costeo", ana.Access);
+        var json = await VerificarContratoAsync(costeo, "/web/cotizaciones/{folio}/costeo", HttpMethod.Get, HttpStatusCode.OK);
+        json.GetProperty("deadline").GetString().Should().Be("2026-10-15T22:00:00+00:00", "leída de la base (datetimeoffset con -05:00) sale en UTC");
+        json.GetProperty("score_prioridad").GetDecimal().Should().Be(62.5m);
+        json.GetProperty("rutas")[0].TryGetProperty("deadline", out _).Should().BeFalse("el deadline es de la solicitud (cabecera), no de la ruta");
+
+        using var lista = await _api.EnviarAsync(HttpMethod.Get, "/web/mis-cotizaciones", ana.Access);
+        var cotizaciones = (await VerificarContratoAsync(lista, "/web/mis-cotizaciones", HttpMethod.Get, HttpStatusCode.OK)).GetProperty("cotizaciones");
+        var fila = cotizaciones.EnumerateArray().Single(c => c.GetProperty("folio").GetString() == folio);
+        fila.GetProperty("deadline").GetString().Should().Be("2026-10-15T22:00:00+00:00");
+        fila.GetProperty("score_prioridad").GetDecimal().Should().Be(62.5m);
+
+        (await clsBaseDatosPruebas.EscalarAsync<decimal?>(_entorno.BaseDatos.CadenaCotifly,
+                $"SELECT scorePrioridad FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'"))
+            .Should().Be(62.5m, "se guarda en la cabecera (script 09)");
+    }
+
+    [Fact]
+    public async Task HU0181_SinScorePrioridadDeNexoNiDeadlineLosDosSalenEnNull()
+    {
+        var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        _nexo.ScorePrioridadAlta = null;
+        var formulario = System.Text.Json.Nodes.JsonNode.Parse(Formulario())!.AsObject();
+        formulario.Remove("deadline").Should().BeTrue();
+        var cuerpo = formulario.ToJsonString();
+
+        using var envio = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, cuerpo);
+        var folio = (await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+
+        using var costeo = await _api.EnviarAsync(HttpMethod.Get, $"/web/cotizaciones/{folio}/costeo", ana.Access);
+        var json = await VerificarContratoAsync(costeo, "/web/cotizaciones/{folio}/costeo", HttpMethod.Get, HttpStatusCode.OK);
+        json.GetProperty("deadline").ValueKind.Should().Be(JsonValueKind.Null);
+        json.GetProperty("score_prioridad").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
     [Fact]
@@ -152,37 +218,93 @@ public sealed class clsCosteoEndpointsTests : IDisposable
     [InlineData("""{"tipo":"urgente","nit_cliente":"900555111","linea_negocio":"Importacion","origen":"Cali","destino":"Bogotá"}""", "SOLICITUD_COSTEO_INVALIDA")]
     [InlineData("""{"tipo":"spot","linea_negocio":"Importacion","origen":"Cali","destino":"Bogotá"}""", "SOLICITUD_COSTEO_INVALIDA")]
     [InlineData("""{"tipo":"spot","nit_cliente":"900555111","linea_negocio":"Importacion","origen":"Cali","destino":"Bogotá","posiciones":[{"largo_cm":0,"ancho_cm":1,"alto_cm":1}]}""", "SOLICITUD_COSTEO_INVALIDA")]
-    [InlineData("""{"tipo":"spot","nit_cliente":"900555111","linea_negocio":"Marítima","origen":"Cali","destino":"Bogotá","peso_kg":1000}""", "MARGEN_LINEA_DESCONOCIDA")]
+    [InlineData("""{"tipo":"spot","nit_cliente":"900555111","linea_negocio":"Marítima","origen":"Cali","destino":"Bogotá","peso_kg":1000,"tipo_vehiculo":"3S3"}""", "MARGEN_LINEA_DESCONOCIDA")]
     [InlineData("""{"tipo":"spot","nit_cliente":"900555111","linea_negocio":"Importacion","origen":"Cali","destino":"Bogotá","peso_kg":1000,"posiciones":[{"cantidad":2,"largo_cm":1,"ancho_cm":1,"alto_cm":1,"peso_kg":400}]}""", "SOLICITUD_COSTEO_INVALIDA")]
     public async Task UnFormularioInvalidoEs400ConErrorNegocioYNoSeGuardaNada(string cuerpo, string codigo)
     {
         var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
-        var antes = _nexo.Peticiones.Count;
+        int Altas() => _nexo.Peticiones.Count(p => p.Metodo == _post);
+        var antes = Altas();
 
         using var respuesta = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, cuerpo);
 
         respuesta.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         await VerificarErrorNegocioAsync(respuesta, codigo);
-        _nexo.Peticiones.Count.Should().Be(antes, "sin formulario válido no se llama a Nexo");
+        Altas().Should().Be(antes, "sin formulario válido no se envía nada a Nexo (HU-021.6: solo se consultan sus catálogos para validar)");
         (await clsBaseDatosPruebas.EscalarAsync<int>(_entorno.BaseDatos.CadenaCotifly,
-            $"SELECT COUNT(*) FROM dbo_cotifly.Cotizaciones WHERE usuarioId = '{ana.UsuarioId}'")).Should().Be(0);
+            $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionesSolicitud WHERE usuarioId = '{ana.UsuarioId}'")).Should().Be(0);
     }
 
     [Fact]
     public async Task SinNexoConfiguradoUnFormularioSinCatalogosDeNexoQuedaEnErrorEnvio()
     {
         var ana = await _entorno.ApiSinCorreo.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
-        var cuerpo = """{"tipo":"spot","nit_cliente":"900555111","linea_negocio":"Importacion","origen":"Cali","destino":"Bogotá","peso_kg":1000}""";
+        // HU-021.6 (decisión 2): aun con el id y el nombre, el nombre se copia del catálogo: sin Nexo no hay captura.
+        var cuerpo = """{"tipo":"spot","nit_cliente":"900555111","linea_negocio":"Importacion","origen":"Cali","origen_municipio_id":76001,"destino":"Bogotá","destino_municipio_id":11001,"peso_kg":1000,"posiciones":[{"codigo_mercancia":"CAFE","largo_cm":100,"ancho_cm":100,"alto_cm":100,"peso_kg":1000}]}""";
 
         using var envio = await _entorno.ApiSinCorreo.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, cuerpo);
-        var json = await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created);
 
-        json.GetProperty("estado_costeo").GetString().Should().Be("error_envio");
-        json.GetProperty("motivo_estado_costeo").GetString().Should().Contain("catálogo de Nexo");
+        envio.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        await VerificarErrorNegocioAsync(envio, "MUNICIPIOS_NO_DISPONIBLE");
     }
 
     [Fact]
-    public async Task SinNexoConfiguradoUnTipoDeVehiculoNoSePuedeValidarYNoSeGuarda()
+    public async Task ConRutasLosCamposPlanosEnLaRaizSonErroresYNoSeDescartan()
+    {
+        var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var cuerpo = Formulario().Replace("\"rutas\":", "\"ciudad_devolucion_contenedor\":\"Cali\",\"peso_kg\":1,\"rutas\":", StringComparison.Ordinal);
+
+        using var respuesta = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, cuerpo);
+
+        respuesta.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await VerificarErrorNegocioAsync(respuesta, "SOLICITUD_COSTEO_INVALIDA");
+        using var json = JsonDocument.Parse(await respuesta.Content.ReadAsStringAsync(Ct));
+        json.RootElement.GetProperty("error").GetProperty("detalle").GetProperty("errores").EnumerateArray()
+            .Select(e => (e.GetProperty("campo").GetString(), e.GetProperty("codigo").GetString()))
+            .Should().BeEquivalentTo([("ciudad_devolucion_contenedor", "CAMPO_NO_APLICA"), ("peso_kg", "CAMPO_NO_APLICA")]);
+    }
+
+    /// <summary>
+    /// DEF-1027B-3 (#228, E2E real 2026-10-27B): el CAMPO_NO_APLICA del levante nombraba el campo heredado <c>valor_aprovisionamiento</c>
+    /// aunque el cliente envió <c>valor_levante_contenedor</c>: el front no podía marcar el campo. Ahora nombra el del contrato.
+    /// </summary>
+    [Fact]
+    public async Task DEF1027B3_ElValorDelLevanteSinLevanteDistintoNombraValorLevanteContenedor()
+    {
+        var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var cuerpo = Formulario().Replace("\"levante_contenedor_diferente\":false", "\"levante_contenedor_diferente\":false,\"valor_levante_contenedor\":500000",
+            StringComparison.Ordinal);
+        cuerpo.Should().Contain("valor_levante_contenedor");
+
+        using var respuesta = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, cuerpo);
+
+        var json = await VerificarContratoAsync(respuesta, "/web/solicitudes-costeo", _post, HttpStatusCode.BadRequest);
+        var error = json.GetProperty("error");
+        error.GetProperty("codigo").GetString().Should().Be("SOLICITUD_COSTEO_INVALIDA");
+        var detalle = error.GetProperty("detalle").GetProperty("errores").EnumerateArray().Should().ContainSingle().Subject;
+        detalle.GetProperty("campo").GetString().Should().Be("valor_levante_contenedor");
+        detalle.GetProperty("codigo").GetString().Should().Be("CAMPO_NO_APLICA");
+        detalle.GetProperty("mensaje").GetString().Should().Contain("'valor_levante_contenedor'").And.NotContain("'valor_aprovisionamiento' solo");
+        _nexo.Peticiones.Should().NotContain(p => p.Metodo == _post);
+    }
+
+    [Fact]
+    public async Task SinNexoConfiguradoUnMunicipioSinIdNoSePuedeResolverYNoSeGuarda()
+    {
+        // HU-021.6 (decisión 2): el id es obligatorio; sin catálogo de municipios no se adivina ni se guarda texto suelto.
+        var ana = await _entorno.ApiSinCorreo.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var cuerpo = """{"tipo":"spot","nit_cliente":"900555111","linea_negocio":"Importacion","origen":"Cali","destino":"Bogotá","peso_kg":1000,"posiciones":[{"codigo_mercancia":"CAFE","largo_cm":100,"ancho_cm":100,"alto_cm":100,"peso_kg":1000}]}""";
+
+        using var envio = await _entorno.ApiSinCorreo.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, cuerpo);
+
+        envio.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        await VerificarErrorNegocioAsync(envio, "MUNICIPIOS_NO_DISPONIBLE");
+        (await clsBaseDatosPruebas.EscalarAsync<int>(_entorno.BaseDatos.CadenaCotifly,
+            $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionesSolicitud WHERE usuarioId = '{ana.UsuarioId}'")).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task SinNexoConfiguradoUnaClaseDeViajeNoSePuedeValidarYNoSeGuarda()
     {
         var ana = await _entorno.ApiSinCorreo.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
 
@@ -191,21 +313,104 @@ public sealed class clsCosteoEndpointsTests : IDisposable
         envio.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         await VerificarErrorNegocioAsync(envio, "CATALOGOS_FLETE_NO_DISPONIBLE");
         (await clsBaseDatosPruebas.EscalarAsync<int>(_entorno.BaseDatos.CadenaCotifly,
-            $"SELECT COUNT(*) FROM dbo_cotifly.Cotizaciones WHERE usuarioId = '{ana.UsuarioId}'")).Should().Be(0);
+            $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionesSolicitud WHERE usuarioId = '{ana.UsuarioId}'")).Should().Be(0);
     }
 
     [Fact]
-    public async Task UnTipoDeVehiculoFueraDelCatalogoMaestroEs400YNoLlegaANexo()
+    public async Task UnaClaseDeViajeFueraDelCatalogoMaestroEs400ConTodosLosErroresYNoLlegaANexo()
     {
         var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var cuerpo = Formulario()
+            .Replace("\"clase_viaje\":\"Contenedor\"", "\"clase_viaje\":\"Barco\"", StringComparison.Ordinal)
+            .Replace("\"destino_municipio_id\":11001,\"destino\":\"Bogot\\u00E1 D.C.\"", "\"destino\":\"La Uni\\u00F3n\"", StringComparison.Ordinal);
+        cuerpo.Should().Contain("La Uni", "el reemplazo del destino debe aplicarse (System.Text.Json escapa las tildes)");
 
-        using var respuesta = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, Formulario().Replace("\"3S3\"", "\"Tractomula\"", StringComparison.Ordinal));
+        using var respuesta = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, cuerpo);
 
         respuesta.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await respuesta.Content.ReadAsStringAsync(Ct)).Should().Contain("tipo_vehiculo");
         await VerificarErrorNegocioAsync(respuesta, "SOLICITUD_COSTEO_INVALIDA");
+        using var json = JsonDocument.Parse(await respuesta.Content.ReadAsStringAsync(Ct));
+        var errores = json.RootElement.GetProperty("error").GetProperty("detalle").GetProperty("errores").EnumerateArray()
+            .Select(e => (e.GetProperty("ruta").GetInt32(), e.GetProperty("campo").GetString(), e.GetProperty("codigo").GetString())).ToList();
+        errores.Should().BeEquivalentTo([(0, "clase_contenedor", "CAMPO_NO_APLICA"), (0, "clase_viaje", "CODIGO_NO_CATALOGO"), (0, "destino", "MUNICIPIO_AMBIGUO")],
+            "HU-021.6: todos los errores de la captura llegan juntos y el municipio ambiguo nunca se adivina");
         _nexo.Peticiones.Should().NotContain(p => p.Metodo == _post, "nunca se envía texto libre a Nexo");
-        _nexo.Peticiones.Should().Contain(p => p.Url.AbsolutePath == "/api/catalogos/tipos-vehiculo");
+    }
+
+    [Fact]
+    public async Task ConLaBanderaDeRespaldoApagadaElVehiculoYLaCarroceriaQueLleganSeIgnoranYElCamionVaSinVehiculo()
+    {
+        // HU-021 (decisión 7): con Captura:AceptarVehiculoCliente apagada (encendida por defecto desde #188), un cliente con el contrato
+        // anterior que todavía manda vehículo y carrocería no falla y el camión va sin vehículo.
+        using var api = clsApiWebPruebas.ConNexo(_entorno.BaseDatos, _nexo, new Dictionary<string, string?> { ["Captura:AceptarVehiculoCliente"] = "false" });
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var cuerpo = Formulario().Replace("\"tipologia\":", "\"tipo_vehiculo\":\"3S3\",\"carroceria\":\"FURGON\",\"tipologia\":", StringComparison.Ordinal);
+
+        using var envio = await api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, cuerpo);
+        var folio = (await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+
+        _nexo.UltimaAlta!["lineas"]![0]!["tipoVehiculo"].Should().BeNull("la Mesa de Costeo de Nexo define el vehículo");
+        (await clsBaseDatosPruebas.EscalarAsync<int>(_entorno.BaseDatos.CadenaCotifly,
+            "SELECT COUNT(*) FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = v.lineaSolicitudId "
+            + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}' AND v.tipoVehiculo IS NULL AND v.pesoKg = 28500.5"))
+            .Should().Be(1, "un camión sin vehículo con el peso total de la ruta");
+    }
+
+    [Fact]
+    public async Task HU014_ConLaBanderaDeRespaldoPorDefectoElVehiculoDelClienteVaEnElCamionDelRespaldo()
+    {
+        // HU-021.11 (#138): Captura:AceptarVehiculoCliente (HU-021-FE.2). HU-014 (#188): encendida por defecto, así que esta API no la
+        // configura. El vehículo se valida contra el catálogo de Nexo y va en el único camión del respaldo; con la bandera apagada se
+        // ignora (prueba anterior).
+        var api = _api;
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var cuerpo = Formulario().Replace("\"tipologia\":", "\"tipo_vehiculo\":\"3S3\",\"carroceria\":\"FURGON\",\"tipologia\":", StringComparison.Ordinal);
+
+        using var envio = await api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, cuerpo);
+        var folio = (await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+
+        _nexo.UltimaAlta!["lineas"]![0]!["tipoVehiculo"]!.GetValue<string>().Should().Be("3S3");
+        _nexo.UltimaAlta!["lineas"]![0]!["carroceria"]!.GetValue<string>().Should().Be("FURGON");
+        (await clsBaseDatosPruebas.EscalarAsync<int>(_entorno.BaseDatos.CadenaCotifly,
+            "SELECT COUNT(*) FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = v.lineaSolicitudId "
+            + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}' AND v.tipoVehiculo = '3S3' AND v.carroceria = 'FURGON' AND v.pesoKg = 28500.5"))
+            .Should().Be(1, "un solo camión, el del respaldo, con el vehículo del cliente y el peso total de la ruta");
+    }
+
+    [Fact]
+    public async Task D1019B2_ElVehiculoDigitadoSeGuardaEscritoComoEnElCatalogoDeNexo()
+    {
+        // E2E real 2026-10-19 (D-1019B-2, #188 M1): " 3s3 "/"furgón" se aceptan por la equivalencia de Nexo y viajan como 3S3/FURGON; también
+        // se guardan así (antes quedaban como los digitó el comercial y así los mostraba GET .../costeo).
+        var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var cuerpo = Formulario().Replace("\"tipologia\":", "\"tipo_vehiculo\":\" 3s3 \",\"carroceria\":\"furgón\",\"tipologia\":", StringComparison.Ordinal);
+
+        using var envio = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, cuerpo);
+        var folio = (await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+
+        _nexo.UltimaAlta!["lineas"]![0]!["tipoVehiculo"]!.GetValue<string>().Should().Be("3S3");
+        _nexo.UltimaAlta!["lineas"]![0]!["carroceria"]!.GetValue<string>().Should().Be("FURGON");
+        var guardado = await clsBaseDatosPruebas.EscalarAsync<string>(_entorno.BaseDatos.CadenaCotifly,
+            "SELECT CONCAT(v.tipoVehiculo, '|', v.carroceria) FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v JOIN dbo_cotifly.CotizacionLineasSolicitud l "
+            + $"ON l.id = v.lineaSolicitudId JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}'");
+        string.Equals(guardado, "3S3|FURGON", StringComparison.Ordinal).Should().BeTrue($"se guarda como en Nexo (se guardó '{guardado}')");
+        using var costeo = await _api.EnviarAsync(HttpMethod.Get, $"/web/cotizaciones/{folio}/costeo", ana.Access);
+        var texto = await costeo.Content.ReadAsStringAsync(Ct);
+        texto.Should().Contain("\"3S3\"").And.NotContain("3s3").And.NotContain("furgón");
+    }
+
+    [Fact]
+    public async Task ConLaBanderaDeRespaldoUnVehiculoFueraDelCatalogoEsCodigoNoCatalogo()
+    {
+        using var api = clsApiWebPruebas.ConNexo(_entorno.BaseDatos, _nexo, new Dictionary<string, string?> { ["Captura:AceptarVehiculoCliente"] = "true" });
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var cuerpo = Formulario().Replace("\"tipologia\":", "\"tipo_vehiculo\":\"Tractomula\",\"tipologia\":", StringComparison.Ordinal);
+
+        using var envio = await api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, cuerpo);
+
+        envio.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await VerificarErrorNegocioAsync(envio, "SOLICITUD_COSTEO_INVALIDA");
+        _nexo.Peticiones.Should().NotContain(p => p.Metodo == _post, "nunca se envía texto libre a Nexo");
     }
 
     [Fact]
@@ -213,7 +418,7 @@ public sealed class clsCosteoEndpointsTests : IDisposable
     {
         var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         var cuerpo = Formulario()
-            .Replace("\"deadline\":\"2026-10-15T17:00:00-05:00\"", "\"deadline\":\"2026-10-15\",\"notas\":\"Cita previa en puerto\",\"origen_municipio_id\":76109,\"destino_municipio_id\":11001", StringComparison.Ordinal);
+            .Replace("\"deadline\":\"2026-10-15T17:00:00-05:00\"", "\"deadline\":\"2026-10-15\",\"notas\":\"Cita previa en puerto\"", StringComparison.Ordinal);
 
         using var envio = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, cuerpo);
         var json = await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created);
@@ -227,11 +432,11 @@ public sealed class clsCosteoEndpointsTests : IDisposable
         linea["destinoMunicipioId"]!.GetValue<int>().Should().Be(11001);
         linea["horasCargue"]!.GetValue<decimal>().Should().Be(4m);
         linea["horasDescargue"]!.GetValue<decimal>().Should().Be(6.5m);
-        linea["tipoVehiculo"]!.GetValue<string>().Should().Be("3S3");
+        linea["tipoVehiculo"].Should().BeNull("HU-021: el comercial ya no digita el vehículo (decisión 7)");
 
         (await clsBaseDatosPruebas.EscalarAsync<string>(_entorno.BaseDatos.CadenaCotifly,
-            "SELECT CONCAT(c.notas, '|', l.origenMunicipioId, '|', l.destinoMunicipioId) FROM dbo_cotifly.Cotizaciones c "
-            + $"JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.cotizacionId = c.id WHERE c.folio = '{folio}'"))
+            "SELECT CONCAT(c.notas, '|', l.origenMunicipioId, '|', l.destinoMunicipioId) FROM dbo_cotifly.CotizacionesSolicitud c "
+            + $"JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.cotizacionSolicitudId = c.id WHERE c.folio = '{folio}'"))
             .Should().Be("Cita previa en puerto|76109|11001", "el reintento reenvía lo guardado");
     }
 
@@ -240,7 +445,7 @@ public sealed class clsCosteoEndpointsTests : IDisposable
     {
         var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         _nexo.AltaFalla = HttpStatusCode.ServiceUnavailable;
-        var cuerpo = Formulario().Replace("\"3S3\"", "\" 3S3 \"", StringComparison.Ordinal).Replace("\"OC-7788\"", "\"  OC-7788 \"", StringComparison.Ordinal);
+        var cuerpo = Formulario().Replace("\"CNT40.HC\"", "\" CNT40.HC \"", StringComparison.Ordinal).Replace("\"OC-7788\"", "\"  OC-7788 \"", StringComparison.Ordinal);
 
         using var envio = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, cuerpo);
         var folio = (await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
@@ -253,8 +458,8 @@ public sealed class clsCosteoEndpointsTests : IDisposable
         // Mismo contenido; solo puede cambiar la escala de los decimales (12000000 en memoria, 12000000.00 al releer DECIMAL(18,2)).
         Canonico(altas[0]).Should().Be(Canonico(altas[1]), "el primer envío y el reintento mandan lo guardado");
         using var primero = JsonDocument.Parse(altas[0]);
-        primero.RootElement.GetProperty("lineas")[0].GetProperty("tipoVehiculo").GetString().Should().Be("3S3");
-        primero.RootElement.GetProperty("referencia").GetString().Should().Be("OC-7788");
+        primero.RootElement.GetProperty("lineas")[0].GetProperty("claseContenedor").GetString().Should().Be("CNT40.HC");
+        primero.RootElement.TryGetProperty("referencia", out _).Should().BeFalse("HU-021 (decisión 1): la referencia se acepta y se ignora");
     }
 
     [Fact]
@@ -285,6 +490,79 @@ public sealed class clsCosteoEndpointsTests : IDisposable
         };
 
         return Normalizar(System.Text.Json.Nodes.JsonNode.Parse(json))!.ToJsonString();
+    }
+
+    /// <summary>
+    /// #173: el E2E real recibió un 500 DESPUÉS de guardar y enviar a Nexo; un reintento del frontend duplicaba la solicitud. Con la misma
+    /// <c>Idempotency-Key</c>, el segundo POST devuelve la misma cotización sin crear otro folio ni otra solicitud en Nexo; sin clave, cada
+    /// POST es una captura nueva.
+    /// </summary>
+    [Fact]
+    public async Task ConLaMismaIdempotencyKeyElReintentoDeLaCapturaNoDuplicaLaSolicitudEnNexo()
+    {
+        var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var clave = Guid.NewGuid().ToString();
+        var antes = _nexo.SolicitudesCreadas.Count;
+
+        using var primera = await CapturarConClaveAsync(ana.Access, clave, Formulario());
+        var folio = (await VerificarContratoAsync(primera, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString();
+        using var reintento = await CapturarConClaveAsync(ana.Access, clave, Formulario());
+        var repetida = await VerificarContratoAsync(reintento, "/web/solicitudes-costeo", _post, HttpStatusCode.Created);
+
+        repetida.GetProperty("folio").GetString().Should().Be(folio, "la repetición devuelve la cotización de la primera");
+        _nexo.SolicitudesCreadas.Count.Should().Be(antes + 1, "una sola solicitud en Nexo");
+        (await clsBaseDatosPruebas.EscalarAsync<int>(_entorno.BaseDatos.CadenaCotifly,
+                $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionesSolicitud WHERE usuarioId = (SELECT usuarioId FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}')"))
+            .Should().Be(1, "un solo folio");
+
+        using var otroCuerpo = await CapturarConClaveAsync(ana.Access, clave, Formulario(linea: "Nacional"));
+        // D4 (E2E 2026-10-16): antes 400 {"error": "texto"}; ahora 409 ErrorNegocio con un código estable.
+        var reutilizada = await VerificarContratoAsync(otroCuerpo, "/web/solicitudes-costeo", _post, HttpStatusCode.Conflict);
+        reutilizada.GetProperty("error").GetProperty("codigo").GetString().Should().Be("IDEMPOTENCY_KEY_REUTILIZADA");
+        reutilizada.GetProperty("error").GetProperty("mensaje").GetString().Should().Contain("Idempotency-Key");
+        _nexo.SolicitudesCreadas.Count.Should().Be(antes + 1, "la clave reutilizada no llega a Nexo");
+
+        using var sinClave = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, Formulario());
+        (await VerificarContratoAsync(sinClave, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()
+            .Should().NotBe(folio, "sin clave cada POST es una captura nueva");
+        _nexo.SolicitudesCreadas.Count.Should().Be(antes + 2);
+    }
+
+    /// <summary>
+    /// #191 (HU-026.1): la Idempotency-Key vive en dbo_cotifly.CapturasIdempotentes (script 06). Una captura repetida con la misma clave
+    /// DESPUÉS DE REINICIAR LA API (otra instancia, sin nada en memoria; igual que otra réplica) devuelve el mismo folio y no crea otra
+    /// solicitud en Nexo. El mismo cuerpo con otra escala de decimales (1424.95 → 1424.950) es la misma petición (deuda del PR #195).
+    /// </summary>
+    [Fact]
+    public async Task I191_LaCapturaRepetidaTrasReiniciarLaApiNoCreaOtraSolicitudEnNexo()
+    {
+        var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var clave = Guid.NewGuid().ToString();
+        var antes = _nexo.SolicitudesCreadas.Count;
+        using var primera = await CapturarConClaveAsync(ana.Access, clave, Formulario());
+        var folio = (await VerificarContratoAsync(primera, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString();
+
+        using var reiniciada = clsApiWebPruebas.ConNexo(_entorno.BaseDatos, _nexo);
+        var otraEscala = Formulario().Replace("1424.95", "1424.950", StringComparison.Ordinal);
+        otraEscala.Should().Contain("1424.950");
+        using var reintento = await CapturarConClaveAsync(ana.Access, clave, otraEscala, reiniciada.Cliente);
+
+        reintento.StatusCode.Should().Be(HttpStatusCode.Created, await reintento.Content.ReadAsStringAsync(Ct));
+        JsonDocument.Parse(await reintento.Content.ReadAsStringAsync(Ct)).RootElement.GetProperty("folio").GetString()
+            .Should().Be(folio, "la API reiniciada lee la clave de la tabla del 06");
+        _nexo.SolicitudesCreadas.Count.Should().Be(antes + 1, "una sola solicitud en Nexo");
+        (await clsBaseDatosPruebas.EscalarAsync<string>(_entorno.BaseDatos.CadenaCotifly,
+                $"SELECT CONCAT(estado, '|', folio) FROM dbo_cotifly.CapturasIdempotentes WHERE clave = N'{clave}'"))
+            .Should().Be($"terminada|{folio}", "la fila guarda el folio de la captura (en la transacción que lo confirmó) y su resultado");
+    }
+
+    private async Task<HttpResponseMessage> CapturarConClaveAsync(string token, string clave, string cuerpo, HttpClient? cliente = null)
+    {
+        using var peticion = new HttpRequestMessage(_post, "/web/solicitudes-costeo");
+        peticion.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        peticion.Headers.TryAddWithoutValidation("Idempotency-Key", clave);
+        peticion.Content = new StringContent(cuerpo, System.Text.Encoding.UTF8, "application/json");
+        return await (cliente ?? _api.Cliente).SendAsync(peticion, Ct);
     }
 
     public void Dispose()

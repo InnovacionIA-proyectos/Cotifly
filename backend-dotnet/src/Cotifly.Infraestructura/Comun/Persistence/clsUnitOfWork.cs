@@ -35,7 +35,29 @@ public sealed partial class clsUnitOfWork(clsCotiflyDbContext contexto) : IClsUn
         ["pk_tokensRevocados"] = new(clsViolacionUnicidadException.CodigoRegistroDuplicado, "Ese access token ya estaba revocado."),
     };
 
+    /// <summary>Intentos de un guardado sin transacción abierta cuando SQL Server lo elige como víctima de un interbloqueo (1205).</summary>
+    internal const int IntentosPorInterbloqueo = 3;
+
     public async Task<int> GuardarCambiosAsync(CancellationToken cancellationToken = default)
+    {
+        // HU-021: guardar el agregado escribe varias tablas (cabecera, rutas, camiones, conexos) y puede chocar con otra petición o con el
+        // polling. Sin una transacción abierta por el llamador, SaveChanges usa la suya: si SQL Server la elige como víctima (1205) la
+        // revierte entera y el rastreador de cambios queda igual, así que se repite. Lo crítico es el guardado después del alta en Nexo
+        // (clsEnvioCosteoService): perderlo dejaría la solicitud en Nexo sin solicitudNexoId y el reintento la duplicaría.
+        for (var intento = 1; ; intento++)
+        {
+            try
+            {
+                return await GuardarUnaVezAsync(cancellationToken);
+            }
+            catch (DbUpdateException ex) when (intento < IntentosPorInterbloqueo && contexto.Database.CurrentTransaction is null && EsInterbloqueo(ex))
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(50 * intento), CancellationToken.None);
+            }
+        }
+    }
+
+    private async Task<int> GuardarUnaVezAsync(CancellationToken cancellationToken)
     {
         try
         {
@@ -62,10 +84,11 @@ public sealed partial class clsUnitOfWork(clsCotiflyDbContext contexto) : IClsUn
         await using var transaccion = await contexto.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
         try
         {
-            // UPDLOCK retiene la fila hasta confirmar: entre la comparación y el UPDATE nadie más (polling, otra petición) la escribe. Todos
-            // los flujos bloquean primero la cotización y después escriben sus líneas: el mismo orden evita interbloqueos.
+            // UPDLOCK retiene la fila de la cabecera (CotizacionesSolicitud, HU-021) hasta confirmar: entre la comparación y el UPDATE nadie
+            // más (polling, otra petición) la escribe. Todos los flujos bloquean primero la cabecera y después escriben sus rutas, camiones y
+            // conexos: el mismo orden evita interbloqueos.
             var actual = await contexto.Database
-                .SqlQuery<int?>($"SELECT versionNegocio AS [Value] FROM dbo_cotifly.Cotizaciones WITH (UPDLOCK, ROWLOCK) WHERE id = {cotizacionId}")
+                .SqlQuery<int?>($"SELECT versionNegocio AS [Value] FROM dbo_cotifly.CotizacionesSolicitud WITH (UPDLOCK, ROWLOCK) WHERE id = {cotizacionId}")
                 .FirstOrDefaultAsync(cancellationToken);
             if (actual != versionEsperada)
             {
@@ -105,6 +128,28 @@ public sealed partial class clsUnitOfWork(clsCotiflyDbContext contexto) : IClsUn
         }
 
         contexto.ChangeTracker.Clear();
+    }
+
+    public async Task<bool> VersionVigenteEnTransaccionAsync(Guid cotizacionId, int versionEsperada, CancellationToken cancellationToken = default)
+    {
+        if (contexto.Database.CurrentTransaction is null)
+        {
+            throw new InvalidOperationException("La comparación de versión dentro de la transacción exige una transacción abierta (la del candado del folio).");
+        }
+
+        try
+        {
+            // Mismo bloqueo que GuardarCambiosSiVersionAsync (la cabecera primero): la fila queda retenida hasta confirmar o deshacer.
+            var actual = await contexto.Database
+                .SqlQuery<int?>($"SELECT versionNegocio AS [Value] FROM dbo_cotifly.CotizacionesSolicitud WITH (UPDLOCK, ROWLOCK) WHERE id = {cotizacionId}")
+                .FirstOrDefaultAsync(cancellationToken);
+            return actual == versionEsperada;
+        }
+        catch (Exception ex) when (EsInterbloqueo(ex))
+        {
+            // Víctima de un interbloqueo: SQL Server ya deshizo la transacción; para el llamador es un CONFLICTO_CONCURRENCIA.
+            return false;
+        }
     }
 
     /// <summary>

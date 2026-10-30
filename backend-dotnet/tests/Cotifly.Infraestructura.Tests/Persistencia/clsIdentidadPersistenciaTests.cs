@@ -134,14 +134,15 @@ public sealed class clsIdentidadPersistenciaTests(clsBaseDatosPruebas baseDatos)
     }
 
     [Fact]
-    public async Task ElScript0002SiembraLosDosRolesInternosConSuCodigo()
+    public async Task ElScript0002SiembraLosDosRolesInternosYEl15ElDirectorConSuCodigo()
     {
         var roles = await ConsultarAsync(s => s.GetRequiredService<IClsRolRepository>().ListarActivosAsync(Ct));
         var codigos = await clsBaseDatosPruebas.EscalarAsync<int>(BaseDatos.CadenaCotifly,
             "SELECT COUNT(*) FROM dbo_cotifly.Roles WHERE codigo IN ('comercial', 'gerente_comercial')");
 
         codigos.Should().Be(2);
-        roles.Select(r => r.Codigo).Should().BeEquivalentTo([RolInterno.Comercial, RolInterno.GerenteComercial]);
+        roles.Select(r => r.Codigo).Should().BeEquivalentTo([RolInterno.Comercial, RolInterno.GerenteComercial, RolInterno.Director]);
+        roles.Single(r => r.Codigo == RolInterno.Director).IdRolExterno.Should().Be(clsBaseDatosPruebas.RolExternoDirector);
         roles.Single(r => r.Codigo == RolInterno.Comercial).IdRolExterno.Should().Be(clsBaseDatosPruebas.RolExternoComercial);
         roles.Single(r => r.Codigo == RolInterno.GerenteComercial).IdRolExterno.Should().Be(clsBaseDatosPruebas.RolExternoGerente);
     }
@@ -167,23 +168,86 @@ public sealed class clsIdentidadPersistenciaTests(clsBaseDatosPruebas baseDatos)
     }
 
     [Fact]
-    public async Task UnUsuarioNoPuedeTenerDosAsignacionesActivas()
+    public async Task ListarTodosTraeATodosLosUsuariosYLosRolesSeLeenConMasDeDosMilIds()
     {
+        // HU-037.3 (#211): el alcance del director sin regional (todos los usuarios) y sus roles, sin el tope de 2100 parámetros.
+        var uno = await CrearUsuarioAsync();
+        var dos = await CrearUsuarioAsync();
+        var gerente = (await ConsultarAsync(s => s.GetRequiredService<IClsRolRepository>().ListarActivosAsync(Ct)))
+            .Single(r => r.Codigo == RolInterno.GerenteComercial);
+        await EnAmbitoAsync(s =>
+        {
+            s.GetRequiredService<IClsRolRepository>().AgregarAsignacion(clsUsuarioRol.Asignar(dos, gerente.Id, Reloj.AhoraUtc).Valor);
+            return Task.CompletedTask;
+        });
+        List<Guid> muchos = [.. Enumerable.Range(0, 2500).Select(_ => Guid.NewGuid()), uno, dos];
+
+        var todos = await ConsultarAsync(s => s.GetRequiredService<IClsUsuarioWebRepository>().ListarTodosAsync(Ct));
+        var roles = await ConsultarAsync(s => s.GetRequiredService<IClsRolRepository>().ListarRolesDeUsuariosAsync(muchos, Ct));
+
+        todos.Select(u => u.Id).Should().Contain([uno, dos]);
+        roles.Should().Equal(new Dictionary<Guid, RolInterno> { [dos] = RolInterno.GerenteComercial });
+    }
+
+    [Fact]
+    public async Task HU0401_UnUsuarioPuedeTenerVariasAsignacionesActivasPeroNoElMismoRolDosVeces()
+    {
+        // HU-040.1 (#229, script 16): sin uq_usuariosRoles_usuarioId_activo caben varias asignaciones activas (una por rol); la unicidad
+        // usuario + rol sigue.
         var usuario = await CrearUsuarioAsync();
         var roles = await ConsultarAsync(s => s.GetRequiredService<IClsRolRepository>().ListarActivosAsync(Ct));
+        var comercial = roles.Single(r => r.Codigo == RolInterno.Comercial);
+        var gerente = roles.Single(r => r.Codigo == RolInterno.GerenteComercial);
 
-        var asignarAmbos = () => EnAmbitoAsync(s =>
+        await EnAmbitoAsync(s =>
         {
             var repo = s.GetRequiredService<IClsRolRepository>();
-            foreach (var rol in roles)
-            {
-                repo.AgregarAsignacion(clsUsuarioRol.Asignar(usuario, rol.Id, Reloj.AhoraUtc).Valor);
-            }
-
+            repo.AgregarAsignacion(clsUsuarioRol.Asignar(usuario, gerente.Id, Reloj.AhoraUtc).Valor);
+            repo.AgregarAsignacion(clsUsuarioRol.Asignar(usuario, comercial.Id, Reloj.AhoraUtc).Valor);
+            return Task.CompletedTask;
+        });
+        var repetir = () => EnAmbitoAsync(s =>
+        {
+            s.GetRequiredService<IClsRolRepository>().AgregarAsignacion(clsUsuarioRol.Asignar(usuario, comercial.Id, Reloj.AhoraUtc).Valor);
             return Task.CompletedTask;
         });
 
-        (await asignarAmbos.Should().ThrowAsync<clsViolacionUnicidadException>()).Which.Restriccion.Should().Be("uq_usuariosRoles_usuarioId_activo");
+        (await repetir.Should().ThrowAsync<clsViolacionUnicidadException>()).Which.Restriccion.Should().Be("uq_usuariosRoles_usuarioId_rolId");
+        var asignados = await ConsultarAsync(s => s.GetRequiredService<IClsRolRepository>().ListarRolesAsignadosAsync(usuario, Ct));
+        var porUsuario = await ConsultarAsync(s => s.GetRequiredService<IClsRolRepository>().ListarRolesDeUsuariosAsync([usuario], Ct));
+        asignados.Should().Equal(RolInterno.Comercial, RolInterno.GerenteComercial);
+        porUsuario.Should().Equal(new Dictionary<Guid, RolInterno> { [usuario] = RolInterno.GerenteComercial },
+            "con varias asignaciones activas el tablero informa la de mayor alcance");
+    }
+
+    [Fact]
+    public async Task HU0401_ElRefreshGuardaElRolDeLaSesionYUnoSinRolSeLeeComoNulo()
+    {
+        // HU-040.1 (#229, script 16): TokensRefresco.rolSesion (NULL en los refresh emitidos antes del 16) y su CHECK.
+        var usuario = await CrearUsuarioAsync();
+        var hashConRol = Convert.ToHexStringLower(Guid.NewGuid().ToByteArray()) + Convert.ToHexStringLower(Guid.NewGuid().ToByteArray());
+        var hashSinRol = Convert.ToHexStringLower(Guid.NewGuid().ToByteArray()) + Convert.ToHexStringLower(Guid.NewGuid().ToByteArray());
+        var conRol = clsTokenRefresco.Emitir(usuario, hashConRol, Reloj.AhoraUtc, TimeSpan.FromDays(30), rolSesion: RolInterno.Director).Valor;
+        var sinRol = clsTokenRefresco.Emitir(usuario, hashSinRol, Reloj.AhoraUtc, TimeSpan.FromDays(30)).Valor;
+        await EnAmbitoAsync(s =>
+        {
+            var repo = s.GetRequiredService<IClsTokenRefrescoRepository>();
+            repo.Agregar(conRol);
+            repo.Agregar(sinRol);
+            return Task.CompletedTask;
+        });
+
+        var leidoConRol = await ConsultarAsync(s => s.GetRequiredService<IClsTokenRefrescoRepository>().ObtenerPorHashAsync(hashConRol, Ct));
+        var leidoSinRol = await ConsultarAsync(s => s.GetRequiredService<IClsTokenRefrescoRepository>().ObtenerPorHashAsync(hashSinRol, Ct));
+        var codigo = await clsBaseDatosPruebas.EscalarAsync<string>(BaseDatos.CadenaCotifly,
+            $"SELECT rolSesion FROM dbo_cotifly.TokensRefresco WHERE id = '{conRol.Id}'");
+        var invalido = () => clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly,
+            $"UPDATE dbo_cotifly.TokensRefresco SET rolSesion = N'admin' WHERE id = '{sinRol.Id}'");
+
+        leidoConRol!.RolSesion.Should().Be(RolInterno.Director);
+        leidoSinRol!.RolSesion.Should().BeNull();
+        codigo.Should().Be("director");
+        (await invalido.Should().ThrowAsync<Microsoft.Data.SqlClient.SqlException>()).Which.Message.Should().Contain("ck_tokensRefresco_rolSesion");
     }
 
     [Fact]

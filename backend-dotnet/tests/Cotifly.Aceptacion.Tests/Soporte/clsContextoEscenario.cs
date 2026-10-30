@@ -17,7 +17,7 @@ public sealed class clsContextoEscenario : IDisposable
 {
     private readonly Dictionary<string, string?> _configuracion;
     private ServiceProvider _proveedor;
-    private clsServidorSmtpFalso? _relay;
+    private string _entorno = "Development";
 
     public clsContextoEscenario()
     {
@@ -26,11 +26,18 @@ public sealed class clsContextoEscenario : IDisposable
         {
             ["Pdf:StorageDir"] = clsServiciosPruebas.CarpetaPdfsTemporal(),
 
+            // HU-021.6: los escenarios del PDF legado (cotización "del chat") lo encienden; en producción está apagado.
+            ["Pdf:PermitirCotizacionChat"] = "true",
+
             // La TRM (HU-012.1) nunca sale a la red: los adaptadores reales consultan las fuentes falsas del escenario. Por defecto solo la
             // Superintendencia; los escenarios de DolarApi eligen el proveedor con UsarProveedorTrm.
             ["Trm:Url"] = clsTrmFalso.Url,
             ["Trm:UrlDolarApi"] = clsDolarApiFalso.Url,
             ["Trm:Proveedor"] = "superfinanciera",
+
+            // HU-033 (#199): el correo sale por el MailSender falso; fuera de Production va al buzón de pruebas.
+            ["Correo:MailSender:UrlBase"] = clsMailSenderFalso.UrlBase,
+            ["Correo:Proteccion:BuzonPruebas"] = clsMailSenderFalso.BuzonPruebas,
         };
         _proveedor = CrearProveedor();
     }
@@ -52,11 +59,40 @@ public sealed class clsContextoEscenario : IDisposable
     /// <summary>Comerciales del escenario por nombre de usuario.</summary>
     public Dictionary<string, Guid> Usuarios { get; } = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Relay SMTP falso del escenario (se crea al pedirlo por primera vez, #11).</summary>
-    public clsServidorSmtpFalso Relay => _relay ??= new clsServidorSmtpFalso();
+    /// <summary>HU-033 (#199): MailSender falso del escenario (nunca envía correos reales).</summary>
+    public clsMailSenderFalso MailSender { get; } = new();
 
-    /// <summary>Correos que recibió el relay falso (0 si el escenario no lo creó).</summary>
-    public int CorreosRecibidos => _relay?.Recibidos.Count ?? 0;
+    /// <summary>Correos que recibió el MailSender falso.</summary>
+    public int CorreosRecibidos => MailSender.Recibidos.Count;
+
+    /// <summary>HU-033 (#199): rehace el proveedor en otro ambiente (<c>Production</c> admite enviar sin protección).</summary>
+    public void UsarEntorno(string entorno, IDictionary<string, string?> configuracion)
+    {
+        _entorno = entorno;
+        Reconfigurar(configuracion);
+    }
+
+    /// <summary>
+    /// HU-033 (#199): una vuelta del worker de correos solo con los correos en curso de <paramref name="folio"/> (como lo haría el worker
+    /// con ellos; la agenda es compartida con otros escenarios). Devuelve cuántos procesó.
+    /// </summary>
+    public async Task<int> ProcesarCorreosAsync(string folio)
+    {
+        var correos = await ConsultarAsync(async s =>
+        {
+            var cotizacion = await s.GetRequiredService<Aplicacion.Cotizaciones.Repositories.IClsCotizacionRepository>().ObtenerPorFolioAsync(folio);
+            return await s.GetRequiredService<Aplicacion.Correo.Repositories.IClsCorreoRepository>().ListarPorCotizacionAsync(cotizacion!.Id);
+        });
+        var procesados = 0;
+        foreach (var correo in correos.Where(c => c.SiguienteConsultaAt is not null))
+        {
+            var resultado = await ConsultarAsync(s => s.GetRequiredService<Aplicacion.Correo.Services.IClsSeguimientoCorreosService>()
+                .ProcesarAsync(new Aplicacion.Correo.Repositories.clsConsultaCorreoPendiente(correo.Id, correo.SiguienteConsultaAt!.Value)));
+            procesados += resultado == Aplicacion.Correo.Services.ResultadoConsultaCorreo.NoReclamado ? 0 : 1;
+        }
+
+        return procesados;
+    }
 
     /// <summary>Error de negocio de la última operación de PDF o correo (#11), o <c>null</c> si salió bien.</summary>
     public clsErrorDominio? UltimoErrorNegocio { get; set; }
@@ -96,6 +132,7 @@ public sealed class clsContextoEscenario : IDisposable
             Reloj,
             clsEntornoAceptacion.BaseDatos.CadenaIdentidad,
             configuracionExtra: _configuracion,
+            entorno: _entorno,
             configurar: s =>
             {
                 s.AddHttpClient(clsFuenteMargenOData.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => SapFalso);
@@ -122,6 +159,7 @@ public sealed class clsContextoEscenario : IDisposable
             Reloj,
             clsEntornoAceptacion.BaseDatos.CadenaIdentidad,
             configuracionExtra: _configuracion,
+            entorno: _entorno,
             configurar: s =>
             {
                 s.AddSingleton<IClsFuenteMargen>(FuenteSap);
@@ -132,6 +170,7 @@ public sealed class clsContextoEscenario : IDisposable
     {
         servicios.AddHttpClient(clsProveedorTrmSuperfinanciera.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => TrmFalso);
         servicios.AddHttpClient(clsProveedorTrmDolarApi.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => DolarApiFalso);
+        servicios.AddHttpClient(Cotifly.Infraestructura.Correo.Services.clsTransporteMailSender.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => MailSender);
     }
 
     /// <summary>Ejecuta <paramref name="accion"/> en un ámbito nuevo (como una petición) y guarda los cambios.</summary>
@@ -157,6 +196,6 @@ public sealed class clsContextoEscenario : IDisposable
         SapFalso.Dispose();
         TrmFalso.Dispose();
         DolarApiFalso.Dispose();
-        _relay?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        MailSender.Dispose();
     }
 }

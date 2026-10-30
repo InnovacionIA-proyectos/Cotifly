@@ -23,6 +23,23 @@ public static class clsTextosEstandar
         string Facturacion);
 
     public const string TituloTarifa = "NUESTRA TARIFA PARA SU SOLICITUD ES:";
+
+    /// <summary>
+    /// HU-033 (#199, decisión 5): etiqueta del total general al final de la tarifa del PDF y en el resumen del correo. El total es la suma del
+    /// precio final de cada ruta (transporte y servicios conexos incluidos), sin desglose.
+    /// </summary>
+    public const string EtiquetaTotalGeneral = "VALOR TOTAL DE LA COTIZACIÓN";
+
+    /// <summary>
+    /// HU-033 (#199): leyenda de impuestos del total, la misma en el PDF y en el correo. El PDF no traía ninguna: este texto es el que se
+    /// propone y queda pendiente de validación de negocio (un solo lugar para cambiarlo).
+    /// </summary>
+    public const string LeyendaImpuestos =
+        "Valores por viaje según las rutas cotizadas, con los servicios conexos incluidos. No incluyen impuestos, tasas ni contribuciones "
+        + "que se causen según la normativa vigente.";
+
+    /// <summary>HU-033 (#199): nota del total general del PDF: el precio de cada ruta ya incluye su transporte y sus servicios conexos.</summary>
+    public const string NotaTotalGeneral = "El valor de cada ruta incluye el transporte y los servicios conexos indicados; el total es la suma de las rutas.";
     public const string TituloTablaPorDefecto = "COTIZACIÓN — BSSL";
     public const string PrefijoOrigen = "ORIGEN Y/O LUGAR DE CARGUE: ";
     public const string TituloDetalleAdicional = "Detalle adicional del servicio";
@@ -85,9 +102,36 @@ public static class clsTextosEstandar
     /// <summary>Frase de cierre (<c>FRASE_FINAL_STD</c>); el enlace va en la línea siguiente.</summary>
     public const string FraseFinal = "Para conocer más de nuestra organización, ingresa a:";
 
-    private const string NotaGeneralComun =
-        "Las tarifas cotizadas no incluyen servicios de cargue ni descargue. Se basan "
-        + "en tiempos logísticos de máximo 4 horas para cada labor. En caso de requerir "
+    /// <summary>Horas de cada labor (cargue o descargue) que asume la nota cuando la captura no las trae.</summary>
+    public const decimal HorasLaborPorDefecto = 4m;
+
+    /// <summary>
+    /// #173: nota general de la tarifa con las horas REALES de cargue y descargue de la ruta (sin dato, <see cref="HorasLaborPorDefecto"/>)
+    /// y sin decir que no incluye un servicio que sí va itemizado: si la cotización lleva el conexo de cargue o de descargue, la frase
+    /// "no incluyen servicios de cargue ni descargue" se ajusta o se quita. Sin horas ni conexos es el texto de siempre.
+    /// </summary>
+    public static string NotaGeneral(decimal? horasCargue, decimal? horasDescargue, bool cargueIncluido, bool descargueIncluido)
+    {
+        var servicios = (cargueIncluido, descargueIncluido) switch
+        {
+            (false, false) => "Las tarifas cotizadas no incluyen servicios de cargue ni descargue. Se basan ",
+            (true, false) => "Las tarifas cotizadas no incluyen el servicio de descargue. Se basan ",
+            (false, true) => "Las tarifas cotizadas no incluyen el servicio de cargue. Se basan ",
+            (true, true) => "Las tarifas cotizadas se basan ",
+        };
+        var cargue = horasCargue ?? HorasLaborPorDefecto;
+        var descargue = horasDescargue ?? HorasLaborPorDefecto;
+        var tiempos = cargue == descargue
+            ? $"en tiempos logísticos de máximo {Horas(cargue)} para cada labor. "
+            : $"en tiempos logísticos de máximo {Horas(cargue)} para el cargue y {Horas(descargue)} para el descargue. ";
+        return servicios + tiempos + RestoNotaGeneral;
+    }
+
+    private static string Horas(decimal horas) =>
+        horas == 1m ? "1 hora" : $"{horas.ToString("0.##", System.Globalization.CultureInfo.GetCultureInfo("es-CO"))} horas";
+
+    private const string RestoNotaGeneral =
+        "En caso de requerir "
         + "un vehículo tipo furgón, el valor se ajustará según lo estipulado por el "
         + "SICETAC. Esta oferta permanecerá vigente siempre que las condiciones del "
         + "mercado de fletes lo permitan. La Superintendencia de Puertos y Transporte, a "
@@ -135,7 +179,7 @@ public static class clsTextosEstandar
         ],
         Incluye: _incluyeComun,
         NoIncluye: _noIncluyeComun,
-        NotaGeneral: NotaGeneralComun,
+        NotaGeneral: NotaGeneral(null, null, false, false),
         Seguro:
             "EDUARDO BOTERO SOTO S.A. cuenta con una póliza de responsabilidad contractual que "
             + "ampara las obligaciones derivadas del contrato de Transporte, conforme a lo "
@@ -164,6 +208,43 @@ public static class clsTextosEstandar
         Vigencia: VigenciaComun,
         Facturacion: FacturacionComun);
 
+    /// <summary>
+    /// Asunto estándar del PDF (el que imprime <c>clsConstructorDocumentoCotizacion</c> si la cotización no trae uno): respaldo del
+    /// redactor de la IA (HU-013.5).
+    /// </summary>
+    public static string AsuntoEstandar(string? lineaNegocio) =>
+        $"presentación oferta de servicios de Transporte {clsTextoSeguro.LimpiarLinea(lineaNegocio) ?? string.Empty}".TrimEnd();
+
+    /// <summary>
+    /// Asunto estándar del PDF de pliego (HU-011.5: licitación o cotización de varias rutas), el que imprime si no hay textos de la IA
+    /// ni del comercial: respaldo del redactor de la IA (HU-013.5).
+    /// </summary>
+    public static string AsuntoLicitacion(string? referencia, int rutas) => referencia is null
+        ? $"presentación oferta de servicios de Transporte para su licitación ({rutas} rutas)"
+        : $"presentación oferta de servicios de Transporte para la licitación {referencia} ({rutas} rutas)";
+
+    /// <summary>
+    /// OBS-C-3 (E2E 2026-10-22, endurecimiento B de #199): asunto estándar del PDF de varias rutas según el tipo de la solicitud. Solo una
+    /// licitación dice "para su licitación" (<see cref="AsuntoLicitacion"/>); una cotización spot de varias rutas (formulario) dice
+    /// "presentación oferta de servicios de Transporte (N rutas)".
+    /// </summary>
+    public static string AsuntoVariasRutas(bool esLicitacion, int rutas) => esLicitacion
+        ? AsuntoLicitacion(null, rutas)
+        : $"presentación oferta de servicios de Transporte ({rutas} rutas)";
+
+    /// <summary>Título del resumen de una licitación de varias rutas (HU-011.5).</summary>
+    public const string TituloResumenPliego = "RESUMEN DEL PLIEGO";
+
+    /// <summary>OBS-C-3 (endurecimiento B de #199): título del resumen de una cotización spot de varias rutas (no es un pliego).</summary>
+    public const string TituloResumenRutas = "RESUMEN DE LAS RUTAS";
+
+    /// <summary>
+    /// Introducción estándar de la variante (párrafos separados por una línea en blanco), la misma que imprime el PDF sin textos de la
+    /// IA ni del comercial: la de <see cref="TarifaUnica"/> o, en un pliego, la de <see cref="MultiSeccion"/> (con sus viñetas
+    /// <c>·</c>; pasa de 900 caracteres). Respaldo del redactor de la IA (HU-013.5).
+    /// </summary>
+    public static string IntroduccionEstandar(bool esPliego) => string.Join("\n\n", (esPliego ? MultiSeccion : TarifaUnica).Intro);
+
     /// <summary>Textos de <c>armar_multi.py</c> (<c>TEXTOS</c>): otra introducción (con viñetas), otro seguro y otro stand by.</summary>
     public static readonly clsJuegoTextos MultiSeccion = new(
         Intro:
@@ -185,7 +266,7 @@ public static class clsTextosEstandar
         ],
         Incluye: _incluyeComun,
         NoIncluye: _noIncluyeComun,
-        NotaGeneral: NotaGeneralComun,
+        NotaGeneral: NotaGeneral(null, null, false, false),
         Seguro:
             "Eduardo Botero Soto S.A. tiene contratado un seguro que ampara sus "
             + "obligaciones derivadas del contrato de transporte conforme los parámetros del "

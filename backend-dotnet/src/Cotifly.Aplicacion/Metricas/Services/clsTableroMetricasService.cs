@@ -22,7 +22,8 @@ public interface IClsTableroMetricasService
 
     /// <summary>
     /// Indicadores de la regional del gerente (o de un comercial suyo con <c>usuario_id</c>), lista de comerciales, serie y
-    /// concentración por ciudad. Solo <c>gerente_comercial</c>.
+    /// concentración por ciudad. <c>gerente_comercial</c> (su regional) o <c>director</c> (todas, o la de <c>regional</c>; HU-037.3, #211),
+    /// con el alcance de <see cref="IClsRegionalUsuario.ResolverAlcanceAsync"/>.
     /// </summary>
     Task<clsResultado<clsMetricasRegional>> ObtenerRegionalAsync(clsConsultaMetricas consulta, CancellationToken cancellationToken = default);
 }
@@ -41,6 +42,9 @@ public sealed class clsTableroMetricasService(
     public const int AniosMaximos = 3;
 
     public const string FormatoFecha = "yyyy-MM-dd";
+
+    /// <summary>Primer año que acepta <c>anio</c> (HU-010.5); el último es el año en curso más uno (en Bogotá).</summary>
+    public const int AnioMinimo = 2020;
     public const string MensajeComercialAjeno = "Comercial no encontrado en tu regional.";
 
     public async Task<clsResultado<clsMetricasComercial>> ObtenerComercialAsync(clsConsultaMetricas consulta, CancellationToken cancellationToken = default)
@@ -62,7 +66,8 @@ public sealed class clsTableroMetricasService(
             periodo.Valor,
             usuarioId,
             Indicadores(datos.Filas, datos),
-            Serie(datos.Filas, periodo.Valor));
+            Serie(datos.Filas, periodo.Valor),
+            clsCalculadoraMetricas.PorLineaNegocio(datos.Filas));
     }
 
     public async Task<clsResultado<clsMetricasRegional>> ObtenerRegionalAsync(clsConsultaMetricas consulta, CancellationToken cancellationToken = default)
@@ -73,9 +78,9 @@ public sealed class clsTableroMetricasService(
             return ErrorNoAutenticado();
         }
 
-        if (rol != RolInterno.GerenteComercial)
+        if (!rol.EsGerencial())
         {
-            return new clsErrorDominio(clsCodigosAplicacion.SinPermiso, "Solo el gerente comercial ve las métricas de la regional.");
+            return new clsErrorDominio(clsCodigosAplicacion.SinPermiso, "Solo el gerente comercial o el director ven las métricas de la regional.");
         }
 
         var periodo = ResolverPeriodo(consulta);
@@ -101,29 +106,25 @@ public sealed class clsTableroMetricasService(
             return ErrorNoAutenticado();
         }
 
-        var regional = await regionales.ResolverAsync(gerente, cancellationToken);
-        if (regional.EsFallo)
+        // HU-037.3 (#211): el alcance (la regional del gerente; todas o la elegida para el director) lo decide IClsRegionalUsuario.
+        var alcance = await regionales.ResolverAlcanceAsync(gerente, rol, consulta.Regional, cancellationToken);
+        if (alcance.EsFallo)
         {
-            return regional.Error;
+            return alcance.Error;
         }
 
-        var miembros = await regionales.ListarMiembrosAsync(regional.Valor.Regional, cancellationToken);
-        if (miembros.EsFallo)
-        {
-            return miembros.Error;
-        }
-
-        if (filtro is { } filtrado && miembros.Valor.All(m => m.Id != filtrado))
+        IReadOnlyList<clsUsuarioWeb> miembros = [.. alcance.Valor.Miembros.DistinctBy(m => m.Id)];
+        if (filtro is { } filtrado && miembros.All(m => m.Id != filtrado))
         {
             return new clsErrorDominio(clsCodigosAplicacion.NoEncontrado, MensajeComercialAjeno);
         }
 
-        var datos = await ListarAsync([.. miembros.Valor.Select(m => m.Id)], periodo.Valor, cancellationToken);
+        var datos = await ListarAsync([.. miembros.Select(m => m.Id)], periodo.Valor, cancellationToken);
         var porUsuario = datos.Filas.ToLookup(f => f.UsuarioId);
         IReadOnlyList<clsCotizacionMetrica> seleccion = filtro is { } uno ? [.. porUsuario[uno]] : datos.Filas;
 
-        var rolesMiembros = await roles.ListarRolesDeUsuariosAsync([.. miembros.Valor.Select(m => m.Id)], cancellationToken);
-        var comerciales = miembros.Valor
+        var rolesMiembros = await roles.ListarRolesDeUsuariosAsync([.. miembros.Select(m => m.Id)], cancellationToken);
+        var comerciales = miembros
             .OrderBy(m => m.NombreCompleto ?? m.NombreUsuario ?? string.Empty, StringComparer.CurrentCultureIgnoreCase)
             .ThenBy(m => m.Id)
             .Select(m => new clsComercialRegional(
@@ -136,24 +137,33 @@ public sealed class clsTableroMetricasService(
 
         return new clsMetricasRegional(
             periodo.Valor,
-            regional.Valor.Regional,
-            regional.Valor.Fuente,
+            alcance.Valor.Regional,
+            alcance.Valor.Fuente,
             filtro,
             Indicadores(seleccion, datos),
             await metricas.ContarLineasNegocioActivasAsync(cancellationToken),
             comerciales,
             Serie(seleccion, periodo.Valor),
-            clsCalculadoraMetricas.Concentracion(seleccion, datos.CiudadesDisponibles));
+            clsCalculadoraMetricas.Concentracion(seleccion, datos.CiudadesDisponibles),
+            clsCalculadoraMetricas.PorLineaNegocio(seleccion));
     }
 
     /// <summary>
     /// Periodo de la consulta en fechas de negocio: por defecto del 1 de enero del año en curso a hoy. 400 si una fecha no es
     /// <c>AAAA-MM-DD</c>, si <c>hasta</c> es anterior a <c>desde</c> o si el rango supera <see cref="AniosMaximos"/> años.
+    /// HU-010.5 (#187): con <c>anio</c> el periodo es ese año completo y, con <c>mes</c>, ese mes completo (fechas de Bogotá); reemplaza a
+    /// <c>desde</c>/<c>hasta</c>, que se ignoran. 400 si <c>mes</c> llega sin <c>anio</c>, si no es un entero de 1 a 12 o si <c>anio</c>
+    /// no es un entero de <see cref="AnioMinimo"/> al año en curso más uno. Solo la regional los pasa: en el comercial siempre son nulos.
     /// </summary>
     public clsResultado<clsPeriodoMetricas> ResolverPeriodo(clsConsultaMetricas consulta)
     {
         ArgumentNullException.ThrowIfNull(consulta);
         var hoy = calendario.Hoy;
+
+        if (!string.IsNullOrWhiteSpace(consulta.Anio) || !string.IsNullOrWhiteSpace(consulta.Mes))
+        {
+            return PeriodoAnioMes(consulta.Anio, consulta.Mes, hoy);
+        }
 
         if (!LeerFecha(consulta.Desde, "desde", new DateOnly(hoy.Year, 1, 1), out var desde, out var errorDesde))
         {
@@ -177,6 +187,38 @@ public sealed class clsTableroMetricasService(
 
         return new clsPeriodoMetricas(desde, hasta, calendario.ZonaHoraria);
     }
+
+    /// <summary>El año completo, o el mes completo de ese año (HU-010.5).</summary>
+    private clsResultado<clsPeriodoMetricas> PeriodoAnioMes(string? textoAnio, string? textoMes, DateOnly hoy)
+    {
+        if (string.IsNullOrWhiteSpace(textoAnio))
+        {
+            return Invalida("El parámetro 'mes' requiere 'anio'.");
+        }
+
+        var anioMaximo = hoy.Year + 1;
+        if (!LeerEntero(textoAnio, out var anio) || anio < AnioMinimo || anio > anioMaximo)
+        {
+            return Invalida($"El parámetro 'anio' debe ser un año entre {AnioMinimo} y {anioMaximo}.");
+        }
+
+        if (string.IsNullOrWhiteSpace(textoMes))
+        {
+            return new clsPeriodoMetricas(new DateOnly(anio, 1, 1), new DateOnly(anio, 12, 31), calendario.ZonaHoraria);
+        }
+
+        if (!LeerEntero(textoMes, out var mes) || mes is < 1 or > 12)
+        {
+            return Invalida("El parámetro 'mes' debe ser un número de 1 a 12.");
+        }
+
+        var inicio = new DateOnly(anio, mes, 1);
+        return new clsPeriodoMetricas(inicio, inicio.AddMonths(1).AddDays(-1), calendario.ZonaHoraria);
+    }
+
+    /// <summary>Entero sin signo ni separadores (<c>2026</c>, <c>04</c>); nada de <c>+4</c>, <c>4.0</c> ni <c>2 026</c>.</summary>
+    private static bool LeerEntero(string texto, out int valor) =>
+        int.TryParse(texto.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out valor);
 
     private Task<clsDatosMetricas> ListarAsync(IReadOnlyCollection<Guid> ids, clsPeriodoMetricas periodo, CancellationToken cancellationToken) =>
         metricas.ListarCotizacionesAsync(ids, calendario.InicioDelDia(periodo.Desde), calendario.InicioDelDia(periodo.Hasta.AddDays(1)), cancellationToken);

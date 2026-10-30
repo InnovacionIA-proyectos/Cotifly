@@ -22,12 +22,17 @@ public sealed class clsCosteoNexoNoDisponible : IClsCosteoNexo
     public Task<clsResultado<clsCosteoConsultadoNexo>> ConsultarCosteoAsync(Guid usuarioId, string solicitudId, CancellationToken cancellationToken = default) =>
         Task.FromResult(NoDisponible<clsCosteoConsultadoNexo>());
 
-    public Task<clsResultado<clsCotizacionNexo>> ObtenerCotizacionAsync(Guid usuarioId, string solicitudId, CancellationToken cancellationToken = default) =>
+    public Task<clsResultado<clsCotizacionNexo>> LeerCotizacionAsync(
+        Guid usuarioId, string solicitudId, string? cotizacionNexoId, CancellationToken cancellationToken = default) =>
         Task.FromResult(NoDisponible<clsCotizacionNexo>());
 
     public Task<clsResultado<clsCotizacionNexo>> MarcarResultadoAsync(
         Guid usuarioId, string cotizacionNexoId, clsResultadoNexo resultado, CancellationToken cancellationToken = default) =>
         Task.FromResult(NoDisponible<clsCotizacionNexo>());
+
+    public Task<clsResultado<ResultadoRechazoNexo>> RechazarSolicitudAsync(
+        Guid usuarioId, string solicitudId, string motivo, string? comentario, CancellationToken cancellationToken = default) =>
+        Task.FromResult(NoDisponible<ResultadoRechazoNexo>());
 
     private static clsResultado<T> NoDisponible<T>() => new clsErrorDominio(clsCodigosError.CosteoNexoNoDisponible, Mensaje);
 }

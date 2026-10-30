@@ -1,14 +1,14 @@
 # =============================================================================
 # Stack de STAGING para Dokploy (Docker Swarm) — backend .NET 10 de Cotifly (HU-006.6, #30).
 #
-# Equivale, para el backend .NET, a infra/stack.staging.yml (Python, documentado pero nunca desplegado). El stack Python
-# que corre hoy es deploy/docker-compose.swarm.yml (destino del rollback, DEPLOY.md §4.5 paso 7); ambos se conservan
-# sin cambios hasta validar producción (corte único, ADR-001). Decisiones: ADR-013.
+# Equivale, para el backend .NET, al antiguo infra/stack.staging.yml (Python, nunca desplegado). Todo el Python, incluido
+# el manifiesto del stack que corre hoy en Dokploy, se borró del repositorio en HU-022.1 (#146) y vive en el tag
+# python-final. Decisiones: ADR-013.
 # Runbook: DEPLOY.md §5. NO desplegar sin aprobación: la prueba en staging está pendiente (HU-006.6).
 #
 # Topología:
 #   Internet/red corporativa ──> Traefik (dokploy-network) ──> cotifly-api:8080 ──> tbsdatacenter:1433 (SQL Server 2019)
-#                                  (TLS: HU-006.2)                      │         ──> LLM, Google Chat, Nexo, SAP TM, relay SMTP
+#                                  (TLS: HU-006.2)                      │         ──> LLM, Nexo, SAP TM, relay SMTP
 #                                                                       └── volumen cotifly_staging_pdfs (/data/pdfs)
 #   - Un solo servicio (ADR-002): no hay MCP, ni base de datos, ni MinIO en el stack.
 #   - SQL Server es la instancia corporativa EXTERNA (HU-002.4, ADR-008): se llega por la cadena de conexión, no por
@@ -16,7 +16,7 @@
 #
 # Redes (equivalentes a bot-edge / bot-back del Python):
 #   - edge    = dokploy-network (externa, la de Traefik). Solo entrada desde Traefik; ningún otro servicio del stack.
-#   - salida  = overlay propia NO interna: salida a internet y a la red corporativa (SQL Server, LLM, Google, Nexo, TRM en
+#   - salida  = overlay propia NO interna: salida a internet y a la red corporativa (SQL Server, LLM, Nexo, TRM en
 #               www.datos.gov.co, SAP, relay). Equivale a bot-edge.
 #   - bot-back (interna, sin salida) no hace falta: no hay servicios internos. Si vuelve alguno (p. ej. MinIO,
 #     ADR-012), va en una overlay con internal: true y sin labels de Traefik.
@@ -27,7 +27,9 @@
 # publicado en modo host (abajo, HTTP sin TLS, solo red corporativa). Al resolverse: quitar "ports", usar
 # COTIFLY_ORDEN_UPDATE=start-first y, si se quiere, quitar la restricción de nodo (con un volumen compartido).
 #
-# Variables: todas llegan del entorno del stack en Dokploy (DEPLOY.md §2); ninguna tiene valor real aquí. Las
+# Variables: todas llegan del entorno del stack en Dokploy (DEPLOY.md §2); ninguna tiene valor real aquí. Endurecimiento A (#199):
+# se declaran TODAS las opciones que el backend valida al arrancar, con el valor por defecto del código (lo verifica la prueba
+# clsManifiestosDespliegueTests contra las clases de opciones). Las
 # obligatorias usan ${VAR:?}: sin ellas "docker stack deploy" falla antes de tocar el servicio. Una variable que no
 # aparece en este archivo NO llega al contenedor aunque esté en Dokploy (p. ej. un tercer respaldo IA__Fallbacks__2__*: agregarlo aquí).
 #
@@ -47,26 +49,12 @@ volumes:
   pdfs:
     name: cotifly_staging_pdfs
 
-secrets:
-  # Cuenta de servicio de Google Chat (DEPLOY.md §2.1). Debe existir antes del deploy:
-  #   docker secret create cotifly_staging_gchat_sa_v1 ./cuenta-servicio.json
-  # Mientras no haya app de Chat puede crearse con "{}": la app solo lo lee si GChat__SaJson apunta a él.
-  gchat_sa:
-    external: true
-    name: ${GCHAT_SA_SECRETO:-cotifly_staging_gchat_sa_v1}
-
 services:
   cotifly-api:
     image: ghcr.io/innovacionia-proyectos/cotifly-backend:${COTIFLY_TAG:?falta COTIFLY_TAG}
     networks: [edge, salida]
     volumes:
       - pdfs:/data/pdfs
-    secrets:
-      - source: gchat_sa
-        target: gchat_sa.json
-        uid: "1654"
-        gid: "1654"
-        mode: 0400
     # Acceso temporal mientras el overlay esté caído (HU-006.1/HU-006.2): bind directo en el worker, HTTP sin TLS.
     # 8092 para no chocar con el Python (8091). Quitar cuando Traefik llegue a la tarea.
     ports:
@@ -87,6 +75,15 @@ services:
       Identidad__TablaUsuarios: ${Identidad__TablaUsuarios:-tblSAPUsuariosApp}
       Identidad__TablaUsuarioRoles: ${Identidad__TablaUsuarioRoles:-tblSAPUsuarioRoles}
       Identidad__TablaRoles: ${Identidad__TablaRoles:-tblSAPRoles}
+      # HU-023 (#176): script 07 del motivo BUSQUEDA_AGOTADA. auto (detecta; exige VIEW DEFINITION), habilitado o deshabilitado.
+      BaseDatos__MotivoBusquedaAgotada: ${BaseDatos__MotivoBusquedaAgotada:-auto}
+      # Candado del folio en SQL Server (sp_getapplock, #125): esperas, reintentos y límite de los comandos.
+      CandadoSql__EsperaMilisegundos: ${CandadoSql__EsperaMilisegundos:-5000}
+      CandadoSql__MargenRespuestaMilisegundos: ${CandadoSql__MargenRespuestaMilisegundos:-15000}
+      CandadoSql__GraciaCancelacionMilisegundos: ${CandadoSql__GraciaCancelacionMilisegundos:-5000}
+      CandadoSql__ComandoSegundos: ${CandadoSql__ComandoSegundos:-120}
+      CandadoSql__Intentos: ${CandadoSql__Intentos:-3}
+      CandadoSql__PausaBaseMilisegundos: ${CandadoSql__PausaBaseMilisegundos:-200}
 
       # Regional del comercial (ADR-016, ADR-008): OPCIONAL, solo lectura de DWCubosEBSSAP (dbo.DimEjecutivo). El login la
       # llena y la refresca en UsuariosWeb.regional (#81) y el tablero del gerente la lee en vivo (#45).
@@ -122,6 +119,8 @@ services:
       ForwardedHeaders__RedesConocidas__0: ${ForwardedHeaders__RedesConocidas__0:?falta ForwardedHeaders__RedesConocidas__0}
       ForwardedHeaders__LimiteSaltos: ${ForwardedHeaders__LimiteSaltos:-1}
       SeguridadHttp__LimiteCuerpoWebBytes: ${SeguridadHttp__LimiteCuerpoWebBytes:-65536}
+      # HU-011: Excel de licitación (10 MB) + JSON. ForwardedHeaders__ProxiesConocidos__N no se declara: vacía no arranca y basta la red.
+      SeguridadHttp__LimiteCuerpoLicitacionBytes: ${SeguridadHttp__LimiteCuerpoLicitacionBytes:-12582912}
 
       # SAP TM (HU-009). Vacío = política de la línea. SapTm__Pass: secreto, solo con odata.
       SapTm__SalesOrgDefault: ${SapTm__SalesOrgDefault:-50000005}
@@ -136,6 +135,33 @@ services:
       # Nexo__UrlBase es la RAÍZ del servicio (https://<host-nexo>), sin "/api": el cliente agrega las rutas /api/...
       Nexo__UrlBase: ${Nexo__UrlBase:-}
       Nexo__MinutosCacheMunicipios: ${Nexo__MinutosCacheMunicipios:-60}
+      # HU-013.10: caché de los catálogos maestros de Nexo y horas que la última copia sirve de respaldo con Nexo caído.
+      Nexo__MinutosCacheCatalogos: ${Nexo__MinutosCacheCatalogos:-30}
+      Nexo__HorasCatalogosVencidos: ${Nexo__HorasCatalogosVencidos:-24}
+      # HU-014 (#188): banderas de Nexo y de la captura con valor EXPLÍCITO, para que un cambio del valor por defecto del código no
+      # cambie el ambiente sin querer. HU-031.1 (#194, decisión del 2026-10-20): EnviarCodigosCubicador en siempre (Nexo ya tiene la
+      # bandeja de normalización, NEXO #322): el código del cubicador se resuelve con el catálogo y el diccionario de alias de Nexo y
+      # viaja oficial; el que ninguno conoce viaja tal cual y Nexo lo normaliza. siempre | solo_conocidos | nunca; true = siempre (un
+      # true que quede en Dokploy ya no es un riesgo), false = solo_conocidos. AceptarVehiculoCliente en true (el vehículo digitado solo
+      # va en el camión del respaldo y debe ser un código de Nexo o un alias que resuelve a uno). Ver DEPLOY.md.
+      Nexo__EnviarGrupoRutaId: ${Nexo__EnviarGrupoRutaId:-true}
+      Nexo__EnviarDatosCubicador: ${Nexo__EnviarDatosCubicador:-true}
+      Nexo__EnviarCodigosCubicador: ${Nexo__EnviarCodigosCubicador:-siempre}
+      Captura__AceptarVehiculoCliente: ${Captura__AceptarVehiculoCliente:-true}
+      # HU-032 (#197): clases de viaje que no exigen el vehículo elegido (la lista REEMPLAZA a la de por defecto, solo Contenedor; los
+      # vacíos no cuentan). Para eximir también Carga Suelta: __0=Contenedor y __1=Carga Suelta. Un valor desconocido no arranca.
+      Captura__ClasesSinVehiculoObligatorio__0: ${Captura__ClasesSinVehiculoObligatorio__0:-Contenedor}
+      Captura__ClasesSinVehiculoObligatorio__1: ${Captura__ClasesSinVehiculoObligatorio__1:-}
+      # HU-018.1 (#155): motivos de pérdida (GET /web/motivos-perdida). Vacíos = la lista de Nexo (Valor muy alto, Flete fuera de rango de
+      # plaza, Cliente desistió del servicio, Tiempo de respuesta vencido, Otro); la lista configurada la REEMPLAZA. Máximo 100 caracteres por
+      # motivo. MotivoConComentario (vacío = Otro) exige comentario y debe estar en la lista; si no, la API no arranca.
+      Resultado__MotivosPerdida__0: ${Resultado__MotivosPerdida__0:-}
+      Resultado__MotivosPerdida__1: ${Resultado__MotivosPerdida__1:-}
+      Resultado__MotivosPerdida__2: ${Resultado__MotivosPerdida__2:-}
+      Resultado__MotivosPerdida__3: ${Resultado__MotivosPerdida__3:-}
+      Resultado__MotivosPerdida__4: ${Resultado__MotivosPerdida__4:-}
+      Resultado__MotivosPerdida__5: ${Resultado__MotivosPerdida__5:-}
+      Resultado__MotivoConComentario: ${Resultado__MotivoConComentario:-}
       # Polling del costeo en Nexo (HU-005.6/005.8, clsOpcionesCosteoNexo). APAGADO por defecto en staging hasta que el
       # DBA confirme que staging y producción NO comparten dbo_cotifly: si la comparten, los workers de los dos stacks
       # consultarían y actualizarían las mismas cotizaciones contra instancias distintas de Nexo (pruebas y producción).
@@ -147,6 +173,49 @@ services:
       CosteoNexo__IntervaloTickSegundos: ${CosteoNexo__IntervaloTickSegundos:-5}
       CosteoNexo__Lote: ${CosteoNexo__Lote:-20}
       CosteoNexo__ReclamoSegundos: ${CosteoNexo__ReclamoSegundos:-120}
+      CosteoNexo__LecturaInmediataSegundos: ${CosteoNexo__LecturaInmediataSegundos:-6}
+      CosteoNexo__MaximoFallosRelectura: ${CosteoNexo__MaximoFallosRelectura:-10}
+      # HU-021.9: envío diferido de los conexos a Nexo (intentos, espera entre reintentos y horas esperando el catálogo).
+      CosteoNexo__MaximoReintentosConexos: ${CosteoNexo__MaximoReintentosConexos:-5}
+      CosteoNexo__IntervaloReintentoConexosMinutos: ${CosteoNexo__IntervaloReintentoConexosMinutos:-5}
+      CosteoNexo__EsperaMaximaCatalogoConexosHoras: ${CosteoNexo__EsperaMaximaCatalogoConexosHoras:-24}
+      # HU-033: sincronización diferida del resultado con Nexo.
+      CosteoNexo__MaximoFallosSincronizacionResultado: ${CosteoNexo__MaximoFallosSincronizacionResultado:-10}
+      CosteoNexo__EdadMaximaSincronizacionResultadoDias: ${CosteoNexo__EdadMaximaSincronizacionResultadoDias:-30}
+
+      # Cubicador (HU-021.5, HU-023; opciones C y D del E2E 2026-10-16). Sin UrlBase el cubicador queda sin configurar: cada ruta va al
+      # camión del respaldo y los catálogos del cubicador responden 503. UrlBase y ApiKey solo en Dokploy; ApiKey es SECRETO, obligatoria
+      # con UrlBase y de al menos 16 caracteres en Production (una por ambiente). RespaldoSiFalla: el valor del código (true); DEPLOY.md
+      # recomienda false en producción con URL. Al arrancar se valida la coherencia de los tiempos (DEPLOY.md §2.2).
+      Cubicador__UrlBase: ${Cubicador__UrlBase:-}
+      Cubicador__ApiKey: ${Cubicador__ApiKey:-}
+      Cubicador__RutaSalud: ${Cubicador__RutaSalud:-}
+      Cubicador__RespaldoSiFalla: ${Cubicador__RespaldoSiFalla:-true}
+      Cubicador__TiempoEsperaSegundos: ${Cubicador__TiempoEsperaSegundos:-15}
+      Cubicador__TiempoEsperaRecomendacionSegundos: ${Cubicador__TiempoEsperaRecomendacionSegundos:-90}
+      Cubicador__EsperaAntesReconsultaSegundos: ${Cubicador__EsperaAntesReconsultaSegundos:-5}
+      Cubicador__TiempoEsperaReconsultaSegundos: ${Cubicador__TiempoEsperaReconsultaSegundos:-60}
+      Cubicador__MaximoConcurrente: ${Cubicador__MaximoConcurrente:-1}
+      Cubicador__EsperaMaximaCupoSegundos: ${Cubicador__EsperaMaximaCupoSegundos:-60}
+      Cubicador__EsperaSincronaCubicacionSegundos: ${Cubicador__EsperaSincronaCubicacionSegundos:-8}
+      Cubicador__RetencionCubicacionMinutos: ${Cubicador__RetencionCubicacionMinutos:-15}
+      Cubicador__MaximoCubicacionesEnMemoria: ${Cubicador__MaximoCubicacionesEnMemoria:-500}
+      Cubicador__MinutosCacheCatalogos: ${Cubicador__MinutosCacheCatalogos:-30}
+      Cubicador__PresupuestoCapturaSegundos: ${Cubicador__PresupuestoCapturaSegundos:-180}
+      Cubicador__TiempoMaximoCatalogoSegundos: ${Cubicador__TiempoMaximoCatalogoSegundos:-10}
+      # Licitación cubicada en segundo plano (HU-023.5, #160; exige db/scripts/pendientes/04). MaximoParalelo <= MaximoConcurrente.
+      Cubicador__LicitacionEnSegundoPlano: ${Cubicador__LicitacionEnSegundoPlano:-true}
+      Cubicador__ProcesadorHabilitado: ${Cubicador__ProcesadorHabilitado:-true}
+      Cubicador__MaximoParalelo: ${Cubicador__MaximoParalelo:-1}
+      Cubicador__IntervaloTickSegundos: ${Cubicador__IntervaloTickSegundos:-5}
+      Cubicador__LoteRutas: ${Cubicador__LoteRutas:-50}
+      Cubicador__ReclamoSegundos: ${Cubicador__ReclamoSegundos:-300}
+      Cubicador__MaximoIntentos: ${Cubicador__MaximoIntentos:-3}
+      Cubicador__EsperaReintentoSegundos: ${Cubicador__EsperaReintentoSegundos:-30}
+      # "Calcular cubicaje" (HU-023.2, #157): parecido de la descripción con el catálogo y el plan B de la sugerencia legada.
+      Cubicacion__ParecidoMinimoMercancia: ${Cubicacion__ParecidoMinimoMercancia:-0.7}
+      Cubicacion__MargenAmbiguedadMercancia: ${Cubicacion__MargenAmbiguedadMercancia:-0.05}
+      Cubicacion__IncluirSugerenciaLegada: ${Cubicacion__IncluirSugerenciaLegada:-false}
 
       # TRM del día (frente C, ADR-014): DolarApi con respaldo en los datos abiertos de la Superintendencia Financiera.
       # Salida a co.dolarapi.com:443 y www.datos.gov.co:443. Las URL vacías impiden arrancar: por eso llevan valor por defecto.
@@ -156,20 +225,38 @@ services:
       Trm__TiempoEsperaSegundos: ${Trm__TiempoEsperaSegundos:-10}
       Trm__TiempoEsperaDolarApiSegundos: ${Trm__TiempoEsperaDolarApiSegundos:-4}
 
-      # PDF (ADR-006, ADR-012): volumen. Pdf__ClaveFirmaUrl: secreto, obligatorio con Google Chat configurado.
+      # PDF (ADR-006, ADR-012): volumen.
       Pdf__StorageModo: volumen
       Pdf__StorageDir: /data/pdfs
       Pdf__BaseUrl: ${Pdf__BaseUrl:-}
-      Pdf__ClaveFirmaUrl: ${Pdf__ClaveFirmaUrl:-}
-      Pdf__MinutosUrlFirmada: ${Pdf__MinutosUrlFirmada:-15}
+      Pdf__TiempoEsperaRenderSegundos: ${Pdf__TiempoEsperaRenderSegundos:-30}
+      # Fijo (no se lee del entorno): la cotización legada del chat está retirada (HU-021.6); solo las pruebas la encienden.
+      Pdf__PermitirCotizacionChat: "false"
 
-      # Correo (D3): deshabilitado por defecto; relay interno sin AUTH.
+      # Correo (HU-033, #199, ADR-023): deshabilitado por defecto; sale por el microservicio interno MailSender (URL solo en Dokploy).
       Correo__Habilitado: ${Correo__Habilitado:-false}
-      Correo__Modo: ${Correo__Modo:-smtp_relay}
-      Correo__SmtpRelay__Host: ${Correo__SmtpRelay__Host:-}
-      Correo__SmtpRelay__Port: ${Correo__SmtpRelay__Port:-25}
-      Correo__SmtpRelay__FromFallback: ${Correo__SmtpRelay__FromFallback:-notificaciones@boterosoto.com.co}
-      Correo__SmtpRelay__TimeoutSeg: ${Correo__SmtpRelay__TimeoutSeg:-20}
+      Correo__Modo: mailsender
+      Correo__MailSender__UrlBase: ${Correo__MailSender__UrlBase:-}
+      Correo__MailSender__TimeoutSegundos: ${Correo__MailSender__TimeoutSegundos:-15}
+      Correo__MailSender__Remitente: ${Correo__MailSender__Remitente:-notificaciones@boterosoto.com.co}
+      Correo__MailSender__ModoRemitente: ${Correo__MailSender__ModoRemitente:-comercial}
+      Correo__MailSender__DominiosRemitente: ${Correo__MailSender__DominiosRemitente:-boterosoto.com.co}
+      # Low, Normal o High (cabeceras Priority/Importance/X-Priority).
+      Correo__MailSender__Prioridad: ${Correo__MailSender__Prioridad:-Normal}
+      # Staging corre como Production: la protección se FIJA aquí (no se lee del entorno). Todo correo va al buzón de pruebas; el envío
+      # real necesitaría además PermitirEnvioReal=true, que aquí queda fijo en false.
+      Correo__Proteccion__Modo: redirigir
+      Correo__Proteccion__PermitirEnvioReal: "false"
+      Correo__Proteccion__BuzonPruebas: ${Correo__Proteccion__BuzonPruebas:-}
+      # #228: tope de destinatarios entre para y cc (la copia oculta al comercial no cuenta). 1 a 100; fuera de rango no arranca.
+      Correo__MaximoDestinatarios: ${Correo__MaximoDestinatarios:-10}
+      # Worker que consulta el estado en MailSender: tick, espera entre consultas del mismo correo, horas sin confirmación antes de
+      # fallido, correos por vuelta y reserva de una réplica (rangos 1-3600, 1-3600, 1-720, 1-1000, 1-3600).
+      Correo__Seguimiento__IntervaloTickSegundos: ${Correo__Seguimiento__IntervaloTickSegundos:-15}
+      Correo__Seguimiento__IntervaloConsultaSegundos: ${Correo__Seguimiento__IntervaloConsultaSegundos:-30}
+      Correo__Seguimiento__EdadMaximaHoras: ${Correo__Seguimiento__EdadMaximaHoras:-24}
+      Correo__Seguimiento__Lote: ${Correo__Seguimiento__Lote:-50}
+      Correo__Seguimiento__ReclamoSegundos: ${Correo__Seguimiento__ReclamoSegundos:-60}
 
       # Agente de IA (ADR-003). Sin proveedor el agente no responde. IA__ApiKey: secreto.
       # Con OmniRoute (#84; docs/03 "OmniRoute"): IA__Proveedor=openai_compatible,
@@ -187,6 +274,10 @@ services:
       IA__JsonSchemaEstricto: ${IA__JsonSchemaEstricto:-false}
       IA__Rpm: ${IA__Rpm:-8}
       IA__TimeoutSeg: ${IA__TimeoutSeg:-60}
+      IA__TiempoRedaccionSegundos: ${IA__TiempoRedaccionSegundos:-15}
+      IA__EsperaMaximaRpmSegundos: ${IA__EsperaMaximaRpmSegundos:-20}
+      IA__PropuestaDirecta: ${IA__PropuestaDirecta:-true}
+      IA__RespuestaFinalEnLoop: ${IA__RespuestaFinalEnLoop:-true}
       # Respaldos (ante 429, 5xx, red caída o el 400 "No credentials for provider" de OmniRoute). Vacíos = sin respaldo.
       # Con OmniRoute: 0 = gemini/gemini-3.5-flash, 1 = gemini/gemini-3-flash-preview (mismo endpoint y clave). ApiKey: secreto.
       IA__Fallbacks__0__Proveedor: ${IA__Fallbacks__0__Proveedor:-}
@@ -204,13 +295,6 @@ services:
       Sesiones__BarridoMinutos: ${Sesiones__BarridoMinutos:-60}
       Sesiones__EsperaTurnoSegundos: ${Sesiones__EsperaTurnoSegundos:-3}
 
-      # Google Chat (ADR-011, HU-006.7): el JWT se verifica SIEMPRE (fijo, no se lee del entorno).
-      # GChat__SaJson: vacío o /run/secrets/gchat_sa.json (el secreto montado arriba).
-      GChat__VerificarJwt: "true"
-      GChat__ProjectNumber: ${GChat__ProjectNumber:-}
-      GChat__SaJson: ${GChat__SaJson:-}
-      GChat__SupportSpace: ${GChat__SupportSpace:-}
-      GChat__CapacidadCola: ${GChat__CapacidadCola:-200}
     # Igual al HEALTHCHECK de la imagen (vida, /health), en forma exec: la imagen no tiene shell. La disponibilidad
     # (/health/ready, base de datos) la mira Traefik, así una base caída no reinicia la tarea.
     healthcheck:
@@ -220,7 +304,7 @@ services:
       retries: 3
       start_period: 30s
     deploy:
-      # Una réplica: cola de Google Chat y barrido de sesiones en proceso; volumen local de PDFs (ADR-012).
+      # Una réplica: barrido de sesiones en proceso; volumen local de PDFs (ADR-012).
       replicas: 1
       placement:
         # Overlay entre nodos caído (HU-006.1): anclado al worker.

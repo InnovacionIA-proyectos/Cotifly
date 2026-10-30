@@ -91,6 +91,105 @@ public sealed class clsCatalogosMaestrosEnCacheTests
         proveedor.UltimaCopia.Should().BeNull();
     }
 
+    // Hallazgo M de #179: un fallo pasajero de clases-contenedor no reemplaza a la copia buena con la lista vacía.
+    private static readonly clsCatalogosMaestros _conContenedores = _catalogos with { ClasesContenedor = [new("CNT40.HC", "CNT40.HC")] };
+
+    private static readonly clsCatalogosMaestros _contenedoresCaidos =
+        _catalogos with { ClasesContenedor = [], LineasNegocio = [], ClasesContenedorNoDisponible = true, LineasNegocioNoDisponible = true };
+
+    [Fact]
+    public async Task UnFalloPasajeroDeClasesDeContenedorConservaLasDeLaCopiaAnterior()
+    {
+        Responde(_conContenedores);
+        var proveedor = Proveedor();
+        await proveedor.ObtenerAsync(_usuarioId, Ct);
+
+        Responde(_contenedoresCaidos);
+        _reloj.Avanzar(TimeSpan.FromMinutes(31));
+        var resultado = await proveedor.ObtenerAsync(_usuarioId, Ct);
+
+        resultado.Valor.ClasesContenedor.Should().Equal(_conContenedores.ClasesContenedor);
+        resultado.Valor.ClasesContenedorNoDisponible.Should().BeFalse();
+        resultado.Valor.LineasNegocio.Should().Equal(_catalogos.LineasNegocio, "lineas-negocio, el otro opcional, se trata igual");
+        proveedor.UltimaCopia!.ClasesContenedor.Should().Equal(_conContenedores.ClasesContenedor);
+
+        // La copia nueva queda vigente con las clases conservadas: no vuelve a Nexo.
+        _reloj.Avanzar(TimeSpan.FromMinutes(29));
+        (await proveedor.ObtenerAsync(_usuarioId, Ct)).Valor.ClasesContenedor.Should().Equal(_conContenedores.ClasesContenedor);
+        await _interno.Received(2).ObtenerAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task UnaListaVaciaLegitimaDeNexoReemplazaALasClasesAnteriores()
+    {
+        Responde(_conContenedores);
+        var proveedor = Proveedor();
+        await proveedor.ObtenerAsync(_usuarioId, Ct);
+
+        Responde(_catalogos); // [] real: ClasesContenedorNoDisponible = false
+        _reloj.Avanzar(TimeSpan.FromMinutes(31));
+
+        (await proveedor.ObtenerAsync(_usuarioId, Ct)).Valor.ClasesContenedor.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task SinCopiaAnteriorUnFalloDeClasesDeContenedorDejaLaListaVacia()
+    {
+        Responde(_contenedoresCaidos);
+
+        var resultado = await Proveedor().ObtenerAsync(_usuarioId, Ct);
+
+        resultado.EsExitoso.Should().BeTrue();
+        resultado.Valor.ClasesContenedor.Should().BeEmpty();
+        resultado.Valor.ClasesContenedorNoDisponible.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task UnaCopiaAnteriorVencidaNoAportaClasesDeContenedor()
+    {
+        Responde(_conContenedores);
+        var proveedor = Proveedor();
+        await proveedor.ObtenerAsync(_usuarioId, Ct);
+
+        Responde(_contenedoresCaidos);
+        _reloj.Avanzar(TimeSpan.FromHours(24));
+
+        (await proveedor.ObtenerAsync(_usuarioId, Ct)).Valor.ClasesContenedor.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task LasClasesConservadasVencenConSuFechaOriginalYNoSeArrastranIndefinidamente()
+    {
+        Responde(_conContenedores);
+        var proveedor = Proveedor();
+        await proveedor.ObtenerAsync(_usuarioId, Ct);
+
+        // Fallos repetidos cada 20 h: a las 20 h se conservan; a las 40 h la copia original ya superó las 24 h.
+        Responde(_contenedoresCaidos);
+        _reloj.Avanzar(TimeSpan.FromHours(20));
+        (await proveedor.ObtenerAsync(_usuarioId, Ct)).Valor.ClasesContenedor.Should().NotBeEmpty();
+
+        _reloj.Avanzar(TimeSpan.FromHours(20));
+        (await proveedor.ObtenerAsync(_usuarioId, Ct)).Valor.ClasesContenedor.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task LasClasesConservadasDejanDeServirseAlVencerAunqueLaFotoSigaVigente()
+    {
+        Responde(_conContenedores);
+        var proveedor = Proveedor();
+        await proveedor.ObtenerAsync(_usuarioId, Ct);
+
+        Responde(_contenedoresCaidos);
+        _reloj.Avanzar(TimeSpan.FromHours(23) + TimeSpan.FromMinutes(50));
+        (await proveedor.ObtenerAsync(_usuarioId, Ct)).Valor.ClasesContenedor.Should().NotBeEmpty();
+
+        _reloj.Avanzar(TimeSpan.FromMinutes(15)); // la foto nueva sigue vigente (15 < 30 min), las clases ya tienen más de 24 h
+        (await proveedor.ObtenerAsync(_usuarioId, Ct)).Valor.ClasesContenedor.Should().BeEmpty();
+        proveedor.UltimaCopia!.ClasesContenedor.Should().BeEmpty();
+        await _interno.Received(2).ObtenerAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
     private void Responde(clsCatalogosMaestros catalogos) =>
         _interno.ObtenerAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(clsResultado<clsCatalogosMaestros>.Exito(catalogos));
 

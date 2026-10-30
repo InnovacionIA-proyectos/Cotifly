@@ -49,7 +49,7 @@ Cómo se reproduce el layout:
   - Reproducir con MigraDoc un layout pensado en CSS exige más código que el HTML.
   - Algunos efectos (flex en dos columnas, imagen con `object-fit`) se aproximan con tablas.
   - Se mitiga aislando cada bloque en su propio componente.
-- Los tests de PDF verifican el texto extraído (cliente, precio, nota de decreto, ausencia de "Cel" sin teléfono, bloque de aduana en Internacional, `<script>` mostrado como texto literal) y el número de páginas.
+- Los tests de PDF verifican la posición de los bloques clave contra una referencia de maquetación (#92) y el texto extraído (cliente, precio, nota de decreto, ausencia de "Cel" sin teléfono, bloque de aduana en Internacional, `<script>` mostrado como texto literal) y el número de páginas.
 
 ## Implementación (#11, HU-003.5)
 
@@ -87,6 +87,44 @@ Lo decidido arriba se implementó así; donde difiere, manda esta sección:
 **Diferencias visuales conocidas** (para la revisión con Kevin): la imagen de la línea va centrada (WeasyPrint la dejaba a la izquierda con la leyenda centrada); las tablas quedan ~2 mm más arriba o abajo por los márgenes CSS que ya no se colapsan; anchos de columna fijos (15/22/15/48 %) en vez de automáticos; en multi los encabezados de la tabla van centrados y "DESTINO / SITIO ENTREGA" ocupa dos líneas; el pie queda en una tabla de 3 columnas (texto centrado y franja web a la derecha, rectangular). `Almacenamiento3PL` no tiene imagen de línea (igual que el Python: `IMG_LINEA` no la trae). Las palabras de más de ~30 caracteres sin espacios se parten con espacios de ancho cero (8 en "Destino" y 12 en "Tipo de vehículo" por el ancho de columna) para que no tapen la tarifa.
 
 **Comparación visual:** las pruebas dejan `dotnet-1-nacional-PCN-19032026.pdf`, `dotnet-2-internacional-PCN-24092026.pdf` y `dotnet-3-multiseccion-PCN-19032026-v2.pdf` en `backend-dotnet/tests/artefactos/` (no versionado). Los equivalentes Python se generaron con el código actual y WeasyPrint 70 en un contenedor `python:3.12-slim` desechable (script fuera del repo) con los mismos datos y folio: mismas páginas (3/3/2), mismos textos y montos; diferencias visibles solo de márgenes colapsados (±3 mm en títulos), anchos de columna y la alineación de la imagen. La revisión con Kevin y la evidencia en el issue siguen pendientes.
+
+## Nota (2026-10-07, #92 y #95): PDFsharp-MigraDoc no es thread-safe; render serializado por proceso
+
+**Evidencia.** PDFsharp-MigraDoc 6.2.4 comparte estado global entre documentos al medir y escribir el texto. Se renderizaron 400
+documentos en paralelo (Nacional, Multi, Internacional y Dólares mezclados) y cada PDF Nacional se comparó contra uno renderizado
+solo. El resultado:
+
+- 99 de 100 salieron con otra maquetación y 43 con otro texto extraído.
+- En los streams de contenido aparecen `/F0 9 Tf` de más antes de los espacios, que se miden con la fuente de otro documento.
+- Hay palabras corridas hasta 529 pt y saltos de línea distintos, por ejemplo "máxim d a e 34" o "candad s o atelital".
+
+PdfPig no era la causa: leyó 400 veces en paralelo los mismos bytes y siempre extrajo lo mismo. Con el render serializado hubo 0
+diferencias. El equipo de PDFsharp lo advierte en su foro ("PDFsharp is not (yet) thread safe", Thomas Hoevel, PDFsharp Team):
+<https://forum.pdfsharp.net/viewtopic.php?p=6485> y <https://forum.pdfsharp.net/viewtopic.php?p=12316>.
+
+**Decisión.**
+
+- **Puerto async con turno de render.** `IClsGeneradorPdf.GenerarAsync(documento, ct)` toma un `SemaphoreSlim(1)` de proceso (no de
+  instancia) y espera turno hasta `Pdf:TiempoEsperaRenderSegundos`, 30 s por defecto.
+- **Sección crítica.** Dentro solo hay CPU: el armado del modelo, el render y el guardado en memoria. El almacén y la base van fuera.
+- **Espera agotada.** Lanza `clsRenderPdfOcupadoException`. Los casos de uso responden `PDF_RENDER_NO_DISPONIBLE`, que desde #92
+  es 503 (transitorio, reintentar), igual que un fallo del render. No se guarda nada ni cambia la versión.
+- **Log.** Cada render deja en el log la espera de turno y la duración del render
+  (`PDF {Referencia} renderizado: espera de turno … ms, render … ms`). Si el turno no llega, queda un warning.
+
+**Pruebas.**
+
+- `LosRendersSimultaneosDanLaMismaMaquetacionQueUnRenderSolo` compara la posición de cada letra entre renders concurrentes y uno
+  solo.
+- `clsMaquetacionPdfTests` compara los bloques clave de las 5 variantes (encabezado, fecha, folio, asunto, tabla, notas,
+  condiciones y firma) contra `tests/fixtures/pdf/maquetacion-referencia.json`, con una tolerancia de 1,5 pt. Moviendo el bloque
+  del folio de 11 a 30 mm fallan las 5 variantes.
+- La referencia se regenera solo a mano, nunca en CI, con
+  `COTIFLY_REGENERAR_MAQUETACION=1 dotnet test --project tests/Cotifly.Infraestructura.Tests --filter-method "*RegeneraLaReferenciaDeMaquetacion"`.
+  Ese comando reescribe el JSON y falla a propósito para que el diff se revise y se versione junto con el cambio de diseño.
+
+**Consecuencia.** La capacidad por réplica tiene un techo de PDFs por segundo. La capacidad medida y la señal para escalar están
+en [10-operacion §10.6](../../docs/10-operacion.md#106-riesgos-y-limitaciones-conocidos).
 
 ## Pendientes
 

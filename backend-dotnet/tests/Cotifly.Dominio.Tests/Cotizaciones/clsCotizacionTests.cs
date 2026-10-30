@@ -1,4 +1,5 @@
 using Cotifly.Dominio.Cotizaciones;
+using Cotifly.Dominio.Margen;
 
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
@@ -9,7 +10,7 @@ public sealed class clsCotizacionTests
     [Fact]
     public void UnaCotizacionNuevaNaceEnVersionUnoEnPesosSinEnviar()
     {
-        var resultado = clsCotizacion.Crear(new clsDatosCotizacion { Folio = " PCN-DG-24092026-001 " });
+        var resultado = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = " PCN-DG-24092026-001 " });
 
         resultado.EsExitoso.Should().BeTrue();
         var cotizacion = resultado.Valor;
@@ -39,7 +40,7 @@ public sealed class clsCotizacionTests
 
     [Fact]
     public void UnaNuevaVersionConservaSuNumero() =>
-        clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-DG-24092026-001-v2", Version = 2 }).Valor.Version.Should().Be(2);
+        clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-DG-24092026-001-v2", Version = 2 }).Valor.Version.Should().Be(2);
 
     [Fact]
     public void LaTrmDebeSerCeroCuandoLaMonedaEsCop() =>
@@ -52,7 +53,7 @@ public sealed class clsCotizacionTests
     [Fact]
     public void EnDolaresConTrmLaMonedaSeNormaliza()
     {
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "F", Moneda = "usd", TrmAplicada = 4100.5m }).Valor;
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "F", Moneda = "usd", TrmAplicada = 4100.5m }).Valor;
 
         cotizacion.Moneda.Should().Be("USD");
         cotizacion.TrmAplicada.Should().Be(4100.5m);
@@ -62,51 +63,48 @@ public sealed class clsCotizacionTests
     public void LaMonedaDebeSerUnCodigoIsoDeTresLetras() =>
         Crear(new clsDatosCotizacion { Folio = "F", Moneda = "PESOS" }).Mensaje.Should().Contain("ISO");
 
+    // HU-021: el margen, el costo y el precio son de la ruta; en la cotización del chat se validan al registrar su ruta.
     [Theory]
     [InlineData(-1)]
     [InlineData(1)]
     [InlineData(1.5)]
     public void LosMargenesDebenEstarEntreCeroYUno(double margen)
     {
-        Crear(new clsDatosCotizacion { Folio = "F", MargenAplicado = (decimal)margen }).Mensaje.Should().Contain("margenAplicado");
-        Crear(new clsDatosCotizacion { Folio = "F", MargenPolitica = (decimal)margen }).Mensaje.Should().Contain("margenPolitica");
+        clsCotizacionSolicitud.ValidarCotizacionChat(null, null, (decimal)margen, null, null)!.Mensaje.Should().Contain("margenAplicado");
+        clsCotizacionSolicitud.ValidarCotizacionChat(null, (decimal)margen, null, null, null)!.Mensaje.Should().Contain("margenPolitica");
     }
 
     [Theory]
     [InlineData("margen")]
     [InlineData(null)]
     public void ConMetodoMargenLosMargenesDebenSerMenoresQueUno(string? metodo) =>
-        Crear(new clsDatosCotizacion { Folio = "F", MetodoCalculo = metodo, MargenAplicado = 1m }).Mensaje.Should().Contain("margen");
+        clsCotizacionSolicitud.ValidarCotizacionChat(null, null, 1m, metodo, null)!.Mensaje.Should().Contain("margen");
 
     [Fact]
     public void ConMetodoMarkupLosMargenesPuedenSerMayoresOIgualesAUno()
     {
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion
-        {
-            Folio = "F",
-            MetodoCalculo = "markup",
-            MargenPolitica = 1m,
-            MargenAplicado = 1.35m,
-        });
+        clsCotizacionSolicitud.ValidarCotizacionChat(1_000m, 1m, 1.35m, "markup", 2_350m).Should().BeNull();
 
-        cotizacion.EsExitoso.Should().BeTrue();
-        cotizacion.Valor.MargenAplicado.Should().Be(1.35m);
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "F" }).Valor;
+        cotizacion.RegistrarCotizacionChat(3, 1_000m, 1m, 1.35m, OrigenMargen.PoliticaLinea, "markup", 2_350m);
+
+        cotizacion.PrimeraRuta!.MargenAplicado.Should().Be(1.35m);
     }
 
     [Fact]
     public void ConMetodoMarkupLosMargenesNoPuedenSerNegativos() =>
-        Crear(new clsDatosCotizacion { Folio = "F", MetodoCalculo = "markup", MargenPolitica = -0.01m }).Mensaje.Should().Contain("negativo");
+        clsCotizacionSolicitud.ValidarCotizacionChat(null, -0.01m, null, "markup", null)!.Mensaje.Should().Contain("negativo");
 
     [Fact]
     public void ElCostoYElPrecioNoPuedenSerNegativos()
     {
-        Crear(new clsDatosCotizacion { Folio = "F", Costo = -1m }).Mensaje.Should().Contain("costo");
-        Crear(new clsDatosCotizacion { Folio = "F", PrecioFinal = -1m }).Mensaje.Should().Contain("precioFinal");
+        clsCotizacionSolicitud.ValidarCotizacionChat(-1m, null, null, null, null)!.Mensaje.Should().Contain("costo");
+        clsCotizacionSolicitud.ValidarCotizacionChat(null, null, null, null, -1m)!.Mensaje.Should().Contain("precioFinal");
     }
 
     [Fact]
     public void LosErroresUsanElCodigoCotizacionInvalida() =>
-        clsCotizacion.Crear(new clsDatosCotizacion { Folio = "" }).Error.Codigo.Should().Be(clsCotizacion.CodigoError);
+        clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "" }).Error.Codigo.Should().Be(clsCotizacionSolicitud.CodigoError);
 
     [Fact]
     public void ElPrimerEnvioLaDejaEnviadaYLosSiguientesReenviada()
@@ -135,11 +133,51 @@ public sealed class clsCotizacionTests
         cotizacion.MarcadoAt.Should().Be(_ahora);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("Mejor precio")]
+    public void MarcarGanadaDejaElMotivoDeRechazoEnNoAplica(string? motivo)
+    {
+        // HU-021.13 (propuesta de refactor de BD §2.1): ganada no deja motivoRechazo en null.
+        var cotizacion = Nueva();
+
+        cotizacion.MarcarSeguimiento(true, motivo, _ahora);
+
+        cotizacion.Ganada.Should().BeTrue();
+        cotizacion.MotivoRechazo.Should().Be(clsCotizacionSolicitud.MotivoRechazoNoAplica).And.Be("No aplica");
+        cotizacion.MarcadoAt.Should().Be(_ahora);
+    }
+
+    [Fact]
+    public void ElMotivoDeRechazoSoloQuedaVacioSinResultado()
+    {
+        var cotizacion = Nueva();
+        cotizacion.MotivoRechazo.Should().BeNull("una cotización nueva no tiene resultado");
+
+        cotizacion.MarcarSeguimiento(true, null, _ahora);
+        cotizacion.MarcarSeguimiento(null, "Precio alto", _ahora);
+
+        cotizacion.Ganada.Should().BeNull();
+        cotizacion.MotivoRechazo.Should().BeNull();
+    }
+
+    [Fact]
+    public void PasarDeGanadaAPerdidaGuardaElMotivoDelComercial()
+    {
+        var cotizacion = Nueva();
+        cotizacion.MarcarSeguimiento(true, null, _ahora);
+
+        cotizacion.MarcarSeguimiento(false, "Precio alto", _ahora);
+
+        cotizacion.MotivoRechazo.Should().Be("Precio alto");
+    }
+
     [Fact]
     public void EsDeSoloEsVerdaderoParaSuDueno()
     {
         var dueno = Guid.NewGuid();
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "F", UsuarioId = dueno }).Valor;
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "F", UsuarioId = dueno }).Valor;
 
         cotizacion.EsDe(dueno).Should().BeTrue();
         cotizacion.EsDe(Guid.NewGuid()).Should().BeFalse();
@@ -159,17 +197,17 @@ public sealed class clsCotizacionTests
     [Fact]
     public void LosTextosOpcionalesVaciosQuedanNulos()
     {
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "F", NitCliente = "  ", ClienteNombre = "" }).Valor;
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "F", NitCliente = "  ", ClienteNombre = "" }).Valor;
 
         cotizacion.NitCliente.Should().BeNull();
         cotizacion.ClienteNombre.Should().BeNull();
     }
 
-    private static clsCotizacion Nueva() => clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-1" }).Valor;
+    private static clsCotizacionSolicitud Nueva() => clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-1" }).Valor;
 
     private static Dominio.Comun.clsErrorDominio Crear(clsDatosCotizacion datos)
     {
-        var resultado = clsCotizacion.Crear(datos);
+        var resultado = clsCotizacionSolicitud.Crear(datos);
         resultado.EsFallo.Should().BeTrue();
         return resultado.Error;
     }

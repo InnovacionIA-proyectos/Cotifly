@@ -10,6 +10,7 @@ namespace Cotifly.Infraestructura.Pdf.Services;
 /// Bloque "NUESTRA TARIFA PARA SU SOLICITUD ES:": subtítulo, tabla(s) de tarifa (<c>table.tar</c>: franja verde con el
 /// título, franja azul con el origen, encabezados en mayúscula y filas con la tarifa en azul), nota general, nota de decretos
 /// (<c>.nota-decreto</c>), aclaración de la cotización en dólares (HU-012.3, mismo recuadro), detalle adicional (aduana, extradimensionada, refrigerada) y las dos columnas incluye / no incluye.
+/// HU-033 (#199): después de las tablas, el total general de la cotización (<see cref="clsDocumentoCotizacion.TotalGeneral"/>).
 /// </summary>
 internal static class clsBloqueTarifa
 {
@@ -34,6 +35,11 @@ internal static class clsBloqueTarifa
             {
                 NotaGeneral(seccion, notaSeccion, diseno);
             }
+        }
+
+        if (documento.TotalGeneral is { } total)
+        {
+            TotalGeneral(seccion, total, diseno);
         }
 
         if (documento.NotaGeneral is { } nota)
@@ -133,6 +139,28 @@ internal static class clsBloqueTarifa
         var celda = fila.Cells[0];
         celda.MergeRight = 3;
         AgregarTexto(Parrafo(celda.AddParagraph(), px, diseno.Alto, Blanco, negrita: true, ParagraphAlignment.Center), texto);
+    }
+
+    /// <summary>
+    /// HU-033 (#199): total general: una fila con fondo claro y borde azul, la etiqueta en negrita a la izquierda y el valor en azul a la
+    /// derecha; debajo, la nota con la leyenda de impuestos.
+    /// </summary>
+    private static void TotalGeneral(Section seccion, clsTotalDocumento total, clsDisenoPdf diseno)
+    {
+        Espacio(seccion, diseno.MargenTabla);
+        var tabla = seccion.AddTable();
+        tabla.Borders.Width = 0.75;
+        tabla.Borders.Color = Primario;
+        tabla.AddColumn(Mm(diseno.AnchoUtilMm * 0.62));
+        tabla.AddColumn(Mm(diseno.AnchoUtilMm * 0.38));
+        Relleno(tabla, diseno.RellenoCelda.Vertical, diseno.RellenoCelda.Horizontal);
+        var fila = tabla.AddRow();
+        fila.Shading.Color = Fondo;
+        fila.VerticalAlignment = VerticalAlignment.Center;
+        AgregarTexto(Parrafo(fila.Cells[0].AddParagraph(), diseno.CeldaTabla, diseno.Alto, negrita: true), total.Etiqueta);
+        AgregarTexto(Parrafo(fila.Cells[1].AddParagraph(), diseno.CeldaTabla, diseno.Alto, Primario, negrita: true, ParagraphAlignment.Right), total.Valor);
+        var nota = Parrafo(seccion.AddParagraph(), diseno.NotaCelda, diseno.Alto, Atenuado, alineacion: ParagraphAlignment.Justify, antes: 4);
+        AgregarTexto(nota, total.Nota);
     }
 
     private static void NotaGeneral(Section seccion, string nota, clsDisenoPdf diseno)

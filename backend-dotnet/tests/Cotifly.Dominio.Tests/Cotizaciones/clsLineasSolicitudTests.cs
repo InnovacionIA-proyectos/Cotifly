@@ -1,4 +1,4 @@
-using Cotifly.Dominio.Comun;
+﻿using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 
 namespace Cotifly.Dominio.Tests.Cotizaciones;
@@ -55,8 +55,32 @@ public sealed class clsLineasSolicitudTests
 
         var errores = linea.Errores();
 
-        errores.Should().Contain(e => e.Campo == "posiciones" && e.Codigo == clsCodigosLineaSolicitud.DemasiadasPosiciones);
-        errores.Should().Contain(e => e.Campo == "posiciones[0]" && e.Codigo == clsCodigosLineaSolicitud.PosicionInvalida);
+        errores.Should().Contain(e => e.Campo == "mercancias" && e.Codigo == clsCodigosLineaSolicitud.DemasiadasPosiciones);
+        errores.Should().Contain(e => e.Campo == "mercancias[0].cantidad" && e.Codigo == clsCodigosLineaSolicitud.PosicionInvalida);
+    }
+
+    /// <summary>
+    /// D6 (E2E 2026-10-16): el mensaje de POSICION_INVALIDA decía <c>posiciones[1].largo_cm</c> y el campo <c>posiciones[0]</c> para la
+    /// misma mercancía. Ahora el campo va en base 0 con el nombre del contrato y el mensaje nombra la mercancía en base 1, sin índices.
+    /// </summary>
+    [Theory]
+    [InlineData(0, "largo_cm")]
+    [InlineData(1, "ancho_cm")]
+    [InlineData(2, "alto_cm")]
+    public void PosicionInvalidaUsaElCampoBaseCeroYElMensajeBaseUnoSinIndices(int indice, string subcampo)
+    {
+        var mala = new clsPosicionCarga("Caja", 1, subcampo == "largo_cm" ? 0m : 10m, subcampo == "ancho_cm" ? 0m : 10m, subcampo == "alto_cm" ? -1m : 10m, 5m);
+        var buena = new clsPosicionCarga("Caja", 1, 10m, 10m, 10m, 5m);
+        var linea = Linea(peso: null) with { Posiciones = [.. Enumerable.Range(0, 3).Select(i => i == indice ? mala : buena)] };
+
+        var error = linea.Errores().Should().ContainSingle(e => e.Codigo == clsCodigosLineaSolicitud.PosicionInvalida).Subject;
+
+        error.Campo.Should().Be($"mercancias[{indice}].{subcampo}");
+        // HU-032 (#197): una medida en 0 con las demás escritas es una medida que falta (medidas parciales); una negativa, fuera de rango.
+        error.Mensaje.Should().StartWith(subcampo == "alto_cm"
+            ? $"Mercancía {indice + 1}: el campo '{subcampo}' debe estar entre"
+            : $"Mercancía {indice + 1}: faltan medidas ({subcampo})");
+        error.Mensaje.Should().NotContain("[", "el índice del arreglo solo va en el campo");
     }
 
     [Fact]
@@ -65,7 +89,6 @@ public sealed class clsLineasSolicitudTests
         var formulario = new clsSolicitudCosteo
         {
             Tipo = TipoSolicitud.Spot,
-            Referencia = "OC-1",
             HorasCargue = 4m,
             Origen = "YUMBO",
             Destino = "CALI",
@@ -78,38 +101,45 @@ public sealed class clsLineasSolicitudTests
     }
 
     [Fact]
-    public void ElEncabezadoValidaReferenciaYHoras()
+    public void ElEncabezadoValidaLasHoras()
     {
-        var encabezado = new clsEncabezadoSolicitudCosteo { Tipo = TipoSolicitud.Licitacion, Referencia = new string('r', 201), HorasCargue = 241m };
+        // Decisión 1 de HU-021: referencia y valor estimado se eliminan del encabezado.
+        var encabezado = new clsEncabezadoSolicitudCosteo { Tipo = TipoSolicitud.Licitacion, HorasCargue = 241m };
 
-        encabezado.Errores().Select(e => e.Campo).Should().BeEquivalentTo(["referencia", "horas_cargue"]);
+        encabezado.Errores().Select(e => e.Campo).Should().BeEquivalentTo(["horas_cargue"]);
     }
 
     [Fact]
-    public void LasLineasDeLaCotizacionConservanElOrdenLaFilaYLosCampos()
+    public void LasRutasDeLaCotizacionConservanElOrdenLaFilaYLosCampos()
     {
-        var cotizacionId = Guid.NewGuid();
-        var lineas = clsCotizacionLineaSolicitud.Desde(cotizacionId, [Linea(), Linea(500m) with { Origen = " CALI " }], [3, null]);
+        var cotizacion = Solicitud([Linea(), Linea(500m) with { Origen = " CALI " }], [3, null]);
+        var rutas = cotizacion.RutasOrdenadas;
 
-        lineas.Select(l => (l.Orden, l.FilaOrigen, l.Origen)).Should().Equal((1, 3, "YUMBO"), (2, (int?)null, "CALI"));
-        lineas.Should().OnlyContain(l => l.CotizacionId == cotizacionId && l.EstadoCosteo == null && l.PrecioFinal == null);
-        var deVuelta = lineas[1].ALinea([]);
+        rutas.Select(l => (l.Orden, l.RutaOrigenIndice, l.OrigenNombre)).Should().Equal((1, 3, "YUMBO"), (2, (int?)null, "CALI"));
+        rutas.Should().OnlyContain(l => l.CotizacionSolicitudId == cotizacion.Id && l.PrecioFinalLinea == null && l.Vehiculos.Count == 1);
+        rutas.Should().OnlyContain(l => l.EstadoCosteo == EstadoCosteo.PendienteEnvio, "lo guardado queda por enviar");
+        var deVuelta = rutas[1].ALinea();
         deVuelta.PesoKg.Should().Be(500m);
     }
 
     [Fact]
-    public void SinFleteLaLineaPierdeElPrecio()
+    public void SinFleteElCamionPierdeElCostoYLaRutaElPrecio()
     {
-        var linea = clsCotizacionLineaSolicitud.Desde(Guid.NewGuid(), [Linea()])[0];
-        linea.RegistrarCosteo(EstadoCosteo.Autocosteo, 1000m).Should().BeTrue();
-        linea.RegistrarPrecio(1176m).Should().BeTrue();
-        linea.TieneCosteo.Should().BeTrue();
+        var cotizacion = Solicitud([Linea()]);
+        var ruta = cotizacion.PrimeraRuta!;
+        ruta.RegistrarMargenCosteo(0.15m, 0.15m, Cotifly.Dominio.Margen.OrigenMargen.PoliticaLinea, "margen");
+        var camion = ruta.Vehiculos[0];
+        camion.RegistrarCosteo(EstadoCosteo.Autocosteo, 1000m, null).Should().BeTrue();
+        ruta.RecalcularTotales(null, 0m).Valor.Should().BeTrue();
+        ruta.PrecioFinalLinea.Should().Be(1176m);
+        camion.TieneCosteo.Should().BeTrue();
 
-        linea.RegistrarCosteo(EstadoCosteo.PendienteCosteo, null).Should().BeTrue();
+        camion.RegistrarCosteo(EstadoCosteo.PendienteCosteo, null, null).Should().BeTrue();
+        ruta.RecalcularTotales(null, 0m);
 
-        linea.PrecioFinal.Should().BeNull();
-        linea.TieneCosteo.Should().BeFalse();
-        linea.RegistrarCosteo(EstadoCosteo.PendienteCosteo, null).Should().BeFalse("la misma foto no cambia nada");
+        ruta.PrecioFinalLinea.Should().BeNull();
+        camion.TieneCosteo.Should().BeFalse();
+        camion.RegistrarCosteo(EstadoCosteo.PendienteCosteo, null, null).Should().BeFalse("la misma foto no cambia nada");
     }
 
     [Fact]
@@ -124,13 +154,14 @@ public sealed class clsLineasSolicitudTests
         clsDerivacionEstadoCosteo.DerivarLinea(foto, "L2").Should().Be(EstadoCosteo.PendienteCosteo);
         clsDerivacionEstadoCosteo.CostoLinea(foto, "L1").Should().Be(1200m);
         clsDerivacionEstadoCosteo.CostoLinea(foto, "L2").Should().BeNull();
+        clsDerivacionEstadoCosteo.CostosCamion(foto, "L1").Should().Be((1000m, 0m), "el levante no sale de Nexo: es la copia de Cotifly (decisión 4)");
         clsDerivacionEstadoCosteo.DerivarLinea(foto with { EstadoSolicitud = "Descartada" }, "L1").Should().Be(EstadoCosteo.Descartada);
     }
 
     [Fact]
     public void ElEmparejadorAsociaPorRutaNormalizadaYDatosCompatiblesSinImportarElOrden()
     {
-        var lineas = clsCotizacionLineaSolicitud.Desde(Guid.NewGuid(),
+        var lineas = Camiones(
         [
             new clsLineaSolicitudCosteo { Origen = "Bogotá, D.C.", Destino = "Medellín", PesoKg = 1000m, TipoVehiculo = "3S3" },
             new clsLineaSolicitudCosteo { Origen = "Bogotá, D.C.", Destino = "Medellín", PesoKg = 2000m, TipoVehiculo = "3S3" },
@@ -154,7 +185,7 @@ public sealed class clsLineasSolicitudTests
     [Fact]
     public void ElEmparejadorNoAsociaLineasIdenticasNiDatosQueSeContradicen()
     {
-        var lineas = clsCotizacionLineaSolicitud.Desde(Guid.NewGuid(),
+        var lineas = Camiones(
         [
             new clsLineaSolicitudCosteo { Origen = "A", Destino = "B", PesoKg = 1m },
             new clsLineaSolicitudCosteo { Origen = "A", Destino = "B", PesoKg = 1m },
@@ -162,20 +193,31 @@ public sealed class clsLineasSolicitudTests
         ]);
         clsLineaSolicitudNexo[] nexo = [new("N1", "A → B", null, 1m, null, null), new("N2", "A → B", null, 1m, null, null), new("N3", "C → D", null, 1m, "2", null)];
 
-        clsEmparejadorLineasNexo.Emparejar(lineas, nexo).Should().BeEmpty("dos idénticas son ambiguas y la tercera contradice el vehículo");
+        // HU-032 (#197): la tercera contradice el vehículo, pero es un camión del respaldo y su ruta y su peso son únicos en la cotización:
+        // la Mesa de Costeo le cambió el vehículo en Nexo (D2) y se asocia. Las dos idénticas siguen ambiguas.
+        clsEmparejadorLineasNexo.Emparejar(lineas, nexo).Should().ContainSingle().Which.Value.Should().Be("N3");
     }
 
     [Fact]
-    public void LasPosicionesDeVariasLineasSiguenElOrdenDeLaCotizacion()
+    public void LasMercanciasCuelganDeSuRutaConUnOrdenPropio()
     {
-        var cotizacion = Guid.NewGuid();
-        var linea = Guid.NewGuid();
+        // HU-021: el orden es único por ruta (uq_cotizacionMercancias_lineaSolicitudId_orden), ya no por cotización.
+        var posicion = new clsPosicionCarga(null, 1, 1, 1, 1, null);
+        var cotizacion = Solicitud([Linea() with { Posiciones = [posicion, posicion] }, Linea() with { Posiciones = [posicion] }]);
 
-        var posiciones = clsCotizacionPosicion.Desde(cotizacion, [new clsPosicionCarga(null, 1, 1, 1, 1, null), new clsPosicionCarga(null, 1, 1, 1, 1, null)], linea, 4);
-
-        posiciones.Select(p => p.Orden).Should().Equal(4, 5);
-        posiciones.Should().OnlyContain(p => p.LineaSolicitudId == linea);
+        cotizacion.RutasOrdenadas.Select(r => string.Join(",", r.MercanciasOrdenadas.Select(m => m.Orden))).Should().Equal("1,2", "1");
+        cotizacion.Rutas.Should().OnlyContain(r => r.Mercancias.All(m => m.LineaSolicitudId == r.Id));
     }
+
+    private static clsCotizacionSolicitud Solicitud(IReadOnlyList<clsLineaSolicitudCosteo> lineas, IReadOnlyList<int?>? filas = null)
+    {
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-LIC-1" }).Valor;
+        cotizacion.RegistrarSolicitudLicitacion(new clsEncabezadoSolicitudCosteo { Tipo = TipoSolicitud.Licitacion }, lineas, filas, 3);
+        return cotizacion;
+    }
+
+    private static IReadOnlyList<clsCamionParaEmparejar> Camiones(IReadOnlyList<clsLineaSolicitudCosteo> lineas) =>
+        [.. Solicitud(lineas).RutasOrdenadas.Select(r => clsCamionParaEmparejar.Desde(r, r.Vehiculos[0]))];
 
     [Theory]
     [InlineData(null, 10, "Hoja", clsCodigosError.ArchivoRequerido)]

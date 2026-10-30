@@ -28,16 +28,20 @@ public sealed class clsCodigoEnumTests
         clsCodigoEnum.Codigos<EstadoSesion>().Should().Equal("activa", "archivada");
 
     [Fact]
-    public void RolInternoUsaComercialGerenteComercial() =>
-        clsCodigoEnum.Codigos<RolInterno>().Should().Equal("comercial", "gerente_comercial");
+    public void RolInternoUsaComercialGerenteComercialDirector() =>
+        clsCodigoEnum.Codigos<RolInterno>().Should().Equal("comercial", "gerente_comercial", "director");
 
     [Fact]
     public void TipoDestinatarioUsaParaCc() =>
         clsCodigoEnum.Codigos<TipoDestinatario>().Should().Equal("para", "cc");
 
     [Fact]
-    public void EstadoCorreoUsaEnviadoFallido() =>
-        clsCodigoEnum.Codigos<EstadoCorreo>().Should().Equal("enviado", "fallido");
+    public void EstadoCorreoUsaEnviadoFallidoEncoladoYEnviando() =>
+        clsCodigoEnum.Codigos<EstadoCorreo>().Should().Equal("enviado", "fallido", "encolado", "enviando");
+
+    [Fact]
+    public void LaSincronizacionDelResultadoUsaPendienteSincronizadoYNoSincronizable() =>
+        clsCodigoEnum.Codigos<SincronizacionResultadoNexo>().Should().Equal("pendiente", "sincronizado", "no_sincronizable");
 
     [Theory]
     [InlineData("politica_linea", OrigenMargen.PoliticaLinea)]

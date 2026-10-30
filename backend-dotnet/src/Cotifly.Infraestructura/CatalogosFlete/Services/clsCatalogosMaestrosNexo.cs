@@ -18,15 +18,18 @@ namespace Cotifly.Infraestructura.CatalogosFlete.Services;
 /// (<c>clsTipoVehiculoDto {codigo, descripcion, esCatalogoOficial}</c>), <c>clases-viaje</c> (<c>{id, descripcion}</c>),
 /// <c>clases-contenedor</c> (<c>{id, descripcion, ...}</c>) y <c>lineas-negocio</c> (<c>{id, descripcion}</c>), verificados en el
 /// swagger de Nexo QA el 2026-10-05. Reemplaza a <c>GET /api/biblioteca-sap-historico/filtros</c> (histórico de tarifas, no el
-/// catálogo maestro). Cada petición identifica al comercial con <c>X-Portal-Usuario-Id: {idUsuarioExterno}</c> (Nexo responde 401
+/// catálogo maestro). Cada petición identifica al comercial con <c>X-Portal-clsUsuario-Id: {idUsuarioExterno}</c> (Nexo responde 401
 /// <c>SESION_INVALIDA</c> sin él). Comparte el cliente HTTP con nombre
 /// <see cref="Cotifly.Infraestructura.Clientes.Services.clsBuscadorClientesNexo.NombreCliente"/> y su tubería de resiliencia.
 /// </summary>
 /// <remarks>
 /// <para><b>Obligatorios y opcionales.</b> Los cuatro catálogos se piden juntos. <c>tipos-vehiculo</c> y <c>clases-viaje</c> son
 /// obligatorios: si uno falla (o queda vacío) el resultado es <c>CATALOGOS_FLETE_NO_DISPONIBLE</c>. Si fallan
-/// <c>clases-contenedor</c> o <c>lineas-negocio</c>, quedan vacíos con un warning y el formulario sigue (la clase de contenedor se
-/// valida contra la lista fija de Cotifly). Filas sin <c>codigo</c> (tipos de vehículo) o sin <c>descripcion</c> se descartan, y
+/// <c>clases-contenedor</c> o <c>lineas-negocio</c>, quedan vacíos con un warning, marcados como no disponibles (<see cref="clsCatalogosMaestros.ClasesContenedorNoDisponible"/>,
+/// <see cref="clsCatalogosMaestros.LineasNegocioNoDisponible"/>; un <c>[]</c> real de Nexo no se marca) para que la caché conserve la
+/// copia anterior, y el formulario sigue (ya no hay lista fija de
+/// clases de contenedor: con la lista vacía <c>GET /web/catalogos-flete</c> la entrega vacía y la captura de una clase que no es
+/// provisional responde <c>CATALOGOS_FLETE_NO_DISPONIBLE</c>, HU-023.1 y HU-027.1). Filas sin <c>codigo</c> (tipos de vehículo) o sin <c>descripcion</c> se descartan, y
 /// también los tipos de vehículo con <c>esCatalogoOficial = false</c> (no se ofrecen ni se aceptan).</para>
 /// <para><b>Límites.</b> Cada respuesta se lee hasta <see cref="MaximoBytes"/> y <see cref="MaximoFilas"/>; pasarse es
 /// <c>NoDisponible</c> (no se guarda un catálogo truncado).</para>
@@ -89,7 +92,11 @@ public sealed class clsCatalogosMaestrosNexo(
         }
 
         return new clsCatalogosMaestros(
-            tipos.Result.Valor, clases.Result.Valor, Opcional(contenedores.Result, RutaClasesContenedor), Opcional(lineas.Result, RutaLineasNegocio));
+            tipos.Result.Valor, clases.Result.Valor, Opcional(contenedores.Result, RutaClasesContenedor), Opcional(lineas.Result, RutaLineasNegocio))
+        {
+            ClasesContenedorNoDisponible = contenedores.Result.EsFallo,
+            LineasNegocioNoDisponible = lineas.Result.EsFallo,
+        };
     }
 
     /// <summary><c>{urlBase}{ruta}</c>, con <paramref name="ruta"/> empezando por <c>/api/</c>.</summary>
@@ -104,7 +111,7 @@ public sealed class clsCatalogosMaestrosNexo(
         string urlBase, string ruta, string identidad, Func<JsonElement, string?> valor, CancellationToken cancellationToken)
     {
         using var peticion = new HttpRequestMessage(HttpMethod.Get, ConstruirUrl(urlBase, ruta));
-        peticion.Headers.Add("X-Portal-Usuario-Id", identidad);
+        clsIdentidadNexo.Identificar(peticion, identidad);
         peticion.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         try
         {
@@ -172,7 +179,7 @@ public sealed class clsCatalogosMaestrosNexo(
     }
 
     /// <summary>El cuerpo completo si no supera <see cref="MaximoBytes"/>; <c>null</c> si lo supera.</summary>
-    private static async Task<ReadOnlyMemory<byte>?> LeerConLimiteAsync(HttpContent contenido, CancellationToken cancellationToken)
+    internal static async Task<ReadOnlyMemory<byte>?> LeerConLimiteAsync(HttpContent contenido, CancellationToken cancellationToken)
     {
         await using var flujo = await contenido.ReadAsStreamAsync(cancellationToken);
         using var memoria = new MemoryStream();

@@ -3,9 +3,8 @@
 # POST /web/cotizaciones/{folio}/costeo/servicios-conexos. Nexo es la fuente de verdad del costo (el conexo se agrega en
 # Nexo con POST /api/cotizaciones/{id}/conexos) y Cotifly le aplica el margen. El catálogo nunca expone costoUnitario.
 # Por HTTP contra la API real en memoria, SQL Server 2019 en Testcontainers y un Nexo falso (200, 400, 404, 403 y caída).
-# @pendiente @ignore: escenario SDD de HU-013.1 (#97); Reqnroll los genera como omitidos hasta que #99 enlace los pasos y
-# quite las dos etiquetas.
-@integracion @pendiente @ignore
+# Pasos en Cotifly.Aceptacion.Tests/Costeo/clsPasosServiciosConexos.cs (#99).
+@integracion
 Característica: Servicios conexos del catálogo de Nexo
   Como comercial de Botero Soto
   Quiero buscar servicios conexos en el catálogo de Nexo y agregarlos a mi cotización
@@ -22,7 +21,7 @@ Característica: Servicios conexos del catálogo de Nexo
 
   # Catálogo
   Escenario: La búsqueda devuelve los servicios activos sin el costo de Nexo
-    Cuando "ana" busca servicios conexos con el texto "a"
+    Cuando "ana" busca servicios conexos con el texto "o"
     Entonces la respuesta tiene el estado 200 y cumple el esquema "PaginaServiciosConexos" del contrato
     Y la página trae 2 servicios con el total 2
     Y ninguna respuesta del catálogo contiene el campo "costo_unitario" ni el valor 120000
@@ -78,7 +77,7 @@ Característica: Servicios conexos del catálogo de Nexo
   Escenario: Si Nexo niega el rol al agregar no cambia nada
     Dado que "ana" envió a costeo el formulario ampliado del cliente "900555111" como "C1"
     Y Nexo costeó la solicitud de "C1" con un flete de 2550000 y el polling lo registró
-    Y que Nexo responde 403 al agregar conexos porque "ana" no tiene el rol Comercial, CoordinadorFletes ni Admin
+    Y que Nexo responde 403 al agregar conexos porque "ana" no tiene el rol Comercial ni Admin
     Cuando "ana" agrega a "C1" en la línea 1 el servicio conexo "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d" con la cantidad 1
     Entonces la respuesta tiene el estado 403 con el código de negocio "NEXO_SIN_PERMISO"
     Y "C1" tiene 0 servicios conexos incluidos
@@ -125,10 +124,11 @@ Característica: Servicios conexos del catálogo de Nexo
     Entonces la respuesta tiene el estado 409 con el código de negocio "COSTEO_NO_LISTO"
 
   # Regla del PDF (ADR-018 §11)
-  Escenario: Con el PDF generado y sin enviar agregar un conexo invalida el PDF
+  # HU-036.3 (#207): finalizada no admite conexos (cotizacion_finalizada.feature); estos dos casos quedan para las anteriores a HU-036.
+  Escenario: Con el PDF generado antes de HU-036 y sin enviar agregar un conexo invalida el PDF
     Dado que "ana" envió a costeo el formulario ampliado del cliente "900555111" como "C1"
     Y Nexo costeó la solicitud de "C1" con un flete de 2550000 y el polling lo registró
-    Y que "ana" generó el PDF del costeo de "C1"
+    Y que "ana" generó el PDF del costeo de "C1" antes de HU-036, sin finalizarla
     Cuando "ana" agrega a "C1" en la línea 1 el servicio conexo "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d" con la cantidad 1
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CosteoCotizacion" del contrato
     Y el costeo de "C1" no tiene pdf_url y está marcado con pdf_desactualizado
@@ -141,10 +141,10 @@ Característica: Servicios conexos del catálogo de Nexo
     Entonces la respuesta tiene el estado 409 con el código de negocio "PDF_YA_ENVIADO"
     Y Nexo no recibió conexos para la cotización de "C1"
 
-  Escenario: Excluir un conexo con el PDF generado y sin enviar también invalida el PDF
+  Escenario: Excluir un conexo con el PDF generado antes de HU-036 y sin enviar también invalida el PDF
     Dado que "ana" envió a costeo el formulario ampliado del cliente "900555111" como "C1"
     Y Nexo costeó la solicitud de "C1" con un flete de 2550000 y el conexo "Cargue" de 85000 y el polling lo registró
-    Y que "ana" generó el PDF del costeo de "C1"
+    Y que "ana" generó el PDF del costeo de "C1" antes de HU-036, sin finalizarla
     Cuando "ana" deja incluidos en "C1" solo los servicios conexos ""
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CosteoCotizacion" del contrato
     Y el costeo de "C1" no tiene pdf_url y está marcado con pdf_desactualizado

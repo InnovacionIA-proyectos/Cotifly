@@ -1,16 +1,18 @@
 # ADR-013 — Despliegue del backend .NET en Dokploy
 
 - **Estado:** Propuesta (pendiente de confirmar con el equipo de infraestructura los puntos marcados en Pendientes)
+- **Nota de estado (HU-013.9, #105):** Google Chat se retiró. Ya no aplican el secreto `cotifly_gchat_sa_v1` (`gchat_sa`), las variables `GChat__*` de los manifiestos ni la verificación del JWT del webhook (§4.2): `POST /chat/events` responde 404. El resto de la decisión sigue vigente.
+- **Actualización 2026-10-13 (HU-022.1, #146):** por decisión del usuario el stack Python se retiró del repositorio, incluida la carpeta `deploy/` (`docker-compose.swarm.yml` y `rebuild-on-worker.sh`). Ya no hay rollback al Python: el rollback del backend .NET es volver a un tag de imagen anterior (`DEPLOY.md` §4.5). El último estado del Python vive en el tag `python-final`. El stack Python desplegado en Dokploy no se tocó; apagarlo es una acción de infraestructura aparte.
 - **Fecha:** 2026-09-28
 - **Issue / HU:** HU-006: #29 (HU-006.5), #28 (HU-006.4), #30 (HU-006.6), #31 (HU-006.7). Relacionada con ADR-001 (corte único), ADR-007 (solo Dockerfile), ADR-008 (SQL Server corporativo) y ADR-012 (volumen de PDF), y con HU-007.1 (#33).
 
 ## Contexto
 
 El despliegue Python que corre hoy en el clúster Docker Swarm + Dokploy (manager `10.10.40.17`, worker `10.10.40.31`)
-tiene atajos de emergencia (backlog, HU-006): credenciales en texto plano en `deploy/docker-compose.swarm.yml`, imágenes
+tiene atajos de emergencia (backlog, HU-006): credenciales en texto plano en `deploy/docker-compose.swarm.yml` (borrado en HU-022.1; tag `python-final`), imágenes
 construidas a mano en el worker con `:latest`, el webhook de Google Chat sin verificar el JWT y backups sin programar.
 El backend .NET es una sola imagen (ADR-002, ADR-007) que usa la instancia corporativa SQL Server 2019, no un contenedor
-propio (ADR-008). El corte es único y el Python queda en el repositorio para rollback hasta validar producción (ADR-001).
+propio (ADR-008). El corte es único (ADR-001). El Python quedaba en el repositorio para rollback; desde HU-022.1 solo está en el tag `python-final`.
 
 ## Decisión
 
@@ -18,7 +20,7 @@ propio (ADR-008). El corte es único y el Python queda en el repositorio para ro
 
 1. Los valores sensibles llegan como **variables de entorno de Dokploy** del stack; el manifiesto solo tiene
    `${Variable}`. Aplica a `ConnectionStrings__Cotifly`, `ConnectionStrings__Identidad`, `Jwt__SigningKey`,
-   `Pdf__ClaveFirmaUrl`, `IA__ApiKey` (y respaldos) y `SapTm__Pass`.
+   `IA__ApiKey` (y respaldos) y `SapTm__Pass` (`Pdf__ClaveFirmaUrl` se retiró con la URL firmada en HU-013.9).
 2. La cuenta de servicio de Google Chat va como **secreto de Docker Swarm** con nombre versionado
    (`cotifly_gchat_sa_v1`), montado en `/run/secrets/gchat_sa.json`; `GChat__SaJson` apunta a esa ruta.
 3. MinIO no se mantiene (ADR-012): no hay credenciales S3. Nexo no usa credencial (ADR-005).
@@ -47,7 +49,7 @@ propio (ADR-008). El corte es único y el Python queda en el repositorio para ro
    (`packages: write` solo en ese job), solo en push a `QA`/`main` o tag, y solo si pasaron todos los demás jobs. El
    nombre del tag se valida como semver y los valores del evento llegan a los `run` por `env:`, no con `${{ }}`.
 4. **Script manual versionado** `backend-dotnet/scripts/publicar-imagen.sh` (y `.ps1`), mismos tags y controles, desde
-   cualquier equipo con Docker. Reemplaza a `deploy/rebuild-on-worker.sh` para el backend .NET; es el camino vigente
+   cualquier equipo con Docker. Reemplaza al antiguo `deploy/rebuild-on-worker.sh` del Python (borrado en HU-022.1); es el camino vigente
    mientras GitHub Actions siga bloqueado por facturación en la organización (2026-09-28).
 5. **Pull en el clúster:** PAT clásico de solo `read:packages` de una cuenta de servicio, registrado en Dokploy y con
    `docker login ghcr.io` en el manager (`--with-registry-auth` lo reenvía al worker).
@@ -55,8 +57,8 @@ propio (ADR-008). El corte es único y el Python queda en el repositorio para ro
 
 ### 3. Manifiestos (HU-006.6, #30)
 
-1. **Archivos nuevos** `infra/stack.dotnet.staging.yml` e `infra/stack.dotnet.dokploy.yml`; los del Python no se tocan
-   (rollback = redesplegar el stack Python).
+1. **Archivos nuevos** `infra/stack.dotnet.staging.yml` e `infra/stack.dotnet.dokploy.yml`; los del Python no se tocaron
+   (desde HU-022.1 ya no están en el repositorio: tag `python-final`).
 2. **SQL Server externo** (`tbsdatacenter`, HU-002.4): ningún servicio de base de datos en el stack.
 3. **Un servicio**, `cotifly-api`, una réplica, volumen local `/data/pdfs` (resuelve para HU-006 el pendiente de
    réplicas y volumen de ADR-012: volumen, no S3).
@@ -71,8 +73,8 @@ propio (ADR-008). El corte es único y el Python queda en el repositorio para ro
    de otros frentes llevan valor por defecto (`Trm__Url` vacía impide arrancar; `Trm__TiempoEsperaSegundos`,
    `Nexo__MinutosCacheMunicipios`); la TRM exige salida a `www.datos.gov.co`.
 8. **Verificación manual de disponibilidad:** el rollback automático solo mira `/health` (vida); tras cada despliegue se
-   comprueba `/health/ready` y, si falla, `docker service rollback`. Rollback al Python documentado (reapuntar la app
-   de Google Chat; los datos escritos en SQL Server no son visibles para el Python).
+   comprueba `/health/ready` y, si falla, `docker service rollback`. El rollback al Python se retiró en HU-022.1
+   (tag `python-final`).
 9. **Riesgo bajo aceptado:** `ForwardedHeaders__RedesConocidas` confía en toda la subred compartida de
    `dokploy-network`; otro contenedor de esa red podría falsear `X-Forwarded-For` y saltarse el límite por IP de
    `/api/auth/*`. Propuesta: acotar a la IP o rango de Traefik cuando se conozca.
@@ -105,7 +107,7 @@ propio (ADR-008). El corte es único y el Python queda en el repositorio para ro
   permisos del repositorio.
 - **Que Dokploy construya desde git en el nodo** (como hoy): es lo que HU-006 pide eliminar (sin versión, disco del
   nodo, sin pruebas antes de desplegar).
-- **Editar `infra/stack.dokploy.yml` / `stack.staging.yml` en el sitio**: más corto, pero el rollback al Python
+- **Editar `infra/stack.dokploy.yml` / `stack.staging.yml` en el sitio** (ambos se borraron en HU-022.1, #146, porque nunca se desplegaron): más corto, pero el rollback al Python
   obligaría a revertir commits. Se descartó mientras el Python siga vigente.
 - **SQL Server como servicio del stack**: descartado por HU-002.4 (la base es corporativa y compartida).
 - **Puerto en modo host también en producción**: expondría la API sin TLS; producción espera a HU-006.2.

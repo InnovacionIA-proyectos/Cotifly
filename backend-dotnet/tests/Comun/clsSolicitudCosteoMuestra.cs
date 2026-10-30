@@ -11,8 +11,6 @@ public static class clsSolicitudCosteoMuestra
     {
         Tipo = TipoSolicitud.Spot,
         Deadline = Deadline,
-        ValorEstimado = 12_000_000m,
-        Referencia = "OC-7788",
         HorasCargue = 4m,
         HorasDescargue = 6.5m,
         Origen = "Buenaventura",
@@ -36,4 +34,40 @@ public static class clsSolicitudCosteoMuestra
             new clsPosicionCarga(null, 1, 1200m, 235m, 269m, null),
         ],
     };
+
+    /// <summary>Tipo de mercancía del catálogo del cubicador de las mercancías de <see cref="CrearCaptura"/>.</summary>
+    public static readonly Guid TipoMercancia = Guid.Parse("6f1c2a52-8d1e-4f5b-9a63-0c1b2d3e4f50");
+
+    /// <summary>
+    /// La misma solicitud como captura nueva (HU-021.6): sin vehículo ni carrocería (decisión 7), con los ids de municipio del Nexo falso
+    /// (Buenaventura 76109, Bogotá 11001) y las mercancías con su tipo del catálogo del cubicador.
+    /// </summary>
+    public static clsSolicitudCosteo CrearCaptura() => Crear() with
+    {
+        TipoVehiculo = null,
+        Carroceria = null,
+        OrigenMunicipioId = 76109,
+        DestinoMunicipioId = 11001,
+        Posiciones =
+        [
+            new clsPosicionCarga("Estiba de café", 20, 120m, 100m, 150m, 1424.95m, TipoMercancia, CodigoMercancia),
+            new clsPosicionCarga(null, 1, 1200m, 235m, 269m, 1m, TipoMercancia, CodigoMercancia),
+        ],
+    };
+
+    /// <summary>La primera ruta de <see cref="CrearCaptura"/> como línea de la captura, con la ciudad de devolución resuelta.</summary>
+    public static clsLineaSolicitudCosteo RutaCaptura() => CrearCaptura().ALinea() with { CiudadDevolucionMunicipioId = 76109 };
+
+    /// <summary>Código (HU-023) del tipo de mercancía <see cref="TipoMercancia"/> en el catálogo del cubicador.</summary>
+    public const string CodigoMercancia = "CAFE_EN_ESTIBAS";
+
+    /// <summary><see cref="RutaCaptura"/> con el <c>codigoMercancia</c> de cada mercancía (HU-023.1: lo que viaja al cubicador).</summary>
+    public static clsLineaSolicitudCosteo RutaConCodigos() => RutaCaptura();
+
+    /// <summary><see cref="RutaCaptura"/> solo con el <c>id_tipo_mercancia</c> obsoleto (transición de HU-023).</summary>
+    public static clsLineaSolicitudCosteo RutaSoloConId()
+    {
+        var ruta = RutaCaptura();
+        return ruta with { Posiciones = [.. ruta.Posiciones.Select(p => p with { CodigoMercancia = null })] };
+    }
 }

@@ -5,6 +5,9 @@
 # SQL Server 2019 en Testcontainers y el almacén de PDFs en una carpeta temporal. El texto del PDF
 # se extrae con PdfPig (solo en pruebas). Cada escenario usa un folio distinto (base compartida).
 # El folio llega en la entrada: generarlo es de HU-003.6 (#12, ADR-011).
+# Auditoría QA 2026-10-22: este feature ejercita el PDF LEGADO por payload (IClsGenerarPdfService, solo con
+# Pdf:PermitirCotizacionChat=true, apagado por defecto; ningún endpoint lo usa). La regla vigente del PDF del costeo
+# (HU-033: valor final por ruta con conexos incluidos y sin precio propio) está en margen_conexos_por_ruta.feature.
 @integracion
 Característica: PDF de la cotización
   Como comercial de Botero Soto

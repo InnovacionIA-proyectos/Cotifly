@@ -2,6 +2,7 @@ using System.Data;
 using System.Security.Cryptography;
 using System.Text;
 using Cotifly.Aplicacion.Agente.Interfaces;
+using Cotifly.Infraestructura.Comun.Persistence;
 using Cotifly.Infraestructura.Configuracion;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
@@ -15,10 +16,19 @@ namespace Cotifly.Infraestructura.Agente.Services;
 /// Recurso <c>cotifly:sesion:{spaceId}:{threadId}</c> (si pasa de 255 caracteres, su SHA-256). Si la conexión se corta, SQL Server
 /// libera el candado solo.
 /// </summary>
-public sealed class clsCandadoSesionSql(IOptions<clsOpcionesConexiones> conexiones) : IClsCandadoSesion
+public sealed class clsCandadoSesionSql(IOptions<clsOpcionesConexiones> conexiones, TimeProvider tiempo) : IClsCandadoSesion
 {
     public const string Prefijo = "cotifly:sesion:";
-    private const int LargoMaximoRecurso = 255;
+    private const int LargoMaximoRecurso = clsAppLockSql.LargoMaximoRecurso;
+
+    /// <summary>Margen sobre la espera para la respuesta del servidor (límite del cliente, #125).</summary>
+    private static readonly TimeSpan _margenRespuesta = TimeSpan.FromSeconds(30);
+
+    /// <summary>Espera del acuse de una cancelación antes de cerrar la conexión (#125).</summary>
+    private static readonly TimeSpan _gracia = TimeSpan.FromSeconds(5);
+
+    /// <summary><c>CommandTimeout</c> de respaldo (#125): alto, porque SqlClient lo mide con el reloj de pared.</summary>
+    private const int ComandoSegundos = 120;
 
     public async Task<IAsyncDisposable?> IntentarTomarAsync(string spaceId, string threadId, TimeSpan espera, CancellationToken cancellationToken = default)
     {
@@ -31,21 +41,21 @@ public sealed class clsCandadoSesionSql(IOptions<clsOpcionesConexiones> conexion
         try
         {
             await conexion.OpenAsync(cancellationToken);
-            await using var comando = conexion.CreateCommand();
-            comando.CommandText = "sp_getapplock";
-            comando.CommandType = CommandType.StoredProcedure;
-            comando.CommandTimeout = (int)Math.Ceiling(espera.TotalSeconds) + 30;
-            comando.Parameters.Add(new SqlParameter("@Resource", SqlDbType.NVarChar, LargoMaximoRecurso) { Value = recurso });
-            comando.Parameters.Add(new SqlParameter("@LockMode", SqlDbType.VarChar, 32) { Value = "Exclusive" });
-            comando.Parameters.Add(new SqlParameter("@LockOwner", SqlDbType.VarChar, 32) { Value = "Session" });
-            comando.Parameters.Add(new SqlParameter("@LockTimeout", SqlDbType.Int) { Value = (int)espera.TotalMilliseconds });
-            var retorno = comando.Parameters.Add(new SqlParameter("@RETURN_VALUE", SqlDbType.Int) { Direction = ParameterDirection.ReturnValue });
-            await comando.ExecuteNonQueryAsync(cancellationToken);
+
+            // Límite del cliente monotónico, CommandTimeout de respaldo y cierre si no se confirma la cancelación (clsAppLockSql, #125).
+            var toma = await clsAppLockSql.TomarAsync(
+                conexion, transaccion: null, recurso, "Session", new clsLimitesAppLock(espera, _margenRespuesta, _gracia, ComandoSegundos), tiempo, cancellationToken);
 
             // 0 = concedido, 1 = concedido tras esperar; negativo = tiempo agotado, cancelado o interbloqueo.
-            if ((int)retorno.Value >= 0)
+            if (toma.Codigo >= clsAppLockSql.Concedido)
             {
-                return new clsCandadoTomado(conexion, recurso);
+                return new clsCandadoTomado(conexion, recurso, tiempo);
+            }
+
+            if (toma.ConexionCerrada)
+            {
+                // Ya se cerró (o se está cerrando) a la fuerza: desecharla aquí podría quedarse esperando a SqlClient.
+                return null;
             }
         }
         catch
@@ -67,30 +77,20 @@ public sealed class clsCandadoSesionSql(IOptions<clsOpcionesConexiones> conexion
             : Prefijo + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(recurso)));
     }
 
-    private sealed class clsCandadoTomado(SqlConnection conexion, string recurso) : IAsyncDisposable
+    private sealed class clsCandadoTomado(SqlConnection conexion, string recurso, TimeProvider tiempo) : IAsyncDisposable
     {
         public async ValueTask DisposeAsync()
         {
-            try
+            // Mismos límites que la toma (#125). Si no se confirma, cerrar la conexión también libera el candado de sesión.
+            if (conexion.State == ConnectionState.Open
+                && !await clsAppLockSql.LiberarAsync(
+                    conexion, recurso, "Session", new clsLimitesAppLock(TimeSpan.Zero, _margenRespuesta, _gracia, ComandoSegundos), tiempo))
             {
-                if (conexion.State == ConnectionState.Open)
-                {
-                    await using var comando = conexion.CreateCommand();
-                    comando.CommandText = "sp_releaseapplock";
-                    comando.CommandType = CommandType.StoredProcedure;
-                    comando.Parameters.Add(new SqlParameter("@Resource", SqlDbType.NVarChar, LargoMaximoRecurso) { Value = recurso });
-                    comando.Parameters.Add(new SqlParameter("@LockOwner", SqlDbType.VarChar, 32) { Value = "Session" });
-                    await comando.ExecuteNonQueryAsync();
-                }
+                await clsAppLockSql.CerrarALaFuerzaAsync(conexion, _gracia, tiempo);
+                return;
             }
-            catch (SqlException)
-            {
-                // Cerrar la conexión también libera el candado de sesión.
-            }
-            finally
-            {
-                await conexion.DisposeAsync();
-            }
+
+            await conexion.DisposeAsync();
         }
     }
 }

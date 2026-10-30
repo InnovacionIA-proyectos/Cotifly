@@ -31,6 +31,51 @@ public sealed class clsPasosCatalogosCosteo(clsContextoWeb web, clsPasosCosteo c
         costeo.Nexo.ClasesViaje.AddRange([a, b, c, d]);
     }
 
+    [Given("que el catálogo maestro de clases de contenedor de Nexo está vacío")]
+    public void DadoClasesContenedorVacias() => costeo.Nexo.ClasesContenedor.Clear();
+
+    [Given("que el catálogo maestro de clases de contenedor de Nexo falla")]
+    public void DadoClasesContenedorFalla() => costeo.Nexo.CatalogosFallidos.Add("clases-contenedor");
+
+    [Then("las clases de contenedor son {string}, {string}, {string}, {string} y {string} con el mismo texto como etiqueta")]
+    public void EntoncesLasClasesDeContenedor(string a, string b, string c, string d, string e)
+    {
+        var clases = ClasesContenedor();
+        clases.Select(t => t.Valor).Should().Equal(a, b, c, d, e);
+        clases.Should().OnlyContain(t => t.Valor == t.Etiqueta);
+    }
+
+    [Then("las clases de contenedor no incluyen las provisionales {string}, {string}, {string} ni {string}")]
+    public void EntoncesSinProvisionales(string a, string b, string c, string d) =>
+        ClasesContenedor().Select(t => t.Valor).Should().NotContain([a, b, c, d]);
+
+    [Then("las clases de contenedor vienen vacías")]
+    public void EntoncesClasesContenedorVacias() => ClasesContenedor().Should().BeEmpty();
+
+    [Given("que el diccionario de alias de Nexo traduce el alias {string} al vehículo {string}")]
+    public void DadoElAliasDeVehiculo(string alias, string codigo) => costeo.Nexo.Alias.Add((alias, "Vehiculo", codigo, true));
+
+    [Given("que el diccionario de alias de Nexo falla")]
+    public void DadoElDiccionarioDeAliasFalla() => costeo.Nexo.CatalogosFallidos.Add("alias");
+
+    [When("{string} resuelve el texto {string} como tipo de vehículo")]
+    public Task CuandoResuelveElAlias(string alias, string texto) =>
+        web.EnviarAsync(HttpMethod.Get, $"/web/alias/resolver?tipo=vehiculo&texto={Uri.EscapeDataString(texto)}", web.Sesion(alias).Access);
+
+    [Then("el texto {string} se reconoce como el código {string} por {string}")]
+    public void EntoncesElAliasSeReconoce(string texto, string codigo, string fuente)
+    {
+        var resultado = web.UltimoJson().GetProperty("resultados").EnumerateArray().Should().ContainSingle().Subject;
+        resultado.GetProperty("texto").GetString().Should().Be(texto);
+        resultado.GetProperty("reconocido").GetBoolean().Should().BeTrue();
+        resultado.GetProperty("codigo").GetString().Should().Be(codigo);
+        resultado.GetProperty("fuente").GetString().Should().Be(fuente);
+    }
+
+    private List<(string? Valor, string? Etiqueta)> ClasesContenedor() =>
+        [.. web.UltimoJson().GetProperty("clases_contenedor").EnumerateArray()
+            .Select(t => (t.GetProperty("valor").GetString(), t.GetProperty("etiqueta").GetString()))];
+
     [When("{string} pide los catálogos de flete")]
     public Task CuandoPideLosCatalogos(string alias) =>
         web.EnviarAsync(HttpMethod.Get, "/web/catalogos-flete", web.Sesion(alias).Access);
@@ -63,6 +108,25 @@ public sealed class clsPasosCatalogosCosteo(clsContextoWeb web, clsPasosCosteo c
     [When("{string} envía a costeo el formulario del cliente {string} como {string} con el tipo de vehículo {string}")]
     public Task CuandoEnviaConTipoDeVehiculo(string alias, string nit, string cotizacion, string tipo) =>
         EnviarAsync(alias, nit, cotizacion, f => f["tipo_vehiculo"] = tipo);
+
+    [When("{string} envía a costeo el formulario del cliente {string} como {string} con la clase de viaje {string}")]
+    public Task CuandoEnviaConClaseDeViaje(string alias, string nit, string cotizacion, string claseViaje) =>
+        EnviarAsync(alias, nit, cotizacion, f =>
+        {
+            f["clase_viaje"] = claseViaje;
+            if (claseViaje != "Contenedor")
+            {
+                f.Remove("clase_contenedor");
+            }
+        });
+
+    [Then("Nexo recibió la solicitud de {string} sin {word}")]
+    public void EntoncesNexoRecibioSinElCampo(string cotizacion, string campo)
+    {
+        costeo.Folio(cotizacion).Should().NotBeNullOrEmpty();
+        var alta = costeo.Nexo.UltimaAlta ?? throw new InvalidOperationException("Nexo no recibió ningún alta.");
+        alta["lineas"]![0]![campo].Should().BeNull();
+    }
 
     [When("{string} envía a costeo el formulario del cliente {string} como {string} con la tipología {string}")]
     public Task CuandoEnviaConTipologia(string alias, string nit, string cotizacion, string tipologia) =>
@@ -109,8 +173,6 @@ public sealed class clsPasosCatalogosCosteo(clsContextoWeb web, clsPasosCosteo c
             ["linea_negocio"] = "Importacion",
             ["origen"] = "Buenaventura",
             ["destino"] = "Bogotá D.C.",
-            ["tipo_vehiculo"] = "3S3",
-            ["carroceria"] = "PORTACONTENEDORES",
             ["tipologia"] = "Contenedor",
             ["clase_viaje"] = "Contenedor",
             ["clase_contenedor"] = "CNT40.HC",

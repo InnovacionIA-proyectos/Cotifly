@@ -20,7 +20,11 @@ public sealed class clsPasosAjusteMargen(clsContextoWeb web, clsPasosCosteo cost
     private readonly Dictionary<string, string> _duenos = new(StringComparer.OrdinalIgnoreCase);
     private string? _etagGuardado;
 
+    /// <summary>ETag que guardó el paso "leyó el costeo de ... y guardó su ETag" (lo reutilizan los pasos de los textos, HU-013.5).</summary>
+    public string? EtagGuardado => _etagGuardado;
+
     [Given("{string} envió a costeo el formulario ampliado del cliente {string} como {string}")]
+    [Given("que {string} envió a costeo el formulario ampliado del cliente {string} como {string}")]
     [Given("que {string} envió a costeo el formulario ampliado del cliente {string} como {string} y Nexo no lo ha costeado")]
     public async Task DadoQueEnvioACosteo(string alias, string nit, string cotizacion)
     {
@@ -40,8 +44,7 @@ public sealed class clsPasosAjusteMargen(clsContextoWeb web, clsPasosCosteo cost
     [Given("que el costeo de {string} trae el servicio conexo {string} con un valor de Nexo de {int}")]
     public async Task DadoElConexo(string cotizacion, string nombre, int valor)
     {
-        costeo.Nexo.AgregarConexo((await costeo.Columna(cotizacion, "costeoId"))!, nombre, valor);
-        await web.Api.ProcesarPollingAsync(costeo.Folio(cotizacion));
+        await costeo.AgregarConexoEnCotiflyAsync(cotizacion, nombre, valor);
     }
 
     [Given("{string} ajusta el margen de {string} a {string} sin justificación")]
@@ -104,14 +107,6 @@ public sealed class clsPasosAjusteMargen(clsContextoWeb web, clsPasosCosteo cost
         (await clsBaseDatosPruebas.EscalarAsync<int>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
             $"SELECT COUNT(*) FROM dbo_cotifly.MargenAjustes WHERE folio = '{costeo.Folio(cotizacion)}'")).Should().Be(0);
 
-    [Then("las métricas de ajustes de {string} marcan {int} ajuste por debajo del sugerido")]
-    public async Task EntoncesLasMetricas(string alias, int ajustes)
-    {
-        await web.EnviarAsync(HttpMethod.Get, "/web/metricas/ajustes-margen", web.Sesion(alias).Access);
-        web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);
-        web.UltimoJson().EnumerateArray().Sum(f => f.GetProperty("num_ajustes_bajo_sugerido").GetInt32()).Should().Be(ajustes);
-    }
-
     [Then("el servicio conexo {string} de {string} tiene el precio {int}")]
     public async Task EntoncesElConexo(string nombre, string cotizacion, int precio) =>
         (await CosteoAsync(cotizacion)).GetProperty("servicios_conexos").EnumerateArray()
@@ -125,7 +120,8 @@ public sealed class clsPasosAjusteMargen(clsContextoWeb web, clsPasosCosteo cost
         await CosteoAsync(cotizacion);
         foreach (var cuerpo in new[] { anterior, web.UltimoCuerpo })
         {
-            cuerpo.Should().NotContain(texto, "el costo de Nexo nunca llega al comercial").And.NotContain("\"costo\"");
+            // HU-039.1 (#218): el dueño ve el costo bruto de la ruta (`costo_final`), nunca el costo de un conexo ni un campo `costo`.
+            cuerpo.Should().NotContain(texto, "el costo de un conexo de Nexo nunca llega al comercial").And.NotContain("\"costo\"");
         }
     }
 
@@ -137,8 +133,24 @@ public sealed class clsPasosAjusteMargen(clsContextoWeb web, clsPasosCosteo cost
     }
 
     [When("{string} genera el PDF del costeo de {string}")]
-    public Task CuandoGeneraElPdf(string alias, string cotizacion) =>
-        web.EnviarAsync(HttpMethod.Post, $"{Ruta(cotizacion)}/pdf", web.Sesion(alias).Access);
+    public async Task CuandoGeneraElPdf(string alias, string cotizacion)
+    {
+        // HU-036.3 (#207): como el frontend, finaliza antes del PDF (la regla en sí la prueba cotizacion_finalizada.feature).
+        await costeo.FinalizarSiCorrespondeAsync(alias, costeo.Folio(cotizacion));
+        await web.EnviarAsync(HttpMethod.Post, $"{Ruta(cotizacion)}/pdf", web.Sesion(alias).Access);
+    }
+
+    /// <summary>
+    /// HU-036 (sin backfill): una cotización cuyo PDF se generó ANTES del script 14 y nunca se finalizó. Se arma con el flujo de hoy
+    /// (finalizar y generar) y se deja sin la finalización, como la deja el 14 sobre una fila existente.
+    /// </summary>
+    [Given("que {string} generó el PDF del costeo de {string} antes de HU-036, sin finalizarla")]
+    public async Task DadoQueGeneroElPdfSinFinalizar(string alias, string cotizacion)
+    {
+        await DadoQueGeneroElPdf(alias, cotizacion);
+        await clsBaseDatosPruebas.EjecutarAsync(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
+            $"UPDATE dbo_cotifly.CotizacionesSolicitud SET finalizadaAt = NULL, finalizadaPor = NULL WHERE folio = '{costeo.Folio(cotizacion)}'");
+    }
 
     [Given("que {string} generó el PDF del costeo de {string} y lo envió al cliente")]
     public async Task DadoQueLoEnvio(string alias, string cotizacion)
@@ -147,7 +159,7 @@ public sealed class clsPasosAjusteMargen(clsContextoWeb web, clsPasosCosteo cost
 
         // El envío por correo está deshabilitado en la API de pruebas: se deja la cotización como la deja un envío exitoso.
         await clsBaseDatosPruebas.EjecutarAsync(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-            $"UPDATE dbo_cotifly.Cotizaciones SET estadoEnvio = 'enviada' WHERE folio = '{costeo.Folio(cotizacion)}'");
+            $"UPDATE dbo_cotifly.CotizacionesSolicitud SET estadoEnvio = 'enviada' WHERE folio = '{costeo.Folio(cotizacion)}'");
     }
 
     [Given("que Nexo entregó la cotización de {string} y {string} la marcó como {string}")]
@@ -155,6 +167,7 @@ public sealed class clsPasosAjusteMargen(clsContextoWeb web, clsPasosCosteo cost
     {
         costeo.Nexo.Entregar((await costeo.Columna(cotizacion, "costeoId"))!);
         await web.Api.ProcesarPollingAsync(costeo.Folio(cotizacion));
+        await costeo.FinalizarSiCorrespondeAsync(alias, costeo.Folio(cotizacion)); // HU-036.3: finaliza antes del resultado
         await web.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{costeo.Folio(cotizacion)}/resultado", web.Sesion(alias).Access,
             clsApiWebPruebas.Json(new { resultado }));
         web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);
@@ -182,7 +195,7 @@ public sealed class clsPasosAjusteMargen(clsContextoWeb web, clsPasosCosteo cost
         var folio = costeo.Folio(cotizacion);
         (await clsBaseDatosPruebas.EscalarAsync<string>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
                 $"SELECT STRING_AGG(CONCAT(h.motivo, '|', h.pdfPath), ';') FROM dbo_cotifly.CotizacionPdfsHistorial h "
-                + $"JOIN dbo_cotifly.Cotizaciones c ON c.id = h.cotizacionId WHERE c.folio = '{folio}'"))
+                + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = h.cotizacionId WHERE c.folio = '{folio}'"))
             .Should().StartWith("ajuste_margen|").And.EndWith($"{folio}.pdf", "una sola fila: el PDF que estaba vigente");
         (await clsBaseDatosPruebas.EscalarAsync<int>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
                 "SELECT COUNT(*) FROM dbo_cotifly.EventosHerramienta WHERE herramienta = 'ajustar_margen_costeo' AND exito = 1 "
@@ -228,7 +241,7 @@ public sealed class clsPasosAjusteMargen(clsContextoWeb web, clsPasosCosteo cost
     private async Task<string> VersionVigenteAsync(string cotizacion)
     {
         var version = await clsBaseDatosPruebas.EscalarAsync<int>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-            $"SELECT versionNegocio FROM dbo_cotifly.Cotizaciones WHERE folio = '{costeo.Folio(cotizacion)}'");
+            $"SELECT versionNegocio FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{costeo.Folio(cotizacion)}'");
         return $"\"{version.ToString(CultureInfo.InvariantCulture)}\"";
     }
 

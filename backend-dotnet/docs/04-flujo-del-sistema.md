@@ -1,5 +1,7 @@
 # 4. Flujo del sistema
 
+> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-15
+
 Cómo se mueve una cotización por el sistema, desde el login hasta el correo. El detalle de cada pieza está en [02-arquitectura](02-arquitectura.md); el contrato HTTP, en [07-api](07-api.md).
 
 Contenido:
@@ -9,7 +11,7 @@ Contenido:
 - [4.3 Nueva cotización en la consola web](#43-nueva-cotización-en-la-consola-web)
 - [4.4 Mis cotizaciones, seguimiento y nueva versión](#44-mis-cotizaciones-seguimiento-y-nueva-versión)
 - [4.5 Resolución del margen](#45-resolución-del-margen)
-- [4.6 Google Chat](#46-google-chat)
+- [4.6 Asistente IA por folio](#46-asistente-ia-por-folio)
 - [4.7 Envío de correo](#47-envío-de-correo)
 - [4.8 Estados](#48-estados)
 - [4.9 Procesos en segundo plano](#49-procesos-en-segundo-plano)
@@ -18,18 +20,17 @@ Contenido:
 
 ```mermaid
 flowchart LR
-    login[Login SSO desde ClientePro<br/>POST /api/auth/login-clientepro] --> chat[Conversación con el agente<br/>POST /web/chat o Google Chat]
-    chat --> datos[Cliente, línea, ruta y costo]
-    datos --> margen[Margen<br/>SAP TM o política de la línea]
+    login[Login SSO desde ClientePro<br/>POST /api/auth/login-clientepro] --> form[Formulario de captura<br/>POST /web/solicitudes-costeo<br/>folio del servidor]
+    form --> nexo[Costeo en Nexo<br/>envío y polling]
+    nexo --> margen[Margen<br/>SAP TM o política de la línea]
     margen --> precio[Precio<br/>margen o markup]
-    precio --> previa[Previsualización]
-    previa -- "el comercial confirma" --> pdf[PDF con folio del servidor<br/>fila en Cotizaciones]
-    previa -- "ajustar margen" --> ajuste[Margen negociado<br/>MargenAjustes]
-    ajuste --> precio
+    precio --> ajustes[Ajustes finales<br/>margen, conexos, textos, re-solicitud<br/>a mano o propuestos por el asistente IA]
+    ajustes --> precio
+    precio --> pdf[PDF<br/>POST .../costeo/pdf]
     pdf --> correo[Vista previa y envío por correo<br/>estado enviada o reenviada]
     pdf --> mis[Mis cotizaciones<br/>seguimiento ganada o perdida]
     mis --> version[Nueva versión<br/>folio con -vN]
-    version --> chat
+    version --> nexo
 ```
 
 ## 4.2 Inicio de sesión y renovación
@@ -55,28 +56,18 @@ stateDiagram-v2
 
 ## 4.3 Nueva cotización en la consola web
 
-Conversación típica (el texto lo redacta el LLM; los datos y los números salen de las herramientas y del estado de la conversación):
+Desde HU-013 la cotización la arma un pipeline determinista: el formulario, Nexo, SAP y el código ([ADR-018](../specs/decisiones/ADR-018-pipeline-determinista-ia-etapa-final.md)). La IA no cotiza: solo redacta textos y asiste sobre una cotización ya hecha. Hasta HU-013.9 (#105) la cotización también podía armarse conversando con un agente (`POST /web/chat` sin folio o Google Chat); ese camino se retiró.
 
 | Paso | El comercial | El sistema |
 |---|---|---|
-| 1 | "Cotiza un flete nacional de Cali a Bogotá para el cliente X, costo 2.850.000" | `buscar_cliente` en Nexo (HU-005.2: un único candidato → NIT, origen y BP en el estado; varios → candidatos para que el comercial elija; ninguno → sin cliente resuelto; sin `Nexo__UrlBase`, con Nexo caído o sin `idUsuarioExterno` → `CLIENTE_BUSQUEDA_NO_DISPONIBLE` y el nombre queda como referencia, sin NIT ni BP), `resolver_municipio` con el origen y con el destino (HU-005.13, ver 1b), `obtener_margen` (con BP: SAP TM si `SapTm__Modo` está configurado; sin BP: política de la línea), `calcular_precio` con el costo escrito por el comercial. Estado: línea, municipios, margen, método, costo y precio |
-| 1b | "La de Nariño" | Solo si el origen o el destino coincidieron con varios municipios (ej. "La Unión" en Antioquia, Nariño y Valle del Cauca): el agente mostró los candidatos con su departamento y, mientras el comercial no elige, el filtro rechaza `buscar_tarifa`, `calcular_precio`, `registrar_ajuste_margen` y `generar_pdf` con `CONFIRMACION_REQUERIDA`. El servidor reconoce la elección por el departamento o, si no hay otra lista pendiente, por posición ("2", "la segunda"); si no, el agente vuelve a llamar a `resolver_municipio` con lo que escribió. Una sola coincidencia se usa directo (`Yumbo, Valle del Cauca`); ninguna se informa sin inventar un municipio. Sin catálogo (`MUNICIPIOS_NO_DISPONIBLE`: Nexo sin configurar o caído) la cotización sigue con el texto libre |
-| 2 | — | El agente muestra la **previsualización** (precio, margen, método, origen del margen) y pide confirmación; `acciones_sugeridas`: `confirmar_pdf`, `ajustar_margen` |
-| 3a | "Confirmo" | `generar_pdf`: el filtro exige la confirmación del turno y un precio calculado, reescribe el payload con el estado, el servidor genera el folio `PCN-[{nit}-]{INICIALES}-DDMMAAAA-{NNN}[-vN]` con las iniciales del comercial (ej. `PCN-DG-25092026-001`; [ADR-011](../specs/decisiones/ADR-011-folio-e-identidad-google-chat.md)), renderiza, guarda el PDF y registra la fila en `Cotizaciones`. La respuesta trae `pdf.url` |
-| 3b | "Déjalo en 18 %" | `registrar_ajuste_margen` (margen negociado, auditado en `MargenAjustes`), nuevo precio y nueva previsualización |
-| 4 | "Envíala a compras@cliente.com" | Con la confirmación o los destinatarios escritos por el comercial, `enviar_correo` (ver [4.7](#47-envío-de-correo)) |
+| 1 | Llena el formulario de captura (cliente, línea, origen, destino, vehículo, carga) | Catálogos de Nexo a través de la API (ver abajo) |
+| 2 | Envía la solicitud | `POST /web/solicitudes-costeo`: folio del servidor `PCN-[{nit}-]{INICIALES}-DDMMAAAA-{NNN}[-vN]` con las iniciales del comercial ([ADR-011](../specs/decisiones/ADR-011-folio-e-identidad-google-chat.md)), fila en `Cotizaciones` y envío a Nexo ([ADR-015](../specs/decisiones/ADR-015-costeo-nexo.md)) |
+| 3 | — | El polling (`clsWorkerCosteoNexo`) recoge el costeo, resuelve el margen ([4.5](#45-resolución-del-margen)) y calcula el precio en la moneda de la cotización; `GET /web/cotizaciones/{folio}/costeo` lo muestra sin el costo de Nexo |
+| 4 | Ajusta si hace falta | Margen (`PUT .../costeo/margen`, negociado y auditado en `MargenAjustes`), servicios conexos, textos (`POST .../costeo/textos/redactar` con IA, o a mano) y re-solicitud del costeo; o le pide al asistente por folio que lo proponga ([4.6](#46-asistente-ia-por-folio)) |
+| 5 | Genera el PDF | `POST /web/cotizaciones/{folio}/costeo/pdf` |
+| 6 | Lo envía | [4.7](#47-envío-de-correo) |
 
-Reglas que el flujo garantiza (pruebas en `chat_slot_filling.feature`, `chat_municipios.feature`, `chat_web.feature` y `validador_respuesta_ia.feature`):
-
-- Un "sí" sin previsualización pendiente no confirma nada; elegir un cliente candidato o un municipio no confirma el PDF.
-- Con un origen o destino ambiguo sin elegir no se busca tarifa, no se calcula precio y no hay previsualización.
-- Si cambia el cliente, la línea o la ruta, la cotización en curso se descarta: la siguiente es nueva, no una versión de otra.
-- Un costo que no viene de la fuente solo se acepta si el comercial lo escribió (`2.850.000`, `2,85 millones`...).
-- Un turno a la vez por conversación; un segundo mensaje simultáneo recibe "Todavía estoy respondiendo tu mensaje anterior...".
-
-El recorrido técnico de un turno (candado, filtros, validador) está en [2.12](02-arquitectura.md#212-turno-de-webchat-de-punta-a-punta).
-
-El formulario de captura del frontend (HU-004) consulta a Nexo a través de la API, sin pasar por el agente: `GET /web/clientes?q=` (el mismo catálogo que `buscar_cliente`), `GET /web/municipios` (origen y destino), `GET /web/catalogos-flete` (tipo de vehículo, carrocería y clase de viaje) y `POST /web/cubicacion` (vehículo o flota sugeridos para los bultos). Respuestas y códigos en [7.3](07-api.md#73-endpoints).
+El formulario de captura del frontend (HU-004) consulta a Nexo a través de la API: `GET /web/clientes?q=`, `GET /web/municipios` (origen y destino), `GET /web/catalogos-flete` (tipo de vehículo, carrocería y clase de viaje) y `POST /web/cubicacion` (vehículo o flota sugeridos para los bultos). Respuestas y códigos en [7.3](07-api.md#73-endpoints).
 
 ## 4.4 Mis cotizaciones, seguimiento y nueva versión
 
@@ -95,19 +86,19 @@ sequenceDiagram
     A-->>F: 200 CotizacionResumen
     F->>A: GET /web/cotizaciones/{id}/nueva-version
     A-->>F: 200 DatosNuevaVersion {folio_base, version_siguiente, ...}
-    F->>A: POST /web/chat {sesion_id, mensaje, cotizacion_origen_id}
-    Note over A: siembra el estado con la cotización origen (validando el dueño)<br/>y generar_pdf crea el folio base con -vN
+    F->>A: POST /web/cotizaciones/{folio}/costeo/re-solicitar {motivo, datos_carga?, nueva_version: true}
+    Note over A: crea {folio base}-vN y la envía a Nexo<br/>(hasta HU-013.9 también por /web/chat con cotizacion_origen_id)
 ```
 
 Una cotización de otro comercial responde siempre `404 {"error":"Cotización no encontrada o no es tuya."}`, igual que una inexistente (`aislamiento_comercial.feature`).
 
 ## 4.5 Resolución del margen
 
-Orden de `obtener_margen` (`clsMargenResolverService`, mismo orden que el Python salvo la resiliencia ante SAP caído, decisión de #13):
+Orden de la resolución del margen sugerido (`clsMargenResolverService`, la antigua herramienta `obtener_margen`; mismo orden que el Python salvo la resiliencia ante SAP caído, decisión de #13):
 
 ```mermaid
 flowchart TD
-    inicio([obtener_margen: línea y cliente del estado]) --> linea{¿La línea existe<br/>y está activa?}
+    inicio([Margen sugerido: línea y cliente de la cotización]) --> linea{¿La línea existe<br/>y está activa?}
     linea -- no --> desconocida[MARGEN_LINEA_DESCONOCIDA]
     linea -- sí --> trq{¿Tiene TrqType?<br/>SapMapeoTrqType}
     trq -- no --> politica
@@ -123,44 +114,24 @@ flowchart TD
     caido -- no --> fuente[MARGEN_FUENTE_NO_DISPONIBLE]
 ```
 
-El margen negociado (`registrar_ajuste_margen`) no cambia la política: se registra en `MargenAjustes` con la referencia que propuso `obtener_margen` y queda `origenMargen = negociado` en la cotización.
+El margen negociado (`PUT .../costeo/margen`) no cambia la política: se registra en `MargenAjustes` con el margen sugerido como referencia y queda `origenMargen = negociado` en la cotización.
 
-## 4.6 Google Chat
+## 4.6 Asistente IA por folio
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant G as Google Chat
-    participant W as clsChatEventosController
-    participant Q as clsColaEventosChat (Channel acotado)
-    participant K as clsWorkerEventosChat
-    participant P as clsProcesadorEventoChat
-    participant R as clsAgenteRunner
-    participant C as API de Google Chat
-    G->>W: POST /chat/events (Bearer JWT de Google)
-    W->>W: verifica RS256, emisor y audiencia (GChat:ProjectNumber)
-    W->>Q: encola el evento
-    W-->>G: 200 acuse inmediato
-    K->>Q: toma el evento (un ámbito de DI por evento)
-    K->>P: procesar
-    P->>P: identidad por UsuariosWeb.email y verificación doble (sin alta)
-    alt Sin cuenta o rol cambiado
-        P->>C: "Ingresa primero a Cotifly desde ClientePro."
-    else Comercial verificado
-        P->>R: turno en el hilo (spaceId, threadId)
-        R-->>P: respuesta validada
-        P->>C: tarjeta de previsualización con botones, tarjeta del PDF con enlace firmado, o texto
-    end
-    Note over K,C: Si el evento falla, aviso en el hilo y alerta a GChat:SupportSpace. El worker sigue
-```
+Desde el detalle de una cotización, el comercial conversa con el asistente (`POST /web/chat` con `folio`, HU-013.6, ADR-018 §2b):
 
-Los clics en los botones de la tarjeta se convierten en "Confirmo" o "Quiero ajustar el margen.". El enlace del PDF (`/pdfs/{folio}.pdf?t=...`) vence a los `Pdf:MinutosUrlFirmada` minutos y solo sirve al dueño.
+1. El asistente solo trabaja sobre esa cotización y solo si es del comercial (otra responde 404). Sin `folio`, 400 `FOLIO_REQUERIDO`.
+2. Consulta la cotización (estado, ruta, márgenes como porcentaje, conexos) sin ver ningún monto y, si el comercial lo pide, propone una acción: ajustar el margen, re-solicitar el costeo o agregar un servicio conexo.
+3. El servidor arma la propuesta (`accion_propuesta`: endpoint, cuerpo, `row_version` y resumen con precios) con las mismas reglas del endpoint destino. Nada cambia hasta que el comercial pulsa Confirmar y el frontend llama a ese endpoint.
+4. Un turno a la vez por conversación; un segundo mensaje simultáneo recibe "Todavía estoy respondiendo tu mensaje anterior...".
+
+El recorrido técnico de un turno (candado, herramientas, validador) está en [2.12](02-arquitectura.md#212-turno-de-webchat-de-punta-a-punta). Google Chat, el canal conversacional alterno que existía hasta HU-013.9 (#105), se retiró: `POST /chat/events` responde 404.
 
 ## 4.7 Envío de correo
 
 ```mermaid
 flowchart TD
-    previa[POST .../correo/vista-previa<br/>asunto, cuerpo, para y cc prediligenciados] --> enviar[POST /web/cotizaciones/folio/enviar<br/>o herramienta enviar_correo]
+    previa[POST .../correo/vista-previa<br/>asunto, cuerpo, para y cc prediligenciados] --> enviar[POST /web/cotizaciones/folio/enviar]
     enviar --> hab{¿Correo:Habilitado?}
     hab -- no --> deshab[503 CORREO_DESHABILITADO]
     hab -- sí --> dest{¿Destinatarios válidos?}
@@ -171,9 +142,10 @@ flowchart TD
     dup -- sí --> dupl[400 CORREO_DUPLICADO]
     dup -- no --> pdf{¿Existe el PDF en el almacén?}
     pdf -- no --> sinpdf[400 CORREO_PDF_NO_ENCONTRADO]
-    pdf -- sí --> relay[Relay SMTP<br/>From = correo del comercial]
-    relay -- falla --> fallido[Fila Correos fallido<br/>400 CORREO_ENVIO_FALLIDO]
-    relay -- ok --> ok[Fila Correos enviado + destinatarios<br/>estadoEnvio: enviada o reenviada]
+    pdf -- sí --> relay[MailSender POST /api/v1/emails<br/>From = correo del comercial]
+    relay -- no acepta --> fallido[Fila Correos fallido<br/>CORREO_ENVIO_FALLIDO]
+    relay -- 202 --> ok[Fila Correos encolado + destinatarios<br/>estadoEnvio: enviada o reenviada]
+    ok --> worker[Worker de correos: GET /api/v1/emails/id<br/>enviando, enviado o fallido]
 ```
 
 `GET /web/clientes/{nit}/destinatarios-previos` prediligencia los destinatarios del último envío exitoso del comercial a ese NIT.
@@ -184,7 +156,7 @@ Estado de envío de una cotización (`Cotizaciones.estadoEnvio`):
 
 ```mermaid
 stateDiagram-v2
-    [*] --> sin_enviar: generar_pdf registra la cotización
+    [*] --> sin_enviar: la solicitud de costeo registra la cotización
     sin_enviar --> enviada: primer envío exitoso
     enviada --> reenviada: otro envío exitoso
     reenviada --> reenviada: otro envío exitoso
@@ -197,7 +169,7 @@ Seguimiento comercial (independiente del envío): `ganada` verdadero o falso con
 
 | Proceso | Clase | Frecuencia | Qué hace | Si falla |
 |---|---|---|---|---|
-| Worker de Google Chat | `clsWorkerEventosChat` | Continuo | Consume la cola de eventos, un ámbito por evento | Aviso en el hilo y alerta a soporte; sigue con el siguiente |
+| Polling del costeo | `clsWorkerCosteoNexo` | `CosteoNexo:IntervaloTickSegundos` | Consulta en Nexo las cotizaciones agendadas y aplica margen y precio ([2.14](02-arquitectura.md#214-integración-con-nexo)) | Se registra y el lote sigue con la siguiente cotización |
 | Barrido de sesiones | `clsBarridoSesionesHostedService` | `Sesiones:BarridoMinutos` (60) | Archiva sesiones inactivas desde hace más de `Sesiones:TtlHoras` | Warning; reintenta en el siguiente ciclo |
 | Limpieza de tokens | `clsLimpiezaTokensHostedService` | Cada hora | Purga `jti` vencidos y refresh vencidos hace más de un día | Warning |
 | Caché de revocados | `clsCacheTokensRevocados` | Cada 60 s | Foto de `TokensRevocados`; sin foto de menos de 5 min, fail-closed | Las peticiones protegidas responden 401 hasta recuperar la foto |
