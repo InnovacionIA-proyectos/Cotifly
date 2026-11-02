@@ -23,11 +23,12 @@ IF OBJECT_ID(N'dbo_cotifly.SapMapeoTrqType', N'U') IS NULL
     THROW 50001, N'Falta dbo_cotifly.SapMapeoTrqType: corra primero scripts/01_crear_esquema.sql.', 1;
 GO
 
--- COLLATE DATABASE_DEFAULT: #mapeo vive en tempdb, que puede tener otra collation que la base.
+-- Misma collation explícita que las columnas de SapMapeoTrqType y MargenesPolitica (01 y 0001). No sirve
+-- DATABASE_DEFAULT: una base creada sin collation (las de prueba del backend) queda con la del servidor y choca.
 CREATE TABLE #mapeo (
-    trqType      NVARCHAR(8)  COLLATE DATABASE_DEFAULT NOT NULL,
-    salesOrg     NVARCHAR(12) COLLATE DATABASE_DEFAULT NOT NULL,
-    lineaNegocio NVARCHAR(40) COLLATE DATABASE_DEFAULT NOT NULL
+    trqType      NVARCHAR(8)  COLLATE Latin1_General_100_CI_AS_SC_UTF8 NOT NULL,
+    salesOrg     NVARCHAR(12) COLLATE Latin1_General_100_CI_AS_SC_UTF8 NOT NULL,
+    lineaNegocio NVARCHAR(40) COLLATE Latin1_General_100_CI_AS_SC_UTF8 NOT NULL
 );
 INSERT INTO #mapeo (trqType, salesOrg, lineaNegocio) VALUES
     (N'OPTN', N'', N'Nacional'),
