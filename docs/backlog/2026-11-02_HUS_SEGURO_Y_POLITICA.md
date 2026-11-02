@@ -1,6 +1,6 @@
 # HU-045 y HU-046 — Seguro de la mercancía y recomendaciones de la política de seguros
 
-> Las decisiones de HU-045 y de HU-046 están tomadas (2026-11-02). De HU-046 falta validar con negocio la carga inicial y las inconsistencias del PDF (HU-046.1).
+> Las decisiones de HU-045 y de HU-046 están tomadas y la carga inicial de HU-046 está aprobada (2026-11-02, @scalderon-bs).
 > Relacionadas: política NOGE0076 (documento interno de la empresa: no se guarda en el repo), cálculo del flete (`docs/backlog/2026-10-30_COMO_SE_CALCULA_EL_FLETE.md`) y HU-043 (#251, conexos a precio de venta y sin margen).
 
 ## Lo que ya existe y se reutiliza
@@ -212,18 +212,18 @@ Entonces el seguro aparece como una línea separada "Seguro de la mercancía"
   - Cotifly ya **lee** `codigoServicio` del catálogo de Nexo (`clsServiciosConexosNexo`), pero **no lo guarda**: `CotizacionServiciosConexos` solo tiene `idServicioConexo` y `nombreServicioConexo`.
   - Por eso esta HU agrega la columna `codigoServicio` a los conexos de la ruta.
 - **Qué se cobra y qué no:**
-  - Las medidas **no cobrables** (esquema básico, GPS, restricción nocturna) solo se muestran.
-  - Las **cobrables** (candado, acompañantes) se muestran con un botón para agregar el conexo. Se cobran con la regla de HU-043 (#251): a precio de venta y sin margen.
+  - Las medidas **no cobrables** (esquema básico, GPS, candado satelital, restricción nocturna, incluir el seguro) solo se muestran.
+  - Las **cobrables** (los acompañantes) se muestran con un botón para agregar el conexo. Se cobran con la regla de HU-043 (#251): a precio de venta y sin margen.
 - **El bloqueo se suma al que ya existe en "Finalizar".** HU-036.2 (#206) ya rechaza la finalización con `COTIZACION_NO_FINALIZABLE` y un `detalle.motivo` (`conexos_pendientes_de_leer`, `conexos_pendientes_en_nexo`). Esta HU agrega el motivo `medidas_obligatorias_faltantes`.
 
-### Carga inicial propuesta (la valida negocio en HU-046.1)
+### Carga inicial aprobada (HU-046.1, 2026-11-02)
 
 | Tramo | Esquema básico | GPS | Candado satelital | Restricción nocturna | Acompañante | Incluir seguro (aviso) | Proyecto especial |
 |---|---|---|---|---|---|---|---|
 | ≤ 150 M | Recomendada | — | — | — | — | — | — |
 | > 150 – 250 M | Recomendada | — | Recomendada | — | — | — | — |
 | > 250 – 350 M | Recomendada | Recomendada | Recomendada | — | — | Recomendada | — |
-| > 350 – 500 M | Recomendada | Recomendada | Recomendada | Recomendada | **Obligatoria: parcial** | Recomendada | — |
+| > 350 – 500 M | Recomendada | Recomendada | Recomendada | Recomendada | **Obligatoria: parcial o total** | Recomendada | — |
 | > 500 – 700 M | Recomendada | Recomendada | Recomendada | Recomendada | **Obligatoria: parcial o total** | Recomendada | — |
 | > 700 – 1.000 M | Recomendada | Recomendada | Recomendada | Recomendada | **Obligatoria: total** | Recomendada | Sí |
 | > 1.000 M | — | — | — | — | Caso a caso (solo aviso) | — | Sí |
@@ -231,14 +231,13 @@ Entonces el seguro aparece como una línea separada "Seguro de la mercancía"
 - **Límites:** `desde` exclusivo y `hasta` incluido, en pesos fijos. Exactamente 250 M cae en "> 150 – 250 M".
 - **Quién autoriza no se guarda** (decisión del 2026-11-02): era solo informativo. Los tramos de 700 M en adelante muestran "proyecto especial".
 
-Qué conexos cumplen cada medida:
-- `acompanante_parcial` → `AVP_MOTO`, `AVP_MOTO_ARMADA`;
+Qué conexos cumplen cada medida (códigos verificados en `tbl_servicios_conexos` de Nexo el 2026-11-02):
+- `acompanante_vehicular` (parcial o total, tramos de 350 – 700 M) → cualquiera de los 5: `AVP_MOTO`, `AVP_MOTO_ARMADA`, `AVT_AUTO`, `AVT_MOTO`, `AVT_MOTO_ARMADA`. El total cumple la obligación de parcial: en Nexo el parcial solo tiene precio en trayectos cortos y el total en largos.
 - `acompanante_total` → `AVT_AUTO`, `AVT_MOTO`, `AVT_MOTO_ARMADA`;
-- `acompanante_parcial_o_total` → los 5 anteriores;
-- `candado_satelital` → `PRE_BSAT` (falta confirmar);
+- `esquema_basico`, `gps`, `candado_satelital`, `restriccion_nocturna` → ninguno: no hay conexo en Nexo (el candado **no** es `PRE_BSAT`, que es un precinto). Solo se recomiendan.
 - `incluir_seguro` → ninguno. Es un aviso: "si el cliente no tiene póliza propia, incluye el seguro de la mercancía" (HU-045). La política pide la póliza específica desde 250 M cuando el cliente no tiene póliza propia.
 
-> El PDF pone el candado y el GPS como obligatorios desde 250 M. Por decisión de producto quedan como **recomendación**. Si negocio los quiere obligatorios, se cambia el `nivel` en la tabla intermedia, sin tocar el código.
+> El PDF pone el candado y el GPS como obligatorios desde 250 M. Quedan como **recomendación** porque no hay conexo en Nexo para exigirlos: solo el acompañamiento vehicular puede ser obligatorio.
 
 ### Decisiones tomadas (2026-11-02, @scalderon-bs)
 1. **Finalizar sin la medida obligatoria:** se permite con una justificación escrita, que queda auditada.
@@ -249,8 +248,13 @@ Qué conexos cumplen cada medida:
 6. **Recomendar el seguro (HU-045):** solo un aviso, porque Cotifly no sabe si el cliente tiene póliza propia. Es la medida `incluir_seguro`, recomendada desde 250 M, sin conexos.
 7. **Cotizaciones existentes:** la regla aplica solo a las que todavía no están finalizadas. Las finalizadas no se tocan (HU-036).
 8. **Quién autoriza no se guarda en la base:** era solo informativo y no es relevante para Cotifly. Se conserva la marca de proyecto especial (700 M en adelante).
+9. **Solo el acompañamiento vehicular puede ser obligatorio.** El GPS, el candado, el esquema básico y la restricción nocturna quedan como recomendación: en Nexo solo hay conexos de acompañamiento.
+10. **El candado satelital no es `PRE_BSAT`** (es un precinto). No hay conexo de candado.
+11. **El acompañante total cumple la obligación de parcial** (en Nexo no se cruzan en ninguna ruta).
+12. **El riesgo de la mercancía no se modela por ahora.**
+13. **Inconsistencias del PDF:** el tramo 1 sigue la regla general (póliza del cliente con subrogación); "$250.000.000.000" es $250 M; pesos fijos; el acuerdo con Seguros Bolívar no se aplica; los montos de 2023 se toman como vigentes.
 
-Lo que falta validar con negocio en HU-046.1: la carga inicial, tramo por tramo, y las inconsistencias del PDF.
+La carga inicial de arriba quedó **aprobada** por @scalderon-bs el 2026-11-02 (HU-046.1). Detalle en `docs/backlog/2026-11-02_DECISIONES_HU-046_POLITICA_SEGUROS.md`.
 
 ### Criterios de aceptación (Gherkin)
 ```gherkin
@@ -259,15 +263,20 @@ Dado una ruta con un camión y valor_mercancia de $400.000.000
 Cuando el comercial abre el costeo
 Entonces ve el tramo "> 350 – 500 M"
 Y ve como recomendadas: esquema básico, GPS, candado satelital, restricción nocturna e incluir el seguro
-Y ve como obligatoria: acompañante vehicular parcial, marcada como "pendiente"
+Y ve como obligatoria: acompañante vehicular (parcial o total), marcada como "pendiente"
 
 Escenario: La obligación se cumple con cualquier conexo de la medida
 Dado la ruta anterior
 Cuando el comercial agrega el conexo AVP_MOTO_ARMADA
-Entonces la obligación "acompañante vehicular parcial" queda "cumplida"
+Entonces la obligación "acompañante vehicular" queda "cumplida"
+
+Escenario: El acompañante total cumple la obligación de parcial
+Dado una ruta Cali → Bogotá en el tramo "> 350 – 500 M"
+Cuando el comercial agrega el conexo AVT_AUTO
+Entonces la obligación "acompañante vehicular" queda "cumplida"
 
 Escenario: No deja finalizar sin la medida obligatoria
-Dado una ruta en el tramo "> 350 – 500 M" sin ningún conexo de acompañante parcial
+Dado una ruta en el tramo "> 350 – 500 M" sin ningún conexo de acompañante
 Cuando el comercial intenta finalizar la cotización
 Entonces recibe 409 COTIZACION_NO_FINALIZABLE con detalle.motivo = "medidas_obligatorias_faltantes"
 Y el detalle lista la ruta y la medida que falta
@@ -299,9 +308,9 @@ Cuando el comercial abre el costeo
 Entonces ve que es proyecto especial y que el acompañante total es obligatorio
 
 Escenario: Cambio de la política sin despliegue
-Dado que Datos cambia el candado satelital a "obligatoria" en el tramo "> 250 – 350 M"
+Dado que Datos cambia el acompañante vehicular a "obligatoria" en el tramo "> 250 – 350 M"
 Cuando el comercial abre el costeo de una ruta en ese tramo
-Entonces el candado aparece como obligatorio, sin desplegar el backend
+Entonces el acompañante aparece como obligatorio, sin desplegar el backend
 
 Escenario: Ruta sin valor de mercancía
 Dado una ruta sin valor_mercancia
@@ -405,7 +414,7 @@ Entonces ve un aviso de que no se puede aplicar la política de seguros, y "Fina
 
 - [ ] Una cotización por tramo (los 7), revisando las medidas recomendadas y obligatorias contra la tabla aprobada en HU-046.1.
 - [ ] Valores exactamente en el límite (150, 250, 350, 500, 700 y 1.000 M): cada uno cae en el tramo de abajo.
-- [ ] Cumplir la obligación con distintos conexos de la misma medida (por ejemplo, `AVP_MOTO` y `AVP_MOTO_ARMADA`).
+- [ ] Cumplir la obligación con distintos conexos de la misma medida: en 350 – 500 M, con un parcial (`AVP_MOTO`) y con un total (`AVT_AUTO`).
 - [ ] Intentar finalizar sin la medida obligatoria (debe rechazar) y con justificación (debe dejar finalizar y auditar la justificación).
 - [ ] Cambiar un nivel en la base y verificar que el costeo lo refleja sin desplegar.
 - [ ] Reportar los defectos como issues nuevas, en el formato de los E2E (#226, #228).
@@ -420,6 +429,6 @@ Entonces ve un aviso de que no se puede aplicar la política de seguros, y "Fina
   - el tramo;
   - las medidas recomendadas (informativas), incluido el aviso de incluir el seguro;
   - las medidas obligatorias, con su estado cumplida o pendiente.
-- [ ] Para cada medida cobrable, un botón para agregar el conexo que la cumple, reutilizando el flujo actual de agregar conexos. Si hay varios conexos posibles (por ejemplo, moto o moto armada), el comercial escoge.
+- [ ] Para cada medida cobrable (solo los acompañantes), un botón para agregar el conexo que la cumple, reutilizando el flujo actual de agregar conexos. Si hay varios conexos posibles (por ejemplo, parcial en moto o total en auto), el comercial escoge.
 - [ ] Destacar el proyecto especial (700 M o más) y el aviso de ruta sin valor de mercancía.
 - [ ] En "Finalizar", mostrar el rechazo `medidas_obligatorias_faltantes` con la lista de rutas y medidas. Pedir la justificación para continuar (decisión 1).
