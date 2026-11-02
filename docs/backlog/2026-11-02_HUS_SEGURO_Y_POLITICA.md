@@ -1,6 +1,6 @@
 # HU-045 y HU-046 — Seguro de la mercancía y recomendaciones de la política de seguros
 
-> Las decisiones de HU-045 están tomadas. Las de HU-046 (🔶) se cierran en HU-046.1.
+> Las decisiones de HU-045 y de HU-046 están tomadas (2026-11-02). De HU-046 falta validar con negocio la carga inicial y las inconsistencias del PDF (HU-046.1).
 > Relacionadas: política NOGE0076 (`docs/backlog/2026-10-30_POLITICA_SEGUROS_NOGE0076.md`), cálculo del flete (`docs/backlog/2026-10-30_COMO_SE_CALCULA_EL_FLETE.md`) y HU-043 (#251, conexos a precio de venta y sin margen).
 
 ## Lo que ya existe y se reutiliza
@@ -202,7 +202,7 @@ Entonces el seguro aparece como una línea separada "Seguro de la mercancía"
 
   | Tabla | Qué guarda |
   |---|---|
-  | `PoliticaSeguroTramos` | Rangos de valor de la mercancía y quién autoriza. |
+  | `PoliticaSeguroTramos` | Rangos de valor de la mercancía y si el tramo es proyecto especial. |
   | `PoliticaSeguroMedidas` | Catálogo de medidas: esquema básico, GPS, candado, acompañantes, etc. |
   | `PoliticaSeguroTramoMedidas` | Tabla intermedia: qué medida aplica en cada tramo, con nivel `recomendada` u `obligatoria`. |
   | `PoliticaSeguroMedidaConexos` | Qué **códigos** de conexo de Nexo cumplen cada medida. Es lo que permite decir "**algún** acompañante": la obligación se cumple con cualquiera de los conexos de la medida. |
@@ -218,40 +218,47 @@ Entonces el seguro aparece como una línea separada "Seguro de la mercancía"
 
 ### Carga inicial propuesta (la valida negocio en HU-046.1)
 
-| Tramo | Esquema básico | GPS | Candado satelital | Restricción nocturna | Acompañante | Autoriza |
-|---|---|---|---|---|---|---|
-| ≤ 150 M | Recomendada | — | — | — | — | Gerente Regional |
-| > 150 – 250 M | Recomendada | — | Recomendada | — | — | Gerente Regional |
-| > 250 – 350 M | Recomendada | Recomendada | Recomendada | — | — | Gerente Regional |
-| > 350 – 500 M | Recomendada | Recomendada | Recomendada | Recomendada | **Obligatoria: parcial** | Gerente Regional |
-| > 500 – 700 M | Recomendada | Recomendada | Recomendada | Recomendada | **Obligatoria: parcial o total** | Gerente Regional |
-| > 700 – 1.000 M | Recomendada | Recomendada | Recomendada | Recomendada | **Obligatoria: total** | Gerencia (proyecto especial) |
-| > 1.000 M | — | — | — | — | Caso a caso (solo aviso) | Gerencia + Gestión Corporativa |
+| Tramo | Esquema básico | GPS | Candado satelital | Restricción nocturna | Acompañante | Incluir seguro (aviso) | Proyecto especial |
+|---|---|---|---|---|---|---|---|
+| ≤ 150 M | Recomendada | — | — | — | — | — | — |
+| > 150 – 250 M | Recomendada | — | Recomendada | — | — | — | — |
+| > 250 – 350 M | Recomendada | Recomendada | Recomendada | — | — | Recomendada | — |
+| > 350 – 500 M | Recomendada | Recomendada | Recomendada | Recomendada | **Obligatoria: parcial** | Recomendada | — |
+| > 500 – 700 M | Recomendada | Recomendada | Recomendada | Recomendada | **Obligatoria: parcial o total** | Recomendada | — |
+| > 700 – 1.000 M | Recomendada | Recomendada | Recomendada | Recomendada | **Obligatoria: total** | Recomendada | Sí |
+| > 1.000 M | — | — | — | — | Caso a caso (solo aviso) | — | Sí |
+
+- **Límites:** `desde` exclusivo y `hasta` incluido, en pesos fijos. Exactamente 250 M cae en "> 150 – 250 M".
+- **Quién autoriza no se guarda** (decisión del 2026-11-02): era solo informativo. Los tramos de 700 M en adelante muestran "proyecto especial".
 
 Qué conexos cumplen cada medida:
 - `acompanante_parcial` → `AVP_MOTO`, `AVP_MOTO_ARMADA`;
 - `acompanante_total` → `AVT_AUTO`, `AVT_MOTO`, `AVT_MOTO_ARMADA`;
 - `acompanante_parcial_o_total` → los 5 anteriores;
-- `candado_satelital` → `PRE_BSAT` (falta confirmar).
+- `candado_satelital` → `PRE_BSAT` (falta confirmar);
+- `incluir_seguro` → ninguno. Es un aviso: "si el cliente no tiene póliza propia, incluye el seguro de la mercancía" (HU-045). La política pide la póliza específica desde 250 M cuando el cliente no tiene póliza propia.
 
 > El PDF pone el candado y el GPS como obligatorios desde 250 M. Por decisión de producto quedan como **recomendación**. Si negocio los quiere obligatorios, se cambia el `nivel` en la tabla intermedia, sin tocar el código.
 
-### 🔶 Decisiones que se cierran en HU-046.1
-1. **"Obligatoria" bloquea "Finalizar".** ¿Se permite saltar el bloqueo con una justificación escrita, como el margen bajo el sugerido? **Recomendado: sí**, para los casos que Riesgo aprueba aparte. La justificación queda auditada.
-2. **¿El tramo se calcula por ruta o por camión?** Ejemplo: una ruta de 3 camiones con $900 M en total. **Recomendado: por camión** (valor de la ruta / número de camiones que cuentan), porque la política habla del valor del despacho.
-3. **Límites.** **Recomendado:** `desde` exclusivo y `hasta` inclusivo (exactamente 250 M cae en "> 150 – 250 M"), y en pesos fijos, no en SMLMV.
-4. **Ruta sin `valor_mercancia`.** **Recomendado:** se muestra un aviso y no bloquea.
-5. **Acompañante armado o no armado.** Hay que definir si algún tramo exige el armado. Si no, cualquiera de los dos cumple.
-6. **Recomendar el seguro (HU-045).** **Recomendado:** sí, recomendar "incluir seguro" en los tramos donde la política pide la póliza específica cuando el cliente no tiene póliza propia.
-7. **Cotizaciones que ya existen.** **Recomendado:** la regla aplica solo a las que **todavía no están finalizadas**. Las finalizadas no se tocan (HU-036).
+### Decisiones tomadas (2026-11-02, @scalderon-bs)
+1. **Finalizar sin la medida obligatoria:** se permite con una justificación escrita, que queda auditada.
+2. **El tramo se calcula por ruta**, con el `valor_mercancia` total de la ruta. No se divide por camión: solo hay un valor de mercancía por ruta.
+3. **Límites:** `desde` exclusivo y `hasta` incluido; el límite cae en el tramo de abajo (exactamente 250 M es "> 150 – 250 M"). En pesos fijos, no en SMLMV.
+4. **`valor_mercancia` obligatorio:** basta con que lo exija el front. El backend igual muestra un aviso si una ruta llega sin él, y no bloquea por eso.
+5. **Acompañante armado:** ningún tramo lo exige; cumple cualquiera de los dos (armado o no).
+6. **Recomendar el seguro (HU-045):** solo un aviso, porque Cotifly no sabe si el cliente tiene póliza propia. Es la medida `incluir_seguro`, recomendada desde 250 M, sin conexos.
+7. **Cotizaciones existentes:** la regla aplica solo a las que todavía no están finalizadas. Las finalizadas no se tocan (HU-036).
+8. **Quién autoriza no se guarda en la base:** era solo informativo y no es relevante para Cotifly. Se conserva la marca de proyecto especial (700 M en adelante).
+
+Lo que falta validar con negocio en HU-046.1: la carga inicial, tramo por tramo, y las inconsistencias del PDF.
 
 ### Criterios de aceptación (Gherkin)
 ```gherkin
 Escenario: Ruta en un tramo con acompañante obligatorio
 Dado una ruta con un camión y valor_mercancia de $400.000.000
 Cuando el comercial abre el costeo
-Entonces ve el tramo "> 350 – 500 M", autoriza "Gerente Regional"
-Y ve como recomendadas: esquema básico, GPS, candado satelital y restricción nocturna
+Entonces ve el tramo "> 350 – 500 M"
+Y ve como recomendadas: esquema básico, GPS, candado satelital, restricción nocturna e incluir el seguro
 Y ve como obligatoria: acompañante vehicular parcial, marcada como "pendiente"
 
 Escenario: La obligación se cumple con cualquier conexo de la medida
@@ -265,7 +272,7 @@ Cuando el comercial intenta finalizar la cotización
 Entonces recibe 409 COTIZACION_NO_FINALIZABLE con detalle.motivo = "medidas_obligatorias_faltantes"
 Y el detalle lista la ruta y la medida que falta
 
-Escenario: Finalizar con justificación (si se aprueba la decisión 1)
+Escenario: Finalizar con justificación
 Dado la cotización del escenario anterior
 Cuando el comercial finaliza enviando una justificación
 Entonces la cotización se finaliza y la justificación queda auditada
@@ -275,10 +282,21 @@ Dado una ruta con valor_mercancia de $100.000.000
 Cuando el comercial abre el costeo
 Entonces solo ve "esquema básico" como recomendado y nada obligatorio
 
+Escenario: Valor justo en el límite
+Dado una ruta con valor_mercancia de exactamente $250.000.000
+Cuando el comercial abre el costeo
+Entonces la ruta cae en el tramo "> 150 – 250 M"
+Y no ve el aviso de incluir el seguro
+
+Escenario: El tramo es de la ruta, no del camión
+Dado una ruta de 3 camiones con valor_mercancia de $900.000.000
+Cuando el comercial abre el costeo
+Entonces la ruta cae en el tramo "> 700 – 1.000 M"
+
 Escenario: Proyecto especial
 Dado una ruta con valor_mercancia de $800.000.000
 Cuando el comercial abre el costeo
-Entonces ve que es proyecto especial, que lo autoriza la Gerencia y que el acompañante total es obligatorio
+Entonces ve que es proyecto especial y que el acompañante total es obligatorio
 
 Escenario: Cambio de la política sin despliegue
 Dado que Datos cambia el candado satelital a "obligatoria" en el tramo "> 250 – 350 M"
@@ -292,7 +310,7 @@ Entonces ve un aviso de que no se puede aplicar la política de seguros, y "Fina
 ```
 
 ### Trazabilidad (event storming)
-- **Lectura:** Requisitos de la política de la ruta (tramo, autoriza, medidas recomendadas y obligatorias, cumplidas o pendientes). Se arma con `valor_mercancia` y las 4 tablas.
+- **Lectura:** Requisitos de la política de la ruta (tramo, proyecto especial, medidas recomendadas y obligatorias, cumplidas o pendientes). Se arma con `valor_mercancia` y las 4 tablas.
 - **Comando:** Agregar el conexo sugerido → **Evento:** Conexo agregado a la ruta (con su `codigoServicio`) → **Política:** La medida queda cumplida.
 - **Comando:** Finalizar la cotización → **Política:** Medidas obligatorias cumplidas → **Evento:** Cotización finalizada, o rechazo con `medidas_obligatorias_faltantes`.
 - **Comando (Datos):** Cambiar la política en las tablas → **Evento:** Política actualizada. Afecta solo las cotizaciones no finalizadas.
@@ -314,7 +332,7 @@ Entonces ve un aviso de que no se puede aplicar la política de seguros, y "Fina
 > **Solo evaluación y propuesta.** No se crea ninguna tabla ni se cambia código. Lo aprobado aquí lo construyen HU-046.2 y HU-046.3.
 
 - [ ] Llevar a negocio (Dirección Comercial, Gestión Corporativa y Administración de Riesgo) la **carga inicial propuesta** de la milestone, tramo por tramo, y dejar escrito qué se aprueba y qué se cambia.
-- [ ] Cerrar las 7 decisiones 🔶 de la milestone (justificación, ruta o camión, límites, sin valor de mercancía, armado, recomendar el seguro, cotizaciones existentes).
+- [x] Cerrar las 7 decisiones de la milestone (justificación, ruta o camión, límites, sin valor de mercancía, armado, recomendar el seguro, cotizaciones existentes).
 - [ ] Cerrar las inconsistencias del PDF (sección 7 de `docs/backlog/2026-10-30_POLITICA_SEGUROS_NOGE0076.md`):
   - tramo 1 sin seguro definido;
   - cifra con error de digitación;
@@ -336,7 +354,6 @@ Entonces ve un aviso de que no se puede aplicar la política de seguros, y "Fina
     - `nombre NVARCHAR(60)`;
     - `valorDesde DECIMAL(18,2) NOT NULL` (exclusivo);
     - `valorHasta DECIMAL(18,2) NULL` (inclusivo; NULL = sin tope);
-    - `autoriza NVARCHAR(40)` con CHECK (`gerente_regional`, `gerencia`, `gerencia_gestion_corporativa`);
     - `proyectoEspecial BIT`;
     - `nota NVARCHAR(500) NULL`;
     - `isActive BIT`, `updatedAt DATETIMEOFFSET`.
@@ -346,7 +363,7 @@ Entonces ve un aviso de que no se puede aplicar la política de seguros, y "Fina
   - [ ] `PoliticaSeguroTramoMedidas`: `tramoId` FK, `medidaId` FK, `nivel NVARCHAR(20)` con CHECK (`recomendada`, `obligatoria`), `nota NVARCHAR(300) NULL`. UNIQUE (`tramoId`, `medidaId`).
   - [ ] `PoliticaSeguroMedidaConexos`: `medidaId` FK, `codigoServicio NVARCHAR(40)` (código del catálogo de Nexo, sin FK porque es de otra base). UNIQUE (`medidaId`, `codigoServicio`).
   - [ ] En `CotizacionServiciosConexos`: la columna `codigoServicio NVARCHAR(40) NULL`. Las filas existentes quedan en NULL y el backend las completa (HU-046.3).
-- [ ] Carga inicial con lo aprobado en HU-046.1: tramos, medidas, tabla intermedia y conexos de cada medida.
+- [ ] Carga inicial con lo aprobado en HU-046.1: tramos, medidas (incluida `incluir_seguro`, sin conexos), tabla intermedia y conexos de cada medida.
 - [ ] Validar en el script que los tramos activos **no se solapan ni dejan huecos**. Si encuentra uno de los dos, el script se detiene sin cambiar nada (`THROW`).
 - [ ] Script de operación con ejemplos para cambiar la política: cambiar el nivel de una medida, agregar un conexo a una medida, mover un límite.
 - [ ] Probado en Docker antes de la compartida. Documentado en `db/README.md`, `BASE_DE_DATOS.md` y `docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md`.
@@ -359,16 +376,16 @@ Entonces ve un aviso de que no se puede aplicar la política de seguros, y "Fina
 
 - [ ] Mapear las 4 tablas y la columna `codigoServicio` de `CotizacionServiciosConexos`.
 - [ ] Guardar `codigoServicio` al agregar un conexo. Ya viene en el catálogo de Nexo que lee `clsServiciosConexosNexo`. Completar las filas existentes que lo tengan en NULL la próxima vez que se lea el catálogo.
-- [ ] Calcular el tramo de cada ruta con `valor_mercancia`, según lo aprobado en HU-046.1 (por ruta o por camión, y regla de límites).
+- [ ] Calcular el tramo de cada ruta con su `valor_mercancia` total (por ruta, no por camión), con `valorDesde` exclusivo y `valorHasta` incluido: exactamente 250 M cae en "> 150 – 250 M".
 - [ ] En `GET /web/cotizaciones/{folio}/costeo`, devolver por ruta un bloque `politica_seguros` con:
-  - el tramo y quién autoriza;
+  - el tramo;
   - si es proyecto especial;
   - las medidas **recomendadas**;
   - las medidas **obligatorias**, cada una con estado `cumplida` o `pendiente` y los códigos de conexo que la cumplen (para el botón "agregar");
   - la nota del tramo;
   - un aviso si falta `valor_mercancia`.
 - [ ] En "Finalizar" (HU-036.2), rechazar con `COTIZACION_NO_FINALIZABLE` y `detalle.motivo = medidas_obligatorias_faltantes` si una ruta cotizable tiene una medida obligatoria pendiente. El detalle lista cada ruta y su medida.
-- [ ] Si se aprueba la decisión 1: aceptar una justificación al finalizar que salta el bloqueo, y auditarla en `EventosHerramienta`.
+- [ ] Aceptar una justificación al finalizar que salta el bloqueo (decisión 1), y auditarla en `EventosHerramienta`.
 - [ ] Las rutas rechazadas por la Mesa de Costeo no cuentan. Las cotizaciones finalizadas no se recalculan.
 - [ ] Actualizar `openapi.yaml` y `docs/docs_front/CONTRATOS_API_COTIFLY_FRONTEND.md`.
 - [ ] Tests:
@@ -378,7 +395,7 @@ Entonces ve un aviso de que no se puede aplicar la política de seguros, y "Fina
   - bloqueo y justificación en "Finalizar";
   - un cambio en las tablas se refleja sin desplegar;
   - ruta sin `valor_mercancia`;
-  - cálculo por camión (si se aprueba).
+  - una ruta de varios camiones usa el valor total de la ruta.
 
 ### [HU-046.4] [QA] Validar la política de seguros de punta a punta
 **Labels:** `qa`
@@ -386,10 +403,10 @@ Entonces ve un aviso de que no se puede aplicar la política de seguros, y "Fina
 **Asignado a:** Kevin (QA)
 **Parte de HU-046 (milestone). Depende de HU-046.3 y HU-046-FE.1.**
 
-- [ ] Una cotización por tramo (los 7), revisando las medidas recomendadas y obligatorias y quién autoriza contra la tabla aprobada en HU-046.1.
-- [ ] Valores exactamente en el límite (150, 250, 350, 500, 700 y 1.000 M).
+- [ ] Una cotización por tramo (los 7), revisando las medidas recomendadas y obligatorias contra la tabla aprobada en HU-046.1.
+- [ ] Valores exactamente en el límite (150, 250, 350, 500, 700 y 1.000 M): cada uno cae en el tramo de abajo.
 - [ ] Cumplir la obligación con distintos conexos de la misma medida (por ejemplo, `AVP_MOTO` y `AVP_MOTO_ARMADA`).
-- [ ] Intentar finalizar sin la medida obligatoria (debe rechazar) y con justificación (si se aprobó).
+- [ ] Intentar finalizar sin la medida obligatoria (debe rechazar) y con justificación (debe dejar finalizar y auditar la justificación).
 - [ ] Cambiar un nivel en la base y verificar que el costeo lo refleja sin desplegar.
 - [ ] Reportar los defectos como issues nuevas, en el formato de los E2E (#226, #228).
 
@@ -400,9 +417,9 @@ Entonces ve un aviso de que no se puede aplicar la política de seguros, y "Fina
 **Parte de HU-046 (milestone en `Cotifly`). Depende de HU-046.3 (contrato). No arrancar hasta que el contrato esté publicado.**
 
 - [ ] En cada ruta del costeo, un panel "Política de seguros" con:
-  - el tramo y quién autoriza;
-  - las medidas recomendadas (informativas);
+  - el tramo;
+  - las medidas recomendadas (informativas), incluido el aviso de incluir el seguro;
   - las medidas obligatorias, con su estado cumplida o pendiente.
 - [ ] Para cada medida cobrable, un botón para agregar el conexo que la cumple, reutilizando el flujo actual de agregar conexos. Si hay varios conexos posibles (por ejemplo, moto o moto armada), el comercial escoge.
 - [ ] Destacar el proyecto especial (700 M o más) y el aviso de ruta sin valor de mercancía.
-- [ ] En "Finalizar", mostrar el rechazo `medidas_obligatorias_faltantes` con la lista de rutas y medidas. Si se aprobó, pedir la justificación para continuar.
+- [ ] En "Finalizar", mostrar el rechazo `medidas_obligatorias_faltantes` con la lista de rutas y medidas. Pedir la justificación para continuar (decisión 1).
