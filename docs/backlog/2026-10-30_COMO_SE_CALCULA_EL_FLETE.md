@@ -84,5 +84,5 @@ Mismo ejemplo: 2.000.000 / 0,80 = $2.500.000, más el precinto a su precio de ve
 
 - [ ] ¿Negocio está de acuerdo con que los conexos se cobren sin margen (HU-043)? ¿O hay conexos que sí deberían llevarlo?
 - [ ] ¿Cuándo se usa **margen** y cuándo **markup**? ¿Quién lo decide?
-- [ ] Con la política de seguros (`2026-10-30_POLITICA_SEGUROS_NOGE0076.md`): los conexos obligatorios por valor de mercancía (acompañante, precinto) ¿se muestran **aparte** del flete en la cotización, o **sumados en un solo total**?
+- [ ] Con la política de seguros (NOGE0076, documento interno: no se guarda en el repo): los conexos obligatorios por valor de mercancía (acompañante, precinto) ¿se muestran **aparte** del flete en la cotización, o **sumados en un solo total**?
 - [ ] ¿De dónde saca Nexo el costo de cada camión? Pendiente de revisar.

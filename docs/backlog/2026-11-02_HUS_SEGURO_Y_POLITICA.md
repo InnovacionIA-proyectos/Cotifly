@@ -1,7 +1,7 @@
 # HU-045 y HU-046 — Seguro de la mercancía y recomendaciones de la política de seguros
 
 > Las decisiones de HU-045 están tomadas. Las de HU-046 (🔶) se cierran en HU-046.1.
-> Relacionadas: política NOGE0076 (`docs/backlog/2026-10-30_POLITICA_SEGUROS_NOGE0076.md`), cálculo del flete (`docs/backlog/2026-10-30_COMO_SE_CALCULA_EL_FLETE.md`) y HU-043 (#251, conexos a precio de venta y sin margen).
+> Relacionadas: política NOGE0076 (documento interno de la empresa: no se guarda en el repo), cálculo del flete (`docs/backlog/2026-10-30_COMO_SE_CALCULA_EL_FLETE.md`) y HU-043 (#251, conexos a precio de venta y sin margen).
 
 ## Lo que ya existe y se reutiliza
 - **La tabla de rutas** es `dbo_cotifly.CotizacionLineasSolicitud`. Ya tiene `valorMercancia DECIMAL(18,2) NULL`, que se captura en el formulario, en la licitación y en la edición (`datos_carga.valor_mercancia`). Hoy no se usa para ningún cálculo.
@@ -192,7 +192,7 @@ Entonces el seguro aparece como una línea separada "Seguro de la mercancía"
 **para** cumplir la política NOGE0076 sin memorizarla, y no finalizar una cotización a la que le falta el acompañante que exige la política.
 
 ### Contexto técnico
-- **Fuente:** política NOGE0076 v2 (06-feb-2023), resumida en `docs/backlog/2026-10-30_POLITICA_SEGUROS_NOGE0076.md`. La sección 7 de ese md lista las inconsistencias del PDF que hay que cerrar con negocio.
+- **Fuente:** política NOGE0076 v2 (06-feb-2023), documento interno de la empresa que no se guarda en el repo. Sus inconsistencias, que hay que cerrar con negocio, están listadas en HU-046.1.
 - **Dato de entrada:** `CotizacionLineasSolicitud.valorMercancia`, que ya existe.
 - **Las reglas viven en 4 tablas, no en el código.** Así un cambio de la política es un cambio de datos y no un despliegue:
 
@@ -315,7 +315,7 @@ Entonces ve un aviso de que no se puede aplicar la política de seguros, y "Fina
 
 - [ ] Llevar a negocio (Dirección Comercial, Gestión Corporativa y Administración de Riesgo) la **carga inicial propuesta** de la milestone, tramo por tramo, y dejar escrito qué se aprueba y qué se cambia.
 - [ ] Cerrar las 7 decisiones 🔶 de la milestone (justificación, ruta o camión, límites, sin valor de mercancía, armado, recomendar el seguro, cotizaciones existentes).
-- [ ] Cerrar las inconsistencias del PDF (sección 7 de `docs/backlog/2026-10-30_POLITICA_SEGUROS_NOGE0076.md`):
+- [ ] Cerrar las inconsistencias del PDF de la política:
   - tramo 1 sin seguro definido;
   - cifra con error de digitación;
   - pesos vs SMLMV;
