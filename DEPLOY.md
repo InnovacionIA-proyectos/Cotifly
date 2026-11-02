@@ -331,7 +331,7 @@ COMMIT;
 
 ### Multi-rol (HU-040, #229 y #230)
 
-`db/scripts/16_multiples_roles_activos.sql` (#229, propuesta pendiente de revisión de @scalderon-bs) retira el índice único
+`db/scripts/16_multiples_roles_activos.sql` (#229, aprobado por @scalderon-bs el 2026-11-02) retira el índice único
 `uq_usuariosRoles_usuarioId_activo`: una persona puede tener varias asignaciones activas en `UsuariosRoles` (una por rol; la unicidad
 usuario + rol sigue). Además agrega `TokensRefresco.rolSesion` (el rol con el que se emitió la sesión). No cambia ninguna fila.
 

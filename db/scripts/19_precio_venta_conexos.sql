@@ -1,5 +1,5 @@
 /* ============================================================================
-   Cotifly — 19: precio de venta en los conexos (PROPUESTA, pendiente de revisión de @scalderon-bs)
+   Cotifly — 19: precio de venta en los conexos (APROBADO por @scalderon-bs el 2026-11-02)
    ============================================================================
    HU-043.1 (#245). La consume HU-043.2. Origen: plan "Precio de venta de los servicios conexos"
    (2026-10-28, docs/backlog/2026-10-28_ISSUES-PRECIO-VENTA-CONEXOS.md en NEXO); relacionada con
