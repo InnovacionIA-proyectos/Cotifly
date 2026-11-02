@@ -169,6 +169,7 @@ erDiagram
         uniqueidentifier lineaSolicitudId FK
         nvarchar64 idServicioConexo "unico por ruta"
         nvarchar200 nombreServicioConexo "0010, copia"
+        nvarchar40 codigoServicio "21, codigo del catalogo de Nexo"
         decimal18_2 precio "costo unitario de Nexo"
         decimal10_2 cantidad
         datetimeoffset createdAt
@@ -176,8 +177,9 @@ erDiagram
     }
 ```
 
-El diagrama muestra las columnas de `0001` a `0010` (lo que crea el `01`) y, marcadas con `20`, las del seguro de la
-mercancía (HU-045.1, #263); las de los demás ajustes (`02` a `19` y `pendientes/04`) están en las tablas de §A.4.
+El diagrama muestra las columnas de `0001` a `0010` (lo que crea el `01`), marcadas con `20` las del seguro de la
+mercancía (HU-045.1, #263) y con `21` el código del conexo (HU-046.2, #268); las de los demás ajustes (`02` a `19` y
+`pendientes/04`) están en las tablas de §A.4.
 
 Los tipos del diagrama van sin paréntesis porque Mermaid no los admite: `nvarchar50` es `NVARCHAR(50)`, `decimal18_2` es
 `DECIMAL(18,2)` y `nvarcharmax` es `NVARCHAR(MAX)`.
@@ -218,6 +220,9 @@ erDiagram
     UsuariosWeb |o--o{ CotizacionPdfsHistorial : "usuarioId"
     UsuariosWeb |o--o{ Correos : "confirmadoPor"
     Correos ||--|{ CorreoDestinatarios : "correoId"
+    PoliticaSeguroTramos ||--o{ PoliticaSeguroTramoMedidas : "tramoId (21)"
+    PoliticaSeguroMedidas ||--o{ PoliticaSeguroTramoMedidas : "medidaId (21)"
+    PoliticaSeguroMedidas ||--o{ PoliticaSeguroMedidaConexos : "medidaId (21)"
 
     UsuariosWeb {
         uniqueidentifier id PK
@@ -252,6 +257,27 @@ erDiagram
         datetimeoffset vigenteDesde
         bit isActive UK "una sola activa (20)"
         datetimeoffset updatedAt
+    }
+    PoliticaSeguroTramos {
+        int id PK
+        nvarchar60 nombre
+        decimal18_2 valorDesde "exclusivo (21)"
+        decimal18_2 valorHasta "incluido, NULL sin tope"
+        bit proyectoEspecial
+    }
+    PoliticaSeguroMedidas {
+        int id PK
+        nvarchar40 codigo UK
+        bit esCobrable "solo acompanantes"
+    }
+    PoliticaSeguroTramoMedidas {
+        int tramoId PK
+        int medidaId PK
+        nvarchar20 nivel "recomendada | obligatoria"
+    }
+    PoliticaSeguroMedidaConexos {
+        int medidaId PK
+        nvarchar40 codigoServicio PK "catalogo de Nexo"
     }
     SapMapeoTrqType {
         nvarchar8 trqType PK
@@ -404,6 +430,7 @@ Estados de costeo (cabecera, ruta y camión, 8): `pendiente_envio`, `error_envio
 | `idServicioConexoCatalogo` | nv(64) | sí | | **`03`.** Id del catálogo de Nexo del conexo. NULL en las filas anteriores a HU-014 (#188) |
 | `categoriaServicioConexo` | nv(20) | sí | | **`05`.** Categoría del catálogo de Nexo (`logistico`, `adicional`...). Sin CHECK: el catálogo puede crecer |
 | `precioVenta` | dec(18,2) | no | | **`19`.** HU-043.1 (#245). Precio de venta al cliente; backfill = `precio` en las filas existentes. CHECK ≥ 0 (mismo `ck_cotizacionServiciosConexos_montos`, ampliado) |
+| `codigoServicio` | nv(40) | sí | | **`21`.** HU-046.2 (#268). Código del catálogo de Nexo (`AVT_AUTO`…); con él se cruza el conexo con las medidas de la política de seguros. NULL en las filas anteriores al `21`; el backend lo completa (HU-046.3) |
 
 ### A.4.6 Otras tablas de cotizaciones
 
@@ -451,6 +478,10 @@ Sin cambios de estructura en HU-021 (salvo el catálogo de líneas de negocio de
 |---|---|---|
 | `MargenesPolitica` | `id` int identity; único `lineaNegocio` | `mapeoLineasNexo`, `margen` dec(9,4), `metodoCalculo` (`'margen'`), `isActive`, `updatedAt` |
 | `TarifasSeguro` | `id` int identity; único filtrado `uq_tarifasSeguro_activa` (`isActive`) `WHERE isActive = 1` | Script `20`, HU-045.1 (#263). `tasa` dec(9,6) (CHECK > 0 y < 1; inicial 0.003450 = 0,345 %), `vigenteDesde`, `isActive`, `updatedAt`. Una sola activa; las viejas se desactivan, no se borran (`db/scripts/operacion/cambiar_tasa_seguro.sql`) |
+| `PoliticaSeguroTramos` | `id` int identity; único filtrado `uq_politicaSeguroTramos_valorDesde_activo` (`valorDesde`) `WHERE isActive = 1` | Script `21`, HU-046.2 (#268). `nombre` nv(60), `valorDesde` dec(18,2) exclusivo, `valorHasta` dec(18,2) incluido o NULL (sin tope), CHECK `valorDesde >= 0` y `valorHasta > valorDesde`; `proyectoEspecial`, `nota` nv(500), `isActive`, `updatedAt`. Los activos son contiguos (lo valida el `21` y el script de operación) |
+| `PoliticaSeguroMedidas` | `id` int identity; único `codigo` nv(40) | Script `21`. `nombre` nv(100), `descripcion` nv(300), `esCobrable`, `isActive`, `updatedAt` |
+| `PoliticaSeguroTramoMedidas` | (`tramoId`, `medidaId`), FK a las dos | Script `21`. `nivel` nv(20) CHECK `recomendada` \| `obligatoria`, `nota` nv(300), `updatedAt`. Índice `ix_politicaSeguroTramoMedidas_medidaId` |
+| `PoliticaSeguroMedidaConexos` | (`medidaId`, `codigoServicio`), FK a `PoliticaSeguroMedidas` | Script `21`. `codigoServicio` nv(40) del catálogo de Nexo (sin FK: otra base), `updatedAt` |
 | `SapMapeoTrqType` | (`trqType`, `salesOrg`) | `lineaNegocio` (texto, original), `lineaNegocioId` int NOT NULL FK `MargenesPolitica(id)` (script `18`, HU-042.4, #247 — conviven mientras el backend se adapta a leer por id; `lineaNegocio` se retira después), `activo` |
 | `SapMargenCliente` | `id` uid; único (`salesOrgId`, `trqType`, `bpSap`) | `nit` nv(20) nulo (resuelto por BP contra el DW `DWCubosOperacionesEBS.dbo.DimBPSolicitante`), `margenRecomendado` dec(9,4), `activo` (soft delete), `creadoAt`, `actualizadoAt`. Script `17` (HU-042.1, #242); no la lee `backend-dotnet` todavía (HU-042.2, #243) |
 | `SapMargenSyncLog` | `id` uid | Log append-only de las corridas del job de `SapMargenCliente`: `iniciadoAt`, `finalizadoAt`, `filasInsertadas`, `filasActualizadas`, `filasDesactivadas`, `status` (CHECK `ok`\|`error`\|`omitido`), `mensajeError`. Script `17` |
@@ -502,8 +533,9 @@ retiraron en HU-014.3 (#152) con `db/scripts/08_retirar_vistas_actividad.sql`, j
 | `db/scripts/18_sap_mapeo_fk_margenes_politica.sql` | **HU-042.4, #247:** agrega `SapMapeoTrqType.lineaNegocioId INT NOT NULL` con FK a `MargenesPolitica(id)`, con backfill por texto verificado (se detiene si algo no cruza). No borra `lineaNegocio` (texto) todavía — transición en 2 pasos, hasta que el backend (#247) deje de leerla. Idempotente; ya aplicado en la base compartida de pruebas (2026-10-28) |
 | `db/scripts/19_precio_venta_conexos.sql` | **HU-043.1 (#245):** `CotizacionServiciosConexos.precioVenta DECIMAL(18,2) NOT NULL`, junto a `precio` (que sigue siendo el costo unitario). Backfill: `precioVenta = precio` en las filas existentes (ninguna cotización cambia de valor). Amplía `ck_cotizacionServiciosConexos_montos` para exigir también `precioVenta >= 0`. Idempotente, corre dos veces sin error (verificado); ya aplicado en la base compartida de pruebas (2026-10-28). No depende de ningún otro ajuste; se puede aplicar antes del backend (HU-043.2 la consume) |
 | `db/scripts/20_seguro_mercancia.sql` | **HU-045.1 (#263):** tabla nueva `TarifasSeguro` (la tasa del seguro de la mercancía con su historia; una sola activa por el índice único filtrado `uq_tarifasSeguro_activa`; fila inicial `0.003450` = 0,345 %, solo si la tabla está vacía) y, en `CotizacionLineasSolicitud`, `incluyeSeguro BIT NOT NULL DEFAULT 0`, `tasaSeguroAplicada DECIMAL(9,6) NULL` y `costoSeguro DECIMAL(18,2) NULL` con `ck_cotizacionLineasSolicitud_seguroMontos` y `ck_cotizacionLineasSolicitud_seguroIncluido`. Las rutas existentes quedan sin seguro (ninguna cotización cambia de valor). Idempotente, no destructivo, en el ejecutador. No lo exige `/health/ready` hasta que HU-045.2 mapee las columnas. La tasa se cambia con `db/scripts/operacion/cambiar_tasa_seguro.sql` |
+| `db/scripts/21_politica_seguros.sql` | **HU-046.2 (#268):** la política de seguros por valor de la mercancía en 4 tablas nuevas (`PoliticaSeguroTramos`, `PoliticaSeguroMedidas`, `PoliticaSeguroTramoMedidas`, `PoliticaSeguroMedidaConexos`) con la carga aprobada en HU-046.1 (#267): 7 tramos, 7 medidas, 25 reglas y 8 conexos; y `CotizacionServiciosConexos.codigoServicio NVARCHAR(40) NULL`. Siembra solo con las 4 tablas vacías; valida que los tramos activos sean contiguos y que toda medida obligatoria tenga conexos (si no, THROW y no aplica nada). Idempotente, no destructivo, en el ejecutador. No lo exige `/health/ready` hasta HU-046.3. La política se cambia con `db/scripts/operacion/cambiar_politica_seguros.sql` |
 
-Las columnas de los ajustes `02`, `03`, `pendientes/04`, `05`, `09`, `10`, `11`, `12`, `13`, `14`, `16` y `20` están en las tablas de §A.4 (marcadas
+Las columnas de los ajustes `02`, `03`, `pendientes/04`, `05`, `09`, `10`, `11`, `12`, `13`, `14`, `16`, `20` y `21` están en las tablas de §A.4 (marcadas
 con el número del script) y la tabla del `06` en §A.4.6.1; el detalle de cada cambio está en la cabecera de su script. Además,
 `db/scripts/operacion/` guarda scripts de operación puntual (no cambian el esquema) y `db/migrations_mssql/rollback/` la reversa
 del `0006`.
