@@ -1,7 +1,7 @@
 # Decisiones de HU-046 — Política de seguros por valor de la mercancía
 
 > **Fecha:** 2026-11-02 · **Decidió:** @scalderon-bs (Datos / Producto) · **Issue:** HU-046.1 (#267) · **Milestone:** HU-046
-> **Fuente:** política NOGE0076 v2 (06-feb-2023), resumida en [`2026-10-30_POLITICA_SEGUROS_NOGE0076.md`](2026-10-30_POLITICA_SEGUROS_NOGE0076.md).
+> **Fuente:** política NOGE0076 v2 (06-feb-2023), documento interno de la empresa: no se guarda en el repo.
 > La HU completa está en [`2026-11-02_HUS_SEGURO_Y_POLITICA.md`](2026-11-02_HUS_SEGURO_Y_POLITICA.md).
 
 Estas son las decisiones de producto de HU-046. Con ellas se construyen HU-046.2 (las tablas, #268), HU-046.3 (el
