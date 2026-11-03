@@ -139,7 +139,7 @@ public sealed partial class clsManifiestosDespliegueTests
     [Fact]
     public void LosSecretosNoTienenValorPorDefecto()
     {
-        var secretos = new[] { "Cubicador__ApiKey", "IA__ApiKey", "Jwt__SigningKey", "ConnectionStrings__Cotifly", "Cubicador__UrlBase" };
+        var secretos = new[] { "Cubicador__ApiKey", "IA__ApiKey", "Jwt__SigningKey", "ConnectionStrings__Cotifly", "Cubicador__UrlBase", "SapTm__Pass", "ConnectionStrings__DwOperaciones" };
         foreach (var manifiesto in Manifiestos)
         {
             var variables = Variables(manifiesto);

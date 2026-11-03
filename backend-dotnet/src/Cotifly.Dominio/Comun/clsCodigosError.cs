@@ -401,4 +401,17 @@ public static class clsCodigosError
     /// solo faltó el comentario. Código nuevo del backend .NET.
     /// </summary>
     public const string MotivoNoPermitido = "MOTIVO_NO_PERMITIDO";
+
+    /// <summary>
+    /// HU-042.2 (#243, ADR-027): <c>GET /web/admin/sap-margen/estado</c> o <c>POST /web/admin/sap-margen/sincronizar</c> en un ambiente sin
+    /// la sincronización del margen de SAP TM configurada (falta <c>SapTm:Url</c>, <c>SapTm:User</c> o <c>SapTm:Pass</c>). El margen sigue
+    /// con la copia local existente o, sin ella, con la política de la línea. 503. Código nuevo del backend .NET.
+    /// </summary>
+    public const string SapMargenNoConfigurado = "SAP_MARGEN_NO_CONFIGURADO";
+
+    /// <summary>
+    /// HU-042.2 (#243, ADR-027): <c>POST /web/admin/sap-margen/sincronizar</c> mientras esta réplica ya sincroniza el margen de SAP TM (el
+    /// worker o otra petición). Nada cambia; se reintenta cuando termine. 409. Código nuevo del backend .NET.
+    /// </summary>
+    public const string SapMargenSincronizacionEnCurso = "SAP_MARGEN_SINCRONIZACION_EN_CURSO";
 }

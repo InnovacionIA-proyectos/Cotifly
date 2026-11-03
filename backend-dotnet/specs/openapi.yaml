@@ -70,7 +70,9 @@ tags:
   - name: web
     description: Consola de cotización del comercial
   - name: admin
-    description: Administración de políticas de margen (roles gerente_comercial y director, HU-037)
+    description: |
+      Administración de políticas de margen (roles gerente_comercial y director, HU-037) y de la sincronización del margen de
+      SAP TM (HU-042.2, #243, ADR-027).
   - name: metricas
     description: |
       Tablero de métricas agregadas (HU-010.1, ADR-016). `GET /web/metricas/comercial` (las cotizaciones
@@ -1012,6 +1014,76 @@ paths:
           $ref: '#/components/responses/CuerpoDemasiadoGrande'
         '415':
           $ref: '#/components/responses/TipoContenidoNoSoportado'
+
+  /web/admin/sap-margen/estado:
+    get:
+      operationId: obtenerEstadoSincronizacionMargenSap
+      tags: [admin]
+      summary: Estado de la sincronización del margen de SAP TM (HU-042.2)
+      description: |
+        Solo `gerente_comercial` y `director`. La copia local `SapMargenCliente` la sincroniza el backend con SAP TM (ADR-027):
+        última corrida (cualquier estado), última corrida `ok`, filas activas y la próxima corrida estimada por el worker de la
+        réplica que responde. Sin `SapTm:Url`, `SapTm:User` o `SapTm:Pass` en el ambiente responde 503 `SAP_MARGEN_NO_CONFIGURADO`.
+      security:
+        - bearer: []
+      responses:
+        '200':
+          description: Estado de la copia local y de sus corridas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EstadoSincronizacionMargenSap'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '503':
+          description: '`SAP_MARGEN_NO_CONFIGURADO`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+
+  /web/admin/sap-margen/sincronizar:
+    post:
+      operationId: sincronizarMargenSap
+      tags: [admin]
+      summary: Fuerza una sincronización del margen de SAP TM (HU-042.2)
+      description: |
+        Solo `gerente_comercial` y `director`. Corre ya, sin esperar el intervalo (`SapTm:SincronizacionMinutos`), y **espera** el
+        resultado: responde 200 también cuando la corrida quedó en `error` (SAP caído, credenciales rechazadas, respuesta inválida,
+        menos filas que el mínimo, DW caído; la tabla no cambió) u `omitido` (otra réplica tenía el candado del stored procedure).
+        Puede tardar hasta `SapTm:TimeoutSegundos` (120 s) más la carga. Sin cuerpo. Queda en la auditoría
+        (`admin_sincronizar_margen_sap`). 409 `SAP_MARGEN_SINCRONIZACION_EN_CURSO` si esta réplica ya está sincronizando.
+      security:
+        - bearer: []
+      responses:
+        '200':
+          description: La corrida terminó (ver `estado`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultadoSincronizacionMargenSap'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '409':
+          description: '`SAP_MARGEN_SINCRONIZACION_EN_CURSO`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '503':
+          description: '`SAP_MARGEN_NO_CONFIGURADO`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
 
   /web/metricas/comercial:
     get:
@@ -4854,6 +4926,10 @@ components:
                 perdida solo en Cotifly y la ganada pendiente de sincronizar). Y `PDF_YA_ENVIADO` también con la cotización
                 **finalizada** (margen, conexos, conexos en Nexo, re-solicitud en el mismo folio y recálculo de camiones; la edición
                 pasa a `nueva_version`).
+                HU-042.2 (#243, ADR-027): `SAP_MARGEN_NO_CONFIGURADO` (503 en `/web/admin/sap-margen/*`: falta `SapTm:Url`,
+                `SapTm:User` o `SapTm:Pass`; el margen sigue con la copia local existente o la política de la línea) y
+                `SAP_MARGEN_SINCRONIZACION_EN_CURSO` (409 en `POST /web/admin/sap-margen/sincronizar`: esta réplica ya está
+                sincronizando; nada cambió).
               enum:
                 - MARGEN_LINEA_DESCONOCIDA
                 - PRECIO_INVALIDO
@@ -4937,6 +5013,8 @@ components:
                 - SIN_RUTAS_COTIZABLES
                 - ERROR_INTERNO
                 - MOTIVO_NO_PERMITIDO
+                - SAP_MARGEN_NO_CONFIGURADO
+                - SAP_MARGEN_SINCRONIZACION_EN_CURSO
             mensaje:
               type: string
             detalle:
@@ -6134,6 +6212,94 @@ components:
           type: string
           format: date-time
           nullable: true
+
+    CorridaSincronizacionMargenSap:
+      type: object
+      description: |
+        HU-042.2 (#243). Una corrida de `SapMargenSyncLog`. Las filas solo vienen en las corridas `ok`; `mensaje_error` en las
+        `error` y `omitido` (sin URL ni credenciales).
+      required: [estado, iniciado_at, finalizado_at, filas_insertadas, filas_actualizadas, filas_desactivadas, mensaje_error]
+      properties:
+        estado:
+          type: string
+          enum: [ok, error, omitido]
+        iniciado_at:
+          type: string
+          format: date-time
+        finalizado_at:
+          type: string
+          format: date-time
+          nullable: true
+        filas_insertadas:
+          type: integer
+          nullable: true
+        filas_actualizadas:
+          type: integer
+          nullable: true
+          description: Con valor o NIT nuevo, o reactivadas.
+        filas_desactivadas:
+          type: integer
+          nullable: true
+          description: Combinaciones que SAP dejó de traer (`activo = 0`).
+        mensaje_error:
+          type: string
+          nullable: true
+
+    EstadoSincronizacionMargenSap:
+      type: object
+      description: HU-042.2 (#243). `GET /web/admin/sap-margen/estado`.
+      required: [ultima_corrida, ultima_corrida_ok, filas_activas, proxima_corrida_estimada, intervalo_minutos, chequeo_minutos, en_curso, nit_configurado]
+      properties:
+        ultima_corrida:
+          description: La corrida más reciente, cualquiera sea su estado; `null` si nunca hubo una.
+          oneOf:
+            - $ref: '#/components/schemas/CorridaSincronizacionMargenSap'
+            - $ref: '#/components/schemas/Nulo'
+        ultima_corrida_ok:
+          description: La corrida `ok` más reciente (de ella depende la próxima); `null` si nunca la hubo.
+          oneOf:
+            - $ref: '#/components/schemas/CorridaSincronizacionMargenSap'
+            - $ref: '#/components/schemas/Nulo'
+        filas_activas:
+          type: integer
+          description: Combinaciones activas en `SapMargenCliente` (las que usa la cotización).
+        proxima_corrida_estimada:
+          type: string
+          format: date-time
+          description: |
+            Primer chequeo del worker de esta réplica en o después de que la última corrida `ok` cumpla `intervalo_minutos` (sin
+            corrida `ok`, el próximo chequeo).
+        intervalo_minutos:
+          type: integer
+          description: '`SapTm:SincronizacionMinutos`: edad máxima de la última corrida `ok` (1440 por defecto).'
+        chequeo_minutos:
+          type: integer
+          description: '`SapTm:ChequeoMinutos`: cada cuánto revisa el worker (60 por defecto).'
+        en_curso:
+          type: boolean
+          description: Esta réplica está sincronizando ahora.
+        nit_configurado:
+          type: boolean
+          description: Hay `ConnectionStrings:DwOperaciones`; sin ella el NIT de cada fila queda `null`.
+
+    ResultadoSincronizacionMargenSap:
+      type: object
+      description: HU-042.2 (#243). Respuesta de `POST /web/admin/sap-margen/sincronizar`.
+      required: [estado, filas_recibidas, duracion_ms, corrida]
+      properties:
+        estado:
+          type: string
+          enum: [ok, error, omitido]
+        filas_recibidas:
+          type: integer
+          description: Filas que entregó SAP TM y pasaron la validación (0 si falló antes).
+        duracion_ms:
+          type: integer
+        corrida:
+          description: La fila de `SapMargenSyncLog` de esta corrida; `null` solo si no se pudo registrar.
+          oneOf:
+            - $ref: '#/components/schemas/CorridaSincronizacionMargenSap'
+            - $ref: '#/components/schemas/Nulo'
 
     LineaNegocioOpcion:
       type: object
