@@ -229,7 +229,8 @@ public static class clsDependenciasInfraestructura
     /// <see cref="clsWorkerSincronizacionMargenSap"/> llama a <see cref="clsSincronizacionMargenSapSql"/> (singleton, con su candado por réplica),
     /// que descarga <c>RentabClienteSet</c> con el cliente HTTP con nombre <see cref="clsClienteRentabSap.NombreCliente"/> (sin cookies, gzip,
     /// sin registrar cabeceras, sin la tubería de reintentos: el límite lo pone <c>SapTm:TimeoutSegundos</c>), resuelve el NIT en el DW y llama al
-    /// stored procedure. Sin <c>SapTm:Url</c>/<c>User</c>/<c>Pass</c> el worker no corre. Las variables retiradas
+    /// stored procedure. Sin <c>SapTm:Url</c>/<c>User</c>/<c>Pass</c>, o con la URL o el mandante mal escritos, el worker no corre (la API
+    /// arranca igual). Las variables retiradas
     /// (<see cref="clsAvisosArranqueSapTm.VariablesObsoletas"/>) no impiden arrancar: el servicio alojado avisa que se ignoran. TryAdd: un
     /// adaptador registrado antes (pruebas) se respeta.
     /// </summary>
@@ -238,7 +239,6 @@ public static class clsDependenciasInfraestructura
         servicios.TryAddScoped<IClsFuenteMargen, clsFuenteMargenTablaLocal>();
 
         servicios.AddOpcionesValidadas<clsOpcionesSapTmSincronizacion>(configuracion, clsOpcionesSapTmSincronizacion.Seccion);
-        servicios.AddSingleton<IValidateOptions<clsOpcionesSapTmSincronizacion>, clsValidadorOpcionesSapTmSincronizacion>();
         servicios.AddHttpClient(clsClienteRentabSap.NombreCliente, cliente => cliente.Timeout = Timeout.InfiniteTimeSpan) // el límite lo pone el cliente
             .ConfigurePrimaryHttpMessageHandler(clsClienteRentabSap.CrearManejadorPrimario)
             .RedactLoggedHeaders(_ => true);

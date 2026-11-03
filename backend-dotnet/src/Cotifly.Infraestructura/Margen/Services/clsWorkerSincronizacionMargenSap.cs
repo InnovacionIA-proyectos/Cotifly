@@ -15,7 +15,8 @@ namespace Cotifly.Infraestructura.Margen.Services;
 /// </summary>
 /// <remarks>
 /// <list type="bullet">
-/// <item>Sin <c>SapTm:Url</c>, <c>User</c> o <c>Pass</c> no corre (una línea Information) y el margen sigue con la copia local o la política.</item>
+/// <item>Sin <c>SapTm:Url</c>, <c>User</c> o <c>Pass</c> no corre (una línea Information) y el margen sigue con la copia local o la política.
+/// Con la URL o el mandante mal escritos tampoco corre (una línea Error), pero la API arranca.</item>
 /// <item>La primera ronda espera <see cref="EsperaInicial"/>: no retrasa el arranque ni <c>/health/ready</c>. Después, cada
 /// <c>SapTm:ChequeoMinutos</c> (60) revisa la última corrida <c>ok</c> y sincroniza solo si tiene más de <c>SapTm:SincronizacionMinutos</c>
 /// (1440) o si nunca la hubo.</item>
@@ -38,14 +39,21 @@ public sealed class clsWorkerSincronizacionMargenSap(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var valor = opciones.Value;
-        if (!valor.Configurada)
+        if (!valor.TieneCredenciales)
         {
             logger.LogInformation(
                 "Sincronización del margen de SAP TM inactiva: falta SapTm:Url, SapTm:User o SapTm:Pass. El margen sigue con la copia local existente o la política de la línea.");
             return;
         }
 
-        if (entorno.IsProduction() && Uri.TryCreate(valor.Url!.Trim(), UriKind.Absolute, out var url) && url.Scheme == Uri.UriSchemeHttp)
+        if (valor.ErrorConfiguracion is { } error)
+        {
+            // No impide arrancar la API: el margen no depende de SAP al cotizar. La administración responde SAP_MARGEN_NO_CONFIGURADO.
+            logger.LogError("Sincronización del margen de SAP TM inactiva por configuración inválida: {Error} Corríjala y reinicie.", error);
+            return;
+        }
+
+        if (entorno.IsProduction() && Uri.TryCreate(valor.UrlServicio, UriKind.Absolute, out var url) && url.Scheme == Uri.UriSchemeHttp)
         {
             logger.LogWarning(
                 "SapTm:Url usa http (sin TLS): se acepta solo en la red interna; la clave del usuario técnico de SAP viaja en Basic sin cifrar.");

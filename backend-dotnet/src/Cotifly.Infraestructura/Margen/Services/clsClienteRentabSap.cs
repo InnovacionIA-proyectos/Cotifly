@@ -21,7 +21,7 @@ namespace Cotifly.Infraestructura.Margen.Services;
 /// <item><c>SapTm:TimeoutSegundos</c> cubre cabeceras y cuerpo; <c>SapTm:MaximoBytes</c> acota el cuerpo ya descomprimido.</item>
 /// <item>Sin reintentos: si falla, la corrida queda en <c>error</c> y el worker vuelve a intentar en el chequeo siguiente.</item>
 /// <item>Cualquier fallo sale como <see cref="clsSincronizacionMargenSapException"/> con un motivo corto, sin la URL ni las credenciales
-/// (el detalle técnico queda en Debug).</item>
+/// (el detalle técnico queda en Debug), también un corte a mitad del cuerpo o un gzip corrupto.</item>
 /// </list>
 /// </remarks>
 public sealed class clsClienteRentabSap(
@@ -43,12 +43,15 @@ public sealed class clsClienteRentabSap(
         AllowAutoRedirect = false,
     };
 
-    /// <summary>URL de la descarga: <c>{url}/RentabClienteSet?$format=json[&amp;sap-client=NNN]</c>, sin <c>$filter</c>.</summary>
+    /// <summary>
+    /// URL de la descarga: <c>{url}/RentabClienteSet?$format=json[&amp;sap-client=NNN]</c>, sin <c>$filter</c>. Una <paramref name="url"/> que ya
+    /// termina en <c>/RentabClienteSet</c> no lo duplica.
+    /// </summary>
     public static Uri ConstruirUrl(string url, string? sapClient)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(url);
         var mandante = string.IsNullOrWhiteSpace(sapClient) ? string.Empty : $"&sap-client={Uri.EscapeDataString(sapClient.Trim())}";
-        return new Uri($"{url.Trim().TrimEnd('/')}/{ConjuntoEntidades}?$format=json{mandante}", UriKind.Absolute);
+        return new Uri($"{clsOpcionesSapTmSincronizacion.NormalizarUrl(url)}/{ConjuntoEntidades}?$format=json{mandante}", UriKind.Absolute);
     }
 
     /// <summary>Descarga y valida el set completo (ver <see cref="clsLectorRentabClienteSap"/>).</summary>
@@ -58,14 +61,15 @@ public sealed class clsClienteRentabSap(
         var valor = opciones.Value;
         if (!valor.Configurada)
         {
-            throw new clsSincronizacionMargenSapException("La sincronización con SAP TM no está configurada (SapTm:Url, SapTm:User, SapTm:Pass).");
+            throw new clsSincronizacionMargenSapException(
+                valor.ErrorConfiguracion ?? "La sincronización con SAP TM no está configurada (SapTm:Url, SapTm:User, SapTm:Pass).");
         }
 
         var limite = TimeSpan.FromSeconds(valor.TimeoutSegundos);
         using var tiempo = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         tiempo.CancelAfter(limite);
 
-        using var peticion = new HttpRequestMessage(HttpMethod.Get, ConstruirUrl(valor.Url!, valor.SapClientNormalizado));
+        using var peticion = new HttpRequestMessage(HttpMethod.Get, ConstruirUrl(valor.UrlServicio!, valor.SapClientNormalizado));
         peticion.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         peticion.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("gzip"));
         peticion.Headers.Authorization = new AuthenticationHeaderValue(
@@ -106,6 +110,11 @@ public sealed class clsClienteRentabSap(
         {
             throw Fallo(string.Create(CultureInfo.InvariantCulture,
                 $"La respuesta de SAP TM supera SapTm:MaximoBytes ({valor.MaximoBytes} bytes descomprimidos)."), ex);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException)
+        {
+            // Conexión cortada a mitad del cuerpo (HttpIOException) o gzip corrupto, como en clsCubicadorHttp y clsCosteoNexo.
+            throw Fallo("SAP TM cortó la respuesta o la mandó corrupta (conexión interrumpida o gzip inválido).", ex);
         }
     }
 

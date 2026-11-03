@@ -139,7 +139,7 @@ public sealed class clsSincronizacionMargenSapTests
         var opciones = new clsOpcionesSapTmSincronizacion { Url = url, User = usuario, Pass = clave };
 
         opciones.Configurada.Should().Be(configurada);
-        new clsValidadorOpcionesSapTmSincronizacion().Validate(null, opciones).Succeeded.Should().BeTrue("que falte algo deja el worker inactivo, no impide arrancar");
+        opciones.ErrorConfiguracion.Should().BeNull("que falte algo deja el worker inactivo, sin error de configuración");
     }
 
     [Theory]
@@ -147,16 +147,31 @@ public sealed class clsSincronizacionMargenSapTests
     [InlineData("ftp://sap/odata", null, "http o https absoluta")]
     [InlineData("http://usuario:clave@sap/odata", null, "no puede llevar usuario")]
     [InlineData("http://sap/odata?$filter=x", null, "sin consulta")]
-    [InlineData("http://sap/odata/RentabClienteSet", null, "sin /RentabClienteSet")]
     [InlineData("http://sap/odata", "10", "3 dígitos")]
     [InlineData("http://sap/odata", "abc", "3 dígitos")]
-    public void UnaUrlOMandanteMalEscritosImpidenArrancar(string url, string? sapClient, string mensaje)
+    public void UnaUrlOMandanteMalEscritosDejanLaSincronizacionSinConfigurarSinImpedirArrancar(string url, string? sapClient, string mensaje)
     {
-        var resultado = new clsValidadorOpcionesSapTmSincronizacion().Validate(null,
-            new clsOpcionesSapTmSincronizacion { Url = url, User = "u", Pass = "clave-123456", SapClient = sapClient });
+        var opciones = new clsOpcionesSapTmSincronizacion { Url = url, User = "u", Pass = "clave-123456", SapClient = sapClient };
 
-        resultado.Failed.Should().BeTrue();
-        resultado.FailureMessage.Should().Contain(mensaje).And.NotContain("clave-123456");
+        opciones.TieneCredenciales.Should().BeTrue();
+        opciones.Configurada.Should().BeFalse();
+        opciones.ErrorConfiguracion.Should().Contain(mensaje).And.NotContain("clave-123456").And.NotContain("usuario:");
+        using var proveedor = Proveedor(new clsSapRentabFalso(), new() { ["SapTm:Url"] = url, ["SapTm:SapClient"] = sapClient });
+        var leer = () => proveedor.GetRequiredService<IOptions<clsOpcionesSapTmSincronizacion>>().Value;
+        leer.Should().NotThrow("la URL de SAP no impide arrancar la API: el margen no depende de SAP al cotizar");
+    }
+
+    [Theory]
+    [InlineData("http://sap/odata/RentabClienteSet", "http://sap/odata")]
+    [InlineData(" http://sap/odata/rentabclienteset/ ", "http://sap/odata")]
+    [InlineData("http://sap/odata/", "http://sap/odata")]
+    public void UnaUrlConRentabClienteSetSeAceptaYSeNormaliza(string url, string servicio)
+    {
+        var opciones = new clsOpcionesSapTmSincronizacion { Url = url, User = "u", Pass = "clave-123456" };
+
+        opciones.Configurada.Should().BeTrue();
+        opciones.UrlServicio.Should().Be(servicio);
+        clsClienteRentabSap.ConstruirUrl(url, null).AbsoluteUri.Should().Be($"{servicio}/RentabClienteSet?$format=json");
     }
 
     [Fact]
@@ -212,6 +227,41 @@ public sealed class clsSincronizacionMargenSapTests
 
         Encoding.UTF8.GetByteCount(grande).Should().BeGreaterThan(1024 * 1024);
         await descargar.Should().ThrowAsync<clsSincronizacionMargenSapException>().WithMessage("*supera SapTm:MaximoBytes*");
+    }
+
+    [Theory]
+    [InlineData("corte")]
+    [InlineData("gzip")]
+    public async Task UnCorteAMitadDelCuerpoOUnGzipCorruptoEsUnErrorDeSincronizacion(string caso)
+    {
+        // H2 (#243): antes la IOException/InvalidDataException escapaba de la sincronización (sin fila 'error' y 500 en el POST).
+        Exception error = caso == "corte"
+            ? new HttpIOException(HttpRequestError.ResponseEnded, "The response ended prematurely.")
+            : new InvalidDataException("The archive entry was compressed using an unsupported compression method.");
+        var inicio = Encoding.UTF8.GetBytes("{\"d\":{\"results\":[{\"SalesOrgId\":\"50000005\",");
+        await using var proveedor = Proveedor(new clsSapRentabFalso().ResponderFlujo(() => new clsFlujoQueFalla(inicio, error)));
+
+        var descargar = () => proveedor.GetRequiredService<clsClienteRentabSap>().DescargarAsync(Ct);
+
+        await descargar.Should().ThrowAsync<clsSincronizacionMargenSapException>().WithMessage("*SAP TM cortó la respuesta*");
+    }
+
+    [Fact]
+    public async Task ConLaUrlMalEscritaElWorkerNoCorreYLoAnotaEnError()
+    {
+        var logger = new clsLoggerFalso<clsWorkerSincronizacionMargenSap>();
+        await using var proveedor = Proveedor(new clsSapRentabFalso(), new() { ["SapTm:Url"] = "sap-tm-prd:8000/sin-esquema" });
+        using var coordinacion = new clsCoordinacionSincronizacionMargenSap();
+        using var worker = new clsWorkerSincronizacionMargenSap(
+            proveedor.GetRequiredService<IServiceScopeFactory>(), proveedor.GetRequiredService<IOptions<clsOpcionesSapTmSincronizacion>>(),
+            coordinacion, new clsEntornoFalso(Environments.Production), TimeProvider.System, logger);
+
+        await worker.StartAsync(Ct);
+        await worker.ExecuteTask!;
+
+        logger.Registros.Should().ContainSingle().Which.Should().Match<clsRegistroLog>(r => r.Nivel == LogLevel.Error && r.Mensaje.Contains("SapTm:Url"));
+        logger.Registros.Should().NotContain(r => r.Mensaje.Contains("sin-esquema") || r.Mensaje.Contains(clsSapRentabFalso.Clave));
+        proveedor.GetRequiredService<IClsSincronizacionMargenSap>().Configurada.Should().BeFalse();
     }
 
     [Fact]
@@ -278,6 +328,57 @@ public sealed class clsSincronizacionMargenSapTests
         servicios.AddHttpClient(clsClienteRentabSap.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => sap);
         configurar?.Invoke(servicios);
         return servicios.BuildServiceProvider();
+    }
+
+    /// <summary>Flujo que entrega unos bytes y luego lanza (conexión cortada o gzip corrupto).</summary>
+    private sealed class clsFlujoQueFalla(byte[] inicio, Exception error) : Stream
+    {
+        private int _posicion;
+
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => _posicion;
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => Read(buffer.AsSpan(offset, count));
+
+        public override int Read(Span<byte> buffer)
+        {
+            if (_posicion >= inicio.Length)
+            {
+                throw error;
+            }
+
+            var n = Math.Min(buffer.Length, inicio.Length - _posicion);
+            inicio.AsSpan(_posicion, n).CopyTo(buffer);
+            _posicion += n;
+            return n;
+        }
+
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(Read(buffer.Span));
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            Task.FromResult(Read(buffer.AsSpan(offset, count)));
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     /// <summary>Sincronización que lanza (una falla inesperada): el worker la anota y sigue.</summary>

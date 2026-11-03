@@ -47,6 +47,14 @@ public sealed class clsSapRentabFalso : HttpMessageHandler
         return this;
     }
 
+    /// <summary>Encola una respuesta 200 cuyo cuerpo sale del flujo dado (por ejemplo, uno que se corta a mitad).</summary>
+    public clsSapRentabFalso ResponderFlujo(Func<Stream> flujo)
+    {
+        ArgumentNullException.ThrowIfNull(flujo);
+        _respuestas.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(flujo()) });
+        return this;
+    }
+
     /// <summary>Encola un fallo de red (la excepción se lanza al enviar).</summary>
     public clsSapRentabFalso Fallar(Exception excepcion)
     {

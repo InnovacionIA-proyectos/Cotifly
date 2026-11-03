@@ -10,11 +10,13 @@ namespace Cotifly.Infraestructura.Configuracion;
 /// <list type="bullet">
 /// <item><b>Inactiva sin credenciales.</b> Sin <see cref="Url"/>, <see cref="User"/> o <see cref="Pass"/> el worker no corre (lo anota en
 /// Information) y el margen sigue con la copia local existente o la política de la línea. No impide arrancar.</item>
-/// <item><see cref="Url"/> es la URL del servicio OData, sin <c>/RentabClienteSet</c> ni consulta (se pide
-/// <c>{Url}/RentabClienteSet?$format=json</c>, sin <c>$filter</c>: SAP lo ignora y devuelve el set completo). http se acepta (red interna);
-/// en Production el worker lo avisa al arrancar.</item>
-/// <item>Reglas de forma en <see cref="clsValidadorOpcionesSapTmSincronizacion"/>; la fortaleza de <see cref="Pass"/> en Production, en
-/// <see cref="clsValidadorSecretosOpciones{TOpciones}"/>. Ningún mensaje ni log incluye <see cref="User"/> o <see cref="Pass"/>.</item>
+/// <item><b>Inactiva con la URL o el mandante mal escritos</b> (<see cref="ErrorConfiguracion"/>): tampoco impide arrancar la API (el margen
+/// no depende de SAP al cotizar); el worker lo anota en Error y la administración responde <c>SAP_MARGEN_NO_CONFIGURADO</c>.</item>
+/// <item><see cref="Url"/> es la URL del servicio OData (ej. <c>.../ZGW_RENTAB_CLI_SRV</c>). Si trae <c>/RentabClienteSet</c> al final se
+/// acepta y se quita (<see cref="UrlServicio"/>). Se pide <c>{UrlServicio}/RentabClienteSet?$format=json</c>, sin <c>$filter</c>: SAP lo
+/// ignora y devuelve el set completo. http se acepta (red interna); en Production el worker lo avisa al arrancar.</item>
+/// <item>La fortaleza de <see cref="Pass"/> en Production la revisa <see cref="clsValidadorSecretosOpciones{TOpciones}"/>. Ningún mensaje
+/// ni log incluye <see cref="Url"/>, <see cref="User"/> o <see cref="Pass"/>.</item>
 /// </list>
 /// </remarks>
 public sealed class clsOpcionesSapTmSincronizacion
@@ -58,8 +60,55 @@ public sealed class clsOpcionesSapTmSincronizacion
     [Range(0, 100)]
     public int MinimoPorcentajeActivas { get; set; } = 80;
 
-    /// <summary>Hay URL, usuario y clave: el worker corre.</summary>
-    public bool Configurada => !string.IsNullOrWhiteSpace(Url) && !string.IsNullOrWhiteSpace(User) && !string.IsNullOrWhiteSpace(Pass);
+    /// <summary>Hay URL, usuario y clave (aunque estén mal escritas).</summary>
+    public bool TieneCredenciales => !string.IsNullOrWhiteSpace(Url) && !string.IsNullOrWhiteSpace(User) && !string.IsNullOrWhiteSpace(Pass);
+
+    /// <summary>Hay URL, usuario y clave y la URL y el mandante son válidos: el worker corre.</summary>
+    public bool Configurada => TieneCredenciales && ErrorConfiguracion is null;
+
+    /// <summary><see cref="Url"/> recortada, sin <c>/</c> ni <c>/RentabClienteSet</c> al final (<c>null</c> si no hay).</summary>
+    public string? UrlServicio => string.IsNullOrWhiteSpace(Url) ? null : NormalizarUrl(Url);
+
+    /// <summary>
+    /// Por qué la URL o el mandante no sirven (<c>null</c> si sirven o si no hay URL). Nombra la clave, nunca el valor.
+    /// </summary>
+    public string? ErrorConfiguracion
+    {
+        get
+        {
+            const string Prefijo = Seccion + ":";
+            if (UrlServicio is { } texto)
+            {
+                if (!Uri.TryCreate(texto, UriKind.Absolute, out var url) || (url.Scheme != Uri.UriSchemeHttp && url.Scheme != Uri.UriSchemeHttps))
+                {
+                    return $"'{Prefijo}Url' debe ser una URL http o https absoluta.";
+                }
+
+                if (url.UserInfo.Length > 0)
+                {
+                    return $"'{Prefijo}Url' no puede llevar usuario ni clave: use {Prefijo}User y {Prefijo}Pass.";
+                }
+
+                if (url.Query.Length > 0 || url.Fragment.Length > 0)
+                {
+                    return $"'{Prefijo}Url' es la URL del servicio, sin consulta ni fragmento (se agrega /RentabClienteSet?$format=json).";
+                }
+            }
+
+            return SapClientNormalizado is { } mandante && !(mandante.Length == 3 && mandante.All(char.IsAsciiDigit))
+                ? $"'{Prefijo}SapClient' debe tener exactamente 3 dígitos (ej. 100) o quedar vacío."
+                : null;
+        }
+    }
+
+    /// <summary>Quita espacios, la <c>/</c> final y un <c>/RentabClienteSet</c> final (sin distinguir mayúsculas).</summary>
+    public static string NormalizarUrl(string url)
+    {
+        ArgumentNullException.ThrowIfNull(url);
+        var texto = url.Trim().TrimEnd('/');
+        const string Conjunto = "/RentabClienteSet";
+        return texto.EndsWith(Conjunto, StringComparison.OrdinalIgnoreCase) ? texto[..^Conjunto.Length].TrimEnd('/') : texto;
+    }
 
     /// <summary><see cref="SapClient"/> recortado, o <c>null</c> si no hay.</summary>
     public string? SapClientNormalizado => string.IsNullOrWhiteSpace(SapClient) ? null : SapClient.Trim();
