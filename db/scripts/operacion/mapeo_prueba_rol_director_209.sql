@@ -129,4 +129,10 @@ GO
    FROM dbo_cotifly.Roles AS r
    JOIN dbo_cotifly.RespaldoRoles_209 AS b ON b.id = r.id
    WHERE r.codigo IN (N'gerente_comercial', N'director');
+
+   En dbTarifario_Nexo_Pruebas (compartida) RespaldoRoles_209 se borró el 2026-11-02 (@scalderon-bs). Tenía, del
+   2026-10-26: comercial 34, gerente_comercial 31, director NULL. Ahí la reversa es a mano, en este orden:
+   UPDATE dbo_cotifly.Roles SET idRolExterno = NULL, updatedAt = SYSDATETIMEOFFSET() WHERE codigo = N'director';
+   UPDATE dbo_cotifly.Roles SET idRolExterno = 31, updatedAt = SYSDATETIMEOFFSET() WHERE codigo = N'gerente_comercial';
+   Ojo: para pasar a los valores definitivos no se revierte; se usan los de #203 (34 / 29 / 31).
 */

@@ -129,6 +129,9 @@ erDiagram
         nvarchar20 origenMargen "sap_tm | politica_linea | negociado"
         nvarchar20 metodoCalculo
         decimal18_2 precioFinalLinea
+        bit incluyeSeguro "20, casilla del seguro"
+        decimal9_6 tasaSeguroAplicada "20, copia de la tasa"
+        decimal18_2 costoSeguro "20, sin margen, fuera de costoFinal"
         nvarchar30 estadoCosteo "resumen de los camiones"
         datetimeoffset createdAt
         datetimeoffset updatedAt
@@ -173,8 +176,8 @@ erDiagram
     }
 ```
 
-El diagrama muestra solo las columnas de `0001` a `0010` (lo que crea el `01`); las de los ajustes `02` a `13` y
-`pendientes/04` están en las tablas de §A.4.
+El diagrama muestra las columnas de `0001` a `0010` (lo que crea el `01`) y, marcadas con `20`, las del seguro de la
+mercancía (HU-045.1, #263); las de los demás ajustes (`02` a `19` y `pendientes/04`) están en las tablas de §A.4.
 
 Los tipos del diagrama van sin paréntesis porque Mermaid no los admite: `nvarchar50` es `NVARCHAR(50)`, `decimal18_2` es
 `DECIMAL(18,2)` y `nvarcharmax` es `NVARCHAR(MAX)`.
@@ -185,6 +188,9 @@ Los tipos del diagrama van sin paréntesis porque Mermaid no los admite: `nvarch
   los camiones que cuentan (los `descartada` no cuentan, salvo que lo estén todos). `costoServiciosConexos` = Σ precio ×
   cantidad. `costoFinal` = la suma de los cuatro. `precioFinalLinea` = `costoFinal` con el margen y el método de la ruta, en
   la moneda y la TRM de la cabecera. `precioFinal` = Σ `precioFinalLinea` (NULL mientras alguna ruta no tenga precio).
+- **Seguro de la mercancía** (script `20`, HU-045). Con `incluyeSeguro = 1`, `costoSeguro` = `valorMercancia` × la tasa activa de
+  `TarifasSeguro`, que se copia en `tasaSeguroAplicada` para que un cambio de tasa no mueva las cotizaciones hechas. No lleva
+  margen ni entra en `costoFinal`. Cómo se suma al precio y si bloquea finalizar sin `valorMercancia` lo define HU-045.2.
 - **Estado agregado.** El `estadoCosteo` del camión se resume en la ruta y el de las rutas en la cabecera ("el más atrasado").
 - **Margen vigente** de la ruta: `margenSAPSugerido` si existe; si no, `margenPoliticaSugerido`. El ajuste del comercial
   queda en `margenAplicado` (`origenMargen = negociado`) y en `MargenAjustes` con la ruta.
@@ -240,6 +246,13 @@ erDiagram
         decimal9_4 margen
         nvarcharmax mapeoLineasNexo
     }
+    TarifasSeguro {
+        uniqueidentifier id PK
+        decimal9_6 tasa "0.003450 = 0,345 %"
+        datetimeoffset vigenteDesde
+        bit isActive UK "una sola activa (20)"
+        datetimeoffset updatedAt
+    }
     SapMapeoTrqType {
         nvarchar8 trqType PK
         nvarchar12 salesOrg PK
@@ -247,7 +260,7 @@ erDiagram
     }
 ```
 
-`EventosHerramienta`, `MargenesPolitica` y `SapMapeoTrqType` no tienen FK. `EventosHerramienta` guarda además los registros
+`EventosHerramienta`, `MargenesPolitica`, `TarifasSeguro` y `SapMapeoTrqType` no tienen FK. `EventosHerramienta` guarda además los registros
 de proceso del backend (por ejemplo `conexos_envio_nexo`, `conexos_pendientes_nexo`, `cambiar_servicios_conexos`), sin
 columnas propias.
 
@@ -339,6 +352,9 @@ Estados de costeo (cabecera, ruta y camión, 8): `pendiente_envio`, `error_envio
 | `avisosCubicacion` | nv(max) | sí | | **`pendientes/04`.** JSON (CHECK `ISJSON`): advertencias, extradimensión y mercancías condicionadas |
 | `pesoConTaraKg` | dec(12,2) | sí | | **`11`.** Peso con la tara de los contenedores (ruta `Contenedor`). CHECK NULL o > 0 |
 | `tipoVehiculoElegido`, `carroceriaElegida` | nv(100) | sí | | **`12`.** Vehículo elegido por el comercial: respaldo del cubicador (HU-032, ADR-022). NULL = no eligió o la ruta es anterior al `12` |
+| `incluyeSeguro` | bit | no | `0` | **`20`.** HU-045.1 (#263). La casilla por ruta: se cobra el seguro de la mercancía. Las rutas anteriores al `20` quedan en `0` |
+| `tasaSeguroAplicada` | dec(9,6) | sí | | **`20`.** Copia de la tasa activa de `TarifasSeguro` con la que se calculó (0.003450 = 0,345 %). CHECK > 0 y < 1 |
+| `costoSeguro` | dec(18,2) | sí | | **`20`.** `valorMercancia × tasaSeguroAplicada`. Va aparte: no entra en `costoFinal` ni lleva margen. CHECK ≥ 0 y, si hay costo, hay tasa (`ck_cotizacionLineasSolicitud_seguroMontos`); sin `incluyeSeguro`, las dos en NULL (`ck_cotizacionLineasSolicitud_seguroIncluido`) |
 
 ### A.4.3 `CotizacionVehiculosLineaSolicitud` — el camión (nueva en el 0009)
 
@@ -387,7 +403,7 @@ Estados de costeo (cabecera, ruta y camión, 8): `pendiente_envio`, `error_envio
 | `createdAt`, `updatedAt` | dto | no | `SYSDATETIMEOFFSET()` | |
 | `idServicioConexoCatalogo` | nv(64) | sí | | **`03`.** Id del catálogo de Nexo del conexo. NULL en las filas anteriores a HU-014 (#188) |
 | `categoriaServicioConexo` | nv(20) | sí | | **`05`.** Categoría del catálogo de Nexo (`logistico`, `adicional`...). Sin CHECK: el catálogo puede crecer |
-| `precioVenta` | dec(18,2) | no | | **`16`.** HU-043.1 (#245). Precio de venta al cliente; backfill = `precio` en las filas existentes. CHECK ≥ 0 (mismo `ck_cotizacionServiciosConexos_montos`, ampliado) |
+| `precioVenta` | dec(18,2) | no | | **`19`.** HU-043.1 (#245). Precio de venta al cliente; backfill = `precio` en las filas existentes. CHECK ≥ 0 (mismo `ck_cotizacionServiciosConexos_montos`, ampliado) |
 
 ### A.4.6 Otras tablas de cotizaciones
 
@@ -434,6 +450,7 @@ Sin cambios de estructura en HU-021 (salvo el catálogo de líneas de negocio de
 | Tabla | Clave | Columnas |
 |---|---|---|
 | `MargenesPolitica` | `id` int identity; único `lineaNegocio` | `mapeoLineasNexo`, `margen` dec(9,4), `metodoCalculo` (`'margen'`), `isActive`, `updatedAt` |
+| `TarifasSeguro` | `id` uniqueidentifier `NEWID()`; único filtrado `uq_tarifasSeguro_activa` (`isActive`) `WHERE isActive = 1` | Script `20`, HU-045.1 (#263). `tasa` dec(9,6) (CHECK > 0 y < 1; inicial 0.003450 = 0,345 %), `vigenteDesde`, `isActive`, `updatedAt`. Una sola activa; las viejas se desactivan, no se borran (`db/scripts/operacion/cambiar_tasa_seguro.sql`) |
 | `SapMapeoTrqType` | (`trqType`, `salesOrg`) | `lineaNegocio` (texto, original), `lineaNegocioId` int NOT NULL FK `MargenesPolitica(id)` (script `18`, HU-042.4, #247 — conviven mientras el backend se adapta a leer por id; `lineaNegocio` se retira después), `activo` |
 | `SapMargenCliente` | `id` uid; único (`salesOrgId`, `trqType`, `bpSap`) | `nit` nv(20) nulo (resuelto por BP contra el DW `DWCubosOperacionesEBS.dbo.DimBPSolicitante`), `margenRecomendado` dec(9,4), `activo` (soft delete), `creadoAt`, `actualizadoAt`. Script `17` (HU-042.1, #242); no la lee `backend-dotnet` todavía (HU-042.2, #243) |
 | `SapMargenSyncLog` | `id` uid | Log append-only de las corridas del job de `SapMargenCliente`: `iniciadoAt`, `finalizadoAt`, `filasInsertadas`, `filasActualizadas`, `filasDesactivadas`, `status` (CHECK `ok`\|`error`\|`omitido`), `mensajeError`. Script `17` |
@@ -480,12 +497,13 @@ retiraron en HU-014.3 (#152) con `db/scripts/08_retirar_vistas_actividad.sql`, j
 | `db/scripts/12_vehiculo_elegido.sql` | **HU-032 (#197):** `CotizacionLineasSolicitud.tipoVehiculoElegido`/`carroceriaElegida NVARCHAR(100) NULL` y medidas de `CotizacionMercancias` en NULL (CHECK: las tres NULL o las tres > 0). Idempotente; lo corre el ejecutador después del `11`; el backend lo exige (`falta 12`) |
 | `db/scripts/13_correo_mailsender.sql` | **HU-033 (#199):** `Correos.idMailSender UNIQUEIDENTIFIER NULL` (índice único filtrado `ux_correos_idMailSender`), `redirigidoA NVARCHAR(320)`, `intentosEntrega INT`, `enviadoAt`, `estadoActualizadoAt`, `siguienteConsultaAt DATETIMEOFFSET` (índice filtrado `ix_correos_siguienteConsultaAt`), `encoladoAt DATETIMEOFFSET` (última aceptación de MailSender, auditoría #199) y el CHECK `ck_correos_estado`; `CotizacionesSolicitud.sincronizacionResultadoNexo NVARCHAR(20)` (CHECK `pendiente`/`sincronizado`/`no_sincronizable`), `comentarioResultadoPendiente NVARCHAR(500)`, `resultadoSincronizadoAt`, `errorSincronizacionResultado NVARCHAR(1000)` e `intentosSincronizacionResultado INT NOT NULL DEFAULT 0` (CHECK ≥ 0). Idempotente; obligatorio ("falta 13") |
 | `db/scripts/14_cotizacion_finalizada.sql` | **HU-036 (#205, #206):** `CotizacionesSolicitud.finalizadaAt DATETIMEOFFSET NULL` y `finalizadaPor UNIQUEIDENTIFIER NULL` (FK `fk_cotizaciones_finalizadaPor` a `UsuariosWeb(id)`, el tipo de su PK), con el CHECK `ck_cotizaciones_finalizada` (las dos NULL o las dos con valor). Aparte de `estadoCosteo` a propósito: el polling lo deriva de Nexo en cada vuelta. Sin backfill. Idempotente; obligatorio ("falta 14"). Propuesta pendiente de revisión de @scalderon-bs |
-| `db/scripts/16_multiples_roles_activos.sql` | **HU-040.1 (#229):** `UsuariosRoles` sin `uq_usuariosRoles_usuarioId_activo` (varias asignaciones activas por usuario, una por rol; `uq_usuariosRoles_usuarioId_rolId` sigue) y `TokensRefresco.rolSesion NVARCHAR(30) NULL` con el CHECK `ck_tokensRefresco_rolSesion` (NULL o un código de `Roles`). No cambia filas. Idempotente; obligatorio ("falta 16"). Propuesta pendiente de revisión de @scalderon-bs |
+| `db/scripts/16_multiples_roles_activos.sql` | **HU-040.1 (#229):** `UsuariosRoles` sin `uq_usuariosRoles_usuarioId_activo` (varias asignaciones activas por usuario, una por rol; `uq_usuariosRoles_usuarioId_rolId` sigue) y `TokensRefresco.rolSesion NVARCHAR(30) NULL` con el CHECK `ck_tokensRefresco_rolSesion` (NULL o un código de `Roles`). No cambia filas. Idempotente; obligatorio ("falta 16"). Aprobado por @scalderon-bs (2026-11-02) |
 | `db/scripts/17_sap_margen_sincronizacion.sql` | **HU-042.1 (#242):** crea `SapMargenCliente`, `SapMargenSyncLog` y el stored procedure `sp_sincronizar_margen_sap`. **No lo corre el ejecutador, no lo exige `/health/ready`: no lo lee `backend-dotnet`.** Dueña @scalderon-bs (Datos); ya aplicado en la base compartida de pruebas (2026-10-28) |
 | `db/scripts/18_sap_mapeo_fk_margenes_politica.sql` | **HU-042.4, #247:** agrega `SapMapeoTrqType.lineaNegocioId INT NOT NULL` con FK a `MargenesPolitica(id)`, con backfill por texto verificado (se detiene si algo no cruza). No borra `lineaNegocio` (texto) todavía — transición en 2 pasos, hasta que el backend (#247) deje de leerla. Idempotente; ya aplicado en la base compartida de pruebas (2026-10-28) |
 | `db/scripts/19_precio_venta_conexos.sql` | **HU-043.1 (#245):** `CotizacionServiciosConexos.precioVenta DECIMAL(18,2) NOT NULL`, junto a `precio` (que sigue siendo el costo unitario). Backfill: `precioVenta = precio` en las filas existentes (ninguna cotización cambia de valor). Amplía `ck_cotizacionServiciosConexos_montos` para exigir también `precioVenta >= 0`. Idempotente, corre dos veces sin error (verificado); ya aplicado en la base compartida de pruebas (2026-10-28). No depende de ningún otro ajuste; se puede aplicar antes del backend (HU-043.2 la consume) |
+| `db/scripts/20_seguro_mercancia.sql` | **HU-045.1 (#263):** tabla nueva `TarifasSeguro` (la tasa del seguro de la mercancía con su historia; una sola activa por el índice único filtrado `uq_tarifasSeguro_activa`; fila inicial `0.003450` = 0,345 %, solo si la tabla está vacía) y, en `CotizacionLineasSolicitud`, `incluyeSeguro BIT NOT NULL DEFAULT 0`, `tasaSeguroAplicada DECIMAL(9,6) NULL` y `costoSeguro DECIMAL(18,2) NULL` con `ck_cotizacionLineasSolicitud_seguroMontos` y `ck_cotizacionLineasSolicitud_seguroIncluido`. Las rutas existentes quedan sin seguro (ninguna cotización cambia de valor). Idempotente, no destructivo, en el ejecutador. No lo exige `/health/ready` hasta que HU-045.2 mapee las columnas. La tasa se cambia con `db/scripts/operacion/cambiar_tasa_seguro.sql` |
 
-Las columnas de los ajustes `02`, `03`, `pendientes/04`, `05`, `09`, `10`, `11`, `12`, `13`, `14` y `16` están en las tablas de §A.4 (marcadas
+Las columnas de los ajustes `02`, `03`, `pendientes/04`, `05`, `09`, `10`, `11`, `12`, `13`, `14`, `16` y `20` están en las tablas de §A.4 (marcadas
 con el número del script) y la tabla del `06` en §A.4.6.1; el detalle de cada cambio está en la cabecera de su script. Además,
 `db/scripts/operacion/` guarda scripts de operación puntual (no cambian el esquema) y `db/migrations_mssql/rollback/` la reversa
 del `0006`.

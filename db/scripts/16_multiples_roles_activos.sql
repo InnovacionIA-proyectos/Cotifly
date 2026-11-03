@@ -1,6 +1,6 @@
 /* ============================================================================
-   Cotifly — 16: varias asignaciones activas por usuario y rol de la sesión en el refresh (PROPUESTA, pendiente de revisión
-   de @scalderon-bs)
+   Cotifly — 16: varias asignaciones activas por usuario y rol de la sesión en el refresh (APROBADO por
+   @scalderon-bs el 2026-11-02)
    ============================================================================
    HU-040.1 (#229, Datos; la consume HU-040.2, #230). Multi-rol: una persona con varios roles (p. ej. comercial y gerente
    comercial) elige con cuál entra, en vez de que gane siempre el de mayor alcance (ADR-009 y HU-037).

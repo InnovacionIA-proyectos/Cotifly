@@ -93,4 +93,8 @@ GO
    FROM dbo_cotifly.Roles AS r
    JOIN dbo_cotifly.RespaldoRoles_173 AS b ON b.id = r.id
    WHERE r.codigo = N'comercial';
+
+   En dbTarifario_Nexo_Pruebas (compartida) RespaldoRoles_173 se borró el 2026-11-02 (@scalderon-bs). Tenía, del
+   2026-10-26: comercial 34, gerente_comercial 31, director NULL. Ahí la reversa es a mano:
+   UPDATE dbo_cotifly.Roles SET idRolExterno = 34, updatedAt = SYSDATETIMEOFFSET() WHERE codigo = N'comercial';
 */
