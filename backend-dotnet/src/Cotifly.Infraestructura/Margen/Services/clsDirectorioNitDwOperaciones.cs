@@ -13,10 +13,12 @@ namespace Cotifly.Infraestructura.Margen.Services;
 /// <c>clsDirectorioEjecutivosDimEjecutivo</c>.
 /// </summary>
 /// <remarks>
-/// El BP se busca tal como lo manda SAP (igual que el script de Datos). Las columnas se leen como texto (<c>CAST ... AS nvarchar</c>, por si
-/// el cubo las tiene numéricas) y recortadas. Un NIT vacío o de más de 20 caracteres (el largo de <c>SapMargenCliente.nit</c>) se descarta: la
-/// fila queda sin NIT y se anota un warning. Un BP con varios NIT se queda con el último leído, como el script. Los fallos de la base se
-/// propagan: la corrida queda en <c>error</c> y la tabla no se toca.
+/// El BP se busca tal como lo manda SAP (igual que el script de Datos; si <c>DimBPSolicitante.BP</c> guarda ceros a la izquierda no cruza:
+/// pendiente de confirmar con Datos, ADR-027 §13). Los parámetros son <c>VARCHAR(20)</c>, como un cubo (un <c>NVARCHAR</c> contra una columna
+/// <c>VARCHAR</c> obliga a convertir la columna y no usa su índice). Las columnas se leen como texto (<c>CAST ... AS nvarchar</c>, por si el
+/// cubo las tiene numéricas) y recortadas. Un NIT vacío o de más de 20 caracteres (el largo de <c>SapMargenCliente.nit</c>) se descarta. Un
+/// BP con varios NIT distintos se queda, de forma determinista, con el menor en orden ordinal y se anota un warning (el script tomaba el
+/// último leído, que depende del plan). Los fallos de la base se propagan: la corrida queda en <c>error</c> y la tabla no se toca.
 /// </remarks>
 public sealed class clsDirectorioNitDwOperaciones(IOptions<clsOpcionesConexiones> conexiones, ILogger<clsDirectorioNitDwOperaciones> logger)
 {
@@ -41,12 +43,12 @@ public sealed class clsDirectorioNitDwOperaciones(IOptions<clsOpcionesConexiones
             throw new InvalidOperationException("ConnectionStrings:DwOperaciones no está configurada.");
         }
 
-        var nits = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var candidatos = new Dictionary<string, SortedSet<string>>(StringComparer.OrdinalIgnoreCase);
         var descartados = 0;
         var pendientes = bps.Where(b => !string.IsNullOrWhiteSpace(b)).Select(b => b.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         if (pendientes.Count == 0)
         {
-            return nits;
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         }
 
         await using var conexion = new SqlConnection(conexiones.Value.DwOperaciones);
@@ -59,7 +61,7 @@ public sealed class clsDirectorioNitDwOperaciones(IOptions<clsOpcionesConexiones
             {
                 var nombre = $"@bp{i}";
                 parametros.Add(nombre);
-                comando.Parameters.Add(new SqlParameter(nombre, SqlDbType.NVarChar, 20) { Value = lote[i] });
+                comando.Parameters.Add(new SqlParameter(nombre, SqlDbType.VarChar, 20) { Value = lote[i] });
             }
 
             comando.CommandText = $"""
@@ -83,7 +85,13 @@ public sealed class clsDirectorioNitDwOperaciones(IOptions<clsOpcionesConexiones
                     continue;
                 }
 
-                nits[lector.GetString(0)] = nit;
+                var bp = lector.GetString(0);
+                if (!candidatos.TryGetValue(bp, out var delBp))
+                {
+                    candidatos[bp] = delBp = new SortedSet<string>(StringComparer.Ordinal);
+                }
+
+                delBp.Add(nit);
             }
         }
 
@@ -92,6 +100,12 @@ public sealed class clsDirectorioNitDwOperaciones(IOptions<clsOpcionesConexiones
             logger.LogWarning("DimBPSolicitante trajo {Descartados} NIT vacíos o de más de {Largo} caracteres: esas filas quedan sin NIT.", descartados, LargoNit);
         }
 
-        return nits;
+        var ambiguos = candidatos.Count(c => c.Value.Count > 1);
+        if (ambiguos > 0)
+        {
+            logger.LogWarning("DimBPSolicitante trae varios NIT para {Ambiguos} BP: se toma el menor de cada uno.", ambiguos);
+        }
+
+        return candidatos.ToDictionary(c => c.Key, c => c.Value.Min!, StringComparer.OrdinalIgnoreCase);
     }
 }
