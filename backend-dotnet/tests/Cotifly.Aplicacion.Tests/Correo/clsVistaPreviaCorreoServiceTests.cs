@@ -1,3 +1,4 @@
+using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Correo.DTOs;
 using Cotifly.Aplicacion.Correo.Repositories;
 using Cotifly.Aplicacion.Correo.Services;
@@ -40,7 +41,7 @@ public sealed class clsVistaPreviaCorreoServiceTests
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     private clsVistaPreviaCorreoService Servicio() =>
-        new(_cotizaciones, new clsDestinatariosPreviosService(_correos), _usuarios, Options.Create(_opciones));
+        new(_cotizaciones, new clsDestinatariosPreviosService(_correos), _usuarios, Substitute.For<IClsCalendarioNegocio>(), Options.Create(_opciones));
 
     [Fact]
     public async Task SinBorradorPrecargaLosDestinatariosDelUltimoEnvioYLaPlantilla()
@@ -206,6 +207,14 @@ public sealed class clsVistaPreviaCorreoServiceTests
 
         destinatarios.Para.Should().Equal("compras@cliente.com");
         destinatarios.Cc.Should().Equal("gerente@cliente.com");
+    }
+
+    [Fact]
+    public async Task LaVistaPreviaLlevaLaMismaFichaQueElEnvio()
+    {
+        var vista = (await Servicio().PrevisualizarAsync(_usuario, "PCN-V1", null, Ct)).Valor;
+
+        vista.CuerpoHtml.Should().Contain(">PCN-V1<");
     }
 
     [Fact]

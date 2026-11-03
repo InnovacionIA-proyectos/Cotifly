@@ -113,6 +113,12 @@ agregue `ReplyTo`: `From` corporativo y respuestas al comercial.
   con la moneda, la leyenda de impuestos y, en USD, la nota de TRM mínima del PDF. Mismo formato de miles que el PDF.
 - **Leyenda de impuestos:** el PDF no traía ninguna; se agrega `clsTextosEstandar.LeyendaImpuestos` en un solo lugar para PDF y correo,
   **pendiente de validación de negocio**.
+- **Actualización #262 (2026-11-03, rediseño del HTML del correo):** la leyenda de impuestos **sale del correo** y queda solo en el PDF
+  adjunto; en su lugar el correo trae una nota que remite al PDF (detalle de cada ruta, qué incluye y no incluye la tarifa, facturación y
+  vigencia). El resumen lista **hasta 10 rutas** (`clsPlantillaCorreo.MaximoRutasResumen`) y el resto en una línea que remite al PDF, para
+  que una licitación grande no pase el límite de ~102 KB de Gmail; el total sigue siendo el de todas las rutas. El correo trae además una
+  ficha con folio, fecha, cliente y rutas costeadas, y la despedida ("Cordialmente,") la pone el HTML antes de la firma del comercial (el
+  cuerpo por defecto ya no la trae).
 
 ### 6. Resultado ganada/perdida diferido a NEXO
 

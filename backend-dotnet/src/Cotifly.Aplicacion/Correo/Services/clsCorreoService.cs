@@ -49,6 +49,7 @@ public sealed class clsCorreoService(
     IClsTransporteCorreo transporte,
     IClsUnitOfWork unidadTrabajo,
     IClsReloj reloj,
+    IClsCalendarioNegocio calendario,
     clsCandadoEnvios candado,
     IOptions<clsOpcionesCorreo> opciones,
     ILogger<clsCorreoService> logger) : IClsCorreoService
@@ -138,13 +139,14 @@ public sealed class clsCorreoService(
         var correoId = Guid.NewGuid();
         var resumen = clsPlantillaCorreo.Resumen(cotizacion);
         var firma = clsPlantillaCorreo.FirmaComercial(usuario?.NombreCompleto, usuario?.Email, usuario?.Telefono);
+        var datos = clsPlantillaCorreo.Datos(cotizacion, calendario);
         var original = new clsMensajeCorreo(
             usuario?.Email,
             para,
             cc,
             asunto,
             texto,
-            clsPlantillaCorreo.Html(texto, resumen, firmaComercial: firma),
+            clsPlantillaCorreo.Html(texto, resumen, firmaComercial: firma, datos: datos),
             new clsAdjuntoCorreo(NombreAdjunto(cotizacion), pdf))
         {
             Bcc = CopiaOculta(usuario?.Email, para, cc) is { } bcc ? [bcc] : [],
@@ -162,7 +164,7 @@ public sealed class clsCorreoService(
         try
         {
             (mensaje, redirigidoA) = clsProteccionCorreo.Aplicar(
-                original, opciones.Value.Proteccion, aviso => clsPlantillaCorreo.Html(texto, resumen, aviso, firma));
+                original, opciones.Value.Proteccion, aviso => clsPlantillaCorreo.Html(texto, resumen, aviso, firma, datos));
         }
         catch (InvalidOperationException ex)
         {

@@ -33,6 +33,7 @@ public sealed class clsCorreoServiceTests : IDisposable
     private readonly IClsTransporteCorreo _transporte = Substitute.For<IClsTransporteCorreo>();
     private readonly IClsUnitOfWork _unidadTrabajo = Substitute.For<IClsUnitOfWork>();
     private readonly clsRelojFalso _reloj = new();
+    private readonly IClsCalendarioNegocio _calendario = Substitute.For<IClsCalendarioNegocio>();
     private readonly clsCandadoEnvios _candado = new();
     private static readonly Guid _idMailSender = Guid.Parse("6d1a0f4e-3b2c-4c1d-9e8f-0a1b2c3d4e5f");
     private readonly clsOpcionesCorreo _opciones = new() { Habilitado = true, Proteccion = new() { Modo = "ninguno", PermitirEnvioReal = true } };
@@ -70,7 +71,7 @@ public sealed class clsCorreoServiceTests : IDisposable
     public void Dispose() => _candado.Dispose();
 
     private clsCorreoService Servicio() =>
-        new(_cotizaciones, _correos, _usuarios, _almacen, _transporte, _unidadTrabajo, _reloj, _candado, Options.Create(_opciones), _logger);
+        new(_cotizaciones, _correos, _usuarios, _almacen, _transporte, _unidadTrabajo, _reloj, _calendario, _candado, Options.Create(_opciones), _logger);
 
     private clsEntradaEnviarCorreo Entrada(string[]? para = null, string[]? cc = null, Guid? usuario = null, string? asunto = null, string? cuerpo = null) =>
         new(usuario ?? _comercial.Id, para ?? ["cliente@empresa.com"], Folio: "PCN-C1", Cc: cc, Asunto: asunto, Cuerpo: cuerpo);
@@ -93,7 +94,8 @@ public sealed class clsCorreoServiceTests : IDisposable
         _enviado.Adjunto.Contenido.Should().Equal("%PDF-1.4 prueba"u8.ToArray());
         _enviado.Asunto.Should().Be("Cotización PCN-C1 — Botero Soto");
         _enviado.CuerpoTexto.Should().Be(clsPlantillaCorreo.CuerpoPorDefecto);
-        _enviado.CuerpoHtml.Should().Contain("Estimado cliente,<br>").And.Contain("Botero Soto</b> · Soluciones Logísticas");
+        _enviado.CuerpoHtml.Should().Contain("Estimado cliente,<br>").And.Contain("Soluciones Log&#237;sticas")
+            .And.Contain(System.Net.WebUtility.HtmlEncode(Cotifly.Aplicacion.Pdf.Services.clsTextosEstandar.PieEmpresa));
 
         var fila = _registrados.Should().ContainSingle().Subject;
         fila.Estado.Should().Be(EstadoCorreo.Encolado, "MailSender lo encoló (202): el worker confirma la entrega");
@@ -208,11 +210,22 @@ public sealed class clsCorreoServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ElCuerpoLlevaLaFichaConElFolioYSinFechaSiLaCotizacionNoSeHaGuardado()
+    {
+        await Servicio().EnviarAsync(Entrada(), Ct);
+
+        // #262: sin CreatedAt (la cotización de la prueba no pasó por la persistencia) la ficha sale sin fecha y no se consulta el calendario.
+        _enviado!.CuerpoHtml.Should().Contain(">PCN-C1<").And.NotContain(">Fecha<");
+        _calendario.DidNotReceive().FechaDe(Arg.Any<DateTimeOffset>());
+    }
+
+    [Fact]
     public async Task ElCuerpoLlevaLaFirmaDelComercial()
     {
         await Servicio().EnviarAsync(Entrada(), Ct);
 
-        _enviado!.CuerpoHtml.Should().Contain(System.Net.WebUtility.HtmlEncode("Nathaly Vargas · nvargas@boterosoto.com.co"));
+        // #262: el nombre en negrita y, debajo, el correo (y el celular si lo tiene).
+        _enviado!.CuerpoHtml.Should().Contain(">Nathaly Vargas</div>").And.Contain(">nvargas@boterosoto.com.co");
     }
 
     [Fact]
@@ -249,7 +262,9 @@ public sealed class clsCorreoServiceTests : IDisposable
         var total = Cotifly.Aplicacion.Pdf.Services.clsFormatoMoneda.Formatear(costeada.PrecioFinal, "COP");
         _enviado!.CuerpoHtml.Should().Contain(System.Net.WebUtility.HtmlEncode(clsPlantillaCorreo.TituloResumen))
             .And.Contain(System.Net.WebUtility.HtmlEncode(clsPlantillaCorreo.EtiquetaTotal))
-            .And.Contain(total + " COP").And.Contain(System.Net.WebUtility.HtmlEncode(Cotifly.Aplicacion.Pdf.Services.clsTextosEstandar.LeyendaImpuestos));
+            .And.Contain(total + " COP")
+            // #262 (decisión del 2026-11-03): la leyenda de impuestos ya no va en el correo, solo en el PDF adjunto.
+            .And.NotContain(System.Net.WebUtility.HtmlEncode(Cotifly.Aplicacion.Pdf.Services.clsTextosEstandar.LeyendaImpuestos));
         _enviado.CuerpoHtml.Should().NotContainAny("Costo", "costo", "Margen", "margen", "Flete", "flete");
     }
 
