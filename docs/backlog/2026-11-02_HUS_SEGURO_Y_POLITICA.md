@@ -130,7 +130,9 @@ Entonces el seguro aparece como una línea separada "Seguro de la mercancía"
 **Asignado a:** @dguerraBSSL
 **Parte de HU-045 (milestone). Depende de HU-045.1. Relacionada con HU-043 (#251): la fórmula del precio de la ruta cambia en las dos.**
 
-- [ ] Mapear `TarifasSeguro` y las tres columnas nuevas de la ruta (`clsCotizacionConfiguracion.cs`).
+- [ ] Mapear lo que ya creó el script `20` (HU-045.1, aplicado en la base compartida). **No crear tablas ni scripts de base.**
+  - `TarifasSeguro`: `id UNIQUEIDENTIFIER` (`Guid`, `DEFAULT NEWID()`), `tasa DECIMAL(9,6)` (fracción: 0.003450 = 0,345 %; CHECK > 0 y < 1), `vigenteDesde DATETIMEOFFSET`, `isActive BIT`, `updatedAt DATETIMEOFFSET`. Solo hay una fila activa (índice único filtrado `uq_tarifasSeguro_activa`): la vigente es la de `isActive = 1`. El backend solo la lee; la tasa se cambia con `db/scripts/operacion/cambiar_tasa_seguro.sql`.
+  - `CotizacionLineasSolicitud` (`clsCotizacionConfiguracion.cs`): `incluyeSeguro BIT NOT NULL DEFAULT 0`, `tasaSeguroAplicada DECIMAL(9,6) NULL`, `costoSeguro DECIMAL(18,2) NULL`. Los CHECK de la base exigen: sin seguro, `tasaSeguroAplicada` y `costoSeguro` en NULL; si hay `costoSeguro`, hay `tasaSeguroAplicada`; `costoSeguro >= 0`.
 - [ ] Endpoint para incluir o quitar el seguro de una ruta en el costeo, con `If-Match`, siguiendo el patrón del ajuste de margen (decisión 3). Respeta los candados del PDF enviado y de la cotización finalizada (HU-036).
 - [ ] Al incluirlo: toma la tasa activa, calcula `costoSeguro` y recalcula el precio de la ruta y de la cotización (decisión 1). Sin `valor_mercancia`, responde `SEGURO_SIN_VALOR_MERCANCIA`.
 - [ ] Al editar `valor_mercancia` (HU-028), recalcula `costoSeguro` de las rutas que tienen el seguro.
@@ -382,14 +384,20 @@ Entonces ve un aviso de que no se puede aplicar la política de seguros, y "Fina
 **Asignado a:** @dguerraBSSL
 **Parte de HU-046 (milestone). Depende de HU-046.2. Relacionada con HU-036.2 (#206, Finalizar), HU-043 (#251, conexos a precio de venta) y HU-045 (seguro).**
 
-- [ ] Mapear las 4 tablas y la columna `codigoServicio` de `CotizacionServiciosConexos`.
+- [ ] Mapear lo que ya creó el script `21` (HU-046.2, aplicado en la base compartida). **No crear tablas ni scripts de base.** Todos los `id` y las FK son `UNIQUEIDENTIFIER` (`Guid`). El backend solo lee las 4 tablas; la política se cambia con `db/scripts/operacion/cambiar_politica_seguros.sql`.
+  - `PoliticaSeguroTramos`: `id`, `nombre NVARCHAR(60)`, `valorDesde DECIMAL(18,2)` (exclusivo), `valorHasta DECIMAL(18,2) NULL` (incluido; NULL = sin tope), `nota NVARCHAR(500) NULL`, `isActive`, `updatedAt`. Solo cuentan los activos.
+  - `PoliticaSeguroMedidas`: `id`, `codigo NVARCHAR(40)` (único), `nombre NVARCHAR(100)` (lo que se muestra), `esCobrable BIT`, `isActive`, `updatedAt`. Solo cuentan las activas.
+  - `PoliticaSeguroTramoMedidas`: `id`, `tramoId` FK, `medidaId` FK, `nivel NVARCHAR(20)` (`recomendada` | `obligatoria`), `updatedAt`. Único (`tramoId`, `medidaId`). No tiene `isActive`: si la fila no está, la medida no aplica en ese tramo.
+  - `PoliticaSeguroMedidaConexos`: `id`, `medidaId` FK, `codigoServicio NVARCHAR(40)` (código de Nexo, sin FK), `updatedAt`. Único (`medidaId`, `codigoServicio`).
+  - `CotizacionServiciosConexos.codigoServicio NVARCHAR(40) NULL`.
+  - **No existen** `proyectoEspecial`, `descripcion` ni una `nota` por regla (decisiones del 2026-11-02 y 2026-11-03): el proyecto especial sale de la `nota` del tramo y la medida se muestra con su `nombre`.
 - [ ] Guardar `codigoServicio` al agregar un conexo. Ya viene en el catálogo de Nexo que lee `clsServiciosConexosNexo`. Completar las filas existentes que lo tengan en NULL la próxima vez que se lea el catálogo.
-- [ ] Calcular el tramo de cada ruta con su `valor_mercancia` total (por ruta, no por camión), con `valorDesde` exclusivo y `valorHasta` incluido: exactamente 250 M cae en "> 150 – 250 M".
+- [ ] Calcular el tramo de cada ruta con su `valor_mercancia` total (por ruta, no por camión), con `valorDesde` exclusivo y `valorHasta` incluido: exactamente 250 M cae en "> 150 – 250 M". Una ruta con valor 0 no cae en ningún tramo: recibe el mismo aviso que una sin `valor_mercancia`.
 - [ ] En `GET /web/cotizaciones/{folio}/costeo`, devolver por ruta un bloque `politica_seguros` con:
   - el tramo;
-  - las medidas **recomendadas**;
+  - las medidas **recomendadas** (`codigo` y `nombre`);
   - las medidas **obligatorias**, cada una con estado `cumplida` o `pendiente` y los códigos de conexo que la cumplen (para el botón "agregar");
-  - la nota del tramo;
+  - la nota del tramo (desde 700 M dice "Proyecto especial");
   - un aviso si falta `valor_mercancia`.
 - [ ] En "Finalizar" (HU-036.2), rechazar con `COTIZACION_NO_FINALIZABLE` y `detalle.motivo = medidas_obligatorias_faltantes` si una ruta cotizable tiene una medida obligatoria pendiente. El detalle lista cada ruta y su medida.
 - [ ] Aceptar una justificación al finalizar que salta el bloqueo (decisión 1), y auditarla en `EventosHerramienta`.
@@ -401,7 +409,7 @@ Entonces ve un aviso de que no se puede aplicar la política de seguros, y "Fina
   - cumplir una obligación con cada uno de los conexos de la medida;
   - bloqueo y justificación en "Finalizar";
   - un cambio en las tablas se refleja sin desplegar;
-  - ruta sin `valor_mercancia`;
+  - ruta sin `valor_mercancia` y ruta con valor 0;
   - una ruta de varios camiones usa el valor total de la ruta.
 
 ### [HU-046.4] [QA] Validar la política de seguros de punta a punta
