@@ -367,7 +367,7 @@ Entonces ve un aviso de que no se puede aplicar la política de seguros, y "Fina
     - `isActive BIT`, `updatedAt DATETIMEOFFSET`.
 
     CHECK `valorHasta IS NULL OR valorHasta > valorDesde`.
-  - [ ] `PoliticaSeguroMedidas`: `id`, `codigo NVARCHAR(40) UNIQUE`, `nombre NVARCHAR(100)`, `descripcion NVARCHAR(300) NULL`, `esCobrable BIT`, `isActive`, `updatedAt`.
+  - [ ] `PoliticaSeguroMedidas`: `id`, `codigo NVARCHAR(40) UNIQUE`, `nombre NVARCHAR(100)`, `esCobrable BIT`, `isActive`, `updatedAt`.
   - [ ] `PoliticaSeguroTramoMedidas`: `id`, `tramoId` FK, `medidaId` FK, `nivel NVARCHAR(20)` con CHECK (`recomendada`, `obligatoria`). UNIQUE (`tramoId`, `medidaId`).
   - [ ] `PoliticaSeguroMedidaConexos`: `id`, `medidaId` FK, `codigoServicio NVARCHAR(40)` (código del catálogo de Nexo, sin FK porque es de otra base). UNIQUE (`medidaId`, `codigoServicio`).
   - [ ] En `CotizacionServiciosConexos`: la columna `codigoServicio NVARCHAR(40) NULL`. Las filas existentes quedan en NULL y el backend las completa (HU-046.3).

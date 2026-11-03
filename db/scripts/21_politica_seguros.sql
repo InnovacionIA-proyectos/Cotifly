@@ -96,7 +96,6 @@ BEGIN TRY
             id                  UNIQUEIDENTIFIER    NOT NULL CONSTRAINT df_politicaSeguroMedidas_id DEFAULT (NEWID()),
             codigo              NVARCHAR(40)  COLLATE Latin1_General_100_CI_AS_SC_UTF8 NOT NULL,
             nombre              NVARCHAR(100) COLLATE Latin1_General_100_CI_AS_SC_UTF8 NOT NULL,
-            descripcion         NVARCHAR(300) COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL,
             esCobrable          BIT                 NOT NULL CONSTRAINT df_politicaSeguroMedidas_esCobrable DEFAULT (0),
             isActive            BIT                 NOT NULL CONSTRAINT df_politicaSeguroMedidas_isActive DEFAULT (1),
             updatedAt           DATETIMEOFFSET      NOT NULL CONSTRAINT df_politicaSeguroMedidas_updatedAt DEFAULT (SYSDATETIMEOFFSET()),
@@ -181,14 +180,14 @@ BEGIN TRY
             (N'> 700 – 1.000 M',   700000000,  1000000000, N'Proyecto especial.'),
             (N'> 1.000 M',         1000000000, NULL,       N'Proyecto especial. Caso a caso: la operación se analiza aparte.');
 
-        INSERT INTO dbo_cotifly.PoliticaSeguroMedidas (codigo, nombre, descripcion, esCobrable) VALUES
-            (N'esquema_basico',        N'Esquema básico de seguridad',             NULL, 0),
-            (N'gps',                   N'GPS',                                     NULL, 0),
-            (N'candado_satelital',     N'Candado satelital',                       N'No hay conexo en Nexo: solo se recomienda.', 0),
-            (N'restriccion_nocturna',  N'Restricción de tránsito nocturno',        NULL, 0),
-            (N'acompanante_vehicular', N'Acompañante vehicular (parcial o total)', N'Se cumple con cualquier acompañante, parcial o total.', 1),
-            (N'acompanante_total',     N'Acompañante vehicular total',             N'Se cumple con un acompañante total.', 1),
-            (N'incluir_seguro',        N'Incluir el seguro de la mercancía',       N'Si el cliente no tiene póliza propia, incluye el seguro de la mercancía en la cotización.', 0);
+        INSERT INTO dbo_cotifly.PoliticaSeguroMedidas (codigo, nombre, esCobrable) VALUES
+            (N'esquema_basico',        N'Esquema básico de seguridad',             0),
+            (N'gps',                   N'GPS',                                     0),
+            (N'candado_satelital',     N'Candado satelital',                       0),
+            (N'restriccion_nocturna',  N'Restricción de tránsito nocturno',        0),
+            (N'acompanante_vehicular', N'Acompañante vehicular (parcial o total)', 1),
+            (N'acompanante_total',     N'Acompañante vehicular total',             1),
+            (N'incluir_seguro',        N'Incluir el seguro de la mercancía',       0);
 
         INSERT INTO dbo_cotifly.PoliticaSeguroTramoMedidas (tramoId, medidaId, nivel)
         SELECT t.id, m.id, v.nivel
