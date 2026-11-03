@@ -112,6 +112,19 @@ public sealed class clsBaseDatosHealthCheckTests
         resultado.Description.Should().Be(descripcion);
     }
 
+    [Theory]
+    [InlineData("CotizacionServiciosConexos.precioVenta", clsBaseDatosHealthCheck.DescripcionEsquemaSin19)]
+    [InlineData("CotizacionServiciosConexos.precioVenta|TokensRefresco.rolSesion", clsBaseDatosHealthCheck.DescripcionEsquemaSin16)]
+    [InlineData("CotizacionServiciosConexos.precioVenta|CotizacionServiciosConexos.nombreServicioConexo", clsBaseDatosHealthCheck.DescripcionEsquemaSin0010)]
+    [InlineData("CotizacionServiciosConexos.precioVenta|Otra.columna", "esquema incompleto: falta CotizacionServiciosConexos.precioVenta, Otra.columna")]
+    public void Issue261_SinEl19LaSondaPideEl19SoloCuandoNoFaltaUnScriptAnterior(string faltantes, string descripcion)
+    {
+        var resultado = clsBaseDatosHealthCheck.Clasificar(faltantes.Split('|'), cotizacionesViejas: false);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be(descripcion);
+    }
+
     internal static async Task<HealthCheckResult> EvaluarAsync(string? cadena)
     {
         await using var proveedor = clsServiciosPruebas.Crear(cadena, new clsRelojFalso());
@@ -285,6 +298,18 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
 
         resultado.Status.Should().Be(HealthStatus.Unhealthy);
         resultado.Description.Should().Be("esquema incompleto: falta 16");
+    }
+
+    [Fact]
+    public async Task Issue261_ConEl16PeroSinEl19EsUnhealthyPorqueLeFaltaEl19()
+    {
+        // #261 punto 4: el modelo EF mapea CotizacionServiciosConexos.precioVenta (db/scripts/19_precio_venta_conexos.sql, HU-043.1 #245).
+        await using var sin19 = await baseDatos.CrearBaseConScriptsAsync("dbSin19", clsBaseDatosPruebas.ScriptsSin07 - 1);
+
+        var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin19.Cadena);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be("esquema incompleto: falta 19");
     }
 
     [Fact]

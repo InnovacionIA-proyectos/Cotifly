@@ -39,6 +39,8 @@ namespace Cotifly.Infraestructura.Comun.Persistence;
 /// <c>db/scripts/14_cotizacion_finalizada.sql</c> (HU-036, #205);</item>
 /// <item><see cref="DescripcionEsquemaSin16"/>: solo falta <c>TokensRefresco.rolSesion</c> de
 /// <c>db/scripts/16_multiples_roles_activos.sql</c> (HU-040.1, #229);</item>
+/// <item><see cref="DescripcionEsquemaSin19"/>: solo falta <c>CotizacionServiciosConexos.precioVenta</c> de
+/// <c>db/scripts/19_precio_venta_conexos.sql</c> (HU-043.1, #245; el backend la mapea desde #261);</item>
 /// <item>cualquier otra ausencia: <c>esquema incompleto: falta Tabla.columna</c> (las primeras, sin datos de conexión).</item>
 /// </list>
 /// La sonda tiene un tiempo máximo propio (<see cref="TiempoMaximo"/>). Las descripciones no incluyen la cadena ni el servidor.
@@ -213,6 +215,15 @@ public sealed class clsBaseDatosHealthCheck(
         "TokensRefresco.rolSesion",
     };
 
+    /// <summary>#261 punto 4: está todo lo anterior, pero no <c>precioVenta</c> de <c>db/scripts/19_precio_venta_conexos.sql</c> (HU-043.1, #245).</summary>
+    public const string DescripcionEsquemaSin19 = "esquema incompleto: falta 19";
+
+    /// <summary>Columnas que agrega <c>db/scripts/19_precio_venta_conexos.sql</c> (HU-043.1, #245).</summary>
+    public static readonly IReadOnlySet<string> Columnas19 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "CotizacionServiciosConexos.precioVenta",
+    };
+
     /// <summary>Prefijo de la descripción cuando falta otra tabla o columna del modelo.</summary>
     public const string PrefijoEsquemaIncompleto = "esquema incompleto: falta ";
 
@@ -345,12 +356,12 @@ public sealed class clsBaseDatosHealthCheck(
             return HealthCheckResult.Unhealthy(DescripcionEsquemaSin0009);
         }
 
-        // Faltan columnas de los ajustes que van después del 0009 (0010, 02 del cubicador, 03, 04, 05, 06, 09, 10, 11, 12, 13, 14 y 16): se pide el
+        // Faltan columnas de los ajustes que van después del 0009 (0010, 02 del cubicador, 03, 04, 05, 06, 09, 10, 11, 12, 13, 14, 16 y 19): se pide el
         // primero que falta, en el orden en que se aplican.
         if (faltantes.All(f => Columnas0010.Contains(f) || Columnas02.Contains(f) || Columnas03.Contains(f) || Columnas04.Contains(f)
                                || Columnas05.Contains(f) || Columnas06.Contains(f) || Columnas09.Contains(f) || Columnas10.Contains(f)
                                || Columnas11.Contains(f) || Columnas12.Contains(f) || Columnas13.Contains(f)
-                               || Columnas14.Contains(f) || Columnas16.Contains(f)))
+                               || Columnas14.Contains(f) || Columnas16.Contains(f) || Columnas19.Contains(f)))
         {
             return HealthCheckResult.Unhealthy(
                 faltantes.Any(Columnas0010.Contains) ? DescripcionEsquemaSin0010
@@ -365,7 +376,8 @@ public sealed class clsBaseDatosHealthCheck(
                 : faltantes.Any(Columnas12.Contains) ? DescripcionEsquemaSin12
                 : faltantes.Any(Columnas13.Contains) ? DescripcionEsquemaSin13
                 : faltantes.Any(Columnas14.Contains) ? DescripcionEsquemaSin14
-                : DescripcionEsquemaSin16);
+                : faltantes.Any(Columnas16.Contains) ? DescripcionEsquemaSin16
+                : DescripcionEsquemaSin19);
         }
 
         return HealthCheckResult.Unhealthy(PrefijoEsquemaIncompleto + string.Join(", ", faltantes.Order(StringComparer.Ordinal).Take(5)));
