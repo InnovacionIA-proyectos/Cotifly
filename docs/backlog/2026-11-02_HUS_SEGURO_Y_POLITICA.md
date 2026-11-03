@@ -204,7 +204,7 @@ Entonces el seguro aparece como una línea separada "Seguro de la mercancía"
 
   | Tabla | Qué guarda |
   |---|---|
-  | `PoliticaSeguroTramos` | Rangos de valor de la mercancía y una nota por tramo (por ejemplo, "Proyecto especial"). |
+  | `PoliticaSeguroTramos` | Rangos de valor de la mercancía. |
   | `PoliticaSeguroMedidas` | Catálogo de medidas: esquema básico, GPS, candado, acompañantes, etc. |
   | `PoliticaSeguroTramoMedidas` | Tabla intermedia: qué medida aplica en cada tramo, con nivel `recomendada` u `obligatoria`. |
   | `PoliticaSeguroMedidaConexos` | Qué **códigos** de conexo de Nexo cumplen cada medida. Es lo que permite decir "**algún** acompañante": la obligación se cumple con cualquiera de los conexos de la medida. |
@@ -220,18 +220,18 @@ Entonces el seguro aparece como una línea separada "Seguro de la mercancía"
 
 ### Carga inicial aprobada (HU-046.1, 2026-11-02)
 
-| Tramo | Esquema básico | GPS | Candado satelital | Restricción nocturna | Acompañante | Incluir seguro (aviso) | Proyecto especial |
-|---|---|---|---|---|---|---|---|
-| ≤ 150 M | Recomendada | — | — | — | — | — | — |
-| > 150 – 250 M | Recomendada | — | Recomendada | — | — | — | — |
-| > 250 – 350 M | Recomendada | Recomendada | Recomendada | — | — | Recomendada | — |
-| > 350 – 500 M | Recomendada | Recomendada | Recomendada | Recomendada | **Obligatoria: parcial o total** | Recomendada | — |
-| > 500 – 700 M | Recomendada | Recomendada | Recomendada | Recomendada | **Obligatoria: parcial o total** | Recomendada | — |
-| > 700 – 1.000 M | Recomendada | Recomendada | Recomendada | Recomendada | **Obligatoria: total** | Recomendada | Sí |
-| > 1.000 M | — | — | — | — | Caso a caso (solo aviso) | — | Sí |
+| Tramo | Esquema básico | GPS | Candado satelital | Restricción nocturna | Acompañante | Incluir seguro (aviso) |
+|---|---|---|---|---|---|---|
+| ≤ 150 M | Recomendada | — | — | — | — | — |
+| > 150 – 250 M | Recomendada | — | Recomendada | — | — | — |
+| > 250 – 350 M | Recomendada | Recomendada | Recomendada | — | — | Recomendada |
+| > 350 – 500 M | Recomendada | Recomendada | Recomendada | Recomendada | **Obligatoria: parcial o total** | Recomendada |
+| > 500 – 700 M | Recomendada | Recomendada | Recomendada | Recomendada | **Obligatoria: parcial o total** | Recomendada |
+| > 700 – 1.000 M | Recomendada | Recomendada | Recomendada | Recomendada | **Obligatoria: total** | Recomendada |
+| > 1.000 M | — | — | — | — | — (caso a caso, fuera de Cotifly) | — |
 
 - **Límites:** `desde` exclusivo y `hasta` incluido, en pesos fijos. Exactamente 250 M cae en "> 150 – 250 M".
-- **Quién autoriza no se guarda** (decisión del 2026-11-02): era solo informativo. Tampoco hay una columna de proyecto especial: los tramos de 700 M en adelante lo dicen en su nota.
+- **Quién autoriza y el proyecto especial no se guardan** (decisiones del 2026-11-02 y 2026-11-03): eran solo informativos. Los tramos no tienen `proyectoEspecial` ni `nota`, así que Cotifly no muestra un aviso de proyecto especial ni el "caso a caso" de más de 1.000 M: la ruta solo muestra su tramo y sus medidas.
 
 Qué conexos cumplen cada medida (códigos verificados en `tbl_servicios_conexos` de Nexo el 2026-11-02):
 - `acompanante_vehicular` (parcial o total, tramos de 350 – 700 M) → cualquiera de los 5: `AVP_MOTO`, `AVP_MOTO_ARMADA`, `AVT_AUTO`, `AVT_MOTO`, `AVT_MOTO_ARMADA`. El total cumple la obligación de parcial: en Nexo el parcial solo tiene precio en trayectos cortos y el total en largos.
@@ -249,7 +249,7 @@ Qué conexos cumplen cada medida (códigos verificados en `tbl_servicios_conexos
 5. **Acompañante armado:** ningún tramo lo exige; cumple cualquiera de los dos (armado o no).
 6. **Recomendar el seguro (HU-045):** solo un aviso, porque Cotifly no sabe si el cliente tiene póliza propia. Es la medida `incluir_seguro`, recomendada desde 250 M, sin conexos.
 7. **Cotizaciones existentes:** la regla aplica solo a las que todavía no están finalizadas. Las finalizadas no se tocan (HU-036).
-8. **Quién autoriza no se guarda en la base:** era solo informativo y no es relevante para Cotifly. Tampoco hay una marca de proyecto especial: los tramos de 700 M en adelante lo dicen en su nota.
+8. **Quién autoriza no se guarda en la base:** era solo informativo y no es relevante para Cotifly. Tampoco se guarda el proyecto especial (ni columna ni nota del tramo, decisión del 2026-11-03): Cotifly no lo muestra.
 9. **Solo el acompañamiento vehicular puede ser obligatorio.** El GPS, el candado, el esquema básico y la restricción nocturna quedan como recomendación: en Nexo solo hay conexos de acompañamiento.
 10. **El candado satelital no es `PRE_BSAT`** (es un precinto). No hay conexo de candado.
 11. **El acompañante total cumple la obligación de parcial** (en Nexo no se cruzan en ninguna ruta).
@@ -304,10 +304,10 @@ Dado una ruta de 3 camiones con valor_mercancia de $900.000.000
 Cuando el comercial abre el costeo
 Entonces la ruta cae en el tramo "> 700 – 1.000 M"
 
-Escenario: Proyecto especial
+Escenario: Tramo de 700 – 1.000 M
 Dado una ruta con valor_mercancia de $800.000.000
 Cuando el comercial abre el costeo
-Entonces ve la nota del tramo ("Proyecto especial") y que el acompañante total es obligatorio
+Entonces ve que el acompañante total es obligatorio
 
 Escenario: Cambio de la política sin despliegue
 Dado que Datos cambia el acompañante vehicular a "obligatoria" en el tramo "> 250 – 350 M"
@@ -321,7 +321,7 @@ Entonces ve un aviso de que no se puede aplicar la política de seguros, y "Fina
 ```
 
 ### Trazabilidad (event storming)
-- **Lectura:** Requisitos de la política de la ruta (tramo y su nota, medidas recomendadas y obligatorias, cumplidas o pendientes). Se arma con `valor_mercancia` y las 4 tablas.
+- **Lectura:** Requisitos de la política de la ruta (tramo, medidas recomendadas y obligatorias, cumplidas o pendientes). Se arma con `valor_mercancia` y las 4 tablas.
 - **Comando:** Agregar el conexo sugerido → **Evento:** Conexo agregado a la ruta (con su `codigoServicio`) → **Política:** La medida queda cumplida.
 - **Comando:** Finalizar la cotización → **Política:** Medidas obligatorias cumplidas → **Evento:** Cotización finalizada, o rechazo con `medidas_obligatorias_faltantes`.
 - **Comando (Datos):** Cambiar la política en las tablas → **Evento:** Política actualizada. Afecta solo las cotizaciones no finalizadas.
@@ -365,7 +365,6 @@ Entonces ve un aviso de que no se puede aplicar la política de seguros, y "Fina
     - `nombre NVARCHAR(60)`;
     - `valorDesde DECIMAL(18,2) NOT NULL` (exclusivo);
     - `valorHasta DECIMAL(18,2) NULL` (inclusivo; NULL = sin tope);
-    - `nota NVARCHAR(500) NULL`;
     - `isActive BIT`, `updatedAt DATETIMEOFFSET`.
 
     CHECK `valorHasta IS NULL OR valorHasta > valorDesde`.
@@ -385,19 +384,18 @@ Entonces ve un aviso de que no se puede aplicar la política de seguros, y "Fina
 **Parte de HU-046 (milestone). Depende de HU-046.2. Relacionada con HU-036.2 (#206, Finalizar), HU-043 (#251, conexos a precio de venta) y HU-045 (seguro).**
 
 - [ ] Mapear lo que ya creó el script `21` (HU-046.2, aplicado en la base compartida). **No crear tablas ni scripts de base.** Todos los `id` y las FK son `UNIQUEIDENTIFIER` (`Guid`). El backend solo lee las 4 tablas; la política se cambia con `db/scripts/operacion/cambiar_politica_seguros.sql`.
-  - `PoliticaSeguroTramos`: `id`, `nombre NVARCHAR(60)`, `valorDesde DECIMAL(18,2)` (exclusivo), `valorHasta DECIMAL(18,2) NULL` (incluido; NULL = sin tope), `nota NVARCHAR(500) NULL`, `isActive`, `updatedAt`. Solo cuentan los activos.
+  - `PoliticaSeguroTramos`: `id`, `nombre NVARCHAR(60)`, `valorDesde DECIMAL(18,2)` (exclusivo), `valorHasta DECIMAL(18,2) NULL` (incluido; NULL = sin tope), `isActive`, `updatedAt`. Solo cuentan los activos.
   - `PoliticaSeguroMedidas`: `id`, `codigo NVARCHAR(40)` (único), `nombre NVARCHAR(100)` (lo que se muestra), `esCobrable BIT`, `isActive`, `updatedAt`. Solo cuentan las activas.
   - `PoliticaSeguroTramoMedidas`: `id`, `tramoId` FK, `medidaId` FK, `nivel NVARCHAR(20)` (`recomendada` | `obligatoria`), `updatedAt`. Único (`tramoId`, `medidaId`). No tiene `isActive`: si la fila no está, la medida no aplica en ese tramo.
   - `PoliticaSeguroMedidaConexos`: `id`, `medidaId` FK, `codigoServicio NVARCHAR(40)` (código de Nexo, sin FK), `updatedAt`. Único (`medidaId`, `codigoServicio`).
   - `CotizacionServiciosConexos.codigoServicio NVARCHAR(40) NULL`.
-  - **No existen** `proyectoEspecial`, `descripcion` ni una `nota` por regla (decisiones del 2026-11-02 y 2026-11-03): el proyecto especial sale de la `nota` del tramo y la medida se muestra con su `nombre`.
+  - **No existen** `proyectoEspecial`, `descripcion` ni `nota` (ni en el tramo ni en la regla; decisiones del 2026-11-02 y 2026-11-03): no hay aviso de proyecto especial y la medida se muestra con su `nombre`.
 - [ ] Guardar `codigoServicio` al agregar un conexo. Ya viene en el catálogo de Nexo que lee `clsServiciosConexosNexo`. Completar las filas existentes que lo tengan en NULL la próxima vez que se lea el catálogo.
 - [ ] Calcular el tramo de cada ruta con su `valor_mercancia` total (por ruta, no por camión), con `valorDesde` exclusivo y `valorHasta` incluido: exactamente 250 M cae en "> 150 – 250 M". Una ruta con valor 0 no cae en ningún tramo: recibe el mismo aviso que una sin `valor_mercancia`.
 - [ ] En `GET /web/cotizaciones/{folio}/costeo`, devolver por ruta un bloque `politica_seguros` con:
   - el tramo;
   - las medidas **recomendadas** (`codigo` y `nombre`);
   - las medidas **obligatorias**, cada una con estado `cumplida` o `pendiente` y los códigos de conexo que la cumplen (para el botón "agregar");
-  - la nota del tramo (desde 700 M dice "Proyecto especial");
   - un aviso si falta `valor_mercancia`.
 - [ ] En "Finalizar" (HU-036.2), rechazar con `COTIZACION_NO_FINALIZABLE` y `detalle.motivo = medidas_obligatorias_faltantes` si una ruta cotizable tiene una medida obligatoria pendiente. El detalle lista cada ruta y su medida.
 - [ ] Aceptar una justificación al finalizar que salta el bloqueo (decisión 1), y auditarla en `EventosHerramienta`.
@@ -436,5 +434,5 @@ Entonces ve un aviso de que no se puede aplicar la política de seguros, y "Fina
   - las medidas recomendadas (informativas), incluido el aviso de incluir el seguro;
   - las medidas obligatorias, con su estado cumplida o pendiente.
 - [ ] Para cada medida cobrable (solo los acompañantes), un botón para agregar el conexo que la cumple, reutilizando el flujo actual de agregar conexos. Si hay varios conexos posibles (por ejemplo, parcial en moto o total en auto), el comercial escoge.
-- [ ] Destacar la nota del tramo ("Proyecto especial" desde 700 M) y el aviso de ruta sin valor de mercancía.
+- [ ] Destacar el aviso de ruta sin valor de mercancía.
 - [ ] En "Finalizar", mostrar el rechazo `medidas_obligatorias_faltantes` con la lista de rutas y medidas. Pedir la justificación para continuar (decisión 1).

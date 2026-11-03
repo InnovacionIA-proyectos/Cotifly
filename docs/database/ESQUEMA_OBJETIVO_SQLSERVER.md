@@ -271,7 +271,6 @@ erDiagram
         nvarchar60 nombre
         decimal18_2 valorDesde "exclusivo (21)"
         decimal18_2 valorHasta "incluido, NULL sin tope"
-        nvarchar500 nota "Proyecto especial desde 700 M"
     }
     PoliticaSeguroMedidas {
         uniqueidentifier id PK
@@ -488,7 +487,7 @@ Sin cambios de estructura en HU-021 (salvo el catálogo de líneas de negocio de
 |---|---|---|
 | `MargenesPolitica` | `id` int identity; único `lineaNegocio` | `mapeoLineasNexo`, `margen` dec(9,4), `metodoCalculo` (`'margen'`), `isActive`, `updatedAt` |
 | `TarifasSeguro` | `id` uniqueidentifier `NEWID()`; único filtrado `uq_tarifasSeguro_activa` (`isActive`) `WHERE isActive = 1` | Script `20`, HU-045.1 (#263). `tasa` dec(9,6) (CHECK > 0 y < 1; inicial 0.003450 = 0,345 %), `vigenteDesde`, `isActive`, `updatedAt`. Una sola activa; las viejas se desactivan, no se borran (`db/scripts/operacion/cambiar_tasa_seguro.sql`) |
-| `PoliticaSeguroTramos` | `id` uniqueidentifier `NEWID()`; único filtrado `uq_politicaSeguroTramos_valorDesde_activo` (`valorDesde`) `WHERE isActive = 1` | Script `21`, HU-046.2 (#268). `nombre` nv(60), `valorDesde` dec(18,2) exclusivo, `valorHasta` dec(18,2) incluido o NULL (sin tope), CHECK `valorDesde >= 0` y `valorHasta > valorDesde`; `nota` nv(500) (los de 700 M en adelante dicen "Proyecto especial"), `isActive`, `updatedAt`. Los activos son contiguos (lo valida el `21` y el script de operación) |
+| `PoliticaSeguroTramos` | `id` uniqueidentifier `NEWID()`; único filtrado `uq_politicaSeguroTramos_valorDesde_activo` (`valorDesde`) `WHERE isActive = 1` | Script `21`, HU-046.2 (#268). `nombre` nv(60), `valorDesde` dec(18,2) exclusivo, `valorHasta` dec(18,2) incluido o NULL (sin tope), CHECK `valorDesde >= 0` y `valorHasta > valorDesde`; `isActive`, `updatedAt`. Los activos son contiguos (lo valida el `21` y el script de operación) |
 | `PoliticaSeguroMedidas` | `id` uniqueidentifier `NEWID()`; único `codigo` nv(40) | Script `21`. `nombre` nv(100) (lo que ve el comercial), `esCobrable`, `isActive`, `updatedAt` |
 | `PoliticaSeguroTramoMedidas` | `id` uniqueidentifier `NEWID()`; único (`tramoId`, `medidaId`), FK a las dos | Script `21`. `nivel` nv(20) CHECK `recomendada` \| `obligatoria`, `updatedAt`. Índice `ix_politicaSeguroTramoMedidas_medidaId` |
 | `PoliticaSeguroMedidaConexos` | `id` uniqueidentifier `NEWID()`; único (`medidaId`, `codigoServicio`), FK a `PoliticaSeguroMedidas` | Script `21`. `codigoServicio` nv(40) del catálogo de Nexo (sin FK: otra base), `updatedAt` |

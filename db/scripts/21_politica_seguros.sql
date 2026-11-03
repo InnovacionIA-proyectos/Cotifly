@@ -12,9 +12,8 @@
 
       PoliticaSeguroTramos         rango de valor de la mercancía de la ruta: valorDesde EXCLUSIVO y valorHasta INCLUIDO
                                    (250.000.000 exacto cae en "> 150 – 250 M"); valorHasta NULL = sin tope. Pesos fijos.
-                                   Ni quién autoriza ni una marca de proyecto especial se guardan (decisión 8): los tramos
-                                   de 700 M en adelante lo dicen en su nota. Una ruta con valor 0 no cae en ningún tramo
-                                   (como una sin valor: aviso).
+                                   Ni quién autoriza ni el proyecto especial se guardan (decisión 8; sin nota desde el
+                                   2026-11-03). Una ruta con valor 0 no cae en ningún tramo (como una sin valor: aviso).
       PoliticaSeguroMedidas        catálogo de medidas (codigo único). esCobrable = 1 solo en las que se cumplen
                                    agregando un conexo de Nexo (los acompañantes).
       PoliticaSeguroTramoMedidas   qué medida aplica en cada tramo y con qué nivel: 'recomendada' u 'obligatoria'.
@@ -77,7 +76,6 @@ BEGIN TRY
             nombre              NVARCHAR(60)  COLLATE Latin1_General_100_CI_AS_SC_UTF8 NOT NULL,
             valorDesde          DECIMAL(18,2)       NOT NULL,   -- exclusivo
             valorHasta          DECIMAL(18,2)       NULL,       -- incluido; NULL = sin tope
-            nota                NVARCHAR(500) COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL,
             isActive            BIT                 NOT NULL CONSTRAINT df_politicaSeguroTramos_isActive DEFAULT (1),
             updatedAt           DATETIMEOFFSET      NOT NULL CONSTRAINT df_politicaSeguroTramos_updatedAt DEFAULT (SYSDATETIMEOFFSET()),
             CONSTRAINT pk_politicaSeguroTramos PRIMARY KEY (id),
@@ -171,14 +169,14 @@ BEGIN TRY
        AND NOT EXISTS (SELECT 1 FROM dbo_cotifly.PoliticaSeguroTramoMedidas WITH (UPDLOCK, HOLDLOCK))
        AND NOT EXISTS (SELECT 1 FROM dbo_cotifly.PoliticaSeguroMedidaConexos WITH (UPDLOCK, HOLDLOCK))
     BEGIN
-        INSERT INTO dbo_cotifly.PoliticaSeguroTramos (nombre, valorDesde, valorHasta, nota) VALUES
-            (N'≤ 150 M',           0,          150000000,  NULL),
-            (N'> 150 – 250 M',     150000000,  250000000,  NULL),
-            (N'> 250 – 350 M',     250000000,  350000000,  NULL),
-            (N'> 350 – 500 M',     350000000,  500000000,  NULL),
-            (N'> 500 – 700 M',     500000000,  700000000,  NULL),
-            (N'> 700 – 1.000 M',   700000000,  1000000000, N'Proyecto especial.'),
-            (N'> 1.000 M',         1000000000, NULL,       N'Proyecto especial. Caso a caso: la operación se analiza aparte.');
+        INSERT INTO dbo_cotifly.PoliticaSeguroTramos (nombre, valorDesde, valorHasta) VALUES
+            (N'≤ 150 M',           0,          150000000),
+            (N'> 150 – 250 M',     150000000,  250000000),
+            (N'> 250 – 350 M',     250000000,  350000000),
+            (N'> 350 – 500 M',     350000000,  500000000),
+            (N'> 500 – 700 M',     500000000,  700000000),
+            (N'> 700 – 1.000 M',   700000000,  1000000000),
+            (N'> 1.000 M',         1000000000, NULL);
 
         INSERT INTO dbo_cotifly.PoliticaSeguroMedidas (codigo, nombre, esCobrable) VALUES
             (N'esquema_basico',        N'Esquema básico de seguridad',             0),
@@ -299,7 +297,7 @@ GO
 /* ============================================================================
    Verificación sugerida tras ejecutar (7 tramos contiguos, 7 medidas, 25 reglas, 8 conexos, la columna nueva):
 
-     SELECT id, nombre, valorDesde, valorHasta, nota, isActive FROM dbo_cotifly.PoliticaSeguroTramos ORDER BY valorDesde;
+     SELECT id, nombre, valorDesde, valorHasta, isActive FROM dbo_cotifly.PoliticaSeguroTramos ORDER BY valorDesde;
      SELECT t.nombre AS tramo, m.codigo AS medida, tm.nivel,
             STRING_AGG(c.codigoServicio, ', ') AS conexos
      FROM dbo_cotifly.PoliticaSeguroTramoMedidas tm

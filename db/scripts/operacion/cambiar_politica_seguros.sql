@@ -131,7 +131,7 @@ END CATCH;
 GO
 
 -- Resumen de la política vigente
-SELECT t.nombre AS tramo, t.valorDesde, t.valorHasta, t.nota AS notaTramo,
+SELECT t.nombre AS tramo, t.valorDesde, t.valorHasta,
        m.codigo AS medida, tm.nivel,
        (SELECT STRING_AGG(c.codigoServicio, N', ') FROM dbo_cotifly.PoliticaSeguroMedidaConexos AS c WHERE c.medidaId = m.id) AS conexos
 FROM dbo_cotifly.PoliticaSeguroTramos AS t

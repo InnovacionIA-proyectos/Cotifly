@@ -20,7 +20,7 @@ tablas, #268), HU-046.3 (el backend, #269), HU-046.4 (QA, #270) y HU-046-FE.1 (e
 | 5 | Acompañante armado o no armado | **Ningún tramo exige el armado.** Cumple cualquiera de los dos. | Ni la política ni Nexo definen cuándo va armado. |
 | 6 | Recomendar el seguro (HU-045) | **Solo un aviso**: "si el cliente no tiene póliza propia, incluye el seguro de la mercancía". Es la medida `incluir_seguro`: **recomendada desde 250 M**, sin conexos. No se guarda si el cliente tiene póliza. | Cotifly no sabe si el cliente tiene póliza propia; el comercial sí. La política pide la póliza específica desde 250 M cuando el cliente no tiene póliza. |
 | 7 | Cotizaciones que ya existen | Las reglas aplican **solo a las que no están finalizadas**. Las finalizadas no se recalculan (HU-036). | Una cotización finalizada no cambia. |
-| 8 | Quién autoriza | **No se guarda en la base.** La tabla de tramos no tiene la columna `autoriza` ni una marca `proyectoEspecial`: los tramos de 700 M en adelante lo dicen en su `nota`. | Era solo informativo: Cotifly no pide ni registra aprobaciones. |
+| 8 | Quién autoriza | **No se guarda en la base.** La tabla de tramos no tiene `autoriza`, ni `proyectoEspecial`, ni `nota` (2026-11-03): Cotifly no muestra el proyecto especial ni el "caso a caso" de más de 1.000 M. | Era solo informativo: Cotifly no pide ni registra aprobaciones. |
 | 9 | Qué puede ser obligatorio | **Solo el acompañamiento vehicular.** El GPS, el candado satelital, el esquema básico y la restricción nocturna quedan como **recomendación** (aunque el PDF pone el GPS y el candado como obligatorios desde 250 M). | Cotifly solo puede exigir lo que el comercial agrega como conexo, y en Nexo solo hay conexos de acompañamiento. |
 | 10 | Candado satelital | **No es `PRE_BSAT`** ("Precinto (Sello) Barra Satelital" es otro servicio). No hay conexo de candado en Nexo: la medida no tiene conexos. | Un precinto no es un candado. |
 | 11 | Acompañante parcial o total | **El acompañante total cumple la obligación de parcial.** En los tramos de 350 – 700 M sirve cualquiera de los 5 acompañantes. | En Nexo el parcial (`AVP_*`) solo tiene precio en trayectos cortos y el total (`AVT_*`) en trayectos largos: no se cruzan en ninguna ruta. Si solo sirviera el parcial, un trayecto largo de 350 – 500 M no se podría finalizar. |
@@ -33,15 +33,15 @@ tablas, #268), HU-046.3 (el backend, #269), HU-046.4 (QA, #270) y HU-046-FE.1 (e
 
 Aprobada por @scalderon-bs el 2026-11-02. La construye HU-046.2 (#268).
 
-| Tramo | Esquema básico | GPS | Candado satelital | Restricción nocturna | Acompañante | Incluir seguro (aviso) | Proyecto especial |
-|---|---|---|---|---|---|---|---|
-| ≤ 150 M | Recomendada | — | — | — | — | — | — |
-| > 150 – 250 M | Recomendada | — | Recomendada | — | — | — | — |
-| > 250 – 350 M | Recomendada | Recomendada | Recomendada | — | — | Recomendada | — |
-| > 350 – 500 M | Recomendada | Recomendada | Recomendada | Recomendada | **Obligatoria: parcial o total** | Recomendada | — |
-| > 500 – 700 M | Recomendada | Recomendada | Recomendada | Recomendada | **Obligatoria: parcial o total** | Recomendada | — |
-| > 700 – 1.000 M | Recomendada | Recomendada | Recomendada | Recomendada | **Obligatoria: total** | Recomendada | Sí |
-| > 1.000 M | — | — | — | — | Caso a caso (solo aviso) | — | Sí |
+| Tramo | Esquema básico | GPS | Candado satelital | Restricción nocturna | Acompañante | Incluir seguro (aviso) |
+|---|---|---|---|---|---|---|
+| ≤ 150 M | Recomendada | — | — | — | — | — |
+| > 150 – 250 M | Recomendada | — | Recomendada | — | — | — |
+| > 250 – 350 M | Recomendada | Recomendada | Recomendada | — | — | Recomendada |
+| > 350 – 500 M | Recomendada | Recomendada | Recomendada | Recomendada | **Obligatoria: parcial o total** | Recomendada |
+| > 500 – 700 M | Recomendada | Recomendada | Recomendada | Recomendada | **Obligatoria: parcial o total** | Recomendada |
+| > 700 – 1.000 M | Recomendada | Recomendada | Recomendada | Recomendada | **Obligatoria: total** | Recomendada |
+| > 1.000 M | — | — | — | — | — (caso a caso, fuera de Cotifly) | — |
 
 Medidas y conexos que las cumplen (códigos verificados en `tbl_servicios_conexos` de Nexo el 2026-11-02):
 
