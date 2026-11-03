@@ -25,6 +25,15 @@ public static class clsPlantillaCorreo
     /// <summary>#262: firma cuando no se conocen los datos del comercial.</summary>
     public const string FirmaGenerica = "Equipo Comercial — Botero Soto";
 
+    /// <summary>#262: título del encabezado del correo (con el folio debajo, si se conoce).</summary>
+    public const string TituloCorreo = "Cotización";
+
+    /// <summary>#262: texto del encabezado en lugar del logo (sin <c>Correo:LogoUrl</c> válida) y texto alterno del logo.</summary>
+    public const string Marca = "Botero Soto";
+
+    /// <summary>#262: ancho del logo en el encabezado, en píxeles.</summary>
+    public const int AnchoLogo = 90;
+
     /// <summary>Título del bloque del resumen (encima de la ficha de la cotización).</summary>
     public const string TituloResumen = "Resumen de la cotización";
 
@@ -108,13 +117,18 @@ public static class clsPlantillaCorreo
     }
 
     /// <summary>
-    /// Cuerpo en HTML (#262, cotización formal): tarjeta de hasta <see cref="AnchoMaximo"/> px con la marca, el aviso de pruebas (si el correo
-    /// se redirige), el texto escapado (un <c>&lt;script&gt;</c> del comercial llega como texto) con los saltos de línea como <c>&lt;br&gt;</c>,
+    /// Cuerpo en HTML (#262, cotización formal): tarjeta de hasta <see cref="AnchoMaximo"/> px con el encabezado (<see cref="TituloCorreo"/> con
+    /// el folio a la izquierda y el logo de <paramref name="logoUrl"/> a la derecha), el aviso de pruebas (si el correo se redirige), el texto escapado (un <c>&lt;script&gt;</c> del comercial llega como texto) con los saltos de línea como <c>&lt;br&gt;</c>,
     /// el resumen (la ficha con el folio, la fecha y el cliente si se conocen, y las rutas costeadas), la tabla de rutas con el total (si hay),
     /// la nota del PDF adjunto y la despedida con la firma del comercial; debajo de la tarjeta, el pie legal.
     /// </summary>
     public static string Html(
-        string texto, clsResumenCorreo? resumen = null, string? avisoPruebas = null, string? firmaComercial = null, clsDatosCorreo? datos = null)
+        string texto,
+        clsResumenCorreo? resumen = null,
+        string? avisoPruebas = null,
+        string? firmaComercial = null,
+        clsDatosCorreo? datos = null,
+        string? logoUrl = null)
     {
         ArgumentNullException.ThrowIfNull(texto);
         return $"<div style=\"font-family:Arial,Helvetica,sans-serif;color:{Texto};font-size:14px;line-height:1.5;background-color:{FondoPagina};padding:24px 12px\">"
@@ -122,9 +136,7 @@ public static class clsPlantillaCorreo
                + $"<!--[if mso]><table role=\"presentation\" width=\"{AnchoMaximo}\" align=\"center\" cellpadding=\"0\" cellspacing=\"0\"><tr><td><![endif]-->"
                + $"<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:{AnchoMaximo}px;margin:0 auto;"
                + $"background-color:#ffffff;border:1px solid {Linea};border-radius:12px;border-collapse:separate\">"
-               + $"<tr><td style=\"padding:18px 24px;border-bottom:3px solid {Azul}\">"
-               + $"<span style=\"font-size:18px;font-weight:bold;color:{Azul}\">Botero Soto</span>"
-               + $"<span style=\"font-size:12px;color:{TextoSuave}\"> &#183; Soluciones Log&#237;sticas</span></td></tr>"
+               + $"<tr><td style=\"padding:18px 24px;border-bottom:3px solid {Azul}\">{EncabezadoHtml(datos, logoUrl)}</td></tr>"
                + (avisoPruebas is null ? string.Empty : Fila(AvisoHtml(avisoPruebas)))
                + Fila(Escapar(texto))
                + (FichaHtml(datos, resumen) is { Length: > 0 } ficha ? Fila(TituloSeccion(TituloResumen) + ficha) : string.Empty)
@@ -146,6 +158,27 @@ public static class clsPlantillaCorreo
 
     private static string Fila(string contenido, string relleno = "20px 24px 0 24px") =>
         $"<tr><td style=\"padding:{relleno}\">{contenido}</td></tr>";
+
+    /// <summary>
+    /// Encabezado: <see cref="TituloCorreo"/> con el folio debajo (si se conoce) a la izquierda y el logo a la derecha. Sin una URL http(s)
+    /// absoluta, el logo se reemplaza por el texto <see cref="Marca"/>; con imágenes bloqueadas, ese mismo texto es el alterno del logo.
+    /// </summary>
+    private static string EncabezadoHtml(clsDatosCorreo? datos, string? logoUrl)
+    {
+        var folio = clsTextoSeguro.LimpiarLinea(datos?.Folio?.Trim()) is { Length: > 0 } f
+            ? $"<div style=\"color:{TextoSuave};margin-top:2px\">{WebUtility.HtmlEncode(f)}</div>"
+            : string.Empty;
+        const string EstiloMarca = "color:" + Azul + ";font-size:14px;font-weight:bold";
+        var logo = Uri.TryCreate(logoUrl?.Trim(), UriKind.Absolute, out var url) && (url.Scheme == Uri.UriSchemeHttps || url.Scheme == Uri.UriSchemeHttp)
+            ? $"<img src=\"{WebUtility.HtmlEncode(url.AbsoluteUri)}\" width=\"{AnchoLogo}\" alt=\"{Marca}\" "
+              + $"style=\"display:inline-block;width:{AnchoLogo}px;max-width:{AnchoLogo}px;height:auto;border:0;{EstiloMarca}\">"
+            : $"<span style=\"{EstiloMarca};white-space:nowrap\">{Marca}</span>";
+        return "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr>"
+               + $"<td style=\"vertical-align:middle\"><div style=\"font-size:18px;font-weight:bold;color:{Azul}\">{WebUtility.HtmlEncode(TituloCorreo)}</div>"
+               + folio + "</td>"
+               + $"<td style=\"vertical-align:middle;text-align:right;width:{AnchoLogo}px\">{logo}</td>"
+               + "</tr></table>";
+    }
 
     private static string TituloSeccion(string titulo) =>
         $"<div style=\"font-size:14px;font-weight:bold;letter-spacing:.06em;text-transform:uppercase;color:{Azul};margin-bottom:8px\">"

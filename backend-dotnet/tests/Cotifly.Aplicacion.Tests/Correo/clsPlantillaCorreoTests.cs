@@ -80,7 +80,7 @@ public sealed class clsPlantillaCorreoTests
 
         string[] enOrden =
         [
-            "[QA] Ambiente de pruebas", "Estimado cliente,", WebUtility.HtmlEncode(clsPlantillaCorreo.TituloResumen), ">PCN-1<",
+            "[QA] Ambiente de pruebas", "Estimado cliente,", WebUtility.HtmlEncode(clsPlantillaCorreo.TituloResumen), ">Folio<",
             WebUtility.HtmlEncode(clsPlantillaCorreo.TituloRutas), "$1.000.000 COP", WebUtility.HtmlEncode(clsPlantillaCorreo.TextoAdjunto),
             clsTextosEstandar.Despedida, ">Ana<", ">ana@boterosoto.com.co<", WebUtility.HtmlEncode(clsTextosEstandar.PieEmpresa),
         ];
@@ -112,6 +112,28 @@ public sealed class clsPlantillaCorreoTests
     public void LaFirmaVaUnaParteDebajoDeLaOtra() =>
         clsPlantillaCorreo.Html("Hola", firmaComercial: clsPlantillaCorreo.FirmaComercial("Ana", "ana@boterosoto.com.co", "300 000 0000")).Should()
             .Contain(">Ana</div>").And.Contain(">ana@boterosoto.com.co</div>").And.Contain(">Cel. 300 000 0000</div>");
+
+    [Fact]
+    public void ElEncabezadoLlevaCotizacionConElFolioDebajoYElLogo()
+    {
+        var html = clsPlantillaCorreo.Html(
+            "Hola", datos: new clsDatosCorreo(Folio: "PCN-SC-03112026-001"), logoUrl: "https://www.boterosoto.com.co/logo.png?v=1&x=2");
+
+        html.Should().Contain($">{WebUtility.HtmlEncode(clsPlantillaCorreo.TituloCorreo)}</div><div style=\"color:#5F6B7A;margin-top:2px\">PCN-SC-03112026-001</div>")
+            .And.Contain("<img src=\"https://www.boterosoto.com.co/logo.png?v=1&amp;x=2\"", "la URL va escapada en el atributo")
+            .And.Contain($"alt=\"{clsPlantillaCorreo.Marca}\"");
+        html.IndexOf("PCN-SC-03112026-001", StringComparison.Ordinal).Should().BeLessThan(html.IndexOf("Hola", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("logo.png")]
+    [InlineData("javascript:alert(1)")]
+    [InlineData("file:///C:/logo.png")]
+    public void SinUnaUrlHttpDelLogoElEncabezadoLlevaLaMarcaEnTexto(string? logoUrl) =>
+        clsPlantillaCorreo.Html("Hola", logoUrl: logoUrl).Should()
+            .NotContain("<img").And.Contain($">{clsPlantillaCorreo.Marca}</span>");
 
     [Fact]
     public void ElCuerpoPorDefectoNoTraeDespedidaPorqueLaPoneElHtml() =>

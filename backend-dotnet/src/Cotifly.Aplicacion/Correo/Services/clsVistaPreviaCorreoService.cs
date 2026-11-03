@@ -69,7 +69,8 @@ public sealed class clsVistaPreviaCorreoService(
                 resumen,
                 firmaComercial: clsPlantillaCorreo.FirmaComercial(usuario?.NombreCompleto, usuario?.Email, usuario?.Telefono),
                 // #262: los mismos datos de la ficha que el envío.
-                datos: clsPlantillaCorreo.Datos(cotizacion, calendario)),
+                datos: clsPlantillaCorreo.Datos(cotizacion, calendario),
+                logoUrl: opciones.Value.LogoUrl),
             Resumen = resumen,
             // OBS-1027-5 (#226, ADR-023): al redirigir el correo sale solo al buzón de pruebas, sin CC ni CCO (clsProteccionCorreo): la
             // vista previa no anuncia una copia oculta que no se envía.

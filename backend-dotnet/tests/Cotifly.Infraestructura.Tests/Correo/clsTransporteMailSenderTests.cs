@@ -76,7 +76,7 @@ public sealed class clsTransporteMailSenderTests : IDisposable
         recibido.Bcc.Should().Equal("nvargas@boterosoto.com.co");
         recibido.Subject.Should().Be("Cotización PCN-1 — Botero Soto");
         recibido.IsHtml.Should().BeTrue();
-        recibido.Body.Should().Contain("Adjuntamos su cotizaci&#243;n.").And.Contain("Soluciones Log&#237;sticas");
+        recibido.Body.Should().Contain("Adjuntamos su cotizaci&#243;n.").And.Contain(">Cotizaci&#243;n<");
         recibido.Priority.Should().Be("Normal");
         recibido.CorrelationId.Should().Be("PCN-1:0d6c1f8a-1111-2222-3333-444455556666");
         JsonDocument.Parse(recibido.Metadata!).RootElement.GetProperty("folio").GetString().Should().Be("PCN-1");

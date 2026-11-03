@@ -94,7 +94,8 @@ public sealed class clsCorreoServiceTests : IDisposable
         _enviado.Adjunto.Contenido.Should().Equal("%PDF-1.4 prueba"u8.ToArray());
         _enviado.Asunto.Should().Be("Cotización PCN-C1 — Botero Soto");
         _enviado.CuerpoTexto.Should().Be(clsPlantillaCorreo.CuerpoPorDefecto);
-        _enviado.CuerpoHtml.Should().Contain("Estimado cliente,<br>").And.Contain("Soluciones Log&#237;sticas")
+        _enviado.CuerpoHtml.Should().Contain("Estimado cliente,<br>")
+            .And.Contain($"<img src=\"{clsOpcionesCorreo.LogoUrlPorDefecto}\"", "#262: el logo de la web de Botero Soto por defecto")
             .And.Contain(System.Net.WebUtility.HtmlEncode(Cotifly.Aplicacion.Pdf.Services.clsTextosEstandar.PieEmpresa));
 
         var fila = _registrados.Should().ContainSingle().Subject;
