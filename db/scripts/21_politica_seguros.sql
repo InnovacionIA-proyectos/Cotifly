@@ -12,18 +12,23 @@
 
       PoliticaSeguroTramos         rango de valor de la mercancía de la ruta: valorDesde EXCLUSIVO y valorHasta INCLUIDO
                                    (250.000.000 exacto cae en "> 150 – 250 M"); valorHasta NULL = sin tope. Pesos fijos.
-                                   proyectoEspecial marca los tramos de 700 M en adelante. Quién autoriza NO se guarda
-                                   (decisión 8). Una ruta con valor 0 no cae en ningún tramo (como una sin valor: aviso).
+                                   Ni quién autoriza ni una marca de proyecto especial se guardan (decisión 8): los tramos
+                                   de 700 M en adelante lo dicen en su nota. Una ruta con valor 0 no cae en ningún tramo
+                                   (como una sin valor: aviso).
       PoliticaSeguroMedidas        catálogo de medidas (codigo único). esCobrable = 1 solo en las que se cumplen
                                    agregando un conexo de Nexo (los acompañantes).
       PoliticaSeguroTramoMedidas   qué medida aplica en cada tramo y con qué nivel: 'recomendada' u 'obligatoria'.
-                                   PK (tramoId, medidaId).
+                                   Único (tramoId, medidaId).
       PoliticaSeguroMedidaConexos  códigos del catálogo de Nexo que cumplen cada medida (sin FK: es otra base).
                                    La obligación se cumple con CUALQUIERA de los códigos de la medida.
-                                   PK (medidaId, codigoServicio).
+                                   Único (medidaId, codigoServicio).
+
+      Todas con id UNIQUEIDENTIFIER DEFAULT NEWID(), como el resto del esquema.
 
    2. En CotizacionServiciosConexos: codigoServicio NVARCHAR(40) NULL (el código del catálogo de Nexo, p. ej. AVT_AUTO).
-      Las filas existentes quedan en NULL; el backend las completa (HU-046.3).
+      idServicioConexo e idServicioConexoCatalogo guardan el id de una fila de tarifa (Nexo tiene una por trayecto), no
+      el código: sin codigoServicio no se puede saber si el conexo es un acompañante. Las filas existentes quedan en NULL;
+      el backend las completa (HU-046.3).
 
    3. Carga inicial (la aprobada en #267), SOLO si las 4 tablas están vacías: una política ya cambiada con el script de
       operación no se pisa al volver a correr este.
@@ -68,11 +73,10 @@ BEGIN TRY
     IF OBJECT_ID(N'dbo_cotifly.PoliticaSeguroTramos', N'U') IS NULL
     BEGIN
         CREATE TABLE dbo_cotifly.PoliticaSeguroTramos (
-            id                  INT IDENTITY(1,1)   NOT NULL,
+            id                  UNIQUEIDENTIFIER    NOT NULL CONSTRAINT df_politicaSeguroTramos_id DEFAULT (NEWID()),
             nombre              NVARCHAR(60)  COLLATE Latin1_General_100_CI_AS_SC_UTF8 NOT NULL,
             valorDesde          DECIMAL(18,2)       NOT NULL,   -- exclusivo
             valorHasta          DECIMAL(18,2)       NULL,       -- incluido; NULL = sin tope
-            proyectoEspecial    BIT                 NOT NULL CONSTRAINT df_politicaSeguroTramos_proyectoEspecial DEFAULT (0),
             nota                NVARCHAR(500) COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL,
             isActive            BIT                 NOT NULL CONSTRAINT df_politicaSeguroTramos_isActive DEFAULT (1),
             updatedAt           DATETIMEOFFSET      NOT NULL CONSTRAINT df_politicaSeguroTramos_updatedAt DEFAULT (SYSDATETIMEOFFSET()),
@@ -89,7 +93,7 @@ BEGIN TRY
     IF OBJECT_ID(N'dbo_cotifly.PoliticaSeguroMedidas', N'U') IS NULL
     BEGIN
         CREATE TABLE dbo_cotifly.PoliticaSeguroMedidas (
-            id                  INT IDENTITY(1,1)   NOT NULL,
+            id                  UNIQUEIDENTIFIER    NOT NULL CONSTRAINT df_politicaSeguroMedidas_id DEFAULT (NEWID()),
             codigo              NVARCHAR(40)  COLLATE Latin1_General_100_CI_AS_SC_UTF8 NOT NULL,
             nombre              NVARCHAR(100) COLLATE Latin1_General_100_CI_AS_SC_UTF8 NOT NULL,
             descripcion         NVARCHAR(300) COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL,
@@ -107,12 +111,13 @@ BEGIN TRY
     IF OBJECT_ID(N'dbo_cotifly.PoliticaSeguroTramoMedidas', N'U') IS NULL
     BEGIN
         CREATE TABLE dbo_cotifly.PoliticaSeguroTramoMedidas (
-            tramoId             INT                 NOT NULL,
-            medidaId            INT                 NOT NULL,
+            id                  UNIQUEIDENTIFIER    NOT NULL CONSTRAINT df_politicaSeguroTramoMedidas_id DEFAULT (NEWID()),
+            tramoId             UNIQUEIDENTIFIER    NOT NULL,
+            medidaId            UNIQUEIDENTIFIER    NOT NULL,
             nivel               NVARCHAR(20)  COLLATE Latin1_General_100_CI_AS_SC_UTF8 NOT NULL,
-            nota                NVARCHAR(300) COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL,
             updatedAt           DATETIMEOFFSET      NOT NULL CONSTRAINT df_politicaSeguroTramoMedidas_updatedAt DEFAULT (SYSDATETIMEOFFSET()),
-            CONSTRAINT pk_politicaSeguroTramoMedidas PRIMARY KEY (tramoId, medidaId),
+            CONSTRAINT pk_politicaSeguroTramoMedidas PRIMARY KEY (id),
+            CONSTRAINT uq_politicaSeguroTramoMedidas_tramoId_medidaId UNIQUE (tramoId, medidaId),
             CONSTRAINT fk_politicaSeguroTramoMedidas_tramoId FOREIGN KEY (tramoId) REFERENCES dbo_cotifly.PoliticaSeguroTramos (id),
             CONSTRAINT fk_politicaSeguroTramoMedidas_medidaId FOREIGN KEY (medidaId) REFERENCES dbo_cotifly.PoliticaSeguroMedidas (id),
             CONSTRAINT ck_politicaSeguroTramoMedidas_nivel CHECK (nivel IN ('recomendada', 'obligatoria'))
@@ -126,10 +131,12 @@ BEGIN TRY
     IF OBJECT_ID(N'dbo_cotifly.PoliticaSeguroMedidaConexos', N'U') IS NULL
     BEGIN
         CREATE TABLE dbo_cotifly.PoliticaSeguroMedidaConexos (
-            medidaId            INT                 NOT NULL,
+            id                  UNIQUEIDENTIFIER    NOT NULL CONSTRAINT df_politicaSeguroMedidaConexos_id DEFAULT (NEWID()),
+            medidaId            UNIQUEIDENTIFIER    NOT NULL,
             codigoServicio      NVARCHAR(40)  COLLATE Latin1_General_100_CI_AS_SC_UTF8 NOT NULL,   -- catálogo de Nexo, sin FK
             updatedAt           DATETIMEOFFSET      NOT NULL CONSTRAINT df_politicaSeguroMedidaConexos_updatedAt DEFAULT (SYSDATETIMEOFFSET()),
-            CONSTRAINT pk_politicaSeguroMedidaConexos PRIMARY KEY (medidaId, codigoServicio),
+            CONSTRAINT pk_politicaSeguroMedidaConexos PRIMARY KEY (id),
+            CONSTRAINT uq_politicaSeguroMedidaConexos_medidaId_codigoServicio UNIQUE (medidaId, codigoServicio),
             CONSTRAINT fk_politicaSeguroMedidaConexos_medidaId FOREIGN KEY (medidaId) REFERENCES dbo_cotifly.PoliticaSeguroMedidas (id)
         );
         PRINT N'21: tabla dbo_cotifly.PoliticaSeguroMedidaConexos creada.';
@@ -165,14 +172,14 @@ BEGIN TRY
        AND NOT EXISTS (SELECT 1 FROM dbo_cotifly.PoliticaSeguroTramoMedidas WITH (UPDLOCK, HOLDLOCK))
        AND NOT EXISTS (SELECT 1 FROM dbo_cotifly.PoliticaSeguroMedidaConexos WITH (UPDLOCK, HOLDLOCK))
     BEGIN
-        INSERT INTO dbo_cotifly.PoliticaSeguroTramos (nombre, valorDesde, valorHasta, proyectoEspecial, nota) VALUES
-            (N'≤ 150 M',           0,          150000000,  0, NULL),
-            (N'> 150 – 250 M',     150000000,  250000000,  0, NULL),
-            (N'> 250 – 350 M',     250000000,  350000000,  0, NULL),
-            (N'> 350 – 500 M',     350000000,  500000000,  0, NULL),
-            (N'> 500 – 700 M',     500000000,  700000000,  0, NULL),
-            (N'> 700 – 1.000 M',   700000000,  1000000000, 1, N'Proyecto especial.'),
-            (N'> 1.000 M',         1000000000, NULL,       1, N'Proyecto especial. Caso a caso: la operación se analiza aparte.');
+        INSERT INTO dbo_cotifly.PoliticaSeguroTramos (nombre, valorDesde, valorHasta, nota) VALUES
+            (N'≤ 150 M',           0,          150000000,  NULL),
+            (N'> 150 – 250 M',     150000000,  250000000,  NULL),
+            (N'> 250 – 350 M',     250000000,  350000000,  NULL),
+            (N'> 350 – 500 M',     350000000,  500000000,  NULL),
+            (N'> 500 – 700 M',     500000000,  700000000,  NULL),
+            (N'> 700 – 1.000 M',   700000000,  1000000000, N'Proyecto especial.'),
+            (N'> 1.000 M',         1000000000, NULL,       N'Proyecto especial. Caso a caso: la operación se analiza aparte.');
 
         INSERT INTO dbo_cotifly.PoliticaSeguroMedidas (codigo, nombre, descripcion, esCobrable) VALUES
             (N'esquema_basico',        N'Esquema básico de seguridad',             NULL, 0),
@@ -293,7 +300,7 @@ GO
 /* ============================================================================
    Verificación sugerida tras ejecutar (7 tramos contiguos, 7 medidas, 25 reglas, 8 conexos, la columna nueva):
 
-     SELECT id, nombre, valorDesde, valorHasta, proyectoEspecial, isActive FROM dbo_cotifly.PoliticaSeguroTramos ORDER BY valorDesde;
+     SELECT id, nombre, valorDesde, valorHasta, nota, isActive FROM dbo_cotifly.PoliticaSeguroTramos ORDER BY valorDesde;
      SELECT t.nombre AS tramo, m.codigo AS medida, tm.nivel,
             STRING_AGG(c.codigoServicio, ', ') AS conexos
      FROM dbo_cotifly.PoliticaSeguroTramoMedidas tm

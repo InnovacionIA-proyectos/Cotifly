@@ -25,8 +25,8 @@
    Si la medida todavía no está en ese tramo, el INSERT la agrega; si ya está, el UPDATE le cambia el nivel.
    ---------------------------------------------------------------------------
    DECLARE @tramo NVARCHAR(60) = N'> 250 – 350 M', @medida NVARCHAR(40) = N'acompanante_vehicular', @nivel NVARCHAR(20) = N'obligatoria';
-   DECLARE @tramoId INT = (SELECT id FROM dbo_cotifly.PoliticaSeguroTramos WHERE nombre = @tramo AND isActive = 1);
-   DECLARE @medidaId INT = (SELECT id FROM dbo_cotifly.PoliticaSeguroMedidas WHERE codigo = @medida AND isActive = 1);
+   DECLARE @tramoId UNIQUEIDENTIFIER = (SELECT id FROM dbo_cotifly.PoliticaSeguroTramos WHERE nombre = @tramo AND isActive = 1);
+   DECLARE @medidaId UNIQUEIDENTIFIER = (SELECT id FROM dbo_cotifly.PoliticaSeguroMedidas WHERE codigo = @medida AND isActive = 1);
    IF @tramoId IS NULL OR @medidaId IS NULL THROW 50010, N'No existe el tramo activo o la medida activa indicados.', 1;
    UPDATE dbo_cotifly.PoliticaSeguroTramoMedidas SET nivel = @nivel, updatedAt = SYSDATETIMEOFFSET()
    WHERE tramoId = @tramoId AND medidaId = @medidaId;
@@ -40,7 +40,7 @@
    (p. ej., si Nexo crea un acompañante nuevo). Verificar antes que el código existe en tbl_servicios_conexos de Nexo.
    ---------------------------------------------------------------------------
    DECLARE @medida NVARCHAR(40) = N'acompanante_total', @codigoServicio NVARCHAR(40) = N'AVT_CODIGO_NUEVO';
-   DECLARE @medidaId INT = (SELECT id FROM dbo_cotifly.PoliticaSeguroMedidas WHERE codigo = @medida AND isActive = 1);
+   DECLARE @medidaId UNIQUEIDENTIFIER = (SELECT id FROM dbo_cotifly.PoliticaSeguroMedidas WHERE codigo = @medida AND isActive = 1);
    IF @medidaId IS NULL THROW 50011, N'No existe la medida activa indicada.', 1;
    IF NOT EXISTS (SELECT 1 FROM dbo_cotifly.PoliticaSeguroMedidaConexos WHERE medidaId = @medidaId AND codigoServicio = @codigoServicio)
        INSERT INTO dbo_cotifly.PoliticaSeguroMedidaConexos (medidaId, codigoServicio) VALUES (@medidaId, @codigoServicio);
@@ -131,7 +131,7 @@ END CATCH;
 GO
 
 -- Resumen de la política vigente
-SELECT t.nombre AS tramo, t.valorDesde, t.valorHasta, t.proyectoEspecial,
+SELECT t.nombre AS tramo, t.valorDesde, t.valorHasta, t.nota AS notaTramo,
        m.codigo AS medida, tm.nivel,
        (SELECT STRING_AGG(c.codigoServicio, N', ') FROM dbo_cotifly.PoliticaSeguroMedidaConexos AS c WHERE c.medidaId = m.id) AS conexos
 FROM dbo_cotifly.PoliticaSeguroTramos AS t

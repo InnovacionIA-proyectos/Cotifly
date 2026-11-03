@@ -1,11 +1,11 @@
 # Esquema de la base de datos — SQL Server 2019 (`dbo_cotifly`)
 
-> **Estado:** vigente desde HU-021 · **Dueño:** Duban Guerra (backend) y scalderon-bs (datos) · **Actualizado:** 2026-10-28 (scripts `17`/`18`: `SapMargenCliente`/`SapMargenSyncLog` HU-042.1 #242, `SapMapeoTrqType.lineaNegocioId` HU-042.4, #247)
+> **Estado:** vigente desde HU-021 · **Dueño:** Duban Guerra (backend) y scalderon-bs (datos) · **Actualizado:** 2026-11-02 (scripts `20`/`21`: `TarifasSeguro` y el seguro de la ruta HU-045.1 #263, la política de seguros y `codigoServicio` HU-046.2 #268)
 
 Este documento describe la Parte A; la Parte B se archivó:
 
 - **Parte A — Esquema vigente.** Lo que crean `db/scripts/01_crear_esquema.sql` o las migraciones
-  `db/migrations_mssql/0001` a `0010`, más los ajustes `db/scripts/02` a `13` y `db/scripts/pendientes/04`, y lo que mapea el
+  `db/migrations_mssql/0001` a `0010`, más los ajustes `db/scripts/02` a `21` y `db/scripts/pendientes/04`, y lo que mapea el
   modelo EF Core
   (`backend-dotnet/src/Cotifly.Infraestructura/Comun/Persistence/Configurations/`). Es la referencia para el backend.
 - **Parte B — Diseño original de HU-002.3 (histórico).** El mapeo de Postgres a SQL Server que dio origen al `0001`.
@@ -20,15 +20,17 @@ cómo instalar y migrar, en [`db/README.md`](../../db/README.md); la decisión d
 
 ---
 
-# Parte A — Esquema vigente (0001 a 0010 y ajustes 02 a 13)
+# Parte A — Esquema vigente (0001 a 0010 y ajustes 02 a 21)
 
 ## A.1 Resumen
 
 - **Motor:** SQL Server 2019. **Base:** `dbTarifario_Nexo_Pruebas` (compartida, en `tbsdatacenter`). **Schema:** `dbo_cotifly`.
-- **21 tablas, sin vistas:** las 20 que crea el `01` (o el `0001` a `0010`) y `CapturasIdempotentes`, que crea
-  `db/scripts/06_idempotencia_captura.sql` (las 2 vistas del borrador de métricas se retiraron en HU-014.3, #152, con el `08`).
+- **28 tablas, sin vistas:** las 20 que crea el `01` (o el `0001` a `0010`); `CapturasIdempotentes` (script `06`);
+  `SapMargenCliente` y `SapMargenSyncLog` (script `17`); `TarifasSeguro` (script `20`); y `PoliticaSeguroTramos`,
+  `PoliticaSeguroMedidas`, `PoliticaSeguroTramoMedidas` y `PoliticaSeguroMedidaConexos` (script `21`). Las 2 vistas del
+  borrador de métricas se retiraron en HU-014.3, #152, con el `08`.
   EF Core es *Database First*: el esquema solo cambia con scripts SQL (ADR-008): las migraciones `db/migrations_mssql/000N_*.sql`
-  hasta el `0010` y, desde HU-023, los ajustes `db/scripts/02` a `13` (más `pendientes/04`), que todavía no están consolidados en
+  hasta el `0010` y, desde HU-023, los ajustes `db/scripts/02` a `21` (más `pendientes/04`), que todavía no están consolidados en
   `db/scripts/01_crear_esquema.sql`.
 - **Collation** `Latin1_General_100_CI_AS_SC_UTF8` explícita en cada columna de texto. Única excepción:
   `TokensRefresco.tokenHash` (`Latin1_General_100_BIN2`).
@@ -193,6 +195,12 @@ Los tipos del diagrama van sin paréntesis porque Mermaid no los admite: `nvarch
 - **Seguro de la mercancía** (script `20`, HU-045). Con `incluyeSeguro = 1`, `costoSeguro` = `valorMercancia` × la tasa activa de
   `TarifasSeguro`, que se copia en `tasaSeguroAplicada` para que un cambio de tasa no mueva las cotizaciones hechas. No lleva
   margen ni entra en `costoFinal`. Cómo se suma al precio y si bloquea finalizar sin `valorMercancia` lo define HU-045.2.
+- **Política de seguros** (script `21`, HU-046). El tramo de la ruta sale de su `valorMercancia` total (por ruta, no por
+  camión): `valor > valorDesde` y `valor <= valorHasta` (o `valorHasta` NULL). Una ruta sin valor, o con 0, no cae en ningún
+  tramo: el backend muestra un aviso y no bloquea. Una medida obligatoria se cumple si la ruta tiene un conexo cuyo
+  `codigoServicio` está en `PoliticaSeguroMedidaConexos` para esa medida (cualquiera de ellos). Que los tramos activos sean
+  contiguos desde 0, sin huecos ni solapes, lo validan el `21` y `db/scripts/operacion/cambiar_politica_seguros.sql`, no una
+  restricción. Las cotizaciones finalizadas no se recalculan (HU-036).
 - **Estado agregado.** El `estadoCosteo` del camión se resume en la ruta y el de las rutas en la cabecera ("el más atrasado").
 - **Margen vigente** de la ruta: `margenSAPSugerido` si existe; si no, `margenPoliticaSugerido`. El ajuste del comercial
   queda en `margenAplicado` (`origenMargen = negociado`) y en `MargenAjustes` con la ruta.
@@ -252,32 +260,34 @@ erDiagram
         nvarcharmax mapeoLineasNexo
     }
     TarifasSeguro {
-        int id PK
+        uniqueidentifier id PK
         decimal9_6 tasa "0.003450 = 0,345 %"
         datetimeoffset vigenteDesde
         bit isActive UK "una sola activa (20)"
         datetimeoffset updatedAt
     }
     PoliticaSeguroTramos {
-        int id PK
+        uniqueidentifier id PK
         nvarchar60 nombre
         decimal18_2 valorDesde "exclusivo (21)"
         decimal18_2 valorHasta "incluido, NULL sin tope"
-        bit proyectoEspecial
+        nvarchar500 nota "Proyecto especial desde 700 M"
     }
     PoliticaSeguroMedidas {
-        int id PK
+        uniqueidentifier id PK
         nvarchar40 codigo UK
         bit esCobrable "solo acompanantes"
     }
     PoliticaSeguroTramoMedidas {
-        int tramoId PK
-        int medidaId PK
+        uniqueidentifier id PK
+        uniqueidentifier tramoId FK "UK con medidaId"
+        uniqueidentifier medidaId FK
         nvarchar20 nivel "recomendada | obligatoria"
     }
     PoliticaSeguroMedidaConexos {
-        int medidaId PK
-        nvarchar40 codigoServicio PK "catalogo de Nexo"
+        uniqueidentifier id PK
+        uniqueidentifier medidaId FK "UK con codigoServicio"
+        nvarchar40 codigoServicio "catalogo de Nexo"
     }
     SapMapeoTrqType {
         nvarchar8 trqType PK
@@ -477,11 +487,11 @@ Sin cambios de estructura en HU-021 (salvo el catálogo de líneas de negocio de
 | Tabla | Clave | Columnas |
 |---|---|---|
 | `MargenesPolitica` | `id` int identity; único `lineaNegocio` | `mapeoLineasNexo`, `margen` dec(9,4), `metodoCalculo` (`'margen'`), `isActive`, `updatedAt` |
-| `TarifasSeguro` | `id` int identity; único filtrado `uq_tarifasSeguro_activa` (`isActive`) `WHERE isActive = 1` | Script `20`, HU-045.1 (#263). `tasa` dec(9,6) (CHECK > 0 y < 1; inicial 0.003450 = 0,345 %), `vigenteDesde`, `isActive`, `updatedAt`. Una sola activa; las viejas se desactivan, no se borran (`db/scripts/operacion/cambiar_tasa_seguro.sql`) |
-| `PoliticaSeguroTramos` | `id` int identity; único filtrado `uq_politicaSeguroTramos_valorDesde_activo` (`valorDesde`) `WHERE isActive = 1` | Script `21`, HU-046.2 (#268). `nombre` nv(60), `valorDesde` dec(18,2) exclusivo, `valorHasta` dec(18,2) incluido o NULL (sin tope), CHECK `valorDesde >= 0` y `valorHasta > valorDesde`; `proyectoEspecial`, `nota` nv(500), `isActive`, `updatedAt`. Los activos son contiguos (lo valida el `21` y el script de operación) |
-| `PoliticaSeguroMedidas` | `id` int identity; único `codigo` nv(40) | Script `21`. `nombre` nv(100), `descripcion` nv(300), `esCobrable`, `isActive`, `updatedAt` |
-| `PoliticaSeguroTramoMedidas` | (`tramoId`, `medidaId`), FK a las dos | Script `21`. `nivel` nv(20) CHECK `recomendada` \| `obligatoria`, `nota` nv(300), `updatedAt`. Índice `ix_politicaSeguroTramoMedidas_medidaId` |
-| `PoliticaSeguroMedidaConexos` | (`medidaId`, `codigoServicio`), FK a `PoliticaSeguroMedidas` | Script `21`. `codigoServicio` nv(40) del catálogo de Nexo (sin FK: otra base), `updatedAt` |
+| `TarifasSeguro` | `id` uniqueidentifier `NEWID()`; único filtrado `uq_tarifasSeguro_activa` (`isActive`) `WHERE isActive = 1` | Script `20`, HU-045.1 (#263). `tasa` dec(9,6) (CHECK > 0 y < 1; inicial 0.003450 = 0,345 %), `vigenteDesde`, `isActive`, `updatedAt`. Una sola activa; las viejas se desactivan, no se borran (`db/scripts/operacion/cambiar_tasa_seguro.sql`) |
+| `PoliticaSeguroTramos` | `id` uniqueidentifier `NEWID()`; único filtrado `uq_politicaSeguroTramos_valorDesde_activo` (`valorDesde`) `WHERE isActive = 1` | Script `21`, HU-046.2 (#268). `nombre` nv(60), `valorDesde` dec(18,2) exclusivo, `valorHasta` dec(18,2) incluido o NULL (sin tope), CHECK `valorDesde >= 0` y `valorHasta > valorDesde`; `nota` nv(500) (los de 700 M en adelante dicen "Proyecto especial"), `isActive`, `updatedAt`. Los activos son contiguos (lo valida el `21` y el script de operación) |
+| `PoliticaSeguroMedidas` | `id` uniqueidentifier `NEWID()`; único `codigo` nv(40) | Script `21`. `nombre` nv(100), `descripcion` nv(300), `esCobrable`, `isActive`, `updatedAt` |
+| `PoliticaSeguroTramoMedidas` | `id` uniqueidentifier `NEWID()`; único (`tramoId`, `medidaId`), FK a las dos | Script `21`. `nivel` nv(20) CHECK `recomendada` \| `obligatoria`, `updatedAt`. Índice `ix_politicaSeguroTramoMedidas_medidaId` |
+| `PoliticaSeguroMedidaConexos` | `id` uniqueidentifier `NEWID()`; único (`medidaId`, `codigoServicio`), FK a `PoliticaSeguroMedidas` | Script `21`. `codigoServicio` nv(40) del catálogo de Nexo (sin FK: otra base), `updatedAt` |
 | `SapMapeoTrqType` | (`trqType`, `salesOrg`) | `lineaNegocio` (texto, original), `lineaNegocioId` int NOT NULL FK `MargenesPolitica(id)` (script `18`, HU-042.4, #247 — conviven mientras el backend se adapta a leer por id; `lineaNegocio` se retira después), `activo` |
 | `SapMargenCliente` | `id` uid; único (`salesOrgId`, `trqType`, `bpSap`) | `nit` nv(20) nulo (resuelto por BP contra el DW `DWCubosOperacionesEBS.dbo.DimBPSolicitante`), `margenRecomendado` dec(9,4), `activo` (soft delete), `creadoAt`, `actualizadoAt`. Script `17` (HU-042.1, #242); no la lee `backend-dotnet` todavía (HU-042.2, #243) |
 | `SapMargenSyncLog` | `id` uid | Log append-only de las corridas del job de `SapMargenCliente`: `iniciadoAt`, `finalizadoAt`, `filasInsertadas`, `filasActualizadas`, `filasDesactivadas`, `status` (CHECK `ok`\|`error`\|`omitido`), `mensajeError`. Script `17` |

@@ -1,11 +1,11 @@
 # Diccionario de datos — `dbo_cotifly` (SQL Server)
 
-> **Estado:** vigente desde HU-021 · **Dueño:** Duban Guerra (backend) y scalderon-bs (datos) · **Actualizado:** 2026-10-28 (`SapMargenCliente`/`SapMargenSyncLog`, HU-042.1 #242; `SapMapeoTrqType.lineaNegocioId`, HU-042.4, #247)
+> **Estado:** vigente desde HU-021 · **Dueño:** Duban Guerra (backend) y scalderon-bs (datos) · **Actualizado:** 2026-11-02 (`TarifasSeguro` y el seguro de la ruta, HU-045.1 #263; política de seguros y `codigoServicio`, HU-046.2 #268)
 
 Qué significa cada columna de las tablas de cotizaciones, quién la escribe y quién la lee. Los tipos, nulos, restricciones e
 índices están en [`ESQUEMA_OBJETIVO_SQLSERVER.md`](ESQUEMA_OBJETIVO_SQLSERVER.md) (Parte A, con el diagrama ER); la decisión
 de diseño, en [ADR-019](../../backend-dotnet/specs/decisiones/ADR-019-reestructuracion-rutas-y-camiones.md). Fuente de verdad:
-`db/scripts/01_crear_esquema.sql` (= `0001` a `0010`), los ajustes `db/scripts/02` a `13` y `db/scripts/pendientes/04`, y el
+`db/scripts/01_crear_esquema.sql` (= `0001` a `0010`), los ajustes `db/scripts/02` a `21` y `db/scripts/pendientes/04`, y el
 modelo EF
 (`backend-dotnet/src/Cotifly.Infraestructura/Comun/Persistence/Configurations/`).
 
@@ -137,7 +137,7 @@ Una fila por camión. Si el cubicador recomienda 7 camiones para una ruta, son 7
 | `nombreMercancia` | Copia del nombre del catálogo (si el catálogo no responde, el que mandó el cliente) | Captura | PDF, asistente |
 | `cantidad`, `largoCm`, `anchoCm`, `altoCm`, `pesoKg` | Unidades y medidas. Desde el script `12` (HU-032) las tres medidas pueden ser NULL juntas: mercancía "no cubicable" (solo descripción, cantidad o peso) | Captura | Cubicador; posiciones hacia Nexo cuando la ruta tiene un solo camión |
 
-> El detalle de cada ajuste (`02`, `03`, `pendientes/04`, `05`, `10`, `11`, `12`, `13`) está en la cabecera de su script en
+> El detalle de cada ajuste (`02`, `03`, `pendientes/04`, `05`, `10`, `11`, `12`, `13`, `20`, `21`) está en la cabecera de su script en
 > `db/scripts/`; los tipos y restricciones, en `ESQUEMA_OBJETIVO_SQLSERVER.md` §A.4.
 
 ## 7. `CotizacionServiciosConexos` — conexos de la ruta
@@ -173,7 +173,7 @@ Quitar un conexo borra su fila (no hay columna `incluido`). El estado del envío
 | `UsuariosWeb`, `Roles`, `UsuariosRoles`, `TokensRefresco`, `TokensRevocados` | Identidad: usuarios de ClientePro, rol interno, refresh tokens (hash) y access tokens revocados |
 | `MargenesPolitica` | Líneas de negocio, margen de política y nombre equivalente en Nexo (`mapeoLineasNexo`). Desde el `0009`: Nacional, Distribucion, Importacion, Exportacion, Internacional y DevolucionContenedor (salen ITR, Almacenamiento y Almacenamiento3PL) |
 | `TarifasSeguro` | La tasa del seguro de la mercancía con su historia (script `20`, HU-045.1 #263): `tasa` (fracción; inicial 0.003450 = 0,345 %), `vigenteDesde`, `isActive`. Una sola activa; las viejas se desactivan, no se borran. Se cambia con `db/scripts/operacion/cambiar_tasa_seguro.sql` |
-| `PoliticaSeguroTramos` | Tramos de la política de seguros por valor de la mercancía de la ruta (script `21`, HU-046.2 #268): `valorDesde` exclusivo, `valorHasta` incluido (NULL = sin tope), en pesos fijos; `proyectoEspecial` desde 700 M. Los activos son contiguos y sin solapes (lo valida el script) |
+| `PoliticaSeguroTramos` | Tramos de la política de seguros por valor de la mercancía de la ruta (script `21`, HU-046.2 #268): `valorDesde` exclusivo, `valorHasta` incluido (NULL = sin tope), en pesos fijos; `nota` (los de 700 M en adelante dicen "Proyecto especial"). Los activos son contiguos y sin solapes (lo valida el script) |
 | `PoliticaSeguroMedidas` | Catálogo de medidas de la política: `codigo` (`esquema_basico`, `gps`, `candado_satelital`, `restriccion_nocturna`, `acompanante_vehicular`, `acompanante_total`, `incluir_seguro`), `nombre`, `esCobrable` (solo los acompañantes) |
 | `PoliticaSeguroTramoMedidas` | Qué medida aplica en cada tramo y con qué `nivel` (`recomendada` u `obligatoria`). Solo los acompañantes son obligatorios |
 | `PoliticaSeguroMedidaConexos` | Códigos del catálogo de Nexo que cumplen cada medida; la obligación se cumple con cualquiera. `acompanante_vehicular`: los 5 acompañantes; `acompanante_total`: los 3 `AVT_*` |
