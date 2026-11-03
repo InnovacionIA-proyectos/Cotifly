@@ -108,7 +108,7 @@ Entonces el seguro aparece como una línea separada "Seguro de la mercancía"
 
 - [ ] Script `db/scripts/20_seguro_mercancia.sql`, no destructivo e idempotente, en transacción:
   - [ ] Tabla `dbo_cotifly.TarifasSeguro`:
-    - `id INT IDENTITY`;
+    - `id UNIQUEIDENTIFIER` (`NEWID()`, como el resto del esquema);
     - `tasa DECIMAL(9,6) NOT NULL` (0.003450 = 0,345 %);
     - `vigenteDesde DATETIMEOFFSET NOT NULL`;
     - `isActive BIT NOT NULL DEFAULT 1`;

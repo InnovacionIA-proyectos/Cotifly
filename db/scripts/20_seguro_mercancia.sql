@@ -7,7 +7,7 @@
    Qué hace (NO destructivo e idempotente: solo crea y agrega; no borra ni cambia valores):
 
    1. Tabla nueva dbo_cotifly.TarifasSeguro — la tasa del seguro, con su historia:
-          id            INT IDENTITY     PK
+          id            UNIQUEIDENTIFIER PK         DEFAULT NEWID(), como el resto del esquema
           tasa          DECIMAL(9,6)     NOT NULL   0.003450 = 0,345 % (CHECK > 0 y < 1)
           vigenteDesde  DATETIMEOFFSET   NOT NULL   desde cuándo rige (informativo: se usa la activa)
           isActive      BIT              NOT NULL   DEFAULT 1
@@ -69,7 +69,7 @@ BEGIN TRY
     IF OBJECT_ID(N'dbo_cotifly.TarifasSeguro', N'U') IS NULL
     BEGIN
         CREATE TABLE dbo_cotifly.TarifasSeguro (
-            id              INT IDENTITY(1,1)   NOT NULL,
+            id              UNIQUEIDENTIFIER    NOT NULL CONSTRAINT df_tarifasSeguro_id DEFAULT (NEWID()),
             tasa            DECIMAL(9,6)        NOT NULL,
             vigenteDesde    DATETIMEOFFSET      NOT NULL,
             isActive        BIT                 NOT NULL CONSTRAINT df_tarifasSeguro_isActive DEFAULT (1),

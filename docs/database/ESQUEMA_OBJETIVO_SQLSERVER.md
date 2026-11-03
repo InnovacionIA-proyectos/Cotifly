@@ -247,7 +247,7 @@ erDiagram
         nvarcharmax mapeoLineasNexo
     }
     TarifasSeguro {
-        int id PK
+        uniqueidentifier id PK
         decimal9_6 tasa "0.003450 = 0,345 %"
         datetimeoffset vigenteDesde
         bit isActive UK "una sola activa (20)"
@@ -450,7 +450,7 @@ Sin cambios de estructura en HU-021 (salvo el catálogo de líneas de negocio de
 | Tabla | Clave | Columnas |
 |---|---|---|
 | `MargenesPolitica` | `id` int identity; único `lineaNegocio` | `mapeoLineasNexo`, `margen` dec(9,4), `metodoCalculo` (`'margen'`), `isActive`, `updatedAt` |
-| `TarifasSeguro` | `id` int identity; único filtrado `uq_tarifasSeguro_activa` (`isActive`) `WHERE isActive = 1` | Script `20`, HU-045.1 (#263). `tasa` dec(9,6) (CHECK > 0 y < 1; inicial 0.003450 = 0,345 %), `vigenteDesde`, `isActive`, `updatedAt`. Una sola activa; las viejas se desactivan, no se borran (`db/scripts/operacion/cambiar_tasa_seguro.sql`) |
+| `TarifasSeguro` | `id` uniqueidentifier `NEWID()`; único filtrado `uq_tarifasSeguro_activa` (`isActive`) `WHERE isActive = 1` | Script `20`, HU-045.1 (#263). `tasa` dec(9,6) (CHECK > 0 y < 1; inicial 0.003450 = 0,345 %), `vigenteDesde`, `isActive`, `updatedAt`. Una sola activa; las viejas se desactivan, no se borran (`db/scripts/operacion/cambiar_tasa_seguro.sql`) |
 | `SapMapeoTrqType` | (`trqType`, `salesOrg`) | `lineaNegocio` (texto, original), `lineaNegocioId` int NOT NULL FK `MargenesPolitica(id)` (script `18`, HU-042.4, #247 — conviven mientras el backend se adapta a leer por id; `lineaNegocio` se retira después), `activo` |
 | `SapMargenCliente` | `id` uid; único (`salesOrgId`, `trqType`, `bpSap`) | `nit` nv(20) nulo (resuelto por BP contra el DW `DWCubosOperacionesEBS.dbo.DimBPSolicitante`), `margenRecomendado` dec(9,4), `activo` (soft delete), `creadoAt`, `actualizadoAt`. Script `17` (HU-042.1, #242); no la lee `backend-dotnet` todavía (HU-042.2, #243) |
 | `SapMargenSyncLog` | `id` uid | Log append-only de las corridas del job de `SapMargenCliente`: `iniciadoAt`, `finalizadoAt`, `filasInsertadas`, `filasActualizadas`, `filasDesactivadas`, `status` (CHECK `ok`\|`error`\|`omitido`), `mensajeError`. Script `17` |
