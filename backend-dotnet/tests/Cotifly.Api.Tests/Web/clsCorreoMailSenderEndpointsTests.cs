@@ -221,7 +221,8 @@ public sealed class clsCorreoMailSenderEndpointsTests : IDisposable
         // OBS-1027-5 (#226): al redirigir el correo sale sin CC ni CCO, así que la vista previa no anuncia la copia oculta al comercial.
         json.GetProperty("copia_oculta").ValueKind.Should().Be(JsonValueKind.Null);
         json.GetProperty("aviso").GetString().Should().Contain("sin CC ni CCO");
-        json.GetProperty("cuerpo_html").GetString().Should().Contain("Botero Soto</b>");
+        // #262: el HTML es el del correo (encabezado "Cotización" con el logo).
+        json.GetProperty("cuerpo_html").GetString().Should().Contain(">Cotizaci&#243;n<").And.Contain("<img src=\"https://");
         _api.MailSender.Recibidos.Should().BeEmpty("la vista previa no envía nada");
     }
 
