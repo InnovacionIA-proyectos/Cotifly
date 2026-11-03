@@ -95,14 +95,14 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `SeguridadHttp__LimiteCuerpoLicitacionBytes` | no | no | `12582912` | manifiesto | HU-011: Excel de licitación (10 MB) + JSON. Traefik no debe cortar antes (sin límite de cuerpo propio en el router) |
 | `SapTm__SalesOrgDefault` | no | no | `50000005` | manifiesto | |
 | `SapTm__AvisoSincronizacionHoras` | no | no (> 0) | `48` | manifiesto | HU-042.2 (#243): horas desde la última sincronización exitosa de la copia local del margen de SAP a partir de las cuales el detalle lo avisa (el dato se usa igual) |
-| `SapTm__Url` | no | no (http/https, sin consulta ni `/RentabClienteSet`) | vacío | Dokploy | HU-042.2 (2026-11-03): URL del servicio OData de rentabilidad (`http://sap-tm-prd.boterosoto.local:8000/sap/opu/odata/sap/ZGW_RENTAB_CLI_SRV`). Sin `Url`, `User` o `Pass` el worker de sincronización queda inactivo y la API arranca igual |
+| `SapTm__Url` | no | no (mal escrita no impide arrancar: el worker queda inactivo con un log Error) | vacío | Dokploy | HU-042.2 (2026-11-03): la **raíz del servicio** OData de rentabilidad, `http://sap-tm-prd.boterosoto.local:8000/sap/opu/odata/sap/ZGW_RENTAB_CLI_SRV` (sin `/RentabClienteSet`; si se pone, se acepta y se quita, y sin `?$filter`). Sin `Url`, `User` o `Pass` el worker de sincronización queda inactivo y la API arranca igual |
 | `SapTm__User` | no | no | vacío | Dokploy | usuario técnico de SAP (Basic) |
 | `SapTm__Pass` | **sí** (≥ 8, si tiene valor) | no | vacío | Dokploy | clave del usuario técnico; nunca en el repo ni en el manifiesto |
-| `SapTm__SapClient` | no | no (3 dígitos) | vacío | Dokploy | mandante (`&sap-client=NNN`), opcional |
+| `SapTm__SapClient` | no | no (si no son 3 dígitos, el worker queda inactivo con un log Error) | vacío | Dokploy | mandante (`&sap-client=NNN`), opcional |
 | `SapTm__ChequeoMinutos`, `SapTm__SincronizacionMinutos` | no | no | `60`, `1440` | manifiesto | cada cuánto revisa el worker y edad máxima de la última corrida `ok` |
 | `SapTm__TimeoutSegundos`, `SapTm__MaximoBytes` | no | no | `120`, `20971520` | manifiesto | límite de la descarga y tope del cuerpo descomprimido |
 | `SapTm__MinimoFilas`, `SapTm__MinimoPorcentajeActivas` | no | no | `100`, `80` | manifiesto | guarda: con menos de `max(MinimoFilas, % de las activas)` filas no se toca la tabla |
-| `ConnectionStrings__DwOperaciones` | **sí** (≥ 20, si tiene valor) | no (opcional) | vacío | Dokploy | `DWCubosOperacionesEBS` en `10.10.40.24:1433`, solo lectura de `dbo.DimBPSolicitante` (`BP`, `NIT`): el NIT de cada fila de la copia. Vacía: NIT `NULL` (warning por corrida). Configurada y caída: la corrida queda `error` |
+| `ConnectionStrings__DwOperaciones` | **sí** (≥ 20, si tiene valor) | no (opcional) | vacío | Dokploy | `DWCubosOperacionesEBS` en `10.10.40.24:1433`, solo lectura de `dbo.DimBPSolicitante` (`BP`, `NIT`): el NIT de cada fila de la copia. Vacía, o sin el BP en el DW: la fila conserva el NIT que ya tenía (o queda `NULL`; warning por corrida). Configurada y caída: la corrida queda `error` |
 | ~~`SapTm__Modo`, `__ExportPath`~~ | — | — | — | — | **Retiradas en HU-042.2 (ADR-027).** Si siguen cargadas en Dokploy, borrarlas; si llegan al contenedor, la API arranca y avisa "variable obsoleta, se ignora" |
 | `Nexo__UrlBase` | no | no | vacío | Dokploy | **raíz** del servicio (`https://<host-nexo>`), sin `/api`: el cliente agrega las rutas `/api/...`. Sin ella la búsqueda de clientes responde `*_NO_DISPONIBLE`, el costeo no corre y `POST /web/solicitudes-costeo` rechaza con 503 `CATALOGOS_FLETE_NO_DISPONIBLE` todo formulario con `tipo_vehiculo` o `clase_viaje` (no hay catálogo contra el cual validarlos, HU-013.10) |
 | `Nexo__MinutosCacheMunicipios` | no | no | `60` | manifiesto | caché de la lista de municipios de Nexo (frente B) |
@@ -358,7 +358,17 @@ sincroniza el propio backend** (worker `clsWorkerSincronizacionMargenSap`, ADR-0
   (secreto). Los ajustes (`SapTm__ChequeoMinutos`, `__SincronizacionMinutos`, `__TimeoutSegundos`, `__MaximoBytes`, `__MinimoFilas`,
   `__MinimoPorcentajeActivas`) ya tienen su valor por defecto en el manifiesto. Borrar `SapTm__Modo` y `SapTm__ExportPath` si siguen cargadas.
 - **Sin `Url`/`User`/`Pass`** el worker queda inactivo (un log Information) y, si la copia nunca se sincronizó, todo margen sale de la
-  política con el detalle "SAP TM no configurado": es el comportamiento esperado en local.
+  política con el detalle "SAP TM no configurado": es el comportamiento esperado en local. Con la URL o el mandante mal escritos la API
+  arranca igual, el worker queda inactivo con un log Error y `/web/admin/sap-margen/*` responde 503 `SAP_MARGEN_NO_CONFIGURADO`.
+  `SapTm__Url` es la **raíz del servicio** (`.../ZGW_RENTAB_CLI_SRV`); si trae `/RentabClienteSet` al final se acepta y se quita.
+- **⚠️ Antes de desplegar, revisar en cada ambiente** (Dokploy, `.env`) si quedaron `SapTm__Url`, `SapTm__User` y `SapTm__Pass` del modo
+  `odata` viejo (#13): con las tres cargadas el worker **se activa solo** y empieza a sincronizar contra esa URL. Si el ambiente no debe
+  sincronizar todavía, borrarlas; si sí, confirmar que la URL es la raíz del servicio de producción.
+- **Timeout del proxy:** `POST /web/admin/sap-margen/sincronizar` es síncrono; en la práctica tarda segundos; el máximo con los límites actuales es de unos 10 min (120 s de SAP, la conexión y 60 s por lote de 500 BP en el DW, 120 s para leer los NIT existentes, 120 s de la carga y 120 s del stored procedure). Traefik (sin
+  `respondingTimeouts.writeTimeout` ni `serversTransport.forwardingTimeouts.responseHeaderTimeout` que lo corten, como para la captura)
+  debe cubrirlo. Si algo corta antes, la corrida sigue en el servidor y su resultado se ve con `GET /web/admin/sap-margen/estado`.
+- **NIT por BP:** se busca con el BP tal como lo manda SAP (hoy sin ceros a la izquierda). Si `DimBPSolicitante.BP` los guarda con ceros,
+  no cruzará: **pendiente de confirmar con Datos** (ADR-027 §13). Sin el DW, o sin el BP en el DW, la fila conserva su NIT anterior.
 - **Primera corrida:** después de desplegar, `POST /web/admin/sap-margen/sincronizar` con un gerente o director (responde 200 con
   `estado = ok` y las filas) o esperar el primer chequeo (30 s después del arranque). Verificar con `GET /web/admin/sap-margen/estado`
   ([10-operacion](backend-dotnet/docs/10-operacion.md#sincronización-del-margen-de-sap-tm-hu-0422)).
@@ -768,6 +778,9 @@ Internet / red corporativa
         └── red "salida" (overlay con egreso) → tbsdatacenter:1433 (SQL Server 2019, externo)
                                               → proveedor LLM, Nexo, cubicador, MailSender (él entrega por el relay SMTP),
                                                 TRM en co.dolarapi.com:443 y www.datos.gov.co:443
+                                              → SAP TM en sap-tm-prd.boterosoto.local:8000 (HTTP, worker del margen, HU-042.2)
+                                              → DW 10.10.40.24:1433 (DWCubosEBSSAP para la regional y DWCubosOperacionesEBS
+                                                para el NIT por BP del margen de SAP)
 ```
 
 - **SQL Server es externo.** HU-002.4 lo decidió: la instancia corporativa `tbsdatacenter` (base
@@ -784,7 +797,7 @@ Internet / red corporativa
   | Python | .NET | Para qué |
   |---|---|---|
   | `web` / `dokploy-network` (Traefik) | `edge` = `dokploy-network` (externa) | Solo entrada desde Traefik. Es el único servicio del stack en esa red |
-  | `bot-edge` (overlay con egreso) | `salida` (overlay propia, no interna) | Salida a internet y a la red corporativa: LLM, Nexo, TRM (`co.dolarapi.com` y `www.datos.gov.co`), relay, SQL Server |
+  | `bot-edge` (overlay con egreso) | `salida` (overlay propia, no interna) | Salida a internet y a la red corporativa: LLM, Nexo, TRM (`co.dolarapi.com` y `www.datos.gov.co`), relay, SQL Server, SAP TM (`sap-tm-prd.boterosoto.local:8000`, worker del margen) y el DW (`10.10.40.24:1433`) |
   | `bot-back` (overlay `internal: true`) | — | No hace falta: no hay servicios internos. Si vuelve alguno (MinIO, ADR-012), va en una overlay interna sin labels de Traefik |
 
 - **Healthchecks:** el del stack es el mismo de la imagen, en forma exec (`dotnet /app/Cotifly.Api.dll --healthcheck`,

@@ -76,8 +76,10 @@ cliente queda fuera de alcance (sin columna nueva ni script de Datos).
     (no retrasa el arranque ni `/health/ready`, que no depende de SAP). Cada `SapTm:ChequeoMinutos` (60) revisa la última corrida `ok` y
     sincroniza solo si tiene más de `SapTm:SincronizacionMinutos` (1440) o si nunca la hubo, igual que el script. Ninguna excepción tumba el
     host. Sin `SapTm:Url`, `SapTm:User` o `SapTm:Pass` queda inactivo (una línea Information) y el margen sigue con la copia existente o la
-    política; **no falla el arranque**. Una URL o un mandante mal escritos sí (`clsValidadorOpcionesSapTmSincronizacion`); en Production,
-    una URL http (red interna) se acepta con un warning.
+    política; **no falla el arranque**. Una URL o un mandante mal escritos tampoco (corrección del 2026-11-03: el margen no depende de SAP
+    al cotizar): el worker queda inactivo con un log Error y la administración responde `SAP_MARGEN_NO_CONFIGURADO`
+    (`clsOpcionesSapTmSincronizacion.ErrorConfiguracion`). `SapTm:Url` es la raíz del servicio; un `/RentabClienteSet` final se acepta y se
+    quita. En Production, una URL http (red interna) se acepta con un warning.
 11. **Una corrida = el script en C#** (`clsSincronizacionMargenSapSql`, singleton): (a) sin forzar, sale si todavía no toca, sin llamar a
     SAP; (b) un solo `GET {Url}/RentabClienteSet?$format=json` (más `&sap-client=NNN`), **sin `$filter`** porque SAP lo ignora y devuelve el
     set completo (~1500 filas); Basic por petición, `Accept-Encoding: gzip` con descompresión automática, sin cookies, sin redirecciones,
@@ -88,20 +90,30 @@ cliente queda fuera de alcance (sin columna nueva ni script de Datos).
     guarda de mínimo (§12); (e) el NIT por BP (§13); (f) `#SapMargenStage` con `COLLATE DATABASE_DEFAULT` en el texto y PK
     `(salesOrgId, trqType, bpSap)`, `SqlBulkCopy` y `EXEC dbo_cotifly.sp_sincronizar_margen_sap` **en la misma conexión** (la temporal es de
     la sesión). Con la collation real de la base (`Latin1_General_100_CI_AS_SC_UTF8`, distinta de la del servidor) una temporal sin
-    `DATABASE_DEFAULT` choca en el `MERGE`: las pruebas usan una base con esa collation.
+    `DATABASE_DEFAULT` choca en el `MERGE`: las pruebas usan una base con esa collation. **La PK de la temporal va sin nombre**: en
+    `tempdb` el nombre de una restricción es global, y con nombre la temporal de una segunda réplica fallaba con el error 2714 antes del
+    `sp_getapplock` (en vez de quedar `omitido`). Un corte a mitad del cuerpo o un gzip corrupto también son `error` ("SAP TM cortó la
+    respuesta…").
 12. **Guarda de mínimo de filas.** Si SAP trae menos de `max(SapTm:MinimoFilas = 100, ceil(SapTm:MinimoPorcentajeActivas = 80 % × filas
     activas actuales))`, no se llama al stored procedure (que desactivaría lo que falta) y queda `error` con las filas recibidas y el mínimo
     exigido. Así un set parcial de SAP no apaga al resto de clientes.
 13. **NIT por BP.** `ConnectionStrings:DwOperaciones` (opcional, secreto, usuario de solo lectura) a `DWCubosOperacionesEBS`,
     `dbo.DimBPSolicitante` (`BP`, `NIT`); es otra base que la de `ConnectionStrings:Regional`. `SELECT` parametrizado en lotes de 500 BP, el
-    BP tal como lo manda SAP (como el script). **Sin la cadena, el NIT queda `NULL` y se sincroniza igual** (un warning por corrida); ojo:
-    el `MERGE` del stored procedure compara el NIT, así que una copia que tenía NIT lo pierde si se quita la cadena. **Configurada y caída,
-    la corrida queda `error` y la tabla no se toca**, igual que el script. Un NIT vacío o de más de 20 caracteres se descarta (fila sin NIT).
+    BP tal como lo manda SAP (como el script), con parámetros `VARCHAR(20)` como el cubo. **Sin la cadena, o sin ese BP en el DW, la fila
+    conserva el NIT que ya tenía la copia** (se lee de `SapMargenCliente` por clave antes de cargar la temporal, sin tocar el stored
+    procedure, cuyo `MERGE` lo pisaría con `NULL`); si no tenía, queda `NULL`. Un warning por corrida sin la cadena. **Configurada y
+    caída, la corrida queda `error` y la tabla no se toca**, igual que el script. Un NIT vacío o de más de 20 caracteres se descarta; un BP
+    con varios NIT distintos toma el menor en orden ordinal (determinista) y deja un warning. **Pendiente de confirmar con Datos:** SAP
+    manda el BP sin ceros a la izquierda; si `DimBPSolicitante.BP` los guarda con ceros, no cruza (no se consultó el DW real).
 14. **Registro.** Un fallo antes del stored procedure (SAP, validación, guarda, DW, staging) se inserta en `SapMargenSyncLog` como `error`
     con `iniciadoAt`, `finalizadoAt` y `mensajeError` (máx. 2000) **sin la URL, el usuario ni la clave** (el detalle técnico queda en Debug;
     de un error de la base solo se guarda el número de SQL Server). El stored procedure registra lo suyo (`ok`, `omitido` o su `error`); si
-    no se pudo ejecutar (sin `EXECUTE`, error 229, o sin el objeto, 2812) el backend registra el `error`. El resultado de la corrida es la
-    fila que dejó el stored procedure, leída en la misma conexión desde la hora del servidor tomada antes del `EXEC`. Un log Information por
+    no dejó su fila (sin `EXECUTE`, error 229; sin el objeto, 2812; un error de recompilación como el 207 que su `TRY` no atrapa; tiempo
+    agotado o `KILL`) el backend registra el `error`. El resultado de la corrida es la fila que dejó el stored procedure: la **primera**
+    iniciada entre la hora del servidor tomada antes del `EXEC` (en la misma conexión) y la hora al consultar. El stored procedure fija su
+    `iniciadoAt` al empezar, así que una réplica que llegó después y quedó `omitido` no se confunde con la propia. Si la base de Cotifly no
+    responde (al leer el estado o la última corrida, o al registrar el fallo), se lanza `clsSincronizacionMargenSapNoDisponibleException`:
+    la administración responde 503 `SAP_MARGEN_NO_DISPONIBLE` y el worker solo lo anota. Un log Information por
     corrida con el estado, la duración y las filas; nunca credenciales (los logs de `IHttpClientFactory` muestran la URL, sin credenciales,
     y ocultan las cabeceras).
 15. **Varias réplicas.** Cada réplica tiene su worker y un candado en memoria (`clsCoordinacionSincronizacionMargenSap`) que comparten el
@@ -114,8 +126,10 @@ cliente queda fuera de alcance (sin columna nueva ni script de Datos).
     "administrador". **El POST es síncrono y responde 200 con el resultado** (`ok`, `error` u `omitido`): son segundos con ~1500 filas y la
     gerencia ve en la misma respuesta si SAP rechazó las credenciales o el mínimo frenó la carga; corre con el token de apagado de la API, no
     con el de la petición, para que una desconexión del cliente no deje la corrida a medias. Queda en la auditoría
-    (`admin_sincronizar_margen_sap`). Códigos nuevos: `SAP_MARGEN_NO_CONFIGURADO` (503, los dos endpoints sin `Url`/`User`/`Pass`) y
-    `SAP_MARGEN_SINCRONIZACION_EN_CURSO` (409, esta réplica ya sincroniza).
+    (`admin_sincronizar_margen_sap`). Códigos nuevos: `SAP_MARGEN_NO_CONFIGURADO` (503, los dos endpoints sin `Url`/`User`/`Pass` o con la
+    URL o el mandante mal escritos), `SAP_MARGEN_SINCRONIZACION_EN_CURSO` (409, esta réplica ya sincroniza) y `SAP_MARGEN_NO_DISPONIBLE`
+    (503, la base de Cotifly no respondió). El POST en la práctica tarda segundos; el máximo con los límites actuales es de unos 10 min (120 s de SAP, la conexión y 60 s por lote de 500 BP en el DW, 120 s para leer los NIT existentes, 120 s de la carga y 120 s del stored procedure); si el cliente o el proxy cortan antes, la corrida
+    sigue y su resultado se ve en `GET .../estado`.
 
 ## Alternativas consideradas
 
@@ -159,7 +173,8 @@ cliente queda fuera de alcance (sin columna nueva ni script de Datos).
 | ~~Instalar el job en el servidor SQL de producción~~: no se instala (2026-11-03); lo reemplaza el worker | — |
 | `GRANT EXECUTE` sobre `sp_sincronizar_margen_sap` e `INSERT` sobre `SapMargenSyncLog` a `cotifly_app` | DBA / Datos |
 | Ruta de red del cluster a `sap-tm-prd.boterosoto.local:8000` y `10.10.40.24:1433` (HU-009.1) | Infraestructura |
-| `SapTm__Url`, `SapTm__User`, `SapTm__Pass` y `ConnectionStrings__DwOperaciones` en Dokploy | Backend / Infraestructura |
+| `SapTm__Url`, `SapTm__User`, `SapTm__Pass` y `ConnectionStrings__DwOperaciones` en Dokploy (y revisar que no hayan quedado las del modo `odata` viejo: activan el worker solas) | Backend / Infraestructura |
+| Confirmar si `DimBPSolicitante.BP` guarda el BP con ceros a la izquierda (SAP lo manda sin ellos; si los tiene, el NIT no cruza) | Datos |
 | Script que retira `SapMapeoTrqType.lineaNegocio` (texto) después de desplegar esta imagen | Datos, avisado por Backend |
 | Borrar de Dokploy `SapTm__Modo` y `SapTm__ExportPath` (las únicas que siguen retiradas) | Backend / Infraestructura |
 | Cerrar o reorientar HU-009.1/HU-009.2 en su milestone | Usuario |

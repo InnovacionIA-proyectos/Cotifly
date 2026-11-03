@@ -93,12 +93,12 @@ Resumen de todas las variables de [`.env.example`](../.env.example). "Production
 | `SeguridadHttp__LimiteCuerpoLicitacionBytes` | `12582912` | no | no | [Seguridad HTTP](#seguridad-http) |
 | `SapTm__SalesOrgDefault` | `50000005` | no | no | [SAP TM](#integraciones-externas-y-sap-tm) |
 | `SapTm__AvisoSincronizacionHoras` | `48` | no | no (entero > 0) | [SAP TM](#integraciones-externas-y-sap-tm) |
-| `SapTm__Url`, `SapTm__User`, `SapTm__SapClient` | vacío | no | no (Url http/https sin consulta ni `/RentabClienteSet`; SapClient de 3 dígitos). Sin Url/User/Pass, el worker queda inactivo | [SAP TM](#integraciones-externas-y-sap-tm) |
+| `SapTm__Url`, `SapTm__User`, `SapTm__SapClient` | vacío | no | no (Url: la raíz del servicio, http/https sin consulta; un `/RentabClienteSet` final se quita. SapClient de 3 dígitos. Mal escritas o sin Url/User/Pass, el worker queda inactivo; la API arranca) | [SAP TM](#integraciones-externas-y-sap-tm) |
 | `SapTm__Pass` | vacío | **sí** | no (con valor, se valida como secreto en Production) | [SAP TM](#integraciones-externas-y-sap-tm) |
 | `SapTm__ChequeoMinutos`, `SapTm__SincronizacionMinutos` | `60`, `1440` | no | no (1–1440 y 1–10080) | [SAP TM](#integraciones-externas-y-sap-tm) |
 | `SapTm__TimeoutSegundos`, `SapTm__MaximoBytes` | `120`, `20971520` (20 MB) | no | no (5–900 s; 1–512 MB) | [SAP TM](#integraciones-externas-y-sap-tm) |
 | `SapTm__MinimoFilas`, `SapTm__MinimoPorcentajeActivas` | `100`, `80` | no | no (≥ 1; 0–100) | [SAP TM](#integraciones-externas-y-sap-tm) |
-| `ConnectionStrings__DwOperaciones` | vacío (NIT `NULL`) | **sí** | no (con valor, se valida en Production) | [SAP TM](#integraciones-externas-y-sap-tm) |
+| `ConnectionStrings__DwOperaciones` | vacío (cada fila conserva su NIT o queda `NULL`) | **sí** | no (con valor, se valida en Production) | [SAP TM](#integraciones-externas-y-sap-tm) |
 | ~~`SapTm__Modo`, `__ExportPath`~~ | — | — | retiradas (HU-042.2): si llegan, warning "variable obsoleta, se ignora" | [SAP TM](#integraciones-externas-y-sap-tm) |
 | `Pdf__StorageModo`, `Pdf__StorageDir`, `Pdf__BaseUrl` | `volumen`, `/data/pdfs`, vacío | no | no | [PDF y correo](#pdf-y-correo) |
 | `Pdf__TiempoEsperaRenderSegundos` | `30` | no | no | [PDF y correo](#pdf-y-correo) |
@@ -281,13 +281,15 @@ SAP TM (HU-042.2 #243 y HU-042.4 #247, [ADR-027](../specs/decisiones/ADR-027-mar
   Scripts `db/scripts/17` (tablas y stored procedure) y `18` (`SapMapeoTrqType.lineaNegocioId`), exigidos por `/health/ready`.
 - **Descarga.** Un `GET {SapTm__Url}/RentabClienteSet?$format=json` (más `&sap-client=` si hay `SapTm__SapClient`), sin `$filter` (SAP lo
   ignora y trae todo), Basic con `SapTm__User`/`SapTm__Pass`, gzip, sin cookies, `SapTm__TimeoutSegundos` (120) y `SapTm__MaximoBytes`
-  (20 MB). Sin `Url`, `User` o `Pass` el worker queda inactivo (Information) y la API arranca igual. http se acepta en la red interna (en
+  (20 MB). Sin `Url`, `User` o `Pass` el worker queda inactivo (Information) y la API arranca igual; con la URL o el mandante mal escritos,
+  también (log Error, y la administración responde `SAP_MARGEN_NO_CONFIGURADO`). http se acepta en la red interna (en
   Production deja un warning al arrancar).
 - **Guarda.** Si SAP trae menos de `max(SapTm__MinimoFilas, SapTm__MinimoPorcentajeActivas % de las filas activas)` (100 y 80 %), no se
   toca la tabla y la corrida queda `error` con las filas recibidas y el mínimo exigido.
 - **NIT por BP.** `ConnectionStrings__DwOperaciones` (opcional, secreto, solo lectura): `DWCubosOperacionesEBS.dbo.DimBPSolicitante`
-  (`BP`, `NIT`) en `10.10.40.24:1433`, otra base que la de la regional. Sin la cadena, el NIT queda `NULL` (warning por corrida); con la
-  cadena y el DW caído, la corrida queda `error` y la tabla no cambia.
+  (`BP`, `NIT`) en `10.10.40.24:1433`, otra base que la de la regional. Sin la cadena, o sin el BP en el DW, la fila conserva el NIT que
+  ya tenía (o queda `NULL`; warning por corrida); con la cadena y el DW caído, la corrida queda `error` y la tabla no cambia. Un BP con varios
+  NIT toma el menor. El BP se busca como lo manda SAP (sin ceros): si el DW lo guarda con ceros no cruza (pendiente con Datos).
 - **Errores.** Un fallo antes del stored procedure queda como `error` en `SapMargenSyncLog` sin URL ni credenciales; el stored procedure
   registra sus `ok`, `omitido` y `error`. Ninguno tumba la API.
 - **Red y permisos.** Salida desde el cluster a `sap-tm-prd.boterosoto.local:8000` (SAP TM) y a `10.10.40.24:1433` (DW): HU-009.1 (#35)
