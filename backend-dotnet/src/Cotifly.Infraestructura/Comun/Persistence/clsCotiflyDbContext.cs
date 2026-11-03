@@ -46,10 +46,10 @@ public sealed class clsCotiflyDbContext(DbContextOptions<clsCotiflyDbContext> op
     public DbSet<clsTokenRefresco> TokensRefresco => Set<clsTokenRefresco>();
     public DbSet<clsTokenRevocado> TokensRevocados => Set<clsTokenRevocado>();
 
-    /// <summary>HU-042.2 (#243): copia local del margen de SAP TM (script 17, la escribe el job de Datos; aquí solo se lee).</summary>
+    /// <summary>HU-042.2 (#243): copia local del margen de SAP TM (script 17; la escribe <c>sp_sincronizar_margen_sap</c>, que llama la sincronización del backend; EF solo la lee).</summary>
     public DbSet<clsSapMargenClienteFila> SapMargenCliente => Set<clsSapMargenClienteFila>();
 
-    /// <summary>HU-042.2 (#243): log de corridas del job que sincroniza <see cref="SapMargenCliente"/> (script 17).</summary>
+    /// <summary>HU-042.2 (#243): log de corridas de la sincronización que mantiene <see cref="SapMargenCliente"/> (script 17).</summary>
     public DbSet<clsSapMargenSyncLogFila> SapMargenSyncLog => Set<clsSapMargenSyncLogFila>();
 
     /// <summary>

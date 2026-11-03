@@ -4,8 +4,8 @@ namespace Cotifly.Aplicacion.Margen.DTOs;
 public enum EstadoConsultaMargenSap
 {
     /// <summary>
-    /// La copia local nunca se sincronizó (ninguna corrida <c>ok</c> del job): se trata como "SAP TM no configurado" y el resolver usa
-    /// la política de la línea. Es el caso de un ambiente local o de QA sin el job de Datos.
+    /// La copia local nunca se sincronizó (ninguna corrida <c>ok</c> de la sincronización del backend): se trata como "SAP TM no
+    /// configurado" y el resolver usa la política de la línea. Es el caso de un ambiente local o sin las credenciales de SAP.
     /// </summary>
     NoConfigurada,
 

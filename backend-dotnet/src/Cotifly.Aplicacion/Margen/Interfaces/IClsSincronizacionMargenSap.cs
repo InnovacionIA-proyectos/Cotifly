@@ -7,6 +7,10 @@ namespace Cotifly.Aplicacion.Margen.Interfaces;
 /// Job). Una corrida descarga <c>RentabClienteSet</c> completo, resuelve el NIT por BP en el DW, carga <c>#SapMargenStage</c> y llama a
 /// <c>dbo_cotifly.sp_sincronizar_margen_sap</c>. La implementación vive en Infraestructura; la usan el worker y la administración.
 /// </summary>
+/// <remarks>
+/// Si la base de Cotifly no responde (al leer el estado o la última corrida, o al registrar un fallo) lanza
+/// <see cref="Exceptions.clsSincronizacionMargenSapNoDisponibleException"/>.
+/// </remarks>
 public interface IClsSincronizacionMargenSap
 {
     /// <summary>Hay <c>SapTm:Url</c>, <c>SapTm:User</c> y <c>SapTm:Pass</c>. Sin ellas no se sincroniza y el margen sigue con la política.</summary>
@@ -17,8 +21,8 @@ public interface IClsSincronizacionMargenSap
 
     /// <summary>
     /// Un intento de sincronización. Sin <paramref name="forzada"/>, solo corre si la última corrida <c>ok</c> tiene más de
-    /// <c>SapTm:SincronizacionMinutos</c> (o si nunca la hubo); con ella, corre ya. Nunca lanza por un fallo de SAP, del DW o de la base:
-    /// lo registra como <c>error</c> en <c>SapMargenSyncLog</c> y lo devuelve.
+    /// <c>SapTm:SincronizacionMinutos</c> (o si nunca la hubo); con ella, corre ya. No lanza por un fallo de SAP, del DW o de la carga: lo
+    /// registra como <c>error</c> en <c>SapMargenSyncLog</c> y lo devuelve.
     /// </summary>
     Task<clsResultadoSincronizacionMargenSap> SincronizarAsync(bool forzada, CancellationToken cancellationToken = default);
 }

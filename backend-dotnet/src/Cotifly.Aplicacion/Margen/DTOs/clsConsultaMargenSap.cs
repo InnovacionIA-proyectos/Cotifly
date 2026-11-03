@@ -7,7 +7,7 @@ namespace Cotifly.Aplicacion.Margen.DTOs;
 /// <param name="Estado">Qué encontró la fuente.</param>
 /// <param name="Porcentaje">Margen recomendado en porcentaje, solo con <see cref="EstadoConsultaMargenSap.ConValor"/>.</param>
 /// <param name="ActualizadoAt">Cuándo cambió la fila por última vez en la copia local (solo con valor; <c>null</c> si la fuente no lo sabe).</param>
-/// <param name="UltimaSincronizacion">Fin de la última corrida <c>ok</c> del job (<c>null</c> si nunca la hubo o si la fuente no lo sabe).</param>
+/// <param name="UltimaSincronizacion">Fin de la última corrida <c>ok</c> de la sincronización (<c>null</c> si nunca la hubo o si la fuente no lo sabe).</param>
 public sealed record clsConsultaMargenSap(
     EstadoConsultaMargenSap Estado,
     decimal? Porcentaje = null,

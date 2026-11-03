@@ -43,7 +43,10 @@ public sealed class clsMargenResolverService(
     /// <summary>Con BP, pero sin TrqType mapeado o sin fila en SAP TM (texto del Python).</summary>
     public const string MotivoSinRegistro = "sin registro en SAP TM";
 
-    /// <summary>La copia local de SAP TM nunca se sincronizó (ninguna corrida <c>ok</c> del job de Datos, HU-042.2): ambiente sin job.</summary>
+    /// <summary>
+    /// La copia local de SAP TM nunca se sincronizó (ninguna corrida <c>ok</c> de la sincronización del backend, HU-042.2): ambiente sin las
+    /// credenciales de SAP o con todas las corridas fallidas.
+    /// </summary>
     public const string MotivoNoConfigurado = "SAP TM no configurado: se usa la política de la línea";
 
     /// <summary>La fuente SAP TM no se pudo leer (decisión de #13: respaldo en la política).</summary>

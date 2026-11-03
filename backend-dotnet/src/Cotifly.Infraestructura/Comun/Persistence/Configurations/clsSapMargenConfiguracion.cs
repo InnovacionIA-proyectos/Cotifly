@@ -29,7 +29,7 @@ internal sealed class clsSapMargenClienteConfiguracion : IEntityTypeConfiguratio
     }
 }
 
-/// <summary><c>dbo_cotifly.SapMargenSyncLog</c> (<c>db/scripts/17</c>): log de corridas del job de Datos (HU-042.1 #242).</summary>
+/// <summary><c>dbo_cotifly.SapMargenSyncLog</c> (<c>db/scripts/17</c>): log de corridas de la sincronización del backend (HU-042.2 #243; tablas de HU-042.1 #242).</summary>
 internal sealed class clsSapMargenSyncLogConfiguracion : IEntityTypeConfiguration<clsSapMargenSyncLogFila>
 {
     public void Configure(EntityTypeBuilder<clsSapMargenSyncLogFila> builder)

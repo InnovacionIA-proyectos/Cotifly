@@ -2,8 +2,9 @@ namespace Cotifly.Infraestructura.Comun.Persistence;
 
 /// <summary>
 /// HU-042.2 (#243): fila de <c>dbo_cotifly.SapMargenCliente</c> (<c>db/scripts/17_sap_margen_sincronizacion.sql</c>, HU-042.1 #242), la
-/// copia local del margen recomendado de SAP TM que mantiene el job diario de Datos (<c>sp_sincronizar_margen_sap</c>). El backend solo
-/// la lee (<see cref="Margen.Services.clsFuenteMargenTablaLocal"/>, <c>AsNoTracking</c>); nunca la escribe.
+/// copia local del margen recomendado de SAP TM. La escribe <c>sp_sincronizar_margen_sap</c>, que llama la sincronización del backend
+/// (<see cref="Margen.Services.clsSincronizacionMargenSapSql"/>); EF solo la lee (<see cref="Margen.Services.clsFuenteMargenTablaLocal"/>,
+/// <c>AsNoTracking</c>).
 /// </summary>
 public sealed class clsSapMargenClienteFila
 {
@@ -22,17 +23,17 @@ public sealed class clsSapMargenClienteFila
     /// <summary>Porcentaje tal como lo manda SAP (13.5 = 13,5 %), <c>decimal(9,4)</c>.</summary>
     public decimal MargenRecomendado { get; private set; }
 
-    /// <summary><c>false</c> cuando SAP dejó de traer la combinación (soft delete del job): no se usa.</summary>
+    /// <summary><c>false</c> cuando SAP dejó de traer la combinación (soft delete del stored procedure): no se usa.</summary>
     public bool Activo { get; private set; }
 
     public DateTimeOffset CreadoAt { get; private set; }
 
-    /// <summary>Última vez que el job cambió la fila (valor, NIT o reactivación).</summary>
+    /// <summary>Última vez que el stored procedure cambió la fila (valor, NIT o reactivación).</summary>
     public DateTimeOffset ActualizadoAt { get; private set; }
 }
 
 /// <summary>
-/// HU-042.2 (#243): fila de <c>dbo_cotifly.SapMargenSyncLog</c> (<c>db/scripts/17</c>), una por corrida del job de sincronización
+/// HU-042.2 (#243): fila de <c>dbo_cotifly.SapMargenSyncLog</c> (<c>db/scripts/17</c>), una por corrida de la sincronización
 /// (append-only). El backend solo lee la última corrida <c>ok</c> para saber si la copia existe y qué tan vieja es.
 /// </summary>
 public sealed class clsSapMargenSyncLogFila

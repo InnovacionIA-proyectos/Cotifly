@@ -5,8 +5,9 @@ namespace Cotifly.Aplicacion.Margen.Services;
 /// <summary>
 /// Opciones de la resolución de margen (sección <c>SapTm</c>: <c>SapTm__SalesOrgDefault</c> y <c>SapTm__AvisoSincronizacionHoras</c>).
 /// Infraestructura la enlaza y la valida al arrancar. HU-042.2 (#243, ADR-027): el margen de SAP TM sale de la copia local que sincroniza
-/// el job de Datos; las variables del modo en vivo (<c>SapTm__Modo</c>, <c>Url</c>, <c>User</c>, <c>Pass</c>, <c>SapClient</c>,
-/// <c>ExportPath</c>) se retiraron: si llegan, la API arranca igual y avisa que las ignora.
+/// el worker del backend; sus variables (<c>Url</c>, <c>User</c>, <c>Pass</c>, <c>SapClient</c> y los ajustes del worker) son de
+/// <c>clsOpcionesSapTmSincronizacion</c> (Infraestructura), en la misma sección. <c>SapTm__Modo</c> y <c>SapTm__ExportPath</c> se retiraron:
+/// si llegan, la API arranca igual y avisa que las ignora.
 /// </summary>
 public sealed class clsOpcionesMargen
 {
