@@ -63,8 +63,8 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
             DELETE s FROM dbo_cotifly.CotizacionServiciosConexos s
               JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = s.lineaSolicitudId
              WHERE l.cotizacionSolicitudId = '{cotizacion.Id}' AND s.idServicioConexo = N'CX-1';
-            INSERT INTO dbo_cotifly.CotizacionServiciosConexos (lineaSolicitudId, idServicioConexo, nombreServicioConexo, precio, cantidad)
-            SELECT id, N'CX-3', N'Precinto', 1000, 1 FROM dbo_cotifly.CotizacionLineasSolicitud WHERE cotizacionSolicitudId = '{cotizacion.Id}';
+            INSERT INTO dbo_cotifly.CotizacionServiciosConexos (lineaSolicitudId, idServicioConexo, nombreServicioConexo, precio, cantidad, precioVenta)
+            SELECT id, N'CX-3', N'Precinto', 1000, 1, 1000 FROM dbo_cotifly.CotizacionLineasSolicitud WHERE cotizacionSolicitudId = '{cotizacion.Id}';
             """);
 
         await repositorio.RecargarAsync(leida, Ct);
@@ -80,6 +80,37 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
                 $"SELECT estadoEnvio FROM dbo_cotifly.CotizacionesSolicitud WHERE id = '{cotizacion.Id}'"))
             .Should().Be("enviada", "el cambio después de recargar sí se guarda");
     }
+
+    /// <summary>
+    /// #261 punto 4 (script 19, HU-043.1 #245): <c>precioVenta</c> es NOT NULL sin DEFAULT. Agregar un conexo no falla (antes, SQL
+    /// Server respondía 515 porque EF no mandaba la columna) y guarda <c>precioVenta = precio</c>; actualizarlo lo mantiene igual al
+    /// precio. Mientras llega HU-043.2 (#251) el precio de venta es el costo.
+    /// </summary>
+    [Fact]
+    public async Task Issue261_AgregarYActualizarUnConexoGuardaPrecioVentaIgualAlPrecio()
+    {
+        var cotizacion = NuevaCotizacion(null);
+        cotizacion.CambiarConexos(1, [new clsCambioConexo("CX-PV", "Cargue", 12_345.67m, 2m)], Reloj.AhoraUtc);
+
+        await GuardarAsync(cotizacion);
+
+        (await PrecioYPrecioVentaAsync(cotizacion.Id, "CX-PV")).Should().Be("12345.67|12345.67", "al agregar, precioVenta = precio");
+
+        await using (var ambito = NuevoAmbito())
+        {
+            var leida = (await ambito.ServiceProvider.GetRequiredService<IClsCotizacionRepository>().ObtenerPorIdAsync(cotizacion.Id, Ct))!;
+            leida.CambiarConexos(1, [new clsCambioConexo("CX-PV", "Cargue", 20_000m, 3m)], Reloj.AhoraUtc);
+            await ambito.ServiceProvider.GetRequiredService<IClsUnitOfWork>().GuardarCambiosAsync(Ct);
+        }
+
+        (await PrecioYPrecioVentaAsync(cotizacion.Id, "CX-PV")).Should().Be("20000.00|20000.00", "al actualizar, precioVenta sigue al precio");
+    }
+
+    private Task<string?> PrecioYPrecioVentaAsync(Guid cotizacionId, string idServicioConexo) => clsBaseDatosPruebas.EscalarAsync<string>(
+        BaseDatos.CadenaCotifly,
+        "SELECT CONCAT(s.precio, '|', s.precioVenta) FROM dbo_cotifly.CotizacionServiciosConexos s "
+        + "JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = s.lineaSolicitudId "
+        + $"WHERE l.cotizacionSolicitudId = '{cotizacionId}' AND s.idServicioConexo = N'{idServicioConexo}'");
 
     [Fact]
     public async Task LosEnumsSeGuardanConElCodigoQueExigenLosCheckDelEsquema()

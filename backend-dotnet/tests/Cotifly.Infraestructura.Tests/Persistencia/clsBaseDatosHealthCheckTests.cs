@@ -228,8 +228,8 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
     public async Task HU0301_ConEl10PeroSinEl11EsUnhealthyPorqueLeFaltaEl11()
     {
         // HU-030.1 (#184): el modelo EF mapea CotizacionLineasSolicitud.pesoConTaraKg de db/scripts/11_peso_con_tara.sql. Integración 1021:
-        // la base llega hasta el 10 (Scripts[ScriptsSin07 - 5], #183); hasta el 09 la sonda pide primero el 10.
-        await using var sin11 = await baseDatos.CrearBaseConScriptsAsync("dbSin11", clsBaseDatosPruebas.ScriptsSin07 - 5);
+        // la base llega hasta el 10 (Scripts[ScriptsSin07 - 6], #183); hasta el 09 la sonda pide primero el 10.
+        await using var sin11 = await baseDatos.CrearBaseConScriptsAsync("dbSin11", clsBaseDatosPruebas.ScriptsSin07 - 6);
 
         var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin11.Cadena);
 
@@ -241,7 +241,7 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
     public async Task HU032_ConEl11PeroSinEl12EsUnhealthyPorqueLeFaltaEl12()
     {
         // HU-032 (#197): el modelo EF mapea tipoVehiculoElegido y carroceriaElegida de la ruta (db/scripts/12_vehiculo_elegido.sql).
-        await using var sin12 = await baseDatos.CrearBaseConScriptsAsync("dbSin12", clsBaseDatosPruebas.ScriptsSin07 - 4);
+        await using var sin12 = await baseDatos.CrearBaseConScriptsAsync("dbSin12", clsBaseDatosPruebas.ScriptsSin07 - 5);
 
         var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin12.Cadena);
 
@@ -254,7 +254,7 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
     {
         // HU-033 (#199): el modelo EF mapea el seguimiento de MailSender (Correos) y el resultado diferido a Nexo (cabecera) de
         // db/scripts/13_correo_mailsender.sql.
-        await using var sin13 = await baseDatos.CrearBaseConScriptsAsync("dbSin13", clsBaseDatosPruebas.ScriptsSin07 - 3);
+        await using var sin13 = await baseDatos.CrearBaseConScriptsAsync("dbSin13", clsBaseDatosPruebas.ScriptsSin07 - 4);
 
         var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin13.Cadena);
 
@@ -266,7 +266,7 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
     public async Task HU036_ConEl13PeroSinEl14EsUnhealthyPorqueLeFaltaEl14()
     {
         // HU-036 (#205): el modelo EF mapea finalizadaAt y finalizadaPor de la cabecera (db/scripts/14_cotizacion_finalizada.sql).
-        await using var sin14 = await baseDatos.CrearBaseConScriptsAsync("dbSin14", clsBaseDatosPruebas.ScriptsSin07 - 2);
+        await using var sin14 = await baseDatos.CrearBaseConScriptsAsync("dbSin14", clsBaseDatosPruebas.ScriptsSin07 - 3);
 
         var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin14.Cadena);
 
@@ -279,7 +279,7 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
     {
         // HU-040.1 (#229): el modelo EF mapea TokensRefresco.rolSesion (db/scripts/16_multiples_roles_activos.sql). No es "falta 0002"
         // aunque la columna sea de TokensRefresco.
-        await using var sin16 = await baseDatos.CrearBaseConScriptsAsync("dbSin16", clsBaseDatosPruebas.ScriptsSin07 - 1);
+        await using var sin16 = await baseDatos.CrearBaseConScriptsAsync("dbSin16", clsBaseDatosPruebas.ScriptsSin07 - 2);
 
         var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin16.Cadena);
 
