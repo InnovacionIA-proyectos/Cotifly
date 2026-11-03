@@ -58,6 +58,9 @@ public static class clsLectorRentabClienteSap
     /// <summary>Máximo de <c>decimal(9,4)</c>.</summary>
     public const decimal MargenMaximo = 99_999.9999m;
 
+    /// <summary>Compara claves (organización, TrqType, BP) sin distinguir mayúsculas, como la collation de la base.</summary>
+    public static IEqualityComparer<(string, string, string)> ComparadorClave { get; } = clsComparadorClave.Instancia;
+
     /// <summary>Lee el JSON de <paramref name="flujo"/> (ya descomprimido y acotado por quien llama).</summary>
     public static async Task<IReadOnlyList<clsFilaMargenSap>> LeerAsync(Stream flujo, CancellationToken cancellationToken = default)
     {
@@ -91,7 +94,7 @@ public static class clsLectorRentabClienteSap
         }
 
         var filas = new List<clsFilaMargenSap>(resultados.GetArrayLength());
-        var claves = new HashSet<(string, string, string)>(clsComparadorClave.Instancia);
+        var claves = new HashSet<(string, string, string)>(ComparadorClave);
         var numero = 0;
         foreach (var fila in resultados.EnumerateArray())
         {

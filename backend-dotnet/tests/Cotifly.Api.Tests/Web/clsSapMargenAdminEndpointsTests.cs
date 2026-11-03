@@ -43,6 +43,27 @@ public sealed class clsSapMargenAdminEndpointsTests(clsEntornoApiWeb entorno)
     }
 
     [Fact]
+    public async Task ConLaUrlDeSapMalEscritaLaApiArrancaYResponde503SapMargenNoConfigurado()
+    {
+        var sap = new clsSapRentabFalso();
+        using var api = new clsApiWebPruebas(entorno.BaseDatos, extra: new Dictionary<string, string?>
+        {
+            ["SapTm:Url"] = "sap-tm-prd:8000/sin-esquema",
+            ["SapTm:User"] = clsSapRentabFalso.Usuario,
+            ["SapTm:Pass"] = clsSapRentabFalso.Clave,
+        });
+        var gloria = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoGerente);
+
+        using var estado = await api.EnviarAsync(_get, Estado, gloria.Access);
+        using var sincronizar = await api.EnviarAsync(_post, Sincronizar, gloria.Access);
+
+        await VerificarErrorNegocioAsync(estado, "SAP_MARGEN_NO_CONFIGURADO");
+        estado.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        await VerificarErrorNegocioAsync(sincronizar, "SAP_MARGEN_NO_CONFIGURADO");
+        sap.Peticiones.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task UnComercialRecibe403YNoSeLlamaASap()
     {
         var sap = new clsSapRentabFalso().ConFilas(clsSapRentabFalso.Set("41", 3));

@@ -1023,7 +1023,8 @@ paths:
       description: |
         Solo `gerente_comercial` y `director`. La copia local `SapMargenCliente` la sincroniza el backend con SAP TM (ADR-027):
         última corrida (cualquier estado), última corrida `ok`, filas activas y la próxima corrida estimada por el worker de la
-        réplica que responde. Sin `SapTm:Url`, `SapTm:User` o `SapTm:Pass` en el ambiente responde 503 `SAP_MARGEN_NO_CONFIGURADO`.
+        réplica que responde. Sin `SapTm:Url`, `SapTm:User` o `SapTm:Pass` en el ambiente, o con la URL o el mandante mal escritos, responde
+        503 `SAP_MARGEN_NO_CONFIGURADO`; con la base de Cotifly sin responder, 503 `SAP_MARGEN_NO_DISPONIBLE`.
       security:
         - bearer: []
       responses:
@@ -1040,7 +1041,7 @@ paths:
         '500':
           $ref: '#/components/responses/ErrorInterno'
         '503':
-          description: '`SAP_MARGEN_NO_CONFIGURADO`'
+          description: '`SAP_MARGEN_NO_CONFIGURADO` o `SAP_MARGEN_NO_DISPONIBLE`'
           content:
             application/json:
               schema:
@@ -1055,7 +1056,9 @@ paths:
         Solo `gerente_comercial` y `director`. Corre ya, sin esperar el intervalo (`SapTm:SincronizacionMinutos`), y **espera** el
         resultado: responde 200 también cuando la corrida quedó en `error` (SAP caído, credenciales rechazadas, respuesta inválida,
         menos filas que el mínimo, DW caído; la tabla no cambió) u `omitido` (otra réplica tenía el candado del stored procedure).
-        Puede tardar hasta `SapTm:TimeoutSegundos` (120 s) más la carga. Sin cuerpo. Queda en la auditoría
+        Suele tardar segundos; el máximo con los límites actuales es de unos 10 min (120 s de SAP, 60 s por lote de 500 BP en el DW, 120 s
+        de la carga y 120 s del stored procedure). Si el cliente corta antes, la corrida sigue y su resultado se ve en `GET .../estado`.
+        Sin cuerpo. Queda en la auditoría
         (`admin_sincronizar_margen_sap`). 409 `SAP_MARGEN_SINCRONIZACION_EN_CURSO` si esta réplica ya está sincronizando.
       security:
         - bearer: []
@@ -1079,7 +1082,7 @@ paths:
         '500':
           $ref: '#/components/responses/ErrorInterno'
         '503':
-          description: '`SAP_MARGEN_NO_CONFIGURADO`'
+          description: '`SAP_MARGEN_NO_CONFIGURADO` o `SAP_MARGEN_NO_DISPONIBLE`'
           content:
             application/json:
               schema:
@@ -4929,7 +4932,8 @@ components:
                 HU-042.2 (#243, ADR-027): `SAP_MARGEN_NO_CONFIGURADO` (503 en `/web/admin/sap-margen/*`: falta `SapTm:Url`,
                 `SapTm:User` o `SapTm:Pass`; el margen sigue con la copia local existente o la política de la línea) y
                 `SAP_MARGEN_SINCRONIZACION_EN_CURSO` (409 en `POST /web/admin/sap-margen/sincronizar`: esta réplica ya está
-                sincronizando; nada cambió).
+                sincronizando; nada cambió) y `SAP_MARGEN_NO_DISPONIBLE` (503 en `/web/admin/sap-margen/*`: la base de Cotifly no
+                respondió al leer el estado o al registrar la corrida; reintentable).
               enum:
                 - MARGEN_LINEA_DESCONOCIDA
                 - PRECIO_INVALIDO
@@ -5015,6 +5019,7 @@ components:
                 - MOTIVO_NO_PERMITIDO
                 - SAP_MARGEN_NO_CONFIGURADO
                 - SAP_MARGEN_SINCRONIZACION_EN_CURSO
+                - SAP_MARGEN_NO_DISPONIBLE
             mensaje:
               type: string
             detalle:

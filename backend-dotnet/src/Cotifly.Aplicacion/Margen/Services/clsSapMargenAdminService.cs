@@ -3,6 +3,7 @@ using Cotifly.Aplicacion.Auditoria.Services;
 using Cotifly.Aplicacion.Comun;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Margen.DTOs;
+using Cotifly.Aplicacion.Margen.Exceptions;
 using Cotifly.Aplicacion.Margen.Interfaces;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Identidad;
@@ -17,14 +18,16 @@ namespace Cotifly.Aplicacion.Margen.Services;
 public interface IClsSapMargenAdminService
 {
     /// <summary>
-    /// Estado de la copia local. Errores: <see cref="clsCodigosAplicacion.SinPermiso"/> (403) y <see cref="clsCodigosError.SapMargenNoConfigurado"/> (503).
+    /// Estado de la copia local. Errores: <see cref="clsCodigosAplicacion.SinPermiso"/> (403), <see cref="clsCodigosError.SapMargenNoConfigurado"/>
+    /// (503) y <see cref="clsCodigosError.SapMargenNoDisponible"/> (503, la base no respondió).
     /// </summary>
     Task<clsResultado<clsEstadoSincronizacionMargenSap>> EstadoAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Fuerza una corrida (ignora el intervalo, no el candado) y espera su resultado: <c>ok</c>, <c>error</c> u <c>omitido</c>. Queda en la
     /// auditoría. Errores: <see cref="clsCodigosAplicacion.SinPermiso"/> (403), <see cref="clsCodigosError.SapMargenNoConfigurado"/> (503) y
-    /// <see cref="clsCodigosError.SapMargenSincronizacionEnCurso"/> (409).
+    /// <see cref="clsCodigosError.SapMargenSincronizacionEnCurso"/> (409) y <see cref="clsCodigosError.SapMargenNoDisponible"/> (503: la base no respondió
+    /// ni para registrar la corrida fallida).
     /// </summary>
     Task<clsResultado<clsResultadoSincronizacionMargenSap>> SincronizarAsync(CancellationToken cancellationToken = default);
 }
@@ -43,6 +46,8 @@ public sealed class clsSapMargenAdminService(
 
     public const string MensajeEnCurso = "Ya hay una sincronización del margen de SAP TM en curso. Intenta de nuevo cuando termine.";
 
+    public const string MensajeNoDisponible = "La base de Cotifly no respondió al consultar la sincronización del margen de SAP TM. Intenta de nuevo.";
+
     public async Task<clsResultado<clsEstadoSincronizacionMargenSap>> EstadoAsync(CancellationToken cancellationToken = default)
     {
         if (Validar() is { } error)
@@ -50,7 +55,14 @@ public sealed class clsSapMargenAdminService(
             return error;
         }
 
-        return await sincronizacion.EstadoAsync(cancellationToken);
+        try
+        {
+            return await sincronizacion.EstadoAsync(cancellationToken);
+        }
+        catch (clsSincronizacionMargenSapNoDisponibleException)
+        {
+            return new clsErrorDominio(clsCodigosError.SapMargenNoDisponible, MensajeNoDisponible);
+        }
     }
 
     public async Task<clsResultado<clsResultadoSincronizacionMargenSap>> SincronizarAsync(CancellationToken cancellationToken = default)
@@ -61,7 +73,18 @@ public sealed class clsSapMargenAdminService(
         }
 
         var reloj = Stopwatch.StartNew();
-        var resultado = await sincronizacion.SincronizarAsync(forzada: true, cancellationToken);
+        clsResultadoSincronizacionMargenSap resultado;
+        try
+        {
+            resultado = await sincronizacion.SincronizarAsync(forzada: true, cancellationToken);
+        }
+        catch (clsSincronizacionMargenSapNoDisponibleException)
+        {
+            await auditoria.RegistrarAsync(HerramientaAuditoria, new { usuario_id = usuario.UsuarioId, nombre_usuario = usuario.NombreUsuario },
+                new { error = new { codigo = clsCodigosError.SapMargenNoDisponible } }, false, (int)reloj.ElapsedMilliseconds, null);
+            return new clsErrorDominio(clsCodigosError.SapMargenNoDisponible, MensajeNoDisponible);
+        }
+
         clsResultado<clsResultadoSincronizacionMargenSap> respuesta = resultado.Estado switch
         {
             clsResultadoSincronizacionMargenSap.EstadoEnCurso => new clsErrorDominio(clsCodigosError.SapMargenSincronizacionEnCurso, MensajeEnCurso),

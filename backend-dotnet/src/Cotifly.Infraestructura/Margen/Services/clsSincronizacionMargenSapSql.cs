@@ -1,6 +1,7 @@
 using System.Data;
 using System.Diagnostics;
 using Cotifly.Aplicacion.Margen.DTOs;
+using Cotifly.Aplicacion.Margen.Exceptions;
 using Cotifly.Aplicacion.Margen.Interfaces;
 using Cotifly.Infraestructura.Configuracion;
 using Microsoft.Data.SqlClient;
@@ -73,17 +74,20 @@ public sealed class clsCoordinacionSincronizacionMargenSap : IDisposable
 /// <c>SapTm:SincronizacionMinutos</c> ("no toca": no llama a SAP);</item>
 /// <item>descarga el set completo de SAP (<see cref="clsClienteRentabSap"/>) y lo valida (<see cref="clsLectorRentabClienteSap"/>);</item>
 /// <item>aplica la guarda de mínimo de filas (<see cref="clsGuardaMinimoFilasSap"/>) contra las filas activas actuales;</item>
-/// <item>busca el NIT por BP en el DW (<see cref="clsDirectorioNitDwOperaciones"/>); sin <c>ConnectionStrings:DwOperaciones</c> el NIT queda
-/// <c>NULL</c> (warning una vez por corrida); configurada y caída, la corrida falla;</item>
+/// <item>busca el NIT por BP en el DW (<see cref="clsDirectorioNitDwOperaciones"/>); sin <c>ConnectionStrings:DwOperaciones</c> (warning una
+/// vez por corrida) o sin ese BP en el DW, la fila conserva el NIT que ya tenía la copia (o queda <c>NULL</c>); configurada y caída, la
+/// corrida falla;</item>
 /// <item>crea <c>#SapMargenStage</c> (texto con <c>COLLATE DATABASE_DEFAULT</c>: la temporal nace con la collation del servidor y la base de
 /// Cotifly tiene otra; PK <c>(salesOrgId, trqType, bpSap)</c>), la llena con <c>SqlBulkCopy</c> y llama a
 /// <c>dbo_cotifly.sp_sincronizar_margen_sap</c>, todo en la MISMA conexión (la temporal es de la sesión);</item>
 /// <item>lee la fila que dejó el stored procedure (<c>ok</c>, <c>omitido</c> o <c>error</c>) y la devuelve.</item>
 /// </list>
 /// Un fallo antes del stored procedure (SAP, validación, guarda, DW, staging) se registra aquí como <c>error</c> con un mensaje sin URL ni
-/// credenciales; uno dentro del stored procedure ya lo registró él (su <c>CATCH</c>), salvo que no se haya podido ejecutar (sin permiso
-/// <c>EXECUTE</c> o sin el objeto), que también se registra aquí. Nunca lanza por esos fallos. Singleton; usa conexiones propias, no el
-/// <c>DbContext</c>.
+/// credenciales; uno dentro del stored procedure ya lo registró él (su <c>CATCH</c>), salvo que no haya quedado su fila (sin permiso
+/// <c>EXECUTE</c>, sin el objeto, un error de recompilación que su <c>TRY</c> no atrapa, tiempo agotado), que también se registra aquí.
+/// Nunca lanza por esos fallos; si la base de Cotifly no responde ni para leer la última corrida ni para registrar el fallo, lanza
+/// <see cref="clsSincronizacionMargenSapNoDisponibleException"/> (503 en la administración; el worker lo anota). Singleton; usa conexiones
+/// propias, no el <c>DbContext</c>.
 /// </summary>
 public sealed class clsSincronizacionMargenSapSql(
     IOptions<clsOpcionesSapTmSincronizacion> opciones,
@@ -108,6 +112,18 @@ public sealed class clsSincronizacionMargenSapSql(
     public bool Configurada => opciones.Value.Configurada;
 
     public async Task<clsEstadoSincronizacionMargenSap> EstadoAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await LeerEstadoAsync(cancellationToken);
+        }
+        catch (Exception ex) when (EsFalloDeBase(ex, cancellationToken))
+        {
+            throw NoDisponible(ex);
+        }
+    }
+
+    private async Task<clsEstadoSincronizacionMargenSap> LeerEstadoAsync(CancellationToken cancellationToken)
     {
         await using var conexion = await AbrirCotiflyAsync(cancellationToken);
         await using var comando = conexion.CreateCommand();
@@ -161,8 +177,20 @@ public sealed class clsSincronizacionMargenSapSql(
     private async Task<clsResultadoSincronizacionMargenSap> SincronizarConCandadoAsync(bool forzada, CancellationToken cancellationToken)
     {
         var valor = opciones.Value;
-        if (!forzada && await UltimaOkAsync(cancellationToken) is { } ultimaOk
-            && tiempo.GetUtcNow() - ultimaOk < TimeSpan.FromMinutes(valor.SincronizacionMinutos))
+        DateTimeOffset? ultimaOk = null;
+        if (!forzada)
+        {
+            try
+            {
+                ultimaOk = await UltimaOkAsync(cancellationToken);
+            }
+            catch (Exception ex) when (EsFalloDeBase(ex, cancellationToken))
+            {
+                throw NoDisponible(ex);
+            }
+        }
+
+        if (ultimaOk is not null && tiempo.GetUtcNow() - ultimaOk.Value < TimeSpan.FromMinutes(valor.SincronizacionMinutos))
         {
             logger.LogDebug("Todavía no toca sincronizar el margen de SAP TM (última corrida ok: {UltimaOk:O}).", ultimaOk);
             return clsResultadoSincronizacionMargenSap.SinCorrida(clsResultadoSincronizacionMargenSap.EstadoNoToca);
@@ -194,8 +222,14 @@ public sealed class clsSincronizacionMargenSapSql(
             var mensaje = MensajeDe(ex);
             logger.LogDebug(ex, "Detalle del fallo de la sincronización del margen de SAP TM.");
             var corrida = await RegistrarErrorAsync(iniciadoAt, mensaje);
-            return Terminar(corrida ?? new clsCorridaSincronizacionMargenSap(
-                clsCorridaSincronizacionMargenSap.EstadoError, iniciadoAt, tiempo.GetUtcNow(), null, null, null, mensaje), filas.Count, reloj);
+            if (corrida is null)
+            {
+                // La base de Cotifly tampoco acepta el registro: no hay corrida que informar (la administración responde 503).
+                logger.LogWarning("Sincronización del margen de SAP TM: error tras {Duracion} ms sin poder registrarlo: {Mensaje}", reloj.ElapsedMilliseconds, mensaje);
+                throw NoDisponible(ex);
+            }
+
+            return Terminar(corrida, filas.Count, reloj);
         }
     }
 
@@ -221,7 +255,8 @@ public sealed class clsSincronizacionMargenSapSql(
     {
         if (!dw.Configurado)
         {
-            logger.LogWarning("ConnectionStrings:DwOperaciones no está configurada: el NIT de las filas del margen de SAP TM queda NULL.");
+            logger.LogWarning(
+                "ConnectionStrings:DwOperaciones no está configurada: cada fila del margen de SAP TM conserva el NIT que ya tenía la copia (o queda NULL).");
             return null;
         }
 
@@ -238,37 +273,66 @@ public sealed class clsSincronizacionMargenSapSql(
         }
     }
 
-    /// <summary>Pasos 4 y 5 del script: <c>#SapMargenStage</c>, <c>SqlBulkCopy</c> y el stored procedure en una misma conexión.</summary>
+    /// <summary>
+    /// <c>#SapMargenStage</c> tal como la crea el script de Datos, con <c>COLLATE DATABASE_DEFAULT</c> en el texto y la PK
+    /// <c>(salesOrgId, trqType, bpSap)</c> SIN NOMBRE: en <c>tempdb</c> el nombre de una restricción es global, así que una PK con nombre
+    /// hace fallar con el error 2714 la temporal de una segunda réplica que sincroniza a la vez (antes de llegar al <c>sp_getapplock</c>).
+    /// </summary>
+    public const string DdlStage = """
+        CREATE TABLE #SapMargenStage
+        (
+            salesOrgId        NVARCHAR(20)  COLLATE DATABASE_DEFAULT NOT NULL,
+            trqType           NVARCHAR(8)   COLLATE DATABASE_DEFAULT NOT NULL,
+            bpSap             NVARCHAR(20)  COLLATE DATABASE_DEFAULT NOT NULL,
+            nit               NVARCHAR(20)  COLLATE DATABASE_DEFAULT NULL,
+            margenRecomendado DECIMAL(9, 4) NOT NULL,
+            PRIMARY KEY (salesOrgId, trqType, bpSap)
+        );
+        """;
+
+    /// <summary>
+    /// Pasos 4 y 5 del script: <c>#SapMargenStage</c>, <c>SqlBulkCopy</c> y el stored procedure en una misma conexión. El NIT de cada fila
+    /// es el del DW; si el DW no está configurado o no trae ese BP, se conserva el que ya tiene <c>SapMargenCliente</c> para la misma clave
+    /// (el <c>MERGE</c> del stored procedure lo pisaría con <c>NULL</c>).
+    /// </summary>
     private async Task<clsCorridaSincronizacionMargenSap> CargarYSincronizarAsync(
         IReadOnlyList<clsFilaMargenSap> filas, IReadOnlyDictionary<string, string>? nits, DateTimeOffset iniciadoAt, CancellationToken cancellationToken)
     {
+        await using var conexion = await AbrirCotiflyAsync(cancellationToken);
+        var existentes = await NitsExistentesAsync(conexion, cancellationToken);
+
         using var tabla = new DataTable { Locale = System.Globalization.CultureInfo.InvariantCulture };
         tabla.Columns.Add("salesOrgId", typeof(string));
         tabla.Columns.Add("trqType", typeof(string));
         tabla.Columns.Add("bpSap", typeof(string));
         tabla.Columns.Add("nit", typeof(string));
         tabla.Columns.Add("margenRecomendado", typeof(decimal));
+        var conservados = 0;
         foreach (var fila in filas)
         {
-            object nit = nits is not null && nits.TryGetValue(fila.BpSap, out var valor) ? valor : DBNull.Value;
+            object nit = DBNull.Value;
+            if (nits is not null && nits.TryGetValue(fila.BpSap, out var delDw))
+            {
+                nit = delDw;
+            }
+            else if (existentes.TryGetValue((fila.SalesOrgId, fila.TrqType, fila.BpSap), out var anterior))
+            {
+                nit = anterior;
+                conservados++;
+            }
+
             tabla.Rows.Add(fila.SalesOrgId, fila.TrqType, fila.BpSap, nit, fila.Margen);
         }
 
-        await using var conexion = await AbrirCotiflyAsync(cancellationToken);
+        if (conservados > 0)
+        {
+            logger.LogInformation("Sincronización del margen de SAP TM: {Conservados} filas conservan el NIT anterior (sin NIT en el DW).", conservados);
+        }
+
         await using (var crear = conexion.CreateCommand())
         {
             crear.CommandTimeout = TiempoOrdenSegundos;
-            crear.CommandText = """
-                CREATE TABLE #SapMargenStage
-                (
-                    salesOrgId        NVARCHAR(20)  COLLATE DATABASE_DEFAULT NOT NULL,
-                    trqType           NVARCHAR(8)   COLLATE DATABASE_DEFAULT NOT NULL,
-                    bpSap             NVARCHAR(20)  COLLATE DATABASE_DEFAULT NOT NULL,
-                    nit               NVARCHAR(20)  COLLATE DATABASE_DEFAULT NULL,
-                    margenRecomendado DECIMAL(9, 4) NOT NULL,
-                    CONSTRAINT pk_sapMargenStageTemp PRIMARY KEY (salesOrgId, trqType, bpSap)
-                );
-                """;
+            crear.CommandText = DdlStage;
             await crear.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -299,29 +363,70 @@ public sealed class clsSincronizacionMargenSapSql(
         }
         catch (SqlException ex) when (!ex.Errors.Cast<SqlError>().Any(e => _spNoEjecutado.Contains(e.Number)))
         {
-            // El CATCH del stored procedure ya registró el error (con ERROR_MESSAGE()): se devuelve esa fila, sin registrar otra.
+            // Normalmente el CATCH del stored procedure ya registró el error: se devuelve esa fila, sin registrar otra. Si no la hay (un
+            // error de recompilación como el 207 que su TRY no atrapa, tiempo agotado, KILL), se registra aquí (lo hace quien llama).
             logger.LogDebug(ex, "El stored procedure sp_sincronizar_margen_sap falló.");
-            return await CorridaDelSpAsync(conexion, marca, cancellationToken)
-                ?? new clsCorridaSincronizacionMargenSap(clsCorridaSincronizacionMargenSap.EstadoError, iniciadoAt, tiempo.GetUtcNow(), null, null, null,
-                    Recortar($"sp_sincronizar_margen_sap falló (SQL {ex.Number}): {ex.Message}"));
+            return await CorridaDelSpSinFallarAsync(conexion, marca)
+                ?? throw new clsSincronizacionMargenSapException(Recortar($"sp_sincronizar_margen_sap falló sin registrar la corrida (SQL {ex.Number}): {ex.Message}"), ex);
         }
 
         return await CorridaDelSpAsync(conexion, marca, cancellationToken)
             ?? new clsCorridaSincronizacionMargenSap(clsCorridaSincronizacionMargenSap.EstadoOk, iniciadoAt, tiempo.GetUtcNow(), null, null, null, null);
     }
 
+    /// <summary>NIT actuales de la copia por clave (sin distinguir mayúsculas, como la collation de la base).</summary>
+    private static async Task<Dictionary<(string, string, string), string>> NitsExistentesAsync(SqlConnection conexion, CancellationToken cancellationToken)
+    {
+        var nits = new Dictionary<(string, string, string), string>(clsLectorRentabClienteSap.ComparadorClave);
+        await using var comando = conexion.CreateCommand();
+        comando.CommandTimeout = TiempoOrdenSegundos;
+        comando.CommandText = "SELECT salesOrgId, trqType, bpSap, nit FROM dbo_cotifly.SapMargenCliente WHERE nit IS NOT NULL;";
+        await using var lector = await comando.ExecuteReaderAsync(cancellationToken);
+        while (await lector.ReadAsync(cancellationToken))
+        {
+            nits[(lector.GetString(0), lector.GetString(1), lector.GetString(2))] = lector.GetString(3);
+        }
+
+        return nits;
+    }
+
     /// <summary>
-    /// La fila que el stored procedure acaba de escribir: la más reciente iniciada desde <paramref name="marca"/> (hora del servidor tomada
-    /// justo antes del <c>EXEC</c>, en la misma conexión).
+    /// La fila que el stored procedure acaba de escribir: la PRIMERA iniciada entre <paramref name="marca"/> (hora del servidor tomada justo
+    /// antes del <c>EXEC</c>, en la misma conexión) y la hora del servidor al consultar. El stored procedure fija su <c>iniciadoAt</c> al
+    /// empezar, así que su fila es la primera de ese rango; una réplica que llegó después mientras esta tenía el candado dejó su
+    /// <c>omitido</c> más tarde y no se confunde (antes se tomaba la más reciente).
     /// </summary>
     private static async Task<clsCorridaSincronizacionMargenSap?> CorridaDelSpAsync(SqlConnection conexion, DateTimeOffset marca, CancellationToken cancellationToken)
     {
         await using var comando = conexion.CreateCommand();
         comando.CommandTimeout = TiempoOrdenSegundos;
-        comando.CommandText = $"SELECT TOP (1) {ColumnasLog} FROM dbo_cotifly.SapMargenSyncLog WHERE iniciadoAt >= @marca ORDER BY iniciadoAt DESC;";
+        comando.CommandText = $"""
+            SELECT TOP (1) {ColumnasLog} FROM dbo_cotifly.SapMargenSyncLog
+            WHERE iniciadoAt >= @marca AND iniciadoAt <= SYSDATETIMEOFFSET()
+            ORDER BY iniciadoAt ASC;
+            """;
         comando.Parameters.Add(new SqlParameter("@marca", SqlDbType.DateTimeOffset) { Value = marca });
         await using var lector = await comando.ExecuteReaderAsync(cancellationToken);
         return await LeerCorridaAsync(lector, cancellationToken);
+    }
+
+    /// <summary><see cref="CorridaDelSpAsync"/> tras un fallo del <c>EXEC</c>: la conexión puede haber quedado inservible (<c>null</c>).</summary>
+    private async Task<clsCorridaSincronizacionMargenSap?> CorridaDelSpSinFallarAsync(SqlConnection conexion, DateTimeOffset marca)
+    {
+        try
+        {
+            if (conexion.State != ConnectionState.Open)
+            {
+                return null;
+            }
+
+            return await CorridaDelSpAsync(conexion, marca, CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is SqlException or InvalidOperationException)
+        {
+            logger.LogDebug(ex, "No se pudo leer la corrida del stored procedure tras su fallo.");
+            return null;
+        }
     }
 
     /// <summary>Paso 7 del script: deja la corrida fallida en el log. Best-effort: si tampoco esto funciona, queda en el log de la API.</summary>
@@ -388,6 +493,14 @@ public sealed class clsSincronizacionMargenSapSql(
             throw;
         }
     }
+
+    /// <summary>Un fallo de la base de Cotifly (no una cancelación de quien llama).</summary>
+    private static bool EsFalloDeBase(Exception ex, CancellationToken cancellationToken) =>
+        ex is SqlException or InvalidOperationException or TimeoutException
+        || (ex is OperationCanceledException && !cancellationToken.IsCancellationRequested);
+
+    private static clsSincronizacionMargenSapNoDisponibleException NoDisponible(Exception causa) =>
+        new($"La base de Cotifly no respondió ({causa.GetType().Name}{(causa is SqlException sql ? $" {sql.Number}" : string.Empty)}).", causa);
 
     private static async Task<clsCorridaSincronizacionMargenSap?> LeerCorridaAsync(SqlDataReader lector, CancellationToken cancellationToken)
     {

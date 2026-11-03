@@ -2,6 +2,7 @@ using Cotifly.Aplicacion.Auditoria.Services;
 using Cotifly.Aplicacion.Comun;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Margen.DTOs;
+using Cotifly.Aplicacion.Margen.Exceptions;
 using Cotifly.Aplicacion.Margen.Interfaces;
 using Cotifly.Aplicacion.Margen.Services;
 using Cotifly.Dominio.Comun;
@@ -69,6 +70,21 @@ public sealed class clsSapMargenAdminServiceTests
         r.Valor.Corrida.Should().Be(corrida);
         await _auditoria.Received(1).RegistrarAsync(clsSapMargenAdminService.HerramientaAuditoria, Arg.Any<object?>(), Arg.Any<object?>(), false,
             Arg.Any<int>(), null);
+    }
+
+    [Fact]
+    public async Task ConLaBaseCaidaRespondeSapMargenNoDisponibleNoUnErrorInterno()
+    {
+        _sincronizacion.EstadoAsync(Arg.Any<CancellationToken>()).Returns<clsEstadoSincronizacionMargenSap>(_ => throw new clsSincronizacionMargenSapNoDisponibleException());
+        _sincronizacion.SincronizarAsync(true, Arg.Any<CancellationToken>())
+            .Returns<clsResultadoSincronizacionMargenSap>(_ => throw new clsSincronizacionMargenSapNoDisponibleException());
+        var servicio = Servicio(RolInterno.Director);
+
+        var estado = await servicio.EstadoAsync(Ct);
+        var sincronizar = await servicio.SincronizarAsync(Ct);
+
+        estado.Error.Codigo.Should().Be(clsCodigosError.SapMargenNoDisponible);
+        sincronizar.Error.Codigo.Should().Be(clsCodigosError.SapMargenNoDisponible);
     }
 
     private clsSapMargenAdminService Servicio(RolInterno? rol) => new(new clsUsuario(rol), _sincronizacion, _auditoria);

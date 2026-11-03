@@ -414,4 +414,10 @@ public static class clsCodigosError
     /// worker o otra petición). Nada cambia; se reintenta cuando termine. 409. Código nuevo del backend .NET.
     /// </summary>
     public const string SapMargenSincronizacionEnCurso = "SAP_MARGEN_SINCRONIZACION_EN_CURSO";
+
+    /// <summary>
+    /// HU-042.2 (#243): <c>/web/admin/sap-margen/*</c> con la base de Cotifly sin responder (no se pudo leer el estado de la copia o
+    /// registrar la corrida). 503, reintentable. Código nuevo del backend .NET.
+    /// </summary>
+    public const string SapMargenNoDisponible = "SAP_MARGEN_NO_DISPONIBLE";
 }

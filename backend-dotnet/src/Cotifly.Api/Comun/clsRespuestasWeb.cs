@@ -117,7 +117,7 @@ public static class clsRespuestasWeb
                 or clsCodigosError.ClienteBusquedaNoDisponible
                 or clsCodigosError.CubicadorNoDisponible or clsCodigosError.CubicadorRespuestaInvalida or clsCodigosError.CubicadorNoAutorizado
                 // HU-042.2 (#243): la sincronización del margen de SAP TM no está configurada en el ambiente.
-                or clsCodigosError.SapMargenNoConfigurado =>
+                or clsCodigosError.SapMargenNoConfigurado or clsCodigosError.SapMargenNoDisponible =>
                 new ObjectResult(clsErrorNegocioWeb.Desde(error)) { StatusCode = StatusCodes.Status503ServiceUnavailable },
             clsCodigosAplicacion.RegionalNoAsignada => new ConflictObjectResult(clsErrorNegocioWeb.Desde(error)),
             clsCodigosError.NexoSinPermiso or clsCodigosAplicacion.RegionalNoPermitida =>
