@@ -1,11 +1,11 @@
 # Diccionario de datos — `dbo_cotifly` (SQL Server)
 
-> **Estado:** vigente desde HU-021 · **Dueño:** Duban Guerra (backend) y scalderon-bs (datos) · **Actualizado:** 2026-10-28 (`SapMargenCliente`/`SapMargenSyncLog`, HU-042.1 #242; `SapMapeoTrqType.lineaNegocioId`, HU-042.4, #247)
+> **Estado:** vigente desde HU-021 · **Dueño:** Duban Guerra (backend) y scalderon-bs (datos) · **Actualizado:** 2026-11-02 (`TarifasSeguro` y el seguro de la ruta, HU-045.1 #263; política de seguros y `codigoServicio`, HU-046.2 #268)
 
 Qué significa cada columna de las tablas de cotizaciones, quién la escribe y quién la lee. Los tipos, nulos, restricciones e
 índices están en [`ESQUEMA_OBJETIVO_SQLSERVER.md`](ESQUEMA_OBJETIVO_SQLSERVER.md) (Parte A, con el diagrama ER); la decisión
 de diseño, en [ADR-019](../../backend-dotnet/specs/decisiones/ADR-019-reestructuracion-rutas-y-camiones.md). Fuente de verdad:
-`db/scripts/01_crear_esquema.sql` (= `0001` a `0010`), los ajustes `db/scripts/02` a `13` y `db/scripts/pendientes/04`, y el
+`db/scripts/01_crear_esquema.sql` (= `0001` a `0010`), los ajustes `db/scripts/02` a `21` y `db/scripts/pendientes/04`, y el
 modelo EF
 (`backend-dotnet/src/Cotifly.Infraestructura/Comun/Persistence/Configurations/`).
 
@@ -137,7 +137,7 @@ Una fila por camión. Si el cubicador recomienda 7 camiones para una ruta, son 7
 | `nombreMercancia` | Copia del nombre del catálogo (si el catálogo no responde, el que mandó el cliente) | Captura | PDF, asistente |
 | `cantidad`, `largoCm`, `anchoCm`, `altoCm`, `pesoKg` | Unidades y medidas. Desde el script `12` (HU-032) las tres medidas pueden ser NULL juntas: mercancía "no cubicable" (solo descripción, cantidad o peso) | Captura | Cubicador; posiciones hacia Nexo cuando la ruta tiene un solo camión |
 
-> El detalle de cada ajuste (`02`, `03`, `pendientes/04`, `05`, `10`, `11`, `12`, `13`) está en la cabecera de su script en
+> El detalle de cada ajuste (`02`, `03`, `pendientes/04`, `05`, `10`, `11`, `12`, `13`, `20`, `21`) está en la cabecera de su script en
 > `db/scripts/`; los tipos y restricciones, en `ESQUEMA_OBJETIVO_SQLSERVER.md` §A.4.
 
 ## 7. `CotizacionServiciosConexos` — conexos de la ruta
@@ -151,6 +151,7 @@ Son de la ruta, no del camión: la cantidad ya dice cuántos. Reemplazan el JSON
 | `nombreServicioConexo` | Copia del nombre (0010) | Igual | PDF |
 | `precio` | Costo unitario de Nexo al momento de capturar, antes del margen. No se vuelve a cotizar | Captura (catálogo de Nexo), `-vN` (catálogo refrescado) | Totales y precio de la ruta |
 | `precioVenta` | Precio de venta al cliente (HU-043.1, #245; script `19`). En las filas existentes arranca igual a `precio` (backfill); de ahí en adelante lo ajusta lo que decida HU-043.2 | Captura (hasta HU-043.2: igual a `precio`) | HU-043.2 (pendiente) |
+| `codigoServicio` | Código del servicio en el catálogo de Nexo (p. ej. `AVT_AUTO`; script `21`, HU-046.2 #268). Con él se sabe qué medida de la política de seguros cumple el conexo, porque en Nexo cada trayecto tiene su propio id. NULL en las filas anteriores al `21` | Captura y edición de conexos (HU-046.3, pendiente) | Política de seguros de la ruta (HU-046.3) |
 | `cantidad` | Cantidad | Captura, `PUT` | Totales, Nexo |
 | `idServicioConexoCatalogo` | Id del catálogo de Nexo del conexo (script `03`, HU-014 #188). NULL en filas anteriores (se resuelven por id o por nombre) | Captura, importación desde Nexo, `-vN` | `clsResolutorConexosCatalogo` |
 | `categoriaServicioConexo` | Categoría del catálogo de Nexo (`logistico`, `adicional`...; script `05`). NULL en filas anteriores (sale del catálogo al armar el costeo) | Captura, importación, `-vN` | Costeo |
@@ -172,6 +173,10 @@ Quitar un conexo borra su fila (no hay columna `incluido`). El estado del envío
 | `UsuariosWeb`, `Roles`, `UsuariosRoles`, `TokensRefresco`, `TokensRevocados` | Identidad: usuarios de ClientePro, rol interno, refresh tokens (hash) y access tokens revocados |
 | `MargenesPolitica` | Líneas de negocio, margen de política y nombre equivalente en Nexo (`mapeoLineasNexo`). Desde el `0009`: Nacional, Distribucion, Importacion, Exportacion, Internacional y DevolucionContenedor (salen ITR, Almacenamiento y Almacenamiento3PL) |
 | `TarifasSeguro` | La tasa del seguro de la mercancía con su historia (script `20`, HU-045.1 #263): `tasa` (fracción; inicial 0.003450 = 0,345 %), `vigenteDesde`, `isActive`. Una sola activa; las viejas se desactivan, no se borran. Se cambia con `db/scripts/operacion/cambiar_tasa_seguro.sql` |
+| `PoliticaSeguroTramos` | Tramos de la política de seguros por valor de la mercancía de la ruta (script `21`, HU-046.2 #268): `valorDesde` exclusivo, `valorHasta` incluido (NULL = sin tope), en pesos fijos. Los activos son contiguos y sin solapes (lo valida el script) |
+| `PoliticaSeguroMedidas` | Catálogo de medidas de la política: `codigo` (`esquema_basico`, `gps`, `candado_satelital`, `restriccion_nocturna`, `acompanante_vehicular`, `acompanante_total`, `incluir_seguro`), `nombre`, `esCobrable` (solo los acompañantes) |
+| `PoliticaSeguroTramoMedidas` | Qué medida aplica en cada tramo y con qué `nivel` (`recomendada` u `obligatoria`). Solo los acompañantes son obligatorios |
+| `PoliticaSeguroMedidaConexos` | Códigos del catálogo de Nexo que cumplen cada medida; la obligación se cumple con cualquiera. `acompanante_vehicular`: los 5 acompañantes; `acompanante_total`: los 3 `AVT_*` |
 | `SapMapeoTrqType` | TrqType de SAP TM → línea de negocio. Clave `(trqType, salesOrg)`; `salesOrg=''` es el comodín (gana la fila específica si existe, `salesOrg DESC`). `lineaNegocioId` (FK a `MargenesPolitica.id`, script `18`, HU-042.4, #247): hoy conviven con `lineaNegocio` (texto, el original) mientras el backend se adapta a leer por id en vez de por texto — `lineaNegocio` se retira en un script futuro. Falta el TrqType de `DevolucionContenedor` (lo da negocio o SAP) |
 | `SapMargenCliente` | Copia local del margen recomendado de SAP TM (`RentabClienteSet`), sincronizada a diario por un job fuera de `backend-dotnet` (HU-042.1, #242; no la lee el backend todavía, eso es HU-042.2, #243). Clave de negocio única `(salesOrgId, trqType, bpSap)` + `id` propio; `bpSap` es el BP del cliente en SAP (`OrderPartyId`); `nit` ya resuelto por BP contra el DW `DWCubosOperacionesEBS.dbo.DimBPSolicitante`, para cruzar directo con `nitCliente` de `CotizacionesSolicitud` sin que el backend tenga que resolverlo aparte; `margenRecomendado` es el valor completo que manda SAP; `activo` es soft delete (si SAP deja de traer un combo, se desactiva, no se borra) |
 | `SapMargenSyncLog` | Log de corridas del job de `SapMargenCliente` (HU-042.1, #242): append-only, una fila por ejecución (no por registro de SAP), con cuándo empezó/terminó, cuántas filas insertó/actualizó/desactivó, y el resultado (`ok`/`error`/`omitido`) |
