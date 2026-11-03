@@ -10,8 +10,9 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Tests.Margen;
 
 /// <summary>
-/// <see cref="clsAvisosArranqueSapTm"/> (HU-042.2, #243): las variables del modo en vivo de SAP TM que se retiraron no impiden arrancar;
-/// cada una deja un warning "variable obsoleta, se ignora" con su nombre y sin su valor.
+/// <see cref="clsAvisosArranqueSapTm"/> (HU-042.2, #243): las variables de los modos de SAP TM que se retiraron (<c>Modo</c> y
+/// <c>ExportPath</c>) no impiden arrancar; cada una deja un warning "variable obsoleta, se ignora" con su nombre y sin su valor. <c>Url</c>,
+/// <c>User</c>, <c>Pass</c> y <c>SapClient</c> volvieron con la sincronización del backend: ya no avisan.
 /// </summary>
 public sealed class clsAvisosArranqueSapTmTests
 {
@@ -35,17 +36,16 @@ public sealed class clsAvisosArranqueSapTmTests
 
         var logger = await ArrancarAsync(configuracion);
 
-        logger.Registros.Should().HaveCount(6).And.OnlyContain(r => r.Nivel == LogLevel.Warning && r.Mensaje.Contains("variable obsoleta, se ignora"));
-        logger.Registros.Select(r => r.Mensaje.Split(':')[0]).Should().BeEquivalentTo(
-            "SapTm__Modo", "SapTm__Url", "SapTm__User", "SapTm__Pass", "SapTm__SapClient", "SapTm__ExportPath");
+        logger.Registros.Should().HaveCount(2).And.OnlyContain(r => r.Nivel == LogLevel.Warning && r.Mensaje.Contains("variable obsoleta, se ignora"));
+        logger.Registros.Select(r => r.Mensaje.Split(':')[0]).Should().BeEquivalentTo("SapTm__Modo", "SapTm__ExportPath");
         logger.Registros.Should().NotContain(r => r.Mensaje.Contains(ClaveDeEjemplo) || r.Mensaje.Contains("svc_cotifly")
-            || r.Mensaje.Contains("sap.example"));
+            || r.Mensaje.Contains("sap.example") || r.Mensaje.Contains("/data/sap"));
     }
 
     [Fact]
     public async Task VariablesVaciasOSoloSalesOrgDefaultNoAvisan()
     {
-        var configuracion = Configuracion(new() { ["SapTm:Modo"] = "", ["SapTm:Pass"] = "  ", ["SapTm:SalesOrgDefault"] = "50000010" });
+        var configuracion = Configuracion(new() { ["SapTm:Modo"] = "", ["SapTm:ExportPath"] = "  ", ["SapTm:SalesOrgDefault"] = "50000010" });
 
         (await ArrancarAsync(configuracion)).Registros.Should().BeEmpty();
     }
@@ -56,12 +56,12 @@ public sealed class clsAvisosArranqueSapTmTests
         var servicios = new ServiceCollection();
         servicios.AddSingleton<IHostEnvironment>(new clsEntornoFalso(Environments.Development));
         servicios.AddLogging();
-        servicios.AddInfraestructura(Configuracion(new() { ["SapTm:Modo"] = "odata", ["SapTm:Pass"] = "corta" }));
+        servicios.AddInfraestructura(Configuracion(new() { ["SapTm:Modo"] = "odata", ["SapTm:ExportPath"] = "/data/sap/sap_export.json" }));
         using var proveedor = servicios.BuildServiceProvider();
 
         var leer = () => proveedor.GetRequiredService<IOptions<Aplicacion.Margen.Services.clsOpcionesMargen>>().Value;
 
-        leer.Should().NotThrow("una clave de SAP corta o de ejemplo ya no se valida: Cotifly no la usa");
+        leer.Should().NotThrow("las variables de los modos retirados ya no se validan: Cotifly no las usa");
         // Solo los servicios alojados registrados con fábrica (el de los avisos lleva la lista de variables ya calculada).
         var avisos = servicios.Where(d => d.ServiceType == typeof(IHostedService) && d.ImplementationFactory is not null)
             .Select(d => d.ImplementationFactory!(proveedor)).OfType<clsAvisosArranqueSapTm>().ToList();

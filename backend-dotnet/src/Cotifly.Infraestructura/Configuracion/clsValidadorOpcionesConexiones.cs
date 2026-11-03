@@ -29,6 +29,7 @@ public sealed class clsValidadorOpcionesConexiones(IHostEnvironment entorno) : I
                 (Clave: $"{clsOpcionesConexiones.Seccion}:{nameof(clsOpcionesConexiones.Cotifly)}", Valor: options.Cotifly),
                 (Clave: $"{clsOpcionesConexiones.Seccion}:{nameof(clsOpcionesConexiones.Identidad)}", Valor: options.Identidad),
                 (Clave: $"{clsOpcionesConexiones.Seccion}:{nameof(clsOpcionesConexiones.Regional)}", Valor: options.Regional),
+                (Clave: $"{clsOpcionesConexiones.Seccion}:{nameof(clsOpcionesConexiones.DwOperaciones)}", Valor: options.DwOperaciones),
             }
             .Where(c => !string.IsNullOrWhiteSpace(c.Valor))
             .SelectMany(c => Validar(c.Clave, c.Valor!))

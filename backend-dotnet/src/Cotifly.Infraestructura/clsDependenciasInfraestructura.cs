@@ -132,8 +132,8 @@ public static class clsDependenciasInfraestructura
 
         AgregarPersistencia(servicios);
 
-        // Fuente del margen de SAP TM: la copia local que sincroniza Datos (HU-042.2, #243). TryAdd: un adaptador registrado antes
-        // (pruebas) se respeta.
+        // Margen de SAP TM: la copia local y su sincronización con SAP desde el backend (HU-042.2, #243). TryAdd: un adaptador
+        // registrado antes (pruebas) se respeta.
         AgregarFuenteMargen(servicios, configuracion);
 
         // TRM oficial del día para cotizar en USD (HU-012.1, ADR-014).
@@ -224,14 +224,29 @@ public static class clsDependenciasInfraestructura
     }
 
     /// <summary>
-    /// Fuente del margen de SAP TM (HU-042.2, #243, ADR-027): <see cref="clsFuenteMargenTablaLocal"/>, que lee la copia local
-    /// <c>dbo_cotifly.SapMargenCliente</c> con el <c>DbContext</c> de la petición (scoped). Ya no hay modos ni cliente HTTP a SAP. Las variables
-    /// del modo en vivo que se retiraron (<see cref="clsAvisosArranqueSapTm.VariablesObsoletas"/>) no impiden arrancar: el servicio alojado
-    /// avisa que se ignoran.
+    /// Margen de SAP TM (HU-042.2, #243, ADR-027). Al cotizar, <see cref="clsFuenteMargenTablaLocal"/> lee la copia local
+    /// <c>dbo_cotifly.SapMargenCliente</c> con el <c>DbContext</c> de la petición (scoped). La copia la mantiene el propio backend:
+    /// <see cref="clsWorkerSincronizacionMargenSap"/> llama a <see cref="clsSincronizacionMargenSapSql"/> (singleton, con su candado por réplica),
+    /// que descarga <c>RentabClienteSet</c> con el cliente HTTP con nombre <see cref="clsClienteRentabSap.NombreCliente"/> (sin cookies, gzip,
+    /// sin registrar cabeceras, sin la tubería de reintentos: el límite lo pone <c>SapTm:TimeoutSegundos</c>), resuelve el NIT en el DW y llama al
+    /// stored procedure. Sin <c>SapTm:Url</c>/<c>User</c>/<c>Pass</c> el worker no corre. Las variables retiradas
+    /// (<see cref="clsAvisosArranqueSapTm.VariablesObsoletas"/>) no impiden arrancar: el servicio alojado avisa que se ignoran. TryAdd: un
+    /// adaptador registrado antes (pruebas) se respeta.
     /// </summary>
     private static void AgregarFuenteMargen(IServiceCollection servicios, IConfiguration configuracion)
     {
         servicios.TryAddScoped<IClsFuenteMargen, clsFuenteMargenTablaLocal>();
+
+        servicios.AddOpcionesValidadas<clsOpcionesSapTmSincronizacion>(configuracion, clsOpcionesSapTmSincronizacion.Seccion);
+        servicios.AddSingleton<IValidateOptions<clsOpcionesSapTmSincronizacion>, clsValidadorOpcionesSapTmSincronizacion>();
+        servicios.AddHttpClient(clsClienteRentabSap.NombreCliente, cliente => cliente.Timeout = Timeout.InfiniteTimeSpan) // el límite lo pone el cliente
+            .ConfigurePrimaryHttpMessageHandler(clsClienteRentabSap.CrearManejadorPrimario)
+            .RedactLoggedHeaders(_ => true);
+        servicios.TryAddSingleton<clsClienteRentabSap>();
+        servicios.TryAddSingleton<clsDirectorioNitDwOperaciones>();
+        servicios.TryAddSingleton<clsCoordinacionSincronizacionMargenSap>();
+        servicios.TryAddSingleton<IClsSincronizacionMargenSap, clsSincronizacionMargenSapSql>();
+        servicios.AddHostedService<clsWorkerSincronizacionMargenSap>();
 
         var obsoletas = clsAvisosArranqueSapTm.VariablesObsoletas(configuracion);
         servicios.AddHostedService(proveedor =>

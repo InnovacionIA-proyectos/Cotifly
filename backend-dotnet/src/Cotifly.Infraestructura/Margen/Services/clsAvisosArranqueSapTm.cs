@@ -5,18 +5,18 @@ using Microsoft.Extensions.Logging;
 namespace Cotifly.Infraestructura.Margen.Services;
 
 /// <summary>
-/// Avisos al arrancar sobre SAP TM (HU-042.2, #243, ADR-027). Desde que el margen sale de la copia local que sincroniza Datos, las
-/// variables del modo en vivo de #13 (<c>SapTm__Modo</c>, <c>Url</c>, <c>User</c>, <c>Pass</c>, <c>SapClient</c>, <c>ExportPath</c>) ya no
-/// se leen. Un <c>.env</c> viejo que todavía las traiga NO impide arrancar: se registra un warning por variable ("variable obsoleta, se
-/// ignora") con su nombre, nunca su valor (puede ser la clave del usuario de servicio de SAP).
+/// Avisos al arrancar sobre SAP TM (HU-042.2, #243, ADR-027). Las variables de los modos <c>export_json</c>/<c>odata</c> de #13 que no volvieron
+/// (<c>SapTm__Modo</c> y <c>SapTm__ExportPath</c>) ya no se leen: un <c>.env</c> viejo que todavía las traiga NO impide arrancar, se registra un
+/// warning por variable ("variable obsoleta, se ignora") con su nombre, nunca su valor. <c>SapTm__Url</c>, <c>User</c>, <c>Pass</c> y
+/// <c>SapClient</c> volvieron con la sincronización que hace el backend (<see cref="clsWorkerSincronizacionMargenSap"/>).
 /// </summary>
 public sealed class clsAvisosArranqueSapTm(IReadOnlyList<string> obsoletas, ILogger<clsAvisosArranqueSapTm> logger) : IHostedService
 {
-    /// <summary>Claves retiradas de la sección <c>SapTm</c> (las del modo <c>export_json</c>/<c>odata</c> de #13).</summary>
-    public static readonly IReadOnlyList<string> ClavesRetiradas = ["Modo", "Url", "User", "Pass", "SapClient", "ExportPath"];
+    /// <summary>Claves retiradas de la sección <c>SapTm</c> (las de los modos <c>export_json</c>/<c>odata</c> de #13 que no volvieron).</summary>
+    public static readonly IReadOnlyList<string> ClavesRetiradas = ["Modo", "ExportPath"];
 
     /// <summary>
-    /// Variables retiradas presentes en la configuración con algún valor, como variable de entorno (<c>SapTm__Pass</c>). Una variable
+    /// Variables retiradas presentes en la configuración con algún valor, como variable de entorno (<c>SapTm__Modo</c>). Una variable
     /// declarada vacía (<c>SapTm__Modo=</c>, como dejaban los manifiestos anteriores) no se reporta: no cambia nada.
     /// </summary>
     public static IReadOnlyList<string> VariablesObsoletas(IConfiguration configuracion)
@@ -31,8 +31,8 @@ public sealed class clsAvisosArranqueSapTm(IReadOnlyList<string> obsoletas, ILog
         foreach (var variable in obsoletas)
         {
             logger.LogWarning(
-                "{Variable}: variable obsoleta, se ignora. El margen de SAP TM sale de la copia local que sincroniza Datos (HU-042.2); "
-                + "Cotifly ya no se conecta a SAP. Quítela de la configuración.",
+                "{Variable}: variable obsoleta, se ignora. El margen de SAP TM sale de la copia local que sincroniza el backend con SapTm__Url, "
+                + "SapTm__User y SapTm__Pass (HU-042.2); ya no hay modos. Quítela de la configuración.",
                 variable);
         }
 

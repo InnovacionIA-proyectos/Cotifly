@@ -214,6 +214,15 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     /// <summary>Scripts hasta el esquema anterior a HU-021 (0001 a 0008): para probar el 0009 sobre filas del esquema viejo.</summary>
     public const int ScriptsAntesDeHu021 = 8;
 
+    /// <summary>
+    /// HU-042.2 (#243): collation con la que el ejecutador crea la base real (<c>db/ejecutar-bd.*</c>), distinta de la del servidor del
+    /// contenedor (<c>SQL_Latin1_General_CP1_CI_AS</c>): con ella, una tabla temporal sin <c>COLLATE DATABASE_DEFAULT</c> choca con las tablas.
+    /// </summary>
+    public const string CollationCotifly = "Latin1_General_100_CI_AS_SC_UTF8";
+
+    /// <summary>HU-042.2 (#243): nombre de la base falsa del DW con <c>dbo.DimBPSolicitante</c>.</summary>
+    public const string NombreBaseDwOperaciones = "DWCubosOperacionesEBS";
+
     /// <summary>Script de instalación desde cero (<c>db/scripts/01_crear_esquema.sql</c>).</summary>
     public const string ScriptInstalacion = "01_crear_esquema.sql";
 
@@ -243,6 +252,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     private string? _cadenaSolo0001;
     private string? _cadenaConCiudades;
     private string? _cadenaDirectorio;
+    private string? _cadenaDwOperaciones;
     private string? _cadenaSin0004;
     private string? _cadenaSin0005;
     private string? _cadenaSin0006;
@@ -574,6 +584,55 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     }
 
     /// <summary>
+    /// HU-042.2 (#243): <c>DWCubosOperacionesEBS</c> falsa con <c>dbo.DimBPSolicitante</c> (<c>BP</c> y <c>NIT</c>, las columnas que lee la
+    /// sincronización del margen de SAP TM; los tipos reales no se conocen: VARCHAR, como en un cubo). Se crea una vez por contenedor; cada
+    /// prueba inserta sus BP con un prefijo único (<see cref="AgregarBpDwAsync"/>).
+    /// </summary>
+    public async Task<string> CadenaDwOperacionesAsync()
+    {
+        await _candado.WaitAsync();
+        try
+        {
+            if (_cadenaDwOperaciones is null)
+            {
+                await CrearBaseAsync(CadenaMaster, NombreBaseDwOperaciones);
+                var cadena = ConBase(CadenaMaster, NombreBaseDwOperaciones);
+                await EjecutarAsync(cadena, """
+                    CREATE TABLE dbo.DimBPSolicitante (
+                        ID      INT IDENTITY(1, 1) NOT NULL PRIMARY KEY,
+                        BP      VARCHAR(20)  NULL,
+                        NIT     VARCHAR(30)  NULL,
+                        NOMBRE  VARCHAR(200) NULL
+                    );
+                    """);
+                _cadenaDwOperaciones = cadena;
+            }
+
+            return _cadenaDwOperaciones;
+        }
+        finally
+        {
+            _candado.Release();
+        }
+    }
+
+    /// <summary>HU-042.2 (#243): agrega pares (BP, NIT) a la <c>DimBPSolicitante</c> falsa.</summary>
+    public async Task AgregarBpDwAsync(params (string Bp, string? Nit)[] filas)
+    {
+        ArgumentNullException.ThrowIfNull(filas);
+        var cadena = await CadenaDwOperacionesAsync();
+        await using var conexion = new SqlConnection(cadena);
+        await conexion.OpenAsync();
+        foreach (var (bp, nit) in filas)
+        {
+            await using var comando = new SqlCommand("INSERT INTO dbo.DimBPSolicitante (BP, NIT, NOMBRE) VALUES (@bp, @nit, N'Cliente de prueba');", conexion);
+            comando.Parameters.AddWithValue("@bp", bp);
+            comando.Parameters.AddWithValue("@nit", (object?)nit ?? DBNull.Value);
+            await comando.ExecuteNonQueryAsync();
+        }
+    }
+
+    /// <summary>
     /// Base auxiliar con 0001, 0002 y 0003 pero SIN el 0004 (costeo en Nexo), para probar que la readiness lo detecta. Se crea
     /// una vez por contenedor; igual que en <see cref="CadenaSolo0001Async"/>, el <c>USE</c> de cada script se redirige.
     /// </summary>
@@ -638,9 +697,10 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     /// <summary>
     /// Base auxiliar nueva (nombre único) con los primeros <paramref name="scripts"/> scripts aplicados: para probar el backfill del
     /// 0005 sobre filas creadas con el esquema anterior sin tocar la base compartida. Usarla con <c>await using</c>: al salir la
-    /// prueba (pase o falle) la base se borra (#91).
+    /// prueba (pase o falle) la base se borra (#91). Con <paramref name="collation"/> la base se crea con esa collation (HU-042.2, #243: la
+    /// de la base real, <see cref="CollationCotifly"/>, distinta de la del servidor del contenedor).
     /// </summary>
-    public async Task<clsBaseAuxiliarPruebas> CrearBaseConScriptsAsync(string prefijo, int scripts)
+    public async Task<clsBaseAuxiliarPruebas> CrearBaseConScriptsAsync(string prefijo, int scripts, string? collation = null)
     {
         await _candado.WaitAsync();
         try
@@ -648,7 +708,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             var nombre = $"{prefijo}_{Guid.NewGuid():N}"[..40];
             try
             {
-                return new clsBaseAuxiliarPruebas(CadenaMaster, nombre, await CrearBaseSinCandadoAsync(nombre, scripts));
+                return new clsBaseAuxiliarPruebas(CadenaMaster, nombre, await CrearBaseSinCandadoAsync(nombre, scripts, collation));
             }
             catch
             {
@@ -672,9 +732,9 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
         await EjecutarLotesAsync(cadena, PartirPorGo(script));
     }
 
-    private async Task<string> CrearBaseSinCandadoAsync(string nombre, int scripts)
+    private async Task<string> CrearBaseSinCandadoAsync(string nombre, int scripts, string? collation = null)
     {
-        await CrearBaseAsync(CadenaMaster, nombre);
+        await CrearBaseAsync(CadenaMaster, nombre, collation);
         var cadena = ConBase(CadenaMaster, nombre);
         foreach (var script in Scripts.Take(scripts))
         {
@@ -710,13 +770,13 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     /// contenedor, alguno falla con el error 1807 ("Could not obtain exclusive lock on database 'model'"). Visto en el CI
     /// (#147). Reintenta solo ese error, con espera creciente y algo de azar; cualquier otro error se propaga.
     /// </summary>
-    public static async Task CrearBaseAsync(string cadenaMaster, string nombre)
+    public static async Task CrearBaseAsync(string cadenaMaster, string nombre, string? collation = null)
     {
         for (var intento = 1; ; intento++)
         {
             try
             {
-                await EjecutarAsync(cadenaMaster, $"CREATE DATABASE [{nombre}];");
+                await EjecutarAsync(cadenaMaster, collation is null ? $"CREATE DATABASE [{nombre}];" : $"CREATE DATABASE [{nombre}] COLLATE {collation};");
                 return;
             }
             catch (SqlException ex) when (intento < IntentosCrearBase && EsBloqueoDeModel(ex))
