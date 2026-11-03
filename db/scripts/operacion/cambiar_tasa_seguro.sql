@@ -65,5 +65,5 @@ END
 
 SELECT id, tasa, vigenteDesde, isActive, updatedAt
 FROM dbo_cotifly.TarifasSeguro
-ORDER BY id DESC;
+ORDER BY isActive DESC, vigenteDesde DESC;
 GO
