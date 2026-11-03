@@ -86,6 +86,10 @@ services:
       # y exige salida desde el worker a 10.10.40.24:1433 y un usuario SQL de solo lectura con SELECT únicamente sobre
       # dbo.DimEjecutivo (pendiente con el DBA).
       ConnectionStrings__Regional: ${ConnectionStrings__Regional:-}
+      # NIT por BP para la sincronización del margen de SAP TM (HU-042.2): OPCIONAL, solo lectura de DWCubosOperacionesEBS
+      # (dbo.DimBPSolicitante, columnas BP y NIT; otra base que la de Regional). Vacía: el NIT de cada fila queda NULL. Con valor es
+      # SECRETO (se valida en Production) y exige salida desde el worker a 10.10.40.24:1433.
+      ConnectionStrings__DwOperaciones: ${ConnectionStrings__DwOperaciones:-}
       # Obligatorias con valor (identificadores SQL): los defaults son los de clsOpcionesRegional; no dejarlas vacías.
       Regional__Esquema: ${Regional__Esquema:-dbo}
       Regional__Tabla: ${Regional__Tabla:-DimEjecutivo}
@@ -117,11 +121,26 @@ services:
       # HU-011: Excel de licitación (10 MB) + JSON. ForwardedHeaders__ProxiesConocidos__N no se declara: vacía no arranca y basta la red.
       SeguridadHttp__LimiteCuerpoLicitacionBytes: ${SeguridadHttp__LimiteCuerpoLicitacionBytes:-12582912}
 
-      # SAP TM (HU-042.2, ADR-027): el margen sale de la copia local dbo_cotifly.SapMargenCliente que sincroniza el job de Datos;
-      # la API ya no se conecta a SAP (sin Modo/Url/User/Pass). AvisoSincronizacionHoras: el detalle avisa si la última sincronización
-      # exitosa es más vieja (el dato se usa igual).
+      # SAP TM (HU-042.2, ADR-027): al cotizar, el margen sale de la copia local dbo_cotifly.SapMargenCliente; la copia la
+      # sincroniza el propio backend (worker, no un SQL Agent Job). AvisoSincronizacionHoras: el detalle avisa si la última
+      # sincronización exitosa es más vieja (el dato se usa igual).
       SapTm__SalesOrgDefault: ${SapTm__SalesOrgDefault:-50000005}
       SapTm__AvisoSincronizacionHoras: ${SapTm__AvisoSincronizacionHoras:-48}
+      # Sincronización: sin Url, User o Pass el worker queda inactivo (la API arranca igual y el margen usa la política). Url es la
+      # del servicio OData sin /RentabClienteSet (ej. http://sap-tm-prd.boterosoto.local:8000/sap/opu/odata/sap/ZGW_RENTAB_CLI_SRV);
+      # exige salida desde el cluster a sap-tm-prd.boterosoto.local:8000. Pass es SECRETO (solo en Dokploy). SapClient: 3 dígitos u
+      # omitido. Cada ChequeoMinutos revisa la última corrida ok y sincroniza si tiene más de SincronizacionMinutos. Si SAP trae
+      # menos de max(MinimoFilas, MinimoPorcentajeActivas % de las filas activas), no se toca la tabla.
+      SapTm__Url: ${SapTm__Url:-}
+      SapTm__User: ${SapTm__User:-}
+      SapTm__Pass: ${SapTm__Pass:-}
+      SapTm__SapClient: ${SapTm__SapClient:-}
+      SapTm__ChequeoMinutos: ${SapTm__ChequeoMinutos:-60}
+      SapTm__SincronizacionMinutos: ${SapTm__SincronizacionMinutos:-1440}
+      SapTm__TimeoutSegundos: ${SapTm__TimeoutSegundos:-120}
+      SapTm__MaximoBytes: ${SapTm__MaximoBytes:-20971520}
+      SapTm__MinimoFilas: ${SapTm__MinimoFilas:-100}
+      SapTm__MinimoPorcentajeActivas: ${SapTm__MinimoPorcentajeActivas:-80}
 
       # Nexo (HU-005): sin token; URL de PRODUCCIÓN de Nexo, no la de pruebas (HU-007).
       # Nexo__UrlBase es la RAÍZ del servicio (https://<host-nexo>), sin "/api": el cliente agrega las rutas /api/...
