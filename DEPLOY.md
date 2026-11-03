@@ -39,7 +39,8 @@ distinto, por ejemplo un gestor de secretos):
 1. **Variables de entorno de Dokploy por servicio** (pestaña *Environment* del compose de tipo *stack*). Dokploy las
    guarda en su base y las escribe en el `.env` con el que hace `docker stack deploy`; el manifiesto solo las
    referencia como `${Variable}` y nunca lleva el valor. Así llegan las cadenas de conexión, `Jwt__SigningKey` e
-   `IA__ApiKey` (`SapTm__Pass` se retiró en HU-042.2: la API ya no se conecta a SAP, ADR-027).
+   `IA__ApiKey`, y desde el 2026-11-03 `SapTm__Pass` y `ConnectionStrings__DwOperaciones` (la sincronización del margen de SAP la hace
+   el backend, ADR-027).
 2. **Sin secretos de Docker Swarm.** El único que había era la cuenta de servicio de Google Chat (`GChat__SaJson`,
    secreto `cotifly_gchat_sa_v1`), retirada con Google Chat en HU-013.9 (#105, ADR-018 §15). Tras desplegar la versión
    sin Google Chat, borrar el secreto en el manager: `docker secret rm cotifly_gchat_sa_v1 cotifly_staging_gchat_sa_v1`
@@ -94,7 +95,15 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `SeguridadHttp__LimiteCuerpoLicitacionBytes` | no | no | `12582912` | manifiesto | HU-011: Excel de licitación (10 MB) + JSON. Traefik no debe cortar antes (sin límite de cuerpo propio en el router) |
 | `SapTm__SalesOrgDefault` | no | no | `50000005` | manifiesto | |
 | `SapTm__AvisoSincronizacionHoras` | no | no (> 0) | `48` | manifiesto | HU-042.2 (#243): horas desde la última sincronización exitosa de la copia local del margen de SAP a partir de las cuales el detalle lo avisa (el dato se usa igual) |
-| ~~`SapTm__Modo`, `__ExportPath`, `__Url`, `__User`, `__SapClient`, `__Pass`~~ | — | — | — | — | **Retiradas en HU-042.2 (ADR-027):** el margen sale de `dbo_cotifly.SapMargenCliente`, que llena el job de Datos. Si siguen cargadas en Dokploy, borrarlas; si llegan al contenedor, la API arranca y avisa "variable obsoleta, se ignora" |
+| `SapTm__Url` | no | no (http/https, sin consulta ni `/RentabClienteSet`) | vacío | Dokploy | HU-042.2 (2026-11-03): URL del servicio OData de rentabilidad (`http://sap-tm-prd.boterosoto.local:8000/sap/opu/odata/sap/ZGW_RENTAB_CLI_SRV`). Sin `Url`, `User` o `Pass` el worker de sincronización queda inactivo y la API arranca igual |
+| `SapTm__User` | no | no | vacío | Dokploy | usuario técnico de SAP (Basic) |
+| `SapTm__Pass` | **sí** (≥ 8, si tiene valor) | no | vacío | Dokploy | clave del usuario técnico; nunca en el repo ni en el manifiesto |
+| `SapTm__SapClient` | no | no (3 dígitos) | vacío | Dokploy | mandante (`&sap-client=NNN`), opcional |
+| `SapTm__ChequeoMinutos`, `SapTm__SincronizacionMinutos` | no | no | `60`, `1440` | manifiesto | cada cuánto revisa el worker y edad máxima de la última corrida `ok` |
+| `SapTm__TimeoutSegundos`, `SapTm__MaximoBytes` | no | no | `120`, `20971520` | manifiesto | límite de la descarga y tope del cuerpo descomprimido |
+| `SapTm__MinimoFilas`, `SapTm__MinimoPorcentajeActivas` | no | no | `100`, `80` | manifiesto | guarda: con menos de `max(MinimoFilas, % de las activas)` filas no se toca la tabla |
+| `ConnectionStrings__DwOperaciones` | **sí** (≥ 20, si tiene valor) | no (opcional) | vacío | Dokploy | `DWCubosOperacionesEBS` en `10.10.40.24:1433`, solo lectura de `dbo.DimBPSolicitante` (`BP`, `NIT`): el NIT de cada fila de la copia. Vacía: NIT `NULL` (warning por corrida). Configurada y caída: la corrida queda `error` |
+| ~~`SapTm__Modo`, `__ExportPath`~~ | — | — | — | — | **Retiradas en HU-042.2 (ADR-027).** Si siguen cargadas en Dokploy, borrarlas; si llegan al contenedor, la API arranca y avisa "variable obsoleta, se ignora" |
 | `Nexo__UrlBase` | no | no | vacío | Dokploy | **raíz** del servicio (`https://<host-nexo>`), sin `/api`: el cliente agrega las rutas `/api/...`. Sin ella la búsqueda de clientes responde `*_NO_DISPONIBLE`, el costeo no corre y `POST /web/solicitudes-costeo` rechaza con 503 `CATALOGOS_FLETE_NO_DISPONIBLE` todo formulario con `tipo_vehiculo` o `clase_viaje` (no hay catálogo contra el cual validarlos, HU-013.10) |
 | `Nexo__MinutosCacheMunicipios` | no | no | `60` | manifiesto | caché de la lista de municipios de Nexo (frente B) |
 | `Nexo__MinutosCacheCatalogos`, `Nexo__HorasCatalogosVencidos` | no | no | `30`, `24` | manifiesto (endurecimiento A, #199) | caché de los catálogos maestros de Nexo y horas que la última copia sirve de respaldo con Nexo caído (HU-013.10) |
@@ -285,7 +294,7 @@ Variables del Python que **no** pasan al backend .NET (se retiran; no cargarlas 
 (reemplazadas por `IA__*`), `GCHAT_*` y `GOOGLE_SA_JSON` (Google Chat retirado en #105), y `DRIVE_TARIFARIO_*` (tarifario
 de Drive retirado), `TARIFA_*`, `S3_*` y `MINIO_*` (MinIO no se mantiene, ADR-012), `SHEETS_*` (diferida, ADR-012),
 `SMTP_*`/`SMTP_RELAY_*`/`CORREO_*` (reemplazadas por `Correo__*`), `SAP_TM_*`/`SAP_SALES_ORG_DEFAULT` (reemplazadas por
-`SapTm__*`; de esas solo quedan `SalesOrgDefault` y `AvisoSincronizacionHoras` desde HU-042.2), `PDF_*` (reemplazadas por `Pdf__*`), `PUBLIC_HOST` (sigue como variable del manifiesto para Traefik, no
+`SapTm__*`: `SalesOrgDefault`, `AvisoSincronizacionHoras` y, desde el 2026-11-03, `Url`, `User`, `Pass`, `SapClient` y los ajustes del worker), `PDF_*` (reemplazadas por `Pdf__*`), `PUBLIC_HOST` (sigue como variable del manifiesto para Traefik, no
 de la app).
 
 ### Rol director (HU-037, #209 a #212)
@@ -329,16 +338,32 @@ COMMIT;
 
 ### Margen de SAP desde la copia local (HU-042, #242, #243, #247; ADR-027)
 
-Desde HU-042.2 la API **no se conecta a SAP TM**: el margen recomendado sale de `dbo_cotifly.SapMargenCliente`, la copia que mantiene
-el job diario de Datos (`db/jobs/sincronizar_margen_sap.ps1`, SQL Server Agent en el servidor de base de datos; sus credenciales de SAP
-viven en `db/jobs/.env` de ese servidor, no en Dokploy).
+Al cotizar, la API lee el margen recomendado de `dbo_cotifly.SapMargenCliente`; no llama a SAP. **Desde el 2026-11-03 la copia la
+sincroniza el propio backend** (worker `clsWorkerSincronizacionMargenSap`, ADR-027 §10 a §16). El SQL Agent Job de la #242
+(`db/jobs/sincronizar_margen_sap.ps1` y `db/scripts/operacion/instalar_sql_agent_job_margen_sap.sql`) **no se instala**.
 
 - **Antes de la imagen:** `db/scripts/17_sap_margen_sincronizacion.sql` y `db/scripts/18_sap_mapeo_fk_margenes_politica.sql` (sin ellos,
   `/health/ready` responde 503 "falta 17"/"falta 18"; aplicarlos la recupera sin redesplegar).
-- **Variables:** borrar de Dokploy `SapTm__Modo`, `__ExportPath`, `__Url`, `__User`, `__SapClient` y `__Pass` (los manifiestos ya no las
-  pasan; si llegan, la API avisa "variable obsoleta, se ignora"). Nueva opcional: `SapTm__AvisoSincronizacionHoras` (48 por defecto).
-- **Sin el job** (ninguna corrida `ok` en `SapMargenSyncLog`) todo margen sale de la política de la línea con el detalle "SAP TM no
-  configurado": es el comportamiento esperado en local y en un QA sin el job.
+- **Permisos de `cotifly_app` (DBA):** `EXECUTE` sobre `dbo_cotifly.sp_sincronizar_margen_sap` e `INSERT` sobre
+  `dbo_cotifly.SapMargenSyncLog` (con el `GRANT ... ON SCHEMA::dbo_cotifly` de 03-infraestructura ya están). `#SapMargenStage` es una tabla
+  temporal: no pide permisos extra; el `MERGE` del stored procedure corre con los permisos de su dueño.
+  ```sql
+  GRANT EXECUTE ON OBJECT::dbo_cotifly.sp_sincronizar_margen_sap TO cotifly_app;
+  GRANT INSERT ON OBJECT::dbo_cotifly.SapMargenSyncLog TO cotifly_app;
+  ```
+  En el DW, un usuario de solo lectura con `SELECT` sobre `DWCubosOperacionesEBS.dbo.DimBPSolicitante` (columnas `BP` y `NIT`).
+- **Red desde el cluster (HU-009.1, #35):** salida del nodo donde corre `cotifly-api` hacia `sap-tm-prd.boterosoto.local:8000` (SAP TM,
+  HTTP; el nombre debe resolver desde el contenedor) y hacia `10.10.40.24:1433` (DW). Probar desde el nodo antes de cargar las variables.
+- **Variables en Dokploy:** `SapTm__Url`, `SapTm__User`, `SapTm__Pass` (secreto) y, si se quiere el NIT, `ConnectionStrings__DwOperaciones`
+  (secreto). Los ajustes (`SapTm__ChequeoMinutos`, `__SincronizacionMinutos`, `__TimeoutSegundos`, `__MaximoBytes`, `__MinimoFilas`,
+  `__MinimoPorcentajeActivas`) ya tienen su valor por defecto en el manifiesto. Borrar `SapTm__Modo` y `SapTm__ExportPath` si siguen cargadas.
+- **Sin `Url`/`User`/`Pass`** el worker queda inactivo (un log Information) y, si la copia nunca se sincronizó, todo margen sale de la
+  política con el detalle "SAP TM no configurado": es el comportamiento esperado en local.
+- **Primera corrida:** después de desplegar, `POST /web/admin/sap-margen/sincronizar` con un gerente o director (responde 200 con
+  `estado = ok` y las filas) o esperar el primer chequeo (30 s después del arranque). Verificar con `GET /web/admin/sap-margen/estado`
+  ([10-operacion](backend-dotnet/docs/10-operacion.md#sincronización-del-margen-de-sap-tm-hu-0422)).
+- **Varias réplicas:** cada réplica tiene su worker; el `sp_getapplock` del stored procedure hace que una segunda corrida simultánea quede
+  `omitido` y la `ok` de una evita que las otras vuelvan a sincronizar en su chequeo.
 - **Después de desplegar:** avisar a Datos (@scalderon-bs) para el script que retira `SapMapeoTrqType.lineaNegocio` (texto), #247.
 
 ### Multi-rol (HU-040, #229 y #230)
@@ -416,7 +441,9 @@ solo *sí* o *no* (y para las variables no secretas puede llevar el valor). Los 
 | `IA__Fallbacks__0__*`, `IA__Fallbacks__1__*` | `ApiKey` sí | negocio (ADR-003). Propuesta con OmniRoute: `gemini/gemini-3.5-flash` y `gemini/gemini-3-flash-preview` | no | Negocio / Backend | fallbacks de LiteLLM |
 | `IA__SoportaJsonSchema` / `IA__MaxTokens` | no | con OmniRoute y Gemini: `false` y `1500` (§2.2) | no | Backend | `LLM_MAX_TOKENS` |
 | `Nexo__UrlBase` | no | equipo de Nexo (URL de producción, no la de pruebas) | no | Backend / Nexo | — |
-| ~~`SapTm__Modo` (+ `ExportPath` o `Url`/`User`/`Pass`)~~ | — | retiradas en HU-042.2 (ADR-027): las credenciales de SAP las usa el job de Datos en el servidor SQL (`db/jobs/.env`), no la API | no aplica | Datos | `SAP_TM_*` |
+| `SapTm__Url` / `SapTm__User` / `SapTm__Pass` | `Pass` sí | SAP: el usuario técnico de `ZGW_RENTAB_CLI_SRV`; infraestructura: salida a `sap-tm-prd.boterosoto.local:8000` (HU-009.1) | no | SAP / Infraestructura / Backend | `SAP_TM_*` |
+| `ConnectionStrings__DwOperaciones` | sí | DBA: usuario de solo lectura con `SELECT` sobre `dbo.DimBPSolicitante` en `DWCubosOperacionesEBS`; infraestructura: salida a `10.10.40.24:1433`. Opcional | no | DBA / Infraestructura | — |
+| ~~`SapTm__Modo`, `SapTm__ExportPath`~~ | — | retiradas en HU-042.2 (ADR-027) | no aplica | — | `SAP_TM_*` |
 | `Correo__Habilitado` / `Correo__MailSender__UrlBase` / `Correo__Proteccion__BuzonPruebas` | no | Backend (URL de MailSender) y negocio (buzón de pruebas, por definir) | no | Backend | `CORREO_*`, `SMTP_RELAY_HOST` (retiradas: el relay lo usa MailSender) |
 | `MCP_AUTH_TOKEN`, `INTERNAL_API_TOKEN`, `S3_*`, `DRIVE_*`, `SHEETS_*` | — | se retiran (§2.2) | no aplica | Backend | sí |
 

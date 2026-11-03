@@ -62,7 +62,7 @@ Las pruebas **no** corren dentro de `docker build`: el contexto no incluye `test
 - Memoria: cada sonda levanta un proceso `dotnet` aparte (~40–70 MB transitorios cada 30 s); contarlo en `resources.limits.memory`.
 - Retirar `bot-mcp` (sus herramientas viven en el monolito, ADR-002).
 - Variables: `ConnectionStrings__Cotifly` y `ConnectionStrings__Identidad` (HU-007 debe usar estos nombres, no `SQLSERVER_CONNECTION_STRING`).
-- SAP TM: solo `SapTm__SalesOrgDefault` y `SapTm__AvisoSincronizacionHoras`. Desde HU-042.2 (ADR-027) el margen sale de la copia local en `dbo_cotifly` y la API no se conecta a SAP; `SapTm__Modo`, `__ExportPath`, `__Url`, `__User`, `__Pass` y `__SapClient` se retiraron (ver "Integraciones externas").
+- SAP TM: `SapTm__SalesOrgDefault` y `SapTm__AvisoSincronizacionHoras` para cotizar con la copia local de `dbo_cotifly` (HU-042.2, ADR-027), y `SapTm__Url`, `__User`, `__Pass`, `__SapClient` y los ajustes del worker que la sincroniza desde SAP (2026-11-03; sin `Url`/`User`/`Pass` queda inactivo). `SapTm__Modo` y `__ExportPath` se retiraron (ver "Integraciones externas").
 - Logs en UTC.
 
 Medida del 2026-09-25 (#14, `docker build --no-cache` con el código de #16): **345 MB en disco** según `docker image ls`.
@@ -93,7 +93,13 @@ Resumen de todas las variables de [`.env.example`](../.env.example). "Production
 | `SeguridadHttp__LimiteCuerpoLicitacionBytes` | `12582912` | no | no | [Seguridad HTTP](#seguridad-http) |
 | `SapTm__SalesOrgDefault` | `50000005` | no | no | [SAP TM](#integraciones-externas-y-sap-tm) |
 | `SapTm__AvisoSincronizacionHoras` | `48` | no | no (entero > 0) | [SAP TM](#integraciones-externas-y-sap-tm) |
-| ~~`SapTm__Modo`, `__ExportPath`, `__Url`, `__User`, `__SapClient`, `__Pass`~~ | — | — | retiradas (HU-042.2): si llegan, warning "variable obsoleta, se ignora" | [SAP TM](#integraciones-externas-y-sap-tm) |
+| `SapTm__Url`, `SapTm__User`, `SapTm__SapClient` | vacío | no | no (Url http/https sin consulta ni `/RentabClienteSet`; SapClient de 3 dígitos). Sin Url/User/Pass, el worker queda inactivo | [SAP TM](#integraciones-externas-y-sap-tm) |
+| `SapTm__Pass` | vacío | **sí** | no (con valor, se valida como secreto en Production) | [SAP TM](#integraciones-externas-y-sap-tm) |
+| `SapTm__ChequeoMinutos`, `SapTm__SincronizacionMinutos` | `60`, `1440` | no | no (1–1440 y 1–10080) | [SAP TM](#integraciones-externas-y-sap-tm) |
+| `SapTm__TimeoutSegundos`, `SapTm__MaximoBytes` | `120`, `20971520` (20 MB) | no | no (5–900 s; 1–512 MB) | [SAP TM](#integraciones-externas-y-sap-tm) |
+| `SapTm__MinimoFilas`, `SapTm__MinimoPorcentajeActivas` | `100`, `80` | no | no (≥ 1; 0–100) | [SAP TM](#integraciones-externas-y-sap-tm) |
+| `ConnectionStrings__DwOperaciones` | vacío (NIT `NULL`) | **sí** | no (con valor, se valida en Production) | [SAP TM](#integraciones-externas-y-sap-tm) |
+| ~~`SapTm__Modo`, `__ExportPath`~~ | — | — | retiradas (HU-042.2): si llegan, warning "variable obsoleta, se ignora" | [SAP TM](#integraciones-externas-y-sap-tm) |
 | `Pdf__StorageModo`, `Pdf__StorageDir`, `Pdf__BaseUrl` | `volumen`, `/data/pdfs`, vacío | no | no | [PDF y correo](#pdf-y-correo) |
 | `Pdf__TiempoEsperaRenderSegundos` | `30` | no | no | [PDF y correo](#pdf-y-correo) |
 | `Correo__Habilitado`, `Correo__Modo` | `false`, `mailsender` | no | no | [PDF y correo](#pdf-y-correo) |
@@ -260,28 +266,44 @@ Para desarrollo local, `scripts/levantar-local.ps1` y `scripts/levantar-local.sh
 
 | Integración del Python | En .NET | Configuración |
 |---|---|---|
-| SAP TM, export JSON (`export_fuente.py`) y OData en vivo (`odata_fuente.py`) | ~~`clsFuenteMargenExportJson`, `clsFuenteMargenOData` (#13)~~ retirados en HU-042.2: `clsFuenteMargenTablaLocal` lee la copia local `dbo_cotifly.SapMargenCliente` que sincroniza el job de Datos | `SapTm__SalesOrgDefault`, `SapTm__AvisoSincronizacionHoras` |
+| SAP TM, export JSON (`export_fuente.py`) y OData en vivo (`odata_fuente.py`) | ~~`clsFuenteMargenExportJson`, `clsFuenteMargenOData` (#13)~~ retirados en HU-042.2: `clsFuenteMargenTablaLocal` lee la copia local `dbo_cotifly.SapMargenCliente`, que sincroniza el worker `clsWorkerSincronizacionMargenSap` | `SapTm__*`, `ConnectionStrings__DwOperaciones` |
 | Tarifario en Google Drive (`DriveFlatFileProvider`) | **No se porta**: retirado el 2026-09-23, el costeo vendrá de Nexo (HU-005.5 en adelante) | ninguna |
 | Búsqueda de clientes (no existía en el Python) | `clsBuscadorClientesNexo`, más municipios y catálogos de flete de Nexo (la cubicación de Nexo se retiró en HU-023.2: "Calcular cubicaje" usa el cubicador, `Cubicador__UrlBase`) | `Nexo__UrlBase` ([Nexo](#nexo)) |
 | Sincronización a Google Sheets (Looker Studio) | **Diferida**, pendiente en ADR-012 (Looker directo a SQL Server, port a .NET o tablero de HU-010) | ninguna |
 | PDF en S3/MinIO (`almacen_pdf.py`) | **Diferido**: se mantiene el volumen `/data/pdfs` detrás de `IClsAlmacenPdf` (#11). S3 solo si HU-006.6 despliega varias réplicas sin volumen compartido (ADR-012) | ninguna |
 
 SAP TM (HU-042.2 #243 y HU-042.4 #247, [ADR-027](../specs/decisiones/ADR-027-margen-sap-tabla-local.md)):
-- **Copia local, sin red hacia SAP.** El margen recomendado (`RentabClienteSet`) lo copia a diario el job de Datos (HU-042.1, #242:
-  `db/jobs/sincronizar_margen_sap.ps1`, SQL Server Agent en el servidor de base de datos) en `dbo_cotifly.SapMargenCliente`, con el log
-  de corridas en `dbo_cotifly.SapMargenSyncLog`. La API solo lee esas tablas con su cadena `ConnectionStrings__Cotifly`: **Cotifly ya no
-  necesita ruta de red ni usuario de servicio hacia SAP**; los necesita el servidor SQL donde corre el job (sus credenciales viven en
-  `db/jobs/.env` de ese servidor). Scripts `db/scripts/17` (tablas) y `18` (`SapMapeoTrqType.lineaNegocioId`), exigidos por
-  `/health/ready`.
-- **Nunca sincronizada** (ninguna corrida `ok`, como en local o en un QA sin el job): "SAP TM no configurado", política de la línea.
+- **Copia local, sincronizada por el backend.** Al cotizar, la API lee `dbo_cotifly.SapMargenCliente` con su cadena
+  `ConnectionStrings__Cotifly`; no llama a SAP. La copia la mantiene el worker `clsWorkerSincronizacionMargenSap` (desde el 2026-11-03; el
+  SQL Agent Job de Datos, `db/jobs/sincronizar_margen_sap.ps1`, **no se instala**): cada `SapTm__ChequeoMinutos` (60) revisa la última
+  corrida `ok` de `dbo_cotifly.SapMargenSyncLog` y, si tiene más de `SapTm__SincronizacionMinutos` (1440) o nunca la hubo, descarga
+  `RentabClienteSet` completo, resuelve el NIT por BP en el DW, carga `#SapMargenStage` y llama a `dbo_cotifly.sp_sincronizar_margen_sap`.
+  Scripts `db/scripts/17` (tablas y stored procedure) y `18` (`SapMapeoTrqType.lineaNegocioId`), exigidos por `/health/ready`.
+- **Descarga.** Un `GET {SapTm__Url}/RentabClienteSet?$format=json` (más `&sap-client=` si hay `SapTm__SapClient`), sin `$filter` (SAP lo
+  ignora y trae todo), Basic con `SapTm__User`/`SapTm__Pass`, gzip, sin cookies, `SapTm__TimeoutSegundos` (120) y `SapTm__MaximoBytes`
+  (20 MB). Sin `Url`, `User` o `Pass` el worker queda inactivo (Information) y la API arranca igual. http se acepta en la red interna (en
+  Production deja un warning al arrancar).
+- **Guarda.** Si SAP trae menos de `max(SapTm__MinimoFilas, SapTm__MinimoPorcentajeActivas % de las filas activas)` (100 y 80 %), no se
+  toca la tabla y la corrida queda `error` con las filas recibidas y el mínimo exigido.
+- **NIT por BP.** `ConnectionStrings__DwOperaciones` (opcional, secreto, solo lectura): `DWCubosOperacionesEBS.dbo.DimBPSolicitante`
+  (`BP`, `NIT`) en `10.10.40.24:1433`, otra base que la de la regional. Sin la cadena, el NIT queda `NULL` (warning por corrida); con la
+  cadena y el DW caído, la corrida queda `error` y la tabla no cambia.
+- **Errores.** Un fallo antes del stored procedure queda como `error` en `SapMargenSyncLog` sin URL ni credenciales; el stored procedure
+  registra sus `ok`, `omitido` y `error`. Ninguno tumba la API.
+- **Red y permisos.** Salida desde el cluster a `sap-tm-prd.boterosoto.local:8000` (SAP TM) y a `10.10.40.24:1433` (DW): HU-009.1 (#35)
+  vuelve a aplicar, ahora para el worker. `cotifly_app` necesita `EXECUTE` sobre `dbo_cotifly.sp_sincronizar_margen_sap` e `INSERT` sobre
+  `dbo_cotifly.SapMargenSyncLog` (más el `SELECT` que ya tiene); la tabla temporal no pide permisos extra.
+- **Varias réplicas.** Cada una revisa en su chequeo; el `sp_getapplock` del stored procedure deja `omitido` a la segunda corrida simultánea.
+- **Administración:** `GET /web/admin/sap-margen/estado` y `POST /web/admin/sap-margen/sincronizar` (gerencia), ver
+  [10-operacion](10-operacion.md).
+- **Nunca sincronizada** (ninguna corrida `ok`, como en local o sin credenciales de SAP): "SAP TM no configurado", política de la línea.
 - **Con la copia:** fila `activo = 1` por organización, TrqType y BP (comparado sin ceros a la izquierda en los dos lados) → `sap_tm` con
   el detalle "SAP TM (tabla local, actualizado AAAA-MM-DD)"; sin fila o inactiva → política ("sin registro en SAP TM").
 - **Copia vieja:** no caduca; si la última corrida `ok` tiene más de `SapTm__AvisoSincronizacionHoras` (48), el detalle lo avisa y el
   margen se usa igual.
 - **Base caída al leerla** → política con "SAP TM no disponible: se usa la política de la línea" y un warning (decisión de #13).
-- **Variables retiradas:** `SapTm__Modo`, `__ExportPath`, `__Url`, `__User`, `__Pass`, `__SapClient`. Si siguen en un `.env` o en Dokploy
-  la API arranca y registra "variable obsoleta, se ignora" por cada una (sin el valor); borrarlas.
-- **HU-009.1/HU-009.2 (#35, #36)** quedan obsoletas para Cotifly (ADR-027): la red y el usuario de SAP son del job de Datos.
+- **Variables retiradas:** `SapTm__Modo` y `__ExportPath`. Si siguen en un `.env` o en Dokploy la API arranca y registra "variable
+  obsoleta, se ignora" por cada una (sin el valor); borrarlas.
 
 ### Nexo
 
@@ -497,7 +519,8 @@ Google Chat (webhook `POST /chat/events`, verificación del JWT, cola, worker, p
 | SQL Server 2019 corporativo (`tbsdatacenter`), base `dbTarifario_Nexo_Pruebas`, esquema `dbo_cotifly` | Datos propios: cotizaciones, márgenes, correos, sesiones, auditoría, identidad interna, tokens | TDS 1433, SQL login `cotifly_app` (cifrado por defecto) | Esquema de HU-021 (`0001` a `0010`, o la instalación desde cero) más `db/scripts/02`, `03`, `pendientes/04`, `05`, `06`, `09`, `10`, `11`, `12` y `13` (y los siguientes; desde HU-042, `17` y `18` con la copia local del margen de SAP; `07` opcional; `08` después de la imagen); la base compartida se instaló desde cero el 2026-10-08 ([`db/README.md`](../../db/README.md)). El 0010 es un borrador pendiente de revisión | `/health/ready` 503; las operaciones fallan con error controlado |
 | Base de identidad del portal, la misma que Nexo (QA: `dbSolucionesTI_Prueba`; producción por confirmar, #172) | Usuarios y roles de ClientePro para el login (solo lectura) | TDS, `cotifly_app` con `SELECT` por columna | Instancia y permisos de `cotifly_app` pendientes con el DBA; `Roles.idRolExterno` contra los IDROLES de esa base | Login y refresh responden 401 (fail-closed) |
 | `DWCubosEBSSAP` | Regional del comercial (`DimEjecutivo`, ADR-016): login (#81) y tablero del gerente | TDS, solo lectura, `SELECT` parametrizado | Adaptador y login listos; tabla verificada en #81. Faltan la credencial en Dokploy y la salida de red del clúster (puerto 1433) | Sin cadena: `UsuariosWeb.regional` (sin ella, 409 `REGIONAL_NO_ASIGNADA` en el tablero del gerente). Con cadena y caída: el login entra sin refrescar la regional (warning) y el tablero responde 503 `REGIONAL_NO_DISPONIBLE` |
-| SAP TM (copia local, HU-042) | Margen propuesto por cliente (`RentabClienteSet`) | **Cotifly no se conecta a SAP**: lee `dbo_cotifly.SapMargenCliente` por la misma conexión a SQL Server. La red y el usuario de SAP los usa el job diario de Datos en el servidor SQL (SQL Server Agent, `db/jobs/`) | Código listo (HU-042.2); el job ya corrió a mano en la base de pruebas (2026-10-28) | Sin sincronizar o sin fila: política de la línea con el motivo en `detalle`; copia vieja: se usa con un aviso; base caída: política ("no disponible") |
+| SAP TM (copia local, HU-042) | Margen propuesto por cliente (`RentabClienteSet`) | Al cotizar, lee `dbo_cotifly.SapMargenCliente` por la conexión a SQL Server. El worker la sincroniza con un GET diario a `sap-tm-prd.boterosoto.local:8000` (OData, Basic con el usuario técnico, http en la red interna) | Código listo (HU-042.2, sincronización en el backend desde el 2026-11-03). Faltan la ruta de red del cluster, el usuario técnico en Dokploy y los permisos de `cotifly_app` sobre el stored procedure y el log | Worker inactivo o SAP caído: la copia no se actualiza (`error` en el log) y se usa la que hay; sin copia o sin fila: política de la línea con el motivo en `detalle`; copia vieja: se usa con un aviso; base caída: política ("no disponible") |
+| `DWCubosOperacionesEBS` | NIT por BP (`dbo.DimBPSolicitante`) para la copia del margen de SAP (HU-042.2) | TDS `10.10.40.24:1433`, solo lectura, `SELECT` parametrizado en lotes de 500 (`ConnectionStrings__DwOperaciones`) | Código listo; faltan la credencial en Dokploy y la salida de red | Sin cadena: NIT `NULL` en la copia (warning); con cadena y caído: la corrida queda `error` y la copia no cambia |
 | Proveedor LLM (OpenAI, Azure OpenAI, compatible con OpenAI, Gemini, Ollama o Anthropic) | Redacción de los textos de la cotización y asistente por folio (ADR-018) | HTTPS con API key; OmniRoute (#84) por **HTTP** dentro de la red interna, con API key `Bearer` en claro (riesgo; ver [OmniRoute](#omniroute)); respaldos configurables | Proveedor de producción pendiente de negocio (ADR-003) | `/web/chat` 200 `{texto, error: true}`; la redacción de textos usa los estándar |
 | ~~Relay SMTP interno (en el Python `10.10.40.62`)~~ **MailSender** (microservicio interno, HU-033, [ADR-023](../specs/decisiones/ADR-023-correo-mailsender-y-resultado-diferido.md); él entrega por el relay SMTP corporativo y reintenta) | Envío de la cotización | ~~SMTP 25 sin AUTH ni STARTTLS, control por IP~~ HTTP en la red interna, sin autenticación: `POST /api/v1/emails` (multipart, 202 con id) y `GET /api/v1/emails/{id}` para el estado; `Correo:MailSender:TimeoutSegundos` (15 s), el POST no se reintenta | Deshabilitado por defecto; ~~transporte real por confirmar (D3)~~ transporte decidido en ADR-023. La URL de QA se carga en Dokploy; para producción falta autorizar la IP de MailSender en el relay y revisar SPF/DMARC | `CORREO_DESHABILITADO` (503) o `CORREO_ENVIO_FALLIDO` con la fila `fallido` (rechazo al encolar, caída o tiempo agotado); un `fallido` de MailSender se reintenta con `POST /web/cotizaciones/{folio}/correos/{correoId}/reintentar` |
 | Volumen `/data/pdfs` | Almacén de los PDF | Sistema de archivos del contenedor (UID 1654) | Único adaptador; S3/MinIO diferido (ADR-012) | La generación del PDF falla sin registrar la cotización |
@@ -516,7 +539,8 @@ flowchart LR
     end
     front[clientepro-frontend] --> traefik
     api --> sqlsrv[(tbsdatacenter<br/>SQL Server 2019)]
-    sqlsrv -. job diario de Datos, HU-042.1 .-> sapnet[SAP TM]
+    api -. worker diario, HU-042.2 .-> sapnet[SAP TM<br/>sap-tm-prd:8000]
+    api -. NIT por BP .-> dwops[(DWCubosOperacionesEBS<br/>10.10.40.24)]
     api --> mailsender[MailSender - HU-033<br/>entrega por el relay SMTP]
     api --> proveedor[Proveedor LLM]
     api --> nexo[Nexo]

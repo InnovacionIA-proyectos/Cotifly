@@ -224,8 +224,9 @@ Las decisiones de negocio que siguen abiertas en este módulo están en [10-oper
 ## 2.7 Margen de SAP TM: copia local
 
 **HU-042.2 (#243) y HU-042.4 (#247), [ADR-027](../specs/decisiones/ADR-027-margen-sap-tabla-local.md).** El margen recomendado de SAP TM
-(`RentabClienteSet`) ya no se consulta en vivo ni de un export montado: sale de `dbo_cotifly.SapMargenCliente`, la copia que sincroniza a
-diario el job de Datos (HU-042.1, #242; `db/jobs/`, SQL Server Agent). Cotifly no tiene red ni credenciales hacia SAP. Los modos
+(`RentabClienteSet`) ya no se consulta en vivo al cotizar ni de un export montado: sale de `dbo_cotifly.SapMargenCliente`. Desde el
+2026-11-03 esa copia la sincroniza **el propio backend** con un worker (el SQL Agent Job de Datos de HU-042.1, `db/jobs/`, no se
+instala): un GET diario del set completo, el NIT por BP en el DW y el stored procedure `sp_sincronizar_margen_sap` del `17`. Los modos
 `export_json`/`odata` de #13 (HU-003.7) se retiraron con sus adaptadores, su fábrica, sus opciones y sus pruebas.
 
 | Pieza | Capa | Qué hace |
@@ -233,13 +234,19 @@ diario el job de Datos (HU-042.1, #242; `db/jobs/`, SQL Server Agent). Cotifly n
 | `Margen/Services/clsFuenteMargenTablaLocal` | Infraestructura | Única `IClsFuenteMargen` (scoped, `TryAdd`). Sin ninguna corrida `ok` en `SapMargenSyncLog` → `NoConfigurada` (no lee la tabla). Si no, busca la fila `activo = 1` por organización y TrqType (recortados, mayúsculas) y BP **sin ceros a la izquierda en los dos lados**, con el índice único `(salesOrgId, trqType, bpSap)` y el final del BP; devuelve el porcentaje, `actualizadoAt` y la última sincronización. Error de base → `clsFuenteMargenNoDisponibleException`. `AsNoTracking`, sin caché |
 | `Comun/Persistence/clsSapMargenClienteFila`, `clsSapMargenSyncLogFila` (+ `clsSapMargenConfiguracion`) | Infraestructura | Mapeo de solo lectura de las dos tablas del `db/scripts/17` (CHECK del estado e índices incluidos). Sus columnas de texto heredan la collation de la base (`clsCotiflyDbContext.TablasConCollationDeLaBase`) |
 | `Margen/clsSapMapeoTrqType.LineaNegocioId` (+ `clsSapMapeoRepository`) | Dominio / Infraestructura | HU-042.4: FK a `MargenesPolitica(id)` (`db/scripts/18`); `TrqTypeDeAsync(lineaNegocioId, salesOrg)` y `LineaDeAsync` (nombre por el id) con el comodín `IN (@org, '') ORDER BY salesOrg DESC`. La columna `lineaNegocio` (texto) sigue mapeada mientras exista |
-| `Margen/Services/clsAvisosArranqueSapTm` | Infraestructura | `IHostedService`: un warning "variable obsoleta, se ignora" por cada `SapTm__Modo`, `__Url`, `__User`, `__Pass`, `__SapClient` o `__ExportPath` que llegue con valor (nombre, nunca el valor). No impide arrancar |
+| `Margen/Services/clsAvisosArranqueSapTm` | Infraestructura | `IHostedService`: un warning "variable obsoleta, se ignora" por cada `SapTm__Modo` o `__ExportPath` que llegue con valor (nombre, nunca el valor). No impide arrancar |
+| `IClsSincronizacionMargenSap` / `clsEstadoSincronizacionMargenSap`, `clsResultadoSincronizacionMargenSap`, `clsCorridaSincronizacionMargenSap` | Aplicacion | Puerto de la sincronización (2026-11-03): `Configurada`, `EstadoAsync` y `SincronizarAsync(forzada)`; nunca lanza por fallos de SAP, del DW o de la base (los deja como `error` en el log) |
+| `Margen/Services/clsSincronizacionMargenSapSql` (+ `clsCoordinacionSincronizacionMargenSap`) | Infraestructura | Singleton, port del script de Datos: si no toca sale sin llamar a SAP; descarga, guarda de mínimo de filas, NIT, `#SapMargenStage` con `COLLATE DATABASE_DEFAULT` + `SqlBulkCopy` + `EXEC` del stored procedure en una misma conexión; registra el `error` de lo que falla antes del stored procedure. Conexiones ADO propias (no el `DbContext`). La coordinación es el candado por réplica (worker y corrida forzada) y el próximo chequeo |
+| `Margen/Services/clsClienteRentabSap`, `clsLectorRentabClienteSap`, `clsGuardaMinimoFilasSap` | Infraestructura | GET a `{SapTm:Url}/RentabClienteSet?$format=json` sin `$filter` (cliente con nombre, Basic, gzip, sin cookies, `TimeoutSegundos`, `MaximoBytes`, sin reintentos); lectura todo o nada de `d.results`; `max(MinimoFilas, ceil(% × activas))` |
+| `Margen/Services/clsDirectorioNitDwOperaciones` | Infraestructura | NIT por BP en `DWCubosOperacionesEBS.dbo.DimBPSolicitante` (`ConnectionStrings:DwOperaciones`, lotes de 500); sin la cadena, NIT `NULL` |
+| `Margen/Services/clsWorkerSincronizacionMargenSap` | Infraestructura | `BackgroundService` (`PeriodicTimer` + `TimeProvider`, un ámbito por ronda): espera 30 s y cada `SapTm:ChequeoMinutos` sincroniza si la última corrida `ok` supera `SapTm:SincronizacionMinutos`. Sin `Url`/`User`/`Pass` no corre. Una ronda fallida queda en Error y no tumba el host |
+| `Margen/Services/clsSapMargenAdminService` + `Administracion/Controllers/clsSapMargenController` | Aplicacion / Api | `GET /web/admin/sap-margen/estado` y `POST /web/admin/sap-margen/sincronizar` (gerencia; el POST espera la corrida y responde su resultado; auditado) |
 
 Reglas que se conservan: sin BP no se busca (ADR-004); el anómalo fuera de [0, 60 %] se marca y el envío a Nexo aplica la política
 (#139); una fuente caída cae a la política con "SAP TM no disponible" y un warning; `origen` sigue siendo `sap_tm`. Lo nuevo: cada
 cliente recibe su propia fila (el modo `odata` tomaba `results[0]`), el detalle dice de dónde y de cuándo es el dato, y la copia no
 caduca (si la última sincronización exitosa supera `SapTm:AvisoSincronizacionHoras`, el detalle lo avisa y el margen se usa igual).
-`/health/ready` exige el `17` y el `18` ("falta 17", "falta 18").
+`/health/ready` exige el `17` y el `18` ("falta 17", "falta 18"); no depende de SAP ni del DW (el worker no bloquea el arranque).
 
 ## 2.8 PDF, correo y auditoría
 

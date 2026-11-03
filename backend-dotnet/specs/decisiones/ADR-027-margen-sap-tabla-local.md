@@ -1,11 +1,13 @@
 # ADR-027 — Margen de SAP TM desde la copia local (HU-042.2) y mapeo TrqType por id de línea (HU-042.4)
 
-- **Estado:** Propuesta (2026-10-29). Issues #243 (HU-042.2) y #247 (HU-042.4), milestone HU-042. Plan aprobado por el usuario; pendiente
-  del visto bueno del PR.
+- **Estado:** Propuesta (2026-10-29; ampliada el 2026-11-03: la sincronización la hace el backend, §10 a §16). Issues #243 (HU-042.2) y
+  #247 (HU-042.4), milestone HU-042. Plan aprobado por el usuario; pendiente del visto bueno del PR.
 - **Relacionadas:** ADR-002 (puertos y adaptadores), ADR-004 (SAP solo con BP, nunca con el NIT), ADR-008 (Database First), ADR-015 §5
   (margen al enviar a Nexo), HU-003.7 (#13, modos `export_json`/`odata`), HU-009 (#35, #36: SAP en vivo en producción), HU-009 #139
   (margen anómalo), HU-042.1 (#242, la copia local y el job de Datos).
-- **Reemplaza en parte:** la decisión de #13 de elegir la fuente por `SapTm:Modo` (export JSON montado u OData en vivo).
+- **Reemplaza en parte:** la decisión de #13 de elegir la fuente por `SapTm:Modo` (export JSON montado u OData en vivo) y, desde el
+  2026-11-03, el SQL Server Agent Job de HU-042.1 (`db/jobs/sincronizar_margen_sap.ps1`): **el job no se instala**; lo reemplaza el worker
+  del backend (§10).
 
 ## Contexto
 
@@ -47,7 +49,8 @@ Por otro lado, `SapMapeoTrqType.lineaNegocio` era texto libre que debía coincid
 6. **`origen` sigue siendo `sap_tm`.** El frontend no cambia (decisión del plan; la pregunta abierta de #243 se responde así): lo que
    distingue la copia del vivo es el `detalle`.
 7. **Variables retiradas sin romper el arranque.** `SapTm__Modo`, `__Url`, `__User`, `__Pass`, `__SapClient` y `__ExportPath` ya no se
-   enlazan. Si un `.env` viejo las trae con valor, la API arranca y `clsAvisosArranqueSapTm` registra un warning por variable ("variable
+   enlazan (2026-11-03: `Url`, `User`, `Pass` y `SapClient` vuelven para la sincronización del backend, §11; siguen retiradas `Modo` y
+   `ExportPath`). Si un `.env` viejo las trae con valor, la API arranca y `clsAvisosArranqueSapTm` registra un warning por variable ("variable
    obsoleta, se ignora") con el nombre y nunca el valor. Quedan `SapTm__SalesOrgDefault` y la nueva `SapTm__AvisoSincronizacionHoras`.
 8. **Mapeo por id (HU-042.4).** `clsSapMapeoTrqType.LineaNegocioId` mapeado con su FK; `TrqTypeDeAsync(lineaNegocioId, salesOrg)` y
    `LineaDeAsync` (que devuelve el nombre de `MargenesPolitica` cruzando por el id) mantienen el comodín
@@ -61,6 +64,59 @@ Por otro lado, `SapMapeoTrqType.lineaNegocio` era texto libre que debía coincid
    de la base; el modelo no les asigna collation (`TablasConCollationDeLaBase`). El seeder `02` llena `lineaNegocioId` cuando el `18` ya
    está aplicado (antes, una instalación desde cero fallaba por el `NOT NULL`).
 
+## Ampliación (2026-11-03): la sincronización con SAP la hace el backend
+
+Decisión del usuario (comentarios del 2026-11-03 en #243): no se instala el SQL Agent Job de la #242 (`db/jobs/sincronizar_margen_sap.ps1` y
+`db/scripts/operacion/instalar_sql_agent_job_margen_sap.sql`). Se quedan las tablas `SapMargenCliente` y `SapMargenSyncLog` y el stored
+procedure `sp_sincronizar_margen_sap`; el backend hace lo que hacía el script de PowerShell. **Solo se resuelve el NIT**: el nombre del
+cliente queda fuera de alcance (sin columna nueva ni script de Datos).
+
+10. **Worker.** `clsWorkerSincronizacionMargenSap` (`BackgroundService`, mismo molde que `clsWorkerCosteoNexo` y
+    `clsLimpiezaIdempotenciaHostedService`: `PeriodicTimer` con `TimeProvider`, un ámbito de DI por ronda). La primera ronda espera 30 s
+    (no retrasa el arranque ni `/health/ready`, que no depende de SAP). Cada `SapTm:ChequeoMinutos` (60) revisa la última corrida `ok` y
+    sincroniza solo si tiene más de `SapTm:SincronizacionMinutos` (1440) o si nunca la hubo, igual que el script. Ninguna excepción tumba el
+    host. Sin `SapTm:Url`, `SapTm:User` o `SapTm:Pass` queda inactivo (una línea Information) y el margen sigue con la copia existente o la
+    política; **no falla el arranque**. Una URL o un mandante mal escritos sí (`clsValidadorOpcionesSapTmSincronizacion`); en Production,
+    una URL http (red interna) se acepta con un warning.
+11. **Una corrida = el script en C#** (`clsSincronizacionMargenSapSql`, singleton): (a) sin forzar, sale si todavía no toca, sin llamar a
+    SAP; (b) un solo `GET {Url}/RentabClienteSet?$format=json` (más `&sap-client=NNN`), **sin `$filter`** porque SAP lo ignora y devuelve el
+    set completo (~1500 filas); Basic por petición, `Accept-Encoding: gzip` con descompresión automática, sin cookies, sin redirecciones,
+    `SapTm:TimeoutSegundos` (120) para cabeceras y cuerpo y `SapTm:MaximoBytes` (20 MB) sobre el cuerpo descomprimido; sin reintentos (el
+    chequeo siguiente reintenta); (c) `d.results` se valida **todo o nada** (`clsLectorRentabClienteSap`): campos de texto no vacíos dentro
+    del largo de su columna, `Value` texto o número en cultura invariante redondeado a 4 decimales, clave repetida o set vacío ⇒ error;
+    organización y TrqType recortados y en mayúsculas, el BP recortado **con sus ceros** (el consumo ya normaliza al buscar, §4); (d) la
+    guarda de mínimo (§12); (e) el NIT por BP (§13); (f) `#SapMargenStage` con `COLLATE DATABASE_DEFAULT` en el texto y PK
+    `(salesOrgId, trqType, bpSap)`, `SqlBulkCopy` y `EXEC dbo_cotifly.sp_sincronizar_margen_sap` **en la misma conexión** (la temporal es de
+    la sesión). Con la collation real de la base (`Latin1_General_100_CI_AS_SC_UTF8`, distinta de la del servidor) una temporal sin
+    `DATABASE_DEFAULT` choca en el `MERGE`: las pruebas usan una base con esa collation.
+12. **Guarda de mínimo de filas.** Si SAP trae menos de `max(SapTm:MinimoFilas = 100, ceil(SapTm:MinimoPorcentajeActivas = 80 % × filas
+    activas actuales))`, no se llama al stored procedure (que desactivaría lo que falta) y queda `error` con las filas recibidas y el mínimo
+    exigido. Así un set parcial de SAP no apaga al resto de clientes.
+13. **NIT por BP.** `ConnectionStrings:DwOperaciones` (opcional, secreto, usuario de solo lectura) a `DWCubosOperacionesEBS`,
+    `dbo.DimBPSolicitante` (`BP`, `NIT`); es otra base que la de `ConnectionStrings:Regional`. `SELECT` parametrizado en lotes de 500 BP, el
+    BP tal como lo manda SAP (como el script). **Sin la cadena, el NIT queda `NULL` y se sincroniza igual** (un warning por corrida); ojo:
+    el `MERGE` del stored procedure compara el NIT, así que una copia que tenía NIT lo pierde si se quita la cadena. **Configurada y caída,
+    la corrida queda `error` y la tabla no se toca**, igual que el script. Un NIT vacío o de más de 20 caracteres se descarta (fila sin NIT).
+14. **Registro.** Un fallo antes del stored procedure (SAP, validación, guarda, DW, staging) se inserta en `SapMargenSyncLog` como `error`
+    con `iniciadoAt`, `finalizadoAt` y `mensajeError` (máx. 2000) **sin la URL, el usuario ni la clave** (el detalle técnico queda en Debug;
+    de un error de la base solo se guarda el número de SQL Server). El stored procedure registra lo suyo (`ok`, `omitido` o su `error`); si
+    no se pudo ejecutar (sin `EXECUTE`, error 229, o sin el objeto, 2812) el backend registra el `error`. El resultado de la corrida es la
+    fila que dejó el stored procedure, leída en la misma conexión desde la hora del servidor tomada antes del `EXEC`. Un log Information por
+    corrida con el estado, la duración y las filas; nunca credenciales (los logs de `IHttpClientFactory` muestran la URL, sin credenciales,
+    y ocultan las cabeceras).
+15. **Varias réplicas.** Cada réplica tiene su worker y un candado en memoria (`clsCoordinacionSincronizacionMargenSap`) que comparten el
+    worker y la corrida forzada. Entre réplicas, el `sp_getapplock` del stored procedure hace que la segunda corrida simultánea quede
+    `omitido`, y la corrida `ok` de una hace que a las demás ya no les toque en su chequeo. En el peor caso dos réplicas descargan el set a
+    la vez (dos GET a SAP en el mismo chequeo); se acepta.
+16. **Administración.** `GET /web/admin/sap-margen/estado` (última corrida, última `ok`, filas activas, próxima corrida estimada, intervalo,
+    chequeo, si hay una en curso y si el NIT está configurado) y `POST /web/admin/sap-margen/sincronizar` (fuerza una corrida: ignora el
+    intervalo, no el candado). Solo gerencia (`gerente_comercial` y `director`), como el resto de `/web/admin/*`: Cotifly no tiene un rol
+    "administrador". **El POST es síncrono y responde 200 con el resultado** (`ok`, `error` u `omitido`): son segundos con ~1500 filas y la
+    gerencia ve en la misma respuesta si SAP rechazó las credenciales o el mínimo frenó la carga; corre con el token de apagado de la API, no
+    con el de la petición, para que una desconexión del cliente no deje la corrida a medias. Queda en la auditoría
+    (`admin_sincronizar_margen_sap`). Códigos nuevos: `SAP_MARGEN_NO_CONFIGURADO` (503, los dos endpoints sin `Url`/`User`/`Pass`) y
+    `SAP_MARGEN_SINCRONIZACION_EN_CURSO` (409, esta réplica ya sincroniza).
+
 ## Alternativas consideradas
 
 - **Mantener `odata` como respaldo de la copia.** Descartada: duplica la integración, mantiene la necesidad de red y credenciales en el
@@ -72,13 +128,24 @@ Por otro lado, `SapMapeoTrqType.lineaNegocio` era texto libre que debía coincid
 - **Un `origen` nuevo (`sap_tm_local`).** Descartada: obligaba a tocar el frontend sin aportar al comercial más que el detalle.
 - **Normalizar el BP con una columna calculada o en SQL.** Descartada: tocaba el esquema de Datos; el filtro por final del BP sobre el
   rango del índice basta.
+- **Mantener el SQL Agent Job de Datos (2026-11-03).** Descartada por el usuario: el job exigía PowerShell, credenciales de SAP y del DW en
+  el servidor SQL y otra pieza que operar; en el backend la sincronización comparte el despliegue, la configuración (`.env`, Dokploy), los
+  logs y la administración (estado y corrida forzada). El script de Datos queda en el repo como referencia (no se toca).
+- **POST de la corrida forzada asíncrono (202).** Descartada: la corrida tarda segundos y el resultado (en particular el `error`) es lo que
+  la gerencia necesita ver; el estado sigue disponible en `GET .../estado`.
+- **Reintentos con la tubería de resiliencia.** Descartada: es una descarga del set completo una vez al día; el chequeo siguiente (60 min)
+  ya es el reintento y evita repetir un GET pesado contra SAP.
 
 ## Consecuencias
 
-- Cotifly no necesita red hacia SAP; la necesita el servidor SQL donde corre el job de Datos (`docs/03-infraestructura.md`).
-- **HU-009.1 y HU-009.2 (#35, #36) quedan obsoletas** para Cotifly: la ruta de red y el usuario de servicio de SAP son del job de Datos.
-  No se editan sus issues (decisión del usuario); queda anotado aquí y en el reporte del PR para que se cierren o reorienten en su
-  milestone.
+- Al cotizar, Cotifly no llama a SAP. **Desde el 2026-11-03 el worker sí necesita red desde el cluster** hacia
+  `sap-tm-prd.boterosoto.local:8000` (SAP TM) y `10.10.40.24:1433` (DW), el usuario técnico de SAP y el de solo lectura del DW en Dokploy
+  (`docs/03-infraestructura.md`, `DEPLOY.md`). Sin ellos la API funciona igual con la política.
+- **HU-009.1 (#35, conectividad) vuelve a aplicar**, ahora para el worker de sincronización; HU-009.2 (#36) se reorienta al usuario técnico
+  y su clave en Dokploy. No se editan sus issues (decisión del usuario); queda anotado aquí y en el reporte.
+- Permisos del login `cotifly_app`: `EXECUTE` sobre `dbo_cotifly.sp_sincronizar_margen_sap` e `INSERT` sobre `dbo_cotifly.SapMargenSyncLog`
+  (además del `SELECT` que ya usa el consumo). La tabla temporal no exige permisos extra; el `MERGE` del stored procedure corre con los
+  permisos de su dueño (encadenamiento de propiedad dentro de `dbo_cotifly`).
 - Un cliente con varias filas en el mismo TrqType recibe la suya (antes el modo `odata` tomaba `results[0]`).
 - La regla de anómalos de #139 no cambia: el envío a Nexo aplica la política y guarda el de SAP como marca.
 - Pruebas: integración con la copia sembrada en bases aisladas (la compartida nunca tiene una corrida `ok`), esquema, readiness, BDD
@@ -89,7 +156,10 @@ Por otro lado, `SapMapeoTrqType.lineaNegocio` era texto libre que debía coincid
 | Pendiente | Dueño |
 |---|---|
 | Aplicar `17` y `18` en cada base antes de la imagen (ya aplicados en la compartida de pruebas el 2026-10-28) | Datos (@scalderon-bs) |
-| Instalar el job en el servidor SQL de producción cuando exista | Datos |
+| ~~Instalar el job en el servidor SQL de producción~~: no se instala (2026-11-03); lo reemplaza el worker | — |
+| `GRANT EXECUTE` sobre `sp_sincronizar_margen_sap` e `INSERT` sobre `SapMargenSyncLog` a `cotifly_app` | DBA / Datos |
+| Ruta de red del cluster a `sap-tm-prd.boterosoto.local:8000` y `10.10.40.24:1433` (HU-009.1) | Infraestructura |
+| `SapTm__Url`, `SapTm__User`, `SapTm__Pass` y `ConnectionStrings__DwOperaciones` en Dokploy | Backend / Infraestructura |
 | Script que retira `SapMapeoTrqType.lineaNegocio` (texto) después de desplegar esta imagen | Datos, avisado por Backend |
-| Borrar de Dokploy las variables `SapTm__*` retiradas | Backend / Infraestructura |
+| Borrar de Dokploy `SapTm__Modo` y `SapTm__ExportPath` (las únicas que siguen retiradas) | Backend / Infraestructura |
 | Cerrar o reorientar HU-009.1/HU-009.2 en su milestone | Usuario |
