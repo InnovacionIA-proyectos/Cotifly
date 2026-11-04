@@ -3484,7 +3484,7 @@ Teléfono del comercial que imprime el PDF ("Cel").
 
 Estado de la copia local del margen de SAP TM, que sincroniza el backend (ADR-027). Pantalla de administración, no del flujo de cotizar.
 Responde también con la sincronización deshabilitada (`habilitada = false`: mostrar "Sincronización deshabilitada en este ambiente" y
-esconder "Sincronizar ahora").
+esconder "Sincronizar ahora"; `proxima_corrida_estimada` llega en `null`).
 
 - **Rol:** `gerente_comercial` o `director`.
 

@@ -370,8 +370,10 @@ sincroniza el propio backend** (worker `clsWorkerSincronizacionMargenSap`, ADR-0
 - **Timeout del proxy:** `POST /web/admin/sap-margen/sincronizar` es síncrono; en la práctica tarda segundos; el máximo con los límites actuales es de unos 10 min (120 s de SAP, la conexión y 60 s por lote de 500 BP en el DW, 120 s para leer los NIT existentes, 120 s de la carga y 120 s del stored procedure). Traefik (sin
   `respondingTimeouts.writeTimeout` ni `serversTransport.forwardingTimeouts.responseHeaderTimeout` que lo corten, como para la captura)
   debe cubrirlo. Si algo corta antes, la corrida sigue en el servidor y su resultado se ve con `GET /web/admin/sap-margen/estado`. Con la
-  base de Cotifly caída, los dos endpoints responden 503 `SAP_MARGEN_NO_DISPONIBLE` en unos 5–10 s (límite de conexión de 5 s en esas
-  lecturas).
+  base de Cotifly caída, los dos endpoints responden 503 `SAP_MARGEN_NO_DISPONIBLE` en **20 a 45 s** (medido en el E2E del 2026-11-04):
+  las lecturas de la sincronización usan un límite de conexión de 5 s, pero el tiempo lo suman la autenticación (recarga de
+  `clsCacheTokensRevocados`) y la auditoría con EF, que usan la conexión normal. Es transversal a la API (`GET /web/mis-cotizaciones`
+  tardó 30 s en dar 500 en la misma prueba); el timeout de Traefik y del front deben cubrirlo. Pendiente fuera de esta issue (ADR-027).
 - **NIT por BP:** se busca con el BP tal como lo manda SAP (hoy sin ceros a la izquierda). Si `DimBPSolicitante.BP` los guarda con ceros,
   no cruzará: **pendiente de confirmar con Datos** (ADR-027 §13). Sin el DW, o sin el BP en el DW, la fila conserva su NIT anterior
   (decisión aceptada: puede quedar desactualizado si el BP sale del cubo).

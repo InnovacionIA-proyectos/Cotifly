@@ -151,8 +151,12 @@ cliente queda fuera de alcance (sin columna nueva ni script de Datos).
     muestra al comercial (el motivo "sin registro" no se guarda en la ruta y se confundiría con "sin BP" o "sin mapeo"); queda en el log.
 19. **Base antes que SAP y respuestas rápidas.** La corrida (también la forzada) lee las filas activas antes de descargar de SAP: con la
     base caída responde 503 `SAP_MARGEN_NO_DISPONIBLE` sin hacer el GET. Las lecturas cortas (estado, última corrida, filas activas) usan
-    un límite de conexión de 5 s y de orden de 15 s: con la base caída la administración responde en unos 5–10 s (antes 51–66 s); la carga
-    y el stored procedure conservan sus límites.
+    un límite de conexión de 5 s y de orden de 15 s (la carga y el stored procedure conservan sus límites). En el E2E del 2026-11-04, con la
+    base caída la administración respondió el 503 en 20 a 45 s (antes 51 a 66 s): el resto lo suman la autenticación y la auditoría, ver
+    los pendientes. Solo la conectividad (red, login, base inaccesible, tiempo agotado, error fatal) es "no disponible"; un error de una
+    orden con la base respondiendo en las lecturas previas (sin permiso, 229; sin el objeto, 208 o 2812) es un fallo de la corrida y queda
+    como `error`, igual que el `DENY EXECUTE` del stored procedure. Con la sincronización deshabilitada o sin configuración válida,
+    `proxima_corrida_estimada` es `null`.
 20. **`mensajeError` sin texto de SQL Server.** Un fallo del stored procedure sin fila propia guarda "sp_sincronizar_margen_sap falló sin
     registrar la corrida (SQL N)." (solo el número), como el resto de errores de la base (§14).
 
@@ -202,4 +206,5 @@ cliente queda fuera de alcance (sin columna nueva ni script de Datos).
 | Confirmar si `DimBPSolicitante.BP` guarda el BP con ceros a la izquierda (SAP lo manda sin ellos; si los tiene, el NIT no cruza) | Datos |
 | Script que retira `SapMapeoTrqType.lineaNegocio` (texto) después de desplegar esta imagen | Datos, avisado por Backend |
 | Borrar de Dokploy `SapTm__Modo` y `SapTm__ExportPath` (las únicas que siguen retiradas) | Backend / Infraestructura |
+| **Transversal, fuera de esta issue:** con la base de Cotifly caída, cualquier endpoint tarda 20 a 45 s en responder (503 en la administración de SAP, 500 en `GET /web/mis-cotizaciones`: 30 s en el E2E del 2026-11-04). Lo suman la recarga de `clsCacheTokensRevocados` en la autenticación y las escrituras con EF (por ejemplo, la auditoría de `clsSapMargenAdminService`), que usan la conexión normal (15 s de `Connect Timeout` por intento). El límite de 5 s de las lecturas de la sincronización puede no aplicar si el pool ya tiene la conexión abierta; en ese caso manda el `CommandTimeout` de 15 s, que se considera razonable. Revisar un límite corto de conexión para la API en general | Backend |
 | Cerrar o reorientar HU-009.1/HU-009.2 en su milestone | Usuario |
