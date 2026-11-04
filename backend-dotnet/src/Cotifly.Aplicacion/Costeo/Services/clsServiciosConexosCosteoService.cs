@@ -67,7 +67,8 @@ public sealed class clsServiciosConexosCosteoService(
     IClsEnvioConexosNexoService envioConexos,
     ILogger<clsServiciosConexosCosteoService> logger,
     IClsCategoriasConexos categoriasConexos,
-    IClsSituacionLineasNexo situacionesNexo) : IClsServiciosConexosCosteoService
+    IClsSituacionLineasNexo situacionesNexo,
+    Margen.Services.IClsAvisoSincronizacionMargenSap? avisoSincronizacion = null) : IClsServiciosConexosCosteoService
 {
     // #226 (validación de DEF-1027-3): las dependencias de la vista con estados son obligatorias. Opcionales, un registro que faltara
     // en DI devolvía otra vez estado_nexo = null en silencio; obligatorias, el contenedor falla al resolver el servicio.
@@ -458,7 +459,9 @@ public sealed class clsServiciosConexosCosteoService(
         // catálogo y la situación de las líneas en Nexo (antes salía estado_nexo = null). Ya se guardó: sin el token del cliente.
         return (await clsCosteoCotizacionService.VistaConEstadosAsync(
             cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, logger, CancellationToken.None, categoriasConexos,
-            situacionesNexo.Obtener(cotizacion.Id)), agregados, pdfInvalidado);
+            situacionesNexo.Obtener(cotizacion.Id),
+            await Margen.Services.clsAvisoSincronizacionMargenSap.ConsultarSinFallarAsync(avisoSincronizacion, cotizacion, CancellationToken.None)),
+            agregados, pdfInvalidado);
     }
 
     /// <summary>¿La cotización releída tiene conexos que no estaban antes del POST? (confirma un efecto incierto).</summary>

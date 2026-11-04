@@ -37,6 +37,8 @@ public static class clsDependenciasAplicacion
         servicios.AddSingleton<IClsPrecioService, clsPrecioService>();
         servicios.AddSingleton<Cotizaciones.Services.IClsFijacionMonedaService, Cotizaciones.Services.clsFijacionMonedaService>();
         servicios.AddScoped<IClsMargenResolverService, clsMargenResolverService>();
+        // HU-042.2 (#243): aviso de la copia de SAP TM vieja en aviso_margen del costeo.
+        servicios.AddScoped<IClsAvisoSincronizacionMargenSap, clsAvisoSincronizacionMargenSap>();
         servicios.AddScoped<clsAjusteMargenService>();
         servicios.AddScoped<IClsAjusteMargenService>(sp => new clsAjusteMargenServiceAuditado(
             sp.GetRequiredService<clsAjusteMargenService>(), sp.GetRequiredService<IClsAuditoriaService>()));

@@ -88,7 +88,8 @@ public sealed class clsCosteoLineasService(
     IClsSituacionLineasNexo situacionesNexo,
     IClsReloj reloj,
     ILogger<clsCosteoLineasService> logger,
-    IOptions<clsOpcionesCosteoNexo>? opcionesCosteo = null) : IClsCosteoLineasService
+    IOptions<clsOpcionesCosteoNexo>? opcionesCosteo = null,
+    Margen.Services.IClsAvisoSincronizacionMargenSap? avisoSincronizacion = null) : IClsCosteoLineasService
 {
     /// <summary>Herramienta de la auditoría del margen masivo (<c>EventosHerramienta.herramienta</c>).</summary>
     public const string HerramientaMargen = "ajustar_margen_costeo_lineas";
@@ -700,9 +701,10 @@ public sealed class clsCosteoLineasService(
             : await cotizaciones.ObtenerPorFolioDelUsuarioAsync(folio, usuarioId, cancellationToken);
 
     /// <summary>La misma vista que <c>GET .../costeo</c> y los endpoints por ruta (con el <c>estado_nexo</c> de cada conexo).</summary>
-    private Task<clsCosteoCotizacion> VistaAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken) =>
-        clsCosteoCotizacionService.VistaConEstadosAsync(
-            cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, logger, cancellationToken, categoriasConexos, situacionesNexo.Obtener(cotizacion.Id));
+    private async Task<clsCosteoCotizacion> VistaAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken) =>
+        await clsCosteoCotizacionService.VistaConEstadosAsync(
+            cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, logger, cancellationToken, categoriasConexos, situacionesNexo.Obtener(cotizacion.Id),
+            await Margen.Services.clsAvisoSincronizacionMargenSap.ConsultarSinFallarAsync(avisoSincronizacion, cotizacion, cancellationToken));
 
     private static object ErrorAuditado(clsErrorDominio error) =>
         new { error = new { codigo = error.Codigo, mensaje = error.Mensaje, detalle = error.Datos } };

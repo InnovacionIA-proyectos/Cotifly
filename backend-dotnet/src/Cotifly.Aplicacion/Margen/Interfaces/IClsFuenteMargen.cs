@@ -21,4 +21,10 @@ public interface IClsFuenteMargen
     /// </summary>
     /// <exception cref="clsFuenteMargenNoDisponibleException">La fuente no se pudo leer (base caída, tiempo agotado): el resolver usa la política.</exception>
     Task<clsConsultaMargenSap> ConsultarAsync(string salesOrg, string trqType, string bpCliente, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// HU-042.2 (#243): fin de la última corrida <c>ok</c> de la copia (<c>null</c> si nunca la hubo o si no se pudo leer: es para avisos, no
+    /// lanza). Por defecto <c>null</c> (fuentes de prueba).
+    /// </summary>
+    Task<DateTimeOffset?> UltimaSincronizacionAsync(CancellationToken cancellationToken = default) => Task.FromResult<DateTimeOffset?>(null);
 }

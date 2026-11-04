@@ -973,6 +973,13 @@ public sealed class clsEnvioCosteoService(
                 var resultado = await margen.ResolverAsync(new Margen.DTOs.clsEntradaMargen(deRuta.LineaNegocio, bp), cancellationToken);
                 resuelto = resultado.EsExitoso ? resultado.Valor : null;
                 resueltos[deRuta.Id] = resuelto;
+                if (resuelto?.SincronizacionVieja is { } vieja)
+                {
+                    // HU-042.2 (#243): la copia de SAP TM está vieja (con margen de SAP o sin registro del cliente: puede faltar por eso).
+                    logger.LogWarning(
+                        "La copia del margen de SAP TM lleva más de {Horas} h sin sincronizarse (última: {Ultima:O}) al resolver el margen de {Linea} en {Folio} ({Origen}).",
+                        vieja.Horas, vieja.Ultima, deRuta.LineaNegocio, cotizacion.Folio, resuelto.Salida.Origen);
+                }
             }
 
             if (resuelto is null || !clsCodigoEnum.TryDesdeCodigo<OrigenMargen>(resuelto.Salida.Origen, out var origen))

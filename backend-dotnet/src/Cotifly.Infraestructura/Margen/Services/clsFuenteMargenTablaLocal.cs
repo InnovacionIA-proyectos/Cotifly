@@ -93,6 +93,25 @@ public sealed class clsFuenteMargenTablaLocal(clsCotiflyDbContext contexto, ILog
         }
     }
 
+    public async Task<DateTimeOffset?> UltimaSincronizacionAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await contexto.SapMargenSyncLog.AsNoTracking()
+                .Where(l => l.Status == clsSapMargenSyncLogFila.EstadoOk)
+                .OrderByDescending(l => l.IniciadoAt)
+                .Select(l => (DateTimeOffset?)(l.FinalizadoAt ?? l.IniciadoAt))
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+        catch (Exception ex) when (ex is DbException or InvalidOperationException or TimeoutException or RetryLimitExceededException
+                                       || (ex is OperationCanceledException && !cancellationToken.IsCancellationRequested))
+        {
+            // Es para un aviso: sin la fecha, no hay aviso (el costeo no falla por esto).
+            logger.LogDebug(ex, "No se pudo leer la última sincronización de la copia del margen de SAP TM.");
+            return null;
+        }
+    }
+
     /// <summary>
     /// BP para comparar: recortado y sin ceros a la izquierda (<c>"0000000580"</c> → <c>"580"</c>); un BP de solo ceros queda en
     /// <c>"0"</c> y uno vacío en <c>""</c> (sin registro).

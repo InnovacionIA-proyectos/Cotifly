@@ -116,7 +116,8 @@ public sealed class clsMargenResolverService(
                     linea,
                     politica.Id,
                     clsReglasMargen.Redondear(politica.Margen),
-                    metodo);
+                    metodo,
+                    Vieja(consulta));
             }
         }
 
@@ -147,8 +148,15 @@ public sealed class clsMargenResolverService(
             linea,
             politica.Id,
             margen,
-            metodo);
+            metodo,
+            consulta is { Estado: EstadoConsultaMargenSap.SinRegistro } ? Vieja(consulta) : null);
     }
+
+    /// <summary>La última corrida <c>ok</c> de la copia, si supera <see cref="clsOpcionesMargen.AvisoSincronizacionHoras"/>.</summary>
+    private clsSincronizacionSapVieja? Vieja(clsConsultaMargenSap consulta) =>
+        consulta.UltimaSincronizacion is { } ultima && reloj.AhoraUtc - ultima > TimeSpan.FromHours(_avisoSincronizacionHoras)
+            ? new clsSincronizacionSapVieja(ultima, _avisoSincronizacionHoras)
+            : null;
 
     /// <summary>
     /// HU-042.2 (#243): detalle de un margen de SAP TM leído de la copia local, con la fecha en que cambió la fila (en la zona de la
