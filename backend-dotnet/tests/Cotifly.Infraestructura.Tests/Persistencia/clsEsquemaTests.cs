@@ -94,12 +94,13 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         scripts[clsBaseDatosPruebas.ScriptsHasta05 - 1].Should().Be(clsBaseDatosPruebas.Script05, "ScriptsHasta05 incluye el 05 y no el 06");
         scripts[clsBaseDatosPruebas.ScriptsHasta06 - 1].Should().Be(clsBaseDatosPruebas.Script06, "ScriptsHasta06 incluye el 06 y no el 09");
         scripts[clsBaseDatosPruebas.ScriptsHasta09 - 1].Should().Be(clsBaseDatosPruebas.Script09, "ScriptsHasta09 incluye el 09 y no el 10 ni el 11");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 6].Should().Be(clsBaseDatosPruebas.Script10, "ScriptsSin07 incluye el 10 (el backend mapea el rechazo)");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 5].Should().Be(clsBaseDatosPruebas.Script11, "ScriptsSin07 incluye el 11 (el backend mapea pesoConTaraKg)");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 4].Should().Be(clsBaseDatosPruebas.Script12, "ScriptsSin07 incluye el 12 (el backend mapea el vehículo elegido)");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 3].Should().Be(clsBaseDatosPruebas.Script13, "ScriptsSin07 incluye el 13 (el backend mapea MailSender y el resultado diferido)");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 2].Should().Be(clsBaseDatosPruebas.Script14, "ScriptsSin07 incluye el 14 (el backend mapea la cotización finalizada)");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script16, "ScriptsSin07 llega hasta el 16 (el backend mapea TokensRefresco.rolSesion)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 7].Should().Be(clsBaseDatosPruebas.Script10, "ScriptsSin07 incluye el 10 (el backend mapea el rechazo)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 6].Should().Be(clsBaseDatosPruebas.Script11, "ScriptsSin07 incluye el 11 (el backend mapea pesoConTaraKg)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 5].Should().Be(clsBaseDatosPruebas.Script12, "ScriptsSin07 incluye el 12 (el backend mapea el vehículo elegido)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 4].Should().Be(clsBaseDatosPruebas.Script13, "ScriptsSin07 incluye el 13 (el backend mapea MailSender y el resultado diferido)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 3].Should().Be(clsBaseDatosPruebas.Script14, "ScriptsSin07 incluye el 14 (el backend mapea la cotización finalizada)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 2].Should().Be(clsBaseDatosPruebas.Script16, "ScriptsSin07 incluye el 16 (el backend mapea TokensRefresco.rolSesion)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script19, "ScriptsSin07 llega hasta el 19 (el backend mapea precioVenta del conexo, #261)");
         scripts[clsBaseDatosPruebas.ScriptsSin07].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsSin07 corta justo antes del 07");
         scripts[clsBaseDatosPruebas.ScriptsHasta07 - 1].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsHasta07 incluye el 07");
         // HU-037.1 (#209): el 15 (rol director) va al final, después del 08: no agrega columnas y clsRolDirectorScriptTests usa
@@ -343,7 +344,7 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     public async Task HU036_ElScript14SeAplicaSobreUnaBaseConDatosSinTocarlos()
     {
         // HU-036 (#205): sin backfill. Sobre una base hasta el 13 con una cotización ya escrita, el 14 la deja sin finalizar.
-        await using var baseConDatos = await BaseDatos.CrearBaseConScriptsAsync("dbDatos14", clsBaseDatosPruebas.ScriptsSin07 - 2);
+        await using var baseConDatos = await BaseDatos.CrearBaseConScriptsAsync("dbDatos14", clsBaseDatosPruebas.ScriptsSin07 - 3);
         var cotizacion = Guid.NewGuid();
         await clsBaseDatosPruebas.EjecutarAsync(baseConDatos.Cadena,
             $"INSERT INTO dbo_cotifly.CotizacionesSolicitud (id, folio, estadoCosteo) VALUES ('{cotizacion}', 'COT-F14', 'autocosteo');");
@@ -387,7 +388,7 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         // HU-040.1 (#229): no destructivo. Sobre una base hasta el 14 (sin el 16) con un usuario, su asignación activa y un refresh, el 16
         // no cambia ninguna fila; el refresh queda con rolSesion NULL. Antes del 16 la segunda asignación activa choca con el índice; después
         // entra, y el mismo rol dos veces sigue prohibido.
-        await using var baseConDatos = await BaseDatos.CrearBaseConScriptsAsync("dbDatos16", clsBaseDatosPruebas.ScriptsSin07 - 1);
+        await using var baseConDatos = await BaseDatos.CrearBaseConScriptsAsync("dbDatos16", clsBaseDatosPruebas.ScriptsSin07 - 2);
         var usuario = Guid.NewGuid();
         await clsBaseDatosPruebas.EjecutarAsync(baseConDatos.Cadena, $"""
             IF NOT EXISTS (SELECT 1 FROM dbo_cotifly.Roles WHERE codigo = 'comercial')
@@ -427,7 +428,7 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     public async Task HU0401_ElScript16NoAflojaNadaSiFaltaLaUnicidadDeUsuarioYRol()
     {
         // HU-040.1 (#229): sin uq_usuariosRoles_usuarioId_rolId se podría duplicar el mismo rol activo: el 16 se detiene sin cambiar nada.
-        await using var aislada = await BaseDatos.CrearBaseConScriptsAsync("dbPre16", clsBaseDatosPruebas.ScriptsSin07 - 1);
+        await using var aislada = await BaseDatos.CrearBaseConScriptsAsync("dbPre16", clsBaseDatosPruebas.ScriptsSin07 - 2);
         await clsBaseDatosPruebas.EjecutarAsync(aislada.Cadena,
             "ALTER TABLE dbo_cotifly.UsuariosRoles DROP CONSTRAINT uq_usuariosRoles_usuarioId_rolId;");
         var esquemaAntes = await FotoEsquemaAsync(aislada.Cadena);
@@ -1324,7 +1325,7 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
             .Which.Message.Should().Contain("ck_cotizacionVehiculosLineaSolicitud_estadoCosteo");
         (await Sql($"INSERT INTO dbo_cotifly.CotizacionVehiculosLineaSolicitud (lineaSolicitudId, costoFlete) VALUES ('{ruta}', -1)").Should().ThrowAsync<SqlException>())
             .Which.Message.Should().Contain("ck_cotizacionVehiculosLineaSolicitud_montos");
-        (await Sql($"INSERT INTO dbo_cotifly.CotizacionServiciosConexos (lineaSolicitudId, idServicioConexo, precio, cantidad) VALUES ('{ruta}', 'CX', 1, 0)").Should().ThrowAsync<SqlException>())
+        (await Sql($"INSERT INTO dbo_cotifly.CotizacionServiciosConexos (lineaSolicitudId, idServicioConexo, precio, cantidad, precioVenta) VALUES ('{ruta}', 'CX', 1, 0, 1)").Should().ThrowAsync<SqlException>())
             .Which.Message.Should().Contain("ck_cotizacionServiciosConexos_montos");
         (await Sql($"UPDATE dbo_cotifly.CotizacionesSolicitud SET estadoEnvio = 'perdida' WHERE id = '{cotizacion}'").Should().ThrowAsync<SqlException>())
             .Which.Message.Should().Contain("ck_cotizaciones_estadoEnvio");

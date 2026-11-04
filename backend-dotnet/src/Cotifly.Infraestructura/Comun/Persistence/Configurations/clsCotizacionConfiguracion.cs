@@ -343,8 +343,9 @@ internal sealed class clsServicioConexoRutaConfiguracion : IEntityTypeConfigurat
 {
     public void Configure(EntityTypeBuilder<clsServicioConexoRuta> builder)
     {
+        // #261 punto 4: el script 19 (HU-043.1, #245) agrega "AND precioVenta >= 0" al CHECK, con el mismo nombre.
         builder.ToTable("CotizacionServiciosConexos", t =>
-            t.HasCheckConstraint("ck_cotizacionServiciosConexos_montos", "precio >= 0 AND cantidad > 0"));
+            t.HasCheckConstraint("ck_cotizacionServiciosConexos_montos", "precio >= 0 AND cantidad > 0 AND precioVenta >= 0"));
 
         builder.HasKey(c => c.Id).HasName("pk_cotizacionServiciosConexos");
         builder.Property(c => c.Id).Columna("id", "uniqueidentifier").ValueGeneratedNever();
@@ -355,6 +356,8 @@ internal sealed class clsServicioConexoRutaConfiguracion : IEntityTypeConfigurat
         builder.Property(c => c.IdServicioConexoCatalogo).Columna("idServicioConexoCatalogo", "nvarchar(64)").HasMaxLength(clsServicioConexoRuta.LargoMaximoId);
         builder.Property(c => c.Categoria).Columna("categoriaServicioConexo", "nvarchar(20)").HasMaxLength(clsServicioConexoRuta.LargoMaximoCategoria);
         builder.Property(c => c.Precio).Columna("precio", "decimal(18,2)");
+        // #261 punto 4: precioVenta (script 19, NOT NULL sin DEFAULT); hasta HU-043.2 (#251) el dominio lo iguala a precio.
+        builder.Property(c => c.PrecioVenta).Columna("precioVenta", "decimal(18,2)");
         builder.Property(c => c.Cantidad).Columna("cantidad", "decimal(10,2)");
         builder.Property(c => c.CreatedAt).Fecha("createdAt");
         builder.Property(c => c.UpdatedAt).Fecha("updatedAt");

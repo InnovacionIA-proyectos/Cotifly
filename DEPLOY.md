@@ -608,6 +608,24 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
      imagen vieja, ver §2.2 "Rol director"). En la compartida el `15` ya está aplicado (#209) y el `14` está pendiente de @scalderon-bs.
      Con HU-040 (#229, #230): `…` → `13` → `14` → `15` → `16` → imagen → `08`. El `16` va ANTES de la imagen (la imagen de HU-040.1 lo
      exige: "falta 16") y, a diferencia del `15`, es seguro con la imagen anterior (ver abajo, "Multi-rol").
+     Con #261 (punto 4, `precioVenta` del conexo): `…` → `16` → `19` → imagen → `08`, con el `19` **en la misma ventana que la
+     imagen** (ver abajo).
+   - **#261 (punto 4): `db/scripts/19_precio_venta_conexos.sql` va en la misma ventana corta que la imagen de #261.** Deja
+     `CotizacionServiciosConexos.precioVenta DECIMAL(18,2) NOT NULL` sin `DEFAULT` (backfill `precioVenta = precio`). No hay un orden
+     sin ventana de falla:
+     - la imagen de #261 sin el `19` queda en 503 "falta 19" (aplicarlo la recupera sin redesplegar);
+     - el `19` con la imagen anterior rompe agregar conexos (error 515: la imagen vieja inserta sin `precioVenta`), aunque la cabecera
+       del script diga lo contrario.
+
+     Por ambiente: aplicar el `19` (segundos, idempotente), desplegar de inmediato la imagen y verificar `/health/ready` 200 y agregar
+     un conexo de prueba. Un ambiente que ya tiene el `19` con una imagen anterior (la base compartida de pruebas, desde el
+     2026-10-28) ya está roto para agregar conexos: desplegar ahí la imagen de #261 cuanto antes. Verificación de solo lectura (un
+     largo no NULL y `0`):
+
+     ```sql
+     SELECT COL_LENGTH(N'dbo_cotifly.CotizacionServiciosConexos', N'precioVenta') AS precioVenta_19,
+            COLUMNPROPERTY(OBJECT_ID(N'dbo_cotifly.CotizacionServiciosConexos'), N'precioVenta', 'AllowsNull') AS admiteNulos_19;
+     ```
    - **HU-030.1 (#184): `db/scripts/11_peso_con_tara.sql` va ANTES de la imagen de #184.** Agrega a la ruta
      (`CotizacionLineasSolicitud`) la columna `pesoConTaraKg DECIMAL(12,2) NULL` y el `CHECK` `ck_cotizacionLineasSolicitud_pesoConTaraKg`
      (`NULL` o > 0): el peso total con tara que escribe el comercial en una ruta `Contenedor`. Es un `ADD` de columna NULL, idempotente
@@ -670,6 +688,7 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
    | `esquema incompleto: falta 13` | Faltan las columnas de MailSender en `Correos` o la sincronización del resultado en la cabecera (HU-033, #199) | Aplicar `db/scripts/13_correo_mailsender.sql` |
    | `esquema incompleto: falta 14` | Faltan `finalizadaAt`/`finalizadaPor` de la cabecera (HU-036, #205) | Aplicar `db/scripts/14_cotizacion_finalizada.sql` |
    | `esquema incompleto: falta 16` | Falta `TokensRefresco.rolSesion` (HU-040.1, #229) | Aplicar `db/scripts/16_multiples_roles_activos.sql` |
+   | `esquema incompleto: falta 19` | Falta `CotizacionServiciosConexos.precioVenta` (HU-043.1, #245; mapeo en #261) | Aplicar `db/scripts/19_precio_venta_conexos.sql` |
    | `esquema incompleto: falta Tabla.columna, ...` (hasta 5) | Falta otra tabla o columna del modelo (por ejemplo un script intermedio sin aplicar) | Comparar con `db/scripts/01_crear_esquema.sql` y aplicar el script que la trae (lista en `docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md` §A.5) |
 
 1. **Staging.** Merge a `QA` → el pipeline (o `publicar-imagen.sh --canal qa`) publica `sha-<corto>`. En Dokploy, stack
