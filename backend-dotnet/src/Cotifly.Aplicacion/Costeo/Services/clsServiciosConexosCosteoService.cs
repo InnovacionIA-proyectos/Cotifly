@@ -68,7 +68,7 @@ public sealed class clsServiciosConexosCosteoService(
     ILogger<clsServiciosConexosCosteoService> logger,
     IClsCategoriasConexos categoriasConexos,
     IClsSituacionLineasNexo situacionesNexo,
-    Margen.Services.IClsAvisoSincronizacionMargenSap? avisoSincronizacion = null) : IClsServiciosConexosCosteoService
+    Margen.Services.IClsAvisoSincronizacionMargenSap avisoSincronizacion) : IClsServiciosConexosCosteoService
 {
     // #226 (validación de DEF-1027-3): las dependencias de la vista con estados son obligatorias. Opcionales, un registro que faltara
     // en DI devolvía otra vez estado_nexo = null en silencio; obligatorias, el contenedor falla al resolver el servicio.
