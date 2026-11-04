@@ -103,7 +103,9 @@ cliente queda fuera de alcance (sin columna nueva ni script de Datos).
     conserva el NIT que ya tenía la copia** (se lee de `SapMargenCliente` por clave antes de cargar la temporal, sin tocar el stored
     procedure, cuyo `MERGE` lo pisaría con `NULL`); si no tenía, queda `NULL`. Un warning por corrida sin la cadena. **Configurada y
     caída, la corrida queda `error` y la tabla no se toca**, igual que el script. Un NIT vacío o de más de 20 caracteres se descarta; un BP
-    con varios NIT distintos toma el menor en orden ordinal (determinista) y deja un warning. **Pendiente de confirmar con Datos:** SAP
+    con varios NIT distintos toma el menor en orden ordinal **de texto** (no numérico: `"1000"` va antes que `"900"`; determinista) y
+    deja un warning. **Decisión aceptada (2026-11-04): el NIT se conserva siempre** que el cubo no traiga uno válido para el BP, esté o no
+    configurado el cubo; por eso el NIT de un BP que desapareció del cubo puede quedar desactualizado. **Pendiente de confirmar con Datos:** SAP
     manda el BP sin ceros a la izquierda; si `DimBPSolicitante.BP` los guarda con ceros, no cruza (no se consultó el DW real).
 14. **Registro.** Un fallo antes del stored procedure (SAP, validación, guarda, DW, staging) se inserta en `SapMargenSyncLog` como `error`
     con `iniciadoAt`, `finalizadoAt` y `mensajeError` (máx. 2000) **sin la URL, el usuario ni la clave** (el detalle técnico queda en Debug;
@@ -130,6 +132,29 @@ cliente queda fuera de alcance (sin columna nueva ni script de Datos).
     URL o el mandante mal escritos), `SAP_MARGEN_SINCRONIZACION_EN_CURSO` (409, esta réplica ya sincroniza) y `SAP_MARGEN_NO_DISPONIBLE`
     (503, la base de Cotifly no respondió). El POST en la práctica tarda segundos; el máximo con los límites actuales es de unos 10 min (120 s de SAP, la conexión y 60 s por lote de 500 BP en el DW, 120 s para leer los NIT existentes, 120 s de la carga y 120 s del stored procedure); si el cliente o el proxy cortan antes, la corrida
     sigue y su resultado se ve en `GET .../estado`.
+
+## Ajustes del 2026-11-04
+
+17. **Interruptor `SapTm:SincronizacionHabilitada`** (`false` por defecto). Apagado, el worker no corre aunque haya credenciales (log
+    Information; así unas `SapTm__Url/User/Pass` que quedaron del modo `odata` viejo no lo activan solas), `GET .../estado` responde 200 con
+    `habilitada = false` y `POST .../sincronizar` responde 503 `SAP_MARGEN_NO_CONFIGURADO` con un mensaje que dice que está deshabilitada
+    (se reusa el código: para el front es el mismo caso, "no se puede sincronizar en este ambiente", y el `mensaje` distingue). Encendido con
+    la configuración incompleta o mal escrita, como antes, ahora con el motivo en `detalle.motivo` (nunca el valor). La lectura del margen
+    desde la copia no depende del interruptor.
+18. **Aviso de la copia vieja en `aviso_margen`.** El resolver ya ponía "sincronización con más de 48 h" en el `detalle`, que el envío a
+    Nexo descartaba. Ahora: (a) al enviar, un Warning en el log por línea de negocio cuando la copia supera `SapTm:AvisoSincronizacionHoras`,
+    con `sap_tm` y también con `politica_linea` por "sin registro" (el cliente puede no tener fila porque la copia está vieja); (b) la vista
+    del costeo (`GET .../costeo` y las respuestas de los PUT/POST del costeo) agrega a `aviso_margen` "La copia del margen de SAP TM lleva
+    más de N h sin sincronizarse (última: …)…" en las rutas cuyo sugerido salió de SAP (`sap_tm` o anómalo), después del aviso del anómalo
+    si lo hay. Se evalúa **al leer** el costeo (`IClsAvisoSincronizacionMargenSap`, una consulta indexada solo si alguna ruta tiene sugerido
+    de SAP): la ruta no guarda cuándo se resolvió su margen y no se agregan columnas (sin scripts de Datos). Con `politica_linea` no se
+    muestra al comercial (el motivo "sin registro" no se guarda en la ruta y se confundiría con "sin BP" o "sin mapeo"); queda en el log.
+19. **Base antes que SAP y respuestas rápidas.** La corrida (también la forzada) lee las filas activas antes de descargar de SAP: con la
+    base caída responde 503 `SAP_MARGEN_NO_DISPONIBLE` sin hacer el GET. Las lecturas cortas (estado, última corrida, filas activas) usan
+    un límite de conexión de 5 s y de orden de 15 s: con la base caída la administración responde en unos 5–10 s (antes 51–66 s); la carga
+    y el stored procedure conservan sus límites.
+20. **`mensajeError` sin texto de SQL Server.** Un fallo del stored procedure sin fila propia guarda "sp_sincronizar_margen_sap falló sin
+    registrar la corrida (SQL N)." (solo el número), como el resto de errores de la base (§14).
 
 ## Alternativas consideradas
 

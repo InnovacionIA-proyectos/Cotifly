@@ -7,7 +7,7 @@ namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
 /// Con el registro real (<c>clsFuenteMargenTablaLocal</c>, HU-042.2) y una copia local que nunca se sincronizó (la base compartida de
-/// la colección no tiene ninguna corrida <c>ok</c> en <c>SapMargenSyncLog</c>, como un ambiente sin el job de Datos), un cliente con BP
+/// la colección no tiene ninguna corrida <c>ok</c> en <c>SapMargenSyncLog</c>, como un ambiente con la sincronización del backend deshabilitada), un cliente con BP
 /// obtiene la política de la línea y no un error: "no configurado" no es "caído".
 /// </summary>
 [Collection(clsColeccionSqlServer.Nombre)]

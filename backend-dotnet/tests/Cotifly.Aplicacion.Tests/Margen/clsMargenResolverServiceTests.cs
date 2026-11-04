@@ -248,7 +248,8 @@ public sealed class clsMargenResolverServiceTests
         _fuente.Consultas.Should().BeEmpty();
     }
 
-    // HU-042.2 (#243): una copia local que nunca se sincronizó (ambiente sin el job de Datos) es "no configurado", no "caído".
+    // HU-042.2 (#243): una copia local que nunca se sincronizó (ambiente sin la sincronización del backend o con ella deshabilitada) es
+    // "no configurado", no "caído".
     [Fact]
     public async Task ConLaFuenteNoConfiguradaSeUsaLaPoliticaSinError()
     {

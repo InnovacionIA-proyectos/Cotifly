@@ -95,6 +95,7 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `SeguridadHttp__LimiteCuerpoLicitacionBytes` | no | no | `12582912` | manifiesto | HU-011: Excel de licitación (10 MB) + JSON. Traefik no debe cortar antes (sin límite de cuerpo propio en el router) |
 | `SapTm__SalesOrgDefault` | no | no | `50000005` | manifiesto | |
 | `SapTm__AvisoSincronizacionHoras` | no | no (> 0) | `48` | manifiesto | HU-042.2 (#243): horas desde la última sincronización exitosa de la copia local del margen de SAP a partir de las cuales el detalle lo avisa (el dato se usa igual) |
+| `SapTm__SincronizacionHabilitada` | no | no | `false` | manifiesto | Interruptor de la sincronización (worker y corrida forzada). Apagado, no se sincroniza aunque haya credenciales; la cotización sigue leyendo la copia local |
 | `SapTm__Url` | no | no (mal escrita no impide arrancar: el worker queda inactivo con un log Error) | vacío | Dokploy | HU-042.2 (2026-11-03): la **raíz del servicio** OData de rentabilidad, `http://sap-tm-prd.boterosoto.local:8000/sap/opu/odata/sap/ZGW_RENTAB_CLI_SRV` (sin `/RentabClienteSet`; si se pone, se acepta y se quita, y sin `?$filter`). Sin `Url`, `User` o `Pass` el worker de sincronización queda inactivo y la API arranca igual |
 | `SapTm__User` | no | no | vacío | Dokploy | usuario técnico de SAP (Basic) |
 | `SapTm__Pass` | **sí** (≥ 8, si tiene valor) | no | vacío | Dokploy | clave del usuario técnico; nunca en el repo ni en el manifiesto |
@@ -361,14 +362,19 @@ sincroniza el propio backend** (worker `clsWorkerSincronizacionMargenSap`, ADR-0
   política con el detalle "SAP TM no configurado": es el comportamiento esperado en local. Con la URL o el mandante mal escritos la API
   arranca igual, el worker queda inactivo con un log Error y `/web/admin/sap-margen/*` responde 503 `SAP_MARGEN_NO_CONFIGURADO`.
   `SapTm__Url` es la **raíz del servicio** (`.../ZGW_RENTAB_CLI_SRV`); si trae `/RentabClienteSet` al final se acepta y se quita.
-- **⚠️ Antes de desplegar, revisar en cada ambiente** (Dokploy, `.env`) si quedaron `SapTm__Url`, `SapTm__User` y `SapTm__Pass` del modo
-  `odata` viejo (#13): con las tres cargadas el worker **se activa solo** y empieza a sincronizar contra esa URL. Si el ambiente no debe
-  sincronizar todavía, borrarlas; si sí, confirmar que la URL es la raíz del servicio de producción.
+- **Interruptor `SapTm__SincronizacionHabilitada` (2026-11-04), `false` por defecto y en los dos manifiestos.** Apagado, el worker no
+  corre aunque haya `SapTm__Url/User/Pass` (las del modo `odata` viejo ya no lo activan solas), `GET /web/admin/sap-margen/estado`
+  responde con `habilitada = false` y la corrida forzada responde 503 `SAP_MARGEN_NO_CONFIGURADO`. Para encenderlo: cargar en Dokploy
+  `SapTm__SincronizacionHabilitada=true` con `SapTm__Url` (raíz del servicio), `SapTm__User` y `SapTm__Pass`, redesplegar y forzar la
+  primera corrida. La cotización lee la copia local con el interruptor encendido o apagado.
 - **Timeout del proxy:** `POST /web/admin/sap-margen/sincronizar` es síncrono; en la práctica tarda segundos; el máximo con los límites actuales es de unos 10 min (120 s de SAP, la conexión y 60 s por lote de 500 BP en el DW, 120 s para leer los NIT existentes, 120 s de la carga y 120 s del stored procedure). Traefik (sin
   `respondingTimeouts.writeTimeout` ni `serversTransport.forwardingTimeouts.responseHeaderTimeout` que lo corten, como para la captura)
-  debe cubrirlo. Si algo corta antes, la corrida sigue en el servidor y su resultado se ve con `GET /web/admin/sap-margen/estado`.
+  debe cubrirlo. Si algo corta antes, la corrida sigue en el servidor y su resultado se ve con `GET /web/admin/sap-margen/estado`. Con la
+  base de Cotifly caída, los dos endpoints responden 503 `SAP_MARGEN_NO_DISPONIBLE` en unos 5–10 s (límite de conexión de 5 s en esas
+  lecturas).
 - **NIT por BP:** se busca con el BP tal como lo manda SAP (hoy sin ceros a la izquierda). Si `DimBPSolicitante.BP` los guarda con ceros,
-  no cruzará: **pendiente de confirmar con Datos** (ADR-027 §13). Sin el DW, o sin el BP en el DW, la fila conserva su NIT anterior.
+  no cruzará: **pendiente de confirmar con Datos** (ADR-027 §13). Sin el DW, o sin el BP en el DW, la fila conserva su NIT anterior
+  (decisión aceptada: puede quedar desactualizado si el BP sale del cubo).
 - **Primera corrida:** después de desplegar, `POST /web/admin/sap-margen/sincronizar` con un gerente o director (responde 200 con
   `estado = ok` y las filas) o esperar el primer chequeo (30 s después del arranque). Verificar con `GET /web/admin/sap-margen/estado`
   ([10-operacion](backend-dotnet/docs/10-operacion.md#sincronización-del-margen-de-sap-tm-hu-0422)).
