@@ -155,12 +155,15 @@ public sealed class clsSincronizacionMargenSapSql(
         var activas = lector.GetInt32(0);
 
         var valor = opciones.Value;
-        var proxima = clsCoordinacionSincronizacionMargenSap.ProximaCorridaEstimada(
-            ultimaOk?.FinalizadoAt ?? ultimaOk?.IniciadoAt,
-            TimeSpan.FromMinutes(valor.SincronizacionMinutos),
-            coordinacion.ProximoChequeo,
-            TimeSpan.FromMinutes(valor.ChequeoMinutos),
-            tiempo.GetUtcNow());
+        // Deshabilitada o sin configuración válida no habrá corrida: sin estimado.
+        DateTimeOffset? proxima = valor.Configurada
+            ? clsCoordinacionSincronizacionMargenSap.ProximaCorridaEstimada(
+                ultimaOk?.FinalizadoAt ?? ultimaOk?.IniciadoAt,
+                TimeSpan.FromMinutes(valor.SincronizacionMinutos),
+                coordinacion.ProximoChequeo,
+                TimeSpan.FromMinutes(valor.ChequeoMinutos),
+                tiempo.GetUtcNow())
+            : null;
         return new clsEstadoSincronizacionMargenSap(
             ultima, ultimaOk, activas, proxima, valor.SincronizacionMinutos, valor.ChequeoMinutos, coordinacion.EnCurso, dw.Configurado,
             valor.SincronizacionHabilitada);
@@ -191,6 +194,8 @@ public sealed class clsSincronizacionMargenSapSql(
     private async Task<clsResultadoSincronizacionMargenSap> SincronizarConCandadoAsync(bool forzada, CancellationToken cancellationToken)
     {
         var valor = opciones.Value;
+        var reloj = Stopwatch.StartNew();
+        var iniciadoAt = tiempo.GetUtcNow();
         DateTimeOffset? ultimaOk = null;
         if (!forzada)
         {
@@ -201,6 +206,11 @@ public sealed class clsSincronizacionMargenSapSql(
             catch (Exception ex) when (EsFalloDeBase(ex, cancellationToken))
             {
                 throw NoDisponible(ex);
+            }
+            catch (SqlException ex)
+            {
+                // Sin permiso (229), sin el objeto (208)...: la base responde, así que es un fallo de la corrida y queda registrado.
+                return await FalloAsync(ex, iniciadoAt, 0, reloj);
             }
         }
 
@@ -221,9 +231,13 @@ public sealed class clsSincronizacionMargenSapSql(
         {
             throw NoDisponible(ex);
         }
+        catch (SqlException ex)
+        {
+            return await FalloAsync(ex, iniciadoAt, 0, reloj);
+        }
 
-        var reloj = Stopwatch.StartNew();
-        var iniciadoAt = tiempo.GetUtcNow();
+        reloj.Restart();
+        iniciadoAt = tiempo.GetUtcNow();
         IReadOnlyList<clsFilaMargenSap> filas = [];
         try
         {
@@ -243,18 +257,27 @@ public sealed class clsSincronizacionMargenSapSql(
         }
         catch (Exception ex) when (ex is clsSincronizacionMargenSapException or SqlException or InvalidOperationException or TimeoutException)
         {
-            var mensaje = MensajeDe(ex);
-            logger.LogDebug(ex, "Detalle del fallo de la sincronización del margen de SAP TM.");
-            var corrida = await RegistrarErrorAsync(iniciadoAt, mensaje);
-            if (corrida is null)
-            {
-                // La base de Cotifly tampoco acepta el registro: no hay corrida que informar (la administración responde 503).
-                logger.LogWarning("Sincronización del margen de SAP TM: error tras {Duracion} ms sin poder registrarlo: {Mensaje}", reloj.ElapsedMilliseconds, mensaje);
-                throw NoDisponible(ex);
-            }
-
-            return Terminar(corrida, filas.Count, reloj);
+            return await FalloAsync(ex, iniciadoAt, filas.Count, reloj);
         }
+    }
+
+    /// <summary>
+    /// Registra el fallo de la corrida como <c>error</c> (mensaje sin URL, credenciales ni texto de SQL Server) y lo devuelve. Si tampoco
+    /// se puede registrar, la base no está disponible: <see cref="clsSincronizacionMargenSapNoDisponibleException"/>.
+    /// </summary>
+    private async Task<clsResultadoSincronizacionMargenSap> FalloAsync(Exception ex, DateTimeOffset iniciadoAt, int recibidas, Stopwatch reloj)
+    {
+        var mensaje = MensajeDe(ex);
+        logger.LogDebug(ex, "Detalle del fallo de la sincronización del margen de SAP TM.");
+        var corrida = await RegistrarErrorAsync(iniciadoAt, mensaje);
+        if (corrida is null)
+        {
+            // La base de Cotifly tampoco acepta el registro: no hay corrida que informar (la administración responde 503).
+            logger.LogWarning("Sincronización del margen de SAP TM: error tras {Duracion} ms sin poder registrarlo: {Mensaje}", reloj.ElapsedMilliseconds, mensaje);
+            throw NoDisponible(ex);
+        }
+
+        return Terminar(corrida, recibidas, reloj);
     }
 
     private clsResultadoSincronizacionMargenSap Terminar(clsCorridaSincronizacionMargenSap corrida, int recibidas, Stopwatch reloj)
@@ -528,9 +551,26 @@ public sealed class clsSincronizacionMargenSapSql(
     }
 
     /// <summary>Un fallo de la base de Cotifly (no una cancelación de quien llama).</summary>
+    /// <remarks>
+    /// Solo la conectividad: red, servidor o base inaccesible, login rechazado, tiempo agotado (SQL -2), un error fatal (severidad 20 o
+    /// más), la cadena sin configurar. Un error de una orden con la base respondiendo (sin permiso, 229; sin el objeto, 208 o 2812) NO lo es:
+    /// es un fallo de la corrida y se registra como <c>error</c>.
+    /// </remarks>
     private static bool EsFalloDeBase(Exception ex, CancellationToken cancellationToken) =>
-        ex is SqlException or InvalidOperationException or TimeoutException
-        || (ex is OperationCanceledException && !cancellationToken.IsCancellationRequested);
+        ex switch
+        {
+            SqlException sql => EsConectividad(sql),
+            InvalidOperationException or TimeoutException => true,
+            OperationCanceledException => !cancellationToken.IsCancellationRequested,
+            _ => false,
+        };
+
+    /// <summary>Errores de SQL Server de conectividad (ver <see cref="EsFalloDeBase"/>).</summary>
+    private static readonly HashSet<int> _conectividad =
+        [-2, -1, 2, 53, 64, 121, 233, 4060, 18452, 18456, 10053, 10054, 10060, 10061, 11001, 40613];
+
+    private static bool EsConectividad(SqlException ex) =>
+        ex.Class >= 20 || ex.Errors.Cast<SqlError>().Any(e => _conectividad.Contains(e.Number) || e.Class >= 20);
 
     private static clsSincronizacionMargenSapNoDisponibleException NoDisponible(Exception causa) =>
         new($"La base de Cotifly no respondió ({causa.GetType().Name}{(causa is SqlException sql ? $" {sql.Number}" : string.Empty)}).", causa);

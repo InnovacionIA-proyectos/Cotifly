@@ -480,6 +480,70 @@ public sealed class clsSincronizacionMargenSapIntegracionTests(clsBaseDatosPrueb
         sap.Peticiones.Should().BeEmpty("la corrida forzada comprueba la base antes de descargar de SAP");
     }
 
+    // Ajuste del 2026-11-04: sin sincronización (deshabilitada o sin configuración válida) no hay próxima corrida que estimar.
+    [Theory]
+    [InlineData("false", clsSapRentabFalso.Url)]
+    [InlineData("true", "sap-tm-prd:8000/sin-esquema")]
+    public async Task SinSincronizacionLaProximaCorridaEstimadaEsNull(string habilitada, string url)
+    {
+        await using var aislada = await BaseAsync("dbSapProx");
+        await using var proveedor = await ProveedorAsync(aislada.Cadena, new clsSapRentabFalso(),
+            extra: new() { ["SapTm:SincronizacionHabilitada"] = habilitada, ["SapTm:Url"] = url });
+
+        var estado = await proveedor.GetRequiredService<IClsSincronizacionMargenSap>().EstadoAsync(Ct);
+
+        estado.ProximaCorridaEstimada.Should().BeNull();
+    }
+
+    // Ajuste del 2026-11-04: un error de una orden con la base respondiendo (229 sin permiso, 208 sin el objeto) en las lecturas previas
+    // es un fallo de la corrida (fila 'error'), no "base no disponible".
+    [Theory]
+    [InlineData("229")]
+    [InlineData("208")]
+    public async Task UnErrorDeLaBaseQueRespondeEnLasLecturasPreviasEsUnErrorDeLaCorrida(string caso)
+    {
+        await using var aislada = await BaseAsync("dbSapPrevia");
+        var cadena = aislada.Cadena;
+        var login = $"v243p_{Guid.NewGuid():N}"[..20];
+        const string Clave = "V243-Prueba-Clave-x9!";
+        if (caso == "229")
+        {
+            await clsBaseDatosPruebas.EjecutarAsync(aislada.Cadena, $"""
+                CREATE LOGIN [{login}] WITH PASSWORD = N'{Clave}', CHECK_POLICY = OFF;
+                CREATE USER [{login}] FOR LOGIN [{login}];
+                GRANT SELECT, INSERT, EXECUTE ON SCHEMA::dbo_cotifly TO [{login}];
+                DENY SELECT ON dbo_cotifly.SapMargenCliente TO [{login}];
+                """);
+            cadena = new SqlConnectionStringBuilder(aislada.Cadena) { UserID = login, Password = Clave, IntegratedSecurity = false }.ConnectionString;
+        }
+        else
+        {
+            await clsBaseDatosPruebas.EjecutarAsync(aislada.Cadena, "EXEC sp_rename N'dbo_cotifly.SapMargenCliente', N'SapMargenClienteRenombrada';");
+        }
+
+        try
+        {
+            var sap = new clsSapRentabFalso().ConFilas(clsSapRentabFalso.Set(Prefijo(), 3));
+            await using var proveedor = await ProveedorAsync(cadena, sap);
+
+            var r = await proveedor.GetRequiredService<IClsSincronizacionMargenSap>().SincronizarAsync(forzada: true, Ct);
+
+            r.Estado.Should().Be("error");
+            r.Corrida!.MensajeError.Should().Be($"Falló la base de Cotifly al sincronizar el margen de SAP TM (SQL {caso}): no se tocó la tabla.");
+            (await UltimaCorridaAsync(aislada.Cadena)).Should().Be(("error", r.Corrida.MensajeError));
+            sap.Peticiones.Should().BeEmpty("falla antes de descargar de SAP");
+        }
+        finally
+        {
+            if (caso == "229")
+            {
+                SqlConnection.ClearAllPools();
+                await clsBaseDatosPruebas.EjecutarAsync(baseDatos.CadenaMaster,
+                    $"IF EXISTS (SELECT 1 FROM sys.server_principals WHERE name = N'{login}') BEGIN TRY DROP LOGIN [{login}]; END TRY BEGIN CATCH END CATCH");
+            }
+        }
+    }
+
     private static string Prefijo() => $"9{Random.Shared.Next(10_000, 99_999)}";
 
     private Task<clsBaseAuxiliarPruebas> BaseAsync(string prefijo) =>

@@ -1026,7 +1026,8 @@ paths:
         réplica que responde. Con la sincronización deshabilitada (`SapTm:SincronizacionHabilitada = false`, el valor por defecto)
         responde 200 con `habilitada = false`. Habilitada sin `SapTm:Url`, `SapTm:User` o `SapTm:Pass`, o con la URL o el mandante mal
         escritos, responde 503 `SAP_MARGEN_NO_CONFIGURADO` con el motivo en `detalle.motivo` (nunca el valor); con la base de Cotifly sin
-        responder, 503 `SAP_MARGEN_NO_DISPONIBLE` (en unos segundos: las lecturas del estado usan un límite de conexión de 5 s).
+        responder, 503 `SAP_MARGEN_NO_DISPONIBLE` (en el E2E, entre 20 y 45 s: lo suman la autenticación y la auditoría). Con la
+        sincronización deshabilitada o sin configuración válida, `proxima_corrida_estimada` es `null`.
       security:
         - bearer: []
       responses:
@@ -6277,7 +6278,9 @@ components:
         proxima_corrida_estimada:
           type: string
           format: date-time
+          nullable: true
           description: |
+            `null` con la sincronización deshabilitada o sin configuración válida (no habrá corrida).
             Primer chequeo del worker de esta réplica en o después de que la última corrida `ok` cumpla `intervalo_minutos` (sin
             corrida `ok`, el próximo chequeo).
         intervalo_minutos:

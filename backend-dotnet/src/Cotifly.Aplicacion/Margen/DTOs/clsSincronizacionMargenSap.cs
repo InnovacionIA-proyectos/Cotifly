@@ -36,7 +36,10 @@ public sealed record clsCorridaSincronizacionMargenSap(
 /// <param name="UltimaCorrida">La corrida más reciente, cualquiera sea su estado (<c>null</c> si nunca hubo una).</param>
 /// <param name="UltimaCorridaOk">La corrida <c>ok</c> más reciente: de ella depende la próxima (<c>null</c> si nunca la hubo).</param>
 /// <param name="FilasActivas">Combinaciones activas en <c>SapMargenCliente</c> (las que usa la cotización).</param>
-/// <param name="ProximaCorridaEstimada">Cuándo la correrá el worker de esta réplica, según su próximo chequeo y el intervalo.</param>
+/// <param name="ProximaCorridaEstimada">
+/// Cuándo la correrá el worker de esta réplica, según su próximo chequeo y el intervalo; <c>null</c> con la sincronización deshabilitada o
+/// sin configuración válida (no habrá corrida).
+/// </param>
 /// <param name="IntervaloMinutos"><c>SapTm:SincronizacionMinutos</c>: edad máxima de la última corrida <c>ok</c>.</param>
 /// <param name="ChequeoMinutos"><c>SapTm:ChequeoMinutos</c>: cada cuánto el worker revisa si toca.</param>
 /// <param name="EnCurso">Esta réplica está sincronizando ahora.</param>
@@ -46,7 +49,7 @@ public sealed record clsEstadoSincronizacionMargenSap(
     clsCorridaSincronizacionMargenSap? UltimaCorrida,
     clsCorridaSincronizacionMargenSap? UltimaCorridaOk,
     int FilasActivas,
-    DateTimeOffset ProximaCorridaEstimada,
+    DateTimeOffset? ProximaCorridaEstimada,
     int IntervaloMinutos,
     int ChequeoMinutos,
     bool EnCurso,
