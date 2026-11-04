@@ -87,7 +87,8 @@ services:
       # dbo.DimEjecutivo (pendiente con el DBA).
       ConnectionStrings__Regional: ${ConnectionStrings__Regional:-}
       # NIT por BP para la sincronización del margen de SAP TM (HU-042.2): OPCIONAL, solo lectura de DWCubosOperacionesEBS
-      # (dbo.DimBPSolicitante, columnas BP y NIT; otra base que la de Regional). Vacía: el NIT de cada fila queda NULL. Con valor es
+      # (dbo.DimBPSolicitante, columnas BP y NIT; otra base que la de Regional). Vacía, o sin el BP en el DW: cada fila conserva el
+      # NIT que ya tenía (o queda NULL). Con valor es
       # SECRETO (se valida en Production) y exige salida desde el worker a 10.10.40.24:1433.
       ConnectionStrings__DwOperaciones: ${ConnectionStrings__DwOperaciones:-}
       # Obligatorias con valor (identificadores SQL): los defaults son los de clsOpcionesRegional; no dejarlas vacías.
@@ -126,8 +127,12 @@ services:
       # sincronización exitosa es más vieja (el dato se usa igual).
       SapTm__SalesOrgDefault: ${SapTm__SalesOrgDefault:-50000005}
       SapTm__AvisoSincronizacionHoras: ${SapTm__AvisoSincronizacionHoras:-48}
+      # Interruptor de la sincronización (decisión del 2026-11-04): APAGADO por defecto. Para encenderla, cargar en Dokploy
+      # SapTm__SincronizacionHabilitada=true junto con SapTm__Url, SapTm__User y SapTm__Pass (ver DEPLOY.md, "Margen de SAP").
+      # Apagado, el worker no corre aunque haya credenciales y el margen se sigue leyendo de la copia local.
+      SapTm__SincronizacionHabilitada: ${SapTm__SincronizacionHabilitada:-false}
       # Sincronización: sin Url, User o Pass el worker queda inactivo (la API arranca igual y el margen usa la política). Url es la
-      # del servicio OData sin /RentabClienteSet (ej. http://sap-tm-prd.boterosoto.local:8000/sap/opu/odata/sap/ZGW_RENTAB_CLI_SRV);
+      # raíz del servicio OData sin /RentabClienteSet (ej. http://sap-tm-prd.boterosoto.local:8000/sap/opu/odata/sap/ZGW_RENTAB_CLI_SRV);
       # exige salida desde el cluster a sap-tm-prd.boterosoto.local:8000. Pass es SECRETO (solo en Dokploy). SapClient: 3 dígitos u
       # omitido. Cada ChequeoMinutos revisa la última corrida ok y sincroniza si tiene más de SincronizacionMinutos. Si SAP trae
       # menos de max(MinimoFilas, MinimoPorcentajeActivas % de las filas activas), no se toca la tabla.

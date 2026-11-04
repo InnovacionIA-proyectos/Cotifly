@@ -44,13 +44,17 @@ public sealed class clsSapMargenAdminService(
     public const string MensajeNoConfigurado =
         "La sincronización del margen de SAP TM no está configurada en este ambiente: el margen usa la copia local existente o la política de la línea.";
 
+    public const string MensajeDeshabilitada =
+        "La sincronización del margen de SAP TM está deshabilitada en este ambiente (SapTm:SincronizacionHabilitada = false): el margen usa la copia local existente o la política de la línea.";
+
     public const string MensajeEnCurso = "Ya hay una sincronización del margen de SAP TM en curso. Intenta de nuevo cuando termine.";
 
     public const string MensajeNoDisponible = "La base de Cotifly no respondió al consultar la sincronización del margen de SAP TM. Intenta de nuevo.";
 
     public async Task<clsResultado<clsEstadoSincronizacionMargenSap>> EstadoAsync(CancellationToken cancellationToken = default)
     {
-        if (Validar() is { } error)
+        // Deshabilitada, el estado responde igual (con habilitada = false): la copia se sigue leyendo al cotizar.
+        if (Validar(exigirHabilitada: false) is { } error)
         {
             return error;
         }
@@ -67,7 +71,7 @@ public sealed class clsSapMargenAdminService(
 
     public async Task<clsResultado<clsResultadoSincronizacionMargenSap>> SincronizarAsync(CancellationToken cancellationToken = default)
     {
-        if (Validar() is { } error)
+        if (Validar(exigirHabilitada: true) is { } error)
         {
             return error;
         }
@@ -88,7 +92,7 @@ public sealed class clsSapMargenAdminService(
         clsResultado<clsResultadoSincronizacionMargenSap> respuesta = resultado.Estado switch
         {
             clsResultadoSincronizacionMargenSap.EstadoEnCurso => new clsErrorDominio(clsCodigosError.SapMargenSincronizacionEnCurso, MensajeEnCurso),
-            clsResultadoSincronizacionMargenSap.EstadoNoConfigurada => new clsErrorDominio(clsCodigosError.SapMargenNoConfigurado, MensajeNoConfigurado),
+            clsResultadoSincronizacionMargenSap.EstadoNoConfigurada => NoConfigurada(),
             _ => resultado,
         };
 
@@ -110,7 +114,12 @@ public sealed class clsSapMargenAdminService(
         return respuesta;
     }
 
-    private clsErrorDominio? Validar()
+    /// <summary>
+    /// Rol gerencial y configuración: sin el interruptor, la corrida forzada responde <c>SAP_MARGEN_NO_CONFIGURADO</c> con
+    /// <see cref="MensajeDeshabilitada"/> (el estado responde igual); habilitada pero sin credenciales o con la URL o el mandante mal escritos,
+    /// los dos responden <c>SAP_MARGEN_NO_CONFIGURADO</c> con el motivo en <c>detalle</c> (nunca el valor).
+    /// </summary>
+    private clsErrorDominio? Validar(bool exigirHabilitada)
     {
         if (usuario.UsuarioId is null)
         {
@@ -122,6 +131,15 @@ public sealed class clsSapMargenAdminService(
             return new clsErrorDominio(clsCodigosAplicacion.SinPermiso, "No tienes permiso para esta operación.");
         }
 
-        return sincronizacion.Configurada ? null : new clsErrorDominio(clsCodigosError.SapMargenNoConfigurado, MensajeNoConfigurado);
+        if (!sincronizacion.Habilitada)
+        {
+            return exigirHabilitada ? new clsErrorDominio(clsCodigosError.SapMargenNoConfigurado, MensajeDeshabilitada) : null;
+        }
+
+        return sincronizacion.Configurada ? null : NoConfigurada();
     }
+
+    private clsErrorDominio NoConfigurada() => sincronizacion.Habilitada
+        ? new clsErrorDominio(clsCodigosError.SapMargenNoConfigurado, MensajeNoConfigurado, sincronizacion.ErrorConfiguracion)
+        : new clsErrorDominio(clsCodigosError.SapMargenNoConfigurado, MensajeDeshabilitada);
 }

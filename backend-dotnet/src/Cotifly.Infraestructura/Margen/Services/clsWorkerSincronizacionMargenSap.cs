@@ -15,7 +15,8 @@ namespace Cotifly.Infraestructura.Margen.Services;
 /// </summary>
 /// <remarks>
 /// <list type="bullet">
-/// <item>Sin <c>SapTm:Url</c>, <c>User</c> o <c>Pass</c> no corre (una línea Information) y el margen sigue con la copia local o la política.
+/// <item>Con <c>SapTm:SincronizacionHabilitada = false</c> (por defecto) no corre (una línea Information). Sin <c>SapTm:Url</c>, <c>User</c> o
+/// <c>Pass</c> no corre (una línea Information) y el margen sigue con la copia local o la política.
 /// Con la URL o el mandante mal escritos tampoco corre (una línea Error), pero la API arranca.</item>
 /// <item>La primera ronda espera <see cref="EsperaInicial"/>: no retrasa el arranque ni <c>/health/ready</c>. Después, cada
 /// <c>SapTm:ChequeoMinutos</c> (60) revisa la última corrida <c>ok</c> y sincroniza solo si tiene más de <c>SapTm:SincronizacionMinutos</c>
@@ -39,6 +40,13 @@ public sealed class clsWorkerSincronizacionMargenSap(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var valor = opciones.Value;
+        if (!valor.SincronizacionHabilitada)
+        {
+            logger.LogInformation(
+                "Sincronización del margen de SAP TM deshabilitada (SapTm:SincronizacionHabilitada = false). El margen sigue con la copia local existente o la política de la línea.");
+            return;
+        }
+
         if (!valor.TieneCredenciales)
         {
             logger.LogInformation(

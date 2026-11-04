@@ -13,8 +13,17 @@ namespace Cotifly.Aplicacion.Margen.Interfaces;
 /// </remarks>
 public interface IClsSincronizacionMargenSap
 {
-    /// <summary>Hay <c>SapTm:Url</c>, <c>SapTm:User</c> y <c>SapTm:Pass</c>. Sin ellas no se sincroniza y el margen sigue con la política.</summary>
+    /// <summary><c>SapTm:SincronizacionHabilitada</c> (interruptor, <c>false</c> por defecto).</summary>
+    bool Habilitada { get; }
+
+    /// <summary>
+    /// Habilitada y con <c>SapTm:Url</c>, <c>SapTm:User</c> y <c>SapTm:Pass</c> bien escritas. Si no, no se sincroniza y el margen sigue con la
+    /// copia existente o la política.
+    /// </summary>
     bool Configurada { get; }
+
+    /// <summary>Por qué la URL o el mandante no sirven (nombra la clave, nunca el valor); <c>null</c> si sirven o si faltan.</summary>
+    string? ErrorConfiguracion { get; }
 
     /// <summary>Estado de la copia: última corrida, última <c>ok</c>, filas activas y próxima corrida estimada.</summary>
     Task<clsEstadoSincronizacionMargenSap> EstadoAsync(CancellationToken cancellationToken = default);

@@ -20,7 +20,11 @@ public sealed class clsSapMargenAdminServiceTests
     private readonly IClsSincronizacionMargenSap _sincronizacion = Substitute.For<IClsSincronizacionMargenSap>();
     private readonly IClsAuditoriaService _auditoria = Substitute.For<IClsAuditoriaService>();
 
-    public clsSapMargenAdminServiceTests() => _sincronizacion.Configurada.Returns(true);
+    public clsSapMargenAdminServiceTests()
+    {
+        _sincronizacion.Habilitada.Returns(true);
+        _sincronizacion.Configurada.Returns(true);
+    }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -38,13 +42,33 @@ public sealed class clsSapMargenAdminServiceTests
     }
 
     [Fact]
-    public async Task SinConfiguracionRespondeSapMargenNoConfigurado()
+    public async Task HabilitadaSinConfiguracionValidaRespondeSapMargenNoConfiguradoConElMotivo()
     {
         _sincronizacion.Configurada.Returns(false);
+        _sincronizacion.ErrorConfiguracion.Returns("'SapTm:SapClient' debe tener exactamente 3 dígitos (ej. 100) o quedar vacío.");
 
         var estado = await Servicio(RolInterno.Director).EstadoAsync(Ct);
 
         estado.Error.Codigo.Should().Be(clsCodigosError.SapMargenNoConfigurado);
+        estado.Error.Detalle.Should().Contain("'SapTm:SapClient'");
+    }
+
+    [Fact]
+    public async Task DeshabilitadaElEstadoRespondeYLaCorridaForzadaDa503SinLlamarALaSincronizacion()
+    {
+        _sincronizacion.Habilitada.Returns(false);
+        _sincronizacion.Configurada.Returns(false);
+        var estadoCopia = new clsEstadoSincronizacionMargenSap(null, null, 0, DateTimeOffset.UtcNow, 1440, 60, false, false, false);
+        _sincronizacion.EstadoAsync(Arg.Any<CancellationToken>()).Returns(estadoCopia);
+        var servicio = Servicio(RolInterno.GerenteComercial);
+
+        var estado = await servicio.EstadoAsync(Ct);
+        var sincronizar = await servicio.SincronizarAsync(Ct);
+
+        estado.Valor.Should().Be(estadoCopia);
+        sincronizar.Error.Codigo.Should().Be(clsCodigosError.SapMargenNoConfigurado);
+        sincronizar.Error.Mensaje.Should().Contain("deshabilitada");
+        await _sincronizacion.DidNotReceiveWithAnyArgs().SincronizarAsync(default, Ct);
     }
 
     [Fact]

@@ -8,6 +8,9 @@ namespace Cotifly.Infraestructura.Configuracion;
 /// </summary>
 /// <remarks>
 /// <list type="bullet">
+/// <item><b>Interruptor.</b> <see cref="SincronizacionHabilitada"/> (<c>false</c> por defecto, decisión del 2026-11-04): apagado, el worker no
+/// corre aunque haya credenciales (así unas <c>SapTm__Url/User/Pass</c> que quedaron del modo <c>odata</c> viejo no lo activan solas). La
+/// lectura del margen desde la copia local no depende del interruptor.</item>
 /// <item><b>Inactiva sin credenciales.</b> Sin <see cref="Url"/>, <see cref="User"/> o <see cref="Pass"/> el worker no corre (lo anota en
 /// Information) y el margen sigue con la copia local existente o la política de la línea. No impide arrancar.</item>
 /// <item><b>Inactiva con la URL o el mandante mal escritos</b> (<see cref="ErrorConfiguracion"/>): tampoco impide arrancar la API (el margen
@@ -22,6 +25,9 @@ namespace Cotifly.Infraestructura.Configuracion;
 public sealed class clsOpcionesSapTmSincronizacion
 {
     public const string Seccion = "SapTm";
+
+    /// <summary>Interruptor de la sincronización (worker y corrida forzada). Por defecto <c>false</c>.</summary>
+    public bool SincronizacionHabilitada { get; set; }
 
     /// <summary>URL base del servicio OData (ej. <c>http://sap-tm-prd.boterosoto.local:8000/sap/opu/odata/sap/ZGW_RENTAB_CLI_SRV</c>).</summary>
     public string? Url { get; set; }
@@ -63,8 +69,8 @@ public sealed class clsOpcionesSapTmSincronizacion
     /// <summary>Hay URL, usuario y clave (aunque estén mal escritas).</summary>
     public bool TieneCredenciales => !string.IsNullOrWhiteSpace(Url) && !string.IsNullOrWhiteSpace(User) && !string.IsNullOrWhiteSpace(Pass);
 
-    /// <summary>Hay URL, usuario y clave y la URL y el mandante son válidos: el worker corre.</summary>
-    public bool Configurada => TieneCredenciales && ErrorConfiguracion is null;
+    /// <summary>Habilitada, con URL, usuario y clave, y la URL y el mandante son válidos: el worker corre.</summary>
+    public bool Configurada => SincronizacionHabilitada && TieneCredenciales && ErrorConfiguracion is null;
 
     /// <summary><see cref="Url"/> recortada, sin <c>/</c> ni <c>/RentabClienteSet</c> al final (<c>null</c> si no hay).</summary>
     public string? UrlServicio => string.IsNullOrWhiteSpace(Url) ? null : NormalizarUrl(Url);

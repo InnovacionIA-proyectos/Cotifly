@@ -109,7 +109,20 @@ public sealed class clsSincronizacionMargenSapSql(
 
     private const string ColumnasLog = "status, iniciadoAt, finalizadoAt, filasInsertadas, filasActualizadas, filasDesactivadas, mensajeError";
 
+    /// <summary>
+    /// Límite de conexión (s) de las lecturas cortas (estado, última corrida, filas activas): con la base caída, la administración responde
+    /// 503 en segundos y no en el minuto que suma el límite por defecto (15 s por intento).
+    /// </summary>
+    public const int LimiteConexionLecturaSegundos = 5;
+
+    /// <summary>Límite (s) de cada orden de las lecturas cortas.</summary>
+    public const int LimiteOrdenLecturaSegundos = 15;
+
+    public bool Habilitada => opciones.Value.SincronizacionHabilitada;
+
     public bool Configurada => opciones.Value.Configurada;
+
+    public string? ErrorConfiguracion => opciones.Value.ErrorConfiguracion;
 
     public async Task<clsEstadoSincronizacionMargenSap> EstadoAsync(CancellationToken cancellationToken = default)
     {
@@ -125,9 +138,9 @@ public sealed class clsSincronizacionMargenSapSql(
 
     private async Task<clsEstadoSincronizacionMargenSap> LeerEstadoAsync(CancellationToken cancellationToken)
     {
-        await using var conexion = await AbrirCotiflyAsync(cancellationToken);
+        await using var conexion = await AbrirCotiflyAsync(cancellationToken, rapida: true);
         await using var comando = conexion.CreateCommand();
-        comando.CommandTimeout = TiempoOrdenSegundos;
+        comando.CommandTimeout = LimiteOrdenLecturaSegundos;
         comando.CommandText = $"""
             SELECT TOP (1) {ColumnasLog} FROM dbo_cotifly.SapMargenSyncLog ORDER BY iniciadoAt DESC;
             SELECT TOP (1) {ColumnasLog} FROM dbo_cotifly.SapMargenSyncLog WHERE status = N'ok' ORDER BY iniciadoAt DESC;
@@ -149,7 +162,8 @@ public sealed class clsSincronizacionMargenSapSql(
             TimeSpan.FromMinutes(valor.ChequeoMinutos),
             tiempo.GetUtcNow());
         return new clsEstadoSincronizacionMargenSap(
-            ultima, ultimaOk, activas, proxima, valor.SincronizacionMinutos, valor.ChequeoMinutos, coordinacion.EnCurso, dw.Configurado);
+            ultima, ultimaOk, activas, proxima, valor.SincronizacionMinutos, valor.ChequeoMinutos, coordinacion.EnCurso, dw.Configurado,
+            valor.SincronizacionHabilitada);
     }
 
     public async Task<clsResultadoSincronizacionMargenSap> SincronizarAsync(bool forzada, CancellationToken cancellationToken = default)
@@ -196,14 +210,24 @@ public sealed class clsSincronizacionMargenSapSql(
             return clsResultadoSincronizacionMargenSap.SinCorrida(clsResultadoSincronizacionMargenSap.EstadoNoToca);
         }
 
+        // Antes de descargar de SAP se comprueba la base de Cotifly (lectura corta): con la base caída no tiene sentido el GET a SAP, ni se
+        // podría registrar el fallo.
+        int activas;
+        try
+        {
+            activas = await FilasActivasAsync(cancellationToken);
+        }
+        catch (Exception ex) when (EsFalloDeBase(ex, cancellationToken))
+        {
+            throw NoDisponible(ex);
+        }
+
         var reloj = Stopwatch.StartNew();
         var iniciadoAt = tiempo.GetUtcNow();
         IReadOnlyList<clsFilaMargenSap> filas = [];
         try
         {
             filas = await sap.DescargarAsync(cancellationToken);
-
-            var activas = await FilasActivasAsync(cancellationToken);
             if (clsGuardaMinimoFilasSap.Rechazo(filas.Count, valor.MinimoFilas, valor.MinimoPorcentajeActivas, activas) is { } rechazo)
             {
                 throw new clsSincronizacionMargenSapException(rechazo);
@@ -367,7 +391,8 @@ public sealed class clsSincronizacionMargenSapSql(
             // error de recompilación como el 207 que su TRY no atrapa, tiempo agotado, KILL), se registra aquí (lo hace quien llama).
             logger.LogDebug(ex, "El stored procedure sp_sincronizar_margen_sap falló.");
             return await CorridaDelSpSinFallarAsync(conexion, marca)
-                ?? throw new clsSincronizacionMargenSapException(Recortar($"sp_sincronizar_margen_sap falló sin registrar la corrida (SQL {ex.Number}): {ex.Message}"), ex);
+                ?? throw new clsSincronizacionMargenSapException(
+                    string.Create(System.Globalization.CultureInfo.InvariantCulture, $"sp_sincronizar_margen_sap falló sin registrar la corrida (SQL {ex.Number})."), ex);
         }
 
         return await CorridaDelSpAsync(conexion, marca, cancellationToken)
@@ -457,28 +482,36 @@ public sealed class clsSincronizacionMargenSapSql(
 
     private async Task<DateTimeOffset?> UltimaOkAsync(CancellationToken cancellationToken)
     {
-        await using var conexion = await AbrirCotiflyAsync(cancellationToken);
+        await using var conexion = await AbrirCotiflyAsync(cancellationToken, rapida: true);
         await using var comando = conexion.CreateCommand();
-        comando.CommandTimeout = TiempoOrdenSegundos;
+        comando.CommandTimeout = LimiteOrdenLecturaSegundos;
         comando.CommandText = "SELECT TOP (1) ISNULL(finalizadoAt, iniciadoAt) FROM dbo_cotifly.SapMargenSyncLog WHERE status = N'ok' ORDER BY iniciadoAt DESC;";
         return await comando.ExecuteScalarAsync(cancellationToken) is DateTimeOffset ultima ? ultima : null;
     }
 
     private async Task<int> FilasActivasAsync(CancellationToken cancellationToken)
     {
-        await using var conexion = await AbrirCotiflyAsync(cancellationToken);
+        await using var conexion = await AbrirCotiflyAsync(cancellationToken, rapida: true);
         await using var comando = conexion.CreateCommand();
-        comando.CommandTimeout = TiempoOrdenSegundos;
+        comando.CommandTimeout = LimiteOrdenLecturaSegundos;
         comando.CommandText = "SELECT COUNT(*) FROM dbo_cotifly.SapMargenCliente WHERE activo = 1;";
         return (int)(await comando.ExecuteScalarAsync(cancellationToken))!;
     }
 
-    private async Task<SqlConnection> AbrirCotiflyAsync(CancellationToken cancellationToken)
+    /// <summary>Conexión a la base de Cotifly; con <paramref name="rapida"/>, con <see cref="LimiteConexionLecturaSegundos"/> como límite.</summary>
+    private async Task<SqlConnection> AbrirCotiflyAsync(CancellationToken cancellationToken, bool rapida = false)
     {
         var cadena = conexiones.Value.Cotifly;
         if (string.IsNullOrWhiteSpace(cadena))
         {
             throw new InvalidOperationException("ConnectionStrings:Cotifly no está configurada.");
+        }
+
+        if (rapida)
+        {
+            var builder = new SqlConnectionStringBuilder(cadena);
+            builder.ConnectTimeout = Math.Min(builder.ConnectTimeout, LimiteConexionLecturaSegundos);
+            cadena = builder.ConnectionString;
         }
 
         var conexion = new SqlConnection(cadena);

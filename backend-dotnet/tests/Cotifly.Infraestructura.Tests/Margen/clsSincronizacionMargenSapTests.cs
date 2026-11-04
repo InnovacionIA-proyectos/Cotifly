@@ -136,7 +136,7 @@ public sealed class clsSincronizacionMargenSapTests
     [InlineData("http://sap/odata", "u", "clave-123456", true)]
     public void SoloConUrlUsuarioYClaveQuedaConfigurada(string? url, string? usuario, string? clave, bool configurada)
     {
-        var opciones = new clsOpcionesSapTmSincronizacion { Url = url, User = usuario, Pass = clave };
+        var opciones = new clsOpcionesSapTmSincronizacion { SincronizacionHabilitada = true, Url = url, User = usuario, Pass = clave };
 
         opciones.Configurada.Should().Be(configurada);
         opciones.ErrorConfiguracion.Should().BeNull("que falte algo deja el worker inactivo, sin error de configuración");
@@ -151,7 +151,7 @@ public sealed class clsSincronizacionMargenSapTests
     [InlineData("http://sap/odata", "abc", "3 dígitos")]
     public void UnaUrlOMandanteMalEscritosDejanLaSincronizacionSinConfigurarSinImpedirArrancar(string url, string? sapClient, string mensaje)
     {
-        var opciones = new clsOpcionesSapTmSincronizacion { Url = url, User = "u", Pass = "clave-123456", SapClient = sapClient };
+        var opciones = new clsOpcionesSapTmSincronizacion { SincronizacionHabilitada = true, Url = url, User = "u", Pass = "clave-123456", SapClient = sapClient };
 
         opciones.TieneCredenciales.Should().BeTrue();
         opciones.Configurada.Should().BeFalse();
@@ -167,7 +167,7 @@ public sealed class clsSincronizacionMargenSapTests
     [InlineData("http://sap/odata/", "http://sap/odata")]
     public void UnaUrlConRentabClienteSetSeAceptaYSeNormaliza(string url, string servicio)
     {
-        var opciones = new clsOpcionesSapTmSincronizacion { Url = url, User = "u", Pass = "clave-123456" };
+        var opciones = new clsOpcionesSapTmSincronizacion { SincronizacionHabilitada = true, Url = url, User = "u", Pass = "clave-123456" };
 
         opciones.Configurada.Should().BeTrue();
         opciones.UrlServicio.Should().Be(servicio);
@@ -265,6 +265,25 @@ public sealed class clsSincronizacionMargenSapTests
     }
 
     [Fact]
+    public async Task DeshabilitadaElWorkerNoCorreAunqueHayaCredencialesYLoAnotaEnInformation()
+    {
+        var logger = new clsLoggerFalso<clsWorkerSincronizacionMargenSap>();
+        await using var proveedor = Proveedor(new clsSapRentabFalso(), new() { ["SapTm:SincronizacionHabilitada"] = null });
+        using var coordinacion = new clsCoordinacionSincronizacionMargenSap();
+        using var worker = new clsWorkerSincronizacionMargenSap(
+            proveedor.GetRequiredService<IServiceScopeFactory>(), proveedor.GetRequiredService<IOptions<clsOpcionesSapTmSincronizacion>>(),
+            coordinacion, new clsEntornoFalso(Environments.Production), TimeProvider.System, logger);
+
+        await worker.StartAsync(Ct);
+        await worker.ExecuteTask!;
+
+        logger.Registros.Should().ContainSingle().Which.Should().Match<clsRegistroLog>(r => r.Nivel == LogLevel.Information && r.Mensaje.Contains("deshabilitada"));
+        var sincronizacion = proveedor.GetRequiredService<IClsSincronizacionMargenSap>();
+        (sincronizacion.Habilitada, sincronizacion.Configurada).Should().Be((false, false));
+        new clsOpcionesSapTmSincronizacion().SincronizacionHabilitada.Should().BeFalse("apagada por defecto");
+    }
+
+    [Fact]
     public async Task SinConfiguracionElWorkerNoCorreYLoAnotaEnInformation()
     {
         var logger = new clsLoggerFalso<clsWorkerSincronizacionMargenSap>();
@@ -312,6 +331,7 @@ public sealed class clsSincronizacionMargenSapTests
     {
         var valores = new Dictionary<string, string?>
         {
+            ["SapTm:SincronizacionHabilitada"] = "true",
             ["SapTm:Url"] = clsSapRentabFalso.Url,
             ["SapTm:User"] = clsSapRentabFalso.Usuario,
             ["SapTm:Pass"] = clsSapRentabFalso.Clave,
@@ -384,7 +404,11 @@ public sealed class clsSincronizacionMargenSapTests
     /// <summary>Sincronización que lanza (una falla inesperada): el worker la anota y sigue.</summary>
     private sealed class clsSincronizacionQueFalla : IClsSincronizacionMargenSap
     {
+        public bool Habilitada => true;
+
         public bool Configurada => true;
+
+        public string? ErrorConfiguracion => null;
 
         public Task<Aplicacion.Margen.DTOs.clsEstadoSincronizacionMargenSap> EstadoAsync(CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("no se usa");

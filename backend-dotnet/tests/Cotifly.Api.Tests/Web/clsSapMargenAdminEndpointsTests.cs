@@ -29,17 +29,22 @@ public sealed class clsSapMargenAdminEndpointsTests(clsEntornoApiWeb entorno)
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task SinConfiguracionLaGerenciaRecibe503SapMargenNoConfigurado()
+    public async Task DeshabilitadaElEstadoRespondeConHabilitadaFalseYLaCorridaForzadaDa503()
     {
-        var gloria = await entorno.Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoGerente);
+        // SapTm__SincronizacionHabilitada es false por defecto (decisión del 2026-11-04), aunque hubiera credenciales de SAP.
+        var sap = new clsSapRentabFalso().ConFilas(clsSapRentabFalso.Set("40", 3));
+        await using var aislada = await BaseAsync();
+        using var api = Api(aislada.Cadena, sap, habilitada: false);
+        var gloria = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoGerente);
 
-        using var estado = await entorno.Api.EnviarAsync(_get, Estado, gloria.Access);
-        using var sincronizar = await entorno.Api.EnviarAsync(_post, Sincronizar, gloria.Access);
+        using var estado = await api.EnviarAsync(_get, Estado, gloria.Access);
+        using var sincronizar = await api.EnviarAsync(_post, Sincronizar, gloria.Access);
 
-        await VerificarContratoAsync(estado, Estado, _get, HttpStatusCode.ServiceUnavailable);
-        await VerificarErrorNegocioAsync(estado, "SAP_MARGEN_NO_CONFIGURADO");
-        await VerificarContratoAsync(sincronizar, Sincronizar, _post, HttpStatusCode.ServiceUnavailable);
+        (await VerificarContratoAsync(estado, Estado, _get, HttpStatusCode.OK)).GetProperty("habilitada").GetBoolean().Should().BeFalse();
+        var error = await VerificarContratoAsync(sincronizar, Sincronizar, _post, HttpStatusCode.ServiceUnavailable);
         await VerificarErrorNegocioAsync(sincronizar, "SAP_MARGEN_NO_CONFIGURADO");
+        error.GetProperty("error").GetProperty("mensaje").GetString().Should().Contain("deshabilitada");
+        sap.Peticiones.Should().BeEmpty();
     }
 
     [Fact]
@@ -48,6 +53,7 @@ public sealed class clsSapMargenAdminEndpointsTests(clsEntornoApiWeb entorno)
         var sap = new clsSapRentabFalso();
         using var api = new clsApiWebPruebas(entorno.BaseDatos, extra: new Dictionary<string, string?>
         {
+            ["SapTm:SincronizacionHabilitada"] = "true",
             ["SapTm:Url"] = "sap-tm-prd:8000/sin-esquema",
             ["SapTm:User"] = clsSapRentabFalso.Usuario,
             ["SapTm:Pass"] = clsSapRentabFalso.Clave,
@@ -57,8 +63,9 @@ public sealed class clsSapMargenAdminEndpointsTests(clsEntornoApiWeb entorno)
         using var estado = await api.EnviarAsync(_get, Estado, gloria.Access);
         using var sincronizar = await api.EnviarAsync(_post, Sincronizar, gloria.Access);
 
+        var error = await VerificarContratoAsync(estado, Estado, _get, HttpStatusCode.ServiceUnavailable);
         await VerificarErrorNegocioAsync(estado, "SAP_MARGEN_NO_CONFIGURADO");
-        estado.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        error.GetProperty("error").GetProperty("detalle").GetProperty("motivo").GetString().Should().Contain("'SapTm:Url'").And.NotContain("sin-esquema");
         await VerificarErrorNegocioAsync(sincronizar, "SAP_MARGEN_NO_CONFIGURADO");
         sap.Peticiones.Should().BeEmpty();
     }
@@ -104,6 +111,7 @@ public sealed class clsSapMargenAdminEndpointsTests(clsEntornoApiWeb entorno)
         estado.GetProperty("filas_activas").GetInt32().Should().Be(4);
         (estado.GetProperty("intervalo_minutos").GetInt32(), estado.GetProperty("chequeo_minutos").GetInt32()).Should().Be((1440, 60));
         estado.GetProperty("en_curso").GetBoolean().Should().BeFalse();
+        estado.GetProperty("habilitada").GetBoolean().Should().BeTrue();
         sap.Peticiones.Should().ContainSingle().Which.Url.Query.Should().NotContain("filter");
         (await clsBaseDatosPruebas.EscalarAsync<int>(aislada.Cadena,
             "SELECT COUNT(*) FROM dbo_cotifly.EventosHerramienta WHERE herramienta = 'admin_sincronizar_margen_sap' AND exito = 1")).Should().Be(1);
@@ -139,11 +147,12 @@ public sealed class clsSapMargenAdminEndpointsTests(clsEntornoApiWeb entorno)
         return aislada;
     }
 
-    private clsApiWebPruebas Api(string cadena, clsSapRentabFalso sap) => new(
+    private clsApiWebPruebas Api(string cadena, clsSapRentabFalso sap, bool habilitada = true) => new(
         entorno.BaseDatos,
         extra: new Dictionary<string, string?>
         {
             ["ConnectionStrings:Cotifly"] = cadena,
+            ["SapTm:SincronizacionHabilitada"] = habilitada ? "true" : "false",
             ["SapTm:Url"] = clsSapRentabFalso.Url,
             ["SapTm:User"] = clsSapRentabFalso.Usuario,
             ["SapTm:Pass"] = clsSapRentabFalso.Clave,

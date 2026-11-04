@@ -466,7 +466,8 @@ public sealed class clsSincronizacionMargenSapIntegracionTests(clsBaseDatosPrueb
     public async Task ConLaBaseDeCotiflyCaidaElEstadoYLaSincronizacionNoEstanDisponibles()
     {
         var inexistente = clsBaseDatosPruebas.ConBase(baseDatos.CadenaMaster, "dbCotiflyNoExiste_Pruebas");
-        await using var proveedor = await ProveedorAsync(inexistente, new clsSapRentabFalso().ConFilas(clsSapRentabFalso.Set(Prefijo(), 3)));
+        var sap = new clsSapRentabFalso().ConFilas(clsSapRentabFalso.Set(Prefijo(), 3));
+        await using var proveedor = await ProveedorAsync(inexistente, sap);
         var sincronizacion = proveedor.GetRequiredService<IClsSincronizacionMargenSap>();
 
         var estado = () => sincronizacion.EstadoAsync(Ct);
@@ -476,6 +477,7 @@ public sealed class clsSincronizacionMargenSapIntegracionTests(clsBaseDatosPrueb
         (await estado.Should().ThrowAsync<clsSincronizacionMargenSapNoDisponibleException>()).Which.Message.Should().NotContain("dbCotiflyNoExiste");
         await ronda.Should().ThrowAsync<clsSincronizacionMargenSapNoDisponibleException>();
         await forzada.Should().ThrowAsync<clsSincronizacionMargenSapNoDisponibleException>();
+        sap.Peticiones.Should().BeEmpty("la corrida forzada comprueba la base antes de descargar de SAP");
     }
 
     private static string Prefijo() => $"9{Random.Shared.Next(10_000, 99_999)}";
@@ -501,6 +503,7 @@ public sealed class clsSincronizacionMargenSapIntegracionTests(clsBaseDatosPrueb
     {
         var valores = new Dictionary<string, string?>
         {
+            ["SapTm:SincronizacionHabilitada"] = "true",
             ["SapTm:Url"] = clsSapRentabFalso.Url,
             ["SapTm:User"] = clsSapRentabFalso.Usuario,
             ["SapTm:Pass"] = clsSapRentabFalso.Clave,

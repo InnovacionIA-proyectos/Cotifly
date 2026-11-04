@@ -40,7 +40,8 @@ public sealed record clsCorridaSincronizacionMargenSap(
 /// <param name="IntervaloMinutos"><c>SapTm:SincronizacionMinutos</c>: edad máxima de la última corrida <c>ok</c>.</param>
 /// <param name="ChequeoMinutos"><c>SapTm:ChequeoMinutos</c>: cada cuánto el worker revisa si toca.</param>
 /// <param name="EnCurso">Esta réplica está sincronizando ahora.</param>
-/// <param name="NitConfigurado">Hay <c>ConnectionStrings:DwOperaciones</c>: sin ella, el NIT de cada fila queda <c>null</c>.</param>
+/// <param name="NitConfigurado">Hay <c>ConnectionStrings:DwOperaciones</c>: sin ella, cada fila conserva el NIT que ya tenía (o <c>null</c>).</param>
+/// <param name="Habilitada"><c>SapTm:SincronizacionHabilitada</c>: apagada, ni el worker ni la corrida forzada sincronizan.</param>
 public sealed record clsEstadoSincronizacionMargenSap(
     clsCorridaSincronizacionMargenSap? UltimaCorrida,
     clsCorridaSincronizacionMargenSap? UltimaCorridaOk,
@@ -49,7 +50,8 @@ public sealed record clsEstadoSincronizacionMargenSap(
     int IntervaloMinutos,
     int ChequeoMinutos,
     bool EnCurso,
-    bool NitConfigurado);
+    bool NitConfigurado,
+    bool Habilitada);
 
 /// <summary>
 /// HU-042.2 (#243): resultado de un intento de sincronización. El worker usa todos los estados; <c>POST /web/admin/sap-margen/sincronizar</c>
@@ -77,7 +79,7 @@ public sealed record clsResultadoSincronizacionMargenSap(string Estado, int Fila
     /// <summary>Esta réplica ya está sincronizando (worker o petición): no se hizo nada.</summary>
     public const string EstadoEnCurso = "en_curso";
 
-    /// <summary>Falta <c>SapTm:Url</c>, <c>SapTm:User</c> o <c>SapTm:Pass</c>.</summary>
+    /// <summary>Deshabilitada, o falta <c>SapTm:Url</c>, <c>SapTm:User</c> o <c>SapTm:Pass</c>, o están mal escritas.</summary>
     public const string EstadoNoConfigurada = "no_configurada";
 
     /// <summary>Intento sin corrida ("no toca", "en curso", "no configurada").</summary>
