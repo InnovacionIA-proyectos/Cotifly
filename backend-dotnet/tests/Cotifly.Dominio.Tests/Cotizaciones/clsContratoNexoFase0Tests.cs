@@ -129,9 +129,10 @@ public sealed class clsContratoNexoFase0Tests
     [InlineData(null, 2.5, "horas_cargue")]
     public void LasHorasDelEncabezadoVanEnPareja(double? cargue, double? descargue, string falta)
     {
-        var errores = Encabezado((decimal?)cargue, (decimal?)descargue).Errores();
+        var encabezado = Encabezado((decimal?)cargue, (decimal?)descargue);
 
-        var error = errores.Should().ContainSingle().Subject;
+        var error = encabezado.ErroresHorasEnPareja().Should().ContainSingle().Subject;
+        encabezado.Errores().Should().BeEmpty("el encabezado guardado o el de una re-solicitud no trae las dos: lo que viaja es la pareja de cada línea");
         error.Campo.Should().Be(falta);
         error.Codigo.Should().Be(clsCodigosLineaSolicitud.CampoRequerido);
         error.Mensaje.Should().Contain("las dos");
@@ -140,7 +141,8 @@ public sealed class clsContratoNexoFase0Tests
     [Fact]
     public void SinHorasOConLasDosElEncabezadoEsValido()
     {
-        Encabezado(null, null).Errores().Should().BeEmpty();
+        Encabezado(null, null).ErroresHorasEnPareja().Should().BeEmpty();
+        Encabezado(0m, 240m).ErroresHorasEnPareja().Should().BeEmpty();
         Encabezado(0m, 240m).Errores().Should().BeEmpty();
         Encabezado(241m, 1m).Errores().Should().ContainSingle(e => e.Codigo == clsCodigosLineaSolicitud.ValorFueraDeRango);
     }

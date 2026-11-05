@@ -54,7 +54,7 @@ public static class clsValidadorLicitacion
             Encabezado("moneda", clsCodigosLineaSolicitud.ValorFueraDeRango, $"El campo 'moneda' debe ser COP o USD (llegó '{moneda.Trim()}').");
         }
 
-        foreach (var error in entrada.Encabezado.Errores())
+        foreach (var error in entrada.Encabezado.Errores().Concat(entrada.Encabezado.ErroresHorasEnPareja()))
         {
             Encabezado(error.Campo, error.Codigo, error.Mensaje);
         }

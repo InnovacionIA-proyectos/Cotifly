@@ -3963,8 +3963,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorWeb'
+        '429':
+          description: '`IA_TOPE_DIARIO` (#278): Nexo respondió 429 `IA_TOPE_DIARIO`, el comercial agotó su cupo diario de IA en Nexo. Sin `Retry-After`: se reintenta al día siguiente (o se captura la licitación sin el análisis). El 429 `DEMASIADAS_SOLICITUDES` de Nexo (cupo por minuto) es 503 `COSTEO_NEXO_NO_DISPONIBLE`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
         '503':
-          description: '`COSTEO_NEXO_NO_DISPONIBLE` o `COSTEO_NEXO_TIEMPO_AGOTADO`. Como en el resto de los endpoints, `detalle.motivo` lleva solo el código de Nexo (por ejemplo `SESION_INVALIDA`, o `HTTP 401` si Nexo no manda código), nunca su texto (HU-013.15, #124). HU-035.2 (#213): `SERVICIO_OCUPADO` con `Retry-After` si el cupo de lecturas de Excel siguió lleno 15 s (el archivo no se envió a Nexo)'
+          description: '`COSTEO_NEXO_NO_DISPONIBLE` o `COSTEO_NEXO_TIEMPO_AGOTADO`. Como en el resto de los endpoints, `detalle.motivo` lleva solo el código de Nexo (por ejemplo `SESION_INVALIDA`, o `HTTP 401` si Nexo no manda código), nunca su texto (HU-013.15, #124). #278: también el 429 `DEMASIADAS_SOLICITUDES` de Nexo, con `detalle.motivo` = `DEMASIADAS_SOLICITUDES (Retry-After N s)`. HU-035.2 (#213): `SERVICIO_OCUPADO` con `Retry-After` si el cupo de lecturas de Excel siguió lleno 15 s (el archivo no se envió a Nexo)'
           content:
             application/json:
               schema:
@@ -4941,6 +4947,16 @@ components:
                 `SAP_MARGEN_SINCRONIZACION_EN_CURSO` (409 en `POST /web/admin/sap-margen/sincronizar`: esta réplica ya está
                 sincronizando; nada cambió) y `SAP_MARGEN_NO_DISPONIBLE` (503 en `/web/admin/sap-margen/*`: la base de Cotifly no
                 respondió al leer el estado o al registrar la corrida; reintentable).
+                Contrato único de NEXO, fase 0 (#278, DU §8 y §9): `LINEA_NEGOCIO_INVALIDO` (400, mismo código que NEXO: la línea de
+                negocio que viajaría a NEXO, el `mapeoLineasNexo` de la línea de la ruta, no es una de las seis de NEXO: `Nacional`,
+                `Puerto a interior`, `Interior a puerto`, `Devolución de contenedor`, `Andino` o `Licitaciones`, en cualquier escritura
+                que NEXO acepte. En `POST /web/solicitudes-costeo` y `POST /web/licitaciones` se valida antes de guardar y no se llama a
+                NEXO; `detalle.linea_negocio`, `detalle.linea_negocio_nexo` y `detalle.permitidas`. Al reenviar una guardada, o si NEXO lo
+                responde, la cotización queda en `error_envio` reintentable: lo corrige el administrador en el mapeo) e `IA_TOPE_DIARIO`
+                (429, mismo código que NEXO, sin `Retry-After`: el comercial agotó su cupo DIARIO de IA en NEXO al analizar un Excel; se
+                reintenta al día siguiente. El `429 DEMASIADAS_SOLICITUDES` de NEXO, el cupo por minuto, sigue siendo
+                `COSTEO_NEXO_NO_DISPONIBLE` con el `Retry-After` en `detalle.motivo`). `CUBICACION_DEMASIADO_GRANDE` también si NEXO
+                lo responde al alta (más de 200 posiciones o 10.000 unidades en una línea): `error_envio` definitivo.
               enum:
                 - MARGEN_LINEA_DESCONOCIDA
                 - PRECIO_INVALIDO
@@ -5027,6 +5043,8 @@ components:
                 - SAP_MARGEN_NO_CONFIGURADO
                 - SAP_MARGEN_SINCRONIZACION_EN_CURSO
                 - SAP_MARGEN_NO_DISPONIBLE
+                - LINEA_NEGOCIO_INVALIDO
+                - IA_TOPE_DIARIO
             mensaje:
               type: string
             detalle:

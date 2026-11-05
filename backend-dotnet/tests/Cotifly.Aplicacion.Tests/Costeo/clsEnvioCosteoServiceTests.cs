@@ -460,6 +460,59 @@ public sealed class clsEnvioCosteoServiceTests
     }
 
     [Fact]
+    public async Task UnaLineaMapeadaAUnaLineaQueNexoNoAceptaNoGuardaNadaNiLlamaANexo()
+    {
+        // #278 (DU §8): solo seis líneas de negocio de Nexo; un mapeo de texto libre ya no se manda (Nexo lo rechazaría).
+        _margen.ResolverLineaAsync("Importación", Arg.Any<CancellationToken>()).Returns(ConMapeo(clsMargenPolitica.Crear("Importacion", 0.15m).Valor, "Importaciones"));
+
+        var resultado = await Servicio().EnviarAsync(_ana, Entrada(), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.LineaNegocioInvalido);
+        resultado.Error.Mensaje.Should().Contain("Importacion").And.Contain("Importaciones").And.Contain("Puerto a interior");
+        resultado.Error.Datos!["linea_negocio_nexo"].Should().Be("Importaciones");
+        resultado.Error.Datos["permitidas"].Should().BeEquivalentTo(clsLineasNegocioNexo.Permitidas);
+        _eventos.Should().BeEmpty();
+        await _folios.DidNotReceiveWithAnyArgs().CrearConFolioNuevoAsync<clsCotizacionSolicitud>(default, default, default!, Ct);
+    }
+
+    [Theory]
+    [InlineData("PuertoAInterior")]
+    [InlineData("puerto-a-interior")]
+    [InlineData(null)]
+    public async Task UnaLineaMapeadaAUnaDeLasSeisOSinMapeoSeEnviaTalCual(string? mapeo)
+    {
+        _margen.ResolverLineaAsync("Importación", Arg.Any<CancellationToken>()).Returns(ConMapeo(clsMargenPolitica.Crear("Importacion", 0.15m).Valor, mapeo));
+
+        var resultado = await Servicio().EnviarAsync(_ana, Entrada(), Ct);
+
+        resultado.Valor.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo);
+        await _nexo.Received(1).EnviarSolicitudAsync(_ana, Arg.Is<clsSolicitudNexo>(s => s.Lineas.All(l => l.LineaNegocioNexo == mapeo)), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SiElMapeoCambioAUnaLineaQueNexoNoAceptaElReintentoQuedaEnErrorReintentableSinLlamarANexo()
+    {
+        var cotizacion = await CotizacionEnErrorAsync();
+        _cotizaciones.ReclamarReenvioCosteoAsync(cotizacion.Id, cotizacion.UpdatedAt, _reloj.AhoraUtc, Arg.Any<CancellationToken>()).Returns(true);
+        _politicas.ObtenerPorIdAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(ConMapeo(clsMargenPolitica.Crear("Importacion", 0.15m).Valor, "Exportaciones"));
+        _nexo.ClearReceivedCalls();
+
+        var resultado = await Servicio().ReintentarAsync(_ana, cotizacion.Folio, Ct);
+
+        resultado.Valor.EstadoCosteo.Should().Be(EstadoCosteo.ErrorEnvio);
+        resultado.Valor.MotivoEstadoCosteo.Should().Contain("Exportaciones");
+        resultado.Valor.ErrorEnvioDefinitivo.Should().BeFalse("lo corrige el administrador en el mapeo y el reintento vuelve a leerlo");
+        await _nexo.DidNotReceiveWithAnyArgs().EnviarSolicitudAsync(default, default!, Ct);
+    }
+
+    [Theory]
+    [InlineData(clsCodigosError.CubicacionDemasiadoGrande, true)]
+    [InlineData(clsCodigosError.LineaNegocioInvalido, false)]
+    [InlineData(clsCodigosError.IaTopeDiario, false)]
+    public void LosRechazosNuevosDeNexoSonDefinitivosSoloSiLosMismosDatosNoPuedenPasar(string codigo, bool definitivo) =>
+        clsEnvioCosteoService.EsRechazoDefinitivo(new clsErrorDominio(codigo, "x")).Should().Be(definitivo);
+
+    [Fact]
     public async Task ElReintentoReenviaLaSolicitudGuardadaSinVolverALlenarElFormulario()
     {
         var cotizacion = await CotizacionEnErrorAsync();
@@ -1045,6 +1098,13 @@ public sealed class clsEnvioCosteoServiceTests
     private static clsMargenPolitica ConId(clsMargenPolitica politica, int id)
     {
         typeof(clsMargenPolitica).GetProperty(nameof(clsMargenPolitica.Id))!.SetValue(politica, id);
+        return politica;
+    }
+
+    /// <summary>#278: la política con un mapeo a Nexo cualquiera (como lo leería EF de la base, sin pasar por <c>Crear</c>).</summary>
+    private static clsMargenPolitica ConMapeo(clsMargenPolitica politica, string? mapeo)
+    {
+        typeof(clsMargenPolitica).GetProperty(nameof(clsMargenPolitica.MapeoLineasNexo))!.SetValue(politica, mapeo);
         return politica;
     }
 

@@ -482,11 +482,25 @@ public sealed class clsCosteoNexo(
     public const string MensajeDwCubos =
         "Nexo no tiene configurado el cálculo de cubicaje (DWCubos): intenta de nuevo más tarde o avisa al equipo de Nexo.";
 
+    /// <summary>Mensaje de <c>LINEA_NEGOCIO_INVALIDO</c> cuando lo responde Nexo (#278): lo corrige el administrador en el mapeo.</summary>
+    public static readonly string MensajeLineaNegocioInvalida =
+        $"Nexo no acepta la línea de negocio de la solicitud (solo {clsLineasNegocioNexo.Lista}): pide al administrador corregir el mapeo de la línea de negocio y reintenta el envío.";
+
+    /// <summary>Mensaje de <c>CUBICACION_DEMASIADO_GRANDE</c> cuando lo responde Nexo (#278).</summary>
+    public const string MensajeCubicacionDemasiadoGrande =
+        "Nexo rechazó la solicitud: una línea trae más de 200 mercancías o más de 10.000 unidades en total. Parte la carga en varias rutas y crea la cotización de nuevo.";
+
+    /// <summary>Mensaje de <c>IA_TOPE_DIARIO</c> (429 de Nexo, #278): el cupo diario de IA del comercial en Nexo.</summary>
+    public const string MensajeIaTopeDiario =
+        "Agotaste tu cupo diario de IA en Nexo: intenta de nuevo mañana o captura la solicitud sin el análisis automático.";
+
     /// <summary>
     /// Traduce un 400 del alta (G16, <c>docs/conexion_nexo/HU-013-preguntas-nexo.md</c> §3): <c>ENUM_INVALIDO</c>, <c>LINEA_INCOMPLETA</c>,
     /// <c>PESO_REQUERIDO</c> y <c>PESO_INCONSISTENTE</c> → <c>SOLICITUD_COSTEO_INVALIDA</c> (definitivo); <c>CLIENTE_REQUERIDO</c>,
     /// <c>CLIENTE_INVALIDO</c> y <c>CLIENTE_BP_INVALIDO</c> → <c>COSTEO_NEXO_RECHAZADA</c> con un motivo de cliente (reintentable);
-    /// <c>DWCUBOS_NO_CONFIGURADO</c> → <c>COSTEO_NEXO_NO_DISPONIBLE</c> (reintentable); cualquier otro (<c>VALIDATION_ERROR</c>...) →
+    /// <c>DWCUBOS_NO_CONFIGURADO</c> → <c>COSTEO_NEXO_NO_DISPONIBLE</c> (reintentable); #278 (contrato único de NEXO, DU §9):
+    /// <c>LINEA_NEGOCIO_INVALIDO</c> → <c>LINEA_NEGOCIO_INVALIDO</c> (reintentable: lo corrige el administrador en el mapeo) y
+    /// <c>CUBICACION_DEMASIADO_GRANDE</c> → <c>CUBICACION_DEMASIADO_GRANDE</c> (definitivo); cualquier otro (<c>VALIDATION_ERROR</c>...) →
     /// <c>COSTEO_NEXO_SOLICITUD_INVALIDA</c>. El detalle conserva <c>HTTP 400 {code}: {message}</c> de Nexo.
     /// </summary>
     public static clsErrorDominio TraducirRechazoCaptura(string detalle)
@@ -498,6 +512,8 @@ public sealed class clsCosteoNexo(
             not null when CodigosCapturaDatos.Contains(codigo) => new clsErrorDominio(clsCodigosError.SolicitudCosteoInvalida, MensajeCapturaDatos, detalle),
             not null when CodigosCapturaCliente.Contains(codigo) => new clsErrorDominio(clsCodigosError.CosteoNexoRechazada, MensajeCapturaCliente, detalle),
             CodigoDwCubosNoConfigurado => new clsErrorDominio(clsCodigosError.CosteoNexoNoDisponible, MensajeDwCubos, detalle),
+            clsCodigosError.LineaNegocioInvalido => new clsErrorDominio(clsCodigosError.LineaNegocioInvalido, MensajeLineaNegocioInvalida, detalle),
+            clsCodigosError.CubicacionDemasiadoGrande => new clsErrorDominio(clsCodigosError.CubicacionDemasiadoGrande, MensajeCubicacionDemasiadoGrande, detalle),
             _ => new clsErrorDominio(clsCodigosError.CosteoNexoSolicitudInvalida, MensajeSolicitudInvalida, detalle),
         };
     }
@@ -897,8 +913,13 @@ public sealed class clsCosteoNexo(
             {
                 // HU-023.4 (#159): cupo de Nexo agotado (por rol). No es un rechazo de los datos: no disponible, reintentable cuando pase el
                 // Retry-After (clsCupoNexoHandler ya bloqueó las lecturas hasta entonces).
-                var (_, _, detalle429) = await LeerErrorNexoAsync(respuesta, cancellationToken);
-                return NoDisponible(ConEspera(detalle429, respuesta));
+                var (codigo429, _, detalle429) = await LeerErrorNexoAsync(respuesta, cancellationToken);
+
+                // #278 (DU §2.1): IA_TOPE_DIARIO es el cupo DIARIO de IA del comercial, no el cupo por minuto: no sirve esperar el
+                // Retry-After. Ninguno de los dos se reintenta (un POST nunca, y la captura no reenvía sola).
+                return codigo429 == clsCodigosError.IaTopeDiario
+                    ? new clsErrorDominio(clsCodigosError.IaTopeDiario, MensajeIaTopeDiario, detalle429)
+                    : NoDisponible(ConEspera(detalle429, respuesta));
             }
 
             if ((int)respuesta.StatusCode is >= 400 and < 500)

@@ -70,6 +70,23 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
     }
 
     [Fact]
+    public async Task ElTopeDiarioDeIaDeNexoEs429IaTopeDiarioYNoUnaCaida()
+    {
+        // #278 (DU §2.1): el cupo diario de IA del comercial (IA_TOPE_DIARIO) no es el cupo por minuto (DEMASIADAS_SOLICITUDES, 503).
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        _nexo.AnalisisFalla = HttpStatusCode.TooManyRequests;
+        _nexo.CodigoAnalisisFalla = "IA_TOPE_DIARIO";
+
+        using var respuesta = await _api.EnviarContenidoAsync(HttpMethod.Post, "/web/licitaciones/analizar-excel", sesion.Access,
+            clsApiWebPruebas.Archivo(clsPliegoMuestra.Excel()));
+
+        var json = await VerificarContratoAsync(respuesta, "/web/licitaciones/analizar-excel", HttpMethod.Post, HttpStatusCode.TooManyRequests);
+        json.GetProperty("error").GetProperty("codigo").GetString().Should().Be("IA_TOPE_DIARIO");
+        respuesta.Headers.RetryAfter.Should().BeNull("el cupo diario no se libera en segundos");
+        _nexo.Llamadas(HttpMethod.Post, "/api/captura-solicitudes/analizar-excel").Should().Be(1, "un POST nunca se reintenta");
+    }
+
+    [Fact]
     public async Task LaLicitacionConArchivoGuardaSusLineasYElOriginalYViajaComoUnaSolicitudDeNLineas()
     {
         var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);

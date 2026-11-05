@@ -98,6 +98,18 @@ public sealed record clsEncabezadoSolicitudCosteo
         clsLineaSolicitudCosteo.Largo(errores, "notas", Notas, clsSolicitudCosteo.LargoNotas);
         clsLineaSolicitudCosteo.Rango(errores, "horas_cargue", HorasCargue, 0m, clsSolicitudCosteo.MaximoHoras);
         clsLineaSolicitudCosteo.Rango(errores, "horas_descargue", HorasDescargue, 0m, clsSolicitudCosteo.MaximoHoras);
+        return errores;
+    }
+
+    /// <summary>
+    /// #278 (DU §5): las horas del encabezado QUE ESCRIBIÓ EL COMERCIAL van las dos o ninguna (<c>CAMPO_REQUERIDO</c> en la que falta). Solo
+    /// se pide a la entrada (formulario, edición y licitación): el encabezado guardado no trae horas (son de cada ruta) y el de una
+    /// re-solicitud lleva solo las que cambian; lo que viaja a Nexo es la pareja de cada línea, que valida
+    /// <see cref="clsLineaSolicitudCosteo.Errores"/>.
+    /// </summary>
+    public IReadOnlyList<clsErrorCampo> ErroresHorasEnPareja()
+    {
+        var errores = new List<clsErrorCampo>();
         clsLineaSolicitudCosteo.HorasEnPareja(errores, HorasCargue, HorasDescargue);
         return errores;
     }

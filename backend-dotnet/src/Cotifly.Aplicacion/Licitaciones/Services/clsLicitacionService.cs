@@ -494,6 +494,12 @@ public sealed class clsLicitacionService(
                 });
             }
 
+            // #278 (DU §8): la línea de Nexo de las filas de esa línea debe ser una de las seis (se envía la de cada ruta).
+            if (clsMargenResolverService.LineaNexoInvalida(resuelta) is { } lineaNexo)
+            {
+                return clsResultadoLicitacion.Fallo(lineaNexo);
+            }
+
             porNombre[nombre] = resuelta;
         }
 
@@ -656,7 +662,8 @@ public sealed class clsLicitacionService(
     /// <summary>
     /// OBS-1027-4 (#226): los errores de la línea de negocio para el reporte por fila, con la misma regla que el alta (sin política,
     /// <see cref="clsMargenResolverService.LineaDesconocida"/> con la explicación de "Licitaciones"; inactiva,
-    /// <see cref="clsMargenResolverService.LineaInactiva"/>): la del encabezado con <c>indice = null</c> y la de cada fila que trae la suya
+    /// <see cref="clsMargenResolverService.LineaInactiva"/>; #278: activa pero con un mapeo a Nexo fuera de las seis líneas de Nexo,
+    /// <see cref="clsMargenResolverService.LineaNexoInvalida(Dominio.Margen.clsMargenPolitica)"/>): la del encabezado con <c>indice = null</c> y la de cada fila que trae la suya
     /// con su índice, en el campo <c>linea_negocio</c>. Devuelve también las líneas activas si hubo algún error (<c>null</c> si no). Una
     /// línea vacía no se revisa aquí: ya la reporta la validación de las filas.
     /// </summary>
@@ -689,7 +696,7 @@ public sealed class clsLicitacionService(
 
                 error = resuelta is null
                     ? clsMargenResolverService.LineaDesconocida(limpio, activas!, esLicitacion: true)
-                    : resuelta.Activa ? null : clsMargenResolverService.LineaInactiva(resuelta.LineaNegocio);
+                    : resuelta.Activa ? clsMargenResolverService.LineaNexoInvalida(resuelta) : clsMargenResolverService.LineaInactiva(resuelta.LineaNegocio);
                 porNombre[limpio] = error;
             }
 

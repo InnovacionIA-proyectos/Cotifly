@@ -185,6 +185,43 @@ public sealed class clsMargenResolverService(
     public static clsErrorDominio LineaInactiva(string linea) =>
         new(clsCodigosError.MargenLineaDesconocida, $"La línea '{linea}' está inactiva: no se puede cotizar con ella.", DetalleLineaInactiva);
 
+    /// <summary>
+    /// #278 (DU §8): <c>LINEA_NEGOCIO_INVALIDO</c> si el <c>mapeoLineasNexo</c> de <paramref name="politica"/> (lo que viaja a NEXO como
+    /// <c>lineaNegocio</c> de las rutas de esa línea) no es una de las seis líneas de NEXO; <c>null</c> si es válido o no tiene mapeo (sin
+    /// línea). Se valida ANTES de llamar a NEXO, que lo rechazaría con el mismo código.
+    /// </summary>
+    public static clsErrorDominio? LineaNexoInvalida(clsMargenPolitica politica)
+    {
+        ArgumentNullException.ThrowIfNull(politica);
+        return LineaNexoInvalida(politica.LineaNegocio, politica.MapeoLineasNexo);
+    }
+
+    /// <summary>
+    /// <see cref="LineaNexoInvalida(clsMargenPolitica)"/> sobre el valor que viajaría (<paramref name="lineaNegocioNexo"/>) y la línea de
+    /// Cotifly de la que sale (<paramref name="lineaNegocio"/>, para el mensaje; <c>null</c> si no se conoce).
+    /// </summary>
+    public static clsErrorDominio? LineaNexoInvalida(string? lineaNegocio, string? lineaNegocioNexo)
+    {
+        if (Dominio.Cotizaciones.clsLineasNegocioNexo.EsValida(lineaNegocioNexo))
+        {
+            return null;
+        }
+
+        var valor = lineaNegocioNexo!.Trim();
+        var origen = string.IsNullOrWhiteSpace(lineaNegocio) ? "La línea de negocio" : $"La línea de negocio '{lineaNegocio.Trim()}'";
+        return new clsErrorDominio(clsCodigosError.LineaNegocioInvalido,
+            $"{origen} está asociada en Cotifly a la línea de Nexo '{valor}', que Nexo no acepta (solo {Dominio.Cotizaciones.clsLineasNegocioNexo.Lista}): "
+            + "pide al administrador corregir el mapeo de la línea de negocio. No se envió nada a Nexo.")
+        {
+            Datos = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["linea_negocio"] = lineaNegocio?.Trim(),
+                ["linea_negocio_nexo"] = valor,
+                ["permitidas"] = Dominio.Cotizaciones.clsLineasNegocioNexo.Permitidas,
+            },
+        };
+    }
+
     /// <summary>Línea de negocio de Nexo para licitaciones (catálogo <c>GET /api/catalogos/lineas-negocio</c>); no es una línea de Cotifly.</summary>
     public const string LineaNexoLicitaciones = "Licitaciones";
 

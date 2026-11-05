@@ -163,6 +163,8 @@ public sealed class clsCosteoNexoTests : IDisposable
     [InlineData("CLIENTE_BP_INVALIDO", clsCodigosError.CosteoNexoRechazada)]
     [InlineData("DWCUBOS_NO_CONFIGURADO", clsCodigosError.CosteoNexoNoDisponible)]
     [InlineData("VALIDATION_ERROR", clsCodigosError.CosteoNexoSolicitudInvalida)]
+    [InlineData("LINEA_NEGOCIO_INVALIDO", clsCodigosError.LineaNegocioInvalido)]
+    [InlineData("CUBICACION_DEMASIADO_GRANDE", clsCodigosError.CubicacionDemasiadoGrande)]
     public async Task Un400DelAltaSeTraduceAlCodigoDeCotiflyConservandoElDeNexo(string codigoNexo, string esperado)
     {
         _nexo.Responder(HttpStatusCode.BadRequest, $$"""{"code":"{{codigoNexo}}","message":"No coincide."}""");
@@ -597,6 +599,61 @@ public sealed class clsCosteoNexoTests : IDisposable
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.CosteoNexoNoDisponible).And.NotBe(clsCodigosError.CosteoNexoRechazada);
         resultado.Error.Detalle.Should().Contain("HTTP 429 DEMASIADAS_SOLICITUDES").And.Contain("Retry-After 30 s");
+    }
+
+    /// <summary>
+    /// #278: el adaptador contra el Nexo falso con las reglas del contrato único (DU §5 y §8). Lo que Cotifly ya valida en la captura, si
+    /// llegara a Nexo, vuelve con el código de Nexo traducido; una solicitud válida (la muestra) pasa sin ningún rechazo.
+    /// </summary>
+    [Theory]
+    [InlineData("linea", clsCodigosError.LineaNegocioInvalido, "LINEA_NEGOCIO_INVALIDO")]
+    [InlineData("unidades", clsCodigosError.CubicacionDemasiadoGrande, "CUBICACION_DEMASIADO_GRANDE")]
+    [InlineData("sin_peso", clsCodigosError.CosteoNexoSolicitudInvalida, "VALIDATION_ERROR")]
+    [InlineData("horas", clsCodigosError.CosteoNexoSolicitudInvalida, "VALIDATION_ERROR")]
+    [InlineData("valida", null, null)]
+    public async Task ContraElNexoFalsoLasReglasDelContratoUnicoVuelvenConSuCodigo(string caso, string? esperado, string? codigoNexo)
+    {
+        using var nexo = new clsNexoFalso();
+        using var http = new HttpClient(nexo);
+        var adaptador = new clsCosteoNexo(http, Options.Create(new clsOpcionesNexo { UrlBase = clsNexoFalso.UrlBase }), _usuarios,
+            NullLogger<clsCosteoNexo>.Instance);
+        var muestra = clsSolicitudCosteoMuestra.Crear();
+        var (formulario, linea) = caso switch
+        {
+            "linea" => (muestra, "Importaciones"),
+            "unidades" => (muestra with { PesoKg = 10_001m, Posiciones = [new Cotifly.Dominio.Cotizaciones.clsPosicionCarga("Caja", 10_001, 10m, 10m, 10m, 1m)] }, "Nacional"),
+            "sin_peso" => (muestra with { Posiciones = [new Cotifly.Dominio.Cotizaciones.clsPosicionCarga("Caja", 1, 10m, 10m, 10m, null)] }, "Nacional"),
+            "horas" => (muestra with { HorasDescargue = null }, "Nacional"),
+            _ => (muestra, "puertoAInterior"),
+        };
+
+        var resultado = await adaptador.EnviarSolicitudAsync(_usuarioId, new clsSolicitudNexo("15927", formulario, linea), Ct);
+
+        if (esperado is null)
+        {
+            resultado.EsExitoso.Should().BeTrue();
+            nexo.RechazosContrato.Should().BeEmpty();
+            return;
+        }
+
+        resultado.Error.Codigo.Should().Be(esperado);
+        resultado.Error.Detalle.Should().StartWith($"HTTP 400 {codigoNexo}");
+        nexo.RechazosContrato.Should().Equal(codigoNexo);
+    }
+
+    [Theory]
+    [InlineData("IA_TOPE_DIARIO", clsCodigosError.IaTopeDiario)]
+    [InlineData("DEMASIADAS_SOLICITUDES", clsCodigosError.CosteoNexoNoDisponible)]
+    public async Task Un429DelAltaDistingueElTopeDiarioDeIaDelCupoPorMinutoYNoSeReintenta(string codigoNexo, string esperado)
+    {
+        // #278 (DU §2.1): IA_TOPE_DIARIO es el cupo diario de IA del comercial; DEMASIADAS_SOLICITUDES, el cupo por minuto (Retry-After).
+        _nexo.Responder(HttpStatusCode.TooManyRequests, $$"""{"code":"{{codigoNexo}}","message":"Límite."}""");
+
+        var resultado = await Adaptador().EnviarSolicitudAsync(_usuarioId, Solicitud(), Ct);
+
+        resultado.Error.Codigo.Should().Be(esperado);
+        resultado.Error.Detalle.Should().Contain($"HTTP 429 {codigoNexo}");
+        _nexo.Peticiones.Should().ContainSingle("un POST de la captura nunca se reintenta");
     }
 
     [Fact]

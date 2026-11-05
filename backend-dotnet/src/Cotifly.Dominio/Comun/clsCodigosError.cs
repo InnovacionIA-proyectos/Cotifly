@@ -380,6 +380,22 @@ public static class clsCodigosError
     public const string CubicacionDemasiadoGrande = "CUBICACION_DEMASIADO_GRANDE";
 
     /// <summary>
+    /// #278 (contrato único de NEXO, DU §8): la línea de negocio que viajaría a NEXO (<c>MargenesPolitica.mapeoLineasNexo</c> de la línea de
+    /// la ruta) no es una de las seis de NEXO. Cotifly lo valida antes de llamar (en la captura y la licitación: 400 y nada se guarda; al
+    /// reenviar una guardada: <c>error_envio</c> reintentable) y traduce igual el <c>400 LINEA_NEGOCIO_INVALIDO</c> de NEXO. Lo corrige el
+    /// administrador en el mapeo. 400; <c>detalle.linea_negocio</c>, <c>detalle.linea_negocio_nexo</c> y <c>detalle.permitidas</c>. Mismo
+    /// código que usa NEXO.
+    /// </summary>
+    public const string LineaNegocioInvalido = "LINEA_NEGOCIO_INVALIDO";
+
+    /// <summary>
+    /// #278 (DU §2.1 y §9): NEXO respondió <c>429 IA_TOPE_DIARIO</c>: el comercial agotó su cupo DIARIO de IA en NEXO (análisis del Excel).
+    /// No es el <c>429 DEMASIADAS_SOLICITUDES</c> del cupo por minuto (ese es <c>COSTEO_NEXO_NO_DISPONIBLE</c>, reintentable tras el
+    /// <c>Retry-After</c>): no se reintenta hasta el día siguiente. 429. Mismo código que usa NEXO.
+    /// </summary>
+    public const string IaTopeDiario = "IA_TOPE_DIARIO";
+
+    /// <summary>
     /// HU-036.2 (#206): <c>POST .../finalizar</c> sobre una cotización cuyo <c>estado_costeo</c> no es <c>autocosteo</c> ni <c>entregada</c>
     /// (sin el costeo de Nexo listo no hay precio que aceptar; el chat y las licitaciones sin costeo tampoco). 409; <c>detalle.estado_costeo</c>
     /// trae el estado actual. Código nuevo del backend .NET.

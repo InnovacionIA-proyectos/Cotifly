@@ -268,6 +268,12 @@ public sealed class clsEnvioCosteoService(
                     return clsMargenResolverService.LineaInactiva(resuelta.LineaNegocio);
                 }
 
+                // #278 (DU §8): la línea de Nexo de la ruta debe ser una de las seis; si no, Nexo rechazaría el alta. Nada se guarda.
+                if (clsMargenResolverService.LineaNexoInvalida(resuelta) is { } lineaNexo)
+                {
+                    return lineaNexo;
+                }
+
                 // G11: advertencia (no bloquea) si el mapeo a la línea de Nexo no está en su catálogo de líneas de negocio.
                 catalogos.RevisarMapeoLineaNexo(resuelta);
                 porNombre[nombre] = deRuta = resuelta;
@@ -446,7 +452,7 @@ public sealed class clsEnvioCosteoService(
             Encabezado("moneda", clsCodigosLineaSolicitud.ValorFueraDeRango, moneda.Mensaje);
         }
 
-        foreach (var error in entrada.Encabezado.Errores())
+        foreach (var error in entrada.Encabezado.Errores().Concat(entrada.Encabezado.ErroresHorasEnPareja()))
         {
             Encabezado(error.Campo, error.Codigo, error.Mensaje);
         }
@@ -910,6 +916,14 @@ public sealed class clsEnvioCosteoService(
         Guid usuarioId,
         CancellationToken cancellationToken)
     {
+        // #278 (DU §8): ninguna línea viaja con una línea de negocio que Nexo no acepta (el mapeo de su ruta pudo cambiar después de la
+        // captura). Sin llamar a Nexo: error_envio reintentable, que pasa cuando el administrador corrige el mapeo.
+        if (lineas.Select(l => l.LineaNegocioNexo).FirstOrDefault(l => !clsLineasNegocioNexo.EsValida(l)) is { } invalida)
+        {
+            var linea = politicasRuta.Values.Append(politica).FirstOrDefault(p => p is not null && string.Equals(p.MapeoLineasNexo, invalida, StringComparison.Ordinal));
+            return clsMargenResolverService.LineaNexoInvalida(linea?.LineaNegocio, invalida)!;
+        }
+
         var nit = cotizacion.NitCliente;
         if (nit is null)
         {
@@ -1045,7 +1059,10 @@ public sealed class clsEnvioCosteoService(
     public static bool EsRechazoDefinitivo(clsErrorDominio error)
     {
         ArgumentNullException.ThrowIfNull(error);
-        return error.Codigo is clsCodigosError.CosteoNexoSolicitudInvalida or clsCodigosError.SolicitudCosteoInvalida;
+        // #278: CUBICACION_DEMASIADO_GRANDE (más posiciones o unidades de las que admite Nexo) tampoco cambia con los mismos datos.
+        // LINEA_NEGOCIO_INVALIDO sí se reintenta: lo corrige el administrador en el mapeo y el reintento vuelve a leerlo.
+        return error.Codigo is clsCodigosError.CosteoNexoSolicitudInvalida or clsCodigosError.SolicitudCosteoInvalida
+            or clsCodigosError.CubicacionDemasiadoGrande;
     }
 
     /// <summary>Motivo legible para <c>motivoEstadoCosteo</c>: el mensaje y, si hay, el detalle (código y mensaje de Nexo).</summary>
