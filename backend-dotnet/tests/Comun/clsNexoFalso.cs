@@ -32,8 +32,9 @@ public sealed class clsNexoFalso : HttpMessageHandler
     public HttpStatusCode? AltaFalla { get; set; }
 
     /// <summary>
-    /// HU-030.1 (#184): altas rechazadas con <c>400 PESO_INCONSISTENTE</c>. Como Nexo (<c>CapturarSolicitudValidador</c>, confirmado al
-    /// cerrar NEXO#308): una línea con posiciones con peso cuyo <c>peso</c> difiere más del 1 % de <c>Σ cantidad × pesoKg</c> se rechaza.
+    /// HU-030.1 (#184): altas rechazadas con <c>400 PESO_INCONSISTENTE</c>. #250 (DU §8), como Nexo: se rechaza una línea con posiciones
+    /// con peso cuya <c>Σ cantidad × pesoKg</c> supera <c>peso × 1,01</c>; un peso mayor que la suma (la tara) se acepta
+    /// (<see cref="LineaConPesoInconsistente"/>).
     /// </summary>
     public int AltasPesoInconsistente => Volatile.Read(ref _altasPesoInconsistente);
 

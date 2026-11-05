@@ -8108,7 +8108,7 @@ components:
             HU-030.1 (#184). **Solo con `clase_viaje = Contenedor`** y opcional: peso total de la ruta CON la tara de los contenedores
             (kg, 2 decimales), lo escribe el comercial. Valor inicial sugerido: el peso de carga (`peso_kg`). No puede ser menor que
             el peso de carga (`peso_kg` o, sin él, la suma de las mercancías): `PESO_CON_TARA_MENOR_QUE_CARGA`. Con otra clase de
-            viaje es `CAMPO_NO_APLICA` (#250: también en Carga Suelta y Extradimensionado, que mandan el peso de la carga). No va al
+            viaje es `CAMPO_NO_APLICA` (#250: Carga Suelta y Extradimensionado mandan el peso de la carga). No va al
             cubicador (recibe el peso por mercancía, sin tara): va a Nexo como `peso` de las líneas de la ruta, repartido por camión
             (la tara, por partes iguales). #250 (contrato único de Nexo, DU §8): `peso` es el total con tara y Nexo solo responde
             `PESO_INCONSISTENTE` si la suma de las posiciones lo SUPERA en más de 1 %, así que con **un solo camión** la línea viaja
@@ -8674,7 +8674,7 @@ components:
             HU-030.1 (#184). **Solo con `clase_viaje = Contenedor`** y opcional: peso total de la ruta CON la tara de los contenedores
             (kg, 2 decimales), lo escribe el comercial. Valor inicial sugerido: el peso de carga (`peso_kg`). No puede ser menor que
             el peso de carga (`peso_kg` o, sin él, la suma de las mercancías): `PESO_CON_TARA_MENOR_QUE_CARGA`. Con otra clase de
-            viaje es `CAMPO_NO_APLICA` (#250: también en Carga Suelta y Extradimensionado, que mandan el peso de la carga). No va al
+            viaje es `CAMPO_NO_APLICA` (#250: Carga Suelta y Extradimensionado mandan el peso de la carga). No va al
             cubicador (recibe el peso por mercancía, sin tara): va a Nexo como `peso` de las líneas de la ruta, repartido por camión
             (la tara, por partes iguales). #250 (contrato único de Nexo, DU §8): `peso` es el total con tara y Nexo solo responde
             `PESO_INCONSISTENTE` si la suma de las posiciones lo SUPERA en más de 1 %, así que con **un solo camión** la línea viaja
@@ -9303,7 +9303,7 @@ components:
             HU-030.1 (#184). **Solo con `clase_viaje = Contenedor`** y opcional: peso total de la ruta CON la tara de los contenedores
             (kg, 2 decimales), lo escribe el comercial. Valor inicial sugerido: el peso de carga (`peso_kg`). No puede ser menor que
             el peso de carga (`peso_kg` o, sin él, la suma de las mercancías): `PESO_CON_TARA_MENOR_QUE_CARGA`. Con otra clase de
-            viaje es `CAMPO_NO_APLICA` (#250: también en Carga Suelta y Extradimensionado, que mandan el peso de la carga). No va al
+            viaje es `CAMPO_NO_APLICA` (#250: Carga Suelta y Extradimensionado mandan el peso de la carga). No va al
             cubicador (recibe el peso por mercancía, sin tara): va a Nexo como `peso` de las líneas de la ruta, repartido por camión
             (la tara, por partes iguales). #250 (contrato único de Nexo, DU §8): `peso` es el total con tara y Nexo solo responde
             `PESO_INCONSISTENTE` si la suma de las posiciones lo SUPERA en más de 1 %, así que con **un solo camión** la línea viaja

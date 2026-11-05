@@ -348,6 +348,8 @@ public sealed record clsLineaSolicitudCosteo
         }
         else if (suma > 0 && Math.Abs(peso.Value - suma) / peso.Value > clsSolicitudCosteo.ToleranciaPeso)
         {
+            // #250 (DU §8): regla propia de Cotifly sobre la carga sin tara, simétrica y más estricta que la de Nexo (que solo rechaza
+            // una suma mayor que peso × 1,01); al cumplirse, garantiza la de Nexo sobre lo que viaja (ver clsSolicitudCosteo.ValidarPeso).
             errores.Add(new clsErrorCampo("peso_kg", clsCodigosLineaSolicitud.PesoInconsistente,
                 $"El peso total ({peso.Value:0.##} kg) no coincide con la suma de las posiciones ({suma:0.##} kg)."));
         }
