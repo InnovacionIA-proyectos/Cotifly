@@ -72,23 +72,98 @@ public sealed class clsMargenRepositoryTests(clsBaseDatosPruebas baseDatos) : cl
     [Fact]
     public async Task ElMapeoSembradoTraduceTrqTypeALineaYViceversa()
     {
+        var nacional = await IdDeAsync("Nacional");
         var (linea, trqType) = await ConsultarAsync(async s =>
         {
             var repo = s.GetRequiredService<IClsSapMapeoRepository>();
-            return (await repo.LineaDeAsync("OPTN", cancellationToken: Ct), await repo.TrqTypeDeAsync("Nacional", cancellationToken: Ct));
+            return (await repo.LineaDeAsync("OPTN", cancellationToken: Ct), await repo.TrqTypeDeAsync(nacional, cancellationToken: Ct));
         });
 
         linea.Should().Be("Nacional");
         trqType.Should().Be("OPTN");
     }
 
+    // HU-042.4 (#247): el script 18 rellena lineaNegocioId cruzando por el texto; las filas sembradas quedan con el id de su línea.
+    [Fact]
+    public async Task ElScript18DejaCadaMapeoSembradoConElIdDeSuLinea()
+    {
+        var cruces = await LeerCrucesAsync();
+
+        cruces.Should().Contain(("OPTN", "Nacional", "Nacional")).And.Contain(("OPEX", "Exportacion", "Exportacion"));
+        cruces.Where(c => c.TrqType.StartsWith('O')).Should().OnlyContain(c => c.LineaTexto == c.LineaPorId);
+    }
+
+    // HU-042.4 (#247): la resolución usa el id, no el texto; un mapeo cuyo texto ya no coincide (la línea se renombró) sigue funcionando.
+    [Fact]
+    public async Task ElMapeoSeResuelvePorElIdAunqueElTextoNoCoincida()
+    {
+        var linea = await CrearLineaAsync();
+        var id = await IdDeAsync(linea);
+        var trqType = $"X{Guid.NewGuid():N}"[..8].ToUpperInvariant();
+        await AgregarMapeosAsync(clsSapMapeoTrqType.Crear(trqType, id, "Nombre anterior de la línea").Valor);
+
+        var (lineaDeTrq, trqDeLinea) = await ConsultarAsync(async s =>
+        {
+            var repo = s.GetRequiredService<IClsSapMapeoRepository>();
+            return (await repo.LineaDeAsync(trqType, cancellationToken: Ct), await repo.TrqTypeDeAsync(id, cancellationToken: Ct));
+        });
+
+        lineaDeTrq.Should().Be(linea, "el nombre sale de MargenesPolitica por el id");
+        trqDeLinea.Should().Be(trqType);
+    }
+
+    [Fact]
+    public async Task PorIdLaOrganizacionEspecificaGanaSobreElComodinYOtraOrganizacionUsaElComodin()
+    {
+        var id = await IdDeAsync(await CrearLineaAsync());
+        var comodin = $"W{Guid.NewGuid():N}"[..8].ToUpperInvariant();
+        var especifico = $"V{Guid.NewGuid():N}"[..8].ToUpperInvariant();
+        await AgregarMapeosAsync(
+            clsSapMapeoTrqType.Crear(comodin, id, "Prueba").Valor,
+            clsSapMapeoTrqType.Crear(especifico, id, "Prueba", OrganizacionDePrueba).Valor);
+
+        var (especifica, otraOrganizacion, sinOrganizacion) = await ConsultarAsync(async s =>
+        {
+            var repo = s.GetRequiredService<IClsSapMapeoRepository>();
+            return (await repo.TrqTypeDeAsync(id, OrganizacionDePrueba, Ct),
+                await repo.TrqTypeDeAsync(id, "99999999", Ct),
+                await repo.TrqTypeDeAsync(id, cancellationToken: Ct));
+        });
+
+        especifica.Should().Be(especifico);
+        otraOrganizacion.Should().Be(comodin);
+        sinOrganizacion.Should().Be(comodin);
+    }
+
+    [Fact]
+    public async Task UnMapeoInactivoNoSeUsaPorId()
+    {
+        var id = await IdDeAsync(await CrearLineaAsync());
+        var inactivo = clsSapMapeoTrqType.Crear($"U{Guid.NewGuid():N}"[..8].ToUpperInvariant(), id, "Prueba").Valor;
+        inactivo.Desactivar();
+        await AgregarMapeosAsync(inactivo);
+
+        (await ConsultarAsync(s => s.GetRequiredService<IClsSapMapeoRepository>().TrqTypeDeAsync(id, cancellationToken: Ct))).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UnMapeoConUnIdQueNoExisteLoRechazaLaFk()
+    {
+        var mapeo = clsSapMapeoTrqType.Crear($"T{Guid.NewGuid():N}"[..8].ToUpperInvariant(), int.MaxValue, "Sin línea").Valor;
+
+        var guardar = () => AgregarMapeosAsync(mapeo);
+
+        (await guardar.Should().ThrowAsync<Exception>()).Which.ToString().Should().Contain("fk_sapMapeoTrqType_lineaNegocioId");
+    }
+
     [Fact]
     public async Task ElMapeoDeUnaOrganizacionEspecificaGanaSobreElComodin()
     {
+        var (nacional, exportacion) = (await IdDeAsync("Nacional"), await IdDeAsync("Exportacion"));
         var trqType = $"Z{Guid.NewGuid():N}"[..8].ToUpperInvariant();
         await AgregarMapeosAsync(
-            clsSapMapeoTrqType.Crear(trqType, "Nacional").Valor,
-            clsSapMapeoTrqType.Crear(trqType, "Exportacion", OrganizacionDePrueba).Valor);
+            clsSapMapeoTrqType.Crear(trqType, nacional, "Nacional").Valor,
+            clsSapMapeoTrqType.Crear(trqType, exportacion, "Exportacion", OrganizacionDePrueba).Valor);
 
         var (especifica, otraOrganizacion, comodin) = await ConsultarAsync(async s =>
         {
@@ -107,7 +182,7 @@ public sealed class clsMargenRepositoryTests(clsBaseDatosPruebas baseDatos) : cl
     public async Task UnMapeoInactivoSeIgnora()
     {
         var trqType = $"Y{Guid.NewGuid():N}"[..8].ToUpperInvariant();
-        var inactivo = clsSapMapeoTrqType.Crear(trqType, "Nacional").Valor;
+        var inactivo = clsSapMapeoTrqType.Crear(trqType, await IdDeAsync("Nacional"), "Nacional").Valor;
         inactivo.Desactivar();
         await AgregarMapeosAsync(inactivo);
 
@@ -145,6 +220,29 @@ public sealed class clsMargenRepositoryTests(clsBaseDatosPruebas baseDatos) : cl
             return Task.CompletedTask;
         });
         return linea;
+    }
+
+    private Task<int> IdDeAsync(string linea) =>
+        ConsultarAsync(async s => (await s.GetRequiredService<IClsMargenPoliticaRepository>().ObtenerPorLineaAsync(linea, Ct))!.Id);
+
+    private async Task<List<(string TrqType, string LineaTexto, string LineaPorId)>> LeerCrucesAsync()
+    {
+        var cruces = new List<(string, string, string)>();
+        await using var conexion = new Microsoft.Data.SqlClient.SqlConnection(BaseDatos.CadenaCotifly);
+        await conexion.OpenAsync(Ct);
+        await using var comando = new Microsoft.Data.SqlClient.SqlCommand(
+            """
+            SELECT s.trqType, s.lineaNegocio, m.lineaNegocio
+            FROM dbo_cotifly.SapMapeoTrqType s JOIN dbo_cotifly.MargenesPolitica m ON m.id = s.lineaNegocioId
+            WHERE s.salesOrg = ''
+            """, conexion);
+        await using var lector = await comando.ExecuteReaderAsync(Ct);
+        while (await lector.ReadAsync(Ct))
+        {
+            cruces.Add((lector.GetString(0), lector.GetString(1), lector.GetString(2)));
+        }
+
+        return cruces;
     }
 
     private Task AgregarMapeosAsync(params clsSapMapeoTrqType[] mapeos) =>

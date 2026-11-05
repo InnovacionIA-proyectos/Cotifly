@@ -39,6 +39,10 @@ namespace Cotifly.Infraestructura.Comun.Persistence;
 /// <c>db/scripts/14_cotizacion_finalizada.sql</c> (HU-036, #205);</item>
 /// <item><see cref="DescripcionEsquemaSin16"/>: solo falta <c>TokensRefresco.rolSesion</c> de
 /// <c>db/scripts/16_multiples_roles_activos.sql</c> (HU-040.1, #229);</item>
+/// <item><see cref="DescripcionEsquemaSin17"/>: solo faltan las tablas <c>SapMargenCliente</c> o <c>SapMargenSyncLog</c> de
+/// <c>db/scripts/17_sap_margen_sincronizacion.sql</c> (HU-042.1 #242; las lee HU-042.2 #243);</item>
+/// <item><see cref="DescripcionEsquemaSin18"/>: solo falta <c>SapMapeoTrqType.lineaNegocioId</c> de
+/// <c>db/scripts/18_sap_mapeo_fk_margenes_politica.sql</c> (HU-042.4, #247);</item>
 /// <item><see cref="DescripcionEsquemaSin19"/>: solo falta <c>CotizacionServiciosConexos.precioVenta</c> de
 /// <c>db/scripts/19_precio_venta_conexos.sql</c> (HU-043.1, #245; el backend la mapea desde #261);</item>
 /// <item>cualquier otra ausencia: <c>esquema incompleto: falta Tabla.columna</c> (las primeras, sin datos de conexión).</item>
@@ -215,6 +219,40 @@ public sealed class clsBaseDatosHealthCheck(
         "TokensRefresco.rolSesion",
     };
 
+    /// <summary>HU-042.2 (#243): está todo lo anterior, pero no las tablas de la copia local del margen de SAP de <c>db/scripts/17</c>.</summary>
+    public const string DescripcionEsquemaSin17 = "esquema incompleto: falta 17";
+
+    /// <summary>Columnas de las dos tablas que crea <c>db/scripts/17_sap_margen_sincronizacion.sql</c> (HU-042.1, #242).</summary>
+    public static readonly IReadOnlySet<string> Columnas17 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "SapMargenCliente.id",
+        "SapMargenCliente.salesOrgId",
+        "SapMargenCliente.trqType",
+        "SapMargenCliente.bpSap",
+        "SapMargenCliente.nit",
+        "SapMargenCliente.margenRecomendado",
+        "SapMargenCliente.activo",
+        "SapMargenCliente.creadoAt",
+        "SapMargenCliente.actualizadoAt",
+        "SapMargenSyncLog.id",
+        "SapMargenSyncLog.iniciadoAt",
+        "SapMargenSyncLog.finalizadoAt",
+        "SapMargenSyncLog.filasInsertadas",
+        "SapMargenSyncLog.filasActualizadas",
+        "SapMargenSyncLog.filasDesactivadas",
+        "SapMargenSyncLog.status",
+        "SapMargenSyncLog.mensajeError",
+    };
+
+    /// <summary>HU-042.4 (#247): está todo lo anterior, pero no <c>SapMapeoTrqType.lineaNegocioId</c> de <c>db/scripts/18</c>.</summary>
+    public const string DescripcionEsquemaSin18 = "esquema incompleto: falta 18";
+
+    /// <summary>Columnas que agrega <c>db/scripts/18_sap_mapeo_fk_margenes_politica.sql</c> (HU-042.4, #247).</summary>
+    public static readonly IReadOnlySet<string> Columnas18 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "SapMapeoTrqType.lineaNegocioId",
+    };
+
     /// <summary>#261 punto 4: está todo lo anterior, pero no <c>precioVenta</c> de <c>db/scripts/19_precio_venta_conexos.sql</c> (HU-043.1, #245).</summary>
     public const string DescripcionEsquemaSin19 = "esquema incompleto: falta 19";
 
@@ -356,12 +394,13 @@ public sealed class clsBaseDatosHealthCheck(
             return HealthCheckResult.Unhealthy(DescripcionEsquemaSin0009);
         }
 
-        // Faltan columnas de los ajustes que van después del 0009 (0010, 02 del cubicador, 03, 04, 05, 06, 09, 10, 11, 12, 13, 14, 16 y 19): se pide el
-        // primero que falta, en el orden en que se aplican.
+        // Faltan columnas de los ajustes que van después del 0009 (0010, 02 del cubicador, 03, 04, 05, 06, 09, 10, 11, 12, 13, 14, 16, 17, 18 y 19):
+        // se pide el primero que falta, en el orden en que se aplican.
         if (faltantes.All(f => Columnas0010.Contains(f) || Columnas02.Contains(f) || Columnas03.Contains(f) || Columnas04.Contains(f)
                                || Columnas05.Contains(f) || Columnas06.Contains(f) || Columnas09.Contains(f) || Columnas10.Contains(f)
                                || Columnas11.Contains(f) || Columnas12.Contains(f) || Columnas13.Contains(f)
-                               || Columnas14.Contains(f) || Columnas16.Contains(f) || Columnas19.Contains(f)))
+                               || Columnas14.Contains(f) || Columnas16.Contains(f) || Columnas17.Contains(f) || Columnas18.Contains(f)
+                               || Columnas19.Contains(f)))
         {
             return HealthCheckResult.Unhealthy(
                 faltantes.Any(Columnas0010.Contains) ? DescripcionEsquemaSin0010
@@ -377,6 +416,8 @@ public sealed class clsBaseDatosHealthCheck(
                 : faltantes.Any(Columnas13.Contains) ? DescripcionEsquemaSin13
                 : faltantes.Any(Columnas14.Contains) ? DescripcionEsquemaSin14
                 : faltantes.Any(Columnas16.Contains) ? DescripcionEsquemaSin16
+                : faltantes.Any(Columnas17.Contains) ? DescripcionEsquemaSin17
+                : faltantes.Any(Columnas18.Contains) ? DescripcionEsquemaSin18
                 : DescripcionEsquemaSin19);
         }
 

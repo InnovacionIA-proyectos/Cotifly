@@ -7,8 +7,7 @@ namespace Cotifly.Infraestructura.Clientes.Services;
 
 /// <summary>
 /// Elige el buscador de clientes según <c>Nexo:UrlBase</c> (HU-005.2): configurada → <see cref="clsBuscadorClientesNexo"/>
-/// (cliente tipado, transitorio); vacía → <see cref="clsBuscadorClientesNoDisponible"/>. Mismo patrón que
-/// <c>clsFabricaFuenteMargen</c> para la fuente de margen SAP TM.
+/// (cliente tipado, transitorio); vacía → <see cref="clsBuscadorClientesNoDisponible"/>.
 /// </summary>
 internal static class clsFabricaBuscadorClientes
 {

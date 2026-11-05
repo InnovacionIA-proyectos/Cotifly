@@ -312,7 +312,8 @@ public sealed class clsCosteoCotizacionService(
     IClsEnvioConexosNexoService? envioConexos = null,
     Cubicacion.Interfaces.IClsCubicador? cubicador = null,
     IClsCategoriasConexos? categoriasConexos = null,
-    IClsSituacionLineasNexo? situacionesNexo = null) : IClsCosteoCotizacionService
+    IClsSituacionLineasNexo? situacionesNexo = null,
+    Margen.Services.IClsAvisoSincronizacionMargenSap? avisoSincronizacion = null) : IClsCosteoCotizacionService
 {
     public const string HerramientaPdf = "generar_pdf_costeo";
 
@@ -337,7 +338,8 @@ public sealed class clsCosteoCotizacionService(
         var estadosNexo = envioConexos is null ? null : await envioConexos.EstadosAsync(cotizacion, cancellationToken);
         // #181: el estado y el motivo pendiente de la línea de Nexo de cada camión, de la última lectura del polling (en memoria).
         return Vista(cotizacion, opcionesPdf.Value.BaseUrl, estadosNexo, await CategoriasAsync(categoriasConexos, cotizacion, logger, cancellationToken),
-            situacionesNexo?.Obtener(cotizacion.Id));
+            situacionesNexo?.Obtener(cotizacion.Id),
+            await Margen.Services.clsAvisoSincronizacionMargenSap.ConsultarSinFallarAsync(avisoSincronizacion, cotizacion, cancellationToken));
     }
 
     /// <summary>Herramienta de la auditoría de los cambios de conexos (<c>EventosHerramienta.herramienta</c>, HU-021.8).</summary>
@@ -430,13 +432,15 @@ public sealed class clsCosteoCotizacionService(
         if (movimientos.Count == 0)
         {
             // La misma selección y las mismas cantidades no cambian nada (ni invalidan el PDF): idempotente.
-            return (await VistaConEstadosAsync(cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, logger, cancellationToken, categoriasConexos, situacionesNexo?.Obtener(cotizacion.Id)), [], false);
+            return (await VistaConEstadosAsync(cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, logger, cancellationToken, categoriasConexos, situacionesNexo?.Obtener(cotizacion.Id),
+                await Margen.Services.clsAvisoSincronizacionMargenSap.ConsultarSinFallarAsync(avisoSincronizacion, cotizacion, cancellationToken)), [], false);
         }
 
         var pdfInvalidado = clsReglaPdfCosteo.InvalidarPdf(cotizacion, MotivoInvalidacionPdf.ServiciosConexos, usuarioId, cotizaciones);
         cotizacion.IncrementarVersionNegocio();
         return await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, versionEsperada, cancellationToken)
-            ? (await VistaConEstadosAsync(cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, logger, CancellationToken.None, categoriasConexos, situacionesNexo?.Obtener(cotizacion.Id)), movimientos, pdfInvalidado)
+            ? (await VistaConEstadosAsync(cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, logger, CancellationToken.None, categoriasConexos, situacionesNexo?.Obtener(cotizacion.Id),
+                await Margen.Services.clsAvisoSincronizacionMargenSap.ConsultarSinFallarAsync(avisoSincronizacion, cotizacion, CancellationToken.None)), movimientos, pdfInvalidado)
             : (clsReglaPdfCosteo.Conflicto(cotizacion.Folio), [], false);
     }
 
@@ -1240,24 +1244,24 @@ public sealed class clsCosteoCotizacionService(
     public static async Task<clsCosteoCotizacion> VistaConEstadosAsync(
         clsCotizacionSolicitud cotizacion, string? baseUrlPdf, IClsEnvioConexosNexoService? envioConexos, ILogger logger,
         CancellationToken cancellationToken = default, IClsCategoriasConexos? categoriasConexos = null,
-        IReadOnlyDictionary<Guid, clsSituacionLineaNexo>? situaciones = null)
+        IReadOnlyDictionary<Guid, clsSituacionLineaNexo>? situaciones = null, Margen.DTOs.clsSincronizacionSapVieja? sincronizacionVieja = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(logger);
         var categorias = await CategoriasAsync(categoriasConexos, cotizacion, logger, cancellationToken);
         if (envioConexos is null)
         {
-            return Vista(cotizacion, baseUrlPdf, null, categorias, situaciones);
+            return Vista(cotizacion, baseUrlPdf, null, categorias, situaciones, sincronizacionVieja);
         }
 
         try
         {
-            return Vista(cotizacion, baseUrlPdf, await envioConexos.EstadosAsync(cotizacion, cancellationToken), categorias, situaciones);
+            return Vista(cotizacion, baseUrlPdf, await envioConexos.EstadosAsync(cotizacion, cancellationToken), categorias, situaciones, sincronizacionVieja);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             _logEstadosNoDisponibles(logger, cotizacion.Folio, ex);
-            return Vista(cotizacion, baseUrlPdf, null, categorias, situaciones);
+            return Vista(cotizacion, baseUrlPdf, null, categorias, situaciones, sincronizacionVieja);
         }
     }
 
@@ -1300,7 +1304,8 @@ public sealed class clsCosteoCotizacionService(
     /// </summary>
     public static clsCosteoCotizacion Vista(
         clsCotizacionSolicitud cotizacion, string? baseUrlPdf, IReadOnlyDictionary<(Guid Ruta, string Conexo), string>? estadosNexo = null,
-        IReadOnlyDictionary<string, string>? categorias = null, IReadOnlyDictionary<Guid, clsSituacionLineaNexo>? situaciones = null)
+        IReadOnlyDictionary<string, string>? categorias = null, IReadOnlyDictionary<Guid, clsSituacionLineaNexo>? situaciones = null,
+        Margen.DTOs.clsSincronizacionSapVieja? sincronizacionVieja = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
 
@@ -1330,7 +1335,7 @@ public sealed class clsCosteoCotizacionService(
             SincronizacionResultadoNexo = cotizacion.EstadoSincronizacionResultado,
             ErrorSincronizacionResultadoNexo = cotizacion.Ganada is null ? null : cotizacion.ErrorSincronizacionResultado,
             FinalizadaAt = cotizacion.FinalizadaAt?.ToUniversalTime(),
-            Rutas = [.. cotizacion.RutasOrdenadas.Select(r => RutaCosteo(cotizacion, r, estadosNexo, categorias, situaciones))],
+            Rutas = [.. cotizacion.RutasOrdenadas.Select(r => RutaCosteo(cotizacion, r, estadosNexo, categorias, situaciones, sincronizacionVieja))],
         };
     }
 
@@ -1341,7 +1346,8 @@ public sealed class clsCosteoCotizacionService(
     /// </summary>
     public static clsRutaCosteo RutaCosteo(
         clsCotizacionSolicitud cotizacion, clsLineaSolicitud ruta, IReadOnlyDictionary<(Guid Ruta, string Conexo), string>? estadosNexo = null,
-        IReadOnlyDictionary<string, string>? categorias = null, IReadOnlyDictionary<Guid, clsSituacionLineaNexo>? situaciones = null)
+        IReadOnlyDictionary<string, string>? categorias = null, IReadOnlyDictionary<Guid, clsSituacionLineaNexo>? situaciones = null,
+        Margen.DTOs.clsSincronizacionSapVieja? sincronizacionVieja = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(ruta);
@@ -1367,7 +1373,7 @@ public sealed class clsCosteoCotizacionService(
             MargenSapAnomalo = ruta.MargenSapAnomalo,
             // HU-028.1 (#183): los motivos del rechazo de sus camiones (la ruta puede seguir con precio por los no rechazados).
             MotivoRechazo = ruta.MotivoRechazo,
-            AvisoMargen = AvisoMargenSapAnomalo(ruta),
+            AvisoMargen = AvisoMargen(ruta, sincronizacionVieja),
             AvisoConexosNexo = revisar.Count == 0
                 ? null
                 : $"Revisa en la cotización de Nexo los servicios conexos {string.Join(", ", revisar)}: Cotifly no pudo confirmar que llegaron "
@@ -1433,6 +1439,20 @@ public sealed class clsCosteoCotizacionService(
               + "fuera del rango normal (0 a 60 %): no se aplicó y la ruta usa el margen de la política de su línea de negocio. Revísalo antes "
               + "de enviar la cotización."
             : null;
+    }
+
+    /// <summary>
+    /// <c>aviso_margen</c> de la ruta: el del margen de SAP anómalo (#139) y, si su sugerido salió de SAP TM y la copia lleva más de
+    /// <c>SapTm:AvisoSincronizacionHoras</c> sin sincronizarse (HU-042.2, #243), el de la sincronización vieja; los dos, uno tras otro.
+    /// </summary>
+    public static string? AvisoMargen(clsLineaSolicitud ruta, Margen.DTOs.clsSincronizacionSapVieja? sincronizacionVieja)
+    {
+        ArgumentNullException.ThrowIfNull(ruta);
+        var anomalo = AvisoMargenSapAnomalo(ruta);
+        var vieja = sincronizacionVieja is not null && Margen.Services.clsAvisoSincronizacionMargenSap.TieneSugeridoDeSap(ruta)
+            ? sincronizacionVieja.Aviso
+            : null;
+        return anomalo is null ? vieja : vieja is null ? anomalo : $"{anomalo} {vieja}";
     }
 
     /// <summary>Los conexos de la ruta con el estado de su envío a Nexo (decisión 10), si se conoce; sin estados, tal cual.</summary>

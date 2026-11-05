@@ -1,10 +1,9 @@
 # language: es
-# HU-003.4 (#10) y HU-003.7 (#13) — Resolución del margen y margen negociado (ADR-004, ADR-008, ADR-010).
-# Casos de tests/test_margen.py del Python contra SQL Server 2019 (Testcontainers) con la semilla del script
-# 0001 (HU-021: el 0009 retira Almacenamiento, Almacenamiento3PL e ITR y agrega DevolucionContenedor) y la muestra de SAP TM del Python
-# (tests/fixtures/sap/rentab_cliente_muestra.json) como fuente en memoria. Los escenarios "se lee en modo" usan los
-# adaptadores reales de #13 (export_json sobre la muestra, odata contra un SAP falso sin red que responde con la
-# misma muestra). Márgenes entre comillas (fracción decimal con punto).
+# HU-003.4 (#10), HU-003.7 (#13), HU-042.2 (#243) y HU-042.4 (#247) — Resolución del margen y margen negociado (ADR-004, ADR-008,
+# ADR-010, ADR-027). Casos de tests/test_margen.py del Python contra SQL Server 2019 (Testcontainers) con la semilla del script 0001
+# (HU-021: el 0009 retira Almacenamiento, Almacenamiento3PL e ITR y agrega DevolucionContenedor) y la muestra de SAP TM del Python como
+# fuente en memoria. Los escenarios "copia local" usan la fuente real de HU-042.2: dbo_cotifly.SapMargenCliente, que sincroniza a diario
+# el job de Datos (HU-042.1); Cotifly ya no llama a SAP TM al cotizar. Márgenes entre comillas (fracción decimal con punto).
 @integracion
 Característica: Resolución del margen de una cotización
   Como comercial de Botero Soto
@@ -68,30 +67,45 @@ Característica: Resolución del margen de una cotización
     Entonces el margen es "0.15" con origen "politica_linea" y TrqType "OPTN"
     Y el detalle menciona "SAP TM no disponible: se usa la política de la línea"
 
-  Escenario: SAP TM sin configurar (SapTm:Modo vacío)
+  # HU-042.2: "no configurado" es una copia local que nunca se sincronizó (ningún 'ok' del job), como en un ambiente sin el job de Datos.
+  Escenario: SAP TM sin configurar (la copia local nunca se sincronizó)
     Dado que SAP TM no está configurado
     Cuando pido el margen de la línea "Nacional" para el BP "15927"
     Entonces el margen es "0.15" con origen "politica_linea" y TrqType "OPTN"
     Y SAP TM no fue consultado
     Y el detalle menciona "SAP TM no configurado: se usa la política de la línea"
 
-  # test_conmutacion_export_a_odata_misma_salida: pasar a OData en vivo (HU-009) es solo cambiar SapTm:Modo.
-  Esquema del escenario: Cambiar la fuente de SAP TM entre export JSON y OData no cambia el margen
-    Dado que SAP TM se lee en modo "<modo>" con la muestra del Python
-    Cuando pido el margen de la línea "Nacional" para el BP "15927"
-    Entonces el margen es "0.135" con origen "sap_tm" y TrqType "OPTN"
-    Y el detalle menciona "OPTN: 13.5%"
+  # HU-042.2 (#243, ADR-027): cada cliente recibe SU margen de la copia local (no el de la primera fila del TrqType), el BP se compara
+  # sin ceros a la izquierda y el detalle dice de dónde salió y cuándo cambió la fila. origen sigue siendo sap_tm.
+  Escenario: El margen de SAP TM se lee de la copia local para el cliente pedido
+    Dado la copia local de SAP TM sincronizada hace 2 horas
+    Y en la copia local el cliente "880" tiene margen "21.25" % en "OPTN"
+    Cuando pido el margen de la línea "Nacional" para el BP "0000000880"
+    Entonces el margen es "0.2125" con origen "sap_tm" y TrqType "OPTN"
+    Y el margen no está marcado como anómalo
+    Y el detalle menciona "Margen propuesto SAP TM (tabla local, actualizado 2026-09-23) para cliente 0000000880 en OPTN: 21.25%"
+    Y el detalle no menciona "sincronización con más de"
 
-    Ejemplos:
-      | modo        |
-      | export_json |
-      | odata       |
+  Escenario: Con la copia local vieja el margen se usa igual y el detalle lo avisa
+    Dado la copia local de SAP TM sincronizada hace 72 horas
+    Y en la copia local el cliente "881" tiene margen "12" % en "OPTN"
+    Cuando pido el margen de la línea "Nacional" para el BP "881"
+    Entonces el margen es "0.12" con origen "sap_tm" y TrqType "OPTN"
+    Y el detalle menciona "sincronización con más de 48 h"
 
-  Escenario: Un BP con comillas no altera la consulta OData a SAP TM
-    Dado que SAP TM se lee en modo "odata" con la muestra del Python
-    Cuando pido el margen de la línea "Nacional" para el BP "15927' or 1 eq 1"
+  Escenario: Una fila inactiva de la copia local no se usa
+    Dado la copia local de SAP TM sincronizada hace 2 horas
+    Y en la copia local el cliente "882" está inactivo en "OPEX"
+    Cuando pido el margen de la línea "Exportacion" para el BP "882"
+    Entonces el margen es "0.15" con origen "politica_linea" y TrqType "OPEX"
+    Y el detalle menciona "sin registro en SAP TM"
+
+  Escenario: Un BP con comillas no altera la consulta a la copia local
+    Dado la copia local de SAP TM sincronizada hace 2 horas
+    Y en la copia local el cliente "883" tiene margen "30" % en "OPTN"
+    Cuando pido el margen de la línea "Nacional" para el BP "883' OR '1'='1"
     Entonces el margen es "0.15" con origen "politica_linea" y TrqType "OPTN"
-    Y SAP TM recibió el filtro OData "SalesOrgId eq '50000005' and TrqType eq 'OPTN' and OrderPartyId eq '15927'' or 1 eq 1'"
+    Y el detalle menciona "sin registro en SAP TM"
 
   Escenario: El comercial negocia un margen distinto al sugerido
     Dado el comercial "ana.negocia" registrado

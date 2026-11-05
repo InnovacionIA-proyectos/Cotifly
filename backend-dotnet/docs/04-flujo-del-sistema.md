@@ -94,24 +94,24 @@ Una cotización de otro comercial responde siempre `404 {"error":"Cotización no
 
 ## 4.5 Resolución del margen
 
-Orden de la resolución del margen sugerido (`clsMargenResolverService`, la antigua herramienta `obtener_margen`; mismo orden que el Python salvo la resiliencia ante SAP caído, decisión de #13):
+Orden de la resolución del margen sugerido (`clsMargenResolverService`, la antigua herramienta `obtener_margen`). Desde HU-042.2 y HU-042.4
+([ADR-027](../specs/decisiones/ADR-027-margen-sap-tabla-local.md)) el margen de SAP sale de la copia local `SapMargenCliente` y el TrqType se
+busca por el id de la política:
 
 ```mermaid
 flowchart TD
     inicio([Margen sugerido: línea y cliente de la cotización]) --> linea{¿La línea existe<br/>y está activa?}
     linea -- no --> desconocida[MARGEN_LINEA_DESCONOCIDA]
-    linea -- sí --> trq{¿Tiene TrqType?<br/>SapMapeoTrqType}
+    linea -- sí --> trq{¿Tiene TrqType?<br/>SapMapeoTrqType por lineaNegocioId}
     trq -- no --> politica
     trq -- sí --> bp{¿Hay BP del cliente?}
     bp -- no --> politica[Política de la línea<br/>origen politica_linea, motivo en detalle]
-    bp -- sí --> modo{¿SapTm:Modo configurado?}
-    modo -- no --> politica
-    modo -- sí --> sap[Consulta SAP TM<br/>salesOrg, TrqType, BP]
-    sap -- "registro" --> saptm[Margen SAP: Value / 100<br/>origen sap_tm, anómalo fuera de 0 a 0,6]
-    sap -- "sin registro" --> politica
-    sap -- "caído o tiempo agotado" --> caido{¿La línea tiene política?}
-    caido -- sí --> politica
-    caido -- no --> fuente[MARGEN_FUENTE_NO_DISPONIBLE]
+    bp -- sí --> sync{¿Alguna corrida ok<br/>en SapMargenSyncLog?}
+    sync -- "no: no configurado" --> politica
+    sync -- sí --> sap[Busca en SapMargenCliente<br/>salesOrg, TrqType, BP sin ceros, activo]
+    sap -- "fila" --> saptm[Margen SAP: valor / 100<br/>origen sap_tm, anómalo fuera de 0 a 0,6<br/>aviso si la sincronización es vieja]
+    sap -- "sin fila o inactiva" --> politica
+    sap -- "base caída" --> politica
 ```
 
 El margen negociado (`PUT .../costeo/margen`) no cambia la política: se registra en `MargenAjustes` con el margen sugerido como referencia y queda `origenMargen = negociado` en la cotización.
@@ -173,4 +173,4 @@ Seguimiento comercial (independiente del envío): `ganada` verdadero o falso con
 | Barrido de sesiones | `clsBarridoSesionesHostedService` | `Sesiones:BarridoMinutos` (60) | Archiva sesiones inactivas desde hace más de `Sesiones:TtlHoras` | Warning; reintenta en el siguiente ciclo |
 | Limpieza de tokens | `clsLimpiezaTokensHostedService` | Cada hora | Purga `jti` vencidos y refresh vencidos hace más de un día | Warning |
 | Caché de revocados | `clsCacheTokensRevocados` | Cada 60 s | Foto de `TokensRevocados`; sin foto de menos de 5 min, fail-closed | Las peticiones protegidas responden 401 hasta recuperar la foto |
-| Avisos de arranque de SAP TM | `clsAvisosArranqueSapTm` | Al arrancar | Avisa si `Production` no tiene `SapTm:Modo` o si falta el export | No impide arrancar |
+| Avisos de arranque de SAP TM | `clsAvisosArranqueSapTm` | Al arrancar | HU-042.2: un warning por cada variable retirada del SAP en vivo (`SapTm__Modo`, `__Url`, `__User`, `__Pass`, `__SapClient`, `__ExportPath`) que llegue con valor | No impide arrancar |

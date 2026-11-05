@@ -79,9 +79,10 @@ public sealed class clsMargenTests
     [Fact]
     public void ElMapeoNormalizaElTrqTypeYUsaElComodinPorDefecto()
     {
-        var mapeo = clsSapMapeoTrqType.Crear(" optn ", "Nacional").Valor;
+        var mapeo = clsSapMapeoTrqType.Crear(" optn ", 1, "Nacional").Valor;
 
         mapeo.TrqType.Should().Be("OPTN");
+        mapeo.LineaNegocioId.Should().Be(1);
         mapeo.SalesOrg.Should().BeEmpty();
         mapeo.EsComodin.Should().BeTrue();
         mapeo.Activo.Should().BeTrue();
@@ -89,14 +90,16 @@ public sealed class clsMargenTests
 
     [Fact]
     public void ElMapeoConOrganizacionEspecificaNoEsComodin() =>
-        clsSapMapeoTrqType.Crear("OPTN", "Nacional", "50000005").Valor.EsComodin.Should().BeFalse();
+        clsSapMapeoTrqType.Crear("OPTN", 1, "Nacional", "50000005").Valor.EsComodin.Should().BeFalse();
 
     [Theory]
-    [InlineData("TRQTYPE9X", "Nacional", "")]
-    [InlineData("OPTN", "", "")]
-    [InlineData("OPTN", "Nacional", "1234567890123")]
-    public void ElMapeoRespetaLosLargosDelEsquema(string trqType, string linea, string salesOrg) =>
-        clsSapMapeoTrqType.Crear(trqType, linea, salesOrg).EsFallo.Should().BeTrue();
+    [InlineData("TRQTYPE9X", 1, "Nacional", "")]
+    [InlineData("OPTN", 1, "", "")]
+    [InlineData("OPTN", 1, "Nacional", "1234567890123")]
+    [InlineData("OPTN", 0, "Nacional", "")]
+    [InlineData("OPTN", -3, "Nacional", "")]
+    public void ElMapeoRespetaLosLargosDelEsquemaYExigeElIdDeLaLinea(string trqType, int lineaNegocioId, string linea, string salesOrg) =>
+        clsSapMapeoTrqType.Crear(trqType, lineaNegocioId, linea, salesOrg).EsFallo.Should().BeTrue();
 
     [Fact]
     public void UnAjusteCalculaLaDiferenciaConCuatroDecimales()

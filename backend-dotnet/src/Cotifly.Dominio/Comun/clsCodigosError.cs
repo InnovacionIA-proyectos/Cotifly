@@ -7,9 +7,6 @@ namespace Cotifly.Dominio.Comun;
 /// </summary>
 public static class clsCodigosError
 {
-    /// <summary>La fuente de margen (SAP TM) no respondió o no está configurada.</summary>
-    public const string MargenFuenteNoDisponible = "MARGEN_FUENTE_NO_DISPONIBLE";
-
     /// <summary>La línea de negocio no tiene mapeo TrqType ni política de margen.</summary>
     public const string MargenLineaDesconocida = "MARGEN_LINEA_DESCONOCIDA";
 
@@ -404,4 +401,23 @@ public static class clsCodigosError
     /// solo faltó el comentario. Código nuevo del backend .NET.
     /// </summary>
     public const string MotivoNoPermitido = "MOTIVO_NO_PERMITIDO";
+
+    /// <summary>
+    /// HU-042.2 (#243, ADR-027): <c>GET /web/admin/sap-margen/estado</c> o <c>POST /web/admin/sap-margen/sincronizar</c> en un ambiente sin
+    /// la sincronización del margen de SAP TM configurada (falta <c>SapTm:Url</c>, <c>SapTm:User</c> o <c>SapTm:Pass</c>). El margen sigue
+    /// con la copia local existente o, sin ella, con la política de la línea. 503. Código nuevo del backend .NET.
+    /// </summary>
+    public const string SapMargenNoConfigurado = "SAP_MARGEN_NO_CONFIGURADO";
+
+    /// <summary>
+    /// HU-042.2 (#243, ADR-027): <c>POST /web/admin/sap-margen/sincronizar</c> mientras esta réplica ya sincroniza el margen de SAP TM (el
+    /// worker o otra petición). Nada cambia; se reintenta cuando termine. 409. Código nuevo del backend .NET.
+    /// </summary>
+    public const string SapMargenSincronizacionEnCurso = "SAP_MARGEN_SINCRONIZACION_EN_CURSO";
+
+    /// <summary>
+    /// HU-042.2 (#243): <c>/web/admin/sap-margen/*</c> con la base de Cotifly sin responder (no se pudo leer el estado de la copia o
+    /// registrar la corrida). 503, reintentable. Código nuevo del backend .NET.
+    /// </summary>
+    public const string SapMargenNoDisponible = "SAP_MARGEN_NO_DISPONIBLE";
 }

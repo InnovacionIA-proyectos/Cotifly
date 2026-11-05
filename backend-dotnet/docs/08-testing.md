@@ -36,13 +36,13 @@ Conteos de la corrida del 2026-10-09 de la [matriz de HU-021](qa/MATRIZ_PRUEBAS_
 | Nivel | Proyecto | Herramientas | Alcance |
 |---|---|---|---|
 | Unitario | `Cotifly.Dominio.Tests`, `Cotifly.Aplicacion.Tests` | xUnit v3, NSubstitute, AwesomeAssertions | Reglas puras (precio, margen, folio), casos de uso con puertos simulados, runner del asistente por folio con un `IChatClient` guionizado |
-| Integración | `Cotifly.Infraestructura.Tests` | Testcontainers.MsSql | Repositorios, scripts `db/migrations_mssql/` aplicados, esquema igual al modelo EF, adaptadores (SAP TM, MailSender, PDF, IA, Nexo) con dobles locales |
+| Integración | `Cotifly.Infraestructura.Tests` | Testcontainers.MsSql | Repositorios, scripts `db/migrations_mssql/` aplicados, esquema igual al modelo EF, adaptadores (copia local del margen de SAP TM en bases aisladas, MailSender, PDF, IA, Nexo) con dobles locales |
 | API | `Cotifly.Api.Tests` | `WebApplicationFactory` | Forma exacta de las respuestas del contrato, autenticación, CORS, aislamiento por comercial |
 | Aceptación | `Cotifly.Aceptacion.Tests` | Reqnroll (`Reqnroll.xunit.v3`) | Los `.feature` de `specs/features/` |
 | Arquitectura | `Cotifly.Arquitectura.Tests` | ArchUnitNET | Dependencias entre capas, Dominio sin paquetes externos, convención `cls`/`ICls`, contexto de `docker build` |
 
 - TDD: test en rojo, implementación, refactor (ADR-010).
-- Las pruebas no llaman a proveedores de IA reales ni a SAP TM o un relay reales: usan dobles locales (`clsChatClientGuionizado`, `clsSapTmFalso`, `clsMailSenderFalso` (HU-033: MailSender en proceso; nunca se envían correos reales), `clsNexoClientesFalso` para Nexo y `clsTrmFalso` para los datos abiertos de la TRM, HU-012). Las pruebas con proveedores reales son manuales.
+- Las pruebas no llaman a proveedores de IA reales ni a SAP TM o un relay reales: usan dobles locales (`clsChatClientGuionizado`, `clsFuenteMargenMuestra` o la copia local `SapMargenCliente` sembrada en Testcontainers (HU-042.2), `clsMailSenderFalso` (HU-033: MailSender en proceso; nunca se envían correos reales), `clsNexoClientesFalso` para Nexo y `clsTrmFalso` para los datos abiertos de la TRM, HU-012). Las pruebas con proveedores reales son manuales.
 
 ## 8.2 Proyectos y alcance
 
@@ -50,7 +50,7 @@ Conteos de la corrida del 2026-10-09 de la [matriz de HU-021](qa/MATRIZ_PRUEBAS_
 |---|---|---|
 | `Cotifly.Dominio.Tests` | Reglas puras: invariantes de las entidades (solicitud, ruta, camión, correo, margen, identidad, tokens), precio y margen por método, folio, estados del costeo y sus resúmenes, métricas | Unitarias |
 | `Cotifly.Aplicacion.Tests` | Casos de uso con puertos simulados (NSubstitute): login SSO, captura y envío a Nexo, polling y emparejamiento, conexos, re-solicitud y `-vN`, margen (SAP TM y política), PDF, correo, textos con IA, asistente por folio, licitaciones, cubicación, TRM y métricas | Unitarias |
-| `Cotifly.Infraestructura.Tests` | Adaptadores: EF Core contra SQL Server real (Testcontainers), esquema de `db/` (instalación desde cero frente a la cadena `0001`–`0010` más el `02`), clientes HTTP de Nexo, cubicador, SAP TM y TRM contra servidores falsos, PDF (MigraDoc), correo, configuración y secretos | Unitarias e integración |
+| `Cotifly.Infraestructura.Tests` | Adaptadores: EF Core contra SQL Server real (Testcontainers), esquema de `db/` (instalación desde cero frente a la cadena `0001`–`0010` más el `02`), clientes HTTP de Nexo, cubicador y TRM contra servidores falsos, la copia local del margen de SAP (HU-042.2), PDF (MigraDoc), correo, configuración y secretos | Unitarias e integración |
 | `Cotifly.Api.Tests` | Endpoints con `WebApplicationFactory`: forma exacta de las respuestas frente a `specs/openapi.yaml` y a los ejemplos de `docs/docs_front/CONTRATO_API_WEB.md`, autenticación, CORS, `If-Match`, idempotencia, aislamiento por comercial y los E2E por flujo de HU-021 y HU-023 | Integración |
 | `Cotifly.Aceptacion.Tests` | Los escenarios BDD de `specs/features/*.feature` (Reqnroll) contra SQL Server real | Aceptación |
 | `Cotifly.Arquitectura.Tests` | Dependencias entre capas (ArchUnitNET), Dominio sin paquetes externos, prefijos `cls`/`ICls` y el contexto de `docker build` | Arquitectura |
@@ -65,7 +65,7 @@ HU-013.9 (#105).
 | Trait | Dónde | Necesita | En CI |
 |---|---|---|---|
 | `Categoria=Integracion` | Pruebas de integración de `Cotifly.Infraestructura.Tests` y `Cotifly.Api.Tests` (por clase) y todo `Cotifly.Aceptacion.Tests` (a nivel de ensamblado) | Docker (Testcontainers) | Job `integracion` |
-| `Categoria=sap` | `clsSapTmRealTests` (SAP TM real, HU-009) | Red corporativa y `SapTm__*` / `SAPTM_PRUEBA_*`; sin variables se omite | Excluida siempre |
+| ~~`Categoria=sap`~~ | ~~`clsSapTmRealTests` (SAP TM real, HU-009)~~ retirada en HU-042.2 (#243): Cotifly ya no llama a SAP | — | — |
 | (sin trait) | Todo lo demás | Nada | Job `unitarias` |
 
 ## 8.4 Comandos
@@ -99,9 +99,6 @@ dotnet test --project tests/Cotifly.Aceptacion.Tests -c Release --no-build --fil
 # Contrato: OpenAPI ↔ controllers y DTOs (Cotifly.Api.Tests/Contrato) y lint del spec (como el job contrato-openapi)
 dotnet test --project tests/Cotifly.Api.Tests -c Release --no-build --filter-class "*Contrato*"
 npx --yes @redocly/cli@2.54.2 lint specs/openapi.yaml   # necesita Node; no viene en la imagen del SDK
-
-# SAP TM real (HU-009.1, desde una máquina con ruta a SAP)
-dotnet test -c Release --no-build --filter-trait "Categoria=sap"
 ```
 
 Por suite:
@@ -246,20 +243,8 @@ Workflow `.github/workflows/backend-dotnet.yml` (GitHub Actions, `ubuntu-latest`
 | `test_resolver_respeta_sales_org` | `SeRespetaLaOrganizacionDeVentasPedida` (unitaria e integración); `margen.feature` |
 | `test_resolver_linea_desconocida` | `UnaLineaDesconocidaDevuelveMargenLineaDesconocida` (unitaria e integración); `margen.feature` |
 | `test_mapeo_todas_las_lineas` | `clsMargenResolverIntegracionTests.CadaLineaSembradaTieneSuTrqTypeYSuPolitica` |
-| `test_export_encuentra_y_no_encuentra` | `clsFuenteMargenExportJsonTests.EncuentraElValueDelClienteYDevuelveNullSiNoExiste` (+ `DevuelveElValueCrudoDeCadaFilaSinDividirPorCien` para las 10 filas); `clsMargenFuentesSapIntegracionTests.ConExportJsonUnClienteConRegistroObtieneElMargenDeSap` |
-| `test_export_archivo_ausente` | `clsFuenteMargenExportJsonTests.UnArchivoAusenteEsFuenteNoDisponibleSinExponerLaRuta`; `clsMargenFuentesSapIntegracionTests.ConExportJsonAusenteElResolverUsaLaPoliticaConElMotivo` |
-| `test_export_json_malformado` | `clsFuenteMargenExportJsonTests.UnExportMalformadoEsFuenteNoDisponible` (8 casos: JSON roto, sin `d.results`, fila sin `Value`, `Value` no numérico o nulo, id numérico) |
-| `test_odata_encuentra` | `clsFuenteMargenODataTests.EncuentraElValueConLaConsultaExactaDeRentabClienteSet` (URL exacta, filtro y `Accept`) |
-| `test_odata_cliente_inyectado` | `clsFuenteMargenODataTests.EnviaAutenticacionBasicConUsuarioYClave` (el cliente siempre se inyecta: `IHttpClientFactory`) |
-| `test_odata_vacio_devuelve_none` | `clsFuenteMargenODataTests.SinResultadosDevuelveNull` |
-| `test_odata_error_500_es_estructurado` | `clsFuenteMargenODataTests.UnErrorHttpEsFuenteNoDisponibleSinExponerCredenciales` (500, 503, 404, 401); `clsRegistroFuenteMargenTests.ElClienteODataAgotaLosReintentosYReportaFuenteNoDisponible`; `clsMargenFuentesSapIntegracionTests.ConODataCaidoElResolverUsaLaPoliticaSinRomperLaCotizacion` |
-| `test_odata_timeout_es_estructurado` | `clsFuenteMargenODataTests.UnTimeoutEsFuenteNoDisponible` (+ `UnErrorDeRedEsFuenteNoDisponible`, `LaCancelacionDelLlamadorNoSeDisfrazaDeCaidaDeSap`) |
-| `test_construir_resolver_export` | `clsRegistroFuenteMargenTests.ConModoExportJsonLaFuenteEsElExport` |
-| `test_construir_resolver_odata` | `clsRegistroFuenteMargenTests.ConModoODataLaFuenteEsElClienteOData` |
-| `test_conmutacion_export_a_odata_misma_salida` | `clsMargenFuentesSapIntegracionTests.ConmutarDeExportJsonAODataDaLaMismaSalida` (13 consultas: las 10 filas, organización equivocada, sin registro, sin BP); `margen.feature` |
-| (sin equivalente en Python: inyección en el `$filter`, corregida) | `clsFuenteMargenODataTests.EscapaLasComillasDelBpParaQueNoAltereElFiltro`, `CodificaLaUrlParaQueElBpNoAgregueParametros`, `EscapaTambienLaOrganizacionYElTrqType`; `margen.feature` |
-| (sin equivalente en Python: caché del export, validación de `SapTm`, resiliencia) | `clsFuenteMargenExportJsonTests.NoReleeElArchivoMientrasNoCambieSuFechaNiSuTamano`, `RecargaElArchivoCuandoCambia`, `SiElArchivoDesapareceODejaDeSerLegibleDespuesDeCargarLoReporta`; `clsRegistroFuenteMargenTests` (modos y validación; `ElClienteODataReintentaUnErrorTransitorio`) |
-| (sin equivalente en Python: SAP no configurado → política) | `clsMargenResolverServiceTests.ConLaFuenteNoConfiguradaSeUsaLaPoliticaSinError`; `clsMargenSapNoConfiguradoIntegracionTests`; `margen.feature` |
+| `test_export_*`, `test_odata_*`, `test_construir_resolver_*`, `test_conmutacion_export_a_odata_misma_salida` | **Retiradas en HU-042.2 (#243, ADR-027)** con los modos `export_json`/`odata`: el margen sale de la copia local. Sus equivalentes: `clsFuenteMargenTablaLocalIntegracionTests` (cada cliente con su fila, BP con o sin ceros a la izquierda, fila inactiva, anómalo, sincronización vieja, sin corrida `ok` = no configurado, base sin el 17 = no disponible, mapeo por id con comodín); `clsRegistroFuenteMargenTests` (registro y opciones); `clsAvisosArranqueSapTmTests` (variables retiradas); `clsMargenSapAnomaloEndpointsTests.HU0422_*` (#139 con la fuente real); `margen.feature` ("copia local", incluido el BP con comillas) |
+| (sin equivalente en Python: SAP no configurado → política) | `clsMargenResolverServiceTests.ConLaFuenteNoConfiguradaSeUsaLaPoliticaSinError`; `clsMargenSapNoConfiguradoIntegracionTests` (la base compartida nunca tiene una corrida `ok`); `clsFuenteMargenTablaLocalIntegracionTests.SinNingunaCorridaOkLaCopiaSeTrataComoNoConfigurada`; `margen.feature` |
 | `registrar_ajuste_margen` (`server.py`, sin test propio) | `clsAjusteMargenServiceTests`; `clsMargenResolverIntegracionTests.ElAjusteNegociadoSePersisteConElComercialYLaCotizacion`; `margen.feature`; auditado: `clsAuditoriaServiceTests.ElAjusteDeMargenNegociadoSeAudita`, `auditoria.feature` |
 | `test_html_contiene_datos_de_la_cotizacion` | `clsConstructorDocumentoCotizacionTests.ElDocumentoTieneLosDatosDeLaCotizacion`; `clsGeneradorPdfMigraDocTests.LaSolicitudDeEjemploTieneTresPaginasConLosBloquesEnSuSitio`; `pdf.feature` |
 | `test_html_determinista` | `clsConstructorDocumentoCotizacionTests.ElDocumentoEsDeterminista`; `clsGeneradorPdfMigraDocTests.ElRenderEsEstableEnPaginasYTexto` |

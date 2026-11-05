@@ -1,7 +1,6 @@
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Margen.Interfaces;
 using Cotifly.Dominio.Comun;
-using Cotifly.Infraestructura.Margen.Services;
 using Cotifly.Infraestructura.Precio.Services;
 using Cotifly.Pruebas.Comun;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,13 +10,14 @@ namespace Cotifly.Aceptacion.Tests.Soporte;
 /// <summary>
 /// Estado de un escenario (Reqnroll lo crea por escenario y lo inyecta en los pasos): proveedor de
 /// servicios real (<c>AddAplicacion</c> + <c>AddInfraestructura</c>) sobre la base de pruebas y la <c>dbsolucionesti</c>
-/// falsa, reloj falso, fuente SAP TM de muestra y resultados.
+/// falsa, reloj falso, fuente SAP TM de muestra (o la copia local real, HU-042.2) y resultados.
 /// </summary>
 public sealed class clsContextoEscenario : IDisposable
 {
     private readonly Dictionary<string, string?> _configuracion;
     private ServiceProvider _proveedor;
     private string _entorno = "Development";
+    private bool _copiaLocalSap;
 
     public clsContextoEscenario()
     {
@@ -46,9 +46,6 @@ public sealed class clsContextoEscenario : IDisposable
 
     /// <summary>Fuente SAP TM del escenario por defecto: la muestra del Python en memoria.</summary>
     public clsFuenteMargenMuestra FuenteSap { get; } = new();
-
-    /// <summary>SAP TM falso (sin red) que atiende al adaptador OData cuando el escenario usa <see cref="UsarFuenteSapReal"/>.</summary>
-    public clsSapTmFalso SapFalso { get; } = new();
 
     /// <summary>Datos abiertos de la Superintendencia Financiera falsos (TRM, HU-012.1) que atienden al adaptador real.</summary>
     public clsTrmFalso TrmFalso { get; } = new();
@@ -107,37 +104,14 @@ public sealed class clsContextoEscenario : IDisposable
     public IReadOnlyList<string> FoliosConsultados { get; set; } = [];
 
     /// <summary>
-    /// Rehace el proveedor con el adaptador real de SAP TM que elige <c>SapTm:Modo</c> (#13): <c>export_json</c> sobre la
-    /// muestra del Python u <c>odata</c> contra <see cref="SapFalso"/>, que responde con esa misma muestra.
+    /// HU-042.2 (#243): rehace el proveedor con la fuente real del margen de SAP TM (<c>clsFuenteMargenTablaLocal</c>, la copia local
+    /// <c>dbo_cotifly.SapMargenCliente</c> de la base de aceptación) en vez de la muestra en memoria.
     /// </summary>
-    public void UsarFuenteSapReal(string modo)
+    public void UsarCopiaLocalSap()
     {
-        var configuracion = new Dictionary<string, string?>
-        {
-            ["SapTm:Modo"] = modo,
-            ["SapTm:ExportPath"] = clsSapTmFalso.RutaMuestra,
-            ["SapTm:Url"] = clsSapTmFalso.UrlBase,
-            ["SapTm:User"] = "svc_cotifly",
-            ["SapTm:Pass"] = "Kq7-Vr2m-Xz9p",
-        };
-
+        _copiaLocalSap = true;
         _proveedor.Dispose();
-        foreach (var (clave, valor) in configuracion)
-        {
-            _configuracion[clave] = valor;
-        }
-
-        _proveedor = clsServiciosPruebas.Crear(
-            clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-            Reloj,
-            clsEntornoAceptacion.BaseDatos.CadenaIdentidad,
-            configuracionExtra: _configuracion,
-            entorno: _entorno,
-            configurar: s =>
-            {
-                s.AddHttpClient(clsFuenteMargenOData.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => SapFalso);
-                UsarTrmFalsa(s);
-            });
+        _proveedor = CrearProveedor();
     }
 
     /// <summary>Rehace el proveedor con claves de configuración adicionales (ej. <c>Correo:Habilitado</c>), conservando las anteriores.</summary>
@@ -162,7 +136,11 @@ public sealed class clsContextoEscenario : IDisposable
             entorno: _entorno,
             configurar: s =>
             {
-                s.AddSingleton<IClsFuenteMargen>(FuenteSap);
+                if (!_copiaLocalSap)
+                {
+                    s.AddSingleton<IClsFuenteMargen>(FuenteSap);
+                }
+
                 UsarTrmFalsa(s);
             });
 
@@ -193,7 +171,6 @@ public sealed class clsContextoEscenario : IDisposable
     public void Dispose()
     {
         _proveedor.Dispose();
-        SapFalso.Dispose();
         TrmFalso.Dispose();
         DolarApiFalso.Dispose();
         MailSender.Dispose();

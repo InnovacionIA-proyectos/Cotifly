@@ -1,8 +1,8 @@
 namespace Cotifly.Infraestructura.Configuracion;
 
 /// <summary>
-/// Cadenas de conexión (sección <c>ConnectionStrings</c>, variables <c>ConnectionStrings__Cotifly</c> y
-/// <c>ConnectionStrings__Identidad</c>). Siempre SQL login (<c>cotifly_app</c>), nunca autenticación
+/// Cadenas de conexión (sección <c>ConnectionStrings</c>, variables <c>ConnectionStrings__Cotifly</c>,
+/// <c>ConnectionStrings__Identidad</c> y las opcionales <c>ConnectionStrings__Regional</c> y <c>ConnectionStrings__DwOperaciones</c>). Siempre SQL login (<c>cotifly_app</c>), nunca autenticación
 /// integrada: el backend corre en un contenedor Linux (ADR-008).
 /// </summary>
 /// <remarks>
@@ -29,4 +29,12 @@ public sealed class clsOpcionesConexiones
     /// </summary>
     [clsSecreto(LargoMinimo = 20, Opcional = true)]
     public string? Regional { get; set; }
+
+    /// <summary>
+    /// Opcional (HU-042.2, #243): solo lectura de <c>dbo.DimBPSolicitante</c> (columnas <c>BP</c> y <c>NIT</c>) en <c>DWCubosOperacionesEBS</c>,
+    /// para resolver el NIT de cada BP al sincronizar el margen de SAP TM. Es otra base que la de <see cref="Regional"/>. Vacía: el NIT de
+    /// cada fila queda <c>NULL</c> y la sincronización sigue (un warning por corrida). Con valor, se valida como las otras en Production.
+    /// </summary>
+    [clsSecreto(LargoMinimo = 20, Opcional = true)]
+    public string? DwOperaciones { get; set; }
 }

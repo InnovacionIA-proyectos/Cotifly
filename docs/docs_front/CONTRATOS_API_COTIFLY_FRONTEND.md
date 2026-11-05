@@ -43,7 +43,8 @@ botón. La IA nunca escribe datos de negocio.
 ```
 Angular (módulo Cotifly en ClientePro) ──► API Cotifly (.NET 10) ──► NEXO (clientes, municipios, catálogos, costeo)
                                                                  ──► Cubicador (tipos de mercancía, vehículos, recomendación)
-                                                                 ──► SAP TM, TRM, proveedor de IA, MailSender (correo)
+                                                                 ──► TRM, proveedor de IA, MailSender (correo)
+                                                                 ──► SQL Server: dbo_cotifly (incluye la copia local del margen de SAP TM)
 ```
 
 - El navegador **solo** habla con la API de Cotifly. **Nunca** llama a NEXO, al cubicador, a SAP, a la TRM ni a la IA.
@@ -193,10 +194,10 @@ arriba. `detalle` es opcional y es un objeto: por lo general `{"motivo": "<códi
 |---|---|
 | 400 | Todos los códigos de negocio no listados abajo (`SOLICITUD_COSTEO_INVALIDA`, `RUTA_REQUERIDA`, `JUSTIFICACION_REQUERIDA`, `MERCANCIA_DESCONOCIDA`, `TRM_NO_DISPONIBLE`, `POSICION_INVALIDA`, `CUBICADOR_PETICION_RECHAZADA`...) |
 | 403 | `NEXO_SIN_PERMISO`, `REGIONAL_NO_PERMITIDA` (fila 64) |
-| 409 | `COSTEO_NO_REINTENTABLE`, `COSTEO_NO_LISTO`, `PDF_YA_GENERADO`, `TEXTOS_EDITADOS`, `RESULTADO_YA_DEFINIDO`, `COTIZACION_NO_ENTREGADA`, `USAR_RESULTADO_NEXO`, `SOLICITUD_NO_TRANSICIONABLE`, `CONFLICTO_CONCURRENCIA`, `PDF_YA_ENVIADO`, `LINEA_SIN_COTIZACION_NEXO`, `ESTADO_NO_PERMITE`, `RUTA_RECHAZADA`, `SIN_RUTAS_COTIZABLES`, `REGIONAL_NO_ASIGNADA`, `IDEMPOTENCY_KEY_REUTILIZADA`, `CORREO_NO_REINTENTABLE`, `COTIZACION_NO_FINALIZABLE`, `COTIZACION_NO_FINALIZADA` |
+| 409 | `COSTEO_NO_REINTENTABLE`, `COSTEO_NO_LISTO`, `PDF_YA_GENERADO`, `TEXTOS_EDITADOS`, `RESULTADO_YA_DEFINIDO`, `COTIZACION_NO_ENTREGADA`, `USAR_RESULTADO_NEXO`, `SOLICITUD_NO_TRANSICIONABLE`, `CONFLICTO_CONCURRENCIA`, `PDF_YA_ENVIADO`, `LINEA_SIN_COTIZACION_NEXO`, `ESTADO_NO_PERMITE`, `RUTA_RECHAZADA`, `SIN_RUTAS_COTIZABLES`, `REGIONAL_NO_ASIGNADA`, `IDEMPOTENCY_KEY_REUTILIZADA`, `CORREO_NO_REINTENTABLE`, `COTIZACION_NO_FINALIZABLE`, `COTIZACION_NO_FINALIZADA`, `SAP_MARGEN_SINCRONIZACION_EN_CURSO` (fila 72) |
 | 428 | `PRECONDICION_REQUERIDA` |
 | 500 | `ERROR_INTERNO` (fila 57; en `/api/auth/*` es `ErrorWeb`) |
-| 503 | `CORREO_DESHABILITADO`, `COSTEO_NEXO_NO_DISPONIBLE`, `COSTEO_NEXO_TIEMPO_AGOTADO`, `REGIONAL_NO_DISPONIBLE`, `CATALOGOS_FLETE_NO_DISPONIBLE`, `NEXO_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE`, `CLIENTE_BUSQUEDA_NO_DISPONIBLE`, `PDF_RENDER_NO_DISPONIBLE`, `CUBICADOR_NO_DISPONIBLE`, `CUBICADOR_RESPUESTA_INVALIDA`, `CUBICADOR_NO_AUTORIZADO`, `SERVICIO_OCUPADO` (con `Retry-After: 1`), `CUBICADOR_OCUPADO` (con `Retry-After: 10`) |
+| 503 | `CORREO_DESHABILITADO`, `COSTEO_NEXO_NO_DISPONIBLE`, `COSTEO_NEXO_TIEMPO_AGOTADO`, `REGIONAL_NO_DISPONIBLE`, `CATALOGOS_FLETE_NO_DISPONIBLE`, `NEXO_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE`, `CLIENTE_BUSQUEDA_NO_DISPONIBLE`, `PDF_RENDER_NO_DISPONIBLE`, `CUBICADOR_NO_DISPONIBLE`, `CUBICADOR_RESPUESTA_INVALIDA`, `CUBICADOR_NO_AUTORIZADO`, `SERVICIO_OCUPADO` (con `Retry-After: 1`), `CUBICADOR_OCUPADO` (con `Retry-After: 10`), `SAP_MARGEN_NO_CONFIGURADO`, `SAP_MARGEN_NO_DISPONIBLE` (fila 72) |
 
 Casos especiales:
 
@@ -833,7 +834,7 @@ Convenciones de esta sección:
   más de 64 KB: 413. Un JSON mal formado o con tipos erróneos: 400 `ErrorWeb`. Tampoco se repiten.
 - `{folio}` es el folio de la cotización (hasta 50 caracteres), codificado con `encodeURIComponent`.
 
-Resumen (62 endpoints):
+Resumen (64 endpoints):
 
 | # | Método y ruta | Rol | Módulo |
 |---|---|---|---|
@@ -899,6 +900,8 @@ Resumen (62 endpoints):
 | 60 | `POST /web/cotizaciones/{folio}/costeo/servicios-conexos/lineas` | Ambos (dueño) | Captura y costeo (HU-041.1, #231) |
 | 61 | `POST /web/cotizaciones/{folio}/costeo/servicios-conexos/lineas/quitar` | Ambos (dueño) | Captura y costeo (HU-041.1, #231) |
 | 62 | `POST /api/auth/elegir-rol` | Público (el ticket de elección) | Autenticación (HU-040.2, #230) |
+| 63 | `GET /web/admin/sap-margen/estado` | `gerente_comercial` o `director` | Administración (HU-042.2, #243) |
+| 64 | `POST /web/admin/sap-margen/sincronizar` | `gerente_comercial` o `director` | Administración (HU-042.2, #243) |
 
 Retirados (responden 404): `GET /web/metricas/actividad`, `GET /web/metricas/ajustes-margen`, `POST /chat/events`, `POST /web/login`.
 
@@ -3477,6 +3480,63 @@ Teléfono del comercial que imprime el PDF ("Cel").
 | 400 | `ErrorWeb`: fuera del patrón |
 | 401 | `ErrorWeb`: usuario inexistente |
 
+#### 4.12.5 `GET /web/admin/sap-margen/estado` (HU-042.2, #243)
+
+Estado de la copia local del margen de SAP TM, que sincroniza el backend (ADR-027). Pantalla de administración, no del flujo de cotizar.
+Responde también con la sincronización deshabilitada (`habilitada = false`: mostrar "Sincronización deshabilitada en este ambiente" y
+esconder "Sincronizar ahora"; `proxima_corrida_estimada` llega en `null`).
+
+- **Rol:** `gerente_comercial` o `director`.
+
+```json
+{
+  "ultima_corrida": { "estado": "error", "iniciado_at": "2026-11-03T08:00:05-05:00", "finalizado_at": "2026-11-03T08:00:06-05:00", "filas_insertadas": null, "filas_actualizadas": null, "filas_desactivadas": null, "mensaje_error": "SAP TM respondió HTTP 503 (ServiceUnavailable)." },
+  "ultima_corrida_ok": { "estado": "ok", "iniciado_at": "2026-11-02T08:00:04-05:00", "finalizado_at": "2026-11-02T08:00:09-05:00", "filas_insertadas": 3, "filas_actualizadas": 41, "filas_desactivadas": 2, "mensaje_error": null },
+  "filas_activas": 1498,
+  "proxima_corrida_estimada": "2026-11-03T09:00:35-05:00",
+  "intervalo_minutos": 1440,
+  "chequeo_minutos": 60,
+  "en_curso": false,
+  "nit_configurado": true,
+  "habilitada": true
+}
+```
+
+| HTTP | UI |
+|---|---|
+| 200 | `EstadoSincronizacionMargenSap`: `ultima_corrida` y `ultima_corrida_ok` son `null` si nunca hubo una; `proxima_corrida_estimada` la calcula la réplica que responde |
+| 403 | `ErrorWeb`: no es gerencia |
+| 503 | `SAP_MARGEN_NO_CONFIGURADO`: la sincronización está habilitada pero sin las credenciales de SAP o con su URL o mandante mal escritos (motivo en `error.detalle.motivo`); el margen usa la copia existente o la política. Mostrar "Sincronización no configurada". `SAP_MARGEN_NO_DISPONIBLE`: la base no respondió; reintentar |
+
+#### 4.12.6 `POST /web/admin/sap-margen/sincronizar` (HU-042.2, #243)
+
+Fuerza una sincronización del margen de SAP TM sin esperar el intervalo. Con la sincronización deshabilitada responde 503
+`SAP_MARGEN_NO_CONFIGURADO` (el `mensaje` dice "deshabilitada"). Comprueba la base antes de llamar a SAP. **Síncrono:** espera la corrida y responde su resultado. En
+la práctica tarda segundos; el máximo con los límites actuales es de unos 10 min (120 s de SAP, 60 s por lote de 500 BP en el DW, 120 s
+de lectura de los NIT existentes, 120 s de carga y 120 s del stored procedure). Sin cuerpo. Queda auditado.
+
+- **Rol:** `gerente_comercial` o `director`.
+
+```json
+{
+  "estado": "ok",
+  "filas_recibidas": 1500,
+  "duracion_ms": 4210,
+  "corrida": { "estado": "ok", "iniciado_at": "2026-11-03T10:15:00-05:00", "finalizado_at": "2026-11-03T10:15:04-05:00", "filas_insertadas": 2, "filas_actualizadas": 15, "filas_desactivadas": 0, "mensaje_error": null }
+}
+```
+
+| HTTP | UI |
+|---|---|
+| 200 | `ResultadoSincronizacionMargenSap`. `estado = ok`: listo. `estado = error`: la tabla no cambió; mostrar `corrida.mensaje_error` (SAP caído o sin credenciales válidas, respuesta inválida, menos filas que el mínimo, DW caído). `estado = omitido`: otra réplica estaba sincronizando; no es un error |
+| 403 | `ErrorWeb` |
+| 409 | `SAP_MARGEN_SINCRONIZACION_EN_CURSO`: ya hay una corrida en esta réplica; reintentar en un momento |
+| 503 | `SAP_MARGEN_NO_CONFIGURADO`; `SAP_MARGEN_NO_DISPONIBLE` (la base no respondió ni para registrar la corrida; reintentar) |
+
+Timeout del cliente: no hace falta esperar el máximo. Con un timeout corto (por ejemplo 150 s), si se corta, la corrida sigue en el
+servidor: mostrar "Sincronización en curso" y consultar `GET .../estado` (`en_curso`, `ultima_corrida`). Deshabilitar el botón mientras
+corre.
+
 ### 4.13 Health
 
 No requieren autenticación. El frontend no los necesita para operar; sirven para diagnóstico.
@@ -3576,7 +3636,7 @@ Notación: `?` = puede ser `null` (el campo viene igual). **(omitible)** = el ca
 | `avisos_cubicacion` | `AvisosCubicacion` **(omitible)** | `{mercancias_condicionadas, advertencias, extradimension?}` |
 | `aviso_conexos_nexo` | string? | Algún conexo quedó `incierto` o `fallido_definitivo`: "revisa en NEXO" |
 | `margen_sap_anomalo` | bool | SAP TM propuso un margen fuera de [0, 60 %]: se usó la política |
-| `aviso_margen` | string? | Explicación cuando `margen_sap_anomalo = true` |
+| `aviso_margen` | string? | Explicación cuando `margen_sap_anomalo = true` y, desde el 2026-11-04 (fila 72), cuando el sugerido salió de SAP TM y la copia lleva más de 48 h sin sincronizarse; con los dos, el del anómalo primero |
 
 **`ServicioConexoCosteo`**: `{id, nombre?, categoria, cantidad, precio, incluido, linea_orden?, estado_nexo?, servicio_id?}`. `precio` ya tiene el margen
 de la ruta; nunca trae costo. `incluido` siempre `true`. `servicio_id` (HU-041.1): id del servicio en el catálogo de NEXO, igual entre rutas.
@@ -3665,7 +3725,7 @@ hasta reintentar), `completa`. `progreso_cubicacion = null` si ninguna ruta pas�
 
 | Enum | Valores | Significado |
 |---|---|---|
-| `origen_margen` | `sap_tm`, `politica_linea`, `negociado` | Sugerido por SAP TM con el BP; política de la línea; ajustado por el comercial (badge "Ajuste fuera de política") |
+| `origen_margen` | `sap_tm`, `politica_linea`, `negociado` | Sugerido por SAP TM con el BP (desde HU-042.2 se lee de la copia local que sincroniza el backend a diario; el valor sigue siendo `sap_tm`); política de la línea; ajustado por el comercial (badge "Ajuste fuera de política") |
 | `metodo_calculo` | `margen`, `markup` | Método de la política de la línea |
 | `moneda` | `COP`, `USD` | Entrada sin distinguir mayúsculas; COP por defecto |
 | `origen_cliente` | `cliente`, `prospecto` | Prospecto: puede fallar el envío a NEXO si no tiene BP |
@@ -3857,6 +3917,9 @@ parecido del catálogo, `sugerido = true`, con `similitud` de 0 a 1), `null` (si
 | `RUTA_REQUERIDA` | 400 | Varias rutas y no se indicó cuál (`detalle.rutas`) | Selector de ruta |
 | `RUTA_RECHAZADA` | 409 | HU-028.1 (#183): la Mesa de Costeo de NEXO rechazó la ruta (margen o conexos); `detalle.linea_orden`, `detalle.linea_solicitud_id`, `detalle.motivo_rechazo` | Deshabilitar margen y conexos en esa ruta; mostrar el motivo |
 | `SIN_RUTAS_COTIZABLES` | 409 | HU-028.1 (#183, D1): la Mesa rechazó todas las rutas; `POST .../costeo/pdf` no genera el PDF. En `re-solicitar` y `PUT .../solicitud` (`detalle.motivo = TODOS_RECHAZADOS`): ningún camión viajaría a NEXO | Esconder "Generar PDF"; mostrar `motivo_estado_costeo`. Al re-solicitar o editar: ofrecer reincluir los rechazados en la edición |
+| `SAP_MARGEN_NO_CONFIGURADO` | 503 | HU-042.2 (#243): `/web/admin/sap-margen/*` en un ambiente sin las credenciales de SAP | "Sincronización no configurada" (solo administración) |
+| `SAP_MARGEN_NO_DISPONIBLE` | 503 | HU-042.2 (#243): `/web/admin/sap-margen/*` con la base de Cotifly sin responder | Reintentar |
+| `SAP_MARGEN_SINCRONIZACION_EN_CURSO` | 409 | HU-042.2 (#243): `POST /web/admin/sap-margen/sincronizar` con otra corrida en curso | Reintentar en un momento; nada cambió |
 | `SERVICIO_OCUPADO` | 503 | Otra operación retiene el folio (con `Retry-After: 1`) | Reintentar en 1 s |
 | `SOLICITUD_COSTEO_INVALIDA` | 400 | Formulario o carga inválidos (`detalle.errores[]` en la captura) | Pintar errores por campo |
 | `SOLICITUD_NO_TRANSICIONABLE` | 409 | NEXO no permite la transición | Mostrar `mensaje` |
@@ -3867,7 +3930,7 @@ parecido del catálogo, `sugerido = true`, con `similitud` de 0 a 1), `null` (si
 | `MOTIVO_NO_PERMITIDO` | 400 | HU-018.1 (#155): perdida (`/resultado` o `/seguimiento`) sin motivo, con uno fuera de `GET /web/motivos-perdida` o con `Otro` sin comentario; `detalle.motivos_permitidos` y `detalle.requiere_comentario` | Marcar el selector; con `requiere_comentario`, pedir el comentario |
 
 Códigos del enum que **no** debería ver la consola web (internos del asistente o del agente retirado):
-`MARGEN_FUENTE_NO_DISPONIBLE`, `PRECIO_INVALIDO`, `CONFIRMACION_REQUERIDA`, `AJUSTE_COTIZACION_INVALIDA`, `FOLIO_DUPLICADO`,
+~~`MARGEN_FUENTE_NO_DISPONIBLE`~~ (retirado en HU-042.4, fila 72 de §7), `PRECIO_INVALIDO`, `CONFIRMACION_REQUERIDA`, `AJUSTE_COTIZACION_INVALIDA`, `FOLIO_DUPLICADO`,
 `HERRAMIENTA_DESCONOCIDA`, `COTIZACION_CHAT_RETIRADA` (fila 57: `TARIFA_FUENTE_NO_DISPONIBLE`, `TARIFA_CONFIG_INVALIDA`, `AJUSTE_ID_INVALIDO`
 y `MUNICIPIO_ARGUMENTO_INVALIDO` salieron del enum porque ningún código los emite; fila 58: los tres de tarifa y municipio se borraron también del backend). Pueden
 aparecer en `errores[]` del chat: ignorarlos (el asistente lo explica en `texto`). `COTIZACION_NO_ENCONTRADA` se traduce siempre a 404
@@ -3997,6 +4060,7 @@ fila_excel, campo, codigo, mensaje}`.
 | 69 | **HU-034.1 (#201, parte A): la licitación para el gerente y el director, en solo consulta.** `GET /web/licitaciones/{folio}` (4.6.3) y `GET /web/licitaciones/{folio}/excel` (4.6.5) se abren, además del dueño, al `gerente_comercial` cuya regional efectiva incluye al dueño y al `director` (cualquier regional), con la misma regla del detalle por folio y del PDF: si la regional del gerente no se puede comprobar (sin regional o fuente caída) responde 404, igual que un comercial ajeno o un folio inexistente. Campo **nuevo** `solo_lectura` (booleano, siempre presente) en `Licitacion`: `false` para el dueño (también en las respuestas de `POST /web/licitaciones` y de reintentar la cubicación) y `true` para el gerente o el director. Las acciones siguen siendo del dueño: reintentar la cubicación (con o sin `usar_respaldo`), reintentar el envío y finalizar les responden 404. **Sin costos:** la vista y el Excel nunca los tuvieron (solo precios con margen), así que el gerente y el director reciben exactamente lo mismo que el dueño, salvo `solo_lectura`. Cada consulta o descarga de un gerente o director sobre una licitación ajena, permitida o no, queda en la auditoría (`consultar_licitacion`, `exportar_excel_licitacion`). Sin endpoints nuevos ni códigos de error nuevos; siguen **55 endpoints** | Agrega | Desde el listado regional, abrir la licitación con `GET /web/licitaciones/{folio}`; con `solo_lectura = true`, esconder "Reintentar cubicación", "Enviar sin vehículo", reintentar el envío y "Finalizar", y dejar "Descargar Excel" |
 | 70 | **HU-040 (#229, #230, ADR-025): multi-rol, elegir el rol al entrar.** (a) `POST /api/auth/login-clientepro` 200 puede responder **`EleccionRolRequerida`** (`requiereEleccionRol: true`, `ticketEleccion`, `ticketExpiraAt`, `roles[]` con `codigo` y `descripcion`, `user` sin rol) **sin tokens** cuando la persona tiene varios roles en Cotifly (o entra por primera vez con varios roles de ClientePro); con un solo rol la respuesta es la misma de siempre. (b) **Nuevo `POST /api/auth/elegir-rol`** `{ticket, rol}` → 200 `LoginResponse` con el rol elegido; 400 cuerpo inválido; 401 `Inicia sesión de nuevo.` para todo rechazo; 429. Ticket de un solo uso, 5 minutos. (c) El refresh conserva el rol elegido y responde 401 si se lo quitaron. (d) Con varios roles ya **no** gana el de mayor alcance: la jerarquía queda para el rol único | Agrega | Detectar `requiereEleccionRol`, mostrar el selector y llamar a `elegir-rol`; ante 401 en `elegir-rol`, volver a hacer login |
 | 71 | **HU-041.1 (#231, ADR-026): margen y servicios conexos de varias rutas en una operación.** Tres endpoints **nuevos** (4.4.12 a 4.4.14): `PUT .../costeo/margen/lineas` (el mismo `margen` o `revertir_sugerido: true` para `lineas` o `todas`), `POST .../costeo/servicios-conexos/lineas` (agrega `servicio_id` con `cantidad`) y `POST .../costeo/servicios-conexos/lineas/quitar`. Las mismas reglas que por ruta, pero atómicas: si una ruta no admite el cambio no cambia ninguna y el error trae `detalle.linea_orden` y `detalle.linea_solicitud_id`. `If-Match` obligatorio, `Idempotency-Key` opcional, una invalidación del PDF y una auditoría por operación. El conexo en lote va a NEXO por el envío diferido: sale `estado_nexo = pendiente` con el costo del catálogo. `ServicioConexoCosteo` trae **`servicio_id`** (id del catálogo, nuevo y anulable). Sin códigos de error nuevos ni script de base de datos; son **61 endpoints** | Agrega | Botones "Aplicar a todas" y "Volver al sugerido en todas" con un solo `If-Match`; agrupar conexos por `servicio_id`; ante un error con `detalle.linea_orden` señalar esa ruta (nada cambió); tras agregar en lote, mostrar `pendiente` hasta el refresco del costeo y no habilitar "Finalizar" mientras tanto |
+| 72 | **HU-042.2 y HU-042.4 (#243, #247, ADR-027): el margen de SAP TM sale de la copia local.** Cotifly ya no consulta SAP al cotizar: lee `dbo_cotifly.SapMargenCliente`, que el propio backend sincroniza a diario con SAP. `origen_margen` sigue siendo **`sap_tm`** (sin valor nuevo) y la regla de anómalos de #139 no cambia (`margen_sap_anomalo`, `aviso_margen`). Cambia solo el texto del `detalle` del margen sugerido: `Margen propuesto SAP TM (tabla local, actualizado AAAA-MM-DD) para cliente … en …: N%` y, si la última sincronización exitosa tiene más de 48 h (configurable), ` — sincronización con más de 48 h (última: …): el dato puede estar desactualizado.`; el margen se usa igual. Cada cliente recibe su propio margen y el BP se reconoce con o sin ceros a la izquierda. Se **retira** el código `MARGEN_FUENTE_NO_DISPONIBLE` del enum de `ErrorNegocio` (ya no se emitía en la web: una caída de SAP siempre tiene la política de respaldo). **Ampliación del 2026-11-03:** la copia la sincroniza el backend y hay dos endpoints **nuevos** de administración (4.12.5 y 4.12.6, `gerente_comercial` o `director`): `GET /web/admin/sap-margen/estado` (última corrida, última `ok`, filas activas, próxima corrida estimada) y `POST /web/admin/sap-margen/sincronizar` (fuerza una corrida y espera su resultado: 200 con `estado` `ok`, `error` u `omitido`). Códigos **nuevos**: `SAP_MARGEN_NO_CONFIGURADO` (503, ambiente sin credenciales de SAP o con su URL mal escrita), `SAP_MARGEN_SINCRONIZACION_EN_CURSO` (409) y `SAP_MARGEN_NO_DISPONIBLE` (503, la base no respondió; reintentable). **Ajustes del 2026-11-04:** la sincronización tiene un interruptor del servidor, apagado por defecto: apagada, `GET .../estado` responde 200 con el campo **nuevo** `habilitada = false` y el POST responde 503 `SAP_MARGEN_NO_CONFIGURADO` con un mensaje que dice que está deshabilitada; habilitada pero mal configurada, el 503 trae el motivo en `error.detalle.motivo`. **`aviso_margen`** de cada ruta del costeo puede traer además "La copia del margen de SAP TM lleva más de 48 h sin sincronizarse (última: …): el margen sugerido de SAP puede estar desactualizado." cuando el sugerido salió de SAP (aplicado o anómalo); con el anómalo, van los dos textos seguidos. Son **64 endpoints** | Cambia / Agrega | Nada obligatorio para cotizar; mostrar `aviso_margen` tal cual (puede venir sin `margen_sap_anomalo`); quitar `MARGEN_FUENTE_NO_DISPONIBLE` de los mapas de errores si existe. Si se muestra el `detalle`, no asumir el texto anterior (`Margen propuesto SAP TM para cliente …`); se puede resaltar el aviso de sincronización vieja buscando "sincronización con más de". Opcional: una vista de administración con el estado y el botón "Sincronizar ahora" (el POST suele tardar segundos y como máximo unos 10 min; si el cliente corta antes, la corrida sigue: consultar `GET .../estado`; mostrar `corrida.mensaje_error` con `estado = error`) |
 
 ---
 

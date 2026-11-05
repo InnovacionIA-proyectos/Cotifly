@@ -113,8 +113,24 @@ public sealed class clsBaseDatosHealthCheckTests
     }
 
     [Theory]
+    [InlineData("SapMargenCliente.id|SapMargenCliente.bpSap|SapMargenSyncLog.status|SapMapeoTrqType.lineaNegocioId", clsBaseDatosHealthCheck.DescripcionEsquemaSin17)]
+    [InlineData("SapMargenSyncLog.status", clsBaseDatosHealthCheck.DescripcionEsquemaSin17)]
+    [InlineData("SapMapeoTrqType.lineaNegocioId", clsBaseDatosHealthCheck.DescripcionEsquemaSin18)]
+    [InlineData("SapMapeoTrqType.lineaNegocioId|TokensRefresco.rolSesion", clsBaseDatosHealthCheck.DescripcionEsquemaSin16)]
+    [InlineData("SapMargenCliente.margenRecomendado|CotizacionesSolicitud.finalizadaAt", clsBaseDatosHealthCheck.DescripcionEsquemaSin14)]
+    [InlineData("SapMapeoTrqType.lineaNegocioId|Otra.columna", "esquema incompleto: falta Otra.columna, SapMapeoTrqType.lineaNegocioId")]
+    public void HU042_SinEl17OEl18LaSondaLosPideSoloCuandoNoFaltaUnScriptAnterior(string faltantes, string descripcion)
+    {
+        var resultado = clsBaseDatosHealthCheck.Clasificar(faltantes.Split('|'), cotizacionesViejas: false);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be(descripcion);
+    }
+
+    [Theory]
     [InlineData("CotizacionServiciosConexos.precioVenta", clsBaseDatosHealthCheck.DescripcionEsquemaSin19)]
     [InlineData("CotizacionServiciosConexos.precioVenta|TokensRefresco.rolSesion", clsBaseDatosHealthCheck.DescripcionEsquemaSin16)]
+    [InlineData("CotizacionServiciosConexos.precioVenta|SapMapeoTrqType.lineaNegocioId", clsBaseDatosHealthCheck.DescripcionEsquemaSin18)]
     [InlineData("CotizacionServiciosConexos.precioVenta|CotizacionServiciosConexos.nombreServicioConexo", clsBaseDatosHealthCheck.DescripcionEsquemaSin0010)]
     [InlineData("CotizacionServiciosConexos.precioVenta|Otra.columna", "esquema incompleto: falta CotizacionServiciosConexos.precioVenta, Otra.columna")]
     public void Issue261_SinEl19LaSondaPideEl19SoloCuandoNoFaltaUnScriptAnterior(string faltantes, string descripcion)
@@ -241,8 +257,8 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
     public async Task HU0301_ConEl10PeroSinEl11EsUnhealthyPorqueLeFaltaEl11()
     {
         // HU-030.1 (#184): el modelo EF mapea CotizacionLineasSolicitud.pesoConTaraKg de db/scripts/11_peso_con_tara.sql. Integración 1021:
-        // la base llega hasta el 10 (Scripts[ScriptsSin07 - 6], #183); hasta el 09 la sonda pide primero el 10.
-        await using var sin11 = await baseDatos.CrearBaseConScriptsAsync("dbSin11", clsBaseDatosPruebas.ScriptsSin07 - 6);
+        // la base llega hasta el 10 (Scripts[ScriptsHasta16 - 5], #183); hasta el 09 la sonda pide primero el 10.
+        await using var sin11 = await baseDatos.CrearBaseConScriptsAsync("dbSin11", clsBaseDatosPruebas.ScriptsHasta16 - 5);
 
         var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin11.Cadena);
 
@@ -254,7 +270,7 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
     public async Task HU032_ConEl11PeroSinEl12EsUnhealthyPorqueLeFaltaEl12()
     {
         // HU-032 (#197): el modelo EF mapea tipoVehiculoElegido y carroceriaElegida de la ruta (db/scripts/12_vehiculo_elegido.sql).
-        await using var sin12 = await baseDatos.CrearBaseConScriptsAsync("dbSin12", clsBaseDatosPruebas.ScriptsSin07 - 5);
+        await using var sin12 = await baseDatos.CrearBaseConScriptsAsync("dbSin12", clsBaseDatosPruebas.ScriptsHasta16 - 4);
 
         var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin12.Cadena);
 
@@ -267,7 +283,7 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
     {
         // HU-033 (#199): el modelo EF mapea el seguimiento de MailSender (Correos) y el resultado diferido a Nexo (cabecera) de
         // db/scripts/13_correo_mailsender.sql.
-        await using var sin13 = await baseDatos.CrearBaseConScriptsAsync("dbSin13", clsBaseDatosPruebas.ScriptsSin07 - 4);
+        await using var sin13 = await baseDatos.CrearBaseConScriptsAsync("dbSin13", clsBaseDatosPruebas.ScriptsHasta16 - 3);
 
         var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin13.Cadena);
 
@@ -279,7 +295,7 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
     public async Task HU036_ConEl13PeroSinEl14EsUnhealthyPorqueLeFaltaEl14()
     {
         // HU-036 (#205): el modelo EF mapea finalizadaAt y finalizadaPor de la cabecera (db/scripts/14_cotizacion_finalizada.sql).
-        await using var sin14 = await baseDatos.CrearBaseConScriptsAsync("dbSin14", clsBaseDatosPruebas.ScriptsSin07 - 3);
+        await using var sin14 = await baseDatos.CrearBaseConScriptsAsync("dbSin14", clsBaseDatosPruebas.ScriptsHasta16 - 2);
 
         var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin14.Cadena);
 
@@ -292,7 +308,7 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
     {
         // HU-040.1 (#229): el modelo EF mapea TokensRefresco.rolSesion (db/scripts/16_multiples_roles_activos.sql). No es "falta 0002"
         // aunque la columna sea de TokensRefresco.
-        await using var sin16 = await baseDatos.CrearBaseConScriptsAsync("dbSin16", clsBaseDatosPruebas.ScriptsSin07 - 2);
+        await using var sin16 = await baseDatos.CrearBaseConScriptsAsync("dbSin16", clsBaseDatosPruebas.ScriptsHasta16 - 1);
 
         var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin16.Cadena);
 
@@ -301,10 +317,35 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
     }
 
     [Fact]
-    public async Task Issue261_ConEl16PeroSinEl19EsUnhealthyPorqueLeFaltaEl19()
+    public async Task HU0422_ConEl16PeroSinEl17EsUnhealthyPorqueLeFaltaEl17()
     {
-        // #261 punto 4: el modelo EF mapea CotizacionServiciosConexos.precioVenta (db/scripts/19_precio_venta_conexos.sql, HU-043.1 #245).
-        await using var sin19 = await baseDatos.CrearBaseConScriptsAsync("dbSin19", clsBaseDatosPruebas.ScriptsSin07 - 1);
+        // HU-042.2 (#243): el modelo EF mapea SapMargenCliente y SapMargenSyncLog (db/scripts/17), que lee la fuente del margen de SAP.
+        await using var sin17 = await baseDatos.CrearBaseConScriptsAsync("dbSin17", clsBaseDatosPruebas.ScriptsHasta16);
+
+        var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin17.Cadena);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be("esquema incompleto: falta 17");
+    }
+
+    [Fact]
+    public async Task HU0424_ConEl17PeroSinEl18EsUnhealthyPorqueLeFaltaEl18()
+    {
+        // HU-042.4 (#247): el modelo EF mapea SapMapeoTrqType.lineaNegocioId (db/scripts/18), con el que se resuelve el TrqType.
+        await using var sin18 = await baseDatos.CrearBaseConScriptsAsync("dbSin18", clsBaseDatosPruebas.ScriptsHasta16 + 1);
+
+        var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin18.Cadena);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be("esquema incompleto: falta 18");
+    }
+
+    [Fact]
+    public async Task Issue261_ConEl18PeroSinEl19EsUnhealthyPorqueLeFaltaEl19()
+    {
+        // #261 punto 4: el modelo EF mapea CotizacionServiciosConexos.precioVenta (db/scripts/19_precio_venta_conexos.sql, HU-043.1 #245),
+        // después del 17 y el 18 de SAP (HU-042, #242/#247).
+        await using var sin19 = await baseDatos.CrearBaseConScriptsAsync("dbSin19", clsBaseDatosPruebas.ScriptsHasta16 + 2);
 
         var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin19.Cadena);
 

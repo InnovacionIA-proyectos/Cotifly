@@ -625,7 +625,7 @@ public sealed class clsEnvioCosteoServiceTests
         if (resolucionFalla)
         {
             _margen.ResolverAsync(Arg.Any<Cotifly.Aplicacion.Margen.DTOs.clsEntradaMargen>(), Arg.Any<CancellationToken>())
-                .Returns(new clsErrorDominio(clsCodigosError.MargenFuenteNoDisponible, "SAP TM caído"));
+                .Returns(new clsErrorDominio(clsCodigosError.MargenLineaDesconocida, "Sin política"));
         }
 
         await Servicio().EnviarGuardadaAsync(cotizacion, _politica, _ana, "Re-solicitud de F; reemplaza la solicitud sol-1.");

@@ -13,7 +13,7 @@ public sealed class clsSecretoAttribute : Attribute
 
     /// <summary>
     /// Si es <c>true</c>, un valor vacío se acepta: la obligatoriedad la decide el validador de la opción (p. ej.
-    /// <c>SapTm:Pass</c> solo con <c>SapTm:Modo=odata</c>, #13). Si tiene valor, se valida igual que un secreto obligatorio.
+    /// <c>ConnectionStrings:Regional</c>, opcional). Si tiene valor, se valida igual que un secreto obligatorio.
     /// </summary>
     public bool Opcional { get; init; }
 }

@@ -169,6 +169,10 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         (typeof(clsLineaNegocioAdmin), "LineaNegocio"),
         // HU-016.1 (#154): GET /web/lineas-negocio, el desplegable de la captura sin margen.
         (typeof(Cotifly.Aplicacion.Administracion.DTOs.clsLineaNegocioOpcion), "LineaNegocioOpcion"),
+        // HU-042.2 (#243): estado y corrida forzada de la sincronización del margen de SAP TM.
+        (typeof(Cotifly.Aplicacion.Margen.DTOs.clsEstadoSincronizacionMargenSap), "EstadoSincronizacionMargenSap"),
+        (typeof(Cotifly.Aplicacion.Margen.DTOs.clsResultadoSincronizacionMargenSap), "ResultadoSincronizacionMargenSap"),
+        (typeof(Cotifly.Aplicacion.Margen.DTOs.clsCorridaSincronizacionMargenSap), "CorridaSincronizacionMargenSap"),
         (typeof(clsMetricasComercial), "MetricasComercial"),
         (typeof(clsMetricasRegional), "MetricasRegional"),
         // HU-037.3 (#211): GET /web/regionales.

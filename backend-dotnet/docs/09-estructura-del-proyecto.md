@@ -53,9 +53,8 @@ backend-dotnet/
 └── tests/
     ├── Directory.Build.props    # xUnit v3, AwesomeAssertions, TRX y cobertura; Testcontainers y soporte con UsaSqlServerPruebas
     ├── cobertura.config.xml     # ensamblados medidos por la cobertura (#14)
-    ├── Comun/                   # soporte compartido de integración (enlazado, no es proyecto): SQL Server, reloj, MailSender, SAP,
-    │                            # Nexo, cubicador, TRM y modelo de IA falsos, lector de PDF
-    ├── fixtures/sap/            # muestra de RentabClienteSet portada del Python
+    ├── Comun/                   # soporte compartido de integración (enlazado, no es proyecto): SQL Server, reloj, MailSender,
+    │                            # muestra de SAP TM, Nexo, cubicador, TRM y modelo de IA falsos, lector de PDF
     ├── fixtures/cotizacion/     # ejemplo-solicitud.json del Python (payload del PDF, #11)
     ├── fixtures/licitaciones/   # pliego de 300 líneas (paridad con el lector de Nexo, HU-011)
     ├── fixtures/pdf/            # referencia de la maquetación del PDF

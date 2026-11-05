@@ -6,7 +6,7 @@ namespace Cotifly.Pruebas.Comun;
 
 /// <summary>
 /// SQL Server 2019 en Testcontainers con el esquema real (ADR-008, ADR-010):
-/// crea <c>dbTarifario_Nexo_Pruebas</c>, aplica <c>db/migrations_mssql/0001</c> a <c>0010</c>, <c>db/scripts/02_alter_cubicador.sql</c>, el <c>03</c> (HU-014, #188), la propuesta <c>db/scripts/04</c> (HU-023.5), el <c>05</c> (#188), el <c>06</c> (#191, Idempotency-Key), el <c>07</c>, el <c>08</c> (HU-014.3), el <c>09</c> (HU-018.1) y el <c>10</c> (HU-028.1, #183) y el <c>11</c> (HU-030.1, #184) partidos por <c>GO</c> (HU-021: el 0009
+/// crea <c>dbTarifario_Nexo_Pruebas</c>, aplica <c>db/migrations_mssql/0001</c> a <c>0010</c>, <c>db/scripts/02_alter_cubicador.sql</c>, el <c>03</c> (HU-014, #188), la propuesta <c>db/scripts/04</c> (HU-023.5), el <c>05</c> (#188), el <c>06</c> (#191, Idempotency-Key), el <c>07</c>, el <c>08</c> (HU-014.3), el <c>09</c> (HU-018.1), el <c>10</c> (HU-028.1, #183), el <c>11</c> (HU-030.1, #184) y los siguientes hasta el <c>18</c> (HU-042, #242, #247) partidos por <c>GO</c> (HU-021: el 0009
 /// reestructura las cotizaciones en rutas y camiones y el 0010 agrega los nombres de municipio; las pruebas de esquema verifican además
 /// que <c>db/scripts/01_crear_esquema.sql</c> deja el mismo esquema, <see cref="CrearBaseInstaladaAsync"/>), y crea una <c>dbsolucionesti</c> falsa con las tres tablas del almacén corporativo y sus tipos reales:
 /// <c>dbo.tblSAPUsuariosApp</c> (ID NUMERIC, incluida la columna CLAVE, que el backend nunca debe leer),
@@ -63,8 +63,14 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
         // HU-040.1 (#229): varias asignaciones activas por usuario y TokensRefresco.rolSesion (db/scripts/16; el backend mapea rolSesion).
         // Como el 14, va antes del 07 en esta lista.
         Script16,
-        // HU-043.1 (#245) / #261 punto 4: precioVenta NOT NULL en CotizacionServiciosConexos (db/scripts/19; el backend la mapea). Como
-        // el 16, va antes del 07 en esta lista. El 17 y el 18 (SAP) no se aplican aquí: el 19 no depende de ellos.
+        // HU-042.1/HU-042.2 (#242, #243): la copia local del margen de SAP TM y el log del job (db/scripts/17; el backend mapea sus tablas).
+        // Como el 16, va antes del 07 en esta lista.
+        Script17,
+        // HU-042.4 (#247): SapMapeoTrqType.lineaNegocioId con su FK a MargenesPolitica (db/scripts/18; el backend resuelve por ese id). Su
+        // backfill cruza por el texto las filas que sembró el 0001.
+        Script18,
+        // HU-043.1 (#245) / #261 punto 4: precioVenta NOT NULL en CotizacionServiciosConexos (db/scripts/19; el backend la mapea). Va
+        // después del 18: no depende de él ni del 17, pero mantiene el orden numérico de los scripts.
         Script19,
         // HU-023 (#176): BUSQUEDA_AGOTADA en el CHECK del motivo (db/scripts/07, lo aplica @scalderon-bs).
         Script07,
@@ -78,8 +84,21 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     /// <summary>HU-040.1 (#229): el 16 de las asignaciones activas múltiples y el rol de la sesión (relativa a <c>migrations_mssql</c>).</summary>
     public const string Script16 = "../scripts_bd/16_multiples_roles_activos.sql";
 
+    /// <summary>HU-042.1 (#242): el 17 de la copia local del margen de SAP TM y su log (relativa a <c>migrations_mssql</c>).</summary>
+    public const string Script17 = "../scripts_bd/17_sap_margen_sincronizacion.sql";
+
+    /// <summary>HU-042.4 (#247): el 18 de <c>SapMapeoTrqType.lineaNegocioId</c> (relativa a <c>migrations_mssql</c>).</summary>
+    public const string Script18 = "../scripts_bd/18_sap_mapeo_fk_margenes_politica.sql";
+
     /// <summary>HU-043.1 (#245, #261 punto 4): el 19 del precio de venta de los conexos (relativa a <c>migrations_mssql</c>).</summary>
     public const string Script19 = "../scripts_bd/19_precio_venta_conexos.sql";
+
+    /// <summary>
+    /// HU-042 (#243, #247): scripts hasta el 16 incluido (sin el 17, el 18, el 19, el 07, el 08 ni el 15). <c>Scripts[ScriptsHasta16 - 1]</c>
+    /// es el 16 (lo verifica <c>clsEsquemaTests</c>): la base de la prueba "falta 17". <c>ScriptsHasta16 - k</c> son las bases "sin el 16",
+    /// "sin el 14"... que antes se escribían como <c>ScriptsSin07 - k</c>.
+    /// </summary>
+    public const int ScriptsHasta16 = 22;
 
     /// <summary>HU-037.1 (#209): el 15 del rol director (relativa a <c>migrations_mssql</c>).</summary>
     public const string Script15 = "../scripts_bd/15_rol_director.sql";
@@ -139,20 +158,21 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     public const string Script04 = "../scripts_bd/04_cubicacion_segundo_plano.sql";
 
     /// <summary>
-    /// Scripts hasta el 07 incluido (con el 09, el 10 y el 11, sin el 08): la base migrada que todavía tiene las vistas del borrador de métricas.
-    /// <c>Scripts[ScriptsHasta07 - 1]</c> es el 07 (lo verifica <c>clsEsquemaTests</c>).
+    /// Scripts hasta el 07 incluido (con el 09, el 10, el 11... y el 18, sin el 08): la base migrada que todavía tiene las vistas del borrador de
+    /// métricas. <c>Scripts[ScriptsHasta07 - 1]</c> es el 07 (lo verifica <c>clsEsquemaTests</c>).
     /// </summary>
-    public const int ScriptsHasta07 = 24;
+    public const int ScriptsHasta07 = 26;
 
     /// <summary>
     /// Todos los scripts anteriores al 07 en <see cref="Scripts"/> (sin el 07 ni los que van después). <c>Scripts[ScriptsSin07]</c> es el 07
     /// (lo verifica <c>clsEsquemaTests</c>). Si otra rama agrega un script que el backend mapea, va antes del 07 en la lista y este número
-    /// sube (hoy llega hasta el 19: <c>Scripts[ScriptsSin07 - 1]</c> es el 19, HU-043.1 #245/#261; antes el 16, HU-040.1 #229; el 14, HU-036 #205; el 13, HU-033 #199; el 12, HU-032 #197, antes el 11,
-    /// HU-030.1 #184, y antes el 10, HU-028.1 #183).
+    /// sube (hoy llega hasta el 19: <c>Scripts[ScriptsSin07 - 1]</c> es el 19, HU-043.1 #245/#261; antes el 18, HU-042.4 #247; el 17,
+    /// HU-042.1 #242; el 16, HU-040.1 #229; el 14, HU-036 #205; el 13, HU-033 #199; el 12, HU-032 #197, antes el 11, HU-030.1 #184, y antes
+    /// el 10, HU-028.1 #183).
     /// HU-014 (#188): incluye el 03, que deja el CHECK del 07; para una base que de verdad no admite BUSQUEDA_AGOTADA,
     /// <see cref="CrearBaseSin07Async"/>.
     /// </summary>
-    public const int ScriptsSin07 = 23;
+    public const int ScriptsSin07 = 25;
 
     /// <summary>
     /// HU-014 (#188): el CHECK del motivo tal como lo deja el <c>02</c> (4 motivos, sin <c>BUSQUEDA_AGOTADA</c> ni <c>ISNULL</c>). Con el 03
@@ -201,6 +221,15 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     /// <summary>Scripts hasta el esquema anterior a HU-021 (0001 a 0008): para probar el 0009 sobre filas del esquema viejo.</summary>
     public const int ScriptsAntesDeHu021 = 8;
 
+    /// <summary>
+    /// HU-042.2 (#243): collation con la que el ejecutador crea la base real (<c>db/ejecutar-bd.*</c>), distinta de la del servidor del
+    /// contenedor (<c>SQL_Latin1_General_CP1_CI_AS</c>): con ella, una tabla temporal sin <c>COLLATE DATABASE_DEFAULT</c> choca con las tablas.
+    /// </summary>
+    public const string CollationCotifly = "Latin1_General_100_CI_AS_SC_UTF8";
+
+    /// <summary>HU-042.2 (#243): nombre de la base falsa del DW con <c>dbo.DimBPSolicitante</c>.</summary>
+    public const string NombreBaseDwOperaciones = "DWCubosOperacionesEBS";
+
     /// <summary>Script de instalación desde cero (<c>db/scripts/01_crear_esquema.sql</c>).</summary>
     public const string ScriptInstalacion = "01_crear_esquema.sql";
 
@@ -230,6 +259,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     private string? _cadenaSolo0001;
     private string? _cadenaConCiudades;
     private string? _cadenaDirectorio;
+    private string? _cadenaDwOperaciones;
     private string? _cadenaSin0004;
     private string? _cadenaSin0005;
     private string? _cadenaSin0006;
@@ -299,7 +329,11 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("15_rol_director.sql"));
                 // HU-040.1 (#229): el 16 (multi-rol) va después del 15 por nombre.
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("16_multiples_roles_activos.sql"));
-                // HU-043.1 (#245, #261 punto 4): el 19 (precioVenta de los conexos) va después del 16 por nombre (sin el 17 ni el 18).
+                // HU-042 (#242, #247): el 17 (copia local del margen de SAP) y el 18 (lineaNegocioId del mapeo) van después del 16 por nombre;
+                // los seeders corren después (el 02 llena lineaNegocioId).
+                await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("17_sap_margen_sincronizacion.sql"));
+                await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("18_sap_mapeo_fk_margenes_politica.sql"));
+                // HU-043.1 (#245, #261 punto 4): el 19 (precioVenta de los conexos) va después del 18 por nombre.
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("19_precio_venta_conexos.sql"));
                 if (conSeeders)
                 {
@@ -353,6 +387,8 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("14_cotizacion_finalizada.sql"));
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("15_rol_director.sql"));
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("16_multiples_roles_activos.sql"));
+            await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("17_sap_margen_sincronizacion.sql"));
+            await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("18_sap_mapeo_fk_margenes_politica.sql"));
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("19_precio_venta_conexos.sql"));
             foreach (var seeder in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "scripts_bd", "seeder"), "*.sql").Order(StringComparer.Ordinal))
             {
@@ -558,6 +594,55 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     }
 
     /// <summary>
+    /// HU-042.2 (#243): <c>DWCubosOperacionesEBS</c> falsa con <c>dbo.DimBPSolicitante</c> (<c>BP</c> y <c>NIT</c>, las columnas que lee la
+    /// sincronización del margen de SAP TM; los tipos reales no se conocen: VARCHAR, como en un cubo). Se crea una vez por contenedor; cada
+    /// prueba inserta sus BP con un prefijo único (<see cref="AgregarBpDwAsync"/>).
+    /// </summary>
+    public async Task<string> CadenaDwOperacionesAsync()
+    {
+        await _candado.WaitAsync();
+        try
+        {
+            if (_cadenaDwOperaciones is null)
+            {
+                await CrearBaseAsync(CadenaMaster, NombreBaseDwOperaciones);
+                var cadena = ConBase(CadenaMaster, NombreBaseDwOperaciones);
+                await EjecutarAsync(cadena, """
+                    CREATE TABLE dbo.DimBPSolicitante (
+                        ID      INT IDENTITY(1, 1) NOT NULL PRIMARY KEY,
+                        BP      VARCHAR(20)  NULL,
+                        NIT     VARCHAR(30)  NULL,
+                        NOMBRE  VARCHAR(200) NULL
+                    );
+                    """);
+                _cadenaDwOperaciones = cadena;
+            }
+
+            return _cadenaDwOperaciones;
+        }
+        finally
+        {
+            _candado.Release();
+        }
+    }
+
+    /// <summary>HU-042.2 (#243): agrega pares (BP, NIT) a la <c>DimBPSolicitante</c> falsa.</summary>
+    public async Task AgregarBpDwAsync(params (string Bp, string? Nit)[] filas)
+    {
+        ArgumentNullException.ThrowIfNull(filas);
+        var cadena = await CadenaDwOperacionesAsync();
+        await using var conexion = new SqlConnection(cadena);
+        await conexion.OpenAsync();
+        foreach (var (bp, nit) in filas)
+        {
+            await using var comando = new SqlCommand("INSERT INTO dbo.DimBPSolicitante (BP, NIT, NOMBRE) VALUES (@bp, @nit, N'Cliente de prueba');", conexion);
+            comando.Parameters.AddWithValue("@bp", bp);
+            comando.Parameters.AddWithValue("@nit", (object?)nit ?? DBNull.Value);
+            await comando.ExecuteNonQueryAsync();
+        }
+    }
+
+    /// <summary>
     /// Base auxiliar con 0001, 0002 y 0003 pero SIN el 0004 (costeo en Nexo), para probar que la readiness lo detecta. Se crea
     /// una vez por contenedor; igual que en <see cref="CadenaSolo0001Async"/>, el <c>USE</c> de cada script se redirige.
     /// </summary>
@@ -622,9 +707,10 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     /// <summary>
     /// Base auxiliar nueva (nombre único) con los primeros <paramref name="scripts"/> scripts aplicados: para probar el backfill del
     /// 0005 sobre filas creadas con el esquema anterior sin tocar la base compartida. Usarla con <c>await using</c>: al salir la
-    /// prueba (pase o falle) la base se borra (#91).
+    /// prueba (pase o falle) la base se borra (#91). Con <paramref name="collation"/> la base se crea con esa collation (HU-042.2, #243: la
+    /// de la base real, <see cref="CollationCotifly"/>, distinta de la del servidor del contenedor).
     /// </summary>
-    public async Task<clsBaseAuxiliarPruebas> CrearBaseConScriptsAsync(string prefijo, int scripts)
+    public async Task<clsBaseAuxiliarPruebas> CrearBaseConScriptsAsync(string prefijo, int scripts, string? collation = null)
     {
         await _candado.WaitAsync();
         try
@@ -632,7 +718,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             var nombre = $"{prefijo}_{Guid.NewGuid():N}"[..40];
             try
             {
-                return new clsBaseAuxiliarPruebas(CadenaMaster, nombre, await CrearBaseSinCandadoAsync(nombre, scripts));
+                return new clsBaseAuxiliarPruebas(CadenaMaster, nombre, await CrearBaseSinCandadoAsync(nombre, scripts, collation));
             }
             catch
             {
@@ -656,9 +742,9 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
         await EjecutarLotesAsync(cadena, PartirPorGo(script));
     }
 
-    private async Task<string> CrearBaseSinCandadoAsync(string nombre, int scripts)
+    private async Task<string> CrearBaseSinCandadoAsync(string nombre, int scripts, string? collation = null)
     {
-        await CrearBaseAsync(CadenaMaster, nombre);
+        await CrearBaseAsync(CadenaMaster, nombre, collation);
         var cadena = ConBase(CadenaMaster, nombre);
         foreach (var script in Scripts.Take(scripts))
         {
@@ -694,13 +780,13 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     /// contenedor, alguno falla con el error 1807 ("Could not obtain exclusive lock on database 'model'"). Visto en el CI
     /// (#147). Reintenta solo ese error, con espera creciente y algo de azar; cualquier otro error se propaga.
     /// </summary>
-    public static async Task CrearBaseAsync(string cadenaMaster, string nombre)
+    public static async Task CrearBaseAsync(string cadenaMaster, string nombre, string? collation = null)
     {
         for (var intento = 1; ; intento++)
         {
             try
             {
-                await EjecutarAsync(cadenaMaster, $"CREATE DATABASE [{nombre}];");
+                await EjecutarAsync(cadenaMaster, collation is null ? $"CREATE DATABASE [{nombre}];" : $"CREATE DATABASE [{nombre}] COLLATE {collation};");
                 return;
             }
             catch (SqlException ex) when (intento < IntentosCrearBase && EsBloqueoDeModel(ex))

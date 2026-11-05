@@ -46,6 +46,19 @@ public sealed class clsCotiflyDbContext(DbContextOptions<clsCotiflyDbContext> op
     public DbSet<clsTokenRefresco> TokensRefresco => Set<clsTokenRefresco>();
     public DbSet<clsTokenRevocado> TokensRevocados => Set<clsTokenRevocado>();
 
+    /// <summary>HU-042.2 (#243): copia local del margen de SAP TM (script 17; la escribe <c>sp_sincronizar_margen_sap</c>, que llama la sincronización del backend; EF solo la lee).</summary>
+    public DbSet<clsSapMargenClienteFila> SapMargenCliente => Set<clsSapMargenClienteFila>();
+
+    /// <summary>HU-042.2 (#243): log de corridas de la sincronización que mantiene <see cref="SapMargenCliente"/> (script 17).</summary>
+    public DbSet<clsSapMargenSyncLogFila> SapMargenSyncLog => Set<clsSapMargenSyncLogFila>();
+
+    /// <summary>
+    /// HU-042.2 (#243): tablas cuyo script (<c>db/scripts/17</c>, de Datos) no fija <c>COLLATE</c> en las columnas de texto: heredan la
+    /// collation de la base. El modelo no les asigna <see cref="Collation"/> para no describir algo que el script no declara.
+    /// </summary>
+    public static readonly IReadOnlySet<string> TablasConCollationDeLaBase =
+        new HashSet<string>(StringComparer.Ordinal) { "SapMargenCliente", "SapMargenSyncLog" };
+
     /// <summary>
     /// Database First: el modelo solo declara los índices que existen en los scripts. Se quita la
     /// convención que crea un índice por cada FK (el 0001 no indexa todas sus FK y la prueba de deriva
@@ -71,6 +84,7 @@ public sealed class clsCotiflyDbContext(DbContextOptions<clsCotiflyDbContext> op
         // Collation explícita de cada columna de texto, igual que en los scripts (documenta el esquema;
         // EF no la usa en consultas). La binaria (tokenHash) se fija en su configuración.
         foreach (var propiedad in modelBuilder.Model.GetEntityTypes()
+                     .Where(e => e.GetTableName() is not { } tabla || !TablasConCollationDeLaBase.Contains(tabla))
                      .SelectMany(e => e.GetProperties())
                      .Where(p => p.GetCollation() is null
                                  && p.GetColumnType()?.StartsWith("nvarchar", StringComparison.OrdinalIgnoreCase) == true))

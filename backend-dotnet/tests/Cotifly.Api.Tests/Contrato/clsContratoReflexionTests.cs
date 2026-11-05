@@ -98,6 +98,8 @@ public sealed class clsContratoReflexionTests(clsCotiflyApiFactory factory) : IC
         "ResultadoWeb.resultado", "CosteoCotizacion.resultado", "ServicioConexoCosteo.estado_nexo", "TextosCotizacion.fuente",
         "EdicionSolicitudResultado.solicitud_nexo_reemplazada", "CodigoMercanciaFila.origen",
         "CubicacionEnProceso.estado", "EstadoCubicacion.estado",
+        // HU-042.2 (#243): el estado de la corrida es el texto del CHECK de SapMargenSyncLog (constantes de clsCorridaSincronizacionMargenSap).
+        "CorridaSincronizacionMargenSap.estado", "ResultadoSincronizacionMargenSap.estado",
     };
 
     /// <summary>

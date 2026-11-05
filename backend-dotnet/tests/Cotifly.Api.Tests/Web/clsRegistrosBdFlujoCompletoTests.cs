@@ -80,7 +80,7 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
     public async Task LaBaseInstaladaDesdeCeroTieneLasTablasYLaConfiguracionSembrada()
     {
         (await clsBaseDatosPruebas.EscalarAsync<int>(Cadena,
-            "SELECT COUNT(*) FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.name = 'dbo_cotifly'")).Should().Be(21, "las 20 de HU-021 más CapturasIdempotentes del script 06 (#191)");
+            "SELECT COUNT(*) FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.name = 'dbo_cotifly'")).Should().Be(23, "las 20 de HU-021 más CapturasIdempotentes del script 06 (#191) y las dos del 17 (HU-042: SapMargenCliente, SapMargenSyncLog)");
         (await clsBaseDatosPruebas.EscalarAsync<int>(Cadena,
             "SELECT COUNT(*) FROM sys.views v JOIN sys.schemas s ON s.schema_id = v.schema_id WHERE s.name = 'dbo_cotifly'")).Should().Be(0, "las vistas del borrador de métricas se retiraron (HU-014.3, #152)");
         (await clsBaseDatosPruebas.EscalarAsync<string>(Cadena,

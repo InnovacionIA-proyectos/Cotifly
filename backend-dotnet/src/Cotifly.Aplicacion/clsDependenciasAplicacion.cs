@@ -37,6 +37,8 @@ public static class clsDependenciasAplicacion
         servicios.AddSingleton<IClsPrecioService, clsPrecioService>();
         servicios.AddSingleton<Cotizaciones.Services.IClsFijacionMonedaService, Cotizaciones.Services.clsFijacionMonedaService>();
         servicios.AddScoped<IClsMargenResolverService, clsMargenResolverService>();
+        // HU-042.2 (#243): aviso de la copia de SAP TM vieja en aviso_margen del costeo.
+        servicios.AddScoped<IClsAvisoSincronizacionMargenSap, clsAvisoSincronizacionMargenSap>();
         servicios.AddScoped<clsAjusteMargenService>();
         servicios.AddScoped<IClsAjusteMargenService>(sp => new clsAjusteMargenServiceAuditado(
             sp.GetRequiredService<clsAjusteMargenService>(), sp.GetRequiredService<IClsAuditoriaService>()));
@@ -85,6 +87,8 @@ public static class clsDependenciasAplicacion
         servicios.AddScoped<IClsLineasNegocioAdminService, clsLineasNegocioAdminService>();
         // HU-016.1 (#154): catálogo de líneas activas para el desplegable de la captura (sin margen).
         servicios.AddScoped<IClsLineasNegocioCatalogoService, clsLineasNegocioCatalogoService>();
+        // HU-042.2 (#243, ADR-027): estado y corrida forzada de la sincronización del margen de SAP TM (el adaptador lo registra Infraestructura).
+        servicios.AddScoped<Margen.Services.IClsSapMargenAdminService, Margen.Services.clsSapMargenAdminService>();
 
         // Costeo en Nexo (HU-005.5 a HU-005.14, ADR-015): envío de la solicitud y polling (el worker lo registra Infraestructura). El adaptador de Nexo lo registra Infraestructura.
         servicios.AddScoped<IClsValidadorCatalogosCaptura, clsValidadorCatalogosCaptura>();

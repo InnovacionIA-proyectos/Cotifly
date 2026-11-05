@@ -91,6 +91,8 @@ public static class clsRespuestasWeb
         clsCodigosError.CotizacionNoFinalizada,
         // D4 (E2E 2026-10-16): la misma Idempotency-Key con otro cuerpo (antes 400 ErrorWeb).
         clsCodigosAplicacion.IdempotencyKeyReutilizada,
+        // HU-042.2 (#243): ya hay una sincronización del margen de SAP TM en curso en esta réplica.
+        clsCodigosError.SapMargenSincronizacionEnCurso,
     };
 
     public static IActionResult Error(clsErrorDominio error)
@@ -113,7 +115,9 @@ public static class clsRespuestasWeb
                 or clsCodigosError.MunicipiosNoDisponible or clsCodigosError.PdfRenderNoDisponible
                 // OBS-1021B-3 (E2E 2026-10-21): la búsqueda de clientes sin Nexo es 503, como los demás catálogos (antes 400).
                 or clsCodigosError.ClienteBusquedaNoDisponible
-                or clsCodigosError.CubicadorNoDisponible or clsCodigosError.CubicadorRespuestaInvalida or clsCodigosError.CubicadorNoAutorizado =>
+                or clsCodigosError.CubicadorNoDisponible or clsCodigosError.CubicadorRespuestaInvalida or clsCodigosError.CubicadorNoAutorizado
+                // HU-042.2 (#243): la sincronización del margen de SAP TM no está configurada en el ambiente.
+                or clsCodigosError.SapMargenNoConfigurado or clsCodigosError.SapMargenNoDisponible =>
                 new ObjectResult(clsErrorNegocioWeb.Desde(error)) { StatusCode = StatusCodes.Status503ServiceUnavailable },
             clsCodigosAplicacion.RegionalNoAsignada => new ConflictObjectResult(clsErrorNegocioWeb.Desde(error)),
             clsCodigosError.NexoSinPermiso or clsCodigosAplicacion.RegionalNoPermitida =>

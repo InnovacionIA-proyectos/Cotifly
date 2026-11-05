@@ -27,6 +27,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
 
         // #191: la Idempotency-Key persistente (db/scripts/06; la base de las pruebas aplica toda la cadena de scripts).
         "CapturasIdempotentes",
+
+        // HU-042.1/HU-042.2 (#242, #243): la copia local del margen de SAP TM y el log del job (db/scripts/17).
+        "SapMargenCliente", "SapMargenSyncLog",
     ];
 
     /// <summary>Filtro de las tablas de respaldo que deja el 0009 (<c>Respaldo0009_*</c>): no son del modelo.</summary>
@@ -94,13 +97,18 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         scripts[clsBaseDatosPruebas.ScriptsHasta05 - 1].Should().Be(clsBaseDatosPruebas.Script05, "ScriptsHasta05 incluye el 05 y no el 06");
         scripts[clsBaseDatosPruebas.ScriptsHasta06 - 1].Should().Be(clsBaseDatosPruebas.Script06, "ScriptsHasta06 incluye el 06 y no el 09");
         scripts[clsBaseDatosPruebas.ScriptsHasta09 - 1].Should().Be(clsBaseDatosPruebas.Script09, "ScriptsHasta09 incluye el 09 y no el 10 ni el 11");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 7].Should().Be(clsBaseDatosPruebas.Script10, "ScriptsSin07 incluye el 10 (el backend mapea el rechazo)");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 6].Should().Be(clsBaseDatosPruebas.Script11, "ScriptsSin07 incluye el 11 (el backend mapea pesoConTaraKg)");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 5].Should().Be(clsBaseDatosPruebas.Script12, "ScriptsSin07 incluye el 12 (el backend mapea el vehículo elegido)");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 4].Should().Be(clsBaseDatosPruebas.Script13, "ScriptsSin07 incluye el 13 (el backend mapea MailSender y el resultado diferido)");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 3].Should().Be(clsBaseDatosPruebas.Script14, "ScriptsSin07 incluye el 14 (el backend mapea la cotización finalizada)");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 2].Should().Be(clsBaseDatosPruebas.Script16, "ScriptsSin07 incluye el 16 (el backend mapea TokensRefresco.rolSesion)");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script19, "ScriptsSin07 llega hasta el 19 (el backend mapea precioVenta del conexo, #261)");
+        scripts[clsBaseDatosPruebas.ScriptsHasta16 - 6].Should().Be(clsBaseDatosPruebas.Script10, "ScriptsHasta16 incluye el 10 (el backend mapea el rechazo)");
+        scripts[clsBaseDatosPruebas.ScriptsHasta16 - 5].Should().Be(clsBaseDatosPruebas.Script11, "ScriptsHasta16 incluye el 11 (el backend mapea pesoConTaraKg)");
+        scripts[clsBaseDatosPruebas.ScriptsHasta16 - 4].Should().Be(clsBaseDatosPruebas.Script12, "ScriptsHasta16 incluye el 12 (el backend mapea el vehículo elegido)");
+        scripts[clsBaseDatosPruebas.ScriptsHasta16 - 3].Should().Be(clsBaseDatosPruebas.Script13, "ScriptsHasta16 incluye el 13 (el backend mapea MailSender y el resultado diferido)");
+        scripts[clsBaseDatosPruebas.ScriptsHasta16 - 2].Should().Be(clsBaseDatosPruebas.Script14, "ScriptsHasta16 incluye el 14 (el backend mapea la cotización finalizada)");
+        scripts[clsBaseDatosPruebas.ScriptsHasta16 - 1].Should().Be(clsBaseDatosPruebas.Script16, "ScriptsHasta16 llega hasta el 16 (el backend mapea TokensRefresco.rolSesion)");
+        // HU-042 (#242, #243, #247) y #261 punto 4: el 17, el 18 y el 19 van después del 16 y antes del 07 (el backend mapea sus tablas,
+        // lineaNegocioId y precioVenta, en ese orden).
+        scripts[clsBaseDatosPruebas.ScriptsHasta16].Should().Be(clsBaseDatosPruebas.Script17, "después del 16 va el 17 (copia local del margen de SAP)");
+        scripts[clsBaseDatosPruebas.ScriptsHasta16 + 1].Should().Be(clsBaseDatosPruebas.Script18, "después del 17 va el 18 (lineaNegocioId del mapeo)");
+        scripts[clsBaseDatosPruebas.ScriptsHasta16 + 2].Should().Be(clsBaseDatosPruebas.Script19, "después del 18 va el 19 (precioVenta del conexo, #261)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script19, "ScriptsSin07 llega hasta el 19");
         scripts[clsBaseDatosPruebas.ScriptsSin07].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsSin07 corta justo antes del 07");
         scripts[clsBaseDatosPruebas.ScriptsHasta07 - 1].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsHasta07 incluye el 07");
         // HU-037.1 (#209): el 15 (rol director) va al final, después del 08: no agrega columnas y clsRolDirectorScriptTests usa
@@ -344,7 +352,7 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     public async Task HU036_ElScript14SeAplicaSobreUnaBaseConDatosSinTocarlos()
     {
         // HU-036 (#205): sin backfill. Sobre una base hasta el 13 con una cotización ya escrita, el 14 la deja sin finalizar.
-        await using var baseConDatos = await BaseDatos.CrearBaseConScriptsAsync("dbDatos14", clsBaseDatosPruebas.ScriptsSin07 - 3);
+        await using var baseConDatos = await BaseDatos.CrearBaseConScriptsAsync("dbDatos14", clsBaseDatosPruebas.ScriptsHasta16 - 2);
         var cotizacion = Guid.NewGuid();
         await clsBaseDatosPruebas.EjecutarAsync(baseConDatos.Cadena,
             $"INSERT INTO dbo_cotifly.CotizacionesSolicitud (id, folio, estadoCosteo) VALUES ('{cotizacion}', 'COT-F14', 'autocosteo');");
@@ -388,7 +396,7 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         // HU-040.1 (#229): no destructivo. Sobre una base hasta el 14 (sin el 16) con un usuario, su asignación activa y un refresh, el 16
         // no cambia ninguna fila; el refresh queda con rolSesion NULL. Antes del 16 la segunda asignación activa choca con el índice; después
         // entra, y el mismo rol dos veces sigue prohibido.
-        await using var baseConDatos = await BaseDatos.CrearBaseConScriptsAsync("dbDatos16", clsBaseDatosPruebas.ScriptsSin07 - 2);
+        await using var baseConDatos = await BaseDatos.CrearBaseConScriptsAsync("dbDatos16", clsBaseDatosPruebas.ScriptsHasta16 - 1);
         var usuario = Guid.NewGuid();
         await clsBaseDatosPruebas.EjecutarAsync(baseConDatos.Cadena, $"""
             IF NOT EXISTS (SELECT 1 FROM dbo_cotifly.Roles WHERE codigo = 'comercial')
@@ -428,7 +436,7 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     public async Task HU0401_ElScript16NoAflojaNadaSiFaltaLaUnicidadDeUsuarioYRol()
     {
         // HU-040.1 (#229): sin uq_usuariosRoles_usuarioId_rolId se podría duplicar el mismo rol activo: el 16 se detiene sin cambiar nada.
-        await using var aislada = await BaseDatos.CrearBaseConScriptsAsync("dbPre16", clsBaseDatosPruebas.ScriptsSin07 - 2);
+        await using var aislada = await BaseDatos.CrearBaseConScriptsAsync("dbPre16", clsBaseDatosPruebas.ScriptsHasta16 - 1);
         await clsBaseDatosPruebas.EjecutarAsync(aislada.Cadena,
             "ALTER TABLE dbo_cotifly.UsuariosRoles DROP CONSTRAINT uq_usuariosRoles_usuarioId_rolId;");
         var esquemaAntes = await FotoEsquemaAsync(aislada.Cadena);
@@ -436,6 +444,48 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         var aplicar = () => clsBaseDatosPruebas.AplicarScriptAsync(aislada.Cadena, clsBaseDatosPruebas.Script16);
 
         (await aplicar.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("uq_usuariosRoles_usuarioId_rolId");
+        (await FotoEsquemaAsync(aislada.Cadena)).Should().Equal(esquemaAntes);
+    }
+
+    [Fact]
+    public async Task HU042_LosScripts17Y18SonIdempotentesSobreUnaBaseMigradaYSobreUnaInstalacionDesdeCero()
+    {
+        // HU-042.1 y HU-042.4 (#242, #247): repetir el 17 (tablas, SP) y el 18 (lineaNegocioId con su FK) no cambia el esquema.
+        await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem17", clsBaseDatosPruebas.Scripts.Length);
+        await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script17);
+        await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script18);
+
+        await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbIdem17Inst", conSeeders: true);
+        await ReaplicarYVerificarIdempotenciaAsync(instalada.Cadena, clsBaseDatosPruebas.Script17);
+        await ReaplicarYVerificarIdempotenciaAsync(instalada.Cadena, clsBaseDatosPruebas.Script18);
+        foreach (var cadena in new[] { migrada.Cadena, instalada.Cadena })
+        {
+            (await clsBaseDatosPruebas.EscalarAsync<string>(cadena,
+                    "SELECT CONCAT(TYPE_NAME(c.user_type_id), '|', c.is_nullable) FROM sys.columns c "
+                    + "WHERE c.object_id = OBJECT_ID(N'dbo_cotifly.SapMapeoTrqType') AND c.name = N'lineaNegocioId'"))
+                .Should().Be("int|0");
+            (await clsBaseDatosPruebas.EscalarAsync<int>(cadena,
+                    "SELECT COUNT(*) FROM dbo_cotifly.SapMapeoTrqType s JOIN dbo_cotifly.MargenesPolitica m ON m.id = s.lineaNegocioId "
+                    + "WHERE m.lineaNegocio <> s.lineaNegocio"))
+                .Should().Be(0, "el backfill del 18 (o el seeder 02) deja el id de la misma línea que dice el texto");
+        }
+
+        (await clsBaseDatosPruebas.EscalarAsync<int>(instalada.Cadena, "SELECT COUNT(*) FROM dbo_cotifly.SapMapeoTrqType"))
+            .Should().Be(5, "el seeder 02 llena lineaNegocioId cuando el 18 ya está aplicado");
+    }
+
+    [Fact]
+    public async Task HU0424_ElScript18SeDetieneSinTocarNadaSiUnMapeoNoCruzaConUnaLinea()
+    {
+        // HU-042.4 (#247): una fila de SapMapeoTrqType con un texto que no existe en MargenesPolitica no se fuerza a NOT NULL.
+        await using var aislada = await BaseDatos.CrearBaseConScriptsAsync("dbPre18", clsBaseDatosPruebas.ScriptsHasta16 + 1);
+        await clsBaseDatosPruebas.EjecutarAsync(aislada.Cadena,
+            "INSERT INTO dbo_cotifly.SapMapeoTrqType (trqType, salesOrg, lineaNegocio, activo) VALUES (N'OHUB', N'', N'Almacenamiento', 1);");
+        var esquemaAntes = await FotoEsquemaAsync(aislada.Cadena);
+
+        var aplicar = () => clsBaseDatosPruebas.AplicarScriptAsync(aislada.Cadena, clsBaseDatosPruebas.Script18);
+
+        (await aplicar.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("no cruza");
         (await FotoEsquemaAsync(aislada.Cadena)).Should().Equal(esquemaAntes);
     }
 
@@ -1099,7 +1149,8 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
             return e.GetIndexes().Select(i =>
             {
                 var claves = i.Properties.Select((p, n) =>
-                    p.GetColumnName(objeto) + (i.IsDescending is { Count: > 0 } d && d[n] ? " DESC" : string.Empty));
+                    // EF guarda "todas descendentes" como lista vacía (HU-042.2: idx_sapMargenSyncLog_iniciado, una columna DESC).
+                    p.GetColumnName(objeto) + (i.IsDescending is { } d && (d.Count == 0 || d[n]) ? " DESC" : string.Empty));
                 var incluidas = (i.GetIncludeProperties() ?? [])
                     .Select(nombre => e.FindProperty(nombre)!.GetColumnName(objeto)!)
                     .Order(StringComparer.Ordinal);
@@ -1157,6 +1208,12 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         var diferencias = modelo.GetEntityTypes().SelectMany(e =>
         {
             var (tabla, objeto) = Tabla(e);
+            // HU-042.2 (#243): las tablas del 17 (de Datos) no fijan COLLATE: heredan la de la base y el modelo no les asigna ninguna.
+            if (clsCotiflyDbContext.TablasConCollationDeLaBase.Contains(tabla))
+            {
+                return e.GetProperties().Where(p => p.GetCollation() is not null).Select(p => $"{tabla}.{p.GetColumnName(objeto)}: EF fija collation '{p.GetCollation()}'");
+            }
+
             return e.GetProperties()
                 .Where(p => porColumna.ContainsKey((tabla, p.GetColumnName(objeto)!)) || p.GetCollation() is not null)
                 .Select(p => (Columna: $"{tabla}.{p.GetColumnName(objeto)}", Ef: p.GetCollation(),
@@ -1268,6 +1325,8 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
             await c.UsuariosRoles.Take(1).ToListAsync(Ct);
             await c.TokensRefresco.Take(1).ToListAsync(Ct);
             await c.TokensRevocados.Take(1).ToListAsync(Ct);
+            await c.SapMargenCliente.Take(1).ToListAsync(Ct);
+            await c.SapMargenSyncLog.Take(1).ToListAsync(Ct);
             return true;
         });
     }
