@@ -1854,9 +1854,11 @@ la suma de las mercancías): `PESO_CON_TARA_MENOR_QUE_CARGA`; con otra clase de 
 
 **Qué viaja a Nexo.** Con un camión, la línea lleva `peso` = `peso_con_tara_kg`. Con varios, cada línea lleva el peso de carga de su
 camión más una parte igual de la tara (`peso_con_tara_kg` menos la suma de los pesos de carga de los camiones; un contenedor por camión, de la misma clase); el último camión en
-orden se queda con el resto del redondeo, así que la suma de las líneas es exactamente `peso_con_tara_kg`. En los dos casos la línea va
-**sin posiciones**: Nexo valida que el peso de una línea con posiciones coincida al 1 % con su suma (`PESO_INCONSISTENTE`, confirmado al
-cerrar NEXO#308) y la tara la descuadraría. Sin `peso_con_tara_kg` todo sigue como antes. Integración 1021 (con #183): la tara de un contenedor es
+orden se queda con el resto del redondeo, así que la suma de las líneas es exactamente `peso_con_tara_kg`. #250 (contrato único de Nexo,
+DU §8): `peso` es el total con tara y Nexo solo responde `PESO_INCONSISTENTE` si la suma de las posiciones **supera** el peso en más de
+1 %; por eso, con **un camión**, la línea lleva el peso con tara **y sus posiciones** (antes iba sin ellas, por el 1 % simétrico de
+NEXO#308); con varios, sin posiciones. La tara solo aplica a `Contenedor` (Carga Suelta y Extradimensionado: `CAMPO_NO_APLICA`). Sin
+`peso_con_tara_kg` todo sigue como antes. Integración 1021 (con #183): la tara de un contenedor es
 `(peso_con_tara_kg − Σ pesos de carga de las líneas de TODOS los camiones) / N` (N = todos los camiones de la ruta, truncada a 2
 decimales); solo la llevan los camiones que viajan, el último que viaja suma el resto del redondeo, y un camión rechazado fuera del envío
 no viaja ni lleva tara (`camiones[].peso_con_tara_kg = null`).

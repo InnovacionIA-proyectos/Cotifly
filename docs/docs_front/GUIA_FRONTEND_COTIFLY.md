@@ -2043,13 +2043,16 @@ con `GET .../costeo`. Contrato completo y ejemplo en `CONTRATO_API_WEB.md` §8.1
 Contrato completo y ejemplos en `CONTRATO_API_WEB.md` §8.15.
 
 - **Campo:** `peso_con_tara_kg` (number o null, opcional) en cada ruta de la captura (`RutaCapturaWeb`), de la edición
-  (`PUT .../solicitud`) y de cada fila de la licitación (`LineaLicitacionWeb`). **Mostrarlo solo con `clase_viaje = Contenedor`**
+  (`PUT .../solicitud`) y de cada fila de la licitación (`LineaLicitacionWeb`). **Mostrarlo solo con `clase_viaje = Contenedor`** (#250,
+  decisión del 2026-11-05: la tara **no** se extiende a Carga Suelta ni a Extradimensionado; con ellas el backend responde
+  `CAMPO_NO_APLICA`, así que el comportamiento planeado en CTF-F3/#107 para Carga Suelta no se construye)
   (etiqueta "Peso total con tara", con una nota: "carga más la tara de todos los contenedores de la ruta, en kg"). Valor inicial
   sugerido: el `peso_kg` de la ruta. El "Peso (kg)" de cada mercancía no cambia: es el peso por unidad, sin tara, y es el que usa el cubicador.
 - **Por qué por ruta y no por camión:** los camiones salen del cubicador en la misma petición de la captura; el comercial no sabe cuántos
   habrá. Cotifly reparte la tara por partes iguales entre los camiones (un contenedor por camión) al enviar a Nexo.
-- **Lo que pasa en Nexo:** las líneas de una ruta con tara llevan el peso con tara y **no llevan posiciones** (Nexo valida
-  `PESO_INCONSISTENTE` al 1 % cuando la línea trae posiciones). Sin el campo, nada cambia.
+- **Lo que pasa en Nexo:** las líneas de una ruta con tara llevan el peso con tara. #250 (DU §8): con **un camión** la línea lleva
+  también sus posiciones (Nexo solo rechaza una suma de posiciones que supera el peso en más de 1 %; un peso mayor, la tara, es válido);
+  con varios, sin posiciones. Para el frontend no cambia nada del formulario ni de la respuesta. Sin el campo, nada cambia.
 - **Errores (400 `SOLICITUD_COSTEO_INVALIDA`, `detalle.errores[]` en `peso_con_tara_kg`):** `CAMPO_NO_APLICA` (no es Contenedor: limpiar
   el campo al cambiar la clase de viaje), `PESO_CON_TARA_MENOR_QUE_CARGA` (menor que el peso de carga) y `VALOR_FUERA_DE_RANGO`
   (fuera de 0 a 999.999,99 o más de 2 decimales). En la licitación, los mismos códigos en `errores[]` de la fila.
