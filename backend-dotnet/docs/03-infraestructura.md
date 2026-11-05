@@ -102,6 +102,7 @@ Resumen de todas las variables de [`.env.example`](../.env.example). "Production
 | `Correo__MailSender__UrlBase`, `__TimeoutSegundos`, `__Remitente`, `__Prioridad`, `__ModoRemitente`, `__DominiosRemitente` | vacío, `15`, `notificaciones@boterosoto.com.co`, `Normal`, `comercial`, `boterosoto.com.co` | no | `UrlBase` con el correo habilitado | [PDF y correo](#pdf-y-correo) |
 | `Correo__Proteccion__Modo`, `__PermitirEnvioReal`, `__BuzonPruebas` | `redirigir`, `false`, vacío | no | con el correo habilitado: el buzón mientras redirige; el envío real exige `ninguno` + `PermitirEnvioReal=true` (solo Production) | [PDF y correo](#pdf-y-correo) |
 | `Correo__MaximoDestinatarios` | `10` | no | no (1–100; fuera de rango no arranca) | [PDF y correo](#pdf-y-correo) |
+| `Correo__LogoUrl` | el logo de la web de Botero Soto | no | no (URL http(s) pública; vacía = texto "Botero Soto") | [PDF y correo](#pdf-y-correo) |
 | `Correo__Seguimiento__IntervaloTickSegundos`, `__IntervaloConsultaSegundos`, `__EdadMaximaHoras`, `__Lote`, `__ReclamoSegundos` | `15`, `30`, `24`, `50`, `60` | no | no (rangos 1–3600, 1–3600, 1–720, 1–1000 y 1–3600; fuera de rango no arranca) | [PDF y correo](#pdf-y-correo) |
 | `IA__Proveedor`, `IA__Modelo`, `IA__Endpoint` | vacío (agente sin configurar) | no | no | [Agente de IA](#agente-de-ia) |
 | `IA__ApiKey`, `IA__Fallbacks__N__ApiKey` | vacío | **sí** | según el proveedor | [Agente de IA](#agente-de-ia) |

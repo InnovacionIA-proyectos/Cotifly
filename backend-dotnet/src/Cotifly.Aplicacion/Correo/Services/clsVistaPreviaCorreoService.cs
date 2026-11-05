@@ -1,3 +1,4 @@
+using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Correo.DTOs;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Identidad.Repositories;
@@ -16,6 +17,7 @@ public sealed class clsVistaPreviaCorreoService(
     IClsCotizacionRepository cotizaciones,
     IClsDestinatariosPreviosService destinatariosPrevios,
     IClsUsuarioWebRepository usuarios,
+    IClsCalendarioNegocio calendario,
     IOptions<clsOpcionesCorreo> opciones) : IClsVistaPreviaCorreoService
 {
     public async Task<clsResultado<clsVistaPreviaCorreo>> PrevisualizarAsync(
@@ -62,7 +64,13 @@ public sealed class clsVistaPreviaCorreoService(
         var buzon = redirige ? clsProteccionCorreo.BuzonValido(proteccion) : null;
         return new clsVistaPreviaCorreo(asunto, cuerpo, para, cc, clsCorreoService.NombreAdjunto(cotizacion))
         {
-            CuerpoHtml = clsPlantillaCorreo.Html(cuerpo, resumen, firmaComercial: clsPlantillaCorreo.FirmaComercial(usuario?.NombreCompleto, usuario?.Email, usuario?.Telefono)),
+            CuerpoHtml = clsPlantillaCorreo.Html(
+                cuerpo,
+                resumen,
+                firmaComercial: clsPlantillaCorreo.FirmaComercial(usuario?.NombreCompleto, usuario?.Email, usuario?.Telefono),
+                // #262: los mismos datos de la ficha que el envío.
+                datos: clsPlantillaCorreo.Datos(cotizacion, calendario),
+                logoUrl: opciones.Value.LogoUrl),
             Resumen = resumen,
             // OBS-1027-5 (#226, ADR-023): al redirigir el correo sale solo al buzón de pruebas, sin CC ni CCO (clsProteccionCorreo): la
             // vista previa no anuncia una copia oculta que no se envía.

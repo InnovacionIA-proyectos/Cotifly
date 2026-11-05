@@ -29,6 +29,16 @@ public sealed class clsOpcionesCorreo
     /// </summary>
     public int MaximoDestinatarios { get; set; } = MaximoDestinatariosPorDefecto;
 
+    /// <summary>#262: logo publicado en la web de Botero Soto (el mismo archivo de la marca a color, 792 × 612).</summary>
+    public const string LogoUrlPorDefecto = "https://www.boterosoto.com.co/wp-content/uploads/Logo-Botero-Soto-Soluciones-Logisticas-2022.png";
+
+    /// <summary>
+    /// #262: logo del encabezado del correo (<c>Correo:LogoUrl</c>, variable <c>Correo__LogoUrl</c>). Debe ser una URL http(s) PÚBLICA: el
+    /// correo del cliente descarga la imagen desde internet al abrirlo (Gmail, desde sus servidores), así que una URL de la red interna sale
+    /// rota. Por defecto <see cref="LogoUrlPorDefecto"/>; vacía o inválida, el encabezado lleva el texto "Botero Soto" en su lugar.
+    /// </summary>
+    public string? LogoUrl { get; set; } = LogoUrlPorDefecto;
+
     /// <summary>Protección de los ambientes que no son producción (<c>Correo:Proteccion</c>).</summary>
     public clsOpcionesProteccionCorreo Proteccion { get; set; } = new();
 
