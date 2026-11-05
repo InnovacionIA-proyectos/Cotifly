@@ -4952,7 +4952,7 @@ components:
                 `Puerto a interior`, `Interior a puerto`, `Devolución de contenedor`, `Andino` o `Licitaciones`, en cualquier escritura
                 que NEXO acepte. En `POST /web/solicitudes-costeo` y `POST /web/licitaciones` se valida antes de guardar y no se llama a
                 NEXO; `detalle.linea_negocio`, `detalle.linea_negocio_nexo` y `detalle.permitidas`. Al reenviar una guardada, o si NEXO lo
-                responde, la cotización queda en `error_envio` reintentable: lo corrige el administrador en el mapeo) e `IA_TOPE_DIARIO`
+                responde, la cotización queda en `error_envio` reintentable: el mapeo no tiene endpoint para corregirse, avisar a soporte) e `IA_TOPE_DIARIO`
                 (429, mismo código que NEXO, sin `Retry-After`: el comercial agotó su cupo DIARIO de IA en NEXO al analizar un Excel; se
                 reintenta al día siguiente. El `429 DEMASIADAS_SOLICITUDES` de NEXO, el cupo por minuto, sigue siendo
                 `COSTEO_NEXO_NO_DISPONIBLE` con el `Retry-After` en `detalle.motivo`). `CUBICACION_DEMASIADO_GRANDE` también si NEXO
@@ -7678,6 +7678,7 @@ components:
           nullable: true
           minimum: 0
           maximum: 240
+          description: (#278) Nexo recibe las horas en pareja. Con horas guardadas en la ruta basta la que cambia; una ruta sin horas guardadas exige las dos (si no, `CAMPO_REQUERIDO`).
         horas_descargue:
           type: number
           nullable: true
@@ -8787,7 +8788,7 @@ components:
           maximum: 240
           description: |
             Encabezado (`horasCargue`). Cotifly lo envía en el encabezado y también en la línea (HU-013.10, G5): sin el valor
-            de línea Nexo aplica el suyo por defecto (4 h + 4 h, o 2 h si retorna contenedor). (#278) `horas_cargue` y `horas_descargue` van las dos o ninguna (Nexo no acepta una sola); si viene una, `CAMPO_REQUERIDO` en la que falta.
+            de línea Nexo aplica el suyo por defecto (4 h + 4 h, o 1 h + 1 h si la línea es una devolución de contenedor; DU §5). (#278) `horas_cargue` y `horas_descargue` van las dos o ninguna (Nexo no acepta una sola); si viene una, `CAMPO_REQUERIDO` en la que falta.
         horas_descargue:
           type: number
           nullable: true
