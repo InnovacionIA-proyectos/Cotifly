@@ -250,6 +250,53 @@ public sealed class clsLicitacionCubicadorEndpointsTests : IDisposable
             + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = N'{folio}'")).Should().Be(17_600m);
     }
 
+    /// <summary>
+    /// #250 (DU §8): la misma fila de contenedor con tara, cubicada en UN solo camión, sale a Nexo con el peso con tara y sus posiciones
+    /// (la carga sin tara): Nexo solo rechaza una suma de posiciones que supera el peso en más de 1 %, y un peso mayor (la tara) es válido.
+    /// </summary>
+    [Fact]
+    public async Task UnaFilaDeContenedorConTaraEnUnSoloCamionSaleANexoConElPesoConTaraYSusPosiciones()
+    {
+        _cubicador.RecomendarSiempre(clsCubicadorFalso.Vehiculo("3S3", "FURGON", 10_000m));
+        var api = Api();
+        var sesion = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var cuerpo = JsonSerializer.Serialize(new
+        {
+            nit_cliente = clsCosteoEndpointsTests.Nit,
+            cliente_nombre = "Longyin",
+            linea_negocio = "Importacion",
+            lineas = new[]
+            {
+                new
+                {
+                    fila = 0,
+                    origen = "BUENAVENTURA",
+                    destino = "BOGOTA, D.C.",
+                    tipologia = "Contenedor",
+                    clase_viaje = "Contenedor",
+                    clase_contenedor = "CNT40.HC",
+                    peso_kg = 10_000m,
+                    peso_con_tara_kg = 13_800m,
+                    mercancias = new[]
+                    {
+                        new { codigo_mercancia = CodigoCafe, nombre_mercancia = "Café", cantidad = 10, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = 1_000 },
+                    },
+                },
+            },
+        });
+
+        using var envio = await api.EnviarAsync(_post, Ruta, sesion.Access, cuerpo);
+        var folio = (await VerificarContratoAsync(envio, Ruta, _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+        (await api.ProcesarCubicacionAsync(folio)).Should().Be(1);
+
+        var linea = _nexo.UltimaAlta!["lineas"]!.AsArray().Should().ContainSingle().Subject!;
+        linea["peso"]!.GetValue<decimal>().Should().Be(13_800m);
+        var posicion = linea["posiciones"]!.AsArray().Should().ContainSingle().Subject!;
+        (posicion["cantidad"]!.GetValue<int>(), posicion["pesoKg"]!.GetValue<decimal>()).Should().Be((10, 1_000m));
+        _nexo.AltasPesoInconsistente.Should().Be(0);
+        _nexo.SolicitudesCreadas.Should().ContainSingle();
+    }
+
     [Fact]
     public async Task UnaRutaQueFallaDejaLaLicitacionSinEnviarConElErrorYSeAceptaConElCamionSinVehiculo()
     {
