@@ -122,7 +122,7 @@ public sealed class clsAsistenteFolioRunner(
             .Append(solicitud.Mensaje)
             .ToList();
         var linea = cotizacion.PrimeraRuta?.LineaNegocioId is { } lineaId ? await politicas.ObtenerPorIdAsync(lineaId, cancellationToken) : null;
-        contextoFolio.Iniciar(usuario.Id, cotizacion, linea?.LineaNegocio, solicitud.ThreadId);
+        contextoFolio.Iniciar(usuario.Id, cotizacion, linea?.LineaNegocio, solicitud.ThreadId, linea?.MapeoLineasNexo);
 
         var mensajes = new List<ChatMessage>
         {

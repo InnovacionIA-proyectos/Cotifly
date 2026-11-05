@@ -22,9 +22,6 @@ public sealed class clsContratoNexoFase0Tests
     [InlineData("ANDINO", "Andino")]
     [InlineData("licitaciones", "Licitaciones")]
     [InlineData("DevolucionContenedor", "Devolución de contenedor")]
-    [InlineData("devolución del contenedor", "Devolución de contenedor")]
-    [InlineData("PuertoInterior", "Puerto a interior")]
-    [InlineData("Interior-Puerto", "Interior a puerto")]
     public void LasSeisLineasDeNexoSeReconocenComoNexo(string valor, string canonica)
     {
         clsLineasNegocioNexo.Canonica(valor).Should().Be(canonica);
@@ -46,6 +43,9 @@ public sealed class clsContratoNexoFase0Tests
     [InlineData("Puerto")]
     [InlineData("Oferta de Expedición Puerto a interior")]
     [InlineData("Licitacion")]
+    [InlineData("PuertoInterior")]
+    [InlineData("InteriorPuerto")]
+    [InlineData("Devolución del contenedor")]
     public void OtroTextoNoEsUnaLineaDeNexo(string valor)
     {
         clsLineasNegocioNexo.EsValida(valor).Should().BeFalse();
@@ -162,6 +162,19 @@ public sealed class clsContratoNexoFase0Tests
         clsSolicitudCosteo.Desde(encabezado, linea).Validar().Should().BeNull("el formulario de una línea fusiona igual");
         linea.ErroresHorasEnPareja().Should().ContainSingle("sin encabezado (lo guardado) se valida la línea sola");
         (Linea() with { HorasDescargue = 3m }).ErroresHorasEnPareja(Encabezado(1m, null)).Should().BeEmpty("se completa campo a campo");
+    }
+
+    [Fact]
+    public void ElErrorQueNaceDelEncabezadoSeReportaEnElEncabezadoUnaVez()
+    {
+        var encabezado = Encabezado(4m, null);
+        clsLineaSolicitudCosteo[] lineas = [Linea(), Linea(), Linea() with { HorasCargue = 2m, HorasDescargue = 2m }];
+
+        encabezado.ErroresHorasHeredadas(lineas).Should().ContainSingle(e => e.Campo == "horas_descargue" && e.Codigo == clsCodigosLineaSolicitud.CampoRequerido);
+        lineas.SelectMany(l => l.ErroresHorasPropias(encabezado)).Should().BeEmpty("las rutas que heredan no repiten el error del encabezado");
+        encabezado.ErroresHorasHeredadas([lineas[2]]).Should().BeEmpty("si todas traen horas propias, las del encabezado no viajan");
+        (Linea() with { HorasCargue = 2m }).ErroresHorasPropias(encabezado).Should().ContainSingle(e => e.Campo == "horas_descargue",
+            "una ruta con una hora propia que el encabezado no completa sí reporta el error en la ruta");
     }
 
     [Fact]

@@ -33,17 +33,12 @@ public static class clsLineasNegocioNexo
         ["Nacional", "Puerto a interior", "Interior a puerto", "Devolución de contenedor", "Andino", "Licitaciones"];
 
     /// <summary>
-    /// Escrituras sin los conectores ("de", "a") que usa Cotifly: la semilla vigente de <c>MargenesPolitica.mapeoLineasNexo</c> trae
-    /// <c>DevolucionContenedor</c> (<c>db/seeder/01_lineas_negocio.sql</c> y la migración 0009), que no es la forma camelCase de NEXO
-    /// (<c>devolucionDeContenedor</c>). Como Cotifly envía siempre la forma canónica (<see cref="Canonica"/>), aceptarlas no depende de NEXO.
+    /// Único alias propio de Cotifly: <c>DevolucionContenedor</c>, el <c>mapeoLineasNexo</c> que siembran la migración 0009 y
+    /// <c>db/seeder/01_lineas_negocio.sql</c> para la línea DevolucionContenedor. No es una forma que NEXO acepte (su camelCase es
+    /// <c>devolucionDeContenedor</c>, con "de"), así que sin el alias toda captura de esa línea respondería <c>LINEA_NEGOCIO_INVALIDO</c>.
+    /// Como Cotifly envía siempre la forma canónica (<see cref="Canonica"/>), aceptarlo no depende de NEXO. No se agregan otras variantes.
     /// </summary>
-    private static readonly (string Alias, string Linea)[] _alias =
-    [
-        ("DevolucionContenedor", "Devolución de contenedor"),
-        ("Devolución del contenedor", "Devolución de contenedor"),
-        ("PuertoInterior", "Puerto a interior"),
-        ("InteriorPuerto", "Interior a puerto"),
-    ];
+    private static readonly (string Alias, string Linea)[] _alias = [("DevolucionContenedor", DevolucionContenedor)];
 
     private static readonly Dictionary<string, string> _porClave =
         Permitidas.Select(l => (Alias: l, Linea: l)).Concat(_alias).ToDictionary(a => Clave(a.Alias), a => a.Linea, StringComparer.Ordinal);

@@ -452,7 +452,8 @@ public sealed class clsEnvioCosteoService(
             Encabezado("moneda", clsCodigosLineaSolicitud.ValorFueraDeRango, moneda.Mensaje);
         }
 
-        foreach (var error in entrada.Encabezado.Errores())
+        // #278: una sola hora en el encabezado que alguna ruta hereda se reporta en el encabezado (ruta = null), no en cada ruta.
+        foreach (var error in entrada.Encabezado.Errores().Concat(entrada.Encabezado.ErroresHorasHeredadas(rutas.Select(r => r?.Linea))))
         {
             Encabezado(error.Campo, error.Codigo, error.Mensaje);
         }
@@ -485,7 +486,7 @@ public sealed class clsEnvioCosteoService(
             }
 
             // #278: la pareja de horas que viaja es la de la ruta completada con la del encabezado (como en el formulario de una línea).
-            errores.AddRange(linea.Errores().Concat(linea.ErroresHorasEnPareja(entrada.Encabezado))
+            errores.AddRange(linea.Errores().Concat(linea.ErroresHorasPropias(entrada.Encabezado))
                 .Select(e => new clsErrorFilaLicitacion(indice, null, e.Campo, e.Codigo, e.Mensaje)));
         }
 

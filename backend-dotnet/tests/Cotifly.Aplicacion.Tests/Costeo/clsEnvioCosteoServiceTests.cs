@@ -506,6 +506,19 @@ public sealed class clsEnvioCosteoServiceTests
         await _nexo.DidNotReceiveWithAnyArgs().EnviarSolicitudAsync(default, default!, Ct);
     }
 
+    [Fact]
+    public async Task UnaSolaHoraEnElEncabezadoQueLaRutaHeredaSeReportaEnElEncabezadoYNoEnLaRuta()
+    {
+        // #278: la ruta no trae horas propias y hereda (4, null) del encabezado: el error va en el encabezado (ruta = null), una vez.
+        var resultado = await Servicio().EnviarAsync(_ana, Entrada() with { Solicitud = clsSolicitudCosteoMuestra.CrearCaptura() with { HorasDescargue = null } }, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.SolicitudCosteoInvalida);
+        var errores = ((IEnumerable<IReadOnlyDictionary<string, object?>>)resultado.Error.Datos!["errores"]!).ToList();
+        errores.Where(e => (string?)e["campo"] is "horas_cargue" or "horas_descargue").Should().ContainSingle()
+            .Which.Should().Contain(new KeyValuePair<string, object?>("ruta", null)).And.Contain(new KeyValuePair<string, object?>("campo", "horas_descargue"));
+        _eventos.Should().BeEmpty();
+    }
+
     [Theory]
     [InlineData(clsCodigosError.CubicacionDemasiadoGrande, true)]
     [InlineData(clsCodigosError.LineaNegocioInvalido, false)]

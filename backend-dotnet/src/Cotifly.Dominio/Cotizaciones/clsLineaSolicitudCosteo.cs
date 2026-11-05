@@ -101,6 +101,24 @@ public sealed record clsEncabezadoSolicitudCosteo
         clsLineaSolicitudCosteo.Rango(errores, "horas_descargue", HorasDescargue, 0m, clsSolicitudCosteo.MaximoHoras);
         return errores;
     }
+
+    /// <summary>
+    /// #278 (DU §5): el error de pareja que nace del encabezado. Si el encabezado trae una sola hora y alguna de <paramref name="lineas"/> no
+    /// trae ninguna (la hereda tal cual), <see cref="clsCodigosLineaSolicitud.CampoRequerido"/> en el campo del encabezado que falta, una
+    /// sola vez; esas rutas no repiten el error (<see cref="clsLineaSolicitudCosteo.ErroresHorasPropias"/>). Si todas traen horas propias,
+    /// las del encabezado no viajan y no hay error.
+    /// </summary>
+    public IReadOnlyList<clsErrorCampo> ErroresHorasHeredadas(IEnumerable<clsLineaSolicitudCosteo?> lineas)
+    {
+        ArgumentNullException.ThrowIfNull(lineas);
+        var errores = new List<clsErrorCampo>();
+        if (lineas.Any(l => l is { HorasCargue: null, HorasDescargue: null }))
+        {
+            clsLineaSolicitudCosteo.HorasEnPareja(errores, HorasCargue, HorasDescargue);
+        }
+
+        return errores;
+    }
 }
 
 /// <summary>
@@ -348,6 +366,14 @@ public sealed record clsLineaSolicitudCosteo
         HorasEnPareja(errores, HorasCargue ?? encabezado?.HorasCargue, HorasDescargue ?? encabezado?.HorasDescargue);
         return errores;
     }
+
+    /// <summary>
+    /// #278: <see cref="ErroresHorasEnPareja"/> de una ruta de la ENTRADA (captura, edición, licitación): una ruta sin horas propias no
+    /// reporta nada, porque su pareja es la del encabezado y ese error va en el encabezado
+    /// (<see cref="clsEncabezadoSolicitudCosteo.ErroresHorasHeredadas"/>).
+    /// </summary>
+    public IReadOnlyList<clsErrorCampo> ErroresHorasPropias(clsEncabezadoSolicitudCosteo encabezado) =>
+        HorasCargue is null && HorasDescargue is null ? [] : ErroresHorasEnPareja(encabezado);
 
     /// <summary>
     /// Validaciones condicionales de la captura (G3, HU-013.10/HU-013.11), las mismas para el formulario y para cada fila de una

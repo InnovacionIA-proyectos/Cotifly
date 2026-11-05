@@ -1494,7 +1494,7 @@ Cuerpo `SolicitudCosteoWeb` (encabezado):
 | `linea_negocio` | string | Sí, si alguna ruta no trae la suya | Nombre de la línea de negocio de Cotifly (da el margen). Inexistente o inactiva: 400 `MARGEN_LINEA_DESCONOCIDA`. Si su línea de NEXO (la configura soporte: no hay endpoint para editarla) no es una de las seis de NEXO: 400 `LINEA_NEGOCIO_INVALIDO` (#278, fila 73), nada se guarda |
 | `deadline` | fecha y hora o null | No | ISO-8601 con desfase (sección 1.5) |
 | `notas` | string o null | No | Hasta 2000. Nota para la Mesa de NEXO (no va al PDF) |
-| `horas_cargue`, `horas_descargue` | número o null | No | 0 a 240. **Las dos o ninguna** después de completar cada ruta con ellas (#278): si a una ruta le falta una, `CAMPO_REQUERIDO` en esa ruta. Valen para las rutas que no traen las suyas. Sin horas NEXO aplica 4 + 4, o 1 + 1 en una devolución de contenedor |
+| `horas_cargue`, `horas_descargue` | número o null | No | 0 a 240. **Las dos o ninguna** después de completar cada ruta con ellas (#278): si el encabezado trae una sola y alguna ruta no trae horas propias (las hereda), `CAMPO_REQUERIDO` en el campo del encabezado que falta (`ruta = null`, una vez); si una ruta con una hora propia queda incompleta, el error va en esa ruta. Valen para las rutas que no traen las suyas. Sin horas NEXO aplica 4 + 4, o 1 + 1 en una devolución de contenedor |
 | `moneda` | `"COP"`, `"USD"` o null | No | COP por defecto. Sin distinguir mayúsculas. En USD la TRM del día se fija al crear; sin TRM, 400 `TRM_NO_DISPONIBLE` |
 | `rutas` | `RutaCapturaWeb[]` | Sí (formato vigente) | 1 a 100 rutas |
 

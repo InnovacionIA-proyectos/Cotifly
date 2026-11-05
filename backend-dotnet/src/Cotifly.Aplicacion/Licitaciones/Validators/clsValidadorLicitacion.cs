@@ -54,7 +54,8 @@ public static class clsValidadorLicitacion
             Encabezado("moneda", clsCodigosLineaSolicitud.ValorFueraDeRango, $"El campo 'moneda' debe ser COP o USD (llegó '{moneda.Trim()}').");
         }
 
-        foreach (var error in entrada.Encabezado.Errores())
+        // #278: una sola hora en el encabezado que alguna fila hereda se reporta en el encabezado (indice = null), no en cada fila.
+        foreach (var error in entrada.Encabezado.Errores().Concat(entrada.Encabezado.ErroresHorasHeredadas((entrada.Lineas ?? []).Select(l => l?.Linea))))
         {
             Encabezado(error.Campo, error.Codigo, error.Mensaje);
         }
@@ -96,7 +97,7 @@ public static class clsValidadorLicitacion
             }
 
             // #278: la pareja de horas de la fila se valida completada con la del encabezado.
-            foreach (var error in entradaLinea.Linea.Errores().Concat(entradaLinea.Linea.ErroresHorasEnPareja(entrada.Encabezado)))
+            foreach (var error in entradaLinea.Linea.Errores().Concat(entradaLinea.Linea.ErroresHorasPropias(entrada.Encabezado)))
             {
                 Linea(error.Campo, error.Codigo, error.Mensaje);
             }
