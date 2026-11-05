@@ -960,8 +960,9 @@ public sealed partial class clsCotizacionSolicitud
     }
 
     /// <summary>
-    /// Agrega o actualiza conexos en la ruta <paramref name="ordenRuta"/> (precio = costo unitario de Nexo) y recalcula SIEMPRE los
-    /// totales y el precio. Devuelve cuántos agregó o cambió, o el error del módulo de precio.
+    /// Agrega o actualiza conexos en la ruta <paramref name="ordenRuta"/> (precio = costo unitario de Nexo; HU-043.2, #251: y su venta
+    /// unitaria, que suma al precio de la ruta sin margen) y recalcula SIEMPRE los totales y el precio. Devuelve cuántos agregó o cambió, o
+    /// el error del módulo de precio.
     /// </summary>
     public clsResultado<int> CambiarConexos(int ordenRuta, IEnumerable<clsCambioConexo> conexos, DateTimeOffset ahora)
     {

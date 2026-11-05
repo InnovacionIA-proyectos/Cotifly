@@ -144,13 +144,16 @@ public static class clsCotizacionMuestra
 
     /// <summary>
     /// Agrega a la ruta <paramref name="orden"/> un conexo con su costo unitario de Nexo (<paramref name="costoUnitario"/>) y recalcula
-    /// los totales y el precio: el precio de la ruta y de la solicitud lo incluye con el margen de la ruta.
+    /// los totales y el precio. HU-043.2 (#251): el precio de la ruta y de la solicitud lo incluye a su venta unitaria
+    /// (<paramref name="ventaUnitaria"/>; <c>null</c> = al costo), sin margen.
     /// </summary>
     public static clsCotizacionSolicitud ConConexo(
-        clsCotizacionSolicitud cotizacion, string idServicioConexo, string? nombre, decimal costoUnitario, decimal cantidad = 1m, int orden = 1)
+        clsCotizacionSolicitud cotizacion, string idServicioConexo, string? nombre, decimal costoUnitario, decimal cantidad = 1m, int orden = 1,
+        decimal? ventaUnitaria = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        cotizacion.Rutas.Single(r => r.Orden == orden).AgregarOActualizarConexo(idServicioConexo, nombre, costoUnitario, cantidad);
+        cotizacion.Rutas.Single(r => r.Orden == orden)
+            .AgregarOActualizarConexo(new clsCambioConexo(idServicioConexo, nombre, costoUnitario, cantidad, PrecioVenta: ventaUnitaria));
         cotizacion.RecalcularTotales(Ahora);
         return cotizacion;
     }
