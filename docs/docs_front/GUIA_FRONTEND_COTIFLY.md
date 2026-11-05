@@ -1,6 +1,6 @@
 # Guía de integración frontend: módulo Cotifly en ClientePro (Angular) contra el backend .NET 10
 
-> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-22
+> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-11-05
 
 | Campo | Valor |
 |---|---|
@@ -9,12 +9,13 @@
 | Estado | Vigente |
 | Dueño | Duban Guerra (backend) |
 | Fecha de creación | 2026-09-29 |
-| Actualizado | 2026-10-22 |
+| Actualizado | 2026-11-05 |
 | Fuentes verificadas | `backend-dotnet/specs/openapi.yaml`, `docs/docs_front/CONTRATO_API_WEB.md`, `backend-dotnet/docs/07-api.md` y `04-flujo-del-sistema.md`, ADR-005, ADR-009, ADR-011, ADR-014, ADR-015, `docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md`, el backlog de HU-001 a HU-013 (archivado en `docs/archivo/backlog/`) y los controllers de `backend-dotnet/src/Cotifly.Api` en `origin/QA` |
 | Fuente de verdad | `backend-dotnet/specs/openapi.yaml`. Si esta guía y el spec difieren, manda el spec, y hay que avisar al backend |
 
 > **AVISO HU-021 (ADR-019, 2026-10-08): `precio_final` YA INCLUYE los servicios conexos.** Es la suma de las rutas, y cada ruta es
-> su costo (fletes, retorno, levante y conexos) con el margen. **No sumarle el `precio` de los conexos** (se cobrarían dos veces):
+> su transporte (fletes, retorno y levante) con el margen + la **venta** de sus conexos **sin margen** (HU-043.2, #251, desde el
+> 2026-11-05; antes el margen se aplicaba también a los conexos). **No sumarle el `precio` de los conexos** (se cobrarían dos veces):
 > ese `precio` es el desglose. En la vista de la licitación (`GET /web/licitaciones/{folio}`) y en su Excel cada línea es la
 > tarifa del transporte y el total va **sin** conexos, que se listan aparte una sola vez. Tarifa + conexos = precio de la ruta.
 > El PDF (de una ruta o del pliego), desde HU-033 (#199), muestra el **valor final de cada ruta** (conexos incluidos, sin desglose) y
@@ -1145,7 +1146,7 @@ El formulario pasa a capturar **rutas** (`rutas[]`, hasta 100; ver `RutaCapturaW
 - **Varias líneas de negocio** en una misma solicitud se aceptan: el margen es por ruta y cada camión viaja a Nexo con la línea de negocio de su ruta.
 - **Formato plano obsoleto:** `deprecated`; #138 lo mantiene y **se retira cuando salga HU-021-FE**. Con `rutas`, un campo de ruta en la raíz es 400 con `detalle.errores`.
 - **Mercancías:** `{codigo_mercancia, nombre_mercancia, cantidad, largo_cm, ancho_cm, alto_cm, peso_kg}`. Desde HU-023.3 (#158) `codigo_mercancia` (el `codigo` de `GET /web/tipos-mercancia`) es **obligatorio** con el cubicador configurado (400 `CAMPO_REQUERIDO` en `mercancias[i].codigo_mercancia`); uno inactivo o desconocido es `MERCANCIA_DESCONOCIDA` y uno no cubicable `MERCANCIA_NO_CUBICABLE`. `id_tipo_mercancia` es **obsoleto**: todavía se acepta y se traduce al código. `peso_kg` es el peso **por unidad** y debe ser mayor que 0; #278: es **obligatorio en toda mercancía con medidas** (aunque no lleve código), si no `POSICION_INVALIDA` en `mercancias[i].peso_kg`. Topes: 200 mercancías por ruta (cuenta todas, `DEMASIADAS_POSICIONES`) y 10.000 unidades (`cantidad`) entre las mercancías **con medidas** (las sin medidas no cuentan; `CUBICACION_DEMASIADO_GRANDE` en `detalle.errores[]`, también sin cubicador). **HU-032 (#197): las medidas son opcionales.** Una mercancía sin ninguna medida y sin código (solo nombre, cantidad o peso) es "no cubicable": se acepta, no viaja a Nexo como posición y la ruta usa el vehículo elegido. Si escribe una medida, pedir las tres (`POSICION_INVALIDA` "faltan medidas"); con código, las tres son obligatorias.
-- **Servicios conexos:** `{id_servicio_conexo, cantidad}` con ids de `GET /web/servicios-conexos`. El servidor guarda el costo de Nexo como precio (nunca se muestra) y lo suma al costo de la ruta. Errores: `CONEXO_NO_ENCONTRADO`, `CONEXO_DUPLICADO`, `DEMASIADOS_CONEXOS` (20 por ruta).
+- **Servicios conexos:** `{id_servicio_conexo, cantidad}` con ids de `GET /web/servicios-conexos`. El servidor guarda el costo de Nexo (nunca se muestra), que suma al costo de la ruta, y (HU-043.2, #251) el precio de venta del catálogo de Nexo (`precioVenta`; sin él, el costo), que suma al precio de la ruta sin margen. Errores: `CONEXO_NO_ENCONTRADO`, `CONEXO_DUPLICADO`, `DEMASIADOS_CONEXOS` (20 por ruta).
 - **Vehículo elegido o cubicador (HU-032, #197, ADR-022).** **Volver a mostrar el selector** de `tipo_vehiculo` (y de `carroceria`, opcional) en cada ruta, con los códigos de `GET /web/catalogos-flete`. Es el **respaldo del cubicador**:
   - Ruta con **todas** sus mercancías cubicables (código, largo, ancho, alto y peso): va al cubicador. Si asigna, manda el cubicador (aviso `VEHICULO_AJUSTADO_POR_CUBICADOR` si el elegido era otro); si no selecciona, falla o está ocupado, va el elegido (`VEHICULO_ELEGIDO_USADO`; si no es código de Nexo, sin vehículo con `VEHICULO_ELEGIDO_INVALIDO`). El vehículo es opcional.
   - Ruta **sin mercancías cubicables** (solo `peso_kg`, mercancías sin medidas, o mixta con `MERCANCIAS_NO_CUBICABLES`): no se cubica y va con el elegido, que es **obligatorio salvo en las clases de viaje exentas** (por defecto solo `clase_viaje = Contenedor`; el backend las configura en `Captura:ClasesSinVehiculoObligatorio`) (400 con `VEHICULO_REQUERIDO` en `detalle.errores[]`, campo `tipo_vehiculo`). Se valida contra Nexo al guardar (`CODIGO_NO_CATALOGO`).
@@ -1288,10 +1289,10 @@ Las reglas condicionales de Nexo (mostrar u ocultar, y requerido u opcional) **n
 
 | Campo | Nota |
 |---|---|
-| `precio_final` | Precio total con margen: flete + aprovisionamiento + retorno del contenedor **+ servicios conexos** (HU-021, ADR-019). null mientras no haya costeo |
+| `precio_final` | Precio total: (flete + aprovisionamiento + retorno del contenedor) con margen **+ servicios conexos a su venta, sin margen** (HU-021, ADR-019; HU-043.2, #251). null mientras no haya costeo |
 | `margen_aplicado` | null mientras no haya `precio_final` |
 | `moneda`, `trm_aplicada` | #103 (HU-013.7). `trm_aplicada` es la TRM fijada al crear (COP por USD); 0 en COP. En USD, `precio_final` y el `precio` de los conexos van en dólares con 2 decimales: mostrar `US$` y "TRM aplicada: `trm_aplicada`" |
-| `servicios_conexos[]` | `id` (id de Nexo como string), `nombre` (string o null), `categoria` (por ejemplo, `logistico`), `cantidad`, `precio` (con el mismo margen) e `incluido` (por defecto true). **Nunca trae el costo** |
+| `servicios_conexos[]` | `id` (id de Nexo como string), `nombre` (string o null), `categoria` (por ejemplo, `logistico`), `cantidad`, `precio` (HU-043.2, #251: su precio de **venta**, sin margen; no cambia al ajustar el margen) e `incluido` (por defecto true). **Nunca trae el costo** |
 | `costeo_listo_at` | Cuándo quedó costeada |
 | `pdf_url` | null hasta generar el PDF |
 | `deadline` | HU-018.1 (#155). Fecha límite de la solicitud (cabecera, no de cada ruta), en UTC; null si no se dio. Para "Ver detalle" |
@@ -1464,7 +1465,7 @@ Ejemplo (del contrato): `PCN-DG-10082026-001` se crea el **10 de agosto** (v1, 1
 | `pendientes_por_cotizar` | int | Ver la partición |
 | `conversion` | number o null | ganadas / cantidad (definición del backlog, "#ganadas / #totales"). `null` si cantidad = 0 |
 | `conversion_sobre_cerradas` | number o null | ganadas / (ganadas + perdidas). `null` si no hay cerradas |
-| `margen_promedio` | number o null | Promedio simple del margen de cada cotización (fracción, 0.15 = 15 %) de las que lo tienen; el de una cotización es el de sus rutas ponderado por costo. `null` si ninguna |
+| `margen_promedio` | number o null | Promedio simple del margen de cada cotización (fracción, 0.15 = 15 %) de las que lo tienen; el de una cotización es el de sus rutas ponderado por costo. `null` si ninguna. HU-043.2 (#251): es el margen del **transporte** (los conexos van a su venta, sin margen), no el margen sobre el precio completo; para el margen real sobre el precio usar `margen_ponderado` |
 | `margen_ponderado` | number o null | **Por ruta** (HU-021), margen sobre el precio: SUM(precio de la ruta en COP − `costoFinal`) / SUM(precio de la ruta en COP) de todas las rutas con costo > 0 y precio > 0. `null` si ninguna |
 | `costeo_total` | number | SUM(`costo`) en COP de **todas** |
 | `costeo_ganadas` | number | SUM(`costo`) en COP de las ganadas |

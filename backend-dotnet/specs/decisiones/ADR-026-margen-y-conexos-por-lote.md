@@ -46,7 +46,8 @@ varias líneas) no se pueden deshacer si Cotifly falla después: no hay forma de
    `AJUSTE_MARGEN_INVALIDO` con la ruta.
 5. **Conexos y Nexo: outbox, nunca N POST síncronos.** Agregar en lote NO llama al `POST` de conexos de Nexo dentro de la petición. El
    conexo se guarda en cada ruta con el **costo del catálogo de Nexo** (`IClsCostosConexosNexo`, leído antes de cambiar nada: Nexo caído
-   es 503 sin cambios), igual que un conexo capturado con la ruta (decisión 3 de ADR-019), con el id del catálogo como
+   es 503 sin cambios) y, desde HU-043.2 (#251), con su **precio de venta** (`precioVenta ?? costoUnitario` del catálogo, columna
+   `precioVenta`), igual que un conexo capturado con la ruta (decisión 3 de ADR-019), con el id del catálogo como
    `idServicioConexo` e `idServicioConexoCatalogo`. En la MISMA transacción queda, por ruta, el registro `en_espera` del envío diferido
    (`clsEnvioConexosNexo`, ADR-019 decisión 10) y la siguiente consulta del polling se adelanta a ahora (`ProgramarRelecturaCosteo`):
    en autocosteo el intervalo crece hasta `CosteoNexo:IntervaloMaximoMinutos` (15 min) y, sin adelantarla, el conexo seguiría
@@ -61,8 +62,13 @@ varias líneas) no se pueden deshacer si Cotifly falla después: no hay forma de
    - *Alternativa descartada:* un solo `POST` a Nexo con una línea por ruta (Nexo lo aplica todo o nada). Seguía siendo una escritura
      externa no reversible dentro de la petición: si Cotifly fallaba después (conflicto de versión, caída), quedaban conexos en Nexo que
      Cotifly no tiene, y los conexos nuevos de Nexo no siempre dicen su línea (#134).
-   - *Consecuencia:* el precio del conexo en lote es el costo del catálogo, no el `valorAplicado` que Nexo calcula al agregarlo por ruta
-     (los dos salen del mismo valor base del catálogo; es el mismo criterio de los conexos capturados).
+   - *Consecuencia:* el costo del conexo en lote es el costo del catálogo, no el `valorAplicado` que Nexo calcula al agregarlo por ruta
+     (los dos salen del mismo valor base del catálogo; es el mismo criterio de los conexos capturados). HU-043.2 (#251): su venta es el
+     `precioVenta` del catálogo (o el costo, si no tiene), la misma que Nexo fija como `precioVentaUnitario` al recibir el conexo del
+     envío diferido (el POST nunca lleva precio: solo `servicioConexoId` y `cantidad`).
+   - *HU-043.2 (#251), fórmula:* el margen en lote (como el de una ruta) se aplica solo al transporte de cada ruta (fletes + retorno +
+     levante); los conexos suman su venta sin margen (`clsLineaSolicitud.PrecioRutaCon`). Revertir al sugerido y agregar o quitar un
+     conexo recalculan con la misma fórmula.
 6. **Una sola invalidación del PDF y una sola auditoría por operación.** `clsReglaPdfCosteo.InvalidarPdf` se llama una vez (un registro
    en el historial del PDF) y cada operación deja una entrada en `EventosHerramienta` (`ajustar_margen_costeo_lineas`,
    `agregar_servicio_conexo_lineas`, `quitar_servicio_conexo_lineas`) con las rutas cambiadas y sin montos; el error también se audita.
