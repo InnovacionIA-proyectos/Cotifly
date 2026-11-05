@@ -90,8 +90,8 @@ public sealed partial class clsLineaSolicitud
 
     /// <summary>
     /// HU-030.1 (#184, script <c>db/scripts/11_peso_con_tara.sql</c>): peso total de la ruta CON la tara de los contenedores, tal como lo
-    /// escribió el comercial (solo en una ruta <c>Contenedor</c>); <c>null</c> = sin tara. Es lo que viaja a Nexo como peso (repartido por
-    /// camión, <see cref="PesoLineaNexo"/>); al cubicador nunca va.
+    /// escribió el comercial (solo en una ruta <c>Contenedor</c>, #250); <c>null</c> = sin tara. Es lo que viaja a Nexo como peso (repartido
+    /// por camión, <see cref="PesoLineaNexo"/>; DU §8: <c>peso</c> es el total con tara); al cubicador nunca va.
     /// </summary>
     public decimal? PesoConTaraKg { get; private set; }
 
@@ -550,9 +550,12 @@ public sealed partial class clsLineaSolicitud
     /// mercancías viajan como posiciones solo si la ruta tiene un único camión: con varios, a Nexo le basta el peso de cada uno (el
     /// reparto lo sabe el cubicador). El peso es <see cref="PesoLineaNexo"/> y el camión del cubicador viaja en
     /// <see cref="clsLineaSolicitudCosteo.IdRecomendacionVehiculo"/> (HU-023.4, #159). HU-030.1 (#184): una ruta de contenedor con
-    /// <see cref="PesoConTaraKg"/> manda el peso con tara y NUNCA posiciones, tampoco con un solo camión: Nexo valida que el peso de una
-    /// línea con posiciones cuadre al 1 % con su suma (<c>PESO_INCONSISTENTE</c>, confirmado al cerrar NEXO#308) y la tara lo
-    /// descuadraría. La línea no lleva <see cref="clsLineaSolicitudCosteo.PesoConTaraKg"/>: su <c>PesoKg</c> ya es el peso con tara.
+    /// <see cref="PesoConTaraKg"/> manda el peso con tara. #250 (DU §8, contrato único del 2026-11-04): <c>peso</c> es el total con tara y
+    /// Nexo solo responde <c>PESO_INCONSISTENTE</c> si la suma <c>cantidad × pesoKg</c> de las posiciones SUPERA el peso en más de 1 %; un
+    /// peso mayor (la tara) es válido. Por eso, con un solo camión, la línea con tara lleva sus posiciones como cualquier otra (antes viajaba
+    /// sin ellas para esquivar el 1 % simétrico de NEXO#308). La regla asimétrica se cumple sin guarda propia: la carga cuadra al 1 % con
+    /// las posiciones (revalidada antes de cada envío) y el peso que viaja nunca es menor que la carga (<see cref="PesoLineaNexo"/>). La
+    /// línea no lleva <see cref="clsLineaSolicitudCosteo.PesoConTaraKg"/>: su <c>PesoKg</c> ya es el peso con tara.
     /// </summary>
     public clsLineaSolicitudCosteo ALineaNexo(clsVehiculoLineaSolicitud camion)
     {
@@ -572,14 +575,16 @@ public sealed partial class clsLineaSolicitud
             PesoKg = PesoLineaNexo(camion),
             PesoConTaraKg = null,
             ValorAprovisionamiento = ValorLevanteContenedor is null ? null : camion.CostoLevanteContenedor,
-            // HU-032 (#197): una ruta con mercancías sin medidas (no cubicables) viaja sin posiciones (PosicionesParaNexo).
-            Posiciones = UnSoloCamion && !LlevaTara ? linea.PosicionesParaNexo : [],
+            // HU-032 (#197): una ruta con mercancías sin medidas (no cubicables) viaja sin posiciones (PosicionesParaNexo). #250 (DU §8):
+            // con tara también, con un solo camión; con varios, ninguna línea lleva posiciones (LineasSinPosiciones).
+            Posiciones = UnSoloCamion ? linea.PosicionesParaNexo : [],
         };
     }
 
     /// <summary>
     /// HU-030.1 (#184): ¿la ruta manda a Nexo el peso con tara? Solo una ruta <c>Contenedor</c> con <see cref="PesoConTaraKg"/> (la
-    /// captura no la acepta en otra clase; si una ruta guardada cambiara de clase, la tara deja de aplicarse en lugar de viajar).
+    /// captura no la acepta en otra clase, #250: Carga suelta y Extradimensionado mandan el peso de la carga; si una ruta guardada cambiara
+    /// de clase, la tara deja de aplicarse en lugar de viajar). No decide las posiciones: desde #250 eso lo decide solo el número de camiones.
     /// </summary>
     public bool LlevaTara => PesoConTaraKg is not null
         && string.Equals(ClaseViaje, clsCatalogosCaptura.ClaseViajeContenedor, StringComparison.Ordinal);
@@ -611,7 +616,8 @@ public sealed partial class clsLineaSolicitud
     /// <summary>
     /// Peso que viaja a Nexo en la línea de <paramref name="camion"/> (HU-023.4, #159, decisión 6 del 2026-10-13). Con <b>un solo camión</b>
     /// la línea lleva las posiciones, así que lleva el <b>peso declarado de la ruta</b> (o, sin él, la suma de las posiciones): ese ya cuadra
-    /// al 1 % con las posiciones y Nexo no responde <c>PESO_INCONSISTENTE</c>. El peso del cubicador (<see cref="clsVehiculoLineaSolicitud.PesoKg"/>)
+    /// al 1 % con las posiciones y Nexo no responde <c>PESO_INCONSISTENTE</c> (#250, DU §8: solo lo responde si la suma SUPERA el peso en
+    /// más de 1 %). El peso del cubicador (<see cref="clsVehiculoLineaSolicitud.PesoKg"/>)
     /// se guarda y se muestra, pero no viaja. Con <b>varios camiones</b> (sin posiciones) va el peso de cada camión, como antes. El emparejador
     /// compara con este mismo peso, en una sola pasada (<see cref="clsCamionParaEmparejar.Desde"/>).
     /// </summary>
@@ -619,7 +625,8 @@ public sealed partial class clsLineaSolicitud
     /// HU-030.1 (#184): en una ruta que <see cref="LlevaTara"/> (contenedor con <see cref="PesoConTaraKg"/>) la tara total (peso con tara
     /// menos la carga que viaja en sus líneas) se reparte <b>por partes iguales</b> entre TODOS sus camiones (uno por contenedor, de la misma
     /// clase: la misma tara), en céntimos, y el último camión en orden (<see cref="VehiculosOrdenados"/>) se queda con el resto del
-    /// redondeo: la suma de las líneas es exactamente el peso con tara. Con un solo camión, la línea lleva el peso con tara tal cual. Como
+    /// redondeo: la suma de las líneas es exactamente el peso con tara. Con un solo camión, la línea lleva el peso con tara tal cual y,
+    /// desde #250 (DU §8), también sus posiciones: un peso mayor que su suma es la tara y Nexo lo acepta. Como
     /// el peso sin tara, cuenta los camiones descartados: lo que ya viajó no cambia y el emparejador vuelve a calcular el mismo peso.
     /// Integración 1021 (con #183): un camión rechazado fuera del envío no lleva tara y el redondeo lo absorbe el último que viaja
     /// (<see cref="TaraDelCamion"/>).
