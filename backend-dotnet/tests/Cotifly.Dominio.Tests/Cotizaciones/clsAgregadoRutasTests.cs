@@ -223,6 +223,22 @@ public sealed class clsAgregadoRutasTests
     }
 
     [Fact]
+    public void Issue261_ElPrecioDeVentaDelConexoSigueAlPrecioAlCrearActualizarYAjustarLaCantidad()
+    {
+        // #261 punto 4: hasta HU-043.2 (#251) precioVenta = precio en todas las vías que fijan el precio; el costo no cambia.
+        var ruta = clsCotizacionMuestra.Formulario().PrimeraRuta!;
+
+        ruta.AgregarOActualizarConexo("CX-1", "Cargue", 10_000m, 2m);
+        ruta.Conexos.Single().Should().Match<clsServicioConexoRuta>(c => c.PrecioVenta == 10_000m && c.Costo == 20_000m);
+
+        ruta.AgregarOActualizarConexo("CX-1", null, 12_500.5m, 2m);
+        ruta.Conexos.Single().PrecioVenta.Should().Be(12_500.5m);
+
+        ruta.AjustarConexos(new Dictionary<string, decimal> { ["CX-1"] = 3m });
+        ruta.Conexos.Single().Should().Match<clsServicioConexoRuta>(c => c.PrecioVenta == 12_500.5m && c.Precio == 12_500.5m && c.Cantidad == 3m);
+    }
+
+    [Fact]
     public void HU014_ElIdDelCatalogoYLaCategoriaSeGuardanAlCrearYCompletanUnaFilaViejaSinPisarLosGuardados()
     {
         var ruta = clsCotizacionMuestra.Formulario().PrimeraRuta!;

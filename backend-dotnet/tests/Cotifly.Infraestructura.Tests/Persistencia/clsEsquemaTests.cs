@@ -97,16 +97,18 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         scripts[clsBaseDatosPruebas.ScriptsHasta05 - 1].Should().Be(clsBaseDatosPruebas.Script05, "ScriptsHasta05 incluye el 05 y no el 06");
         scripts[clsBaseDatosPruebas.ScriptsHasta06 - 1].Should().Be(clsBaseDatosPruebas.Script06, "ScriptsHasta06 incluye el 06 y no el 09");
         scripts[clsBaseDatosPruebas.ScriptsHasta09 - 1].Should().Be(clsBaseDatosPruebas.Script09, "ScriptsHasta09 incluye el 09 y no el 10 ni el 11");
-        scripts[clsBaseDatosPruebas.ScriptsHasta16 - 6].Should().Be(clsBaseDatosPruebas.Script10, "ScriptsSin07 incluye el 10 (el backend mapea el rechazo)");
-        scripts[clsBaseDatosPruebas.ScriptsHasta16 - 5].Should().Be(clsBaseDatosPruebas.Script11, "ScriptsSin07 incluye el 11 (el backend mapea pesoConTaraKg)");
-        scripts[clsBaseDatosPruebas.ScriptsHasta16 - 4].Should().Be(clsBaseDatosPruebas.Script12, "ScriptsSin07 incluye el 12 (el backend mapea el vehículo elegido)");
-        scripts[clsBaseDatosPruebas.ScriptsHasta16 - 3].Should().Be(clsBaseDatosPruebas.Script13, "ScriptsSin07 incluye el 13 (el backend mapea MailSender y el resultado diferido)");
-        scripts[clsBaseDatosPruebas.ScriptsHasta16 - 2].Should().Be(clsBaseDatosPruebas.Script14, "ScriptsSin07 incluye el 14 (el backend mapea la cotización finalizada)");
+        scripts[clsBaseDatosPruebas.ScriptsHasta16 - 6].Should().Be(clsBaseDatosPruebas.Script10, "ScriptsHasta16 incluye el 10 (el backend mapea el rechazo)");
+        scripts[clsBaseDatosPruebas.ScriptsHasta16 - 5].Should().Be(clsBaseDatosPruebas.Script11, "ScriptsHasta16 incluye el 11 (el backend mapea pesoConTaraKg)");
+        scripts[clsBaseDatosPruebas.ScriptsHasta16 - 4].Should().Be(clsBaseDatosPruebas.Script12, "ScriptsHasta16 incluye el 12 (el backend mapea el vehículo elegido)");
+        scripts[clsBaseDatosPruebas.ScriptsHasta16 - 3].Should().Be(clsBaseDatosPruebas.Script13, "ScriptsHasta16 incluye el 13 (el backend mapea MailSender y el resultado diferido)");
+        scripts[clsBaseDatosPruebas.ScriptsHasta16 - 2].Should().Be(clsBaseDatosPruebas.Script14, "ScriptsHasta16 incluye el 14 (el backend mapea la cotización finalizada)");
         scripts[clsBaseDatosPruebas.ScriptsHasta16 - 1].Should().Be(clsBaseDatosPruebas.Script16, "ScriptsHasta16 llega hasta el 16 (el backend mapea TokensRefresco.rolSesion)");
-        // HU-042 (#242, #243, #247): el 17 y el 18 van después del 16 y antes del 07 (el backend mapea sus tablas y lineaNegocioId).
+        // HU-042 (#242, #243, #247) y #261 punto 4: el 17, el 18 y el 19 van después del 16 y antes del 07 (el backend mapea sus tablas,
+        // lineaNegocioId y precioVenta, en ese orden).
         scripts[clsBaseDatosPruebas.ScriptsHasta16].Should().Be(clsBaseDatosPruebas.Script17, "después del 16 va el 17 (copia local del margen de SAP)");
         scripts[clsBaseDatosPruebas.ScriptsHasta16 + 1].Should().Be(clsBaseDatosPruebas.Script18, "después del 17 va el 18 (lineaNegocioId del mapeo)");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script18, "ScriptsSin07 llega hasta el 18");
+        scripts[clsBaseDatosPruebas.ScriptsHasta16 + 2].Should().Be(clsBaseDatosPruebas.Script19, "después del 18 va el 19 (precioVenta del conexo, #261)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script19, "ScriptsSin07 llega hasta el 19");
         scripts[clsBaseDatosPruebas.ScriptsSin07].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsSin07 corta justo antes del 07");
         scripts[clsBaseDatosPruebas.ScriptsHasta07 - 1].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsHasta07 incluye el 07");
         // HU-037.1 (#209): el 15 (rol director) va al final, después del 08: no agrega columnas y clsRolDirectorScriptTests usa
@@ -1382,7 +1384,7 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
             .Which.Message.Should().Contain("ck_cotizacionVehiculosLineaSolicitud_estadoCosteo");
         (await Sql($"INSERT INTO dbo_cotifly.CotizacionVehiculosLineaSolicitud (lineaSolicitudId, costoFlete) VALUES ('{ruta}', -1)").Should().ThrowAsync<SqlException>())
             .Which.Message.Should().Contain("ck_cotizacionVehiculosLineaSolicitud_montos");
-        (await Sql($"INSERT INTO dbo_cotifly.CotizacionServiciosConexos (lineaSolicitudId, idServicioConexo, precio, cantidad) VALUES ('{ruta}', 'CX', 1, 0)").Should().ThrowAsync<SqlException>())
+        (await Sql($"INSERT INTO dbo_cotifly.CotizacionServiciosConexos (lineaSolicitudId, idServicioConexo, precio, cantidad, precioVenta) VALUES ('{ruta}', 'CX', 1, 0, 1)").Should().ThrowAsync<SqlException>())
             .Which.Message.Should().Contain("ck_cotizacionServiciosConexos_montos");
         (await Sql($"UPDATE dbo_cotifly.CotizacionesSolicitud SET estadoEnvio = 'perdida' WHERE id = '{cotizacion}'").Should().ThrowAsync<SqlException>())
             .Which.Message.Should().Contain("ck_cotizaciones_estadoEnvio");

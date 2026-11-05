@@ -310,9 +310,9 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
         await RechazaAsync($"UPDATE dbo_cotifly.CotizacionLineasSolicitud SET orden = 2 WHERE id = '{ruta1}'", 2627, "orden único por solicitud");
         await RechazaAsync($"INSERT INTO dbo_cotifly.CotizacionVehiculosLineaSolicitud (lineaSolicitudId) VALUES ('{Guid.NewGuid()}')", 547, "FK camión → ruta");
         await RechazaAsync($"UPDATE v SET v.costoFlete = -1 {DeLosCamiones(id)}", 547, "CHECK de montos del camión");
-        await RechazaAsync($"INSERT INTO dbo_cotifly.CotizacionServiciosConexos (lineaSolicitudId, idServicioConexo, precio, cantidad) VALUES ('{ruta1}', '{Cargue}', 1, 1)",
+        await RechazaAsync($"INSERT INTO dbo_cotifly.CotizacionServiciosConexos (lineaSolicitudId, idServicioConexo, precio, cantidad, precioVenta) VALUES ('{ruta1}', '{Cargue}', 1, 1, 1)",
             2627, "un conexo una vez por ruta");
-        await RechazaAsync($"INSERT INTO dbo_cotifly.CotizacionServiciosConexos (lineaSolicitudId, idServicioConexo, precio, cantidad) VALUES ('{ruta1}', 'OTRO', 1, 0)",
+        await RechazaAsync($"INSERT INTO dbo_cotifly.CotizacionServiciosConexos (lineaSolicitudId, idServicioConexo, precio, cantidad, precioVenta) VALUES ('{ruta1}', 'OTRO', 1, 0, 1)",
             547, "CHECK cantidad > 0 del conexo");
         await RechazaAsync($"INSERT INTO dbo_cotifly.CotizacionMercancias (lineaSolicitudId, orden, largoCm, anchoCm, altoCm) VALUES ('{ruta1}', 9, 0, 1, 1)", 547,
             "CHECK de medidas de la mercancía");

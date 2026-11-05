@@ -48,6 +48,12 @@ public sealed class clsServicioConexoRuta
     /// <summary>Costo unitario de Nexo al aplicarlo (antes del margen).</summary>
     public decimal Precio { get; private set; }
 
+    /// <summary>
+    /// Precio de venta unitario del conexo (<c>precioVenta</c> del script 19, HU-043.1 #245). #261 punto 4: mientras llega HU-043.2
+    /// (#251) vale siempre lo mismo que <see cref="Precio"/> (se fija junto con él); no entra en ninguna fórmula de la ruta.
+    /// </summary>
+    public decimal PrecioVenta { get; private set; }
+
     /// <summary>Unidades del servicio (decimal: Nexo maneja la cantidad de los conexos con decimales).</summary>
     public decimal Cantidad { get; private set; }
 
@@ -69,6 +75,7 @@ public sealed class clsServicioConexoRuta
             IdServicioConexo = id,
             Nombre = LimpiarNombre(nombre),
             Precio = precio,
+            PrecioVenta = precio,
             Cantidad = cantidad,
             IdServicioConexoCatalogo = Acotar(idServicioConexoCatalogo, LargoMaximoId),
             Categoria = Acotar(categoria, LargoMaximoCategoria),
@@ -86,6 +93,7 @@ public sealed class clsServicioConexoRuta
         var antes = (Nombre, Precio, Cantidad);
         Nombre = LimpiarNombre(nombre) ?? Nombre;
         Precio = precio;
+        PrecioVenta = precio;
         Cantidad = cantidad;
         IdServicioConexoCatalogo ??= Acotar(idServicioConexoCatalogo, LargoMaximoId);
         Categoria ??= Acotar(categoria, LargoMaximoCategoria);

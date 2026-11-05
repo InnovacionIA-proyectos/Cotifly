@@ -668,6 +668,24 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
      Con HU-042 (#242, #243, #247): `…` → `16` → `17` → `18` → imagen → `08`. El `17` y el `18` (de Datos, ya aplicados en la compartida
      el 2026-10-28) van ANTES de la imagen de HU-042.2: la imagen mapea sus tablas y `SapMapeoTrqType.lineaNegocioId` ("falta 17",
      "falta 18"). Los dos son seguros con la imagen anterior (tablas nuevas; el 18 deja la columna de texto). Ver abajo, "Margen de SAP".
+     Con #261 (punto 4, `precioVenta` del conexo): `…` → `16` → `17` → `18` → `19` → imagen → `08`, con el `19` **en la misma ventana
+     que la imagen** (ver abajo).
+   - **#261 (punto 4): `db/scripts/19_precio_venta_conexos.sql` va en la misma ventana corta que la imagen de #261.** Deja
+     `CotizacionServiciosConexos.precioVenta DECIMAL(18,2) NOT NULL` sin `DEFAULT` (backfill `precioVenta = precio`). No hay un orden
+     sin ventana de falla:
+     - la imagen de #261 sin el `19` queda en 503 "falta 19" (aplicarlo la recupera sin redesplegar);
+     - el `19` con la imagen anterior rompe agregar conexos (error 515: la imagen vieja inserta sin `precioVenta`), aunque la cabecera
+       del script diga lo contrario.
+
+     Por ambiente: aplicar el `19` (segundos, idempotente), desplegar de inmediato la imagen y verificar `/health/ready` 200 y agregar
+     un conexo de prueba. Un ambiente que ya tiene el `19` con una imagen anterior (la base compartida de pruebas, desde el
+     2026-10-28) ya está roto para agregar conexos: desplegar ahí la imagen de #261 cuanto antes. Verificación de solo lectura (un
+     largo no NULL y `0`):
+
+     ```sql
+     SELECT COL_LENGTH(N'dbo_cotifly.CotizacionServiciosConexos', N'precioVenta') AS precioVenta_19,
+            COLUMNPROPERTY(OBJECT_ID(N'dbo_cotifly.CotizacionServiciosConexos'), N'precioVenta', 'AllowsNull') AS admiteNulos_19;
+     ```
    - **HU-030.1 (#184): `db/scripts/11_peso_con_tara.sql` va ANTES de la imagen de #184.** Agrega a la ruta
      (`CotizacionLineasSolicitud`) la columna `pesoConTaraKg DECIMAL(12,2) NULL` y el `CHECK` `ck_cotizacionLineasSolicitud_pesoConTaraKg`
      (`NULL` o > 0): el peso total con tara que escribe el comercial en una ruta `Contenedor`. Es un `ADD` de columna NULL, idempotente
@@ -732,6 +750,7 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
    | `esquema incompleto: falta 16` | Falta `TokensRefresco.rolSesion` (HU-040.1, #229) | Aplicar `db/scripts/16_multiples_roles_activos.sql` |
    | `esquema incompleto: falta 17` | Faltan `SapMargenCliente`/`SapMargenSyncLog`, la copia local del margen de SAP (HU-042.1 #242, la lee HU-042.2 #243) | Aplicar `db/scripts/17_sap_margen_sincronizacion.sql` |
    | `esquema incompleto: falta 18` | Falta `SapMapeoTrqType.lineaNegocioId` (HU-042.4, #247) | Aplicar `db/scripts/18_sap_mapeo_fk_margenes_politica.sql` |
+   | `esquema incompleto: falta 19` | Falta `CotizacionServiciosConexos.precioVenta` (HU-043.1, #245; mapeo en #261) | Aplicar `db/scripts/19_precio_venta_conexos.sql` |
    | `esquema incompleto: falta Tabla.columna, ...` (hasta 5) | Falta otra tabla o columna del modelo (por ejemplo un script intermedio sin aplicar) | Comparar con `db/scripts/01_crear_esquema.sql` y aplicar el script que la trae (lista en `docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md` §A.5) |
 
 1. **Staging.** Merge a `QA` → el pipeline (o `publicar-imagen.sh --canal qa`) publica `sha-<corto>`. En Dokploy, stack

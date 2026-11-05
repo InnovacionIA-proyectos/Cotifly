@@ -286,8 +286,8 @@ public sealed class clsEnvioConexosNexoEndpointsTests : IDisposable
     {
         var (sesion, folio) = await CapturarAsync();
         await clsBaseDatosPruebas.EjecutarAsync(_entorno.BaseDatos.CadenaCotifly,
-            "INSERT INTO dbo_cotifly.CotizacionServiciosConexos (id, lineaSolicitudId, idServicioConexo, nombreServicioConexo, precio, cantidad, createdAt, updatedAt) "
-            + "SELECT NEWID(), l.id, CONVERT(nvarchar(64), NEWID()), N'Servicio retirado del catálogo', 50000, 1, SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET() "
+            "INSERT INTO dbo_cotifly.CotizacionServiciosConexos (id, lineaSolicitudId, idServicioConexo, nombreServicioConexo, precio, cantidad, createdAt, updatedAt, precioVenta) "
+            + "SELECT NEWID(), l.id, CONVERT(nvarchar(64), NEWID()), N'Servicio retirado del catálogo', 50000, 1, SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET(), 50000 "
             + "FROM dbo_cotifly.CotizacionLineasSolicitud l JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId "
             + $"WHERE c.folio = '{folio}'");
         var solicitud = _nexo.SolicitudesCreadas[^1];

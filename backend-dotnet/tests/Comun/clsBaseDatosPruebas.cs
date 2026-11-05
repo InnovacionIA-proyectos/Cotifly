@@ -69,6 +69,9 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
         // HU-042.4 (#247): SapMapeoTrqType.lineaNegocioId con su FK a MargenesPolitica (db/scripts/18; el backend resuelve por ese id). Su
         // backfill cruza por el texto las filas que sembró el 0001.
         Script18,
+        // HU-043.1 (#245) / #261 punto 4: precioVenta NOT NULL en CotizacionServiciosConexos (db/scripts/19; el backend la mapea). Va
+        // después del 18: no depende de él ni del 17, pero mantiene el orden numérico de los scripts.
+        Script19,
         // HU-023 (#176): BUSQUEDA_AGOTADA en el CHECK del motivo (db/scripts/07, lo aplica @scalderon-bs).
         Script07,
         // HU-014.3 (#152): retiro de las vistas del borrador de métricas (db/scripts/08, lo aplica el DBA).
@@ -87,10 +90,13 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     /// <summary>HU-042.4 (#247): el 18 de <c>SapMapeoTrqType.lineaNegocioId</c> (relativa a <c>migrations_mssql</c>).</summary>
     public const string Script18 = "../scripts_bd/18_sap_mapeo_fk_margenes_politica.sql";
 
+    /// <summary>HU-043.1 (#245, #261 punto 4): el 19 del precio de venta de los conexos (relativa a <c>migrations_mssql</c>).</summary>
+    public const string Script19 = "../scripts_bd/19_precio_venta_conexos.sql";
+
     /// <summary>
-    /// HU-042 (#243, #247): scripts hasta el 16 incluido (sin el 17, el 18, el 07, el 08 ni el 15). <c>Scripts[ScriptsHasta16 - 1]</c> es el
-    /// 16 (lo verifica <c>clsEsquemaTests</c>): la base de la prueba "falta 17". <c>ScriptsHasta16 - k</c> son las bases "sin el 16", "sin el
-    /// 14"... que antes se escribían como <c>ScriptsSin07 - k</c>.
+    /// HU-042 (#243, #247): scripts hasta el 16 incluido (sin el 17, el 18, el 19, el 07, el 08 ni el 15). <c>Scripts[ScriptsHasta16 - 1]</c>
+    /// es el 16 (lo verifica <c>clsEsquemaTests</c>): la base de la prueba "falta 17". <c>ScriptsHasta16 - k</c> son las bases "sin el 16",
+    /// "sin el 14"... que antes se escribían como <c>ScriptsSin07 - k</c>.
     /// </summary>
     public const int ScriptsHasta16 = 22;
 
@@ -155,17 +161,18 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     /// Scripts hasta el 07 incluido (con el 09, el 10, el 11... y el 18, sin el 08): la base migrada que todavía tiene las vistas del borrador de
     /// métricas. <c>Scripts[ScriptsHasta07 - 1]</c> es el 07 (lo verifica <c>clsEsquemaTests</c>).
     /// </summary>
-    public const int ScriptsHasta07 = 25;
+    public const int ScriptsHasta07 = 26;
 
     /// <summary>
     /// Todos los scripts anteriores al 07 en <see cref="Scripts"/> (sin el 07 ni los que van después). <c>Scripts[ScriptsSin07]</c> es el 07
     /// (lo verifica <c>clsEsquemaTests</c>). Si otra rama agrega un script que el backend mapea, va antes del 07 en la lista y este número
-    /// sube (hoy llega hasta el 18: <c>Scripts[ScriptsSin07 - 1]</c> es el 18, HU-042.4 #247, y <c>Scripts[ScriptsSin07 - 2]</c> el 17, HU-042.1 #242;
-    /// antes el 16, HU-040.1 #229; el 14, HU-036 #205; el 13, HU-033 #199; el 12, HU-032 #197, antes el 11, HU-030.1 #184, y antes el 10, HU-028.1 #183).
+    /// sube (hoy llega hasta el 19: <c>Scripts[ScriptsSin07 - 1]</c> es el 19, HU-043.1 #245/#261; antes el 18, HU-042.4 #247; el 17,
+    /// HU-042.1 #242; el 16, HU-040.1 #229; el 14, HU-036 #205; el 13, HU-033 #199; el 12, HU-032 #197, antes el 11, HU-030.1 #184, y antes
+    /// el 10, HU-028.1 #183).
     /// HU-014 (#188): incluye el 03, que deja el CHECK del 07; para una base que de verdad no admite BUSQUEDA_AGOTADA,
     /// <see cref="CrearBaseSin07Async"/>.
     /// </summary>
-    public const int ScriptsSin07 = 24;
+    public const int ScriptsSin07 = 25;
 
     /// <summary>
     /// HU-014 (#188): el CHECK del motivo tal como lo deja el <c>02</c> (4 motivos, sin <c>BUSQUEDA_AGOTADA</c> ni <c>ISNULL</c>). Con el 03
@@ -326,6 +333,8 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
                 // los seeders corren después (el 02 llena lineaNegocioId).
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("17_sap_margen_sincronizacion.sql"));
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("18_sap_mapeo_fk_margenes_politica.sql"));
+                // HU-043.1 (#245, #261 punto 4): el 19 (precioVenta de los conexos) va después del 18 por nombre.
+                await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("19_precio_venta_conexos.sql"));
                 if (conSeeders)
                 {
                     foreach (var seeder in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "scripts_bd", "seeder"), "*.sql").Order(StringComparer.Ordinal))
@@ -380,6 +389,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("16_multiples_roles_activos.sql"));
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("17_sap_margen_sincronizacion.sql"));
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("18_sap_mapeo_fk_margenes_politica.sql"));
+            await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("19_precio_venta_conexos.sql"));
             foreach (var seeder in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "scripts_bd", "seeder"), "*.sql").Order(StringComparer.Ordinal))
             {
                 await EjecutarScriptAsync(CadenaCotifly, seeder);
