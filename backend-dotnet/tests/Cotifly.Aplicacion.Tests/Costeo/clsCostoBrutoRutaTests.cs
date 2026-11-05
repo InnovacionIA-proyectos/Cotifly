@@ -81,8 +81,9 @@ public sealed class clsCostoBrutoRutaTests
         vista.Rutas.Should().OnlyContain(r => r.CostoFinal != null, "la vista del dueño no cambia");
     }
     /// <summary>
-    /// Validador (#218): el costo bruto que ve el dueño es exactamente el costo con el que se calculó el precio de la ruta (el mismo margen
-    /// y método dan el mismo precio, también en USD con la TRM fijada), y la suma de las rutas es el costo interno de la cotización.
+    /// Validador (#218): el costo bruto que ve el dueño es exactamente el costo del que sale el precio de la ruta (también en USD con la
+    /// TRM fijada), y la suma de las rutas es el costo interno de la cotización. HU-043.2 (#251): el margen se aplica solo al transporte
+    /// (costo bruto − costo de los conexos) y los conexos suman su venta sin margen.
     /// </summary>
     [Theory]
     [InlineData("COP", 0)]
@@ -98,8 +99,11 @@ public sealed class clsCostoBrutoRutaTests
         vista.Rutas.Select(r => r.CostoFinal).Should().Equal(1_234_567m, 2_345_678m + 3 * 123_456m, 987_654m);
         foreach (var ruta in vista.Rutas)
         {
-            clsLineaSolicitud.PrecioCon(ruta.CostoFinal, ruta.MargenAplicado, "margen", moneda, trm, out var precio).Should().BeNull();
-            precio.Should().Be(ruta.PrecioFinalLinea, $"la ruta {ruta.LineaOrden} cobra su costo bruto con su margen");
+            var dominio = cotizacion.RutasOrdenadas.Single(r => r.Orden == ruta.LineaOrden);
+            clsLineaSolicitud.PrecioCon(ruta.CostoFinal - dominio.CostoServiciosConexos, ruta.MargenAplicado, "margen", moneda, trm, out var precio)
+                .Should().BeNull();
+            var ventas = dominio.Conexos.Sum(c => clsLineaSolicitud.VentaConexo(c, moneda, trm, out var venta) is null ? venta!.Value : 0m);
+            (precio + ventas).Should().Be(ruta.PrecioFinalLinea, $"la ruta {ruta.LineaOrden} cobra su transporte con su margen y sus conexos a su venta");
         }
 
         vista.Rutas.Sum(r => r.CostoFinal).Should().Be(cotizacion.CostoFinal, "la suma de las rutas es el costo de la cotización");

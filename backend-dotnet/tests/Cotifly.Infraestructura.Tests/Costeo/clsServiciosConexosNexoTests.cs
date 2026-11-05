@@ -92,6 +92,26 @@ public sealed class clsServiciosConexosNexoTests
     }
 
     [Fact]
+    public async Task Hu0432_LosCostosDeLaCapturaTraenElPrecioDeVentaDelCatalogoOElCostoSiNoTiene()
+    {
+        // S6-HU-38.2: el catálogo trae precioVenta, que puede ser null (sin precio de venta: se cotiza al costo) o faltar (Nexo anterior).
+        var nexo = new clsNexoClientesFalso()
+            .Responder(HttpStatusCode.OK, """
+                {"items":[{"id":"S-1","tipoServicio":"Cargue","costoUnitario":50000,"precioVenta":70000,"activo":true},
+                {"id":"S-2","tipoServicio":"Escolta","costoUnitario":30000,"precioVenta":null,"activo":true},
+                {"id":"S-3","tipoServicio":"Bodegaje","costoUnitario":20000,"activo":true}],"total":3}
+                """);
+        using var proveedor = Proveedor(new() { ["Nexo:UrlBase"] = clsNexoClientesFalso.UrlBase }, nexo);
+        using var ambito = proveedor.CreateScope();
+
+        var costos = await ambito.ServiceProvider.GetRequiredService<IClsCostosConexosNexo>().CostosAsync(_usuarioId, ["S-1", "S-2", "S-3"], Ct);
+
+        costos.Valor["S-1"].Should().Match<clsCostoConexoNexo>(c => c.CostoUnitario == 50_000m && c.PrecioVenta == 70_000m && c.VentaUnitaria == 70_000m);
+        costos.Valor["S-2"].Should().Match<clsCostoConexoNexo>(c => c.PrecioVenta == null && c.VentaUnitaria == 30_000m);
+        costos.Valor["S-3"].Should().Match<clsCostoConexoNexo>(c => c.PrecioVenta == null && c.VentaUnitaria == 20_000m);
+    }
+
+    [Fact]
     public async Task LosCostosDeLaCapturaTraducenLosErroresDeNexoYSinUrlBaseNoEstanDisponibles()
     {
         var nexo = new clsNexoClientesFalso().Responder(HttpStatusCode.Forbidden);

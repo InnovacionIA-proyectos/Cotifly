@@ -50,7 +50,9 @@ public sealed class clsCostosConexosNexo(clsCosteoNexo costeo) : IClsCostosConex
                     continue;
                 }
 
-                encontrados[id] = new clsCostoConexoNexo(id, clsCosteoNexo.Texto(fila, "tipoServicio"), costo, clsCosteoNexo.Texto(fila, "categoria"));
+                // HU-043.2 (#251): precioVenta (S6-HU-38.2) puede venir null (sin precio de venta: se cotiza al costo) o faltar (Nexo anterior).
+                encontrados[id] = new clsCostoConexoNexo(
+                    id, clsCosteoNexo.Texto(fila, "tipoServicio"), costo, clsCosteoNexo.Texto(fila, "categoria"), clsCosteoNexo.Decimal(fila, "precioVenta"));
                 pendientes.Remove(id);
             }
 

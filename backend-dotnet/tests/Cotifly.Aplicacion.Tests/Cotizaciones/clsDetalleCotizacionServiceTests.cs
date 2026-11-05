@@ -105,6 +105,49 @@ public sealed class clsDetalleCotizacionServiceTests
         detalle.Captura[0].ServiciosConexos.Select(c => c.IdServicioConexo).Should().Equal("CX-1", "CX-2");
     }
 
+    /// <summary>
+    /// HU-043.2 (#251): <c>precio_transporte</c> es (flete + retorno + levante) con el margen y <c>precio_conexos</c> la suma de las VENTAS
+    /// de los conexos, sin margen; suman el precio final. El costo de los conexos no sale en ninguna parte del detalle para el comercial.
+    /// </summary>
+    [Fact]
+    public async Task Hu0432_LosTotalesSeparanElTransporteConMargenYLaVentaDeLosConexosSinMargen()
+    {
+        var cotizacion = clsCotizacionMuestra.Costeada(flete: 2_550_000m, margen: 0.15m, folio: "PCN-AP-01102026-007", usuarioId: _ana.Id);
+        clsCotizacionMuestra.ConConexo(cotizacion, "CX-1", "Cargue", 85_000m, 2m, ventaUnitaria: 100_000m);
+        _cotizaciones.ObtenerPorFolioDelUsuarioAsync(cotizacion.Folio, _ana.Id, Arg.Any<CancellationToken>()).Returns(cotizacion);
+
+        var detalle = (await Servicio(Comercial(_ana)).ObtenerAsync(cotizacion.Folio, Ct)).Valor;
+
+        detalle.Totales.PrecioTransporte.Should().Be(3_000_000m, "2.550.000 / (1 − 0,15)");
+        detalle.Totales.PrecioConexos.Should().Be(200_000m, "100.000 × 2, sin margen");
+        detalle.Totales.PrecioFinal.Should().Be(3_200_000m);
+        detalle.Costeo.ServiciosConexos.Should().ContainSingle().Which.Precio.Should().Be(200_000m, "el detalle muestra la venta, no el costo (170.000)");
+        detalle.Costeo.Rutas.Single().CostoFinal.Should().Be(2_720_000m, "costo_final (HU-039.1) sigue con el costo del conexo");
+    }
+
+    /// <summary>
+    /// HU-043.2 (#251): una cotización FINALIZADA antes del cambio conserva sus valores: el precio congelado (con el margen sobre los
+    /// conexos) no se recalcula y el desglose se sigue mostrando como entonces, así que transporte + conexos sigue dando su precio.
+    /// </summary>
+    [Fact]
+    public async Task Hu0432_UnaCotizacionFinalizadaAntesDelCambioConservaSuPrecioYSuDesglose()
+    {
+        var cotizacion = clsCotizacionMuestra.Costeada(flete: 2_550_000m, margen: 0.15m, folio: "PCN-AP-01102026-008", usuarioId: _ana.Id);
+        clsCotizacionMuestra.ConConexo(cotizacion, "CX-1", "Cargue", 85_000m);
+        // Así quedó guardada con la fórmula anterior: (2.550.000 + 85.000) / 0,85 = 3.100.000.
+        cotizacion.PrimeraRuta!.FijarPrecio(3_100_000m);
+        cotizacion.RecalcularPrecio(clsCotizacionMuestra.Ahora);
+        cotizacion.Finalizar(_ana.Id, clsCotizacionMuestra.Ahora).Valor.Should().BeTrue();
+        _cotizaciones.ObtenerPorFolioDelUsuarioAsync(cotizacion.Folio, _ana.Id, Arg.Any<CancellationToken>()).Returns(cotizacion);
+
+        var detalle = (await Servicio(Comercial(_ana)).ObtenerAsync(cotizacion.Folio, Ct)).Valor;
+
+        detalle.Totales.PrecioFinal.Should().Be(3_100_000m, "el precio finalizado no cambia");
+        detalle.Totales.PrecioConexos.Should().Be(100_000m, "85.000 / 0,85: el conexo como se cotizó");
+        detalle.Totales.PrecioTransporte.Should().Be(3_000_000m);
+        (detalle.Totales.PrecioTransporte + detalle.Totales.PrecioConexos).Should().Be(detalle.Totales.PrecioFinal);
+    }
+
     /// <summary>Fusión #181: el detalle trae por camión el estado y el motivo pendiente de la línea de Nexo, igual que <c>GET .../costeo</c>.</summary>
     [Fact]
     public async Task ElDetalleTraeElEstadoYElMotivoPendienteDeLaLineaDeNexoComoElCosteo()

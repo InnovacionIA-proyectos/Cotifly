@@ -114,7 +114,8 @@ public static class clsPropuestasAsistente
 
         if (conConexos)
         {
-            resumen += " Los servicios conexos se recalculan con el mismo margen.";
+            // HU-043.2 (#251): el margen es solo del transporte; los conexos van a su precio de venta y no cambian con el ajuste.
+            resumen += " Los servicios conexos no cambian: se cotizan a su precio de venta, sin margen.";
         }
 
         resumen += SufijoPdf(cotizacion);

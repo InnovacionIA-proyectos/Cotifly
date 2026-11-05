@@ -56,8 +56,8 @@ public sealed class clsPdfCosteoMonedaTests
 
         vista.Moneda.Should().Be("USD");
         vista.TrmAplicada.Should().Be(4000m);
-        vista.PrecioFinal.Should().Be(775m, "HU-021: el precio de la ruta incluye el conexo (750,00 del flete + 25,00 del Cargue)");
-        vista.ServiciosConexos.Single().Precio.Should().Be(25m);
+        vista.PrecioFinal.Should().Be(771.25m, "HU-021: el precio de la ruta incluye el conexo (750,00 del flete + 21,25 del Cargue, HU-043.2: sin margen)");
+        vista.ServiciosConexos.Single().Precio.Should().Be(21.25m, "85.000 / 4.000, sin margen");
         clsCosteoCotizacionService.Vista(clsAjusteMargenCosteoServiceTests.Costeada(_ana, "PCN-C"), null).TrmAplicada.Should().Be(0m);
     }
 
@@ -69,10 +69,10 @@ public sealed class clsPdfCosteoMonedaTests
         var resultado = await Servicio().GenerarPdfAsync(_ana, cotizacion.Folio, Version, Ct);
 
         resultado.EsExitoso.Should().BeTrue(resultado.EsFallo ? resultado.Error.Mensaje : string.Empty);
-        _documento!.Secciones[0].Filas[0].Tarifa.Should().Be("US$775,00", "HU-033 (#199): la tarifa es el precio final de la ruta, con el conexo incluido");
+        _documento!.Secciones[0].Filas[0].Tarifa.Should().Be("US$771,25", "HU-033 (#199): la tarifa es el precio final de la ruta, con el conexo incluido");
         _documento.Incluye.Should().Contain(i => i.StartsWith("Cargue", StringComparison.Ordinal) && !i.Contains("US$", StringComparison.Ordinal),
             "el conexo se lista como incluido, sin precio");
-        _documento.TotalGeneral!.Valor.Should().Be("US$775,00 USD");
+        _documento.TotalGeneral!.Valor.Should().Be("US$771,25 USD");
         _documento.NotaMoneda.Should().Be(clsTextosEstandar.NotaTrmMinima(4000m));
         _documento.NotaMoneda.Should().Contain("TRM mínima de $4.000,00");
     }
@@ -82,7 +82,7 @@ public sealed class clsPdfCosteoMonedaTests
     [Fact]
     public void UnPrecioEnDolaresQueNoEsElPrecioFinalDeLaRutaNoSeImprime()
     {
-        // HU-033 (#199): la tarifa impresa es el precio final de la ruta (precioFinalLinea, con el conexo): 750,00 + 25,00 = 775,00.
+        // HU-033 (#199): la tarifa impresa es el precio final de la ruta (precioFinalLinea, con el conexo): 750,00 + 21,25 = 771,25 (HU-043.2: conexo sin margen).
         var cotizacion = EnDolares();
         var ruta = cotizacion.PrimeraRuta!;
         var payload = clsCosteoCotizacionService.Payload(cotizacion, "Importacion", "USD");
@@ -93,8 +93,8 @@ public sealed class clsPdfCosteoMonedaTests
 
         var error = clsGenerarPdfService.ValidarCoherencia(payload, traza, "margen", "USD");
 
-        error!.Codigo.Should().Be(clsCodigosError.PdfPayloadInvalido, "el precio final de la ruta es 775,00, no 760");
-        ruta.PrecioFinalLinea.Should().Be(775m);
+        error!.Codigo.Should().Be(clsCodigosError.PdfPayloadInvalido, "el precio final de la ruta es 771,25, no 760");
+        ruta.PrecioFinalLinea.Should().Be(771.25m);
         clsGenerarPdfService.ValidarCoherencia(clsCosteoCotizacionService.Payload(cotizacion, "Importacion", "USD"), traza, "margen", "USD")
             .Should().BeNull("el payload que arma el servicio imprime el precio final de la ruta");
     }
@@ -164,8 +164,8 @@ public sealed class clsPdfCosteoMonedaTests
     }
 
     /// <summary>
-    /// Costeada en USD con la TRM 4.000 fijada: flete 2.550.000 COP al 15 % (750,00 USD) y el conexo Cargue de 85.000 (25,00 USD) en la
-    /// ruta (HU-021: el precio de la ruta, 775,00 USD, incluye el conexo).
+    /// Costeada en USD con la TRM 4.000 fijada: flete 2.550.000 COP al 15 % (750,00 USD) y el conexo Cargue de 85.000 (21,25 USD, sin margen) en la
+    /// ruta (HU-021: el precio de la ruta, 771,25 USD, incluye el conexo; HU-043.2: a su venta).
     /// </summary>
     private clsCotizacionSolicitud EnDolares()
     {

@@ -273,13 +273,24 @@ public sealed class clsNexoFalso : HttpMessageHandler
     /// <summary>Tamaño en bytes del último archivo recibido por <c>analizar-excel</c> (multipart <c>archivo</c>), o <c>null</c>.</summary>
     public long? UltimoArchivoAnalizado { get; private set; }
 
-    /// <summary>Agrega un servicio conexo a la cotización de Nexo.</summary>
-    public void AgregarConexo(string solicitudId, string nombre, decimal valorAplicado, string categoria = "logistico", decimal cantidad = 1m) =>
+    /// <summary>
+    /// Agrega un servicio conexo a la cotización de Nexo: <paramref name="valorAplicado"/> es su costo y, HU-043.2 (#251),
+    /// <paramref name="valorVenta"/> su venta (<c>valorVenta</c>); sin ella Nexo guarda el costo como venta (contrato §7.1).
+    /// </summary>
+    public void AgregarConexo(
+        string solicitudId, string nombre, decimal valorAplicado, string categoria = "logistico", decimal cantidad = 1m, decimal? valorVenta = null) =>
         Con(solicitudId, s =>
         {
             s.Cotizacion ??= new clsCotizacionFalsa(Guid.NewGuid().ToString());
-            s.Cotizacion.Conexos.Add((Guid.NewGuid().ToString(), nombre, categoria, cantidad, valorAplicado));
+            var venta = valorVenta ?? valorAplicado;
+            s.Cotizacion.Conexos.Add((Guid.NewGuid().ToString(), nombre, categoria, cantidad, valorAplicado, decimal.Round(venta / cantidad, 2), venta));
         });
+
+    /// <summary>
+    /// HU-043.2 (#251): simula un Nexo ANTERIOR a S6-HU-38.2: la cotización no trae <c>precioVentaUnitario</c> ni <c>valorVenta</c> en sus
+    /// conexos (y su <c>total</c> suma el costo) y el catálogo no trae <c>precioVenta</c>.
+    /// </summary>
+    public bool SinPrecioVenta { get; set; }
 
     /// <summary>Si tiene valor, <c>GET /api/servicios-conexos</c> responde este estado (ej. 403: sin rol en Nexo).</summary>
     public HttpStatusCode? CatalogoFalla { get; set; }
@@ -299,12 +310,16 @@ public sealed class clsNexoFalso : HttpMessageHandler
     /// <summary>Servicios que <c>POST .../conexos</c> rechaza con el estado indicado (ej. 400 o 404), además de las reglas del catálogo.</summary>
     public ConcurrentDictionary<string, HttpStatusCode> RechazosConexo { get; } = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Agrega un servicio al catálogo de <c>GET /api/servicios-conexos</c> (<c>clsServicioConexoDto</c>).</summary>
-    public clsNexoFalso ConServicioConexo(string id, string codigo, string nombre, string categoria, string unidad, decimal costoUnitario, bool activo = true)
+    /// <summary>
+    /// Agrega un servicio al catálogo de <c>GET /api/servicios-conexos</c> (<c>clsServicioConexoDto</c>). HU-043.2 (#251):
+    /// <paramref name="precioVenta"/> es su precio de venta (<c>null</c>: sin precio de venta, se cotiza al costo).
+    /// </summary>
+    public clsNexoFalso ConServicioConexo(
+        string id, string codigo, string nombre, string categoria, string unidad, decimal costoUnitario, bool activo = true, decimal? precioVenta = null)
     {
         lock (_candado)
         {
-            _catalogo.Add(new clsServicioCatalogoFalso(id, codigo, nombre, categoria, unidad, costoUnitario, activo));
+            _catalogo.Add(new clsServicioCatalogoFalso(id, codigo, nombre, categoria, unidad, costoUnitario, activo, precioVenta));
         }
 
         return this;
@@ -1071,11 +1086,21 @@ public sealed class clsNexoFalso : HttpMessageHandler
             .Where(x => string.IsNullOrEmpty(q) || x.Nombre.Contains(q, StringComparison.OrdinalIgnoreCase) || x.Codigo.Contains(q, StringComparison.OrdinalIgnoreCase))
             .Where(x => string.IsNullOrEmpty(categoria) || string.Equals(x.Categoria, categoria, StringComparison.OrdinalIgnoreCase))
             .ToList();
-        var items = filtrados.Skip((page - 1) * pageSize).Take(pageSize).Select(x => new
+        var items = filtrados.Skip((page - 1) * pageSize).Take(pageSize).Select(x =>
         {
-            id = x.Id, codigoServicio = x.Codigo, tipoServicio = x.Nombre, origen = (string?)null, destino = (string?)null, puerto = (string?)null,
-            ruta = (string?)null, tipoMaquina = (string?)null, costoUnitario = x.Costo, unidad = x.Unidad, vigencia = "2026-12-31", categoria = x.Categoria,
-            activo = x.Activo,
+            var item = new JsonObject
+            {
+                ["id"] = x.Id, ["codigoServicio"] = x.Codigo, ["tipoServicio"] = x.Nombre, ["origen"] = null, ["destino"] = null, ["puerto"] = null,
+                ["ruta"] = null, ["tipoMaquina"] = null, ["costoUnitario"] = x.Costo, ["unidad"] = x.Unidad, ["vigencia"] = "2026-12-31",
+                ["categoria"] = x.Categoria, ["activo"] = x.Activo,
+            };
+            if (!SinPrecioVenta)
+            {
+                // HU-043.2 (#251, S6-HU-38.2): precioVenta puede ser null (sin precio de venta: se cotiza al costo).
+                item["precioVenta"] = x.PrecioVenta;
+            }
+
+            return item;
         }).ToList();
         return Json(HttpStatusCode.OK, new { items, total = filtrados.Count });
     }
@@ -1116,7 +1141,7 @@ public sealed class clsNexoFalso : HttpMessageHandler
             return Error(HttpStatusCode.BadRequest, "VALIDATION_ERROR", "Items es obligatorio.");
         }
 
-        var nuevos = new List<(string Id, string Nombre, string Categoria, decimal Cantidad, decimal Valor, string? ServicioId, string? LineaId)>();
+        var nuevos = new List<(string Id, string Nombre, string Categoria, decimal Cantidad, decimal Valor, decimal VentaUnitaria, string? ServicioId, string? LineaId)>();
         foreach (var item in items)
         {
             var lineaId = item?["lineaId"]?.GetValue<string>();
@@ -1144,12 +1169,14 @@ public sealed class clsNexoFalso : HttpMessageHandler
             }
 
             var valor = item?["valorAplicado"]?.GetValue<decimal>() ?? servicio.Costo * cantidad;
-            nuevos.Add((Guid.NewGuid().ToString(), servicio.Nombre, servicio.Categoria, cantidad, valor, servicio.Id, lineaId));
+            // HU-043.2 (#251, S6-HU-38.2): la venta unitaria se fija al agregar: la de la biblioteca o, sin ella, el costo.
+            nuevos.Add((Guid.NewGuid().ToString(), servicio.Nombre, servicio.Categoria, cantidad, valor, servicio.PrecioVenta ?? servicio.Costo, servicio.Id, lineaId));
         }
 
         foreach (var nuevo in nuevos)
         {
-            c.Conexos.Add((nuevo.Id, nuevo.Nombre, nuevo.Categoria, nuevo.Cantidad, nuevo.Valor));
+            c.Conexos.Add((nuevo.Id, nuevo.Nombre, nuevo.Categoria, nuevo.Cantidad, nuevo.Valor, nuevo.VentaUnitaria,
+                decimal.Round(nuevo.VentaUnitaria * nuevo.Cantidad, 2)));
             c.ServicioYLinea[nuevo.Id] = (nuevo.ServicioId, nuevo.LineaId);
         }
 
@@ -1164,7 +1191,7 @@ public sealed class clsNexoFalso : HttpMessageHandler
         return FallarRelecturaTrasConexos ? new HttpResponseMessage(HttpStatusCode.NoContent) : Json(HttpStatusCode.OK, Cotizacion(s));
     }
 
-    private static object Cotizacion(clsSolicitudFalsa s)
+    private object Cotizacion(clsSolicitudFalsa s)
     {
         var c = s.Cotizacion!;
         var lineas = c.Fletes.OrderByDescending(f => f.Key).Where(f => f.Key < s.LineaIds.Count).Select(f => new
@@ -1172,15 +1199,26 @@ public sealed class clsNexoFalso : HttpMessageHandler
             id = c.LineaId(f.Key), lineaSolicitudId = (string?)s.LineaIds[f.Key], valorFlete = f.Value.Flete, fuente = "Sicetac",
             valorAprovisionamiento = f.Value.Aprovisionamiento, valorRetornoContenedor = f.Value.Retorno,
         }).ToArray();
-        var conexos = c.Conexos.Select(x => new
+        var conexos = c.Conexos.Select(x =>
         {
-            id = x.Id,
-            cotizacionLineaId = c.ServicioYLinea.TryGetValue(x.Id, out var sl) ? sl.LineaId : null,
-            servicioConexoId = c.ServicioYLinea.TryGetValue(x.Id, out var sl2) ? sl2.ServicioId : null,
-            nombre = x.Nombre,
-            categoria = x.Categoria,
-            cantidad = x.Cantidad,
-            valorAplicado = x.Valor,
+            var conexo = new JsonObject
+            {
+                ["id"] = x.Id,
+                ["cotizacionLineaId"] = c.ServicioYLinea.TryGetValue(x.Id, out var sl) ? sl.LineaId : null,
+                ["servicioConexoId"] = c.ServicioYLinea.TryGetValue(x.Id, out var sl2) ? sl2.ServicioId : null,
+                ["nombre"] = x.Nombre,
+                ["categoria"] = x.Categoria,
+                ["cantidad"] = x.Cantidad,
+                ["valorAplicado"] = x.Valor,
+            };
+            if (!SinPrecioVenta)
+            {
+                // HU-043.2 (#251, contrato §7.1): la venta viaja aparte del costo y nunca es null.
+                conexo["precioVentaUnitario"] = x.VentaUnitaria;
+                conexo["valorVenta"] = x.Venta;
+            }
+
+            return conexo;
         }).ToList();
         return new
         {
@@ -1188,7 +1226,9 @@ public sealed class clsNexoFalso : HttpMessageHandler
             solicitudId = s.Id,
             estado = c.Estado,
             resultado = c.Resultado,
-            total = lineas.Sum(l => l.valorFlete + (l.valorAprovisionamiento ?? 0m) + (l.valorRetornoContenedor ?? 0m)) + conexos.Sum(x => x.valorAplicado),
+            // HU-043.2 (#251): el total de Nexo suma la VENTA de los conexos (antes de S6-HU-38.2, el costo).
+            total = lineas.Sum(l => l.valorFlete + (l.valorAprovisionamiento ?? 0m) + (l.valorRetornoContenedor ?? 0m))
+                    + c.Conexos.Sum(x => SinPrecioVenta ? x.Valor : x.Venta),
             entregadaAt = c.Estado == "Entregada" ? DateTimeOffset.UtcNow : (DateTimeOffset?)null,
             lineas,
             conexos,
@@ -1260,7 +1300,8 @@ public sealed class clsNexoFalso : HttpMessageHandler
         public string? Comentario { get; set; }
         /// <summary>Fletes por índice de línea de la solicitud (base 0).</summary>
         public Dictionary<int, (decimal Flete, decimal? Aprovisionamiento, decimal? Retorno)> Fletes { get; } = [];
-        public List<(string Id, string Nombre, string Categoria, decimal Cantidad, decimal Valor)> Conexos { get; } = [];
+        /// <summary>Conexos: costo (<c>valorAplicado</c>) y, HU-043.2 (#251), venta unitaria y venta (<c>valorVenta</c>).</summary>
+        public List<(string Id, string Nombre, string Categoria, decimal Cantidad, decimal Valor, decimal VentaUnitaria, decimal Venta)> Conexos { get; } = [];
 
         /// <summary>Servicio del catálogo y línea de la cotización de cada conexo agregado por <c>POST .../conexos</c>.</summary>
         public Dictionary<string, (string? ServicioId, string? LineaId)> ServicioYLinea { get; } = [];
@@ -1283,5 +1324,6 @@ public sealed class clsNexoFalso : HttpMessageHandler
         }
     }
 
-    private sealed record clsServicioCatalogoFalso(string Id, string Codigo, string Nombre, string Categoria, string Unidad, decimal Costo, bool Activo);
+    private sealed record clsServicioCatalogoFalso(
+        string Id, string Codigo, string Nombre, string Categoria, string Unidad, decimal Costo, bool Activo, decimal? PrecioVenta = null);
 }

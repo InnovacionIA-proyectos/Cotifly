@@ -95,9 +95,10 @@ public sealed class clsPrecioCosteoLineasTests
         cotizacion.PrecioFinal.Should().Be(359.39m + 718.79m + 305.48m, "el total es la suma de las rutas en USD");
         cotizacion.CostoFinal.Should().Be(3_850_000m, "el costo de Nexo se guarda en pesos");
 
-        // HU-021: el conexo es de la ruta (la lectura del costeo no lo importa): su precio sale con el margen de la ruta en USD.
+        // HU-021: el conexo es de la ruta (la lectura del costeo no lo importa). HU-043.2 (#251): su precio es su venta (aquí el costo)
+        // sin margen, convertida a USD con la trmAplicada: 170.000 / 3.273,49 = 51,93.
         clsCotizacionMuestra.ConConexo(cotizacion, "CX", "Cargue", 170_000m);
-        clsCosteoCotizacionService.ConexosConPrecio(cotizacion, cotizacion.PrimeraRuta!).Should().ContainSingle().Which.Precio.Should().Be(61.10m);
+        clsCosteoCotizacionService.ConexosConPrecio(cotizacion, cotizacion.PrimeraRuta!).Should().ContainSingle().Which.Precio.Should().Be(51.93m);
         clsCosteoCotizacionService.ValidarTotal(cotizacion, "USD").Should().BeNull("el pliego en USD ya no se rechaza");
         clsCosteoCotizacionService.ValidarTotal(cotizacion, " ")!.Codigo.Should().Be(Cotifly.Dominio.Comun.clsCodigosError.PdfPayloadInvalido,
             "sin moneda es un error de dominio, no una excepción");

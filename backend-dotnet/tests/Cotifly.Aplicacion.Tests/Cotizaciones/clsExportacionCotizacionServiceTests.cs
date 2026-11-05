@@ -212,6 +212,33 @@ public sealed class clsExportacionCotizacionServiceTests
         datos.Rutas[0].Camiones[0].PrecioTransporte.Should().Be(precio);
     }
 
+    /// <summary>
+    /// HU-043.2 (#251): el Excel de la cotización y el de la licitación muestran el conexo a su VENTA, sin margen, y cuadran con el precio
+    /// de la ruta; los costos internos (del dueño) siguen con el costo del conexo.
+    /// </summary>
+    [Fact]
+    public void Hu0432_LosExcelMuestranElConexoASuVentaYCuadranConElTotal()
+    {
+        var cotizacion = clsCotizacionMuestra.LicitacionCosteada([1_000_000m, 2_000_000m], folio: "PCN-AP-27102026-009", usuarioId: _ana.Id);
+        clsCotizacionMuestra.ConConexo(cotizacion, "CX-1", "Cargue", 100_000m, 2m, orden: 1, ventaUnitaria: 150_000m);
+
+        var datos = clsExportacionCotizacionService.Datos(cotizacion, null, _reloj.AhoraUtc);
+
+        var ruta1 = datos.Rutas[0];
+        ruta1.PrecioTransporte.Should().Be(1_176_471m, "1.000.000 / (1 − 0,15)");
+        ruta1.PrecioConexos.Should().Be(300_000m, "150.000 × 2, sin margen");
+        ruta1.PrecioRuta.Should().Be(1_476_471m).And.Be(ruta1.PrecioTransporte + ruta1.PrecioConexos);
+        ruta1.Conexos.Should().ContainSingle().Which.Should().Match<clsExcelConexo>(c => c.Precio == 300_000m && c.Interno!.Costo == 200_000m);
+        ruta1.Interno!.CostoConexos.Should().Be(200_000m, "el costo interno sigue siendo el costo");
+        ruta1.Interno.CostoBruto.Should().Be(1_200_000m);
+        (datos.Totales.PrecioTransporte + datos.Totales.PrecioConexos).Should().Be(datos.Totales.PrecioFinal);
+
+        var licitacion = Cotifly.Aplicacion.Licitaciones.Services.clsLicitacionService.DatosExportacion(cotizacion, null, _reloj.AhoraUtc);
+        licitacion.ServiciosConexos.Should().ContainSingle().Which.Precio.Should().Be(300_000m);
+        (licitacion.PrecioTotal + licitacion.ServiciosConexos.Sum(c => c.Precio)).Should().Be(cotizacion.PrecioFinal,
+            "las tarifas del transporte (el total del Excel) más los conexos dan el precio de la cotización");
+    }
+
     [Fact]
     public void EnDolaresLosPreciosVanEnDolaresYLosCostosSiempreEnPesos()
     {

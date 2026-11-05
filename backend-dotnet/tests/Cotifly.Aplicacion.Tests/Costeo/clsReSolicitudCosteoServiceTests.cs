@@ -137,7 +137,7 @@ public sealed class clsReSolicitudCosteoServiceTests
         // HU-021: la instantánea es por ruta y camión; el costo y el precio de la ruta incluyen el conexo Cargue (85.000).
         instantanea.OutputResumen.Should().Contain("\"costo\":2635000").And.Contain("sol-vieja").And.Contain("linea-vieja")
             .And.Contain("\"costo_flete\":2550000").And.Contain("\"margen_aplicado\":0.15").And.Contain("\"margen_politica_sugerido\":0.15")
-            .And.Contain("Cargue").And.Contain("\"precio_final\":3100000").And.Contain("PCN-1.pdf");
+            .And.Contain("Cargue").And.Contain("\"precio_final\":3085000").And.Contain("PCN-1.pdf");
         await _auditoria.Received(1).RegistrarAsync(clsReSolicitudCosteoService.HerramientaAuditoria,
             Arg.Any<object?>(), Arg.Is<object?>(s => Json(s).Contains("sol-nueva")), true, Arg.Any<int>(), null);
     }

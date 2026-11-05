@@ -526,9 +526,25 @@ public sealed record clsLineaCosteoNexo(
     public decimal Costo => ValorFlete + (ValorAprovisionamiento ?? 0m) + (ValorRetornoContenedor ?? 0m);
 }
 
-/// <summary>Servicio conexo de la cotización de Nexo (<c>CotizacionConexoDto</c>): <paramref name="ValorAplicado"/> es un costo.</summary>
+/// <summary>
+/// Servicio conexo de la cotización de Nexo (<c>CotizacionConexoDto</c>): <paramref name="ValorAplicado"/> es un costo (costo unitario ×
+/// cantidad, interno). HU-043.2 (#251, Nexo S6-HU-38.2, contrato §7.1): la venta viaja aparte en <see cref="PrecioVentaUnitario"/> y
+/// <see cref="ValorVenta"/>.
+/// </summary>
 public sealed record clsConexoNexo(string Id, string? Nombre, string Categoria, decimal Cantidad, decimal ValorAplicado)
 {
+    /// <summary>
+    /// HU-043.2 (#251): <c>precioVentaUnitario</c>, el precio de venta de UNA unidad que Nexo fija al agregar el conexo (el de su biblioteca
+    /// o, si no tenía, el costo). <c>null</c> si Nexo no lo trae (versión anterior a S6-HU-38.2).
+    /// </summary>
+    public decimal? PrecioVentaUnitario { get; init; }
+
+    /// <summary>
+    /// HU-043.2 (#251): <c>valorVenta</c> = <c>precioVentaUnitario × cantidad</c>: lo que se cotiza al cliente, sin margen. Nexo lo manda
+    /// siempre; <c>null</c> solo si Nexo no lo trae (versión anterior a S6-HU-38.2): el conexo se cotiza entonces al costo, no desaparece.
+    /// </summary>
+    public decimal? ValorVenta { get; init; }
+
     /// <summary>
     /// Línea de la COTIZACIÓN de Nexo a la que está pegado (<c>cotizacionLineaId</c>): Cotifly lo pega a la línea del primer camión de su
     /// ruta (decisión 3), así que esta línea dice de qué ruta es. <c>null</c> si Nexo no lo trae.

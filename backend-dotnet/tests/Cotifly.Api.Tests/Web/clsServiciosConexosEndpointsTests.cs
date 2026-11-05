@@ -23,7 +23,7 @@ public sealed class clsServiciosConexosEndpointsTests : IDisposable
     private static readonly HttpMethod _post = HttpMethod.Post;
     private readonly clsNexoFalso _nexo = new clsNexoFalso()
         .ConCliente(clsCosteoEndpointsTests.Nit, "LONGYIN S.A.S.")
-        .ConServicioConexo(Almacenamiento, "ALM-01", "Almacenamiento", "logistico", "Día", 120_000m)
+        .ConServicioConexo(Almacenamiento, "ALM-01", "Almacenamiento", "logistico", "Día", 120_000m, precioVenta: 150_000m)
         .ConServicioConexo(Precinto, "PRE-01", "Precinto", "adicional", "Unidad", 35_000m)
         .ConServicioConexo(Escolta, "ESC-01", "Escolta", "logistico", "Viaje", 900_000m, activo: false);
     private readonly clsApiWebPruebas _api;
@@ -81,7 +81,7 @@ public sealed class clsServiciosConexosEndpointsTests : IDisposable
         var json = await VerificarContratoAsync(respuesta, RutaContrato, _post, HttpStatusCode.OK);
         var conexo = json.GetProperty("servicios_conexos").EnumerateArray().Single();
         conexo.GetProperty("nombre").GetString().Should().Be("Almacenamiento");
-        conexo.GetProperty("precio").GetDecimal().Should().Be(282_353m, "240.000 / (1 - 0,15)");
+        conexo.GetProperty("precio").GetDecimal().Should().Be(300_000m, "HU-043.2 (#251): la venta de Nexo (150.000 × 2), sin margen");
         conexo.GetProperty("incluido").GetBoolean().Should().BeTrue();
         json.GetRawText().Should().NotContain("240000", "el costo de Nexo no se expone");
         respuesta.Headers.ETag!.Tag.Should().NotBe(etag).And.Be("\"" + json.GetProperty("row_version").GetString() + "\"");
@@ -95,6 +95,27 @@ public sealed class clsServiciosConexosEndpointsTests : IDisposable
         // El polling ve los mismos conexos: no cambia nada ni sube la versión.
         await _api.ProcesarPollingAsync(folio);
         (await EtagAsync(sesion, folio)).Should().Be(respuesta.Headers.ETag.Tag);
+    }
+
+    /// <summary>
+    /// HU-043.2 (#251), orden de despliegue: con un Nexo anterior a S6-HU-38.2 (sin <c>valorVenta</c> en la cotización) el conexo
+    /// agregado no desaparece: se cotiza al costo, sin margen, y el precio de la ruta lo incluye.
+    /// </summary>
+    [Fact]
+    public async Task Hu0432_SinValorVentaEnNexoElConexoAgregadoSeCotizaAlCostoSinMargen()
+    {
+        _nexo.SinPrecioVenta = true;
+        var (sesion, folio, _) = await CosteadaAsync();
+        var etag = await EtagAsync(sesion, folio);
+        using var costeo = await _api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", sesion.Access);
+        var antes = (await VerificarContratoAsync(costeo, "/web/cotizaciones/{folio}/costeo", _get, HttpStatusCode.OK)).GetProperty("precio_final").GetDecimal();
+
+        using var respuesta = await AgregarAsync(sesion, folio, Cuerpo(1, Precinto, 2), etag);
+
+        var json = await VerificarContratoAsync(respuesta, RutaContrato, _post, HttpStatusCode.OK);
+        json.GetProperty("servicios_conexos").EnumerateArray().Should().ContainSingle()
+            .Which.GetProperty("precio").GetDecimal().Should().Be(70_000m, "35.000 × 2: sin venta, al costo y sin margen");
+        json.GetProperty("precio_final").GetDecimal().Should().Be(antes + 70_000m);
     }
 
     [Fact]

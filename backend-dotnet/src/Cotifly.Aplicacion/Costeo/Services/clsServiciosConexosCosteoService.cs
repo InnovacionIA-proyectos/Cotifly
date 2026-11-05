@@ -478,7 +478,8 @@ public sealed class clsServiciosConexosCosteoService(
 
     /// <summary>
     /// Guarda <paramref name="conexos"/> de Nexo como filas de la ruta (HU-021): costo unitario = <c>valorAplicado ÷ cantidad</c> (el mismo
-    /// criterio del 0009), la cantidad y el nombre. Un conexo que ya estaba se actualiza. La raíz recalcula siempre los totales y el precio
+    /// criterio del 0009, columna <c>precio</c>), la cantidad y el nombre. HU-043.2 (#251): la venta unitaria (columna <c>precioVenta</c>) es
+    /// <see cref="VentaUnitaria"/>. Un conexo que ya estaba se actualiza. La raíz recalcula siempre los totales y el precio
     /// (<see cref="clsCotizacionSolicitud.CambiarConexos"/>). Devuelve cuántos agregó o cambió, o el error del módulo de precio.
     /// </summary>
     public static clsResultado<int> ImportarConexos(
@@ -492,9 +493,30 @@ public sealed class clsServiciosConexosCosteoService(
             var cantidad = conexo.Cantidad > 0m ? decimal.Round(conexo.Cantidad, 2) : 1m;
             var precio = decimal.Round(conexo.ValorAplicado / cantidad, 2, MidpointRounding.ToEven);
             // HU-014 (#188): con el id del catálogo (servicioConexoId, script 03) y la categoría que informó Nexo (script 05).
-            return new clsCambioConexo(conexo.Id, conexo.Nombre ?? conexo.Categoria, precio, cantidad, conexo.ServicioConexoId, conexo.CategoriaInformada);
+            return new clsCambioConexo(
+                conexo.Id, conexo.Nombre ?? conexo.Categoria, precio, cantidad, conexo.ServicioConexoId, conexo.CategoriaInformada,
+                VentaUnitaria(conexo, cantidad));
         }).ToList();
         return cotizacion.CambiarConexos(ruta.Orden, cambios, ahora);
+    }
+
+    /// <summary>
+    /// HU-043.2 (#251, contrato de Nexo §7.1): venta unitaria de un conexo de Nexo: <c>precioVentaUnitario</c> (la que Nexo fijó al agregarlo)
+    /// o, si no viene, <c>valorVenta ÷ cantidad</c> (2 decimales, half-to-even, como el costo). Sin ninguno de los dos (Nexo anterior a
+    /// S6-HU-38.2) o con un valor negativo, <c>null</c>: el conexo se guarda y se cotiza al costo (<c>valorAplicado</c>), la misma regla de
+    /// Nexo para un servicio sin precio de venta. Nunca hace desaparecer el conexo.
+    /// </summary>
+    public static decimal? VentaUnitaria(clsConexoNexo conexo, decimal cantidad)
+    {
+        ArgumentNullException.ThrowIfNull(conexo);
+        if (conexo.PrecioVentaUnitario is >= 0m and var unitaria)
+        {
+            return unitaria;
+        }
+
+        return conexo.ValorVenta is >= 0m and var venta && cantidad > 0m
+            ? decimal.Round(venta / cantidad, 2, MidpointRounding.ToEven)
+            : null;
     }
 
     /// <summary>

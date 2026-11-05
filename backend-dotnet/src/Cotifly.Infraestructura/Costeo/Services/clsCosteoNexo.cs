@@ -531,7 +531,11 @@ public sealed class clsCosteoNexo(
         return codigo.Length == 0 || codigo.Contains(' ', StringComparison.Ordinal) ? null : codigo;
     }
 
-    /// <summary><c>CotizacionDto</c> de Nexo, o <c>null</c> si no trae <c>id</c>. Líneas sin <c>valorFlete</c> se descartan.</summary>
+    /// <summary>
+    /// <c>CotizacionDto</c> de Nexo, o <c>null</c> si no trae <c>id</c>. Líneas sin <c>valorFlete</c> se descartan. HU-043.2 (#251): de cada
+    /// conexo se leen también <c>precioVentaUnitario</c> y <c>valorVenta</c> (contrato §7.1); si Nexo no los trae (versión anterior a
+    /// S6-HU-38.2) quedan en <c>null</c> y el conexo se lee igual, con su costo (<c>valorAplicado</c>).
+    /// </summary>
     internal static clsCotizacionNexo? LeerCotizacion(JsonElement raiz)
     {
         if (Texto(raiz, "id") is not { } id)
@@ -565,6 +569,8 @@ public sealed class clsCosteoNexo(
                         CotizacionLineaId = Texto(conexo, "cotizacionLineaId"),
                         ServicioConexoId = Texto(conexo, "servicioConexoId"),
                         CategoriaInformada = Texto(conexo, "categoria"),
+                        PrecioVentaUnitario = Decimal(conexo, "precioVentaUnitario"),
+                        ValorVenta = Decimal(conexo, "valorVenta"),
                     });
                 }
             }

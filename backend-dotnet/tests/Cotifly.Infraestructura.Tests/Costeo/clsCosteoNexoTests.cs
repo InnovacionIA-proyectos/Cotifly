@@ -665,6 +665,33 @@ public sealed class clsCosteoNexoTests : IDisposable
         clsCosteoNexo.LeerCotizacion(documento.RootElement)!.Conexos.Should().ContainSingle().Which.CotizacionLineaId.Should().Be("LC-7");
     }
 
+    [Fact]
+    public void Hu0432_ElConexoDeLaCotizacionTraeSuCostoYSuVentaPorSeparado()
+    {
+        // Contrato de Nexo §7.1 (S6-HU-38.2): valorAplicado es el costo; precioVentaUnitario y valorVenta, la venta (nunca null).
+        using var documento = JsonDocument.Parse(
+            """{"id":"COT","lineas":[],"conexos":[{"id":"CX-1","nombre":"Escolta","categoria":"logistico","cantidad":2,"valorAplicado":100000,"precioVentaUnitario":70000,"valorVenta":140000}]}""");
+
+        var conexo = clsCosteoNexo.LeerCotizacion(documento.RootElement)!.Conexos.Should().ContainSingle().Subject;
+
+        conexo.ValorAplicado.Should().Be(100_000m, "el costo sigue en valorAplicado");
+        conexo.PrecioVentaUnitario.Should().Be(70_000m);
+        conexo.ValorVenta.Should().Be(140_000m);
+    }
+
+    [Fact]
+    public void Hu0432_SinVentaEnLaRespuestaDeNexoElConexoSeLeeIgualConSuCosto()
+    {
+        // Orden de despliegue: un Nexo anterior a S6-HU-38.2 no manda la venta; el conexo no desaparece (se cotizará al costo).
+        using var documento = JsonDocument.Parse(
+            """{"id":"COT","lineas":[],"conexos":[{"id":"CX-1","nombre":"Escolta","cantidad":1,"valorAplicado":50000},{"id":"CX-2","cantidad":1,"valorAplicado":10000,"valorVenta":null}]}""");
+
+        var conexos = clsCosteoNexo.LeerCotizacion(documento.RootElement)!.Conexos;
+
+        conexos.Select(c => (c.Id, c.ValorAplicado, c.PrecioVentaUnitario, c.ValorVenta))
+            .Should().Equal(("CX-1", 50_000m, (decimal?)null, (decimal?)null), ("CX-2", 10_000m, (decimal?)null, (decimal?)null));
+    }
+
     // --- HU-028 (#186): rechazar la solicitud anterior al editarla ---
 
     [Fact]
