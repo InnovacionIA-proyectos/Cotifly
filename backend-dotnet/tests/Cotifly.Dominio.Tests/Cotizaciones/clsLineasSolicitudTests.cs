@@ -104,7 +104,7 @@ public sealed class clsLineasSolicitudTests
     public void ElEncabezadoValidaLasHoras()
     {
         // Decisión 1 de HU-021: referencia y valor estimado se eliminan del encabezado.
-        var encabezado = new clsEncabezadoSolicitudCosteo { Tipo = TipoSolicitud.Licitacion, HorasCargue = 241m };
+        var encabezado = new clsEncabezadoSolicitudCosteo { Tipo = TipoSolicitud.Licitacion, HorasCargue = 241m, HorasDescargue = 4m };
 
         encabezado.Errores().Select(e => e.Campo).Should().BeEquivalentTo(["horas_cargue"]);
     }

@@ -65,7 +65,7 @@ public sealed class clsSolicitudCosteoTests
     [Fact]
     public void SinPesoNiPosicionesConPesoEsPesoRequeridoComoEnNexo()
     {
-        var error = (Valida() with { PesoKg = null, Posiciones = [new clsPosicionCarga(null, 1, 10m, 10m, 10m, null)] }).Validar()!;
+        var error = (Valida() with { PesoKg = null, Posiciones = [new clsPosicionCarga("Bultos", 1, 0m, 0m, 0m, null)] }).Validar()!;
 
         error.Codigo.Should().Be(clsSolicitudCosteo.CodigoError);
         error.Detalle.Should().Be(clsSolicitudCosteo.PesoRequerido);
@@ -111,7 +111,7 @@ public sealed class clsSolicitudCosteoTests
     [Fact]
     public void CadaPosicionSeValidaConSuNumero()
     {
-        var solicitud = Valida() with { Posiciones = [new clsPosicionCarga(null, 1, 10m, 10m, 10m, null), new clsPosicionCarga(null, 0, 10m, 10m, 10m, null)] };
+        var solicitud = Valida() with { Posiciones = [new clsPosicionCarga(null, 1, 10m, 10m, 10m, 1m), new clsPosicionCarga(null, 0, 10m, 10m, 10m, 1m)] };
         solicitud.Validar()!.Mensaje.Should().StartWith("Mercancía 2: la cantidad", "D6: la mercancía en base 1, sin índices");
 
         (Valida() with { Posiciones = [new clsPosicionCarga(null, 1, 0.05m, 10m, 10m, null)] }).Validar()!.Mensaje.Should().Contain("largo_cm");
@@ -162,7 +162,8 @@ public sealed class clsSolicitudCosteoTests
         TipoVehiculo = "2S3",
         Carroceria = "FURGON",
         HorasCargue = 4m,
+        HorasDescargue = 4m,
         PesoKg = 12_000m,
-        Posiciones = [new clsPosicionCarga("Caja", 3, 50m, 40m, 30m, 4_000m), new clsPosicionCarga(null, 1, 100m, 100m, 100m, null)],
+        Posiciones = [new clsPosicionCarga("Caja", 3, 50m, 40m, 30m, 4_000m), new clsPosicionCarga(null, 1, 100m, 100m, 100m, 0.01m)],
     };
 }

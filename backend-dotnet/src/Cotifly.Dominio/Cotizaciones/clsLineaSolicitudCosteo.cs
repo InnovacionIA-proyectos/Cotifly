@@ -66,6 +66,12 @@ public static class clsCodigosLineaSolicitud
     /// <c>tipo_vehiculo</c>. Salvo en Contenedor (Nexo deduce el vehículo), el vehículo elegido es obligatorio.
     /// </summary>
     public const string VehiculoRequerido = "VEHICULO_REQUERIDO";
+
+    /// <summary>
+    /// #278 (DU §8): las mercancías con medidas de la ruta (las que viajan a NEXO como <c>posiciones[]</c> y al cubicador) suman más de
+    /// <see cref="clsSolicitudCosteo.MaximoUnidades"/> unidades. Mismo código que NEXO y el cubicador.
+    /// </summary>
+    public const string CubicacionDemasiadoGrande = clsCodigosError.CubicacionDemasiadoGrande;
 }
 
 /// <summary>Un error de un campo de la licitación: el campo (snake_case del contrato), su código y un mensaje legible.</summary>
@@ -92,6 +98,7 @@ public sealed record clsEncabezadoSolicitudCosteo
         clsLineaSolicitudCosteo.Largo(errores, "notas", Notas, clsSolicitudCosteo.LargoNotas);
         clsLineaSolicitudCosteo.Rango(errores, "horas_cargue", HorasCargue, 0m, clsSolicitudCosteo.MaximoHoras);
         clsLineaSolicitudCosteo.Rango(errores, "horas_descargue", HorasDescargue, 0m, clsSolicitudCosteo.MaximoHoras);
+        clsLineaSolicitudCosteo.HorasEnPareja(errores, HorasCargue, HorasDescargue);
         return errores;
     }
 }
@@ -284,12 +291,18 @@ public sealed record clsLineaSolicitudCosteo
         Rango(errores, clsSolicitudCosteo.CampoPesoConTara, PesoConTaraKg, 0m, clsSolicitudCosteo.MaximoPeso);
         Rango(errores, "horas_cargue", HorasCargue, 0m, clsSolicitudCosteo.MaximoHoras);
         Rango(errores, "horas_descargue", HorasDescargue, 0m, clsSolicitudCosteo.MaximoHoras);
+        HorasEnPareja(errores, HorasCargue, HorasDescargue);
         errores.AddRange(ErroresCondicionales());
 
         if (Posiciones.Count > clsSolicitudCosteo.MaximoPosiciones)
         {
             errores.Add(new clsErrorCampo(CampoMercancias, clsCodigosLineaSolicitud.DemasiadasPosiciones,
                 $"Una ruta admite máximo {clsSolicitudCosteo.MaximoPosiciones} mercancías."));
+        }
+
+        if (clsSolicitudCosteo.ExcedeUnidades(Posiciones))
+        {
+            errores.Add(new clsErrorCampo(CampoMercancias, clsCodigosLineaSolicitud.CubicacionDemasiadoGrande, clsSolicitudCosteo.MensajeDemasiadasUnidades));
         }
 
         for (var i = 0; i < Posiciones.Count; i++)
@@ -467,6 +480,18 @@ public sealed record clsLineaSolicitudCosteo
         if (clsSolicitudCosteo.IdMunicipio(campo, valor) is { } error)
         {
             errores.Add(new clsErrorCampo(campo, clsCodigosLineaSolicitud.ValorFueraDeRango, error.Mensaje));
+        }
+    }
+
+    /// <summary>
+    /// #278 (DU §5): NEXO recibe <c>horasCargue</c> y <c>horasDescargue</c> las dos o ninguna (sin ellas aplica su valor por defecto, 4 + 4).
+    /// Si solo viene una, <see cref="clsCodigosLineaSolicitud.CampoRequerido"/> en la que falta.
+    /// </summary>
+    internal static void HorasEnPareja(List<clsErrorCampo> errores, decimal? cargue, decimal? descargue)
+    {
+        if (clsSolicitudCosteo.HoraFaltante(cargue, descargue) is { } falta)
+        {
+            errores.Add(new clsErrorCampo(falta, clsCodigosLineaSolicitud.CampoRequerido, clsSolicitudCosteo.MensajeHorasEnPareja(falta)));
         }
     }
 

@@ -24,14 +24,21 @@ public sealed class clsMargenPolitica
     public bool Activa { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
 
-    /// <summary>Crea una línea con margen ≥ 0 (y &lt; 1 si el método es <c>margen</c>, ver <see cref="clsReglaMargen"/>).</summary>
+    /// <summary>
+    /// Crea una línea con margen ≥ 0 (y &lt; 1 si el método es <c>margen</c>, ver <see cref="clsReglaMargen"/>). #278 (DU §8): el
+    /// <paramref name="mapeoLineasNexo"/>, si viene, debe ser una de las seis líneas de NEXO (<see cref="Cotizaciones.clsLineasNegocioNexo"/>).
+    /// </summary>
     public static clsResultado<clsMargenPolitica> Crear(
         string lineaNegocio, decimal margen, string metodoCalculo = MetodoMargen, string? mapeoLineasNexo = null)
     {
         var error = clsValidacion.Primero(
             clsValidacion.Requerido(CodigoError, "lineaNegocio", lineaNegocio, LargoMaximoLinea),
             clsValidacion.Requerido(CodigoError, "metodoCalculo", metodoCalculo),
-            clsReglaMargen.Validar(CodigoError, "margen", margen, metodoCalculo));
+            clsReglaMargen.Validar(CodigoError, "margen", margen, metodoCalculo),
+            Cotizaciones.clsLineasNegocioNexo.EsValida(mapeoLineasNexo)
+                ? null
+                : new clsErrorDominio(CodigoError,
+                    $"El campo 'mapeoLineasNexo' ('{mapeoLineasNexo!.Trim()}') debe ser una de las líneas de negocio de Nexo: {Cotizaciones.clsLineasNegocioNexo.Lista}."));
 
         if (error is not null)
         {
