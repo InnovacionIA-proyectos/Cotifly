@@ -7890,8 +7890,10 @@ components:
       description: |
         Posición de cubicaje (`clsCapturaPosicionRequest` de Nexo: `descripcion`, `cantidad`, `largoCm`, `anchoCm`,
         `altoCm`, `pesoKg`), en centímetros y kilogramos. `largo_cm`, `ancho_cm` y `alto_cm` son opcionales: ausentes, `null` o `0`
-        es "sin medida"; con valor van de 0,1 a 999.999 y vienen las tres juntas. `peso_kg` es opcional y **por unidad**: el peso de la
-        posición es `cantidad × peso_kg`.
+        es "sin medida"; con valor van de 0,1 a 999.999 y vienen las tres juntas. `peso_kg` es **por unidad**: el peso de la
+        posición es `cantidad × peso_kg`. #278 (contrato único de Nexo): es **obligatorio y mayor que 0 en una mercancía con medidas**
+        (viaja a Nexo como posición y Nexo lo exige; si no, `POSICION_INVALIDA` en `mercancias[i].peso_kg`); sin medidas es opcional. Las
+        mercancías con medidas de una ruta suman como máximo 10.000 unidades (`CUBICACION_DEMASIADO_GRANDE` en `mercancias`).
 
         **HU-032 (#197): las medidas son opcionales.** Una mercancía **sin ninguna medida y sin código** (solo `nombre_mercancia`,
         `cantidad` o `peso_kg`) es "no cubicable": se acepta y se guarda, **no viaja a Nexo como posición** (si una mercancía de la
@@ -8071,7 +8073,7 @@ components:
           nullable: true
           minimum: 0
           maximum: 240
-          description: Horas de cargue de la ruta; sin valor, las de la solicitud.
+          description: Horas de cargue de la ruta; sin valor, las de la solicitud. (#278) `horas_cargue` y `horas_descargue` van las dos o ninguna (Nexo no acepta una sola); si viene una, `CAMPO_REQUERIDO` en la que falta.
         horas_descargue:
           type: number
           nullable: true
@@ -8188,7 +8190,7 @@ components:
           nullable: true
           minimum: 0
           maximum: 240
-          description: Horas por defecto de las rutas que no traen las suyas.
+          description: Horas por defecto de las rutas que no traen las suyas. (#278) `horas_cargue` y `horas_descargue` van las dos o ninguna (Nexo no acepta una sola); si viene una, `CAMPO_REQUERIDO` en la que falta.
         horas_descargue:
           type: number
           nullable: true
@@ -8634,7 +8636,7 @@ components:
           nullable: true
           minimum: 0
           maximum: 240
-          description: Horas de cargue de la ruta; sin valor, las de la solicitud.
+          description: Horas de cargue de la ruta; sin valor, las de la solicitud. (#278) `horas_cargue` y `horas_descargue` van las dos o ninguna (Nexo no acepta una sola); si viene una, `CAMPO_REQUERIDO` en la que falta.
         horas_descargue:
           type: number
           nullable: true
@@ -8785,7 +8787,7 @@ components:
           maximum: 240
           description: |
             Encabezado (`horasCargue`). Cotifly lo envía en el encabezado y también en la línea (HU-013.10, G5): sin el valor
-            de línea Nexo aplica el suyo por defecto (4 h + 4 h, o 2 h si retorna contenedor).
+            de línea Nexo aplica el suyo por defecto (4 h + 4 h, o 2 h si retorna contenedor). (#278) `horas_cargue` y `horas_descargue` van las dos o ninguna (Nexo no acepta una sola); si viene una, `CAMPO_REQUERIDO` en la que falta.
         horas_descargue:
           type: number
           nullable: true
@@ -9206,7 +9208,7 @@ components:
           nullable: true
           minimum: 0
           maximum: 240
-          description: Opcional (`horasCargue` de la línea; HU-013.11, G5). Sin valor, viajan las del encabezado.
+          description: Opcional (`horasCargue` de la línea; HU-013.11, G5). Sin valor, viajan las del encabezado. (#278) `horas_cargue` y `horas_descargue` van las dos o ninguna (Nexo no acepta una sola); si viene una, `CAMPO_REQUERIDO` en la que falta.
         horas_descargue:
           type: number
           nullable: true
@@ -9360,7 +9362,7 @@ components:
           nullable: true
           minimum: 0
           maximum: 240
-          description: Encabezado. Viajan en cada línea que no trae sus propias `horas_cargue` (G5).
+          description: Encabezado. Viajan en cada línea que no trae sus propias `horas_cargue` (G5). (#278) `horas_cargue` y `horas_descargue` van las dos o ninguna (Nexo no acepta una sola); si viene una, `CAMPO_REQUERIDO` en la que falta.
         horas_descargue:
           type: number
           nullable: true
