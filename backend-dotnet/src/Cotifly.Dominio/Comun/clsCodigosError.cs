@@ -382,8 +382,8 @@ public static class clsCodigosError
     /// <summary>
     /// #278 (contrato único de NEXO, DU §8): la línea de negocio que viajaría a NEXO (<c>MargenesPolitica.mapeoLineasNexo</c> de la línea de
     /// la ruta) no es una de las seis de NEXO. Cotifly lo valida antes de llamar (en la captura y la licitación: 400 y nada se guarda; al
-    /// reenviar una guardada: <c>error_envio</c> reintentable) y traduce igual el <c>400 LINEA_NEGOCIO_INVALIDO</c> de NEXO. Lo corrige el
-    /// administrador en el mapeo. 400; <c>detalle.linea_negocio</c>, <c>detalle.linea_negocio_nexo</c> y <c>detalle.permitidas</c>. Mismo
+    /// reenviar una guardada: <c>error_envio</c> reintentable) y traduce igual el <c>400 LINEA_NEGOCIO_INVALIDO</c> de NEXO. Lo corrige soporte en el
+    /// mapeo (no hay endpoint para editarlo). 400; <c>detalle.linea_negocio</c>, <c>detalle.linea_negocio_nexo</c> y <c>detalle.permitidas</c>. Mismo
     /// código que usa NEXO.
     /// </summary>
     public const string LineaNegocioInvalido = "LINEA_NEGOCIO_INVALIDO";

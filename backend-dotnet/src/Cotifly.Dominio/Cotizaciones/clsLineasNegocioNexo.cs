@@ -7,17 +7,46 @@ namespace Cotifly.Dominio.Cotizaciones;
 /// #278 (contrato único de NEXO del 2026-11-04, DU §8): las líneas de negocio que acepta <c>POST /api/captura-solicitudes</c> en
 /// <c>lineas[].lineaNegocio</c>. Son exactamente seis; NEXO también las acepta en camelCase (<c>puertoAInterior</c>), en mayúsculas o con
 /// guiones, y un valor vacío es "sin línea". Cualquier otro texto lo rechaza con <c>400 LINEA_NEGOCIO_INVALIDO</c> (antes se perdía en
-/// silencio). Cotifly envía el <c>MargenesPolitica.mapeoLineasNexo</c> de la línea de negocio de cada ruta y lo valida con esta lista
-/// ANTES de llamar a NEXO.
+/// silencio). Cotifly toma el <c>MargenesPolitica.mapeoLineasNexo</c> de la línea de negocio de cada ruta, lo valida con esta lista
+/// ANTES de llamar a NEXO y envía su forma canónica (<see cref="Canonica"/>: el nombre de la lista, con espacios y tildes).
 /// </summary>
 public static class clsLineasNegocioNexo
 {
+    /// <summary>La línea de devolución de contenedor (DU §5: sus horas por defecto son 1 + 1, no 4 + 4).</summary>
+    public const string DevolucionContenedor = "Devolución de contenedor";
+
+    /// <summary>Horas de cargue (y de descargue) que NEXO aplica por defecto a una línea cargada (DU §5 y §8).</summary>
+    public const decimal HorasPorDefecto = 4m;
+
+    /// <summary>Horas de cargue (y de descargue) que NEXO aplica por defecto a una devolución de contenedor (DU §5 y §8).</summary>
+    public const decimal HorasPorDefectoDevolucion = 1m;
+
+    /// <summary>
+    /// Las horas por defecto de NEXO para <paramref name="lineaNegocio"/> (cualquier escritura que <see cref="Canonica"/> reconozca):
+    /// <see cref="HorasPorDefectoDevolucion"/> en una devolución de contenedor y <see cref="HorasPorDefecto"/> en las demás.
+    /// </summary>
+    public static decimal HorasPorDefectoDe(string? lineaNegocio) =>
+        string.Equals(Canonica(lineaNegocio), DevolucionContenedor, StringComparison.Ordinal) ? HorasPorDefectoDevolucion : HorasPorDefecto;
+
     /// <summary>Las seis líneas de negocio de NEXO, escritas como en el contrato (DU §8).</summary>
     public static readonly IReadOnlyList<string> Permitidas =
         ["Nacional", "Puerto a interior", "Interior a puerto", "Devolución de contenedor", "Andino", "Licitaciones"];
 
+    /// <summary>
+    /// Escrituras sin los conectores ("de", "a") que usa Cotifly: la semilla vigente de <c>MargenesPolitica.mapeoLineasNexo</c> trae
+    /// <c>DevolucionContenedor</c> (<c>db/seeder/01_lineas_negocio.sql</c> y la migración 0009), que no es la forma camelCase de NEXO
+    /// (<c>devolucionDeContenedor</c>). Como Cotifly envía siempre la forma canónica (<see cref="Canonica"/>), aceptarlas no depende de NEXO.
+    /// </summary>
+    private static readonly (string Alias, string Linea)[] _alias =
+    [
+        ("DevolucionContenedor", "Devolución de contenedor"),
+        ("Devolución del contenedor", "Devolución de contenedor"),
+        ("PuertoInterior", "Puerto a interior"),
+        ("InteriorPuerto", "Interior a puerto"),
+    ];
+
     private static readonly Dictionary<string, string> _porClave =
-        Permitidas.ToDictionary(Clave, l => l, StringComparer.Ordinal);
+        Permitidas.Select(l => (Alias: l, Linea: l)).Concat(_alias).ToDictionary(a => Clave(a.Alias), a => a.Linea, StringComparer.Ordinal);
 
     /// <summary>
     /// La línea de NEXO equivalente a <paramref name="valor"/>, escrita como en <see cref="Permitidas"/>; <c>null</c> si viene vacío o no

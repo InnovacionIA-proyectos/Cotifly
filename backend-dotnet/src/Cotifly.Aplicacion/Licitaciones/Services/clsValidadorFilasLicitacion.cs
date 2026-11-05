@@ -125,7 +125,8 @@ public sealed class clsValidadorFilasLicitacion(
         ArgumentNullException.ThrowIfNull(filas);
         var entradas = lineas.Select((l, i) => (clsLineaLicitacionEntrada?)new clsLineaLicitacionEntrada(i < filas.Count ? filas[i] : null, l)).ToList();
         var previos = encabezado.Errores().Select(e => new clsErrorFilaLicitacion(null, null, e.Campo, e.Codigo, e.Mensaje))
-            .Concat(entradas.SelectMany((l, i) => l!.Linea.Errores().Select(e => new clsErrorFilaLicitacion(i, l.Fila, e.Campo, e.Codigo, e.Mensaje))))
+            .Concat(entradas.SelectMany((l, i) => l!.Linea.Errores().Concat(l.Linea.ErroresHorasEnPareja(encabezado))
+                .Select(e => new clsErrorFilaLicitacion(i, l.Fila, e.Campo, e.Codigo, e.Mensaje))))
             .ToList();
 
         var validadas = await ValidarAsync(usuarioId, entradas, previos, captura: false, cancellationToken);

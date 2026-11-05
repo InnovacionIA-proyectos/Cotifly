@@ -77,7 +77,7 @@ public sealed class clsCosteoNexoTests : IDisposable
         linea.GetProperty("destino").GetString().Should().Be("Bogotá D.C.");
         linea.GetProperty("tipoVehiculo").GetString().Should().Be("3S3");
         linea.GetProperty("carroceria").GetString().Should().Be("PORTACONTENEDORES");
-        linea.GetProperty("lineaNegocio").GetString().Should().Be("PuertoAInterior");
+        linea.GetProperty("lineaNegocio").GetString().Should().Be("Puerto a interior", "#278: viaja la escritura canónica del DU");
         linea.GetProperty("claseContenedor").GetString().Should().Be("CNT40.HC");
         linea.GetProperty("exclusivo").GetBoolean().Should().BeTrue();
         linea.GetProperty("retornaContenedor").GetBoolean().Should().BeTrue();

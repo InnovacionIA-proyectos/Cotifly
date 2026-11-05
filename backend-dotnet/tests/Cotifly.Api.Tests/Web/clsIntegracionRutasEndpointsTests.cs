@@ -65,9 +65,9 @@ public sealed class clsIntegracionRutasEndpointsTests : IDisposable
         var lineas = _nexo.UltimaAlta!["lineas"]!.AsArray().Select(l => l!).ToList();
         lineas.Select(l => (l["origen"]!.GetValue<string>(), l["peso"]!.GetValue<decimal>(), l["lineaNegocio"]!.GetValue<string>()))
             .Should().Equal(
-                ("Buenaventura", 28000m, "PuertoAInterior"),
-                ("Medellín", 12500m, "InteriorAPuerto"),
-                ("Medellín", 6000m, "InteriorAPuerto"));
+                ("Buenaventura", 28000m, "Puerto a interior"),
+                ("Medellín", 12500m, "Interior a puerto"),
+                ("Medellín", 6000m, "Interior a puerto"));
 
         var solicitud = _nexo.SolicitudesCreadas[^1];
         _nexo.CostearLinea(solicitud, 0, 1_000_000m);
@@ -206,6 +206,25 @@ public sealed class clsIntegracionRutasEndpointsTests : IDisposable
     }
 
     /// <summary>Dos rutas de distinta línea de negocio (Importacion y Exportacion); la ruta 2 captura un conexo del catálogo de Nexo.</summary>
+    /// <summary>
+    /// #278 (bloqueante de la validación): la línea sembrada <c>DevolucionContenedor</c> (mapeo <c>DevolucionContenedor</c>, seeder y 0009)
+    /// se captura sin <c>LINEA_NEGOCIO_INVALIDO</c> y viaja a Nexo con la escritura canónica del DU, que el Nexo falso acepta.
+    /// </summary>
+    [Fact]
+    public async Task LaLineaSembradaDevolucionContenedorViajaComoDevolucionDeContenedor()
+    {
+        var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var formulario = Formulario().Replace("\"linea_negocio\":\"Importacion\"", "\"linea_negocio\":\"DevolucionContenedor\"", StringComparison.Ordinal)
+            .Replace("\"linea_negocio\":\"Exportacion\"", "\"linea_negocio\":\"DevolucionContenedor\"", StringComparison.Ordinal);
+
+        using var envio = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, formulario);
+
+        var creada = await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created);
+        creada.GetProperty("estado_costeo").GetString().Should().NotBe("error_envio");
+        _nexo.RechazosContrato.Should().BeEmpty();
+        _nexo.UltimaAlta!["lineas"]!.AsArray().Select(l => l!["lineaNegocio"]!.GetValue<string>()).Should().OnlyContain(l => l == "Devolución de contenedor");
+    }
+
     private static string Formulario() => clsApiWebPruebas.Json(new
     {
         tipo = "spot",

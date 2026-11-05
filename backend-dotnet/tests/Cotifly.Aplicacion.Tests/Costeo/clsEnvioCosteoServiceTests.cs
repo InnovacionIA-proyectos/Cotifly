@@ -145,7 +145,7 @@ public sealed class clsEnvioCosteoServiceTests
         resultado.Valor.ClienteNombre.Should().Be("LONGYIN S.A.S.");
         resultado.Valor.OrigenCliente.Should().Be(OrigenCliente.Cliente);
         await _nexo.Received(1).EnviarSolicitudAsync(_ana,
-            Arg.Is<clsSolicitudNexo>(s => s.ClienteBp == "15927" && s.LineaNegocioNexo == "PuertoAInterior" && s.Solicitud.Origen == "Buenaventura"),
+            Arg.Is<clsSolicitudNexo>(s => s.ClienteBp == "15927" && s.LineaNegocioNexo == "Puerto a interior" && s.Solicitud.Origen == "Buenaventura"),
             Arg.Any<CancellationToken>());
     }
 
@@ -476,17 +476,18 @@ public sealed class clsEnvioCosteoServiceTests
     }
 
     [Theory]
-    [InlineData("PuertoAInterior")]
-    [InlineData("puerto-a-interior")]
-    [InlineData(null)]
-    public async Task UnaLineaMapeadaAUnaDeLasSeisOSinMapeoSeEnviaTalCual(string? mapeo)
+    [InlineData("PuertoAInterior", "Puerto a interior")]
+    [InlineData("puerto-a-interior", "Puerto a interior")]
+    [InlineData("DevolucionContenedor", "Devolución de contenedor")]
+    [InlineData(null, null)]
+    public async Task UnaLineaMapeadaAUnaDeLasSeisViajaEnLaEscrituraCanonicaDelDu(string? mapeo, string? enviada)
     {
         _margen.ResolverLineaAsync("Importación", Arg.Any<CancellationToken>()).Returns(ConMapeo(clsMargenPolitica.Crear("Importacion", 0.15m).Valor, mapeo));
 
         var resultado = await Servicio().EnviarAsync(_ana, Entrada(), Ct);
 
         resultado.Valor.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo);
-        await _nexo.Received(1).EnviarSolicitudAsync(_ana, Arg.Is<clsSolicitudNexo>(s => s.Lineas.All(l => l.LineaNegocioNexo == mapeo)), Arg.Any<CancellationToken>());
+        await _nexo.Received(1).EnviarSolicitudAsync(_ana, Arg.Is<clsSolicitudNexo>(s => s.Lineas.All(l => l.LineaNegocioNexo == enviada)), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -501,7 +502,7 @@ public sealed class clsEnvioCosteoServiceTests
 
         resultado.Valor.EstadoCosteo.Should().Be(EstadoCosteo.ErrorEnvio);
         resultado.Valor.MotivoEstadoCosteo.Should().Contain("Exportaciones");
-        resultado.Valor.ErrorEnvioDefinitivo.Should().BeFalse("lo corrige el administrador en el mapeo y el reintento vuelve a leerlo");
+        resultado.Valor.ErrorEnvioDefinitivo.Should().BeFalse("lo corrige soporte en el mapeo y el reintento vuelve a leerlo");
         await _nexo.DidNotReceiveWithAnyArgs().EnviarSolicitudAsync(default, default!, Ct);
     }
 
@@ -711,7 +712,7 @@ public sealed class clsEnvioCosteoServiceTests
 
         enviada!.Lineas.Should().HaveCount(3, "una línea por camión");
         enviada.Lineas.Select(l => (l.Origen, l.LineaNegocioNexo)).Should().Equal(
-            ("Buenaventura", "PuertoAInterior"), ("Buenaventura", "PuertoAInterior"), ("Cali", "Nacional"));
+            ("Buenaventura", "Puerto a interior"), ("Buenaventura", "Puerto a interior"), ("Cali", "Nacional"));
         enviada.Encabezado.Notas.Should().Contain("Ruta 1 (Buenaventura → Bogotá D.C.): 2 camiones. Ruta 2 (Cali → Yumbo): 1 camión.");
     }
 

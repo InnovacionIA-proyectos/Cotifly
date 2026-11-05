@@ -126,6 +126,30 @@ public sealed class clsReSolicitudCosteoEndpointsTests : IDisposable
         (await EtagAsync(sesion, folio)).Should().NotBe(etag, "la versión de la original se reserva: un If-Match viejo ya no crea otra versión");
     }
 
+    /// <summary>
+    /// #278 (DU §5, hallazgo ALTA de la validación): una re-solicitud que cambia una sola hora deja el encabezado con una (los cambios de
+    /// carga se aplican también a él). La cabecera de Nexo solo lleva las horas en pareja y la línea lleva la suya: el Nexo falso, que
+    /// valida la pareja en la cabecera y en cada línea, acepta el alta.
+    /// </summary>
+    [Fact]
+    public async Task UnaReSolicitudQueCambiaUnaSolaHoraLlegaANexoConLasHorasEnPareja()
+    {
+        var (sesion, folio) = await EnviarAsync();
+        await _api.ProcesarPollingAsync(folio, TimeSpan.FromHours(73));
+        var etag = await EtagAsync(sesion, folio);
+
+        using var respuesta = await ReSolicitarAsync(sesion, folio, """{"motivo":"El cliente cambió el horario","datos_carga":{"horas_cargue":8}}""", etag);
+
+        var json = await VerificarContratoAsync(respuesta, Ruta, _post, HttpStatusCode.Created);
+        json.GetProperty("estado_costeo").GetString().Should().Be("pendiente_costeo");
+        _nexo.RechazosContrato.Should().BeEmpty();
+        var alta = _nexo.UltimaAlta!;
+        (alta["horasCargue"] is null && alta["horasDescargue"] is null).Should().BeTrue("la cabecera no lleva una sola hora");
+        var linea = alta["lineas"]![0]!;
+        linea["horasCargue"]!.GetValue<decimal>().Should().Be(8m);
+        linea["horasDescargue"].Should().NotBeNull("la línea conserva la hora de descargue guardada");
+    }
+
     [Fact]
     public async Task SiNexoRechazaOSeCaeEnLaReSolicitudLaCotizacionQuedaEnErrorEnvioConElMotivo()
     {

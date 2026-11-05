@@ -452,7 +452,7 @@ public sealed class clsEnvioCosteoService(
             Encabezado("moneda", clsCodigosLineaSolicitud.ValorFueraDeRango, moneda.Mensaje);
         }
 
-        foreach (var error in entrada.Encabezado.Errores().Concat(entrada.Encabezado.ErroresHorasEnPareja()))
+        foreach (var error in entrada.Encabezado.Errores())
         {
             Encabezado(error.Campo, error.Codigo, error.Mensaje);
         }
@@ -484,7 +484,9 @@ public sealed class clsEnvioCosteoService(
                 errores.Add(new clsErrorFilaLicitacion(i, null, "linea_negocio", clsCodigosLineaSolicitud.CampoRequerido, "El campo 'linea_negocio' es obligatorio."));
             }
 
-            errores.AddRange(linea.Errores().Select(e => new clsErrorFilaLicitacion(indice, null, e.Campo, e.Codigo, e.Mensaje)));
+            // #278: la pareja de horas que viaja es la de la ruta completada con la del encabezado (como en el formulario de una línea).
+            errores.AddRange(linea.Errores().Concat(linea.ErroresHorasEnPareja(entrada.Encabezado))
+                .Select(e => new clsErrorFilaLicitacion(indice, null, e.Campo, e.Codigo, e.Mensaje)));
         }
 
         return errores;
@@ -773,7 +775,7 @@ public sealed class clsEnvioCosteoService(
         }
 
         var primero = encabezado.Errores().Select(e => (Linea: (int?)null, Error: e))
-            .Concat(lineas.SelectMany((l, i) => l.Errores().Select(e => (Linea: (int?)(i + 1), Error: e))))
+            .Concat(lineas.SelectMany((l, i) => l.Errores().Concat(l.ErroresHorasEnPareja(encabezado)).Select(e => (Linea: (int?)(i + 1), Error: e))))
             .FirstOrDefault();
         return primero.Error is null
             ? null
@@ -917,12 +919,16 @@ public sealed class clsEnvioCosteoService(
         CancellationToken cancellationToken)
     {
         // #278 (DU §8): ninguna línea viaja con una línea de negocio que Nexo no acepta (el mapeo de su ruta pudo cambiar después de la
-        // captura). Sin llamar a Nexo: error_envio reintentable, que pasa cuando el administrador corrige el mapeo.
+        // captura). Sin llamar a Nexo: error_envio reintentable, que pasa cuando se corrige el mapeo (soporte).
         if (lineas.Select(l => l.LineaNegocioNexo).FirstOrDefault(l => !clsLineasNegocioNexo.EsValida(l)) is { } invalida)
         {
             var linea = politicasRuta.Values.Append(politica).FirstOrDefault(p => p is not null && string.Equals(p.MapeoLineasNexo, invalida, StringComparison.Ordinal));
             return clsMargenResolverService.LineaNexoInvalida(linea?.LineaNegocio, invalida)!;
         }
+
+        // Validada, viaja la escritura canónica del DU ("Puerto a interior", no "PuertoAInterior" ni "DevolucionContenedor"): Cotifly no
+        // depende de qué variantes acepte Nexo. Vacío = sin línea.
+        lineas = [.. lineas.Select(l => l.LineaNegocioNexo is null ? l : l with { LineaNegocioNexo = clsLineasNegocioNexo.Canonica(l.LineaNegocioNexo) })];
 
         var nit = cotizacion.NitCliente;
         if (nit is null)
@@ -960,7 +966,7 @@ public sealed class clsEnvioCosteoService(
         await ResolverMargenAsync(cotizacion, politica, politicasRuta, bp, cancellationToken);
 
         var cliente = bp is not null ? clsClienteNexo.PorBp(bp) : clsClienteNexo.PorId(clienteId!.Value);
-        return await nexo.EnviarSolicitudAsync(usuarioId, new clsSolicitudNexo(cliente, encabezado, lineas, politica?.MapeoLineasNexo), cancellationToken);
+        return await nexo.EnviarSolicitudAsync(usuarioId, new clsSolicitudNexo(cliente, encabezado, lineas, clsLineasNegocioNexo.Canonica(politica?.MapeoLineasNexo)), cancellationToken);
     }
 
     /// <summary>
@@ -1060,7 +1066,7 @@ public sealed class clsEnvioCosteoService(
     {
         ArgumentNullException.ThrowIfNull(error);
         // #278: CUBICACION_DEMASIADO_GRANDE (más posiciones o unidades de las que admite Nexo) tampoco cambia con los mismos datos.
-        // LINEA_NEGOCIO_INVALIDO sí se reintenta: lo corrige el administrador en el mapeo y el reintento vuelve a leerlo.
+        // LINEA_NEGOCIO_INVALIDO sí se reintenta: lo corrige soporte en el mapeo (no hay endpoint para eso) y el reintento vuelve a leerlo.
         return error.Codigo is clsCodigosError.CosteoNexoSolicitudInvalida or clsCodigosError.SolicitudCosteoInvalida
             or clsCodigosError.CubicacionDemasiadoGrande;
     }

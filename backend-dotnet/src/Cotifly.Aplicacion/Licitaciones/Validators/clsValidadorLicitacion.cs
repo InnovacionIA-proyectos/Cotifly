@@ -54,7 +54,7 @@ public static class clsValidadorLicitacion
             Encabezado("moneda", clsCodigosLineaSolicitud.ValorFueraDeRango, $"El campo 'moneda' debe ser COP o USD (llegó '{moneda.Trim()}').");
         }
 
-        foreach (var error in entrada.Encabezado.Errores().Concat(entrada.Encabezado.ErroresHorasEnPareja()))
+        foreach (var error in entrada.Encabezado.Errores())
         {
             Encabezado(error.Campo, error.Codigo, error.Mensaje);
         }
@@ -95,7 +95,8 @@ public static class clsValidadorLicitacion
                 continue;
             }
 
-            foreach (var error in entradaLinea.Linea.Errores())
+            // #278: la pareja de horas de la fila se valida completada con la del encabezado.
+            foreach (var error in entradaLinea.Linea.Errores().Concat(entradaLinea.Linea.ErroresHorasEnPareja(entrada.Encabezado)))
             {
                 Linea(error.Campo, error.Codigo, error.Mensaje);
             }

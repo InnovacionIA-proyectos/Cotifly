@@ -211,7 +211,7 @@ public sealed class clsMargenResolverService(
         var origen = string.IsNullOrWhiteSpace(lineaNegocio) ? "La línea de negocio" : $"La línea de negocio '{lineaNegocio.Trim()}'";
         return new clsErrorDominio(clsCodigosError.LineaNegocioInvalido,
             $"{origen} está asociada en Cotifly a la línea de Nexo '{valor}', que Nexo no acepta (solo {Dominio.Cotizaciones.clsLineasNegocioNexo.Lista}): "
-            + "pide al administrador corregir el mapeo de la línea de negocio. No se envió nada a Nexo.")
+            + "avisa a soporte para que corrija la configuración de la línea de negocio. No se envió nada a Nexo.")
         {
             Datos = new Dictionary<string, object?>(StringComparer.Ordinal)
             {

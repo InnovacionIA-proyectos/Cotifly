@@ -68,7 +68,8 @@ public static class clsCodigosLineaSolicitud
     public const string VehiculoRequerido = "VEHICULO_REQUERIDO";
 
     /// <summary>
-    /// #278 (DU §8): las mercancías con medidas de la ruta (las que viajan a NEXO como <c>posiciones[]</c> y al cubicador) suman más de
+    /// #278 (DU §8): las mercancías con medidas de la ruta (las que usa el cubicador y que viajan a NEXO como <c>posiciones[]</c> cuando
+    /// todas las de la ruta las traen) suman más de
     /// <see cref="clsSolicitudCosteo.MaximoUnidades"/> unidades. Mismo código que NEXO y el cubicador.
     /// </summary>
     public const string CubicacionDemasiadoGrande = clsCodigosError.CubicacionDemasiadoGrande;
@@ -98,19 +99,6 @@ public sealed record clsEncabezadoSolicitudCosteo
         clsLineaSolicitudCosteo.Largo(errores, "notas", Notas, clsSolicitudCosteo.LargoNotas);
         clsLineaSolicitudCosteo.Rango(errores, "horas_cargue", HorasCargue, 0m, clsSolicitudCosteo.MaximoHoras);
         clsLineaSolicitudCosteo.Rango(errores, "horas_descargue", HorasDescargue, 0m, clsSolicitudCosteo.MaximoHoras);
-        return errores;
-    }
-
-    /// <summary>
-    /// #278 (DU §5): las horas del encabezado QUE ESCRIBIÓ EL COMERCIAL van las dos o ninguna (<c>CAMPO_REQUERIDO</c> en la que falta). Solo
-    /// se pide a la entrada (formulario, edición y licitación): el encabezado guardado no trae horas (son de cada ruta) y el de una
-    /// re-solicitud lleva solo las que cambian; lo que viaja a Nexo es la pareja de cada línea, que valida
-    /// <see cref="clsLineaSolicitudCosteo.Errores"/>.
-    /// </summary>
-    public IReadOnlyList<clsErrorCampo> ErroresHorasEnPareja()
-    {
-        var errores = new List<clsErrorCampo>();
-        clsLineaSolicitudCosteo.HorasEnPareja(errores, HorasCargue, HorasDescargue);
         return errores;
     }
 }
@@ -303,7 +291,6 @@ public sealed record clsLineaSolicitudCosteo
         Rango(errores, clsSolicitudCosteo.CampoPesoConTara, PesoConTaraKg, 0m, clsSolicitudCosteo.MaximoPeso);
         Rango(errores, "horas_cargue", HorasCargue, 0m, clsSolicitudCosteo.MaximoHoras);
         Rango(errores, "horas_descargue", HorasDescargue, 0m, clsSolicitudCosteo.MaximoHoras);
-        HorasEnPareja(errores, HorasCargue, HorasDescargue);
         errores.AddRange(ErroresCondicionales());
 
         if (Posiciones.Count > clsSolicitudCosteo.MaximoPosiciones)
@@ -345,6 +332,20 @@ public sealed record clsLineaSolicitudCosteo
                 $"El peso total ({peso.Value:0.##} kg) no coincide con la suma de las posiciones ({suma:0.##} kg)."));
         }
 
+        return errores;
+    }
+
+    /// <summary>
+    /// #278 (DU §5): Nexo recibe <c>horasCargue</c> y <c>horasDescargue</c> de la línea las dos o ninguna. Se valida la pareja que viaja:
+    /// la de la línea completada con la del <paramref name="encabezado"/> campo a campo (como la guarda la ruta y la arma
+    /// <see cref="clsSolicitudCosteo.Desde"/>), igual en el formulario de una línea, la captura por rutas, la edición, la licitación y la
+    /// re-solicitud. Sin encabezado (lo guardado, ya completado), la de la línea. <see cref="clsCodigosLineaSolicitud.CampoRequerido"/> en
+    /// la que falta. No va en <see cref="Errores"/>, que no conoce el encabezado.
+    /// </summary>
+    public IReadOnlyList<clsErrorCampo> ErroresHorasEnPareja(clsEncabezadoSolicitudCosteo? encabezado = null)
+    {
+        var errores = new List<clsErrorCampo>();
+        HorasEnPareja(errores, HorasCargue ?? encabezado?.HorasCargue, HorasDescargue ?? encabezado?.HorasDescargue);
         return errores;
     }
 

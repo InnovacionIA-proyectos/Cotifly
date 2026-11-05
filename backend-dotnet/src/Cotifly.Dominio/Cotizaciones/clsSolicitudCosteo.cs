@@ -20,8 +20,10 @@ public sealed record clsSolicitudCosteo
     public const int MaximoPosiciones = 200;
 
     /// <summary>
-    /// #278 (DU §8): tope de NEXO (y del cubicador) de unidades en total por línea: la suma de <c>cantidad</c> de las mercancías con
-    /// medidas (las que viajan como <c>posiciones[]</c>). Si se pasa, <c>CUBICACION_DEMASIADO_GRANDE</c>.
+    /// #278 (DU §8): tope de NEXO (y del cubicador) de unidades en total por línea: la suma de <c>cantidad</c> de las mercancías CON
+    /// MEDIDAS (las que puede usar el cubicador y, si todas las de la ruta las traen, viajan como <c>posiciones[]</c>; en una ruta mixta no
+    /// viajan, pero la regla es la misma para no depender de las demás mercancías). Si se pasa, <c>CUBICACION_DEMASIADO_GRANDE</c>. A
+    /// diferencia de <see cref="MaximoPosiciones"/>, que cuenta todas las mercancías de la ruta.
     /// </summary>
     public const int MaximoUnidades = 10_000;
 
@@ -131,8 +133,9 @@ public sealed record clsSolicitudCosteo
         ALinea().ErroresCondicionales() is [var primero, ..] ? new clsErrorDominio(CodigoError, primero.Mensaje) : null;
 
     /// <summary>
-    /// #278 (DU §8): ¿las mercancías con medidas suman más de <see cref="MaximoUnidades"/> unidades? Las que no traen medidas no viajan
-    /// como posiciones a NEXO ni van al cubicador, así que no cuentan.
+    /// #278 (DU §8): ¿las mercancías con medidas suman más de <see cref="MaximoUnidades"/> unidades? Las que no traen medidas nunca van al
+    /// cubicador ni viajan como posiciones a NEXO, así que no cuentan; las que sí, cuentan siempre (también en una ruta mixta, donde no
+    /// viajan como posiciones).
     /// </summary>
     public static bool ExcedeUnidades(IEnumerable<clsPosicionCarga?> posiciones)
     {
@@ -328,8 +331,9 @@ public sealed record clsPosicionCarga(
             ?? (VaAlCubicador() && PesoKg is not > 0m
                 ? new clsErrorPosicion("peso_kg", $"{prefijo}el peso por unidad (peso_kg) debe ser mayor que 0: el cubicador lo exige.")
                 : null)
-            // #278 (DU §5 y §8): una mercancía con medidas viaja a NEXO como posición y NEXO exige su pesoKg, que es el de UNA unidad (NEXO
-            // y el cubicador lo multiplican por la cantidad). Sin él NEXO rechaza el alta; aquí se pide antes, en el formulario.
+            // #278 (DU §5 y §8): se exige a toda mercancía con medidas, porque el cubicador las usa y, si todas las de la ruta las traen,
+            // viajan a NEXO como posiciones, donde pesoKg es obligatorio (en una ruta mixta no viajan, pero la regla no cambia). Es el peso
+            // de UNA unidad: NEXO y el cubicador lo multiplican por la cantidad.
             ?? (ConMedidas && PesoKg is not > 0m
                 ? new clsErrorPosicion("peso_kg",
                     $"{prefijo}el peso por unidad (peso_kg) es obligatorio y mayor que 0 cuando la mercancía trae medidas: es el peso de una unidad, no el total.")

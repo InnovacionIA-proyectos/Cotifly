@@ -482,9 +482,9 @@ public sealed class clsCosteoNexo(
     public const string MensajeDwCubos =
         "Nexo no tiene configurado el cálculo de cubicaje (DWCubos): intenta de nuevo más tarde o avisa al equipo de Nexo.";
 
-    /// <summary>Mensaje de <c>LINEA_NEGOCIO_INVALIDO</c> cuando lo responde Nexo (#278): lo corrige el administrador en el mapeo.</summary>
+    /// <summary>Mensaje de <c>LINEA_NEGOCIO_INVALIDO</c> cuando lo responde Nexo (#278): lo corrige soporte en el mapeo (no hay endpoint para editarlo).</summary>
     public static readonly string MensajeLineaNegocioInvalida =
-        $"Nexo no acepta la línea de negocio de la solicitud (solo {clsLineasNegocioNexo.Lista}): pide al administrador corregir el mapeo de la línea de negocio y reintenta el envío.";
+        $"Nexo no acepta la línea de negocio de la solicitud (solo {clsLineasNegocioNexo.Lista}): avisa a soporte para que corrija la configuración de la línea de negocio y después reintenta el envío.";
 
     /// <summary>Mensaje de <c>CUBICACION_DEMASIADO_GRANDE</c> cuando lo responde Nexo (#278).</summary>
     public const string MensajeCubicacionDemasiadoGrande =
@@ -499,7 +499,7 @@ public sealed class clsCosteoNexo(
     /// <c>PESO_REQUERIDO</c> y <c>PESO_INCONSISTENTE</c> → <c>SOLICITUD_COSTEO_INVALIDA</c> (definitivo); <c>CLIENTE_REQUERIDO</c>,
     /// <c>CLIENTE_INVALIDO</c> y <c>CLIENTE_BP_INVALIDO</c> → <c>COSTEO_NEXO_RECHAZADA</c> con un motivo de cliente (reintentable);
     /// <c>DWCUBOS_NO_CONFIGURADO</c> → <c>COSTEO_NEXO_NO_DISPONIBLE</c> (reintentable); #278 (contrato único de NEXO, DU §9):
-    /// <c>LINEA_NEGOCIO_INVALIDO</c> → <c>LINEA_NEGOCIO_INVALIDO</c> (reintentable: lo corrige el administrador en el mapeo) y
+    /// <c>LINEA_NEGOCIO_INVALIDO</c> → <c>LINEA_NEGOCIO_INVALIDO</c> (reintentable: lo corrige soporte en el mapeo) y
     /// <c>CUBICACION_DEMASIADO_GRANDE</c> → <c>CUBICACION_DEMASIADO_GRANDE</c> (definitivo); cualquier otro (<c>VALIDATION_ERROR</c>...) →
     /// <c>COSTEO_NEXO_SOLICITUD_INVALIDA</c>. El detalle conserva <c>HTTP 400 {code}: {message}</c> de Nexo.
     /// </summary>
@@ -662,8 +662,10 @@ public sealed class clsCosteoNexo(
             solicitud.Cliente.Id,
             clsCodigoEnum.ACodigo(e.Tipo),
             e.Deadline,
-            e.HorasCargue,
-            e.HorasDescargue,
+            // #278 (DU §5): Nexo recibe las horas en pareja. Una re-solicitud que cambia una sola hora deja el encabezado con una (los
+            // cambios de carga se aplican también a él): en la cabecera viajan solo si vienen las dos; cada línea lleva su pareja.
+            e.HorasCargue is not null && e.HorasDescargue is not null ? e.HorasCargue : null,
+            e.HorasCargue is not null && e.HorasDescargue is not null ? e.HorasDescargue : null,
             string.IsNullOrWhiteSpace(e.Notas) ? null : e.Notas.Trim(),
             [.. solicitud.Lineas.Select(s =>
             {
@@ -673,7 +675,7 @@ public sealed class clsCosteoNexo(
                 tipoVehiculo,
                 carroceria,
                 s.Tipologia,
-                s.LineaNegocioNexo ?? solicitud.LineaNegocioNexo, s.ClaseViaje, s.ClaseContenedor,
+                LineaNegocioWire(s.LineaNegocioNexo ?? solicitud.LineaNegocioNexo), s.ClaseViaje, s.ClaseContenedor,
                 s.Exclusivo, s.Consolidado, s.RetornaContenedor, s.CiudadDevolucionContenedor, s.LevanteContenedorDiferente,
                 s.CiudadLevanteContenedor, s.ValorAprovisionamiento, s.HorasCargue ?? e.HorasCargue, s.HorasDescargue ?? e.HorasDescargue, s.PesoKg, s.ValorMercancia,
                 // HU-032 (#197): una mercancía sin medidas (no cubicable) no viaja como posición; con ella la línea va sin posiciones.
@@ -684,6 +686,14 @@ public sealed class clsCosteoNexo(
                 enviarDatosCubicador ? s.IdRecomendacionVehiculo?.ToString("D") : null);
             })]);
     }
+
+    /// <summary>
+    /// #278 (DU §8): la <c>lineaNegocio</c> que viaja, en la escritura canónica del DU (<c>Puerto a interior</c>, no <c>PuertoAInterior</c>)
+    /// para no depender de las variantes que acepte Nexo. Un valor que no es una de las seis viaja tal cual (recortado): el envío ya lo
+    /// valida antes y, si llegara, Nexo responde <c>LINEA_NEGOCIO_INVALIDO</c> en vez de perderlo en silencio. Vacío = sin línea.
+    /// </summary>
+    internal static string? LineaNegocioWire(string? lineaNegocio) =>
+        string.IsNullOrWhiteSpace(lineaNegocio) ? null : clsLineasNegocioNexo.Canonica(lineaNegocio) ?? lineaNegocio.Trim();
 
     /// <summary>
     /// <c>grupoRutaId</c> de la línea (HU-023, #176): el id de su ruta de Cotifly (un GUID por recomendación, igual en todas sus líneas,

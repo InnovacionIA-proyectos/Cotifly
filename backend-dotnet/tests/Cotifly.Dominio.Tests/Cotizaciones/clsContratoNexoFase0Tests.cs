@@ -21,6 +21,10 @@ public sealed class clsContratoNexoFase0Tests
     [InlineData("devolucion_de_contenedor", "Devolución de contenedor")]
     [InlineData("ANDINO", "Andino")]
     [InlineData("licitaciones", "Licitaciones")]
+    [InlineData("DevolucionContenedor", "Devolución de contenedor")]
+    [InlineData("devolución del contenedor", "Devolución de contenedor")]
+    [InlineData("PuertoInterior", "Puerto a interior")]
+    [InlineData("Interior-Puerto", "Interior a puerto")]
     public void LasSeisLineasDeNexoSeReconocenComoNexo(string valor, string canonica)
     {
         clsLineasNegocioNexo.Canonica(valor).Should().Be(canonica);
@@ -49,8 +53,12 @@ public sealed class clsContratoNexoFase0Tests
     }
 
     [Fact]
-    public void LaSemillaActualDeMapeoLineasNexoEsValida() =>
-        new[] { "Nacional", "PuertoAInterior", "InteriorAPuerto", "Andino", null }.Should().OnlyContain(v => clsLineasNegocioNexo.EsValida(v));
+    public void LaSemillaVigenteSeEnviaCanonica()
+    {
+        // Los valores reales de la semilla se leen de los scripts en Cotifly.Infraestructura.Tests (clsSemillaLineasNegocioNexoTests).
+        clsLineasNegocioNexo.Canonica("DevolucionContenedor").Should().Be("Devolución de contenedor");
+        clsLineasNegocioNexo.Canonica("PuertoAInterior").Should().Be("Puerto a interior");
+    }
 
     [Fact]
     public void UnaPoliticaNoAceptaUnMapeoANexoFueraDeLasSeis()
@@ -127,31 +135,42 @@ public sealed class clsContratoNexoFase0Tests
     [Theory]
     [InlineData(4.0, null, "horas_descargue")]
     [InlineData(null, 2.5, "horas_cargue")]
-    public void LasHorasDelEncabezadoVanEnPareja(double? cargue, double? descargue, string falta)
+    public void UnaSolaHoraSinLaOtraEnElEncabezadoEsCampoRequerido(double? cargue, double? descargue, string falta)
     {
-        var encabezado = Encabezado((decimal?)cargue, (decimal?)descargue);
+        var linea = Linea() with { HorasCargue = (decimal?)cargue, HorasDescargue = (decimal?)descargue };
 
-        var error = encabezado.ErroresHorasEnPareja().Should().ContainSingle().Subject;
-        encabezado.Errores().Should().BeEmpty("el encabezado guardado o el de una re-solicitud no trae las dos: lo que viaja es la pareja de cada línea");
+        var error = linea.ErroresHorasEnPareja().Should().ContainSingle().Subject;
+        linea.Errores().Should().BeEmpty("la pareja depende del encabezado: va en ErroresHorasEnPareja");
         error.Campo.Should().Be(falta);
         error.Codigo.Should().Be(clsCodigosLineaSolicitud.CampoRequerido);
         error.Mensaje.Should().Contain("las dos");
+        Linea().ErroresHorasEnPareja(Encabezado((decimal?)cargue, (decimal?)descargue)).Should().ContainSingle(e => e.Campo == falta,
+            "una ruta sin horas toma las del encabezado: si este trae una sola, falta la otra");
+    }
+
+    /// <summary>
+    /// #278 (hallazgo de la validación): la pareja se valida DESPUÉS de completar la línea con el encabezado, igual en todos los flujos. Una
+    /// línea con <c>horas_cargue = 2</c> y un encabezado 4 + 4 viaja como 2 + 4: es válida en el formulario de una línea y también por ruta.
+    /// </summary>
+    [Fact]
+    public void LaParejaSeValidaDespuesDeCompletarLaLineaConElEncabezado()
+    {
+        var linea = Linea() with { HorasCargue = 2m };
+        var encabezado = Encabezado(4m, 4m);
+
+        linea.ErroresHorasEnPareja(encabezado).Should().BeEmpty();
+        clsSolicitudCosteo.Desde(encabezado, linea).Validar().Should().BeNull("el formulario de una línea fusiona igual");
+        linea.ErroresHorasEnPareja().Should().ContainSingle("sin encabezado (lo guardado) se valida la línea sola");
+        (Linea() with { HorasDescargue = 3m }).ErroresHorasEnPareja(Encabezado(1m, null)).Should().BeEmpty("se completa campo a campo");
     }
 
     [Fact]
-    public void SinHorasOConLasDosElEncabezadoEsValido()
+    public void SinHorasOConLasDosEsValidoYElRangoSigueEnErrores()
     {
-        Encabezado(null, null).ErroresHorasEnPareja().Should().BeEmpty();
-        Encabezado(0m, 240m).ErroresHorasEnPareja().Should().BeEmpty();
+        Linea().ErroresHorasEnPareja(Encabezado(null, null)).Should().BeEmpty();
+        (Linea() with { HorasCargue = 0m, HorasDescargue = 240m }).ErroresHorasEnPareja().Should().BeEmpty();
         Encabezado(0m, 240m).Errores().Should().BeEmpty();
         Encabezado(241m, 1m).Errores().Should().ContainSingle(e => e.Codigo == clsCodigosLineaSolicitud.ValorFueraDeRango);
-    }
-
-    [Fact]
-    public void LasHorasDeLaLineaVanEnPareja()
-    {
-        (Linea() with { HorasCargue = 1m }).Errores().Should().ContainSingle(e => e.Campo == "horas_descargue" && e.Codigo == clsCodigosLineaSolicitud.CampoRequerido);
-        (Linea() with { HorasCargue = 1m, HorasDescargue = 1m }).Errores().Should().BeEmpty();
     }
 
     [Fact]
