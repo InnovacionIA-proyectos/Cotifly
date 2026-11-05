@@ -31,10 +31,11 @@ Característica: Moneda en el formulario de costeo
     Entonces el costeo de "U1" tiene el precio final 750.00 en "USD" con la TRM aplicada 4000
     Y el costo de "U1" guardado es 2550000 en COP
 
+  # HU-043.2 (#251): el conexo va a su venta (aquí el costo, 85.000), sin margen: 85.000 / 4.000 = 21,25 USD.
   Escenario: Los servicios conexos también se convierten con la TRM fijada
     Dado que "ana" envió a costeo en "USD" el formulario ampliado del cliente "900555111" como "U1"
     Y Nexo costeó la solicitud de "U1" con un flete de 2550000 y el conexo "Cargue" de 85000 y el polling lo registró
-    Entonces el servicio conexo "Cargue" de "U1" tiene el precio 25.00
+    Entonces el servicio conexo "Cargue" de "U1" tiene el precio 21.25
 
   Escenario: La TRM no cambia aunque el costeo llegue otro día
     Dado que "ana" envió a costeo en "USD" el formulario ampliado del cliente "900555111" como "U1"

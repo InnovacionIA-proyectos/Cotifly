@@ -337,13 +337,14 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
 
     /// <summary>
     /// HU-021 (decisión 3): el dueño de <paramref name="cotizacion"/> agrega en Cotifly (ruta 1) un conexo de costo <paramref name="valor"/>;
-    /// Cotifly lo crea en Nexo y guarda el valor que Nexo calcula. El polling ya no importa los conexos que aparezcan en Nexo.
+    /// Cotifly lo crea en Nexo y guarda el valor que Nexo calcula. El polling ya no importa los conexos que aparezcan en Nexo. HU-043.2
+    /// (#251): <paramref name="venta"/> es su precio de venta en el catálogo de Nexo (<c>null</c>: se cotiza al costo).
     /// </summary>
-    public async Task AgregarConexoEnCotiflyAsync(string cotizacion, string nombre, decimal valor)
+    public async Task AgregarConexoEnCotiflyAsync(string cotizacion, string nombre, decimal valor, decimal? venta = null)
     {
         var usuarioId = Guid.Parse((await Columna(cotizacion, "usuarioId"))!);
         var dueno = web.Sesiones.Values.First(s => s.UsuarioId == usuarioId);
-        await web.Api.AgregarConexoAsync(_nexo, dueno.Access, Folio(cotizacion), nombre, valor);
+        await web.Api.AgregarConexoAsync(_nexo, dueno.Access, Folio(cotizacion), nombre, valor, venta);
         ConexosAgregadosPorLaPrueba++;
     }
 

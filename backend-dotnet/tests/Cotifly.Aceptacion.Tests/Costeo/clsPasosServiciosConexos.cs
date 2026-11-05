@@ -26,8 +26,12 @@ public sealed class clsPasosServiciosConexos(
         ArgumentNullException.ThrowIfNull(tabla);
         foreach (var fila in tabla.Rows)
         {
+            // HU-043.2 (#251): columna opcional precio_venta (vacía o ausente: sin precio de venta, se cotiza al costo).
+            var venta = fila.TryGetValue("precio_venta", out var texto) && texto.Length > 0
+                ? decimal.Parse(texto, CultureInfo.InvariantCulture)
+                : (decimal?)null;
             costeo.Nexo.ConServicioConexo(fila["id"], fila["codigo"], fila["nombre"], fila["categoria"], fila["unidad"],
-                decimal.Parse(fila["costo_unitario"], CultureInfo.InvariantCulture), bool.Parse(fila["activo"]));
+                decimal.Parse(fila["costo_unitario"], CultureInfo.InvariantCulture), bool.Parse(fila["activo"]), venta);
         }
     }
 

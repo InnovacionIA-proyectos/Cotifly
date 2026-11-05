@@ -58,19 +58,20 @@ Característica: Margen y servicios conexos por ruta
     Y que el costeo de "C1" trae el servicio conexo "Cargue" con un valor de Nexo de 85000
     Cuando "ana" deja el servicio conexo "Cargue" en la ruta 1 de "C1" con la cantidad 2
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CosteoCotizacion" del contrato
-    Y el costeo de "C1" tiene el precio final 3200000 con el margen aplicado "0.15" y el origen "politica_linea"
+    Y el costeo de "C1" tiene el precio final 3170000 con el margen aplicado "0.15" y el origen "politica_linea"
     Cuando "ana" quita el servicio conexo "Cargue" de la ruta 1 de "C1"
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CosteoCotizacion" del contrato
     Y el costeo de "C1" tiene el precio final 3000000 con el margen aplicado "0.15" y el origen "politica_linea"
     Y la ruta 1 de "C1" no tiene servicios conexos guardados
     Y quedó auditado que se quitó el servicio conexo "Cargue" de "C1"
 
-  # HU-033 (#199): el PDF del costeo no desglosa. Cada ruta muestra su precio final (transporte + conexos, con el margen) y los conexos
-  # incluidos solo por nombre; el total va como "VALOR TOTAL DE LA COTIZACIÓN". (2.550.000 + 170.000) / (1 − 0,15) = 3.200.000.
+  # HU-033 (#199): el PDF del costeo no desglosa. Cada ruta muestra su precio final (transporte con el margen + conexos a su venta, sin
+  # margen, HU-043.2) y los conexos incluidos solo por nombre; el total va como "VALOR TOTAL DE LA COTIZACIÓN".
+  # 2.550.000 / (1 − 0,15) + 200.000 = 3.200.000; el conexo cuesta 170.000 y no sale en el PDF.
   Escenario: El PDF muestra el precio final de la ruta y el nombre del conexo sin el precio del conexo ni el transporte solo
     Dado "ana" envió a costeo el formulario ampliado del cliente "900555111" como "C1"
     Y Nexo costeó la solicitud de "C1" con un flete de 2550000 y el polling lo registró
-    Y que el costeo de "C1" trae el servicio conexo "Cargue en puerto" con un valor de Nexo de 170000
+    Y que el costeo de "C1" trae el servicio conexo "Cargue en puerto" con un valor de Nexo de 170000 y una venta de 200000
     Cuando "ana" genera el PDF del costeo de "C1"
     Entonces la respuesta tiene el estado 201 y cumple el esquema "SalidaPdf" del contrato
     Y el PDF de "C1" contiene "$3.200.000"

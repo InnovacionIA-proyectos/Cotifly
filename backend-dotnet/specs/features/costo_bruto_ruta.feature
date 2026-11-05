@@ -29,12 +29,13 @@ Característica: Costo bruto de la ruta para el dueño de la cotización
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CosteoCotizacion" del contrato
     Y la ruta 1 de la respuesta tiene el costo final 2550000 y el precio final 3000000
 
+  # HU-043.2 (#251): el precio es 2.550.000 / (1 − 0,15) + 85.000 del conexo a su venta (aquí el costo), sin margen.
   Escenario: El costo bruto de la ruta incluye sus servicios conexos sin margen
     Dado que "ana" envió a costeo el formulario ampliado del cliente "900555111" como "C1"
     Y Nexo costeó la solicitud de "C1" con un flete de 2550000 y el polling lo registró
     Y que el costeo de "C1" trae el servicio conexo "Cargue" con un valor de Nexo de 85000
     Cuando "ana" consulta el costeo de "C1"
-    Entonces la ruta 1 de la respuesta tiene el costo final 2635000 y el precio final 3100000
+    Entonces la ruta 1 de la respuesta tiene el costo final 2635000 y el precio final 3085000
 
   @trm
   Escenario: En una cotización en USD el costo bruto sigue en pesos

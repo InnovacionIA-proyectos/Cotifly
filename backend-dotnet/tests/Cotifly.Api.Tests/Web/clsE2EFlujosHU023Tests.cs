@@ -135,7 +135,7 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
             SELECT CONCAT(l.orden, '|', l.costoFletesTotal, '|', l.costoServiciosConexos, '|', l.costoFinal, '|', l.margenAplicado, '|', l.precioFinalLinea, '|', l.estadoCosteo)
             FROM dbo_cotifly.CotizacionLineasSolicitud l WHERE l.cotizacionSolicitudId = '{id}' ORDER BY l.orden
             """)).Should().Equal(
-            "1|2100000.00|150000.00|2250000.00|0.1500|2647059.00|autocosteo",
+            "1|2100000.00|150000.00|2250000.00|0.1500|2620588.00|autocosteo",   // HU-043.2: 2.100.000 / 0,85 + 150.000, conexo sin margen
             "2|600000.00|0.00|600000.00|0.1500|705882.00|autocosteo");
 
         // 3. Conexo diferido: viaja a la línea de Nexo del PRIMER camión de la ruta 1.
@@ -155,7 +155,7 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
             .Should().Be("0.3000|negociado|857143.00");
         (await Escalar<int>($"SELECT COUNT(*) FROM dbo_cotifly.MargenAjustes WHERE cotizacionId = '{id}'")).Should().Be(1);
         var precio = await Escalar<decimal>($"SELECT precioFinal FROM dbo_cotifly.CotizacionesSolicitud WHERE id = '{id}'");
-        precio.Should().Be(2_647_059m + 857_143m);
+        precio.Should().Be(2_620_588m + 857_143m);
 
         // 5. PDF y correo.
         await api.FinalizarSiCorrespondeAsync(ana.Access, folio); // HU-036.3: como el frontend

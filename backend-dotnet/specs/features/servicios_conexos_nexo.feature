@@ -1,7 +1,8 @@
 # language: es
 # HU-013.3 (#99, ADR-018) — Servicios conexos desde el catálogo de Nexo: GET /web/servicios-conexos y
 # POST /web/cotizaciones/{folio}/costeo/servicios-conexos. Nexo es la fuente de verdad del costo (el conexo se agrega en
-# Nexo con POST /api/cotizaciones/{id}/conexos) y Cotifly le aplica el margen. El catálogo nunca expone costoUnitario.
+# Nexo con POST /api/cotizaciones/{id}/conexos). HU-043.2 (#251): el conexo se cotiza a su precio de venta (valorVenta de Nexo),
+# sin margen. El catálogo nunca expone costoUnitario.
 # Por HTTP contra la API real en memoria, SQL Server 2019 en Testcontainers y un Nexo falso (200, 400, 404, 403 y caída).
 # Pasos en Cotifly.Aceptacion.Tests/Costeo/clsPasosServiciosConexos.cs (#99).
 @integracion
@@ -14,10 +15,10 @@ Característica: Servicios conexos del catálogo de Nexo
     Dado la API web de Cotifly conectada a Nexo con el cliente "900555111" de BP "15927"
     Y el comercial "ana" con sesión en la regional "Occidente"
     Y el catálogo de Nexo tiene estos servicios conexos:
-      | id                                   | codigo | nombre         | categoria | unidad | costo_unitario | activo |
-      | 6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d | ALM-01 | Almacenamiento | logistico | Día    | 120000         | true   |
-      | 7a2d3b0f-4c8e-4d66-8b1f-2e3a4b5c6d7e | PRE-01 | Precinto       | adicional | Unidad | 35000          | true   |
-      | 8b3e4c1a-5d9f-4e77-9c2a-3f4b5c6d7e8f | ESC-01 | Escolta        | logistico | Viaje  | 900000         | false  |
+      | id                                   | codigo | nombre         | categoria | unidad | costo_unitario | precio_venta | activo |
+      | 6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d | ALM-01 | Almacenamiento | logistico | Día    | 120000         | 150000       | true   |
+      | 7a2d3b0f-4c8e-4d66-8b1f-2e3a4b5c6d7e | PRE-01 | Precinto       | adicional | Unidad | 35000          |              | true   |
+      | 8b3e4c1a-5d9f-4e77-9c2a-3f4b5c6d7e8f | ESC-01 | Escolta        | logistico | Viaje  | 900000         |              | false  |
 
   # Catálogo
   Escenario: La búsqueda devuelve los servicios activos sin el costo de Nexo
@@ -48,13 +49,13 @@ Característica: Servicios conexos del catálogo de Nexo
     Entonces la respuesta tiene el estado 403 con el código de negocio "NEXO_SIN_PERMISO"
 
   # Agregar a la cotización
-  Escenario: Agregar un conexo lo crea en Nexo, aplica el margen y lo deja incluido
+  Escenario: Agregar un conexo lo crea en Nexo, lo cotiza a su venta sin margen y lo deja incluido
     Dado que "ana" envió a costeo el formulario ampliado del cliente "900555111" como "C1"
     Y Nexo costeó la solicitud de "C1" con un flete de 2550000 y el polling lo registró
     Cuando "ana" agrega a "C1" en la línea 1 el servicio conexo "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d" con la cantidad 2
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CosteoCotizacion" del contrato
     Y Nexo recibió para la cotización de "C1" el conexo "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d" con la cantidad 2 en el lineaId de la línea 1 de su cotización y sin valorAplicado
-    Y el servicio conexo "Almacenamiento" de "C1" está incluido con el precio 282353
+    Y el servicio conexo "Almacenamiento" de "C1" está incluido con el precio 300000
     Y ninguna respuesta del costeo de "C1" contiene el costo 240000
 
   Escenario: Varios conexos en una sola petición
