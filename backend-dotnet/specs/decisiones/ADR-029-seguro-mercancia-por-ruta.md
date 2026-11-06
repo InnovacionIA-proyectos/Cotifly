@@ -19,7 +19,8 @@ tabla `TarifasSeguro` (una sola tasa activa) y las columnas `incluyeSeguro`, `ta
 1. **Dominio.** La ruta (`clsLineaSolicitud`, parcial `Seguro`) guarda las tres columnas y las mantiene coherentes con los CHECK del 20:
    - `IncluirSeguro(tasa)`: sin `ValorMercancia`, `SEGURO_SIN_VALOR_MERCANCIA`; si ya lo tiene, nada cambia (conserva su tasa).
    - `QuitarSeguro()`: tasa y costo en `null`.
-   - `costoSeguro = round(valorMercancia × tasa, 0)` en pesos (`clsConversorMoneda.Redondear`, como todo precio en COP).
+   - `costoSeguro = round(valorMercancia × tasa, 0)` en pesos (`clsConversorMoneda.Redondear`, half-to-even, como todo precio en COP
+     del costeo y la venta de los conexos).
    - `ActualizarSeguroPorValor`: si el valor de la mercancía cambió, toma la tasa vigente y recalcula; sin valor, el seguro sigue marcado
      sin tasa ni costo (la base lo admite: `incluyeSeguro = 1` con `costoSeguro` NULL).
    - `CopiarSeguro`: la versión nueva (`-vN`, de la re-solicitud o de la edición) copia el check, la tasa y el costo de la ruta
@@ -34,7 +35,7 @@ tabla `TarifasSeguro` (una sola tasa activa) y las columnas `incluyeSeguro`, `ta
    dominio (`ValidarCambioSeguro`), PDF invalidado e historial, versión de negocio, una escritura con control de versión y auditoría en
    `EventosHerramienta` (`cambiar_seguro_costeo`) **sin montos ni tasa**. Marcar una ruta que ya lo tiene responde 200 sin cambios.
 4. **Lectura.** La tasa vigente la lee un repositorio de solo lectura (`IClsTarifaSeguroRepository`, la fila `isActive = 1`). El costeo
-   expone `tasa_seguro_vigente` (en `GET .../costeo`, en el PUT del seguro y en el detalle por folio) y en cada ruta `incluye_seguro`, `tasa_seguro` y
+   expone `tasa_seguro_vigente` (en `GET .../costeo`, en el PUT del seguro, en las respuestas del margen y de los conexos y en el detalle por folio) y en cada ruta `incluye_seguro`, `tasa_seguro` y
    `valor_seguro` (en la moneda de la cotización).
 5. **Nombre del campo: `valor_seguro`, no `costo_seguro`.** La issue pide `costo_seguro` en el GET; `clsCostoBrutoSinFugasTests`
    exige que el único campo `Costo*` de `RutaCosteo` sea `costo_final` (el costo de Nexo, #218). El seguro es venta (se le cobra al
@@ -46,6 +47,9 @@ tabla `TarifasSeguro` (una sola tasa activa) y las columnas `incluyeSeguro`, `ta
 8. **Sin script nuevo.** Se registra el 20 en el arnés de pruebas y en `/health/ready` ("esquema incompleto: falta 20").
 
 ## Consecuencias
+
+- **Métricas (M1 de la auditoría):** `margen_ponderado` y `ganancias` del tablero restan el seguro del precio en COP (es un traslado, la
+  prima de la póliza, no margen); `valor_cotizado_cop` y `valor_ganado_cop` sí lo incluyen (se le cobra al cliente).
 
 - El PDF, el Excel y el correo muestran el total con el seguro, pero todavía no la línea "Seguro de la mercancía" (HU-045.3, #265).
 - El seguro se puede marcar antes de que Nexo costee: queda guardado y suma cuando la ruta tenga precio.

@@ -1370,7 +1370,7 @@ El comercial marca en el costeo, ruta por ruta, si la ruta incluye el seguro de 
 
 - **Check por ruta:** `PUT /web/cotizaciones/{folio}/costeo/seguro` con `{"incluye_seguro": true, "linea_orden": 1}` (o
   `linea_solicitud_id`; con una sola ruta, opcional) e `If-Match` obligatorio. Responde `CosteoCotizacion` con el `ETag` nuevo.
-- **Qué mostrar:** junto al check, la tasa vigente (`tasa_seguro_vigente` del `GET .../costeo`, fracción: `0.00345` = 0,345 %). En cada
+- **Qué mostrar:** junto al check, la tasa vigente (`tasa_seguro_vigente` del `GET .../costeo` y de las respuestas del seguro, del margen y de los conexos; fracción: `0.00345` = 0,345 %; si una respuesta la trae en `null`, conservar la última). En cada
   ruta, `incluye_seguro`, `tasa_seguro` (la que se usó) y `valor_seguro` (el seguro en la moneda de la cotización) como una línea aparte
   del flete. `precio_final_linea` y `precio_final` **ya incluyen** el seguro: no sumarlo otra vez.
 - **El seguro no lleva margen:** cambiar el margen de la ruta no cambia `valor_seguro`.

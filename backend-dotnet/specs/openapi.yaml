@@ -110,7 +110,8 @@ tags:
         (#251): el margen de una ruta se aplica solo a su transporte (fletes + retorno + levante); los servicios conexos se
         cotizan a su precio de venta, sin margen. Desde entonces `margen_promedio` mide el margen sobre el transporte, ya no
         sobre el precio completo; `margen_ponderado` y `ganancias` siguen siendo (precio − costo) e incluyen la diferencia
-        entre la venta y el costo de los conexos.
+        entre la venta y el costo de los conexos. HU-045.2 (#264): el seguro de la mercancía (`valor_seguro` de la ruta) es un
+        traslado: `margen_ponderado` y `ganancias` lo restan del precio en COP; `valor_cotizado_cop` y `valor_ganado_cop` lo incluyen.
       - `margen_ponderado` = margen agregado sobre el precio: SUM(`valor_cop` de la ruta − `costoFinal`) / SUM(`valor_cop`
         de la ruta) de TODAS las rutas del universo con costo > 0 y precio > 0 (el precio de la ruta en COP, USD × TRM).
         `null` si no hay ninguna.
@@ -2830,7 +2831,8 @@ paths:
         flete y nunca como descuento.
 
         - **Cálculo.** Al incluirlo se toma la tasa VIGENTE (`TarifasSeguro`, la de `tasa_seguro_vigente` del costeo; hoy 0,345 %
-          = `0.003450`) y se copia en la ruta: `valor_seguro = round(valor_mercancia × tasa_seguro, 0)` en pesos. Un cambio posterior
+          = `0.003450`) y se copia en la ruta: `valor_seguro = round(valor_mercancia × tasa_seguro, 0)` en pesos (half-to-even, como todo
+          precio en COP del costeo). Un cambio posterior
           de la tasa vigente no toca las rutas que ya lo tienen.
         - **Precio.** El seguro **no lleva margen** (decisión 1): `precio_final_linea` = (fletes + retorno + levante) con el margen
           + la venta de los conexos + `valor_seguro`, y `precio_final` es la suma de las rutas. En USD se convierte con la
@@ -7561,8 +7563,9 @@ components:
           nullable: true
           description: |
             HU-045.2 (#264). La tasa VIGENTE del seguro de la mercancía (fracción: 0.003450 = 0,345 %), para mostrarla antes de marcar el
-            seguro en una ruta (la de cada ruta que ya lo tiene es `rutas[].tasa_seguro`). Solo en `GET .../costeo`, en
-            `PUT .../costeo/seguro` y en `costeo` del detalle por folio; `null` en las demás respuestas o si no se pudo leer.
+            seguro en una ruta (la de cada ruta que ya lo tiene es `rutas[].tasa_seguro`). Viene en `GET .../costeo`, en
+            `PUT .../costeo/seguro`, en las respuestas del margen y de los conexos y en `costeo` del detalle por folio; `null` en las
+            demás (PDF, textos, recálculo de vehículos) o si no se pudo leer: conservar la del último `GET`.
         textos:
           description: HU-013.5. Asunto e introducción guardados para el PDF, o `null` si todavía no hay (el PDF usa los estándar).
           oneOf:
