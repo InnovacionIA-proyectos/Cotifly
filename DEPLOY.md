@@ -671,6 +671,9 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
      "falta 18"). Los dos son seguros con la imagen anterior (tablas nuevas; el 18 deja la columna de texto). Ver abajo, "Margen de SAP".
      Con #261 (punto 4, `precioVenta` del conexo): `…` → `16` → `17` → `18` → `19` → imagen → `08`, con el `19` **en la misma ventana
      que la imagen** (ver abajo).
+     Con HU-045.2 (#264, seguro de la mercancía): `…` → `19` → `20` → imagen → `08`. El `20` (de Datos, ya aplicado en la compartida el
+     2026-11-03) va ANTES de la imagen: la imagen mapea `TarifasSeguro` y las tres columnas del seguro de la ruta ("falta 20"). Es
+     seguro con la imagen anterior (tabla nueva y columnas con `DEFAULT 0`/NULL: las rutas quedan sin seguro).
    - **#261 (punto 4): `db/scripts/19_precio_venta_conexos.sql` va en la misma ventana corta que la imagen de #261.** Deja
      `CotizacionServiciosConexos.precioVenta DECIMAL(18,2) NOT NULL` sin `DEFAULT` (backfill `precioVenta = precio`). No hay un orden
      sin ventana de falla:
@@ -752,6 +755,7 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
    | `esquema incompleto: falta 17` | Faltan `SapMargenCliente`/`SapMargenSyncLog`, la copia local del margen de SAP (HU-042.1 #242, la lee HU-042.2 #243) | Aplicar `db/scripts/17_sap_margen_sincronizacion.sql` |
    | `esquema incompleto: falta 18` | Falta `SapMapeoTrqType.lineaNegocioId` (HU-042.4, #247) | Aplicar `db/scripts/18_sap_mapeo_fk_margenes_politica.sql` |
    | `esquema incompleto: falta 19` | Falta `CotizacionServiciosConexos.precioVenta` (HU-043.1, #245; mapeo en #261) | Aplicar `db/scripts/19_precio_venta_conexos.sql` |
+   | `esquema incompleto: falta 20` | Faltan `TarifasSeguro` o `incluyeSeguro`/`tasaSeguroAplicada`/`costoSeguro` de la ruta (HU-045.1 #263; mapeo en HU-045.2 #264) | Aplicar `db/scripts/20_seguro_mercancia.sql` |
    | `esquema incompleto: falta Tabla.columna, ...` (hasta 5) | Falta otra tabla o columna del modelo (por ejemplo un script intermedio sin aplicar) | Comparar con `db/scripts/01_crear_esquema.sql` y aplicar el script que la trae (lista en `docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md` §A.5) |
 
 1. **Staging.** Merge a `QA` → el pipeline (o `publicar-imagen.sh --canal qa`) publica `sha-<corto>`. En Dokploy, stack

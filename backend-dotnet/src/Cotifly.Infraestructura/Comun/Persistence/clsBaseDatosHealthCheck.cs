@@ -45,6 +45,8 @@ namespace Cotifly.Infraestructura.Comun.Persistence;
 /// <c>db/scripts/18_sap_mapeo_fk_margenes_politica.sql</c> (HU-042.4, #247);</item>
 /// <item><see cref="DescripcionEsquemaSin19"/>: solo falta <c>CotizacionServiciosConexos.precioVenta</c> de
 /// <c>db/scripts/19_precio_venta_conexos.sql</c> (HU-043.1, #245; el backend la mapea desde #261);</item>
+/// <item><see cref="DescripcionEsquemaSin20"/>: solo faltan la tabla <c>TarifasSeguro</c> o las columnas del seguro de la ruta de
+/// <c>db/scripts/20_seguro_mercancia.sql</c> (HU-045.1, #263; el backend las mapea desde HU-045.2, #264);</item>
 /// <item>cualquier otra ausencia: <c>esquema incompleto: falta Tabla.columna</c> (las primeras, sin datos de conexión).</item>
 /// </list>
 /// La sonda tiene un tiempo máximo propio (<see cref="TiempoMaximo"/>). Las descripciones no incluyen la cadena ni el servidor.
@@ -262,6 +264,22 @@ public sealed class clsBaseDatosHealthCheck(
         "CotizacionServiciosConexos.precioVenta",
     };
 
+    /// <summary>HU-045.2 (#264): está todo lo anterior, pero no lo de <c>db/scripts/20_seguro_mercancia.sql</c> (HU-045.1, #263).</summary>
+    public const string DescripcionEsquemaSin20 = "esquema incompleto: falta 20";
+
+    /// <summary>Columnas que agrega <c>db/scripts/20_seguro_mercancia.sql</c> (HU-045.1, #263): la tabla de la tasa y el seguro de la ruta.</summary>
+    public static readonly IReadOnlySet<string> Columnas20 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "TarifasSeguro.id",
+        "TarifasSeguro.tasa",
+        "TarifasSeguro.vigenteDesde",
+        "TarifasSeguro.isActive",
+        "TarifasSeguro.updatedAt",
+        "CotizacionLineasSolicitud.incluyeSeguro",
+        "CotizacionLineasSolicitud.tasaSeguroAplicada",
+        "CotizacionLineasSolicitud.costoSeguro",
+    };
+
     /// <summary>Prefijo de la descripción cuando falta otra tabla o columna del modelo.</summary>
     public const string PrefijoEsquemaIncompleto = "esquema incompleto: falta ";
 
@@ -394,13 +412,13 @@ public sealed class clsBaseDatosHealthCheck(
             return HealthCheckResult.Unhealthy(DescripcionEsquemaSin0009);
         }
 
-        // Faltan columnas de los ajustes que van después del 0009 (0010, 02 del cubicador, 03, 04, 05, 06, 09, 10, 11, 12, 13, 14, 16, 17, 18 y 19):
+        // Faltan columnas de los ajustes que van después del 0009 (0010, 02 del cubicador, 03, 04, 05, 06, 09, 10, 11, 12, 13, 14, 16, 17, 18, 19 y 20):
         // se pide el primero que falta, en el orden en que se aplican.
         if (faltantes.All(f => Columnas0010.Contains(f) || Columnas02.Contains(f) || Columnas03.Contains(f) || Columnas04.Contains(f)
                                || Columnas05.Contains(f) || Columnas06.Contains(f) || Columnas09.Contains(f) || Columnas10.Contains(f)
                                || Columnas11.Contains(f) || Columnas12.Contains(f) || Columnas13.Contains(f)
                                || Columnas14.Contains(f) || Columnas16.Contains(f) || Columnas17.Contains(f) || Columnas18.Contains(f)
-                               || Columnas19.Contains(f)))
+                               || Columnas19.Contains(f) || Columnas20.Contains(f)))
         {
             return HealthCheckResult.Unhealthy(
                 faltantes.Any(Columnas0010.Contains) ? DescripcionEsquemaSin0010
@@ -418,7 +436,8 @@ public sealed class clsBaseDatosHealthCheck(
                 : faltantes.Any(Columnas16.Contains) ? DescripcionEsquemaSin16
                 : faltantes.Any(Columnas17.Contains) ? DescripcionEsquemaSin17
                 : faltantes.Any(Columnas18.Contains) ? DescripcionEsquemaSin18
-                : DescripcionEsquemaSin19);
+                : faltantes.Any(Columnas19.Contains) ? DescripcionEsquemaSin19
+                : DescripcionEsquemaSin20);
         }
 
         return HealthCheckResult.Unhealthy(PrefijoEsquemaIncompleto + string.Join(", ", faltantes.Order(StringComparer.Ordinal).Take(5)));

@@ -46,6 +46,9 @@ public sealed class clsCotiflyDbContext(DbContextOptions<clsCotiflyDbContext> op
     public DbSet<clsTokenRefresco> TokensRefresco => Set<clsTokenRefresco>();
     public DbSet<clsTokenRevocado> TokensRevocados => Set<clsTokenRevocado>();
 
+    /// <summary>HU-045.2 (#264): la tasa del seguro de la mercancía (script 20; EF solo la lee, la cambia Datos).</summary>
+    public DbSet<clsTarifaSeguro> TarifasSeguro => Set<clsTarifaSeguro>();
+
     /// <summary>HU-042.2 (#243): copia local del margen de SAP TM (script 17; la escribe <c>sp_sincronizar_margen_sap</c>, que llama la sincronización del backend; EF solo la lee).</summary>
     public DbSet<clsSapMargenClienteFila> SapMargenCliente => Set<clsSapMargenClienteFila>();
 

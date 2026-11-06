@@ -128,6 +128,19 @@ public sealed class clsBaseDatosHealthCheckTests
     }
 
     [Theory]
+    [InlineData("TarifasSeguro.id|TarifasSeguro.tasa|CotizacionLineasSolicitud.incluyeSeguro", clsBaseDatosHealthCheck.DescripcionEsquemaSin20)]
+    [InlineData("CotizacionLineasSolicitud.costoSeguro", clsBaseDatosHealthCheck.DescripcionEsquemaSin20)]
+    [InlineData("CotizacionLineasSolicitud.costoSeguro|CotizacionServiciosConexos.precioVenta", clsBaseDatosHealthCheck.DescripcionEsquemaSin19)]
+    [InlineData("TarifasSeguro.tasa|Otra.columna", "esquema incompleto: falta Otra.columna, TarifasSeguro.tasa")]
+    public void HU0452_SinEl20LaSondaPideEl20SoloCuandoNoFaltaUnScriptAnterior(string faltantes, string descripcion)
+    {
+        var resultado = clsBaseDatosHealthCheck.Clasificar(faltantes.Split('|'), cotizacionesViejas: false);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be(descripcion);
+    }
+
+    [Theory]
     [InlineData("CotizacionServiciosConexos.precioVenta", clsBaseDatosHealthCheck.DescripcionEsquemaSin19)]
     [InlineData("CotizacionServiciosConexos.precioVenta|TokensRefresco.rolSesion", clsBaseDatosHealthCheck.DescripcionEsquemaSin16)]
     [InlineData("CotizacionServiciosConexos.precioVenta|SapMapeoTrqType.lineaNegocioId", clsBaseDatosHealthCheck.DescripcionEsquemaSin18)]
@@ -351,6 +364,18 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
 
         resultado.Status.Should().Be(HealthStatus.Unhealthy);
         resultado.Description.Should().Be("esquema incompleto: falta 19");
+    }
+
+    [Fact]
+    public async Task HU0452_ConEl19PeroSinEl20EsUnhealthyPorqueLeFaltaEl20()
+    {
+        // HU-045.2 (#264): el modelo EF mapea TarifasSeguro y el seguro de la ruta (db/scripts/20_seguro_mercancia.sql, HU-045.1 #263).
+        await using var sin20 = await baseDatos.CrearBaseConScriptsAsync("dbSin20", clsBaseDatosPruebas.ScriptsHasta16 + 3);
+
+        var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin20.Cadena);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be("esquema incompleto: falta 20");
     }
 
     [Fact]

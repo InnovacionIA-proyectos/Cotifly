@@ -30,6 +30,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
 
         // HU-042.1/HU-042.2 (#242, #243): la copia local del margen de SAP TM y el log del job (db/scripts/17).
         "SapMargenCliente", "SapMargenSyncLog",
+
+        // HU-045.1/HU-045.2 (#263, #264): la tasa del seguro de la mercancía (db/scripts/20).
+        "TarifasSeguro",
     ];
 
     /// <summary>Filtro de las tablas de respaldo que deja el 0009 (<c>Respaldo0009_*</c>): no son del modelo.</summary>
@@ -108,7 +111,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         scripts[clsBaseDatosPruebas.ScriptsHasta16].Should().Be(clsBaseDatosPruebas.Script17, "después del 16 va el 17 (copia local del margen de SAP)");
         scripts[clsBaseDatosPruebas.ScriptsHasta16 + 1].Should().Be(clsBaseDatosPruebas.Script18, "después del 17 va el 18 (lineaNegocioId del mapeo)");
         scripts[clsBaseDatosPruebas.ScriptsHasta16 + 2].Should().Be(clsBaseDatosPruebas.Script19, "después del 18 va el 19 (precioVenta del conexo, #261)");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script19, "ScriptsSin07 llega hasta el 19");
+        // HU-045 (#263, #264): el 20 (TarifasSeguro y el seguro de la ruta) va después del 19.
+        scripts[clsBaseDatosPruebas.ScriptsHasta16 + 3].Should().Be(clsBaseDatosPruebas.Script20, "después del 19 va el 20 (seguro de la mercancía, #264)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script20, "ScriptsSin07 llega hasta el 20");
         scripts[clsBaseDatosPruebas.ScriptsSin07].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsSin07 corta justo antes del 07");
         scripts[clsBaseDatosPruebas.ScriptsHasta07 - 1].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsHasta07 incluye el 07");
         // HU-037.1 (#209): el 15 (rol director) va al final, después del 08: no agrega columnas y clsRolDirectorScriptTests usa
