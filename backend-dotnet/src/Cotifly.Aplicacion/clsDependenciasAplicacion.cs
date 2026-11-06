@@ -150,6 +150,9 @@ public static class clsDependenciasAplicacion
         // HU-035.1 (#202, ADR-024): Excel de mercancías de una ruta, leído localmente sin Nexo (el lector lo registra Infraestructura).
         servicios.AddScoped<Mercancias.Services.IClsAnalisisExcelMercanciasService, Mercancias.Services.clsAnalisisExcelMercanciasService>();
 
+        // HU-044.4 (#255, ADR-029): POST /web/licitaciones/normalizar-valores con NEXO (el puerto de la importación lo registra Infraestructura).
+        servicios.AddScoped<Licitaciones.Services.IClsNormalizacionValoresService, Licitaciones.Services.clsNormalizacionValoresService>();
+
         // Tablero de métricas agregadas (HU-010.1, ADR-016) y regional del usuario (DimEjecutivo o UsuariosWeb.regional).
         servicios.AddScoped<IClsRegionalUsuario, clsRegionalUsuarioService>();
         // HU-037.3 (#211): GET /web/regionales (selector del director y del gerente).
