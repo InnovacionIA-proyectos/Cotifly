@@ -208,3 +208,16 @@ Característica: Licitaciones desde Excel
       | un libro con una entidad externa (XXE)   | EXCEL_INVALIDO           | LIBRO_ILEGIBLE              |
       | un .xls antiguo renombrado a .xlsx       | EXCEL_INVALIDO           | CIFRADO_O_XLS               |
       | un archivo de texto renombrado a .xlsx   | EXCEL_INVALIDO           | NO_ES_XLSX                  |
+
+  # HU-044.2 (#253) — La importación inteligente de NEXO propone el mapeo de una hoja: la plantilla del cliente, luego su diccionario y,
+  # para lo que falte, la IA. El campo de cada columna es el nombre de NEXO; es solo una sugerencia que el comercial confirma.
+  Escenario: NEXO sugiere con IA el mapeo de las columnas de la hoja
+    Cuando "ana" pide la sugerencia de mapeo de la hoja "ORIGEN, DESTINO, TON" del cliente "900555111"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "SugerenciaMapeo" del contrato
+    Y la sugerencia viene de "ia" con la IA usada y propone los campos "origen, destino, peso"
+
+  Escenario: Con la plantilla del cliente la sugerencia sale de la plantilla sin usar la IA
+    Dado que el cliente "900555111" tiene en Nexo la plantilla de mapeo de "ORIGEN, DESTINO, TON" a "origen, destino, peso"
+    Cuando "ana" pide la sugerencia de mapeo de la hoja "ORIGEN, DESTINO, TON" del cliente "900555111"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "SugerenciaMapeo" del contrato
+    Y la sugerencia viene de "plantilla" sin la IA por "PLANTILLA_RECONOCIDA" y propone los campos "origen, destino, peso"
