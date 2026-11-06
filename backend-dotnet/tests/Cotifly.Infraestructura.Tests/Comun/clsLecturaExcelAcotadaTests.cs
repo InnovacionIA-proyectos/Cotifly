@@ -129,8 +129,8 @@ public sealed class clsLecturaExcelAcotadaTests : IDisposable
     }
 
     /// <summary>
-    /// Un paquete que declara su hoja con un tipo no XML no se salta los controles: o el SDK no lo abre (<c>LIBRO_ILEGIBLE</c>) o la hoja
-    /// se cuenta igual. Un libro denso o con DTD no llega a ClosedXML.
+    /// Un paquete que declara su hoja con un tipo no XML no se salta los controles: el SDK de Open XML exige el tipo de la hoja y no lo
+    /// abre (<c>LIBRO_ILEGIBLE</c>). Un libro denso o con DTD no llega a ClosedXML.
     /// </summary>
     [Theory]
     [InlineData("application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet")]
@@ -141,7 +141,7 @@ public sealed class clsLecturaExcelAcotadaTests : IDisposable
         var densa = clsExcelMercanciasMuestra.ConTipoDeHoja(clsExcelMercanciasMuestra.Densa(4_000_000), tipo);
         var conDtd = clsExcelMercanciasMuestra.ConTipoDeHoja(clsExcelMercanciasMuestra.ConEntidadExterna(), tipo);
 
-        clsLecturaExcelAcotada.Verificar(densa, Ct).Should().NotBeNull(tipo);
-        clsLecturaExcelAcotada.Verificar(conDtd, Ct).Should().NotBeNull(tipo);
+        (clsLecturaExcelAcotada.Verificar(densa, Ct)?.Detalle).Should().Be(clsLecturaExcelAcotada.MotivoLibroIlegible, tipo);
+        (clsLecturaExcelAcotada.Verificar(conDtd, Ct)?.Detalle).Should().Be(clsLecturaExcelAcotada.MotivoLibroIlegible, tipo);
     }
 }

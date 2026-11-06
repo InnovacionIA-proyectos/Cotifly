@@ -64,6 +64,9 @@ public sealed class clsLecturaExcelAcotada : IDisposable
     /// <summary>Tope de <c>_rels/.rels</c> al buscar el libro: un archivo de relaciones real tiene unos cientos de bytes.</summary>
     private const int MaximoRelacionesBytes = 64 * 1024;
 
+    /// <summary>Tipo del dibujo VML (comentarios, controles heredados): es XML aunque el tipo no termine en <c>+xml</c>.</summary>
+    private const string TipoVml = "application/vnd.openxmlformats-officedocument.vmlDrawing";
+
     private readonly SemaphoreSlim _cupo;
     private readonly TimeSpan _espera;
     private readonly ILogger<clsLecturaExcelAcotada> _logger;
@@ -186,8 +189,8 @@ public sealed class clsLecturaExcelAcotada : IDisposable
     }
 
     /// <summary>
-    /// Cuenta los elementos XML de todas las partes XML del paquete (las mismas que abriría ClosedXML, resueltas por sus relaciones) con
-    /// un lector de flujo, sin DTD ni entidades externas. <c>ARCHIVO_DEMASIADO_GRANDE</c> (<see cref="MotivoDescomprimido"/>) si pasan
+    /// Cuenta los elementos XML de todas las partes XML del paquete (las mismas que abriría ClosedXML, resueltas por sus relaciones; ver
+    /// <see cref="EsParteXml"/>) con un lector de flujo, sin DTD ni entidades externas. <c>ARCHIVO_DEMASIADO_GRANDE</c> (<see cref="MotivoDescomprimido"/>) si pasan
     /// de <see cref="MaximoElementosXml"/>; <c>EXCEL_INVALIDO</c> (<see cref="MotivoLibroIlegible"/>) si una parte no es XML válido o trae
     /// un DTD; <c>null</c> si se puede abrir. Se llama después de <see cref="VerificarPaquete"/>: el contenido descomprimido ya está acotado.
     /// </summary>
@@ -210,7 +213,7 @@ public sealed class clsLecturaExcelAcotada : IDisposable
             foreach (var parte in documento.GetAllParts())
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (!parte.ContentType.Contains("xml", StringComparison.OrdinalIgnoreCase))
+                if (!EsParteXml(parte.ContentType))
                 {
                     continue;
                 }
@@ -236,6 +239,24 @@ public sealed class clsLecturaExcelAcotada : IDisposable
         {
             return Invalido(MotivoLibroIlegible);
         }
+    }
+
+    /// <summary>
+    /// ¿La parte se lee como XML? HU-035.3 (#277): sí si su tipo, sin parámetros, termina en <c>+xml</c> o es <c>application/xml</c> o
+    /// <c>text/xml</c>, y también el dibujo VML (<see cref="TipoVml"/>, sin <c>+xml</c>), que ClosedXML lee como XML para los comentarios.
+    /// Las demás son binarias y se saltan: imágenes, <c>vbaProject</c>, objetos incrustados y la configuración de impresión que guarda
+    /// Excel (<c>xl/printerSettings/printerSettings1.bin</c>, de tipo <c>...spreadsheetml.printerSettings</c>). Antes bastaba «xml» en
+    /// el tipo y esas partes de <c>openxmlformats</c> llegaban al lector XML: un libro con la impresión configurada era
+    /// <c>LIBRO_ILEGIBLE</c>. Una parte que ClosedXML lee como XML no puede saltarse el conteo cambiando su tipo: el SDK de Open XML exige
+    /// el tipo de las partes que conoce (hoja, cadenas, estilos...) y si no coincide el libro no abre (<c>LIBRO_ILEGIBLE</c>).
+    /// </summary>
+    internal static bool EsParteXml(string tipo)
+    {
+        var sinParametros = tipo.Split(';')[0].Trim();
+        return sinParametros.EndsWith("+xml", StringComparison.OrdinalIgnoreCase)
+            || sinParametros.Equals("application/xml", StringComparison.OrdinalIgnoreCase)
+            || sinParametros.Equals("text/xml", StringComparison.OrdinalIgnoreCase)
+            || sinParametros.Equals(TipoVml, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
