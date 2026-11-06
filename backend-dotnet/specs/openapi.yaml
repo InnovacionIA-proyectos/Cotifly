@@ -2586,8 +2586,9 @@ paths:
       tags: [web]
       summary: Estado del costeo en Nexo, precio final y servicios conexos de la cotización
       description: |
-        HU-005.7 (ADR-015 §5). `precio_final` y el `precio` de cada servicio conexo salen del módulo de Precio con el margen
-        de la cotización (resuelto al enviarla: SAP TM con el BP o la política de la línea). `precio_final` es `null`
+        HU-005.7 (ADR-015 §5). `precio_final` sale del módulo de Precio con el margen de la cotización (resuelto al enviarla:
+        SAP TM con el BP o la política de la línea) sobre el transporte; HU-043.2 (#251): el `precio` de cada servicio conexo
+        es su venta, sin margen, y suma tal cual. `precio_final` es `null`
         mientras no haya costeo. Solo el dueño.
 
         HU-039.1 (#218, reversa de ADR-015 §5 confirmada por la Gerencia Comercial el 2026-10-27): cada ruta trae su costo
@@ -3460,7 +3461,8 @@ paths:
         - **`incluidos`** (HU-005.7): los ids que se conservan, sin cambiar cantidades; los demás se quitan. Con ruta, solo en esa
           ruta; sin ruta, en todas (compatibilidad).
 
-        Después del cambio se recalculan la ruta (`costoServiciosConexos`, su costo final y su precio con su margen) y el total.
+        Después del cambio se recalculan la ruta (`costoServiciosConexos`, su costo final y su precio: el transporte con su
+        margen + la venta de los conexos, sin margen, HU-043.2) y el total.
         Cada conexo quitado o con cantidad nueva queda en la auditoría (`EventosHerramienta`, herramienta
         `cambiar_servicios_conexos`, sin montos). Solo mientras la cotización tenga precio. Solo el dueño.
 
@@ -7368,8 +7370,8 @@ components:
           nullable: true
           description: |
             Precio al cliente (costeo de Nexo con margen). `null` mientras no haya costeo. **HU-021 (ADR-019): incluye los
-            servicios conexos** (es la suma de las rutas; cada ruta = fletes + retorno + levante + conexos, con su margen). No
-            sumarle el `precio` de `servicios_conexos`, que es el desglose.
+            servicios conexos** (es la suma de las rutas; cada ruta = (fletes + retorno + levante) con su margen + la venta de
+            sus conexos sin margen, HU-043.2). No sumarle el `precio` de `servicios_conexos`, que es el desglose.
         margen_aplicado:
           type: number
           nullable: true

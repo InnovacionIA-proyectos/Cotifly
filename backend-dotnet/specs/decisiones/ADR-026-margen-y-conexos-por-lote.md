@@ -89,6 +89,12 @@ varias líneas) no se pueden deshacer si Cotifly falla después: no hay forma de
   adelanta a ese momento (segundos, con `CosteoNexo:IntervaloTickSegundos`). En una cotización entregada esto vuelve a agendarla solo
   para el envío.
 - Sin script de base de datos ni configuración nueva; sin códigos de error nuevos.
+- HU-043.2 (#251): una venta 0 (en el catálogo o en Nexo) es un conexo **sin cobro**; solo la venta ausente (`null`) es "al costo".
+- HU-043.2 (#251), **riesgo aceptado:** la venta del conexo en lote es la del catálogo al agregarlo. Si la biblioteca de Nexo cambia
+  antes del envío diferido, Nexo fija otra; el siguiente polling la corrige (refresca la venta de los conexos guardados cruzando por el
+  id), salvo que en ese intervalo se genere el PDF o se finalice (precio congelado).
+- HU-043.2 (#251), deducción del costo (#236): con el precio y el margen se sigue pudiendo deducir el costo del transporte
+  (`precio_transporte × (1 − margen)`), pero no el de los conexos, porque su precio es la venta y la venta no es el costo.
 
 ## Pendientes
 

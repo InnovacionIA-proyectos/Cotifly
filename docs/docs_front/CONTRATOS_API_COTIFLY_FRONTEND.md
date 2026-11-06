@@ -130,7 +130,8 @@ moneda en el cliente.
 Reglas de dinero que la UI debe respetar:
 
 - **`precio_final` de una cotización YA INCLUYE los servicios conexos.** Es la suma de `rutas[].precio_final_linea`, y cada ruta es
-  fletes + retorno + levante + conexos, con el margen de la ruta. **No sumarle** el `precio` de `servicios_conexos`: ese `precio` es
+  (fletes + retorno + levante) con el margen de la ruta + la venta de sus conexos, sin margen (HU-043.2, #251). **No sumarle** el
+  `precio` de `servicios_conexos`: ese `precio` es
   solo el desglose. Si se suma, se cobra dos veces.
 - Excepción: en la **vista de la licitación** (`Licitacion.precio_final`, `lineas[].precio_final`) y en su **Excel**, cada fila es la
   tarifa del transporte **sin** conexos; los conexos se listan aparte. Tarifa + conexos = precio de la ruta. **Es una diferencia
@@ -4169,6 +4170,13 @@ fila_excel, campo, codigo, mensaje}`.
 
 **2026-11-05 (rama `251-conexos-precio-venta`, #251, HU-043.2).** Servicios conexos a precio de venta y sin margen (fila 75 de §7):
 
+- **Venta 0:** un conexo con precio de venta 0 (en el catálogo o en NEXO) es un conexo **sin cobro**: suma 0 al precio. Solo la venta
+  ausente (`null`) significa "al costo".
+- **Venta de los conexos ya guardados:** el polling actualiza la venta de los conexos de una cotización sin precio congelado con la que
+  NEXO fijó (cruzando por el id), así que los guardados antes del despliegue (al costo) toman su venta real. Una venta ya conocida no
+  vuelve al costo si NEXO no la trae. La venta se guarda a 2 decimales (half-to-even), como el costo.
+- **Deducción del costo (#236):** quien ve el precio y el margen sigue pudiendo deducir el costo del **transporte**
+  (`precio_transporte × (1 − margen)`), pero ya no el de los conexos: su precio es la venta y la venta no es el costo.
 - Fórmula del precio de la ruta: `precio_final_linea = (fletes + retorno + levante) con el margen + Σ venta de los conexos`. Ejemplo
   (COP, margen 15 %, método `margen`): flete 2.550.000 y un conexo con costo 85.000 y venta 120.000 por unidad, 2 unidades →
   2.550.000 / 0,85 = 3.000.000 + 240.000 = **3.240.000**. Antes: (2.550.000 + 170.000) / 0,85 = 3.200.000.
