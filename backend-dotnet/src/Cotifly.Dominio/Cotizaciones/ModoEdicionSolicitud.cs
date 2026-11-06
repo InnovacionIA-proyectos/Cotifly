@@ -37,7 +37,14 @@ public sealed record clsEdicionSolicitud(
     clsEncabezadoSolicitudCosteo Encabezado,
     IReadOnlyList<clsRutaEditada> Rutas,
     string? MonedaNueva = null,
-    decimal TrmNueva = 0m);
+    decimal TrmNueva = 0m)
+{
+    /// <summary>
+    /// HU-045.2 (#264, decisión 5): la tasa vigente del seguro de la mercancía (<c>TarifasSeguro</c>), con la que se recalcula el seguro de
+    /// una ruta que lo incluye si la edición cambia su valor de la mercancía; <c>null</c> = se conserva la tasa que ya tenía la ruta.
+    /// </summary>
+    public decimal? TasaSeguroVigente { get; init; }
+}
 
 /// <summary>Lo que hizo <see cref="clsCotizacionSolicitud.AplicarEdicion"/>: las rutas que se quitaron y el orden de las nuevas.</summary>
 public sealed record clsResultadoEdicion(IReadOnlyList<clsLineaSolicitud> RutasQuitadas, IReadOnlyList<int> RutasAgregadas);
