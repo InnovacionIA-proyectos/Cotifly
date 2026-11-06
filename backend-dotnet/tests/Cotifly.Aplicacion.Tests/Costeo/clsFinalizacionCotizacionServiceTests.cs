@@ -227,6 +227,59 @@ public sealed class clsFinalizacionCotizacionServiceTests
         await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosAsync(Ct);
     }
 
+    /// <summary>
+    /// #259: con un conexo que sigue pendiente después de releer Nexo y la cotización fuera de la agenda (una entregada que el polling ya no
+    /// consulta), finalizar la vuelve a encolar para el envío diferido y sigue respondiendo 409, SIN hacer el POST de conexos (lo hace el
+    /// worker con su reclamo). También si Nexo no responde la relectura.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Issue259_ConConexosPendientesFueraDeLaAgendaFinalizarLaReencolaSinEnviarANexo(bool nexoResponde)
+    {
+        var entregada = Entregada();
+        entregada.CosteoSiguienteConsultaAt.Should().BeNull("entregada: el polling ya no la consulta");
+        if (nexoResponde)
+        {
+            _nexo.LeerCotizacionAsync(_ana, entregada.CotizacionNexoId!, Arg.Any<CancellationToken>())
+                .Returns(new clsCotizacionNexo(entregada.CotizacionNexoId!, clsCotizacionNexo.EstadoEntregada, "SinDefinir", [], []));
+        }
+
+        var resultado = await Servicio().FinalizarAsync(_ana, entregada.Folio, Version, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.CotizacionNoFinalizable);
+        resultado.Error.Datos!["motivo"].Should().Be(clsCotizacionSolicitud.CodigoConexosPendientesEnNexo);
+        entregada.CosteoSiguienteConsultaAt.Should().Be(_ahora, "vuelve a la agenda para que el worker envíe el conexo en segundos");
+        entregada.Finalizada.Should().BeFalse();
+        await _nexo.DidNotReceiveWithAnyArgs().AgregarAsync(default, default!, default!, Ct);
+        await _unidad.Received(nexoResponde ? 2 : 1).GuardarCambiosAsync(Arg.Any<CancellationToken>());
+        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
+    }
+
+    [Fact]
+    public async Task Issue259_SiYaEstaAgendadaParaProntoNoSeMueveLaAgenda()
+    {
+        var entregada = Entregada();
+        entregada.ProgramarRelecturaCosteo(_ahora.AddSeconds(30));   // p. ej. reclamada por una réplica del polling
+
+        var resultado = await Servicio().FinalizarAsync(_ana, entregada.Folio, Version, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.CotizacionNoFinalizable);
+        entregada.CosteoSiguienteConsultaAt.Should().Be(_ahora.AddSeconds(30), "nunca se cruza con un reclamo vigente");
+        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosAsync(Ct);
+    }
+
+    /// <summary>Una entregada (sin agenda) con un conexo pendiente en Nexo según el registro del envío diferido.</summary>
+    private clsCotizacionSolicitud Entregada()
+    {
+        var entregada = clsCotizacionMuestra.ConVersionNegocio(
+            clsCotizacionMuestra.Costeada(estado: EstadoCosteo.Entregada, usuarioId: _ana, folio: "PCN-AP-28092026-259"), Version);
+        _cotizaciones.ObtenerPorFolioDelUsuarioAsync(entregada.Folio, _ana, Arg.Any<CancellationToken>()).Returns(entregada);
+        _envioConexos.EstadosAsync(entregada, Arg.Any<CancellationToken>()).Returns(
+            new Dictionary<(Guid, string), string> { [(entregada.PrimeraRuta!.Id, "CNX-1")] = clsEnvioConexosNexoService.VisiblePendiente });
+        return entregada;
+    }
+
     [Fact]
     public async Task Validacion228_SinPendientesNoSeLlamaANexo()
     {
