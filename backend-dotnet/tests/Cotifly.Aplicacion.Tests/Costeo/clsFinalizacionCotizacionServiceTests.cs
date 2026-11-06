@@ -249,24 +249,33 @@ public sealed class clsFinalizacionCotizacionServiceTests
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.CotizacionNoFinalizable);
         resultado.Error.Datos!["motivo"].Should().Be(clsCotizacionSolicitud.CodigoConexosPendientesEnNexo);
-        entregada.CosteoSiguienteConsultaAt.Should().Be(_ahora, "vuelve a la agenda para que el worker envíe el conexo en segundos");
+        // Auditoría M1: con la actualización condicional del repositorio (nunca pisa un reclamo vigente), no con la unidad de trabajo.
+        await _cotizaciones.Received(1).ReencolarConsultaCosteoAsync(entregada.Id, _ahora, Arg.Any<CancellationToken>());
         entregada.Finalizada.Should().BeFalse();
         await _nexo.DidNotReceiveWithAnyArgs().AgregarAsync(default, default!, default!, Ct);
-        await _unidad.Received(nexoResponde ? 2 : 1).GuardarCambiosAsync(Arg.Any<CancellationToken>());
+        await _unidad.Received(nexoResponde ? 1 : 0).GuardarCambiosAsync(Arg.Any<CancellationToken>());
         await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
     }
 
-    [Fact]
-    public async Task Issue259_SiYaEstaAgendadaParaProntoNoSeMueveLaAgenda()
+    /// <summary>
+    /// Auditoría B2: con la cotización ya en la agenda (reclamada por una réplica o esperando el siguiente reintento, aunque sea en una
+    /// hora) finalizar no la mueve: varios clics no adelantan la espera de los reintentos ni agotan su tope.
+    /// </summary>
+    [Theory]
+    [InlineData(30)]
+    [InlineData(3600)]
+    public async Task Issue259_SiYaEstaEnLaAgendaNoSeReencola(int segundos)
     {
         var entregada = Entregada();
-        entregada.ProgramarRelecturaCosteo(_ahora.AddSeconds(30));   // p. ej. reclamada por una réplica del polling
+        entregada.ProgramarRelecturaCosteo(_ahora.AddSeconds(segundos));
+        _nexo.LeerCotizacionAsync(_ana, entregada.CotizacionNexoId!, Arg.Any<CancellationToken>())
+            .Returns(new clsCotizacionNexo(entregada.CotizacionNexoId!, clsCotizacionNexo.EstadoEntregada, "SinDefinir", [], []));
 
         var resultado = await Servicio().FinalizarAsync(_ana, entregada.Folio, Version, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.CotizacionNoFinalizable);
-        entregada.CosteoSiguienteConsultaAt.Should().Be(_ahora.AddSeconds(30), "nunca se cruza con un reclamo vigente");
-        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosAsync(Ct);
+        entregada.CosteoSiguienteConsultaAt.Should().Be(_ahora.AddSeconds(segundos));
+        await _cotizaciones.DidNotReceiveWithAnyArgs().ReencolarConsultaCosteoAsync(default, default, Ct);
     }
 
     /// <summary>Una entregada (sin agenda) con un conexo pendiente en Nexo según el registro del envío diferido.</summary>

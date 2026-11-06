@@ -175,6 +175,94 @@ public sealed class clsConexosHuerfanosNexoTests
         cotizacion.CosteoSiguienteConsultaAt.Should().Be(sigueAgendada ? clsCotizacionMuestra.Ahora + new clsOpcionesCosteoNexo().IntervaloReintentoConexos : null);
     }
 
+    // ------------------------------------------------------------------ Auditoría M2: rutas rechazadas y rutas sin camión vigente
+
+    [Fact]
+    public async Task AuditoriaM2_LosConexosDeUnaRutaRechazadaNoSeEnviaNiQuedanFallidoDefinitivoNiTomanLaLineaDeOtraRuta()
+    {
+        var cotizacion = clsCotizacionMuestra.LicitacionCosteada([1_000_000m, 2_000_000m], estado: EstadoCosteo.Entregada, usuarioId: _ana, tipo: TipoSolicitud.Spot);
+        var rechazada = cotizacion.RutasOrdenadas[1];
+        rechazada.VehiculosOrdenados[0].RegistrarCosteo(EstadoCosteo.Rechazada, null, null);
+        cotizacion.ResumirRutas();
+        rechazada.Rechazada.Should().BeTrue("precondición: la Mesa rechazó la única línea de la ruta 2");
+        clsCotizacionMuestra.ConConexo(cotizacion, "CX-2", "Cargue", 85_000m, orden: 2);
+        var unaSolaLinea = CotizacionNexo(("L1", "CL-1"));   // antes, sin camión vigente, la ruta 2 tomaba esta línea de la ruta 1
+
+        var resultado = await Envio().EnviarPendientesAsync(cotizacion, unaSolaLinea, _ana, Ct);
+
+        resultado.Should().Be(clsResultadoEnvioConexos.Nada);
+        _registrados.Should().BeEmpty("ni enviado ni fallido_definitivo: #228 tampoco los cuenta para finalizar");
+        await _nexo.DidNotReceiveWithAnyArgs().AgregarAsync(default, default!, default!, Ct);
+        (await Envio().TieneReintentosAsync(cotizacion, Ct)).Should().BeFalse("el reintento tampoco recorre las rutas rechazadas");
+    }
+
+    [Fact]
+    public void AuditoriaM2_UnaRutaConTodosSusCamionesDescartadosNoTomaLaUnicaLineaDeLaCotizacion()
+    {
+        var cotizacion = clsCotizacionMuestra.Costeada(estado: EstadoCosteo.Entregada, usuarioId: _ana);
+        var ruta = cotizacion.PrimeraRuta!;
+        ruta.VehiculosOrdenados[0].RegistrarCosteo(EstadoCosteo.Descartada, null, null);
+
+        clsEnvioConexosNexoService.LineaDestino(cotizacion, ruta, CotizacionNexo(("OTRA", "CL-9"))).Should().BeNull(
+            "la única línea de la cotización solo vale para una ruta SIN camiones");
+    }
+
+    // ------------------------------------------------------------------ Auditoría B3 y B4: la consulta que entrega
+
+    [Fact]
+    public async Task AuditoriaB4_LaConsultaQueEntregaNoSacaDeLaAgendaSiQuedaUnConexoPendiente()
+    {
+        var (cotizacion, envio, polling) = ConsultaQueEntrega();
+        envio.EnviarPendientesAsync(cotizacion, Arg.Any<clsCotizacionNexo>(), _ana, Arg.Any<CancellationToken>()).Returns(clsResultadoEnvioConexos.Nada);
+
+        await polling.ProcesarAsync(new clsConsultaCosteoPendiente(cotizacion.Id, cotizacion.CosteoSiguienteConsultaAt!.Value), Ct);
+
+        cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.Entregada);
+        cotizacion.CosteoSiguienteConsultaAt.Should().Be(_reloj.AhoraUtc + new clsOpcionesCosteoNexo().IntervaloReintentoConexos,
+            "el envío devolvió Nada pero queda un pendiente: invariante de agenda");
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AuditoriaB3_UnaExcepcionDelEnvioReagendaSoloConLaActualizacionCondicionalYConTecho(bool dentroDelTecho)
+    {
+        var config = new clsOpcionesCosteoNexo { EdadMaximaHoras = 24 * 60, EdadMaximaSincronizacionResultadoDias = 1 };
+        var (cotizacion, envio, polling) = ConsultaQueEntrega(config, dentroDelTecho ? TimeSpan.FromHours(2) : TimeSpan.FromDays(2));
+        envio.EnviarPendientesAsync(cotizacion, Arg.Any<clsCotizacionNexo>(), _ana, Arg.Any<CancellationToken>())
+            .Returns<clsResultadoEnvioConexos>(_ => throw new InvalidOperationException("error determinista (prueba)"));
+
+        await polling.ProcesarAsync(new clsConsultaCosteoPendiente(cotizacion.Id, cotizacion.CosteoSiguienteConsultaAt!.Value), Ct);
+
+        await _cotizaciones.Received(dentroDelTecho ? 1 : 0)
+            .ReencolarConsultaCosteoAsync(cotizacion.Id, _reloj.AhoraUtc + config.IntervaloReintentoConexos, Arg.Any<CancellationToken>());
+        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosAsync(Ct);
+    }
+
+    /// <summary>
+    /// Una cotización en autocosteo con el conexo <c>CX-1</c> (pendiente según el registro) cuya siguiente consulta trae la entrega de la
+    /// Mesa, <paramref name="despues"/> (por defecto 2 min) después del envío a Nexo.
+    /// </summary>
+    private (clsCotizacionSolicitud Cotizacion, IClsEnvioConexosNexoService Envio, clsPollingCosteoService Polling) ConsultaQueEntrega(
+        clsOpcionesCosteoNexo? config = null, TimeSpan? despues = null)
+    {
+        var cotizacion = ConConexo(EstadoCosteo.Autocosteo);
+        _reloj.AhoraUtc.Returns(clsCotizacionMuestra.Ahora + (despues ?? TimeSpan.FromMinutes(2)));
+        var envio = Substitute.For<IClsEnvioConexosNexoService>();
+        envio.EstadosAsync(cotizacion, Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<(Guid, string), string> { [(cotizacion.PrimeraRuta!.Id, "CX-1")] = clsEnvioConexosNexoService.VisiblePendiente });
+        var costeo = Substitute.For<IClsCosteoNexo>();
+        costeo.ConsultarCosteoAsync(_ana, "SOL-1", Arg.Any<CancellationToken>())
+            .Returns(clsCotizacionMuestra.Foto([2_550_000m], estadoCotizacion: clsCotizacionNexo.EstadoEntregada));
+        _cotizaciones.ReclamarConsultaCosteoAsync(cotizacion.Id, Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        _cotizaciones.ObtenerPorIdAsync(cotizacion.Id, Arg.Any<CancellationToken>()).Returns(cotizacion);
+        _unidad.GuardarCambiosSiVersionAsync(cotizacion.Id, Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(true);
+        var polling = new clsPollingCosteoService(_cotizaciones, costeo, _unidad, Substitute.For<IClsAuditoriaService>(), _reloj,
+            Options.Create(config ?? new clsOpcionesCosteoNexo()), NullLogger<clsPollingCosteoService>.Instance, new clsPrecioCosteoService(), envio);
+        return (cotizacion, envio, polling);
+    }
+
     // ------------------------------------------------------------------ Apoyo
 
     /// <summary>Cotización costeada (un camión con la línea <c>L1</c>, cotización de Nexo <c>COT-1</c>) con el conexo <c>CX-1</c>.</summary>
