@@ -2884,6 +2884,132 @@ Descarga el Excel original del cliente con columnas agregadas: `Precio final Cot
 | 404 | `ErrorWeb` (JSON) | No es licitación o no la puede ver |
 | 503 | `SERVICIO_OCUPADO` con `Retry-After` (HU-035.2, #213) | Cupo de lecturas de Excel lleno: reintentar tras `Retry-After` |
 
+#### 4.6.6 `POST /web/licitaciones/sugerir-mapeo` (HU-044.2, #253)
+
+Propone a qué campo va cada columna de UNA hoja con la importación inteligente de NEXO: primero la plantilla guardada del cliente para
+esos encabezados, luego su diccionario y, para lo que falte, la IA. **Es solo una sugerencia**: el comercial la confirma o la cambia
+antes de convertir las filas (`aplicar-mapeo`, #254). No guarda nada. Sirve igual con una hoja de `analizar-excel` (4.6.1) que con una
+tabla de `leer-estructura` (4.6.7): se mandan sus `encabezados` y `filas` tal cual.
+
+- **Rol:** comercial (también gerente y director, como el resto de `/web`). **Cuerpo:** JSON `SugerirMapeoWeb`.
+- `nit_cliente`: el NIT de la licitación, con o sin puntos y dígito de verificación (opcional: sin él NEXO usa solo el diccionario
+  general). `encabezados`: los de la hoja, en orden. `filas`: una muestra (mandar hasta 200; NEXO usa las 20 primeras y Cotifly
+  descarta las que pasen de 200). Un `null` viaja como texto vacío.
+- **`campo` viene con el nombre de NEXO** (`ignorar` = sin propuesta). Es el mismo que vuelve en `aplicar-mapeo` y en las plantillas.
+- **Sin propuesta no es un error:** con más de 100 encabezados (`motivo_sin_ia = DEMASIADAS_COLUMNAS`, sin llamar a NEXO), con la
+  importación apagada en el ambiente o con NEXO caído (`NEXO_NO_DISPONIBLE`, una sola llamada, sin reintentos) responde **200** con todas
+  las columnas en `campo = ignorar`, `origen = ninguno`, `confianza = 0` e `ia_usada = false`. La pantalla sigue en mapeo manual.
+- Con la IA de NEXO apagada NEXO responde lo que resolvieron la plantilla y el diccionario, `ia_usada = false` y `motivo_sin_ia =
+  IA_NO_DISPONIBLE` (o un `IA_*` del proveedor). Con plantilla reconocida: `PLANTILLA_RECONOCIDA` y `plantilla_id`.
+- **Peso (DU §8):** la sugerencia no trae pesos, así que la regla del peso total con tara no aplica aquí; se aplica al convertir las filas
+  (#254) y en la captura.
+
+```json
+{
+  "nit_cliente": "900.555.111-2",
+  "encabezados": ["ORIGEN", "DESTINO", "TON", "OBSERVACIONES"],
+  "filas": [["Buenaventura", "Bogotá", "32", ""], ["Cartagena", "Medellín", "28", "urgente"]]
+}
+```
+
+```json
+{
+  "ia_usada": true,
+  "motivo_sin_ia": null,
+  "columnas": [
+    { "indice": 0, "columna": "ORIGEN", "campo": "origen", "transformacion": "ninguna", "confianza": 1.0, "origen": "diccionario", "nota": null },
+    { "indice": 1, "columna": "DESTINO", "campo": "destino", "transformacion": "ninguna", "confianza": 0.9, "origen": "ia", "nota": null },
+    { "indice": 2, "columna": "TON", "campo": "peso", "transformacion": "peso_toneladas_a_kg", "confianza": 0.9, "origen": "ia", "nota": null },
+    { "indice": 3, "columna": "OBSERVACIONES", "campo": "ignorar", "transformacion": "ninguna", "confianza": 0.0, "origen": "ninguno", "nota": null }
+  ],
+  "dudas": ["¿TON es el peso total?"],
+  "plantilla_id": null
+}
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `SugerenciaMapeo` | Prellenar el mapeo con `campo` (traducido con la tabla de abajo), marcar las columnas `origen = ia` como sugeridas y mostrar `dudas`. Con `ia_usada = false` y todas en `ignorar`, mapeo manual (con `DEMASIADAS_COLUMNAS`: "La hoja tiene más de 100 columnas: mapéala a mano") |
+| 400 | `ErrorWeb` (cuerpo inválido); `ENCABEZADOS_REQUERIDOS`, `CLIENTE_NIT_INVALIDO`, un código de NEXO o `COSTEO_NEXO_RECHAZADA` | Mostrar `mensaje` y seguir en manual |
+| 403 | `NEXO_SIN_PERMISO` | El comercial no tiene el rol requerido en NEXO |
+| 429 | `IA_TOPE_DIARIO` (sin `Retry-After`) | "Agotaste tu cupo diario de IA en NEXO"; mapeo manual. No bloquea a los demás comerciales |
+
+**Equivalencias entre el `campo` de NEXO y el campo del frontend** (`CampoMapeableLicitacion`):
+
+| NEXO (`campo`) | Frontend | Nota |
+|---|---|---|
+| `origen`, `destino` | `origen`, `destino` | |
+| `tipoVehiculo`, `carroceria`, `claseViaje`, `claseContenedor`, `lineaNegocio` | igual | |
+| `exclusivo`, `consolidado`, `retornaContenedor` | igual | |
+| `ciudadDevolucionContenedor`, `ciudadLevanteContenedor` | `ciudadDevolucion…`, `ciudadLevante…` | |
+| `horasCargue`, `horasDescargue`, `valorMercancia` | igual | Las horas van las dos o ninguna |
+| `cantidad`, `largoCm`, `anchoCm`, `altoCm`, `pesoKg` | `cantidad`, `largo`, `ancho`, `alto`, `pesoKg` | `pesoKg` es el peso de **una unidad** y es obligatorio con medidas |
+| `peso` | — | Peso total de la línea en kg. En NEXO (DU §8) incluye la tara; en Cotifly la tara solo aplica a Contenedor (`peso_con_tara_kg`, #250). Cómo se traduce a la línea lo define `aplicar-mapeo` (#254) |
+| `descripcion`, `codigoTipoMercancia` | (columna de mercancía) | Alimentan `mercancias[]` |
+| `tipologia`, `levanteContenedorDiferente`, `referencia`, `deadline` | — | Pendiente de confirmar su uso en Cotifly; `deadline` y `referencia` son de la licitación, no de la línea |
+| `ignorar` | — | Columna sin propuesta |
+
+#### 4.6.7 `POST /web/licitaciones/leer-estructura` (HU-044.2, #253)
+
+Paso previo a 4.6.6 cuando el Excel tiene un formato complejo (encabezado en varias filas, matrices con los puertos en las columnas, el
+destino en un recuadro suelto). NEXO propone con IA una **receta de lectura**, la ejecuta y devuelve **tablas con la misma forma de las
+hojas de `analizar-excel`**: cada una va a `sugerir-mapeo` sin transformarla. Cotifly solo hace de puente: no guarda nada (tampoco el
+historial del chat) y **no altera `receta` ni `tablas`**.
+
+- **Rol:** comercial (también gerente y director). **Cuerpo:** `multipart/form-data` con `archivo` (`.xlsx` o `.xlsm`, hasta unos 9,9
+  MB), `nit_cliente` (opcional: solo busca el cliente en NEXO, no lo crea), `instrucciones` (opcional, máx. 4000) y `receta` (opcional,
+  texto JSON, máx. 60.000).
+- **Primera lectura:** solo `archivo` y `nit_cliente`. Si el cliente tiene un formato guardado parecido, NEXO lo usa sin IA
+  (`origen_receta = guardada`).
+- **Corrección:** el mismo archivo, la frase del comercial en `instrucciones` (por ejemplo "el destino es la casilla al lado de
+  SERVICIO") y la `receta` de la respuesta anterior **serializada como texto** (`JSON.stringify(respuesta.receta)`). Llega a NEXO
+  exactamente como la manda el frontend.
+- **Reaplicar sin IA:** el archivo y una `receta`, sin `instrucciones` (`origen_receta = manual`).
+- **Antes de NEXO, Cotifly solo valida el archivo** (que venga, el tamaño y la extensión). **No abre el libro**: un archivo que Cotifly
+  no sabría leer igual llega a NEXO, que decide (`EXCEL_INVALIDO`, `EXCEL_SIN_DATOS`).
+- **`ia_usada = false` es un 200 normal**, con el motivo en `motivo_sin_ia`. **Sin reintentos automáticos** (cada llamada puede gastar
+  IA). Puede tardar hasta unos 3 minutos: mostrar un indicador y no reenviar mientras tanto.
+- `receta` es **opaca**: sus claves vienen en camelCase, como las manda NEXO (no pasan a snake_case). No interpretarla; solo devolverla.
+
+```json
+{
+  "archivo": "EPM_formulario.xlsx",
+  "origen_receta": "ia",
+  "similitud": null,
+  "receta_guardada_id": null,
+  "ia_usada": true,
+  "motivo_sin_ia": null,
+  "receta": { "version": 1, "hojas": [ { "hoja": "*", "usar": true, "filasEncabezado": [20] } ], "unir": false, "notas": null },
+  "resumen": "La hoja VALLE DE ABURRA es una tabla cruzada: los puertos de origen están en las columnas.",
+  "dudas": ["¿Las celdas vacías de la matriz son rutas a cotizar?"],
+  "hojas_del_archivo": [ { "nombre": "VALLE DE ABURRA", "oculta": false, "filas": 60, "columnas": 8, "usada": true } ],
+  "tablas": [
+    {
+      "nombre": "VALLE DE ABURRA",
+      "fila_encabezado": 20,
+      "encabezados": ["Tipo de servicio", "Origen", "Destino", "Valor"],
+      "filas": [["Turbo Hasta 4.5 ton", "CARTAGENA", "MEDELLIN", ""]],
+      "total_filas": 36,
+      "filas_excel": null,
+      "columna_mercancia": null,
+      "columna_codigo_mercancia": null,
+      "mercancias": null
+    }
+  ],
+  "avisos": [],
+  "cambios": null
+}
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `LecturaEstructura` | Mostrar `resumen` y `dudas` en el chat, las `tablas` para elegir y seguir con 4.6.6; guardar `receta` para la siguiente corrección. Con `cambios`, avisar qué títulos faltan o son nuevos |
+| 400 | De Cotifly, sin llamar a NEXO: `ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE`, `CLIENTE_NIT_INVALIDO`. De NEXO, con su código y su mensaje: `EXCEL_INVALIDO`, `EXCEL_SIN_DATOS`, `RECETA_INVALIDA`, `INSTRUCCIONES_DEMASIADO_LARGAS`, `VALIDATION_ERROR`; `COSTEO_NEXO_RECHAZADA` para otro 4xx | Mostrar `mensaje`. Con `RECETA_INVALIDA`, volver a la primera lectura |
+| 403 | `NEXO_SIN_PERMISO` | El comercial no tiene el rol requerido en NEXO |
+| 413 | `ErrorWeb` | Más de 12 MB |
+| 429 | `IA_TOPE_DIARIO` (sin `Retry-After`) | "Agotaste tu cupo diario de IA en NEXO"; usar `analizar-excel` o reaplicar una receta sin `instrucciones` |
+| 503 | `NEXO_NO_DISPONIBLE` | Importación apagada o NEXO caído: ofrecer Reintentar (a mano) o `analizar-excel` |
+
 ### 4.7 PDF
 
 #### 4.7.1 `POST /web/cotizaciones/{folio}/costeo/pdf`
@@ -3865,6 +3991,7 @@ parecido del catálogo, `sugerido = true`, con `similitud` de 0 a 1), `null` (si
 | `ARCHIVO_REQUERIDO` | 400 | Falta el Excel o está vacío | Pedir el archivo |
 | `CAMPO_NO_EDITABLE` | 400 | La edición cambia el cliente, el tipo o la línea de negocio de una ruta (HU-028) | Restaurar el campo de `detalle.campo` |
 | `CATALOGOS_FLETE_NO_DISPONIBLE` | 503 | Catálogos de NEXO caídos y sin copia de menos de 24 h | Deshabilitar selects, Reintentar; nada se guardó |
+| `CLIENTE_NIT_INVALIDO` | 400 | HU-044.2 (#253): el NIT de la licitación no tiene letras ni dígitos o pasa de 30 (Cotifly, sin llamar a NEXO); al guardar plantillas o formatos, NEXO también lo responde si el NIT no es de ningún cliente ni prospecto | Revisar el NIT del cliente |
 | `CLIENTE_BUSQUEDA_NO_DISPONIBLE` | 503 (antes 400) | Buscador de clientes no disponible (no es "sin resultados"); `mensaje` dice qué falta | "Buscador no disponible", Reintentar |
 | `CONEXO_INVALIDO` | 400 | NEXO no aceptó el servicio, o la ruta no existe | Mostrar mensaje; recargar el costeo antes de reintentar |
 | `CONFLICTO_CONCURRENCIA` | 409 | El `If-Match` no coincide; nada cambió | Recargar el costeo y repetir |
@@ -3891,6 +4018,7 @@ parecido del catálogo, `sugerido = true`, con `similitud` de 0 a 1), `null` (si
 | `CUBICADOR_PETICION_RECHAZADA` | 400 | D1 (2026-10-16): el cubicador respondió 422 (su validación de esquema) sin señalar una mercancía. En "Calcular cubicaje", la captura y el recálculo; nada se guardó. Antes era 503 `CUBICADOR_RESPUESTA_INVALIDA` | Mostrar `mensaje` y pedir que revise medidas, peso y cantidades; no reintentar sin cambios |
 | `CUBICADOR_RESPUESTA_INVALIDA` | 503 | Respuesta del cubicador fuera del contrato | "Avisa a soporte" |
 | `DIMENSIONES_INVALIDAS` | 400 | Medida fuera de 0,1 a 999.999 o peso por bulto ≤ 0. En "Calcular cubicaje" con `detalle.item` (base 0) y `detalle.campo` (D1); también por un 422 del cubicador que señala una mercancía | Marcar el campo del ítem |
+| `ENCABEZADOS_REQUERIDOS` | 400 | HU-044.2 (#253): `sugerir-mapeo` sin encabezados (sin llamar a NEXO) | Mandar los encabezados de la hoja |
 | `ERROR_INTERNO` | 500 | Error no controlado del servidor (fila 57): mensaje genérico; `detalle.id_correlacion` para soporte. Antes salía como 400 o sin cuerpo | "Ocurrió un error. Reintenta" |
 | `ESTADO_NO_PERMITE` | 409 | El estado no admite la operación (ver `detalle.motivo`) | Según el motivo (sección 5.7) |
 | `EXCEL_INVALIDO` | 400 | No se pudo leer el Excel (en el Excel de mercancías, `detalle.motivo` dice por qué: 4.4.11) | Pedir otro archivo |
@@ -3905,6 +4033,7 @@ parecido del catálogo, `sugerido = true`, con `similitud` de 0 a 1), `null` (si
 | `ITEMS_REQUERIDOS` | 400 | "Calcular cubicaje" sin ítems | Deshabilitar el botón |
 | `JUSTIFICACION_REQUERIDA` | 400 | Margen por debajo del sugerido de la ruta sin justificación | Abrir el campo de justificación |
 | `LICITACION_INVALIDA` | 400 | Filas inválidas (`errores[]`) o filas guardadas que ya no pasan | Pintar errores por fila |
+| `INSTRUCCIONES_DEMASIADO_LARGAS` | 400 | HU-044.2 (#253): NEXO rechazó las `instrucciones` de `leer-estructura` (más de 4000 caracteres) | Acortar la frase |
 | `LINEA_NEGOCIO_INVALIDO` | 400 | #278 (fila 73): la línea de NEXO asociada a la línea de negocio de la ruta (la configura soporte: no hay endpoint para editarla) no es una de las seis de NEXO (`Nacional`, `Puerto a interior`, `Interior a puerto`, `Devolución de contenedor`, `Andino`, `Licitaciones`). En la captura y la licitación nada se guarda; `detalle.linea_negocio`, `detalle.linea_negocio_nexo` y `detalle.permitidas`. Al reenviar una guardada (o si NEXO lo responde), es el motivo de un `error_envio` **reintentable** | "La línea de negocio está mal configurada: avisa a soporte"; el comercial no lo corrige en el formulario |
 | `LINEA_SIN_COTIZACION_NEXO` | 409 | La ruta aún no tiene línea en la cotización de NEXO | Esperar el costeo |
 | `MARGEN_LINEA_DESCONOCIDA` | 400 | Línea de negocio inexistente o inactiva | Marcar la línea; ofrecer `detalle.lineas_validas` si vienen |
@@ -3920,6 +4049,7 @@ parecido del catálogo, `sugerido = true`, con `similitud` de 0 a 1), `null` (si
 | `PDF_YA_ENVIADO` | 409 | Ya enviada o con resultado; `detalle` trae la llamada para la versión nueva | Ofrecer "Crear versión nueva" |
 | `PDF_YA_GENERADO` | 409 | Ya hay un PDF vigente | Descargarlo |
 | `PRECONDICION_REQUERIDA` | 428 | Falta `If-Match` | Error de programación: enviar el encabezado |
+| `RECETA_INVALIDA` | 400 | HU-044.2 (#253): la `receta` de `leer-estructura` no es JSON, es demasiado grande o no corresponde al archivo (NEXO) | Volver a la primera lectura, sin `receta` |
 | `REGIONAL_NO_ASIGNADA` | 409 | El gerente no tiene regional | Estado vacío explicativo |
 | `REGIONAL_NO_PERMITIDA` | 403 | El gerente pidió con `?regional=` una regional que no es la suya (HU-037.3, fila 64) | No ofrecerle otras regionales |
 | `REGIONAL_NO_DISPONIBLE` | 503 | Fuente de la regional caída | Reintentar |
@@ -3937,6 +4067,7 @@ parecido del catálogo, `sugerido = true`, con `similitud` de 0 a 1), `null` (si
 | `TEXTOS_COTIZACION_INVALIDOS` | 400 | Asunto o introducción vacíos, largos o con URL o correos | Marcar el campo |
 | `TEXTOS_EDITADOS` | 409 | Redactar sobre textos editados | Confirmar y repetir con `?sobrescribir=true` |
 | `TRM_NO_DISPONIBLE` | 400 | No hay TRM del día | Reintentar o Cambiar a COP |
+| `VALIDATION_ERROR` | 400 | HU-044.2 (#253): NEXO rechazó la forma del formulario de `leer-estructura` (el mensaje dice el campo) | Mostrar `mensaje` |
 | `USAR_RESULTADO_NEXO` | 409 | `/seguimiento` sobre una cotización de NEXO | Llamar a `detalle.endpoint` con `If-Match` |
 | `MOTIVO_NO_PERMITIDO` | 400 | HU-018.1 (#155): perdida (`/resultado` o `/seguimiento`) sin motivo, con uno fuera de `GET /web/motivos-perdida` o con `Otro` sin comentario; `detalle.motivos_permitidos` y `detalle.requiere_comentario` | Marcar el selector; con `requiere_comentario`, pedir el comentario |
 
@@ -4077,6 +4208,7 @@ fila_excel, campo, codigo, mensaje}`.
 | 74 | **#250 (contrato único de NEXO, DU §8, fase 1): peso con tara.** La tara (`peso_con_tara_kg`) aplica **solo a `Contenedor`** (decisión del 2026-11-05): Carga Suelta y Extradimensionado siguen respondiendo `CAMPO_NO_APLICA` y mandan el peso de la carga; no se generaliza. En NEXO, una ruta de contenedor con tara y **un solo camión** viaja ahora con el peso con tara **y sus posiciones** (NEXO solo rechaza una suma de posiciones que supera el peso en más de 1 %); con varios camiones, sin posiciones como antes. Sin cambios en el contrato web: ni campos, ni códigos, ni endpoints; siguen **64 endpoints** | Sin cambio de contrato | Mostrar "Peso total con tara" **solo** con `clase_viaje = Contenedor` y limpiarlo al cambiar de clase; **no** construir el comportamiento planeado en CTF-F3/#107 para Carga Suelta |
 | 75 | **HU-043.2 (#251, NEXO S6-HU-38.2): los servicios conexos se cotizan a su precio de VENTA, sin margen.** El precio de cada ruta es ahora (fletes + retorno + levante) **con** el margen de la ruta **+** la venta de sus conexos **sin** margen (antes el margen se aplicaba también a los conexos). La venta sale del `valorVenta`/`precioVentaUnitario` de la cotización de NEXO o, en un conexo capturado o agregado en Cotifly, del `precioVenta` del catálogo de NEXO; sin ella (NEXO anterior o servicio sin precio de venta), el costo. **Cambia el significado** de: `precio_final_linea` y `precio_final` (nueva fórmula), `servicios_conexos[].precio` (la venta, en la moneda de la cotización; **no cambia al ajustar el margen**), `totales.precio_transporte` (solo transporte con margen) y `totales.precio_conexos` (suma de las ventas), y `margen_promedio` del tablero (margen sobre el transporte, no sobre el precio completo). **No cambian:** `costo_final` (costo real, con el costo de los conexos), la forma de ninguna respuesta (ningún campo nuevo ni retirado), el PDF y el correo (siguen sin mostrar el costo ni el precio de cada conexo, solo el total). Una cotización **finalizada o con PDF antes del cambio conserva su precio** y su desglose como se cotizó; una sin finalizar puede cambiar de precio la próxima vez que se recalcule (polling, margen, conexos) | Cambia | Dejar de explicar en pantalla que "el margen se aplica a los conexos": la vista previa del margen solo mueve el transporte; mostrar `servicios_conexos[].precio` como precio de venta. En el tablero, rotular `margen_promedio` como margen del transporte |
 
+| 76 | **HU-044.2 (#253): sugerencia de mapeo y lectura con IA del Excel de licitación.** Dos endpoints **nuevos** (4.6.6 y 4.6.7): `POST /web/licitaciones/sugerir-mapeo` (JSON: `nit_cliente`, `encabezados`, `filas` → `ia_usada`, `motivo_sin_ia`, `plantilla_id`, `dudas[]`, `columnas[]` con el `campo` de NEXO) y `POST /web/licitaciones/leer-estructura` (multipart: `archivo`, `nit_cliente`, `instrucciones`, `receta` → `LecturaEstructura`, con la `receta` opaca y `tablas` con la forma de `analizar-excel`). La sugerencia nunca bloquea: con más de 100 columnas, la importación apagada o NEXO caído responde 200 sin propuesta (`ia_usada = false`, `motivo_sin_ia` `DEMASIADAS_COLUMNAS` o `NEXO_NO_DISPONIBLE`). `IA_TOPE_DIARIO` (429) en los dos. Códigos de error nuevos en el enum: `VALIDATION_ERROR` (el de NEXO en `leer-estructura`). Sin script de base de datos; son **66 endpoints** | Agrega | Para un Excel complejo, llamar a `leer-estructura`, mostrar `resumen` y `dudas` y permitir corregir con una frase (reenviando `JSON.stringify(receta)`); luego, por cada hoja o tabla, llamar a `sugerir-mapeo` y prellenar el mapeo traduciendo `campo` con la tabla de 4.6.6; con `ia_usada = false` seguir en manual; con `IA_TOPE_DIARIO`, mapear a mano |
 ---
 
 ## 8. Checklist de integración
@@ -4167,6 +4299,16 @@ fila_excel, campo, codigo, mensaje}`.
 ---
 
 ## 9. Notas de versión
+
+**2026-11-06 (rama `253-sugerir-mapeo`, #253, HU-044.2).** Sugerencia de mapeo y lectura con IA del Excel de licitación (fila 76 de
+§7):
+
+- `POST /web/licitaciones/sugerir-mapeo` reenvía la hoja a NEXO y devuelve su propuesta con el `campo` de NEXO. Sin propuesta (más de
+  100 columnas, importación apagada, NEXO caído) responde 200 con `ia_usada = false`; solo `IA_TOPE_DIARIO` y los rechazos son errores.
+- `POST /web/licitaciones/leer-estructura` es el paso previo para Excels complejos: Cotifly valida solo el tamaño y la extensión (no abre
+  el libro, #277), no reintenta y devuelve la `receta` y las `tablas` de NEXO sin tocarlas. `ia_usada = false` es un 200.
+- La regla de peso del contrato único (DU §8, peso total con tara) no aplica a estos dos endpoints: no devuelven pesos. Aplica en
+  `aplicar-mapeo` (#254) y en la captura.
 
 **2026-11-05 (rama `251-conexos-precio-venta`, #251, HU-043.2).** Servicios conexos a precio de venta y sin margen (fila 75 de §7):
 
