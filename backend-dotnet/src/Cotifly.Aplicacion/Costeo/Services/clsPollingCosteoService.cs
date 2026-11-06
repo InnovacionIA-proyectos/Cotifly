@@ -363,7 +363,7 @@ public sealed class clsPollingCosteoService(
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 logger.LogWarning(ex, "No se pudieron enviar a Nexo los conexos de {Folio}: se reintenta en el siguiente ciclo.", cotizacion.Folio);
-                await MantenerEnAgendaTrasFalloAsync(cotizacion, ahora + config.IntervaloReintentoConexos);
+                await MantenerEnAgendaTrasFalloAsync(cotizacion, ahora, config);
             }
         }
 
@@ -389,17 +389,34 @@ public sealed class clsPollingCosteoService(
 
     /// <summary>
     /// #259: el envío de conexos falló con una excepción en la consulta que detuvo el polling: si quedan pendientes, la cotización vuelve a la
-    /// agenda para el reintento. Nunca lanza (la consulta ya se guardó; un fallo aquí queda en el log y finalizar la reencola).
+    /// agenda para el reintento (<c>ahora + CosteoNexo:IntervaloReintentoConexosMinutos</c>). Auditoría B3:
+    /// <list type="bullet">
+    /// <item>Se agenda con la actualización condicional del repositorio (<see cref="IClsCotizacionRepository.ReencolarConsultaCosteoAsync"/>),
+    /// no con la unidad de trabajo: no persiste lo que el envío dejó a medias en el seguimiento de cambios ni pisa una agenda o un reclamo
+    /// que otro (finalizar, el lote) haya puesto entretanto.</item>
+    /// <item>Techo: una excepción que se repite siempre (un error determinista) reagendaría la cotización sin fin. Solo se reagenda mientras
+    /// la solicitud tenga menos de <c>CosteoNexo:EdadMaximaSincronizacionResultadoDias</c> desde su envío a Nexo; pasado ese plazo queda
+    /// fuera de la agenda (con el warning en el log) y finalizar la vuelve a encolar cuando el comercial lo intente.</item>
+    /// </list>
+    /// Nunca lanza (la consulta ya se guardó).
     /// </summary>
-    private async Task MantenerEnAgendaTrasFalloAsync(clsCotizacionSolicitud cotizacion, DateTimeOffset cuando)
+    private async Task MantenerEnAgendaTrasFalloAsync(clsCotizacionSolicitud cotizacion, DateTimeOffset ahora, clsOpcionesCosteoNexo config)
     {
         try
         {
-            if (cotizacion.CosteoSiguienteConsultaAt is null && await ConexosPendientesAsync(cotizacion))
+            if (cotizacion.CosteoSiguienteConsultaAt is not null || !await ConexosPendientesAsync(cotizacion))
             {
-                cotizacion.ProgramarRelecturaCosteo(cuando);
-                await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
+                return;
             }
+
+            if (cotizacion.CosteoEnviadoAt is { } enviadaAt && ahora - enviadaAt >= config.EdadMaximaSincronizacionResultado)
+            {
+                logger.LogWarning("{Folio} sigue con conexos pendientes tras un error del envío y superó la edad máxima: no se reagenda (finalizar la vuelve a encolar).",
+                    cotizacion.Folio);
+                return;
+            }
+
+            await cotizaciones.ReencolarConsultaCosteoAsync(cotizacion.Id, ahora + config.IntervaloReintentoConexos, CancellationToken.None);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

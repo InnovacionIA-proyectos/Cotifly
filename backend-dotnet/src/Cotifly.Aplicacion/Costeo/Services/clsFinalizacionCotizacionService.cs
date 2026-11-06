@@ -6,7 +6,6 @@ using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace Cotifly.Aplicacion.Costeo.Services;
 
@@ -45,8 +44,7 @@ public sealed class clsFinalizacionCotizacionService(
     IClsAuditoriaService auditoria,
     IClsEnvioConexosNexoService envioConexos,
     IClsServiciosConexosNexo nexo,
-    ILogger<clsFinalizacionCotizacionService> logger,
-    IOptions<clsOpcionesCosteoNexo>? opcionesCosteo = null) : IClsFinalizacionCotizacionService
+    ILogger<clsFinalizacionCotizacionService> logger) : IClsFinalizacionCotizacionService
 {
     /// <summary>Herramienta de la auditoría de la finalización (<c>EventosHerramienta.herramienta</c>).</summary>
     public const string HerramientaAuditoria = "finalizar_cotizacion";
@@ -118,7 +116,7 @@ public sealed class clsFinalizacionCotizacionService(
     /// #228: conexos de las rutas cotizables (las rechazadas por la Mesa no cuentan: su conexo nunca llegará a Nexo) que todavía no están en
     /// la cotización de Nexo: <c>estado_nexo = pendiente</c> en el registro del envío diferido (<see cref="IClsEnvioConexosNexoService.EstadosAsync"/>,
     /// el mismo que ve el comercial en el costeo). <c>incierto</c> y <c>fallido_definitivo</c> no cuentan: el polling ya no los reintenta y
-    /// el costeo los muestra para revisarlos en Nexo. #259: si siguen pendientes, la cotización vuelve a la agenda (<see cref="Reencolar"/>).
+    /// el costeo los muestra para revisarlos en Nexo. #259: si siguen pendientes, la cotización vuelve a la agenda (<see cref="ReencolarAsync"/>).
     /// <para>Validación #228: con alguno pendiente se RELEE la cotización de Nexo y los que ya muestra quedan <c>enviado</c>
     /// (<see cref="IClsEnvioConexosNexoService.RegistrarConfirmadosAsync"/>) antes de contar otra vez. Un registro que se quedó en
     /// <c>pendiente</c> aunque Nexo ya tenga el conexo (agregado con el POST antes de #228, o si su registro falló) bloquearía para siempre
@@ -137,20 +135,16 @@ public sealed class clsFinalizacionCotizacionService(
         {
             logger.LogWarning("No se pudo releer la cotización de Nexo de {Folio} para confirmar {Pendientes} conexos pendientes ({Codigo}).",
                 cotizacion.Folio, pendientes, leida.Error.Codigo);
-            if (Reencolar(cotizacion))
-            {
-                await unidadTrabajo.GuardarCambiosAsync(cancellationToken);
-            }
-
+            await ReencolarAsync(cotizacion);
             return pendientes;
         }
 
         await envioConexos.RegistrarConfirmadosAsync(cotizacion, leida.Valor, cancellationToken);
         await unidadTrabajo.GuardarCambiosAsync(cancellationToken);
         pendientes = await ContarPendientesAsync(cotizacion, cancellationToken);
-        if (pendientes > 0 && Reencolar(cotizacion))
+        if (pendientes > 0)
         {
-            await unidadTrabajo.GuardarCambiosAsync(cancellationToken);
+            await ReencolarAsync(cotizacion);
         }
 
         return pendientes;
@@ -159,23 +153,23 @@ public sealed class clsFinalizacionCotizacionService(
     /// <summary>
     /// #259: con conexos todavía pendientes, la cotización vuelve a la agenda del polling para que el envío diferido los procese (los envía o
     /// los deja <c>fallido_definitivo</c>) en segundos; finalizar sigue respondiendo 409 y NUNCA hace el POST de conexos: lo hace el worker
-    /// con su reclamo, así que no hay doble envío. Con la misma holgura que el lote de conexos (<c>clsCosteoLineasService</c>): solo se mueve
-    /// una cotización fuera de la agenda o agendada más allá de dos veces el reclamo, así nunca se cruza con un reclamo vigente. Repara también
-    /// las cotizaciones que ya quedaron atascadas antes de #259. Devuelve si cambió la agenda.
+    /// con su reclamo, así que no hay doble envío. Solo se agenda una cotización que está FUERA de la agenda (las atascadas antes de #259),
+    /// con una actualización condicional en la base (<see cref="IClsCotizacionRepository.ReencolarConsultaCosteoAsync"/>, auditoría M1 y
+    /// B2): nunca pisa un reclamo vigente del worker (la cotización en memoria se leyó antes de releer Nexo) y varios clics no adelantan la
+    /// espera de los reintentos ni agotan su tope. Escribe de inmediato, sin la unidad de trabajo.
     /// </summary>
-    private bool Reencolar(clsCotizacionSolicitud cotizacion)
+    private async Task ReencolarAsync(clsCotizacionSolicitud cotizacion)
     {
-        var ahora = reloj.AhoraUtc;
-        var reclamo = (opcionesCosteo?.Value ?? new clsOpcionesCosteoNexo()).Reclamo;
-        if (cotizacion.PerdidaSoloEnCotifly || cotizacion.UsuarioId is null
-            || (cotizacion.CosteoSiguienteConsultaAt is { } siguiente && siguiente <= ahora + (2 * reclamo)))
+        if (cotizacion.PerdidaSoloEnCotifly || cotizacion.UsuarioId is null || cotizacion.CosteoSiguienteConsultaAt is not null)
         {
-            return false;
+            return;
         }
 
-        cotizacion.ProgramarRelecturaCosteo(ahora);
-        logger.LogInformation("{Folio} tiene conexos pendientes de enviar a Nexo al finalizar: vuelve a la agenda del envío diferido.", cotizacion.Folio);
-        return true;
+        // Sin el token del cliente: una vez decidido, el reencolado no se corta a mitad.
+        if (await cotizaciones.ReencolarConsultaCosteoAsync(cotizacion.Id, reloj.AhoraUtc, CancellationToken.None))
+        {
+            logger.LogInformation("{Folio} tiene conexos pendientes de enviar a Nexo al finalizar: vuelve a la agenda del envío diferido.", cotizacion.Folio);
+        }
     }
 
     private async Task<int> ContarPendientesAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken)

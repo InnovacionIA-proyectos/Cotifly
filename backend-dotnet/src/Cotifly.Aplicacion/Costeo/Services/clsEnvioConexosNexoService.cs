@@ -108,7 +108,9 @@ public sealed class clsEnvioConexosNexoService(
 
         var registros = await cotizaciones.ListarEnviosConexosNexoAsync(cotizacion.Folio, solicitud, cancellationToken);
         var total = clsResultadoEnvioConexos.Nada;
-        foreach (var ruta in cotizacion.RutasOrdenadas.Where(r => r.Conexos.Count > 0))
+        // #259 (auditoría M2): una ruta rechazada por la Mesa no tiene línea vigente ni precio: sus conexos no se envían ni se dan por
+        // fallidos (quedan como estaban; #228 tampoco los cuenta para finalizar).
+        foreach (var ruta in cotizacion.RutasOrdenadas.Where(r => r.Conexos.Count > 0 && !r.Rechazada))
         {
             total = total.Mas(await EnviarRutaAsync(cotizacion, ruta, cotizacionNexo, cotizacionNexoId, solicitud, usuarioId,
                 [.. registros.Where(r => r.LineaSolicitudId == ruta.Id)]));
@@ -129,7 +131,7 @@ public sealed class clsEnvioConexosNexoService(
         // salió de la agenda con él nunca lo procesaría.
         var registros = await cotizaciones.ListarEnviosConexosNexoAsync(cotizacion.Folio, solicitud, cancellationToken);
         var conCotizacionNexo = cotizacion.CotizacionNexoId is not null;
-        return cotizacion.Rutas.Any(r =>
+        return cotizacion.Rutas.Where(r => !r.Rechazada).Any(r =>
         {
             var estados = Estados([.. registros.Where(x => x.LineaSolicitudId == r.Id)]);
             return r.Conexos.Any(c => estados.GetValueOrDefault(c.IdServicioConexo) is { } estado ? PorReintentar(estado) : conCotizacionNexo);
@@ -159,7 +161,7 @@ public sealed class clsEnvioConexosNexoService(
         var registros = await cotizaciones.ListarEnviosConexosNexoAsync(cotizacion.Folio, solicitud, cancellationToken);
         var total = clsResultadoEnvioConexos.Nada;
         var guardar = false;
-        foreach (var ruta in cotizacion.RutasOrdenadas)
+        foreach (var ruta in cotizacion.RutasOrdenadas.Where(r => !r.Rechazada))
         {
             var propios = registros.Where(r => r.LineaSolicitudId == ruta.Id).ToList();
             var estados = Estados(propios);
@@ -461,7 +463,12 @@ public sealed class clsEnvioConexosNexoService(
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(ruta);
         ArgumentNullException.ThrowIfNull(cotizacionNexo);
-        var primera = clsServiciosConexosCosteoService.LineaDeNexo(cotizacionNexo, clsServiciosConexosCosteoService.PrimerCamion(ruta));
+        // Auditoría M2: la única línea de la cotización (LineaDeNexo sin camión) solo vale para una ruta SIN camiones; una ruta cuyos camiones
+        // están todos descartados o rechazados no tiene destino (antes podía tomar la línea de otra ruta).
+        var primerCamion = clsServiciosConexosCosteoService.PrimerCamion(ruta);
+        var primera = primerCamion is not null ? clsServiciosConexosCosteoService.LineaDeNexo(cotizacionNexo, primerCamion)
+            : ruta.VehiculosOrdenados.Count == 0 ? clsServiciosConexosCosteoService.LineaDeNexo(cotizacionNexo, null)
+            : null;
         if (primera is not null || cotizacion.SeConsultaEnNexo)
         {
             return primera;
