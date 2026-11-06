@@ -795,7 +795,8 @@ public sealed class clsReSolicitudCosteoService(
                 costo_servicios_conexos = r.CostoServiciosConexos,
                 costo_final = r.CostoFinal,
                 precio_final_linea = r.PrecioFinalLinea,
-                servicios_conexos = r.Conexos.Select(c => new { id = c.IdServicioConexo, nombre = c.Nombre, precio = c.Precio, cantidad = c.Cantidad }).ToList(),
+                // HU-043.2 (#251): con la venta unitaria, además del costo.
+                servicios_conexos = r.Conexos.Select(c => new { id = c.IdServicioConexo, nombre = c.Nombre, precio = c.Precio, precio_venta = c.PrecioVenta, cantidad = c.Cantidad }).ToList(),
                 camiones = r.VehiculosOrdenados.Select(v => new
                 {
                     linea_solicitud_nexo_id = v.LineaSolicitudNexoId,

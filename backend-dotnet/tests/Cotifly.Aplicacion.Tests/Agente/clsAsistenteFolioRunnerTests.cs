@@ -348,7 +348,9 @@ public sealed partial class clsAsistenteFolioRunnerTests
         item["linea_orden"].Should().Be(1);
         item["servicio_id"].Should().Be(IdServicio);
         item["cantidad"].Should().Be(2m);
-        accion.Resumen.Should().Contain("Almacenamiento").And.Contain("15 %");
+        // HU-043.2 (#251): el conexo se cotiza a su precio de venta, sin el margen de la ruta.
+        accion.Resumen.Should().Contain("Almacenamiento").And.Contain("Se cotiza a su precio de venta de Nexo, sin margen; queda incluido en el PDF.")
+            .And.NotContain("15 %").And.NotContain("margen de la ruta");
         _modelo.Llamadas[1].ResultadosHerramientas.Single().Should().Contain(IdServicio).And.NotContainEquivalentOf("costo");
         await _conexos.DidNotReceiveWithAnyArgs().AgregarAsync(default, default!, default, default, default, Ct);
         SinCambios(cotizacion);

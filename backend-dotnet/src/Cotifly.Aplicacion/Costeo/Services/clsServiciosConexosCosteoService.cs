@@ -479,7 +479,7 @@ public sealed class clsServiciosConexosCosteoService(
     /// <summary>
     /// Guarda <paramref name="conexos"/> de Nexo como filas de la ruta (HU-021): costo unitario = <c>valorAplicado ÷ cantidad</c> (el mismo
     /// criterio del 0009, columna <c>precio</c>), la cantidad y el nombre. HU-043.2 (#251): la venta unitaria (columna <c>precioVenta</c>) es
-    /// <see cref="VentaUnitaria"/>. Un conexo que ya estaba se actualiza. La raíz recalcula siempre los totales y el precio
+    /// <see cref="clsConexoNexo.VentaUnitaria"/>. Un conexo que ya estaba se actualiza. La raíz recalcula siempre los totales y el precio
     /// (<see cref="clsCotizacionSolicitud.CambiarConexos"/>). Devuelve cuántos agregó o cambió, o el error del módulo de precio.
     /// </summary>
     public static clsResultado<int> ImportarConexos(
@@ -495,28 +495,45 @@ public sealed class clsServiciosConexosCosteoService(
             // HU-014 (#188): con el id del catálogo (servicioConexoId, script 03) y la categoría que informó Nexo (script 05).
             return new clsCambioConexo(
                 conexo.Id, conexo.Nombre ?? conexo.Categoria, precio, cantidad, conexo.ServicioConexoId, conexo.CategoriaInformada,
-                VentaUnitaria(conexo, cantidad));
+                conexo.VentaUnitaria);
         }).ToList();
         return cotizacion.CambiarConexos(ruta.Orden, cambios, ahora);
     }
 
     /// <summary>
-    /// HU-043.2 (#251, contrato de Nexo §7.1): venta unitaria de un conexo de Nexo: <c>precioVentaUnitario</c> (la que Nexo fijó al agregarlo)
-    /// o, si no viene, <c>valorVenta ÷ cantidad</c> (2 decimales, half-to-even, como el costo). Sin ninguno de los dos (Nexo anterior a
-    /// S6-HU-38.2) o con un valor negativo, <c>null</c>: el conexo se guarda y se cotiza al costo (<c>valorAplicado</c>), la misma regla de
-    /// Nexo para un servicio sin precio de venta. Nunca hace desaparecer el conexo.
+    /// HU-043.2 (#251): la venta que Nexo fijó para los conexos que Cotifly YA tiene guardados (filas anteriores al despliegue quedaron con
+    /// <c>precioVenta = precio</c>). Se cruza por el id: la fila de Nexo cuyo <c>id</c> es el <c>idServicioConexo</c> guardado (conexo
+    /// agregado o importado) o, si no hay, las de su <c>servicioConexoId</c> (el id del catálogo de un conexo capturado) que son de la misma
+    /// ruta (<see cref="RutaDelConexo"/>). Solo con una venta conocida (<see cref="clsConexoNexo.VentaUnitaria"/>) y única: sin venta, o con
+    /// dos filas de distinta venta para el mismo servicio, el conexo conserva la suya.
     /// </summary>
-    public static decimal? VentaUnitaria(clsConexoNexo conexo, decimal cantidad)
+    public static IReadOnlyList<clsVentaConexo> VentasDeNexo(clsCotizacionSolicitud cotizacion, clsCotizacionNexo cotizacionNexo)
     {
-        ArgumentNullException.ThrowIfNull(conexo);
-        if (conexo.PrecioVentaUnitario is >= 0m and var unitaria)
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        ArgumentNullException.ThrowIfNull(cotizacionNexo);
+        var ventas = new List<clsVentaConexo>();
+        foreach (var ruta in cotizacion.Rutas)
         {
-            return unitaria;
+            foreach (var conexo in ruta.Conexos)
+            {
+                var filas = cotizacionNexo.Conexos.Where(n => string.Equals(n.Id, conexo.IdServicioConexo, StringComparison.OrdinalIgnoreCase)).ToList();
+                if (filas.Count == 0)
+                {
+                    var catalogo = conexo.IdServicioConexoCatalogo ?? conexo.IdServicioConexo;
+                    filas = [.. cotizacionNexo.Conexos.Where(n =>
+                        string.Equals(n.ServicioConexoId, catalogo, StringComparison.OrdinalIgnoreCase)
+                        && RutaDelConexo(cotizacion, cotizacionNexo, n)?.Id == ruta.Id)];
+                }
+
+                var distintas = filas.Select(n => n.VentaUnitaria).OfType<decimal>().Distinct().ToList();
+                if (distintas.Count == 1)
+                {
+                    ventas.Add(new clsVentaConexo(ruta.Id, conexo.IdServicioConexo, distintas[0]));
+                }
+            }
         }
 
-        return conexo.ValorVenta is >= 0m and var venta && cantidad > 0m
-            ? decimal.Round(venta / cantidad, 2, MidpointRounding.ToEven)
-            : null;
+        return ventas;
     }
 
     /// <summary>

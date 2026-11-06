@@ -21,3 +21,6 @@ public sealed record clsMovimientoConexo(string IdServicioConexo, string? Nombre
     /// <summary>¿Se quitó de la ruta?</summary>
     public bool Quitado => CantidadNueva is null;
 }
+
+/// <summary>HU-043.2 (#251): la venta unitaria que Nexo fijó para un conexo ya guardado en la ruta <paramref name="RutaId"/>.</summary>
+public sealed record clsVentaConexo(Guid RutaId, string IdServicioConexo, decimal PrecioVenta);

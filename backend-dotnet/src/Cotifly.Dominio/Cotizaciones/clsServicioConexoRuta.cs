@@ -3,10 +3,8 @@ namespace Cotifly.Dominio.Cotizaciones;
 /// <summary>
 /// Servicio conexo de una ruta (<c>dbo_cotifly.CotizacionServiciosConexos</c>, script 0009, HU-021, ADR-019; reemplaza los dos JSON
 /// <c>serviciosConexos</c>). Es global a la ruta: la <see cref="Cantidad"/> ya dice cuántos son. <see cref="Precio"/> es el costo
-/// unitario de Nexo al aplicarlo y no se recalcula si Nexo lo cambia después: <see cref="Costo"/> suma a
-/// <see cref="clsLineaSolicitud.CostoServiciosConexos"/> (costo interno). HU-043.2 (#251): al cliente se cotiza <see cref="PrecioVenta"/>,
-/// SIN margen (<see cref="Venta"/> suma al precio de la ruta tal cual; el margen es solo del transporte). En Nexo los conexos de la ruta viajan pegados a la línea
-/// de su primer camión (decisión 3 del 2026-10-08). <see cref="Nombre"/> es una copia del nombre del servicio (0010, mismo criterio que
+/// unitario de Nexo al aplicarlo (interno, no se recalcula si Nexo lo cambia después); HU-043.2 (#251): al cliente se cotiza
+/// <see cref="PrecioVenta"/>, sin margen. En Nexo los conexos de la ruta viajan pegados a la línea de su primer camión (decisión 3 del 2026-10-08). <see cref="Nombre"/> es una copia del nombre del servicio (0010, mismo criterio que
 /// el vehículo); vacío en las filas migradas.
 /// </summary>
 public sealed class clsServicioConexoRuta
@@ -70,7 +68,8 @@ public sealed class clsServicioConexoRuta
     public decimal Venta => PrecioVenta * Cantidad;
 
     /// <summary>
-    /// Conexo nuevo de la ruta. HU-043.2 (#251): <paramref name="precioVenta"/> <c>null</c> = sin precio de venta: se cotiza al costo.
+    /// Conexo nuevo de la ruta. HU-043.2 (#251): <paramref name="precioVenta"/> se guarda a 2 decimales (half-to-even, como el costo);
+    /// <c>null</c> = sin precio de venta: se cotiza al costo. Una venta 0 es un conexo sin cobro, no "al costo".
     /// </summary>
     internal static clsServicioConexoRuta Crear(
         Guid lineaSolicitudId, string idServicioConexo, string? nombre, decimal precio, decimal cantidad,
@@ -84,7 +83,7 @@ public sealed class clsServicioConexoRuta
             IdServicioConexo = id,
             Nombre = LimpiarNombre(nombre),
             Precio = precio,
-            PrecioVenta = precioVenta ?? precio,
+            PrecioVenta = VentaRedondeada(precioVenta) ?? precio,
             Cantidad = cantidad,
             IdServicioConexoCatalogo = Acotar(idServicioConexoCatalogo, LargoMaximoId),
             Categoria = Acotar(categoria, LargoMaximoCategoria),
@@ -95,7 +94,8 @@ public sealed class clsServicioConexoRuta
     /// Cambia el precio, la venta, la cantidad o el nombre (el mismo conexo leído otra vez). Devuelve <c>true</c> si cambió alguno.
     /// HU-014 (#188): si trae el id del catálogo o la categoría y la fila no los tenía (una fila anterior a #188), los completa; no
     /// reemplaza uno ya guardado ni cuenta como cambio (la persistencia sí lo guarda). HU-043.2 (#251): <paramref name="precioVenta"/>
-    /// <c>null</c> = sin precio de venta (se cotiza al costo, <paramref name="precio"/>).
+    /// <c>null</c> = no se conoce: se conserva la venta guardada, salvo que fuera el costo por defecto (venta = costo anterior), que sigue
+    /// al costo nuevo. Una venta conocida nunca vuelve al costo por una lectura sin venta.
     /// </summary>
     internal bool Actualizar(
         string? nombre, decimal precio, decimal cantidad, string? idServicioConexoCatalogo = null, string? categoria = null, decimal? precioVenta = null)
@@ -103,13 +103,34 @@ public sealed class clsServicioConexoRuta
         Validar(IdServicioConexo, precio, cantidad, precioVenta);
         var antes = (Nombre, Precio, PrecioVenta, Cantidad);
         Nombre = LimpiarNombre(nombre) ?? Nombre;
+        PrecioVenta = VentaRedondeada(precioVenta) ?? (PrecioVenta == Precio ? precio : PrecioVenta);
         Precio = precio;
-        PrecioVenta = precioVenta ?? precio;
         Cantidad = cantidad;
         IdServicioConexoCatalogo ??= Acotar(idServicioConexoCatalogo, LargoMaximoId);
         Categoria ??= Acotar(categoria, LargoMaximoCategoria);
         return antes != (Nombre, Precio, PrecioVenta, Cantidad);
     }
+
+    /// <summary>
+    /// HU-043.2 (#251): cambia solo la venta unitaria (la que Nexo fijó al agregar el conexo, leída por el polling). Devuelve <c>true</c>
+    /// si cambió. No toca el costo ni la cantidad.
+    /// </summary>
+    internal bool CambiarVenta(decimal precioVenta)
+    {
+        Validar(IdServicioConexo, Precio, Cantidad, precioVenta);
+        var nueva = VentaRedondeada(precioVenta)!.Value;
+        if (nueva == PrecioVenta)
+        {
+            return false;
+        }
+
+        PrecioVenta = nueva;
+        return true;
+    }
+
+    /// <summary>HU-043.2 (#251): la venta a 2 decimales, half-to-even (como <c>valorAplicado ÷ cantidad</c> del costo).</summary>
+    private static decimal? VentaRedondeada(decimal? precioVenta) =>
+        precioVenta is { } venta ? decimal.Round(venta, 2, MidpointRounding.ToEven) : null;
 
     /// <summary>El texto recortado, o <c>null</c> si viene vacío o no cabe en la columna (no se guarda un valor truncado).</summary>
     private static string? Acotar(string? valor, int largo) =>

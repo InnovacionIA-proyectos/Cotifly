@@ -546,6 +546,26 @@ public sealed record clsConexoNexo(string Id, string? Nombre, string Categoria, 
     public decimal? ValorVenta { get; init; }
 
     /// <summary>
+    /// HU-043.2 (#251, contrato de Nexo §7.1): la venta unitaria del conexo: <see cref="PrecioVentaUnitario"/> (la que Nexo fijó al
+    /// agregarlo) o, si no viene, <c>valorVenta ÷ cantidad</c>; a 2 decimales half-to-even, como el costo. Sin ninguno de los dos (Nexo
+    /// anterior a S6-HU-38.2) o con un valor negativo, <c>null</c>: no se conoce (el conexo nuevo se cotiza al costo y uno guardado
+    /// conserva su venta). Una venta 0 es un conexo sin cobro. Nunca hace desaparecer el conexo.
+    /// </summary>
+    public decimal? VentaUnitaria
+    {
+        get
+        {
+            if (PrecioVentaUnitario is >= 0m and var unitaria)
+            {
+                return decimal.Round(unitaria, 2, MidpointRounding.ToEven);
+            }
+
+            var cantidad = Cantidad > 0m ? decimal.Round(Cantidad, 2) : 1m;
+            return ValorVenta is >= 0m and var venta ? decimal.Round(venta / cantidad, 2, MidpointRounding.ToEven) : null;
+        }
+    }
+
+    /// <summary>
     /// Línea de la COTIZACIÓN de Nexo a la que está pegado (<c>cotizacionLineaId</c>): Cotifly lo pega a la línea del primer camión de su
     /// ruta (decisión 3), así que esta línea dice de qué ruta es. <c>null</c> si Nexo no lo trae.
     /// </summary>

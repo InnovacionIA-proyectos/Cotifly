@@ -480,6 +480,7 @@ public sealed class clsServiciosConexosCosteoServiceTests
     [InlineData(null, 300_000.0, 150_000.0)]   // sin precioVentaUnitario: valorVenta ÷ cantidad
     [InlineData(null, null, 120_000.0)]        // Nexo anterior a S6-HU-38.2: al costo, y el conexo no desaparece
     [InlineData(-1.0, -1.0, 120_000.0)]        // una venta negativa no se usa
+    [InlineData(0.0, 0.0, 0.0)]                // venta 0: un conexo sin cobro, no "al costo" (el contrato solo define null como al costo)
     public void Hu0432_SinPrecioVentaUnitarioSeUsaElValorVentaYSinNingunoElCosto(double? unitaria, double? valorVenta, double esperada)
     {
         var cotizacion = clsCotizacionMuestra.Costeada(flete: 2_550_000m, margen: 0.15m, folio: "PCN-V");

@@ -292,6 +292,24 @@ public sealed class clsNexoFalso : HttpMessageHandler
     /// </summary>
     public bool SinPrecioVenta { get; set; }
 
+    /// <summary>
+    /// HU-043.2 (#251): fija en la cotización de <paramref name="solicitudId"/> la venta unitaria de los conexos del servicio
+    /// <paramref name="servicioConexoId"/> (como si Nexo la hubiera fijado al agregarlos con otro precio de su biblioteca).
+    /// </summary>
+    public void FijarVentaConexo(string solicitudId, string servicioConexoId, decimal ventaUnitaria) =>
+        Con(solicitudId, s =>
+        {
+            var c = s.Cotizacion!;
+            for (var i = 0; i < c.Conexos.Count; i++)
+            {
+                var x = c.Conexos[i];
+                if (c.ServicioYLinea.TryGetValue(x.Id, out var sl) && string.Equals(sl.ServicioId, servicioConexoId, StringComparison.OrdinalIgnoreCase))
+                {
+                    c.Conexos[i] = x with { VentaUnitaria = ventaUnitaria, Venta = decimal.Round(ventaUnitaria * x.Cantidad, 2) };
+                }
+            }
+        });
+
     /// <summary>Si tiene valor, <c>GET /api/servicios-conexos</c> responde este estado (ej. 403: sin rol en Nexo).</summary>
     public HttpStatusCode? CatalogoFalla { get; set; }
 

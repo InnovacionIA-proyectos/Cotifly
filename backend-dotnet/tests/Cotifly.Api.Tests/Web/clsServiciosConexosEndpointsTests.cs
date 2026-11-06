@@ -28,7 +28,13 @@ public sealed class clsServiciosConexosEndpointsTests : IDisposable
         .ConServicioConexo(Escolta, "ESC-01", "Escolta", "logistico", "Viaje", 900_000m, activo: false);
     private readonly clsApiWebPruebas _api;
 
-    public clsServiciosConexosEndpointsTests(clsEntornoApiWeb entorno) => _api = clsApiWebPruebas.ConNexo(entorno.BaseDatos, _nexo);
+    private readonly clsEntornoApiWeb _entorno;
+
+    public clsServiciosConexosEndpointsTests(clsEntornoApiWeb entorno)
+    {
+        _entorno = entorno;
+        _api = clsApiWebPruebas.ConNexo(entorno.BaseDatos, _nexo);
+    }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -95,6 +101,34 @@ public sealed class clsServiciosConexosEndpointsTests : IDisposable
         // El polling ve los mismos conexos: no cambia nada ni sube la versión.
         await _api.ProcesarPollingAsync(folio);
         (await EtagAsync(sesion, folio)).Should().Be(respuesta.Headers.ETag.Tag);
+    }
+
+    /// <summary>
+    /// HU-043.2 (#251): un conexo guardado al costo (como los anteriores al despliegue, <c>precioVenta = precio</c>) toma en el siguiente
+    /// polling la venta que Nexo fijó, cruzando por su id; el costo no cambia y el precio de la ruta queda con la venta.
+    /// </summary>
+    [Fact]
+    public async Task Hu0432_ElPollingRefrescaLaVentaDeUnConexoGuardadoAlCosto()
+    {
+        var (sesion, folio, solicitud) = await CosteadaAsync();
+        using (var agregado = await AgregarAsync(sesion, folio, Cuerpo(1, Precinto, 2), await EtagAsync(sesion, folio)))
+        {
+            (await VerificarContratoAsync(agregado, RutaContrato, _post, HttpStatusCode.OK)).GetProperty("precio_final").GetDecimal()
+                .Should().Be(3_070_000m, "sin precio de venta en el catálogo: 2.550.000 / 0,85 + 35.000 × 2 al costo");
+        }
+
+        _nexo.FijarVentaConexo(solicitud, Precinto, 50_000m);
+        await _api.ProcesarPollingAsync(folio);
+
+        var conexo = (await ConexosAsync(sesion, folio)).Should().ContainSingle().Subject;
+        conexo.GetProperty("precio").GetDecimal().Should().Be(100_000m, "la venta de Nexo (50.000 × 2), sin margen");
+        using var costeo = await _api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", sesion.Access);
+        (await VerificarContratoAsync(costeo, "/web/cotizaciones/{folio}/costeo", _get, HttpStatusCode.OK)).GetProperty("precio_final").GetDecimal()
+            .Should().Be(3_100_000m);
+        (await clsBaseDatosPruebas.EscalarAsync<string>(_entorno.BaseDatos.CadenaCotifly,
+            "SELECT CONCAT(CAST(s.precio AS decimal(18,2)), '/', CAST(s.precioVenta AS decimal(18,2))) FROM dbo_cotifly.CotizacionServiciosConexos s "
+            + "JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = s.lineaSolicitudId JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId "
+            + $"WHERE c.folio = '{folio}'")).Should().Be("35000.00/50000.00", "el costo sigue en precio y la venta queda en precioVenta");
     }
 
     /// <summary>

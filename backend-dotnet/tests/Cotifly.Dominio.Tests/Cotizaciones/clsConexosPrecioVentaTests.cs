@@ -39,7 +39,7 @@ public sealed class clsConexosPrecioVentaTests
         ruta.CostoTransporte.Should().Be(1_900_000m);
         ruta.CostoServiciosConexos.Should().Be(100_000m, "el costo sigue siendo precio (costo unitario) × cantidad");
         ruta.CostoFinal.Should().Be(2_000_000m, "costo_final (HU-039.1) no cambia: es el costo real");
-        ruta.VentaServiciosConexos.Should().Be(140_000m, "precioVenta × cantidad");
+        ruta.Conexos.Sum(c => c.Venta).Should().Be(140_000m, "precioVenta × cantidad");
         ruta.PrecioFinalLinea.Should().Be(2_515_000m, "1.900.000 / (1 − 0,20) = 2.375.000, + 140.000 de conexos sin margen");
         cotizacion.PrecioFinal.Should().Be(2_515_000m);
         cotizacion.CostoFinal.Should().Be(2_000_000m);
@@ -140,7 +140,7 @@ public sealed class clsConexosPrecioVentaTests
         var ruta = cotizacion.PrimeraRuta!;
 
         ruta.PrecioFinalLinea.Should().Be(1_250_000m);
-        ruta.VentaServiciosConexos.Should().Be(0m);
+        ruta.Conexos.Sum(c => c.Venta).Should().Be(0m);
         ruta.PrecioConFormulaAnterior(cotizacion.Moneda, cotizacion.TrmAplicada).Should().BeFalse("sin conexos no hay nada que distinguir");
     }
 }

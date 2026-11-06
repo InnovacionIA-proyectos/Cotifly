@@ -137,7 +137,8 @@ public sealed class clsReSolicitudCosteoServiceTests
         // HU-021: la instantánea es por ruta y camión; el costo y el precio de la ruta incluyen el conexo Cargue (85.000).
         instantanea.OutputResumen.Should().Contain("\"costo\":2635000").And.Contain("sol-vieja").And.Contain("linea-vieja")
             .And.Contain("\"costo_flete\":2550000").And.Contain("\"margen_aplicado\":0.15").And.Contain("\"margen_politica_sugerido\":0.15")
-            .And.Contain("Cargue").And.Contain("\"precio_final\":3085000").And.Contain("PCN-1.pdf");
+            .And.Contain("Cargue").And.Contain("\"precio_final\":3085000").And.Contain("PCN-1.pdf")
+            .And.Contain("\"precio_venta\":85000", "HU-043.2 (#251): la foto guarda también la venta del conexo");
         await _auditoria.Received(1).RegistrarAsync(clsReSolicitudCosteoService.HerramientaAuditoria,
             Arg.Any<object?>(), Arg.Is<object?>(s => Json(s).Contains("sol-nueva")), true, Arg.Any<int>(), null);
     }
@@ -401,6 +402,31 @@ public sealed class clsReSolicitudCosteoServiceTests
         _agregada.RutasOrdenadas[1].Conexos.Single().Precio.Should().Be(42_500m, "CX-9 no es un id del catálogo: conserva su costo");
         licitacion.RutasOrdenadas[0].Conexos.Single().Precio.Should().Be(10_000m, "la original no cambia");
         await _costos.Received(1).CostosAsync(_ana, Arg.Is<IReadOnlyCollection<string>>(ids => ids.Count == 1 && ids.Contains(id)), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// HU-043.2 (#251): la -vN toma la venta del catálogo de hoy (<c>precioVenta</c>), distinta de la guardada, igual que el costo; y un
+    /// conexo que ya no está en el catálogo conserva su costo y su venta guardados.
+    /// </summary>
+    [Fact]
+    public async Task Hu0432_LaVersionNuevaTomaLaVentaDelCatalogoYUnConexoFueraDelCatalogoConservaLaSuya()
+    {
+        var licitacion = VencidaDeDosRutas();
+        var id = Guid.NewGuid().ToString("D");
+        licitacion.RutasOrdenadas[0].AgregarOActualizarConexo(new clsCambioConexo(id, "Precinto", 10_000m, 3m, PrecioVenta: 14_000m));
+        licitacion.RutasOrdenadas[1].AgregarOActualizarConexo(new clsCambioConexo("CX-9", "Escolta", 42_500m, 1m, PrecioVenta: 55_000m));
+        _costos.CostosAsync(_ana, Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns(clsResultado<IReadOnlyDictionary<string, clsCostoConexoNexo>>.Exito(
+                new Dictionary<string, clsCostoConexoNexo> { [id] = new(id, "Precinto de seguridad", 12_500m, PrecioVenta: 16_000m) }));
+
+        var resultado = await Servicio().ReSolicitarAsync(_ana, licitacion.Folio, Entrada() with { NuevaVersion = true }, Version, null, Ct);
+
+        resultado.EsExitoso.Should().BeTrue();
+        _agregada!.RutasOrdenadas[0].Conexos.Single().Should().Match<clsServicioConexoRuta>(c => c.Precio == 12_500m && c.PrecioVenta == 16_000m,
+            "costo y venta del catálogo de hoy (la guardada era 14.000)");
+        _agregada.RutasOrdenadas[1].Conexos.Single().Should().Match<clsServicioConexoRuta>(c => c.Precio == 42_500m && c.PrecioVenta == 55_000m,
+            "CX-9 no es un id del catálogo: conserva su costo y su venta");
+        licitacion.RutasOrdenadas[0].Conexos.Single().PrecioVenta.Should().Be(14_000m, "la original no cambia");
     }
 
     /// <summary>

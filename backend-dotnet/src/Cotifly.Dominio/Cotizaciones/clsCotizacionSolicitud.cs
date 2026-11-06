@@ -1092,6 +1092,22 @@ public sealed partial class clsCotizacionSolicitud
     }
 
     /// <summary>
+    /// HU-043.2 (#251): actualiza la venta unitaria de conexos ya guardados con la que Nexo fijó (<paramref name="ventas"/>: ruta, id del
+    /// conexo y venta). Con el precio congelado (<see cref="PrecioCongelado"/>: PDF o finalizada) no cambia nada. No recalcula: lo hace la
+    /// lectura del costeo a continuación (<c>AplicarPrecio</c>). Devuelve cuántos cambió.
+    /// </summary>
+    public int RefrescarVentaConexos(IEnumerable<clsVentaConexo> ventas)
+    {
+        ArgumentNullException.ThrowIfNull(ventas);
+        if (PrecioCongelado)
+        {
+            return 0;
+        }
+
+        return ventas.Count(v => _rutas.FirstOrDefault(r => r.Id == v.RutaId) is { } ruta && ruta.CambiarVentaConexo(v.IdServicioConexo, v.PrecioVenta));
+    }
+
+    /// <summary>
     /// Quita de todas las rutas los conexos que no están en <paramref name="conservar"/> (vacío = todos) y recalcula SIEMPRE los totales y
     /// el precio. Devuelve cuántos quitó, o el error del módulo de precio.
     /// </summary>

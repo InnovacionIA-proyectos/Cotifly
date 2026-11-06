@@ -853,9 +853,6 @@ public sealed partial class clsLineaSolicitud
     public decimal? CostoTransporte =>
         CostoFletesTotal is { } fletes && CostoRetornoContenedorTotal is { } retorno ? fletes + retorno + (CostoLevanteContenedorTotal ?? 0m) : null;
 
-    /// <summary>HU-043.2 (#251): venta de los conexos de la ruta en pesos, sin margen (Σ <see cref="clsServicioConexoRuta.Venta"/>).</summary>
-    public decimal VentaServiciosConexos => _conexos.Sum(c => c.Venta);
-
     /// <summary>
     /// HU-043.2 (#251): venta de UN conexo en la moneda de la solicitud, SIN margen: <see cref="clsServicioConexoRuta.Venta"/> redondeada a
     /// pesos enteros (como todo precio en COP) y, en dólares, convertida con la <paramref name="trm"/> (centavos, ADR-014). Es la que suma
@@ -920,8 +917,9 @@ public sealed partial class clsLineaSolicitud
     /// HU-043.2 (#251): ¿<see cref="PrecioFinalLinea"/> quedó con la fórmula ANTERIOR (fletes + retorno + levante + conexos, todo con el
     /// margen) y no con la de hoy? Pasa con una ruta finalizada o con PDF antes del despliegue (precio congelado, HU-036.4) o que no se ha
     /// vuelto a recalcular desde entonces. El desglose (tarifa del transporte y precio de cada conexo) se muestra entonces como se calculó,
-    /// con el margen en los conexos, para que siga cuadrando con el precio guardado: la cotización conserva sus valores. Sin conexos (o con
-    /// margen 0 y venta = costo) las dos fórmulas coinciden y es <c>false</c>.
+    /// con el margen en los conexos, para que siga cuadrando con el precio guardado: la cotización conserva sus valores. Sin precio
+    /// congelado solo aplica hasta el siguiente recálculo (polling, margen o conexos), que guarda el precio con la fórmula de hoy. Sin
+    /// conexos (o con margen 0 y venta = costo) las dos fórmulas coinciden y es <c>false</c>.
     /// </summary>
     public bool PrecioConFormulaAnterior(string? moneda, decimal trm) =>
         PrecioFinalLinea is { } guardado && _conexos.Count > 0
@@ -1074,6 +1072,14 @@ public sealed partial class clsLineaSolicitud
             Id, id, conexo.Nombre, conexo.Precio, conexo.Cantidad, conexo.IdServicioConexoCatalogo, conexo.Categoria, conexo.PrecioVenta));
         return true;
     }
+
+    /// <summary>
+    /// HU-043.2 (#251): cambia la venta unitaria del conexo <paramref name="idServicioConexo"/> de la ruta (sin costo ni cantidad). No
+    /// recalcula: desde fuera se usa <see cref="clsCotizacionSolicitud.RefrescarVentaConexos"/>. Devuelve <c>true</c> si cambió.
+    /// </summary>
+    internal bool CambiarVentaConexo(string idServicioConexo, decimal precioVenta) =>
+        _conexos.FirstOrDefault(c => string.Equals(c.IdServicioConexo, idServicioConexo, StringComparison.OrdinalIgnoreCase)) is { } conexo
+        && conexo.CambiarVenta(precioVenta);
 
     /// <summary>
     /// Quita los conexos que no están en <paramref name="conservar"/>. Devuelve los quitados. Interno: desde fuera se usa
