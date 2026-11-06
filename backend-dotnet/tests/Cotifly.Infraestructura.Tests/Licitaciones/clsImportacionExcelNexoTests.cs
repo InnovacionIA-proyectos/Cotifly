@@ -86,10 +86,28 @@ public sealed class clsImportacionExcelNexoTests
     [Fact]
     public async Task LaNoDisponibleRespondeNexoNoDisponibleSinLlamar()
     {
-        var resultado = await new clsImportacionExcelNoDisponible().LeerEstructuraAsync(_usuarioId,
-            new clsPeticionLeerEstructura(new clsArchivoImportacion("a.xlsx", [1]), null, null, null), Ct);
+        var apagada = new clsImportacionExcelNoDisponible();
+        var archivo = new clsArchivoImportacion("a.xlsx", [1]);
 
-        resultado.Error.Codigo.Should().Be(clsCodigosError.NexoNoDisponible);
+        IReadOnlyList<clsErrorDominio> errores =
+        [
+            (await apagada.SugerirMapeoAsync(_usuarioId, _sugerir, Ct)).Error,
+            (await apagada.AplicarMapeoAsync(_usuarioId, new clsPeticionAplicarMapeo("900123456", [new(0, "origen", null)], [["Cali"]], null), Ct)).Error,
+            (await apagada.NormalizarValoresAsync(_usuarioId, null, [new("ciudad", "Cali")], Ct)).Error,
+            (await apagada.GuardarPlantillaMapeoAsync(_usuarioId,
+                new clsPeticionPlantillaMapeo("900123456", null, ["ORIGEN"], [new(0, "origen", null)]), Ct)).Error,
+            (await apagada.ListarPlantillasMapeoAsync(_usuarioId, "900123456", Ct)).Error,
+            (await apagada.EliminarPlantillaMapeoAsync(_usuarioId, Guid.NewGuid(), Ct)).Error,
+            (await apagada.ObtenerDiccionarioClienteAsync(_usuarioId, "900123456", null, Ct)).Error,
+            (await apagada.ObtenerOpcionesDiccionarioAsync(_usuarioId, Ct)).Error,
+            (await apagada.LeerEstructuraAsync(_usuarioId, new clsPeticionLeerEstructura(archivo, null, null, null), Ct)).Error,
+            (await apagada.GuardarRecetaLecturaAsync(_usuarioId, new clsPeticionGuardarReceta(archivo, "{}", "900123456", null, null), Ct)).Error,
+            (await apagada.ListarRecetasLecturaAsync(_usuarioId, "900123456", Ct)).Error,
+            (await apagada.EliminarRecetaLecturaAsync(_usuarioId, Guid.NewGuid(), Ct)).Error,
+        ];
+
+        errores.Should().AllSatisfy(e => e.Codigo.Should().Be(clsCodigosError.NexoNoDisponible));
+        apagada.EstaHabilitada.Should().BeFalse();
     }
 
     [Fact]
@@ -507,6 +525,88 @@ public sealed class clsImportacionExcelNexoTests
             new clsPeticionPlantillaMapeo("123", null, ["ORIGEN", "DESTINO"], [new(0, "origen", null), new(1, "destino", null)]), Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.ClienteNitInvalido);
+    }
+
+    // --- Forma de las respuestas ---
+
+    [Fact]
+    public async Task NormalizarValoresTraeLosCandidatosDeUnaCiudadAmbigua()
+    {
+        var nexo = new clsNexoClientesFalso().Responder(HttpStatusCode.OK, """
+            {"iaUsada":true,"motivoSinIa":null,"totalDistintos":2,"valores":[
+              {"campo":"ciudad","valor":"San José","estado":"ambiguo","codigo":null,"descripcion":null,"municipioId":null,"origen":"catalogo",
+               "confianza":0.5,"nota":"Hay varias","candidatos":[{"municipioId":101,"codigoDane":"05656","municipio":"San José de la Montaña","departamento":"Antioquia"},
+               {"municipioId":102,"codigoDane":null,"municipio":null,"departamento":null}]},
+              {"campo":"tipoVehiculo","valor":"tracto","estado":"resuelto","codigo":"TRACTO","descripcion":"Tractocamión","municipioId":null,
+               "origen":"ia","confianza":0.8,"nota":null,"candidatos":null}]}
+            """);
+        var importacion = Importacion(nexo, out var proveedor);
+        using var limpieza = proveedor;
+
+        var resultado = await importacion.NormalizarValoresAsync(_usuarioId, "900.123.456-7",
+            [new("ciudad", "San José"), new("tipoVehiculo", "tracto")], Ct);
+
+        resultado.Valor.TotalDistintos.Should().Be(2);
+        var ciudad = resultado.Valor.Valores[0];
+        ciudad.Estado.Should().Be("ambiguo");
+        ciudad.Candidatos.Should().HaveCount(2);
+        ciudad.Candidatos![0].Should().Be(new clsCandidatoCiudad(101, "05656", "San José de la Montaña", "Antioquia"));
+        ciudad.Candidatos[1].CodigoDane.Should().BeEmpty("un texto nulo de NEXO llega vacío");
+        resultado.Valor.Valores[1].Codigo.Should().Be("TRACTO");
+        resultado.Valor.Valores[1].Candidatos.Should().BeNull();
+        var cuerpo = JsonNode.Parse(nexo.Peticiones.Should().ContainSingle().Subject.Cuerpo!)!;
+        cuerpo["clienteNit"]!.GetValue<string>().Should().Be("900123456");
+        cuerpo["valores"]!.AsArray().Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task AplicarMapeoTraeLasPosicionesYLosErroresPorFila()
+    {
+        var nexo = new clsNexoClientesFalso().Responder(HttpStatusCode.OK, """
+            {"totalFilas":3,"filasVacias":0,"filasConErrores":1,"lineas":[{"fila":2,"origen":"Cali","destino":"Bogotá","peso":1200,
+              "posiciones":[{"descripcion":"Estiba","cantidad":2,"largoCm":120,"anchoCm":100,"altoCm":150,"pesoKg":600,"codigoTipoMercancia":"GEN"}]}],
+             "errores":[{"fila":3,"campo":"destino","codigo":"CIUDAD_NO_ENCONTRADA","mensaje":"No existe"},{"fila":4,"campo":null,"codigo":null,"mensaje":null}],
+             "totalErrores":2}
+            """);
+        var importacion = Importacion(nexo, out var proveedor);
+        using var limpieza = proveedor;
+
+        var resultado = await importacion.AplicarMapeoAsync(_usuarioId,
+            new clsPeticionAplicarMapeo("900123456", [new(0, "origen", null), new(1, "destino", null)], [["Cali", "Bogotá"]], 2), Ct);
+
+        var posicion = resultado.Valor.Lineas.Should().ContainSingle().Subject.Posiciones.Should().ContainSingle().Subject;
+        posicion.Should().Be(new clsPosicionImportada("Estiba", 2, 120m, 100m, 150m, 600m, "GEN"));
+        resultado.Valor.Errores.Should().Equal(
+            new clsErrorDeFila(3, "destino", "CIUDAD_NO_ENCONTRADA", "No existe"),
+            new clsErrorDeFila(4, null, string.Empty, string.Empty));
+        resultado.Valor.TotalErrores.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task UnFormatoQueCambioTraeLosTitulosQueFaltanYLosNuevos()
+    {
+        var nexo = new clsNexoClientesFalso().Responder(HttpStatusCode.OK, """
+            {"archivo":null,"origenReceta":"guardada","similitud":0.9,"recetaGuardadaId":"3f2504e0-4f89-11d3-9a0c-0305e82c3301","iaUsada":false,
+             "motivoSinIa":null,"receta":{"version":1},"resumen":null,"dudas":null,"hojasDelArchivo":null,
+             "tablas":[{"nombre":"H1","filaEncabezado":3,"encabezados":["A",null],"filas":[["x",null],null],"totalFilas":null}],
+             "avisos":["columna vacía"],"cambios":{"faltan":["PESO"],"nuevos":null}}
+            """);
+        var importacion = Importacion(nexo, out var proveedor);
+        using var limpieza = proveedor;
+
+        var lectura = await importacion.LeerEstructuraAsync(_usuarioId,
+            new clsPeticionLeerEstructura(new clsArchivoImportacion("EPM.xlsx", [1]), "890904996", null, null), Ct);
+
+        lectura.Valor.Archivo.Should().Be("EPM.xlsx", "sin nombre de NEXO queda el del archivo enviado");
+        lectura.Valor.Cambios.Should().NotBeNull();
+        lectura.Valor.Cambios!.Faltan.Should().Equal("PESO");
+        lectura.Valor.Cambios.Nuevos.Should().BeEmpty();
+        lectura.Valor.Avisos.Should().Equal("columna vacía");
+        var tabla = lectura.Valor.Tablas.Should().ContainSingle().Subject;
+        tabla.Encabezados.Should().Equal("A", string.Empty);
+        tabla.Filas.Should().HaveCount(2);
+        tabla.Filas[1].Should().BeEmpty();
+        tabla.TotalFilas.Should().Be(2, "sin totalFilas cuenta las filas recibidas");
     }
 
     // --- Soporte ---
