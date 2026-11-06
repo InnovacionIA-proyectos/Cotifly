@@ -242,7 +242,8 @@ public sealed class clsPasosServiciosConexos(
     {
         var json = await clsBaseDatosPruebas.EscalarAsync<string>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
             "SELECT s.idServicioConexo AS id, s.nombreServicioConexo AS nombre, CAST(1 AS bit) AS incluido, "
-            + "ROUND(s.precio * s.cantidad / (1 - ISNULL(l.margenAplicado, 0)), 0) AS precio "
+            // HU-043.2 (#251): el precio del conexo es su venta (precioVenta × cantidad, a pesos enteros), sin el margen de la ruta.
+            + "ROUND(s.precioVenta * s.cantidad, 0) AS precio "
             + "FROM dbo_cotifly.CotizacionServiciosConexos s JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = s.lineaSolicitudId "
             + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{Folio(cotizacion)}' FOR JSON PATH");
         if (string.IsNullOrWhiteSpace(json))

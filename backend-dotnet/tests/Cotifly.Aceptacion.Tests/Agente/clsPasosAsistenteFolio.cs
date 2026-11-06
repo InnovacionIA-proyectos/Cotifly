@@ -82,6 +82,11 @@ public sealed partial class clsPasosAsistenteFolio(clsContextoWeb web, clsPasosC
     [Given("que Nexo costeó la solicitud de {string} con el conexo {string} de {int}")]
     public Task DadoElConexo(string cotizacion, string conexo, int valor) => ajuste.DadoElConexo(cotizacion, conexo, valor);
 
+    /// <summary>HU-043.2 (#251): el conexo con su costo y su venta distintos (el total no contiene el costo como subcadena).</summary>
+    [Given("que Nexo costeó la solicitud de {string} con el conexo {string} de {int} y una venta de {int}")]
+    public Task DadoElConexoConVenta(string cotizacion, string conexo, int valor, int venta) =>
+        ajuste.DadoElConexoConVenta(cotizacion, conexo, valor, venta);
+
     [Given("que {string} tiene la cotización de chat {string} creada antes de HU-013")]
     public async Task DadoUnaCotizacionDeChat(string alias, string folio)
     {

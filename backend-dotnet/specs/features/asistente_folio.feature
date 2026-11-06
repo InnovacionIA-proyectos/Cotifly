@@ -146,12 +146,13 @@ Característica: Asistente IA sobre una cotización (folio)
     Cuando "ana" consulta "Mis cotizaciones"
     Entonces "Mis cotizaciones" de "ana" incluye "PCN-AN-01092026-001"
 
+  # HU-043.2 (#251): el conexo se cotiza a su venta (110.000), sin margen; con venta = costo, el total (3.085.000) contendría el costo.
   Escenario: Ni la entrada al modelo ni las respuestas del chat contienen montos de dinero
-    Dado que Nexo costeó la solicitud de "C1" con el conexo "Cargue" de 85000
+    Dado que Nexo costeó la solicitud de "C1" con el conexo "Cargue" de 85000 y una venta de 110000
     Y que el modelo consulta la cotización y propone ajustar el margen a "0.18"
     Cuando "ana" escribe en el chat "¿Cuánto nos cuesta y cuánto le cobramos?" sobre el folio de "C1"
     Entonces la salida de "consultar_cotizacion" que recibió el modelo trae los márgenes "0.15" y "0.15", el estado, la ruta, la línea, la moneda y el conexo "Cargue"
     Y ningún mensaje enviado al modelo contiene "costo", "2550000", "3000000", "85000" ni "100000"
     Y ninguna respuesta del chat contiene el campo "costo" ni los valores 2550000 ni 85000
     Y los campos precio, margen y pdf de la respuesta del chat son null
-    Y el resumen de la acción propuesta lo armó el servidor con el precio 3194756
+    Y el resumen de la acción propuesta lo armó el servidor con el precio 3219756

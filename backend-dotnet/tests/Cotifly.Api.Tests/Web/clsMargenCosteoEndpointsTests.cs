@@ -143,7 +143,7 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
         json.GetProperty("margen_aplicado").GetDecimal().Should().Be(0.18m);
         json.GetProperty("margen_sugerido").GetDecimal().Should().Be(0.15m);
         json.GetProperty("origen_margen").GetString().Should().Be("negociado");
-        json.GetProperty("servicios_conexos")[0].GetProperty("precio").GetDecimal().Should().Be(207_317m, "170.000 / (1 - 0,18)");
+        json.GetProperty("servicios_conexos")[0].GetProperty("precio").GetDecimal().Should().Be(200_000m, "HU-043.2: su venta, que no cambia con el margen");
         var nuevo = ajuste.Headers.ETag!.Tag;
         nuevo.Should().NotBe(etag).And.Be("\"" + json.GetProperty("row_version").GetString() + "\"");
 
@@ -248,7 +248,7 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
             clsApiWebPruebas.Json(new { linea_orden = 1, conexos = new[] { new { id = conexo, cantidad = 2 } } }), margen.Headers.ETag?.Tag);
         var conDos = await VerificarContratoAsync(cantidad, "/web/cotizaciones/{folio}/costeo/servicios-conexos", _put, HttpStatusCode.OK);
         conDos.GetProperty("servicios_conexos")[0].GetProperty("cantidad").GetDecimal().Should().Be(2m);
-        conDos.GetProperty("precio_final").GetDecimal().Should().Be(3_524_390m, "(2.550.000 + 2 × 170.000) / (1 - 0,18)");
+        conDos.GetProperty("precio_final").GetDecimal().Should().Be(3_509_756m, "HU-043.2: 2.550.000 / (1 - 0,18) + 2 × 200.000 de venta, sin margen");
 
         using var quitar = await EnviarConVersionAsync(_put, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", sesion.Access,
             """{"conexos":[]}""", cantidad.Headers.ETag?.Tag);
