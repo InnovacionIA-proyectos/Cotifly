@@ -407,11 +407,12 @@ public sealed class clsApiWebPruebas : IDisposable
     /// comercial (<c>POST .../servicios-conexos</c>, que lo crea en Nexo y guarda el valor que Nexo calcula). El polling ya no importa
     /// los conexos de Nexo. Lanza si la API no responde 200.
     /// </summary>
-    public async Task AgregarConexoAsync(clsNexoFalso nexo, string token, string folio, string nombre, decimal costo)
+    public async Task AgregarConexoAsync(clsNexoFalso nexo, string token, string folio, string nombre, decimal costo, decimal? venta = null)
     {
         ArgumentNullException.ThrowIfNull(nexo);
         var id = Guid.NewGuid().ToString();
-        nexo.ConServicioConexo(id, $"SC-{id[..8]}", nombre, "logistico", "servicio", costo);
+        // HU-043.2 (#251): venta = precioVenta del catálogo (null: se cotiza al costo).
+        nexo.ConServicioConexo(id, $"SC-{id[..8]}", nombre, "logistico", "servicio", costo, precioVenta: venta);
         using var costeo = await EnviarAsync(HttpMethod.Get, $"/web/cotizaciones/{folio}/costeo", token);
         using var respuesta = await EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", token,
             Json(new { items = new[] { new { linea_orden = 1, servicio_id = id, cantidad = 1 } } }), costeo.Headers.ETag?.Tag);

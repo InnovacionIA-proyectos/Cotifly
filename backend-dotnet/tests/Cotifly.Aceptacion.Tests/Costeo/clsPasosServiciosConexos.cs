@@ -26,8 +26,12 @@ public sealed class clsPasosServiciosConexos(
         ArgumentNullException.ThrowIfNull(tabla);
         foreach (var fila in tabla.Rows)
         {
+            // HU-043.2 (#251): columna opcional precio_venta (vacía o ausente: sin precio de venta, se cotiza al costo).
+            var venta = fila.TryGetValue("precio_venta", out var texto) && texto.Length > 0
+                ? decimal.Parse(texto, CultureInfo.InvariantCulture)
+                : (decimal?)null;
             costeo.Nexo.ConServicioConexo(fila["id"], fila["codigo"], fila["nombre"], fila["categoria"], fila["unidad"],
-                decimal.Parse(fila["costo_unitario"], CultureInfo.InvariantCulture), bool.Parse(fila["activo"]));
+                decimal.Parse(fila["costo_unitario"], CultureInfo.InvariantCulture), bool.Parse(fila["activo"]), venta);
         }
     }
 
@@ -238,7 +242,8 @@ public sealed class clsPasosServiciosConexos(
     {
         var json = await clsBaseDatosPruebas.EscalarAsync<string>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
             "SELECT s.idServicioConexo AS id, s.nombreServicioConexo AS nombre, CAST(1 AS bit) AS incluido, "
-            + "ROUND(s.precio * s.cantidad / (1 - ISNULL(l.margenAplicado, 0)), 0) AS precio "
+            // HU-043.2 (#251): el precio del conexo es su venta (precioVenta × cantidad, a pesos enteros), sin el margen de la ruta.
+            + "ROUND(s.precioVenta * s.cantidad, 0) AS precio "
             + "FROM dbo_cotifly.CotizacionServiciosConexos s JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = s.lineaSolicitudId "
             + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{Folio(cotizacion)}' FOR JSON PATH");
         if (string.IsNullOrWhiteSpace(json))

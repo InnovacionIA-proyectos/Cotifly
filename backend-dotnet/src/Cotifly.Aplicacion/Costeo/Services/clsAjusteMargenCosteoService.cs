@@ -43,7 +43,7 @@ public interface IClsAjusteMargenCosteoService
 /// <item>La ruta la resuelve el dominio (<see cref="clsCotizacionSolicitud.ResolverRuta"/>); las invariantes (rango, costo disponible,
 /// regla del PDF y justificación contra el sugerido de la ruta: <c>margenSAPSugerido</c> o <c>margenPoliticaSugerido</c>) también
 /// (<see cref="clsCotizacionSolicitud.ValidarAjusteMargen"/>); <c>PDF_YA_ENVIADO</c> sale con la llamada para crear la versión nueva.</item>
-/// <item>Solo se recalculan la ruta ajustada (su costo final, con fletes, retorno, levante y conexos, con el margen nuevo y su método) y
+/// <item>Solo se recalculan la ruta ajustada (su transporte con el margen nuevo y su método + la venta de sus conexos, HU-043.2) y
 /// la cabecera (la suma de las rutas). En otra moneda se convierte con la <c>trm_aplicada</c> de la cotización, nunca con una TRM nueva.</item>
 /// <item>El ajuste queda en <c>MargenAjustes</c> con la ruta REAL (<c>lineaSolicitudId</c>), el sugerido de esa ruta
 /// (<c>margenPolitica</c>), la justificación (<c>motivo</c>) y el comercial; el PDF vigente se invalida y queda en el historial
@@ -188,9 +188,8 @@ public sealed class clsAjusteMargenCosteoService(
 
     /// <summary>
     /// Precio de la ruta <paramref name="ruta"/> con <paramref name="margen"/> y el total de la solicitud con ese precio y el de las demás
-    /// rutas, SIN cambiar la cotización (HU-021.8: el precio de la ruta es su costo final, con fletes, retorno, levante y conexos, con el
-    /// margen y el método de la ruta, en la moneda y con la TRM fijadas). La ruta debe tener costo final (si no, <c>COSTEO_NO_LISTO</c>);
-    /// el total queda en <c>null</c> si otra ruta todavía no tiene precio. Lo usa también la vista previa del asistente (HU-013.6, #102)
+    /// rutas, SIN cambiar la cotización (<see cref="clsLineaSolicitud.PrecioRutaCon"/>, en la moneda y con la TRM fijadas). La ruta debe
+    /// tener costo final (si no, <c>COSTEO_NO_LISTO</c>); el total queda en <c>null</c> si otra ruta todavía no tiene precio. Lo usa también la vista previa del asistente (HU-013.6, #102)
     /// para el <c>resumen</c> de la acción propuesta <c>ajustar_margen</c>, con los precios que se guardarían.
     /// </summary>
     public static clsResultado<clsRecalculoMargen> Recalcular(clsCotizacionSolicitud cotizacion, clsLineaSolicitud ruta, decimal margen)
@@ -202,13 +201,13 @@ public sealed class clsAjusteMargenCosteoService(
             return rechazada;
         }
 
-        if (ruta.CostoFinal is not { } costo)
+        if (ruta.CostoFinal is null)
         {
             return new clsErrorDominio(clsCodigosError.CosteoNoListo,
                 $"La ruta {ruta.Orden} de la cotización {cotizacion.Folio} no tiene el costeo de Nexo: no se puede recalcular su precio.");
         }
 
-        if (clsLineaSolicitud.PrecioCon(costo, margen, ruta.MetodoCalculo ?? clsReglaMargen.MetodoMargen, cotizacion.Moneda, cotizacion.TrmAplicada, out var precio) is { } error)
+        if (ruta.PrecioRutaCon(margen, ruta.MetodoCalculo ?? clsReglaMargen.MetodoMargen, cotizacion.Moneda, cotizacion.TrmAplicada, out var precio) is { } error)
         {
             return error;
         }

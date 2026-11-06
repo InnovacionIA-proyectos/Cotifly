@@ -130,8 +130,8 @@ public sealed class clsAgregadoRutasTests
         ruta.CostoLevanteContenedorTotal.Should().Be(200_000m, "100.000 por camión");
         ruta.CostoServiciosConexos.Should().Be(100_000m, "precio × cantidad");
         ruta.CostoFinal.Should().Be(2_000_000m);
-        ruta.PrecioFinalLinea.Should().Be(2_500_000m, "2.000.000 / (1 - 0,20)");
-        cotizacion.PrecioFinal.Should().Be(2_500_000m);
+        ruta.PrecioFinalLinea.Should().Be(2_475_000m, "HU-043.2: 1.900.000 / (1 - 0,20) + 100.000 de conexos, sin margen");
+        cotizacion.PrecioFinal.Should().Be(2_475_000m);
         cotizacion.CostoFinal.Should().Be(2_000_000m);
         cotizacion.CosteoListoAt.Should().Be(_ahora);
         cotizacion.RecalcularTotales(_ahora.AddHours(1)).Valor.Should().BeFalse("recalcular sin cambios no cambia nada");
@@ -225,7 +225,7 @@ public sealed class clsAgregadoRutasTests
     [Fact]
     public void Issue261_ElPrecioDeVentaDelConexoSigueAlPrecioAlCrearActualizarYAjustarLaCantidad()
     {
-        // #261 punto 4: hasta HU-043.2 (#251) precioVenta = precio en todas las vías que fijan el precio; el costo no cambia.
+        // #261 punto 4; desde HU-043.2 (#251), sin precio de venta conocido precioVenta = precio (se cotiza al costo); el costo no cambia.
         var ruta = clsCotizacionMuestra.Formulario().PrimeraRuta!;
 
         ruta.AgregarOActualizarConexo("CX-1", "Cargue", 10_000m, 2m);
@@ -465,7 +465,7 @@ public sealed class clsAgregadoRutasTests
         cotizacion.PrecioFinal.Should().Be(2_500_000m, "el flete nuevo recalcula la ruta y la solicitud");
 
         cotizacion.CambiarConexos(1, [new clsCambioConexo("CX-1", "Cargue", 100_000m, 2m)], _ahora).Valor.Should().Be(1);
-        cotizacion.PrecioFinal.Should().Be(2_750_000m, "(2.000.000 + 200.000) / 0,8");
+        cotizacion.PrecioFinal.Should().Be(2_700_000m, "HU-043.2: 2.000.000 / 0,8 + 200.000 del conexo, sin margen");
 
         cotizacion.ConservarConexos(new HashSet<string>(), _ahora).Valor.Should().Be(1);
         cotizacion.PrecioFinal.Should().Be(2_500_000m);

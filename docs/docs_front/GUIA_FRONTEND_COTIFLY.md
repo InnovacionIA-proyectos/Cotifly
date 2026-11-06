@@ -1,6 +1,6 @@
 # Guía de integración frontend: módulo Cotifly en ClientePro (Angular) contra el backend .NET 10
 
-> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-22
+> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-11-05
 
 | Campo | Valor |
 |---|---|
@@ -9,12 +9,13 @@
 | Estado | Vigente |
 | Dueño | Duban Guerra (backend) |
 | Fecha de creación | 2026-09-29 |
-| Actualizado | 2026-10-22 |
+| Actualizado | 2026-11-05 |
 | Fuentes verificadas | `backend-dotnet/specs/openapi.yaml`, `docs/docs_front/CONTRATO_API_WEB.md`, `backend-dotnet/docs/07-api.md` y `04-flujo-del-sistema.md`, ADR-005, ADR-009, ADR-011, ADR-014, ADR-015, `docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md`, el backlog de HU-001 a HU-013 (archivado en `docs/archivo/backlog/`) y los controllers de `backend-dotnet/src/Cotifly.Api` en `origin/QA` |
 | Fuente de verdad | `backend-dotnet/specs/openapi.yaml`. Si esta guía y el spec difieren, manda el spec, y hay que avisar al backend |
 
 > **AVISO HU-021 (ADR-019, 2026-10-08): `precio_final` YA INCLUYE los servicios conexos.** Es la suma de las rutas, y cada ruta es
-> su costo (fletes, retorno, levante y conexos) con el margen. **No sumarle el `precio` de los conexos** (se cobrarían dos veces):
+> su transporte (fletes, retorno y levante) con el margen + la **venta** de sus conexos **sin margen** (HU-043.2, #251, desde el
+> 2026-11-05; antes el margen se aplicaba también a los conexos). **No sumarle el `precio` de los conexos** (se cobrarían dos veces):
 > ese `precio` es el desglose. En la vista de la licitación (`GET /web/licitaciones/{folio}`) y en su Excel cada línea es la
 > tarifa del transporte y el total va **sin** conexos, que se listan aparte una sola vez. Tarifa + conexos = precio de la ruta.
 > El PDF (de una ruta o del pliego), desde HU-033 (#199), muestra el **valor final de cada ruta** (conexos incluidos, sin desglose) y
@@ -1145,7 +1146,7 @@ El formulario pasa a capturar **rutas** (`rutas[]`, hasta 100; ver `RutaCapturaW
 - **Varias líneas de negocio** en una misma solicitud se aceptan: el margen es por ruta y cada camión viaja a Nexo con la línea de negocio de su ruta.
 - **Formato plano obsoleto:** `deprecated`; #138 lo mantiene y **se retira cuando salga HU-021-FE**. Con `rutas`, un campo de ruta en la raíz es 400 con `detalle.errores`.
 - **Mercancías:** `{codigo_mercancia, nombre_mercancia, cantidad, largo_cm, ancho_cm, alto_cm, peso_kg}`. Desde HU-023.3 (#158) `codigo_mercancia` (el `codigo` de `GET /web/tipos-mercancia`) es **obligatorio** con el cubicador configurado (400 `CAMPO_REQUERIDO` en `mercancias[i].codigo_mercancia`); uno inactivo o desconocido es `MERCANCIA_DESCONOCIDA` y uno no cubicable `MERCANCIA_NO_CUBICABLE`. `id_tipo_mercancia` es **obsoleto**: todavía se acepta y se traduce al código. `peso_kg` es el peso **por unidad** y debe ser mayor que 0; #278: es **obligatorio en toda mercancía con medidas** (aunque no lleve código), si no `POSICION_INVALIDA` en `mercancias[i].peso_kg`. Topes: 200 mercancías por ruta (cuenta todas, `DEMASIADAS_POSICIONES`) y 10.000 unidades (`cantidad`) entre las mercancías **con medidas** (las sin medidas no cuentan; `CUBICACION_DEMASIADO_GRANDE` en `detalle.errores[]`, también sin cubicador). **HU-032 (#197): las medidas son opcionales.** Una mercancía sin ninguna medida y sin código (solo nombre, cantidad o peso) es "no cubicable": se acepta, no viaja a Nexo como posición y la ruta usa el vehículo elegido. Si escribe una medida, pedir las tres (`POSICION_INVALIDA` "faltan medidas"); con código, las tres son obligatorias.
-- **Servicios conexos:** `{id_servicio_conexo, cantidad}` con ids de `GET /web/servicios-conexos`. El servidor guarda el costo de Nexo como precio (nunca se muestra) y lo suma al costo de la ruta. Errores: `CONEXO_NO_ENCONTRADO`, `CONEXO_DUPLICADO`, `DEMASIADOS_CONEXOS` (20 por ruta).
+- **Servicios conexos:** `{id_servicio_conexo, cantidad}` con ids de `GET /web/servicios-conexos`. El servidor guarda el costo de Nexo (nunca se muestra), que suma al costo de la ruta, y (HU-043.2, #251) el precio de venta del catálogo de Nexo (`precioVenta`; sin él, el costo), que suma al precio de la ruta sin margen. Errores: `CONEXO_NO_ENCONTRADO`, `CONEXO_DUPLICADO`, `DEMASIADOS_CONEXOS` (20 por ruta).
 - **Vehículo elegido o cubicador (HU-032, #197, ADR-022).** **Volver a mostrar el selector** de `tipo_vehiculo` (y de `carroceria`, opcional) en cada ruta, con los códigos de `GET /web/catalogos-flete`. Es el **respaldo del cubicador**:
   - Ruta con **todas** sus mercancías cubicables (código, largo, ancho, alto y peso): va al cubicador. Si asigna, manda el cubicador (aviso `VEHICULO_AJUSTADO_POR_CUBICADOR` si el elegido era otro); si no selecciona, falla o está ocupado, va el elegido (`VEHICULO_ELEGIDO_USADO`; si no es código de Nexo, sin vehículo con `VEHICULO_ELEGIDO_INVALIDO`). El vehículo es opcional.
   - Ruta **sin mercancías cubicables** (solo `peso_kg`, mercancías sin medidas, o mixta con `MERCANCIAS_NO_CUBICABLES`): no se cubica y va con el elegido, que es **obligatorio salvo en las clases de viaje exentas** (por defecto solo `clase_viaje = Contenedor`; el backend las configura en `Captura:ClasesSinVehiculoObligatorio`) (400 con `VEHICULO_REQUERIDO` en `detalle.errores[]`, campo `tipo_vehiculo`). Se valida contra Nexo al guardar (`CODIGO_NO_CATALOGO`).
@@ -1288,10 +1289,10 @@ Las reglas condicionales de Nexo (mostrar u ocultar, y requerido u opcional) **n
 
 | Campo | Nota |
 |---|---|
-| `precio_final` | Precio total con margen: flete + aprovisionamiento + retorno del contenedor **+ servicios conexos** (HU-021, ADR-019). null mientras no haya costeo |
+| `precio_final` | Precio total: (flete + aprovisionamiento + retorno del contenedor) con margen **+ servicios conexos a su venta, sin margen** (HU-021, ADR-019; HU-043.2, #251). null mientras no haya costeo |
 | `margen_aplicado` | null mientras no haya `precio_final` |
 | `moneda`, `trm_aplicada` | #103 (HU-013.7). `trm_aplicada` es la TRM fijada al crear (COP por USD); 0 en COP. En USD, `precio_final` y el `precio` de los conexos van en dólares con 2 decimales: mostrar `US$` y "TRM aplicada: `trm_aplicada`" |
-| `servicios_conexos[]` | `id` (id de Nexo como string), `nombre` (string o null), `categoria` (por ejemplo, `logistico`), `cantidad`, `precio` (con el mismo margen) e `incluido` (por defecto true). **Nunca trae el costo** |
+| `servicios_conexos[]` | `id` (id de Nexo como string), `nombre` (string o null), `categoria` (por ejemplo, `logistico`), `cantidad`, `precio` (HU-043.2, #251: su precio de **venta**, sin margen; no cambia al ajustar el margen) e `incluido` (por defecto true). **Nunca trae el costo** |
 | `costeo_listo_at` | Cuándo quedó costeada |
 | `pdf_url` | null hasta generar el PDF |
 | `deadline` | HU-018.1 (#155). Fecha límite de la solicitud (cabecera, no de cada ruta), en UTC; null si no se dio. Para "Ver detalle" |
@@ -1364,7 +1365,7 @@ El resumen completo, los ejemplos JSON de cada endpoint cambiado y la lista de c
 
 ### 5.19 PDF del costeo (`POST /web/cotizaciones/{folio}/costeo/pdf`). En QA
 
-- Sin cuerpo. El servidor arma el PDF: una fila con origen, destino, vehículo y el **valor final de la ruta** (transporte y conexos incluidos, con su margen, sin desglose), los conexos listados como incluidos **sin precio** y, al final, el "VALOR TOTAL DE LA COTIZACIÓN" con la leyenda de impuestos (HU-033, #199; antes la tarifa del transporte y cada conexo con su precio).
+- Sin cuerpo. El servidor arma el PDF: una fila con origen, destino, vehículo y el **valor final de la ruta** (transporte con su margen y conexos a su venta, sin margen, HU-043.2; sin desglose), los conexos listados como incluidos **sin precio** y, al final, el "VALOR TOTAL DE LA COTIZACIÓN" con la leyenda de impuestos (HU-033, #199; antes la tarifa del transporte y cada conexo con su precio).
 - 201 `SalidaPdf` `{cotizacion_id, folio, pdf_url, registrada_en_bd: true}`.
 - 400 `PDF_PAYLOAD_INVALIDO`. 404. 409 `COSTEO_NO_LISTO`, `PDF_YA_GENERADO` (ya hay un PDF **vigente**), `PDF_YA_ENVIADO` o `CONFLICTO_CONCURRENCIA` (`If-Match` opcional aquí). 503 `PDF_RENDER_NO_DISPONIBLE` (transitorio: reintentar; desde #92).
 - **Ya no es "una sola vez".** Mientras la cotización no se haya enviado ni tenga resultado, ajustar el margen, los conexos o los textos, o re-solicitar en el mismo folio, invalida el PDF (`pdf_url = null`, `pdf_desactualizado = true`) y se **regenera** con este mismo endpoint (ADR-018 §11). Ya enviada o con resultado, los cambios van en una versión `-vN`. Antes de generarlo, confirmar el teléfono (`GET`/`PUT /web/usuario/telefono`).
@@ -1464,7 +1465,7 @@ Ejemplo (del contrato): `PCN-DG-10082026-001` se crea el **10 de agosto** (v1, 1
 | `pendientes_por_cotizar` | int | Ver la partición |
 | `conversion` | number o null | ganadas / cantidad (definición del backlog, "#ganadas / #totales"). `null` si cantidad = 0 |
 | `conversion_sobre_cerradas` | number o null | ganadas / (ganadas + perdidas). `null` si no hay cerradas |
-| `margen_promedio` | number o null | Promedio simple del margen de cada cotización (fracción, 0.15 = 15 %) de las que lo tienen; el de una cotización es el de sus rutas ponderado por costo. `null` si ninguna |
+| `margen_promedio` | number o null | Promedio simple del margen de cada cotización (fracción, 0.15 = 15 %) de las que lo tienen; el de una cotización es el de sus rutas ponderado por costo. `null` si ninguna. HU-043.2 (#251): es el margen del **transporte** (los conexos van a su venta, sin margen), no el margen sobre el precio completo; para el margen real sobre el precio usar `margen_ponderado` |
 | `margen_ponderado` | number o null | **Por ruta** (HU-021), margen sobre el precio: SUM(precio de la ruta en COP − `costoFinal`) / SUM(precio de la ruta en COP) de todas las rutas con costo > 0 y precio > 0. `null` si ninguna |
 | `costeo_total` | number | SUM(`costo`) en COP de **todas** |
 | `costeo_ganadas` | number | SUM(`costo`) en COP de las ganadas |
@@ -2640,7 +2641,7 @@ La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones.
 **Servicios conexos de Nexo (implementado en #99).**
 
 - **Buscar:** `GET /web/servicios-conexos?q=alm&categoria=logistico&page=1&page_size=20`. `q` busca en el nombre o el código (hasta 100 caracteres), `categoria` es `logistico` o `adicional`, `page` desde 1 y `page_size` de 1 a 50 (por defecto 20). Responde `PaginaServiciosConexos` `{total, page, page_size, items: [{id, codigo, nombre, categoria, unidad, origen, destino, puerto, ruta, tipo_maquina, vigencia}]}`. Nunca trae costos. Errores: 400 `ErrorWeb` (filtro fuera de límites), 403 `NEXO_SIN_PERMISO` (el comercial no tiene rol en Nexo), 503 `NEXO_NO_DISPONIBLE`.
-- **Agregar:** `POST /web/cotizaciones/{folio}/costeo/servicios-conexos` con `{"items": [{"linea_orden": 1, "servicio_id": "<id del catálogo>", "cantidad": 2}]}`. Entre 1 y 20 items; `cantidad` de 0,01 a 999.999,99 con hasta 2 decimales; `linea_orden` es 1 en una cotización del formulario. Encabezados: `If-Match` (obligatorio) e `Idempotency-Key` (un UUID nuevo por clic). Responde 200 `CosteoCotizacion` con el `ETag` nuevo: los conexos agregados quedan en `servicios_conexos` con su `precio` (con el margen de la cotización) e `incluido = true`. Si había PDF sin enviar, queda `pdf_desactualizado`.
+- **Agregar:** `POST /web/cotizaciones/{folio}/costeo/servicios-conexos` con `{"items": [{"linea_orden": 1, "servicio_id": "<id del catálogo>", "cantidad": 2}]}`. Entre 1 y 20 items; `cantidad` de 0,01 a 999.999,99 con hasta 2 decimales; `linea_orden` es 1 en una cotización del formulario. Encabezados: `If-Match` (obligatorio) e `Idempotency-Key` (un UUID nuevo por clic). Responde 200 `CosteoCotizacion` con el `ETag` nuevo: los conexos agregados quedan en `servicios_conexos` con su `precio` (HU-043.2, #251: su venta de Nexo, sin margen) e `incluido = true`. Si había PDF sin enviar, queda `pdf_desactualizado`.
 - **Errores al agregar:** 400 `ErrorWeb` (items vacíos, más de 20 o fuera de rango); 400 `CONEXO_INVALIDO` (la línea no existe o Nexo no acepta el servicio; `detalle.motivo` trae el código de Nexo); 403 `NEXO_SIN_PERMISO`; 404 (no es suya); 409 `COSTEO_NO_LISTO`, `LINEA_SIN_COTIZACION_NEXO` (esa línea todavía no tiene flete en Nexo), `PDF_YA_ENVIADO`, `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION` (las licitaciones no admiten conexos todavía) y `CONFLICTO_CONCURRENCIA`; 428 sin `If-Match`; 503 `NEXO_NO_DISPONIBLE`. En `detalle.motivo` viaja solo el código de Nexo (o `HTTP 401`), nunca su texto.
 - **Tras un rechazo de Nexo el `ETag` YA CAMBIÓ.** Un 400 `CONEXO_INVALIDO` de Nexo, un 403 `NEXO_SIN_PERMISO` o un 503 `NEXO_NO_DISPONIBLE` llegan después de reservar la versión: el conexo no se agregó, pero el `If-Match` que se usó ya no sirve. Antes de reintentar (o de ofrecer otro servicio), recargar el costeo (`GET .../costeo`) y usar su `ETag` nuevo; si no, el reintento responde 409 `CONFLICTO_CONCURRENCIA`.
 - **503 con `detalle.agregado_en_nexo = true`:** Nexo sí agregó el conexo pero no se pudo leer de nuevo la cotización. **No reintentar el POST**: avisar "El conexo se agregó; su precio aparecerá en unos segundos" y seguir consultando `GET .../costeo`. Un 409 `CONFLICTO_CONCURRENCIA` con `agregado_en_nexo = true` significa lo mismo: recargar el costeo, no volver a agregar.

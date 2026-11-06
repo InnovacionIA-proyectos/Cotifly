@@ -478,7 +478,8 @@ public sealed class clsServiciosConexosCosteoService(
 
     /// <summary>
     /// Guarda <paramref name="conexos"/> de Nexo como filas de la ruta (HU-021): costo unitario = <c>valorAplicado ÷ cantidad</c> (el mismo
-    /// criterio del 0009), la cantidad y el nombre. Un conexo que ya estaba se actualiza. La raíz recalcula siempre los totales y el precio
+    /// criterio del 0009, columna <c>precio</c>), la cantidad y el nombre. HU-043.2 (#251): la venta unitaria (columna <c>precioVenta</c>) es
+    /// <see cref="clsConexoNexo.VentaUnitaria"/>. Un conexo que ya estaba se actualiza. La raíz recalcula siempre los totales y el precio
     /// (<see cref="clsCotizacionSolicitud.CambiarConexos"/>). Devuelve cuántos agregó o cambió, o el error del módulo de precio.
     /// </summary>
     public static clsResultado<int> ImportarConexos(
@@ -492,9 +493,50 @@ public sealed class clsServiciosConexosCosteoService(
             var cantidad = conexo.Cantidad > 0m ? decimal.Round(conexo.Cantidad, 2) : 1m;
             var precio = decimal.Round(conexo.ValorAplicado / cantidad, 2, MidpointRounding.ToEven);
             // HU-014 (#188): con el id del catálogo (servicioConexoId, script 03) y la categoría que informó Nexo (script 05).
-            return new clsCambioConexo(conexo.Id, conexo.Nombre ?? conexo.Categoria, precio, cantidad, conexo.ServicioConexoId, conexo.CategoriaInformada);
+            return new clsCambioConexo(
+                conexo.Id, conexo.Nombre ?? conexo.Categoria, precio, cantidad, conexo.ServicioConexoId, conexo.CategoriaInformada,
+                conexo.VentaUnitaria);
         }).ToList();
         return cotizacion.CambiarConexos(ruta.Orden, cambios, ahora);
+    }
+
+    /// <summary>
+    /// HU-043.2 (#251): la venta que Nexo fijó para los conexos que Cotifly YA tiene guardados (filas anteriores al despliegue quedaron con
+    /// <c>precioVenta = precio</c>). Se cruza por el id: la fila de Nexo cuyo <c>id</c> es el <c>idServicioConexo</c> guardado (conexo
+    /// agregado o importado) o, si no hay, las de su <c>servicioConexoId</c> (el id del catálogo de un conexo capturado) que son de la misma
+    /// ruta (<see cref="RutaDelConexo"/>) y que no son ya, por id, de otro conexo guardado. Solo con una venta conocida (<see cref="clsConexoNexo.VentaUnitaria"/>) y única: sin venta, o con
+    /// dos filas de distinta venta para el mismo servicio, el conexo conserva la suya.
+    /// </summary>
+    public static IReadOnlyList<clsVentaConexo> VentasDeNexo(clsCotizacionSolicitud cotizacion, clsCotizacionNexo cotizacionNexo)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        ArgumentNullException.ThrowIfNull(cotizacionNexo);
+        var ventas = new List<clsVentaConexo>();
+        // Filas de Nexo que ya son, por id, de un conexo guardado: no cuentan en el cruce por servicio de los demás.
+        var conDueno = cotizacion.Rutas.SelectMany(r => r.Conexos).Select(c => c.IdServicioConexo).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var ruta in cotizacion.Rutas)
+        {
+            foreach (var conexo in ruta.Conexos)
+            {
+                var filas = cotizacionNexo.Conexos.Where(n => string.Equals(n.Id, conexo.IdServicioConexo, StringComparison.OrdinalIgnoreCase)).ToList();
+                if (filas.Count == 0)
+                {
+                    var catalogo = conexo.IdServicioConexoCatalogo ?? conexo.IdServicioConexo;
+                    filas = [.. cotizacionNexo.Conexos.Where(n =>
+                        !conDueno.Contains(n.Id)
+                        && string.Equals(n.ServicioConexoId, catalogo, StringComparison.OrdinalIgnoreCase)
+                        && RutaDelConexo(cotizacion, cotizacionNexo, n)?.Id == ruta.Id)];
+                }
+
+                var distintas = filas.Select(n => n.VentaUnitaria).OfType<decimal>().Distinct().ToList();
+                if (distintas.Count == 1)
+                {
+                    ventas.Add(new clsVentaConexo(ruta.Id, conexo.IdServicioConexo, distintas[0]));
+                }
+            }
+        }
+
+        return ventas;
     }
 
     /// <summary>

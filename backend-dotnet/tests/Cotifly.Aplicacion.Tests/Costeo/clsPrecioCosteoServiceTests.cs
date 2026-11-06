@@ -34,12 +34,16 @@ public sealed class clsPrecioCosteoServiceTests
 
     // HU-021 (decisión 3): Cotifly es la fuente de los conexos de la ruta; la lectura del costeo NO importa los conexos de Nexo, salvo
     // los que Cotifly agregó y no pudo leer (marca ConexosPendientesDeLeer). Ya no hay "incluido/excluido": el conexo de la ruta va en
-    // su precio con el margen de la ruta.
+    // su precio. HU-043.2 (#251): a su venta (valorVenta de Nexo), sin margen; sin venta (Nexo anterior), al costo.
     [Fact]
-    public void LosConexosDeNexoSoloSeTraenConLaMarcaYVanEnElPrecioConElMargenDeLaRuta()
+    public void LosConexosDeNexoSoloSeTraenConLaMarcaYVanEnElPrecioASuVentaSinMargen()
     {
         var cotizacion = Cotizacion();
-        IReadOnlyList<clsConexoNexo> conexos = [new clsConexoNexo("CX-1", "Cargue", "logistico", 1m, 170_000m), new clsConexoNexo("CX-2", "Seguro", "adicional", 1m, 85_000m)];
+        IReadOnlyList<clsConexoNexo> conexos =
+        [
+            new clsConexoNexo("CX-1", "Cargue", "logistico", 1m, 170_000m) { PrecioVentaUnitario = 250_000m, ValorVenta = 250_000m },
+            new clsConexoNexo("CX-2", "Seguro", "adicional", 1m, 85_000m),
+        ];
         Aplicar(cotizacion, Foto(2_000_000m, conexos: conexos), _ahora);
 
         cotizacion.PrimeraRuta!.Conexos.Should().BeEmpty("sin la marca la lectura no trae conexos");
@@ -50,11 +54,12 @@ public sealed class clsPrecioCosteoServiceTests
         Aplicar(cotizacion, Foto(2_000_000m, conexos: conexos), _ahora.AddHours(1), pendientes).Should().BeTrue();
 
         cotizacion.ConexosPendientesDeLeer.Should().BeFalse("la lectura quita la marca");
-        cotizacion.PrimeraRuta.Conexos.Select(c => (c.IdServicioConexo, c.Precio, c.Cantidad)).Should().BeEquivalentTo(
-            [("CX-1", 170_000m, 1m), ("CX-2", 85_000m, 1m)]);
+        cotizacion.PrimeraRuta.Conexos.Select(c => (c.IdServicioConexo, c.Precio, c.PrecioVenta, c.Cantidad)).Should().BeEquivalentTo(
+            [("CX-1", 170_000m, 250_000m, 1m), ("CX-2", 85_000m, 85_000m, 1m)]);
         clsCosteoCotizacionService.Vista(cotizacion, null).ServiciosConexos.Select(s => (s.Id, s.Precio, s.Incluido))
-            .Should().BeEquivalentTo([("CX-1", 200_000m, true), ("CX-2", 100_000m, true)]);
-        cotizacion.PrecioFinal.Should().Be(2_652_941m, "(2.000.000 + 255.000) / 0,85");
+            .Should().BeEquivalentTo([("CX-1", 250_000m, true), ("CX-2", 85_000m, true)]);
+        cotizacion.PrecioFinal.Should().Be(2_687_941m, "2.000.000 / 0,85 = 2.352.941 + 250.000 + 85.000");
+        cotizacion.CostoFinal.Should().Be(2_255_000m, "el costo sigue con valorAplicado");
         cotizacion.CosteoListoAt.Should().Be(_ahora, "costeoListoAt es la primera vez que hubo costeo");
     }
 

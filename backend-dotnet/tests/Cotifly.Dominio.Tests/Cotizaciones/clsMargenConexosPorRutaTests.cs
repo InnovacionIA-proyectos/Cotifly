@@ -137,7 +137,7 @@ public sealed class clsMargenConexosPorRutaTests
     {
         var cotizacion = clsCotizacionMuestra.ConConexo(TresRutas(), "CX-1", "Cargue", 85_000m, 2m, orden: 2);
         clsCotizacionMuestra.ConConexo(cotizacion, "CX-2", "Escolta", 42_500m, 1m, orden: 2);
-        cotizacion.RutasOrdenadas[1].PrecioFinalLinea.Should().Be(2_250_000m, "(1.700.000 + 170.000 + 42.500) / 0,85");
+        cotizacion.RutasOrdenadas[1].PrecioFinalLinea.Should().Be(2_212_500m, "HU-043.2: 1.700.000 / 0,85 + 170.000 + 42.500 (conexos sin margen)");
 
         var movimientos = cotizacion.AjustarConexosRuta(2, new Dictionary<string, decimal> { ["CX-2"] = 1m }, _ahora).Valor;
 
@@ -145,8 +145,8 @@ public sealed class clsMargenConexosPorRutaTests
         movimientos[0].Quitado.Should().BeTrue();
         cotizacion.RutasOrdenadas[1].Conexos.Select(c => c.IdServicioConexo).Should().Equal("CX-2");
         cotizacion.RutasOrdenadas[1].CostoServiciosConexos.Should().Be(42_500m);
-        cotizacion.RutasOrdenadas[1].PrecioFinalLinea.Should().Be(2_050_000m, "(1.700.000 + 42.500) / 0,85");
-        cotizacion.PrecioFinal.Should().Be(3_550_000m);
+        cotizacion.RutasOrdenadas[1].PrecioFinalLinea.Should().Be(2_042_500m, "1.700.000 / 0,85 + 42.500");
+        cotizacion.PrecioFinal.Should().Be(3_542_500m);
     }
 
     [Fact]
@@ -160,7 +160,7 @@ public sealed class clsMargenConexosPorRutaTests
         var conexo = cotizacion.RutasOrdenadas[1].Conexos.Single();
         conexo.Precio.Should().Be(85_000m);
         conexo.Cantidad.Should().Be(1m);
-        cotizacion.RutasOrdenadas[1].PrecioFinalLinea.Should().Be(2_100_000m, "(1.700.000 + 85.000) / 0,85");
+        cotizacion.RutasOrdenadas[1].PrecioFinalLinea.Should().Be(2_085_000m, "1.700.000 / 0,85 + 85.000 (la venta unitaria también se conserva)");
     }
 
     [Fact]

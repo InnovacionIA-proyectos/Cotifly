@@ -32,8 +32,9 @@ info:
       están implementadas; `x-issue` dice qué issue las implementa. Mientras tanto la prueba de
       contrato las lista en `clsContratoRutasTests.PendientesDeImplementar` (HU-013, ADR-018).
     - **AVISO PARA EL FRONTEND (HU-021, ADR-019): `precio_final` de la cotización YA INCLUYE los servicios
-      conexos.** Es la suma de las rutas, y el precio de cada ruta es su costo (fletes, retorno, levante y
-      conexos) con el margen. NO sumarle el `precio` de los conexos: se cobrarían dos veces. El `precio` de
+      conexos.** Es la suma de las rutas, y el precio de cada ruta es su transporte (fletes, retorno y levante)
+      con el margen + la venta de sus conexos SIN margen (HU-043.2, #251; antes el margen se aplicaba también a los
+      conexos). NO sumarle el `precio` de los conexos: se cobrarían dos veces. El `precio` de
       cada conexo es informativo (desglose en pantalla). La excepción son la vista de la licitación
       (`Licitacion.precio_final` y `lineas[].precio_final`) y su Excel: allí cada fila es la tarifa del transporte y
       el total va sin conexos, que se listan aparte una sola vez. Tarifa + conexos = precio de la ruta, exacto. El
@@ -105,7 +106,11 @@ tags:
         `costo` = SUM(`costoFinal`) de las rutas (fletes + retorno + levante + conexos; `null` si alguna no lo tiene),
         `precioFinal` de la cabecera = SUM(`precioFinalLinea`), y el margen de la cotización = promedio de sus rutas
         ponderado por `costoFinal`. La apertura por línea de negocio (`por_linea_negocio`) es por ruta.
-      - `margen_promedio` = promedio simple del margen de cada cotización (el de sus rutas ponderado por costo).
+      - `margen_promedio` = promedio simple del margen de cada cotización (el de sus rutas ponderado por costo). HU-043.2
+        (#251): el margen de una ruta se aplica solo a su transporte (fletes + retorno + levante); los servicios conexos se
+        cotizan a su precio de venta, sin margen. Desde entonces `margen_promedio` mide el margen sobre el transporte, ya no
+        sobre el precio completo; `margen_ponderado` y `ganancias` siguen siendo (precio − costo) e incluyen la diferencia
+        entre la venta y el costo de los conexos.
       - `margen_ponderado` = margen agregado sobre el precio: SUM(`valor_cop` de la ruta − `costoFinal`) / SUM(`valor_cop`
         de la ruta) de TODAS las rutas del universo con costo > 0 y precio > 0 (el precio de la ruta en COP, USD × TRM).
         `null` si no hay ninguna.
@@ -2581,8 +2586,9 @@ paths:
       tags: [web]
       summary: Estado del costeo en Nexo, precio final y servicios conexos de la cotización
       description: |
-        HU-005.7 (ADR-015 §5). `precio_final` y el `precio` de cada servicio conexo salen del módulo de Precio con el margen
-        de la cotización (resuelto al enviarla: SAP TM con el BP o la política de la línea). `precio_final` es `null`
+        HU-005.7 (ADR-015 §5). `precio_final` sale del módulo de Precio con el margen de la cotización (resuelto al enviarla:
+        SAP TM con el BP o la política de la línea) sobre el transporte; HU-043.2 (#251): el `precio` de cada servicio conexo
+        es su venta, sin margen, y suma tal cual. `precio_final` es `null`
         mientras no haya costeo. Solo el dueño.
 
         HU-039.1 (#218, reversa de ADR-015 §5 confirmada por la Gerencia Comercial el 2026-10-27): cada ruta trae su costo
@@ -3247,7 +3253,8 @@ paths:
       description: |
         HU-013.3 (ADR-018 §4). Consulta `GET {Nexo:UrlBase}/api/servicios-conexos?soloActivos=true&q=&categoria=&page=&pageSize=`
         con la identidad del comercial y devuelve solo servicios activos, **sin `costoUnitario`** (Nexo es la fuente de
-        verdad del costo; Cotifly solo expone precios con margen, y solo de los conexos ya agregados a una cotización).
+        verdad del costo; Cotifly solo expone precios, y solo de los conexos ya agregados a una cotización: desde HU-043.2, #251,
+        su precio de venta sin margen).
         Lo usan el buscador del detalle de la cotización y la herramienta `buscar_servicio_conexo` del asistente.
       security:
         - bearer: []
@@ -3454,7 +3461,8 @@ paths:
         - **`incluidos`** (HU-005.7): los ids que se conservan, sin cambiar cantidades; los demás se quitan. Con ruta, solo en esa
           ruta; sin ruta, en todas (compatibilidad).
 
-        Después del cambio se recalculan la ruta (`costoServiciosConexos`, su costo final y su precio con su margen) y el total.
+        Después del cambio se recalculan la ruta (`costoServiciosConexos`, su costo final y su precio: el transporte con su
+        margen + la venta de los conexos, sin margen, HU-043.2) y el total.
         Cada conexo quitado o con cantidad nueva queda en la auditoría (`EventosHerramienta`, herramienta
         `cambiar_servicios_conexos`, sin montos). Solo mientras la cotización tenga precio. Solo el dueño.
 
@@ -3817,7 +3825,7 @@ paths:
 
         **Por ruta (HU-021.9, #136).** Con una ruta, el PDF sale de la ruta y sus camiones: origen, destino, los camiones
         agrupados ("2 × 3S3 - FURGON (20000 KG)"; un camión sin vehículo es "Vehículo por definir" y uno descartado en Nexo no
-        se imprime) y el valor final de la ruta (HU-033, #199: transporte y conexos con su margen, sin desglose; los
+        se imprime) y el valor final de la ruta (HU-033, #199: transporte con su margen y conexos a su venta, HU-043.2, sin desglose; los
         conexos se listan como incluidos, sin precio). Con **más de una ruta** (formulario o licitación) sale con el layout
         de pliego: resumen con una fila por ruta (número, ruta, vehículo y peso, valor final) y "VALOR TOTAL DE LA
         COTIZACIÓN (N RUTAS)" (antes la tarifa sin conexos y "TOTAL DEL PLIEGO (N RUTAS, SIN SERVICIOS CONEXOS)"), y luego
@@ -5968,7 +5976,8 @@ components:
       required: [rutas, camiones, peso_kg, precio_transporte, precio_conexos, precio_final]
       description: |
         HU-027.1 (#179). Totales de la solicitud con las reglas del costeo y del PDF, en la moneda de la cotización. Los precios son `null`
-        mientras alguna ruta no tenga precio; `precio_transporte + precio_conexos = precio_final`.
+        mientras alguna ruta no tenga precio; `precio_transporte + precio_conexos = precio_final`. HU-043.2 (#251): el margen se aplica
+        solo al transporte; los conexos van a su precio de venta, sin margen.
       properties:
         rutas:
           type: integer
@@ -5984,11 +5993,14 @@ components:
         precio_transporte:
           type: number
           nullable: true
-          description: Suma de la tarifa de transporte de las rutas (la que imprime el PDF).
+          description: |
+            Suma de la tarifa de transporte de las rutas: fletes + retorno + levante con el margen de cada ruta (HU-043.2, #251).
         precio_conexos:
           type: number
           nullable: true
-          description: Suma del precio de los servicios conexos de todas las rutas.
+          description: |
+            Suma del precio de los servicios conexos de todas las rutas. HU-043.2 (#251): su precio de VENTA (el `valorVenta` de Nexo o el
+            `precioVenta` del catálogo; sin él, el costo), sin margen.
         precio_final:
           type: number
           nullable: true
@@ -7026,7 +7038,9 @@ components:
     ServicioConexoCosteo:
       type: object
       required: [id, nombre, categoria, cantidad, precio, incluido]
-      description: Servicio conexo del costeo de Nexo con su precio (margen de la cotización). Nunca trae el costo.
+      description: |
+        Servicio conexo del costeo de Nexo con su precio. Nunca trae el costo. HU-043.2 (#251): `precio` es el precio de VENTA del conexo
+        (venta unitaria × cantidad, en la moneda de la cotización), SIN margen: no cambia al ajustar el margen de la ruta.
       properties:
         id:
           type: string
@@ -7043,6 +7057,9 @@ components:
           type: number
         precio:
           type: number
+          description: |
+            HU-043.2 (#251): venta del conexo sin margen (en COP a pesos enteros; en USD convertida con `trm_aplicada`). Una cotización
+            finalizada o con PDF antes de HU-043.2 conserva su precio y muestra sus conexos como se cotizaron (con el margen de la ruta).
         incluido:
           type: boolean
           description: "Si va en el precio y en el PDF (HU-021, siempre `true`: un conexo de la ruta va en el precio y en el PDF)."
@@ -7184,7 +7201,9 @@ components:
         precio_final_linea:
           type: number
           nullable: true
-          description: Precio de la ruta (fletes + retorno + levante + conexos, con el margen de la ruta); `null` sin costeo o rechazada (HU-028.1).
+          description: |
+            Precio de la ruta: (fletes + retorno + levante) con el margen de la ruta + la venta de sus conexos SIN margen (HU-043.2, #251;
+            antes el margen se aplicaba también a los conexos); `null` sin costeo o rechazada (HU-028.1).
         costo_final:
           type: number
           nullable: true
@@ -7351,8 +7370,8 @@ components:
           nullable: true
           description: |
             Precio al cliente (costeo de Nexo con margen). `null` mientras no haya costeo. **HU-021 (ADR-019): incluye los
-            servicios conexos** (es la suma de las rutas; cada ruta = fletes + retorno + levante + conexos, con su margen). No
-            sumarle el `precio` de `servicios_conexos`, que es el desglose.
+            servicios conexos** (es la suma de las rutas; cada ruta = (fletes + retorno + levante) con su margen + la venta de
+            sus conexos sin margen, HU-043.2). No sumarle el `precio` de `servicios_conexos`, que es el desglose.
         margen_aplicado:
           type: number
           nullable: true

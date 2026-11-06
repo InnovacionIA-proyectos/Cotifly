@@ -51,7 +51,8 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
     private readonly clsBaseDatosPruebas _bd;
     private readonly clsNexoFalso _nexo = new clsNexoFalso()
         .ConCliente(clsCosteoEndpointsTests.Nit, "LONGYIN S.A.S.")
-        .ConServicioConexo(Cargue, Cargue, "Cargue en puerto", "logistico", "UND", 150_000m);
+        // HU-043.2 (#251): con precio de venta (180.000) distinto del costo (150.000).
+        .ConServicioConexo(Cargue, Cargue, "Cargue en puerto", "logistico", "UND", 150_000m, precioVenta: 180_000m);
     private readonly clsCubicadorFalso _cubicador = new();
     private readonly clsApiWebPruebas _api;
 
@@ -175,11 +176,12 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
                 l.costoFinal, '|', l.margenAplicado, '|', l.origenMargen, '|', l.metodoCalculo, '|', l.precioFinalLinea, '|', l.estadoCosteo)
             FROM dbo_cotifly.CotizacionLineasSolicitud l WHERE l.cotizacionSolicitudId = '{id}' ORDER BY l.orden
             """)).Should().Equal(
-            "1|1800000.00|200000.00|300000.00|150000.00|2450000.00|0.1500|politica_linea|margen|2882353.00|autocosteo",
+            // HU-043.2 (#251): 2.300.000 / 0,85 = 2.705.882 + 180.000 de venta del conexo, sin margen; costoFinal sigue con su costo.
+            "1|1800000.00|200000.00|300000.00|150000.00|2450000.00|0.1500|politica_linea|margen|2885882.00|autocosteo",
             "2|600000.00|0.00|0.00|0.00|600000.00|0.1500|politica_linea|margen|705882.00|autocosteo");
         await VerificarTotalesCuadranAsync(id);
         (await Fila($"SELECT CONCAT(precioFinal, '|', estadoCosteo, '|', IIF(costeoListoAt IS NULL, '-', 'L')) FROM dbo_cotifly.CotizacionesSolicitud WHERE id = '{id}'"))
-            .Should().Be("3588235.00|autocosteo|L", "el precio de la cabecera es la suma de las rutas y el estado resume el de las rutas");
+            .Should().Be("3591764.00|autocosteo|L", "el precio de la cabecera es la suma de las rutas y el estado resume el de las rutas");
 
         // El conexo capturado viajó diferido a la línea del primer camión (decisión 10).
         var item = _nexo.PeticionesConexos(_nexo.CotizacionDe(solicitud)!).Should().ContainSingle().Subject["items"]!.AsArray().Should().ContainSingle().Subject!;
@@ -216,8 +218,8 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
         (await Filas($"""
             SELECT CONCAT(l.orden, '|', l.margenAplicado, '|', l.origenMargen, '|', l.precioFinalLinea) FROM dbo_cotifly.CotizacionLineasSolicitud l
             WHERE l.cotizacionSolicitudId = '{id}' ORDER BY l.orden
-            """)).Should().Equal("1|0.1500|politica_linea|2882353.00", "2|0.3000|negociado|857143.00");
-        (await Escalar<decimal>($"SELECT precioFinal FROM dbo_cotifly.CotizacionesSolicitud WHERE id = '{id}'")).Should().Be(3_739_496m);
+            """)).Should().Equal("1|0.1500|politica_linea|2885882.00", "2|0.3000|negociado|857143.00");
+        (await Escalar<decimal>($"SELECT precioFinal FROM dbo_cotifly.CotizacionesSolicitud WHERE id = '{id}'")).Should().Be(3_743_025m);
         await VerificarTotalesCuadranAsync(id);
 
         // ---------------------------------------------------------------- 4. PDF de pliego y correo
@@ -330,8 +332,8 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
     }
 
     /// <summary>
-    /// Para cada ruta de la solicitud: los totales guardados cuadran con sus camiones y conexos (§9.1), el precio sale del costo final con
-    /// el margen, y el precio de la cabecera es la suma de los de sus rutas.
+    /// Para cada ruta de la solicitud: los totales guardados cuadran con sus camiones y conexos (§9.1), el precio sale del transporte con
+    /// el margen + la venta de los conexos sin margen (HU-043.2, #251), y el precio de la cabecera es la suma de los de sus rutas.
     /// </summary>
     private async Task VerificarTotalesCuadranAsync(Guid id)
     {
@@ -339,12 +341,13 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
             SELECT COUNT(*) FROM dbo_cotifly.CotizacionLineasSolicitud l
             CROSS APPLY (SELECT SUM(v.costoFlete) AS fletes, SUM(ISNULL(v.costoRetornoContenedor, 0)) AS retorno, SUM(ISNULL(v.costoLevanteContenedor, 0)) AS levante
                          FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v WHERE v.lineaSolicitudId = l.id) cam
-            CROSS APPLY (SELECT ISNULL(SUM(s.precio * s.cantidad), 0) AS conexos FROM dbo_cotifly.CotizacionServiciosConexos s WHERE s.lineaSolicitudId = l.id) cx
+            CROSS APPLY (SELECT ISNULL(SUM(s.precio * s.cantidad), 0) AS conexos, ISNULL(SUM(ROUND(s.precioVenta * s.cantidad, 0)), 0) AS ventas
+                         FROM dbo_cotifly.CotizacionServiciosConexos s WHERE s.lineaSolicitudId = l.id) cx
             WHERE l.cotizacionSolicitudId = '{id}'
               AND (l.costoFletesTotal <> cam.fletes OR l.costoRetornoContenedorTotal <> cam.retorno OR l.costoLevanteContenedorTotal <> cam.levante
                    OR l.costoServiciosConexos <> cx.conexos
                    OR l.costoFinal <> l.costoFletesTotal + l.costoRetornoContenedorTotal + l.costoLevanteContenedorTotal + l.costoServiciosConexos
-                   OR l.precioFinalLinea <> ROUND(l.costoFinal / (1 - l.margenAplicado), 0))
+                   OR l.precioFinalLinea <> ROUND((l.costoFinal - l.costoServiciosConexos) / (1 - l.margenAplicado), 0) + cx.ventas)
             """)).Should().Be(0, "los totales guardados de cada ruta cuadran con sus camiones y conexos");
         (await Escalar<int>($"""
             SELECT COUNT(*) FROM dbo_cotifly.CotizacionesSolicitud c

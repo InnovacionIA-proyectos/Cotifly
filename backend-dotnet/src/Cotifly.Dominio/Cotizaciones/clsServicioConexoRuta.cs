@@ -3,9 +3,8 @@ namespace Cotifly.Dominio.Cotizaciones;
 /// <summary>
 /// Servicio conexo de una ruta (<c>dbo_cotifly.CotizacionServiciosConexos</c>, script 0009, HU-021, ADR-019; reemplaza los dos JSON
 /// <c>serviciosConexos</c>). Es global a la ruta: la <see cref="Cantidad"/> ya dice cuántos son. <see cref="Precio"/> es el costo
-/// unitario de Nexo al aplicarlo (antes del margen) y no se recalcula si Nexo lo cambia después; la ruta le aplica su margen al sumar
-/// <see cref="Costo"/> a <see cref="clsLineaSolicitud.CostoServiciosConexos"/>. En Nexo los conexos de la ruta viajan pegados a la línea
-/// de su primer camión (decisión 3 del 2026-10-08). <see cref="Nombre"/> es una copia del nombre del servicio (0010, mismo criterio que
+/// unitario de Nexo al aplicarlo (interno, no se recalcula si Nexo lo cambia después); HU-043.2 (#251): al cliente se cotiza
+/// <see cref="PrecioVenta"/>, sin margen. En Nexo los conexos de la ruta viajan pegados a la línea de su primer camión (decisión 3 del 2026-10-08). <see cref="Nombre"/> es una copia del nombre del servicio (0010, mismo criterio que
 /// el vehículo); vacío en las filas migradas.
 /// </summary>
 public sealed class clsServicioConexoRuta
@@ -45,12 +44,14 @@ public sealed class clsServicioConexoRuta
     /// </summary>
     public string? Categoria { get; private set; }
 
-    /// <summary>Costo unitario de Nexo al aplicarlo (antes del margen).</summary>
+    /// <summary>Costo unitario de Nexo al aplicarlo (<c>valorAplicado ÷ cantidad</c> o <c>costoUnitario</c> del catálogo). Interno.</summary>
     public decimal Precio { get; private set; }
 
     /// <summary>
-    /// Precio de venta unitario del conexo (<c>precioVenta</c> del script 19, HU-043.1 #245). #261 punto 4: mientras llega HU-043.2
-    /// (#251) vale siempre lo mismo que <see cref="Precio"/> (se fija junto con él); no entra en ninguna fórmula de la ruta.
+    /// Precio de venta unitario del conexo (<c>precioVenta</c> del script 19, HU-043.1 #245). HU-043.2 (#251): el
+    /// <c>precioVentaUnitario</c> de la cotización de Nexo (lo fija Nexo al agregar el conexo) o, en un conexo capturado o agregado en
+    /// Cotifly, el <c>precioVenta</c> del catálogo; sin él (Nexo anterior a S6-HU-38.2 o servicio sin precio de venta), el costo
+    /// (<see cref="Precio"/>). Es lo que se cotiza al cliente, sin margen.
     /// </summary>
     public decimal PrecioVenta { get; private set; }
 
@@ -63,11 +64,18 @@ public sealed class clsServicioConexoRuta
     /// <summary>Costo del conexo en la ruta: <see cref="Precio"/> × <see cref="Cantidad"/>.</summary>
     public decimal Costo => Precio * Cantidad;
 
+    /// <summary>HU-043.2 (#251): venta del conexo en la ruta, en pesos y sin margen: <see cref="PrecioVenta"/> × <see cref="Cantidad"/>.</summary>
+    public decimal Venta => PrecioVenta * Cantidad;
+
+    /// <summary>
+    /// Conexo nuevo de la ruta. HU-043.2 (#251): <paramref name="precioVenta"/> se guarda a 2 decimales (half-to-even, como el costo);
+    /// <c>null</c> = sin precio de venta: se cotiza al costo. Una venta 0 es un conexo sin cobro, no "al costo".
+    /// </summary>
     internal static clsServicioConexoRuta Crear(
         Guid lineaSolicitudId, string idServicioConexo, string? nombre, decimal precio, decimal cantidad,
-        string? idServicioConexoCatalogo = null, string? categoria = null)
+        string? idServicioConexoCatalogo = null, string? categoria = null, decimal? precioVenta = null)
     {
-        var id = Validar(idServicioConexo, precio, cantidad);
+        var id = Validar(idServicioConexo, precio, cantidad, precioVenta);
         return new clsServicioConexoRuta
         {
             Id = Guid.NewGuid(),
@@ -75,7 +83,7 @@ public sealed class clsServicioConexoRuta
             IdServicioConexo = id,
             Nombre = LimpiarNombre(nombre),
             Precio = precio,
-            PrecioVenta = precio,
+            PrecioVenta = VentaRedondeada(precioVenta) ?? precio,
             Cantidad = cantidad,
             IdServicioConexoCatalogo = Acotar(idServicioConexoCatalogo, LargoMaximoId),
             Categoria = Acotar(categoria, LargoMaximoCategoria),
@@ -83,28 +91,54 @@ public sealed class clsServicioConexoRuta
     }
 
     /// <summary>
-    /// Cambia el precio, la cantidad o el nombre (el mismo conexo leído otra vez). Devuelve <c>true</c> si cambió alguno de esos tres.
+    /// Cambia el precio, la venta, la cantidad o el nombre (el mismo conexo leído otra vez). Devuelve <c>true</c> si cambió alguno.
     /// HU-014 (#188): si trae el id del catálogo o la categoría y la fila no los tenía (una fila anterior a #188), los completa; no
-    /// reemplaza uno ya guardado ni cuenta como cambio (la persistencia sí lo guarda).
+    /// reemplaza uno ya guardado ni cuenta como cambio (la persistencia sí lo guarda). HU-043.2 (#251): <paramref name="precioVenta"/>
+    /// <c>null</c> = no se conoce: se conserva la venta guardada, salvo que fuera el costo por defecto (venta = costo anterior), que sigue
+    /// al costo nuevo. Una venta conocida nunca vuelve al costo por una lectura sin venta.
     /// </summary>
-    internal bool Actualizar(string? nombre, decimal precio, decimal cantidad, string? idServicioConexoCatalogo = null, string? categoria = null)
+    internal bool Actualizar(
+        string? nombre, decimal precio, decimal cantidad, string? idServicioConexoCatalogo = null, string? categoria = null, decimal? precioVenta = null)
     {
-        Validar(IdServicioConexo, precio, cantidad);
-        var antes = (Nombre, Precio, Cantidad);
+        Validar(IdServicioConexo, precio, cantidad, precioVenta);
+        var antes = (Nombre, Precio, PrecioVenta, Cantidad);
         Nombre = LimpiarNombre(nombre) ?? Nombre;
+        // Sin venta: una venta igual al costo se toma como "al costo" y sigue al costo nuevo, aunque fuera una venta conocida que coincidía
+        // (riesgo aceptado, ADR-026: solo con un Nexo anterior a S6-HU-38.2 y un cambio de costo).
+        PrecioVenta = VentaRedondeada(precioVenta) ?? (PrecioVenta == Precio ? precio : PrecioVenta);
         Precio = precio;
-        PrecioVenta = precio;
         Cantidad = cantidad;
         IdServicioConexoCatalogo ??= Acotar(idServicioConexoCatalogo, LargoMaximoId);
         Categoria ??= Acotar(categoria, LargoMaximoCategoria);
-        return antes != (Nombre, Precio, Cantidad);
+        return antes != (Nombre, Precio, PrecioVenta, Cantidad);
     }
+
+    /// <summary>
+    /// HU-043.2 (#251): cambia solo la venta unitaria (la que Nexo fijó al agregar el conexo, leída por el polling). Devuelve <c>true</c>
+    /// si cambió. No toca el costo ni la cantidad.
+    /// </summary>
+    internal bool CambiarVenta(decimal precioVenta)
+    {
+        Validar(IdServicioConexo, Precio, Cantidad, precioVenta);
+        var nueva = VentaRedondeada(precioVenta)!.Value;
+        if (nueva == PrecioVenta)
+        {
+            return false;
+        }
+
+        PrecioVenta = nueva;
+        return true;
+    }
+
+    /// <summary>HU-043.2 (#251): la venta a 2 decimales, half-to-even (como <c>valorAplicado ÷ cantidad</c> del costo).</summary>
+    private static decimal? VentaRedondeada(decimal? precioVenta) =>
+        precioVenta is { } venta ? decimal.Round(venta, 2, MidpointRounding.ToEven) : null;
 
     /// <summary>El texto recortado, o <c>null</c> si viene vacío o no cabe en la columna (no se guarda un valor truncado).</summary>
     private static string? Acotar(string? valor, int largo) =>
         valor?.Trim() is { Length: > 0 } limpio && limpio.Length <= largo ? limpio : null;
 
-    private static string Validar(string idServicioConexo, decimal precio, decimal cantidad)
+    private static string Validar(string idServicioConexo, decimal precio, decimal cantidad, decimal? precioVenta = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(idServicioConexo);
         var id = idServicioConexo.Trim();
@@ -116,6 +150,12 @@ public sealed class clsServicioConexoRuta
         if (precio < 0m || cantidad <= 0m)
         {
             throw new ArgumentOutOfRangeException(nameof(precio), "El precio del conexo no puede ser negativo y la cantidad debe ser mayor que 0.");
+        }
+
+        if (precioVenta < 0m)
+        {
+            // HU-043.2 (#251): el CHECK ck_cotizacionServiciosConexos_montos del script 19 exige precioVenta >= 0.
+            throw new ArgumentOutOfRangeException(nameof(precioVenta), "El precio de venta del conexo no puede ser negativo.");
         }
 
         return id;

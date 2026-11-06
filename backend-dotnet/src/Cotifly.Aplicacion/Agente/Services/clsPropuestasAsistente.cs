@@ -114,7 +114,8 @@ public static class clsPropuestasAsistente
 
         if (conConexos)
         {
-            resumen += " Los servicios conexos se recalculan con el mismo margen.";
+            // HU-043.2 (#251): el margen es solo del transporte; los conexos van a su precio de venta y no cambian con el ajuste.
+            resumen += " Los servicios conexos no cambian: se cotizan a su precio de venta, sin margen.";
         }
 
         resumen += SufijoPdf(cotizacion);
@@ -235,7 +236,8 @@ public static class clsPropuestasAsistente
         var cuerpo = new Dictionary<string, object?>(StringComparer.Ordinal) { ["items"] = new[] { item } };
         var unidad = string.IsNullOrWhiteSpace(servicio.Unidad) ? string.Empty : $" ({servicio.Unidad.Trim()})";
         var resumen = $"Agregar {Numero(cantidad)}{unidad} de «{servicio.Nombre ?? servicio.Codigo ?? servicio.Id}» a la ruta {ruta.Orden} en Nexo. "
-                      + $"Nexo calcula su valor y Cotifly le aplica el margen de la ruta ({Porcentaje(ruta.MargenAplicado)}); queda incluido en el PDF."
+                      // HU-043.2 (#251): el conexo no lleva el margen de la ruta.
+                      + "Se cotiza a su precio de venta de Nexo, sin margen; queda incluido en el PDF."
                       + SufijoPdf(cotizacion);
         return new clsAccionPropuesta(
             clsAccionPropuesta.TipoAgregarServiciosConexos, MetodoPost, RutaServiciosConexos(cotizacion.Folio), cuerpo, Recortar(resumen),

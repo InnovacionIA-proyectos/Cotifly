@@ -1104,10 +1104,13 @@ public sealed class clsCosteoCotizacionService(
 
     /// <summary>
     /// Precio del transporte de la ruta (fletes, retorno y levante con su margen), en la moneda de la solicitud; <c>null</c> sin costo.
-    /// Es la tarifa que ven el PDF y el Excel: los conexos van aparte (<see cref="ConexosConPrecio"/>), así que la tarifa + los conexos
-    /// tienen que dar exactamente <c>precioFinalLinea</c>. Cada precio se redondea por separado; la diferencia de redondeo (a lo sumo
-    /// una unidad por conexo) la absorbe la tarifa: <c>precioFinalLinea − conexos</c>. Si la diferencia es mayor, la ruta no incluye
-    /// los conexos en su precio (cotización migrada antes de HU-021) y la tarifa es el transporte calculado.
+    /// Es la tarifa que ven el Excel, la licitación y <c>totales.precio_transporte</c>: los conexos van aparte (<see cref="ConexosConPrecio"/>),
+    /// así que la tarifa + los conexos tienen que dar exactamente <c>precioFinalLinea</c>. HU-043.2 (#251): con la fórmula de hoy los
+    /// conexos van a su venta sin margen y la diferencia es 0 (<see cref="clsLineaSolicitud.PrecioRutaCon"/> suma la venta ya redondeada).
+    /// Con un precio de la fórmula anterior (<see cref="clsLineaSolicitud.PrecioConFormulaAnterior"/>), cada precio se redondeó por
+    /// separado y la diferencia de redondeo (a lo sumo una unidad por conexo) la absorbe la tarifa: <c>precioFinalLinea − conexos</c>. Si
+    /// la diferencia es mayor, la ruta no incluye los conexos en su precio (cotización migrada antes de HU-021) y la tarifa es el
+    /// transporte calculado.
     /// </summary>
     public static decimal? PrecioTransporte(clsCotizacionSolicitud cotizacion, clsLineaSolicitud ruta)
     {
@@ -1136,23 +1139,28 @@ public sealed class clsCosteoCotizacionService(
     }
 
     /// <summary>
-    /// Conexos de la ruta como los ve el comercial: precio con el margen de la ruta (nunca el costo de Nexo); todos incluidos. La categoría
-    /// es la del catálogo de Nexo (<paramref name="categorias"/>, #173) o <see cref="CategoriaConexo"/> si no se conoce. HU-028.1 (#183): una
-    /// ruta rechazada por la Mesa de Costeo no tiene precio y sus conexos tampoco (lista vacía: no salen en el costeo, el PDF ni el Excel,
-    /// y no suman; siguen guardados en la ruta y se ven en la captura).
+    /// Conexos de la ruta como los ve el comercial (nunca el costo de Nexo); todos incluidos. HU-043.2 (#251): el precio es la VENTA del
+    /// conexo sin margen (<see cref="clsLineaSolicitud.VentaConexo"/>), en la moneda de la solicitud; como antes, solo cuando la ruta ya
+    /// tiene margen (se resuelve al enviar a Nexo). Una ruta cuyo precio guardado es de la fórmula anterior
+    /// (<see cref="clsLineaSolicitud.PrecioConFormulaAnterior"/>: finalizada o con PDF antes de HU-043.2) muestra sus conexos como se
+    /// calcularon, con el margen de la ruta, para que el desglose siga cuadrando con su precio. La categoría es la del catálogo de Nexo
+    /// (<paramref name="categorias"/>, #173) o <see cref="CategoriaConexo"/> si no se conoce. HU-028.1 (#183): una ruta rechazada por la
+    /// Mesa de Costeo no tiene precio y sus conexos tampoco (lista vacía: no salen en el costeo, el PDF ni el Excel, y no suman; siguen
+    /// guardados en la ruta y se ven en la captura).
     /// </summary>
     public static IReadOnlyList<clsServicioConexoPrecio> ConexosConPrecio(
         clsCotizacionSolicitud cotizacion, clsLineaSolicitud ruta, IReadOnlyDictionary<string, string>? categorias = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(ruta);
-        if (ruta.Rechazada)
+        if (ruta.Rechazada || ruta.MargenAplicado is null || string.IsNullOrWhiteSpace(ruta.MetodoCalculo))
         {
             return [];
         }
 
+        var anterior = ruta.PrecioConFormulaAnterior(cotizacion.Moneda, cotizacion.TrmAplicada);
         return [.. ruta.Conexos.OrderBy(c => c.CreatedAt).ThenBy(c => c.IdServicioConexo, StringComparer.Ordinal)
-            .Select(c => (Conexo: c, Error: ruta.PrecioDe(c.Costo, cotizacion.Moneda, cotizacion.TrmAplicada, out var precio), Precio: precio))
+            .Select(c => (Conexo: c, Error: PrecioConexo(cotizacion, ruta, c, anterior, out var precio), Precio: precio))
             .Where(x => x.Error is null && x.Precio is not null)
             .Select(x => new clsServicioConexoPrecio(
                 x.Conexo.IdServicioConexo,
@@ -1168,6 +1176,16 @@ public sealed class clsCosteoCotizacionService(
                 ServicioId = x.Conexo.IdServicioConexoCatalogo,
             })];
     }
+
+    /// <summary>
+    /// HU-043.2 (#251): precio de un conexo para el comercial: su venta sin margen o, con <paramref name="formulaAnterior"/>, su costo con el
+    /// margen de la ruta (como se calculó el precio congelado).
+    /// </summary>
+    private static clsErrorDominio? PrecioConexo(
+        clsCotizacionSolicitud cotizacion, clsLineaSolicitud ruta, clsServicioConexoRuta conexo, bool formulaAnterior, out decimal? precio) =>
+        formulaAnterior
+            ? ruta.PrecioDe(conexo.Costo, cotizacion.Moneda, cotizacion.TrmAplicada, out precio)
+            : clsLineaSolicitud.VentaConexo(conexo, cotizacion.Moneda, cotizacion.TrmAplicada, out precio);
 
     /// <summary>
     /// Categoría por defecto de un conexo sin categoría guardada (filas anteriores a #188, que no llenaron <c>categoriaServicioConexo</c> del

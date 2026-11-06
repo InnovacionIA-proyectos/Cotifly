@@ -451,7 +451,10 @@ public sealed class clsCosteoLineasService(
         }
 
         var ahora = cotizacion.CosteoListoAt ?? cotizacion.UpdatedAt;
-        var cambio = new clsCambioConexo(deCatalogo.Id, deCatalogo.Nombre, deCatalogo.CostoUnitario, cantidad, deCatalogo.Id, deCatalogo.Categoria);
+        // HU-043.2 (#251): con la venta del catálogo (precioVenta ?? costoUnitario), la misma que Nexo fija al recibir el conexo del envío
+        // diferido (el POST a Nexo nunca lleva precio: solo servicioConexoId y cantidad).
+        var cambio = new clsCambioConexo(
+            deCatalogo.Id, deCatalogo.Nombre, deCatalogo.CostoUnitario, cantidad, deCatalogo.Id, deCatalogo.Categoria, deCatalogo.VentaUnitaria);
         var cambios = new List<clsCambioConexoRuta>();
         foreach (var ruta in destino)
         {

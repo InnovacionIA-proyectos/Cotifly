@@ -70,7 +70,7 @@ public sealed class clsAsistenteMargenPorRutaTests
         propuesta.Cuerpo["margen"].Should().Be(0.20m);
         propuesta.Resumen.Should().Contain("ruta 3").And.Contain("Destino 3")
             .And.Contain("500.000").And.Contain("531.250", "425.000 / 0,80")
-            .And.Contain("3.700.000").And.Contain("3.731.250", "el total cambia solo por la ruta 3")
+            .And.Contain("3.670.000").And.Contain("3.701.250", "el total cambia solo por la ruta 3 (HU-043.2: los conexos de la ruta 2 sin margen)")
             .And.Contain("Las demás rutas no cambian");
         propuesta.Resumen.Length.Should().BeLessThanOrEqualTo(clsAccionPropuesta.LargoMaximoResumen);
         var salida = (IReadOnlyDictionary<string, object?>)resultado.ParaModelo();

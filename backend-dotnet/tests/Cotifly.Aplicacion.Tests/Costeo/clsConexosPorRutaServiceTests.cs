@@ -58,8 +58,8 @@ public sealed class clsConexosPorRutaServiceTests
 
         resultado.EsExitoso.Should().BeTrue(resultado.EsFallo ? resultado.Error.Mensaje : string.Empty);
         _cotizacion.RutasOrdenadas[1].Conexos.Select(c => c.IdServicioConexo).Should().Equal("CX-2");
-        _cotizacion.RutasOrdenadas[1].PrecioFinalLinea.Should().Be(2_050_000m, "(1.700.000 + 42.500) / 0,85");
-        resultado.Valor.PrecioFinal.Should().Be(3_550_000m);
+        _cotizacion.RutasOrdenadas[1].PrecioFinalLinea.Should().Be(2_042_500m, "HU-043.2: 1.700.000 / 0,85 + 42.500, sin margen");
+        resultado.Valor.PrecioFinal.Should().Be(3_542_500m);
         resultado.Valor.Rutas[1].ServiciosConexos.Select(s => s.Id).Should().Equal("CX-2");
         resultado.Valor.ServiciosConexos.Single().LineaOrden.Should().Be(2);
         resultado.Valor.PdfDesactualizado.Should().BeTrue("ADR-018 §11: el PDF vigente se invalida");
@@ -70,20 +70,20 @@ public sealed class clsConexosPorRutaServiceTests
             Arg.Any<object?>(), Arg.Any<object?>(), true, Arg.Any<int>(), Arg.Any<string?>());
         var salida = JsonSerializer.Serialize(_salidaAuditada);
         salida.Should().Contain("\"quitado\":true").And.Contain("\"id\":\"CX-1\"").And.Contain("\"linea_orden\":2");
-        salida.Should().NotContain("85000").And.NotContain("2050000", "la auditoría no lleva montos");
+        salida.Should().NotContain("85000").And.NotContain("2042500", "la auditoría no lleva montos");
     }
 
     [Fact]
-    public async Task CambiarLaCantidadUsaElCostoUnitarioDeNexoYElMargenDeLaRuta()
+    public async Task CambiarLaCantidadConservaElCostoYLaVentaUnitariosYElMargenSoloEsDelFlete()
     {
         var resultado = await Servicio().SeleccionarServiciosConexosAsync(_ana, "PCN-L1",
             new clsCambioServiciosConexos(clsRutaIndicada.DeOrden(2), null,
                 [new clsCantidadConexoEntrada("CX-1", 1m), new clsCantidadConexoEntrada("CX-2", 1m)]), Version, Ct);
 
         resultado.Valor.Rutas[1].ServiciosConexos.Single(s => s.Id == "CX-1").Cantidad.Should().Be(1m);
-        resultado.Valor.Rutas[1].ServiciosConexos.Single(s => s.Id == "CX-1").Precio.Should().Be(100_000m, "85.000 / 0,85");
-        _cotizacion.RutasOrdenadas[1].PrecioFinalLinea.Should().Be(2_150_000m, "(1.700.000 + 85.000 + 42.500) / 0,85");
-        _cotizacion.RutasOrdenadas.Select(r => r.PrecioFinalLinea).Should().Equal(1_000_000m, 2_150_000m, 500_000m);
+        resultado.Valor.Rutas[1].ServiciosConexos.Single(s => s.Id == "CX-1").Precio.Should().Be(85_000m, "HU-043.2: su venta, sin margen");
+        _cotizacion.RutasOrdenadas[1].PrecioFinalLinea.Should().Be(2_127_500m, "1.700.000 / 0,85 + 85.000 + 42.500");
+        _cotizacion.RutasOrdenadas.Select(r => r.PrecioFinalLinea).Should().Equal(1_000_000m, 2_127_500m, 500_000m);
         JsonSerializer.Serialize(_salidaAuditada).Should().Contain("\"cantidad_anterior\":2").And.Contain("\"cantidad_nueva\":1");
     }
 

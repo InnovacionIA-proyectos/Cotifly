@@ -704,14 +704,16 @@ public sealed class clsReSolicitudCosteoService(
                         continue;
                     }
 
-                    // HU-014 (#188): la versión nueva guarda el id del catálogo y la categoría (scripts 03 y 05).
-                    conexos.Add(new clsCambioConexo(costo.Id, costo.Nombre ?? c.Nombre, costo.CostoUnitario, c.Cantidad, costo.Id, costo.Categoria ?? c.Categoria));
+                    // HU-014 (#188): la versión nueva guarda el id del catálogo y la categoría (scripts 03 y 05). HU-043.2 (#251): y la
+                    // venta del catálogo de hoy (precioVenta ?? costoUnitario), como el costo.
+                    conexos.Add(new clsCambioConexo(
+                        costo.Id, costo.Nombre ?? c.Nombre, costo.CostoUnitario, c.Cantidad, costo.Id, costo.Categoria ?? c.Categoria, costo.VentaUnitaria));
                     continue;
                 }
 
                 logger.LogWarning("El conexo {Conexo} de la ruta {Ruta} de {Folio} no está en el catálogo de Nexo (ni por id ni por nombre): la versión nueva conserva lo guardado.",
                     c.IdServicioConexo, ruta.Orden, original.Folio);
-                conexos.Add(new clsCambioConexo(c.IdServicioConexo, c.Nombre, c.Precio, c.Cantidad, c.IdServicioConexoCatalogo, c.Categoria));
+                conexos.Add(new clsCambioConexo(c.IdServicioConexo, c.Nombre, c.Precio, c.Cantidad, c.IdServicioConexoCatalogo, c.Categoria, c.PrecioVenta));
             }
 
             rutas.Add(new clsRutaCapturada(linea, ruta.LineaNegocioId ?? validada.Politica?.Id, ruta.RutaOrigenIndice, camiones, conexos, rutaId, cubicacion)
@@ -793,7 +795,8 @@ public sealed class clsReSolicitudCosteoService(
                 costo_servicios_conexos = r.CostoServiciosConexos,
                 costo_final = r.CostoFinal,
                 precio_final_linea = r.PrecioFinalLinea,
-                servicios_conexos = r.Conexos.Select(c => new { id = c.IdServicioConexo, nombre = c.Nombre, precio = c.Precio, cantidad = c.Cantidad }).ToList(),
+                // HU-043.2 (#251): con la venta unitaria, además del costo.
+                servicios_conexos = r.Conexos.Select(c => new { id = c.IdServicioConexo, nombre = c.Nombre, precio = c.Precio, precio_venta = c.PrecioVenta, cantidad = c.Cantidad }).ToList(),
                 camiones = r.VehiculosOrdenados.Select(v => new
                 {
                     linea_solicitud_nexo_id = v.LineaSolicitudNexoId,

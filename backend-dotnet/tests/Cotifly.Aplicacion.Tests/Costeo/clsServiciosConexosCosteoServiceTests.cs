@@ -77,7 +77,7 @@ public sealed class clsServiciosConexosCosteoServiceTests
     }
 
     [Fact]
-    public async Task AgregarLoCreaEnNexoConElLineaIdDeSuCotizacionYLeAplicaElMargenComoElModuloDePrecio()
+    public async Task AgregarLoCreaEnNexoConElLineaIdDeSuCotizacionYLoCotizaSinMargen()
     {
         var resultado = await Servicio().AgregarAsync(_ana, _cotizacion.Folio, [Item(1, Almacenamiento, 2m)], Version, null, Ct);
 
@@ -85,7 +85,8 @@ public sealed class clsServiciosConexosCosteoServiceTests
         await _nexo.Received(1).AgregarAsync(_ana, CotizacionNexo, Arg.Is<IReadOnlyList<clsConexoParaNexo>>(i =>
             i.Count == 1 && i[0].LineaId == "LC-1" && i[0].ServicioConexoId == Almacenamiento && i[0].Cantidad == 2m), Arg.Any<CancellationToken>());
         var nuevo = resultado.Valor.ServiciosConexos.Single(s => s.Id == "CX-2");
-        nuevo.Precio.Should().Be(_precios.Calcular(240_000m, 0.15m).Valor.Precio).And.Be(282_353m);
+        // HU-043.2 (#251): esta respuesta de Nexo no trae valorVenta (Nexo anterior a S6-HU-38.2): el conexo va al costo, sin margen.
+        nuevo.Precio.Should().Be(240_000m);
         nuevo.Incluido.Should().BeTrue("un conexo agregado queda incluido");
 
         // HU-021: el conexo queda como fila de la ruta (costo unitario de Nexo = 240.000 / 2) y el precio de la ruta lo incluye; ya no hay
@@ -93,7 +94,7 @@ public sealed class clsServiciosConexosCosteoServiceTests
         var fila = _cotizacion.PrimeraRuta!.Conexos.Single(c => c.IdServicioConexo == "CX-2");
         (fila.Precio, fila.Cantidad, fila.Nombre).Should().Be((120_000m, 2m, "Almacenamiento"));
         resultado.Valor.ServiciosConexos.Single(s => s.Id == "CX-1").Incluido.Should().BeTrue();
-        resultado.Valor.PrecioFinal.Should().Be(_precios.Calcular(2_550_000m + 85_000m + 240_000m, 0.15m).Valor.Precio).And.Be(3_382_353m);
+        resultado.Valor.PrecioFinal.Should().Be(_precios.Calcular(2_550_000m, 0.15m).Valor.Precio + 85_000m + 240_000m).And.Be(3_325_000m);
         resultado.Valor.RowVersion.Should().Be("8", "la versión reservada antes del POST");
         Received.InOrder(() =>
         {
@@ -445,7 +446,8 @@ public sealed class clsServiciosConexosCosteoServiceTests
     [Fact]
     public void EnDolaresElConexoSeConvierteConLaTrmFijadaDeLaCotizacion()
     {
-        // HU-021: el conexo de Nexo queda en la ruta y su precio sale con el margen de la ruta, en la moneda de la solicitud.
+        // HU-021: el conexo de Nexo queda en la ruta y su precio sale en la moneda de la solicitud. HU-043.2 (#251): a su venta (aquí, sin
+        // valorVenta, el costo), sin margen.
         var usd = clsCotizacionMuestra.Costeada(flete: 2_550_000m, margen: 0.15m, folio: "PCN-U", moneda: "USD", trm: 4000m);
         var ruta = usd.PrimeraRuta!;
         var precioAntes = usd.PrecioFinal;
@@ -454,7 +456,41 @@ public sealed class clsServiciosConexosCosteoServiceTests
 
         var conexos = clsCosteoCotizacionService.ConexosConPrecio(usd, ruta);
 
-        conexos.Single(c => c.Id == "CX-2").Precio.Should().Be(70.59m, "282.353 / 4.000, con la TRM de la cotización y no la del día");
+        conexos.Single(c => c.Id == "CX-2").Precio.Should().Be(60m, "240.000 / 4.000, con la TRM de la cotización y no la del día");
+    }
+
+    [Fact]
+    public void Hu0432_ElConexoDeNexoGuardaElCostoEnPrecioYLaVentaEnPrecioVentaYSeCotizaASuVentaSinMargen()
+    {
+        var cotizacion = clsCotizacionMuestra.Costeada(flete: 2_550_000m, margen: 0.15m, folio: "PCN-V");
+        var ruta = cotizacion.PrimeraRuta!;
+        var conVenta = _cx2 with { PrecioVentaUnitario = 150_000m, ValorVenta = 300_000m };
+
+        clsServiciosConexosCosteoService.ImportarConexos(cotizacion, ruta, [conVenta], clsCotizacionMuestra.Ahora).Valor.Should().Be(1);
+
+        var fila = ruta.Conexos.Single();
+        (fila.Precio, fila.PrecioVenta, fila.Cantidad).Should().Be((120_000m, 150_000m, 2m), "costo = valorAplicado ÷ cantidad; venta = precioVentaUnitario");
+        ruta.CostoFinal.Should().Be(2_790_000m, "costo_final sigue siendo el costo: 2.550.000 + 240.000");
+        ruta.PrecioFinalLinea.Should().Be(3_300_000m, "2.550.000 / 0,85 = 3.000.000 + 300.000 de venta, sin margen");
+        clsCosteoCotizacionService.ConexosConPrecio(cotizacion, ruta).Single().Precio.Should().Be(300_000m, "el comercial ve la venta, nunca el costo");
+        clsCosteoCotizacionService.PrecioTransporte(cotizacion, ruta).Should().Be(3_000_000m, "transporte + conexos = precio de la ruta");
+    }
+
+    [Theory]
+    [InlineData(null, 300_000.0, 150_000.0)]   // sin precioVentaUnitario: valorVenta ÷ cantidad
+    [InlineData(null, null, 120_000.0)]        // Nexo anterior a S6-HU-38.2: al costo, y el conexo no desaparece
+    [InlineData(-1.0, -1.0, 120_000.0)]        // una venta negativa no se usa
+    [InlineData(0.0, 0.0, 0.0)]                // venta 0: un conexo sin cobro, no "al costo" (el contrato solo define null como al costo)
+    public void Hu0432_SinPrecioVentaUnitarioSeUsaElValorVentaYSinNingunoElCosto(double? unitaria, double? valorVenta, double esperada)
+    {
+        var cotizacion = clsCotizacionMuestra.Costeada(flete: 2_550_000m, margen: 0.15m, folio: "PCN-V");
+        var ruta = cotizacion.PrimeraRuta!;
+        var conexo = _cx2 with { PrecioVentaUnitario = (decimal?)unitaria, ValorVenta = (decimal?)valorVenta };
+
+        clsServiciosConexosCosteoService.ImportarConexos(cotizacion, ruta, [conexo], clsCotizacionMuestra.Ahora).Valor.Should().Be(1);
+
+        ruta.Conexos.Should().ContainSingle().Which.PrecioVenta.Should().Be((decimal)esperada);
+        ruta.PrecioFinalLinea.Should().Be(3_000_000m + (decimal)esperada * 2m);
     }
 
     [Fact]

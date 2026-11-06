@@ -121,10 +121,11 @@ public sealed partial class clsAsistenteFolioRunnerTests
         accion.Cuerpo["margen"].Should().Be(0.18m);
         accion.Cuerpo["justificacion"].Should().BeNull();
         accion.RowVersion.Should().Be("7");
-        // HU-021: el precio de la ruta incluye el conexo (2.635.000 / 0,85 → / 0,82), así que el resumen habla del precio total.
+        // HU-021: el precio de la ruta incluye el conexo, así que el resumen habla del precio total. HU-043.2 (#251): el margen es solo del
+        // flete (2.550.000 / 0,85 = 3.000.000 → / 0,82 = 3.109.756) y el conexo suma su venta sin margen (85.000).
         accion.Resumen.Should().Be(
-            "Ajustar el margen de 15 % a 18 %: el precio total pasa de $3.100.000 a $3.213.415 COP. Los servicios conexos se recalculan con el mismo margen.");
-        resultado.Valor.Texto.Should().NotContain("3.213.415", "el texto es del LLM y el LLM no conoce los montos");
+            "Ajustar el margen de 15 % a 18 %: el precio total pasa de $3.085.000 a $3.194.756 COP. Los servicios conexos no cambian: se cotizan a su precio de venta, sin margen.");
+        resultado.Valor.Texto.Should().NotContain("3.194.756", "el texto es del LLM y el LLM no conoce los montos");
         resultado.Valor.HerramientasInvocadas.Should().Equal("consultar_cotizacion", "proponer_ajuste_margen");
         SinCambios(cotizacion);
     }
@@ -159,7 +160,7 @@ public sealed partial class clsAsistenteFolioRunnerTests
         var accion = resultado.Valor.AccionPropuesta!;
         accion.Cuerpo["margen"].Should().Be(0.12m);
         accion.Cuerpo["justificacion"].Should().Be("El cliente tiene una oferta más baja");
-        accion.Resumen.Should().Contain("de 15 % a 12 %").And.Contain("$2.994.318")
+        accion.Resumen.Should().Contain("de 15 % a 12 %").And.Contain("$2.982.727")
             .And.Contain("Justificación: «El cliente tiene una oferta más baja»", "el comercial ve lo que confirma");
     }
 
@@ -347,7 +348,9 @@ public sealed partial class clsAsistenteFolioRunnerTests
         item["linea_orden"].Should().Be(1);
         item["servicio_id"].Should().Be(IdServicio);
         item["cantidad"].Should().Be(2m);
-        accion.Resumen.Should().Contain("Almacenamiento").And.Contain("15 %");
+        // HU-043.2 (#251): el conexo se cotiza a su precio de venta, sin el margen de la ruta.
+        accion.Resumen.Should().Contain("Almacenamiento").And.Contain("Se cotiza a su precio de venta de Nexo, sin margen; queda incluido en el PDF.")
+            .And.NotContain("15 %").And.NotContain("margen de la ruta");
         _modelo.Llamadas[1].ResultadosHerramientas.Single().Should().Contain(IdServicio).And.NotContainEquivalentOf("costo");
         await _conexos.DidNotReceiveWithAnyArgs().AgregarAsync(default, default!, default, default, default, Ct);
         SinCambios(cotizacion);
@@ -411,8 +414,8 @@ public sealed partial class clsAsistenteFolioRunnerTests
 
         var resultado = await Runner().EjecutarTurnoAsync(Solicitud("¿Cuánto nos cuesta y cuánto le cobramos?"), Ct);
 
-        resultado.Valor.AccionPropuesta!.Resumen.Should().Contain("$3.213.415", "el resumen con montos sí lo arma el servidor");
-        VerificarSinMontos("costo", "2550000", "2635000", "3100000", "3213415", "85000", "100000", "103659", "250000000", "12000000");
+        resultado.Valor.AccionPropuesta!.Resumen.Should().Contain("$3.194.756", "el resumen con montos sí lo arma el servidor");
+        VerificarSinMontos("costo", "2550000", "2635000", "3085000", "3194756", "85000", "250000000", "12000000");
     }
 
     [Fact]
@@ -423,9 +426,9 @@ public sealed partial class clsAsistenteFolioRunnerTests
 
         var resultado = await Runner().EjecutarTurnoAsync(Solicitud("¿Cuánto es en dólares?"), Ct);
 
-        // HU-021: (2.550.000 + 85.000 del conexo) con el margen, en dólares: 775 al 15 % y 803,35 al 18 %.
-        resultado.Valor.AccionPropuesta!.Resumen.Should().Contain("US$803,35").And.Contain("USD");
-        VerificarSinMontos("costo", "2550000", "775", "80335", "trm_aplicada", "4.000", "25,00", "85000");
+        // HU-043.2 (#251): 2.550.000 con el margen + 85.000 del conexo sin margen, en dólares: 771,25 al 15 % y 798,69 al 18 %.
+        resultado.Valor.AccionPropuesta!.Resumen.Should().Contain("US$798,69").And.Contain("USD");
+        VerificarSinMontos("costo", "2550000", "771", "79869", "trm_aplicada", "4.000", "21,25", "85000");
         _modelo.Llamadas[1].ResultadosHerramientas[0].Should().Contain("\"moneda\":\"USD\"");
     }
 

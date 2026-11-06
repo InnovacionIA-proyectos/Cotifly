@@ -54,7 +54,8 @@ public sealed class clsCosteoLineasServiceTests
         _reloj.AhoraUtc.Returns(clsCotizacionMuestra.Ahora);
         _costos.CostosAsync(_ana, Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
             .Returns(clsResultado<IReadOnlyDictionary<string, clsCostoConexoNexo>>.Exito(
-                new Dictionary<string, clsCostoConexoNexo> { [Cargue] = new(Cargue, "Cargue en puerto", 85_000m, "logistico") }));
+                // HU-043.2 (#251): costo 85.000 y precio de venta 100.000 en el catálogo de Nexo.
+                new Dictionary<string, clsCostoConexoNexo> { [Cargue] = new(Cargue, "Cargue en puerto", 85_000m, "logistico", 100_000m) }));
         _auditoria.RegistrarAsync(Arg.Do<string>(h => _herramientaAuditada = h), Arg.Any<object?>(), Arg.Do<object?>(s => _salidaAuditada = s),
             Arg.Any<bool>(), Arg.Any<int>(), Arg.Any<string?>()).Returns(Task.CompletedTask);
     }
@@ -239,8 +240,11 @@ public sealed class clsCosteoLineasServiceTests
 
         resultado.EsExitoso.Should().BeTrue(resultado.EsFallo ? resultado.Error.Mensaje : string.Empty);
         resultado.Valor.Rutas.Should().OnlyContain(r => r.ServiciosConexos.Count == 1 && r.ServiciosConexos[0].ServicioId == Cargue
-            && r.ServiciosConexos[0].Cantidad == 2m && r.ServiciosConexos[0].Precio == 200_000m, "85.000 × 2 / 0,85, con el costo del catálogo");
-        _spot.RutasOrdenadas[1].PrecioFinalLinea.Should().Be(2_200_000m, "(1.700.000 + 170.000) / 0,85");
+            && r.ServiciosConexos[0].Cantidad == 2m && r.ServiciosConexos[0].Precio == 200_000m,
+            "HU-043.2 (#251): 100.000 × 2, con el precio de venta del catálogo y sin margen");
+        _spot.RutasOrdenadas[1].PrecioFinalLinea.Should().Be(2_200_000m, "1.700.000 / 0,85 + 200.000");
+        _spot.RutasOrdenadas[1].Conexos.Single().Should().Match<clsServicioConexoRuta>(c => c.Precio == 85_000m && c.PrecioVenta == 100_000m,
+            "el costo y la venta del catálogo se guardan por separado");
         _cotizaciones.Received(3).RegistrarEnvioConexosNexo(Arg.Is<clsEnvioConexosNexo>(e =>
             e.Estado == clsEnvioConexosNexo.EnEspera && e.Conexos.Single() == Cargue && e.EsperaDesde == clsCotizacionMuestra.Ahora));
         _spot.CosteoSiguienteConsultaAt.Should().Be(clsCotizacionMuestra.Ahora, "con el polling detenido vuelve a la agenda para el envío");
@@ -338,7 +342,7 @@ public sealed class clsCosteoLineasServiceTests
         resultado.EsExitoso.Should().BeTrue(resultado.EsFallo ? resultado.Error.Mensaje : string.Empty);
         _spot.RutasOrdenadas[0].Conexos.Should().BeEmpty();
         _spot.RutasOrdenadas[2].Conexos.Select(c => c.IdServicioConexo).Should().Equal("CX-9");
-        _spot.RutasOrdenadas.Select(r => r.PrecioFinalLinea).Should().Equal(1_000_000m, 2_000_000m, 550_000m);
+        _spot.RutasOrdenadas.Select(r => r.PrecioFinalLinea).Should().Equal(1_000_000m, 2_000_000m, 542_500m);
         _cotizaciones.Received(1).AgregarHistorialPdf(Arg.Any<clsCotizacionPdfHistorial>());
         _herramientaAuditada.Should().Be(clsCosteoLineasService.HerramientaQuitarConexo);
         JsonSerializer.Serialize(_salidaAuditada).Should().Contain("\"rutas_cambiadas\":2");

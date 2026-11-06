@@ -47,6 +47,13 @@ public sealed class clsPasosAjusteMargen(clsContextoWeb web, clsPasosCosteo cost
         await costeo.AgregarConexoEnCotiflyAsync(cotizacion, nombre, valor);
     }
 
+    /// <summary>HU-043.2 (#251): el conexo con su costo de Nexo y su precio de venta en el catálogo, distintos.</summary>
+    [Given("que el costeo de {string} trae el servicio conexo {string} con un valor de Nexo de {int} y una venta de {int}")]
+    public async Task DadoElConexoConVenta(string cotizacion, string nombre, int valor, int venta)
+    {
+        await costeo.AgregarConexoEnCotiflyAsync(cotizacion, nombre, valor, venta);
+    }
+
     [Given("{string} ajusta el margen de {string} a {string} sin justificación")]
     [When("{string} ajusta el margen de {string} a {string} sin justificación")]
     public async Task CuandoAjustaSinJustificacion(string alias, string cotizacion, string margen) =>

@@ -108,4 +108,5 @@ Característica: Envío a Nexo por camión y emparejamiento de sus líneas
     Y "ana" agrega a "C1" en la línea 1 el servicio conexo "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d" con la cantidad 2
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CosteoCotizacion" del contrato
     Y Nexo recibió el conexo de "C1" en la línea de la cotización de Nexo del primer camión de su ruta 1
-    Y el servicio conexo "Almacenamiento" de "C1" está incluido con el precio 282353
+    # HU-043.2 (#251): sin precio de venta en el catálogo, el conexo va al costo (2 × 120.000), sin margen.
+    Y el servicio conexo "Almacenamiento" de "C1" está incluido con el precio 240000

@@ -67,10 +67,12 @@ Característica: Ajuste de margen sobre el costeo de Nexo
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CosteoCotizacion" del contrato
     Y no hay ajustes de margen de "C1"
 
-  Escenario: Los servicios conexos incluidos se recalculan con el nuevo margen
-    Dado que el costeo de "C1" trae el servicio conexo "Cargue" con un valor de Nexo de 85000
+  # HU-043.2 (#251): el margen es solo del transporte; el conexo se cotiza a su precio de venta y no cambia con el ajuste.
+  Escenario: Los servicios conexos no cambian con el nuevo margen
+    Dado que el costeo de "C1" trae el servicio conexo "Cargue" con un valor de Nexo de 85000 y una venta de 100000
     Cuando "ana" ajusta el margen de "C1" a "0.20" sin justificación
-    Entonces el servicio conexo "Cargue" de "C1" tiene el precio 106250
+    Entonces el servicio conexo "Cargue" de "C1" tiene el precio 100000
+    Y el costeo de "C1" tiene el precio final 3287500 con el margen aplicado "0.20" y el origen "negociado"
     Y ninguna respuesta del costeo de "C1" contiene el costo 85000
 
   # HU-013.7 (#103): 2.550.000 / (1 - 0,18) = 3.109.756 pesos / 4.000 = 777,44 USD, con la TRM fijada al crear y no la del día.

@@ -47,13 +47,13 @@ public sealed class clsAjusteMargenCosteoServiceTests
 
         resultado.EsExitoso.Should().BeTrue();
         var vista = resultado.Valor;
-        // HU-021: el precio de la ruta (y el total) es su costo final CON los conexos (2.550.000 + 85.000) con el margen de la ruta.
-        vista.PrecioFinal.Should().Be(_precios.Calcular(2_635_000m, 0.18m).Valor.Precio, "equivalencia con clsPrecioService");
-        vista.PrecioFinal.Should().Be(3_213_415m);
+        // HU-043.2 (#251): el precio de la ruta (y el total) es el flete con el margen de la ruta + la venta del conexo (85.000), sin margen.
+        vista.PrecioFinal.Should().Be(_precios.Calcular(2_550_000m, 0.18m).Valor.Precio + 85_000m, "equivalencia con clsPrecioService");
+        vista.PrecioFinal.Should().Be(3_194_756m);
         vista.MargenAplicado.Should().Be(0.18m);
         vista.MargenSugerido.Should().Be(0.15m);
         vista.OrigenMargen.Should().Be("negociado");
-        vista.ServiciosConexos.Single().Precio.Should().Be(103_659m, "85.000 / (1 - 0,18), a pesos enteros");
+        vista.ServiciosConexos.Single().Precio.Should().Be(85_000m, "HU-043.2: la venta del conexo no cambia con el margen");
         vista.ServiciosConexos.Single().Incluido.Should().BeTrue("HU-021: un conexo de la ruta siempre va en el precio y en el PDF");
         _ajustes.Received(1).Agregar(Arg.Is<clsMargenAjuste>(a =>
             a.MargenPolitica == 0.15m && a.MargenAplicado == 0.18m && a.Diferencia == 0.03m && a.Motivo == null
@@ -70,7 +70,7 @@ public sealed class clsAjusteMargenCosteoServiceTests
     {
         var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, clsRutaIndicada.Ninguna, 0.12m, " Cliente estratégico ", Version, Ct);
 
-        resultado.Valor.PrecioFinal.Should().Be(2_994_318m, "HU-021: (2.550.000 + 85.000 del conexo) / 0,88");
+        resultado.Valor.PrecioFinal.Should().Be(2_982_727m, "HU-043.2: 2.550.000 / 0,88 + 85.000 del conexo, sin margen");
         _ajustes.Received(1).Agregar(Arg.Is<clsMargenAjuste>(a => a.Diferencia == -0.03m && a.Motivo == "Cliente estratégico"));
     }
 
@@ -81,7 +81,7 @@ public sealed class clsAjusteMargenCosteoServiceTests
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.JustificacionRequerida);
         resultado.Error.Datos.Should().ContainKey("margen_sugerido").WhoseValue.Should().Be(0.15m);
-        _cotizacion.PrecioFinal.Should().Be(3_100_000m);
+        _cotizacion.PrecioFinal.Should().Be(3_085_000m);
         _cotizacion.PrimeraRuta!.MargenAplicado.Should().Be(0.15m);
         _ajustes.DidNotReceiveWithAnyArgs().Agregar(default!);
         await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);

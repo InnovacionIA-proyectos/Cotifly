@@ -53,6 +53,26 @@ public sealed class clsPrecioCongeladoFinalizadaTests
     }
 
     [Fact]
+    public void Hu0432_UnaFinalizadaAntesDelCambioConConexosNoSeRecalculaConLaFormulaNueva()
+    {
+        // HU-043.2 (#251): la cotización se finalizó con la fórmula anterior ((flete + conexos) con margen); Nexo ya manda la venta de los
+        // conexos. El polling no la recalcula: conserva su precio y sus costos.
+        var cotizacion = clsCotizacionMuestra.LicitacionCosteada([2_000_000m], usuarioId: _ana, tipo: TipoSolicitud.Spot);
+        clsCotizacionMuestra.ConConexo(cotizacion, "CX-1", "Cargue", 85_000m);
+        var ruta = cotizacion.PrimeraRuta!;
+        ruta.FijarPrecio(2_452_941m);   // (2.000.000 + 85.000) / 0,85: la fórmula anterior
+        cotizacion.RecalcularPrecio(_ahora);
+        cotizacion.Finalizar(_ana, _ahora).Valor.Should().BeTrue();
+        var conVenta = new clsConexoNexo("CX-1", "Cargue", "logistico", 1m, 85_000m) { PrecioVentaUnitario = 120_000m, ValorVenta = 120_000m, CotizacionLineaId = "CL1" };
+
+        Aplicar(cotizacion, clsCotizacionMuestra.Foto([2_000_000m], conexos: [conVenta], estadoCotizacion: "Entregada"), _ahora.AddMinutes(5));
+
+        (ruta.PrecioFinalLinea, cotizacion.PrecioFinal).Should().Be(((decimal?)2_452_941m, (decimal?)2_452_941m), "el precio finalizado se conserva");
+        ruta.Conexos.Single().PrecioVenta.Should().Be(85_000m, "el conexo guardado no cambia");
+        ruta.CostoFinal.Should().Be(2_085_000m);
+    }
+
+    [Fact]
     public void LaMismaDiferenciaEnLaSiguienteVueltaNoVuelveAContarComoCambio()
     {
         var cotizacion = Finalizada(2_000_000m);

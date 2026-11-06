@@ -341,7 +341,8 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         (await clsBaseDatosPruebas.EscalarAsync<decimal>(Cadena,
             $"SELECT l.costoFinal FROM dbo_cotifly.CotizacionLineasSolicitud l JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}'"))
             .Should().Be(2_570_000m, "1.000.000 + 800.000 + 500.000 de fletes + 150.000 + 120.000 de conexos");
-        precio.Should().BeApproximately(2_570_000m / 0.85m, 0.5m, "margen de política de Importacion (0,15)");
+        precio.Should().Be(Math.Round(2_300_000m / 0.85m, 0, MidpointRounding.ToEven) + 270_000m,
+            "margen de política de Importacion (0,15) sobre los fletes; HU-043.2 (#251): los conexos a su venta (aquí el costo), sin margen");
 
         using var respuesta = await api.EnviarAsync(_get, "/web/metricas/comercial?desde=2026-01-01&hasta=2026-12-31", ana.Access);
         var metricas = await VerificarContratoAsync(respuesta, "/web/metricas/comercial", _get, HttpStatusCode.OK);
@@ -923,8 +924,8 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         _nexo.CostearLinea(solicitud, Indice(lineas, 12_000m), 800_000m);
         await api.ProcesarPollingAsync(folio);
         var rutas = await RutasAsync(api, ana, folio);
-        // (1.800.000 de fletes + 150.000 del conexo) / 0,85; 700.000 / 0,85; 400.000 / 0,85 (política de Nacional).
-        rutas.Select(r => r.GetProperty("precio_final_linea").GetDecimal()).Should().Equal(2_294_118m, 823_529m, 470_588m);
+        // 1.800.000 de fletes / 0,85 + 150.000 del conexo (HU-043.2: sin margen); 700.000 / 0,85; 400.000 / 0,85 (política de Nacional).
+        rutas.Select(r => r.GetProperty("precio_final_linea").GetDecimal()).Should().Equal(2_267_647m, 823_529m, 470_588m);
         var item = _nexo.PeticionesConexos(_nexo.CotizacionDe(solicitud)!).Should().ContainSingle().Subject["items"]!.AsArray().Should().ContainSingle().Subject!;
         item["lineaId"]!.GetValue<string>().Should().Be(_nexo.LineaCotizacionDe(solicitud, Indice(lineas, 16_000m)), "el conexo de la ruta va al primer camión");
 
@@ -934,7 +935,7 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         {
             var ajustado = (await VerificarContratoAsync(margen, "/web/cotizaciones/{folio}/costeo/margen", _put, HttpStatusCode.OK))
                 .GetProperty("rutas").EnumerateArray().OrderBy(r => r.GetProperty("linea_orden").GetInt32()).ToList();
-            ajustado.Select(r => r.GetProperty("precio_final_linea").GetDecimal()).Should().Equal(2_294_118m, 823_529m, 500_000m);
+            ajustado.Select(r => r.GetProperty("precio_final_linea").GetDecimal()).Should().Equal(2_267_647m, 823_529m, 500_000m);
         }
 
         // 6. PDF de pliego: una sección por ruta, los camiones de la ruta 1 en orden y ningún costo de Nexo.
@@ -944,11 +945,11 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         using var descarga = await api.EnviarAsync(_get, new Uri(new Uri("http://localhost"), pdfJson.GetProperty("pdf_url").GetString()!).AbsolutePath, ana.Access);
         descarga.StatusCode.Should().Be(HttpStatusCode.OK);
         var texto = clsLectorPdf.Leer(await descarga.Content.ReadAsByteArrayAsync(Ct)).Texto;
-        // HU-033 (#199): el valor FINAL de cada ruta (la ruta 1 con su conexo: 1.800.000 / 0,85 + 150.000 / 0,85), el total general y el
+        // HU-033 (#199): el valor FINAL de cada ruta (la ruta 1 con su conexo: 1.800.000 / 0,85 + 150.000, HU-043.2), el total general y el
         // conexo como incluido, sin precio aparte.
-        texto.Should().Contain("RESUMEN DEL PLIEGO").And.Contain("$2.294.118").And.Contain("$823.529").And.Contain("$500.000")
-            .And.Contain("VALOR TOTAL DE LA COTIZACIÓN (3 RUTAS) $3.617.647").And.Contain("Cargue en puerto (ruta 1)");
-        texto.Should().NotContain("$2.117.647", "sin desglose: el transporte sin el conexo no se imprime").And.NotContain("$176.471", "ni el precio del conexo");
+        texto.Should().Contain("RESUMEN DEL PLIEGO").And.Contain("$2.267.647").And.Contain("$823.529").And.Contain("$500.000")
+            .And.Contain("VALOR TOTAL DE LA COTIZACIÓN (3 RUTAS) $3.591.176").And.Contain("Cargue en puerto (ruta 1)");
+        texto.Should().NotContain("$2.117.647", "sin desglose: el transporte sin el conexo no se imprime").And.NotContain("$150.000", "ni el precio del conexo");
         texto.Should().Contain("1 × Tractocamión 3S3 - Furgón, 1", "los dos camiones de la ruta 1 en el orden del cubicador, con los nombres del catálogo (HU-023.1)")
             .And.Contain("× Tractocamión 2S3 - Estacas (28000 KG)");
         foreach (var costo in new[] { "$1.000.000", "$800.000", "$700.000", "$400.000", "$1.950.000" })
@@ -972,7 +973,7 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
             var json = await VerificarContratoAsync(lista, "/web/mis-cotizaciones", _get, HttpStatusCode.OK);
             var fila = json.GetProperty("cotizaciones").EnumerateArray()
                 .Should().ContainSingle(c => c.GetProperty("folio").GetString() == folio).Subject;
-            fila.GetProperty("precio_final").GetDecimal().Should().Be(3_617_647m);
+            fila.GetProperty("precio_final").GetDecimal().Should().Be(3_591_176m);
             fila.GetProperty("linea_negocio").GetString().Should().Be("Nacional");
         }
 

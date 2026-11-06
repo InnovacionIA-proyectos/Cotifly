@@ -11,8 +11,9 @@ namespace Cotifly.Dominio.Cotizaciones;
 /// <list type="bullet">
 /// <item><see cref="CostoFletesTotal"/>, <see cref="CostoRetornoContenedorTotal"/> y <see cref="CostoLevanteContenedorTotal"/> suman
 /// sus camiones; <see cref="CostoServiciosConexos"/> suma <c>precio × cantidad</c> de sus conexos;</item>
-/// <item><see cref="CostoFinal"/> = la suma de los cuatro, y <see cref="PrecioFinalLinea"/> = <see cref="CostoFinal"/> con
-/// <see cref="MargenAplicado"/> según <see cref="MetodoCalculo"/> (la fórmula de <see cref="clsCalculadoraPrecio"/>);</item>
+/// <item><see cref="CostoFinal"/> = la suma de los cuatro (costo interno), y <see cref="PrecioFinalLinea"/> = <see cref="CostoTransporte"/>
+/// (fletes + retorno + levante) con <see cref="MargenAplicado"/> según <see cref="MetodoCalculo"/> (la fórmula de
+/// <see cref="clsCalculadoraPrecio"/>) + la venta de sus conexos SIN margen (HU-043.2, #251: <see cref="PrecioRutaCon"/>);</item>
 /// <item>mientras algún camión no tenga flete, la ruta no tiene costo final ni precio.</item>
 /// </list>
 /// Los totales se GUARDAN y se recalculan con cada cambio (<see cref="RecalcularTotales"/>). El estado resume el de sus camiones
@@ -789,15 +790,16 @@ public sealed partial class clsLineaSolicitud
 
     /// <summary>
     /// Recalcula y guarda los totales de costo y el precio de la ruta (§9.1): se llama cada vez que cambia el costo de un camión, un
-    /// conexo o el margen. El precio es <see cref="CostoFinal"/> con <see cref="MargenAplicado"/> según <see cref="MetodoCalculo"/>, en
-    /// pesos o convertido a la <paramref name="moneda"/> con la <paramref name="trm"/> fijada en la solicitud (ADR-014). Sin costo final o
-    /// sin margen el precio queda vacío. Devuelve si algo cambió, o el error del módulo de precio (la ruta queda sin precio).
+    /// conexo o el margen. HU-043.2 (#251): el precio es <see cref="PrecioRutaCon"/> con <see cref="MargenAplicado"/> y
+    /// <see cref="MetodoCalculo"/> (transporte con margen + venta de los conexos sin margen), en pesos o convertido a la
+    /// <paramref name="moneda"/> con la <paramref name="trm"/> fijada en la solicitud (ADR-014). Sin costo final o sin margen el precio
+    /// queda vacío. Devuelve si algo cambió, o el error del módulo de precio (la ruta queda sin precio).
     /// </summary>
     public clsResultado<bool> RecalcularTotales(string? moneda, decimal trm)
     {
         var antes = Huella();
         SumarCostos();
-        var error = PrecioDe(CostoFinal, moneda, trm, out var precio);
+        var error = PrecioRutaCon(MargenAplicado, MetodoCalculo, moneda, trm, out var precio);
         PrecioFinalLinea = precio;
         if (error is not null)
         {
@@ -808,9 +810,10 @@ public sealed partial class clsLineaSolicitud
     }
 
     /// <summary>
-    /// Precio de <paramref name="costo"/> con el margen y el método de la ruta, en la moneda de la solicitud (la misma fórmula del
-    /// precio de la ruta; la usan también el PDF y la vista previa para el flete y los conexos). <paramref name="precio"/> queda en
-    /// <c>null</c> sin costo, sin margen o con error; devuelve el error del módulo de precio, o <c>null</c>.
+    /// Precio de <paramref name="costo"/> con el margen y el método de la ruta, en la moneda de la solicitud (la fórmula del transporte
+    /// de la ruta; la usan también la tarifa del transporte y el Excel por camión). HU-043.2 (#251): no es para los conexos, que van a su
+    /// venta (<see cref="VentaConexo"/>). <paramref name="precio"/> queda en <c>null</c> sin costo, sin margen o con error; devuelve el
+    /// error del módulo de precio, o <c>null</c>.
     /// </summary>
     public clsErrorDominio? PrecioDe(decimal? costo, string? moneda, decimal trm, out decimal? precio) =>
         PrecioCon(costo, MargenAplicado, MetodoCalculo, moneda, trm, out precio);
@@ -849,6 +852,79 @@ public sealed partial class clsLineaSolicitud
     /// <summary>Costo del transporte (fletes + retorno + levante, sin conexos), o <c>null</c> mientras algún camión no tenga flete.</summary>
     public decimal? CostoTransporte =>
         CostoFletesTotal is { } fletes && CostoRetornoContenedorTotal is { } retorno ? fletes + retorno + (CostoLevanteContenedorTotal ?? 0m) : null;
+
+    /// <summary>
+    /// HU-043.2 (#251): venta de UN conexo en la moneda de la solicitud, SIN margen: <see cref="clsServicioConexoRuta.Venta"/> redondeada a
+    /// pesos enteros (como todo precio en COP) y, en dólares, convertida con la <paramref name="trm"/> (centavos, ADR-014). Es la que suma
+    /// <see cref="PrecioRutaCon"/>, así que el desglose (transporte + conexos) cuadra exacto con el precio de la ruta. Devuelve el error del
+    /// módulo de precio (TRM inválida), o <c>null</c>.
+    /// </summary>
+    public static clsErrorDominio? VentaConexo(clsServicioConexoRuta conexo, string? moneda, decimal trm, out decimal? venta)
+    {
+        ArgumentNullException.ThrowIfNull(conexo);
+        venta = null;
+        var enPesos = clsConversorMoneda.Redondear(conexo.Venta, clsConversorMoneda.Pesos);
+        if (clsConversorMoneda.EsPesos(moneda))
+        {
+            venta = enPesos;
+            return null;
+        }
+
+        var convertido = clsConversorMoneda.PesosADolares(enPesos, trm);
+        if (convertido.EsFallo)
+        {
+            return convertido.Error;
+        }
+
+        venta = convertido.Valor;
+        return null;
+    }
+
+    /// <summary>
+    /// HU-043.2 (#251): precio de la ruta con <paramref name="margen"/> y <paramref name="metodo"/> en la moneda de la solicitud:
+    /// <see cref="CostoTransporte"/> (fletes + retorno + levante) con el margen + la venta de cada conexo (<see cref="VentaConexo"/>) SIN
+    /// margen. Es el de <see cref="RecalcularTotales"/> y el de la vista previa del ajuste (por ruta, en lote y del asistente).
+    /// <paramref name="precio"/> queda en <c>null</c> sin transporte (algún camión sin flete), sin margen o con error.
+    /// </summary>
+    public clsErrorDominio? PrecioRutaCon(decimal? margen, string? metodo, string? moneda, decimal trm, out decimal? precio)
+    {
+        precio = null;
+        if (PrecioCon(CostoTransporte, margen, metodo, moneda, trm, out var transporte) is { } error)
+        {
+            return error;
+        }
+
+        if (transporte is not { } total)
+        {
+            return null;
+        }
+
+        foreach (var conexo in _conexos)
+        {
+            if (VentaConexo(conexo, moneda, trm, out var venta) is { } errorVenta)
+            {
+                return errorVenta;
+            }
+
+            total += venta!.Value;
+        }
+
+        precio = total;
+        return null;
+    }
+
+    /// <summary>
+    /// HU-043.2 (#251): ¿<see cref="PrecioFinalLinea"/> quedó con la fórmula ANTERIOR (fletes + retorno + levante + conexos, todo con el
+    /// margen) y no con la de hoy? Pasa con una ruta finalizada o con PDF antes del despliegue (precio congelado, HU-036.4) o que no se ha
+    /// vuelto a recalcular desde entonces. El desglose (tarifa del transporte y precio de cada conexo) se muestra entonces como se calculó,
+    /// con el margen en los conexos, para que siga cuadrando con el precio guardado: la cotización conserva sus valores. Sin precio
+    /// congelado solo aplica hasta el siguiente recálculo (polling, margen o conexos), que guarda el precio con la fórmula de hoy. Sin
+    /// conexos (o con margen 0 y venta = costo) las dos fórmulas coinciden y es <c>false</c>.
+    /// </summary>
+    public bool PrecioConFormulaAnterior(string? moneda, decimal trm) =>
+        PrecioFinalLinea is { } guardado && _conexos.Count > 0
+        && PrecioDe(CostoFinal, moneda, trm, out var anterior) is null && anterior == guardado
+        && !(PrecioRutaCon(MargenAplicado, MetodoCalculo, moneda, trm, out var actual) is null && actual == guardado);
 
     /// <summary>
     /// Camiones que cuentan para el estado y los totales (precio, PDF, Excel, conteos): los <c>descartada</c> en Nexo se ignoran, salvo que
@@ -988,13 +1064,22 @@ public sealed partial class clsLineaSolicitud
         var id = conexo.IdServicioConexo.Trim();
         if (_conexos.FirstOrDefault(c => string.Equals(c.IdServicioConexo, id, StringComparison.OrdinalIgnoreCase)) is { } existente)
         {
-            return existente.Actualizar(conexo.Nombre, conexo.Precio, conexo.Cantidad, conexo.IdServicioConexoCatalogo, conexo.Categoria);
+            return existente.Actualizar(
+                conexo.Nombre, conexo.Precio, conexo.Cantidad, conexo.IdServicioConexoCatalogo, conexo.Categoria, conexo.PrecioVenta);
         }
 
         _conexos.Add(clsServicioConexoRuta.Crear(
-            Id, id, conexo.Nombre, conexo.Precio, conexo.Cantidad, conexo.IdServicioConexoCatalogo, conexo.Categoria));
+            Id, id, conexo.Nombre, conexo.Precio, conexo.Cantidad, conexo.IdServicioConexoCatalogo, conexo.Categoria, conexo.PrecioVenta));
         return true;
     }
+
+    /// <summary>
+    /// HU-043.2 (#251): cambia la venta unitaria del conexo <paramref name="idServicioConexo"/> de la ruta (sin costo ni cantidad). No
+    /// recalcula: desde fuera se usa <see cref="clsCotizacionSolicitud.RefrescarVentaConexos"/>. Devuelve <c>true</c> si cambió.
+    /// </summary>
+    internal bool CambiarVentaConexo(string idServicioConexo, decimal precioVenta) =>
+        _conexos.FirstOrDefault(c => string.Equals(c.IdServicioConexo, idServicioConexo, StringComparison.OrdinalIgnoreCase)) is { } conexo
+        && conexo.CambiarVenta(precioVenta);
 
     /// <summary>
     /// Quita los conexos que no están en <paramref name="conservar"/>. Devuelve los quitados. Interno: desde fuera se usa
@@ -1014,7 +1099,7 @@ public sealed partial class clsLineaSolicitud
 
     /// <summary>
     /// Deja exactamente los conexos de <paramref name="cantidades"/> (id → cantidad nueva): quita los demás y cambia la cantidad de los
-    /// que siguen (mismo precio unitario). No recalcula: desde fuera se usa <see cref="clsCotizacionSolicitud.AjustarConexosRuta"/>.
+    /// que siguen (mismo costo y misma venta unitarios). No recalcula: desde fuera se usa <see cref="clsCotizacionSolicitud.AjustarConexosRuta"/>.
     /// Un id que no es conexo de la ruta lanza (el caso de uso lo valida antes). Devuelve los movimientos, en el orden de los conexos.
     /// </summary>
     internal IReadOnlyList<clsMovimientoConexo> AjustarConexos(IReadOnlyDictionary<string, decimal> cantidades)
@@ -1037,7 +1122,7 @@ public sealed partial class clsLineaSolicitud
             }
 
             var anterior = conexo.Cantidad;
-            if (conexo.Actualizar(null, conexo.Precio, cantidad.Value))
+            if (conexo.Actualizar(null, conexo.Precio, cantidad.Value, precioVenta: conexo.PrecioVenta))
             {
                 movimientos.Add(new clsMovimientoConexo(conexo.IdServicioConexo, conexo.Nombre, anterior, cantidad.Value));
             }

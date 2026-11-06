@@ -960,8 +960,9 @@ public sealed partial class clsCotizacionSolicitud
     }
 
     /// <summary>
-    /// Agrega o actualiza conexos en la ruta <paramref name="ordenRuta"/> (precio = costo unitario de Nexo) y recalcula SIEMPRE los
-    /// totales y el precio. Devuelve cuántos agregó o cambió, o el error del módulo de precio.
+    /// Agrega o actualiza conexos en la ruta <paramref name="ordenRuta"/> (precio = costo unitario de Nexo; HU-043.2, #251: y su venta
+    /// unitaria, que suma al precio de la ruta sin margen) y recalcula SIEMPRE los totales y el precio. Devuelve cuántos agregó o cambió, o
+    /// el error del módulo de precio.
     /// </summary>
     public clsResultado<int> CambiarConexos(int ordenRuta, IEnumerable<clsCambioConexo> conexos, DateTimeOffset ahora)
     {
@@ -1088,6 +1089,22 @@ public sealed partial class clsCotizacionSolicitud
         return recalculo.EsFallo
             ? new clsErrorDominio(recalculo.Error.Codigo, $"Ruta {ruta.Orden}: {recalculo.Error.Mensaje}", recalculo.Error.Detalle)
             : recalculo.Valor | cambioCabecera;
+    }
+
+    /// <summary>
+    /// HU-043.2 (#251): actualiza la venta unitaria de conexos ya guardados con la que Nexo fijó (<paramref name="ventas"/>: ruta, id del
+    /// conexo y venta). Con el precio congelado (<see cref="PrecioCongelado"/>: PDF o finalizada) no cambia nada. No recalcula: lo hace la
+    /// lectura del costeo a continuación (<c>AplicarPrecio</c>). Devuelve cuántos cambió.
+    /// </summary>
+    public int RefrescarVentaConexos(IEnumerable<clsVentaConexo> ventas)
+    {
+        ArgumentNullException.ThrowIfNull(ventas);
+        if (PrecioCongelado)
+        {
+            return 0;
+        }
+
+        return ventas.Count(v => _rutas.FirstOrDefault(r => r.Id == v.RutaId) is { } ruta && ruta.CambiarVentaConexo(v.IdServicioConexo, v.PrecioVenta));
     }
 
     /// <summary>

@@ -24,8 +24,9 @@ public sealed class clsIntegracionRutasEndpointsTests : IDisposable
     private readonly clsEntornoApiWeb _entorno;
     private readonly clsNexoFalso _nexo = new clsNexoFalso()
         .ConCliente(clsCosteoEndpointsTests.Nit, "LONGYIN S.A.S.")
-        .ConServicioConexo(Cargue, Cargue, "Cargue en puerto", "logistico", "UND", 150_000m)
-        .ConServicioConexo(Almacenamiento, "ALM-01", "Almacenamiento", "logistico", "Día", 120_000m);
+        // HU-043.2 (#251): con precio de venta distinto del costo (S6-HU-38.2), para que las métricas lo distingan.
+        .ConServicioConexo(Cargue, Cargue, "Cargue en puerto", "logistico", "UND", 150_000m, precioVenta: 200_000m)
+        .ConServicioConexo(Almacenamiento, "ALM-01", "Almacenamiento", "logistico", "Día", 120_000m, precioVenta: 150_000m);
     private readonly clsApiWebPruebas _api;
 
     public clsIntegracionRutasEndpointsTests(clsEntornoApiWeb entorno)
@@ -169,8 +170,16 @@ public sealed class clsIntegracionRutasEndpointsTests : IDisposable
             "SELECT STRING_AGG(CAST(CAST(l.costoFinal AS decimal(18,2)) AS nvarchar(30)), '|') WITHIN GROUP (ORDER BY l.orden) "
             + "FROM dbo_cotifly.CotizacionLineasSolicitud l JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId "
             + $"WHERE c.folio = '{folio}'");
-        costos.Should().Be("1000000.00|770000.00", "el camión descartado no suma y los conexos sí");
-        precio2.Should().Be(1_100_000m, "770.000 / (1 − 0,30): el precio de la ruta incluye los conexos");
+        costos.Should().Be("1000000.00|770000.00", "el camión descartado no suma y los conexos sí, a su COSTO (HU-043.2: costo_final no cambia)");
+        var conexosBd = await clsBaseDatosPruebas.EscalarAsync<string>(_entorno.BaseDatos.CadenaCotifly,
+            "SELECT STRING_AGG(CONCAT(CAST(s.precio AS decimal(18,2)), '/', CAST(s.precioVenta AS decimal(18,2))), '|') "
+            + "WITHIN GROUP (ORDER BY s.precio DESC) FROM dbo_cotifly.CotizacionServiciosConexos s "
+            + "JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = s.lineaSolicitudId JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId "
+            + $"WHERE c.folio = '{folio}'");
+        conexosBd.Should().Be("150000.00/200000.00|120000.00/150000.00",
+            "HU-043.2: el costo queda en precio y la venta en precioVenta (el capturado y el agregado en Nexo)");
+        precio2.Should().Be(1_064_286m,
+            "HU-043.2 (#251): 500.000 / (1 − 0,30) = 714.286 + la venta de los conexos (200.000 + 150.000), sin margen");
         precio1.Should().BeApproximately(1_176_470.59m, 0.5m, "1.000.000 / (1 − 0,15)");
         costeo.GetProperty("precio_final").GetDecimal().Should().Be(precio1 + precio2);
 
@@ -199,8 +208,9 @@ public sealed class clsIntegracionRutasEndpointsTests : IDisposable
         var exportacion = lineas["Exportacion"];
         exportacion.GetProperty("cotizaciones").GetInt32().Should().Be(1);
         exportacion.GetProperty("costeo_total").GetDecimal().Should().Be(770_000m);
-        exportacion.GetProperty("valor_cotizado_cop").GetDecimal().Should().Be(1_100_000m);
-        exportacion.GetProperty("margen_ponderado").GetDecimal().Should().Be(0.3m, "(1.100.000 − 770.000) / 1.100.000");
+        exportacion.GetProperty("valor_cotizado_cop").GetDecimal().Should().Be(1_064_286m);
+        exportacion.GetProperty("margen_ponderado").GetDecimal().Should().Be(0.2765m,
+            "(1.064.286 − 770.000) / 1.064.286: la ganancia de la ruta cuenta la diferencia entre la venta y el costo de los conexos");
         exportacion.GetProperty("ajustes_margen").GetInt32().Should().Be(1);
         exportacion.GetProperty("desviacion_promedio_margen").GetDecimal().Should().Be(0.15m, "0,30 negociado − 0,15 sugerido de la ruta 2");
     }

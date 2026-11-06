@@ -46,6 +46,13 @@ public static class clsLecturaCosteo
             }
         }
 
+        // HU-043.2 (#251): la venta que Nexo fijó para los conexos ya guardados (los anteriores al despliegue quedaron al costo). Sin precio
+        // congelado; la recalcula AplicarPrecio más abajo.
+        if (!cotizacion.PrecioCongelado && foto.Cotizacion is { } leida)
+        {
+            cambio |= cotizacion.RefrescarVentaConexos(clsServiciosConexosCosteoService.VentasDeNexo(cotizacion, leida)) > 0;
+        }
+
         var estadoNexo = clsDerivacionEstadoCosteo.Derivar(foto);
         // HU-028.1 (#183): con todas las rutas rechazadas la cabecera toma lo que dice Nexo (entregada) o sigue en pendiente_costeo.
         var estado = cotizacion.EstadoCabecera(estadoNexo);

@@ -356,7 +356,7 @@ internal sealed class clsServicioConexoRutaConfiguracion : IEntityTypeConfigurat
         builder.Property(c => c.IdServicioConexoCatalogo).Columna("idServicioConexoCatalogo", "nvarchar(64)").HasMaxLength(clsServicioConexoRuta.LargoMaximoId);
         builder.Property(c => c.Categoria).Columna("categoriaServicioConexo", "nvarchar(20)").HasMaxLength(clsServicioConexoRuta.LargoMaximoCategoria);
         builder.Property(c => c.Precio).Columna("precio", "decimal(18,2)");
-        // #261 punto 4: precioVenta (script 19, NOT NULL sin DEFAULT); hasta HU-043.2 (#251) el dominio lo iguala a precio.
+        // precioVenta (script 19, NOT NULL sin DEFAULT): la venta unitaria del conexo, que se cotiza sin margen (HU-043.2, #251).
         builder.Property(c => c.PrecioVenta).Columna("precioVenta", "decimal(18,2)");
         builder.Property(c => c.Cantidad).Columna("cantidad", "decimal(10,2)");
         builder.Property(c => c.CreatedAt).Fecha("createdAt");
