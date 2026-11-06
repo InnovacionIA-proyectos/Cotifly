@@ -274,6 +274,10 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         (typeof(Cotifly.Aplicacion.CatalogosFlete.DTOs.clsOpcionCatalogo), "OpcionCatalogo"),
         (typeof(Cotifly.Aplicacion.CatalogosFlete.Services.clsAliasResueltos), "AliasResueltos"),
         (typeof(Cotifly.Aplicacion.CatalogosFlete.Services.clsAliasResuelto), "AliasResuelto"),
+        // HU-044.4 (#255): normalización de los textos del Excel de licitación con NEXO.
+        (typeof(Cotifly.Api.Licitaciones.DTOs.clsNormalizacionValoresWebRequest), "NormalizarValoresWeb"),
+        (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsNormalizacionValores), "NormalizacionValores"),
+        (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsValorNormalizacionWeb), "ValorNormalizado"),
         (typeof(Cotifly.Aplicacion.Clientes.DTOs.clsResultadoBusquedaClientes), "ResultadoBusquedaClientes"),
         (typeof(Cotifly.Aplicacion.Clientes.DTOs.clsClienteEncontrado), "ClienteEncontrado"),
         (typeof(Cotifly.Api.Cubicacion.DTOs.clsCubicacionWebRequest), "CubicacionRequest"),
