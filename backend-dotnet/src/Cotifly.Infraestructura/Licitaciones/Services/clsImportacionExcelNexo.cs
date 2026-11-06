@@ -96,6 +96,13 @@ public sealed class clsImportacionExcelNexo(
         clsCodigosError.TipoTerminoInvalido,
     };
 
+    /// <summary>
+    /// HU-044.2 (#253): el <c>400 VALIDATION_ERROR</c> de <c>leer-estructura</c> (la forma del formulario: un campo de más o de menos que
+    /// NEXO valida y Cotifly no, porque no abre el libro ni interpreta la receta) llega al comercial con ese código y el mensaje de NEXO. En
+    /// las demás rutas sigue como <c>COSTEO_NEXO_RECHAZADA</c>: ahí es un cuerpo JSON de Cotifly mal armado.
+    /// </summary>
+    public const string CodigoValidacionNexo = "VALIDATION_ERROR";
+
     private static readonly JsonSerializerOptions _json = new(JsonSerializerDefaults.Web)
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
@@ -454,7 +461,8 @@ public sealed class clsImportacionExcelNexo(
             return new clsErrorDominio(clsCodigosError.ArchivoDemasiadoGrande, "NEXO rechazó el archivo por tamaño (máximo 10 MB con el envío).", detalle);
         }
 
-        if (respuesta.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.NotFound && codigo is not null && CodigosNexo.Contains(codigo))
+        if (respuesta.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.NotFound && codigo is not null
+            && (CodigosNexo.Contains(codigo) || (codigo == CodigoValidacionNexo && ruta == RutaLeerEstructura)))
         {
             return new clsErrorDominio(codigo, mensaje ?? MensajeRechazada, detalle);
         }

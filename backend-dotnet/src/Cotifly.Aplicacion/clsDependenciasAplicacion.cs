@@ -146,6 +146,8 @@ public static class clsDependenciasAplicacion
         // HU-023.5 (#160): cubicación de la licitación en segundo plano (el procesador lo registra Infraestructura).
         servicios.AddScoped<Licitaciones.Services.IClsCubicacionLicitacionService, Licitaciones.Services.clsCubicacionLicitacionService>();
         servicios.AddScoped<Licitaciones.Services.IClsValidadorFilasLicitacion, Licitaciones.Services.clsValidadorFilasLicitacion>();
+        // HU-044.2 (#253): sugerir-mapeo y leer-estructura, puente hacia la importación inteligente de NEXO (el adaptador lo registra Infraestructura).
+        servicios.AddScoped<Licitaciones.Services.IClsSugerenciaMapeoService, Licitaciones.Services.clsSugerenciaMapeoService>();
 
         // HU-035.1 (#202, ADR-024): Excel de mercancías de una ruta, leído localmente sin Nexo (el lector lo registra Infraestructura).
         servicios.AddScoped<Mercancias.Services.IClsAnalisisExcelMercanciasService, Mercancias.Services.clsAnalisisExcelMercanciasService>();
