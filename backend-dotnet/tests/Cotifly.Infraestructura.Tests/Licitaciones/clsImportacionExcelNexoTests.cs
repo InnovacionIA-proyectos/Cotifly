@@ -171,9 +171,9 @@ public sealed class clsImportacionExcelNexoTests
     [Fact]
     public async Task ListarRecetasFiltraPorElNitYDevuelveLaRecetaTalCual()
     {
-        const string receta = """{"version":1,"hojas":[{"hoja":"*","usar":true,"extra":{"a":[1,2]}}],"unir":false}""";
+        const string RecetaJson = """{"version":1,"hojas":[{"hoja":"*","usar":true,"extra":{"a":[1,2]}}],"unir":false}""";
         var nexo = new clsNexoClientesFalso().Responder(HttpStatusCode.OK,
-            $$"""[{"id":"{{Guid.NewGuid()}}","clienteId":"{{Guid.NewGuid()}}","clienteNombre":"EPM","nombre":null,"receta":{{receta}},"instrucciones":null,"usos":2,"ultimoUsoAt":null,"createdAt":"2026-11-05T15:00:00Z","updatedAt":null}]""");
+            $$"""[{"id":"{{Guid.NewGuid()}}","clienteId":"{{Guid.NewGuid()}}","clienteNombre":"EPM","nombre":null,"receta":{{RecetaJson}},"instrucciones":null,"usos":2,"ultimoUsoAt":null,"createdAt":"2026-11-05T15:00:00Z","updatedAt":null}]""");
         var importacion = Importacion(nexo, out var proveedor);
         using var limpieza = proveedor;
 
@@ -182,28 +182,28 @@ public sealed class clsImportacionExcelNexoTests
         nexo.Peticiones.Should().ContainSingle().Which.Url.Query.Should().Be("?clienteNit=890904996");
         var guardada = resultado.Valor.Should().ContainSingle().Subject;
         guardada.Usos.Should().Be(2);
-        guardada.Receta.GetRawText().Should().Be(JsonDocument.Parse(receta).RootElement.GetRawText(), "la receta es JSON opaco");
+        guardada.Receta.GetRawText().Should().Be(JsonDocument.Parse(RecetaJson).RootElement.GetRawText(), "la receta es JSON opaco");
     }
 
     [Fact]
     public async Task LeerEstructuraReenviaElArchivoYLaRecetaSinTocarla()
     {
-        const string receta = """{"version":1,"hojas":[{"hoja":"Hoja 1","usar":true,"campoDelFuturo":"x"}],"unir":false}""";
+        const string RecetaJson = """{"version":1,"hojas":[{"hoja":"Hoja 1","usar":true,"campoDelFuturo":"x"}],"unir":false}""";
         var nexo = new clsNexoFalso();
         var importacion = Importacion(nexo, out var proveedor);
         using var limpieza = proveedor;
 
         var resultado = await importacion.LeerEstructuraAsync(_usuarioId,
-            new clsPeticionLeerEstructura(new clsArchivoImportacion("EPM formulario.xlsx", [1, 2, 3]), "890.904.996-1", null, receta), Ct);
+            new clsPeticionLeerEstructura(new clsArchivoImportacion("EPM formulario.xlsx", [1, 2, 3]), "890.904.996-1", null, RecetaJson), Ct);
 
         var formulario = nexo.UltimoFormularioImportacion!;
         formulario["archivo"].Should().Be("EPM formulario.xlsx", "con su nombre original");
-        formulario["receta"].Should().Be(receta, "la receta viaja tal cual");
+        formulario["receta"].Should().Be(RecetaJson, "la receta viaja tal cual");
         formulario["clienteNit"].Should().Be("890904996");
         formulario.Should().NotContainKey("instrucciones");
         resultado.Valor.OrigenReceta.Should().Be("manual");
         resultado.Valor.IaUsada.Should().BeFalse();
-        JsonNode.DeepEquals(JsonNode.Parse(resultado.Valor.Receta.GetRawText()), JsonNode.Parse(receta)).Should().BeTrue();
+        JsonNode.DeepEquals(JsonNode.Parse(resultado.Valor.Receta.GetRawText()), JsonNode.Parse(RecetaJson)).Should().BeTrue();
         resultado.Valor.Tablas.Should().ContainSingle().Which.Encabezados.Should().Equal("ORIGEN", "DESTINO", "TON");
         nexo.Llamadas(HttpMethod.Post, clsImportacionExcelNexo.RutaLeerEstructura).Should().Be(1);
     }
