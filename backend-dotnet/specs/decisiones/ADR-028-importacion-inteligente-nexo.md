@@ -62,7 +62,7 @@ Los pliegos de licitación son justo esos archivos. La pregunta era si Cotifly r
    captura como hasta hoy.
 9. **Cliente HTTP propio, tiempos por endpoint.** `NexoImportacion`, con su tubería: cada intento con `ImportacionInteligente:TimeoutSegundos`
    (90 s por defecto) o, en `leer-estructura` y `PUT recetas-lectura`, `ImportacionInteligente:TimeoutLecturaSegundos` (180 s por defecto y
-   como mínimo: NEXO hace hasta 3 intentos de IA de 60 s y luego ejecuta la receta). Se reintentan (2 veces, como los GET de NEXO) solo los
+   como mínimo: NEXO hace hasta 3 intentos de IA de 60 s y luego ejecuta la receta). Se reintentan (una vez, lo que admite NEXO) solo los
    `GET` y `aplicar-mapeo` (sin IA ni efecto en NEXO); las demás escrituras tampoco (`PUT plantillas-mapeo`, los `DELETE`). Un 429 nunca se
    reintenta. La petición lleva marcas (`HttpRequestOptions`) que la tubería lee para el tiempo y el reintento. Sin registrar cabeceras.
 10. **Errores.** Nunca lanza por NEXO. Un 400/404 con un código de la tabla de NEXO llega con ese código y el mensaje de NEXO (códigos nuevos
