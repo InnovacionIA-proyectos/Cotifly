@@ -279,6 +279,28 @@ public sealed class clsMetricasTableroRepositoryTests(clsBaseDatosPruebas baseDa
     }
 
     [Fact]
+    public async Task HU0452_ElSeguroDeLaRutaSeLeeYNoCuentaComoGanancia()
+    {
+        // HU-045.2 (#264, M1 de la auditoría): costoSeguro (script 20) está en el precio de la ruta pero no es ganancia.
+        var ana = await CrearUsuarioAsync();
+        var cotizacion = NuevaCotizacion(ana);
+        await GuardarAsync(cotizacion);
+        await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly, $"""
+            DECLARE @id UNIQUEIDENTIFIER = '{cotizacion.Id}';
+            UPDATE dbo_cotifly.CotizacionLineasSolicitud SET costoFinal = 1000000, precioFinalLinea = 1940000, margenAplicado = 0.20,
+                   incluyeSeguro = 1, tasaSeguroAplicada = 0.003450, costoSeguro = 690000
+            WHERE cotizacionSolicitudId = @id AND orden = 1;
+            UPDATE dbo_cotifly.CotizacionesSolicitud SET precioFinal = 1940000, ganada = 1 WHERE id = @id;
+            """);
+
+        var fila = (await ListarAsync([ana], Reloj.AhoraUtc.AddDays(-1), Reloj.AhoraUtc.AddDays(1))).Filas.Should().ContainSingle().Subject;
+
+        (fila.Seguro, fila.Rutas.Single().Seguro).Should().Be((690_000m, 690_000m));
+        var indicadores = Cotifly.Dominio.Metricas.clsCalculadoraMetricas.Indicadores([fila], Reloj.AhoraUtc, deadlineDisponible: false);
+        (indicadores.Ganancias, indicadores.MargenPonderado, indicadores.ValorCotizadoCop).Should().Be((250_000m, 0.20m, 1_940_000m));
+    }
+
+    [Fact]
     public async Task SinCotizacionesNoConsultaRutas()
     {
         var ana = await CrearUsuarioAsync();
