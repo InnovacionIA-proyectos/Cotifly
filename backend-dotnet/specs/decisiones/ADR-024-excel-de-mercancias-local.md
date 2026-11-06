@@ -98,6 +98,21 @@ La auditoría de la #202 encontró que `POST /web/licitaciones/analizar-excel` a
    `EXCEL_INVALIDO` (`LIBRO_ILEGIBLE`), no un 500. Con el cupo lleno, 503 `SERVICIO_OCUPADO` (nuevo en este endpoint). Sin original
    no se abre nada del cliente y no se toma el cupo. Sin códigos nuevos.
 
+## HU-035.3 (#277): qué partes del libro se cuentan como XML
+
+El conteo de elementos (punto 5) leía como XML toda parte con «xml» en el tipo. Las partes binarias de Office también lo tienen
+(`openxmlformats`): la configuración de impresión que guarda Excel (`xl/printerSettings/printerSettings1.bin`, tipo
+`...spreadsheetml.printerSettings`), los objetos incrustados (`...oleObject`) o las propiedades personalizadas. Llegaban al lector
+XML y el libro, válido, era `LIBRO_ILEGIBLE`; en pliegos de clientes la impresión configurada es lo normal.
+
+1. Se lee como XML la parte cuyo tipo, sin parámetros, termina en `+xml` o es `application/xml` o `text/xml`, y además el dibujo VML
+   (`...vmlDrawing`, sin `+xml`), que ClosedXML lee como XML para los comentarios: dejarlo fuera abriría un hueco en el tope de
+   elementos. Las demás partes se saltan, como ya se saltaban las imágenes y el `vbaProject`.
+2. Los topes (entradas, 64 MB descomprimidos, 1.000.000 de elementos) y el rechazo del DTD no cambian. Una parte que ClosedXML lee
+   como XML no puede saltarse el conteo cambiando su tipo en `[Content_Types].xml`: el SDK de Open XML exige el tipo de las partes que
+   conoce y el libro no abre (`LIBRO_ILEGIBLE`); hay pruebas con una hoja densa y una con DTD declaradas como binarias.
+3. Los tres lectores (mercancías, pliego y exportación) usan esta misma pieza: ninguno tiene un filtro propio.
+
 ## Pendientes
 
 | Pendiente | Dueño |
