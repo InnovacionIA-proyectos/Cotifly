@@ -80,7 +80,8 @@ public sealed class clsEdicionSolicitudService(
     IClsAuditoriaService auditoria,
     IClsReloj reloj,
     ILogger<clsEdicionSolicitudService> logger,
-    IOptions<clsOpcionesCaptura>? opcionesCaptura = null) : IClsEdicionSolicitudService
+    IOptions<clsOpcionesCaptura>? opcionesCaptura = null,
+    IClsTarifaSeguroRepository? tarifasSeguro = null) : IClsEdicionSolicitudService
 {
     /// <summary>HU-032 (#197): ¿el vehículo elegido cuenta? (<c>Captura:AceptarVehiculoCliente</c>, encendida por defecto).</summary>
     private bool AceptaVehiculo => opcionesCaptura?.Value.AceptarVehiculoCliente ?? true;
@@ -90,6 +91,13 @@ public sealed class clsEdicionSolicitudService(
 
     /// <summary>Ámbito de las claves de idempotencia (con el comercial).</summary>
     public const string OperacionIdempotencia = "editar_solicitud";
+
+    /// <summary>
+    /// HU-045.2 (#264): la tasa vigente del seguro, solo si alguna ruta de <paramref name="original"/> lo incluye (la edición puede cambiar su
+    /// valor de la mercancía); si no, o sin repositorio, <c>null</c> (se conserva la tasa de la ruta).
+    /// </summary>
+    private async Task<decimal?> TasaSeguroAsync(clsCotizacionSolicitud original, CancellationToken cancellationToken) =>
+        tarifasSeguro is not null && original.Rutas.Any(r => r.IncluyeSeguro) ? await tarifasSeguro.ObtenerTasaVigenteAsync(cancellationToken) : null;
 
     /// <summary>Motivo (1-100) del rechazo de la solicitud anterior en Nexo.</summary>
     public const string MotivoRechazoNexo = "Edición de la solicitud desde Cotifly";
@@ -681,6 +689,7 @@ public sealed class clsEdicionSolicitudService(
     {
         var moneda = p.Moneda ?? new clsMonedaFijada(original.Moneda ?? clsCotizacionSolicitud.MonedaPesos, original.TrmAplicada);
         var anteriorDe = p.Rutas.Where(r => r.RutaExistenteId is not null).ToDictionary(r => r.Ruta.RutaId!.Value, r => r.RutaExistenteId!.Value);
+        var tasaSeguro = await TasaSeguroAsync(original, cancellationToken);
         var creada = await folios.CrearNuevaVersionAsync<clsCotizacionSolicitud>(usuarioId, original.Id, async (folio, ct) =>
         {
             if (!await ReservarEnTransaccionAsync(unidadTrabajo, registroAuditoria, original, versionEsperada, reserva, ct))
@@ -697,6 +706,8 @@ public sealed class clsEdicionSolicitudService(
             var nueva = version.Valor;
             nueva.RegistrarCaptura(p.Encabezado, [.. p.Rutas.Select(r => r.Ruta)]);
             nueva.CopiarMargenesNegociadosDe(original, anteriorDe);
+            // HU-045.2 (#264): el seguro de la mercancía de cada ruta que se conserva (recalculado si cambió su valor de la mercancía).
+            nueva.CopiarSegurosDe(original, anteriorDe, tasaSeguro);
             cotizaciones.Agregar(nueva);
             await unidadTrabajo.GuardarCambiosAsync(ct);
             return nueva;
@@ -722,7 +733,12 @@ public sealed class clsEdicionSolicitudService(
     private async Task<(clsResultadoEdicion Resultado, IReadOnlyList<clsAvisoEdicion> Avisos)?> AplicarYGuardarAsync(
         clsCotizacionSolicitud cotizacion, Guid usuarioId, clsEdicionPreparada p, int versionEsperada)
     {
-        var resultado = cotizacion.AplicarEdicion(new clsEdicionSolicitud(p.Encabezado, p.Rutas, p.Moneda?.Moneda, p.Moneda?.TrmAplicada ?? 0m), reloj.AhoraUtc);
+        // HU-045.2 (#264, decisión 5): si cambia el valor de la mercancía de una ruta con seguro, el seguro toma la tasa vigente.
+        var edicion = new clsEdicionSolicitud(p.Encabezado, p.Rutas, p.Moneda?.Moneda, p.Moneda?.TrmAplicada ?? 0m)
+        {
+            TasaSeguroVigente = await TasaSeguroAsync(cotizacion, CancellationToken.None),
+        };
+        var resultado = cotizacion.AplicarEdicion(edicion, reloj.AhoraUtc);
         var avisos = new List<clsAvisoEdicion>();
         if (resultado.RutasQuitadas.Count > 0)
         {

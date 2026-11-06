@@ -108,6 +108,13 @@ public sealed record clsCosteoCotizacion(
     public DateTimeOffset? FinalizadaAt { get; init; }
 
     /// <summary>
+    /// HU-045.2 (#264): la tasa VIGENTE del seguro de la mercancía (fracción: 0.003450 = 0,345 %; <c>TarifasSeguro</c>), para mostrarla antes
+    /// de marcar el seguro en una ruta. La de cada ruta que ya lo tiene es <see cref="clsRutaCosteo.TasaSeguro"/> (no cambia con la
+    /// vigente). Solo en <c>GET .../costeo</c> y en <c>PUT .../costeo/seguro</c>; <c>null</c> en las demás respuestas o si no se pudo leer.
+    /// </summary>
+    public decimal? TasaSeguroVigente { get; init; }
+
+    /// <summary>
     /// HU-021.8 (#135): las rutas en orden, cada una con su margen (aplicado, sugerido y origen), su precio y sus conexos. El ajuste de
     /// margen y los cambios de conexos dicen a cuál aplican con <c>linea_orden</c> o <c>linea_solicitud_id</c>. HU-039.1 (#218): el único
     /// costo que trae es el costo bruto de cada ruta (<see cref="clsRutaCosteo.CostoFinal"/>), solo para el dueño.
@@ -174,6 +181,22 @@ public sealed record clsRutaCosteo(
 
     /// <summary>HU-021.9 (#136): línea de negocio de la ruta (id de <c>MargenesPolitica</c>; define su margen).</summary>
     public int? LineaNegocioId { get; init; }
+
+    /// <summary>HU-045.2 (#264): ¿la ruta incluye el seguro de la mercancía? (el check del costeo, <c>PUT .../costeo/seguro</c>).</summary>
+    public bool IncluyeSeguro { get; init; }
+
+    /// <summary>
+    /// HU-045.2 (#264): la tasa con que se calculó el seguro de la ruta (fracción: 0.003450 = 0,345 %), copiada de la vigente al marcarlo;
+    /// un cambio de la tasa vigente no la toca. <c>null</c> sin seguro o sin valor de la mercancía.
+    /// </summary>
+    public decimal? TasaSeguro { get; init; }
+
+    /// <summary>
+    /// HU-045.2 (#264): el seguro de la mercancía de la ruta (<c>round(valor_mercancia × tasa_seguro, 0)</c> en pesos), en la moneda de la
+    /// cotización (en USD, convertido con <c>trm_aplicada</c>). Es venta, sin margen: ya está sumado en <see cref="PrecioFinalLinea"/>.
+    /// <c>null</c> sin seguro o sin valor de la mercancía.
+    /// </summary>
+    public decimal? ValorSeguro { get; init; }
 
     /// <summary>HU-021.9: peso total que declaró el comercial para la ruta.</summary>
     public decimal? PesoKg { get; init; }
@@ -313,7 +336,8 @@ public sealed class clsCosteoCotizacionService(
     Cubicacion.Interfaces.IClsCubicador? cubicador = null,
     IClsCategoriasConexos? categoriasConexos = null,
     IClsSituacionLineasNexo? situacionesNexo = null,
-    Margen.Services.IClsAvisoSincronizacionMargenSap? avisoSincronizacion = null) : IClsCosteoCotizacionService
+    Margen.Services.IClsAvisoSincronizacionMargenSap? avisoSincronizacion = null,
+    IClsTarifaSeguroRepository? tarifasSeguro = null) : IClsCosteoCotizacionService
 {
     public const string HerramientaPdf = "generar_pdf_costeo";
 
@@ -339,8 +363,41 @@ public sealed class clsCosteoCotizacionService(
         // #181: el estado y el motivo pendiente de la línea de Nexo de cada camión, de la última lectura del polling (en memoria).
         return Vista(cotizacion, opcionesPdf.Value.BaseUrl, estadosNexo, await CategoriasAsync(categoriasConexos, cotizacion, logger, cancellationToken),
             situacionesNexo?.Obtener(cotizacion.Id),
-            await Margen.Services.clsAvisoSincronizacionMargenSap.ConsultarSinFallarAsync(avisoSincronizacion, cotizacion, cancellationToken));
+            await Margen.Services.clsAvisoSincronizacionMargenSap.ConsultarSinFallarAsync(avisoSincronizacion, cotizacion, cancellationToken))
+            with
+            {
+                // HU-045.2 (#264): la tasa vigente, para mostrarla antes de marcar el seguro.
+                TasaSeguroVigente = await TasaSeguroVigenteSinFallarAsync(tarifasSeguro, logger, cotizacion.Folio, cancellationToken),
+            };
     }
+
+    /// <summary>
+    /// HU-045.2 (#264): la tasa vigente del seguro (<see cref="clsCosteoCotizacion.TasaSeguroVigente"/>). Nunca falla: sin repositorio o si la
+    /// lectura lanza, <c>null</c> (y un aviso en el log); la vista del costeo sale igual.
+    /// </summary>
+    public static async Task<decimal?> TasaSeguroVigenteSinFallarAsync(
+        IClsTarifaSeguroRepository? tarifasSeguro, ILogger logger, string folio, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(logger);
+        if (tarifasSeguro is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await tarifasSeguro.ObtenerTasaVigenteAsync(cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            _logTasaSeguroNoDisponible(logger, folio, ex);
+            return null;
+        }
+    }
+
+    private static readonly Action<ILogger, string, Exception?> _logTasaSeguroNoDisponible = LoggerMessage.Define<string>(
+        LogLevel.Warning, new EventId(1734, nameof(_logTasaSeguroNoDisponible)),
+        "No se pudo leer la tasa vigente del seguro de la mercancía para el costeo de {Folio}; la respuesta sale sin tasa_seguro_vigente.");
 
     /// <summary>Herramienta de la auditoría de los cambios de conexos (<c>EventosHerramienta.herramienta</c>, HU-021.8).</summary>
     public const string HerramientaConexos = "cambiar_servicios_conexos";
@@ -1122,12 +1179,14 @@ public sealed class clsCosteoCotizacionService(
         }
 
         var conexos = ConexosConPrecio(cotizacion, ruta);
-        if (ruta.PrecioFinalLinea is { } total && conexos.Count > 0)
+        // HU-045.2 (#264): el seguro de la mercancía también va aparte del transporte (sin margen, ya redondeado como el precio).
+        var seguro = ruta.ValorSeguro(cotizacion.Moneda, cotizacion.TrmAplicada, out var valorSeguro) is null ? valorSeguro ?? 0m : 0m;
+        if (ruta.PrecioFinalLinea is { } total && (conexos.Count > 0 || seguro != 0m))
         {
             // Tolerancia por moneda (HU-021.9): cada precio se redondea a la unidad de su moneda (1 peso en COP, 0,01 en USD), así que la
             // diferencia entre la ruta y transporte + conexos es a lo sumo media unidad por redondeo: (n + 1) / 2 unidades con n conexos,
             // que nunca pasa de n unidades. Una tolerancia de 1 por conexo en USD dejaba pasar un dólar entero por conexo.
-            var ajustado = total - conexos.Sum(c => c.Precio);
+            var ajustado = total - conexos.Sum(c => c.Precio) - seguro;
             var unidad = Dominio.Precio.clsConversorMoneda.EsPesos(cotizacion.Moneda) ? 1m : 0.01m;
             if (Math.Abs(ajustado - transporte) <= conexos.Count * unidad)
             {
@@ -1397,6 +1456,9 @@ public sealed class clsCosteoCotizacionService(
                 : $"Revisa en la cotización de Nexo los servicios conexos {string.Join(", ", revisar)}: Cotifly no pudo confirmar que llegaron "
                   + "y no los reenvía solo (Nexo no tiene DELETE). El precio en Cotifly ya los incluye.",
             LineaNegocioId = ruta.LineaNegocioId,
+            IncluyeSeguro = ruta.IncluyeSeguro,
+            TasaSeguro = ruta.IncluyeSeguro ? ruta.TasaSeguroAplicada : null,
+            ValorSeguro = ruta.ValorSeguro(cotizacion.Moneda, cotizacion.TrmAplicada, out var seguro) is null ? seguro : null,
             PesoKg = ruta.PesoKg,
             PesoConTaraKg = ruta.LlevaTara ? ruta.PesoConTaraKg : null,
             Camiones = [.. ruta.VehiculosOrdenados.Select(v => CamionCosteo(v, situaciones) with { PesoConTaraKg = ruta.PesoConTaraCamion(v) })],

@@ -102,6 +102,8 @@ public static class clsDependenciasAplicacion
         servicios.AddSingleton<IClsSituacionLineasNexo, clsSituacionLineasNexoEnMemoria>();
         servicios.AddScoped<IClsCosteoCotizacionService, clsCosteoCotizacionService>();
         servicios.AddScoped<IClsAjusteMargenCosteoService, clsAjusteMargenCosteoService>();
+        // HU-045.2 (#264): el seguro de la mercancía por ruta (PUT .../costeo/seguro).
+        servicios.AddScoped<IClsSeguroCosteoService, clsSeguroCosteoService>();
         // HU-023.3 (#158): recalcular los camiones de una ruta con el cubicador antes de enviarla a Nexo.
         servicios.AddScoped<IClsRecalculoVehiculosService, clsRecalculoVehiculosService>();
         servicios.AddScoped<IClsServiciosConexosCosteoService, clsServiciosConexosCosteoService>();

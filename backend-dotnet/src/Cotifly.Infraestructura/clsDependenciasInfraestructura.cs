@@ -509,6 +509,8 @@ public static class clsDependenciasInfraestructura
 
         servicios.AddScoped<IClsUnitOfWork, clsUnitOfWork>();
         servicios.AddScoped<IClsCotizacionRepository, clsCotizacionRepository>();
+        // HU-045.2 (#264): la tasa vigente del seguro de la mercancía (TarifasSeguro, script 20; solo lectura).
+        servicios.AddScoped<IClsTarifaSeguroRepository, clsTarifaSeguroRepository>();
         servicios.AddScoped<IClsMargenPoliticaRepository, clsMargenPoliticaRepository>();
         servicios.AddScoped<IClsSapMapeoRepository, clsSapMapeoRepository>();
         servicios.AddScoped<IClsMargenAjusteRepository, clsMargenAjusteRepository>();
