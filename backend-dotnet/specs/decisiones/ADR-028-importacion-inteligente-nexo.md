@@ -86,6 +86,17 @@ Los pliegos de licitación son justo esos archivos. La pregunta era si Cotifly r
 - **Discrepancia abierta con NEXO QA (2026-11-06):** `GET /api/diccionario-cliente` todavía no acepta `clienteNit` (NEXO#410 cubrió el mapeo
   y las plantillas, no el diccionario): ignora el parámetro y responde los términos de todos los clientes más los generales. Cotifly lo
   manda igual para que tome efecto cuando NEXO lo agregue; mientras tanto, el endpoint que lo exponga (#253 a #256) debe saberlo.
+  - **Cómo lo resuelve #256 (HU-044.5, 2026-11-06, pendiente de decisión).** `GET /web/diccionario-cliente` descarta todo término con
+    cliente (`clienteId != null`) y devuelve solo los generales, con o sin NIT; con NIT añade el aviso `TERMINOS_CLIENTE_NO_DISPONIBLES`
+    para que la interfaz explique que los del cliente aún no se ven. Es la opción conservadora (b) del análisis: nunca sale un término de
+    otro cliente. Las otras opciones eran (a) resolver el `clienteId` de NEXO por NIT solo para filtrar, que choca con el punto 3, y (c)
+    esperar a NEXO. Cuando NEXO filtre por `clienteNit`, se revisa la regla y se quita el aviso.
+  - **La escritura del diccionario no está.** `POST`, `PUT /{id}` y `DELETE /{id}` de `/web/diccionario-cliente` (y sus códigos
+    `TERMINO_DUPLICADO`, `TERMINO_NO_ENCONTRADO`, `CAMPO_DESTINO_INVALIDO` y `CONTEXTO_INVALIDO`) esperan el contrato §3.19.1 de NEXO y
+    S6-HU-34.10. El puerto `IClsImportacionExcelNexo` tampoco tiene esas operaciones todavía.
+- **"No encontrado" con código (#256).** `PLANTILLA_NO_ENCONTRADA` y `RECETA_NO_ENCONTRADA` responden `404` con `ErrorNegocio` y su código,
+  no el `404` `ErrorWeb` sin código de las cotizaciones («no encontrada o no es tuya»): una plantilla o un formato no tienen dueño en
+  Cotifly. Cambio a confirmar con el front.
 
 ## Alternativas descartadas
 
