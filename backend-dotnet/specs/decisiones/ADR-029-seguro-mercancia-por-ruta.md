@@ -34,7 +34,7 @@ tabla `TarifasSeguro` (una sola tasa activa) y las columnas `incluyeSeguro`, `ta
    dominio (`ValidarCambioSeguro`), PDF invalidado e historial, versión de negocio, una escritura con control de versión y auditoría en
    `EventosHerramienta` (`cambiar_seguro_costeo`) **sin montos ni tasa**. Marcar una ruta que ya lo tiene responde 200 sin cambios.
 4. **Lectura.** La tasa vigente la lee un repositorio de solo lectura (`IClsTarifaSeguroRepository`, la fila `isActive = 1`). El costeo
-   expone `tasa_seguro_vigente` (solo en `GET .../costeo` y en el PUT del seguro) y en cada ruta `incluye_seguro`, `tasa_seguro` y
+   expone `tasa_seguro_vigente` (en `GET .../costeo`, en el PUT del seguro y en el detalle por folio) y en cada ruta `incluye_seguro`, `tasa_seguro` y
    `valor_seguro` (en la moneda de la cotización).
 5. **Nombre del campo: `valor_seguro`, no `costo_seguro`.** La issue pide `costo_seguro` en el GET; `clsCostoBrutoSinFugasTests`
    exige que el único campo `Costo*` de `RutaCosteo` sea `costo_final` (el costo de Nexo, #218). El seguro es venta (se le cobra al

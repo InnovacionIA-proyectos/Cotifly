@@ -110,7 +110,8 @@ public sealed record clsCosteoCotizacion(
     /// <summary>
     /// HU-045.2 (#264): la tasa VIGENTE del seguro de la mercancía (fracción: 0.003450 = 0,345 %; <c>TarifasSeguro</c>), para mostrarla antes
     /// de marcar el seguro en una ruta. La de cada ruta que ya lo tiene es <see cref="clsRutaCosteo.TasaSeguro"/> (no cambia con la
-    /// vigente). Solo en <c>GET .../costeo</c> y en <c>PUT .../costeo/seguro</c>; <c>null</c> en las demás respuestas o si no se pudo leer.
+    /// vigente). Solo en <c>GET .../costeo</c>, en <c>PUT .../costeo/seguro</c> y en el detalle por folio; <c>null</c> en las demás respuestas o si
+    /// no se pudo leer.
     /// </summary>
     public decimal? TasaSeguroVigente { get; init; }
 

@@ -7561,8 +7561,8 @@ components:
           nullable: true
           description: |
             HU-045.2 (#264). La tasa VIGENTE del seguro de la mercancía (fracción: 0.003450 = 0,345 %), para mostrarla antes de marcar el
-            seguro en una ruta (la de cada ruta que ya lo tiene es `rutas[].tasa_seguro`). Solo en `GET .../costeo` y en
-            `PUT .../costeo/seguro`; `null` en las demás respuestas o si no se pudo leer.
+            seguro en una ruta (la de cada ruta que ya lo tiene es `rutas[].tasa_seguro`). Solo en `GET .../costeo`, en
+            `PUT .../costeo/seguro` y en `costeo` del detalle por folio; `null` en las demás respuestas o si no se pudo leer.
         textos:
           description: HU-013.5. Asunto e introducción guardados para el PDF, o `null` si todavía no hay (el PDF usa los estándar).
           oneOf:
