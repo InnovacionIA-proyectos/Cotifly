@@ -63,7 +63,8 @@ public sealed class clsAjusteMargenCosteoService(
     ILogger<clsAjusteMargenCosteoService>? logger = null,
     IClsCategoriasConexos? categoriasConexos = null,
     IClsSituacionLineasNexo? situacionesNexo = null,
-    Margen.Services.IClsAvisoSincronizacionMargenSap? avisoSincronizacion = null) : IClsAjusteMargenCosteoService
+    Margen.Services.IClsAvisoSincronizacionMargenSap? avisoSincronizacion = null,
+    IClsTarifaSeguroRepository? tarifasSeguro = null) : IClsAjusteMargenCosteoService
 {
     private readonly ILogger _logger = logger ?? NullLogger<clsAjusteMargenCosteoService>.Instance;
 
@@ -147,7 +148,7 @@ public sealed class clsAjusteMargenCosteoService(
         {
             // Idempotente: el mismo margen vigente de la ruta no registra un ajuste ni invalida el PDF.
             return (await clsCosteoCotizacionService.VistaConEstadosAsync(cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, _logger, cancellationToken, categoriasConexos, situacionesNexo?.Obtener(cotizacion.Id),
-                await Margen.Services.clsAvisoSincronizacionMargenSap.ConsultarSinFallarAsync(avisoSincronizacion, cotizacion, cancellationToken)), false, false);
+                await Margen.Services.clsAvisoSincronizacionMargenSap.ConsultarSinFallarAsync(avisoSincronizacion, cotizacion, cancellationToken), tarifasSeguro), false, false);
         }
 
         // Vista previa ANTES de cambiar nada: si el módulo de precio rechaza el margen, la cotización queda intacta.
@@ -182,7 +183,8 @@ public sealed class clsAjusteMargenCosteoService(
         // #173: con el estado_nexo de cada conexo, igual que GET .../costeo.
         return (await clsCosteoCotizacionService.VistaConEstadosAsync(
             cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, _logger, CancellationToken.None, categoriasConexos, situacionesNexo?.Obtener(cotizacion.Id),
-            await Margen.Services.clsAvisoSincronizacionMargenSap.ConsultarSinFallarAsync(avisoSincronizacion, cotizacion, CancellationToken.None)),
+            await Margen.Services.clsAvisoSincronizacionMargenSap.ConsultarSinFallarAsync(avisoSincronizacion, cotizacion, CancellationToken.None),
+            tarifasSeguro),
             true, pdfInvalidado);
     }
 

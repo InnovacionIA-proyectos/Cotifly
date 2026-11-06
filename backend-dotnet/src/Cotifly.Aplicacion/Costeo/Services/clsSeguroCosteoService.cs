@@ -154,13 +154,10 @@ public sealed class clsSeguroCosteoService(
     }
 
     /// <summary>La vista del costeo (como <c>GET .../costeo</c>, con el estado de los conexos en Nexo) y la tasa vigente.</summary>
-    private async Task<clsCosteoCotizacion> VistaAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken) =>
-        (await clsCosteoCotizacionService.VistaConEstadosAsync(
-            cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, _logger, cancellationToken, categoriasConexos, situacionesNexo?.Obtener(cotizacion.Id)))
-        with
-        {
-            TasaSeguroVigente = await clsCosteoCotizacionService.TasaSeguroVigenteSinFallarAsync(tarifasSeguro, _logger, cotizacion.Folio, cancellationToken),
-        };
+    private Task<clsCosteoCotizacion> VistaAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken) =>
+        clsCosteoCotizacionService.VistaConEstadosAsync(
+            cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, _logger, cancellationToken, categoriasConexos, situacionesNexo?.Obtener(cotizacion.Id),
+            tarifasSeguro: tarifasSeguro);
 
     /// <summary><c>PDF_YA_ENVIADO</c> con la llamada de la versión nueva (contrato, como el margen); los demás errores tal cual.</summary>
     private static clsErrorDominio Detallar(clsErrorDominio error, clsCotizacionSolicitud cotizacion) =>

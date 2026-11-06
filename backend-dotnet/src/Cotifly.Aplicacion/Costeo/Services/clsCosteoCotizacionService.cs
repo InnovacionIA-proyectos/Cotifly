@@ -110,8 +110,8 @@ public sealed record clsCosteoCotizacion(
     /// <summary>
     /// HU-045.2 (#264): la tasa VIGENTE del seguro de la mercancía (fracción: 0.003450 = 0,345 %; <c>TarifasSeguro</c>), para mostrarla antes
     /// de marcar el seguro en una ruta. La de cada ruta que ya lo tiene es <see cref="clsRutaCosteo.TasaSeguro"/> (no cambia con la
-    /// vigente). Solo en <c>GET .../costeo</c>, en <c>PUT .../costeo/seguro</c> y en el detalle por folio; <c>null</c> en las demás respuestas o si
-    /// no se pudo leer.
+    /// vigente). En <c>GET .../costeo</c>, en <c>PUT .../costeo/seguro</c>, en las respuestas del margen y de los conexos y en el detalle por
+    /// folio; <c>null</c> en las demás respuestas (PDF, textos, recálculo de vehículos) o si no se pudo leer.
     /// </summary>
     public decimal? TasaSeguroVigente { get; init; }
 
@@ -491,14 +491,14 @@ public sealed class clsCosteoCotizacionService(
         {
             // La misma selección y las mismas cantidades no cambian nada (ni invalidan el PDF): idempotente.
             return (await VistaConEstadosAsync(cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, logger, cancellationToken, categoriasConexos, situacionesNexo?.Obtener(cotizacion.Id),
-                await Margen.Services.clsAvisoSincronizacionMargenSap.ConsultarSinFallarAsync(avisoSincronizacion, cotizacion, cancellationToken)), [], false);
+                await Margen.Services.clsAvisoSincronizacionMargenSap.ConsultarSinFallarAsync(avisoSincronizacion, cotizacion, cancellationToken), tarifasSeguro), [], false);
         }
 
         var pdfInvalidado = clsReglaPdfCosteo.InvalidarPdf(cotizacion, MotivoInvalidacionPdf.ServiciosConexos, usuarioId, cotizaciones);
         cotizacion.IncrementarVersionNegocio();
         return await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, versionEsperada, cancellationToken)
             ? (await VistaConEstadosAsync(cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, logger, CancellationToken.None, categoriasConexos, situacionesNexo?.Obtener(cotizacion.Id),
-                await Margen.Services.clsAvisoSincronizacionMargenSap.ConsultarSinFallarAsync(avisoSincronizacion, cotizacion, CancellationToken.None)), movimientos, pdfInvalidado)
+                await Margen.Services.clsAvisoSincronizacionMargenSap.ConsultarSinFallarAsync(avisoSincronizacion, cotizacion, CancellationToken.None), tarifasSeguro), movimientos, pdfInvalidado)
             : (clsReglaPdfCosteo.Conflicto(cotizacion.Folio), [], false);
     }
 
@@ -1318,14 +1318,28 @@ public sealed class clsCosteoCotizacionService(
     /// #173: <see cref="Vista"/> con el estado del envío diferido de cada conexo a Nexo (<c>estado_nexo</c>), igual que
     /// <c>GET .../costeo</c>: las respuestas de los PUT de margen y de conexos salían con <c>estado_nexo = null</c>. Se llama después de
     /// guardar: si la lectura de los estados falla, responde sin ellos (y lo deja en el log) en lugar de un 500 con el cambio ya hecho.
+    /// HU-045.2 (#264, B2 de la auditoría): con <paramref name="tarifasSeguro"/>, también la tasa vigente del seguro
+    /// (<see cref="clsCosteoCotizacion.TasaSeguroVigente"/>), para que el frontend que refresca con la respuesta no la pierda.
     /// </summary>
     public static async Task<clsCosteoCotizacion> VistaConEstadosAsync(
         clsCotizacionSolicitud cotizacion, string? baseUrlPdf, IClsEnvioConexosNexoService? envioConexos, ILogger logger,
         CancellationToken cancellationToken = default, IClsCategoriasConexos? categoriasConexos = null,
-        IReadOnlyDictionary<Guid, clsSituacionLineaNexo>? situaciones = null, Margen.DTOs.clsSincronizacionSapVieja? sincronizacionVieja = null)
+        IReadOnlyDictionary<Guid, clsSituacionLineaNexo>? situaciones = null, Margen.DTOs.clsSincronizacionSapVieja? sincronizacionVieja = null,
+        IClsTarifaSeguroRepository? tarifasSeguro = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(logger);
+        var vista = await VistaConEstadosSinTasaAsync(cotizacion, baseUrlPdf, envioConexos, logger, cancellationToken, categoriasConexos, situaciones, sincronizacionVieja);
+        return tarifasSeguro is null
+            ? vista
+            : vista with { TasaSeguroVigente = await TasaSeguroVigenteSinFallarAsync(tarifasSeguro, logger, cotizacion.Folio, cancellationToken) };
+    }
+
+    private static async Task<clsCosteoCotizacion> VistaConEstadosSinTasaAsync(
+        clsCotizacionSolicitud cotizacion, string? baseUrlPdf, IClsEnvioConexosNexoService? envioConexos, ILogger logger,
+        CancellationToken cancellationToken, IClsCategoriasConexos? categoriasConexos,
+        IReadOnlyDictionary<Guid, clsSituacionLineaNexo>? situaciones, Margen.DTOs.clsSincronizacionSapVieja? sincronizacionVieja)
+    {
         var categorias = await CategoriasAsync(categoriasConexos, cotizacion, logger, cancellationToken);
         if (envioConexos is null)
         {
