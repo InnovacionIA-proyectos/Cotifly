@@ -606,16 +606,29 @@ public sealed class clsServiciosConexosCosteoService(
     }
 
     /// <summary>
-    /// <c>lineaId</c> de Nexo para un camión de Cotifly: el id de la línea de la cotización de Nexo con su <c>lineaSolicitudId</c>. Sin
-    /// camión, la única línea de la cotización de Nexo. <c>null</c> si no hay (sin flete o sin id).
+    /// <c>lineaId</c> de Nexo para un camión de Cotifly: el id de la línea de la cotización de Nexo con su <c>lineaSolicitudId</c>. #259:
+    /// basta con UNA; si la Mesa dejó varias para el mismo camión (el costo ya las suma, <c>clsCosteoConsultadoNexo.CostoLinea</c>) se toma
+    /// la primera por id (orden ordinal), un criterio estable para el envío diferido y para el POST. Sin camión, la única línea de la
+    /// cotización de Nexo. <c>null</c> si no hay (sin flete o sin id).
     /// </summary>
     public static string? LineaDeNexo(clsCotizacionNexo cotizacion, clsVehiculoLineaSolicitud? camion)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        IReadOnlyList<clsLineaCosteoNexo> candidatas = camion is null
-            ? cotizacion.Lineas
-            : [.. cotizacion.Lineas.Where(l => string.Equals(l.LineaSolicitudId, camion.LineaSolicitudNexoId, StringComparison.OrdinalIgnoreCase))];
-        return candidatas.Count == 1 && !string.IsNullOrWhiteSpace(candidatas[0].Id) ? candidatas[0].Id!.Trim() : null;
+        if (camion is null)
+        {
+            return cotizacion.Lineas.Count == 1 && !string.IsNullOrWhiteSpace(cotizacion.Lineas[0].Id) ? cotizacion.Lineas[0].Id!.Trim() : null;
+        }
+
+        if (string.IsNullOrWhiteSpace(camion.LineaSolicitudNexoId))
+        {
+            return null;
+        }
+
+        return cotizacion.Lineas
+            .Where(l => string.Equals(l.LineaSolicitudId, camion.LineaSolicitudNexoId, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(l.Id))
+            .Select(l => l.Id!.Trim())
+            .Order(StringComparer.Ordinal)
+            .FirstOrDefault();
     }
 
     private static clsErrorDominio SinLineaNexo(clsCotizacionSolicitud cotizacion, int orden) => new(clsCodigosError.LineaSinCotizacionNexo,
