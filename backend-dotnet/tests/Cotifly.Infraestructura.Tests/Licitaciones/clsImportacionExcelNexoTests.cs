@@ -100,6 +100,7 @@ public sealed class clsImportacionExcelNexoTests
         clsImportacionExcelNexo.ConfigurarResiliencia(opciones, TimeSpan.FromSeconds(90), TimeSpan.FromSeconds(180));
 
         opciones.AttemptTimeout.Timeout.Should().Be(TimeSpan.FromSeconds(90));
+        opciones.Retry.MaxRetryAttempts.Should().Be(1, "NEXO admite un solo reintento de los GET");
         opciones.TotalRequestTimeout.Timeout.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(180));
         opciones.TotalRequestTimeout.Timeout.Should().BeGreaterThan(opciones.AttemptTimeout.Timeout);
         opciones.CircuitBreaker.SamplingDuration.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(360));

@@ -60,8 +60,8 @@ public sealed class clsImportacionExcelNexo(
     /// <summary>Largo máximo del <c>clienteNit</c> que acepta NEXO.</summary>
     public const int LargoMaximoNit = 30;
 
-    /// <summary>Reintentos de las peticiones marcadas con <see cref="OpcionReintentable"/> (los GET y <c>aplicar-mapeo</c>).</summary>
-    public const int ReintentosLectura = 2;
+    /// <summary>Reintentos de las peticiones marcadas con <see cref="OpcionReintentable"/> (los GET y <c>aplicar-mapeo</c>): uno, como pide NEXO.</summary>
+    public const int ReintentosLectura = 1;
 
     /// <summary>Marca de la petición que la tubería puede reintentar ante un fallo transitorio (sin ella, nunca).</summary>
     public static readonly HttpRequestOptionsKey<bool> OpcionReintentable = new("Cotifly.NexoImportacion.Reintentable");

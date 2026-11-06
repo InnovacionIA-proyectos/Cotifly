@@ -215,7 +215,7 @@ Decisiones que fijan cómo llama Cotifly:
 - **Cliente por NIT:** `clienteNit` normalizado (sin puntos, espacios ni dígito de verificación). Nunca `clienteId`. Los `GET` de plantillas
   y recetas van siempre con el NIT: sin él NEXO devolvería los de todos los clientes.
 - **Receta:** JSON opaco. Se reenvía exactamente como llegó.
-- **Reintentos:** solo `aplicar-mapeo` y los `GET`. `sugerir-mapeo`, `normalizar-valores`, `leer-estructura` y `PUT recetas-lectura` pueden
+- **Reintentos:** una vez, solo `aplicar-mapeo` y los `GET`. `sugerir-mapeo`, `normalizar-valores`, `leer-estructura` y `PUT recetas-lectura` pueden
   gastar IA y cuentan para el tope: nunca se reintentan (tampoco los demás `PUT` ni los `DELETE`).
 - **Tiempos:** 90 s por intento (`ImportacionInteligente__TimeoutSegundos`) y al menos 180 s en `leer-estructura` y `PUT recetas-lectura`
   (`ImportacionInteligente__TimeoutLecturaSegundos`): NEXO hace hasta 3 intentos de IA de 60 s.
