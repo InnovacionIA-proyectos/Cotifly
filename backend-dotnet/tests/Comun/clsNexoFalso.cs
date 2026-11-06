@@ -596,6 +596,102 @@ public sealed class clsNexoFalso : HttpMessageHandler
         return null;
     }
 
+    /// <summary>
+    /// #278: códigos de las altas que el Nexo falso rechazó por las reglas del contrato único (<see cref="RechazoContrato"/>), en orden. Una
+    /// captura de Cotifly bien validada nunca debería llegar a ninguno.
+    /// </summary>
+    public IReadOnlyList<string> RechazosContrato
+    {
+        get
+        {
+            lock (_rechazosContrato)
+            {
+                return [.. _rechazosContrato];
+            }
+        }
+    }
+
+    private readonly List<string> _rechazosContrato = [];
+
+    /// <summary>Las seis líneas de negocio de NEXO (DU §8), normalizadas como las compara NEXO (sin tildes, espacios, guiones ni mayúsculas).</summary>
+    private static readonly HashSet<string> _lineasNegocio = new(
+        new[] { "Nacional", "Puerto a interior", "Interior a puerto", "Devolución de contenedor", "Andino", "Licitaciones" }.Select(ClaveLinea),
+        StringComparer.Ordinal);
+
+    private static string ClaveLinea(string texto) => NormalizarComoNexo(texto).Replace(" ", string.Empty, StringComparison.Ordinal);
+
+    /// <summary>
+    /// #278 (contrato único de NEXO del 2026-11-04, DU §5 y §8): el primer rechazo del alta por las reglas nuevas, o <c>null</c>. Como NEXO:
+    /// <c>lineaNegocio</c> que no es una de las seis (vacío = sin línea) → <c>LINEA_NEGOCIO_INVALIDO</c> con el número de línea y el valor;
+    /// más de 200 posiciones o más de 10.000 unidades en una línea → <c>CUBICACION_DEMASIADO_GRANDE</c>; una posición sin <c>pesoKg</c>
+    /// (&gt; 0, por unidad) o con <c>cantidad</c> fuera de 1–10.000, o <c>horasCargue</c>/<c>horasDescargue</c> fuera de 0–240 o sin su
+    /// pareja (en el encabezado o en una línea) → <c>VALIDATION_ERROR</c>.
+    /// </summary>
+    internal static (string Codigo, string Mensaje)? RechazoContrato(JsonNode? alta)
+    {
+        if (Horas(alta, "La solicitud") is { } horasEncabezado)
+        {
+            return (CodigoValidacion, horasEncabezado);
+        }
+
+        if (alta?["lineas"] is not JsonArray lineas)
+        {
+            return null;
+        }
+
+        for (var i = 0; i < lineas.Count; i++)
+        {
+            var linea = lineas[i];
+            var numero = i + 1;
+            if (linea?["lineaNegocio"] is JsonValue lineaNegocio && lineaNegocio.GetValue<string>() is { } valor
+                && !string.IsNullOrWhiteSpace(valor) && !_lineasNegocio.Contains(ClaveLinea(valor)))
+            {
+                return ("LINEA_NEGOCIO_INVALIDO", $"Línea {numero}: la línea de negocio '{valor}' no es válida.");
+            }
+
+            if (Horas(linea, $"Línea {numero}") is { } horasLinea)
+            {
+                return (CodigoValidacion, horasLinea);
+            }
+
+            if (linea?["posiciones"] is not JsonArray posiciones)
+            {
+                continue;
+            }
+
+            if (posiciones.Count > 200 || posiciones.Sum(p => p?["cantidad"] is JsonValue c ? c.GetValue<long>() : 0L) > 10_000)
+            {
+                return ("CUBICACION_DEMASIADO_GRANDE", $"Línea {numero}: máximo 200 posiciones y 10.000 unidades.");
+            }
+
+            for (var j = 0; j < posiciones.Count; j++)
+            {
+                var cantidad = posiciones[j]?["cantidad"] is JsonValue c ? c.GetValue<long>() : 0L;
+                if (posiciones[j]?["pesoKg"] is not JsonValue kg || kg.GetValue<decimal>() <= 0 || cantidad is < 1 or > 10_000)
+                {
+                    return (CodigoValidacion, $"Línea {numero}, posición {j + 1}: pesoKg (por unidad) es obligatorio y la cantidad va de 1 a 10.000.");
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private const string CodigoValidacion = "VALIDATION_ERROR";
+
+    /// <summary>#278 (DU §5): las horas de cargue y descargue van las dos o ninguna, cada una entre 0 y 240.</summary>
+    private static string? Horas(JsonNode? nodo, string donde)
+    {
+        var cargue = nodo?["horasCargue"] is JsonValue c ? c.GetValue<decimal>() : (decimal?)null;
+        var descargue = nodo?["horasDescargue"] is JsonValue d ? d.GetValue<decimal>() : (decimal?)null;
+        if ((cargue is null) != (descargue is null))
+        {
+            return $"{donde}: horasCargue y horasDescargue van las dos o ninguna.";
+        }
+
+        return cargue is < 0 or > 240 || descargue is < 0 or > 240 ? $"{donde}: las horas van de 0 a 240." : null;
+    }
+
     /// <summary>HU-023 (#176): la query de cada <c>GET /api/captura-solicitudes/ciudades</c> recibida.</summary>
     public ConcurrentQueue<string> CiudadesConsultadas { get; } = new();
 
@@ -607,6 +703,16 @@ public sealed class clsNexoFalso : HttpMessageHandler
         }
 
         UltimaAlta = JsonNode.Parse(cuerpo ?? "{}");
+        if (RechazoContrato(UltimaAlta) is var (codigoContrato, mensajeContrato))
+        {
+            lock (_rechazosContrato)
+            {
+                _rechazosContrato.Add(codigoContrato);
+            }
+
+            return Error(HttpStatusCode.BadRequest, codigoContrato, mensajeContrato);
+        }
+
         if (LineaConPesoInconsistente(UltimaAlta) is { } inconsistente)
         {
             Interlocked.Increment(ref _altasPesoInconsistente);

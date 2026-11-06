@@ -31,7 +31,8 @@ public static class clsSolicitudCosteoMuestra
         Posiciones =
         [
             new clsPosicionCarga("Estiba de café", 20, 120m, 100m, 150m, 1425m),
-            new clsPosicionCarga(null, 1, 1200m, 235m, 269m, null),
+            // #278 (DU §8): con medidas, el peso por unidad es obligatorio (20 × 1.425 + 0,5 = 28.500,5 kg, el peso de la línea).
+            new clsPosicionCarga(null, 1, 1200m, 235m, 269m, 0.5m),
         ],
     };
 

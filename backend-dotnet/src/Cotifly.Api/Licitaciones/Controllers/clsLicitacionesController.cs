@@ -26,10 +26,14 @@ public sealed class clsLicitacionesController(
     public const string ParteArchivo = "archivo";
     public const string ParteLicitacion = "licitacion";
 
-    /// <summary>200 <c>AnalisisExcel</c>; 400 <c>ARCHIVO_REQUERIDO</c>, <c>FORMATO_NO_SOPORTADO</c>, <c>ARCHIVO_DEMASIADO_GRANDE</c>, <c>EXCEL_*</c>; 503 sin Nexo.</summary>
+    /// <summary>
+    /// 200 <c>AnalisisExcel</c>; 400 <c>ARCHIVO_REQUERIDO</c>, <c>FORMATO_NO_SOPORTADO</c>, <c>ARCHIVO_DEMASIADO_GRANDE</c>, <c>EXCEL_*</c>; 429
+    /// <c>IA_TOPE_DIARIO</c> (#278: cupo diario de IA del comercial en Nexo); 503 sin Nexo.
+    /// </summary>
     [HttpPost("licitaciones/analizar-excel")]
     [ProducesResponseType<clsAnalisisExcel>(StatusCodes.Status200OK)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status429TooManyRequests)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> AnalizarExcel(CancellationToken cancellationToken)
     {

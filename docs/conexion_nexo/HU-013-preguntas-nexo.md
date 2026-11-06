@@ -13,7 +13,7 @@ Convención: **Confirmado** = está en el swagger o en el código de Nexo citado
 
 ## 1. Lo que ya se sabe por el swagger
 
-- **Sin esquema de seguridad.** El swagger no declara `securitySchemes` ni `security`. La identidad viaja en el encabezado `X-Portal-Usuario-Id` (ADR-015), que el swagger tampoco documenta.
+- **Sin esquema de seguridad.** El swagger no declara `securitySchemes` ni `security`. La identidad viaja en el encabezado `X-Portal-clsUsuario-Id` (ADR-015; con `X-Portal-Usuario-Id` Nexo responde 401), que el swagger tampoco documenta.
 - **Roles en las descripciones.** Algunas operaciones los mencionan en su `summary`:
   - `POST /api/servicios-conexos` y `PATCH /api/servicios-conexos/{id}`: "solo Servicios Logísticos / Admin".
   - `POST /api/cotizaciones/{id}/resultado`: "Solo Comercial y Admin".

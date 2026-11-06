@@ -3963,8 +3963,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorWeb'
+        '429':
+          description: '`IA_TOPE_DIARIO` (#278): Nexo respondió 429 `IA_TOPE_DIARIO`, el comercial agotó su cupo diario de IA en Nexo. Sin `Retry-After`: se reintenta al día siguiente (o se captura la licitación sin el análisis). El 429 `DEMASIADAS_SOLICITUDES` de Nexo (cupo por minuto) es 503 `COSTEO_NEXO_NO_DISPONIBLE`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
         '503':
-          description: '`COSTEO_NEXO_NO_DISPONIBLE` o `COSTEO_NEXO_TIEMPO_AGOTADO`. Como en el resto de los endpoints, `detalle.motivo` lleva solo el código de Nexo (por ejemplo `SESION_INVALIDA`, o `HTTP 401` si Nexo no manda código), nunca su texto (HU-013.15, #124). HU-035.2 (#213): `SERVICIO_OCUPADO` con `Retry-After` si el cupo de lecturas de Excel siguió lleno 15 s (el archivo no se envió a Nexo)'
+          description: '`COSTEO_NEXO_NO_DISPONIBLE` o `COSTEO_NEXO_TIEMPO_AGOTADO`. Como en el resto de los endpoints, `detalle.motivo` lleva solo el código de Nexo (por ejemplo `SESION_INVALIDA`, o `HTTP 401` si Nexo no manda código), nunca su texto (HU-013.15, #124). #278: también el 429 `DEMASIADAS_SOLICITUDES` de Nexo, con `detalle.motivo` = `DEMASIADAS_SOLICITUDES (Retry-After N s)`. HU-035.2 (#213): `SERVICIO_OCUPADO` con `Retry-After` si el cupo de lecturas de Excel siguió lleno 15 s (el archivo no se envió a Nexo)'
           content:
             application/json:
               schema:
@@ -4941,6 +4947,16 @@ components:
                 `SAP_MARGEN_SINCRONIZACION_EN_CURSO` (409 en `POST /web/admin/sap-margen/sincronizar`: esta réplica ya está
                 sincronizando; nada cambió) y `SAP_MARGEN_NO_DISPONIBLE` (503 en `/web/admin/sap-margen/*`: la base de Cotifly no
                 respondió al leer el estado o al registrar la corrida; reintentable).
+                Contrato único de NEXO, fase 0 (#278, DU §8 y §9): `LINEA_NEGOCIO_INVALIDO` (400, mismo código que NEXO: la línea de
+                negocio que viajaría a NEXO, el `mapeoLineasNexo` de la línea de la ruta, no es una de las seis de NEXO: `Nacional`,
+                `Puerto a interior`, `Interior a puerto`, `Devolución de contenedor`, `Andino` o `Licitaciones`, en cualquier escritura
+                que NEXO acepte. En `POST /web/solicitudes-costeo` y `POST /web/licitaciones` se valida antes de guardar y no se llama a
+                NEXO; `detalle.linea_negocio`, `detalle.linea_negocio_nexo` y `detalle.permitidas`. Al reenviar una guardada, o si NEXO lo
+                responde, la cotización queda en `error_envio` reintentable: el mapeo no tiene endpoint para corregirse, avisar a soporte) e `IA_TOPE_DIARIO`
+                (429, mismo código que NEXO, sin `Retry-After`: el comercial agotó su cupo DIARIO de IA en NEXO al analizar un Excel; se
+                reintenta al día siguiente. El `429 DEMASIADAS_SOLICITUDES` de NEXO, el cupo por minuto, sigue siendo
+                `COSTEO_NEXO_NO_DISPONIBLE` con el `Retry-After` en `detalle.motivo`). `CUBICACION_DEMASIADO_GRANDE` también si NEXO
+                lo responde al alta (más de 200 posiciones o 10.000 unidades en una línea): `error_envio` definitivo.
               enum:
                 - MARGEN_LINEA_DESCONOCIDA
                 - PRECIO_INVALIDO
@@ -5027,6 +5043,8 @@ components:
                 - SAP_MARGEN_NO_CONFIGURADO
                 - SAP_MARGEN_SINCRONIZACION_EN_CURSO
                 - SAP_MARGEN_NO_DISPONIBLE
+                - LINEA_NEGOCIO_INVALIDO
+                - IA_TOPE_DIARIO
             mensaje:
               type: string
             detalle:
@@ -7660,6 +7678,7 @@ components:
           nullable: true
           minimum: 0
           maximum: 240
+          description: (#278) Nexo recibe las horas en pareja. Con horas guardadas en la ruta basta la que cambia; una ruta sin horas guardadas exige las dos (si no, `CAMPO_REQUERIDO`).
         horas_descargue:
           type: number
           nullable: true
@@ -7872,8 +7891,10 @@ components:
       description: |
         Posición de cubicaje (`clsCapturaPosicionRequest` de Nexo: `descripcion`, `cantidad`, `largoCm`, `anchoCm`,
         `altoCm`, `pesoKg`), en centímetros y kilogramos. `largo_cm`, `ancho_cm` y `alto_cm` son opcionales: ausentes, `null` o `0`
-        es "sin medida"; con valor van de 0,1 a 999.999 y vienen las tres juntas. `peso_kg` es opcional y **por unidad**: el peso de la
-        posición es `cantidad × peso_kg`.
+        es "sin medida"; con valor van de 0,1 a 999.999 y vienen las tres juntas. `peso_kg` es **por unidad**: el peso de la
+        posición es `cantidad × peso_kg`. #278 (contrato único de Nexo): es **obligatorio y mayor que 0 en una mercancía con medidas**
+        (viaja a Nexo como posición y Nexo lo exige; si no, `POSICION_INVALIDA` en `mercancias[i].peso_kg`); sin medidas es opcional. Las
+        mercancías con medidas de una ruta suman como máximo 10.000 unidades (`CUBICACION_DEMASIADO_GRANDE` en `mercancias`).
 
         **HU-032 (#197): las medidas son opcionales.** Una mercancía **sin ninguna medida y sin código** (solo `nombre_mercancia`,
         `cantidad` o `peso_kg`) es "no cubicable": se acepta y se guarda, **no viaja a Nexo como posición** (si una mercancía de la
@@ -8053,7 +8074,7 @@ components:
           nullable: true
           minimum: 0
           maximum: 240
-          description: Horas de cargue de la ruta; sin valor, las de la solicitud.
+          description: Horas de cargue de la ruta; sin valor, las de la solicitud. (#278) `horas_cargue` y `horas_descargue` van las dos o ninguna (Nexo no acepta una sola); si viene una, `CAMPO_REQUERIDO` en la que falta.
         horas_descargue:
           type: number
           nullable: true
@@ -8170,7 +8191,7 @@ components:
           nullable: true
           minimum: 0
           maximum: 240
-          description: Horas por defecto de las rutas que no traen las suyas.
+          description: Horas por defecto de las rutas que no traen las suyas. (#278) `horas_cargue` y `horas_descargue` van las dos o ninguna (Nexo no acepta una sola); si viene una, `CAMPO_REQUERIDO` en la que falta.
         horas_descargue:
           type: number
           nullable: true
@@ -8616,7 +8637,7 @@ components:
           nullable: true
           minimum: 0
           maximum: 240
-          description: Horas de cargue de la ruta; sin valor, las de la solicitud.
+          description: Horas de cargue de la ruta; sin valor, las de la solicitud. (#278) `horas_cargue` y `horas_descargue` van las dos o ninguna (Nexo no acepta una sola); si viene una, `CAMPO_REQUERIDO` en la que falta.
         horas_descargue:
           type: number
           nullable: true
@@ -8767,7 +8788,7 @@ components:
           maximum: 240
           description: |
             Encabezado (`horasCargue`). Cotifly lo envía en el encabezado y también en la línea (HU-013.10, G5): sin el valor
-            de línea Nexo aplica el suyo por defecto (4 h + 4 h, o 2 h si retorna contenedor).
+            de línea Nexo aplica el suyo por defecto (4 h + 4 h, o 1 h + 1 h si la línea es una devolución de contenedor; DU §5). (#278) `horas_cargue` y `horas_descargue` van las dos o ninguna (Nexo no acepta una sola); si viene una, `CAMPO_REQUERIDO` en la que falta.
         horas_descargue:
           type: number
           nullable: true
@@ -9188,7 +9209,7 @@ components:
           nullable: true
           minimum: 0
           maximum: 240
-          description: Opcional (`horasCargue` de la línea; HU-013.11, G5). Sin valor, viajan las del encabezado.
+          description: Opcional (`horasCargue` de la línea; HU-013.11, G5). Sin valor, viajan las del encabezado. (#278) `horas_cargue` y `horas_descargue` van las dos o ninguna (Nexo no acepta una sola); si viene una, `CAMPO_REQUERIDO` en la que falta.
         horas_descargue:
           type: number
           nullable: true
@@ -9342,7 +9363,7 @@ components:
           nullable: true
           minimum: 0
           maximum: 240
-          description: Encabezado. Viajan en cada línea que no trae sus propias `horas_cargue` (G5).
+          description: Encabezado. Viajan en cada línea que no trae sus propias `horas_cargue` (G5). (#278) `horas_cargue` y `horas_descargue` van las dos o ninguna (Nexo no acepta una sola); si viene una, `CAMPO_REQUERIDO` en la que falta.
         horas_descargue:
           type: number
           nullable: true

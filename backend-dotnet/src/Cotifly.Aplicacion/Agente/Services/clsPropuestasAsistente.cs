@@ -129,6 +129,29 @@ public static class clsPropuestasAsistente
     }
 
     /// <summary>
+    /// #278 (DU §5): Nexo recibe las horas de cargue y descargue en pareja. Si el asistente propone una sola, la otra se completa con la
+    /// guardada en la ruta o, si la ruta no tiene, con el valor por defecto de Nexo (<see cref="clsLineasNegocioNexo.HorasPorDefectoDe"/>:
+    /// 4, o 1 en una devolución de contenedor, según <paramref name="lineaNegocioNexo"/>, el <c>mapeoLineasNexo</c> de la línea de negocio de
+    /// la cotización, como pide el DU: la línea de NEXO, no el nombre de la de Cotifly). Así el chat no
+    /// falla con <c>CAMPO_REQUERIDO</c> en un cambio que antes funcionaba. Con las dos o ninguna, los cambios quedan como vienen.
+    /// </summary>
+    public static clsCambiosCargaAsistente CompletarHoras(clsCambiosCargaAsistente cambios, clsCotizacionSolicitud cotizacion, string? lineaNegocioNexo)
+    {
+        ArgumentNullException.ThrowIfNull(cambios);
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        if ((cambios.HorasCargue is null) == (cambios.HorasDescargue is null))
+        {
+            return cambios;
+        }
+
+        var ruta = cotizacion.PrimeraRuta;
+        var defecto = clsLineasNegocioNexo.HorasPorDefectoDe(lineaNegocioNexo);
+        return cambios.HorasCargue is null
+            ? cambios with { HorasCargue = ruta?.HorasCargue ?? defecto }
+            : cambios with { HorasDescargue = ruta?.HorasDescargue ?? defecto };
+    }
+
+    /// <summary>
     /// Entrada del caso de uso de la re-solicitud con lo que propone el LLM: con cambios de carga siempre es versión nueva. Con ella se
     /// valida (<c>IClsReSolicitudCosteoService.ValidarAsync</c>) ANTES de <see cref="ReSolicitar"/>.
     /// </summary>

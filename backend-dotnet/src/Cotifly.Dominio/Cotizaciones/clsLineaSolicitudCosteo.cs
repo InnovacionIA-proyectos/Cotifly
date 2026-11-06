@@ -66,6 +66,13 @@ public static class clsCodigosLineaSolicitud
     /// <c>tipo_vehiculo</c>. Salvo en Contenedor (Nexo deduce el vehículo), el vehículo elegido es obligatorio.
     /// </summary>
     public const string VehiculoRequerido = "VEHICULO_REQUERIDO";
+
+    /// <summary>
+    /// #278 (DU §8): las mercancías con medidas de la ruta (las que usa el cubicador y que viajan a NEXO como <c>posiciones[]</c> cuando
+    /// todas las de la ruta las traen) suman más de
+    /// <see cref="clsSolicitudCosteo.MaximoUnidades"/> unidades. Mismo código que NEXO y el cubicador.
+    /// </summary>
+    public const string CubicacionDemasiadoGrande = clsCodigosError.CubicacionDemasiadoGrande;
 }
 
 /// <summary>Un error de un campo de la licitación: el campo (snake_case del contrato), su código y un mensaje legible.</summary>
@@ -92,6 +99,24 @@ public sealed record clsEncabezadoSolicitudCosteo
         clsLineaSolicitudCosteo.Largo(errores, "notas", Notas, clsSolicitudCosteo.LargoNotas);
         clsLineaSolicitudCosteo.Rango(errores, "horas_cargue", HorasCargue, 0m, clsSolicitudCosteo.MaximoHoras);
         clsLineaSolicitudCosteo.Rango(errores, "horas_descargue", HorasDescargue, 0m, clsSolicitudCosteo.MaximoHoras);
+        return errores;
+    }
+
+    /// <summary>
+    /// #278 (DU §5): el error de pareja que nace del encabezado. Si el encabezado trae una sola hora y alguna de <paramref name="lineas"/> no
+    /// trae ninguna (la hereda tal cual), <see cref="clsCodigosLineaSolicitud.CampoRequerido"/> en el campo del encabezado que falta, una
+    /// sola vez; esas rutas no repiten el error (<see cref="clsLineaSolicitudCosteo.ErroresHorasPropias"/>). Si todas traen horas propias,
+    /// las del encabezado no viajan y no hay error.
+    /// </summary>
+    public IReadOnlyList<clsErrorCampo> ErroresHorasHeredadas(IEnumerable<clsLineaSolicitudCosteo?> lineas)
+    {
+        ArgumentNullException.ThrowIfNull(lineas);
+        var errores = new List<clsErrorCampo>();
+        if (lineas.Any(l => l is { HorasCargue: null, HorasDescargue: null }))
+        {
+            clsLineaSolicitudCosteo.HorasEnPareja(errores, HorasCargue, HorasDescargue);
+        }
+
         return errores;
     }
 }
@@ -292,6 +317,11 @@ public sealed record clsLineaSolicitudCosteo
                 $"Una ruta admite máximo {clsSolicitudCosteo.MaximoPosiciones} mercancías."));
         }
 
+        if (clsSolicitudCosteo.ExcedeUnidades(Posiciones))
+        {
+            errores.Add(new clsErrorCampo(CampoMercancias, clsCodigosLineaSolicitud.CubicacionDemasiadoGrande, clsSolicitudCosteo.MensajeDemasiadasUnidades));
+        }
+
         for (var i = 0; i < Posiciones.Count; i++)
         {
             // D6 (E2E 2026-10-16): el campo va en base 0 y con el nombre del contrato (mercancias[i].subcampo, como
@@ -322,6 +352,28 @@ public sealed record clsLineaSolicitudCosteo
 
         return errores;
     }
+
+    /// <summary>
+    /// #278 (DU §5): Nexo recibe <c>horasCargue</c> y <c>horasDescargue</c> de la línea las dos o ninguna. Se valida la pareja que viaja:
+    /// la de la línea completada con la del <paramref name="encabezado"/> campo a campo (como la guarda la ruta y la arma
+    /// <see cref="clsSolicitudCosteo.Desde"/>), igual en el formulario de una línea, la captura por rutas, la edición, la licitación y la
+    /// re-solicitud. Sin encabezado (lo guardado, ya completado), la de la línea. <see cref="clsCodigosLineaSolicitud.CampoRequerido"/> en
+    /// la que falta. No va en <see cref="Errores"/>, que no conoce el encabezado.
+    /// </summary>
+    public IReadOnlyList<clsErrorCampo> ErroresHorasEnPareja(clsEncabezadoSolicitudCosteo? encabezado = null)
+    {
+        var errores = new List<clsErrorCampo>();
+        HorasEnPareja(errores, HorasCargue ?? encabezado?.HorasCargue, HorasDescargue ?? encabezado?.HorasDescargue);
+        return errores;
+    }
+
+    /// <summary>
+    /// #278: <see cref="ErroresHorasEnPareja"/> de una ruta de la ENTRADA (captura, edición, licitación): una ruta sin horas propias no
+    /// reporta nada, porque su pareja es la del encabezado y ese error va en el encabezado
+    /// (<see cref="clsEncabezadoSolicitudCosteo.ErroresHorasHeredadas"/>).
+    /// </summary>
+    public IReadOnlyList<clsErrorCampo> ErroresHorasPropias(clsEncabezadoSolicitudCosteo encabezado) =>
+        HorasCargue is null && HorasDescargue is null ? [] : ErroresHorasEnPareja(encabezado);
 
     /// <summary>
     /// Validaciones condicionales de la captura (G3, HU-013.10/HU-013.11), las mismas para el formulario y para cada fila de una
@@ -467,6 +519,18 @@ public sealed record clsLineaSolicitudCosteo
         if (clsSolicitudCosteo.IdMunicipio(campo, valor) is { } error)
         {
             errores.Add(new clsErrorCampo(campo, clsCodigosLineaSolicitud.ValorFueraDeRango, error.Mensaje));
+        }
+    }
+
+    /// <summary>
+    /// #278 (DU §5): NEXO recibe <c>horasCargue</c> y <c>horasDescargue</c> las dos o ninguna (sin ellas aplica su valor por defecto, 4 + 4).
+    /// Si solo viene una, <see cref="clsCodigosLineaSolicitud.CampoRequerido"/> en la que falta.
+    /// </summary>
+    internal static void HorasEnPareja(List<clsErrorCampo> errores, decimal? cargue, decimal? descargue)
+    {
+        if (clsSolicitudCosteo.HoraFaltante(cargue, descargue) is { } falta)
+        {
+            errores.Add(new clsErrorCampo(falta, clsCodigosLineaSolicitud.CampoRequerido, clsSolicitudCosteo.MensajeHorasEnPareja(falta)));
         }
     }
 

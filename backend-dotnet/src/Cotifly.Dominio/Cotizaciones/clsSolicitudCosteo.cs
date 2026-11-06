@@ -18,6 +18,19 @@ public sealed record clsSolicitudCosteo
     public const int LargoClaseContenedor = 20;
     public const int LargoNotas = 2000;
     public const int MaximoPosiciones = 200;
+
+    /// <summary>
+    /// #278 (DU §8): tope de NEXO (y del cubicador) de unidades en total por línea: la suma de <c>cantidad</c> de las mercancías CON
+    /// MEDIDAS (las que puede usar el cubicador y, si todas las de la ruta las traen, viajan como <c>posiciones[]</c>; en una ruta mixta no
+    /// viajan, pero la regla es la misma para no depender de las demás mercancías). Si se pasa, <c>CUBICACION_DEMASIADO_GRANDE</c>. A
+    /// diferencia de <see cref="MaximoPosiciones"/>, que cuenta todas las mercancías de la ruta.
+    /// </summary>
+    public const int MaximoUnidades = 10_000;
+
+    /// <summary>Mensaje del tope de <see cref="MaximoUnidades"/> para el comercial.</summary>
+    public const string MensajeDemasiadasUnidades =
+        "Las mercancías con medidas de la ruta suman más de 10.000 unidades y Nexo y el cubicador reciben como máximo 10.000 por línea: parte la carga en varias rutas.";
+
     public const decimal MaximoHoras = 240m;
     public const decimal MaximoPeso = 999_999.99m;
     public const decimal MaximoValor = 9_999_999_999_999.99m;
@@ -93,8 +106,14 @@ public sealed record clsSolicitudCosteo
             Rango("peso_kg", PesoKg, 0m, MaximoPeso),
             Rango("valor_mercancia", ValorMercancia, 0m, MaximoValor),
             Rango(CampoPesoConTara, PesoConTaraKg, 0m, MaximoPeso),
+            HoraFaltante(HorasCargue, HorasDescargue) is { } faltaHora
+                ? new clsErrorDominio(CodigoError, MensajeHorasEnPareja(faltaHora), clsCodigosLineaSolicitud.CampoRequerido)
+                : null,
             Posiciones.Count > MaximoPosiciones
                 ? new clsErrorDominio(CodigoError, $"Una solicitud admite máximo {MaximoPosiciones} posiciones.")
+                : null,
+            ExcedeUnidades(Posiciones)
+                ? new clsErrorDominio(CodigoError, MensajeDemasiadasUnidades, clsCodigosLineaSolicitud.CubicacionDemasiadoGrande)
                 : null);
 
         return error
@@ -112,6 +131,33 @@ public sealed record clsSolicitudCosteo
     /// </summary>
     private clsErrorDominio? ValidarCondicionales() =>
         ALinea().ErroresCondicionales() is [var primero, ..] ? new clsErrorDominio(CodigoError, primero.Mensaje) : null;
+
+    /// <summary>
+    /// #278 (DU §8): ¿las mercancías con medidas suman más de <see cref="MaximoUnidades"/> unidades? Las que no traen medidas nunca van al
+    /// cubicador ni viajan como posiciones a NEXO, así que no cuentan; las que sí, cuentan siempre (también en una ruta mixta, donde no
+    /// viajan como posiciones).
+    /// </summary>
+    public static bool ExcedeUnidades(IEnumerable<clsPosicionCarga?> posiciones)
+    {
+        ArgumentNullException.ThrowIfNull(posiciones);
+        return posiciones.Where(p => p is { ConMedidas: true }).Sum(p => (long)Math.Max(p!.Cantidad, 0)) > MaximoUnidades;
+    }
+
+    /// <summary>
+    /// #278 (DU §5): el campo que falta si solo viene una de las horas (<c>horas_cargue</c> o <c>horas_descargue</c>); <c>null</c> si
+    /// vienen las dos o ninguna. NEXO las exige en pareja.
+    /// </summary>
+    public static string? HoraFaltante(decimal? cargue, decimal? descargue) =>
+        (cargue, descargue) switch
+        {
+            (not null, null) => "horas_descargue",
+            (null, not null) => "horas_cargue",
+            _ => null,
+        };
+
+    /// <summary>Mensaje de <see cref="HoraFaltante"/> para el comercial.</summary>
+    public static string MensajeHorasEnPareja(string falta) =>
+        $"El campo '{falta}' es obligatorio cuando viene la otra hora: las horas de cargue y descargue van las dos o ninguna (sin ellas Nexo aplica 4 + 4).";
 
     /// <summary>Id de municipio de Nexo: entero positivo si viene.</summary>
     internal static clsErrorDominio? IdMunicipio(string campo, int? valor) =>
@@ -284,6 +330,13 @@ public sealed record clsPosicionCarga(
             // propósito (relajarla solo al revalidar exige llevar una bandera por las tres rutas de validación).
             ?? (VaAlCubicador() && PesoKg is not > 0m
                 ? new clsErrorPosicion("peso_kg", $"{prefijo}el peso por unidad (peso_kg) debe ser mayor que 0: el cubicador lo exige.")
+                : null)
+            // #278 (DU §5 y §8): se exige a toda mercancía con medidas, porque el cubicador las usa y, si todas las de la ruta las traen,
+            // viajan a NEXO como posiciones, donde pesoKg es obligatorio (en una ruta mixta no viajan, pero la regla no cambia). Es el peso
+            // de UNA unidad: NEXO y el cubicador lo multiplican por la cantidad.
+            ?? (ConMedidas && PesoKg is not > 0m
+                ? new clsErrorPosicion("peso_kg",
+                    $"{prefijo}el peso por unidad (peso_kg) es obligatorio y mayor que 0 cuando la mercancía trae medidas: es el peso de una unidad, no el total.")
                 : null);
     }
 

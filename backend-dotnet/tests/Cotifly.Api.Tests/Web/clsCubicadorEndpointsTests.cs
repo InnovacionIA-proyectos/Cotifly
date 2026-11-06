@@ -305,7 +305,7 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         // Tres líneas a Nexo, en ese orden, cada una con la línea de negocio de Nexo de la ruta.
         var lineas = _nexo.UltimaAlta!["lineas"]!.AsArray().Select(l => l!).ToList();
         lineas.Select(l => (l["tipoVehiculo"]!.GetValue<string>(), l["peso"]!.GetValue<decimal>(), l["lineaNegocio"]!.GetValue<string>()))
-            .Should().Equal(("3S3", 12_000m, "PuertoAInterior"), ("2S3", 9_000m, "PuertoAInterior"), ("2", 7_000m, "PuertoAInterior"));
+            .Should().Equal(("3S3", 12_000m, "Puerto a interior"), ("2S3", 9_000m, "Puerto a interior"), ("2", 7_000m, "Puerto a interior"));
 
         // Emparejamiento en el polling con las líneas barajadas: cada camión recibe el flete de SU línea.
         var solicitud = _nexo.SolicitudesCreadas[^1];
@@ -594,8 +594,8 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         // 2. Envío por camión: una línea por camión, en orden, con la lineaNegocio de Nexo de su ruta.
         var lineas = _nexo.UltimaAlta!["lineas"]!.AsArray().Select(l => l!).ToList();
         lineas.Select(l => (l["tipoVehiculo"]?.GetValue<string>(), l["peso"]!.GetValue<decimal>(), l["lineaNegocio"]!.GetValue<string>()))
-            .Should().Equal(("3S3", 12_000m, "PuertoAInterior"), ("2S3", 9_000m, "PuertoAInterior"), ("2", 7_000m, "PuertoAInterior"),
-                ((string?)null, 12_500m, "InteriorAPuerto"));
+            .Should().Equal(("3S3", 12_000m, "Puerto a interior"), ("2S3", 9_000m, "Puerto a interior"), ("2", 7_000m, "Puerto a interior"),
+                ((string?)null, 12_500m, "Interior a puerto"));
 
         // 3. Polling con las líneas barajadas: cada camión recibe el flete de SU línea.
         var solicitud = _nexo.SolicitudesCreadas[^1];

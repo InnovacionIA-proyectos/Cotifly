@@ -145,7 +145,7 @@ public sealed class clsEnvioCosteoServiceTests
         resultado.Valor.ClienteNombre.Should().Be("LONGYIN S.A.S.");
         resultado.Valor.OrigenCliente.Should().Be(OrigenCliente.Cliente);
         await _nexo.Received(1).EnviarSolicitudAsync(_ana,
-            Arg.Is<clsSolicitudNexo>(s => s.ClienteBp == "15927" && s.LineaNegocioNexo == "PuertoAInterior" && s.Solicitud.Origen == "Buenaventura"),
+            Arg.Is<clsSolicitudNexo>(s => s.ClienteBp == "15927" && s.LineaNegocioNexo == "Puerto a interior" && s.Solicitud.Origen == "Buenaventura"),
             Arg.Any<CancellationToken>());
     }
 
@@ -460,6 +460,73 @@ public sealed class clsEnvioCosteoServiceTests
     }
 
     [Fact]
+    public async Task UnaLineaMapeadaAUnaLineaQueNexoNoAceptaNoGuardaNadaNiLlamaANexo()
+    {
+        // #278 (DU §8): solo seis líneas de negocio de Nexo; un mapeo de texto libre ya no se manda (Nexo lo rechazaría).
+        _margen.ResolverLineaAsync("Importación", Arg.Any<CancellationToken>()).Returns(ConMapeo(clsMargenPolitica.Crear("Importacion", 0.15m).Valor, "Importaciones"));
+
+        var resultado = await Servicio().EnviarAsync(_ana, Entrada(), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.LineaNegocioInvalido);
+        resultado.Error.Mensaje.Should().Contain("Importacion").And.Contain("Importaciones").And.Contain("Puerto a interior");
+        resultado.Error.Datos!["linea_negocio_nexo"].Should().Be("Importaciones");
+        resultado.Error.Datos["permitidas"].Should().BeEquivalentTo(clsLineasNegocioNexo.Permitidas);
+        _eventos.Should().BeEmpty();
+        await _folios.DidNotReceiveWithAnyArgs().CrearConFolioNuevoAsync<clsCotizacionSolicitud>(default, default, default!, Ct);
+    }
+
+    [Theory]
+    [InlineData("PuertoAInterior", "Puerto a interior")]
+    [InlineData("puerto-a-interior", "Puerto a interior")]
+    [InlineData("DevolucionContenedor", "Devolución de contenedor")]
+    [InlineData(null, null)]
+    public async Task UnaLineaMapeadaAUnaDeLasSeisViajaEnLaEscrituraCanonicaDelDu(string? mapeo, string? enviada)
+    {
+        _margen.ResolverLineaAsync("Importación", Arg.Any<CancellationToken>()).Returns(ConMapeo(clsMargenPolitica.Crear("Importacion", 0.15m).Valor, mapeo));
+
+        var resultado = await Servicio().EnviarAsync(_ana, Entrada(), Ct);
+
+        resultado.Valor.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo);
+        await _nexo.Received(1).EnviarSolicitudAsync(_ana, Arg.Is<clsSolicitudNexo>(s => s.Lineas.All(l => l.LineaNegocioNexo == enviada)), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SiElMapeoCambioAUnaLineaQueNexoNoAceptaElReintentoQuedaEnErrorReintentableSinLlamarANexo()
+    {
+        var cotizacion = await CotizacionEnErrorAsync();
+        _cotizaciones.ReclamarReenvioCosteoAsync(cotizacion.Id, cotizacion.UpdatedAt, _reloj.AhoraUtc, Arg.Any<CancellationToken>()).Returns(true);
+        _politicas.ObtenerPorIdAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(ConMapeo(clsMargenPolitica.Crear("Importacion", 0.15m).Valor, "Exportaciones"));
+        _nexo.ClearReceivedCalls();
+
+        var resultado = await Servicio().ReintentarAsync(_ana, cotizacion.Folio, Ct);
+
+        resultado.Valor.EstadoCosteo.Should().Be(EstadoCosteo.ErrorEnvio);
+        resultado.Valor.MotivoEstadoCosteo.Should().Contain("Exportaciones");
+        resultado.Valor.ErrorEnvioDefinitivo.Should().BeFalse("lo corrige soporte en el mapeo y el reintento vuelve a leerlo");
+        await _nexo.DidNotReceiveWithAnyArgs().EnviarSolicitudAsync(default, default!, Ct);
+    }
+
+    [Fact]
+    public async Task UnaSolaHoraEnElEncabezadoQueLaRutaHeredaSeReportaEnElEncabezadoYNoEnLaRuta()
+    {
+        // #278: la ruta no trae horas propias y hereda (4, null) del encabezado: el error va en el encabezado (ruta = null), una vez.
+        var resultado = await Servicio().EnviarAsync(_ana, Entrada() with { Solicitud = clsSolicitudCosteoMuestra.CrearCaptura() with { HorasDescargue = null } }, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.SolicitudCosteoInvalida);
+        var errores = ((IEnumerable<IReadOnlyDictionary<string, object?>>)resultado.Error.Datos!["errores"]!).ToList();
+        errores.Where(e => (string?)e["campo"] is "horas_cargue" or "horas_descargue").Should().ContainSingle()
+            .Which.Should().Contain(new KeyValuePair<string, object?>("ruta", null)).And.Contain(new KeyValuePair<string, object?>("campo", "horas_descargue"));
+        _eventos.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(clsCodigosError.CubicacionDemasiadoGrande, true)]
+    [InlineData(clsCodigosError.LineaNegocioInvalido, false)]
+    [InlineData(clsCodigosError.IaTopeDiario, false)]
+    public void LosRechazosNuevosDeNexoSonDefinitivosSoloSiLosMismosDatosNoPuedenPasar(string codigo, bool definitivo) =>
+        clsEnvioCosteoService.EsRechazoDefinitivo(new clsErrorDominio(codigo, "x")).Should().Be(definitivo);
+
+    [Fact]
     public async Task ElReintentoReenviaLaSolicitudGuardadaSinVolverALlenarElFormulario()
     {
         var cotizacion = await CotizacionEnErrorAsync();
@@ -658,7 +725,7 @@ public sealed class clsEnvioCosteoServiceTests
 
         enviada!.Lineas.Should().HaveCount(3, "una línea por camión");
         enviada.Lineas.Select(l => (l.Origen, l.LineaNegocioNexo)).Should().Equal(
-            ("Buenaventura", "PuertoAInterior"), ("Buenaventura", "PuertoAInterior"), ("Cali", "Nacional"));
+            ("Buenaventura", "Puerto a interior"), ("Buenaventura", "Puerto a interior"), ("Cali", "Nacional"));
         enviada.Encabezado.Notas.Should().Contain("Ruta 1 (Buenaventura → Bogotá D.C.): 2 camiones. Ruta 2 (Cali → Yumbo): 1 camión.");
     }
 
@@ -1045,6 +1112,13 @@ public sealed class clsEnvioCosteoServiceTests
     private static clsMargenPolitica ConId(clsMargenPolitica politica, int id)
     {
         typeof(clsMargenPolitica).GetProperty(nameof(clsMargenPolitica.Id))!.SetValue(politica, id);
+        return politica;
+    }
+
+    /// <summary>#278: la política con un mapeo a Nexo cualquiera (como lo leería EF de la base, sin pasar por <c>Crear</c>).</summary>
+    private static clsMargenPolitica ConMapeo(clsMargenPolitica politica, string? mapeo)
+    {
+        typeof(clsMargenPolitica).GetProperty(nameof(clsMargenPolitica.MapeoLineasNexo))!.SetValue(politica, mapeo);
         return politica;
     }
 

@@ -94,6 +94,9 @@ public sealed class clsExcelLicitacionTests : IDisposable
     [InlineData(HttpStatusCode.Unauthorized, "SESION_INVALIDA", clsCodigosError.CosteoNexoNoDisponible)]
     [InlineData(HttpStatusCode.RequestEntityTooLarge, "PAYLOAD_TOO_LARGE", clsCodigosError.ArchivoDemasiadoGrande)]
     [InlineData(HttpStatusCode.InternalServerError, "X", clsCodigosError.CosteoNexoNoDisponible)]
+    // #278 (DU §2.1): el cupo diario de IA no es el cupo por minuto; ninguno es un rechazo de los datos.
+    [InlineData(HttpStatusCode.TooManyRequests, "IA_TOPE_DIARIO", clsCodigosError.IaTopeDiario)]
+    [InlineData(HttpStatusCode.TooManyRequests, "DEMASIADAS_SOLICITUDES", clsCodigosError.CosteoNexoNoDisponible)]
     public async Task LosErroresDeNexoSeTraducen(HttpStatusCode estado, string codigoNexo, string esperado)
     {
         _nexo.AnalisisFalla = estado;

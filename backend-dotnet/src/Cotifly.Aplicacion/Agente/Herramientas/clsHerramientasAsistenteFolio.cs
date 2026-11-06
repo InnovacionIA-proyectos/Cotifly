@@ -161,7 +161,9 @@ public sealed class clsHerramientasAsistenteFolio(
     {
         var herramienta = clsNombresHerramientas.ProponerReSolicitud;
         var cotizacion = contexto.Cotizacion;
-        var cambios = new clsCambiosCargaAsistente(pesoKg, horasCargue, horasDescargue, exclusivo, consolidado);
+        // #278: con una sola hora, la otra se completa (la guardada o la de Nexo por defecto): Nexo las recibe en pareja.
+        var cambios = clsPropuestasAsistente.CompletarHoras(
+            new clsCambiosCargaAsistente(pesoKg, horasCargue, horasDescargue, exclusivo, consolidado), cotizacion, contexto.LineaNegocioNexo);
         var entrada = clsPropuestasAsistente.EntradaReSolicitud(motivo, cambios, nuevaVersion);
 
         // Las MISMAS validaciones del endpoint (estado, catálogo, rangos, peso frente a las posiciones): si no pasa, no hay propuesta y el

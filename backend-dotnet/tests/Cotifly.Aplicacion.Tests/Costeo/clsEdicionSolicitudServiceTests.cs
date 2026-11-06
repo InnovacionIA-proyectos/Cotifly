@@ -156,7 +156,7 @@ public sealed class clsEdicionSolicitudServiceTests
     {
         var cotizacion = Registrar(EnNexo());
         cotizacion.AsignarPdf("/data/pdfs/PCN-1.pdf");
-        var entrada = EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m }) with { Motivo = "El cliente cambió el horario" };
+        var entrada = EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m, HorasDescargue = 9m }) with { Motivo = "El cliente cambió el horario" };
 
         var resultado = await Servicio().EditarAsync(_ana, Folio, entrada, Version, null, Ct);
 
@@ -198,7 +198,7 @@ public sealed class clsEdicionSolicitudServiceTests
             .ReturnsForAnyArgs(new clsErrorDominio(fallo, "Nexo no responde.", "HTTP 403 FORBIDDEN texto crudo de Nexo"));
         _eventos.Clear();
 
-        var resultado = await Servicio().EditarAsync(_ana, Folio, EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m }), Version, null, Ct);
+        var resultado = await Servicio().EditarAsync(_ana, Folio, EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m, HorasDescargue = 9m }), Version, null, Ct);
 
         resultado.Error.Codigo.Should().Be(esperado);
         resultado.Error.Datos!["motivo"].Should().Be(clsEdicionSolicitudService.MotivoRechazoFallido);
@@ -218,7 +218,7 @@ public sealed class clsEdicionSolicitudServiceTests
     {
         var cotizacion = Registrar(EnNexo(costeada: false));
 
-        var resultado = await Servicio().EditarAsync(_ana, Folio, EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m }), Version, null, Ct);
+        var resultado = await Servicio().EditarAsync(_ana, Folio, EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m, HorasDescargue = 9m }), Version, null, Ct);
 
         resultado.Valor.Respuesta.Avisos.Select(a => a.Codigo).Should().Contain(clsAvisoEdicion.PierdeTrabajoMesa);
     }
@@ -229,7 +229,7 @@ public sealed class clsEdicionSolicitudServiceTests
         var cotizacion = Registrar(EnNexo());
         _unidad.GuardarCambiosSiVersionAsync(cotizacion.Id, 5, Arg.Any<CancellationToken>()).Returns(false);
 
-        var resultado = await Servicio().EditarAsync(_ana, Folio, EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m }), Version, null, Ct);
+        var resultado = await Servicio().EditarAsync(_ana, Folio, EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m, HorasDescargue = 9m }), Version, null, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.ConflictoConcurrencia);
         await _cotizaciones.Received(1).RecargarAsync(cotizacion, Arg.Any<CancellationToken>());
@@ -255,7 +255,7 @@ public sealed class clsEdicionSolicitudServiceTests
             cotizacion.RegistrarEnvioCosteo("SOL-1", false, clsCotizacionMuestra.Ahora, clsCotizacionMuestra.Ahora);
         });
 
-        var resultado = await Servicio().EditarAsync(_ana, Folio, EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m }), Version, null, Ct);
+        var resultado = await Servicio().EditarAsync(_ana, Folio, EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m, HorasDescargue = 9m }), Version, null, Ct);
 
         resultado.EsExitoso.Should().BeTrue(resultado.EsFallo ? resultado.Error.Mensaje : null);
         _eventos.Should().Equal("guardar:v4", "rechazar", "guardar:v5 (gana el polling)", "recargar", "guardar:v6", "capturar");
@@ -272,7 +272,7 @@ public sealed class clsEdicionSolicitudServiceTests
         var cotizacion = Registrar(EnNexo());
         cotizacion.PrimeraRuta!.AplicarMargenNegociado(0.22m);
 
-        await Servicio().EditarAsync(_ana, Folio, EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m }), Version, null, Ct);
+        await Servicio().EditarAsync(_ana, Folio, EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m, HorasDescargue = 9m }), Version, null, Ct);
 
         (cotizacion.PrimeraRuta.MargenAplicado, cotizacion.PrimeraRuta.OrigenMargen).Should().Be((0.22m, OrigenMargen.Negociado));
     }
@@ -327,7 +327,7 @@ public sealed class clsEdicionSolicitudServiceTests
             .Returns(ci => ci.Arg<Func<clsFolio, CancellationToken, Task<clsResultado<clsCotizacionSolicitud>>>>()(
                 clsFolio.Desde(Folio).Valor.ConVersion(2).Valor, CancellationToken.None));
 
-        var resultado = await Servicio().EditarAsync(_ana, Folio, EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m }), Version, null, Ct);
+        var resultado = await Servicio().EditarAsync(_ana, Folio, EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m, HorasDescargue = 9m }), Version, null, Ct);
 
         var respuesta = resultado.Valor.Respuesta;
         (respuesta.Modo, respuesta.Folio, respuesta.FolioOrigen, resultado.Valor.Creada).Should().Be(("nueva_version", $"{Folio}-v2", Folio, true));
@@ -357,7 +357,7 @@ public sealed class clsEdicionSolicitudServiceTests
         _folios.CrearNuevaVersionAsync(_ana, cotizacion.Id, Arg.Any<Func<clsFolio, CancellationToken, Task<clsResultado<clsCotizacionSolicitud>>>>(), Arg.Any<CancellationToken>())
             .Returns(new clsErrorDominio(clsCodigosError.ServicioOcupado, "ocupado"));
 
-        var resultado = await Servicio().EditarAsync(_ana, Folio, EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m }), Version, null, Ct);
+        var resultado = await Servicio().EditarAsync(_ana, Folio, EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m, HorasDescargue = 9m }), Version, null, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.ServicioOcupado);
         cotizacion.VersionNegocio.Should().Be(Version, "nada cambia");
@@ -377,7 +377,7 @@ public sealed class clsEdicionSolicitudServiceTests
             .Returns(ci => ci.Arg<Func<clsFolio, CancellationToken, Task<clsResultado<clsCotizacionSolicitud>>>>()(
                 clsFolio.Desde(Folio).Valor.ConVersion(2).Valor, CancellationToken.None));
 
-        var resultado = await Servicio().EditarAsync(_ana, Folio, EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m }), Version, null, Ct);
+        var resultado = await Servicio().EditarAsync(_ana, Folio, EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m, HorasDescargue = 9m }), Version, null, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.ConflictoConcurrencia);
         cotizacion.VersionNegocio.Should().Be(Version);
@@ -455,7 +455,7 @@ public sealed class clsEdicionSolicitudServiceTests
     {
         var cotizacion = Registrar(EnNexo());
 
-        var resultado = await Servicio().EditarAsync(_ana, Folio, EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m }), Version - 1, null, Ct);
+        var resultado = await Servicio().EditarAsync(_ana, Folio, EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m, HorasDescargue = 9m }), Version - 1, null, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.ConflictoConcurrencia);
         _eventos.Should().BeEmpty();
@@ -488,7 +488,7 @@ public sealed class clsEdicionSolicitudServiceTests
     public async Task ConIdempotencyKeySeEjecutaUnaVezPorComercialYHuella()
     {
         var cotizacion = Registrar(EnNexo());
-        var entrada = EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m });
+        var entrada = EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m, HorasDescargue = 9m });
         _idempotencia.EjecutarUnaVezAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
                 Arg.Any<Func<CancellationToken, Task<clsResultado<clsEdicionAplicada>>>>(), Arg.Any<Func<clsResultado<clsEdicionAplicada>, bool>?>(),
                 Arg.Any<CancellationToken>())
@@ -609,7 +609,7 @@ public sealed class clsEdicionSolicitudServiceTests
         _envio.When(e => e.EnviarGuardadaAsync(cotizacion, Arg.Any<clsMargenPolitica?>(), Arg.Any<Guid>(), Arg.Any<string?>()))
             .Do(_ => enviados = [.. cotizacion.LineasNexo().Select(l => l.Camion)]);
 
-        var resultado = await Servicio().EditarAsync(_ana, Folio, EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m }), Version, null, Ct);
+        var resultado = await Servicio().EditarAsync(_ana, Folio, EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m, HorasDescargue = 9m }), Version, null, Ct);
 
         resultado.EsExitoso.Should().BeTrue(resultado.EsFallo ? resultado.Error.Mensaje : null);
         var respuesta = resultado.Valor.Respuesta;
@@ -666,14 +666,14 @@ public sealed class clsEdicionSolicitudServiceTests
     {
         var cotizacion = ConRechazos(todos: true);
 
-        var resultado = await Servicio().EditarAsync(_ana, Folio, EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m }), Version, null, Ct);
+        var resultado = await Servicio().EditarAsync(_ana, Folio, EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m, HorasDescargue = 9m }), Version, null, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.SinRutasCotizables);
         resultado.Error.Detalle.Should().Be(clsReSolicitudCosteoService.MotivoTodosRechazados);
         _eventos.Should().BeEmpty("se valida antes de reservar, rechazar en Nexo o capturar");
         cotizacion.VersionNegocio.Should().Be(Version);
 
-        var entrada = EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m });
+        var entrada = EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m, HorasDescargue = 9m });
         entrada = entrada with { Rutas = [entrada.Rutas[0]! with { ReincluirRechazados = true }] };
         var reincluida = await Servicio().EditarAsync(_ana, Folio, entrada, Version, null, Ct);
 
@@ -694,7 +694,7 @@ public sealed class clsEdicionSolicitudServiceTests
         var editable = (await Servicio().ObtenerAsync(_ana, Folio, Ct)).Valor;
         editable.Rutas.Select(r => (r.CamionesRechazados, r.MotivoRechazo)).Should().Equal([(1, "Sin cupo"), (1, "Sin operación")]);
 
-        var resultado = await Servicio().EditarAsync(_ana, Folio, EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m }), Version, null, Ct);
+        var resultado = await Servicio().EditarAsync(_ana, Folio, EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m, HorasDescargue = 9m }), Version, null, Ct);
 
         resultado.Valor.Respuesta.Modo.Should().Be("nueva_version");
         var nueva = _agregada!;

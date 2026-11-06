@@ -127,6 +127,9 @@ public static class clsRespuestasWeb
             clsCodigosError.ErrorInterno or clsViolacionUnicidadException.CodigoRegistroDuplicado => new clsResultadoErrorInterno(error),
             clsCodigosError.PrecondicionRequerida =>
                 new ObjectResult(clsErrorNegocioWeb.Desde(error)) { StatusCode = StatusCodes.Status428PreconditionRequired },
+            // #278: el cupo diario de IA del comercial en Nexo (sin Retry-After: no se libera hasta el día siguiente).
+            clsCodigosError.IaTopeDiario =>
+                new ObjectResult(clsErrorNegocioWeb.Desde(error)) { StatusCode = StatusCodes.Status429TooManyRequests },
             _ when _conflicto.Contains(error.Codigo) => new ConflictObjectResult(clsErrorNegocioWeb.Desde(error)),
             _ when _validacion.Contains(error.Codigo) => new BadRequestObjectResult(new clsErrorWeb(error.Mensaje)),
             _ => new BadRequestObjectResult(clsErrorNegocioWeb.Desde(error)),

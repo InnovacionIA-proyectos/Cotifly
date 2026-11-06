@@ -24,18 +24,25 @@ public sealed class clsContextoAsistenteFolio
     /// <summary>Nombre de la línea de negocio (<c>MargenPoliticas.lineaNegocio</c>), o <c>null</c>.</summary>
     public string? LineaNegocio { get; private set; }
 
+    /// <summary>
+    /// #278: la línea de NEXO de esa línea de negocio (<c>MargenesPolitica.mapeoLineasNexo</c>), o <c>null</c>. Decide las horas por defecto
+    /// del DU (1 + 1 en una devolución de contenedor) cuando el asistente propone una sola hora.
+    /// </summary>
+    public string? LineaNegocioNexo { get; private set; }
+
     /// <summary>Última propuesta del turno (una por turno como máximo: una nueva reemplaza la anterior), o <c>null</c>.</summary>
     public clsAccionPropuesta? Propuesta { get; private set; }
 
     public bool Iniciado => _cotizacion is not null;
 
-    public void Iniciar(Guid usuarioId, clsCotizacionSolicitud cotizacion, string? lineaNegocio, string threadId)
+    public void Iniciar(Guid usuarioId, clsCotizacionSolicitud cotizacion, string? lineaNegocio, string threadId, string? lineaNegocioNexo = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentException.ThrowIfNullOrWhiteSpace(threadId);
         UsuarioId = usuarioId;
         _cotizacion = cotizacion;
         LineaNegocio = lineaNegocio;
+        LineaNegocioNexo = lineaNegocioNexo;
         ThreadId = threadId;
         Propuesta = null;
     }

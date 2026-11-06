@@ -19,7 +19,13 @@ public sealed class clsPasosEdicionSolicitud(clsContextoWeb web, clsPasosCosteo 
 
     [When("{string} edita la solicitud {string} con las horas de cargue en {int}")]
     public Task CuandoEditaLasHoras(string alias, string cotizacion, int horas) =>
-        EditarAsync(alias, cotizacion, modelo => modelo["rutas"]![0]!["horas_cargue"] = horas);
+        EditarAsync(alias, cotizacion, modelo =>
+        {
+            // #278 (DU §5): las horas de cargue y descargue van las dos o ninguna; si la ruta no tenía, la de descargue queda en 4.
+            var ruta = modelo["rutas"]![0]!;
+            ruta["horas_cargue"] = horas;
+            ruta["horas_descargue"] ??= 4;
+        });
 
     [When("{string} edita la solicitud {string} con el NIT {string}")]
     public Task CuandoEditaElNit(string alias, string cotizacion, string nit) =>
