@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Cotifly.Pruebas.Comun;
 using Cotifly.Pruebas.Web;
 using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
@@ -147,6 +148,127 @@ public sealed class clsSeguroCosteoEndpointsTests : IDisposable
         var folioNuevo = json.GetProperty("folio").GetString()!;
         (await FilaRutaAsync(folioNuevo)).Should().Be("1|0.003450|1035000.00", "HU-045: 300.000.000 × 0,345 % (decisión 5)");
         (await FilaRutaAsync(folio)).Should().Be("1|0.003450|862500.00", "la original no cambia");
+    }
+
+    /// <summary>B2 de la auditoría: la respuesta del margen (y de los conexos) también trae la tasa vigente, no <c>null</c>.</summary>
+    [Fact]
+    public async Task LaRespuestaDelMargenTambienTraeLaTasaVigente()
+    {
+        var (sesion, folio) = await CosteadaAsync();
+
+        using var margen = await EnviarConVersionAsync(_put, $"/web/cotizaciones/{folio}/costeo/margen", sesion.Access, """{"margen":0.2}""",
+            await EtagAsync(sesion, folio));
+
+        var json = await VerificarContratoAsync(margen, "/web/cotizaciones/{folio}/costeo/margen", _put, HttpStatusCode.OK);
+        json.GetProperty("tasa_seguro_vigente").GetDecimal().Should().Be(0.003450m);
+    }
+
+    /// <summary>B6: con un PDF vigente sin enviar, cambiar el seguro lo invalida y lo deja en el historial.</summary>
+    [Fact]
+    public async Task ConUnPdfVigenteSinEnviarElSeguroLoInvalidaYQuedaEnElHistorial()
+    {
+        var (sesion, folio) = await CosteadaAsync();
+        await EscalarAsync<int>($"UPDATE dbo_cotifly.CotizacionesSolicitud SET pdfPath = N'{folio}.pdf' WHERE folio = '{folio}'; SELECT @@ROWCOUNT");
+
+        using var incluir = await EnviarConVersionAsync(_put, $"/web/cotizaciones/{folio}/costeo/seguro", sesion.Access, """{"incluye_seguro":true}""",
+            await EtagAsync(sesion, folio));
+
+        var json = await VerificarContratoAsync(incluir, Ruta, _put, HttpStatusCode.OK);
+        json.GetProperty("pdf_desactualizado").GetBoolean().Should().BeTrue();
+        json.GetProperty("pdf_url").ValueKind.Should().Be(JsonValueKind.Null);
+        (await EscalarAsync<int>($"SELECT COUNT(*) FROM dbo_cotifly.CotizacionPdfsHistorial h JOIN dbo_cotifly.CotizacionesSolicitud c "
+            + $"ON c.id = h.cotizacionId WHERE c.folio = '{folio}' AND h.pdfPath = N'{folio}.pdf'")).Should().Be(1);
+    }
+
+    /// <summary>B6: sin tasa activa en <c>TarifasSeguro</c> responde 500 con el mensaje genérico (el detalle técnico solo va al log).</summary>
+    [Fact]
+    public async Task SinTasaActivaRespondeErrorInternoSinDetallesTecnicos()
+    {
+        var (sesion, folio) = await CosteadaAsync();
+        var etag = await EtagAsync(sesion, folio);
+        await EscalarAsync<int>("UPDATE dbo_cotifly.TarifasSeguro SET isActive = 0 WHERE isActive = 1; SELECT @@ROWCOUNT");
+        try
+        {
+            using var incluir = await EnviarConVersionAsync(_put, $"/web/cotizaciones/{folio}/costeo/seguro", sesion.Access, """{"incluye_seguro":true}""", etag);
+
+            incluir.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            var cuerpo = await incluir.Content.ReadAsStringAsync(Ct);
+            cuerpo.Should().Contain("ERROR_INTERNO").And.NotContain("dbo_cotifly").And.NotContain("TarifasSeguro");
+            (await FilaRutaAsync(folio)).Should().Be("0||", "nada cambia");
+        }
+        finally
+        {
+            await EscalarAsync<int>(
+                "UPDATE TOP (1) dbo_cotifly.TarifasSeguro SET isActive = 1 WHERE tasa = 0.003450 "
+                + "AND NOT EXISTS (SELECT 1 FROM dbo_cotifly.TarifasSeguro WHERE isActive = 1); SELECT @@ROWCOUNT");
+        }
+    }
+
+    /// <summary>B6: la cotización de otro comercial responde 404, igual que una inexistente.</summary>
+    [Fact]
+    public async Task LaCotizacionDeOtroComercialEs404()
+    {
+        var (sesion, folio) = await CosteadaAsync();
+        var luis = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+
+        using var ajena = await EnviarConVersionAsync(_put, $"/web/cotizaciones/{folio}/costeo/seguro", luis.Access, """{"incluye_seguro":true}""",
+            await EtagAsync(sesion, folio));
+
+        ajena.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await FilaRutaAsync(folio)).Should().Be("0||");
+    }
+
+    /// <summary>B6: la licitación todavía no admite el seguro: 409 <c>ESTADO_NO_PERMITE</c> con <c>detalle.motivo = LICITACION</c>.</summary>
+    [Fact]
+    public async Task LaLicitacionRespondeEstadoNoPermite()
+    {
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        using var alta = await _api.EnviarContenidoAsync(HttpMethod.Post, "/web/licitaciones", sesion.Access,
+            clsApiWebPruebas.Licitacion(clsPliegoMuestra.Json(clsCosteoEndpointsTests.Nit, clsPliegoMuestra.Lineas()), clsPliegoMuestra.Excel()));
+        var folio = (await VerificarContratoAsync(alta, "/web/licitaciones", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+
+        using var seguro = await EnviarConVersionAsync(_put, $"/web/cotizaciones/{folio}/costeo/seguro", sesion.Access,
+            """{"incluye_seguro":true,"linea_orden":1}""", await EtagAsync(sesion, folio));
+
+        seguro.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        await VerificarErrorNegocioAsync(seguro, "ESTADO_NO_PERMITE");
+        using var cuerpo = JsonDocument.Parse(await seguro.Content.ReadAsStringAsync(Ct));
+        cuerpo.RootElement.GetProperty("error").GetProperty("detalle").GetProperty("motivo").GetString().Should().Be("LICITACION");
+    }
+
+    /// <summary>
+    /// B6: editar la solicitud (HU-028) en sitio (sin llegar a Nexo) y como reemplazo (ya en Nexo) con otro <c>valor_mercancia</c>
+    /// recalcula el seguro de la ruta con la tasa vigente (decisión 5).
+    /// </summary>
+    [Theory]
+    [InlineData(true, "en_sitio")]
+    [InlineData(false, "reemplazo")]
+    public async Task EditarElValorDeLaMercanciaRecalculaElSeguro(bool sinLlegarANexo, string modo)
+    {
+        if (sinLlegarANexo)
+        {
+            _nexo.AltaFalla = HttpStatusCode.ServiceUnavailable;
+        }
+
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        using var alta = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", sesion.Access, clsCosteoEndpointsTests.Formulario());
+        var folio = (await VerificarContratoAsync(alta, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+        _nexo.AltaFalla = null;
+        using var incluir = await EnviarConVersionAsync(_put, $"/web/cotizaciones/{folio}/costeo/seguro", sesion.Access, """{"incluye_seguro":true}""",
+            await EtagAsync(sesion, folio));
+        incluir.StatusCode.Should().Be(HttpStatusCode.OK, await incluir.Content.ReadAsStringAsync(Ct));
+        (await FilaRutaAsync(folio)).Should().Be("1|0.003450|862500.00");
+
+        using var leida = await _api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/solicitud", sesion.Access);
+        var modelo = JsonNode.Parse(await leida.Content.ReadAsStringAsync(Ct))!;
+        modelo["rutas"]![0]!["valor_mercancia"] = 300_000_000;
+        modelo["motivo"] = "El cliente cambió el valor de la mercancía";
+        using var edicion = await EnviarConVersionAsync(_put, $"/web/cotizaciones/{folio}/solicitud", sesion.Access, modelo.ToJsonString(),
+            leida.Headers.ETag?.Tag);
+
+        var json = await VerificarContratoAsync(edicion, "/web/cotizaciones/{folio}/solicitud", _put, HttpStatusCode.OK);
+        json.GetProperty("modo").GetString().Should().Be(modo);
+        (await FilaRutaAsync(folio)).Should().Be("1|0.003450|1035000.00", "300.000.000 × 0,345 % (escenario de la HU)");
     }
 
     /// <summary><c>incluyeSeguro|tasaSeguroAplicada|costoSeguro</c> de la ruta 1 del folio, como los guarda la base.</summary>
