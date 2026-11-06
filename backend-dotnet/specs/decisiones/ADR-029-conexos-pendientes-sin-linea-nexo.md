@@ -25,24 +25,44 @@ En una cotización entregada la situación ya no cambia: reintentar más veces n
 ## Decisión
 
 1. **"Tener línea" es tener al menos una.** `LineaDeNexo` toma, de las líneas de la cotización de Nexo con el `lineaSolicitudId` del
-   camión, la **primera por id** (orden ordinal): un criterio estable, el mismo en el envío diferido y en el `POST` síncrono de
-   `POST .../costeo/servicios-conexos`. Sin camión se conserva la regla anterior (la única línea de la cotización).
+   camión, la **primera por id**: un criterio estable, el mismo en el envío diferido y en el `POST` síncrono de
+   `POST .../costeo/servicios-conexos`. **"Primera" es orden ordinal del texto del id, no cronológico** (auditoría B5): no equivale a
+   "la primera que creó la Mesa"; con ids GUID la elección es arbitraria pero determinista, y con ids numéricos "10" va antes que "9". Lo
+   que pide la decisión es que siempre se elija la misma; falta confirmar con el folio real que la Mesa parte líneas así.
+   **La única línea de la cotización** (`LineaDeNexo` sin camión, la regla anterior) **solo se usa para una ruta sin camiones**: una ruta
+   cuyos camiones están todos descartados o rechazados no tiene destino (antes podía tomar la línea de otra ruta; auditoría M2).
 2. **Variante 4a (decisión del usuario).** Si el primer camión vigente no tiene línea y la cotización **ya no se costea** en Nexo
    (`SeConsultaEnNexo` falso: entregada, descartada, vencida), los conexos van a la línea del **primer camión vigente que sí la tiene**
    (un camión entregado sin flete se trata como uno rechazado). Si ningún camión de la ruta tiene línea, quedan `fallido_definitivo` con
    warning y el aviso "Revísalos en Nexo" del costeo: no bloquean finalizar, igual que los demás definitivos. Mientras la cotización se
    costea se mantiene la espera. En estado terminal el envío nunca sale "en silencio".
+   **Entregada sin precio** (auditoría B1, decisión del usuario): una entregada con un camión sin flete se trata como terminal aunque el
+   polling todavía la vaya a releer (`RequiereRelecturaCosteo`, HU-013.14). La 4a (o el definitivo) se aplica en la misma consulta que
+   entrega, sin esperar la relectura: "un camión entregado sin flete se trata como uno rechazado".
+   **Rutas rechazadas** (auditoría M2): el envío diferido y el reintento no recorren las rutas rechazadas por la Mesa, el mismo alcance
+   que #228 en finalizar y que el invariante del punto 4. Sus conexos no se envían ni quedan `fallido_definitivo` (el aviso "el precio ya
+   los incluye" sería falso en una ruta sin precio): siguen como estaban y no bloquean finalizar.
 3. **El reintento ve los nunca intentados.** `TieneReintentosAsync` cuenta también los conexos sin registro cuando la cotización ya tiene
    cotización de Nexo; si Nexo no responde la lectura del reintento, quedan `en_espera` (con el tope de
    `CosteoNexo:EsperaMaximaCatalogoConexosHoras`) en vez de quedar sin registro.
 4. **Invariante de agenda.** El polling no saca de la agenda una cotización (con cotización de Nexo, dueño y no perdida solo en Cotifly)
    mientras tenga conexos `pendiente` en sus rutas cotizables: ni en el ramal de reintento ni después del envío de la consulta que
    entrega, tampoco si ese envío lanzó una excepción. Con los puntos 2 y 3 eso converge siempre en la vuelta siguiente: se envía o queda
-   definitivo.
-5. **Finalizar reencola, sin POST.** Si después de releer Nexo siguen pendientes, finalizar responde el mismo 409 y vuelve a poner la
-   cotización en la agenda ahora, con la misma holgura del lote (solo si está fuera de la agenda o agendada más allá de dos veces el
-   reclamo, para no cruzarse con un reclamo vigente). El envío lo hace el worker bajo su reclamo: no hay doble `POST` (que no es
-   idempotente). Así se reparan solas, al primer clic, las cotizaciones que ya quedaron atascadas: no hace falta script de datos.
+   definitivo. **Tras una excepción del envío** (auditoría B3) se agenda con la actualización condicional del punto 5 (sin la unidad de
+   trabajo, así no se persiste lo que el envío dejó a medias) y con techo: solo mientras la solicitud tenga menos de
+   `CosteoNexo:EdadMaximaSincronizacionResultadoDias` desde su envío a Nexo. Una excepción determinista no reagenda sin fin; pasado el
+   techo, la cotización queda fuera de la agenda con un warning y finalizar la vuelve a encolar.
+5. **Finalizar reencola, sin POST.** Si después de releer Nexo (o sin poder releerla) siguen pendientes, finalizar responde el mismo 409
+   y vuelve a poner en la agenda, para ahora, una cotización que está **fuera** de ella. El envío lo hace el worker bajo su reclamo: no
+   hay doble `POST` (que no es idempotente). Así se reparan solas, al primer clic, las cotizaciones que ya quedaron atascadas: no hace
+   falta script de datos.
+   - **Actualización condicional** (auditoría M1): `IClsCotizacionRepository.ReencolarConsultaCosteoAsync` es un `ExecuteUpdateAsync`
+     con `WHERE id = @id AND costeoSiguienteConsultaAt IS NULL`, como `ReclamarConsultaCosteoAsync`. La decisión no depende de la
+     cotización en memoria (leída antes de releer Nexo, que tarda segundos): un doble clic, o finalizar junto con el lote, nunca pisa un
+     reclamo vigente del worker. El lote de ADR-026 conserva su patrón (agenda con la unidad de trabajo y holgura de dos reclamos, sin
+     una llamada a Nexo de por medio); llevarlo al mismo método queda para una issue aparte.
+   - **Solo fuera de la agenda** (auditoría B2): una cotización ya agendada (reclamada o esperando el siguiente reintento, 5, 15 o 60 min)
+     no se mueve. Varios clics no adelantan la espera de los reintentos ni agotan `CosteoNexo:MaximoReintentosConexos`; el 409 basta.
 
 ## Alternativas consideradas
 
