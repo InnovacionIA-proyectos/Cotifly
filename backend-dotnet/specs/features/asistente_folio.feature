@@ -81,7 +81,8 @@ Característica: Asistente IA sobre una cotización (folio)
     Cuando "ana" confirma la acción propuesta
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CosteoCotizacion" del contrato
     Y Nexo recibió 1 petición de conexos para la cotización de "C1"
-    Y el servicio conexo "Almacenamiento" de "C1" está incluido con el precio 117647
+    # HU-043.2 (#251): sin precio de venta en el catálogo, el conexo va al costo (2 × 50.000), sin margen.
+    Y el servicio conexo "Almacenamiento" de "C1" está incluido con el precio 100000
 
   # El peso nuevo es 28400: la regla de peso de Nexo (1 %) se aplica contra las posiciones guardadas (28500 kg), igual que al confirmar.
   Escenario: El asistente propone re-solicitar el costeo con cambios de carga y confirmarla crea la versión nueva
