@@ -1363,6 +1363,26 @@ El resumen completo, los ejemplos JSON de cada endpoint cambiado y la lista de c
 | `conexos_descartados` siempre `[]` (`deprecated`, se retira con HU-021-FE) | Leer `conexos_conservados` |
 | `datos_carga` de la re-solicitud solo con una ruta (409 `ESTADO_NO_PERMITE` con varias: `detalle.motivo` = `VARIAS_RUTAS` o `LICITACION`) | Con varias rutas, `nueva_version: true` sin `datos_carga` |
 
+### 5.18.3 Seguro de la mercancía por ruta (HU-045.2, #264). Implementado, pendiente de QA
+
+El comercial marca en el costeo, ruta por ruta, si la ruta incluye el seguro de la mercancía (póliza específica). Contrato completo:
+`CONTRATOS_API_COTIFLY_FRONTEND.md` 4.4.15.
+
+- **Check por ruta:** `PUT /web/cotizaciones/{folio}/costeo/seguro` con `{"incluye_seguro": true, "linea_orden": 1}` (o
+  `linea_solicitud_id`; con una sola ruta, opcional) e `If-Match` obligatorio. Responde `CosteoCotizacion` con el `ETag` nuevo.
+- **Qué mostrar:** junto al check, la tasa vigente (`tasa_seguro_vigente` del `GET .../costeo`, fracción: `0.00345` = 0,345 %). En cada
+  ruta, `incluye_seguro`, `tasa_seguro` (la que se usó) y `valor_seguro` (el seguro en la moneda de la cotización) como una línea aparte
+  del flete. `precio_final_linea` y `precio_final` **ya incluyen** el seguro: no sumarlo otra vez.
+- **El seguro no lleva margen:** cambiar el margen de la ruta no cambia `valor_seguro`.
+- **Sin valor de la mercancía:** 400 `SEGURO_SIN_VALOR_MERCANCIA`: desmarcar el check y pedir el valor editando la solicitud. Si una
+  edición deja la ruta sin valor, el check sigue marcado con `valor_seguro = null`: mostrar "Falta el valor de la mercancía".
+- **Candados:** finalizada, enviada o con resultado: 409 `PDF_YA_ENVIADO` (como el margen, con la llamada de la versión nueva). En las
+  licitaciones el check no aplica (409 `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION`): ocultarlo. Con PDF vigente sin enviar, el
+  PDF queda desactualizado.
+- **Recálculos:** si cambia `valor_mercancia` (editar la solicitud o `datos_carga` de re-solicitar), el seguro se recalcula con la tasa
+  vigente. La versión nueva conserva el check.
+- **Todavía no:** la línea "Seguro de la mercancía" en el PDF, el Excel y el correo (HU-045.3, #265).
+
 ### 5.19 PDF del costeo (`POST /web/cotizaciones/{folio}/costeo/pdf`). En QA
 
 - Sin cuerpo. El servidor arma el PDF: una fila con origen, destino, vehículo y el **valor final de la ruta** (transporte con su margen y conexos a su venta, sin margen, HU-043.2; sin desglose), los conexos listados como incluidos **sin precio** y, al final, el "VALOR TOTAL DE LA COTIZACIÓN" con la leyenda de impuestos (HU-033, #199; antes la tarifa del transporte y cada conexo con su precio).
@@ -2627,6 +2647,7 @@ La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones.
 | Endpoint | Para qué | Issue |
 |---|---|---|
 | `POST /web/solicitudes-costeo` + `moneda` (`COP` o `USD`) | **Implementado (#103).** Formulario en dólares con la TRM fijada al crear; sin TRM responde 400 `TRM_NO_DISPONIBLE` y no se crea nada. Ver 5.15 | #103 (HU-013.7) |
+| `PUT /web/cotizaciones/{folio}/costeo/seguro` `{incluye_seguro, linea_orden?, linea_solicitud_id?}` | **Implementado (#264).** Incluye o quita el seguro de la mercancía de UNA ruta, con `If-Match` obligatorio. El seguro (`valor_mercancia × tasa vigente`, sin margen) se suma al precio de la ruta. Sin `valor_mercancia`, 400 `SEGURO_SIN_VALOR_MERCANCIA`. Ver 5.18.3 | #264 (HU-045.2) |
 | `PUT /web/cotizaciones/{folio}/costeo/margen` `{margen, justificacion?, linea_orden?, linea_solicitud_id?}` | **Implementado (#98; por ruta en #135).** Ajuste de margen de 0 a 0,99 de UNA ruta, con `If-Match` obligatorio. Con varias rutas y sin indicarla, 400 `RUTA_REQUERIDA` (sección 5.18.1). La justificación es obligatoria por debajo del `margen_sugerido` de la ruta (400 `JUSTIFICACION_REQUERIDA` con `detalle.margen_sugerido`). Responde `CosteoCotizacion` con los precios recalculados y el `ETag` nuevo | #98 (HU-013.2), #135 (HU-021.8) |
 | `GET /web/servicios-conexos?q=&categoria=&page=&page_size=` | **Implementado (#99).** Buscador del catálogo de Nexo: solo servicios activos y nunca su costo. Ver abajo | #99 (HU-013.3) |
 | `POST /web/cotizaciones/{folio}/costeo/servicios-conexos` `{items: [{linea_orden, servicio_id, cantidad}]}` | **Implementado (#99).** Agrega conexos en Nexo; vuelven con precio e incluidos. `If-Match` obligatorio e `Idempotency-Key` opcional. Ver abajo | #99 (HU-013.3) |
