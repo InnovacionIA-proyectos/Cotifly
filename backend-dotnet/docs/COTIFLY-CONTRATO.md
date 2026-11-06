@@ -1,6 +1,6 @@
 # Contrato NEXO ⇄ Cotifly
 
-> **Estado:** vigente (contrato externo) · **Dueño:** equipo de NEXO; copia de referencia para Cotifly (HU-023) · **Actualizado:** 2026-10-14
+> **Estado:** vigente (contrato externo) · **Dueño:** equipo de NEXO; copia de referencia para Cotifly (HU-023) · **Actualizado:** 2026-11-06 (§8, HU-044.1)
 
 Lo que Cotifly **manda a NEXO** y lo que **recibe de vuelta**, con las decisiones ya tomadas por
 negocio. Es el contrato de la *captura de solicitudes*; cómo pedirle la recomendación de vehículo al
@@ -177,3 +177,55 @@ encima de lo que tarda la Mesa en la práctica.
 > tarifa, el texto de la ruta sale hoy con la clave **`clsRuta`** (el `CONTRATO.md` la llama `ruta`).
 > Es una discrepancia conocida del lado de NEXO; si Cotifly lee ese campo, que use `clsRuta`
 > hasta que se corrija.
+
+## 8. Importación inteligente del Excel (HU-044.1, #252, ADR-028)
+
+Cotifly **reutiliza** la importación inteligente de NEXO: no la replica ni guarda nada propio (sin tablas, sin copia de plantillas,
+recetas ni historial). Detalle campo por campo en `CONTRATO.md` de NEXO (rama `QA`): §3.3 (captura de solicitudes) y §3.19.1 (diccionario
+por cliente). Revisado contra NEXO QA el 2026-11-06, con el PR #433 de NEXO (`leer-estructura` y `recetas-lectura`) ya fusionado.
+
+```
+Cotifly ──POST leer-estructura (multipart)──► NEXO   (opcional: Excel de formato complejo → tablas normales + receta)
+Cotifly ──POST sugerir-mapeo────────────────► NEXO   (plantilla del cliente → diccionario → IA)
+Cotifly ──POST aplicar-mapeo────────────────► NEXO   (líneas listas + errores por fila; sin IA)
+Cotifly ──POST normalizar-valores───────────► NEXO   (vehículo, carrocería, línea de negocio, ciudad)
+Cotifly ──PUT plantillas-mapeo / PUT recetas-lectura──► NEXO   (lo que el comercial confirmó, por cliente)
+Cotifly ──POST /api/captura-solicitudes─────► NEXO   (la captura de siempre, §3)
+```
+
+| Endpoint de NEXO | Body / query que manda Cotifly | Respuesta |
+|---|---|---|
+| `POST /api/captura-solicitudes/sugerir-mapeo` | `{ clienteNit?, encabezados[1..100], filas? }` | `SugerenciaMapeoDto` |
+| `POST /api/captura-solicitudes/aplicar-mapeo` | `{ clienteNit?, columnas[{ indice, campo, transformacion? }], filas[..5000], primeraFila? }` | `ResultadoAplicarMapeoDto` |
+| `POST /api/captura-solicitudes/normalizar-valores` | `{ clienteNit?, valores[{ campo, valor }] }` | `ResultadoNormalizacionDto` |
+| `PUT /api/captura-solicitudes/plantillas-mapeo` | `{ clienteNit, nombre?, encabezados, columnas }` | `201`/`200 PlantillaMapeoDto` |
+| `GET /api/captura-solicitudes/plantillas-mapeo` | `?clienteNit=` (siempre) | `PlantillaMapeoDto[]` |
+| `DELETE /api/captura-solicitudes/plantillas-mapeo/{id}` | | `204` · `404 PLANTILLA_NO_ENCONTRADA` |
+| `GET /api/diccionario-cliente` | `?clienteNit=&incluirGenerales=&tipo=&q=&soloActivos=` | `TerminoClienteDto[]` |
+| `GET /api/diccionario-cliente/opciones` | | `{ tipos, camposDestino, unidades, contextos }` |
+| `POST /api/captura-solicitudes/leer-estructura` | multipart: `archivo`, `clienteNit?`, `instrucciones?`, `receta?` (texto JSON) | `LecturaEstructuraDto` |
+| `PUT /api/captura-solicitudes/recetas-lectura` | multipart: `archivo`, `receta`, `clienteNit`, `nombre?`, `instrucciones?` | `201`/`200 RecetaGuardadaDto` |
+| `GET /api/captura-solicitudes/recetas-lectura` | `?clienteNit=` (siempre) | `RecetaGuardadaDto[]` |
+| `DELETE /api/captura-solicitudes/recetas-lectura/{id}` | | `204` · `404 RECETA_NO_ENCONTRADA` |
+
+Decisiones que fijan cómo llama Cotifly:
+
+- **Identidad:** `X-Portal-clsUsuario-Id` del comercial, como en §2. Sin `idUsuarioExterno` no se llama. Roles en NEXO: `Comercial` o
+  `Admin` (el `GET` del diccionario, cualquier rol válido).
+- **Cliente por NIT:** `clienteNit` normalizado (sin puntos, espacios ni dígito de verificación). Nunca `clienteId`. Los `GET` de plantillas
+  y recetas van siempre con el NIT: sin él NEXO devolvería los de todos los clientes.
+- **Receta:** JSON opaco. Se reenvía exactamente como llegó.
+- **Reintentos:** solo `aplicar-mapeo` y los `GET`. `sugerir-mapeo`, `normalizar-valores`, `leer-estructura` y `PUT recetas-lectura` pueden
+  gastar IA y cuentan para el tope: nunca se reintentan (tampoco los demás `PUT` ni los `DELETE`).
+- **Tiempos:** 90 s por intento (`ImportacionInteligente__TimeoutSegundos`) y al menos 180 s en `leer-estructura` y `PUT recetas-lectura`
+  (`ImportacionInteligente__TimeoutLecturaSegundos`): NEXO hace hasta 3 intentos de IA de 60 s.
+- **Sin IA:** `200` con `iaUsada = false` y `motivoSinIa`. No es un error.
+- **`429 IA_TOPE_DIARIO`:** el cupo diario de IA del comercial. Cotifly lo devuelve como `IA_TOPE_DIARIO` con el mensaje de NEXO y **no**
+  activa el bloqueo global de lecturas de NEXO (ese es solo para el `429 DEMASIADAS_SOLICITUDES` de catálogos y bandeja).
+- **Otros errores:** los 400/404 de la tabla de NEXO llegan con el mismo código y mensaje; `VALIDATION_ERROR` u otro 4xx →
+  `COSTEO_NEXO_RECHAZADA`; 401/403 → `NEXO_SIN_PERMISO`; 413 → `ARCHIVO_DEMASIADO_GRANDE`; red, tiempo, 5xx o el 429 por minuto →
+  `NEXO_NO_DISPONIBLE`.
+
+> **Discrepancia abierta (NEXO QA, 2026-11-06):** `GET /api/diccionario-cliente` acepta solo `clienteId`, no `clienteNit` (NEXO#410
+> cubrió plantillas y mapeo, no el diccionario). Cotifly manda `clienteNit` igual; mientras NEXO no lo acepte, la respuesta trae los
+> términos de todos los clientes más los generales.
