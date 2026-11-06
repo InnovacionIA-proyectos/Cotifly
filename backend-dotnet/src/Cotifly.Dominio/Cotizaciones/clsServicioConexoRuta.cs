@@ -103,6 +103,8 @@ public sealed class clsServicioConexoRuta
         Validar(IdServicioConexo, precio, cantidad, precioVenta);
         var antes = (Nombre, Precio, PrecioVenta, Cantidad);
         Nombre = LimpiarNombre(nombre) ?? Nombre;
+        // Sin venta: una venta igual al costo se toma como "al costo" y sigue al costo nuevo, aunque fuera una venta conocida que coincidía
+        // (riesgo aceptado, ADR-026: solo con un Nexo anterior a S6-HU-38.2 y un cambio de costo).
         PrecioVenta = VentaRedondeada(precioVenta) ?? (PrecioVenta == Precio ? precio : PrecioVenta);
         Precio = precio;
         Cantidad = cantidad;

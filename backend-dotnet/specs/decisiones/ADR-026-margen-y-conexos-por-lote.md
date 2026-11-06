@@ -93,6 +93,8 @@ varias líneas) no se pueden deshacer si Cotifly falla después: no hay forma de
 - HU-043.2 (#251), **riesgo aceptado:** la venta del conexo en lote es la del catálogo al agregarlo. Si la biblioteca de Nexo cambia
   antes del envío diferido, Nexo fija otra; el siguiente polling la corrige (refresca la venta de los conexos guardados cruzando por el
   id), salvo que en ese intervalo se genere el PDF o se finalice (precio congelado).
+- HU-043.2 (#251), **riesgo aceptado:** una lectura sin venta conserva la venta guardada, pero si esa venta coincide con el costo se
+  toma como "al costo" y sigue al costo nuevo. Solo pasa con un Nexo anterior a S6-HU-38.2 que además cambie el costo del conexo.
 - HU-043.2 (#251), deducción del costo (#236): con el precio y el margen se sigue pudiendo deducir el costo del transporte
   (`precio_transporte × (1 − margen)`), pero no el de los conexos, porque su precio es la venta y la venta no es el costo.
 

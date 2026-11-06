@@ -504,7 +504,7 @@ public sealed class clsServiciosConexosCosteoService(
     /// HU-043.2 (#251): la venta que Nexo fijó para los conexos que Cotifly YA tiene guardados (filas anteriores al despliegue quedaron con
     /// <c>precioVenta = precio</c>). Se cruza por el id: la fila de Nexo cuyo <c>id</c> es el <c>idServicioConexo</c> guardado (conexo
     /// agregado o importado) o, si no hay, las de su <c>servicioConexoId</c> (el id del catálogo de un conexo capturado) que son de la misma
-    /// ruta (<see cref="RutaDelConexo"/>). Solo con una venta conocida (<see cref="clsConexoNexo.VentaUnitaria"/>) y única: sin venta, o con
+    /// ruta (<see cref="RutaDelConexo"/>) y que no son ya, por id, de otro conexo guardado. Solo con una venta conocida (<see cref="clsConexoNexo.VentaUnitaria"/>) y única: sin venta, o con
     /// dos filas de distinta venta para el mismo servicio, el conexo conserva la suya.
     /// </summary>
     public static IReadOnlyList<clsVentaConexo> VentasDeNexo(clsCotizacionSolicitud cotizacion, clsCotizacionNexo cotizacionNexo)
@@ -512,6 +512,8 @@ public sealed class clsServiciosConexosCosteoService(
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(cotizacionNexo);
         var ventas = new List<clsVentaConexo>();
+        // Filas de Nexo que ya son, por id, de un conexo guardado: no cuentan en el cruce por servicio de los demás.
+        var conDueno = cotizacion.Rutas.SelectMany(r => r.Conexos).Select(c => c.IdServicioConexo).ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var ruta in cotizacion.Rutas)
         {
             foreach (var conexo in ruta.Conexos)
@@ -521,7 +523,8 @@ public sealed class clsServiciosConexosCosteoService(
                 {
                     var catalogo = conexo.IdServicioConexoCatalogo ?? conexo.IdServicioConexo;
                     filas = [.. cotizacionNexo.Conexos.Where(n =>
-                        string.Equals(n.ServicioConexoId, catalogo, StringComparison.OrdinalIgnoreCase)
+                        !conDueno.Contains(n.Id)
+                        && string.Equals(n.ServicioConexoId, catalogo, StringComparison.OrdinalIgnoreCase)
                         && RutaDelConexo(cotizacion, cotizacionNexo, n)?.Id == ruta.Id)];
                 }
 
