@@ -6,18 +6,18 @@ namespace Cotifly.Aceptacion.Tests.Costeo;
 
 /// <summary>
 /// HU-030.1 (#184), pasos de <c>specs/features/captura_rutas.feature</c>: el peso con tara de una ruta de contenedor viaja a Nexo como el
-/// peso de su línea, sin posiciones, y se guarda en la ruta (<c>CotizacionLineasSolicitud.pesoConTaraKg</c>, script 11).
+/// peso de su línea (#250, DU §8: con un solo camión, con sus posiciones) y se guarda en la ruta (<c>CotizacionLineasSolicitud.pesoConTaraKg</c>, script 11).
 /// </summary>
 [Binding]
 public sealed class clsPasosPesoConTara(clsPasosCosteo costeo)
 {
-    [Then("Nexo recibió una línea con el peso {int} y sin posiciones")]
+    [Then("Nexo recibió una línea con el peso {int} y sus posiciones")]
     public void EntoncesNexoRecibioElPesoConTara(int peso)
     {
         var alta = costeo.Nexo.UltimaAlta ?? throw new InvalidOperationException("Nexo no recibió ningún alta.");
         var linea = alta["lineas"]!.AsArray().Should().ContainSingle().Subject!;
         linea["peso"]!.GetValue<decimal>().Should().Be(peso);
-        linea["posiciones"].Should().BeNull("con tara la línea no lleva posiciones: Nexo respondería PESO_INCONSISTENTE");
+        linea["posiciones"]!.AsArray().Should().NotBeEmpty("#250 (DU §8): un peso mayor que la suma de las posiciones es la tara");
         costeo.Nexo.AltasPesoInconsistente.Should().Be(0);
     }
 

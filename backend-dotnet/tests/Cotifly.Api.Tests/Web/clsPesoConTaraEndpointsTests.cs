@@ -9,9 +9,10 @@ namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
 /// HU-030.1 (#184): peso con tara de una ruta de contenedor, por HTTP con SQL Server real, el Nexo falso (que valida
-/// <c>PESO_INCONSISTENTE</c> al 1 % como Nexo, NEXO#308) y el cubicador falso. El comercial escribe <c>peso_con_tara_kg</c> por ruta
-/// (captura, edición y licitación); se guarda en <c>CotizacionLineasSolicitud.pesoConTaraKg</c> (script 11) y viaja a Nexo como el peso de
-/// las líneas de la ruta (repartida la tara por camión), sin posiciones. Al cubicador va lo mismo que antes.
+/// <c>PESO_INCONSISTENTE</c> como Nexo: #250, DU §8, solo una suma de posiciones que SUPERA el peso en más de 1 %) y el cubicador falso. El
+/// comercial escribe <c>peso_con_tara_kg</c> por ruta (captura, edición y licitación); se guarda en
+/// <c>CotizacionLineasSolicitud.pesoConTaraKg</c> (script 11) y viaja a Nexo como el peso de las líneas de la ruta (repartida la tara por
+/// camión). #250: con un solo camión la línea lleva además sus posiciones; con varios, sin posiciones. Al cubicador va lo mismo que antes.
 /// </summary>
 [Collection(clsColeccionApiWeb.Nombre)]
 [Trait("Categoria", "Integracion")]
@@ -36,7 +37,7 @@ public sealed class clsPesoConTaraEndpointsTests : IDisposable
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task UnaRutaContenedorConTaraYUnCamionViajaANexoConElPesoConTaraYSinPosiciones()
+    public async Task UnaRutaContenedorConTaraYUnCamionViajaANexoConElPesoConTaraYSusPosiciones()
     {
         var api = Api();
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
@@ -46,8 +47,9 @@ public sealed class clsPesoConTaraEndpointsTests : IDisposable
 
         var linea = _nexo.UltimaAlta!["lineas"]!.AsArray().Should().ContainSingle().Subject!;
         linea["peso"]!.GetValue<decimal>().Should().Be(32_300.5m, "a Nexo va el peso con tara que escribió el comercial");
-        linea["posiciones"].Should().BeNull("con tara la línea no lleva posiciones: Nexo respondería PESO_INCONSISTENTE");
-        _nexo.AltasPesoInconsistente.Should().Be(0);
+        linea["posiciones"]!.AsArray().Select(p => p!["cantidad"]!.GetValue<int>() * p["pesoKg"]!.GetValue<decimal>())
+            .Should().HaveCount(2).And.Subject.Sum().Should().Be(28_500m, "#250 (DU §8): las posiciones viajan con las mercancías, sin tara");
+        _nexo.AltasPesoInconsistente.Should().Be(0, "un peso mayor que la suma de las posiciones es la tara y Nexo lo acepta");
         _nexo.SolicitudesCreadas.Should().ContainSingle();
         (await PesoConTaraGuardadoAsync(folio)).Should().Be(32_300.5m, "se guarda en la ruta (script 11)");
 
@@ -149,12 +151,13 @@ public sealed class clsPesoConTaraEndpointsTests : IDisposable
         using var envio = await api.EnviarAsync(_post, Captura, ana.Access, clsCosteoEndpointsTests.Formulario().ConTara(28_500.5m));
 
         await VerificarContratoAsync(envio, Captura, _post, HttpStatusCode.Created);
-        _nexo.UltimaAlta!["lineas"]![0]!["posiciones"].Should().BeNull();
+        _nexo.UltimaAlta!["lineas"]![0]!["posiciones"]!.AsArray().Should().HaveCount(2);
+        _nexo.AltasPesoInconsistente.Should().Be(0);
     }
 
     /// <summary>
     /// HU-028 (#186) + HU-030.1: el comercial agrega (o corrige) el peso con tara en "Editar solicitud". Se guarda, el GET lo devuelve y la
-    /// captura nueva en Nexo lleva el peso con tara y sin posiciones. Cambiar solo la tara no vuelve a cubicar.
+    /// captura nueva en Nexo lleva el peso con tara y, con un solo camión, sus posiciones (#250). Cambiar solo la tara no vuelve a cubicar.
     /// </summary>
     [Fact]
     public async Task EnLaEdicionSeAgregaElPesoConTaraSinRecubicarYLaCapturaNuevaLoLleva()
@@ -178,19 +181,20 @@ public sealed class clsPesoConTaraEndpointsTests : IDisposable
         _cubicador.Recomendaciones.Should().HaveCount(cubicaciones);
         var linea = _nexo.UltimaAlta!["lineas"]!.AsArray().Should().ContainSingle().Subject!;
         linea["peso"]!.GetValue<decimal>().Should().Be(32_300.5m);
-        linea["posiciones"].Should().BeNull();
+        linea["posiciones"]!.AsArray().Should().HaveCount(2, "#250: con un solo camión viajan también con tara");
         _nexo.AltasPesoInconsistente.Should().Be(0);
         (await PesoConTaraGuardadoAsync(folio)).Should().Be(32_300.5m);
 
         var (releido, etag2) = await ModeloAsync(api, ana, folio);
         releido["rutas"]![0]!["peso_con_tara_kg"]!.GetValue<decimal>().Should().Be(32_300.5m);
 
-        // El mismo modelo otra vez no cambia nada; quitar la tara (null) vuelve al envío con posiciones.
+        // El mismo modelo otra vez no cambia nada; quitar la tara (null) vuelve al peso de la carga, con las mismas posiciones.
         releido["rutas"]![0]!["peso_con_tara_kg"] = null;
         using var sinTara = await EditarAsync(api, ana, folio, releido, etag2);
         await VerificarContratoAsync(sinTara, Edicion, _put, HttpStatusCode.OK);
         (await PesoConTaraGuardadoAsync(folio)).Should().BeNull();
         _nexo.UltimaAlta!["lineas"]![0]!["posiciones"]!.AsArray().Should().HaveCount(2);
+        _nexo.UltimaAlta!["lineas"]![0]!["peso"]!.GetValue<decimal>().Should().Be(28_500.5m);
     }
 
     [Fact]

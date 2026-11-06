@@ -32,8 +32,9 @@ public sealed class clsNexoFalso : HttpMessageHandler
     public HttpStatusCode? AltaFalla { get; set; }
 
     /// <summary>
-    /// HU-030.1 (#184): altas rechazadas con <c>400 PESO_INCONSISTENTE</c>. Como Nexo (<c>CapturarSolicitudValidador</c>, confirmado al
-    /// cerrar NEXO#308): una línea con posiciones con peso cuyo <c>peso</c> difiere más del 1 % de <c>Σ cantidad × pesoKg</c> se rechaza.
+    /// HU-030.1 (#184): altas rechazadas con <c>400 PESO_INCONSISTENTE</c>. #250 (DU §8), como Nexo: se rechaza una línea con posiciones
+    /// con peso cuya <c>Σ cantidad × pesoKg</c> supera <c>peso × 1,01</c>; un peso mayor que la suma (la tara) se acepta
+    /// (<see cref="LineaConPesoInconsistente"/>).
     /// </summary>
     public int AltasPesoInconsistente => Volatile.Read(ref _altasPesoInconsistente);
 
@@ -566,8 +567,10 @@ public sealed class clsNexoFalso : HttpMessageHandler
     }
 
     /// <summary>
-    /// HU-030.1 (#184): el índice (base 0) de la primera línea del alta cuyo <c>peso</c> no cuadra al 1 % con sus posiciones con peso
-    /// (la regla de Nexo); <c>null</c> si todas cuadran o no traen posiciones.
+    /// HU-030.1 (#184): el índice (base 0) de la primera línea del alta que Nexo rechaza con <c>PESO_INCONSISTENTE</c>; <c>null</c> si
+    /// ninguna o no traen posiciones. #250 (DU §8): la regla es asimétrica: <c>peso</c> es el total con tara, así que solo se rechaza una
+    /// suma <c>cantidad × pesoKg</c> de las posiciones que SUPERA el peso en más de 1 % (<c>suma &gt; peso × 1,01</c>); un peso mayor que la
+    /// suma (la tara) es válido.
     /// </summary>
     internal static int? LineaConPesoInconsistente(JsonNode? alta)
     {
@@ -587,7 +590,7 @@ public sealed class clsNexoFalso : HttpMessageHandler
                 ? (p["cantidad"]?.GetValue<int>() ?? 1) * kg.GetValue<decimal>()
                 : 0m);
             var peso = pesoNodo.GetValue<decimal>();
-            if (suma > 0 && peso > 0 && Math.Abs(peso - suma) / peso > 0.01m)
+            if (suma > 0 && peso > 0 && suma > peso * 1.01m)
             {
                 return i;
             }
@@ -717,7 +720,7 @@ public sealed class clsNexoFalso : HttpMessageHandler
         {
             Interlocked.Increment(ref _altasPesoInconsistente);
             return Error(HttpStatusCode.BadRequest, "PESO_INCONSISTENTE",
-                $"Línea {inconsistente + 1}: el peso no coincide con la suma de las posiciones (tolerancia 1 %).");
+                $"Línea {inconsistente + 1}: la suma de las posiciones supera el peso (tolerancia 1 %).");
         }
 
         var numero = Math.Max(1, UltimaAlta?["lineas"] is JsonArray arreglo ? arreglo.Count : 1);

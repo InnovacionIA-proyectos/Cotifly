@@ -227,7 +227,7 @@ public sealed class clsLicitacionesCapturaEndpointsTests : IDisposable
 
     /// <summary>
     /// HU-030.1 (#184): una fila de contenedor de la licitación acepta <c>peso_con_tara_kg</c> (igual que la captura): se guarda en la ruta y
-    /// viaja a Nexo como el peso de su línea, sin posiciones. En una fila de otra clase de viaje es <c>CAMPO_NO_APLICA</c> en esa fila.
+    /// viaja a Nexo como el peso de su línea (la fila no trae mercancías: sin posiciones). En una fila de otra clase de viaje es <c>CAMPO_NO_APLICA</c> en esa fila.
     /// </summary>
     [Fact]
     public async Task HU0301_UnaFilaDeContenedorConPesoConTaraLoGuardaYLoMandaANexoYEnOtraClaseEsCampoNoAplica()

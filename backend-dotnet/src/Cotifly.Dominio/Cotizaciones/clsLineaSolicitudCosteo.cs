@@ -176,7 +176,8 @@ public sealed record clsLineaSolicitudCosteo
     /// HU-030.1 (#184): peso total CON la tara de los contenedores que escribe el comercial para la ruta (<c>peso_con_tara_kg</c>, kg);
     /// <c>null</c> = sin tara (a Nexo va el peso de carga, como antes). Solo con <c>clase_viaje = Contenedor</c> y nunca menor que el peso
     /// de carga (<see cref="PesoCarga"/>). No va al cubicador (que recibe el peso por mercancía, sin tara): solo cambia el <c>peso</c> de
-    /// las líneas de Nexo de la ruta, que entonces viajan sin posiciones (<see cref="clsLineaSolicitud.PesoLineaNexo"/>).
+    /// las líneas de Nexo de la ruta (<see cref="clsLineaSolicitud.PesoLineaNexo"/>). #250 (DU §8): con un solo camión la línea conserva sus
+    /// posiciones (Nexo acepta un peso mayor que su suma: la tara); con varios, ninguna línea lleva posiciones, con tara o sin ella.
     /// </summary>
     public decimal? PesoConTaraKg { get; init; }
 
@@ -259,8 +260,9 @@ public sealed record clsLineaSolicitudCosteo
 
     /// <summary>
     /// HU-032 (#197): las posiciones que pueden viajar a Nexo: todas, si todas traen sus tres medidas; ninguna si alguna es una mercancía
-    /// sin medidas (no cubicable). Mandar solo una parte descuadraría el peso de la línea contra la suma de sus posiciones
-    /// (<c>PESO_INCONSISTENTE</c> de Nexo, tolerancia 1 %): sin posiciones, a Nexo le basta el peso de la ruta.
+    /// sin medidas (no cubicable). Mandar solo una parte daría a Nexo un detalle incompleto de la carga (con el 1 % simétrico de NEXO#308
+    /// además la habría rechazado con <c>PESO_INCONSISTENTE</c>; con la regla asimétrica del DU §8, #250, ya no): sin posiciones, a Nexo le
+    /// basta el peso de la ruta.
     /// </summary>
     public IReadOnlyList<clsPosicionCarga> PosicionesParaNexo => Posiciones.All(p => p is not null && p.ConMedidas) ? Posiciones : [];
 
@@ -346,6 +348,8 @@ public sealed record clsLineaSolicitudCosteo
         }
         else if (suma > 0 && Math.Abs(peso.Value - suma) / peso.Value > clsSolicitudCosteo.ToleranciaPeso)
         {
+            // #250 (DU §8): regla propia de Cotifly sobre la carga sin tara, simétrica y más estricta que la de Nexo (que solo rechaza
+            // una suma mayor que peso × 1,01); al cumplirse, garantiza la de Nexo sobre lo que viaja (ver clsSolicitudCosteo.ValidarPeso).
             errores.Add(new clsErrorCampo("peso_kg", clsCodigosLineaSolicitud.PesoInconsistente,
                 $"El peso total ({peso.Value:0.##} kg) no coincide con la suma de las posiciones ({suma:0.##} kg)."));
         }

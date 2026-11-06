@@ -239,9 +239,12 @@ public sealed record clsSolicitudCosteo
     public decimal SumaPesoPosiciones => Posiciones.Where(p => p?.PesoKg is > 0).Sum(p => p.Cantidad * p.PesoKg!.Value);
 
     /// <summary>
-    /// Regla de peso de Nexo (<c>CapturarSolicitudValidador.ValidarLinea</c>): el peso de la línea es <see cref="PesoKg"/> o, si
-    /// falta, la suma de las posiciones; debe ser &gt; 0 (<see cref="PesoRequerido"/>) y, si hay posiciones con peso, no diferir de
-    /// su suma más del 1 % (<see cref="PesoInconsistente"/>). Se valida antes de guardar para no enviar algo que Nexo rechazará.
+    /// Regla de peso de Cotifly sobre la CARGA (sin tara): el peso de la línea es <see cref="PesoKg"/> o, si falta, la suma de las
+    /// posiciones; debe ser &gt; 0 (<see cref="PesoRequerido"/>) y, si hay posiciones con peso, no diferir de su suma más del 1 % en
+    /// ningún sentido (<see cref="PesoInconsistente"/>). #250 (DU §8): Nexo ya no exige esa simetría (<c>peso</c> es el total con tara y
+    /// solo rechaza una suma de posiciones mayor que <c>peso × 1,01</c>); esta regla propia es más estricta que la de Nexo y, al cumplirse,
+    /// la garantiza sobre lo que viaja, porque el peso enviado nunca es menor que la carga (<see cref="clsLineaSolicitud.PesoLineaNexo"/>).
+    /// Se valida antes de guardar y antes de cada reenvío.
     /// </summary>
     private clsErrorDominio? ValidarPeso()
     {

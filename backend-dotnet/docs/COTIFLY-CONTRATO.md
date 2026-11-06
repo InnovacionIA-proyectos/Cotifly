@@ -104,7 +104,10 @@ comparan sin tildes y con `_` y `-` equivalentes a espacio (`Bogotá` = `Bogota`
 > incluye la tara y NEXO no la suma (NEXO#308). Cotifly lo aplica **solo a las cargas contenerizadas** (`claseViaje = Contenedor`):
 > el comercial escribe por ruta el peso total con tara y Cotifly manda en cada línea de esa ruta `peso` = el peso con tara (con
 > varios camiones, el peso de carga del camión más una parte igual de la tara; la suma de las líneas es el peso con tara de la ruta).
-> Como NEXO valida `PESO_INCONSISTENTE` (1 %) cuando la línea trae posiciones, **esas líneas viajan sin `posiciones[]`**. Sin peso
+> **Actualización #250 (2026-11-05, contrato único de NEXO, DU §8):** `peso` es el total con tara y NEXO solo responde
+> `PESO_INCONSISTENTE` si la suma `cantidad × pesoKg` de las posiciones **supera** `peso` en más de 1 % (un peso mayor es válido). Con
+> un solo camión, la línea con tara viaja ahora **con sus `posiciones[]`**; con varios camiones, sin ellas (antes, por el 1 % simétrico
+> de NEXO#308, ninguna línea con tara llevaba posiciones). La tara sigue siendo solo de Contenedor. Sin peso
 > con tara, y en las demás clases de viaje, Cotifly manda lo de siempre (con un camión, el peso de carga y las posiciones; con
 > varios, el peso de cada camión sin posiciones). Lo que va al Cubicador (peso por unidad de cada mercancía, sin tara) no cambia.
 

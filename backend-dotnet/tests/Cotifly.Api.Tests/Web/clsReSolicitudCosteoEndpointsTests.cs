@@ -150,6 +150,27 @@ public sealed class clsReSolicitudCosteoEndpointsTests : IDisposable
         linea["horasDescargue"].Should().NotBeNull("la línea conserva la hora de descargue guardada");
     }
 
+    /// <summary>
+    /// #250 (DU §8): una re-solicitud que agrega la tara (<c>datos_carga.peso_con_tara_kg</c>) a la ruta de contenedor de un solo camión llega
+    /// a Nexo con el peso con tara y con sus posiciones (la carga sin tara): el Nexo falso, con la regla asimétrica de Nexo, la acepta.
+    /// </summary>
+    [Fact]
+    public async Task UnaReSolicitudQueAgregaLaTaraLlegaANexoConElPesoConTaraYSusPosiciones()
+    {
+        var (sesion, folio) = await EnviarAsync();
+        await _api.ProcesarPollingAsync(folio, TimeSpan.FromHours(73));
+        var etag = await EtagAsync(sesion, folio);
+
+        using var respuesta = await ReSolicitarAsync(sesion, folio,
+            """{"motivo":"El cliente mandó el peso con tara","datos_carga":{"peso_con_tara_kg":32300.5}}""", etag);
+
+        await VerificarContratoAsync(respuesta, Ruta, _post, HttpStatusCode.Created);
+        var linea = _nexo.UltimaAlta!["lineas"]!.AsArray().Should().ContainSingle().Subject!;
+        linea["peso"]!.GetValue<decimal>().Should().Be(32_300.5m);
+        linea["posiciones"]!.AsArray().Should().HaveCount(2);
+        _nexo.AltasPesoInconsistente.Should().Be(0);
+    }
+
     [Fact]
     public async Task SiNexoRechazaOSeCaeEnLaReSolicitudLaCotizacionQuedaEnErrorEnvioConElMotivo()
     {
