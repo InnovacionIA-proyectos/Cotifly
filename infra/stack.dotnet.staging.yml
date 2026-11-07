@@ -207,7 +207,8 @@ services:
       # Tiempo por intento (10-600 s) y el de leer-estructura y PUT recetas-lectura (180-900 s, sin reintentos).
       ImportacionInteligente__Habilitada: ${ImportacionInteligente__Habilitada:-true}
       ImportacionInteligente__TimeoutSegundos: ${ImportacionInteligente__TimeoutSegundos:-90}
-      ImportacionInteligente__TimeoutLecturaSegundos: ${ImportacionInteligente__TimeoutLecturaSegundos:-180}
+      ImportacionInteligente__TimeoutLecturaSegundos: ${ImportacionInteligente__TimeoutLecturaSegundos:-240}
+      ImportacionInteligente__LimiteRespuestaMegabytes: ${ImportacionInteligente__LimiteRespuestaMegabytes:-20}
 
       # Cubicador (HU-021.5, HU-023; opciones C y D del E2E 2026-10-16). Sin UrlBase el cubicador queda sin configurar: cada ruta va al
       # camión del respaldo y los catálogos del cubicador responden 503. UrlBase y ApiKey solo en Dokploy; ApiKey es SECRETO, obligatoria

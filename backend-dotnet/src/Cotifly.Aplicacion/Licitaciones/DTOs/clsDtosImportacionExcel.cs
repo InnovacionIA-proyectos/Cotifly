@@ -130,8 +130,9 @@ public sealed record clsOpcionesDiccionarioCliente(
     IReadOnlyList<string> Tipos, IReadOnlyList<string> CamposDestino, IReadOnlyList<string> Unidades, IReadOnlyList<string> Contextos);
 
 /// <summary>
-/// El Excel que viaja a NEXO (<c>multipart</c>, campo <c>archivo</c>) con su nombre original. Cotifly no lo abre ni lo valida: lo valida NEXO
-/// (<c>.xlsx</c>/<c>.xlsm</c>, máx. 10 MB) y su rechazo llega con su código.
+/// El Excel que viaja a NEXO (<c>multipart</c>, campo <c>archivo</c>) con su nombre original. El adaptador no lo abre ni lo valida: el endpoint
+/// de Cotifly que lo recibe (#253 lectura, #256 recetas) solo comprueba el tamaño (≤ 10 MB) y la extensión (<c>.xlsx</c>/<c>.xlsm</c>), sin abrir
+/// el libro, y el resto lo valida NEXO, cuyo rechazo llega con su código.
 /// </summary>
 public sealed record clsArchivoImportacion(string NombreArchivo, byte[] Contenido);
 
