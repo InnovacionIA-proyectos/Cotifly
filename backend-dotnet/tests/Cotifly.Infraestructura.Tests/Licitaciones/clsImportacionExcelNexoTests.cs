@@ -14,8 +14,12 @@ using Cotifly.Pruebas.Comun;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http.Resilience;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using Polly;
+using Polly.CircuitBreaker;
+using Polly.Timeout;
 
 namespace Cotifly.Infraestructura.Tests.Licitaciones;
 
@@ -67,13 +71,15 @@ public sealed class clsImportacionExcelNexoTests
         importacion.EstaHabilitada.Should().BeTrue();
         var opciones = proveedor.GetRequiredService<IOptions<clsOpcionesImportacionInteligente>>().Value;
         opciones.TimeoutSegundos.Should().Be(90);
-        opciones.TimeoutLecturaSegundos.Should().Be(180);
+        opciones.TimeoutLecturaSegundos.Should().Be(240, "más que los 3 intentos de IA de 60 s de NEXO: deja margen para la lectura sin IA");
+        opciones.LimiteRespuestaMegabytes.Should().Be(20);
     }
 
     [Theory]
     [InlineData("ImportacionInteligente:TimeoutLecturaSegundos", "179")]
     [InlineData("ImportacionInteligente:TimeoutSegundos", "0")]
     [InlineData("ImportacionInteligente:TimeoutSegundos", "601")]
+    [InlineData("ImportacionInteligente:LimiteRespuestaMegabytes", "0")]
     public void UnTiempoFueraDeRangoImpideArrancar(string clave, string valor)
     {
         using var proveedor = Proveedor(new() { [clave] = valor });
@@ -123,6 +129,31 @@ public sealed class clsImportacionExcelNexoTests
         opciones.TotalRequestTimeout.Timeout.Should().BeGreaterThan(opciones.AttemptTimeout.Timeout);
         opciones.CircuitBreaker.SamplingDuration.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(360));
         clsImportacionExcelNexo.NombreCliente.Should().Be("NexoImportacion");
+    }
+
+    [Fact]
+    public async Task CadaIntentoRecibeSuTiempoSegunLaMarcaDeLectura()
+    {
+        var opciones = new HttpStandardResilienceOptions();
+        clsImportacionExcelNexo.ConfigurarResiliencia(opciones, TimeSpan.FromSeconds(90), TimeSpan.FromSeconds(240));
+        using var lectura = new HttpRequestMessage(HttpMethod.Post, "http://nexo/api/captura-solicitudes/leer-estructura");
+        lectura.Options.Set(clsImportacionExcelNexo.OpcionLectura, true);
+        using var normal = new HttpRequestMessage(HttpMethod.Post, "http://nexo/api/captura-solicitudes/sugerir-mapeo");
+
+        (await TiempoDelIntento(opciones, lectura)).Should().Be(TimeSpan.FromSeconds(240));
+        (await TiempoDelIntento(opciones, normal)).Should().Be(TimeSpan.FromSeconds(90));
+        opciones.TotalRequestTimeout.Timeout.Should().BeGreaterThan(TimeSpan.FromSeconds(240), "el total no corta antes que el intento de lectura");
+    }
+
+    [Fact]
+    public async Task UnTopeDiarioNoCuentaComoFalloDelCircuitoYUnCincoCeroTresSi()
+    {
+        var opciones = new HttpStandardResilienceOptions();
+        clsImportacionExcelNexo.ConfigurarResiliencia(opciones, TimeSpan.FromSeconds(90), TimeSpan.FromSeconds(240));
+
+        (await CuentaParaElCircuito(opciones, HttpStatusCode.TooManyRequests)).Should().BeFalse("IA_TOPE_DIARIO es del comercial, no de la salud de NEXO");
+        (await CuentaParaElCircuito(opciones, HttpStatusCode.ServiceUnavailable)).Should().BeTrue();
+        (await CuentaParaElCircuito(opciones, HttpStatusCode.OK)).Should().BeFalse();
     }
 
     // --- Identidad, NIT y receta opaca ---
@@ -609,12 +640,241 @@ public sealed class clsImportacionExcelNexoTests
         tabla.TotalFilas.Should().Be(2, "sin totalFilas cuenta las filas recibidas");
     }
 
+    [Fact]
+    public async Task AvisosYCambiosConOtraFormaNoTumbanLaLectura()
+    {
+        var nexo = new clsNexoClientesFalso().Responder(HttpStatusCode.OK, """
+            {"archivo":"a.xlsx","origenReceta":"ia","iaUsada":true,"receta":{"version":1},"tablas":[],
+             "avisos":["texto",{"codigo":"FILA_VACIA","mensaje":"Fila 5 vacía"},{"codigo":"SIN_MENSAJE"},7],
+             "cambios":{"faltan":["PESO",{"titulo":"VALOR"}],"nuevos":"no es lista","otro":1}}
+            """)
+            .Responder(HttpStatusCode.OK, """{"archivo":"a.xlsx","origenReceta":"ia","iaUsada":true,"receta":{},"avisos":"un aviso","cambios":["raro"]}""");
+        var importacion = Importacion(nexo, out var proveedor);
+        using var limpieza = proveedor;
+        var peticion = new clsPeticionLeerEstructura(new clsArchivoImportacion("a.xlsx", [1]), null, null, null);
+
+        var primera = await importacion.LeerEstructuraAsync(_usuarioId, peticion, Ct);
+        var segunda = await importacion.LeerEstructuraAsync(_usuarioId, peticion, Ct);
+
+        primera.Valor.Avisos.Should().Equal("texto", "Fila 5 vacía", """{"codigo":"SIN_MENSAJE"}""", "7");
+        primera.Valor.Cambios!.Faltan.Should().Equal("PESO", """{"titulo":"VALOR"}""");
+        primera.Valor.Cambios.Nuevos.Should().BeEmpty();
+        segunda.Valor.Avisos.Should().Equal("un aviso");
+        segunda.Valor.Cambios.Should().BeNull("una forma que no es un objeto no se adivina");
+    }
+
+    [Theory]
+    [InlineData("plantillas", "[null]")]
+    [InlineData("recetas", "[null]")]
+    [InlineData("diccionario", "[null]")]
+    [InlineData("aplicar", """{"totalFilas":1,"lineas":[null],"errores":[]}""")]
+    [InlineData("aplicar", """{"totalFilas":1,"lineas":[{"fila":2,"origen":"Cali","destino":"Bogotá","posiciones":[null]}],"errores":[null]}""")]
+    [InlineData("normalizar", """{"iaUsada":true,"totalDistintos":1,"valores":[{"campo":"ciudad","valor":"X","estado":"ambiguo","candidatos":[null]}]}""")]
+    [InlineData("sugerir", """{"iaUsada":true,"columnas":[null],"dudas":[]}""")]
+    public async Task UnNuloDentroDeUnaListaEsUnaRespuestaInvalidaNoUnaExcepcion(string llamada, string json)
+    {
+        var nexo = new clsNexoClientesFalso().Responder(HttpStatusCode.OK, json);
+        var importacion = Importacion(nexo, out var proveedor);
+        using var limpieza = proveedor;
+
+        clsErrorDominio error = llamada switch
+        {
+            "plantillas" => (await importacion.ListarPlantillasMapeoAsync(_usuarioId, "900123456", Ct)).Error,
+            "recetas" => (await importacion.ListarRecetasLecturaAsync(_usuarioId, "900123456", Ct)).Error,
+            "diccionario" => (await importacion.ObtenerDiccionarioClienteAsync(_usuarioId, "900123456", null, Ct)).Error,
+            "aplicar" => (await importacion.AplicarMapeoAsync(_usuarioId,
+                new clsPeticionAplicarMapeo("900123456", [new(0, "origen", null)], [["Cali"]], null), Ct)).Error,
+            "normalizar" => (await importacion.NormalizarValoresAsync(_usuarioId, null, [new("ciudad", "X")], Ct)).Error,
+            _ => (await importacion.SugerirMapeoAsync(_usuarioId, _sugerir, Ct)).Error,
+        };
+
+        error.Codigo.Should().Be(clsCodigosError.NexoNoDisponible);
+    }
+
+    // --- Tamaño y tiempo de la respuesta ---
+
+    [Fact]
+    public async Task UnaRespuestaMasGrandeQueElLimiteEsNoDisponible()
+    {
+        var grande = "[" + string.Join(',', Enumerable.Repeat("""{"id":"3f2504e0-4f89-11d3-9a0c-0305e82c3301","nombre":"xxxxxxxxxxxxxxxxxxxx"}""", 20_000)) + "]";
+        var nexo = new clsNexoClientesFalso().Responder(HttpStatusCode.OK, grande);
+        var importacion = Importacion(nexo, out var proveedor, new() { ["ImportacionInteligente:LimiteRespuestaMegabytes"] = "1" });
+        using var limpieza = proveedor;
+
+        var resultado = await importacion.ListarPlantillasMapeoAsync(_usuarioId, "900123456", Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.NexoNoDisponible);
+        resultado.Error.Detalle.Should().Contain("demasiado grande");
+    }
+
+    [Fact]
+    public async Task UnCuerpoQueNoTerminaDeLlegarSeCortaConElTiempoDelIntento()
+    {
+        var importacion = Importacion(new clsNexoCuerpoColgado(), out var proveedor, new() { ["ImportacionInteligente:TimeoutSegundos"] = "10" });
+        using var limpieza = proveedor;
+        var reloj = System.Diagnostics.Stopwatch.StartNew();
+
+        var resultado = await importacion.ObtenerOpcionesDiccionarioAsync(_usuarioId, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.NexoNoDisponible);
+        reloj.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(60), "el cuerpo se lee dentro del tiempo del intento");
+    }
+
+    // --- Reintentos exactos y cancelación ---
+
+    [Fact]
+    public async Task TresFallosSeguidosEnAplicarMapeoSonExactamenteDosPeticiones()
+    {
+        var nexo = new clsNexoClientesFalso()
+            .Responder(HttpStatusCode.ServiceUnavailable).Responder(HttpStatusCode.ServiceUnavailable).Responder(HttpStatusCode.ServiceUnavailable);
+        var importacion = Importacion(nexo, out var proveedor);
+        using var limpieza = proveedor;
+
+        var resultado = await importacion.AplicarMapeoAsync(_usuarioId,
+            new clsPeticionAplicarMapeo("900123456", [new(0, "origen", null)], [["Cali"]], null), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.NexoNoDisponible);
+        nexo.Peticiones.Should().HaveCount(2, "un intento y un solo reintento");
+    }
+
+    [Fact]
+    public async Task LosDeleteYGuardarLaPlantillaNoSeReintentan()
+    {
+        var nexo = new clsNexoClientesFalso()
+            .Responder(HttpStatusCode.ServiceUnavailable).Responder(HttpStatusCode.ServiceUnavailable).Responder(HttpStatusCode.ServiceUnavailable)
+            .Responder(HttpStatusCode.ServiceUnavailable).Responder(HttpStatusCode.ServiceUnavailable).Responder(HttpStatusCode.ServiceUnavailable);
+        var importacion = Importacion(nexo, out var proveedor);
+        using var limpieza = proveedor;
+
+        var receta = await importacion.EliminarRecetaLecturaAsync(_usuarioId, Guid.NewGuid(), Ct);
+        var plantilla = await importacion.EliminarPlantillaMapeoAsync(_usuarioId, Guid.NewGuid(), Ct);
+        var guardar = await importacion.GuardarPlantillaMapeoAsync(_usuarioId,
+            new clsPeticionPlantillaMapeo("900123456", null, ["ORIGEN"], [new(0, "origen", null)]), Ct);
+
+        new[] { receta.Error.Codigo, plantilla.Error.Codigo, guardar.Error.Codigo }.Should().AllBe(clsCodigosError.NexoNoDisponible);
+        nexo.Peticiones.Should().HaveCount(3, "una sola petición por llamada");
+    }
+
+    [Fact]
+    public async Task LaCancelacionDeQuienLlamaSePropaga()
+    {
+        var nexo = new clsNexoClientesFalso().Responder(HttpStatusCode.OK, SugerenciaJson);
+        var importacion = Importacion(nexo, out var proveedor);
+        using var limpieza = proveedor;
+        using var cancelacion = new CancellationTokenSource();
+        await cancelacion.CancelAsync();
+
+        var sugerir = () => importacion.SugerirMapeoAsync(_usuarioId, _sugerir, cancelacion.Token);
+
+        await sugerir.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    // --- Logs ---
+
+    [Fact]
+    public async Task LosLogsNoLlevanElNitNiElMensajeDeNexoNiLaUrl()
+    {
+        using var logs = new clsProveedorLogsFalso();
+        var nexo = new clsNexoClientesFalso()
+            .Responder(HttpStatusCode.OK, "[]")
+            .Responder(HttpStatusCode.BadRequest, """{"code":"RECETA_INVALIDA","message":"La columna 900123456 de ACME S.A.S. no cuadra"}""");
+        var importacion = Importacion(nexo, out var proveedor, logs: logs);
+        using var limpieza = proveedor;
+
+        await importacion.ObtenerDiccionarioClienteAsync(_usuarioId, "900123456", new clsFiltroDiccionarioCliente(Q: "contenedor"), Ct);
+        var rechazo = await importacion.ListarRecetasLecturaAsync(_usuarioId, "900123456", Ct);
+
+        rechazo.Error.Codigo.Should().Be(clsCodigosError.RecetaInvalida);
+        logs.Registros.Should().NotBeEmpty();
+        logs.Registros.Should().NotContain(r => r.Registro.Mensaje.Contains("900123456") || r.Registro.Mensaje.Contains("ACME")
+            || r.Registro.Mensaje.Contains("contenedor"));
+        logs.Registros.Should().NotContain(r => r.Categoria.StartsWith("System.Net.Http.HttpClient." + clsImportacionExcelNexo.NombreCliente,
+            StringComparison.Ordinal));
+    }
+
     // --- Soporte ---
 
-    private static IClsImportacionExcelNexo Importacion(HttpMessageHandler nexo, out ServiceProvider proveedor)
+    private static async Task<TimeSpan> TiempoDelIntento(HttpStandardResilienceOptions opciones, HttpRequestMessage peticion)
     {
-        proveedor = Proveedor(new() { ["Nexo:UrlBase"] = clsNexoClientesFalso.UrlBase }, s =>
+        var contexto = ResilienceContextPool.Shared.Get(TestContext.Current.CancellationToken);
+        try
         {
+            contexto.SetRequestMessage(peticion);
+            return await opciones.AttemptTimeout.TimeoutGenerator!(new TimeoutGeneratorArguments(contexto));
+        }
+        finally
+        {
+            ResilienceContextPool.Shared.Return(contexto);
+        }
+    }
+
+    private static async Task<bool> CuentaParaElCircuito(HttpStandardResilienceOptions opciones, HttpStatusCode estado)
+    {
+        var contexto = ResilienceContextPool.Shared.Get(TestContext.Current.CancellationToken);
+        using var respuesta = new HttpResponseMessage(estado);
+        try
+        {
+            return await opciones.CircuitBreaker.ShouldHandle(
+                new CircuitBreakerPredicateArguments<HttpResponseMessage>(contexto, Outcome.FromResult(respuesta)));
+        }
+        finally
+        {
+            ResilienceContextPool.Shared.Return(contexto);
+        }
+    }
+
+    /// <summary>NEXO que manda las cabeceras de un 200 y nunca termina el cuerpo.</summary>
+    private sealed class clsNexoCuerpoColgado : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(new clsFlujoColgado()) });
+    }
+
+    private sealed class clsFlujoColgado : Stream
+    {
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return 0;
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override void Flush()
+        {
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    private static IClsImportacionExcelNexo Importacion(
+        HttpMessageHandler nexo, out ServiceProvider proveedor, Dictionary<string, string?>? configuracion = null, ILoggerProvider? logs = null)
+    {
+        var valores = new Dictionary<string, string?>(configuracion ?? []) { ["Nexo:UrlBase"] = clsNexoClientesFalso.UrlBase };
+        proveedor = Proveedor(valores, s =>
+        {
+            if (logs is not null)
+            {
+                s.AddLogging(b => b.AddProvider(logs));
+            }
+
             s.AddHttpClient(clsImportacionExcelNexo.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => nexo);
             var usuarios = Substitute.For<IClsUsuarioWebRepository>();
             usuarios.ObtenerPorIdAsync(_usuarioId, Arg.Any<CancellationToken>())

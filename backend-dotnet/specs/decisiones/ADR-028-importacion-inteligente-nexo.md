@@ -5,7 +5,7 @@
 - **Relacionadas:** ADR-002 (puertos y adaptadores), ADR-015 (costeo en NEXO, identidad `X-Portal-clsUsuario-Id`), ADR-017 (licitaciones
   desde Excel: `analizar-excel` y mapeo), ADR-024 (Excel de mercancías leído en local), #278 (contrato único de NEXO, fase 0:
   `IA_TOPE_DIARIO`), HU-031.1 (#194, diccionario de alias de NEXO). En NEXO: S6-HU-34 (importación inteligente), S6-HU-34.9 (NEXO#410,
-  cliente por NIT) y el PR #433 (`leer-estructura` y `recetas-lectura`, en QA desde el 2026-11-05).
+  cliente por NIT) y el PR #433 (`leer-estructura` y `recetas-lectura`; su llegada a NEXO QA está pendiente de confirmar).
 - **Origen:** plan «Cotifly reutiliza la importación inteligente de Excel de NEXO» (2026-10-29,
   `docs/backlog/2026-10-29_ISSUES-IMPORTACION-INTELIGENTE-COTIFLY.md` en NEXO) y las decisiones de Sara del 2026-10-29.
 
@@ -54,26 +54,33 @@ Los pliegos de licitación son justo esos archivos. La pregunta era si Cotifly r
 6. **La receta es JSON opaco.** Su forma (`RecetaLectura`, versión 1) es de NEXO y puede crecer. Cotifly la recibe como `JsonElement`, la
    devuelve al front y la reenvía como texto exactamente como llegó (para corregirla con una instrucción o para guardarla). No la tipa, no la
    valida y no la modifica: una receta mal formada la rechaza NEXO con `RECETA_INVALIDA`.
-7. **El archivo lo valida NEXO.** El adaptador no abre el Excel: lo reenvía con su nombre original en el campo `archivo`. Los controles
+7. **El archivo lo valida NEXO.** El adaptador no abre el Excel: lo reenvía con su nombre original en el campo `archivo`. Los endpoints
+   que lo reciben (#253 lectura, #256 recetas) solo comprueban el tamaño (≤ 10 MB) y la extensión (`.xlsx`/`.xlsm`), sin abrir el libro. Los controles
    locales del Excel subido (HU-035.2) no se aplican en esta ruta; su falso positivo con la configuración de impresión (#277) es una razón más.
    Un rechazo llega con el código de NEXO (`FORMATO_NO_SOPORTADO`, `EXCEL_INVALIDO`, `EXCEL_SIN_DATOS`) o, por tamaño (`413`),
    `ARCHIVO_DEMASIADO_GRANDE`.
 8. **La clase de contenedor sigue por alias.** La importación no cambia cómo se resuelve: el diccionario de alias de NEXO (HU-031.1) y la
    captura como hasta hoy.
 9. **Cliente HTTP propio, tiempos por endpoint.** `NexoImportacion`, con su tubería: cada intento con `ImportacionInteligente:TimeoutSegundos`
-   (90 s por defecto) o, en `leer-estructura` y `PUT recetas-lectura`, `ImportacionInteligente:TimeoutLecturaSegundos` (180 s por defecto y
-   como mínimo: NEXO hace hasta 3 intentos de IA de 60 s y luego ejecuta la receta). Se reintentan (una vez, lo que admite NEXO) solo los
+   (90 s por defecto) o, en `leer-estructura` y `PUT recetas-lectura`, `ImportacionInteligente:TimeoutLecturaSegundos` (240 s por defecto,
+   180 como mínimo: NEXO hace hasta 3 intentos de IA de 60 s y luego ejecuta la receta o lee sin IA, y el margen evita cortar justo antes). Se reintentan (una vez, lo que admite NEXO) solo los
    `GET` y `aplicar-mapeo` (sin IA ni efecto en NEXO); las demás escrituras tampoco (`PUT plantillas-mapeo`, los `DELETE`). Un 429 nunca se
-   reintenta. La petición lleva marcas (`HttpRequestOptions`) que la tubería lee para el tiempo y el reintento. Sin registrar cabeceras.
+   reintenta. La petición lleva marcas (`HttpRequestOptions`) que la tubería lee para el tiempo y el reintento. Un 429 no cuenta para el circuito
+   (el `IA_TOPE_DIARIO` es de un comercial, no una caída de NEXO). El cuerpo se lee dentro del tiempo del intento y con un tope
+   (`ImportacionInteligente:LimiteRespuestaMegabytes`, 20 MB). Sin los logs del `HttpClient` (la URL lleva el NIT) y sin el `message` de NEXO
+   en el log (solo estado y código).
 10. **Errores.** Nunca lanza por NEXO. Un 400/404 con un código de la tabla de NEXO llega con ese código y el mensaje de NEXO (códigos nuevos
     en `clsCodigosError` y en el enum de `ErrorNegocio`); `VALIDATION_ERROR` (una petición de Cotifly mal armada) u otro 4xx →
     `COSTEO_NEXO_RECHAZADA` con el código en el detalle; 401/403 → `NEXO_SIN_PERMISO`; red, tiempo agotado, 5xx, circuito abierto, JSON
     inesperado, el 429 por minuto (con el `Retry-After` en el detalle) o el comercial sin `idUsuarioExterno` → `NEXO_NO_DISPONIBLE`. Sin
-    IA en NEXO no hay error: `200` con `iaUsada = false` y `motivoSinIa`, y el front sigue con el mapeo manual.
+    IA en NEXO no hay error: `200` con `iaUsada = false` y `motivoSinIa`, y el front sigue con el mapeo manual. Un `null` dentro de una
+    lista de la respuesta también es `NEXO_NO_DISPONIBLE`; `avisos` y `cambios` de la lectura se reciben con tolerancia (su forma no está
+    fijada). `VALIDATION_ERROR` en `leer-estructura` lo deja pasar tal cual #253, que es quien arma ese formulario.
 11. **Interruptor.** `ImportacionInteligente:Habilitada` (por defecto `true`, como interruptor de emergencia si el gasto de IA se dispara),
     validada al arrancar con los tiempos. Apagada o sin `Nexo:UrlBase`, se registra `clsImportacionExcelNoDisponible`, que responde
     `NEXO_NO_DISPONIBLE` sin llamar a NEXO.
-12. **Alcance de HU-044.1.** Solo el puerto, el adaptador, la simulación en `clsNexoFalso` y este ADR. Los endpoints `/web/licitaciones/...`
+12. **Alcance de HU-044.1.** Solo el puerto, el adaptador, la simulación en `clsNexoFalso` y este ADR. Del diccionario, solo la lectura
+    (`GET diccionario-cliente` y `/opciones`); la escritura (`POST/PUT/DELETE`, `CONTRATO.md` §3.19.1 de NEXO) se agrega en #256. Los endpoints `/web/licitaciones/...`
     son #253 a #256 y las pruebas E2E, #257.
 
 ## Consecuencias
