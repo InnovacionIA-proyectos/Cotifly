@@ -119,9 +119,16 @@ public sealed class clsSeguroCosteoService(
             return (Detallar(invalido, cotizacion), false, false);
         }
 
-        // La tasa solo se necesita al incluirlo en una ruta que no lo tiene; quitarlo (o repetir la marca) no la lee.
+        // D1 de la validación: la ruta ya está como se pide (marcada, aunque sea sin valor de la mercancía, o sin seguro): no se llama al
+        // dominio, no se lee la tasa, no se invalida el PDF ni sube la versión.
+        if (incluir == ruta.IncluyeSeguro && (incluir || (ruta.TasaSeguroAplicada is null && ruta.CostoSeguro is null)))
+        {
+            return (await VistaAsync(cotizacion, cancellationToken), false, false);
+        }
+
+        // La tasa solo se necesita al incluirlo en una ruta que no lo tiene.
         var tasa = 0m;
-        if (incluir && !ruta.IncluyeSeguro)
+        if (incluir)
         {
             if (await tarifasSeguro.ObtenerTasaVigenteAsync(cancellationToken) is not { } vigente)
             {

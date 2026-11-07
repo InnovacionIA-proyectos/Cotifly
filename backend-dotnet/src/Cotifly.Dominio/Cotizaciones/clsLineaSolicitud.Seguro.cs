@@ -54,11 +54,13 @@ public sealed partial class clsLineaSolicitud
     /// </summary>
     internal clsResultado<bool> IncluirSeguro(decimal tasaVigente)
     {
-        ValidarTasa(tasaVigente);
+        // D1 de la validación: marcar una ruta que ya lo tiene es idempotente aunque no traiga tasa (no se usa).
         if (IncluyeSeguro)
         {
             return false;
         }
+
+        ValidarTasa(tasaVigente);
 
         if (ValorMercancia is not { } valor)
         {
