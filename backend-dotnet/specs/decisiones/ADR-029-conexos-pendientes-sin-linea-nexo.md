@@ -30,7 +30,8 @@ En una cotización entregada la situación ya no cambia: reintentar más veces n
    "la primera que creó la Mesa"; con ids GUID la elección es arbitraria pero determinista, y con ids numéricos "10" va antes que "9". Lo
    que pide la decisión es que siempre se elija la misma; falta confirmar con el folio real que la Mesa parte líneas así.
    **La única línea de la cotización** (`LineaDeNexo` sin camión, la regla anterior) **solo se usa para una ruta sin camiones**: una ruta
-   cuyos camiones están todos descartados o rechazados no tiene destino (antes podía tomar la línea de otra ruta; auditoría M2).
+   cuyos camiones están todos descartados o rechazados no tiene destino (antes podía tomar la línea de otra ruta y cobrar allí el
+   conexo con un `POST` no idempotente; auditoría M2, validación H1). En estado terminal esa ruta queda como dice el punto 2.
 2. **Variante 4a (decisión del usuario).** Si el primer camión vigente no tiene línea y la cotización **ya no se costea** en Nexo
    (`SeConsultaEnNexo` falso: entregada, descartada, vencida), los conexos van a la línea del **primer camión vigente que sí la tiene**
    (un camión entregado sin flete se trata como uno rechazado). Si ningún camión de la ruta tiene línea, quedan `fallido_definitivo` con
@@ -64,6 +65,11 @@ En una cotización entregada la situación ya no cambia: reintentar más veces n
    - **Solo fuera de la agenda** (auditoría B2): una cotización ya agendada (reclamada o esperando el siguiente reintento, 5, 15 o 60 min)
      no se mueve. Varios clics no adelantan la espera de los reintentos ni agotan `CosteoNexo:MaximoReintentosConexos`; el 409 basta.
 
+6. **El `POST` individual no aplica la 4a** (validación H2). `POST .../costeo/servicios-conexos` (síncrono, del comercial) sigue
+   exigiendo la línea del primer camión vigente: sin ella responde `LINEA_SIN_COTIZACION_NEXO`. El lote (ADR-026) sí la aplica, porque
+   va por el envío diferido. La diferencia es casi inalcanzable (sin la línea del primer camión no suele haber precio y ninguno de los
+   dos admite conexos sin costeo) y alinearlos movería la validación previa del `POST`; queda así, a la vista.
+
 ## Alternativas consideradas
 
 - **Solo contar los conexos sin registro en el reintento** (opción 1 del análisis): hace entrar al reintento, pero sin destino vuelve a
@@ -92,5 +98,6 @@ En una cotización entregada la situación ya no cambia: reintentar más veces n
 | Pendiente | Dueño |
 |---|---|
 | Confirmar en NEXO que la cotización de `PCN-900017447-DG-22102026-002` tiene más de una línea con el `lineaSolicitudId` del primer camión (consulta de solo lectura del análisis de #259) | Duban Guerra |
-| Visto bueno del PR (puntos 1, 3, 4 y 5; el 2 ya está decidido) | Usuario |
+| Confirmar con NEXO el formato de los ids de las líneas de la cotización (validación H3): "primera por id" es orden ordinal del texto, así que con ids numéricos `CL-10` va antes que `CL-9` | Duban Guerra |
+| Visto bueno del PR (puntos 1, 3, 4, 5 y 6; el 2 ya está decidido) | Usuario |
 | Opcional: barrido al arrancar el worker que reencole las entregadas con conexos pendientes y sin agenda, si hace falta repararlas antes de que el comercial vuelva a finalizar | Usuario |
