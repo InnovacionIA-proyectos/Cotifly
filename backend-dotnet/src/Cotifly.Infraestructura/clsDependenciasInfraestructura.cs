@@ -486,7 +486,7 @@ public static class clsDependenciasInfraestructura
     /// (<see cref="Licitaciones.Services.clsImportacionExcelNexo.NombreCliente"/>) con su tubería: los tiempos de
     /// <c>ImportacionInteligente</c> por endpoint y reintentos solo de los GET y de <c>aplicar-mapeo</c>. Lleva el manejador del cupo de Nexo
     /// como los demás clientes; sus rutas no son de listados limitados, así que un 429 aquí (ni el <c>IA_TOPE_DIARIO</c>) nunca bloquea al
-    /// resto. Sin registrar cabeceras. TryAdd: un adaptador registrado antes (pruebas) se respeta.
+    /// resto. Sin los logs del HttpClient (la URL lleva el NIT). TryAdd: un adaptador registrado antes (pruebas) se respeta.
     /// </summary>
     private static void AgregarImportacionInteligente(IServiceCollection servicios)
     {
@@ -495,7 +495,9 @@ public static class clsDependenciasInfraestructura
         // Sin el límite de 100 s del HttpClient: los límites los pone la tubería (la lectura puede esperar 180 s o más).
         var tuberia = servicios.AddHttpClient<Licitaciones.Services.clsImportacionExcelNexo>(
                 Licitaciones.Services.clsImportacionExcelNexo.NombreCliente, cliente => cliente.Timeout = Timeout.InfiniteTimeSpan)
-            .RedactLoggedHeaders(_ => true)
+            // Sin los logs por defecto de IHttpClientFactory: escriben en Information la URL con ?clienteNit= y q= (datos del cliente).
+            // El adaptador registra su propio warning por fallo, con la ruta sin consulta.
+            .RemoveAllLoggers()
             .AddHttpMessageHandler<clsCupoNexoHandler>()
             .AddStandardResilienceHandler();
         servicios.AddOptions<HttpStandardResilienceOptions>(tuberia.PipelineName)

@@ -205,12 +205,12 @@ backend tiene el adaptador (`IClsImportacionExcelNexo` → `clsImportacionExcelN
 | Endpoint de NEXO que Cotifly consume | Qué hace | Puede gastar IA | Reintentos | Tiempo por intento |
 |---|---|---|---|---|
 | `POST /api/captura-solicitudes/sugerir-mapeo` | Propone el campo de cada columna de **una** hoja (plantilla del cliente → diccionario → IA) | Sí | No | `TimeoutSegundos` (90 s) |
-| `POST /api/captura-solicitudes/aplicar-mapeo` | Aplica el mapeo confirmado a todas las filas: líneas listas y errores por fila | No | Sí (2) | 90 s |
+| `POST /api/captura-solicitudes/aplicar-mapeo` | Aplica el mapeo confirmado a todas las filas: líneas listas y errores por fila | No | Sí (1) | 90 s |
 | `POST /api/captura-solicitudes/normalizar-valores` | Textos libres (vehículo, carrocería, línea de negocio, ciudad) → valores de NEXO | Sí | No | 90 s |
 | `PUT` / `GET` / `DELETE /api/captura-solicitudes/plantillas-mapeo` | Plantilla de mapeo por cliente | No | Solo el `GET` | 90 s |
-| `GET /api/diccionario-cliente` y `GET /api/diccionario-cliente/opciones` | Diccionario de términos por cliente y sus opciones | No | Sí | 90 s |
-| `POST /api/captura-solicitudes/leer-estructura` (multipart) | Lee un Excel de formato complejo (tabla cruzada, encabezados en varias filas, datos sueltos) con una **receta** y devuelve tablas normales | Sí | No | `TimeoutLecturaSegundos` (≥ 180 s) |
-| `PUT /api/captura-solicitudes/recetas-lectura` (multipart) | Guarda la receta confirmada como formato del cliente (hasta 20 por cliente) | Sí (la ejecuta) | No | ≥ 180 s |
+| `GET /api/diccionario-cliente` y `GET /api/diccionario-cliente/opciones` | Diccionario de términos por cliente y sus opciones (solo lectura; la escritura llega con #256) | No | Sí (1) | 90 s |
+| `POST /api/captura-solicitudes/leer-estructura` (multipart) | Lee un Excel de formato complejo (tabla cruzada, encabezados en varias filas, datos sueltos) con una **receta** y devuelve tablas normales | Sí | No | `TimeoutLecturaSegundos` (240 s, mínimo 180) |
+| `PUT /api/captura-solicitudes/recetas-lectura` (multipart) | Guarda la receta confirmada como formato del cliente (hasta 20 por cliente) | Sí (la ejecuta) | No | 240 s |
 | `GET` / `DELETE /api/captura-solicitudes/recetas-lectura` | Formatos guardados del cliente | No | Solo el `GET` | 90 s |
 
 Reglas:
@@ -225,13 +225,14 @@ Reglas:
   guardarla. No la tipa ni la modifica.
 - **Las matrices las lee NEXO.** Con `leer-estructura` queda obsoleta la conversión de matrices en el front (P3, clientepro-frontend#141).
   Cada tabla de `tablas` tiene la forma de una hoja de `analizar-excel` y entra a `sugerir-mapeo` sin transformarla.
-- **El archivo lo valida NEXO.** Cotifly no abre el Excel en esta ruta: un archivo que no es `.xlsx`/`.xlsm`, ilegible o de más de 10 MB
-  vuelve con el código de NEXO (`FORMATO_NO_SOPORTADO`, `EXCEL_INVALIDO`, `ARCHIVO_DEMASIADO_GRANDE`...).
+- **El archivo lo valida NEXO.** Cotifly no abre el Excel en esta ruta. El adaptador no lo valida; el endpoint que lo recibe (#253
+  lectura, #256 recetas) solo comprueba el tamaño (≤ 10 MB) y la extensión (`.xlsx`/`.xlsm`), sin abrir el libro. Lo demás (un libro
+  ilegible o sin datos) vuelve con el código de NEXO (`FORMATO_NO_SOPORTADO`, `EXCEL_INVALIDO`, `EXCEL_SIN_DATOS`...).
 - **Sin IA no es un error.** Con la IA de NEXO apagada o caída, la respuesta es 200 con `iaUsada = false` y `motivoSinIa`.
 - **Tope diario de IA.** `429 IA_TOPE_DIARIO` es el cupo del comercial (500.000 tokens al día): llega como `IA_TOPE_DIARIO` con el mensaje
   de NEXO y no bloquea a los demás comerciales.
 - **Errores.** Los 400/404 de NEXO de estos endpoints llegan con su mismo código y mensaje (lista en `clsCodigosError`); 401/403 →
   `NEXO_SIN_PERMISO`; red, tiempo agotado, 5xx, el 429 por minuto o la importación apagada → `NEXO_NO_DISPONIBLE`.
 - **Configuración.** `ImportacionInteligente__Habilitada` (por defecto `true`, interruptor de emergencia), `ImportacionInteligente__TimeoutSegundos`
-  (90) e `ImportacionInteligente__TimeoutLecturaSegundos` (180, mínimo 180). Sin `Nexo__UrlBase` o apagada, todo es `NEXO_NO_DISPONIBLE`.
+  (90), `ImportacionInteligente__TimeoutLecturaSegundos` (240, mínimo 180) e `ImportacionInteligente__LimiteRespuestaMegabytes` (20). Sin `Nexo__UrlBase` o apagada, todo es `NEXO_NO_DISPONIBLE`.
 - **Clase de contenedor.** Sigue resolviéndose por alias (diccionario de alias de NEXO, HU-031.1); la importación no la cambia.

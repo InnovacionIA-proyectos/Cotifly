@@ -182,7 +182,8 @@ encima de lo que tarda la Mesa en la práctica.
 
 Cotifly **reutiliza** la importación inteligente de NEXO: no la replica ni guarda nada propio (sin tablas, sin copia de plantillas,
 recetas ni historial). Detalle campo por campo en `CONTRATO.md` de NEXO (rama `QA`): §3.3 (captura de solicitudes) y §3.19.1 (diccionario
-por cliente). Revisado contra NEXO QA el 2026-11-06, con el PR #433 de NEXO (`leer-estructura` y `recetas-lectura`) ya fusionado.
+por cliente). Revisado el 2026-11-06 contra `CONTRATO.md` de NEXO y el documento de lectura de Excel con IA. Que el PR #433 de NEXO
+(`leer-estructura` y `recetas-lectura`) esté en NEXO QA está **pendiente de confirmar**.
 
 ```
 Cotifly ──POST leer-estructura (multipart)──► NEXO   (opcional: Excel de formato complejo → tablas normales + receta)
@@ -217,8 +218,9 @@ Decisiones que fijan cómo llama Cotifly:
 - **Receta:** JSON opaco. Se reenvía exactamente como llegó.
 - **Reintentos:** una vez, solo `aplicar-mapeo` y los `GET`. `sugerir-mapeo`, `normalizar-valores`, `leer-estructura` y `PUT recetas-lectura` pueden
   gastar IA y cuentan para el tope: nunca se reintentan (tampoco los demás `PUT` ni los `DELETE`).
-- **Tiempos:** 90 s por intento (`ImportacionInteligente__TimeoutSegundos`) y al menos 180 s en `leer-estructura` y `PUT recetas-lectura`
-  (`ImportacionInteligente__TimeoutLecturaSegundos`): NEXO hace hasta 3 intentos de IA de 60 s.
+- **Tiempos:** 90 s por intento (`ImportacionInteligente__TimeoutSegundos`) y 240 s (mínimo 180) en `leer-estructura` y `PUT recetas-lectura`
+  (`ImportacionInteligente__TimeoutLecturaSegundos`): NEXO hace hasta 3 intentos de IA de 60 s y luego lee sin IA. El cuerpo de la respuesta
+  se lee dentro del mismo tiempo y con un tope de `ImportacionInteligente__LimiteRespuestaMegabytes` (20 MB).
 - **Sin IA:** `200` con `iaUsada = false` y `motivoSinIa`. No es un error.
 - **`429 IA_TOPE_DIARIO`:** el cupo diario de IA del comercial. Cotifly lo devuelve como `IA_TOPE_DIARIO` con el mensaje de NEXO y **no**
   activa el bloqueo global de lecturas de NEXO (ese es solo para el `429 DEMASIADAS_SOLICITUDES` de catálogos y bandeja).

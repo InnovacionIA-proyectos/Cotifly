@@ -27,15 +27,16 @@ namespace Cotifly.Infraestructura.Licitaciones.Services;
 /// <remarks>
 /// <para><b>Cliente HTTP propio (<see cref="NombreCliente"/>).</b> Su tubería (<see cref="ConfigurarResiliencia"/>) da a cada intento
 /// <c>ImportacionInteligente:TimeoutSegundos</c> (90 s) o, en <c>leer-estructura</c> y <c>PUT recetas-lectura</c>,
-/// <c>ImportacionInteligente:TimeoutLecturaSegundos</c> (≥ 180 s). Solo se reintentan los GET y <c>aplicar-mapeo</c> (sin IA ni efecto); las
+/// <c>ImportacionInteligente:TimeoutLecturaSegundos</c> (240 s; mínimo 180). Solo se reintentan los GET y <c>aplicar-mapeo</c> (sin IA ni efecto); las
 /// llamadas que pueden gastar IA (<c>sugerir-mapeo</c>, <c>normalizar-valores</c>, <c>leer-estructura</c>, <c>PUT recetas-lectura</c>) y las
-/// demás escrituras nunca.</para>
+/// demás escrituras nunca. Un 429 no cuenta para el circuito. El cuerpo se lee dentro del tiempo del intento y con el tope
+/// <c>ImportacionInteligente:LimiteRespuestaMegabytes</c>.</para>
 /// <para><b>Errores.</b> 400/404 con un código de <see cref="CodigosNexo"/> → ese código con el mensaje de NEXO; otro 4xx →
 /// <c>COSTEO_NEXO_RECHAZADA</c>; <c>429 IA_TOPE_DIARIO</c> → <c>IA_TOPE_DIARIO</c> sin tocar el bloqueo global de
 /// <see cref="clsCupoNexoHandler"/> (estas rutas no son de listados limitados); otro 429 (<c>DEMASIADAS_SOLICITUDES</c>) → no disponible
 /// con el <c>Retry-After</c> en el detalle; 401/403 → <c>NEXO_SIN_PERMISO</c>; 413 → <c>ARCHIVO_DEMASIADO_GRANDE</c>; 5xx, red, tiempo
-/// agotado, circuito abierto, JSON inválido, comercial sin <c>idUsuarioExterno</c> o sin configurar → <c>NEXO_NO_DISPONIBLE</c>. La
-/// cancelación del llamador se propaga. Una línea de warning por fallo, sin el header de identidad.</para>
+/// agotado, circuito abierto, JSON inválido (o un null dentro de una lista), respuesta demasiado grande, comercial sin
+/// <c>idUsuarioExterno</c> o sin configurar → <c>NEXO_NO_DISPONIBLE</c>. La cancelación del llamador se propaga. Una línea de warning por fallo, sin el header de identidad, la consulta ni el mensaje de NEXO.</para>
 /// </remarks>
 public sealed class clsImportacionExcelNexo(
     HttpClient http,
@@ -198,7 +199,7 @@ public sealed class clsImportacionExcelNexo(
 
         return await EnviarYLeerAsync<List<clsPlantillaMapeoWire>, IReadOnlyList<clsPlantillaMapeo>>(
             usuarioId, HttpMethod.Get, $"{RutaPlantillasMapeo}?clienteNit={Uri.EscapeDataString(nit)}", null, reintentable: true, lectura: false,
-            lista => [.. lista.Select(MapearPlantilla)], cancellationToken);
+            lista => [.. SinNulos(lista).Select(MapearPlantilla)], cancellationToken);
     }
 
     public Task<clsResultado<bool>> EliminarPlantillaMapeoAsync(Guid usuarioId, Guid plantillaId, CancellationToken cancellationToken = default) =>
@@ -217,7 +218,7 @@ public sealed class clsImportacionExcelNexo(
         if (nit is not null)
         {
             // NEXO QA (2026-11-06) aún no acepta clienteNit en este GET (solo clienteId): lo ignora y responde los términos de todos los
-            // clientes. Se manda igual para que tome efecto cuando NEXO lo agregue (ADR-028 §5).
+            // clientes. Se manda igual para que tome efecto cuando NEXO lo agregue (ADR-028, Consecuencias).
             parametros.Add("clienteNit=" + Uri.EscapeDataString(nit));
         }
 
@@ -239,7 +240,7 @@ public sealed class clsImportacionExcelNexo(
 
         return await EnviarYLeerAsync<List<clsTerminoWire>, IReadOnlyList<clsTerminoCliente>>(
             usuarioId, HttpMethod.Get, $"{RutaDiccionarioCliente}?{string.Join('&', parametros)}", null, reintentable: true, lectura: false,
-            lista => [.. lista.Select(t => new clsTerminoCliente(
+            lista => [.. SinNulos(lista).Select(t => new clsTerminoCliente(
                 t.Id, t.ClienteId, t.ClienteNombre, t.Termino ?? string.Empty, t.Tipo ?? string.Empty, t.Concepto ?? string.Empty, t.Contexto,
                 t.Ejemplo, t.Activo, t.CreatedAt, t.UpdatedAt))],
             cancellationToken);
@@ -248,7 +249,8 @@ public sealed class clsImportacionExcelNexo(
     public Task<clsResultado<clsOpcionesDiccionarioCliente>> ObtenerOpcionesDiccionarioAsync(Guid usuarioId, CancellationToken cancellationToken = default) =>
         EnviarYLeerAsync<clsOpcionesDiccionarioWire, clsOpcionesDiccionarioCliente>(
             usuarioId, HttpMethod.Get, RutaOpcionesDiccionario, null, reintentable: true, lectura: false,
-            o => new clsOpcionesDiccionarioCliente(o.Tipos ?? [], o.CamposDestino ?? [], o.Unidades ?? [], o.Contextos ?? []), cancellationToken);
+            o => new clsOpcionesDiccionarioCliente(
+                [.. SinNulos(o.Tipos)], [.. SinNulos(o.CamposDestino)], [.. SinNulos(o.Unidades)], [.. SinNulos(o.Contextos)]), cancellationToken);
 
     public async Task<clsResultado<clsLecturaEstructura>> LeerEstructuraAsync(
         Guid usuarioId, clsPeticionLeerEstructura peticion, CancellationToken cancellationToken = default)
@@ -302,7 +304,7 @@ public sealed class clsImportacionExcelNexo(
 
         return await EnviarYLeerAsync<List<clsRecetaGuardadaWire>, IReadOnlyList<clsRecetaGuardada>>(
             usuarioId, HttpMethod.Get, $"{RutaRecetasLectura}?clienteNit={Uri.EscapeDataString(nit)}", null, reintentable: true, lectura: false,
-            lista => [.. lista.Select(MapearReceta)], cancellationToken);
+            lista => [.. SinNulos(lista).Select(MapearReceta)], cancellationToken);
     }
 
     public Task<clsResultado<bool>> EliminarRecetaLecturaAsync(Guid usuarioId, Guid recetaId, CancellationToken cancellationToken = default) =>
@@ -333,6 +335,10 @@ public sealed class clsImportacionExcelNexo(
             Marcada(argumentos.Context.GetRequestMessage(), OpcionReintentable) ? transitorio(argumentos) : ValueTask.FromResult(false);
         var mayor = tiempoLectura > tiempo ? tiempoLectura : tiempo;
         resiliencia.CircuitBreaker.SamplingDuration = mayor * 2;
+        // Un 429 (IA_TOPE_DIARIO del comercial o el cupo por minuto) no es una caída de NEXO: no suma a la tasa de fallos del circuito, que
+        // es de todos los comerciales.
+        resiliencia.CircuitBreaker.ShouldHandle = argumentos => ValueTask.FromResult(
+            argumentos.Outcome.Result?.StatusCode != HttpStatusCode.TooManyRequests && HttpClientResiliencePredicates.IsTransient(argumentos.Outcome));
     }
 
     private static bool Marcada(HttpRequestMessage? peticion, HttpRequestOptionsKey<bool> opcion) =>
@@ -402,7 +408,23 @@ public sealed class clsImportacionExcelNexo(
         try
         {
             using var respuesta = await http.SendAsync(peticion, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-            var texto = await respuesta.Content.ReadAsStringAsync(cancellationToken);
+            var limite = opciones.Value.LimiteRespuestaMegabytes * 1024L * 1024L;
+            if (respuesta.Content.Headers.ContentLength is { } largo && largo > limite)
+            {
+                return NoDisponible($"respuesta demasiado grande ({largo.ToString(CultureInfo.InvariantCulture)} bytes) en {metodo} {rutaSinConsulta}");
+            }
+
+            // Con ResponseHeadersRead el tiempo de la tubería solo cubre las cabeceras: el cuerpo se lee con el mismo tiempo del intento.
+            using var tiempoCuerpo = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            tiempoCuerpo.CancelAfter(TimeSpan.FromSeconds(lectura ? opciones.Value.TimeoutLecturaSegundos : opciones.Value.TimeoutSegundos));
+            await using var flujo = await respuesta.Content.ReadAsStreamAsync(tiempoCuerpo.Token);
+            using var acotado = await clsCosteoNexo.LeerAcotadoAsync(flujo, limite, tiempoCuerpo.Token);
+            if (acotado is null)
+            {
+                return NoDisponible($"respuesta demasiado grande (más de {limite.ToString(CultureInfo.InvariantCulture)} bytes) en {metodo} {rutaSinConsulta}");
+            }
+
+            var texto = Encoding.UTF8.GetString(acotado.GetBuffer(), 0, (int)acotado.Length);
             if (respuesta.IsSuccessStatusCode)
             {
                 return new clsRespuestaNexo(respuesta.StatusCode, texto, rutaSinConsulta);
@@ -437,8 +459,8 @@ public sealed class clsImportacionExcelNexo(
         var (codigo, mensaje) = LeerError(texto);
         var estado = (int)respuesta.StatusCode;
         var detalle = $"HTTP {estado.ToString(CultureInfo.InvariantCulture)}" + (codigo is null ? string.Empty : $" {codigo}");
-        logger.LogWarning("NEXO rechazó {Metodo} {Ruta}: {Detalle}{Mensaje}", metodo, ruta, detalle,
-            mensaje is null ? string.Empty : ": " + (mensaje.Length <= 300 ? mensaje : mensaje[..300]));
+        // Solo el estado y el código: el mensaje de NEXO puede repetir un encabezado del Excel o el NIT del cliente.
+        logger.LogWarning("NEXO rechazó {Metodo} {Ruta}: {Detalle}", metodo, ruta, detalle);
 
         if (respuesta.StatusCode == HttpStatusCode.TooManyRequests)
         {
@@ -563,35 +585,43 @@ public sealed class clsImportacionExcelNexo(
 
     // --- Mapeo de las respuestas ---
 
+    /// <summary>
+    /// Los elementos de una lista de NEXO; un <c>null</c> dentro de ella es una respuesta inválida (<see cref="JsonException"/>, que
+    /// <see cref="Leer{TWire, TSalida}"/> traduce a no disponible), no una <see cref="NullReferenceException"/> al mapearla.
+    /// </summary>
+    private static IEnumerable<T> SinNulos<T>(IEnumerable<T?>? lista)
+        where T : class =>
+        (lista ?? []).Select(elemento => elemento ?? throw new JsonException("elemento null en una lista de la respuesta de NEXO"));
+
     private static clsSugerenciaMapeo MapearSugerencia(clsSugerenciaWire s) => new(
         s.IaUsada, s.MotivoSinIa,
-        [.. (s.Columnas ?? []).Select(c => new clsColumnaMapeada(
+        [.. SinNulos(s.Columnas).Select(c => new clsColumnaMapeada(
             c.Indice, c.Columna ?? string.Empty, c.Campo ?? string.Empty, c.Transformacion ?? string.Empty, c.Confianza, c.Origen ?? string.Empty, c.Nota))],
-        s.Dudas ?? [], s.PlantillaId);
+        [.. SinNulos(s.Dudas)], s.PlantillaId);
 
     private static clsResultadoAplicarMapeo MapearAplicar(clsResultadoAplicarWire r) => new(
         r.TotalFilas, r.FilasVacias, r.FilasConErrores,
-        [.. (r.Lineas ?? []).Select(l => new clsLineaImportada(
+        [.. SinNulos(r.Lineas).Select(l => new clsLineaImportada(
             l.Fila, l.Origen ?? string.Empty, l.Destino ?? string.Empty, l.TipoVehiculo, l.Carroceria, l.Tipologia, l.LineaNegocio, l.ClaseViaje,
             l.ClaseContenedor, l.Exclusivo, l.Consolidado, l.RetornaContenedor, l.CiudadDevolucionContenedor, l.LevanteContenedorDiferente,
             l.CiudadLevanteContenedor, l.HorasCargue, l.HorasDescargue, l.Peso, l.ValorMercancia,
-            l.Posiciones?.Select(p => new clsPosicionImportada(
+            l.Posiciones is null ? null : SinNulos(l.Posiciones).Select(p => new clsPosicionImportada(
                 p.Descripcion, p.Cantidad, p.LargoCm, p.AnchoCm, p.AltoCm, p.PesoKg, p.CodigoTipoMercancia)).ToList(),
             l.Referencia, l.Deadline))],
-        [.. (r.Errores ?? []).Select(e => new clsErrorDeFila(e.Fila, e.Campo, e.Codigo ?? string.Empty, e.Mensaje ?? string.Empty))],
+        [.. SinNulos(r.Errores).Select(e => new clsErrorDeFila(e.Fila, e.Campo, e.Codigo ?? string.Empty, e.Mensaje ?? string.Empty))],
         r.TotalErrores);
 
     private static clsResultadoNormalizacion MapearNormalizacion(clsResultadoNormalizacionWire r) => new(
         r.IaUsada, r.MotivoSinIa, r.TotalDistintos,
-        [.. (r.Valores ?? []).Select(v => new clsValorNormalizado(
+        [.. SinNulos(r.Valores).Select(v => new clsValorNormalizado(
             v.Campo ?? string.Empty, v.Valor ?? string.Empty, v.Estado ?? string.Empty, v.Codigo, v.Descripcion, v.MunicipioId,
             v.Origen ?? string.Empty, v.Confianza, v.Nota,
-            v.Candidatos?.Select(c => new clsCandidatoCiudad(
+            v.Candidatos is null ? null : SinNulos(v.Candidatos).Select(c => new clsCandidatoCiudad(
                 c.MunicipioId, c.CodigoDane ?? string.Empty, c.Municipio ?? string.Empty, c.Departamento ?? string.Empty)).ToList()))]);
 
     private static clsPlantillaMapeo MapearPlantilla(clsPlantillaMapeoWire p) => new(
-        p.Id, p.ClienteId, p.ClienteNombre, p.Nombre, p.Encabezados ?? [],
-        [.. (p.Columnas ?? []).Select(c => new clsColumnaConfirmada(c.Indice, c.Campo ?? string.Empty, c.Transformacion))],
+        p.Id, p.ClienteId, p.ClienteNombre, p.Nombre, [.. SinNulos(p.Encabezados)],
+        [.. SinNulos(p.Columnas).Select(c => new clsColumnaConfirmada(c.Indice, c.Campo ?? string.Empty, c.Transformacion))],
         p.CreatedAt, p.UpdatedAt);
 
     /// <summary>La receta se copia tal cual (<see cref="JsonElement.Clone"/>): nunca se tipa ni se cambia.</summary>
@@ -607,16 +637,42 @@ public sealed class clsImportacionExcelNexo(
         l.MotivoSinIa,
         l.Receta.Clone(),
         l.Resumen,
-        l.Dudas ?? [],
-        [.. (l.HojasDelArchivo ?? []).Select(h => new clsHojaDelArchivo(h.Nombre ?? string.Empty, h.Oculta, h.Filas, h.Columnas, h.Usada))],
-        [.. (l.Tablas ?? []).Select(t =>
+        [.. SinNulos(l.Dudas)],
+        [.. SinNulos(l.HojasDelArchivo).Select(h => new clsHojaDelArchivo(h.Nombre ?? string.Empty, h.Oculta, h.Filas, h.Columnas, h.Usada))],
+        [.. SinNulos(l.Tablas).Select(t =>
         {
             var filas = (t.Filas ?? []).Select(f => (IReadOnlyList<string>)(f ?? []).Select(c => c ?? string.Empty).ToList()).ToList();
             return new clsHojaExcel(t.Nombre ?? string.Empty, t.FilaEncabezado, [.. (t.Encabezados ?? []).Select(e => e ?? string.Empty)], filas,
                 t.TotalFilas ?? filas.Count);
         })],
-        l.Avisos ?? [],
-        l.Cambios is null ? null : new clsCambiosDeFormato(l.Cambios.Faltan ?? [], l.Cambios.Nuevos ?? []));
+        Avisos(l.Avisos),
+        Cambios(l.Cambios));
+
+    /// <summary>
+    /// <c>avisos</c> de la lectura, con tolerancia (el documento de NEXO no fija su forma): una lista de textos tal cual; de un objeto, su
+    /// <c>mensaje</c>/<c>message</c> si lo trae o su JSON; un texto suelto, una lista de uno. Otra forma no tumba la lectura.
+    /// </summary>
+    private static IReadOnlyList<string> Avisos(JsonElement avisos) => avisos.ValueKind switch
+    {
+        JsonValueKind.Array => [.. avisos.EnumerateArray().Where(a => a.ValueKind != JsonValueKind.Null).Select(Aviso)],
+        JsonValueKind.String or JsonValueKind.Object => [Aviso(avisos)],
+        _ => [],
+    };
+
+    private static string Aviso(JsonElement aviso) =>
+        aviso.ValueKind == JsonValueKind.String ? aviso.GetString() ?? string.Empty
+        : aviso.ValueKind == JsonValueKind.Object && (clsCosteoNexo.Texto(aviso, "mensaje") ?? clsCosteoNexo.Texto(aviso, "message")) is { } texto
+            ? texto
+            : aviso.GetRawText();
+
+    /// <summary><c>cambios</c> con la misma tolerancia: solo un objeto se lee (<c>faltan</c>, <c>nuevos</c>); otra forma → sin cambios.</summary>
+    private static clsCambiosDeFormato? Cambios(JsonElement cambios) =>
+        cambios.ValueKind != JsonValueKind.Object ? null : new clsCambiosDeFormato(Titulos(cambios, "faltan"), Titulos(cambios, "nuevos"));
+
+    private static IReadOnlyList<string> Titulos(JsonElement cambios, string propiedad) =>
+        cambios.TryGetProperty(propiedad, out var lista) && lista.ValueKind == JsonValueKind.Array
+            ? [.. lista.EnumerateArray().Where(t => t.ValueKind != JsonValueKind.Null).Select(Aviso)]
+            : [];
 
     /// <summary>Un 2xx de NEXO: el estado (201 frente a 200 al guardar), el cuerpo y la ruta sin consulta (para el log).</summary>
     private sealed record clsRespuestaNexo(HttpStatusCode Estado, string Cuerpo, string Ruta);
@@ -679,14 +735,12 @@ public sealed class clsImportacionExcelNexo(
 
     private sealed record clsLecturaWire(
         string? Archivo, string? OrigenReceta, double? Similitud, Guid? RecetaGuardadaId, bool IaUsada, string? MotivoSinIa, JsonElement Receta,
-        string? Resumen, List<string>? Dudas, List<clsHojaDelArchivoWire>? HojasDelArchivo, List<clsTablaWire>? Tablas, List<string>? Avisos,
-        clsCambiosWire? Cambios);
+        string? Resumen, List<string>? Dudas, List<clsHojaDelArchivoWire>? HojasDelArchivo, List<clsTablaWire>? Tablas, JsonElement Avisos,
+        JsonElement Cambios);
 
     private sealed record clsHojaDelArchivoWire(string? Nombre, bool Oculta, int Filas, int Columnas, bool Usada);
 
     private sealed record clsTablaWire(string? Nombre, int FilaEncabezado, List<string?>? Encabezados, List<List<string?>?>? Filas, int? TotalFilas);
-
-    private sealed record clsCambiosWire(List<string>? Faltan, List<string>? Nuevos);
 
     private sealed record clsRecetaGuardadaWire(
         Guid Id, Guid ClienteId, string? ClienteNombre, string? Nombre, JsonElement Receta, string? Instrucciones, int Usos,
