@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Cotifly.Pruebas.Comun;
 using Cotifly.Pruebas.Web;
+using Microsoft.Extensions.DependencyInjection;
 using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 
 namespace Cotifly.Api.Tests.Web;
@@ -356,6 +357,64 @@ public sealed class clsSugerenciaMapeoEndpointsTests : IDisposable
         (await VerificarContratoAsync(respuesta, RutaLeer, HttpMethod.Post, HttpStatusCode.ServiceUnavailable))
             .GetProperty("error").GetProperty("codigo").GetString().Should().Be("NEXO_NO_DISPONIBLE");
         _nexo.Llamadas(HttpMethod.Post, RutaNexoLeer).Should().Be(1, "leer-estructura puede gastar IA: nunca se reintenta");
+    }
+
+    [Fact]
+    public async Task ElValidationErrorDeLaLecturaTraeSoloLosNombresDeLosCamposDeNexo()
+    {
+        // Auditoría B2: NEXO pone el campo en details ({ "Campo": ["mensaje"] }); a la UI llegan los nombres, nunca los valores.
+        var cuerpo = """{"code":"VALIDATION_ERROR","message":"One or more validation errors occurred.","details":{"Receta":["La receta 900555111 no es válida"],"ClienteNit":["x"]}}""";
+        var falso = new clsNexoClientesFalso().Responder(HttpStatusCode.BadRequest, cuerpo);
+        using var api = clsApiWebPruebas.ConNexo(_entorno.BaseDatos, _nexo, servicios: s =>
+            s.AddHttpClient(Cotifly.Infraestructura.Licitaciones.Services.clsImportacionExcelNexo.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => falso));
+        var sesion = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+
+        using var respuesta = await api.EnviarContenidoAsync(HttpMethod.Post, RutaLeer, sesion.Access, Formulario());
+
+        var error = (await VerificarContratoAsync(respuesta, RutaLeer, HttpMethod.Post, HttpStatusCode.BadRequest)).GetProperty("error");
+        error.GetProperty("codigo").GetString().Should().Be("VALIDATION_ERROR");
+        error.GetProperty("detalle").GetProperty("campos").EnumerateArray().Select(c => c.GetString()).Should().Equal("Receta", "ClienteNit");
+        error.GetRawText().Should().NotContain("900555111", "los valores de details pueden repetir datos del Excel");
+    }
+
+    [Fact]
+    public async Task ElValidationErrorDeLaSugerenciaSigueComoCosteoNexoRechazada()
+    {
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        _nexo.ImportacionFalla = HttpStatusCode.BadRequest;
+        _nexo.CodigoImportacionFalla = "VALIDATION_ERROR";
+
+        using var respuesta = await SugerirAsync(sesion, Hoja());
+
+        (await VerificarContratoAsync(respuesta, RutaSugerir, HttpMethod.Post, HttpStatusCode.BadRequest))
+            .GetProperty("error").GetProperty("codigo").GetString().Should().Be("COSTEO_NEXO_RECHAZADA", "en sugerir-mapeo es un JSON de Cotifly mal armado");
+    }
+
+    [Fact]
+    public async Task Un413DeNexoEnLaLecturaEsArchivoDemasiadoGrande()
+    {
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        _nexo.ImportacionFalla = HttpStatusCode.RequestEntityTooLarge;
+
+        using var respuesta = await LeerAsync(sesion, Formulario());
+
+        (await VerificarContratoAsync(respuesta, RutaLeer, HttpMethod.Post, HttpStatusCode.BadRequest))
+            .GetProperty("error").GetProperty("codigo").GetString().Should().Be("ARCHIVO_DEMASIADO_GRANDE");
+        _nexo.Llamadas(HttpMethod.Post, RutaNexoLeer).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task UnArchivoQueCabeConUnaRecetaQueNoCabeEsLecturaDemasiadoGrandeSinLlamarANexo()
+    {
+        // Auditoría B7: el archivo solo cabe, pero con la receta y las instrucciones el envío pasa el tope de NEXO.
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var receta = "{\"notas\":\"" + new string('ñ', 59_000) + "\"}";
+
+        using var respuesta = await LeerAsync(sesion, Formulario(new byte[10_400_000], receta: receta));
+
+        var error = (await VerificarContratoAsync(respuesta, RutaLeer, HttpMethod.Post, HttpStatusCode.BadRequest)).GetProperty("error");
+        error.GetProperty("codigo").GetString().Should().Be("LECTURA_DEMASIADO_GRANDE");
+        _nexo.Llamadas(HttpMethod.Post, RutaNexoLeer).Should().Be(0);
     }
 
     [Fact]

@@ -150,6 +150,26 @@ public sealed class clsSugerenciaMapeoServiceTests
     }
 
     [Theory]
+    [InlineData(0, 0, false)]
+    [InlineData(100, 0, true)]
+    [InlineData(0, 100, true)]
+    [InlineData(50, 50, true)]
+    public async Task ElArchivoConLaRecetaYLasInstruccionesNoPuedePasarElTopeDeNexo(int bytesReceta, int bytesInstrucciones, bool rechaza)
+    {
+        // Auditoría B7: el archivo solo cabe (justo en el tope); con la receta o las instrucciones (en bytes UTF-8) ya no.
+        _nexo.LeerEstructuraAsync(_usuario, Arg.Any<clsPeticionLeerEstructura>(), Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio(clsCodigosError.NexoNoDisponible, "x"));
+        static string? Texto(int bytes) => bytes == 0 ? null : new string('ñ', bytes / 2);
+        var entrada = new clsEntradaLeerEstructura(
+            new clsArchivoSubido("a.xlsx", new byte[clsArchivoExcel.TamanoMaximoBytes - 49]), null, Texto(bytesInstrucciones), Texto(bytesReceta));
+
+        var resultado = await Servicio().LeerEstructuraAsync(_usuario, entrada, TestContext.Current.CancellationToken);
+
+        resultado.Error.Codigo.Should().Be(rechaza ? clsCodigosError.LecturaDemasiadoGrande : clsCodigosError.NexoNoDisponible);
+        await _nexo.Received(rechaza ? 0 : 1).LeerEstructuraAsync(_usuario, Arg.Any<clsPeticionLeerEstructura>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
     [InlineData(clsCodigosError.NexoNoDisponible)]
     [InlineData(clsCodigosError.IaTopeDiario)]
     [InlineData(clsCodigosError.RecetaInvalida)]
