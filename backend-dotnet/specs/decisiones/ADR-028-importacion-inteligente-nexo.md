@@ -98,6 +98,9 @@ Los pliegos de licitación son justo esos archivos. La pregunta era si Cotifly r
     para que la interfaz explique que los del cliente aún no se ven. Es la opción conservadora (b) del análisis: nunca sale un término de
     otro cliente. Las otras opciones eran (a) resolver el `clienteId` de NEXO por NIT solo para filtrar, que choca con el punto 3, y (c)
     esperar a NEXO. Cuando NEXO filtre por `clienteNit`, se revisa la regla y se quita el aviso.
+    El filtro **falla cerrado**: un término es general solo si NEXO mandó `clienteId: null` explícito y sin `clienteNombre`. Si
+    `clienteId` no viene (un cambio de forma de NEXO), el adaptador lo marca como no leído (`ClienteIdLeido = false`) y el término no se
+    muestra. Lo más seguro sería un campo `general` explícito de NEXO: se le puede pedir junto con el filtro.
   - **La escritura del diccionario no está.** `POST`, `PUT /{id}` y `DELETE /{id}` de `/web/diccionario-cliente` (y sus códigos
     `TERMINO_DUPLICADO`, `TERMINO_NO_ENCONTRADO`, `CAMPO_DESTINO_INVALIDO` y `CONTEXTO_INVALIDO`) esperan el contrato §3.19.1 de NEXO y
     S6-HU-34.10. El puerto `IClsImportacionExcelNexo` tampoco tiene esas operaciones todavía.

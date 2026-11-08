@@ -2912,6 +2912,7 @@ guarda copia; NEXO registra quién la guardó. Rol: el de la captura (comercial,
 | 400 | `CLIENTE_REQUERIDO` | Falta el NIT de la licitación (no se llamó a NEXO) |
 | 400 | `CLIENTE_NIT_INVALIDO` | El NIT no es de ningún cliente ni prospecto: "No se puede guardar la plantilla para este NIT" |
 | 400 | `NOMBRE_DEMASIADO_LARGO`, `ENCABEZADOS_REQUERIDOS`, `DEMASIADAS_COLUMNAS`, `ENCABEZADO_DEMASIADO_LARGO`, `COLUMNA_FUERA_DE_RANGO`, `COLUMNA_INVALIDA`, `CAMPO_INVALIDO`, `CAMPO_DUPLICADO`, `TRANSFORMACION_INVALIDA`, `TRANSFORMACION_NO_APLICA` | Rechazo de NEXO con su `mensaje`: mostrarlo |
+| 400 | `COSTEO_NEXO_RECHAZADA` (`detalle.motivo` = código de NEXO) | NEXO respondió otro 4xx o un 404 sin código (por ejemplo, un NEXO sin el endpoint): mostrar el `mensaje` y avisar a soporte |
 | 403 | `NEXO_SIN_PERMISO` | El comercial no tiene el rol requerido en NEXO: avisar a soporte |
 | 404 | `PLANTILLA_NO_ENCONTRADA` (`ErrorNegocio`) | Ya no existe: recargar la lista |
 | 503 | `NEXO_NO_DISPONIBLE` | Importación apagada o NEXO caído: reintentar más tarde |
@@ -2942,6 +2943,7 @@ un formato parecido (≥ 85 %) se lee sin IA. NEXO guarda hasta 20 por cliente; 
 | 204 (DELETE) | — | Quitar de la lista |
 | 400 | `ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE`, `RECETA_REQUERIDA`, `CLIENTE_REQUERIDO` | Validación de Cotifly, sin llamar a NEXO |
 | 400 | `RECETA_INVALIDA`, `RECETA_SIN_FILAS` (la receta no da filas con ese archivo), `CLIENTE_NIT_INVALIDO`, `CLIENTE_NO_ENCONTRADO`, `NOMBRE_DEMASIADO_LARGO`, `INSTRUCCIONES_DEMASIADO_LARGAS`, `EXCEL_INVALIDO`, `EXCEL_SIN_DATOS` | Rechazo de NEXO con su `mensaje`: mostrarlo; con `RECETA_SIN_FILAS`, volver a la lectura |
+| 400 | `COSTEO_NEXO_RECHAZADA` (`detalle.motivo` = código de NEXO) | NEXO respondió otro 4xx o un 404 sin código (por ejemplo, un NEXO sin el endpoint): mostrar el `mensaje` y avisar a soporte |
 | 403 | `NEXO_SIN_PERMISO` | Avisar a soporte |
 | 404 | `RECETA_NO_ENCONTRADA` (`ErrorNegocio`) | Ya no existe: recargar la lista |
 | 503 | `NEXO_NO_DISPONIBLE` | No se guardó (una sola llamada): el comercial decide si reintenta |
@@ -2963,6 +2965,7 @@ crear, editar y borrar términos esperan el contrato de NEXO (§3.19.1, S6-HU-34
 |---|---|---|
 | 200 | `DiccionarioCliente` / `OpcionesDiccionarioCliente` | Pintar; con `aviso`, mostrar su `mensaje` |
 | 400 | `TIPO_TERMINO_INVALIDO`, `CLIENTE_NIT_INVALIDO` | Corregir el filtro |
+| 400 | `COSTEO_NEXO_RECHAZADA` (`detalle.motivo` = código de NEXO) | NEXO respondió otro 4xx o un 404 sin código (por ejemplo, un NEXO sin el endpoint): mostrar el `mensaje` y avisar a soporte |
 | 403 | `NEXO_SIN_PERMISO` | Avisar a soporte |
 | 503 | `NEXO_NO_DISPONIBLE` | Reintentar |
 
