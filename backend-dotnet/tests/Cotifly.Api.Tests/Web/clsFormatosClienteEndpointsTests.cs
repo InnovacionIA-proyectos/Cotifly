@@ -276,6 +276,22 @@ public sealed class clsFormatosClienteEndpointsTests : IDisposable
         _nexo.Llamadas(HttpMethod.Delete, $"{RutaNexoRecetas}/{id}").Should().Be(2);
     }
 
+    [Fact]
+    public async Task UnNotFoundDeNexoConUnCodigoDesconocidoEs400CosteoNexoRechazada()
+    {
+        // #256 (B3): lo que pasaría con un NEXO sin recetas-lectura (PR #433 fuera de QA): 404 sin un código de la tabla de NEXO.
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        (_nexo.ImportacionFalla, _nexo.CodigoImportacionFalla) = (HttpStatusCode.NotFound, "RUTA_NO_ENCONTRADA");
+
+        using var borrar = await _api.EnviarAsync(HttpMethod.Delete, $"{RutaRecetas}/{Guid.NewGuid()}", sesion.Access);
+        using var listar = await _api.EnviarAsync(HttpMethod.Get, $"{RutaRecetas}?nit_cliente=900555111", sesion.Access);
+
+        borrar.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await VerificarErrorNegocioAsync(borrar, "COSTEO_NEXO_RECHAZADA");
+        listar.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await VerificarErrorNegocioAsync(listar, "COSTEO_NEXO_RECHAZADA");
+    }
+
     // --- Diccionario del cliente (solo lectura) ---
 
     [Fact]
@@ -306,6 +322,20 @@ public sealed class clsFormatosClienteEndpointsTests : IDisposable
         json.GetProperty("aviso").GetProperty("codigo").GetString().Should().Be("TERMINOS_CLIENTE_NO_DISPONIBLES");
         var enviada = _nexo.Peticiones.Single(p => p.Url.AbsolutePath == "/api/diccionario-cliente");
         enviada.Url.Query.Should().Contain("tipo=valor").And.Contain("q=mula");
+    }
+
+    [Fact]
+    public async Task SiNexoDejaDeMandarElClienteIdNoSeMuestraNingunTermino()
+    {
+        // #256 (B2): el filtro de generales falla cerrado ante un cambio de forma de NEXO.
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        _nexo.Diccionario.Add((Guid.NewGuid(), "Mula de otro cliente", "valor", "3S2", "tipoVehiculo"));
+        _nexo.DiccionarioSinClienteId = true;
+
+        using var respuesta = await _api.EnviarAsync(HttpMethod.Get, RutaDiccionario, sesion.Access);
+
+        var json = await VerificarContratoAsync(respuesta, RutaDiccionario, HttpMethod.Get, HttpStatusCode.OK);
+        json.GetProperty("terminos").GetArrayLength().Should().Be(0);
     }
 
     [Fact]

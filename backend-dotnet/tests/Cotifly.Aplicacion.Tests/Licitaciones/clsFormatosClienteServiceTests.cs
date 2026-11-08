@@ -3,6 +3,8 @@ using Cotifly.Aplicacion.Licitaciones.DTOs;
 using Cotifly.Aplicacion.Licitaciones.Interfaces;
 using Cotifly.Aplicacion.Licitaciones.Services;
 using Cotifly.Dominio.Comun;
+using Cotifly.Pruebas.Comun;
+using Microsoft.Extensions.Logging;
 using NSubstitute;
 
 namespace Cotifly.Aplicacion.Tests.Licitaciones;
@@ -18,13 +20,15 @@ public sealed class clsFormatosClienteServiceTests
     private static readonly Guid _usuario = Guid.NewGuid();
     private readonly IClsImportacionExcelNexo _nexo = Substitute.For<IClsImportacionExcelNexo>();
 
-    private clsFormatosClienteService Servicio() => new(_nexo);
+    private readonly clsLoggerFalso<clsFormatosClienteService> _logger = new();
+
+    private clsFormatosClienteService Servicio() => new(_nexo, _logger);
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    private static clsTerminoCliente Termino(string termino, Guid? clienteId) =>
-        new(Guid.NewGuid(), clienteId, clienteId is null ? null : "Cliente ficticio", termino, "valor", "3S3", "tipoVehiculo", null, true,
-            DateTimeOffset.UtcNow, null);
+    private static clsTerminoCliente Termino(string termino, Guid? clienteId, bool clienteIdLeido = true, string? clienteNombre = null) =>
+        new(Guid.NewGuid(), clienteId, clienteNombre ?? (clienteId is null ? null : "Cliente ficticio"), termino, "valor", "3S3", "tipoVehiculo",
+            null, true, DateTimeOffset.UtcNow, null, clienteIdLeido);
 
     private static clsRecetaGuardada Receta() =>
         new(Guid.NewGuid(), Guid.NewGuid(), "Cliente ficticio", "Formato", JsonDocument.Parse("""{"version":1}""").RootElement.Clone(), null, 0,
@@ -142,6 +146,52 @@ public sealed class clsFormatosClienteServiceTests
         resultado.Valor.Aviso!.Codigo.Should().Be(clsFormatosClienteService.AvisoTerminosClienteNoDisponibles);
         await _nexo.Received(1).ObtenerDiccionarioClienteAsync(_usuario, Nit,
             Arg.Is<clsFiltroDiccionarioCliente?>(f => f!.Tipo == "valor" && f.Q == "mula" && f.IncluirGenerales), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ElFiltroDeGeneralesFallaCerradoSiNexoNoMandaElClienteIdOTraeNombreDeCliente()
+    {
+        // #256 B2: un término es general solo si NEXO mandó clienteId = null explícito y sin nombre de cliente. Un cambio de forma en NEXO
+        // (clienteId ausente, renombrado o anidado) no puede hacer pasar por generales los términos de otros clientes.
+        _nexo.ObtenerDiccionarioClienteAsync(_usuario, null, Arg.Any<clsFiltroDiccionarioCliente?>(), Arg.Any<CancellationToken>())
+            .Returns(clsResultado<IReadOnlyList<clsTerminoCliente>>.Exito([
+                Termino("Tractomula", null),
+                Termino("Sin clienteId", null, clienteIdLeido: false),
+                Termino("Con nombre de cliente", null, clienteNombre: "Cliente ficticio")]));
+
+        var resultado = await Servicio().ConsultarDiccionarioAsync(_usuario, null, null, null, Ct);
+
+        resultado.Valor.Terminos.Select(t => t.Termino).Should().Equal("Tractomula");
+    }
+
+    [Fact]
+    public async Task BorrarUnaPlantillaOUnaRecetaDejaRastroConElComercialYElIdSinDatosDelCliente()
+    {
+        var plantilla = Guid.NewGuid();
+        var receta = Guid.NewGuid();
+        _nexo.EliminarPlantillaMapeoAsync(_usuario, plantilla, Arg.Any<CancellationToken>()).Returns(clsResultado<bool>.Exito(true));
+        _nexo.EliminarRecetaLecturaAsync(_usuario, receta, Arg.Any<CancellationToken>()).Returns(clsResultado<bool>.Exito(true));
+
+        await Servicio().EliminarPlantillaAsync(_usuario, plantilla, Ct);
+        await Servicio().EliminarRecetaAsync(_usuario, receta, Ct);
+
+        var registros = _logger.Registros.Where(r => r.Nivel == LogLevel.Information).Select(r => r.Mensaje).ToList();
+        registros.Should().HaveCount(2);
+        registros[0].Should().Contain(_usuario.ToString()).And.Contain(plantilla.ToString()).And.Contain("plantilla");
+        registros[1].Should().Contain(_usuario.ToString()).And.Contain(receta.ToString()).And.Contain("formato");
+    }
+
+    [Fact]
+    public async Task UnBorradoQueNexoRechazaNoDejaRastroDeBorrado()
+    {
+        var id = Guid.NewGuid();
+        _nexo.EliminarRecetaLecturaAsync(_usuario, id, Arg.Any<CancellationToken>())
+            .Returns(clsResultado<bool>.Fallo(new clsErrorDominio(clsCodigosError.RecetaNoEncontrada, "No existe.")));
+
+        var resultado = await Servicio().EliminarRecetaAsync(_usuario, id, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.RecetaNoEncontrada);
+        _logger.Registros.Should().NotContain(r => r.Nivel == LogLevel.Information);
     }
 
     [Fact]
