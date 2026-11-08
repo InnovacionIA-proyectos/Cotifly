@@ -46,14 +46,20 @@ public sealed class clsFormatosClienteController(IClsContextoUsuario usuario, IC
     [HttpGet("plantillas-mapeo")]
     [ProducesResponseType<IReadOnlyList<clsPlantillaMapeoWeb>>(StatusCodes.Status200OK)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> ListarPlantillas([FromQuery(Name = "nit_cliente")] string? nitCliente, CancellationToken cancellationToken) =>
         (await formatos.ListarPlantillasAsync(UsuarioId, nitCliente, cancellationToken))
             .Coincidir<IActionResult>(l => Ok(l.Select(clsPlantillaMapeoWeb.Desde).ToList()), Error);
 
-    /// <summary>204; 404 <c>PLANTILLA_NO_ENCONTRADA</c> (un id que no es un GUID no llega a NEXO).</summary>
+    /// <summary>
+    /// 204; 404 <c>PLANTILLA_NO_ENCONTRADA</c> (un id que no es un GUID no llega a NEXO); 400 <c>COSTEO_NEXO_RECHAZADA</c> si NEXO responde otro
+    /// 4xx o un 404 sin código; 403 <c>NEXO_SIN_PERMISO</c>.
+    /// </summary>
     [HttpDelete("plantillas-mapeo/{id}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> EliminarPlantilla(string id, CancellationToken cancellationToken)
@@ -114,14 +120,20 @@ public sealed class clsFormatosClienteController(IClsContextoUsuario usuario, IC
     [HttpGet("recetas-lectura")]
     [ProducesResponseType<IReadOnlyList<clsRecetaLecturaWeb>>(StatusCodes.Status200OK)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> ListarRecetas([FromQuery(Name = "nit_cliente")] string? nitCliente, CancellationToken cancellationToken) =>
         (await formatos.ListarRecetasAsync(UsuarioId, nitCliente, cancellationToken))
             .Coincidir<IActionResult>(l => Ok(l.Select(clsRecetaLecturaWeb.Desde).ToList()), Error);
 
-    /// <summary>204; 404 <c>RECETA_NO_ENCONTRADA</c> (un id que no es un GUID no llega a NEXO).</summary>
+    /// <summary>
+    /// 204; 404 <c>RECETA_NO_ENCONTRADA</c> (un id que no es un GUID no llega a NEXO); 400 <c>COSTEO_NEXO_RECHAZADA</c> si NEXO responde otro 4xx
+    /// o un 404 sin código; 403 <c>NEXO_SIN_PERMISO</c>.
+    /// </summary>
     [HttpDelete("recetas-lectura/{id}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> EliminarReceta(string id, CancellationToken cancellationToken)

@@ -1,6 +1,7 @@
 using Cotifly.Aplicacion.Licitaciones.DTOs;
 using Cotifly.Aplicacion.Licitaciones.Interfaces;
 using Cotifly.Dominio.Comun;
+using Microsoft.Extensions.Logging;
 
 namespace Cotifly.Aplicacion.Licitaciones.Services;
 
@@ -56,7 +57,8 @@ public interface IClsFormatosClienteService
 }
 
 /// <inheritdoc cref="IClsFormatosClienteService"/>
-public sealed class clsFormatosClienteService(IClsImportacionExcelNexo importacion) : IClsFormatosClienteService
+public sealed partial class clsFormatosClienteService(IClsImportacionExcelNexo importacion, ILogger<clsFormatosClienteService> logger)
+    : IClsFormatosClienteService
 {
     /// <summary>Código del aviso del diccionario consultado con NIT: por ahora solo se ven los términos generales.</summary>
     public const string AvisoTerminosClienteNoDisponibles = "TERMINOS_CLIENTE_NO_DISPONIBLES";
@@ -82,8 +84,21 @@ public sealed class clsFormatosClienteService(IClsImportacionExcelNexo importaci
         SinComercial<IReadOnlyList<clsPlantillaMapeo>>(usuarioId) ?? SinNit<IReadOnlyList<clsPlantillaMapeo>>(nitCliente)
         ?? await importacion.ListarPlantillasMapeoAsync(usuarioId, nitCliente!, cancellationToken);
 
-    public async Task<clsResultado<bool>> EliminarPlantillaAsync(Guid usuarioId, Guid plantillaId, CancellationToken cancellationToken = default) =>
-        SinComercial<bool>(usuarioId) ?? await importacion.EliminarPlantillaMapeoAsync(usuarioId, plantillaId, cancellationToken);
+    public async Task<clsResultado<bool>> EliminarPlantillaAsync(Guid usuarioId, Guid plantillaId, CancellationToken cancellationToken = default)
+    {
+        if (SinComercial<bool>(usuarioId) is { } sinComercial)
+        {
+            return sinComercial;
+        }
+
+        var resultado = await importacion.EliminarPlantillaMapeoAsync(usuarioId, plantillaId, cancellationToken);
+        if (resultado.EsExitoso)
+        {
+            LogPlantillaBorrada(logger, usuarioId, plantillaId);
+        }
+
+        return resultado;
+    }
 
     public async Task<clsResultado<clsRecetaGuardadaResultado>> GuardarRecetaAsync(
         Guid usuarioId, clsEntradaGuardarReceta entrada, CancellationToken cancellationToken = default)
@@ -122,8 +137,21 @@ public sealed class clsFormatosClienteService(IClsImportacionExcelNexo importaci
         SinComercial<IReadOnlyList<clsRecetaGuardada>>(usuarioId) ?? SinNit<IReadOnlyList<clsRecetaGuardada>>(nitCliente)
         ?? await importacion.ListarRecetasLecturaAsync(usuarioId, nitCliente!, cancellationToken);
 
-    public async Task<clsResultado<bool>> EliminarRecetaAsync(Guid usuarioId, Guid recetaId, CancellationToken cancellationToken = default) =>
-        SinComercial<bool>(usuarioId) ?? await importacion.EliminarRecetaLecturaAsync(usuarioId, recetaId, cancellationToken);
+    public async Task<clsResultado<bool>> EliminarRecetaAsync(Guid usuarioId, Guid recetaId, CancellationToken cancellationToken = default)
+    {
+        if (SinComercial<bool>(usuarioId) is { } sinComercial)
+        {
+            return sinComercial;
+        }
+
+        var resultado = await importacion.EliminarRecetaLecturaAsync(usuarioId, recetaId, cancellationToken);
+        if (resultado.EsExitoso)
+        {
+            LogRecetaBorrada(logger, usuarioId, recetaId);
+        }
+
+        return resultado;
+    }
 
     public async Task<clsResultado<clsConsultaDiccionarioCliente>> ConsultarDiccionarioAsync(
         Guid usuarioId, string? nitCliente, string? tipo, string? q, CancellationToken cancellationToken = default)
@@ -143,7 +171,8 @@ public sealed class clsFormatosClienteService(IClsImportacionExcelNexo importaci
 
         // NEXO QA (2026-11-06) ignora clienteNit en este GET y responde los términos de todos los clientes: un término con cliente nunca
         // sale de Cotifly, ni siquiera con el NIT (ClienteId es el id de NEXO, que Cotifly no puede cruzar con el NIT; ADR-028).
-        IReadOnlyList<clsTerminoCliente> generales = [.. terminos.Valor.Where(t => t.ClienteId is null)];
+        // #256 (B2): falla cerrado: un término sin clienteId explícito (cambio de forma de NEXO) o con nombre de cliente no es general.
+        IReadOnlyList<clsTerminoCliente> generales = [.. terminos.Valor.Where(t => t.EsGeneral)];
         var aviso = nit is null ? null : new clsAvisoDiccionario(AvisoTerminosClienteNoDisponibles, MensajeTerminosClienteNoDisponibles);
         return new clsConsultaDiccionarioCliente(generales, aviso);
     }
@@ -151,6 +180,14 @@ public sealed class clsFormatosClienteService(IClsImportacionExcelNexo importaci
     public async Task<clsResultado<clsOpcionesDiccionarioCliente>> ObtenerOpcionesDiccionarioAsync(
         Guid usuarioId, CancellationToken cancellationToken = default) =>
         SinComercial<clsOpcionesDiccionarioCliente>(usuarioId) ?? await importacion.ObtenerOpcionesDiccionarioAsync(usuarioId, cancellationToken);
+
+    // #256 (B1): el borrado también deja rastro en Cotifly (además de la auditoría de NEXO), para soporte cuando un formato "desaparece".
+    // Solo el comercial y el id: ni el NIT ni el nombre del cliente.
+    [LoggerMessage(Level = LogLevel.Information, Message = "El comercial {UsuarioId} borró en NEXO la plantilla de mapeo {PlantillaId}.")]
+    private static partial void LogPlantillaBorrada(ILogger logger, Guid usuarioId, Guid plantillaId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "El comercial {UsuarioId} borró en NEXO el formato de lectura {RecetaId}.")]
+    private static partial void LogRecetaBorrada(ILogger logger, Guid usuarioId, Guid recetaId);
 
     /// <summary><c>ERROR_INTERNO</c> si no hay comercial (la política lo garantiza: sería un error de Cotifly, nunca del cliente).</summary>
     private static clsResultado<T>? SinComercial<T>(Guid usuarioId) =>

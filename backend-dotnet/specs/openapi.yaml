@@ -4174,7 +4174,7 @@ paths:
                 items:
                   $ref: '#/components/schemas/PlantillaMapeo'
         '400':
-          description: '`CLIENTE_REQUERIDO` (sin `nit_cliente`) o `CLIENTE_NIT_INVALIDO`, sin llamar a NEXO'
+          description: '`CLIENTE_REQUERIDO` (sin `nit_cliente`) o `CLIENTE_NIT_INVALIDO`, sin llamar a NEXO; `COSTEO_NEXO_RECHAZADA` (`detalle.motivo` = el código de NEXO) si NEXO responde otro 4xx o un 404 sin código'
           content:
             application/json:
               schema:
@@ -4220,6 +4220,12 @@ paths:
       responses:
         '204':
           description: Borrada
+        '400':
+          description: '`COSTEO_NEXO_RECHAZADA` (`detalle.motivo` = el código de NEXO) si NEXO responde otro 4xx o un 404 sin código'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
         '401':
           $ref: '#/components/responses/SesionExpirada'
         '403':
@@ -4364,7 +4370,7 @@ paths:
                 items:
                   $ref: '#/components/schemas/RecetaLectura'
         '400':
-          description: '`CLIENTE_REQUERIDO` (sin `nit_cliente`) o `CLIENTE_NIT_INVALIDO`, sin llamar a NEXO'
+          description: '`CLIENTE_REQUERIDO` (sin `nit_cliente`) o `CLIENTE_NIT_INVALIDO`, sin llamar a NEXO; `COSTEO_NEXO_RECHAZADA` (`detalle.motivo` = el código de NEXO) si NEXO responde otro 4xx o un 404 sin código'
           content:
             application/json:
               schema:
@@ -4409,6 +4415,12 @@ paths:
       responses:
         '204':
           description: Borrado
+        '400':
+          description: '`COSTEO_NEXO_RECHAZADA` (`detalle.motivo` = el código de NEXO) si NEXO responde otro 4xx o un 404 sin código'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
         '401':
           $ref: '#/components/responses/SesionExpirada'
         '403':
@@ -4478,7 +4490,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/DiccionarioCliente'
         '400':
-          description: '`TIPO_TERMINO_INVALIDO` (de NEXO) o `CLIENTE_NIT_INVALIDO` (sin llamar a NEXO)'
+          description: '`TIPO_TERMINO_INVALIDO` (de NEXO) o `CLIENTE_NIT_INVALIDO` (sin llamar a NEXO); `COSTEO_NEXO_RECHAZADA` (`detalle.motivo` = el código de NEXO) si NEXO responde otro 4xx o un 404 sin código'
           content:
             application/json:
               schema:
@@ -4517,6 +4529,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OpcionesDiccionarioCliente'
+        '400':
+          description: '`COSTEO_NEXO_RECHAZADA` (`detalle.motivo` = el código de NEXO) si NEXO responde otro 4xx o un 404 sin código'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
         '401':
           $ref: '#/components/responses/SesionExpirada'
         '403':

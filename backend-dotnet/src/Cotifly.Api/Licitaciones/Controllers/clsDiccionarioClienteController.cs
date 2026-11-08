@@ -31,9 +31,13 @@ public sealed class clsDiccionarioClienteController(IClsContextoUsuario usuario,
         (await formatos.ConsultarDiccionarioAsync(UsuarioId, nitCliente, tipo, q, cancellationToken))
             .Coincidir<IActionResult>(c => Ok(clsDiccionarioClienteWeb.Desde(c)), Error);
 
-    /// <summary>200 <c>OpcionesDiccionarioCliente</c> (tipos, campos de NEXO, unidades y contextos); 503 sin NEXO.</summary>
+    /// <summary>
+    /// 200 <c>OpcionesDiccionarioCliente</c> (tipos, campos de NEXO, unidades y contextos); 400 <c>COSTEO_NEXO_RECHAZADA</c> si NEXO responde un
+    /// 4xx; 403 <c>NEXO_SIN_PERMISO</c>; 503 sin NEXO.
+    /// </summary>
     [HttpGet("opciones")]
     [ProducesResponseType<clsOpcionesDiccionarioCliente>(StatusCodes.Status200OK)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> Opciones(CancellationToken cancellationToken) =>

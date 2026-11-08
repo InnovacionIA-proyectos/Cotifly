@@ -106,6 +106,6 @@ public sealed record clsTerminoDiccionarioWeb(
     {
         ArgumentNullException.ThrowIfNull(termino);
         return new(termino.Id, termino.Termino, termino.Tipo, termino.Concepto, termino.Contexto, termino.Ejemplo, termino.Activo,
-            termino.ClienteId is null);
+            termino.EsGeneral);
     }
 }
