@@ -211,13 +211,13 @@ public sealed class clsFormatosClienteAdversarialTests : IDisposable
     public async Task LaRecetaLlegaANexoByteAByteYVuelveSinSnakeCase()
     {
         var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
-        const string rara = "{\r\n\t\"version\" :1 ,\"hojas\":[{\"hoja\":\"Pliego ñ \\u00e1 \\\"x\\\"\",\"filasEncabezado\":[3],"
+        const string Rara = "{\r\n\t\"version\" :1 ,\"hojas\":[{\"hoja\":\"Pliego ñ \\u00e1 \\\"x\\\"\",\"filasEncabezado\":[3],"
             + "\"hastaPrimeraFilaVacia\":true}],\"precision\":12345678901234567890.123456789,\"Clave_Rara\":{\"subClave\":null},"
             + "\"vacia\":\"\",\"emoji\":\"\uD83D\uDE9A\"}  \n";
 
-        using var respuesta = await PutReceta(sesion, Formulario(receta: rara));
+        using var respuesta = await PutReceta(sesion, Formulario(receta: Rara));
 
-        _nexo.UltimoFormularioImportacion!["receta"].Should().Be(rara, "la receta es opaca: ni se recorta ni se reescribe");
+        _nexo.UltimoFormularioImportacion!["receta"].Should().Be(Rara, "la receta es opaca: ni se recorta ni se reescribe");
         var json = await VerificarContratoAsync(respuesta, RutaRecetas, HttpMethod.Put, HttpStatusCode.Created);
         var receta = json.GetProperty("receta");
         receta.GetProperty("hojas")[0].TryGetProperty("filasEncabezado", out _).Should().BeTrue("las claves de la receta no pasan a snake_case");

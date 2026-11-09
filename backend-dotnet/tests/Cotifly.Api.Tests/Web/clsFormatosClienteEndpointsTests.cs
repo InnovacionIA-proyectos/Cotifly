@@ -239,6 +239,39 @@ public sealed class clsFormatosClienteEndpointsTests : IDisposable
         _nexo.Llamadas(HttpMethod.Put, RutaNexoRecetas).Should().Be(0);
     }
 
+    [Theory]
+    [InlineData("receta", RecetaExacta)]
+    [InlineData("nit_cliente", "800111222")]
+    [InlineData("nombre", "Otro nombre")]
+    [InlineData("instrucciones", "Otra instrucción")]
+    public async Task UnaParteRepetidaDelFormularioEs400SinLlamarANexo(string parte, string valor)
+    {
+        // #256 (validador D1/D2): dos partes con el mismo nombre se unirían con coma: una receta que deja de ser opaca o dos NIT que la
+        // normalización funde en otro NIT (la receta se guardaría en otro cliente). Se rechaza el formulario completo.
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var formulario = FormularioReceta(instrucciones: "Las celdas vacías no se cotizan");
+        formulario.Add(new StringContent(valor, Encoding.UTF8), parte);
+
+        using var respuesta = await GuardarRecetaAsync(sesion, formulario);
+
+        respuesta.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await respuesta.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).Should().Contain(parte);
+        _nexo.Llamadas(HttpMethod.Put, RutaNexoRecetas).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task DosArchivosEnElFormularioEs400SinLlamarANexo()
+    {
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var formulario = FormularioReceta();
+        formulario.Add(new ByteArrayContent([0x50, 0x4B, 3, 4]), "archivo", "otro.xlsx");
+
+        using var respuesta = await GuardarRecetaAsync(sesion, formulario);
+
+        respuesta.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        _nexo.Llamadas(HttpMethod.Put, RutaNexoRecetas).Should().Be(0);
+    }
+
     [Fact]
     public async Task ListarLasRecetasDelClienteYSinNitEs400SinLlamarANexo()
     {

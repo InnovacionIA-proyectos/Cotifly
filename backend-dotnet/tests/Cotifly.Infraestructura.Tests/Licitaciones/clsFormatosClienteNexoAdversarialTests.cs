@@ -10,6 +10,7 @@ using Cotifly.Infraestructura.Tests.Configuracion;
 using Cotifly.Pruebas.Comun;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using NSubstitute;
 
 namespace Cotifly.Infraestructura.Tests.Licitaciones;
@@ -59,13 +60,15 @@ public sealed class clsFormatosClienteNexoAdversarialTests
     [Fact]
     public async Task UnaListaConNulosDelDiccionarioNoRompe()
     {
+        // Ajustado por el desarrollador: #252 (auditoría) decidió que un elemento null en una lista de NEXO es una respuesta con otra forma
+        // (SinNulos → NEXO_NO_DISPONIBLE, falla cerrado). "No rompe" = 503 controlado, nunca un 500 ni términos a medias.
         var nexo = new clsNexoClientesFalso().Responder(HttpStatusCode.OK, "[null," + TerminoGeneral + ",null]");
         var servicio = Servicio(nexo, out var proveedor);
         using var limpieza = proveedor;
 
         var resultado = await servicio.ConsultarDiccionarioAsync(_usuarioId, null, null, null, Ct);
 
-        resultado.Valor.Terminos.Should().ContainSingle(t => t.Termino == "Tractomula");
+        resultado.Error.Codigo.Should().Be(clsCodigosError.NexoNoDisponible);
     }
 
     [Theory]
@@ -104,16 +107,16 @@ public sealed class clsFormatosClienteNexoAdversarialTests
     [Fact]
     public async Task LaRecetaQueDevuelveNexoSeConservaTalCual()
     {
-        const string receta = """{ "version":1, "hojas":[{"hoja":"*","filasEncabezado":[3]}], "precision": 12345678901234567890.123456789, "Clave_Rara":{"a":[1,2.50,-0e0]} }""";
+        const string RecetaTexto = """{ "version":1, "hojas":[{"hoja":"*","filasEncabezado":[3]}], "precision": 12345678901234567890.123456789, "Clave_Rara":{"a":[1,2.50,-0e0]} }""";
         var nexo = new clsNexoClientesFalso().Responder(HttpStatusCode.OK,
             """[{"id":"5d1c7a52-8b51-4c8f-9e1b-1f8f6f6c0a06","clienteId":"5d1c7a52-8b51-4c8f-9e1b-1f8f6f6c0a07","clienteNombre":"Cliente","nombre":"F","receta":"""
-            + receta + ""","instrucciones":null,"usos":0,"ultimoUsoAt":null,"createdAt":"2026-11-01T00:00:00Z","updatedAt":null}]""");
+            + RecetaTexto + ""","instrucciones":null,"usos":0,"ultimoUsoAt":null,"createdAt":"2026-11-01T00:00:00Z","updatedAt":null}]""");
         var servicio = Servicio(nexo, out var proveedor);
         using var limpieza = proveedor;
 
         var resultado = await servicio.ListarRecetasAsync(_usuarioId, "900555111", Ct);
 
-        resultado.Valor.Single().Receta.GetRawText().Should().Be(receta, "la receta es opaca: ni se tipa ni se reescribe");
+        resultado.Valor.Single().Receta.GetRawText().Should().Be(RecetaTexto, "la receta es opaca: ni se tipa ni se reescribe");
     }
 
     [Theory]
@@ -167,7 +170,9 @@ public sealed class clsFormatosClienteNexoAdversarialTests
             .Returns(clsUsuarioWeb.Crear("vval", "Validador Ficticio", "vval@boterosoto.com.co", null, DateTimeOffset.UtcNow, 1009).Valor);
         servicios.AddScoped<IClsUsuarioWebRepository>(_ => usuarios);
         proveedor = servicios.BuildServiceProvider();
-        return new clsFormatosClienteService(proveedor.CreateScope().ServiceProvider.GetRequiredService<IClsImportacionExcelNexo>());
+        var alcance = proveedor.CreateScope().ServiceProvider;
+        return new clsFormatosClienteService(
+            alcance.GetRequiredService<IClsImportacionExcelNexo>(), alcance.GetRequiredService<ILogger<clsFormatosClienteService>>());
     }
 
     /// <summary>Captura el texto de cada log (para comprobar que no lleva datos del cliente).</summary>
