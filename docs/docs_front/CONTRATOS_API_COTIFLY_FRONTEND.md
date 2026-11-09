@@ -3012,6 +3012,63 @@ historial del chat) y **no altera `receta` ni `tablas`**.
 | 429 | `IA_TOPE_DIARIO` (sin `Retry-After`) | "Agotaste tu cupo diario de IA en NEXO"; usar `analizar-excel` o reaplicar una receta sin `instrucciones` |
 | 503 | `NEXO_NO_DISPONIBLE` | Importación apagada o NEXO caído: ofrecer Reintentar (a mano) o `analizar-excel` |
 
+#### 4.6.8 `POST /web/licitaciones/normalizar-valores` (HU-044.4, #255)
+
+Lleva los textos libres del Excel (vehículo, carrocería, ciudad y línea de negocio) a los valores oficiales con NEXO: diccionario del
+cliente, alias, catálogo y, al final, IA con lista cerrada. No guarda nada. Es una **sugerencia**: el comercial confirma lo que tenga
+`origen = ia`, elige entre los `candidatos` de una ciudad `ambigua` y escoge a mano lo que quede `sin_resolver`.
+
+- **Rol:** comercial (política Comercial). **Cuerpo:** JSON. Mandar **solo los valores distintos** (máx. 1000, de hasta 150
+  caracteres). El largo se mide **después de recortar los espacios de los extremos** y en unidades UTF-16 (la longitud de un
+  `string` de JavaScript o .NET): una letra con tilde compuesta (`é`) cuenta 1, pero un emoji o una tilde descompuesta cuentan 2. Es la
+  medida más estricta de las posibles: lo que pasa en Cotifly no lo rechaza NEXO por largo (si lo hiciera, llega su `VALOR_DEMASIADO_LARGO`). `nit_cliente` es el de la licitación (opcional; con él NEXO usa además el diccionario de ese cliente).
+- **Respuesta:** un resultado por cada valor distinto, **en el orden de la petición** (emparejar por `campo` + `valor`).
+- **`origen`:** es el texto que manda NEXO (`diccionario`, `alias`, `catalogo`, `ia`, `ninguno`...), **no una lista cerrada**: la UI
+  solo distingue `ia` (propuesta para confirmar) y `linea_cotifly` (Cotifly reconoció su propia línea); el resto se muestra tal cual.
+  `estado` sí es cerrado (`resuelto`, `ambiguo`, `sin_resolver`: otro valor de NEXO llega como `sin_resolver`) y `confianza` va de 0 a 1.
+- **`nit_cliente`:** se valida siempre (máx. 30 caracteres sin puntos ni dígito de verificación): uno inválido es
+  `CLIENTE_NIT_INVALIDO` aunque todos los valores se resuelvan sin NEXO.
+- **Ciudad:** `municipio_id` es el id de NEXO (el de `GET /web/municipios`), listo para `origen_municipio_id`/`destino_municipio_id`.
+  `POST /web/licitaciones` sigue validando las ciudades al crear.
+- **Línea de negocio:** `codigo` es la línea **de Cotifly** (la que va en `lineas[].linea_negocio`), no la de NEXO; `linea_nexo` dice
+  de qué línea de NEXO sale. Un texto que ya es el nombre de una línea de Cotifly («Distribución», «Importacion») se resuelve sin NEXO
+  (`origen = linea_cotifly`). Si NEXO devuelve una línea que no corresponde a ninguna de Cotifly (p. ej. «Licitaciones»), queda
+  `sin_resolver` con la explicación en `nota`; si corresponde a varias, `ambiguo` con `lineas_candidatas`.
+- **Clase de contenedor:** no va aquí (`CAMPO_INVALIDO`); sigue por `GET /web/alias/resolver?tipo=contenedor` (4.2.8).
+
+```json
+{
+  "nit_cliente": "900123456-7",
+  "valores": [
+    { "campo": "tipo_vehiculo", "valor": "Turbo Hasta 4.5 ton" },
+    { "campo": "ciudad", "valor": "La Unión" },
+    { "campo": "linea_negocio", "valor": "impo" }
+  ]
+}
+```
+
+```json
+{
+  "ia_usada": true,
+  "motivo_sin_ia": null,
+  "valores": [
+    { "campo": "tipo_vehiculo", "valor": "Turbo Hasta 4.5 ton", "estado": "resuelto", "codigo": "2L2", "descripcion": "Turbo", "municipio_id": null, "origen": "ia", "confianza": 0.8, "nota": null, "candidatos": null, "linea_nexo": null, "lineas_candidatas": null },
+    { "campo": "ciudad", "valor": "La Unión", "estado": "ambiguo", "codigo": null, "descripcion": null, "municipio_id": null, "origen": "catalogo", "confianza": 0.5, "nota": null,
+      "candidatos": [ { "municipio_id": 5400, "codigo_dane": "05400", "municipio": "La Unión", "departamento": "Antioquia" }, { "municipio_id": 52399, "codigo_dane": "52399", "municipio": "La Unión", "departamento": "Nariño" } ],
+      "linea_nexo": null, "lineas_candidatas": null },
+    { "campo": "linea_negocio", "valor": "impo", "estado": "resuelto", "codigo": "Importacion", "descripcion": "Importacion", "municipio_id": null, "origen": "sinonimo", "confianza": 1, "nota": null, "candidatos": null, "linea_nexo": "Puerto a interior", "lineas_candidatas": null }
+  ]
+}
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `NormalizacionValores` | Pintar cada valor según `estado`. Con `ia_usada = false` (`motivo_sin_ia`: `SIN_PENDIENTES`, `IA_NO_DISPONIBLE`...) no es un error: lo que no se resolvió se elige a mano |
+| 400 | `VALORES_REQUERIDOS`, `DEMASIADOS_VALORES`, `CAMPO_INVALIDO`, `VALOR_DEMASIADO_LARGO`, `CLIENTE_NIT_INVALIDO`, `COSTEO_NEXO_RECHAZADA` | Error de la petición: mostrar `mensaje` |
+| 403 | `NEXO_SIN_PERMISO` | El comercial no tiene permiso en NEXO |
+| 429 | `IA_TOPE_DIARIO` | Cupo diario de IA agotado: seguir eligiendo a mano (se libera al día siguiente) |
+| 503 | `NEXO_NO_DISPONIBLE` | NEXO no responde o la importación inteligente está apagada: seguir eligiendo a mano |
+
 ### 4.7 PDF
 
 #### 4.7.1 `POST /web/cotizaciones/{folio}/costeo/pdf`
@@ -4212,6 +4269,7 @@ fila_excel, campo, codigo, mensaje}`.
 | 74 | **#250 (contrato único de NEXO, DU §8, fase 1): peso con tara.** La tara (`peso_con_tara_kg`) aplica **solo a `Contenedor`** (decisión del 2026-11-05): Carga Suelta y Extradimensionado siguen respondiendo `CAMPO_NO_APLICA` y mandan el peso de la carga; no se generaliza. En NEXO, una ruta de contenedor con tara y **un solo camión** viaja ahora con el peso con tara **y sus posiciones** (NEXO solo rechaza una suma de posiciones que supera el peso en más de 1 %); con varios camiones, sin posiciones como antes. Sin cambios en el contrato web: ni campos, ni códigos, ni endpoints; siguen **64 endpoints** | Sin cambio de contrato | Mostrar "Peso total con tara" **solo** con `clase_viaje = Contenedor` y limpiarlo al cambiar de clase; **no** construir el comportamiento planeado en CTF-F3/#107 para Carga Suelta |
 | 75 | **HU-043.2 (#251, NEXO S6-HU-38.2): los servicios conexos se cotizan a su precio de VENTA, sin margen.** El precio de cada ruta es ahora (fletes + retorno + levante) **con** el margen de la ruta **+** la venta de sus conexos **sin** margen (antes el margen se aplicaba también a los conexos). La venta sale del `valorVenta`/`precioVentaUnitario` de la cotización de NEXO o, en un conexo capturado o agregado en Cotifly, del `precioVenta` del catálogo de NEXO; sin ella (NEXO anterior o servicio sin precio de venta), el costo. **Cambia el significado** de: `precio_final_linea` y `precio_final` (nueva fórmula), `servicios_conexos[].precio` (la venta, en la moneda de la cotización; **no cambia al ajustar el margen**), `totales.precio_transporte` (solo transporte con margen) y `totales.precio_conexos` (suma de las ventas), y `margen_promedio` del tablero (margen sobre el transporte, no sobre el precio completo). **No cambian:** `costo_final` (costo real, con el costo de los conexos), la forma de ninguna respuesta (ningún campo nuevo ni retirado), el PDF y el correo (siguen sin mostrar el costo ni el precio de cada conexo, solo el total). Una cotización **finalizada o con PDF antes del cambio conserva su precio** y su desglose como se cotizó; una sin finalizar puede cambiar de precio la próxima vez que se recalcule (polling, margen, conexos) | Cambia | Dejar de explicar en pantalla que "el margen se aplica a los conexos": la vista previa del margen solo mueve el transporte; mostrar `servicios_conexos[].precio` como precio de venta. En el tablero, rotular `margen_promedio` como margen del transporte |
 | 76 | **HU-044.2 (#253): sugerencia de mapeo y lectura con IA del Excel de licitación.** Dos endpoints **nuevos** (4.6.6 y 4.6.7): `POST /web/licitaciones/sugerir-mapeo` (JSON: `nit_cliente`, `encabezados`, `filas` → `ia_usada`, `motivo_sin_ia`, `plantilla_id`, `dudas[]`, `columnas[]` con el `campo` de NEXO) y `POST /web/licitaciones/leer-estructura` (multipart: `archivo`, `nit_cliente`, `instrucciones`, `receta` → `LecturaEstructura`, con la `receta` opaca y `tablas` con la forma de `analizar-excel`). La sugerencia nunca bloquea: con más de 100 columnas, la importación apagada o NEXO caído responde 200 sin propuesta (`ia_usada = false`, `motivo_sin_ia` `DEMASIADAS_COLUMNAS` o `NEXO_NO_DISPONIBLE`). `IA_TOPE_DIARIO` (429) en los dos. Códigos de error nuevos en el enum: `VALIDATION_ERROR` (el de NEXO en `leer-estructura`, con `detalle.campos`) y `LECTURA_DEMASIADO_GRANDE` (el archivo con la receta y las instrucciones pasa el tope de NEXO). Sin script de base de datos; son **66 endpoints** | Agrega | Para un Excel complejo, llamar a `leer-estructura`, mostrar `resumen` y `dudas` y permitir corregir con una frase (reenviando `JSON.stringify(receta)`); luego, por cada hoja o tabla, llamar a `sugerir-mapeo` y prellenar el mapeo traduciendo `campo` con la tabla de 4.6.6; con `ia_usada = false` seguir en manual; con `IA_TOPE_DIARIO`, mapear a mano |
+| 77 | **HU-044.4 (#255, ADR-029): normalizar los textos del Excel de licitación con NEXO.** Endpoint **nuevo** `POST /web/licitaciones/normalizar-valores` (4.6.8): `{nit_cliente?, valores[{campo, valor}]}` con `campo` = `tipo_vehiculo`, `carroceria`, `ciudad` o `linea_negocio` (máx. 1000 valores de 150 caracteres; solo los distintos). Responde `ia_usada`, `motivo_sin_ia` y un resultado por valor, en el orden de la petición: `estado` (`resuelto`, `ambiguo`, `sin_resolver`), `codigo`, `descripcion`, `municipio_id` (ciudad), `origen`, `confianza`, `nota`, `candidatos[]` (ciudad ambigua), `linea_nexo` y `lineas_candidatas[]` (línea de negocio). En `linea_negocio`, `codigo` es la línea **de Cotifly** (la de `lineas[].linea_negocio`). Errores nuevos para el front en este endpoint: `VALORES_REQUERIDOS`, `DEMASIADOS_VALORES`, `CAMPO_INVALIDO`, `VALOR_DEMASIADO_LARGO`, `CLIENTE_NIT_INVALIDO` (400), `NEXO_SIN_PERMISO` (403), `IA_TOPE_DIARIO` (429) y `NEXO_NO_DISPONIBLE` (503). La clase de contenedor sigue por `GET /web/alias/resolver`. Son **67 endpoints** | Agrega | Después de mapear las columnas, mandar los textos distintos de vehículo, carrocería, ciudad y línea de negocio; pintar cada uno por `estado`, pedir confirmación de lo que tenga `origen = ia`, elegir entre `candidatos` o `lineas_candidatas` y dejar a mano lo `sin_resolver`. Con 429 o 503, seguir a mano |
 
 ---
 
@@ -4313,6 +4371,8 @@ fila_excel, campo, codigo, mensaje}`.
   el libro, #277), no reintenta y devuelve la `receta` y las `tablas` de NEXO sin tocarlas. `ia_usada = false` es un 200.
 - La regla de peso del contrato único (DU §8, peso total con tara) no aplica a estos dos endpoints: no devuelven pesos. Aplica en
   `aplicar-mapeo` (#254) y en la captura.
+
+**2026-11-06 (rama `255-normalizar-valores`, #255, HU-044.4).** `POST /web/licitaciones/normalizar-valores` (fila 77 de §7, 4.6.8). La línea de negocio se devuelve como la línea de Cotifly; un texto que ya es una línea de Cotifly («Distribución») no pasa por NEXO. Pendiente con NEXO: si la normalización de la línea depende del cliente y qué hace NEXO con «Distribución».
 
 **2026-11-05 (rama `251-conexos-precio-venta`, #251, HU-043.2).** Servicios conexos a precio de venta y sin margen (fila 75 de §7):
 

@@ -100,6 +100,8 @@ public sealed class clsContratoReflexionTests(clsCotiflyApiFactory factory) : IC
         "CubicacionEnProceso.estado", "EstadoCubicacion.estado",
         // HU-042.2 (#243): el estado de la corrida es el texto del CHECK de SapMargenSyncLog (constantes de clsCorridaSincronizacionMargenSap).
         "CorridaSincronizacionMargenSap.estado", "ResultadoSincronizacionMargenSap.estado",
+        // HU-044.4 (#255): el campo son las constantes de clsCamposNormalizacion y el estado es el texto de NEXO, que Cotifly reenvía.
+        "ValorNormalizado.campo", "ValorNormalizado.estado",
     };
 
     /// <summary>
