@@ -310,7 +310,7 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
         if (linea.ValorSeguro is { } seguro)
         {
             hoja.Cell(fila, columna + 4).Value = seguro;
-            hoja.Cell(fila, columna + 4).Style.NumberFormat.Format = Formato(datos.Moneda);
+            hoja.Cell(fila, columna + 4).Style.NumberFormat.Format = Cotizaciones.Services.clsExportadorExcelCotizacionClosedXml.ConCentavos(seguro, Formato(datos.Moneda));
         }
     }
 
@@ -446,7 +446,8 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
 
         if (ConSeguro(datos))
         {
-            Dato(EtiquetaTotalSeguro, datos.Lineas.Where(l => !l.Rechazada).Sum(l => l.ValorSeguro ?? 0m), formato);
+            var totalSeguro = datos.Lineas.Where(l => !l.Rechazada).Sum(l => l.ValorSeguro ?? 0m);
+            Dato(EtiquetaTotalSeguro, totalSeguro, Cotizaciones.Services.clsExportadorExcelCotizacionClosedXml.ConCentavos(totalSeguro, formato));
         }
 
         Dato("Generado", datos.GeneradoEn.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture));

@@ -1388,7 +1388,7 @@ El comercial marca en el costeo, ruta por ruta, si la ruta incluye el seguro de 
   seguro de la mercancía"). El detalle por folio trae `totales.precio_seguro`: mostrar `precio_transporte + precio_conexos +
   precio_seguro = precio_final`. Nunca se exporta la tasa.
 - **Check marcado sin valor (HU-045.3, decisión del 2026-11-09: se avisa, no se bloquea):** `CosteoCotizacion` (y `costeo` del detalle)
-  y el 201 de "Generar PDF" traen `aviso_seguro` (`{codigo: "SEGURO_SIN_VALOR_MERCANCIA", mensaje, rutas[]}`, o `null`). Mostrar el
+  y el 201 de "Generar PDF" y la vista previa del correo traen `aviso_seguro` (`{codigo: "SEGURO_SIN_VALOR_MERCANCIA", mensaje, rutas[]}`, o `null`). Mostrar el
   `mensaje` y resaltar las rutas: su seguro no suma ni sale en el PDF. El comercial edita el valor de la mercancía o quita el check, mejor
   **antes de Finalizar** (después, la corrección va en una versión nueva).
 

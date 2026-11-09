@@ -98,4 +98,38 @@ public sealed class clsSeguroCorreoTests : IDisposable
         enviado!.CuerpoHtml.Should().Contain("$1.250.000 COP", "sin valor, el seguro no suma")
             .And.NotContain(System.Net.WebUtility.HtmlEncode(clsPlantillaCorreo.TextoIncluyeSeguro));
     }
+
+    /// <summary>B1: en COP, el precio de la ruta y el total con centavos (el seguro) se muestran con sus 2 decimales.</summary>
+    [Fact]
+    public void ElResumenMuestraLosCentavosDelSeguro()
+    {
+        var cotizacion = clsCotizacionMuestra.Costeada(flete: 1_000_000m, margen: 0.20m,
+            solicitud: clsSolicitudCosteoMuestra.Crear() with { ValorMercancia = 100_400m });
+        cotizacion.CambiarSeguro(1, true, 0.001m, clsCotizacionMuestra.Ahora).Valor.Should().BeTrue();
+
+        var resumen = clsPlantillaCorreo.Resumen(cotizacion)!;
+
+        resumen.Rutas.Single().PrecioTexto.Should().Be("$1.250.100,40");
+        resumen.TotalTexto.Should().Be("$1.250.100,40");
+    }
+
+    /// <summary>B5 (decisión del usuario): la vista previa del correo trae el mismo <c>aviso_seguro</c> que el costeo.</summary>
+    [Fact]
+    public async Task LaVistaPreviaTraeElAvisoDelSeguroSinValor()
+    {
+        var cotizacion = ConSeguro();
+        clsSeguroPdfCosteoTests.QuitarValor(cotizacion);
+        _cotizaciones.ObtenerPorFolioDelUsuarioAsync("PCN-C9", _comercial.Id, Arg.Any<CancellationToken>()).Returns(cotizacion);
+        var previos = Substitute.For<IClsDestinatariosPreviosService>();
+        previos.ObtenerAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns(new clsDestinatarios([], []));
+        var servicio = new clsVistaPreviaCorreoService(_cotizaciones, previos, _usuarios, Substitute.For<IClsCalendarioNegocio>(),
+            Options.Create(new clsOpcionesCorreo { Habilitado = true }));
+
+        var vista = await servicio.PrevisualizarAsync(_comercial.Id, "PCN-C9", cancellationToken: Ct);
+
+        vista.Valor.AvisoSeguro!.Rutas.Should().ContainSingle().Which.LineaOrden.Should().Be(1);
+        (await servicio.PrevisualizarAsync(_comercial.Id, "PCN-C9", cancellationToken: Ct)).Valor.AvisoSeguro.Should().NotBeNull();
+        _cotizaciones.ObtenerPorFolioDelUsuarioAsync("PCN-C9", _comercial.Id, Arg.Any<CancellationToken>()).Returns(ConSeguro());
+        (await servicio.PrevisualizarAsync(_comercial.Id, "PCN-C9", cancellationToken: Ct)).Valor.AvisoSeguro.Should().BeNull();
+    }
 }

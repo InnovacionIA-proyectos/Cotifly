@@ -39,6 +39,32 @@ public sealed class clsExportadorExcelCotizacionSeguroTests
                                       || t.Contains("0.00345", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// B1 (decisión del usuario): en COP, una celda con centavos (el seguro, el precio de la ruta y los totales que lo incluyen) se formatea con
+    /// 2 decimales para que lo que se ve cuadre con lo guardado; sin centavos sigue en pesos enteros.
+    /// </summary>
+    [Fact]
+    public void EnPesosLasCeldasConCentavosMuestranLosDecimales()
+    {
+        var datos = Datos() with
+        {
+            Rutas = [Ruta(1, 1_250_000m) with { ValorSeguro = 100.40m, PrecioRuta = 1_250_100.40m }],
+            Totales = Datos().Totales with { PrecioFinal = 1_250_100.40m, PrecioSeguro = 100.40m },
+        };
+
+        using var libro = new XLWorkbook(new MemoryStream(_exportador.Generar(datos)));
+
+        var rutas = libro.Worksheet(clsExportadorExcelCotizacionClosedXml.HojaRutas);
+        var encabezados = rutas.Row(1).CellsUsed().Select(c => c.GetString()).ToList();
+        var seguro = encabezados.IndexOf("Seguro de la mercancía (COP)") + 1;
+        rutas.Cell(2, seguro).Style.NumberFormat.Format.Should().Be("#,##0.00");
+        rutas.Cell(2, seguro + 1).Style.NumberFormat.Format.Should().Be("#,##0.00", "el precio de la ruta incluye los centavos del seguro");
+        rutas.Cell(2, seguro - 2).Style.NumberFormat.Format.Should().Be("#,##0", "el transporte no tiene centavos");
+        rutas.Cell(3, seguro + 1).Style.NumberFormat.Format.Should().Be("#,##0.00", "el total también");
+        libro.Worksheet(clsExportadorExcelCotizacionClosedXml.HojaResumen).RowsUsed()
+            .Single(f => f.Cell(1).GetString() == "Precio final (COP)").Cell(2).Style.NumberFormat.Format.Should().Be("#,##0.00");
+    }
+
     /// <summary>Ruta 1 con seguro (1.250.000 de transporte + 690.000) y ruta 2 con el seguro marcado sin valor de la mercancía (1.000.000).</summary>
     private static clsExcelCotizacion Datos() => new(
         "PCN-AB-05112026-001", "Cliente", "900111222", "Ana", "spot", "COP", 0m, "autocosteo", null, null, false, DateTimeOffset.UnixEpoch, false,

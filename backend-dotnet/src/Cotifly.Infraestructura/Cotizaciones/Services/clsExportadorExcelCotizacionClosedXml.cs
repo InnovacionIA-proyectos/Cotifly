@@ -132,7 +132,7 @@ public sealed class clsExportadorExcelCotizacionClosedXml : IClsExportadorExcelC
         {
             if (valor is { } numero)
             {
-                Dato(etiqueta, numero, formato);
+                Dato(etiqueta, numero, ConCentavos(numero, formato));
             }
             else
             {
@@ -339,7 +339,7 @@ public sealed class clsExportadorExcelCotizacionClosedXml : IClsExportadorExcelC
         if (valor is { } numero)
         {
             celda.Value = numero;
-            celda.Style.NumberFormat.Format = formato;
+            celda.Style.NumberFormat.Format = ConCentavos(numero, formato);
         }
         else
         {
@@ -357,7 +357,7 @@ public sealed class clsExportadorExcelCotizacionClosedXml : IClsExportadorExcelC
         if (ruta.ValorSeguro is { } valor)
         {
             celda.Value = valor;
-            celda.Style.NumberFormat.Format = formato;
+            celda.Style.NumberFormat.Format = ConCentavos(valor, formato);
         }
         else if (ruta.SeguroSinValor)
         {
@@ -365,6 +365,13 @@ public sealed class clsExportadorExcelCotizacionClosedXml : IClsExportadorExcelC
             celda.Style.Fill.SetBackgroundColor(_pendiente);
         }
     }
+
+    /// <summary>
+    /// HU-045.3 (#265, B1): en pesos (<see cref="FormatoPesos"/>), un monto con centavos (el seguro y lo que lo incluye) se muestra con 2
+    /// decimales para que cuadre con lo guardado; sin centavos, en pesos enteros como siempre.
+    /// </summary>
+    public static string ConCentavos(decimal valor, string formato) =>
+        formato == FormatoPesos && Aplicacion.Pdf.Services.clsFormatoMoneda.TieneCentavos(valor) ? "#,##0.00" : formato;
 
     private static string Fecha(DateTimeOffset fecha) => fecha.ToUniversalTime().ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture);
 }

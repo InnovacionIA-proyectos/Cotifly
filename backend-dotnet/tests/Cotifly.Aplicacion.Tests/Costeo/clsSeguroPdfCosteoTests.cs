@@ -112,19 +112,19 @@ public sealed class clsSeguroPdfCosteoTests
     }
 
     /// <summary>
-    /// Decisión del usuario del 2026-11-09 (#264): el seguro no se redondea a pesos (se guarda en centavos). El PDF lo muestra con el formato
-    /// habitual de los pesos (sin decimales, como los demás montos en COP); el precio y el total conservan los centavos.
+    /// Decisión del usuario del 2026-11-09 (#264): el seguro no se redondea a pesos (se guarda en centavos). B1: en el PDF, el seguro y el
+    /// total con centavos los muestran (2 decimales), así cuadran exacto con lo guardado; el flete, sin centavos, sigue en pesos enteros.
     /// </summary>
     [Fact]
-    public async Task ElSeguroConCentavosSeMuestraEnPesosComoLosDemasMontos()
+    public async Task ElSeguroConCentavosSeMuestraConSusCentavosYCuadraConElTotal()
     {
         var cotizacion = Registrada(Preparada(UnaRuta(valor: 123_456_789.99m)));
 
         (await Servicio().GenerarPdfAsync(_ana, cotizacion.Folio, Version, Ct)).EsExitoso.Should().BeTrue();
 
         cotizacion.PrimeraRuta!.CostoSeguro.Should().Be(425_925.93m, "123.456.789,99 × 0,345 % = 425.925,925…, en centavos");
-        _documento!.Secciones.Single().Filas.Select(f => f.Tarifa).Should().Equal("$1.250.000", "$425.926");
-        _documento.TotalGeneral!.Valor.Should().Be("$1.675.926 COP");
+        _documento!.Secciones.Single().Filas.Select(f => f.Tarifa).Should().Equal("$1.250.000", "$425.925,93");
+        _documento.TotalGeneral!.Valor.Should().Be("$1.675.925,93 COP");
     }
 
     /// <summary>
@@ -144,6 +144,37 @@ public sealed class clsSeguroPdfCosteoTests
         clsCosteoCotizacionService.ConFilasSeguro(documento with { Secciones = [] }, UnaRuta(conSeguro: false), "COP").Secciones
             .Should().BeEmpty("sin seguro no hay fila que agregar");
     }
+
+    /// <summary>
+    /// B1 de la auditoría (decisión del usuario): en COP, el seguro y los totales con centavos se muestran con sus 2 decimales, así lo impreso
+    /// cuadra exacto con lo guardado: dos rutas con seguro de $100,40 (valor 100.400 × 0,1 %).
+    /// </summary>
+    [Fact]
+    public async Task ElPliegoConSegurosConCentavosLosMuestraYLasFilasCuadranConElTotal()
+    {
+        var cotizacion = Registrada(Preparada(DosRutas([100_400m, 100_400m], 0.001m)));
+
+        var resultado = await Servicio().GenerarPdfAsync(_ana, cotizacion.Folio, Version, Ct);
+
+        resultado.EsExitoso.Should().BeTrue(resultado.EsFallo ? resultado.Error.Mensaje : string.Empty);
+        cotizacion.RutasOrdenadas.Select(r => r.CostoSeguro).Should().Equal(100.40m, 100.40m);
+        _documento!.Secciones.Select(s => s.Filas.Select(f => f.Tarifa).ToList()).Should().BeEquivalentTo(
+            new[] { new[] { "$1.250.000", "$100,40" }, new[] { "$2.500.000", "$100,40" } }, o => o.WithStrictOrdering());
+        _documento.Pliego!.Filas.Select(f => f.Tarifa).Should().Equal("$1.250.000", "$100,40", "$2.500.000", "$100,40");
+        _documento.Pliego.Total.Should().Be("$3.750.200,80", "1.250.000 + 100,40 + 2.500.000 + 100,40: cuadra exacto");
+        _documento.TotalGeneral!.Valor.Should().Be("$3.750.200,80 COP");
+        cotizacion.PrecioFinal.Should().Be(3_750_200.80m, "lo impreso es lo guardado");
+    }
+
+    [Theory]
+    [InlineData("100.40", "COP", "$100,40")]
+    [InlineData("100.4", "COP", "$100,40")]
+    [InlineData("1250000", "COP", "$1.250.000")]
+    [InlineData("1250000.00", "COP", "$1.250.000")]
+    [InlineData("3750200.8", "COP", "$3.750.200,80")]
+    [InlineData("312.5", "USD", "US$312,50")]
+    public void ElFormatoExactoMuestraLosCentavosEnPesosSoloSiLosHay(string valor, string moneda, string esperado) =>
+        clsFormatoMoneda.FormatearExacto(decimal.Parse(valor, System.Globalization.CultureInfo.InvariantCulture), moneda).Should().Be(esperado);
 
     [Fact]
     public void ElPdfNoImprimeLaTasaDelSeguro()
@@ -208,9 +239,13 @@ public sealed class clsSeguroPdfCosteoTests
         return cotizacion;
     }
 
-    /// <summary>Spot de dos rutas al 20 %: la 1 (1.000.000) sin seguro y la 2 (2.000.000, valor 100.000.000) con seguro de 345.000.</summary>
-    private clsCotizacionSolicitud DosRutas()
+    /// <summary>
+    /// Spot de dos rutas al 20 % (1.000.000 → 1.250.000 y 2.000.000 → 2.500.000). Por defecto, la 1 sin seguro y la 2 (valor 100.000.000)
+    /// con seguro de 345.000; con <paramref name="valores"/> y <paramref name="tasa"/>, cada ruta con valor lleva el seguro.
+    /// </summary>
+    internal clsCotizacionSolicitud DosRutas(decimal?[]? valores = null, decimal tasa = Tasa)
     {
+        valores ??= [null, 100_000_000m];
         var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion
         {
             Folio = "PCN-900555111-AP-05112026-002", UsuarioId = _ana, NitCliente = "900123456", ClienteNombre = "LONGYIN S.A.S.",
@@ -224,7 +259,7 @@ public sealed class clsSeguroPdfCosteoTests
             TipoVehiculo = "3S3",
             Carroceria = "FURGON",
             PesoKg = 10_000m + i,
-            ValorMercancia = i == 2 ? 100_000_000m : null,
+            ValorMercancia = valores[i - 1],
         }).ToList();
         cotizacion.RegistrarSolicitudLicitacion(new clsEncabezadoSolicitudCosteo { Tipo = TipoSolicitud.Spot }, lineas, [0, 1], 3);
         cotizacion.RegistrarEnvioCosteo("SOL-1", false, clsCotizacionMuestra.Ahora, clsCotizacionMuestra.Ahora);
@@ -234,7 +269,11 @@ public sealed class clsSeguroPdfCosteoTests
         }
 
         clsCotizacionMuestra.AplicarCosteo(cotizacion, [1_000_000m, 2_000_000m], EstadoCosteo.Autocosteo, null);
-        cotizacion.CambiarSeguro(2, true, Tasa, clsCotizacionMuestra.Ahora).Valor.Should().BeTrue();
+        foreach (var ruta in cotizacion.RutasOrdenadas.Where(r => r.ValorMercancia is not null))
+        {
+            cotizacion.CambiarSeguro(ruta.Orden, true, tasa, clsCotizacionMuestra.Ahora).Valor.Should().BeTrue();
+        }
+
         return cotizacion;
     }
 

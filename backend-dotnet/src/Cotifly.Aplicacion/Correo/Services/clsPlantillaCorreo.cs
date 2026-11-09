@@ -100,7 +100,7 @@ public static class clsPlantillaCorreo
                 r.Orden,
                 clsTextoSeguro.LimpiarLinea($"{r.OrigenNombre} → {r.DestinoNombre}") ?? $"Ruta {r.Orden.ToString(CultureInfo.InvariantCulture)}",
                 r.Rechazada ? null : r.PrecioFinalLinea,
-                r.Rechazada || r.PrecioFinalLinea is null ? Costeo.Services.clsCosteoCotizacionService.TextoSinCosteo : clsFormatoMoneda.Formatear(r.PrecioFinalLinea, moneda))
+                r.Rechazada || r.PrecioFinalLinea is null ? Costeo.Services.clsCosteoCotizacionService.TextoSinCosteo : clsFormatoMoneda.FormatearExacto(r.PrecioFinalLinea, moneda))
             {
                 IncluyeSeguro = Costeo.Services.clsCosteoCotizacionService.ValorSeguroPdf(cotizacion, r) is not null,
             })
@@ -108,7 +108,8 @@ public static class clsPlantillaCorreo
         return new clsResumenCorreo(
             moneda.ToUpperInvariant(),
             total,
-            clsFormatoMoneda.Formatear(total, moneda),
+            // HU-045.3 (#265, B1): con los centavos del seguro, si los hay.
+            clsFormatoMoneda.FormatearExacto(total, moneda),
             rutas,
             clsTextosEstandar.LeyendaImpuestos,
             string.Equals(moneda.Trim(), "USD", StringComparison.OrdinalIgnoreCase) && cotizacion.TrmAplicada > 0 ? clsTextosEstandar.NotaTrmMinima(cotizacion.TrmAplicada) : null);

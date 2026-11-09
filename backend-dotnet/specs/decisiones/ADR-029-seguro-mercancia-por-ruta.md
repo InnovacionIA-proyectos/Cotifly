@@ -64,7 +64,11 @@ tabla `TarifasSeguro` (una sola tasa activa) y las columnas `incluyeSeguro`, `ta
    - **Check marcado sin valor de la mercancía** (decisión 7 de #264; decisión del usuario del 2026-11-09: **se avisa, no se bloquea**).
      El seguro no suma y el PDF sale sin su fila en esa ruta. `aviso_seguro` (`clsAvisoSeguro`, código `SEGURO_SIN_VALOR_MERCANCIA`, con
      las rutas de `clsCotizacionSolicitud.RutasConSeguroSinValor()`) va en `CosteoCotizacion` (y en el detalle) y en el 201 del PDF. El
-     envío del correo tampoco se bloquea. No toca Finalizar (#269).
+     envío del correo tampoco se bloquea; la vista previa del correo trae el mismo aviso (B5). No toca Finalizar (#269).
+   - **Centavos (B1, decisión del usuario):** el seguro se guarda en centavos (#264). En COP, el seguro y los montos que lo incluyen (precio
+     de la ruta en el resumen del pliego y en el correo, totales) se muestran con 2 decimales cuando los tienen
+     (`clsFormatoMoneda.FormatearExacto`; en el Excel, `#,##0.00` por celda), así lo impreso cuadra con lo guardado; sin centavos, en pesos
+     enteros como siempre.
 
 ## Consecuencias
 

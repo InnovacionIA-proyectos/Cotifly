@@ -63,7 +63,7 @@ public sealed partial class clsCosteoCotizacionService
                         new clsFilaDocumento(
                             clsTextoSeguro.PartirPalabrasLargas(EtiquetaSeguroPdf, clsConstructorDocumentoCotizacion.TramoDestino),
                             string.Empty,
-                            clsFormatoMoneda.Formatear(seguro, moneda),
+                            clsFormatoMoneda.FormatearExacto(seguro, moneda),
                             NotaSeguroPdf),
                     ],
                 }

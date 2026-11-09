@@ -870,7 +870,8 @@ public sealed partial class clsCosteoCotizacionService(
         var total = cotizacion.RutasCotizables.Sum(r => r.PrecioFinalLinea ?? 0m);
         return new clsTotalDocumento(
             clsTextosEstandar.EtiquetaTotalGeneral,
-            $"{clsFormatoMoneda.Formatear(total, moneda)} {moneda.Trim().ToUpperInvariant()}",
+            // HU-045.3 (#265, B1): con los centavos del seguro, si los hay.
+            $"{clsFormatoMoneda.FormatearExacto(total, moneda)} {moneda.Trim().ToUpperInvariant()}",
             clsTextosEstandar.NotaTotalGeneral + " " + clsTextosEstandar.LeyendaImpuestos);
     }
 
@@ -997,11 +998,11 @@ public sealed partial class clsCosteoCotizacionService(
                 numero,
                 clsTextoSeguro.LimpiarLinea($"{r.OrigenNombre} → {r.DestinoNombre}") ?? string.Empty,
                 Camiones(r, catalogo) ?? "—",
-                r.Rechazada ? TextoSinCosteo : tarifa is { } precio ? clsFormatoMoneda.Formatear(precio, moneda) : "—"));
+                r.Rechazada ? TextoSinCosteo : tarifa is { } precio ? clsFormatoMoneda.FormatearExacto(precio, moneda) : "—"));
             total += tarifa ?? 0m;
             if (!r.Rechazada && ValorSeguroPdf(cotizacion, r) is { } seguro)
             {
-                filas.Add(new clsFilaPliegoDocumento(numero, EtiquetaSeguroPdf, "—", clsFormatoMoneda.Formatear(seguro, moneda)));
+                filas.Add(new clsFilaPliegoDocumento(numero, EtiquetaSeguroPdf, "—", clsFormatoMoneda.FormatearExacto(seguro, moneda)));
                 total += seguro;
                 conSeguro = true;
             }
@@ -1012,7 +1013,7 @@ public sealed partial class clsCosteoCotizacionService(
             EsLicitacion(cotizacion) ? clsTextosEstandar.TituloResumenPliego : clsTextosEstandar.TituloResumenRutas,
             filas,
             $"{clsTextosEstandar.EtiquetaTotalGeneral} ({rutas} RUTAS)",
-            clsFormatoMoneda.Formatear(total, moneda),
+            clsFormatoMoneda.FormatearExacto(total, moneda),
             "Valor por viaje de cada ruta con sus servicios conexos incluidos; el total es la suma de un viaje por ruta."
             + (conSeguro ? " " + NotaResumenSeguroPdf : string.Empty));
     }

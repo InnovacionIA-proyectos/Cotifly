@@ -3959,7 +3959,9 @@ paths:
         **Seguro de la mercancía (HU-045.3, #265, ADR-029 §9).** Una ruta con el seguro (`incluye_seguro`, #264) lo trae en una fila propia,
         "Seguro de la mercancía", aparte del flete (política NOGE0076): la fila de la ruta imprime su valor final SIN el seguro y la fila del
         seguro su `valor_seguro`; en el pliego, el resumen agrega la fila del seguro debajo de la ruta (con su número). El "VALOR TOTAL DE LA
-        COTIZACIÓN" no cambia: la suma de los `precio_final_linea`, con el seguro. Nunca imprime la tasa. Una ruta que cotiza con el seguro
+        COTIZACIÓN" no cambia: la suma de los `precio_final_linea`, con el seguro. Nunca imprime la tasa. En COP, el seguro y los montos que
+        lo incluyen (resumen y total) se imprimen con sus centavos cuando los tienen (`$100,40`), para que lo impreso cuadre con lo guardado
+        (B1, decisión del usuario); sin centavos, en pesos enteros como siempre. Una ruta que cotiza con el seguro
         marcado y sin valor de la mercancía (una edición quitó el valor) NO bloquea (decisión del usuario del 2026-11-09): el seguro no suma,
         la ruta sale sin su fila y el 201 trae `aviso_seguro` (`AvisoSeguro`) con las rutas.
       security:
@@ -10284,6 +10286,13 @@ components:
           type: string
           nullable: true
           description: HU-033. Texto del aviso de pruebas para mostrar tal cual; `null` en producción.
+        aviso_seguro:
+          description: |
+            HU-045.3 (#265). Las rutas con el seguro de la mercancía marcado sin valor de la mercancía (no suma ni sale en el PDF; no
+            bloquea el envío); `null` si no hay ninguna. El mismo aviso de `CosteoCotizacion`.
+          oneOf:
+            - $ref: '#/components/schemas/AvisoSeguro'
+            - $ref: '#/components/schemas/Nulo'
 
     DatosNuevaVersion:
       type: object
