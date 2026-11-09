@@ -1,4 +1,5 @@
 using Cotifly.Dominio.Comun;
+using Cotifly.Dominio.Seguros;
 
 namespace Cotifly.Dominio.Cotizaciones;
 
@@ -76,8 +77,16 @@ public sealed partial class clsCotizacionSolicitud
     /// están en la cotización de Nexo (<c>estado_nexo = pendiente</c>; <c>detalle.motivo</c> = <see cref="CodigoConexosPendientesEnNexo"/>
     /// y <c>detalle.conexos_pendientes</c>): en los dos casos el precio todavía no es el definitivo. El estado de cada conexo en Nexo vive
     /// fuera del agregado (el registro del envío diferido): lo cuenta el caso de uso.
+    /// <para>HU-046.3 (#269): por último, si alguna ruta cotizable tiene una medida obligatoria de la política de seguros pendiente
+    /// (<paramref name="medidasFaltantes"/>, <see cref="MedidasObligatoriasPendientes"/>, que evalúa el caso de uso con la política leída de
+    /// sus tablas), <c>COTIZACION_NO_FINALIZABLE</c> con <c>detalle.motivo</c> = <see cref="CodigoMedidasObligatoriasFaltantes"/> y
+    /// <c>detalle.rutas</c> (cada ruta con sus medidas), salvo que venga una <paramref name="justificacion"/> (decisión 1 de HU-046.1). La
+    /// justificación salta SOLO este bloqueo (decisión del 2026-11-06): los anteriores (estado, conexos pendientes de leer o en Nexo)
+    /// bloquean igual con ella.</para>
     /// </summary>
-    public clsResultado<bool> Finalizar(Guid usuarioId, DateTimeOffset ahora, int conexosPendientesEnNexo = 0)
+    public clsResultado<bool> Finalizar(
+        Guid usuarioId, DateTimeOffset ahora, int conexosPendientesEnNexo = 0, IReadOnlyList<clsMedidasFaltantesRuta>? medidasFaltantes = null,
+        string? justificacion = null)
     {
         if (usuarioId == Guid.Empty)
         {
@@ -129,9 +138,56 @@ public sealed partial class clsCotizacionSolicitud
             };
         }
 
+        if (medidasFaltantes is { Count: > 0 } && string.IsNullOrWhiteSpace(justificacion))
+        {
+            // HU-046.3 (#269): la política de seguros exige una medida que la ruta no tiene (p. ej. un acompañante desde 350 M). El comercial
+            // agrega el conexo o finaliza con una justificación (Riesgo lo aprobó por fuera de Cotifly).
+            return new clsErrorDominio(clsCodigosError.CotizacionNoFinalizable, MotivoNoFinalizableMedidas(medidasFaltantes))
+            {
+                Datos = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["estado_costeo"] = EstadoCosteo is { } e ? clsCodigoEnum.ACodigo(e) : null,
+                    ["motivo"] = CodigoMedidasObligatoriasFaltantes,
+                    ["rutas"] = DetalleMedidasFaltantes(medidasFaltantes),
+                },
+            };
+        }
+
         FinalizadaAt = ahora;
         FinalizadaPor = usuarioId;
         return true;
+    }
+
+    /// <summary>Mensaje de <c>COTIZACION_NO_FINALIZABLE</c> con medidas obligatorias de la política de seguros pendientes (HU-046.3).</summary>
+    public static string MotivoNoFinalizableMedidas(IReadOnlyList<clsMedidasFaltantesRuta> faltantes)
+    {
+        ArgumentNullException.ThrowIfNull(faltantes);
+        var rutas = string.Join("; ", faltantes.Select(r => $"ruta {r.LineaOrden}: {string.Join(", ", r.Medidas.Select(m => m.Nombre))}"));
+        return $"La política de seguros exige medidas que la cotización no tiene ({rutas}). Agrega el servicio conexo que la cumple o finaliza "
+            + "con una justificación.";
+    }
+
+    /// <summary>
+    /// <c>detalle.rutas</c> de <see cref="CodigoMedidasObligatoriasFaltantes"/>: por ruta (<c>linea_orden</c>, <c>linea_solicitud_id</c>) sus
+    /// medidas pendientes con su <c>codigo</c>, su <c>nombre</c> y los <c>conexos</c> que la cumplen. Sin montos.
+    /// </summary>
+    public static IReadOnlyList<IReadOnlyDictionary<string, object?>> DetalleMedidasFaltantes(IReadOnlyList<clsMedidasFaltantesRuta> faltantes)
+    {
+        ArgumentNullException.ThrowIfNull(faltantes);
+        return
+        [
+            .. faltantes.Select(r => (IReadOnlyDictionary<string, object?>)new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["linea_orden"] = r.LineaOrden,
+                ["linea_solicitud_id"] = r.LineaSolicitudId,
+                ["medidas"] = r.Medidas.Select(m => (IReadOnlyDictionary<string, object?>)new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["codigo"] = m.Codigo,
+                    ["nombre"] = m.Nombre,
+                    ["conexos"] = m.Conexos,
+                }).ToList(),
+            }),
+        ];
     }
 
     // ------------------------------------------------------------------ HU-036.3 (#207): candados antes de finalizar
