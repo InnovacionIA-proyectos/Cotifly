@@ -3939,6 +3939,7 @@ parecido del catálogo, `sugerido = true`, con `similitud` de 0 a 1), `null` (si
 | `RESULTADO_YA_DEFINIDO` | `ganada` o `perdida` | El resultado que tiene NEXO (Cotifly ya lo guardó) |
 | `COTIZACION_NO_FINALIZABLE` | `conexos_pendientes_de_leer` | NEXO agregó un conexo que Cotifly todavía no leyó: esperar la siguiente actualización del costeo |
 | `COTIZACION_NO_FINALIZABLE` | `conexos_pendientes_en_nexo` | #228: hay conexos con `estado_nexo = pendiente` (`detalle.conexos_pendientes` dice cuántos): esperar a que el polling los deje `enviado` |
+| `COTIZACION_NO_FINALIZABLE` | `medidas_obligatorias_faltantes` | HU-046.3 (#269): una ruta que cuenta no tiene una medida obligatoria de la política de seguros (`detalle.rutas` con sus medidas y los `conexos` que las cumplen): agregar el conexo o reintentar con `{"justificacion": "…"}`. Se evalúa después de los otros motivos |
 | `COSTEO_NEXO_RECHAZADA`, `CONEXO_INVALIDO`, `COSTEO_NEXO_*` | Código de NEXO (o `HTTP 401`) | Nunca el texto de NEXO |
 
 ---
