@@ -141,6 +141,19 @@ public sealed class clsBaseDatosHealthCheckTests
     }
 
     [Theory]
+    [InlineData("PoliticaSeguroTramos.id|PoliticaSeguroMedidas.codigo|CotizacionServiciosConexos.codigoServicio", clsBaseDatosHealthCheck.DescripcionEsquemaSin21)]
+    [InlineData("CotizacionServiciosConexos.codigoServicio", clsBaseDatosHealthCheck.DescripcionEsquemaSin21)]
+    [InlineData("PoliticaSeguroMedidaConexos.codigoServicio|TarifasSeguro.tasa", clsBaseDatosHealthCheck.DescripcionEsquemaSin20)]
+    [InlineData("PoliticaSeguroTramos.valorDesde|Otra.columna", "esquema incompleto: falta Otra.columna, PoliticaSeguroTramos.valorDesde")]
+    public void HU0463_SinEl21LaSondaPideEl21SoloCuandoNoFaltaUnScriptAnterior(string faltantes, string descripcion)
+    {
+        var resultado = clsBaseDatosHealthCheck.Clasificar(faltantes.Split('|'), cotizacionesViejas: false);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be(descripcion);
+    }
+
+    [Theory]
     [InlineData("CotizacionServiciosConexos.precioVenta", clsBaseDatosHealthCheck.DescripcionEsquemaSin19)]
     [InlineData("CotizacionServiciosConexos.precioVenta|TokensRefresco.rolSesion", clsBaseDatosHealthCheck.DescripcionEsquemaSin16)]
     [InlineData("CotizacionServiciosConexos.precioVenta|SapMapeoTrqType.lineaNegocioId", clsBaseDatosHealthCheck.DescripcionEsquemaSin18)]
@@ -376,6 +389,18 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
 
         resultado.Status.Should().Be(HealthStatus.Unhealthy);
         resultado.Description.Should().Be("esquema incompleto: falta 20");
+    }
+
+    [Fact]
+    public async Task HU0463_ConEl20PeroSinEl21EsUnhealthyPorqueLeFaltaEl21()
+    {
+        // HU-046.3 (#269): el modelo EF mapea las 4 tablas de la política de seguros y codigoServicio del conexo (db/scripts/21, HU-046.2 #268).
+        await using var sin21 = await baseDatos.CrearBaseConScriptsAsync("dbSin21", clsBaseDatosPruebas.ScriptsHasta16 + 4);
+
+        var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin21.Cadena);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be("esquema incompleto: falta 21");
     }
 
     [Fact]

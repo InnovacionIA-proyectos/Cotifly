@@ -365,6 +365,8 @@ internal sealed class clsServicioConexoRutaConfiguracion : IEntityTypeConfigurat
         // HU-014 (#188): id del catálogo de Nexo (script 03) y su categoría (script 05). NULL en las filas anteriores a #188.
         builder.Property(c => c.IdServicioConexoCatalogo).Columna("idServicioConexoCatalogo", "nvarchar(64)").HasMaxLength(clsServicioConexoRuta.LargoMaximoId);
         builder.Property(c => c.Categoria).Columna("categoriaServicioConexo", "nvarchar(20)").HasMaxLength(clsServicioConexoRuta.LargoMaximoCategoria);
+        // HU-046.3 (#269): el código del servicio en el catálogo de Nexo (script 21). NULL en las filas anteriores: el backend las completa.
+        builder.Property(c => c.CodigoServicio).Columna("codigoServicio", "nvarchar(40)").HasMaxLength(clsServicioConexoRuta.LargoMaximoCodigoServicio);
         builder.Property(c => c.Precio).Columna("precio", "decimal(18,2)");
         // precioVenta (script 19, NOT NULL sin DEFAULT): la venta unitaria del conexo, que se cotiza sin margen (HU-043.2, #251).
         builder.Property(c => c.PrecioVenta).Columna("precioVenta", "decimal(18,2)");

@@ -511,6 +511,8 @@ public static class clsDependenciasInfraestructura
         servicios.AddScoped<IClsCotizacionRepository, clsCotizacionRepository>();
         // HU-045.2 (#264): la tasa vigente del seguro de la mercancía (TarifasSeguro, script 20; solo lectura).
         servicios.AddScoped<IClsTarifaSeguroRepository, clsTarifaSeguroRepository>();
+        // HU-046.3 (#269): la política de seguros (las 4 tablas PoliticaSeguro*, script 21; solo lectura y sin caché).
+        servicios.AddScoped<IClsPoliticaSegurosRepository, clsPoliticaSegurosRepository>();
         servicios.AddScoped<IClsMargenPoliticaRepository, clsMargenPoliticaRepository>();
         servicios.AddScoped<IClsSapMapeoRepository, clsSapMapeoRepository>();
         servicios.AddScoped<IClsMargenAjusteRepository, clsMargenAjusteRepository>();
