@@ -129,8 +129,8 @@ public sealed class clsLecturaExcelAcotadaTests : IDisposable
     }
 
     /// <summary>
-    /// Un paquete que declara su hoja con un tipo no XML no se salta los controles: el SDK de Open XML exige el tipo de la hoja y no lo
-    /// abre (<c>LIBRO_ILEGIBLE</c>). Un libro denso o con DTD no llega a ClosedXML.
+    /// Un paquete que declara su hoja con un tipo no XML no se salta los controles: la hoja es una parte de tipo fijo en el SDK de Open
+    /// XML, que no la abre con otro tipo (<c>LIBRO_ILEGIBLE</c>). Un libro denso o con DTD no llega a ClosedXML.
     /// </summary>
     [Theory]
     [InlineData("application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet")]
@@ -142,6 +142,28 @@ public sealed class clsLecturaExcelAcotadaTests : IDisposable
         var conDtd = clsExcelMercanciasMuestra.ConTipoDeHoja(clsExcelMercanciasMuestra.ConEntidadExterna(), tipo);
 
         (clsLecturaExcelAcotada.Verificar(densa, Ct)?.Detalle).Should().Be(clsLecturaExcelAcotada.MotivoLibroIlegible, tipo);
+        (clsLecturaExcelAcotada.Verificar(conDtd, Ct)?.Detalle).Should().Be(clsLecturaExcelAcotada.MotivoLibroIlegible, tipo);
+    }
+
+    /// <summary>
+    /// Auditoría de #277 (M1): la parte principal (<c>xl/workbook.xml</c>) no tiene tipo fijo en el SDK de Open XML, que la abre con
+    /// cualquier tipo, y ClosedXML la lee igual. Se cuenta siempre: un libro principal denso es <c>DESCOMPRIMIDO_EXCEDE_LIMITE</c> y con
+    /// DTD es <c>LIBRO_ILEGIBLE</c>, declare el tipo que declare. Con <c>...sheet.main</c> sin <c>+xml</c> era una regresión de esta rama.
+    /// </summary>
+    [Theory]
+    [InlineData("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main")]
+    [InlineData("application/octet-stream")]
+    [InlineData("image/png")]
+    public void UnLibroPrincipalConTipoNoXmlNoSeSaltaLosControles(string tipo)
+    {
+        var denso = clsExcelMercanciasMuestra.ConTipoDeLibro(
+            clsExcelMercanciasMuestra.ConLibroDenso(clsPliegoMuestra.Excel(1), clsLecturaExcelAcotada.MaximoElementosXml + 1), tipo);
+        var conDtd = clsExcelMercanciasMuestra.ConTipoDeLibro(clsExcelMercanciasMuestra.ConLibroConDtd(clsPliegoMuestra.Excel(1)), tipo);
+        var valido = clsExcelMercanciasMuestra.ConTipoDeLibro(clsPliegoMuestra.Excel(1), tipo);
+
+        clsLecturaExcelAcotada.Verificar(valido, Ct).Should().BeNull("el SDK abre el libro con ese tipo: la prueba es de una evasión real ({0})", tipo);
+        (clsLecturaExcelAcotada.Verificar(denso, Ct)?.Codigo, clsLecturaExcelAcotada.Verificar(denso, Ct)?.Detalle).Should()
+            .Be((clsCodigosError.ArchivoDemasiadoGrande, clsLecturaExcelAcotada.MotivoDescomprimido), tipo);
         (clsLecturaExcelAcotada.Verificar(conDtd, Ct)?.Detalle).Should().Be(clsLecturaExcelAcotada.MotivoLibroIlegible, tipo);
     }
 }

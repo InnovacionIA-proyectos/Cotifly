@@ -278,11 +278,35 @@ public static class clsExcelMercanciasMuestra
     /// HU-035.3 (#277): cambia en <c>[Content_Types].xml</c> el tipo de la primera hoja por <paramref name="tipo"/> (un libro que intenta
     /// que su hoja no se cuente como XML).
     /// </summary>
-    public static byte[] ConTipoDeHoja(byte[] libro, string tipo) => ConEntrada(libro, "[Content_Types].xml", xml => xml.Replace(
-        "PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"",
-        $"PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"{tipo}\"", StringComparison.Ordinal) is var nuevo && nuevo != xml
-            ? nuevo
-            : throw new InvalidOperationException("No se encontró el tipo de la hoja en [Content_Types].xml."));
+    public static byte[] ConTipoDeHoja(byte[] libro, string tipo) =>
+        ConTipoDeParte(libro, "/xl/worksheets/sheet1.xml", "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml", tipo);
+
+    /// <summary>
+    /// HU-035.3 (#277), auditoría: cambia en <c>[Content_Types].xml</c> el tipo de la parte principal (<c>xl/workbook.xml</c>) por
+    /// <paramref name="tipo"/>. El SDK de Open XML no fija el tipo del libro y lo abre igual.
+    /// </summary>
+    public static byte[] ConTipoDeLibro(byte[] libro, string tipo) =>
+        ConTipoDeParte(libro, "/xl/workbook.xml", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml", tipo);
+
+    /// <summary>
+    /// HU-035.3 (#277), auditoría: <paramref name="libro"/> con <paramref name="extra"/> elementos vacíos más dentro de
+    /// <c>xl/workbook.xml</c>, antes de su cierre (un libro principal denso).
+    /// </summary>
+    public static byte[] ConLibroDenso(byte[] libro, int extra) => ConEntrada(libro, "xl/workbook.xml", xml =>
+        xml.Replace("</x:workbook>", string.Concat(Enumerable.Repeat("<x:z/>", extra)) + "</x:workbook>", StringComparison.Ordinal)
+           .Replace("</workbook>", string.Concat(Enumerable.Repeat("<z/>", extra)) + "</workbook>", StringComparison.Ordinal));
+
+    /// <summary>HU-035.3 (#277), auditoría: <c>xl/workbook.xml</c> de <paramref name="libro"/> con un DTD y una entidad externa.</summary>
+    public static byte[] ConLibroConDtd(byte[] libro) => ConEntrada(libro, "xl/workbook.xml", xml =>
+        "<?xml version=\"1.0\"?><!DOCTYPE w [<!ENTITY e SYSTEM \"file:///etc/passwd\">]>"
+        + xml[(xml.IndexOf("?>", StringComparison.Ordinal) + 2)..].TrimStart('﻿'));
+
+    private static byte[] ConTipoDeParte(byte[] libro, string parte, string tipoActual, string tipo) =>
+        ConEntrada(libro, "[Content_Types].xml", xml => xml.Replace(
+            $"PartName=\"{parte}\" ContentType=\"{tipoActual}\"", $"PartName=\"{parte}\" ContentType=\"{tipo}\"", StringComparison.Ordinal)
+                is var nuevo && nuevo != xml
+                ? nuevo
+                : throw new InvalidOperationException($"No se encontró el tipo de {parte} en [Content_Types].xml."));
 
     /// <summary>Un DEVMODE ficticio: nombre de impresora en UTF-16 relleno a 64 bytes y campos binarios (no es XML).</summary>
     public static byte[] DevmodeFicticio()
