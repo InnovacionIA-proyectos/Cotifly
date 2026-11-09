@@ -689,8 +689,8 @@ paths:
         formato de las direcciones, largos. Nada de esto llama a MailSender ni cambia el estado de envío.
 
         HU-045.3 (#265): el precio de cada ruta y el total del bloque fijo incluyen el seguro de la mercancía (sin desglose, regla de HU-033);
-        la ruta que lo incluye dice "Incluye el seguro de la mercancía". Con una ruta que cotiza con el seguro marcado sin valor de la
-        mercancía responde 400 `SEGURO_SIN_VALOR_MERCANCIA` (`detalle.rutas`), sin enviar nada.
+        la ruta que lo incluye dice "Incluye el seguro de la mercancía". Una ruta con el seguro marcado sin valor de la mercancía no bloquea
+        el envío (decisión del usuario del 2026-11-09): su precio no lo incluye y no lo menciona.
       security:
         - bearer: []
       parameters:
@@ -710,8 +710,7 @@ paths:
                 $ref: '#/components/schemas/RespuestaEnvio'
         '400':
           description: |
-            Error de negocio del envío: duplicado (`CORREO_DUPLICADO`), sin PDF (`CORREO_PDF_NO_ENCONTRADO`), seguro de la mercancía marcado
-            sin valor de la mercancía en alguna ruta (`SEGURO_SIN_VALOR_MERCANCIA`, HU-045.3, #265, con `detalle.rutas`), más
+            Error de negocio del envío: duplicado (`CORREO_DUPLICADO`), sin PDF (`CORREO_PDF_NO_ENCONTRADO`), más
             destinatarios entre `para` y `cc` que el tope (10 por defecto, configurable) (`CORREO_DEMASIADOS_DESTINATARIOS`, #228, con `detalle.maximo` y
             `detalle.recibidos`), MailSender lo
             rechazó (400/413/422), no está disponible o no respondió a tiempo (`CORREO_ENVIO_FALLIDO`; con tiempo agotado el
@@ -3961,9 +3960,8 @@ paths:
         "Seguro de la mercancía", aparte del flete (política NOGE0076): la fila de la ruta imprime su valor final SIN el seguro y la fila del
         seguro su `valor_seguro`; en el pliego, el resumen agrega la fila del seguro debajo de la ruta (con su número). El "VALOR TOTAL DE LA
         COTIZACIÓN" no cambia: la suma de los `precio_final_linea`, con el seguro. Nunca imprime la tasa. Una ruta que cotiza con el seguro
-        marcado y sin valor de la mercancía (una edición quitó el valor: no suma al precio) responde 400 `SEGURO_SIN_VALOR_MERCANCIA` con
-        `detalle.rutas` (`linea_orden`, `linea_solicitud_id`), para no cobrar de menos; se corrige quitando el seguro o agregando el valor (en
-        una versión nueva si ya está finalizada). Pendiente de decisión del usuario: bloquear (hoy) o solo avisar.
+        marcado y sin valor de la mercancía (una edición quitó el valor) NO bloquea (decisión del usuario del 2026-11-09): el seguro no suma,
+        la ruta sale sin su fila y el 201 trae `aviso_seguro` (`AvisoSeguro`) con las rutas.
       security:
         - bearer: []
       parameters:
@@ -3980,24 +3978,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/SalidaPdf'
         '400':
-          description: |
-            Payload del PDF inválido (`PDF_PAYLOAD_INVALIDO`) o (HU-045.3, #265) `SEGURO_SIN_VALOR_MERCANCIA`: alguna ruta que cotiza tiene el
-            seguro de la mercancía marcado sin valor de la mercancía; `detalle.rutas` las lista. No se genera nada.
+          description: Payload del PDF inválido (`PDF_PAYLOAD_INVALIDO`)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
-              examples:
-                seguro_sin_valor:
-                  summary: HU-045.3 (#265)
-                  value:
-                    error:
-                      codigo: SEGURO_SIN_VALOR_MERCANCIA
-                      mensaje: "La cotización PCN-900123456-AP-05112026-001 tiene el seguro de la mercancía marcado en la ruta 1 sin valor de la mercancía: su precio no incluye el seguro. Antes de generar el PDF, quita el seguro o agrega el valor de la mercancía (en una versión nueva si ya está finalizada)."
-                      detalle:
-                        rutas:
-                          - linea_orden: 1
-                            linea_solicitud_id: 0f8fad5b-d9cb-469f-a165-70867728950e
         '401':
           $ref: '#/components/responses/SesionExpirada'
         '404':
@@ -5461,6 +5446,42 @@ components:
           type: string
         registrada_en_bd:
           type: boolean
+        aviso_seguro:
+          description: |
+            HU-045.3 (#265). Solo en `POST .../costeo/pdf`: las rutas con el seguro de la mercancía marcado sin valor de la mercancía (el
+            PDF salió sin su fila; no bloquea). `null` si no hay ninguna (y siempre en el PDF del chat).
+          oneOf:
+            - $ref: '#/components/schemas/AvisoSeguro'
+            - $ref: '#/components/schemas/Nulo'
+
+    AvisoSeguro:
+      type: object
+      required: [codigo, mensaje, rutas]
+      description: |
+        HU-045.3 (#265, decisión del usuario del 2026-11-09). Aviso, no error: rutas que cotizan con el seguro de la mercancía marcado
+        (`incluye_seguro = true`) y SIN valor de la mercancía (una edición quitó el valor). Su seguro no suma al precio ni sale en el PDF.
+        Mostrar `mensaje` y resaltar las rutas: el comercial edita el valor de la mercancía (en una versión nueva si ya está finalizada) o
+        quita el seguro.
+      properties:
+        codigo:
+          type: string
+          description: Siempre `SEGURO_SIN_VALOR_MERCANCIA` (el código del catálogo de errores; aquí es un aviso).
+        mensaje:
+          type: string
+        rutas:
+          type: array
+          items:
+            $ref: '#/components/schemas/RutaAvisoSeguro'
+
+    RutaAvisoSeguro:
+      type: object
+      required: [linea_orden, linea_solicitud_id]
+      properties:
+        linea_orden:
+          type: integer
+        linea_solicitud_id:
+          type: string
+          format: uuid
 
     RespuestaChat:
       type: object
@@ -7603,6 +7624,13 @@ components:
             seguro en una ruta (la de cada ruta que ya lo tiene es `rutas[].tasa_seguro`). Viene en `GET .../costeo`, en
             `PUT .../costeo/seguro`, en las respuestas del margen y de los conexos y en `costeo` del detalle por folio; `null` en las
             demás (PDF, textos, recálculo de vehículos) o si no se pudo leer: conservar la del último `GET`.
+        aviso_seguro:
+          description: |
+            HU-045.3 (#265). Las rutas con el seguro de la mercancía marcado sin valor de la mercancía (no suma ni sale en el PDF; no
+            bloquea); `null` si no hay ninguna. Viene en toda respuesta `CosteoCotizacion` y en `costeo` del detalle por folio.
+          oneOf:
+            - $ref: '#/components/schemas/AvisoSeguro'
+            - $ref: '#/components/schemas/Nulo'
         textos:
           description: HU-013.5. Asunto e introducción guardados para el PDF, o `null` si todavía no hay (el PDF usa los estándar).
           oneOf:

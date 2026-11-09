@@ -116,6 +116,12 @@ public sealed record clsCosteoCotizacion(
     public decimal? TasaSeguroVigente { get; init; }
 
     /// <summary>
+    /// HU-045.3 (#265): aviso de las rutas con el seguro de la mercancía marcado sin valor de la mercancía (no suma ni sale en el PDF);
+    /// <c>null</c> si no hay ninguna.
+    /// </summary>
+    public clsAvisoSeguro? AvisoSeguro { get; init; }
+
+    /// <summary>
     /// HU-021.8 (#135): las rutas en orden, cada una con su margen (aplicado, sugerido y origen), su precio y sus conexos. El ajuste de
     /// margen y los cambios de conexos dicen a cuál aplican con <c>linea_orden</c> o <c>linea_solicitud_id</c>. HU-039.1 (#218): el único
     /// costo que trae es el costo bruto de cada ruta (<see cref="clsRutaCosteo.CostoFinal"/>), solo para el dueño.
@@ -654,12 +660,6 @@ public sealed partial class clsCosteoCotizacionService(
             return bloqueo;
         }
 
-        // HU-045.3 (#265): una ruta con el seguro marcado sin valor de la mercancía cobraría de menos (pendiente de decisión: bloquear o avisar).
-        if (cotizacion.ValidarSeguroAntesDe(AccionPdf) is { } seguroSinValor)
-        {
-            return seguroSinValor;
-        }
-
         var usuario = await usuarios.ObtenerPorIdAsync(usuarioId, cancellationToken);
         if (usuario is null)
         {
@@ -768,7 +768,11 @@ public sealed partial class clsCosteoCotizacionService(
         }
 
         return new clsPdfCosteoGenerado(
-            new clsSalidaPdf(cotizacion.Id, cotizacion.Folio, clsUrlPdf.Construir(opcionesPdf.Value.BaseUrl, nombre), RegistradaEnBd: true),
+            // HU-045.3 (#265): el seguro marcado sin valor de la mercancía no bloquea (decisión del 2026-11-09): sale sin su fila y se avisa.
+            new clsSalidaPdf(cotizacion.Id, cotizacion.Folio, clsUrlPdf.Construir(opcionesPdf.Value.BaseUrl, nombre), RegistradaEnBd: true)
+            {
+                AvisoSeguro = clsAvisoSeguro.De(cotizacion),
+            },
             VersionEtag(cotizacion));
     }
 
@@ -1453,6 +1457,7 @@ public sealed partial class clsCosteoCotizacionService(
             SincronizacionResultadoNexo = cotizacion.EstadoSincronizacionResultado,
             ErrorSincronizacionResultadoNexo = cotizacion.Ganada is null ? null : cotizacion.ErrorSincronizacionResultado,
             FinalizadaAt = cotizacion.FinalizadaAt?.ToUniversalTime(),
+            AvisoSeguro = clsAvisoSeguro.De(cotizacion),
             Rutas = [.. cotizacion.RutasOrdenadas.Select(r => RutaCosteo(cotizacion, r, estadosNexo, categorias, situaciones, sincronizacionVieja))],
         };
     }

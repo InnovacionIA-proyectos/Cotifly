@@ -10,7 +10,7 @@ namespace Cotifly.Api.Tests.Web;
 /// <summary>
 /// HU-045.3 (#265, ADR-029 §9) por HTTP con SQL Server real y el Nexo falso: el detalle por folio cuadra el desglose con
 /// <c>totales.precio_seguro</c>, el Excel trae el seguro en su columna, el PDF sale, y una ruta con el seguro marcado sin valor de la
-/// mercancía no deja generar el PDF (400 <c>SEGURO_SIN_VALOR_MERCANCIA</c> con <c>detalle.rutas</c>). El formulario de prueba trae
+/// mercancía trae <c>aviso_seguro</c> en el costeo y en la respuesta del PDF (no bloquea). El formulario de prueba trae
 /// <c>valor_mercancia = 250.000.000</c>: el seguro es 862.500.
 /// </summary>
 [Collection(clsColeccionApiWeb.Nombre)]
@@ -56,21 +56,37 @@ public sealed class clsSeguroExportacionesEndpointsTests : IDisposable
         await VerificarContratoAsync(pdf, "/web/cotizaciones/{folio}/costeo/pdf", _post, HttpStatusCode.Created);
     }
 
+    /// <summary>Decisión del usuario del 2026-11-09: no bloquea; el costeo y la respuesta del PDF traen <c>aviso_seguro</c>.</summary>
     [Fact]
-    public async Task ConElSeguroMarcadoSinValorDeLaMercanciaNoSeGeneraElPdf()
+    public async Task ConElSeguroMarcadoSinValorDeLaMercanciaElPdfSaleConElAviso()
     {
         var (sesion, folio) = await ConSeguroAsync(quitarValor: true);
         await _api.FinalizarAsync(sesion.Access, folio);
 
+        using var costeo = await _api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", sesion.Access);
+        var vista = await VerificarContratoAsync(costeo, "/web/cotizaciones/{folio}/costeo", _get, HttpStatusCode.OK);
+        vista.GetProperty("precio_final").GetDecimal().Should().Be(3_000_000m, "sin valor, el seguro no suma");
         using var pdf = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
 
-        pdf.StatusCode.Should().Be(HttpStatusCode.BadRequest, await pdf.Content.ReadAsStringAsync(Ct));
-        await VerificarErrorNegocioAsync(pdf, "SEGURO_SIN_VALOR_MERCANCIA");
-        using var cuerpo = JsonDocument.Parse(await pdf.Content.ReadAsStringAsync(Ct));
-        var ruta = cuerpo.RootElement.GetProperty("error").GetProperty("detalle").GetProperty("rutas").EnumerateArray().Single();
-        ruta.GetProperty("linea_orden").GetInt32().Should().Be(1);
-        ruta.GetProperty("linea_solicitud_id").GetString().Should().NotBeNullOrWhiteSpace();
-        (await EscalarAsync<string>($"SELECT pdfPath FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'")).Should().BeNull("no se generó");
+        var salida = await VerificarContratoAsync(pdf, "/web/cotizaciones/{folio}/costeo/pdf", _post, HttpStatusCode.Created);
+        foreach (var aviso in new[] { vista.GetProperty("aviso_seguro"), salida.GetProperty("aviso_seguro") })
+        {
+            aviso.GetProperty("codigo").GetString().Should().Be("SEGURO_SIN_VALOR_MERCANCIA");
+            var ruta = aviso.GetProperty("rutas").EnumerateArray().Single();
+            ruta.GetProperty("linea_orden").GetInt32().Should().Be(1);
+            ruta.GetProperty("linea_solicitud_id").GetString().Should().NotBeNullOrWhiteSpace();
+        }
+    }
+
+    [Fact]
+    public async Task ConElSeguroCalculadoNoHayAviso()
+    {
+        var (sesion, folio) = await ConSeguroAsync(quitarValor: false);
+
+        using var costeo = await _api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", sesion.Access);
+
+        (await VerificarContratoAsync(costeo, "/web/cotizaciones/{folio}/costeo", _get, HttpStatusCode.OK))
+            .GetProperty("aviso_seguro").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
     /// <summary>

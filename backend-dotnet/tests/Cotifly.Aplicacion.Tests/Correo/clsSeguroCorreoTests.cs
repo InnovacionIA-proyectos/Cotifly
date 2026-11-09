@@ -7,7 +7,6 @@ using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Aplicacion.Pdf.Interfaces;
 using Cotifly.Aplicacion.Tests.Costeo;
-using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Dominio.Identidad;
 using Cotifly.Pruebas.Comun;
@@ -19,7 +18,7 @@ namespace Cotifly.Aplicacion.Tests.Correo;
 /// <summary>
 /// HU-045.3 (#265, ADR-029 §9): el correo y su vista previa. Con la regla de HU-033 (sin desglose) cada ruta sigue con un solo valor, su
 /// precio final con el seguro, y el total lo incluye; la ruta que lo incluye lo dice, sin el monto ni la tasa. Una ruta con el seguro marcado
-/// sin valor de la mercancía no deja enviar la cotización.
+/// sin valor de la mercancía no bloquea el envío (decisión del usuario del 2026-11-09).
 /// </summary>
 public sealed class clsSeguroCorreoTests : IDisposable
 {
@@ -71,8 +70,9 @@ public sealed class clsSeguroCorreoTests : IDisposable
         clsPlantillaCorreo.ResumenHtml(resumen).Should().NotContain(System.Net.WebUtility.HtmlEncode(clsPlantillaCorreo.TextoIncluyeSeguro));
     }
 
+    /// <summary>Decisión del usuario del 2026-11-09: el seguro marcado sin valor de la mercancía no bloquea el envío; la ruta no dice que lo incluye.</summary>
     [Fact]
-    public async Task ConElSeguroMarcadoSinValorDeLaMercanciaNoSeEnvia()
+    public async Task ConElSeguroMarcadoSinValorDeLaMercanciaSeEnviaSinDecirQueLoIncluye()
     {
         var cotizacion = ConSeguro();
         clsSeguroPdfCosteoTests.QuitarValor(cotizacion);
@@ -83,6 +83,10 @@ public sealed class clsSeguroCorreoTests : IDisposable
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync("PCN-C9", _comercial.Id, Arg.Any<CancellationToken>()).Returns(cotizacion);
         _correos.ListarEnviadosDesdeAsync(Arg.Any<Guid>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>()).Returns([]);
         _almacen.LeerPorReferenciaAsync("/data/pdfs/PCN-C9.pdf", Arg.Any<CancellationToken>()).Returns("%PDF-1.4 prueba"u8.ToArray());
+        _unidad.GuardarCambiosSiVersionAsync(Arg.Any<Guid>(), Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(true);
+        clsMensajeCorreo? enviado = null;
+        _transporte.EnviarAsync(Arg.Do<clsMensajeCorreo>(m => enviado = m), Arg.Any<CancellationToken>())
+            .Returns(new clsEnvioAceptado(Guid.NewGuid(), Cotifly.Dominio.Correo.EstadoCorreo.Encolado, null));
         var servicio = new clsCorreoService(_cotizaciones, _correos, _usuarios, _almacen, _transporte, _unidad, new clsRelojFalso(),
             Substitute.For<IClsCalendarioNegocio>(), _candado,
             Options.Create(new clsOpcionesCorreo { Habilitado = true, Proteccion = new() { Modo = "ninguno", PermitirEnvioReal = true } }),
@@ -90,10 +94,8 @@ public sealed class clsSeguroCorreoTests : IDisposable
 
         var resultado = await servicio.EnviarAsync(new clsEntradaEnviarCorreo(_comercial.Id, ["cliente@empresa.com"], Folio: "PCN-C9"), Ct);
 
-        resultado.Error.Codigo.Should().Be(clsCodigosError.SeguroSinValorMercancia);
-        resultado.Error.Mensaje.Should().Contain(clsCorreoService.AccionEnviar);
-        await _transporte.DidNotReceiveWithAnyArgs().EnviarAsync(default!, Ct);
-        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
-        cotizacion.EstadoEnvio.Should().NotBe(EstadoEnvio.Enviada);
+        resultado.EsExitoso.Should().BeTrue(resultado.EsFallo ? resultado.Error.Mensaje : string.Empty);
+        enviado!.CuerpoHtml.Should().Contain("$1.250.000 COP", "sin valor, el seguro no suma")
+            .And.NotContain(System.Net.WebUtility.HtmlEncode(clsPlantillaCorreo.TextoIncluyeSeguro));
     }
 }

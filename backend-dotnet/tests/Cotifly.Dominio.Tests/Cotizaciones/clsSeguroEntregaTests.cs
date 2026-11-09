@@ -1,12 +1,11 @@
-using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Pruebas.Comun;
 
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
 /// <summary>
-/// HU-045.3 (#265, ADR-029 §9): una ruta con el seguro marcado pero sin valor de la mercancía (la edición quitó el valor: el check queda sin
-/// tasa ni costo) no deja generar el PDF ni enviar la cotización, para no cobrar de menos. El error lista las rutas.
+/// HU-045.3 (#265, ADR-029 §9): las rutas con el seguro marcado pero sin valor de la mercancía (la edición quitó el valor: el check queda
+/// sin tasa ni costo). Decisión del usuario del 2026-11-09: se avisan, no se bloquean.
 /// </summary>
 public sealed class clsSeguroEntregaTests
 {
@@ -34,7 +33,7 @@ public sealed class clsSeguroEntregaTests
     }
 
     [Fact]
-    public void SinSeguroOConSeguroCalculadoNoHayNadaQueBloquear()
+    public void SinSeguroOConSeguroCalculadoNoHayRutasQueAvisar()
     {
         var sinSeguro = Costeada();
         var conSeguro = Costeada();
@@ -42,22 +41,15 @@ public sealed class clsSeguroEntregaTests
 
         sinSeguro.RutasConSeguroSinValor().Should().BeEmpty();
         conSeguro.RutasConSeguroSinValor().Should().BeEmpty();
-        conSeguro.ValidarSeguroAntesDe("generar el PDF").Should().BeNull();
     }
 
     [Fact]
-    public void ElSeguroMarcadoSinValorDeLaMercanciaBloqueaConElCodigoYLasRutas()
+    public void ElSeguroMarcadoSinValorDeLaMercanciaApareceEnLasRutasQueAvisarYNoSumaAlPrecio()
     {
         var cotizacion = ConSeguroSinValor();
 
-        var error = cotizacion.ValidarSeguroAntesDe("generar el PDF");
-
-        cotizacion.RutasConSeguroSinValor().Select(r => r.Orden).Should().Equal(1);
-        error!.Codigo.Should().Be(clsCodigosError.SeguroSinValorMercancia);
-        error.Mensaje.Should().Contain("generar el PDF").And.Contain("ruta 1").And.Contain(cotizacion.Folio);
-        var rutas = error.Datos!["rutas"].Should().BeAssignableTo<IReadOnlyList<IReadOnlyDictionary<string, object?>>>().Subject;
-        rutas.Should().ContainSingle();
-        rutas[0]["linea_orden"].Should().Be(1);
-        rutas[0]["linea_solicitud_id"].Should().Be(cotizacion.PrimeraRuta!.Id);
+        cotizacion.RutasConSeguroSinValor().Should().ContainSingle().Which.Should().BeSameAs(cotizacion.PrimeraRuta);
+        cotizacion.PrimeraRuta!.ValorSeguro(clsCotizacionSolicitud.MonedaPesos, 0m, out var valor).Should().BeNull();
+        valor.Should().BeNull("sin valor de la mercancía el seguro no se calcula ni se suma");
     }
 }

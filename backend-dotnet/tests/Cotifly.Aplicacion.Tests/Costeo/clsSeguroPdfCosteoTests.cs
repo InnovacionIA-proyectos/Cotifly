@@ -22,7 +22,8 @@ namespace Cotifly.Aplicacion.Tests.Costeo;
 /// <summary>
 /// HU-045.3 (#265, ADR-029 §9): el PDF del costeo muestra el seguro de la mercancía en una línea propia por ruta, aparte del flete (política
 /// NOGE0076): la fila del flete imprime el precio de la ruta SIN el seguro y la fila "Seguro de la mercancía" su valor; el total general sigue
-/// siendo la suma de los precios finales. Nunca la tasa. Una ruta con el seguro marcado sin valor de la mercancía no deja generar el PDF.
+/// siendo la suma de los precios finales. Nunca la tasa. Una ruta con el seguro marcado sin valor de la mercancía sale sin su fila y con un
+/// aviso (decisión del usuario del 2026-11-09).
 /// </summary>
 public sealed class clsSeguroPdfCosteoTests
 {
@@ -125,8 +126,12 @@ public sealed class clsSeguroPdfCosteoTests
         json.Should().NotContain("0,345").And.NotContain("0.00345").And.NotContain("0,00345", "el cliente ve el valor del seguro, nunca la tasa");
     }
 
+    /// <summary>
+    /// Decisión del usuario del 2026-11-09: el seguro marcado sin valor de la mercancía no bloquea. El PDF sale sin la fila del seguro en esa
+    /// ruta (no suma) y la respuesta y la vista del costeo traen el aviso con las rutas.
+    /// </summary>
     [Fact]
-    public async Task ConElSeguroMarcadoSinValorDeLaMercanciaNoSeGeneraElPdf()
+    public async Task ConElSeguroMarcadoSinValorDeLaMercanciaElPdfSaleSinSuFilaYConElAviso()
     {
         var cotizacion = UnaRuta();
         QuitarValor(cotizacion);
@@ -134,11 +139,25 @@ public sealed class clsSeguroPdfCosteoTests
 
         var resultado = await Servicio().GenerarPdfAsync(_ana, cotizacion.Folio, Version, Ct);
 
-        resultado.Error.Codigo.Should().Be(clsCodigosError.SeguroSinValorMercancia);
-        resultado.Error.Mensaje.Should().Contain(clsCosteoCotizacionService.AccionPdf);
-        resultado.Error.Datos!.Should().ContainKey("rutas");
-        await _generador.DidNotReceiveWithAnyArgs().GenerarAsync(default!, Ct);
-        await _almacen.DidNotReceiveWithAnyArgs().GuardarNuevoAsync(default!, default!, Ct);
+        resultado.EsExitoso.Should().BeTrue(resultado.EsFallo ? resultado.Error.Mensaje : string.Empty);
+        _documento!.Secciones.Single().Filas.Should().ContainSingle().Which.Tarifa.Should().Be("$1.250.000", "sin valor, el seguro no suma");
+        _documento.TotalGeneral!.Valor.Should().Be("$1.250.000 COP");
+        var aviso = resultado.Valor.Pdf.AvisoSeguro!;
+        aviso.Codigo.Should().Be(clsCodigosError.SeguroSinValorMercancia);
+        aviso.Rutas.Should().Equal(new Cotifly.Aplicacion.Costeo.DTOs.clsRutaAvisoSeguro(1, cotizacion.PrimeraRuta!.Id));
+        aviso.Mensaje.Should().Contain("la ruta 1");
+        clsCosteoCotizacionService.Vista(cotizacion, null).AvisoSeguro.Should().BeEquivalentTo(aviso, "la vista del costeo (y el detalle) trae el mismo aviso");
+    }
+
+    [Fact]
+    public async Task ConElSeguroCalculadoNoHayAviso()
+    {
+        var cotizacion = Registrada(Preparada(UnaRuta()));
+
+        var resultado = await Servicio().GenerarPdfAsync(_ana, cotizacion.Folio, Version, Ct);
+
+        resultado.Valor.Pdf.AvisoSeguro.Should().BeNull();
+        clsCosteoCotizacionService.Vista(cotizacion, null).AvisoSeguro.Should().BeNull();
     }
 
     /// <summary>Formulario de una ruta: flete 1.000.000 al 20 % (1.250.000) y valor de la mercancía 200.000.000 (seguro 690.000).</summary>

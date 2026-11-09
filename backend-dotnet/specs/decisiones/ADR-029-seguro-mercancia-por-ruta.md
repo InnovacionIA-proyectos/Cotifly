@@ -58,9 +58,10 @@ tabla `TarifasSeguro` (una sola tasa activa) y las columnas `incluyeSeguro`, `ta
      ("Incluye el seguro de la mercancía", `resumen.rutas[].incluye_seguro`) sin el monto.
    - **Detalle por folio:** `totales.precio_seguro` (B4 de la auditoría de #264): `precio_transporte + precio_conexos + precio_seguro =
      precio_final`.
-   - **Check marcado sin valor de la mercancía** (decisión 7 de #264): opción conservadora mientras el usuario decide. El PDF y el envío
-     responden 400 `SEGURO_SIN_VALOR_MERCANCIA` con `detalle.rutas` (`clsCotizacionSolicitud.ValidarSeguroAntesDe`), para no cobrar de
-     menos. Para convertirlo en un aviso basta con quitar esas dos llamadas y mostrar `RutasConSeguroSinValor`. No toca Finalizar (#269).
+   - **Check marcado sin valor de la mercancía** (decisión 7 de #264; decisión del usuario del 2026-11-09: **se avisa, no se bloquea**).
+     El seguro no suma y el PDF sale sin su fila en esa ruta. `aviso_seguro` (`clsAvisoSeguro`, código `SEGURO_SIN_VALOR_MERCANCIA`, con
+     las rutas de `clsCotizacionSolicitud.RutasConSeguroSinValor()`) va en `CosteoCotizacion` (y en el detalle) y en el 201 del PDF. El
+     envío del correo tampoco se bloquea. No toca Finalizar (#269).
 
 ## Consecuencias
 
@@ -69,8 +70,8 @@ tabla `TarifasSeguro` (una sola tasa activa) y las columnas `incluyeSeguro`, `ta
 
 - El PDF, el Excel y el correo muestran el seguro aparte (HU-045.3, #265, §9). Un PDF generado antes de §9 imprime el precio de la ruta
   con el seguro dentro y sin su fila; se corrige al regenerarlo.
-- Con el seguro marcado sin valor, el bloqueo llega al generar el PDF, que exige la cotización finalizada: si ya se finalizó, la
-  corrección va en una versión nueva. Avisarlo antes de Finalizar es del frontend (o de #269 si el usuario lo decide).
+- Con el seguro marcado sin valor, la cotización puede salir sin el seguro que el comercial marcó: el aviso lo hace visible en el costeo
+  antes de Finalizar y en la respuesta del PDF. Corregirlo después de finalizar exige una versión nueva.
 - El seguro se puede marcar antes de que Nexo costee: queda guardado y suma cuando la ruta tenga precio.
 - Una tasa vigente que no existe (tabla vacía) responde 500 `ERROR_INTERNO` al marcar: es un problema de configuración de la base.
 - El historial del PDF invalidado usa el motivo `servicios_conexos`: el CHECK de `CotizacionPdfsHistorial.motivo` no tiene uno propio y
@@ -83,4 +84,4 @@ tabla `TarifasSeguro` (una sola tasa activa) y las columnas `incluyeSeguro`, `ta
 3. Motivo propio `seguro` en `CotizacionPdfsHistorial` (script de Datos).
 4. ¿Marcar el seguro exige el costeo listo, como el margen? Hoy no (se puede marcar antes).
 5. Una versión nueva (`-vN`) conserva el check; ¿debería volver a tomar la tasa vigente aunque no cambie el valor?
-6. (§9) El check marcado sin valor de la mercancía: ¿bloquear el PDF y el envío (hoy) o solo avisar? ¿Bloquear también Finalizar (#269)?
+6. (§9) Resuelto el 2026-11-09: el check marcado sin valor de la mercancía se avisa, no se bloquea.
