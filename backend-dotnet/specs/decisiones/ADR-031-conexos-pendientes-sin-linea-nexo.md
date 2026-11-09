@@ -1,4 +1,4 @@
-# ADR-029 — Conexos que no encuentran su línea en Nexo: destino estable y salida definitiva (#259)
+# ADR-031 — Conexos que no encuentran su línea en Nexo: destino estable y salida definitiva (#259)
 
 - **Estado:** Propuesta (2026-11-06). Issue #259. Variante 4a decidida por el usuario el 2026-11-06; el resto, pendiente del visto bueno
   del PR.

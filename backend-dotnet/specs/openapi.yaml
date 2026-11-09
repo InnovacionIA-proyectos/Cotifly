@@ -7114,7 +7114,7 @@ components:
             Nexo costea la línea del primer camión vigente de la ruta, o se reintentará), `enviado`, `incierto` (Nexo no respondió y
             su cotización no lo muestra: revisar en Nexo; Cotifly no lo reenvía solo) o `fallido_definitivo` (se agotaron los
             reintentos, el conexo no tiene servicio en el catálogo de Nexo ni por id ni por nombre o, #259, la cotización ya no se
-            costea y ningún camión vigente de la ruta tiene línea en Nexo: revisar en Nexo). #259 (ADR-029): si el primer camión no
+            costea y ningún camión vigente de la ruta tiene línea en Nexo: revisar en Nexo). #259 (ADR-031): si el primer camión no
             tiene línea cuando la cotización ya no se costea, el conexo va a la línea del primer camión vigente que sí la tiene. En
             `GET .../costeo` y, desde #173, también en las respuestas de `PUT .../costeo/margen` y `PUT .../costeo/servicios-conexos`
             (igual que el GET). `null` antes de enviar la solicitud a Nexo y en las demás mutaciones.

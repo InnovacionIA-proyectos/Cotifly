@@ -453,7 +453,7 @@ public sealed class clsEnvioConexosNexoService(
 
     /// <summary>
     /// Línea de la cotización de Nexo a la que van los conexos de <paramref name="ruta"/>: la del primer camión vigente (decisión 3). #259
-    /// (variante 4a, ADR-029, decisión del usuario del 2026-11-06, extiende la decisión 3): si ese camión no tiene línea y la cotización
+    /// (variante 4a, ADR-031, decisión del usuario del 2026-11-06, extiende la decisión 3): si ese camión no tiene línea y la cotización
     /// ya no se costea en Nexo (<see cref="clsCotizacionSolicitud.SeConsultaEnNexo"/> falso: la línea ya no va a aparecer), la del primer
     /// camión vigente que SÍ tiene línea; un camión entregado sin flete se trata como uno rechazado. <c>null</c> si no hay ninguna (o si,
     /// en costeo, el primer camión todavía no la tiene: se espera).
