@@ -7380,8 +7380,8 @@ components:
             - $ref: '#/components/schemas/Nulo'
           description: |
             HU-046.3 (#269). Lo que exige la política de seguros a la ruta (tablas `PoliticaSeguro*` del script 21, leídas en cada
-            petición: un cambio de Datos se ve sin desplegar). En `GET .../costeo` y en las respuestas de los conexos, del margen y del
-            seguro. `null` en una ruta `rechazada`, en una cotización finalizada (no se recalcula), si la política no se pudo leer y en
+            petición: un cambio de Datos se ve sin desplegar). En `GET .../costeo`, en el detalle por folio y en las respuestas de los
+            conexos, del margen y del seguro. `null` en una ruta `rechazada`, en una cotización finalizada (no se recalcula), si la política no se pudo leer y en
             las demás respuestas (no lo reemplaces con `null`: vuelve a leer el costeo).
 
     PoliticaSegurosRuta:

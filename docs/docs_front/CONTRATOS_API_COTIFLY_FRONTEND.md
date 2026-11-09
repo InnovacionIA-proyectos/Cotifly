@@ -1874,7 +1874,7 @@ Notas:
   esos servicios. Hoy solo el acompañante vehicular es obligatorio (350 – 700 M: parcial o total; 700 – 1.000 M: total); las demás
   medidas son recomendaciones (mostrar `nombre`). `politica_seguros = null` en una ruta `rechazada`, en una cotización finalizada (no se
   recalcula), si la política no se pudo leer y en las respuestas que no la calculan (PDF, textos, recálculo de vehículos): no borrar el
-  panel por un `null`; refrescar con `GET .../costeo`. Viene también en las respuestas de los conexos (4.4.5, 4.4.7, 4.4.13, 4.4.14), del
+  panel por un `null`; refrescar con `GET .../costeo`. Viene también en el detalle por folio, en las respuestas de los conexos (4.4.5, 4.4.7, 4.4.13, 4.4.14), del
   margen (4.4.4, 4.4.12) y del seguro (4.4.15).
 
 #### 4.4.4 `PUT /web/cotizaciones/{folio}/costeo/margen`

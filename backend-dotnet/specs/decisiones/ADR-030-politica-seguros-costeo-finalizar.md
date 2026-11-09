@@ -24,12 +24,13 @@ saber qué medida es un acompañante; solo cruza los `codigoServicio` de los con
    20 y a `/health/ready` ("falta 21").
 3. **`codigoServicio` del conexo:** se guarda al crearlo desde el catálogo (captura, `POST .../servicios-conexos/lineas`, re-solicitud y
    versión nueva: `clsCostoConexoNexo.Codigo`, leído de `codigoServicio`). En `POST .../servicios-conexos` (que importa la fila de la
-   cotización de Nexo, sin código) se busca en el catálogo por el id del catálogo, en caché, sin fallar el agregado. Las filas en NULL
+   cotización de Nexo, sin código) sale del índice en memoria del catálogo (abajo), sin leer el catálogo de Nexo ni llenar la caché de
+   costos (que decide qué servicios resuelve la versión nueva); con el índice frío se completa en la siguiente lectura. Las filas en NULL
    (anteriores al 21 o importadas por el polling) se completan con el índice del catálogo que ya mantiene el costeo para las categorías
    (`IClsCategoriasConexos.CodigosAsync`, calentado en segundo plano): en `GET .../costeo` se guardan sin subir la versión de negocio (si
    el guardado falla, se deja en el log y se completa en otra lectura) y en "Finalizar" antes de evaluar.
-4. **Costeo:** `rutas[].politica_seguros` (`{tramo, medidas_recomendadas, medidas_obligatorias, aviso}`) en `GET .../costeo` y en las
-   respuestas de conexos, margen y seguro (las que usan `VistaConEstadosAsync`). `null` en una ruta rechazada, en una cotización
+4. **Costeo:** `rutas[].politica_seguros` (`{tramo, medidas_recomendadas, medidas_obligatorias, aviso}`) en `GET .../costeo`, en el
+   detalle por folio (sin completar códigos) y en las respuestas de conexos, margen y seguro (las que usan `VistaConEstadosAsync`). `null` en una ruta rechazada, en una cotización
    finalizada (decisión 7: no se recalcula) y si la política no se pudo leer (la vista sale igual).
 5. **Finalizar:** después de los bloqueos existentes (estado, conexos pendientes de leer, conexos pendientes en Nexo), si una ruta
    cotizable tiene una obligatoria pendiente: 409 `COTIZACION_NO_FINALIZABLE` con `detalle.motivo = medidas_obligatorias_faltantes` y

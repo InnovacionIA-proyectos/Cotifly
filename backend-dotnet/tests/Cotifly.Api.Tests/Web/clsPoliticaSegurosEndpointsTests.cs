@@ -106,10 +106,13 @@ public sealed class clsPoliticaSegurosEndpointsTests : IDisposable
             clsApiWebPruebas.Json(new { items = new[] { new { linea_orden = 1, servicio_id = AcompananteTotal, cantidad = 1 } } }),
             await EtagAsync(sesion, folio));
 
-        var costeo = await VerificarContratoAsync(agregar, "/web/cotizaciones/{folio}/costeo/servicios-conexos", _post, HttpStatusCode.OK);
+        await VerificarContratoAsync(agregar, "/web/cotizaciones/{folio}/costeo/servicios-conexos", _post, HttpStatusCode.OK);
+        // La fila importada de Nexo no trae el código: sale del índice del catálogo (calentado en segundo plano, sin la caché de costos).
+        await _api.Factory.Services.GetRequiredService<clsAlmacenCategoriasConexos>().UltimaLectura.WaitAsync(TimeSpan.FromSeconds(30), Ct);
+        var costeo = await CosteoAsync(sesion, folio);
         costeo.GetProperty("rutas")[0].GetProperty("politica_seguros").GetProperty("medidas_obligatorias")[0]
-            .GetProperty("estado").GetString().Should().Be("cumplida", "la respuesta del agregado ya trae el panel actualizado");
-        (await CodigosAsync(folio)).Should().Be("AVT_AUTO", "el código del catálogo se guarda al agregar el conexo");
+            .GetProperty("estado").GetString().Should().Be("cumplida");
+        (await CodigosAsync(folio)).Should().Be("AVT_AUTO", "la lectura del costeo guarda el código del catálogo");
 
         await _api.FinalizarAsync(sesion.Access, folio);
     }
