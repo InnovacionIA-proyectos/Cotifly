@@ -111,6 +111,22 @@ public sealed class clsSeguroPdfCosteoTests
         _documento.TotalGeneral!.Valor.Should().Be("$4.095.000 COP");
     }
 
+    /// <summary>
+    /// Decisión del usuario del 2026-11-09 (#264): el seguro no se redondea a pesos (se guarda en centavos). El PDF lo muestra con el formato
+    /// habitual de los pesos (sin decimales, como los demás montos en COP); el precio y el total conservan los centavos.
+    /// </summary>
+    [Fact]
+    public async Task ElSeguroConCentavosSeMuestraEnPesosComoLosDemasMontos()
+    {
+        var cotizacion = Registrada(Preparada(UnaRuta(valor: 123_456_789.99m)));
+
+        (await Servicio().GenerarPdfAsync(_ana, cotizacion.Folio, Version, Ct)).EsExitoso.Should().BeTrue();
+
+        cotizacion.PrimeraRuta!.CostoSeguro.Should().Be(425_925.93m, "123.456.789,99 × 0,345 % = 425.925,925…, en centavos");
+        _documento!.Secciones.Single().Filas.Select(f => f.Tarifa).Should().Equal("$1.250.000", "$425.926");
+        _documento.TotalGeneral!.Valor.Should().Be("$1.675.926 COP");
+    }
+
     [Fact]
     public void ElPdfNoImprimeLaTasaDelSeguro()
     {
@@ -161,10 +177,11 @@ public sealed class clsSeguroPdfCosteoTests
     }
 
     /// <summary>Formulario de una ruta: flete 1.000.000 al 20 % (1.250.000) y valor de la mercancía 200.000.000 (seguro 690.000).</summary>
-    private clsCotizacionSolicitud UnaRuta(bool conSeguro = true, string moneda = clsCotizacionSolicitud.MonedaPesos, decimal trm = 0m)
+    private clsCotizacionSolicitud UnaRuta(
+        bool conSeguro = true, string moneda = clsCotizacionSolicitud.MonedaPesos, decimal trm = 0m, decimal valor = 200_000_000m)
     {
         var cotizacion = clsCotizacionMuestra.Costeada(flete: 1_000_000m, margen: 0.20m, folio: "PCN-900555111-AP-05112026-001", usuarioId: _ana,
-            moneda: moneda, trm: trm, solicitud: clsSolicitudCosteoMuestra.Crear() with { ValorMercancia = 200_000_000m });
+            moneda: moneda, trm: trm, solicitud: clsSolicitudCosteoMuestra.Crear() with { ValorMercancia = valor });
         if (conSeguro)
         {
             cotizacion.CambiarSeguro(1, true, Tasa, clsCotizacionMuestra.Ahora).Valor.Should().BeTrue();
