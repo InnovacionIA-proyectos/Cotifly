@@ -29,8 +29,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Digest de aspnet:10.0.12-noble-chiseled-extra en uso (construida el 2026-09-04) cuando se creó la excepción de #86.
-  DIGEST_FIJADO: sha256:6385dc0eaef704fad88d3f65c334e791a371bbe448f52ca39d83d2df49251e28
+  # Digest de aspnet:10.0.14-noble-chiseled-extra en uso desde el parche de CVE-2026-70188 (2026-11).
+  DIGEST_FIJADO: sha256:a9298ccc39c6258ae71228479e2f3f8d2ceb6639a9927262a4b0ff7d319a0e7e
   TRIVY_IMAGEN: aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
   DIAS_AVISO_VENCIMIENTO: '7'
 
