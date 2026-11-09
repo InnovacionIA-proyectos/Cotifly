@@ -49,6 +49,33 @@ public sealed class clsSugerenciaMapeoServiceTests
         await _nexo.Received(1).SugerirMapeoAsync(_usuario, Arg.Is<clsPeticionSugerirMapeo>(p => p.Encabezados.Count == 100), Arg.Any<CancellationToken>());
     }
 
+    [Theory]
+    [InlineData("---")]
+    [InlineData(".-.")]
+    [InlineData("1234567890123456789012345678901")]
+    public async Task ConUnNitInvalidoYMasDeCienColumnasGanaElNitInvalido(string nit)
+    {
+        // O1 (val253): el NIT se valida antes que el límite de columnas, con la regla de NEXO (antes del guion, letras y dígitos, máx. 30).
+        var peticion = Peticion(101) with { ClienteNit = nit };
+
+        var resultado = await Servicio().SugerirAsync(_usuario, peticion, TestContext.Current.CancellationToken);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.ClienteNitInvalido);
+        await _nexo.DidNotReceiveWithAnyArgs().SugerirMapeoAsync(default, default!, TestContext.Current.CancellationToken);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("  ")]
+    [InlineData("900.555.111-2")]
+    [InlineData("123456789012345678901234567890-1")]
+    public async Task UnNitValidoOVacioNoCambiaElLimiteDeColumnas(string? nit)
+    {
+        var resultado = await Servicio().SugerirAsync(_usuario, Peticion(101) with { ClienteNit = nit }, TestContext.Current.CancellationToken);
+
+        resultado.Valor.MotivoSinIa.Should().Be(clsCodigosError.DemasiadasColumnas);
+    }
+
     [Fact]
     public async Task SinEncabezadosEsEncabezadosRequeridosSinLlamarANexo()
     {

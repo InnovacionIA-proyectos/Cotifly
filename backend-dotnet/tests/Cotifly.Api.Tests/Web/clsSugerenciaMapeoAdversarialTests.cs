@@ -220,15 +220,16 @@ public sealed partial class clsSugerenciaMapeoAdversarialTests : IDisposable
     }
 
     [Fact]
-    public async Task ConMasDeCienColumnasYNitInvalidoGanaLaHojaSinPropuesta()
+    public async Task ConMasDeCienColumnasYNitInvalidoGanaElNitInvalido()
     {
-        // Observación: el límite de columnas se revisa antes que el NIT (el NIT lo valida el adaptador). Documenta la precedencia.
+        // O1 (val253): el NIT se valida antes que el límite de columnas: un NIT inválido no se esconde detrás de la hoja sin propuesta.
         var sesion = await ComercialAsync();
 
         using var respuesta = await SugerirAsync(sesion, new { nit_cliente = "---", encabezados = Encabezados(101) });
 
-        (await VerificarContratoAsync(respuesta, RutaSugerir, HttpMethod.Post, HttpStatusCode.OK))
-            .GetProperty("motivo_sin_ia").GetString().Should().Be("DEMASIADAS_COLUMNAS");
+        (await VerificarContratoAsync(respuesta, RutaSugerir, HttpMethod.Post, HttpStatusCode.BadRequest))
+            .GetProperty("error").GetProperty("codigo").GetString().Should().Be("CLIENTE_NIT_INVALIDO");
+        _nexo.Llamadas(HttpMethod.Post, RutaNexoSugerir).Should().Be(0);
     }
 
     // ------------------------------------------------------------------ roles y tope de IA
@@ -502,34 +503,34 @@ public sealed partial class clsSugerenciaMapeoAdversarialTests : IDisposable
         _nexo.UltimoFormularioImportacion!.Should().NotContainKeys("receta", "instrucciones", "clienteNit");
     }
 
-    [Fact(Skip = "D1: un campo repetido del formulario (nit_cliente, receta, instrucciones) se une con comas: dos NIT forman un tercero que viaja a NEXO. Ver INFORME val253.")]
-    public async Task UnCampoRepetidoNoFormaUnValorQueElComercialNoMando()
+    [Theory]
+    [InlineData("nit_cliente")]
+    [InlineData("receta")]
+    [InlineData("instrucciones")]
+    public async Task UnCampoRepetidoSeRechazaSinLlamarANexo(string campo)
     {
+        // D1 (val253): dos partes con el mismo nombre se unían con coma (dos NIT formaban un tercero). Como #256: 400 ErrorWeb, sin adivinar.
         var sesion = await ComercialAsync();
 
-        using var respuesta = await LeerAsync(sesion, Formulario(campos: [("nit_cliente", "900111222"), ("nit_cliente", "800333444")]));
+        using var respuesta = await LeerAsync(sesion, Formulario(campos: [(campo, "900111222"), (campo, "800333444")]));
 
-        if (respuesta.StatusCode == HttpStatusCode.OK)
-        {
-            _nexo.UltimoFormularioImportacion!["clienteNit"].Should().BeOneOf("900111222", "800333444");
-        }
-        else
-        {
-            respuesta.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-            _nexo.Llamadas(HttpMethod.Post, RutaNexoLeer).Should().Be(0);
-        }
+        var json = await VerificarContratoAsync(respuesta, RutaLeer, HttpMethod.Post, HttpStatusCode.BadRequest);
+        json.GetProperty("error").GetString().Should().Be($"Formulario inválido: la parte '{campo}' viene más de una vez.");
+        _nexo.Llamadas(HttpMethod.Post, RutaNexoLeer).Should().Be(0);
     }
 
     [Fact]
-    public async Task UnCampoRepetidoHoyUneLosValoresConComa()
+    public async Task DosArchivosSeRechazanSinLlamarANexo()
     {
-        // Documenta el comportamiento actual de D1 (pasa hoy; cuando se corrija D1, esta prueba debe cambiar).
         var sesion = await ComercialAsync();
+        var formulario = Formulario();
+        formulario.Add(new ByteArrayContent([0x50, 0x4B, 3, 4]), "archivo", "otro.xlsx");
 
-        using var respuesta = await LeerAsync(sesion, Formulario(campos: [("nit_cliente", "900111222"), ("nit_cliente", "800333444")]));
+        using var respuesta = await LeerAsync(sesion, formulario);
 
-        await VerificarContratoAsync(respuesta, RutaLeer, HttpMethod.Post, HttpStatusCode.OK);
-        _nexo.UltimoFormularioImportacion!["clienteNit"].Should().Be("900111222800333444");
+        (await VerificarContratoAsync(respuesta, RutaLeer, HttpMethod.Post, HttpStatusCode.BadRequest))
+            .GetProperty("error").GetString().Should().Be("Formulario inválido: la parte 'archivo' viene más de una vez.");
+        _nexo.Llamadas(HttpMethod.Post, RutaNexoLeer).Should().Be(0);
     }
 
     // ------------------------------------------------------------------ leer-estructura: códigos y respuestas de NEXO
@@ -618,7 +619,7 @@ public sealed partial class clsSugerenciaMapeoAdversarialTests : IDisposable
 
     [Theory]
     [InlineData("""{"origenReceta":"ia","iaUsada":true,"receta":null}""", JsonValueKind.Null)]
-    [InlineData("""{"origenReceta":"ia","iaUsada":true}""", JsonValueKind.Null, Skip = "D2: sin la propiedad receta en la respuesta de NEXO, MapearLectura hace Clone() de un JsonElement por defecto (InvalidOperationException) y la lectura sale 503 NEXO_NO_DISPONIBLE; la rama Undefined de clsLecturaEstructuraWeb.Desde nunca se alcanza. Ver INFORME val253.")]
+    [InlineData("""{"origenReceta":"ia","iaUsada":true}""", JsonValueKind.Null)]
     public async Task UnaLecturaSinRecetaDevuelveRecetaNullYListasVacias(string crudo, JsonValueKind receta)
     {
         var sesion = await ComercialAsync();
