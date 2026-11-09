@@ -90,7 +90,8 @@ public sealed class clsCosteoLineasService(
     ILogger<clsCosteoLineasService> logger,
     IOptions<clsOpcionesCosteoNexo>? opcionesCosteo = null,
     Margen.Services.IClsAvisoSincronizacionMargenSap? avisoSincronizacion = null,
-    IClsTarifaSeguroRepository? tarifasSeguro = null) : IClsCosteoLineasService
+    IClsTarifaSeguroRepository? tarifasSeguro = null,
+    IClsPoliticaSegurosRepository? politicaSeguros = null) : IClsCosteoLineasService
 {
     /// <summary>Herramienta de la auditoría del margen masivo (<c>EventosHerramienta.herramienta</c>).</summary>
     public const string HerramientaMargen = "ajustar_margen_costeo_lineas";
@@ -454,8 +455,10 @@ public sealed class clsCosteoLineasService(
         var ahora = cotizacion.CosteoListoAt ?? cotizacion.UpdatedAt;
         // HU-043.2 (#251): con la venta del catálogo (precioVenta ?? costoUnitario), la misma que Nexo fija al recibir el conexo del envío
         // diferido (el POST a Nexo nunca lleva precio: solo servicioConexoId y cantidad).
+        // HU-046.3 (#269): con el codigoServicio del catálogo, para la política de seguros.
         var cambio = new clsCambioConexo(
-            deCatalogo.Id, deCatalogo.Nombre, deCatalogo.CostoUnitario, cantidad, deCatalogo.Id, deCatalogo.Categoria, deCatalogo.VentaUnitaria);
+            deCatalogo.Id, deCatalogo.Nombre, deCatalogo.CostoUnitario, cantidad, deCatalogo.Id, deCatalogo.Categoria, deCatalogo.VentaUnitaria,
+            deCatalogo.Codigo);
         var cambios = new List<clsCambioConexoRuta>();
         foreach (var ruta in destino)
         {
@@ -709,7 +712,7 @@ public sealed class clsCosteoLineasService(
         await clsCosteoCotizacionService.VistaConEstadosAsync(
             cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, logger, cancellationToken, categoriasConexos, situacionesNexo.Obtener(cotizacion.Id),
             await Margen.Services.clsAvisoSincronizacionMargenSap.ConsultarSinFallarAsync(avisoSincronizacion, cotizacion, cancellationToken),
-            tarifasSeguro);
+            tarifasSeguro, politicaSeguros);
 
     private static object ErrorAuditado(clsErrorDominio error) =>
         new { error = new { codigo = error.Codigo, mensaje = error.Mensaje, detalle = error.Datos } };

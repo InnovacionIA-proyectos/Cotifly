@@ -69,7 +69,9 @@ public sealed class clsServiciosConexosCosteoService(
     IClsCategoriasConexos categoriasConexos,
     IClsSituacionLineasNexo situacionesNexo,
     Margen.Services.IClsAvisoSincronizacionMargenSap avisoSincronizacion,
-    IClsTarifaSeguroRepository tarifasSeguro) : IClsServiciosConexosCosteoService
+    IClsTarifaSeguroRepository tarifasSeguro,
+    IClsPoliticaSegurosRepository? politicaSeguros = null,
+    IClsCostosConexosNexo? costosConexos = null) : IClsServiciosConexosCosteoService
 {
     // #226 (validación de DEF-1027-3): las dependencias de la vista con estados son obligatorias. Opcionales, un registro que faltara
     // en DI devolvía otra vez estado_nexo = null en silencio; obligatorias, el contenedor falla al resolver el servicio.
@@ -438,6 +440,9 @@ public sealed class clsServiciosConexosCosteoService(
 
         var agregados = importados.Valor;
 
+        // HU-046.3 (#269): el codigoServicio de los conexos agregados (la cotización de Nexo no lo trae): del catálogo, por su id.
+        await CompletarCodigosAsync(cotizacion, usuarioId, [.. items.Select(i => i.ServicioId)]);
+
         // #228: Nexo ya tiene los conexos (los creó este POST): quedan enviados en el registro del envío diferido, en la misma escritura.
         // Si no, estado_nexo = pendiente bloquearía finalizar, y en una entregada el polling ya no pasa para confirmarlos.
         try
@@ -462,8 +467,35 @@ public sealed class clsServiciosConexosCosteoService(
             cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, logger, CancellationToken.None, categoriasConexos,
             situacionesNexo.Obtener(cotizacion.Id),
             await Margen.Services.clsAvisoSincronizacionMargenSap.ConsultarSinFallarAsync(avisoSincronizacion, cotizacion, CancellationToken.None),
-            tarifasSeguro),
+            tarifasSeguro, politicaSeguros),
             agregados, pdfInvalidado);
+    }
+
+    /// <summary>
+    /// HU-046.3 (#269): guarda el <c>codigoServicio</c> del catálogo de Nexo en los conexos recién importados (por su id del catálogo,
+    /// <c>idServicioConexoCatalogo</c>), con el costo del catálogo en caché (<see cref="IClsCostosConexosNexo"/>). Nunca falla el agregado:
+    /// si el catálogo no responde, el código se completa en la siguiente lectura del costeo.
+    /// </summary>
+    private async Task CompletarCodigosAsync(clsCotizacionSolicitud cotizacion, Guid usuarioId, IReadOnlyCollection<string> servicios)
+    {
+        if (costosConexos is null || servicios.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            var leidos = await costosConexos.CostosAsync(usuarioId, servicios, CancellationToken.None);
+            if (leidos.EsExitoso)
+            {
+                cotizacion.CompletarCodigosConexos(c =>
+                    c.IdServicioConexoCatalogo is { } catalogo && leidos.Valor.TryGetValue(catalogo, out var costo) ? costo.Codigo : null);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "No se pudo leer el codigoServicio de los conexos agregados en {Folio}; se completa al leer el costeo.", cotizacion.Folio);
+        }
     }
 
     /// <summary>¿La cotización releída tiene conexos que no estaban antes del POST? (confirma un efecto incierto).</summary>

@@ -47,7 +47,8 @@ public sealed class clsSeguroCosteoService(
     IClsEnvioConexosNexoService? envioConexos = null,
     ILogger<clsSeguroCosteoService>? logger = null,
     IClsCategoriasConexos? categoriasConexos = null,
-    IClsSituacionLineasNexo? situacionesNexo = null) : IClsSeguroCosteoService
+    IClsSituacionLineasNexo? situacionesNexo = null,
+    IClsPoliticaSegurosRepository? politicaSeguros = null) : IClsSeguroCosteoService
 {
     private readonly ILogger _logger = logger ?? NullLogger<clsSeguroCosteoService>.Instance;
 
@@ -164,7 +165,7 @@ public sealed class clsSeguroCosteoService(
     private Task<clsCosteoCotizacion> VistaAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken) =>
         clsCosteoCotizacionService.VistaConEstadosAsync(
             cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, _logger, cancellationToken, categoriasConexos, situacionesNexo?.Obtener(cotizacion.Id),
-            tarifasSeguro: tarifasSeguro);
+            tarifasSeguro: tarifasSeguro, politicaSeguros: politicaSeguros);
 
     /// <summary><c>PDF_YA_ENVIADO</c> con la llamada de la versión nueva (contrato, como el margen); los demás errores tal cual.</summary>
     private static clsErrorDominio Detallar(clsErrorDominio error, clsCotizacionSolicitud cotizacion) =>
