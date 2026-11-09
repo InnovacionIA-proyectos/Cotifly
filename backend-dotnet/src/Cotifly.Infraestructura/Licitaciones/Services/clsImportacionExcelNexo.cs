@@ -665,7 +665,8 @@ public sealed class clsImportacionExcelNexo(
         l.RecetaGuardadaId,
         l.IaUsada,
         l.MotivoSinIa,
-        l.Receta.Clone(),
+        // D2 (validador de #253): sin la propiedad receta, el JsonElement es Undefined y Clone() lanzaría (la lectura saldría 503).
+        l.Receta.ValueKind == JsonValueKind.Undefined ? default : l.Receta.Clone(),
         l.Resumen,
         [.. SinNulos(l.Dudas)],
         [.. SinNulos(l.HojasDelArchivo).Select(h => new clsHojaDelArchivo(h.Nombre ?? string.Empty, h.Oculta, h.Filas, h.Columnas, h.Usada))],

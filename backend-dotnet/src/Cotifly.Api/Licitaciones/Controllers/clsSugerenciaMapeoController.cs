@@ -1,3 +1,4 @@
+using System.Globalization;
 using Cotifly.Api.Comun;
 using Cotifly.Api.Licitaciones.DTOs;
 using Cotifly.Aplicacion.Comun.Interfaces;
@@ -20,6 +21,9 @@ public sealed class clsSugerenciaMapeoController(IClsContextoUsuario usuario, IC
     public const string ParteNitCliente = "nit_cliente";
     public const string ParteInstrucciones = "instrucciones";
     public const string ParteReceta = "receta";
+
+    /// <summary>400 <c>ErrorWeb</c> de un formulario con una parte repetida (<c>{0}</c> = el nombre de la parte). El mismo de #256.</summary>
+    public const string MensajeParteRepetida = "Formulario inválido: la parte '{0}' viene más de una vez.";
 
     /// <summary>
     /// 200 <c>SugerenciaMapeo</c>, también sin propuesta (<c>ia_usada = false</c>) con más de 100 columnas (<c>DEMASIADAS_COLUMNAS</c>), la
@@ -59,6 +63,11 @@ public sealed class clsSugerenciaMapeoController(IClsContextoUsuario usuario, IC
             try
             {
                 var formulario = await Request.ReadFormAsync(cancellationToken);
+                if (ParteRepetida(formulario) is { } repetida)
+                {
+                    return BadRequest(new clsErrorWeb(string.Format(CultureInfo.InvariantCulture, MensajeParteRepetida, repetida)));
+                }
+
                 if (formulario.Files.GetFile(ParteArchivo) is { } subido)
                 {
                     archivo = await clsArchivoMultipart.LeerAsync(subido, cancellationToken);
@@ -77,6 +86,22 @@ public sealed class clsSugerenciaMapeoController(IClsContextoUsuario usuario, IC
         var entrada = new clsEntradaLeerEstructura(archivo ?? new clsArchivoSubido(null, []), nit, instrucciones, receta);
         var resultado = await sugerencias.LeerEstructuraAsync(UsuarioId, entrada, cancellationToken);
         return resultado.Coincidir<IActionResult>(l => Ok(clsLecturaEstructuraWeb.Desde(l)), Error);
+    }
+
+    /// <summary>
+    /// D1 (validador de #253, igual que #256): la primera parte que vino más de una vez, o <c>null</c>. Dos partes con el mismo nombre se
+    /// unirían con coma: dos NIT que la normalización funde en otro NIT, o una receta que deja de ser la que devolvió NEXO. No se adivina
+    /// cuál vale: se rechaza el formulario sin llamar a NEXO.
+    /// </summary>
+    private static string? ParteRepetida(IFormCollection formulario)
+    {
+        if (formulario.Files.GetFiles(ParteArchivo).Count > 1)
+        {
+            return ParteArchivo;
+        }
+
+        return new[] { ParteNitCliente, ParteInstrucciones, ParteReceta }
+            .FirstOrDefault(campo => formulario.TryGetValue(campo, out var valor) && valor.Count > 1);
     }
 
     /// <summary>El valor de un campo del formulario tal cual (sin recortar: la receta llega a NEXO exacta), o <c>null</c> si no vino.</summary>

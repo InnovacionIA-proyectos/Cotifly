@@ -3006,6 +3006,7 @@ historial del chat) y **no altera `receta` ni `tablas`**.
 |---|---|---|
 | 200 | `LecturaEstructura` | Mostrar `resumen` y `dudas` en el chat, las `tablas` para elegir y seguir con 4.6.6; guardar `receta` para la siguiente corrección. Con `cambios`, avisar qué títulos faltan o son nuevos |
 | 400 | De Cotifly, sin llamar a NEXO: `ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE`, `LECTURA_DEMASIADO_GRANDE`, `CLIENTE_NIT_INVALIDO`. De NEXO, con su código y su mensaje: `EXCEL_INVALIDO`, `EXCEL_SIN_DATOS`, `RECETA_INVALIDA`, `INSTRUCCIONES_DEMASIADO_LARGAS`, `VALIDATION_ERROR` (con `detalle.campos`: solo los nombres de los campos); `COSTEO_NEXO_RECHAZADA` para otro 4xx | Mostrar `mensaje`. Con `RECETA_INVALIDA`, volver a la primera lectura |
+| 400 | `ErrorWeb` `Formulario inválido: la parte '…' viene más de una vez.` (validador de #253, igual que `recetas-lectura`): dos partes `archivo`, `nit_cliente`, `instrucciones` o `receta`; no se llama a NEXO | Error de programación: mandar cada parte una sola vez |
 | 403 | `NEXO_SIN_PERMISO` | El comercial no tiene el rol requerido en NEXO |
 | 413 | `ErrorWeb` | Más de 12 MB |
 | 429 | `IA_TOPE_DIARIO` (sin `Retry-After`) | "Agotaste tu cupo diario de IA en NEXO"; usar `analizar-excel` o reaplicar una receta sin `instrucciones` |

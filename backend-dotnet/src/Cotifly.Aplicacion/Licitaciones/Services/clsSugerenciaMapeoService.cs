@@ -55,6 +55,12 @@ public sealed class clsSugerenciaMapeoService(IClsImportacionExcelNexo importaci
 
     public const string MensajeEncabezadosRequeridos = "Envía los encabezados de la hoja.";
 
+    /// <summary>Largo máximo del NIT normalizado que acepta NEXO (el mismo del adaptador).</summary>
+    public const int LargoMaximoNit = 30;
+
+    /// <summary>El mismo mensaje del adaptador para <c>CLIENTE_NIT_INVALIDO</c>.</summary>
+    public const string MensajeNitInvalido = "El NIT del cliente de la licitación no es válido.";
+
     public const string MensajeLecturaDemasiadoGrande =
         "El archivo con la receta y las instrucciones supera el máximo de 9,9 MB (10 MB con el envío) que acepta NEXO: lee el archivo sin la receta o usa un archivo más pequeño.";
 
@@ -71,6 +77,12 @@ public sealed class clsSugerenciaMapeoService(IClsImportacionExcelNexo importaci
         if (encabezados.Count == 0)
         {
             return new clsErrorDominio(clsCodigosError.EncabezadosRequeridos, MensajeEncabezadosRequeridos);
+        }
+
+        // O1 (validador): el NIT se revisa antes que el límite de columnas, para que un NIT inválido no quede escondido en la hoja sin propuesta.
+        if (NitInvalido(peticion.ClienteNit))
+        {
+            return new clsErrorDominio(clsCodigosError.ClienteNitInvalido, MensajeNitInvalido);
         }
 
         // NEXO rechaza más de 100 columnas: no se le llama y la hoja sigue en manual (no es un error para el comercial).
@@ -114,6 +126,22 @@ public sealed class clsSugerenciaMapeoService(IClsImportacionExcelNexo importaci
         var archivo = new clsArchivoImportacion(clsArchivoExcel.NombreLimpio(entrada.Archivo.Nombre), entrada.Archivo.Contenido);
         return await importacion.LeerEstructuraAsync(
             usuarioId, new clsPeticionLeerEstructura(archivo, entrada.NitCliente, entrada.Instrucciones, entrada.Receta), cancellationToken);
+    }
+
+    /// <summary>
+    /// La regla del NIT del adaptador (<c>clsImportacionExcelNexo.NormalizarNit</c>, como lo compara NEXO): vacío es "sin cliente"; si no, lo que
+    /// va antes del primer guion, solo letras y dígitos, debe quedar con 1 a <see cref="LargoMaximoNit"/> caracteres. El adaptador lo vuelve a
+    /// validar (y lo normaliza) antes de llamar a NEXO.
+    /// </summary>
+    private static bool NitInvalido(string? nit)
+    {
+        if (string.IsNullOrWhiteSpace(nit))
+        {
+            return false;
+        }
+
+        var limpio = nit.Trim().Split('-')[0].Count(char.IsLetterOrDigit);
+        return limpio is 0 or > LargoMaximoNit;
     }
 
     /// <summary>Bytes UTF-8 de un campo del formulario (0 si no vino).</summary>

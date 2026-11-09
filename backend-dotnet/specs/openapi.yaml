@@ -4396,7 +4396,8 @@ paths:
 
         **Sin propuesta no es un error.** Responde 200 con todas las columnas en `campo = ignorar`, `origen = ninguno`,
         `confianza = 0`, `ia_usada = false` y el motivo en `motivo_sin_ia`, y el comercial sigue en manual:
-        - más de 100 encabezados: `DEMASIADAS_COLUMNAS`, **sin llamar a NEXO**;
+        - más de 100 encabezados: `DEMASIADAS_COLUMNAS`, **sin llamar a NEXO** (el NIT se valida antes: uno inválido es 400
+          `CLIENTE_NIT_INVALIDO`);
         - la importación apagada en el ambiente (`ImportacionInteligente:Habilitada`), NEXO caído o sin respuesta a tiempo:
           `NEXO_NO_DISPONIBLE` (una sola llamada: nunca se reintenta, porque puede gastar IA).
         Con la IA de NEXO apagada o caída NEXO responde 200 con lo que resolvieron la plantilla y el diccionario, `ia_usada = false` y
@@ -4516,7 +4517,9 @@ paths:
                 $ref: '#/components/schemas/LecturaEstructura'
         '400':
           description: |
-            `ErrorWeb`: el formulario no se pudo leer. `ErrorNegocio`: de Cotifly, sin llamar a NEXO, `ARCHIVO_REQUERIDO`,
+            `ErrorWeb`: el formulario no se pudo leer, o una parte (`archivo`, `nit_cliente`, `instrucciones` o `receta`) viene más de
+            una vez (`Formulario inválido: la parte '…' viene más de una vez.`, el mismo texto de `recetas-lectura`); no se llama a NEXO.
+            `ErrorNegocio`: de Cotifly, sin llamar a NEXO, `ARCHIVO_REQUERIDO`,
             `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE` (el archivo solo pasa de 10 MB menos 64 KB; un 413 de NEXO también),
             `LECTURA_DEMASIADO_GRANDE` (el archivo cabe, pero con `receta` e `instrucciones`, contadas en bytes UTF-8, el envío pasa ese
             tope: leer sin la receta o con un archivo más pequeño) y `CLIENTE_NIT_INVALIDO`; de NEXO, con su mismo código y su mensaje,
