@@ -4428,7 +4428,7 @@ paths:
           description: |
             Validación local, sin llamar a NEXO y con los códigos de NEXO: `VALORES_REQUERIDOS` (sin valores o uno vacío),
             `DEMASIADOS_VALORES` (más de 1000), `CAMPO_INVALIDO` (otro campo; la clase de contenedor va por `GET /web/alias/resolver`),
-            `VALOR_DEMASIADO_LARGO` (más de 150 caracteres), `CLIENTE_NIT_INVALIDO` (NIT de más de 30 caracteres). De NEXO, su código
+            `VALOR_DEMASIADO_LARGO` (más de 150 caracteres), `CLIENTE_NIT_INVALIDO` (NIT de más de 30 caracteres o sin dígitos; siempre, aunque todo se resuelva sin NEXO). De NEXO, su código
             con su mensaje; `COSTEO_NEXO_RECHAZADA` para otro 4xx. Un cuerpo que no es JSON: `ErrorWeb`.
           content:
             application/json:
@@ -7180,7 +7180,7 @@ components:
         origen:
           type: string
           description: |
-            Quién lo resolvió, tal como lo dice NEXO (`diccionario`, `alias`, `catalogo`, `ia`, `ninguno`...) o `linea_cotifly` si
+            Quién lo resolvió: el texto de NEXO tal cual, sin lista cerrada (`diccionario`, `alias`, `catalogo`, `ia`, `ninguno`...), o `linea_cotifly` si
             Cotifly reconoció una línea de negocio propia sin NEXO. Con `ia` es una propuesta para confirmar.
         confianza:
           type: number

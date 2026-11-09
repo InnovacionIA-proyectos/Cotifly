@@ -146,7 +146,7 @@ public sealed class clsNormalizacionValoresService(IClsImportacionExcelNexo nexo
     private static clsValorNormalizacionWeb LineaDeNexo(string valor, clsValorNormalizado nexo, IReadOnlyList<clsMargenPolitica> lineas)
     {
         var campo = clsCamposNormalizacion.LineaNegocio;
-        if (nexo.Estado == clsCamposNormalizacion.SinResolver || (string.IsNullOrWhiteSpace(nexo.Codigo) && string.IsNullOrWhiteSpace(nexo.Descripcion)))
+        if (Estado(nexo.Estado) == clsCamposNormalizacion.SinResolver || (string.IsNullOrWhiteSpace(nexo.Codigo) && string.IsNullOrWhiteSpace(nexo.Descripcion)))
         {
             return SinResolver(campo, valor, nexo.Origen, nexo.Nota);
         }
@@ -163,23 +163,48 @@ public sealed class clsNormalizacionValoresService(IClsImportacionExcelNexo nexo
             .Select(p => p.LineaNegocio)
             .Order(StringComparer.Ordinal)
             .ToList();
+        // Una sola línea de Cotifly: resuelto aunque NEXO dijera "ambiguo" (sus opciones serían líneas de NEXO, no de Cotifly): nunca un
+        // ambiguo sin opciones. Con origen "ia" sigue siendo una propuesta que el comercial confirma.
         return deCotifly.Count switch
         {
-            0 => SinResolver(campo, valor, nexo.Origen,
-                $"NEXO la reconoce como '{lineaNexo}', pero ninguna línea de negocio activa de Cotifly corresponde a esa línea: elígela a mano.")
-                with { LineaNexo = lineaNexo },
-            1 => new clsValorNormalizacionWeb(campo, valor, nexo.Estado, deCotifly[0], deCotifly[0], null, nexo.Origen, nexo.Confianza,
-                nexo.Nota, null, lineaNexo, null),
-            _ => new clsValorNormalizacionWeb(campo, valor, clsCamposNormalizacion.Ambiguo, null, null, null, nexo.Origen, nexo.Confianza,
+            0 => SinResolver(campo, valor, nexo.Origen, SinLineaDeCotifly(lineaNexo, lineas)) with { LineaNexo = lineaNexo },
+            1 => new clsValorNormalizacionWeb(campo, valor, clsCamposNormalizacion.Resuelto, deCotifly[0], deCotifly[0], null, nexo.Origen,
+                Confianza(nexo.Confianza), nexo.Nota, null, lineaNexo, null),
+            _ => new clsValorNormalizacionWeb(campo, valor, clsCamposNormalizacion.Ambiguo, null, null, null, nexo.Origen, Confianza(nexo.Confianza),
                 $"NEXO la reconoce como '{lineaNexo}', que corresponde a varias líneas de Cotifly: elige una.", null, lineaNexo, deCotifly),
         };
     }
 
-    /// <summary>Vehículo, carrocería o ciudad: lo de NEXO tal cual, con el campo en el nombre de Cotifly.</summary>
-    private static clsValorNormalizacionWeb DeNexo(string campo, string valor, clsValorNormalizado nexo) =>
-        new(campo, valor, string.IsNullOrWhiteSpace(nexo.Estado) ? clsCamposNormalizacion.SinResolver : nexo.Estado, nexo.Codigo,
-            nexo.Descripcion, nexo.MunicipioId, string.IsNullOrWhiteSpace(nexo.Origen) ? clsCamposNormalizacion.OrigenNinguno : nexo.Origen,
-            nexo.Confianza, nexo.Nota, nexo.Candidatos is { Count: > 0 } candidatos ? candidatos : null, null, null);
+    /// <summary>
+    /// Por qué una línea de NEXO no tiene línea de Cotifly. <c>Licitaciones</c> usa el mensaje del alta
+    /// (<see cref="clsMargenResolverService.LineaDesconocida"/> con <c>esLicitacion</c>): es la línea de NEXO y no da margen.
+    /// </summary>
+    private static string SinLineaDeCotifly(string lineaNexo, IReadOnlyList<clsMargenPolitica> lineas) =>
+        lineaNexo == clsMargenResolverService.LineaNexoLicitaciones
+            ? clsMargenResolverService.LineaDesconocida(lineaNexo,
+                [.. lineas.Where(p => p.Activa).Select(p => p.LineaNegocio).Order(StringComparer.Ordinal)], esLicitacion: true).Mensaje
+            : $"NEXO la reconoce como '{lineaNexo}', pero ninguna línea de negocio activa de Cotifly corresponde a esa línea: elígela a mano.";
+
+    /// <summary>
+    /// Vehículo, carrocería o ciudad: lo de NEXO con el campo en el nombre de Cotifly. Un estado que Cotifly no conoce es
+    /// <c>sin_resolver</c> (sin código: no se propone) y la confianza se acota a [0, 1].
+    /// </summary>
+    private static clsValorNormalizacionWeb DeNexo(string campo, string valor, clsValorNormalizado nexo)
+    {
+        var origen = string.IsNullOrWhiteSpace(nexo.Origen) ? clsCamposNormalizacion.OrigenNinguno : nexo.Origen;
+        var estado = Estado(nexo.Estado);
+        return estado == clsCamposNormalizacion.SinResolver
+            ? SinResolver(campo, valor, origen, nexo.Nota)
+            : new(campo, valor, estado, nexo.Codigo, nexo.Descripcion, nexo.MunicipioId, origen, Confianza(nexo.Confianza), nexo.Nota,
+                nexo.Candidatos is { Count: > 0 } candidatos ? candidatos : null, null, null);
+    }
+
+    /// <summary>El estado de NEXO si es <c>resuelto</c> o <c>ambiguo</c>; cualquier otro (o vacío), <c>sin_resolver</c>.</summary>
+    private static string Estado(string? estado) =>
+        estado is clsCamposNormalizacion.Resuelto or clsCamposNormalizacion.Ambiguo ? estado : clsCamposNormalizacion.SinResolver;
+
+    /// <summary>La confianza de NEXO acotada a [0, 1] (un valor no numérico, 0).</summary>
+    private static double Confianza(double confianza) => double.IsNaN(confianza) ? 0 : Math.Clamp(confianza, 0, 1);
 
     private static clsValorNormalizacionWeb SinResolver(string campo, string valor, string? origen, string? nota) =>
         new(campo, valor, clsCamposNormalizacion.SinResolver, null, null, null,

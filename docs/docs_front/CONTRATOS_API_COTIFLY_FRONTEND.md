@@ -2893,6 +2893,11 @@ cliente, alias, catálogo y, al final, IA con lista cerrada. No guarda nada. Es 
 - **Rol:** comercial (política Comercial). **Cuerpo:** JSON. Mandar **solo los valores distintos** (máx. 1000, de hasta 150
   caracteres). `nit_cliente` es el de la licitación (opcional; con él NEXO usa además el diccionario de ese cliente).
 - **Respuesta:** un resultado por cada valor distinto, **en el orden de la petición** (emparejar por `campo` + `valor`).
+- **`origen`:** es el texto que manda NEXO (`diccionario`, `alias`, `catalogo`, `ia`, `ninguno`...), **no una lista cerrada**: la UI
+  solo distingue `ia` (propuesta para confirmar) y `linea_cotifly` (Cotifly reconoció su propia línea); el resto se muestra tal cual.
+  `estado` sí es cerrado (`resuelto`, `ambiguo`, `sin_resolver`: otro valor de NEXO llega como `sin_resolver`) y `confianza` va de 0 a 1.
+- **`nit_cliente`:** se valida siempre (máx. 30 caracteres sin puntos ni dígito de verificación): uno inválido es
+  `CLIENTE_NIT_INVALIDO` aunque todos los valores se resuelvan sin NEXO.
 - **Ciudad:** `municipio_id` es el id de NEXO (el de `GET /web/municipios`), listo para `origen_municipio_id`/`destino_municipio_id`.
   `POST /web/licitaciones` sigue validando las ciudades al crear.
 - **Línea de negocio:** `codigo` es la línea **de Cotifly** (la que va en `lineas[].linea_negocio`), no la de NEXO; `linea_nexo` dice
@@ -2921,7 +2926,7 @@ cliente, alias, catálogo y, al final, IA con lista cerrada. No guarda nada. Es 
     { "campo": "ciudad", "valor": "La Unión", "estado": "ambiguo", "codigo": null, "descripcion": null, "municipio_id": null, "origen": "catalogo", "confianza": 0.5, "nota": null,
       "candidatos": [ { "municipio_id": 5400, "codigo_dane": "05400", "municipio": "La Unión", "departamento": "Antioquia" }, { "municipio_id": 52399, "codigo_dane": "52399", "municipio": "La Unión", "departamento": "Nariño" } ],
       "linea_nexo": null, "lineas_candidatas": null },
-    { "campo": "linea_negocio", "valor": "impo", "estado": "resuelto", "codigo": "Importacion", "descripcion": "Importacion", "municipio_id": null, "origen": "regla", "confianza": 1, "nota": null, "candidatos": null, "linea_nexo": "Puerto a interior", "lineas_candidatas": null }
+    { "campo": "linea_negocio", "valor": "impo", "estado": "resuelto", "codigo": "Importacion", "descripcion": "Importacion", "municipio_id": null, "origen": "sinonimo", "confianza": 1, "nota": null, "candidatos": null, "linea_nexo": "Puerto a interior", "lineas_candidatas": null }
   ]
 }
 ```

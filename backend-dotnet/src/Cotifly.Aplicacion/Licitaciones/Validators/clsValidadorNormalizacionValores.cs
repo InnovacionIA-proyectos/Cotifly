@@ -17,17 +17,29 @@ public static class clsValidadorNormalizacionValores
     /// <summary>Largo máximo de un valor (el de NEXO).</summary>
     public const int LargoMaximoValor = 150;
 
+    /// <summary>Largo máximo del NIT ya normalizado (el de NEXO, <c>clsImportacionExcelNexo.LargoMaximoNit</c>).</summary>
+    public const int LargoMaximoNit = 30;
+
+    /// <summary>Mensaje de <c>CLIENTE_NIT_INVALIDO</c> (el mismo del adaptador de la importación).</summary>
+    public const string MensajeNitInvalido = "El NIT del cliente de la licitación no es válido.";
+
     /// <summary>Nombres con los que el front podría pedir la clase de contenedor: reciben un mensaje que dice adónde ir.</summary>
     private static readonly HashSet<string> _contenedor = new(StringComparer.OrdinalIgnoreCase) { "clase_contenedor", "claseContenedor", "contenedor" };
 
     /// <summary>
     /// Los valores distintos de la entrada (mismo campo y mismo texto, sin distinguir los espacios de los extremos), en el orden en que
-    /// llegaron, o el primer error: <c>VALORES_REQUERIDOS</c> (sin valores o uno vacío), <c>DEMASIADOS_VALORES</c>,
-    /// <c>CAMPO_INVALIDO</c> o <c>VALOR_DEMASIADO_LARGO</c>, con la posición (base 1) en el mensaje.
+    /// llegaron, o el primer error: <c>CLIENTE_NIT_INVALIDO</c> (<see cref="NitValido"/>, siempre, aunque después todo se resuelva sin
+    /// NEXO), <c>VALORES_REQUERIDOS</c> (sin valores o uno vacío), <c>DEMASIADOS_VALORES</c>, <c>CAMPO_INVALIDO</c> o
+    /// <c>VALOR_DEMASIADO_LARGO</c>, con la posición (base 1) en el mensaje.
     /// </summary>
     public static clsResultado<IReadOnlyList<clsValorEntradaNormalizacion>> Validar(clsEntradaNormalizacion entrada)
     {
         ArgumentNullException.ThrowIfNull(entrada);
+        if (!NitValido(entrada.NitCliente))
+        {
+            return new clsErrorDominio(clsCodigosError.ClienteNitInvalido, MensajeNitInvalido);
+        }
+
         var valores = entrada.Valores;
         if (valores is null || valores.Count == 0)
         {
@@ -71,6 +83,21 @@ public static class clsValidadorNormalizacionValores
         }
 
         return distintos;
+    }
+
+    /// <summary>
+    /// ¿El NIT es aceptable? Vacío sí (es opcional). Si no, con la regla del adaptador (como compara NEXO: lo que va antes del primer guion,
+    /// solo letras y dígitos) debe quedar algo y no pasar de <see cref="LargoMaximoNit"/>.
+    /// </summary>
+    public static bool NitValido(string? nit)
+    {
+        if (string.IsNullOrWhiteSpace(nit))
+        {
+            return true;
+        }
+
+        var largo = nit.Trim().Split('-')[0].Count(char.IsLetterOrDigit);
+        return largo is > 0 and <= LargoMaximoNit;
     }
 
     private static string MensajeCampoInvalido(int posicion, string? campo)
