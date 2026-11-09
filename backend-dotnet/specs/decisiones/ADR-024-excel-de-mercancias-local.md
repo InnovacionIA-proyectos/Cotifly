@@ -117,6 +117,11 @@ XML y el libro, válido, era `LIBRO_ILEGIBLE`; en pliegos de clientes la impresi
    unos 1,35 GB). Las demás partes sin tipo fijo (imágenes, XML personalizado, propiedades, incrustadas, miniatura) ClosedXML no las
    lee como XML. Hay pruebas con una hoja y con el libro principal densos y con DTD declarados con tipos no XML.
 3. Los tres lectores (mercancías, pliego y exportación) usan esta misma pieza: ninguno tiene un filtro propio.
+4. **`[Content_Types].xml` y las relaciones (`.rels`)** no son partes, pero System.IO.Packaging las lee enteras al abrir el paquete
+   (hueco anterior a #277, visto en la validación: solo las frenaba el tope de 64 MB, unas 600.000 relaciones). Ahora se cuentan en
+   el mismo tope de 1.000.000 de elementos, sin DTD, **antes** de abrir el paquete con el SDK.
+5. El VML con `<br>` sin cerrar sigue siendo `LIBRO_ILEGIBLE`: ClosedXML 0.104.2 tampoco lo abre, así que el control no rechaza nada
+   que ClosedXML pudiera leer.
 
 ## Pendientes
 

@@ -189,8 +189,9 @@ public sealed class clsLecturaExcelAcotada : IDisposable
     }
 
     /// <summary>
-    /// Cuenta los elementos XML de todas las partes XML del paquete (las mismas que abriría ClosedXML, resueltas por sus relaciones; ver
-    /// <see cref="EsParteXml"/>) con un lector de flujo, sin DTD ni entidades externas. <c>ARCHIVO_DEMASIADO_GRANDE</c> (<see cref="MotivoDescomprimido"/>) si pasan
+    /// Cuenta los elementos XML de <c>[Content_Types].xml</c>, de las relaciones (<c>.rels</c>, que System.IO.Packaging lee enteras al
+    /// abrir el paquete; validación de #277) y de todas las partes XML del paquete (las mismas que abriría ClosedXML, resueltas por sus
+    /// relaciones; ver <see cref="EsParteXml"/>) con un lector de flujo, sin DTD ni entidades externas. <c>ARCHIVO_DEMASIADO_GRANDE</c> (<see cref="MotivoDescomprimido"/>) si pasan
     /// de <see cref="MaximoElementosXml"/>; <c>EXCEL_INVALIDO</c> (<see cref="MotivoLibroIlegible"/>) si una parte no es XML válido o trae
     /// un DTD; <c>null</c> si se puede abrir. Se llama después de <see cref="VerificarPaquete"/>: el contenido descomprimido ya está acotado.
     /// </summary>
@@ -206,27 +207,44 @@ public sealed class clsLecturaExcelAcotada : IDisposable
             IgnoreProcessingInstructions = true,
             CloseInput = true,
         };
+        long elementos = 0;
+        bool Excede(Stream flujo)
+        {
+            using var lector = XmlReader.Create(flujo, ajustes);
+            while (lector.Read())
+            {
+                if (lector.NodeType == XmlNodeType.Element && ++elementos > MaximoElementosXml)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         try
         {
+            // Primero lo que System.IO.Packaging lee entero al abrir el paquete y no son partes: [Content_Types].xml y las relaciones.
+            using (var zip = new ZipArchive(new MemoryStream(contenido, writable: false), ZipArchiveMode.Read))
+            {
+                foreach (var entrada in zip.Entries)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (EsEntradaDelPaquete(entrada.FullName) && Excede(entrada.Open()))
+                    {
+                        return DemasiadosElementos();
+                    }
+                }
+            }
+
             using var documento = SpreadsheetDocument.Open(new MemoryStream(contenido, writable: false), isEditable: false);
-            long elementos = 0;
             foreach (var parte in documento.GetAllParts())
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 // La parte principal se cuenta siempre: el SDK no fija su tipo y la abre con cualquiera (ver EsParteXml).
-                if (parte is not WorkbookPart && !EsParteXml(parte.ContentType))
+                if ((parte is WorkbookPart || EsParteXml(parte.ContentType)) && Excede(parte.GetStream(FileMode.Open, FileAccess.Read)))
                 {
-                    continue;
-                }
-
-                using var lector = XmlReader.Create(parte.GetStream(FileMode.Open, FileAccess.Read), ajustes);
-                while (lector.Read())
-                {
-                    if (lector.NodeType == XmlNodeType.Element && ++elementos > MaximoElementosXml)
-                    {
-                        return new clsErrorDominio(clsCodigosError.ArchivoDemasiadoGrande,
-                            "El Excel tiene demasiadas celdas para analizarlo: deja solo las hojas y filas que se necesitan.", MotivoDescomprimido);
-                    }
+                    return DemasiadosElementos();
                 }
             }
 
@@ -306,6 +324,13 @@ public sealed class clsLecturaExcelAcotada : IDisposable
 
     /// <summary><c>EXCEL_INVALIDO</c> con <paramref name="motivo"/> en <c>detalle.motivo</c>.</summary>
     public static clsErrorDominio Invalido(string motivo) => new(clsCodigosError.ExcelInvalido, MensajeInvalido, motivo);
+
+    /// <summary>¿La entrada del zip es de las que lee System.IO.Packaging al abrir el paquete sin ser una parte?</summary>
+    private static bool EsEntradaDelPaquete(string nombre) =>
+        nombre.Equals("[Content_Types].xml", StringComparison.OrdinalIgnoreCase) || nombre.EndsWith(".rels", StringComparison.OrdinalIgnoreCase);
+
+    private static clsErrorDominio DemasiadosElementos() => new(clsCodigosError.ArchivoDemasiadoGrande,
+        "El Excel tiene demasiadas celdas para analizarlo: deja solo las hojas y filas que se necesitan.", MotivoDescomprimido);
 
     private static clsErrorDominio DemasiadoGrande() => new(clsCodigosError.ArchivoDemasiadoGrande,
         "El contenido del Excel descomprimido supera 64 MB: deja solo las hojas y filas que se necesitan.", MotivoDescomprimido);
