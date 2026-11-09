@@ -1374,6 +1374,7 @@ El comercial marca en el costeo, ruta por ruta, si la ruta incluye el seguro de 
   ruta, `incluye_seguro`, `tasa_seguro` (la que se usó) y `valor_seguro` (el seguro en la moneda de la cotización) como una línea aparte
   del flete. `precio_final_linea` y `precio_final` **ya incluyen** el seguro: no sumarlo otra vez.
 - **El seguro no lleva margen:** cambiar el margen de la ruta no cambia `valor_seguro`.
+- **Sin redondeo a pesos** (decisión del 2026-11-09): `valor_seguro` y, con él, `precio_final_linea` y `precio_final` pueden traer centavos en COP: mostrarlos con dos decimales.
 - **Sin valor de la mercancía:** 400 `SEGURO_SIN_VALOR_MERCANCIA`: desmarcar el check y pedir el valor editando la solicitud. Si una
   edición deja la ruta sin valor, el check sigue marcado con `valor_seguro = null`: mostrar "Falta el valor de la mercancía".
 - **Candados:** finalizada, enviada o con resultado: 409 `PDF_YA_ENVIADO` (como el margen, con la llamada de la versión nueva). En las
