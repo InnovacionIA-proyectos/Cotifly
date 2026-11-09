@@ -2893,6 +2893,10 @@ Guardan en NEXO el mapeo que el comercial confirmó como **plantilla del cliente
 formato (mismos encabezados) sale de la plantilla en `sugerir-mapeo`, sin IA (`motivo_sin_ia = PLANTILLA_RECONOCIDA`). Cotifly no
 guarda copia; NEXO registra quién la guardó. Rol: el de la captura (comercial, gerente o director).
 
+> **Compartidas por cliente (decisión del usuario, 2026-11-09).** Las plantillas y los formatos de lectura (4.6.11) son del cliente, no
+> del comercial: cualquier comercial los ve con el NIT y puede borrarlos por id; Cotifly no verifica dueño. Conviene pedir confirmación
+> antes de borrar ("Este formato lo usan todos los comerciales con este cliente").
+
 - **`PUT /web/licitaciones/plantillas-mapeo`** (JSON `PlantillaMapeoWeb`): `nit_cliente` (obligatorio, con o sin puntos y dígito de
   verificación), `nombre` (opcional, máx. 100), `encabezados[]` (en el orden del archivo) y `columnas[]` (`indice` base 0, `campo` de
   NEXO o `ignorar`, `transformacion` opcional). **201** la primera vez y **200** si reemplaza a la plantilla del cliente con esos mismos

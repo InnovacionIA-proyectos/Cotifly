@@ -104,6 +104,11 @@ Los pliegos de licitación son justo esos archivos. La pregunta era si Cotifly r
   - **La escritura del diccionario no está.** `POST`, `PUT /{id}` y `DELETE /{id}` de `/web/diccionario-cliente` (y sus códigos
     `TERMINO_DUPLICADO`, `TERMINO_NO_ENCONTRADO`, `CAMPO_DESTINO_INVALIDO` y `CONTEXTO_INVALIDO`) esperan el contrato §3.19.1 de NEXO y
     S6-HU-34.10. El puerto `IClsImportacionExcelNexo` tampoco tiene esas operaciones todavía.
+- **Plantillas y formatos compartidos por cliente (decisión del usuario, 2026-11-09).** Las plantillas de mapeo y los formatos de lectura son
+  del **cliente**, no del comercial: cualquier comercial (o gerente o director) puede listarlos por NIT y borrarlos por id, y Cotifly no
+  verifica dueño. Exigir el NIT en el `DELETE` y cruzarlo con el listado no cerraría ningún acceso, porque cualquier comercial puede
+  listar cualquier NIT. El rastro queda en la auditoría de NEXO (`X-Portal-clsUsuario-Id`) y en el log de Cotifly del borrado (comercial
+  e id). Si algún día se quiere restringir, el control se pide a NEXO.
 - **"No encontrado" con código (#256).** `PLANTILLA_NO_ENCONTRADA` y `RECETA_NO_ENCONTRADA` responden `404` con `ErrorNegocio` y su código,
   no el `404` `ErrorWeb` sin código de las cotizaciones («no encontrada o no es tuya»): una plantilla o un formato no tienen dueño en
   Cotifly. Cambio a confirmar con el front.
