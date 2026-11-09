@@ -301,12 +301,36 @@ public static class clsExcelMercanciasMuestra
         "<?xml version=\"1.0\"?><!DOCTYPE w [<!ENTITY e SYSTEM \"file:///etc/passwd\">]>"
         + xml[(xml.IndexOf("?>", StringComparison.Ordinal) + 2)..].TrimStart('﻿'));
 
+    /// <summary>
+    /// Cambia el tipo de <paramref name="parte"/> en <c>[Content_Types].xml</c>: en su <c>Override</c> o, si el paquete la tipa por el
+    /// <c>Default</c> de su extensión (System.IO.Packaging lo hace con el libro), agregándole un <c>Override</c>, que manda sobre el
+    /// <c>Default</c>.
+    /// </summary>
     private static byte[] ConTipoDeParte(byte[] libro, string parte, string tipoActual, string tipo) =>
-        ConEntrada(libro, "[Content_Types].xml", xml => xml.Replace(
-            $"PartName=\"{parte}\" ContentType=\"{tipoActual}\"", $"PartName=\"{parte}\" ContentType=\"{tipo}\"", StringComparison.Ordinal)
-                is var nuevo && nuevo != xml
-                ? nuevo
-                : throw new InvalidOperationException($"No se encontró el tipo de {parte} en [Content_Types].xml."));
+        ConEntrada(libro, "[Content_Types].xml", xml =>
+        {
+            var documento = System.Xml.Linq.XDocument.Parse(xml);
+            var raiz = documento.Root!;
+            var extension = parte[(parte.LastIndexOf('.') + 1)..];
+            var sobrescritura = raiz.Elements().SingleOrDefault(e => e.Name.LocalName == "Override" && (string?)e.Attribute("PartName") == parte);
+            if (sobrescritura is not null && (string?)sobrescritura.Attribute("ContentType") == tipoActual)
+            {
+                sobrescritura.SetAttributeValue("ContentType", tipo);
+            }
+            else if (sobrescritura is null && raiz.Elements().Any(e => e.Name.LocalName == "Default"
+                && string.Equals((string?)e.Attribute("Extension"), extension, StringComparison.OrdinalIgnoreCase)
+                && (string?)e.Attribute("ContentType") == tipoActual))
+            {
+                raiz.Add(new System.Xml.Linq.XElement(raiz.Name.Namespace + "Override",
+                    new System.Xml.Linq.XAttribute("PartName", parte), new System.Xml.Linq.XAttribute("ContentType", tipo)));
+            }
+            else
+            {
+                throw new InvalidOperationException($"No se encontró el tipo de {parte} en [Content_Types].xml.");
+            }
+
+            return documento.Declaration + documento.ToString(System.Xml.Linq.SaveOptions.DisableFormatting);
+        });
 
     /// <summary>Un DEVMODE ficticio: nombre de impresora en UTF-16 relleno a 64 bytes y campos binarios (no es XML).</summary>
     public static byte[] DevmodeFicticio()
