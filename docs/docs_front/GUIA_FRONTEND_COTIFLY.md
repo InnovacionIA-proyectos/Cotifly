@@ -1383,6 +1383,23 @@ El comercial marca en el costeo, ruta por ruta, si la ruta incluye el seguro de 
   vigente. La versión nueva conserva el check.
 - **Todavía no:** la línea "Seguro de la mercancía" en el PDF, el Excel y el correo (HU-045.3, #265).
 
+### 5.18.4 Política de seguros por ruta y "Finalizar" (HU-046.3, #269). Implementado, pendiente de QA
+
+Contrato completo: `CONTRATOS_API_COTIFLY_FRONTEND.md` 4.4.3 (`politica_seguros`) y 4.5.6 (finalizar).
+
+- **Panel por ruta:** `rutas[].politica_seguros` del `GET .../costeo`. Mostrar el `tramo.nombre`, las `medidas_recomendadas` (por su
+  `nombre`) y las `medidas_obligatorias` con su `estado` (`cumplida` / `pendiente`). Con `tramo = null`, mostrar el `aviso` (falta el valor
+  de la mercancía) y nada más: no bloquea.
+- **Botón "Agregar":** solo en una obligatoria `pendiente`. Ofrece los servicios del catálogo (`GET /web/servicios-conexos`) cuyo `codigo`
+  está en `conexos` (basta uno); se agrega con el `POST .../costeo/servicios-conexos` de siempre y la respuesta ya trae el panel
+  actualizado.
+- **Finalizar:** ante 409 `COTIZACION_NO_FINALIZABLE` con `detalle.motivo = medidas_obligatorias_faltantes`, mostrar por ruta las medidas
+  de `detalle.rutas` y pedir una justificación (texto obligatorio, hasta 1000 caracteres); reintentar `POST .../finalizar` con
+  `{"justificacion": "…"}` y el `ETag` vigente. La justificación no salta los demás bloqueos (conexos pendientes en NEXO, estado del
+  costeo).
+- **`null`:** el panel no viene en una ruta rechazada, en una cotización finalizada ni en respuestas que no lo calculan: no borrarlo por un
+  `null`; refrescar con `GET .../costeo`.
+
 ### 5.19 PDF del costeo (`POST /web/cotizaciones/{folio}/costeo/pdf`). En QA
 
 - Sin cuerpo. El servidor arma el PDF: una fila con origen, destino, vehículo y el **valor final de la ruta** (transporte con su margen y conexos a su venta, sin margen, HU-043.2; sin desglose), los conexos listados como incluidos **sin precio** y, al final, el "VALOR TOTAL DE LA COTIZACIÓN" con la leyenda de impuestos (HU-033, #199; antes la tarifa del transporte y cada conexo con su precio).

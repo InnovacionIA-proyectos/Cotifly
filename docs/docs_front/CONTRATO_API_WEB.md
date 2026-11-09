@@ -694,7 +694,21 @@ primer nivel son los de la ruta 1:
       ],
       "aviso_conexos_nexo": "No se pudo confirmar en Nexo el envío del servicio conexo «Cargue con montacargas»: revísalo en la cotización de Nexo.",
       "margen_sap_anomalo": true,
-      "aviso_margen": "SAP TM propuso un margen de 72.5 % para esta ruta, fuera del rango normal (0 a 60 %): no se aplicó y la ruta usa el margen de la política de su línea de negocio. Revísalo antes de enviar la cotización."
+      "aviso_margen": "SAP TM propuso un margen de 72.5 % para esta ruta, fuera del rango normal (0 a 60 %): no se aplicó y la ruta usa el margen de la política de su línea de negocio. Revísalo antes de enviar la cotización.",
+      "politica_seguros": {
+        "tramo": { "nombre": "> 350 – 500 M", "valor_desde": 350000000, "valor_hasta": 500000000 },
+        "medidas_recomendadas": [
+          { "codigo": "candado_satelital", "nombre": "Candado satelital" },
+          { "codigo": "esquema_basico", "nombre": "Esquema básico de seguridad" },
+          { "codigo": "gps", "nombre": "GPS" },
+          { "codigo": "incluir_seguro", "nombre": "Incluir el seguro de la mercancía" },
+          { "codigo": "restriccion_nocturna", "nombre": "Restricción de tránsito nocturno" }
+        ],
+        "medidas_obligatorias": [
+          { "codigo": "acompanante_vehicular", "nombre": "Acompañante vehicular (parcial o total)", "estado": "pendiente", "conexos": ["AVP_MOTO", "AVP_MOTO_ARMADA", "AVT_AUTO", "AVT_MOTO", "AVT_MOTO_ARMADA"] }
+        ],
+        "aviso": null
+      }
     },
     {
       "linea_orden": 2,
@@ -719,7 +733,13 @@ primer nivel son los de la ruta 1:
       "servicios_conexos": [],
       "aviso_conexos_nexo": null,
       "margen_sap_anomalo": false,
-      "aviso_margen": null
+      "aviso_margen": null,
+      "politica_seguros": {
+        "tramo": null,
+        "medidas_recomendadas": [],
+        "medidas_obligatorias": [],
+        "aviso": "La ruta no tiene valor de la mercancía: no se puede saber qué exige la política de seguros. Registra el valor para ver sus medidas."
+      }
     }
   ]
 }
@@ -1948,7 +1968,8 @@ Un archivo corrupto o malicioso es 400 con código, nunca 500 (`detalle.motivo` 
 El comercial **acepta el precio** de la cotización y la finaliza. Columnas propias en la cabecera (`finalizadaAt`, `finalizadaPor`,
 `db/scripts/14_cotizacion_finalizada.sql`), no un `estado_costeo`: el estado sigue avanzando con Nexo.
 
-**#206, el endpoint.** `If-Match` obligatorio (428 sin él), solo el dueño (404 para una ajena), sin cuerpo.
+**#206, el endpoint.** `If-Match` obligatorio (428 sin él), solo el dueño (404 para una ajena). Cuerpo opcional (HU-046.3, #269):
+`{"justificacion": "…"}`.
 
 - Solo con el costeo de Nexo listo (`estado_costeo` en `autocosteo` o `entregada`). En otro estado, 409 `COTIZACION_NO_FINALIZABLE` con el
   estado actual en `detalle.estado_costeo`.
@@ -1963,6 +1984,11 @@ El comercial **acepta el precio** de la cotización y la finaliza. Columnas prop
   relectura lo confirma), así una entregada, que el polling ya no consulta, no queda bloqueada. Validación de #228: con algún conexo
   `pendiente`, finalizar relee la cotización de Nexo y deja `enviado` lo que Nexo ya muestra antes de contar (un registro viejo que quedó
   `pendiente` aunque Nexo tenga el conexo no bloquea para siempre); si Nexo no responde, cuenta el registro y responde el 409.
+- HU-046.3 (#269): tampoco mientras una ruta que cuenta tiene una medida **obligatoria** de la política de seguros `pendiente`
+  (`rutas[].politica_seguros.medidas_obligatorias[]` de `GET .../costeo`; hoy, el acompañante vehicular desde 350 M): 409
+  `COTIZACION_NO_FINALIZABLE` con `detalle.motivo = "medidas_obligatorias_faltantes"` y `detalle.rutas` (por ruta, sus medidas con
+  `codigo`, `nombre` y los `conexos` que la cumplen). Con `justificacion` (no vacía, hasta 1000 caracteres; 400 si no cabe) se finaliza
+  igual y queda auditada; la justificación salta solo este bloqueo. Una ruta sin `valor_mercancia` no exige nada.
 - Re-finalizar una ya finalizada: 200 sin cambios (mismo `finalizada_at`, mismo `ETag`).
 - `If-Match` que no es la versión vigente: 409 `CONFLICTO_CONCURRENCIA` (también si ya estaba finalizada). Si el polling cambió el precio
   entre la lectura y el clic, la versión ya no coincide: el comercial recarga y nunca finaliza un precio que no vio.
@@ -1989,6 +2015,33 @@ El comercial **acepta el precio** de la cotización y la finaliza. Columnas prop
     "codigo": "COTIZACION_NO_FINALIZABLE",
     "mensaje": "Hay servicios conexos que todavía no están en la cotización de Nexo (estado_nexo = pendiente): espera la siguiente actualización del costeo para finalizar la cotización con un precio que Nexo respalde.",
     "detalle": { "estado_costeo": "autocosteo", "motivo": "conexos_pendientes_en_nexo", "conexos_pendientes": 1 }
+  }
+}
+```
+
+<!-- respuesta: POST /web/cotizaciones/{folio}/finalizar 409 (medidas obligatorias de la política de seguros, HU-046.3) -->
+```json
+{
+  "error": {
+    "codigo": "COTIZACION_NO_FINALIZABLE",
+    "mensaje": "La política de seguros exige medidas que la cotización no tiene (ruta 1: Acompañante vehicular (parcial o total)). Agrega el servicio conexo que la cumple o finaliza con una justificación.",
+    "detalle": {
+      "estado_costeo": "autocosteo",
+      "motivo": "medidas_obligatorias_faltantes",
+      "rutas": [
+        {
+          "linea_orden": 1,
+          "linea_solicitud_id": "3f0c6e7a-1b2c-4d5e-8f90-a1b2c3d4e5f6",
+          "medidas": [
+            {
+              "codigo": "acompanante_vehicular",
+              "nombre": "Acompañante vehicular (parcial o total)",
+              "conexos": ["AVP_MOTO", "AVP_MOTO_ARMADA", "AVT_AUTO", "AVT_MOTO", "AVT_MOTO_ARMADA"]
+            }
+          ]
+        }
+      ]
+    }
   }
 }
 ```
