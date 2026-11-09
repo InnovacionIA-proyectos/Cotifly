@@ -301,7 +301,7 @@ public sealed partial class clsNexoFalso
                 return new
                 {
                     campo = v.Campo, valor = v.Valor, estado = "resuelto", codigo = (string?)linea, descripcion = (string?)linea, municipioId = (int?)null,
-                    origen = "regla", confianza = 1.0, nota = (string?)null, candidatos = (object[]?)null,
+                    origen = "sinonimo", confianza = 1.0, nota = (string?)null, candidatos = (object[]?)null,
                 };
             }
 

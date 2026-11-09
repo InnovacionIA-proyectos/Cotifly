@@ -154,7 +154,7 @@ public sealed class clsNormalizacionValoresServiceTests
             ("sin_resolver", null, "diccionario", "Licitaciones"),
             ("sin_resolver", null, "ia", null),
             ("sin_resolver", null, "ninguno", null));
-        resultado.Valor.Valores[2].Nota.Should().Contain("ninguna línea de negocio activa de Cotifly");
+        resultado.Valor.Valores[2].Nota.Should().Contain("catálogo de Nexo");
         resultado.Valor.Valores[3].Nota.Should().Contain("Cabotaje");
         _enviados!.Select(v => v.Campo).Should().AllBe("lineaNegocio");
     }
@@ -228,5 +228,74 @@ public sealed class clsNormalizacionValoresServiceTests
         (sinValores.Error.Codigo, demasiados.Error.Codigo, largo.Error.Codigo).Should().Be((clsCodigosError.ValoresRequeridos, clsCodigosError.DemasiadosValores, clsCodigosError.ValorDemasiadoLargo));
         justo.EsExitoso.Should().BeTrue();
         justo.Valor.Should().HaveCount(1000);
+    }
+
+    [Theory]
+    [InlineData("1234567890123456789012345678901")]
+    [InlineData("---")]
+    public async Task UnNitInvalidoSeRechazaSiempre_AunqueTodoSeResuelvaEnCotifly(string nit)
+    {
+        var resultado = await Normalizar(new clsEntradaNormalizacion(nit, [new clsValorEntradaNormalizacion("linea_negocio", "Nacional")]));
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.ClienteNitInvalido);
+        await _nexo.DidNotReceiveWithAnyArgs().NormalizarValoresAsync(default, default, default!, TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task UnNitConPuntosYDigitoDeVerificacionEsValido()
+    {
+        var resultado = await Normalizar(new clsEntradaNormalizacion("900.123.456-7", [new clsValorEntradaNormalizacion("linea_negocio", "Nacional")]));
+
+        resultado.EsExitoso.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task NexoAmbiguoEnUnaLineaConUnaSolaLineaDeCotifly_EsResuelto()
+    {
+        NexoResponde(true, null, DeNexo("lineaNegocio", "Puerto", "ambiguo", "PuertoAInterior", "ia", 0.6));
+
+        var valor = (await Normalizar(Entrada(("linea_negocio", "Puerto")))).Valor.Valores[0];
+
+        (valor.Estado, valor.Codigo, valor.LineasCandidatas).Should().Be(("resuelto", (string?)"Importacion", (IReadOnlyList<string>?)null));
+    }
+
+    [Fact]
+    public async Task UnEstadoDesconocidoDeNexoEsSinResolverYLaConfianzaSeAcota()
+    {
+        NexoResponde(true, null,
+            DeNexo("tipoVehiculo", "TB", "pendiente", "2L2", "alias", 0.9),
+            DeNexo("carroceria", "furgon", "resuelto", "FURGON", "diccionario", 1.7),
+            DeNexo("ciudad", "Cali", "resuelto", "76001", "catalogo", -0.2, municipio: 76001),
+            DeNexo("lineaNegocio", "impo", "otro", "PuertoAInterior", "sinonimo", 1));
+
+        var valores = (await Normalizar(Entrada(("tipo_vehiculo", "TB"), ("carroceria", "furgon"), ("ciudad", "Cali"), ("linea_negocio", "impo")))).Valor.Valores;
+
+        valores.Select(v => (v.Estado, v.Confianza)).Should().Equal(("sin_resolver", 0d), ("resuelto", 1d), ("resuelto", 0d), ("sin_resolver", 0d));
+        valores[0].Codigo.Should().BeNull("un estado que Cotifly no conoce no se propone");
+    }
+
+    [Fact]
+    public async Task LicitacionesDeNexoExplicaQueEsUnaLineaDeNexo()
+    {
+        NexoResponde(true, null, DeNexo("lineaNegocio", "Pliego", "resuelto", "Licitaciones", "diccionario"));
+
+        var valor = (await Normalizar(Entrada(("linea_negocio", "Pliego")))).Valor.Valores[0];
+
+        valor.Estado.Should().Be("sin_resolver");
+        valor.Nota.Should().Contain("catálogo de Nexo").And.Contain("Usa una de estas");
+    }
+
+    [Fact]
+    public async Task UnaLineaDeCotifly_ConUnMapeoFueraDeLasSeis_QuedaSinResolverConElMotivo()
+    {
+        var linea = Linea("Cabotaje", "Nacional");
+        typeof(clsMargenPolitica).GetProperty(nameof(clsMargenPolitica.MapeoLineasNexo))!.SetValue(linea, "Cabotaje");
+        _politicas.ListarAsync(Arg.Any<CancellationToken>()).Returns([linea]);
+
+        var valor = (await Normalizar(Entrada(("linea_negocio", "cabotaje")))).Valor.Valores[0];
+
+        (valor.Estado, valor.Codigo, valor.Origen).Should().Be(("sin_resolver", (string?)null, "linea_cotifly"));
+        valor.Nota.Should().Contain("Cabotaje");
+        await _nexo.DidNotReceiveWithAnyArgs().NormalizarValoresAsync(default, default, default!, TestContext.Current.CancellationToken);
     }
 }

@@ -1,8 +1,11 @@
 using System.Net;
 using System.Text.Json;
+using System.Text;
 using System.Text.Json.Nodes;
 using Cotifly.Pruebas.Comun;
 using Cotifly.Pruebas.Web;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
 using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 
 namespace Cotifly.Api.Tests.Web;
@@ -100,7 +103,7 @@ public sealed class clsNormalizacionValoresEndpointsTests : IDisposable
         json.GetProperty("valores").EnumerateArray()
             .Select(v => (v.GetProperty("estado").GetString(), v.GetProperty("codigo").GetString(), v.GetProperty("origen").GetString(),
                 v.GetProperty("linea_nexo").GetString()))
-            .Should().Equal(("resuelto", "Importacion", "regla", "Puerto a interior"), ("resuelto", "Distribucion", "linea_cotifly", null));
+            .Should().Equal(("resuelto", "Importacion", "sinonimo", "Puerto a interior"), ("resuelto", "Distribucion", "linea_cotifly", null));
         UltimoCuerpoANexo()["valores"]!.AsArray().Select(v => (v!["campo"]!.GetValue<string>(), v["valor"]!.GetValue<string>()))
             .Should().Equal([("lineaNegocio", "impo")], "«Distribución» es una línea de Cotifly: no se le pregunta a NEXO");
     }
@@ -135,6 +138,57 @@ public sealed class clsNormalizacionValoresEndpointsTests : IDisposable
         var json = await PostAsync(cuerpo, HttpStatusCode.BadRequest);
 
         json.GetProperty("error").GetProperty("codigo").GetString().Should().Be(codigo);
+        _nexo.Peticiones.Should().NotContain(p => p.Url.AbsolutePath == RutaNexo);
+    }
+
+    [Fact]
+    public async Task UnSinPermisoDeNexoEs403NexoSinPermiso()
+    {
+        _nexo.ImportacionFalla = HttpStatusCode.Forbidden;
+        _nexo.CodigoImportacionFalla = "SIN_PERMISO";
+
+        var json = await PostAsync(Cuerpo("900123456", ("ciudad", "Cali")), HttpStatusCode.Forbidden);
+
+        json.GetProperty("error").GetProperty("codigo").GetString().Should().Be("NEXO_SIN_PERMISO");
+    }
+
+    [Fact]
+    public async Task ElCupoPorMinutoDeNexoEs503NoDisponibleYNoElTopeDiario()
+    {
+        _nexo.ImportacionFalla = HttpStatusCode.TooManyRequests;
+        _nexo.CodigoImportacionFalla = "DEMASIADAS_SOLICITUDES";
+
+        var json = await PostAsync(Cuerpo("900123456", ("ciudad", "Cali")), HttpStatusCode.ServiceUnavailable);
+
+        json.GetProperty("error").GetProperty("codigo").GetString().Should().Be("NEXO_NO_DISPONIBLE");
+    }
+
+    [Fact]
+    public async Task UnNitInvalidoEs400AunqueTodoSeResuelvaEnCotifly()
+    {
+        var json = await PostAsync(Cuerpo(new string('9', 31), ("linea_negocio", "Nacional")), HttpStatusCode.BadRequest);
+
+        json.GetProperty("error").GetProperty("codigo").GetString().Should().Be("CLIENTE_NIT_INVALIDO");
+        _nexo.Peticiones.Should().NotContain(p => p.Url.AbsolutePath == RutaNexo);
+    }
+
+    [Fact]
+    public async Task UnRolQueNoEsComercialEs403()
+    {
+        // Token válido (firma, emisor y audiencia de la API) con un rol fuera de la política Comercial (comercial, gerente, director).
+        var token = new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
+        {
+            Issuer = "cotifly-api",
+            Audience = "clientepro",
+            Expires = DateTime.UtcNow.AddMinutes(10),
+            Claims = new Dictionary<string, object> { ["sub"] = Guid.NewGuid().ToString(), ["jti"] = Guid.NewGuid().ToString(), ["rol"] = "consulta" },
+            SigningCredentials = new SigningCredentials(
+                new SymmetricSecurityKey(Encoding.UTF8.GetBytes(clsApiWebPruebas.ClaveJwt)), SecurityAlgorithms.HmacSha256),
+        });
+
+        using var respuesta = await _api.EnviarAsync(HttpMethod.Post, Ruta, token, Cuerpo(null, ("ciudad", "Cali")));
+
+        respuesta.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         _nexo.Peticiones.Should().NotContain(p => p.Url.AbsolutePath == RutaNexo);
     }
 
