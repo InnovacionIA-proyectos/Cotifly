@@ -440,7 +440,8 @@ public static class clsCodigosError
     /// <summary>
     /// HU-045.2 (#264, decisión 4 de HU-045): incluir el seguro de la mercancía en una ruta sin <c>valor_mercancia</c> (el seguro es
     /// <c>valor_mercancia × tasa</c>). 400 con <c>detalle.linea_orden</c> y <c>detalle.linea_solicitud_id</c>; nada cambia. Código nuevo del
-    /// backend .NET.
+    /// backend .NET. HU-045.3 (#265): también al generar el PDF o enviar la cotización con alguna ruta con el seguro marcado sin valor de la
+    /// mercancía, con <c>detalle.rutas</c>.
     /// </summary>
     public const string SeguroSinValorMercancia = "SEGURO_SIN_VALOR_MERCANCIA";
 }

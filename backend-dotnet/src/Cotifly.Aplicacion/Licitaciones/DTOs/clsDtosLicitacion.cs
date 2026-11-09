@@ -276,6 +276,12 @@ public sealed record clsLineaExportacion(
     /// en el total ni como pendiente.
     /// </summary>
     public bool Rechazada { get; init; }
+
+    /// <summary>
+    /// HU-045.3 (#265): el seguro de la mercancía de la línea en la moneda, aparte de <see cref="PrecioFinal"/> (la tarifa del transporte);
+    /// <c>null</c> sin seguro o con la línea rechazada. Hoy las licitaciones no lo admiten. Nunca la tasa.
+    /// </summary>
+    public decimal? ValorSeguro { get; init; }
 }
 
 /// <summary>

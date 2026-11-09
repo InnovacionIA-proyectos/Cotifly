@@ -24,6 +24,12 @@ public sealed class clsExportadorExcelCotizacionClosedXml : IClsExportadorExcelC
     /// <summary>Texto de un precio que no hay (ruta rechazada, sin costeo o camión que no cuenta).</summary>
     public const string SinPrecio = "Sin precio";
 
+    /// <summary>HU-045.3 (#265): columna (hoja Rutas) y dato (Resumen) del seguro de la mercancía, con la moneda.</summary>
+    public const string EtiquetaSeguro = "Seguro de la mercancía";
+
+    /// <summary>HU-045.3 (#265): la ruta tiene el seguro marcado sin valor de la mercancía (no suma en su precio).</summary>
+    public const string SeguroSinValorMercancia = "Sin valor de la mercancía";
+
     public const string VersionInterna = "Interna (con costos y márgenes)";
     public const string VersionSoloLectura = "Solo lectura (sin costos ni márgenes)";
 
@@ -112,6 +118,7 @@ public sealed class clsExportadorExcelCotizacionClosedXml : IClsExportadorExcelC
         Dato("Peso total (kg)", totales.PesoKg is { } peso ? peso : "—", FormatoPeso);
         DatoPrecio(Precio("Precio transporte", datos.Moneda), totales.PrecioTransporte);
         DatoPrecio(Precio("Precio conexos", datos.Moneda), totales.PrecioConexos);
+        DatoPrecio(Precio(EtiquetaSeguro, datos.Moneda), totales.PrecioSeguro);
         DatoPrecio(Precio("Precio final", datos.Moneda), totales.PrecioFinal);
         if (Interna(datos) && totales.Interno is { } interno)
         {
@@ -150,7 +157,11 @@ public sealed class clsExportadorExcelCotizacionClosedXml : IClsExportadorExcelC
         }
 
         var finInterno = campos.Count;
-        campos.AddRange([Precio("Precio transporte", datos.Moneda), Precio("Precio conexos", datos.Moneda), Precio("Precio ruta", datos.Moneda)]);
+        // HU-045.3 (#265): el seguro de la mercancía en su columna, aparte del transporte y de los conexos (NOGE0076).
+        campos.AddRange([
+            Precio("Precio transporte", datos.Moneda), Precio("Precio conexos", datos.Moneda), Precio(EtiquetaSeguro, datos.Moneda),
+            Precio("Precio ruta", datos.Moneda),
+        ]);
         Encabezados(hoja, campos, interna ? (inicioInterno, finInterno) : null);
 
         var fila = 2;
@@ -180,6 +191,7 @@ public sealed class clsExportadorExcelCotizacionClosedXml : IClsExportadorExcelC
 
             PrecioCelda(hoja.Cell(fila, c++), ruta.PrecioTransporte, formato);
             PrecioCelda(hoja.Cell(fila, c++), ruta.PrecioConexos, formato);
+            SeguroCelda(hoja.Cell(fila, c++), ruta, formato);
             PrecioCelda(hoja.Cell(fila, c), ruta.PrecioRuta, formato);
             fila++;
         }
@@ -187,7 +199,7 @@ public sealed class clsExportadorExcelCotizacionClosedXml : IClsExportadorExcelC
         // Fila de totales (sin las rutas rechazadas, ADR-017 §3).
         hoja.Cell(fila, 1).Value = "Total";
         hoja.Row(fila).Style.Font.SetBold();
-        var columnaPrecio = campos.Count - 2;
+        var columnaPrecio = campos.Count - 3;
         if (interna)
         {
             // "Costo bruto" es la quinta columna interna.
@@ -196,7 +208,8 @@ public sealed class clsExportadorExcelCotizacionClosedXml : IClsExportadorExcelC
 
         PrecioCelda(hoja.Cell(fila, columnaPrecio), datos.Totales.PrecioTransporte, formato);
         PrecioCelda(hoja.Cell(fila, columnaPrecio + 1), datos.Totales.PrecioConexos, formato);
-        PrecioCelda(hoja.Cell(fila, columnaPrecio + 2), datos.Totales.PrecioFinal, formato);
+        PrecioCelda(hoja.Cell(fila, columnaPrecio + 2), datos.Totales.PrecioSeguro, formato);
+        PrecioCelda(hoja.Cell(fila, columnaPrecio + 3), datos.Totales.PrecioFinal, formato);
         Terminar(hoja);
     }
 
@@ -331,6 +344,24 @@ public sealed class clsExportadorExcelCotizacionClosedXml : IClsExportadorExcelC
         else
         {
             celda.Value = SinPrecio;
+            celda.Style.Fill.SetBackgroundColor(_pendiente);
+        }
+    }
+
+    /// <summary>
+    /// HU-045.3 (#265): el seguro de la ruta; vacía si no lo incluye (o la ruta está rechazada) y <see cref="SeguroSinValorMercancia"/>
+    /// resaltada si está marcado sin valor de la mercancía.
+    /// </summary>
+    private static void SeguroCelda(IXLCell celda, clsExcelRuta ruta, string formato)
+    {
+        if (ruta.ValorSeguro is { } valor)
+        {
+            celda.Value = valor;
+            celda.Style.NumberFormat.Format = formato;
+        }
+        else if (ruta.SeguroSinValor)
+        {
+            celda.Value = SeguroSinValorMercancia;
             celda.Style.Fill.SetBackgroundColor(_pendiente);
         }
     }

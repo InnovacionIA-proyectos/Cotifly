@@ -115,6 +115,12 @@ public sealed class clsCorreoService(
             return sinFinalizar;
         }
 
+        // HU-045.3 (#265): el seguro marcado sin valor de la mercancía no suma al precio; no sale al cliente (pendiente de decisión: bloquear o avisar).
+        if (cotizacion.ValidarSeguroAntesDe(AccionEnviar) is { } seguroSinValor)
+        {
+            return seguroSinValor;
+        }
+
         var recientes = await correos.ListarEnviadosDesdeAsync(cotizacion.Id, reloj.AhoraUtc - VentanaDuplicado, cancellationToken);
         if (recientes.Any(c => c.CuentaComoEnvio && c.TieneMismosPara(para)))
         {

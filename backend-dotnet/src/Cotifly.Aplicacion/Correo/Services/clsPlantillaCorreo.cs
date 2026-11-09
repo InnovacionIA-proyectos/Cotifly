@@ -53,6 +53,12 @@ public static class clsPlantillaCorreo
     /// </summary>
     public const int MaximoRutasResumen = 10;
 
+    /// <summary>
+    /// HU-045.3 (#265): debajo de la ruta que incluye el seguro de la mercancía. Sin el monto (HU-033: sin desglose; el PDF adjunto lo trae
+    /// en su propia fila) ni la tasa.
+    /// </summary>
+    public const string TextoIncluyeSeguro = "Incluye el seguro de la mercancía";
+
     /// <summary>#262: línea que remite al PDF adjunto.</summary>
     public const string TextoAdjunto =
         "En el PDF adjunto está el detalle de cada ruta, lo que incluye y no incluye la tarifa, la facturación y la vigencia.";
@@ -76,8 +82,9 @@ public static class clsPlantillaCorreo
 
     /// <summary>
     /// Resumen para el cliente: una fila por ruta, en orden, con su precio final (transporte y conexos incluidos, <c>precioFinalLinea</c>) y
-    /// el total (<c>precioFinal</c>, la suma). Una ruta que rechazó la Mesa de Costeo sale "Sin costeo" y no suma (HU-028.1). <c>null</c> si
-    /// la cotización todavía no tiene total.
+    /// el total (<c>precioFinal</c>, la suma). Una ruta que rechazó la Mesa de Costeo sale "Sin costeo" y no suma (HU-028.1). HU-045.3 (#265):
+    /// el precio final de la ruta y el total incluyen el seguro de la mercancía; la ruta que lo incluye lo marca
+    /// (<see cref="clsRutaResumenCorreo.IncluyeSeguro"/>). <c>null</c> si la cotización todavía no tiene total.
     /// </summary>
     public static clsResumenCorreo? Resumen(clsCotizacionSolicitud cotizacion)
     {
@@ -93,7 +100,10 @@ public static class clsPlantillaCorreo
                 r.Orden,
                 clsTextoSeguro.LimpiarLinea($"{r.OrigenNombre} → {r.DestinoNombre}") ?? $"Ruta {r.Orden.ToString(CultureInfo.InvariantCulture)}",
                 r.Rechazada ? null : r.PrecioFinalLinea,
-                r.Rechazada || r.PrecioFinalLinea is null ? Costeo.Services.clsCosteoCotizacionService.TextoSinCosteo : clsFormatoMoneda.Formatear(r.PrecioFinalLinea, moneda)))
+                r.Rechazada || r.PrecioFinalLinea is null ? Costeo.Services.clsCosteoCotizacionService.TextoSinCosteo : clsFormatoMoneda.Formatear(r.PrecioFinalLinea, moneda))
+            {
+                IncluyeSeguro = Costeo.Services.clsCosteoCotizacionService.ValorSeguroPdf(cotizacion, r) is not null,
+            })
             .ToList();
         return new clsResumenCorreo(
             moneda.ToUpperInvariant(),
@@ -285,7 +295,9 @@ public static class clsPlantillaCorreo
                                   + ";font-size:14px;font-weight:bold;letter-spacing:.04em;text-transform:uppercase;color:" + TextoSuave;
         var filas = string.Concat(resumen.Rutas.Take(MaximoRutasResumen).Select(r =>
             $"<tr><td style=\"{Celda};color:{TextoSuave};width:24px\">{r.Orden.ToString(CultureInfo.InvariantCulture)}</td>"
-            + $"<td style=\"{Celda}\">{WebUtility.HtmlEncode(r.Ruta)}</td>"
+            + $"<td style=\"{Celda}\">{WebUtility.HtmlEncode(r.Ruta)}"
+            + (r.IncluyeSeguro ? $"<div style=\"font-size:12px;color:{TextoSuave}\">{WebUtility.HtmlEncode(TextoIncluyeSeguro)}</div>" : string.Empty)
+            + "</td>"
             + $"<td style=\"{Celda};text-align:right;white-space:nowrap{(r.Precio is null ? $";color:{TextoSuave}" : string.Empty)}\">"
             + $"{WebUtility.HtmlEncode(r.PrecioTexto)}</td></tr>"));
         var restantes = resumen.Rutas.Count - MaximoRutasResumen;
@@ -323,7 +335,11 @@ public sealed record clsResumenCorreo(
     string Moneda, decimal Total, string TotalTexto, IReadOnlyList<clsRutaResumenCorreo> Rutas, string Leyenda, string? NotaMoneda);
 
 /// <summary>Una ruta del resumen: su orden, "Origen → Destino" y su precio final (<c>null</c> si la Mesa la rechazó).</summary>
-public sealed record clsRutaResumenCorreo(int Orden, string Ruta, decimal? Precio, string PrecioTexto);
+public sealed record clsRutaResumenCorreo(int Orden, string Ruta, decimal? Precio, string PrecioTexto)
+{
+    /// <summary>HU-045.3 (#265): el precio de la ruta incluye el seguro de la mercancía (sin el monto ni la tasa: HU-033, sin desglose).</summary>
+    public bool IncluyeSeguro { get; init; }
+}
 
 /// <summary>
 /// #262: datos opcionales de la cotización para la ficha del correo (folio, fecha y cliente). Todos pueden ser <c>null</c>.
