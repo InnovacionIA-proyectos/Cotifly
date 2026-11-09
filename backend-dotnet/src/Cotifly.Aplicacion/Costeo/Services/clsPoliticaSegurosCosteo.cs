@@ -39,28 +39,28 @@ public static class clsPoliticaSegurosCosteo
 
     /// <summary>
     /// Completa en memoria el <c>codigoServicio</c> de los conexos que no lo tienen con lo que ya sabe el índice del catálogo de Nexo (sin
-    /// esperarlo: si está frío, se calienta en segundo plano y la siguiente lectura los completa). Nunca falla. Devuelve cuántos completó;
-    /// quien llama los guarda.
+    /// esperarlo: si está frío, se calienta en segundo plano y la siguiente lectura los completa). Nunca falla. Devuelve los conexos que
+    /// completó; quien llama los guarda.
     /// </summary>
-    public static async Task<int> CompletarCodigosAsync(
+    public static async Task<IReadOnlyList<clsServicioConexoRuta>> CompletarCodigosAsync(
         IClsCategoriasConexos? catalogo, clsCotizacionSolicitud cotizacion, ILogger logger, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(logger);
         if (catalogo is null || cotizacion.Rutas.SelectMany(r => r.Conexos).All(c => c.CodigoServicio is not null))
         {
-            return 0;
+            return [];
         }
 
         try
         {
             var codigos = await catalogo.CodigosAsync(cotizacion, cancellationToken);
-            return codigos.Count == 0 ? 0 : cotizacion.CompletarCodigosConexos(c => codigos.GetValueOrDefault(c.IdServicioConexo));
+            return codigos.Count == 0 ? [] : cotizacion.CompletarCodigosConexos(c => codigos.GetValueOrDefault(c.IdServicioConexo));
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             _logCodigosNoDisponibles(logger, cotizacion.Folio, ex);
-            return 0;
+            return [];
         }
     }
 
@@ -83,10 +83,25 @@ public static class clsPoliticaSegurosCosteo
             Rutas =
             [
                 .. vista.Rutas.Select(r => porId.TryGetValue(r.LineaSolicitudId, out var ruta) && !ruta.Rechazada
-                    ? r with { PoliticaSeguros = Bloque(ruta.EvaluarPoliticaSeguros(politica)) }
+                    ? r with { PoliticaSeguros = Bloque(ruta.EvaluarPoliticaSeguros(politica, CuentaSegunVista(r))) }
                     : r),
             ],
         };
+    }
+
+    /// <summary>
+    /// Decisión del usuario (2026-11-09): ¿el conexo cuenta para cumplir una medida? No si su envío a Nexo quedó <c>fallido_definitivo</c>
+    /// o <c>incierto</c> (nunca llegó o no se sabe); sí si está <c>enviado</c>, <c>pendiente</c> (lo bloquea #228 aparte) o sin estado.
+    /// </summary>
+    public static bool CuentaParaLaPolitica(string? estadoNexo) =>
+        estadoNexo is not (clsEnvioConexosNexoService.VisibleFallidoDefinitivo or clsEnvioConexosNexoService.VisibleIncierto);
+
+    /// <summary>Lo de <see cref="CuentaParaLaPolitica"/> con el <c>estado_nexo</c> que ya trae la vista de la ruta.</summary>
+    private static Func<clsServicioConexoRuta, bool> CuentaSegunVista(clsRutaCosteo ruta)
+    {
+        var excluidos = ruta.ServiciosConexos.Where(s => !CuentaParaLaPolitica(s.EstadoNexo)).Select(s => s.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return c => !excluidos.Contains(c.IdServicioConexo);
     }
 
     /// <summary>El bloque <c>politica_seguros</c> de una ruta.</summary>
@@ -97,7 +112,10 @@ public static class clsPoliticaSegurosCosteo
             evaluacion.Tramo is { } tramo ? new clsTramoPoliticaSegurosRuta(tramo.Nombre, tramo.ValorDesde, tramo.ValorHasta) : null,
             [.. evaluacion.Recomendadas.Select(m => new clsMedidaRecomendadaRuta(m.Codigo, m.Nombre))],
             [.. evaluacion.Obligatorias.Select(m => new clsMedidaObligatoriaRuta(m.Codigo, m.Nombre, m.Estado, m.Conexos))],
-            evaluacion.Aviso);
+            evaluacion.Aviso)
+        {
+            AvisoCodigo = evaluacion.AvisoCodigo,
+        };
     }
 
     private static readonly Action<ILogger, string, Exception?> _logPoliticaNoDisponible = LoggerMessage.Define<string>(
@@ -117,7 +135,14 @@ public sealed record clsPoliticaSegurosRuta(
     clsTramoPoliticaSegurosRuta? Tramo,
     IReadOnlyList<clsMedidaRecomendadaRuta> MedidasRecomendadas,
     IReadOnlyList<clsMedidaObligatoriaRuta> MedidasObligatorias,
-    string? Aviso);
+    string? Aviso)
+{
+    /// <summary>
+    /// B7 de la auditoría: código estable del <see cref="Aviso"/>: <c>sin_valor_mercancia</c> (el comercial registra el valor) o
+    /// <c>sin_tramo</c> (error de datos de la política); <c>null</c> sin aviso.
+    /// </summary>
+    public string? AvisoCodigo { get; init; }
+}
 
 /// <summary>El tramo de la ruta: su nombre y sus límites en pesos (<see cref="ValorDesde"/> exclusivo, <see cref="ValorHasta"/> incluido; <c>null</c> = sin tope).</summary>
 public sealed record clsTramoPoliticaSegurosRuta(string Nombre, decimal ValorDesde, decimal? ValorHasta);

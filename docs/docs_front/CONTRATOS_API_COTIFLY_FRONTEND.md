@@ -1867,8 +1867,11 @@ Notas:
 - **Política de seguros (HU-046.3, #269).** Cada ruta trae `politica_seguros`: lo que exige la política de seguros por el valor de la
   mercancía de la ruta (tablas de Datos, leídas en cada petición; un cambio se ve sin desplegar). Forma:
   `{tramo: {nombre, valor_desde, valor_hasta} | null, medidas_recomendadas: [{codigo, nombre}], medidas_obligatorias: [{codigo, nombre,
-  estado: cumplida | pendiente, conexos: [codigoServicio]}], aviso: string | null}`. El tramo usa el `valor_mercancia` TOTAL de la ruta
-  (no por camión), con `valor_desde` exclusivo y `valor_hasta` incluido (250.000.000 exacto es "> 150 – 250 M"). Sin `valor_mercancia`
+  estado: cumplida | pendiente, conexos: [codigoServicio]}], aviso: string | null, aviso_codigo: sin_valor_mercancia | sin_tramo | null}`
+  (usar `aviso_codigo`, no el texto). El tramo usa el `valor_mercancia` TOTAL de la ruta (no por camión), con `valor_desde` exclusivo y
+  `valor_hasta` incluido (250.000.000 exacto es "> 150 – 250 M"). `valor_mercancia` y los límites están **siempre en pesos (COP)**,
+  también en una cotización en USD. Un conexo con `estado_nexo` `fallido_definitivo` o `incierto` **no** cumple ninguna medida
+  (decisión del 2026-11-09): la obligatoria sigue `pendiente` hasta revisarlo en NEXO. Sin `valor_mercancia`
   o con 0: `tramo = null`, listas vacías y `aviso` ("La ruta no tiene valor de la mercancía…"); no bloquea. Una obligatoria se cumple
   con CUALQUIERA de sus `conexos` (códigos del catálogo de NEXO, `GET /web/servicios-conexos` → `codigo`): el botón "Agregar" ofrece
   esos servicios. Hoy solo el acompañante vehicular es obligatorio (350 – 700 M: parcial o total; 700 – 1.000 M: total); las demás
@@ -2691,7 +2694,8 @@ El comercial **acepta el precio** y finaliza la cotización. Desde ahí el preci
 | 404 | `ErrorWeb` | No existe o no es tuya |
 | 409 | `COTIZACION_NO_FINALIZABLE` | `estado_costeo` distinto de `autocosteo` y `entregada` (`detalle.estado_costeo` trae el actual), un conexo de Nexo pendiente de leer (`detalle.motivo = conexos_pendientes_de_leer`) o, desde #228, conexos que todavía no están en Nexo (`servicios_conexos[].estado_nexo = pendiente`; `detalle.motivo = conexos_pendientes_en_nexo`, `detalle.conexos_pendientes`): deshabilitar "Finalizar" hasta que haya precio o hasta la siguiente actualización del costeo |
 | 409 | `COTIZACION_NO_FINALIZABLE` + `medidas_obligatorias_faltantes` | HU-046.3 (#269): faltan medidas obligatorias de la política de seguros (`detalle.rutas`). Ofrecer "Agregar" con los `conexos` de cada medida o pedir una justificación y reintentar con `{"justificacion": "…"}` |
-| 400 | `ErrorWeb` (`SOLICITUD_INVALIDA`) | HU-046.3: la justificación pasa de 1000 caracteres |
+| 400 | `ErrorWeb` (`SOLICITUD_INVALIDA`) | HU-046.3: la justificación pasa de 1000 caracteres (o el cuerpo no es JSON válido) |
+| 503 | `SERVICIO_OCUPADO` + `politica_seguros_no_disponible` | HU-046.3: la política de seguros no se pudo leer; no se finalizó. Reintentar en unos segundos |
 | 409 | `CONFLICTO_CONCURRENCIA` | El `If-Match` no es la versión vigente (por ejemplo, el polling cambió el precio después de que lo leíste): recargar el costeo, mostrar el precio nuevo y volver a pedir la confirmación |
 | 428 | `PRECONDICION_REQUERIDA` | Falta `If-Match` |
 

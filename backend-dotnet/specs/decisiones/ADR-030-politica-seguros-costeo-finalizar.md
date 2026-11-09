@@ -39,6 +39,22 @@ saber qué medida es un acompañante; solo cruza los `codigoServicio` de los con
    entrada y, si saltó el bloqueo, `medidas_omitidas` (códigos por ruta) en la salida; sin montos. Si la política no se puede leer,
    "Finalizar" falla (no se finaliza sin evaluarla). Re-finalizar una finalizada no lee la política.
 
+6. **Observaciones de la auditoría (2026-11-09):**
+   - B1: el `GET .../costeo` guarda los códigos completados fila por fila (`UPDATE … WHERE id = … AND codigoServicio IS NULL`,
+     `IClsCotizacionRepository.GuardarCodigosServicioAsync`), fuera del rastreador: no toma el candado de la cabecera, no sube la versión
+     ni cambia el `ETag`, y una fila borrada o ya completada por otra petición no se toca.
+   - B3: "Finalizar" solo lee la política si no hay conexos pendientes en Nexo. ORDEN con #259: la evaluación va DESPUÉS de
+     `ConexosPendientesEnNexoAsync` (que guarda sin versión); invertirlo guardaría códigos completados sin la versión del `If-Match`.
+   - B4: política ilegible al finalizar: 503 `SERVICIO_OCUPADO` con `detalle.motivo = politica_seguros_no_disponible`, auditado. Sigue
+     fallando cerrado.
+   - B6: con el índice del catálogo vigente no se recalienta por un código que no está en él (solo con el índice frío o vencido).
+   - B7: `politica_seguros.aviso_codigo` (`sin_valor_mercancia` | `sin_tramo`).
+   - B8: `valor_mercancia` y los límites de los tramos están siempre en pesos (COP), también en cotizaciones en USD.
+7. **Decisiones del usuario (2026-11-09):**
+   - Un conexo cuyo envío a Nexo quedó `fallido_definitivo` o `incierto` **no** cumple ninguna medida; solo cuentan `enviado` y
+     `pendiente` (este último lo bloquea #228 aparte). Se aplica en el costeo (con el `estado_nexo` de la vista) y en "Finalizar".
+   - Licitaciones de 350 M o más: se quedan como están. No admiten conexos (HU-041.1), así que se finalizan con justificación.
+
 ## Consecuencias
 
 - Cambiar la política no requiere desplegar; los tramos y medidas inactivos no cuentan.
@@ -49,7 +65,4 @@ saber qué medida es un acompañante; solo cruza los `codigoServicio` de los con
 ## Pendientes de decisión
 
 - Largo de la justificación: se fijó un máximo de 1000 caracteres y ningún mínimo (basta con que no esté vacía).
-- Licitaciones: no admiten conexos (HU-041.1), así que una ruta de 350 M o más en una licitación solo se finaliza con justificación.
-- Un conexo que cumple la medida pero sigue `pendiente` en Nexo cuenta como cumplido para la política (el bloqueo de #228/#259 ya lo
-  cubre aparte).
 - Orden de las medidas en el panel: por código (las tablas no tienen columna de orden).

@@ -707,7 +707,8 @@ primer nivel son los de la ruta 1:
         "medidas_obligatorias": [
           { "codigo": "acompanante_vehicular", "nombre": "Acompañante vehicular (parcial o total)", "estado": "pendiente", "conexos": ["AVP_MOTO", "AVP_MOTO_ARMADA", "AVT_AUTO", "AVT_MOTO", "AVT_MOTO_ARMADA"] }
         ],
-        "aviso": null
+        "aviso": null,
+        "aviso_codigo": null
       }
     },
     {
@@ -738,7 +739,8 @@ primer nivel son los de la ruta 1:
         "tramo": null,
         "medidas_recomendadas": [],
         "medidas_obligatorias": [],
-        "aviso": "La ruta no tiene valor de la mercancía: no se puede saber qué exige la política de seguros. Registra el valor para ver sus medidas."
+        "aviso": "La ruta no tiene valor de la mercancía: no se puede saber qué exige la política de seguros. Registra el valor para ver sus medidas.",
+        "aviso_codigo": "sin_valor_mercancia"
       }
     }
   ]

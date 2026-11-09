@@ -20,13 +20,15 @@ public sealed partial class clsCotizacionSolicitud
     /// <see cref="RutasCotizables"/>), en orden de ruta; vacío si no hay ninguna. Una ruta sin valor de la mercancía no tiene tramo ni
     /// exige nada (decisión 4: el aviso no bloquea).
     /// </summary>
-    public IReadOnlyList<clsMedidasFaltantesRuta> MedidasObligatoriasPendientes(clsPoliticaSeguros politica)
+    public IReadOnlyList<clsMedidasFaltantesRuta> MedidasObligatoriasPendientes(
+        clsPoliticaSeguros politica, Func<clsLineaSolicitud, clsServicioConexoRuta, bool>? cuenta = null)
     {
         ArgumentNullException.ThrowIfNull(politica);
         return
         [
             .. RutasCotizables
-                .Select(r => new clsMedidasFaltantesRuta(r.Orden, r.Id, r.EvaluarPoliticaSeguros(politica).Pendientes))
+                .Select(r => new clsMedidasFaltantesRuta(
+                    r.Orden, r.Id, r.EvaluarPoliticaSeguros(politica, cuenta is null ? null : c => cuenta(r, c)).Pendientes))
                 .Where(r => r.Medidas.Count > 0),
         ];
     }
@@ -34,11 +36,11 @@ public sealed partial class clsCotizacionSolicitud
     /// <summary>
     /// Completa el <c>codigoServicio</c> de los conexos que no lo tienen con <paramref name="codigoDe"/> (lo que dice el catálogo de Nexo
     /// del conexo, o <c>null</c> si no se sabe). No cambia el precio ni la versión de negocio: es un dato del catálogo, también en una
-    /// cotización finalizada. Devuelve cuántos completó.
+    /// cotización finalizada. Devuelve los conexos que completó.
     /// </summary>
-    public int CompletarCodigosConexos(Func<clsServicioConexoRuta, string?> codigoDe)
+    public IReadOnlyList<clsServicioConexoRuta> CompletarCodigosConexos(Func<clsServicioConexoRuta, string?> codigoDe)
     {
         ArgumentNullException.ThrowIfNull(codigoDe);
-        return _rutas.SelectMany(r => r.Conexos).Where(c => c.CodigoServicio is null).Count(c => c.CompletarCodigoServicio(codigoDe(c)));
+        return [.. _rutas.SelectMany(r => r.Conexos).Where(c => c.CodigoServicio is null).ToList().Where(c => c.CompletarCodigoServicio(codigoDe(c)))];
     }
 }

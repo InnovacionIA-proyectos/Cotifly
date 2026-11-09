@@ -44,6 +44,7 @@ public sealed class clsCosteoController(
     [ProducesResponseType<clsErrorWeb>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status409Conflict)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status428PreconditionRequired)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> Finalizar(
         string folio, [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] clsFinalizarWebRequest? cuerpo, CancellationToken cancellationToken)
     {

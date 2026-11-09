@@ -2549,7 +2549,9 @@ paths:
           cumplen). Es el último bloqueo que se evalúa. Con `justificacion` (no vacía, hasta 1000 caracteres) se finaliza igual: la
           justificación salta **solo** este bloqueo (los anteriores bloquean con o sin ella) y queda en `EventosHerramienta` con las
           medidas que faltaban (códigos, sin montos). Una ruta sin `valor_mercancia` (o con 0) no exige nada (el costeo trae un
-          aviso). La política se lee de sus tablas en cada finalización: un cambio de Datos se ve sin desplegar.
+          aviso). La política se lee de sus tablas en cada finalización: un cambio de Datos se ve sin desplegar. Solo se evalúa si no
+          bloquea otro motivo. Un conexo `fallido_definitivo` o `incierto` en Nexo no cumple la medida. Si la política no se puede leer:
+          503 `SERVICIO_OCUPADO` con `detalle.motivo = politica_seguros_no_disponible` (no se finaliza; reintentar).
         - Re-finalizar una ya finalizada es idempotente: 200 sin cambios (mismo `finalizada_at`, mismo `ETag`).
         - `If-Match` que no es la versión vigente: 409 `CONFLICTO_CONCURRENCIA`, sin cambios (también si ya estaba finalizada). Si
           el polling cambió el precio entre la lectura y el clic, la versión ya no coincide: el comercial recarga y nunca finaliza un
@@ -2590,6 +2592,12 @@ paths:
           $ref: '#/components/responses/NoEsTuya'
         '409':
           description: '`COTIZACION_NO_FINALIZABLE` (`estado_costeo` distinto de `autocosteo` y `entregada`, con `detalle.estado_costeo`; o `detalle.motivo` = `conexos_pendientes_de_leer`, #228 `conexos_pendientes_en_nexo` con `detalle.conexos_pendientes` o, HU-046.3 #269, `medidas_obligatorias_faltantes` con `detalle.rutas`) o `CONFLICTO_CONCURRENCIA`; sin cambios.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '503':
+          description: 'HU-046.3 (#269): `SERVICIO_OCUPADO` con `detalle.motivo = politica_seguros_no_disponible`: la política de seguros no se pudo leer; no se finalizó (reintentar).'
           content:
             application/json:
               schema:
@@ -7386,11 +7394,12 @@ components:
 
     PoliticaSegurosRuta:
       type: object
-      required: [tramo, medidas_recomendadas, medidas_obligatorias, aviso]
+      required: [tramo, medidas_recomendadas, medidas_obligatorias, aviso, aviso_codigo]
       description: |
         HU-046.3 (#269). El tramo se calcula con el `valor_mercancia` TOTAL de la ruta (no por camión): `valor_desde` exclusivo y
-        `valor_hasta` incluido (250.000.000 exacto cae en "> 150 – 250 M"). Sin `valor_mercancia` o con 0 no hay tramo: `tramo = null`,
-        listas vacías y `aviso`. Una medida obligatoria se cumple con CUALQUIERA de sus `conexos` (el `codigoServicio` de Nexo de un
+        `valor_hasta` incluido (250.000.000 exacto cae en "> 150 – 250 M"). `valor_mercancia` y los límites están SIEMPRE en pesos (COP),
+        también en una cotización en USD. Sin `valor_mercancia` o con 0 no hay tramo: `tramo = null`, listas vacías y `aviso`.
+        Un conexo cuyo `estado_nexo` es `fallido_definitivo` o `incierto` NO cumple ninguna medida (decisión del 2026-11-09). Una medida obligatoria se cumple con CUALQUIERA de sus `conexos` (el `codigoServicio` de Nexo de un
         conexo de la ruta); una medida sin conexos nunca es obligatoria pendiente (se lista como recomendada).
       properties:
         tramo:
@@ -7409,6 +7418,13 @@ components:
           type: string
           nullable: true
           description: Por qué no hay tramo (sin `valor_mercancia`, valor 0 o ningún tramo activo lo contiene). No bloquea "Finalizar".
+        aviso_codigo:
+          type: string
+          nullable: true
+          enum: [sin_valor_mercancia, sin_tramo, null]
+          description: |
+            Código estable del `aviso` (no compares textos): `sin_valor_mercancia` (el comercial registra el valor) o `sin_tramo` (error de
+            datos de la política). `null` sin aviso.
 
     TramoPoliticaSeguros:
       type: object

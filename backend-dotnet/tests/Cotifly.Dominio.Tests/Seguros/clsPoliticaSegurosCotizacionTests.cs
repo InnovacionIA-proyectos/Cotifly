@@ -218,6 +218,17 @@ public sealed class clsPoliticaSegurosCotizacionTests
         cotizacion.FinalizadaAt.Should().Be(finalizadaAt);
     }
 
+    [Fact]
+    public void UnConexoQueNoCuentaNoCumpleLaMedida()
+    {
+        // Decisión del usuario (2026-11-09): el caso de uso excluye los conexos fallido_definitivo o incierto en Nexo.
+        var cotizacion = ConConexo(Costeada(400 * M), "AVT_AUTO");
+
+        cotizacion.MedidasObligatoriasPendientes(_politica, (_, _) => false).Should().ContainSingle();
+        cotizacion.MedidasObligatoriasPendientes(_politica, (_, _) => true).Should().BeEmpty();
+        cotizacion.PrimeraRuta!.EvaluarPoliticaSeguros(_politica, _ => false).Pendientes.Should().ContainSingle();
+    }
+
     // ------------------------------------------------------------------ codigoServicio del conexo
 
     [Fact]
@@ -238,7 +249,7 @@ public sealed class clsPoliticaSegurosCotizacionTests
 
         var completados = cotizacion.CompletarCodigosConexos(c => c.IdServicioConexo == "FILA-VIEJA" ? " AVT_AUTO " : "OTRO");
 
-        completados.Should().Be(1);
+        completados.Should().ContainSingle().Which.IdServicioConexo.Should().Be("FILA-VIEJA");
         cotizacion.PrimeraRuta.Conexos.Select(c => c.CodigoServicio).Should().BeEquivalentTo(["AVT_MOTO", "AVT_AUTO"]);
         (cotizacion.PrecioFinal, cotizacion.VersionNegocio).Should().Be((precio, version));
         cotizacion.MedidasObligatoriasPendientes(_politica).Should().BeEmpty();
@@ -251,7 +262,7 @@ public sealed class clsPoliticaSegurosCotizacionTests
         var ruta = cotizacion.PrimeraRuta!;
 
         ruta.AgregarOActualizarConexo(new clsCambioConexo("FILA-AVT_MOTO-1", "AVT_MOTO", 120_000m, 2m));
-        cotizacion.CompletarCodigosConexos(_ => new string('X', 41)).Should().Be(0);
+        cotizacion.CompletarCodigosConexos(_ => new string('X', 41)).Should().BeEmpty();
 
         ruta.Conexos.Single().CodigoServicio.Should().Be("AVT_MOTO");
         ruta.AgregarOActualizarConexo(new clsCambioConexo("FILA-NUEVA", "Otro", 1m, 1m, CodigoServicio: new string('X', 41)));

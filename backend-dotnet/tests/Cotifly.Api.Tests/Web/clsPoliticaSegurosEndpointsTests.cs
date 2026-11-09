@@ -145,14 +145,63 @@ public sealed class clsPoliticaSegurosEndpointsTests : IDisposable
         await clsBaseDatosPruebas.EjecutarAsync(_entorno.BaseDatos.CadenaCotifly,
             "UPDATE s SET codigoServicio = NULL FROM dbo_cotifly.CotizacionServiciosConexos s JOIN dbo_cotifly.CotizacionLineasSolicitud l "
             + $"ON l.id = s.lineaSolicitudId JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}'");
-        _ = await CosteoAsync(sesion, folio);
+        var etagAntes = await EtagAsync(sesion, folio);
+        var versionAntes = await VersionNegocioAsync(folio);
         await _api.Factory.Services.GetRequiredService<clsAlmacenCategoriasConexos>().UltimaLectura.WaitAsync(TimeSpan.FromSeconds(30), Ct);
 
-        var costeo = await CosteoAsync(sesion, folio);
+        using var respuesta = await _api.EnviarAsync(_get, Url(RutaCosteo, folio), sesion.Access);
+        var costeo = await VerificarContratoAsync(respuesta, RutaCosteo, _get, HttpStatusCode.OK);
 
         costeo.GetProperty("rutas")[0].GetProperty("politica_seguros").GetProperty("medidas_obligatorias")[0]
             .GetProperty("estado").GetString().Should().Be("cumplida");
         (await CodigosAsync(folio)).Should().Be("AVT_AUTO", "la lectura del catálogo completa la fila en NULL");
+        // B2 de la auditoría: el GET que escribe el código no cambia el ETag ni la versión de negocio.
+        respuesta.Headers.ETag?.Tag.Should().Be(etagAntes);
+        (await VersionNegocioAsync(folio)).Should().Be(versionAntes);
+        (await EtagAsync(sesion, folio)).Should().Be(etagAntes);
+    }
+
+    [Fact]
+    public async Task EnUnaFinalizadaElGetCompletaElCodigoSinCambiarElEtagYSinBloqueDePolitica()
+    {
+        var (sesion, folio) = await CosteadaAsync(400_000_000);
+        using (var agregar = await _api.EnviarAsync(_post, Url("/web/cotizaciones/{folio}/costeo/servicios-conexos", folio), sesion.Access,
+                   clsApiWebPruebas.Json(new { items = new[] { new { linea_orden = 1, servicio_id = AcompananteTotal, cantidad = 1 } } }),
+                   await EtagAsync(sesion, folio)))
+        {
+            agregar.StatusCode.Should().Be(HttpStatusCode.OK, await agregar.Content.ReadAsStringAsync(Ct));
+        }
+
+        using (var finalizar = await _api.EnviarAsync(_post, Url(RutaFinalizar, folio), sesion.Access,
+                   """{"justificacion":"Prueba de la finalizada."}""", await EtagAsync(sesion, folio)))
+        {
+            finalizar.StatusCode.Should().Be(HttpStatusCode.OK, await finalizar.Content.ReadAsStringAsync(Ct));
+        }
+
+        await clsBaseDatosPruebas.EjecutarAsync(_entorno.BaseDatos.CadenaCotifly,
+            "UPDATE s SET codigoServicio = NULL FROM dbo_cotifly.CotizacionServiciosConexos s JOIN dbo_cotifly.CotizacionLineasSolicitud l "
+            + $"ON l.id = s.lineaSolicitudId JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}'");
+        var etagAntes = await EtagAsync(sesion, folio);
+        await _api.Factory.Services.GetRequiredService<clsAlmacenCategoriasConexos>().UltimaLectura.WaitAsync(TimeSpan.FromSeconds(30), Ct);
+
+        var costeo = await CosteoAsync(sesion, folio);
+
+        costeo.GetProperty("rutas")[0].GetProperty("politica_seguros").ValueKind.Should().Be(JsonValueKind.Null, "una finalizada no se recalcula");
+        (await CodigosAsync(folio)).Should().Be("AVT_AUTO", "el dato del catálogo se completa también en una finalizada");
+        (await EtagAsync(sesion, folio)).Should().Be(etagAntes);
+    }
+
+    [Fact]
+    public async Task FinalizarConUnCuerpoMalformadoEs400SinCambios()
+    {
+        var (sesion, folio) = await CosteadaAsync(400_000_000);
+
+        using var respuesta = await _api.EnviarAsync(_post, Url(RutaFinalizar, folio), sesion.Access, """{"justificacion": 12""",
+            await EtagAsync(sesion, folio));
+
+        respuesta.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await EscalarAsync<string>($"SELECT CONVERT(nvarchar(40), finalizadaAt) FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'"))
+            .Should().BeNull();
     }
 
     [Theory]
@@ -188,6 +237,9 @@ public sealed class clsPoliticaSegurosEndpointsTests : IDisposable
     private Task<string?> CodigosAsync(string folio) => EscalarAsync<string>(
         "SELECT STRING_AGG(ISNULL(s.codigoServicio, 'NULL'), ',') FROM dbo_cotifly.CotizacionServiciosConexos s JOIN dbo_cotifly.CotizacionLineasSolicitud l "
         + $"ON l.id = s.lineaSolicitudId JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}'");
+
+    private Task<int> VersionNegocioAsync(string folio) =>
+        EscalarAsync<int>($"SELECT versionNegocio FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'");
 
     private Task<T?> EscalarAsync<T>(string sql) => clsBaseDatosPruebas.EscalarAsync<T>(_entorno.BaseDatos.CadenaCotifly, sql);
 

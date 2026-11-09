@@ -1390,14 +1390,18 @@ Contrato completo: `CONTRATOS_API_COTIFLY_FRONTEND.md` 4.4.3 (`politica_seguros`
 
 - **Panel por ruta:** `rutas[].politica_seguros` del `GET .../costeo`. Mostrar el `tramo.nombre`, las `medidas_recomendadas` (por su
   `nombre`) y las `medidas_obligatorias` con su `estado` (`cumplida` / `pendiente`). Con `tramo = null`, mostrar el `aviso` (falta el valor
-  de la mercancía) y nada más: no bloquea.
+  de la mercancía; distinguir por `aviso_codigo`: `sin_valor_mercancia` o `sin_tramo`) y nada más: no bloquea. `valor_mercancia` va
+  siempre en pesos (COP), también en cotizaciones en USD.
 - **Botón "Agregar":** solo en una obligatoria `pendiente`. Ofrece los servicios del catálogo (`GET /web/servicios-conexos`) cuyo `codigo`
-  está en `conexos` (basta uno); se agrega con el `POST .../costeo/servicios-conexos` de siempre y la respuesta ya trae el panel
-  actualizado.
+  está en `conexos` (basta uno). Usar `POST .../costeo/servicios-conexos/lineas` (guarda el código del catálogo y la respuesta trae el
+  panel actualizado). Con `POST .../costeo/servicios-conexos` el código sale del catálogo en memoria del servidor: si la respuesta aún
+  muestra la medida `pendiente`, refrescar con `GET .../costeo`.
+- **Conexos que no cumplen:** un conexo con `estado_nexo` `fallido_definitivo` o `incierto` no cumple la medida (sigue `pendiente`):
+  mostrar que hay que revisarlo en NEXO o agregar otro.
 - **Finalizar:** ante 409 `COTIZACION_NO_FINALIZABLE` con `detalle.motivo = medidas_obligatorias_faltantes`, mostrar por ruta las medidas
   de `detalle.rutas` y pedir una justificación (texto obligatorio, hasta 1000 caracteres); reintentar `POST .../finalizar` con
   `{"justificacion": "…"}` y el `ETag` vigente. La justificación no salta los demás bloqueos (conexos pendientes en NEXO, estado del
-  costeo).
+  costeo). Si responde 503 `SERVICIO_OCUPADO` con `detalle.motivo = politica_seguros_no_disponible`, reintentar en unos segundos.
 - **`null`:** el panel no viene en una ruta rechazada, en una cotización finalizada ni en respuestas que no lo calculan: no borrarlo por un
   `null`; refrescar con `GET .../costeo`.
 

@@ -390,19 +390,22 @@ public sealed class clsCosteoCotizacionService(
 
     /// <summary>
     /// HU-046.3 (#269): completa el <c>codigoServicio</c> de los conexos que no lo tienen con el índice del catálogo de Nexo y lo guarda.
-    /// Nunca falla la lectura del costeo: si no se puede guardar (p. ej. otra petición cambió los conexos), se deja en el log y se completa
-    /// en otra lectura. No sube la versión de negocio (no cambia nada que vea el comercial: solo el dato del catálogo).
+    /// Nunca falla la lectura del costeo: si no se puede guardar, se deja en el log y se completa en otra lectura. B1 de la auditoría: se
+    /// guarda fila por fila con <c>WHERE codigoServicio IS NULL</c> (<see cref="IClsCotizacionRepository.GuardarCodigosServicioAsync"/>),
+    /// sin la unidad de trabajo: la lectura no toma el candado de la cabecera, no sube la versión de negocio ni cambia el <c>ETag</c>, y
+    /// una fila que otra petición borró o completó no se toca.
     /// </summary>
     private async Task CompletarCodigosConexosAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken)
     {
-        if (await clsPoliticaSegurosCosteo.CompletarCodigosAsync(categoriasConexos, cotizacion, logger, cancellationToken) == 0)
+        var completados = await clsPoliticaSegurosCosteo.CompletarCodigosAsync(categoriasConexos, cotizacion, logger, cancellationToken);
+        if (completados.Count == 0)
         {
             return;
         }
 
         try
         {
-            await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
+            await cotizaciones.GuardarCodigosServicioAsync(completados, CancellationToken.None);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

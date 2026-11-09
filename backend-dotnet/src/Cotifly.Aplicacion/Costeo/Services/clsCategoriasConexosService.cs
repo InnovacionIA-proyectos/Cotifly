@@ -144,7 +144,9 @@ public sealed class clsCategoriasConexosService(
         ArgumentNullException.ThrowIfNull(cotizacion);
         // HU-046.3 (#269): los que ya traen el codigoServicio guardado (script 21) no dependen del catálogo.
         var conexos = cotizacion.Rutas.SelectMany(r => r.Conexos).Where(c => c.CodigoServicio is null).ToList();
-        var indice = IndiceCalentando(cotizacion, conexos, CodigoDe);
+        // B6 de la auditoría: con el índice vigente no se recalienta por un código que no está (el servicio salió del catálogo o el
+        // nombre es ambiguo): sería una lectura de Nexo por minuto para siempre. Solo con el índice frío o vencido.
+        var indice = IndiceCalentando(cotizacion, conexos, (_, _) => null, recalentarSiFalta: false);
         var codigos = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         if (indice is not null)
         {
@@ -165,7 +167,8 @@ public sealed class clsCategoriasConexosService(
     /// <paramref name="resolver"/>, lo calienta en segundo plano (a lo sumo un intento por <see cref="clsAlmacenCategoriasConexos.EsperaTrasFallo"/>).
     /// </summary>
     private clsIndiceCategorias? IndiceCalentando(
-        clsCotizacionSolicitud cotizacion, IReadOnlyList<clsServicioConexoRuta> conexos, Func<clsIndiceCategorias, clsServicioConexoRuta, string?> resolver)
+        clsCotizacionSolicitud cotizacion, IReadOnlyList<clsServicioConexoRuta> conexos, Func<clsIndiceCategorias, clsServicioConexoRuta, string?> resolver,
+        bool recalentarSiFalta = true)
     {
         if (conexos.Count == 0)
         {
@@ -174,7 +177,7 @@ public sealed class clsCategoriasConexosService(
 
         var ahora = reloj.AhoraUtc;
         var indice = almacen.Vigente(ahora);
-        if ((indice is null || conexos.Any(c => resolver(indice, c) is null))
+        if ((indice is null || (recalentarSiFalta && conexos.Any(c => resolver(indice, c) is null)))
             && cotizacion.UsuarioId is { } usuarioId && almacen.ReservarIntento(ahora))
         {
             // #173 (observación del validador): no se espera a Nexo; se calienta el índice en segundo plano con su propio ámbito.

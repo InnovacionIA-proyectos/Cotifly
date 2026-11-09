@@ -32,6 +32,7 @@ public sealed class clsPoliticaSegurosTests
 
         evaluacion.Tramo!.Nombre.Should().Be(tramo);
         evaluacion.Aviso.Should().BeNull();
+        evaluacion.AvisoCodigo.Should().BeNull();
     }
 
     [Theory]
@@ -133,6 +134,7 @@ public sealed class clsPoliticaSegurosTests
 
         evaluacion.Tramo.Should().BeNull();
         evaluacion.Aviso.Should().Be(clsPoliticaSeguros.AvisoSinValorMercancia);
+        evaluacion.AvisoCodigo.Should().Be("sin_valor_mercancia");
         evaluacion.Obligatorias.Should().BeEmpty("sin tramo no se exige nada: el aviso no bloquea (decisión 4)");
         evaluacion.Recomendadas.Should().BeEmpty();
     }
@@ -144,6 +146,7 @@ public sealed class clsPoliticaSegurosTests
 
         evaluacion.Tramo.Should().BeNull();
         evaluacion.Aviso.Should().Be(clsPoliticaSeguros.AvisoSinTramo);
+        evaluacion.AvisoCodigo.Should().Be("sin_tramo");
         evaluacion.Pendientes.Should().BeEmpty();
     }
 

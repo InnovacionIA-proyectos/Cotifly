@@ -9,6 +9,12 @@ namespace Cotifly.Dominio.Seguros;
 /// </summary>
 public sealed class clsPoliticaSeguros
 {
+    /// <summary>B7 de la auditoría: <c>aviso_codigo</c> de la ruta sin <c>valor_mercancia</c> o con valor 0.</summary>
+    public const string CodigoSinValorMercancia = "sin_valor_mercancia";
+
+    /// <summary>B7 de la auditoría: <c>aviso_codigo</c> de un valor que no cae en ningún tramo activo (error de datos).</summary>
+    public const string CodigoSinTramo = "sin_tramo";
+
     /// <summary>Aviso de la ruta sin <c>valor_mercancia</c> o con valor 0 (decisión 4: avisa, no bloquea).</summary>
     public const string AvisoSinValorMercancia =
         "La ruta no tiene valor de la mercancía: no se puede saber qué exige la política de seguros. Registra el valor para ver sus medidas.";
@@ -46,12 +52,12 @@ public sealed class clsPoliticaSeguros
         ArgumentNullException.ThrowIfNull(codigosConexos);
         if (valorMercancia is not { } valor || valor <= 0m)
         {
-            return new clsEvaluacionPoliticaSeguro(null, [], [], AvisoSinValorMercancia);
+            return new clsEvaluacionPoliticaSeguro(null, [], [], AvisoSinValorMercancia) { AvisoCodigo = CodigoSinValorMercancia };
         }
 
         if (TramoDe(valor) is not { } tramo)
         {
-            return new clsEvaluacionPoliticaSeguro(null, [], [], AvisoSinTramo);
+            return new clsEvaluacionPoliticaSeguro(null, [], [], AvisoSinTramo) { AvisoCodigo = CodigoSinTramo };
         }
 
         var presentes = codigosConexos.Where(c => !string.IsNullOrWhiteSpace(c)).Select(c => c!.Trim())
@@ -125,6 +131,12 @@ public sealed record clsMedidaObligatoria(string Codigo, string Nombre, bool Cum
 public sealed record clsEvaluacionPoliticaSeguro(
     clsTramoPoliticaSeguro? Tramo, IReadOnlyList<clsMedidaRecomendada> Recomendadas, IReadOnlyList<clsMedidaObligatoria> Obligatorias, string? Aviso)
 {
+    /// <summary>
+    /// B7 de la auditoría: el código estable del <see cref="Aviso"/> (<see cref="clsPoliticaSeguros.CodigoSinValorMercancia"/> o
+    /// <see cref="clsPoliticaSeguros.CodigoSinTramo"/>), para que el frontend no compare textos; <c>null</c> sin aviso.
+    /// </summary>
+    public string? AvisoCodigo { get; init; }
+
     /// <summary>Las obligatorias pendientes (bloquean "Finalizar" sin justificación).</summary>
     public IReadOnlyList<clsMedidaObligatoria> Pendientes => [.. Obligatorias.Where(m => !m.Cumplida)];
 }

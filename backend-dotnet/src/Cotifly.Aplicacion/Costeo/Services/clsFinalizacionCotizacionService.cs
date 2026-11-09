@@ -124,8 +124,23 @@ public sealed class clsFinalizacionCotizacionService(
 
         var evaluable = !cotizacion.Finalizada && cotizacion.AdmiteFinalizar && !cotizacion.ConexosPendientesDeLeer;
         var pendientesEnNexo = evaluable ? await ConexosPendientesEnNexoAsync(cotizacion, usuarioId, cancellationToken) : 0;
-        // HU-046.3 (#269): la política de seguros de hoy (decisión 7: una finalizada no se recalcula; re-finalizar no la mira).
-        var medidas = evaluable ? await MedidasPendientesAsync(cotizacion, cancellationToken) : [];
+        // HU-046.3 (#269): la política de seguros de hoy (decisión 7: una finalizada no se recalcula; re-finalizar no la mira). B3 de la
+        // auditoría: solo si nada más bloquea (con conexos pendientes en Nexo el 409 es ese y no se lee la política).
+        // ORDEN (#259): MedidasPendientesAsync va DESPUÉS de ConexosPendientesEnNexoAsync. Esta guarda con GuardarCambiosAsync SIN versión
+        // (el registro del envío diferido); si se invirtiera, los codigoServicio completados en memoria se guardarían sin la versión del
+        // If-Match. Los códigos solo se guardan con la escritura versionada de la finalización.
+        IReadOnlyList<clsMedidasFaltantesRuta> medidas = [];
+        if (evaluable && pendientesEnNexo == 0)
+        {
+            var leidas = await MedidasPendientesAsync(cotizacion, cancellationToken);
+            if (leidas.EsFallo)
+            {
+                return (leidas.Error, false, []);
+            }
+
+            medidas = leidas.Valor;
+        }
+
         var finalizada = cotizacion.Finalizar(usuarioId, reloj.AhoraUtc, pendientesEnNexo, medidas, justificacion);
         if (finalizada.EsFallo)
         {
@@ -147,19 +162,44 @@ public sealed class clsFinalizacionCotizacionService(
     /// <summary>
     /// HU-046.3 (#269): las medidas obligatorias pendientes de las rutas cotizables con la política leída AHORA de sus tablas. Antes completa
     /// en memoria el <c>codigoServicio</c> de los conexos que no lo tienen (se guarda con la finalización). Sin repositorio (pruebas que no
-    /// lo registran) no exige nada. Si la lectura de la política lanza, la excepción sube: no se finaliza sin evaluarla.
+    /// lo registran) no exige nada. B4 de la auditoría: si la política no se puede leer, 503 <c>SERVICIO_OCUPADO</c> con
+    /// <c>detalle.motivo = politica_seguros_no_disponible</c> (auditado como todo rechazo; nada se guarda): no se finaliza sin evaluarla.
     /// </summary>
-    private async Task<IReadOnlyList<clsMedidasFaltantesRuta>> MedidasPendientesAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken)
+    private async Task<clsResultado<IReadOnlyList<clsMedidasFaltantesRuta>>> MedidasPendientesAsync(
+        clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken)
     {
         if (politicaSeguros is null)
         {
-            return [];
+            return clsResultado<IReadOnlyList<clsMedidasFaltantesRuta>>.Exito([]);
         }
 
         await clsPoliticaSegurosCosteo.CompletarCodigosAsync(categoriasConexos, cotizacion, logger, cancellationToken);
-        var politica = await politicaSeguros.ObtenerAsync(cancellationToken);
-        return cotizacion.MedidasObligatoriasPendientes(politica);
+        clsPoliticaSeguros politica;
+        try
+        {
+            politica = await politicaSeguros.ObtenerAsync(cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "No se pudo leer la política de seguros al finalizar {Folio}: no se finaliza sin evaluarla.", cotizacion.Folio);
+            return new clsErrorDominio(clsCodigosError.ServicioOcupado, MensajePoliticaNoDisponible)
+            {
+                Datos = new Dictionary<string, object?>(StringComparer.Ordinal) { ["motivo"] = MotivoPoliticaNoDisponible },
+            };
+        }
+
+        // Decisión del usuario (2026-11-09): un conexo fallido_definitivo o incierto en Nexo no cumple la medida.
+        var estados = await envioConexos.EstadosAsync(cotizacion, cancellationToken);
+        return clsResultado<IReadOnlyList<clsMedidasFaltantesRuta>>.Exito(cotizacion.MedidasObligatoriasPendientes(politica,
+            (ruta, conexo) => clsPoliticaSegurosCosteo.CuentaParaLaPolitica(estados.GetValueOrDefault((ruta.Id, conexo.IdServicioConexo)))));
     }
+
+    /// <summary>B4: <c>detalle.motivo</c> del 503 cuando la política de seguros no se puede leer al finalizar.</summary>
+    public const string MotivoPoliticaNoDisponible = "politica_seguros_no_disponible";
+
+    /// <summary>B4: mensaje del 503 cuando la política de seguros no se puede leer al finalizar.</summary>
+    public const string MensajePoliticaNoDisponible =
+        "No se pudo leer la política de seguros para revisar las medidas obligatorias: no se finalizó. Intenta de nuevo en unos segundos.";
 
     /// <summary>
     /// #228: conexos de las rutas cotizables (las rechazadas por la Mesa no cuentan: su conexo nunca llegará a Nexo) que todavía no están en

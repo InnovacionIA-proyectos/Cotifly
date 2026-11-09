@@ -102,6 +102,8 @@ public sealed class clsContratoReflexionTests(clsCotiflyApiFactory factory) : IC
         "CorridaSincronizacionMargenSap.estado", "ResultadoSincronizacionMargenSap.estado",
         // HU-046.3 (#269): cumplida | pendiente, las constantes de clsMedidaObligatoria (un bool en el dominio, no un enum).
         "MedidaObligatoriaPolitica.estado",
+        // HU-046.3 (#269, B7): constantes de clsPoliticaSeguros (CodigoSinValorMercancia, CodigoSinTramo).
+        "PoliticaSegurosRuta.aviso_codigo",
     };
 
     /// <summary>

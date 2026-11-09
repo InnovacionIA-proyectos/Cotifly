@@ -542,6 +542,32 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
         return maxima ?? 0;
     }
 
+    public async Task<int> GuardarCodigosServicioAsync(IReadOnlyCollection<clsServicioConexoRuta> conexos, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(conexos);
+        var guardadas = 0;
+        foreach (var conexo in conexos)
+        {
+            if (conexo.CodigoServicio is not { } codigo)
+            {
+                continue;
+            }
+
+            guardadas += await contexto.Set<clsServicioConexoRuta>()
+                .Where(c => c.Id == conexo.Id && c.CodigoServicio == null)
+                .ExecuteUpdateAsync(s => s.SetProperty(c => c.CodigoServicio, (string?)codigo), cancellationToken);
+            var entrada = contexto.Entry(conexo);
+            if (entrada.State != EntityState.Detached)
+            {
+                var propiedad = entrada.Property(c => c.CodigoServicio);
+                propiedad.OriginalValue = codigo;
+                propiedad.IsModified = false;
+            }
+        }
+
+        return guardadas;
+    }
+
     /// <summary>La cabecera con todo su agregado (rutas, camiones, mercancías y conexos), en consultas divididas.</summary>
     private IQueryable<clsCotizacionSolicitud> ConAgregado() =>
         contexto.CotizacionesSolicitud

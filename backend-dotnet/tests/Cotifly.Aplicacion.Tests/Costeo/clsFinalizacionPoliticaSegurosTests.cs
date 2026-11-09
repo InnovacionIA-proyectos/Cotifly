@@ -176,14 +176,54 @@ public sealed class clsFinalizacionPoliticaSegurosTests
     }
 
     [Fact]
-    public async Task SiLaPoliticaNoSePuedeLeerNoSeFinaliza()
+    public async Task SiLaPoliticaNoSePuedeLeerRespondeServicioOcupadoAuditadoYNoFinaliza()
     {
+        // B4 de la auditoría: falla cerrado, pero con un 503 controlado y auditado (no un 500 genérico).
         _politicas.ObtenerAsync(Arg.Any<CancellationToken>()).ThrowsAsync(new InvalidOperationException("tabla caída"));
 
-        var finalizar = () => Servicio().FinalizarAsync(_ana, _cotizacion.Folio, Version, "Riesgo lo aprobó.", Ct);
+        var resultado = await Servicio().FinalizarAsync(_ana, _cotizacion.Folio, Version, "Riesgo lo aprobó.", Ct);
 
-        await finalizar.Should().ThrowAsync<InvalidOperationException>();
+        resultado.Error.Codigo.Should().Be(clsCodigosError.ServicioOcupado);
+        resultado.Error.Datos!["motivo"].Should().Be(clsFinalizacionCotizacionService.MotivoPoliticaNoDisponible);
         _cotizacion.Finalizada.Should().BeFalse();
+        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
+        _auditados.Should().ContainSingle("el rechazo queda auditado");
+    }
+
+    [Fact]
+    public async Task ConConexosPendientesEnNexoNoSeLeeLaPolitica()
+    {
+        // B3 de la auditoría: el 409 es el de los conexos pendientes; la política no se lee (ni su fallo tapa ese 409).
+        _envioConexos.EstadosAsync(Arg.Any<clsCotizacionSolicitud>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<(Guid, string), string> { [(_cotizacion.PrimeraRuta!.Id, "S-1")] = clsEnvioConexosNexoService.VisiblePendiente });
+        _nexo.LeerCotizacionAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio(clsCodigosError.NexoNoDisponible, "Nexo no responde."));
+        _politicas.ObtenerAsync(Arg.Any<CancellationToken>()).ThrowsAsync(new InvalidOperationException("tabla caída"));
+
+        var resultado = await Servicio().FinalizarAsync(_ana, _cotizacion.Folio, Version, Ct);
+
+        resultado.Error.Datos!["motivo"].Should().Be(clsCotizacionSolicitud.CodigoConexosPendientesEnNexo);
+        await _politicas.DidNotReceiveWithAnyArgs().ObtenerAsync(Ct);
+    }
+
+    [Theory]
+    [InlineData(clsEnvioConexosNexoService.VisibleFallidoDefinitivo, false)]
+    [InlineData(clsEnvioConexosNexoService.VisibleIncierto, false)]
+    [InlineData(clsEnvioConexosNexoService.VisibleEnviado, true)]
+    public async Task UnAcompananteFallidoOInciertoEnNexoNoCumpleLaObligacion(string estado, bool finaliza)
+    {
+        // Decisión del usuario (2026-11-09): solo cuenta un conexo enviado o pendiente (este último lo bloquea #228 aparte).
+        Usar(400 * M, "AVT_AUTO");
+        _envioConexos.EstadosAsync(Arg.Any<clsCotizacionSolicitud>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<(Guid, string), string> { [(_cotizacion.PrimeraRuta!.Id, "FILA-AVT_AUTO")] = estado });
+
+        var resultado = await Servicio().FinalizarAsync(_ana, _cotizacion.Folio, Version, Ct);
+
+        resultado.EsExitoso.Should().Be(finaliza);
+        if (!finaliza)
+        {
+            resultado.Error.Datos!["motivo"].Should().Be(clsCotizacionSolicitud.CodigoMedidasObligatoriasFaltantes);
+        }
     }
 
     [Fact]

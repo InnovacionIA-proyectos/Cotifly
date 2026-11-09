@@ -1,8 +1,11 @@
+using Cotifly.Aplicacion.Cotizaciones.Repositories;
+using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Dominio.Seguros;
 using Cotifly.Infraestructura.Comun.Persistence;
 using Cotifly.Infraestructura.Cotizaciones.Repositories;
 using Cotifly.Pruebas.Comun;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
@@ -97,5 +100,19 @@ public sealed class clsPoliticaSegurosRepositoryTests(clsBaseDatosPruebas baseDa
             "SELECT CONCAT(DATA_TYPE, '|', CHARACTER_MAXIMUM_LENGTH, '|', IS_NULLABLE) FROM INFORMATION_SCHEMA.COLUMNS "
             + "WHERE TABLE_SCHEMA = 'dbo_cotifly' AND TABLE_NAME = 'CotizacionServiciosConexos' AND COLUMN_NAME = 'codigoServicio'"))
             .Should().Be("nvarchar|40|YES");
+    }
+
+    [Fact]
+    public async Task GuardarElCodigoDeUnaFilaQueOtraPeticionBorroNoFallaYNoTocaNada()
+    {
+        // B2 de la auditoría: el GET del costeo guarda fila por fila con WHERE codigoServicio IS NULL; una fila borrada en paralelo da 0.
+        var cotizacion = clsCotizacionMuestra.ConConexo(clsCotizacionMuestra.Costeada(), "FILA-BORRADA", "Acompañante", 100_000m);
+        cotizacion.CompletarCodigosConexos(_ => "AVT_AUTO").Should().ContainSingle();
+        await using var ambito = NuevoAmbito();
+
+        var guardadas = await ambito.ServiceProvider.GetRequiredService<IClsCotizacionRepository>()
+            .GuardarCodigosServicioAsync([.. cotizacion.PrimeraRuta!.Conexos], Ct);
+
+        guardadas.Should().Be(0);
     }
 }
