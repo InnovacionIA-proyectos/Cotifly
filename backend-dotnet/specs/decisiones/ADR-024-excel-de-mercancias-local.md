@@ -109,8 +109,13 @@ XML y el libro, válido, era `LIBRO_ILEGIBLE`; en pliegos de clientes la impresi
    (`...vmlDrawing`, sin `+xml`), que ClosedXML lee como XML para los comentarios: dejarlo fuera abriría un hueco en el tope de
    elementos. Las demás partes se saltan, como ya se saltaban las imágenes y el `vbaProject`.
 2. Los topes (entradas, 64 MB descomprimidos, 1.000.000 de elementos) y el rechazo del DTD no cambian. Una parte que ClosedXML lee
-   como XML no puede saltarse el conteo cambiando su tipo en `[Content_Types].xml`: el SDK de Open XML exige el tipo de las partes que
-   conoce y el libro no abre (`LIBRO_ILEGIBLE`); hay pruebas con una hoja densa y una con DTD declaradas como binarias.
+   como XML no puede saltarse el conteo cambiando su tipo en `[Content_Types].xml`. El SDK de Open XML exige el tipo de las partes de
+   **tipo fijo** (hoja, cadenas, estilos, VML...) y, si no coincide, el libro no abre (`LIBRO_ILEGIBLE`). La parte principal
+   (`xl/workbook.xml`, `WorkbookPart`) **no** tiene tipo fijo: el SDK la abre con cualquier tipo y ClosedXML la lee igual, así que se
+   cuenta **siempre**, declare el tipo que declare (auditoría de #277: un `workbook.xml` de 10 millones de elementos declarado
+   `application/octet-stream`, `image/png` o `...sheet.main` sin `+xml` pasaba el control en un zip de 90 KB y ClosedXML ocupaba
+   unos 1,35 GB). Las demás partes sin tipo fijo (imágenes, XML personalizado, propiedades, incrustadas, miniatura) ClosedXML no las
+   lee como XML. Hay pruebas con una hoja y con el libro principal densos y con DTD declarados con tipos no XML.
 3. Los tres lectores (mercancías, pliego y exportación) usan esta misma pieza: ninguno tiene un filtro propio.
 
 ## Pendientes

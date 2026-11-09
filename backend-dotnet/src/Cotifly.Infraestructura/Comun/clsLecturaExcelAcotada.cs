@@ -213,7 +213,8 @@ public sealed class clsLecturaExcelAcotada : IDisposable
             foreach (var parte in documento.GetAllParts())
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (!EsParteXml(parte.ContentType))
+                // La parte principal se cuenta siempre: el SDK no fija su tipo y la abre con cualquiera (ver EsParteXml).
+                if (parte is not WorkbookPart && !EsParteXml(parte.ContentType))
                 {
                     continue;
                 }
@@ -247,8 +248,10 @@ public sealed class clsLecturaExcelAcotada : IDisposable
     /// Las demás son binarias y se saltan: imágenes, <c>vbaProject</c>, objetos incrustados y la configuración de impresión que guarda
     /// Excel (<c>xl/printerSettings/printerSettings1.bin</c>, de tipo <c>...spreadsheetml.printerSettings</c>). Antes bastaba «xml» en
     /// el tipo y esas partes de <c>openxmlformats</c> llegaban al lector XML: un libro con la impresión configurada era
-    /// <c>LIBRO_ILEGIBLE</c>. Una parte que ClosedXML lee como XML no puede saltarse el conteo cambiando su tipo: el SDK de Open XML exige
-    /// el tipo de las partes que conoce (hoja, cadenas, estilos...) y si no coincide el libro no abre (<c>LIBRO_ILEGIBLE</c>).
+    /// <c>LIBRO_ILEGIBLE</c>. Cambiar el tipo en <c>[Content_Types].xml</c> no salta el conteo: el SDK de Open XML exige el tipo de las
+    /// partes de tipo fijo (hoja, cadenas, estilos, VML...) y si no coincide el libro no abre (<c>LIBRO_ILEGIBLE</c>); la parte principal
+    /// (<c>xl/workbook.xml</c>) no tiene tipo fijo, así que <see cref="VerificarElementos"/> la cuenta siempre, declare el tipo que declare.
+    /// Las demás partes sin tipo fijo (imágenes, XML personalizado, propiedades, incrustadas, miniatura) ClosedXML no las lee como XML.
     /// </summary>
     internal static bool EsParteXml(string tipo)
     {
