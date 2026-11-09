@@ -40,9 +40,17 @@ public sealed partial class clsCosteoCotizacionService
         ArgumentNullException.ThrowIfNull(documento);
         ArgumentNullException.ThrowIfNull(cotizacion);
         var rutas = cotizacion.RutasOrdenadas;
-        if (documento.Secciones.Count != rutas.Count || !rutas.Any(r => ValorSeguroPdf(cotizacion, r) is not null))
+        if (!rutas.Any(r => ValorSeguroPdf(cotizacion, r) is not null))
         {
             return documento;
+        }
+
+        // B3 de la auditoría: la fila de la ruta ya imprime su precio sin el seguro (PrecioRutaPdf); omitir la fila del seguro dejaría el PDF
+        // sin cuadrar a la vista. Payload y PayloadPliego arman una sección por ruta: otra cosa es un error de programación.
+        if (documento.Secciones.Count != rutas.Count)
+        {
+            throw new InvalidOperationException(
+                $"El PDF de {cotizacion.Folio} tiene {documento.Secciones.Count} secciones y {rutas.Count} rutas: no se puede ubicar la fila del seguro.");
         }
 
         var secciones = documento.Secciones

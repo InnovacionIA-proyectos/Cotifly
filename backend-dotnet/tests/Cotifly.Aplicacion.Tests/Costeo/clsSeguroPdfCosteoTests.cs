@@ -127,6 +127,24 @@ public sealed class clsSeguroPdfCosteoTests
         _documento.TotalGeneral!.Valor.Should().Be("$1.675.926 COP");
     }
 
+    /// <summary>
+    /// B3 de la auditoría: si las secciones no siguen a las rutas, la fila del seguro no se omite en silencio (la ruta ya imprime su precio
+    /// sin el seguro y el total no cuadraría a la vista): es un error de programación.
+    /// </summary>
+    [Fact]
+    public void SiLasSeccionesNoSonUnaPorRutaLaFilaDelSeguroNoSeOmiteEnSilencio()
+    {
+        var cotizacion = UnaRuta();
+        var documento = clsConstructorDocumentoCotizacion.Construir(
+            clsCosteoCotizacionService.Payload(cotizacion, "Importacion", "COP"), cotizacion.Folio,
+            new clsFirmaDocumento("Ana", null, null, null), DateOnly.FromDateTime(clsCotizacionMuestra.Ahora.UtcDateTime), "COP", 0m).Valor;
+
+        FluentActions.Invoking(() => clsCosteoCotizacionService.ConFilasSeguro(documento with { Secciones = [] }, cotizacion, "COP"))
+            .Should().Throw<InvalidOperationException>();
+        clsCosteoCotizacionService.ConFilasSeguro(documento with { Secciones = [] }, UnaRuta(conSeguro: false), "COP").Secciones
+            .Should().BeEmpty("sin seguro no hay fila que agregar");
+    }
+
     [Fact]
     public void ElPdfNoImprimeLaTasaDelSeguro()
     {

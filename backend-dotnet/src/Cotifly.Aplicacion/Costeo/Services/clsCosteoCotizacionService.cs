@@ -695,8 +695,9 @@ public sealed partial class clsCosteoCotizacionService(
         }
 
         // En el pliego cada fila tiene su propio precio: aquí solo la moneda. En una ruta, la tarifa impresa es el precio FINAL de la ruta
-        // (HU-033, #199, decisión 5: transporte y conexos incluidos, sin desglose), que debe ser exactamente su precioFinalLinea. Sin costo ni
-        // margen en la trazabilidad: el PDF ya no los refleja (no hay nada que recalcular contra ellos).
+        // (HU-033, #199, decisión 5: transporte y conexos incluidos, sin desglose) menos el seguro de la mercancía, que va en su propia fila
+        // (HU-045.3, #265): debe ser exactamente PrecioRutaPdf (precioFinalLinea − valor_seguro). Sin costo ni margen en la trazabilidad: el PDF
+        // ya no los refleja (no hay nada que recalcular contra ellos).
         var primera = cotizacion.PrimeraRuta;
         var precioRuta = esPliego || primera is null ? null : PrecioRutaPdf(cotizacion, primera);
         var traza = new clsTrazabilidadCotizacion(

@@ -1395,7 +1395,7 @@ El comercial marca en el costeo, ruta por ruta, si la ruta incluye el seguro de 
 ### 5.19 PDF del costeo (`POST /web/cotizaciones/{folio}/costeo/pdf`). En QA
 
 - Sin cuerpo. El servidor arma el PDF: una fila con origen, destino, vehículo y el **valor final de la ruta** (transporte con su margen y conexos a su venta, sin margen, HU-043.2; sin desglose), los conexos listados como incluidos **sin precio** y, al final, el "VALOR TOTAL DE LA COTIZACIÓN" con la leyenda de impuestos (HU-033, #199; antes la tarifa del transporte y cada conexo con su precio).
-- 201 `SalidaPdf` `{cotizacion_id, folio, pdf_url, registrada_en_bd: true}`.
+- 201 `SalidaPdf` `{cotizacion_id, folio, pdf_url, registrada_en_bd: true, aviso_seguro: null}` (HU-045.3: `aviso_seguro` trae `{codigo, mensaje, rutas[]}` si alguna ruta tiene el seguro marcado sin valor de la mercancía; ver 5.18.3).
 - HU-045.3 (#265): la ruta con seguro de la mercancía lleva una fila propia, "Seguro de la mercancía", aparte del flete; el total no cambia.
 - 400 `PDF_PAYLOAD_INVALIDO`. HU-045.3: el 201 puede traer `aviso_seguro` (ver 5.18.3). 404. 409 `COSTEO_NO_LISTO`, `PDF_YA_GENERADO` (ya hay un PDF **vigente**), `PDF_YA_ENVIADO` o `CONFLICTO_CONCURRENCIA` (`If-Match` opcional aquí). 503 `PDF_RENDER_NO_DISPONIBLE` (transitorio: reintentar; desde #92).
 - **Ya no es "una sola vez".** Mientras la cotización no se haya enviado ni tenga resultado, ajustar el margen, los conexos o los textos, o re-solicitar en el mismo folio, invalida el PDF (`pdf_url = null`, `pdf_desactualizado = true`) y se **regenera** con este mismo endpoint (ADR-018 §11). Ya enviada o con resultado, los cambios van en una versión `-vN`. Antes de generarlo, confirmar el teléfono (`GET`/`PUT /web/usuario/telefono`).

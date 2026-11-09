@@ -2985,7 +2985,7 @@ número). El "VALOR TOTAL DE LA COTIZACIÓN" sigue siendo la suma de los `precio
 - **Rol:** ambos (dueño). **Headers:** `If-Match` opcional. **Sin cuerpo.**
 
 ```json
-{ "cotizacion_id": "5b0f8a3e-2c1d-4e6f-9a7b-3c2d1e0f9a8b", "folio": "PCN-900555111-DG-15102026-001", "pdf_url": "/pdfs/PCN-900555111-DG-15102026-001.pdf", "registrada_en_bd": true }
+{ "cotizacion_id": "5b0f8a3e-2c1d-4e6f-9a7b-3c2d1e0f9a8b", "folio": "PCN-900555111-DG-15102026-001", "pdf_url": "/pdfs/PCN-900555111-DG-15102026-001.pdf", "registrada_en_bd": true, "aviso_seguro": null }
 ```
 
 | HTTP | Código | UI |
