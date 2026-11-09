@@ -720,14 +720,21 @@ public sealed class clsImportacionExcelNexo(
     private sealed record clsColumnaPlantillaWire(int Indice, string? Campo, string? Transformacion);
 
     /// <summary>
-    /// #256 (B2): <c>clienteId</c> leído de verdad: <c>null</c> explícito o un GUID. Ausente (<see cref="JsonValueKind.Undefined"/>) o con otra
-    /// forma, no: así el término nunca pasa por general.
+    /// #256 (B2): <c>clienteId</c> leído de verdad: <c>null</c> explícito o un GUID. Ausente (<see cref="JsonValueKind.Undefined"/>, un cambio de
+    /// forma de NEXO), no: el término nunca pasa por general.
     /// </summary>
-    private static bool ClienteIdValido(JsonElement clienteId) =>
-        clienteId.ValueKind == JsonValueKind.Null || (clienteId.ValueKind == JsonValueKind.String && clienteId.TryGetGuid(out _));
+    private static bool ClienteIdValido(JsonElement clienteId) => clienteId.ValueKind != JsonValueKind.Undefined;
 
-    private static Guid? ClienteIdDe(JsonElement clienteId) =>
-        clienteId.ValueKind == JsonValueKind.String && clienteId.TryGetGuid(out var id) ? id : null;
+    /// <summary>
+    /// El <c>clienteId</c> del término: <c>null</c> si vino <c>null</c> o no vino. Con otra forma (un texto que no es GUID, un número...) la
+    /// respuesta no se puede leer: <see cref="JsonException"/> → <c>NEXO_NO_DISPONIBLE</c>, como el resto de una respuesta con otra forma.
+    /// </summary>
+    private static Guid? ClienteIdDe(JsonElement clienteId) => clienteId.ValueKind switch
+    {
+        JsonValueKind.Undefined or JsonValueKind.Null => null,
+        JsonValueKind.String when clienteId.TryGetGuid(out var id) => id,
+        _ => throw new JsonException("clienteId con otra forma en el diccionario de NEXO"),
+    };
 
     /// <summary><c>ClienteId</c> como <see cref="JsonElement"/> para distinguir <c>null</c> de "no vino" (#256, B2).</summary>
     private sealed record clsTerminoWire(
