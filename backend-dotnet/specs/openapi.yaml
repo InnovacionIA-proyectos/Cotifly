@@ -4967,6 +4967,16 @@ components:
                 reintenta al día siguiente. El `429 DEMASIADAS_SOLICITUDES` de NEXO, el cupo por minuto, sigue siendo
                 `COSTEO_NEXO_NO_DISPONIBLE` con el `Retry-After` en `detalle.motivo`). `CUBICACION_DEMASIADO_GRANDE` también si NEXO
                 lo responde al alta (más de 200 posiciones o 10.000 unidades en una línea): `error_envio` definitivo.
+                HU-044.1 (#252, ADR-028): importación inteligente del Excel con NEXO. Los rechazos de NEXO llegan con su mismo código y su
+                mensaje: `ENCABEZADOS_REQUERIDOS`, `DEMASIADAS_COLUMNAS`, `DEMASIADAS_FILAS`, `ENCABEZADO_DEMASIADO_LARGO`,
+                `COLUMNA_FUERA_DE_RANGO`, `COLUMNA_INVALIDA`, `MAPEO_REQUERIDO`, `CAMPO_INVALIDO`, `CAMPO_DUPLICADO`, `CAMPO_REQUERIDO`,
+                `TRANSFORMACION_INVALIDA`, `TRANSFORMACION_NO_APLICA`, `VALORES_REQUERIDOS`, `DEMASIADOS_VALORES`, `VALOR_DEMASIADO_LARGO`,
+                `CLIENTE_NO_ENCONTRADO`, `CLIENTE_NIT_INVALIDO` (el NIT no es de ningún cliente ni prospecto al guardar una plantilla o un
+                formato), `NOMBRE_DEMASIADO_LARGO`, `INSTRUCCIONES_DEMASIADO_LARGAS`, `RECETA_REQUERIDA`, `RECETA_INVALIDA`, `RECETA_SIN_FILAS`
+                y `TIPO_TERMINO_INVALIDO` (400), `PLANTILLA_NO_ENCONTRADA` y `RECETA_NO_ENCONTRADA` (404 en NEXO, al borrar).
+                `CLIENTE_REQUERIDO` (400) también lo responde Cotifly, sin llamar a NEXO, al listar plantillas o formatos sin el NIT de la
+                licitación. `IA_TOPE_DIARIO` (429) es el cupo diario de IA del comercial y no bloquea a los demás. Sin la importación
+                habilitada, NEXO caído o sin respuesta a tiempo: `NEXO_NO_DISPONIBLE` (503). Los endpoints `/web` llegan con #253 a #256.
               enum:
                 - MARGEN_LINEA_DESCONOCIDA
                 - PRECIO_INVALIDO
@@ -5055,6 +5065,32 @@ components:
                 - SAP_MARGEN_NO_DISPONIBLE
                 - LINEA_NEGOCIO_INVALIDO
                 - IA_TOPE_DIARIO
+                - ENCABEZADOS_REQUERIDOS
+                - DEMASIADAS_COLUMNAS
+                - DEMASIADAS_FILAS
+                - ENCABEZADO_DEMASIADO_LARGO
+                - COLUMNA_FUERA_DE_RANGO
+                - COLUMNA_INVALIDA
+                - MAPEO_REQUERIDO
+                - CAMPO_INVALIDO
+                - CAMPO_DUPLICADO
+                - CAMPO_REQUERIDO
+                - TRANSFORMACION_INVALIDA
+                - TRANSFORMACION_NO_APLICA
+                - VALORES_REQUERIDOS
+                - DEMASIADOS_VALORES
+                - VALOR_DEMASIADO_LARGO
+                - CLIENTE_REQUERIDO
+                - CLIENTE_NO_ENCONTRADO
+                - CLIENTE_NIT_INVALIDO
+                - NOMBRE_DEMASIADO_LARGO
+                - PLANTILLA_NO_ENCONTRADA
+                - INSTRUCCIONES_DEMASIADO_LARGAS
+                - RECETA_REQUERIDA
+                - RECETA_INVALIDA
+                - RECETA_SIN_FILAS
+                - RECETA_NO_ENCONTRADA
+                - TIPO_TERMINO_INVALIDO
             mensaje:
               type: string
             detalle:

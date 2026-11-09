@@ -203,6 +203,12 @@ services:
       # HU-033: sincronización diferida del resultado con Nexo.
       CosteoNexo__MaximoFallosSincronizacionResultado: ${CosteoNexo__MaximoFallosSincronizacionResultado:-10}
       CosteoNexo__EdadMaximaSincronizacionResultadoDias: ${CosteoNexo__EdadMaximaSincronizacionResultadoDias:-30}
+      # Importación inteligente del Excel con NEXO (HU-044.1, #252, ADR-028). Apagada o sin Nexo__UrlBase: NEXO_NO_DISPONIBLE, sin llamar a NEXO.
+      # Tiempo por intento (10-600 s) y el de leer-estructura y PUT recetas-lectura (180-900 s, sin reintentos).
+      ImportacionInteligente__Habilitada: ${ImportacionInteligente__Habilitada:-true}
+      ImportacionInteligente__TimeoutSegundos: ${ImportacionInteligente__TimeoutSegundos:-90}
+      ImportacionInteligente__TimeoutLecturaSegundos: ${ImportacionInteligente__TimeoutLecturaSegundos:-240}
+      ImportacionInteligente__LimiteRespuestaMegabytes: ${ImportacionInteligente__LimiteRespuestaMegabytes:-20}
 
       # Cubicador (HU-021.5, HU-023; opciones C y D del E2E 2026-10-16). Sin UrlBase el cubicador queda sin configurar: cada ruta va al
       # camión del respaldo y los catálogos del cubicador responden 503. UrlBase y ApiKey solo en Dokploy; ApiKey es SECRETO, obligatoria

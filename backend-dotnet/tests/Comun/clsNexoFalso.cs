@@ -12,7 +12,7 @@ namespace Cotifly.Pruebas.Comun;
 /// solicitudes, consulta de la solicitud, "crear o recuperar" la cotización y marcar el resultado. Las pruebas cambian el estado
 /// (costear, entregar, descartar, caer) como lo haría la Mesa de Nexo. Seguro para varios hilos.
 /// </summary>
-public sealed class clsNexoFalso : HttpMessageHandler
+public sealed partial class clsNexoFalso : HttpMessageHandler
 {
     /// <summary>Raíz del servicio en las pruebas (sin <c>/api</c>, ADR-015 §8).</summary>
     public const string UrlBase = clsNexoClientesFalso.UrlBase;
@@ -458,10 +458,12 @@ public sealed class clsNexoFalso : HttpMessageHandler
         cancellationToken.ThrowIfCancellationRequested();
         var esMultipart = request.Content?.Headers.ContentType?.MediaType == "multipart/form-data";
         var cuerpo = request.Content is null || esMultipart ? null : await request.Content.ReadAsStringAsync(cancellationToken);
+        Dictionary<string, string>? formulario = null;
         if (esMultipart)
         {
             var bytes = await request.Content!.ReadAsByteArrayAsync(cancellationToken);
             UltimoArchivoAnalizado = bytes.LongLength;
+            formulario = await LeerFormularioAsync(request.Content, cancellationToken);
         }
         var identidad = request.Headers.TryGetValues(clsPeticionNexo.EncabezadoIdentidad, out var valores) ? valores.FirstOrDefault() : null;
         _peticiones.Enqueue(new clsPeticionNexo(
@@ -532,6 +534,8 @@ public sealed class clsNexoFalso : HttpMessageHandler
                     CotizacionPorSolicitud(r["/api/cotizaciones/por-solicitud/".Length..]),
                 ("GET", var r) when r.StartsWith("/api/cotizaciones/", StringComparison.Ordinal) => LeerCotizacion(r["/api/cotizaciones/".Length..]),
                 ("GET", "/api/servicios-conexos") => CatalogoConexos(request.RequestUri),
+                // HU-044.1 (#252): importación inteligente (clsNexoFalsoImportacion.cs).
+                (var m, var r) when EsRutaImportacion(r) => Importacion(m, r, request.RequestUri!, cuerpo, formulario),
                 _ => Error(HttpStatusCode.NotFound, "RUTA_NO_ENCONTRADA", $"{request.Method} {ruta}"),
             };
         }
