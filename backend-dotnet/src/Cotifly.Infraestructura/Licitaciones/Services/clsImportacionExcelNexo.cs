@@ -31,8 +31,9 @@ namespace Cotifly.Infraestructura.Licitaciones.Services;
 /// llamadas que pueden gastar IA (<c>sugerir-mapeo</c>, <c>normalizar-valores</c>, <c>leer-estructura</c>, <c>PUT recetas-lectura</c>) y las
 /// demás escrituras nunca. Un 429 no cuenta para el circuito. El cuerpo se lee dentro del tiempo del intento y con el tope
 /// <c>ImportacionInteligente:LimiteRespuestaMegabytes</c>.</para>
-/// <para><b>Errores.</b> 400/404 con un código de <see cref="CodigosNexo"/> → ese código con el mensaje de NEXO; otro 4xx →
-/// <c>COSTEO_NEXO_RECHAZADA</c>; <c>429 IA_TOPE_DIARIO</c> → <c>IA_TOPE_DIARIO</c> sin tocar el bloqueo global de
+/// <para><b>Errores.</b> 400/404 con un código de <see cref="CodigosNexo"/> → ese código con el mensaje de NEXO; el 400
+/// <c>VALIDATION_ERROR</c> de <c>leer-estructura</c> → ese código con el mensaje y solo los nombres de los campos de <c>details</c>
+/// (<c>detalle.campos</c>, #253); otro 4xx (también <c>VALIDATION_ERROR</c> en las demás rutas) → <c>COSTEO_NEXO_RECHAZADA</c>; <c>429 IA_TOPE_DIARIO</c> → <c>IA_TOPE_DIARIO</c> sin tocar el bloqueo global de
 /// <see cref="clsCupoNexoHandler"/> (estas rutas no son de listados limitados); otro 429 (<c>DEMASIADAS_SOLICITUDES</c>) → no disponible
 /// con el <c>Retry-After</c> en el detalle; 401/403 → <c>NEXO_SIN_PERMISO</c>; 413 → <c>ARCHIVO_DEMASIADO_GRANDE</c>; 5xx, red, tiempo
 /// agotado, circuito abierto, JSON inválido (o un null dentro de una lista), respuesta demasiado grande, comercial sin
@@ -80,8 +81,9 @@ public sealed class clsImportacionExcelNexo(
     public const string MensajeNitInvalido = "El NIT del cliente de la licitación no es válido.";
 
     /// <summary>
-    /// Códigos de error de NEXO de estos endpoints que llegan tal cual (CONTRATO.md §3.3 y §3.19.1). <c>VALIDATION_ERROR</c> no está: es
-    /// una petición de Cotifly mal armada y sale como <c>COSTEO_NEXO_RECHAZADA</c> con el código en el detalle.
+    /// Códigos de error de NEXO de estos endpoints que llegan tal cual (CONTRATO.md §3.3 y §3.19.1). <c>VALIDATION_ERROR</c> no está: en
+    /// casi todas las rutas es una petición de Cotifly mal armada y sale como <c>COSTEO_NEXO_RECHAZADA</c> con el código en el detalle; la
+    /// excepción es <c>leer-estructura</c> (ver <see cref="CodigoValidacionNexo"/>).
     /// </summary>
     public static readonly IReadOnlySet<string> CodigosNexo = new HashSet<string>(StringComparer.Ordinal)
     {
@@ -486,10 +488,38 @@ public sealed class clsImportacionExcelNexo(
         if (respuesta.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.NotFound && codigo is not null
             && (CodigosNexo.Contains(codigo) || (codigo == CodigoValidacionNexo && ruta == RutaLeerEstructura)))
         {
-            return new clsErrorDominio(codigo, mensaje ?? MensajeRechazada, detalle);
+            var campos = codigo == CodigoValidacionNexo ? CamposDeValidacion(texto) : null;
+            return new clsErrorDominio(codigo, mensaje ?? MensajeRechazada, detalle)
+            {
+                Datos = campos is null ? null : new Dictionary<string, object?>(StringComparer.Ordinal) { ["campos"] = campos },
+            };
         }
 
         return new clsErrorDominio(clsCodigosError.CosteoNexoRechazada, MensajeRechazada, detalle);
+    }
+
+    /// <summary>
+    /// Solo los NOMBRES de las claves de <c>details</c> de un <c>VALIDATION_ERROR</c> de NEXO (<c>{ "Campo": ["mensaje"] }</c>, DU §2.1): los
+    /// valores pueden repetir datos del Excel o de la receta. <c>null</c> si no hay <c>details</c> con claves. A lo sumo 20.
+    /// </summary>
+    private static List<string>? CamposDeValidacion(string texto)
+    {
+        try
+        {
+            using var documento = JsonDocument.Parse(texto);
+            if (documento.RootElement.ValueKind != JsonValueKind.Object
+                || !documento.RootElement.TryGetProperty("details", out var detalles) || detalles.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            var campos = detalles.EnumerateObject().Select(p => p.Name).Where(n => n.Length > 0).Take(20).ToList();
+            return campos.Count == 0 ? null : campos;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private static (string? Codigo, string? Mensaje) LeerError(string texto)

@@ -2178,7 +2178,9 @@ columnas en `ignorar` e `ia_usada = false`. `IA_TOPE_DIARIO` es 429.
 `POST /web/licitaciones/leer-estructura` (multipart: `archivo`, `nit_cliente`, `instrucciones`, `receta`) es el paso previo para un
 Excel de formato complejo. Cotifly solo valida el archivo (que venga, tamaño y extensión; no abre el libro), no reintenta y devuelve la
 `receta` (opaca, en camelCase) y las `tablas` (la forma de las hojas de `analizar-excel`) sin tocarlas. Para corregir, se reenvía el
-mismo archivo con `instrucciones` y `receta` = `JSON.stringify(respuesta.receta)`. `ia_usada = false` es un 200.
+mismo archivo con `instrucciones` y `receta` = `JSON.stringify(respuesta.receta)`. `ia_usada = false` es un 200. Si el archivo cabe
+solo pero no con la receta y las instrucciones (en bytes UTF-8), 400 `LECTURA_DEMASIADO_GRANDE` sin llamar a NEXO. Un
+`VALIDATION_ERROR` de NEXO trae en `detalle.campos` solo los nombres de los campos rechazados.
 
 <!-- respuesta: POST /web/licitaciones/leer-estructura 200 -->
 ```json
@@ -2188,7 +2190,7 @@ mismo archivo con `instrucciones` y `receta` = `JSON.stringify(respuesta.receta)
   "similitud": 0.93,
   "receta_guardada_id": "8a7b6c5d-4e3f-4a2b-9c1d-0e9f8a7b6c5d",
   "ia_usada": false,
-  "motivo_sin_ia": "RECETA_GUARDADA",
+  "motivo_sin_ia": null,
   "receta": { "version": 1, "hojas": [ { "hoja": "*", "usar": true, "filasEncabezado": [20] } ], "unir": false, "notas": null },
   "resumen": null,
   "dudas": [],

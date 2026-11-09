@@ -4442,6 +4442,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '413':
+          description: El cuerpo supera `SeguridadHttp:LimiteCuerpoLicitacionBytes` (12 MB por defecto, el límite de todo `/web/licitaciones*`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWeb'
         '415':
           $ref: '#/components/responses/TipoContenidoNoSoportado'
         '429':
@@ -4511,10 +4517,12 @@ paths:
         '400':
           description: |
             `ErrorWeb`: el formulario no se pudo leer. `ErrorNegocio`: de Cotifly, sin llamar a NEXO, `ARCHIVO_REQUERIDO`,
-            `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE` (un 413 de NEXO también) y `CLIENTE_NIT_INVALIDO`; de NEXO, con su
-            mismo código y su mensaje, `EXCEL_INVALIDO`, `EXCEL_SIN_DATOS`, `RECETA_INVALIDA` (no es JSON, es demasiado grande o no
-            corresponde al archivo), `INSTRUCCIONES_DEMASIADO_LARGAS` y `VALIDATION_ERROR` (la forma del formulario);
-            `COSTEO_NEXO_RECHAZADA` para otro 4xx de NEXO.
+            `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE` (el archivo solo pasa de 10 MB menos 64 KB; un 413 de NEXO también),
+            `LECTURA_DEMASIADO_GRANDE` (el archivo cabe, pero con `receta` e `instrucciones`, contadas en bytes UTF-8, el envío pasa ese
+            tope: leer sin la receta o con un archivo más pequeño) y `CLIENTE_NIT_INVALIDO`; de NEXO, con su mismo código y su mensaje,
+            `EXCEL_INVALIDO`, `EXCEL_SIN_DATOS`, `RECETA_INVALIDA` (no es JSON, es demasiado grande o no corresponde al archivo),
+            `INSTRUCCIONES_DEMASIADO_LARGAS` y `VALIDATION_ERROR` (la forma del formulario; `detalle.campos` trae solo los nombres de los
+            campos que NEXO rechazó, nunca sus valores); `COSTEO_NEXO_RECHAZADA` para otro 4xx de NEXO.
           content:
             application/json:
               schema:
@@ -5147,7 +5155,9 @@ components:
                 `CLIENTE_REQUERIDO` (400) también lo responde Cotifly, sin llamar a NEXO, al listar plantillas o formatos sin el NIT de la
                 licitación. `IA_TOPE_DIARIO` (429) es el cupo diario de IA del comercial y no bloquea a los demás. Sin la importación
                 habilitada, NEXO caído o sin respuesta a tiempo: `NEXO_NO_DISPONIBLE` (503). Los endpoints `/web` llegan con #253 a #256.
-                HU-044.2 (#253): `VALIDATION_ERROR` (400) es el de NEXO en `leer-estructura` (la forma del formulario), con su mensaje.
+                HU-044.2 (#253): `VALIDATION_ERROR` (400) es el de NEXO en `leer-estructura` (la forma del formulario), con su mensaje y
+                solo los nombres de los campos en `detalle.campos`. `LECTURA_DEMASIADO_GRANDE` (400) lo responde Cotifly en
+                `leer-estructura`, sin llamar a NEXO, cuando el archivo cabe solo pero no con la receta y las instrucciones.
               enum:
                 - MARGEN_LINEA_DESCONOCIDA
                 - PRECIO_INVALIDO
@@ -5263,6 +5273,7 @@ components:
                 - RECETA_NO_ENCONTRADA
                 - TIPO_TERMINO_INVALIDO
                 - VALIDATION_ERROR
+                - LECTURA_DEMASIADO_GRANDE
             mensaje:
               type: string
             detalle:

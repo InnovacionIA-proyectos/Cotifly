@@ -40,8 +40,8 @@ public sealed class clsSugerenciaMapeoController(IClsContextoUsuario usuario, IC
 
     /// <summary>
     /// 200 <c>LecturaEstructura</c> (también con <c>ia_usada = false</c>); 400 <c>ARCHIVO_REQUERIDO</c>, <c>FORMATO_NO_SOPORTADO</c> o
-    /// <c>ARCHIVO_DEMASIADO_GRANDE</c> sin llamar a NEXO, o el código de NEXO (<c>EXCEL_INVALIDO</c>, <c>RECETA_INVALIDA</c>,
-    /// <c>VALIDATION_ERROR</c>...); 403 <c>NEXO_SIN_PERMISO</c>; 429 <c>IA_TOPE_DIARIO</c>; 503 <c>NEXO_NO_DISPONIBLE</c>. Multipart con
+    /// <c>ARCHIVO_DEMASIADO_GRANDE</c> (o <c>LECTURA_DEMASIADO_GRANDE</c> si no cabe con la receta y las instrucciones) sin llamar a NEXO, o el
+    /// código de NEXO (<c>EXCEL_INVALIDO</c>, <c>RECETA_INVALIDA</c>, <c>VALIDATION_ERROR</c> con <c>detalle.campos</c>...); 403 <c>NEXO_SIN_PERMISO</c>; 429 <c>IA_TOPE_DIARIO</c>; 503 <c>NEXO_NO_DISPONIBLE</c>. Multipart con
     /// <c>archivo</c>, <c>nit_cliente</c>, <c>instrucciones</c> y <c>receta</c> (texto JSON que llega a NEXO tal cual).
     /// </summary>
     [HttpPost("licitaciones/leer-estructura")]

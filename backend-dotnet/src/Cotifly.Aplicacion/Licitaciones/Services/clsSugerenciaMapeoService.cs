@@ -55,6 +55,9 @@ public sealed class clsSugerenciaMapeoService(IClsImportacionExcelNexo importaci
 
     public const string MensajeEncabezadosRequeridos = "Envía los encabezados de la hoja.";
 
+    public const string MensajeLecturaDemasiadoGrande =
+        "El archivo con la receta y las instrucciones supera el máximo de 9,9 MB (10 MB con el envío) que acepta NEXO: lee el archivo sin la receta o usa un archivo más pequeño.";
+
     public async Task<clsResultado<clsSugerenciaMapeo>> SugerirAsync(
         Guid usuarioId, clsPeticionSugerirMapeo peticion, CancellationToken cancellationToken = default)
     {
@@ -100,10 +103,21 @@ public sealed class clsSugerenciaMapeoService(IClsImportacionExcelNexo importaci
             return invalido;
         }
 
+        // Auditoría B7: el tope de NEXO es del envío completo. El archivo cabe solo, pero con la receta (hasta 60.000 caracteres) y las
+        // instrucciones puede no caber: se dice aquí con su propio código, sin llamar a NEXO y sin culpar al archivo.
+        if (entrada.Archivo.Contenido.LongLength + Bytes(entrada.Receta) + Bytes(entrada.Instrucciones) + Bytes(entrada.NitCliente)
+            > clsArchivoExcel.TamanoMaximoBytes)
+        {
+            return new clsErrorDominio(clsCodigosError.LecturaDemasiadoGrande, MensajeLecturaDemasiadoGrande);
+        }
+
         var archivo = new clsArchivoImportacion(clsArchivoExcel.NombreLimpio(entrada.Archivo.Nombre), entrada.Archivo.Contenido);
         return await importacion.LeerEstructuraAsync(
             usuarioId, new clsPeticionLeerEstructura(archivo, entrada.NitCliente, entrada.Instrucciones, entrada.Receta), cancellationToken);
     }
+
+    /// <summary>Bytes UTF-8 de un campo del formulario (0 si no vino).</summary>
+    private static long Bytes(string? texto) => texto is null ? 0 : System.Text.Encoding.UTF8.GetByteCount(texto);
 
     /// <summary>La hoja con cada columna sin propuesta (<c>ignorar</c>, confianza 0), <c>ia_usada = false</c> y el motivo.</summary>
     private static clsSugerenciaMapeo SinPropuesta(IReadOnlyList<string> encabezados, string motivo) => new(
