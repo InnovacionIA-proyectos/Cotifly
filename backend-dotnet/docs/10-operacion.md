@@ -154,7 +154,7 @@ El "antes" simulado reproduce los 17 s del E2E: dos de cada tres partes del turn
 1. `docker debug <contenedor>` (Docker Desktop/Engine con licencia que lo incluya): shell temporal con herramientas, sin tocar la imagen.
 2. Contenedor auxiliar que comparte PID y red con el de la API:
    ```powershell
-   docker run --rm -it --cap-add=SYS_PTRACE --pid=container:<id> --network=container:<id> mcr.microsoft.com/dotnet/sdk:10.0.401-noble bash
+   docker run --rm -it --cap-add=SYS_PTRACE --pid=container:<id> --network=container:<id> mcr.microsoft.com/dotnet/sdk:10.0.403-noble bash
    # dentro: dotnet tool install -g dotnet-counters; dotnet tool install -g dotnet-dump
    #         export PATH="$PATH:/root/.dotnet/tools"
    #         export TMPDIR=/proc/1/root/tmp   # el socket de diagnóstico vive en el /tmp del contenedor de la API
@@ -162,7 +162,7 @@ El "antes" simulado reproduce los 17 s del E2E: dos de cada tres partes del turn
    ```
    El PID 1 es el `dotnet` de la API. **`--cap-add=SYS_PTRACE` es obligatorio**: sin esa capacidad el contenedor auxiliar no puede leer `/proc/1/root/tmp` (el proceso de la API es del usuario `app`) y `dotnet-counters` falla con `UnauthorizedAccessException`. Ensayado el 2026-09-25 (#14) contra `cotifly-api:dev`: `dotnet-counters ps` lista el PID 1 y `dotnet-counters collect -p 1 --counters System.Runtime` guarda las métricas.
 3. Build de emergencia con runtime Ubuntu completo (con shell), solo local y con sufijo `-debug`, **nunca** por el pipeline de producción:
-   `docker build --build-arg ASPNET_VERSION=10.0.12-noble -t cotifly-api:<versión>-debug -f backend-dotnet/Dockerfile backend-dotnet`.
+   `docker build --build-arg ASPNET_VERSION=10.0.14-noble -t cotifly-api:<versión>-debug -f backend-dotnet/Dockerfile backend-dotnet`.
 
 ## 10.6 Riesgos y limitaciones conocidos
 
