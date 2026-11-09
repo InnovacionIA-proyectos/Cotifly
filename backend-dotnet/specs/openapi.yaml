@@ -4313,7 +4313,8 @@ paths:
                 $ref: '#/components/schemas/RecetaLectura'
         '400':
           description: |
-            `ErrorWeb`: el formulario no se pudo leer. `ErrorNegocio`: de Cotifly, sin llamar a NEXO, `ARCHIVO_REQUERIDO`,
+            `ErrorWeb`: el formulario no se pudo leer o una parte viene más de una vez (dos `receta`, dos `nit_cliente`, dos `archivo`...;
+            no se adivina cuál vale y no se llama a NEXO). `ErrorNegocio`: de Cotifly, sin llamar a NEXO, `ARCHIVO_REQUERIDO`,
             `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE` (un 413 de NEXO también), `RECETA_REQUERIDA`, `CLIENTE_REQUERIDO` y
             `CLIENTE_NIT_INVALIDO`; de NEXO, con su código y su mensaje, `RECETA_INVALIDA`, `RECETA_SIN_FILAS`,
             `CLIENTE_NIT_INVALIDO`, `CLIENTE_NO_ENCONTRADO`, `NOMBRE_DEMASIADO_LARGO`, `INSTRUCCIONES_DEMASIADO_LARGAS`, `EXCEL_INVALIDO`

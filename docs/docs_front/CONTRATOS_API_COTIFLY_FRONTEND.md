@@ -2942,6 +2942,7 @@ un formato parecido (≥ 85 %) se lee sin IA. NEXO guarda hasta 20 por cliente; 
 | 200 (GET) | `RecetaLectura[]` | Lista; vacía = sin formatos |
 | 204 (DELETE) | — | Quitar de la lista |
 | 400 | `ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE`, `RECETA_REQUERIDA`, `CLIENTE_REQUERIDO` | Validación de Cotifly, sin llamar a NEXO |
+| 400 | `ErrorWeb` | El formulario no se pudo leer o una parte viene repetida (dos `receta`, dos `nit_cliente`...): mandar cada parte una sola vez |
 | 400 | `RECETA_INVALIDA`, `RECETA_SIN_FILAS` (la receta no da filas con ese archivo), `CLIENTE_NIT_INVALIDO`, `CLIENTE_NO_ENCONTRADO`, `NOMBRE_DEMASIADO_LARGO`, `INSTRUCCIONES_DEMASIADO_LARGAS`, `EXCEL_INVALIDO`, `EXCEL_SIN_DATOS` | Rechazo de NEXO con su `mensaje`: mostrarlo; con `RECETA_SIN_FILAS`, volver a la lectura |
 | 400 | `COSTEO_NEXO_RECHAZADA` (`detalle.motivo` = código de NEXO) | NEXO respondió otro 4xx o un 404 sin código (por ejemplo, un NEXO sin el endpoint): mostrar el `mensaje` y avisar a soporte |
 | 403 | `NEXO_SIN_PERMISO` | Avisar a soporte |

@@ -1,3 +1,4 @@
+using System.Globalization;
 using Cotifly.Api.Comun;
 using Cotifly.Api.Licitaciones.DTOs;
 using Cotifly.Aplicacion.Comun.Interfaces;
@@ -23,6 +24,9 @@ public sealed class clsFormatosClienteController(IClsContextoUsuario usuario, IC
     public const string ParteNitCliente = "nit_cliente";
     public const string ParteNombre = "nombre";
     public const string ParteInstrucciones = "instrucciones";
+
+    /// <summary>400 <c>ErrorWeb</c> de un formulario con una parte repetida (<c>{0}</c> = el nombre de la parte).</summary>
+    public const string MensajeParteRepetida = "Formulario inválido: la parte '{0}' viene más de una vez.";
 
     /// <summary>
     /// 201 <c>PlantillaMapeo</c> la primera vez, 200 si reemplaza a la del cliente con esos encabezados; 400 <c>CLIENTE_REQUERIDO</c> o
@@ -94,6 +98,11 @@ public sealed class clsFormatosClienteController(IClsContextoUsuario usuario, IC
             try
             {
                 var formulario = await Request.ReadFormAsync(cancellationToken);
+                if (ParteRepetida(formulario) is { } repetida)
+                {
+                    return BadRequest(new clsErrorWeb(string.Format(CultureInfo.InvariantCulture, MensajeParteRepetida, repetida)));
+                }
+
                 if (formulario.Files.GetFile(ParteArchivo) is { } subido)
                 {
                     archivo = await clsArchivoMultipart.LeerAsync(subido, cancellationToken);
@@ -144,6 +153,22 @@ public sealed class clsFormatosClienteController(IClsContextoUsuario usuario, IC
         }
 
         return (await formatos.EliminarRecetaAsync(UsuarioId, recetaId, cancellationToken)).Coincidir<IActionResult>(_ => NoContent(), Error);
+    }
+
+    /// <summary>
+    /// #256 (validador D1/D2): la primera parte que vino más de una vez, o <c>null</c>. Dos partes con el mismo nombre se unirían con coma: una
+    /// receta que deja de ser opaca, o dos NIT que la normalización funde en otro NIT (la receta quedaría en otro cliente). No se adivina cuál
+    /// vale: se rechaza el formulario.
+    /// </summary>
+    private static string? ParteRepetida(IFormCollection formulario)
+    {
+        if (formulario.Files.GetFiles(ParteArchivo).Count > 1)
+        {
+            return ParteArchivo;
+        }
+
+        return new[] { ParteReceta, ParteNitCliente, ParteNombre, ParteInstrucciones }
+            .FirstOrDefault(campo => formulario.TryGetValue(campo, out var valor) && valor.Count > 1);
     }
 
     /// <summary>El valor de un campo del formulario tal cual (sin recortar: la receta llega a NEXO exacta), o <c>null</c> si no vino.</summary>
