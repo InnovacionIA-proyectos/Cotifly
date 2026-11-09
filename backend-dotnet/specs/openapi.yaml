@@ -4378,6 +4378,91 @@ paths:
         '500':
           $ref: '#/components/responses/ErrorInterno'
 
+  /web/licitaciones/normalizar-valores:
+    post:
+      operationId: normalizarValoresLicitacion
+      tags: [web]
+      summary: Normaliza con NEXO los textos del Excel de licitación (vehículo, carrocería, ciudad y línea de negocio)
+      description: |
+        HU-044.4 (#255, ADR-028 y ADR-029). Lleva los textos distintos del Excel a los valores oficiales con
+        `POST {Nexo:UrlBase}/api/captura-solicitudes/normalizar-valores` (diccionario del cliente, alias, catálogo y, al final, IA
+        con lista cerrada), con la identidad del comercial. Rol Comercial. No guarda nada. El front manda **solo los valores
+        distintos**; Cotifly quita además los repetidos (mismo `campo` y mismo `valor` sin los espacios de los extremos) y devuelve
+        **un resultado por cada valor distinto, en el orden de la petición**. Con `nit_cliente` (el de la licitación, con o sin
+        dígito de verificación) NEXO usa además el diccionario de ese cliente; sin él, solo el general.
+
+        **Es una sugerencia.** Un valor con `origen = ia` es una propuesta que el comercial confirma. Sin IA en NEXO (apagada,
+        caída o sin pendientes) la respuesta es **200** con `ia_usada = false`, `motivo_sin_ia` y lo que resolvieron las reglas.
+
+        **Ciudad.** `municipio_id` es el id de municipio de NEXO (el mismo de `GET /web/municipios` y de
+        `origen_municipio_id`/`destino_municipio_id`). Una ciudad `ambigua` trae `candidatos` (máx. 8) para que el comercial elija.
+        `POST /web/licitaciones` sigue validando las ciudades al crear.
+
+        **Línea de negocio (`linea_negocio`).** En una licitación cada ruta lleva su línea de negocio **de Cotifly** (la que tiene
+        margen). Por eso `codigo` es el nombre de la línea de Cotifly, el que va en `lineas[].linea_negocio` de
+        `POST /web/licitaciones`, y `linea_nexo` la de NEXO de la que sale:
+        - un texto que ya es el nombre de una línea de Cotifly (sin tildes ni mayúsculas, como en el alta) se resuelve sin NEXO,
+          con `origen = linea_cotifly` (así «Distribución», que no tiene línea en NEXO, no la cambia la IA). Si esa línea está
+          inactiva o su mapeo a NEXO no es válido, queda `sin_resolver` con el motivo en `nota`;
+        - cualquier otro texto lo resuelve NEXO (diccionario del cliente → sinónimos `impo`/`expo` → IA con las seis líneas). Lo
+          que NEXO devuelve se valida contra sus seis líneas y se traduce a la línea activa de Cotifly cuyo mapeo es esa: una sola,
+          `codigo` = esa línea; ninguna (p. ej. `Licitaciones`), `sin_resolver`; varias, `ambiguo` con `lineas_candidatas`.
+
+        **Clase de contenedor:** no se normaliza aquí (`CAMPO_INVALIDO`); sigue por `GET /web/alias/resolver?tipo=contenedor`.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NormalizarValoresWeb'
+      responses:
+        '200':
+          description: Un resultado por valor distinto, en el orden de la petición
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizacionValores'
+        '400':
+          description: |
+            Validación local, sin llamar a NEXO y con los códigos de NEXO: `VALORES_REQUERIDOS` (sin valores o uno vacío),
+            `DEMASIADOS_VALORES` (más de 1000), `CAMPO_INVALIDO` (otro campo; la clase de contenedor va por `GET /web/alias/resolver`),
+            `VALOR_DEMASIADO_LARGO` (más de 150 caracteres), `CLIENTE_NIT_INVALIDO` (NIT de más de 30 caracteres o sin dígitos; siempre, aunque todo se resuelva sin NEXO). De NEXO, su código
+            con su mensaje; `COSTEO_NEXO_RECHAZADA` para otro 4xx. Un cuerpo que no es JSON: `ErrorWeb`.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorNegocio'
+                  - $ref: '#/components/schemas/ErrorWeb'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: '`NEXO_SIN_PERMISO`: NEXO respondió 401/403 para el comercial. Sin el rol Comercial en Cotifly, `ErrorWeb`'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorNegocio'
+                  - $ref: '#/components/schemas/ErrorWeb'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
+        '429':
+          description: '`IA_TOPE_DIARIO`: el comercial agotó su cupo diario de IA en NEXO (sin `Retry-After`; no afecta a los demás)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '503':
+          description: '`NEXO_NO_DISPONIBLE`: la importación inteligente está apagada, NEXO no responde, tardó más de 90 s o respondió el 429 por minuto (`detalle.motivo` con el `Retry-After`). El comercial elige los valores a mano'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+
   /web/clientes/{nit}/destinatarios-previos:
     get:
       operationId: obtenerDestinatariosPrevios
@@ -7019,6 +7104,120 @@ components:
           nullable: true
           enum: [catalogo, alias, null]
           description: '`catalogo` (ya era un código oficial), `alias` (lo tradujo el diccionario) o `null`.'
+
+    NormalizarValoresWeb:
+      type: object
+      description: HU-044.4 (#255). Cuerpo de `POST /web/licitaciones/normalizar-valores`.
+      required: [valores]
+      properties:
+        nit_cliente:
+          type: string
+          nullable: true
+          maxLength: 30
+          description: NIT del cliente de la licitación (con o sin puntos y dígito de verificación). Opcional.
+        valores:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          description: Solo los textos distintos del Excel.
+          items:
+            type: object
+            required: [campo, valor]
+            properties:
+              campo:
+                type: string
+                enum: [tipo_vehiculo, carroceria, ciudad, linea_negocio]
+              valor:
+                type: string
+                maxLength: 150
+                description: |
+                  El texto tal como viene en la celda (no vacío). Los 150 se miden después de recortar los espacios de los extremos y en
+                  unidades UTF-16 (`string.length`): un emoji o una tilde descompuesta cuentan 2. Más largo: `VALOR_DEMASIADO_LARGO`.
+
+    NormalizacionValores:
+      type: object
+      description: HU-044.4 (#255). Respuesta de `POST /web/licitaciones/normalizar-valores`.
+      required: [ia_usada, motivo_sin_ia, valores]
+      properties:
+        ia_usada:
+          type: boolean
+          description: '`true` si NEXO usó IA en esta petición.'
+        motivo_sin_ia:
+          type: string
+          nullable: true
+          description: |
+            Por qué no se usó IA: `SIN_PENDIENTES` (las reglas resolvieron todo, o Cotifly no tuvo que llamar a NEXO),
+            `IA_NO_DISPONIBLE` o un `IA_*` del proveedor de NEXO; `null` si la IA participó. No es un error.
+        valores:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValorNormalizado'
+
+    ValorNormalizado:
+      type: object
+      required: [campo, valor, estado, codigo, descripcion, municipio_id, origen, confianza, nota, candidatos, linea_nexo, lineas_candidatas]
+      properties:
+        campo:
+          type: string
+          enum: [tipo_vehiculo, carroceria, ciudad, linea_negocio]
+        valor:
+          type: string
+          description: El valor pedido, sin los espacios de los extremos.
+        estado:
+          type: string
+          enum: [resuelto, ambiguo, sin_resolver]
+        codigo:
+          type: string
+          nullable: true
+          description: |
+            El valor oficial: código de vehículo (`2L2`) o de carrocería (`FURGON`), código de la ciudad según NEXO o, en
+            `linea_negocio`, el **nombre de la línea de negocio de Cotifly**. `null` si no se resolvió.
+        descripcion:
+          type: string
+          nullable: true
+        municipio_id:
+          type: integer
+          nullable: true
+          description: Solo en una ciudad resuelta, el id de municipio de NEXO (el de `GET /web/municipios`).
+        origen:
+          type: string
+          description: |
+            Quién lo resolvió: el texto de NEXO tal cual, sin lista cerrada (`diccionario`, `alias`, `catalogo`, `ia`, `ninguno`...), o `linea_cotifly` si
+            Cotifly reconoció una línea de negocio propia sin NEXO. Con `ia` es una propuesta para confirmar.
+        confianza:
+          type: number
+          minimum: 0
+          maximum: 1
+        nota:
+          type: string
+          nullable: true
+          description: Explicación de NEXO o de Cotifly (por ejemplo, por qué una línea de negocio quedó sin resolver).
+        candidatos:
+          type: array
+          nullable: true
+          description: Solo en una ciudad `ambigua` (máx. 8).
+          items:
+            type: object
+            required: [municipio_id, codigo_dane, municipio, departamento]
+            properties:
+              municipio_id:
+                type: integer
+              codigo_dane:
+                type: string
+              municipio:
+                type: string
+              departamento:
+                type: string
+        linea_nexo:
+          type: string
+          nullable: true
+          description: Solo en `linea_negocio`, la línea de NEXO (una de las seis, escrita como en el contrato) de la que sale `codigo`.
+        lineas_candidatas:
+          type: array
+          nullable: true
+          description: Solo en `linea_negocio` ambigua, las líneas de Cotifly que comparten `linea_nexo`.
+          items:
+            type: string
 
     CatalogosFlete:
       type: object
