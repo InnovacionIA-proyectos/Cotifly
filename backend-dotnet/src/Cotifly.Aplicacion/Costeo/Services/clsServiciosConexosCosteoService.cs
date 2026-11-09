@@ -70,8 +70,8 @@ public sealed class clsServiciosConexosCosteoService(
     IClsSituacionLineasNexo situacionesNexo,
     Margen.Services.IClsAvisoSincronizacionMargenSap avisoSincronizacion,
     IClsTarifaSeguroRepository tarifasSeguro,
-    IClsPoliticaSegurosRepository? politicaSeguros = null,
-    IClsCostosConexosNexo? costosConexos = null) : IClsServiciosConexosCosteoService
+    IClsPoliticaSegurosRepository politicaSeguros,
+    IClsCostosConexosNexo costosConexos) : IClsServiciosConexosCosteoService
 {
     // #226 (validación de DEF-1027-3): las dependencias de la vista con estados son obligatorias. Opcionales, un registro que faltara
     // en DI devolvía otra vez estado_nexo = null en silencio; obligatorias, el contenedor falla al resolver el servicio.
@@ -478,7 +478,7 @@ public sealed class clsServiciosConexosCosteoService(
     /// </summary>
     private async Task CompletarCodigosAsync(clsCotizacionSolicitud cotizacion, Guid usuarioId, IReadOnlyCollection<string> servicios)
     {
-        if (costosConexos is null || servicios.Count == 0)
+        if (servicios.Count == 0)
         {
             return;
         }

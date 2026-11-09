@@ -192,6 +192,6 @@ public sealed class clsFinalizacionPoliticaSegurosTests
         _cotizacion.Finalizar(_ana, _ahora.AddHours(-1), medidasFaltantes: [], justificacion: null);
 
         (await Servicio().FinalizarAsync(_ana, _cotizacion.Folio, Version, Ct)).Valor.Should().BeSameAs(_cotizacion);
-        await _politicas.DidNotReceiveWithAnyArgs().ObtenerAsync(default);
+        await _politicas.DidNotReceiveWithAnyArgs().ObtenerAsync(Ct);
     }
 }

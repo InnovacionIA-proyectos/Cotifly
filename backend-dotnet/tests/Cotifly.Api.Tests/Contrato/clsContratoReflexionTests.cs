@@ -100,6 +100,8 @@ public sealed class clsContratoReflexionTests(clsCotiflyApiFactory factory) : IC
         "CubicacionEnProceso.estado", "EstadoCubicacion.estado",
         // HU-042.2 (#243): el estado de la corrida es el texto del CHECK de SapMargenSyncLog (constantes de clsCorridaSincronizacionMargenSap).
         "CorridaSincronizacionMargenSap.estado", "ResultadoSincronizacionMargenSap.estado",
+        // HU-046.3 (#269): cumplida | pendiente, las constantes de clsMedidaObligatoria (un bool en el dominio, no un enum).
+        "MedidaObligatoriaPolitica.estado",
     };
 
     /// <summary>

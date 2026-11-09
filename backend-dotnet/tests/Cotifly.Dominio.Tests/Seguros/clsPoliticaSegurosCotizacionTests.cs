@@ -84,7 +84,10 @@ public sealed class clsPoliticaSegurosCotizacionTests
     public void LasRutasRechazadasPorLaMesaNoCuentan()
     {
         var cotizacion = Rutas(400 * M, 600 * M);
-        cotizacion.Rutas.Single(r => r.Orden == 1).Vehiculos[0].RegistrarRechazo("Ruta no operada", _ahora);
+        var rechazada = cotizacion.Rutas.Single(r => r.Orden == 1);
+        rechazada.Vehiculos[0].RegistrarRechazo("Ruta no operada", _ahora);
+        rechazada.ResumirEstado(true);
+        rechazada.Rechazada.Should().BeTrue();
 
         var faltantes = cotizacion.MedidasObligatoriasPendientes(_politica);
 

@@ -216,6 +216,12 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         (typeof(Cotifly.Api.Costeo.DTOs.clsAjusteMargenWebRequest), "AjusteMargenWeb"),
         // HU-045.2 (#264): el check del seguro de la mercancía por ruta.
         (typeof(Cotifly.Api.Costeo.DTOs.clsSeguroRutaWebRequest), "SeguroRutaWeb"),
+        // HU-046.3 (#269): la política de seguros de la ruta en el costeo y la justificación de "Finalizar".
+        (typeof(Cotifly.Aplicacion.Costeo.Services.clsPoliticaSegurosRuta), "PoliticaSegurosRuta"),
+        (typeof(Cotifly.Aplicacion.Costeo.Services.clsTramoPoliticaSegurosRuta), "TramoPoliticaSeguros"),
+        (typeof(Cotifly.Aplicacion.Costeo.Services.clsMedidaRecomendadaRuta), "MedidaRecomendadaPolitica"),
+        (typeof(Cotifly.Aplicacion.Costeo.Services.clsMedidaObligatoriaRuta), "MedidaObligatoriaPolitica"),
+        (typeof(Cotifly.Api.Costeo.DTOs.clsFinalizarWebRequest), "FinalizarWeb"),
         // HU-041.1 (#231): margen y conexos para varias rutas en una operación.
         (typeof(Cotifly.Api.Costeo.DTOs.clsMargenLineasWebRequest), "MargenLineasWeb"),
         (typeof(Cotifly.Api.Costeo.DTOs.clsConexoLineasWebRequest), "ConexoLineasWeb"),
