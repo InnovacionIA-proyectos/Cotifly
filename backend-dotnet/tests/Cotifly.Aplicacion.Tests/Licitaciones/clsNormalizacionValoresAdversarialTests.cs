@@ -323,7 +323,7 @@ public sealed class clsNormalizacionValoresAdversarialTests
         (valor.Estado, valor.Origen).Should().Be(("sin_resolver", "ninguno"));
     }
 
-    [Fact(Skip = "D1: en linea_negocio el estado y el origen vacíos de NEXO pasan tal cual (estado \"\" fuera del enum de openapi). clsNormalizacionValoresService.cs:171 usa nexo.Estado/nexo.Origen sin el respaldo que sí tiene DeNexo (línea 180-181).")]
+    [Fact]
     public async Task UnEstadoYUnOrigenVaciosDeNexoEnLineaDeNegocioRespetanElEnum()
     {
         NexoResponde(true, null, DeNexo("lineaNegocio", "impo", "", "PuertoAInterior", ""));
@@ -416,7 +416,7 @@ public sealed class clsNormalizacionValoresAdversarialTests
         (valor.Estado, valor.Codigo, valor.LineaNexo).Should().Be(("sin_resolver", (string?)null, (string?)null));
     }
 
-    [Fact(Skip = "D2: NEXO 'ambiguo' con una sola línea en linea_negocio sale estado ambiguo con codigo y sin lineas_candidatas (contrato del front: ambiguo ⇒ candidatos). clsNormalizacionValoresService.cs:171 copia nexo.Estado.")]
+    [Fact]
     public async Task UnAmbiguoDeNexoEnLineaDeNegocioNoQuedaAmbiguoSinCandidatos()
     {
         NexoResponde(true, null, DeNexo("lineaNegocio", "impo/expo", "ambiguo", "PuertoAInterior", "ia", 0.4));

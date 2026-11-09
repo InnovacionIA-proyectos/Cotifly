@@ -7130,7 +7130,9 @@ components:
               valor:
                 type: string
                 maxLength: 150
-                description: El texto tal como viene en la celda (no vacío).
+                description: |
+                  El texto tal como viene en la celda (no vacío). Los 150 se miden después de recortar los espacios de los extremos y en
+                  unidades UTF-16 (`string.length`): un emoji o una tilde descompuesta cuentan 2. Más largo: `VALOR_DEMASIADO_LARGO`.
 
     NormalizacionValores:
       type: object

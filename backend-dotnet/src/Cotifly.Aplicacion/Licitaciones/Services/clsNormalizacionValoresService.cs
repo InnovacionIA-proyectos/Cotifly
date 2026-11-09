@@ -168,10 +168,10 @@ public sealed class clsNormalizacionValoresService(IClsImportacionExcelNexo nexo
         return deCotifly.Count switch
         {
             0 => SinResolver(campo, valor, nexo.Origen, SinLineaDeCotifly(lineaNexo, lineas)) with { LineaNexo = lineaNexo },
-            1 => new clsValorNormalizacionWeb(campo, valor, clsCamposNormalizacion.Resuelto, deCotifly[0], deCotifly[0], null, nexo.Origen,
-                Confianza(nexo.Confianza), nexo.Nota, null, lineaNexo, null),
-            _ => new clsValorNormalizacionWeb(campo, valor, clsCamposNormalizacion.Ambiguo, null, null, null, nexo.Origen, Confianza(nexo.Confianza),
-                $"NEXO la reconoce como '{lineaNexo}', que corresponde a varias líneas de Cotifly: elige una.", null, lineaNexo, deCotifly),
+            1 => new clsValorNormalizacionWeb(campo, valor, clsCamposNormalizacion.Resuelto, deCotifly[0], deCotifly[0], null,
+                Origen(nexo.Origen), Confianza(nexo.Confianza), nexo.Nota, null, lineaNexo, null),
+            _ => new clsValorNormalizacionWeb(campo, valor, clsCamposNormalizacion.Ambiguo, null, null, null, Origen(nexo.Origen),
+                Confianza(nexo.Confianza), $"NEXO la reconoce como '{lineaNexo}', que corresponde a varias líneas de Cotifly: elige una.", null, lineaNexo, deCotifly),
         };
     }
 
@@ -191,7 +191,7 @@ public sealed class clsNormalizacionValoresService(IClsImportacionExcelNexo nexo
     /// </summary>
     private static clsValorNormalizacionWeb DeNexo(string campo, string valor, clsValorNormalizado nexo)
     {
-        var origen = string.IsNullOrWhiteSpace(nexo.Origen) ? clsCamposNormalizacion.OrigenNinguno : nexo.Origen;
+        var origen = Origen(nexo.Origen);
         var estado = Estado(nexo.Estado);
         return estado == clsCamposNormalizacion.SinResolver
             ? SinResolver(campo, valor, origen, nexo.Nota)
@@ -202,6 +202,9 @@ public sealed class clsNormalizacionValoresService(IClsImportacionExcelNexo nexo
     /// <summary>El estado de NEXO si es <c>resuelto</c> o <c>ambiguo</c>; cualquier otro (o vacío), <c>sin_resolver</c>.</summary>
     private static string Estado(string? estado) =>
         estado is clsCamposNormalizacion.Resuelto or clsCamposNormalizacion.Ambiguo ? estado : clsCamposNormalizacion.SinResolver;
+
+    /// <summary>El origen de NEXO; si viene vacío, <c>ninguno</c> (nunca un texto vacío, en ningún campo).</summary>
+    private static string Origen(string? origen) => string.IsNullOrWhiteSpace(origen) ? clsCamposNormalizacion.OrigenNinguno : origen;
 
     /// <summary>La confianza de NEXO acotada a [0, 1] (un valor no numérico, 0).</summary>
     private static double Confianza(double confianza) => double.IsNaN(confianza) ? 0 : Math.Clamp(confianza, 0, 1);

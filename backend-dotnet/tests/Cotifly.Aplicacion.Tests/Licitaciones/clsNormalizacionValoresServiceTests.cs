@@ -298,4 +298,14 @@ public sealed class clsNormalizacionValoresServiceTests
         valor.Nota.Should().Contain("Cabotaje");
         await _nexo.DidNotReceiveWithAnyArgs().NormalizarValoresAsync(default, default, default!, TestContext.Current.CancellationToken);
     }
+
+    [Fact]
+    public async Task UnaLineaResueltaSinOrigenDeNexoLlegaConOrigenNinguno()
+    {
+        NexoResponde(true, null, DeNexo("lineaNegocio", "impo", "resuelto", "PuertoAInterior", ""));
+
+        var valor = (await Normalizar(Entrada(("linea_negocio", "impo")))).Valor.Valores[0];
+
+        (valor.Estado, valor.Codigo, valor.Origen).Should().Be(("resuelto", (string?)"Importacion", "ninguno"));
+    }
 }
