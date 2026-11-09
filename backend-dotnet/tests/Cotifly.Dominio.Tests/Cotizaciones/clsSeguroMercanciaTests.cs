@@ -5,7 +5,7 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
 /// <summary>
-/// HU-045.2 (#264, ADR-029): el seguro de la mercancía por ruta. <c>costoSeguro = round(valorMercancia × tasa, 0)</c> en pesos, sin margen,
+/// HU-045.2 (#264, ADR-032): el seguro de la mercancía por ruta. <c>costoSeguro = round(valorMercancia × tasa, 0)</c> en pesos, sin margen,
 /// sumado al precio de la ruta después del margen y de la venta de los conexos (decisión 1); en USD, convertido con la TRM de la solicitud
 /// (decisión 2). La tasa se copia en la ruta al marcarlo y otra vez si cambia el valor de la mercancía (decisión 5).
 /// </summary>

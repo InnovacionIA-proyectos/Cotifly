@@ -4,7 +4,7 @@ using Cotifly.Dominio.Precio;
 namespace Cotifly.Dominio.Cotizaciones;
 
 /// <summary>
-/// HU-045.2 (#264, ADR-029; script <c>db/scripts/20_seguro_mercancia.sql</c>): el seguro de la mercancía de la ruta (póliza específica,
+/// HU-045.2 (#264, ADR-032; script <c>db/scripts/20_seguro_mercancia.sql</c>): el seguro de la mercancía de la ruta (póliza específica,
 /// NOGE0076). Se marca en el costeo, se calcula en pesos con la tasa vigente copiada en la ruta y se suma al precio sin margen. Las reglas
 /// que exige la base (CHECK del 20): sin seguro, la tasa y el costo van en <c>null</c>; con costo hay tasa; el costo no es negativo.
 /// </summary>

@@ -2826,7 +2826,7 @@ paths:
       summary: Incluye o quita el seguro de la mercancía de UNA ruta y recalcula el precio de esa ruta y el total
       x-issue: '#264 (HU-045.2; usa el script 20 de HU-045.1, #263)'
       description: |
-        HU-045.2 (#264, ADR-029). El check "incluir seguro" de cada ruta en el costeo (decisión 3 de HU-045: endpoint propio con
+        HU-045.2 (#264, ADR-032). El check "incluir seguro" de cada ruta en el costeo (decisión 3 de HU-045: endpoint propio con
         `If-Match`, como el ajuste de margen). Es el seguro de la mercancía de la **póliza específica** (NOGE0076): se cobra aparte del
         flete y nunca como descuento.
 
