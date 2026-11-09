@@ -492,14 +492,17 @@ public static class clsDependenciasInfraestructura
     {
         AgregarCupoNexo(servicios);
         servicios.TryAddScoped<Licitaciones.Services.clsImportacionExcelNoDisponible>();
-        // Sin el límite de 100 s del HttpClient: los límites los pone la tubería (la lectura puede esperar 180 s o más).
-        var tuberia = servicios.AddHttpClient<Licitaciones.Services.clsImportacionExcelNexo>(
-                Licitaciones.Services.clsImportacionExcelNexo.NombreCliente, cliente => cliente.Timeout = Timeout.InfiniteTimeSpan)
+        servicios.TryAddTransient<Licitaciones.Services.clsCuerpoAcotadoNexoHandler>();
+        // Sin el límite de 100 s del HttpClient: los límites los pone la tubería (la lectura puede esperar 240 s).
+        var cliente = servicios.AddHttpClient<Licitaciones.Services.clsImportacionExcelNexo>(
+                Licitaciones.Services.clsImportacionExcelNexo.NombreCliente, http => http.Timeout = Timeout.InfiniteTimeSpan)
             // Sin los logs por defecto de IHttpClientFactory: escriben en Information la URL con ?clienteNit= y q= (datos del cliente).
             // El adaptador registra su propio warning por fallo, con la ruta sin consulta.
             .RemoveAllLoggers()
-            .AddHttpMessageHandler<clsCupoNexoHandler>()
-            .AddStandardResilienceHandler();
+            .AddHttpMessageHandler<clsCupoNexoHandler>();
+        var tuberia = cliente.AddStandardResilienceHandler();
+        // Por dentro de la tubería: el cuerpo se lee (acotado) dentro del tiempo de cada intento.
+        cliente.AddHttpMessageHandler<Licitaciones.Services.clsCuerpoAcotadoNexoHandler>();
         servicios.AddOptions<HttpStandardResilienceOptions>(tuberia.PipelineName)
             .Configure<IOptions<clsOpcionesImportacionInteligente>>((resiliencia, opciones) =>
                 Licitaciones.Services.clsImportacionExcelNexo.ConfigurarResiliencia(resiliencia,
