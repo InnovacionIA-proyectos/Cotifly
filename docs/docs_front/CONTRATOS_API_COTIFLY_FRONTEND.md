@@ -2424,7 +2424,12 @@ Notas:
   seguro de esa ruta se recalcula con la tasa vigente. La versión nueva (`-vN`) conserva el check de cada ruta.
 - El seguro se puede marcar antes de que llegue el costeo: la ruta no tiene precio hasta que NEXO costee (como con los conexos).
 - `costo_final` de la ruta no incluye el seguro (no es costo de NEXO).
-- El PDF, el Excel y el correo todavía no muestran la línea "Seguro de la mercancía" (llega con HU-045.3, #265); el total ya lo incluye.
+- HU-045.3 (#265): el PDF lo muestra en su propia fila por ruta ("Seguro de la mercancía", aparte del flete), el Excel en su columna, el
+  correo dentro del precio de la ruta ("Incluye el seguro de la mercancía", sin el monto) y el detalle en `totales.precio_seguro`. Ver 4.7.1,
+  4.5.8, 4.6.5, 4.8 y 4.5.5. Nunca se exporta la tasa.
+- HU-045.3 (#265): si una edición deja una ruta **con el check marcado y sin valor de la mercancía** (`incluye_seguro = true` y
+  `valor_seguro = null`), el seguro no suma y el PDF y el envío responden 400 `SEGURO_SIN_VALOR_MERCANCIA` con `detalle.rutas`. Avisar
+  en la ruta antes de Finalizar: "Falta el valor de la mercancía para el seguro" (quitar el check o editar el valor).
 
 ### 4.5 Cotizaciones
 
@@ -2640,7 +2645,7 @@ hace falta combinar `GET /web/mis-cotizaciones` (cliente, NIT, `estado_envio`, `
 | `captura` | `RutaEditable[]` (4.4.10) | Cada ruta como se capturó: municipios por id y nombre y condiciones. Se cruza con `costeo.rutas[]` por `linea_solicitud_id` |
 | `tipo`, `notas` | | `spot` / `licitacion` (`null` en las del chat) y las notas |
 | `fechas` | `FechasCotizacion` | `created_at`, `updated_at`, `costeo_enviado_at`, `costeo_listo_at`, `marcado_at` y `finalizada_at` (HU-036.2; UTC, `null` si no aplica) |
-| `totales` | `TotalesCotizacion` | `rutas`, `camiones` (los que cuentan en el precio), `peso_kg`, `precio_transporte`, `precio_conexos`, `precio_final` (`transporte + conexos = final`; los precios en `null` sin costeo). HU-043.2 (#251): `precio_transporte` = (flete + retorno + levante) con el margen; `precio_conexos` = suma de las **ventas** de los conexos, sin margen |
+| `totales` | `TotalesCotizacion` | `rutas`, `camiones` (los que cuentan en el precio), `peso_kg`, `precio_transporte`, `precio_conexos`, `precio_seguro`, `precio_final` (`transporte + conexos + seguro = final`; los precios en `null` sin costeo). HU-043.2 (#251): `precio_transporte` = (flete + retorno + levante) con el margen; `precio_conexos` = suma de las **ventas** de los conexos, sin margen. HU-045.3 (#265): `precio_seguro` = suma del `valor_seguro` de las rutas (0 si ninguna lo incluye) |
 | `row_version` | | Para el `If-Match` de las acciones que siguen |
 | `solo_lectura` | | `true` si lo ve un gerente: esconder las acciones (le responden 404); descargar el PDF sí puede |
 
@@ -2712,6 +2717,9 @@ moneda de la cotización; `Sin precio` donde no hay.
 - **Gerente comercial de la regional del dueño y director (HU-037):** el mismo Excel en **solo lectura, sin ninguna columna de costo ni
   de margen** (con el margen y el precio se deduce el costo). Cada descarga queda en la auditoría.
 - Respeta el precio congelado (HU-036) y las rutas rechazadas por la Mesa (sin precio, sin conexos, no suman). Solo lee lo guardado.
+- **Seguro de la mercancía (HU-045.3, #265):** en `Rutas`, la columna `Seguro de la mercancía ({moneda})` entre `Precio conexos` y
+  `Precio ruta` (vacía sin seguro; `Sin valor de la mercancía` si el check está marcado sin valor), y su total en la fila `Total` y en el
+  `Resumen`. Transporte + conexos + seguro = precio de la ruta. Es venta, no costo: también va en la versión de solo lectura. Nunca la tasa.
 - **Respuesta:** `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, como blob; nombre `{folio}.xlsx` en
   `Content-Disposition`.
 
@@ -2933,7 +2941,9 @@ Reintenta las rutas con `estado_cubicacion = fallida`. Solo antes de enviar la l
 
 Descarga el Excel original del cliente con columnas agregadas: `Precio final Cotifly ({moneda})`, `Estado costeo Cotifly`,
 `Servicios conexos Cotifly` y `Camiones Cotifly`, más las hojas `Resumen Cotifly` y `Camiones Cotifly`. Sin archivo original, una hoja
-`Licitación` con los campos mapeados. Nunca incluye costos de NEXO. Se puede exportar en cualquier momento.
+`Licitación` con los campos mapeados. Nunca incluye costos de NEXO. Se puede exportar en cualquier momento. HU-045.3 (#265): si alguna
+línea incluye el seguro de la mercancía, una quinta columna `Seguro de la mercancía Cotifly ({moneda})` y, en `Resumen Cotifly`, su suma
+(aparte del total). Hoy las licitaciones no admiten el seguro (4.4.15), así que el archivo no cambia.
 
 - **Rol:** el dueño; también el gerente de la regional del dueño o el director (HU-034.1, #201), que reciben **el mismo archivo** (el
   Excel nunca tuvo costos: no hay columnas que quitar). **Respuesta:** `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`. Descargar como blob. El nombre
@@ -2958,6 +2968,10 @@ Endurecimiento B (#199, OBS-C-3): los textos de varias rutas dependen del tipo. 
 PLIEGO" y "RUTA n: PLIEGO DE TRANSPORTE …". Spot de varias rutas: "… de Transporte (N rutas)", "RESUMEN DE LAS RUTAS" y "RUTA n: TARIFA
 DE TRANSPORTE …". Este endpoint no responde `FOLIO_INVALIDO`.
 
+HU-045.3 (#265, política NOGE0076): una ruta con el seguro de la mercancía lleva una fila propia, **"Seguro de la mercancía"**, con su
+`valor_seguro`, y la fila de la ruta imprime su valor **sin** el seguro; en el pliego, el resumen agrega esa fila debajo de la ruta (mismo
+número). El "VALOR TOTAL DE LA COTIZACIÓN" sigue siendo la suma de los `precio_final_linea` (con el seguro). Nunca se imprime la tasa.
+
 - **Rol:** ambos (dueño). **Headers:** `If-Match` opcional. **Sin cuerpo.**
 
 ```json
@@ -2968,6 +2982,7 @@ DE TRANSPORTE …". Este endpoint no responde `FOLIO_INVALIDO`.
 |---|---|---|
 | 201 | `SalidaPdf` | Descargar con `pdf_url`. Guardar el `ETag` de la respuesta (la versión cambió) |
 | 400 | `PDF_PAYLOAD_INVALIDO` | "No se pudo generar el PDF: faltan datos" |
+| 400 | `SEGURO_SIN_VALOR_MERCANCIA` (`detalle.rutas[]` con `linea_orden` y `linea_solicitud_id`) | HU-045.3 (#265): "Falta el valor de la mercancía para el seguro de la ruta N": quitar el check o editar el valor (en una versión nueva si ya está finalizada). No se generó nada |
 | 404 | `ErrorWeb` | — |
 | 409 | `COSTEO_NO_LISTO` | Todas las rutas deben tener precio |
 | 409 | `PDF_YA_GENERADO` | Ya hay un PDF vigente: descargarlo. Solo se regenera con `pdf_desactualizado = true` |
@@ -3004,6 +3019,9 @@ con la leyenda de impuestos del PDF. **Por defecto, en todos los ambientes**, to
 sin CC ni CCO, con los destinatarios originales en el cuerpo, y `redirigido_a` con el buzón); la vista previa lo avisa
 (`entorno_pruebas`). Solo producción con `Correo:Proteccion:Modo=ninguno` **y** `Correo:Proteccion:PermitirEnvioReal=true` escribe a
 los destinatarios reales.
+
+HU-045.3 (#265): el precio de cada ruta y el total del bloque fijo incluyen el seguro de la mercancía, sin desglose (regla de HU-033); la
+ruta que lo incluye dice "Incluye el seguro de la mercancía" (`resumen.rutas[].incluye_seguro = true`), sin el monto ni la tasa.
 
 #### 4.8.1 `GET /web/clientes/{nit}/destinatarios-previos`
 
@@ -3107,6 +3125,7 @@ producción.
 | 400 | `CORREO_DEMASIADOS_DESTINATARIOS` | #228: más destinatarios entre `para` y `cc` que el tope (máximo 10 por defecto, configurable). `detalle = {maximo: 10, recibidos: N}`: "Puedes enviar a máximo {maximo} destinatarios" (limitar los chips del formulario a 10 y, tras un 400, a `detalle.maximo`) |
 | 400 | `CORREO_DUPLICADO` | "Ya enviaste esta cotización a esos destinatarios hace menos de 5 minutos" (cuenta también un envío todavía en curso) |
 | 400 | `CORREO_PDF_NO_ENCONTRADO` | Sin PDF: deshabilitar Enviar si `pdf_url` es `null` |
+| 400 | `SEGURO_SIN_VALOR_MERCANCIA` (`detalle.rutas[]`) | HU-045.3 (#265): una ruta tiene el seguro marcado sin valor de la mercancía (por ejemplo, un PDF generado antes de esta regla): no se envió nada; corregir en una versión nueva |
 | 400 | `CORREO_ENVIO_FALLIDO` | MailSender lo rechazó o no está disponible: mostrar `mensaje`. Si dice que no respondió a tiempo, el correo pudo quedar encolado: la cotización **queda enviada** y, durante 5 minutos, reenviar a los mismos destinatarios responde `CORREO_DUPLICADO` (la fila del historial es `fallido` con un `error` que empieza por "Resultado incierto:"). También llega si el ambiente redirige y no tiene buzón de pruebas: no salió nada |
 | 404 | `ErrorWeb` | — |
 | 409 | `CONFLICTO_CONCURRENCIA` | La cotización cambió o el PDF quedó desactualizado: recargar y regenerar el PDF |
@@ -3999,7 +4018,7 @@ parecido del catálogo, `sugerido = true`, con `similitud` de 0 a 1), `null` (si
 | `SIN_RUTAS_COTIZABLES` | 409 | HU-028.1 (#183, D1): la Mesa rechazó todas las rutas; `POST .../costeo/pdf` no genera el PDF. En `re-solicitar` y `PUT .../solicitud` (`detalle.motivo = TODOS_RECHAZADOS`): ningún camión viajaría a NEXO | Esconder "Generar PDF"; mostrar `motivo_estado_costeo`. Al re-solicitar o editar: ofrecer reincluir los rechazados en la edición |
 | `SAP_MARGEN_NO_CONFIGURADO` | 503 | HU-042.2 (#243): `/web/admin/sap-margen/*` en un ambiente sin las credenciales de SAP | "Sincronización no configurada" (solo administración) |
 | `SAP_MARGEN_NO_DISPONIBLE` | 503 | HU-042.2 (#243): `/web/admin/sap-margen/*` con la base de Cotifly sin responder | Reintentar |
-| `SEGURO_SIN_VALOR_MERCANCIA` | 400 | HU-045.2 (#264): `PUT .../costeo/seguro` en una ruta sin `valor_mercancia` (`detalle.linea_orden`, `detalle.linea_solicitud_id`) | Desmarcar el check; pedir el valor de la mercancía editando la solicitud |
+| `SEGURO_SIN_VALOR_MERCANCIA` | 400 | HU-045.2 (#264): `PUT .../costeo/seguro` en una ruta sin `valor_mercancia` (`detalle.linea_orden`, `detalle.linea_solicitud_id`). HU-045.3 (#265): también `POST .../costeo/pdf` y `POST .../enviar` con alguna ruta que tiene el check marcado sin valor (`detalle.rutas[]`) | Desmarcar el check; pedir el valor de la mercancía editando la solicitud |
 | `SAP_MARGEN_SINCRONIZACION_EN_CURSO` | 409 | HU-042.2 (#243): `POST /web/admin/sap-margen/sincronizar` con otra corrida en curso | Reintentar en un momento; nada cambió |
 | `SERVICIO_OCUPADO` | 503 | Otra operación retiene el folio (con `Retry-After: 1`) | Reintentar en 1 s |
 | `SOLICITUD_COSTEO_INVALIDA` | 400 | Formulario o carga inválidos (`detalle.errores[]` en la captura) | Pintar errores por campo |
@@ -4147,6 +4166,7 @@ fila_excel, campo, codigo, mensaje}`.
 | 74 | **#250 (contrato único de NEXO, DU §8, fase 1): peso con tara.** La tara (`peso_con_tara_kg`) aplica **solo a `Contenedor`** (decisión del 2026-11-05): Carga Suelta y Extradimensionado siguen respondiendo `CAMPO_NO_APLICA` y mandan el peso de la carga; no se generaliza. En NEXO, una ruta de contenedor con tara y **un solo camión** viaja ahora con el peso con tara **y sus posiciones** (NEXO solo rechaza una suma de posiciones que supera el peso en más de 1 %); con varios camiones, sin posiciones como antes. Sin cambios en el contrato web: ni campos, ni códigos, ni endpoints; siguen **64 endpoints** | Sin cambio de contrato | Mostrar "Peso total con tara" **solo** con `clase_viaje = Contenedor` y limpiarlo al cambiar de clase; **no** construir el comportamiento planeado en CTF-F3/#107 para Carga Suelta |
 | 75 | **HU-043.2 (#251, NEXO S6-HU-38.2): los servicios conexos se cotizan a su precio de VENTA, sin margen.** El precio de cada ruta es ahora (fletes + retorno + levante) **con** el margen de la ruta **+** la venta de sus conexos **sin** margen (antes el margen se aplicaba también a los conexos). La venta sale del `valorVenta`/`precioVentaUnitario` de la cotización de NEXO o, en un conexo capturado o agregado en Cotifly, del `precioVenta` del catálogo de NEXO; sin ella (NEXO anterior o servicio sin precio de venta), el costo. **Cambia el significado** de: `precio_final_linea` y `precio_final` (nueva fórmula), `servicios_conexos[].precio` (la venta, en la moneda de la cotización; **no cambia al ajustar el margen**), `totales.precio_transporte` (solo transporte con margen) y `totales.precio_conexos` (suma de las ventas), y `margen_promedio` del tablero (margen sobre el transporte, no sobre el precio completo). **No cambian:** `costo_final` (costo real, con el costo de los conexos), la forma de ninguna respuesta (ningún campo nuevo ni retirado), el PDF y el correo (siguen sin mostrar el costo ni el precio de cada conexo, solo el total). Una cotización **finalizada o con PDF antes del cambio conserva su precio** y su desglose como se cotizó; una sin finalizar puede cambiar de precio la próxima vez que se recalcule (polling, margen, conexos) | Cambia | Dejar de explicar en pantalla que "el margen se aplica a los conexos": la vista previa del margen solo mueve el transporte; mostrar `servicios_conexos[].precio` como precio de venta. En el tablero, rotular `margen_promedio` como margen del transporte |
 | 76 | **HU-045.2 (#264, ADR-029): seguro de la mercancía por ruta.** Endpoint **nuevo** `PUT /web/cotizaciones/{folio}/costeo/seguro` (4.4.15, `If-Match` obligatorio) con `{incluye_seguro, linea_orden?, linea_solicitud_id?}`: incluye o quita el seguro de una ruta. El seguro es `round(valor_mercancia × tasa vigente, 0)` en pesos (hoy 0,345 %), **no lleva margen** y se suma al precio: `precio_final_linea` = (fletes + retorno + levante) con margen + venta de los conexos + `valor_seguro`; en USD se convierte con `trm_aplicada`. Campos **nuevos** en `CosteoCotizacion`: `tasa_seguro_vigente` (en el GET, en el PUT del seguro, en las respuestas del margen y de los conexos y en el detalle por folio) y en cada ruta `incluye_seguro`, `tasa_seguro` y `valor_seguro`. Código **nuevo** `SEGURO_SIN_VALOR_MERCANCIA` (400). Con la cotización finalizada o enviada, 409 `PDF_YA_ENVIADO` (como el margen); en una licitación, 409 `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION`. Si cambia `valor_mercancia` (edición o `datos_carga`), el seguro se recalcula con la tasa vigente; la versión nueva conserva el check. El PDF, el Excel y el correo todavía no muestran la línea del seguro (HU-045.3, #265). Script `db/scripts/20` (de Datos) antes de la imagen ("falta 20"). Son **65 endpoints** | Agrega | Mostrar el check "Incluir seguro" por ruta (no en licitaciones) con la `tasa_seguro_vigente`; al marcarlo o desmarcarlo, `PUT .../costeo/seguro` con `If-Match` y refrescar con la respuesta; mostrar `valor_seguro` aparte del flete; con `SEGURO_SIN_VALOR_MERCANCIA`, pedir el valor de la mercancía editando la solicitud |
+| 77 | **HU-045.3 (#265, ADR-029 §9): el seguro de la mercancía en el PDF, el Excel, el correo y el detalle.** PDF (4.7.1): una fila **"Seguro de la mercancía"** por ruta, aparte del flete (NOGE0076); la fila de la ruta imprime su valor **sin** el seguro y el total no cambia. Excel de la cotización (4.5.8): columna `Seguro de la mercancía ({moneda})` en `Rutas` y su total (también en solo lectura); Excel de la licitación (4.6.5): quinta columna solo si alguna línea lo incluye. Correo (4.8): el precio de la ruta y el total lo incluyen, sin desglose; campo **nuevo** `resumen.rutas[].incluye_seguro`. Detalle (4.5.5): campo **nuevo** `totales.precio_seguro`, y ahora `precio_transporte + precio_conexos + precio_seguro = precio_final`. `SEGURO_SIN_VALOR_MERCANCIA` (400) también en `POST .../costeo/pdf` y `POST .../enviar` cuando una ruta tiene el check marcado sin valor de la mercancía (`detalle.rutas[]`; pendiente de decisión: bloquear o avisar). Nunca se exporta la tasa | Agrega | Mostrar `totales.precio_seguro` en el desglose del detalle; en el correo, la marca de `incluye_seguro`; avisar en la ruta con `incluye_seguro = true` y `valor_seguro = null` antes de Finalizar; manejar el 400 en Generar PDF y Enviar |
 
 ---
 

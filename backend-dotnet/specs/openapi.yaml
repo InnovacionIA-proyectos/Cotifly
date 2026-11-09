@@ -687,6 +687,10 @@ paths:
           no sale y responde 400 `CORREO_ENVIO_FALLIDO` (fila `fallido` en el historial).
         El orden es: dueño (404), correo deshabilitado (503), asunto con controles, destinatarios con controles, tope,
         formato de las direcciones, largos. Nada de esto llama a MailSender ni cambia el estado de envío.
+
+        HU-045.3 (#265): el precio de cada ruta y el total del bloque fijo incluyen el seguro de la mercancía (sin desglose, regla de HU-033);
+        la ruta que lo incluye dice "Incluye el seguro de la mercancía". Con una ruta que cotiza con el seguro marcado sin valor de la
+        mercancía responde 400 `SEGURO_SIN_VALOR_MERCANCIA` (`detalle.rutas`), sin enviar nada.
       security:
         - bearer: []
       parameters:
@@ -706,7 +710,8 @@ paths:
                 $ref: '#/components/schemas/RespuestaEnvio'
         '400':
           description: |
-            Error de negocio del envío: duplicado (`CORREO_DUPLICADO`), sin PDF (`CORREO_PDF_NO_ENCONTRADO`), más
+            Error de negocio del envío: duplicado (`CORREO_DUPLICADO`), sin PDF (`CORREO_PDF_NO_ENCONTRADO`), seguro de la mercancía marcado
+            sin valor de la mercancía en alguna ruta (`SEGURO_SIN_VALOR_MERCANCIA`, HU-045.3, #265, con `detalle.rutas`), más
             destinatarios entre `para` y `cc` que el tope (10 por defecto, configurable) (`CORREO_DEMASIADOS_DESTINATARIOS`, #228, con `detalle.maximo` y
             `detalle.recibidos`), MailSender lo
             rechazó (400/413/422), no está disponible o no respondió a tiempo (`CORREO_ENVIO_FALLIDO`; con tiempo agotado el
@@ -3951,6 +3956,14 @@ paths:
         HU-012.1. Acepta `If-Match` opcional (desde el `0006` de #98: si viene y no coincide, 409 `CONFLICTO_CONCURRENCIA`).
         Al regenerar un PDF desactualizado, el anterior se archiva en el almacén como `{folio}-hN.pdf` (queda en el
         historial) y el nuevo conserva el nombre `{folio}.pdf`.
+
+        **Seguro de la mercancía (HU-045.3, #265, ADR-029 §9).** Una ruta con el seguro (`incluye_seguro`, #264) lo trae en una fila propia,
+        "Seguro de la mercancía", aparte del flete (política NOGE0076): la fila de la ruta imprime su valor final SIN el seguro y la fila del
+        seguro su `valor_seguro`; en el pliego, el resumen agrega la fila del seguro debajo de la ruta (con su número). El "VALOR TOTAL DE LA
+        COTIZACIÓN" no cambia: la suma de los `precio_final_linea`, con el seguro. Nunca imprime la tasa. Una ruta que cotiza con el seguro
+        marcado y sin valor de la mercancía (una edición quitó el valor: no suma al precio) responde 400 `SEGURO_SIN_VALOR_MERCANCIA` con
+        `detalle.rutas` (`linea_orden`, `linea_solicitud_id`), para no cobrar de menos; se corrige quitando el seguro o agregando el valor (en
+        una versión nueva si ya está finalizada). Pendiente de decisión del usuario: bloquear (hoy) o solo avisar.
       security:
         - bearer: []
       parameters:
@@ -3967,11 +3980,24 @@ paths:
               schema:
                 $ref: '#/components/schemas/SalidaPdf'
         '400':
-          description: Payload del PDF inválido (`PDF_PAYLOAD_INVALIDO`)
+          description: |
+            Payload del PDF inválido (`PDF_PAYLOAD_INVALIDO`) o (HU-045.3, #265) `SEGURO_SIN_VALOR_MERCANCIA`: alguna ruta que cotiza tiene el
+            seguro de la mercancía marcado sin valor de la mercancía; `detalle.rutas` las lista. No se genera nada.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+              examples:
+                seguro_sin_valor:
+                  summary: HU-045.3 (#265)
+                  value:
+                    error:
+                      codigo: SEGURO_SIN_VALOR_MERCANCIA
+                      mensaje: "La cotización PCN-900123456-AP-05112026-001 tiene el seguro de la mercancía marcado en la ruta 1 sin valor de la mercancía: su precio no incluye el seguro. Antes de generar el PDF, quita el seguro o agrega el valor de la mercancía (en una versión nueva si ya está finalizada)."
+                      detalle:
+                        rutas:
+                          - linea_orden: 1
+                            linea_solicitud_id: 0f8fad5b-d9cb-469f-a165-70867728950e
         '401':
           $ref: '#/components/responses/SesionExpirada'
         '404':
@@ -6077,11 +6103,11 @@ components:
 
     TotalesCotizacion:
       type: object
-      required: [rutas, camiones, peso_kg, precio_transporte, precio_conexos, precio_final]
+      required: [rutas, camiones, peso_kg, precio_transporte, precio_conexos, precio_seguro, precio_final]
       description: |
         HU-027.1 (#179). Totales de la solicitud con las reglas del costeo y del PDF, en la moneda de la cotización. Los precios son `null`
-        mientras alguna ruta no tenga precio; `precio_transporte + precio_conexos = precio_final`. HU-043.2 (#251): el margen se aplica
-        solo al transporte; los conexos van a su precio de venta, sin margen.
+        mientras alguna ruta no tenga precio; `precio_transporte + precio_conexos + precio_seguro = precio_final` (HU-045.3, #265). HU-043.2
+        (#251): el margen se aplica solo al transporte; los conexos van a su precio de venta, sin margen, y el seguro (HU-045.2) tampoco lo lleva.
       properties:
         rutas:
           type: integer
@@ -6105,6 +6131,12 @@ components:
           description: |
             Suma del precio de los servicios conexos de todas las rutas. HU-043.2 (#251): su precio de VENTA (el `valorVenta` de Nexo o el
             `precioVenta` del catálogo; sin él, el costo), sin margen.
+        precio_seguro:
+          type: number
+          nullable: true
+          description: |
+            HU-045.3 (#265, B4 de la auditoría de #264). Suma del `valor_seguro` de las rutas que cotizan (0 si ninguna incluye el seguro de
+            la mercancía), sin margen. Nunca la tasa.
         precio_final:
           type: number
           nullable: true
@@ -6275,8 +6307,8 @@ components:
     ResumenCorreo:
       type: object
       description: |
-        HU-033 (#199, decisión 5). Bloque fijo del correo para el cliente: el precio final de cada ruta (transporte y conexos
-        incluidos) y el total general, sin desglose (nunca costo, margen, flete ni conexos con precio).
+        HU-033 (#199, decisión 5). Bloque fijo del correo para el cliente: el precio final de cada ruta (transporte, conexos y, HU-045.3,
+        #265, el seguro de la mercancía incluidos) y el total general, sin desglose (nunca costo, margen, flete, conexos ni seguro con precio).
       required: [moneda, total, total_texto, rutas, leyenda]
       properties:
         moneda:
@@ -6314,6 +6346,11 @@ components:
           description: Precio final de la ruta; `null` si la Mesa de Costeo la rechazó (`precio_texto` = "Sin costeo").
         precio_texto:
           type: string
+        incluye_seguro:
+          type: boolean
+          description: |
+            HU-045.3 (#265). El precio de la ruta incluye el seguro de la mercancía (el correo dice "Incluye el seguro de la mercancía",
+            sin el monto ni la tasa).
 
     SeguimientoWeb:
       type: object
