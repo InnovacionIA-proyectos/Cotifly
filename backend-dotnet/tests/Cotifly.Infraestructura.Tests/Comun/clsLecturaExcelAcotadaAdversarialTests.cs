@@ -398,11 +398,12 @@ public sealed class clsLecturaExcelAcotadaAdversarialTests
     }
 
     /// <summary>
-    /// D1 (preexistente, anterior a #277): el VML que guarda Excel para los comentarios trae <c>&lt;br&gt;</c> sin cerrar. ClosedXML lo
-    /// corrige antes de leerlo, pero el conteo lo lee estricto: un libro con comentarios es <c>LIBRO_ILEGIBLE</c> en mercancías y pliego.
+    /// D1 descartado (auditoría de #277): un VML con <c>&lt;br&gt;</c> sin cerrar (XML mal formado, como el que a veces trae el texto de
+    /// un comentario) tampoco lo abre ClosedXML 0.104.2, que no lo corrige: el control da <c>LIBRO_ILEGIBLE</c> y coincide con ClosedXML.
+    /// No rechaza nada que ClosedXML pudiera abrir, y la lectura responde un error de negocio, nunca un 500.
     /// </summary>
     [Fact]
-    public async Task UnVmlComoElDeExcelConBrSinCerrarSeLee()
+    public async Task UnVmlConBrSinCerrarLoRechazanElControlYClosedXml()
     {
         var vml = Parte("vml");
         string original;
@@ -412,17 +413,18 @@ public sealed class clsLecturaExcelAcotadaAdversarialTests
             original = lector.ReadToEnd();
         }
 
-        // Excel escribe el estilo del cuadro con <br> sin cerrar dentro de x:ClientData o del texto del comentario.
-        var conBr = original.Replace("</v:textbox>", "<br></v:textbox>", StringComparison.Ordinal);
-        conBr.Should().NotBe(original, "el VML de ClosedXML trae v:textbox");
+        var conBr = original.Replace("<v:textbox />", "<v:textbox><div>hola<br>mundo</div></v:textbox>", StringComparison.Ordinal);
+        conBr.Should().NotBe(original, "el VML de ClosedXML trae v:textbox vacío");
         var libro = Disfrazar(_base.Value, vml, null, conBr);
-
-        AbrirConClosedXml(libro); // ClosedXML lo lee.
         var lectorMercancias = new clsLectorGrillaExcelClosedXml(new clsLecturaExcelAcotada(NullLogger<clsLecturaExcelAcotada>.Instance),
             NullLogger<clsLectorGrillaExcelClosedXml>.Instance);
+
+        var abrir = () => AbrirConClosedXml(libro);
         var resultado = await lectorMercancias.LeerAsync("m.xlsx", libro, Ct);
 
-        resultado.EsExitoso.Should().BeTrue(resultado.EsFallo ? resultado.Error.Detalle : null);
+        abrir.Should().Throw<Exception>("ClosedXML 0.104.2 no corrige el <br> sin cerrar del VML");
+        (clsLecturaExcelAcotada.Verificar(libro, Ct)?.Detalle).Should().Be(clsLecturaExcelAcotada.MotivoLibroIlegible);
+        (resultado.Error.Codigo, resultado.Error.Detalle).Should().Be((clsCodigosError.ExcelInvalido, clsLecturaExcelAcotada.MotivoLibroIlegible));
     }
 
     /// <summary>Mercancías, pliego y exportación con el libro base disfrazado (VML octet-stream con XML roto): ningún 500.</summary>

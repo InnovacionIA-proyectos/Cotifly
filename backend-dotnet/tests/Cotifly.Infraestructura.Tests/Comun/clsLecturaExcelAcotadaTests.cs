@@ -166,4 +166,57 @@ public sealed class clsLecturaExcelAcotadaTests : IDisposable
             .Be((clsCodigosError.ArchivoDemasiadoGrande, clsLecturaExcelAcotada.MotivoDescomprimido), tipo);
         (clsLecturaExcelAcotada.Verificar(conDtd, Ct)?.Detalle).Should().Be(clsLecturaExcelAcotada.MotivoLibroIlegible, tipo);
     }
+
+    /// <summary>
+    /// Validación de #277 (hueco anterior): las relaciones (<c>.rels</c>) y <c>[Content_Types].xml</c> no son partes y no entraban en el
+    /// conteo, aunque System.IO.Packaging las lee enteras al abrir el paquete. Ahora se cuentan antes de abrirlo, en el mismo tope: una
+    /// hoja de medio millón de elementos más 600.000 relaciones pasa de 1.000.000 y es <c>DESCOMPRIMIDO_EXCEDE_LIMITE</c>.
+    /// </summary>
+    [Fact]
+    public void LasRelacionesEntranEnElConteoDeElementos()
+    {
+        var libro = clsExcelMercanciasMuestra.ConRelacionesDelLibro(clsExcelMercanciasMuestra.Densa(250_000), 600_000);
+
+        clsLecturaExcelAcotada.VerificarPaquete(libro, Ct).Should().BeNull("cabe en los 64 MB: lo frena el conteo");
+        var rechazo = clsLecturaExcelAcotada.Verificar(libro, Ct);
+
+        (rechazo?.Codigo, rechazo?.Detalle).Should().Be((clsCodigosError.ArchivoDemasiadoGrande, clsLecturaExcelAcotada.MotivoDescomprimido));
+        clsLecturaExcelAcotada.Verificar(clsExcelMercanciasMuestra.ConRelacionesDelLibro(clsExcelMercanciasMuestra.Excel(3), 50), Ct)
+            .Should().BeNull("unas pocas relaciones más no cambian nada");
+    }
+
+    /// <summary>Las relaciones con DTD siguen siendo <c>LIBRO_ILEGIBLE</c> (ya lo eran: las rechaza también System.IO.Packaging).</summary>
+    [Fact]
+    public void UnasRelacionesConDtdSonLibroIlegible()
+    {
+        var conDtd = ReemplazarRelaciones(clsExcelMercanciasMuestra.Excel(1), xml => "<?xml version=\"1.0\"?><!DOCTYPE r [<!ENTITY e SYSTEM \"file:///etc/passwd\">]>"
+            + xml[(xml.IndexOf("?>", StringComparison.Ordinal) + 2)..]);
+
+        (clsLecturaExcelAcotada.Verificar(conDtd, Ct)?.Detalle).Should().Be(clsLecturaExcelAcotada.MotivoLibroIlegible);
+    }
+
+    private static byte[] ReemplazarRelaciones(byte[] libro, Func<string, string> cambio)
+    {
+        using var salida = new MemoryStream();
+        using (var origen = new ZipArchive(new MemoryStream(libro), ZipArchiveMode.Read))
+        using (var destino = new ZipArchive(salida, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            foreach (var entrada in origen.Entries)
+            {
+                using var escritura = destino.CreateEntry(entrada.FullName).Open();
+                using var lectura = entrada.Open();
+                if (entrada.FullName == "xl/_rels/workbook.xml.rels")
+                {
+                    using var texto = new StreamReader(lectura);
+                    escritura.Write(Encoding.UTF8.GetBytes(cambio(texto.ReadToEnd())));
+                }
+                else
+                {
+                    lectura.CopyTo(escritura);
+                }
+            }
+        }
+
+        return salida.ToArray();
+    }
 }

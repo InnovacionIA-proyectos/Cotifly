@@ -332,6 +332,23 @@ public static class clsExcelMercanciasMuestra
             return documento.Declaration + documento.ToString(System.Xml.Linq.SaveOptions.DisableFormatting);
         });
 
+    /// <summary>
+    /// HU-035.3 (#277), validación: <paramref name="libro"/> con <paramref name="extra"/> relaciones externas (hipervínculos) más en
+    /// <c>xl/_rels/workbook.xml.rels</c>. Las relaciones no son partes: System.IO.Packaging las lee enteras al abrir el paquete.
+    /// </summary>
+    public static byte[] ConRelacionesDelLibro(byte[] libro, int extra) => ConEntrada(libro, "xl/_rels/workbook.xml.rels", xml =>
+    {
+        var relaciones = new StringBuilder();
+        for (var i = 0; i < extra; i++)
+        {
+            relaciones.Append("<Relationship Id=\"h").Append(i).Append("\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"http://x/\" TargetMode=\"External\"/>");
+        }
+
+        return xml.Replace("</Relationships>", relaciones + "</Relationships>", StringComparison.Ordinal) is var nuevo && nuevo != xml
+            ? nuevo
+            : throw new InvalidOperationException("No se encontró el cierre de xl/_rels/workbook.xml.rels.");
+    });
+
     /// <summary>Un DEVMODE ficticio: nombre de impresora en UTF-16 relleno a 64 bytes y campos binarios (no es XML).</summary>
     public static byte[] DevmodeFicticio()
     {
