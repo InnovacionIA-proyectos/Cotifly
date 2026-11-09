@@ -11,11 +11,21 @@ namespace Cotifly.Dominio.Cotizaciones;
 public sealed partial class clsLineaSolicitud
 {
     /// <summary>
-    /// HU-045.2 (#264): <c>round(valorMercancia × tasa, 0)</c> en pesos enteros (la fórmula de la HU; el valor de la mercancía es siempre
-    /// en pesos, decisión 2).
+    /// HU-045.2 (#264, decisión del usuario del 2026-11-09: sin redondeo por ahora): <c>valorMercancia × tasa</c> en pesos, exacto (el valor
+    /// de la mercancía es siempre en pesos, decisión 2). Lo que se guarda en la ruta es <see cref="SeguroGuardado"/>.
     /// </summary>
-    public static decimal CalcularSeguro(decimal valorMercancia, decimal tasa) =>
-        clsConversorMoneda.Redondear(valorMercancia * tasa, clsConversorMoneda.Pesos);
+    public static decimal CalcularSeguro(decimal valorMercancia, decimal tasa) => valorMercancia * tasa;
+
+    /// <summary>Escala de <c>CotizacionLineasSolicitud.costoSeguro</c> (<c>DECIMAL(18,2)</c>, script 20): centavos.</summary>
+    public const int DecimalesCostoSeguro = 2;
+
+    /// <summary>
+    /// HU-045.2 (#264): el seguro tal como lo guarda la columna <c>costoSeguro DECIMAL(18,2)</c>: <see cref="CalcularSeguro"/> sin redondear a
+    /// pesos, llevado a la escala de la columna (centavos) con el mismo criterio con que SQL Server/SqlClient ajustan un decimal de más
+    /// escala (la mitad se aleja de cero). Así el seguro en memoria es exactamente el que se relee de la base.
+    /// </summary>
+    public static decimal SeguroGuardado(decimal valorMercancia, decimal tasa) =>
+        Math.Round(CalcularSeguro(valorMercancia, tasa), DecimalesCostoSeguro, MidpointRounding.AwayFromZero);
 
     /// <summary>
     /// HU-045.2 (#264): el seguro de la ruta en la moneda de la solicitud: <see cref="CostoSeguro"/> en pesos o, en dólares, convertido con la
@@ -74,7 +84,7 @@ public sealed partial class clsLineaSolicitud
 
         IncluyeSeguro = true;
         TasaSeguroAplicada = tasaVigente;
-        CostoSeguro = CalcularSeguro(valor, tasaVigente);
+        CostoSeguro = SeguroGuardado(valor, tasaVigente);
         return true;
     }
 
@@ -110,7 +120,7 @@ public sealed partial class clsLineaSolicitud
         }
 
         var tasa = tasaVigente ?? TasaSeguroAplicada;
-        var (tasaNueva, costoNuevo) = ValorMercancia is { } valor && tasa is { } t ? (t, CalcularSeguro(valor, t)) : ((decimal?)null, (decimal?)null);
+        var (tasaNueva, costoNuevo) = ValorMercancia is { } valor && tasa is { } t ? (t, SeguroGuardado(valor, t)) : ((decimal?)null, (decimal?)null);
         var cambio = tasaNueva != TasaSeguroAplicada || costoNuevo != CostoSeguro;
         TasaSeguroAplicada = tasaNueva;
         CostoSeguro = costoNuevo;

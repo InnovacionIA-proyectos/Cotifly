@@ -1,6 +1,5 @@
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
-using Cotifly.Dominio.Precio;
 using Cotifly.Pruebas.Comun;
 
 namespace Cotifly.Dominio.Tests.Cotizaciones;
@@ -20,31 +19,32 @@ public sealed class clsSeguroMercanciaAdversarialTests
         clsCotizacionMuestra.Costeada(flete: 1_000_000m, margen: 0.20m, moneda: moneda, trm: trm,
             solicitud: clsSolicitudCosteoMuestra.Crear() with { ValorMercancia = valor });
 
+    // Decisión del usuario del 2026-11-09: el seguro NO se redondea a pesos. Se calcula exacto y se guarda con la escala de la columna
+    // costoSeguro DECIMAL(18,2) (centavos), con el criterio de SQL Server al ajustar la escala (la mitad se aleja de cero).
     [Theory]
-    [InlineData("1000", "0.0005", "0")]
-    [InlineData("3000", "0.0005", "2")]
-    [InlineData("2500", "0.001", "2")]
-    [InlineData("3500", "0.001", "4")]
-    [InlineData("1", "0.000001", "0")]
-    [InlineData("0", "0.003450", "0")]
-    [InlineData("0.01", "0.999999", "0")]
-    [InlineData("123456789.99", "0.003450", "425926")]
-    public void ElRedondeoAPesosEnterosEsElMismoHalfToEvenDelModuloDePrecio(string valor, string tasa, string esperado)
+    [InlineData("1000", "0.0005", "0.5", "0.50")]
+    [InlineData("3000", "0.0005", "1.5", "1.50")]
+    [InlineData("1", "0.005", "0.005", "0.01")]
+    [InlineData("3", "0.005", "0.015", "0.02")]
+    [InlineData("1", "0.000001", "0.000001", "0.00")]
+    [InlineData("0", "0.003450", "0", "0.00")]
+    [InlineData("0.01", "0.999999", "0.00999999", "0.01")]
+    [InlineData("123456789.99", "0.003450", "425925.9254655", "425925.93")]
+    public void ElSeguroNoSeRedondeaAPesosYSeGuardaEnCentavos(string valor, string tasa, string exacto, string guardado)
     {
         var v = decimal.Parse(valor, System.Globalization.CultureInfo.InvariantCulture);
         var t = decimal.Parse(tasa, System.Globalization.CultureInfo.InvariantCulture);
 
-        var seguro = clsLineaSolicitud.CalcularSeguro(v, t);
-
-        seguro.Should().Be(decimal.Parse(esperado, System.Globalization.CultureInfo.InvariantCulture));
-        seguro.Should().Be(clsConversorMoneda.Redondear(v * t, clsConversorMoneda.Pesos), "una sola regla de redondeo en todo el precio");
-        decimal.Truncate(seguro).Should().Be(seguro, "el seguro se guarda en pesos enteros");
+        clsLineaSolicitud.CalcularSeguro(v, t).Should().Be(decimal.Parse(exacto, System.Globalization.CultureInfo.InvariantCulture), "v × t, sin redondear");
+        var seguro = clsLineaSolicitud.SeguroGuardado(v, t);
+        seguro.Should().Be(decimal.Parse(guardado, System.Globalization.CultureInfo.InvariantCulture));
+        decimal.Round(seguro, 2).Should().Be(seguro, "cabe en la escala de costoSeguro DECIMAL(18,2)");
     }
 
     [Fact]
     public void ElValorMaximoDeLaMercanciaConLaTasaMaximaNoDesbordaLaColumnaDecimal18_2()
     {
-        var seguro = clsLineaSolicitud.CalcularSeguro(clsSolicitudCosteo.MaximoValor, 0.999999m);
+        var seguro = clsLineaSolicitud.SeguroGuardado(clsSolicitudCosteo.MaximoValor, 0.999999m);
 
         seguro.Should().BeLessThan(10_000_000_000_000_000m, "costoSeguro es DECIMAL(18,2): a lo sumo 16 dígitos enteros");
         seguro.Should().BeGreaterThan(0m);
@@ -84,12 +84,12 @@ public sealed class clsSeguroMercanciaAdversarialTests
     }
 
     [Fact]
-    public void EnDolaresElSeguroSeRedondeaACentavosConLaTrmDeLaSolicitud()
+    public void EnDolaresElSeguroSeConvierteConLaTrmDeLaSolicitudSinRedondearloAntesAPesos()
     {
         var ruta = Costeada(valor: 200_000_290m, moneda: "USD", trm: 3_999.99m).PrimeraRuta!;
         ruta.IncluirSeguro(Tasa).Valor.Should().BeTrue();
 
-        ruta.CostoSeguro.Should().Be(690_001m, "200.000.290 × 0,345 % = 690.001,0005 → 690.001 pesos");
+        ruta.CostoSeguro.Should().Be(690_001.00m, "200.000.290 × 0,345 % = 690.001,0005, en la escala de la columna (centavos)");
         ruta.ValorSeguro("USD", 3_999.99m, out var valor).Should().BeNull();
 
         valor.Should().Be(Math.Round(690_001m / 3_999.99m, 2, MidpointRounding.ToEven)).And.Be(172.50m);

@@ -19,8 +19,11 @@ tabla `TarifasSeguro` (una sola tasa activa) y las columnas `incluyeSeguro`, `ta
 1. **Dominio.** La ruta (`clsLineaSolicitud`, parcial `Seguro`) guarda las tres columnas y las mantiene coherentes con los CHECK del 20:
    - `IncluirSeguro(tasa)`: sin `ValorMercancia`, `SEGURO_SIN_VALOR_MERCANCIA`; si ya lo tiene, nada cambia (conserva su tasa).
    - `QuitarSeguro()`: tasa y costo en `null`.
-   - `costoSeguro = round(valorMercancia × tasa, 0)` en pesos (`clsConversorMoneda.Redondear`, half-to-even, como todo precio en COP
-     del costeo y la venta de los conexos).
+   - `costoSeguro = valorMercancia × tasa` en pesos, **sin redondear a pesos** (decisión del usuario del 2026-11-09). Se guarda con la
+     escala de la columna `costoSeguro DECIMAL(18,2)` del script 20 (centavos; `valorMercancia` también es `DECIMAL(18,2)` y la tasa
+     `DECIMAL(9,6)`): `SeguroGuardado` lleva el producto exacto (hasta 8 decimales) a centavos con el criterio de SQL Server al ajustar la
+     escala (la mitad se aleja de cero), para que el valor en memoria sea el mismo que se relee. En USD se convierte con `trm_aplicada`
+     (`PesosADolares`, centavos, la regla de todo precio en dólares), sin redondear antes el seguro a pesos.
    - `ActualizarSeguroPorValor`: si el valor de la mercancía cambió, toma la tasa vigente y recalcula; sin valor, el seguro sigue marcado
      sin tasa ni costo (la base lo admite: `incluyeSeguro = 1` con `costoSeguro` NULL).
    - `CopiarSeguro`: la versión nueva (`-vN`, de la re-solicitud o de la edición) copia el check, la tasa y el costo de la ruta
@@ -57,10 +60,18 @@ tabla `TarifasSeguro` (una sola tasa activa) y las columnas `incluyeSeguro`, `ta
 - El historial del PDF invalidado usa el motivo `servicios_conexos`: el CHECK de `CotizacionPdfsHistorial.motivo` no tiene uno propio y
   agregarlo exige un script de Datos.
 
+## Decisiones del usuario (2026-11-09)
+
+1. **Sin redondeo** del seguro a pesos por ahora (se guarda en centavos, la escala de la columna). El precio de la ruta en COP puede
+   tener centavos cuando hay seguro.
+2. **Licitaciones fuera** por ahora (409 `ESTADO_NO_PERMITE`, `motivo = LICITACION`); se habilitan después.
+3. El historial del PDF se queda con el motivo **`servicios_conexos`** (no se pide un motivo propio a Datos).
+4. Seguro marcado sin valor de la mercancía (tras una edición): se **avisa**, no se bloquea; el aviso lo implementa HU-045.3 (#265).
+
 ## Pendientes (de decisión)
 
 1. Nombre del campo en la API (`valor_seguro` frente a `costo_seguro` de la issue) y el de la base (`costoSeguro`, de Datos).
-2. Licitaciones: ¿se habilita el seguro en el mismo endpoint?
-3. Motivo propio `seguro` en `CotizacionPdfsHistorial` (script de Datos).
+2. (Resuelta el 2026-11-09: licitaciones fuera por ahora.)
+3. (Resuelta el 2026-11-09: el motivo sigue siendo `servicios_conexos`.)
 4. ¿Marcar el seguro exige el costeo listo, como el margen? Hoy no (se puede marcar antes).
 5. Una versión nueva (`-vN`) conserva el check; ¿debería volver a tomar la tasa vigente aunque no cambie el valor?

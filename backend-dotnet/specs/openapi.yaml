@@ -2849,8 +2849,8 @@ paths:
         flete y nunca como descuento.
 
         - **Cálculo.** Al incluirlo se toma la tasa VIGENTE (`TarifasSeguro`, la de `tasa_seguro_vigente` del costeo; hoy 0,345 %
-          = `0.003450`) y se copia en la ruta: `valor_seguro = round(valor_mercancia × tasa_seguro, 0)` en pesos (half-to-even, como todo
-          precio en COP del costeo). Un cambio posterior
+          = `0.003450`) y se copia en la ruta: `valor_seguro = valor_mercancia × tasa_seguro` en pesos, **sin redondear a pesos**
+          (decisión del usuario del 2026-11-09; se guarda en centavos, la escala de `costoSeguro DECIMAL(18,2)`). Un cambio posterior
           de la tasa vigente no toca las rutas que ya lo tienen.
         - **Precio.** El seguro **no lleva margen** (decisión 1): `precio_final_linea` = (fletes + retorno + levante) con el margen
           + la venta de los conexos + `valor_seguro`, y `precio_final` es la suma de las rutas. En USD se convierte con la
@@ -7236,7 +7236,7 @@ components:
           type: number
           nullable: true
           description: |
-            HU-045.2 (#264). El seguro de la mercancía de la ruta (`round(valor_mercancia × tasa_seguro, 0)` en pesos) en la moneda de
+            HU-045.2 (#264). El seguro de la mercancía de la ruta (`valor_mercancia × tasa_seguro` en pesos, sin redondear a pesos: en centavos) en la moneda de
             la cotización (en USD, convertido con `trm_aplicada`). Es venta, sin margen, y ya está sumado en `precio_final_linea`.
             `null` sin seguro o sin valor de la mercancía (la ruta lo tiene marcado pero no suma).
         peso_kg:

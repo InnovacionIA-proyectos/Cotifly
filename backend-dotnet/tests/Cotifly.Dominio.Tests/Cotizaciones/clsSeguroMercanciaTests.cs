@@ -131,10 +131,23 @@ public sealed class clsSeguroMercanciaTests
     }
 
     [Fact]
-    public void ElSeguroSeRedondeaAPesosEnteros()
+    public void ElSeguroNoSeRedondeaAPesos()
     {
-        clsLineaSolicitud.CalcularSeguro(123_456_789m, Tasa).Should().Be(425_926m, "425.925,92 a pesos enteros");
+        // Decisión del usuario del 2026-11-09: sin redondeo por ahora; se guarda con la escala de la columna (DECIMAL(18,2)).
+        clsLineaSolicitud.CalcularSeguro(123_456_789m, Tasa).Should().Be(425_925.92205m, "123.456.789 × 0,345 %, exacto");
+        clsLineaSolicitud.SeguroGuardado(123_456_789m, Tasa).Should().Be(425_925.92m, "en centavos, la escala de costoSeguro");
         clsLineaSolicitud.CalcularSeguro(300_000_000m, Tasa).Should().Be(1_035_000m, "escenario de la HU");
+    }
+
+    [Fact]
+    public void UnSeguroConCentavosSeSumaConSusCentavosAlPrecio()
+    {
+        var cotizacion = Costeada(valor: 123_456_789m);
+
+        cotizacion.CambiarSeguro(1, true, Tasa, _ahora).Valor.Should().BeTrue();
+
+        cotizacion.PrimeraRuta!.CostoSeguro.Should().Be(425_925.92m);
+        cotizacion.PrimeraRuta!.PrecioFinalLinea.Should().Be(1_250_000m + 425_925.92m, "sin redondear el seguro a pesos");
     }
 
     [Fact]

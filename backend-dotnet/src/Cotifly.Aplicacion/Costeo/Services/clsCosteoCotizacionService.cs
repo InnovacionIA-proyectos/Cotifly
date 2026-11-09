@@ -193,7 +193,7 @@ public sealed record clsRutaCosteo(
     public decimal? TasaSeguro { get; init; }
 
     /// <summary>
-    /// HU-045.2 (#264): el seguro de la mercancía de la ruta (<c>round(valor_mercancia × tasa_seguro, 0)</c> en pesos), en la moneda de la
+    /// HU-045.2 (#264): el seguro de la mercancía de la ruta (<c>valor_mercancia × tasa_seguro</c> en pesos, sin redondear a pesos; en centavos), en la moneda de la
     /// cotización (en USD, convertido con <c>trm_aplicada</c>). Es venta, sin margen: ya está sumado en <see cref="PrecioFinalLinea"/>.
     /// <c>null</c> sin seguro o sin valor de la mercancía.
     /// </summary>
@@ -1224,7 +1224,7 @@ public sealed class clsCosteoCotizacionService(
         }
 
         var conexos = ConexosConPrecio(cotizacion, ruta);
-        // HU-045.2 (#264): el seguro de la mercancía también va aparte del transporte (sin margen, ya redondeado como el precio).
+        // HU-045.2 (#264): el seguro de la mercancía también va aparte del transporte (sin margen, en centavos, tal como se sumó al precio).
         var seguro = ruta.ValorSeguro(cotizacion.Moneda, cotizacion.TrmAplicada, out var valorSeguro) is null ? valorSeguro ?? 0m : 0m;
         if (ruta.PrecioFinalLinea is { } total && (conexos.Count > 0 || seguro != 0m))
         {

@@ -134,7 +134,8 @@ public sealed partial class clsLineaSolicitud
     public decimal? TasaSeguroAplicada { get; private set; }
 
     /// <summary>
-    /// HU-045.2 (#264): el seguro de la mercancía en PESOS = <c>round(ValorMercancia × TasaSeguroAplicada, 0)</c>. NO entra en
+    /// HU-045.2 (#264): el seguro de la mercancía en PESOS = <c>ValorMercancia × TasaSeguroAplicada</c> sin redondear a
+    /// pesos (en centavos, la escala de la columna). NO entra en
     /// <see cref="CostoFinal"/> ni lleva margen: se suma al precio de la ruta (<see cref="PrecioRutaCon"/>, decisión 1), convertido con la TRM
     /// en una cotización en dólares (<see cref="ValorSeguro"/>, decisión 2). <c>null</c> sin seguro o sin valor de la mercancía.
     /// </summary>
