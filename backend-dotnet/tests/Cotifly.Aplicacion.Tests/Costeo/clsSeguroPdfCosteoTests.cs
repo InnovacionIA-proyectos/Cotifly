@@ -137,8 +137,8 @@ public sealed class clsSeguroPdfCosteoTests
         resultado.Error.Codigo.Should().Be(clsCodigosError.SeguroSinValorMercancia);
         resultado.Error.Mensaje.Should().Contain(clsCosteoCotizacionService.AccionPdf);
         resultado.Error.Datos!.Should().ContainKey("rutas");
-        await _generador.DidNotReceiveWithAnyArgs().GenerarAsync(default!, default);
-        await _almacen.DidNotReceiveWithAnyArgs().GuardarNuevoAsync(default!, default!, default);
+        await _generador.DidNotReceiveWithAnyArgs().GenerarAsync(default!, Ct);
+        await _almacen.DidNotReceiveWithAnyArgs().GuardarNuevoAsync(default!, default!, Ct);
     }
 
     /// <summary>Formulario de una ruta: flete 1.000.000 al 20 % (1.250.000) y valor de la mercancía 200.000.000 (seguro 690.000).</summary>

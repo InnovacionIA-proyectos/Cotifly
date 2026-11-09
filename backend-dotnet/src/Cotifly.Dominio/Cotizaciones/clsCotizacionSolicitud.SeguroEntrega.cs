@@ -13,9 +13,9 @@ public sealed partial class clsCotizacionSolicitud
 {
     /// <summary>
     /// Las rutas que cotizan (las rechazadas por la Mesa no, HU-028.1) con el seguro marcado y sin seguro calculado (sin valor de la
-    /// mercancía), en orden.
+    /// mercancía), en orden. Es un método y no una propiedad para que EF Core no la tome por una navegación.
     /// </summary>
-    public IReadOnlyList<clsLineaSolicitud> RutasConSeguroSinValor => [.. RutasCotizables.Where(r => r.IncluyeSeguro && r.CostoSeguro is null)];
+    public IReadOnlyList<clsLineaSolicitud> RutasConSeguroSinValor() => [.. RutasCotizables.Where(r => r.IncluyeSeguro && r.CostoSeguro is null)];
 
     /// <summary>
     /// <c>SEGURO_SIN_VALOR_MERCANCIA</c> si alguna ruta tiene el seguro marcado sin valor de la mercancía (<see cref="RutasConSeguroSinValor"/>),
@@ -25,7 +25,7 @@ public sealed partial class clsCotizacionSolicitud
     public clsErrorDominio? ValidarSeguroAntesDe(string accion)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(accion);
-        var rutas = RutasConSeguroSinValor;
+        var rutas = RutasConSeguroSinValor();
         if (rutas.Count == 0)
         {
             return null;

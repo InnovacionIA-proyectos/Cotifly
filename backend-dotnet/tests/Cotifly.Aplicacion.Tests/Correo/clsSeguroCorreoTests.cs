@@ -92,8 +92,8 @@ public sealed class clsSeguroCorreoTests : IDisposable
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.SeguroSinValorMercancia);
         resultado.Error.Mensaje.Should().Contain(clsCorreoService.AccionEnviar);
-        await _transporte.DidNotReceiveWithAnyArgs().EnviarAsync(default!, default);
-        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, default);
+        await _transporte.DidNotReceiveWithAnyArgs().EnviarAsync(default!, Ct);
+        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
         cotizacion.EstadoEnvio.Should().NotBe(EstadoEnvio.Enviada);
     }
 }

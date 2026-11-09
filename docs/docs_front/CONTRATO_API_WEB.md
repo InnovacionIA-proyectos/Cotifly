@@ -1573,7 +1573,7 @@ frontend ya conoce, con sus mismas reglas y nombres:
 | `costeo` | `CosteoCotizacion` (lo mismo que `GET .../costeo`) | Por ruta: camiones con vehículo, porcentajes de llenado y estado, mercancías, conexos con precio y `estado_nexo`, margen, precio y avisos; `pdf_desactualizado`, `textos`, `row_version` |
 | `captura` | `RutaEditable[]` (lo mismo que `rutas` de `GET .../solicitud`) | Municipios por id y nombre y condiciones de cada ruta (tipología, clases, exclusivo, contenedor, horas, valores, peso). Se cruza con `costeo.rutas[]` por `linea_solicitud_id` |
 | `tipo`, `notas`, `fechas` | | Tipo de la solicitud, notas, y `created_at`, `updated_at`, `costeo_enviado_at`, `costeo_listo_at`, `marcado_at` (UTC) |
-| `totales` | `TotalesCotizacion` | `rutas`, `camiones` (los que cuentan en el precio), `peso_kg`, `precio_transporte`, `precio_conexos` y `precio_final` (`transporte + conexos = final`; `null` mientras alguna ruta no tenga precio) |
+| `totales` | `TotalesCotizacion` | `rutas`, `camiones` (los que cuentan en el precio), `peso_kg`, `precio_transporte`, `precio_conexos`, `precio_seguro` (HU-045.3, #265: suma del seguro de la mercancía de las rutas) y `precio_final` (`transporte + conexos + seguro = final`; `null` mientras alguna ruta no tenga precio) |
 | `row_version` | | La versión de la fila (también en el `ETag`) para el `If-Match` de las acciones que siguen |
 | `solo_lectura` | | `true` si lo consulta un gerente de la regional del dueño o un director |
 
@@ -1798,6 +1798,7 @@ frontend ya conoce, con sus mismas reglas y nombres:
     "peso_kg": 41000.5,
     "precio_transporte": 8352942,
     "precio_conexos": 470588,
+    "precio_seguro": 0,
     "precio_final": 8823530
   }
 }

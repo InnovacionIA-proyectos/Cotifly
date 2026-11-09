@@ -40,8 +40,8 @@ public sealed class clsSeguroEntregaTests
         var conSeguro = Costeada();
         conSeguro.CambiarSeguro(1, true, Tasa, _ahora);
 
-        sinSeguro.RutasConSeguroSinValor.Should().BeEmpty();
-        conSeguro.RutasConSeguroSinValor.Should().BeEmpty();
+        sinSeguro.RutasConSeguroSinValor().Should().BeEmpty();
+        conSeguro.RutasConSeguroSinValor().Should().BeEmpty();
         conSeguro.ValidarSeguroAntesDe("generar el PDF").Should().BeNull();
     }
 
@@ -52,7 +52,7 @@ public sealed class clsSeguroEntregaTests
 
         var error = cotizacion.ValidarSeguroAntesDe("generar el PDF");
 
-        cotizacion.RutasConSeguroSinValor.Select(r => r.Orden).Should().Equal(1);
+        cotizacion.RutasConSeguroSinValor().Select(r => r.Orden).Should().Equal(1);
         error!.Codigo.Should().Be(clsCodigosError.SeguroSinValorMercancia);
         error.Mensaje.Should().Contain("generar el PDF").And.Contain("ruta 1").And.Contain(cotizacion.Folio);
         var rutas = error.Datos!["rutas"].Should().BeAssignableTo<IReadOnlyList<IReadOnlyDictionary<string, object?>>>().Subject;

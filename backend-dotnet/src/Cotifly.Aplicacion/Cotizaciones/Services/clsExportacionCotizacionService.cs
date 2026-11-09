@@ -160,7 +160,7 @@ public sealed class clsExportacionCotizacionService(
                 ruta.MetodoCalculo))
         {
             ValorSeguro = clsCosteoCotizacionService.ValorSeguroPdf(cotizacion, ruta),
-            SeguroSinValor = cotizacion.RutasConSeguroSinValor.Contains(ruta),
+            SeguroSinValor = cotizacion.RutasConSeguroSinValor().Contains(ruta),
         };
     }
 
