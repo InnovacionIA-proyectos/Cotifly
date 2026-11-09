@@ -170,12 +170,12 @@ public sealed class clsLecturaExcelAcotadaTests : IDisposable
     /// <summary>
     /// Validación de #277 (hueco anterior): las relaciones (<c>.rels</c>) y <c>[Content_Types].xml</c> no son partes y no entraban en el
     /// conteo, aunque System.IO.Packaging las lee enteras al abrir el paquete. Ahora se cuentan antes de abrirlo, en el mismo tope: una
-    /// hoja de medio millón de elementos más 600.000 relaciones pasa de 1.000.000 y es <c>DESCOMPRIMIDO_EXCEDE_LIMITE</c>.
+    /// hoja de 525.000 elementos más 500.000 relaciones pasa de 1.000.000 y es <c>DESCOMPRIMIDO_EXCEDE_LIMITE</c>.
     /// </summary>
     [Fact]
     public void LasRelacionesEntranEnElConteoDeElementos()
     {
-        var libro = clsExcelMercanciasMuestra.ConRelacionesDelLibro(clsExcelMercanciasMuestra.Densa(250_000), 600_000);
+        var libro = clsExcelMercanciasMuestra.ConRelacionesDelLibro(clsExcelMercanciasMuestra.Densa(260_000), 500_000);
 
         clsLecturaExcelAcotada.VerificarPaquete(libro, Ct).Should().BeNull("cabe en los 64 MB: lo frena el conteo");
         var rechazo = clsLecturaExcelAcotada.Verificar(libro, Ct);

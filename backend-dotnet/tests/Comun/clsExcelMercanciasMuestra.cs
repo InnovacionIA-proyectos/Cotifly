@@ -333,7 +333,7 @@ public static class clsExcelMercanciasMuestra
         });
 
     /// <summary>
-    /// HU-035.3 (#277), validación: <paramref name="libro"/> con <paramref name="extra"/> relaciones externas (hipervínculos) más en
+    /// HU-035.3 (#277), validación: <paramref name="libro"/> con <paramref name="extra"/> relaciones externas cortas más en
     /// <c>xl/_rels/workbook.xml.rels</c>. Las relaciones no son partes: System.IO.Packaging las lee enteras al abrir el paquete.
     /// </summary>
     public static byte[] ConRelacionesDelLibro(byte[] libro, int extra) => ConEntrada(libro, "xl/_rels/workbook.xml.rels", xml =>
@@ -341,7 +341,7 @@ public static class clsExcelMercanciasMuestra
         var relaciones = new StringBuilder();
         for (var i = 0; i < extra; i++)
         {
-            relaciones.Append("<Relationship Id=\"h").Append(i).Append("\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"http://x/\" TargetMode=\"External\"/>");
+            relaciones.Append("<Relationship Id=\"h").Append(i).Append("\" Type=\"http://x/h\" Target=\"http://x/\" TargetMode=\"External\"/>");
         }
 
         return xml.Replace("</Relationships>", relaciones + "</Relationships>", StringComparison.Ordinal) is var nuevo && nuevo != xml
