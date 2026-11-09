@@ -410,29 +410,15 @@ public sealed class clsImportacionExcelNexo(
         try
         {
             using var respuesta = await http.SendAsync(peticion, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-            var limite = opciones.Value.LimiteRespuestaMegabytes * 1024L * 1024L;
-            if (respuesta.Content.Headers.ContentLength is { } largo && largo > limite)
-            {
-                return NoDisponible($"respuesta demasiado grande ({largo.ToString(CultureInfo.InvariantCulture)} bytes) en {metodo} {rutaSinConsulta}");
-            }
-
-            // Con ResponseHeadersRead el tiempo de la tubería solo cubre las cabeceras: el cuerpo se lee con el mismo tiempo del intento.
-            using var tiempoCuerpo = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            tiempoCuerpo.CancelAfter(TimeSpan.FromSeconds(lectura ? opciones.Value.TimeoutLecturaSegundos : opciones.Value.TimeoutSegundos));
-            await using var flujo = await respuesta.Content.ReadAsStreamAsync(tiempoCuerpo.Token);
-            using var acotado = await clsCosteoNexo.LeerAcotadoAsync(flujo, limite, tiempoCuerpo.Token);
-            if (acotado is null)
-            {
-                return NoDisponible($"respuesta demasiado grande (más de {limite.ToString(CultureInfo.InvariantCulture)} bytes) en {metodo} {rutaSinConsulta}");
-            }
-
-            var texto = Encoding.UTF8.GetString(acotado.GetBuffer(), 0, (int)acotado.Length);
+            // El cuerpo ya viene leído y acotado por clsCuerpoAcotadoNexoHandler, dentro del tiempo del intento.
+            var texto = await respuesta.Content.ReadAsStringAsync(cancellationToken);
             if (respuesta.IsSuccessStatusCode)
             {
                 return new clsRespuestaNexo(respuesta.StatusCode, texto, rutaSinConsulta);
             }
 
-            if ((int)respuesta.StatusCode < 400 || (int)respuesta.StatusCode >= 500)
+            // Un 408 es un tiempo agotado (de NEXO o de un proxy), no un rechazo de los datos.
+            if ((int)respuesta.StatusCode < 400 || (int)respuesta.StatusCode >= 500 || respuesta.StatusCode == HttpStatusCode.RequestTimeout)
             {
                 return NoDisponible($"HTTP {((int)respuesta.StatusCode).ToString(CultureInfo.InvariantCulture)} en {metodo} {rutaSinConsulta}");
             }
@@ -446,6 +432,10 @@ public sealed class clsImportacionExcelNexo(
         catch (Exception ex) when (ex is OperationCanceledException or Polly.Timeout.TimeoutRejectedException)
         {
             return NoDisponible($"tiempo agotado en {metodo} {rutaSinConsulta}", ex);
+        }
+        catch (InvalidDataException ex)
+        {
+            return NoDisponible($"{ex.Message} en {metodo} {rutaSinConsulta}");
         }
         catch (Exception ex) when (ex is HttpRequestException or ExecutionRejectedException or IOException)
         {
@@ -601,8 +591,18 @@ public sealed class clsImportacionExcelNexo(
         var parte = new ByteArrayContent(archivo.Contenido);
         parte.Headers.ContentType = new MediaTypeHeaderValue(
             archivo.NombreArchivo?.EndsWith(".xlsm", StringComparison.OrdinalIgnoreCase) == true ? clsArchivoExcel.TipoXlsm : clsArchivoExcel.TipoXlsx);
-        formulario.Add(parte, "archivo", string.IsNullOrWhiteSpace(archivo.NombreArchivo) ? "licitacion.xlsx" : archivo.NombreArchivo);
+        formulario.Add(parte, "archivo", NombreSeguro(archivo.NombreArchivo));
         return formulario;
+    }
+
+    /// <summary>
+    /// El nombre del archivo apto para el <c>Content-Disposition</c> de la parte: sin comillas ni caracteres de control
+    /// (un salto de línea podría inyectar cabeceras y una comilla rompe el formato). Conserva tildes y unicode; vacío → <c>licitacion.xlsx</c>.
+    /// </summary>
+    internal static string NombreSeguro(string? nombre)
+    {
+        var limpio = new string((nombre ?? string.Empty).Where(c => !char.IsControl(c) && c != '"').ToArray()).Trim();
+        return limpio.Length == 0 ? "licitacion.xlsx" : limpio;
     }
 
     private static void Campo(MultipartFormDataContent formulario, string nombre, string? valor)
