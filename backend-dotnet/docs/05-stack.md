@@ -63,7 +63,7 @@ Recursos embebidos: Liberation Sans 2.1.5 (SIL Open Font License 1.1; la licenci
 
 | Imagen | Uso | Licencia |
 |---|---|---|
-| `mcr.microsoft.com/dotnet/sdk:10.0.401-noble` | Etapa de build del `Dockerfile`; build y pruebas en local | MIT (.NET) |
-| `mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled-extra` | Runtime de la imagen `cotifly-api` | MIT (.NET) sobre Ubuntu 24.04 mínimo |
+| `mcr.microsoft.com/dotnet/sdk:10.0.403-noble` | Etapa de build del `Dockerfile`; build y pruebas en local | MIT (.NET) |
+| `mcr.microsoft.com/dotnet/aspnet:10.0.14-noble-chiseled-extra` | Runtime de la imagen `cotifly-api` | MIT (.NET) sobre Ubuntu 24.04 mínimo |
 | `mcr.microsoft.com/mssql/server:2019-latest` | Testcontainers y entorno local | EULA de SQL Server; edición Developer, solo desarrollo y pruebas |
 | (la misma `mcr.microsoft.com/mssql/server:2019-latest`) | `sqlcmd` 18 de los scripts de entorno local (`/opt/mssql-tools18/bin/sqlcmd`); `mcr.microsoft.com/mssql-tools18` no existe en MCR | EULA de SQL Server |

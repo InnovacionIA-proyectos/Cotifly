@@ -20,8 +20,8 @@
 #   2. Cambiar SDK_VERSION y ASPNET_VERSION juntos (el SDK 10.0.4xx trae el runtime 10.0.N; usar ese N).
 #   3. Reconstruir, correr las pruebas y verificar HEALTHCHECK (docs/06-ejecucion-local.md, §6.4).
 # =============================================================================
-ARG SDK_VERSION=10.0.401-noble
-ARG ASPNET_VERSION=10.0.12-noble-chiseled-extra
+ARG SDK_VERSION=10.0.403-noble
+ARG ASPNET_VERSION=10.0.14-noble-chiseled-extra
 # Metadatos de la imagen (los pasa el pipeline, HU-006.4 #28):
 #   --build-arg VERSION=<versión> --build-arg VCS_REF=$(git rev-parse --short HEAD) --build-arg BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 ARG VERSION=dev
