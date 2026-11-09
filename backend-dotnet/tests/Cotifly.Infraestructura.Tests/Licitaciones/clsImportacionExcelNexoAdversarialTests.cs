@@ -23,8 +23,8 @@ namespace Cotifly.Infraestructura.Tests.Licitaciones;
 /// <summary>
 /// Pruebas adversariales del adaptador de importación inteligente (validación de #252, HU-044.1): cuántas veces se llama a NEXO ante cada
 /// fallo, tiempos por endpoint con la tubería real (acortada), respuestas raras de NEXO, NIT y receta como texto opaco, nada del Excel ni
-/// de la identidad en los logs, archivos grandes y nombres raros. Todo contra un NEXO grabador en memoria (sin red). Las marcadas con
-/// <c>Skip</c> reproducen un defecto abierto (ver el informe del validador) y afirman el comportamiento esperado.
+/// de la identidad en los logs, archivos grandes y nombres raros. Todo contra un NEXO grabador en memoria (sin red). Las de los defectos
+/// D1 a D5 del validador (antes con <c>Skip</c>) afirman el comportamiento corregido.
 /// </summary>
 public sealed class clsImportacionExcelNexoAdversarialTests
 {
@@ -93,7 +93,7 @@ public sealed class clsImportacionExcelNexoAdversarialTests
         nexo.Llamadas.Should().HaveCount(2, "la tubería trata el 408 como transitorio");
     }
 
-    [Fact(Skip = "Defecto D5 del validador de #252 (bajo): un 408 de NEXO (o de un proxy) se reintenta como transitorio pero termina como COSTEO_NEXO_RECHAZADA en vez de NEXO_NO_DISPONIBLE.")]
+    [Fact]
     public async Task UnCuatroCeroOchoEsNoDisponible()
     {
         var nexo = new clsNexoGrabador((_, _) => Respuesta(HttpStatusCode.RequestTimeout, string.Empty));
@@ -334,7 +334,7 @@ public sealed class clsImportacionExcelNexoAdversarialTests
         await sugerir.Should().ThrowAsync<OperationCanceledException>();
     }
 
-    [Fact(Skip = "Defecto D2 del validador de #252: el cuerpo de la respuesta se lee fuera de la tubería (ResponseHeadersRead) y el HttpClient no tiene timeout: un cuerpo que se queda colgado espera sin límite.")]
+    [Fact]
     public async Task UnCuerpoQueSeQuedaColgadoTambienAgotaElTiempo()
     {
         var nexo = new clsNexoGrabador((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
@@ -440,7 +440,7 @@ public sealed class clsImportacionExcelNexoAdversarialTests
         JsonNode.Parse(nexo.Llamadas[0].Cuerpo!)!.AsObject().ContainsKey("clienteNit").Should().BeFalse("sin NIT no viaja clienteNit");
     }
 
-    [Theory(Skip = "Defecto D3 del validador de #252: un elemento null dentro de una lista de la respuesta de NEXO lanza NullReferenceException (no se convierte en NEXO_NO_DISPONIBLE).")]
+    [Theory]
     [InlineData("sugerir", """{"iaUsada":true,"columnas":[null]}""")]
     [InlineData("aplicar", """{"totalFilas":1,"lineas":[null],"errores":[]}""")]
     [InlineData("aplicar-errores", """{"totalFilas":1,"lineas":[],"errores":[null]}""")]
@@ -522,7 +522,7 @@ public sealed class clsImportacionExcelNexoAdversarialTests
         nexo.Llamadas.Should().ContainSingle();
     }
 
-    [Fact(Skip = "Defecto D1 del validador de #252: el cortacircuitos de la tubería cuenta los 429 IA_TOPE_DIARIO de un comercial como fallos y, al abrirse, deja sin importación a los demás comerciales.")]
+    [Fact]
     public async Task ElTopeDiarioDeUnComercialNoAbreElCircuitoParaLosDemas()
     {
         var nexo = new clsNexoGrabador((llamada, _) => llamada.Identidad == IdExterno.ToString(System.Globalization.CultureInfo.InvariantCulture)
@@ -834,7 +834,7 @@ public sealed class clsImportacionExcelNexoAdversarialTests
         llamada.Partes.Select(p => p.Nombre).Should().OnlyHaveUniqueItems().And.NotContain(n => n == null);
     }
 
-    [Theory(Skip = "Defecto D4 del validador de #252: un nombre de archivo con comillas o saltos de línea lanza una excepción al armar el formulario (fuera del try del adaptador).")]
+    [Theory]
     [InlineData("Cotización \"final\".xlsx")]
     [InlineData("a\r\nX-Inyectado: 1.xlsx")]
     public async Task UnNombreDeArchivoConComillasOSaltosNoRompeElAdaptador(string nombre)
