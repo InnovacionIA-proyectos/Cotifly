@@ -3,7 +3,7 @@ using Cotifly.Dominio.Comun;
 namespace Cotifly.Dominio.Cotizaciones;
 
 /// <summary>
-/// HU-045.2 (#264, ADR-029): el comercial incluye o quita el seguro de la mercancía de una ruta en el costeo y la cotización recalcula esa
+/// HU-045.2 (#264, ADR-032): el comercial incluye o quita el seguro de la mercancía de una ruta en el costeo y la cotización recalcula esa
 /// ruta y su total. Las versiones nuevas (<c>-vN</c>) copian el seguro de la ruta equivalente.
 /// </summary>
 public sealed partial class clsCotizacionSolicitud

@@ -14,7 +14,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Aplicacion.Costeo.Services;
 
 /// <summary>
-/// HU-045.2 (#264, ADR-029): incluir o quitar el seguro de la mercancía de una ruta en el costeo:
+/// HU-045.2 (#264, ADR-032): incluir o quitar el seguro de la mercancía de una ruta en el costeo:
 /// <c>PUT /web/cotizaciones/{folio}/costeo/seguro</c> (decisión 3 de HU-045: endpoint propio con <c>If-Match</c>, como el margen).
 /// </summary>
 public interface IClsSeguroCosteoService

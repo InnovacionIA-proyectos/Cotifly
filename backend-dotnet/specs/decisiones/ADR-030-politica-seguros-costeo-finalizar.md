@@ -3,7 +3,7 @@
 - **Estado:** Propuesta (2026-11-08). Issue #269 (HU-046.3), milestone HU-046. Pendiente del visto bueno del usuario (ver Pendientes).
 - **Relacionadas:** HU-046.1 (#267, decisiones y carga aprobada: `docs/backlog/2026-11-02_DECISIONES_HU-046_POLITICA_SEGUROS.md`),
   HU-046.2 (#268, script `db/scripts/21_politica_seguros.sql`), HU-036.2 (#206, "Finalizar"), #228 y #259 (conexos pendientes en Nexo),
-  ADR-029 (seguro de la mercancía por ruta).
+  ADR-032 (seguro de la mercancía por ruta; antes ADR-029, renumerada por #264).
 
 ## Contexto
 
