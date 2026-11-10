@@ -2540,7 +2540,9 @@ paths:
           `POST .../costeo/servicios-conexos` queda `enviado` en el momento (Nexo lo creó y la relectura lo confirma). Con
           alguno `pendiente`, finalizar RELEE la cotización de Nexo y deja `enviado` lo que Nexo ya muestra antes de decidir (un
           registro que quedó `pendiente` aunque Nexo tenga el conexo, p. ej. agregado antes de #228, no bloquea para siempre una
-          entregada); si Nexo no responde, cuenta el registro y responde el 409. Si hay
+          entregada); si Nexo no responde, cuenta el registro y responde el 409. #259: si después de releer siguen pendientes, el
+          409 además vuelve a encolar la cotización para el envío diferido (finalizar nunca envía conexos a Nexo): el worker los
+          envía o los deja `fallido_definitivo` en segundos y el siguiente intento de finalizar pasa. Si hay
           conexos pendientes de leer, ese motivo va primero.
         - Re-finalizar una ya finalizada es idempotente: 200 sin cambios (mismo `finalizada_at`, mismo `ETag`).
         - `If-Match` que no es la versión vigente: 409 `CONFLICTO_CONCURRENCIA`, sin cambios (también si ya estaba finalizada). Si
@@ -8078,7 +8080,9 @@ components:
             Decisión 10 (HU-021.9, #136). Estado del envío diferido del conexo a la cotización de Nexo: `pendiente` (se envía cuando
             Nexo costea la línea del primer camión vigente de la ruta, o se reintentará), `enviado`, `incierto` (Nexo no respondió y
             su cotización no lo muestra: revisar en Nexo; Cotifly no lo reenvía solo) o `fallido_definitivo` (se agotaron los
-            reintentos, o el conexo no tiene servicio en el catálogo de Nexo ni por id ni por nombre: revisar en Nexo). En
+            reintentos, el conexo no tiene servicio en el catálogo de Nexo ni por id ni por nombre o, #259, la cotización ya no se
+            costea y ningún camión vigente de la ruta tiene línea en Nexo: revisar en Nexo). #259 (ADR-031): si el primer camión no
+            tiene línea cuando la cotización ya no se costea, el conexo va a la línea del primer camión vigente que sí la tiene. En
             `GET .../costeo` y, desde #173, también en las respuestas de `PUT .../costeo/margen` y `PUT .../costeo/servicios-conexos`
             (igual que el GET). `null` antes de enviar la solicitud a Nexo y en las demás mutaciones.
         servicio_id:
