@@ -7,6 +7,8 @@
 !Directory.Packages.props
 !.editorconfig
 !src/
+# Config de OpenSSL para SQL Server antiguos (fix handshake TLS DWCubosEBSSAP): la copia la etapa runtime.
+!openssl-legacy.cnf
 
 # Dentro de src/: artefactos de compilación locales o del contenedor del SDK, y archivos de usuario.
 **/bin/
