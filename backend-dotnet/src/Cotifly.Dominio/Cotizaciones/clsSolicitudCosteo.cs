@@ -125,9 +125,10 @@ public sealed record clsSolicitudCosteo
     }
 
     /// <summary>
-    /// Validaciones condicionales de la captura (G3, HU-013.10): <c>clase_contenedor</c> solo con <c>clase_viaje = Contenedor</c>
-    /// y obligatoria con ella, y <c>valor_aprovisionamiento</c> solo con una <c>ciudad_levante_contenedor</c> distinta del origen
-    /// (Nexo lo descarta en otro caso). La regla es la de cada fila de una licitación (<see cref="clsLineaSolicitudCosteo.ErroresCondicionales"/>).
+    /// Validaciones condicionales de la captura (G3, HU-013.10): <c>clase_contenedor</c> obligatoria con <c>clase_viaje = Contenedor</c>,
+    /// opcional y solo de la lista provisional G15 con <c>Extradimensionado</c> (HU-021.15, #297), y no aplica con las demás; y
+    /// <c>valor_aprovisionamiento</c> solo con una <c>ciudad_levante_contenedor</c> distinta del origen (Nexo lo descarta en otro caso). La
+    /// regla es la de cada fila de una licitación (<see cref="clsLineaSolicitudCosteo.ErroresCondicionales"/>).
     /// </summary>
     private clsErrorDominio? ValidarCondicionales() =>
         ALinea().ErroresCondicionales() is [var primero, ..] ? new clsErrorDominio(CodigoError, primero.Mensaje) : null;
