@@ -437,6 +437,13 @@ public static class clsCodigosError
     /// </summary>
     public const string SapMargenNoDisponible = "SAP_MARGEN_NO_DISPONIBLE";
 
+    /// <summary>
+    /// HU-045.2 (#264, decisión 4 de HU-045): incluir el seguro de la mercancía en una ruta sin <c>valor_mercancia</c> (el seguro es
+    /// <c>valor_mercancia × tasa</c>). 400 con <c>detalle.linea_orden</c> y <c>detalle.linea_solicitud_id</c>; nada cambia. Código nuevo del
+    /// backend .NET.
+    /// </summary>
+    public const string SeguroSinValorMercancia = "SEGURO_SIN_VALOR_MERCANCIA";
+
     // HU-044.1 (#252, ADR-028): importación inteligente del Excel con NEXO. Los códigos que siguen son los 400/404 de NEXO
     // (CONTRATO.md §3.3 y §3.19.1) que el adaptador devuelve tal cual, con el mensaje de NEXO. Mismos códigos que usa NEXO.
 
@@ -530,4 +537,11 @@ public static class clsCodigosError
 
     /// <summary>HU-044.1 (#252): <c>GET diccionario-cliente</c> con un <c>tipo</c> distinto de columna, unidad o valor. 400. Mismo código que usa NEXO.</summary>
     public const string TipoTerminoInvalido = "TIPO_TERMINO_INVALIDO";
+
+    /// <summary>
+    /// HU-044.2 (#253, auditoría B7): en <c>leer-estructura</c> el archivo cabe solo, pero con la <c>receta</c> y las <c>instrucciones</c> el
+    /// envío pasa el tope de 10 MB de NEXO (el mismo de <c>clsArchivoExcel.TamanoMaximoBytes</c>). Lo responde Cotifly, sin llamar a NEXO,
+    /// para no culpar al archivo con un <c>ARCHIVO_DEMASIADO_GRANDE</c>. 400. Código nuevo del backend .NET.
+    /// </summary>
+    public const string LecturaDemasiadoGrande = "LECTURA_DEMASIADO_GRANDE";
 }

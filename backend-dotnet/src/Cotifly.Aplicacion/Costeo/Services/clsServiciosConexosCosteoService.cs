@@ -68,7 +68,8 @@ public sealed class clsServiciosConexosCosteoService(
     ILogger<clsServiciosConexosCosteoService> logger,
     IClsCategoriasConexos categoriasConexos,
     IClsSituacionLineasNexo situacionesNexo,
-    Margen.Services.IClsAvisoSincronizacionMargenSap avisoSincronizacion) : IClsServiciosConexosCosteoService
+    Margen.Services.IClsAvisoSincronizacionMargenSap avisoSincronizacion,
+    IClsTarifaSeguroRepository tarifasSeguro) : IClsServiciosConexosCosteoService
 {
     // #226 (validación de DEF-1027-3): las dependencias de la vista con estados son obligatorias. Opcionales, un registro que faltara
     // en DI devolvía otra vez estado_nexo = null en silencio; obligatorias, el contenedor falla al resolver el servicio.
@@ -460,7 +461,8 @@ public sealed class clsServiciosConexosCosteoService(
         return (await clsCosteoCotizacionService.VistaConEstadosAsync(
             cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, logger, CancellationToken.None, categoriasConexos,
             situacionesNexo.Obtener(cotizacion.Id),
-            await Margen.Services.clsAvisoSincronizacionMargenSap.ConsultarSinFallarAsync(avisoSincronizacion, cotizacion, CancellationToken.None)),
+            await Margen.Services.clsAvisoSincronizacionMargenSap.ConsultarSinFallarAsync(avisoSincronizacion, cotizacion, CancellationToken.None),
+            tarifasSeguro),
             agregados, pdfInvalidado);
     }
 

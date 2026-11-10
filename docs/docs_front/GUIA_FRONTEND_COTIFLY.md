@@ -537,6 +537,12 @@ Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA
 | `CUBICACION_DEMASIADO_GRANDE` | 400 en `/web/cubicacion`, captura, recálculo de vehículos y licitación | Vigente desde HU-023 (#176): las mercancías de la ruta o del cálculo suman más de 10.000 unidades, el tope del cubicador. No se llama al cubicador ni se guarda nada. #278: en la captura y la licitación también **sin** cubicador (tope de NEXO), contando solo las mercancías con medidas, como código por campo (`detalle.errores[]`, `campo = mercancias`) | "Parte la carga en varias rutas" (mostrar `mensaje`) | Vigente |
 | `LINEA_NEGOCIO_INVALIDO` | 400 en captura y licitación; motivo de `error_envio` (reintentable) al reenviar | #278: la línea de NEXO configurada para la línea de negocio de la ruta no es una de las seis de NEXO. No hay endpoint para corregirla: la corrige soporte. Nada se guarda en la captura | "La línea de negocio está mal configurada: avisa a soporte" | Nuevo |
 | `IA_TOPE_DIARIO` | 429 en `POST /web/licitaciones/analizar-excel`, sin `Retry-After` | #278: el comercial agotó su cupo diario de IA en NEXO. El 429 `DEMASIADAS_SOLICITUDES` de NEXO sigue siendo 503 `COSTEO_NEXO_NO_DISPONIBLE` | "Agotaste tu cupo diario de IA en NEXO"; no reintentar hoy | Nuevo |
+| `CLIENTE_REQUERIDO` | 400 en `GET` y `PUT /web/licitaciones/plantillas-mapeo` y `/recetas-lectura` | HU-044.5 (#256): falta `nit_cliente`. Cotifly no llama a NEXO (sin el NIT, NEXO devolvería los datos de todos los clientes) | Pedir o pasar el NIT de la licitación | Nuevo |
+| `PLANTILLA_NO_ENCONTRADA` | **404 `ErrorNegocio`** en `DELETE /web/licitaciones/plantillas-mapeo/{id}` | HU-044.5 (#256): NEXO no tiene esa plantilla. A diferencia de los demás 404, trae código (a confirmar con el frontend) | Recargar la lista | Nuevo |
+| `RECETA_REQUERIDA` | 400 en `PUT /web/licitaciones/recetas-lectura` | HU-044.5 (#256): falta `receta`. Cotifly no sube el archivo | Reenviar la `receta` de `leer-estructura` tal cual | Nuevo |
+| `RECETA_SIN_FILAS` | 400 en `PUT /web/licitaciones/recetas-lectura` | HU-044.5 (#256): NEXO ejecutó la receta contra el archivo y no dio filas | Volver a la lectura y corregir | Nuevo |
+| `RECETA_NO_ENCONTRADA` | **404 `ErrorNegocio`** en `DELETE /web/licitaciones/recetas-lectura/{id}` | HU-044.5 (#256): NEXO no tiene ese formato (404 con código, a confirmar con el frontend) | Recargar la lista | Nuevo |
+| `TERMINOS_CLIENTE_NO_DISPONIBLES` | Aviso (no es error) en el 200 de `GET /web/diccionario-cliente?nit_cliente=` (`aviso.codigo`) | HU-044.5 (#256): por ahora solo se muestran los términos generales del diccionario de NEXO, porque NEXO aún no filtra por cliente | Mostrar `aviso.mensaje` encima de la lista | Nuevo |
 | `ERROR_INTERNO` | 500 en cualquier `/web/*` (endurecimiento A, #199; antes 400 o sin cuerpo) | Error no controlado del servidor; mensaje genérico y `detalle.id_correlacion` (id de la petición en el log, para soporte) | "Ocurrió un error. Reintenta" (no mostrar nada técnico ni cerrar sesión) | En QA |
 | `TRM_NO_DISPONIBLE` | `errores` del chat (`calcular_precio`, `registrar_ajuste_margen`); 400 en `POST /web/licitaciones` y en `POST /web/solicitudes-costeo` (#103) con `moneda = USD` | Ninguna fuente de la TRM respondió (DolarApi ni la Superintendencia): no hay precio en USD | Mensaje no bloqueante: "No se pudo obtener la TRM. Reintenta en unos minutos o cotiza en pesos", con botones **Reintentar** y **Cambiar a COP**. Quitar el spinner | En QA (#70/#71) |
 | `SOLICITUD_COSTEO_INVALIDA` | 400 en `solicitudes-costeo`, `reintentar` y `servicios-conexos` | Campo fuera de los límites de Nexo. `detalle.motivo` = `PESO_REQUERIDO` o `PESO_INCONSISTENTE` cuando es el peso | Mostrar `mensaje` junto al campo (el mensaje nombra el campo) | En QA |
@@ -1362,6 +1368,27 @@ El resumen completo, los ejemplos JSON de cada endpoint cambiado y la lista de c
 | "Mis cotizaciones": `linea_negocio` = la de la ruta 1 o `Varias`; margen de la ruta 1. `DatosNuevaVersion.rutas[]` por ruta | Mostrar `Varias` tal cual |
 | `conexos_descartados` siempre `[]` (`deprecated`, se retira con HU-021-FE) | Leer `conexos_conservados` |
 | `datos_carga` de la re-solicitud solo con una ruta (409 `ESTADO_NO_PERMITE` con varias: `detalle.motivo` = `VARIAS_RUTAS` o `LICITACION`) | Con varias rutas, `nueva_version: true` sin `datos_carga` |
+
+### 5.18.3 Seguro de la mercancía por ruta (HU-045.2, #264). Implementado, pendiente de QA
+
+El comercial marca en el costeo, ruta por ruta, si la ruta incluye el seguro de la mercancía (póliza específica). Contrato completo:
+`CONTRATOS_API_COTIFLY_FRONTEND.md` 4.4.15.
+
+- **Check por ruta:** `PUT /web/cotizaciones/{folio}/costeo/seguro` con `{"incluye_seguro": true, "linea_orden": 1}` (o
+  `linea_solicitud_id`; con una sola ruta, opcional) e `If-Match` obligatorio. Responde `CosteoCotizacion` con el `ETag` nuevo.
+- **Qué mostrar:** junto al check, la tasa vigente (`tasa_seguro_vigente` del `GET .../costeo` y de las respuestas del seguro, del margen y de los conexos; fracción: `0.00345` = 0,345 %; si una respuesta la trae en `null`, conservar la última). En cada
+  ruta, `incluye_seguro`, `tasa_seguro` (la que se usó) y `valor_seguro` (el seguro en la moneda de la cotización) como una línea aparte
+  del flete. `precio_final_linea` y `precio_final` **ya incluyen** el seguro: no sumarlo otra vez.
+- **El seguro no lleva margen:** cambiar el margen de la ruta no cambia `valor_seguro`.
+- **Sin redondeo a pesos** (decisión del 2026-11-09): `valor_seguro` y, con él, `precio_final_linea` y `precio_final` pueden traer centavos en COP: mostrarlos con dos decimales.
+- **Sin valor de la mercancía:** 400 `SEGURO_SIN_VALOR_MERCANCIA`: desmarcar el check y pedir el valor editando la solicitud. Si una
+  edición deja la ruta sin valor, el check sigue marcado con `valor_seguro = null`: mostrar "Falta el valor de la mercancía".
+- **Candados:** finalizada, enviada o con resultado: 409 `PDF_YA_ENVIADO` (como el margen, con la llamada de la versión nueva). En las
+  licitaciones el check no aplica (409 `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION`): ocultarlo. Con PDF vigente sin enviar, el
+  PDF queda desactualizado.
+- **Recálculos:** si cambia `valor_mercancia` (editar la solicitud o `datos_carga` de re-solicitar), el seguro se recalcula con la tasa
+  vigente. La versión nueva conserva el check.
+- **Todavía no:** la línea "Seguro de la mercancía" en el PDF, el Excel y el correo (HU-045.3, #265).
 
 ### 5.19 PDF del costeo (`POST /web/cotizaciones/{folio}/costeo/pdf`). En QA
 
@@ -2627,6 +2654,7 @@ La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones.
 | Endpoint | Para qué | Issue |
 |---|---|---|
 | `POST /web/solicitudes-costeo` + `moneda` (`COP` o `USD`) | **Implementado (#103).** Formulario en dólares con la TRM fijada al crear; sin TRM responde 400 `TRM_NO_DISPONIBLE` y no se crea nada. Ver 5.15 | #103 (HU-013.7) |
+| `PUT /web/cotizaciones/{folio}/costeo/seguro` `{incluye_seguro, linea_orden?, linea_solicitud_id?}` | **Implementado (#264).** Incluye o quita el seguro de la mercancía de UNA ruta, con `If-Match` obligatorio. El seguro (`valor_mercancia × tasa vigente`, sin margen) se suma al precio de la ruta. Sin `valor_mercancia`, 400 `SEGURO_SIN_VALOR_MERCANCIA`. Ver 5.18.3 | #264 (HU-045.2) |
 | `PUT /web/cotizaciones/{folio}/costeo/margen` `{margen, justificacion?, linea_orden?, linea_solicitud_id?}` | **Implementado (#98; por ruta en #135).** Ajuste de margen de 0 a 0,99 de UNA ruta, con `If-Match` obligatorio. Con varias rutas y sin indicarla, 400 `RUTA_REQUERIDA` (sección 5.18.1). La justificación es obligatoria por debajo del `margen_sugerido` de la ruta (400 `JUSTIFICACION_REQUERIDA` con `detalle.margen_sugerido`). Responde `CosteoCotizacion` con los precios recalculados y el `ETag` nuevo | #98 (HU-013.2), #135 (HU-021.8) |
 | `GET /web/servicios-conexos?q=&categoria=&page=&page_size=` | **Implementado (#99).** Buscador del catálogo de Nexo: solo servicios activos y nunca su costo. Ver abajo | #99 (HU-013.3) |
 | `POST /web/cotizaciones/{folio}/costeo/servicios-conexos` `{items: [{linea_orden, servicio_id, cantidad}]}` | **Implementado (#99).** Agrega conexos en Nexo; vuelven con precio e incluidos. `If-Match` obligatorio e `Idempotency-Key` opcional. Ver abajo | #99 (HU-013.3) |

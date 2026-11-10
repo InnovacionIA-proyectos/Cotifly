@@ -526,6 +526,24 @@ public sealed class clsImportacionExcelNexoTests
     }
 
     [Fact]
+    public async Task ElDiccionarioDistingueUnClienteIdNuloDeUnoQueNexoNoMando()
+    {
+        // #256 (B2): solo un clienteId presente (null o un GUID) cuenta como leído; si NEXO deja de mandarlo, ningún término es general.
+        var nexo = new clsNexoFalso();
+        nexo.Diccionario.Add((Guid.NewGuid(), "Mula de otro cliente", "valor", "3S2", "tipoVehiculo"));
+        var importacion = Importacion(nexo, out var proveedor);
+        using var limpieza = proveedor;
+
+        var conClienteId = await importacion.ObtenerDiccionarioClienteAsync(_usuarioId, null, null, Ct);
+        nexo.DiccionarioSinClienteId = true;
+        var sinClienteId = await importacion.ObtenerDiccionarioClienteAsync(_usuarioId, null, null, Ct);
+
+        conClienteId.Valor.Should().OnlyContain(t => t.ClienteIdLeido);
+        conClienteId.Valor.Single(t => t.Termino == "Mula de otro cliente").ClienteId.Should().NotBeNull();
+        sinClienteId.Valor.Should().HaveCount(conClienteId.Valor.Count).And.OnlyContain(t => !t.ClienteIdLeido && t.ClienteId == null);
+    }
+
+    [Fact]
     public async Task LaPlantillaSeGuardaPorNitYLaSiguienteSugerenciaLaReconoce()
     {
         var nexo = new clsNexoFalso();

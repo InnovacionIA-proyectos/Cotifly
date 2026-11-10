@@ -25,7 +25,8 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
     private const string SqlColumnasOpcionales = """
         SELECT CAST(CASE WHEN COL_LENGTH(N'dbo_cotifly.CotizacionLineasSolicitud', N'origenNombre') IS NOT NULL
                           AND COL_LENGTH(N'dbo_cotifly.CotizacionLineasSolicitud', N'destinoNombre') IS NOT NULL THEN 1 ELSE 0 END AS bit) AS Ciudades,
-               CAST(CASE WHEN COL_LENGTH(N'dbo_cotifly.CotizacionesSolicitud', N'deadline') IS NOT NULL THEN 1 ELSE 0 END AS bit) AS Deadline
+               CAST(CASE WHEN COL_LENGTH(N'dbo_cotifly.CotizacionesSolicitud', N'deadline') IS NOT NULL THEN 1 ELSE 0 END AS bit) AS Deadline,
+               CAST(CASE WHEN COL_LENGTH(N'dbo_cotifly.CotizacionLineasSolicitud', N'costoSeguro') IS NOT NULL THEN 1 ELSE 0 END AS bit) AS Seguro
         """;
 
     /// <summary>
@@ -34,7 +35,8 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
     /// cadena (<c>MIN(createdAt)</c>); resultado = el último no nulo de la cadena (mayor <c>marcadoAt</c>, sin fecha al final, y
     /// luego mayor <c>version</c>); ajustes de la vigente con <c>OUTER APPLY</c> por <c>cotizacionId</c> (índice del 0002).
     /// <c>{0}</c>/<c>{1}</c>/<c>{2}</c>: origen y destino de la ruta 1 y <c>deadline</c> (o <c>NULL</c> si la columna no existe);
-    /// <c>{3}</c>: la lectura de la ruta 1 (fragmentos fijos del código, nunca datos del usuario). Costo = suma de <c>costoFinal</c> de las
+    /// <c>{3}</c>: la lectura de la ruta 1; <c>{4}</c> (HU-045.2, #264): <c>costoSeguro</c> o NULL sin el script 20 (fragmentos fijos del
+    /// código, nunca datos del usuario). Costo = suma de <c>costoFinal</c> de las
     /// rutas (solo si todas lo tienen); margen = promedio de las rutas ponderado por su costo (sin costo, el promedio simple). HU-028.1
     /// (#183): las rutas <c>rechazada</c> por la Mesa de Costeo no cuentan (ni en el costo ni en el margen): el valor cotizado
     /// (<c>precioFinal</c>) ya las excluye.
@@ -44,7 +46,7 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
     /// </summary>
     private const string SqlCotizaciones = """
         WITH base AS (
-            SELECT c.id, c.usuarioId, c.version, c.createdAt, rr.costo, c.precioFinal, c.moneda, c.trmAplicada, rr.margen AS margenAplicado,
+            SELECT c.id, c.usuarioId, c.version, c.createdAt, rr.costo, rr.seguro, c.precioFinal, c.moneda, c.trmAplicada, rr.margen AS margenAplicado,
                    c.ganada, c.marcadoAt, c.costeoListoAt, {0} AS origen, {1} AS destino, {2} AS deadline,
                    CASE WHEN c.version > 1
                              AND RIGHT(c.folio, LEN(N'-v' + CAST(c.version AS nvarchar(10)))) = N'-v' + CAST(c.version AS nvarchar(10))
@@ -56,7 +58,8 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
                        CASE WHEN SUM(CASE WHEN l.margenAplicado IS NOT NULL AND l.costoFinal > 0 THEN l.costoFinal END) > 0
                             THEN CAST(SUM(CASE WHEN l.margenAplicado IS NOT NULL AND l.costoFinal > 0 THEN l.margenAplicado * l.costoFinal END)
                                       / SUM(CASE WHEN l.margenAplicado IS NOT NULL AND l.costoFinal > 0 THEN l.costoFinal END) AS decimal(9,4))
-                            ELSE CAST(AVG(l.margenAplicado) AS decimal(9,4)) END AS margen
+                            ELSE CAST(AVG(l.margenAplicado) AS decimal(9,4)) END AS margen,
+                       SUM({4}) AS seguro
                 FROM dbo_cotifly.CotizacionLineasSolicitud l
                 WHERE l.cotizacionSolicitudId = c.id
                   AND (l.estadoCosteo IS NULL OR l.estadoCosteo <> N'rechazada')
@@ -75,12 +78,13 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
                v.costo AS Costo, v.precioFinal AS PrecioFinal, v.moneda AS Moneda, v.trmAplicada AS TrmAplicada,
                v.margenAplicado AS MargenAplicado, r.ganada AS Ganada, v.costeoListoAt AS CosteoListoAt,
                r.id AS CotizacionResultadoId, r.precioFinal AS PrecioResultado, r.moneda AS MonedaResultado, r.trmAplicada AS TrmResultado, r.costo AS CostoResultado,
+               v.seguro AS Seguro, r.seguro AS SeguroResultado,
                v.origen AS Origen, v.destino AS Destino, v.deadline AS Deadline,
                a.numAjustes AS NumAjustes, a.numDiferencias AS NumDiferencias,
                a.sumaDiferencias AS SumaDiferencias, a.sumaDiferenciasAbs AS SumaDiferenciasAbsolutas
         FROM cadenas v
         OUTER APPLY (
-            SELECT TOP (1) b2.id, b2.ganada, b2.precioFinal, b2.moneda, b2.trmAplicada, b2.costo
+            SELECT TOP (1) b2.id, b2.ganada, b2.precioFinal, b2.moneda, b2.trmAplicada, b2.costo, b2.seguro
             FROM base b2
             WHERE b2.usuarioId = v.usuarioId AND b2.folioBase = v.folioBase AND b2.ganada IS NOT NULL
             ORDER BY CASE WHEN b2.marcadoAt IS NULL THEN 1 ELSE 0 END, b2.marcadoAt DESC, b2.version DESC
@@ -111,7 +115,7 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
     /// </summary>
     private const string SqlRutas = """
         WITH rutas AS (
-            SELECT l.id, l.cotizacionSolicitudId, l.orden, l.lineaNegocioId, mp.lineaNegocio, l.costoFinal, l.precioFinalLinea, l.margenAplicado,
+            SELECT l.id, l.cotizacionSolicitudId, l.orden, l.lineaNegocioId, mp.lineaNegocio, l.costoFinal, l.precioFinalLinea, l.margenAplicado, {0} AS costoSeguro,
                    l.margenPoliticaSugerido,
                    ROW_NUMBER() OVER (PARTITION BY l.cotizacionSolicitudId ORDER BY l.orden, l.id) AS posicion
             FROM dbo_cotifly.CotizacionLineasSolicitud l
@@ -120,7 +124,7 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
               AND (l.estadoCosteo IS NULL OR l.estadoCosteo <> N'rechazada')
         )
         SELECT r.cotizacionSolicitudId AS CotizacionId, r.orden AS Orden, r.lineaNegocioId AS LineaNegocioId, r.lineaNegocio AS LineaNegocio,
-               r.costoFinal AS Costo, r.precioFinalLinea AS PrecioFinal, r.margenAplicado AS MargenAplicado,
+               r.costoFinal AS Costo, r.precioFinalLinea AS PrecioFinal, r.margenAplicado AS MargenAplicado, r.costoSeguro AS Seguro,
                r.margenPoliticaSugerido AS MargenPolitica,
                a.numAjustes AS NumAjustes, a.numDiferencias AS NumDiferencias, a.sumaDiferencias AS SumaDiferencias
         FROM rutas r
@@ -153,7 +157,8 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
             columnas.Deadline ? "c.deadline" : "CAST(NULL AS datetimeoffset)",
             columnas.Ciudades
                 ? "OUTER APPLY (SELECT TOP (1) l1.origenNombre, l1.destinoNombre FROM dbo_cotifly.CotizacionLineasSolicitud l1 WHERE l1.cotizacionSolicitudId = c.id ORDER BY l1.orden) r1"
-                : string.Empty);
+                : string.Empty,
+            ExpresionSeguro(columnas.Seguro, "l.costoSeguro"));
         var usuariosJson = JsonSerializer.Serialize(usuarios.Distinct());
         var filas = await ConReintentoPorInterbloqueoAsync(() => contexto.Database.SqlQueryRaw<clsFilaMetrica>(
                 sql,
@@ -163,7 +168,8 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
             .ToListAsync(cancellationToken));
         // B3 (#173): también las rutas de la versión ganada cuando no es la vigente (apertura por línea de negocio).
         var rutas = await ListarRutasAsync(
-            [.. filas.Select(f => f.CotizacionId).Concat(filas.Select(f => f.CotizacionResultadoId).OfType<Guid>()).Distinct()], cancellationToken);
+            [.. filas.Select(f => f.CotizacionId).Concat(filas.Select(f => f.CotizacionResultadoId).OfType<Guid>()).Distinct()], columnas.Seguro,
+            cancellationToken);
 
         return new clsDatosMetricas(
             [.. filas.Select(f => new clsCotizacionMetrica
@@ -175,6 +181,7 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
                 Versiones = f.Versiones,
                 Costo = f.Costo,
                 PrecioFinal = f.PrecioFinal,
+                Seguro = f.Seguro,
                 Moneda = f.Moneda,
                 TrmAplicada = f.TrmAplicada,
                 MargenAplicado = f.MargenAplicado,
@@ -182,7 +189,7 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
                 // B3 (#173): precio y costo de la versión que tiene el resultado (la ganada puede no ser la vigente).
                 VersionResultado = f.Ganada is null
                     ? null
-                    : new clsVersionResultadoMetrica(f.PrecioResultado, f.MonedaResultado, f.TrmResultado ?? 0m, f.CostoResultado),
+                    : new clsVersionResultadoMetrica(f.PrecioResultado, f.MonedaResultado, f.TrmResultado ?? 0m, f.CostoResultado, f.SeguroResultado),
                 RutasResultado = f.Ganada is not null && f.CotizacionResultadoId is { } ganada && ganada != f.CotizacionId
                     ? rutas[ganada].ToList()
                     : null,
@@ -200,7 +207,8 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
     }
 
     /// <summary>Rutas de <paramref name="cotizaciones"/> (versiones vigentes), por cotización y en su orden.</summary>
-    private async Task<ILookup<Guid, clsRutaMetrica>> ListarRutasAsync(IReadOnlyCollection<Guid> cotizaciones, CancellationToken cancellationToken)
+    private async Task<ILookup<Guid, clsRutaMetrica>> ListarRutasAsync(
+        IReadOnlyCollection<Guid> cotizaciones, bool conSeguro, CancellationToken cancellationToken)
     {
         if (cotizaciones.Count == 0)
         {
@@ -209,7 +217,8 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
 
         var ids = JsonSerializer.Serialize(cotizaciones);
         var filas = await ConReintentoPorInterbloqueoAsync(() => contexto.Database.SqlQueryRaw<clsFilaRuta>(
-                SqlRutas, new SqlParameter("@cotizaciones", System.Data.SqlDbType.NVarChar, -1) { Value = ids })
+                string.Format(System.Globalization.CultureInfo.InvariantCulture, SqlRutas, ExpresionSeguro(conSeguro, "l.costoSeguro")),
+                new SqlParameter("@cotizaciones", System.Data.SqlDbType.NVarChar, -1) { Value = ids })
             .ToListAsync(cancellationToken));
         return filas.ToLookup(
             f => f.CotizacionId,
@@ -221,12 +230,19 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
                 Costo = f.Costo,
                 PrecioFinal = f.PrecioFinal,
                 MargenAplicado = f.MargenAplicado,
+                Seguro = f.Seguro,
                 MargenPolitica = f.MargenPolitica,
                 NumAjustes = f.NumAjustes,
                 NumDiferencias = f.NumDiferencias,
                 SumaDiferencias = f.SumaDiferencias,
             });
     }
+
+    /// <summary>
+    /// HU-045.2 (#264): la columna del seguro de la ruta, o <c>NULL</c> en una base sin el script 20 (fragmento fijo del código, nunca datos
+    /// del usuario). En producción <c>/health/ready</c> exige el 20; las pruebas del tablero también corren sobre bases anteriores.
+    /// </summary>
+    private static string ExpresionSeguro(bool existe, string columna) => existe ? columna : "CAST(NULL AS decimal(18,2))";
 
     /// <summary>
     /// HU-021: la consulta del tablero lee la cabecera y sus rutas (dos tablas) mientras el costeo y el polling las escriben en una
@@ -268,6 +284,9 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
     {
         public bool Ciudades { get; set; }
         public bool Deadline { get; set; }
+
+        /// <summary>HU-045.2 (#264): ¿existe <c>costoSeguro</c> del script 20? (las pruebas de bases anteriores no lo tienen).</summary>
+        public bool Seguro { get; set; }
     }
 
     /// <summary>Fila cruda del tablero, una por cadena (materializada por nombre de columna).</summary>
@@ -289,6 +308,10 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
         public string? MonedaResultado { get; set; }
         public decimal? TrmResultado { get; set; }
         public decimal? CostoResultado { get; set; }
+
+        /// <summary>HU-045.2 (#264): Σ <c>costoSeguro</c> de las rutas no rechazadas de la vigente y de la versión con el resultado (COP).</summary>
+        public decimal? Seguro { get; set; }
+        public decimal? SeguroResultado { get; set; }
         public DateTimeOffset? CosteoListoAt { get; set; }
         public string? Origen { get; set; }
         public string? Destino { get; set; }
@@ -309,6 +332,9 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
         public decimal? Costo { get; set; }
         public decimal? PrecioFinal { get; set; }
         public decimal? MargenAplicado { get; set; }
+
+        /// <summary>HU-045.2 (#264): <c>costoSeguro</c> de la ruta (COP), o <c>null</c> sin seguro.</summary>
+        public decimal? Seguro { get; set; }
 
         /// <summary>HU-016.1 (#154): <c>margenPoliticaSugerido</c> de la ruta.</summary>
         public decimal? MargenPolitica { get; set; }

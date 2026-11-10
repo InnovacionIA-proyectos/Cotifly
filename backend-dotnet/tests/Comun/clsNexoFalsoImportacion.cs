@@ -32,6 +32,12 @@ public sealed partial class clsNexoFalso
 
     public string CodigoImportacionFalla { get; set; } = "IA_TOPE_DIARIO";
 
+    /// <summary>
+    /// Validador #253: si tiene valor, toda ruta de la importación responde 200 con este cuerpo crudo (respuestas raras de NEXO: JSON
+    /// inválido, nulos en listas, receta que no es objeto, <c>cambios</c> con datos).
+    /// </summary>
+    public string? CuerpoImportacionCrudo { get; set; }
+
     /// <summary>Mensaje del rechazo forzado (el que Cotifly debe reenviar tal cual).</summary>
     public string MensajeImportacionFalla { get; set; } = "Rechazo de la importación (prueba).";
 
@@ -41,6 +47,24 @@ public sealed partial class clsNexoFalso
     /// <summary>Términos del diccionario de NEXO (<c>ClienteId</c> null = generales).</summary>
     public List<(Guid? ClienteId, string Termino, string Tipo, string Concepto, string? Contexto)> Diccionario { get; } =
         [(null, "Tractomula", "valor", "3S3", "tipoVehiculo"), (null, "ORIGEN", "columna", "origen", null)];
+
+    /// <summary>
+    /// #256 (B2): simula un cambio de forma de NEXO en <c>GET diccionario-cliente</c>: los términos llegan SIN la propiedad <c>clienteId</c>
+    /// (ni siquiera <c>null</c>). Cotifly no debe tomarlos por generales.
+    /// </summary>
+    public bool DiccionarioSinClienteId { get; set; }
+
+    /// <summary>
+    /// HU-044.4 (#255): resultados fijos de <c>normalizar-valores</c> por campo de NEXO y texto (comparado como NEXO), para simular el
+    /// alias, el catálogo y la ciudad ambigua con candidatos. Ganan sobre el diccionario y la "IA" del falso.
+    /// </summary>
+    public List<clsNormalizacionFalsa> ValoresNormalizados { get; } = [];
+
+    /// <summary>Sinónimos inequívocos de la línea de negocio que NEXO resuelve sin IA (DU §6).</summary>
+    private static readonly Dictionary<string, string> _sinonimosLinea = new(StringComparer.Ordinal)
+    {
+        ["IMPO"] = "Puerto a interior", ["IMPORTACION"] = "Puerto a interior", ["EXPO"] = "Interior a puerto", ["EXPORTACION"] = "Interior a puerto",
+    };
 
     /// <summary>Campos del último <c>multipart</c> recibido (sin el archivo); el archivo, en <c>archivo</c> con su nombre.</summary>
     public IReadOnlyDictionary<string, string>? UltimoFormularioImportacion { get; private set; }
@@ -112,6 +136,11 @@ public sealed partial class clsNexoFalso
             return Error(falla, CodigoImportacionFalla, MensajeImportacionFalla);
         }
 
+        if (CuerpoImportacionCrudo is { } crudo)
+        {
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(crudo, System.Text.Encoding.UTF8, "application/json") };
+        }
+
         var json = cuerpo is null ? null : JsonNode.Parse(cuerpo);
         var consulta = System.Web.HttpUtility.ParseQueryString(url.Query);
         var accion = ruta.StartsWith(RutaCaptura, StringComparison.Ordinal) ? ruta[RutaCaptura.Length..] : ruta;
@@ -144,14 +173,25 @@ public sealed partial class clsNexoFalso
             }),
             ("GET", "/api/diccionario-cliente") => consulta["tipo"] is { } tipo && tipo is not ("columna" or "unidad" or "valor")
                 ? Error(HttpStatusCode.BadRequest, "TIPO_TERMINO_INVALIDO", "El tipo de término no es válido.")
-                : Json(HttpStatusCode.OK, Diccionario.Select(t => new
-                {
-                    id = Guid.NewGuid(), clienteId = t.ClienteId, clienteNombre = (string?)null, termino = t.Termino, tipo = t.Tipo,
-                    concepto = t.Concepto, contexto = t.Contexto, ejemplo = (string?)null, activo = true, createdAt = DateTimeOffset.UtcNow,
-                    updatedAt = (DateTimeOffset?)null,
-                }).ToList()),
+                : Json(HttpStatusCode.OK, Diccionario.Select(TerminoDto).ToList()),
             _ => Error(HttpStatusCode.NotFound, "RUTA_NO_ENCONTRADA", $"{metodo} {ruta}"),
         };
+    }
+
+    /// <summary>Un término como lo manda NEXO (con <see cref="DiccionarioSinClienteId"/>, sin la propiedad <c>clienteId</c>).</summary>
+    private JsonObject TerminoDto((Guid? ClienteId, string Termino, string Tipo, string Concepto, string? Contexto) t)
+    {
+        var termino = new JsonObject
+        {
+            ["id"] = Guid.NewGuid(), ["clienteNombre"] = null, ["termino"] = t.Termino, ["tipo"] = t.Tipo, ["concepto"] = t.Concepto,
+            ["contexto"] = t.Contexto, ["ejemplo"] = null, ["activo"] = true, ["createdAt"] = DateTimeOffset.UtcNow, ["updatedAt"] = null,
+        };
+        if (!DiccionarioSinClienteId)
+        {
+            termino["clienteId"] = t.ClienteId;
+        }
+
+        return termino;
     }
 
     private HttpResponseMessage SugerirMapeo(JsonNode? json)
@@ -274,6 +314,25 @@ public sealed partial class clsNexoFalso
 
         var resultado = valores.DistinctBy(v => (v.Campo, NormalizarComoNexo(v.Valor))).Select(v =>
         {
+            if (ValoresNormalizados.FirstOrDefault(f => f.Campo == v.Campo && NormalizarComoNexo(f.Valor) == NormalizarComoNexo(v.Valor)) is { } fijo)
+            {
+                return new
+                {
+                    campo = v.Campo, valor = v.Valor, estado = fijo.Estado, codigo = fijo.Codigo, descripcion = fijo.Descripcion,
+                    municipioId = fijo.MunicipioId, origen = fijo.Origen, confianza = fijo.Confianza, nota = fijo.Nota,
+                    candidatos = fijo.Candidatos?.Select(c => (object)new { municipioId = c.MunicipioId, codigoDane = c.CodigoDane, municipio = c.Municipio, departamento = c.Departamento }).ToArray(),
+                };
+            }
+
+            if (v.Campo == "lineaNegocio" && _sinonimosLinea.TryGetValue(NormalizarComoNexo(v.Valor), out var linea))
+            {
+                return new
+                {
+                    campo = v.Campo, valor = v.Valor, estado = "resuelto", codigo = (string?)linea, descripcion = (string?)linea, municipioId = (int?)null,
+                    origen = "sinonimo", confianza = 1.0, nota = (string?)null, candidatos = (object[]?)null,
+                };
+            }
+
             var alias = Diccionario.FirstOrDefault(t => t.Tipo == "valor" && t.Contexto == v.Campo && NormalizarComoNexo(t.Termino) == NormalizarComoNexo(v.Valor));
             var resuelto = alias.Termino is not null || IaImportacionDisponible;
             return new
@@ -285,7 +344,7 @@ public sealed partial class clsNexoFalso
                 confianza = alias.Termino is not null ? 1.0 : resuelto ? 0.8 : 0.0, nota = (string?)null, candidatos = (object[]?)null,
             };
         }).ToList();
-        var todosPorRegla = resultado.All(r => r.origen == "diccionario");
+        var todosPorRegla = resultado.All(r => r.origen is not ("ia" or "ninguno"));
         return Json(HttpStatusCode.OK, new
         {
             iaUsada = IaImportacionDisponible && !todosPorRegla,
@@ -476,3 +535,8 @@ public sealed partial class clsNexoFalso
         return new Guid(bytes.AsSpan(0, 16));
     }
 }
+
+/// <summary>HU-044.4 (#255): un resultado fijo de <c>normalizar-valores</c> del Nexo falso (campo de NEXO en camelCase).</summary>
+public sealed record clsNormalizacionFalsa(
+    string Campo, string Valor, string Estado, string? Codigo, string Origen, double Confianza = 1, string? Descripcion = null,
+    int? MunicipioId = null, string? Nota = null, IReadOnlyList<(int MunicipioId, string CodigoDane, string Municipio, string Departamento)>? Candidatos = null);

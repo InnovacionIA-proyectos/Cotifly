@@ -23,7 +23,7 @@ public sealed class clsPasosPersistencia(clsContextoEscenario contexto)
     {
         var tablas = await clsBaseDatosPruebas.EscalarAsync<int>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
             "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dbo_cotifly' AND TABLE_TYPE = 'BASE TABLE' AND TABLE_NAME NOT LIKE 'Respaldo0009[_]%'");
-        tablas.Should().Be(23, "HU-021: tras el 0009 son CotizacionesSolicitud, sus rutas, camiones, mercancías y conexos, más las demás tablas de 0001 a 0008 (sin los respaldos Respaldo0009_* que deja el 0009), más CapturasIdempotentes del script 06 (#191) y SapMargenCliente y SapMargenSyncLog del 17 (HU-042)");
+        tablas.Should().Be(24, "HU-021: tras el 0009 son CotizacionesSolicitud, sus rutas, camiones, mercancías y conexos, más las demás tablas de 0001 a 0008 (sin los respaldos Respaldo0009_* que deja el 0009), más CapturasIdempotentes del script 06 (#191) y SapMargenCliente y SapMargenSyncLog del 17 (HU-042) y TarifasSeguro del 20 (HU-045, #264)");
     }
 
     [Given("el comercial {string} registrado")]

@@ -329,6 +329,12 @@ public sealed record clsCantidadConexoWebRequest(string? Id, decimal? Cantidad);
 /// </summary>
 public sealed record clsAjusteMargenWebRequest(decimal? Margen, string? Justificacion, int? LineaOrden = null, Guid? LineaSolicitudId = null);
 
+/// <summary>
+/// <c>SeguroRutaWeb</c> (HU-045.2, #264): <c>incluye_seguro</c> (obligatorio: <c>true</c> incluye el seguro de la mercancía en la ruta,
+/// <c>false</c> lo quita) y la ruta (<c>linea_orden</c> o <c>linea_solicitud_id</c>; sin ninguno, la única ruta), como el ajuste de margen.
+/// </summary>
+public sealed record clsSeguroRutaWebRequest(bool? IncluyeSeguro, int? LineaOrden = null, Guid? LineaSolicitudId = null);
+
 /// <summary><c>ResultadoWeb</c>: <c>resultado</c> (<c>ganada</c> | <c>perdida</c>), <c>motivo</c> (se guarda en <c>motivo_rechazo</c>) y
 /// <c>comentario</c> (solo se reenvía a Nexo).</summary>
 public sealed record clsResultadoWebRequest(string? Resultado, string? Motivo, string? Comentario);
