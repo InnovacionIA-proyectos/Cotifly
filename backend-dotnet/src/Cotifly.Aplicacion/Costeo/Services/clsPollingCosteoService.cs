@@ -146,7 +146,9 @@ public sealed class clsPollingCosteoService(
             && await envioConexos.TieneReintentosAsync(cotizacion, cancellationToken))
         {
             var reintento = await envioConexos.ReintentarAsync(cotizacion, duenoConexos, CancellationToken.None);
-            if (reintento.PorReintentar > 0)
+            // #259 (invariante de agenda): no sale de la agenda mientras quede un conexo pendiente en una ruta cotizable.
+            var sigue = reintento.PorReintentar > 0 || await ConexosPendientesAsync(cotizacion);
+            if (sigue)
             {
                 // Con los conexos en espera (Nexo sin responder antes del POST) el reintento se espacia 5, 15 y 60 min (#136).
                 cotizacion.ProgramarRelecturaCosteo(ahora + (reintento.EsperaReintento ?? config.IntervaloReintentoConexos));
@@ -157,7 +159,7 @@ public sealed class clsPollingCosteoService(
             }
 
             await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
-            return reintento.PorReintentar > 0 ? ResultadoConsultaCosteo.SinCambio : ResultadoConsultaCosteo.Detenida;
+            return sigue ? ResultadoConsultaCosteo.SinCambio : ResultadoConsultaCosteo.Detenida;
         }
 
         if (!(cotizacion.SeConsultaEnNexo || relectura) || cotizacion.PerdidaSoloEnCotifly || cotizacion.UsuarioId is not { } usuarioId || cotizacion.CosteoEnviadoAt is not { } enviadaAt)
@@ -350,8 +352,9 @@ public sealed class clsPollingCosteoService(
                 var envio = await envioConexos.EnviarPendientesAsync(cotizacion, cotizacionNexo, usuarioId, CancellationToken.None);
 
                 // Si el polling se detuvo en esta consulta (entregada, descartada o vencida) y quedaron conexos por reintentar, la
-                // cotización se vuelve a agendar solo para el envío (hasta CosteoNexo:MaximoReintentosConexos).
-                if (envio.PorReintentar > 0 && cotizacion.CosteoSiguienteConsultaAt is null)
+                // cotización se vuelve a agendar solo para el envío (hasta CosteoNexo:MaximoReintentosConexos). #259 (invariante de
+                // agenda): también si queda alguno pendiente en una ruta cotizable, aunque este envío no lo cuente.
+                if (cotizacion.CosteoSiguienteConsultaAt is null && (envio.PorReintentar > 0 || await ConexosPendientesAsync(cotizacion)))
                 {
                     cotizacion.ProgramarRelecturaCosteo(ahora + (envio.EsperaReintento ?? config.IntervaloReintentoConexos));
                     await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
@@ -360,10 +363,65 @@ public sealed class clsPollingCosteoService(
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 logger.LogWarning(ex, "No se pudieron enviar a Nexo los conexos de {Folio}: se reintenta en el siguiente ciclo.", cotizacion.Folio);
+                await MantenerEnAgendaTrasFalloAsync(cotizacion, ahora, config);
             }
         }
 
         return cambio ? ResultadoConsultaCosteo.Cambio : ResultadoConsultaCosteo.SinCambio;
+    }
+
+    /// <summary>
+    /// #259 (invariante de agenda): ¿quedan conexos con <c>estado_nexo = pendiente</c> en las rutas cotizables (las mismas que cuenta
+    /// finalizar, #228) de una cotización que el reintento de conexos sí procesa (con cotización de Nexo y dueño, no perdida solo en
+    /// Cotifly)? Con la variante 4a del envío eso converge siempre: el siguiente ciclo los envía o los deja fallido_definitivo.
+    /// </summary>
+    private async Task<bool> ConexosPendientesAsync(clsCotizacionSolicitud cotizacion)
+    {
+        if (envioConexos is null || cotizacion.CotizacionNexoId is null || cotizacion.UsuarioId is null || cotizacion.PerdidaSoloEnCotifly)
+        {
+            return false;
+        }
+
+        var rutas = cotizacion.RutasCotizables.Select(r => r.Id).ToHashSet();
+        var estados = await envioConexos.EstadosAsync(cotizacion, CancellationToken.None);
+        return estados.Any(e => rutas.Contains(e.Key.Ruta) && e.Value == clsEnvioConexosNexoService.VisiblePendiente);
+    }
+
+    /// <summary>
+    /// #259: el envío de conexos falló con una excepción en la consulta que detuvo el polling: si quedan pendientes, la cotización vuelve a la
+    /// agenda para el reintento (<c>ahora + CosteoNexo:IntervaloReintentoConexosMinutos</c>). Auditoría B3:
+    /// <list type="bullet">
+    /// <item>Se agenda con la actualización condicional del repositorio (<see cref="IClsCotizacionRepository.ReencolarConsultaCosteoAsync"/>),
+    /// no con la unidad de trabajo: no persiste lo que el envío dejó a medias en el seguimiento de cambios ni pisa una agenda o un reclamo
+    /// que otro (finalizar, el lote) haya puesto entretanto.</item>
+    /// <item>Techo: una excepción que se repite siempre (un error determinista) reagendaría la cotización sin fin. Solo se reagenda mientras
+    /// la solicitud tenga menos de <c>CosteoNexo:EdadMaximaSincronizacionResultadoDias</c> desde su envío a Nexo; pasado ese plazo queda
+    /// fuera de la agenda (con el warning en el log) y finalizar la vuelve a encolar cuando el comercial lo intente.</item>
+    /// </list>
+    /// Nunca lanza (la consulta ya se guardó).
+    /// </summary>
+    private async Task MantenerEnAgendaTrasFalloAsync(clsCotizacionSolicitud cotizacion, DateTimeOffset ahora, clsOpcionesCosteoNexo config)
+    {
+        try
+        {
+            if (cotizacion.CosteoSiguienteConsultaAt is not null || !await ConexosPendientesAsync(cotizacion))
+            {
+                return;
+            }
+
+            if (cotizacion.CosteoEnviadoAt is { } enviadaAt && ahora - enviadaAt >= config.EdadMaximaSincronizacionResultado)
+            {
+                logger.LogWarning("{Folio} sigue con conexos pendientes tras un error del envío y superó la edad máxima: no se reagenda (finalizar la vuelve a encolar).",
+                    cotizacion.Folio);
+                return;
+            }
+
+            await cotizaciones.ReencolarConsultaCosteoAsync(cotizacion.Id, ahora + config.IntervaloReintentoConexos, CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "No se pudo volver a agendar {Folio} para reintentar sus conexos: finalizar la vuelve a encolar.", cotizacion.Folio);
+        }
     }
 
     public async Task<int> ReprogramarEntregadasSinPrecioAsync(CancellationToken cancellationToken = default)

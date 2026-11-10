@@ -131,6 +131,14 @@ public interface IClsCotizacionRepository
     Task<bool> ReclamarConsultaCosteoAsync(Guid cotizacionId, DateTimeOffset esperada, DateTimeOffset reclamoHasta, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// #259: vuelve a poner en la agenda del polling, para <paramref name="cuando"/>, una cotización que está FUERA de ella
+    /// (<c>costeoSiguienteConsultaAt</c> nulo), para que el envío diferido procese sus conexos pendientes. Es una actualización condicional
+    /// (como <see cref="ReclamarConsultaCosteoAsync"/>): nunca pisa un reclamo vigente ni adelanta una agenda ya programada (la espera de
+    /// los reintentos). Escribe de inmediato, sin arrastrar otros cambios de la unidad de trabajo; devuelve si la agendó.
+    /// </summary>
+    Task<bool> ReencolarConsultaCosteoAsync(Guid cotizacionId, DateTimeOffset cuando, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Reparación de HU-013.14 (ADR-018 §17): agenda para <paramref name="ahora"/> la relectura de las cotizaciones en <c>entregada</c>
     /// con <c>solicitudNexoId</c>, sin <c>precioFinal</c>, sin PDF, sin <c>motivoEstadoCosteo</c> y sin agenda. Escribe de inmediato y
     /// devuelve cuántas agendó (idempotente: una agendada ya no cumple el filtro).

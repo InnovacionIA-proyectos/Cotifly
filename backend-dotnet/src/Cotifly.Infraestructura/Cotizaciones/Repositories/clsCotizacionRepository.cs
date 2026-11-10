@@ -312,6 +312,14 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
         return filas == 1;
     }
 
+    public async Task<bool> ReencolarConsultaCosteoAsync(Guid cotizacionId, DateTimeOffset cuando, CancellationToken cancellationToken = default)
+    {
+        var filas = await contexto.CotizacionesSolicitud
+            .Where(c => c.Id == cotizacionId && c.CosteoSiguienteConsultaAt == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(c => c.CosteoSiguienteConsultaAt, (DateTimeOffset?)cuando), cancellationToken);
+        return filas == 1;
+    }
+
     public Task<int> ReprogramarEntregadasSinPrecioAsync(DateTimeOffset ahora, CancellationToken cancellationToken = default) =>
         contexto.CotizacionesSolicitud
             .Where(c => c.EstadoCosteo == EstadoCosteo.Entregada && c.SolicitudNexoId != null && c.PrecioFinal == null && c.PdfPath == null
