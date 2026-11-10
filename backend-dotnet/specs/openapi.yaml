@@ -4079,6 +4079,482 @@ paths:
         '500':
           $ref: '#/components/responses/ErrorInterno'
 
+  /web/licitaciones/plantillas-mapeo:
+    put:
+      operationId: guardarPlantillaMapeo
+      tags: [web]
+      summary: Guarda (o reemplaza) en NEXO la plantilla de mapeo del cliente para esos encabezados
+      description: |
+        HU-044.5 (#256, ADR-028). Cotifly reenvía a `PUT {Nexo:UrlBase}/api/captura-solicitudes/plantillas-mapeo` con la identidad del
+        comercial y el NIT de la licitación como `clienteNit` (sin puntos ni dígito de verificación). Se llama cuando el comercial
+        confirma el mapeo y elige guardarlo. Con la plantilla, la siguiente carga del mismo formato (mismos encabezados) sale de la
+        plantilla en `sugerir-mapeo`, sin IA. **Cotifly no guarda copia**: NEXO registra quién la guardó (`tbl_audit_log`).
+
+        `201` la primera vez; `200` si reemplaza a la plantilla del cliente con esos mismos encabezados (el mismo `id`). Si el NIT no
+        tiene cliente local en NEXO, NEXO lo crea desde el DW; si no es de ningún cliente ni prospecto, `CLIENTE_NIT_INVALIDO`.
+        `campo` es el nombre de NEXO (el de `sugerir-mapeo` y `aplicar-mapeo`). Las reglas de `encabezados` (1 a 100, máx. 200
+        caracteres) y de `columnas` las valida NEXO y sus rechazos llegan con su código.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlantillaMapeoWeb'
+      responses:
+        '201':
+          description: Plantilla nueva del cliente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlantillaMapeo'
+        '200':
+          description: Reemplazó a la plantilla del cliente con esos encabezados
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlantillaMapeo'
+        '400':
+          description: |
+            `ErrorWeb`: cuerpo inválido. `ErrorNegocio`: `CLIENTE_REQUERIDO` (sin `nit_cliente`) o `CLIENTE_NIT_INVALIDO` (el NIT no
+            tiene letras ni dígitos o pasa de 30), sin llamar a NEXO; de NEXO, con su código y su mensaje, `CLIENTE_NIT_INVALIDO` (no es
+            de ningún cliente ni prospecto), `NOMBRE_DEMASIADO_LARGO`, `ENCABEZADOS_REQUERIDOS`, `DEMASIADAS_COLUMNAS`,
+            `ENCABEZADO_DEMASIADO_LARGO`, `COLUMNA_FUERA_DE_RANGO`, `COLUMNA_INVALIDA`, `CAMPO_INVALIDO`, `CAMPO_DUPLICADO`,
+            `TRANSFORMACION_INVALIDA`, `TRANSFORMACION_NO_APLICA`...; `COSTEO_NEXO_RECHAZADA` para otro 4xx de NEXO.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: '`ErrorWeb`: el rol no es de la consola del comercial. `ErrorNegocio` `NEXO_SIN_PERMISO`: NEXO respondió 401 o 403'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
+        '503':
+          description: '`NEXO_NO_DISPONIBLE`: la importación apagada en el ambiente, NEXO caído o sin respuesta a tiempo'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+    get:
+      operationId: listarPlantillasMapeo
+      tags: [web]
+      summary: Las plantillas de mapeo del cliente guardadas en NEXO
+      description: |
+        HU-044.5 (#256). **`nit_cliente` es obligatorio en Cotifly**: sin él NEXO devolvería las plantillas de TODOS los clientes, así
+        que Cotifly responde `400 CLIENTE_REQUERIDO` sin llamar a NEXO. Un cliente sin plantillas (o un NIT sin cliente en NEXO) → `[]`.
+      security:
+        - bearer: []
+      parameters:
+        - name: nit_cliente
+          in: query
+          required: true
+          description: NIT de la licitación, con o sin puntos y dígito de verificación.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Las plantillas del cliente (vacía si no tiene)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PlantillaMapeo'
+        '400':
+          description: '`CLIENTE_REQUERIDO` (sin `nit_cliente`) o `CLIENTE_NIT_INVALIDO`, sin llamar a NEXO; `COSTEO_NEXO_RECHAZADA` (`detalle.motivo` = el código de NEXO) si NEXO responde otro 4xx o un 404 sin código'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: '`ErrorWeb`: el rol no es de la consola del comercial. `ErrorNegocio` `NEXO_SIN_PERMISO`: NEXO respondió 401 o 403'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
+        '503':
+          description: '`NEXO_NO_DISPONIBLE`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+
+  /web/licitaciones/plantillas-mapeo/{id}:
+    delete:
+      operationId: eliminarPlantillaMapeo
+      tags: [web]
+      summary: Borra en NEXO una plantilla de mapeo
+      description: |
+        HU-044.5 (#256). Reenvía a `DELETE {Nexo:UrlBase}/api/captura-solicitudes/plantillas-mapeo/{id}`. La siguiente carga de ese
+        formato vuelve a pasar por el diccionario y la IA. **Cambio a confirmar con el frontend:** "no encontrado" es `404` con
+        `ErrorNegocio` y el código `PLANTILLA_NO_ENCONTRADA` (no el 404 `ErrorWeb` "no es tuya" de las cotizaciones). Un `id` que no
+        es un GUID responde lo mismo sin llamar a NEXO.
+      security:
+        - bearer: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Borrada
+        '400':
+          description: '`COSTEO_NEXO_RECHAZADA` (`detalle.motivo` = el código de NEXO) si NEXO responde otro 4xx o un 404 sin código'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: '`ErrorWeb`: el rol no es de la consola del comercial. `ErrorNegocio` `NEXO_SIN_PERMISO`: NEXO respondió 401 o 403'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
+        '404':
+          description: '`PLANTILLA_NO_ENCONTRADA`: NEXO no tiene esa plantilla'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '503':
+          description: '`NEXO_NO_DISPONIBLE`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+
+  /web/licitaciones/recetas-lectura:
+    put:
+      operationId: guardarRecetaLectura
+      tags: [web]
+      summary: Guarda en NEXO el formato de lectura (receta) confirmado para el cliente
+      description: |
+        HU-044.5 (#256, ADR-028; NEXO PR #433). Se llama **solo cuando el comercial confirma** «Guardar este formato para el cliente»
+        después de `leer-estructura`. Cotifly reenvía el formulario a `PUT {Nexo:UrlBase}/api/captura-solicitudes/recetas-lectura` con
+        el **nombre original del archivo**, la identidad del comercial y el NIT como `clienteNit`. Con el formato guardado, el siguiente
+        Excel del cliente con un formato parecido (≥ 85 %) se lee sin IA. NEXO guarda hasta 20 formatos por cliente; **Cotifly no
+        guarda copia**.
+
+        **`receta` es un texto JSON opaco**: la de la última respuesta de `leer-estructura`, que llega a NEXO exactamente como vino
+        (Cotifly no la interpreta ni la cambia). `archivo` debe ser **el mismo Excel** con el que se confirmó: NEXO ejecuta la receta
+        contra él y exige que dé filas (`RECETA_SIN_FILAS`).
+
+        **Antes de NEXO Cotifly solo valida** que venga el archivo (`ARCHIVO_REQUERIDO`), su tamaño (`ARCHIVO_DEMASIADO_GRANDE`) y su
+        extensión (`FORMATO_NO_SOPORTADO`, solo `.xlsx` o `.xlsm`), que venga la receta (`RECETA_REQUERIDA`) y el NIT
+        (`CLIENTE_REQUERIDO`). **No abre el libro** (#277). **Sin reintentos automáticos** y con el tiempo largo hacia NEXO (al menos
+        180 s, `ImportacionInteligente:TimeoutLecturaSegundos`).
+
+        `201` la primera vez; `200` si reemplazó a un formato parecido del cliente.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [archivo, receta, nit_cliente]
+              properties:
+                archivo:
+                  type: string
+                  format: binary
+                receta:
+                  type: string
+                  description: La `receta` de la última respuesta de `leer-estructura`, como texto JSON (máx. 60.000).
+                nit_cliente:
+                  type: string
+                  description: NIT de la licitación (con o sin puntos y dígito de verificación). Si no tiene cliente local en NEXO, NEXO lo crea desde el DW.
+                nombre:
+                  type: string
+                  description: Nombre para reconocer el formato en la lista (máx. 100).
+                instrucciones:
+                  type: string
+                  description: Lo que explicó el comercial (máx. 4000); NEXO se lo da a la IA si el formato cambia.
+      responses:
+        '201':
+          description: Formato nuevo del cliente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecetaLectura'
+        '200':
+          description: Reemplazó a un formato parecido del cliente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecetaLectura'
+        '400':
+          description: |
+            `ErrorWeb`: el formulario no se pudo leer o una parte viene más de una vez (dos `receta`, dos `nit_cliente`, dos `archivo`...;
+            no se adivina cuál vale y no se llama a NEXO). `ErrorNegocio`: de Cotifly, sin llamar a NEXO, `ARCHIVO_REQUERIDO`,
+            `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE` (un 413 de NEXO también), `RECETA_REQUERIDA`, `CLIENTE_REQUERIDO` y
+            `CLIENTE_NIT_INVALIDO`; de NEXO, con su código y su mensaje, `RECETA_INVALIDA`, `RECETA_SIN_FILAS`,
+            `CLIENTE_NIT_INVALIDO`, `CLIENTE_NO_ENCONTRADO`, `NOMBRE_DEMASIADO_LARGO`, `INSTRUCCIONES_DEMASIADO_LARGAS`, `EXCEL_INVALIDO`
+            y `EXCEL_SIN_DATOS`; `COSTEO_NEXO_RECHAZADA` para otro 4xx de NEXO.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: '`ErrorWeb`: el rol no es de la consola del comercial. `ErrorNegocio` `NEXO_SIN_PERMISO`: NEXO respondió 401 o 403'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '503':
+          description: '`NEXO_NO_DISPONIBLE`: la importación apagada en el ambiente, NEXO caído o sin respuesta a tiempo (una sola llamada)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+    get:
+      operationId: listarRecetasLectura
+      tags: [web]
+      summary: Los formatos de lectura del cliente guardados en NEXO
+      description: |
+        HU-044.5 (#256). **`nit_cliente` es obligatorio en Cotifly**: sin él NEXO devolvería los formatos de TODOS los clientes, así
+        que Cotifly responde `400 CLIENTE_REQUERIDO` sin llamar a NEXO. Un NIT sin cliente local en NEXO → `[]` (NEXO no crea nada).
+      security:
+        - bearer: []
+      parameters:
+        - name: nit_cliente
+          in: query
+          required: true
+          description: NIT de la licitación, con o sin puntos y dígito de verificación.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Los formatos del cliente (vacía si no tiene)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RecetaLectura'
+        '400':
+          description: '`CLIENTE_REQUERIDO` (sin `nit_cliente`) o `CLIENTE_NIT_INVALIDO`, sin llamar a NEXO; `COSTEO_NEXO_RECHAZADA` (`detalle.motivo` = el código de NEXO) si NEXO responde otro 4xx o un 404 sin código'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: '`ErrorWeb`: el rol no es de la consola del comercial. `ErrorNegocio` `NEXO_SIN_PERMISO`: NEXO respondió 401 o 403'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
+        '503':
+          description: '`NEXO_NO_DISPONIBLE`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+
+  /web/licitaciones/recetas-lectura/{id}:
+    delete:
+      operationId: eliminarRecetaLectura
+      tags: [web]
+      summary: Borra en NEXO un formato de lectura del cliente
+      description: |
+        HU-044.5 (#256). Reenvía a `DELETE {Nexo:UrlBase}/api/captura-solicitudes/recetas-lectura/{id}`; el siguiente archivo de ese
+        cliente vuelve a pasar por la IA. **Cambio a confirmar con el frontend:** "no encontrado" es `404` con `ErrorNegocio` y el
+        código `RECETA_NO_ENCONTRADA`. Un `id` que no es un GUID responde lo mismo sin llamar a NEXO.
+      security:
+        - bearer: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Borrado
+        '400':
+          description: '`COSTEO_NEXO_RECHAZADA` (`detalle.motivo` = el código de NEXO) si NEXO responde otro 4xx o un 404 sin código'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: '`ErrorWeb`: el rol no es de la consola del comercial. `ErrorNegocio` `NEXO_SIN_PERMISO`: NEXO respondió 401 o 403'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
+        '404':
+          description: '`RECETA_NO_ENCONTRADA`: NEXO no tiene ese formato'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '503':
+          description: '`NEXO_NO_DISPONIBLE`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+
+  /web/diccionario-cliente:
+    get:
+      operationId: consultarDiccionarioCliente
+      tags: [web]
+      summary: Consulta el diccionario de NEXO (por ahora, solo los términos generales)
+      description: |
+        HU-044.5 (#256, ADR-028). Reenvía a `GET {Nexo:UrlBase}/api/diccionario-cliente` con los filtros `tipo` y `q`. **Solo lectura.**
+
+        **Solo términos generales (`general = true`).** El NEXO de QA todavía no filtra este endpoint por `clienteNit` y devuelve los
+        términos de todos los clientes; para no mostrarle a un comercial los términos de otro cliente, Cotifly descarta todo término
+        con cliente. Con `nit_cliente`, además, responde el `aviso` `TERMINOS_CLIENTE_NO_DISPONIBLES` para que la interfaz explique
+        que los términos propios del cliente aún no se ven. Cuando NEXO filtre por NIT, esta regla se revisa (ADR-028).
+
+        Crear, editar y borrar términos (`POST`, `PUT /{id}`, `DELETE /{id}`) **todavía no existen**: esperan el contrato de NEXO
+        (§3.19.1, S6-HU-34.10).
+      security:
+        - bearer: []
+      parameters:
+        - name: nit_cliente
+          in: query
+          required: false
+          description: NIT de la licitación. Hoy solo cambia el `aviso`.
+          schema:
+            type: string
+        - name: tipo
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [columna, unidad, valor]
+        - name: q
+          in: query
+          required: false
+          description: Busca en el término y el concepto.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Los términos generales y, con NIT, el aviso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiccionarioCliente'
+        '400':
+          description: '`TIPO_TERMINO_INVALIDO` (de NEXO) o `CLIENTE_NIT_INVALIDO` (sin llamar a NEXO); `COSTEO_NEXO_RECHAZADA` (`detalle.motivo` = el código de NEXO) si NEXO responde otro 4xx o un 404 sin código'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: '`ErrorWeb`: el rol no es de la consola del comercial. `ErrorNegocio` `NEXO_SIN_PERMISO`: NEXO respondió 401 o 403'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
+        '503':
+          description: '`NEXO_NO_DISPONIBLE`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+
+  /web/diccionario-cliente/opciones:
+    get:
+      operationId: opcionesDiccionarioCliente
+      tags: [web]
+      summary: Los valores que acepta el diccionario de NEXO (tipos, campos, unidades y contextos)
+      description: HU-044.5 (#256). Reenvía a `GET {Nexo:UrlBase}/api/diccionario-cliente/opciones`, para armar filtros y formularios.
+      security:
+        - bearer: []
+      responses:
+        '200':
+          description: Las opciones del diccionario
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpcionesDiccionarioCliente'
+        '400':
+          description: '`COSTEO_NEXO_RECHAZADA` (`detalle.motivo` = el código de NEXO) si NEXO responde otro 4xx o un 404 sin código'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: '`ErrorWeb`: el rol no es de la consola del comercial. `ErrorNegocio` `NEXO_SIN_PERMISO`: NEXO respondió 401 o 403'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
+        '503':
+          description: '`NEXO_NO_DISPONIBLE`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+
   /web/licitaciones:
     post:
       operationId: crearLicitacion
@@ -10147,6 +10623,196 @@ components:
           description: HU-023.5. Los camiones de la ruta, en su orden (uno provisional sin vehículo mientras está `pendiente`).
           items:
             $ref: '#/components/schemas/CamionLicitacion'
+
+    PlantillaMapeoWeb:
+      type: object
+      required: [nit_cliente, encabezados, columnas]
+      description: |
+        HU-044.5 (#256). La plantilla de mapeo que el comercial confirmó para el cliente: los `encabezados` de la hoja en el orden del
+        archivo (1 a 100) y el mapeo de sus `columnas`. Las reglas las valida NEXO.
+      properties:
+        nit_cliente:
+          type: string
+          description: NIT de la licitación, con o sin puntos y dígito de verificación.
+        nombre:
+          type: string
+          nullable: true
+          maxLength: 100
+        encabezados:
+          type: array
+          items:
+            type: string
+            nullable: true
+        columnas:
+          type: array
+          items:
+            $ref: '#/components/schemas/ColumnaPlantilla'
+
+    ColumnaPlantilla:
+      type: object
+      required: [indice, campo]
+      description: HU-044.5 (#256). Una columna confirmada de la plantilla.
+      properties:
+        indice:
+          type: integer
+          minimum: 0
+          description: Posición en `encabezados` (base 0).
+        campo:
+          type: string
+          description: Campo de NEXO (`origen`, `destino`, `peso`, `tipoVehiculo`...) o `ignorar`.
+        transformacion:
+          type: string
+          nullable: true
+          description: Transformación de NEXO (`peso_toneladas_a_kg`...); vacía o ausente = `ninguna`.
+
+    PlantillaMapeo:
+      type: object
+      required: [id, cliente_nombre, nombre, encabezados, columnas, created_at, updated_at]
+      description: HU-044.5 (#256). Una plantilla de mapeo del cliente guardada en NEXO (Cotifly no guarda copia).
+      properties:
+        id:
+          type: string
+          format: uuid
+        cliente_nombre:
+          type: string
+          nullable: true
+        nombre:
+          type: string
+          nullable: true
+        encabezados:
+          type: array
+          items:
+            type: string
+        columnas:
+          type: array
+          items:
+            $ref: '#/components/schemas/ColumnaPlantilla'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    RecetaLectura:
+      type: object
+      required: [id, cliente_nombre, nombre, receta, instrucciones, usos, ultimo_uso_at, created_at, updated_at]
+      description: |
+        HU-044.5 (#256). Un formato de lectura de Excel del cliente guardado en NEXO. `receta` es el JSON de NEXO **sin tocar** (sus
+        claves no pasan a snake_case): se reenvía tal cual, como texto, en `leer-estructura` o al guardarlo otra vez.
+      properties:
+        id:
+          type: string
+          format: uuid
+        cliente_nombre:
+          type: string
+          nullable: true
+        nombre:
+          type: string
+          nullable: true
+        receta:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: JSON opaco de NEXO.
+        instrucciones:
+          type: string
+          nullable: true
+        usos:
+          type: integer
+          minimum: 0
+        ultimo_uso_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    DiccionarioCliente:
+      type: object
+      required: [terminos, aviso]
+      description: |
+        HU-044.5 (#256). La consulta del diccionario de NEXO. Hoy solo trae los términos generales; `aviso` viene cuando se pidió con
+        `nit_cliente` (`TERMINOS_CLIENTE_NO_DISPONIBLES`) y es `null` sin NIT.
+      properties:
+        terminos:
+          type: array
+          items:
+            $ref: '#/components/schemas/TerminoDiccionario'
+        aviso:
+          description: '`null` sin `nit_cliente`.'
+          oneOf:
+            - $ref: '#/components/schemas/AvisoDiccionario'
+            - $ref: '#/components/schemas/Nulo'
+
+    TerminoDiccionario:
+      type: object
+      required: [id, termino, tipo, concepto, contexto, ejemplo, activo, general]
+      description: HU-044.5 (#256). Un término del diccionario de NEXO.
+      properties:
+        id:
+          type: string
+          format: uuid
+        termino:
+          type: string
+          description: Lo que escribe el cliente ("Tractomula", "TON").
+        tipo:
+          type: string
+          enum: [columna, unidad, valor]
+        concepto:
+          type: string
+          description: Lo que significa para NEXO (un campo, una unidad o un código).
+        contexto:
+          type: string
+          nullable: true
+          description: El campo de NEXO al que aplica un término de tipo `valor` (`tipoVehiculo`, `carroceria`...).
+        ejemplo:
+          type: string
+          nullable: true
+        activo:
+          type: boolean
+        general:
+          type: boolean
+          description: Aplica a todos los clientes. Hoy siempre `true` (ver la operación).
+
+    AvisoDiccionario:
+      type: object
+      required: [codigo, mensaje]
+      description: HU-044.5 (#256). Aviso de la consulta del diccionario (no es un error).
+      properties:
+        codigo:
+          type: string
+          enum: [TERMINOS_CLIENTE_NO_DISPONIBLES]
+        mensaje:
+          type: string
+
+    OpcionesDiccionarioCliente:
+      type: object
+      required: [tipos, campos_destino, unidades, contextos]
+      description: HU-044.5 (#256). Los valores que acepta el diccionario de NEXO.
+      properties:
+        tipos:
+          type: array
+          items:
+            type: string
+        campos_destino:
+          type: array
+          items:
+            type: string
+        unidades:
+          type: array
+          items:
+            type: string
+        contextos:
+          type: array
+          items:
+            type: string
 
     CamionLicitacion:
       type: object

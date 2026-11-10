@@ -120,10 +120,21 @@ public sealed record clsPlantillaGuardada(clsPlantillaMapeo Plantilla, bool Crea
 /// </summary>
 public sealed record clsFiltroDiccionarioCliente(string? Tipo = null, string? Q = null, bool SoloActivos = false, bool IncluirGenerales = true);
 
-/// <summary>Un término del diccionario de NEXO (<paramref name="ClienteId"/> <c>null</c> = aplica a todos los clientes).</summary>
+/// <summary>
+/// Un término del diccionario de NEXO (<paramref name="ClienteId"/> <c>null</c> = aplica a todos los clientes). <paramref name="ClienteIdLeido"/>
+/// dice si NEXO mandó <c>clienteId</c> de verdad (<c>null</c> o un GUID); si no vino (un cambio de forma de NEXO), el <c>null</c> de
+/// <paramref name="ClienteId"/> no significa "general" (#256). Por defecto <c>false</c>: falla cerrado.
+/// </summary>
 public sealed record clsTerminoCliente(
     Guid Id, Guid? ClienteId, string? ClienteNombre, string Termino, string Tipo, string Concepto, string? Contexto, string? Ejemplo,
-    bool Activo, DateTimeOffset CreatedAt, DateTimeOffset? UpdatedAt);
+    bool Activo, DateTimeOffset CreatedAt, DateTimeOffset? UpdatedAt, bool ClienteIdLeido = false)
+{
+    /// <summary>
+    /// ¿Aplica a todos los clientes? Solo si NEXO mandó <c>clienteId = null</c> explícito y sin nombre de cliente. Ante la duda, no: así un
+    /// cambio de forma de NEXO nunca muestra los términos de otro cliente como generales.
+    /// </summary>
+    public bool EsGeneral => ClienteIdLeido && ClienteId is null && string.IsNullOrWhiteSpace(ClienteNombre);
+}
 
 /// <summary>Los valores que acepta el diccionario de NEXO (tipos, campos de NEXO, unidades y contextos), para armar los formularios.</summary>
 public sealed record clsOpcionesDiccionarioCliente(

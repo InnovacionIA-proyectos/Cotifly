@@ -248,6 +248,16 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         // HU-023.5 (#160): código de mercancía sugerido por fila y camiones de cada ruta de la licitación.
         (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsCodigoMercanciaFila), "CodigoMercanciaFila"),
         (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsCamionLicitacion), "CamionLicitacion"),
+        // HU-044.5 (#256): plantillas de mapeo, formatos de lectura y diccionario del cliente en NEXO.
+        (typeof(Cotifly.Api.Licitaciones.DTOs.clsPlantillaMapeoWebRequest), "PlantillaMapeoWeb"),
+        (typeof(Cotifly.Api.Licitaciones.DTOs.clsColumnaPlantillaWebRequest), "ColumnaPlantilla"),
+        (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsColumnaConfirmada), "ColumnaPlantilla"),
+        (typeof(Cotifly.Api.Licitaciones.DTOs.clsPlantillaMapeoWeb), "PlantillaMapeo"),
+        (typeof(Cotifly.Api.Licitaciones.DTOs.clsRecetaLecturaWeb), "RecetaLectura"),
+        (typeof(Cotifly.Api.Licitaciones.DTOs.clsDiccionarioClienteWeb), "DiccionarioCliente"),
+        (typeof(Cotifly.Api.Licitaciones.DTOs.clsTerminoDiccionarioWeb), "TerminoDiccionario"),
+        (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsAvisoDiccionario), "AvisoDiccionario"),
+        (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsOpcionesDiccionarioCliente), "OpcionesDiccionarioCliente"),
         // HU-035.1 (#202): grilla cruda del Excel de mercancías de una ruta, leída en Cotifly sin Nexo.
         (typeof(Cotifly.Aplicacion.Mercancias.DTOs.clsAnalisisExcelMercancias), "AnalisisExcelMercancias"),
         (typeof(Cotifly.Aplicacion.Mercancias.DTOs.clsHojaExcelMercancias), "HojaExcelMercancias"),

@@ -243,8 +243,8 @@ public sealed class clsImportacionExcelNexo(
         return await EnviarYLeerAsync<List<clsTerminoWire>, IReadOnlyList<clsTerminoCliente>>(
             usuarioId, HttpMethod.Get, $"{RutaDiccionarioCliente}?{string.Join('&', parametros)}", null, reintentable: true, lectura: false,
             lista => [.. SinNulos(lista).Select(t => new clsTerminoCliente(
-                t.Id, t.ClienteId, t.ClienteNombre, t.Termino ?? string.Empty, t.Tipo ?? string.Empty, t.Concepto ?? string.Empty, t.Contexto,
-                t.Ejemplo, t.Activo, t.CreatedAt, t.UpdatedAt))],
+                t.Id, ClienteIdDe(t.ClienteId), t.ClienteNombre, t.Termino ?? string.Empty, t.Tipo ?? string.Empty, t.Concepto ?? string.Empty,
+                t.Contexto, t.Ejemplo, t.Activo, t.CreatedAt, t.UpdatedAt, ClienteIdLeido: ClienteIdValido(t.ClienteId)))],
             cancellationToken);
     }
 
@@ -758,8 +758,26 @@ public sealed class clsImportacionExcelNexo(
 
     private sealed record clsColumnaPlantillaWire(int Indice, string? Campo, string? Transformacion);
 
+    /// <summary>
+    /// #256 (B2): <c>clienteId</c> leído de verdad: <c>null</c> explícito o un GUID. Ausente (<see cref="JsonValueKind.Undefined"/>, un cambio de
+    /// forma de NEXO), no: el término nunca pasa por general.
+    /// </summary>
+    private static bool ClienteIdValido(JsonElement clienteId) => clienteId.ValueKind != JsonValueKind.Undefined;
+
+    /// <summary>
+    /// El <c>clienteId</c> del término: <c>null</c> si vino <c>null</c> o no vino. Con otra forma (un texto que no es GUID, un número...) la
+    /// respuesta no se puede leer: <see cref="JsonException"/> → <c>NEXO_NO_DISPONIBLE</c>, como el resto de una respuesta con otra forma.
+    /// </summary>
+    private static Guid? ClienteIdDe(JsonElement clienteId) => clienteId.ValueKind switch
+    {
+        JsonValueKind.Undefined or JsonValueKind.Null => null,
+        JsonValueKind.String when clienteId.TryGetGuid(out var id) => id,
+        _ => throw new JsonException("clienteId con otra forma en el diccionario de NEXO"),
+    };
+
+    /// <summary><c>ClienteId</c> como <see cref="JsonElement"/> para distinguir <c>null</c> de "no vino" (#256, B2).</summary>
     private sealed record clsTerminoWire(
-        Guid Id, Guid? ClienteId, string? ClienteNombre, string? Termino, string? Tipo, string? Concepto, string? Contexto, string? Ejemplo,
+        Guid Id, JsonElement ClienteId, string? ClienteNombre, string? Termino, string? Tipo, string? Concepto, string? Contexto, string? Ejemplo,
         bool Activo, DateTimeOffset CreatedAt, DateTimeOffset? UpdatedAt);
 
     private sealed record clsOpcionesDiccionarioWire(List<string>? Tipos, List<string>? CamposDestino, List<string>? Unidades, List<string>? Contextos);

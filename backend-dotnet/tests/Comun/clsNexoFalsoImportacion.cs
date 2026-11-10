@@ -49,6 +49,12 @@ public sealed partial class clsNexoFalso
         [(null, "Tractomula", "valor", "3S3", "tipoVehiculo"), (null, "ORIGEN", "columna", "origen", null)];
 
     /// <summary>
+    /// #256 (B2): simula un cambio de forma de NEXO en <c>GET diccionario-cliente</c>: los términos llegan SIN la propiedad <c>clienteId</c>
+    /// (ni siquiera <c>null</c>). Cotifly no debe tomarlos por generales.
+    /// </summary>
+    public bool DiccionarioSinClienteId { get; set; }
+
+    /// <summary>
     /// HU-044.4 (#255): resultados fijos de <c>normalizar-valores</c> por campo de NEXO y texto (comparado como NEXO), para simular el
     /// alias, el catálogo y la ciudad ambigua con candidatos. Ganan sobre el diccionario y la "IA" del falso.
     /// </summary>
@@ -167,14 +173,25 @@ public sealed partial class clsNexoFalso
             }),
             ("GET", "/api/diccionario-cliente") => consulta["tipo"] is { } tipo && tipo is not ("columna" or "unidad" or "valor")
                 ? Error(HttpStatusCode.BadRequest, "TIPO_TERMINO_INVALIDO", "El tipo de término no es válido.")
-                : Json(HttpStatusCode.OK, Diccionario.Select(t => new
-                {
-                    id = Guid.NewGuid(), clienteId = t.ClienteId, clienteNombre = (string?)null, termino = t.Termino, tipo = t.Tipo,
-                    concepto = t.Concepto, contexto = t.Contexto, ejemplo = (string?)null, activo = true, createdAt = DateTimeOffset.UtcNow,
-                    updatedAt = (DateTimeOffset?)null,
-                }).ToList()),
+                : Json(HttpStatusCode.OK, Diccionario.Select(TerminoDto).ToList()),
             _ => Error(HttpStatusCode.NotFound, "RUTA_NO_ENCONTRADA", $"{metodo} {ruta}"),
         };
+    }
+
+    /// <summary>Un término como lo manda NEXO (con <see cref="DiccionarioSinClienteId"/>, sin la propiedad <c>clienteId</c>).</summary>
+    private JsonObject TerminoDto((Guid? ClienteId, string Termino, string Tipo, string Concepto, string? Contexto) t)
+    {
+        var termino = new JsonObject
+        {
+            ["id"] = Guid.NewGuid(), ["clienteNombre"] = null, ["termino"] = t.Termino, ["tipo"] = t.Tipo, ["concepto"] = t.Concepto,
+            ["contexto"] = t.Contexto, ["ejemplo"] = null, ["activo"] = true, ["createdAt"] = DateTimeOffset.UtcNow, ["updatedAt"] = null,
+        };
+        if (!DiccionarioSinClienteId)
+        {
+            termino["clienteId"] = t.ClienteId;
+        }
+
+        return termino;
     }
 
     private HttpResponseMessage SugerirMapeo(JsonNode? json)
