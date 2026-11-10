@@ -100,6 +100,8 @@ public static class clsDependenciasInfraestructura
         servicios.AddSingleton<IValidateOptions<clsOpcionesIA>, clsValidadorOpcionesIA>();
         servicios.AddOpcionesValidadas<clsOpcionesNexo>(configuracion, clsOpcionesNexo.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesCosteoNexo>(configuracion, clsOpcionesCosteoNexo.Seccion);
+        // HU-044.1 (#252, ADR-028): interruptor y tiempos de la importación inteligente con NEXO.
+        servicios.AddOpcionesValidadas<clsOpcionesImportacionInteligente>(configuracion, clsOpcionesImportacionInteligente.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesCaptura>(configuracion, clsOpcionesCaptura.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesCaptura>, clsValidadorOpcionesCaptura>();
         // HU-018.1 (#155): lista de motivos de pérdida (por defecto la de Nexo) y el motivo que exige comentario.
@@ -464,6 +466,7 @@ public static class clsDependenciasInfraestructura
             string.IsNullOrWhiteSpace(sp.GetRequiredService<IOptions<clsOpcionesNexo>>().Value.UrlBase)
                 ? sp.GetRequiredService<Licitaciones.Services.clsAnalizadorExcelNoDisponible>()
                 : sp.GetRequiredService<Licitaciones.Services.clsAnalizadorExcelNexo>());
+        AgregarImportacionInteligente(servicios);
         // HU-035.2 (#213): los controles del Excel subido (bomba zip, libro denso, XXE) y el cupo de lecturas simultáneas son una sola
         // pieza para el pliego y el Excel de mercancías. Singleton: el cupo es de todo el proceso.
         servicios.TryAddSingleton<clsLecturaExcelAcotada>();
@@ -474,6 +477,41 @@ public static class clsDependenciasInfraestructura
 
         // HU-035.1 (#202, ADR-024): Excel de mercancías de una ruta, leído localmente (ClosedXML, sin Nexo), con el cupo compartido.
         servicios.TryAddSingleton<Aplicacion.Mercancias.Interfaces.IClsLectorGrillaExcel, Mercancias.Services.clsLectorGrillaExcelClosedXml>();
+    }
+
+    /// <summary>
+    /// Importación inteligente del Excel con NEXO (HU-044.1, #252, ADR-028), elegida al resolver: con <c>Nexo:UrlBase</c> y
+    /// <c>ImportacionInteligente:Habilitada</c> → <see cref="Licitaciones.Services.clsImportacionExcelNexo"/>; si no →
+    /// <see cref="Licitaciones.Services.clsImportacionExcelNoDisponible"/>. Cliente HTTP propio
+    /// (<see cref="Licitaciones.Services.clsImportacionExcelNexo.NombreCliente"/>) con su tubería: los tiempos de
+    /// <c>ImportacionInteligente</c> por endpoint y reintentos solo de los GET y de <c>aplicar-mapeo</c>. Lleva el manejador del cupo de Nexo
+    /// como los demás clientes; sus rutas no son de listados limitados, así que un 429 aquí (ni el <c>IA_TOPE_DIARIO</c>) nunca bloquea al
+    /// resto. Sin los logs del HttpClient (la URL lleva el NIT). TryAdd: un adaptador registrado antes (pruebas) se respeta.
+    /// </summary>
+    private static void AgregarImportacionInteligente(IServiceCollection servicios)
+    {
+        AgregarCupoNexo(servicios);
+        servicios.TryAddScoped<Licitaciones.Services.clsImportacionExcelNoDisponible>();
+        servicios.TryAddTransient<Licitaciones.Services.clsCuerpoAcotadoNexoHandler>();
+        // Sin el límite de 100 s del HttpClient: los límites los pone la tubería (la lectura puede esperar 240 s).
+        var cliente = servicios.AddHttpClient<Licitaciones.Services.clsImportacionExcelNexo>(
+                Licitaciones.Services.clsImportacionExcelNexo.NombreCliente, http => http.Timeout = Timeout.InfiniteTimeSpan)
+            // Sin los logs por defecto de IHttpClientFactory: escriben en Information la URL con ?clienteNit= y q= (datos del cliente).
+            // El adaptador registra su propio warning por fallo, con la ruta sin consulta.
+            .RemoveAllLoggers()
+            .AddHttpMessageHandler<clsCupoNexoHandler>();
+        var tuberia = cliente.AddStandardResilienceHandler();
+        // Por dentro de la tubería: el cuerpo se lee (acotado) dentro del tiempo de cada intento.
+        cliente.AddHttpMessageHandler<Licitaciones.Services.clsCuerpoAcotadoNexoHandler>();
+        servicios.AddOptions<HttpStandardResilienceOptions>(tuberia.PipelineName)
+            .Configure<IOptions<clsOpcionesImportacionInteligente>>((resiliencia, opciones) =>
+                Licitaciones.Services.clsImportacionExcelNexo.ConfigurarResiliencia(resiliencia,
+                    TimeSpan.FromSeconds(opciones.Value.TimeoutSegundos), TimeSpan.FromSeconds(opciones.Value.TimeoutLecturaSegundos)));
+        servicios.TryAddScoped<Aplicacion.Licitaciones.Interfaces.IClsImportacionExcelNexo>(sp =>
+            string.IsNullOrWhiteSpace(sp.GetRequiredService<IOptions<clsOpcionesNexo>>().Value.UrlBase)
+            || !sp.GetRequiredService<IOptions<clsOpcionesImportacionInteligente>>().Value.Habilitada
+                ? sp.GetRequiredService<Licitaciones.Services.clsImportacionExcelNoDisponible>()
+                : sp.GetRequiredService<Licitaciones.Services.clsImportacionExcelNexo>());
     }
 
     /// <summary>

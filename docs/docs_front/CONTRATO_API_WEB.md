@@ -86,6 +86,7 @@ Resumen de los endpoints de uso más frecuente; la lista completa (56) está en 
 | `POST /web/solicitudes-costeo` | ambos | **Endpoint vigente para crear una cotización** (una o varias rutas, hasta 100): formulario ampliado, validación por código de catálogo y envío a costeo en Nexo. Ver §3.2 |
 | `GET /web/catalogos-flete` | ambos | Tipos de vehículo, carrocerías, clases de viaje y clases de contenedor del formulario (catálogos maestros de Nexo; `clases_contenedor` desde HU-027.1, puede venir vacía). Ver §3.2 |
 | `GET /web/alias/resolver` | ambos | HU-031.1 (#194): traduce un tipo de vehículo o una clase de contenedor escritos a mano al código oficial de Nexo (catálogo y diccionario de alias), en lote (`?tipo=vehiculo&texto=TB&texto=3s3`, hasta 200). `{tipo, resultados: [{texto, reconocido, codigo, fuente}]}`; 503 `CATALOGOS_FLETE_NO_DISPONIBLE` si Nexo no responde. Ver `CONTRATOS_API_COTIFLY_FRONTEND.md` §4.2.8 |
+| `POST /web/licitaciones/normalizar-valores` | ambos | HU-044.4 (#255): lleva con NEXO los textos distintos del Excel de licitación (`tipo_vehiculo`, `carroceria`, `ciudad`, `linea_negocio`; máx. 1000) a los valores oficiales. Un resultado por valor con `estado` (`resuelto`/`ambiguo`/`sin_resolver`), `codigo`, `municipio_id`, `candidatos[]`; en `linea_negocio`, `codigo` es la línea de Cotifly. 429 `IA_TOPE_DIARIO`, 503 `NEXO_NO_DISPONIBLE`. Ver `CONTRATOS_API_COTIFLY_FRONTEND.md` §4.6.6 |
 | `GET /web/municipios` | ambos | Buscador de origen y destino (`?q=&departamento=`, máx. 50) o catálogo completo sin filtros. 503 `MUNICIPIOS_NO_DISPONIBLE` si Nexo no responde (antes 400). Ver §8.1, fila 5 |
 | `GET /web/mis-cotizaciones` | ambos | Cotizaciones propias (máx. 100) |
 | `GET /web/cotizaciones/regional` | gerente_comercial o director | HU-016.1 (#154): cotizaciones de los comerciales de su regional (máx. 100), con la forma de `mis-cotizaciones` y el comercial dueño en cada fila. HU-037.3 (#211): el director ve todas o la de `?regional=`. Ver §8.10.1 |
@@ -2139,6 +2140,86 @@ invalidación del PDF y una auditoría por operación. El conexo agregado en lot
     "codigo": "COSTEO_NO_LISTO",
     "mensaje": "La cotización PCN-900555111-DG-27102026-001 todavía no tiene el costeo de Nexo con margen aplicado.",
     "detalle": { "linea_orden": 4, "linea_solicitud_id": "7d6c5b4a-3e2f-4a1b-9c8d-0e1f2a3b4c5d" }
+  }
+}
+```
+
+### 8.20 Importación inteligente con NEXO: `sugerir-mapeo` y `leer-estructura` (HU-044.2, #253, ADR-028)
+
+`POST /web/licitaciones/sugerir-mapeo` propone el mapeo de las columnas de UNA hoja: la plantilla del cliente, luego su diccionario y,
+para lo que falte, la IA de NEXO. `campo` es el nombre de NEXO (`ignorar` = sin propuesta); la tabla de equivalencias con los campos del
+frontend está en `CONTRATOS_API_COTIFLY_FRONTEND.md` (4.6.6). Sin propuesta no es un error: con más de 100 encabezados
+(`DEMASIADAS_COLUMNAS`, sin llamar a NEXO), con la importación apagada o con NEXO caído (`NEXO_NO_DISPONIBLE`) responde 200 con todas las
+columnas en `ignorar` e `ia_usada = false`. `IA_TOPE_DIARIO` es 429.
+
+<!-- esquema: SugerirMapeoWeb -->
+```json
+{
+  "nit_cliente": "900.555.111-2",
+  "encabezados": ["ORIGEN", "DESTINO", "TON"],
+  "filas": [["Buenaventura", "Bogotá", "32"], ["Cartagena", "Medellín", null]]
+}
+```
+
+<!-- respuesta: POST /web/licitaciones/sugerir-mapeo 200 -->
+```json
+{
+  "ia_usada": false,
+  "motivo_sin_ia": "PLANTILLA_RECONOCIDA",
+  "columnas": [
+    { "indice": 0, "columna": "ORIGEN", "campo": "origen", "transformacion": "ninguna", "confianza": 1.0, "origen": "plantilla", "nota": null },
+    { "indice": 1, "columna": "DESTINO", "campo": "destino", "transformacion": "ninguna", "confianza": 1.0, "origen": "plantilla", "nota": null },
+    { "indice": 2, "columna": "TON", "campo": "peso", "transformacion": "peso_toneladas_a_kg", "confianza": 1.0, "origen": "plantilla", "nota": null }
+  ],
+  "dudas": [],
+  "plantilla_id": "3f2b8c1d-7a6e-4d5c-9b8a-1e2f3a4b5c6d"
+}
+```
+
+`POST /web/licitaciones/leer-estructura` (multipart: `archivo`, `nit_cliente`, `instrucciones`, `receta`) es el paso previo para un
+Excel de formato complejo. Cotifly solo valida el archivo (que venga, tamaño y extensión; no abre el libro), no reintenta y devuelve la
+`receta` (opaca, en camelCase) y las `tablas` (la forma de las hojas de `analizar-excel`) sin tocarlas. Para corregir, se reenvía el
+mismo archivo con `instrucciones` y `receta` = `JSON.stringify(respuesta.receta)`. `ia_usada = false` es un 200. Si el archivo cabe
+solo pero no con la receta y las instrucciones (en bytes UTF-8), 400 `LECTURA_DEMASIADO_GRANDE` sin llamar a NEXO. Un
+`VALIDATION_ERROR` de NEXO trae en `detalle.campos` solo los nombres de los campos rechazados.
+
+<!-- respuesta: POST /web/licitaciones/leer-estructura 200 -->
+```json
+{
+  "archivo": "EPM_formulario.xlsx",
+  "origen_receta": "guardada",
+  "similitud": 0.93,
+  "receta_guardada_id": "8a7b6c5d-4e3f-4a2b-9c1d-0e9f8a7b6c5d",
+  "ia_usada": false,
+  "motivo_sin_ia": null,
+  "receta": { "version": 1, "hojas": [ { "hoja": "*", "usar": true, "filasEncabezado": [20] } ], "unir": false, "notas": null },
+  "resumen": null,
+  "dudas": [],
+  "hojas_del_archivo": [ { "nombre": "VALLE DE ABURRA", "oculta": false, "filas": 60, "columnas": 8, "usada": true } ],
+  "tablas": [
+    {
+      "nombre": "VALLE DE ABURRA",
+      "fila_encabezado": 20,
+      "encabezados": ["Tipo de servicio", "Origen", "Destino"],
+      "filas": [["Turbo Hasta 4.5 ton", "CARTAGENA", "MEDELLIN"]],
+      "total_filas": 36,
+      "filas_excel": null,
+      "columna_mercancia": null,
+      "columna_codigo_mercancia": null,
+      "mercancias": null
+    }
+  ],
+  "avisos": [],
+  "cambios": { "faltan": [], "nuevos": ["Observaciones"] }
+}
+```
+
+<!-- respuesta: POST /web/licitaciones/leer-estructura 400 -->
+```json
+{
+  "error": {
+    "codigo": "FORMATO_NO_SOPORTADO",
+    "mensaje": "Solo se aceptan archivos .xlsx o .xlsm."
   }
 }
 ```
