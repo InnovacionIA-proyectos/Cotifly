@@ -1638,6 +1638,11 @@ Respuesta **201** (`CotizacionResumen` + `cubicacion`):
   "trm_aplicada": 0,
   "deadline": "2026-10-15T22:00:00+00:00",
   "score_prioridad": 62.5,
+  "origen": "Buenaventura",
+  "destino": "Bogotá D.C.",
+  "numero_rutas": 2,
+  "peso_total_kg": 37500,
+  "valor_mercancia": 430000000,
   "cubicacion": [
     {
       "linea_orden": 1,
@@ -1777,6 +1782,8 @@ polling.
       "estado_costeo": "autocosteo",
       "precio_final_linea": 5294118,
       "costo_final": 4500000,
+      "costo_transporte": 4320000,
+      "valor_mercancia": 250000000,
       "margen_aplicado": 0.15,
       "margen_sugerido": 0.15,
       "origen_margen": "politica_linea",
@@ -1808,6 +1815,8 @@ polling.
       "estado_costeo": "autocosteo",
       "precio_final_linea": 3529412,
       "costo_final": 3000000,
+      "costo_transporte": 3000000,
+      "valor_mercancia": 180000000,
       "margen_aplicado": 0.15,
       "margen_sugerido": 0.18,
       "origen_margen": "negociado",
@@ -2061,7 +2070,12 @@ Respuesta (los dos casos traen siempre `conexos_conservados` y `conexos_descarta
   "conexos_descartados": [],
   "conexos_conservados": ["Cargue con montacargas"],
   "deadline": "2026-10-15T22:00:00+00:00",
-  "score_prioridad": 58
+  "score_prioridad": 58,
+  "origen": "Buenaventura",
+  "destino": "Bogotá D.C.",
+  "numero_rutas": 2,
+  "peso_total_kg": 37500,
+  "valor_mercancia": 430000000
 }
 ```
 
@@ -3728,6 +3742,11 @@ Vista "Todas las cotizaciones" del gerente: las cotizaciones de los comerciales 
       "trm_aplicada": 0,
       "deadline": "2026-10-15T22:00:00+00:00",
       "score_prioridad": 62.5,
+      "origen": "Buenaventura",
+      "destino": "Bogotá D.C.",
+      "numero_rutas": 2,
+      "peso_total_kg": 37500,
+      "valor_mercancia": 430000000,
       "comercial": { "usuario_id": "5f0c2a8e-4b1d-4c55-9a51-2f7d0c1e9b10", "nombre_usuario": "APEREZ", "nombre_completo": "Ana Pérez" }
     }
   ]
