@@ -10,6 +10,7 @@ using Cotifly.Api.Identidad;
 using Cotifly.Api.Sistema;
 using Cotifly.Aplicacion;
 using Cotifly.Infraestructura;
+using Microsoft.OpenApi;
 
 // HEALTHCHECK del Dockerfile (#27): "dotnet Cotifly.Api.dll --healthcheck" solo consulta
 // GET /health del proceso que ya corre en el contenedor y termina (0 sano, 1 no sano).
@@ -47,8 +48,24 @@ try
 
     // Swagger UI para explorar la API. Solo se expone en Development (ver más abajo); el generador
     // se registra siempre porque no cuesta nada y así la prueba de arranque no depende del entorno.
+    // Botón "Authorize" con JWT Bearer: se pega el access token del login (/api/auth/login-clientepro)
+    // y la UI lo envía como "Authorization: Bearer <token>". Patrón de Swashbuckle 10.x / Microsoft.OpenApi 2.x
+    // (AddSecurityRequirement recibe un Func<OpenApiDocument, OpenApiSecurityRequirement> y usa OpenApiSecuritySchemeReference).
     builder.Services.AddEndpointsApiExplorer();
-    builder.Services.AddSwaggerGen();
+    builder.Services.AddSwaggerGen(opciones =>
+    {
+        opciones.AddSecurityDefinition("bearer", new OpenApiSecurityScheme
+        {
+            Type = SecuritySchemeType.Http,
+            Scheme = "bearer",
+            BearerFormat = "JWT",
+            Description = "Pega el access token del login (sin la palabra 'Bearer').",
+        });
+        opciones.AddSecurityRequirement(document => new OpenApiSecurityRequirement
+        {
+            [new OpenApiSecuritySchemeReference("bearer", document)] = [],
+        });
+    });
 
     // CORS del frontend de ClientePro, encabezados reenviados de Traefik y límites HTTP (#12 parte B).
     builder.Services.AddSeguridadHttp();

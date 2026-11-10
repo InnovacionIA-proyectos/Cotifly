@@ -95,12 +95,20 @@ LABEL org.opencontainers.image.title="cotifly-api" \
 
 # Sin TZ: el contenedor queda en UTC y la zona de negocio sale de Zona:ZonaHoraria (IClsReloj),
 # así un DateTime.Now accidental no queda oculto por la zona del sistema.
+#
+# OPENSSL_CONF: baja la política TLS de OpenSSL 3.x para poder abrir conexión con SQL Server
+# antiguos (BD de cubos DWCubosEBSSAP, ConnectionStrings:Regional 10.10.40.24), cuyo handshake
+# TLS legacy rechaza la política por defecto. Apaño acotado — ver backend-dotnet/openssl-legacy.cnf.
 ENV ASPNETCORE_HTTP_PORTS=8080 \
-    DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
+    DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
+    OPENSSL_CONF=/app/openssl-legacy.cnf
 
 # Binarios con dueño root (0:0) y /app creado por COPY (no por WORKDIR, que con la imagen chiseled
 # lo crearía con dueño app): el usuario app puede leerlos pero no borrarlos ni reemplazarlos.
 COPY --from=build --chown=0:0 /app/publish /app/
+# Config de OpenSSL para hablar con SQL Server antiguos (OPENSSL_CONF, arriba). Dueño root:
+# el proceso app solo la lee. Ver backend-dotnet/openssl-legacy.cnf.
+COPY --chown=0:0 openssl-legacy.cnf /app/openssl-legacy.cnf
 # Única carpeta escribible: PDFs (montar un volumen aquí; ver docs/06-ejecucion-local.md).
 COPY --from=build --chown=1654:1654 /data/pdfs /data/pdfs
 WORKDIR /app
