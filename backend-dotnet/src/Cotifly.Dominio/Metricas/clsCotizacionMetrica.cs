@@ -38,6 +38,12 @@ public sealed record clsCotizacionMetrica
     /// <summary>TRM con que se cotizó en USD; 0 en COP.</summary>
     public decimal TrmAplicada { get; init; }
 
+    /// <summary>
+    /// HU-045.2 (#264): suma del <c>costoSeguro</c> de las rutas de la versión vigente, en COP; <c>null</c> sin seguro. Está dentro de
+    /// <see cref="PrecioFinal"/> pero no es ganancia: <c>ganancias</c> lo resta (<see cref="GananciaResultadoCop"/>).
+    /// </summary>
+    public decimal? Seguro { get; init; }
+
     /// <summary>Margen de la cotización: el de sus rutas ponderado por <c>costoFinal</c> (sin costo, el promedio simple).</summary>
     public decimal? MargenAplicado { get; init; }
 
@@ -87,6 +93,16 @@ public sealed record clsCotizacionMetrica
     /// <summary>Costo en COP de la versión con el resultado (<see cref="VersionResultado"/>, o la vigente).</summary>
     public decimal? CostoResultado => VersionResultado is { } v ? v.Costo : Costo;
 
+    /// <summary>HU-045.2 (#264): seguro en COP de la versión con el resultado (<see cref="VersionResultado"/>, o la vigente).</summary>
+    public decimal? SeguroResultado => VersionResultado is { } v ? v.Seguro : Seguro;
+
+    /// <summary>
+    /// <c>ganancias</c> de la cotización: valor en COP − costo − seguro (HU-045.2, #264: el seguro es un traslado) de la versión con el
+    /// resultado; <c>null</c> si falta el valor o el costo.
+    /// </summary>
+    public decimal? GananciaResultadoCop =>
+        ValorResultadoCop is { } valor && CostoResultado is { } costo ? valor - costo - (SeguroResultado ?? 0m) : null;
+
     /// <summary>
     /// B3 (#173): rutas de la versión que tiene el resultado cuando NO es la vigente; <c>null</c> = las de la vigente
     /// (<see cref="Rutas"/>). La apertura por línea de negocio saca de aquí lo ganado.
@@ -127,4 +143,4 @@ public sealed record clsCotizacionMetrica
 }
 
 /// <summary>B3 (#173): precio, moneda, TRM y costo de la versión de la cadena que tiene el resultado.</summary>
-public sealed record clsVersionResultadoMetrica(decimal? PrecioFinal, string? Moneda, decimal TrmAplicada, decimal? Costo);
+public sealed record clsVersionResultadoMetrica(decimal? PrecioFinal, string? Moneda, decimal TrmAplicada, decimal? Costo, decimal? Seguro = null);

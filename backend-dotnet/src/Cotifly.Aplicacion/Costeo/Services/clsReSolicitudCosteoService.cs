@@ -94,7 +94,8 @@ public sealed class clsReSolicitudCosteoService(
     IClsResolutorConexosCatalogo resolutorConexos,
     ILogger<clsReSolicitudCosteoService> logger,
     IOptions<clsOpcionesCaptura>? opcionesCaptura = null,
-    IClsCubicador? cubicador = null) : IClsReSolicitudCosteoService
+    IClsCubicador? cubicador = null,
+    IClsTarifaSeguroRepository? tarifasSeguro = null) : IClsReSolicitudCosteoService
 {
     /// <summary>HU-032 (#197): ¿el vehículo elegido cuenta? (<c>Captura:AceptarVehiculoCliente</c>, encendida por defecto).</summary>
     private bool AceptaVehiculo => opcionesCaptura?.Value.AceptarVehiculoCliente ?? true;
@@ -563,6 +564,11 @@ public sealed class clsReSolicitudCosteoService(
             return (rutas.Error, null, false);
         }
 
+        // HU-045.2 (#264, decisión 5): con datos_carga el valor de la mercancía puede cambiar; el seguro copiado toma entonces la tasa vigente.
+        var tasaSeguro = tarifasSeguro is not null && original.Rutas.Any(r => r.IncluyeSeguro)
+            ? await tarifasSeguro.ObtenerTasaVigenteAsync(cancellationToken)
+            : null;
+
         // Endurecimiento B (#199): la reserva de la original va DENTRO del candado del folio -vN, en la misma transacción que la versión: un
         // SERVICIO_OCUPADO (o una versión que no se crea) deja la original como estaba, con su If-Match vigente.
         var creada = await folios.CrearNuevaVersionAsync<clsCotizacionSolicitud>(usuarioId, original.Id, async (folio, ct) =>
@@ -584,6 +590,8 @@ public sealed class clsReSolicitudCosteoService(
             var nueva = version.Valor;
             nueva.RegistrarCaptura(validada.Encabezado, rutas.Valor.Rutas, reglasCaptura: false);
             nueva.CopiarMargenesNegociadosDe(original);
+            // HU-045.2 (#264): el seguro de la mercancía de cada ruta (recalculado si datos_carga cambió valor_mercancia).
+            nueva.CopiarSegurosDe(original, tasaSeguro);
             cotizaciones.Agregar(nueva);
             await unidadTrabajo.GuardarCambiosAsync(ct);
             return nueva;

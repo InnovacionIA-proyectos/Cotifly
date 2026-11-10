@@ -24,6 +24,12 @@ public sealed record clsRutaMetrica
     public decimal? MargenAplicado { get; init; }
 
     /// <summary>
+    /// HU-045.2 (#264): <c>costoSeguro</c> de la ruta, en COP (siempre en pesos), o <c>null</c> sin seguro. Está dentro de
+    /// <see cref="PrecioFinal"/> pero no es ganancia (es la prima de la póliza): el margen ponderado y las ganancias lo restan.
+    /// </summary>
+    public decimal? Seguro { get; init; }
+
+    /// <summary>
     /// HU-016.1 (#154): <c>margenPoliticaSugerido</c> de la ruta, el margen de política de su línea guardado al cotizar; <c>null</c> en
     /// datos anteriores a HU-021. Es la referencia con que se compara el margen aplicado en el tablero.
     /// </summary>

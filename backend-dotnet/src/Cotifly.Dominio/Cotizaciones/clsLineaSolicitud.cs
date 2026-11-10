@@ -120,6 +120,27 @@ public sealed partial class clsLineaSolicitud
     /// <summary>Precio de la ruta al cliente (ex <c>precioFinal</c> de la línea), en la moneda de la solicitud.</summary>
     public decimal? PrecioFinalLinea { get; private set; }
 
+    /// <summary>
+    /// HU-045.2 (#264, script <c>db/scripts/20_seguro_mercancia.sql</c>): ¿la ruta incluye el seguro de la mercancía (póliza específica)?
+    /// Lo marca el comercial en el costeo (<see cref="clsCotizacionSolicitud.CambiarSeguro"/>). Ver <see cref="CostoSeguro"/>.
+    /// </summary>
+    public bool IncluyeSeguro { get; private set; }
+
+    /// <summary>
+    /// HU-045.2 (#264): la tasa (fracción: 0.003450 = 0,345 %) con que se calculó <see cref="CostoSeguro"/>: copia de la vigente de
+    /// <c>TarifasSeguro</c> al marcar el seguro y otra vez si cambia <see cref="ValorMercancia"/> (decisión 5). Un cambio de la tasa vigente
+    /// no la toca. <c>null</c> sin seguro, o con el seguro y sin valor de la mercancía.
+    /// </summary>
+    public decimal? TasaSeguroAplicada { get; private set; }
+
+    /// <summary>
+    /// HU-045.2 (#264): el seguro de la mercancía en PESOS = <c>ValorMercancia × TasaSeguroAplicada</c> sin redondear a
+    /// pesos (en centavos, la escala de la columna). NO entra en
+    /// <see cref="CostoFinal"/> ni lleva margen: se suma al precio de la ruta (<see cref="PrecioRutaCon"/>, decisión 1), convertido con la TRM
+    /// en una cotización en dólares (<see cref="ValorSeguro"/>, decisión 2). <c>null</c> sin seguro o sin valor de la mercancía.
+    /// </summary>
+    public decimal? CostoSeguro { get; private set; }
+
     /// <summary>HU-023.3 (script <c>02</c>): la corrida del cubicador de esta ruta (para volver a consultarla); <c>null</c> sin cubicador.</summary>
     public Guid? IdRecomendacion { get; private set; }
 
@@ -883,7 +904,8 @@ public sealed partial class clsLineaSolicitud
     /// <summary>
     /// HU-043.2 (#251): precio de la ruta con <paramref name="margen"/> y <paramref name="metodo"/> en la moneda de la solicitud:
     /// <see cref="CostoTransporte"/> (fletes + retorno + levante) con el margen + la venta de cada conexo (<see cref="VentaConexo"/>) SIN
-    /// margen. Es el de <see cref="RecalcularTotales"/> y el de la vista previa del ajuste (por ruta, en lote y del asistente).
+    /// margen + (HU-045.2, #264) el seguro de la mercancía si la ruta lo incluye (<see cref="ValorSeguro"/>), también sin margen. Es el de
+    /// <see cref="RecalcularTotales"/> y el de la vista previa del ajuste (por ruta, en lote y del asistente).
     /// <paramref name="precio"/> queda en <c>null</c> sin transporte (algún camión sin flete), sin margen o con error.
     /// </summary>
     public clsErrorDominio? PrecioRutaCon(decimal? margen, string? metodo, string? moneda, decimal trm, out decimal? precio)
@@ -909,7 +931,13 @@ public sealed partial class clsLineaSolicitud
             total += venta!.Value;
         }
 
-        precio = total;
+        // HU-045.2 (#264, decisión 1): el seguro de la mercancía va después del margen, como los conexos.
+        if (ValorSeguro(moneda, trm, out var seguro) is { } errorSeguro)
+        {
+            return errorSeguro;
+        }
+
+        precio = total + (seguro ?? 0m);
         return null;
     }
 
@@ -1024,8 +1052,8 @@ public sealed partial class clsLineaSolicitud
         CostoFinal = conFlete ? CostoFletesTotal + CostoRetornoContenedorTotal + (CostoLevanteContenedorTotal ?? 0m) + CostoServiciosConexos : null;
     }
 
-    private (decimal?, decimal?, decimal?, decimal?, decimal?, decimal?) Huella() =>
-        (CostoFletesTotal, CostoRetornoContenedorTotal, CostoLevanteContenedorTotal, CostoServiciosConexos, CostoFinal, PrecioFinalLinea);
+    private (decimal?, decimal?, decimal?, decimal?, decimal?, decimal?, decimal?) Huella() =>
+        (CostoFletesTotal, CostoRetornoContenedorTotal, CostoLevanteContenedorTotal, CostoServiciosConexos, CostoFinal, PrecioFinalLinea, CostoSeguro);
 
     /// <summary>
     /// Precio de la ruta tal como quedó congelado (PDF ya generado, o el chat): no se recalcula. Lo usa el chat, que trae el precio

@@ -11,13 +11,17 @@ public sealed partial class clsLineaSolicitud
     /// exactamente los de la edición, con el costo del catálogo de hoy. La línea de negocio, el margen y el id no cambian. No recalcula.
     /// HU-028.1 (#183): con <paramref name="reincluirRechazados"/> (y camiones conservados) los camiones que la Mesa de Costeo rechazó
     /// olvidan el rechazo y vuelven a viajar (<see cref="ReincluirRechazados"/>); sin él siguen rechazados y fuera del envío.
+    /// HU-045.2 (#264, decisión 5): si la ruta incluye el seguro y cambia el valor de la mercancía, el seguro se recalcula con la
+    /// <paramref name="tasaSeguroVigente"/> (<see cref="ActualizarSeguroPorValor"/>).
     /// </summary>
     internal void AplicarEdicion(
-        int orden, clsRutaCapturada capturada, clsEncabezadoSolicitudCosteo? encabezado, bool replanificada, bool reincluirRechazados = false)
+        int orden, clsRutaCapturada capturada, clsEncabezadoSolicitudCosteo? encabezado, bool replanificada, bool reincluirRechazados = false,
+        decimal? tasaSeguroVigente = null)
     {
         ArgumentNullException.ThrowIfNull(capturada);
         ArgumentOutOfRangeException.ThrowIfLessThan(orden, 1);
         var linea = capturada.Linea;
+        var valorAnterior = ValorMercancia;
         Orden = orden;
         OrigenMunicipioId = linea.OrigenMunicipioId;
         OrigenNombre = NombreMunicipio(linea.Origen);
@@ -38,6 +42,7 @@ public sealed partial class clsLineaSolicitud
         HorasDescargue = linea.HorasDescargue ?? encabezado?.HorasDescargue;
         PesoKg = linea.PesoKg;
         ValorMercancia = linea.ValorMercancia;
+        ActualizarSeguroPorValor(valorAnterior, tasaSeguroVigente);
         PesoConTaraKg = linea.PesoConTaraKg;
         // HU-032 (#197): la edición conserva (o cambia) el vehículo elegido de la ruta.
         TipoVehiculoElegido = Normalizar(linea.TipoVehiculo);

@@ -25,7 +25,8 @@ public sealed class clsCosteoController(
     IClsReSolicitudCosteoService reSolicitud,
     ILogger<clsCosteoController> logger,
     IClsRecalculoVehiculosService recalculoVehiculos,
-    IClsFinalizacionCotizacionService finalizacion) : clsControladorWebBase(usuario)
+    IClsFinalizacionCotizacionService finalizacion,
+    IClsSeguroCosteoService seguro) : clsControladorWebBase(usuario)
 {
     /// <summary>
     /// HU-036.2 (#206): el comercial acepta el precio y finaliza la cotización. 200 <c>CotizacionResumen</c> con <c>finalizada_at</c> (y el
@@ -134,6 +135,34 @@ public sealed class clsCosteoController(
         var resultado = await ajusteMargen.AjustarAsync(
             UsuarioId, folio, new clsRutaIndicada(cuerpo.LineaOrden, cuerpo.LineaSolicitudId), margen, cuerpo.Justificacion,
             clsConcurrenciaHttp.VersionDe(HttpContext), cancellationToken);
+        return resultado.Coincidir<IActionResult>(c => Ok(c), Error);
+    }
+
+    /// <summary>
+    /// HU-045.2 (#264): 200 <c>CosteoCotizacion</c> con el seguro de la mercancía de la ruta incluido o quitado, sus precios recalculados y
+    /// la tasa vigente (y el <c>ETag</c> nuevo); 400 <c>SOLICITUD_INVALIDA</c> (sin <c>incluye_seguro</c>), <c>SEGURO_SIN_VALOR_MERCANCIA</c>,
+    /// <c>RUTA_REQUERIDA</c> (con <c>detalle.rutas</c>) o <c>RUTA_INEXISTENTE</c>; 404; 409 <c>PDF_YA_ENVIADO</c> (enviada o finalizada, como
+    /// el margen), <c>RUTA_RECHAZADA</c>, <c>ESTADO_NO_PERMITE</c> (licitación) o <c>CONFLICTO_CONCURRENCIA</c>; 428 sin <c>If-Match</c>. Con PDF
+    /// vigente lo invalida (ADR-018 §11).
+    /// </summary>
+    [HttpPut("cotizaciones/{folio}/costeo/seguro")]
+    [clsRequiereIfMatch]
+    [ProducesResponseType<clsCosteoCotizacion>(StatusCodes.Status200OK)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status409Conflict)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status428PreconditionRequired)]
+    public async Task<IActionResult> CambiarSeguro(string folio, [FromBody] clsSeguroRutaWebRequest cuerpo, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(cuerpo);
+        if (cuerpo.IncluyeSeguro is not { } incluir)
+        {
+            return Error(new clsErrorDominio(Aplicacion.Comun.clsCodigosAplicacion.SolicitudInvalida,
+                "El campo 'incluye_seguro' es obligatorio (true incluye el seguro de la mercancía en la ruta, false lo quita)."));
+        }
+
+        var resultado = await seguro.CambiarAsync(
+            UsuarioId, folio, new clsRutaIndicada(cuerpo.LineaOrden, cuerpo.LineaSolicitudId), incluir, clsConcurrenciaHttp.VersionDe(HttpContext),
+            cancellationToken);
         return resultado.Coincidir<IActionResult>(c => Ok(c), Error);
     }
 

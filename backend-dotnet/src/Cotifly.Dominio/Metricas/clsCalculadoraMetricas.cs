@@ -148,7 +148,7 @@ public static class clsCalculadoraMetricas
     /// de tres líneas cuenta en las tres; su resultado es el de la cotización);</item>
     /// <item><c>costeo_total</c> = Σ <c>costoFinal</c>; <c>valor_cotizado_cop</c> = Σ <c>precioFinalLinea</c> en COP con la TRM de su
     /// cotización (<see cref="clsCotizacionMetrica.ACop"/>, redondeado por ruta); las de ganadas, solo las rutas de cotizaciones
-    /// ganadas; <c>ganancias</c> = Σ(valor en COP − costo) de esas rutas con precio y costo;</item>
+    /// ganadas; <c>ganancias</c> = Σ(valor en COP − costo − seguro, HU-045.2) de esas rutas con precio y costo;</item>
     /// <item><c>margen_ponderado</c> = Σ(precio en COP − costo) / Σ precio en COP de las rutas con costo y precio &gt; 0;</item>
     /// <item><c>ajustes_margen</c> y <c>desviacion_promedio_margen</c> = los <c>MargenAjustes</c> de esas rutas.</item>
     /// </list>
@@ -185,9 +185,10 @@ public static class clsCalculadoraMetricas
                     Redondear(ganadas.Sum(x => x.Cotizacion.ACopResultado(x.Ruta.PrecioFinal) ?? 0m), DecimalesMonto),
                     Redondear(
                         ganadas
-                            .Select(x => (Valor: x.Cotizacion.ACopResultado(x.Ruta.PrecioFinal), x.Ruta.Costo))
+                            .Select(x => (Valor: x.Cotizacion.ACopResultado(x.Ruta.PrecioFinal), x.Ruta.Costo, x.Ruta.Seguro))
                             .Where(x => x.Valor.HasValue && x.Costo.HasValue)
-                            .Sum(x => x.Valor!.Value - x.Costo!.Value),
+                            // HU-045.2 (#264): el seguro de la ruta es un traslado, no ganancia.
+                            .Sum(x => x.Valor!.Value - x.Costo!.Value - (x.Seguro ?? 0m)),
                         DecimalesMonto),
                     MargenPonderadoDe(g),
                     g.Sum(x => x.Ruta.NumAjustes),
@@ -205,7 +206,7 @@ public static class clsCalculadoraMetricas
     /// <item><c>costeo_total</c> = Σ <see cref="clsCotizacionMetrica.Costo"/> (COP, nunca se convierte; sin las rutas rechazadas, #183);</item>
     /// <item><c>valor_cotizado_cop</c> = Σ <see cref="clsCotizacionMetrica.ValorCop"/> (USD × TRM; en USD sin TRM no suma);</item>
     /// <item>de las ganadas, la versión con el resultado (B3, #173): <c>costeo_ganadas</c> = Σ <see cref="clsCotizacionMetrica.CostoResultado"/>,
-    /// <c>valor_ganado_cop</c> = Σ <see cref="clsCotizacionMetrica.ValorResultadoCop"/> y <c>ganancias</c> = Σ(valor − costo) de las que
+    /// <c>valor_ganado_cop</c> = Σ <see cref="clsCotizacionMetrica.ValorResultadoCop"/> y <c>ganancias</c> = Σ(valor − costo − seguro, HU-045.2) de las que
     /// tienen ambos.</item>
     /// </list>
     /// </summary>
@@ -217,10 +218,7 @@ public static class clsCalculadoraMetricas
             Redondear(ganadas.Sum(f => f.CostoResultado ?? 0m), DecimalesMonto),
             Redondear(universo.Sum(f => f.ValorCop ?? 0m), DecimalesMonto),
             Redondear(ganadas.Sum(f => f.ValorResultadoCop ?? 0m), DecimalesMonto),
-            Redondear(
-                ganadas.Where(f => f.ValorResultadoCop.HasValue && f.CostoResultado.HasValue)
-                    .Sum(f => f.ValorResultadoCop!.Value - f.CostoResultado!.Value),
-                DecimalesMonto));
+            Redondear(ganadas.Sum(f => f.GananciaResultadoCop ?? 0m), DecimalesMonto));
     }
 
     /// <summary>Mes <c>AAAA-MM</c> de una fecha.</summary>
@@ -244,14 +242,16 @@ public static class clsCalculadoraMetricas
             .ThenBy(c => c.Ciudad, StringComparer.OrdinalIgnoreCase)];
 
     /// <summary>
-    /// Margen agregado sobre el precio: Σ(precio en COP − costo) / Σ precio en COP de las rutas con costo &gt; 0 y precio &gt; 0 (4 decimales);
+    /// Margen agregado sobre el precio: Σ(precio en COP − costo) / Σ precio en COP de las rutas con costo &gt; 0 y precio &gt; 0 (4 decimales),
+    /// con el precio SIN el seguro de la mercancía (HU-045.2, #264: es un traslado);
     /// <c>null</c> si no hay ninguna. El precio de la ruta se pasa a COP con la TRM de su cotización (<see cref="clsCotizacionMetrica.ACop"/>),
     /// porque el costo siempre está en COP.
     /// </summary>
     private static decimal? MargenPonderadoDe(IEnumerable<(clsCotizacionMetrica Cotizacion, clsRutaMetrica Ruta)> rutas)
     {
         var validas = rutas
-            .Select(x => (Precio: x.Cotizacion.ACop(x.Ruta.PrecioFinal), x.Ruta.Costo))
+            // HU-045.2 (#264): el seguro (en COP) sale del precio: es un traslado, no margen.
+            .Select(x => (Precio: x.Cotizacion.ACop(x.Ruta.PrecioFinal) - (x.Ruta.Seguro ?? 0m), x.Ruta.Costo))
             .Where(x => x.Costo > 0m && x.Precio > 0m)
             .ToList();
         var precio = validas.Sum(x => x.Precio!.Value);

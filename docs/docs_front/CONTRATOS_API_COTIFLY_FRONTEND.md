@@ -227,6 +227,7 @@ Uso de `If-Match` por endpoint:
 | Endpoint | `If-Match` | Sin él | Si no coincide |
 |---|---|---|---|
 | `PUT .../costeo/margen` | Obligatorio | 428 `PRECONDICION_REQUERIDA` | 409 `CONFLICTO_CONCURRENCIA` |
+| `PUT .../costeo/seguro` (HU-045.2) | Obligatorio | 428 | 409 |
 | `POST .../costeo/servicios-conexos` | Obligatorio | 428 | 409 |
 | `PUT .../costeo/servicios-conexos` | Obligatorio | 428 | 409 |
 | `POST .../costeo/re-solicitar` | Obligatorio | 428 | 409 |
@@ -841,7 +842,7 @@ Convenciones de esta sección:
   más de 64 KB: 413. Un JSON mal formado o con tipos erróneos: 400 `ErrorWeb`. Tampoco se repiten.
 - `{folio}` es el folio de la cotización (hasta 50 caracteres), codificado con `encodeURIComponent`.
 
-Resumen (64 endpoints):
+Resumen (65 endpoints):
 
 | # | Método y ruta | Rol | Módulo |
 |---|---|---|---|
@@ -909,6 +910,7 @@ Resumen (64 endpoints):
 | 62 | `POST /api/auth/elegir-rol` | Público (el ticket de elección) | Autenticación (HU-040.2, #230) |
 | 63 | `GET /web/admin/sap-margen/estado` | `gerente_comercial` o `director` | Administración (HU-042.2, #243) |
 | 64 | `POST /web/admin/sap-margen/sincronizar` | `gerente_comercial` o `director` | Administración (HU-042.2, #243) |
+| 65 | `PUT /web/cotizaciones/{folio}/costeo/seguro` | Ambos (dueño) | Captura y costeo (HU-045.2, #264) |
 
 Retirados (responden 404): `GET /web/metricas/actividad`, `GET /web/metricas/ajustes-margen`, `POST /chat/events`, `POST /web/login`.
 
@@ -1858,6 +1860,11 @@ Notas:
   `servicio_id` (el `id` puede ser el de la fila de NEXO y cambiar entre rutas). Usarlo para agrupar y para 4.4.13 y 4.4.14; `null` en
   conexos guardados antes de #188.
 - `avisos_cubicacion` aparece solo si la ruta tiene avisos del cubicador; si no, se omite.
+- **Seguro de la mercancía (HU-045.2, #264).** `tasa_seguro_vigente` (primer nivel, fracción: `0.00345` = 0,345 %) es la tasa con la
+  que se calcularía el seguro si se marca ahora: mostrarla junto al check. Cada ruta trae `incluye_seguro` (el check), `tasa_seguro` (la
+  tasa con que se calculó: no cambia aunque cambie la vigente) y `valor_seguro` (el seguro en la moneda de la cotización, ya sumado en
+  `precio_final_linea`, sin margen). Con el check y sin `valor_mercancia`, `valor_seguro` y `tasa_seguro` llegan en `null`: mostrar
+  "Falta el valor de la mercancía". El check se cambia con 4.4.15.
 
 #### 4.4.4 `PUT /web/cotizaciones/{folio}/costeo/margen`
 
@@ -2363,6 +2370,62 @@ ruta (4.4.6). NEXO no cambia. Atómica, con `detalle.linea_orden` de la ruta que
 | 428 | `PRECONDICION_REQUERIDA` | — |
 
 Un conexo guardado antes de #188 trae `servicio_id = null`: no se puede quitar en lote; usar el `PUT` por ruta con su `id`.
+
+#### 4.4.15 `PUT /web/cotizaciones/{folio}/costeo/seguro` (seguro de la mercancía de una ruta, HU-045.2, #264)
+
+Incluye o quita el **seguro de la mercancía** (póliza específica) de **una ruta** y recalcula el precio de esa ruta y el total. El seguro
+es `valor_mercancia × tasa vigente` en pesos, **sin redondear a pesos** (decisión del 2026-11-09: llega con centavos, la escala de la columna), **no lleva margen** y se suma al precio de la ruta después del margen y de la
+venta de los conexos. En USD se convierte con `trm_aplicada`. No se envía a NEXO.
+
+- **Rol:** ambos (dueño). **Headers:** `If-Match` **obligatorio**.
+
+| Campo | Tipo | Obligatorio | Reglas |
+|---|---|---|---|
+| `incluye_seguro` | bool | Sí | `true` incluye el seguro (con la tasa vigente), `false` lo quita. Ausente: 400 `ErrorWeb` |
+| `linea_orden` | entero o null | Con varias rutas | `rutas[].linea_orden`. Con una sola ruta se puede omitir |
+| `linea_solicitud_id` | UUID o null | Alternativa | `rutas[].linea_solicitud_id` |
+
+```json
+{ "incluye_seguro": true, "linea_orden": 1 }
+```
+
+Respuesta **200** `CosteoCotizacion` (como 4.4.3) con la ruta recalculada. Ejemplo (COP, `valor_mercancia` 200.000.000, tasa 0,345 %, una
+ruta con transporte 1.250.000 con margen):
+
+```json
+{
+  "precio_final": 1940000,
+  "tasa_seguro_vigente": 0.00345,
+  "rutas": [
+    { "linea_orden": 1, "precio_final_linea": 1940000, "incluye_seguro": true, "tasa_seguro": 0.00345, "valor_seguro": 690000 }
+  ]
+}
+```
+
+(Solo se muestran los campos que cambian.)
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `CosteoCotizacion` | Refrescar la vista con la respuesta. Guardar `row_version`. Si había PDF, ahora `pdf_desactualizado = true` |
+| 400 | `SEGURO_SIN_VALOR_MERCANCIA` (`detalle.linea_orden`, `detalle.linea_solicitud_id`) | "Falta el valor de la mercancía de la ruta": desmarcar el check y llevar a editar la solicitud |
+| 400 | `RUTA_REQUERIDA` (`detalle.rutas`), `RUTA_INEXISTENTE` | Como en 4.4.4 |
+| 400 | `ErrorWeb` | Falta `incluye_seguro` o el cuerpo no es JSON |
+| 404 | `ErrorWeb` | — |
+| 409 | `PDF_YA_ENVIADO` | Enviada, con resultado o **finalizada** (el mismo 409 que el margen): ofrecer "Crear versión nueva" con `detalle` |
+| 409 | `RUTA_RECHAZADA` | La Mesa rechazó la ruta: no tiene precio |
+| 409 | `ESTADO_NO_PERMITE` (`detalle.motivo = LICITACION`) | Ocultar el check en las licitaciones: todavía no admiten el seguro |
+| 409 | `CONFLICTO_CONCURRENCIA` | Recargar y repetir |
+| 428 | `PRECONDICION_REQUERIDA` | Falta `If-Match` |
+
+Notas:
+
+- La tasa se copia en la ruta al marcar el check: si Datos cambia la tasa vigente, las rutas que ya tienen el seguro conservan la suya.
+  Marcar de nuevo una ruta que ya lo tiene responde 200 sin cambios (no toma la tasa nueva); para tomarla, quitar y volver a marcar.
+- Si el comercial cambia `valor_mercancia` (editar la solicitud, 4.4.10, o `datos_carga` de re-solicitar, 4.4.7, versión nueva), el
+  seguro de esa ruta se recalcula con la tasa vigente. La versión nueva (`-vN`) conserva el check de cada ruta.
+- El seguro se puede marcar antes de que llegue el costeo: la ruta no tiene precio hasta que NEXO costee (como con los conexos).
+- `costo_final` de la ruta no incluye el seguro (no es costo de NEXO).
+- El PDF, el Excel y el correo todavía no muestran la línea "Seguro de la mercancía" (llega con HU-045.3, #265); el total ya lo incluye.
 
 ### 4.5 Cotizaciones
 
@@ -3479,7 +3542,9 @@ Definiciones comunes (aplican a los dos tableros):
   `margen_promedio` sigue siendo el promedio por cotización (incluye las rutas sin política) y no se compara con la política.
   **HU-043.2 (#251):** desde entonces el margen de cada ruta es el del **transporte** (los conexos van a su precio de venta, sin
   margen), así que `margen_promedio` mide el margen sobre el transporte y no sobre el precio completo; `margen_ponderado` y `ganancias`
-  siguen siendo (precio − costo) y sí cuentan la diferencia entre la venta y el costo de los conexos.
+  siguen siendo (precio − costo) y sí cuentan la diferencia entre la venta y el costo de los conexos. **HU-045.2 (#264):** el seguro de
+  la mercancía de una ruta (`valor_seguro`) es un traslado, no ganancia: `margen_ponderado` y `ganancias` lo restan del precio en COP;
+  `valor_cotizado_cop` y `valor_ganado_cop` sí lo incluyen.
   `desviacion_promedio_margen` (solo los ajustes negociados, ADR-016) no cambia. Ejemplo: rutas 10/20/30 % con política 15/15/25 % y
   costos 1M/2M/3M → `margen_aplicado_promedio` `0.2`, `margen_politica_promedio` `0.1833`, `margen_politica_ponderado` `0.2` y
   `desviacion_margen_politica` `0.0333` (verde).
@@ -3893,6 +3958,7 @@ Notación: `?` = puede ser `null` (el campo viene igual). **(omitible)** = el ca
 | `row_version` | string? | Para `If-Match` |
 | `textos` | `TextosCotizacion`? | `null` si no hay (el PDF usa los estándar) |
 | `deadline`, `score_prioridad` | fecha y hora?, número? | De la cabecera |
+| `tasa_seguro_vigente` | número? | HU-045.2 (#264): tasa vigente del seguro de la mercancía (fracción). Viene en `GET .../costeo`, en `PUT .../costeo/seguro`, en las respuestas del margen (`PUT .../costeo/margen` y `.../margen/lineas`) y de los conexos (`POST`/`PUT .../costeo/servicios-conexos` y `.../lineas`) y en el `costeo` del detalle por folio; `null` en las demás (PDF, textos, recálculo de vehículos): conservar la del último `GET` |
 | `rutas` | `RutaCosteo[]` | En orden |
 
 **`RutaCosteo`**
@@ -3904,9 +3970,12 @@ Notación: `?` = puede ser `null` (el campo viene igual). **(omitible)** = el ca
 | `linea_negocio_id` | entero? | — |
 | `origen`, `destino` | string? | — |
 | `estado_costeo` | enum? | Estado de la ruta |
-| `precio_final_linea` | número? | Precio de la ruta (con sus conexos) |
+| `precio_final_linea` | número? | Precio de la ruta (con sus conexos y, si lo incluye, el seguro de la mercancía) |
 | `costo_final` | número? | HU-039.1 (#218): costo bruto de la ruta (fletes + retorno + levante + conexos, **sin margen**), **siempre en COP** aunque la cotización esté en USD. `null` cuando `precio_final_linea` es `null` (sin costeo o `rechazada`). Solo el dueño: en el detalle de un gerente (`solo_lectura = true`) siempre `null`. Sin desglose ni costo por camión o conexo |
 | `margen_aplicado`, `margen_sugerido`, `origen_margen` | número?, número?, enum? | Por debajo del sugerido, el ajuste exige justificación |
+| `incluye_seguro` | bool | HU-045.2 (#264): el check del seguro de la mercancía (4.4.15) |
+| `tasa_seguro` | número? | HU-045.2: tasa con que se calculó el seguro de la ruta (fracción); `null` sin seguro o sin valor de la mercancía |
+| `valor_seguro` | número? | HU-045.2: el seguro en la moneda de la cotización, sin margen, ya sumado en `precio_final_linea`; `null` sin seguro o sin valor de la mercancía |
 | `peso_kg` | número? | Peso declarado de la ruta |
 | `peso_con_tara_kg` | número? | HU-030.1 (#184): peso total con tara de una ruta `Contenedor` (el que escribió el comercial); `null` = sin tara |
 | `camiones` | `CamionCosteo[]` | `{tipo_vehiculo?, carroceria?, peso_kg?, peso_con_tara_kg?, estado_costeo?, volumen_total_m3?, porcentaje_llenado_volumen?, porcentaje_llenado_peso?, estado_linea_nexo?, motivo_pendiente?, motivo_rechazo?, rechazada_at?}`. `peso_con_tara_kg` (HU-030.1) es el peso que viajó a NEXO en la línea del camión (su carga más su parte de la tara); `null` si la ruta no lleva tara o si el camión no viaja (rechazado y fuera del envío, #183). Los porcentajes llegan en `null` si no pasó por el cubicador o si la Mesa cambió el vehículo (D2): mostrar "—". `estado_linea_nexo` (`por_costear`, `auto_resuelta`, `revisada`) y `motivo_pendiente` (#181, texto de NEXO de por qué la línea sigue por costear; solo con el camión en `pendiente_costeo`) son de solo lectura, no se guardan y pueden llegar en `null` (NEXO sin el dato, camión sin asociar o servicio recién reiniciado): `null` = no mostrar nada. HU-028.1 (#183): con `estado_costeo = rechazada` (la Mesa de Costeo rechazó su línea), `motivo_rechazo` (texto de NEXO) y `rechazada_at` (cuándo lo vio Cotifly); se guardan en la base. La ruta trae `motivo_rechazo` (motivos de sus camiones rechazados) |
@@ -4211,6 +4280,7 @@ parecido del catálogo, `sugerido = true`, con `similitud` de 0 a 1), `null` (si
 | `SIN_RUTAS_COTIZABLES` | 409 | HU-028.1 (#183, D1): la Mesa rechazó todas las rutas; `POST .../costeo/pdf` no genera el PDF. En `re-solicitar` y `PUT .../solicitud` (`detalle.motivo = TODOS_RECHAZADOS`): ningún camión viajaría a NEXO | Esconder "Generar PDF"; mostrar `motivo_estado_costeo`. Al re-solicitar o editar: ofrecer reincluir los rechazados en la edición |
 | `SAP_MARGEN_NO_CONFIGURADO` | 503 | HU-042.2 (#243): `/web/admin/sap-margen/*` en un ambiente sin las credenciales de SAP | "Sincronización no configurada" (solo administración) |
 | `SAP_MARGEN_NO_DISPONIBLE` | 503 | HU-042.2 (#243): `/web/admin/sap-margen/*` con la base de Cotifly sin responder | Reintentar |
+| `SEGURO_SIN_VALOR_MERCANCIA` | 400 | HU-045.2 (#264): `PUT .../costeo/seguro` en una ruta sin `valor_mercancia` (`detalle.linea_orden`, `detalle.linea_solicitud_id`) | Desmarcar el check; pedir el valor de la mercancía editando la solicitud |
 | `SAP_MARGEN_SINCRONIZACION_EN_CURSO` | 409 | HU-042.2 (#243): `POST /web/admin/sap-margen/sincronizar` con otra corrida en curso | Reintentar en un momento; nada cambió |
 | `SERVICIO_OCUPADO` | 503 | Otra operación retiene el folio (con `Retry-After: 1`) | Reintentar en 1 s |
 | `SOLICITUD_COSTEO_INVALIDA` | 400 | Formulario o carga inválidos (`detalle.errores[]` en la captura) | Pintar errores por campo |
@@ -4366,6 +4436,7 @@ fila_excel, campo, codigo, mensaje}`.
 | 76 | **HU-044.2 (#253): sugerencia de mapeo y lectura con IA del Excel de licitación.** Dos endpoints **nuevos** (4.6.6 y 4.6.7): `POST /web/licitaciones/sugerir-mapeo` (JSON: `nit_cliente`, `encabezados`, `filas` → `ia_usada`, `motivo_sin_ia`, `plantilla_id`, `dudas[]`, `columnas[]` con el `campo` de NEXO) y `POST /web/licitaciones/leer-estructura` (multipart: `archivo`, `nit_cliente`, `instrucciones`, `receta` → `LecturaEstructura`, con la `receta` opaca y `tablas` con la forma de `analizar-excel`). La sugerencia nunca bloquea: con más de 100 columnas, la importación apagada o NEXO caído responde 200 sin propuesta (`ia_usada = false`, `motivo_sin_ia` `DEMASIADAS_COLUMNAS` o `NEXO_NO_DISPONIBLE`). `IA_TOPE_DIARIO` (429) en los dos. Códigos de error nuevos en el enum: `VALIDATION_ERROR` (el de NEXO en `leer-estructura`, con `detalle.campos`) y `LECTURA_DEMASIADO_GRANDE` (el archivo con la receta y las instrucciones pasa el tope de NEXO). Sin script de base de datos; son **66 endpoints** | Agrega | Para un Excel complejo, llamar a `leer-estructura`, mostrar `resumen` y `dudas` y permitir corregir con una frase (reenviando `JSON.stringify(receta)`); luego, por cada hoja o tabla, llamar a `sugerir-mapeo` y prellenar el mapeo traduciendo `campo` con la tabla de 4.6.6; con `ia_usada = false` seguir en manual; con `IA_TOPE_DIARIO`, mapear a mano |
 | 77 | **HU-044.4 (#255, ADR-029): normalizar los textos del Excel de licitación con NEXO.** Endpoint **nuevo** `POST /web/licitaciones/normalizar-valores` (4.6.8): `{nit_cliente?, valores[{campo, valor}]}` con `campo` = `tipo_vehiculo`, `carroceria`, `ciudad` o `linea_negocio` (máx. 1000 valores de 150 caracteres; solo los distintos). Responde `ia_usada`, `motivo_sin_ia` y un resultado por valor, en el orden de la petición: `estado` (`resuelto`, `ambiguo`, `sin_resolver`), `codigo`, `descripcion`, `municipio_id` (ciudad), `origen`, `confianza`, `nota`, `candidatos[]` (ciudad ambigua), `linea_nexo` y `lineas_candidatas[]` (línea de negocio). En `linea_negocio`, `codigo` es la línea **de Cotifly** (la de `lineas[].linea_negocio`). Errores nuevos para el front en este endpoint: `VALORES_REQUERIDOS`, `DEMASIADOS_VALORES`, `CAMPO_INVALIDO`, `VALOR_DEMASIADO_LARGO`, `CLIENTE_NIT_INVALIDO` (400), `NEXO_SIN_PERMISO` (403), `IA_TOPE_DIARIO` (429) y `NEXO_NO_DISPONIBLE` (503). La clase de contenedor sigue por `GET /web/alias/resolver`. Son **67 endpoints** | Agrega | Después de mapear las columnas, mandar los textos distintos de vehículo, carrocería, ciudad y línea de negocio; pintar cada uno por `estado`, pedir confirmación de lo que tenga `origen = ia`, elegir entre `candidatos` o `lineas_candidatas` y dejar a mano lo `sin_resolver`. Con 429 o 503, seguir a mano |
 | 78 | **HU-044.5 (#256): plantillas de mapeo, formatos de lectura y consulta del diccionario del cliente en NEXO.** Endpoints **nuevos** (4.6.9 a 4.6.11): `PUT/GET/DELETE /web/licitaciones/plantillas-mapeo`, `PUT/GET/DELETE /web/licitaciones/recetas-lectura` (multipart, `receta` opaca, sin reintentos) y `GET /web/diccionario-cliente` (+ `/opciones`). Los `GET` de plantillas y formatos exigen `nit_cliente` (400 `CLIENTE_REQUERIDO` sin él). El diccionario trae **solo los términos generales** y, con NIT, el `aviso` `TERMINOS_CLIENTE_NO_DISPONIBLES`. **Cambio a confirmar:** `PLANTILLA_NO_ENCONTRADA` y `RECETA_NO_ENCONTRADA` son **404 `ErrorNegocio`** con código. Crear, editar y borrar términos del diccionario todavía no existen. Son **70 endpoints** | Agrega | Pantallas de plantillas y formatos del cliente; reenviar la `receta` tal cual; mostrar el `aviso` del diccionario |
+| 79 | **HU-045.2 (#264, ADR-032): seguro de la mercancía por ruta.** Endpoint **nuevo** `PUT /web/cotizaciones/{folio}/costeo/seguro` (4.4.15, `If-Match` obligatorio) con `{incluye_seguro, linea_orden?, linea_solicitud_id?}`: incluye o quita el seguro de una ruta. El seguro es `valor_mercancia × tasa vigente` en pesos, sin redondear a pesos (hoy 0,345 %), **no lleva margen** y se suma al precio: `precio_final_linea` = (fletes + retorno + levante) con margen + venta de los conexos + `valor_seguro`; en USD se convierte con `trm_aplicada`. Campos **nuevos** en `CosteoCotizacion`: `tasa_seguro_vigente` (en el GET, en el PUT del seguro, en las respuestas del margen y de los conexos y en el detalle por folio) y en cada ruta `incluye_seguro`, `tasa_seguro` y `valor_seguro`. Código **nuevo** `SEGURO_SIN_VALOR_MERCANCIA` (400). Con la cotización finalizada o enviada, 409 `PDF_YA_ENVIADO` (como el margen); en una licitación, 409 `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION`. Si cambia `valor_mercancia` (edición o `datos_carga`), el seguro se recalcula con la tasa vigente; la versión nueva conserva el check. El PDF, el Excel y el correo todavía no muestran la línea del seguro (HU-045.3, #265). Script `db/scripts/20` (de Datos) antes de la imagen ("falta 20"). Son **71 endpoints** | Agrega | Mostrar el check "Incluir seguro" por ruta (no en licitaciones) con la `tasa_seguro_vigente`; al marcarlo o desmarcarlo, `PUT .../costeo/seguro` con `If-Match` y refrescar con la respuesta; mostrar `valor_seguro` aparte del flete; con `SEGURO_SIN_VALOR_MERCANCIA`, pedir el valor de la mercancía editando la solicitud |
 
 ---
 
@@ -4476,6 +4547,17 @@ fila_excel, campo, codigo, mensaje}`.
 - Pendiente de decisión: el diccionario solo muestra los términos generales hasta que NEXO filtre por `clienteNit`; la escritura del
   diccionario espera el contrato §3.19.1 de NEXO; el 404 con código de `PLANTILLA_NO_ENCONTRADA` y `RECETA_NO_ENCONTRADA` se confirma
   con el frontend.
+
+**2026-11-06 (rama `264-seguro-por-ruta`, #264, HU-045.2).** Seguro de la mercancía por ruta (fila 79 de §7, 4.4.15):
+
+- Fórmula: `precio_final_linea = (fletes + retorno + levante) con el margen + Σ venta de los conexos + valor_seguro`. Ejemplo (COP,
+  margen 20 %, método `margen`, `valor_mercancia` 200.000.000, tasa 0,345 %): flete 1.000.000 → 1.250.000 + 690.000 = **1.940.000**.
+- En USD (TRM 4.000) el mismo seguro es 690.000 / 4.000 = **172,50**, redondeado a centavos como el resto del precio.
+- **Sin redondeo a pesos (decisión del 2026-11-09):** el seguro es `valor_mercancia × tasa` exacto, guardado en centavos. Ejemplo:
+  123.456.789 × 0,345 % = **425.925,92** (antes se redondeaba a 425.926). En COP el precio de la ruta puede traer centavos.
+- `costo_final` no incluye el seguro. El seguro no viaja a NEXO.
+- La línea "Seguro de la mercancía" del PDF, el Excel y el correo llega con HU-045.3 (#265): mientras tanto el total la incluye sin
+  desglose.
 
 **2026-11-05 (rama `251-conexos-precio-venta`, #251, HU-043.2).** Servicios conexos a precio de venta y sin margen (fila 75 de §7):
 

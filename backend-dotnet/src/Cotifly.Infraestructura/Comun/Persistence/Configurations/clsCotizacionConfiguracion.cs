@@ -160,6 +160,12 @@ internal sealed class clsLineaSolicitudConfiguracion : IEntityTypeConfiguration<
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_avisosCubicacion", "avisosCubicacion IS NULL OR ISJSON(avisosCubicacion) = 1");
             // HU-030.1 (#184): db/scripts/11_peso_con_tara.sql.
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_pesoConTaraKg", "pesoConTaraKg IS NULL OR pesoConTaraKg > 0");
+            // HU-045.2 (#264): db/scripts/20_seguro_mercancia.sql (HU-045.1, #263).
+            t.HasCheckConstraint("ck_cotizacionLineasSolicitud_seguroMontos",
+                "(costoSeguro IS NULL OR costoSeguro >= 0) AND (tasaSeguroAplicada IS NULL OR (tasaSeguroAplicada > 0 AND tasaSeguroAplicada < 1)) "
+                + "AND (costoSeguro IS NULL OR tasaSeguroAplicada IS NOT NULL)");
+            t.HasCheckConstraint("ck_cotizacionLineasSolicitud_seguroIncluido",
+                "incluyeSeguro = 1 OR (costoSeguro IS NULL AND tasaSeguroAplicada IS NULL)");
         });
 
         builder.HasKey(l => l.Id).HasName("pk_cotizacionLineasSolicitud");
@@ -218,6 +224,10 @@ internal sealed class clsLineaSolicitudConfiguracion : IEntityTypeConfiguration<
             .HasConversion(new clsConvertidorCodigoEnum<OrigenMargen>());
         builder.Property(l => l.MetodoCalculo).Columna("metodoCalculo", "nvarchar(20)").HasMaxLength(20);
         builder.Property(l => l.PrecioFinalLinea).Columna("precioFinalLinea", "decimal(18,2)");
+        // HU-045.2 (#264): db/scripts/20_seguro_mercancia.sql (sin él, /health/ready dice "falta 20").
+        builder.Property(l => l.IncluyeSeguro).Columna("incluyeSeguro", "bit").HasDefaultValue(false);
+        builder.Property(l => l.TasaSeguroAplicada).Columna("tasaSeguroAplicada", "decimal(9,6)");
+        builder.Property(l => l.CostoSeguro).Columna("costoSeguro", "decimal(18,2)");
         builder.Property(l => l.EstadoCosteo).Columna("estadoCosteo", "nvarchar(30)").HasMaxLength(30)
             .HasConversion(new clsConvertidorCodigoEnum<EstadoCosteo>());
         builder.Property(l => l.CreatedAt).Fecha("createdAt");
@@ -412,5 +422,24 @@ internal sealed class clsCotizacionPdfHistorialConfiguracion : IEntityTypeConfig
             .HasConstraintName("fk_cotizacionPdfsHistorial_cotizacionId").OnDelete(DeleteBehavior.NoAction);
         builder.HasOne<clsUsuarioWeb>().WithMany().HasForeignKey(h => h.UsuarioId)
             .HasConstraintName("fk_cotizacionPdfsHistorial_usuarioId").OnDelete(DeleteBehavior.NoAction);
+    }
+}
+
+/// <summary>
+/// <c>dbo_cotifly.TarifasSeguro</c> (HU-045.1 #263, script <c>db/scripts/20_seguro_mercancia.sql</c>): la tasa del seguro de la mercancía.
+/// HU-045.2 (#264) solo la lee (<c>clsTarifaSeguroRepository</c>).
+/// </summary>
+internal sealed class clsTarifaSeguroConfiguracion : IEntityTypeConfiguration<clsTarifaSeguro>
+{
+    public void Configure(EntityTypeBuilder<clsTarifaSeguro> builder)
+    {
+        builder.ToTable("TarifasSeguro", t => t.HasCheckConstraint("ck_tarifasSeguro_tasa", "tasa > 0 AND tasa < 1"));
+        builder.HasKey(t => t.Id).HasName("pk_tarifasSeguro");
+        builder.Property(t => t.Id).Columna("id", "uniqueidentifier").HasDefaultValueSql("NEWID()");
+        builder.Property(t => t.Tasa).Columna("tasa", "decimal(9,6)");
+        builder.Property(t => t.VigenteDesde).Fecha("vigenteDesde");
+        builder.Property(t => t.Activa).Columna("isActive", "bit").HasDefaultValue(true);
+        builder.Property(t => t.UpdatedAt).Fecha("updatedAt").HasDefaultValueSql("SYSDATETIMEOFFSET()");
+        builder.HasIndex(t => t.Activa).IsUnique().HasDatabaseName("uq_tarifasSeguro_activa").HasFilter("[isActive] = 1");
     }
 }

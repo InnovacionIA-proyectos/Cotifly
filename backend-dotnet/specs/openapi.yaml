@@ -110,7 +110,8 @@ tags:
         (#251): el margen de una ruta se aplica solo a su transporte (fletes + retorno + levante); los servicios conexos se
         cotizan a su precio de venta, sin margen. Desde entonces `margen_promedio` mide el margen sobre el transporte, ya no
         sobre el precio completo; `margen_ponderado` y `ganancias` siguen siendo (precio − costo) e incluyen la diferencia
-        entre la venta y el costo de los conexos.
+        entre la venta y el costo de los conexos. HU-045.2 (#264): el seguro de la mercancía (`valor_seguro` de la ruta) es un
+        traslado: `margen_ponderado` y `ganancias` lo restan del precio en COP; `valor_cotizado_cop` y `valor_ganado_cop` lo incluyen.
       - `margen_ponderado` = margen agregado sobre el precio: SUM(`valor_cop` de la ruta − `costoFinal`) / SUM(`valor_cop`
         de la ruta) de TODAS las rutas del universo con costo > 0 y precio > 0 (el precio de la ruta en COP, USD × TRM).
         `null` si no hay ninguna.
@@ -2808,6 +2809,106 @@ paths:
                     endpoint: /web/cotizaciones/PCN-900555111-DG-05102026-001/costeo/re-solicitar
                     cuerpo:
                       motivo: "Ajuste de margen después del envío"
+                      nueva_version: true
+        '428':
+          $ref: '#/components/responses/PrecondicionRequerida'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
+
+  /web/cotizaciones/{folio}/costeo/seguro:
+    put:
+      operationId: cambiarSeguroCosteo
+      tags: [web]
+      summary: Incluye o quita el seguro de la mercancía de UNA ruta y recalcula el precio de esa ruta y el total
+      x-issue: '#264 (HU-045.2; usa el script 20 de HU-045.1, #263)'
+      description: |
+        HU-045.2 (#264, ADR-032). El check "incluir seguro" de cada ruta en el costeo (decisión 3 de HU-045: endpoint propio con
+        `If-Match`, como el ajuste de margen). Es el seguro de la mercancía de la **póliza específica** (NOGE0076): se cobra aparte del
+        flete y nunca como descuento.
+
+        - **Cálculo.** Al incluirlo se toma la tasa VIGENTE (`TarifasSeguro`, la de `tasa_seguro_vigente` del costeo; hoy 0,345 %
+          = `0.003450`) y se copia en la ruta: `valor_seguro = valor_mercancia × tasa_seguro` en pesos, **sin redondear a pesos**
+          (decisión del usuario del 2026-11-09; se guarda en centavos, la escala de `costoSeguro DECIMAL(18,2)`). Un cambio posterior
+          de la tasa vigente no toca las rutas que ya lo tienen.
+        - **Precio.** El seguro **no lleva margen** (decisión 1): `precio_final_linea` = (fletes + retorno + levante) con el margen
+          + la venta de los conexos + `valor_seguro`, y `precio_final` es la suma de las rutas. En USD se convierte con la
+          `trm_aplicada` de la cotización (decisión 2). `costo_final` no cambia: el seguro no es costo de Nexo. Sin flete (ruta sin
+          costeo) la ruta no tiene precio, como con los conexos.
+        - **Sin `valor_mercancia`:** 400 `SEGURO_SIN_VALOR_MERCANCIA` (decisión 4) y nada cambia. El valor se cambia editando la
+          solicitud o con `datos_carga.valor_mercancia` de la re-solicitud (versión nueva): el seguro se recalcula con la tasa vigente
+          (decisión 5). Si la edición deja la ruta sin valor, el seguro sigue marcado pero sin tasa ni valor (no suma).
+        - La ruta, con `linea_orden` o `linea_solicitud_id` como en `PUT .../costeo/margen` (`RUTA_REQUERIDA`, `RUTA_INEXISTENTE`).
+        - **Regla del PDF (ADR-018 §11, HU-036):** enviada al cliente, con resultado o **finalizada**: 409 `PDF_YA_ENVIADO` (el mismo
+          del margen, con la llamada de la versión nueva en `detalle`). Si no, se permite aunque haya PDF: queda invalidado
+          (`pdf_desactualizado = true`; en el historial con el motivo `servicios_conexos`).
+        - **Licitación:** 409 `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION` (la HU no la incluye todavía). Ruta rechazada por
+          la Mesa: 409 `RUTA_RECHAZADA`.
+        - Marcar una ruta que ya tiene el seguro (o quitarlo de una que no lo tiene) responde 200 sin cambios (idempotente).
+        - No se envía a Nexo (decisión 6). Se audita en `EventosHerramienta` (`cambiar_seguro_costeo`) sin montos ni tasa.
+        - `If-Match` **obligatorio** (428 `PRECONDICION_REQUERIDA` sin él; 409 `CONFLICTO_CONCURRENCIA` si no coincide). Solo el dueño.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/Folio'
+        - $ref: '#/components/parameters/IfMatchObligatorio'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SeguroRutaWeb'
+            example:
+              incluye_seguro: true
+              linea_orden: 1
+      responses:
+        '200':
+          description: Seguro de la ruta incluido o quitado, precios recalculados (esa ruta y el total) y la tasa vigente
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CosteoCotizacion'
+        '400':
+          description: '`SEGURO_SIN_VALOR_MERCANCIA` (con `detalle.linea_orden` y `detalle.linea_solicitud_id`), `RUTA_REQUERIDA` (con `detalle.rutas`) o `RUTA_INEXISTENTE` (`ErrorNegocio`); `ErrorWeb` sin `incluye_seguro` o si el cuerpo no es JSON válido'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorNegocio'
+                  - $ref: '#/components/schemas/ErrorWeb'
+              example:
+                error:
+                  codigo: SEGURO_SIN_VALOR_MERCANCIA
+                  mensaje: "La ruta 1 no tiene valor de la mercancía: el seguro es el valor de la mercancía por la tasa vigente. Edita la solicitud con el valor y vuelve a marcarlo."
+                  detalle:
+                    linea_orden: 1
+                    linea_solicitud_id: "5b1f6a1e-2c3d-4e5f-8a9b-0c1d2e3f4a5b"
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '404':
+          $ref: '#/components/responses/NoEsTuya'
+        '409':
+          description: '`PDF_YA_ENVIADO` (enviada, con resultado o finalizada), `RUTA_RECHAZADA`, `ESTADO_NO_PERMITE` (licitación, `detalle.motivo = LICITACION`) o `CONFLICTO_CONCURRENCIA`; sin cambios'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+              example:
+                error:
+                  codigo: PDF_YA_ENVIADO
+                  mensaje: "La cotización ya está finalizada: crea una versión nueva para cambiarla."
+                  detalle:
+                    accion: nueva_version
+                    metodo: POST
+                    endpoint: /web/cotizaciones/PCN-900555111-DG-05102026-001/costeo/re-solicitar
+                    cuerpo:
+                      motivo: "Cambio del seguro de la mercancía después del envío"
                       nueva_version: true
         '428':
           $ref: '#/components/responses/PrecondicionRequerida'
@@ -5709,6 +5810,8 @@ components:
                 reintenta al día siguiente. El `429 DEMASIADAS_SOLICITUDES` de NEXO, el cupo por minuto, sigue siendo
                 `COSTEO_NEXO_NO_DISPONIBLE` con el `Retry-After` en `detalle.motivo`). `CUBICACION_DEMASIADO_GRANDE` también si NEXO
                 lo responde al alta (más de 200 posiciones o 10.000 unidades en una línea): `error_envio` definitivo.
+                HU-045.2 (#264): `SEGURO_SIN_VALOR_MERCANCIA` (400 en `PUT .../costeo/seguro`: la ruta no tiene `valor_mercancia`; con
+                `detalle.linea_orden` y `detalle.linea_solicitud_id`).
                 HU-044.1 (#252, ADR-028): importación inteligente del Excel con NEXO. Los rechazos de NEXO llegan con su mismo código y su
                 mensaje: `ENCABEZADOS_REQUERIDOS`, `DEMASIADAS_COLUMNAS`, `DEMASIADAS_FILAS`, `ENCABEZADO_DEMASIADO_LARGO`,
                 `COLUMNA_FUERA_DE_RANGO`, `COLUMNA_INVALIDA`, `MAPEO_REQUERIDO`, `CAMPO_INVALIDO`, `CAMPO_DUPLICADO`, `CAMPO_REQUERIDO`,
@@ -5810,6 +5913,7 @@ components:
                 - SAP_MARGEN_NO_DISPONIBLE
                 - LINEA_NEGOCIO_INVALIDO
                 - IA_TOPE_DIARIO
+                - SEGURO_SIN_VALOR_MERCANCIA
                 - ENCABEZADOS_REQUERIDOS
                 - DEMASIADAS_COLUMNAS
                 - DEMASIADAS_FILAS
@@ -7999,6 +8103,23 @@ components:
           type: integer
           nullable: true
           description: HU-021.9. Línea de negocio de la ruta (id de `MargenesPolitica`); define su margen.
+        incluye_seguro:
+          type: boolean
+          description: HU-045.2 (#264). ¿La ruta incluye el seguro de la mercancía? (el check de `PUT .../costeo/seguro`).
+        tasa_seguro:
+          type: number
+          nullable: true
+          description: |
+            HU-045.2 (#264). La tasa con que se calculó el seguro de la ruta (fracción: 0.003450 = 0,345 %), copiada de la vigente al
+            marcarlo (y otra vez si cambia `valor_mercancia`); un cambio de la tasa vigente no la toca. `null` sin seguro o sin valor de
+            la mercancía.
+        valor_seguro:
+          type: number
+          nullable: true
+          description: |
+            HU-045.2 (#264). El seguro de la mercancía de la ruta (`valor_mercancia × tasa_seguro` en pesos, sin redondear a pesos: en centavos) en la moneda de
+            la cotización (en USD, convertido con `trm_aplicada`). Es venta, sin margen, y ya está sumado en `precio_final_linea`.
+            `null` sin seguro o sin valor de la mercancía (la ruta lo tiene marcado pero no suma).
         peso_kg:
           type: number
           nullable: true
@@ -8336,6 +8457,14 @@ components:
           format: date-time
           nullable: true
           description: HU-036.2 (#206). Cuándo se finalizó la cotización; `null` sin finalizar. Igual que en `CotizacionResumen`.
+        tasa_seguro_vigente:
+          type: number
+          nullable: true
+          description: |
+            HU-045.2 (#264). La tasa VIGENTE del seguro de la mercancía (fracción: 0.003450 = 0,345 %), para mostrarla antes de marcar el
+            seguro en una ruta (la de cada ruta que ya lo tiene es `rutas[].tasa_seguro`). Viene en `GET .../costeo`, en
+            `PUT .../costeo/seguro`, en las respuestas del margen y de los conexos y en `costeo` del detalle por folio; `null` en las
+            demás (PDF, textos, recálculo de vehículos) o si no se pudo leer: conservar la del último `GET`.
         textos:
           description: HU-013.5. Asunto e introducción guardados para el PDF, o `null` si todavía no hay (el PDF usa los estándar).
           oneOf:
@@ -8428,6 +8557,25 @@ components:
           description: |
             Obligatoria (no vacía) si `margen` es menor que el `margen_sugerido` de la ruta; se guarda en
             `MargenAjustes.motivo`. Por encima del sugerido es opcional.
+
+    SeguroRutaWeb:
+      type: object
+      required: [incluye_seguro]
+      description: HU-045.2 (#264). Cuerpo de `PUT /web/cotizaciones/{folio}/costeo/seguro`.
+      properties:
+        incluye_seguro:
+          type: boolean
+          description: '`true` incluye el seguro de la mercancía en la ruta (con la tasa vigente); `false` lo quita.'
+        linea_orden:
+          type: integer
+          minimum: 1
+          nullable: true
+          description: Ruta a la que aplica (`rutas[].linea_orden`); opcional si la cotización tiene una sola.
+        linea_solicitud_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Ruta a la que aplica por su id (`rutas[].linea_solicitud_id`); alternativa a `linea_orden`.
 
     MargenLineasWeb:
       type: object

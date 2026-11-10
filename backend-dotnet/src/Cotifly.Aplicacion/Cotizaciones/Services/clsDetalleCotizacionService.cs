@@ -55,7 +55,9 @@ public sealed class clsDetalleCotizacionService(
     clsAlmacenCategoriasConexos categorias,
     IClsAuditoriaService auditoria,
     IOptions<clsOpcionesPdf> opcionesPdf,
-    IClsSituacionLineasNexo? situacionesNexo = null) : IClsDetalleCotizacionService
+    IClsSituacionLineasNexo? situacionesNexo = null,
+    IClsTarifaSeguroRepository? tarifasSeguro = null,
+    Microsoft.Extensions.Logging.ILogger<clsDetalleCotizacionService>? logger = null) : IClsDetalleCotizacionService
 {
     /// <summary>Herramienta de la auditoría de las consultas de un gerente a una cotización ajena (<c>EventosHerramienta.herramienta</c>).</summary>
     public const string HerramientaAuditoria = "consultar_detalle_cotizacion";
@@ -83,7 +85,14 @@ public sealed class clsDetalleCotizacionService(
         var estadosNexo = await envioConexos.EstadosAsync(cotizacion, cancellationToken);
         var costeo = clsCosteoCotizacionService.Vista(
             cotizacion, opcionesPdf.Value.BaseUrl, estadosNexo, clsCategoriasConexosService.EnMemoria(categorias, cotizacion),
-            situacionesNexo?.Obtener(cotizacion.Id));
+            situacionesNexo?.Obtener(cotizacion.Id))
+            with
+            {
+                // HU-045.2 (#264): la tasa vigente del seguro, como en GET .../costeo.
+                TasaSeguroVigente = await clsCosteoCotizacionService.TasaSeguroVigenteSinFallarAsync(
+                    tarifasSeguro, (Microsoft.Extensions.Logging.ILogger?)logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance,
+                    cotizacion.Folio, cancellationToken),
+            };
 
         // HU-039.1 (#218): el costo bruto de las rutas es solo del dueño; el gerente en solo consulta lo recibe en null (decisión
         // conservadora: hasta HU-039 el detalle nunca le mostraba costos).

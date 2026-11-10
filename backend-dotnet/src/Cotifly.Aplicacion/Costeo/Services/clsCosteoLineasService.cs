@@ -89,7 +89,8 @@ public sealed class clsCosteoLineasService(
     IClsReloj reloj,
     ILogger<clsCosteoLineasService> logger,
     IOptions<clsOpcionesCosteoNexo>? opcionesCosteo = null,
-    Margen.Services.IClsAvisoSincronizacionMargenSap? avisoSincronizacion = null) : IClsCosteoLineasService
+    Margen.Services.IClsAvisoSincronizacionMargenSap? avisoSincronizacion = null,
+    IClsTarifaSeguroRepository? tarifasSeguro = null) : IClsCosteoLineasService
 {
     /// <summary>Herramienta de la auditoría del margen masivo (<c>EventosHerramienta.herramienta</c>).</summary>
     public const string HerramientaMargen = "ajustar_margen_costeo_lineas";
@@ -707,7 +708,8 @@ public sealed class clsCosteoLineasService(
     private async Task<clsCosteoCotizacion> VistaAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken) =>
         await clsCosteoCotizacionService.VistaConEstadosAsync(
             cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, logger, cancellationToken, categoriasConexos, situacionesNexo.Obtener(cotizacion.Id),
-            await Margen.Services.clsAvisoSincronizacionMargenSap.ConsultarSinFallarAsync(avisoSincronizacion, cotizacion, cancellationToken));
+            await Margen.Services.clsAvisoSincronizacionMargenSap.ConsultarSinFallarAsync(avisoSincronizacion, cotizacion, cancellationToken),
+            tarifasSeguro);
 
     private static object ErrorAuditado(clsErrorDominio error) =>
         new { error = new { codigo = error.Codigo, mensaje = error.Mensaje, detalle = error.Datos } };
