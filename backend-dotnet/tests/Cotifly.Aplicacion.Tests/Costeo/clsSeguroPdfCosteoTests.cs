@@ -20,7 +20,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// HU-045.3 (#265, ADR-029 §9): el PDF del costeo muestra el seguro de la mercancía en una línea propia por ruta, aparte del flete (política
+/// HU-045.3 (#265, ADR-032 §9): el PDF del costeo muestra el seguro de la mercancía en una línea propia por ruta, aparte del flete (política
 /// NOGE0076): la fila del flete imprime el precio de la ruta SIN el seguro y la fila "Seguro de la mercancía" su valor; el total general sigue
 /// siendo la suma de los precios finales. Nunca la tasa. Una ruta con el seguro marcado sin valor de la mercancía sale sin su fila y con un
 /// aviso (decisión del usuario del 2026-11-09).

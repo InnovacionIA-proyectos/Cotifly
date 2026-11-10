@@ -2830,7 +2830,7 @@ paths:
       summary: Incluye o quita el seguro de la mercancía de UNA ruta y recalcula el precio de esa ruta y el total
       x-issue: '#264 (HU-045.2; usa el script 20 de HU-045.1, #263)'
       description: |
-        HU-045.2 (#264, ADR-029). El check "incluir seguro" de cada ruta en el costeo (decisión 3 de HU-045: endpoint propio con
+        HU-045.2 (#264, ADR-032). El check "incluir seguro" de cada ruta en el costeo (decisión 3 de HU-045: endpoint propio con
         `If-Match`, como el ajuste de margen). Es el seguro de la mercancía de la **póliza específica** (NOGE0076): se cobra aparte del
         flete y nunca como descuento.
 
@@ -3956,7 +3956,7 @@ paths:
         Al regenerar un PDF desactualizado, el anterior se archiva en el almacén como `{folio}-hN.pdf` (queda en el
         historial) y el nuevo conserva el nombre `{folio}.pdf`.
 
-        **Seguro de la mercancía (HU-045.3, #265, ADR-029 §9).** Una ruta con el seguro (`incluye_seguro`, #264) lo trae en una fila propia,
+        **Seguro de la mercancía (HU-045.3, #265, ADR-032 §9).** Una ruta con el seguro (`incluye_seguro`, #264) lo trae en una fila propia,
         "Seguro de la mercancía", aparte del flete (política NOGE0076): la fila de la ruta imprime su valor final SIN el seguro y la fila del
         seguro su `valor_seguro`; en el pliego, el resumen agrega la fila del seguro debajo de la ruta (con su número). El "VALOR TOTAL DE LA
         COTIZACIÓN" no cambia: la suma de los `precio_final_linea`, con el seguro. Nunca imprime la tasa. En COP, el seguro y los montos que

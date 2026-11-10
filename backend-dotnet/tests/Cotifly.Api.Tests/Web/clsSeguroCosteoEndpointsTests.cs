@@ -8,7 +8,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// HU-045.2 (#264, ADR-029): <c>PUT /web/cotizaciones/{folio}/costeo/seguro</c> por HTTP con SQL Server real (script 20 aplicado: tasa
+/// HU-045.2 (#264, ADR-032): <c>PUT /web/cotizaciones/{folio}/costeo/seguro</c> por HTTP con SQL Server real (script 20 aplicado: tasa
 /// vigente 0,345 %) y el Nexo falso. El formulario de prueba trae <c>valor_mercancia = 250.000.000</c>: el seguro es 862.500 y se suma al
 /// precio sin margen.
 /// </summary>

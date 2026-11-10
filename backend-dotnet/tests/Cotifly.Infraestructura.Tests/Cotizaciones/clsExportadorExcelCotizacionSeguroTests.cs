@@ -5,7 +5,7 @@ using Cotifly.Infraestructura.Cotizaciones.Services;
 namespace Cotifly.Infraestructura.Tests.Cotizaciones;
 
 /// <summary>
-/// HU-045.3 (#265, ADR-029 §9): el Excel de la cotización trae el seguro de la mercancía de cada ruta en su columna (aparte del transporte y
+/// HU-045.3 (#265, ADR-032 §9): el Excel de la cotización trae el seguro de la mercancía de cada ruta en su columna (aparte del transporte y
 /// de los conexos), su total en la fila de totales y en el Resumen, y lo ven también el gerente y el director (es venta, no costo). La ruta
 /// con el seguro marcado sin valor de la mercancía lo dice. Nunca la tasa.
 /// </summary>

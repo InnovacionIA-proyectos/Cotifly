@@ -1,7 +1,7 @@
 namespace Cotifly.Dominio.Cotizaciones;
 
 /// <summary>
-/// HU-045.3 (#265, ADR-029 §9): el seguro de la mercancía al entregar la cotización. Una ruta con el seguro marcado pero sin valor de la
+/// HU-045.3 (#265, ADR-032 §9): el seguro de la mercancía al entregar la cotización. Una ruta con el seguro marcado pero sin valor de la
 /// mercancía (la edición quitó el valor: el check queda sin tasa ni costo) no suma el seguro al precio. Decisión del usuario del
 /// 2026-11-09: se avisa (la vista del costeo y la respuesta del PDF), no se bloquea.
 /// </summary>

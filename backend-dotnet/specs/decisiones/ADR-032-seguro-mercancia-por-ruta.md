@@ -1,4 +1,4 @@
-# ADR-029 — Seguro de la mercancía por ruta (HU-045.2)
+# ADR-032 — Seguro de la mercancía por ruta (HU-045.2)
 
 - **Estado:** Propuesta (2026-11-06; §9 agregado el 2026-11-08). Issues #264 (HU-045.2) y #265 (HU-045.3), milestone HU-045. Pendiente del
   visto bueno del usuario (ver Pendientes).

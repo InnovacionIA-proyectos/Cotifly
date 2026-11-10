@@ -9,7 +9,7 @@ using Cotifly.Aplicacion.Pdf.DTOs;
 namespace Cotifly.Arquitectura.Tests;
 
 /// <summary>
-/// HU-045.3 (#265, ADR-029 §9): el seguro de la mercancía sale en el PDF, el Excel (cotización y licitación), el correo y los totales del
+/// HU-045.3 (#265, ADR-032 §9): el seguro de la mercancía sale en el PDF, el Excel (cotización y licitación), el correo y los totales del
 /// detalle como <c>valor_seguro</c> / <c>precio_seguro</c>, nunca con la tasa (<c>Tasa*</c>) ni como costo (<c>CostoSeguro</c>). Complementa
 /// <c>clsCostoBrutoSinFugasTests</c>, que no se relaja: ningún campo <c>Costo*</c> nuevo.
 /// </summary>

@@ -7,7 +7,7 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Aplicacion.Tests.Cotizaciones;
 
 /// <summary>
-/// HU-045.3 (#265, ADR-029 §9): los datos del Excel de la cotización y de la exportación de la licitación traen el seguro de la mercancía por
+/// HU-045.3 (#265, ADR-032 §9): los datos del Excel de la cotización y de la exportación de la licitación traen el seguro de la mercancía por
 /// ruta, aparte del transporte y de los conexos, y el desglose cuadra: transporte + conexos + seguro = precio de la ruta y total. Es venta,
 /// así que lo conserva también la versión del gerente.
 /// </summary>

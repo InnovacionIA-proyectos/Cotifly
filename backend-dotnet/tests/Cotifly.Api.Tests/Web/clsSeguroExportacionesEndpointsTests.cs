@@ -8,7 +8,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// HU-045.3 (#265, ADR-029 §9) por HTTP con SQL Server real y el Nexo falso: el detalle por folio cuadra el desglose con
+/// HU-045.3 (#265, ADR-032 §9) por HTTP con SQL Server real y el Nexo falso: el detalle por folio cuadra el desglose con
 /// <c>totales.precio_seguro</c>, el Excel trae el seguro en su columna, el PDF sale, y una ruta con el seguro marcado sin valor de la
 /// mercancía trae <c>aviso_seguro</c> en el costeo y en la respuesta del PDF (no bloquea). El formulario de prueba trae
 /// <c>valor_mercancia = 250.000.000</c>: el seguro es 862.500.

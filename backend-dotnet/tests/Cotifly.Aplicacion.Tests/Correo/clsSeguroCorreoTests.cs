@@ -16,7 +16,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Correo;
 
 /// <summary>
-/// HU-045.3 (#265, ADR-029 §9): el correo y su vista previa. Con la regla de HU-033 (sin desglose) cada ruta sigue con un solo valor, su
+/// HU-045.3 (#265, ADR-032 §9): el correo y su vista previa. Con la regla de HU-033 (sin desglose) cada ruta sigue con un solo valor, su
 /// precio final con el seguro, y el total lo incluye; la ruta que lo incluye lo dice, sin el monto ni la tasa. Una ruta con el seguro marcado
 /// sin valor de la mercancía no bloquea el envío (decisión del usuario del 2026-11-09).
 /// </summary>

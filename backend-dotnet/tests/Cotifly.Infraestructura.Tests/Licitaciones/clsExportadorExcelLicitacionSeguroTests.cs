@@ -6,7 +6,7 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Infraestructura.Tests.Licitaciones;
 
 /// <summary>
-/// HU-045.3 (#265, ADR-029 §9): el Excel de la licitación agrega la columna del seguro de la mercancía (después de las cuatro de Cotifly) solo
+/// HU-045.3 (#265, ADR-032 §9): el Excel de la licitación agrega la columna del seguro de la mercancía (después de las cuatro de Cotifly) solo
 /// si alguna línea lo incluye, y su suma en la hoja de resumen, aparte del total. Sin seguro (hoy, porque las licitaciones no lo admiten) el
 /// archivo no cambia.
 /// </summary>

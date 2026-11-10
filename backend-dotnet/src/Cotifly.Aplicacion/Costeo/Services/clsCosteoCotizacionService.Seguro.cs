@@ -5,7 +5,7 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Aplicacion.Costeo.Services;
 
 /// <summary>
-/// HU-045.3 (#265, ADR-029 §9): el seguro de la mercancía en el PDF del costeo. La política NOGE0076 pide mostrarlo aparte del flete: la
+/// HU-045.3 (#265, ADR-032 §9): el seguro de la mercancía en el PDF del costeo. La política NOGE0076 pide mostrarlo aparte del flete: la
 /// fila de la ruta imprime su precio sin el seguro (<see cref="PrecioRutaPdf"/>) y una fila propia, "Seguro de la mercancía", su valor en la
 /// moneda de la cotización. El total general no cambia (la suma de los precios finales, con el seguro). Nunca se imprime la tasa.
 /// </summary>
