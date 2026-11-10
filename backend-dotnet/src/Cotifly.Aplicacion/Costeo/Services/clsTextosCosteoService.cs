@@ -252,7 +252,7 @@ public sealed class clsTextosCosteoService(
     /// indicaciones); por encima de <see cref="clsContextoRedaccion.LargoMaximoIndicaciones"/> devuelve <c>false</c> con 400
     /// <c>SOLICITUD_INVALIDA</c> (el llamador no debe seguir a la IA).
     /// </summary>
-    public static bool NormalizarIndicaciones(string? entrada, out string? indicaciones, out clsErrorDominio? error)
+    private static bool NormalizarIndicaciones(string? entrada, out string? indicaciones, out clsErrorDominio? error)
     {
         var limpio = entrada?.Trim();
         if (string.IsNullOrEmpty(limpio))
