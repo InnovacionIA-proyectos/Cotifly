@@ -4378,6 +4378,189 @@ paths:
         '500':
           $ref: '#/components/responses/ErrorInterno'
 
+  /web/licitaciones/sugerir-mapeo:
+    post:
+      operationId: sugerirMapeoLicitacion
+      tags: [web]
+      summary: Propone el mapeo de las columnas de una hoja con la importación inteligente de NEXO (no guarda nada)
+      description: |
+        HU-044.2 (#253, ADR-028). Cotifly reenvía la hoja a `POST {Nexo:UrlBase}/api/captura-solicitudes/sugerir-mapeo` con la
+        identidad del comercial (`X-Portal-clsUsuario-Id`) y el NIT de la licitación como `clienteNit` (sin puntos ni dígito de
+        verificación). NEXO propone en este orden: la **plantilla** guardada del cliente para esos encabezados, el **diccionario** del
+        cliente y, para lo que falte, la **IA**. Es solo una sugerencia: el comercial la confirma o la cambia antes de `aplicar-mapeo`.
+        Sirve igual para una hoja de `analizar-excel` que para una tabla de `leer-estructura` (misma forma, sin transformarla).
+
+        **`campo` es el nombre de NEXO** (`origen`, `destino`, `tipoVehiculo`, `peso`, `pesoKg`, `largoCm`...; `ignorar` = sin
+        propuesta): es el mismo que vuelve en `aplicar-mapeo` y en las plantillas. La tabla de equivalencias con los campos del
+        frontend está en `docs/docs_front/CONTRATOS_API_COTIFLY_FRONTEND.md` (4.6.6).
+
+        **Sin propuesta no es un error.** Responde 200 con todas las columnas en `campo = ignorar`, `origen = ninguno`,
+        `confianza = 0`, `ia_usada = false` y el motivo en `motivo_sin_ia`, y el comercial sigue en manual:
+        - más de 100 encabezados: `DEMASIADAS_COLUMNAS`, **sin llamar a NEXO** (el NIT se valida antes: uno inválido es 400
+          `CLIENTE_NIT_INVALIDO`);
+        - la importación apagada en el ambiente (`ImportacionInteligente:Habilitada`), NEXO caído o sin respuesta a tiempo:
+          `NEXO_NO_DISPONIBLE` (una sola llamada: nunca se reintenta, porque puede gastar IA).
+        Con la IA de NEXO apagada o caída NEXO responde 200 con lo que resolvieron la plantilla y el diccionario, `ia_usada = false` y
+        su motivo (`IA_NO_DISPONIBLE` o un `IA_*` del proveedor). Otros motivos de NEXO: `PLANTILLA_RECONOCIDA` (con `plantilla_id`) y
+        `DICCIONARIO_COMPLETO`.
+
+        `filas` es una muestra (el frontend manda hasta 200; NEXO usa las 20 primeras): Cotifly reenvía las 200 primeras y descarta el
+        resto. Un encabezado o una celda `null` viaja como texto vacío.
+
+        **Peso (DU §8):** la sugerencia no trae pesos, solo propone columnas, así que la regla del peso total con tara no se aplica aquí.
+        Se aplica al convertir las filas (`aplicar-mapeo`, #254) y en la captura.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SugerirMapeoWeb'
+      responses:
+        '200':
+          description: La propuesta de NEXO, o la hoja sin propuesta con `ia_usada = false`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SugerenciaMapeo'
+        '400':
+          description: |
+            `ErrorWeb`: cuerpo inválido. `ErrorNegocio`: `ENCABEZADOS_REQUERIDOS` (sin encabezados, sin llamar a NEXO),
+            `CLIENTE_NIT_INVALIDO` (el NIT no tiene letras ni dígitos o pasa de 30, sin llamar a NEXO), o el rechazo de NEXO con su
+            código y su mensaje (`ENCABEZADOS_REQUERIDOS`, `DEMASIADAS_COLUMNAS`...); `COSTEO_NEXO_RECHAZADA` para otro 4xx de NEXO.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: '`NEXO_SIN_PERMISO`: NEXO respondió 401 o 403 (la identidad del comercial o su rol en NEXO, que debe ser Comercial o Admin)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '413':
+          description: El cuerpo supera `SeguridadHttp:LimiteCuerpoLicitacionBytes` (12 MB por defecto, el límite de todo `/web/licitaciones*`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWeb'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
+        '429':
+          description: '`IA_TOPE_DIARIO`: el comercial agotó su cupo diario de IA en NEXO. Es suyo: no bloquea a los demás comerciales. Sin `Retry-After` (se libera al día siguiente); mientras tanto, mapear a mano'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+
+  /web/licitaciones/leer-estructura:
+    post:
+      operationId: leerEstructuraLicitacion
+      tags: [web]
+      summary: Lee con IA un Excel de formato complejo y devuelve tablas listas para sugerir-mapeo (no guarda nada)
+      description: |
+        HU-044.2 (#253, ADR-028; NEXO PR #433). Paso previo a `sugerir-mapeo` cuando el Excel tiene un formato complejo (encabezado en
+        varias filas, matrices con los puertos en las columnas, el destino en un recuadro suelto). Cotifly solo hace de puente: reenvía
+        el formulario a `POST {Nexo:UrlBase}/api/captura-solicitudes/leer-estructura` con el **nombre original del archivo** y la
+        identidad del comercial, y devuelve la lectura de NEXO **sin alterar `receta` ni `tablas`**. Ni NEXO ni Cotifly guardan nada en
+        esta llamada; Cotifly tampoco guarda el historial del chat.
+
+        Tres usos:
+        - **Primera lectura:** solo `archivo` (y `nit_cliente`). Con un formato guardado del cliente, NEXO lo reutiliza sin IA.
+        - **Corrección:** el mismo archivo, la frase del comercial en `instrucciones` y la `receta` de la respuesta anterior (llega a
+          NEXO exactamente como vino).
+        - **Reaplicar sin IA:** el archivo y una `receta`, sin `instrucciones`.
+
+        **Antes de NEXO Cotifly solo valida el archivo:** que venga (`ARCHIVO_REQUERIDO`), su tamaño (`ARCHIVO_DEMASIADO_GRANDE`, más de
+        10 MB menos 64 KB) y su extensión (`FORMATO_NO_SOPORTADO`, solo `.xlsx` o `.xlsm`). **No abre el libro**, para no rechazar un
+        archivo que NEXO sí puede leer (#277): los errores de lectura los decide NEXO. `instrucciones` (máx. 4000) y `receta` (máx.
+        60.000) también los valida NEXO.
+
+        **`ia_usada = false` con `motivo_sin_ia` es un 200 normal**, no un error (`IA_NO_DISPONIBLE`, `IA_RESPUESTA_INVALIDA` o un
+        código del proveedor; también cuando NEXO usó una receta guardada o la enviada). **Sin reintentos automáticos:** cada llamada
+        puede gastar IA. Puede tardar: el tiempo de espera hacia NEXO es de al menos 180 s (`ImportacionInteligente:TimeoutLecturaSegundos`).
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [archivo]
+              properties:
+                archivo:
+                  type: string
+                  format: binary
+                nit_cliente:
+                  type: string
+                  description: NIT de la licitación (con o sin puntos y dígito de verificación). Solo busca el cliente en NEXO, no lo crea; sin cliente no se reutiliza ningún formato guardado.
+                instrucciones:
+                  type: string
+                  description: La frase del comercial para corregir la lectura (máx. 4000). Si viene, NEXO siempre consulta a la IA.
+                receta:
+                  type: string
+                  description: La `receta` de una respuesta anterior, como texto JSON (máx. 60.000). Sola se ejecuta sin IA; con `instrucciones`, la IA la ajusta.
+      responses:
+        '200':
+          description: La lectura de NEXO (también con `ia_usada = false`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LecturaEstructura'
+        '400':
+          description: |
+            `ErrorWeb`: el formulario no se pudo leer, o una parte (`archivo`, `nit_cliente`, `instrucciones` o `receta`) viene más de
+            una vez (`Formulario inválido: la parte '…' viene más de una vez.`, el mismo texto de `recetas-lectura`); no se llama a NEXO.
+            `ErrorNegocio`: de Cotifly, sin llamar a NEXO, `ARCHIVO_REQUERIDO`,
+            `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE` (el archivo solo pasa de 10 MB menos 64 KB; un 413 de NEXO también),
+            `LECTURA_DEMASIADO_GRANDE` (el archivo cabe, pero con `receta` e `instrucciones`, contadas en bytes UTF-8, el envío pasa ese
+            tope: leer sin la receta o con un archivo más pequeño) y `CLIENTE_NIT_INVALIDO`; de NEXO, con su mismo código y su mensaje,
+            `EXCEL_INVALIDO`, `EXCEL_SIN_DATOS`, `RECETA_INVALIDA` (no es JSON, es demasiado grande o no corresponde al archivo),
+            `INSTRUCCIONES_DEMASIADO_LARGAS` y `VALIDATION_ERROR` (la forma del formulario; `detalle.campos` trae solo los nombres de los
+            campos que NEXO rechazó, nunca sus valores); `COSTEO_NEXO_RECHAZADA` para otro 4xx de NEXO.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: '`NEXO_SIN_PERMISO`: NEXO respondió 401 o 403 (la identidad del comercial o su rol en NEXO, que debe ser Comercial o Admin)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '413':
+          description: El cuerpo supera `SeguridadHttp:LimiteCuerpoLicitacionBytes` (12 MB por defecto)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWeb'
+        '429':
+          description: '`IA_TOPE_DIARIO`: el comercial agotó su cupo diario de IA en NEXO. No bloquea a los demás comerciales. Sin `Retry-After`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '503':
+          description: '`NEXO_NO_DISPONIBLE`: la importación apagada en el ambiente, NEXO caído, sin respuesta a tiempo o con su cupo por minuto (`DEMASIADAS_SOLICITUDES`, con el `Retry-After` en `detalle.motivo`). No se reintenta solo'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+
   /web/licitaciones/normalizar-valores:
     post:
       operationId: normalizarValoresLicitacion
@@ -5060,6 +5243,9 @@ components:
                 `CLIENTE_REQUERIDO` (400) también lo responde Cotifly, sin llamar a NEXO, al listar plantillas o formatos sin el NIT de la
                 licitación. `IA_TOPE_DIARIO` (429) es el cupo diario de IA del comercial y no bloquea a los demás. Sin la importación
                 habilitada, NEXO caído o sin respuesta a tiempo: `NEXO_NO_DISPONIBLE` (503). Los endpoints `/web` llegan con #253 a #256.
+                HU-044.2 (#253): `VALIDATION_ERROR` (400) es el de NEXO en `leer-estructura` (la forma del formulario), con su mensaje y
+                solo los nombres de los campos en `detalle.campos`. `LECTURA_DEMASIADO_GRANDE` (400) lo responde Cotifly en
+                `leer-estructura`, sin llamar a NEXO, cuando el archivo cabe solo pero no con la receta y las instrucciones.
               enum:
                 - MARGEN_LINEA_DESCONOCIDA
                 - PRECIO_INVALIDO
@@ -5174,6 +5360,8 @@ components:
                 - RECETA_SIN_FILAS
                 - RECETA_NO_ENCONTRADA
                 - TIPO_TERMINO_INVALIDO
+                - VALIDATION_ERROR
+                - LECTURA_DEMASIADO_GRANDE
             mensaje:
               type: string
             detalle:
@@ -9303,6 +9491,178 @@ components:
         catalogo_mercancias_disponible:
           type: boolean
           description: HU-023.5. `false` sin cubicador o con su catálogo caído (no hay sugerencias por parecido).
+
+    SugerirMapeoWeb:
+      type: object
+      required: [encabezados]
+      description: HU-044.2 (#253). Los encabezados de UNA hoja, en el orden del archivo, y una muestra de sus filas.
+      properties:
+        nit_cliente:
+          type: string
+          nullable: true
+          description: NIT de la licitación (con o sin puntos y dígito de verificación). Opcional; sin él NEXO usa solo el diccionario general.
+        encabezados:
+          type: array
+          description: De 1 a 100 (con más, la hoja se responde sin propuesta). `null` viaja como texto vacío.
+          items:
+            type: string
+            nullable: true
+        filas:
+          type: array
+          nullable: true
+          description: Muestra de filas sin el encabezado (el frontend manda hasta 200; se reenvían las 200 primeras).
+          items:
+            type: array
+            nullable: true
+            items:
+              type: string
+              nullable: true
+
+    SugerenciaMapeo:
+      type: object
+      required: [ia_usada, motivo_sin_ia, columnas, dudas, plantilla_id]
+      description: HU-044.2 (#253). La propuesta de mapeo de NEXO para una hoja, una entrada por encabezado.
+      properties:
+        ia_usada:
+          type: boolean
+          description: Si la IA de NEXO participó.
+        motivo_sin_ia:
+          type: string
+          nullable: true
+          description: |
+            Por qué no participó la IA (`null` si participó). De NEXO: `PLANTILLA_RECONOCIDA`, `DICCIONARIO_COMPLETO`,
+            `IA_NO_DISPONIBLE` o un `IA_*` del proveedor. De Cotifly, con todas las columnas sin propuesta: `DEMASIADAS_COLUMNAS`
+            (más de 100, sin llamar a NEXO) y `NEXO_NO_DISPONIBLE` (importación apagada, NEXO caído o sin respuesta a tiempo).
+        columnas:
+          type: array
+          items:
+            $ref: '#/components/schemas/ColumnaMapeada'
+        dudas:
+          type: array
+          description: Preguntas de la IA al comercial, para mostrarlas junto al mapeo.
+          items:
+            type: string
+        plantilla_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: La plantilla del cliente que NEXO reconoció (`motivo_sin_ia = PLANTILLA_RECONOCIDA`).
+
+    ColumnaMapeada:
+      type: object
+      required: [indice, columna, campo, transformacion, confianza, origen, nota]
+      description: HU-044.2 (#253). La propuesta para una columna.
+      properties:
+        indice:
+          type: integer
+          description: Posición del encabezado (base 0).
+        columna:
+          type: string
+          description: El encabezado tal como vino.
+        campo:
+          type: string
+          description: Campo de NEXO (`origen`, `destino`, `tipoVehiculo`, `peso`, `pesoKg`...) o `ignorar` (sin propuesta).
+        transformacion:
+          type: string
+          description: Transformación de NEXO (`ninguna`, `peso_toneladas_a_kg`...).
+        confianza:
+          type: number
+          description: De 0 a 1.
+        origen:
+          type: string
+          description: '`plantilla`, `diccionario`, `ia` o `ninguno`.'
+        nota:
+          type: string
+          nullable: true
+
+    LecturaEstructura:
+      type: object
+      required: [archivo, origen_receta, similitud, receta_guardada_id, ia_usada, motivo_sin_ia, receta, resumen, dudas, hojas_del_archivo, tablas, avisos, cambios]
+      description: |
+        HU-044.2 (#253). La lectura de `leer-estructura` de NEXO, sin alterar `receta` ni `tablas` (solo los nombres de los campos de
+        primer nivel pasan a snake_case).
+      properties:
+        archivo:
+          type: string
+        origen_receta:
+          type: string
+          description: '`guardada` (formato confirmado del cliente, sin IA), `ia` (la propuso el modelo), `manual` (la receta enviada, sin IA) o `automatica` (lectura simple sin IA).'
+        similitud:
+          type: number
+          nullable: true
+          description: De 0 a 1, cuánto se parece al formato guardado que se usó o se tomó de base (desde 0,85 se reutiliza sin IA).
+        receta_guardada_id:
+          type: string
+          format: uuid
+          nullable: true
+        ia_usada:
+          type: boolean
+        motivo_sin_ia:
+          type: string
+          nullable: true
+          description: '`IA_NO_DISPONIBLE`, `IA_RESPUESTA_INVALIDA`, un código del proveedor u otro motivo de NEXO; `null` si la IA participó.'
+        receta:
+          type: object
+          nullable: true
+          description: |
+            La receta que NEXO ejecutó, **opaca**: Cotifly no la interpreta ni la cambia, y sus claves NO pasan a snake_case. Se
+            devuelve como texto JSON en la parte `receta` de la siguiente corrección (y al guardar el formato del cliente, #256).
+        resumen:
+          type: string
+          nullable: true
+          description: Lo que entendió la IA, para el chat.
+        dudas:
+          type: array
+          items:
+            type: string
+        hojas_del_archivo:
+          type: array
+          items:
+            $ref: '#/components/schemas/HojaDelArchivo'
+        tablas:
+          type: array
+          description: Una por hoja, o una sola si la receta las une. Misma forma que las hojas de `analizar-excel`; cada una va a `sugerir-mapeo` sin transformarla.
+          items:
+            $ref: '#/components/schemas/HojaExcel'
+        avisos:
+          type: array
+          items:
+            type: string
+        cambios:
+          description: Si el formato cambió respecto al guardado, los títulos que faltan y los nuevos; `null` si no.
+          oneOf:
+            - $ref: '#/components/schemas/CambiosDeFormato'
+            - $ref: '#/components/schemas/Nulo'
+
+    HojaDelArchivo:
+      type: object
+      required: [nombre, oculta, filas, columnas, usada]
+      description: HU-044.2 (#253). Una hoja del libro, con su tamaño y si la receta la usó.
+      properties:
+        nombre:
+          type: string
+        oculta:
+          type: boolean
+        filas:
+          type: integer
+        columnas:
+          type: integer
+        usada:
+          type: boolean
+
+    CambiosDeFormato:
+      type: object
+      required: [faltan, nuevos]
+      description: HU-044.2 (#253). Títulos que ya no aparecen y títulos nuevos respecto al formato guardado del cliente.
+      properties:
+        faltan:
+          type: array
+          items:
+            type: string
+        nuevos:
+          type: array
+          items:
+            type: string
 
     AnalisisExcelMercancias:
       type: object

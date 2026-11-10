@@ -32,6 +32,12 @@ public sealed partial class clsNexoFalso
 
     public string CodigoImportacionFalla { get; set; } = "IA_TOPE_DIARIO";
 
+    /// <summary>
+    /// Validador #253: si tiene valor, toda ruta de la importación responde 200 con este cuerpo crudo (respuestas raras de NEXO: JSON
+    /// inválido, nulos en listas, receta que no es objeto, <c>cambios</c> con datos).
+    /// </summary>
+    public string? CuerpoImportacionCrudo { get; set; }
+
     /// <summary>Mensaje del rechazo forzado (el que Cotifly debe reenviar tal cual).</summary>
     public string MensajeImportacionFalla { get; set; } = "Rechazo de la importación (prueba).";
 
@@ -122,6 +128,11 @@ public sealed partial class clsNexoFalso
         if (ImportacionFalla is { } falla)
         {
             return Error(falla, CodigoImportacionFalla, MensajeImportacionFalla);
+        }
+
+        if (CuerpoImportacionCrudo is { } crudo)
+        {
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(crudo, System.Text.Encoding.UTF8, "application/json") };
         }
 
         var json = cuerpo is null ? null : JsonNode.Parse(cuerpo);

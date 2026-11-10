@@ -530,4 +530,11 @@ public static class clsCodigosError
 
     /// <summary>HU-044.1 (#252): <c>GET diccionario-cliente</c> con un <c>tipo</c> distinto de columna, unidad o valor. 400. Mismo código que usa NEXO.</summary>
     public const string TipoTerminoInvalido = "TIPO_TERMINO_INVALIDO";
+
+    /// <summary>
+    /// HU-044.2 (#253, auditoría B7): en <c>leer-estructura</c> el archivo cabe solo, pero con la <c>receta</c> y las <c>instrucciones</c> el
+    /// envío pasa el tope de 10 MB de NEXO (el mismo de <c>clsArchivoExcel.TamanoMaximoBytes</c>). Lo responde Cotifly, sin llamar a NEXO,
+    /// para no culpar al archivo con un <c>ARCHIVO_DEMASIADO_GRANDE</c>. 400. Código nuevo del backend .NET.
+    /// </summary>
+    public const string LecturaDemasiadoGrande = "LECTURA_DEMASIADO_GRANDE";
 }
