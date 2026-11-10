@@ -2092,11 +2092,20 @@ en el precio" (mismo folio) o "La versión nueva copia los servicios conexos «.
 La IA redacta el asunto y la introducción del PDF. Nunca falla por la IA: si tarda más de 15 s, falla o su texto no pasa la validación,
 responde los textos estándar (`fuente = estandar`).
 
-- **Rol:** ambos (dueño). **Headers:** `If-Match` **obligatorio**. **Sin cuerpo.**
+- **Rol:** ambos (dueño). **Headers:** `If-Match` **obligatorio**. **Cuerpo opcional** (HU-013.18, #296): sin cuerpo, todo igual que hoy.
 
 | Parámetro | En | Reglas |
 |---|---|---|
 | `sobrescribir` | query | `true` reemplaza textos editados por el comercial. Por defecto `false` |
+
+| Campo (cuerpo opcional) | Tipo | Obligatorio | Reglas |
+|---|---|---|---|
+| `indicaciones_redaccion` | string \| null | No | HU-013.18 (#296). Indicaciones del comercial para orientar la carta de la IA (una **preferencia** de enfoque o tono, p. ej. "destacar la experiencia en carga refrigerada, tono cercano"). **No** es `notas` (la de la Mesa de Costeo). Hasta 500 caracteres (recortada); vacía, solo espacios o `null` = sin indicaciones. Más de 500: 400 `SOLICITUD_INVALIDA` sin llamar a la IA. Es una preferencia que **nunca** pasa por encima de las reglas estrictas del redactor (si pide montos, condiciones, otros nombres o cambiar el formato, esa parte se ignora) y la salida se valida igual. **No se guarda** en la cotización |
+
+```jsonc
+// Cuerpo (opcional)
+{ "indicaciones_redaccion": "Resaltar la experiencia en carga refrigerada y usar un tono cercano." }
+```
 
 ```json
 {
@@ -2111,8 +2120,9 @@ responde los textos estándar (`fuente = estandar`).
 | HTTP | Código | UI |
 |---|---|---|
 | 200 | `TextosCotizacion` | Mostrar en el editor. Con `fuente = estandar`, avisar que se usó el texto estándar. Guardar el `ETag` de la respuesta |
+| 400 | `SOLICITUD_INVALIDA` | `indicaciones_redaccion` de más de 500 caracteres: avisar y no reenviar hasta recortarla |
 | 404 | `ErrorWeb` | — |
-| 409 | `TEXTOS_EDITADOS` | Preguntar "¿Reemplazar tus textos?" y repetir con `?sobrescribir=true` |
+| 409 | `TEXTOS_EDITADOS` | Preguntar "¿Reemplazar tus textos?" y repetir con `?sobrescribir=true` (con las mismas `indicaciones_redaccion`) |
 | 409 | `PDF_YA_ENVIADO`, `CONFLICTO_CONCURRENCIA` | Versión nueva / recargar |
 | 428 | `PRECONDICION_REQUERIDA` | — |
 
@@ -4439,6 +4449,7 @@ fila_excel, campo, codigo, mensaje}`.
 | 78 | **HU-044.5 (#256): plantillas de mapeo, formatos de lectura y consulta del diccionario del cliente en NEXO.** Endpoints **nuevos** (4.6.9 a 4.6.11): `PUT/GET/DELETE /web/licitaciones/plantillas-mapeo`, `PUT/GET/DELETE /web/licitaciones/recetas-lectura` (multipart, `receta` opaca, sin reintentos) y `GET /web/diccionario-cliente` (+ `/opciones`). Los `GET` de plantillas y formatos exigen `nit_cliente` (400 `CLIENTE_REQUERIDO` sin él). El diccionario trae **solo los términos generales** y, con NIT, el `aviso` `TERMINOS_CLIENTE_NO_DISPONIBLES`. **Cambio a confirmar:** `PLANTILLA_NO_ENCONTRADA` y `RECETA_NO_ENCONTRADA` son **404 `ErrorNegocio`** con código. Crear, editar y borrar términos del diccionario todavía no existen. Son **70 endpoints** | Agrega | Pantallas de plantillas y formatos del cliente; reenviar la `receta` tal cual; mostrar el `aviso` del diccionario |
 | 79 | **HU-045.2 (#264, ADR-032): seguro de la mercancía por ruta.** Endpoint **nuevo** `PUT /web/cotizaciones/{folio}/costeo/seguro` (4.4.15, `If-Match` obligatorio) con `{incluye_seguro, linea_orden?, linea_solicitud_id?}`: incluye o quita el seguro de una ruta. El seguro es `valor_mercancia × tasa vigente` en pesos, sin redondear a pesos (hoy 0,345 %), **no lleva margen** y se suma al precio: `precio_final_linea` = (fletes + retorno + levante) con margen + venta de los conexos + `valor_seguro`; en USD se convierte con `trm_aplicada`. Campos **nuevos** en `CosteoCotizacion`: `tasa_seguro_vigente` (en el GET, en el PUT del seguro, en las respuestas del margen y de los conexos y en el detalle por folio) y en cada ruta `incluye_seguro`, `tasa_seguro` y `valor_seguro`. Código **nuevo** `SEGURO_SIN_VALOR_MERCANCIA` (400). Con la cotización finalizada o enviada, 409 `PDF_YA_ENVIADO` (como el margen); en una licitación, 409 `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION`. Si cambia `valor_mercancia` (edición o `datos_carga`), el seguro se recalcula con la tasa vigente; la versión nueva conserva el check. El PDF, el Excel y el correo todavía no muestran la línea del seguro (HU-045.3, #265). Script `db/scripts/20` (de Datos) antes de la imagen ("falta 20"). Son **71 endpoints** | Agrega | Mostrar el check "Incluir seguro" por ruta (no en licitaciones) con la `tasa_seguro_vigente`; al marcarlo o desmarcarlo, `PUT .../costeo/seguro` con `If-Match` y refrescar con la respuesta; mostrar `valor_seguro` aparte del flete; con `SEGURO_SIN_VALOR_MERCANCIA`, pedir el valor de la mercancía editando la solicitud |
 | 80 | **#259: un conexo ya no se queda en `estado_nexo = pendiente` para siempre en una cotización entregada.** (a) Si NEXO deja la línea de un camión partida en varias líneas de su cotización, el conexo va a la primera por id (antes no se enviaba nunca y "Finalizar" respondía `conexos_pendientes_en_nexo` para siempre). (b) Con la cotización ya fuera del costeo (entregada, descartada, vencida), si el primer camión vigente no tiene línea en NEXO el conexo va al primer camión vigente que sí la tiene; si ninguno la tiene queda `fallido_definitivo` (con `aviso_conexos_nexo`, no bloquea "Finalizar"). Los conexos de una ruta `rechazada` no cambian (no se envían ni pasan a `fallido_definitivo`; tampoco bloquean). (c) `POST .../finalizar` con `conexos_pendientes_en_nexo` sigue respondiendo el mismo 409, pero, si la cotización estaba fuera de la agenda del polling, vuelve a encolar el envío diferido (sin enviar nada a NEXO en la petición): en unos segundos el conexo queda `enviado` o `fallido_definitivo` y el siguiente "Finalizar" pasa; así se reparan solas las cotizaciones que ya estaban atascadas. Sin códigos, estados, campos ni endpoints nuevos; sin script de base de datos (ADR-031) | Cambia | Con `conexos_pendientes_en_nexo`, en vez de dejar "Finalizar" deshabilitado indefinidamente: refrescar el costeo a los pocos segundos y permitir reintentar. Mostrar `fallido_definitivo` con `aviso_conexos_nexo` como hasta ahora |
+| 81 | **HU-013.18 (#296): indicaciones del comercial para el redactor con IA.** `POST /web/cotizaciones/{folio}/costeo/textos/redactar` (4.4.8) acepta ahora un **cuerpo JSON opcional** `{indicaciones_redaccion: string \| null}` (`RedactarTextosWeb`). Sin cuerpo, todo igual que hoy. `indicaciones_redaccion` orienta la carta de la IA (una **preferencia** de enfoque o tono, p. ej. "destacar la experiencia en carga refrigerada, tono cercano"); **no** es `notas` (la de la Mesa de Costeo). Hasta 500 caracteres (recortada); vacía, solo espacios o `null` = sin indicaciones. **Más de 500: 400 `SOLICITUD_INVALIDA`** sin llamar a la IA. Es una preferencia que **nunca** pasa por encima de las reglas estrictas del redactor (si pide montos, condiciones, otros nombres o cambiar el formato, esa parte se ignora) y la salida se valida igual (si no pasa, textos estándar). **No se guarda** en la cotización; la auditoría solo registra `con_indicaciones` (sí/no), nunca el texto. El reintento tras `TEXTOS_EDITADOS` (409, `?sobrescribir=true`) lleva las mismas indicaciones. Sin campos nuevos en la respuesta (`TextosCotizacion` igual que hoy), sin estados ni endpoints nuevos; sin script de base de datos | Agrega | En el editor de textos del PDF, ofrecer un campo opcional "Indicaciones para la IA" (máx. 500) y enviarlo en `indicaciones_redaccion` al pedir "Redactar con IA"; con `SOLICITUD_INVALIDA` marcar el campo (más de 500); reenviar las mismas indicaciones en el reintento con `?sobrescribir=true` |
 
 ---
 

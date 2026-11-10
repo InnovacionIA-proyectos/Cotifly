@@ -3803,16 +3803,23 @@ paths:
       summary: La IA redacta el asunto y la introducción del PDF (con el texto estándar de respaldo)
       x-issue: '#101 (HU-013.5)'
       description: |
-        HU-013.5 (ADR-018 §2a). Sin cuerpo. El redactor (`IClsRedactorCotizacion`) **recibe** solo: cliente, línea de
+        HU-013.5 (ADR-018 §2a). El redactor (`IClsRedactorCotizacion`) **recibe** solo: cliente, línea de
         negocio, origen y destino, tipo de vehículo, nombres de los conexos incluidos, moneda y nombre del comercial.
         **Nunca recibe** costos, margen ni precios.
 
         - Tiempo máximo de 15 s. Si la IA tarda, falla, o su salida trae montos, URL o correos, o pasa de 120 caracteres
           (asunto) o 900 (introducción), se descarta y se usan los textos de `clsTextosEstandar`: responde igual **200**
           con `fuente = estandar`. Nunca responde error por la IA.
+        - **Cuerpo opcional** (HU-013.18, #296). Sin cuerpo, todo igual que hoy. Con `indicaciones_redaccion` (string o `null`,
+          hasta 500 caracteres) el comercial orienta la carta de la IA (una **preferencia** de enfoque o tono, p. ej.
+          "destacar la experiencia en carga refrigerada, tono cercano"); **no** es `notas` (la de la Mesa de Costeo). Es una
+          preferencia que **nunca** pasa por encima de las reglas estrictas del prompt (si pide montos, condiciones, otros
+          nombres o cambiar el formato, esa parte se ignora) y la salida se valida igual. Vacío o solo espacios equivale a sin
+          indicaciones. **Más de 500 caracteres: 400 `SOLICITUD_INVALIDA`** sin llamar a la IA. No se guarda en la cotización;
+          la auditoría solo registra `con_indicaciones` (sí/no), nunca el texto.
         - Guarda el resultado en `Cotizaciones.textosCotizacion` y lo audita (proveedor, modelo, duración y si se usó el
           respaldo). Si los textos guardados fueron editados por el comercial (`editado = true`), responde 409
-          `TEXTOS_EDITADOS` sin llamar a la IA, salvo con `?sobrescribir=true`.
+          `TEXTOS_EDITADOS` sin llamar a la IA, salvo con `?sobrescribir=true` (el reintento lleva las mismas indicaciones).
         - Regla del PDF (ADR-018 §11): ya enviada o con resultado, 409 `PDF_YA_ENVIADO`; si no, invalida el PDF actual.
         - `If-Match` **obligatorio** (428 / 409). Solo el dueño.
       security:
@@ -3827,6 +3834,13 @@ paths:
           schema:
             type: boolean
             default: false
+      requestBody:
+        required: false
+        description: 'Opcional (HU-013.18, #296). Sin cuerpo, la redacción es igual que hoy.'
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RedactarTextosWeb'
       responses:
         '200':
           description: Textos redactados (o estándar) y guardados
@@ -3837,6 +3851,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TextosCotizacion'
+        '400':
+          description: '`SOLICITUD_INVALIDA` (HU-013.18, #296: `indicaciones_redaccion` de más de 500 caracteres)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWeb'
         '401':
           $ref: '#/components/responses/SesionExpirada'
         '404':
@@ -8955,6 +8975,24 @@ components:
           minLength: 1
           maxLength: 1100
           description: Hasta 1100 caracteres, como la respuesta (la introducción estándar del pliego mide 1026); la IA redacta hasta 900.
+
+    RedactarTextosWeb:
+      type: object
+      description: |
+        HU-013.18 (#296). Cuerpo **opcional** de `POST /web/cotizaciones/{folio}/costeo/textos/redactar`. Sin cuerpo, la redacción
+        es igual que hoy.
+      properties:
+        indicaciones_redaccion:
+          type: string
+          nullable: true
+          maxLength: 500
+          description: |
+            Indicaciones del comercial para orientar al redactor con IA (una **preferencia** de enfoque o tono, p. ej.
+            "destacar la experiencia en carga refrigerada, tono cercano"). **No** es `notas` (la de la Mesa de Costeo). Es una
+            preferencia que **nunca** pasa por encima de las reglas estrictas del prompt (si pide montos, condiciones, otros
+            nombres o cambiar el formato, esa parte se ignora) y la salida se valida igual. Hasta 500 caracteres (recortada);
+            vacía, solo espacios o `null` equivale a sin indicaciones. Más de 500 caracteres: 400 `SOLICITUD_INVALIDA` sin
+            llamar a la IA. No se guarda en la cotización.
 
     PosicionCargaWeb:
       type: object

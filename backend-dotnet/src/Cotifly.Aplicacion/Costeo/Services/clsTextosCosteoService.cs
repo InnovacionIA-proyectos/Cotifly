@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Cotifly.Aplicacion.Auditoria.Services;
+using Cotifly.Aplicacion.Comun;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Costeo.DTOs;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
@@ -23,9 +24,12 @@ public interface IClsTextosCosteoService
     /// <summary>
     /// Redacta y guarda los textos (<c>fuente = ia</c>, o <c>estandar</c> si la IA no sirvió: nunca falla por la IA). Con textos editados
     /// por el comercial responde <c>TEXTOS_EDITADOS</c> sin llamar a la IA, salvo con <paramref name="sobrescribir"/>.
+    /// <paramref name="indicacionesRedaccion"/> (HU-013.18, #296) son las indicaciones opcionales del comercial para orientar a la IA
+    /// (recortadas; vacías o solo espacios equivalen a sin indicaciones); si pasan de <see cref="clsContextoRedaccion.LargoMaximoIndicaciones"/>
+    /// caracteres responde <c>SOLICITUD_INVALIDA</c> (400) sin llamar a la IA. No se guardan en la cotización.
     /// </summary>
     Task<clsResultado<clsTextosGuardados>> RedactarAsync(
-        Guid usuarioId, string folio, bool sobrescribir, int versionEsperada, CancellationToken cancellationToken = default);
+        Guid usuarioId, string folio, bool sobrescribir, int versionEsperada, string? indicacionesRedaccion = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Guarda los textos del comercial (<c>editado = true</c>; la fuente conserva el origen del texto que editó, o <c>estandar</c>).
@@ -61,8 +65,14 @@ public sealed class clsTextosCosteoService(
     public const string AccionEditar = "editar los textos del PDF";
 
     public async Task<clsResultado<clsTextosGuardados>> RedactarAsync(
-        Guid usuarioId, string folio, bool sobrescribir, int versionEsperada, CancellationToken cancellationToken = default)
+        Guid usuarioId, string folio, bool sobrescribir, int versionEsperada, string? indicacionesRedaccion = null, CancellationToken cancellationToken = default)
     {
+        // HU-013.18 (#296): las indicaciones del comercial se normalizan antes de nada; si pasan del tope, 400 SOLICITUD_INVALIDA sin llamar a la IA.
+        if (!NormalizarIndicaciones(indicacionesRedaccion, out var indicaciones, out var errorIndicaciones))
+        {
+            return errorIndicaciones!;
+        }
+
         var cotizacion = await PropiaAsync(usuarioId, folio, cancellationToken);
         if (cotizacion is null)
         {
@@ -95,8 +105,9 @@ public sealed class clsTextosCosteoService(
         // todas sus rutas tienen la misma (como el PDF) y la IA recibe las de sus rutas.
         var nombres = await clsLineasNegocioRutas.NombresAsync(cotizacion, politicas, cancellationToken);
         var estandar = clsCosteoCotizacionService.TextosEstandar(cotizacion, clsLineasNegocioRutas.Comun(cotizacion, nombres));
-        var redactado = await redaccion.RedactarAsync(
-            Contexto(cotizacion, clsLineasNegocioRutas.ParaRedaccion(cotizacion, nombres)), estandar, cancellationToken);
+        // HU-013.18 (#296): las indicaciones del comercial, si vienen, se adjuntan al contexto como una preferencia (no se guardan).
+        var contexto = Contexto(cotizacion, clsLineasNegocioRutas.ParaRedaccion(cotizacion, nombres)) with { IndicacionesComercial = indicaciones };
+        var redactado = await redaccion.RedactarAsync(contexto, estandar, cancellationToken);
         var textos = new clsTextosCotizacion(redactado.Asunto, redactado.Introduccion, redactado.Fuente, Editado: false, tiempo.GetUtcNow());
         var pdfInvalidado = cotizacion.PdfPath is not null;
         var resultado = await GuardarAsync(cotizacion, textos, usuarioId, versionEsperada, cancellationToken);
@@ -104,7 +115,8 @@ public sealed class clsTextosCosteoService(
         // Se audita DESPUÉS de guardar: con CONFLICTO_CONCURRENCIA queda guardado = false (la fuente no llegó a la cotización).
         await auditoria.RegistrarAsync(
             clsRedaccionCotizacionService.HerramientaAuditoria,
-            new { folio = cotizacion.Folio, sobrescribir },
+            // HU-013.18 (#296): la auditoría solo registra SI hubo indicaciones (con_indicaciones), nunca el texto.
+            new { folio = cotizacion.Folio, sobrescribir, con_indicaciones = indicaciones is not null },
             new
             {
                 proveedor = redactado.Proveedor,
@@ -233,6 +245,34 @@ public sealed class clsTextosCosteoService(
             Recortar(vehiculos.Count == 0 ? null : string.Join(", ", vehiculos)),
             conexos,
             cotizacion.Moneda ?? clsCotizacionSolicitud.MonedaPesos);
+    }
+
+    /// <summary>
+    /// HU-013.18 (#296): normaliza las indicaciones del comercial. Recorta los espacios; vacío o solo espacios queda en <c>null</c> (sin
+    /// indicaciones); por encima de <see cref="clsContextoRedaccion.LargoMaximoIndicaciones"/> devuelve <c>false</c> con 400
+    /// <c>SOLICITUD_INVALIDA</c> (el llamador no debe seguir a la IA).
+    /// </summary>
+    public static bool NormalizarIndicaciones(string? entrada, out string? indicaciones, out clsErrorDominio? error)
+    {
+        var limpio = entrada?.Trim();
+        if (string.IsNullOrEmpty(limpio))
+        {
+            indicaciones = null;
+            error = null;
+            return true;
+        }
+
+        if (limpio.Length > clsContextoRedaccion.LargoMaximoIndicaciones)
+        {
+            indicaciones = null;
+            error = new clsErrorDominio(clsCodigosAplicacion.SolicitudInvalida,
+                $"Las indicaciones para el redactor no pueden pasar de {clsContextoRedaccion.LargoMaximoIndicaciones} caracteres.");
+            return false;
+        }
+
+        indicaciones = limpio;
+        error = null;
+        return true;
     }
 
     private static string? Recortar(string? texto)
