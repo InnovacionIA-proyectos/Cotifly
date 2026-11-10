@@ -45,6 +45,11 @@ try
         .AddConvencionJsonWeb();
     clsFabricaErroresCliente.Registrar(builder.Services);
 
+    // Swagger UI para explorar la API. Solo se expone en Development (ver más abajo); el generador
+    // se registra siempre porque no cuesta nada y así la prueba de arranque no depende del entorno.
+    builder.Services.AddEndpointsApiExplorer();
+    builder.Services.AddSwaggerGen();
+
     // CORS del frontend de ClientePro, encabezados reenviados de Traefik y límites HTTP (#12 parte B).
     builder.Services.AddSeguridadHttp();
     builder.WebHost.ConfigureKestrel(k => k.AddServerHeader = false);
@@ -65,6 +70,14 @@ catch (Exception ex) when (esProcesoPropio)
 // Endurecimiento A (#199): primero, para atrapar lo que escape de todo lo demás. 500 ErrorNegocio ERROR_INTERNO (ErrorWeb en /api/*), sin
 // detalles técnicos, con la excepción en el log junto al id de correlación de la petición.
 app.UseManejadorErroresNoControlados();
+
+// Swagger UI solo en Development (#diagnóstico servidor): GET /swagger. En Production no se expone.
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
 app.UseSeguridadHttp();
 app.UseAuthentication();
 app.UseAuthorization();
