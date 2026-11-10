@@ -82,12 +82,14 @@ public sealed class clsCubicacionRapidaService(
             id = registro.Id;
             var tokenApagado = _apagado.Token; // Seguro: con _cerrado en false la fuente no se ha desechado.
             tarea = Task.Run(() => EjecutarAsync(id, usuarioId, copia, claseViaje, tokenApagado), CancellationToken.None);
-            _enCurso[id] = tarea;
-        }
 
-        var idRegistrado = id;
-        _ = tarea.ContinueWith(_ => _enCurso.TryRemove(idRegistrado, out Task? _), CancellationToken.None,
-            TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            // _enCurso guarda la tarea de LIMPIEZA (no la de cálculo): así StopAsync, que espera los valores de _enCurso, no puede
+            // devolver hasta que el TryRemove ya corrió. Dos continuaciones independientes sobre `tarea` (esta y el WhenAll de
+            // StopAsync) no tienen orden garantizado entre sí; encadenarlas en una sola si lo garantiza.
+            var idRegistrado = id;
+            _enCurso[id] = tarea.ContinueWith(_ => _enCurso.TryRemove(idRegistrado, out Task? _), CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+        }
 
         clsResultado<clsResultadoCubicacion> resultado;
         try
