@@ -6353,7 +6353,7 @@ components:
 
     CotizacionResumen:
       type: object
-      required: [id, folio, version, moneda, estado_envio]
+      required: [id, folio, version, moneda, estado_envio, origen, destino, numero_rutas, peso_total_kg, valor_mercancia]
       properties:
         id:
           type: string
@@ -8120,7 +8120,7 @@ components:
 
     RutaCosteo:
       type: object
-      required: [linea_orden, linea_solicitud_id, origen, destino, estado_costeo, precio_final_linea, costo_final, costo_transporte, margen_aplicado, margen_sugerido, origen_margen, servicios_conexos, camiones, mercancias]
+      required: [linea_orden, linea_solicitud_id, origen, destino, estado_costeo, precio_final_linea, costo_final, costo_transporte, valor_mercancia, margen_aplicado, margen_sugerido, origen_margen, servicios_conexos, camiones, mercancias]
       description: |
         HU-021.8 (#135). Una ruta del costeo. Desde HU-039.1 (#218) trae su costo bruto (`costo_final`, en COP) para el dueño; nunca
         el desglose (fletes, retorno, levante, conexos) ni el costo de cada camión o de cada conexo. El ajuste de margen (`PUT .../costeo/margen`) y los cambios de

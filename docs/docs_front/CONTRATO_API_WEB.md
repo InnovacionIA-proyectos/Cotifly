@@ -464,7 +464,12 @@ es `Varias`:
   "pdf_url": null,
   "created_at": "2026-10-09T15:20:11.532+00:00",
   "deadline": "2026-10-15T22:00:00+00:00",
-  "score_prioridad": 62.5
+  "score_prioridad": 62.5,
+  "origen": "Buenaventura",
+  "destino": "Bogotá D.C.",
+  "numero_rutas": 2,
+  "peso_total_kg": 37500.5,
+  "valor_mercancia": 430000000
 }
 ```
 
@@ -1532,7 +1537,12 @@ Reglas que conviene saber:
     "pdf_url": null,
     "created_at": "2026-10-09T15:20:11.532+00:00",
     "deadline": "2026-10-15T22:00:00+00:00",
-    "score_prioridad": 0.5
+    "score_prioridad": 0.5,
+    "origen": "Buenaventura",
+    "destino": "Bogotá D.C.",
+    "numero_rutas": 2,
+    "peso_total_kg": 30500.5,
+    "valor_mercancia": 250000000
   },
   "avisos": [
     { "codigo": "REEMPLAZA_SOLICITUD_NEXO", "mensaje": "La solicitud actual se rechaza en Nexo y se captura de nuevo en el mismo folio." },
