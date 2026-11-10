@@ -82,6 +82,11 @@ public sealed partial class clsContratoEjemplosDocTests
             // HU-040.2 (#230): selector de rol del login multi-rol.
             "esquema: EleccionRolRequerida",
             "esquema: ElegirRolRequest",
+            // HU-044.2 (#253): sugerir-mapeo y leer-estructura con la importación inteligente de NEXO.
+            "esquema: SugerirMapeoWeb",
+            "respuesta: POST /web/licitaciones/sugerir-mapeo 200",
+            "respuesta: POST /web/licitaciones/leer-estructura 200",
+            "respuesta: POST /web/licitaciones/leer-estructura 400",
         ]);
     }
 

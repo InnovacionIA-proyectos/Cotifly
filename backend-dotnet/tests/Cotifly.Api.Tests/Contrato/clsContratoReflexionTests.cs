@@ -103,6 +103,8 @@ public sealed class clsContratoReflexionTests(clsCotiflyApiFactory factory) : IC
         // HU-044.5 (#256): el tipo del término es el texto de NEXO, reenviado tal cual; el código del aviso es la constante
         // clsFormatosClienteService.AvisoTerminosClienteNoDisponibles.
         "TerminoDiccionario.tipo", "AvisoDiccionario.codigo",
+        // HU-044.4 (#255): el campo son las constantes de clsCamposNormalizacion y el estado es el texto de NEXO, que Cotifly reenvía.
+        "ValorNormalizado.campo", "ValorNormalizado.estado",
     };
 
     /// <summary>

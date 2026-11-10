@@ -261,6 +261,13 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         // HU-035.1 (#202): grilla cruda del Excel de mercancías de una ruta, leída en Cotifly sin Nexo.
         (typeof(Cotifly.Aplicacion.Mercancias.DTOs.clsAnalisisExcelMercancias), "AnalisisExcelMercancias"),
         (typeof(Cotifly.Aplicacion.Mercancias.DTOs.clsHojaExcelMercancias), "HojaExcelMercancias"),
+        // HU-044.2 (#253): sugerir-mapeo y leer-estructura con la importación inteligente de NEXO.
+        (typeof(Cotifly.Api.Licitaciones.DTOs.clsSugerirMapeoWebRequest), "SugerirMapeoWeb"),
+        (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsSugerenciaMapeo), "SugerenciaMapeo"),
+        (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsColumnaMapeada), "ColumnaMapeada"),
+        (typeof(Cotifly.Api.Licitaciones.DTOs.clsLecturaEstructuraWeb), "LecturaEstructura"),
+        (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsHojaDelArchivo), "HojaDelArchivo"),
+        (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsCambiosDeFormato), "CambiosDeFormato"),
         // #138: los esquemas alcanzables desde /web/* que no tenían DTO en esta lista.
         (typeof(Cotifly.Api.Costeo.DTOs.clsRutaCapturaWebRequest), "RutaCapturaWeb"),
         (typeof(Cotifly.Api.Costeo.DTOs.clsConexoCapturaWebRequest), "ConexoCapturaWeb"),
@@ -284,6 +291,10 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         (typeof(Cotifly.Aplicacion.CatalogosFlete.DTOs.clsOpcionCatalogo), "OpcionCatalogo"),
         (typeof(Cotifly.Aplicacion.CatalogosFlete.Services.clsAliasResueltos), "AliasResueltos"),
         (typeof(Cotifly.Aplicacion.CatalogosFlete.Services.clsAliasResuelto), "AliasResuelto"),
+        // HU-044.4 (#255): normalización de los textos del Excel de licitación con NEXO.
+        (typeof(Cotifly.Api.Licitaciones.DTOs.clsNormalizacionValoresWebRequest), "NormalizarValoresWeb"),
+        (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsNormalizacionValores), "NormalizacionValores"),
+        (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsValorNormalizacionWeb), "ValorNormalizado"),
         (typeof(Cotifly.Aplicacion.Clientes.DTOs.clsResultadoBusquedaClientes), "ResultadoBusquedaClientes"),
         (typeof(Cotifly.Aplicacion.Clientes.DTOs.clsClienteEncontrado), "ClienteEncontrado"),
         (typeof(Cotifly.Api.Cubicacion.DTOs.clsCubicacionWebRequest), "CubicacionRequest"),
