@@ -695,9 +695,12 @@ public sealed class clsCosteoCotizacionService(
         var esPliego = EsPliego(cotizacion);
         // HU-023.1: el PDF muestra el nombre del vehículo y de la carrocería del catálogo del cubicador (Cotifly guarda solo el código).
         var catalogo = await NombresCubicadorAsync(cotizacion, cancellationToken);
+        // Corrección conexos (nombre nunca id): el nombre del catálogo de Nexo de los conexos heredados sin nombre guardado, para que el PDF
+        // imprima el nombre y no caiga a la categoría (ni al id). Reutiliza el índice en memoria de categorías; nunca falla (cae a la categoría).
+        var nombresConexos = await NombresAsync(categoriasConexos, cotizacion, logger, cancellationToken);
         var payload = esPliego
-            ? PayloadPliego(cotizacion, lineaNegocio, moneda, nombres, catalogo)
-            : Payload(cotizacion, lineaNegocio, moneda, catalogo);
+            ? PayloadPliego(cotizacion, lineaNegocio, moneda, nombres, catalogo, nombresConexos)
+            : Payload(cotizacion, lineaNegocio, moneda, catalogo, nombresConexos);
         AplicarTextos(payload, cotizacion);
         var invalido = esPliego
             ? clsValidadorCotizacionPdfPayload.Validar(payload, MaximoLineasPliego, MaximoLineasPliego)
@@ -883,10 +886,14 @@ public sealed class clsCosteoCotizacionService(
     /// HU-033 (#199): los conexos de las rutas para el PDF: solo su nombre (van en "Estas tarifas incluyen"), sin precio; el precio de la
     /// ruta ya los incluye. En el pliego, con el número de su ruta.
     /// </summary>
-    private static List<clsServicioConexoPayload>? ConexosSinPrecio(clsCotizacionSolicitud cotizacion, IEnumerable<clsLineaSolicitud> rutas, bool conRuta)
+    private static List<clsServicioConexoPayload>? ConexosSinPrecio(
+        clsCotizacionSolicitud cotizacion, IEnumerable<clsLineaSolicitud> rutas, bool conRuta,
+        IReadOnlyDictionary<string, string>? nombres = null)
     {
+        // Corrección conexos (nombre nunca id): ConexosConPrecio ya pobla Nombre con el nombre guardado o el del catálogo de Nexo por id
+        // (nombres), y cae a la categoría como respaldo legible; el PDF nunca imprime el id interno.
         var conexos = rutas
-            .SelectMany(r => ConexosConPrecio(cotizacion, r).Select(c => conRuta ? $"{c.Nombre ?? c.Categoria} (ruta {r.Orden})" : c.Nombre ?? c.Categoria))
+            .SelectMany(r => ConexosConPrecio(cotizacion, r, nombres: nombres).Select(c => conRuta ? $"{c.Nombre ?? c.Categoria} (ruta {r.Orden})" : c.Nombre ?? c.Categoria))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Select(d => new clsServicioConexoPayload { Descripcion = d })
             .ToList();
@@ -899,7 +906,8 @@ public sealed class clsCosteoCotizacionService(
     /// listan en "Estas tarifas incluyen" sin precio.
     /// </summary>
     public static clsCotizacionPdfPayload Payload(
-        clsCotizacionSolicitud cotizacion, string? lineaNegocio, string moneda, clsNombresCatalogoCubicador? catalogo = null)
+        clsCotizacionSolicitud cotizacion, string? lineaNegocio, string moneda, clsNombresCatalogoCubicador? catalogo = null,
+        IReadOnlyDictionary<string, string>? nombresConexos = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         var ruta = cotizacion.PrimeraRuta;
@@ -923,7 +931,7 @@ public sealed class clsCosteoCotizacionService(
                     },
                 ],
             },
-            ServiciosConexos = ruta is null ? null : ConexosSinPrecio(cotizacion, [ruta], conRuta: false),
+            ServiciosConexos = ruta is null ? null : ConexosSinPrecio(cotizacion, [ruta], conRuta: false, nombresConexos),
             // #173: la nota general usa las horas de cargue y descargue capturadas en la ruta (antes, 4 h fijas).
             HorasCargue = ruta?.HorasCargue,
             HorasDescargue = ruta?.HorasDescargue,
@@ -938,7 +946,7 @@ public sealed class clsCosteoCotizacionService(
     /// </summary>
     public static clsCotizacionPdfPayload PayloadPliego(
         clsCotizacionSolicitud cotizacion, string? lineaNegocio, string moneda, IReadOnlyDictionary<int, string>? lineasPorId = null,
-        clsNombresCatalogoCubicador? catalogo = null)
+        clsNombresCatalogoCubicador? catalogo = null, IReadOnlyDictionary<string, string>? nombresConexos = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         var rutas = cotizacion.RutasOrdenadas;
@@ -978,7 +986,7 @@ public sealed class clsCosteoCotizacionService(
             MetodoCalculo = cotizacion.PrimeraRuta?.MetodoCalculo,
             Asunto = clsTextosEstandar.AsuntoVariasRutas(EsLicitacion(cotizacion), rutas.Count),
             Secciones = secciones,
-            ServiciosConexos = ConexosSinPrecio(cotizacion, rutas, conRuta: true),
+            ServiciosConexos = ConexosSinPrecio(cotizacion, rutas, conRuta: true, nombresConexos),
         };
     }
 

@@ -85,7 +85,8 @@ public sealed class clsLicitacionService(
     Cotizaciones.Services.IClsAccesoCotizacionAjena ajenas,
     IOptions<clsOpcionesCaptura>? opcionesCaptura = null,
     IClsCubicador? cubicador = null,
-    IOptions<clsOpcionesCubicacionLicitacion>? opcionesCubicacion = null) : IClsLicitacionService
+    IOptions<clsOpcionesCubicacionLicitacion>? opcionesCubicacion = null,
+    Costeo.Services.IClsCategoriasConexos? categoriasConexos = null) : IClsLicitacionService
 {
     public const string TipoXlsx = clsArchivoLicitacion.TipoXlsx;
 
@@ -140,7 +141,10 @@ public sealed class clsLicitacionService(
             ? await cotizaciones.ObtenerArchivoLicitacionAsync(cotizacion.Id, cancellationToken)
             : null;
         var nombres = await NombresCubicadorAsync(cotizacion, cancellationToken);
-        var datos = DatosExportacion(cotizacion, archivo, reloj.AhoraUtc, nombres.Vehiculos, nombres.Carrocerias);
+        // Corrección conexos (nombre nunca id): el nombre del catálogo de Nexo de los conexos heredados sin nombre guardado, para que el
+        // export imprima el nombre y no caiga a la categoría (ni al id). Reutiliza el índice en memoria de categorías; nunca falla.
+        var nombresConexos = await Costeo.Services.clsCosteoCotizacionService.NombresAsync(categoriasConexos, cotizacion, logger, cancellationToken);
+        var datos = DatosExportacion(cotizacion, archivo, reloj.AhoraUtc, nombres.Vehiculos, nombres.Carrocerias, nombresConexos);
         var generado = await exportador.GenerarAsync(datos, cancellationToken);
         if (generado.EsFallo)
         {
@@ -163,15 +167,18 @@ public sealed class clsLicitacionService(
         clsArchivoLicitacion? archivo,
         DateTimeOffset ahora,
         IReadOnlyDictionary<string, string>? vehiculos = null,
-        IReadOnlyDictionary<string, string>? carrocerias = null)
+        IReadOnlyDictionary<string, string>? carrocerias = null,
+        IReadOnlyDictionary<string, string>? nombresConexos = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         var lineas = cotizacion.RutasOrdenadas;
         // HU-028.1 (#183): una ruta rechazada por la Mesa de Costeo sale "SIN COSTEO" (sin precio ni motivo), sin sus conexos, y no suma.
         var tarifas = lineas.Select(l => l.Rechazada ? null : Costeo.Services.clsCosteoCotizacionService.PrecioTransporte(cotizacion, l)).ToList();
         var cotizables = lineas.Select((l, i) => (Ruta: l, Tarifa: tarifas[i])).Where(x => !x.Ruta.Rechazada).ToList();
+        // Corrección conexos (nombre nunca id): ConexosConPrecio pobla Nombre con el guardado o el del catálogo de Nexo por id (nombresConexos)
+        // y cae a la categoría como respaldo legible; el export nunca imprime el id interno.
         var conexos = lineas.Where(r => !r.Rechazada)
-            .SelectMany(r => Costeo.Services.clsCosteoCotizacionService.ConexosConPrecio(cotizacion, r))
+            .SelectMany(r => Costeo.Services.clsCosteoCotizacionService.ConexosConPrecio(cotizacion, r, nombres: nombresConexos))
             .Select(s => new clsConexoExportacion(s.Nombre ?? s.Categoria, s.Categoria, s.Cantidad, s.Precio))
             .ToList();
         return new clsExportacionLicitacion(
