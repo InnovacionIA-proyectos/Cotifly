@@ -22,10 +22,40 @@ public sealed class clsCapturaFilasLicitacionTests
     [Theory]
     [InlineData(null)]
     [InlineData("Carga Suelta")]
+    [InlineData("Cupo")]
     [InlineData("contenedor")]
     public void LaClaseDeContenedorSoloAplicaConContenedor(string? claseViaje) =>
         (Linea() with { ClaseViaje = claseViaje, ClaseContenedor = "CNT20.FT" }).Errores().Select(e => (e.Campo, e.Codigo))
             .Should().Equal(("clase_contenedor", clsCodigosLineaSolicitud.CampoNoAplica));
+
+    [Fact]
+    public void ElMensajeDeClaseNoAplicableNombraContenedorYExtradimensionado() =>
+        (Linea() with { ClaseViaje = "Cupo", ClaseContenedor = "CNT20.FT" }).ErroresCondicionales()[0].Mensaje
+            .Should().Contain("Contenedor").And.Contain("Extradimensionado");
+
+    // HU-021.15 (#297): con Extradimensionado la clase es opcional y solo las provisionales G15 (flat track / open top).
+    [Theory]
+    [InlineData("CNT20.FT")]
+    [InlineData("CNT20.OP")]
+    [InlineData("CNT40.FT")]
+    [InlineData("CNT40.OP")]
+    [InlineData(" CNT40.OP ")]
+    [InlineData(null)]
+    public void ConExtradimensionadoLaClaseProvisionalOVaciaSeAcepta(string? claseContenedor) =>
+        (Linea() with { ClaseViaje = "Extradimensionado", ClaseContenedor = claseContenedor }).Errores().Should().BeEmpty();
+
+    [Fact]
+    public void ConExtradimensionadoLaClaseConEspaciosAlrededorSeAcepta() =>
+        (Linea() with { ClaseViaje = " Extradimensionado ", ClaseContenedor = "CNT20.FT" }).Errores().Should().BeEmpty();
+
+    [Theory]
+    [InlineData("CNT40.HC")]
+    [InlineData("CNT20.ST")]
+    [InlineData("cnt20.ft")]
+    [InlineData("Flat Track")]
+    public void ConExtradimensionadoOtraClaseEsFueraDeRango(string claseContenedor) =>
+        (Linea() with { ClaseViaje = "Extradimensionado", ClaseContenedor = claseContenedor }).Errores().Select(e => (e.Campo, e.Codigo))
+            .Should().Equal(("clase_contenedor", clsCodigosLineaSolicitud.ValorFueraDeRango));
 
     [Theory]
     [InlineData(null)]

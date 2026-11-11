@@ -464,7 +464,12 @@ es `Varias`:
   "pdf_url": null,
   "created_at": "2026-10-09T15:20:11.532+00:00",
   "deadline": "2026-10-15T22:00:00+00:00",
-  "score_prioridad": 62.5
+  "score_prioridad": 62.5,
+  "origen": "Buenaventura",
+  "destino": "Bogotá D.C.",
+  "numero_rutas": 2,
+  "peso_total_kg": 37500.5,
+  "valor_mercancia": 430000000
 }
 ```
 
@@ -686,8 +691,10 @@ primer nivel son los de la ruta 1:
       "destino": "Bogotá D.C.",
       "estado_costeo": "autocosteo",
       "peso_kg": 28500.5,
+      "valor_mercancia": 250000000,
       "precio_final_linea": 5294118,
       "costo_final": 4500000,
+      "costo_transporte": 4320000,
       "margen_aplicado": 0.15,
       "margen_sugerido": 0.15,
       "origen_margen": "politica_linea",
@@ -713,8 +720,10 @@ primer nivel son los de la ruta 1:
       "destino": "Yumbo",
       "estado_costeo": "autocosteo",
       "peso_kg": 9000,
+      "valor_mercancia": 180000000,
       "precio_final_linea": 3529412,
       "costo_final": 3000000,
+      "costo_transporte": 3000000,
       "margen_aplicado": 0.15,
       "margen_sugerido": 0.18,
       "origen_margen": "negociado",
@@ -801,6 +810,15 @@ el gerente o el director en solo consulta lo reciben siempre en `null`. Con la c
 finalizó, como el precio congelado. No hay desglose ni costo por camión o por conexo, y no sale en "Mis
 cotizaciones", el listado regional, el PDF, el correo, el Excel ni el asistente. Es una reversa de la regla de ADR-015 §5 ("el costo
 bruto nunca llega al comercial"), confirmada por la Gerencia Comercial el 2026-10-27.
+
+**Costo del transporte y valor de la mercancía por ruta (HU-018.2, #294).** Cada `rutas[]` trae ahora dos campos más de solo lectura:
+`costo_transporte` = fletes + retorno + levante, **sin** conexos ni margen (el costo bruto `costo_final` menos el costo de los conexos),
+y `valor_mercancia` = el valor de la mercancía declarado en la ruta (el mismo de `GET .../solicitud`). Los dos van **siempre en COP**
+aunque la cotización esté en USD. `costo_transporte` sale junto con el precio, igual que `costo_final` (`null` sin costeo o ruta `rechazada`),
+es del dueño y el detalle del gerente o del director en solo consulta lo deja en `null`. `valor_mercancia` no es un costo: sale siempre
+(también para el gerente) y es `null` si no se declaró. En el ejemplo, la ruta 1 cuesta 4.320.000 de transporte (de 4.500.000 de costo bruto,
+con 180.000 de conexo) y la ruta 2, 3.000.000 (sin conexos, igual que su costo bruto). Son datos que ya existían en el dominio: esto solo los
+expone, sin lógica de negocio nueva. No salen en el PDF, el correo, el Excel ni "Mis cotizaciones".
 
 `deadline` y `score_prioridad` (HU-018.1, #155) son de la **cabecera** (toda la solicitud), no de cada ruta, y vienen siempre
 (también en las respuestas de las mutaciones): `deadline` es la fecha límite del formulario en UTC (`null` si no se dio) y
@@ -975,11 +993,22 @@ líneas distintas), y `precio_final` es la suma de las rutas, con conexos:
       "pdf_url": "/pdfs/PCN-900555111-DG-09102026-001.pdf",
       "created_at": "2026-10-09T15:20:11.532+00:00",
       "deadline": "2026-10-15T22:00:00+00:00",
-      "score_prioridad": 62.5
+      "score_prioridad": 62.5,
+      "origen": "Buenaventura",
+      "destino": "Bogotá D.C.",
+      "numero_rutas": 2,
+      "peso_total_kg": 37500.5,
+      "valor_mercancia": 430000000
     }
   ]
 }
 ```
+
+HU-018.2 (#294): la carga de cada fila viene siempre: `origen` y `destino` son los de la **ruta 1** (la de menor orden; `null` sin rutas o
+sin nombre), `numero_rutas` cuenta todas las rutas (también las rechazadas; `0` sin rutas), `peso_total_kg` es la suma del `peso_kg`
+declarado (sin tara) de todas las rutas y `valor_mercancia` la suma del valor de la mercancía de todas (en COP aunque la cotización esté en
+USD); las dos sumas son `null` si ninguna ruta trae el dato. Son de solo lectura (datos que ya existían en el dominio) y salen también en el
+listado regional (§8.10.1).
 
 `GET /web/cotizaciones/{id}/nueva-version`: `rutas[]` trae la línea de negocio y el margen de cada ruta.
 
@@ -1058,6 +1087,11 @@ gerente, 403 para el comercial; 409 `REGIONAL_NO_ASIGNADA` y 503 `REGIONAL_NO_DI
       "created_at": "2026-10-09T15:20:11.532+00:00",
       "deadline": "2026-10-15T22:00:00+00:00",
       "score_prioridad": 62.5,
+      "origen": "Cali",
+      "destino": "Bogotá D.C.",
+      "numero_rutas": 1,
+      "peso_total_kg": 12000,
+      "valor_mercancia": 180000000,
       "comercial": {
         "usuario_id": "5f0c2a8e-4b1d-4c55-9a51-2f7d0c1e9b10",
         "nombre_usuario": "APEREZ",
@@ -1511,7 +1545,12 @@ Reglas que conviene saber:
     "pdf_url": null,
     "created_at": "2026-10-09T15:20:11.532+00:00",
     "deadline": "2026-10-15T22:00:00+00:00",
-    "score_prioridad": 0.5
+    "score_prioridad": 0.5,
+    "origen": "Buenaventura",
+    "destino": "Bogotá D.C.",
+    "numero_rutas": 2,
+    "peso_total_kg": 30500.5,
+    "valor_mercancia": 250000000
   },
   "avisos": [
     { "codigo": "REEMPLAZA_SOLICITUD_NEXO", "mensaje": "La solicitud actual se rechaza en Nexo y se captura de nuevo en el mismo folio." },
@@ -1656,6 +1695,11 @@ frontend ya conoce, con sus mismas reglas y nombres:
     "created_at": "2026-10-09T15:20:11.532+00:00",
     "deadline": "2026-10-15T22:00:00+00:00",
     "score_prioridad": 62.5,
+    "origen": "Buenaventura",
+    "destino": "Bogotá D.C.",
+    "numero_rutas": 2,
+    "peso_total_kg": 41000.5,
+    "valor_mercancia": 430000000,
     "comercial": { "usuario_id": "5f0c2a8e-4b1d-4c55-9a51-2f7d0c1e9b10", "nombre_usuario": "DGUERRA", "nombre_completo": "Duban Guerra" }
   },
   "costeo": {
@@ -1687,8 +1731,10 @@ frontend ya conoce, con sus mismas reglas y nombres:
         "destino": "Bogotá D.C.",
         "estado_costeo": "entregada",
         "peso_kg": 28500.5,
+        "valor_mercancia": 250000000,
         "precio_final_linea": 5294118,
         "costo_final": 4500000,
+        "costo_transporte": 4320000,
         "margen_aplicado": 0.15,
         "margen_sugerido": 0.15,
         "origen_margen": "politica_linea",
@@ -1714,8 +1760,10 @@ frontend ya conoce, con sus mismas reglas y nombres:
         "destino": "Cartagena",
         "estado_costeo": "entregada",
         "peso_kg": 12500,
+        "valor_mercancia": 180000000,
         "precio_final_linea": 3529412,
         "costo_final": 3000000,
+        "costo_transporte": 3000000,
         "margen_aplicado": 0.15,
         "margen_sugerido": 0.15,
         "origen_margen": "politica_linea",

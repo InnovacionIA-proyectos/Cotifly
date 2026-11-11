@@ -196,6 +196,37 @@ public sealed class clsMisCotizacionesYNuevaVersionTests
         datos.Rutas[1].Should().BeEquivalentTo(new { LineaOrden = 2, LineaNegocioId = 7, LineaNegocio = "Contenedores", MargenAplicado = 0.15m, OrigenMargen = "politica_linea" });
     }
 
+    // --- HU-018.2 (#294): la carga en el resumen (origen/destino de la ruta 1, número de rutas y sumas de peso y valor) ---
+
+    [Fact]
+    public async Task ElResumenDesdeElAgregadoTraeLaCargaDeLasRutas()
+    {
+        var cotizacion = DeDosLineas(); // dos rutas: Buenaventura → "Destino 1" (peso 10001) y → "Destino 2" (peso 10002)
+        var servicio = new clsMisCotizacionesService(_cotizaciones, _politicas, Options.Create(new clsOpcionesPdf()));
+
+        var resumen = await servicio.ResumirAsync(cotizacion, Ct);
+
+        resumen.Origen.Should().Be("Buenaventura", "el origen es el de la ruta de menor orden");
+        resumen.Destino.Should().Be("Destino 1", "el destino es el de la ruta de menor orden");
+        resumen.NumeroRutas.Should().Be(2);
+        resumen.PesoTotalKg.Should().Be(20_003m, "la suma del peso de las dos rutas");
+        resumen.ValorMercancia.Should().BeNull("ninguna ruta de la muestra declara valor de la mercancía");
+    }
+
+    [Fact]
+    public async Task ElListadoDesdeLaProyeccionConservaLaCargaQueTraeElRepositorio()
+    {
+        var cotizacion = Cotizacion("PCN-DG-25092026-010");
+        var carga = new clsCargaCotizacion("Cali", "Bogotá D.C.", 3, 42_000m, 500_000_000m);
+        _cotizaciones.ListarConLineaPorUsuarioAsync(_ana, 100, Arg.Any<CancellationToken>())
+            .Returns([new clsCotizacionConLinea(cotizacion, "Nacional", 0.1m, OrigenMargen.Negociado) { Carga = carga }]);
+        var servicio = new clsMisCotizacionesService(_cotizaciones, _politicas, Options.Create(new clsOpcionesPdf()));
+
+        var fila = (await servicio.ListarAsync(_ana, Ct)).Cotizaciones.Should().ContainSingle().Subject;
+
+        fila.Should().BeEquivalentTo(new { Origen = "Cali", Destino = "Bogotá D.C.", NumeroRutas = 3, PesoTotalKg = 42_000m, ValorMercancia = 500_000_000m });
+    }
+
     [Fact]
     public async Task UnaCotizacionAjenaNoTraeDatosDeNuevaVersion()
     {
