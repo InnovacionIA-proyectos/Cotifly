@@ -222,6 +222,7 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         (typeof(Cotifly.Api.Costeo.DTOs.clsQuitarConexoLineasWebRequest), "QuitarConexoLineasWeb"),
         (typeof(Cotifly.Aplicacion.Redaccion.DTOs.clsTextosCotizacion), "TextosCotizacion"),
         (typeof(Cotifly.Api.Costeo.DTOs.clsTextosCotizacionWebRequest), "TextosCotizacionWeb"),
+        (typeof(Cotifly.Api.Costeo.DTOs.clsRedactarTextosWebRequest), "RedactarTextosWeb"),
         (typeof(Cotifly.Api.Costeo.DTOs.clsAgregarServiciosConexosWebRequest), "AgregarServiciosConexosWeb"),
         (typeof(Cotifly.Api.Costeo.DTOs.clsConexoAgregarWebRequest), "ConexoAgregarWeb"),
         (typeof(Cotifly.Aplicacion.Costeo.DTOs.clsPaginaServiciosConexos), "PaginaServiciosConexos"),

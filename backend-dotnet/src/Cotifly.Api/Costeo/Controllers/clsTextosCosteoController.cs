@@ -5,6 +5,7 @@ using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Aplicacion.Redaccion.DTOs;
 using Cotifly.Dominio.Comun;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 
 namespace Cotifly.Api.Costeo.Controllers;
 
@@ -18,16 +19,23 @@ public sealed class clsTextosCosteoController(IClsContextoUsuario usuario, IClsT
 {
     /// <summary>
     /// 200 <c>TextosCotizacion</c> (de la IA o los estándar si la IA tardó, falló o su salida no pasó la validación: nunca un error por
-    /// la IA); 404; 409 <c>TEXTOS_EDITADOS</c> (salvo <c>?sobrescribir=true</c>), <c>PDF_YA_ENVIADO</c> o <c>CONFLICTO_CONCURRENCIA</c>;
-    /// 428 sin <c>If-Match</c>.
+    /// la IA); 400 <c>SOLICITUD_INVALIDA</c> (HU-013.18, #296: <c>indicaciones_redaccion</c> de más de 500 caracteres); 404; 409
+    /// <c>TEXTOS_EDITADOS</c> (salvo <c>?sobrescribir=true</c>), <c>PDF_YA_ENVIADO</c> o <c>CONFLICTO_CONCURRENCIA</c>; 428 sin <c>If-Match</c>.
+    /// El cuerpo es opcional (HU-013.18, #296): sin él, la redacción es igual que hoy.
     /// </summary>
     [HttpPost("cotizaciones/{folio}/costeo/textos/redactar")]
     [clsRequiereIfMatch]
     [ProducesResponseType<clsTextosCotizacion>(StatusCodes.Status200OK)]
+    [ProducesResponseType<clsErrorWeb>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status409Conflict)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status428PreconditionRequired)]
-    public async Task<IActionResult> Redactar(string folio, [FromQuery] bool sobrescribir, CancellationToken cancellationToken) =>
-        Responder(await textos.RedactarAsync(UsuarioId, folio, sobrescribir, clsConcurrenciaHttp.VersionDe(HttpContext), cancellationToken));
+    public async Task<IActionResult> Redactar(
+        string folio,
+        [FromQuery] bool sobrescribir,
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] clsRedactarTextosWebRequest? cuerpo,
+        CancellationToken cancellationToken) =>
+        Responder(await textos.RedactarAsync(
+            UsuarioId, folio, sobrescribir, clsConcurrenciaHttp.VersionDe(HttpContext), cuerpo?.IndicacionesRedaccion, cancellationToken));
 
     /// <summary>
     /// 200 <c>TextosCotizacion</c> con <c>editado = true</c>; 400 <c>TEXTOS_COTIZACION_INVALIDOS</c>; 404; 409 <c>PDF_YA_ENVIADO</c> o

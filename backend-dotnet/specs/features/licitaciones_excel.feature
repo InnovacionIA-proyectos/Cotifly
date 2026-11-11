@@ -101,6 +101,20 @@ Característica: Licitaciones desde Excel
     Entonces la respuesta tiene el estado 201 y cumple el esquema "Licitacion" del contrato
     Y la línea 2 que recibió Nexo trae "claseContenedor" igual a "CNT20.OP"
 
+  # HU-021.15 (#297) — Con clase_viaje = Extradimensionado, clase_contenedor es OPCIONAL y solo admite las clases provisionales G15
+  # (CNT20.FT / CNT20.OP / CNT40.FT / CNT40.OP, exactas); vacía no es error y otra clase es VALOR_FUERA_DE_RANGO en clase_contenedor.
+  Escenario: En extradimensionado la clase de contenedor es opcional y solo admite las provisionales
+    Cuando "ana" crea la licitación "L1" del cliente "900555111" con estas filas:
+      | origen       | destino      | tipologia | clase_viaje       | clase_contenedor |
+      | BUENAVENTURA | BOGOTA, D.C. | CargaSeca | Extradimensionado | CNT40.FT         |
+      | CALI         | CARTAGENA    | CargaSeca | Extradimensionado |                  |
+      | BUENAVENTURA | CALI         | CargaSeca | Extradimensionado | CNT40.HC         |
+    Entonces la respuesta tiene el estado 400 con el reporte de la licitación
+    Y el reporte trae exactamente estos errores:
+      | linea | campo            | codigo                |
+      | 2     | clase_contenedor | VALOR_FUERA_DE_RANGO  |
+    Y Nexo no recibió ninguna solicitud
+
   Escenario: Nexo recibe por línea los ids de municipio y las horas, y el reintento manda lo mismo
     Dado que Nexo responde 503 al alta de solicitudes
     Cuando "ana" crea la licitación "L1" del cliente "900555111" con estas filas:

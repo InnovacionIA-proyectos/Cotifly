@@ -2243,8 +2243,10 @@ paths:
             `SOLICITUD_COSTEO_INVALIDA` (campo obligatorio, largo o rango fuera de los límites de Nexo, más de 200
             posiciones, o la regla de peso de Nexo: `detalle.motivo` = `PESO_REQUERIDO` si la línea no trae peso > 0 ni
             posiciones con peso, `PESO_INCONSISTENTE` si el peso difiere más del 1 % de `sum(cantidad × peso_kg)`; HU-013.10:
-            un catálogo que no es código de catálogo, `clase_contenedor` sin `clase_viaje = Contenedor` o sin ella con
-            `Contenedor`, `valor_levante_contenedor` (ex `valor_aprovisionamiento`; el error lo nombra así desde #228) sin una `ciudad_levante_contenedor` distinta del origen; el mensaje nombra
+            un catálogo que no es código de catálogo, `clase_contenedor` sin `clase_viaje = Contenedor` ni `Extradimensionado`
+            (HU-021.15, #297) o sin ella con `Contenedor`, con `Extradimensionado` solo las clases provisionales G15
+            (`CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP`; otra es `VALOR_FUERA_DE_RANGO`),
+            `valor_levante_contenedor` (ex `valor_aprovisionamiento`; el error lo nombra así desde #228) sin una `ciudad_levante_contenedor` distinta del origen; el mensaje nombra
             el campo), `MARGEN_LINEA_DESCONOCIDA` (la línea no existe o está inactiva) o `FOLIO_CONSECUTIVO_AGOTADO`.
             Con `moneda = USD` (HU-013.7): `TRM_NO_DISPONIBLE` si ninguna fuente de la TRM respondió; `moneda` con otro valor
             es `SOLICITUD_COSTEO_INVALIDA` (el mensaje nombra el campo `moneda`).
@@ -3807,16 +3809,23 @@ paths:
       summary: La IA redacta el asunto y la introducción del PDF (con el texto estándar de respaldo)
       x-issue: '#101 (HU-013.5)'
       description: |
-        HU-013.5 (ADR-018 §2a). Sin cuerpo. El redactor (`IClsRedactorCotizacion`) **recibe** solo: cliente, línea de
+        HU-013.5 (ADR-018 §2a). El redactor (`IClsRedactorCotizacion`) **recibe** solo: cliente, línea de
         negocio, origen y destino, tipo de vehículo, nombres de los conexos incluidos, moneda y nombre del comercial.
         **Nunca recibe** costos, margen ni precios.
 
         - Tiempo máximo de 15 s. Si la IA tarda, falla, o su salida trae montos, URL o correos, o pasa de 120 caracteres
           (asunto) o 900 (introducción), se descarta y se usan los textos de `clsTextosEstandar`: responde igual **200**
           con `fuente = estandar`. Nunca responde error por la IA.
+        - **Cuerpo opcional** (HU-013.18, #296). Sin cuerpo, todo igual que hoy. Con `indicaciones_redaccion` (string o `null`,
+          hasta 500 caracteres) el comercial orienta la carta de la IA (una **preferencia** de enfoque o tono, p. ej.
+          "destacar la experiencia en carga refrigerada, tono cercano"); **no** es `notas` (la de la Mesa de Costeo). Es una
+          preferencia que **nunca** pasa por encima de las reglas estrictas del prompt (si pide montos, condiciones, otros
+          nombres o cambiar el formato, esa parte se ignora) y la salida se valida igual. Vacío o solo espacios equivale a sin
+          indicaciones. **Más de 500 caracteres: 400 `SOLICITUD_INVALIDA`** sin llamar a la IA. No se guarda en la cotización;
+          la auditoría solo registra `con_indicaciones` (sí/no), nunca el texto.
         - Guarda el resultado en `Cotizaciones.textosCotizacion` y lo audita (proveedor, modelo, duración y si se usó el
           respaldo). Si los textos guardados fueron editados por el comercial (`editado = true`), responde 409
-          `TEXTOS_EDITADOS` sin llamar a la IA, salvo con `?sobrescribir=true`.
+          `TEXTOS_EDITADOS` sin llamar a la IA, salvo con `?sobrescribir=true` (el reintento lleva las mismas indicaciones).
         - Regla del PDF (ADR-018 §11): ya enviada o con resultado, 409 `PDF_YA_ENVIADO`; si no, invalida el PDF actual.
         - `If-Match` **obligatorio** (428 / 409). Solo el dueño.
       security:
@@ -3831,6 +3840,13 @@ paths:
           schema:
             type: boolean
             default: false
+      requestBody:
+        required: false
+        description: 'Opcional (HU-013.18, #296). Sin cuerpo, la redacción es igual que hoy.'
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RedactarTextosWeb'
       responses:
         '200':
           description: Textos redactados (o estándar) y guardados
@@ -3841,6 +3857,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TextosCotizacion'
+        '400':
+          description: '`SOLICITUD_INVALIDA` (HU-013.18, #296: `indicaciones_redaccion` de más de 500 caracteres)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWeb'
         '401':
           $ref: '#/components/responses/SesionExpirada'
         '404':
@@ -6374,7 +6396,7 @@ components:
 
     CotizacionResumen:
       type: object
-      required: [id, folio, version, moneda, estado_envio]
+      required: [id, folio, version, moneda, estado_envio, origen, destino, numero_rutas, peso_total_kg, valor_mercancia]
       properties:
         id:
           type: string
@@ -6497,6 +6519,30 @@ components:
           description: |
             HU-036.2 (#206). Cuándo el comercial finalizó la cotización (`POST .../finalizar`: aceptó el precio), ISO 8601 en UTC.
             `null` sin finalizar (las anteriores al script `14` no tienen backfill). Siempre presente.
+        origen:
+          type: string
+          nullable: true
+          description: |
+            HU-018.2 (#294). Municipio de origen de la RUTA 1 (la de menor orden); `null` sin rutas o si esa ruta no tiene nombre. Siempre
+            presente. Lo consumen `GET /web/mis-cotizaciones` y `GET /web/cotizaciones/regional`.
+        destino:
+          type: string
+          nullable: true
+          description: HU-018.2 (#294). Municipio de destino de la RUTA 1 (la de menor orden); `null` sin rutas o sin nombre. Siempre presente.
+        numero_rutas:
+          type: integer
+          description: HU-018.2 (#294). Cuántas rutas tiene la cotización, también las rechazadas (`0` sin rutas). Siempre presente.
+        peso_total_kg:
+          type: number
+          nullable: true
+          description: |
+            HU-018.2 (#294). Suma del `peso_kg` declarado (sin tara) de todas las rutas; `null` si ninguna lo trae. Siempre presente.
+        valor_mercancia:
+          type: number
+          nullable: true
+          description: |
+            HU-018.2 (#294). Suma del valor de la mercancía de todas las rutas, en COP aunque la cotización esté en USD; `null` si ninguna
+            lo trae. Siempre presente.
         conexos_descartados:
           type: array
           deprecated: true
@@ -8119,7 +8165,7 @@ components:
 
     RutaCosteo:
       type: object
-      required: [linea_orden, linea_solicitud_id, origen, destino, estado_costeo, precio_final_linea, costo_final, margen_aplicado, margen_sugerido, origen_margen, servicios_conexos, camiones, mercancias]
+      required: [linea_orden, linea_solicitud_id, origen, destino, estado_costeo, precio_final_linea, costo_final, costo_transporte, valor_mercancia, margen_aplicado, margen_sugerido, origen_margen, servicios_conexos, camiones, mercancias]
       description: |
         HU-021.8 (#135). Una ruta del costeo. Desde HU-039.1 (#218) trae su costo bruto (`costo_final`, en COP) para el dueño; nunca
         el desglose (fletes, retorno, levante, conexos) ni el costo de cada camión o de cada conexo. El ajuste de margen (`PUT .../costeo/margen`) y los cambios de
@@ -8263,6 +8309,23 @@ components:
             cotización finalizada (HU-036.4) es el costo con que se finalizó, como el precio congelado. No sale
             en el PDF, el correo, el Excel, el chat ni "Mis cotizaciones". Reversa de la regla de ADR-015 §5 ("el costo bruto nunca
             llega al comercial"), confirmada por la Gerencia Comercial el 2026-10-27.
+        costo_transporte:
+          type: number
+          nullable: true
+          description: |
+            HU-018.2 (#294). Costo del transporte de la ruta: fletes + retorno + levante, **sin** servicios conexos ni margen. **Siempre en
+            COP (pesos), aunque la cotización esté en USD** (el costeo de Nexo es en pesos y nunca se convierte; en USD `precio_final_linea`
+            va en dólares, el costo no). Sale junto con el precio, igual que `costo_final`: `null` en los mismos casos
+            (`precio_final_linea = null`: sin costeo listo o ruta `rechazada`). Solo lo ve el dueño: en `GET /web/cotizaciones/{folio}`
+            consultado por un gerente comercial o por el director (`solo_lectura = true`) siempre es `null`. Dato de HU-039 que se expone,
+            sin desglose por camión ni por conexo; no sale en el PDF, el correo, el Excel ni "Mis cotizaciones".
+        valor_mercancia:
+          type: number
+          nullable: true
+          description: |
+            HU-018.2 (#294). Valor de la mercancía de la ruta (el mismo `valor_mercancia` de `GET .../solicitud`), en pesos (COP) aunque la
+            cotización esté en USD. `null` si no se declaró. No es un costo: es de solo lectura, lo ve también el gerente o el director
+            (`solo_lectura = true`) y está en todas las respuestas con la vista del costeo. Siempre presente.
         margen_aplicado:
           type: number
           nullable: true
@@ -8707,7 +8770,8 @@ components:
         del elegido.
         Si trae `posiciones`, reemplaza todas las anteriores. La combinación resultante (lo guardado más los cambios) se
         valida igual que en la captura, con las condiciones de G3 (`docs/conexion_nexo/HU-013-preguntas-nexo.md`): `clase_contenedor`
-        solo con `clase_viaje = Contenedor`, `ciudad_devolucion_contenedor` con `retorna_contenedor`,
+        obligatoria con `clase_viaje = Contenedor`, opcional y solo de la lista provisional G15 (`CNT20.FT`, `CNT20.OP`, `CNT40.FT`,
+        `CNT40.OP`) con `Extradimensionado` (HU-021.15, #297) y no aplica con las demás, `ciudad_devolucion_contenedor` con `retorna_contenedor`,
         `ciudad_levante_contenedor` con `levante_contenedor_diferente` y `valor_aprovisionamiento` solo con un levante
         distinto del origen, y la regla de peso.
       properties:
@@ -8978,6 +9042,24 @@ components:
           minLength: 1
           maxLength: 1100
           description: Hasta 1100 caracteres, como la respuesta (la introducción estándar del pliego mide 1026); la IA redacta hasta 900.
+
+    RedactarTextosWeb:
+      type: object
+      description: |
+        HU-013.18 (#296). Cuerpo **opcional** de `POST /web/cotizaciones/{folio}/costeo/textos/redactar`. Sin cuerpo, la redacción
+        es igual que hoy.
+      properties:
+        indicaciones_redaccion:
+          type: string
+          nullable: true
+          maxLength: 500
+          description: |
+            Indicaciones del comercial para orientar al redactor con IA (una **preferencia** de enfoque o tono, p. ej.
+            "destacar la experiencia en carga refrigerada, tono cercano"). **No** es `notas` (la de la Mesa de Costeo). Es una
+            preferencia que **nunca** pasa por encima de las reglas estrictas del prompt (si pide montos, condiciones, otros
+            nombres o cambiar el formato, esa parte se ignora) y la salida se valida igual. Hasta 500 caracteres (recortada);
+            vacía, solo espacios o `null` equivale a sin indicaciones. Más de 500 caracteres: 400 `SOLICITUD_INVALIDA` sin
+            llamar a la IA. No se guarda en la cotización.
 
     PosicionCargaWeb:
       type: object
@@ -10428,8 +10510,10 @@ components:
           por código, igual que en `SolicitudCosteoWeb` (comparación exacta, distinguiendo mayúsculas; se acepta la lista
           provisional `CNT20.FT`, `CNT20.OP`, `CNT40.FT` y `CNT40.OP`). Un texto libre del pliego (`Tractomula`, `3s3`) es
           `CODIGO_NO_CATALOGO` en esa fila: el frontend mapea los valores del pliego a los códigos de `GET /web/catalogos-flete`.
-        - **Condicionales (G3).** `clase_contenedor` es obligatoria con `clase_viaje = Contenedor` (`CAMPO_REQUERIDO`) y solo se
-          admite con ella (`CAMPO_NO_APLICA`); `valor_levante_contenedor` (ex `valor_aprovisionamiento`; el error lo nombra así desde #228) solo con una `ciudad_levante_contenedor` distinta del
+        - **Condicionales (G3).** `clase_contenedor` es obligatoria con `clase_viaje = Contenedor` (`CAMPO_REQUERIDO`); con
+          `Extradimensionado` (HU-021.15, #297) es opcional y solo admite las clases provisionales G15 (`CNT20.FT`, `CNT20.OP`,
+          `CNT40.FT`, `CNT40.OP`; otra es `VALOR_FUERA_DE_RANGO`); con las demás clases de viaje no aplica (`CAMPO_NO_APLICA`);
+          `valor_levante_contenedor` (ex `valor_aprovisionamiento`; el error lo nombra así desde #228) solo con una `ciudad_levante_contenedor` distinta del
           origen (`CAMPO_NO_APLICA`).
         - **Municipios (G6).** Si la fila no trae `origen_municipio_id`/`destino_municipio_id`, Cotifly resuelve el texto de
           `origen`/`destino` en el catálogo de `GET /web/municipios` con la regla determinista de HU-005.13 (sin tildes ni
