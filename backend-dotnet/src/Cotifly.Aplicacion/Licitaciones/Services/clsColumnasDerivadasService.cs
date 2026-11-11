@@ -73,17 +73,21 @@ public sealed class clsColumnasDerivadasService(IClsAliasNexoProvider alias) : I
             return new clsHojaEnriquecida(encabezados, filas);
         }
 
-        var anchoBase = Math.Max(encabezados.Count, filas.Max(f => f?.Count ?? 0));
-        var deteccion = await DetectarAsync(usuarioId, filas, cancellationToken);
+        // Las filas de la muestra se normalizan al ancho de los encabezados; así el ancho base (dónde empiezan las columnas derivadas) sale del
+        // MISMO criterio que en aplicar-mapeo: AnchoBase = la fila más ancha. Con filas rectangulares (lo normal) coincide con el número de
+        // columnas de la hoja y con el que usa aplicar-mapeo.
+        IReadOnlyList<IReadOnlyList<string>> filasBase = [.. filas.Select(f => Rellenar(f, encabezados.Count))];
+        var anchoBase = AnchoBase(filasBase);
+        var deteccion = await DetectarAsync(usuarioId, filasBase, cancellationToken);
         var columnas = ColumnasAAgregar(deteccion, anchoBase);
         if (columnas.Count == 0)
         {
             return new clsHojaEnriquecida(encabezados, filas);
         }
 
-        var encabezadosNuevos = new List<string>(encabezados);
+        var encabezadosNuevos = new List<string>(Rellenar(encabezados, anchoBase));
         encabezadosNuevos.AddRange(columnas.Select(c => c.Encabezado));
-        var filasNuevas = filas.Select((f, i) => CombinarFila(f, deteccion[i], columnas, anchoBase)).ToList();
+        var filasNuevas = filasBase.Select((f, i) => CombinarFila(f, deteccion[i], columnas, anchoBase)).ToList();
         return new clsHojaEnriquecida(encabezadosNuevos, filasNuevas);
     }
 
@@ -97,8 +101,10 @@ public sealed class clsColumnasDerivadasService(IClsAliasNexoProvider alias) : I
             return filas;
         }
 
-        var limpias = filas.Select(f => (IReadOnlyList<string>)[.. f!.Select(c => c ?? string.Empty)]).ToList();
-        var anchoBase = limpias.Count == 0 ? 0 : limpias.Max(f => f.Count);
+        IReadOnlyList<IReadOnlyList<string>> limpias = [.. filas.Select(f => (IReadOnlyList<string>)[.. f!.Select(c => c ?? string.Empty)])];
+        // Mismo criterio de ancho base que sugerir-mapeo: la fila más ancha. Con filas rectangulares coincide con el número de columnas de la
+        // hoja, así los índices de las columnas derivadas calzan con los que propuso sugerir-mapeo y confirmó el mapeo.
+        var anchoBase = AnchoBase(limpias);
         var deteccion = await DetectarAsync(usuarioId, limpias, cancellationToken);
         var columnas = ColumnasAAgregar(deteccion, anchoBase);
         if (columnas.Count == 0)
@@ -168,6 +174,26 @@ public sealed class clsColumnasDerivadasService(IClsAliasNexoProvider alias) : I
         // Nunca se pasa de 100 columnas (el tope de NEXO): si no caben todas, se agregan las que quepan en el mismo orden fijo.
         var caben = Math.Max(0, MaximoColumnas - anchoBase);
         return caben >= columnas.Count ? columnas : [.. columnas.Take(caben)];
+    }
+
+    /// <summary>El ancho base de un bloque de filas: la fila más ancha (0 si no hay filas). El MISMO criterio en sugerir-mapeo y aplicar-mapeo.</summary>
+    private static int AnchoBase(IReadOnlyList<IReadOnlyList<string>> filas) => filas.Count == 0 ? 0 : filas.Max(f => f.Count);
+
+    /// <summary>Los valores rellenados con celdas vacías hasta <paramref name="ancho"/> (los mismos si ya alcanzan ese ancho).</summary>
+    private static IReadOnlyList<string> Rellenar(IReadOnlyList<string> valores, int ancho)
+    {
+        if (valores.Count >= ancho)
+        {
+            return valores;
+        }
+
+        var lista = new List<string>(valores);
+        while (lista.Count < ancho)
+        {
+            lista.Add(string.Empty);
+        }
+
+        return lista;
     }
 
     /// <summary>Una fila con las columnas derivadas al final, rellenando a <paramref name="anchoBase"/> para que los índices coincidan.</summary>
@@ -240,8 +266,11 @@ public sealed class clsColumnasDerivadasService(IClsAliasNexoProvider alias) : I
     /// <summary>El peso en kg (el más alto del rango, tal cual si es un solo valor) o <c>null</c>.</summary>
     private static string? DetectarPeso(string celda)
     {
+        // Se quita primero el patrón del contenedor (C20/C40/20'/40'): si no, el «20»/«40» del código se leería como extremo bajo del rango de
+        // peso («C20 hasta 8 ton» daría 20.000 en vez de 8.000, porque del rango se toma el valor más alto).
+        var sinContenedor = _contenedor.Replace(celda, " ");
         decimal? maximo = null;
-        foreach (Match match in _peso.Matches(celda))
+        foreach (Match match in _peso.Matches(sinContenedor))
         {
             var factor = match.Groups["u"].Value is { Length: > 0 } u && (u[0] is 't' or 'T') ? 1000m : 1m;
             foreach (var grupo in new[] { "n1", "n2" })

@@ -52,6 +52,9 @@ public sealed class clsColumnasDerivadasServiceTests
     [InlineData("Conten. x 40' Hasta 25 ton", "40'", "25000")]
     [InlineData("C40 de 5.000 a 8.000 kg", "40'", "8000")]
     [InlineData("20' hasta 8 ton", "20'", "8000")]
+    // #292 (hallazgo del validador): el «20»/«40» del código del contenedor no debe leerse como extremo bajo del rango de peso.
+    [InlineData("C20 hasta 8 ton", "20'", "8000")]
+    [InlineData("C40 a 25 ton", "40'", "25000")]
     public async Task UnContenedorConPesoORangoDaLaClaseYElPesoMasAltoEnKg(string texto, string contenedor, string peso)
     {
         var hoja = await Servicio().EnriquecerAsync(_usuario, ["Servicio"], Filas(texto), Ct);
