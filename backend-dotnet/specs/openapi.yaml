@@ -4673,8 +4673,8 @@ paths:
 
         Dos formas de cuerpo: `multipart/form-data` con la parte `licitacion` (JSON `LicitacionWeb`) y, opcional, la parte
         `archivo` (el Excel original, para exportarlo después con los precios, HU-011.3); o `application/json` con el
-        `LicitacionWeb` sin archivo. Con archivo, `hoja` y la `fila` de cada línea son obligatorias y se verifican contra el
-        archivo con la misma regla de detección de Nexo.
+        `LicitacionWeb` sin archivo. Con archivo, `hoja` es obligatoria; la `fila` de cada línea se verifica contra el archivo con la misma
+        regla de detección de Nexo, salvo las líneas agregadas a mano (`fila: null`, HU-044.10 #293), que no apuntan a ninguna fila del Excel.
 
         **Origen de la lectura (HU-044.7, #290).** `origen_lectura` dice cómo se leyó el Excel. `analizar_excel` (por defecto;
         ausente o vacío cae aquí y **el flujo de hoy NO cambia**): la `fila` es el índice en `hojas[h].filas` de `analizar-excel`,
@@ -4710,8 +4710,16 @@ paths:
         mientras `progreso_cubicacion.estado = en_curso`. Si una ruta falla (`fallida`, con `error_cubicacion`), la licitación
         no sale a Nexo hasta `POST /web/licitaciones/{folio}/cubicacion/reintentar`. Sin cubicador, como antes: un camión sin
         vehículo por ruta y el envío a Nexo de una vez.
+
+        **Idempotency-Key (HU-044.10, #293).** Cabecera opcional (ámbito `crear-licitacion` por comercial). Una repetición con la misma
+        clave y el mismo cuerpo+archivo (la huella es el cuerpo más el nombre y el SHA-256 del archivo, no los bytes) relee la licitación
+        creada y responde **201 con su estado de ahora**, sin crear otro folio. Solo el **201** consume la clave: un reporte por fila (400)
+        o un 503 NO la consumen y la repetición se vuelve a evaluar (devuelve el reporte completo). La misma clave con otro cuerpo u otro
+        archivo es 409 `IDEMPOTENCY_KEY_REUTILIZADA`; fuera de 8 a 64 caracteres, 400 `ErrorWeb`.
       security:
         - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -4776,6 +4784,14 @@ paths:
                 oneOf:
                   - $ref: '#/components/schemas/ErrorNegocio'
                   - $ref: '#/components/schemas/ErrorWeb'
+        '409':
+          description: |
+            HU-044.10 (#293). `IDEMPOTENCY_KEY_REUTILIZADA`: la misma `Idempotency-Key` con otro cuerpo u otro archivo; no se crea nada
+            (generar una clave nueva por intención).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
         '503':
           description: |
             HU-013.11: `CATALOGOS_FLETE_NO_DISPONIBLE` (alguna fila trae `tipo_vehiculo` o `clase_viaje` y no hay catálogo maestro
@@ -10451,11 +10467,14 @@ components:
           nullable: true
           minimum: 0
           description: |
-            Con `origen_lectura = analizar_excel` (por defecto): índice (base 0) en `hojas[h].filas` de `analizar-excel`. Obligatorio si se
-            adjunta el archivo; único por licitación. Es un dato técnico: al comercial se le muestra `hojas[h].filas_excel[fila]` (fila del
-            Excel) y los mensajes de error nunca usan este índice (HU-013.15, #124). Con `origen_lectura = leer_estructura` (HU-044.7, #290):
-            índice (base 0) dentro de `tablas[t].filas`, **obligatorio y único** siempre; no hay `filas_excel` (no se relee la hoja) y los
-            mensajes de error nombran «línea N de la tabla X».
+            Con `origen_lectura = analizar_excel` (por defecto): índice (base 0) en `hojas[h].filas` de `analizar-excel`; único por
+            licitación. Es un dato técnico: al comercial se le muestra `hojas[h].filas_excel[fila]` (fila del Excel) y los mensajes de error
+            nunca usan este índice (HU-013.15, #124). Con `origen_lectura = leer_estructura` (HU-044.7, #290): índice (base 0) dentro de
+            `tablas[t].filas`, único; no hay `filas_excel` (no se relee la hoja) y los mensajes de error nombran «línea N de la tabla X».
+            HU-044.10 (#293, parte 2): **`null` es una línea agregada a mano** (válida con o sin archivo, con cualquier `origen_lectura`): la
+            unicidad ignora los `null`, sus errores dicen «La línea N» (con `fila` y `fila_excel` en `null`) y en la exportación va a la hoja
+            «Agregadas en Cotifly» (analizar_excel con original) o al final de la hoja «Licitación» (leer_estructura o sin original). Una
+            licitación hecha solo de líneas a mano es válida (con archivo sigue exigiendo `hoja`).
         origen:
           type: string
           maxLength: 150
@@ -11042,7 +11061,7 @@ components:
     Licitacion:
       type: object
       required: [folio, cliente_nombre, nit_cliente, deadline, estado_costeo, motivo_estado_costeo, moneda, trm_aplicada,
-                 precio_final, lineas_costeadas, lineas_pendientes, archivo_nombre, hoja, lineas, finalizada_at, solo_lectura]
+                 precio_final, lineas_costeadas, lineas_pendientes, archivo_nombre, hoja, origen_lectura, lineas, finalizada_at, solo_lectura]
       description: |
         Licitación vista por el comercial (HU-011.2). Solo precios. Sin `referencia` desde HU-021.11 (#138, decisión 1: siempre
         era `null`).
@@ -11095,6 +11114,14 @@ components:
         hoja:
           type: string
           nullable: true
+        origen_lectura:
+          type: string
+          nullable: true
+          enum: [analizar_excel, leer_estructura, null]
+          description: |
+            HU-044.10 (#293). Cómo se leyó el Excel de esta licitación: `analizar_excel` o `leer_estructura` (`LicitacionWeb.origen_lectura`).
+            `null` si la licitación no tiene archivo. Una licitación con archivo anterior al script 22 (sin `origenLectura` guardado) llega
+            como `analizar_excel`. Siempre presente (también en el 201 de `POST /web/licitaciones` y en la respuesta de reintentar la cubicación).
         lineas:
           type: array
           items:
