@@ -6379,7 +6379,7 @@ components:
 
     CotizacionResumen:
       type: object
-      required: [id, folio, version, moneda, estado_envio]
+      required: [id, folio, version, moneda, estado_envio, origen, destino, numero_rutas, peso_total_kg, valor_mercancia]
       properties:
         id:
           type: string
@@ -6502,6 +6502,30 @@ components:
           description: |
             HU-036.2 (#206). Cuándo el comercial finalizó la cotización (`POST .../finalizar`: aceptó el precio), ISO 8601 en UTC.
             `null` sin finalizar (las anteriores al script `14` no tienen backfill). Siempre presente.
+        origen:
+          type: string
+          nullable: true
+          description: |
+            HU-018.2 (#294). Municipio de origen de la RUTA 1 (la de menor orden); `null` sin rutas o si esa ruta no tiene nombre. Siempre
+            presente. Lo consumen `GET /web/mis-cotizaciones` y `GET /web/cotizaciones/regional`.
+        destino:
+          type: string
+          nullable: true
+          description: HU-018.2 (#294). Municipio de destino de la RUTA 1 (la de menor orden); `null` sin rutas o sin nombre. Siempre presente.
+        numero_rutas:
+          type: integer
+          description: HU-018.2 (#294). Cuántas rutas tiene la cotización, también las rechazadas (`0` sin rutas). Siempre presente.
+        peso_total_kg:
+          type: number
+          nullable: true
+          description: |
+            HU-018.2 (#294). Suma del `peso_kg` declarado (sin tara) de todas las rutas; `null` si ninguna lo trae. Siempre presente.
+        valor_mercancia:
+          type: number
+          nullable: true
+          description: |
+            HU-018.2 (#294). Suma del valor de la mercancía de todas las rutas, en COP aunque la cotización esté en USD; `null` si ninguna
+            lo trae. Siempre presente.
         conexos_descartados:
           type: array
           deprecated: true
@@ -8124,7 +8148,7 @@ components:
 
     RutaCosteo:
       type: object
-      required: [linea_orden, linea_solicitud_id, origen, destino, estado_costeo, precio_final_linea, costo_final, margen_aplicado, margen_sugerido, origen_margen, servicios_conexos, camiones, mercancias]
+      required: [linea_orden, linea_solicitud_id, origen, destino, estado_costeo, precio_final_linea, costo_final, costo_transporte, valor_mercancia, margen_aplicado, margen_sugerido, origen_margen, servicios_conexos, camiones, mercancias]
       description: |
         HU-021.8 (#135). Una ruta del costeo. Desde HU-039.1 (#218) trae su costo bruto (`costo_final`, en COP) para el dueño; nunca
         el desglose (fletes, retorno, levante, conexos) ni el costo de cada camión o de cada conexo. El ajuste de margen (`PUT .../costeo/margen`) y los cambios de
@@ -8268,6 +8292,23 @@ components:
             cotización finalizada (HU-036.4) es el costo con que se finalizó, como el precio congelado. No sale
             en el PDF, el correo, el Excel, el chat ni "Mis cotizaciones". Reversa de la regla de ADR-015 §5 ("el costo bruto nunca
             llega al comercial"), confirmada por la Gerencia Comercial el 2026-10-27.
+        costo_transporte:
+          type: number
+          nullable: true
+          description: |
+            HU-018.2 (#294). Costo del transporte de la ruta: fletes + retorno + levante, **sin** servicios conexos ni margen. **Siempre en
+            COP (pesos), aunque la cotización esté en USD** (el costeo de Nexo es en pesos y nunca se convierte; en USD `precio_final_linea`
+            va en dólares, el costo no). Sale junto con el precio, igual que `costo_final`: `null` en los mismos casos
+            (`precio_final_linea = null`: sin costeo listo o ruta `rechazada`). Solo lo ve el dueño: en `GET /web/cotizaciones/{folio}`
+            consultado por un gerente comercial o por el director (`solo_lectura = true`) siempre es `null`. Dato de HU-039 que se expone,
+            sin desglose por camión ni por conexo; no sale en el PDF, el correo, el Excel ni "Mis cotizaciones".
+        valor_mercancia:
+          type: number
+          nullable: true
+          description: |
+            HU-018.2 (#294). Valor de la mercancía de la ruta (el mismo `valor_mercancia` de `GET .../solicitud`), en pesos (COP) aunque la
+            cotización esté en USD. `null` si no se declaró. No es un costo: es de solo lectura, lo ve también el gerente o el director
+            (`solo_lectura = true`) y está en todas las respuestas con la vista del costeo. Siempre presente.
         margen_aplicado:
           type: number
           nullable: true

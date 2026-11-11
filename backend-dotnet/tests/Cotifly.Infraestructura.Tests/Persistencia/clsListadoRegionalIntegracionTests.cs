@@ -36,6 +36,8 @@ public sealed class clsListadoRegionalIntegracionTests(clsBaseDatosPruebas baseD
             (sinLinea.Folio, ana, (string?)null),
             (deLuis.Folio, luis, "Nacional"),
             (deAna.Folio, ana, "Nacional"));
+        // HU-018.2 (#294): la proyección también trae la carga sin cargar el agregado; la cotización sin rutas cuenta 0 y las demás 1.
+        filas.Select(f => f.Carga.NumeroRutas).Should().Equal(0, 1, 1);
     }
 
     [Fact]

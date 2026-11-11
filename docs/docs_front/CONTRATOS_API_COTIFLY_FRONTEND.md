@@ -1638,6 +1638,11 @@ Respuesta **201** (`CotizacionResumen` + `cubicacion`):
   "trm_aplicada": 0,
   "deadline": "2026-10-15T22:00:00+00:00",
   "score_prioridad": 62.5,
+  "origen": "Buenaventura",
+  "destino": "Bogotá D.C.",
+  "numero_rutas": 2,
+  "peso_total_kg": 37500,
+  "valor_mercancia": 430000000,
   "cubicacion": [
     {
       "linea_orden": 1,
@@ -1777,6 +1782,8 @@ polling.
       "estado_costeo": "autocosteo",
       "precio_final_linea": 5294118,
       "costo_final": 4500000,
+      "costo_transporte": 4320000,
+      "valor_mercancia": 250000000,
       "margen_aplicado": 0.15,
       "margen_sugerido": 0.15,
       "origen_margen": "politica_linea",
@@ -1808,6 +1815,8 @@ polling.
       "estado_costeo": "autocosteo",
       "precio_final_linea": 3529412,
       "costo_final": 3000000,
+      "costo_transporte": 3000000,
+      "valor_mercancia": 180000000,
       "margen_aplicado": 0.15,
       "margen_sugerido": 0.18,
       "origen_margen": "negociado",
@@ -2061,7 +2070,12 @@ Respuesta (los dos casos traen siempre `conexos_conservados` y `conexos_descarta
   "conexos_descartados": [],
   "conexos_conservados": ["Cargue con montacargas"],
   "deadline": "2026-10-15T22:00:00+00:00",
-  "score_prioridad": 58
+  "score_prioridad": 58,
+  "origen": "Buenaventura",
+  "destino": "Bogotá D.C.",
+  "numero_rutas": 2,
+  "peso_total_kg": 37500,
+  "valor_mercancia": 430000000
 }
 ```
 
@@ -2471,15 +2485,25 @@ antigua. Sin filtros ni paginación en el servidor: filtrar y ordenar en el clie
       "created_at": "2026-10-15T15:20:11.532+00:00",
       "trm_aplicada": 0,
       "deadline": "2026-10-15T22:00:00+00:00",
-      "score_prioridad": 62.5
+      "score_prioridad": 62.5,
+      "origen": "Buenaventura",
+      "destino": "Bogotá D.C.",
+      "numero_rutas": 2,
+      "peso_total_kg": 37500.5,
+      "valor_mercancia": 430000000
     }
   ]
 }
 ```
 
+HU-018.2 (#294): la carga de cada fila viene siempre. `origen` y `destino` son los de la **ruta 1** (la de menor orden; `null` sin rutas o sin
+nombre); `numero_rutas` cuenta todas las rutas, también las rechazadas (`0` sin rutas); `peso_total_kg` es la suma del `peso_kg` declarado (sin
+tara) de todas las rutas y `valor_mercancia` la suma del valor de la mercancía de todas (en COP aunque la cotización esté en USD); las dos
+sumas son `null` si ninguna ruta trae el dato. Son de solo lectura y también salen en `GET /web/cotizaciones/regional`.
+
 | HTTP | UI |
 |---|---|
-| 200 | Tabla. `linea_negocio = "Varias"` si las rutas tienen líneas distintas (mostrarlo tal cual). `margen_aplicado` y `origen_margen` son los de la ruta 1. Mostrar "v2", "v3" si `version > 1`. Badge "Ajuste fuera de política" con `origen_margen = negociado`. No trae costo |
+| 200 | Tabla. `linea_negocio = "Varias"` si las rutas tienen líneas distintas (mostrarlo tal cual). `margen_aplicado` y `origen_margen` son los de la ruta 1. Mostrar "v2", "v3" si `version > 1`. Badge "Ajuste fuera de política" con `origen_margen = negociado`. No trae costo. La carga (`origen`, `destino`, `numero_rutas`, `peso_total_kg`, `valor_mercancia`) sirve para columnas o filtros de la tabla |
 
 Acciones por fila:
 
@@ -3732,6 +3756,11 @@ Vista "Todas las cotizaciones" del gerente: las cotizaciones de los comerciales 
       "trm_aplicada": 0,
       "deadline": "2026-10-15T22:00:00+00:00",
       "score_prioridad": 62.5,
+      "origen": "Buenaventura",
+      "destino": "Bogotá D.C.",
+      "numero_rutas": 2,
+      "peso_total_kg": 37500,
+      "valor_mercancia": 430000000,
       "comercial": { "usuario_id": "5f0c2a8e-4b1d-4c55-9a51-2f7d0c1e9b10", "nombre_usuario": "APEREZ", "nombre_completo": "Ana Pérez" }
     }
   ]
@@ -4456,6 +4485,9 @@ fila_excel, campo, codigo, mensaje}`.
 | 80 | **#259: un conexo ya no se queda en `estado_nexo = pendiente` para siempre en una cotización entregada.** (a) Si NEXO deja la línea de un camión partida en varias líneas de su cotización, el conexo va a la primera por id (antes no se enviaba nunca y "Finalizar" respondía `conexos_pendientes_en_nexo` para siempre). (b) Con la cotización ya fuera del costeo (entregada, descartada, vencida), si el primer camión vigente no tiene línea en NEXO el conexo va al primer camión vigente que sí la tiene; si ninguno la tiene queda `fallido_definitivo` (con `aviso_conexos_nexo`, no bloquea "Finalizar"). Los conexos de una ruta `rechazada` no cambian (no se envían ni pasan a `fallido_definitivo`; tampoco bloquean). (c) `POST .../finalizar` con `conexos_pendientes_en_nexo` sigue respondiendo el mismo 409, pero, si la cotización estaba fuera de la agenda del polling, vuelve a encolar el envío diferido (sin enviar nada a NEXO en la petición): en unos segundos el conexo queda `enviado` o `fallido_definitivo` y el siguiente "Finalizar" pasa; así se reparan solas las cotizaciones que ya estaban atascadas. Sin códigos, estados, campos ni endpoints nuevos; sin script de base de datos (ADR-031) | Cambia | Con `conexos_pendientes_en_nexo`, en vez de dejar "Finalizar" deshabilitado indefinidamente: refrescar el costeo a los pocos segundos y permitir reintentar. Mostrar `fallido_definitivo` con `aviso_conexos_nexo` como hasta ahora |
 | 81 | **HU-016.2 (#295): la comparación del margen contra la política solo con cotizaciones finalizadas.** En `IndicadoresMetricas` (`indicadores` y `comerciales[].indicadores` de `GET /web/metricas/comercial` y `/regional`), los cinco campos de la comparación con la política —`margen_politica_promedio`, `margen_aplicado_promedio`, `margen_politica_ponderado`, `desviacion_margen_politica` y `rutas_sin_margen_politica`— salen ahora **solo de las cotizaciones finalizadas** (`finalizadaAt`, script 14): una cotización sin finalizar todavía puede cambiar de margen, así que no debe pesar en la desviación. Una finalizada en la v1 con una v2 sin finalizar no cuenta (se mira la versión vigente). **Cambia el significado** (el universo) de esos cinco campos; **no cambia ningún nombre ni tipo**. Sin ninguna cotización finalizada, los cuatro márgenes salen `null` y `rutas_sin_margen_politica` = 0. El **resto del tablero no cambia**: `cantidad`, `margen_promedio`, `margen_ponderado`, los montos, la serie mensual y la apertura por línea (`por_linea_negocio`) siguen contando con TODAS las cotizaciones (una abierta sí entra en `cantidad`). Sin endpoints, códigos ni script de base de datos nuevos | Cambia | Si ya se muestra la comparación de margen contra política, aclarar en pantalla que es **solo sobre cotizaciones finalizadas**; el resto de los indicadores sigue igual. No hay cambios de forma ni de integración |
 | 82 | **HU-013.18 (#296): indicaciones del comercial para el redactor con IA.** `POST /web/cotizaciones/{folio}/costeo/textos/redactar` (4.4.8) acepta ahora un **cuerpo JSON opcional** `{indicaciones_redaccion: string \| null}` (`RedactarTextosWeb`). Sin cuerpo, todo igual que hoy. `indicaciones_redaccion` orienta la carta de la IA (una **preferencia** de enfoque o tono, p. ej. "destacar la experiencia en carga refrigerada, tono cercano"); **no** es `notas` (la de la Mesa de Costeo). Hasta 500 caracteres (recortada); vacía, solo espacios o `null` = sin indicaciones. **Más de 500: 400 `SOLICITUD_INVALIDA`** sin llamar a la IA. Es una preferencia que **nunca** pasa por encima de las reglas estrictas del redactor (si pide montos, condiciones, otros nombres o cambiar el formato, esa parte se ignora) y la salida se valida igual (si no pasa, textos estándar). **No se guarda** en la cotización; la auditoría solo registra `con_indicaciones` (sí/no), nunca el texto. El reintento tras `TEXTOS_EDITADOS` (409, `?sobrescribir=true`) lleva las mismas indicaciones. Sin campos nuevos en la respuesta (`TextosCotizacion` igual que hoy), sin estados ni endpoints nuevos; sin script de base de datos | Agrega | En el editor de textos del PDF, ofrecer un campo opcional "Indicaciones para la IA" (máx. 500) y enviarlo en `indicaciones_redaccion` al pedir "Redactar con IA"; con `SOLICITUD_INVALIDA` marcar el campo (más de 500); reenviar las mismas indicaciones en el reintento con `?sobrescribir=true` |
+| 84 | **HU-018.2 (#294): valor de la mercancía por ruta en la vista del costeo.** Cada `rutas[]` de `CosteoCotizacion` (`RutaCosteo`) trae `valor_mercancia` (número o `null`, **siempre presente**): el mismo `valor_mercancia` de `GET .../solicitud`, en pesos (COP) aunque la cotización esté en USD. Es de **solo lectura** (dato ya existente, sin lógica nueva), lo ve también el gerente o el director (`solo_lectura = true` **no** lo oculta) y sale en todas las respuestas con la vista del costeo: `GET .../costeo`, `PUT .../costeo/seguro`, las respuestas de margen y de conexos y el `costeo` del detalle por folio. Sin campos, códigos ni endpoints nuevos de endpoint (sigue el mismo conteo) | Agrega | Mostrar el valor de la mercancía de cada ruta en el costeo sin volver a pedir la solicitud |
+| 85 | **HU-018.2 (#294): costo del transporte por ruta en la vista del costeo.** Cada `rutas[]` de `RutaCosteo` trae `costo_transporte` (número o `null`, en `required`): fletes + retorno + levante, **sin** conexos ni margen (el costo bruto `costo_final` menos el costo de los conexos), **siempre en COP** aunque la cotización esté en USD. Sale junto con el precio, igual que `costo_final`: `null` sin precio o con la ruta `rechazada`, y en el detalle del gerente o del director en solo consulta (`solo_lectura = true`) siempre `null`. Es un dato de HU-039 que se expone, sin desglose por camión ni por conexo; no sale en el PDF, el correo, el Excel ni "Mis cotizaciones" | Agrega | Mostrar el costo del transporte por ruta (solo para el dueño) separado del costo bruto y de los conexos |
+| 86 | **HU-018.2 (#294): la carga en el listado de cotizaciones.** `CotizacionResumen` trae cinco campos **nuevos, siempre presentes**: `origen` y `destino` (municipios de la **ruta 1**, la de menor orden; `null` sin rutas o sin nombre), `numero_rutas` (cuántas rutas tiene, también las rechazadas; `0` sin rutas), `peso_total_kg` (suma del `peso_kg` declarado, sin tara, de todas las rutas; `null` si ninguna lo trae) y `valor_mercancia` (suma del valor de la mercancía de todas las rutas, en COP aunque la cotización esté en USD; `null` si ninguna lo trae). Los consumen `GET /web/mis-cotizaciones` y `GET /web/cotizaciones/regional`. Sin endpoints nuevos | Agrega | Mostrar origen, destino, número de rutas, peso total y valor de la mercancía como columnas o filtros de la tabla de cotizaciones |
 
 ---
 

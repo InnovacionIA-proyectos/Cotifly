@@ -120,6 +120,21 @@ public sealed class clsCotizacionesRegionalServiceTests
     }
 
     [Fact]
+    public async Task ElListadoRegionalConservaLaCargaDeCadaFila()
+    {
+        // HU-018.2 (#294): la carga (origen/destino de la ruta 1, número de rutas y sumas) viaja con cada fila del listado regional.
+        var ana = UsuarioWeb("ana", "Ana");
+        var gloria = PrepararRegional([ana]);
+        var carga = new clsCargaCotizacion("Cali", "Bogotá D.C.", 2, 24_000m, 300_000_000m);
+        _cotizaciones.ListarPorUsuariosAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([new clsCotizacionConLinea(Cotizacion("PCN-AN-01102026-001", ana.Id), "Nacional") { Carga = carga }]);
+
+        var fila = (await Servicio(Gerente(gloria)).ListarAsync(null, Ct)).Valor.Cotizaciones.Should().ContainSingle().Subject;
+
+        fila.Should().BeEquivalentTo(new { Origen = "Cali", Destino = "Bogotá D.C.", NumeroRutas = 2, PesoTotalKg = 24_000m, ValorMercancia = 300_000_000m });
+    }
+
+    [Fact]
     public async Task NuncaDevuelveUnaFilaDeAlguienFueraDeLaRegional()
     {
         var ana = UsuarioWeb("ana", "Ana");
