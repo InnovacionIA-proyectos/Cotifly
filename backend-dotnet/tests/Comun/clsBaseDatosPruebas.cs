@@ -74,6 +74,8 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
         Script19,
         // HU-045.1/HU-045.2 (#263, #264): TarifasSeguro y el seguro de la ruta (db/scripts/20; el backend los mapea). Va después del 19.
         Script20,
+        // HU-044.7 (#290): origenLectura en CotizacionArchivosLicitacion (db/scripts/22; el backend lo mapea). Va después del 20 y antes del 07.
+        Script22,
         // HU-023 (#176): BUSQUEDA_AGOTADA en el CHECK del motivo (db/scripts/07, lo aplica @scalderon-bs).
         Script07,
         // HU-014.3 (#152): retiro de las vistas del borrador de métricas (db/scripts/08, lo aplica el DBA).
@@ -97,6 +99,9 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
 
     /// <summary>HU-045.1/HU-045.2 (#263, #264): el 20 del seguro de la mercancía (relativa a <c>migrations_mssql</c>).</summary>
     public const string Script20 = "../scripts_bd/20_seguro_mercancia.sql";
+
+    /// <summary>HU-044.7 (#290): el 22 de <c>origenLectura</c> en <c>CotizacionArchivosLicitacion</c> (relativa a <c>migrations_mssql</c>).</summary>
+    public const string Script22 = "../scripts_bd/22_origen_lectura_licitacion.sql";
 
     /// <summary>
     /// HU-042 (#243, #247): scripts hasta el 16 incluido (sin el 17, el 18, el 19, el 07, el 08 ni el 15). <c>Scripts[ScriptsHasta16 - 1]</c>
@@ -166,18 +171,18 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     /// Scripts hasta el 07 incluido (con el 09, el 10, el 11... y el 20, sin el 08): la base migrada que todavía tiene las vistas del borrador de
     /// métricas. <c>Scripts[ScriptsHasta07 - 1]</c> es el 07 (lo verifica <c>clsEsquemaTests</c>).
     /// </summary>
-    public const int ScriptsHasta07 = 27;
+    public const int ScriptsHasta07 = 28;
 
     /// <summary>
     /// Todos los scripts anteriores al 07 en <see cref="Scripts"/> (sin el 07 ni los que van después). <c>Scripts[ScriptsSin07]</c> es el 07
     /// (lo verifica <c>clsEsquemaTests</c>). Si otra rama agrega un script que el backend mapea, va antes del 07 en la lista y este número
-    /// sube (hoy llega hasta el 20: <c>Scripts[ScriptsSin07 - 1]</c> es el 20, HU-045 #263/#264; antes el 19, HU-043.1 #245/#261; el 18, HU-042.4 #247; el 17,
+    /// sube (hoy llega hasta el 22: <c>Scripts[ScriptsSin07 - 1]</c> es el 22, HU-044.7 #290; antes el 20, HU-045 #263/#264; el 19, HU-043.1 #245/#261; el 18, HU-042.4 #247; el 17,
     /// HU-042.1 #242; el 16, HU-040.1 #229; el 14, HU-036 #205; el 13, HU-033 #199; el 12, HU-032 #197, antes el 11, HU-030.1 #184, y antes
     /// el 10, HU-028.1 #183).
     /// HU-014 (#188): incluye el 03, que deja el CHECK del 07; para una base que de verdad no admite BUSQUEDA_AGOTADA,
     /// <see cref="CrearBaseSin07Async"/>.
     /// </summary>
-    public const int ScriptsSin07 = 26;
+    public const int ScriptsSin07 = 27;
 
     /// <summary>
     /// HU-014 (#188): el CHECK del motivo tal como lo deja el <c>02</c> (4 motivos, sin <c>BUSQUEDA_AGOTADA</c> ni <c>ISNULL</c>). Con el 03

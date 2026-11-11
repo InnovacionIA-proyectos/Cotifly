@@ -4702,6 +4702,15 @@ paths:
         `LicitacionWeb` sin archivo. Con archivo, `hoja` y la `fila` de cada línea son obligatorias y se verifican contra el
         archivo con la misma regla de detección de Nexo.
 
+        **Origen de la lectura (HU-044.7, #290).** `origen_lectura` dice cómo se leyó el Excel. `analizar_excel` (por defecto;
+        ausente o vacío cae aquí y **el flujo de hoy NO cambia**): la `fila` es el índice en `hojas[h].filas` de `analizar-excel`,
+        Cotifly relee la hoja para validar y calcular `filas_excel`, y la exportación escribe los precios sobre el Excel original.
+        `leer_estructura`: lo leyó la IA de NEXO (`leer-estructura`); la `hoja` es el **nombre de la tabla** (solo referencia), la
+        `fila` es el índice (base 0) **dentro de la tabla**, obligatoria y única; Cotifly **no relee** la hoja ni calcula
+        `filas_excel`, los errores por fila dicen «línea N de la tabla X» y la exportación arma un Excel **nuevo** (hoja
+        «Licitación»), sin tocar el original (`GET /web/licitaciones/{folio}/excel`). Un `origen_lectura` desconocido es 400
+        `VALIDATION_ERROR` con `detalle.campos = ["origen_lectura"]`.
+
         Moneda (ADR-014 §5): `moneda` opcional, `COP` por defecto o `USD`. En USD la TRM del día (DolarApi con respaldo en la
         Superintendencia Financiera) se consulta antes de guardar y queda en `trm_aplicada`; el polling calcula cada precio en
         pesos y lo convierte con ella (`round(precio_cop / trm, 2)`), también el total y los servicios conexos. Sin TRM responde
@@ -4756,7 +4765,8 @@ paths:
         '400':
           description: |
             `ReporteLicitacionInvalida` (`LICITACION_INVALIDA` con todas las filas que fallaron; nada queda guardado), o
-            `ErrorNegocio` (`ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE`, `EXCEL_INVALIDO`; HU-035.2,
+            `ErrorNegocio` (`VALIDATION_ERROR` con `detalle.campos = ["origen_lectura"]` si `origen_lectura` no es `analizar_excel`
+            ni `leer_estructura`, HU-044.7 #290; `ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE`, `EXCEL_INVALIDO`; HU-035.2,
             #213: el archivo pasa por los controles del análisis y un rechazo trae su `detalle.motivo`; `EXCEL_SIN_DATOS` si la hoja no existe, `EXCEL_INVALIDO` también con más de 10.000 rangos combinados, `MARGEN_LINEA_DESCONOCIDA` (la
             línea no existe, o está inactiva: `detalle.motivo` lo dice; HU-013.15: en los dos casos `detalle.lineas_validas` trae las
             líneas activas de Cotifly y, con `linea_negocio = Licitaciones` (la línea del catálogo de Nexo, que no da margen), `detalle.motivo =
@@ -4931,6 +4941,11 @@ paths:
         Se puede exportar en cualquier momento. Siempre un `.xlsx` real: un `.xlsm` se convierte sin macros, y gráficos,
         imágenes o tablas dinámicas del original pueden perderse. El total del resumen es sin servicios conexos. `Sin enviar`
         solo marca filas entre la primera y la última línea enviada. Solo licitaciones (404 si no).
+
+        HU-044.7 (#290): una licitación creada con `origen_lectura = leer_estructura` (leída con la IA de NEXO) se exporta en un Excel
+        **nuevo**: NO se escribe sobre el archivo original (NEXO reorganizó las filas, así que el índice de una fila ya no corresponde a
+        una fila de la hoja). Se arma la hoja `Licitación` (como sin archivo) más `Resumen Cotifly` y `Camiones Cotifly`, y el resumen
+        deja la nota de que se leyó con la IA de NEXO y que los precios no van sobre el original.
 
         HU-034.1 (#201, parte A). Acceso: el dueño, un `director` (cualquier regional) o un `gerente_comercial` de la regional del
         dueño, con la regla de `GET /web/licitaciones/{folio}` (fail-closed, 404 para cualquier otro). Gerente y director reciben **el
@@ -5851,7 +5866,9 @@ components:
                 licitación. `IA_TOPE_DIARIO` (429) es el cupo diario de IA del comercial y no bloquea a los demás. Sin la importación
                 habilitada, NEXO caído o sin respuesta a tiempo: `NEXO_NO_DISPONIBLE` (503). Los endpoints `/web` llegan con #253 a #256.
                 HU-044.2 (#253): `VALIDATION_ERROR` (400) es el de NEXO en `leer-estructura` (la forma del formulario), con su mensaje y
-                solo los nombres de los campos en `detalle.campos`. `LECTURA_DEMASIADO_GRANDE` (400) lo responde Cotifly en
+                solo los nombres de los campos en `detalle.campos`. HU-044.7 (#290): el mismo `VALIDATION_ERROR` (400) lo responde Cotifly en
+                `POST /web/licitaciones` cuando `origen_lectura` no es `analizar_excel` ni `leer_estructura` (con `detalle.campos = ["origen_lectura"]`).
+                `LECTURA_DEMASIADO_GRANDE` (400) lo responde Cotifly en
                 `leer-estructura`, sin llamar a NEXO, cuando el archivo cabe solo pero no con la receta y las instrucciones.
               enum:
                 - MARGEN_LINEA_DESCONOCIDA
@@ -10337,7 +10354,12 @@ components:
             $ref: '#/components/schemas/HojaDelArchivo'
         tablas:
           type: array
-          description: Una por hoja, o una sola si la receta las une. Misma forma que las hojas de `analizar-excel`; cada una va a `sugerir-mapeo` sin transformarla.
+          description: |
+            Una por hoja, o una sola si la receta las une. Misma forma que las hojas de `analizar-excel`; cada una va a `sugerir-mapeo` sin
+            transformarla. HU-044.7 (#290): cada tabla pasa por la misma detección de mercancías de `analizar-excel`, así que trae
+            `columna_mercancia`, `columna_codigo_mercancia` y `mercancias` (o `null` si la tabla no tiene columna de mercancía ni de código);
+            `mercancias[].fila` es el índice dentro de `tablas[t].filas` (la misma convención que la `fila` de `LineaLicitacionWeb`) y
+            `filas_excel` siempre es `null` en las tablas. La `receta` y el resto de la respuesta de NEXO no se tocan.
           items:
             $ref: '#/components/schemas/HojaExcel'
         avisos:
@@ -10519,9 +10541,11 @@ components:
           nullable: true
           minimum: 0
           description: |
-            Índice (base 0) en `hojas[h].filas`. Obligatorio si se adjunta el archivo; único por licitación. Es un dato técnico:
-            al comercial se le muestra `hojas[h].filas_excel[fila]` (fila del Excel) y los mensajes de error nunca usan este índice
-            (HU-013.15, #124).
+            Con `origen_lectura = analizar_excel` (por defecto): índice (base 0) en `hojas[h].filas` de `analizar-excel`. Obligatorio si se
+            adjunta el archivo; único por licitación. Es un dato técnico: al comercial se le muestra `hojas[h].filas_excel[fila]` (fila del
+            Excel) y los mensajes de error nunca usan este índice (HU-013.15, #124). Con `origen_lectura = leer_estructura` (HU-044.7, #290):
+            índice (base 0) dentro de `tablas[t].filas`, **obligatorio y único** siempre; no hay `filas_excel` (no se relee la hoja) y los
+            mensajes de error nombran «línea N de la tabla X».
         origen:
           type: string
           maxLength: 150
@@ -10715,7 +10739,20 @@ components:
           type: string
           nullable: true
           maxLength: 31
-          description: Hoja mapeada (`hojas[h].nombre`). Obligatoria con el archivo.
+          description: |
+            Con `origen_lectura = analizar_excel` (por defecto): la hoja mapeada (`hojas[h].nombre`), obligatoria con el archivo; Cotifly la
+            relee para calcular `filas_excel`. Con `origen_lectura = leer_estructura`: el **nombre de la tabla** (`tablas[t].nombre`), solo de
+            referencia (no se relee ninguna hoja original).
+        origen_lectura:
+          type: string
+          nullable: true
+          enum: [analizar_excel, leer_estructura, null]
+          description: |
+            HU-044.7 (#290). Cómo se leyó el Excel. `analizar_excel` (por defecto; ausente o vacío cae aquí y el flujo de hoy NO cambia): la
+            `fila` de cada línea es el índice en `hojas[h].filas` de `analizar-excel` y la exportación escribe los precios sobre el Excel
+            original. `leer_estructura`: lo leyó la IA de NEXO (`leer-estructura`), la `hoja` es el nombre de la tabla, la `fila` es el índice
+            dentro de la tabla y la exportación arma un Excel **nuevo** (hoja «Licitación») sin tocar el original. Cualquier otro valor es 400
+            `VALIDATION_ERROR` (con `detalle.campos = ["origen_lectura"]`).
         moneda:
           type: string
           nullable: true

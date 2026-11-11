@@ -141,6 +141,29 @@ public sealed class clsValidadorLicitacionTests
     public void SinArchivoLaFilaEsOpcional() =>
         clsValidadorLicitacion.Validar(Entrada([Linea(null), Linea(null)], hoja: null), filasEnHoja: null).Should().BeEmpty();
 
+    // HU-044.7 (#290): con leer_estructura la 'fila' es el índice dentro de la tabla (entrada.Hoja = nombre de la tabla); es obligatoria y
+    // única, NO hay tope por la hoja (filasEnHoja llega null porque no se relee) y los mensajes nombran «línea N de la tabla X».
+    private static clsEntradaLicitacion LeerEstructura(IReadOnlyList<clsLineaLicitacionEntrada> lineas, clsArchivoSubido? archivo = null, string? tabla = "Rutas 2026") =>
+        Entrada(lineas, archivo, hoja: tabla) with { OrigenLectura = clsOrigenLectura.LeerEstructura };
+
+    [Fact]
+    public void ConLeerEstructuraUnaLicitacionValidaNoTieneErroresConLaFilaHastaElTotalDeLaTabla()
+    {
+        // La 'fila' puede ser cualquier índice >= 0 (no se valida contra el total de la tabla, que el servidor no conoce): aquí 0 y 10.
+        clsValidadorLicitacion.Validar(LeerEstructura([Linea(0), Linea(10)], _archivo), filasEnHoja: null).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ConLeerEstructuraLaFilaEsObligatoriaUnicaYSinNegativasConMensajesQueNombranLaTabla()
+    {
+        var errores = clsValidadorLicitacion.Validar(LeerEstructura([Linea(null), Linea(1), Linea(1), Linea(-1)], _archivo), filasEnHoja: null);
+
+        errores.Where(e => e.Codigo == clsCodigosLineaSolicitud.FilaInvalida).Select(e => e.Indice).Should().Equal(0, 2, 3);
+        errores.Select(e => e.Mensaje).Should().Contain(m => m!.StartsWith("La línea 1 de la tabla 'Rutas 2026'", StringComparison.Ordinal))
+            .And.Contain("La línea 3 de la tabla 'Rutas 2026' repite la 'fila' 1 de otra línea.")
+            .And.Contain("La línea 4 de la tabla 'Rutas 2026' trae una 'fila' negativa.");
+    }
+
     [Fact]
     public void SinLineasOConMasDeMilSeRechazaLaLicitacion()
     {

@@ -62,6 +62,14 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
     /// <summary>El total es la suma de los precios ya redondeados de las líneas, sin servicios conexos (ADR-017 §3).</summary>
     public const string EtiquetaTotal = "Total de la licitación (sin servicios conexos)";
 
+    /// <summary>
+    /// HU-044.7 (#290): nota del resumen cuando la licitación se leyó con la IA de NEXO (<c>leer_estructura</c>): los precios van en la hoja
+    /// «Licitación» nueva, no sobre el archivo original del cliente.
+    /// </summary>
+    public const string NotaLeidaConIa =
+        "Esta licitación se leyó con la IA de NEXO (lectura de estructura). Los precios se exportan en la hoja «" + HojaSinOriginal
+        + "»: NO se escriben sobre el archivo original del cliente.";
+
     private static readonly XLColor _pendiente = XLColor.FromHtml("#FFF2CC");
     private static readonly XLColor _encabezado = XLColor.FromHtml("#E8EEF7");
 
@@ -416,6 +424,14 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
         }
 
         Dato("Generado", datos.GeneradoEn.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture));
+        // HU-044.7 (#290): si la leyó la IA de NEXO, se avisa que los precios van en la hoja nueva, no sobre el original.
+        if (datos.LeidaConIa)
+        {
+            hoja.Cell(f, 1).Value = NotaLeidaConIa;
+            hoja.Cell(f, 1).Style.Font.SetItalic().Fill.SetBackgroundColor(_pendiente);
+            f++;
+        }
+
         f++;
 
         hoja.Cell(f, 1).Value = $"Servicios conexos incluidos ({datos.ServiciosConexos.Count})";

@@ -87,6 +87,8 @@ public sealed class clsContratoReflexionTests(clsCotiflyApiFactory factory) : IC
         "ErrorFilaLicitacion.codigo",
         "MensajeWeb.moneda", "SalidaPrecio.moneda", "ResumenCorreo.moneda", "EdicionSolicitudWeb.moneda", "SolicitudEditable.moneda",
         "SolicitudCosteoWeb.moneda", "LicitacionWeb.moneda", "Licitacion.moneda",
+        // HU-044.7 (#290): origen_lectura son las constantes de clsOrigenLectura (analizar_excel / leer_estructura), no un enum C#.
+        "LicitacionWeb.origen_lectura",
         "SalidaPrecio.metodo", "LineaNegocio.metodo_calculo", "ActualizarLineaNegocio.metodo_calculo", "DatosNuevaVersion.metodo_calculo",
         "RutaNuevaVersion.metodo_calculo", "SalidaPrecio.trm_fuente",
         "AccionPropuesta.tipo", "AccionPropuesta.metodo", "RespuestaChatError.error", "RespuestaChatError.codigo",
