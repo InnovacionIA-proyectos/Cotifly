@@ -39,7 +39,9 @@ public static class clsCalculadoraMetricas
             .ToList();
         var numDiferencias = universo.Sum(f => f.NumDiferencias);
         var montos = MontosDe(universo);
-        var politica = PoliticaDe(universo.SelectMany(f => f.Rutas));
+        // HU-016.2 (#295): la comparación contra la política solo mira las cotizaciones finalizadas (su margen ya no cambia). El resto
+        // del tablero (cantidad, márgenes, montos, serie, apertura por línea) sigue con TODAS.
+        var politica = PoliticaDe(universo.Where(f => f.Finalizada).SelectMany(f => f.Rutas));
 
         return new clsIndicadoresMetricas
         {
@@ -260,7 +262,9 @@ public static class clsCalculadoraMetricas
 
     /// <summary>
     /// HU-016.1 (#154, decisiones P3 y P4 del 2026-10-27): el margen aplicado contra la política de las MISMAS rutas. Comparables = las
-    /// rutas con margen aplicado y con política (el universo ya trae solo las de la versión vigente y sin las rechazadas). Simple sobre
+    /// rutas con margen aplicado y con política (el universo ya trae solo las de la versión vigente y sin las rechazadas). HU-016.2 (#295):
+    /// quien llama ya filtró las rutas a las de las cotizaciones finalizadas (sin ninguna, los cuatro márgenes dan <c>null</c> y
+    /// <c>SinPolitica</c> queda en 0). Simple sobre
     /// todas ellas; ponderado y desviación sobre las que tienen costo &gt; 0 (el costo siempre está en COP, así que la moneda y la TRM no
     /// influyen). La desviación es Σ((aplicado − política) × costo) / Σ costo, redondeada una sola vez. El promedio simple del margen
     /// aplicado (decisión del 2026-10-27) sale de las mismas comparables que el simple de la política, para compararlos directamente.
