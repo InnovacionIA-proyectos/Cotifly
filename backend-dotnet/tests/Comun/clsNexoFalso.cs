@@ -12,7 +12,7 @@ namespace Cotifly.Pruebas.Comun;
 /// solicitudes, consulta de la solicitud, "crear o recuperar" la cotización y marcar el resultado. Las pruebas cambian el estado
 /// (costear, entregar, descartar, caer) como lo haría la Mesa de Nexo. Seguro para varios hilos.
 /// </summary>
-public sealed class clsNexoFalso : HttpMessageHandler
+public sealed partial class clsNexoFalso : HttpMessageHandler
 {
     /// <summary>Raíz del servicio en las pruebas (sin <c>/api</c>, ADR-015 §8).</summary>
     public const string UrlBase = clsNexoClientesFalso.UrlBase;
@@ -310,6 +310,18 @@ public sealed class clsNexoFalso : HttpMessageHandler
             }
         });
 
+    /// <summary>
+    /// #259: índices de línea que la cotización devuelve partidos en DOS líneas con el mismo <c>lineaSolicitudId</c> (el flete repartido),
+    /// como una Mesa que parte la línea de un camión. La segunda (<see cref="LineaPartidaDe"/>) sale después en la lista pero su id es menor
+    /// en orden ordinal: así una prueba distingue "la primera por id" de "la primera de la lista".
+    /// </summary>
+    public HashSet<int> LineasPartidas { get; } = [];
+
+    /// <summary>#259: id de la segunda línea de la cotización de una línea partida (<see cref="LineasPartidas"/>).</summary>
+    public string? LineaPartidaDe(string solicitudId, int indice) => LineaCotizacionDe(solicitudId, indice) is { } id ? LineaPartida(id) : null;
+
+    private static string LineaPartida(string lineaId) => "0-" + lineaId;
+
     /// <summary>Si tiene valor, <c>GET /api/servicios-conexos</c> responde este estado (ej. 403: sin rol en Nexo).</summary>
     public HttpStatusCode? CatalogoFalla { get; set; }
 
@@ -446,10 +458,12 @@ public sealed class clsNexoFalso : HttpMessageHandler
         cancellationToken.ThrowIfCancellationRequested();
         var esMultipart = request.Content?.Headers.ContentType?.MediaType == "multipart/form-data";
         var cuerpo = request.Content is null || esMultipart ? null : await request.Content.ReadAsStringAsync(cancellationToken);
+        Dictionary<string, string>? formulario = null;
         if (esMultipart)
         {
             var bytes = await request.Content!.ReadAsByteArrayAsync(cancellationToken);
             UltimoArchivoAnalizado = bytes.LongLength;
+            formulario = await LeerFormularioAsync(request.Content, cancellationToken);
         }
         var identidad = request.Headers.TryGetValues(clsPeticionNexo.EncabezadoIdentidad, out var valores) ? valores.FirstOrDefault() : null;
         _peticiones.Enqueue(new clsPeticionNexo(
@@ -520,6 +534,8 @@ public sealed class clsNexoFalso : HttpMessageHandler
                     CotizacionPorSolicitud(r["/api/cotizaciones/por-solicitud/".Length..]),
                 ("GET", var r) when r.StartsWith("/api/cotizaciones/", StringComparison.Ordinal) => LeerCotizacion(r["/api/cotizaciones/".Length..]),
                 ("GET", "/api/servicios-conexos") => CatalogoConexos(request.RequestUri),
+                // HU-044.1 (#252): importación inteligente (clsNexoFalsoImportacion.cs).
+                (var m, var r) when EsRutaImportacion(r) => Importacion(m, r, request.RequestUri!, cuerpo, formulario),
                 _ => Error(HttpStatusCode.NotFound, "RUTA_NO_ENCONTRADA", $"{request.Method} {ruta}"),
             };
         }
@@ -1165,7 +1181,7 @@ public sealed class clsNexoFalso : HttpMessageHandler
             var lineaId = item?["lineaId"]?.GetValue<string>();
             var servicioId = item?["servicioConexoId"]?.GetValue<string>();
             var cantidad = item?["cantidad"]?.GetValue<decimal>() ?? 1m;
-            if (!c.Fletes.Keys.Any(i => c.LineaId(i) == lineaId))
+            if (!c.Fletes.Keys.Any(i => c.LineaId(i) == lineaId || (LineasPartidas.Contains(i) && LineaPartida(c.LineaId(i)) == lineaId)))
             {
                 return Error(HttpStatusCode.BadRequest, "LINEA_NO_ENCONTRADA", "La línea no pertenece a la cotización.");
             }
@@ -1212,11 +1228,21 @@ public sealed class clsNexoFalso : HttpMessageHandler
     private object Cotizacion(clsSolicitudFalsa s)
     {
         var c = s.Cotizacion!;
-        var lineas = c.Fletes.OrderByDescending(f => f.Key).Where(f => f.Key < s.LineaIds.Count).Select(f => new
-        {
-            id = c.LineaId(f.Key), lineaSolicitudId = (string?)s.LineaIds[f.Key], valorFlete = f.Value.Flete, fuente = "Sicetac",
-            valorAprovisionamiento = f.Value.Aprovisionamiento, valorRetornoContenedor = f.Value.Retorno,
-        }).ToArray();
+        // #259: con el índice en LineasPartidas la línea sale como DOS líneas de la cotización con el mismo lineaSolicitudId (el flete
+        // repartido), como una Mesa que parte la línea de un camión.
+        var lineas = c.Fletes.OrderByDescending(f => f.Key).Where(f => f.Key < s.LineaIds.Count).SelectMany(f => LineasPartidas.Contains(f.Key)
+            ? new[]
+            {
+                new { id = c.LineaId(f.Key), lineaSolicitudId = (string?)s.LineaIds[f.Key], valorFlete = f.Value.Flete / 2, fuente = "Sicetac",
+                    valorAprovisionamiento = f.Value.Aprovisionamiento, valorRetornoContenedor = f.Value.Retorno },
+                new { id = LineaPartida(c.LineaId(f.Key)), lineaSolicitudId = (string?)s.LineaIds[f.Key], valorFlete = f.Value.Flete / 2, fuente = "Sicetac",
+                    valorAprovisionamiento = (decimal?)null, valorRetornoContenedor = (decimal?)null },
+            }
+            : new[]
+            {
+                new { id = c.LineaId(f.Key), lineaSolicitudId = (string?)s.LineaIds[f.Key], valorFlete = f.Value.Flete, fuente = "Sicetac",
+                    valorAprovisionamiento = f.Value.Aprovisionamiento, valorRetornoContenedor = f.Value.Retorno },
+            }).ToArray();
         var conexos = c.Conexos.Select(x =>
         {
             var conexo = new JsonObject

@@ -1,0 +1,31 @@
+# OpenSSL para hablar con SQL Server antiguos (fix handshake TLS, ops 2026-11-10).
+#
+# PROBLEMA: la BD de cubos DWCubosEBSSAP (ConnectionStrings:Regional, 10.10.40.24) es un
+# SQL Server viejo. SQL Server SIEMPRE cifra el paquete de login (pre-login), aunque la
+# cadena tenga Encrypt=False. El certificado/TLS legacy de ese servidor lo rechaza el
+# OpenSSL 3.x de la imagen chiseled (Ubuntu 24.04) por su política por defecto (SECLEVEL=2,
+# TLS 1.2+), y el servidor corta la conexión:
+#   SqlException: pre-login handshake ... (SSL Provider, error: 31 ... handshake failed)
+#   ---> IOException: Received an unexpected EOF or 0 bytes from the transport stream.
+#
+# SOLUCIÓN (client-side): bajar la política TLS de este proceso para aceptar el handshake
+# viejo. Se activa con ENV OPENSSL_CONF apuntando a este archivo (ver Dockerfile).
+#
+# ALCANCE: afecta a TODO el proceso (también las conexiones salientes a 10.10.40.85, Nexo e
+# IA), que quedan aceptando TLS/cifrados más débiles aunque no lo necesiten. Es un apaño
+# acotado mientras el DBA moderniza TLS en 10.10.40.24 (solución de fondo); al hacerlo,
+# revertir este archivo y el ENV del Dockerfile.
+
+openssl_conf = openssl_init
+
+[openssl_init]
+ssl_conf = ssl_sect
+
+[ssl_sect]
+system_default = system_default_sect
+
+[system_default_sect]
+# Permite negociar hasta TLS 1.0 (OpenSSL 3 por defecto exige 1.2).
+MinProtocol = TLSv1
+# SECLEVEL=0 acepta certificados/algoritmos antiguos (RSA corto, SHA1) que SECLEVEL=2 rechaza.
+CipherString = DEFAULT@SECLEVEL=0

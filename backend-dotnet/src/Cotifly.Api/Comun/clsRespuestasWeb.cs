@@ -107,6 +107,8 @@ public static class clsRespuestasWeb
                 new clsResultadoReintentable(clsErrorNegocioWeb.Desde(error), SegundosReintentoCubicadorOcupado) { StatusCode = StatusCodes.Status503ServiceUnavailable },
             clsCodigosError.CotizacionNoEncontrada => new NotFoundObjectResult(new clsErrorWeb(MensajeNoEsTuya)),
             clsCodigosAplicacion.NoEncontrado => new NotFoundObjectResult(new clsErrorWeb(error.Mensaje)),
+            // HU-044.5 (#256): lo que NEXO no encuentra al borrar es 404 CON su código (no el 404 "no es tuya" sin código).
+            clsCodigosError.PlantillaNoEncontrada or clsCodigosError.RecetaNoEncontrada => new NotFoundObjectResult(clsErrorNegocioWeb.Desde(error)),
             clsCodigosAplicacion.NoAutenticado or clsTelefonoComercialService.CodigoUsuarioNoEncontrado =>
                 new UnauthorizedObjectResult(new clsErrorWeb(clsCodigosAcceso.MensajeSesionExpirada)),
             clsCodigosAplicacion.SinPermiso => new ObjectResult(new clsErrorWeb(clsErrorWeb.MensajeSinPermiso)) { StatusCode = StatusCodes.Status403Forbidden },

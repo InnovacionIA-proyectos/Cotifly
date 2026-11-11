@@ -208,3 +208,30 @@ Característica: Licitaciones desde Excel
       | un libro con una entidad externa (XXE)   | EXCEL_INVALIDO           | LIBRO_ILEGIBLE              |
       | un .xls antiguo renombrado a .xlsx       | EXCEL_INVALIDO           | CIFRADO_O_XLS               |
       | un archivo de texto renombrado a .xlsx   | EXCEL_INVALIDO           | NO_ES_XLSX                  |
+
+  # HU-044.2 (#253) — La importación inteligente de NEXO propone el mapeo de una hoja: la plantilla del cliente, luego su diccionario y,
+  # para lo que falte, la IA. El campo de cada columna es el nombre de NEXO; es solo una sugerencia que el comercial confirma.
+  Escenario: NEXO sugiere con IA el mapeo de las columnas de la hoja
+    Cuando "ana" pide la sugerencia de mapeo de la hoja "ORIGEN, DESTINO, TON" del cliente "900555111"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "SugerenciaMapeo" del contrato
+    Y la sugerencia viene de "ia" con la IA usada y propone los campos "origen, destino, peso"
+
+  Escenario: Con la plantilla del cliente la sugerencia sale de la plantilla sin usar la IA
+    Dado que el cliente "900555111" tiene en Nexo la plantilla de mapeo de "ORIGEN, DESTINO, TON" a "origen, destino, peso"
+    Cuando "ana" pide la sugerencia de mapeo de la hoja "ORIGEN, DESTINO, TON" del cliente "900555111"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "SugerenciaMapeo" del contrato
+    Y la sugerencia viene de "plantilla" sin la IA por "PLANTILLA_RECONOCIDA" y propone los campos "origen, destino, peso"
+
+  # HU-044.5 (#256) — El comercial guarda en NEXO el mapeo confirmado como plantilla del cliente: la siguiente carga del mismo formato
+  # sale de la plantilla, sin IA. Los listados de plantillas y formatos exigen el NIT: sin él NEXO devolvería los de todos los clientes.
+  Escenario: La plantilla de mapeo guardada hace que la siguiente carga del mismo formato no use la IA
+    Cuando "ana" guarda la plantilla de mapeo de la hoja "ORIGEN, DESTINO, TON" a "origen, destino, peso" del cliente "900555111"
+    Entonces la respuesta tiene el estado 201 y cumple el esquema "PlantillaMapeo" del contrato
+    Y la siguiente carga de la hoja "ORIGEN, DESTINO, TON" del cliente "900555111" sale de la plantilla sin IA
+    Cuando "ana" lista las plantillas de mapeo del cliente "900555111"
+    Entonces la lista trae 1 plantilla
+
+  Escenario: Los formatos de lectura no se listan sin el NIT del cliente
+    Cuando "ana" lista los formatos de lectura sin el NIT del cliente
+    Entonces la respuesta tiene el estado 400 con el código de negocio "CLIENTE_REQUERIDO"
+    Y Nexo no recibió la consulta de los formatos

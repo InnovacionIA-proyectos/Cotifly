@@ -155,6 +155,8 @@ public sealed class clsApiWebPruebas : IDisposable
         {
             s.AddHttpClient("Nexo").ConfigurePrimaryHttpMessageHandler(() => nexo);
             s.AddHttpClient("NexoCosteo").ConfigurePrimaryHttpMessageHandler(() => nexo);
+            // HU-044.1 (#252): la importación inteligente (sugerir-mapeo, leer-estructura, recetas...) también va al Nexo falso.
+            s.AddHttpClient(Cotifly.Infraestructura.Licitaciones.Services.clsImportacionExcelNexo.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => nexo);
             if (cubicador is not null)
             {
                 s.AddHttpClient(Cotifly.Infraestructura.Cubicacion.Services.clsCubicadorHttp.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => cubicador);

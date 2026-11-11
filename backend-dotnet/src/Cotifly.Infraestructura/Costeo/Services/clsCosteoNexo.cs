@@ -1110,7 +1110,7 @@ public sealed class clsCosteoNexo(
     }
 
     /// <summary>Lee hasta <paramref name="limite"/> bytes en memoria; <c>null</c> si el flujo trae más.</summary>
-    private static async Task<MemoryStream?> LeerAcotadoAsync(Stream flujo, long limite, CancellationToken cancellationToken)
+    internal static async Task<MemoryStream?> LeerAcotadoAsync(Stream flujo, long limite, CancellationToken cancellationToken)
     {
         var memoria = new MemoryStream();
         var bufer = new byte[16 * 1024];

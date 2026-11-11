@@ -444,4 +444,105 @@ public static class clsCodigosError
     /// <c>aviso_seguro</c> (costeo, detalle y respuesta del PDF) de las rutas con el seguro marcado sin valor de la mercancía (no bloquea).
     /// </summary>
     public const string SeguroSinValorMercancia = "SEGURO_SIN_VALOR_MERCANCIA";
+
+    // HU-044.1 (#252, ADR-028): importación inteligente del Excel con NEXO. Los códigos que siguen son los 400/404 de NEXO
+    // (CONTRATO.md §3.3 y §3.19.1) que el adaptador devuelve tal cual, con el mensaje de NEXO. Mismos códigos que usa NEXO.
+
+    /// <summary>HU-044.1 (#252): <c>sugerir-mapeo</c> o <c>plantillas-mapeo</c> sin encabezados. 400. Mismo código que usa NEXO.</summary>
+    public const string EncabezadosRequeridos = "ENCABEZADOS_REQUERIDOS";
+
+    /// <summary>HU-044.1 (#252): más de 100 columnas en el mapeo. 400. Mismo código que usa NEXO.</summary>
+    public const string DemasiadasColumnas = "DEMASIADAS_COLUMNAS";
+
+    /// <summary>HU-044.1 (#252): más de 5000 filas en <c>aplicar-mapeo</c>. 400. Mismo código que usa NEXO.</summary>
+    public const string DemasiadasFilas = "DEMASIADAS_FILAS";
+
+    /// <summary>HU-044.1 (#252): un encabezado de la plantilla de mapeo pasa de 200 caracteres. 400. Mismo código que usa NEXO.</summary>
+    public const string EncabezadoDemasiadoLargo = "ENCABEZADO_DEMASIADO_LARGO";
+
+    /// <summary>HU-044.1 (#252): una columna de la plantilla apunta a un índice que no está entre los encabezados. 400. Mismo código que usa NEXO.</summary>
+    public const string ColumnaFueraDeRango = "COLUMNA_FUERA_DE_RANGO";
+
+    /// <summary>HU-044.1 (#252): una columna del mapeo con un índice inválido. 400. Mismo código que usa NEXO.</summary>
+    public const string ColumnaInvalida = "COLUMNA_INVALIDA";
+
+    /// <summary>HU-044.1 (#252): el mapeo confirmado viene vacío. 400. Mismo código que usa NEXO.</summary>
+    public const string MapeoRequerido = "MAPEO_REQUERIDO";
+
+    /// <summary>HU-044.1 (#252): un campo del mapeo (o de <c>normalizar-valores</c>) que NEXO no conoce. 400. Mismo código que usa NEXO.</summary>
+    public const string CampoInvalido = "CAMPO_INVALIDO";
+
+    /// <summary>HU-044.1 (#252): dos columnas del mapeo apuntan al mismo campo. 400. Mismo código que usa NEXO.</summary>
+    public const string CampoDuplicado = "CAMPO_DUPLICADO";
+
+    /// <summary>
+    /// HU-044.1 (#252): al mapeo le falta un campo obligatorio (origen y destino, o una columna <c>dividir_origen_destino</c>). 400. Mismo
+    /// código que usa NEXO (y el mismo valor que <c>clsCodigosLineaSolicitud.CampoRequerido</c> de los errores por campo).
+    /// </summary>
+    public const string CampoRequerido = "CAMPO_REQUERIDO";
+
+    /// <summary>HU-044.1 (#252): una transformación que no está en la lista cerrada de NEXO. 400. Mismo código que usa NEXO.</summary>
+    public const string TransformacionInvalida = "TRANSFORMACION_INVALIDA";
+
+    /// <summary>HU-044.1 (#252): una transformación que no corresponde al campo (ej. <c>fecha</c> en <c>peso</c>). 400. Mismo código que usa NEXO.</summary>
+    public const string TransformacionNoAplica = "TRANSFORMACION_NO_APLICA";
+
+    /// <summary>HU-044.1 (#252): <c>normalizar-valores</c> sin valores. 400. Mismo código que usa NEXO.</summary>
+    public const string ValoresRequeridos = "VALORES_REQUERIDOS";
+
+    /// <summary>HU-044.1 (#252): más de 1000 valores en <c>normalizar-valores</c>. 400. Mismo código que usa NEXO.</summary>
+    public const string DemasiadosValores = "DEMASIADOS_VALORES";
+
+    /// <summary>HU-044.1 (#252): un valor de <c>normalizar-valores</c> pasa de 150 caracteres. 400. Mismo código que usa NEXO.</summary>
+    public const string ValorDemasiadoLargo = "VALOR_DEMASIADO_LARGO";
+
+    /// <summary>
+    /// HU-044.1 (#252): falta el cliente. Lo responde NEXO al guardar una plantilla o una receta sin cliente y lo responde Cotifly, sin llamar a
+    /// NEXO, al listar recetas o plantillas sin el NIT de la licitación (sin él, NEXO devolvería las de todos los clientes). 400. Mismo
+    /// código que usa NEXO.
+    /// </summary>
+    public const string ClienteRequerido = "CLIENTE_REQUERIDO";
+
+    /// <summary>HU-044.1 (#252): el <c>clienteId</c> enviado a NEXO no existe. 400. Mismo código que usa NEXO.</summary>
+    public const string ClienteNoEncontrado = "CLIENTE_NO_ENCONTRADO";
+
+    /// <summary>
+    /// HU-044.1 (#252): al guardar una plantilla o una receta, el NIT no es de ningún cliente ni prospecto del DW (NEXO no puede crear el
+    /// cliente local). 400. Mismo código que usa NEXO.
+    /// </summary>
+    public const string ClienteNitInvalido = "CLIENTE_NIT_INVALIDO";
+
+    /// <summary>HU-044.1 (#252): el nombre de la plantilla o de la receta pasa de 100 caracteres. 400. Mismo código que usa NEXO.</summary>
+    public const string NombreDemasiadoLargo = "NOMBRE_DEMASIADO_LARGO";
+
+    /// <summary>HU-044.1 (#252): <c>DELETE plantillas-mapeo/{id}</c> de una plantilla que no existe (404 en NEXO). Mismo código que usa NEXO.</summary>
+    public const string PlantillaNoEncontrada = "PLANTILLA_NO_ENCONTRADA";
+
+    /// <summary>HU-044.1 (#252): las instrucciones de <c>leer-estructura</c> o de la receta pasan de 4000 caracteres. 400. Mismo código que usa NEXO.</summary>
+    public const string InstruccionesDemasiadoLargas = "INSTRUCCIONES_DEMASIADO_LARGAS";
+
+    /// <summary>HU-044.1 (#252): <c>PUT recetas-lectura</c> sin receta. 400. Mismo código que usa NEXO.</summary>
+    public const string RecetaRequerida = "RECETA_REQUERIDA";
+
+    /// <summary>
+    /// HU-044.1 (#252): la receta de lectura no es un JSON válido, es demasiado grande o no se puede ejecutar sobre el archivo (el mensaje de
+    /// NEXO dice qué). 400. Mismo código que usa NEXO.
+    /// </summary>
+    public const string RecetaInvalida = "RECETA_INVALIDA";
+
+    /// <summary>HU-044.1 (#252): al guardarla, la receta no da ninguna fila con ese archivo. 400. Mismo código que usa NEXO.</summary>
+    public const string RecetaSinFilas = "RECETA_SIN_FILAS";
+
+    /// <summary>HU-044.1 (#252): <c>DELETE recetas-lectura/{id}</c> de un formato que no existe (404 en NEXO). Mismo código que usa NEXO.</summary>
+    public const string RecetaNoEncontrada = "RECETA_NO_ENCONTRADA";
+
+    /// <summary>HU-044.1 (#252): <c>GET diccionario-cliente</c> con un <c>tipo</c> distinto de columna, unidad o valor. 400. Mismo código que usa NEXO.</summary>
+    public const string TipoTerminoInvalido = "TIPO_TERMINO_INVALIDO";
+
+    /// <summary>
+    /// HU-044.2 (#253, auditoría B7): en <c>leer-estructura</c> el archivo cabe solo, pero con la <c>receta</c> y las <c>instrucciones</c> el
+    /// envío pasa el tope de 10 MB de NEXO (el mismo de <c>clsArchivoExcel.TamanoMaximoBytes</c>). Lo responde Cotifly, sin llamar a NEXO,
+    /// para no culpar al archivo con un <c>ARCHIVO_DEMASIADO_GRANDE</c>. 400. Código nuevo del backend .NET.
+    /// </summary>
+    public const string LecturaDemasiadoGrande = "LECTURA_DEMASIADO_GRANDE";
 }

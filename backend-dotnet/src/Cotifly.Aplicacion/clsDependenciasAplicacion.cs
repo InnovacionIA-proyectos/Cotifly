@@ -145,12 +145,20 @@ public static class clsDependenciasAplicacion
 
         // Licitaciones desde Excel (HU-011, ADR-017).
         servicios.AddScoped<Licitaciones.Services.IClsLicitacionService, Licitaciones.Services.clsLicitacionService>();
+        // HU-044.5 (#256): plantillas de mapeo, formatos de lectura y diccionario del cliente, puente hacia NEXO (el adaptador lo registra
+        // Infraestructura).
+        servicios.AddScoped<Licitaciones.Services.IClsFormatosClienteService, Licitaciones.Services.clsFormatosClienteService>();
         // HU-023.5 (#160): cubicación de la licitación en segundo plano (el procesador lo registra Infraestructura).
         servicios.AddScoped<Licitaciones.Services.IClsCubicacionLicitacionService, Licitaciones.Services.clsCubicacionLicitacionService>();
         servicios.AddScoped<Licitaciones.Services.IClsValidadorFilasLicitacion, Licitaciones.Services.clsValidadorFilasLicitacion>();
+        // HU-044.2 (#253): sugerir-mapeo y leer-estructura, puente hacia la importación inteligente de NEXO (el adaptador lo registra Infraestructura).
+        servicios.AddScoped<Licitaciones.Services.IClsSugerenciaMapeoService, Licitaciones.Services.clsSugerenciaMapeoService>();
 
         // HU-035.1 (#202, ADR-024): Excel de mercancías de una ruta, leído localmente sin Nexo (el lector lo registra Infraestructura).
         servicios.AddScoped<Mercancias.Services.IClsAnalisisExcelMercanciasService, Mercancias.Services.clsAnalisisExcelMercanciasService>();
+
+        // HU-044.4 (#255, ADR-029): POST /web/licitaciones/normalizar-valores con NEXO (el puerto de la importación lo registra Infraestructura).
+        servicios.AddScoped<Licitaciones.Services.IClsNormalizacionValoresService, Licitaciones.Services.clsNormalizacionValoresService>();
 
         // Tablero de métricas agregadas (HU-010.1, ADR-016) y regional del usuario (DimEjecutivo o UsuariosWeb.regional).
         servicios.AddScoped<IClsRegionalUsuario, clsRegionalUsuarioService>();

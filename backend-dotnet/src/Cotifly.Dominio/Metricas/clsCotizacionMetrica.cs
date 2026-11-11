@@ -21,6 +21,13 @@ public sealed record clsCotizacionMetrica
     /// <summary><c>createdAt</c> de la versión vigente (base del tiempo de cotización con <see cref="CosteoListoAt"/>).</summary>
     public DateTimeOffset? CreatedAtVigente { get; init; }
 
+    /// <summary>
+    /// HU-016.2 (#295): la versión vigente de la cadena está finalizada (<c>finalizadaAt</c> no nulo, script 14). Solo las finalizadas
+    /// entran en la comparación del margen contra la política (<see cref="clsCalculadoraMetricas.Indicadores"/>): mientras la cotización
+    /// no se finaliza su margen aún puede cambiar y no debe pesar en la desviación. El resto del tablero cuenta con TODAS.
+    /// </summary>
+    public bool Finalizada { get; init; }
+
     /// <summary>Filas (versiones) de la cadena.</summary>
     public int Versiones { get; init; } = 1;
 
