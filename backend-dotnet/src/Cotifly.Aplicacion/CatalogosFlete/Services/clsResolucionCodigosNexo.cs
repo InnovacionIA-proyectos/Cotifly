@@ -52,9 +52,15 @@ public static class clsResolucionCodigosNexo
             return new clsCodigoResueltoNexo(oficial, FuenteCodigoNexo.Catalogo);
         }
 
-        return alias?.Resolver(TipoAliasNexo.Vehiculo, texto) is { } codigo
-            ? new clsCodigoResueltoNexo(clsCodigosConocidosNexo.Resolver(lista, codigo) ?? codigo, FuenteCodigoNexo.Alias)
-            : null;
+        if (alias?.Resolver(TipoAliasNexo.Vehiculo, texto) is not { } codigo)
+        {
+            return null;
+        }
+
+        // HU-044.8 (#291): el código al que resuelve el alias también pasa por la equivalencia de SICE-TAC. El catálogo de SAP trae
+        // «2»/«3», así que un alias como "Sencillo"→«2» o "Doble troque"→«3» debe viajar como C2/C3, nunca «2»/«3» (cuarentena).
+        var codigoAlias = clsEquivalenciaVehiculoNexo.ACodigoNexo(codigo) ?? clsCodigosConocidosNexo.Resolver(lista, codigo) ?? codigo;
+        return new clsCodigoResueltoNexo(codigoAlias, FuenteCodigoNexo.Alias);
     }
 
     /// <summary>
