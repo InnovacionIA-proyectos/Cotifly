@@ -64,5 +64,35 @@ saber qué medida es un acompañante; solo cruza los `codigoServicio` de los con
 
 ## Pendientes de decisión
 
-- Largo de la justificación: se fijó un máximo de 1000 caracteres y ningún mínimo (basta con que no esté vacía).
-- Orden de las medidas en el panel: por código (las tablas no tienen columna de orden).
+- Largo de la justificación: se fijó un máximo de 1000 caracteres y ningún mínimo (basta con que no esté vacía). *(Superado por la adenda
+  del 2026-11-10: 10 a 500 caracteres.)*
+- Orden de las medidas en el panel: por código (las tablas no tienen columna de orden). *(Superado por la adenda del 2026-11-10: por nombre
+  y luego por código.)*
+
+## Adenda 2026-11-10 — Realineación al contrato autoritativo del frontend
+
+El comentario del 2026-11-10 en #269 fijó el contrato contra el que el frontend (#150) ya está construido. Ajusta lo decidido antes (no
+reescribe la historia de arriba) en estos puntos. Lo demás (dominio puro, persistencia sin caché, `codigoServicio`, B1, B3, B6, B8 y las
+decisiones del usuario del 2026-11-09) sigue vigente.
+
+- **Forma del bloque (sustituye el punto 4 y B7).** `rutas[].politica_seguros` pasa a
+  `{tramo: {id, nombre, valor_desde, valor_hasta} | null, aviso, recomendadas, obligatorias}`. Las listas se llaman `recomendadas` y
+  `obligatorias` (antes `medidas_recomendadas`/`medidas_obligatorias`) y comparten la misma forma de medida:
+  `Medida = {codigo, nombre, es_cobrable, estado, conexos[]}`. El `estado` es uniforme en ambas listas:
+  - `incluir_seguro` se evalúa por su código: `cumplida` si la ruta tiene `incluye_seguro`, si no `pendiente`;
+  - una medida con conexos: `cumplida` si la ruta tiene alguno (sin distinguir mayúsculas), si no `pendiente`;
+  - una medida sin conexos: `sin_verificar`, que nunca bloquea.
+  Una obligatoria sin conexos NO se mueve a recomendadas (como decía el punto 1): queda en `obligatorias` con `sin_verificar` y no bloquea.
+  Solo una obligatoria `pendiente` bloquea "Finalizar". El tramo ahora incluye su `id`.
+- **Aviso (sustituye B7).** Se retira `aviso_codigo` y el valor `sin_tramo`: `aviso = "SIN_VALOR_MERCANCIA" | null`. Sin `valor_mercancia`
+  o con 0, `aviso = "SIN_VALOR_MERCANCIA"`; un valor positivo que no cae en ningún tramo activo (hueco de datos) va con `aviso = null` y
+  listas vacías (el frontend solo conoce ese aviso o `null`).
+- **Orden de las medidas (sustituye el pendiente de orden).** Por `nombre` y luego por `codigo`; los `conexos`, ordenados.
+- **Justificación de "Finalizar" (sustituye el punto 5 y el pendiente de largo).** De 10 a 500 caracteres sobre el texto recortado (ausente,
+  null, vacía o solo espacios es como no mandarla). Fuera de ese rango: 400 `JUSTIFICACION_REQUERIDA` con `detalle.minimo = 10` y
+  `detalle.maximo = 500`, validado justo después del `If-Match` (antes "hasta 1000 / `SOLICITUD_INVALIDA`"). El `detalle.rutas` del 409
+  `medidas_obligatorias_faltantes` pasa a `[{linea_orden, origen, destino, medidas: [{codigo, nombre}]}]` (sin `linea_solicitud_id` ni
+  `conexos`).
+- **Política ilegible al finalizar (sustituye B4).** En las vistas se usa una lectura que no falla (el bloque sale `null`); en "Finalizar"
+  la excepción se propaga y la respuesta es **500** (ya no 503 `SERVICIO_OCUPADO` ni `detalle.motivo = politica_seguros_no_disponible`).
+  Sigue fallando cerrado: no se finaliza sin evaluar la política.
