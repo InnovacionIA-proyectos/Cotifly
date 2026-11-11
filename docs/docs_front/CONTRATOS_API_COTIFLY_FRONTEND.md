@@ -2092,11 +2092,20 @@ en el precio" (mismo folio) o "La versión nueva copia los servicios conexos «.
 La IA redacta el asunto y la introducción del PDF. Nunca falla por la IA: si tarda más de 15 s, falla o su texto no pasa la validación,
 responde los textos estándar (`fuente = estandar`).
 
-- **Rol:** ambos (dueño). **Headers:** `If-Match` **obligatorio**. **Sin cuerpo.**
+- **Rol:** ambos (dueño). **Headers:** `If-Match` **obligatorio**. **Cuerpo opcional** (HU-013.18, #296): sin cuerpo, todo igual que hoy.
 
 | Parámetro | En | Reglas |
 |---|---|---|
 | `sobrescribir` | query | `true` reemplaza textos editados por el comercial. Por defecto `false` |
+
+| Campo (cuerpo opcional) | Tipo | Obligatorio | Reglas |
+|---|---|---|---|
+| `indicaciones_redaccion` | string \| null | No | HU-013.18 (#296). Indicaciones del comercial para orientar la carta de la IA (una **preferencia** de enfoque o tono, p. ej. "destacar la experiencia en carga refrigerada, tono cercano"). **No** es `notas` (la de la Mesa de Costeo). Hasta 500 caracteres (recortada); vacía, solo espacios o `null` = sin indicaciones. Más de 500: 400 `SOLICITUD_INVALIDA` sin llamar a la IA. Es una preferencia que **nunca** pasa por encima de las reglas estrictas del redactor (si pide montos, condiciones, otros nombres o cambiar el formato, esa parte se ignora) y la salida se valida igual. **No se guarda** en la cotización |
+
+```jsonc
+// Cuerpo (opcional)
+{ "indicaciones_redaccion": "Resaltar la experiencia en carga refrigerada y usar un tono cercano." }
+```
 
 ```json
 {
@@ -2111,8 +2120,9 @@ responde los textos estándar (`fuente = estandar`).
 | HTTP | Código | UI |
 |---|---|---|
 | 200 | `TextosCotizacion` | Mostrar en el editor. Con `fuente = estandar`, avisar que se usó el texto estándar. Guardar el `ETag` de la respuesta |
+| 400 | `SOLICITUD_INVALIDA` | `indicaciones_redaccion` de más de 500 caracteres: avisar y no reenviar hasta recortarla |
 | 404 | `ErrorWeb` | — |
-| 409 | `TEXTOS_EDITADOS` | Preguntar "¿Reemplazar tus textos?" y repetir con `?sobrescribir=true` |
+| 409 | `TEXTOS_EDITADOS` | Preguntar "¿Reemplazar tus textos?" y repetir con `?sobrescribir=true` (con las mismas `indicaciones_redaccion`) |
 | 409 | `PDF_YA_ENVIADO`, `CONFLICTO_CONCURRENCIA` | Versión nueva / recargar |
 | 428 | `PRECONDICION_REQUERIDA` | — |
 
@@ -3536,7 +3546,11 @@ Definiciones comunes (aplican a los dos tableros):
 - **Margen contra la política (HU-016.1, #154, nuevo):** `indicadores` (y `comerciales[].indicadores`) trae cinco campos que comparan
   el margen aplicado con la política de margen de las **mismas rutas** (el `margenPoliticaSugerido` que cada ruta guardó al cotizarse;
   la tabla de políticas no se expone). Rutas comparables: versión vigente, sin las rechazadas por la Mesa, con margen aplicado y con
-  política. `margen_politica_promedio` = promedio simple de su política; `margen_aplicado_promedio` = promedio simple de su margen
+  política. **HU-016.2 (#295, fila 81 de §7): además, solo de las cotizaciones FINALIZADAS** (`finalizadaAt`): una sin finalizar aún
+  puede cambiar de margen, así que no entra en la comparación (ni en `rutas_sin_margen_politica`), pero sí cuenta en `cantidad` y en el
+  resto del tablero (`margen_promedio`, `margen_ponderado`, montos, serie y apertura por línea, todos con TODAS). Sin ninguna finalizada,
+  los cuatro márgenes salen `null` y `rutas_sin_margen_politica` = 0. Una finalizada en la v1 con una v2 sin finalizar no cuenta (se mira
+  la versión vigente). No cambia ningún nombre ni tipo de campo. `margen_politica_promedio` = promedio simple de su política; `margen_aplicado_promedio` = promedio simple de su margen
   aplicado (las **mismas** rutas: es el par directo de `margen_politica_promedio`); `margen_politica_ponderado` = política ponderada por
   `costoFinal` (las de costo > 0); `desviacion_margen_politica` = SUM((aplicado − política) × costo) / SUM(costo) de esas mismas rutas,
   es decir, el aplicado ponderado por costo menos la política ponderada. **Semáforo con el ponderado:** verde si
@@ -4449,6 +4463,8 @@ fila_excel, campo, codigo, mensaje}`.
 | 89 | **HU-044.10 (#293, parte 2): líneas agregadas a mano (`fila: null`) con archivo.** `POST /web/licitaciones` acepta líneas con `fila: null` aunque haya archivo: son líneas agregadas a mano. La unicidad de `fila` ignora los `null`; sus errores por fila dicen «La línea N» (con `fila` y `fila_excel` en `null`) y una `fila null` no desplaza a las demás al releer la hoja. Una licitación hecha solo de líneas a mano es válida (con archivo sigue exigiendo `hoja`). En la vista, la línea vuelve con `fila: null`. En `GET /web/licitaciones/{folio}/excel`: con `analizar_excel` y original, las de a mano van a una hoja nueva «Agregadas en Cotifly» (columnas de «Licitación» + `Referencia` = «Agregada en Cotifly»); con `leer_estructura` o sin original, al final de la hoja «Licitación» con la columna `Referencia`; «Resumen Cotifly» agrega la fila «Líneas agregadas en Cotifly». Sin líneas a mano, el Excel queda igual que hoy. Sin endpoints nuevos; sin script. **Numeración provisional: se renumera al integrar** | Agrega | Permitir agregar filas a mano (sin `fila`) a una licitación con archivo; pintar sus errores como «La línea N»; avisar que irán en una hoja/sección «Agregadas en Cotifly» del Excel |
 | 90 | **HU-044.10 (#293, parte 3): `Idempotency-Key` al crear la licitación.** `POST /web/licitaciones` (multipart o JSON) acepta la cabecera opcional `Idempotency-Key` (8 a 64; CORS ya la permite), ámbito `crear-licitacion` por comercial. La huella es el cuerpo más el nombre y el SHA-256 del archivo (no los bytes). Un doble clic con la misma clave y el mismo cuerpo+archivo relee la licitación creada y responde **201 con el mismo folio** y su estado de ahora, sin crear otra. Solo el 201 consume la clave: un reporte por fila (400) o un 503 **no** la consumen (la repetición se vuelve a evaluar y devuelve el reporte completo). La misma clave con otro cuerpo u otro archivo es 409 `IDEMPOTENCY_KEY_REUTILIZADA`; fuera de largo, 400 `ErrorWeb`. Sin endpoints nuevos; sin script. **Numeración provisional: se renumera al integrar** | Agrega | Generar una `Idempotency-Key` (UUID) por intención al pulsar «Crear» y reenviarla en los reintentos; tratar el 409 `IDEMPOTENCY_KEY_REUTILIZADA` pidiendo una clave nueva |
 | 80 | **#259: un conexo ya no se queda en `estado_nexo = pendiente` para siempre en una cotización entregada.** (a) Si NEXO deja la línea de un camión partida en varias líneas de su cotización, el conexo va a la primera por id (antes no se enviaba nunca y "Finalizar" respondía `conexos_pendientes_en_nexo` para siempre). (b) Con la cotización ya fuera del costeo (entregada, descartada, vencida), si el primer camión vigente no tiene línea en NEXO el conexo va al primer camión vigente que sí la tiene; si ninguno la tiene queda `fallido_definitivo` (con `aviso_conexos_nexo`, no bloquea "Finalizar"). Los conexos de una ruta `rechazada` no cambian (no se envían ni pasan a `fallido_definitivo`; tampoco bloquean). (c) `POST .../finalizar` con `conexos_pendientes_en_nexo` sigue respondiendo el mismo 409, pero, si la cotización estaba fuera de la agenda del polling, vuelve a encolar el envío diferido (sin enviar nada a NEXO en la petición): en unos segundos el conexo queda `enviado` o `fallido_definitivo` y el siguiente "Finalizar" pasa; así se reparan solas las cotizaciones que ya estaban atascadas. Sin códigos, estados, campos ni endpoints nuevos; sin script de base de datos (ADR-031) | Cambia | Con `conexos_pendientes_en_nexo`, en vez de dejar "Finalizar" deshabilitado indefinidamente: refrescar el costeo a los pocos segundos y permitir reintentar. Mostrar `fallido_definitivo` con `aviso_conexos_nexo` como hasta ahora |
+| 81 | **HU-016.2 (#295): la comparación del margen contra la política solo con cotizaciones finalizadas.** En `IndicadoresMetricas` (`indicadores` y `comerciales[].indicadores` de `GET /web/metricas/comercial` y `/regional`), los cinco campos de la comparación con la política —`margen_politica_promedio`, `margen_aplicado_promedio`, `margen_politica_ponderado`, `desviacion_margen_politica` y `rutas_sin_margen_politica`— salen ahora **solo de las cotizaciones finalizadas** (`finalizadaAt`, script 14): una cotización sin finalizar todavía puede cambiar de margen, así que no debe pesar en la desviación. Una finalizada en la v1 con una v2 sin finalizar no cuenta (se mira la versión vigente). **Cambia el significado** (el universo) de esos cinco campos; **no cambia ningún nombre ni tipo**. Sin ninguna cotización finalizada, los cuatro márgenes salen `null` y `rutas_sin_margen_politica` = 0. El **resto del tablero no cambia**: `cantidad`, `margen_promedio`, `margen_ponderado`, los montos, la serie mensual y la apertura por línea (`por_linea_negocio`) siguen contando con TODAS las cotizaciones (una abierta sí entra en `cantidad`). Sin endpoints, códigos ni script de base de datos nuevos | Cambia | Si ya se muestra la comparación de margen contra política, aclarar en pantalla que es **solo sobre cotizaciones finalizadas**; el resto de los indicadores sigue igual. No hay cambios de forma ni de integración |
+| 82 | **HU-013.18 (#296): indicaciones del comercial para el redactor con IA.** `POST /web/cotizaciones/{folio}/costeo/textos/redactar` (4.4.8) acepta ahora un **cuerpo JSON opcional** `{indicaciones_redaccion: string \| null}` (`RedactarTextosWeb`). Sin cuerpo, todo igual que hoy. `indicaciones_redaccion` orienta la carta de la IA (una **preferencia** de enfoque o tono, p. ej. "destacar la experiencia en carga refrigerada, tono cercano"); **no** es `notas` (la de la Mesa de Costeo). Hasta 500 caracteres (recortada); vacía, solo espacios o `null` = sin indicaciones. **Más de 500: 400 `SOLICITUD_INVALIDA`** sin llamar a la IA. Es una preferencia que **nunca** pasa por encima de las reglas estrictas del redactor (si pide montos, condiciones, otros nombres o cambiar el formato, esa parte se ignora) y la salida se valida igual (si no pasa, textos estándar). **No se guarda** en la cotización; la auditoría solo registra `con_indicaciones` (sí/no), nunca el texto. El reintento tras `TEXTOS_EDITADOS` (409, `?sobrescribir=true`) lleva las mismas indicaciones. Sin campos nuevos en la respuesta (`TextosCotizacion` igual que hoy), sin estados ni endpoints nuevos; sin script de base de datos | Agrega | En el editor de textos del PDF, ofrecer un campo opcional "Indicaciones para la IA" (máx. 500) y enviarlo en `indicaciones_redaccion` al pedir "Redactar con IA"; con `SOLICITUD_INVALIDA` marcar el campo (más de 500); reenviar las mismas indicaciones en el reintento con `?sobrescribir=true` |
 
 ---
 
@@ -4645,7 +4661,9 @@ líneas (fila 67 de §7):
   `margen_aplicado_promedio` (el aplicado simple de las mismas rutas), `margen_politica_ponderado`, `desviacion_margen_politica` y `rutas_sin_margen_politica`. El margen aplicado se compara con la
   política de margen de las **mismas rutas** (`margenPoliticaSugerido` de cada ruta), calculada en el servidor: los dos promedios
   (simple y ponderado por costo) y el semáforo con el ponderado (verde ≥ 0). Mismo criterio del tablero: versión vigente, sin rutas
-  rechazadas, alcance del gerente y del director. `desviacion_promedio_margen` no cambia.
+  rechazadas, alcance del gerente y del director. **HU-016.2 (#295, fila 81 de §7): además, solo de las cotizaciones finalizadas**
+  (`finalizadaAt`); sin ninguna finalizada, los cuatro márgenes son `null` y `rutas_sin_margen_politica` = 0. `desviacion_promedio_margen`
+  y el resto del tablero no cambian.
 - **Nuevo** `GET /web/lineas-negocio` (4.2.9): las líneas activas para el desplegable de la captura, **sin margen** (incluye
   `DevolucionContenedor`). Son **56 endpoints**.
 - Sin script de base de datos (la columna `margenPoliticaSugerido` ya existe), sin configuración nueva ni códigos de error nuevos.
