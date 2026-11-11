@@ -49,6 +49,44 @@ public static class clsDetectorMercanciaExcel
         }
     }
 
+    /// <summary>
+    /// Resultado de <see cref="ConMercanciasAsync"/>: las hojas (o tablas) con la mercancía detectada, si el catálogo del cubicador
+    /// respondió (<see cref="CatalogoDisponible"/>) y si de verdad se tocó alguna hoja (<see cref="Aplicado"/> = alguna tenía columna de
+    /// mercancía o de código; <c>false</c> = las hojas quedan como estaban).
+    /// </summary>
+    public sealed record clsHojasConMercancias(IReadOnlyList<clsHojaExcel> Hojas, bool CatalogoDisponible, bool Aplicado);
+
+    /// <summary>
+    /// HU-023.5 (#160) / HU-044.7 (#290): a cada hoja (o tabla) con columna de mercancía o de código le agrega
+    /// <see cref="clsHojaExcel.ColumnaMercancia"/>, <see cref="clsHojaExcel.ColumnaCodigoMercancia"/> y <see cref="clsHojaExcel.Mercancias"/>
+    /// (por fila: el código de la columna del Excel tal cual o el más parecido del catálogo del cubicador). El catálogo se lee una sola vez
+    /// (con caché) y solo si alguna hoja tiene una de esas columnas; si no responde, el detalle sigue sin sugerencias por parecido. Es la
+    /// misma detección de <c>analizar-excel</c>, reutilizada por <c>leer-estructura</c> (sus tablas). No toca <see cref="clsHojaExcel.FilasExcel"/>.
+    /// </summary>
+    public static async Task<clsHojasConMercancias> ConMercanciasAsync(
+        IReadOnlyList<clsHojaExcel> hojas, IClsCubicador? cubicador, ILogger logger, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(hojas);
+        ArgumentNullException.ThrowIfNull(logger);
+        var columnas = hojas.Select(h => (Hoja: h, Texto: ColumnaMercancia(h.Encabezados), Codigo: ColumnaCodigoMercancia(h.Encabezados))).ToList();
+        if (columnas.All(c => c.Texto is null && c.Codigo is null))
+        {
+            return new clsHojasConMercancias(hojas, false, false);
+        }
+
+        var catalogo = await CatalogoAsync(cubicador, logger, cancellationToken);
+        var porCodigo = PorCodigo(catalogo);
+        var nuevas = columnas.Select(c => c.Texto is null && c.Codigo is null
+            ? c.Hoja
+            : c.Hoja with
+            {
+                ColumnaMercancia = c.Texto is { } t ? c.Hoja.Encabezados[t] : null,
+                ColumnaCodigoMercancia = c.Codigo is { } k ? c.Hoja.Encabezados[k] : null,
+                Mercancias = Mercancias(c.Hoja.Filas, c.Texto, c.Codigo, catalogo, porCodigo),
+            }).ToList();
+        return new clsHojasConMercancias(nuevas, catalogo is not null, true);
+    }
+
     /// <summary>El catálogo por código (sin distinguir mayúsculas); vacío sin catálogo.</summary>
     public static IReadOnlyDictionary<string, clsTipoMercanciaCubicador> PorCodigo(IReadOnlyList<clsTipoMercanciaCubicador>? catalogo)
     {

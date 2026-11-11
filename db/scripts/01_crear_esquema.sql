@@ -452,10 +452,13 @@ CREATE TABLE dbo_cotifly.CotizacionArchivosLicitacion (
     sha256          NVARCHAR(64)  COLLATE Latin1_General_100_CI_AS_SC_UTF8 NOT NULL,
     hoja            NVARCHAR(31)  COLLATE Latin1_General_100_CI_AS_SC_UTF8 NOT NULL,
     contenido       VARBINARY(MAX)   NOT NULL,
+    -- HU-044.7 (#290): cómo se leyó el Excel (analizar_excel = sobre el original; leer_estructura = IA de NEXO, se exporta en hoja nueva).
+    origenLectura   NVARCHAR(20)  COLLATE Latin1_General_100_CI_AS_SC_UTF8 NOT NULL CONSTRAINT df_cotizacionArchivosLicitacion_origenLectura DEFAULT (N'analizar_excel'),
     createdAt       DATETIMEOFFSET   NOT NULL CONSTRAINT df_cotizacionArchivosLicitacion_createdAt DEFAULT (SYSDATETIMEOFFSET()),
     CONSTRAINT pk_cotizacionArchivosLicitacion PRIMARY KEY (cotizacionId),
     CONSTRAINT fk_cotizacionArchivosLicitacion_cotizacionId FOREIGN KEY (cotizacionId) REFERENCES dbo_cotifly.CotizacionesSolicitud (id),
-    CONSTRAINT ck_cotizacionArchivosLicitacion_tamano CHECK (tamanoBytes BETWEEN 1 AND 10485760 AND DATALENGTH(contenido) = tamanoBytes)
+    CONSTRAINT ck_cotizacionArchivosLicitacion_tamano CHECK (tamanoBytes BETWEEN 1 AND 10485760 AND DATALENGTH(contenido) = tamanoBytes),
+    CONSTRAINT ck_cotizacionArchivosLicitacion_origenLectura CHECK (origenLectura IN (N'analizar_excel', N'leer_estructura'))
 );
 GO
 

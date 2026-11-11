@@ -29,6 +29,10 @@ public static class clsValidadorLicitacion
         var errores = new List<clsErrorFilaLicitacion>();
         void Encabezado(string campo, string codigo, string mensaje) => errores.Add(new clsErrorFilaLicitacion(null, null, campo, codigo, mensaje));
 
+        // HU-044.7 (#290): con leer_estructura la 'fila' es el índice (base 0) DENTRO de la tabla (entrada.Hoja = nombre de la tabla, solo
+        // referencia); es obligatoria y única, no se relee la hoja (filasEnHoja llega null) y los mensajes por fila nombran la tabla.
+        var leerEstructura = clsOrigenLectura.EsLeerEstructura(entrada.OrigenLectura);
+
         var nit = entrada.NitCliente?.Trim();
         if (string.IsNullOrEmpty(nit))
         {
@@ -90,9 +94,12 @@ public static class clsValidadorLicitacion
             var fila = entradaLinea?.Fila;
             void Linea(string campo, string codigo, string mensaje) => errores.Add(new clsErrorFilaLicitacion(i, fila, campo, codigo, mensaje));
 
+            // HU-044.7 (#290): «línea N de la tabla X» con leer_estructura; «línea N» como siempre con analizar_excel.
+            var donde = leerEstructura ? $"La línea {i + 1} de la tabla '{entrada.Hoja}'" : $"La línea {i + 1}";
+
             if (entradaLinea?.Linea is null)
             {
-                Linea("lineas", clsCodigosLineaSolicitud.LineaIncompleta, $"La línea {i + 1} está vacía.");
+                Linea("lineas", clsCodigosLineaSolicitud.LineaIncompleta, $"{donde} está vacía.");
                 continue;
             }
 
@@ -103,9 +110,16 @@ public static class clsValidadorLicitacion
             }
 
             // HU-013.15 (#124): los mensajes nombran la línea (base 1) y la fila de Excel, nunca el índice 'fila' (base 0).
+            // HU-044.7 (#290): con leer_estructura la 'fila' es obligatoria siempre (es el índice dentro de la tabla) y los mensajes
+            // nombran la tabla; sin filas_excel (no se releyó la hoja) no hay número de Excel.
             if (fila is null)
             {
-                if (conArchivo)
+                if (leerEstructura)
+                {
+                    Linea("fila", clsCodigosLineaSolicitud.FilaInvalida,
+                        $"{donde} no trae su 'fila': con leer_estructura cada línea debe traer su índice (base 0) dentro de la tabla.");
+                }
+                else if (conArchivo)
                 {
                     Linea("fila", clsCodigosLineaSolicitud.FilaInvalida,
                         $"La línea {i + 1} no trae su 'fila' del análisis: con el archivo adjunto cada línea debe traerla.");
@@ -113,13 +127,15 @@ public static class clsValidadorLicitacion
             }
             else if (fila < 0)
             {
-                Linea("fila", clsCodigosLineaSolicitud.FilaInvalida, $"La línea {i + 1} trae una 'fila' negativa.");
+                Linea("fila", clsCodigosLineaSolicitud.FilaInvalida, $"{donde} trae una 'fila' negativa.");
             }
             else if (!vistas.Add(fila.Value))
             {
-                Linea("fila", clsCodigosLineaSolicitud.FilaInvalida, NumeroFilaExcel(filasExcel, fila.Value) is { } repetida
-                    ? $"La línea {i + 1} repite la fila {repetida} del Excel, que ya está en otra línea."
-                    : $"La línea {i + 1} repite la 'fila' de otra línea.");
+                Linea("fila", clsCodigosLineaSolicitud.FilaInvalida, leerEstructura
+                    ? $"{donde} repite la 'fila' {fila} de otra línea."
+                    : NumeroFilaExcel(filasExcel, fila.Value) is { } repetida
+                        ? $"La línea {i + 1} repite la fila {repetida} del Excel, que ya está en otra línea."
+                        : $"La línea {i + 1} repite la 'fila' de otra línea.");
             }
             else if (filasEnHoja is { } total && fila >= total)
             {
