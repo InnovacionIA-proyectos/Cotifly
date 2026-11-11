@@ -26,7 +26,8 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
         SELECT CAST(CASE WHEN COL_LENGTH(N'dbo_cotifly.CotizacionLineasSolicitud', N'origenNombre') IS NOT NULL
                           AND COL_LENGTH(N'dbo_cotifly.CotizacionLineasSolicitud', N'destinoNombre') IS NOT NULL THEN 1 ELSE 0 END AS bit) AS Ciudades,
                CAST(CASE WHEN COL_LENGTH(N'dbo_cotifly.CotizacionesSolicitud', N'deadline') IS NOT NULL THEN 1 ELSE 0 END AS bit) AS Deadline,
-               CAST(CASE WHEN COL_LENGTH(N'dbo_cotifly.CotizacionLineasSolicitud', N'costoSeguro') IS NOT NULL THEN 1 ELSE 0 END AS bit) AS Seguro
+               CAST(CASE WHEN COL_LENGTH(N'dbo_cotifly.CotizacionLineasSolicitud', N'costoSeguro') IS NOT NULL THEN 1 ELSE 0 END AS bit) AS Seguro,
+               CAST(CASE WHEN COL_LENGTH(N'dbo_cotifly.CotizacionesSolicitud', N'finalizadaAt') IS NOT NULL THEN 1 ELSE 0 END AS bit) AS Finalizada
         """;
 
     /// <summary>
@@ -34,6 +35,8 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
     /// <c>(usuarioId, folio base)</c>. Valores de la versión vigente (mayor <c>version</c>); periodo por la primera creación de la
     /// cadena (<c>MIN(createdAt)</c>); resultado = el último no nulo de la cadena (mayor <c>marcadoAt</c>, sin fecha al final, y
     /// luego mayor <c>version</c>); ajustes de la vigente con <c>OUTER APPLY</c> por <c>cotizacionId</c> (índice del 0002).
+    /// HU-016.2 (#295): <c>Finalizada</c> = la versión vigente tiene <c>finalizadaAt</c> (script 14): solo las finalizadas entran en la
+    /// comparación del margen contra la política. <c>{5}</c> es <c>c.finalizadaAt</c> o <c>NULL</c> en una base anterior al 14 (como el seguro).
     /// <c>{0}</c>/<c>{1}</c>/<c>{2}</c>: origen y destino de la ruta 1 y <c>deadline</c> (o <c>NULL</c> si la columna no existe);
     /// <c>{3}</c>: la lectura de la ruta 1; <c>{4}</c> (HU-045.2, #264): <c>costoSeguro</c> o NULL sin el script 20 (fragmentos fijos del
     /// código, nunca datos del usuario). Costo = suma de <c>costoFinal</c> de las
@@ -47,7 +50,7 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
     private const string SqlCotizaciones = """
         WITH base AS (
             SELECT c.id, c.usuarioId, c.version, c.createdAt, rr.costo, rr.seguro, c.precioFinal, c.moneda, c.trmAplicada, rr.margen AS margenAplicado,
-                   c.ganada, c.marcadoAt, c.costeoListoAt, {0} AS origen, {1} AS destino, {2} AS deadline,
+                   c.ganada, c.marcadoAt, c.costeoListoAt, {5} AS finalizadaAt, {0} AS origen, {1} AS destino, {2} AS deadline,
                    CASE WHEN c.version > 1
                              AND RIGHT(c.folio, LEN(N'-v' + CAST(c.version AS nvarchar(10)))) = N'-v' + CAST(c.version AS nvarchar(10))
                         THEN LEFT(c.folio, LEN(c.folio) - LEN(N'-v' + CAST(c.version AS nvarchar(10))))
@@ -77,6 +80,7 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
         SELECT v.id AS CotizacionId, v.usuarioId AS UsuarioId, v.primeraCreacion AS CreatedAt, v.createdAt AS CreatedAtVigente, v.versiones AS Versiones,
                v.costo AS Costo, v.precioFinal AS PrecioFinal, v.moneda AS Moneda, v.trmAplicada AS TrmAplicada,
                v.margenAplicado AS MargenAplicado, r.ganada AS Ganada, v.costeoListoAt AS CosteoListoAt,
+               CAST(CASE WHEN v.finalizadaAt IS NOT NULL THEN 1 ELSE 0 END AS bit) AS Finalizada,
                r.id AS CotizacionResultadoId, r.precioFinal AS PrecioResultado, r.moneda AS MonedaResultado, r.trmAplicada AS TrmResultado, r.costo AS CostoResultado,
                v.seguro AS Seguro, r.seguro AS SeguroResultado,
                v.origen AS Origen, v.destino AS Destino, v.deadline AS Deadline,
@@ -158,7 +162,9 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
             columnas.Ciudades
                 ? "OUTER APPLY (SELECT TOP (1) l1.origenNombre, l1.destinoNombre FROM dbo_cotifly.CotizacionLineasSolicitud l1 WHERE l1.cotizacionSolicitudId = c.id ORDER BY l1.orden) r1"
                 : string.Empty,
-            ExpresionSeguro(columnas.Seguro, "l.costoSeguro"));
+            ExpresionSeguro(columnas.Seguro, "l.costoSeguro"),
+            // HU-016.2 (#295): finalizadaAt (script 14) o NULL en una base anterior (como el seguro): entonces ninguna cuenta como finalizada.
+            columnas.Finalizada ? "c.finalizadaAt" : "CAST(NULL AS datetimeoffset)");
         var usuariosJson = JsonSerializer.Serialize(usuarios.Distinct());
         var filas = await ConReintentoPorInterbloqueoAsync(() => contexto.Database.SqlQueryRaw<clsFilaMetrica>(
                 sql,
@@ -186,6 +192,8 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
                 TrmAplicada = f.TrmAplicada,
                 MargenAplicado = f.MargenAplicado,
                 Ganada = f.Ganada,
+                // HU-016.2 (#295): solo las finalizadas entran en la comparación del margen contra la política.
+                Finalizada = f.Finalizada,
                 // B3 (#173): precio y costo de la versión que tiene el resultado (la ganada puede no ser la vigente).
                 VersionResultado = f.Ganada is null
                     ? null
@@ -287,6 +295,9 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
 
         /// <summary>HU-045.2 (#264): ¿existe <c>costoSeguro</c> del script 20? (las pruebas de bases anteriores no lo tienen).</summary>
         public bool Seguro { get; set; }
+
+        /// <summary>HU-016.2 (#295): ¿existe <c>finalizadaAt</c> del script 14? (las pruebas de bases anteriores al 14 no lo tienen).</summary>
+        public bool Finalizada { get; set; }
     }
 
     /// <summary>Fila cruda del tablero, una por cadena (materializada por nombre de columna).</summary>
@@ -303,6 +314,9 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
         public decimal TrmAplicada { get; set; }
         public decimal? MargenAplicado { get; set; }
         public bool? Ganada { get; set; }
+
+        /// <summary>HU-016.2 (#295): la versión vigente está finalizada (<c>finalizadaAt</c> no nulo, script 14); filtra la comparación con la política.</summary>
+        public bool Finalizada { get; set; }
         public Guid? CotizacionResultadoId { get; set; }
         public decimal? PrecioResultado { get; set; }
         public string? MonedaResultado { get; set; }

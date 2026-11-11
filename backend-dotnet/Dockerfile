@@ -20,8 +20,8 @@
 #   2. Cambiar SDK_VERSION y ASPNET_VERSION juntos (el SDK 10.0.4xx trae el runtime 10.0.N; usar ese N).
 #   3. Reconstruir, correr las pruebas y verificar HEALTHCHECK (docs/06-ejecucion-local.md, §6.4).
 # =============================================================================
-ARG SDK_VERSION=10.0.403-noble
-ARG ASPNET_VERSION=10.0.14-noble-chiseled-extra
+ARG SDK_VERSION=10.0.404-noble
+ARG ASPNET_VERSION=10.0.15-noble-chiseled-extra
 # Metadatos de la imagen (los pasa el pipeline, HU-006.4 #28):
 #   --build-arg VERSION=<versión> --build-arg VCS_REF=$(git rev-parse --short HEAD) --build-arg BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 ARG VERSION=dev
@@ -95,12 +95,20 @@ LABEL org.opencontainers.image.title="cotifly-api" \
 
 # Sin TZ: el contenedor queda en UTC y la zona de negocio sale de Zona:ZonaHoraria (IClsReloj),
 # así un DateTime.Now accidental no queda oculto por la zona del sistema.
+#
+# OPENSSL_CONF: baja la política TLS de OpenSSL 3.x para poder abrir conexión con SQL Server
+# antiguos (BD de cubos DWCubosEBSSAP, ConnectionStrings:Regional 10.10.40.24), cuyo handshake
+# TLS legacy rechaza la política por defecto. Apaño acotado — ver backend-dotnet/openssl-legacy.cnf.
 ENV ASPNETCORE_HTTP_PORTS=8080 \
-    DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
+    DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
+    OPENSSL_CONF=/app/openssl-legacy.cnf
 
 # Binarios con dueño root (0:0) y /app creado por COPY (no por WORKDIR, que con la imagen chiseled
 # lo crearía con dueño app): el usuario app puede leerlos pero no borrarlos ni reemplazarlos.
 COPY --from=build --chown=0:0 /app/publish /app/
+# Config de OpenSSL para hablar con SQL Server antiguos (OPENSSL_CONF, arriba). Dueño root:
+# el proceso app solo la lee. Ver backend-dotnet/openssl-legacy.cnf.
+COPY --chown=0:0 openssl-legacy.cnf /app/openssl-legacy.cnf
 # Única carpeta escribible: PDFs (montar un volumen aquí; ver docs/06-ejecucion-local.md).
 COPY --from=build --chown=1654:1654 /data/pdfs /data/pdfs
 WORKDIR /app

@@ -127,6 +127,10 @@ tags:
       - **Margen contra la política (HU-016.1, #154, decisiones del 2026-10-27):** el margen aplicado se compara con el margen de
         política de las **mismas rutas** (`margenPoliticaSugerido`, guardado en cada ruta al cotizar), calculado en el servidor.
         Rutas comparables = las de la versión vigente, sin las rechazadas, con `margenAplicado` y `margenPoliticaSugerido`.
+        **HU-016.2 (#295): además, solo de las cotizaciones FINALIZADAS** (`finalizadaAt`, script 14): mientras la cotización no se
+        finaliza su margen aún puede cambiar y no debe pesar en la comparación. Sin ninguna finalizada, los cuatro márgenes son `null`
+        y `rutas_sin_margen_politica` = 0. El resto del tablero (cantidad, `margen_promedio`, `margen_ponderado`, montos, serie y
+        apertura por línea) sigue contando con TODAS.
         `margen_politica_promedio` = promedio simple de su política; `margen_aplicado_promedio` = promedio simple de su margen
         aplicado (las mismas rutas, para comparar simple contra simple); `margen_politica_ponderado` = SUM(política × `costoFinal`) /
         SUM(`costoFinal`) de las que tienen costo > 0; `desviacion_margen_politica` = SUM((aplicado − política) × `costoFinal`) /
@@ -2239,8 +2243,10 @@ paths:
             `SOLICITUD_COSTEO_INVALIDA` (campo obligatorio, largo o rango fuera de los límites de Nexo, más de 200
             posiciones, o la regla de peso de Nexo: `detalle.motivo` = `PESO_REQUERIDO` si la línea no trae peso > 0 ni
             posiciones con peso, `PESO_INCONSISTENTE` si el peso difiere más del 1 % de `sum(cantidad × peso_kg)`; HU-013.10:
-            un catálogo que no es código de catálogo, `clase_contenedor` sin `clase_viaje = Contenedor` o sin ella con
-            `Contenedor`, `valor_levante_contenedor` (ex `valor_aprovisionamiento`; el error lo nombra así desde #228) sin una `ciudad_levante_contenedor` distinta del origen; el mensaje nombra
+            un catálogo que no es código de catálogo, `clase_contenedor` sin `clase_viaje = Contenedor` ni `Extradimensionado`
+            (HU-021.15, #297) o sin ella con `Contenedor`, con `Extradimensionado` solo las clases provisionales G15
+            (`CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP`; otra es `VALOR_FUERA_DE_RANGO`),
+            `valor_levante_contenedor` (ex `valor_aprovisionamiento`; el error lo nombra así desde #228) sin una `ciudad_levante_contenedor` distinta del origen; el mensaje nombra
             el campo), `MARGEN_LINEA_DESCONOCIDA` (la línea no existe o está inactiva) o `FOLIO_CONSECUTIVO_AGOTADO`.
             Con `moneda = USD` (HU-013.7): `TRM_NO_DISPONIBLE` si ninguna fuente de la TRM respondió; `moneda` con otro valor
             es `SOLICITUD_COSTEO_INVALIDA` (el mensaje nombra el campo `moneda`).
@@ -2540,7 +2546,9 @@ paths:
           `POST .../costeo/servicios-conexos` queda `enviado` en el momento (Nexo lo creó y la relectura lo confirma). Con
           alguno `pendiente`, finalizar RELEE la cotización de Nexo y deja `enviado` lo que Nexo ya muestra antes de decidir (un
           registro que quedó `pendiente` aunque Nexo tenga el conexo, p. ej. agregado antes de #228, no bloquea para siempre una
-          entregada); si Nexo no responde, cuenta el registro y responde el 409. Si hay
+          entregada); si Nexo no responde, cuenta el registro y responde el 409. #259: si después de releer siguen pendientes, el
+          409 además vuelve a encolar la cotización para el envío diferido (finalizar nunca envía conexos a Nexo): el worker los
+          envía o los deja `fallido_definitivo` en segundos y el siguiente intento de finalizar pasa. Si hay
           conexos pendientes de leer, ese motivo va primero.
         - HU-046.3 (#269; contrato del 2026-11-10): tampoco mientras una ruta que cuenta (no `rechazada`) tiene una medida
           **obligatoria** de la política de seguros pendiente (`rutas[].politica_seguros.obligatorias[].estado = pendiente` en
@@ -3826,16 +3834,23 @@ paths:
       summary: La IA redacta el asunto y la introducción del PDF (con el texto estándar de respaldo)
       x-issue: '#101 (HU-013.5)'
       description: |
-        HU-013.5 (ADR-018 §2a). Sin cuerpo. El redactor (`IClsRedactorCotizacion`) **recibe** solo: cliente, línea de
+        HU-013.5 (ADR-018 §2a). El redactor (`IClsRedactorCotizacion`) **recibe** solo: cliente, línea de
         negocio, origen y destino, tipo de vehículo, nombres de los conexos incluidos, moneda y nombre del comercial.
         **Nunca recibe** costos, margen ni precios.
 
         - Tiempo máximo de 15 s. Si la IA tarda, falla, o su salida trae montos, URL o correos, o pasa de 120 caracteres
           (asunto) o 900 (introducción), se descarta y se usan los textos de `clsTextosEstandar`: responde igual **200**
           con `fuente = estandar`. Nunca responde error por la IA.
+        - **Cuerpo opcional** (HU-013.18, #296). Sin cuerpo, todo igual que hoy. Con `indicaciones_redaccion` (string o `null`,
+          hasta 500 caracteres) el comercial orienta la carta de la IA (una **preferencia** de enfoque o tono, p. ej.
+          "destacar la experiencia en carga refrigerada, tono cercano"); **no** es `notas` (la de la Mesa de Costeo). Es una
+          preferencia que **nunca** pasa por encima de las reglas estrictas del prompt (si pide montos, condiciones, otros
+          nombres o cambiar el formato, esa parte se ignora) y la salida se valida igual. Vacío o solo espacios equivale a sin
+          indicaciones. **Más de 500 caracteres: 400 `SOLICITUD_INVALIDA`** sin llamar a la IA. No se guarda en la cotización;
+          la auditoría solo registra `con_indicaciones` (sí/no), nunca el texto.
         - Guarda el resultado en `Cotizaciones.textosCotizacion` y lo audita (proveedor, modelo, duración y si se usó el
           respaldo). Si los textos guardados fueron editados por el comercial (`editado = true`), responde 409
-          `TEXTOS_EDITADOS` sin llamar a la IA, salvo con `?sobrescribir=true`.
+          `TEXTOS_EDITADOS` sin llamar a la IA, salvo con `?sobrescribir=true` (el reintento lleva las mismas indicaciones).
         - Regla del PDF (ADR-018 §11): ya enviada o con resultado, 409 `PDF_YA_ENVIADO`; si no, invalida el PDF actual.
         - `If-Match` **obligatorio** (428 / 409). Solo el dueño.
       security:
@@ -3850,6 +3865,13 @@ paths:
           schema:
             type: boolean
             default: false
+      requestBody:
+        required: false
+        description: 'Opcional (HU-013.18, #296). Sin cuerpo, la redacción es igual que hoy.'
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RedactarTextosWeb'
       responses:
         '200':
           description: Textos redactados (o estándar) y guardados
@@ -3860,6 +3882,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TextosCotizacion'
+        '400':
+          description: '`SOLICITUD_INVALIDA` (HU-013.18, #296: `indicaciones_redaccion` de más de 500 caracteres)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWeb'
         '401':
           $ref: '#/components/responses/SesionExpirada'
         '404':
@@ -4205,6 +4233,482 @@ paths:
         '500':
           $ref: '#/components/responses/ErrorInterno'
 
+  /web/licitaciones/plantillas-mapeo:
+    put:
+      operationId: guardarPlantillaMapeo
+      tags: [web]
+      summary: Guarda (o reemplaza) en NEXO la plantilla de mapeo del cliente para esos encabezados
+      description: |
+        HU-044.5 (#256, ADR-028). Cotifly reenvía a `PUT {Nexo:UrlBase}/api/captura-solicitudes/plantillas-mapeo` con la identidad del
+        comercial y el NIT de la licitación como `clienteNit` (sin puntos ni dígito de verificación). Se llama cuando el comercial
+        confirma el mapeo y elige guardarlo. Con la plantilla, la siguiente carga del mismo formato (mismos encabezados) sale de la
+        plantilla en `sugerir-mapeo`, sin IA. **Cotifly no guarda copia**: NEXO registra quién la guardó (`tbl_audit_log`).
+
+        `201` la primera vez; `200` si reemplaza a la plantilla del cliente con esos mismos encabezados (el mismo `id`). Si el NIT no
+        tiene cliente local en NEXO, NEXO lo crea desde el DW; si no es de ningún cliente ni prospecto, `CLIENTE_NIT_INVALIDO`.
+        `campo` es el nombre de NEXO (el de `sugerir-mapeo` y `aplicar-mapeo`). Las reglas de `encabezados` (1 a 100, máx. 200
+        caracteres) y de `columnas` las valida NEXO y sus rechazos llegan con su código.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlantillaMapeoWeb'
+      responses:
+        '201':
+          description: Plantilla nueva del cliente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlantillaMapeo'
+        '200':
+          description: Reemplazó a la plantilla del cliente con esos encabezados
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlantillaMapeo'
+        '400':
+          description: |
+            `ErrorWeb`: cuerpo inválido. `ErrorNegocio`: `CLIENTE_REQUERIDO` (sin `nit_cliente`) o `CLIENTE_NIT_INVALIDO` (el NIT no
+            tiene letras ni dígitos o pasa de 30), sin llamar a NEXO; de NEXO, con su código y su mensaje, `CLIENTE_NIT_INVALIDO` (no es
+            de ningún cliente ni prospecto), `NOMBRE_DEMASIADO_LARGO`, `ENCABEZADOS_REQUERIDOS`, `DEMASIADAS_COLUMNAS`,
+            `ENCABEZADO_DEMASIADO_LARGO`, `COLUMNA_FUERA_DE_RANGO`, `COLUMNA_INVALIDA`, `CAMPO_INVALIDO`, `CAMPO_DUPLICADO`,
+            `TRANSFORMACION_INVALIDA`, `TRANSFORMACION_NO_APLICA`...; `COSTEO_NEXO_RECHAZADA` para otro 4xx de NEXO.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: '`ErrorWeb`: el rol no es de la consola del comercial. `ErrorNegocio` `NEXO_SIN_PERMISO`: NEXO respondió 401 o 403'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
+        '503':
+          description: '`NEXO_NO_DISPONIBLE`: la importación apagada en el ambiente, NEXO caído o sin respuesta a tiempo'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+    get:
+      operationId: listarPlantillasMapeo
+      tags: [web]
+      summary: Las plantillas de mapeo del cliente guardadas en NEXO
+      description: |
+        HU-044.5 (#256). **`nit_cliente` es obligatorio en Cotifly**: sin él NEXO devolvería las plantillas de TODOS los clientes, así
+        que Cotifly responde `400 CLIENTE_REQUERIDO` sin llamar a NEXO. Un cliente sin plantillas (o un NIT sin cliente en NEXO) → `[]`.
+      security:
+        - bearer: []
+      parameters:
+        - name: nit_cliente
+          in: query
+          required: true
+          description: NIT de la licitación, con o sin puntos y dígito de verificación.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Las plantillas del cliente (vacía si no tiene)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PlantillaMapeo'
+        '400':
+          description: '`CLIENTE_REQUERIDO` (sin `nit_cliente`) o `CLIENTE_NIT_INVALIDO`, sin llamar a NEXO; `COSTEO_NEXO_RECHAZADA` (`detalle.motivo` = el código de NEXO) si NEXO responde otro 4xx o un 404 sin código'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: '`ErrorWeb`: el rol no es de la consola del comercial. `ErrorNegocio` `NEXO_SIN_PERMISO`: NEXO respondió 401 o 403'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
+        '503':
+          description: '`NEXO_NO_DISPONIBLE`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+
+  /web/licitaciones/plantillas-mapeo/{id}:
+    delete:
+      operationId: eliminarPlantillaMapeo
+      tags: [web]
+      summary: Borra en NEXO una plantilla de mapeo
+      description: |
+        HU-044.5 (#256). Reenvía a `DELETE {Nexo:UrlBase}/api/captura-solicitudes/plantillas-mapeo/{id}`. La siguiente carga de ese
+        formato vuelve a pasar por el diccionario y la IA. **Cambio a confirmar con el frontend:** "no encontrado" es `404` con
+        `ErrorNegocio` y el código `PLANTILLA_NO_ENCONTRADA` (no el 404 `ErrorWeb` "no es tuya" de las cotizaciones). Un `id` que no
+        es un GUID responde lo mismo sin llamar a NEXO.
+      security:
+        - bearer: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Borrada
+        '400':
+          description: '`COSTEO_NEXO_RECHAZADA` (`detalle.motivo` = el código de NEXO) si NEXO responde otro 4xx o un 404 sin código'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: '`ErrorWeb`: el rol no es de la consola del comercial. `ErrorNegocio` `NEXO_SIN_PERMISO`: NEXO respondió 401 o 403'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
+        '404':
+          description: '`PLANTILLA_NO_ENCONTRADA`: NEXO no tiene esa plantilla'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '503':
+          description: '`NEXO_NO_DISPONIBLE`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+
+  /web/licitaciones/recetas-lectura:
+    put:
+      operationId: guardarRecetaLectura
+      tags: [web]
+      summary: Guarda en NEXO el formato de lectura (receta) confirmado para el cliente
+      description: |
+        HU-044.5 (#256, ADR-028; NEXO PR #433). Se llama **solo cuando el comercial confirma** «Guardar este formato para el cliente»
+        después de `leer-estructura`. Cotifly reenvía el formulario a `PUT {Nexo:UrlBase}/api/captura-solicitudes/recetas-lectura` con
+        el **nombre original del archivo**, la identidad del comercial y el NIT como `clienteNit`. Con el formato guardado, el siguiente
+        Excel del cliente con un formato parecido (≥ 85 %) se lee sin IA. NEXO guarda hasta 20 formatos por cliente; **Cotifly no
+        guarda copia**.
+
+        **`receta` es un texto JSON opaco**: la de la última respuesta de `leer-estructura`, que llega a NEXO exactamente como vino
+        (Cotifly no la interpreta ni la cambia). `archivo` debe ser **el mismo Excel** con el que se confirmó: NEXO ejecuta la receta
+        contra él y exige que dé filas (`RECETA_SIN_FILAS`).
+
+        **Antes de NEXO Cotifly solo valida** que venga el archivo (`ARCHIVO_REQUERIDO`), su tamaño (`ARCHIVO_DEMASIADO_GRANDE`) y su
+        extensión (`FORMATO_NO_SOPORTADO`, solo `.xlsx` o `.xlsm`), que venga la receta (`RECETA_REQUERIDA`) y el NIT
+        (`CLIENTE_REQUERIDO`). **No abre el libro** (#277). **Sin reintentos automáticos** y con el tiempo largo hacia NEXO (al menos
+        180 s, `ImportacionInteligente:TimeoutLecturaSegundos`).
+
+        `201` la primera vez; `200` si reemplazó a un formato parecido del cliente.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [archivo, receta, nit_cliente]
+              properties:
+                archivo:
+                  type: string
+                  format: binary
+                receta:
+                  type: string
+                  description: La `receta` de la última respuesta de `leer-estructura`, como texto JSON (máx. 60.000).
+                nit_cliente:
+                  type: string
+                  description: NIT de la licitación (con o sin puntos y dígito de verificación). Si no tiene cliente local en NEXO, NEXO lo crea desde el DW.
+                nombre:
+                  type: string
+                  description: Nombre para reconocer el formato en la lista (máx. 100).
+                instrucciones:
+                  type: string
+                  description: Lo que explicó el comercial (máx. 4000); NEXO se lo da a la IA si el formato cambia.
+      responses:
+        '201':
+          description: Formato nuevo del cliente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecetaLectura'
+        '200':
+          description: Reemplazó a un formato parecido del cliente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecetaLectura'
+        '400':
+          description: |
+            `ErrorWeb`: el formulario no se pudo leer o una parte viene más de una vez (dos `receta`, dos `nit_cliente`, dos `archivo`...;
+            no se adivina cuál vale y no se llama a NEXO). `ErrorNegocio`: de Cotifly, sin llamar a NEXO, `ARCHIVO_REQUERIDO`,
+            `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE` (un 413 de NEXO también), `RECETA_REQUERIDA`, `CLIENTE_REQUERIDO` y
+            `CLIENTE_NIT_INVALIDO`; de NEXO, con su código y su mensaje, `RECETA_INVALIDA`, `RECETA_SIN_FILAS`,
+            `CLIENTE_NIT_INVALIDO`, `CLIENTE_NO_ENCONTRADO`, `NOMBRE_DEMASIADO_LARGO`, `INSTRUCCIONES_DEMASIADO_LARGAS`, `EXCEL_INVALIDO`
+            y `EXCEL_SIN_DATOS`; `COSTEO_NEXO_RECHAZADA` para otro 4xx de NEXO.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: '`ErrorWeb`: el rol no es de la consola del comercial. `ErrorNegocio` `NEXO_SIN_PERMISO`: NEXO respondió 401 o 403'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '503':
+          description: '`NEXO_NO_DISPONIBLE`: la importación apagada en el ambiente, NEXO caído o sin respuesta a tiempo (una sola llamada)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+    get:
+      operationId: listarRecetasLectura
+      tags: [web]
+      summary: Los formatos de lectura del cliente guardados en NEXO
+      description: |
+        HU-044.5 (#256). **`nit_cliente` es obligatorio en Cotifly**: sin él NEXO devolvería los formatos de TODOS los clientes, así
+        que Cotifly responde `400 CLIENTE_REQUERIDO` sin llamar a NEXO. Un NIT sin cliente local en NEXO → `[]` (NEXO no crea nada).
+      security:
+        - bearer: []
+      parameters:
+        - name: nit_cliente
+          in: query
+          required: true
+          description: NIT de la licitación, con o sin puntos y dígito de verificación.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Los formatos del cliente (vacía si no tiene)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RecetaLectura'
+        '400':
+          description: '`CLIENTE_REQUERIDO` (sin `nit_cliente`) o `CLIENTE_NIT_INVALIDO`, sin llamar a NEXO; `COSTEO_NEXO_RECHAZADA` (`detalle.motivo` = el código de NEXO) si NEXO responde otro 4xx o un 404 sin código'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: '`ErrorWeb`: el rol no es de la consola del comercial. `ErrorNegocio` `NEXO_SIN_PERMISO`: NEXO respondió 401 o 403'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
+        '503':
+          description: '`NEXO_NO_DISPONIBLE`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+
+  /web/licitaciones/recetas-lectura/{id}:
+    delete:
+      operationId: eliminarRecetaLectura
+      tags: [web]
+      summary: Borra en NEXO un formato de lectura del cliente
+      description: |
+        HU-044.5 (#256). Reenvía a `DELETE {Nexo:UrlBase}/api/captura-solicitudes/recetas-lectura/{id}`; el siguiente archivo de ese
+        cliente vuelve a pasar por la IA. **Cambio a confirmar con el frontend:** "no encontrado" es `404` con `ErrorNegocio` y el
+        código `RECETA_NO_ENCONTRADA`. Un `id` que no es un GUID responde lo mismo sin llamar a NEXO.
+      security:
+        - bearer: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Borrado
+        '400':
+          description: '`COSTEO_NEXO_RECHAZADA` (`detalle.motivo` = el código de NEXO) si NEXO responde otro 4xx o un 404 sin código'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: '`ErrorWeb`: el rol no es de la consola del comercial. `ErrorNegocio` `NEXO_SIN_PERMISO`: NEXO respondió 401 o 403'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
+        '404':
+          description: '`RECETA_NO_ENCONTRADA`: NEXO no tiene ese formato'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '503':
+          description: '`NEXO_NO_DISPONIBLE`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+
+  /web/diccionario-cliente:
+    get:
+      operationId: consultarDiccionarioCliente
+      tags: [web]
+      summary: Consulta el diccionario de NEXO (por ahora, solo los términos generales)
+      description: |
+        HU-044.5 (#256, ADR-028). Reenvía a `GET {Nexo:UrlBase}/api/diccionario-cliente` con los filtros `tipo` y `q`. **Solo lectura.**
+
+        **Solo términos generales (`general = true`).** El NEXO de QA todavía no filtra este endpoint por `clienteNit` y devuelve los
+        términos de todos los clientes; para no mostrarle a un comercial los términos de otro cliente, Cotifly descarta todo término
+        con cliente. Con `nit_cliente`, además, responde el `aviso` `TERMINOS_CLIENTE_NO_DISPONIBLES` para que la interfaz explique
+        que los términos propios del cliente aún no se ven. Cuando NEXO filtre por NIT, esta regla se revisa (ADR-028).
+
+        Crear, editar y borrar términos (`POST`, `PUT /{id}`, `DELETE /{id}`) **todavía no existen**: esperan el contrato de NEXO
+        (§3.19.1, S6-HU-34.10).
+      security:
+        - bearer: []
+      parameters:
+        - name: nit_cliente
+          in: query
+          required: false
+          description: NIT de la licitación. Hoy solo cambia el `aviso`.
+          schema:
+            type: string
+        - name: tipo
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [columna, unidad, valor]
+        - name: q
+          in: query
+          required: false
+          description: Busca en el término y el concepto.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Los términos generales y, con NIT, el aviso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiccionarioCliente'
+        '400':
+          description: '`TIPO_TERMINO_INVALIDO` (de NEXO) o `CLIENTE_NIT_INVALIDO` (sin llamar a NEXO); `COSTEO_NEXO_RECHAZADA` (`detalle.motivo` = el código de NEXO) si NEXO responde otro 4xx o un 404 sin código'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: '`ErrorWeb`: el rol no es de la consola del comercial. `ErrorNegocio` `NEXO_SIN_PERMISO`: NEXO respondió 401 o 403'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
+        '503':
+          description: '`NEXO_NO_DISPONIBLE`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+
+  /web/diccionario-cliente/opciones:
+    get:
+      operationId: opcionesDiccionarioCliente
+      tags: [web]
+      summary: Los valores que acepta el diccionario de NEXO (tipos, campos, unidades y contextos)
+      description: HU-044.5 (#256). Reenvía a `GET {Nexo:UrlBase}/api/diccionario-cliente/opciones`, para armar filtros y formularios.
+      security:
+        - bearer: []
+      responses:
+        '200':
+          description: Las opciones del diccionario
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpcionesDiccionarioCliente'
+        '400':
+          description: '`COSTEO_NEXO_RECHAZADA` (`detalle.motivo` = el código de NEXO) si NEXO responde otro 4xx o un 404 sin código'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: '`ErrorWeb`: el rol no es de la consola del comercial. `ErrorNegocio` `NEXO_SIN_PERMISO`: NEXO respondió 401 o 403'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
+        '503':
+          description: '`NEXO_NO_DISPONIBLE`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+
   /web/licitaciones:
     post:
       operationId: crearLicitacion
@@ -4497,6 +5001,274 @@ paths:
           headers:
             Retry-After:
               $ref: '#/components/headers/RetryAfter'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+
+  /web/licitaciones/sugerir-mapeo:
+    post:
+      operationId: sugerirMapeoLicitacion
+      tags: [web]
+      summary: Propone el mapeo de las columnas de una hoja con la importación inteligente de NEXO (no guarda nada)
+      description: |
+        HU-044.2 (#253, ADR-028). Cotifly reenvía la hoja a `POST {Nexo:UrlBase}/api/captura-solicitudes/sugerir-mapeo` con la
+        identidad del comercial (`X-Portal-clsUsuario-Id`) y el NIT de la licitación como `clienteNit` (sin puntos ni dígito de
+        verificación). NEXO propone en este orden: la **plantilla** guardada del cliente para esos encabezados, el **diccionario** del
+        cliente y, para lo que falte, la **IA**. Es solo una sugerencia: el comercial la confirma o la cambia antes de `aplicar-mapeo`.
+        Sirve igual para una hoja de `analizar-excel` que para una tabla de `leer-estructura` (misma forma, sin transformarla).
+
+        **`campo` es el nombre de NEXO** (`origen`, `destino`, `tipoVehiculo`, `peso`, `pesoKg`, `largoCm`...; `ignorar` = sin
+        propuesta): es el mismo que vuelve en `aplicar-mapeo` y en las plantillas. La tabla de equivalencias con los campos del
+        frontend está en `docs/docs_front/CONTRATOS_API_COTIFLY_FRONTEND.md` (4.6.6).
+
+        **Sin propuesta no es un error.** Responde 200 con todas las columnas en `campo = ignorar`, `origen = ninguno`,
+        `confianza = 0`, `ia_usada = false` y el motivo en `motivo_sin_ia`, y el comercial sigue en manual:
+        - más de 100 encabezados: `DEMASIADAS_COLUMNAS`, **sin llamar a NEXO** (el NIT se valida antes: uno inválido es 400
+          `CLIENTE_NIT_INVALIDO`);
+        - la importación apagada en el ambiente (`ImportacionInteligente:Habilitada`), NEXO caído o sin respuesta a tiempo:
+          `NEXO_NO_DISPONIBLE` (una sola llamada: nunca se reintenta, porque puede gastar IA).
+        Con la IA de NEXO apagada o caída NEXO responde 200 con lo que resolvieron la plantilla y el diccionario, `ia_usada = false` y
+        su motivo (`IA_NO_DISPONIBLE` o un `IA_*` del proveedor). Otros motivos de NEXO: `PLANTILLA_RECONOCIDA` (con `plantilla_id`) y
+        `DICCIONARIO_COMPLETO`.
+
+        `filas` es una muestra (el frontend manda hasta 200; NEXO usa las 20 primeras): Cotifly reenvía las 200 primeras y descarta el
+        resto. Un encabezado o una celda `null` viaja como texto vacío.
+
+        **Peso (DU §8):** la sugerencia no trae pesos, solo propone columnas, así que la regla del peso total con tara no se aplica aquí.
+        Se aplica al convertir las filas (`aplicar-mapeo`, #254) y en la captura.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SugerirMapeoWeb'
+      responses:
+        '200':
+          description: La propuesta de NEXO, o la hoja sin propuesta con `ia_usada = false`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SugerenciaMapeo'
+        '400':
+          description: |
+            `ErrorWeb`: cuerpo inválido. `ErrorNegocio`: `ENCABEZADOS_REQUERIDOS` (sin encabezados, sin llamar a NEXO),
+            `CLIENTE_NIT_INVALIDO` (el NIT no tiene letras ni dígitos o pasa de 30, sin llamar a NEXO), o el rechazo de NEXO con su
+            código y su mensaje (`ENCABEZADOS_REQUERIDOS`, `DEMASIADAS_COLUMNAS`...); `COSTEO_NEXO_RECHAZADA` para otro 4xx de NEXO.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: '`NEXO_SIN_PERMISO`: NEXO respondió 401 o 403 (la identidad del comercial o su rol en NEXO, que debe ser Comercial o Admin)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '413':
+          description: El cuerpo supera `SeguridadHttp:LimiteCuerpoLicitacionBytes` (12 MB por defecto, el límite de todo `/web/licitaciones*`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWeb'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
+        '429':
+          description: '`IA_TOPE_DIARIO`: el comercial agotó su cupo diario de IA en NEXO. Es suyo: no bloquea a los demás comerciales. Sin `Retry-After` (se libera al día siguiente); mientras tanto, mapear a mano'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+
+  /web/licitaciones/leer-estructura:
+    post:
+      operationId: leerEstructuraLicitacion
+      tags: [web]
+      summary: Lee con IA un Excel de formato complejo y devuelve tablas listas para sugerir-mapeo (no guarda nada)
+      description: |
+        HU-044.2 (#253, ADR-028; NEXO PR #433). Paso previo a `sugerir-mapeo` cuando el Excel tiene un formato complejo (encabezado en
+        varias filas, matrices con los puertos en las columnas, el destino en un recuadro suelto). Cotifly solo hace de puente: reenvía
+        el formulario a `POST {Nexo:UrlBase}/api/captura-solicitudes/leer-estructura` con el **nombre original del archivo** y la
+        identidad del comercial, y devuelve la lectura de NEXO **sin alterar `receta` ni `tablas`**. Ni NEXO ni Cotifly guardan nada en
+        esta llamada; Cotifly tampoco guarda el historial del chat.
+
+        Tres usos:
+        - **Primera lectura:** solo `archivo` (y `nit_cliente`). Con un formato guardado del cliente, NEXO lo reutiliza sin IA.
+        - **Corrección:** el mismo archivo, la frase del comercial en `instrucciones` y la `receta` de la respuesta anterior (llega a
+          NEXO exactamente como vino).
+        - **Reaplicar sin IA:** el archivo y una `receta`, sin `instrucciones`.
+
+        **Antes de NEXO Cotifly solo valida el archivo:** que venga (`ARCHIVO_REQUERIDO`), su tamaño (`ARCHIVO_DEMASIADO_GRANDE`, más de
+        10 MB menos 64 KB) y su extensión (`FORMATO_NO_SOPORTADO`, solo `.xlsx` o `.xlsm`). **No abre el libro**, para no rechazar un
+        archivo que NEXO sí puede leer (#277): los errores de lectura los decide NEXO. `instrucciones` (máx. 4000) y `receta` (máx.
+        60.000) también los valida NEXO.
+
+        **`ia_usada = false` con `motivo_sin_ia` es un 200 normal**, no un error (`IA_NO_DISPONIBLE`, `IA_RESPUESTA_INVALIDA` o un
+        código del proveedor; también cuando NEXO usó una receta guardada o la enviada). **Sin reintentos automáticos:** cada llamada
+        puede gastar IA. Puede tardar: el tiempo de espera hacia NEXO es de al menos 180 s (`ImportacionInteligente:TimeoutLecturaSegundos`).
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [archivo]
+              properties:
+                archivo:
+                  type: string
+                  format: binary
+                nit_cliente:
+                  type: string
+                  description: NIT de la licitación (con o sin puntos y dígito de verificación). Solo busca el cliente en NEXO, no lo crea; sin cliente no se reutiliza ningún formato guardado.
+                instrucciones:
+                  type: string
+                  description: La frase del comercial para corregir la lectura (máx. 4000). Si viene, NEXO siempre consulta a la IA.
+                receta:
+                  type: string
+                  description: La `receta` de una respuesta anterior, como texto JSON (máx. 60.000). Sola se ejecuta sin IA; con `instrucciones`, la IA la ajusta.
+      responses:
+        '200':
+          description: La lectura de NEXO (también con `ia_usada = false`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LecturaEstructura'
+        '400':
+          description: |
+            `ErrorWeb`: el formulario no se pudo leer, o una parte (`archivo`, `nit_cliente`, `instrucciones` o `receta`) viene más de
+            una vez (`Formulario inválido: la parte '…' viene más de una vez.`, el mismo texto de `recetas-lectura`); no se llama a NEXO.
+            `ErrorNegocio`: de Cotifly, sin llamar a NEXO, `ARCHIVO_REQUERIDO`,
+            `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE` (el archivo solo pasa de 10 MB menos 64 KB; un 413 de NEXO también),
+            `LECTURA_DEMASIADO_GRANDE` (el archivo cabe, pero con `receta` e `instrucciones`, contadas en bytes UTF-8, el envío pasa ese
+            tope: leer sin la receta o con un archivo más pequeño) y `CLIENTE_NIT_INVALIDO`; de NEXO, con su mismo código y su mensaje,
+            `EXCEL_INVALIDO`, `EXCEL_SIN_DATOS`, `RECETA_INVALIDA` (no es JSON, es demasiado grande o no corresponde al archivo),
+            `INSTRUCCIONES_DEMASIADO_LARGAS` y `VALIDATION_ERROR` (la forma del formulario; `detalle.campos` trae solo los nombres de los
+            campos que NEXO rechazó, nunca sus valores); `COSTEO_NEXO_RECHAZADA` para otro 4xx de NEXO.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: '`NEXO_SIN_PERMISO`: NEXO respondió 401 o 403 (la identidad del comercial o su rol en NEXO, que debe ser Comercial o Admin)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '413':
+          description: El cuerpo supera `SeguridadHttp:LimiteCuerpoLicitacionBytes` (12 MB por defecto)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWeb'
+        '429':
+          description: '`IA_TOPE_DIARIO`: el comercial agotó su cupo diario de IA en NEXO. No bloquea a los demás comerciales. Sin `Retry-After`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '503':
+          description: '`NEXO_NO_DISPONIBLE`: la importación apagada en el ambiente, NEXO caído, sin respuesta a tiempo o con su cupo por minuto (`DEMASIADAS_SOLICITUDES`, con el `Retry-After` en `detalle.motivo`). No se reintenta solo'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+
+  /web/licitaciones/normalizar-valores:
+    post:
+      operationId: normalizarValoresLicitacion
+      tags: [web]
+      summary: Normaliza con NEXO los textos del Excel de licitación (vehículo, carrocería, ciudad y línea de negocio)
+      description: |
+        HU-044.4 (#255, ADR-028 y ADR-029). Lleva los textos distintos del Excel a los valores oficiales con
+        `POST {Nexo:UrlBase}/api/captura-solicitudes/normalizar-valores` (diccionario del cliente, alias, catálogo y, al final, IA
+        con lista cerrada), con la identidad del comercial. Rol Comercial. No guarda nada. El front manda **solo los valores
+        distintos**; Cotifly quita además los repetidos (mismo `campo` y mismo `valor` sin los espacios de los extremos) y devuelve
+        **un resultado por cada valor distinto, en el orden de la petición**. Con `nit_cliente` (el de la licitación, con o sin
+        dígito de verificación) NEXO usa además el diccionario de ese cliente; sin él, solo el general.
+
+        **Es una sugerencia.** Un valor con `origen = ia` es una propuesta que el comercial confirma. Sin IA en NEXO (apagada,
+        caída o sin pendientes) la respuesta es **200** con `ia_usada = false`, `motivo_sin_ia` y lo que resolvieron las reglas.
+
+        **Ciudad.** `municipio_id` es el id de municipio de NEXO (el mismo de `GET /web/municipios` y de
+        `origen_municipio_id`/`destino_municipio_id`). Una ciudad `ambigua` trae `candidatos` (máx. 8) para que el comercial elija.
+        `POST /web/licitaciones` sigue validando las ciudades al crear.
+
+        **Línea de negocio (`linea_negocio`).** En una licitación cada ruta lleva su línea de negocio **de Cotifly** (la que tiene
+        margen). Por eso `codigo` es el nombre de la línea de Cotifly, el que va en `lineas[].linea_negocio` de
+        `POST /web/licitaciones`, y `linea_nexo` la de NEXO de la que sale:
+        - un texto que ya es el nombre de una línea de Cotifly (sin tildes ni mayúsculas, como en el alta) se resuelve sin NEXO,
+          con `origen = linea_cotifly` (así «Distribución», que no tiene línea en NEXO, no la cambia la IA). Si esa línea está
+          inactiva o su mapeo a NEXO no es válido, queda `sin_resolver` con el motivo en `nota`;
+        - cualquier otro texto lo resuelve NEXO (diccionario del cliente → sinónimos `impo`/`expo` → IA con las seis líneas). Lo
+          que NEXO devuelve se valida contra sus seis líneas y se traduce a la línea activa de Cotifly cuyo mapeo es esa: una sola,
+          `codigo` = esa línea; ninguna (p. ej. `Licitaciones`), `sin_resolver`; varias, `ambiguo` con `lineas_candidatas`.
+
+        **Clase de contenedor:** no se normaliza aquí (`CAMPO_INVALIDO`); sigue por `GET /web/alias/resolver?tipo=contenedor`.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NormalizarValoresWeb'
+      responses:
+        '200':
+          description: Un resultado por valor distinto, en el orden de la petición
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizacionValores'
+        '400':
+          description: |
+            Validación local, sin llamar a NEXO y con los códigos de NEXO: `VALORES_REQUERIDOS` (sin valores o uno vacío),
+            `DEMASIADOS_VALORES` (más de 1000), `CAMPO_INVALIDO` (otro campo; la clase de contenedor va por `GET /web/alias/resolver`),
+            `VALOR_DEMASIADO_LARGO` (más de 150 caracteres), `CLIENTE_NIT_INVALIDO` (NIT de más de 30 caracteres o sin dígitos; siempre, aunque todo se resuelva sin NEXO). De NEXO, su código
+            con su mensaje; `COSTEO_NEXO_RECHAZADA` para otro 4xx. Un cuerpo que no es JSON: `ErrorWeb`.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorNegocio'
+                  - $ref: '#/components/schemas/ErrorWeb'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: '`NEXO_SIN_PERMISO`: NEXO respondió 401/403 para el comercial. Sin el rol Comercial en Cotifly, `ErrorWeb`'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorNegocio'
+                  - $ref: '#/components/schemas/ErrorWeb'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
+        '429':
+          description: '`IA_TOPE_DIARIO`: el comercial agotó su cupo diario de IA en NEXO (sin `Retry-After`; no afecta a los demás)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '503':
+          description: '`NEXO_NO_DISPONIBLE`: la importación inteligente está apagada, NEXO no responde, tardó más de 90 s o respondió el 429 por minuto (`detalle.motivo` con el `Retry-After`). El comercial elige los valores a mano'
           content:
             application/json:
               schema:
@@ -5093,6 +5865,19 @@ components:
                 lo responde al alta (más de 200 posiciones o 10.000 unidades en una línea): `error_envio` definitivo.
                 HU-045.2 (#264): `SEGURO_SIN_VALOR_MERCANCIA` (400 en `PUT .../costeo/seguro`: la ruta no tiene `valor_mercancia`; con
                 `detalle.linea_orden` y `detalle.linea_solicitud_id`).
+                HU-044.1 (#252, ADR-028): importación inteligente del Excel con NEXO. Los rechazos de NEXO llegan con su mismo código y su
+                mensaje: `ENCABEZADOS_REQUERIDOS`, `DEMASIADAS_COLUMNAS`, `DEMASIADAS_FILAS`, `ENCABEZADO_DEMASIADO_LARGO`,
+                `COLUMNA_FUERA_DE_RANGO`, `COLUMNA_INVALIDA`, `MAPEO_REQUERIDO`, `CAMPO_INVALIDO`, `CAMPO_DUPLICADO`, `CAMPO_REQUERIDO`,
+                `TRANSFORMACION_INVALIDA`, `TRANSFORMACION_NO_APLICA`, `VALORES_REQUERIDOS`, `DEMASIADOS_VALORES`, `VALOR_DEMASIADO_LARGO`,
+                `CLIENTE_NO_ENCONTRADO`, `CLIENTE_NIT_INVALIDO` (el NIT no es de ningún cliente ni prospecto al guardar una plantilla o un
+                formato), `NOMBRE_DEMASIADO_LARGO`, `INSTRUCCIONES_DEMASIADO_LARGAS`, `RECETA_REQUERIDA`, `RECETA_INVALIDA`, `RECETA_SIN_FILAS`
+                y `TIPO_TERMINO_INVALIDO` (400), `PLANTILLA_NO_ENCONTRADA` y `RECETA_NO_ENCONTRADA` (404 en NEXO, al borrar).
+                `CLIENTE_REQUERIDO` (400) también lo responde Cotifly, sin llamar a NEXO, al listar plantillas o formatos sin el NIT de la
+                licitación. `IA_TOPE_DIARIO` (429) es el cupo diario de IA del comercial y no bloquea a los demás. Sin la importación
+                habilitada, NEXO caído o sin respuesta a tiempo: `NEXO_NO_DISPONIBLE` (503). Los endpoints `/web` llegan con #253 a #256.
+                HU-044.2 (#253): `VALIDATION_ERROR` (400) es el de NEXO en `leer-estructura` (la forma del formulario), con su mensaje y
+                solo los nombres de los campos en `detalle.campos`. `LECTURA_DEMASIADO_GRANDE` (400) lo responde Cotifly en
+                `leer-estructura`, sin llamar a NEXO, cuando el archivo cabe solo pero no con la receta y las instrucciones.
               enum:
                 - MARGEN_LINEA_DESCONOCIDA
                 - PRECIO_INVALIDO
@@ -5182,6 +5967,34 @@ components:
                 - LINEA_NEGOCIO_INVALIDO
                 - IA_TOPE_DIARIO
                 - SEGURO_SIN_VALOR_MERCANCIA
+                - ENCABEZADOS_REQUERIDOS
+                - DEMASIADAS_COLUMNAS
+                - DEMASIADAS_FILAS
+                - ENCABEZADO_DEMASIADO_LARGO
+                - COLUMNA_FUERA_DE_RANGO
+                - COLUMNA_INVALIDA
+                - MAPEO_REQUERIDO
+                - CAMPO_INVALIDO
+                - CAMPO_DUPLICADO
+                - CAMPO_REQUERIDO
+                - TRANSFORMACION_INVALIDA
+                - TRANSFORMACION_NO_APLICA
+                - VALORES_REQUERIDOS
+                - DEMASIADOS_VALORES
+                - VALOR_DEMASIADO_LARGO
+                - CLIENTE_REQUERIDO
+                - CLIENTE_NO_ENCONTRADO
+                - CLIENTE_NIT_INVALIDO
+                - NOMBRE_DEMASIADO_LARGO
+                - PLANTILLA_NO_ENCONTRADA
+                - INSTRUCCIONES_DEMASIADO_LARGAS
+                - RECETA_REQUERIDA
+                - RECETA_INVALIDA
+                - RECETA_SIN_FILAS
+                - RECETA_NO_ENCONTRADA
+                - TIPO_TERMINO_INVALIDO
+                - VALIDATION_ERROR
+                - LECTURA_DEMASIADO_GRANDE
             mensaje:
               type: string
             detalle:
@@ -5591,7 +6404,7 @@ components:
 
     CotizacionResumen:
       type: object
-      required: [id, folio, version, moneda, estado_envio]
+      required: [id, folio, version, moneda, estado_envio, origen, destino, numero_rutas, peso_total_kg, valor_mercancia]
       properties:
         id:
           type: string
@@ -5714,6 +6527,30 @@ components:
           description: |
             HU-036.2 (#206). Cuándo el comercial finalizó la cotización (`POST .../finalizar`: aceptó el precio), ISO 8601 en UTC.
             `null` sin finalizar (las anteriores al script `14` no tienen backfill). Siempre presente.
+        origen:
+          type: string
+          nullable: true
+          description: |
+            HU-018.2 (#294). Municipio de origen de la RUTA 1 (la de menor orden); `null` sin rutas o si esa ruta no tiene nombre. Siempre
+            presente. Lo consumen `GET /web/mis-cotizaciones` y `GET /web/cotizaciones/regional`.
+        destino:
+          type: string
+          nullable: true
+          description: HU-018.2 (#294). Municipio de destino de la RUTA 1 (la de menor orden); `null` sin rutas o sin nombre. Siempre presente.
+        numero_rutas:
+          type: integer
+          description: HU-018.2 (#294). Cuántas rutas tiene la cotización, también las rechazadas (`0` sin rutas). Siempre presente.
+        peso_total_kg:
+          type: number
+          nullable: true
+          description: |
+            HU-018.2 (#294). Suma del `peso_kg` declarado (sin tara) de todas las rutas; `null` si ninguna lo trae. Siempre presente.
+        valor_mercancia:
+          type: number
+          nullable: true
+          description: |
+            HU-018.2 (#294). Suma del valor de la mercancía de todas las rutas, en COP aunque la cotización esté en USD; `null` si ninguna
+            lo trae. Siempre presente.
         conexos_descartados:
           type: array
           deprecated: true
@@ -6617,7 +7454,8 @@ components:
             HU-016.1 (#154, decisiones P3 y P4 del 2026-10-27). Promedio simple del margen de política
             (`margenPoliticaSugerido`, el de la línea de negocio guardado en la ruta al cotizar) de las **mismas rutas** que se
             cotizaron: rutas de la versión vigente, sin las rechazadas por la Mesa, con margen aplicado y con margen de política
-            (4 decimales). `null` si no hay ninguna. Es la referencia de "Margen promedio" en "Mis cotizaciones" y en el tablero;
+            (4 decimales). **HU-016.2 (#295): solo de las cotizaciones finalizadas** (`finalizadaAt`); una sin finalizar aún puede
+            cambiar de margen y no entra. `null` si no hay ninguna (incluido cuando no hay ninguna finalizada). Es la referencia de "Margen promedio" en "Mis cotizaciones" y en el tablero;
             no expone la tabla de políticas. `margen_promedio` NO es su par sobre las mismas rutas (es por cotización e incluye
             las rutas sin política): no restarlos; su par es `margen_aplicado_promedio`. El semáforo es `desviacion_margen_politica`.
         margen_aplicado_promedio:
@@ -6626,7 +7464,8 @@ components:
           description: |
             HU-016.1 (#154, decisión del 2026-10-27). Promedio simple del margen aplicado (`margenAplicado`) de exactamente las
             mismas rutas comparables de `margen_politica_promedio` (versión vigente, sin las rechazadas por la Mesa, con margen
-            aplicado y con margen de política; 4 decimales, half-to-even). `null` si no hay ninguna. Es el par directo de
+            aplicado y con margen de política; 4 decimales, half-to-even). **HU-016.2 (#295): solo de las cotizaciones finalizadas.**
+            `null` si no hay ninguna. Es el par directo de
             `margen_politica_promedio`: aplicado simple contra política simple sobre las mismas rutas. No reemplaza a
             `margen_promedio` (por cotización, incluye las rutas sin política) ni al semáforo (`desviacion_margen_politica`,
             ponderado por costo).
@@ -6635,23 +7474,23 @@ components:
           nullable: true
           description: |
             HU-016.1 (#154). Margen de política de esas mismas rutas ponderado por su costo: SUM(`margenPoliticaSugerido` ×
-            `costoFinal`) / SUM(`costoFinal`) de las que tienen costo > 0 (el costo siempre en COP; 4 decimales). `null` si
-            ninguna tiene costo. Base del semáforo (`desviacion_margen_politica`).
+            `costoFinal`) / SUM(`costoFinal`) de las que tienen costo > 0 (el costo siempre en COP; 4 decimales). **HU-016.2 (#295):
+            solo de las cotizaciones finalizadas.** `null` si ninguna tiene costo. Base del semáforo (`desviacion_margen_politica`).
         desviacion_margen_politica:
           type: number
           nullable: true
           description: |
             HU-016.1 (#154). Margen aplicado menos margen de política, los dos ponderados por costo sobre las mismas rutas de
             `margen_politica_ponderado`: SUM((`margenAplicado` − `margenPoliticaSugerido`) × `costoFinal`) / SUM(`costoFinal`)
-            (4 decimales). Semáforo: verde si es ≥ 0 (el comercial cotiza por encima de la política), rojo si es < 0. `null` si
-            ninguna ruta tiene costo. No reemplaza a `desviacion_promedio_margen`, que solo promedia los ajustes negociados
-            (ADR-016).
+            (4 decimales). **HU-016.2 (#295): solo de las cotizaciones finalizadas.** Semáforo: verde si es ≥ 0 (el comercial cotiza
+            por encima de la política), rojo si es < 0. `null` si ninguna ruta tiene costo. No reemplaza a `desviacion_promedio_margen`,
+            que solo promedia los ajustes negociados (ADR-016).
         rutas_sin_margen_politica:
           type: integer
           description: |
             HU-016.1 (#154). Rutas del universo (versión vigente, no rechazadas) con margen aplicado pero sin margen de política
-            guardado (datos anteriores a HU-021): no entran en los tres campos anteriores. Sirve para avisar que la comparación
-            está incompleta.
+            guardado (datos anteriores a HU-021): no entran en los tres campos anteriores. **HU-016.2 (#295): solo cuenta las de
+            cotizaciones finalizadas** (0 si no hay ninguna finalizada). Sirve para avisar que la comparación está incompleta.
 
     PuntoSerieMensual:
       type: object
@@ -7113,6 +7952,120 @@ components:
           enum: [catalogo, alias, null]
           description: '`catalogo` (ya era un código oficial), `alias` (lo tradujo el diccionario) o `null`.'
 
+    NormalizarValoresWeb:
+      type: object
+      description: HU-044.4 (#255). Cuerpo de `POST /web/licitaciones/normalizar-valores`.
+      required: [valores]
+      properties:
+        nit_cliente:
+          type: string
+          nullable: true
+          maxLength: 30
+          description: NIT del cliente de la licitación (con o sin puntos y dígito de verificación). Opcional.
+        valores:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          description: Solo los textos distintos del Excel.
+          items:
+            type: object
+            required: [campo, valor]
+            properties:
+              campo:
+                type: string
+                enum: [tipo_vehiculo, carroceria, ciudad, linea_negocio]
+              valor:
+                type: string
+                maxLength: 150
+                description: |
+                  El texto tal como viene en la celda (no vacío). Los 150 se miden después de recortar los espacios de los extremos y en
+                  unidades UTF-16 (`string.length`): un emoji o una tilde descompuesta cuentan 2. Más largo: `VALOR_DEMASIADO_LARGO`.
+
+    NormalizacionValores:
+      type: object
+      description: HU-044.4 (#255). Respuesta de `POST /web/licitaciones/normalizar-valores`.
+      required: [ia_usada, motivo_sin_ia, valores]
+      properties:
+        ia_usada:
+          type: boolean
+          description: '`true` si NEXO usó IA en esta petición.'
+        motivo_sin_ia:
+          type: string
+          nullable: true
+          description: |
+            Por qué no se usó IA: `SIN_PENDIENTES` (las reglas resolvieron todo, o Cotifly no tuvo que llamar a NEXO),
+            `IA_NO_DISPONIBLE` o un `IA_*` del proveedor de NEXO; `null` si la IA participó. No es un error.
+        valores:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValorNormalizado'
+
+    ValorNormalizado:
+      type: object
+      required: [campo, valor, estado, codigo, descripcion, municipio_id, origen, confianza, nota, candidatos, linea_nexo, lineas_candidatas]
+      properties:
+        campo:
+          type: string
+          enum: [tipo_vehiculo, carroceria, ciudad, linea_negocio]
+        valor:
+          type: string
+          description: El valor pedido, sin los espacios de los extremos.
+        estado:
+          type: string
+          enum: [resuelto, ambiguo, sin_resolver]
+        codigo:
+          type: string
+          nullable: true
+          description: |
+            El valor oficial: código de vehículo (`2L2`) o de carrocería (`FURGON`), código de la ciudad según NEXO o, en
+            `linea_negocio`, el **nombre de la línea de negocio de Cotifly**. `null` si no se resolvió.
+        descripcion:
+          type: string
+          nullable: true
+        municipio_id:
+          type: integer
+          nullable: true
+          description: Solo en una ciudad resuelta, el id de municipio de NEXO (el de `GET /web/municipios`).
+        origen:
+          type: string
+          description: |
+            Quién lo resolvió: el texto de NEXO tal cual, sin lista cerrada (`diccionario`, `alias`, `catalogo`, `ia`, `ninguno`...), o `linea_cotifly` si
+            Cotifly reconoció una línea de negocio propia sin NEXO. Con `ia` es una propuesta para confirmar.
+        confianza:
+          type: number
+          minimum: 0
+          maximum: 1
+        nota:
+          type: string
+          nullable: true
+          description: Explicación de NEXO o de Cotifly (por ejemplo, por qué una línea de negocio quedó sin resolver).
+        candidatos:
+          type: array
+          nullable: true
+          description: Solo en una ciudad `ambigua` (máx. 8).
+          items:
+            type: object
+            required: [municipio_id, codigo_dane, municipio, departamento]
+            properties:
+              municipio_id:
+                type: integer
+              codigo_dane:
+                type: string
+              municipio:
+                type: string
+              departamento:
+                type: string
+        linea_nexo:
+          type: string
+          nullable: true
+          description: Solo en `linea_negocio`, la línea de NEXO (una de las seis, escrita como en el contrato) de la que sale `codigo`.
+        lineas_candidatas:
+          type: array
+          nullable: true
+          description: Solo en `linea_negocio` ambigua, las líneas de Cotifly que comparten `linea_nexo`.
+          items:
+            type: string
+
     CatalogosFlete:
       type: object
       required: [tipos_vehiculo, tipos_carroceria, clases_viaje, clases_contenedor]
@@ -7204,7 +8157,9 @@ components:
             Decisión 10 (HU-021.9, #136). Estado del envío diferido del conexo a la cotización de Nexo: `pendiente` (se envía cuando
             Nexo costea la línea del primer camión vigente de la ruta, o se reintentará), `enviado`, `incierto` (Nexo no respondió y
             su cotización no lo muestra: revisar en Nexo; Cotifly no lo reenvía solo) o `fallido_definitivo` (se agotaron los
-            reintentos, o el conexo no tiene servicio en el catálogo de Nexo ni por id ni por nombre: revisar en Nexo). En
+            reintentos, el conexo no tiene servicio en el catálogo de Nexo ni por id ni por nombre o, #259, la cotización ya no se
+            costea y ningún camión vigente de la ruta tiene línea en Nexo: revisar en Nexo). #259 (ADR-031): si el primer camión no
+            tiene línea cuando la cotización ya no se costea, el conexo va a la línea del primer camión vigente que sí la tiene. En
             `GET .../costeo` y, desde #173, también en las respuestas de `PUT .../costeo/margen` y `PUT .../costeo/servicios-conexos`
             (igual que el GET). `null` antes de enviar la solicitud a Nexo y en las demás mutaciones.
         servicio_id:
@@ -7218,7 +8173,7 @@ components:
 
     RutaCosteo:
       type: object
-      required: [linea_orden, linea_solicitud_id, origen, destino, estado_costeo, precio_final_linea, costo_final, margen_aplicado, margen_sugerido, origen_margen, servicios_conexos, camiones, mercancias]
+      required: [linea_orden, linea_solicitud_id, origen, destino, estado_costeo, precio_final_linea, costo_final, costo_transporte, valor_mercancia, margen_aplicado, margen_sugerido, origen_margen, servicios_conexos, camiones, mercancias]
       description: |
         HU-021.8 (#135). Una ruta del costeo. Desde HU-039.1 (#218) trae su costo bruto (`costo_final`, en COP) para el dueño; nunca
         el desglose (fletes, retorno, levante, conexos) ni el costo de cada camión o de cada conexo. El ajuste de margen (`PUT .../costeo/margen`) y los cambios de
@@ -7362,6 +8317,23 @@ components:
             cotización finalizada (HU-036.4) es el costo con que se finalizó, como el precio congelado. No sale
             en el PDF, el correo, el Excel, el chat ni "Mis cotizaciones". Reversa de la regla de ADR-015 §5 ("el costo bruto nunca
             llega al comercial"), confirmada por la Gerencia Comercial el 2026-10-27.
+        costo_transporte:
+          type: number
+          nullable: true
+          description: |
+            HU-018.2 (#294). Costo del transporte de la ruta: fletes + retorno + levante, **sin** servicios conexos ni margen. **Siempre en
+            COP (pesos), aunque la cotización esté en USD** (el costeo de Nexo es en pesos y nunca se convierte; en USD `precio_final_linea`
+            va en dólares, el costo no). Sale junto con el precio, igual que `costo_final`: `null` en los mismos casos
+            (`precio_final_linea = null`: sin costeo listo o ruta `rechazada`). Solo lo ve el dueño: en `GET /web/cotizaciones/{folio}`
+            consultado por un gerente comercial o por el director (`solo_lectura = true`) siempre es `null`. Dato de HU-039 que se expone,
+            sin desglose por camión ni por conexo; no sale en el PDF, el correo, el Excel ni "Mis cotizaciones".
+        valor_mercancia:
+          type: number
+          nullable: true
+          description: |
+            HU-018.2 (#294). Valor de la mercancía de la ruta (el mismo `valor_mercancia` de `GET .../solicitud`), en pesos (COP) aunque la
+            cotización esté en USD. `null` si no se declaró. No es un costo: es de solo lectura, lo ve también el gerente o el director
+            (`solo_lectura = true`) y está en todas las respuestas con la vista del costeo. Siempre presente.
         margen_aplicado:
           type: number
           nullable: true
@@ -7905,7 +8877,8 @@ components:
         del elegido.
         Si trae `posiciones`, reemplaza todas las anteriores. La combinación resultante (lo guardado más los cambios) se
         valida igual que en la captura, con las condiciones de G3 (`docs/conexion_nexo/HU-013-preguntas-nexo.md`): `clase_contenedor`
-        solo con `clase_viaje = Contenedor`, `ciudad_devolucion_contenedor` con `retorna_contenedor`,
+        obligatoria con `clase_viaje = Contenedor`, opcional y solo de la lista provisional G15 (`CNT20.FT`, `CNT20.OP`, `CNT40.FT`,
+        `CNT40.OP`) con `Extradimensionado` (HU-021.15, #297) y no aplica con las demás, `ciudad_devolucion_contenedor` con `retorna_contenedor`,
         `ciudad_levante_contenedor` con `levante_contenedor_diferente` y `valor_aprovisionamiento` solo con un levante
         distinto del origen, y la regla de peso.
       properties:
@@ -8176,6 +9149,24 @@ components:
           minLength: 1
           maxLength: 1100
           description: Hasta 1100 caracteres, como la respuesta (la introducción estándar del pliego mide 1026); la IA redacta hasta 900.
+
+    RedactarTextosWeb:
+      type: object
+      description: |
+        HU-013.18 (#296). Cuerpo **opcional** de `POST /web/cotizaciones/{folio}/costeo/textos/redactar`. Sin cuerpo, la redacción
+        es igual que hoy.
+      properties:
+        indicaciones_redaccion:
+          type: string
+          nullable: true
+          maxLength: 500
+          description: |
+            Indicaciones del comercial para orientar al redactor con IA (una **preferencia** de enfoque o tono, p. ej.
+            "destacar la experiencia en carga refrigerada, tono cercano"). **No** es `notas` (la de la Mesa de Costeo). Es una
+            preferencia que **nunca** pasa por encima de las reglas estrictas del prompt (si pide montos, condiciones, otros
+            nombres o cambiar el formato, esa parte se ignora) y la salida se valida igual. Hasta 500 caracteres (recortada);
+            vacía, solo espacios o `null` equivale a sin indicaciones. Más de 500 caracteres: 400 `SOLICITUD_INVALIDA` sin
+            llamar a la IA. No se guarda en la cotización.
 
     PosicionCargaWeb:
       type: object
@@ -9341,6 +10332,178 @@ components:
           type: boolean
           description: HU-023.5. `false` sin cubicador o con su catálogo caído (no hay sugerencias por parecido).
 
+    SugerirMapeoWeb:
+      type: object
+      required: [encabezados]
+      description: HU-044.2 (#253). Los encabezados de UNA hoja, en el orden del archivo, y una muestra de sus filas.
+      properties:
+        nit_cliente:
+          type: string
+          nullable: true
+          description: NIT de la licitación (con o sin puntos y dígito de verificación). Opcional; sin él NEXO usa solo el diccionario general.
+        encabezados:
+          type: array
+          description: De 1 a 100 (con más, la hoja se responde sin propuesta). `null` viaja como texto vacío.
+          items:
+            type: string
+            nullable: true
+        filas:
+          type: array
+          nullable: true
+          description: Muestra de filas sin el encabezado (el frontend manda hasta 200; se reenvían las 200 primeras).
+          items:
+            type: array
+            nullable: true
+            items:
+              type: string
+              nullable: true
+
+    SugerenciaMapeo:
+      type: object
+      required: [ia_usada, motivo_sin_ia, columnas, dudas, plantilla_id]
+      description: HU-044.2 (#253). La propuesta de mapeo de NEXO para una hoja, una entrada por encabezado.
+      properties:
+        ia_usada:
+          type: boolean
+          description: Si la IA de NEXO participó.
+        motivo_sin_ia:
+          type: string
+          nullable: true
+          description: |
+            Por qué no participó la IA (`null` si participó). De NEXO: `PLANTILLA_RECONOCIDA`, `DICCIONARIO_COMPLETO`,
+            `IA_NO_DISPONIBLE` o un `IA_*` del proveedor. De Cotifly, con todas las columnas sin propuesta: `DEMASIADAS_COLUMNAS`
+            (más de 100, sin llamar a NEXO) y `NEXO_NO_DISPONIBLE` (importación apagada, NEXO caído o sin respuesta a tiempo).
+        columnas:
+          type: array
+          items:
+            $ref: '#/components/schemas/ColumnaMapeada'
+        dudas:
+          type: array
+          description: Preguntas de la IA al comercial, para mostrarlas junto al mapeo.
+          items:
+            type: string
+        plantilla_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: La plantilla del cliente que NEXO reconoció (`motivo_sin_ia = PLANTILLA_RECONOCIDA`).
+
+    ColumnaMapeada:
+      type: object
+      required: [indice, columna, campo, transformacion, confianza, origen, nota]
+      description: HU-044.2 (#253). La propuesta para una columna.
+      properties:
+        indice:
+          type: integer
+          description: Posición del encabezado (base 0).
+        columna:
+          type: string
+          description: El encabezado tal como vino.
+        campo:
+          type: string
+          description: Campo de NEXO (`origen`, `destino`, `tipoVehiculo`, `peso`, `pesoKg`...) o `ignorar` (sin propuesta).
+        transformacion:
+          type: string
+          description: Transformación de NEXO (`ninguna`, `peso_toneladas_a_kg`...).
+        confianza:
+          type: number
+          description: De 0 a 1.
+        origen:
+          type: string
+          description: '`plantilla`, `diccionario`, `ia` o `ninguno`.'
+        nota:
+          type: string
+          nullable: true
+
+    LecturaEstructura:
+      type: object
+      required: [archivo, origen_receta, similitud, receta_guardada_id, ia_usada, motivo_sin_ia, receta, resumen, dudas, hojas_del_archivo, tablas, avisos, cambios]
+      description: |
+        HU-044.2 (#253). La lectura de `leer-estructura` de NEXO, sin alterar `receta` ni `tablas` (solo los nombres de los campos de
+        primer nivel pasan a snake_case).
+      properties:
+        archivo:
+          type: string
+        origen_receta:
+          type: string
+          description: '`guardada` (formato confirmado del cliente, sin IA), `ia` (la propuso el modelo), `manual` (la receta enviada, sin IA) o `automatica` (lectura simple sin IA).'
+        similitud:
+          type: number
+          nullable: true
+          description: De 0 a 1, cuánto se parece al formato guardado que se usó o se tomó de base (desde 0,85 se reutiliza sin IA).
+        receta_guardada_id:
+          type: string
+          format: uuid
+          nullable: true
+        ia_usada:
+          type: boolean
+        motivo_sin_ia:
+          type: string
+          nullable: true
+          description: '`IA_NO_DISPONIBLE`, `IA_RESPUESTA_INVALIDA`, un código del proveedor u otro motivo de NEXO; `null` si la IA participó.'
+        receta:
+          type: object
+          nullable: true
+          description: |
+            La receta que NEXO ejecutó, **opaca**: Cotifly no la interpreta ni la cambia, y sus claves NO pasan a snake_case. Se
+            devuelve como texto JSON en la parte `receta` de la siguiente corrección (y al guardar el formato del cliente, #256).
+        resumen:
+          type: string
+          nullable: true
+          description: Lo que entendió la IA, para el chat.
+        dudas:
+          type: array
+          items:
+            type: string
+        hojas_del_archivo:
+          type: array
+          items:
+            $ref: '#/components/schemas/HojaDelArchivo'
+        tablas:
+          type: array
+          description: Una por hoja, o una sola si la receta las une. Misma forma que las hojas de `analizar-excel`; cada una va a `sugerir-mapeo` sin transformarla.
+          items:
+            $ref: '#/components/schemas/HojaExcel'
+        avisos:
+          type: array
+          items:
+            type: string
+        cambios:
+          description: Si el formato cambió respecto al guardado, los títulos que faltan y los nuevos; `null` si no.
+          oneOf:
+            - $ref: '#/components/schemas/CambiosDeFormato'
+            - $ref: '#/components/schemas/Nulo'
+
+    HojaDelArchivo:
+      type: object
+      required: [nombre, oculta, filas, columnas, usada]
+      description: HU-044.2 (#253). Una hoja del libro, con su tamaño y si la receta la usó.
+      properties:
+        nombre:
+          type: string
+        oculta:
+          type: boolean
+        filas:
+          type: integer
+        columnas:
+          type: integer
+        usada:
+          type: boolean
+
+    CambiosDeFormato:
+      type: object
+      required: [faltan, nuevos]
+      description: HU-044.2 (#253). Títulos que ya no aparecen y títulos nuevos respecto al formato guardado del cliente.
+      properties:
+        faltan:
+          type: array
+          items:
+            type: string
+        nuevos:
+          type: array
+          items:
+            type: string
+
     AnalisisExcelMercancias:
       type: object
       required: [archivo, hojas, total_hojas, hojas_truncadas, catalogo_mercancias_disponible]
@@ -9449,8 +10612,10 @@ components:
           por código, igual que en `SolicitudCosteoWeb` (comparación exacta, distinguiendo mayúsculas; se acepta la lista
           provisional `CNT20.FT`, `CNT20.OP`, `CNT40.FT` y `CNT40.OP`). Un texto libre del pliego (`Tractomula`, `3s3`) es
           `CODIGO_NO_CATALOGO` en esa fila: el frontend mapea los valores del pliego a los códigos de `GET /web/catalogos-flete`.
-        - **Condicionales (G3).** `clase_contenedor` es obligatoria con `clase_viaje = Contenedor` (`CAMPO_REQUERIDO`) y solo se
-          admite con ella (`CAMPO_NO_APLICA`); `valor_levante_contenedor` (ex `valor_aprovisionamiento`; el error lo nombra así desde #228) solo con una `ciudad_levante_contenedor` distinta del
+        - **Condicionales (G3).** `clase_contenedor` es obligatoria con `clase_viaje = Contenedor` (`CAMPO_REQUERIDO`); con
+          `Extradimensionado` (HU-021.15, #297) es opcional y solo admite las clases provisionales G15 (`CNT20.FT`, `CNT20.OP`,
+          `CNT40.FT`, `CNT40.OP`; otra es `VALOR_FUERA_DE_RANGO`); con las demás clases de viaje no aplica (`CAMPO_NO_APLICA`);
+          `valor_levante_contenedor` (ex `valor_aprovisionamiento`; el error lo nombra así desde #228) solo con una `ciudad_levante_contenedor` distinta del
           origen (`CAMPO_NO_APLICA`).
         - **Municipios (G6).** Si la fila no trae `origen_municipio_id`/`destino_municipio_id`, Cotifly resuelve el texto de
           `origen`/`destino` en el catálogo de `GET /web/municipios` con la regla determinista de HU-005.13 (sin tildes ni
@@ -9824,6 +10989,196 @@ components:
           description: HU-023.5. Los camiones de la ruta, en su orden (uno provisional sin vehículo mientras está `pendiente`).
           items:
             $ref: '#/components/schemas/CamionLicitacion'
+
+    PlantillaMapeoWeb:
+      type: object
+      required: [nit_cliente, encabezados, columnas]
+      description: |
+        HU-044.5 (#256). La plantilla de mapeo que el comercial confirmó para el cliente: los `encabezados` de la hoja en el orden del
+        archivo (1 a 100) y el mapeo de sus `columnas`. Las reglas las valida NEXO.
+      properties:
+        nit_cliente:
+          type: string
+          description: NIT de la licitación, con o sin puntos y dígito de verificación.
+        nombre:
+          type: string
+          nullable: true
+          maxLength: 100
+        encabezados:
+          type: array
+          items:
+            type: string
+            nullable: true
+        columnas:
+          type: array
+          items:
+            $ref: '#/components/schemas/ColumnaPlantilla'
+
+    ColumnaPlantilla:
+      type: object
+      required: [indice, campo]
+      description: HU-044.5 (#256). Una columna confirmada de la plantilla.
+      properties:
+        indice:
+          type: integer
+          minimum: 0
+          description: Posición en `encabezados` (base 0).
+        campo:
+          type: string
+          description: Campo de NEXO (`origen`, `destino`, `peso`, `tipoVehiculo`...) o `ignorar`.
+        transformacion:
+          type: string
+          nullable: true
+          description: Transformación de NEXO (`peso_toneladas_a_kg`...); vacía o ausente = `ninguna`.
+
+    PlantillaMapeo:
+      type: object
+      required: [id, cliente_nombre, nombre, encabezados, columnas, created_at, updated_at]
+      description: HU-044.5 (#256). Una plantilla de mapeo del cliente guardada en NEXO (Cotifly no guarda copia).
+      properties:
+        id:
+          type: string
+          format: uuid
+        cliente_nombre:
+          type: string
+          nullable: true
+        nombre:
+          type: string
+          nullable: true
+        encabezados:
+          type: array
+          items:
+            type: string
+        columnas:
+          type: array
+          items:
+            $ref: '#/components/schemas/ColumnaPlantilla'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    RecetaLectura:
+      type: object
+      required: [id, cliente_nombre, nombre, receta, instrucciones, usos, ultimo_uso_at, created_at, updated_at]
+      description: |
+        HU-044.5 (#256). Un formato de lectura de Excel del cliente guardado en NEXO. `receta` es el JSON de NEXO **sin tocar** (sus
+        claves no pasan a snake_case): se reenvía tal cual, como texto, en `leer-estructura` o al guardarlo otra vez.
+      properties:
+        id:
+          type: string
+          format: uuid
+        cliente_nombre:
+          type: string
+          nullable: true
+        nombre:
+          type: string
+          nullable: true
+        receta:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: JSON opaco de NEXO.
+        instrucciones:
+          type: string
+          nullable: true
+        usos:
+          type: integer
+          minimum: 0
+        ultimo_uso_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    DiccionarioCliente:
+      type: object
+      required: [terminos, aviso]
+      description: |
+        HU-044.5 (#256). La consulta del diccionario de NEXO. Hoy solo trae los términos generales; `aviso` viene cuando se pidió con
+        `nit_cliente` (`TERMINOS_CLIENTE_NO_DISPONIBLES`) y es `null` sin NIT.
+      properties:
+        terminos:
+          type: array
+          items:
+            $ref: '#/components/schemas/TerminoDiccionario'
+        aviso:
+          description: '`null` sin `nit_cliente`.'
+          oneOf:
+            - $ref: '#/components/schemas/AvisoDiccionario'
+            - $ref: '#/components/schemas/Nulo'
+
+    TerminoDiccionario:
+      type: object
+      required: [id, termino, tipo, concepto, contexto, ejemplo, activo, general]
+      description: HU-044.5 (#256). Un término del diccionario de NEXO.
+      properties:
+        id:
+          type: string
+          format: uuid
+        termino:
+          type: string
+          description: Lo que escribe el cliente ("Tractomula", "TON").
+        tipo:
+          type: string
+          enum: [columna, unidad, valor]
+        concepto:
+          type: string
+          description: Lo que significa para NEXO (un campo, una unidad o un código).
+        contexto:
+          type: string
+          nullable: true
+          description: El campo de NEXO al que aplica un término de tipo `valor` (`tipoVehiculo`, `carroceria`...).
+        ejemplo:
+          type: string
+          nullable: true
+        activo:
+          type: boolean
+        general:
+          type: boolean
+          description: Aplica a todos los clientes. Hoy siempre `true` (ver la operación).
+
+    AvisoDiccionario:
+      type: object
+      required: [codigo, mensaje]
+      description: HU-044.5 (#256). Aviso de la consulta del diccionario (no es un error).
+      properties:
+        codigo:
+          type: string
+          enum: [TERMINOS_CLIENTE_NO_DISPONIBLES]
+        mensaje:
+          type: string
+
+    OpcionesDiccionarioCliente:
+      type: object
+      required: [tipos, campos_destino, unidades, contextos]
+      description: HU-044.5 (#256). Los valores que acepta el diccionario de NEXO.
+      properties:
+        tipos:
+          type: array
+          items:
+            type: string
+        campos_destino:
+          type: array
+          items:
+            type: string
+        unidades:
+          type: array
+          items:
+            type: string
+        contextos:
+          type: array
+          items:
+            type: string
 
     CamionLicitacion:
       type: object

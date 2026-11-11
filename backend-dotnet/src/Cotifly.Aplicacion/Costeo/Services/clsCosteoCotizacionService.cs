@@ -124,9 +124,11 @@ public sealed record clsCosteoCotizacion(
 
     /// <summary>
     /// HU-039.1 (#218): la misma vista sin el costo bruto de las rutas (<see cref="clsRutaCosteo.CostoFinal"/> en <c>null</c>), para quien
-    /// la consulta sin ser el dueño (el gerente comercial en solo consulta del detalle).
+    /// la consulta sin ser el dueño (el gerente comercial en solo consulta del detalle). HU-018.2 (#294): también deja en <c>null</c>
+    /// <see cref="clsRutaCosteo.CostoTransporte"/> (es costo); el valor de la mercancía (<see cref="clsRutaCosteo.ValorMercancia"/>) no es
+    /// costo y se conserva.
     /// </summary>
-    public clsCosteoCotizacion SinCostoFinal() => this with { Rutas = [.. Rutas.Select(r => r with { CostoFinal = null })] };
+    public clsCosteoCotizacion SinCostoFinal() => this with { Rutas = [.. Rutas.Select(r => r with { CostoFinal = null, CostoTransporte = null })] };
 }
 
 /// <summary>
@@ -179,6 +181,22 @@ public sealed record clsRutaCosteo(
     /// 2026-10-27.
     /// </summary>
     public decimal? CostoFinal { get; init; }
+
+    /// <summary>
+    /// HU-018.2 (#294): costo del transporte de la ruta = fletes + retorno + levante (<see cref="clsLineaSolicitud.CostoTransporte"/>),
+    /// <b>sin</b> conexos ni margen, <b>siempre en COP</b> aunque la cotización esté en USD (el costeo de Nexo es en pesos y nunca se
+    /// convierte). Sale con el precio, igual que <see cref="CostoFinal"/>: <c>null</c> sin costeo listo o con la ruta <c>rechazada</c>.
+    /// Solo lo ve el dueño: el detalle del gerente o del director en solo lectura lo deja en <c>null</c>
+    /// (<see cref="clsCosteoCotizacion.SinCostoFinal"/>). Dato existente de HU-039, solo expuesto (sin lógica nueva).
+    /// </summary>
+    public decimal? CostoTransporte { get; init; }
+
+    /// <summary>
+    /// HU-018.2 (#294): valor de la mercancía de la ruta (<see cref="clsLineaSolicitud.ValorMercancia"/>), en pesos (COP) aunque la
+    /// cotización esté en USD; <c>null</c> si no se declaró. No es un costo de Nexo, es solo lectura y va en todas las respuestas con la
+    /// vista del costeo (incluido el detalle del gerente: <see cref="clsCosteoCotizacion.SinCostoFinal"/> no lo toca).
+    /// </summary>
+    public decimal? ValorMercancia { get; init; }
 
     /// <summary>HU-021.9 (#136): línea de negocio de la ruta (id de <c>MargenesPolitica</c>; define su margen).</summary>
     public int? LineaNegocioId { get; init; }
@@ -1516,6 +1534,10 @@ public sealed class clsCosteoCotizacionService(
         {
             // HU-039.1 (#218): el costo bruto sale con el precio, como el margen aplicado (nunca un costo sin precio).
             CostoFinal = ruta.PrecioFinalLinea is null ? null : ruta.CostoFinal,
+            // HU-018.2 (#294): el costo del transporte sale con el precio, igual que el costo bruto (null sin precio o con la ruta rechazada).
+            CostoTransporte = ruta.PrecioFinalLinea is null ? null : ruta.CostoTransporte,
+            // HU-018.2 (#294): el valor de la mercancía siempre (no es costo ni depende del precio), en COP aunque la cotización sea en USD.
+            ValorMercancia = ruta.ValorMercancia,
             MargenSapAnomalo = ruta.MargenSapAnomalo,
             // HU-028.1 (#183): los motivos del rechazo de sus camiones (la ruta puede seguir con precio por los no rechazados).
             MotivoRechazo = ruta.MotivoRechazo,

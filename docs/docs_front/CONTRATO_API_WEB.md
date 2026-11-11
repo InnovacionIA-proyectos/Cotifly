@@ -86,6 +86,7 @@ Resumen de los endpoints de uso más frecuente; la lista completa (56) está en 
 | `POST /web/solicitudes-costeo` | ambos | **Endpoint vigente para crear una cotización** (una o varias rutas, hasta 100): formulario ampliado, validación por código de catálogo y envío a costeo en Nexo. Ver §3.2 |
 | `GET /web/catalogos-flete` | ambos | Tipos de vehículo, carrocerías, clases de viaje y clases de contenedor del formulario (catálogos maestros de Nexo; `clases_contenedor` desde HU-027.1, puede venir vacía). Ver §3.2 |
 | `GET /web/alias/resolver` | ambos | HU-031.1 (#194): traduce un tipo de vehículo o una clase de contenedor escritos a mano al código oficial de Nexo (catálogo y diccionario de alias), en lote (`?tipo=vehiculo&texto=TB&texto=3s3`, hasta 200). `{tipo, resultados: [{texto, reconocido, codigo, fuente}]}`; 503 `CATALOGOS_FLETE_NO_DISPONIBLE` si Nexo no responde. Ver `CONTRATOS_API_COTIFLY_FRONTEND.md` §4.2.8 |
+| `POST /web/licitaciones/normalizar-valores` | ambos | HU-044.4 (#255): lleva con NEXO los textos distintos del Excel de licitación (`tipo_vehiculo`, `carroceria`, `ciudad`, `linea_negocio`; máx. 1000) a los valores oficiales. Un resultado por valor con `estado` (`resuelto`/`ambiguo`/`sin_resolver`), `codigo`, `municipio_id`, `candidatos[]`; en `linea_negocio`, `codigo` es la línea de Cotifly. 429 `IA_TOPE_DIARIO`, 503 `NEXO_NO_DISPONIBLE`. Ver `CONTRATOS_API_COTIFLY_FRONTEND.md` §4.6.6 |
 | `GET /web/municipios` | ambos | Buscador de origen y destino (`?q=&departamento=`, máx. 50) o catálogo completo sin filtros. 503 `MUNICIPIOS_NO_DISPONIBLE` si Nexo no responde (antes 400). Ver §8.1, fila 5 |
 | `GET /web/mis-cotizaciones` | ambos | Cotizaciones propias (máx. 100) |
 | `GET /web/cotizaciones/regional` | gerente_comercial o director | HU-016.1 (#154): cotizaciones de los comerciales de su regional (máx. 100), con la forma de `mis-cotizaciones` y el comercial dueño en cada fila. HU-037.3 (#211): el director ve todas o la de `?regional=`. Ver §8.10.1 |
@@ -463,7 +464,12 @@ es `Varias`:
   "pdf_url": null,
   "created_at": "2026-10-09T15:20:11.532+00:00",
   "deadline": "2026-10-15T22:00:00+00:00",
-  "score_prioridad": 62.5
+  "score_prioridad": 62.5,
+  "origen": "Buenaventura",
+  "destino": "Bogotá D.C.",
+  "numero_rutas": 2,
+  "peso_total_kg": 37500.5,
+  "valor_mercancia": 430000000
 }
 ```
 
@@ -677,8 +683,10 @@ primer nivel son los de la ruta 1:
       "destino": "Bogotá D.C.",
       "estado_costeo": "autocosteo",
       "peso_kg": 28500.5,
+      "valor_mercancia": 250000000,
       "precio_final_linea": 5294118,
       "costo_final": 4500000,
+      "costo_transporte": 4320000,
       "margen_aplicado": 0.15,
       "margen_sugerido": 0.15,
       "origen_margen": "politica_linea",
@@ -719,8 +727,10 @@ primer nivel son los de la ruta 1:
       "destino": "Yumbo",
       "estado_costeo": "autocosteo",
       "peso_kg": 9000,
+      "valor_mercancia": 180000000,
       "precio_final_linea": 3529412,
       "costo_final": 3000000,
+      "costo_transporte": 3000000,
       "margen_aplicado": 0.15,
       "margen_sugerido": 0.18,
       "origen_margen": "negociado",
@@ -814,6 +824,15 @@ el gerente o el director en solo consulta lo reciben siempre en `null`. Con la c
 finalizó, como el precio congelado. No hay desglose ni costo por camión o por conexo, y no sale en "Mis
 cotizaciones", el listado regional, el PDF, el correo, el Excel ni el asistente. Es una reversa de la regla de ADR-015 §5 ("el costo
 bruto nunca llega al comercial"), confirmada por la Gerencia Comercial el 2026-10-27.
+
+**Costo del transporte y valor de la mercancía por ruta (HU-018.2, #294).** Cada `rutas[]` trae ahora dos campos más de solo lectura:
+`costo_transporte` = fletes + retorno + levante, **sin** conexos ni margen (el costo bruto `costo_final` menos el costo de los conexos),
+y `valor_mercancia` = el valor de la mercancía declarado en la ruta (el mismo de `GET .../solicitud`). Los dos van **siempre en COP**
+aunque la cotización esté en USD. `costo_transporte` sale junto con el precio, igual que `costo_final` (`null` sin costeo o ruta `rechazada`),
+es del dueño y el detalle del gerente o del director en solo consulta lo deja en `null`. `valor_mercancia` no es un costo: sale siempre
+(también para el gerente) y es `null` si no se declaró. En el ejemplo, la ruta 1 cuesta 4.320.000 de transporte (de 4.500.000 de costo bruto,
+con 180.000 de conexo) y la ruta 2, 3.000.000 (sin conexos, igual que su costo bruto). Son datos que ya existían en el dominio: esto solo los
+expone, sin lógica de negocio nueva. No salen en el PDF, el correo, el Excel ni "Mis cotizaciones".
 
 `deadline` y `score_prioridad` (HU-018.1, #155) son de la **cabecera** (toda la solicitud), no de cada ruta, y vienen siempre
 (también en las respuestas de las mutaciones): `deadline` es la fecha límite del formulario en UTC (`null` si no se dio) y
@@ -988,11 +1007,22 @@ líneas distintas), y `precio_final` es la suma de las rutas, con conexos:
       "pdf_url": "/pdfs/PCN-900555111-DG-09102026-001.pdf",
       "created_at": "2026-10-09T15:20:11.532+00:00",
       "deadline": "2026-10-15T22:00:00+00:00",
-      "score_prioridad": 62.5
+      "score_prioridad": 62.5,
+      "origen": "Buenaventura",
+      "destino": "Bogotá D.C.",
+      "numero_rutas": 2,
+      "peso_total_kg": 37500.5,
+      "valor_mercancia": 430000000
     }
   ]
 }
 ```
+
+HU-018.2 (#294): la carga de cada fila viene siempre: `origen` y `destino` son los de la **ruta 1** (la de menor orden; `null` sin rutas o
+sin nombre), `numero_rutas` cuenta todas las rutas (también las rechazadas; `0` sin rutas), `peso_total_kg` es la suma del `peso_kg`
+declarado (sin tara) de todas las rutas y `valor_mercancia` la suma del valor de la mercancía de todas (en COP aunque la cotización esté en
+USD); las dos sumas son `null` si ninguna ruta trae el dato. Son de solo lectura (datos que ya existían en el dominio) y salen también en el
+listado regional (§8.10.1).
 
 `GET /web/cotizaciones/{id}/nueva-version`: `rutas[]` trae la línea de negocio y el margen de cada ruta.
 
@@ -1071,6 +1101,11 @@ gerente, 403 para el comercial; 409 `REGIONAL_NO_ASIGNADA` y 503 `REGIONAL_NO_DI
       "created_at": "2026-10-09T15:20:11.532+00:00",
       "deadline": "2026-10-15T22:00:00+00:00",
       "score_prioridad": 62.5,
+      "origen": "Cali",
+      "destino": "Bogotá D.C.",
+      "numero_rutas": 1,
+      "peso_total_kg": 12000,
+      "valor_mercancia": 180000000,
       "comercial": {
         "usuario_id": "5f0c2a8e-4b1d-4c55-9a51-2f7d0c1e9b10",
         "nombre_usuario": "APEREZ",
@@ -1524,7 +1559,12 @@ Reglas que conviene saber:
     "pdf_url": null,
     "created_at": "2026-10-09T15:20:11.532+00:00",
     "deadline": "2026-10-15T22:00:00+00:00",
-    "score_prioridad": 0.5
+    "score_prioridad": 0.5,
+    "origen": "Buenaventura",
+    "destino": "Bogotá D.C.",
+    "numero_rutas": 2,
+    "peso_total_kg": 30500.5,
+    "valor_mercancia": 250000000
   },
   "avisos": [
     { "codigo": "REEMPLAZA_SOLICITUD_NEXO", "mensaje": "La solicitud actual se rechaza en Nexo y se captura de nuevo en el mismo folio." },
@@ -1669,6 +1709,11 @@ frontend ya conoce, con sus mismas reglas y nombres:
     "created_at": "2026-10-09T15:20:11.532+00:00",
     "deadline": "2026-10-15T22:00:00+00:00",
     "score_prioridad": 62.5,
+    "origen": "Buenaventura",
+    "destino": "Bogotá D.C.",
+    "numero_rutas": 2,
+    "peso_total_kg": 41000.5,
+    "valor_mercancia": 430000000,
     "comercial": { "usuario_id": "5f0c2a8e-4b1d-4c55-9a51-2f7d0c1e9b10", "nombre_usuario": "DGUERRA", "nombre_completo": "Duban Guerra" }
   },
   "costeo": {
@@ -1700,8 +1745,10 @@ frontend ya conoce, con sus mismas reglas y nombres:
         "destino": "Bogotá D.C.",
         "estado_costeo": "entregada",
         "peso_kg": 28500.5,
+        "valor_mercancia": 250000000,
         "precio_final_linea": 5294118,
         "costo_final": 4500000,
+        "costo_transporte": 4320000,
         "margen_aplicado": 0.15,
         "margen_sugerido": 0.15,
         "origen_margen": "politica_linea",
@@ -1727,8 +1774,10 @@ frontend ya conoce, con sus mismas reglas y nombres:
         "destino": "Cartagena",
         "estado_costeo": "entregada",
         "peso_kg": 12500,
+        "valor_mercancia": 180000000,
         "precio_final_linea": 3529412,
         "costo_final": 3000000,
+        "costo_transporte": 3000000,
         "margen_aplicado": 0.15,
         "margen_sugerido": 0.15,
         "origen_margen": "politica_linea",
@@ -2194,6 +2243,86 @@ invalidación del PDF y una auditoría por operación. El conexo agregado en lot
     "codigo": "COSTEO_NO_LISTO",
     "mensaje": "La cotización PCN-900555111-DG-27102026-001 todavía no tiene el costeo de Nexo con margen aplicado.",
     "detalle": { "linea_orden": 4, "linea_solicitud_id": "7d6c5b4a-3e2f-4a1b-9c8d-0e1f2a3b4c5d" }
+  }
+}
+```
+
+### 8.20 Importación inteligente con NEXO: `sugerir-mapeo` y `leer-estructura` (HU-044.2, #253, ADR-028)
+
+`POST /web/licitaciones/sugerir-mapeo` propone el mapeo de las columnas de UNA hoja: la plantilla del cliente, luego su diccionario y,
+para lo que falte, la IA de NEXO. `campo` es el nombre de NEXO (`ignorar` = sin propuesta); la tabla de equivalencias con los campos del
+frontend está en `CONTRATOS_API_COTIFLY_FRONTEND.md` (4.6.6). Sin propuesta no es un error: con más de 100 encabezados
+(`DEMASIADAS_COLUMNAS`, sin llamar a NEXO), con la importación apagada o con NEXO caído (`NEXO_NO_DISPONIBLE`) responde 200 con todas las
+columnas en `ignorar` e `ia_usada = false`. `IA_TOPE_DIARIO` es 429.
+
+<!-- esquema: SugerirMapeoWeb -->
+```json
+{
+  "nit_cliente": "900.555.111-2",
+  "encabezados": ["ORIGEN", "DESTINO", "TON"],
+  "filas": [["Buenaventura", "Bogotá", "32"], ["Cartagena", "Medellín", null]]
+}
+```
+
+<!-- respuesta: POST /web/licitaciones/sugerir-mapeo 200 -->
+```json
+{
+  "ia_usada": false,
+  "motivo_sin_ia": "PLANTILLA_RECONOCIDA",
+  "columnas": [
+    { "indice": 0, "columna": "ORIGEN", "campo": "origen", "transformacion": "ninguna", "confianza": 1.0, "origen": "plantilla", "nota": null },
+    { "indice": 1, "columna": "DESTINO", "campo": "destino", "transformacion": "ninguna", "confianza": 1.0, "origen": "plantilla", "nota": null },
+    { "indice": 2, "columna": "TON", "campo": "peso", "transformacion": "peso_toneladas_a_kg", "confianza": 1.0, "origen": "plantilla", "nota": null }
+  ],
+  "dudas": [],
+  "plantilla_id": "3f2b8c1d-7a6e-4d5c-9b8a-1e2f3a4b5c6d"
+}
+```
+
+`POST /web/licitaciones/leer-estructura` (multipart: `archivo`, `nit_cliente`, `instrucciones`, `receta`) es el paso previo para un
+Excel de formato complejo. Cotifly solo valida el archivo (que venga, tamaño y extensión; no abre el libro), no reintenta y devuelve la
+`receta` (opaca, en camelCase) y las `tablas` (la forma de las hojas de `analizar-excel`) sin tocarlas. Para corregir, se reenvía el
+mismo archivo con `instrucciones` y `receta` = `JSON.stringify(respuesta.receta)`. `ia_usada = false` es un 200. Si el archivo cabe
+solo pero no con la receta y las instrucciones (en bytes UTF-8), 400 `LECTURA_DEMASIADO_GRANDE` sin llamar a NEXO. Un
+`VALIDATION_ERROR` de NEXO trae en `detalle.campos` solo los nombres de los campos rechazados.
+
+<!-- respuesta: POST /web/licitaciones/leer-estructura 200 -->
+```json
+{
+  "archivo": "EPM_formulario.xlsx",
+  "origen_receta": "guardada",
+  "similitud": 0.93,
+  "receta_guardada_id": "8a7b6c5d-4e3f-4a2b-9c1d-0e9f8a7b6c5d",
+  "ia_usada": false,
+  "motivo_sin_ia": null,
+  "receta": { "version": 1, "hojas": [ { "hoja": "*", "usar": true, "filasEncabezado": [20] } ], "unir": false, "notas": null },
+  "resumen": null,
+  "dudas": [],
+  "hojas_del_archivo": [ { "nombre": "VALLE DE ABURRA", "oculta": false, "filas": 60, "columnas": 8, "usada": true } ],
+  "tablas": [
+    {
+      "nombre": "VALLE DE ABURRA",
+      "fila_encabezado": 20,
+      "encabezados": ["Tipo de servicio", "Origen", "Destino"],
+      "filas": [["Turbo Hasta 4.5 ton", "CARTAGENA", "MEDELLIN"]],
+      "total_filas": 36,
+      "filas_excel": null,
+      "columna_mercancia": null,
+      "columna_codigo_mercancia": null,
+      "mercancias": null
+    }
+  ],
+  "avisos": [],
+  "cambios": { "faltan": [], "nuevos": ["Observaciones"] }
+}
+```
+
+<!-- respuesta: POST /web/licitaciones/leer-estructura 400 -->
+```json
+{
+  "error": {
+    "codigo": "FORMATO_NO_SOPORTADO",
+    "mensaje": "Solo se aceptan archivos .xlsx o .xlsm."
   }
 }
 ```

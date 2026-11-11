@@ -276,6 +276,38 @@ public sealed class clsRedactorCotizacionLlmTests
             .And.Contain("Nunca escribas montos").And.Contain("No inventes condiciones").And.Contain("\"introduccion\"");
     }
 
+    // HU-013.18 (#296): indicaciones del comercial para el redactor con IA.
+
+    [Fact]
+    public async Task HU01318_LasIndicacionesVanAlModeloComoIndicacionesComercial()
+    {
+        _modelo.Responder(Json(AsuntoIa, IntroIa));
+        var contexto = Contexto() with { IndicacionesComercial = "Tono cercano, resaltar la carga refrigerada." };
+
+        await Servicio().RedactarAsync(contexto, _estandar, Ct);
+
+        var usuario = _modelo.Llamadas.Single().Mensajes.Single(m => m.Role == ChatRole.User).Text;
+        usuario.Should().Contain("indicaciones_comercial").And.Contain("Tono cercano, resaltar la carga refrigerada.");
+    }
+
+    [Fact]
+    public async Task HU01318_SinIndicacionesElContextoNoLlevaIndicacionesComercial()
+    {
+        _modelo.Responder(Json(AsuntoIa, IntroIa));
+
+        await Servicio().RedactarAsync(Contexto(), _estandar, Ct);
+
+        var usuario = _modelo.Llamadas.Single().Mensajes.Single(m => m.Role == ChatRole.User).Text;
+        usuario.Should().NotContain("indicaciones_comercial", "sin indicaciones el contexto queda idéntico al de siempre");
+    }
+
+    [Fact]
+    public void HU01318_ElPromptTrataLasIndicacionesComoPreferenciaQueNoPasaSobreLasReglas()
+    {
+        clsRedactorCotizacionLlm.Prompt.Should().Contain("indicaciones_comercial").And.Contain("preferencia")
+            .And.Contain("Nunca").And.Contain("ignora esa parte");
+    }
+
     private clsRedaccionCotizacionService Servicio(clsRedactorCotizacionLlm? redactor = null) => new(
         redactor ?? new clsRedactorCotizacionLlm(_modelo, Options.Create(_agente), Options.Create(_ia), _interruptor, _reloj,
             NullLogger<clsRedactorCotizacionLlm>.Instance),

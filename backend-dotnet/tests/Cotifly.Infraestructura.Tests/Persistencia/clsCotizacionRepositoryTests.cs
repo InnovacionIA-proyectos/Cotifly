@@ -464,6 +464,35 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
         leida!.CosteoSiguienteConsultaAt.Should().Be(reclamo);
     }
 
+    /// <summary>
+    /// #259 (auditoría M1 y B2): reencolar desde finalizar solo agenda una cotización que está fuera de la agenda; nunca pisa un reclamo
+    /// vigente del polling ni adelanta una agenda programada, aunque la cotización en memoria se haya leído antes.
+    /// </summary>
+    [Fact]
+    public async Task ReencolarSoloAgendaUnaCotizacionFueraDeLaAgendaYNoPisaUnReclamoVigente()
+    {
+        var fuera = Formulario(null);
+        fuera.RegistrarEnvioCosteo($"SOL-{Guid.NewGuid():N}", false, Reloj.AhoraUtc, Reloj.AhoraUtc);
+        fuera.DetenerPollingCosteo();
+        var reclamada = Formulario(null);
+        var reclamo = Reloj.AhoraUtc.AddMinutes(2);
+        reclamada.RegistrarEnvioCosteo($"SOL-{Guid.NewGuid():N}", false, Reloj.AhoraUtc, reclamo);
+        await GuardarAsync(fuera);
+        await GuardarAsync(reclamada);
+        var ahora = Reloj.AhoraUtc;
+
+        var (primera, segunda, ajena) = await ConsultarAsync(async s =>
+        {
+            var repo = s.GetRequiredService<IClsCotizacionRepository>();
+            return (await repo.ReencolarConsultaCosteoAsync(fuera.Id, ahora, Ct), await repo.ReencolarConsultaCosteoAsync(fuera.Id, ahora.AddSeconds(5), Ct),
+                await repo.ReencolarConsultaCosteoAsync(reclamada.Id, ahora, Ct));
+        });
+
+        (primera, segunda, ajena).Should().Be((true, false, false), "la segunda ya la encuentra agendada y la tercera tiene un reclamo vigente");
+        (await ConsultarAsync(s => s.GetRequiredService<IClsCotizacionRepository>().ObtenerPorIdAsync(fuera.Id, Ct)))!.CosteoSiguienteConsultaAt.Should().Be(ahora);
+        (await ConsultarAsync(s => s.GetRequiredService<IClsCotizacionRepository>().ObtenerPorIdAsync(reclamada.Id, Ct)))!.CosteoSiguienteConsultaAt.Should().Be(reclamo);
+    }
+
     [Fact]
     public async Task ElReclamoDeReenvioSoloGanaConElUpdatedAtLeidoYLaDejaPendienteDeEnvio()
     {

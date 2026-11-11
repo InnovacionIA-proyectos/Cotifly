@@ -15,6 +15,8 @@
   <ItemGroup>
     <!-- Validación del access token de /api/auth/login-clientepro (#12, ADR-009). -->
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <!-- Swagger UI para explorar la API, SOLO en Development (ver Program.cs). MIT (ADR-010 §7). -->
+    <PackageReference Include="Swashbuckle.AspNetCore" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Cotifly.Aplicacion\Cotifly.Aplicacion.csproj" />

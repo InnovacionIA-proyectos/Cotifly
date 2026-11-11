@@ -43,6 +43,8 @@
     -->
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.12" />
     <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.19.2" />
+    <!-- Swagger UI para explorar la API en Development (Api/Program.cs). MIT (ADR-010 §7). Línea 10.x alineada con .NET 10. -->
+    <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.3.1" />
     <!--
       Agente IA (#12 parte C, ADR-003). Todo MIT. Semantic Kernel (Kernel, KernelFunction, IFunctionInvocationFilter) en Aplicacion;
       Microsoft.Extensions.AI (IChatClient, ChatClientBuilder/UseLogging) y los proveedores en Infraestructura/IA:

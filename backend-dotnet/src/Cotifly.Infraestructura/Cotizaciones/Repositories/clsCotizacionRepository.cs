@@ -312,6 +312,14 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
         return filas == 1;
     }
 
+    public async Task<bool> ReencolarConsultaCosteoAsync(Guid cotizacionId, DateTimeOffset cuando, CancellationToken cancellationToken = default)
+    {
+        var filas = await contexto.CotizacionesSolicitud
+            .Where(c => c.Id == cotizacionId && c.CosteoSiguienteConsultaAt == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(c => c.CosteoSiguienteConsultaAt, (DateTimeOffset?)cuando), cancellationToken);
+        return filas == 1;
+    }
+
     public Task<int> ReprogramarEntregadasSinPrecioAsync(DateTimeOffset ahora, CancellationToken cancellationToken = default) =>
         contexto.CotizacionesSolicitud
             .Where(c => c.EstadoCosteo == EstadoCosteo.Entregada && c.SolicitudNexoId != null && c.PrecioFinal == null && c.PdfPath == null
@@ -440,7 +448,12 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
         var ids = cabeceras.Select(c => c.Id).ToList();
         var rutas = await contexto.CotizacionLineasSolicitud.AsNoTracking()
             .Where(r => ids.Contains(r.CotizacionSolicitudId))
-            .Select(r => new { r.CotizacionSolicitudId, r.Orden, r.LineaNegocioId, r.MargenAplicado, r.OrigenMargen })
+            // HU-018.2 (#294): también el origen/destino, el peso y el valor de la mercancía de cada ruta, para la carga del resumen.
+            .Select(r => new
+            {
+                r.CotizacionSolicitudId, r.Orden, r.LineaNegocioId, r.MargenAplicado, r.OrigenMargen,
+                r.OrigenNombre, r.DestinoNombre, r.PesoKg, r.ValorMercancia,
+            })
             .ToListAsync(cancellationToken);
         var lineasNegocio = await contexto.MargenesPolitica.AsNoTracking().ToDictionaryAsync(m => m.Id, m => m.LineaNegocio, cancellationToken);
         var porCotizacion = rutas.GroupBy(r => r.CotizacionSolicitudId).ToDictionary(g => g.Key, g => g.OrderBy(r => r.Orden).ToList());
@@ -458,7 +471,10 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
             var linea = conLinea.Count > 1
                 ? clsCotizacionConLinea.Varias
                 : conLinea.Count == 1 ? lineasNegocio.GetValueOrDefault(conLinea[0]) : null;
-            return new clsCotizacionConLinea(c, linea, primera.MargenAplicado, primera.OrigenMargen);
+            // HU-018.2 (#294): la carga del resumen desde la misma proyección (sin cargar el agregado).
+            var carga = clsCargaCotizacion.Desde(suyas.Select(
+                r => new clsCargaCotizacion.Ruta(r.Orden, r.OrigenNombre, r.DestinoNombre, r.PesoKg, r.ValorMercancia)));
+            return new clsCotizacionConLinea(c, linea, primera.MargenAplicado, primera.OrigenMargen) { Carga = carga };
         })];
     }
 
