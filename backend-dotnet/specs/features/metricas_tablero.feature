@@ -285,9 +285,10 @@ Característica: Tablero de métricas del comercial y del gerente comercial
   # (margenPoliticaSugerido de cada ruta), calculada en el servidor. Rutas comparables: versión vigente, no rechazadas, con margen
   # aplicado y con política. Simple: (0.15 + 0.15 + 0.25) / 3 = 0.1833. Ponderado por costo (1M, 2M y 3M): (0.15 + 0.30 + 0.75) / 6
   # = 0.20. Desviación ponderada: ((0.10 − 0.15) × 1M + (0.20 − 0.15) × 2M + (0.30 − 0.25) × 3M) / 6M = 0.0333. La ruta 4, rechazada,
-  # no cuenta; la de P2 (en USD) no tiene política guardada y solo se cuenta en rutas_sin_margen_politica. margen_aplicado_promedio
-  # (decisión del 2026-10-27) es el simple del aplicado de esas mismas rutas: (0.10 + 0.20 + 0.30) / 3 = 0.2 (con la rechazada sería
-  # 0.1917 y con la de P2, 0.18).
+  # no cuenta; la de P2 (en USD) no tiene política guardada. margen_aplicado_promedio (decisión del 2026-10-27) es el simple del
+  # aplicado de esas mismas rutas: (0.10 + 0.20 + 0.30) / 3 = 0.2 (con la rechazada sería 0.1917 y con la de P2, 0.18).
+  # HU-016.2 (#295): P2 nunca se finaliza (sin resultado), así que queda fuera de TODA la comparación contra la política, incluido
+  # rutas_sin_margen_politica (antes la contaba por no tener política guardada; ahora ni siquiera entra al universo comparado).
   Escenario: El margen aplicado se compara con la política de las mismas rutas, en promedio simple y ponderado por costo
     Dado el comercial "pedro" con sesión en la regional "Sur"
     Y el gerente comercial "sofia" con sesión en la regional "Sur"
@@ -314,7 +315,7 @@ Característica: Tablero de métricas del comercial y del gerente comercial
       | margen_politica_promedio   | 0.1833 |
       | margen_politica_ponderado  | 0.2    |
       | desviacion_margen_politica | 0.0333 |
-      | rutas_sin_margen_politica  | 1      |
+      | rutas_sin_margen_politica  | 0      |
       | desviacion_promedio_margen | null   |
     Cuando "sofia" consulta las métricas de su regional del "2026-01-01" al "2026-12-31" filtradas por "pedro"
     Entonces la respuesta tiene el estado 200 y cumple el esquema "MetricasRegional" del contrato
@@ -324,7 +325,7 @@ Característica: Tablero de métricas del comercial y del gerente comercial
       | margen_politica_promedio   | 0.1833 |
       | margen_politica_ponderado  | 0.2    |
       | desviacion_margen_politica | 0.0333 |
-      | rutas_sin_margen_politica  | 1      |
+      | rutas_sin_margen_politica  | 0      |
 
   Escenario: Sin rutas comparables los campos contra la política vienen en null
     Dado el comercial "pedro" con sesión en la regional "Sur"
@@ -341,11 +342,12 @@ Característica: Tablero de métricas del comercial y del gerente comercial
 
   # HU-016.1 (#154, validación): el alcance de la comparación con la política es el del resto del tablero (el comercial lo suyo, el
   # gerente su regional, el director la que elige o el comercial que filtra) y solo cuenta la versión vigente. Rutas comparables de
-  # "ana": A1 (1M, aplicado 0.20, política 0.10), A2 rehecha como v2 (3M, 0.15, 0.40; la v1 de 1,7M no cuenta) y A3 (3,4M, 0.15,
-  # 0.15); A4 no tiene margen. Simple (0.10 + 0.40 + 0.15) / 3 = 0.2167; ponderado 1,81M / 7,4M = 0.2446; desviación
-  # (0.10 × 1M − 0.25 × 3M) / 7,4M = −0.0878. "luis" (L1: 0,4M, 0.20, 0.15) se suma en la regional; "marta" es de otra regional.
-  # Aplicado simple de las mismas rutas: ana (0.20 + 0.15 + 0.15) / 3 = 0.1667 (contando la v1 de A2 sería 0.1625); regional
-  # (0.20 + 0.15 + 0.15 + 0.20) / 4 = 0.175; "marta" (M1, Norte) 0.10.
+  # "ana": A1 (1M, aplicado 0.20, política 0.10) y A3 (3,4M, 0.15, 0.15); A4 no tiene margen. HU-016.2 (#295): A2 rehecha como v2
+  # queda SIN finalizar (sin resultado) y por eso fuera de la comparación (su margen aún puede cambiar), aunque sea la vigente;
+  # la v1 (perdida, finalizada) tampoco cuenta por no ser la vigente. Política simple (0.10 + 0.15) / 2 = 0.125; ponderado
+  # (0.10 × 1M + 0.15 × 3,4M) / 4,4M = 0.1386; desviación ((0.20 − 0.10) × 1M + (0.15 − 0.15) × 3,4M) / 4,4M = 0.0227. "luis"
+  # (L1: 0,4M, 0.20, 0.15) se suma en la regional; "marta" es de otra regional. Aplicado simple de las mismas rutas: ana
+  # (0.20 + 0.15) / 2 = 0.175; regional (0.20 + 0.15 + 0.20) / 3 = 0.1833; "marta" (M1, Norte) 0.10.
   Escenario: La comparación con la política respeta el alcance de cada rol y cuenta solo la versión vigente
     Dado el director "dario" con sesión en la regional "Sur"
     Y que la cotización "A1" tiene estas rutas:
@@ -362,19 +364,19 @@ Característica: Tablero de métricas del comercial y del gerente comercial
     Entonces la respuesta tiene el estado 200 y cumple el esquema "MetricasComercial" del contrato
     Y los indicadores son:
       | campo                      | valor   |
-      | margen_aplicado_promedio   | 0.1667  |
-      | margen_politica_promedio   | 0.2167  |
-      | margen_politica_ponderado  | 0.2446  |
-      | desviacion_margen_politica | -0.0878 |
+      | margen_aplicado_promedio   | 0.175   |
+      | margen_politica_promedio   | 0.125   |
+      | margen_politica_ponderado  | 0.1386  |
+      | desviacion_margen_politica | 0.0227  |
       | rutas_sin_margen_politica  | 0       |
     Cuando "gloria" consulta las métricas de su regional del "2026-01-01" al "2026-12-31"
     Entonces la respuesta tiene el estado 200 y cumple el esquema "MetricasRegional" del contrato
     Y los indicadores son:
       | campo                      | valor   |
-      | margen_aplicado_promedio   | 0.175   |
-      | margen_politica_promedio   | 0.2     |
-      | margen_politica_ponderado  | 0.2397  |
-      | desviacion_margen_politica | -0.0808 |
+      | margen_aplicado_promedio   | 0.1833  |
+      | margen_politica_promedio   | 0.1333  |
+      | margen_politica_ponderado  | 0.1396  |
+      | desviacion_margen_politica | 0.025   |
       | rutas_sin_margen_politica  | 0       |
     Y los indicadores de "luis" en la lista de comerciales son:
       | campo                      | valor |
@@ -392,10 +394,10 @@ Característica: Tablero de métricas del comercial y del gerente comercial
     Cuando "gloria" consulta las métricas de su regional del "2026-01-01" al "2026-12-31" filtradas por "ana"
     Entonces la respuesta tiene el estado 200
     Y los indicadores son:
-      | campo                      | valor   |
-      | margen_aplicado_promedio   | 0.1667  |
-      | margen_politica_ponderado  | 0.2446  |
-      | desviacion_margen_politica | -0.0878 |
+      | campo                      | valor  |
+      | margen_aplicado_promedio   | 0.175  |
+      | margen_politica_ponderado  | 0.1386 |
+      | desviacion_margen_politica | 0.0227 |
     Cuando "dario" consulta las métricas de la regional "Norte" del "2026-01-01" al "2026-12-31"
     Entonces la respuesta tiene el estado 200 y cumple el esquema "MetricasRegional" del contrato
     Y los indicadores son:
@@ -408,8 +410,8 @@ Característica: Tablero de métricas del comercial y del gerente comercial
     Entonces la respuesta tiene el estado 200
     Y las métricas son de todas las regionales
     Y los indicadores son:
-      | campo                      | valor   |
-      | margen_aplicado_promedio   | 0.1667  |
-      | margen_politica_promedio   | 0.2167  |
-      | margen_politica_ponderado  | 0.2446  |
-      | desviacion_margen_politica | -0.0878 |
+      | campo                      | valor  |
+      | margen_aplicado_promedio   | 0.175  |
+      | margen_politica_promedio   | 0.125  |
+      | margen_politica_ponderado  | 0.1386 |
+      | desviacion_margen_politica | 0.0227 |
