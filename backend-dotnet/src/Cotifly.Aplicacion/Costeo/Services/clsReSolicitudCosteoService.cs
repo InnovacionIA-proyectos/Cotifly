@@ -305,14 +305,15 @@ public sealed class clsReSolicitudCosteoService(
     /// nota de la captura nueva dice que la reemplaza.</item>
     /// </list>
     /// Devuelve los nombres que se conservan, sin repetir y en orden, sin montos (<c>conexos_conservados</c> y el resumen de la propuesta
-    /// del asistente); un conexo migrado sin nombre se muestra con su id de Nexo. <c>conexos_descartados</c> queda vacío (compatibilidad).
+    /// del asistente); corrección conexos (nombre nunca id): un conexo migrado sin nombre se muestra con su categoría como respaldo LEGIBLE,
+    /// nunca con el id interno. <c>conexos_descartados</c> queda vacío (compatibilidad).
     /// </summary>
     public static IReadOnlyList<string> ConexosConservados(clsCotizacionSolicitud cotizacion)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         return [.. cotizacion.RutasOrdenadas
             .SelectMany(r => r.Conexos.OrderBy(c => c.CreatedAt).ThenBy(c => c.IdServicioConexo, StringComparer.Ordinal))
-            .Select(c => (string.IsNullOrWhiteSpace(c.Nombre) ? c.IdServicioConexo : c.Nombre).Trim())
+            .Select(c => (string.IsNullOrWhiteSpace(c.Nombre) ? (c.Categoria ?? clsCosteoCotizacionService.CategoriaConexo) : c.Nombre).Trim())
             .Where(n => n.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)];
     }

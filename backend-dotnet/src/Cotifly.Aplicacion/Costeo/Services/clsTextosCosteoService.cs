@@ -234,8 +234,10 @@ public sealed class clsTextosCosteoService(
         var vehiculos = ordenadas.SelectMany(r => clsVehiculoLineaSolicitud.EnOrden(r.VehiculosQueCuentan))
             .Select(v => v.TipoVehiculo?.Trim()).OfType<string>().Where(t => t.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        // Corrección conexos (nombre nunca id): el nombre guardado o, si es null (fila migrada), la categoría como respaldo LEGIBLE; nunca el
+        // id interno (el texto lo redacta la IA para el cliente).
         var conexos = ordenadas.SelectMany(r => r.Conexos)
-            .Select(s => Recortar(s.Nombre ?? s.IdServicioConexo)!)
+            .Select(s => Recortar(s.Nombre ?? s.Categoria ?? clsCosteoCotizacionService.CategoriaConexo)!)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
         return new clsContextoRedaccion(

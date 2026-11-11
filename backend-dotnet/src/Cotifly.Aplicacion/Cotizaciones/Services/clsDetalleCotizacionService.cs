@@ -85,7 +85,9 @@ public sealed class clsDetalleCotizacionService(
         var estadosNexo = await envioConexos.EstadosAsync(cotizacion, cancellationToken);
         var costeo = clsCosteoCotizacionService.Vista(
             cotizacion, opcionesPdf.Value.BaseUrl, estadosNexo, clsCategoriasConexosService.EnMemoria(categorias, cotizacion),
-            situacionesNexo?.Obtener(cotizacion.Id))
+            situacionesNexo?.Obtener(cotizacion.Id),
+            // Corrección conexos (nombre nunca id): el nombre del catálogo que ya esté en memoria (sin leer Nexo), como respaldo del guardado.
+            nombres: clsCategoriasConexosService.NombresEnMemoria(categorias, cotizacion))
             with
             {
                 // HU-045.2 (#264): la tasa vigente del seguro, como en GET .../costeo.

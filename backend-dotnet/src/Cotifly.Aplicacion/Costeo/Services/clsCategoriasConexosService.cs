@@ -20,6 +20,15 @@ public interface IClsCategoriasConexos
 {
     /// <summary>Categoría por id guardado (<c>idServicioConexo</c>) de los conexos de <paramref name="cotizacion"/> que se pudieron resolver.</summary>
     Task<IReadOnlyDictionary<string, string>> CategoriasAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Corrección conexos (nombre nunca id): nombre del catálogo de Nexo por id guardado (<c>idServicioConexo</c>) de los conexos de
+    /// <paramref name="cotizacion"/> que NO tienen el nombre guardado (filas migradas del JSON). Mismo mecanismo que
+    /// <see cref="CategoriasAsync"/>: responde con el índice en memoria y lo calienta en segundo plano si está frío. Las superficies de
+    /// usuario (asistente de IA, vista web del costeo) usan este nombre como respaldo cuando el guardado es <c>null</c>, antes de caer a la
+    /// categoría; nunca muestran el id interno.
+    /// </summary>
+    Task<IReadOnlyDictionary<string, string>> NombresAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -85,15 +94,35 @@ public sealed class clsAlmacenCategoriasConexos
     }
 }
 
-/// <summary>Categoría por id del catálogo y por nombre (solo los nombres con una sola categoría) y cuándo se leyó.</summary>
+/// <summary>
+/// Categoría por id del catálogo y por nombre (solo los nombres con una sola categoría), nombre por id del catálogo (corrección conexos) y
+/// cuándo se leyó.
+/// </summary>
 public sealed record clsIndiceCategorias(
-    IReadOnlyDictionary<string, string> PorId, IReadOnlyDictionary<string, string> PorNombre, DateTimeOffset LeidoAt)
+    IReadOnlyDictionary<string, string> PorId, IReadOnlyDictionary<string, string> PorNombre, DateTimeOffset LeidoAt,
+    IReadOnlyDictionary<string, string>? NombresPorId = null)
 {
     /// <summary>Categoría de un conexo guardado: por su id (del catálogo) o, si es el id de una fila de Nexo, por su nombre.</summary>
     public string? De(string id, string? nombre) =>
         PorId.TryGetValue(id, out var porId) ? porId
         : nombre is not null && PorNombre.TryGetValue(nombre.Trim(), out var porNombre) ? porNombre
         : null;
+
+    /// <summary>
+    /// Corrección conexos (nombre nunca id): nombre del catálogo de un conexo guardado, por el id del catálogo si la fila lo tiene (script
+    /// 03) o por el id guardado (que en un conexo capturado ya es el del catálogo). <c>null</c> si no está en el índice.
+    /// </summary>
+    public string? Nombre(string id, string? idCatalogo)
+    {
+        if (NombresPorId is not { } nombres)
+        {
+            return null;
+        }
+
+        return idCatalogo is { } catalogo && nombres.TryGetValue(catalogo, out var porCatalogo) ? porCatalogo
+            : nombres.TryGetValue(id, out var porId) ? porId
+            : null;
+    }
 }
 
 /// <summary>Implementación de <see cref="IClsCategoriasConexos"/> sobre <see cref="IClsServiciosConexosNexo.BuscarAsync"/>.</summary>
@@ -135,6 +164,28 @@ public sealed class clsCategoriasConexosService(
         return Task.FromResult(Resolver(indice ?? almacen.Ultimo(), conexos));
     }
 
+    public Task<IReadOnlyDictionary<string, string>> NombresAsync(
+        clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        // Corrección conexos: solo los que NO tienen el nombre guardado (filas migradas del JSON) dependen del catálogo; los demás ya lo traen.
+        var conexos = cotizacion.Rutas.SelectMany(r => r.Conexos).Where(c => string.IsNullOrWhiteSpace(c.Nombre)).ToList();
+        if (conexos.Count == 0)
+        {
+            return Task.FromResult<IReadOnlyDictionary<string, string>>(new Dictionary<string, string>());
+        }
+
+        var ahora = reloj.AhoraUtc;
+        var indice = almacen.Vigente(ahora);
+        if ((indice is null || conexos.Any(c => Nombre(indice, c) is null))
+            && cotizacion.UsuarioId is { } usuarioId && almacen.ReservarIntento(ahora))
+        {
+            almacen.UltimaLectura = Task.Run(() => CalentarAsync(usuarioId, cotizacion.Folio, ahora), CancellationToken.None);
+        }
+
+        return Task.FromResult(ResolverNombres(indice ?? almacen.Ultimo(), conexos));
+    }
+
     /// <summary>
     /// HU-027.1 (#179): las categorías que ya se conocen, sin leer el catálogo de Nexo NI calentarlo en segundo plano (a diferencia de
     /// <see cref="CategoriasAsync"/>): el detalle por folio solo lee lo que Cotifly tiene guardado o en memoria. Los conexos con la
@@ -145,6 +196,17 @@ public sealed class clsCategoriasConexosService(
         ArgumentNullException.ThrowIfNull(almacen);
         ArgumentNullException.ThrowIfNull(cotizacion);
         return Resolver(almacen.Ultimo(), [.. cotizacion.Rutas.SelectMany(r => r.Conexos).Where(c => c.Categoria is null)]);
+    }
+
+    /// <summary>
+    /// Corrección conexos (nombre nunca id): los nombres del catálogo que ya están en memoria, sin leer el catálogo de Nexo ni calentarlo
+    /// (como <see cref="EnMemoria"/>, para el detalle por folio). Solo los conexos sin nombre guardado que estén en el índice.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> NombresEnMemoria(clsAlmacenCategoriasConexos almacen, clsCotizacionSolicitud cotizacion)
+    {
+        ArgumentNullException.ThrowIfNull(almacen);
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        return ResolverNombres(almacen.Ultimo(), [.. cotizacion.Rutas.SelectMany(r => r.Conexos).Where(c => string.IsNullOrWhiteSpace(c.Nombre))]);
     }
 
     private static IReadOnlyDictionary<string, string> Resolver(clsIndiceCategorias? indice, IReadOnlyList<clsServicioConexoRuta> conexos)
@@ -166,9 +228,32 @@ public sealed class clsCategoriasConexosService(
         return categorias;
     }
 
+    private static IReadOnlyDictionary<string, string> ResolverNombres(clsIndiceCategorias? indice, IReadOnlyList<clsServicioConexoRuta> conexos)
+    {
+        var nombres = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (indice is null)
+        {
+            return nombres;
+        }
+
+        foreach (var conexo in conexos)
+        {
+            if (Nombre(indice, conexo) is { } nombre)
+            {
+                nombres[conexo.IdServicioConexo] = nombre;
+            }
+        }
+
+        return nombres;
+    }
+
     /// <summary>Categoría de un conexo en el índice: por el id del catálogo si la fila lo tiene (script 03), si no por el guardado o el nombre.</summary>
     private static string? De(clsIndiceCategorias indice, clsServicioConexoRuta conexo) =>
         (conexo.IdServicioConexoCatalogo is { } catalogo ? indice.De(catalogo, null) : null) ?? indice.De(conexo.IdServicioConexo, conexo.Nombre);
+
+    /// <summary>Corrección conexos: nombre de un conexo en el índice, por el id del catálogo (script 03) o por el id guardado.</summary>
+    private static string? Nombre(clsIndiceCategorias indice, clsServicioConexoRuta conexo) =>
+        indice.Nombre(conexo.IdServicioConexo, conexo.IdServicioConexoCatalogo);
 
     private async Task CalentarAsync(Guid usuarioId, string folio, DateTimeOffset ahora)
     {
@@ -189,6 +274,8 @@ public sealed class clsCategoriasConexosService(
     {
         var porId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var porNombre = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        // Corrección conexos: nombre del catálogo por id, para resolver el nombre de los conexos migrados sin nombre (no muestra el id crudo).
+        var nombresPorId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         for (var pagina = 1; pagina <= MaximoPaginas; pagina++)
         {
             var leida = await catalogo.BuscarAsync(usuarioId, new clsFiltroCatalogoConexos(null, null, pagina, TamanoPagina), cancellationToken);
@@ -200,6 +287,12 @@ public sealed class clsCategoriasConexosService(
 
             foreach (var servicio in leida.Valor.Items)
             {
+                var nombre = servicio.Nombre?.Trim() is { Length: > 0 } limpio ? limpio : null;
+                if (nombre is not null)
+                {
+                    nombresPorId[servicio.Id] = nombre;
+                }
+
                 if (string.IsNullOrWhiteSpace(servicio.Categoria))
                 {
                     continue;
@@ -207,7 +300,7 @@ public sealed class clsCategoriasConexosService(
 
                 var categoria = servicio.Categoria.Trim();
                 porId[servicio.Id] = categoria;
-                if (servicio.Nombre?.Trim() is { Length: > 0 } nombre)
+                if (nombre is not null)
                 {
                     // Un nombre con dos categorías distintas no sirve para resolver: queda en null y se ignora.
                     porNombre[nombre] = porNombre.TryGetValue(nombre, out var previa) && previa != categoria ? null : categoria;
@@ -221,7 +314,8 @@ public sealed class clsCategoriasConexosService(
         }
 
         var indice = new clsIndiceCategorias(
-            porId, porNombre.Where(p => p.Value is not null).ToDictionary(p => p.Key, p => p.Value!, StringComparer.OrdinalIgnoreCase), ahora);
+            porId, porNombre.Where(p => p.Value is not null).ToDictionary(p => p.Key, p => p.Value!, StringComparer.OrdinalIgnoreCase), ahora,
+            nombresPorId);
         almacen.Guardar(indice);
         return indice;
     }

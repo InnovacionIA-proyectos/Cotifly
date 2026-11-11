@@ -382,7 +382,8 @@ public sealed class clsCosteoCotizacionService(
         // #181: el estado y el motivo pendiente de la línea de Nexo de cada camión, de la última lectura del polling (en memoria).
         return Vista(cotizacion, opcionesPdf.Value.BaseUrl, estadosNexo, await CategoriasAsync(categoriasConexos, cotizacion, logger, cancellationToken),
             situacionesNexo?.Obtener(cotizacion.Id),
-            await Margen.Services.clsAvisoSincronizacionMargenSap.ConsultarSinFallarAsync(avisoSincronizacion, cotizacion, cancellationToken))
+            await Margen.Services.clsAvisoSincronizacionMargenSap.ConsultarSinFallarAsync(avisoSincronizacion, cotizacion, cancellationToken),
+            await NombresAsync(categoriasConexos, cotizacion, logger, cancellationToken))
             with
             {
                 // HU-045.2 (#264): la tasa vigente, para mostrarla antes de marcar el seguro.
@@ -1227,7 +1228,8 @@ public sealed class clsCosteoCotizacionService(
     /// guardados en la ruta y se ven en la captura).
     /// </summary>
     public static IReadOnlyList<clsServicioConexoPrecio> ConexosConPrecio(
-        clsCotizacionSolicitud cotizacion, clsLineaSolicitud ruta, IReadOnlyDictionary<string, string>? categorias = null)
+        clsCotizacionSolicitud cotizacion, clsLineaSolicitud ruta, IReadOnlyDictionary<string, string>? categorias = null,
+        IReadOnlyDictionary<string, string>? nombres = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(ruta);
@@ -1240,18 +1242,27 @@ public sealed class clsCosteoCotizacionService(
         return [.. ruta.Conexos.OrderBy(c => c.CreatedAt).ThenBy(c => c.IdServicioConexo, StringComparer.Ordinal)
             .Select(c => (Conexo: c, Error: PrecioConexo(cotizacion, ruta, c, anterior, out var precio), Precio: precio))
             .Where(x => x.Error is null && x.Precio is not null)
-            .Select(x => new clsServicioConexoPrecio(
-                x.Conexo.IdServicioConexo,
-                x.Conexo.Nombre,
-                // HU-014 (#188): la categoría guardada (script 05); si no la tiene (fila anterior), la del catálogo o la de respaldo.
-                x.Conexo.Categoria
-                ?? (categorias is not null && categorias.TryGetValue(x.Conexo.IdServicioConexo, out var categoria) ? categoria : CategoriaConexo),
-                x.Conexo.Cantidad,
-                x.Precio!.Value,
-                true,
-                ruta.Orden)
+            .Select(x =>
             {
-                ServicioId = x.Conexo.IdServicioConexoCatalogo,
+                // HU-014 (#188): la categoría guardada (script 05); si no la tiene (fila anterior), la del catálogo o la de respaldo.
+                var categoria = x.Conexo.Categoria
+                    ?? (categorias is not null && categorias.TryGetValue(x.Conexo.IdServicioConexo, out var cat) ? cat : CategoriaConexo);
+                // Corrección conexos (nombre nunca id): el nombre guardado; si es null (fila migrada), el del catálogo de Nexo por id; si
+                // tampoco, la categoría como respaldo LEGIBLE. El id interno queda en Id para operar (incluir/excluir), nunca como etiqueta.
+                var nombre = x.Conexo.Nombre
+                    ?? (nombres is not null && nombres.TryGetValue(x.Conexo.IdServicioConexo, out var n) ? n : null)
+                    ?? categoria;
+                return new clsServicioConexoPrecio(
+                    x.Conexo.IdServicioConexo,
+                    nombre,
+                    categoria,
+                    x.Conexo.Cantidad,
+                    x.Precio!.Value,
+                    true,
+                    ruta.Orden)
+                {
+                    ServicioId = x.Conexo.IdServicioConexoCatalogo,
+                };
             })];
     }
 
@@ -1359,19 +1370,20 @@ public sealed class clsCosteoCotizacionService(
         IReadOnlyDictionary<Guid, clsSituacionLineaNexo>? situaciones, Margen.DTOs.clsSincronizacionSapVieja? sincronizacionVieja)
     {
         var categorias = await CategoriasAsync(categoriasConexos, cotizacion, logger, cancellationToken);
+        var nombres = await NombresAsync(categoriasConexos, cotizacion, logger, cancellationToken);
         if (envioConexos is null)
         {
-            return Vista(cotizacion, baseUrlPdf, null, categorias, situaciones, sincronizacionVieja);
+            return Vista(cotizacion, baseUrlPdf, null, categorias, situaciones, sincronizacionVieja, nombres);
         }
 
         try
         {
-            return Vista(cotizacion, baseUrlPdf, await envioConexos.EstadosAsync(cotizacion, cancellationToken), categorias, situaciones, sincronizacionVieja);
+            return Vista(cotizacion, baseUrlPdf, await envioConexos.EstadosAsync(cotizacion, cancellationToken), categorias, situaciones, sincronizacionVieja, nombres);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             _logEstadosNoDisponibles(logger, cotizacion.Folio, ex);
-            return Vista(cotizacion, baseUrlPdf, null, categorias, situaciones, sincronizacionVieja);
+            return Vista(cotizacion, baseUrlPdf, null, categorias, situaciones, sincronizacionVieja, nombres);
         }
     }
 
@@ -1400,6 +1412,31 @@ public sealed class clsCosteoCotizacionService(
         }
     }
 
+    /// <summary>
+    /// Corrección conexos (nombre nunca id): nombre del catálogo de Nexo de los conexos sin nombre guardado (<see cref="IClsCategoriasConexos.NombresAsync"/>),
+    /// para que la vista muestre el nombre y no el id. Nunca falla: sin servicio o si la lectura lanza, <c>null</c> (la vista cae a la categoría).
+    /// </summary>
+    public static async Task<IReadOnlyDictionary<string, string>?> NombresAsync(
+        IClsCategoriasConexos? categoriasConexos, clsCotizacionSolicitud cotizacion, ILogger logger, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        ArgumentNullException.ThrowIfNull(logger);
+        if (categoriasConexos is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await categoriasConexos.NombresAsync(cotizacion, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            _logCategoriasNoDisponibles(logger, cotizacion.Folio, ex);
+            return null;
+        }
+    }
+
     private static readonly Action<ILogger, string, Exception?> _logCategoriasNoDisponibles = LoggerMessage.Define<string>(
         LogLevel.Warning, new EventId(1733, nameof(_logCategoriasNoDisponibles)),
         "No se pudo leer la categoría de los conexos de {Folio} en el catálogo de Nexo; se usa la categoría por defecto.");
@@ -1415,7 +1452,7 @@ public sealed class clsCosteoCotizacionService(
     public static clsCosteoCotizacion Vista(
         clsCotizacionSolicitud cotizacion, string? baseUrlPdf, IReadOnlyDictionary<(Guid Ruta, string Conexo), string>? estadosNexo = null,
         IReadOnlyDictionary<string, string>? categorias = null, IReadOnlyDictionary<Guid, clsSituacionLineaNexo>? situaciones = null,
-        Margen.DTOs.clsSincronizacionSapVieja? sincronizacionVieja = null)
+        Margen.DTOs.clsSincronizacionSapVieja? sincronizacionVieja = null, IReadOnlyDictionary<string, string>? nombres = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
 
@@ -1430,7 +1467,7 @@ public sealed class clsCosteoCotizacionService(
             cotizacion.PrecioFinal,
             cotizacion.PrecioFinal is null ? null : ruta?.MargenAplicado,
             cotizacion.Moneda ?? clsCotizacionSolicitud.MonedaPesos,
-            [.. cotizacion.RutasOrdenadas.SelectMany(r => ConEstadoNexo(r, ConexosConPrecio(cotizacion, r, categorias), estadosNexo))],
+            [.. cotizacion.RutasOrdenadas.SelectMany(r => ConEstadoNexo(r, ConexosConPrecio(cotizacion, r, categorias, nombres), estadosNexo))],
             clsUrlPdf.DesdeReferencia(baseUrlPdf, cotizacion.PdfPath),
             ruta?.MargenSugeridoMostrado,
             ruta?.OrigenMargen is { } origen ? clsCodigoEnum.ACodigo(origen) : null,
@@ -1445,7 +1482,7 @@ public sealed class clsCosteoCotizacionService(
             SincronizacionResultadoNexo = cotizacion.EstadoSincronizacionResultado,
             ErrorSincronizacionResultadoNexo = cotizacion.Ganada is null ? null : cotizacion.ErrorSincronizacionResultado,
             FinalizadaAt = cotizacion.FinalizadaAt?.ToUniversalTime(),
-            Rutas = [.. cotizacion.RutasOrdenadas.Select(r => RutaCosteo(cotizacion, r, estadosNexo, categorias, situaciones, sincronizacionVieja))],
+            Rutas = [.. cotizacion.RutasOrdenadas.Select(r => RutaCosteo(cotizacion, r, estadosNexo, categorias, situaciones, sincronizacionVieja, nombres))],
         };
     }
 
@@ -1457,14 +1494,15 @@ public sealed class clsCosteoCotizacionService(
     public static clsRutaCosteo RutaCosteo(
         clsCotizacionSolicitud cotizacion, clsLineaSolicitud ruta, IReadOnlyDictionary<(Guid Ruta, string Conexo), string>? estadosNexo = null,
         IReadOnlyDictionary<string, string>? categorias = null, IReadOnlyDictionary<Guid, clsSituacionLineaNexo>? situaciones = null,
-        Margen.DTOs.clsSincronizacionSapVieja? sincronizacionVieja = null)
+        Margen.DTOs.clsSincronizacionSapVieja? sincronizacionVieja = null, IReadOnlyDictionary<string, string>? nombres = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(ruta);
-        var conexos = ConEstadoNexo(ruta, ConexosConPrecio(cotizacion, ruta, categorias), estadosNexo);
+        var conexos = ConEstadoNexo(ruta, ConexosConPrecio(cotizacion, ruta, categorias, nombres), estadosNexo);
         var revisar = conexos
             .Where(c => c.EstadoNexo is clsEnvioConexosNexoService.VisibleIncierto or clsEnvioConexosNexoService.VisibleFallidoDefinitivo)
-            .Select(c => $"«{c.Nombre ?? c.Id}»")
+            // Corrección conexos (nombre nunca id): Nombre ya viene poblado (catálogo o categoría); la categoría es el respaldo, nunca el id.
+            .Select(c => $"«{c.Nombre ?? c.Categoria}»")
             .ToList();
         return new clsRutaCosteo(
             ruta.Orden,

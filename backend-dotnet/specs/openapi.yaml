@@ -8101,9 +8101,15 @@ components:
       properties:
         id:
           type: string
+          description: |
+            Id interno del conexo (para operar; incluir/excluir). No es una etiqueta para mostrar; usa `nombre`.
         nombre:
           type: string
           nullable: true
+          description: |
+            Corrección conexos: SIEMPRE el nombre del servicio, nunca el `id` interno. El nombre guardado del conexo o, si está en NULL (fila
+            migrada del JSON), el nombre del catálogo de Nexo resuelto por id; si el catálogo no responde o no lo tiene, la `categoria` como
+            respaldo legible (nunca el id). En la práctica siempre viene poblado; `nullable` solo por compatibilidad del esquema.
         categoria:
           type: string
           example: adicional

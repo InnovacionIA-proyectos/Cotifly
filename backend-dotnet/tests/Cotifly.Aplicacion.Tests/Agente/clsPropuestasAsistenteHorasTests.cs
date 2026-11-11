@@ -74,7 +74,7 @@ public sealed class clsPropuestasAsistenteHorasTests
         var contexto = new clsContextoAsistenteFolio();
         contexto.Iniciar(Guid.NewGuid(), cotizacion, lineaCotifly, "web/s1/" + cotizacion.Folio, mapeoNexo);
         var reSolicitud = Substitute.For<IClsReSolicitudCosteoService>();
-        var herramientas = new clsHerramientasAsistenteFolio(contexto, Substitute.For<IClsServiciosConexosCosteoService>(), reSolicitud);
+        var herramientas = new clsHerramientasAsistenteFolio(contexto, Substitute.For<IClsServiciosConexosCosteoService>(), reSolicitud, Substitute.For<IClsCategoriasConexos>());
 
         await herramientas.ProponerReSolicitudAsync("El cliente cambió el horario", horasCargue: 8m, cancellationToken: TestContext.Current.CancellationToken);
 
