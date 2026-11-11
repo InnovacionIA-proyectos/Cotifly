@@ -81,14 +81,19 @@ public sealed class clsCostoBrutoSinFugasTests
     [Fact]
     public void ElDetalleSoloTraeElCostoBrutoEnLasRutasDeSuCosteo()
     {
+        // HU-018.2 (#294): la ruta del costeo trae ahora DOS campos de costo: el costo bruto y el costo del transporte (fletes + retorno +
+        // levante, sin conexos ni margen). Siguen sin aparecer el desglose (fletes, retorno, levante) ni el costo de cada camión o conexo.
+        var raiz = $"{nameof(clsDetalleCotizacion)}.{nameof(clsDetalleCotizacion.Costeo)}.{nameof(clsCosteoCotizacion.Rutas)}";
         CamposConCosto(typeof(clsDetalleCotizacion), nameof(clsDetalleCotizacion), []).Should()
-            .Equal($"{nameof(clsDetalleCotizacion)}.{nameof(clsDetalleCotizacion.Costeo)}.{nameof(clsCosteoCotizacion.Rutas)}.{nameof(clsRutaCosteo.CostoFinal)}");
+            .Equal($"{raiz}.{nameof(clsRutaCosteo.CostoFinal)}", $"{raiz}.{nameof(clsRutaCosteo.CostoTransporte)}");
     }
 
     [Fact]
-    public void LaRutaDelCosteoSoloTraeElCostoBrutoSinDesglose()
+    public void LaRutaDelCosteoSoloTraeElCostoBrutoYElCostoDelTransporteSinDesglose()
     {
-        CamposConCosto(typeof(clsRutaCosteo), nameof(clsRutaCosteo), []).Should().Equal($"{nameof(clsRutaCosteo)}.{nameof(clsRutaCosteo.CostoFinal)}");
+        // HU-018.2 (#294): dos campos de costo (CostoFinal y CostoTransporte); nunca fletes, retorno, levante ni el costo de cada camión o conexo.
+        CamposConCosto(typeof(clsRutaCosteo), nameof(clsRutaCosteo), []).Should()
+            .Equal($"{nameof(clsRutaCosteo)}.{nameof(clsRutaCosteo.CostoFinal)}", $"{nameof(clsRutaCosteo)}.{nameof(clsRutaCosteo.CostoTransporte)}");
     }
 
     /// <summary>
