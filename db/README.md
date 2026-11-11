@@ -1,50 +1,199 @@
 # Base de datos de Cotifly
 
-SQL Server 2019, schema `dbo_cotifly`. Esta carpeta tiene todo lo necesario para **crear la base de datos desde cero** y
-dejarla con la configuración inicial.
+SQL Server 2019 o posterior, schema `dbo_cotifly`. Esta carpeta tiene todo lo necesario para **instalar la base desde cero**,
+**poner al día una base que ya existe** y dejarla con la configuración inicial.
 
-> **Estado:** vigente · **Dueño:** Duban Guerra (backend); revisión de scripts: scalderon-bs y el DBA · **Actualizado:** 2026-10-22
+> **Estado:** vigente · **Dueño:** Duban Guerra (backend); revisión de scripts: scalderon-bs y el DBA · **Actualizado:** 2026-11-10 (HU-024.2, #203: esquema consolidado en `esquema/`, carga de datos en `seeder/`, ejecutador en `ejecutores/`)
 
-## Estado
+## Qué hay en cada carpeta
 
-- **Instalación desde cero probada.** `scripts/01_crear_esquema.sql` y `seeder/` se corrieron el 2026-10-08 sobre
-  `dbTarifario_Nexo_Pruebas`: 20 tablas, 2 vistas, 6 líneas de negocio, 5 mapeos y 2 roles, sin errores. Desde HU-014.3 (#152)
-  el `01` ya no crea las 2 vistas del borrador de métricas y el `08` las retira de las bases que ya las tienen.
-- **Verificación continua.** Las pruebas de integración (Testcontainers,
-  `backend-dotnet/tests/Cotifly.Infraestructura.Tests/Persistencia/clsEsquemaTests.cs`) comprueban en cada corrida que la
-  instalación desde cero y las migraciones `0001` a `0010` (más el `02`, el `03`, el `pendientes/04`, el `05`, el `06`, el `07`, el `08`, el `09`, el `10`, el `11`, el `12`, el `13` y el `14`) dejan el mismo esquema, que el `0010` es
-  idempotente y que el `0009` migra los datos del esquema anterior sin perder ajustes, correos ni auditoría.
-- **Scripts posteriores al `0010`** y lo que falta aprobar (aprobación, no prueba):
+```
+db/
+├── README.md                este archivo
+├── esquema/
+│   └── cotifly_esquema.sql  el esquema COMPLETO de dbo_cotifly, solo estructura: instala una base nueva en un paso
+├── scripts/                 ajustes de las bases que ya existen (02 a 22), idempotentes, en orden de nombre
+│   └── operacion/           scripts de datos de una sola vez que corre el DBA con aprobación (el ejecutador no los corre)
+├── seeder/                  configuración inicial (datos), idempotente, en orden de nombre
+│   ├── 01_lineas_negocio.sql      líneas de negocio y su margen de política
+│   ├── 02_sap_mapeo_trqtype.sql   mapeo del TrqType de SAP TM a la línea de negocio
+│   ├── 03_roles.sql               roles internos (comercial, gerente_comercial)
+│   ├── 04_tarifa_seguro.sql       tasa inicial del seguro de la mercancía (0.003450)
+│   └── 05_politica_seguros.sql    carga inicial de la política de seguros y sus validaciones
+├── ejecutores/
+│   ├── ejecutar-bd.ps1      ejecutador para Windows (PowerShell)
+│   └── ejecutar-bd.sh       ejecutador para Linux / contenedores (bash)
+├── jobs/
+│   └── sincronizar_margen_sap.ps1   paso de PowerShell del SQL Agent Job de HU-042.1 (no se instala, ver abajo)
+└── migrations_mssql/        migraciones 0001 a 0010: llevan una base del esquema viejo al de HU-021
+    └── rollback/            reversas
+```
 
-| Script | HU | Estado |
+| Carpeta | Para qué | Cuándo se usa |
 |---|---|---|
-| `migrations_mssql/0010_nombres_municipio.sql` | HU-021 | Borrador pendiente de revisión de scalderon-bs y del DBA |
-| `scripts/02_alter_cubicador.sql` | HU-023.3 (#158) | En el ejecutador. Columnas para guardar la respuesta del cubicador; va después del `01` (o del `0010` en una base migrada) |
-| `scripts/03_orden_vehiculo_y_conexo_catalogo.sql` | HU-023.3 (#158); HU-014 (#188) | En el ejecutador (desde #188; antes en `pendientes/`). **El backend mapea sus columnas** (`ordenVehiculo`, `idServicioConexoCatalogo`): sin él, `/health/ready` responde "esquema incompleto: falta 03". Se aplica antes de desplegar la imagen (ver abajo) |
-| `scripts/pendientes/04_cubicacion_segundo_plano.sql` | HU-023.5 (#160) | Propuesta, pendiente de scalderon-bs y del DBA. **El backend sí mapea sus columnas**: sin él, `/health/ready` responde "esquema incompleto: falta 04". Se aplica antes de desplegar la imagen. El ejecutador no lo corre; el entorno local (`levantar-local.*`) sí |
-| `scripts/05_categoria_conexo.sql` | #173; HU-014 (#188) | En el ejecutador (desde #188; antes en `pendientes/`). **El backend mapea la columna** (`categoriaServicioConexo`): sin él, `/health/ready` responde "esquema incompleto: falta 05". Se aplica antes de desplegar la imagen |
-| `scripts/06_idempotencia_captura.sql` | #173; #191 (HU-026.1) | En el ejecutador (desde #191; antes en `pendientes/`). Tabla `CapturasIdempotentes`: la `Idempotency-Key` persistente. **El backend la usa y la mapea**: sin él, `/health/ready` responde "esquema incompleto: falta 06". **Lo aprueba y aplica el DBA antes de desplegar la imagen** (ver abajo) |
-| `scripts/07_motivo_busqueda_agotada.sql` | HU-023 (#176) | En el ejecutador (orden de nombre, después del `02`); lo aplica @scalderon-bs en la base compartida. Quinto motivo `BUSQUEDA_AGOTADA` en el CHECK del motivo. No es obligatorio para arrancar (ver abajo) |
-| `scripts/08_retirar_vistas_actividad.sql` | HU-014.3 (#152) | En el ejecutador (después del `07`); **lo aplica el DBA** en la base compartida, después de desplegar el backend sin el borrador de métricas. `DROP VIEW` de `vActividadPorComercial` y `vAjustesMargenPorComercial` (ver abajo) |
-| `scripts/09_score_prioridad.sql` | HU-018.1 (#155) | En el ejecutador (orden de nombre, después del `08`). `CotizacionesSolicitud.scorePrioridad DECIMAL(9,4) NULL`. **El backend mapea la columna**: sin él, `/health/ready` responde "esquema incompleto: falta 09". Se aplica antes de desplegar la imagen (ver abajo) |
-| `scripts/10_rechazo_linea.sql` | HU-028.2 (#182) / HU-028.1 (#183). **Lo revisa @scalderon-bs antes de la base compartida** | En el ejecutador (orden de nombre, después del `09`). Camión: `motivoRechazo NVARCHAR(500) NULL` y `rechazadaAt DATETIMEOFFSET NULL`; `'rechazada'` en los tres CHECK de `estadoCosteo`; CHECK `ck_cotizacionVehiculosLineaSolicitud_rechazo`. **El backend mapea las columnas**: sin él, `/health/ready` responde "esquema incompleto: falta 10". Se aplica antes de desplegar la imagen (ver abajo) |
-| `scripts/11_peso_con_tara.sql` | HU-030.1 (#184) | En el ejecutador (orden de nombre, después del `09`; el `10` es de #183). `CotizacionLineasSolicitud.pesoConTaraKg DECIMAL(12,2) NULL` con su CHECK (> 0). **El backend mapea la columna**: sin él, `/health/ready` responde "esquema incompleto: falta 11". Se aplica antes de desplegar la imagen (ver abajo) |
-| `scripts/12_vehiculo_elegido.sql` | HU-032 (#197) | En el ejecutador (orden de nombre, después del `11`). Ruta: `tipoVehiculoElegido NVARCHAR(100) NULL` y `carroceriaElegida NVARCHAR(100) NULL` (el vehículo elegido, respaldo del cubicador); mercancía: `largoCm`/`anchoCm`/`altoCm` pasan a NULL con el CHECK "las tres NULL o las tres > 0" (mercancías no cubicables). Idempotente y en una transacción; imprime el CHECK anterior. **El backend mapea las columnas**: sin él, `/health/ready` responde "esquema incompleto: falta 12". Se aplica antes de desplegar la imagen |
-| `scripts/13_correo_mailsender.sql` | HU-033 (#199) | En el ejecutador (orden de nombre, después del `12`). `Correos`: el seguimiento de MailSender (`idMailSender`, `redirigidoA`, `intentosEntrega`, `enviadoAt`, `estadoActualizadoAt`, `siguienteConsultaAt`, `encoladoAt`, dos índices filtrados y el CHECK del estado con `encolado` y `enviando`); `CotizacionesSolicitud`: el resultado diferido a Nexo (`sincronizacionResultadoNexo`, `comentarioResultadoPendiente`, `resultadoSincronizadoAt`, `errorSincronizacionResultado`, `intentosSincronizacionResultado`). Idempotente, no destructivo. **El backend mapea las columnas**: sin él, `/health/ready` responde "esquema incompleto: falta 13". Se aplica antes de desplegar la imagen |
-| `scripts/14_cotizacion_finalizada.sql` | HU-036 (#205, #206) | **Propuesta pendiente de revisión de @scalderon-bs.** En el ejecutador (orden de nombre, después del `13`). `CotizacionesSolicitud`: `finalizadaAt DATETIMEOFFSET NULL` y `finalizadaPor UNIQUEIDENTIFIER NULL` (FK `fk_cotizaciones_finalizadaPor` a `UsuariosWeb(id)`, CHECK `ck_cotizaciones_finalizada`: las dos o ninguna). Sin backfill. Idempotente, no destructivo, en una transacción. **El backend mapea las columnas**: sin él, `/health/ready` responde "esquema incompleto: falta 14". Se aplica antes de desplegar la imagen |
-| `scripts/19_precio_venta_conexos.sql` | HU-043.1 (#245) | Ya aplicado en la base compartida de pruebas (2026-10-28), corrido dos veces sin error; dueña @scalderon-bs (Datos). `CotizacionServiciosConexos.precioVenta DECIMAL(18,2) NOT NULL`, junto a `precio` (costo unitario). Backfill `precioVenta = precio` en las filas existentes; amplía `ck_cotizacionServiciosConexos_montos` con `precioVenta >= 0`. Idempotente, en una transacción. No depende de otro ajuste; HU-043.2 (backend) la consume |
-| `scripts/15_rol_director.sql` | HU-037.1 (#209) | En el ejecutador (orden de nombre, después del `13`; el `14` es de HU-036). **Propuesta del backend; la dueña es @scalderon-bs (Datos).** `ck_roles_codigo` admite `director` (el `01` ya lo trae) y agrega la fila `director` activa con `idRolExterno = NULL`. Idempotente, en una transacción, no pisa un `idRolExterno` ya fijado. **No lo exige `/health/ready`** (no agrega columnas; sin él nadie entra como director). Va **con o después** de la imagen de HU-037.2 (#210): una imagen anterior falla al leer el catálogo de roles con la fila `director` (ver `DEPLOY.md`, "Rol director"). El IDROLES lo fija un script de operación por ambiente: `operacion/mapeo_prueba_rol_director_209.sql` (prueba) y el de #212 (producción) |
-| `scripts/16_multiples_roles_activos.sql` | HU-040.1 (#229) | **Aprobado por @scalderon-bs (2026-11-02).** En el ejecutador (orden de nombre, después del `15`). `UsuariosRoles`: retira el índice único filtrado `uq_usuariosRoles_usuarioId_activo` (varias asignaciones activas por usuario, una por rol: multi-rol, HU-040) y conserva `uq_usuariosRoles_usuarioId_rolId`; imprime la definición anterior. `TokensRefresco`: `rolSesion NVARCHAR(30) NULL` (el rol de la sesión, que el refresh conserva) con el CHECK `ck_tokensRefresco_rolSesion`. Idempotente, no destructivo (no cambia filas); se detiene sin tocar nada si falta la unicidad usuario + rol. **El backend mapea `rolSesion`**: sin él, `/health/ready` responde "esquema incompleto: falta 16". Se aplica antes de desplegar la imagen; es seguro con la imagen anterior (ver la cabecera del script) |
-| `scripts/17_sap_margen_sincronizacion.sql` | HU-042.1 (#242) | En el ejecutador (orden de nombre, después del `16`). **Lo lee backend-dotnet desde HU-042.2 (#243, ADR-027): `/health/ready` lo exige ("falta 17").** Ya aplicado en la base compartida de pruebas (2026-10-28); dueña @scalderon-bs (Datos). Crea `SapMargenCliente`, `SapMargenSyncLog` y el stored procedure `sp_sincronizar_margen_sap` (copia local del margen recomendado de SAP TM; el staging es una tabla temporal `#SapMargenStage` que arma el propio job, no un objeto fijo del esquema). Idempotente. Lo alimenta la sincronización del backend (#243, ADR-027: el SQL Agent Job de `jobs/sincronizar_margen_sap.ps1` no se instala) — ver sección "Job de sincronización del margen de SAP" abajo |
-| `scripts/18_sap_mapeo_fk_margenes_politica.sql` | HU-042.4 (#247) | En el ejecutador (después del `17`; el seeder `02` llena `lineaNegocioId` cuando el 18 ya está). **El backend resuelve por `lineaNegocioId` desde HU-042.4: `/health/ready` lo exige ("falta 18").** Ya aplicado en la base compartida de pruebas (2026-10-28), backfill verificado; dueña @scalderon-bs (Datos). `SapMapeoTrqType.lineaNegocio` (texto libre) pasa a tener también `lineaNegocioId INT NOT NULL` con FK a `MargenesPolitica(id)` — igual patrón que `CotizacionLineasSolicitud.lineaNegocioId`. Backfill por texto con verificación (se detiene si algo no cruza). **No borra `lineaNegocio` todavía**: transición en 2 pasos a propósito, hasta que el backend (HU-042.4, #247, @dguerraBSSL) deje de leerla como texto. Idempotente, en una transacción |
-| `scripts/20_seguro_mercancia.sql` | HU-045.1 (#263) | En el ejecutador (orden de nombre, después del `19`); dueña @scalderon-bs (Datos). Probado en Docker (2026-11-02): instalación completa, segunda corrida sin cambios, sobre rutas existentes y con la reversa. Aplicado en la base compartida de pruebas el 2026-11-02 y vuelto a aplicar desde cero el 2026-11-03, con `id` UNIQUEIDENTIFIER (ninguna ruta tenía datos del seguro). Tabla nueva `TarifasSeguro` (la tasa del seguro con su historia; una sola activa por índice único filtrado; fila inicial `0.003450` = 0,345 %). Ruta: `incluyeSeguro BIT NOT NULL DEFAULT 0`, `tasaSeguroAplicada DECIMAL(9,6) NULL` y `costoSeguro DECIMAL(18,2) NULL` con dos CHECK. Las rutas existentes quedan sin seguro: ninguna cotización cambia de valor. Idempotente, no destructivo. **No lo exige `/health/ready`** hasta que HU-045.2 mapee las columnas. La tasa se cambia con `operacion/cambiar_tasa_seguro.sql` |
-| `scripts/21_politica_seguros.sql` | HU-046.2 (#268) | En el ejecutador (orden de nombre, después del `20`); dueña @scalderon-bs (Datos). Probado en Docker (2026-11-02): instalación completa, segunda corrida sin cambios, base sin collation (como el CI), reset desde la primera versión (id INT) y los tres ejemplos del script de operación. Aplicado en la base compartida de pruebas (2026-11-03), corrido dos veces sin error; ese mismo día se le quitó a mano `PoliticaSeguroTramos.nota` (`ALTER TABLE ... DROP COLUMN nota`), que el `21` ya no crea. Cuatro tablas nuevas de la política de seguros por valor de la mercancía (`PoliticaSeguroTramos`, `PoliticaSeguroMedidas`, `PoliticaSeguroTramoMedidas`, `PoliticaSeguroMedidaConexos`) con la carga aprobada en HU-046.1 (#267): 7 tramos, 7 medidas, 25 reglas, 8 conexos. `CotizacionServiciosConexos.codigoServicio NVARCHAR(40) NULL`. Valida que los tramos activos sean contiguos y que toda medida obligatoria tenga conexos. Idempotente; solo siembra con las 4 tablas vacías. **No lo exige `/health/ready`** hasta HU-046.3. La política se cambia con `operacion/cambiar_politica_seguros.sql` |
+| `esquema/` | El esquema vigente completo (tablas, columnas, restricciones, índices y el procedimiento `sp_sincronizar_margen_sap`) en un solo script. **Sin datos.** Equivale a `migrations_mssql/0001` a `0010` más todos los ajustes `scripts/02` a `22` | Solo en una base donde `dbo_cotifly` no tiene tablas. Si ya tiene, avisa y no ejecuta nada |
+| `scripts/` | Ajustes al esquema (`ALTER`, tablas nuevas): cada uno revisa si su cambio ya está, corre en una transacción y se puede repetir | En las bases que ya existen. Sobre una base recién instalada con `esquema/` no cambian nada (el ejecutador igual los corre) |
+| `seeder/` | La configuración que la aplicación necesita desde el primer día. Insertan solo lo que falta y no pisan lo que ya se haya ajustado | Después de los ajustes, en toda base (nueva o existente) |
+| `ejecutores/` | Los scripts que corren todo lo anterior en orden con `sqlcmd` | Para instalar o poner al día una base sin correr nada a mano |
+| `migrations_mssql/` | Migraciones históricas `0001` a `0010` (traen `USE dbTarifario_Nexo_Pruebas`). Las usan las pruebas de integración, `levantar-local.*` y los respaldos | Solo para una base que todavía tenga el esquema anterior a HU-021 (tabla `Cotizaciones`) |
 
-**`scripts/pendientes/04_cubicacion_segundo_plano.sql`** (HU-023.5, #160) agrega a la ruta la cola de la cubicación de la
-licitación en segundo plano (`estadoCubicacion`, `cubicacionIntentos`, `cubicacionDisponibleAt`, `errorCubicacion`,
-`avisosCubicacion` y el índice filtrado `(cubicacionDisponibleAt, createdAt)`), con un respaldo previo de la tabla si tiene
-datos. Es idempotente y no destructivo. **No** está en el 01 ni lo corre el ejecutador: queda en un solo lugar hasta su
-aprobación. Pero el backend de la #160 SÍ mapea sus columnas: **no desplegar sin aplicar antes el 0010 y el 04**.
+**Regla para cambiar el esquema:** un ajuste nuevo en `scripts/` (siguiente número, idempotente) **y** el mismo cambio en
+`esquema/cotifly_esquema.sql`, en el mismo PR. Los datos de configuración van en un seeder, no en el ajuste. Ver "Mantener esto
+en sincronía".
+
+Los ajustes `02` a `19` y el `22` se escribieron cuando el instalador desde cero era `scripts/01_crear_esquema.sql`: sus cabeceras
+y sus mensajes de precondición todavía lo nombran. Hoy ese papel lo cumple `esquema/cotifly_esquema.sql` (el `01` se retiró en
+HU-024.2, #203).
+
+## Instalar o poner al día una base (ejecutador)
+
+Necesitas `sqlcmd` y permiso para crear schemas, tablas, índices y procedimientos en la base.
+
+**Windows (PowerShell):**
+
+```powershell
+cd db
+# Crea la base si no existe, instala el esquema, corre los ajustes y los seeders:
+.\ejecutores\ejecutar-bd.ps1 -Servidor localhost -Base dbCotifly -CrearBase
+
+# Con usuario de SQL Server en vez de autenticación de Windows:
+.\ejecutores\ejecutar-bd.ps1 -Servidor localhost -Base dbCotifly -Usuario sa -CrearBase
+```
+
+**Linux / contenedores:**
+
+```bash
+cd db
+./ejecutores/ejecutar-bd.sh -s localhost,1433 -d dbCotifly -u sa -p '<clave>' -c
+```
+
+El ejecutador **no tiene servidor ni base por defecto, a propósito**: así no se corre por accidente contra el servidor
+compartido (`tbsdatacenter`). Antes de ejecutar muestra a dónde va y pide escribir `SI` (con `-Si` o `-y` no pregunta). Busca
+`esquema/`, `scripts/` y `seeder/` en la carpeta padre de donde él está, así que se puede llamar desde cualquier carpeta.
+
+Pasos, en orden, deteniéndose en el primer error:
+
+1. (con `-CrearBase` / `-c`) crea la base si no existe, con la collation `Latin1_General_100_CI_AS_SC_UTF8`;
+2. si `dbo_cotifly` **no tiene tablas**, instala `esquema/cotifly_esquema.sql`; si ya tiene, se salta este paso;
+3. corre los ajustes `scripts/*.sql` (02 en adelante) en orden de nombre: en una base existente aplican lo que falte, en una
+   base recién instalada no cambian nada (solo el `15` agrega la fila del rol `director`, ver la tabla de ajustes);
+4. corre los seeders `seeder/*.sql` en orden de nombre.
+
+| Opción (PowerShell / bash) | Qué hace |
+|---|---|
+| `-CrearBase` / `-c` | Crea la base de datos si no existe |
+| `-SoloEsquema` / `-e` | Solo los pasos 2 y 3 (esquema si la base está vacía, y ajustes), sin seeders |
+| `-SoloSeeder` / `-r` | Solo los seeders; se puede repetir sin problema |
+| `-Auto` / `-a` | Se acepta por compatibilidad (`docker-compose.yml`); el ejecutador ya decide solo si instala el esquema |
+| `-Usuario` y `-Clave` / `-u` y `-p` | Autenticación de SQL Server (sin esto usa la de Windows) |
+| `-Si` / `-y` | No pide confirmación |
+
+Al final muestra un resumen: tablas, líneas de negocio, mapeos SAP TM, roles, tasas del seguro y filas de la política de seguros.
+
+En una base anterior al `0009` (sin `CotizacionMercancias`) el `02` se detiene en su precondición y el ejecutador también:
+primero hay que migrarla con `migrations_mssql/0002` a `0010`. Los `.sql` de `esquema/`, `scripts/` y `seeder/` no traen
+servidor ni base escritos (no tienen `USE`): la base se elige al ejecutar.
+
+### Con Docker
+
+El `docker-compose.yml` de la raíz trae un servicio `db-init` que levanta después de SQL Server y corre
+`ejecutores/ejecutar-bd.sh -c -a -y` contra la base `bd_cotifly`: la crea, instala el esquema y siembra. Es seguro en cada
+`docker compose up`: si el esquema ya existe, no lo vuelve a crear; solo corre los ajustes y repasa los seeders.
+
+```bash
+docker compose up sqlserver db-init     # SQL Server local en el puerto 1434 del host
+docker compose logs db-init             # ver qué hizo
+```
+
+Solo toca ese SQL Server local de desarrollo. El entorno local del backend .NET es `backend-dotnet/scripts/levantar-local.*`,
+que hace lo mismo (esquema si la base está vacía, ajustes y seeders) sobre su propio contenedor.
+
+### Sin el ejecutador (sqlcmd, SSMS o Azure Data Studio)
+
+En SSMS o Azure Data Studio, selecciona la base destino y abre y ejecuta los mismos archivos en el mismo orden. Con sqlcmd:
+
+```
+sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i esquema/cotifly_esquema.sql      # solo en una base nueva
+sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/02_alter_cubicador.sql   # ... y así cada ajuste, 02 a 22, en orden
+sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i seeder/01_lineas_negocio.sql     # ... y así cada seeder, 01 a 05, en orden
+```
+
+`-E` autenticación de Windows, `-C` confiar en el certificado, `-I` activa `QUOTED_IDENTIFIER` (lo exigen los índices
+filtrados), `-b` detiene el script en el primer error, `-f 65001` lee los archivos como UTF-8 (los nombres de los tramos de la
+política llevan `≤` y `–`). Sin `-b`, SSMS o sqlcmd siguen ejecutando después de un error. `esquema/cotifly_esquema.sql` corre en
+una sola transacción: con `-b`, si algo falla no queda nada creado.
+
+## Qué crea
+
+**Esquema** (`esquema/cotifly_esquema.sql`, o las migraciones más los ajustes): 28 tablas y 1 procedimiento en el schema
+`dbo_cotifly`, sin vistas.
+
+| Grupo | Tablas |
+|---|---|
+| Configuración | `MargenesPolitica`, `SapMapeoTrqType`, `TarifasSeguro`, `PoliticaSeguroTramos`, `PoliticaSeguroMedidas`, `PoliticaSeguroTramoMedidas`, `PoliticaSeguroMedidaConexos` |
+| Identidad | `UsuariosWeb`, `Roles`, `UsuariosRoles`, `TokensRefresco`, `TokensRevocados` |
+| Idempotencia | `CapturasIdempotentes` |
+| Conversación del agente | `Sesiones`, `EventosConversacion`, `EventosHerramienta` |
+| Cotizaciones | `CotizacionesSolicitud` (cabecera), `CotizacionLineasSolicitud` (ruta), `CotizacionVehiculosLineaSolicitud` (camiones), `CotizacionMercancias`, `CotizacionServiciosConexos`, `CotizacionArchivosLicitacion`, `CotizacionPdfsHistorial` |
+| Márgenes y correo | `MargenAjustes`, `Correos`, `CorreoDestinatarios` |
+| Margen de SAP TM | `SapMargenCliente`, `SapMargenSyncLog` y el procedimiento `sp_sincronizar_margen_sap` |
+
+El esquema con su diagrama ER está en [`docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md`](../docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md)
+y el significado de cada columna en [`docs/database/DICCIONARIO_BASE_DE_DATOS.md`](../docs/database/DICCIONARIO_BASE_DE_DATOS.md).
+
+**Seeders** (`seeder/`): la configuración que la aplicación necesita desde el primer día. Todos son idempotentes.
+
+| Archivo | Siembra | Cuándo inserta |
+|---|---|---|
+| `01_lineas_negocio.sql` | 6 líneas de negocio con margen 15 %: Nacional, Distribucion, Importacion, Exportacion, Internacional, DevolucionContenedor | Las líneas que falten |
+| `02_sap_mapeo_trqtype.sql` | 5 mapeos de TrqType (OPTN, OPDS, OPIM, OPEX, OPTI), con `lineaNegocioId`. **Pendiente externo:** el TrqType de `DevolucionContenedor` lo tiene que dar negocio/SAP; no se inventa | Los pares (trqType, salesOrg) que falten |
+| `03_roles.sql` | Los roles `comercial` y `gerente_comercial`, sin rol externo (`idRolExterno` NULL). El tercero, `director`, lo agrega el ajuste `15` | Los roles que falten |
+| `04_tarifa_seguro.sql` | La tasa del seguro de la mercancía `0.003450` (0,345 %), activa | Solo si `TarifasSeguro` está vacía |
+| `05_politica_seguros.sql` | La política de seguros aprobada en HU-046.1 (#267): 7 tramos, 7 medidas, 25 reglas y 8 conexos. Valida en cada corrida que los tramos activos sean contiguos desde 0, sin huecos ni solapes, y que toda medida obligatoria tenga al menos un conexo | Solo si las 4 tablas de la política están vacías |
+
+**Después de sembrar**, el DBA tiene que fijar los roles externos de ClientePro; mientras sean NULL nadie puede iniciar
+sesión con ese rol (falla cerrado). Las sentencias están en `seeder/03_roles.sql`; los valores de prueba y de producción, en
+#209 y #212. La tasa y la política se cambian con `scripts/operacion/cambiar_tasa_seguro.sql` y
+`scripts/operacion/cambiar_politica_seguros.sql`, nunca editando el seeder.
+
+**No crea** datos de ejemplo ni de prueba, ni datos históricos.
+
+## Ajustes al esquema (`scripts/02` a `22`)
+
+Todos están **aplicados en la base compartida** (`tbsdatacenter`, `dbTarifario_Nexo_Pruebas`), del `02` al `22`, y todos están
+en `esquema/cotifly_esquema.sql`. Cada uno es idempotente y trae en su cabecera qué hace, por qué, la verificación y la reversa.
+"`/health/ready`" indica si el backend lo exige para arrancar (responde 503 "esquema incompleto: falta NN" sin él).
+
+| Script | HU | Qué cambia | `/health/ready` |
+|---|---|---|---|
+| `02_alter_cubicador.sql` | HU-023.3 (#158) | `CotizacionMercancias`: `idTipoMercancia` (uuid) se reemplaza por `codigoMercancia`. Camión: `volumenTotalM3`, `porcentajeLlenadoVolumen` y `porcentajeLlenadoPeso` (0 a 100). Ruta: `idRecomendacion`, `resultadoCubicacion`, `motivoSinSeleccion` y `condicionada`. Se detiene sin tocar nada si `idTipoMercancia` tiene valores | Sí |
+| `03_orden_vehiculo_y_conexo_catalogo.sql` | HU-023.3 (#158); HU-014 (#188) | Camión: `ordenVehiculo` (CHECK ≥ 1, índice único filtrado por ruta; numera los camiones existentes). Conexo: `idServicioConexoCatalogo`. Corrige el CHECK del motivo (el mismo del `07`) | Sí |
+| `04_cubicacion_segundo_plano.sql` | HU-023.5 (#160) | Ruta: la cola de la cubicación de la licitación en segundo plano (`estadoCubicacion`, `cubicacionIntentos`, `cubicacionDisponibleAt`, `errorCubicacion`, `avisosCubicacion`) y su índice filtrado. Respalda la tabla la primera vez si tiene datos | Sí |
+| `05_categoria_conexo.sql` | #173; HU-014 (#188) | `CotizacionServiciosConexos.categoriaServicioConexo` | Sí |
+| `06_idempotencia_captura.sql` | #191 (HU-026.1) | Tabla `CapturasIdempotentes` (la `Idempotency-Key` persistente), con su único, CHECKs e índices | Sí |
+| `07_motivo_busqueda_agotada.sql` | HU-023 (#176) | `ck_cotizacionLineasSolicitud_motivoSinSeleccion` con los 5 motivos (`BUSQUEDA_AGOTADA`) y `ISNULL(resultadoCubicacion, '')` | No (solo avisa) |
+| `08_retirar_vistas_actividad.sql` | HU-014.3 (#152) | `DROP VIEW` de `vActividadPorComercial` y `vAjustesMargenPorComercial`, cada una solo si existe | No |
+| `09_score_prioridad.sql` | HU-018.1 (#155) | `CotizacionesSolicitud.scorePrioridad DECIMAL(9,4) NULL` | Sí |
+| `10_rechazo_linea.sql` | HU-028.2 (#182) / HU-028.1 (#183) | Camión: `motivoRechazo` y `rechazadaAt` con el CHECK `ck_cotizacionVehiculosLineaSolicitud_rechazo`; `'rechazada'` en los tres CHECK de `estadoCosteo` | Sí |
+| `11_peso_con_tara.sql` | HU-030.1 (#184) | Ruta: `pesoConTaraKg DECIMAL(12,2) NULL` con su CHECK (> 0) | Sí |
+| `12_vehiculo_elegido.sql` | HU-032 (#197) | Ruta: `tipoVehiculoElegido` y `carroceriaElegida`. Mercancía: `largoCm`/`anchoCm`/`altoCm` NULL con el CHECK "las tres NULL o las tres > 0" | Sí |
+| `13_correo_mailsender.sql` | HU-033 (#199) | `Correos`: seguimiento de MailSender (`idMailSender`, `redirigidoA`, `intentosEntrega`, `enviadoAt`, `estadoActualizadoAt`, `siguienteConsultaAt`, `encoladoAt`, dos índices filtrados y el CHECK del estado). `CotizacionesSolicitud`: resultado diferido a Nexo (`sincronizacionResultadoNexo`, `comentarioResultadoPendiente`, `resultadoSincronizadoAt`, `errorSincronizacionResultado`, `intentosSincronizacionResultado`) | Sí |
+| `14_cotizacion_finalizada.sql` | HU-036 (#205, #206) | `CotizacionesSolicitud.finalizadaAt` y `finalizadaPor` (FK `fk_cotizaciones_finalizadaPor` a `UsuariosWeb`), con el CHECK `ck_cotizaciones_finalizada` (las dos o ninguna). Sin backfill | Sí |
+| `15_rol_director.sql` | HU-037.1 (#209) | `ck_roles_codigo` admite `director` y agrega la fila `director` (activa, `idRolExterno` NULL; no pisa uno ya fijado). Es el único ajuste que escribe una fila: también la agrega en una base nueva, antes de los seeders. Va con o después de la imagen de HU-037.2 (ver `DEPLOY.md`, "Rol director") | No |
+| `16_multiples_roles_activos.sql` | HU-040.1 (#229) | `UsuariosRoles`: retira `uq_usuariosRoles_usuarioId_activo` (varias asignaciones activas por usuario). `TokensRefresco.rolSesion` con su CHECK | Sí |
+| `17_sap_margen_sincronizacion.sql` | HU-042.1 (#242) | Tablas `SapMargenCliente` y `SapMargenSyncLog` y el procedimiento `sp_sincronizar_margen_sap` (copia local del margen de SAP TM) | Sí (desde HU-042.2, #243) |
+| `18_sap_mapeo_fk_margenes_politica.sql` | HU-042.4 (#247) | `SapMapeoTrqType.lineaNegocioId INT NOT NULL` con FK a `MargenesPolitica`, con backfill por texto verificado. No borra `lineaNegocio` todavía | Sí |
+| `19_precio_venta_conexos.sql` | HU-043.1 (#245) | `CotizacionServiciosConexos.precioVenta DECIMAL(18,2) NOT NULL` (backfill = `precio`) y el CHECK de montos ampliado | Sí |
+| `20_seguro_mercancia.sql` | HU-045.1 (#263) | Tabla `TarifasSeguro` (una sola tasa activa) y, en la ruta, `incluyeSeguro`, `tasaSeguroAplicada` y `costoSeguro` con dos CHECK. Solo estructura: la tasa inicial la siembra `seeder/04_tarifa_seguro.sql` | Sí (desde HU-045.2, #264) |
+| `21_politica_seguros.sql` | HU-046.2 (#268) | Las 4 tablas de la política de seguros y `CotizacionServiciosConexos.codigoServicio`. Solo estructura: la carga y sus validaciones están en `seeder/05_politica_seguros.sql` | No (hasta HU-046.3, #269) |
+| `22_origen_lectura_licitacion.sql` | HU-044.7 (#290) | `CotizacionArchivosLicitacion.origenLectura VARCHAR(20) NULL` (`analizar_excel` \| `leer_estructura`) con su CHECK | Lo exigirá el backend de HU-044.7 |
+
+**Orden en otra base existente:** el numérico (el ejecutador los corre por nombre), con dos salvedades: el `08` va **después** de
+desplegar el backend sin el borrador de métricas (la versión anterior respondería 500 en esos endpoints) y el `15` **con o
+después** de la imagen de HU-037. El `10` toma un bloqueo de esquema al reemplazar los CHECK de `estadoCosteo`: mejor en una
+ventana de poco tráfico. Detalle para el DBA: [`DEPLOY.md`](../DEPLOY.md) §4.
+
+### Notas de algunos ajustes
 
 **`scripts/03_orden_vehiculo_y_conexo_catalogo.sql` y `scripts/05_categoria_conexo.sql`** (HU-014, #188). Eran propuestas en
 `pendientes/` con "NO APLICAR"; con #188 el backend mapea sus columnas y pasan a `scripts/`, como el `09`. **Conservan su número**:
@@ -71,7 +220,7 @@ exactamente el mismo CHECK y solo lo reemplaza si le falta `BUSQUEDA_AGOTADA` o 
 **`scripts/08_retirar_vistas_actividad.sql`** (HU-014.3, #152) borra las vistas `vActividadPorComercial` y
 `vAjustesMargenPorComercial`, que solo leían `GET /web/metricas/actividad` y `/ajustes-margen` (el borrador del tablero, retirado
 del backend y del contrato; el tablero de HU-010 lee las tablas y no usa vistas). Cada `DROP VIEW` va con
-`IF OBJECT_ID(...) IS NOT NULL`: se puede repetir y sobre una instalación desde cero (el `01` ya no las crea) no hace nada. No toca
+`IF OBJECT_ID(...) IS NOT NULL`: se puede repetir y sobre una instalación desde cero (`esquema/` no las crea) no hace nada. No toca
 tablas ni datos. **Orden:** aplicarlo **después** de desplegar el backend de la #152; la versión anterior respondería 500 en esos
 dos endpoints sin las vistas. Respaldo: su definición está en `migrations_mssql/0009` (sección de vistas).
 
@@ -122,257 +271,51 @@ toma de la petición y su vencimiento de 10 min, `terminada` con la respuesta en
 `solicitudNexoId` y el `scorePrioridad`. Vence en 24 h (`expiraAt`, con índice): la API ignora las vencidas y las borra cada hora
 en lotes de 1000; no hace falta un job del DBA. Hasta #191 todo esto vivía en la memoria del proceso y se perdía al reiniciar o con dos
 réplicas (despliegue `start-first`): un reintento podía crear otra solicitud en Nexo. **Conserva su número** (es como lo conocen el DBA
-y los documentos, y el 06 estaba libre en `scripts/`); solo depende del `01`. Idempotente; si encuentra la tabla de la propuesta de #173
+y los documentos, y el 06 estaba libre en `scripts/`); solo depende del esquema base. Idempotente; si encuentra la tabla de la propuesta de #173
 (sin `operacion`) vacía la recrea, y con filas se detiene sin tocarla. Sin FK (la fila se reserva antes de que exista el folio).
 **Obligatorio para arrancar**: sin la tabla `/health/ready` responde 503 "esquema incompleto: falta 06"; la API no degrada a memoria
 (con varias réplicas volvería el duplicado en Nexo sin que nadie lo note). No necesita permisos nuevos (`cotifly_app` ya tiene
 `SELECT/INSERT/UPDATE/DELETE` sobre el esquema).
 
-**Orden completo** de una base nueva: `01` (o `0001` a `0010`), `02`, `03`, `pendientes/04`, `05`, `06`, `07`, `08`, `09`, `10`, `11`,
-`12`, `13`, `14` y `15`. El entorno local (`backend-dotnet/scripts/levantar-local.ps1` / `.sh`) aplica los ajustes `02` en adelante (hoy `02`, `03`,
-`05`, `06`, `07`, `08`, `09`, `10`, `11`, `12`, `13`, `14` y `15`) y el `pendientes/04` en ese orden en cada arranque (son idempotentes). Con el `03` aplicado el CHECK del motivo ya es el del
-`07` (sin el `07`, la sonda no da el aviso del `07`).
-
-**Orden del release** sobre una base ya migrada: `03` → `pendientes/04` → `05` → `06` → `07` → `09` → `10` → `11` → `12` → `13` → `14` → `15` →
-imagen → `08` (el `15` en la misma ventana que la imagen de HU-037, nunca antes con una imagen vieja; en la compartida ya está
-aplicado y el `14` está pendiente de @scalderon-bs). El `10` (rechazo de la línea) toma un bloqueo de esquema al reemplazar los CHECK de `estadoCosteo`: mejor en una ventana
-de poco tráfico. Detalle para el DBA: `DEPLOY.md` §4.
-
-## Estructura
-
-```
-db/
-├── README.md              este archivo
-├── ejecutar-bd.ps1        ejecutador para Windows (PowerShell)
-├── ejecutar-bd.sh         ejecutador para Linux / contenedores (bash)
-├── scripts/
-│   ├── 01_crear_esquema.sql   schema, tablas, restricciones e índices, en su forma final (sin vistas desde HU-014.3)
-│   ├── 02_alter_cubicador.sql columnas para la respuesta del cubicador (ALTER; se puede repetir)
-│   ├── 03_orden_vehiculo_y_conexo_catalogo.sql  orden del camión e id del catálogo del conexo (se puede repetir)
-│   ├── 05_categoria_conexo.sql         categoría del catálogo de Nexo en el conexo (se puede repetir)
-│   ├── 06_idempotencia_captura.sql     Idempotency-Key persistente: tabla CapturasIdempotentes (se puede repetir)
-│   ├── 07_motivo_busqueda_agotada.sql  quinto motivo de "sin selección" en el CHECK (se puede repetir)
-│   ├── 08_retirar_vistas_actividad.sql retira las vistas del borrador de métricas (se puede repetir)
-│   ├── 09_score_prioridad.sql          scorePrioridad de Nexo en la cabecera (se puede repetir)
-│   ├── 10_rechazo_linea.sql            rechazo de la línea por la Mesa de Costeo en el camión (se puede repetir)
-│   ├── 11_peso_con_tara.sql            peso con tara de la ruta de contenedor (se puede repetir)
-│   ├── 12_vehiculo_elegido.sql         vehículo elegido de la ruta y medidas NULL de la mercancía (se puede repetir)
-│   ├── 13_correo_mailsender.sql        seguimiento de MailSender en Correos y resultado diferido a Nexo (se puede repetir)
-│   ├── 14_cotizacion_finalizada.sql    cotización finalizada: finalizadaAt y finalizadaPor (propuesta; se puede repetir)
-│   ├── 15_rol_director.sql             rol interno director (se puede repetir)
-│   ├── 16_multiples_roles_activos.sql  varias asignaciones activas por usuario y rolSesion del refresh (propuesta; se puede repetir)
-│   ├── 17_sap_margen_sincronizacion.sql tablas y SP de la copia local del margen de SAP (la lee el backend, HU-042.2)
-│   ├── 18_sap_mapeo_fk_margenes_politica.sql  SapMapeoTrqType.lineaNegocioId (FK a MargenesPolitica; el backend la usa, HU-042.4)
-│   ├── 19_precio_venta_conexos.sql     precioVenta de CotizacionServiciosConexos (se puede repetir)
-│   ├── 20_seguro_mercancia.sql         tasa del seguro (TarifasSeguro) y seguro de la mercancía en la ruta (se puede repetir)
-│   ├── 21_politica_seguros.sql         política de seguros por valor de la mercancía (4 tablas) y codigoServicio del conexo (se puede repetir)
-│   ├── pendientes/            propuesta 04, pendiente de revisión (el ejecutador no la corre)
-│   └── operacion/             scripts de datos de una sola vez que corre el DBA con aprobación
-├── jobs/
-│   └── sincronizar_margen_sap.ps1   paso de PowerShell del SQL Server Agent Job de HU-042.1 (no lo corre el ejecutador)
-├── seeder/
-│   ├── 01_lineas_negocio.sql      líneas de negocio y su margen de política
-│   ├── 02_sap_mapeo_trqtype.sql   mapeo del TrqType de SAP TM a la línea de negocio
-│   └── 03_roles.sql               roles internos (comercial, gerente_comercial)
-├── migrations_mssql/      migraciones 0001 a 0010 (SQL Server): llevan una base que ya existe de un estado al siguiente
-│   └── rollback/          reversas
-```
-
-`scripts/` y `seeder/` son para **instalar desde cero**; `migrations_mssql/` es para **bases que ya existen**. El backend,
-las pruebas y el CI leen `migrations_mssql/`, y por eso esa carpeta no se movió.
-
-## Instalar desde cero
-
-Necesitas `sqlcmd` y permiso para crear schemas, tablas e índices en la base.
-
-**Windows (PowerShell):**
-
-```powershell
-cd db
-# Crea la base si no existe, el esquema (01 y los ajustes 02 a 14) y los seeders:
-.\ejecutar-bd.ps1 -Servidor localhost -Base dbCotifly -CrearBase
-
-# Con usuario de SQL Server en vez de autenticación de Windows:
-.\ejecutar-bd.ps1 -Servidor localhost -Base dbCotifly -Usuario sa -CrearBase
-```
-
-**Linux / contenedores:**
-
-```bash
-cd db
-./ejecutar-bd.sh -s localhost,1433 -d dbCotifly -u sa -p '<clave>' -c
-```
-
-El ejecutador **no tiene servidor ni base por defecto, a propósito**: así no se corre por accidente contra el servidor
-compartido (`tbsdatacenter`). Antes de ejecutar muestra a dónde va y pide escribir `SI` (con `-Si` o `-y` no pregunta).
-
-| Opción (PowerShell / bash) | Qué hace |
-|---|---|
-| `-CrearBase` / `-c` | Crea la base de datos si no existe, con la collation `Latin1_General_100_CI_AS_SC_UTF8` |
-| `-SoloEsquema` / `-e` | Corre solo el esquema: `scripts/01_crear_esquema.sql` y los ajustes `scripts/02_*` en adelante |
-| `-SoloSeeder` / `-r` | Corre solo los seeders; se puede repetir sin problema |
-| `-Auto` / `-a` | Si `dbo_cotifly` ya tiene tablas, se salta la creación del esquema (01) y corre los ajustes (02 en adelante) y los seeders (sirve para correrlo en cada arranque) |
-| `-Usuario` y `-Clave` / `-u` y `-p` | Autenticación de SQL Server (sin esto usa la de Windows) |
-
-El orden es: crear la base (opcional), `scripts/01_crear_esquema.sql`, los ajustes `scripts/02_*.sql` en adelante (en
-orden de nombre) y los seeders. Se detiene en el primer error y no ejecuta los pasos siguientes.
-
-**Los ajustes (`02` en adelante) se pueden repetir**: cada cambio revisa si ya está. Por eso corren también en una base que
-ya tiene el esquema; así una base instalada antes queda igual que una nueva.
-
-Con `-Auto` / `-a` el `02` corre en **cada** arranque (la segunda vez no hace nada). En una base anterior al `0009` (sin
-`CotizacionMercancias`) el `02` se detiene con un error en su precondición y el ejecutador también: primero hay que migrar con
-`migrations_mssql/0009` y `0010`. `scripts/pendientes/` (propuestas pendientes de revisión: hoy el `04`) **no** la corre el
-ejecutador. Tampoco `scripts/operacion/`: scripts de datos de una sola vez que corre el DBA con aprobación, como
-`revincular_identidad_dbSolucionesTI_Prueba.sql` (#172, ver [`DEPLOY.md`](../DEPLOY.md#identidad-compartida-con-nexo-172)) y
-`corregir_rol_comercial_32.sql` (#173: `Roles.idRolExterno` de `comercial` pasa de 34, que en `dbSolucionesTI_Prueba` es
-`AdministracionZonasGeocerca`, a 32 `ClienteProComercial`; respalda `Roles` en `RespaldoRoles_173`, es idempotente y **requiere
-aprobación; lo ejecuta el DBA**) y `mapeo_prueba_rol_director_209.sql` (#209, **solo prueba**: `gerente_comercial` 31 → 25 y
-después `director` → 31, en ese orden por `uq_roles_idRolExterno`; respaldo en `RespaldoRoles_209`). El de producción es #212. El `06_idempotencia_captura.sql` salió de `pendientes/` con #191: ya lo corre el ejecutador.
-
-### Con Docker
-
-El `docker-compose.yml` de la raíz trae un servicio `db-init` que levanta después de SQL Server y corre
-`ejecutar-bd.sh -c -a -y` contra la base `bd_cotifly`: la crea, crea el esquema y siembra. Es seguro en cada
-`docker compose up`: si el esquema ya existe, no lo vuelve a crear; solo corre los ajustes y repasa los seeders.
-
-```bash
-docker compose up sqlserver db-init     # SQL Server local en el puerto 1434 del host
-docker compose logs db-init             # ver qué hizo
-```
-
-Solo toca ese SQL Server local de desarrollo. El compose solo trae la base (`sqlserver` y `db-init`); el entorno local del
-backend .NET es `backend-dotnet/scripts/levantar-local.*`.
-
-### Qué hay que cambiar para ejecutarlo
-
-**Nada dentro de los archivos.** El ejecutador busca `scripts/` y `seeder/` relativo a donde él está (se puede llamar desde
-cualquier carpeta), y los `.sql` de `scripts/` y `seeder/` no traen ningún servidor ni nombre de base escritos: no tienen `USE`.
-La base la eliges al ejecutar, con `-Servidor` y `-Base` (`-s` y `-d` en bash). Sin `-CrearBase`, la base tiene que existir ya.
-
-La excepción son las **migraciones** de `migrations_mssql/` (0001 a 0010): esas sí traen `USE dbTarifario_Nexo_Pruebas`. Si algún
-día se corren contra otra base, hay que cambiar esa línea. No aplica a la instalación desde cero.
-
-### En SSMS o Azure Data Studio (sin el ejecutador)
-
-1. Selecciona la base de datos destino arriba a la izquierda: los scripts corren sobre la que tengas seleccionada.
-2. Abre y ejecuta, en este orden: `scripts/01_crear_esquema.sql`, `scripts/02_alter_cubicador.sql`,
-   `scripts/03_orden_vehiculo_y_conexo_catalogo.sql`, `scripts/pendientes/04_cubicacion_segundo_plano.sql` (solo con la aprobación
-   del DBA; el backend lo exige), `scripts/05_categoria_conexo.sql`, `scripts/06_idempotencia_captura.sql`,
-   `scripts/07_motivo_busqueda_agotada.sql`, `scripts/08_retirar_vistas_actividad.sql`, `scripts/09_score_prioridad.sql`,
-   `scripts/10_rechazo_linea.sql`, `scripts/11_peso_con_tara.sql`, `scripts/12_vehiculo_elegido.sql`,
-   `scripts/13_correo_mailsender.sql`, `scripts/14_cotizacion_finalizada.sql`, `scripts/15_rol_director.sql`,
-   `scripts/16_multiples_roles_activos.sql`, `seeder/01_lineas_negocio.sql`, `seeder/02_sap_mapeo_trqtype.sql` y `seeder/03_roles.sql`.
-3. Si `dbo_cotifly` ya tiene tablas, el `01` avisa y no crea nada. Si falla otro paso, mira el error antes de seguir con
-   los siguientes.
-
-### Sin el ejecutador, con sqlcmd
-
-```
-sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/01_crear_esquema.sql
-sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/02_alter_cubicador.sql
-sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/03_orden_vehiculo_y_conexo_catalogo.sql
-sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/pendientes/04_cubicacion_segundo_plano.sql   # con aprobación del DBA
-sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/05_categoria_conexo.sql
-sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/06_idempotencia_captura.sql
-sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/07_motivo_busqueda_agotada.sql
-sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/08_retirar_vistas_actividad.sql
-sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/09_score_prioridad.sql
-sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/10_rechazo_linea.sql
-sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/11_peso_con_tara.sql
-sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/12_vehiculo_elegido.sql
-sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/13_correo_mailsender.sql
-sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/14_cotizacion_finalizada.sql
-sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/15_rol_director.sql
-sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/16_multiples_roles_activos.sql
-sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i seeder/01_lineas_negocio.sql
-sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i seeder/02_sap_mapeo_trqtype.sql
-sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i seeder/03_roles.sql
-```
-
-`-E` autenticación de Windows, `-C` confiar en el certificado, `-I` activa `QUOTED_IDENTIFIER` (lo exigen los índices
-filtrados), `-b` detiene el script en el primer error, `-f 65001` lee los archivos como UTF-8. Sin `-b`, SSMS o sqlcmd
-siguen ejecutando después de un error.
-
-## Qué crea
-
-**Esquema** (`scripts/01_crear_esquema.sql` y los ajustes): 21 tablas en el schema `dbo_cotifly`, sin vistas: 20 del `01` y
-`CapturasIdempotentes` del `06` (las 2 vistas del borrador de métricas se retiraron en HU-014.3, #152).
-
-| Grupo | Tablas |
-|---|---|
-| Configuración | `MargenesPolitica`, `SapMapeoTrqType` |
-| Identidad | `UsuariosWeb`, `Roles`, `UsuariosRoles`, `TokensRefresco`, `TokensRevocados` |
-| Conversación del agente | `Sesiones`, `EventosConversacion`, `EventosHerramienta` |
-| Cotizaciones | `CotizacionesSolicitud` (cabecera), `CotizacionLineasSolicitud` (ruta), `CotizacionVehiculosLineaSolicitud` (camiones), `CotizacionMercancias`, `CotizacionServiciosConexos`, `CotizacionArchivosLicitacion`, `CotizacionPdfsHistorial` |
-| Márgenes y correo | `MargenAjustes`, `Correos`, `CorreoDestinatarios` |
-| Idempotencia (`06`) | `CapturasIdempotentes` |
-
-El esquema vigente con su diagrama ER está en [`docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md`](../docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md)
-y el significado de cada columna en [`docs/database/DICCIONARIO_BASE_DE_DATOS.md`](../docs/database/DICCIONARIO_BASE_DE_DATOS.md).
-El diseño original de las tablas de cotizaciones está en `docs/database/PROPUESTA_REESTRUCTURACION_COTIZACIONES.md`.
-
-**Seeders** (`seeder/`): la configuración que la aplicación necesita desde el primer día.
-
-| Archivo | Siembra |
-|---|---|
-| `01_lineas_negocio.sql` | 6 líneas de negocio con margen 15 %: Nacional, Distribucion, Importacion, Exportacion, Internacional, DevolucionContenedor |
-| `02_sap_mapeo_trqtype.sql` | 5 mapeos de TrqType (OPTN, OPDS, OPIM, OPEX, OPTI). **Falta el de `DevolucionContenedor`**: necesita el código real de SAP y no se inventa |
-| `03_roles.sql` | Los roles `comercial` y `gerente_comercial`, sin rol externo (`idRolExterno` NULL) |
-
-Todos son idempotentes: insertan solo lo que falta y no pisan lo que ya se haya ajustado.
-
-**Después de sembrar**, el DBA tiene que fijar los roles externos de ClientePro; mientras sean NULL nadie puede iniciar
-sesión con ese rol (falla cerrado). Las dos sentencias están en `seeder/03_roles.sql`.
-
-## Qué NO hace
-
-- **No sirve para una base que ya tiene el esquema.** Si `dbo_cotifly` ya tiene tablas, `01_crear_esquema.sql` se detiene
-  sin tocar nada: no suelta ni recrea nada. Para una base existente se usan las migraciones.
-- **No crea datos de ejemplo ni de prueba.** Solo la configuración inicial.
-- **No lleva datos históricos.** Nada se migra desde el Postgres viejo.
-
 ## Bases que ya existen (migraciones)
 
-La base compartida (`tbsdatacenter`, `dbTarifario_Nexo_Pruebas`) se **reinstaló desde cero el 2026-10-08** con
-`scripts/01_crear_esquema.sql` en la versión de ese día, que equivalía a `0001`–`0009`. Para una base que todavía tenga el
-esquema anterior (`Cotizaciones`), el `0009_reestructuracion_cotizaciones.sql` la lleva al esquema de este directorio
-conservando sus datos: hace un respaldo de las tablas que toca (`Respaldo0009_*`) y corre en una sola transacción. Está
-probado con Testcontainers sobre datos del esquema anterior; aplicarlo en un ambiente real sigue necesitando el visto bueno
-del DBA.
+La base compartida (`tbsdatacenter`, `dbTarifario_Nexo_Pruebas`) se **reinstaló desde cero el 2026-10-08** con el instalador de
+ese día (el antiguo `scripts/01_crear_esquema.sql`, que equivalía a `0001`–`0009`) y desde ahí recibió el `0010` y los ajustes
+`02` a `22`. Para una base que todavía tenga el esquema anterior (`Cotizaciones`), el `0009_reestructuracion_cotizaciones.sql` la
+lleva al esquema de HU-021 conservando sus datos: hace un respaldo de las tablas que toca (`Respaldo0009_*`) y corre en una sola
+transacción. Está probado con Testcontainers sobre datos del esquema anterior; aplicarlo en un ambiente real sigue necesitando
+el visto bueno del DBA. El `0010_nombres_municipio.sql` va **después del `0009`** (nombres de municipio de la ruta,
+`solicitudNexoId`, `nombreServicioConexo` y el `CHECK` de `estadoEnvio` si falta); es idempotente y no destructivo. Después, el
+ejecutador corre los ajustes y los seeders.
 
-El `0010_nombres_municipio.sql` (HU-021, ADR-019) se aplica **después del `0009`**: agrega los nombres de municipio de la
-ruta, `CotizacionesSolicitud.solicitudNexoId`, `CotizacionServiciosConexos.nombreServicioConexo` y el `CHECK` de
-`estadoEnvio` si falta. Es idempotente y no destructivo, y llena los nombres desde `Respaldo0009_*` si existen.
-`scripts/01_crear_esquema.sql` ya trae esas columnas.
+## Mantener esto en sincronía
 
-## Ajustes al esquema (`scripts/02_*`)
+`esquema/cotifly_esquema.sql` tiene que dejar **exactamente** el mismo esquema que `migrations_mssql/0001` a `0010` más todos los
+ajustes de `scripts/`. Por eso:
 
-Cambios pequeños al esquema que todavía no se consolidan en el `01`. Van como `ALTER TABLE`, en un script numerado de
-`scripts/` que **se puede repetir** (cada cambio revisa si ya está) y corre en **una sola transacción**.
+- **Todo cambio de esquema** es un ajuste nuevo en `scripts/` (siguiente número, idempotente, en transacción, sin `USE`) **y** el
+  mismo cambio en `esquema/cotifly_esquema.sql`, en el mismo PR. En el esquema, las columnas nuevas van al final de su tabla
+  (el orden de una base ajustada) y las restricciones llevan el mismo nombre que crea el ajuste.
+- **Los datos de configuración** van en un seeder (`seeder/NN_*.sql`, idempotente: solo inserta lo que falta), no en el ajuste.
+  Así llegan igual a una base nueva y a una existente.
+- Las restricciones de las tablas renombradas conservan los nombres que dejan las migraciones (`pk_cotizaciones`,
+  `pk_cotizacionPosiciones`…).
+- Las pruebas de integración (`backend-dotnet/tests/Cotifly.Infraestructura.Tests/Persistencia/clsEsquemaTests.cs`,
+  `LaInstalacionDesdeCeroDejaElMismoEsquemaQueLasMigraciones`) comparan en cada corrida la base instalada con `esquema/` contra
+  la cadena de migraciones y ajustes.
 
-| Script | HU | Qué cambia |
-|---|---|---|
-| `02_alter_cubicador.sql` | HU-023.3 (#158) | `CotizacionMercancias`: `idTipoMercancia` (uuid) se reemplaza por `codigoMercancia`. Camión (`CotizacionVehiculosLineaSolicitud`): `volumenTotalM3`, `porcentajeLlenadoVolumen` y `porcentajeLlenadoPeso` (0 a 100). Ruta (`CotizacionLineasSolicitud`): `idRecomendacion`, `resultadoCubicacion`, `motivoSinSeleccion` y `condicionada` |
-| `03_orden_vehiculo_y_conexo_catalogo.sql` | HU-023.3 (#158); HU-014 (#188) | Camión: `ordenVehiculo INT NULL` (CHECK ≥ 1, índice único filtrado por ruta; numera los camiones existentes). Conexo: `idServicioConexoCatalogo NVARCHAR(64) NULL`. Corrige el CHECK del motivo (el mismo del `07`). Idempotente, en una transacción. Obligatorio: el backend mapea las columnas |
-| `05_categoria_conexo.sql` | #173; HU-014 (#188) | `CotizacionServiciosConexos.categoriaServicioConexo NVARCHAR(20) NULL` (sin CHECK de valores). Idempotente. Obligatorio: el backend mapea la columna |
-| `06_idempotencia_captura.sql` | #191 (HU-026.1) | Tabla nueva `CapturasIdempotentes` (Idempotency-Key persistente) con su `UNIQUE (usuarioId, operacion, clave)`, CHECKs de estado y de JSON, e índices de vencimiento y de folio. Idempotente; recrea la tabla vacía de la propuesta de #173. Obligatorio: el backend la usa |
-| `07_motivo_busqueda_agotada.sql` | HU-023 (#176) | `ck_cotizacionLineasSolicitud_motivoSinSeleccion` admite los 5 motivos (`BUSQUEDA_AGOTADA`) y exige `ISNULL(resultadoCubicacion, '') = 'SIN_SELECCION_AUTOMATICA'`. Idempotente, DROP + ADD `WITH CHECK` en una transacción; se detiene sin tocar nada si alguna ruta tiene motivo sin `SIN_SELECCION_AUTOMATICA` |
-| `08_retirar_vistas_actividad.sql` | HU-014.3 (#152) | `DROP VIEW` de `vActividadPorComercial` y `vAjustesMargenPorComercial` (borrador de métricas retirado), cada uno solo si la vista existe. No toca tablas ni datos |
-| `09_score_prioridad.sql` | HU-018.1 (#155) | `CotizacionesSolicitud.scorePrioridad DECIMAL(9,4) NULL` (el `scorePrioridad` de Nexo). Idempotente, `ADD` de columna NULL en una transacción. Obligatorio: el backend mapea la columna |
-| `10_rechazo_linea.sql` | HU-028.2 (#182) / HU-028.1 (#183) | Camión: `motivoRechazo NVARCHAR(500) NULL` y `rechazadaAt DATETIMEOFFSET NULL` con el CHECK `ck_cotizacionVehiculosLineaSolicitud_rechazo`; `'rechazada'` en los tres CHECK de `estadoCosteo` (8 estados). Idempotente, en una transacción. Obligatorio: el backend mapea las columnas |
-| `11_peso_con_tara.sql` | HU-030.1 (#184) | `CotizacionLineasSolicitud.pesoConTaraKg DECIMAL(12,2) NULL` con el CHECK `ck_cotizacionLineasSolicitud_pesoConTaraKg` (> 0): el peso con tara de una ruta `Contenedor`. Idempotente, `ADD` de columna NULL en una transacción. Obligatorio: el backend mapea la columna |
-| `12_vehiculo_elegido.sql` | HU-032 (#197) | `CotizacionLineasSolicitud.tipoVehiculoElegido`/`carroceriaElegida NVARCHAR(100) NULL` y `CotizacionMercancias.largoCm/anchoCm/altoCm` NULL con el CHECK `ck_cotizacionPosiciones_medidas` (las tres NULL o las tres > 0). Idempotente, en una transacción. Obligatorio: el backend mapea las columnas |
-| `13_correo_mailsender.sql` | HU-033 (#199) | `Correos`: `idMailSender`, `redirigidoA`, `intentosEntrega`, `enviadoAt`, `estadoActualizadoAt`, `siguienteConsultaAt`, `encoladoAt` (NULL) con los índices filtrados `ix_correos_siguienteConsultaAt` y `ux_correos_idMailSender` y el CHECK `ck_correos_estado`; `CotizacionesSolicitud`: `sincronizacionResultadoNexo` (CHECK), `comentarioResultadoPendiente`, `resultadoSincronizadoAt`, `errorSincronizacionResultado` (NULL) e `intentosSincronizacionResultado` (NOT NULL DEFAULT 0, CHECK ≥ 0). Idempotente. Obligatorio: el backend mapea las columnas |
-| `14_cotizacion_finalizada.sql` | HU-036 (#205, #206) | `CotizacionesSolicitud.finalizadaAt DATETIMEOFFSET NULL` y `finalizadaPor UNIQUEIDENTIFIER NULL` con la FK `fk_cotizaciones_finalizadaPor` a `UsuariosWeb(id)` y el CHECK `ck_cotizaciones_finalizada` (las dos o ninguna). Idempotente, en una transacción, sin backfill. Obligatorio: el backend mapea las columnas. Propuesta pendiente de revisión de @scalderon-bs |
-| `19_precio_venta_conexos.sql` | HU-043.1 (#245) | `CotizacionServiciosConexos.precioVenta DECIMAL(18,2) NOT NULL`, junto a `precio` (costo unitario, sin cambios). Backfill `precioVenta = precio` en las filas existentes, luego `NOT NULL`. Amplía `ck_cotizacionServiciosConexos_montos` con `precioVenta >= 0`. Idempotente, en una transacción, corrido dos veces sin error. Ya aplicado en la base compartida de pruebas |
-| `15_rol_director.sql` | HU-037.1 (#209) | `Roles`: el CHECK `ck_roles_codigo` admite `director` (reemplazo solo si le falta; imprime el anterior) y la fila `director` (activa, `idRolExterno = NULL`). Idempotente. El `01` ya trae el CHECK con `director`; la fila la pone el 15 |
-| `16_multiples_roles_activos.sql` | HU-040.1 (#229) | `UsuariosRoles`: retira `uq_usuariosRoles_usuarioId_activo` (varias asignaciones activas por usuario; `uq_usuariosRoles_usuarioId_rolId` sigue) e imprime su definición. `TokensRefresco.rolSesion NVARCHAR(30) NULL` con el CHECK `ck_tokensRefresco_rolSesion`. Idempotente, no cambia filas. Obligatorio: el backend mapea `rolSesion`. El `01` ya trae el estado final. Aprobado por @scalderon-bs (2026-11-02) |
-| `20_seguro_mercancia.sql` | HU-045.1 (#263) | Tabla nueva `TarifasSeguro` (`id` UNIQUEIDENTIFIER `NEWID()`, `tasa DECIMAL(9,6)` con CHECK > 0 y < 1, `vigenteDesde`, `isActive`, `updatedAt`; índice único filtrado `uq_tarifasSeguro_activa`: una sola activa; fila inicial `0.003450`, solo si la tabla está vacía). `CotizacionLineasSolicitud`: `incluyeSeguro BIT NOT NULL DEFAULT 0`, `tasaSeguroAplicada DECIMAL(9,6) NULL`, `costoSeguro DECIMAL(18,2) NULL`, con `ck_cotizacionLineasSolicitud_seguroMontos` (costo ≥ 0, tasa entre 0 y 1, y si hay costo hay tasa) y `ck_cotizacionLineasSolicitud_seguroIncluido` (sin seguro, las dos en NULL). Idempotente, no cambia valores |
-| `21_politica_seguros.sql` | HU-046.2 (#268) | Tablas nuevas `PoliticaSeguroTramos` (`valorDesde` exclusivo, `valorHasta` incluido o NULL sin tope; CHECK de valores; índice único filtrado `uq_politicaSeguroTramos_valorDesde_activo`), `PoliticaSeguroMedidas` (`codigo` único, `esCobrable`), `PoliticaSeguroTramoMedidas` (único `tramoId` + `medidaId`, CHECK `nivel` `recomendada` \| `obligatoria`) y `PoliticaSeguroMedidaConexos` (único `medidaId` + `codigoServicio`, sin FK a Nexo); las 4 con `id` UNIQUEIDENTIFIER `NEWID()`. `CotizacionServiciosConexos.codigoServicio NVARCHAR(40) NULL`. Carga inicial solo con las 4 tablas vacías; valida tramos contiguos y medidas obligatorias con conexos (THROW y no aplica nada). Idempotente, no cambia valores |
+## Verificar
 
-El `02` se detiene sin tocar nada si `idTipoMercancia` todavía tiene valores (un uuid no se puede convertir a código).
-Cuando el diseño se estabilice, estos cambios se pasan al `01` y el script se retira.
+Contra bases vacías **locales o de pruebas, nunca la compartida**:
+
+1. Base A: `esquema/cotifly_esquema.sql`. Base B: `migrations_mssql/0001` a `0010` (cambiando su `USE`) y después
+   `scripts/02` a `22`.
+2. Comparar los catálogos de las dos (`sys.tables`, `sys.columns` con tipo, largo, precisión, escala, nulabilidad, identidad y
+   collation, `sys.default_constraints`, `sys.check_constraints`, `sys.indexes` con columnas, filtros e incluidas,
+   `sys.foreign_keys` y `sys.sql_modules`). Deben ser iguales salvo los respaldos `Respaldo0009_*` que deja el `0009` en B.
+3. Correr el ejecutador dos veces sobre una base nueva (`-CrearBase`): la segunda vez no cambia el esquema ni duplica datos.
+   El resumen debe mostrar 28 tablas, 6 líneas de negocio, 5 mapeos SAP TM, 3 roles (2 del seeder y `director` del `15`),
+   1 tasa del seguro y la política con 7 tramos, 7 medidas, 25 reglas y 8 conexos.
 
 ## Job de sincronización del margen de SAP (HU-042.1, #242)
 
@@ -466,22 +409,3 @@ en el servidor de SQL Server, y que alguien con permiso lo **registre** en SQL A
 **Bloqueado hoy por esos dos permisos** (ni RDP al servidor ni rol de SQL Agent) — ver
 `docs/backlog/2026-10-28_PENDIENTES_SARA.md`. Hace falta un DBA/admin que haga los dos pasos, o que le dé esos accesos
 a Datos para hacerlo directamente.
-
-## Mantener esto en sincronía
-
-`scripts/01_crear_esquema.sql` es el resultado de aplicar todas las migraciones. **Cada migración nueva (`000N`) tiene que
-reflejarse también ahí**, para que una instalación desde cero y una base migrada queden idénticas. Por eso las restricciones
-de las tablas renombradas conservan los nombres que dejan las migraciones (`pk_cotizaciones`, `pk_cotizacionPosiciones`…).
-
-## Verificar
-
-Contra una base vacía **local o de pruebas, nunca la compartida**:
-
-```powershell
-.\ejecutar-bd.ps1 -Servidor localhost -Base dbCotifly_prueba -CrearBase
-```
-
-El resumen final debe mostrar 21 tablas (las 20 del `01` y `CapturasIdempotentes` del `06`), 6 líneas de negocio, 5 mapeos SAP TM y
-2 roles. Al final de cada ajuste (`02` a `13`) hay una consulta para comprobar sus columnas. Para comprobar que quedó igual que
-una base migrada, aplicar en otra base vacía `db/migrations_mssql/0001` a `0010` más los ajustes `02` a `13` (y `pendientes/04` en
-las dos) y comparar columnas (por ejemplo con `INFORMATION_SCHEMA.COLUMNS`) entre las dos.

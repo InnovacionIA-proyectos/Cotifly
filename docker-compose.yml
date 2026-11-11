@@ -9,10 +9,10 @@
 #
 # Es un contenedor LOCAL propio (usuario `sa`, credenciales locales): no tiene relación con la
 # instancia corporativa `tbsdatacenter`/`dbTarifario_Nexo_Pruebas`.
-# La base `bd_cotifly` la crea e inicializa el servicio `db-init`, que corre db/ejecutar-bd.sh una
-# vez que SQL Server está sano: crea la base, el esquema dbo_cotifly y los seeders. Es seguro
-# correrlo en cada `docker compose up`: si el esquema ya existe, solo repasa los seeders
-# (idempotentes).
+# La base `bd_cotifly` la crea e inicializa el servicio `db-init`, que corre db/ejecutores/ejecutar-bd.sh
+# una vez que SQL Server está sano: crea la base, el esquema dbo_cotifly (db/esquema/) y los seeders. Es
+# seguro correrlo en cada `docker compose up`: si el esquema ya existe, solo corre los ajustes de
+# db/scripts/ y repasa los seeders (todos idempotentes).
 services:
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2019-latest
@@ -36,7 +36,8 @@ services:
 
   # Corre una vez y termina (restart: "no"): crea la base bd_cotifly, el esquema y los seeders.
   # La clave de `sa` la lee sqlcmd de SQLCMDPASSWORD. La carpeta db/ va montada de solo lectura.
-  # Opciones: -c crea la base si falta, -a salta el esquema si ya existe (así no falla al reiniciar), -y no pregunta.
+  # Opciones: -c crea la base si falta, -y no pregunta. El ejecutador salta solo el esquema si ya existe (así no falla al
+  # reiniciar); -a se conserva por compatibilidad.
   db-init:
     image: mcr.microsoft.com/mssql/server:2019-latest
     depends_on:
@@ -46,7 +47,7 @@ services:
       SQLCMDPASSWORD: ${MSSQL_SA_PASSWORD:-Bot_Cotizador_2019!}
     volumes:
       - ./db:/db:ro
-    entrypoint: ["/bin/bash", "/db/ejecutar-bd.sh", "-s", "sqlserver", "-d", "bd_cotifly", "-u", "sa", "-c", "-a", "-y"]
+    entrypoint: ["/bin/bash", "/db/ejecutores/ejecutar-bd.sh", "-s", "sqlserver", "-d", "bd_cotifly", "-u", "sa", "-c", "-a", "-y"]
     restart: "no"
 
 volumes:

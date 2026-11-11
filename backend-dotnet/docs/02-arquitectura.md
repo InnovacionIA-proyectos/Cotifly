@@ -190,7 +190,7 @@ flowchart LR
 - **Ruta:** origen y destino (id del municipio y copia del nombre, 0010), condiciones del contenedor, horas, peso, valor de la mercancía y del levante, línea de negocio, margen (`margenPoliticaSugerido`, `margenSAPSugerido`, `margenAplicado`, `metodoCalculo`) y los totales guardados: `costoFletesTotal`, `costoRetornoContenedorTotal`, `costoLevanteContenedorTotal`, `costoServiciosConexos`, `costoFinal` y `precioFinalLinea`. `rutaOrigenIndice` es la posición en el formulario o la fila del Excel (ex `filaOrigen`).
 - **Camión:** vehículo y carrocería (los define el cubicador o la Mesa de Costeo de Nexo, decisión 7), peso, `costoFlete`, `costoRetornoContenedor`, `costoLevanteContenedor` (copia del levante de la ruta, decisión 4), `lineaSolicitudNexoId`, `estadoCosteo` e `idRecomendacionVehiculo`.
 - **Precio y estado.** `precioFinal` de la cabecera = Σ `precioFinalLinea` (NULL mientras alguna ruta no tenga precio). El estado se guarda en el camión y la ruta y la cabecera lo resumen (`clsResumenEstadoCosteo`, "el más atrasado").
-- **Pendiente HU-023:** `db/scripts/02_alter_cubicador.sql` agregará las columnas del resultado de la cubicación y cambiará `idTipoMercancia` por `codigoMercancia`. Todavía no está en esta rama.
+- ~~**Pendiente HU-023:** `db/scripts/02_alter_cubicador.sql` agregará las columnas del resultado de la cubicación y cambiará `idTipoMercancia` por `codigoMercancia`. Todavía no está en esta rama.~~ Hecho: el `02` está aplicado y su cambio está en `db/esquema/cotifly_esquema.sql` (HU-024.2, #203).
 
 Base de datos, scripts de esquema y permisos: [03-infraestructura](03-infraestructura.md#33-base-de-datos) y [ADR-008](../specs/decisiones/ADR-008-persistencia-ef-core-database-first.md).
 

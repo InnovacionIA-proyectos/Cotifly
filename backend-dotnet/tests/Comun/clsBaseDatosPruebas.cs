@@ -8,7 +8,7 @@ namespace Cotifly.Pruebas.Comun;
 /// SQL Server 2019 en Testcontainers con el esquema real (ADR-008, ADR-010):
 /// crea <c>dbTarifario_Nexo_Pruebas</c>, aplica <c>db/migrations_mssql/0001</c> a <c>0010</c>, <c>db/scripts/02_alter_cubicador.sql</c>, el <c>03</c> (HU-014, #188), la propuesta <c>db/scripts/04</c> (HU-023.5), el <c>05</c> (#188), el <c>06</c> (#191, Idempotency-Key), el <c>07</c>, el <c>08</c> (HU-014.3), el <c>09</c> (HU-018.1), el <c>10</c> (HU-028.1, #183), el <c>11</c> (HU-030.1, #184) y los siguientes hasta el <c>20</c> (HU-045, #264) partidos por <c>GO</c> (HU-021: el 0009
 /// reestructura las cotizaciones en rutas y camiones y el 0010 agrega los nombres de municipio; las pruebas de esquema verifican además
-/// que <c>db/scripts/01_crear_esquema.sql</c> deja el mismo esquema, <see cref="CrearBaseInstaladaAsync"/>), y crea una <c>dbsolucionesti</c> falsa con las tres tablas del almacén corporativo y sus tipos reales:
+/// que <c>db/esquema/cotifly_esquema.sql</c> deja el mismo esquema, <see cref="CrearBaseInstaladaAsync"/>), y crea una <c>dbsolucionesti</c> falsa con las tres tablas del almacén corporativo y sus tipos reales:
 /// <c>dbo.tblSAPUsuariosApp</c> (ID NUMERIC, incluida la columna CLAVE, que el backend nunca debe leer),
 /// <c>dbo.tblSAPUsuarioRoles</c> (IDUSUARIO e IDROLES INT, sin columna ID: Cotifly no la lee, #172) y <c>dbo.tblSAPRoles</c>, los tipos que
 /// Nexo verificó en <c>dbSolucionesTI_Prueba</c> (la base de identidad de QA, #172; aquí conserva el nombre <c>dbsolucionesti</c>). Mapea los roles internos de
@@ -97,6 +97,9 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
 
     /// <summary>HU-045.1/HU-045.2 (#263, #264): el 20 del seguro de la mercancía (relativa a <c>migrations_mssql</c>).</summary>
     public const string Script20 = "../scripts_bd/20_seguro_mercancia.sql";
+
+    /// <summary>HU-024.2 (#203): seeder de la tasa inicial del seguro (la carga que antes hacía el 20), relativo a <c>scripts_bd</c>.</summary>
+    public const string SeederTarifaSeguro = "seeder/04_tarifa_seguro.sql";
 
     /// <summary>
     /// HU-042 (#243, #247): scripts hasta el 16 incluido (sin el 17, el 18, el 19, el 07, el 08 ni el 15). <c>Scripts[ScriptsHasta16 - 1]</c>
@@ -227,7 +230,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     public const int ScriptsAntesDeHu021 = 8;
 
     /// <summary>
-    /// HU-042.2 (#243): collation con la que el ejecutador crea la base real (<c>db/ejecutar-bd.*</c>), distinta de la del servidor del
+    /// HU-042.2 (#243): collation con la que el ejecutador crea la base real (<c>db/ejecutores/ejecutar-bd.*</c>), distinta de la del servidor del
     /// contenedor (<c>SQL_Latin1_General_CP1_CI_AS</c>): con ella, una tabla temporal sin <c>COLLATE DATABASE_DEFAULT</c> choca con las tablas.
     /// </summary>
     public const string CollationCotifly = "Latin1_General_100_CI_AS_SC_UTF8";
@@ -235,8 +238,8 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     /// <summary>HU-042.2 (#243): nombre de la base falsa del DW con <c>dbo.DimBPSolicitante</c>.</summary>
     public const string NombreBaseDwOperaciones = "DWCubosOperacionesEBS";
 
-    /// <summary>Script de instalación desde cero (<c>db/scripts/01_crear_esquema.sql</c>).</summary>
-    public const string ScriptInstalacion = "01_crear_esquema.sql";
+    /// <summary>Script de instalación desde cero (<c>db/esquema/cotifly_esquema.sql</c>, HU-024.2 #203), relativo a <c>scripts_bd</c>.</summary>
+    public const string ScriptInstalacion = "esquema/cotifly_esquema.sql";
 
     /// <summary>IDROLES externo de prueba mapeado a <c>comercial</c>.</summary>
     public const int RolExternoComercial = 32;
@@ -270,7 +273,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     private string? _cadenaSin0006;
 
     /// <summary>
-    /// Si es <c>true</c>, la base principal se arma con <c>db/scripts/01_crear_esquema.sql</c> y los seeders de <c>db/seeder/</c> (instalación
+    /// Si es <c>true</c>, la base principal se arma con <c>db/esquema/cotifly_esquema.sql</c>, los ajustes y los seeders de <c>db/seeder/</c> (instalación
     /// desde cero, como la base compartida desde el 2026-10-08) en vez de las migraciones 0001 a 0010 (HU-021.12, #139).
     /// </summary>
     public bool InstalacionDesdeCero { get; init; }
@@ -290,7 +293,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     public static string RutaScriptInstalacion(string nombre) => Path.Combine(AppContext.BaseDirectory, "scripts_bd", nombre);
 
     /// <summary>
-    /// Base auxiliar nueva instalada desde cero con <c>db/scripts/01_crear_esquema.sql</c> (sin migraciones) y, si
+    /// Base auxiliar nueva instalada desde cero con <c>db/esquema/cotifly_esquema.sql</c> y los ajustes, como el ejecutador (sin migraciones) y, si
     /// <paramref name="conSeeders"/>, los seeders de <c>db/seeder/</c>. Usarla con <c>await using</c>.
     /// </summary>
     public async Task<clsBaseAuxiliarPruebas> CrearBaseInstaladaAsync(string prefijo, bool conSeeders = false)
@@ -304,7 +307,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             {
                 await CrearBaseAsync(CadenaMaster, nombre);
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion(ScriptInstalacion));
-                // HU-023.3: la instalación desde cero corre el 02 después del 01 (como el ejecutador).
+                // HU-023.3: la instalación desde cero corre los ajustes después del esquema (como el ejecutador); sobre él no cambian nada.
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("02_alter_cubicador.sql"));
                 // HU-014 (#188): el 03 va después del 02 por nombre, como en el ejecutador.
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("03_orden_vehiculo_y_conexo_catalogo.sql"));
@@ -316,7 +319,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("06_idempotencia_captura.sql"));
                 // HU-023 (#176): el 07 corre después del 02 (el ejecutador lo toma solo).
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("07_motivo_busqueda_agotada.sql"));
-                // HU-014.3 (#152): el 08 va después del 07; sobre el 01 actual no hace nada (ya no crea las vistas).
+                // HU-014.3 (#152): el 08 va después del 07; sobre el esquema no hace nada (no crea las vistas).
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("08_retirar_vistas_actividad.sql"));
                 // HU-018.1 (#155): el 09 (scorePrioridad) va después del 08 por nombre, como en el ejecutador.
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("09_score_prioridad.sql"));
@@ -342,6 +345,9 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("19_precio_venta_conexos.sql"));
                 // HU-045.1/HU-045.2 (#263, #264): el 20 (seguro de la mercancía) va después del 19 por nombre.
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("20_seguro_mercancia.sql"));
+                // HU-024.2 (#203): el 21 (política de seguros) y el 22 (origen de la lectura del Excel); el esquema ya los trae.
+                await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("21_politica_seguros.sql"));
+                await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("22_origen_lectura_licitacion.sql"));
                 if (conSeeders)
                 {
                     foreach (var seeder in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "scripts_bd", "seeder"), "*.sql").Order(StringComparer.Ordinal))
@@ -375,9 +381,10 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
         await CrearBaseAsync(CadenaMaster, NombreBase);
         if (InstalacionDesdeCero)
         {
-            // HU-021.12 (#139, regla de las pruebas de esquema): el esquema vigente de la base compartida, sin migraciones.
+            // HU-021.12 (#139, regla de las pruebas de esquema): el esquema vigente de la base compartida, sin migraciones
+            // (db/esquema/cotifly_esquema.sql desde HU-024.2, #203), los ajustes y los seeders, como el ejecutador.
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion(ScriptInstalacion));
-            // HU-023.3 (#158): el 02 del cubicador va después del 01, como lo corre el ejecutador.
+            // HU-023.3 (#158): el 02 del cubicador va después del esquema, como lo corre el ejecutador.
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("02_alter_cubicador.sql"));
             // HU-014 (#188): el 03, la propuesta pendiente 04 (HU-023.5, #160) y el 05: el backend mapea sus columnas.
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("03_orden_vehiculo_y_conexo_catalogo.sql"));
@@ -398,6 +405,8 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("18_sap_mapeo_fk_margenes_politica.sql"));
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("19_precio_venta_conexos.sql"));
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("20_seguro_mercancia.sql"));
+            await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("21_politica_seguros.sql"));
+            await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("22_origen_lectura_licitacion.sql"));
             foreach (var seeder in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "scripts_bd", "seeder"), "*.sql").Order(StringComparer.Ordinal))
             {
                 await EjecutarScriptAsync(CadenaCotifly, seeder);
@@ -409,6 +418,10 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             {
                 await EjecutarScriptAsync(CadenaCotifly, RutaScript(script));
             }
+
+            // HU-024.2 (#203): la tasa inicial del seguro ya no la siembra el 20 sino el seeder 04 (el backend la necesita para
+            // calcular el seguro de la ruta). Es el único seeder que hace falta aquí: las líneas, el mapeo y los roles los traen 0001 y 0002.
+            await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion(SeederTarifaSeguro));
         }
 
         await CrearBaseAsync(CadenaMaster, NombreBaseIdentidad);

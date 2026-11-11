@@ -12,8 +12,8 @@ namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
 /// Campaña de QA de HU-021 + HU-023 (rama de integración <c>hu-023-integracion</c>): un E2E por flujo, por HTTP contra la API real en
-/// memoria, sobre la base instalada DESDE CERO (<c>db/scripts/01_crear_esquema.sql</c> + <c>02_alter_cubicador.sql</c> +
-/// <c>pendientes/04_cubicacion_segundo_plano.sql</c>), con el Nexo, el cubicador, la TRM, el relay SMTP y el modelo falsos (nunca los
+/// memoria, sobre la base instalada DESDE CERO (<c>db/esquema/cotifly_esquema.sql</c>, los ajustes de <c>db/scripts/</c> y los
+/// seeders), con el Nexo, el cubicador, la TRM, el relay SMTP y el modelo falsos (nunca los
 /// reales). Cada flujo verifica en la base las filas que deja.
 /// </summary>
 [Collection(clsColeccionApiWebInstalada.Nombre)]

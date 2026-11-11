@@ -87,8 +87,8 @@ scripts/          Utilidades del repositorio (verificador de enlaces de los .md)
   NEXO hasta que la Mesa entregue la cotización (HU-033, ADR-023), el asistente por folio y los tableros de métricas.
 - **Despliegue:** el backend .NET todavía no está en producción. El staging en Dokploy (HU-006.6) y la ronda de regresión
   manual de QA están pendientes ([`DEPLOY.md`](DEPLOY.md) §1).
-- **Base de datos:** el esquema vigente está en la base compartida de pruebas. Los scripts pendientes de aprobación del DBA
-  están listados en [`db/README.md`](db/README.md#estado).
+- **Base de datos:** el esquema vigente está en la base compartida de pruebas, con todos los ajustes aplicados. El estado de
+  cada script está en [`db/README.md`](db/README.md#ajustes-al-esquema-scripts02-a-22).
 - **Pendientes con terceros:** las peticiones abiertas a NEXO y al cubicador están en
   [`docs/conexion_nexo/2026-10-08_CONSIDERACIONES_PARA_NEXO.md`](docs/conexion_nexo/2026-10-08_CONSIDERACIONES_PARA_NEXO.md).
 - **Bot anterior:** el bot en Python (orquestador, servidor MCP y Google Chat) se retiró del repositorio en HU-022.1

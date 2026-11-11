@@ -30,6 +30,7 @@ on:
     paths:
       - 'backend-dotnet/**'
       - 'db/migrations_mssql/**'
+      - 'db/esquema/**'
       - 'db/scripts/**'
       - 'db/seeder/**'
       - '.github/workflows/backend-dotnet.yml'
@@ -38,6 +39,7 @@ on:
     paths:
       - 'backend-dotnet/**'
       - 'db/migrations_mssql/**'
+      - 'db/esquema/**'
       - 'db/scripts/**'
       - 'db/seeder/**'
       - '.github/workflows/backend-dotnet.yml'

@@ -1,13 +1,13 @@
 # Diccionario de datos — `dbo_cotifly` (SQL Server)
 
-> **Estado:** vigente desde HU-021 · **Dueño:** Duban Guerra (backend) y scalderon-bs (datos) · **Actualizado:** 2026-11-02 (`TarifasSeguro` y el seguro de la ruta, HU-045.1 #263; política de seguros y `codigoServicio`, HU-046.2 #268)
+> **Estado:** vigente desde HU-021 · **Dueño:** Duban Guerra (backend) y scalderon-bs (datos) · **Actualizado:** 2026-11-10 (HU-024.2, #203: todas las columnas del esquema consolidado `db/esquema/cotifly_esquema.sql`, con los ajustes `02` a `22`)
 
 Qué significa cada columna de las tablas de cotizaciones, quién la escribe y quién la lee. Los tipos, nulos, restricciones e
 índices están en [`ESQUEMA_OBJETIVO_SQLSERVER.md`](ESQUEMA_OBJETIVO_SQLSERVER.md) (Parte A, con el diagrama ER); la decisión
 de diseño, en [ADR-019](../../backend-dotnet/specs/decisiones/ADR-019-reestructuracion-rutas-y-camiones.md). Fuente de verdad:
-`db/scripts/01_crear_esquema.sql` (= `0001` a `0010`), los ajustes `db/scripts/02` a `21` y `db/scripts/pendientes/04`, y el
-modelo EF
-(`backend-dotnet/src/Cotifly.Infraestructura/Comun/Persistence/Configurations/`).
+`db/esquema/cotifly_esquema.sql` (el esquema completo: `0001` a `0010` más los ajustes `db/scripts/02` a `22`) y el modelo EF
+(`backend-dotnet/src/Cotifly.Infraestructura/Comun/Persistence/Configurations/`). Entre paréntesis, el ajuste de
+`db/scripts/` que trajo la columna a las bases que ya existían.
 
 ## 1. Para qué sirve esta base
 
@@ -65,6 +65,7 @@ la línea; ahora esos datos son de la ruta.
 | `textosCotizacion` | JSON con asunto e introducción del PDF (IA con respaldo estándar) | Redacción (ADR-018) | PDF, correo |
 | `estadoEnvio` | `sin_enviar`, `enviada`, `reenviada` | Correo | Regla del PDF, métricas |
 | `ganada`, `motivoRechazo`, `marcadoAt` | Resultado del negocio | Seguimiento | Métricas |
+| `finalizadaAt`, `finalizadaPor` | Cuándo y quién (`UsuariosWeb.id`, FK `fk_cotizaciones_finalizadaPor`) finalizó la cotización: el comercial aceptó el precio y desde ahí queda congelado (margen, conexos, re-solicitud y edición piden una versión nueva). Las dos NULL (sin finalizar) o las dos con valor (CHECK `ck_cotizaciones_finalizada`). Van aparte de `estadoCosteo`, que el polling recalcula desde Nexo (script `14`, HU-036 #205) | `POST /web/cotizaciones/{folio}/finalizar` | Candados de edición, PDF, correo, resultado |
 | `sincronizacionResultadoNexo` | Estado del envío del resultado a Nexo: `pendiente` (marcado antes de la entrega en Nexo), `sincronizado` o `no_sincronizable`. NULL = sin resultado o anterior al script `13` (HU-033) | Resultado, polling del costeo (`clsSincronizacionResultadoNexoService`) | API, polling |
 | `comentarioResultadoPendiente` | Comentario que se enviará a Nexo con el resultado pendiente (hasta 500, límite de Nexo; `13`) | Resultado | Polling (envío diferido) |
 | `resultadoSincronizadoAt`, `errorSincronizacionResultado`, `intentosSincronizacionResultado` | Cuándo Nexo aceptó el resultado, el último error (o por qué ya no se puede enviar) y los intentos fallidos (`13`) | Polling del costeo | API, polling (reintentos hasta `CosteoNexo:MaximoFallosSincronizacionResultado`) |
@@ -83,12 +84,13 @@ camiones, los totales de costo, el margen y el precio.
 
 | Columna | Qué es | Quién la escribe | Quién la lee |
 |---|---|---|---|
-| `cotizacionSolicitudId`, `orden` | Cabecera y posición de la ruta (1..N) | Captura | API (`linea_orden`), PDF |
+| `id` | Id interno de la ruta | Captura | Camiones, mercancías, conexos, `MargenAjustes` |
+| `cotizacionSolicitudId`, `orden` | Cabecera y posición de la ruta (1..N, única por cabecera) | Captura | API (`linea_orden`), PDF |
 | `rutaOrigenIndice` | Posición en el formulario o fila del Excel (base 0) | Captura | Reporte de errores de la licitación, Excel exportado |
 | `lineaNegocioId` | Línea de negocio de la ruta (`MargenesPolitica`). Cada ruta puede tener la suya | Captura | Margen de política, `lineaNegocio` de cada camión en Nexo, métricas por ruta |
 | `origenMunicipioId`, `destinoMunicipioId` | Id del municipio en Nexo (`tbl_municipios`), obligatorio en toda captura nueva (decisión 2) | Captura (catálogo `GET /web/municipios`) | Envío a Nexo |
 | `origenNombre`, `destinoNombre` | Copia del nombre del catálogo, para mostrar y para que la cotización no cambie si cambia el catálogo (0010) | Captura | PDF, emparejamiento, asistente |
-| `ciudadDevolucionMunicipioId` / `Nombre`, `ciudadLevanteMunicipioId` / `Nombre` | Ciudades del contenedor, id + nombre (decisión 2) | Captura | Nexo, PDF |
+| `ciudadDevolucionMunicipioId`, `ciudadDevolucionNombre`, `ciudadLevanteMunicipioId`, `ciudadLevanteNombre` | Ciudades del contenedor, id + nombre (decisión 2) | Captura | Nexo, PDF |
 | `tipologia`, `claseViaje`, `claseContenedor`, `exclusivo`, `consolidado`, `retornaContenedor`, `levanteContenedorDiferente` | Condiciones del viaje y del contenedor (catálogos de Nexo) | Captura | Envío a Nexo |
 | `horasCargue`, `horasDescargue` | Horas de la ruta (0 a 240) | Captura | Nexo |
 | `pesoKg` | Peso total declarado de la ruta | Captura | Cubicador, respaldo de un camión |
@@ -101,13 +103,14 @@ camiones, los totales de costo, el margen y el precio.
 | `margenPoliticaSugerido`, `margenSAPSugerido` | Margen sugerido por la política de la línea y por SAP TM (fracción). El vigente es el de SAP si existe | Envío (resolución del margen) | Ajuste de margen, asistente |
 | `margenAplicado`, `origenMargen`, `metodoCalculo` | Margen con el que se calcula el precio, de dónde salió (`sap_tm`, `politica_linea`, `negociado`) y el método (`margen` o `markup`) | Envío; ajuste por ruta (decisiones 6 y 9) | Precio, métricas |
 | `precioFinalLinea` | `costoFinal` con el margen, en la moneda de la cabecera | Dominio | PDF, cabecera, métricas |
-| `incluyeSeguro` | Casilla de la ruta: se cobra el seguro de la mercancía (script `20`, HU-045.1 #263). `0` en las rutas anteriores al `20` | HU-045.2 (pendiente) | Precio |
-| `tasaSeguroAplicada` | Copia de la tasa activa de `TarifasSeguro` con la que se calculó el seguro (fracción: 0.003450 = 0,345 %). Un cambio de tasa no mueve las cotizaciones hechas | HU-045.2 (pendiente) | Precio, PDF |
-| `costoSeguro` | `valorMercancia` × `tasaSeguroAplicada`. Va aparte: no entra en `costoFinal` ni lleva margen. NULL si la ruta no lleva seguro o no tiene `valorMercancia` | HU-045.2 (pendiente) | Precio, PDF |
+| `incluyeSeguro` | Casilla de la ruta: se cobra el seguro de la mercancía (script `20`, HU-045.1 #263). `0` en las rutas anteriores al `20` | Seguro de la ruta (`PUT /web/cotizaciones/{folio}/costeo/seguro`, HU-045.2 #264) | Precio |
+| `tasaSeguroAplicada` | Copia de la tasa activa de `TarifasSeguro` con la que se calculó el seguro (fracción: 0.003450 = 0,345 %). Un cambio de tasa no mueve las cotizaciones hechas | Seguro de la ruta (HU-045.2) | Precio, PDF |
+| `costoSeguro` | `valorMercancia` × `tasaSeguroAplicada`. Va aparte: no entra en `costoFinal` ni lleva margen. NULL si la ruta no lleva seguro o no tiene `valorMercancia` | Seguro de la ruta (HU-045.2) | Precio, PDF |
 | `estadoCosteo` | Resumen del estado de sus camiones (8 estados; `rechazada` si lo están todos sus camiones vigentes, script `10`) | Dominio | Cabecera, API |
+| `createdAt`, `updatedAt` | Marcas de tiempo; `createdAt` también ordena la cola de la cubicación | Interceptor de EF | Listados, worker de cubicación |
 | `tipoVehiculoElegido`, `carroceriaElegida` | Vehículo que eligió el comercial en la captura: respaldo del cubicador (script `12`, HU-032, ADR-022). Se conserva en la edición y la re-solicitud aunque el cubicador o la Mesa cambien el del camión. NULL = no eligió | Captura, edición | Planificador de camiones (respaldo), API |
 | `idRecomendacion`, `resultadoCubicacion`, `motivoSinSeleccion`, `condicionada` | Resultado de la cubicación de la ruta (script `02`): la corrida del cubicador, `ASIGNADO` o `SIN_SELECCION_AUTOMATICA`, el motivo (5 valores, con `BUSQUEDA_AGOTADA` del `07`) y si lleva mercancías condicionadas | Captura, recálculo | API, Nexo |
-| `estadoCubicacion`, `cubicacionIntentos`, `cubicacionDisponibleAt`, `errorCubicacion`, `avisosCubicacion` | Cola de la cubicación en segundo plano de la licitación (`pendientes/04`, HU-023.5): `pendiente`/`cubicada`/`fallida`, intentos, desde cuándo se puede tomar, último error y avisos del cubicador (JSON) | Captura de la licitación, worker de cubicación | Worker, API |
+| `estadoCubicacion`, `cubicacionIntentos`, `cubicacionDisponibleAt`, `errorCubicacion`, `avisosCubicacion` | Cola de la cubicación en segundo plano de la licitación (script `04`, HU-023.5): `pendiente`/`cubicada`/`fallida` (NULL = se cubicó al guardarla), intentos, desde cuándo se puede tomar, último error y avisos del cubicador (JSON) | Captura de la licitación, worker de cubicación | Worker, API |
 
 ## 5. `CotizacionVehiculosLineaSolicitud` — el camión
 
@@ -115,6 +118,7 @@ Una fila por camión. Si el cubicador recomienda 7 camiones para una ruta, son 7
 
 | Columna | Qué es | Quién la escribe | Quién la lee |
 |---|---|---|---|
+| `id` | Id interno del camión | Captura | Agregado |
 | `lineaSolicitudId` | Ruta del camión | Captura | Agregado |
 | `idRecomendacionVehiculo` | Fila de la recomendación del cubicador; NULL si no salió de una | Captura (cubicador) | Trazabilidad con el cubicador |
 | `tipoVehiculo`, `carroceria` | Código del vehículo (por ejemplo `3S3`) y carrocería que VIAJA: el del cubicador, el elegido por el comercial cuando la ruta va al respaldo (HU-032, reemplaza la decisión 7) o el que puso la Mesa de Costeo de Nexo. NULL = sin vehículo (lo resuelve la Mesa) | Captura; polling (si la Mesa los pone o cambia) | Envío a Nexo, emparejamiento, PDF |
@@ -126,19 +130,21 @@ Una fila por camión. Si el cubicador recomienda 7 camiones para una ruta, son 7
 | `motivoRechazo`, `rechazadaAt` | Motivo del rechazo que mandó Nexo y cuándo lo vio Cotifly (script `10`). Solo con el camión `rechazada` | Polling | API, asistente |
 | `ordenVehiculo` | Orden del camión en su ruta, 1..n (script `03`); el primero lleva los conexos en Nexo. NULL en filas anteriores (se ordenan por `createdAt`) | Captura, recálculo, re-solicitud, `-vN` | Orden de los camiones, envío de conexos |
 | `volumenTotalM3`, `porcentajeLlenadoVolumen`, `porcentajeLlenadoPeso` | Volumen y llenado del camión según el cubicador (script `02`) | Captura (cubicador) | API, PDF |
-| `createdAt` | Marca de tiempo; antes de `ordenVehiculo` también llevaba el orden (`ahora + orden × 1 ms`) | Interceptor de EF | Orden de las filas anteriores al `03` |
+| `createdAt`, `updatedAt` | Marcas de tiempo; antes de `ordenVehiculo`, `createdAt` también llevaba el orden (`ahora + orden × 1 ms`) | Interceptor de EF | Orden de las filas anteriores al `03` |
 
 ## 6. `CotizacionMercancias` — lo que se va a mandar (ex `CotizacionPosiciones`)
 
 | Columna | Qué es | Quién la escribe | Quién la lee |
 |---|---|---|---|
-| `lineaSolicitudId`, `orden` | Ruta y posición | Captura | Agregado |
+| `id` | Id interno | Captura | Agregado |
+| `lineaSolicitudId`, `orden` | Ruta y posición (única por ruta) | Captura | Agregado |
 | `codigoMercancia` | Código del tipo de mercancía del catálogo del cubicador (`GET /web/tipos-mercancia`), por ejemplo `BEBIDAS`. Reemplaza a `idTipoMercancia` desde el `02`. La captura lo exige solo en las mercancías cubicables (con medidas) con el cubicador configurado; NULL en las no cubicables (HU-032) | Captura | Cubicador |
 | `nombreMercancia` | Copia del nombre del catálogo (si el catálogo no responde, el que mandó el cliente) | Captura | PDF, asistente |
 | `cantidad`, `largoCm`, `anchoCm`, `altoCm`, `pesoKg` | Unidades y medidas. Desde el script `12` (HU-032) las tres medidas pueden ser NULL juntas: mercancía "no cubicable" (solo descripción, cantidad o peso) | Captura | Cubicador; posiciones hacia Nexo cuando la ruta tiene un solo camión |
+| `createdAt` | Marca de tiempo | Interceptor de EF | — |
 
-> El detalle de cada ajuste (`02`, `03`, `pendientes/04`, `05`, `10`, `11`, `12`, `13`, `20`, `21`) está en la cabecera de su script en
-> `db/scripts/`; los tipos y restricciones, en `ESQUEMA_OBJETIVO_SQLSERVER.md` §A.4.
+> El detalle de cada ajuste (`02` a `22`) está en la cabecera de su script en `db/scripts/`; los tipos y restricciones, en
+> `ESQUEMA_OBJETIVO_SQLSERVER.md` §A.4 y en `db/esquema/cotifly_esquema.sql`.
 
 ## 7. `CotizacionServiciosConexos` — conexos de la ruta
 
@@ -146,6 +152,7 @@ Son de la ruta, no del camión: la cantidad ya dice cuántos. Reemplazan el JSON
 
 | Columna | Qué es | Quién la escribe | Quién la lee |
 |---|---|---|---|
+| `id` | Id interno | Captura | Agregado |
 | `lineaSolicitudId` | Ruta | Captura, ajustes | Agregado |
 | `idServicioConexo` | Id del catálogo de Nexo (capturados o copiados a una `-vN`) o id de la fila de la cotización de Nexo (agregados o importados desde Nexo). Único por ruta | Captura, `POST`/`PUT .../servicios-conexos`, polling (#124) | Envío diferido a Nexo (`clsResolutorConexosCatalogo`) |
 | `nombreServicioConexo` | Copia del nombre (0010) | Igual | PDF |
@@ -155,28 +162,96 @@ Son de la ruta, no del camión: la cantidad ya dice cuántos. Reemplazan el JSON
 | `cantidad` | Cantidad | Captura, `PUT` | Totales, Nexo |
 | `idServicioConexoCatalogo` | Id del catálogo de Nexo del conexo (script `03`, HU-014 #188). NULL en filas anteriores (se resuelven por id o por nombre) | Captura, importación desde Nexo, `-vN` | `clsResolutorConexosCatalogo` |
 | `categoriaServicioConexo` | Categoría del catálogo de Nexo (`logistico`, `adicional`...; script `05`). NULL en filas anteriores (sale del catálogo al armar el costeo) | Captura, importación, `-vN` | Costeo |
+| `createdAt`, `updatedAt` | Marcas de tiempo | Interceptor de EF | — |
 
 Quitar un conexo borra su fila (no hay columna `incluido`). El estado del envío a Nexo (`pendiente`, `enviado`, `incierto`,
 `fallido_definitivo`) no tiene columna: se lee de los registros `conexos_envio_nexo` de `EventosHerramienta`.
 
-## 8. Otras tablas
+## 8. Otras tablas de la cotización
 
-| Tabla | Qué guarda |
+### `CotizacionArchivosLicitacion` — el Excel del pliego
+
+Una fila por licitación (la PK es la cabecera).
+
+| Columna | Qué es |
 |---|---|
-| `MargenAjustes` | Cada ajuste de margen de un comercial: `margenPolitica` (el sugerido de la ruta), `margenAplicado`, `diferencia`, `motivo` y la ruta (`lineaSolicitudId`). Base de las métricas por ruta |
-| `CotizacionArchivosLicitacion` | El Excel original del pliego (hasta 10 MB), con su SHA-256 y la hoja usada |
-| `CotizacionPdfsHistorial` | Los PDF anteriores de una cotización y por qué se invalidaron (`ajuste_margen`, `servicios_conexos`, `textos`, `re_solicitud`) |
-| `Correos`, `CorreoDestinatarios` | Cada envío del PDF al cliente, su estado y sus destinatarios (`para`, `cc`). Desde el script `13` (HU-033, MailSender): `estado` `encolado` \| `enviando` \| `enviado` \| `fallido` (CHECK), `idMailSender` (id del correo en MailSender, único), `redirigidoA` (buzón de pruebas fuera de producción; los destinatarios guardados siguen siendo los originales), `intentosEntrega`, `enviadoAt`, `estadoActualizadoAt`, `siguienteConsultaAt` (agenda del worker; NULL = estado final) y `encoladoAt` (última aceptación de MailSender) |
-| `CapturasIdempotentes` | Claves `Idempotency-Key` persistentes (script `06`, #191): una fila por clave, comercial y operación (`capturar_costeo`, `conexos`, `re_solicitar_costeo`, `editar_solicitud`), con la huella del cuerpo, el estado (`en_curso`, `terminada`, `libre`), la respuesta guardada y, en la captura, el folio y el `solicitudNexoId` para que un reintento no vuelva a crear la solicitud en Nexo. Vencen a las 24 h; la API las purga |
-| `EventosHerramienta` | Auditoría de herramientas y registros de proceso: `conexos_envio_nexo`, `conexos_pendientes_nexo`, `cambiar_servicios_conexos` (JSON en `input`/`outputResumen`, sin montos al asistente) |
-| `EventosConversacion`, `Sesiones` | Historial y estado del asistente por folio |
-| `UsuariosWeb`, `Roles`, `UsuariosRoles`, `TokensRefresco`, `TokensRevocados` | Identidad: usuarios de ClientePro, rol interno, refresh tokens (hash) y access tokens revocados |
-| `MargenesPolitica` | Líneas de negocio, margen de política y nombre equivalente en Nexo (`mapeoLineasNexo`). Desde el `0009`: Nacional, Distribucion, Importacion, Exportacion, Internacional y DevolucionContenedor (salen ITR, Almacenamiento y Almacenamiento3PL) |
-| `TarifasSeguro` | La tasa del seguro de la mercancía con su historia (script `20`, HU-045.1 #263): `tasa` (fracción; inicial 0.003450 = 0,345 %), `vigenteDesde`, `isActive`. Una sola activa; las viejas se desactivan, no se borran. Se cambia con `db/scripts/operacion/cambiar_tasa_seguro.sql` |
-| `PoliticaSeguroTramos` | Tramos de la política de seguros por valor de la mercancía de la ruta (script `21`, HU-046.2 #268): `valorDesde` exclusivo, `valorHasta` incluido (NULL = sin tope), en pesos fijos. Los activos son contiguos y sin solapes (lo valida el script) |
-| `PoliticaSeguroMedidas` | Catálogo de medidas de la política: `codigo` (`esquema_basico`, `gps`, `candado_satelital`, `restriccion_nocturna`, `acompanante_vehicular`, `acompanante_total`, `incluir_seguro`), `nombre`, `esCobrable` (solo los acompañantes) |
-| `PoliticaSeguroTramoMedidas` | Qué medida aplica en cada tramo y con qué `nivel` (`recomendada` u `obligatoria`). Solo los acompañantes son obligatorios |
-| `PoliticaSeguroMedidaConexos` | Códigos del catálogo de Nexo que cumplen cada medida; la obligación se cumple con cualquiera. `acompanante_vehicular`: los 5 acompañantes; `acompanante_total`: los 3 `AVT_*` |
-| `SapMapeoTrqType` | TrqType de SAP TM → línea de negocio. Clave `(trqType, salesOrg)`; `salesOrg=''` es el comodín (gana la fila específica si existe, `salesOrg DESC`). `lineaNegocioId` (FK a `MargenesPolitica.id`, script `18`, HU-042.4, #247): hoy conviven con `lineaNegocio` (texto, el original) mientras el backend se adapta a leer por id en vez de por texto — `lineaNegocio` se retira en un script futuro. Falta el TrqType de `DevolucionContenedor` (lo da negocio o SAP) |
-| `SapMargenCliente` | Copia local del margen recomendado de SAP TM (`RentabClienteSet`), sincronizada a diario por un job fuera de `backend-dotnet` (HU-042.1, #242; no la lee el backend todavía, eso es HU-042.2, #243). Clave de negocio única `(salesOrgId, trqType, bpSap)` + `id` propio; `bpSap` es el BP del cliente en SAP (`OrderPartyId`); `nit` ya resuelto por BP contra el DW `DWCubosOperacionesEBS.dbo.DimBPSolicitante`, para cruzar directo con `nitCliente` de `CotizacionesSolicitud` sin que el backend tenga que resolverlo aparte; `margenRecomendado` es el valor completo que manda SAP; `activo` es soft delete (si SAP deja de traer un combo, se desactiva, no se borra) |
-| `SapMargenSyncLog` | Log de corridas del job de `SapMargenCliente` (HU-042.1, #242): append-only, una fila por ejecución (no por registro de SAP), con cuándo empezó/terminó, cuántas filas insertó/actualizó/desactivó, y el resultado (`ok`/`error`/`omitido`) |
+| `cotizacionId` | Cabecera de la licitación (PK y FK a `CotizacionesSolicitud`) |
+| `nombreArchivo`, `tipoContenido`, `hoja` | Nombre del archivo, tipo MIME y hoja que se leyó |
+| `tamanoBytes`, `sha256`, `contenido` | Tamaño (1 byte a 10 MB, el límite de Nexo; CHECK con el largo real del contenido), huella y el archivo original |
+| `origenLectura` | Cómo se leyó el Excel: `analizar_excel` (cada fila es una fila de la hoja) o `leer_estructura` (la estructura que reorganizó Nexo: la exportación arma la hoja "Licitación" y no toca el original). NULL = `analizar_excel`. CHECK de valores (script `22`, HU-044.7 #290). Sin collation explícita: toma la de la base |
+| `createdAt` | Cuándo se guardó |
+
+### `CotizacionPdfsHistorial`, `MargenAjustes`, `Correos` y `CorreoDestinatarios`
+
+| Tabla.columna | Qué es |
+|---|---|
+| `CotizacionPdfsHistorial.id`, `cotizacionId` | Fila del historial y su cabecera |
+| `CotizacionPdfsHistorial.pdfPath`, `motivo` | PDF anterior (el archivo no se borra) y por qué se invalidó: `ajuste_margen`, `servicios_conexos`, `textos`, `re_solicitud` |
+| `CotizacionPdfsHistorial.usuarioId`, `createdAt` | Quién lo invalidó y cuándo |
+| `MargenAjustes.id`, `cotizacionId`, `folio`, `lineaSolicitudId` | El ajuste, su cabecera (y su folio, copiado) y la ruta ajustada |
+| `MargenAjustes.margenPolitica`, `margenAplicado`, `diferencia`, `motivo` | Margen sugerido de la ruta, el que puso el comercial, la diferencia y el motivo. Base de las métricas por ruta |
+| `MargenAjustes.usuarioId`, `createdAt` | Quién y cuándo |
+| `Correos.id`, `cotizacionId`, `asunto`, `messageId` | Un envío del PDF al cliente, su cabecera, el asunto y el id del mensaje |
+| `Correos.confirmadoPor` | Usuario que confirmó el envío |
+| `Correos.estado`, `error` | `encolado`, `enviando`, `enviado` o `fallido` (CHECK `ck_correos_estado`, script `13`) y el último error |
+| `Correos.idMailSender` | Id del correo en MailSender (índice único filtrado `ux_correos_idMailSender`, script `13`, HU-033 #199) |
+| `Correos.redirigidoA` | Buzón de pruebas al que se redirigió fuera de producción; los destinatarios guardados siguen siendo los originales (`13`) |
+| `Correos.intentosEntrega`, `enviadoAt` | Intentos de entrega al relay (`attemptCount` de MailSender) y cuándo el relay lo aceptó (`13`) |
+| `Correos.estadoActualizadoAt`, `siguienteConsultaAt`, `encoladoAt` | Última consulta del estado, agenda del worker de correos (NULL = estado final; índice filtrado) y última aceptación de MailSender (NULL = se usa `createdAt`) (`13`) |
+| `Correos.createdAt` | Cuándo se pidió el envío |
+| `CorreoDestinatarios.id`, `correoId`, `email`, `tipo` | Destinatario de un correo: `para` o `cc` (que haya al menos un `para` lo valida la aplicación) |
+
+## 9. Idempotencia, identidad y conversación
+
+| Tabla.columna | Qué es |
+|---|---|
+| `CapturasIdempotentes.id`, `usuarioId`, `operacion`, `clave` | Una fila por `Idempotency-Key` (8 a 64 caracteres, comparación exacta), comercial y operación (`capturar_costeo`, `conexos`, `re_solicitar_costeo`, `editar_solicitud`); único `(usuarioId, operacion, clave)` (script `06`, #191) |
+| `CapturasIdempotentes.huella` | SHA-256 del cuerpo (los números se comparan por valor). Misma clave con otra huella = 409 |
+| `CapturasIdempotentes.estado`, `tomadaPor`, `enCursoHasta` | `en_curso` (la tiene la petición `tomadaPor` hasta `enCursoHasta`, 10 min; después otra la retoma), `terminada` o `libre` |
+| `CapturasIdempotentes.resultado` | JSON de la respuesta que consumió la clave (obligatorio en `terminada`) |
+| `CapturasIdempotentes.cotizacionId`, `folio`, `solicitudNexoId`, `scorePrioridad` | La captura en curso: el folio confirmado y lo que devolvió Nexo, para que un reintento no vuelva a crear la solicitud |
+| `CapturasIdempotentes.createdAt`, `updatedAt`, `expiraAt` | Marcas de tiempo y vencimiento (24 h); la API borra las vencidas |
+| `UsuariosWeb.id`, `idUsuarioExterno` | Id propio de Cotifly y el de ClientePro (`tblSAPUsuariosApp.ID`, único) |
+| `UsuariosWeb.nombreUsuario`, `nombreCompleto`, `email`, `telefono`, `regional` | Datos del usuario que trae ClientePro (`nombreUsuario` único) |
+| `UsuariosWeb.createdAt`, `ultimaSesion` | Alta y último ingreso |
+| `Roles.id`, `codigo`, `descripcion`, `activo`, `updatedAt` | Rol interno: `comercial`, `gerente_comercial` o `director` (CHECK) |
+| `Roles.idRolExterno` | `IDROLES` de ClientePro con el que se entra con ese rol (único; NULL = nadie entra con él). Lo fija el DBA por ambiente |
+| `UsuariosRoles.usuarioId`, `rolId`, `activo`, `asignadoAt` | Rol asignado a un usuario. Varias asignaciones activas por usuario (multi-rol), pero el mismo rol no se repite (script `16`) |
+| `UsuariosRoles.revisadoPor`, `revisadoAt` | Quién revisó la asignación y cuándo |
+| `TokensRefresco.id`, `usuarioId`, `tokenHash` | Refresh token: solo el SHA-256 en hexadecimal (collation `BIN2`, único) |
+| `TokensRefresco.familiaId`, `reemplazadoPorId`, `revocadoAt` | Cadena de rotación: reusar un token ya rotado revoca toda la familia |
+| `TokensRefresco.createdAt`, `expiraAt` | Emisión y vencimiento (CHECK `expiraAt > createdAt`) |
+| `TokensRefresco.rolSesion` | Rol interno con el que se emitió la sesión; el refresh lo conserva y revalida (CHECK con los tres códigos; NULL = emitido antes del script `16`, HU-040.1 #229) |
+| `TokensRevocados.jti`, `usuarioId`, `expiraAt`, `createdAt` | Access tokens revocados en el logout, hasta su vencimiento |
+| `Sesiones.spaceId`, `threadId`, `usuarioId` | Hilo del asistente (Google Chat o consola web) y su usuario |
+| `Sesiones.estado`, `estadoAgente`, `ultimaActividad` | `activa` o `archivada`, JSON del slot-filling y última actividad |
+| `EventosConversacion.*` | Mensajes del hilo: `rol`, `contenido`, `herramientas` (JSON), usuario y fecha |
+| `EventosHerramienta.*` | Auditoría de herramientas y registros de proceso (`conexos_envio_nexo`, `conexos_pendientes_nexo`, `cambiar_servicios_conexos`): `herramienta`, `input` y `outputResumen` (JSON, sin montos al asistente), `exito`, `duracionMs`, `threadId`, `createdAt` |
+
+## 10. Configuración
+
+| Tabla.columna | Qué es |
+|---|---|
+| `MargenesPolitica.id`, `lineaNegocio` | Línea de negocio (única). Desde el `0009`: Nacional, Distribucion, Importacion, Exportacion, Internacional y DevolucionContenedor. Las siembra `db/seeder/01_lineas_negocio.sql` |
+| `MargenesPolitica.margen`, `metodoCalculo` | Margen de política (fracción) y método (`margen`) |
+| `MargenesPolitica.mapeoLineasNexo` | Nombre equivalente en el enum `LineaNegocio` de Nexo (NULL a propósito en Distribucion) |
+| `MargenesPolitica.isActive`, `updatedAt` | Vigencia y última modificación |
+| `SapMapeoTrqType.trqType`, `salesOrg` | TrqType de SAP TM y organización de ventas (PK; `salesOrg = ''` es el comodín: gana la fila específica si existe) |
+| `SapMapeoTrqType.lineaNegocioId` | Línea de negocio (FK a `MargenesPolitica.id`, script `18`, HU-042.4 #247). El backend resuelve por este id |
+| `SapMapeoTrqType.lineaNegocio` | El texto original de la línea; se conserva mientras el backend lo lea y se retira en un script futuro |
+| `SapMapeoTrqType.activo` | Vigencia. Falta el TrqType de `DevolucionContenedor` (pendiente externo: lo da negocio o SAP) |
+| `TarifasSeguro.id`, `tasa`, `vigenteDesde`, `isActive`, `updatedAt` | Tasa del seguro de la mercancía con su historia (script `20`, HU-045.1 #263): `tasa` es una fracción (CHECK > 0 y < 1; la inicial, 0.003450 = 0,345 %, la siembra `db/seeder/04_tarifa_seguro.sql`). Una sola activa (índice único filtrado); las viejas se desactivan. Se cambia con `db/scripts/operacion/cambiar_tasa_seguro.sql` |
+| `PoliticaSeguroTramos.id`, `nombre`, `valorDesde`, `valorHasta`, `isActive`, `updatedAt` | Tramo de valor de la mercancía de la ruta (script `21`, HU-046.2 #268): `valorDesde` exclusivo, `valorHasta` incluido (NULL = sin tope), en pesos fijos. Los activos son contiguos y sin solapes (lo valida `db/seeder/05_politica_seguros.sql`) |
+| `PoliticaSeguroMedidas.id`, `codigo`, `nombre`, `esCobrable`, `isActive`, `updatedAt` | Medida de la política: `codigo` único (`esquema_basico`, `gps`, `candado_satelital`, `restriccion_nocturna`, `acompanante_vehicular`, `acompanante_total`, `incluir_seguro`); `esCobrable` = se cumple agregando un conexo de Nexo (los acompañantes) |
+| `PoliticaSeguroTramoMedidas.id`, `tramoId`, `medidaId`, `nivel`, `updatedAt` | Qué medida aplica en cada tramo y con qué `nivel` (`recomendada` u `obligatoria`); único `(tramoId, medidaId)`. Solo los acompañantes son obligatorios |
+| `PoliticaSeguroMedidaConexos.id`, `medidaId`, `codigoServicio`, `updatedAt` | Códigos del catálogo de Nexo que cumplen cada medida (sin FK: es otra base); la obligación se cumple con cualquiera. `acompanante_vehicular`: los 5 acompañantes; `acompanante_total`: los 3 `AVT_*` |
+| `SapMargenCliente.id`, `salesOrgId`, `trqType`, `bpSap` | Copia local del margen recomendado de SAP TM (`RentabClienteSet`, script `17`, HU-042.1 #242): una fila por `(salesOrgId, trqType, bpSap)` (única) con `id` propio; `bpSap` es el BP del cliente en SAP (`OrderPartyId`) |
+| `SapMargenCliente.nit` | NIT ya resuelto por BP contra el DW (`DWCubosOperacionesEBS.dbo.DimBPSolicitante`), para cruzar directo con `nitCliente` |
+| `SapMargenCliente.margenRecomendado`, `activo` | El valor completo que manda SAP y si SAP lo sigue trayendo (si deja de traerlo se desactiva, no se borra) |
+| `SapMargenCliente.creadoAt`, `actualizadoAt` | Alta y última actualización |
+| `SapMargenSyncLog.*` | Log de corridas de la sincronización (una fila por ejecución): `iniciadoAt`, `finalizadoAt`, `filasInsertadas`, `filasActualizadas`, `filasDesactivadas`, `status` (`ok`, `error`, `omitido`) y `mensajeError` |
+
+La copia local del margen la sincroniza el backend a diario (`clsWorkerSincronizacionMargenSap`, HU-042.2 #243, ADR-027), que
+llama al procedimiento `dbo_cotifly.sp_sincronizar_margen_sap` (el `MERGE` y el log, en una transacción con `sp_getapplock`).
+Las columnas de `SapMargenCliente` y `SapMargenSyncLog` y `CotizacionArchivosLicitacion.origenLectura` no llevan collation
+explícita: toman la de la base, como las crean los ajustes `17` y `22`.

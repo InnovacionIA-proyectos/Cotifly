@@ -119,7 +119,7 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `Cubicador__MaximoConcurrente`, `Cubicador__EsperaMaximaCupoSegundos` | no | no | `1`, `60` | manifiesto (endurecimiento A, #199) | Opción C: cupo global de llamadas a `POST /recomendaciones` de cada réplica (cubicación rápida, captura, recálculo y licitación) y cuánto se espera por él. Sin cupo a tiempo: `CUBICADOR_OCUPADO` (503 con `Retry-After: 10` en "Calcular cubicaje"; caída en los demás flujos). Subir `MaximoConcurrente` solo cuando el cubicador calcule fuera de su bucle de eventos (opción F) |
 | `Cubicador__EsperaSincronaCubicacionSegundos`, `Cubicador__RetencionCubicacionMinutos`, `Cubicador__MaximoCubicacionesEnMemoria` | no | no | `8`, `15`, `500` | manifiesto (endurecimiento A, #199) | Opción D: `POST /web/cubicacion` responde 202 si el cubicador no termina en 8 s y el front consulta `GET /web/cubicacion/{id}`. Las cubicaciones viven **en memoria** (la API tiene `replicas: 1`): un reinicio o un despliegue las pierde y el front recibe 404 (vuelve a cubicar). Con más réplicas hace falta una tabla compartida |
 | `Cubicador__RespaldoSiFalla` | no | no | `true` | manifiesto (endurecimiento A, #199) | si el cubicador se cae, la ruta sigue con el camión del respaldo (el vehículo elegido si lo hay y es válido; si no, sin vehículo, ADR-022). El manifiesto lo deja en `true`, igual que el código (decisión del endurecimiento A, #199). Conviene cargar `false` en Dokploy cuando el cubicador ya esté estable con URL en ese ambiente y se prefiera que una caída detenga la captura (503 `CUBICADOR_NO_DISPONIBLE`, nada se guarda ni va a Nexo) a enviar camiones del respaldo que la Mesa de Costeo tendría que corregir. Un rechazo o una respuesta incompleta nunca van al respaldo |
-| `Cubicador__LicitacionEnSegundoPlano`, `__ProcesadorHabilitado`, `__MaximoParalelo`, `__IntervaloTickSegundos`, `__LoteRutas`, `__ReclamoSegundos`, `__MaximoIntentos`, `__EsperaReintentoSegundos` | no | no | `true`, `true`, `1`, `5`, `50`, `300`, `3`, `30` | manifiesto (endurecimiento A, #199) | licitación cubicada en segundo plano (HU-023.5, #160; exige `db/scripts/pendientes/04`). `MaximoParalelo` es para todas las réplicas juntas (P6 del cubicador); opción C: antes `4`, y al arrancar no puede superar `MaximoConcurrente`. `ReclamoSegundos` (antes `180`) debe superar, al arrancar, lo que dura la llamada de una ruta: `EsperaMaximaCupoSegundos` + `TiempoEsperaRecomendacionSegundos` + 2 + `EsperaAntesReconsultaSegundos` + `TiempoEsperaReconsultaSegundos` + 30 s (247 con los valores por defecto) |
+| `Cubicador__LicitacionEnSegundoPlano`, `__ProcesadorHabilitado`, `__MaximoParalelo`, `__IntervaloTickSegundos`, `__LoteRutas`, `__ReclamoSegundos`, `__MaximoIntentos`, `__EsperaReintentoSegundos` | no | no | `true`, `true`, `1`, `5`, `50`, `300`, `3`, `30` | manifiesto (endurecimiento A, #199) | licitación cubicada en segundo plano (HU-023.5, #160; exige `db/scripts/04_cubicacion_segundo_plano.sql`). `MaximoParalelo` es para todas las réplicas juntas (P6 del cubicador); opción C: antes `4`, y al arrancar no puede superar `MaximoConcurrente`. `ReclamoSegundos` (antes `180`) debe superar, al arrancar, lo que dura la llamada de una ruta: `EsperaMaximaCupoSegundos` + `TiempoEsperaRecomendacionSegundos` + 2 + `EsperaAntesReconsultaSegundos` + `TiempoEsperaReconsultaSegundos` + 30 s (247 con los valores por defecto) |
 | `Cubicador__RutaSalud` | no | no | vacío | manifiesto (endurecimiento A, #199) | ruta del endpoint de salud del cubicador (petición P7, por ejemplo `/health`) para la sonda `cubicador` de `/health/ready`; vacía no lo consulta |
 | `Cubicador__MinutosCacheCatalogos`, `__TiempoMaximoCatalogoSegundos`, `__PresupuestoCapturaSegundos` | no | no | `30`, `10`, `180` | manifiesto (endurecimiento A, #199) | caché de los tres catálogos, tope de cada catálogo y tiempo máximo de llamadas por captura (se revisa antes de cada ruta y la espera por el cupo cuenta; antes `120`, opción C). Una ruta sola puede tardar lo que dura una llamada al cubicador (`EsperaMaximaCupoSegundos` + `TiempoEsperaRecomendacionSegundos` + 2 + `EsperaAntesReconsultaSegundos` + `TiempoEsperaReconsultaSegundos` = 217 s) y una captura de varias rutas, en el peor caso, el presupuesto más esa llamada (180 + 217 ≈ 400 s, 6,5 min): Traefik (sin `respondingTimeouts.writeTimeout` ni `serversTransport.forwardingTimeouts.responseHeaderTimeout` que lo corten), cualquier otro proxy y el cliente del front deben cubrirlo |
 | `CosteoNexo__LecturaInmediataSegundos`, `__MaximoFallosRelectura`, `__MaximoFallosSincronizacionResultado`, `__EdadMaximaSincronizacionResultadoDias` | no | no | `6` (1-30), `10` (1-100), `10` (1-100), `30` (1-365) | manifiesto (endurecimiento A, #199) | lectura del costeo justo después del alta y tope de relecturas fallidas; reintentos y edad máxima de la sincronización diferida del resultado con Nexo (HU-033) |
@@ -581,8 +581,9 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
 
 ### 4.5 Release paso a paso
 
-0. **Precondición de esquema: `db/migrations_mssql/0001`–`0010`, `db/scripts/02`, `db/scripts/03`, `db/scripts/pendientes/04`, `db/scripts/05`, `db/scripts/06`, `db/scripts/09`, `db/scripts/10`, `db/scripts/11`, `db/scripts/12`, `db/scripts/13` y `db/scripts/14` aplicados (el `07` es opcional, el `08` va después de la imagen y el `15`, del rol director, va con o después de la imagen de HU-037, §2.2 "Rol director")** en la base del ambiente (o la base instalada
-   desde cero con `db/scripts/01_crear_esquema.sql` y `db/seeder/`, que equivale a `0001`–`0010`). Los aplica el DBA con
+0. **Precondición de esquema: `db/migrations_mssql/0001`–`0010`, `db/scripts/02`, `db/scripts/03`, `db/scripts/04`, `db/scripts/05`, `db/scripts/06`, `db/scripts/09`, `db/scripts/10`, `db/scripts/11`, `db/scripts/12`, `db/scripts/13` y `db/scripts/14` aplicados (el `07` es opcional, el `08` va después de la imagen y el `15`, del rol director, va con o después de la imagen de HU-037, §2.2 "Rol director")** en la base del ambiente (o la base instalada
+   desde cero con el ejecutador `db/ejecutores/ejecutar-bd.*`: `db/esquema/cotifly_esquema.sql`, que ya trae todos los ajustes, y
+   `db/seeder/`). Los aplica el DBA con
    un usuario administrador y `sqlcmd -I`; la app no aplica migraciones. Regla de siempre: **primero el script, después
    la imagen.** Sin el esquema completo, `/health/ready` responde `503` (tabla de abajo), Traefik no manda tráfico a la
    tarea y, como la sonda de vida sigue en 200, Swarm no revierte solo (paso 5).
@@ -591,9 +592,9 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
    - El `0010` (`0010_nombres_municipio.sql`, idempotente y no destructivo) es un **borrador pendiente de revisión de
      scalderon-bs y del DBA**. Se aplica después del `0009` y antes de la imagen que lo usa (cualquiera desde #130/#131).
    - HU-023 (cubicador): `db/scripts/02_alter_cubicador.sql` (columnas de resultado de la cubicación y
-     `codigoMercancia`, idempotente; lo corre el ejecutador después del `01`) y
-     `db/scripts/pendientes/04_cubicacion_segundo_plano.sql` (cola de la cubicación de la licitación en segundo plano,
-     HU-023.5; **pendiente de revisión de scalderon-bs y del DBA**). El backend mapea las columnas de los dos: se aplican
+     `codigoMercancia`, idempotente; lo corre el ejecutador después del esquema) y
+     `db/scripts/04_cubicacion_segundo_plano.sql` (cola de la cubicación de la licitación en segundo plano,
+     HU-023.5; aplicado en la base compartida el 2026-10-13). El backend mapea las columnas de los dos: se aplican
      antes de la imagen.
    - **HU-014 (#188): `db/scripts/03_orden_vehiculo_y_conexo_catalogo.sql` y `db/scripts/05_categoria_conexo.sql` van ANTES de la
      imagen de #188.** Hasta #188 estaban en `db/scripts/pendientes/` sin mapear; ahora el backend mapea `ordenVehiculo` e
@@ -655,12 +656,12 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
      ```
 
    - **Excepción, HU-014.3 (#152): el `08` va DESPUÉS de la imagen.** `db/scripts/08_retirar_vistas_actividad.sql` borra las
-     vistas que lee la versión anterior. El ejecutador (`db/ejecutar-bd.*`) corre todos los `scripts/` en orden de nombre
+     vistas que lee la versión anterior. El ejecutador (`db/ejecutores/ejecutar-bd.*`) corre todos los `scripts/` en orden de nombre
      (`07`, `08`, `09`), así que si el DBA lo usa antes de la imagen para aplicar el `09` también aplica el `08`: no rompe nada
      que se use, solo los dos endpoints retirados de la versión anterior (`/web/metricas/actividad` y `/ajustes-margen`, que el
      frontend no consume) responden 500 hasta que sube la imagen nueva.
    - Orden del release con #152 y #155 juntas: `09` → imagen → `08`. ~~Con #183 y #184 (integración 1021): `03` → `pendientes/04` → `05`
-     → `06` → `07` → `09` → `10` → `11` → imagen → `08`.~~ Con HU-032 (#197) y HU-033 (#199): `03` → `pendientes/04` → `05` → `06`
+     → `06` → `07` → `09` → `10` → `11` → imagen → `08`.~~ Con HU-032 (#197) y HU-033 (#199): `03` → `04` → `05` → `06`
      → `07` → `09` → `10` → `11` → `12` → `13` → imagen → `08`. ~~Con HU-036 (#205 a #208): `…` → `13` → `14` → imagen → `08`.~~ Con HU-036 (#205 a #208) y HU-037 (#209 a #211) juntas
      (integración 1027): `…` → `13` → `14` → `15` → imagen → `08`, con el `15` en la misma ventana que la imagen (nunca antes con una
      imagen vieja, ver §2.2 "Rol director"). En la compartida el `15` ya está aplicado (#209) y el `14` está pendiente de @scalderon-bs.
@@ -706,7 +707,7 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
    - **HU-036 (#205, #206): `db/scripts/14_cotizacion_finalizada.sql` va ANTES de la imagen de HU-036.** Es una **propuesta pendiente de
      revisión de @scalderon-bs** (Datos, #205); el número `15` queda reservado para HU-037. Agrega a la cabecera (`CotizacionesSolicitud`)
      `finalizadaAt DATETIMEOFFSET NULL` y `finalizadaPor UNIQUEIDENTIFIER NULL` con la FK `fk_cotizaciones_finalizadaPor` a
-     `UsuariosWeb(id)` (la PK de `UsuariosWeb` es `UNIQUEIDENTIFIER`, verificado en `01_crear_esquema.sql`; si en un ambiente no lo fuera,
+     `UsuariosWeb(id)` (la PK de `UsuariosWeb` es `UNIQUEIDENTIFIER`, verificado en el esquema, hoy `db/esquema/cotifly_esquema.sql`; si en un ambiente no lo fuera,
      el script se detiene sin tocar nada) y el CHECK `ck_cotizaciones_finalizada` (las dos NULL o las dos con valor). Idempotente, no
      destructivo, en una transacción; el ejecutador lo corre por nombre después del `13`. Sin él la imagen de HU-036 queda en 503
      "falta 14" (como con el `09`, aplicarlo la recupera sin redesplegar). Aplicarlo con la imagen anterior en marcha no cambia nada (no
@@ -742,7 +743,7 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
    | `esquema incompleto: falta 0010` | Está el `0009` pero faltan las columnas del `0010` (nombres de municipio, `solicitudNexoId`, `nombreServicioConexo`) o el `CHECK` `ck_cotizaciones_estadoEnvio` | Aplicar `0010_nombres_municipio.sql` |
    | `esquema incompleto: falta 02` | Faltan las columnas del cubicador (HU-023.3) | Aplicar `db/scripts/02_alter_cubicador.sql` |
    | `esquema incompleto: falta 03` | Faltan `ordenVehiculo` o `idServicioConexoCatalogo` (HU-014, #188) | Aplicar `db/scripts/03_orden_vehiculo_y_conexo_catalogo.sql` |
-   | `esquema incompleto: falta 04` | Faltan las columnas de la cubicación en segundo plano (HU-023.5) | Aplicar `db/scripts/pendientes/04_cubicacion_segundo_plano.sql`, con la aprobación del DBA |
+   | `esquema incompleto: falta 04` | Faltan las columnas de la cubicación en segundo plano (HU-023.5) | Aplicar `db/scripts/04_cubicacion_segundo_plano.sql` |
    | `esquema incompleto: falta 05` | Falta `CotizacionServiciosConexos.categoriaServicioConexo` (HU-014, #188) | Aplicar `db/scripts/05_categoria_conexo.sql` |
    | `esquema incompleto: falta 06` | Falta la tabla `CapturasIdempotentes` (o tiene la forma de la propuesta de #173) (#191) | Aplicar `db/scripts/06_idempotencia_captura.sql`, con la aprobación del DBA |
    | `esquema incompleto: falta 09` | Falta `CotizacionesSolicitud.scorePrioridad` (HU-018.1, #155) | Aplicar `db/scripts/09_score_prioridad.sql` |
@@ -755,8 +756,8 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
    | `esquema incompleto: falta 17` | Faltan `SapMargenCliente`/`SapMargenSyncLog`, la copia local del margen de SAP (HU-042.1 #242, la lee HU-042.2 #243) | Aplicar `db/scripts/17_sap_margen_sincronizacion.sql` |
    | `esquema incompleto: falta 18` | Falta `SapMapeoTrqType.lineaNegocioId` (HU-042.4, #247) | Aplicar `db/scripts/18_sap_mapeo_fk_margenes_politica.sql` |
    | `esquema incompleto: falta 19` | Falta `CotizacionServiciosConexos.precioVenta` (HU-043.1, #245; mapeo en #261) | Aplicar `db/scripts/19_precio_venta_conexos.sql` |
-   | `esquema incompleto: falta 20` | Faltan `TarifasSeguro` o `incluyeSeguro`/`tasaSeguroAplicada`/`costoSeguro` de la ruta (HU-045.1 #263; mapeo en HU-045.2 #264) | Aplicar `db/scripts/20_seguro_mercancia.sql` |
-   | `esquema incompleto: falta Tabla.columna, ...` (hasta 5) | Falta otra tabla o columna del modelo (por ejemplo un script intermedio sin aplicar) | Comparar con `db/scripts/01_crear_esquema.sql` y aplicar el script que la trae (lista en `docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md` §A.5) |
+   | `esquema incompleto: falta 20` | Faltan `TarifasSeguro` o `incluyeSeguro`/`tasaSeguroAplicada`/`costoSeguro` de la ruta (HU-045.1 #263; mapeo en HU-045.2 #264) | Aplicar `db/scripts/20_seguro_mercancia.sql` y después `db/seeder/04_tarifa_seguro.sql` (la tasa inicial; desde HU-024.2, #203, el `20` solo crea la estructura) |
+   | `esquema incompleto: falta Tabla.columna, ...` (hasta 5) | Falta otra tabla o columna del modelo (por ejemplo un script intermedio sin aplicar) | Comparar con `db/esquema/cotifly_esquema.sql` y aplicar el script que la trae (lista en `docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md` §A.5) |
 
 1. **Staging.** Merge a `QA` → el pipeline (o `publicar-imagen.sh --canal qa`) publica `sha-<corto>`. En Dokploy, stack
    de staging: variable `COTIFLY_TAG=sha-<corto>` → *Deploy*. Verificar `/health`, `/health/ready` y las pruebas de humo

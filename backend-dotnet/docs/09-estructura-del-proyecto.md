@@ -67,12 +67,13 @@ backend-dotnet/
     └── Cotifly.Aceptacion.Tests/
 
 db/
-├── README.md                       # instalar desde cero, migrar una base existente y verificar
-├── ejecutar-bd.ps1, ejecutar-bd.sh # ejecutador: crea la base (opcional), corre scripts/ y luego seeder/
-├── scripts/01_crear_esquema.sql    # instalación desde cero: el esquema final (= 0001 a 0010 aplicados)
-├── seeder/                         # 01_lineas_negocio, 02_sap_mapeo_trqtype, 03_roles
-└── migrations_mssql/               # migraciones 0001 a 0010 para bases que ya existen (+ rollback/): única vía de cambio
-                                    # de esquema; las leen el backend, las pruebas y el CI
+├── README.md                       # qué va en cada carpeta, instalar, poner al día y verificar
+├── esquema/cotifly_esquema.sql     # instalación desde cero: el esquema completo (= 0001 a 0010 + ajustes 02 a 22)
+├── scripts/                        # ajustes 02 a 22 de las bases existentes (idempotentes) y operacion/
+├── seeder/                         # 01_lineas_negocio, 02_sap_mapeo_trqtype, 03_roles, 04_tarifa_seguro, 05_politica_seguros
+├── ejecutores/                     # ejecutar-bd.ps1 y ejecutar-bd.sh: base vacía -> esquema; después ajustes y seeders
+└── migrations_mssql/               # migraciones 0001 a 0010 para bases con el esquema anterior (+ rollback/); las leen
+                                    # las pruebas, levantar-local y los respaldos
 BASE_DE_DATOS.md                    # punto de entrada a la base de datos (HU-021)
 docs/docs_front/CONTRATO_API_WEB.md         # resumen del contrato para el frontend (HU-004.1)
 docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md # mapeo de campos Nexo ↔ Cotifly del formulario de captura (HU-005)
@@ -87,7 +88,7 @@ docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md # mapeo de campos Nexo ↔ Cotif
 | Un adaptador (base, HTTP, SDK) | `Cotifly.Infraestructura/<Módulo>/Services/` o `Repositories/`, registrado en `clsDependenciasInfraestructura` |
 | Un endpoint | Primero `specs/openapi.yaml`; luego `Cotifly.Api/<Módulo>/Controllers/` heredando de `clsControladorWebBase` si es `/web/*` |
 | Una herramienta del asistente | `Cotifly.Aplicacion/Agente/Herramientas/clsHerramientasAsistenteFolio` (solo lectura o propuesta; la cotización sale de `clsContextoAsistenteFolio`, nunca del LLM) + la propuesta en `clsPropuestasAsistente` con las reglas del endpoint destino |
-| Un cambio de esquema | Script nuevo `db/migrations_mssql/000N_*.sql` idempotente (nunca migraciones EF), el mismo cambio en `db/scripts/01_crear_esquema.sql` (`clsEsquemaTests` exige que las dos vías dejen el mismo esquema), el script en `tests/Comun/clsBaseDatosPruebas.Scripts`, mapeo en `Comun/Persistence/Configurations/` y prueba de deriva. Pendiente HU-023: `db/scripts/02_alter_cubicador.sql` |
+| Un cambio de esquema | Ajuste nuevo `db/scripts/NN_*.sql` idempotente (nunca migraciones EF) y el mismo cambio en `db/esquema/cotifly_esquema.sql` (`clsEsquemaTests` exige que las dos vías dejen el mismo esquema); los datos de configuración, en un seeder de `db/seeder/`. El ajuste en `tests/Comun/clsBaseDatosPruebas.Scripts` (y en la instalación desde cero del arnés), mapeo en `Comun/Persistence/Configurations/` y prueba de deriva. Detalle en [`db/README.md`](../../db/README.md#mantener-esto-en-sincronía) |
 | Una opción de configuración | Clase `clsOpcionesXxx` con `AddOpcionesValidadas<T>()`, variable en `.env.example` y fila en [03-infraestructura](03-infraestructura.md#32-variables-de-entorno-y-configuración) |
 | Una decisión de arquitectura | ADR nueva en `specs/decisiones/` con la plantilla del índice |
 

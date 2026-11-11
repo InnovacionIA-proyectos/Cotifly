@@ -10,7 +10,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// SQL Server 2019 (Testcontainers) instalado DESDE CERO con <c>db/scripts/01_crear_esquema.sql</c> y los seeders de <c>db/seeder/</c>
+/// SQL Server 2019 (Testcontainers) instalado DESDE CERO con <c>db/esquema/cotifly_esquema.sql</c>, los ajustes y los seeders de <c>db/seeder/</c>
 /// (regla de las pruebas de esquema de HU-021.12, #139: el esquema vigente de la base compartida, no las migraciones 0001 a 0010).
 /// </summary>
 public sealed class clsEntornoApiWebInstalada : IAsyncLifetime
@@ -81,7 +81,7 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
     public async Task LaBaseInstaladaDesdeCeroTieneLasTablasYLaConfiguracionSembrada()
     {
         (await clsBaseDatosPruebas.EscalarAsync<int>(Cadena,
-            "SELECT COUNT(*) FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.name = 'dbo_cotifly'")).Should().Be(24, "las 20 de HU-021 más CapturasIdempotentes del script 06 (#191) y las dos del 17 (HU-042: SapMargenCliente, SapMargenSyncLog) y TarifasSeguro del 20 (HU-045, #264)");
+            "SELECT COUNT(*) FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.name = 'dbo_cotifly'")).Should().Be(28, "las 20 de HU-021 más CapturasIdempotentes del script 06 (#191), las dos del 17 (HU-042: SapMargenCliente, SapMargenSyncLog), TarifasSeguro del 20 (HU-045, #264) y las cuatro de la política de seguros del 21 (HU-046.2, #268), que trae db/esquema (HU-024.2, #203)");
         (await clsBaseDatosPruebas.EscalarAsync<int>(Cadena,
             "SELECT COUNT(*) FROM sys.views v JOIN sys.schemas s ON s.schema_id = v.schema_id WHERE s.name = 'dbo_cotifly'")).Should().Be(0, "las vistas del borrador de métricas se retiraron (HU-014.3, #152)");
         (await clsBaseDatosPruebas.EscalarAsync<string>(Cadena,

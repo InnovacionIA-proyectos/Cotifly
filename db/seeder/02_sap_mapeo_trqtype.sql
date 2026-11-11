@@ -1,17 +1,17 @@
 /* ============================================================================
    Seeder 02 — Mapeo del TrqType de SAP TM a la línea de negocio (dbo_cotifly.SapMapeoTrqType)
    ============================================================================
-   PENDIENTE: falta el TrqType real de SAP para `DevolucionContenedor`. No se inventa un código
-   de SAP: confirmarlo con negocio/SAP y agregarlo aquí cuando se tenga:
+   PENDIENTE EXTERNO (negocio/SAP): falta el TrqType real de SAP para `DevolucionContenedor`. No se
+   inventa un código de SAP: cuando negocio/SAP lo confirme, se agrega aquí como una fila más:
        (N'<TrqType>', N'', N'DevolucionContenedor')
 
    Idempotente: inserta solo los pares (trqType, salesOrg) que faltan.
 
-   Con el script 18 (HU-042.4, #247) la tabla tiene además `lineaNegocioId INT NOT NULL` (FK a
-   MargenesPolitica): el id se busca por el texto de la línea, igual que el backfill del 18. Sin el
-   18 (bases de prueba del backend que no lo aplican) se inserta solo el texto, como antes. Va
-   después del seeder 01, que siembra MargenesPolitica; se detiene sin insertar nada si una línea
-   no existe ahí.
+   La tabla tiene `lineaNegocioId INT NOT NULL` (FK a MargenesPolitica; esquema/cotifly_esquema.sql o
+   el ajuste 18): el id se busca por el texto de la línea, igual que el backfill del 18. En una base
+   sin esa columna (migraciones sin el 18, como algunas bases de prueba del backend) se inserta solo
+   el texto. Va después del seeder 01, que siembra MargenesPolitica; se detiene sin insertar nada si
+   una línea no existe ahí.
    ============================================================================ */
 
 SET NOCOUNT ON;
@@ -20,10 +20,10 @@ SET QUOTED_IDENTIFIER ON;
 GO
 
 IF OBJECT_ID(N'dbo_cotifly.SapMapeoTrqType', N'U') IS NULL
-    THROW 50001, N'Falta dbo_cotifly.SapMapeoTrqType: corra primero scripts/01_crear_esquema.sql.', 1;
+    THROW 50001, N'Falta dbo_cotifly.SapMapeoTrqType: instale primero el esquema (esquema/cotifly_esquema.sql).', 1;
 GO
 
--- Misma collation explícita que las columnas de SapMapeoTrqType y MargenesPolitica (01 y 0001). No sirve
+-- Misma collation explícita que las columnas de SapMapeoTrqType y MargenesPolitica (esquema y 0001). No sirve
 -- DATABASE_DEFAULT: una base creada sin collation (las de prueba del backend) queda con la del servidor y choca.
 CREATE TABLE #mapeo (
     trqType      NVARCHAR(8)  COLLATE Latin1_General_100_CI_AS_SC_UTF8 NOT NULL,

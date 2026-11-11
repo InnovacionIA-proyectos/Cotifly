@@ -31,7 +31,9 @@
     <None Include="$(MSBuildThisFileDirectory)..\..\db\migrations_mssql\*.sql" Link="migrations_mssql\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <!-- Reversas de los scripts (0006 en adelante): las pruebas de esquema las aplican en una base aislada. -->
     <None Include="$(MSBuildThisFileDirectory)..\..\db\migrations_mssql\rollback\*.sql" Link="migrations_mssql\rollback\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
-    <!-- HU-021: instalación desde cero (db/scripts/01_crear_esquema.sql) y sus seeders, para compararla con la cadena de migraciones. -->
+    <!-- HU-021 / HU-024.2 (#203): instalación desde cero (db/esquema/cotifly_esquema.sql), los ajustes de db/scripts y los seeders,
+         para compararla con la cadena de migraciones. -->
+    <None Include="$(MSBuildThisFileDirectory)..\..\db\esquema\*.sql" Link="scripts_bd\esquema\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="$(MSBuildThisFileDirectory)..\..\db\scripts\*.sql" Link="scripts_bd\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="$(MSBuildThisFileDirectory)..\..\db\seeder\*.sql" Link="scripts_bd\seeder\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <!-- HU-023.3: propuestas pendientes de revisión (db/scripts/pendientes), que el ejecutador no corre; las pruebas las aplican en bases aisladas. -->

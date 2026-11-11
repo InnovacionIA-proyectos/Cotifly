@@ -11,8 +11,8 @@ namespace Cotifly.Infraestructura.Tests.Persistencia;
 /// Scripts <c>db/migrations_mssql</c> aplicados en SQL Server 2019 y verificación de deriva entre el modelo
 /// EF (Database First) y el esquema real (ADR-008): tablas, columnas, tipos y nulabilidad. Desde HU-021 la base compartida tiene
 /// 0001 a 0010; las pruebas de los scripts anteriores (0002 a 0008) corren en una base AISLADA con el esquema viejo
-/// (<see cref="clsBaseDatosPruebas.ScriptsAntesDeHu021"/>), y <c>db/scripts/01_crear_esquema.sql</c> debe dejar el mismo esquema que
-/// la cadena de migraciones.
+/// (<see cref="clsBaseDatosPruebas.ScriptsAntesDeHu021"/>), y <c>db/esquema/cotifly_esquema.sql</c> debe dejar el mismo esquema que
+/// la cadena de migraciones y ajustes.
 /// </summary>
 [Collection(clsColeccionSqlServer.Nombre)]
 [Trait("Categoria", "Integracion")]
@@ -52,17 +52,22 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     [Fact]
     public async Task LaInstalacionDesdeCeroDejaElMismoEsquemaQueLasMigraciones()
     {
-        // HU-021: db/scripts/01_crear_esquema.sql (instalación de la base compartida) y 0001 → 0010 deben coincidir en columnas (tipo,
-        // largo, nulabilidad, collation y default), PK, UQ, FK, CHECK (con su definición), defaults e índices. El orden de las columnas
-        // puede variar (las migraciones agregan con ALTER) y los respaldos del 0009 solo existen en la base migrada.
+        // HU-021: db/esquema/cotifly_esquema.sql (instalación desde cero, HU-024.2 #203) y 0001 → 0010 con todos los ajustes deben
+        // coincidir en columnas (tipo, largo, nulabilidad, collation y default), PK, UQ, FK, CHECK (con su definición), defaults e índices.
+        // El orden de las columnas puede variar (las migraciones agregan con ALTER) y los respaldos del 0009 solo existen en la base migrada.
+        // La base migrada es aparte de la principal porque lleva el 21 y el 22 (rutas relativas a migrations_mssql), que el modelo EF
+        // todavía no mapea; si la lista de scripts ya los trae, aplicarlos otra vez no cambia nada (son idempotentes).
         await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbInstalada");
+        await using var migradaCompleta = await BaseDatos.CrearBaseConScriptsAsync("dbMigradaCompleta", clsBaseDatosPruebas.Scripts.Length);
+        await clsBaseDatosPruebas.AplicarScriptAsync(migradaCompleta.Cadena, "../scripts_bd/21_politica_seguros.sql");
+        await clsBaseDatosPruebas.AplicarScriptAsync(migradaCompleta.Cadena, "../scripts_bd/22_origen_lectura_licitacion.sql");
 
-        var migrada = (await FotoEsquemaAsync(BaseDatos.CadenaCotifly)).Where(l => !l.StartsWith("Respaldo0009_", StringComparison.Ordinal)).ToList();
+        var migrada = (await FotoEsquemaAsync(migradaCompleta.Cadena)).Where(l => !l.StartsWith("Respaldo0009_", StringComparison.Ordinal)).ToList();
         var desdeCero = await FotoEsquemaAsync(instalada.Cadena);
 
         desdeCero.Except(migrada).Should().BeEmpty("lo que trae la instalación desde cero debe estar en la base migrada");
         migrada.Except(desdeCero).Should().BeEmpty("lo que deja la cadena de migraciones debe estar en la instalación desde cero");
-        (await VistasAsync(instalada.Cadena)).Should().BeEmpty("el 01 ya no crea las vistas del borrador de métricas (HU-014.3, #152)");
+        (await VistasAsync(instalada.Cadena)).Should().BeEmpty("el esquema no crea las vistas del borrador de métricas (HU-014.3, #152)");
         (await VistasAsync(BaseDatos.CadenaCotifly)).Should().BeEmpty("el 08 las retira de la base migrada");
     }
 

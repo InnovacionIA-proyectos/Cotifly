@@ -4,7 +4,9 @@
    HU-045.1 (#263). La consume HU-045.2 (cálculo en el backend). Dueña: @scalderon-bs (Datos).
    Origen: política de seguros NOGE0076 y docs/backlog/2026-11-02_HUS_SEGURO_Y_POLITICA.md.
 
-   Qué hace (NO destructivo e idempotente: solo crea y agrega; no borra ni cambia valores):
+   Qué hace (NO destructivo e idempotente: solo crea y agrega; no borra ni cambia valores). Solo
+   estructura: la tasa inicial la siembra seeder/04_tarifa_seguro.sql, que el ejecutador corre después
+   de los ajustes (así llega igual a una base nueva y a una existente).
 
    1. Tabla nueva dbo_cotifly.TarifasSeguro — la tasa del seguro, con su historia:
           id            UNIQUEIDENTIFIER PK         DEFAULT NEWID(), como el resto del esquema
@@ -14,7 +16,6 @@
           updatedAt     DATETIMEOFFSET   NOT NULL   DEFAULT SYSDATETIMEOFFSET()
       Índice único filtrado uq_tarifasSeguro_activa (WHERE isActive = 1): solo UNA tasa activa.
       Las tasas viejas se desactivan, no se borran. Para cambiarla: scripts/operacion/cambiar_tasa_seguro.sql.
-      Fila inicial: tasa 0.003450 activa, solo si la tabla está vacía (no pisa una tasa ya cambiada).
       DECIMAL(9,6) y no (9,4) como los márgenes: con 4 decimales 0,345 % quedaría redondeado a 0.0035.
 
    2. En CotizacionLineasSolicitud (la ruta):
@@ -34,15 +35,16 @@
    Las filas existentes quedan con incluyeSeguro = 0 (el DEFAULT de la columna NOT NULL): ninguna
    cotización cambia de valor.
 
-   Dónde corre: después del 19 (o del 01); no depende de ningún otro ajuste. El ejecutador
-   (ejecutar-bd.ps1 / .sh) lo toma solo, en orden de nombre. El backend no lee estas columnas hasta
-   HU-045.2, así que se puede aplicar antes del backend sin romper nada.
+   Dónde corre: en una base existente, después del 19; no depende de ningún otro ajuste. Una base
+   instalada con esquema/cotifly_esquema.sql ya trae todo esto y el script no cambia nada. El ejecutador
+   (db/ejecutores/ejecutar-bd.ps1 / .sh) lo toma solo, en orden de nombre.
 
    Respaldo: no hace falta — tabla nueva y columnas nuevas; no se modifica ningún valor existente.
 
    Cómo ejecutarlo (-b detiene el script en el primer error; -I: QUOTED_IDENTIFIER ON, que exige el
    índice filtrado). Sin USE: corre sobre la base que se indique.
      sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i 20_seguro_mercancia.sql
+     sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i ../seeder/04_tarifa_seguro.sql
    ============================================================================ */
 
 SET NOCOUNT ON;
@@ -56,7 +58,7 @@ GO
 -- 0. Precondición
 -- =============================================================================
 IF OBJECT_ID(N'dbo_cotifly.CotizacionLineasSolicitud', N'U') IS NULL
-    THROW 50001, N'dbo_cotifly no tiene CotizacionLineasSolicitud: aplique primero 01_crear_esquema.sql.', 1;
+    THROW 50001, N'dbo_cotifly no tiene CotizacionLineasSolicitud: instale primero el esquema (esquema/cotifly_esquema.sql) o las migraciones.', 1;
 GO
 
 -- =============================================================================
@@ -102,18 +104,11 @@ BEGIN CATCH
 END CATCH;
 GO
 
--- Fila inicial y CHECKs en otro lote: dentro del mismo lote del ADD, SQL Server todavía no conoce
--- las columnas al compilar.
+-- CHECKs en otro lote: dentro del mismo lote del ADD, SQL Server todavía no conoce las columnas al
+-- compilar.
 SET XACT_ABORT ON;
 BEGIN TRY
     BEGIN TRANSACTION;
-
-    IF NOT EXISTS (SELECT 1 FROM dbo_cotifly.TarifasSeguro WITH (UPDLOCK, HOLDLOCK))
-    BEGIN
-        INSERT INTO dbo_cotifly.TarifasSeguro (tasa, vigenteDesde, isActive)
-        VALUES (0.003450, SYSDATETIMEOFFSET(), 1);
-        PRINT N'20: tasa inicial 0.003450 (0,345 %) activa.';
-    END
 
     IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'ck_cotizacionLineasSolicitud_seguroMontos'
                    AND parent_object_id = OBJECT_ID(N'dbo_cotifly.CotizacionLineasSolicitud'))
@@ -131,7 +126,7 @@ BEGIN TRY
 END TRY
 BEGIN CATCH
     IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
-    PRINT N'20 NO se aplicó completo (tasa inicial y CHECKs del seguro): se deshizo este paso. Error:';
+    PRINT N'20 NO se aplicó completo (CHECKs del seguro): se deshizo este paso. Error:';
     THROW;
 END CATCH;
 GO
@@ -140,8 +135,8 @@ PRINT N'20 aplicado: TarifasSeguro y seguro de la mercancía en CotizacionLineas
 GO
 
 /* ============================================================================
-   Verificación sugerida tras ejecutar (una tasa activa en 0.003450, tres columnas, dos CHECKs, ninguna
-   ruta con seguro):
+   Verificación sugerida tras ejecutar (tres columnas, dos CHECKs, ninguna ruta con seguro; después de
+   los seeders, una tasa activa en 0.003450):
 
      SELECT id, tasa, vigenteDesde, isActive FROM dbo_cotifly.TarifasSeguro;
      SELECT c.name AS columna, TYPE_NAME(c.user_type_id) AS tipo, c.precision, c.scale, c.is_nullable

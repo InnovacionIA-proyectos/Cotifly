@@ -4,7 +4,7 @@
    DECIMAL, DATETIMEOFFSET, CHAR con collation BIN2, IDENTITY, llaves foráneas (también compuestas y a sí misma),
    índices únicos filtrados y filas grandes (500 x ~10 KB).
    Se ejecuta con sqlcmd -I (QUOTED_IDENTIFIER ON: índices filtrados) sobre dbTarifario_Nexo_Pruebas con 0001-0010 (o
-   01_crear_esquema.sql): desde HU-021 la cotización es CotizacionesSolicitud con sus rutas, camiones y conexos (ADR-019).
+   db/esquema/cotifly_esquema.sql): desde HU-021 la cotización es CotizacionesSolicitud con sus rutas, camiones y conexos (ADR-019).
    ============================================================================ */
 SET NOCOUNT ON;
 DECLARE @u UNIQUEIDENTIFIER = NEWID(), @u2 UNIQUEIDENTIFIER = NEWID();

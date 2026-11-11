@@ -2,8 +2,8 @@
    Seeder 03 — Roles internos de Cotifly (dbo_cotifly.Roles)
    ============================================================================
    Este seeder siembra `comercial` y `gerente_comercial`. El tercer rol, `director` (HU-037.1, #209),
-   lo crea scripts/15_rol_director.sql, porque el CHECK de `codigo` que deja el 01 solo admite los
-   dos primeros y el 15 lo amplía. Con el 15 aplicado, la tabla tiene 3 roles.
+   lo crea scripts/15_rol_director.sql, que el ejecutador corre en toda base (nueva o existente)
+   antes de los seeders. Con el 15 aplicado, la tabla tiene 3 roles.
 
    Los roles nacen SIN rol externo (`idRolExterno` NULL): mientras sea NULL nadie puede iniciar
    sesión con ese rol (falla cerrado). El DBA lo fija con los IDROLES de ClientePro
@@ -23,7 +23,7 @@ SET QUOTED_IDENTIFIER ON;
 GO
 
 IF OBJECT_ID(N'dbo_cotifly.Roles', N'U') IS NULL
-    THROW 50001, N'Falta dbo_cotifly.Roles: corra primero scripts/01_crear_esquema.sql.', 1;
+    THROW 50001, N'Falta dbo_cotifly.Roles: instale primero el esquema (esquema/cotifly_esquema.sql).', 1;
 GO
 
 INSERT INTO dbo_cotifly.Roles (codigo, descripcion)

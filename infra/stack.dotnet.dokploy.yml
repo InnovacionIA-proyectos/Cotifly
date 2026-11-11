@@ -224,7 +224,7 @@ services:
       Cubicador__MinutosCacheCatalogos: ${Cubicador__MinutosCacheCatalogos:-30}
       Cubicador__PresupuestoCapturaSegundos: ${Cubicador__PresupuestoCapturaSegundos:-180}
       Cubicador__TiempoMaximoCatalogoSegundos: ${Cubicador__TiempoMaximoCatalogoSegundos:-10}
-      # Licitación cubicada en segundo plano (HU-023.5, #160; exige db/scripts/pendientes/04). MaximoParalelo <= MaximoConcurrente.
+      # Licitación cubicada en segundo plano (HU-023.5, #160; exige db/scripts/04_cubicacion_segundo_plano.sql). MaximoParalelo <= MaximoConcurrente.
       Cubicador__LicitacionEnSegundoPlano: ${Cubicador__LicitacionEnSegundoPlano:-true}
       Cubicador__ProcesadorHabilitado: ${Cubicador__ProcesadorHabilitado:-true}
       Cubicador__MaximoParalelo: ${Cubicador__MaximoParalelo:-1}

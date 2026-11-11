@@ -10,7 +10,8 @@ namespace Cotifly.Infraestructura.Comun.Persistence;
 /// <summary>
 /// Readiness de la base <c>dbo_cotifly</c> para <c>GET /health/ready</c> (rehecha para HU-021, ADR-019): la cadena debe estar
 /// configurada, la base debe responder y el esquema debe tener TODAS las tablas y columnas que mapea el modelo EF (se leen del propio
-/// modelo, así la sonda no se queda atrás cuando cambia el esquema). Si falta algo, la descripción dice qué script falta:
+/// modelo, así la sonda no se queda atrás cuando cambia el esquema). Una base instalada con <c>db/esquema/cotifly_esquema.sql</c> ya
+/// trae todo; en una base existente, si falta algo, la descripción dice qué script de ajuste (<c>db/scripts/</c>) falta:
 /// <list type="bullet">
 /// <item><see cref="DescripcionEsquemaIncompleto"/>: falta el 0002 (<c>Sesiones.estadoAgente</c> o <c>TokensRefresco</c>);</item>
 /// <item><see cref="DescripcionEsquemaSin0009"/>: la base sigue con <c>Cotizaciones</c> (esquema anterior a la reestructuración);</item>
@@ -94,7 +95,7 @@ public sealed class clsBaseDatosHealthCheck(
     /// <summary>HU-023.5 (#160): están el 0010, el 02 y el 03, pero no las columnas de la cubicación en segundo plano del <c>04</c>.</summary>
     public const string DescripcionEsquemaSin04 = "esquema incompleto: falta 04";
 
-    /// <summary>Columnas que agrega <c>db/scripts/pendientes/04_cubicacion_segundo_plano.sql</c> (pendiente de @scalderon-bs y del DBA) (HU-023.5).</summary>
+    /// <summary>Columnas que agrega <c>db/scripts/04_cubicacion_segundo_plano.sql</c> (HU-023.5).</summary>
     public static readonly IReadOnlySet<string> Columnas04 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "CotizacionLineasSolicitud.estadoCubicacion",
@@ -313,7 +314,7 @@ public sealed class clsBaseDatosHealthCheck(
 
     /// <summary>
     /// El <c>CHECK</c> de <c>estadoEnvio</c>: el modelo no lo describe, así que la sonda lo verifica aparte. Lo trae el 0009 (y
-    /// <c>01_crear_esquema.sql</c>), pero la base compartida se instaló antes; el 0010 lo crea si falta.
+    /// <c>db/esquema/cotifly_esquema.sql</c>), pero la base compartida se instaló antes; el 0010 lo crea si falta.
     /// </summary>
     public const string CheckEstadoEnvio = "CotizacionesSolicitud.ck_cotizaciones_estadoEnvio";
 

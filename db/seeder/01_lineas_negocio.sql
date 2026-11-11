@@ -19,7 +19,7 @@ SET QUOTED_IDENTIFIER ON;
 GO
 
 IF OBJECT_ID(N'dbo_cotifly.MargenesPolitica', N'U') IS NULL
-    THROW 50001, N'Falta dbo_cotifly.MargenesPolitica: corra primero scripts/01_crear_esquema.sql.', 1;
+    THROW 50001, N'Falta dbo_cotifly.MargenesPolitica: instale primero el esquema (esquema/cotifly_esquema.sql).', 1;
 GO
 
 INSERT INTO dbo_cotifly.MargenesPolitica (lineaNegocio, margen, metodoCalculo, isActive, mapeoLineasNexo)
