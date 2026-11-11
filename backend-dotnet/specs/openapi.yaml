@@ -7167,7 +7167,7 @@ components:
 
     RutaResumenCorreo:
       type: object
-      required: [orden, ruta, precio_texto]
+      required: [orden, ruta, precio_texto, incluye_seguro]
       properties:
         orden:
           type: integer

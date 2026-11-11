@@ -14,8 +14,8 @@ public sealed partial class clsCosteoCotizacionService
     /// <summary>Texto de la fila del seguro en la tabla de la ruta y en el resumen del pliego.</summary>
     public const string EtiquetaSeguroPdf = "Seguro de la mercancía";
 
-    /// <summary>Nota de la fila del seguro en la tabla de la ruta.</summary>
-    public const string NotaSeguroPdf = "Póliza de la mercancía transportada; se cobra aparte del flete.";
+    /// <summary>Nota de la fila del seguro en la tabla de la ruta (contrato de #265 del 2026-11-10).</summary>
+    public const string NotaSeguroPdf = "Póliza específica para la mercancía de esta ruta; su valor va aparte del flete.";
 
     /// <summary>Frase que se agrega a la nota del resumen del pliego cuando alguna ruta incluye el seguro.</summary>
     public const string NotaResumenSeguroPdf = "El seguro de la mercancía de cada ruta va en su propia fila y también suma en el total.";
