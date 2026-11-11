@@ -202,7 +202,7 @@ public sealed class clsVehiculoElegidoEndpointsTests : IDisposable
             new { fila = 0, origen = "BUENAVENTURA", origen_municipio_id = 76109, destino = "BOGOTA, D.C.", destino_municipio_id = 11001, tipologia = "CargaSeca",
                 valor_mercancia = 50_000_000m, tipo_vehiculo = "2S3", mercancias = new object[] { Cubicable(1_000m) } },
             new { fila = 1, origen = "CALI", origen_municipio_id = 76001, destino = "CARTAGENA", destino_municipio_id = 13001, tipologia = "CargaSeca",
-                valor_mercancia = 50_000_000m, tipo_vehiculo = "2", mercancias = new object[] { new { nombre_mercancia = "Bultos", cantidad = 8, peso_kg = 500 } } },
+                valor_mercancia = 50_000_000m, tipo_vehiculo = "C2", mercancias = new object[] { new { nombre_mercancia = "Bultos", cantidad = 8, peso_kg = 500 } } },
         ];
 
         using var alta = await api.EnviarContenidoAsync(_post, "/web/licitaciones", ana.Access,
@@ -211,8 +211,8 @@ public sealed class clsVehiculoElegidoEndpointsTests : IDisposable
         await api.ProcesarCubicacionAsync(folio);
 
         _cubicador.Recomendaciones.Should().ContainSingle("solo la fila con mercancías cubicables va al cubicador");
-        (await CamionesAsync(folio)).Should().Equal("1|3S3", "2|2");
-        _nexo.UltimaAlta!["lineas"]!.AsArray().Select(l => l!["tipoVehiculo"]!.GetValue<string>()).Should().Equal("3S3", "2");
+        (await CamionesAsync(folio)).Should().Equal("1|3S3", "2|C2");
+        _nexo.UltimaAlta!["lineas"]!.AsArray().Select(l => l!["tipoVehiculo"]!.GetValue<string>()).Should().Equal("3S3", "C2");
         using var leida = await api.EnviarAsync(_get, $"/web/licitaciones/{folio}", ana.Access);
         var cubicacion = (await VerificarContratoAsync(leida, "/web/licitaciones/{folio}", _get, HttpStatusCode.OK)).GetProperty("cubicacion");
         cubicacion.EnumerateArray().Should().ContainSingle(r => r.GetProperty("linea_orden").GetInt32() == 1)

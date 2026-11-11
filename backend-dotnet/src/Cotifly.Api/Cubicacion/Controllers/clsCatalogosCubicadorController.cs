@@ -3,6 +3,7 @@ using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Cubicacion.DTOs;
 using Cotifly.Aplicacion.Cubicacion.Interfaces;
 using Cotifly.Dominio.Comun;
+using Cotifly.Dominio.Cotizaciones;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Cotifly.Api.Cubicacion.Controllers;
@@ -25,12 +26,19 @@ public sealed class clsCatalogosCubicadorController(IClsContextoUsuario usuario,
     public async Task<IActionResult> ListarTiposMercancia(CancellationToken cancellationToken) =>
         Responder(await cubicador.ListarTiposMercanciaAsync(cancellationToken));
 
-    /// <summary>200 el catálogo de carrocerías (<c>[{codigo, nombre, activo}]</c>); 503 <c>CUBICADOR_NO_DISPONIBLE</c>.</summary>
+    /// <summary>
+    /// HU-044.8 (#291): 200 con el catálogo de carrocerías <b>de NEXO</b> (<c>[{codigo, nombre, activo}]</c>), que son las que
+    /// propone <c>normalizar-valores</c> y las que valida la captura. Ya no sale del cubicador: Nexo aún no publica un endpoint de
+    /// carrocerías, así que la fuente es la lista de carrocerías de Nexo de Cotifly (<see cref="clsCatalogosCaptura.Carrocerias"/>),
+    /// la misma que <c>GET /web/catalogos-flete</c>. Siempre responde 200 (no depende del cubicador).
+    /// </summary>
     [HttpGet("tipos-carroceria")]
     [ProducesResponseType<IReadOnlyList<clsTipoCarroceriaCubicador>>(StatusCodes.Status200OK)]
-    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status503ServiceUnavailable)]
-    public async Task<IActionResult> ListarTiposCarroceria(CancellationToken cancellationToken) =>
-        Responder(await cubicador.ListarTiposCarroceriaAsync(cancellationToken));
+    public IActionResult ListarTiposCarroceria() => Ok(_carroceriasNexo);
+
+    /// <summary>Las carrocerías de Nexo (<see cref="clsCatalogosCaptura.Carrocerias"/>) con el código como nombre (el front muestra el texto amigable).</summary>
+    private static readonly IReadOnlyList<clsTipoCarroceriaCubicador> _carroceriasNexo =
+        [.. clsCatalogosCaptura.Carrocerias.Select(c => new clsTipoCarroceriaCubicador(c, c, true))];
 
     /// <summary>
     /// 200 el catálogo de tipos de vehículo (<c>[{codigo, nombre, carrocerias, activo}]</c>): el nombre que se muestra en pantalla y en el

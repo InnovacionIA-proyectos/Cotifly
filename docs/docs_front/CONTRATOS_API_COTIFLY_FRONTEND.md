@@ -1025,7 +1025,7 @@ copia de hasta 24 h.
 
 ```json
 {
-  "tipos_vehiculo": [ { "valor": "3S3", "etiqueta": "Tractocamión 3S3" } ],
+  "tipos_vehiculo": [ { "valor": "C2", "etiqueta": "Sencillo" }, { "valor": "3S3", "etiqueta": "Tractocamión 3S3" } ],
   "tipos_carroceria": [ { "valor": "FURGON", "etiqueta": "Furgón" } ],
   "clases_viaje": [
     { "valor": "Contenedor", "etiqueta": "Contenedor" },
@@ -1059,6 +1059,11 @@ texto amigable para cada código, pero debe enviar el `valor`.
   queda vacío. No es un error del endpoint. Con la lista vacía, deshabilitar el selector de clase de contenedor y ofrecer Reintentar:
   una captura `Contenedor` con una clase que no sea provisional respondería 503 `CATALOGOS_FLETE_NO_DISPONIBLE`.
 - Reemplaza el catálogo fijo que tenía el frontend.
+
+**`tipos_vehiculo` (HU-044.8, #291).** El `valor` es el **código NEXO** canónico (`C2`, `C3`, `2L3`…): SAP entrega «2»/«3» y el
+backend los traduce a `C2`/`C3` con la única fuente de equivalencia (`tbl_mapeo_vehiculo_tarifario`); el resto de códigos no cambia. Es
+el valor que hay que guardar y enviar en `tipo_vehiculo`. **Rompe:** cambian el selector y los valores guardados (ver §7, fila de #291);
+el front ya no traduce «2»/«3» por su cuenta. La `etiqueta` (descripción de NEXO) no cambia.
 
 Notas: `tipologia` (7 valores fijos) no viene aquí; ver la sección 5.4.
 
@@ -1139,16 +1144,19 @@ Catálogo del cubicador para el desplegable de mercancías. Ordenado por nombre,
 
 #### 4.2.5 `GET /web/tipos-carroceria`
 
+**HU-044.8 (#291):** sale del **catálogo de carrocerías de NEXO** (ya no del cubicador), la misma lista que `tipos_carroceria` de
+`GET /web/catalogos-flete` y que valida la captura, y la misma de la que `POST /web/licitaciones/normalizar-valores` propone sus
+códigos. `codigo` = `nombre` (el front muestra el texto amigable). **Siempre 200** (ya no depende del cubicador).
+
 - **Rol:** ambos.
 
 ```json
-[ { "codigo": "FURGON", "nombre": "Furgón", "activo": true }, { "codigo": "ESTACAS", "nombre": "Estacas", "activo": true } ]
+[ { "codigo": "FURGON", "nombre": "FURGON", "activo": true }, { "codigo": "ESTACAS", "nombre": "ESTACAS", "activo": true } ]
 ```
 
 | HTTP | Código | UI |
 |---|---|---|
-| 200 | `TipoCarroceria[]` | Para mostrar el nombre de `carroceria` de los camiones |
-| 503 | `CUBICADOR_NO_DISPONIBLE` | Mostrar el código |
+| 200 | `TipoCarroceria[]` | Llenar el selector de carrocería; mostrar el texto amigable desde el front por `codigo` |
 
 #### 4.2.6 `GET /web/tipos-vehiculo`
 
@@ -4455,6 +4463,7 @@ fila_excel, campo, codigo, mensaje}`.
 | 80 | **#259: un conexo ya no se queda en `estado_nexo = pendiente` para siempre en una cotización entregada.** (a) Si NEXO deja la línea de un camión partida en varias líneas de su cotización, el conexo va a la primera por id (antes no se enviaba nunca y "Finalizar" respondía `conexos_pendientes_en_nexo` para siempre). (b) Con la cotización ya fuera del costeo (entregada, descartada, vencida), si el primer camión vigente no tiene línea en NEXO el conexo va al primer camión vigente que sí la tiene; si ninguno la tiene queda `fallido_definitivo` (con `aviso_conexos_nexo`, no bloquea "Finalizar"). Los conexos de una ruta `rechazada` no cambian (no se envían ni pasan a `fallido_definitivo`; tampoco bloquean). (c) `POST .../finalizar` con `conexos_pendientes_en_nexo` sigue respondiendo el mismo 409, pero, si la cotización estaba fuera de la agenda del polling, vuelve a encolar el envío diferido (sin enviar nada a NEXO en la petición): en unos segundos el conexo queda `enviado` o `fallido_definitivo` y el siguiente "Finalizar" pasa; así se reparan solas las cotizaciones que ya estaban atascadas. Sin códigos, estados, campos ni endpoints nuevos; sin script de base de datos (ADR-031) | Cambia | Con `conexos_pendientes_en_nexo`, en vez de dejar "Finalizar" deshabilitado indefinidamente: refrescar el costeo a los pocos segundos y permitir reintentar. Mostrar `fallido_definitivo` con `aviso_conexos_nexo` como hasta ahora |
 | 81 | **HU-016.2 (#295): la comparación del margen contra la política solo con cotizaciones finalizadas.** En `IndicadoresMetricas` (`indicadores` y `comerciales[].indicadores` de `GET /web/metricas/comercial` y `/regional`), los cinco campos de la comparación con la política —`margen_politica_promedio`, `margen_aplicado_promedio`, `margen_politica_ponderado`, `desviacion_margen_politica` y `rutas_sin_margen_politica`— salen ahora **solo de las cotizaciones finalizadas** (`finalizadaAt`, script 14): una cotización sin finalizar todavía puede cambiar de margen, así que no debe pesar en la desviación. Una finalizada en la v1 con una v2 sin finalizar no cuenta (se mira la versión vigente). **Cambia el significado** (el universo) de esos cinco campos; **no cambia ningún nombre ni tipo**. Sin ninguna cotización finalizada, los cuatro márgenes salen `null` y `rutas_sin_margen_politica` = 0. El **resto del tablero no cambia**: `cantidad`, `margen_promedio`, `margen_ponderado`, los montos, la serie mensual y la apertura por línea (`por_linea_negocio`) siguen contando con TODAS las cotizaciones (una abierta sí entra en `cantidad`). Sin endpoints, códigos ni script de base de datos nuevos | Cambia | Si ya se muestra la comparación de margen contra política, aclarar en pantalla que es **solo sobre cotizaciones finalizadas**; el resto de los indicadores sigue igual. No hay cambios de forma ni de integración |
 | 82 | **HU-013.18 (#296): indicaciones del comercial para el redactor con IA.** `POST /web/cotizaciones/{folio}/costeo/textos/redactar` (4.4.8) acepta ahora un **cuerpo JSON opcional** `{indicaciones_redaccion: string \| null}` (`RedactarTextosWeb`). Sin cuerpo, todo igual que hoy. `indicaciones_redaccion` orienta la carta de la IA (una **preferencia** de enfoque o tono, p. ej. "destacar la experiencia en carga refrigerada, tono cercano"); **no** es `notas` (la de la Mesa de Costeo). Hasta 500 caracteres (recortada); vacía, solo espacios o `null` = sin indicaciones. **Más de 500: 400 `SOLICITUD_INVALIDA`** sin llamar a la IA. Es una preferencia que **nunca** pasa por encima de las reglas estrictas del redactor (si pide montos, condiciones, otros nombres o cambiar el formato, esa parte se ignora) y la salida se valida igual (si no pasa, textos estándar). **No se guarda** en la cotización; la auditoría solo registra `con_indicaciones` (sí/no), nunca el texto. El reintento tras `TEXTOS_EDITADOS` (409, `?sobrescribir=true`) lleva las mismas indicaciones. Sin campos nuevos en la respuesta (`TextosCotizacion` igual que hoy), sin estados ni endpoints nuevos; sin script de base de datos | Agrega | En el editor de textos del PDF, ofrecer un campo opcional "Indicaciones para la IA" (máx. 500) y enviarlo en `indicaciones_redaccion` al pedir "Redactar con IA"; con `SOLICITUD_INVALIDA` marcar el campo (más de 500); reenviar las mismas indicaciones en el reintento con `?sobrescribir=true` |
+| 83 (provisional, se renumera al integrar) | **HU-044.8 (#291): catálogos de vehículo y carrocería alineados con NEXO. ROMPE: cambian el selector y los valores guardados.** (a) **Vehículo en código NEXO.** `GET /web/catalogos-flete` devuelve `tipos_vehiculo[].valor` con el **código NEXO** (`C2`, `C3`, `2L3`…) en vez del código de SAP («2», «3»); la `etiqueta` (descripción) no cambia y el resto de códigos tampoco. Es el valor que el front debe guardar y enviar en `tipo_vehiculo` (`POST /web/solicitudes-costeo`, licitación, edición): mandar «2»/«3» dejaría la configuración en cuarentena en NEXO. El backend, además, traduce en la captura cualquier «2»/«3» que llegue (fronts anteriores o cotizaciones viejas) a `C2`/`C3` antes de enviar a NEXO; un alias de NEXO (`GET /web/alias/resolver`) que resuelva a «2»/«3» también viaja como `C2`/`C3`. La equivalencia sale de una sola fuente (`tbl_mapeo_vehiculo_tarifario`, `C2` ↔ «2», `C3` ↔ «3»). (b) **Carrocería del catálogo de NEXO.** `GET /web/tipos-carroceria` ya **no** sale del cubicador: devuelve el catálogo de carrocerías de NEXO (`ESTACAS`, `ESTIBAS`, `FURGON`, `FURGON REFRIGERADO`, `PLATAFORMA`, `PORTACONTENEDORES`, `TANQUE`, `TRAYLER`, `VOLCO`), la misma lista que `tipos_carroceria` de `GET /web/catalogos-flete` y que valida la captura, con `codigo` = `nombre`; **siempre 200** (ya no 503 `CUBICADOR_NO_DISPONIBLE`). Los códigos de carrocería que devuelve `POST /web/licitaciones/normalizar-valores` existen en esta lista. Sin campos, códigos ni endpoints nuevos | Rompe | Guardar y enviar el `valor` de `tipos_vehiculo` tal cual (ya es `C2`/`C3`): no volver a traducir en el front ni asumir «2»/«3»; re-mapear los valores guardados de cotizaciones viejas no hace falta (el backend los traduce). Llenar el selector de carrocería con `GET /web/tipos-carroceria` (ahora de NEXO, siempre 200): quitar cualquier dependencia del cubicador y tratar `codigo` = `nombre` (mostrar el texto amigable desde el front) |
 
 ---
 
