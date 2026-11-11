@@ -2092,11 +2092,20 @@ en el precio" (mismo folio) o "La versión nueva copia los servicios conexos «.
 La IA redacta el asunto y la introducción del PDF. Nunca falla por la IA: si tarda más de 15 s, falla o su texto no pasa la validación,
 responde los textos estándar (`fuente = estandar`).
 
-- **Rol:** ambos (dueño). **Headers:** `If-Match` **obligatorio**. **Sin cuerpo.**
+- **Rol:** ambos (dueño). **Headers:** `If-Match` **obligatorio**. **Cuerpo opcional** (HU-013.18, #296): sin cuerpo, todo igual que hoy.
 
 | Parámetro | En | Reglas |
 |---|---|---|
 | `sobrescribir` | query | `true` reemplaza textos editados por el comercial. Por defecto `false` |
+
+| Campo (cuerpo opcional) | Tipo | Obligatorio | Reglas |
+|---|---|---|---|
+| `indicaciones_redaccion` | string \| null | No | HU-013.18 (#296). Indicaciones del comercial para orientar la carta de la IA (una **preferencia** de enfoque o tono, p. ej. "destacar la experiencia en carga refrigerada, tono cercano"). **No** es `notas` (la de la Mesa de Costeo). Hasta 500 caracteres (recortada); vacía, solo espacios o `null` = sin indicaciones. Más de 500: 400 `SOLICITUD_INVALIDA` sin llamar a la IA. Es una preferencia que **nunca** pasa por encima de las reglas estrictas del redactor (si pide montos, condiciones, otros nombres o cambiar el formato, esa parte se ignora) y la salida se valida igual. **No se guarda** en la cotización |
+
+```jsonc
+// Cuerpo (opcional)
+{ "indicaciones_redaccion": "Resaltar la experiencia en carga refrigerada y usar un tono cercano." }
+```
 
 ```json
 {
@@ -2111,8 +2120,9 @@ responde los textos estándar (`fuente = estandar`).
 | HTTP | Código | UI |
 |---|---|---|
 | 200 | `TextosCotizacion` | Mostrar en el editor. Con `fuente = estandar`, avisar que se usó el texto estándar. Guardar el `ETag` de la respuesta |
+| 400 | `SOLICITUD_INVALIDA` | `indicaciones_redaccion` de más de 500 caracteres: avisar y no reenviar hasta recortarla |
 | 404 | `ErrorWeb` | — |
-| 409 | `TEXTOS_EDITADOS` | Preguntar "¿Reemplazar tus textos?" y repetir con `?sobrescribir=true` |
+| 409 | `TEXTOS_EDITADOS` | Preguntar "¿Reemplazar tus textos?" y repetir con `?sobrescribir=true` (con las mismas `indicaciones_redaccion`) |
 | 409 | `PDF_YA_ENVIADO`, `CONFLICTO_CONCURRENCIA` | Versión nueva / recargar |
 | 428 | `PRECONDICION_REQUERIDA` | — |
 
@@ -3530,7 +3540,11 @@ Definiciones comunes (aplican a los dos tableros):
 - **Margen contra la política (HU-016.1, #154, nuevo):** `indicadores` (y `comerciales[].indicadores`) trae cinco campos que comparan
   el margen aplicado con la política de margen de las **mismas rutas** (el `margenPoliticaSugerido` que cada ruta guardó al cotizarse;
   la tabla de políticas no se expone). Rutas comparables: versión vigente, sin las rechazadas por la Mesa, con margen aplicado y con
-  política. `margen_politica_promedio` = promedio simple de su política; `margen_aplicado_promedio` = promedio simple de su margen
+  política. **HU-016.2 (#295, fila 81 de §7): además, solo de las cotizaciones FINALIZADAS** (`finalizadaAt`): una sin finalizar aún
+  puede cambiar de margen, así que no entra en la comparación (ni en `rutas_sin_margen_politica`), pero sí cuenta en `cantidad` y en el
+  resto del tablero (`margen_promedio`, `margen_ponderado`, montos, serie y apertura por línea, todos con TODAS). Sin ninguna finalizada,
+  los cuatro márgenes salen `null` y `rutas_sin_margen_politica` = 0. Una finalizada en la v1 con una v2 sin finalizar no cuenta (se mira
+  la versión vigente). No cambia ningún nombre ni tipo de campo. `margen_politica_promedio` = promedio simple de su política; `margen_aplicado_promedio` = promedio simple de su margen
   aplicado (las **mismas** rutas: es el par directo de `margen_politica_promedio`); `margen_politica_ponderado` = política ponderada por
   `costoFinal` (las de costo > 0); `desviacion_margen_politica` = SUM((aplicado − política) × costo) / SUM(costo) de esas mismas rutas,
   es decir, el aplicado ponderado por costo menos la política ponderada. **Semáforo con el ponderado:** verde si
@@ -4440,6 +4454,8 @@ fila_excel, campo, codigo, mensaje}`.
 | 79 | **HU-045.2 (#264, ADR-032): seguro de la mercancía por ruta.** Endpoint **nuevo** `PUT /web/cotizaciones/{folio}/costeo/seguro` (4.4.15, `If-Match` obligatorio) con `{incluye_seguro, linea_orden?, linea_solicitud_id?}`: incluye o quita el seguro de una ruta. El seguro es `valor_mercancia × tasa vigente` en pesos, sin redondear a pesos (hoy 0,345 %), **no lleva margen** y se suma al precio: `precio_final_linea` = (fletes + retorno + levante) con margen + venta de los conexos + `valor_seguro`; en USD se convierte con `trm_aplicada`. Campos **nuevos** en `CosteoCotizacion`: `tasa_seguro_vigente` (en el GET, en el PUT del seguro, en las respuestas del margen y de los conexos y en el detalle por folio) y en cada ruta `incluye_seguro`, `tasa_seguro` y `valor_seguro`. Código **nuevo** `SEGURO_SIN_VALOR_MERCANCIA` (400). Con la cotización finalizada o enviada, 409 `PDF_YA_ENVIADO` (como el margen); en una licitación, 409 `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION`. Si cambia `valor_mercancia` (edición o `datos_carga`), el seguro se recalcula con la tasa vigente; la versión nueva conserva el check. El PDF, el Excel y el correo todavía no muestran la línea del seguro (HU-045.3, #265). Script `db/scripts/20` (de Datos) antes de la imagen ("falta 20"). Son **71 endpoints** | Agrega | Mostrar el check "Incluir seguro" por ruta (no en licitaciones) con la `tasa_seguro_vigente`; al marcarlo o desmarcarlo, `PUT .../costeo/seguro` con `If-Match` y refrescar con la respuesta; mostrar `valor_seguro` aparte del flete; con `SEGURO_SIN_VALOR_MERCANCIA`, pedir el valor de la mercancía editando la solicitud |
 | 83 | **HU-021.15 (#297): clase de contenedor con `clase_viaje = Extradimensionado`.** NEXO admite contenedores flat track y open top para la carga extradimensionada nacional (lista provisional G15). Con `clase_viaje = Extradimensionado`, `clase_contenedor` pasa a ser **opcional** y solo admite `CNT20.FT`, `CNT20.OP`, `CNT40.FT` o `CNT40.OP` (exactos, ignorando los espacios alrededor); otra clase es `{"campo":"clase_contenedor","codigo":"VALOR_FUERA_DE_RANGO"}` (antes `CAMPO_NO_APLICA`). Con `Contenedor` no cambia (obligatoria, cualquier clase del catálogo); con `Cupo` o `Carga Suelta`, `CAMPO_NO_APLICA` (el mensaje nombra ahora Contenedor y Extradimensionado). `peso_con_tara_kg` sigue solo con `Contenedor`. La misma regla en la captura (`POST /web/solicitudes-costeo`), la edición (`PUT .../solicitud`) y cada fila de `POST /web/licitaciones`. Ningún campo nuevo. Sin script de base de datos | Agrega | Habilitar el selector de clase de contenedor (con las 4 provisionales G15) también con `Extradimensionado`, sin marcarlo obligatorio; con otra clase, pintar `VALOR_FUERA_DE_RANGO` en `clase_contenedor` |
 | 80 | **#259: un conexo ya no se queda en `estado_nexo = pendiente` para siempre en una cotización entregada.** (a) Si NEXO deja la línea de un camión partida en varias líneas de su cotización, el conexo va a la primera por id (antes no se enviaba nunca y "Finalizar" respondía `conexos_pendientes_en_nexo` para siempre). (b) Con la cotización ya fuera del costeo (entregada, descartada, vencida), si el primer camión vigente no tiene línea en NEXO el conexo va al primer camión vigente que sí la tiene; si ninguno la tiene queda `fallido_definitivo` (con `aviso_conexos_nexo`, no bloquea "Finalizar"). Los conexos de una ruta `rechazada` no cambian (no se envían ni pasan a `fallido_definitivo`; tampoco bloquean). (c) `POST .../finalizar` con `conexos_pendientes_en_nexo` sigue respondiendo el mismo 409, pero, si la cotización estaba fuera de la agenda del polling, vuelve a encolar el envío diferido (sin enviar nada a NEXO en la petición): en unos segundos el conexo queda `enviado` o `fallido_definitivo` y el siguiente "Finalizar" pasa; así se reparan solas las cotizaciones que ya estaban atascadas. Sin códigos, estados, campos ni endpoints nuevos; sin script de base de datos (ADR-031) | Cambia | Con `conexos_pendientes_en_nexo`, en vez de dejar "Finalizar" deshabilitado indefinidamente: refrescar el costeo a los pocos segundos y permitir reintentar. Mostrar `fallido_definitivo` con `aviso_conexos_nexo` como hasta ahora |
+| 81 | **HU-016.2 (#295): la comparación del margen contra la política solo con cotizaciones finalizadas.** En `IndicadoresMetricas` (`indicadores` y `comerciales[].indicadores` de `GET /web/metricas/comercial` y `/regional`), los cinco campos de la comparación con la política —`margen_politica_promedio`, `margen_aplicado_promedio`, `margen_politica_ponderado`, `desviacion_margen_politica` y `rutas_sin_margen_politica`— salen ahora **solo de las cotizaciones finalizadas** (`finalizadaAt`, script 14): una cotización sin finalizar todavía puede cambiar de margen, así que no debe pesar en la desviación. Una finalizada en la v1 con una v2 sin finalizar no cuenta (se mira la versión vigente). **Cambia el significado** (el universo) de esos cinco campos; **no cambia ningún nombre ni tipo**. Sin ninguna cotización finalizada, los cuatro márgenes salen `null` y `rutas_sin_margen_politica` = 0. El **resto del tablero no cambia**: `cantidad`, `margen_promedio`, `margen_ponderado`, los montos, la serie mensual y la apertura por línea (`por_linea_negocio`) siguen contando con TODAS las cotizaciones (una abierta sí entra en `cantidad`). Sin endpoints, códigos ni script de base de datos nuevos | Cambia | Si ya se muestra la comparación de margen contra política, aclarar en pantalla que es **solo sobre cotizaciones finalizadas**; el resto de los indicadores sigue igual. No hay cambios de forma ni de integración |
+| 82 | **HU-013.18 (#296): indicaciones del comercial para el redactor con IA.** `POST /web/cotizaciones/{folio}/costeo/textos/redactar` (4.4.8) acepta ahora un **cuerpo JSON opcional** `{indicaciones_redaccion: string \| null}` (`RedactarTextosWeb`). Sin cuerpo, todo igual que hoy. `indicaciones_redaccion` orienta la carta de la IA (una **preferencia** de enfoque o tono, p. ej. "destacar la experiencia en carga refrigerada, tono cercano"); **no** es `notas` (la de la Mesa de Costeo). Hasta 500 caracteres (recortada); vacía, solo espacios o `null` = sin indicaciones. **Más de 500: 400 `SOLICITUD_INVALIDA`** sin llamar a la IA. Es una preferencia que **nunca** pasa por encima de las reglas estrictas del redactor (si pide montos, condiciones, otros nombres o cambiar el formato, esa parte se ignora) y la salida se valida igual (si no pasa, textos estándar). **No se guarda** en la cotización; la auditoría solo registra `con_indicaciones` (sí/no), nunca el texto. El reintento tras `TEXTOS_EDITADOS` (409, `?sobrescribir=true`) lleva las mismas indicaciones. Sin campos nuevos en la respuesta (`TextosCotizacion` igual que hoy), sin estados ni endpoints nuevos; sin script de base de datos | Agrega | En el editor de textos del PDF, ofrecer un campo opcional "Indicaciones para la IA" (máx. 500) y enviarlo en `indicaciones_redaccion` al pedir "Redactar con IA"; con `SOLICITUD_INVALIDA` marcar el campo (más de 500); reenviar las mismas indicaciones en el reintento con `?sobrescribir=true` |
 
 ---
 
@@ -4636,7 +4652,9 @@ líneas (fila 67 de §7):
   `margen_aplicado_promedio` (el aplicado simple de las mismas rutas), `margen_politica_ponderado`, `desviacion_margen_politica` y `rutas_sin_margen_politica`. El margen aplicado se compara con la
   política de margen de las **mismas rutas** (`margenPoliticaSugerido` de cada ruta), calculada en el servidor: los dos promedios
   (simple y ponderado por costo) y el semáforo con el ponderado (verde ≥ 0). Mismo criterio del tablero: versión vigente, sin rutas
-  rechazadas, alcance del gerente y del director. `desviacion_promedio_margen` no cambia.
+  rechazadas, alcance del gerente y del director. **HU-016.2 (#295, fila 81 de §7): además, solo de las cotizaciones finalizadas**
+  (`finalizadaAt`); sin ninguna finalizada, los cuatro márgenes son `null` y `rutas_sin_margen_politica` = 0. `desviacion_promedio_margen`
+  y el resto del tablero no cambian.
 - **Nuevo** `GET /web/lineas-negocio` (4.2.9): las líneas activas para el desplegable de la captura, **sin margen** (incluye
   `DevolucionContenedor`). Son **56 endpoints**.
 - Sin script de base de datos (la columna `margenPoliticaSugerido` ya existe), sin configuración nueva ni códigos de error nuevos.

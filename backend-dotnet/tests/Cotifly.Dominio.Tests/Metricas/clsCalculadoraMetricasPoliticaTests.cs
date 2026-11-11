@@ -32,6 +32,8 @@ public sealed class clsCalculadoraMetricasPoliticaTests
         CreatedAtVigente = _marzo,
         Moneda = moneda,
         TrmAplicada = trm,
+        // HU-016.2 (#295): por defecto las cotizaciones de prueba están finalizadas, para que entren en la comparación con la política.
+        Finalizada = true,
         Costo = rutas.All(r => r.Costo.HasValue) ? rutas.Sum(r => r.Costo!.Value) : null,
         PrecioFinal = rutas.All(r => r.PrecioFinal.HasValue) ? rutas.Sum(r => r.PrecioFinal!.Value) : null,
         Rutas = rutas,
@@ -298,5 +300,63 @@ public sealed class clsCalculadoraMetricasPoliticaTests
         };
 
         Indicadores(cadena).MargenAplicadoPromedio.Should().Be(0.2m);
+    }
+
+    // ---- HU-016.2 (#295): la comparación con la política solo mira las cotizaciones finalizadas.
+
+    [Fact]
+    public void UnaCotizacionSinFinalizarNoEntraEnLaComparacionPeroSiEnLaCantidad()
+    {
+        var finalizada = Cotizacion(Ruta(1, 1_000_000m, 0.20m, 0.15m));
+        var abierta = Cotizacion(Ruta(1, 9_000_000m, 0.40m, 0.10m)) with { Finalizada = false };
+
+        var indicadores = Indicadores(finalizada, abierta);
+
+        indicadores.Cantidad.Should().Be(2, "la abierta sí cuenta en la cantidad");
+        indicadores.MargenPoliticaPromedio.Should().Be(0.15m, "solo la finalizada entra en la comparación");
+        indicadores.MargenAplicadoPromedio.Should().Be(0.2m);
+        indicadores.MargenPoliticaPonderado.Should().Be(0.15m, "la ruta de 9M de la abierta no pesa");
+        indicadores.DesviacionMargenPolitica.Should().Be(0.05m);
+        indicadores.RutasSinMargenPolitica.Should().Be(0);
+    }
+
+    [Fact]
+    public void UnaRutaSinPoliticaDeUnaCotizacionAbiertaNoCuentaEnRutasSinMargenPolitica()
+    {
+        var finalizada = Cotizacion(Ruta(1, 1_000_000m, 0.20m, 0.15m));
+        var abierta = Cotizacion(Ruta(1, 9_000_000m, 0.05m, null)) with { Finalizada = false };
+
+        var indicadores = Indicadores(finalizada, abierta);
+
+        indicadores.RutasSinMargenPolitica.Should().Be(0, "la ruta sin política es de una cotización sin finalizar");
+    }
+
+    [Fact]
+    public void SinNingunaFinalizadaLosCuatroMargenesSonNullYRutasCero()
+    {
+        var abierta = Cotizacion(Ruta(1, 1_000_000m, 0.20m, 0.15m)) with { Finalizada = false };
+        var otraAbiertaSinPolitica = Cotizacion(Ruta(1, 2_000_000m, 0.10m, null)) with { Finalizada = false };
+
+        var indicadores = Indicadores(abierta, otraAbiertaSinPolitica);
+
+        indicadores.Cantidad.Should().Be(2, "las abiertas sí cuentan en la cantidad");
+        indicadores.MargenPoliticaPromedio.Should().BeNull();
+        indicadores.MargenAplicadoPromedio.Should().BeNull();
+        indicadores.MargenPoliticaPonderado.Should().BeNull();
+        indicadores.DesviacionMargenPolitica.Should().BeNull();
+        indicadores.RutasSinMargenPolitica.Should().Be(0);
+    }
+
+    [Fact]
+    public void ElRestoDelTableroCuentaConTodasAunqueNoEstenFinalizadas()
+    {
+        var finalizada = Cotizacion(Ruta(1, 1_000_000m, 0.20m, 0.15m)) with { MargenAplicado = 0.20m };
+        var abierta = Cotizacion(Ruta(1, 1_000_000m, 0.10m, 0.15m)) with { Finalizada = false, MargenAplicado = 0.10m };
+
+        var indicadores = Indicadores(finalizada, abierta);
+
+        // margen_promedio (por cotización) cuenta con TODAS; la comparación con la política, solo con la finalizada.
+        indicadores.MargenPromedio.Should().Be(0.15m, "(0,20 + 0,10) / 2: con todas");
+        indicadores.MargenAplicadoPromedio.Should().Be(0.2m, "solo la finalizada");
     }
 }
