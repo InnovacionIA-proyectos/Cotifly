@@ -1812,7 +1812,7 @@ paths:
         - `tipos_vehiculo`: `GET /api/catalogos/tipos-vehiculo` (`{codigo, descripcion, esCatalogoOficial}`, códigos SAP
           cortos como `2S3`); `valor` = `codigo`, `etiqueta` = `descripcion`. Filas sin `codigo` se omiten. **HU-044.8 (#291):**
           el `codigo` se devuelve como el **código NEXO** canónico (`C2`, `C3`): SAP trae «2»/«3» y Cotifly los traduce con la
-          única fuente de equivalencia (`tbl_mapeo_vehiculo_tarifario`, `C2` ↔ «2», `C3` ↔ «3`); el resto de códigos no cambia.
+          única fuente de equivalencia (`tbl_mapeo_vehiculo_tarifario`, `C2` ↔ «2», `C3` ↔ «3»); el resto de códigos no cambia.
           Es el valor que se guarda y se envía a NEXO (`POST /web/solicitudes-costeo`): mandar «2»/«3» dejaría la configuración en
           cuarentena en NEXO;
         - `clases_viaje`: `GET /api/catalogos/clases-viaje` (`{id, descripcion}`); `valor` = `etiqueta` = `descripcion`
