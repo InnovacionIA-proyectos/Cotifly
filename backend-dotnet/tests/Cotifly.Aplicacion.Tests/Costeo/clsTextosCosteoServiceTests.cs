@@ -1,4 +1,5 @@
 using Cotifly.Aplicacion.Auditoria.Services;
+using Cotifly.Aplicacion.Comun;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
@@ -46,7 +47,7 @@ public sealed class clsTextosCosteoServiceTests
     [Fact]
     public async Task RedactarGuardaLosTextosDeLaIaSinEditarYSubeLaVersion()
     {
-        var resultado = await Servicio().RedactarAsync(_ana, _cotizacion.Folio, sobrescribir: false, Version, Ct);
+        var resultado = await Servicio().RedactarAsync(_ana, _cotizacion.Folio, sobrescribir: false, Version, cancellationToken: Ct);
 
         resultado.EsExitoso.Should().BeTrue();
         resultado.Valor.Textos.Fuente.Should().Be("ia");
@@ -62,13 +63,13 @@ public sealed class clsTextosCosteoServiceTests
         _cotizacion.RegistrarTextos(clsTextosCotizacionJson.Escribir(
             new clsTextosCotizacion("Mi asunto", "Mi introducción.", clsTextosCotizacion.FuenteIa, true, DateTimeOffset.UtcNow)));
 
-        var sin = await Servicio().RedactarAsync(_ana, _cotizacion.Folio, sobrescribir: false, Version, Ct);
+        var sin = await Servicio().RedactarAsync(_ana, _cotizacion.Folio, sobrescribir: false, Version, cancellationToken: Ct);
 
         sin.Error.Codigo.Should().Be(clsCodigosError.TextosEditados);
         await _redaccion.DidNotReceiveWithAnyArgs().RedactarAsync(default!, default!, Ct);
         clsTextosCotizacionJson.Leer(_cotizacion.TextosCotizacion)!.Asunto.Should().Be("Mi asunto");
 
-        var con = await Servicio().RedactarAsync(_ana, _cotizacion.Folio, sobrescribir: true, Version, Ct);
+        var con = await Servicio().RedactarAsync(_ana, _cotizacion.Folio, sobrescribir: true, Version, cancellationToken: Ct);
 
         con.EsExitoso.Should().BeTrue();
         con.Valor.Textos.Editado.Should().BeFalse();
@@ -80,7 +81,7 @@ public sealed class clsTextosCosteoServiceTests
     {
         _cotizacion.RegistrarEnvio();
 
-        var redactar = await Servicio().RedactarAsync(_ana, _cotizacion.Folio, false, Version, Ct);
+        var redactar = await Servicio().RedactarAsync(_ana, _cotizacion.Folio, false, Version, cancellationToken: Ct);
         var editar = await Servicio().EditarAsync(_ana, _cotizacion.Folio, "Asunto", "Intro", Version, Ct);
 
         redactar.Error.Codigo.Should().Be(clsCodigosError.PdfYaEnviado);
@@ -96,7 +97,7 @@ public sealed class clsTextosCosteoServiceTests
         var sinFinalizar = clsAjusteMargenCosteoServiceTests.Costeada(_ana, "PCN-900555111-AP-05102026-077");
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(sinFinalizar.Folio, _ana, Arg.Any<CancellationToken>()).Returns(sinFinalizar);
 
-        var redactar = await Servicio().RedactarAsync(_ana, sinFinalizar.Folio, false, Version, Ct);
+        var redactar = await Servicio().RedactarAsync(_ana, sinFinalizar.Folio, false, Version, cancellationToken: Ct);
         var editar = await Servicio().EditarAsync(_ana, sinFinalizar.Folio, "Asunto", "Intro", Version, Ct);
 
         redactar.Error.Codigo.Should().Be(clsCodigosError.CotizacionNoFinalizada);
@@ -120,7 +121,7 @@ public sealed class clsTextosCosteoServiceTests
     [Fact]
     public async Task UnaVersionDesactualizadaRespondeConflictoSinLlamarALaIa()
     {
-        var redactar = await Servicio().RedactarAsync(_ana, _cotizacion.Folio, false, Version - 1, Ct);
+        var redactar = await Servicio().RedactarAsync(_ana, _cotizacion.Folio, false, Version - 1, cancellationToken: Ct);
         var editar = await Servicio().EditarAsync(_ana, _cotizacion.Folio, "Asunto", "Intro", Version - 1, Ct);
 
         redactar.Error.Codigo.Should().Be(clsCodigosError.ConflictoConcurrencia);
@@ -133,7 +134,7 @@ public sealed class clsTextosCosteoServiceTests
     {
         _unidad.GuardarCambiosSiVersionAsync(_cotizacion.Id, Version, Arg.Any<CancellationToken>()).Returns(false);
 
-        var resultado = await Servicio().RedactarAsync(_ana, _cotizacion.Folio, false, Version, Ct);
+        var resultado = await Servicio().RedactarAsync(_ana, _cotizacion.Folio, false, Version, cancellationToken: Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.ConflictoConcurrencia);
     }
@@ -141,7 +142,7 @@ public sealed class clsTextosCosteoServiceTests
     [Fact]
     public async Task UnaCotizacionAjenaEs404()
     {
-        var resultado = await Servicio().RedactarAsync(Guid.NewGuid(), _cotizacion.Folio, false, Version, Ct);
+        var resultado = await Servicio().RedactarAsync(Guid.NewGuid(), _cotizacion.Folio, false, Version, cancellationToken: Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.CotizacionNoEncontrada);
     }
@@ -149,7 +150,7 @@ public sealed class clsTextosCosteoServiceTests
     [Fact]
     public async Task ElComercialEditaLosTextosConservaLaFuenteYPuedeEscribirMontos()
     {
-        await Servicio().RedactarAsync(_ana, _cotizacion.Folio, false, Version, Ct);
+        await Servicio().RedactarAsync(_ana, _cotizacion.Folio, false, Version, cancellationToken: Ct);
         _unidad.GuardarCambiosSiVersionAsync(_cotizacion.Id, Version + 1, Arg.Any<CancellationToken>()).Returns(true);
 
         var resultado = await Servicio().EditarAsync(_ana, _cotizacion.Folio, " Propuesta para Cliente SAS ",
@@ -284,13 +285,93 @@ public sealed class clsTextosCosteoServiceTests
             .EsValida.Should().BeTrue("el respaldo de tarifa única cumple las mismas reglas que la IA");
     }
 
+    // HU-013.18 (#296): indicaciones del comercial para el redactor con IA.
+
+    [Fact]
+    public async Task HU01318_LasIndicacionesLleganALaIaRecortadas()
+    {
+        var resultado = await Servicio().RedactarAsync(_ana, _cotizacion.Folio, false, Version,
+            "  Destacar la experiencia en carga refrigerada, tono cercano.  ", Ct);
+
+        resultado.EsExitoso.Should().BeTrue();
+        await _redaccion.Received(1).RedactarAsync(
+            Arg.Is<clsContextoRedaccion>(c => c.IndicacionesComercial == "Destacar la experiencia en carga refrigerada, tono cercano."),
+            Arg.Any<clsTextosBase>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task HU01318_SinCuerpoElContextoEsElDeSiempreSinIndicaciones()
+    {
+        await Servicio().RedactarAsync(_ana, _cotizacion.Folio, false, Version, cancellationToken: Ct);
+
+        await _redaccion.Received(1).RedactarAsync(
+            Arg.Is<clsContextoRedaccion>(c => c.IndicacionesComercial == null),
+            Arg.Any<clsTextosBase>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("\t\r\n")]
+    public async Task HU01318_VacioOSoloEspaciosEsSinIndicaciones(string indicaciones)
+    {
+        await Servicio().RedactarAsync(_ana, _cotizacion.Folio, false, Version, indicaciones, Ct);
+
+        await _redaccion.Received(1).RedactarAsync(
+            Arg.Is<clsContextoRedaccion>(c => c.IndicacionesComercial == null),
+            Arg.Any<clsTextosBase>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task HU01318_MasDe500CaracteresEs400SolicitudInvalidaSinLlamarALaIa()
+    {
+        var resultado = await Servicio().RedactarAsync(_ana, _cotizacion.Folio, false, Version,
+            new string('a', clsContextoRedaccion.LargoMaximoIndicaciones + 1), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosAplicacion.SolicitudInvalida);
+        await _redaccion.DidNotReceiveWithAnyArgs().RedactarAsync(default!, default!, Ct);
+        _cotizacion.TextosCotizacion.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task HU01318_Exactamente500CaracteresSeAcepta()
+    {
+        var resultado = await Servicio().RedactarAsync(_ana, _cotizacion.Folio, false, Version,
+            new string('a', clsContextoRedaccion.LargoMaximoIndicaciones), Ct);
+
+        resultado.EsExitoso.Should().BeTrue();
+        await _redaccion.Received(1).RedactarAsync(
+            Arg.Is<clsContextoRedaccion>(c => c.IndicacionesComercial!.Length == clsContextoRedaccion.LargoMaximoIndicaciones),
+            Arg.Any<clsTextosBase>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task HU01318_LaAuditoriaRegistraConIndicacionesSiSiNoElTexto()
+    {
+        await Servicio().RedactarAsync(_ana, _cotizacion.Folio, false, Version, "Tono cercano y directo.", Ct);
+
+        await _auditoria.Received(1).RegistrarAsync(clsRedaccionCotizacionService.HerramientaAuditoria,
+            Arg.Is<object?>(e => clsAuditoriaService.AJson(e!).Contains("\"con_indicaciones\":true") && !clsAuditoriaService.AJson(e!).Contains("Tono cercano")),
+            Arg.Any<object?>(), true, Arg.Any<int>(), null);
+    }
+
+    [Fact]
+    public async Task HU01318_SinIndicacionesLaAuditoriaRegistraConIndicacionesFalse()
+    {
+        await Servicio().RedactarAsync(_ana, _cotizacion.Folio, false, Version, cancellationToken: Ct);
+
+        await _auditoria.Received(1).RegistrarAsync(clsRedaccionCotizacionService.HerramientaAuditoria,
+            Arg.Is<object?>(e => clsAuditoriaService.AJson(e!).Contains("\"con_indicaciones\":false")),
+            Arg.Any<object?>(), true, Arg.Any<int>(), null);
+    }
+
     private clsTextosCosteoService Servicio() =>
         new(_cotizaciones, _politicas, _redaccion, _unidad, _auditoria, TimeProvider.System);
 
     [Fact]
     public async Task ElRespaldoQueRecibeElRedactorEsElDeLaVarianteDelPdf()
     {
-        await Servicio().RedactarAsync(_ana, _cotizacion.Folio, false, Version, Ct);
+        await Servicio().RedactarAsync(_ana, _cotizacion.Folio, false, Version, cancellationToken: Ct);
 
         await _redaccion.Received(1).RedactarAsync(Arg.Any<clsContextoRedaccion>(),
             new clsTextosBase("presentación oferta de servicios de Transporte", clsTextosEstandar.IntroduccionEstandar(false)), Arg.Any<CancellationToken>());
@@ -327,7 +408,7 @@ public sealed class clsTextosCosteoServiceTests
         _politicas.ObtenerPorIdAsync(3, Arg.Any<CancellationToken>()).Returns(Cotifly.Dominio.Margen.clsMargenPolitica.Crear("Nacional", 0.15m).Valor);
         _politicas.ObtenerPorIdAsync(7, Arg.Any<CancellationToken>()).Returns(Cotifly.Dominio.Margen.clsMargenPolitica.Crear("Contenedores", 0.12m).Valor);
 
-        (await Servicio().RedactarAsync(_ana, pliego.Folio, false, Version, Ct)).EsExitoso.Should().BeTrue();
+        (await Servicio().RedactarAsync(_ana, pliego.Folio, false, Version, cancellationToken: Ct)).EsExitoso.Should().BeTrue();
 
         await _redaccion.Received(1).RedactarAsync(
             Arg.Is<clsContextoRedaccion>(c => c.LineaNegocio == "Nacional, Contenedores" && c.TipoVehiculo == "3S3" && c.Rutas.Count == 2),
@@ -338,7 +419,7 @@ public sealed class clsTextosCosteoServiceTests
     [Fact]
     public async Task LaRedaccionSeAuditaDespuesDeGuardarConLaHuellaYLaVersionDelPrompt()
     {
-        await Servicio().RedactarAsync(_ana, _cotizacion.Folio, false, Version, Ct);
+        await Servicio().RedactarAsync(_ana, _cotizacion.Folio, false, Version, cancellationToken: Ct);
 
         var huella = clsRedaccionCotizacionService.Huella("Cotización transporte Buenaventura - Bogotá", "Apreciado cliente.\n\nCon gusto.");
         huella.Should().HaveLength(64);
@@ -356,7 +437,7 @@ public sealed class clsTextosCosteoServiceTests
     {
         _unidad.GuardarCambiosSiVersionAsync(_cotizacion.Id, Version, Arg.Any<CancellationToken>()).Returns(false);
 
-        await Servicio().RedactarAsync(_ana, _cotizacion.Folio, false, Version, Ct);
+        await Servicio().RedactarAsync(_ana, _cotizacion.Folio, false, Version, cancellationToken: Ct);
 
         await _auditoria.Received(1).RegistrarAsync(clsRedaccionCotizacionService.HerramientaAuditoria, Arg.Any<object?>(),
             Arg.Is<object?>(s => clsAuditoriaService.AJson(s!).Contains("\"guardado\":false")), false, Arg.Any<int>(), null);

@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Cotifly.Aplicacion.Redaccion.DTOs;
 
 /// <summary>
@@ -25,6 +27,18 @@ public sealed record clsContextoRedaccion(
 
     /// <summary>Rutas que se envían al modelo como máximo (un pliego puede tener hasta 1000).</summary>
     public const int MaximoRutas = 30;
+
+    /// <summary>Caracteres máximos de las indicaciones del comercial para el redactor (HU-013.18, #296).</summary>
+    public const int LargoMaximoIndicaciones = 500;
+
+    /// <summary>
+    /// Indicaciones del comercial para orientar la redacción (HU-013.18, #296): una PREFERENCIA de enfoque o tono (ej. "destacar la
+    /// experiencia en carga refrigerada, tono cercano"), nunca una instrucción que pase por encima de las reglas estrictas del prompt. Es
+    /// opcional: cuando no viene (<c>null</c>) el contexto queda idéntico al de siempre, porque solo se serializa a <c>indicaciones_comercial</c>
+    /// si trae texto (<see cref="JsonIgnoreCondition.WhenWritingNull"/>). No es la nota de la Mesa de Costeo ni se guarda en la cotización.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? IndicacionesComercial { get; init; }
 }
 
 /// <summary>Origen y destino de una ruta (solo los nombres de las ciudades).</summary>
