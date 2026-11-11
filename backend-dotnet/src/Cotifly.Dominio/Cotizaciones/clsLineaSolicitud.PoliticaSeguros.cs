@@ -14,6 +14,6 @@ public sealed partial class clsLineaSolicitud
     public clsEvaluacionPoliticaSeguro EvaluarPoliticaSeguros(clsPoliticaSeguros politica, Func<clsServicioConexoRuta, bool>? cuenta = null)
     {
         ArgumentNullException.ThrowIfNull(politica);
-        return politica.Evaluar(ValorMercancia, _conexos.Where(c => cuenta?.Invoke(c) ?? true).Select(c => c.CodigoServicio));
+        return politica.Evaluar(ValorMercancia, IncluyeSeguro, _conexos.Where(c => cuenta?.Invoke(c) ?? true).Select(c => c.CodigoServicio));
     }
 }

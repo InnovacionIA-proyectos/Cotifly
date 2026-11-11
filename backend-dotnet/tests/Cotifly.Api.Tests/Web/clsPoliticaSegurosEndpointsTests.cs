@@ -46,14 +46,19 @@ public sealed class clsPoliticaSegurosEndpointsTests : IDisposable
         var ruta = (await CosteoAsync(sesion, folio)).GetProperty("rutas")[0];
 
         var politica = ruta.GetProperty("politica_seguros");
+        politica.GetProperty("tramo").GetProperty("id").GetString().Should().NotBeNullOrEmpty();
         politica.GetProperty("tramo").GetProperty("nombre").GetString().Should().Be("> 350 – 500 M");
         politica.GetProperty("tramo").GetProperty("valor_desde").GetDecimal().Should().Be(350_000_000m);
         politica.GetProperty("tramo").GetProperty("valor_hasta").GetDecimal().Should().Be(500_000_000m);
-        politica.GetProperty("medidas_recomendadas").EnumerateArray().Select(m => m.GetProperty("codigo").GetString())
+        politica.GetProperty("recomendadas").EnumerateArray().Select(m => m.GetProperty("codigo").GetString())
             .Should().BeEquivalentTo(["esquema_basico", "gps", "candado_satelital", "restriccion_nocturna", "incluir_seguro"]);
-        var obligatoria = politica.GetProperty("medidas_obligatorias").EnumerateArray().Should().ContainSingle().Subject;
+        politica.GetProperty("recomendadas").EnumerateArray()
+            .All(m => m.TryGetProperty("es_cobrable", out _) && m.TryGetProperty("estado", out _) && m.TryGetProperty("conexos", out _))
+            .Should().BeTrue("cada recomendada trae la misma forma de Medida");
+        var obligatoria = politica.GetProperty("obligatorias").EnumerateArray().Should().ContainSingle().Subject;
         obligatoria.GetProperty("codigo").GetString().Should().Be("acompanante_vehicular");
         obligatoria.GetProperty("nombre").GetString().Should().Be("Acompañante vehicular (parcial o total)");
+        obligatoria.GetProperty("es_cobrable").GetBoolean().Should().BeTrue();
         obligatoria.GetProperty("estado").GetString().Should().Be("pendiente");
         obligatoria.GetProperty("conexos").EnumerateArray().Select(c => c.GetString())
             .Should().Equal("AVP_MOTO", "AVP_MOTO_ARMADA", "AVT_AUTO", "AVT_MOTO", "AVT_MOTO_ARMADA");
@@ -73,16 +78,27 @@ public sealed class clsPoliticaSegurosEndpointsTests : IDisposable
         detalle.GetProperty("motivo").GetString().Should().Be("medidas_obligatorias_faltantes");
         var faltante = detalle.GetProperty("rutas")[0];
         faltante.GetProperty("linea_orden").GetInt32().Should().Be(1);
+        faltante.GetProperty("origen").GetString().Should().NotBeNullOrEmpty();
+        faltante.GetProperty("destino").GetString().Should().NotBeNullOrEmpty();
         faltante.GetProperty("medidas")[0].GetProperty("codigo").GetString().Should().Be("acompanante_vehicular");
-        faltante.GetProperty("medidas")[0].GetProperty("conexos").GetArrayLength().Should().Be(5);
+        faltante.GetProperty("medidas")[0].GetProperty("nombre").GetString().Should().Be("Acompañante vehicular (parcial o total)");
+        faltante.GetProperty("medidas")[0].TryGetProperty("conexos", out _).Should().BeFalse("el detalle del contrato del 2026-11-10 solo lleva codigo y nombre");
 
         using var vacia = await _api.EnviarAsync(_post, Url(RutaFinalizar, folio), sesion.Access,
             """{"justificacion":"   "}""", await EtagAsync(sesion, folio));
         vacia.StatusCode.Should().Be(HttpStatusCode.Conflict, "una justificación vacía no salta el bloqueo");
 
+        using var corta = await _api.EnviarAsync(_post, Url(RutaFinalizar, folio), sesion.Access,
+            """{"justificacion":"muy corta"}""", await EtagAsync(sesion, folio));
+        var errorCorta = (await VerificarContratoAsync(corta, RutaFinalizar, _post, HttpStatusCode.BadRequest)).GetProperty("error");
+        errorCorta.GetProperty("codigo").GetString().Should().Be("JUSTIFICACION_REQUERIDA");
+        errorCorta.GetProperty("detalle").GetProperty("minimo").GetInt32().Should().Be(10);
+        errorCorta.GetProperty("detalle").GetProperty("maximo").GetInt32().Should().Be(500);
+
         using var larga = await _api.EnviarAsync(_post, Url(RutaFinalizar, folio), sesion.Access,
-            clsApiWebPruebas.Json(new { justificacion = new string('x', 1001) }), await EtagAsync(sesion, folio));
-        await VerificarContratoAsync(larga, RutaFinalizar, _post, HttpStatusCode.BadRequest);
+            clsApiWebPruebas.Json(new { justificacion = new string('x', 501) }), await EtagAsync(sesion, folio));
+        (await VerificarContratoAsync(larga, RutaFinalizar, _post, HttpStatusCode.BadRequest))
+            .GetProperty("error").GetProperty("codigo").GetString().Should().Be("JUSTIFICACION_REQUERIDA");
 
         using var justificada = await _api.EnviarAsync(_post, Url(RutaFinalizar, folio), sesion.Access,
             """{"justificacion":"Riesgo aprobó el viaje sin acompañante (prueba)."}""", await EtagAsync(sesion, folio));
@@ -110,7 +126,7 @@ public sealed class clsPoliticaSegurosEndpointsTests : IDisposable
         // La fila importada de Nexo no trae el código: sale del índice del catálogo (calentado en segundo plano, sin la caché de costos).
         await _api.Factory.Services.GetRequiredService<clsAlmacenCategoriasConexos>().UltimaLectura.WaitAsync(TimeSpan.FromSeconds(30), Ct);
         var costeo = await CosteoAsync(sesion, folio);
-        costeo.GetProperty("rutas")[0].GetProperty("politica_seguros").GetProperty("medidas_obligatorias")[0]
+        costeo.GetProperty("rutas")[0].GetProperty("politica_seguros").GetProperty("obligatorias")[0]
             .GetProperty("estado").GetString().Should().Be("cumplida");
         (await CodigosAsync(folio)).Should().Be("AVT_AUTO", "la lectura del costeo guarda el código del catálogo");
 
@@ -126,7 +142,7 @@ public sealed class clsPoliticaSegurosEndpointsTests : IDisposable
             clsApiWebPruebas.Json(new { lineas = new[] { 1 }, servicio_id = AcompananteParcial, cantidad = 1 }), await EtagAsync(sesion, folio));
 
         var costeo = await VerificarContratoAsync(agregar, "/web/cotizaciones/{folio}/costeo/servicios-conexos/lineas", _post, HttpStatusCode.OK);
-        costeo.GetProperty("rutas")[0].GetProperty("politica_seguros").GetProperty("medidas_obligatorias")[0]
+        costeo.GetProperty("rutas")[0].GetProperty("politica_seguros").GetProperty("obligatorias")[0]
             .GetProperty("estado").GetString().Should().Be("cumplida");
         (await CodigosAsync(folio)).Should().Be("AVP_MOTO");
     }
@@ -152,7 +168,7 @@ public sealed class clsPoliticaSegurosEndpointsTests : IDisposable
         using var respuesta = await _api.EnviarAsync(_get, Url(RutaCosteo, folio), sesion.Access);
         var costeo = await VerificarContratoAsync(respuesta, RutaCosteo, _get, HttpStatusCode.OK);
 
-        costeo.GetProperty("rutas")[0].GetProperty("politica_seguros").GetProperty("medidas_obligatorias")[0]
+        costeo.GetProperty("rutas")[0].GetProperty("politica_seguros").GetProperty("obligatorias")[0]
             .GetProperty("estado").GetString().Should().Be("cumplida");
         (await CodigosAsync(folio)).Should().Be("AVT_AUTO", "la lectura del catálogo completa la fila en NULL");
         // B2 de la auditoría: el GET que escribe el código no cambia el ETag ni la versión de negocio.
@@ -214,8 +230,8 @@ public sealed class clsPoliticaSegurosEndpointsTests : IDisposable
         var politica = (await CosteoAsync(sesion, folio)).GetProperty("rutas")[0].GetProperty("politica_seguros");
 
         politica.GetProperty("tramo").ValueKind.Should().Be(JsonValueKind.Null);
-        politica.GetProperty("aviso").GetString().Should().Contain("no tiene valor de la mercancía");
-        politica.GetProperty("medidas_obligatorias").GetArrayLength().Should().Be(0);
+        politica.GetProperty("aviso").GetString().Should().Be("SIN_VALOR_MERCANCIA");
+        politica.GetProperty("obligatorias").GetArrayLength().Should().Be(0);
         await _api.FinalizarAsync(sesion.Access, folio);
     }
 
@@ -227,7 +243,7 @@ public sealed class clsPoliticaSegurosEndpointsTests : IDisposable
         var politica = (await CosteoAsync(sesion, folio)).GetProperty("rutas")[0].GetProperty("politica_seguros");
 
         politica.GetProperty("tramo").GetProperty("nombre").GetString().Should().Be("> 150 – 250 M");
-        politica.GetProperty("medidas_obligatorias").GetArrayLength().Should().Be(0);
+        politica.GetProperty("obligatorias").GetArrayLength().Should().Be(0);
         await _api.FinalizarAsync(sesion.Access, folio);
     }
 

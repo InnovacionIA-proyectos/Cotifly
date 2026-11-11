@@ -336,9 +336,9 @@ public sealed record clsAjusteMargenWebRequest(decimal? Margen, string? Justific
 public sealed record clsSeguroRutaWebRequest(bool? IncluyeSeguro, int? LineaOrden = null, Guid? LineaSolicitudId = null);
 
 /// <summary>
-/// <c>FinalizarWeb</c> (HU-046.3, #269), cuerpo OPCIONAL de <c>POST .../finalizar</c>: <c>justificacion</c> (hasta 1000 caracteres) para
-/// finalizar aunque falte una medida obligatoria de la política de seguros. Salta solo ese bloqueo y queda auditada; vacía es como no
-/// mandarla.
+/// <c>FinalizarWeb</c> (HU-046.3, #269; contrato del 2026-11-10), cuerpo OPCIONAL de <c>POST .../finalizar</c>: <c>justificacion</c> (de 10 a
+/// 500 caracteres, sin los espacios de los extremos) para finalizar aunque falte una medida obligatoria de la política de seguros. Salta solo
+/// ese bloqueo y queda auditada; ausente, vacía o solo espacios es como no mandarla.
 /// </summary>
 public sealed record clsFinalizarWebRequest(string? Justificacion);
 

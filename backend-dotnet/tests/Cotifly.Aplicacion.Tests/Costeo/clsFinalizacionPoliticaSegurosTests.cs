@@ -1,6 +1,5 @@
 using System.Text.Json;
 using Cotifly.Aplicacion.Auditoria.Services;
-using Cotifly.Aplicacion.Comun;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Costeo.Interfaces;
 using Cotifly.Aplicacion.Costeo.Services;
@@ -81,7 +80,9 @@ public sealed class clsFinalizacionPoliticaSegurosTests
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.CotizacionNoFinalizable);
         resultado.Error.Datos!["motivo"].Should().Be("medidas_obligatorias_faltantes");
-        Json(resultado.Error.Datos["rutas"]).ToString().Should().Contain("\"linea_orden\":1").And.Contain("acompanante_vehicular").And.Contain("AVT_AUTO");
+        var rutasJson = Json(resultado.Error.Datos["rutas"]).ToString();
+        rutasJson.Should().Contain("\"linea_orden\":1").And.Contain("acompanante_vehicular").And.Contain("origen").And.Contain("destino");
+        rutasJson.Should().NotContain("conexos", "el detalle del contrato del 2026-11-10 solo lleva codigo y nombre");
         _cotizacion.Finalizada.Should().BeFalse();
         await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
         _auditados.Should().ContainSingle();
@@ -128,14 +129,27 @@ public sealed class clsFinalizacionPoliticaSegurosTests
         _cotizacion.Finalizada.Should().BeFalse();
     }
 
-    [Fact]
-    public async Task UnaJustificacionQueNoCabeEsSolicitudInvalidaSinLeerLaCotizacion()
+    [Theory]
+    [InlineData(9)]
+    [InlineData(501)]
+    public async Task UnaJustificacionFueraDeLargoEsJustificacionRequeridaConMinimoYMaximo(int largo)
     {
-        var resultado = await Servicio().FinalizarAsync(
-            _ana, _cotizacion.Folio, Version, new string('x', clsCotizacionSolicitud.LargoMaximoJustificacion + 1), Ct);
+        // Contrato del 2026-11-10: 400 JUSTIFICACION_REQUERIDA con detalle.minimo = 10 y detalle.maximo = 500, validado tras el If-Match.
+        var resultado = await Servicio().FinalizarAsync(_ana, _cotizacion.Folio, Version, new string('x', largo), Ct);
 
-        resultado.Error.Codigo.Should().Be(clsCodigosAplicacion.SolicitudInvalida);
-        await _cotizaciones.DidNotReceiveWithAnyArgs().ObtenerPorFolioDelUsuarioAsync(default!, default, Ct);
+        resultado.Error.Codigo.Should().Be(clsCodigosError.JustificacionRequerida);
+        resultado.Error.Datos!["minimo"].Should().Be(clsCotizacionSolicitud.LargoMinimoJustificacion);
+        resultado.Error.Datos["maximo"].Should().Be(clsCotizacionSolicitud.LargoMaximoJustificacion);
+        _cotizacion.Finalizada.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task UnaJustificacionConEspaciosDeMasSeRecortaAntesDeMedirElLargo()
+    {
+        // 9 caracteres reales rodeados de espacios: tras recortar queda fuera de largo (contrato del 2026-11-10).
+        var resultado = await Servicio().FinalizarAsync(_ana, _cotizacion.Folio, Version, "   " + new string('x', 9) + "   ", Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.JustificacionRequerida);
     }
 
     [Fact]
@@ -176,18 +190,16 @@ public sealed class clsFinalizacionPoliticaSegurosTests
     }
 
     [Fact]
-    public async Task SiLaPoliticaNoSePuedeLeerRespondeServicioOcupadoAuditadoYNoFinaliza()
+    public async Task SiLaPoliticaNoSePuedeLeerLaExcepcionSePropagaYNoFinaliza()
     {
-        // B4 de la auditoría: falla cerrado, pero con un 503 controlado y auditado (no un 500 genérico).
+        // Contrato del 2026-11-10: si la política no se puede leer, Finalizar responde 500 (la excepción se propaga); no se finaliza sin evaluarla.
         _politicas.ObtenerAsync(Arg.Any<CancellationToken>()).ThrowsAsync(new InvalidOperationException("tabla caída"));
 
-        var resultado = await Servicio().FinalizarAsync(_ana, _cotizacion.Folio, Version, "Riesgo lo aprobó.", Ct);
+        await FluentActions.Awaiting(() => Servicio().FinalizarAsync(_ana, _cotizacion.Folio, Version, "Riesgo lo aprobó el equipo.", Ct))
+            .Should().ThrowAsync<InvalidOperationException>();
 
-        resultado.Error.Codigo.Should().Be(clsCodigosError.ServicioOcupado);
-        resultado.Error.Datos!["motivo"].Should().Be(clsFinalizacionCotizacionService.MotivoPoliticaNoDisponible);
         _cotizacion.Finalizada.Should().BeFalse();
         await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
-        _auditados.Should().ContainSingle("el rechazo queda auditado");
     }
 
     [Fact]

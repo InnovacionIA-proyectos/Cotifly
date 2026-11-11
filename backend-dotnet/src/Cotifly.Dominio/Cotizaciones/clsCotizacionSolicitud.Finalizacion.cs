@@ -168,8 +168,8 @@ public sealed partial class clsCotizacionSolicitud
     }
 
     /// <summary>
-    /// <c>detalle.rutas</c> de <see cref="CodigoMedidasObligatoriasFaltantes"/>: por ruta (<c>linea_orden</c>, <c>linea_solicitud_id</c>) sus
-    /// medidas pendientes con su <c>codigo</c>, su <c>nombre</c> y los <c>conexos</c> que la cumplen. Sin montos.
+    /// <c>detalle.rutas</c> de <see cref="CodigoMedidasObligatoriasFaltantes"/> (contrato del 2026-11-10): por ruta (<c>linea_orden</c>,
+    /// <c>origen</c>, <c>destino</c>) sus medidas pendientes con su <c>codigo</c> y su <c>nombre</c>. Sin montos.
     /// </summary>
     public static IReadOnlyList<IReadOnlyDictionary<string, object?>> DetalleMedidasFaltantes(IReadOnlyList<clsMedidasFaltantesRuta> faltantes)
     {
@@ -179,12 +179,12 @@ public sealed partial class clsCotizacionSolicitud
             .. faltantes.Select(r => (IReadOnlyDictionary<string, object?>)new Dictionary<string, object?>(StringComparer.Ordinal)
             {
                 ["linea_orden"] = r.LineaOrden,
-                ["linea_solicitud_id"] = r.LineaSolicitudId,
+                ["origen"] = r.Origen,
+                ["destino"] = r.Destino,
                 ["medidas"] = r.Medidas.Select(m => (IReadOnlyDictionary<string, object?>)new Dictionary<string, object?>(StringComparer.Ordinal)
                 {
                     ["codigo"] = m.Codigo,
                     ["nombre"] = m.Nombre,
-                    ["conexos"] = m.Conexos,
                 }).ToList(),
             }),
         ];

@@ -12,8 +12,14 @@ public sealed partial class clsCotizacionSolicitud
     /// <summary><c>detalle.motivo</c> de <c>COTIZACION_NO_FINALIZABLE</c> con medidas obligatorias de la política pendientes (HU-046.3).</summary>
     public const string CodigoMedidasObligatoriasFaltantes = "medidas_obligatorias_faltantes";
 
-    /// <summary>Largo máximo de la justificación con que el comercial finaliza sin una medida obligatoria (decisión 1 de HU-046.1).</summary>
-    public const int LargoMaximoJustificacion = 1000;
+    /// <summary>
+    /// Largo mínimo de la justificación con que el comercial finaliza sin una medida obligatoria (contrato del 2026-11-10; sin contar los
+    /// espacios de los extremos). Decisión 1 de HU-046.1.
+    /// </summary>
+    public const int LargoMinimoJustificacion = 10;
+
+    /// <summary>Largo máximo de la justificación con que el comercial finaliza sin una medida obligatoria (contrato del 2026-11-10).</summary>
+    public const int LargoMaximoJustificacion = 500;
 
     /// <summary>
     /// Las medidas obligatorias pendientes de cada ruta COTIZABLE (las rechazadas por la Mesa de Costeo no cuentan,
@@ -28,7 +34,8 @@ public sealed partial class clsCotizacionSolicitud
         [
             .. RutasCotizables
                 .Select(r => new clsMedidasFaltantesRuta(
-                    r.Orden, r.Id, r.EvaluarPoliticaSeguros(politica, cuenta is null ? null : c => cuenta(r, c)).Pendientes))
+                    r.Orden, r.OrigenNombre, r.DestinoNombre,
+                    r.EvaluarPoliticaSeguros(politica, cuenta is null ? null : c => cuenta(r, c)).Pendientes))
                 .Where(r => r.Medidas.Count > 0),
         ];
     }

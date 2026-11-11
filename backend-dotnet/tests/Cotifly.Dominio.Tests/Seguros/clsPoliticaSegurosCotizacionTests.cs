@@ -64,7 +64,8 @@ public sealed class clsPoliticaSegurosCotizacionTests
 
         var ruta = faltantes.Should().ContainSingle().Subject;
         ruta.LineaOrden.Should().Be(1);
-        ruta.LineaSolicitudId.Should().Be(cotizacion.PrimeraRuta!.Id);
+        ruta.Origen.Should().Be(cotizacion.PrimeraRuta!.OrigenNombre);
+        ruta.Destino.Should().Be(cotizacion.PrimeraRuta!.DestinoNombre);
         ruta.Medidas.Single().Codigo.Should().Be("acompanante_vehicular");
     }
 
@@ -143,9 +144,12 @@ public sealed class clsPoliticaSegurosCotizacionTests
         resultado.Error.Datos!["motivo"].Should().Be("medidas_obligatorias_faltantes");
         var rutas = (IReadOnlyList<IReadOnlyDictionary<string, object?>>)resultado.Error.Datos["rutas"]!;
         rutas.Select(r => r["linea_orden"]).Should().Equal(1, 2);
+        rutas[1]["origen"].Should().Be(cotizacion.Rutas.Single(r => r.Orden == 2).OrigenNombre);
+        rutas[1]["destino"].Should().Be(cotizacion.Rutas.Single(r => r.Orden == 2).DestinoNombre);
         var medidas = (IEnumerable<IReadOnlyDictionary<string, object?>>)rutas[1]["medidas"]!;
         medidas.Single()["codigo"].Should().Be("acompanante_total");
-        medidas.Single()["conexos"].Should().BeEquivalentTo(clsPoliticaSegurosMuestra.AcompanantesTotales);
+        medidas.Single()["nombre"].Should().Be("Acompañante vehicular total");
+        medidas.Single().Should().NotContainKey("conexos", "el detalle del contrato del 2026-11-10 solo lleva codigo y nombre");
         resultado.Error.Mensaje.Should().Contain("ruta 1: Acompañante vehicular (parcial o total)").And.Contain("ruta 2: Acompañante vehicular total");
         cotizacion.Finalizada.Should().BeFalse();
     }

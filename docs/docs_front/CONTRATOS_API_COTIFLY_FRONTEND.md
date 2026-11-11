@@ -1864,21 +1864,23 @@ Notas:
   tasa con que se calculó: no cambia aunque cambie la vigente) y `valor_seguro` (el seguro en la moneda de la cotización, ya sumado en
   `precio_final_linea`, sin margen). Con el check y sin `valor_mercancia`, `valor_seguro` y `tasa_seguro` llegan en `null`: mostrar
   "Falta el valor de la mercancía". El check se cambia con 4.4.15.
-- **Política de seguros (HU-046.3, #269).** Cada ruta trae `politica_seguros`: lo que exige la política de seguros por el valor de la
-  mercancía de la ruta (tablas de Datos, leídas en cada petición; un cambio se ve sin desplegar). Forma:
-  `{tramo: {nombre, valor_desde, valor_hasta} | null, medidas_recomendadas: [{codigo, nombre}], medidas_obligatorias: [{codigo, nombre,
-  estado: cumplida | pendiente, conexos: [codigoServicio]}], aviso: string | null, aviso_codigo: sin_valor_mercancia | sin_tramo | null}`
-  (usar `aviso_codigo`, no el texto). El tramo usa el `valor_mercancia` TOTAL de la ruta (no por camión), con `valor_desde` exclusivo y
-  `valor_hasta` incluido (250.000.000 exacto es "> 150 – 250 M"). `valor_mercancia` y los límites están **siempre en pesos (COP)**,
-  también en una cotización en USD. Un conexo con `estado_nexo` `fallido_definitivo` o `incierto` **no** cumple ninguna medida
-  (decisión del 2026-11-09): la obligatoria sigue `pendiente` hasta revisarlo en NEXO. Sin `valor_mercancia`
-  o con 0: `tramo = null`, listas vacías y `aviso` ("La ruta no tiene valor de la mercancía…"); no bloquea. Una obligatoria se cumple
-  con CUALQUIERA de sus `conexos` (códigos del catálogo de NEXO, `GET /web/servicios-conexos` → `codigo`): el botón "Agregar" ofrece
-  esos servicios. Hoy solo el acompañante vehicular es obligatorio (350 – 700 M: parcial o total; 700 – 1.000 M: total); las demás
-  medidas son recomendaciones (mostrar `nombre`). `politica_seguros = null` en una ruta `rechazada`, en una cotización finalizada (no se
-  recalcula), si la política no se pudo leer y en las respuestas que no la calculan (PDF, textos, recálculo de vehículos): no borrar el
-  panel por un `null`; refrescar con `GET .../costeo`. Viene también en el detalle por folio, en las respuestas de los conexos (4.4.5, 4.4.7, 4.4.13, 4.4.14), del
-  margen (4.4.4, 4.4.12) y del seguro (4.4.15).
+- **Política de seguros (HU-046.3, #269; contrato del 2026-11-10).** Cada ruta trae `politica_seguros`: lo que exige la política de
+  seguros por el valor de la mercancía de la ruta (tablas de Datos, leídas en cada petición; un cambio se ve sin desplegar). Forma:
+  `{tramo: {id, nombre, valor_desde, valor_hasta} | null, aviso: "SIN_VALOR_MERCANCIA" | null, recomendadas: [Medida], obligatorias:
+  [Medida]}`, con `Medida = {codigo, nombre, es_cobrable, estado, conexos: [codigoServicio]}`. El `estado`: `incluir_seguro` se evalúa por
+  su código (`cumplida` si la ruta tiene `incluye_seguro`, si no `pendiente`); una medida con `conexos` es `cumplida` si la ruta tiene
+  alguno (por `codigoServicio`, sin distinguir mayúsculas), si no `pendiente`; una medida sin `conexos` es `sin_verificar`, que nunca
+  bloquea. El tramo usa el `valor_mercancia` TOTAL de la ruta (no por camión), con `valor_desde` exclusivo y `valor_hasta` incluido
+  (250.000.000 exacto es "> 150 – 250 M"). `valor_mercancia` y los límites están **siempre en pesos (COP)**, también en una cotización en
+  USD. Un conexo con `estado_nexo` `fallido_definitivo` o `incierto` **no** cumple ninguna medida (decisión del 2026-11-09). Sin
+  `valor_mercancia` o con 0: `tramo = null`, listas vacías y `aviso = "SIN_VALOR_MERCANCIA"`; no bloquea. Solo una **obligatoria**
+  `pendiente` bloquea "Finalizar". Las medidas van ordenadas por `nombre` y luego por `codigo`; los `conexos`, ordenados. El botón
+  "Agregar" ofrece los servicios cuyo `codigo` del catálogo de NEXO (`GET /web/servicios-conexos` → `codigo`) está en `conexos`. Hoy solo
+  el acompañante vehicular es obligatorio (350 – 700 M: parcial o total; 700 – 1.000 M: total); las demás son recomendaciones (mostrar
+  `nombre`). `politica_seguros = null` en una ruta `rechazada`, en una cotización finalizada (no se recalcula), si la política no se pudo
+  leer y en las respuestas que no la calculan (PDF, textos, recálculo de vehículos): no borrar el panel por un `null`; refrescar con
+  `GET .../costeo`. Viene también en el detalle por folio, en las respuestas de los conexos (4.4.5, 4.4.7, 4.4.13, 4.4.14), del margen
+  (4.4.4, 4.4.12) y del seguro (4.4.15).
 
 #### 4.4.4 `PUT /web/cotizaciones/{folio}/costeo/margen`
 
@@ -2678,14 +2680,15 @@ El comercial **acepta el precio** y finaliza la cotización. Desde ahí el preci
 
 - **Rol:** ambos (dueño). Una ajena responde 404.
 - **Headers:** `If-Match` **obligatorio** (el `ETag`/`row_version` de `GET .../costeo` o del detalle). Cuerpo **opcional** (HU-046.3,
-  #269): `{"justificacion": "…"}` (hasta 1000 caracteres; vacía es como no mandarla).
+  #269; contrato del 2026-11-10): `{"justificacion": "…"}` (de 10 a 500 caracteres sin los espacios de los extremos; ausente, null, vacía
+  o solo espacios es como no mandarla).
 - Solo con el costeo de NEXO listo: `estado_costeo` en `autocosteo` o `entregada`, con `precio_final` (una `entregada` sin precio
   espera la relectura del polling).
-- **Política de seguros (HU-046.3, #269):** si una ruta que cuenta tiene una medida obligatoria `pendiente`
-  (`politica_seguros.medidas_obligatorias[].estado`), 409 `COTIZACION_NO_FINALIZABLE` con `detalle.motivo = medidas_obligatorias_faltantes`
-  y `detalle.rutas = [{linea_orden, linea_solicitud_id, medidas: [{codigo, nombre, conexos}]}]`. Con `justificacion` se finaliza igual
-  (queda auditada). La justificación salta **solo** este bloqueo: los conexos pendientes de leer o en NEXO y el estado del costeo bloquean
-  con o sin ella.
+- **Política de seguros (HU-046.3, #269; contrato del 2026-11-10):** si una ruta que cuenta tiene una medida obligatoria `pendiente`
+  (`politica_seguros.obligatorias[].estado`), 409 `COTIZACION_NO_FINALIZABLE` con `detalle.motivo = medidas_obligatorias_faltantes` y
+  `detalle.rutas = [{linea_orden, origen, destino, medidas: [{codigo, nombre}]}]`. Se revisa después del estado y de los conexos de NEXO.
+  Con `justificacion` se finaliza igual (queda auditada). La justificación salta **solo** este bloqueo: los conexos pendientes de leer o en
+  NEXO y el estado del costeo bloquean con o sin ella.
 - La finalización no cambia `estado_costeo`: sigue avanzando con NEXO (p. ej. `autocosteo` → `entregada`).
 
 | HTTP | Código | UI |
@@ -2693,9 +2696,9 @@ El comercial **acepta el precio** y finaliza la cotización. Desde ahí el preci
 | 200 | — | `CotizacionResumen` con `finalizada_at` y el `ETag` nuevo. Re-finalizar una ya finalizada es 200 **sin cambios** (mismo `finalizada_at`, mismo `ETag`) |
 | 404 | `ErrorWeb` | No existe o no es tuya |
 | 409 | `COTIZACION_NO_FINALIZABLE` | `estado_costeo` distinto de `autocosteo` y `entregada` (`detalle.estado_costeo` trae el actual), un conexo de Nexo pendiente de leer (`detalle.motivo = conexos_pendientes_de_leer`) o, desde #228, conexos que todavía no están en Nexo (`servicios_conexos[].estado_nexo = pendiente`; `detalle.motivo = conexos_pendientes_en_nexo`, `detalle.conexos_pendientes`): deshabilitar "Finalizar" hasta que haya precio o hasta la siguiente actualización del costeo |
-| 409 | `COTIZACION_NO_FINALIZABLE` + `medidas_obligatorias_faltantes` | HU-046.3 (#269): faltan medidas obligatorias de la política de seguros (`detalle.rutas`). Ofrecer "Agregar" con los `conexos` de cada medida o pedir una justificación y reintentar con `{"justificacion": "…"}` |
-| 400 | `ErrorWeb` (`SOLICITUD_INVALIDA`) | HU-046.3: la justificación pasa de 1000 caracteres (o el cuerpo no es JSON válido) |
-| 503 | `SERVICIO_OCUPADO` + `politica_seguros_no_disponible` | HU-046.3: la política de seguros no se pudo leer; no se finalizó. Reintentar en unos segundos |
+| 409 | `COTIZACION_NO_FINALIZABLE` + `medidas_obligatorias_faltantes` | HU-046.3 (#269): faltan medidas obligatorias de la política de seguros (`detalle.rutas` con `linea_orden`, `origen`, `destino` y `medidas: [{codigo, nombre}]`). Ofrecer "Agregar" con los `conexos` de cada medida (de `GET .../costeo`) o pedir una justificación y reintentar con `{"justificacion": "…"}` |
+| 400 | `JUSTIFICACION_REQUERIDA` (`ErrorNegocio`, `detalle.minimo = 10`, `detalle.maximo = 500`) | HU-046.3 (#269; contrato del 2026-11-10): la justificación viene fuera de 10 a 500 caracteres. Un cuerpo que no es JSON válido es 400 `ErrorWeb` |
+| 500 | — | HU-046.3: la política de seguros no se pudo leer; no se finalizó. Reintentar |
 | 409 | `CONFLICTO_CONCURRENCIA` | El `If-Match` no es la versión vigente (por ejemplo, el polling cambió el precio después de que lo leíste): recargar el costeo, mostrar el precio nuevo y volver a pedir la confirmación |
 | 428 | `PRECONDICION_REQUERIDA` | Falta `If-Match` |
 
@@ -3943,7 +3946,7 @@ parecido del catálogo, `sugerido = true`, con `similitud` de 0 a 1), `null` (si
 | `RESULTADO_YA_DEFINIDO` | `ganada` o `perdida` | El resultado que tiene NEXO (Cotifly ya lo guardó) |
 | `COTIZACION_NO_FINALIZABLE` | `conexos_pendientes_de_leer` | NEXO agregó un conexo que Cotifly todavía no leyó: esperar la siguiente actualización del costeo |
 | `COTIZACION_NO_FINALIZABLE` | `conexos_pendientes_en_nexo` | #228: hay conexos con `estado_nexo = pendiente` (`detalle.conexos_pendientes` dice cuántos): esperar a que el polling los deje `enviado` |
-| `COTIZACION_NO_FINALIZABLE` | `medidas_obligatorias_faltantes` | HU-046.3 (#269): una ruta que cuenta no tiene una medida obligatoria de la política de seguros (`detalle.rutas` con sus medidas y los `conexos` que las cumplen): agregar el conexo o reintentar con `{"justificacion": "…"}`. Se evalúa después de los otros motivos |
+| `COTIZACION_NO_FINALIZABLE` | `medidas_obligatorias_faltantes` | HU-046.3 (#269; contrato del 2026-11-10): una ruta que cuenta no tiene una medida obligatoria de la política de seguros (`detalle.rutas` con `linea_orden`, `origen`, `destino` y `medidas: [{codigo, nombre}]`): agregar el conexo (los `conexos` salen de `GET .../costeo`) o reintentar con `{"justificacion": "…"}`. Se evalúa después de los otros motivos |
 | `COSTEO_NEXO_RECHAZADA`, `CONEXO_INVALIDO`, `COSTEO_NEXO_*` | Código de NEXO (o `HTTP 401`) | Nunca el texto de NEXO |
 
 ---
@@ -4173,6 +4176,7 @@ fila_excel, campo, codigo, mensaje}`.
 | 75 | **HU-043.2 (#251, NEXO S6-HU-38.2): los servicios conexos se cotizan a su precio de VENTA, sin margen.** El precio de cada ruta es ahora (fletes + retorno + levante) **con** el margen de la ruta **+** la venta de sus conexos **sin** margen (antes el margen se aplicaba también a los conexos). La venta sale del `valorVenta`/`precioVentaUnitario` de la cotización de NEXO o, en un conexo capturado o agregado en Cotifly, del `precioVenta` del catálogo de NEXO; sin ella (NEXO anterior o servicio sin precio de venta), el costo. **Cambia el significado** de: `precio_final_linea` y `precio_final` (nueva fórmula), `servicios_conexos[].precio` (la venta, en la moneda de la cotización; **no cambia al ajustar el margen**), `totales.precio_transporte` (solo transporte con margen) y `totales.precio_conexos` (suma de las ventas), y `margen_promedio` del tablero (margen sobre el transporte, no sobre el precio completo). **No cambian:** `costo_final` (costo real, con el costo de los conexos), la forma de ninguna respuesta (ningún campo nuevo ni retirado), el PDF y el correo (siguen sin mostrar el costo ni el precio de cada conexo, solo el total). Una cotización **finalizada o con PDF antes del cambio conserva su precio** y su desglose como se cotizó; una sin finalizar puede cambiar de precio la próxima vez que se recalcule (polling, margen, conexos) | Cambia | Dejar de explicar en pantalla que "el margen se aplica a los conexos": la vista previa del margen solo mueve el transporte; mostrar `servicios_conexos[].precio` como precio de venta. En el tablero, rotular `margen_promedio` como margen del transporte |
 | 76 | **HU-045.2 (#264, ADR-032): seguro de la mercancía por ruta.** Endpoint **nuevo** `PUT /web/cotizaciones/{folio}/costeo/seguro` (4.4.15, `If-Match` obligatorio) con `{incluye_seguro, linea_orden?, linea_solicitud_id?}`: incluye o quita el seguro de una ruta. El seguro es `valor_mercancia × tasa vigente` en pesos, sin redondear a pesos (hoy 0,345 %), **no lleva margen** y se suma al precio: `precio_final_linea` = (fletes + retorno + levante) con margen + venta de los conexos + `valor_seguro`; en USD se convierte con `trm_aplicada`. Campos **nuevos** en `CosteoCotizacion`: `tasa_seguro_vigente` (en el GET, en el PUT del seguro, en las respuestas del margen y de los conexos y en el detalle por folio) y en cada ruta `incluye_seguro`, `tasa_seguro` y `valor_seguro`. Código **nuevo** `SEGURO_SIN_VALOR_MERCANCIA` (400). Con la cotización finalizada o enviada, 409 `PDF_YA_ENVIADO` (como el margen); en una licitación, 409 `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION`. Si cambia `valor_mercancia` (edición o `datos_carga`), el seguro se recalcula con la tasa vigente; la versión nueva conserva el check. El PDF, el Excel y el correo todavía no muestran la línea del seguro (HU-045.3, #265). Script `db/scripts/20` (de Datos) antes de la imagen ("falta 20"). Son **65 endpoints** | Agrega | Mostrar el check "Incluir seguro" por ruta (no en licitaciones) con la `tasa_seguro_vigente`; al marcarlo o desmarcarlo, `PUT .../costeo/seguro` con `If-Match` y refrescar con la respuesta; mostrar `valor_seguro` aparte del flete; con `SEGURO_SIN_VALOR_MERCANCIA`, pedir el valor de la mercancía editando la solicitud |
 | 77 | **HU-046.3 (#269, ADR-030): política de seguros por ruta en el costeo y bloqueo de "Finalizar".** Campo **nuevo** `rutas[].politica_seguros` en `CosteoCotizacion` (`GET .../costeo` y las respuestas de conexos, margen y seguro): `{tramo, medidas_recomendadas, medidas_obligatorias, aviso}` (ver 4.4.3). `POST .../finalizar` acepta un cuerpo **opcional** `{justificacion}` (hasta 1000; 400 si no cabe) y responde 409 `COTIZACION_NO_FINALIZABLE` con el motivo **nuevo** `medidas_obligatorias_faltantes` (`detalle.rutas` por ruta y medida) si una ruta que cuenta tiene una medida obligatoria pendiente y no viene justificación. La justificación salta solo ese bloqueo y queda auditada. Las rutas rechazadas no cuentan; una finalizada no se recalcula (`politica_seguros = null`). Requiere `db/scripts/21_politica_seguros.sql` (sin él `/health/ready` dice "falta 21"). Sin endpoints nuevos ni códigos de error nuevos | Agrega / Cambia | Panel de la política por ruta: tramo, recomendaciones (por `nombre`), obligatorias con su estado y botón "Agregar" con los servicios cuyo `codigo` está en `conexos`; el aviso sin valor de la mercancía. En "Finalizar", ante `medidas_obligatorias_faltantes`, mostrar las medidas por ruta y pedir una justificación (texto obligatorio) para reintentar con ella |
+| 78 (provisional, se renumera al integrar) | **HU-046.3 (#269): la política de seguros se alinea con el contrato autoritativo del 2026-11-10 (el front de #150 ya está construido contra él).** El bloque `rutas[].politica_seguros` pasa a `{tramo: {id, nombre, valor_desde, valor_hasta} \| null, aviso: "SIN_VALOR_MERCANCIA" \| null, recomendadas: [Medida], obligatorias: [Medida]}` con `Medida = {codigo, nombre, es_cobrable, estado, conexos}` (ver 4.4.3). Cambios respecto de la fila 77: el tramo trae `id`; las listas se llaman `recomendadas` y `obligatorias` (antes `medidas_recomendadas`/`medidas_obligatorias`); toda medida (recomendada u obligatoria) trae `es_cobrable` y `estado`, con un tercer estado `sin_verificar` (medida sin conexos, nunca bloquea) y `incluir_seguro` evaluado por su código contra `incluye_seguro`; `aviso` es el código `SIN_VALOR_MERCANCIA` o `null` (se retira `aviso_codigo` y el aviso `sin_tramo`); las medidas van por `nombre` y luego `codigo`. En `POST .../finalizar`: `justificacion` de **10 a 500** caracteres (antes hasta 1000) — fuera de largo, **400 `JUSTIFICACION_REQUERIDA`** con `detalle.minimo = 10` y `detalle.maximo = 500` (antes `SOLICITUD_INVALIDA`), validado tras el `If-Match`; el `detalle.rutas` del 409 pasa a `[{linea_orden, origen, destino, medidas: [{codigo, nombre}]}]` (sin `linea_solicitud_id` ni `conexos`); si la política no se puede leer, **500** (antes 503 `SERVICIO_OCUPADO`) | Cambia | Leer el bloque con los nombres nuevos (`recomendadas`/`obligatorias`, `tramo.id`, `es_cobrable`, `estado` con `sin_verificar`, `aviso = SIN_VALOR_MERCANCIA`); el botón "Agregar" usa `conexos` de cada medida; en "Finalizar" validar la justificación 10–500 y tratar `JUSTIFICACION_REQUERIDA` (400) con `detalle.minimo`/`detalle.maximo` |
 
 ---
 

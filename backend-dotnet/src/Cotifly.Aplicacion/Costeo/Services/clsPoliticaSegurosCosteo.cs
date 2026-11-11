@@ -104,19 +104,19 @@ public static class clsPoliticaSegurosCosteo
         return c => !excluidos.Contains(c.IdServicioConexo);
     }
 
-    /// <summary>El bloque <c>politica_seguros</c> de una ruta.</summary>
+    /// <summary>El bloque <c>politica_seguros</c> de una ruta (contrato del 2026-11-10).</summary>
     public static clsPoliticaSegurosRuta Bloque(clsEvaluacionPoliticaSeguro evaluacion)
     {
         ArgumentNullException.ThrowIfNull(evaluacion);
         return new clsPoliticaSegurosRuta(
-            evaluacion.Tramo is { } tramo ? new clsTramoPoliticaSegurosRuta(tramo.Nombre, tramo.ValorDesde, tramo.ValorHasta) : null,
-            [.. evaluacion.Recomendadas.Select(m => new clsMedidaRecomendadaRuta(m.Codigo, m.Nombre))],
-            [.. evaluacion.Obligatorias.Select(m => new clsMedidaObligatoriaRuta(m.Codigo, m.Nombre, m.Estado, m.Conexos))],
-            evaluacion.Aviso)
-        {
-            AvisoCodigo = evaluacion.AvisoCodigo,
-        };
+            evaluacion.Tramo is { } tramo ? new clsTramoPoliticaSegurosRuta(tramo.Id, tramo.Nombre, tramo.ValorDesde, tramo.ValorHasta) : null,
+            evaluacion.Aviso,
+            [.. evaluacion.Recomendadas.Select(Medida)],
+            [.. evaluacion.Obligatorias.Select(Medida)]);
     }
+
+    private static clsMedidaPolitica Medida(clsMedidaEvaluada medida) =>
+        new(medida.Codigo, medida.Nombre, medida.EsCobrable, medida.Estado, medida.Conexos);
 
     private static readonly Action<ILogger, string, Exception?> _logPoliticaNoDisponible = LoggerMessage.Define<string>(
         LogLevel.Warning, new EventId(1735, nameof(_logPoliticaNoDisponible)),
@@ -128,30 +128,22 @@ public static class clsPoliticaSegurosCosteo
 }
 
 /// <summary>
-/// <c>PoliticaSegurosRuta</c> (HU-046.3, #269): lo que exige la política de seguros a la ruta. <see cref="Tramo"/> es <c>null</c> sin valor
-/// de la mercancía (o con valor 0) o si ningún tramo activo lo contiene; entonces <see cref="Aviso"/> lo explica y nada se exige.
+/// <c>PoliticaSegurosRuta</c> (HU-046.3, #269; contrato del 2026-11-10): lo que exige la política de seguros a la ruta. <see cref="Tramo"/> es
+/// <c>null</c> sin valor de la mercancía (o con valor 0) o si ningún tramo activo lo contiene; <see cref="Aviso"/> es
+/// <c>"SIN_VALOR_MERCANCIA"</c> o <c>null</c>. <see cref="Recomendadas"/> y <see cref="Obligatorias"/> traen la misma forma de medida.
 /// </summary>
 public sealed record clsPoliticaSegurosRuta(
     clsTramoPoliticaSegurosRuta? Tramo,
-    IReadOnlyList<clsMedidaRecomendadaRuta> MedidasRecomendadas,
-    IReadOnlyList<clsMedidaObligatoriaRuta> MedidasObligatorias,
-    string? Aviso)
-{
-    /// <summary>
-    /// B7 de la auditoría: código estable del <see cref="Aviso"/>: <c>sin_valor_mercancia</c> (el comercial registra el valor) o
-    /// <c>sin_tramo</c> (error de datos de la política); <c>null</c> sin aviso.
-    /// </summary>
-    public string? AvisoCodigo { get; init; }
-}
+    string? Aviso,
+    IReadOnlyList<clsMedidaPolitica> Recomendadas,
+    IReadOnlyList<clsMedidaPolitica> Obligatorias);
 
-/// <summary>El tramo de la ruta: su nombre y sus límites en pesos (<see cref="ValorDesde"/> exclusivo, <see cref="ValorHasta"/> incluido; <c>null</c> = sin tope).</summary>
-public sealed record clsTramoPoliticaSegurosRuta(string Nombre, decimal ValorDesde, decimal? ValorHasta);
-
-/// <summary>Una medida recomendada: su código y el nombre que se muestra.</summary>
-public sealed record clsMedidaRecomendadaRuta(string Codigo, string Nombre);
+/// <summary>El tramo de la ruta: su <see cref="Id"/>, su nombre y sus límites en pesos (<see cref="ValorDesde"/> exclusivo, <see cref="ValorHasta"/> incluido; <c>null</c> = sin tope).</summary>
+public sealed record clsTramoPoliticaSegurosRuta(Guid Id, string Nombre, decimal ValorDesde, decimal? ValorHasta);
 
 /// <summary>
-/// Una medida obligatoria: <see cref="Estado"/> <c>cumplida</c> o <c>pendiente</c> y los <c>codigoServicio</c> de Nexo que la cumplen
-/// (<see cref="Conexos"/>, para el botón "agregar").
+/// Una medida de la política (contrato del 2026-11-10, <c>Medida = {codigo, nombre, es_cobrable, estado, conexos[]}</c>): su código, el nombre
+/// que se muestra, si <see cref="EsCobrable"/>, el <see cref="Estado"/> (<c>cumplida</c> | <c>pendiente</c> | <c>sin_verificar</c>) y los
+/// <c>codigoServicio</c> de Nexo que la cumplen (<see cref="Conexos"/>, para el botón "agregar").
 /// </summary>
-public sealed record clsMedidaObligatoriaRuta(string Codigo, string Nombre, string Estado, IReadOnlyList<string> Conexos);
+public sealed record clsMedidaPolitica(string Codigo, string Nombre, bool EsCobrable, string Estado, IReadOnlyList<string> Conexos);

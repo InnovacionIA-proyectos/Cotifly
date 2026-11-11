@@ -39,8 +39,8 @@ public sealed class clsPoliticaSegurosRepositoryTests(clsBaseDatosPruebas baseDa
         vehicular.Nombre.Should().Be("Acompañante vehicular (parcial o total)");
         vehicular.Conexos.Should().Equal("AVP_MOTO", "AVP_MOTO_ARMADA", "AVT_AUTO", "AVT_MOTO", "AVT_MOTO_ARMADA");
         politica.Tramos[5].Medidas.Single(m => m.EsObligatoria).Conexos.Should().Equal("AVT_AUTO", "AVT_MOTO", "AVT_MOTO_ARMADA");
-        politica.Evaluar(400 * M, ["AVT_AUTO"]).Pendientes.Should().BeEmpty("un acompañante total cumple en 350 – 500 M");
-        politica.Evaluar(400 * M, []).Pendientes.Should().ContainSingle();
+        politica.Evaluar(400 * M, incluyeSeguro: false, ["AVT_AUTO"]).Pendientes.Should().BeEmpty("un acompañante total cumple en 350 – 500 M");
+        politica.Evaluar(400 * M, incluyeSeguro: false, []).Pendientes.Should().ContainSingle();
     }
 
     [Fact]
@@ -49,7 +49,7 @@ public sealed class clsPoliticaSegurosRepositoryTests(clsBaseDatosPruebas baseDa
         await using var aislada = await BaseDatos.CrearBaseConScriptsAsync("dbPoliticaCambio", clsBaseDatosPruebas.ScriptsSin07);
         await using var contexto = Contexto(aislada.Cadena);
         var repositorio = new clsPoliticaSegurosRepository(contexto);
-        (await repositorio.ObtenerAsync(Ct)).Evaluar(300 * M, []).Obligatorias.Should().BeEmpty();
+        (await repositorio.ObtenerAsync(Ct)).Evaluar(300 * M, incluyeSeguro: false, []).Obligatorias.Should().BeEmpty();
 
         // Datos vuelve obligatorio el acompañante desde 250 M (como en cambiar_politica_seguros.sql), con la API arriba.
         await clsBaseDatosPruebas.EjecutarAsync(aislada.Cadena, """
@@ -60,10 +60,10 @@ public sealed class clsPoliticaSegurosRepositoryTests(clsBaseDatosPruebas baseDa
             WHERE medidaId = (SELECT id FROM dbo_cotifly.PoliticaSeguroMedidas WHERE codigo = N'gps');
             """);
 
-        var cambiada = (await repositorio.ObtenerAsync(Ct)).Evaluar(300 * M, []);
+        var cambiada = (await repositorio.ObtenerAsync(Ct)).Evaluar(300 * M, incluyeSeguro: false, []);
 
         cambiada.Pendientes.Select(m => m.Codigo).Should().Equal(["acompanante_vehicular"], "la misma instancia lee de nuevo: sin caché");
-        cambiada.Recomendadas.Select(m => m.Codigo).Should().Contain("gps", "una obligatoria sin conexos nunca queda pendiente");
+        cambiada.Obligatorias.Single(m => m.Codigo == "gps").Estado.Should().Be("sin_verificar", "una obligatoria sin conexos queda sin_verificar y nunca pendiente");
     }
 
     [Fact]
@@ -79,8 +79,8 @@ public sealed class clsPoliticaSegurosRepositoryTests(clsBaseDatosPruebas baseDa
         var politica = await new clsPoliticaSegurosRepository(contexto).ObtenerAsync(Ct);
 
         politica.Tramos.Should().HaveCount(6);
-        politica.Evaluar(400 * M, []).Obligatorias.Should().BeEmpty("la medida inactiva no aplica");
-        politica.Evaluar(2_000 * M, []).Aviso.Should().Be(clsPoliticaSeguros.AvisoSinTramo);
+        politica.Evaluar(400 * M, incluyeSeguro: false, []).Obligatorias.Should().BeEmpty("la medida inactiva no aplica");
+        politica.Evaluar(2_000 * M, incluyeSeguro: false, []).Aviso.Should().BeNull("sin tramo activo para el valor no hay aviso de contrato");
     }
 
     [Fact]

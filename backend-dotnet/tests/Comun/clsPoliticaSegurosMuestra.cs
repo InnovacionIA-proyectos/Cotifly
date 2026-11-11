@@ -16,7 +16,7 @@ public static class clsPoliticaSegurosMuestra
     /// <summary>Los 3 acompañantes totales que cumplen <c>acompanante_total</c>.</summary>
     public static readonly string[] AcompanantesTotales = ["AVT_AUTO", "AVT_MOTO", "AVT_MOTO_ARMADA"];
 
-    private static clsMedidaTramoSeguro R(string codigo) => new(codigo, Nombre(codigo), clsNivelMedidaSeguro.Recomendada, []);
+    private static clsMedidaTramoSeguro R(string codigo) => new(codigo, Nombre(codigo), EsCobrable: false, clsNivelMedidaSeguro.Recomendada, []);
 
     private static string Nombre(string codigo) => codigo switch
     {
@@ -31,10 +31,10 @@ public static class clsPoliticaSegurosMuestra
     };
 
     private static readonly clsMedidaTramoSeguro _vehicular =
-        new("acompanante_vehicular", Nombre("acompanante_vehicular"), clsNivelMedidaSeguro.Obligatoria, Acompanantes);
+        new("acompanante_vehicular", Nombre("acompanante_vehicular"), EsCobrable: true, clsNivelMedidaSeguro.Obligatoria, Acompanantes);
 
     private static readonly clsMedidaTramoSeguro _total =
-        new("acompanante_total", Nombre("acompanante_total"), clsNivelMedidaSeguro.Obligatoria, AcompanantesTotales);
+        new("acompanante_total", Nombre("acompanante_total"), EsCobrable: true, clsNivelMedidaSeguro.Obligatoria, AcompanantesTotales);
 
     /// <summary>La política aprobada: 7 tramos, 25 reglas, 8 conexos.</summary>
     public static clsPoliticaSeguros Aprobada() => new(
