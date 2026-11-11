@@ -127,6 +127,10 @@ tags:
       - **Margen contra la política (HU-016.1, #154, decisiones del 2026-10-27):** el margen aplicado se compara con el margen de
         política de las **mismas rutas** (`margenPoliticaSugerido`, guardado en cada ruta al cotizar), calculado en el servidor.
         Rutas comparables = las de la versión vigente, sin las rechazadas, con `margenAplicado` y `margenPoliticaSugerido`.
+        **HU-016.2 (#295): además, solo de las cotizaciones FINALIZADAS** (`finalizadaAt`, script 14): mientras la cotización no se
+        finaliza su margen aún puede cambiar y no debe pesar en la comparación. Sin ninguna finalizada, los cuatro márgenes son `null`
+        y `rutas_sin_margen_politica` = 0. El resto del tablero (cantidad, `margen_promedio`, `margen_ponderado`, montos, serie y
+        apertura por línea) sigue contando con TODAS.
         `margen_politica_promedio` = promedio simple de su política; `margen_aplicado_promedio` = promedio simple de su margen
         aplicado (las mismas rutas, para comparar simple contra simple); `margen_politica_ponderado` = SUM(política × `costoFinal`) /
         SUM(`costoFinal`) de las que tienen costo > 0; `desviacion_margen_politica` = SUM((aplicado − política) × `costoFinal`) /
@@ -7396,7 +7400,8 @@ components:
             HU-016.1 (#154, decisiones P3 y P4 del 2026-10-27). Promedio simple del margen de política
             (`margenPoliticaSugerido`, el de la línea de negocio guardado en la ruta al cotizar) de las **mismas rutas** que se
             cotizaron: rutas de la versión vigente, sin las rechazadas por la Mesa, con margen aplicado y con margen de política
-            (4 decimales). `null` si no hay ninguna. Es la referencia de "Margen promedio" en "Mis cotizaciones" y en el tablero;
+            (4 decimales). **HU-016.2 (#295): solo de las cotizaciones finalizadas** (`finalizadaAt`); una sin finalizar aún puede
+            cambiar de margen y no entra. `null` si no hay ninguna (incluido cuando no hay ninguna finalizada). Es la referencia de "Margen promedio" en "Mis cotizaciones" y en el tablero;
             no expone la tabla de políticas. `margen_promedio` NO es su par sobre las mismas rutas (es por cotización e incluye
             las rutas sin política): no restarlos; su par es `margen_aplicado_promedio`. El semáforo es `desviacion_margen_politica`.
         margen_aplicado_promedio:
@@ -7405,7 +7410,8 @@ components:
           description: |
             HU-016.1 (#154, decisión del 2026-10-27). Promedio simple del margen aplicado (`margenAplicado`) de exactamente las
             mismas rutas comparables de `margen_politica_promedio` (versión vigente, sin las rechazadas por la Mesa, con margen
-            aplicado y con margen de política; 4 decimales, half-to-even). `null` si no hay ninguna. Es el par directo de
+            aplicado y con margen de política; 4 decimales, half-to-even). **HU-016.2 (#295): solo de las cotizaciones finalizadas.**
+            `null` si no hay ninguna. Es el par directo de
             `margen_politica_promedio`: aplicado simple contra política simple sobre las mismas rutas. No reemplaza a
             `margen_promedio` (por cotización, incluye las rutas sin política) ni al semáforo (`desviacion_margen_politica`,
             ponderado por costo).
@@ -7414,23 +7420,23 @@ components:
           nullable: true
           description: |
             HU-016.1 (#154). Margen de política de esas mismas rutas ponderado por su costo: SUM(`margenPoliticaSugerido` ×
-            `costoFinal`) / SUM(`costoFinal`) de las que tienen costo > 0 (el costo siempre en COP; 4 decimales). `null` si
-            ninguna tiene costo. Base del semáforo (`desviacion_margen_politica`).
+            `costoFinal`) / SUM(`costoFinal`) de las que tienen costo > 0 (el costo siempre en COP; 4 decimales). **HU-016.2 (#295):
+            solo de las cotizaciones finalizadas.** `null` si ninguna tiene costo. Base del semáforo (`desviacion_margen_politica`).
         desviacion_margen_politica:
           type: number
           nullable: true
           description: |
             HU-016.1 (#154). Margen aplicado menos margen de política, los dos ponderados por costo sobre las mismas rutas de
             `margen_politica_ponderado`: SUM((`margenAplicado` − `margenPoliticaSugerido`) × `costoFinal`) / SUM(`costoFinal`)
-            (4 decimales). Semáforo: verde si es ≥ 0 (el comercial cotiza por encima de la política), rojo si es < 0. `null` si
-            ninguna ruta tiene costo. No reemplaza a `desviacion_promedio_margen`, que solo promedia los ajustes negociados
-            (ADR-016).
+            (4 decimales). **HU-016.2 (#295): solo de las cotizaciones finalizadas.** Semáforo: verde si es ≥ 0 (el comercial cotiza
+            por encima de la política), rojo si es < 0. `null` si ninguna ruta tiene costo. No reemplaza a `desviacion_promedio_margen`,
+            que solo promedia los ajustes negociados (ADR-016).
         rutas_sin_margen_politica:
           type: integer
           description: |
             HU-016.1 (#154). Rutas del universo (versión vigente, no rechazadas) con margen aplicado pero sin margen de política
-            guardado (datos anteriores a HU-021): no entran en los tres campos anteriores. Sirve para avisar que la comparación
-            está incompleta.
+            guardado (datos anteriores a HU-021): no entran en los tres campos anteriores. **HU-016.2 (#295): solo cuenta las de
+            cotizaciones finalizadas** (0 si no hay ninguna finalizada). Sirve para avisar que la comparación está incompleta.
 
     PuntoSerieMensual:
       type: object

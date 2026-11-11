@@ -258,6 +258,7 @@ public sealed class clsMetricasTableroRepositoryTests(clsBaseDatosPruebas baseDa
     public async Task CadaRutaTraeSuMargenDePoliticaYLaRechazadaNoSale()
     {
         // HU-016.1 (#154): la referencia del margen aplicado es el margenPoliticaSugerido de cada ruta de la versión vigente.
+        // HU-016.2 (#295): la comparación solo mira las finalizadas, así que la cotización se finaliza para que sus rutas entren.
         var ana = await CrearUsuarioAsync();
         var cotizacion = NuevaCotizacion(ana);
         await GuardarAsync(cotizacion);
@@ -267,6 +268,7 @@ public sealed class clsMetricasTableroRepositoryTests(clsBaseDatosPruebas baseDa
             WHERE cotizacionSolicitudId = @id AND orden = 1;
             INSERT INTO dbo_cotifly.CotizacionLineasSolicitud (cotizacionSolicitudId, orden, costoFinal, margenAplicado, margenPoliticaSugerido, estadoCosteo) VALUES
                 (@id, 2, 3000000, 0.20, NULL, NULL), (@id, 3, 500000, 0.30, 0.25, N'rechazada');
+            UPDATE dbo_cotifly.CotizacionesSolicitud SET finalizadaAt = SYSDATETIMEOFFSET(), finalizadaPor = '{ana}' WHERE id = @id;
             """);
 
         var fila = (await ListarAsync([ana], Reloj.AhoraUtc.AddDays(-1), Reloj.AhoraUtc.AddDays(1))).Filas.Should().ContainSingle().Subject;
@@ -276,6 +278,67 @@ public sealed class clsMetricasTableroRepositoryTests(clsBaseDatosPruebas baseDa
         (indicadores.MargenPoliticaPromedio, indicadores.MargenPoliticaPonderado, indicadores.DesviacionMargenPolitica, indicadores.RutasSinMargenPolitica)
             .Should().Be((0.15m, 0.15m, -0.05m, 1));
         indicadores.MargenAplicadoPromedio.Should().Be(0.10m, "solo la ruta 1: la 2 no tiene política y la 3 está rechazada");
+    }
+
+    /// <summary>
+    /// HU-016.2 (#295): solo las cotizaciones finalizadas (<c>finalizadaAt</c>) entran en la comparación del margen contra la política. Una
+    /// abierta cuenta en la cantidad, pero su ruta sin política no infla <c>rutas_sin_margen_politica</c> ni mueve la desviación.
+    /// </summary>
+    [Fact]
+    public async Task HU0162_SoloLasFinalizadasEntranEnLaComparacionConLaPoliticaPeroTodasCuentanEnLaCantidad()
+    {
+        var ana = await CrearUsuarioAsync();
+        var finalizada = NuevaCotizacion(ana);
+        await GuardarAsync(finalizada);
+        var abierta = NuevaCotizacion(ana);
+        await GuardarAsync(abierta);
+        // La abierta queda con margen aplicado pero SIN política: si entrara, sumaría en rutas_sin_margen_politica. Se finaliza solo la otra.
+        await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly, $"""
+            UPDATE dbo_cotifly.CotizacionLineasSolicitud SET margenPoliticaSugerido = NULL WHERE cotizacionSolicitudId = '{abierta.Id}';
+            UPDATE dbo_cotifly.CotizacionesSolicitud SET finalizadaAt = SYSDATETIMEOFFSET(), finalizadaPor = '{ana}' WHERE id = '{finalizada.Id}';
+            """);
+
+        var datos = await ListarAsync([ana], Reloj.AhoraUtc.AddDays(-1), Reloj.AhoraUtc.AddDays(1));
+
+        datos.Filas.Should().HaveCount(2);
+        datos.Filas.Single(f => f.Finalizada).Rutas.Should().ContainSingle("la finalizada tiene su ruta con política");
+        datos.Filas.Count(f => !f.Finalizada).Should().Be(1, "la abierta no está finalizada");
+        var indicadores = Cotifly.Dominio.Metricas.clsCalculadoraMetricas.Indicadores(datos.Filas, Reloj.AhoraUtc, deadlineDisponible: false);
+        indicadores.Cantidad.Should().Be(2, "la abierta sí cuenta en la cantidad");
+        indicadores.MargenPoliticaPromedio.Should().Be(0.15m, "solo la finalizada entra en la comparación");
+        indicadores.RutasSinMargenPolitica.Should().Be(0, "la ruta sin política es de la cotización abierta, que no cuenta");
+    }
+
+    /// <summary>
+    /// HU-016.2 (#295): se mira la versión vigente. Una cadena con la v1 finalizada y una v2 sin finalizar (la vigente) NO entra en la
+    /// comparación con la política.
+    /// </summary>
+    [Fact]
+    public async Task HU0162_UnaV1FinalizadaConV2SinFinalizarNoEntraEnLaComparacion()
+    {
+        var ana = await CrearUsuarioAsync();
+        var folio = FolioUnico();
+        var v1 = NuevaCotizacion(ana, folio);
+        await GuardarAsync(v1);
+        // La vigente es una v2 sin finalizar (con su ruta y política); se finaliza solo la v1.
+        await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly, $"""
+            DECLARE @v2 UNIQUEIDENTIFIER = NEWID();
+            INSERT INTO dbo_cotifly.CotizacionesSolicitud (id, folio, usuarioId, precioFinal, version, createdAt, updatedAt)
+            VALUES (@v2, N'{folio}-v2', '{ana}', 2000000, 2, SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET());
+            INSERT INTO dbo_cotifly.CotizacionLineasSolicitud (cotizacionSolicitudId, orden, costoFinal, margenAplicado, margenPoliticaSugerido)
+            VALUES (@v2, 1, 1000000, 0.10, 0.15);
+            UPDATE dbo_cotifly.CotizacionesSolicitud SET finalizadaAt = SYSDATETIMEOFFSET(), finalizadaPor = '{ana}' WHERE id = '{v1.Id}';
+            """);
+
+        var datos = await ListarAsync([ana], Reloj.AhoraUtc.AddYears(-1), Reloj.AhoraUtc.AddYears(1));
+
+        var fila = datos.Filas.Should().ContainSingle("una fila por cadena de versiones").Subject;
+        fila.Versiones.Should().Be(2);
+        fila.Finalizada.Should().BeFalse("la versión vigente (la v2) no está finalizada");
+        var indicadores = Cotifly.Dominio.Metricas.clsCalculadoraMetricas.Indicadores(datos.Filas, Reloj.AhoraUtc, deadlineDisponible: false);
+        indicadores.Cantidad.Should().Be(1);
+        indicadores.MargenPoliticaPromedio.Should().BeNull("la cadena vigente no está finalizada");
+        indicadores.RutasSinMargenPolitica.Should().Be(0);
     }
 
     [Fact]

@@ -36,7 +36,7 @@ public sealed class clsPasosMetricas(clsContextoWeb web)
             await clsBaseDatosPruebas.EjecutarAsync(CadenaCotifly, $"""
                 UPDATE dbo_cotifly.CotizacionesSolicitud
                 SET moneda = N'{fila["moneda"]}', trmAplicada = {Numero(fila["trm"]) ?? "0"}, precioFinal = {Numero(fila["precio"]) ?? "NULL"},
-                    ganada = {Resultado(fila["resultado"])}, createdAt = '{Creada(fila["creada"])}'
+                    ganada = {Resultado(fila["resultado"])}, createdAt = '{Creada(fila["creada"])}'{FinalizadaFragmento(fila["resultado"], usuarioId)}
                 WHERE id = '{cotizacion.Id}';
                 UPDATE dbo_cotifly.CotizacionLineasSolicitud
                 SET costoFinal = {Numero(fila["costo"]) ?? "NULL"}, margenAplicado = {Numero(fila["margen"]) ?? "NULL"}
@@ -299,4 +299,11 @@ public sealed class clsPasosMetricas(clsContextoWeb web)
         "perdida" => "0",
         _ => "NULL",
     };
+
+    /// <summary>
+    /// HU-016.2 (#295): el dominio solo genera un resultado (ganada/perdida) tras finalizar la cotización (HU-036), así que una fila con
+    /// "resultado" aquí la deja finalizada por el mismo comercial; sin resultado (pendiente), sigue sin finalizar.
+    /// </summary>
+    private static string FinalizadaFragmento(string resultado, Guid usuarioId) =>
+        string.IsNullOrWhiteSpace(resultado) ? string.Empty : $", finalizadaAt = SYSDATETIMEOFFSET(), finalizadaPor = '{usuarioId}'";
 }
