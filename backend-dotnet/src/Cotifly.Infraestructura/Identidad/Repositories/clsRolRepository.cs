@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 namespace Cotifly.Infraestructura.Identidad.Repositories;
 
 /// <summary>
-/// Implementación EF Core de <see cref="IClsRolRepository"/> (<c>Roles</c> y <c>UsuariosRoles</c>). HU-037 (#210): solo lee los roles cuyo
+/// Implementación EF Core de <see cref="IClsRolRepository"/> (<c>Roles</c> y <c>UsuariosRoles</c>). Solo lee los roles cuyo
 /// código conoce este backend (<see cref="RolInterno"/>). Un rol nuevo en el catálogo (por ejemplo, <c>director</c> con el script 15 y un
 /// backend anterior) se ignora: nadie entra con él, en vez de fallar el login de todos al convertir el código. Al leer el catálogo, cada
 /// rol activo ignorado deja un warning con su id (sin leer el código, que no se puede convertir), para que no pase en silencio.
@@ -55,18 +55,18 @@ public sealed class clsRolRepository(clsCotiflyDbContext contexto, ILogger<clsRo
         var ids = usuarios.Distinct().ToList();
         var filas = await (from asignacion in contexto.UsuariosRoles.AsNoTracking()
                            join rol in contexto.Roles.AsNoTracking() on asignacion.RolId equals rol.Id
-                           // HU-037.3 (#211): con el director sin regional son todos los usuarios; un solo parámetro (OPENJSON), sin tope.
+                           // Con el director sin regional son todos los usuarios; un solo parámetro (OPENJSON), sin tope.
                            where EF.Parameter(ids).Contains(asignacion.UsuarioId) && asignacion.Activo && rol.Activo && _conocidos.Contains(rol.Codigo)
                            orderby rol.Id
                            select new { asignacion.UsuarioId, rol.Codigo })
             .ToListAsync(cancellationToken);
-        // HU-040.1 (#229): con varias asignaciones activas se informa la de mayor alcance (director > gerente_comercial > comercial, el
+        // Con varias asignaciones activas se informa la de mayor alcance (director > gerente_comercial > comercial, el
         // orden del enum), la misma jerarquía del login de rol único.
         return filas.GroupBy(f => f.UsuarioId).ToDictionary(g => g.Key, g => g.Max(f => f.Codigo));
     }
 
     public async Task<IReadOnlyList<clsUsuarioRol>> ListarAsignacionesAsync(Guid usuarioId, CancellationToken cancellationToken = default) =>
-        // HU-040.3 (#258): rastreadas (sin AsNoTracking) para que Reactivar/Desactivar las persista la unidad de trabajo del login.
+        // Rastreadas (sin AsNoTracking) para que Reactivar/Desactivar las persista la unidad de trabajo del login.
         await contexto.UsuariosRoles.Where(a => a.UsuarioId == usuarioId).ToListAsync(cancellationToken);
 
     public void AgregarAsignacion(clsUsuarioRol asignacion)

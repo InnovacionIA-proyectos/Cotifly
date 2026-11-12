@@ -17,7 +17,7 @@ namespace Cotifly.Infraestructura.Comun.Persistence;
 /// transacción (EF Core la toma de <c>Database.CurrentTransaction</c>).
 /// </summary>
 /// <remarks>
-/// #125: la espera (<see cref="clsOpcionesCandadoSql"/>) es configurable y el límite del cliente no depende del reloj de pared
+/// La espera (<see cref="clsOpcionesCandadoSql"/>) es configurable y el límite del cliente no depende del reloj de pared
 /// (<see cref="clsAppLockSql"/>). Si el candado no se obtiene (tiempo agotado, interbloqueo o sin respuesta), la transacción se
 /// deshace —la operación todavía no corrió— y se reintenta con pausa creciente; agotados los intentos, el resultado es
 /// <c>SERVICIO_OCUPADO</c> (503), nunca una excepción. La operación corre una sola vez: sus fallos no se reintentan.

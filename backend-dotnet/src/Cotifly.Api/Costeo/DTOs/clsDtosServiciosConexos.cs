@@ -3,7 +3,7 @@ using Cotifly.Aplicacion.Costeo.DTOs;
 namespace Cotifly.Api.Costeo.DTOs;
 
 /// <summary>
-/// <c>AgregarServiciosConexosWeb</c> (HU-013.3): de 1 a 20 conexos, cada uno para una línea de la cotización. Nunca lleva costos ni
+/// <c>AgregarServiciosConexosWeb</c>: de 1 a 20 conexos, cada uno para una línea de la cotización. Nunca lleva costos ni
 /// valores. Los límites los valida <c>clsServiciosConexosCosteoService</c> (400 <c>ErrorWeb</c>), no MVC.
 /// </summary>
 public sealed record clsAgregarServiciosConexosWebRequest(IReadOnlyList<clsConexoAgregarWebRequest>? Items)
@@ -14,7 +14,7 @@ public sealed record clsAgregarServiciosConexosWebRequest(IReadOnlyList<clsConex
 }
 
 /// <summary>
-/// <c>ConexoAgregarWeb</c>: la ruta (<c>linea_orden</c> o <c>linea_solicitud_id</c>; opcional si la cotización tiene una sola, HU-021.8),
+/// <c>ConexoAgregarWeb</c>: la ruta (<c>linea_orden</c> o <c>linea_solicitud_id</c>; opcional si la cotización tiene una sola),
 /// <c>servicio_id</c> del catálogo y <c>cantidad</c>. <c>linea_solicitud_id</c> se lee como texto para responder 400 <c>ErrorWeb</c>
 /// con un mensaje claro si no es un UUID.
 /// </summary>

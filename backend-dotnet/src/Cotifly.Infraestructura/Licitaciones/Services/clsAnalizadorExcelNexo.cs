@@ -15,11 +15,11 @@ using Polly;
 namespace Cotifly.Infraestructura.Licitaciones.Services;
 
 /// <summary>
-/// Análisis del Excel de licitación en Nexo (HU-011.2, ADR-017): <c>POST {Nexo:UrlBase}/api/captura-solicitudes/analizar-excel</c>,
+/// Análisis del Excel de licitación en Nexo (ADR-017): <c>POST {Nexo:UrlBase}/api/captura-solicitudes/analizar-excel</c>,
 /// multipart con el campo <c>archivo</c>, identidad <c>X-Portal-clsUsuario-Id</c> del comercial. Usa el cliente HTTP
 /// <see cref="clsCosteoNexo.NombreCliente"/> (30 s, POST sin reintentos). Nexo no persiste nada. Nunca lanza por Nexo: 400 con
 /// <c>ARCHIVO_REQUERIDO</c>, <c>FORMATO_NO_SOPORTADO</c>, <c>EXCEL_INVALIDO</c> o <c>EXCEL_SIN_DATOS</c> pasa con ese código;
-/// tiempo agotado → <c>COSTEO_NEXO_TIEMPO_AGOTADO</c>; 401/403, 5xx, red o JSON inválido → <c>COSTEO_NEXO_NO_DISPONIBLE</c>; #278:
+/// tiempo agotado → <c>COSTEO_NEXO_TIEMPO_AGOTADO</c>; 401/403, 5xx, red o JSON inválido → <c>COSTEO_NEXO_NO_DISPONIBLE</c>;
 /// <c>429 IA_TOPE_DIARIO</c> → <c>IA_TOPE_DIARIO</c> y otro 429 (<c>DEMASIADAS_SOLICITUDES</c>) → <c>COSTEO_NEXO_NO_DISPONIBLE</c> con el
 /// <c>Retry-After</c> en el detalle; otro 4xx → <c>COSTEO_NEXO_RECHAZADA</c>.
 /// </summary>
@@ -75,12 +75,12 @@ public sealed class clsAnalizadorExcelNexo(
                     return new clsErrorDominio(codigo, mensaje ?? "Nexo no pudo leer el archivo.");
                 }
 
-                // HU-013.15 (#124): el detalle lleva solo el código de Nexo (o "HTTP 401"), nunca su texto crudo, igual que el resto de
+                // El detalle lleva solo el código de Nexo (o "HTTP 401"), nunca su texto crudo, igual que el resto de
                 // los endpoints (clsServiciosConexosNexo.SoloCodigo); el texto completo queda en el log.
                 var soloCodigo = clsServiciosConexosNexo.SoloCodigo(detalle);
                 return respuesta.StatusCode switch
                 {
-                    // #278 (DU §2.1 y §9): el cupo DIARIO de IA del comercial (IA_TOPE_DIARIO, 429) no es el cupo por minuto
+                    // El cupo DIARIO de IA del comercial (IA_TOPE_DIARIO, 429; contrato de NEXO §2.1 y §9) no es el cupo por minuto
                     // (DEMASIADAS_SOLICITUDES, 429, reintentable tras el Retry-After). Ninguno se reintenta aquí (POST sin reintentos).
                     HttpStatusCode.TooManyRequests when codigo == clsCodigosError.IaTopeDiario =>
                         new clsErrorDominio(clsCodigosError.IaTopeDiario, clsCosteoNexo.MensajeIaTopeDiario, soloCodigo),

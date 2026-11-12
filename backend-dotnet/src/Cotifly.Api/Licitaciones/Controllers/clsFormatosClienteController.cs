@@ -10,7 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Cotifly.Api.Licitaciones.Controllers;
 
 /// <summary>
-/// HU-044.5 (#256, ADR-028, <c>specs/openapi.yaml</c>): lo que NEXO recuerda de cada cliente para leer su Excel de licitación. Las
+/// Lo que NEXO recuerda de cada cliente para leer su Excel de licitación (ADR-028, <c>specs/openapi.yaml</c>). Las
 /// <b>plantillas de mapeo</b> (con plantilla, la siguiente carga del mismo formato no llama a la IA) y los <b>formatos de lectura</b> o
 /// recetas (con un formato guardado, el siguiente Excel parecido se lee sin IA). Cotifly es solo el puente: no guarda copia. Los listados
 /// exigen el NIT; "no encontrado" es 404 con el código de NEXO. Rol Comercial (<see cref="clsControladorWebBase"/>).
@@ -156,7 +156,7 @@ public sealed class clsFormatosClienteController(IClsContextoUsuario usuario, IC
     }
 
     /// <summary>
-    /// #256 (validador D1/D2): la primera parte que vino más de una vez, o <c>null</c>. Dos partes con el mismo nombre se unirían con coma: una
+    /// La primera parte que vino más de una vez, o <c>null</c>. Dos partes con el mismo nombre se unirían con coma: una
     /// receta que deja de ser opaca, o dos NIT que la normalización funde en otro NIT (la receta quedaría en otro cliente). No se adivina cuál
     /// vale: se rechaza el formulario.
     /// </summary>

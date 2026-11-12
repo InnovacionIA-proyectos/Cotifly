@@ -13,12 +13,12 @@ using Polly;
 namespace Cotifly.Infraestructura.Precio.Services;
 
 /// <summary>
-/// TRM desde DolarApi (HU-012.1, ADR-014 §1, requisito de negocio del 2026-10-05): <c>GET Trm:UrlDolarApi</c> (por defecto
+/// TRM desde DolarApi (ADR-014 §1): <c>GET Trm:UrlDolarApi</c> (por defecto
 /// <c>https://co.dolarapi.com/v1/trm</c>), sin credenciales, responde la última TRM certificada que publicó la Superintendencia:
-/// <c>{"unidad":"COP","nombre":"TRM","valor":3273.49,"fechaActualizacion":"2026-10-05T20:02:00.074Z"}</c>.
+/// <c>{"unidad":"COP","nombre":"TRM","valor":3273.49,"fechaActualizacion":"AAAA-MM-DDTHH:mm:ss.fffZ"}</c>.
 /// </summary>
 /// <remarks>
-/// <para><b>Semántica (verificada el 2026-10-05, ADR-014 §1).</b> <c>fechaActualizacion</c> es la hora en que DolarApi refrescó el dato, no
+/// <para><b>Semántica (ADR-014 §1).</b> <c>fechaActualizacion</c> es la hora en que DolarApi refrescó el dato, no
 /// la vigencia de la TRM: el valor es la última TRM publicada, que en la tarde puede ser ya la del día siguiente. Por eso solo se acepta
 /// para la fecha pedida si DolarApi la refrescó ESE día en Bogotá antes de <see cref="HoraCorte"/>, cuando la TRM del día siguiente todavía
 /// no se ha publicado; si no, es <c>TRM_NO_DISPONIBLE</c> y la cadena usa la Superintendencia, que consulta la vigencia exacta.</para>

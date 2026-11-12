@@ -18,20 +18,20 @@ public sealed class clsOpcionesConexiones
     [clsSecreto(LargoMinimo = 20)]
     public string? Cotifly { get; set; }
 
-    /// <summary>Solo lectura de <c>tblSAPUsuariosApp</c> en la base de identidad del portal, la misma que Nexo (QA: <c>dbSolucionesTI_Prueba</c>; login, #12, #172).</summary>
+    /// <summary>Solo lectura de <c>tblSAPUsuariosApp</c> en la base de identidad del portal, la misma que Nexo (QA: <c>dbSolucionesTI_Prueba</c>; login).</summary>
     [clsSecreto(LargoMinimo = 20)]
     public string? Identidad { get; set; }
 
     /// <summary>
-    /// Opcional: solo lectura de la tabla de ejecutivos con su regional en <c>DWCubosEBSSAP</c> (<c>DimEjecutivo</c>, HU-010.1 y
-    /// #81, ADR-016): la usan el tablero del gerente y el login (que llena y refresca <c>UsuariosWeb.regional</c> sin bloquearse).
+    /// Opcional: solo lectura de la tabla de ejecutivos con su regional en <c>DWCubosEBSSAP</c> (<c>DimEjecutivo</c>, ADR-016): la
+    /// usan el tablero del gerente y el login (que llena y refresca <c>UsuariosWeb.regional</c> sin bloquearse).
     /// Vacía: no se consulta y la regional sale de <c>UsuariosWeb.regional</c>. Con valor, se valida como las otras en Production.
     /// </summary>
     [clsSecreto(LargoMinimo = 20, Opcional = true)]
     public string? Regional { get; set; }
 
     /// <summary>
-    /// Opcional (HU-042.2, #243): solo lectura de <c>dbo.DimBPSolicitante</c> (columnas <c>BP</c> y <c>NIT</c>) en <c>DWCubosOperacionesEBS</c>,
+    /// Opcional: solo lectura de <c>dbo.DimBPSolicitante</c> (columnas <c>BP</c> y <c>NIT</c>) en <c>DWCubosOperacionesEBS</c>,
     /// para resolver el NIT de cada BP al sincronizar el margen de SAP TM. Es otra base que la de <see cref="Regional"/>. Vacía: el NIT de
     /// cada fila queda <c>NULL</c> y la sincronización sigue (un warning por corrida). Con valor, se valida como las otras en Production.
     /// </summary>

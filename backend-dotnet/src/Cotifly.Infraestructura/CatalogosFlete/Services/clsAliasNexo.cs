@@ -15,14 +15,14 @@ using Polly;
 namespace Cotifly.Infraestructura.CatalogosFlete.Services;
 
 /// <summary>
-/// HU-031.1 (#194): el diccionario de alias de Nexo en vivo, <c>GET {Nexo:UrlBase}/api/catalogos/alias</c> (NEXO #321, sin <c>tipo</c>: los
+/// El diccionario de alias de Nexo en vivo, <c>GET {Nexo:UrlBase}/api/catalogos/alias</c> (sin <c>tipo</c>: los
 /// dos tipos en una sola petición; <c>[Authorize]</c> sin rol, cualquier usuario de Nexo; política <c>listados-estandar</c>). Cada fila es
 /// <c>clsAliasDto {id, alias, aliasNormalizado, tipoElemento ("Vehiculo" | "Contenedor"), codigo, activo}</c>; las inactivas, las de otro
 /// tipo y las incompletas se descartan. Identifica al comercial con <c>X-Portal-clsUsuario-Id</c>. Comparte el cliente HTTP con nombre
 /// <see cref="Clientes.Services.clsBuscadorClientesNexo.NombreCliente"/> (y su tubería de resiliencia y su cupo) con los catálogos maestros.
 /// </summary>
 /// <remarks>
-/// Nunca lanza por Nexo: sin configurar, comercial sin <c>idUsuarioExterno</c>, HTTP (también 404 de un Nexo sin #321), red, tiempo
+/// Nunca lanza por Nexo: sin configurar, comercial sin <c>idUsuarioExterno</c>, HTTP (también 404 de un Nexo sin el endpoint), red, tiempo
 /// agotado, JSON inválido o una respuesta de más de <see cref="clsCatalogosMaestrosNexo.MaximoBytes"/> o
 /// <see cref="clsCatalogosMaestrosNexo.MaximoFilas"/> → <c>CATALOGOS_FLETE_NO_DISPONIBLE</c>, con una línea de warning sin la traza ni el
 /// header. No guarda nada: la caché es <see cref="clsAliasNexoEnCache"/>.
@@ -178,7 +178,7 @@ public sealed class clsCacheAliasNexo
 }
 
 /// <summary>
-/// Decorador con caché de <see cref="IClsAliasNexoProvider"/> (HU-031.1, #194), con las mismas reglas que los catálogos maestros
+/// Decorador con caché de <see cref="IClsAliasNexoProvider"/>, con las mismas reglas que los catálogos maestros
 /// (<see cref="clsCatalogosMaestrosEnCache"/>): vigente <c>Nexo:MinutosCacheCatalogos</c>; vencida, se consulta Nexo y, si falla, se sirve
 /// la copia hasta <c>Nexo:HorasCatalogosVencidos</c>; una consulta a la vez. Además, tras un fallo no vuelve a consultar Nexo durante
 /// <see cref="EsperaTrasFallo"/>: el diccionario se pide en cada envío que trae un código que el catálogo no conoce, y con Nexo caído

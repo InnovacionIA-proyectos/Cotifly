@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Cubicacion.Services;
 
 /// <summary>
-/// HU-023.5 (#160): procesador de la cubicación de la licitación en segundo plano. Cada <c>Cubicador:IntervaloTickSegundos</c> lee la
+/// Procesador de la cubicación de la licitación en segundo plano. Cada <c>Cubicador:IntervaloTickSegundos</c> lee la
 /// cola (rutas <c>pendiente</c> con su turno vencido) y las procesa con hasta <c>Cubicador:MaximoParalelo</c> a la vez, cada una en
 /// <b>su propio ámbito</b> de DI (un fallo no contamina a las demás). El límite real lo ponen los cupos compartidos por todas las réplicas
 /// (<c>IClsCupoCubicador</c>): si no hay cupo libre, la vuelta termina y las rutas esperan a la siguiente. Al final de cada vuelta envía a

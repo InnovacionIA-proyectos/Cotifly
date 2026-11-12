@@ -15,14 +15,14 @@ namespace Cotifly.Api.Identidad;
 public static class clsPoliticas
 {
     /// <summary>
-    /// Consola del comercial: <c>comercial</c>, <c>gerente_comercial</c> o <c>director</c> (el gerente y el director también cotizan;
-    /// HU-037, #210).
+    /// Consola del comercial: <c>comercial</c>, <c>gerente_comercial</c> o <c>director</c> (el gerente y el director también
+    /// cotizan).
     /// </summary>
     public const string Comercial = "Comercial";
 
     /// <summary>
-    /// Administración de márgenes, tablero y listado de la regional: <c>gerente_comercial</c> o <c>director</c> (HU-037, #210: el
-    /// director usa todo lo del gerente; su alcance de regionales lo decide el caso de uso).
+    /// Administración de márgenes, tablero y listado de la regional: <c>gerente_comercial</c> o <c>director</c> (el director usa
+    /// todo lo del gerente; su alcance de regionales lo decide el caso de uso).
     /// </summary>
     public const string GerenteComercial = "GerenteComercial";
 

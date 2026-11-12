@@ -18,7 +18,7 @@ using Polly.Timeout;
 namespace Cotifly.Infraestructura.Correo.Services;
 
 /// <summary>
-/// HU-033 (#199, ADR-023): transporte <c>mailsender</c>, cliente HTTP tipado del microservicio interno MailSender (código en
+/// Transporte <c>mailsender</c> (ADR-023), cliente HTTP tipado del microservicio interno MailSender (código en
 /// <c>InnovacionIA/MailSender</c>, sin autenticación: red interna):
 /// <list type="bullet">
 /// <item><c>POST /api/v1/emails</c> (multipart/form-data): <c>From</c>, <c>To[]</c>, <c>Cc[]</c>, <c>Bcc[]</c>, <c>Subject</c>, <c>Body</c>
@@ -150,7 +150,7 @@ public sealed class clsTransporteMailSender(HttpClient http, IOptions<clsOpcione
     };
 
     /// <summary>
-    /// DEF-1027B-2 (#228, ADR-023): defensa en profundidad antes del POST multipart. Todo lo que MailSender pone en una cabecera del correo
+    /// Defensa en profundidad antes del POST multipart (ADR-023). Todo lo que MailSender pone en una cabecera del correo
     /// (<c>From</c>, <c>To</c>, <c>Cc</c>, <c>Bcc</c>, <c>Subject</c>, el nombre del adjunto) y el <c>X-Correlation-ID</c> se revisa otra vez:
     /// sin caracteres de control y, en las direcciones, una sola dirección con formato estricto (<see cref="clsCabecerasCorreo"/>). Si algo
     /// se coló (otro llamador, un dato viejo), <see cref="clsEnvioCorreoException"/> NO incierta: el correo no sale. El log nombra el campo,
@@ -178,7 +178,7 @@ public sealed class clsTransporteMailSender(HttpClient http, IOptions<clsOpcione
     /// <summary>El formulario multipart de <c>CreateEmailForm</c> (un campo por destinatario).</summary>
     internal static MultipartFormDataContent Formulario(clsMensajeCorreo mensaje, clsOpcionesMailSender config)
     {
-        // HU-033 (auditoría): el From lo decide Correo:MailSender:ModoRemitente/DominiosRemitente; nunca una dirección mal formada.
+        // El From lo decide Correo:MailSender:ModoRemitente/DominiosRemitente; nunca una dirección mal formada.
         var remitente = config.ElegirRemitente(mensaje.Remitente);
         var formulario = new MultipartFormDataContent
         {

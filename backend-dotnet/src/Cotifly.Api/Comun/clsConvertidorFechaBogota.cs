@@ -4,9 +4,9 @@ using System.Text.Json.Serialization;
 namespace Cotifly.Api.Comun;
 
 /// <summary>
-/// <c>deadline</c> de la captura hacia Nexo (HU-013.10, #106, G4): una fecha u hora ISO 8601 <b>sin zona</b> (<c>2026-10-10</c> o
-/// <c>2026-10-10T17:00:00</c>) se interpreta en hora de Bogotá (America/Bogota, UTC-05:00, sin horario de verano) y no en la zona del
-/// servidor (UTC en el contenedor, que la dejaba a las 19:00 del día anterior). Con zona (<c>Z</c> o <c>-05:00</c>) se respeta tal
+/// <c>deadline</c> de la captura hacia Nexo: una fecha u hora ISO 8601 <b>sin zona</b> (<c>AAAA-MM-DD</c> o
+/// <c>AAAA-MM-DDTHH:mm:ss</c>) se interpreta en hora de Bogotá (America/Bogota, UTC-05:00, sin horario de verano) y no en la zona del
+/// servidor (UTC en el contenedor, que la correría al día anterior). Con zona (<c>Z</c> o <c>-05:00</c>) se respeta tal
 /// cual. Cotifly la reenvía a Nexo en ISO 8601 con su desplazamiento. Un texto que no es ISO 8601 sigue siendo un cuerpo inválido.
 /// </summary>
 public sealed class clsConvertidorFechaBogota : JsonConverter<DateTimeOffset?>

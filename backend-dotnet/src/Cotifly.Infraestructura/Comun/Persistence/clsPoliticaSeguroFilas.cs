@@ -1,7 +1,7 @@
 namespace Cotifly.Infraestructura.Comun.Persistence;
 
 /// <summary>
-/// HU-046.3 (#269): fila de <c>dbo_cotifly.PoliticaSeguroTramos</c> (<c>db/scripts/21_politica_seguros.sql</c>, HU-046.2 #268): un rango del
+/// Fila de <c>dbo_cotifly.PoliticaSeguroTramos</c> (<c>db/scripts/21_politica_seguros.sql</c>): un rango del
 /// valor de la mercancía de la ruta, (<see cref="ValorDesde"/>, <see cref="ValorHasta"/>]; <see cref="ValorHasta"/> <c>null</c> = sin tope.
 /// La escribe Datos (<c>db/scripts/operacion/cambiar_politica_seguros.sql</c>); EF solo la lee (<c>AsNoTracking</c>).
 /// </summary>
@@ -23,7 +23,7 @@ public sealed class clsPoliticaSeguroTramoFila
     public DateTimeOffset UpdatedAt { get; private set; }
 }
 
-/// <summary>HU-046.3 (#269): fila de <c>dbo_cotifly.PoliticaSeguroMedidas</c> (script 21): el catálogo de medidas (<see cref="Codigo"/> único).</summary>
+/// <summary>Fila de <c>dbo_cotifly.PoliticaSeguroMedidas</c> (script 21): el catálogo de medidas (<see cref="Codigo"/> único).</summary>
 public sealed class clsPoliticaSeguroMedidaFila
 {
     public Guid Id { get; private set; }
@@ -43,7 +43,7 @@ public sealed class clsPoliticaSeguroMedidaFila
 }
 
 /// <summary>
-/// HU-046.3 (#269): fila de <c>dbo_cotifly.PoliticaSeguroTramoMedidas</c> (script 21): la medida que aplica en un tramo y su
+/// Fila de <c>dbo_cotifly.PoliticaSeguroTramoMedidas</c> (script 21): la medida que aplica en un tramo y su
 /// <see cref="Nivel"/> (<c>recomendada</c> | <c>obligatoria</c>). Sin <c>isActive</c>: si la fila no está, la medida no aplica en el tramo.
 /// </summary>
 public sealed class clsPoliticaSeguroTramoMedidaFila
@@ -60,7 +60,7 @@ public sealed class clsPoliticaSeguroTramoMedidaFila
 }
 
 /// <summary>
-/// HU-046.3 (#269): fila de <c>dbo_cotifly.PoliticaSeguroMedidaConexos</c> (script 21): un <c>codigoServicio</c> del catálogo de Nexo que
+/// Fila de <c>dbo_cotifly.PoliticaSeguroMedidaConexos</c> (script 21): un <c>codigoServicio</c> del catálogo de Nexo que
 /// cumple la medida (sin FK: es de otra base).
 /// </summary>
 public sealed class clsPoliticaSeguroMedidaConexoFila

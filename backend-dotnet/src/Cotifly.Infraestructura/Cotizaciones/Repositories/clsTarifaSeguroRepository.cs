@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Cotifly.Infraestructura.Cotizaciones.Repositories;
 
-/// <summary>Implementación EF de <see cref="IClsTarifaSeguroRepository"/> (HU-045.2, #264).</summary>
+/// <summary>Implementación EF de <see cref="IClsTarifaSeguroRepository"/>.</summary>
 public sealed class clsTarifaSeguroRepository(clsCotiflyDbContext contexto) : IClsTarifaSeguroRepository
 {
     public async Task<decimal?> ObtenerTasaVigenteAsync(CancellationToken cancellationToken = default) =>

@@ -3,7 +3,7 @@ using Cotifly.Aplicacion.Costeo.DTOs;
 namespace Cotifly.Api.Costeo.DTOs;
 
 /// <summary>
-/// <c>MargenLineasWeb</c> (HU-041.1, #231): cuerpo de <c>PUT /web/cotizaciones/{folio}/costeo/margen/lineas</c>. Las rutas (<c>lineas</c>
+/// <c>MargenLineasWeb</c>: cuerpo de <c>PUT /web/cotizaciones/{folio}/costeo/margen/lineas</c>. Las rutas (<c>lineas</c>
 /// o <c>todas</c>) y el margen (<c>margen</c> o <c>revertir_sugerido</c>); la forma la valida el caso de uso (400 <c>ErrorWeb</c>).
 /// </summary>
 public sealed record clsMargenLineasWebRequest(
@@ -14,7 +14,7 @@ public sealed record clsMargenLineasWebRequest(
 }
 
 /// <summary>
-/// <c>ConexoLineasWeb</c> (HU-041.1, #231): cuerpo de <c>POST /web/cotizaciones/{folio}/costeo/servicios-conexos/lineas</c>: las rutas
+/// <c>ConexoLineasWeb</c>: cuerpo de <c>POST /web/cotizaciones/{folio}/costeo/servicios-conexos/lineas</c>: las rutas
 /// (<c>lineas</c> o <c>todas</c>), el <c>servicio_id</c> del catálogo de Nexo y la <c>cantidad</c>.
 /// </summary>
 public sealed record clsConexoLineasWebRequest(IReadOnlyList<int?>? Lineas, bool? Todas, string? ServicioId, decimal? Cantidad)
@@ -24,7 +24,7 @@ public sealed record clsConexoLineasWebRequest(IReadOnlyList<int?>? Lineas, bool
 }
 
 /// <summary>
-/// <c>QuitarConexoLineasWeb</c> (HU-041.1, #231): cuerpo de <c>POST /web/cotizaciones/{folio}/costeo/servicios-conexos/lineas/quitar</c>:
+/// <c>QuitarConexoLineasWeb</c>: cuerpo de <c>POST /web/cotizaciones/{folio}/costeo/servicios-conexos/lineas/quitar</c>:
 /// las rutas (<c>lineas</c> o <c>todas</c>) y el <c>servicio_id</c> del catálogo de Nexo (<c>servicios_conexos[].servicio_id</c>).
 /// </summary>
 public sealed record clsQuitarConexoLineasWebRequest(IReadOnlyList<int?>? Lineas, bool? Todas, string? ServicioId)

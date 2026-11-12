@@ -48,7 +48,7 @@ internal sealed class clsRolConfiguracion : IEntityTypeConfiguration<clsRol>
         builder.Property(r => r.Descripcion).Columna("descripcion", "nvarchar(200)").HasMaxLength(clsRol.LargoMaximoDescripcion);
         builder.Property(r => r.IdRolExterno).Columna("idRolExterno", "int");
         builder.Property(r => r.Activo).Columna("activo", "bit");
-        // HU-040.3 (#258): rol sensible que no se auto-otorga en el login (script 23).
+        // Rol sensible que no se auto-otorga en el login (script 23).
         builder.Property(r => r.RequiereAltaManual).Columna("requiereAltaManual", "bit");
         builder.Property(r => r.UpdatedAt).Fecha("updatedAt");
         builder.HasIndex(r => r.Codigo).IsUnique().HasDatabaseName("uq_roles_codigo");
@@ -59,8 +59,8 @@ internal sealed class clsRolConfiguracion : IEntityTypeConfiguration<clsRol>
 }
 
 /// <summary>
-/// <c>dbo_cotifly.UsuariosRoles</c> (script 0002 §2bis): un rol una vez por usuario. HU-040.1 (#229): el script 16 retiró
-/// <c>uq_usuariosRoles_usuarioId_activo</c>, así que un usuario puede tener varias asignaciones activas (una por rol).
+/// <c>dbo_cotifly.UsuariosRoles</c> (script 0002 §2bis): un rol una vez por usuario. Sin
+/// <c>uq_usuariosRoles_usuarioId_activo</c> (la retira el script 16), un usuario puede tener varias asignaciones activas (una por rol).
 /// </summary>
 internal sealed class clsUsuarioRolConfiguracion : IEntityTypeConfiguration<clsUsuarioRol>
 {
@@ -86,7 +86,7 @@ internal sealed class clsUsuarioRolConfiguracion : IEntityTypeConfiguration<clsU
     }
 }
 
-/// <summary><c>dbo_cotifly.TokensRefresco</c> (script 0002 §3; <c>rolSesion</c> y su CHECK, script 16, HU-040.1).</summary>
+/// <summary><c>dbo_cotifly.TokensRefresco</c> (script 0002 §3; <c>rolSesion</c> y su CHECK, script 16).</summary>
 internal sealed class clsTokenRefrescoConfiguracion : IEntityTypeConfiguration<clsTokenRefresco>
 {
     public void Configure(EntityTypeBuilder<clsTokenRefresco> builder)

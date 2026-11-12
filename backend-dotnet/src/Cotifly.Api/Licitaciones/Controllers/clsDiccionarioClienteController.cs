@@ -8,9 +8,9 @@ using Microsoft.AspNetCore.Mvc;
 namespace Cotifly.Api.Licitaciones.Controllers;
 
 /// <summary>
-/// HU-044.5 (#256, ADR-028): consulta del diccionario del cliente de NEXO (los términos que NEXO usa para proponer el mapeo y normalizar los
-/// valores del Excel). Solo lectura y, mientras NEXO no filtre por cliente, solo los términos generales. La escritura
-/// (<c>POST/PUT/DELETE</c>) espera el contrato §3.19.1 de NEXO (S6-HU-34.10). Rol Comercial (<see cref="clsControladorWebBase"/>).
+/// Consulta del diccionario del cliente de NEXO (ADR-028): los términos que NEXO usa para proponer el mapeo y normalizar los
+/// valores del Excel. Solo lectura y, mientras NEXO no filtre por cliente, solo los términos generales. La escritura
+/// (<c>POST/PUT/DELETE</c>) depende del contrato §3.19.1 de NEXO. Rol Comercial (<see cref="clsControladorWebBase"/>).
 /// </summary>
 [Route("web/diccionario-cliente")]
 public sealed class clsDiccionarioClienteController(IClsContextoUsuario usuario, IClsFormatosClienteService formatos)

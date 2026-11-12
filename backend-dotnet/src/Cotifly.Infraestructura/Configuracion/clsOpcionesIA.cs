@@ -52,13 +52,13 @@ public sealed class clsOpcionesIA
 
     /// <summary>
     /// Peticiones por minuto al proveedor (limitador local, evita el 429 de las capas gratuitas); 0 lo desactiva. Por defecto 8. Ventana
-    /// deslizante de 60 s (HU-013.16): las llamadas de un turno no se espacian mientras el minuto tenga cupo.
+    /// deslizante de 60 s: las llamadas de un turno no se espacian mientras el minuto tenga cupo.
     /// </summary>
     [Range(0, 100_000)]
     public int Rpm { get; set; } = 8;
 
     /// <summary>
-    /// Segundos que una llamada espera, como máximo, a que el limitador <see cref="Rpm"/> tenga cupo (HU-013.16). Si tendría que esperar
+    /// Segundos que una llamada espera, como máximo, a que el limitador <see cref="Rpm"/> tenga cupo. Si tendría que esperar
     /// más, el turno responde de inmediato el texto del límite de peticiones en lugar de dejar al comercial hasta 60 s sin respuesta.
     /// Por defecto 20.
     /// </summary>
@@ -73,7 +73,7 @@ public sealed class clsOpcionesIA
     public List<clsOpcionesProveedorIA> Fallbacks { get; set; } = [];
 
     /// <summary>
-    /// Respaldos con proveedor (#84): un respaldo con <c>Proveedor</c> vacío no existe. Así los manifiestos pueden declarar
+    /// Respaldos con proveedor: un respaldo con <c>Proveedor</c> vacío no existe. Así los manifiestos pueden declarar
     /// <c>IA__Fallbacks__0__*</c> con <c>${...:-}</c> y dejarlos vacíos cuando no hay respaldo.
     /// </summary>
     public IReadOnlyList<clsOpcionesProveedorIA> FallbacksConfigurados() =>

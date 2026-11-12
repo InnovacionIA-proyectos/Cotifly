@@ -4,7 +4,7 @@ namespace Cotifly.Infraestructura.Configuracion;
 
 /// <summary>
 /// Identidad del comercial ante Nexo, en un solo lugar para todos los adaptadores (clientes, municipios, catálogos, costeo, conexos y
-/// licitación; HU-023.4, #159). Nexo no tiene login propio: cada petición lleva el encabezado <see cref="Encabezado"/> con el
+/// licitación). Nexo no tiene login propio: cada petición lleva el encabezado <see cref="Encabezado"/> con el
 /// <c>idUsuarioExterno</c> del comercial (<c>UsuariosWeb.idUsuarioExterno</c>) y Nexo resuelve su rol contra el almacén corporativo
 /// (<c>clsIdentidadPortalAuthenticationHandler.HeaderIdUsuario</c> de Nexo). Sin ese encabezado, o con otro nombre, Nexo responde
 /// <c>401 SESION_INVALIDA</c>.
@@ -12,8 +12,8 @@ namespace Cotifly.Infraestructura.Configuracion;
 public static class clsIdentidadNexo
 {
     /// <summary>
-    /// Nombre exacto del encabezado que valida Nexo (decisión del 2026-10-13). Antes Cotifly mandaba <c>X-Portal-Usuario-Id</c>, que Nexo
-    /// rechaza con 401: el nombre lleva el prefijo <c>cls</c> del renombre de clases de Nexo y así lo publica su código.
+    /// Nombre exacto del encabezado que valida Nexo. Con otro nombre (por ejemplo <c>X-Portal-Usuario-Id</c>) Nexo responde 401: el
+    /// nombre lleva el prefijo <c>cls</c> del renombre de clases de Nexo y así lo publica su código.
     /// </summary>
     public const string Encabezado = "X-Portal-clsUsuario-Id";
 

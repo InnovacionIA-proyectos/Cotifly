@@ -19,7 +19,7 @@ using Polly;
 namespace Cotifly.Infraestructura.Licitaciones.Services;
 
 /// <summary>
-/// Importación inteligente del Excel con NEXO (HU-044.1, #252, ADR-028): puente sin estado hacia <c>/api/captura-solicitudes/*</c> y
+/// Importación inteligente del Excel con NEXO (ADR-028): puente sin estado hacia <c>/api/captura-solicitudes/*</c> y
 /// <c>/api/diccionario-cliente</c> de NEXO (CONTRATO.md §3.3 y §3.19.1). Identidad <c>X-Portal-clsUsuario-Id</c> del comercial
 /// (<see cref="clsIdentidadNexo"/>) y cliente por <c>clienteNit</c> normalizado como lo compara NEXO (<see cref="NormalizarNit"/>); Cotifly
 /// no busca ni guarda el <c>clienteId</c> de NEXO, no abre el Excel (lo valida NEXO) y nunca tipa ni modifica la <c>receta</c> (JSON opaco).
@@ -33,7 +33,7 @@ namespace Cotifly.Infraestructura.Licitaciones.Services;
 /// <c>ImportacionInteligente:LimiteRespuestaMegabytes</c>.</para>
 /// <para><b>Errores.</b> 400/404 con un código de <see cref="CodigosNexo"/> → ese código con el mensaje de NEXO; el 400
 /// <c>VALIDATION_ERROR</c> de <c>leer-estructura</c> → ese código con el mensaje y solo los nombres de los campos de <c>details</c>
-/// (<c>detalle.campos</c>, #253); otro 4xx (también <c>VALIDATION_ERROR</c> en las demás rutas) → <c>COSTEO_NEXO_RECHAZADA</c>; <c>429 IA_TOPE_DIARIO</c> → <c>IA_TOPE_DIARIO</c> sin tocar el bloqueo global de
+/// (<c>detalle.campos</c>); otro 4xx (también <c>VALIDATION_ERROR</c> en las demás rutas) → <c>COSTEO_NEXO_RECHAZADA</c>; <c>429 IA_TOPE_DIARIO</c> → <c>IA_TOPE_DIARIO</c> sin tocar el bloqueo global de
 /// <see cref="clsCupoNexoHandler"/> (estas rutas no son de listados limitados); otro 429 (<c>DEMASIADAS_SOLICITUDES</c>) → no disponible
 /// con el <c>Retry-After</c> en el detalle; 401/403 → <c>NEXO_SIN_PERMISO</c>; 413 → <c>ARCHIVO_DEMASIADO_GRANDE</c>; 5xx, red, tiempo
 /// agotado, circuito abierto, JSON inválido (o un null dentro de una lista), respuesta demasiado grande, comercial sin
@@ -100,7 +100,7 @@ public sealed class clsImportacionExcelNexo(
     };
 
     /// <summary>
-    /// HU-044.2 (#253): el <c>400 VALIDATION_ERROR</c> de <c>leer-estructura</c> (la forma del formulario: un campo de más o de menos que
+    /// El <c>400 VALIDATION_ERROR</c> de <c>leer-estructura</c> (la forma del formulario: un campo de más o de menos que
     /// NEXO valida y Cotifly no, porque no abre el libro ni interpreta la receta) llega al comercial con ese código y el mensaje de NEXO. En
     /// las demás rutas sigue como <c>COSTEO_NEXO_RECHAZADA</c>: ahí es un cuerpo JSON de Cotifly mal armado.
     /// </summary>
@@ -219,8 +219,8 @@ public sealed class clsImportacionExcelNexo(
         var parametros = new List<string>();
         if (nit is not null)
         {
-            // NEXO QA (2026-11-06) aún no acepta clienteNit en este GET (solo clienteId): lo ignora y responde los términos de todos los
-            // clientes. Se manda igual para que tome efecto cuando NEXO lo agregue (ADR-028, Consecuencias).
+            // NEXO no filtra por clienteNit en este GET (solo por clienteId): lo ignora y responde los términos de todos los
+            // clientes. Se manda igual para que tome efecto cuando NEXO lo admita (ADR-028, Consecuencias).
             parametros.Add("clienteNit=" + Uri.EscapeDataString(nit));
         }
 
@@ -456,7 +456,7 @@ public sealed class clsImportacionExcelNexo(
 
         if (respuesta.StatusCode == HttpStatusCode.TooManyRequests)
         {
-            // #278 (DU §2.1): el cupo DIARIO de IA del comercial. Es suyo: no bloquea a nadie más (no toca clsCupoNexo) y no se reintenta.
+            // El cupo DIARIO de IA del comercial (contrato de NEXO §2.1). Es suyo: no bloquea a nadie más (no toca clsCupoNexo) y no se reintenta.
             // Otro 429 (DEMASIADAS_SOLICITUDES, el cupo por minuto) sigue como en el resto de Nexo: no disponible, tras el Retry-After.
             return codigo == clsCodigosError.IaTopeDiario
                 ? new clsErrorDominio(clsCodigosError.IaTopeDiario, mensaje ?? clsCosteoNexo.MensajeIaTopeDiario, detalle)
@@ -665,7 +665,7 @@ public sealed class clsImportacionExcelNexo(
         l.RecetaGuardadaId,
         l.IaUsada,
         l.MotivoSinIa,
-        // D2 (validador de #253): sin la propiedad receta, el JsonElement es Undefined y Clone() lanzaría (la lectura saldría 503).
+        // Sin la propiedad receta, el JsonElement es Undefined y Clone() lanzaría (la lectura saldría 503).
         l.Receta.ValueKind == JsonValueKind.Undefined ? default : l.Receta.Clone(),
         l.Resumen,
         [.. SinNulos(l.Dudas)],
@@ -759,7 +759,7 @@ public sealed class clsImportacionExcelNexo(
     private sealed record clsColumnaPlantillaWire(int Indice, string? Campo, string? Transformacion);
 
     /// <summary>
-    /// #256 (B2): <c>clienteId</c> leído de verdad: <c>null</c> explícito o un GUID. Ausente (<see cref="JsonValueKind.Undefined"/>, un cambio de
+    /// <c>clienteId</c> leído de verdad: <c>null</c> explícito o un GUID. Ausente (<see cref="JsonValueKind.Undefined"/>, un cambio de
     /// forma de NEXO), no: el término nunca pasa por general.
     /// </summary>
     private static bool ClienteIdValido(JsonElement clienteId) => clienteId.ValueKind != JsonValueKind.Undefined;
@@ -775,7 +775,7 @@ public sealed class clsImportacionExcelNexo(
         _ => throw new JsonException("clienteId con otra forma en el diccionario de NEXO"),
     };
 
-    /// <summary><c>ClienteId</c> como <see cref="JsonElement"/> para distinguir <c>null</c> de "no vino" (#256, B2).</summary>
+    /// <summary><c>ClienteId</c> como <see cref="JsonElement"/> para distinguir <c>null</c> de "no vino".</summary>
     private sealed record clsTerminoWire(
         Guid Id, JsonElement ClienteId, string? ClienteNombre, string? Termino, string? Tipo, string? Concepto, string? Contexto, string? Ejemplo,
         bool Activo, DateTimeOffset CreatedAt, DateTimeOffset? UpdatedAt);
@@ -797,7 +797,7 @@ public sealed class clsImportacionExcelNexo(
 }
 
 /// <summary>
-/// Importación inteligente apagada (<c>ImportacionInteligente:Habilitada = false</c>) o sin <c>Nexo:UrlBase</c> (HU-044.1, #252): todo
+/// Importación inteligente apagada (<c>ImportacionInteligente:Habilitada = false</c>) o sin <c>Nexo:UrlBase</c>: todo
 /// responde <c>NEXO_NO_DISPONIBLE</c> sin llamar a NEXO. El comercial sigue con el mapeo manual.
 /// </summary>
 public sealed class clsImportacionExcelNoDisponible : IClsImportacionExcelNexo

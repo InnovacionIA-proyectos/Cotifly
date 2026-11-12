@@ -13,7 +13,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Cubicacion.Services;
 
 /// <summary>
-/// Opción D (D3, E2E 2026-10-16): "Calcular cubicaje" asíncrono. Cada cálculo corre en su propio ámbito de DI con el token del HOST
+/// "Calcular cubicaje" asíncrono. Cada cálculo corre en su propio ámbito de DI con el token del HOST
 /// (no el de la petición: si el cliente corta, el cálculo sigue y queda para <c>GET /web/cubicacion/{id}</c>) y respeta el cupo global del
 /// cubicador (<see cref="clsCupoLlamadasCubicador"/>, dentro de <see cref="clsCubicadorHttp"/>). La petición espera hasta
 /// <c>Cubicador:EsperaSincronaCubicacionSegundos</c>: si termina, responde como siempre; si no, devuelve el id (202).
@@ -25,7 +25,7 @@ namespace Cotifly.Infraestructura.Cubicacion.Services;
 /// <item>Logs con código estable: <see cref="EventoPendiente"/>, <see cref="EventoCompletada"/>, <see cref="EventoFallida"/> y
 /// <see cref="EventoLleno"/>. Un error del cubicador (un 400, una caída) deja la cubicación <c>fallida</c> con su código; una excepción
 /// inesperada, <c>fallida</c> con <c>CUBICADOR_NO_DISPONIBLE</c> (el detalle solo en el log).</item>
-/// <item>La captura y el recálculo siguen síncronos (solo la opción C): pasarlos a segundo plano es el siguiente paso.</item>
+/// <item>La captura y el recálculo son síncronos.</item>
 /// </list>
 /// </remarks>
 public sealed class clsCubicacionRapidaService(

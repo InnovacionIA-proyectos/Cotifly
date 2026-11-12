@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 namespace Cotifly.Infraestructura.Configuracion;
 
 /// <summary>
-/// Importación inteligente del Excel con NEXO (HU-044.1, #252, ADR-028), sección <c>ImportacionInteligente</c> (variables
+/// Importación inteligente del Excel con NEXO (ADR-028), sección <c>ImportacionInteligente</c> (variables
 /// <c>ImportacionInteligente__Habilitada</c>, <c>ImportacionInteligente__TimeoutSegundos</c> y
 /// <c>ImportacionInteligente__TimeoutLecturaSegundos</c> y <c>ImportacionInteligente__LimiteRespuestaMegabytes</c>). Se valida al arrancar: un tiempo fuera de rango impide arrancar. Apagada, o sin
 /// <c>Nexo:UrlBase</c>, Cotifly registra <see cref="Licitaciones.Services.clsImportacionExcelNoDisponible"/> y no llama a NEXO.

@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Cotifly.Api.Cubicacion.Controllers;
 
 /// <summary>
-/// Catálogos del cubicador para el formulario de captura (HU-021.5, #133; HU-023.1, #156): tipos de mercancía, carrocerías y tipos de
+/// Catálogos del cubicador para el formulario de captura: tipos de mercancía, carrocerías y tipos de
 /// vehículo. Cotifly solo los lee (con la caché de <c>Cubicador:MinutosCacheCatalogos</c>); el navegador nunca llama al cubicador.
 /// </summary>
 [Route("web")]
@@ -27,9 +27,9 @@ public sealed class clsCatalogosCubicadorController(IClsContextoUsuario usuario,
         Responder(await cubicador.ListarTiposMercanciaAsync(cancellationToken));
 
     /// <summary>
-    /// HU-044.8 (#291): 200 con el catálogo de carrocerías <b>de NEXO</b> (<c>[{codigo, nombre, activo}]</c>), que son las que
-    /// propone <c>normalizar-valores</c> y las que valida la captura. Ya no sale del cubicador: Nexo aún no publica un endpoint de
-    /// carrocerías, así que la fuente es la lista de carrocerías de Nexo de Cotifly (<see cref="clsCatalogosCaptura.Carrocerias"/>),
+    /// 200 con el catálogo de carrocerías <b>de NEXO</b> (<c>[{codigo, nombre, activo}]</c>), que son las que
+    /// propone <c>normalizar-valores</c> y las que valida la captura. No sale del cubicador: como Nexo no publica un endpoint de
+    /// carrocerías, la fuente es la lista de carrocerías de Nexo de Cotifly (<see cref="clsCatalogosCaptura.Carrocerias"/>),
     /// la misma que <c>GET /web/catalogos-flete</c>. Siempre responde 200 (no depende del cubicador).
     /// </summary>
     [HttpGet("tipos-carroceria")]

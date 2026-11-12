@@ -8,10 +8,10 @@ using Microsoft.AspNetCore.Mvc;
 namespace Cotifly.Api.Licitaciones.Controllers;
 
 /// <summary>
-/// HU-044.3 (#254, ADR-028 y ADR-029): aplica en NEXO el mapeo confirmado a todas las filas del Excel de licitación y devuelve las líneas con
+/// Aplica en NEXO el mapeo confirmado a todas las filas del Excel de licitación (ADR-028 y ADR-029) y devuelve las líneas con
 /// los nombres de <c>LineaLicitacionWeb</c> (más <c>fila_excel</c> y <c>linea_nexo</c>), listas para <c>POST /web/licitaciones</c>. El front no
 /// puede llamar a NEXO (CORS e identidad por header): Cotifly es el intermediario, con la identidad del comercial. Rol Comercial (política de
-/// la base). Controlador propio para no chocar con #253 y #256.
+/// la base).
 /// </summary>
 [Route("web/licitaciones")]
 public sealed class clsAplicacionMapeoController(IClsContextoUsuario usuario, IClsAplicacionMapeoService mapeo)

@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 namespace Cotifly.Infraestructura.Comun.Persistence.Configurations;
 
 /// <summary>
-/// <c>dbo_cotifly.PoliticaSeguroTramos</c> (<c>db/scripts/21_politica_seguros.sql</c>, HU-046.2 #268; la lee HU-046.3 #269). Sin el 21,
+/// <c>dbo_cotifly.PoliticaSeguroTramos</c> (<c>db/scripts/21_politica_seguros.sql</c>). Sin el 21,
 /// <c>/health/ready</c> dice "falta 21". Las columnas de texto llevan <c>COLLATE Latin1_General_100_CI_AS_SC_UTF8</c> en el script (la del
 /// modelo).
 /// </summary>
