@@ -1,7 +1,7 @@
 namespace Cotifly.Aplicacion.Costeo.Services;
 
 /// <summary>
-/// Espaciado del polling (HU-005.6, ADR-015 §4). Determinista y sin contador de consultas: la espera es una fracción de la edad de
+/// Espaciado del polling (ADR-015 §4). Determinista y sin contador de consultas: la espera es una fracción de la edad de
 /// la solicitud (<c>clamp(edad × FactorEdad, IntervaloInicial, IntervaloMaximo)</c>), así se pregunta cada pocos segundos al
 /// principio (como el frontend de Nexo) y cada vez menos cuando una licitación tarda horas. Tras fallos seguidos se multiplica por
 /// <c>2^min(fallos, 5)</c>, sin pasar del máximo.

@@ -11,7 +11,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Aplicacion.Costeo.Services;
 
 /// <summary>
-/// HU-033 (#199, ADR-023, decisión 6): envía a Nexo, UNA vez, el resultado ganada/perdida que quedó pendiente en Cotifly porque la
+/// Envía a Nexo (ADR-023), UNA vez, el resultado ganada/perdida que quedó pendiente en Cotifly porque la
 /// cotización todavía no estaba Entregada. Lo llama el polling del costeo cuando ve la entrega (o en la agenda de reintento). Nunca
 /// entrega la cotización en Nexo (no llama a <c>/entregar</c>: eso es de la Mesa de Costeo). No guarda: el llamador guarda con la versión.
 /// </summary>
@@ -65,13 +65,12 @@ public sealed class clsSincronizacionResultadoNexoService(
         var cotizacionNexoId = cotizacion.CotizacionNexoId;
         if (cotizacionNexoId is null)
         {
-            // DEF-C-1: se LEE la cotización de Nexo (sin "crear o recuperar").
+            // Se LEE la cotización de Nexo (sin "crear o recuperar").
             var recuperada = await nexo.LeerCotizacionAsync(usuarioId, solicitudId, cotizacionNexoId: null, CancellationToken.None);
             if (recuperada.EsFallo && recuperada.Error.Codigo == clsCodigosError.CotizacionNoEntregada)
             {
-                // Auditoría de la integración (#199): con DEF-C-1 la lectura ya no crea la cotización en Nexo; si Nexo todavía no la tiene
-                // (204 de por-solicitud) es la misma carrera con la Mesa que el COTIZACION_NO_ENTREGADA de abajo: sigue pendiente, sin
-                // contar un fallo (antes sumaba intentos y podía dejar el resultado no_sincronizable).
+                // La lectura no crea la cotización en Nexo; si Nexo todavía no la tiene (204 de por-solicitud) es la misma carrera con
+                // la Mesa que el COTIZACION_NO_ENTREGADA de abajo: sigue pendiente, sin contar un fallo.
                 return await SinEntregaAsync(cotizacion, ahora, ganada, recuperada.Error, cronometro);
             }
 
@@ -84,7 +83,7 @@ public sealed class clsSincronizacionResultadoNexoService(
             cotizacion.RegistrarCotizacionNexo(cotizacionNexoId);
         }
 
-        // HU-018.1 (#155): con "Otro" Cotifly guarda "Otro: comentario"; a Nexo va "Otro" y el comentario aparte (el pendiente).
+        // Con "Otro" Cotifly guarda "Otro: comentario"; a Nexo va "Otro" y el comentario aparte (el pendiente).
         var motivo = ganada ? null : _motivosPerdida.MotivoParaNexo(Normalizar(cotizacion.MotivoRechazo));
         var marcada = await nexo.MarcarResultadoAsync(
             usuarioId, cotizacionNexoId, new clsResultadoNexo(ganada, motivo, cotizacion.ComentarioResultadoPendiente), CancellationToken.None);

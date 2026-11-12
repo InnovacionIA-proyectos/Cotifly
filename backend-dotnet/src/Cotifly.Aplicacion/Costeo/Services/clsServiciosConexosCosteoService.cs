@@ -15,7 +15,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Aplicacion.Costeo.Services;
 
 /// <summary>
-/// Servicios conexos del catálogo de Nexo (HU-013.3, ADR-018 §4): <c>GET /web/servicios-conexos</c> (el buscador, sin costos) y
+/// Servicios conexos del catálogo de Nexo (ADR-018 §4): <c>GET /web/servicios-conexos</c> (el buscador, sin costos) y
 /// <c>POST /web/cotizaciones/{folio}/costeo/servicios-conexos</c> (el botón "Agregar conexo" y el Confirmar de la acción propuesta
 /// <c>agregar_servicios_conexos</c>). Nexo es la fuente de verdad del costo: el conexo se agrega en Nexo y Cotifly solo le aplica el
 /// margen de la cotización.
@@ -36,7 +36,7 @@ public interface IClsServiciosConexosCosteoService
     /// (409), <c>CONEXO_INVALIDO</c> (400, línea inexistente), <c>LINEA_SIN_COTIZACION_NEXO</c> (409) y los de Nexo. Si Nexo aceptó
     /// pero la relectura falla, <c>NEXO_NO_DISPONIBLE</c> con <c>agregado_en_nexo = true</c> (el polling lo recoge).
     /// <paramref name="claveIdempotencia"/> (<c>Idempotency-Key</c>, opcional): la repetición con la misma clave devuelve el resultado
-    /// guardado (<see cref="IClsAlmacenIdempotencia"/>); la misma clave con otro cuerpo es <c>IDEMPOTENCY_KEY_REUTILIZADA</c> (409, D4).
+    /// guardado (<see cref="IClsAlmacenIdempotencia"/>); la misma clave con otro cuerpo es <c>IDEMPOTENCY_KEY_REUTILIZADA</c> (409).
     /// </summary>
     Task<clsResultado<clsCosteoCotizacion>> AgregarAsync(
         Guid usuarioId, string folio, IReadOnlyList<clsConexoAgregarEntrada>? items, int versionEsperada, string? claveIdempotencia,
@@ -47,10 +47,10 @@ public interface IClsServiciosConexosCosteoService
 /// Implementación de <see cref="IClsServiciosConexosCosteoService"/>.
 /// <list type="bullet">
 /// <item><b>Línea de Nexo.</b> <c>linea_orden</c> → la ruta de Cotifly (<c>CotizacionLineasSolicitud.orden</c>) → su PRIMER camión
-/// (decisión 3 del 2026-10-08: los conexos de la ruta viajan pegados a la línea de su primer camión) → su <c>lineaSolicitudNexoId</c>
+/// (los conexos de la ruta viajan pegados a la línea de su primer camión) → su <c>lineaSolicitudNexoId</c>
 /// (guardado por el polling) → la línea de la cotización de Nexo con ese <c>lineaSolicitudId</c>, cuyo id se lee de Nexo justo antes de
 /// agregar (<c>GET /api/cotizaciones/{id}</c>).</item>
-/// <item><b>Precio.</b> Los conexos que Nexo agregó quedan como filas de la ruta (<c>CotizacionServiciosConexos</c>, HU-021) con su
+/// <item><b>Precio.</b> Los conexos que Nexo agregó quedan como filas de la ruta (<c>CotizacionServiciosConexos</c>) con su
 /// costo unitario de Nexo y su cantidad; la ruta los suma a su costo final y les aplica su margen (el precio de la ruta los incluye).</item>
 /// <item><b>Concurrencia.</b> La versión se RESERVA en la base (sube y se guarda con el <c>If-Match</c>) antes del POST a Nexo: solo
 /// una de varias peticiones simultáneas llega a Nexo; las demás reciben <c>CONFLICTO_CONCURRENCIA</c>. Los precios se guardan después
@@ -72,8 +72,8 @@ public sealed class clsServiciosConexosCosteoService(
     IClsTarifaSeguroRepository tarifasSeguro,
     IClsPoliticaSegurosRepository politicaSeguros) : IClsServiciosConexosCosteoService
 {
-    // #226 (validación de DEF-1027-3): las dependencias de la vista con estados son obligatorias. Opcionales, un registro que faltara
-    // en DI devolvía otra vez estado_nexo = null en silencio; obligatorias, el contenedor falla al resolver el servicio.
+    // Las dependencias de la vista con estados son obligatorias: si falta un registro en DI, el contenedor falla al resolver el
+    // servicio en lugar de devolver estado_nexo = null en silencio.
 
     /// <summary>Operación del ámbito de la idempotencia (<c>"conexos:{usuarioId}"</c>).</summary>
     public const string OperacionIdempotencia = "conexos";
@@ -206,7 +206,7 @@ public sealed class clsServiciosConexosCosteoService(
 
     /// <summary>
     /// Forma de los items (el esquema <c>AgregarServiciosConexosWeb</c>): de 1 a <see cref="MaximoItems"/>, cada uno con la ruta opcional
-    /// (<c>linea_orden</c> ≥ 1 o <c>linea_solicitud_id</c> UUID; HU-021.8), <c>servicio_id</c> UUID y <c>cantidad</c> de
+    /// (<c>linea_orden</c> ≥ 1 o <c>linea_solicitud_id</c> UUID), <c>servicio_id</c> UUID y <c>cantidad</c> de
     /// <see cref="CantidadMinima"/> a <see cref="CantidadMaxima"/>. Fuera de eso, <c>SOLICITUD_INVALIDA</c> (400 <c>ErrorWeb</c>) sin
     /// tocar nada. La ruta la resuelve <see cref="RutaDe"/> con la cotización.
     /// </summary>
@@ -260,7 +260,7 @@ public sealed class clsServiciosConexosCosteoService(
 
     /// <summary>
     /// Única fuente de las reglas de la cotización para agregar conexos, sin tocar Nexo (la usan el endpoint y la propuesta
-    /// <c>agregar_servicios_conexos</c> del asistente, HU-013.6), en este orden: licitación (<c>ESTADO_NO_PERMITE</c>), costeo con
+    /// <c>agregar_servicios_conexos</c> del asistente), en este orden: licitación (<c>ESTADO_NO_PERMITE</c>), costeo con
     /// margen (<c>COSTEO_NO_LISTO</c>), regla del PDF (<c>PDF_YA_ENVIADO</c>), la ruta (<see cref="RutaDe"/>: <c>RUTA_REQUERIDA</c>,
     /// <c>CONEXO_INVALIDO</c> si no existe, <c>SOLICITUD_INVALIDA</c> si los items son de rutas distintas) y ruta sin cotización de Nexo
     /// (<c>LINEA_SIN_COTIZACION_NEXO</c>). <c>null</c> si pasa.
@@ -287,14 +287,14 @@ public sealed class clsServiciosConexosCosteoService(
             return entregada;
         }
 
-        // linea_orden / linea_solicitud_id → ruta de Cotifly (HU-021.8).
+        // linea_orden / linea_solicitud_id → ruta de Cotifly.
         var ruta = RutaDe(cotizacion, items);
         if (ruta.EsFallo)
         {
             return ruta.Error;
         }
 
-        // HU-028.1 (#183): una ruta rechazada por la Mesa de Costeo no tiene precio: no admite conexos (409 RUTA_RECHAZADA).
+        // Una ruta rechazada por la Mesa de Costeo no tiene precio: no admite conexos (409 RUTA_RECHAZADA).
         if (cotizacion.ValidarRutaNoRechazada(ruta.Valor) is { } rechazada)
         {
             return rechazada;
@@ -306,7 +306,7 @@ public sealed class clsServiciosConexosCosteoService(
     }
 
     /// <summary>
-    /// La ruta a la que se agregan los conexos (HU-021.8, #135): cada item la indica con <c>linea_orden</c> o <c>linea_solicitud_id</c>
+    /// La ruta a la que se agregan los conexos: cada item la indica con <c>linea_orden</c> o <c>linea_solicitud_id</c>
     /// (sin ninguno, la única de la cotización; con varias, <c>RUTA_REQUERIDA</c> con las rutas en el detalle). Una ruta que no existe:
     /// <c>CONEXO_INVALIDO</c> (<c>LINEA_INEXISTENTE</c>). Todos los items de una petición deben ser de la MISMA ruta
     /// (<c>SOLICITUD_INVALIDA</c>): los conexos nuevos de Nexo no dicen su línea y se guardan en la ruta pedida.
@@ -341,8 +341,8 @@ public sealed class clsServiciosConexosCosteoService(
     }
 
     /// <summary>
-    /// Primer camión VIGENTE de la ruta, en el orden estable: el que lleva los conexos en Nexo (decisión 3). Un camión descartado (también
-    /// el que perdió su línea porque la Mesa la borró, #134) no recibe conexos: van al siguiente. HU-028.1 (#183): uno rechazado por la Mesa
+    /// Primer camión VIGENTE de la ruta, en el orden estable: el que lleva los conexos en Nexo. Un camión descartado (también
+    /// el que perdió su línea porque la Mesa la borró) no recibe conexos: van al siguiente. Uno rechazado por la Mesa
     /// tampoco (su línea no tiene fila en la cotización de Nexo): van al primer camión no rechazado.
     /// </summary>
     public static clsVehiculoLineaSolicitud? PrimerCamion(clsLineaSolicitud ruta)
@@ -427,8 +427,8 @@ public sealed class clsServiciosConexosCosteoService(
                 new clsConexosPendientesNexo(cotizacion.Folio, ruta.Id, [.. actual.Valor.Conexos.Select(c => c.Id)]));
         }
 
-        // HU-021: los conexos que Nexo agregó en esta petición quedan como filas de SU ruta (la del camión cuya línea los lleva, #134; si no
-        // se sabe, la ruta pedida, HU-021.8) con el costo unitario de Nexo y la cantidad, y esa ruta y la cabecera se recalculan con el
+        // Los conexos que Nexo agregó en esta petición quedan como filas de SU ruta (la del camión cuya línea los lleva; si no
+        // se sabe, la ruta pedida) con el costo unitario de Nexo y la cantidad, y esa ruta y la cabecera se recalculan con el
         // margen de la ruta.
         var importados = ImportarConexosPorRuta(
             cotizacion, cotizacionNexo, NuevosConexos(actual.Valor, cotizacionNexo), ruta, cotizacion.CosteoListoAt ?? cotizacion.UpdatedAt);
@@ -439,12 +439,12 @@ public sealed class clsServiciosConexosCosteoService(
 
         var agregados = importados.Valor;
 
-        // HU-046.3 (#269): el codigoServicio de los conexos agregados (la cotización de Nexo no lo trae), con el índice del catálogo que ya
+        // El codigoServicio de los conexos agregados (la cotización de Nexo no lo trae), con el índice del catálogo que ya
         // tiene el costeo en memoria, por el id del catálogo. No se lee el catálogo de Nexo aquí (ni se llena la caché de costos, que
         // decide qué ve la versión nueva): si el índice está frío se calienta en segundo plano y el código se completa al leer el costeo.
         await clsPoliticaSegurosCosteo.CompletarCodigosAsync(categoriasConexos, cotizacion, logger, CancellationToken.None);
 
-        // #228: Nexo ya tiene los conexos (los creó este POST): quedan enviados en el registro del envío diferido, en la misma escritura.
+        // Nexo ya tiene los conexos (los creó este POST): quedan enviados en el registro del envío diferido, en la misma escritura.
         // Si no, estado_nexo = pendiente bloquearía finalizar, y en una entregada el polling ya no pasa para confirmarlos.
         try
         {
@@ -462,8 +462,8 @@ public sealed class clsServiciosConexosCosteoService(
             return (AgregadoEnNexo(clsReglaPdfCosteo.Conflicto(cotizacion.Folio), true), 0, false);
         }
 
-        // DEF-1027-3 (#226): la misma vista que GET .../costeo y los PUT (#173): con el estado_nexo de cada conexo, la categoría del
-        // catálogo y la situación de las líneas en Nexo (antes salía estado_nexo = null). Ya se guardó: sin el token del cliente.
+        // La misma vista que GET .../costeo y los PUT: con el estado_nexo de cada conexo, la categoría del
+        // catálogo y la situación de las líneas en Nexo. Ya se guardó: sin el token del cliente.
         return (await clsCosteoCotizacionService.VistaConEstadosAsync(
             cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, logger, CancellationToken.None, categoriasConexos,
             situacionesNexo.Obtener(cotizacion.Id),
@@ -485,8 +485,8 @@ public sealed class clsServiciosConexosCosteoService(
     }
 
     /// <summary>
-    /// Guarda <paramref name="conexos"/> de Nexo como filas de la ruta (HU-021): costo unitario = <c>valorAplicado ÷ cantidad</c> (el mismo
-    /// criterio del 0009, columna <c>precio</c>), la cantidad y el nombre. HU-043.2 (#251): la venta unitaria (columna <c>precioVenta</c>) es
+    /// Guarda <paramref name="conexos"/> de Nexo como filas de la ruta: costo unitario = <c>valorAplicado ÷ cantidad</c> (el mismo
+    /// criterio del 0009, columna <c>precio</c>), la cantidad y el nombre. La venta unitaria (columna <c>precioVenta</c>) es
     /// <see cref="clsConexoNexo.VentaUnitaria"/>. Un conexo que ya estaba se actualiza. La raíz recalcula siempre los totales y el precio
     /// (<see cref="clsCotizacionSolicitud.CambiarConexos"/>). Devuelve cuántos agregó o cambió, o el error del módulo de precio.
     /// </summary>
@@ -500,7 +500,7 @@ public sealed class clsServiciosConexosCosteoService(
         {
             var cantidad = conexo.Cantidad > 0m ? decimal.Round(conexo.Cantidad, 2) : 1m;
             var precio = decimal.Round(conexo.ValorAplicado / cantidad, 2, MidpointRounding.ToEven);
-            // HU-014 (#188): con el id del catálogo (servicioConexoId, script 03) y la categoría que informó Nexo (script 05).
+            // Con el id del catálogo (servicioConexoId, script 03) y la categoría que informó Nexo (script 05).
             return new clsCambioConexo(
                 conexo.Id, conexo.Nombre ?? conexo.Categoria, precio, cantidad, conexo.ServicioConexoId, conexo.CategoriaInformada,
                 conexo.VentaUnitaria);
@@ -509,7 +509,7 @@ public sealed class clsServiciosConexosCosteoService(
     }
 
     /// <summary>
-    /// HU-043.2 (#251): la venta que Nexo fijó para los conexos que Cotifly YA tiene guardados (filas anteriores al despliegue quedaron con
+    /// La venta que Nexo fijó para los conexos que Cotifly YA tiene guardados (algunas filas tienen
     /// <c>precioVenta = precio</c>). Se cruza por el id: la fila de Nexo cuyo <c>id</c> es el <c>idServicioConexo</c> guardado (conexo
     /// agregado o importado) o, si no hay, las de su <c>servicioConexoId</c> (el id del catálogo de un conexo capturado) que son de la misma
     /// ruta (<see cref="RutaDelConexo"/>) y que no son ya, por id, de otro conexo guardado. Solo con una venta conocida (<see cref="clsConexoNexo.VentaUnitaria"/>) y única: sin venta, o con
@@ -548,7 +548,7 @@ public sealed class clsServiciosConexosCosteoService(
     }
 
     /// <summary>
-    /// Ruta de Cotifly de un conexo de Nexo (#134): los conexos viajan pegados a la línea del primer camión de su ruta (decisión 3), así
+    /// Ruta de Cotifly de un conexo de Nexo: los conexos viajan pegados a la línea del primer camión de su ruta, así
     /// que <c>cotizacionLineaId</c> → la línea de la cotización de Nexo → su <c>lineaSolicitudId</c> → el camión con ese
     /// <c>lineaSolicitudNexoId</c> → su ruta. <c>null</c> si no se puede seguir la cadena (Nexo no trae la línea o el camión no está asociado).
     /// </summary>
@@ -600,8 +600,7 @@ public sealed class clsServiciosConexosCosteoService(
     private async Task<(clsResultado<clsCosteoCotizacion>, int, bool)> SinRelecturaAsync(
         clsCotizacionSolicitud cotizacion, Guid usuarioId, int reservada, object agregado, string? detalle, clsConexosPendientesNexo pendientes)
     {
-        // HU-021: el polling ya no importa los conexos de Nexo (Cotifly es la fuente, decisión 3) salvo con esta marca. HU-021.8 (#135):
-        // junto a la marca, y en la misma transacción, se guardan la ruta pedida y los ids que Nexo ya tenía ANTES del POST: la siguiente
+        // El polling no importa los conexos de Nexo (Cotifly es la fuente) salvo con esta marca. Junto a la marca, y en la misma transacción, se guardan la ruta pedida y los ids que Nexo ya tenía ANTES del POST: la siguiente
         // lectura trae a ESA ruta solo los conexos nuevos (nunca uno que el comercial quitó en Cotifly ni uno de otra ruta).
         cotizacion.MarcarConexosPendientesDeLeer();
         cotizaciones.RegistrarConexosPendientesNexo(pendientes);
@@ -614,8 +613,8 @@ public sealed class clsServiciosConexosCosteoService(
     }
 
     /// <summary>
-    /// <c>lineaId</c> de Nexo para un camión de Cotifly: el id de la línea de la cotización de Nexo con su <c>lineaSolicitudId</c>. #259:
-    /// basta con UNA; si la Mesa dejó varias para el mismo camión (el costo ya las suma, <c>clsCosteoConsultadoNexo.CostoLinea</c>) se toma
+    /// <c>lineaId</c> de Nexo para un camión de Cotifly: el id de la línea de la cotización de Nexo con su <c>lineaSolicitudId</c>.
+    /// Basta con UNA; si la Mesa dejó varias para el mismo camión (el costo ya las suma, <c>clsCosteoConsultadoNexo.CostoLinea</c>) se toma
     /// la primera por id (orden ordinal), un criterio estable para el envío diferido y para el POST. Sin camión, la única línea de la
     /// cotización de Nexo. <c>null</c> si no hay (sin flete o sin id).
     /// </summary>

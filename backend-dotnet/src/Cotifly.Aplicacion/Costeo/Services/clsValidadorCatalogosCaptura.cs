@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging;
 namespace Cotifly.Aplicacion.Costeo.Services;
 
 /// <summary>
-/// Validación por código de catálogo de la captura hacia Nexo (HU-013.10, #106, G2 y G11). <c>POST /api/captura-solicitudes</c> de
+/// Validación por código de catálogo de la captura hacia Nexo. <c>POST /api/captura-solicitudes</c> de
 /// Nexo no valida contra sus catálogos: resuelve el texto por coincidencia aproximada y, si no encuentra el tipo de vehículo, crea
 /// una fila nueva de catálogo (duplicados). Por eso Cotifly solo envía códigos de catálogo.
 /// </summary>
@@ -23,7 +23,7 @@ public interface IClsValidadorCatalogosCaptura
     Task<clsErrorDominio?> ValidarAsync(Guid usuarioId, clsLineaSolicitudCosteo linea, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Las mismas reglas que <see cref="ValidarAsync"/> sobre todas las filas de una licitación (HU-013.11), sin detenerse en el primer
+    /// Las mismas reglas que <see cref="ValidarAsync"/> sobre todas las filas de una licitación, sin detenerse en el primer
     /// error: por cada línea (en el mismo orden) la lista de campos que no son códigos de catálogo (<c>CODIGO_NO_CATALOGO</c>). El
     /// catálogo maestro se consulta una sola vez y solo si alguna fila trae <c>tipo_vehiculo</c> o <c>clase_viaje</c>. Sin copia
     /// utilizable, <see cref="clsValidacionCatalogoLineas.NoDisponible"/> es <c>CATALOGOS_FLETE_NO_DISPONIBLE</c> y los errores traen
@@ -33,7 +33,7 @@ public interface IClsValidadorCatalogosCaptura
         Guid usuarioId, IReadOnlyList<clsLineaSolicitudCosteo> lineas, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// G11: advierte (log, nunca bloquea) si <c>MargenesPolitica.mapeoLineasNexo</c> de <paramref name="politica"/> no aparece en la
+    /// Advierte (log, nunca bloquea) si <c>MargenesPolitica.mapeoLineasNexo</c> de <paramref name="politica"/> no aparece en la
     /// última copia de <c>GET /api/catalogos/lineas-negocio</c>. Sin copia en memoria no consulta Nexo. Devuelve <c>false</c> solo si
     /// pudo revisarlo y no está.
     /// </summary>
@@ -43,7 +43,7 @@ public interface IClsValidadorCatalogosCaptura
 /// <summary>
 /// Resultado de <see cref="IClsValidadorCatalogosCaptura.ValidarLineasAsync"/>: por línea, los campos que no son códigos de catálogo, y
 /// <see cref="NoDisponible"/> si <c>tipo_vehiculo</c>/<c>clase_viaje</c> no se pudieron validar (catálogo maestro caído y sin copia).
-/// <see cref="Canonicas"/> (D-1019B-2, #188 M1): las mismas líneas con <c>tipo_vehiculo</c> y <c>carroceria</c> escritos como en el
+/// <see cref="Canonicas"/>: las mismas líneas con <c>tipo_vehiculo</c> y <c>carroceria</c> escritos como en el
 /// catálogo de Nexo (<c>2s2</c>/<c>furgon</c> → <c>2S2</c>/<c>FURGON</c>), para que el camión del respaldo se guarde y se muestre con la
 /// misma escritura que viaja a Nexo; <c>null</c> = sin cambios.
 /// </summary>
@@ -53,10 +53,10 @@ public sealed record clsValidacionCatalogoLineas(
 /// <summary>Implementación de <see cref="IClsValidadorCatalogosCaptura"/>.</summary>
 /// <remarks>
 /// <list type="bullet">
-/// <item><b>HU-014 (#188, hallazgo M1; decisión del 2026-10-19 "enviar solo códigos conocidos").</b> <c>tipo_vehiculo</c> y
+/// <item><b>Solo códigos que Nexo conoce.</b> <c>tipo_vehiculo</c> y
 /// <c>carroceria</c> son el vehículo digitado del respaldo (<c>Captura:AceptarVehiculoCliente</c>) y viajan a Nexo: deben ser códigos
-/// que NEXO conozca, o la línea nacería en cuarentena (S5-HU-18.4). Ya no basta con que estén en el catálogo del cubicador (HU-023.1 los
-/// aceptaba, y un código que solo conocía el cubicador caía en cuarentena). <c>tipo_vehiculo</c> se valida contra el <c>codigo</c> de
+/// que NEXO conozca, o la línea nacería en cuarentena. No basta con que estén en el catálogo del cubicador (un código que solo
+/// conoce el cubicador cae en cuarentena). <c>tipo_vehiculo</c> se valida contra el <c>codigo</c> de
 /// <c>GET /api/catalogos/tipos-vehiculo</c> de Nexo y <c>carroceria</c> contra la lista de carrocerías de Nexo
 /// (<see cref="clsCatalogosCaptura.Carrocerias"/>; Nexo no publica ese catálogo). Se rechaza con 400 (<c>CODIGO_NO_CATALOGO</c>) en vez
 /// de descartarlo en silencio: el comercial sabe que su vehículo no se usaría, y el emparejamiento sigue comparando el vehículo que
@@ -65,17 +65,16 @@ public sealed record clsValidacionCatalogoLineas(
 /// <c>_</c>/<c>-</c> como espacio; <see cref="clsCodigosConocidosNexo"/>): <c>FURGON_REFRIGERADO</c> es <c>FURGON REFRIGERADO</c> y
 /// <c>3s3</c> es <c>3S3</c>. Una descripción (<c>Tractocamión 3 ejes, semi 3</c>) no es un código. El envío a Nexo lo escribe como en
 /// el catálogo de Nexo.</item>
-/// <item><b>En código</b>: <c>tipologia</c> (enum de 7 valores) y la lista provisional de extradimensionado de <c>clase_contenedor</c>
-/// (G15, hasta que Nexo la formalice).</item>
+/// <item><b>En código</b>: <c>tipologia</c> (enum de 7 valores) y la lista provisional de extradimensionado de <c>clase_contenedor</c>.</item>
 /// <item><b>Catálogo maestro de Nexo</b> (con caché): <c>tipo_vehiculo</c>, <c>clase_viaje</c> (<c>descripcion</c> de
-/// <c>clases-viaje</c>, exacta) y <c>clase_contenedor</c> (<c>descripcion</c> de <c>clases-contenedor</c>, exacta; HU-023.1 quitó la
-/// lista fija de 5 códigos). Solo se consulta si hace falta; sin copia utilizable, <c>CATALOGOS_FLETE_NO_DISPONIBLE</c>.</item>
+/// <c>clases-viaje</c>, exacta) y <c>clase_contenedor</c> (<c>descripcion</c> de <c>clases-contenedor</c>, exacta; sin lista fija
+/// de códigos). Solo se consulta si hace falta; sin copia utilizable, <c>CATALOGOS_FLETE_NO_DISPONIBLE</c>.</item>
 /// <item>Un valor con espacios al borde se compara recortado, igual que lo guarda la cotización.</item>
-/// <item><b>HU-031.1 (#194): alias de Nexo.</b> Un <c>tipo_vehiculo</c> que el catálogo no conoce, o una <c>clase_contenedor</c> que no
-/// está en el catálogo ni en la lista provisional, se busca en el diccionario de alias de Nexo (NEXO #321; "TB" → <c>2L2</c>, "40HC" →
+/// <item><b>Alias de Nexo.</b> Un <c>tipo_vehiculo</c> que el catálogo no conoce, o una <c>clase_contenedor</c> que no
+/// está en el catálogo ni en la lista provisional, se busca en el diccionario de alias de Nexo ("TB" → <c>2L2</c>, "40HC" →
 /// <c>CNT40.HC</c>) ANTES de rechazarlo: si resuelve a un código oficial, se acepta y <see cref="clsValidacionCatalogoLineas.Canonicas"/>
-/// lo guarda con ese código (<see cref="Canonica"/>, como ya hacía con la escritura de Nexo). Sin diccionario (Nexo caído y sin copia)
-/// se valida como antes, sin alias, con un warning: nunca se rechaza por el diccionario. Solo se consulta si hace falta.</item>
+/// lo guarda con ese código (<see cref="Canonica"/>, como con la escritura de Nexo). Sin diccionario (Nexo caído y sin copia)
+/// se valida sin alias, con un warning: nunca se rechaza por el diccionario. Solo se consulta si hace falta.</item>
 /// </list>
 /// </remarks>
 public sealed class clsValidadorCatalogosCaptura(
@@ -148,7 +147,7 @@ public sealed class clsValidadorCatalogosCaptura(
     }
 
     /// <summary>
-    /// HU-031.1 (#194): el diccionario de alias de Nexo, solo si alguna línea trae un <c>tipo_vehiculo</c> que el catálogo no conoce o una
+    /// El diccionario de alias de Nexo, solo si alguna línea trae un <c>tipo_vehiculo</c> que el catálogo no conoce o una
     /// <c>clase_contenedor</c> que no está en el catálogo ni en la lista provisional. <c>null</c> si no hace falta o no está disponible (se
     /// valida sin alias; nunca falla por esto).
     /// </summary>
@@ -184,8 +183,8 @@ public sealed class clsValidadorCatalogosCaptura(
     }
 
     /// <summary>
-    /// D-1019B-2 (#188 M1): la línea con <c>tipo_vehiculo</c> y <c>carroceria</c> escritos como en Nexo (la equivalencia de
-    /// <see cref="clsCodigosConocidosNexo"/>), la misma escritura con la que viajan. HU-031.1 (#194): con <paramref name="alias"/>, un
+    /// La línea con <c>tipo_vehiculo</c> y <c>carroceria</c> escritos como en Nexo (la equivalencia de
+    /// <see cref="clsCodigosConocidosNexo"/>), la misma escritura con la que viajan. Con <paramref name="alias"/>, un
     /// <c>tipo_vehiculo</c> o una <c>clase_contenedor</c> que solo conoce el diccionario de alias de Nexo queda con el código oficial
     /// ("TB" → <c>2L2</c>, "40HC" → <c>CNT40.HC</c>). Un código que no se puede resolver (o el tipo sin el catálogo maestro) queda
     /// recortado y tal cual: ya trae su error.
@@ -231,7 +230,7 @@ public sealed class clsValidadorCatalogosCaptura(
 
     /// <summary>
     /// Tipo de vehículo (<c>codigo</c>, con la equivalencia de <see cref="clsCodigosConocidosNexo"/>), clase de viaje (<c>descripcion</c>) y
-    /// clase de contenedor (<c>descripcion</c> de <c>clases-contenedor</c>, o la lista provisional G15) contra el catálogo maestro de Nexo.
+    /// clase de contenedor (<c>descripcion</c> de <c>clases-contenedor</c>, o la lista provisional) contra el catálogo maestro de Nexo.
     /// </summary>
     private static List<clsErrorCampo> ErroresMaestros(clsLineaSolicitudCosteo linea, clsCatalogosMaestros catalogos, clsDiccionarioAliasNexo? alias)
     {
@@ -266,7 +265,7 @@ public sealed class clsValidadorCatalogosCaptura(
     /// <summary>
     /// ¿La línea trae una clase de contenedor que hay que validar con Nexo y la copia del catálogo maestro llegó sin
     /// <c>clases-contenedor</c>? (Es un catálogo opcional de Nexo: si falló, llega vacío.) Sin él no se valida: la captura no sigue
-    /// (<c>CATALOGOS_FLETE_NO_DISPONIBLE</c>), porque ya no hay lista fija de respaldo y nunca se manda texto libre a Nexo.
+    /// (<c>CATALOGOS_FLETE_NO_DISPONIBLE</c>), porque no hay lista fija de respaldo y nunca se manda texto libre a Nexo.
     /// </summary>
     private static bool SinClasesContenedor(clsLineaSolicitudCosteo linea, clsCatalogosMaestros catalogos) =>
         catalogos.ClasesContenedor.Count == 0 && Recortar(linea.ClaseContenedor) is { } clase && !EsProvisional(clase);
