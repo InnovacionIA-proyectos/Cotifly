@@ -79,6 +79,13 @@ public sealed record clsDocumentoCotizacion
     /// </summary>
     public clsTotalDocumento? TotalGeneral { get; init; }
 
+    /// <summary>
+    /// #261 (HU-046, política NOGE0076): párrafos del texto de seguros de la propuesta, que van después del resumen de precios (<c>null</c> o
+    /// vacío = sin bloque). Se lee de configuración (<c>Pdf:TextoSeguros</c>); no lo arma <c>clsConstructorDocumentoCotizacion</c>: lo pone el
+    /// caso de uso (<c>clsCosteoCotizacionService</c>), así el PDF del chat legado y las pruebas del constructor no lo traen.
+    /// </summary>
+    public IReadOnlyList<string>? TextoSeguros { get; init; }
+
     public required IReadOnlyList<string> Incluye { get; init; }
 
     public required IReadOnlyList<string> NoIncluye { get; init; }

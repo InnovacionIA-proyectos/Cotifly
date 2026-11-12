@@ -7,6 +7,7 @@ using Cotifly.Aplicacion.Correo.Services;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Aplicacion.Pdf.Interfaces;
+using Cotifly.Aplicacion.Pdf.Services;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Correo;
 using Cotifly.Dominio.Cotizaciones;
@@ -71,7 +72,24 @@ public sealed class clsCorreoServiceTests : IDisposable
     public void Dispose() => _candado.Dispose();
 
     private clsCorreoService Servicio() =>
-        new(_cotizaciones, _correos, _usuarios, _almacen, _transporte, _unidadTrabajo, _reloj, _calendario, _candado, Options.Create(_opciones), _logger);
+        new(_cotizaciones, _correos, _usuarios, _almacen, _transporte, _unidadTrabajo, _reloj, _calendario, _candado, Options.Create(_opciones),
+            Options.Create(new clsOpcionesPdf { TextoSeguros = _textoSeguros }), _logger);
+
+    /// <summary>#261 (HU-046): el texto de seguros de la configuración para el cuerpo del correo (null = sin bloque; los tests que lo prueban lo fijan).</summary>
+    private string? _textoSeguros;
+
+    // #261 (HU-046): el correo que sale lleva el texto de seguros de la configuración (Pdf:TextoSeguros) en el cuerpo HTML.
+    [Fact]
+    public async Task ElCorreoLlevaElTextoDeSegurosDeLaConfiguracion()
+    {
+        _textoSeguros = "Ampara la responsabilidad del transporte.";
+
+        var resultado = await Servicio().EnviarAsync(Entrada(), Ct);
+
+        resultado.EsExitoso.Should().BeTrue(resultado.EsFallo ? resultado.Error.Mensaje : string.Empty);
+        _enviado!.CuerpoHtml.Should().Contain(System.Net.WebUtility.HtmlEncode(Cotifly.Aplicacion.Pdf.Services.clsTextosEstandar.TituloSegurosPropuesta))
+            .And.Contain("Ampara la responsabilidad del transporte.");
+    }
 
     private clsEntradaEnviarCorreo Entrada(string[]? para = null, string[]? cc = null, Guid? usuario = null, string? asunto = null, string? cuerpo = null) =>
         new(usuario ?? _comercial.Id, para ?? ["cliente@empresa.com"], Folio: "PCN-C1", Cc: cc, Asunto: asunto, Cuerpo: cuerpo);

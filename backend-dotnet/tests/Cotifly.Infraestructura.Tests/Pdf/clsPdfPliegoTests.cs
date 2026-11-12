@@ -133,6 +133,29 @@ public sealed class clsPdfPliegoTests
         Math.Abs(tarifa - transporteSolo!.Value).Should().BeLessThanOrEqualTo(1m, "a lo sumo una unidad por conexo");
     }
 
+    // #261 (HU-046): en el pliego el texto de seguros va justo después del resumen del pliego, una sola vez (no se repite al final).
+    [Fact]
+    public void ElTextoDeSegurosDelPliegoVaDespuesDelResumenYUnaSolaVez()
+    {
+        var (cotizacion, _) = Pliego(3);
+        var payload = clsCosteoCotizacionService.PayloadPliego(cotizacion, "Nacional", "COP");
+        var documento = clsConstructorDocumentoCotizacion.Construir(payload, cotizacion.Folio, _firma, new DateOnly(2026, 10, 1), "COP", 0m).Valor
+            with
+            {
+                TotalGeneral = clsCosteoCotizacionService.TotalGeneral(cotizacion, "COP"),
+                TextoSeguros = clsCosteoCotizacionService.ParrafosSeguros("El transportador ampara su responsabilidad del contrato de transporte."),
+            };
+
+        var pdf = _generador.Generar(clsCosteoCotizacionService.DocumentoPliego(documento, cotizacion, "COP"));
+        var texto = clsLectorPdf.Leer(pdf.Contenido).Texto;
+
+        texto.Should().Contain(clsTextosEstandar.TituloSegurosPropuesta).And.Contain("El transportador ampara su responsabilidad del contrato de transporte.");
+        texto.IndexOf(clsTextosEstandar.TituloSegurosPropuesta, StringComparison.Ordinal).Should()
+            .BeGreaterThan(texto.IndexOf("RESUMEN DEL PLIEGO", StringComparison.Ordinal), "va después del resumen del pliego");
+        System.Text.RegularExpressions.Regex.Matches(texto, System.Text.RegularExpressions.Regex.Escape(clsTextosEstandar.TituloSegurosPropuesta)).Count
+            .Should().Be(1, "una sola vez: tras el resumen, no también al final tras el total general");
+    }
+
     [Fact]
     public void UnPliegoDeDoceRutasTraeElResumenConTodasLasRutasYElTotalGeneral()
     {

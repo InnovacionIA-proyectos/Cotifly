@@ -48,6 +48,8 @@ public sealed partial class clsManifiestosDespliegueTests
             [("*", "Nexo__EnviarCodigosCubicador")] = "siempre explícito (HU-014 #188, HU-031.1 #194): en el código, vacío ya significa siempre.",
             [("stack.dotnet.staging.yml", "CosteoNexo__Habilitado")] =
                 "Apagado en staging hasta que el DBA confirme que staging y producción no comparten dbo_cotifly (DEPLOY.md §2.2).",
+            [("*", "Pdf__TextoSeguros")] =
+                "#261 (HU-046): vacío en los stacks (Jurídica carga el texto oficial en Dokploy); el marcador provisional del código es solo para dev/QA y no debe salir a un cliente.",
         };
 
     [Fact]

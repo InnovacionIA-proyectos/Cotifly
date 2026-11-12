@@ -6,6 +6,7 @@ using Cotifly.Aplicacion.Correo.Repositories;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Aplicacion.Pdf.Interfaces;
+using Cotifly.Aplicacion.Pdf.Services;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Correo;
 using Cotifly.Dominio.Cotizaciones;
@@ -52,6 +53,7 @@ public sealed class clsCorreoService(
     IClsCalendarioNegocio calendario,
     clsCandadoEnvios candado,
     IOptions<clsOpcionesCorreo> opciones,
+    IOptions<clsOpcionesPdf> opcionesPdf,
     ILogger<clsCorreoService> logger) : IClsCorreoService
 {
     /// <summary>Ventana de deduplicación del contrato: 5 minutos.</summary>
@@ -146,7 +148,7 @@ public sealed class clsCorreoService(
             cc,
             asunto,
             texto,
-            clsPlantillaCorreo.Html(texto, resumen, firmaComercial: firma, datos: datos, logoUrl: opciones.Value.LogoUrl),
+            clsPlantillaCorreo.Html(texto, resumen, firmaComercial: firma, datos: datos, logoUrl: opciones.Value.LogoUrl, textoSeguros: opcionesPdf.Value.TextoSeguros),
             new clsAdjuntoCorreo(NombreAdjunto(cotizacion), pdf))
         {
             Bcc = CopiaOculta(usuario?.Email, para, cc) is { } bcc ? [bcc] : [],
@@ -164,7 +166,7 @@ public sealed class clsCorreoService(
         try
         {
             (mensaje, redirigidoA) = clsProteccionCorreo.Aplicar(
-                original, opciones.Value.Proteccion, aviso => clsPlantillaCorreo.Html(texto, resumen, aviso, firma, datos, opciones.Value.LogoUrl));
+                original, opciones.Value.Proteccion, aviso => clsPlantillaCorreo.Html(texto, resumen, aviso, firma, datos, opciones.Value.LogoUrl, opcionesPdf.Value.TextoSeguros));
         }
         catch (InvalidOperationException ex)
         {

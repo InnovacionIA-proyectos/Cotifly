@@ -50,6 +50,10 @@ dejaría a la IA de NEXO decidir, por ejemplo, que «Distribución» es `Naciona
   sin que una línea de Cotifly lo respalde.
 - Si soporte cambia `mapeoLineasNexo`, la traducción cambia con él (se lee en cada petición).
 - Un sinónimo que el cliente usa para una línea sin equivalente en NEXO («Distri») no se resuelve: queda para elegir a mano.
+- **HU-044.3 (#254): `aplicar-mapeo` reusa esta misma traducción** (`clsTraductorLineaNegocio`) sobre el `lineaNegocio` que devuelve NEXO
+  por cada fila. Al traducir una fila, además de `linea_negocio` (la de Cotifly) la línea trae `linea_nexo` (la de NEXO); una fila cuya
+  línea no tiene equivalencia en Cotifly vuelve igual en `lineas[]` (con `linea_negocio = null`) **y** en `errores[]` con el código nuevo
+  `LINEA_NEGOCIO_SIN_EQUIVALENCIA`, para que el comercial la elija en la revisión (no se elige una entre varias por él).
 
 ## Pendiente de decisión (preguntas abiertas con NEXO, plan §Preguntas 5)
 
