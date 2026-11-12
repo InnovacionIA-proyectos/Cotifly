@@ -239,6 +239,14 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
         return string.Join(' ', sinTildes.Replace('_', ' ').Replace('-', ' ').ToUpperInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries));
     }
 
+    /// <summary>
+    /// HU-044.8 (#291): el código con el que Nexo compara un tipo de vehículo: el código NEXO de SICE-TAC
+    /// (<c>C2</c>/<c>C3</c>, de <see cref="Cotifly.Dominio.Cotizaciones.clsEquivalenciaVehiculoNexo"/>) si está en el mapeo, o el
+    /// código normalizado como Nexo si no. Así «2» del catálogo de SAP y <c>C2</c> son el mismo vehículo.
+    /// </summary>
+    private static string CodigoNexoCanonico(string texto) =>
+        Cotifly.Dominio.Cotizaciones.clsEquivalenciaVehiculoNexo.ACodigoNexo(texto) ?? NormalizarComoNexo(texto);
+
     /// <summary>Ids de las líneas de la solicitud en Nexo, en el orden de captura.</summary>
     public IReadOnlyList<string> LineasDe(string solicitudId)
     {
@@ -808,7 +816,9 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
             {
                 var vehiculo = segunContrato[i]?["tipoVehiculo"]?.GetValue<string>();
                 var clase = segunContrato[i]?["claseViaje"]?.GetValue<string>();
-                if (vehiculo is not null && !TiposVehiculo.Any(t => t.Oficial && t.Codigo is not null && NormalizarComoNexo(t.Codigo) == NormalizarComoNexo(vehiculo)))
+                // HU-044.8 (#291): Nexo conoce el código NEXO de SICE-TAC (C2/C3) aunque su catálogo de SAP traiga «2»/«3»
+                // (tbl_mapeo_vehiculo_tarifario); se compara por el código NEXO canónico, así que C2 (↔ «2») NO nace en cuarentena.
+                if (vehiculo is not null && !TiposVehiculo.Any(t => t.Oficial && t.Codigo is not null && CodigoNexoCanonico(t.Codigo) == CodigoNexoCanonico(vehiculo)))
                 {
                     Cuarentenas++;
                     continue;

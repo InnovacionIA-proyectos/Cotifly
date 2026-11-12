@@ -1025,7 +1025,7 @@ copia de hasta 24 h.
 
 ```json
 {
-  "tipos_vehiculo": [ { "valor": "3S3", "etiqueta": "Tractocamión 3S3" } ],
+  "tipos_vehiculo": [ { "valor": "C2", "etiqueta": "Sencillo" }, { "valor": "3S3", "etiqueta": "Tractocamión 3S3" } ],
   "tipos_carroceria": [ { "valor": "FURGON", "etiqueta": "Furgón" } ],
   "clases_viaje": [
     { "valor": "Contenedor", "etiqueta": "Contenedor" },
@@ -1059,6 +1059,11 @@ texto amigable para cada código, pero debe enviar el `valor`.
   queda vacío. No es un error del endpoint. Con la lista vacía, deshabilitar el selector de clase de contenedor y ofrecer Reintentar:
   una captura `Contenedor` con una clase que no sea provisional respondería 503 `CATALOGOS_FLETE_NO_DISPONIBLE`.
 - Reemplaza el catálogo fijo que tenía el frontend.
+
+**`tipos_vehiculo` (HU-044.8, #291).** El `valor` es el **código NEXO** canónico (`C2`, `C3`, `2L3`…): SAP entrega «2»/«3» y el
+backend los traduce a `C2`/`C3` con la única fuente de equivalencia (`tbl_mapeo_vehiculo_tarifario`); el resto de códigos no cambia. Es
+el valor que hay que guardar y enviar en `tipo_vehiculo`. **Rompe:** cambian el selector y los valores guardados (ver §7, fila de #291);
+el front ya no traduce «2»/«3» por su cuenta. La `etiqueta` (descripción de NEXO) no cambia.
 
 Notas: `tipologia` (7 valores fijos) no viene aquí; ver la sección 5.4.
 
@@ -1139,16 +1144,19 @@ Catálogo del cubicador para el desplegable de mercancías. Ordenado por nombre,
 
 #### 4.2.5 `GET /web/tipos-carroceria`
 
+**HU-044.8 (#291):** sale del **catálogo de carrocerías de NEXO** (ya no del cubicador), la misma lista que `tipos_carroceria` de
+`GET /web/catalogos-flete` y que valida la captura, y la misma de la que `POST /web/licitaciones/normalizar-valores` propone sus
+códigos. `codigo` = `nombre` (el front muestra el texto amigable). **Siempre 200** (ya no depende del cubicador).
+
 - **Rol:** ambos.
 
 ```json
-[ { "codigo": "FURGON", "nombre": "Furgón", "activo": true }, { "codigo": "ESTACAS", "nombre": "Estacas", "activo": true } ]
+[ { "codigo": "FURGON", "nombre": "FURGON", "activo": true }, { "codigo": "ESTACAS", "nombre": "ESTACAS", "activo": true } ]
 ```
 
 | HTTP | Código | UI |
 |---|---|---|
-| 200 | `TipoCarroceria[]` | Para mostrar el nombre de `carroceria` de los camiones |
-| 503 | `CUBICADOR_NO_DISPONIBLE` | Mostrar el código |
+| 200 | `TipoCarroceria[]` | Llenar el selector de carrocería; mostrar el texto amigable desde el front por `codigo` |
 
 #### 4.2.6 `GET /web/tipos-vehiculo`
 
@@ -4573,6 +4581,7 @@ fila_excel, campo, codigo, mensaje}`.
 | 94 | **HU-044.3 (#254, ADR-028 y ADR-029): aplicar el mapeo confirmado y traducir las filas a líneas de Cotifly.** Endpoint **nuevo** `POST /web/licitaciones/aplicar-mapeo` (todavía sin número de sección reservado; `aplicar-mapeo` se añade a 4.6 al integrar): `{nit_cliente?, columnas[{indice, campo, transformacion}], filas[][], primera_fila? = 1}` (todas las filas sin el encabezado, **máx. 5000**, el tope de NEXO). Reenvía el mapeo a NEXO, que convierte las filas (diccionario del cliente, transformaciones: toneladas, «ORIGEN - DESTINO», coma decimal), y devuelve `{total_filas, filas_vacias, filas_con_errores, total_errores, lineas[], errores[]}`. `lineas[]` usa los mismos nombres de `lineas[]` de `POST /web/licitaciones` **más `fila_excel` y `linea_nexo`**; `fila` es el índice base 0 en las `filas` enviadas (`fila = fila_excel - primera_fila`); los ids de municipio van **siempre en `null`**; `mercancias[]` es `{descripcion, nombre_mercancia, cantidad, largo_cm, ancho_cm, alto_cm, peso_kg, codigo_mercancia}` (una mercancía sin código recibe el más parecido del catálogo del cubicador, o ninguno). `linea_negocio` es la de **Cotifly** y `linea_nexo` la de NEXO; una fila sin equivalencia de línea de negocio va en `lineas[]` (con `linea_negocio = null`) **y** en `errores[]` con el código **nuevo `LINEA_NEGOCIO_SIN_EQUIVALENCIA`**. Una fila con errores de NEXO va **solo** en `errores[]` (`{fila, fila_excel, campo, codigo, mensaje}`, hasta 100; `campo` tal como lo manda NEXO). Errores HTTP: `CLIENTE_NIT_INVALIDO`, `MAPEO_REQUERIDO`, `DEMASIADAS_COLUMNAS`, `DEMASIADAS_FILAS` y los 400 de NEXO con su código (400); `NEXO_SIN_PERMISO` (403); `IA_TOPE_DIARIO` (429); `NEXO_NO_DISPONIBLE` (503). No reemplaza las validaciones de `POST /web/licitaciones`. Sin script de base de datos | Agrega | Tras confirmar el mapeo (y normalizar valores), llamar a `aplicar-mapeo` con todas las filas; volcar `lineas[]` en la revisión tal cual (son líneas de `POST /web/licitaciones` más `fila_excel`/`linea_nexo`), pintar cada error de `errores[]` por `fila_excel`, dejar que el comercial elija la línea de negocio de las filas con `LINEA_NEGOCIO_SIN_EQUIVALENCIA` y confirmar el código sugerido de las mercancías sin código; con 429 o 503, reintentar o mapear a mano |
 | 95 | **#261 (HU-046, política NOGE0076): texto de seguros en la propuesta.** El PDF de la cotización y de la licitación trae, **después del resumen de precios**, y el cuerpo del correo (`cuerpo_html` de la vista previa y del envío), **antes de la firma**, un bloque "Estructura de seguros" con el texto de la póliza y el modelo de subrogación. El texto **se lee de configuración** (`Pdf:TextoSeguros`, lo edita Jurídica sin desplegar código) para que el área jurídica cargue el oficial; por ahora el código trae un marcador provisional y en los ambientes va **vacío** (sin bloque) hasta que se configure. Solo sale en los PDF y correos **nuevos**: no reescribe los ya generados ni enviados. Sin campos, códigos ni endpoints nuevos; sin script de base de datos | Agrega | Ninguna acción: el `cuerpo_html` se renderiza tal cual y el PDF se descarga igual. Si se configura el texto, aparecerá el bloque automáticamente |
 | 96 | **HU-044.9 (#292): datos metidos en otra columna (vehículo dentro del texto y contenedor con rango de peso).** Antes de `sugerir-mapeo` (4.6.6) y `aplicar-mapeo` (#254), Cotifly revisa las columnas de texto de la hoja y, cuando reconoce un vehículo dentro de un texto o un contenedor con un peso, agrega columnas derivadas **con nombre fijo al final**, solo si al menos una fila reconoce un valor (si no, la hoja mantiene su firma de plantilla). Los nombres fijos son **`Vehículo detectado`** (el vehículo reconocido con el diccionario de alias de NEXO —el mismo de `GET /web/alias/resolver`—, p. ej. «Venezuela Mula» → `Mula`), **`Contenedor detectado`** (del patrón `C20`/`C40`/`20'`/`40'`, normalizado a `20'` o `40'`) y **`Peso detectado (kg)`** (un peso o un rango en toneladas o kg, en kg). **Regla del rango: se toma el valor más alto** (decisión 2026-11-09: «C20 de 0 a 8 Ton» → `20'` y `8000`; «Conten. x 40' Hasta 25 ton» → `40'` y `25000`; «de 5.000 a 8.000 kg» → `8000`); un solo valor se toma tal cual; `t`/`ton`/`tons`/`toneladas` se convierten a kg y `kg` queda igual. La celda original **no se modifica**; un texto no reconocido deja la celda derivada vacía (el comercial la completa). `sugerir-mapeo` puede proponer esas columnas para `tipoVehiculo`, `claseContenedor` y `pesoKg`, y `aplicar-mapeo` las convierte como cualquier otra. Las columnas derivadas se ubican después de las columnas de la hoja con el mismo criterio de ancho en los dos endpoints, así que sus índices coinciden **salvo** que una categoría se reconozca solo en filas fuera de la muestra (≤200) que recibe `sugerir-mapeo` (limitación conocida; con pliegos <200 filas y muestra representativa coinciden). Fuera de alcance: rutas con varias paradas. **Sin endpoints, campos, códigos ni script de base de datos nuevos** (solo aparecen más columnas en la propuesta de `sugerir-mapeo`) | Agrega | Mostrar las columnas derivadas (`Vehículo detectado`, `Contenedor detectado`, `Peso detectado (kg)`) que lleguen en `columnas[]` de `sugerir-mapeo` como columnas más de la hoja, con su mapeo propuesto, y enviarlas igual a `aplicar-mapeo`; el comercial revisa y corrige el valor detectado como cualquier otro |
+| 97 | **HU-044.8 (#291): catálogos de vehículo y carrocería alineados con NEXO. ROMPE: cambian el selector y los valores guardados.** (a) **Vehículo en código NEXO.** `GET /web/catalogos-flete` devuelve `tipos_vehiculo[].valor` con el **código NEXO** (`C2`, `C3`, `2L3`…) en vez del código de SAP («2», «3»); la `etiqueta` (descripción) no cambia y el resto de códigos tampoco. Es el valor que el front debe guardar y enviar en `tipo_vehiculo` (`POST /web/solicitudes-costeo`, licitación, edición): mandar «2»/«3» dejaría la configuración en cuarentena en NEXO. El backend, además, traduce en la captura cualquier «2»/«3» que llegue (fronts anteriores o cotizaciones viejas) a `C2`/`C3` antes de enviar a NEXO; un alias de NEXO (`GET /web/alias/resolver`) que resuelva a «2»/«3» también viaja como `C2`/`C3`. La equivalencia sale de una sola fuente (`tbl_mapeo_vehiculo_tarifario`, `C2` ↔ «2», `C3` ↔ «3»). (b) **Carrocería del catálogo de NEXO.** `GET /web/tipos-carroceria` ya **no** sale del cubicador: devuelve el catálogo de carrocerías de NEXO (`ESTACAS`, `ESTIBAS`, `FURGON`, `FURGON REFRIGERADO`, `PLATAFORMA`, `PORTACONTENEDORES`, `TANQUE`, `TRAYLER`, `VOLCO`), la misma lista que `tipos_carroceria` de `GET /web/catalogos-flete` y que valida la captura, con `codigo` = `nombre`; **siempre 200** (ya no 503 `CUBICADOR_NO_DISPONIBLE`). Los códigos de carrocería que devuelve `POST /web/licitaciones/normalizar-valores` existen en esta lista. Sin campos, códigos ni endpoints nuevos | Rompe | Guardar y enviar el `valor` de `tipos_vehiculo` tal cual (ya es `C2`/`C3`): no volver a traducir en el front ni asumir «2»/«3»; re-mapear los valores guardados de cotizaciones viejas no hace falta (el backend los traduce). Llenar el selector de carrocería con `GET /web/tipos-carroceria` (ahora de NEXO, siempre 200): quitar cualquier dependencia del cubicador y tratar `codigo` = `nombre` (mostrar el texto amigable desde el front) |
 
 ---
 

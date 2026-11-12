@@ -71,10 +71,13 @@ public sealed class clsResolucionAliasTests
 
         clsResolucionCodigosNexo.Vehiculo(tipos, _diccionario, "3s3").Should().Be(new clsCodigoResueltoNexo("3S3", FuenteCodigoNexo.Catalogo));
         clsResolucionCodigosNexo.Vehiculo(tipos, _diccionario, "Turbo").Should().Be(new clsCodigoResueltoNexo("2L2", FuenteCodigoNexo.Alias));
-        clsResolucionCodigosNexo.Vehiculo(tipos, _diccionario, "C2").Should().Be(new clsCodigoResueltoNexo("2", FuenteCodigoNexo.Alias));
-        clsResolucionCodigosNexo.Vehiculo(tipos, null, "C2").Should().BeNull();
-        clsResolucionCodigosNexo.Vehiculo(null, _diccionario, "C2").Should().Be(new clsCodigoResueltoNexo("2", FuenteCodigoNexo.Alias),
-            "sin catálogo, el código del alias (Nexo solo deja crear alias hacia códigos oficiales)");
+        // HU-044.8 (#291): el código NEXO (C2/C3) y «2»/«3» del catálogo de SAP se resuelven con la equivalencia de SICE-TAC, antes del
+        // catálogo y del alias; «2»/«3» NUNCA viajan (cuarentena) y el alias C2 → «2» ya no los devuelve al código de SAP.
+        clsResolucionCodigosNexo.Vehiculo(tipos, _diccionario, "C2").Should().Be(new clsCodigoResueltoNexo("C2", FuenteCodigoNexo.Catalogo));
+        clsResolucionCodigosNexo.Vehiculo(tipos, null, "C2").Should().Be(new clsCodigoResueltoNexo("C2", FuenteCodigoNexo.Catalogo), "la equivalencia no necesita el diccionario de alias");
+        clsResolucionCodigosNexo.Vehiculo(null, _diccionario, "C2").Should().Be(new clsCodigoResueltoNexo("C2", FuenteCodigoNexo.Catalogo));
+        clsResolucionCodigosNexo.Vehiculo(tipos, null, "2").Should().Be(new clsCodigoResueltoNexo("C2", FuenteCodigoNexo.Catalogo), "«2» de SAP viaja como C2");
+        clsResolucionCodigosNexo.Vehiculo(tipos, null, "3").Should().Be(new clsCodigoResueltoNexo("C3", FuenteCodigoNexo.Catalogo), "«3» de SAP viaja como C3");
         clsResolucionCodigosNexo.Vehiculo(tipos, _diccionario, "Tractomula").Should().BeNull();
     }
 

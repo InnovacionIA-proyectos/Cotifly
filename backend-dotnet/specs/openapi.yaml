@@ -1715,16 +1715,21 @@ paths:
     get:
       operationId: listarTiposCarroceria
       tags: [web]
-      summary: Catálogo de carrocerías del cubicador
+      summary: Catálogo de carrocerías de NEXO
       description: |
-        HU-023.1 (#156). Pasa `GET /tipos-carroceria` del cubicador (con la caché de `Cubicador:MinutosCacheCatalogos`). Los códigos
-        (`FURGON`, `ESTACAS`, `CAMA_BAJA`...) son los que guarda el camión en `carroceria` y los que acepta la validación de la
-        captura. El refrigerado es `FURGON` más una advertencia del cubicador, no una carrocería aparte.
+        HU-044.8 (#291): el catálogo de carrocerías **de NEXO** (`ESTACAS`, `ESTIBAS`, `FURGON`, `FURGON REFRIGERADO`,
+        `PLATAFORMA`, `PORTACONTENEDORES`, `TANQUE`, `TRAYLER`, `VOLCO`), que son las que propone `normalizar-valores` y las que
+        valida la captura. **Antes salía del cubicador** (`GET /tipos-carroceria`); ahora sale del catálogo de NEXO, para que el
+        selector y los valores guardados coincidan con lo que entiende NEXO. NEXO aún no publica un endpoint de carrocerías, así
+        que la fuente es la lista de carrocerías de NEXO de Cotifly, la misma que `tipos_carroceria` de `GET /web/catalogos-flete`.
+        `codigo` = `nombre` (el frontend muestra el texto amigable). Siempre responde 200: ya no depende del cubicador. Si el
+        código de carrocería que da el cubicador para la recomendación de vehículo no coincidiera con el de NEXO, la traducción va
+        en el adaptador del cubicador, nunca en el front (pendiente de verificar con el cubicador).
       security:
         - bearer: []
       responses:
         '200':
-          description: Catálogo de carrocerías
+          description: Catálogo de carrocerías de NEXO
           content:
             application/json:
               schema:
@@ -1733,12 +1738,6 @@ paths:
                   $ref: '#/components/schemas/TipoCarroceria'
         '401':
           $ref: '#/components/responses/SesionExpirada'
-        '503':
-          description: '`CUBICADOR_NO_DISPONIBLE`: el cubicador no está configurado o no respondió; `CUBICADOR_NO_AUTORIZADO` (rechazó la llave de Cotifly) o `CUBICADOR_RESPUESTA_INVALIDA` (respuesta fuera del contrato).'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorNegocio'
         '500':
           $ref: '#/components/responses/ErrorInterno'
 
@@ -1815,7 +1814,11 @@ paths:
         `docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md`). Ya no se usa `GET /api/biblioteca-sap-historico/filtros` (el histórico de
         tarifas). HU-027.1 (#179) agrega `clases_contenedor`; el resto de la forma no cambió:
         - `tipos_vehiculo`: `GET /api/catalogos/tipos-vehiculo` (`{codigo, descripcion, esCatalogoOficial}`, códigos SAP
-          cortos como `2S3`); `valor` = `codigo`, `etiqueta` = `descripcion`. Filas sin `codigo` se omiten;
+          cortos como `2S3`); `valor` = `codigo`, `etiqueta` = `descripcion`. Filas sin `codigo` se omiten. **HU-044.8 (#291):**
+          el `codigo` se devuelve como el **código NEXO** canónico (`C2`, `C3`): SAP trae «2»/«3» y Cotifly los traduce con la
+          única fuente de equivalencia (`tbl_mapeo_vehiculo_tarifario`, `C2` ↔ «2», `C3` ↔ «3»); el resto de códigos no cambia.
+          Es el valor que se guarda y se envía a NEXO (`POST /web/solicitudes-costeo`): mandar «2»/«3» dejaría la configuración en
+          cuarentena en NEXO;
         - `clases_viaje`: `GET /api/catalogos/clases-viaje` (`{id, descripcion}`); `valor` = `etiqueta` = `descripcion`
           (`Carga Suelta`, con espacio);
         - `tipos_carroceria`: en código (`ESTACAS` ... `VOLCO`) hasta que Nexo publique su catálogo;
@@ -8531,6 +8534,9 @@ components:
       properties:
         tipos_vehiculo:
           type: array
+          description: |
+            HU-044.8 (#291). Tipos de vehículo con el **código NEXO** canónico en `valor` (`C2`, `C3`...): SAP entrega «2»/«3»
+            y Cotifly los traduce con `tbl_mapeo_vehiculo_tarifario`; el resto de códigos no cambia. `etiqueta` = `descripcion`.
           items:
             $ref: '#/components/schemas/OpcionCatalogo'
         tipos_carroceria:
