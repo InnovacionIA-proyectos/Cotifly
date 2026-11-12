@@ -93,6 +93,8 @@ public static class clsRespuestasWeb
         clsCodigosAplicacion.IdempotencyKeyReutilizada,
         // HU-042.2 (#243): ya hay una sincronización del margen de SAP TM en curso en esta réplica.
         clsCodigosError.SapMargenSincronizacionEnCurso,
+        // El cliente ya tiene ese término del diccionario en NEXO (mismo tipo y contexto).
+        clsCodigosError.TerminoDuplicado,
     };
 
     public static IActionResult Error(clsErrorDominio error)
@@ -108,7 +110,8 @@ public static class clsRespuestasWeb
             clsCodigosError.CotizacionNoEncontrada => new NotFoundObjectResult(new clsErrorWeb(MensajeNoEsTuya)),
             clsCodigosAplicacion.NoEncontrado => new NotFoundObjectResult(new clsErrorWeb(error.Mensaje)),
             // HU-044.5 (#256): lo que NEXO no encuentra al borrar es 404 CON su código (no el 404 "no es tuya" sin código).
-            clsCodigosError.PlantillaNoEncontrada or clsCodigosError.RecetaNoEncontrada => new NotFoundObjectResult(clsErrorNegocioWeb.Desde(error)),
+            clsCodigosError.PlantillaNoEncontrada or clsCodigosError.RecetaNoEncontrada or clsCodigosError.TerminoNoEncontrado =>
+                new NotFoundObjectResult(clsErrorNegocioWeb.Desde(error)),
             clsCodigosAplicacion.NoAutenticado or clsTelefonoComercialService.CodigoUsuarioNoEncontrado =>
                 new UnauthorizedObjectResult(new clsErrorWeb(clsCodigosAcceso.MensajeSesionExpirada)),
             clsCodigosAplicacion.SinPermiso => new ObjectResult(new clsErrorWeb(clsErrorWeb.MensajeSinPermiso)) { StatusCode = StatusCodes.Status403Forbidden },
@@ -122,7 +125,7 @@ public static class clsRespuestasWeb
                 or clsCodigosError.SapMargenNoConfigurado or clsCodigosError.SapMargenNoDisponible =>
                 new ObjectResult(clsErrorNegocioWeb.Desde(error)) { StatusCode = StatusCodes.Status503ServiceUnavailable },
             clsCodigosAplicacion.RegionalNoAsignada => new ConflictObjectResult(clsErrorNegocioWeb.Desde(error)),
-            clsCodigosError.NexoSinPermiso or clsCodigosAplicacion.RegionalNoPermitida =>
+            clsCodigosError.NexoSinPermiso or clsCodigosAplicacion.RegionalNoPermitida or clsCodigosError.TerminoGeneralNoEditable =>
                 new ObjectResult(clsErrorNegocioWeb.Desde(error)) { StatusCode = StatusCodes.Status403Forbidden },
             // Endurecimiento A (#199): un error interno es 500, nunca 400; REGISTRO_DUPLICADO (una restricción única que el caso de uso no
             // tradujo) también, sin el nombre técnico de la restricción: el detalle queda solo en el log.

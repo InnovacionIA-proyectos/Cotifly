@@ -26,11 +26,19 @@ public static class clsPoliticas
     /// </summary>
     public const string GerenteComercial = "GerenteComercial";
 
+    /// <summary>
+    /// Solo el rol activo <c>comercial</c> (sin el gerente ni el director): mantener el diccionario de términos de un cliente en NEXO.
+    /// </summary>
+    public const string SoloComercial = "SoloComercial";
+
     /// <summary>Roles (claim <c>rol</c>) de la política <see cref="Comercial"/>.</summary>
     internal static readonly string[] RolesComercial = ["comercial", "gerente_comercial", "director"];
 
     /// <summary>Roles (claim <c>rol</c>) de la política <see cref="GerenteComercial"/>.</summary>
     internal static readonly string[] RolesGerencial = ["gerente_comercial", "director"];
+
+    /// <summary>Roles (claim <c>rol</c>) de la política <see cref="SoloComercial"/>.</summary>
+    internal static readonly string[] RolesSoloComercial = ["comercial"];
 }
 
 /// <summary>Límite de peticiones de <c>/api/auth/*</c> (sección <c>LimiteAuth</c>): ventana fija por IP.</summary>
@@ -87,7 +95,8 @@ public static class clsConfiguracionAutenticacion
 
         servicios.AddAuthorizationBuilder()
             .AddPolicy(clsPoliticas.Comercial, p => p.RequireAuthenticatedUser().RequireRole(clsPoliticas.RolesComercial))
-            .AddPolicy(clsPoliticas.GerenteComercial, p => p.RequireAuthenticatedUser().RequireRole(clsPoliticas.RolesGerencial));
+            .AddPolicy(clsPoliticas.GerenteComercial, p => p.RequireAuthenticatedUser().RequireRole(clsPoliticas.RolesGerencial))
+            .AddPolicy(clsPoliticas.SoloComercial, p => p.RequireAuthenticatedUser().RequireRole(clsPoliticas.RolesSoloComercial));
 
         servicios.AddHttpContextAccessor();
         servicios.AddScoped<IClsContextoUsuario, clsContextoUsuarioHttp>();

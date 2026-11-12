@@ -11,7 +11,7 @@ namespace Cotifly.Api.Tests.Web;
 /// HU-044.5 (#256) por HTTP contra la API real y el Nexo falso: plantillas de mapeo (<c>PUT/GET/DELETE /web/licitaciones/plantillas-mapeo</c>),
 /// recetas de lectura (<c>PUT/GET/DELETE /web/licitaciones/recetas-lectura</c>) y la consulta del diccionario del cliente
 /// (<c>GET /web/diccionario-cliente</c> y <c>/opciones</c>). Los listados sin NIT responden 400 sin llamar a NEXO; el PUT de la receta no
-/// se reintenta; "no encontrado" es 404 con el código de NEXO; el diccionario solo devuelve los términos generales.
+/// se reintenta; "no encontrado" es 404 con el código de NEXO; el diccionario trae los términos del cliente (con NIT) y los generales.
 /// </summary>
 [Collection(clsColeccionApiWeb.Nombre)]
 [Trait("Categoria", "Integracion")]
@@ -325,7 +325,7 @@ public sealed class clsFormatosClienteEndpointsTests : IDisposable
         await VerificarErrorNegocioAsync(listar, "COSTEO_NEXO_RECHAZADA");
     }
 
-    // --- Diccionario del cliente (solo lectura) ---
+    // --- Diccionario del cliente (consulta) ---
 
     [Fact]
     public async Task ElDiccionarioSinNitSoloTraeLosTerminosGenerales()
@@ -342,19 +342,21 @@ public sealed class clsFormatosClienteEndpointsTests : IDisposable
     }
 
     [Fact]
-    public async Task ElDiccionarioConNitTraeSoloLosGeneralesYElAviso()
+    public async Task ElDiccionarioConNitTraeLosTerminosDelClienteYLosGeneralesSinAviso()
     {
         var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        _nexo.Diccionario.Add((clsNexoFalso.ClienteIdDeNit(Nit), "Mula del cliente", "valor", "3S2", "tipoVehiculo"));
         _nexo.Diccionario.Add((Guid.NewGuid(), "Mula de otro cliente", "valor", "3S2", "tipoVehiculo"));
 
         using var respuesta = await _api.EnviarAsync(HttpMethod.Get, $"{RutaDiccionario}?nit_cliente=900555111&tipo=valor&q=mula", sesion.Access);
 
         var json = await VerificarContratoAsync(respuesta, RutaDiccionario, HttpMethod.Get, HttpStatusCode.OK);
-        json.GetProperty("terminos").EnumerateArray().Select(t => t.GetProperty("termino").GetString())
-            .Should().NotContain("Mula de otro cliente", "un término de otro cliente nunca sale de Cotifly");
-        json.GetProperty("aviso").GetProperty("codigo").GetString().Should().Be("TERMINOS_CLIENTE_NO_DISPONIBLES");
+        var terminos = json.GetProperty("terminos").EnumerateArray()
+            .Select(t => (Termino: t.GetProperty("termino").GetString(), General: t.GetProperty("general").GetBoolean())).ToList();
+        terminos.Should().BeEquivalentTo([("Tractomula", true), ("ORIGEN", true), ("Mula del cliente", false)]);
+        json.GetProperty("aviso").ValueKind.Should().Be(JsonValueKind.Null);
         var enviada = _nexo.Peticiones.Single(p => p.Url.AbsolutePath == "/api/diccionario-cliente");
-        enviada.Url.Query.Should().Contain("tipo=valor").And.Contain("q=mula");
+        enviada.Url.Query.Should().Contain("clienteNit=900555111").And.Contain("tipo=valor").And.Contain("q=mula");
     }
 
     [Fact]

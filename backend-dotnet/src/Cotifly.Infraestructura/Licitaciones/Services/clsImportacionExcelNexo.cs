@@ -31,7 +31,8 @@ namespace Cotifly.Infraestructura.Licitaciones.Services;
 /// llamadas que pueden gastar IA (<c>sugerir-mapeo</c>, <c>normalizar-valores</c>, <c>leer-estructura</c>, <c>PUT recetas-lectura</c>) y las
 /// demás escrituras nunca. Un 429 no cuenta para el circuito. El cuerpo se lee dentro del tiempo del intento y con el tope
 /// <c>ImportacionInteligente:LimiteRespuestaMegabytes</c>.</para>
-/// <para><b>Errores.</b> 400/404 con un código de <see cref="CodigosNexo"/> → ese código con el mensaje de NEXO; el 400
+/// <para><b>Errores.</b> 400/404 con un código de <see cref="CodigosNexo"/> (o 409 con uno de <see cref="CodigosConflictoNexo"/>) → ese
+/// código con el mensaje de NEXO; el 400
 /// <c>VALIDATION_ERROR</c> de <c>leer-estructura</c> → ese código con el mensaje y solo los nombres de los campos de <c>details</c>
 /// (<c>detalle.campos</c>, #253); otro 4xx (también <c>VALIDATION_ERROR</c> en las demás rutas) → <c>COSTEO_NEXO_RECHAZADA</c>; <c>429 IA_TOPE_DIARIO</c> → <c>IA_TOPE_DIARIO</c> sin tocar el bloqueo global de
 /// <see cref="clsCupoNexoHandler"/> (estas rutas no son de listados limitados); otro 429 (<c>DEMASIADAS_SOLICITUDES</c>) → no disponible
@@ -96,7 +97,18 @@ public sealed class clsImportacionExcelNexo(
         clsCodigosError.ClienteNoEncontrado, clsCodigosError.ClienteNitInvalido, clsCodigosError.NombreDemasiadoLargo,
         clsCodigosError.PlantillaNoEncontrada, clsCodigosError.InstruccionesDemasiadoLargas, clsCodigosError.RecetaRequerida,
         clsCodigosError.RecetaInvalida, clsCodigosError.RecetaSinFilas, clsCodigosError.RecetaNoEncontrada,
-        clsCodigosError.TipoTerminoInvalido,
+        clsCodigosError.TipoTerminoInvalido, clsCodigosError.TerminoRequerido, clsCodigosError.ConceptoRequerido,
+        clsCodigosError.CampoDestinoInvalido, clsCodigosError.UnidadInvalida, clsCodigosError.ContextoInvalido, clsCodigosError.ContextoNoAplica,
+        clsCodigosError.EjemploMuyLargo, clsCodigosError.TerminoNoEncontrado,
+    };
+
+    /// <summary>
+    /// Códigos de un <c>409</c> de NEXO que llegan tal cual: el término repetido del diccionario. Otro 409 sale como
+    /// <c>COSTEO_NEXO_RECHAZADA</c>.
+    /// </summary>
+    public static readonly IReadOnlySet<string> CodigosConflictoNexo = new HashSet<string>(StringComparer.Ordinal)
+    {
+        clsCodigosError.TerminoDuplicado,
     };
 
     /// <summary>
@@ -219,8 +231,6 @@ public sealed class clsImportacionExcelNexo(
         var parametros = new List<string>();
         if (nit is not null)
         {
-            // NEXO QA (2026-11-06) aún no acepta clienteNit en este GET (solo clienteId): lo ignora y responde los términos de todos los
-            // clientes. Se manda igual para que tome efecto cuando NEXO lo agregue (ADR-028, Consecuencias).
             parametros.Add("clienteNit=" + Uri.EscapeDataString(nit));
         }
 
@@ -242,11 +252,36 @@ public sealed class clsImportacionExcelNexo(
 
         return await EnviarYLeerAsync<List<clsTerminoWire>, IReadOnlyList<clsTerminoCliente>>(
             usuarioId, HttpMethod.Get, $"{RutaDiccionarioCliente}?{string.Join('&', parametros)}", null, reintentable: true, lectura: false,
-            lista => [.. SinNulos(lista).Select(t => new clsTerminoCliente(
-                t.Id, ClienteIdDe(t.ClienteId), t.ClienteNombre, t.Termino ?? string.Empty, t.Tipo ?? string.Empty, t.Concepto ?? string.Empty,
-                t.Contexto, t.Ejemplo, t.Activo, t.CreatedAt, t.UpdatedAt, ClienteIdLeido: ClienteIdValido(t.ClienteId)))],
+            lista => [.. SinNulos(lista).Select(MapearTermino)], cancellationToken);
+    }
+
+    public async Task<clsResultado<clsTerminoCliente>> CrearTerminoClienteAsync(
+        Guid usuarioId, string clienteNit, clsDatosTerminoCliente datos, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(datos);
+        // Sin NIT NEXO crearía un término general (de todos los clientes): se corta aquí, sin llamar a NEXO.
+        if (NitObligatorio(clienteNit, out var nit) is { } errorNit)
+        {
+            return errorNit;
+        }
+
+        var cuerpo = new clsTerminoNuevoWire(nit, datos.Termino, datos.Tipo, datos.Concepto, datos.Contexto, datos.Ejemplo, datos.Activo);
+        return await EnviarYLeerAsync<clsTerminoWire, clsTerminoCliente>(
+            usuarioId, HttpMethod.Post, RutaDiccionarioCliente, Json(cuerpo), reintentable: false, lectura: false, MapearTermino, cancellationToken);
+    }
+
+    public Task<clsResultado<clsTerminoCliente>> EditarTerminoClienteAsync(
+        Guid usuarioId, Guid terminoId, clsDatosTerminoCliente datos, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(datos);
+        var cuerpo = new clsTerminoEditadoWire(datos.Termino, datos.Tipo, datos.Concepto, datos.Contexto, datos.Ejemplo, datos.Activo);
+        return EnviarYLeerAsync<clsTerminoWire, clsTerminoCliente>(
+            usuarioId, HttpMethod.Put, $"{RutaDiccionarioCliente}/{terminoId:D}", Json(cuerpo), reintentable: false, lectura: false, MapearTermino,
             cancellationToken);
     }
+
+    public Task<clsResultado<bool>> EliminarTerminoClienteAsync(Guid usuarioId, Guid terminoId, CancellationToken cancellationToken = default) =>
+        EliminarAsync(usuarioId, $"{RutaDiccionarioCliente}/{terminoId:D}", cancellationToken);
 
     public Task<clsResultado<clsOpcionesDiccionarioCliente>> ObtenerOpcionesDiccionarioAsync(Guid usuarioId, CancellationToken cancellationToken = default) =>
         EnviarYLeerAsync<clsOpcionesDiccionarioWire, clsOpcionesDiccionarioCliente>(
@@ -473,6 +508,11 @@ public sealed class clsImportacionExcelNexo(
         if (respuesta.StatusCode == HttpStatusCode.RequestEntityTooLarge)
         {
             return new clsErrorDominio(clsCodigosError.ArchivoDemasiadoGrande, "NEXO rechazó el archivo por tamaño (máximo 10 MB con el envío).", detalle);
+        }
+
+        if (respuesta.StatusCode == HttpStatusCode.Conflict && codigo is not null && CodigosConflictoNexo.Contains(codigo))
+        {
+            return new clsErrorDominio(codigo, mensaje ?? MensajeRechazada, detalle);
         }
 
         if (respuesta.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.NotFound && codigo is not null
@@ -775,6 +815,17 @@ public sealed class clsImportacionExcelNexo(
         _ => throw new JsonException("clienteId con otra forma en el diccionario de NEXO"),
     };
 
+    private static clsTerminoCliente MapearTermino(clsTerminoWire t) => new(
+        t.Id, ClienteIdDe(t.ClienteId), t.ClienteNombre, t.Termino ?? string.Empty, t.Tipo ?? string.Empty, t.Concepto ?? string.Empty,
+        t.Contexto, t.Ejemplo, t.Activo, t.CreatedAt, t.UpdatedAt, ClienteIdLeido: ClienteIdValido(t.ClienteId));
+
+    /// <summary>Cuerpo de <c>POST diccionario-cliente</c>: el cliente siempre por NIT, nunca por <c>clienteId</c>.</summary>
+    private sealed record clsTerminoNuevoWire(
+        string ClienteNit, string Termino, string Tipo, string Concepto, string? Contexto, string? Ejemplo, bool Activo);
+
+    /// <summary>Cuerpo de <c>PUT diccionario-cliente/{id}</c>: solo los campos editables (NEXO no admite cambiar el cliente).</summary>
+    private sealed record clsTerminoEditadoWire(string Termino, string Tipo, string Concepto, string? Contexto, string? Ejemplo, bool Activo);
+
     /// <summary><c>ClienteId</c> como <see cref="JsonElement"/> para distinguir <c>null</c> de "no vino" (#256, B2).</summary>
     private sealed record clsTerminoWire(
         Guid Id, JsonElement ClienteId, string? ClienteNombre, string? Termino, string? Tipo, string? Concepto, string? Contexto, string? Ejemplo,
@@ -829,6 +880,17 @@ public sealed class clsImportacionExcelNoDisponible : IClsImportacionExcelNexo
     public Task<clsResultado<IReadOnlyList<clsTerminoCliente>>> ObtenerDiccionarioClienteAsync(
         Guid usuarioId, string? clienteNit, clsFiltroDiccionarioCliente? filtro = null, CancellationToken cancellationToken = default) =>
         NoDisponible<IReadOnlyList<clsTerminoCliente>>();
+
+    public Task<clsResultado<clsTerminoCliente>> CrearTerminoClienteAsync(
+        Guid usuarioId, string clienteNit, clsDatosTerminoCliente datos, CancellationToken cancellationToken = default) =>
+        NoDisponible<clsTerminoCliente>();
+
+    public Task<clsResultado<clsTerminoCliente>> EditarTerminoClienteAsync(
+        Guid usuarioId, Guid terminoId, clsDatosTerminoCliente datos, CancellationToken cancellationToken = default) =>
+        NoDisponible<clsTerminoCliente>();
+
+    public Task<clsResultado<bool>> EliminarTerminoClienteAsync(Guid usuarioId, Guid terminoId, CancellationToken cancellationToken = default) =>
+        NoDisponible<bool>();
 
     public Task<clsResultado<clsOpcionesDiccionarioCliente>> ObtenerOpcionesDiccionarioAsync(Guid usuarioId, CancellationToken cancellationToken = default) =>
         NoDisponible<clsOpcionesDiccionarioCliente>();
