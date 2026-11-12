@@ -71,6 +71,41 @@ de base en un ambiente con usuarios exige soltar una vez los vínculos `idUsuari
 | `alta_concurrente` | Dos primeros ingresos simultáneos: el segundo choca con el índice único; reintentar entra |
 | `error_interno` | Cualquier otra excepción (por ejemplo, `dbo_cotifly` caída): también 401 |
 
+### Reconciliación de roles en el login (HU-040.3, #258, OPCIÓN B+; actualiza la premisa de abajo)
+
+> **Actualiza la premisa histórica "cualquier diferencia de rol… nunca se re-sincroniza solo".** Desde HU-040.3 (#258, resuelve el punto 2
+> de #261) esa premisa vale **solo para el refresh y la elección de rol**. **En el login** el rol interno se **reconcilia** con los roles
+> externos vigentes de ClientePro, en vez de rechazar ante cualquier desajuste.
+
+Motivo: con el rol `director` (#209) y el multi-rol (#229/#230), cada cambio de rol en ClientePro exigía que Datos/Backend insertara o
+desactivara a mano la asignación en `UsuariosRoles`, y el usuario quedaba bloqueado sin aviso. Se adoptó la **OPCIÓN B+**: reconciliar en el
+login, distinguiendo roles ordinarios de sensibles.
+
+**Matriz de reconciliación (solo en el login, `permitirAlta: true`):**
+
+| Situación | Rol **ordinario** (`comercial`, `gerente_comercial`) | Rol **sensible** (`requiereAltaManual`, hoy `director`) |
+|---|---|---|
+| Está mapeado externamente pero falta la asignación | **Auto-otorgar**: se crea o se **reactiva** la fila existente (nunca se duplica, `uq_usuariosRoles_usuarioId_rolId`) | **NO** se auto-otorga: si es el rol de la jerarquía, se **rechaza** (`rol_externo_cambio`) y queda para el **alta manual** + auditoría, como antes |
+| La asignación activa ya no tiene respaldo externo | **Auto-revocar** (desactivar) | **Auto-revocar** también (quitar privilegio es *fail-safe*, aplica a **todos** los roles) |
+
+- **Qué es un rol sensible** lo dice el **dato del catálogo** `Roles.requiereAltaManual` (script 23), no una lista fija en el código. Hoy
+  solo `director`; el DBA marca cualquier rol de administración futuro igual, sin tocar el backend.
+- **Fail-closed:** la reconciliación solo ocurre sobre una **lectura exitosa** del almacén corporativo. Si el almacén falla, se rechaza el
+  login entero (`almacen_no_disponible`) y **nunca** se revoca ni se otorga por una lectura parcial. Si la persona pierde **todos** sus roles
+  externos mapeados, es `sin_rol_autorizado` (no se reconcilia nada: no se revoca en masa).
+- **Auto-otorgar/revocar sin revisor humano:** la fila reconciliada queda con `revisadoPor = NULL` y `revisadoAt` con el instante, para
+  distinguirla de una revisión manual (que lleva revisor). Los deltas van a la auditoría del login (ver abajo), con actor `sistema/login`.
+- **Efecto sobre multi-rol:** como los roles ordinarios siguen al almacén, un usuario con una sola asignación interna pero varios roles
+  ordinarios externos **pasa a multi-rol** en su siguiente login (el login le otorga el que falta y luego pide elegir). Esto es un cambio
+  deliberado frente a la alternativa de ADR-025 ("el multi-rol de los existentes lo habilita Datos"): esa alternativa sigue valiendo para los
+  roles **sensibles** (director), no para los ordinarios.
+- **El refresh y la elección de rol NO reconcilian** (`permitirAlta: false`): siguen estrictos; un desajuste es rechazo (`rol_externo_cambio`),
+  igual que antes. Así, la reconciliación es un acto explícito del login (el SSO de ClientePro), no de cada rotación de token.
+
+**Auditoría de la reconciliación:** el evento `login_clientepro` lleva, cuando hubo cambios, `roles_otorgados`, `roles_revocados` (listas de
+códigos, sin datos sensibles) y `actor_reconciliacion = sistema/login`. Los motivos de vocabulario `rol_otorgado_auto` y `rol_revocado_auto`
+(en `clsMotivosAcceso`) describen cada tipo de delta para QA. **Pendiente de coordinar con Kevin (QA)** los nuevos campos del evento.
+
 ### Regla de precedencia cuando hay dos roles
 
 > **Reemplazada en parte por [ADR-025](ADR-025-multi-rol-eleccion-al-entrar.md) (HU-040, #229 y #230).** La precedencia sigue vigente
@@ -102,7 +137,7 @@ Por qué no rechazar la ambigüedad: en ClientePro es normal que un gerente cons
 
 | Tabla / columna | Propósito |
 |---|---|
-| `Roles` | Rol interno (`codigo` único, `comercial` \| `gerente_comercial`), `descripcion`, `idRolExterno` (IDROLES de ClientePro, único si no es NULL), `activo`, `updatedAt`. Sembrada con los dos roles **sin rol externo** |
+| `Roles` | Rol interno (`codigo` único, `comercial` \| `gerente_comercial` \| `director`), `descripcion`, `idRolExterno` (IDROLES de ClientePro, único si no es NULL), `activo`, `requiereAltaManual` (HU-040.3, #258, script 23: rol sensible que el login no auto-otorga), `updatedAt`. Sembrada con los roles **sin rol externo** |
 | `UsuariosRoles` | Rol interno asignado a cada usuario: `usuarioId`, `rolId`, `asignadoAt`, `activo`, `revisadoPor`, `revisadoAt`. Único (`usuarioId`, `rolId`). ~~Una sola asignación activa por usuario (índice único filtrado)~~: HU-040.1 (#229, script 16) retiró `uq_usuariosRoles_usuarioId_activo`; un usuario puede tener varias asignaciones activas, una por rol (multi-rol, HU-040) |
 | `UsuariosWeb.idUsuarioExterno` | BIGINT NULL, único filtrado: vínculo con `tblSAPUsuariosApp.ID` para detectar renombres. **No es clave de búsqueda** (la búsqueda sigue siendo solo por `nombreUsuario`, HU-003.6) |
 | `TokensRefresco` | Hash del refresh, familia, vencimiento, revocación y encadenamiento de rotación |
@@ -192,6 +227,7 @@ Mitigaciones a acordar con ClientePro (scalderon-bs), en orden de preferencia:
 | Esquema real de las tres tablas en `dbSolucionesTI_Prueba` (textos; `ID`, `IDUSUARIO` e `IDROLES` ya los verificó Nexo) y permisos de `cotifly_app` (SELECT sin `CLAVE`) | DBA |
 | Base de identidad de producción (la misma que use Nexo en producción) y `ConnectionStrings:IdentidadPortal` configurada en Nexo QA (#172) | Duban con el equipo de Nexo |
 | Procedimiento o pantalla para revisar un acceso rechazado por `rol_externo_cambio` / `nombre_usuario_cambio` | Negocio (HU-010) |
+| HU-040.3 (#258): coordinar con **Kevin (QA)** los nuevos campos del evento `login_clientepro` (`roles_otorgados`, `roles_revocados`, `actor_reconciliacion`) y los motivos `rol_otorgado_auto` / `rol_revocado_auto`; aplicar el **script 23** antes de desplegar la imagen de HU-040.3 | Duban + Kevin (QA) + DBA |
 | ~~Regional desde `DWCubosEBSSAP.DimEjecutivo`~~: implementada en #81 (ADR-016 §6). El login la llena y la refresca sin bloquearse (fuera de la verificación doble: no decide el acceso). Falta cargar `ConnectionStrings__Regional` en Dokploy y abrir la red; mientras tanto `ubicacion` sale `null` o con la regional que puso el DBA | Infraestructura (#81) |
 | ~~`UseForwardedHeaders` con los proxies de Traefik para que el límite sea por IP real~~ | Implementado en #12 parte B (`ForwardedHeaders:*`, apagado por defecto); falta activarlo en Dokploy con la red de Traefik (HU-006.6) |
 | `sqlcmd` exige `-I` (QUOTED_IDENTIFIER ON) para el `UPDATE dbo_cotifly.Roles SET idRolExterno = ...` por el índice filtrado | DBA (documentado en el encabezado del 0002 y en `docs/03-infraestructura.md` y `docs/10-operacion.md`) |

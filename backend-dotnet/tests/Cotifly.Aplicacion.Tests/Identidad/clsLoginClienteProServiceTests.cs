@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Cotifly.Aplicacion.Comun.Exceptions;
 using Cotifly.Aplicacion.Identidad.DTOs;
 using Cotifly.Aplicacion.Identidad.Services;
@@ -194,6 +195,25 @@ public sealed class clsLoginClienteProServiceTests
     }
 
     [Fact]
+    public async Task HU0403_SiElAlmacenFallaParaUnUsuarioExistenteElLoginSeRechazaYNoReconcilia()
+    {
+        // HU-040.3 (#258, B+): la reconciliación solo ocurre sobre una lectura EXITOSA del almacén. Si falla, se rechaza el login entero
+        // (almacen_no_disponible) y NUNCA se revoca ni se otorga por una lectura parcial (fail-closed).
+        _e.PersonaExterna("JEFE", 200, clsEscenarioIdentidad.RolExternoComercial, clsEscenarioIdentidad.RolExternoGerente);
+        var usuario = _e.UsuarioLocal("JEFE", 200, RolInterno.Comercial, RolInterno.GerenteComercial);
+        var filas = _e.ConAsignaciones(usuario, (RolInterno.Comercial, true), (RolInterno.GerenteComercial, true));
+        _e.Almacen.ObtenerRolesAsync(200, Arg.Any<CancellationToken>()).ThrowsAsync(new TimeoutException("sin respuesta"));
+
+        var resultado = await _e.Login().IniciarSesionAsync(new clsSolicitudLoginClientePro("JEFE"), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosAcceso.CredencialesInvalidas);
+        _e.SalidaAuditada(clsCodigosAcceso.HerramientaLogin).GetProperty("motivo").GetString().Should().Be(clsMotivosAcceso.AlmacenNoDisponible);
+        filas.Should().OnlyContain(f => f.Activo, "no se revoca nada cuando el almacén falla");
+        _e.Roles.DidNotReceiveWithAnyArgs().AgregarAsignacion(default!);
+        await _e.UnidadTrabajo.DidNotReceiveWithAnyArgs().GuardarCambiosAsync(Ct);
+    }
+
+    [Fact]
     public async Task UnSegundoIngresoConElMismoRolNoCreaNadaYActualizaLaUltimaSesion()
     {
         _e.PersonaExterna("APEREZ", 101, clsEscenarioIdentidad.RolExternoComercial);
@@ -211,21 +231,27 @@ public sealed class clsLoginClienteProServiceTests
     }
 
     [Fact]
-    public async Task SiElRolExternoCambioSeRechazaSinResincronizarLaAsignacion()
+    public async Task HU0403_SiElRolExternoOrdinarioCambioElLoginReconciliaOtorgaYRevoca()
     {
+        // HU-040.3 (#258, B+): antes esto era rol_externo_cambio (rechazo). Ahora el login reconcilia: external gerente, interno comercial;
+        // otorga gerente (crea la asignación) y revoca comercial (sobrante), y entra con gerente_comercial.
         _e.PersonaExterna("APEREZ", 101, clsEscenarioIdentidad.RolExternoGerente);
         var usuario = _e.UsuarioLocal("APEREZ", 101, RolInterno.Comercial);
-        var sesionAnterior = usuario.UltimaSesion;
+        clsUsuarioRol? otorgado = null;
+        _e.Roles.When(r => r.AgregarAsignacion(Arg.Any<clsUsuarioRol>())).Do(c => otorgado = c.Arg<clsUsuarioRol>());
 
         var resultado = await _e.Login().IniciarSesionAsync(new clsSolicitudLoginClientePro("APEREZ"), Ct);
 
-        resultado.Error.Codigo.Should().Be(clsCodigosAcceso.CredencialesInvalidas);
-        _e.SalidaAuditada(clsCodigosAcceso.HerramientaLogin).GetProperty("motivo").GetString().Should().Be(clsMotivosAcceso.RolExternoCambio);
-        _e.SalidaAuditada(clsCodigosAcceso.HerramientaLogin).GetProperty("usuario_id").GetGuid().Should().Be(usuario.Id, "la auditoría del rechazo lleva el id interno para revisarlo");
-        usuario.UltimaSesion.Should().Be(sesionAnterior);
-        _e.Roles.DidNotReceiveWithAnyArgs().AgregarAsignacion(default!);
-        _e.Tokens.DidNotReceiveWithAnyArgs().Agregar(default!);
-        await _e.UnidadTrabajo.DidNotReceiveWithAnyArgs().GuardarCambiosAsync(Ct);
+        resultado.Valor.Sesion!.Usuario.Rol.Should().Be("gerente_comercial");
+        resultado.Valor.Eleccion.Should().BeNull("queda un solo rol efectivo");
+        usuario.UltimaSesion.Should().Be(_e.Reloj.AhoraUtc);
+        otorgado!.RolId.Should().Be(_e.Gerente.Id, "se auto-otorga el rol ordinario que faltaba");
+        var salida = _e.SalidaAuditada(clsCodigosAcceso.HerramientaLogin);
+        salida.GetProperty("motivo").GetString().Should().Be(clsMotivosAcceso.UsuarioExistente);
+        salida.GetProperty("roles_otorgados").EnumerateArray().Select(r => r.GetString()).Should().Equal("gerente_comercial");
+        salida.GetProperty("roles_revocados").EnumerateArray().Select(r => r.GetString()).Should().Equal("comercial");
+        salida.GetProperty("actor_reconciliacion").GetString().Should().Be(clsCodigosAcceso.ActorReconciliacion);
+        await _e.UnidadTrabajo.Received(1).GuardarCambiosAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -248,10 +274,11 @@ public sealed class clsLoginClienteProServiceTests
     }
 
     [Fact]
-    public async Task HU0402_UnUsuarioConUnSoloRolEntraIgualQueHoySinSelectorAunqueTengaVariosRolesExternos()
+    public async Task HU0402_UnUsuarioConUnSoloRolExternoEntraSinSelectorYElRefreshLlevaElRolDeLaSesion()
     {
-        // Rol único (una asignación activa): la jerarquía de siempre, sesión directa y el refresh con el rol de la sesión.
-        _e.PersonaExterna("JEFE", 200, clsEscenarioIdentidad.RolExternoComercial, clsEscenarioIdentidad.RolExternoGerente);
+        // Rol único (external y asignación de gerente): sesión directa y el refresh con el rol de la sesión. Sin roles ordinarios de más que
+        // reconciliar, el login no cambia nada (HU-040.3).
+        _e.PersonaExterna("JEFE", 200, clsEscenarioIdentidad.RolExternoGerente);
         _e.UsuarioLocal("JEFE", 200, RolInterno.GerenteComercial);
         clsTokenRefresco? refresh = null;
         _e.Tokens.When(t => t.Agregar(Arg.Any<clsTokenRefresco>())).Do(c => refresh = c.Arg<clsTokenRefresco>());
@@ -262,37 +289,119 @@ public sealed class clsLoginClienteProServiceTests
         resultado.Valor.Sesion!.Usuario.Rol.Should().Be("gerente_comercial");
         refresh!.RolSesion.Should().Be(RolInterno.GerenteComercial);
         _e.Tickets.DidNotReceiveWithAnyArgs().Emitir(default, default!, default!);
-        _e.SalidaAuditada(clsCodigosAcceso.HerramientaLogin).GetProperty("regla").GetString().Should().Be(clsMotivosAcceso.ReglaPrecedenciaGerente);
+        _e.Roles.DidNotReceiveWithAnyArgs().AgregarAsignacion(default!);
+        _e.SalidaAuditada(clsCodigosAcceso.HerramientaLogin).GetProperty("regla").GetString().Should().Be(clsMotivosAcceso.ReglaMapeoUnico);
+    }
+
+    [Fact]
+    public async Task HU0403_SiGanaUnRolOrdinarioExternoQueFaltabaElLoginLoOtorgaYPasaAMultiRol()
+    {
+        // HU-040.3 (#258, B+): external comercial+gerente, interno solo gerente. El login auto-otorga comercial (ordinario) y, al quedar dos
+        // roles efectivos, pide elegir (ya no entra directo como gerente). Es el cambio frente a ADR-025 para los roles ORDINARIOS.
+        _e.PersonaExterna("JEFE", 200, clsEscenarioIdentidad.RolExternoComercial, clsEscenarioIdentidad.RolExternoGerente);
+        var usuario = _e.UsuarioLocal("JEFE", 200, RolInterno.GerenteComercial);
+        clsUsuarioRol? otorgado = null;
+        _e.Roles.When(r => r.AgregarAsignacion(Arg.Any<clsUsuarioRol>())).Do(c => otorgado = c.Arg<clsUsuarioRol>());
+
+        var resultado = await _e.Login().IniciarSesionAsync(new clsSolicitudLoginClientePro("JEFE"), Ct);
+
+        resultado.Valor.Sesion.Should().BeNull("con dos roles efectivos hay selector");
+        resultado.Valor.Eleccion!.Roles.Select(r => r.Codigo).Should().Equal("comercial", "gerente_comercial");
+        otorgado!.RolId.Should().Be(_e.Comercial.Id);
+        var salida = _e.SalidaAuditada(clsCodigosAcceso.HerramientaLogin);
+        salida.GetProperty("regla").GetString().Should().Be(clsMotivosAcceso.ReglaMultiRol);
+        salida.GetProperty("roles_otorgados").EnumerateArray().Select(r => r.GetString()).Should().Equal("comercial");
+        await _e.UnidadTrabajo.Received(1).GuardarCambiosAsync(Arg.Any<CancellationToken>());
     }
 
     [Theory]
-    [InlineData(new[] { clsEscenarioIdentidad.RolExternoGerente }, "la asignación de comercial ya no tiene su rol externo")]
-    [InlineData(new[] { clsEscenarioIdentidad.RolExternoComercial }, "el rol de la jerarquía (comercial) está, pero la de gerente perdió su rol externo")]
-    [InlineData(new[] { clsEscenarioIdentidad.RolExternoComercial, clsEscenarioIdentidad.RolExternoGerente, clsEscenarioIdentidad.RolExternoDirector },
-        "la jerarquía da director, que no está asignado")]
-    public async Task HU0401_ConDosAsignacionesActivasSiElConjuntoNoCoincideEsRolExternoCambio(int[] externos, string motivo)
+    [InlineData(new[] { clsEscenarioIdentidad.RolExternoGerente }, "gerente_comercial", "comercial")]
+    [InlineData(new[] { clsEscenarioIdentidad.RolExternoComercial }, "comercial", "gerente_comercial")]
+    public async Task HU0403_ConDosAsignacionesActivasElLoginRevocaLaSobranteYEntraConLaQueQueda(int[] externos, string rolEsperado, string revocado)
     {
+        // HU-040.3 (#258, B+): antes esto era rol_externo_cambio. Ahora el login revoca la asignación cuyo rol externo desapareció y entra con
+        // la que queda (rol único: sesión directa, sin selector).
         _e.PersonaExterna("JEFE", 200, externos);
         var usuario = _e.UsuarioLocal("JEFE", 200, RolInterno.Comercial, RolInterno.GerenteComercial);
 
         var resultado = await _e.Login().IniciarSesionAsync(new clsSolicitudLoginClientePro("JEFE"), Ct);
 
-        resultado.Error.Codigo.Should().Be(clsCodigosAcceso.CredencialesInvalidas, motivo);
-        _e.SalidaAuditada(clsCodigosAcceso.HerramientaLogin).GetProperty("motivo").GetString().Should().Be(clsMotivosAcceso.RolExternoCambio);
-        _e.SalidaAuditada(clsCodigosAcceso.HerramientaLogin).GetProperty("usuario_id").GetGuid().Should().Be(usuario.Id);
-        _e.Tokens.DidNotReceiveWithAnyArgs().Agregar(default!);
+        resultado.Valor.Sesion!.Usuario.Rol.Should().Be(rolEsperado);
+        resultado.Valor.Eleccion.Should().BeNull();
+        usuario.UltimaSesion.Should().Be(_e.Reloj.AhoraUtc);
+        var salida = _e.SalidaAuditada(clsCodigosAcceso.HerramientaLogin);
+        salida.GetProperty("roles_revocados").EnumerateArray().Select(r => r.GetString()).Should().Equal(revocado);
+        salida.TryGetProperty("roles_otorgados", out var otorgados).Should().BeTrue();
+        otorgados.ValueKind.Should().Be(JsonValueKind.Null, "no se otorga nada: ambos roles ya estaban asignados");
+        _e.Roles.DidNotReceiveWithAnyArgs().AgregarAsignacion(default!);
     }
 
     [Fact]
-    public async Task SinAsignacionActivaSeRechaza()
+    public async Task HU0403_UnRolSensibleDirectorQueFaltaNoSeAutoOtorgaSigueRechazoYAltaManual()
     {
+        // HU-040.3 (#258, B+): director es SENSIBLE (requiereAltaManual). external comercial+gerente+director, interno comercial+gerente: la
+        // jerarquía da director, que falta y NO se auto-otorga. Sigue el rechazo (rol_externo_cambio) + alta manual, sin tocar ninguna fila.
+        _e.PersonaExterna("JEFE", 200, clsEscenarioIdentidad.RolExternoComercial, clsEscenarioIdentidad.RolExternoGerente, clsEscenarioIdentidad.RolExternoDirector);
+        var usuario = _e.UsuarioLocal("JEFE", 200, RolInterno.Comercial, RolInterno.GerenteComercial);
+        var sesionAnterior = usuario.UltimaSesion;
+
+        var resultado = await _e.Login().IniciarSesionAsync(new clsSolicitudLoginClientePro("JEFE"), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosAcceso.CredencialesInvalidas);
+        _e.SalidaAuditada(clsCodigosAcceso.HerramientaLogin).GetProperty("motivo").GetString().Should().Be(clsMotivosAcceso.RolExternoCambio);
+        _e.SalidaAuditada(clsCodigosAcceso.HerramientaLogin).GetProperty("usuario_id").GetGuid().Should().Be(usuario.Id);
+        usuario.UltimaSesion.Should().Be(sesionAnterior, "un login rechazado no toca nada");
+        _e.Roles.DidNotReceiveWithAnyArgs().AgregarAsignacion(default!);
+        _e.Tokens.DidNotReceiveWithAnyArgs().Agregar(default!);
+        await _e.UnidadTrabajo.DidNotReceiveWithAnyArgs().GuardarCambiosAsync(Ct);
+    }
+
+    [Fact]
+    public async Task HU0403_UnDirectorSobranteSeAutoRevocaAunqueSeaSensible()
+    {
+        // HU-040.3 (#258, B+): la auto-revocación aplica a TODOS los roles (fail-safe), también a director. external comercial, interno
+        // comercial+director: revoca director y entra como comercial.
+        _e.PersonaExterna("JEFE", 200, clsEscenarioIdentidad.RolExternoComercial);
+        var usuario = _e.UsuarioLocal("JEFE", 200, RolInterno.Comercial, RolInterno.Director);
+
+        var resultado = await _e.Login().IniciarSesionAsync(new clsSolicitudLoginClientePro("JEFE"), Ct);
+
+        resultado.Valor.Sesion!.Usuario.Rol.Should().Be("comercial");
+        _e.SalidaAuditada(clsCodigosAcceso.HerramientaLogin).GetProperty("roles_revocados").EnumerateArray()
+            .Select(r => r.GetString()).Should().Equal("director");
+    }
+
+    [Fact]
+    public async Task HU0403_SinAsignacionActivaElLoginAutoOtorgaElRolOrdinarioRespaldado()
+    {
+        // HU-040.3 (#258, B+): antes esto era sin_asignacion_activa (rechazo). Ahora el login crea la asignación del rol ordinario respaldado.
         _e.PersonaExterna("APEREZ", 101, clsEscenarioIdentidad.RolExternoComercial);
-        _e.UsuarioLocal("APEREZ", 101);
+        var usuario = _e.UsuarioLocal("APEREZ", 101);
+        clsUsuarioRol? otorgado = null;
+        _e.Roles.When(r => r.AgregarAsignacion(Arg.Any<clsUsuarioRol>())).Do(c => otorgado = c.Arg<clsUsuarioRol>());
 
         var resultado = await _e.Login().IniciarSesionAsync(new clsSolicitudLoginClientePro("APEREZ"), Ct);
 
-        resultado.Error.Codigo.Should().Be(clsCodigosAcceso.CredencialesInvalidas);
-        _e.SalidaAuditada(clsCodigosAcceso.HerramientaLogin).GetProperty("motivo").GetString().Should().Be(clsMotivosAcceso.SinAsignacionActiva);
+        resultado.Valor.Sesion!.Usuario.Rol.Should().Be("comercial");
+        otorgado!.RolId.Should().Be(_e.Comercial.Id);
+        otorgado.UsuarioId.Should().Be(usuario.Id);
+        _e.SalidaAuditada(clsCodigosAcceso.HerramientaLogin).GetProperty("roles_otorgados").EnumerateArray()
+            .Select(r => r.GetString()).Should().Equal("comercial");
+    }
+
+    [Fact]
+    public async Task HU0403_ElLoginReactivaLaFilaExistenteEnVezDeInsertarUnaNueva()
+    {
+        // HU-040.3 (#258, B+): si ya hay una fila (retirada) del rol, se reactiva, sin insertar otra (uq_usuariosRoles_usuarioId_rolId).
+        _e.PersonaExterna("APEREZ", 101, clsEscenarioIdentidad.RolExternoComercial);
+        var usuario = _e.UsuarioLocal("APEREZ", 101);
+        var filas = _e.ConAsignaciones(usuario, (RolInterno.Comercial, false));
+
+        var resultado = await _e.Login().IniciarSesionAsync(new clsSolicitudLoginClientePro("APEREZ"), Ct);
+
+        resultado.Valor.Sesion!.Usuario.Rol.Should().Be("comercial");
+        filas[0].Activo.Should().BeTrue("se reactivó la fila existente");
+        _e.Roles.DidNotReceiveWithAnyArgs().AgregarAsignacion(default!);
     }
 
     [Fact]

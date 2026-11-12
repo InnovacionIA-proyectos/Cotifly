@@ -26,9 +26,12 @@ internal sealed class clsEscenarioIdentidad
     {
         Comercial = ConId(clsRol.Crear(RolInterno.Comercial, "Comercial", RolExternoComercial).Valor, 1);
         Gerente = ConId(clsRol.Crear(RolInterno.GerenteComercial, "Gerente comercial", RolExternoGerente).Valor, 2);
-        Director = ConId(clsRol.Crear(RolInterno.Director, "Director comercial", RolExternoDirector).Valor, 3);
+        // HU-040.3 (#258): director es el rol SENSIBLE (requiereAltaManual), como en el script 23.
+        Director = ConId(clsRol.Crear(RolInterno.Director, "Director comercial", RolExternoDirector, requiereAltaManual: true).Valor, 3);
         Roles.ListarActivosAsync(Arg.Any<CancellationToken>()).Returns(_ => (IReadOnlyList<clsRol>)Catalogo);
         Roles.ListarRolesAsignadosAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(Array.Empty<RolInterno>());
+        // HU-040.3 (#258): sin asignaciones por defecto (las pruebas las fijan con UsuarioLocal / ConAsignaciones).
+        Roles.ListarAsignacionesAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(Array.Empty<clsUsuarioRol>());
         Almacen.ObtenerRolesAsync(Arg.Any<long>(), Arg.Any<CancellationToken>()).Returns(Array.Empty<clsRolExterno>());
         Configuracion.VigenciaAcceso.Returns(TimeSpan.FromMinutes(60));
         Configuracion.VigenciaRefresh.Returns(TimeSpan.FromDays(30));
@@ -127,7 +130,7 @@ internal sealed class clsEscenarioIdentidad
             .Returns((IReadOnlyDictionary<string, string>)mapa);
     }
 
-    /// <summary>Usuario ya creado en Cotifly (vinculado o no) con su rol asignado.</summary>
+    /// <summary>Usuario ya creado en Cotifly (vinculado o no) con sus roles ACTIVOS asignados.</summary>
     public clsUsuarioWeb UsuarioLocal(string nombreUsuario, long? idExterno, params RolInterno[] asignados)
     {
         var usuario = clsUsuarioWeb.Crear(nombreUsuario, "Nombre local", "local@boterosoto.com.co", "Antioquia", Reloj.AhoraUtc.AddDays(-10), idExterno).Valor;
@@ -139,8 +142,34 @@ internal sealed class clsEscenarioIdentidad
         }
 
         Roles.ListarRolesAsignadosAsync(usuario.Id, Arg.Any<CancellationToken>()).Returns(asignados.ToList());
+        // HU-040.3 (#258): la reconciliación del login lee las filas rastreadas; aquí son asignaciones activas.
+        ConAsignaciones(usuario, [.. asignados.Select(r => (r, true))]);
         return usuario;
     }
+
+    /// <summary>
+    /// HU-040.3 (#258): fija las filas de <c>UsuariosRoles</c> del usuario (cada una con su estado activo/inactivo) para la reconciliación
+    /// del login. Devuelve las entidades creadas (en el orden dado) para comprobar sus cambios de estado. No toca
+    /// <see cref="IClsRolRepository.ListarRolesAsignadosAsync"/> (lo fija <see cref="UsuarioLocal"/> con los activos).
+    /// </summary>
+    public IReadOnlyList<clsUsuarioRol> ConAsignaciones(clsUsuarioWeb usuario, params (RolInterno Rol, bool Activo)[] filas)
+    {
+        var entidades = filas.Select(f =>
+        {
+            var fila = clsUsuarioRol.Asignar(usuario.Id, RolDe(f.Rol).Id, Reloj.AhoraUtc.AddDays(-5)).Valor;
+            if (!f.Activo)
+            {
+                fila.Retirar(usuario.Id, Reloj.AhoraUtc.AddDays(-4));
+            }
+
+            return fila;
+        }).ToList();
+        Roles.ListarAsignacionesAsync(usuario.Id, Arg.Any<CancellationToken>()).Returns((IReadOnlyList<clsUsuarioRol>)entidades);
+        return entidades;
+    }
+
+    /// <summary>El <see cref="clsRol"/> del catálogo con ese código interno.</summary>
+    public clsRol RolDe(RolInterno rol) => Catalogo.Single(r => r.Codigo == rol);
 
     /// <summary>Salida (3er argumento) del último evento auditado de <paramref name="herramienta"/>, como JSON snake_case.</summary>
     public JsonElement SalidaAuditada(string herramienta) => ArgumentoAuditado(herramienta, 2);

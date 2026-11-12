@@ -145,6 +145,45 @@ public sealed class clsIdentidadPersistenciaTests(clsBaseDatosPruebas baseDatos)
         roles.Single(r => r.Codigo == RolInterno.Director).IdRolExterno.Should().Be(clsBaseDatosPruebas.RolExternoDirector);
         roles.Single(r => r.Codigo == RolInterno.Comercial).IdRolExterno.Should().Be(clsBaseDatosPruebas.RolExternoComercial);
         roles.Single(r => r.Codigo == RolInterno.GerenteComercial).IdRolExterno.Should().Be(clsBaseDatosPruebas.RolExternoGerente);
+        // HU-040.3 (#258, script 23): director es sensible (requiereAltaManual); los ordinarios no.
+        roles.Single(r => r.Codigo == RolInterno.Director).RequiereAltaManual.Should().BeTrue();
+        roles.Single(r => r.Codigo == RolInterno.Comercial).RequiereAltaManual.Should().BeFalse();
+        roles.Single(r => r.Codigo == RolInterno.GerenteComercial).RequiereAltaManual.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task HU0403_ListarAsignacionesTraeActivasEInactivasYReactivarODesactivarSeGuardan()
+    {
+        // HU-040.3 (#258): la reconciliación del login lee las filas rastreadas y las reactiva/desactiva; aquí se comprueba el ida y vuelta.
+        var usuario = await CrearUsuarioAsync();
+        var roles = await ConsultarAsync(s => s.GetRequiredService<IClsRolRepository>().ListarActivosAsync(Ct));
+        var comercial = roles.Single(r => r.Codigo == RolInterno.Comercial);
+        var gerente = roles.Single(r => r.Codigo == RolInterno.GerenteComercial);
+        await EnAmbitoAsync(s =>
+        {
+            var repo = s.GetRequiredService<IClsRolRepository>();
+            repo.AgregarAsignacion(clsUsuarioRol.Asignar(usuario, comercial.Id, Reloj.AhoraUtc).Valor);
+            var retirada = clsUsuarioRol.Asignar(usuario, gerente.Id, Reloj.AhoraUtc).Valor;
+            retirada.Desactivar(Reloj.AhoraUtc);
+            repo.AgregarAsignacion(retirada);
+            return Task.CompletedTask;
+        });
+
+        // Lee TODAS (activa comercial + inactiva gerente), reactiva la inactiva y desactiva la activa.
+        await EnAmbitoAsync(async s =>
+        {
+            var repo = s.GetRequiredService<IClsRolRepository>();
+            var filas = await repo.ListarAsignacionesAsync(usuario, Ct);
+            filas.Should().HaveCount(2);
+            filas.Single(a => a.RolId == comercial.Id).Desactivar(Reloj.AhoraUtc.AddDays(1));
+            filas.Single(a => a.RolId == gerente.Id).Reactivar(Reloj.AhoraUtc.AddDays(1));
+        });
+        var asignados = await ConsultarAsync(s => s.GetRequiredService<IClsRolRepository>().ListarRolesAsignadosAsync(usuario, Ct));
+        var sinRevisor = await clsBaseDatosPruebas.EscalarAsync<int>(BaseDatos.CadenaCotifly,
+            $"SELECT COUNT(*) FROM dbo_cotifly.UsuariosRoles WHERE usuarioId = '{usuario}' AND revisadoPor IS NOT NULL");
+
+        asignados.Should().Equal([RolInterno.GerenteComercial]);
+        sinRevisor.Should().Be(0, "la reconciliación del sistema no deja revisor humano");
     }
 
     [Fact]

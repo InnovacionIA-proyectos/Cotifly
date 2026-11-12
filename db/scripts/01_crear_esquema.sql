@@ -117,6 +117,8 @@ CREATE TABLE dbo_cotifly.Roles (
     descripcion     NVARCHAR(200) COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL,
     idRolExterno    INT                 NULL,
     activo          BIT                 NOT NULL CONSTRAINT df_roles_activo DEFAULT (1),
+    -- HU-040.3 (#258): rol sensible que el login NO auto-otorga (el 23 lo agrega en las bases ya instaladas y marca 'director').
+    requiereAltaManual BIT              NOT NULL CONSTRAINT df_roles_requiereAltaManual DEFAULT (0),
     updatedAt       DATETIMEOFFSET      NOT NULL CONSTRAINT df_roles_updatedAt DEFAULT (SYSDATETIMEOFFSET()),
     CONSTRAINT pk_roles PRIMARY KEY (id),
     CONSTRAINT uq_roles_codigo UNIQUE (codigo),
