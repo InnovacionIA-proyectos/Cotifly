@@ -20,7 +20,7 @@ public interface IClsMisCotizacionesService
 
     /// <summary>
     /// Resumen (<c>CotizacionResumen</c>) de una cotización ya autorizada, con el nombre de su línea. Se llama DESPUÉS de confirmar
-    /// (captura, resultado, reintento, re-solicitud): si la lectura del nombre de la línea falla (timeout de la base, #173), no lanza;
+    /// (captura, resultado, reintento, re-solicitud): si la lectura del nombre de la línea falla (timeout de la base), no lanza;
     /// devuelve el resumen con lo que está en memoria, <c>linea_negocio = null</c> y el aviso <see cref="clsMisCotizacionesService.AvisoResumenIncompleto"/>.
     /// </summary>
     Task<clsCotizacionResumen> ResumirAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken = default);
@@ -34,7 +34,7 @@ public sealed class clsMisCotizacionesService(
     ILogger<clsMisCotizacionesService>? logger = null) : IClsMisCotizacionesService
 {
     /// <summary>
-    /// Aviso de <c>CotizacionResumen.avisos</c> (#173): lo esencial ya quedó guardado (y enviado a Nexo), pero una lectura secundaria
+    /// Aviso de <c>CotizacionResumen.avisos</c>: lo esencial ya quedó guardado (y enviado a Nexo), pero una lectura secundaria
     /// del resumen falló; el nombre de la línea sale <c>null</c>. El frontend recarga con <c>GET /web/mis-cotizaciones</c>.
     /// </summary>
     public const string AvisoResumenIncompleto = "RESUMEN_INCOMPLETO";
@@ -57,7 +57,7 @@ public sealed class clsMisCotizacionesService(
     public async Task<clsCotizacionResumen> ResumirAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        // HU-021: la línea de negocio de las rutas, o "Varias" si tienen líneas distintas (una ruta sin línea no cuenta, HU-021.9).
+        // La línea de negocio de las rutas, o "Varias" si tienen líneas distintas (una ruta sin línea no cuenta).
         var lineas = cotizacion.Rutas.Select(r => r.LineaNegocioId).OfType<int>().Distinct().ToList();
         if (lineas.Count != 1)
         {
@@ -71,7 +71,7 @@ public sealed class clsMisCotizacionesService(
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
-            // #173: la cotización ya está guardada (y quizá en Nexo). Un 500 aquí haría que el cliente reintentara y duplicara la
+            // La cotización ya está guardada (y quizá en Nexo). Un 500 aquí haría que el cliente reintentara y duplicara la
             // solicitud: se responde con lo que hay en memoria y un aviso.
             _logResumenIncompleto(_logger, cotizacion.Folio, ex);
             return clsCotizacionResumen.Desde(cotizacion, null, opcionesPdf.Value.BaseUrl) with { Avisos = [AvisoResumenIncompleto] };

@@ -4,7 +4,7 @@ namespace Cotifly.Aplicacion.Pdf.Services;
 
 /// <summary>
 /// Formato de dinero del PDF y del correo, idéntico al <c>money()</c> del Python en pesos: prefijo <c>$</c> pegado al número,
-/// separador de miles <c>.</c> y sin decimales (<c>3294798</c> → <c>$3.294.798</c>). En dólares (HU-012.3) el prefijo es <c>US$</c> y
+/// separador de miles <c>.</c> y sin decimales (<c>3294798</c> → <c>$3.294.798</c>). En dólares el prefijo es <c>US$</c> y
 /// lleva 2 decimales con coma (<c>996.35</c> → <c>US$996,35</c>): el precio en USD se convierte con la TRM a centavos.
 /// </summary>
 /// <remarks>
@@ -38,7 +38,7 @@ public static class clsFormatoMoneda
     }
 
     /// <summary>
-    /// HU-045.3 (#265, B1, decisión del usuario): como <see cref="Formatear"/>, pero en pesos un monto con centavos (el seguro de la mercancía
+    /// Como <see cref="Formatear"/>, pero en pesos un monto con centavos (el seguro de la mercancía
     /// se guarda en centavos, y con él el precio de la ruta y los totales) se muestra con sus 2 decimales (<c>100.40</c> → <c>$100,40</c>), para
     /// que lo impreso cuadre exacto con lo guardado. Sin centavos, igual que <see cref="Formatear"/> (<c>$1.250.000</c>).
     /// </summary>
@@ -52,7 +52,7 @@ public static class clsFormatoMoneda
 
     /// <summary>
     /// TRM (pesos por dólar) con su escala real, sin rellenar ni recortar (hasta 4 decimales, la de <c>trmAplicada</c>): <c>3306.86</c> →
-    /// <c>$3.306,86</c>, <c>3306.8612</c> → <c>$3.306,8612</c>, <c>950</c> → <c>$950</c> (HU-012.3).
+    /// <c>$3.306,86</c>, <c>3306.8612</c> → <c>$3.306,8612</c>, <c>950</c> → <c>$950</c>.
     /// </summary>
     public static string FormatearTrm(decimal trm)
     {
@@ -62,7 +62,7 @@ public static class clsFormatoMoneda
     }
 
     /// <summary>
-    /// TRM de la nota del PDF en USD (HU-012.3, requisito de negocio del 2026-10-05): siempre 2 decimales (half-to-even), miles con <c>.</c> y
+    /// TRM de la nota del PDF en USD (requisito de negocio): siempre 2 decimales (half-to-even), miles con <c>.</c> y
     /// decimales con <c>,</c>: <c>3273.49</c> → <c>$3.273,49</c>, <c>3306.8612</c> → <c>$3.306,86</c>, <c>950</c> → <c>$950,00</c>.
     /// </summary>
     public static string FormatearTrmNota(decimal trm) => PrefijoPesos + ConDecimales(trm);

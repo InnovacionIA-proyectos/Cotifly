@@ -6,8 +6,9 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Aplicacion.Cotizaciones.Services;
 
 /// <summary>
-/// Caso de uso de seguimiento (<c>POST /web/cotizaciones/{folio}/seguimiento</c>, interino hasta HU-005.14): marca la
-/// cotización del comercial como ganada o perdida con el motivo de rechazo y la fecha (<c>marcadoAt</c>).
+/// Caso de uso de seguimiento (<c>POST /web/cotizaciones/{folio}/seguimiento</c>): marca la
+/// cotización del comercial como ganada o perdida con el motivo de rechazo y la fecha (<c>marcadoAt</c>). Las del flujo de costeo de
+/// Nexo marcan el resultado con <c>POST .../resultado</c>.
 /// </summary>
 public interface IClsSeguimientoService
 {
@@ -18,8 +19,8 @@ public interface IClsSeguimientoService
     Task<clsResultado<clsCotizacionSolicitud>> MarcarAsync(Guid usuarioId, string folio, bool? ganada, string? motivoRechazo, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Igual que <see cref="MarcarAsync(Guid, string, bool?, string?, CancellationToken)"/> con el <paramref name="comentario"/> del motivo
-    /// (HU-018.1, #155): en una perdida el motivo es de la lista (<see cref="IClsCatalogoMotivosPerdida"/>) y <c>Otro</c> exige el
+    /// Igual que <see cref="MarcarAsync(Guid, string, bool?, string?, CancellationToken)"/> con el <paramref name="comentario"/> del motivo:
+    /// en una perdida el motivo es de la lista (<see cref="IClsCatalogoMotivosPerdida"/>) y <c>Otro</c> exige el
     /// comentario (<c>MOTIVO_NO_PERMITIDO</c>, 400).
     /// </summary>
     Task<clsResultado<clsCotizacionSolicitud>> MarcarAsync(
@@ -27,15 +28,14 @@ public interface IClsSeguimientoService
 }
 
 /// <summary>
-/// Implementación de <see cref="IClsSeguimientoService"/>. La regla vivía en <c>IClsCotizacionRepository.MarcarSeguimientoAsync</c>
-/// (portada así de <c>shared/repos.py</c>); pasa a caso de uso por la deuda de ADR-008. Guarda <c>ganada</c> tal como llega
-/// (un <c>ganada = null</c> deja la cotización sin resultado) y el motivo según la regla de HU-021.13 que aplica el dominio
+/// Implementación de <see cref="IClsSeguimientoService"/>. Guarda <c>ganada</c> tal como llega
+/// (un <c>ganada = null</c> deja la cotización sin resultado) y el motivo según la regla que aplica el dominio
 /// (<see cref="clsCotizacionSolicitud.MarcarSeguimiento"/>): ganada → <c>"No aplica"</c>, perdida → el motivo, sin resultado → vacío.
 /// </summary>
 /// <remarks>
-/// HU-018.1 (#155, parte B): una perdida exige un motivo de la lista configurada y, con <c>Otro</c>, el comentario (se guarda
+/// Una perdida exige un motivo de la lista configurada y, con <c>Otro</c>, el comentario (se guarda
 /// <c>"Otro: comentario"</c>: estas cotizaciones nunca van a Nexo, así que el comentario no se pierde). Siguen marcándose aquí las del chat,
-/// las <c>descartada</c> y las de <c>costeo_vencido</c>. Los resultados guardados antes (motivo libre o sin motivo) no se revalidan.
+/// las <c>descartada</c> y las de <c>costeo_vencido</c>. Los resultados ya guardados (motivo libre o sin motivo) no se revalidan.
 /// </remarks>
 public sealed class clsSeguimientoService(
     IClsCotizacionRepository cotizaciones,
@@ -73,9 +73,9 @@ public sealed class clsSeguimientoService(
 
         if (!cotizacion.ResultadoSoloLocal)
         {
-            // En el flujo de costeo de Nexo: marcarla solo en Cotifly desincronizaría el resultado (HU-005.14). Las del chat, las
+            // En el flujo de costeo de Nexo: marcarla solo en Cotifly desincronizaría el resultado. Las del chat, las
             // descartadas y las de costeo vencido sí se marcan aquí (Nexo no les acepta resultado).
-            // HU-021.13: el detalle dice al frontend a dónde ir, sin que tenga que adivinarlo (HU-019.1).
+            // El detalle dice al frontend a dónde ir, sin que tenga que adivinarlo.
             var ruta = $"/web/cotizaciones/{cotizacion.Folio}/resultado";
             return new clsErrorDominio(clsCodigosError.UsarResultadoNexo,
                 $"La cotización {cotizacion.Folio} está en Nexo: marca el resultado con POST {ruta} (con If-Match).")

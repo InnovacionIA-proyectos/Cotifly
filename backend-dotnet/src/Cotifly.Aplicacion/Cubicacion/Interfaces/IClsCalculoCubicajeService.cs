@@ -4,10 +4,9 @@ using Cotifly.Dominio.Comun;
 namespace Cotifly.Aplicacion.Cubicacion.Interfaces;
 
 /// <summary>
-/// "Calcular cubicaje" del formulario (<c>POST /web/cubicacion</c>, HU-023.2, #157): una vista previa contra el cubicador. Llama a
+/// "Calcular cubicaje" del formulario (<c>POST /web/cubicacion</c>): una vista previa contra el cubicador. Llama a
 /// <c>POST /recomendaciones</c> por <see cref="IClsCubicador"/> con <c>idLineaSolicitud = "PRUEBA-&lt;guid&gt;"</c> y devuelve la lista de
-/// vehículos. Cotifly no guarda nada de esa llamada. Reemplaza la cubicación rápida que pasaba por <c>POST /api/cubicacion</c> de Nexo
-/// (retirada en el corte del cubicador).
+/// vehículos. Cotifly no guarda nada de esa llamada.
 /// </summary>
 public interface IClsCalculoCubicajeService
 {
@@ -26,7 +25,7 @@ public interface IClsCalculoCubicajeService
         Guid usuarioId, IReadOnlyList<clsItemCubicacion> items, string? claseViaje, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Opción D: lo que se valida sin llamar al cubicador (cubicador configurado; medidas, peso y cantidad de cada ítem, D1), para
+    /// Lo que se valida sin llamar al cubicador (cubicador configurado; medidas, peso y cantidad de cada ítem), para
     /// responder esos errores siempre de forma síncrona aunque el cálculo siga en segundo plano. <c>null</c> si todo está bien.
     /// <see cref="CalcularAsync"/> lo vuelve a revisar.
     /// </summary>

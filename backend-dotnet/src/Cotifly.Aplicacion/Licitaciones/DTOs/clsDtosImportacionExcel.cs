@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Cotifly.Aplicacion.Licitaciones.DTOs;
 
-// HU-044.1 (#252, ADR-028): lo que Cotifly pide y recibe de la importación inteligente de NEXO (CONTRATO.md §3.3 y §3.19.1 de NEXO).
+// ADR-028: lo que Cotifly pide y recibe de la importación inteligente de NEXO (CONTRATO.md §3.3 y §3.19.1 de NEXO).
 // Son los datos de Aplicación, no la forma del cable: el JSON camelCase de NEXO lo arma y lo lee el adaptador con sus DTOs privados.
 // El cliente viaja siempre como el NIT de la licitación (NEXO lo normaliza y lo busca); Cotifly no guarda el clienteId de NEXO.
 
@@ -123,7 +123,7 @@ public sealed record clsFiltroDiccionarioCliente(string? Tipo = null, string? Q 
 /// <summary>
 /// Un término del diccionario de NEXO (<paramref name="ClienteId"/> <c>null</c> = aplica a todos los clientes). <paramref name="ClienteIdLeido"/>
 /// dice si NEXO mandó <c>clienteId</c> de verdad (<c>null</c> o un GUID); si no vino (un cambio de forma de NEXO), el <c>null</c> de
-/// <paramref name="ClienteId"/> no significa "general" (#256). Por defecto <c>false</c>: falla cerrado.
+/// <paramref name="ClienteId"/> no significa "general". Por defecto <c>false</c>: falla cerrado.
 /// </summary>
 public sealed record clsTerminoCliente(
     Guid Id, Guid? ClienteId, string? ClienteNombre, string Termino, string Tipo, string Concepto, string? Contexto, string? Ejemplo,
@@ -142,7 +142,7 @@ public sealed record clsOpcionesDiccionarioCliente(
 
 /// <summary>
 /// El Excel que viaja a NEXO (<c>multipart</c>, campo <c>archivo</c>) con su nombre original. El adaptador no lo abre ni lo valida: el endpoint
-/// de Cotifly que lo recibe (#253 lectura, #256 recetas) solo comprueba el tamaño (≤ 10 MB) y la extensión (<c>.xlsx</c>/<c>.xlsm</c>), sin abrir
+/// de Cotifly que lo recibe (lectura y recetas) solo comprueba el tamaño (≤ 10 MB) y la extensión (<c>.xlsx</c>/<c>.xlsm</c>), sin abrir
 /// el libro, y el resto lo valida NEXO, cuyo rechazo llega con su código.
 /// </summary>
 public sealed record clsArchivoImportacion(string NombreArchivo, byte[] Contenido);

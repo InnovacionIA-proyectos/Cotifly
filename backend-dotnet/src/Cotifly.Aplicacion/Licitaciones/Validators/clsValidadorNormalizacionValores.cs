@@ -4,10 +4,10 @@ using Cotifly.Dominio.Comun;
 namespace Cotifly.Aplicacion.Licitaciones.Validators;
 
 /// <summary>
-/// HU-044.4 (#255): validación local de <c>POST /web/licitaciones/normalizar-valores</c> ANTES de llamar a NEXO, con los mismos límites
+/// Validación local de <c>POST /web/licitaciones/normalizar-valores</c> ANTES de llamar a NEXO, con los mismos límites
 /// y códigos que <c>normalizar-valores</c> de NEXO (máx. 1000 valores de 150 caracteres, campos cerrados). Así una petición mal armada no
 /// gasta la llamada (ni el cupo de IA del comercial). La clase de contenedor no se normaliza aquí: sigue por <c>GET /web/alias/resolver</c>
-/// (decisión de Sara del 2026-10-29, ADR-028 §8).
+/// (ADR-028 §8).
 /// </summary>
 public static class clsValidadorNormalizacionValores
 {

@@ -18,7 +18,7 @@ namespace Cotifly.Aplicacion.Licitaciones.Services;
 public enum ResultadoCubicacionRuta
 {
     /// <summary>
-    /// No había cupo libre en el cubicador (P6), o el cupo global del proceso siguió tomado (opción C, <c>CUBICADOR_OCUPADO</c>): la ruta
+    /// No había cupo libre en el cubicador, o el cupo global del proceso siguió tomado (<c>CUBICADOR_OCUPADO</c>): la ruta
     /// espera a la siguiente vuelta sin gastar un intento.
     /// </summary>
     SinCupo,
@@ -37,7 +37,7 @@ public enum ResultadoCubicacionRuta
 }
 
 /// <summary>
-/// HU-023.5 (#160): cubicación de la licitación en segundo plano. <c>POST /web/licitaciones</c> guarda las rutas con un camión provisional
+/// Cubicación de la licitación en segundo plano. <c>POST /web/licitaciones</c> guarda las rutas con un camión provisional
 /// y las deja <c>pendiente</c>; el procesador (<c>clsWorkerCubicacionLicitacion</c>) lee la cola con <see cref="PendientesAsync"/> y
 /// procesa cada ruta con <see cref="CubicarAsync"/> en su propio ámbito de DI, con un cupo del cubicador por llamada
 /// (<see cref="IClsCupoCubicador"/>, <c>Cubicador:MaximoParalelo</c> entre todas las réplicas). Cuando la última ruta queda cubicada, la
@@ -81,7 +81,7 @@ public interface IClsCubicacionLicitacionService
 /// <c>updatedAt</c> de la cabecera (el mismo reclamo del reintento): de dos réplicas que terminan juntas, solo una envía.</item>
 /// <item><b>Reintentos:</b> solo una caída del cubicador (<c>CUBICADOR_NO_DISPONIBLE</c>, sin respaldo) se reintenta, hasta
 /// <c>Cubicador:MaximoIntentos</c>, con espera creciente. Un rechazo de la petición, una respuesta inválida o la llave rechazada dejan la
-/// ruta <c>fallida</c> de una vez (nunca se tapan con el respaldo, HU-023.1). Con <c>Cubicador:RespaldoSiFalla</c> una caída nunca llega
+/// ruta <c>fallida</c> de una vez (nunca se tapan con el respaldo). Con <c>Cubicador:RespaldoSiFalla</c> una caída nunca llega
 /// aquí: el planificador ya devuelve el camión sin vehículo.</item>
 /// <item><b>Ruta fallida:</b> la licitación queda en <c>pendiente_envio</c> sin salir a Nexo, con el error en la ruta, hasta que el
 /// comercial la reintente (<see cref="ReintentarAsync"/>).</item>
@@ -101,10 +101,10 @@ public sealed class clsCubicacionLicitacionService(
     TimeProvider tiempo,
     IOptions<clsOpcionesCaptura>? opcionesCaptura = null) : IClsCubicacionLicitacionService
 {
-    /// <summary>Herramienta de la auditoría de cada ruta cubicada en segundo plano (<c>EventosHerramienta.herramienta</c>, E1 de #174).</summary>
+    /// <summary>Herramienta de la auditoría de cada ruta cubicada en segundo plano (<c>EventosHerramienta.herramienta</c>).</summary>
     public const string HerramientaCubicarRuta = "cubicar_ruta_licitacion";
 
-    /// <summary>Herramienta de la auditoría del reintento del comercial (<c>POST .../cubicacion/reintentar</c>, E1 de #174).</summary>
+    /// <summary>Herramienta de la auditoría del reintento del comercial (<c>POST .../cubicacion/reintentar</c>).</summary>
     public const string HerramientaReintentar = "reintentar_cubicacion_licitacion";
 
     public Task<IReadOnlyList<clsRutaPorCubicar>> PendientesAsync(Guid? cotizacionId = null, CancellationToken cancellationToken = default) =>
@@ -146,7 +146,7 @@ public sealed class clsCubicacionLicitacionService(
 
         if (detalle.Resultado == ResultadoCubicacionRuta.SinCupo)
         {
-            // Opción C: el cupo global del cubicador siguió tomado; no se llamó, así que no hay nada que auditar.
+            // El cupo global del cubicador siguió tomado; no se llamó, así que no hay nada que auditar.
             return ResultadoCubicacionRuta.SinCupo;
         }
 
@@ -192,7 +192,7 @@ public sealed class clsCubicacionLicitacionService(
             return new clsDetalleRuta(ResultadoCubicacionRuta.Fallida, intentoNoAdmitido, clsCodigosError.EstadoNoPermite);
         }
 
-        // Como el camino síncrono (HU-032, #197): el vehículo ELEGIDO de la ruta (guardado en la ruta; el camión provisional va sin él) es el
+        // Como el camino síncrono: el vehículo ELEGIDO de la ruta (guardado en la ruta; el camión provisional va sin él) es el
         // respaldo: si el cubicador no escoge o falla, se valida contra Nexo y se usa. Si el cubicador recomienda, manda el cubicador. Con
         // Captura:AceptarVehiculoCliente apagada el respaldo va sin vehículo.
         var entrada = opcionesCaptura?.Value.AceptarVehiculoCliente != false
@@ -202,7 +202,7 @@ public sealed class clsCubicacionLicitacionService(
         var ahora = reloj.AhoraUtc;
         if (plan.EsFallo && plan.Error.Codigo == clsCodigosError.CubicadorOcupado)
         {
-            // Opción C (validación de los defectos del 2026-10-16): el cupo global del proceso siguió tomado (por ejemplo, un "Calcular
+            // El cupo global del proceso siguió tomado (por ejemplo, un "Calcular
             // cubicaje" largo). No es una caída: la ruta no va al respaldo ni gasta un intento; vuelve a la cola para la siguiente vuelta
             // (sin esperar a que venza el reclamo) y el procesador corta la vuelta como con el cupo de la base.
             cotizacion.PosponerCubicacionDeRuta(linea.Id, ahora);
@@ -252,7 +252,7 @@ public sealed class clsCubicacionLicitacionService(
     }
 
     /// <summary>
-    /// Desviación E1 (#174): cada ruta procesada en segundo plano deja un evento en <c>EventosHerramienta</c> (<see cref="HerramientaCubicarRuta"/>)
+    /// Cada ruta procesada en segundo plano deja un evento en <c>EventosHerramienta</c> (<see cref="HerramientaCubicarRuta"/>)
     /// con el folio, la ruta, el intento, el resultado, el código del error y cuántos camiones quedaron. Sin montos, pesos ni mercancías.
     /// </summary>
     private Task AuditarRutaAsync(clsCotizacionSolicitud cotizacion, clsLineaSolicitud linea, clsDetalleRuta detalle, int duracionMs) =>
@@ -328,11 +328,10 @@ public sealed class clsCubicacionLicitacionService(
     }
 
     /// <summary>
-    /// Endurecimiento B (#199, HU-032, ADR-022): el respaldo de cada ruta fallida por una caída del cubicador, como en segundo plano
+    /// ADR-022: el respaldo de cada ruta fallida por una caída del cubicador, como en segundo plano
     /// (<see cref="CubicarAsync"/>): el vehículo ELEGIDO de la ruta validado contra Nexo (<see cref="IClsPlanificadorCamiones.PlanificarRespaldoAsync"/>,
-    /// sin llamar al cubicador) con su aviso, o sin vehículo con <c>Captura:AceptarVehiculoCliente</c> apagada. Antes el reintento aceptaba
-    /// el camión provisional sin vehículo aunque la ruta tuviera un elegido. Si el respaldo de una ruta falla, esa ruta queda con el camión
-    /// sin vehículo (lo de siempre).
+    /// sin llamar al cubicador) con su aviso, o sin vehículo con <c>Captura:AceptarVehiculoCliente</c> apagada. Si el respaldo de
+    /// una ruta falla, esa ruta queda con el camión sin vehículo.
     /// </summary>
     private async Task<IReadOnlyDictionary<Guid, clsPlanRuta>?> RespaldosAsync(
         clsCotizacionSolicitud cotizacion, Guid usuarioId, CancellationToken cancellationToken)
@@ -374,14 +373,14 @@ public sealed class clsCubicacionLicitacionService(
     /// <summary>
     /// Si la cubicación terminó (todas las rutas cubicadas) y la solicitud no ha salido, con el candado del envío
     /// (<see cref="IClsCupoCubicador.IntentarTomarEnvioAsync"/>) la reclama con el <c>updatedAt</c> de la cabecera y la envía a Nexo con la política de su primera ruta, como el reintento. Sin el token de la
-    /// petición: una vez reclamada, el envío se completa (HU-005.5).
+    /// petición: una vez reclamada, el envío se completa.
     /// </summary>
     private async Task<bool> EnviarSiListaAsync(clsCotizacionSolicitud cotizacion, bool esperarCandado, int? versionLeida, CancellationToken cancellationToken)
     {
         // El reclamo por updatedAt no basta: una réplica que recarga DESPUÉS del reclamo de otra (y antes de que esta guarde el envío)
         // ve la licitación todavía en pendiente_envio y la reclamaría otra vez. El candado del envío cubre la revisión, el reclamo y el
         // envío.
-        // B2 (#174): quien no obtiene el candado NO se va. Si las dos últimas rutas terminan juntas, la primera puede tomar el candado,
+        // Quien no obtiene el candado NO se va. Si las dos últimas rutas terminan juntas, la primera puede tomar el candado,
         // ver a la otra todavía pendiente y soltarlo sin enviar; la última, que ya guardó su ruta, debe volver a revisar con el candado.
         // Por eso espera y reintenta: cuando lo obtiene, la revisión ve todo lo guardado antes de soltarlo. Envío único: el candado, el
         // estado (ListaParaEnviarTrasCubicar) y el reclamo por updatedAt. La espera tiene tope: si otro tiene el candado tanto tiempo, es
@@ -424,10 +423,9 @@ public sealed class clsCubicacionLicitacionService(
     }
 
     /// <summary>
-    /// Un intento de tomar el candado del envío. Revisión de #174: cada intento abre una conexión propia sin pool (el candado es de
-    /// sesión) y, con la base cargada, abrirla puede fallar (<c>Connection Timeout Expired</c> en el saludo previo al login). Antes esa
-    /// excepción salía de <see cref="CubicarAsync"/> con la ruta ya guardada: el procesador no la contaba y la licitación esperaba la
-    /// recuperación. Ahora un fallo al pedir el candado cuenta como "no obtenido" y se reintenta dentro del mismo tope.
+    /// Un intento de tomar el candado del envío. Cada intento abre una conexión propia sin pool (el candado es de
+    /// sesión) y, con la base cargada, abrirla puede fallar (<c>Connection Timeout Expired</c> en el saludo previo al login). Un fallo al
+    /// pedir el candado no sale de <see cref="CubicarAsync"/> (la ruta ya está guardada): cuenta como "no obtenido" y se reintenta dentro del mismo tope.
     /// </summary>
     private async Task<IAsyncDisposable?> IntentarTomarCandadoEnvioAsync(clsCotizacionSolicitud cotizacion, int intento)
     {
@@ -442,7 +440,7 @@ public sealed class clsCubicacionLicitacionService(
         }
     }
 
-    /// <summary>Intentos de tomar el candado del envío antes de dejarlo a quien lo tiene (B2, #174): 15,75 s de espera en total con <see cref="EsperaCandadoEnvio"/>.</summary>
+    /// <summary>Intentos de tomar el candado del envío antes de dejarlo a quien lo tiene: 15,75 s de espera en total con <see cref="EsperaCandadoEnvio"/>.</summary>
     internal const int IntentosCandadoEnvio = 35;
 
     /// <summary>Espera antes del intento <paramref name="intento"/> + 1 del candado del envío: 50 ms que se duplican hasta 500 ms.</summary>
@@ -453,11 +451,11 @@ public sealed class clsCubicacionLicitacionService(
     /// vio quien cubicó la ruta (o reintentó) antes de guardar; <c>null</c> en la recuperación.
     /// </summary>
     /// <remarks>
-    /// Revisión de #174 (doble envío medido bajo carga): el reclamo sube <c>versionNegocio</c>. Si quien envió obtuvo el alta en Nexo pero
-    /// no pudo guardar el <c>solicitudNexoId</c> (la base no respondió), la licitación sigue en <c>pendiente_envio</c> y suelta el candado:
-    /// la ruta que esperaba lo tomaba, la veía "lista" y la enviaba otra vez (dos altas en Nexo). Con la versión cambiada desde que se
-    /// leyó, alguien ya la reclamó: el envío está en curso o es incierto y no se repite aquí; la recuperación aplica la regla de siempre
-    /// (<see cref="clsCotizacionSolicitud.EsperaReenvioPendiente"/>), igual que un reenvío cortado a medias (HU-005.5).
+    /// Evita el doble envío: el reclamo sube <c>versionNegocio</c>. Si quien envió obtuvo el alta en Nexo pero
+    /// no pudo guardar el <c>solicitudNexoId</c> (la base no respondió), la licitación sigue en <c>pendiente_envio</c> y suelta el candado;
+    /// sin la versión, la ruta que espera lo tomaría, la vería "lista" y la enviaría otra vez (dos altas en Nexo). Con la versión cambiada desde que se
+    /// leyó, alguien ya la reclamó: el envío está en curso o es incierto y no se repite aquí; la recuperación aplica su regla
+    /// (<see cref="clsCotizacionSolicitud.EsperaReenvioPendiente"/>), igual que un reenvío cortado a medias.
     /// </remarks>
     private async Task<bool> EnviarConCandadoAsync(clsCotizacionSolicitud cotizacion, int? versionLeida)
     {

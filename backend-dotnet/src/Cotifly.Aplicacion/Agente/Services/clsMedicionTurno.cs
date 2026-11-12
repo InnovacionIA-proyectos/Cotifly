@@ -4,7 +4,7 @@ using Microsoft.Extensions.AI;
 namespace Cotifly.Aplicacion.Agente.Services;
 
 /// <summary>
-/// Duración por fase de un turno del asistente (HU-013.16, #126): preparación (base de datos y prompt), llamadas al modelo con
+/// Duración por fase de un turno del asistente: preparación (base de datos y prompt), llamadas al modelo con
 /// herramientas, ejecución de las herramientas, respuesta final y guardado; más las llamadas al modelo, los tokens que informa el
 /// proveedor y los modelos que respondieron (un modelo distinto del principal es un respaldo de <c>IA:Fallbacks</c>). El tiempo de
 /// cada llamada incluye la espera del limitador <c>IA:Rpm</c>, que Infraestructura registra aparte. No guarda ningún texto.

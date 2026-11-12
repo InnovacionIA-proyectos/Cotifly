@@ -26,7 +26,7 @@ public static class clsValidadorCotizacionPdfPayload
     public static clsErrorDominio? Validar(clsCotizacionPdfPayload? payload) => Validar(payload, MaxSecciones, MaxFilas);
 
     /// <summary>
-    /// Igual que <see cref="Validar(clsCotizacionPdfPayload?)"/> con otros topes de tablas y filas: el PDF de pliego (HU-011.5) admite
+    /// Igual que <see cref="Validar(clsCotizacionPdfPayload?)"/> con otros topes de tablas y filas: el PDF de pliego admite
     /// tantas filas como líneas tiene una licitación (1000).
     /// </summary>
     public static clsErrorDominio? Validar(clsCotizacionPdfPayload? payload, int maxSecciones, int maxFilas)
@@ -36,7 +36,7 @@ public static class clsValidadorCotizacionPdfPayload
             return Error("Falta el payload de la cotización.");
         }
 
-        // HU-021.9 (#136): un pliego (con secciones) puede tener rutas de varias líneas de negocio; cada sección lleva la suya en su título,
+        // Un pliego (con secciones) puede tener rutas de varias líneas de negocio; cada sección lleva la suya en su título,
         // así que la línea de la cabecera solo se exige en el PDF de una tarifa (de ella salen el subtítulo y la imagen de la línea).
         if (clsTextoSeguro.LimpiarLinea(payload.LineaNegocio) is null && payload.Secciones is not { Count: > 0 })
         {

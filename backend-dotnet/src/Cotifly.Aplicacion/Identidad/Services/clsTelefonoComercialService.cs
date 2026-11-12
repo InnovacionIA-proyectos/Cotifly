@@ -9,7 +9,7 @@ namespace Cotifly.Aplicacion.Identidad.Services;
 public sealed record clsTelefonoComercial(string? Telefono);
 
 /// <summary>
-/// Confirmación del teléfono antes de generar el PDF (HU-003.5, <c>GET/PUT /web/usuario/telefono</c>): el valor queda en
+/// Confirmación del teléfono antes de generar el PDF (<c>GET/PUT /web/usuario/telefono</c>): el valor queda en
 /// <c>UsuariosWeb.telefono</c> y es el que imprime la firma ("Cel") en los PDF siguientes. Errores:
 /// <see cref="clsTelefonoComercialService.CodigoTelefonoInvalido"/> (el endpoint responde 400 con <c>ErrorWeb</c>) y
 /// <see cref="clsTelefonoComercialService.CodigoUsuarioNoEncontrado"/>.

@@ -3,7 +3,7 @@ using Cotifly.Dominio.Comun;
 
 namespace Cotifly.Aplicacion.Precio.Services;
 
-/// <summary>Caso de uso <c>calcular_precio</c>: precio al cliente a partir del costo y el margen, en COP o en USD (HU-012.2).</summary>
+/// <summary>Caso de uso <c>calcular_precio</c>: precio al cliente a partir del costo y el margen, en COP o en USD.</summary>
 public interface IClsPrecioService
 {
     /// <summary>Precio en pesos por <c>margen</c> o <c>markup</c>; <c>PRECIO_INVALIDO</c> si la entrada no permite calcularlo.</summary>

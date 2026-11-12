@@ -4,7 +4,7 @@ using Cotifly.Aplicacion.Margen.Repositories;
 namespace Cotifly.Aplicacion.Administracion.Services;
 
 /// <summary>
-/// HU-016.1 (#154, decisión P4b del 2026-10-27): <c>GET /web/lineas-negocio</c>, las líneas de negocio activas para el desplegable
+/// <c>GET /web/lineas-negocio</c>, las líneas de negocio activas para el desplegable
 /// "Línea de negocio" de cada ruta en "Nueva solicitud" (comercial, gerente y director). Nunca expone el margen ni el método de la
 /// política (eso es de <see cref="IClsLineasNegocioAdminService"/>).
 /// </summary>

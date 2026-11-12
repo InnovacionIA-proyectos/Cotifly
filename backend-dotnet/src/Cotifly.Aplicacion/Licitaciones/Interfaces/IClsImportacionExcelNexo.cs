@@ -4,7 +4,7 @@ using Cotifly.Dominio.Comun;
 namespace Cotifly.Aplicacion.Licitaciones.Interfaces;
 
 /// <summary>
-/// Importación inteligente del Excel de licitación con NEXO (HU-044.1, #252, ADR-028). Cotifly no la replica: reenvía a
+/// Importación inteligente del Excel de licitación con NEXO (ADR-028). Cotifly no la replica: reenvía a
 /// <c>/api/captura-solicitudes/*</c> (<c>sugerir-mapeo</c>, <c>aplicar-mapeo</c>, <c>normalizar-valores</c>, <c>plantillas-mapeo</c>,
 /// <c>leer-estructura</c>, <c>recetas-lectura</c>) y a <c>/api/diccionario-cliente</c> de NEXO con la identidad del comercial
 /// (<c>X-Portal-clsUsuario-Id</c>) y el cliente por NIT (<c>clienteNit</c>, normalizado como lo compara NEXO). Nada se guarda en Cotifly.

@@ -1,7 +1,7 @@
 namespace Cotifly.Aplicacion.Agente.DTOs;
 
 /// <summary>
-/// <c>AccionPropuesta</c> de <c>RespuestaChat</c> (HU-013.6, #102, ADR-018 §2b): la acción final que el asistente PROPONE. La arma el
+/// <c>AccionPropuesta</c> de <c>RespuestaChat</c> (ADR-018 §2b): la acción final que el asistente PROPONE. La arma el
 /// SERVIDOR con datos validados: el LLM solo eligió la herramienta y sus argumentos (margen, motivo, cambios de carga o servicio y
 /// cantidad). El frontend la muestra con <see cref="Resumen"/> y un botón Confirmar; solo al confirmar llama a <see cref="Metodo"/>
 /// <see cref="Endpoint"/> con <see cref="Cuerpo"/> tal cual e <c>If-Match: </c><see cref="RowVersion"/>. La IA nunca la ejecuta.

@@ -12,16 +12,16 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Aplicacion.Cotizaciones.Services;
 
 /// <summary>
-/// Listado regional del gerente comercial (HU-016.1, #154; <c>GET /web/cotizaciones/regional</c>): las cotizaciones de los miembros de su
+/// Listado regional del gerente comercial (<c>GET /web/cotizaciones/regional</c>): las cotizaciones de los miembros de su
 /// regional, fila por fila, con la forma de "Mis cotizaciones" y el comercial dueño. El alcance se resuelve en el servidor con
 /// <see cref="IClsRegionalUsuario.ResolverAlcanceAsync"/> (la misma regla que <c>GET /web/metricas/regional</c>): el gerente solo la suya;
-/// el director todas o la que pide con <c>?regional=</c> (HU-037.3, #211).
+/// el director todas o la que pide con <c>?regional=</c>.
 /// </summary>
 public interface IClsCotizacionesRegionalService
 {
     /// <summary>
     /// Cotizaciones del alcance del usuario autenticado (<see cref="IClsRegionalUsuario.ResolverAlcanceAsync"/>): la regional del gerente;
-    /// para el director, todas o la de <paramref name="regional"/> (HU-037.3, #211). Errores: <c>NO_AUTENTICADO</c>, <c>SIN_PERMISO</c> (no
+    /// para el director, todas o la de <paramref name="regional"/>. Errores: <c>NO_AUTENTICADO</c>, <c>SIN_PERMISO</c> (no
     /// es <c>gerente_comercial</c> ni <c>director</c>), <c>REGIONAL_NO_PERMITIDA</c> (el gerente pidió otra regional),
     /// <c>REGIONAL_NO_ASIGNADA</c> y <c>REGIONAL_NO_DISPONIBLE</c>.
     /// </summary>
@@ -57,7 +57,7 @@ public sealed class clsCotizacionesRegionalService(
             return ErrorNoAutenticado();
         }
 
-        // HU-037.3 (#211): el alcance (la regional del gerente; todas o la elegida para el director) lo decide IClsRegionalUsuario.
+        // El alcance (la regional del gerente; todas o la elegida para el director) lo decide IClsRegionalUsuario.
         var alcance = await regionales.ResolverAlcanceAsync(gerente, rol, regional, cancellationToken);
         if (alcance.EsFallo)
         {
