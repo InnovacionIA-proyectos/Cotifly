@@ -266,15 +266,14 @@ Para desarrollo local, `scripts/levantar-local.ps1` y `scripts/levantar-local.sh
 
 ### Integraciones externas y SAP TM
 
-**Integraciones externas (#13, HU-003.7).**
-
-| Integración del Python | En .NET | Configuración |
+| Integración | En .NET | Configuración |
 |---|---|---|
-| SAP TM, export JSON (`export_fuente.py`) y OData en vivo (`odata_fuente.py`) | ~~`clsFuenteMargenExportJson`, `clsFuenteMargenOData` (#13)~~ retirados en HU-042.2: `clsFuenteMargenTablaLocal` lee la copia local `dbo_cotifly.SapMargenCliente`, que sincroniza el worker `clsWorkerSincronizacionMargenSap` | `SapTm__*`, `ConnectionStrings__DwOperaciones` |
-| Tarifario en Google Drive (`DriveFlatFileProvider`) | **No se porta**: retirado el 2026-09-23, el costeo vendrá de Nexo (HU-005.5 en adelante) | ninguna |
-| Búsqueda de clientes (no existía en el Python) | `clsBuscadorClientesNexo`, más municipios y catálogos de flete de Nexo (la cubicación de Nexo se retiró en HU-023.2: "Calcular cubicaje" usa el cubicador, `Cubicador__UrlBase`) | `Nexo__UrlBase` ([Nexo](#nexo)) |
-| Sincronización a Google Sheets (Looker Studio) | **Diferida**, pendiente en ADR-012 (Looker directo a SQL Server, port a .NET o tablero de HU-010) | ninguna |
-| PDF en S3/MinIO (`almacen_pdf.py`) | **Diferido**: se mantiene el volumen `/data/pdfs` detrás de `IClsAlmacenPdf` (#11). S3 solo si HU-006.6 despliega varias réplicas sin volumen compartido (ADR-012) | ninguna |
+| SAP TM (margen propuesto por cliente) | `clsFuenteMargenTablaLocal` lee la copia local `dbo_cotifly.SapMargenCliente`, que sincroniza el worker `clsWorkerSincronizacionMargenSap` | `SapTm__*`, `ConnectionStrings__DwOperaciones` |
+| Clientes, municipios y catálogos de flete | `clsBuscadorClientesNexo` y los catálogos de Nexo; "Calcular cubicaje" usa el cubicador (`Cubicador__UrlBase`) | `Nexo__UrlBase` ([Nexo](#nexo)) |
+| PDF | Volumen `/data/pdfs` detrás de `IClsAlmacenPdf`; S3 solo si se despliegan varias réplicas sin volumen compartido ([ADR-012](../specs/decisiones/ADR-012-integraciones-diferidas-sheets-y-s3.md)) | `Pdf__*` |
+
+Las integraciones del Python que no se portaron (tarifario de Drive, exportación JSON y OData en vivo de SAP TM, Google Sheets) están en
+[`docs/archivo/COMPONENTES_RETIRADOS.md`](../../docs/archivo/COMPONENTES_RETIRADOS.md#integraciones-del-python).
 
 SAP TM (HU-042.2 #243 y HU-042.4 #247, [ADR-027](../specs/decisiones/ADR-027-margen-sap-tabla-local.md)):
 - **Copia local, sincronizada por el backend.** Al cotizar, la API lee `dbo_cotifly.SapMargenCliente` con su cadena
@@ -513,10 +512,6 @@ Qué hace el backend para OmniRoute (ADR-003, "Implementación (#84)"):
 - **Cuota.** Las credenciales de Gemini detrás de OmniRoute son de cuota limitada: tras 4 a 8 llamadas por modelo, OmniRoute responde `429 model_cooldown` con `reset_seconds` de unas 9 horas. Una cotización completa hace entre 6 y 15 llamadas, así que un solo modelo no alcanza para una jornada. Antes de producción hace falta una credencial con cuota de pago, o varios modelos en `IA__Fallbacks`, porque cada modelo tiene su propia cuota.
 - **Recomendación** (pendiente de confirmar con el dueño de OmniRoute y negocio): principal `gemini/gemini-3.5-flash-lite`, respaldos `gemini/gemini-3.5-flash` y `gemini/gemini-3-flash-preview`, con `IA__SoportaJsonSchema=false` e `IA__MaxTokens=1500`. flash-lite va de principal porque es el único que completó la cotización con PDF, el único que respeta `json_schema` y el más rápido (1 a 2 s por llamada). Los otros dos validaron las herramientas, pero su cuota se agotó primero.
 - **Datos y términos** (pendiente con negocio y legal). OmniRoute reenvía cada petición a Google, OpenRouter o Groq bajo los términos de la credencial que tenga cargada; con una clave gratuita de AI Studio, Google puede usar los datos para mejorar sus productos. Hay que confirmar qué credencial es, la residencia de los datos y si OmniRoute registra los prompts.
-
-### Google Chat y enlace firmado del PDF (retirados)
-
-Google Chat (webhook `POST /chat/events`, verificación del JWT, cola, worker, publicador con cuenta de servicio y opciones `GChat:*`) y el enlace firmado del PDF (`GET /pdfs/{archivo}?t=...`, `Pdf:ClaveFirmaUrl`, `Pdf:MinutosUrlFirmada`, ADR-011 §3), que solo emitía Google Chat, se retiraron en HU-013.9 (#105). El PDF se descarga siempre con Bearer. Si un entorno todavía trae esas variables, la API las ignora.
 
 ## 3.5 Servicios externos
 

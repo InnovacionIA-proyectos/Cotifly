@@ -5,13 +5,28 @@
 Índice único de la documentación del proyecto. Cada tema tiene **un solo documento de referencia**; los demás lo
 enlazan en vez de repetirlo. El punto de entrada general es el [`README.md`](../README.md) de la raíz.
 
+## Qué leer para qué
+
+| Si necesitas… | Lee |
+|---|---|
+| Integrar el frontend (pantallas, flujos, estados y botones) | [`docs_front/GUIA_FRONTEND_COTIFLY.md`](docs_front/GUIA_FRONTEND_COTIFLY.md) |
+| El contrato de cada endpoint para el frontend | [`docs_front/CONTRATOS_API_COTIFLY_FRONTEND.md`](docs_front/CONTRATOS_API_COTIFLY_FRONTEND.md) y, para el contrato por rutas con ejemplos verificados, [`docs_front/CONTRATO_API_WEB.md`](docs_front/CONTRATO_API_WEB.md). Fuente de verdad: [`openapi.yaml`](../backend-dotnet/specs/openapi.yaml) |
+| Entender el sistema y su arquitectura | [`backend-dotnet/docs/01-descripcion.md`](../backend-dotnet/docs/01-descripcion.md) y [`02-arquitectura.md`](../backend-dotnet/docs/02-arquitectura.md) |
+| Levantar el backend en local y correr las pruebas | [`backend-dotnet/docs/06-ejecucion-local.md`](../backend-dotnet/docs/06-ejecucion-local.md) y [`08-testing.md`](../backend-dotnet/docs/08-testing.md) |
+| Desplegar (Docker Swarm y Dokploy) | [`DEPLOY.md`](../DEPLOY.md) y [`backend-dotnet/docs/03-infraestructura.md`](../backend-dotnet/docs/03-infraestructura.md) (variables y configuración) |
+| Operar y dar soporte | [`backend-dotnet/docs/10-operacion.md`](../backend-dotnet/docs/10-operacion.md) |
+| Conocer una decisión de arquitectura | [`backend-dotnet/specs/decisiones/README.md`](../backend-dotnet/specs/decisiones/README.md) (índice de ADR) |
+| Trabajar con la base de datos | [`BASE_DE_DATOS.md`](../BASE_DE_DATOS.md), [`database/DICCIONARIO_BASE_DE_DATOS.md`](database/DICCIONARIO_BASE_DE_DATOS.md) y los scripts en [`db/README.md`](../db/README.md) |
+| Integrarse con Nexo o con el cubicador | [`backend-dotnet/docs/COTIFLY-CONTRATO.md`](../backend-dotnet/docs/COTIFLY-CONTRATO.md) y [`backend-dotnet/docs/COTIFLY-COMO-CONECTARSE-AL-CUBICADOR.md`](../backend-dotnet/docs/COTIFLY-COMO-CONECTARSE-AL-CUBICADOR.md) |
+| Escribir código o comentarios nuevos | Convenciones en [`backend-dotnet/docs/02-arquitectura.md`](../backend-dotnet/docs/02-arquitectura.md#24-convenciones-de-nombres) (nombres y comentarios) |
+
 ## Por tema
 
 | Tema | Documento de referencia | Complementos |
 |---|---|---|
 | Qué es Cotifly, roles y capacidades | [`backend-dotnet/docs/01-descripcion.md`](../backend-dotnet/docs/01-descripcion.md) | [`backend-dotnet/README.md`](../backend-dotnet/README.md) |
 | Arquitectura del backend | [`backend-dotnet/docs/02-arquitectura.md`](../backend-dotnet/docs/02-arquitectura.md) | [`04-flujo-del-sistema.md`](../backend-dotnet/docs/04-flujo-del-sistema.md), [`05-stack.md`](../backend-dotnet/docs/05-stack.md), [`09-estructura-del-proyecto.md`](../backend-dotnet/docs/09-estructura-del-proyecto.md) |
-| Decisiones de arquitectura (ADR) | [`backend-dotnet/specs/decisiones/README.md`](../backend-dotnet/specs/decisiones/README.md) | ADR-001 a ADR-020 |
+| Decisiones de arquitectura (ADR) | [`backend-dotnet/specs/decisiones/README.md`](../backend-dotnet/specs/decisiones/README.md) | ADR-001 a ADR-032 |
 | Contrato HTTP (fuente de verdad) | [`backend-dotnet/specs/openapi.yaml`](../backend-dotnet/specs/openapi.yaml) | Escenarios BDD en [`backend-dotnet/specs/features/`](../backend-dotnet/specs/features/), resumen en [`07-api.md`](../backend-dotnet/docs/07-api.md) |
 | API para el frontend (ClientePro) | [`docs_front/CONTRATO_API_WEB.md`](docs_front/CONTRATO_API_WEB.md) | [`docs_front/GUIA_FRONTEND_COTIFLY.md`](docs_front/GUIA_FRONTEND_COTIFLY.md) (flujos, estados y reglas de UI), [`docs_front/CONTRATOS_API_COTIFLY_FRONTEND.md`](docs_front/CONTRATOS_API_COTIFLY_FRONTEND.md) (referencia consolidada de los 46 endpoints, errores y checklist de integración) y el [manual de conexión con ClientePro](<docs_front/Manual de Conexión ClientePro - Grovity.pdf>) (PDF) |
 | Integración con Nexo | [`backend-dotnet/docs/COTIFLY-CONTRATO.md`](../backend-dotnet/docs/COTIFLY-CONTRATO.md) (contrato de captura que publicó Nexo) | [`conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md`](conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md), [`conexion_nexo/HU-013-preguntas-nexo.md`](conexion_nexo/HU-013-preguntas-nexo.md), [ADR-015](../backend-dotnet/specs/decisiones/ADR-015-costeo-nexo.md) |
@@ -47,7 +62,8 @@ Estos documentos **no describen el sistema actual**. Se conservan como registro 
 | [`archivo/ESQUEMA_OBJETIVO_SQLSERVER_PARTE_B.md`](archivo/ESQUEMA_OBJETIVO_SQLSERVER_PARTE_B.md) | Diseño original del esquema SQL Server (HU-002.3) | [`database/ESQUEMA_OBJETIVO_SQLSERVER.md`](database/ESQUEMA_OBJETIVO_SQLSERVER.md) |
 | [`archivo/PROPUESTA_REFACTOR_BD_COTIFLY.md`](archivo/PROPUESTA_REFACTOR_BD_COTIFLY.md) | Propuesta de refactor de la base de HU-002.1 (era Postgres) | [`database/ESQUEMA_OBJETIVO_SQLSERVER.md`](database/ESQUEMA_OBJETIVO_SQLSERVER.md) |
 | [`archivo/HU-005.1-mapeo-campos-nexo.md`](archivo/HU-005.1-mapeo-campos-nexo.md) | Duplicado del mapeo de campos de Nexo | [`conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md`](conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md) |
-| [`archivo/paridad-python-dotnet.md`](archivo/paridad-python-dotnet.md) | Plantilla de paridad Python vs .NET (HU-003.9, #15), cerrada sin ejecutarse | [`backend-dotnet/docs/08-testing.md`](../backend-dotnet/docs/08-testing.md) |
+| [`archivo/paridad-python-dotnet.md`](archivo/paridad-python-dotnet.md) | Plantilla de paridad Python vs .NET, cerrada sin ejecutarse, y la tabla de equivalencias de pruebas | [`backend-dotnet/docs/08-testing.md`](../backend-dotnet/docs/08-testing.md) |
+| [`archivo/COMPONENTES_RETIRADOS.md`](archivo/COMPONENTES_RETIRADOS.md) | Google Chat, agente cotizador por chat, stack Python e integraciones que no se portaron (Drive, Sheets, SAP TM por exportación JSON u OData en vivo) | [`DEPLOY.md`](../DEPLOY.md) §7 (limpieza de infraestructura pendiente) |
 | [`archivo/backlog/2026-09-21_HU_Backlog_Cotifly_ClientePro.md`](archivo/backlog/2026-09-21_HU_Backlog_Cotifly_ClientePro.md) | Borrador de HU-001 a HU-013 | Milestones de GitHub |
 | [`archivo/backlog/2026-10-08_HU_Correccion_BD_Cotifly.md`](archivo/backlog/2026-10-08_HU_Correccion_BD_Cotifly.md) | Borrador de HU-021 (cerrada) | Milestone HU-021 y [ADR-019](../backend-dotnet/specs/decisiones/ADR-019-reestructuracion-rutas-y-camiones.md) |
 | [`archivo/backlog/2026-10-08_PENDIENTES_AL_FINALIZAR_CORRECCION_BD.md`](archivo/backlog/2026-10-08_PENDIENTES_AL_FINALIZAR_CORRECCION_BD.md) | Pendientes al cerrar HU-021 | [`BASE_DE_DATOS.md`](../BASE_DE_DATOS.md) §7 |

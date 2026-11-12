@@ -32,8 +32,7 @@ Contenido:
 - Cada llamada a `/web/*` y `/pdfs/*` lleva `Authorization: Bearer <access>` (JWT HS256, 60 minutos; claims `sub`, `jti`, `username`, `rol`, `iss`, `aud`, `iat`, `exp`).
 - Sin token, vencido, firmado con otra clave o revocado: `401 {"error":"Inicia sesión de nuevo."}`. Rol insuficiente: `403 {"error":"No tienes permiso para esta operación."}`.
 - Políticas: `Comercial` (roles `comercial` y `gerente_comercial`) en toda la consola; `GerenteComercial` además en `/web/admin/*`. Los casos de uso sensibles revalidan el rol.
-- `/pdfs/{archivo}` exige siempre Bearer. El enlace firmado `?t=` (ADR-011 §3), que solo emitía Google Chat, se retiró en HU-013.9 (#105): el parámetro se ignora.
-- `/chat/events` (webhook de Google Chat con JWT de Google) se retiró en HU-013.9 (#105): responde 404.
+- `/pdfs/{archivo}` exige siempre Bearer; el parámetro `?t=` se ignora.
 - `/health` y `/health/ready` son anónimos.
 
 ## 7.3 Endpoints
@@ -224,4 +223,4 @@ Los límites son por proceso: con N réplicas el límite efectivo es N veces may
 - `Cotifly.Api.Tests` lee `openapi.yaml` y recorre el contrato: cada operación está expuesta, ningún `/web/*` queda fuera del contrato, cada una responde 401 sin token, y los cuerpos reales (incluidos los DTOs y los casos de error) cumplen su esquema.
 - El CI corre `redocly lint specs/openapi.yaml` (falla con errores; hoy hay 4 warnings aceptados: servidor `localhost` de ejemplo y operaciones de salud sin respuesta 4XX).
 - La comparación contra un documento OpenAPI generado por la propia API (pendiente de ADR-010 §1) no se implementó: el recorrido de rutas y la validación de esquemas cubren la misma deriva sin agregar un generador de OpenAPI a la imagen.
-- Las pruebas manuales con Postman de los endpoints `/web/*` eran parte de HU-003.9 ([qa/paridad-python-dotnet.md](../../docs/archivo/paridad-python-dotnet.md)), cerrada por decisión del usuario (2026-10-13, HU-022.1): el Python se retiró del repositorio (tag `python-final`), así que ya no hay contra qué comparar.
+- Las pruebas manuales de los endpoints `/web/*` se hacen con la regresión manual ([qa/regresion-manual.md](qa/regresion-manual.md)).
