@@ -235,3 +235,8 @@ Decisiones que fijan cómo llama Cotifly:
 > ese cliente más los generales. Cotifly lo pide siempre con el NIT de la licitación al editar o borrar (para comprobar que el término
 > es del cliente y no general) y sin NIT solo muestra los generales. Crear, editar y borrar: rol `Comercial` en NEXO y rol activo
 > `comercial` en Cotifly; ninguna escritura se reintenta.
+> **Consulta de control (dependencia de NEXO):** cuando la respuesta con NIT trae términos de cliente, Cotifly hace un segundo
+> `GET /api/diccionario-cliente?clienteNit=COTIFLYSINCLIENTE&incluirGenerales=false` y exige que vuelva sin términos de cliente (ver
+> ADR-028). Depende de dos reglas de NEXO que no deben cambiar sin avisar: un NIT sin cliente local responde `200` sin términos propios
+> (no `400`) y `COTIFLYSINCLIENTE` nunca se crea como cliente. Si NEXO empezara a rechazar ese NIT, la consulta del diccionario de un
+> cliente con términos fallaría con el error de NEXO y no se podría editar ni borrar ninguno.

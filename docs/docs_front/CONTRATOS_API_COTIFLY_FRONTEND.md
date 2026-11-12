@@ -3283,14 +3283,15 @@ entiende NEXO. NEXO lo usa para proponer el mapeo y normalizar valores. Cotifly 
   - **Garantía (falla cerrado):** NEXO no manda el NIT de cada término, así que Cotifly solo muestra los del cliente si NEXO demuestra
     en esa operación que filtró por el NIT (la respuesta es de un solo cliente y una consulta de control con un NIT sin cliente no trae
     términos de cliente). Si no, salen solo los generales y editar o borrar un término de cliente responde 404
-    `TERMINO_NO_ENCONTRADO`. Un término de otro cliente no sale ni se edita.
+    `TERMINO_NO_ENCONTRADO`. Así, un término de otro cliente no sale ni se edita aunque NEXO deje de filtrar por NIT.
   - Sin `nit_cliente`: solo los generales.
   - `aviso` va **siempre en `null`** (el aviso `TERMINOS_CLIENTE_NO_DISPONIBLES` se retiró).
 - **`GET /web/diccionario-cliente/opciones`** → `OpcionesDiccionarioCliente` `{tipos, campos_destino, unidades, contextos}`, para los
   filtros y el formulario.
 - **`POST /web/diccionario-cliente`** (JSON `TerminoDiccionarioWeb`) → **201** `TerminoDiccionario` (`general = false`).
 - **`PUT /web/diccionario-cliente/{id}`** (JSON `TerminoDiccionarioWeb`) → **200** `TerminoDiccionario`. Reemplaza los campos
-  editables; el cliente del término no cambia (para pasarlo a otro cliente, borrar y crear).
+  editables; el cliente del término no cambia (para pasarlo a otro cliente, borrar y crear). **Mandar siempre `activo`** con el valor
+  del formulario: un `PUT` sin `activo` lo deja en `true` y reactiva un término inactivo (igual que NEXO).
 - **`DELETE /web/diccionario-cliente/{id}?nit_cliente=`** → **204**.
 - **Cuerpo `TerminoDiccionarioWeb`:** `{nit_cliente, termino, tipo, concepto, contexto?, ejemplo?, activo? = true}`.
   - `nit_cliente` es **obligatorio** en `POST`, `PUT` y `DELETE`: desde Cotifly no se crean términos generales.

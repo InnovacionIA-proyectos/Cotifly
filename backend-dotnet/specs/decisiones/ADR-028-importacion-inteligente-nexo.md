@@ -107,11 +107,21 @@ Los pliegos de licitación son justo esos archivos. La pregunta era si Cotifly r
     `TERMINO_NO_ENCONTRADO`; si la consulta de control falla, falla la operación. Un término sin `clienteId` nunca sale. La consulta
     de control solo se hace cuando la respuesta trae términos de cliente. Cotifly sigue sin resolver ni guardar el `clienteId` de NEXO
     (punto 3). Lo más fuerte sería que NEXO mandara el NIT en cada término: se le puede pedir.
+
+    **Lo que cubre y lo que no.** Cubre un NEXO que ignora `clienteNit` (o que con un NIT desconocido responde todos los clientes). No
+    cubre un NEXO que filtra pero resuelve el NIT a otro cliente: ahí ambas comprobaciones pasan, y es un defecto que corrige NEXO. Depende
+    de que NEXO responda `200` sin términos propios a un NIT sin cliente local (hoy normaliza conservando letras y filtra por un id
+    inexistente); si algún día rechazara `COTIFLYSINCLIENTE` con un 400, la consulta y la edición del diccionario de un cliente con términos
+    fallarían (cerrado, sin fuga). Cuesta una llamada más a NEXO por consulta con términos de cliente (tres por edición o borrado).
+    Comparar `clienteNombre` con el nombre que Cotifly conoce del NIT se descartó: el nombre del DW no siempre coincide con el del cliente
+    local de NEXO y un prospecto nuevo no tiene nombre en Cotifly.
   - **Escritura solo para un cliente y solo por el comercial.** `POST`, `PUT /{id}` y `DELETE /{id}?nit_cliente=` exigen el NIT (desde
     Cotifly no se crean términos generales) y la política `SoloComercial` (rol activo `comercial`; gerente y director solo consultan).
     Antes de editar o borrar se listan los términos del cliente: un término general responde `403 TERMINO_GENERAL_NO_EDITABLE` y un id
     que no está entre los del cliente, `404 TERMINO_NO_ENCONTRADO`, sin escribir en NEXO. El `POST` manda el cliente por `clienteNit`
-    (nunca `clienteId`) y el `PUT`, solo los campos editables. Ninguna escritura se reintenta.
+    (nunca `clienteId`) y el `PUT`, solo los campos editables. Ninguna escritura se reintenta. Como las plantillas y los formatos, el
+    diccionario es del cliente: no hay control de cartera (cualquier comercial mantiene el de cualquier NIT) y el rastro queda en la
+    auditoría de NEXO con el usuario del portal.
   - **Errores.** Los códigos del diccionario de NEXO pasan tal cual (`TERMINO_REQUERIDO`, `CONCEPTO_REQUERIDO`, `CAMPO_DESTINO_INVALIDO`,
     `UNIDAD_INVALIDA`, `CONTEXTO_INVALIDO`, `CONTEXTO_NO_APLICA`, `EJEMPLO_MUY_LARGO`, `404 TERMINO_NO_ENCONTRADO`, `409
     TERMINO_DUPLICADO`); otro 409 o un 404 sin código es `COSTEO_NEXO_RECHAZADA`. Los vacíos y los largos (`termino` 200, `tipo` 100,
