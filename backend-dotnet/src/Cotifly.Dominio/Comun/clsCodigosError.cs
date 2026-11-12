@@ -487,6 +487,14 @@ public static class clsCodigosError
     /// <summary>HU-044.1 (#252): una transformación que no corresponde al campo (ej. <c>fecha</c> en <c>peso</c>). 400. Mismo código que usa NEXO.</summary>
     public const string TransformacionNoAplica = "TRANSFORMACION_NO_APLICA";
 
+    /// <summary>
+    /// HU-044.3 (#254): al traducir <c>aplicar-mapeo</c>, la línea de negocio que trae NEXO no corresponde a ninguna línea activa de Cotifly
+    /// (ninguna la mapea, está inactiva, su mapeo no es válido o NEXO la reconoce para varias). La fila vuelve igual en <c>lineas[]</c> (con
+    /// <c>linea_negocio</c> en <c>null</c> y <c>linea_nexo</c> con la línea de NEXO) <b>y</b> en <c>errores[]</c>: el comercial elige la línea
+    /// en la revisión. No es un 400: es un error por fila dentro del 200.
+    /// </summary>
+    public const string LineaNegocioSinEquivalencia = "LINEA_NEGOCIO_SIN_EQUIVALENCIA";
+
     /// <summary>HU-044.1 (#252): <c>normalizar-valores</c> sin valores. 400. Mismo código que usa NEXO.</summary>
     public const string ValoresRequeridos = "VALORES_REQUERIDOS";
 
