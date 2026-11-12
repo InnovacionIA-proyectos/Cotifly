@@ -22,7 +22,7 @@ public sealed class clsAsistenteMargenPorRutaTests
     private clsHerramientasAsistenteFolio Herramientas(clsCotizacionSolicitud cotizacion)
     {
         _contexto.Iniciar(Guid.NewGuid(), cotizacion, "Importacion", "web/s1/" + cotizacion.Folio);
-        return new clsHerramientasAsistenteFolio(_contexto, Substitute.For<IClsServiciosConexosCosteoService>(), Substitute.For<IClsReSolicitudCosteoService>());
+        return new clsHerramientasAsistenteFolio(_contexto, Substitute.For<IClsServiciosConexosCosteoService>(), Substitute.For<IClsReSolicitudCosteoService>(), Substitute.For<IClsCategoriasConexos>());
     }
 
     /// <summary>Pliego de 3 rutas al 15 %: precios 1.000.000, 2.000.000 y 500.000 (los fletes son 850.000, 1.700.000 y 425.000).</summary>

@@ -17,8 +17,14 @@ public sealed class clsSugerenciaMapeoServiceTests
 {
     private static readonly Guid _usuario = Guid.NewGuid();
     private readonly IClsImportacionExcelNexo _nexo = Substitute.For<IClsImportacionExcelNexo>();
+    private readonly IClsColumnasDerivadasService _columnas = Substitute.For<IClsColumnasDerivadasService>();
 
-    private clsSugerenciaMapeoService Servicio() => new(_nexo);
+    public clsSugerenciaMapeoServiceTests() =>
+        // HU-044.9 (#292): la detección de columnas derivadas se prueba aparte; aquí es un paso que devuelve la hoja tal cual.
+        _columnas.EnriquecerAsync(Arg.Any<Guid>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<IReadOnlyList<IReadOnlyList<string>>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => new clsHojaEnriquecida(ci.ArgAt<IReadOnlyList<string>>(1), ci.ArgAt<IReadOnlyList<IReadOnlyList<string>>>(2)));
+
+    private clsSugerenciaMapeoService Servicio() => new(_nexo, _columnas);
 
     private static clsPeticionSugerirMapeo Peticion(int columnas, int filas = 2) => new(
         "900.555.111-2",
@@ -76,6 +82,22 @@ public sealed class clsSugerenciaMapeoServiceTests
         var resultado = await Servicio().SugerirAsync(_usuario, Peticion(101) with { ClienteNit = nit }, TestContext.Current.CancellationToken);
 
         resultado.Valor.MotivoSinIa.Should().Be(clsCodigosError.DemasiadasColumnas);
+    }
+
+    [Fact]
+    public async Task LaHojaEnriquecidaConLasColumnasDerivadasViajaANexo()
+    {
+        // HU-044.9 (#292): la hoja que llega a NEXO lleva las columnas derivadas agregadas antes de sugerir-mapeo.
+        _columnas.EnriquecerAsync(_usuario, Arg.Any<IReadOnlyList<string>>(), Arg.Any<IReadOnlyList<IReadOnlyList<string>>>(), Arg.Any<CancellationToken>())
+            .Returns(new clsHojaEnriquecida(["COL0", clsColumnasDerivadasService.EncabezadoVehiculo], [["Venezuela Mula", "Mula"]]));
+        clsPeticionSugerirMapeo? enviada = null;
+        _nexo.SugerirMapeoAsync(_usuario, Arg.Do<clsPeticionSugerirMapeo>(p => enviada = p), Arg.Any<CancellationToken>())
+            .Returns(new clsSugerenciaMapeo(true, null, [], [], null));
+
+        await Servicio().SugerirAsync(_usuario, Peticion(1, filas: 1), TestContext.Current.CancellationToken);
+
+        enviada!.Encabezados.Should().Equal("COL0", clsColumnasDerivadasService.EncabezadoVehiculo);
+        enviada.Filas!.Single().Should().Equal("Venezuela Mula", "Mula");
     }
 
     [Fact]
@@ -203,7 +225,7 @@ public sealed class clsSugerenciaMapeoServiceTests
         var cubicador = Substitute.For<IClsCubicador>();
         cubicador.EstaConfigurado.Returns(true);
         cubicador.ListarTiposMercanciaAsync(Arg.Any<CancellationToken>()).Returns(clsResultado<IReadOnlyList<clsTipoMercanciaCubicador>>.Exito(_catalogoMercancias));
-        var servicio = new clsSugerenciaMapeoService(_nexo, null, cubicador);
+        var servicio = new clsSugerenciaMapeoService(_nexo, _columnas, null, cubicador);
 
         var resultado = await servicio.LeerEstructuraAsync(
             _usuario, new clsEntradaLeerEstructura(new clsArchivoSubido("a.xlsx", [1]), null, null, null), TestContext.Current.CancellationToken);
@@ -225,7 +247,7 @@ public sealed class clsSugerenciaMapeoServiceTests
         var lectura = LecturaConTablas();
         _nexo.LeerEstructuraAsync(_usuario, Arg.Any<clsPeticionLeerEstructura>(), Arg.Any<CancellationToken>()).Returns(lectura);
         // Sin cubicador (catálogo no disponible): la tabla igual trae columna_mercancia y mercancias, con el código en null.
-        var servicio = new clsSugerenciaMapeoService(_nexo);
+        var servicio = new clsSugerenciaMapeoService(_nexo, _columnas);
 
         var resultado = await servicio.LeerEstructuraAsync(
             _usuario, new clsEntradaLeerEstructura(new clsArchivoSubido("a.xlsx", [1]), null, null, null), TestContext.Current.CancellationToken);

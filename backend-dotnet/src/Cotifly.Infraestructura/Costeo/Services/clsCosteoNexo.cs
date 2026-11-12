@@ -832,9 +832,12 @@ public sealed class clsCosteoNexo(
     private async Task<Aplicacion.CatalogosFlete.DTOs.clsDiccionarioAliasNexo?> AliasAsync(
         Guid usuarioId, clsSolicitudNexo solicitud, IReadOnlyCollection<string>? vehiculosNexo, CancellationToken cancellationToken)
     {
+        // HU-044.8 (#291): el código NEXO (C2/C3) y «2»/«3» los resuelve la equivalencia de SICE-TAC sin alias, así que un
+        // camión con esos códigos no fuerza a bajar el diccionario de Nexo; solo lo hace un código que ni el catálogo ni la
+        // equivalencia conocen (clsResolucionCodigosNexo incluye la equivalencia antes del catálogo).
         if (alias is null || !solicitud.Lineas.Any(l => !string.IsNullOrWhiteSpace(l.TipoVehiculo)
                 && (l.IdRecomendacionVehiculo is null || _modoCodigosCubicador != ModoCodigosCubicador.Nunca)
-                && clsCodigosConocidosNexo.Resolver(vehiculosNexo, l.TipoVehiculo) is null))
+                && Aplicacion.CatalogosFlete.Services.clsResolucionCodigosNexo.Vehiculo(vehiculosNexo, null, l.TipoVehiculo) is null))
         {
             return null;
         }

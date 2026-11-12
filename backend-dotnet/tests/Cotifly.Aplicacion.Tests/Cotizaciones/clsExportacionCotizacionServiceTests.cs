@@ -257,7 +257,8 @@ public sealed class clsExportacionCotizacionServiceTests
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(cotizacion.Folio, _ana.Id, Arg.Any<CancellationToken>()).Returns(cotizacion);
 
     private clsExportacionCotizacionService Servicio(IClsContextoUsuario usuario) =>
-        new(usuario, _cotizaciones, _usuarios, _regionales, _auditoria, _exportador, _reloj);
+        new(usuario, _cotizaciones, _usuarios, _regionales, _auditoria, _exportador, _reloj,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<clsExportacionCotizacionService>.Instance);
 
     private static clsUsuarioWeb UsuarioWeb(string nombre, string? nombreCompleto) =>
         clsUsuarioWeb.Crear(nombre, nombreCompleto, null, "Occidente", DateTimeOffset.UtcNow).Valor;

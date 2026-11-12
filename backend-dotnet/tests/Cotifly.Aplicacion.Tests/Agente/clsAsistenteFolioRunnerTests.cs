@@ -592,7 +592,7 @@ public sealed partial class clsAsistenteFolioRunnerTests
             modelo ?? _modelo, _sesiones, _usuarios, _cotizaciones, _politicas, _unidad, _reloj, _calendario,
             new clsValidadorRespuestaAgente(Options.Create(opcionesAgente), NullLogger<clsValidadorRespuestaAgente>.Instance, new clsFabricaMedidoresPrueba(), _reloj),
             _auditoria, candado ?? new clsCandadoSesionFalso(), _contextoFolio,
-            new clsHerramientasAsistenteFolio(_contextoFolio, _conexos, _reSolicitud),
+            new clsHerramientasAsistenteFolio(_contextoFolio, _conexos, _reSolicitud, Substitute.For<IClsCategoriasConexos>()),
             Options.Create(opcionesAgente), Options.Create(opcionesSesiones ?? new clsOpcionesSesiones()), logger ?? NullLogger<clsAsistenteFolioRunner>.Instance);
     }
 
