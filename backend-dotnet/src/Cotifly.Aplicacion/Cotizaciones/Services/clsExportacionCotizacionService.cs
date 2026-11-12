@@ -105,7 +105,11 @@ public sealed class clsExportacionCotizacionService(
             conPrecio ? cotizables.Sum(r => r.PrecioConexos ?? 0m) : null,
             cotizacion.PrecioFinal,
             new clsExcelInternoTotales(
-                conPrecio && cotizables.All(r => r.Interno?.CostoBruto is not null) ? cotizables.Sum(r => r.Interno!.CostoBruto!.Value) : null));
+                conPrecio && cotizables.All(r => r.Interno?.CostoBruto is not null) ? cotizables.Sum(r => r.Interno!.CostoBruto!.Value) : null))
+        {
+            // HU-045.3 (#265): el seguro de la mercancía aparte del transporte y de los conexos.
+            PrecioSeguro = conPrecio ? cotizables.Sum(r => r.ValorSeguro ?? 0m) : null,
+        };
 
         return new clsExcelCotizacion(
             cotizacion.Folio,
@@ -164,7 +168,11 @@ public sealed class clsExportacionCotizacionService(
                 conPrecio ? ruta.MargenAplicado : null,
                 ruta.MargenSugeridoMostrado,
                 ruta.OrigenMargen is { } origen ? clsCodigoEnum.ACodigo(origen) : null,
-                ruta.MetodoCalculo));
+                ruta.MetodoCalculo))
+        {
+            ValorSeguro = clsCosteoCotizacionService.ValorSeguroPdf(cotizacion, ruta),
+            SeguroSinValor = cotizacion.RutasConSeguroSinValor().Contains(ruta),
+        };
     }
 
     private static clsExcelCamion Camion(
