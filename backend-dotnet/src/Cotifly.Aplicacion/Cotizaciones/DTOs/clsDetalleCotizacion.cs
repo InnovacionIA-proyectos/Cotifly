@@ -56,7 +56,7 @@ public sealed record clsFechasCotizacion(
 /// <param name="PesoKg">Suma del peso declarado de las rutas; <c>null</c> si ninguna lo trae.</param>
 /// <param name="PrecioTransporte">Suma de la tarifa de transporte de las rutas (la del PDF).</param>
 /// <param name="PrecioConexos">Suma del precio de los servicios conexos de todas las rutas.</param>
-/// <param name="PrecioFinal">Precio de la solicitud (= <c>costeo.precio_final</c>): transporte + conexos.</param>
+/// <param name="PrecioFinal">Precio de la solicitud (= <c>costeo.precio_final</c>): transporte + conexos + seguro de la mercancía.</param>
 public sealed record clsTotalesCotizacion(
     int Rutas, int Camiones, decimal? PesoKg, decimal? PrecioTransporte, decimal? PrecioConexos, decimal? PrecioFinal)
 {
@@ -65,4 +65,10 @@ public sealed record clsTotalesCotizacion(
 
     /// <summary>HU-028.1 (#183): camiones rechazados por la Mesa de Costeo de Nexo (de cualquier ruta).</summary>
     public int CamionesRechazados { get; init; }
+
+    /// <summary>
+    /// HU-045.3 (#265, B4 de la auditoría de #264): suma del seguro de la mercancía de las rutas (<c>valor_seguro</c>, 0 si ninguna lo
+    /// incluye), con la misma regla de <c>null</c> que los demás precios: <c>precio_transporte + precio_conexos + precio_seguro = precio_final</c>.
+    /// </summary>
+    public decimal? PrecioSeguro { get; init; }
 }
