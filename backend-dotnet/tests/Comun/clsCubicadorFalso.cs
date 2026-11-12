@@ -83,7 +83,7 @@ public sealed class clsCubicadorFalso : HttpMessageHandler
     /// <summary>Si tiene valor, la recomendación responde ese error con <c>{codigo, mensaje}</c>.</summary>
     public (HttpStatusCode Estado, string Codigo)? ErrorRecomendacion { get; set; }
 
-    /// <summary>D1: cuerpo crudo del error de <see cref="ErrorRecomendacion"/> (por ejemplo el <c>{"detail": [...]}</c> de un 422 de FastAPI).</summary>
+    /// <summary>Cuerpo crudo del error de <see cref="ErrorRecomendacion"/> (por ejemplo el <c>{"detail": [...]}</c> de un 422 de FastAPI).</summary>
     public string? CuerpoErrorRecomendacion { get; set; }
 
     /// <summary>Error de la recomendación según la petición (por ejemplo, una sola ruta); <c>null</c> = responde normal.</summary>
