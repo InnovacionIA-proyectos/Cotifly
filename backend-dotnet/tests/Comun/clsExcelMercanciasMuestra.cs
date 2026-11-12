@@ -7,7 +7,7 @@ using DocumentFormat.OpenXml.Spreadsheet;
 namespace Cotifly.Pruebas.Comun;
 
 /// <summary>
-/// Excel de mercancías de una ruta para las pruebas de HU-035.1 (#202): uno normal (hoja "Mercancías", encabezado en la fila 1 y las
+/// Excel de mercancías de una ruta para las pruebas: uno normal (hoja "Mercancías", encabezado en la fila 1 y las
 /// filas desde la 2), variantes con fórmula y fecha, y archivos corruptos o maliciosos (texto renombrado, zip sin libro, bomba zip),
 /// todos generados en la propia prueba.
 /// </summary>
@@ -67,7 +67,7 @@ public static class clsExcelMercanciasMuestra
 
     /// <summary>
     /// Una fila de bobinas con el peso como fórmula (<c>=B2*1000</c>, con el valor 2000 guardado, como lo deja Excel) y una fecha de
-    /// despacho (2026-10-20) con formato de fecha colombiano.
+    /// despacho con formato de fecha colombiano.
     /// </summary>
     public static byte[] ConFormulaYFecha()
     {
@@ -123,7 +123,7 @@ public static class clsExcelMercanciasMuestra
     public static byte[] SinDatos() => Guardar(l => l.Worksheets.Add("Vacía"));
 
     /// <summary>
-    /// HU-035.2 (#213), validación: <paramref name="xlsx"/> convertido en <c>.xlsm</c> con macros por el SDK de Open XML, que deja el libro
+    /// <paramref name="xlsx"/> convertido en <c>.xlsm</c> con macros por el SDK de Open XML, que deja el libro
     /// en <c>xl/workbook2.xml</c> (no en <c>xl/workbook.xml</c> como Excel): un libro válido que ClosedXML abre por la relación
     /// <c>officeDocument</c>.
     /// </summary>
@@ -166,7 +166,7 @@ public static class clsExcelMercanciasMuestra
     public static byte[] LibroIlegible() => Zip(("[Content_Types].xml", 50), ("xl/workbook.xml", 50));
 
     /// <summary>
-    /// Libro denso (validación de HU-035.1): la hoja "Mercancías" con <paramref name="celdas"/> celdas numéricas mínimas
+    /// Libro denso: la hoja "Mercancías" con <paramref name="celdas"/> celdas numéricas mínimas
     /// (<c>&lt;c&gt;&lt;v&gt;1&lt;/v&gt;&lt;/c&gt;</c>, sin referencia, 50 por fila). Comprime a muy poco: 4 millones de celdas son unos
     /// 200 KB.
     /// </summary>
@@ -188,7 +188,7 @@ public static class clsExcelMercanciasMuestra
     }
 
     /// <summary>
-    /// XXE (validación de HU-035.1): la hoja declara una entidad externa (<c>file:///etc/passwd</c>) y la usa en una celda. Un lector que
+    /// XXE: la hoja declara una entidad externa (<c>file:///etc/passwd</c>) y la usa en una celda. Un lector que
     /// resolviera entidades devolvería el archivo del servidor.
     /// </summary>
     public static byte[] ConEntidadExterna() => ConHojaXml(Excel(1),
@@ -204,7 +204,7 @@ public static class clsExcelMercanciasMuestra
     public static byte[] ConHojaXml(byte[] libro, string xmlHoja) => ConEntrada(libro, "xl/worksheets/sheet1.xml", _ => xmlHoja);
 
     /// <summary>
-    /// HU-035.3 (#277): <paramref name="xlsx"/> con la configuración de impresión que guarda Excel al hacer «Configurar página» en cada
+    /// <paramref name="xlsx"/> con la configuración de impresión que guarda Excel al hacer «Configurar página» en cada
     /// hoja: orientación, papel, área de impresión y títulos (nombres definidos <c>_xlnm.Print_Area</c> y <c>_xlnm.Print_Titles</c>),
     /// encabezado y pie, saltos de página, ajuste a una página, márgenes, opciones de impresión y, como Excel, la parte binaria
     /// <c>xl/printerSettings/printerSettingsN.bin</c> (un DEVMODE ficticio) enlazada desde <c>pageSetup r:id</c>.
@@ -256,7 +256,7 @@ public static class clsExcelMercanciasMuestra
     }
 
     /// <summary>
-    /// HU-035.3 (#277): <paramref name="xlsx"/> con una parte más, relacionada desde el libro, de tipo <paramref name="tipo"/> y contenido
+    /// <paramref name="xlsx"/> con una parte más, relacionada desde el libro, de tipo <paramref name="tipo"/> y contenido
     /// <paramref name="datos"/> (partes binarias que guarda Excel, o partes XML maliciosas).
     /// </summary>
     public static byte[] ConParteExtra(byte[] xlsx, string tipo, byte[] datos)
@@ -275,28 +275,28 @@ public static class clsExcelMercanciasMuestra
     }
 
     /// <summary>
-    /// HU-035.3 (#277): cambia en <c>[Content_Types].xml</c> el tipo de la primera hoja por <paramref name="tipo"/> (un libro que intenta
+    /// Cambia en <c>[Content_Types].xml</c> el tipo de la primera hoja por <paramref name="tipo"/> (un libro que intenta
     /// que su hoja no se cuente como XML).
     /// </summary>
     public static byte[] ConTipoDeHoja(byte[] libro, string tipo) =>
         ConTipoDeParte(libro, "/xl/worksheets/sheet1.xml", "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml", tipo);
 
     /// <summary>
-    /// HU-035.3 (#277), auditoría: cambia en <c>[Content_Types].xml</c> el tipo de la parte principal (<c>xl/workbook.xml</c>) por
+    /// Cambia en <c>[Content_Types].xml</c> el tipo de la parte principal (<c>xl/workbook.xml</c>) por
     /// <paramref name="tipo"/>. El SDK de Open XML no fija el tipo del libro y lo abre igual.
     /// </summary>
     public static byte[] ConTipoDeLibro(byte[] libro, string tipo) =>
         ConTipoDeParte(libro, "/xl/workbook.xml", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml", tipo);
 
     /// <summary>
-    /// HU-035.3 (#277), auditoría: <paramref name="libro"/> con <paramref name="extra"/> elementos vacíos más dentro de
+    /// <paramref name="libro"/> con <paramref name="extra"/> elementos vacíos más dentro de
     /// <c>xl/workbook.xml</c>, antes de su cierre (un libro principal denso).
     /// </summary>
     public static byte[] ConLibroDenso(byte[] libro, int extra) => ConEntrada(libro, "xl/workbook.xml", xml =>
         xml.Replace("</x:workbook>", string.Concat(Enumerable.Repeat("<x:z/>", extra)) + "</x:workbook>", StringComparison.Ordinal)
            .Replace("</workbook>", string.Concat(Enumerable.Repeat("<z/>", extra)) + "</workbook>", StringComparison.Ordinal));
 
-    /// <summary>HU-035.3 (#277), auditoría: <c>xl/workbook.xml</c> de <paramref name="libro"/> con un DTD y una entidad externa.</summary>
+    /// <summary><c>xl/workbook.xml</c> de <paramref name="libro"/> con un DTD y una entidad externa.</summary>
     public static byte[] ConLibroConDtd(byte[] libro) => ConEntrada(libro, "xl/workbook.xml", xml =>
         "<?xml version=\"1.0\"?><!DOCTYPE w [<!ENTITY e SYSTEM \"file:///etc/passwd\">]>"
         + xml[(xml.IndexOf("?>", StringComparison.Ordinal) + 2)..].TrimStart('﻿'));
@@ -333,7 +333,7 @@ public static class clsExcelMercanciasMuestra
         });
 
     /// <summary>
-    /// HU-035.3 (#277), validación: <paramref name="libro"/> con <paramref name="extra"/> relaciones externas cortas más en
+    /// <paramref name="libro"/> con <paramref name="extra"/> relaciones externas cortas más en
     /// <c>xl/_rels/workbook.xml.rels</c>. Las relaciones no son partes: System.IO.Packaging las lee enteras al abrir el paquete.
     /// </summary>
     public static byte[] ConRelacionesDelLibro(byte[] libro, int extra) => ConEntrada(libro, "xl/_rels/workbook.xml.rels", xml =>

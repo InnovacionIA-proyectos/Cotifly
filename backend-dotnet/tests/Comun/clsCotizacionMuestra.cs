@@ -4,14 +4,14 @@ using Cotifly.Dominio.Margen;
 namespace Cotifly.Pruebas.Comun;
 
 /// <summary>
-/// Solicitudes de prueba sobre el agregado de HU-021 (cabecera → rutas → camiones): formulario de una ruta, licitación de N rutas y
+/// Solicitudes de prueba sobre el agregado de la cotización (cabecera → rutas → camiones): formulario de una ruta, licitación de N rutas y
 /// cotización del chat, en el estado que pida la prueba. Todo pasa por el dominio (nada de reflexión).
 /// </summary>
 public static class clsCotizacionMuestra
 {
     public static readonly DateTimeOffset Ahora = new(2026, 9, 28, 16, 0, 0, TimeSpan.Zero);
 
-    /// <summary>Cabecera sin rutas (en pesos), lista para <see cref="clsCotizacionSolicitud.RegistrarCaptura"/> (HU-021.6).</summary>
+    /// <summary>Cabecera sin rutas (en pesos), lista para <see cref="clsCotizacionSolicitud.RegistrarCaptura"/>.</summary>
     public static clsCotizacionSolicitud Cabecera(string folio = "PCN-AP-28092026-010") =>
         clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = folio, NitCliente = "900123456", ClienteNombre = "LONGYIN S.A.S." }).Valor;
 
@@ -51,7 +51,7 @@ public static class clsCotizacionMuestra
 
     /// <summary>
     /// Licitación de <paramref name="rutas"/> rutas (un camión cada una), guardada en <c>pendiente_envio</c>. Con <paramref name="tipo"/>
-    /// <c>Spot</c>, un formulario de varias rutas (HU-041.1: los conexos no se admiten en licitaciones).
+    /// <c>Spot</c>, un formulario de varias rutas (los conexos no se admiten en licitaciones).
     /// </summary>
     public static clsCotizacionSolicitud Licitacion(
         int rutas = 2, string folio = "PCN-AP-28092026-010", Guid? usuarioId = null, int? lineaNegocioId = 3,
@@ -144,7 +144,7 @@ public static class clsCotizacionMuestra
 
     /// <summary>
     /// Agrega a la ruta <paramref name="orden"/> un conexo con su costo unitario de Nexo (<paramref name="costoUnitario"/>) y recalcula
-    /// los totales y el precio. HU-043.2 (#251): el precio de la ruta y de la solicitud lo incluye a su venta unitaria
+    /// los totales y el precio. El precio de la ruta y de la solicitud lo incluye a su venta unitaria
     /// (<paramref name="ventaUnitaria"/>; <c>null</c> = al costo), sin margen.
     /// </summary>
     public static clsCotizacionSolicitud ConConexo(

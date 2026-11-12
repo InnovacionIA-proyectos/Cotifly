@@ -3,7 +3,7 @@ using ClosedXML.Excel;
 namespace Cotifly.Pruebas.Comun;
 
 /// <summary>
-/// Pliego de licitación de prueba (HU-011): un Excel con plantilla "de cliente" (portada combinada en la fila 1, encabezado en la fila
+/// Pliego de licitación de prueba: un Excel con plantilla "de cliente" (portada combinada en la fila 1, encabezado en la fila
 /// 3, una fila vacía en medio de los datos y una columna que no se mapea) y el JSON de las líneas ya mapeadas que mandaría el frontend.
 /// </summary>
 public static class clsPliegoMuestra
@@ -56,7 +56,7 @@ public static class clsPliegoMuestra
     }
 
     /// <summary>
-    /// Líneas mapeadas (objetos anónimos snake_case) de las <paramref name="filas"/> filas del pliego. HU-032 (#197): cada fila lleva su
+    /// Líneas mapeadas (objetos anónimos snake_case) de las <paramref name="filas"/> filas del pliego. Cada fila lleva su
     /// vehículo elegido (código de Nexo): una fila solo con el peso no se cubica y lo exige.
     /// </summary>
     public static object[] Lineas(int filas = 3) =>
@@ -94,7 +94,7 @@ public static class clsPliegoMuestra
         });
 
     /// <summary>
-    /// HU-044.7 (#290): JSON de <c>POST /web/licitaciones</c> con <c>origen_lectura = leer_estructura</c>; <paramref name="tabla"/> es el
+    /// JSON de <c>POST /web/licitaciones</c> con <c>origen_lectura = leer_estructura</c>; <paramref name="tabla"/> es el
     /// nombre de la tabla (solo referencia) y la <c>fila</c> de cada línea es el índice dentro de la tabla.
     /// </summary>
     public static string JsonLeerEstructura(string nit, object[] lineas, string tabla) =>

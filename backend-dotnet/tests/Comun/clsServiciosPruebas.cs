@@ -28,16 +28,16 @@ public static class clsServiciosPruebas
         {
             ["ConnectionStrings:Cotifly"] = cadenaCotifly,
             ["ConnectionStrings:Identidad"] = cadenaIdentidad,
-            // Los PDFs de las pruebas van a una carpeta temporal propia, nunca a /data/pdfs (#11).
+            // Los PDFs de las pruebas van a una carpeta temporal propia, nunca a /data/pdfs.
             ["Pdf:StorageDir"] = CarpetaPdfsTemporal(),
 
-            // HU-021.6: las pruebas del PDF legado (cotización "del chat") lo encienden; en producción está apagado.
+            // Las pruebas del PDF legado (cotización "del chat") lo encienden; en producción está apagado.
             ["Pdf:PermitirCotizacionChat"] = "true",
 
-            // #261 (HU-046): el texto de seguros de la propuesta va vacío por defecto en las pruebas (como los ambientes): quien lo prueba lo fija.
+            // El texto de seguros de la propuesta va vacío por defecto en las pruebas (como los ambientes): quien lo prueba lo fija.
             ["Pdf:TextoSeguros"] = string.Empty,
 
-            // La TRM (HU-012.1) nunca sale a la red: sin un manejador falso, las dos fuentes apuntan a hosts de prueba inexistentes.
+            // La TRM nunca sale a la red: sin un manejador falso, las dos fuentes apuntan a hosts de prueba inexistentes.
             ["Trm:Url"] = clsTrmFalso.Url,
             ["Trm:UrlDolarApi"] = clsDolarApiFalso.Url,
         };

@@ -32,7 +32,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
     public HttpStatusCode? AltaFalla { get; set; }
 
     /// <summary>
-    /// HU-030.1 (#184): altas rechazadas con <c>400 PESO_INCONSISTENTE</c>. #250 (DU §8), como Nexo: se rechaza una línea con posiciones
+    /// Altas rechazadas con <c>400 PESO_INCONSISTENTE</c>. Como Nexo (DU §8): se rechaza una línea con posiciones
     /// con peso cuya <c>Σ cantidad × pesoKg</c> supera <c>peso × 1,01</c>; un peso mayor que la suma (la tara) se acepta
     /// (<see cref="LineaConPesoInconsistente"/>).
     /// </summary>
@@ -41,24 +41,24 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
     private int _altasPesoInconsistente;
 
     /// <summary>
-    /// HU-023.3 (#158): si tiene valor, el alta (<c>POST /api/captura-solicitudes</c>) lo espera antes de responder: sirve para hacer
+    /// Si tiene valor, el alta (<c>POST /api/captura-solicitudes</c>) lo espera antes de responder: sirve para hacer
     /// otra petición a la API mientras el envío a Nexo está en curso (carreras).
     /// </summary>
     public Func<Task>? AntesDelAlta { get; set; }
 
     /// <summary>
     /// Si es verdadero, <c>GET /api/solicitudes/{id}</c> responde 503 para las solicitudes cuya cotización ya tiene resultado: la
-    /// relectura del costeo justo después de marcar el resultado falla (HU-013.14).
+    /// relectura del costeo justo después de marcar el resultado falla.
     /// </summary>
     public bool FallarConsultaTrasResultado { get; set; }
 
     /// <summary>
-    /// E2E 2026-10-16: si es mayor que cero, los siguientes N <c>GET /api/solicitudes/{id}</c> responden <c>409 CONFLICTO_CONCURRENCIA</c>
+    /// Si es mayor que cero, los siguientes N <c>GET /api/solicitudes/{id}</c> responden <c>409 CONFLICTO_CONCURRENCIA</c>
     /// (dos lecturas a la vez: "abrir" la solicitud cambia su estado en Nexo).
     /// </summary>
     public int ConflictosPasajerosSolicitud { get; set; }
 
-    /// <summary>Si es verdadero, <c>GET /api/cotizaciones/por-solicitud/{id}</c> no existe (un Nexo anterior a S5-HU-20.1, #286): 404.</summary>
+    /// <summary>Si es verdadero, <c>GET /api/cotizaciones/por-solicitud/{id}</c> no existe (un Nexo sin esa consulta): 404.</summary>
     public bool SinCotizacionPorSolicitud { get; set; }
 
     /// <summary>Cuántas peticiones con <paramref name="metodo"/> recibió <paramref name="ruta"/> (ruta exacta, sin la consulta).</summary>
@@ -72,7 +72,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
     /// <summary>Si es mayor que cero, los siguientes N GET responden <c>429 DEMASIADAS_SOLICITUDES</c> con <c>Retry-After</c> (<see cref="SegundosRetryAfter"/>).</summary>
     public int LecturasLimitadas { get; set; }
 
-    /// <summary>Segundos del <c>Retry-After</c> de esos 429 (30 por defecto, el que manda Nexo hoy).</summary>
+    /// <summary>Segundos del <c>Retry-After</c> de esos 429 (30 por defecto, el que manda Nexo).</summary>
     public int SegundosRetryAfter { get; set; } = 30;
 
     /// <summary>Si es verdadero, el alta auto-costea la línea con <see cref="FleteAutocosteo"/> (como la Biblioteca de Nexo).</summary>
@@ -81,7 +81,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
     public decimal FleteAutocosteo { get; set; } = 2_550_000m;
 
     /// <summary>
-    /// HU-014 (#188): si es verdadero, el alta auto-costea como Nexo según su contrato (<c>COTIFLY-CONTRATO.md</c> §3.4 y §4): una línea
+    /// Si es verdadero, el alta auto-costea como Nexo según su contrato (<c>COTIFLY-CONTRATO.md</c> §3.4 y §4): una línea
     /// con un <c>tipoVehiculo</c> que no está entre los oficiales de <see cref="TiposVehiculo"/> (comparado como Nexo: sin tildes ni mayúsculas, con <c>_</c>
     /// y <c>-</c> como espacio) nace en cuarentena (<see cref="Cuarentenas"/>) y no se costea; una línea de Cupo (o sin clase de viaje)
     /// sin vehículo queda <c>PorCostear</c>; las demás se costean con <see cref="FleteAutocosteo"/>.
@@ -91,7 +91,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
     /// <summary>Líneas que nacieron en cuarentena (código de vehículo que Nexo no conoce) con <see cref="AutoCostearSegunContrato"/>.</summary>
     public int Cuarentenas { get; private set; }
 
-    /// <summary>HU-018.1 (#155): <c>scorePrioridad</c> que responde el alta (<c>CapturaResultDto</c>); <c>null</c> lo manda en null.</summary>
+    /// <summary><c>scorePrioridad</c> que responde el alta (<c>CapturaResultDto</c>); <c>null</c> lo manda en null.</summary>
     public decimal? ScorePrioridadAlta { get; set; } = 0.5m;
 
     public IReadOnlyList<clsPeticionNexo> Peticiones => [.. _peticiones];
@@ -100,7 +100,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
     public IReadOnlyList<clsPeticionNexo> PeticionesSinCatalogos =>
         [.. _peticiones.Where(p => !p.Url.AbsolutePath.StartsWith("/api/catalogos/", StringComparison.Ordinal))];
 
-    /// <summary>Catálogo de <c>GET /api/catalogos/tipos-vehiculo</c> (HU-013.10): <c>codigo</c>, <c>descripcion</c>, <c>esCatalogoOficial</c>.</summary>
+    /// <summary>Catálogo de <c>GET /api/catalogos/tipos-vehiculo</c>: <c>codigo</c>, <c>descripcion</c>, <c>esCatalogoOficial</c>.</summary>
     public List<(string? Codigo, string? Descripcion, bool Oficial)> TiposVehiculo { get; } =
     [
         ("2", "Camión 2 ejes", true), ("2S3", "Tractocamión 2 ejes, semi 3", true), ("3S3", "Tractocamión 3 ejes, semi 3", true),
@@ -110,7 +110,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
     public List<string> ClasesViaje { get; } = ["Contenedor", "Cupo", "Carga Suelta", "Extradimensionado"];
 
     /// <summary>
-    /// HU-031.1 (#194): el diccionario de <c>GET /api/catalogos/alias</c> (NEXO #321): texto, tipo (<c>Vehiculo</c> | <c>Contenedor</c>),
+    /// El diccionario de <c>GET /api/catalogos/alias</c>: texto, tipo (<c>Vehiculo</c> | <c>Contenedor</c>),
     /// código oficial y si está activo. Vacío por defecto. Para hacerlo fallar: <c>CatalogosFallidos.Add("alias")</c>.
     /// </summary>
     public List<(string Alias, string Tipo, string Codigo, bool Activo)> Alias { get; } = [];
@@ -122,7 +122,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
     public List<string> LineasNegocio { get; } = ["PuertoAInterior", "InteriorAPuerto", "Nacional", "DevolucionContenedor", "Andino", "Licitaciones"];
 
     /// <summary>
-    /// Catálogo de <c>GET /api/captura-solicitudes/municipios</c> (HU-013.11): resuelve las ciudades de <see cref="clsPliegoMuestra"/> y
+    /// Catálogo de <c>GET /api/captura-solicitudes/municipios</c>: resuelve las ciudades de <see cref="clsPliegoMuestra"/> y
     /// trae "La Unión" en tres departamentos (el caso ambiguo).
     /// </summary>
     public List<(int Id, string? CodigoDane, string Municipio, string Departamento)> Municipios { get; } =
@@ -199,7 +199,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
             s.Estado = "EnCosteo";
         });
 
-    /// <summary>La Mesa de Nexo costea solo la línea <paramref name="indice"/> (base 0) de una solicitud de varias líneas (HU-011).</summary>
+    /// <summary>La Mesa de Nexo costea solo la línea <paramref name="indice"/> (base 0) de una solicitud de varias líneas.</summary>
     public void CostearLinea(string solicitudId, int indice, decimal flete, decimal? retorno = null) =>
         Con(solicitudId, s =>
         {
@@ -210,7 +210,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
 
     /// <summary>
     /// Si tiene valor, <c>GET /api/solicitudes/{id}</c> devuelve las líneas barajadas con esta semilla (como Nexo, sin <c>OrderBy</c>);
-    /// sin valor, al revés del orden de captura (HU-021.7, #134).
+    /// sin valor, al revés del orden de captura.
     /// </summary>
     public int? SemillaOrdenLineas { get; set; }
 
@@ -240,7 +240,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
     }
 
     /// <summary>
-    /// HU-044.8 (#291): el código con el que Nexo compara un tipo de vehículo: el código NEXO de SICE-TAC
+    /// El código con el que Nexo compara un tipo de vehículo: el código NEXO de SICE-TAC
     /// (<c>C2</c>/<c>C3</c>, de <see cref="Cotifly.Dominio.Cotizaciones.clsEquivalenciaVehiculoNexo"/>) si está en el mapeo, o el
     /// código normalizado como Nexo si no. Así «2» del catálogo de SAP y <c>C2</c> son el mismo vehículo.
     /// </summary>
@@ -282,7 +282,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
     public long? UltimoArchivoAnalizado { get; private set; }
 
     /// <summary>
-    /// Agrega un servicio conexo a la cotización de Nexo: <paramref name="valorAplicado"/> es su costo y, HU-043.2 (#251),
+    /// Agrega un servicio conexo a la cotización de Nexo: <paramref name="valorAplicado"/> es su costo y
     /// <paramref name="valorVenta"/> su venta (<c>valorVenta</c>); sin ella Nexo guarda el costo como venta (contrato §7.1).
     /// </summary>
     public void AgregarConexo(
@@ -295,13 +295,13 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
         });
 
     /// <summary>
-    /// HU-043.2 (#251): simula un Nexo ANTERIOR a S6-HU-38.2: la cotización no trae <c>precioVentaUnitario</c> ni <c>valorVenta</c> en sus
+    /// Simula un Nexo sin la venta de los conexos: la cotización no trae <c>precioVentaUnitario</c> ni <c>valorVenta</c> en sus
     /// conexos (y su <c>total</c> suma el costo) y el catálogo no trae <c>precioVenta</c>.
     /// </summary>
     public bool SinPrecioVenta { get; set; }
 
     /// <summary>
-    /// HU-043.2 (#251): fija en la cotización de <paramref name="solicitudId"/> la venta unitaria de los conexos del servicio
+    /// Fija en la cotización de <paramref name="solicitudId"/> la venta unitaria de los conexos del servicio
     /// <paramref name="servicioConexoId"/> (como si Nexo la hubiera fijado al agregarlos con otro precio de su biblioteca).
     /// </summary>
     public void FijarVentaConexo(string solicitudId, string servicioConexoId, decimal ventaUnitaria) =>
@@ -319,13 +319,13 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
         });
 
     /// <summary>
-    /// #259: índices de línea que la cotización devuelve partidos en DOS líneas con el mismo <c>lineaSolicitudId</c> (el flete repartido),
+    /// Índices de línea que la cotización devuelve partidos en DOS líneas con el mismo <c>lineaSolicitudId</c> (el flete repartido),
     /// como una Mesa que parte la línea de un camión. La segunda (<see cref="LineaPartidaDe"/>) sale después en la lista pero su id es menor
     /// en orden ordinal: así una prueba distingue "la primera por id" de "la primera de la lista".
     /// </summary>
     public HashSet<int> LineasPartidas { get; } = [];
 
-    /// <summary>#259: id de la segunda línea de la cotización de una línea partida (<see cref="LineasPartidas"/>).</summary>
+    /// <summary>Id de la segunda línea de la cotización de una línea partida (<see cref="LineasPartidas"/>).</summary>
     public string? LineaPartidaDe(string solicitudId, int indice) => LineaCotizacionDe(solicitudId, indice) is { } id ? LineaPartida(id) : null;
 
     private static string LineaPartida(string lineaId) => "0-" + lineaId;
@@ -349,7 +349,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
     public ConcurrentDictionary<string, HttpStatusCode> RechazosConexo { get; } = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Agrega un servicio al catálogo de <c>GET /api/servicios-conexos</c> (<c>clsServicioConexoDto</c>). HU-043.2 (#251):
+    /// Agrega un servicio al catálogo de <c>GET /api/servicios-conexos</c> (<c>clsServicioConexoDto</c>).
     /// <paramref name="precioVenta"/> es su precio de venta (<c>null</c>: sin precio de venta, se cotiza al costo).
     /// </summary>
     public clsNexoFalso ConServicioConexo(
@@ -391,7 +391,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
 
     public void Descartar(string solicitudId) => Con(solicitudId, s => s.Estado = "Descartada");
 
-    /// <summary>HU-028 (#186): si tiene valor, <c>POST /api/solicitudes/{id}/rechazar</c> responde este estado (con <see cref="CodigoRechazoFalla"/>).</summary>
+    /// <summary>Si tiene valor, <c>POST /api/solicitudes/{id}/rechazar</c> responde este estado (con <see cref="CodigoRechazoFalla"/>).</summary>
     public HttpStatusCode? RechazoFalla { get; set; }
 
     /// <summary>Código de Nexo de la respuesta de <see cref="RechazoFalla"/>.</summary>
@@ -399,7 +399,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
 
     private readonly List<(string SolicitudId, string Motivo, string? Comentario)> _rechazos = [];
 
-    /// <summary>HU-028: los rechazos que Nexo aplicó (204), en orden, con su motivo y su comentario.</summary>
+    /// <summary>Los rechazos que Nexo aplicó (204), en orden, con su motivo y su comentario.</summary>
     public IReadOnlyList<(string SolicitudId, string Motivo, string? Comentario)> Rechazos
     {
         get
@@ -411,7 +411,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
         }
     }
 
-    /// <summary>HU-028: cuántas veces se llamó a <c>POST /api/solicitudes/{id}/rechazar</c> (con éxito o sin él).</summary>
+    /// <summary>Cuántas veces se llamó a <c>POST /api/solicitudes/{id}/rechazar</c> (con éxito o sin él).</summary>
     public int IntentosRechazo =>
         Peticiones.Count(p => p.Metodo == HttpMethod.Post && p.Url.AbsolutePath.EndsWith("/rechazar", StringComparison.Ordinal));
 
@@ -442,7 +442,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
         }
     }
 
-    /// <summary>HU-018.1 (#155): el <c>motivo</c> y el <c>comentario</c> con que se marcó el resultado (<c>null</c> si no hay).</summary>
+    /// <summary>El <c>motivo</c> y el <c>comentario</c> con que se marcó el resultado (<c>null</c> si no hay).</summary>
     public (string? Motivo, string? Comentario) MotivoDelResultado(string solicitudId)
     {
         lock (_candado)
@@ -481,7 +481,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
             request.Headers.Accept.ToString(),
             cuerpo));
 
-        // Como clsIdentidadPortalAuthenticationHandler de Nexo: sin X-Portal-clsUsuario-Id numérico, 401 (HU-023.4, #159).
+        // Como clsIdentidadPortalAuthenticationHandler de Nexo: sin X-Portal-clsUsuario-Id numérico, 401.
         if (!long.TryParse(identidad, out _))
         {
             return Error(HttpStatusCode.Unauthorized, "SESION_INVALIDA", "La sesión no es válida. Ingrese nuevamente desde el portal.");
@@ -542,7 +542,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
                     CotizacionPorSolicitud(r["/api/cotizaciones/por-solicitud/".Length..]),
                 ("GET", var r) when r.StartsWith("/api/cotizaciones/", StringComparison.Ordinal) => LeerCotizacion(r["/api/cotizaciones/".Length..]),
                 ("GET", "/api/servicios-conexos") => CatalogoConexos(request.RequestUri),
-                // HU-044.1 (#252): importación inteligente (clsNexoFalsoImportacion.cs).
+                // Importación inteligente (clsNexoFalsoImportacion.cs).
                 (var m, var r) when EsRutaImportacion(r) => Importacion(m, r, request.RequestUri!, cuerpo, formulario),
                 _ => Error(HttpStatusCode.NotFound, "RUTA_NO_ENCONTRADA", $"{request.Method} {ruta}"),
             };
@@ -604,7 +604,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
     }
 
     /// <summary>
-    /// HU-023 (#176): <c>GET /api/captura-solicitudes/ciudades?departamento=&amp;q=</c> como Nexo (<c>clsBuscarCiudadesQueryHandler</c>):
+    /// <c>GET /api/captura-solicitudes/ciudades?departamento=&amp;q=</c> como Nexo (<c>clsBuscarCiudadesQueryHandler</c>):
     /// sin tildes ni mayúsculas, el texto dentro del municipio y el departamento exacto, ordenado por nombre, máximo 50, sin <c>pais</c>.
     /// </summary>
     private HttpResponseMessage Ciudades(Uri url)
@@ -624,8 +624,8 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
     }
 
     /// <summary>
-    /// HU-030.1 (#184): el índice (base 0) de la primera línea del alta que Nexo rechaza con <c>PESO_INCONSISTENTE</c>; <c>null</c> si
-    /// ninguna o no traen posiciones. #250 (DU §8): la regla es asimétrica: <c>peso</c> es el total con tara, así que solo se rechaza una
+    /// El índice (base 0) de la primera línea del alta que Nexo rechaza con <c>PESO_INCONSISTENTE</c>; <c>null</c> si
+    /// ninguna o no traen posiciones. Según DU §8, la regla es asimétrica: <c>peso</c> es el total con tara, así que solo se rechaza una
     /// suma <c>cantidad × pesoKg</c> de las posiciones que SUPERA el peso en más de 1 % (<c>suma &gt; peso × 1,01</c>); un peso mayor que la
     /// suma (la tara) es válido.
     /// </summary>
@@ -657,7 +657,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
     }
 
     /// <summary>
-    /// #278: códigos de las altas que el Nexo falso rechazó por las reglas del contrato único (<see cref="RechazoContrato"/>), en orden. Una
+    /// Códigos de las altas que el Nexo falso rechazó por las reglas del contrato único (<see cref="RechazoContrato"/>), en orden. Una
     /// captura de Cotifly bien validada nunca debería llegar a ninguno.
     /// </summary>
     public IReadOnlyList<string> RechazosContrato
@@ -681,7 +681,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
     private static string ClaveLinea(string texto) => NormalizarComoNexo(texto).Replace(" ", string.Empty, StringComparison.Ordinal);
 
     /// <summary>
-    /// #278 (contrato único de NEXO del 2026-11-04, DU §5 y §8): el primer rechazo del alta por las reglas nuevas, o <c>null</c>. Como NEXO:
+    /// Contrato único de NEXO (DU §5 y §8): el primer rechazo del alta por las reglas nuevas, o <c>null</c>. Como NEXO:
     /// <c>lineaNegocio</c> que no es una de las seis (vacío = sin línea) → <c>LINEA_NEGOCIO_INVALIDO</c> con el número de línea y el valor;
     /// más de 200 posiciones o más de 10.000 unidades en una línea → <c>CUBICACION_DEMASIADO_GRANDE</c>; una posición sin <c>pesoKg</c>
     /// (&gt; 0, por unidad) o con <c>cantidad</c> fuera de 1–10.000, o <c>horasCargue</c>/<c>horasDescargue</c> fuera de 0–240 o sin su
@@ -739,7 +739,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
 
     private const string CodigoValidacion = "VALIDATION_ERROR";
 
-    /// <summary>#278 (DU §5): las horas de cargue y descargue van las dos o ninguna, cada una entre 0 y 240.</summary>
+    /// <summary>DU §5: las horas de cargue y descargue van las dos o ninguna, cada una entre 0 y 240.</summary>
     private static string? Horas(JsonNode? nodo, string donde)
     {
         var cargue = nodo?["horasCargue"] is JsonValue c ? c.GetValue<decimal>() : (decimal?)null;
@@ -752,7 +752,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
         return cargue is < 0 or > 240 || descargue is < 0 or > 240 ? $"{donde}: las horas van de 0 a 240." : null;
     }
 
-    /// <summary>HU-023 (#176): la query de cada <c>GET /api/captura-solicitudes/ciudades</c> recibida.</summary>
+    /// <summary>La query de cada <c>GET /api/captura-solicitudes/ciudades</c> recibida.</summary>
     public ConcurrentQueue<string> CiudadesConsultadas { get; } = new();
 
     private HttpResponseMessage Alta(string? cuerpo)
@@ -816,7 +816,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
             {
                 var vehiculo = segunContrato[i]?["tipoVehiculo"]?.GetValue<string>();
                 var clase = segunContrato[i]?["claseViaje"]?.GetValue<string>();
-                // HU-044.8 (#291): Nexo conoce el código NEXO de SICE-TAC (C2/C3) aunque su catálogo de SAP traiga «2»/«3»
+                // Nexo conoce el código NEXO de SICE-TAC (C2/C3) aunque su catálogo de SAP traiga «2»/«3»
                 // (tbl_mapeo_vehiculo_tarifario); se compara por el código NEXO canónico, así que C2 (↔ «2») NO nace en cuarentena.
                 if (vehiculo is not null && !TiposVehiculo.Any(t => t.Oficial && t.Codigo is not null && CodigoNexoCanonico(t.Codigo) == CodigoNexoCanonico(vehiculo)))
                 {
@@ -901,33 +901,33 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
                 peso = s.Lineas[i].Peso,
                 tipoVehiculo = s.Lineas[i].TipoVehiculo,
                 carroceria = s.Lineas[i].Carroceria,
-                // HU-023.4 (#159): clsLineaCosteoDto devuelve lo que recibió (null si no viajó).
+                // clsLineaCosteoDto devuelve lo que recibió (null si no viajó).
                 grupoRutaId = s.Lineas[i].GrupoRutaId,
                 idRecomendacionVehiculo = s.Lineas[i].IdRecomendacionVehiculo,
-                // Nexo #297 (S5-HU-20.5): posición de la línea en el arreglo del alta, desde 1.
+                // Posición de la línea en el arreglo del alta, desde 1.
                 numeroLinea = i + 1,
             })).ToArray(),
         });
     }
 
     /// <summary>
-    /// #181 (Nexo #309): con <see cref="ExponerSituacionLinea"/>, la línea lleva al final <c>estadoLinea</c> (minúscula inicial:
+    /// Con <see cref="ExponerSituacionLinea"/>, la línea lleva al final <c>estadoLinea</c> (minúscula inicial:
     /// <c>porCostear</c> o <c>autoResuelta</c>) y <c>motivoPendiente</c> (el de <see cref="MarcarMotivoPendiente"/>, solo si sigue por
-    /// costear). Sin ella, la línea sale como la de un Nexo anterior a #309: sin esos campos.
+    /// costear). Sin ella, la línea sale sin esos campos, como en un Nexo que no los expone.
     /// </summary>
     private JsonNode ConSituacionLinea(clsSolicitudFalsa s, int indice, object linea)
     {
         var nodo = JsonSerializer.SerializeToNode(linea, _json)!;
         if (s.Rechazos.TryGetValue(indice, out var rechazo))
         {
-            // HU-028.1 (#183, Nexo #320): un Nexo que rechaza líneas siempre trae estadoLinea; motivoRechazo al final de la línea.
+            // Un Nexo que rechaza líneas siempre trae estadoLinea; motivoRechazo al final de la línea.
             nodo["estadoLinea"] = "rechazada";
             nodo["motivoPendiente"] = null;
             nodo["motivoRechazo"] = rechazo;
             return nodo;
         }
 
-        // Validación #183: un Nexo con #320 trae estadoLinea en TODAS las líneas (también después de deshacer un rechazo); Cotifly solo
+        // Un Nexo que rechaza líneas trae estadoLinea en TODAS las líneas (también después de deshacer un rechazo); Cotifly solo
         // deshace el rechazo con esa confirmación.
         if (ExponerSituacionLinea || s.ConRechazoLinea)
         {
@@ -939,14 +939,14 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
         return nodo;
     }
 
-    /// <summary>#181: ¿<c>GET /api/solicitudes/{id}</c> trae <c>estadoLinea</c> y <c>motivoPendiente</c> por línea (Nexo con #309)? Por defecto no.</summary>
+    /// <summary>¿<c>GET /api/solicitudes/{id}</c> trae <c>estadoLinea</c> y <c>motivoPendiente</c> por línea? Por defecto no.</summary>
     public bool ExponerSituacionLinea { get; set; }
 
-    /// <summary>#181: Nexo deja la línea <paramref name="indice"/> (base 0, orden de captura) pendiente con este motivo.</summary>
+    /// <summary>Nexo deja la línea <paramref name="indice"/> (base 0, orden de captura) pendiente con este motivo.</summary>
     public void MarcarMotivoPendiente(string solicitudId, int indice, string motivo) => Con(solicitudId, s => s.Motivos[indice] = motivo);
 
     /// <summary>
-    /// HU-028.1 (#183, Nexo #320: <c>POST /api/cotizaciones/{id}/lineas/{lineaSolicitudId}/rechazo</c>): la Mesa de Costeo rechaza la línea
+    /// <c>POST /api/cotizaciones/{id}/lineas/{lineaSolicitudId}/rechazo</c>: la Mesa de Costeo rechaza la línea
     /// <paramref name="indice"/> (base 0, orden de captura) con <paramref name="motivo"/>. Como Nexo: solo con la cotización en borrador
     /// (<c>COTIZACION_NO_EDITABLE</c>), la línea sin flete (<c>LINEA_CON_FLETE</c>) y no rechazada antes (<c>LINEA_YA_RECHAZADA</c>);
     /// motivo obligatorio de hasta 500 (<c>MOTIVO_RECHAZO_REQUERIDO</c>). El falso lanza <see cref="InvalidOperationException"/> con el código.
@@ -981,7 +981,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
         });
 
     /// <summary>
-    /// HU-028.1 (#183, Nexo #320: <c>DELETE .../rechazo</c>): la Mesa deshace el rechazo de la línea <paramref name="indice"/>. Como Nexo,
+    /// <c>DELETE .../rechazo</c>: la Mesa deshace el rechazo de la línea <paramref name="indice"/>. Como Nexo,
     /// solo con la cotización sin entregar (<c>COTIZACION_NO_EDITABLE</c>, 409) y la línea rechazada (<c>LINEA_NO_RECHAZADA</c>).
     /// </summary>
     public void DeshacerRechazoLinea(string solicitudId, int indice) =>
@@ -1003,7 +1003,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
         s.Rechazos.ContainsKey(indice) ? "Rechazada" : s.Cotizacion?.Fletes.ContainsKey(indice) == true ? "AutoResuelta" : "PorCostear";
 
     /// <summary>
-    /// <c>GET /api/cotizaciones/por-solicitud/{solicitudId}</c> (Nexo S5-HU-20.1, #286): la cotización que ya existe, SIN crear nada; 204 si
+    /// <c>GET /api/cotizaciones/por-solicitud/{solicitudId}</c>: la cotización que ya existe, SIN crear nada; 204 si
     /// todavía no hay (la crean el autocosteo, la Mesa o el "crear o recuperar").
     /// </summary>
     private HttpResponseMessage CotizacionPorSolicitud(string solicitudId)
@@ -1034,7 +1034,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
     }
 
     /// <summary>
-    /// HU-028 (#186): <c>POST /api/solicitudes/{id}/rechazar</c> como <c>clsRechazarSolicitudCommand</c> de Nexo: motivo de 1 a 100 y
+    /// <c>POST /api/solicitudes/{id}/rechazar</c> como <c>clsRechazarSolicitudCommand</c> de Nexo: motivo de 1 a 100 y
     /// comentario hasta 500 (400 si no), 404 <c>SOLICITUD_NO_ENCONTRADA</c>, 409 <c>SOLICITUD_YA_DESCARTADA</c>; si no, la deja
     /// <c>Descartada</c> y responde 204.
     /// </summary>
@@ -1140,7 +1140,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
             };
             if (!SinPrecioVenta)
             {
-                // HU-043.2 (#251, S6-HU-38.2): precioVenta puede ser null (sin precio de venta: se cotiza al costo).
+                // precioVenta puede ser null (sin precio de venta: se cotiza al costo).
                 item["precioVenta"] = x.PrecioVenta;
             }
 
@@ -1213,7 +1213,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
             }
 
             var valor = item?["valorAplicado"]?.GetValue<decimal>() ?? servicio.Costo * cantidad;
-            // HU-043.2 (#251, S6-HU-38.2): la venta unitaria se fija al agregar: la de la biblioteca o, sin ella, el costo.
+            // La venta unitaria se fija al agregar: la de la biblioteca o, sin ella, el costo.
             nuevos.Add((Guid.NewGuid().ToString(), servicio.Nombre, servicio.Categoria, cantidad, valor, servicio.PrecioVenta ?? servicio.Costo, servicio.Id, lineaId));
         }
 
@@ -1238,7 +1238,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
     private object Cotizacion(clsSolicitudFalsa s)
     {
         var c = s.Cotizacion!;
-        // #259: con el índice en LineasPartidas la línea sale como DOS líneas de la cotización con el mismo lineaSolicitudId (el flete
+        // Con el índice en LineasPartidas la línea sale como DOS líneas de la cotización con el mismo lineaSolicitudId (el flete
         // repartido), como una Mesa que parte la línea de un camión.
         var lineas = c.Fletes.OrderByDescending(f => f.Key).Where(f => f.Key < s.LineaIds.Count).SelectMany(f => LineasPartidas.Contains(f.Key)
             ? new[]
@@ -1267,7 +1267,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
             };
             if (!SinPrecioVenta)
             {
-                // HU-043.2 (#251, contrato §7.1): la venta viaja aparte del costo y nunca es null.
+                // Contrato §7.1: la venta viaja aparte del costo y nunca es null.
                 conexo["precioVentaUnitario"] = x.VentaUnitaria;
                 conexo["valorVenta"] = x.Venta;
             }
@@ -1280,7 +1280,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
             solicitudId = s.Id,
             estado = c.Estado,
             resultado = c.Resultado,
-            // HU-043.2 (#251): el total de Nexo suma la VENTA de los conexos (antes de S6-HU-38.2, el costo).
+            // El total de Nexo suma la VENTA de los conexos.
             total = lineas.Sum(l => l.valorFlete + (l.valorAprovisionamiento ?? 0m) + (l.valorRetornoContenedor ?? 0m))
                     + c.Conexos.Sum(x => SinPrecioVenta ? x.Valor : x.Venta),
             entregadaAt = c.Estado == "Entregada" ? DateTimeOffset.UtcNow : (DateTimeOffset?)null,
@@ -1335,13 +1335,13 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
         public string Estado { get; set; } = "Pendiente";
         public clsCotizacionFalsa? Cotizacion { get; set; }
 
-        /// <summary>#181: motivo pendiente por índice de línea (orden de captura).</summary>
+        /// <summary>Motivo pendiente por índice de línea (orden de captura).</summary>
         public Dictionary<int, string> Motivos { get; } = [];
 
-        /// <summary>HU-028.1 (#183, Nexo #320): motivo del rechazo de la Mesa por índice de línea (orden de captura).</summary>
+        /// <summary>Motivo del rechazo de la Mesa por índice de línea (orden de captura).</summary>
         public Dictionary<int, string> Rechazos { get; } = [];
 
-        /// <summary>Validación #183: la solicitud viene de un Nexo con #320 (alguna línea se rechazó): todas sus líneas traen estadoLinea.</summary>
+        /// <summary>La solicitud tiene alguna línea rechazada: todas sus líneas traen estadoLinea.</summary>
         public bool ConRechazoLinea { get; set; }
     }
 
@@ -1354,7 +1354,7 @@ public sealed partial class clsNexoFalso : HttpMessageHandler
         public string? Comentario { get; set; }
         /// <summary>Fletes por índice de línea de la solicitud (base 0).</summary>
         public Dictionary<int, (decimal Flete, decimal? Aprovisionamiento, decimal? Retorno)> Fletes { get; } = [];
-        /// <summary>Conexos: costo (<c>valorAplicado</c>) y, HU-043.2 (#251), venta unitaria y venta (<c>valorVenta</c>).</summary>
+        /// <summary>Conexos: costo (<c>valorAplicado</c>), venta unitaria y venta (<c>valorVenta</c>).</summary>
         public List<(string Id, string Nombre, string Categoria, decimal Cantidad, decimal Valor, decimal VentaUnitaria, decimal Venta)> Conexos { get; } = [];
 
         /// <summary>Servicio del catálogo y línea de la cotización de cada conexo agregado por <c>POST .../conexos</c>.</summary>

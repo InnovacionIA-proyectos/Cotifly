@@ -5,7 +5,7 @@ namespace Cotifly.Pruebas.Comun;
 /// <summary>
 /// Base auxiliar de una sola prueba (nombre único, creada con <see cref="clsBaseDatosPruebas.CrearBaseConScriptsAsync"/>). Se usa
 /// con <c>await using</c>: al salir, también si la prueba falla, cierra las conexiones abiertas
-/// (<c>SINGLE_USER WITH ROLLBACK IMMEDIATE</c>) y la borra, para no acumular bases en el SQL Server compartido (#91).
+/// (<c>SINGLE_USER WITH ROLLBACK IMMEDIATE</c>) y la borra, para no acumular bases en el SQL Server compartido.
 /// </summary>
 public sealed class clsBaseAuxiliarPruebas : IAsyncDisposable
 {
