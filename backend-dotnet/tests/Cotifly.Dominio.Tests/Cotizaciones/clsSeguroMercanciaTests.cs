@@ -5,9 +5,9 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
 /// <summary>
-/// ADR-032: el seguro de la mercancía por ruta. <c>costoSeguro = round(valorMercancia × tasa, 0)</c> en pesos, sin margen,
-/// sumado al precio de la ruta después del margen y de la venta de los conexos; en USD, convertido con la TRM de la solicitud
-/// La tasa se copia en la ruta al marcarlo y otra vez si cambia el valor de la mercancía.
+/// ADR-032: el seguro de la mercancía por ruta. <c>costoSeguro = valorMercancia × tasa</c> en pesos, sin redondear a pesos (se guarda
+/// con los 2 decimales de la columna) y sin margen, sumado al precio de la ruta después del margen y de la venta de los conexos; en USD,
+/// convertido con la TRM de la solicitud. La tasa se copia en la ruta al marcarlo y otra vez si cambia el valor de la mercancía.
 /// </summary>
 public sealed class clsSeguroMercanciaTests
 {
