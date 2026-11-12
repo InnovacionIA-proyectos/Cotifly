@@ -149,8 +149,11 @@ public sealed class clsDetalleCotizacionEndpointsTests : IDisposable
         deGerente.GetProperty("cotizacion").GetProperty("comercial").GetProperty("nombre_completo").GetString().Should().Be("Ana Occidente");
         // HU-039.1 (#218): el gerente ve el mismo costeo que el dueño salvo el costo bruto de las rutas, que solo es del dueño.
         deDueno.GetProperty("costeo").GetProperty("rutas")[0].GetProperty("costo_final").GetDecimal().Should().Be(1_000_000m);
+        // HU-018.2 (#294): el costo del transporte también es costo y el gerente lo ve en null; el valor de la mercancía NO es costo y se conserva.
+        deDueno.GetProperty("costeo").GetProperty("rutas")[0].GetProperty("costo_transporte").ValueKind.Should().Be(JsonValueKind.Number);
         deGerente.GetProperty("costeo").GetProperty("rutas").EnumerateArray()
-            .Should().OnlyContain(r => r.GetProperty("costo_final").ValueKind == JsonValueKind.Null);
+            .Should().OnlyContain(r => r.GetProperty("costo_final").ValueKind == JsonValueKind.Null
+                && r.GetProperty("costo_transporte").ValueKind == JsonValueKind.Null);
         SinCostoFinal(deGerente.GetProperty("costeo")).Should().Be(SinCostoFinal(deDueno.GetProperty("costeo")), "el gerente ve lo mismo que el dueño");
         foreach (var negada in new[] { otraRegional, gerenteSinRegional, ajeno, inexistente })
         {
@@ -328,13 +331,17 @@ public sealed class clsDetalleCotizacionEndpointsTests : IDisposable
         _nexo.Dispose();
     }
 
-    /// <summary>El costeo serializado sin <c>rutas[].costo_final</c> (HU-039.1: el único campo que cambia entre el dueño y el gerente).</summary>
+    /// <summary>
+    /// El costeo serializado sin los costos de <c>rutas[]</c> (HU-039.1: <c>costo_final</c>; HU-018.2, #294: también <c>costo_transporte</c>):
+    /// los únicos campos que cambian entre el dueño y el gerente (el valor de la mercancía no es costo y se conserva en los dos).
+    /// </summary>
     private static string SinCostoFinal(JsonElement costeo)
     {
         var nodo = JsonNode.Parse(costeo.GetRawText())!;
         foreach (var ruta in nodo["rutas"]!.AsArray())
         {
             ruta!.AsObject().Remove("costo_final");
+            ruta.AsObject().Remove("costo_transporte");
         }
 
         return nodo.ToJsonString();

@@ -231,7 +231,7 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
     public Task<clsArchivoLicitacionResumen?> ObtenerResumenArchivoLicitacionAsync(Guid cotizacionId, CancellationToken cancellationToken = default) =>
         contexto.ArchivosLicitacion.AsNoTracking()
             .Where(a => a.CotizacionId == cotizacionId)
-            .Select(a => new clsArchivoLicitacionResumen(a.NombreArchivo, a.Hoja, a.TamanoBytes))
+            .Select(a => new clsArchivoLicitacionResumen(a.NombreArchivo, a.Hoja, a.TamanoBytes, a.OrigenLectura))
             .FirstOrDefaultAsync(cancellationToken);
 
     public Task<clsArchivoLicitacion?> ObtenerArchivoLicitacionAsync(Guid cotizacionId, CancellationToken cancellationToken = default) =>
@@ -448,7 +448,12 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
         var ids = cabeceras.Select(c => c.Id).ToList();
         var rutas = await contexto.CotizacionLineasSolicitud.AsNoTracking()
             .Where(r => ids.Contains(r.CotizacionSolicitudId))
-            .Select(r => new { r.CotizacionSolicitudId, r.Orden, r.LineaNegocioId, r.MargenAplicado, r.OrigenMargen })
+            // HU-018.2 (#294): también el origen/destino, el peso y el valor de la mercancía de cada ruta, para la carga del resumen.
+            .Select(r => new
+            {
+                r.CotizacionSolicitudId, r.Orden, r.LineaNegocioId, r.MargenAplicado, r.OrigenMargen,
+                r.OrigenNombre, r.DestinoNombre, r.PesoKg, r.ValorMercancia,
+            })
             .ToListAsync(cancellationToken);
         var lineasNegocio = await contexto.MargenesPolitica.AsNoTracking().ToDictionaryAsync(m => m.Id, m => m.LineaNegocio, cancellationToken);
         var porCotizacion = rutas.GroupBy(r => r.CotizacionSolicitudId).ToDictionary(g => g.Key, g => g.OrderBy(r => r.Orden).ToList());
@@ -466,7 +471,10 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
             var linea = conLinea.Count > 1
                 ? clsCotizacionConLinea.Varias
                 : conLinea.Count == 1 ? lineasNegocio.GetValueOrDefault(conLinea[0]) : null;
-            return new clsCotizacionConLinea(c, linea, primera.MargenAplicado, primera.OrigenMargen);
+            // HU-018.2 (#294): la carga del resumen desde la misma proyección (sin cargar el agregado).
+            var carga = clsCargaCotizacion.Desde(suyas.Select(
+                r => new clsCargaCotizacion.Ruta(r.Orden, r.OrigenNombre, r.DestinoNombre, r.PesoKg, r.ValorMercancia)));
+            return new clsCotizacionConLinea(c, linea, primera.MargenAplicado, primera.OrigenMargen) { Carga = carga };
         })];
     }
 
@@ -548,6 +556,32 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
             .Where(c => c.Folio == buscado || EF.Functions.Like(c.Folio, patron, @"\"))
             .MaxAsync(c => (int?)c.Version, cancellationToken);
         return maxima ?? 0;
+    }
+
+    public async Task<int> GuardarCodigosServicioAsync(IReadOnlyCollection<clsServicioConexoRuta> conexos, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(conexos);
+        var guardadas = 0;
+        foreach (var conexo in conexos)
+        {
+            if (conexo.CodigoServicio is not { } codigo)
+            {
+                continue;
+            }
+
+            guardadas += await contexto.Set<clsServicioConexoRuta>()
+                .Where(c => c.Id == conexo.Id && c.CodigoServicio == null)
+                .ExecuteUpdateAsync(s => s.SetProperty(c => c.CodigoServicio, (string?)codigo), cancellationToken);
+            var entrada = contexto.Entry(conexo);
+            if (entrada.State != EntityState.Detached)
+            {
+                var propiedad = entrada.Property(c => c.CodigoServicio);
+                propiedad.OriginalValue = codigo;
+                propiedad.IsModified = false;
+            }
+        }
+
+        return guardadas;
     }
 
     /// <summary>La cabecera con todo su agregado (rutas, camiones, mercancías y conexos), en consultas divididas.</summary>

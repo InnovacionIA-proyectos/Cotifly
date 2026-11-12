@@ -92,4 +92,20 @@ public static class clsPliegoMuestra
             moneda,
             lineas,
         });
+
+    /// <summary>
+    /// HU-044.7 (#290): JSON de <c>POST /web/licitaciones</c> con <c>origen_lectura = leer_estructura</c>; <paramref name="tabla"/> es el
+    /// nombre de la tabla (solo referencia) y la <c>fila</c> de cada línea es el índice dentro de la tabla.
+    /// </summary>
+    public static string JsonLeerEstructura(string nit, object[] lineas, string tabla) =>
+        System.Text.Json.JsonSerializer.Serialize(new
+        {
+            nit_cliente = nit,
+            cliente_nombre = "Agencia de Aduanas JF",
+            linea_negocio = "Nacional",
+            deadline = "2026-10-20T17:00:00-05:00",
+            hoja = tabla,
+            origen_lectura = "leer_estructura",
+            lineas,
+        });
 }

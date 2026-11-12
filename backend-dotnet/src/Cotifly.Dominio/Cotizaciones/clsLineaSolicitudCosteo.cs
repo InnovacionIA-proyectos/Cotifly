@@ -184,6 +184,9 @@ public sealed record clsLineaSolicitudCosteo
     /// <summary>¿La ruta es de contenedor (<c>clase_viaje = Contenedor</c>, recortado, como se guarda)?</summary>
     public bool EsContenedor => string.Equals(ClaseViaje?.Trim(), clsCatalogosCaptura.ClaseViajeContenedor, StringComparison.Ordinal);
 
+    /// <summary>HU-021.15 (#297): ¿la ruta es extradimensionada (<c>clase_viaje = Extradimensionado</c>, recortado, como se guarda)?</summary>
+    public bool EsExtradimensionado => string.Equals(ClaseViaje?.Trim(), clsCatalogosCaptura.ClaseViajeExtradimensionado, StringComparison.Ordinal);
+
     /// <summary>Peso de la carga (sin tara): <see cref="PesoKg"/> o, sin él, la suma de las mercancías con peso; <c>null</c> si no hay.</summary>
     public decimal? PesoCarga => PesoKg ?? (SumaPesoPosiciones is var suma && suma > 0 ? suma : null);
 
@@ -380,25 +383,44 @@ public sealed record clsLineaSolicitudCosteo
         HorasCargue is null && HorasDescargue is null ? [] : ErroresHorasEnPareja(encabezado);
 
     /// <summary>
-    /// Validaciones condicionales de la captura (G3, HU-013.10/HU-013.11), las mismas para el formulario y para cada fila de una
-    /// licitación: <c>clase_contenedor</c> solo con <c>clase_viaje = Contenedor</c> y obligatoria con ella, y
-    /// <c>valor_aprovisionamiento</c> solo con una <c>ciudad_levante_contenedor</c> distinta del origen (Nexo lo descarta en otro caso).
-    /// Los valores se comparan recortados, como se guardan.
+    /// Validaciones condicionales de la captura (G3, HU-013.10/HU-013.11), las mismas para el formulario, la edición y para cada fila de
+    /// una licitación:
+    /// <list type="bullet">
+    /// <item>con <c>clase_viaje = Contenedor</c>, <c>clase_contenedor</c> es obligatoria (<c>CAMPO_REQUERIDO</c>) y admite cualquier clase
+    /// del catálogo;</item>
+    /// <item>HU-021.15 (#297): con <c>clase_viaje = Extradimensionado</c>, <c>clase_contenedor</c> es OPCIONAL y, si viene, solo una de las
+    /// clases provisionales G15 (<see cref="clsCatalogosCaptura.ClasesContenedorProvisionales"/>, flat track / open top); otra es
+    /// <c>VALOR_FUERA_DE_RANGO</c>;</item>
+    /// <item>con cualquier otra clase de viaje (Cupo, Carga Suelta...), <c>clase_contenedor</c> no aplica (<c>CAMPO_NO_APLICA</c>);</item>
+    /// <item><c>valor_aprovisionamiento</c> solo con una <c>ciudad_levante_contenedor</c> distinta del origen (Nexo lo descarta en otro caso).</item>
+    /// </list>
+    /// Los valores se comparan recortados, como se guardan (la clase provisional, exacta, ignorando los espacios alrededor).
     /// </summary>
     public IReadOnlyList<clsErrorCampo> ErroresCondicionales()
     {
         var errores = new List<clsErrorCampo>();
-        var esContenedor = EsContenedor;
         var conClase = !string.IsNullOrWhiteSpace(ClaseContenedor);
-        if (conClase && !esContenedor)
+        if (EsContenedor)
+        {
+            if (!conClase)
+            {
+                errores.Add(new clsErrorCampo("clase_contenedor", clsCodigosLineaSolicitud.CampoRequerido,
+                    $"El campo 'clase_contenedor' es obligatorio con clase_viaje = {clsCatalogosCaptura.ClaseViajeContenedor}."));
+            }
+        }
+        else if (EsExtradimensionado)
+        {
+            // HU-021.15 (#297): opcional; con valor, solo las clases provisionales G15 (recortadas), si no VALOR_FUERA_DE_RANGO.
+            if (conClase && !clsCatalogosCaptura.Contiene(clsCatalogosCaptura.ClasesContenedorProvisionales, ClaseContenedor!.Trim()))
+            {
+                errores.Add(new clsErrorCampo("clase_contenedor", clsCodigosLineaSolicitud.ValorFueraDeRango,
+                    $"Con clase_viaje = {clsCatalogosCaptura.ClaseViajeExtradimensionado}, 'clase_contenedor' solo admite {string.Join(", ", clsCatalogosCaptura.ClasesContenedorProvisionales)}."));
+            }
+        }
+        else if (conClase)
         {
             errores.Add(new clsErrorCampo("clase_contenedor", clsCodigosLineaSolicitud.CampoNoAplica,
-                $"El campo 'clase_contenedor' solo aplica con clase_viaje = {clsCatalogosCaptura.ClaseViajeContenedor}."));
-        }
-        else if (esContenedor && !conClase)
-        {
-            errores.Add(new clsErrorCampo("clase_contenedor", clsCodigosLineaSolicitud.CampoRequerido,
-                $"El campo 'clase_contenedor' es obligatorio con clase_viaje = {clsCatalogosCaptura.ClaseViajeContenedor}."));
+                $"El campo 'clase_contenedor' solo aplica con clase_viaje = {clsCatalogosCaptura.ClaseViajeContenedor} o {clsCatalogosCaptura.ClaseViajeExtradimensionado}."));
         }
 
         if (ValorAprovisionamiento is not null && !LevanteDistintoDelOrigen)

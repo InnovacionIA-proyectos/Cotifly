@@ -69,7 +69,8 @@ public sealed class clsServiciosConexosCosteoService(
     IClsCategoriasConexos categoriasConexos,
     IClsSituacionLineasNexo situacionesNexo,
     Margen.Services.IClsAvisoSincronizacionMargenSap avisoSincronizacion,
-    IClsTarifaSeguroRepository tarifasSeguro) : IClsServiciosConexosCosteoService
+    IClsTarifaSeguroRepository tarifasSeguro,
+    IClsPoliticaSegurosRepository politicaSeguros) : IClsServiciosConexosCosteoService
 {
     // #226 (validación de DEF-1027-3): las dependencias de la vista con estados son obligatorias. Opcionales, un registro que faltara
     // en DI devolvía otra vez estado_nexo = null en silencio; obligatorias, el contenedor falla al resolver el servicio.
@@ -438,6 +439,11 @@ public sealed class clsServiciosConexosCosteoService(
 
         var agregados = importados.Valor;
 
+        // HU-046.3 (#269): el codigoServicio de los conexos agregados (la cotización de Nexo no lo trae), con el índice del catálogo que ya
+        // tiene el costeo en memoria, por el id del catálogo. No se lee el catálogo de Nexo aquí (ni se llena la caché de costos, que
+        // decide qué ve la versión nueva): si el índice está frío se calienta en segundo plano y el código se completa al leer el costeo.
+        await clsPoliticaSegurosCosteo.CompletarCodigosAsync(categoriasConexos, cotizacion, logger, CancellationToken.None);
+
         // #228: Nexo ya tiene los conexos (los creó este POST): quedan enviados en el registro del envío diferido, en la misma escritura.
         // Si no, estado_nexo = pendiente bloquearía finalizar, y en una entregada el polling ya no pasa para confirmarlos.
         try
@@ -462,7 +468,7 @@ public sealed class clsServiciosConexosCosteoService(
             cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, logger, CancellationToken.None, categoriasConexos,
             situacionesNexo.Obtener(cotizacion.Id),
             await Margen.Services.clsAvisoSincronizacionMargenSap.ConsultarSinFallarAsync(avisoSincronizacion, cotizacion, CancellationToken.None),
-            tarifasSeguro),
+            tarifasSeguro, politicaSeguros),
             agregados, pdfInvalidado);
     }
 
