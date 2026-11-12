@@ -267,7 +267,7 @@ A (#199, con la aprobación del usuario); se cargan en Dokploy así:
 | `Captura__ClasesSinVehiculoObligatorio__0`, `__1`... | por defecto (solo `Contenedor`) | por defecto (solo `Contenedor`) | HU-032 (#197): solo si negocio exime otra clase de viaje (p. ej. `Carga Suelta`); se declaran las dos |
 | `Pdf__PermitirCotizacionChat` | `false` | `false` | Nunca se enciende fuera de las pruebas |
 
-**Verificación de las banderas en los ambientes desplegados.** En el Dokploy del backend desplegado no están cargadas
+**Verificación de las banderas en los ambientes desplegados.** En la app Backend de Dokploy del ambiente de pruebas (`cotifly-backend-y9nglj`) no están cargadas
 `Nexo__EnviarGrupoRutaId`, `Nexo__EnviarCodigosCubicador` ni `Captura__AceptarVehiculoCliente`, así que rige el valor por
 defecto del manifiesto, que es el del código (`clsManifiestosDespliegueTests` falla si difieren). `appsettings.json` no
 define ninguna de las tres, de modo que no hay otra capa que las cambie. Valores efectivos:
@@ -985,7 +985,8 @@ Internet / red corporativa
     la tarea se indica con **`traefik.swarm.network`**; `traefik.docker.network` (la etiqueta de v2, la que usaba el
     Python) pertenece al proveedor `docker` y el proveedor `swarm` no la lee. Sin la etiqueta correcta, como
     `cotifly-api` está en dos redes (`edge` y `salida`), Traefik puede tomar la IP de la red `salida`, que no comparte con
-    la tarea, y responder 502 o 504. Por eso los dos manifiestos usan `traefik.swarm.network=dokploy-network`.
+    la tarea, y responder 502 o 504. Por eso los dos manifiestos usan `traefik.swarm.network=dokploy-network`. La configuración estática de Traefik (`/etc/traefik/traefik.yml`
+    en el contenedor `dokploy-traefik`) tiene activo el proveedor `swarm` (`exposedByDefault: false`), que es el que lee estas etiquetas.
   - El resto de etiquetas de los manifiestos no cambió de v2 a v3: `traefik.enable`, los routers (`rule` con `Host(...)`,
     `entrypoints`, `tls`, `tls.certresolver`, `middlewares`), el middleware `headers` (`stsSeconds`,
     `stsIncludeSubdomains`) y, en los servicios, `loadbalancer.server.port` y `loadbalancer.healthcheck.*` se escriben
