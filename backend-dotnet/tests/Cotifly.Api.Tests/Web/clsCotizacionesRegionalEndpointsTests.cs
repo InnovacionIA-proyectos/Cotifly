@@ -6,7 +6,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// HU-016.1 (#154): <c>GET /web/cotizaciones/regional</c> por HTTP contra la base real: contrato, política <c>GerenteComercial</c>
+/// <c>GET /web/cotizaciones/regional</c> por HTTP contra la base real: contrato, política <c>GerenteComercial</c>
 /// (403 al comercial), regional resuelta en el servidor (409 sin regional) y aislamiento entre regionales.
 /// </summary>
 [Collection(clsColeccionApiWeb.Nombre)]
@@ -77,7 +77,7 @@ public sealed class clsCotizacionesRegionalEndpointsTests(clsEntornoApiWeb entor
     }
 
     /// <summary>
-    /// La fila regional es de consulta (decisión de #154): el gerente descarga el PDF de un comercial de su regional, pero las acciones del
+    /// La fila regional es de consulta: el gerente descarga el PDF de un comercial de su regional, pero las acciones del
     /// dueño (seguimiento, nueva versión) le responden 404 igual que a cualquier ajeno, y la cotización no cambia.
     /// </summary>
     [Fact]

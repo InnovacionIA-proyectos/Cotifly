@@ -5,8 +5,8 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Costeo;
 
 /// <summary>
-/// HU-030.1 (#184), pasos de <c>specs/features/captura_rutas.feature</c>: el peso con tara de una ruta de contenedor viaja a Nexo como el
-/// peso de su línea (#250, DU §8: con un solo camión, con sus posiciones) y se guarda en la ruta (<c>CotizacionLineasSolicitud.pesoConTaraKg</c>, script 11).
+/// Pasos de <c>specs/features/captura_rutas.feature</c>: el peso con tara de una ruta de contenedor viaja a Nexo como el
+/// peso de su línea (DU §8: con un solo camión, con sus posiciones) y se guarda en la ruta (<c>CotizacionLineasSolicitud.pesoConTaraKg</c>, script 11).
 /// </summary>
 [Binding]
 public sealed class clsPasosPesoConTara(clsPasosCosteo costeo)

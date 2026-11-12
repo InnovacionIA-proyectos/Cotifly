@@ -8,7 +8,7 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Costeo;
 
 /// <summary>
-/// Pasos de <c>specs/features/editar_solicitud.feature</c> (HU-028, #186, ADR-021): el GET del modelo editable y el PUT con ese modelo
+/// Pasos de <c>specs/features/editar_solicitud.feature</c> (ADR-021): el GET del modelo editable y el PUT con ese modelo
 /// cambiado y el <c>ETag</c> vigente, como lo hace la pantalla "Editar solicitud", contra la API real y el Nexo falso de
 /// <see cref="clsPasosCosteo"/>.
 /// </summary>
@@ -21,7 +21,7 @@ public sealed class clsPasosEdicionSolicitud(clsContextoWeb web, clsPasosCosteo 
     public Task CuandoEditaLasHoras(string alias, string cotizacion, int horas) =>
         EditarAsync(alias, cotizacion, modelo =>
         {
-            // #278 (DU §5): las horas de cargue y descargue van las dos o ninguna; si la ruta no tenía, la de descargue queda en 4.
+            // DU §5: las horas de cargue y descargue van las dos o ninguna; si la ruta no tenía, la de descargue queda en 4.
             var ruta = modelo["rutas"]![0]!;
             ruta["horas_cargue"] = horas;
             ruta["horas_descargue"] ??= 4;

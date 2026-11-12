@@ -9,11 +9,11 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// Opción D (D3, E2E 2026-10-16): "Calcular cubicaje" asíncrono por HTTP con SQL Server real y el cubicador falso con una compuerta (el
+/// "Calcular cubicaje" asíncrono por HTTP con SQL Server real y el cubicador falso con una compuerta (el
 /// motor "calcula" hasta que la prueba la abre). <c>POST /web/cubicacion</c> responde 200 si el cubicador termina dentro de
 /// <c>Cubicador:EsperaSincronaCubicacionSegundos</c>; si no, 202 con <c>Location</c> y <c>Retry-After</c>, y
 /// <c>GET /web/cubicacion/{id}</c> muestra <c>en_proceso</c>, <c>completada</c> o <c>fallida</c>. Solo el dueño la ve (404 a otro), el cálculo
-/// sigue aunque el cliente corte y, con el cupo global ocupado (opción C), responde 503 <c>CUBICADOR_OCUPADO</c> con <c>Retry-After</c>.
+/// sigue aunque el cliente corte y, con el cupo global ocupado, responde 503 <c>CUBICADOR_OCUPADO</c> con <c>Retry-After</c>.
 /// Cada respuesta se valida contra <c>specs/openapi.yaml</c>.
 /// </summary>
 [Collection(clsColeccionApiWeb.Nombre)]
@@ -130,7 +130,7 @@ public sealed class clsCubicacionAsincronaEndpointsTests : IDisposable
         using var ajena = await api.EnviarAsync(_get, $"/web/cubicacion/{id}", luis);
         using var inexistente = await api.EnviarAsync(_get, $"/web/cubicacion/{Guid.NewGuid()}", ana);
         using var sinSesion = await api.EnviarAsync(_get, $"/web/cubicacion/{id}", null);
-        // Endurecimiento A (#199): un id que no es un GUID da el mismo 404 ErrorWeb (antes un 404 de enrutamiento sin cuerpo).
+        // Un id que no es un GUID da el mismo 404 ErrorWeb, no un 404 de enrutamiento sin cuerpo.
         using var noGuid = await api.EnviarAsync(_get, "/web/cubicacion/no-es-guid", ana);
         await VerificarContratoAsync(noGuid, RutaConsulta, _get, HttpStatusCode.NotFound);
         (await noGuid.Content.ReadAsStringAsync(Ct)).Should().Be(await inexistente.Content.ReadAsStringAsync(Ct));

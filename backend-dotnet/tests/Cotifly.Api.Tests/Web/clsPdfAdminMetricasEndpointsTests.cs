@@ -9,7 +9,7 @@ namespace Cotifly.Api.Tests.Web;
 /// <summary>
 /// <c>GET /pdfs/{archivo}</c> (dueño o gerente de la regional), administración de líneas (solo <c>gerente_comercial</c>,
 /// auditada) por HTTP contra la base real. Las métricas del borrador (<c>/web/metricas/actividad</c> y
-/// <c>/ajustes-margen</c>) se retiraron en HU-014.3 (#152); el tablero vigente se prueba en <c>metricas_tablero.feature</c>.
+/// <c>/ajustes-margen</c>) no existen; el tablero vigente se prueba en <c>metricas_tablero.feature</c>.
 /// </summary>
 [Collection(clsColeccionApiWeb.Nombre)]
 [Trait("Categoria", "Integracion")]
@@ -93,7 +93,7 @@ public sealed class clsPdfAdminMetricasEndpointsTests(clsEntornoApiWeb entorno)
         var json = await VerificarContratoAsync(respuesta, "/web/admin/lineas-negocio", _get, HttpStatusCode.OK);
 
         json.EnumerateArray().Select(l => l.GetProperty("linea_negocio").GetString()).Should().Contain(
-            ["Nacional", "Distribucion", "Importacion", "Exportacion", "Internacional", "DevolucionContenedor"]); // HU-021: el 0009 retira Almacenamiento, Almacenamiento3PL e ITR
+            ["Nacional", "Distribucion", "Importacion", "Exportacion", "Internacional", "DevolucionContenedor"]); // El 0009 retira Almacenamiento, Almacenamiento3PL e ITR
     }
 
     [Fact]
@@ -169,7 +169,7 @@ public sealed class clsPdfAdminMetricasEndpointsTests(clsEntornoApiWeb entorno)
     [InlineData("/web/metricas/ajustes-margen")]
     public async Task LasMetricasDelBorradorSeRetiraronYResponden404(string ruta)
     {
-        // HU-014.3 (#152): el borrador del tablero ya no existe, ni para el comercial ni para el gerente.
+        // El borrador del tablero no existe, ni para el comercial ni para el gerente.
         var ana = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         var gloria = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoGerente, Regional());
 

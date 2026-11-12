@@ -14,7 +14,7 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Costeo;
 
 /// <summary>
-/// Pasos de <c>specs/features/redaccion_cotizacion.feature</c> (HU-013.5, #101, ADR-018 §2a): la API real en memoria con SQL Server 2019,
+/// Pasos de <c>specs/features/redaccion_cotizacion.feature</c> (ADR-018 §2a): la API real en memoria con SQL Server 2019,
 /// el Nexo falso de <see cref="clsPasosCosteo"/> y su <see cref="clsChatClientGuionizado"/> (nunca un proveedor real). Las mutaciones
 /// envían <c>If-Match</c> con la versión vigente de la fila salvo que el paso diga otra cosa.
 /// </summary>
@@ -156,7 +156,7 @@ public sealed partial class clsPasosRedaccionCotizacion(clsContextoWeb web, clsP
     [Then("el modelo no fue llamado")]
     public void EntoncesElModeloNoFueLlamado() => Modelo.Llamadas.Should().BeEmpty();
 
-    // "el PDF de {string} contiene {string}" es de clsPasosMonedaCosteo (#103): una sola definición para las dos features.
+    // "el PDF de {string} contiene {string}" es de clsPasosMonedaCosteo: una sola definición para las dos features.
 
     [Then("el PDF de {string} contiene la introducción estándar")]
     public async Task EntoncesElPdfContieneLaIntroduccionEstandar(string cotizacion)

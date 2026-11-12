@@ -7,7 +7,7 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Web;
 
 /// <summary>
-/// Pasos de <c>specs/features/excel_cotizacion.feature</c> (HU-018.1, #155, parte C): <c>GET /web/cotizaciones/{folio}/excel</c> con el
+/// Pasos de <c>specs/features/excel_cotizacion.feature</c>: <c>GET /web/cotizaciones/{folio}/excel</c> con el
 /// dueño (versión interna), el gerente de su regional y el director (sin costos ni márgenes) y los ajenos (404). Lee el libro de la última
 /// respuesta de <see cref="clsContextoWeb"/>.
 /// </summary>

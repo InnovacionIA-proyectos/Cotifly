@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging;
 namespace Cotifly.Api.Tests.Contrato;
 
 /// <summary>
-/// HU-021.11 (#138), decisión 1 de HU-021: <c>valor_estimado</c> y <c>referencia</c> salieron del contrato. Un frontend anterior que los
+/// <c>valor_estimado</c> y <c>referencia</c> no están en el contrato. Un frontend que los
 /// siga mandando no recibe error: se ignoran y queda un aviso en el log con el nombre del campo (nunca su valor).
 /// </summary>
 public sealed class clsCamposRetiradosTests

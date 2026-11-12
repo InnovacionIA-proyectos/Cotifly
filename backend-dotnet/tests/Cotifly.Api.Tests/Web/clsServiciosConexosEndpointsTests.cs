@@ -7,7 +7,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// Servicios conexos del catálogo de Nexo (HU-013.3, ADR-018 §4 y §8) por HTTP con SQL Server real y el Nexo falso: el catálogo sin
+/// Servicios conexos del catálogo de Nexo (ADR-018 §4 y §8) por HTTP con SQL Server real y el Nexo falso: el catálogo sin
 /// costos, agregar un conexo en Nexo con el <c>lineaId</c> de su cotización, el precio con el margen, el <c>ETag</c>, el
 /// <c>If-Match</c> obligatorio, el <c>Idempotency-Key</c> y los errores de Nexo (400, 404, 403, caída y relectura fallida).
 /// </summary>
@@ -104,11 +104,11 @@ public sealed class clsServiciosConexosEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// HU-043.2 (#251): un conexo guardado al costo (como los anteriores al despliegue, <c>precioVenta = precio</c>) toma en el siguiente
+    /// Un conexo guardado al costo (dato heredado, <c>precioVenta = precio</c>) toma en el siguiente
     /// polling la venta que Nexo fijó, cruzando por su id; el costo no cambia y el precio de la ruta queda con la venta.
     /// </summary>
     [Fact]
-    public async Task Hu0432_ElPollingRefrescaLaVentaDeUnConexoGuardadoAlCosto()
+    public async Task ElPollingRefrescaLaVentaDeUnConexoGuardadoAlCosto()
     {
         var (sesion, folio, solicitud) = await CosteadaAsync();
         using (var agregado = await AgregarAsync(sesion, folio, Cuerpo(1, Precinto, 2), await EtagAsync(sesion, folio)))
@@ -132,11 +132,11 @@ public sealed class clsServiciosConexosEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// HU-043.2 (#251), orden de despliegue: con un Nexo anterior a S6-HU-38.2 (sin <c>valorVenta</c> en la cotización) el conexo
+    /// Con un Nexo que no trae <c>valorVenta</c> en la cotización, el conexo
     /// agregado no desaparece: se cotiza al costo, sin margen, y el precio de la ruta lo incluye.
     /// </summary>
     [Fact]
-    public async Task Hu0432_SinValorVentaEnNexoElConexoAgregadoSeCotizaAlCostoSinMargen()
+    public async Task SinValorVentaEnNexoElConexoAgregadoSeCotizaAlCostoSinMargen()
     {
         _nexo.SinPrecioVenta = true;
         var (sesion, folio, _) = await CosteadaAsync();
@@ -157,7 +157,7 @@ public sealed class clsServiciosConexosEndpointsTests : IDisposable
     {
         var (sesion, folio, solicitud) = await CosteadaAsync();
         var etag = await EtagAsync(sesion, folio);
-        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // Como el frontend
         using var pdf = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
 
         using var sinIfMatch = await AgregarAsync(sesion, folio, Cuerpo(1, Almacenamiento, 1), null);

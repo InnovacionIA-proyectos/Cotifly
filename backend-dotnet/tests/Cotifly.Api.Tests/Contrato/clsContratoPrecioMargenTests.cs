@@ -10,8 +10,8 @@ using Microsoft.OpenApi.Reader;
 namespace Cotifly.Api.Tests.Contrato;
 
 /// <summary>
-/// Los DTOs de Precio y Margen (#10) y los códigos de error cumplen <c>specs/openapi.yaml</c> (SDD, ADR-010).
-/// Se serializan en snake_case, la convención de <c>/web/*</c> (ADR-002; en la Api la aplica <c>clsJsonWeb</c>, #12).
+/// Los DTOs de Precio y Margen y los códigos de error cumplen <c>specs/openapi.yaml</c> (SDD, ADR-010).
+/// Se serializan en snake_case, la convención de <c>/web/*</c> (ADR-002; en la Api la aplica <c>clsJsonWeb</c>).
 /// </summary>
 public sealed class clsContratoPrecioMargenTests
 {
@@ -25,8 +25,7 @@ public sealed class clsContratoPrecioMargenTests
         var codigosContrato = esquemas["ErrorNegocio"].Properties!["error"].Properties!["codigo"].Enum!
             .Select(e => e!.GetValue<string>()).ToList();
 
-        // Endurecimiento A (#199): solo las constantes que el código emite; las que nadie usa (TARIFA_*, MUNICIPIO_ARGUMENTO_INVALIDO)
-        // salieron del enum. La comparación exacta (en los dos sentidos) la hace clsContratoReflexionTests.
+        // Solo las constantes que el código emite están en el enum. La comparación exacta (en los dos sentidos) la hace clsContratoReflexionTests.
         var codigos = typeof(clsCodigosError).GetFields(BindingFlags.Public | BindingFlags.Static)
             .Where(f => f.IsLiteral)
             .Select(f => (string)f.GetRawConstantValue()!)
@@ -44,7 +43,7 @@ public sealed class clsContratoPrecioMargenTests
         Verificar(new clsSalidaPrecio(3_294_798m, 2_850_000m, 0.135m, "markup", 444_798m), esquemas["SalidaPrecio"], "metodo");
     }
 
-    // HU-012.4 (auditoría): los errores de las herramientas van en RespuestaChat.errores con el esquema ErrorHerramienta.
+    // Los errores de las herramientas van en RespuestaChat.errores con el esquema ErrorHerramienta.
     [Fact]
     public async Task LosErroresDeHerramientaDeRespuestaChatCumplenElEsquema()
     {
@@ -59,7 +58,7 @@ public sealed class clsContratoPrecioMargenTests
         respuesta.Properties!.Should().ContainKey("errores");
     }
 
-    // HU-012.2: el precio en dólares trae moneda, TRM y precio en pesos, todos declarados en el contrato.
+    // El precio en dólares trae moneda, TRM y precio en pesos, todos declarados en el contrato.
     [Fact]
     public async Task SalidaPrecioEnDolaresCumpleElEsquema()
     {

@@ -5,9 +5,9 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Costeo;
 
 /// <summary>
-/// #181 (Nexo #309), pasos de <c>specs/features/costeo_nexo.feature</c>: el estado de la línea de Nexo y el motivo por el que sigue
-/// pendiente se leen con el polling y se muestran por camión en <c>GET .../costeo</c>, sin guardarse en la base. Con un Nexo anterior a
-/// #309 (sin esos campos) salen en <c>null</c>.
+/// Pasos de <c>specs/features/costeo_nexo.feature</c>: el estado de la línea de Nexo y el motivo por el que sigue
+/// pendiente se leen con el polling y se muestran por camión en <c>GET .../costeo</c>, sin guardarse en la base. Si Nexo no
+/// trae esos campos, salen en <c>null</c>.
 /// </summary>
 [Binding]
 public sealed class clsPasosMotivoPendiente(clsContextoWeb web, clsPasosCosteo costeo)

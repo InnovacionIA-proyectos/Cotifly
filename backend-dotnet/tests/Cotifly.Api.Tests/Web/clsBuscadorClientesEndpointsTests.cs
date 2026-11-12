@@ -8,8 +8,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// OBS-1021B-3 (E2E 2026-10-21, punto 4.2 del QA): <c>GET /web/clientes</c> sin Nexo responde 503 <c>CLIENTE_BUSQUEDA_NO_DISPONIBLE</c>
-/// (antes 400), como los demás catálogos de Nexo, con un mensaje que dice qué falta. Por HTTP contra SQL Server real y el Nexo falso, con
+/// <c>GET /web/clientes</c> sin Nexo responde 503 <c>CLIENTE_BUSQUEDA_NO_DISPONIBLE</c>, como los demás catálogos de Nexo, con un mensaje que dice qué falta. Por HTTP contra SQL Server real y el Nexo falso, con
 /// el cuerpo validado contra <c>specs/openapi.yaml</c>.
 /// </summary>
 [Collection(clsColeccionApiWeb.Nombre)]

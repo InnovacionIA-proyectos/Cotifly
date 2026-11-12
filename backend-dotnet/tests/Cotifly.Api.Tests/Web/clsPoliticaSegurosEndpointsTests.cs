@@ -9,7 +9,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// HU-046.3 (#269): la política de seguros por HTTP con SQL Server real (script 21 con la carga aprobada) y el Nexo falso. El bloque
+/// La política de seguros por HTTP con SQL Server real (script 21 con la carga aprobada) y el Nexo falso. El bloque
 /// <c>politica_seguros</c> de <c>GET .../costeo</c>, el <c>codigoServicio</c> guardado al agregar un conexo (y completado si falta) y el
 /// bloqueo de <c>POST .../finalizar</c> con <c>medidas_obligatorias_faltantes</c> y la justificación que lo salta (auditada).
 /// </summary>

@@ -8,7 +8,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// Validación adversarial de HU-044.4 (#255) por HTTP, contra SQL Server real y el Nexo falso: límites en el borde (1000/1001 valores,
+/// Validación adversarial de la normalización de valores por HTTP, contra SQL Server real y el Nexo falso: límites en el borde (1000/1001 valores,
 /// 150/151 caracteres), cuerpos mal formados (nunca 500), errores de NEXO (403, 400 propio de NEXO, 429, 503), NIT opcional o inválido,
 /// roles y que la petición a NEXO no lleve repetidos.
 /// </summary>

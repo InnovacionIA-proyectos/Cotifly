@@ -9,7 +9,7 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Costeo;
 
 /// <summary>
-/// HU-028.1 (#183, Nexo #320), pasos de <c>specs/features/rechazo_linea_nexo.feature</c>: la Mesa de Costeo del Nexo falso rechaza (o deja de
+/// Pasos de <c>specs/features/rechazo_linea_nexo.feature</c>: la Mesa de Costeo del Nexo falso rechaza (o deja de
 /// rechazar) una línea y Cotifly lo refleja en la licitación, en la base (el camión con su motivo, script 10), en el Excel, en el PDF y en el
 /// margen. Reutiliza los pasos de la licitación (<see cref="clsPasosLicitaciones"/>) y el Nexo falso de <see cref="clsPasosCosteo"/>.
 /// </summary>

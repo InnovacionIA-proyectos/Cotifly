@@ -11,7 +11,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// HU-044.4 (#255, ADR-029): <c>POST /web/licitaciones/normalizar-valores</c> por HTTP contra SQL Server real y el Nexo falso, con el
+/// <c>POST /web/licitaciones/normalizar-valores</c> (ADR-029) por HTTP contra SQL Server real y el Nexo falso, con el
 /// cuerpo validado contra <c>specs/openapi.yaml</c>: alias, diccionario, ciudad ambigua con candidatos, sin resolver, IA no disponible,
 /// tope diario de IA, la línea de negocio traducida a la de Cotifly y la validación local sin llamar a NEXO.
 /// </summary>
@@ -73,9 +73,9 @@ public sealed class clsNormalizacionValoresEndpointsTests : IDisposable
     }
 
     [Fact]
-    public async Task HU0448_LasCarroceriasQueProponeNormalizarExistenEnTiposCarroceria()
+    public async Task LasCarroceriasQueProponeNormalizarExistenEnTiposCarroceria()
     {
-        // HU-044.8 (#291): normalizar-valores propone carrocerías del catálogo de NEXO; GET /web/tipos-carroceria sale del mismo catálogo,
+        // normalizar-valores propone carrocerías del catálogo de NEXO; GET /web/tipos-carroceria sale del mismo catálogo,
         // así que todo código que proponga está en el selector.
         var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
 

@@ -9,7 +9,7 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Web;
 
 /// <summary>
-/// Pasos de <c>specs/features/metricas_tablero.feature</c> (HU-010.1, ADR-016): cotizaciones con valores del tablero fijados por
+/// Pasos de <c>specs/features/metricas_tablero.feature</c> (ADR-016): cotizaciones con valores del tablero fijados por
 /// SQL, versiones nuevas, consultas a <c>/web/metricas/comercial</c> y <c>/regional</c> y comprobación de los indicadores.
 /// Reutiliza la sesión, las regionales y la última respuesta de <see cref="clsContextoWeb"/>.
 /// </summary>
@@ -64,8 +64,8 @@ public sealed class clsPasosMetricas(clsContextoWeb web)
     }
 
     /// <summary>
-    /// HU-021.10: reemplaza los valores de la ruta 1 y agrega las demás rutas con su línea de negocio (por nombre); la cabecera queda con la
-    /// suma de los precios, como la deja el dominio. HU-016.1 (#154): con la columna <c>politica</c>, el <c>margenPoliticaSugerido</c> de
+    /// Reemplaza los valores de la ruta 1 y agrega las demás rutas con su línea de negocio (por nombre); la cabecera queda con la
+    /// suma de los precios, como la deja el dominio. Con la columna <c>politica</c>, el <c>margenPoliticaSugerido</c> de
     /// cada ruta (vacía = <c>NULL</c>); sin ella, la ruta 1 conserva el suyo y las demás quedan sin política.
     /// </summary>
     [Given("que la cotización {string} tiene estas rutas:")]
@@ -90,7 +90,7 @@ public sealed class clsPasosMetricas(clsContextoWeb web)
     }
 
     /// <summary>
-    /// HU-034.1 (#201): la Mesa de Costeo rechaza una ruta (HU-028.1, #183): queda sin precio y la cabecera suma solo las rutas no
+    /// La Mesa de Costeo rechaza una ruta: queda sin precio y la cabecera suma solo las rutas no
     /// rechazadas, como la deja el dominio. El costo de la ruta se conserva para comprobar que el tablero no lo cuenta.
     /// </summary>
     [Given("que la Mesa de Costeo rechazó la ruta {int} de la cotización {string}")]
@@ -153,7 +153,7 @@ public sealed class clsPasosMetricas(clsContextoWeb web)
     }
 
     /// <summary>
-    /// HU-016.1 (#154, validación): los <c>indicadores</c> de un comercial en <c>comerciales[]</c> de <c>/web/metricas/regional</c>, con la
+    /// Los <c>indicadores</c> de un comercial en <c>comerciales[]</c> de <c>/web/metricas/regional</c>, con la
     /// misma tabla <c>campo | valor</c> de "los indicadores son".
     /// </summary>
     [Then("los indicadores de {string} en la lista de comerciales son:")]
@@ -228,7 +228,7 @@ public sealed class clsPasosMetricas(clsContextoWeb web)
         punto.GetProperty("ganadas").GetInt32().Should().Be(ganadas);
     }
 
-    /// <summary>HU-034.1 (#201): cada fila es un mes de <c>serie_mensual</c>; una celda vacía no se comprueba.</summary>
+    /// <summary>Cada fila es un mes de <c>serie_mensual</c>; una celda vacía no se comprueba.</summary>
     [Then("la serie mensual tiene estos montos:")]
     public void EntoncesLosMontosDeLaSerie(DataTable tabla)
     {
@@ -247,7 +247,7 @@ public sealed class clsPasosMetricas(clsContextoWeb web)
         }
     }
 
-    /// <summary>HU-034.1 (#201): la suma de los meses de la serie es exactamente el valor de los indicadores del periodo.</summary>
+    /// <summary>La suma de los meses de la serie es exactamente el valor de los indicadores del periodo.</summary>
     [Then("la suma de la serie mensual cuadra con los indicadores")]
     public void EntoncesLaSerieCuadra()
     {
@@ -260,7 +260,7 @@ public sealed class clsPasosMetricas(clsContextoWeb web)
         }
     }
 
-    /// <summary>HU-037.3 (#211): <c>?regional=</c> con el nombre real de la regional (alias del escenario).</summary>
+    /// <summary><c>?regional=</c> con el nombre real de la regional (alias del escenario).</summary>
     [When("{string} consulta las métricas de la regional {string} del {string} al {string}")]
     public Task CuandoConsultaUnaRegional(string alias, string regional, string desde, string hasta) =>
         web.EnviarAsync(_get, $"/web/metricas/regional?desde={desde}&hasta={hasta}&regional={Uri.EscapeDataString(web.Regional(regional))}",
@@ -286,7 +286,7 @@ public sealed class clsPasosMetricas(clsContextoWeb web)
         web.UltimoJson().GetProperty("comerciales").EnumerateArray().Select(c => c.GetProperty("usuario_id").GetString())
             .Should().BeEquivalentTo([.. new[] { uno, dos, tres }.Select(a => web.Sesion(a).UsuarioId.ToString())]);
 
-    /// <summary>Una fecha sola es el mediodía en Bogotá; con hora (<c>2026-04-30T23:30:00-05:00</c>) va tal cual (límites de mes, HU-010.5).</summary>
+    /// <summary>Una fecha sola es el mediodía en Bogotá; con hora y desfase horario va tal cual (límites de mes).</summary>
     private static string Creada(string texto) =>
         texto.Contains('T', StringComparison.Ordinal) ? texto : $"{texto}T12:00:00-05:00";
 
@@ -301,7 +301,7 @@ public sealed class clsPasosMetricas(clsContextoWeb web)
     };
 
     /// <summary>
-    /// HU-016.2 (#295): el dominio solo genera un resultado (ganada/perdida) tras finalizar la cotización (HU-036), así que una fila con
+    /// El dominio solo genera un resultado (ganada/perdida) tras finalizar la cotización, así que una fila con
     /// "resultado" aquí la deja finalizada por el mismo comercial; sin resultado (pendiente), sigue sin finalizar.
     /// </summary>
     private static string FinalizadaFragmento(string resultado, Guid usuarioId) =>

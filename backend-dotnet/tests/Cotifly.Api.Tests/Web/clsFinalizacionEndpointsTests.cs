@@ -7,7 +7,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// HU-036.2 (#206): <c>POST /web/cotizaciones/{folio}/finalizar</c> por HTTP con SQL Server real (script 14) y el Nexo falso. Cada respuesta
+/// <c>POST /web/cotizaciones/{folio}/finalizar</c> por HTTP con SQL Server real (script 14) y el Nexo falso. Cada respuesta
 /// se valida contra su esquema de <c>specs/openapi.yaml</c>: 200 <c>CotizacionResumen</c> con <c>finalizada_at</c> y el <c>ETag</c>, 409
 /// <c>COTIZACION_NO_FINALIZABLE</c> y <c>CONFLICTO_CONCURRENCIA</c>, 428 sin <c>If-Match</c> y 404 para una ajena.
 /// </summary>
@@ -104,7 +104,7 @@ public sealed class clsFinalizacionEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// Integración 1027 (HU-036 con HU-037 y HU-039.1): el director ve cualquier cotización en solo consulta, pero finalizar es solo del
+    /// El director ve cualquier cotización en solo consulta, pero finalizar es solo del
     /// dueño (404, igual que el comercial ajeno) y el costeo del dueño tampoco es suyo; en el detalle ve <c>finalizada_at</c> y el costo
     /// bruto de las rutas le sale en <c>null</c>, como al gerente.
     /// </summary>

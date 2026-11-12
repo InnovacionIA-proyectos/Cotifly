@@ -7,8 +7,8 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// HU-018.1 (#155) por HTTP contra SQL Server real: parte B, la lista de motivos de pérdida (<c>GET /web/motivos-perdida</c>, configurable
-/// con <c>Resultado:MotivosPerdida</c>) y su validación en <c>/seguimiento</c>; parte C, el Excel de la cotización
+/// Por HTTP contra SQL Server real: la lista de motivos de pérdida (<c>GET /web/motivos-perdida</c>, configurable
+/// con <c>Resultado:MotivosPerdida</c>) y su validación en <c>/seguimiento</c>, y el Excel de la cotización
 /// (<c>GET /web/cotizaciones/{folio}/excel</c>): el dueño con costos y márgenes, el gerente de su regional sin ninguno (ni en el paquete),
 /// los demás 404 y 409 sin precio. Cada respuesta JSON se valida contra <c>specs/openapi.yaml</c>.
 /// </summary>

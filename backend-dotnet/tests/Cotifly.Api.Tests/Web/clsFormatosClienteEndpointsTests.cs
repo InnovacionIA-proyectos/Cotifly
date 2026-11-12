@@ -8,7 +8,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// HU-044.5 (#256) por HTTP contra la API real y el Nexo falso: plantillas de mapeo (<c>PUT/GET/DELETE /web/licitaciones/plantillas-mapeo</c>),
+/// Por HTTP contra la API real y el Nexo falso: plantillas de mapeo (<c>PUT/GET/DELETE /web/licitaciones/plantillas-mapeo</c>),
 /// recetas de lectura (<c>PUT/GET/DELETE /web/licitaciones/recetas-lectura</c>) y la consulta del diccionario del cliente
 /// (<c>GET /web/diccionario-cliente</c> y <c>/opciones</c>). Los listados sin NIT responden 400 sin llamar a NEXO; el PUT de la receta no
 /// se reintenta; "no encontrado" es 404 con el código de NEXO; el diccionario solo devuelve los términos generales.
@@ -246,7 +246,7 @@ public sealed class clsFormatosClienteEndpointsTests : IDisposable
     [InlineData("instrucciones", "Otra instrucción")]
     public async Task UnaParteRepetidaDelFormularioEs400SinLlamarANexo(string parte, string valor)
     {
-        // #256 (validador D1/D2): dos partes con el mismo nombre se unirían con coma: una receta que deja de ser opaca o dos NIT que la
+        // Dos partes con el mismo nombre se unirían con coma: una receta que deja de ser opaca o dos NIT que la
         // normalización funde en otro NIT (la receta se guardaría en otro cliente). Se rechaza el formulario completo.
         var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         var formulario = FormularioReceta(instrucciones: "Las celdas vacías no se cotizan");
@@ -312,7 +312,7 @@ public sealed class clsFormatosClienteEndpointsTests : IDisposable
     [Fact]
     public async Task UnNotFoundDeNexoConUnCodigoDesconocidoEs400CosteoNexoRechazada()
     {
-        // #256 (B3): lo que pasaría con un NEXO sin recetas-lectura (PR #433 fuera de QA): 404 sin un código de la tabla de NEXO.
+        // Un NEXO sin recetas-lectura: 404 sin un código de la tabla de NEXO.
         var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         (_nexo.ImportacionFalla, _nexo.CodigoImportacionFalla) = (HttpStatusCode.NotFound, "RUTA_NO_ENCONTRADA");
 
@@ -360,7 +360,7 @@ public sealed class clsFormatosClienteEndpointsTests : IDisposable
     [Fact]
     public async Task SiNexoDejaDeMandarElClienteIdNoSeMuestraNingunTermino()
     {
-        // #256 (B2): el filtro de generales falla cerrado ante un cambio de forma de NEXO.
+        // El filtro de generales falla cerrado ante un cambio de forma de NEXO.
         var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         _nexo.Diccionario.Add((Guid.NewGuid(), "Mula de otro cliente", "valor", "3S2", "tipoVehiculo"));
         _nexo.DiccionarioSinClienteId = true;

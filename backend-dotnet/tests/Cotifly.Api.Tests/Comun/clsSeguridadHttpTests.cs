@@ -12,7 +12,7 @@ using Microsoft.Extensions.Hosting;
 namespace Cotifly.Api.Tests.Comun;
 
 /// <summary>
-/// Endurecimiento HTTP (#12 parte B): CORS por configuración (preflight), encabezados de seguridad, límite del cuerpo en
+/// Endurecimiento HTTP: CORS por configuración (preflight), encabezados de seguridad, límite del cuerpo en
 /// <c>/web/*</c> y encabezados reenviados de Traefik (la IP real llega al límite de peticiones). Sin base de datos.
 /// </summary>
 public sealed class clsSeguridadHttpTests

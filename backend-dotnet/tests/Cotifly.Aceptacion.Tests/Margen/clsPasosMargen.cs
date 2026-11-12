@@ -23,7 +23,7 @@ public sealed class clsPasosMargen(clsContextoEscenario contexto)
     {
         var lineas = await contexto.ConsultarAsync(s => s.GetRequiredService<IClsMargenPoliticaRepository>().ListarAsync());
         lineas.Select(l => l.LineaNegocio).Should().Contain(
-            ["Nacional", "Distribucion", "Importacion", "Exportacion", "Internacional", "DevolucionContenedor"]); // HU-021: el 0009 retira Almacenamiento, Almacenamiento3PL e ITR
+            ["Nacional", "Distribucion", "Importacion", "Exportacion", "Internacional", "DevolucionContenedor"]); // El 0009 retira Almacenamiento, Almacenamiento3PL e ITR
     }
 
     [Given("la fuente SAP TM con la muestra de rentabilidad por cliente")]
@@ -36,7 +36,7 @@ public sealed class clsPasosMargen(clsContextoEscenario contexto)
     public void DadoQueSapNoEstaConfigurado() => contexto.FuenteSap.EstaConfigurada = false;
 
     /// <summary>
-    /// HU-042.2 (#243): fin de la única corrida <c>ok</c> del job que se siembra en la base de aceptación. Todos los escenarios usan la misma
+    /// Fin de la única corrida <c>ok</c> del job que se siembra en la base de aceptación. Todos los escenarios usan la misma
     /// (es la última <c>ok</c> de la tabla) y mueven el reloj del escenario para que quede "hace N horas".
     /// </summary>
     private static readonly DateTimeOffset _sincronizacionCopia = new(2026, 9, 24, 6, 0, 0, TimeSpan.FromHours(-5));

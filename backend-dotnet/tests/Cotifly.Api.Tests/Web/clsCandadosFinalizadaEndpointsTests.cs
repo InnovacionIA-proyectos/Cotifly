@@ -7,7 +7,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// HU-036.3 (#207) por HTTP con SQL Server real, el Nexo falso y el MailSender falso: antes de finalizar, el PDF, el correo y el resultado
+/// Candados de la cotización finalizada por HTTP con SQL Server real, el Nexo falso y el MailSender falso: antes de finalizar, el PDF, el correo y el resultado
 /// responden 409 <c>COTIZACION_NO_FINALIZADA</c> con la llamada para finalizar; después de finalizar, el margen responde 409
 /// <c>PDF_YA_ENVIADO</c> con la versión nueva y el PDF y el correo sí salen. Cada respuesta se valida contra <c>specs/openapi.yaml</c>.
 /// </summary>
@@ -79,13 +79,13 @@ public sealed class clsCandadosFinalizadaEndpointsTests : IDisposable
         (await VerificarContratoAsync(finalizada, "/web/cotizaciones/{folio}/enviar", _post, HttpStatusCode.OK))
             .GetProperty("estado").GetString().Should().Be("encolado");
 
-        // DEF-1027B-1 (#228, E2E real 2026-10-27B): el 409 PDF_YA_ENVIADO del PDF trae la llamada para la versión nueva en detalle.
+        // El 409 PDF_YA_ENVIADO del PDF trae la llamada para la versión nueva en detalle.
         using var pdfEnviada = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
         await VersionNuevaAsync(pdfEnviada, "/web/cotizaciones/{folio}/costeo/pdf", _post, folio);
     }
 
     /// <summary>
-    /// Validación HU-036: todo lo que cambia el precio o la solicitud de una cotización finalizada (sin enviar) responde 409
+    /// Todo lo que cambia el precio o la solicitud de una cotización finalizada (sin enviar) responde 409
     /// <c>PDF_YA_ENVIADO</c> con la versión nueva en <c>detalle</c>, sin tocar Nexo ni el precio; los textos del PDF y el PDF sí se permiten.
     /// </summary>
     [Fact]

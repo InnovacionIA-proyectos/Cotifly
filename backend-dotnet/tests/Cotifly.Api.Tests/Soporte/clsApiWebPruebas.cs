@@ -61,11 +61,11 @@ public sealed class clsApiWebPruebas : IDisposable
             ["LimiteAuth:PeticionesPorVentana"] = "100000",
             ["Pdf:StorageDir"] = clsServiciosPruebas.CarpetaPdfsTemporal(),
 
-            // La TRM (HU-012.1) nunca sale a la red: sin un manejador falso, las dos fuentes apuntan a hosts de prueba inexistentes.
+            // La TRM nunca sale a la red: sin un manejador falso, las dos fuentes apuntan a hosts de prueba inexistentes.
             ["Trm:Url"] = clsTrmFalso.Url,
             ["Trm:UrlDolarApi"] = clsDolarApiFalso.Url,
         };
-        // HU-033 (#199): el correo sale por MailSender, y en las pruebas por el MailSender FALSO (nunca a la red ni a un buzón real). Fuera
+        // El correo sale por MailSender, y en las pruebas por el MailSender FALSO (nunca a la red ni a un buzón real). Fuera
         // de Production la protección "redirigir" exige el buzón de pruebas. Con el correo habilitado el MailSender falso empieza CAÍDO: un
         // envío propio termina en CORREO_ENVIO_FALLIDO y uno ajeno se rechaza antes (404); las pruebas que envían lo levantan (Caido = false).
         valores["Correo:MailSender:UrlBase"] = clsMailSenderFalso.UrlBase;
@@ -87,17 +87,17 @@ public sealed class clsApiWebPruebas : IDisposable
             b.UseEnvironment(entorno);
             b.ConfigureAppConfiguration((_, configuracion) => configuracion.AddInMemoryCollection(valores));
 
-            // Reloj de la API con horas explícitas por flujo (CrearCotizacionAsync con creadaEn, #117); sin fijar, el del sistema.
+            // Reloj de la API con horas explícitas por flujo (CrearCotizacionAsync con creadaEn); sin fijar, el del sistema.
             b.ConfigureTestServices(s =>
             {
                 s.AddSingleton<IClsReloj>(sp => new clsRelojFijable(sp.GetRequiredService<TimeProvider>()));
                 s.AddHttpClient(Cotifly.Infraestructura.Correo.Services.clsTransporteMailSender.NombreCliente)
                     .ConfigurePrimaryHttpMessageHandler(() => MailSender);
 
-                // Auditoría QA 2026-10-22: el worker de correos hace una vuelta de la agenda COMPLETA al arrancar (antes del primer tick) y
-                // la base es compartida: con el correo habilitado, una API de prueba consultaba en SU MailSender falso los correos de otros
-                // escenarios (404) y los dejaba fallidos (intermitentes en correo.feature). Las pruebas procesan sus correos con
-                // ProcesarCorreosAsync, así que el worker no se registra en la API de pruebas.
+                // El worker de correos hace una vuelta de la agenda COMPLETA al arrancar (antes del primer tick) y la base es compartida:
+                // con el correo habilitado, una API de prueba consultaría en SU MailSender falso los correos de otros escenarios (404) y los
+                // dejaría fallidos. Las pruebas procesan sus correos con ProcesarCorreosAsync, así que el worker no se registra en la API de
+                // pruebas.
                 foreach (var worker in s.Where(d => d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService)
                              && d.ImplementationType == typeof(Cotifly.Infraestructura.Correo.Services.clsWorkerEstadoCorreos)).ToList())
                 {
@@ -111,16 +111,16 @@ public sealed class clsApiWebPruebas : IDisposable
 
     public WebApplicationFactory<Program> Factory { get; }
 
-    /// <summary>HU-033 (#199): MailSender falso de esta API (nunca envía correos reales).</summary>
+    /// <summary>MailSender falso de esta API (nunca envía correos reales).</summary>
     public clsMailSenderFalso MailSender { get; } = new();
 
     /// <summary>
     /// API con <c>Nexo:UrlBase</c> apuntando al Nexo falso (ADR-015): los clientes HTTP <c>Nexo</c> (búsquedas) y <c>NexoCosteo</c>
     /// (costeo) usan <paramref name="nexo"/> como manejador primario, sin salir a la red. Con <paramref name="dolarApi"/> y
     /// <paramref name="superfinanciera"/>, las fuentes de la TRM (ADR-014) también son falsas. Con <paramref name="modelo"/>, el
-    /// <c>IChatClient</c> (agente y redactor de textos, HU-013.5) es ese doble: nunca un proveedor real. Con <paramref name="cubicador"/>
-    /// (HU-021.5, #133), <c>Cubicador:UrlBase</c> y <c>Cubicador:ApiKey</c> apuntan al cubicador falso y su cliente HTTP lo usa como manejador.
-    /// Con <paramref name="servicios"/>, reemplazos adicionales de DI (por ejemplo, una fuente de margen SAP TM fija, #139).
+    /// <c>IChatClient</c> (agente y redactor de textos) es ese doble: nunca un proveedor real. Con <paramref name="cubicador"/>
+    /// <c>Cubicador:UrlBase</c> y <c>Cubicador:ApiKey</c> apuntan al cubicador falso y su cliente HTTP lo usa como manejador.
+    /// Con <paramref name="servicios"/>, reemplazos adicionales de DI (por ejemplo, una fuente de margen SAP TM fija).
     /// </summary>
     public static clsApiWebPruebas ConNexo(
         clsBaseDatosPruebas baseDatos,
@@ -140,7 +140,7 @@ public sealed class clsApiWebPruebas : IDisposable
             valores["Cubicador:UrlBase"] = clsCubicadorFalso.UrlBase;
             valores["Cubicador:ApiKey"] = clsCubicadorFalso.ApiKey;
 
-            // HU-023.5 (#160): el procesador de la cubicación en segundo plano queda apagado; las pruebas lo corren cuando quieren
+            // El procesador de la cubicación en segundo plano queda apagado; las pruebas lo corren cuando quieren
             // (ProcesarCubicacionAsync), solo con las rutas de su licitación.
             valores["Cubicador:ProcesadorHabilitado"] = "false";
             valores["Cubicador:LoteRutas"] = "1000";
@@ -155,7 +155,7 @@ public sealed class clsApiWebPruebas : IDisposable
         {
             s.AddHttpClient("Nexo").ConfigurePrimaryHttpMessageHandler(() => nexo);
             s.AddHttpClient("NexoCosteo").ConfigurePrimaryHttpMessageHandler(() => nexo);
-            // HU-044.1 (#252): la importación inteligente (sugerir-mapeo, leer-estructura, recetas...) también va al Nexo falso.
+            // La importación inteligente (sugerir-mapeo, leer-estructura, recetas...) también va al Nexo falso.
             s.AddHttpClient(Cotifly.Infraestructura.Licitaciones.Services.clsImportacionExcelNexo.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => nexo);
             if (cubicador is not null)
             {
@@ -211,7 +211,7 @@ public sealed class clsApiWebPruebas : IDisposable
     /// <summary>
     /// Cotización del comercial con folio del servidor (<see cref="IClsGeneradorFolioService"/>), línea, precio y, si se pide,
     /// su PDF en el almacén (<c>pdfPath</c>). Con <paramref name="creadaEn"/>, ese es su <c>createdAt</c> (reloj fijado solo para esta
-    /// creación, <see cref="clsRelojFijable"/>): las pruebas de orden no dependen del reloj real (#117).
+    /// creación, <see cref="clsRelojFijable"/>): las pruebas de orden no dependen del reloj real.
     /// </summary>
     public async Task<clsCotizacionPrueba> CrearCotizacionAsync(
         Guid usuarioId, string? nit = null, bool conPdf = true, string linea = "Nacional", DateTimeOffset? creadaEn = null)
@@ -247,7 +247,7 @@ public sealed class clsApiWebPruebas : IDisposable
                 return cotizacion.Error;
             }
 
-            // HU-021: como la del chat, una ruta con la línea de negocio, el margen y el precio, y un camión con el flete.
+            // Como la del chat, una ruta con la línea de negocio, el margen y el precio, y un camión con el flete.
             cotizacion.Valor.RegistrarCotizacionChat(politica.Id, 1_000_000m, 0.15m, 0.15m, OrigenMargen.PoliticaLinea, "margen", 1_176_471m);
 
             repositorio.Agregar(cotizacion.Valor);
@@ -265,7 +265,7 @@ public sealed class clsApiWebPruebas : IDisposable
     }
 
     /// <summary>
-    /// Una vuelta del polling de Nexo (HU-005.6) como la haría el worker, después de adelantar la agenda de la cotización
+    /// Una vuelta del polling de Nexo como la haría el worker, después de adelantar la agenda de la cotización
     /// <paramref name="folio"/> al año 2000 (queda primera en la agenda compartida) y, si se pide, su envío a Nexo
     /// <paramref name="enviadaHace"/> atrás. Devuelve cuántas procesó (puede incluir cotizaciones vencidas de otras pruebas).
     /// </summary>
@@ -295,7 +295,7 @@ public sealed class clsApiWebPruebas : IDisposable
     }
 
     /// <summary>
-    /// HU-033 (#199): una vuelta del worker de correos (<c>clsWorkerEstadoCorreos</c>) solo con los correos de <paramref name="folio"/> que
+    /// Una vuelta del worker de correos (<c>clsWorkerEstadoCorreos</c>) solo con los correos de <paramref name="folio"/> que
     /// siguen en curso: les vence la consulta y consulta su estado en el MailSender falso. Devuelve cuántos procesó.
     /// </summary>
     public async Task<int> ProcesarCorreosAsync(string folio)
@@ -332,7 +332,7 @@ public sealed class clsApiWebPruebas : IDisposable
     }
 
     /// <summary>
-    /// HU-023.5 (#160): vueltas del procesador de la cubicación en segundo plano (<c>clsWorkerCubicacionLicitacion.ProcesarLoteAsync</c>)
+    /// Vueltas del procesador de la cubicación en segundo plano (<c>clsWorkerCubicacionLicitacion.ProcesarLoteAsync</c>)
     /// solo con las rutas de la licitación <paramref name="folio"/>, hasta que no quede ninguna pendiente con el turno vencido ni reclamada
     /// por un instante (otra réplica de la prueba la está cubicando), o hasta <paramref name="limite"/> (30 s por defecto). Se espera por
     /// tiempo y no por número de vueltas: una vuelta sin cupo libre no procesa nada y se repite tras una pausa corta. Devuelve cuántas rutas
@@ -377,7 +377,7 @@ public sealed class clsApiWebPruebas : IDisposable
 
     /// <summary>
     /// Dos (o más) réplicas del worker procesan a la vez la misma cotización vencida en la agenda, cada una en su propio ámbito de DI
-    /// (HU-021.9: el reclamo de la agenda deja pasar a una sola). Devuelve el resultado de cada una.
+    /// (el reclamo de la agenda deja pasar a una sola). Devuelve el resultado de cada una.
     /// </summary>
     public async Task<IReadOnlyList<Aplicacion.Costeo.Services.ResultadoConsultaCosteo>> ProcesarPollingEnParaleloAsync(string folio, int replicas)
     {
@@ -405,15 +405,15 @@ public sealed class clsApiWebPruebas : IDisposable
     }
 
     /// <summary>
-    /// HU-021 (decisión 3): agrega en la ruta 1 de <paramref name="folio"/> un conexo de costo <paramref name="costo"/> como lo hace el
-    /// comercial (<c>POST .../servicios-conexos</c>, que lo crea en Nexo y guarda el valor que Nexo calcula). El polling ya no importa
+    /// Agrega en la ruta 1 de <paramref name="folio"/> un conexo de costo <paramref name="costo"/> como lo hace el
+    /// comercial (<c>POST .../servicios-conexos</c>, que lo crea en Nexo y guarda el valor que Nexo calcula). El polling no importa
     /// los conexos de Nexo. Lanza si la API no responde 200.
     /// </summary>
     public async Task AgregarConexoAsync(clsNexoFalso nexo, string token, string folio, string nombre, decimal costo, decimal? venta = null)
     {
         ArgumentNullException.ThrowIfNull(nexo);
         var id = Guid.NewGuid().ToString();
-        // HU-043.2 (#251): venta = precioVenta del catálogo (null: se cotiza al costo).
+        // venta = precioVenta del catálogo (null: se cotiza al costo).
         nexo.ConServicioConexo(id, $"SC-{id[..8]}", nombre, "logistico", "servicio", costo, precioVenta: venta);
         using var costeo = await EnviarAsync(HttpMethod.Get, $"/web/cotizaciones/{folio}/costeo", token);
         using var respuesta = await EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", token,
@@ -425,7 +425,7 @@ public sealed class clsApiWebPruebas : IDisposable
     }
 
     /// <summary>
-    /// HU-036.2 (#206): el comercial finaliza <paramref name="folio"/> como lo hace el frontend (lee el <c>ETag</c> de
+    /// El comercial finaliza <paramref name="folio"/> como lo hace el frontend (lee el <c>ETag</c> de
     /// <c>GET .../costeo</c> y llama a <c>POST .../finalizar</c> con él). Lanza si la API no responde 200.
     /// </summary>
     public async Task FinalizarAsync(string token, string folio)
@@ -439,15 +439,15 @@ public sealed class clsApiWebPruebas : IDisposable
     }
 
     /// <summary>
-    /// HU-036 (sin backfill): deja <paramref name="folio"/> como una cotización cuyo PDF se generó ANTES del script 14 y nunca se finalizó
-    /// (no cambia la versión de negocio).
+    /// Deja <paramref name="folio"/> como una cotización cuyo PDF se generó antes del script 14 y nunca se finalizó (el script no
+    /// rellena datos; no cambia la versión de negocio).
     /// </summary>
     public async Task DesfinalizarComoAnteriorAHu036Async(string folio) =>
         await clsBaseDatosPruebas.EjecutarAsync(_baseDatos.CadenaCotifly,
             $"UPDATE dbo_cotifly.CotizacionesSolicitud SET finalizadaAt = NULL, finalizadaPor = NULL WHERE folio = N'{folio.Replace("'", "''", StringComparison.Ordinal)}';");
 
     /// <summary>
-    /// HU-036.3 (#207): lo que hace el frontend antes del PDF, los textos, el envío y el resultado: si el costeo de <paramref name="folio"/>
+    /// Lo que hace el frontend antes del PDF, los textos, el envío y el resultado: si el costeo de <paramref name="folio"/>
     /// está listo (<c>autocosteo</c> o <c>entregada</c> con precio), sin finalizar y sin resultado, lo finaliza con el <c>ETag</c> vigente.
     /// Si no corresponde (sin precio, ya finalizada, ajena, chat), no hace nada. Las pruebas de los candados no la usan.
     /// </summary>
@@ -478,7 +478,7 @@ public sealed class clsApiWebPruebas : IDisposable
 
     /// <summary>
     /// Petición con <c>Authorization: Bearer</c> (si hay token), cuerpo JSON crudo (si viene) e <c>If-Match</c> (si viene, tal cual:
-    /// la concurrencia optimista de HU-013, ADR-018 §8).
+    /// la concurrencia optimista de ADR-018 §8).
     /// </summary>
     public async Task<HttpResponseMessage> EnviarAsync(HttpMethod metodo, string ruta, string? token, string? cuerpoJson = null, string? ifMatch = null)
     {
@@ -504,7 +504,7 @@ public sealed class clsApiWebPruebas : IDisposable
     /// <summary>Serializa un objeto anónimo tal cual (sin política de nombres): las pruebas escriben el snake_case a mano.</summary>
     public static string Json(object valor) => JsonSerializer.Serialize(valor);
 
-    /// <summary>Petición con un cuerpo cualquiera (multipart de licitaciones, HU-011).</summary>
+    /// <summary>Petición con un cuerpo cualquiera (multipart de licitaciones).</summary>
     public async Task<HttpResponseMessage> EnviarContenidoAsync(HttpMethod metodo, string ruta, string? token, HttpContent contenido)
     {
         using var peticion = new HttpRequestMessage(metodo, ruta) { Content = contenido };
@@ -517,7 +517,7 @@ public sealed class clsApiWebPruebas : IDisposable
     }
 
     /// <summary>
-    /// Multipart de <c>POST /web/licitaciones</c> (HU-011.2): la parte <c>licitacion</c> con el JSON y, si viene, la parte <c>archivo</c>.
+    /// Multipart de <c>POST /web/licitaciones</c>: la parte <c>licitacion</c> con el JSON y, si viene, la parte <c>archivo</c>.
     /// </summary>
     public static MultipartFormDataContent Licitacion(string json, byte[]? archivo, string nombreArchivo = "pliego.xlsx")
     {

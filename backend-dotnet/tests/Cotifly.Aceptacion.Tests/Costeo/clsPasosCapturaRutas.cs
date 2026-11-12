@@ -10,7 +10,7 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Costeo;
 
 /// <summary>
-/// Pasos de <c>specs/features/captura_rutas.feature</c> (HU-021.6, #132): el formulario por rutas contra la API real, SQL Server en
+/// Pasos de <c>specs/features/captura_rutas.feature</c>: el formulario por rutas contra la API real, SQL Server en
 /// Testcontainers y el Nexo falso de <see cref="clsPasosCosteo"/>.
 /// </summary>
 [Binding]
@@ -61,7 +61,7 @@ public sealed class clsPasosCapturaRutas(clsContextoWeb web, clsPasosCosteo cost
             ["destino"] = "Bogotá",
             ["tipologia"] = "CargaSeca",
             ["peso_kg"] = 28_000m,
-            // HU-032 (#197): la ruta solo trae el peso: el vehículo elegido es obligatorio.
+            // La ruta solo trae el peso: el vehículo elegido es obligatorio.
             ["tipo_vehiculo"] = "3S3",
             ["servicios_conexos"] = new JsonArray(new JsonObject { ["id_servicio_conexo"] = servicio, ["cantidad"] = cantidad }),
         }));

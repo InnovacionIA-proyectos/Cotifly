@@ -11,7 +11,7 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Identidad;
 
 /// <summary>
-/// Pasos de <c>specs/features/identidad_portal.feature</c> (#172): login por HTTP con el NOMBRE de usuario, el ID del portal en
+/// Pasos de <c>specs/features/identidad_portal.feature</c>: login por HTTP con el NOMBRE de usuario, el ID del portal en
 /// <c>UsuariosWeb.idUsuarioExterno</c> y en <c>X-Portal-clsUsuario-Id</c> de cada petición al Nexo falso de <see cref="clsPasosCosteo"/>, y la
 /// revinculación con el vínculo en NULL (lo que hace <c>db/scripts/operacion/revincular_…sql</c>, solo para la persona del escenario).
 /// Cada alias se traduce a un nombre y un ID únicos: la base de identidad se comparte entre escenarios.

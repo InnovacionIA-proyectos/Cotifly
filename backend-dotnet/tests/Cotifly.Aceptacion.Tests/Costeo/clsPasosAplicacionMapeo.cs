@@ -5,8 +5,8 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Costeo;
 
 /// <summary>
-/// HU-044.3 (#254): pasos de <c>aplicar-mapeo</c> de <c>specs/features/licitaciones_excel.feature</c>. Usa el Nexo falso del escenario, que
-/// aplica el mapeo con un subconjunto de las reglas de NEXO (#252): toneladas, «ORIGEN - DESTINO», coma decimal y la línea de negocio por celda.
+/// Pasos de <c>aplicar-mapeo</c> de <c>specs/features/licitaciones_excel.feature</c>. Usa el Nexo falso del escenario, que
+/// aplica el mapeo con un subconjunto de las reglas de NEXO: toneladas, «ORIGEN - DESTINO», coma decimal y la línea de negocio por celda.
 /// </summary>
 [Binding]
 public sealed class clsPasosAplicacionMapeo(clsContextoWeb web)
