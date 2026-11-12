@@ -11,7 +11,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// Validador de la #253 (HU-044.2): pruebas adversariales de <c>POST /web/licitaciones/sugerir-mapeo</c> y
+/// Pruebas adversariales de <c>POST /web/licitaciones/sugerir-mapeo</c> y
 /// <c>POST /web/licitaciones/leer-estructura</c> contra la API real y el Nexo falso: límites (100 encabezados, 200 filas, tamaño exacto del
 /// archivo), entradas mal formadas (encabezados vacíos, duplicados o enormes, NIT inválido, extensiones engañosas, receta binaria o enorme,
 /// partes repetidas), roles, el 429 por comercial, respuestas raras de NEXO, la forma snake_case con la receta intacta y que ningún
@@ -222,7 +222,7 @@ public sealed partial class clsSugerenciaMapeoAdversarialTests : IDisposable
     [Fact]
     public async Task ConMasDeCienColumnasYNitInvalidoGanaElNitInvalido()
     {
-        // O1 (val253): el NIT se valida antes que el límite de columnas: un NIT inválido no se esconde detrás de la hoja sin propuesta.
+        // El NIT se valida antes que el límite de columnas: un NIT inválido no se esconde detrás de la hoja sin propuesta.
         var sesion = await ComercialAsync();
 
         using var respuesta = await SugerirAsync(sesion, new { nit_cliente = "---", encabezados = Encabezados(101) });
@@ -479,7 +479,7 @@ public sealed partial class clsSugerenciaMapeoAdversarialTests : IDisposable
     [Fact]
     public async Task UnaRecetaEnormeLlegaANexoSinTopeEnCotiflyYVuelveSuRechazo()
     {
-        // Observación O2 (val253): Cotifly no pone tope a la receta (la issue lo delega en NEXO, máx. 60.000) ni el formulario la corta:
+        // Cotifly no pone tope a la receta (lo pone NEXO, máx. 60.000) ni el formulario la corta:
         // una receta de más de 4 MB viaja entera a NEXO. Con un archivo cerca del límite, el cuerpo hacia NEXO pasa de 10 MB y el
         // comercial recibiría ARCHIVO_DEMASIADO_GRANDE (el 413 de NEXO), un mensaje sobre el archivo cuando sobra la receta.
         var sesion = await ComercialAsync();
@@ -509,7 +509,7 @@ public sealed partial class clsSugerenciaMapeoAdversarialTests : IDisposable
     [InlineData("instrucciones")]
     public async Task UnCampoRepetidoSeRechazaSinLlamarANexo(string campo)
     {
-        // D1 (val253): dos partes con el mismo nombre se unían con coma (dos NIT formaban un tercero). Como #256: 400 ErrorWeb, sin adivinar.
+        // Dos partes con el mismo nombre se unirían con coma (dos NIT formarían un tercero): 400 ErrorWeb, sin adivinar, como en los formatos del cliente.
         var sesion = await ComercialAsync();
 
         using var respuesta = await LeerAsync(sesion, Formulario(campos: [(campo, "900111222"), (campo, "800333444")]));

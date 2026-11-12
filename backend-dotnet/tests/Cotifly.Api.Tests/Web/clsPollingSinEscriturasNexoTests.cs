@@ -6,10 +6,9 @@ using Cotifly.Pruebas.Web;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// E2E real del 2026-10-16 (observación 1): el polling hizo 69 <c>POST /api/cotizaciones</c> ("crear o recuperar" el borrador) a Nexo QA
-/// en unos 20 minutos para 5 solicitudes, una escritura por ciclo. Ahora el polling solo LEE (<c>GET /api/solicitudes/{id}</c> y
+/// El polling solo LEE en Nexo (<c>GET /api/solicitudes/{id}</c> y
 /// <c>GET /api/cotizaciones/por-solicitud/{id}</c>); la cotización de Nexo la crean el autocosteo o la Mesa, y su id queda guardado en
-/// <c>cotizacionNexoId</c> la primera vez que aparece. Además, el 409 pasajero de Nexo al coincidir dos lecturas se reintenta una vez.
+/// <c>cotizacionNexoId</c> la primera vez que aparece; nunca hace un <c>POST /api/cotizaciones</c> ("crear o recuperar") por ciclo. Además, el 409 pasajero de Nexo al coincidir dos lecturas se reintenta una vez.
 /// Por HTTP con SQL Server real y el Nexo falso, contando las llamadas.
 /// </summary>
 [Collection(clsColeccionApiWeb.Nombre)]
@@ -35,7 +34,7 @@ public sealed class clsPollingSinEscriturasNexoTests : IDisposable
         var (folio, solicitud) = await CapturarAsync();
         var escriturasTrasLaCaptura = _nexo.EscriturasCotizaciones;
 
-        // Cinco ciclos sin costeo: Nexo todavía no tiene cotización (204). Antes, cinco "crear o recuperar".
+        // Cinco ciclos sin costeo: Nexo todavía no tiene cotización (204) y no se escribe nada.
         for (var ciclo = 0; ciclo < 5; ciclo++)
         {
             (await _api.ProcesarPollingAsync(folio)).Should().Be(1);
@@ -90,7 +89,7 @@ public sealed class clsPollingSinEscriturasNexoTests : IDisposable
             await _api.ProcesarPollingAsync(folio);
         }
 
-        // Compatibilidad con un Nexo anterior a #286: sin la ruta de lectura, el primer ciclo hace UNA VEZ el "crear o recuperar" y guarda
+        // Compatibilidad con un Nexo sin la ruta de lectura por solicitud, el primer ciclo hace UNA VEZ el "crear o recuperar" y guarda
         // el id; los siguientes leen la cotización por su id.
         var cotizacionNexo = _nexo.CotizacionDe(solicitud);
         _nexo.Llamadas(HttpMethod.Post, "/api/cotizaciones").Should().Be(1, "una sola escritura por solicitud");

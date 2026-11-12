@@ -7,7 +7,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// <c>GET /web/metricas/comercial</c> y <c>/regional</c> (HU-010.1, ADR-016) por HTTP contra la base real: contrato, rol del
+/// <c>GET /web/metricas/comercial</c> y <c>/regional</c> (ADR-016) por HTTP contra la base real: contrato, rol del
 /// token, versión vigente, USD a COP, regional del gerente y sus errores (403, 404, 409, 400).
 /// </summary>
 [Collection(clsColeccionApiWeb.Nombre)]
@@ -50,7 +50,7 @@ public sealed class clsMetricasTableroEndpointsTests(clsEntornoApiWeb entorno)
     [Fact]
     public async Task UnaCotizacionGanadaConTresRutasDeDistintasLineasCuentaUnaVezYSeAbrePorRutaEnLaApertura()
     {
-        // HU-021.10 (#137), decisión 8: conteos por cotización; valores y apertura por línea de negocio, por ruta (USD con su TRM).
+        // Conteos por cotización; valores y apertura por línea de negocio, por ruta (USD con su TRM).
         var ana = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         var cotizacion = await CrearAsync(ana.UsuarioId, "USD", 1_300.34m, 4_000.5m, 1_000_000m, true, "2026-05-05");
         await clsBaseDatosPruebas.EjecutarAsync(entorno.BaseDatos.CadenaCotifly, $"""
@@ -168,12 +168,12 @@ public sealed class clsMetricasTableroEndpointsTests(clsEntornoApiWeb entorno)
     [Fact]
     public async Task ElGerenteFiltraPorAnioYMesCompletosEnBogotaYElAnioReemplazaADesdeYHasta()
     {
-        // HU-010.5 (#187).
+        // Periodos por año, por mes y con desde/hasta.
         var occidente = Regional();
         var ana = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial, occidente, "Ana Anio");
         var gloria = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoGerente, occidente, "Gloria Anio");
         await CrearAsync(ana.UsuarioId, "COP", 1_000_000m, 0m, 850_000m, true, "2025-12-15");
-        await CrearAsync(ana.UsuarioId, "COP", 1_000_000m, 0m, 850_000m, true, "2026-04-30T23:30:00-05:00"); // 2026-05-01 04:30 UTC
+        await CrearAsync(ana.UsuarioId, "COP", 1_000_000m, 0m, 850_000m, true, "2026-04-30T23:30:00-05:00"); // 1 de mayo, 04:30 UTC
         await CrearAsync(ana.UsuarioId, "COP", 1_000_000m, 0m, 850_000m, false, "2026-05-01T00:30:00-05:00");
         await CrearAsync(ana.UsuarioId, "COP", 1_000_000m, 0m, 850_000m, null, "2026-10-05");
 
@@ -198,7 +198,7 @@ public sealed class clsMetricasTableroEndpointsTests(clsEntornoApiWeb entorno)
     [Fact]
     public async Task ElUltimoInstanteDelMesEnBogotaEsDeEseMesYLas0000DelSiguienteNo()
     {
-        // HU-010.5 (#187), validación: límites exactos del mes con datetimeoffset (Bogotá, UTC-5) y su equivalente en otra zona.
+        // Límites exactos del mes con datetimeoffset (Bogotá, UTC-5) y su equivalente en otra zona.
         var occidente = Regional();
         var ana = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial, occidente, "Ana Limite");
         var gloria = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoGerente, occidente, "Gloria Limite");
@@ -253,9 +253,9 @@ public sealed class clsMetricasTableroEndpointsTests(clsEntornoApiWeb entorno)
     }
 
     [Fact]
-    public async Task HU0341_LaSerieMensualTraeGananciasYCosteoPorMesEnAmbosTablerosYCuadraConLosIndicadores()
+    public async Task LaSerieMensualTraeGananciasYCosteoPorMesEnAmbosTablerosYCuadraConLosIndicadores()
     {
-        // #201: frontera de mes en Bogotá (23:30 del 31 de marzo es 1 de abril en UTC), USD con TRM y una ruta rechazada que no cuenta.
+        // Frontera de mes en Bogotá (23:30 del 31 de marzo es 1 de abril en UTC), USD con TRM y una ruta rechazada que no cuenta.
         var occidente = Regional();
         var ana = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial, occidente, "Ana Serie");
         var gloria = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoGerente, occidente, "Gloria Serie");
@@ -287,10 +287,10 @@ public sealed class clsMetricasTableroEndpointsTests(clsEntornoApiWeb entorno)
     }
 
     [Fact]
-    public async Task HU0341_LaSerieCruzaElAnioRespetaMesYLaVersionGanadaYNoMezclaOtrasRegionales()
+    public async Task LaSerieCruzaElAnioRespetaMesYLaVersionGanadaYNoMezclaOtrasRegionales()
     {
-        // #201: diciembre (23:30 del 31 en Bogotá) frente a enero; en enero una cadena cuya v1 se ganó y cuya -v2 vigente no tiene
-        // precio ni costo (B3, #173); Marta, de otra regional, no entra en la serie del gerente ni en la de Ana.
+        // Diciembre (23:30 del 31 en Bogotá) frente a enero; en enero una cadena cuya v1 se ganó y cuya -v2 vigente no tiene
+        // precio ni costo; Marta, de otra regional, no entra en la serie del gerente ni en la de Ana.
         var occidente = Regional();
         var ana = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial, occidente, "Ana Cruce");
         var gloria = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoGerente, occidente, "Gloria Cruce");

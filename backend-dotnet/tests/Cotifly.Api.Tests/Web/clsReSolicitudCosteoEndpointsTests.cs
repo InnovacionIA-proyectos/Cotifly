@@ -7,7 +7,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// "Cotizar costo" (HU-013.4, #100, ADR-018 §5, §8 y §11) por HTTP con SQL Server real y el Nexo falso: re-solicitar es una captura
+/// "Cotizar costo" (ADR-018 §5, §8 y §11) por HTTP con SQL Server real y el Nexo falso: re-solicitar es una captura
 /// nueva en Nexo (Nexo no tiene "reabrir"), en el mismo folio (200) o en la versión <c>-vN</c> (201), con <c>If-Match</c> obligatorio e
 /// <c>Idempotency-Key</c> contra el doble clic.
 /// </summary>
@@ -71,13 +71,13 @@ public sealed class clsReSolicitudCosteoEndpointsTests : IDisposable
     public async Task EntregadaConPdfSinEnviarSeReSolicitaEnElMismoFolioOlvidaElPrecioEInvalidaElPdf()
     {
         var (sesion, folio) = await EntregadaAsync();
-        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // Como el frontend
         using (var pdf = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access))
         {
             pdf.StatusCode.Should().Be(HttpStatusCode.Created);
         }
 
-        // HU-036 (sin backfill): el PDF se generó antes del script 14 y la cotización quedó sin finalizar; con ella finalizada el cambio
+        // El PDF se generó antes del script 14 y la cotización quedó sin finalizar; con ella finalizada el cambio
         // sería 409 PDF_YA_ENVIADO (clsCandadosFinalizadaEndpointsTests).
         await _api.DesfinalizarComoAnteriorAHu036Async(folio);
         using var respuesta = await ReSolicitarAsync(sesion, folio, """{"motivo":"El cliente pidió actualizar el valor"}""", await EtagAsync(sesion, folio));
@@ -127,7 +127,7 @@ public sealed class clsReSolicitudCosteoEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// #278 (DU §5, hallazgo ALTA de la validación): una re-solicitud que cambia una sola hora deja el encabezado con una (los cambios de
+    /// DU §5: una re-solicitud que cambia una sola hora deja el encabezado con una (los cambios de
     /// carga se aplican también a él). La cabecera de Nexo solo lleva las horas en pareja y la línea lleva la suya: el Nexo falso, que
     /// valida la pareja en la cabecera y en cada línea, acepta el alta.
     /// </summary>
@@ -151,7 +151,7 @@ public sealed class clsReSolicitudCosteoEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// #250 (DU §8): una re-solicitud que agrega la tara (<c>datos_carga.peso_con_tara_kg</c>) a la ruta de contenedor de un solo camión llega
+    /// DU §8: una re-solicitud que agrega la tara (<c>datos_carga.peso_con_tara_kg</c>) a la ruta de contenedor de un solo camión llega
     /// a Nexo con el peso con tara y con sus posiciones (la carga sin tara): el Nexo falso, con la regla asimétrica de Nexo, la acepta.
     /// </summary>
     [Fact]
@@ -380,7 +380,7 @@ public sealed class clsReSolicitudCosteoEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// Una columna de la cotización <paramref name="folio"/>. HU-021: el costo es el de la ruta 1 y la carga (peso, vehículo, carrocería),
+    /// Una columna de la cotización <paramref name="folio"/>. El costo es el de la ruta 1 y la carga (peso, vehículo, carrocería),
     /// la de su primer camión; el resto, de la cabecera.
     /// </summary>
     private Task<string?> ColumnaAsync(string folio, string columna)

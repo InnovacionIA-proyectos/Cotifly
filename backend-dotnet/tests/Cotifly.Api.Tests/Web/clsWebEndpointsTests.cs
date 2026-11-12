@@ -7,9 +7,9 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// <c>/web/*</c> de la consola del comercial por HTTP contra la base real (#12 parte B): respuestas que cumplen
+/// <c>/web/*</c> de la consola del comercial por HTTP contra la base real: respuestas que cumplen
 /// <c>specs/openapi.yaml</c> (snake_case), aislamiento A/B en cada endpoint (404 indistinguible), validaciones 400 y la tabla de
-/// códigos HTTP "Para #12" de docs/07-api.md.
+/// códigos HTTP de docs/07-api.md.
 /// </summary>
 [Collection(clsColeccionApiWeb.Nombre)]
 [Trait("Categoria", "Integracion")]
@@ -29,7 +29,7 @@ public sealed class clsWebEndpointsTests(clsEntornoApiWeb entorno)
     {
         var ana = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         var luis = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
-        // Horas explícitas (#117): el reloj del contenedor de pruebas llega a saltar hacia atrás, así que una espera real no
+        // Horas explícitas: el reloj del contenedor de pruebas llega a saltar hacia atrás, así que una espera real no
         // garantiza que la segunda quede con un createdAt posterior.
         var hora = clsRelojFijable.HoraBase();
         var primera = await Api.CrearCotizacionAsync(ana.UsuarioId, "900111222", creadaEn: hora);
@@ -94,7 +94,7 @@ public sealed class clsWebEndpointsTests(clsEntornoApiWeb entorno)
         json.GetProperty("ganada").GetBoolean().Should().BeFalse();
         json.GetProperty("motivo_rechazo").GetString().Should().Be("Valor muy alto");
         json.GetProperty("linea_negocio").GetString().Should().Be("Nacional");
-        // HU-018.1 (#155): sin motivo_rechazo la perdida es MOTIVO_NO_PERMITIDO; con motivoRechazo (camelCase) el motivo no llega.
+        // Sin motivo_rechazo la perdida es MOTIVO_NO_PERMITIDO; con motivoRechazo (camelCase) el motivo no llega.
         jsonCamel.GetProperty("error").GetProperty("codigo").GetString().Should()
             .Be("MOTIVO_NO_PERMITIDO", "el cuerpo de /web/* se lee en snake_case: motivoRechazo no existe");
     }
@@ -209,7 +209,7 @@ public sealed class clsWebEndpointsTests(clsEntornoApiWeb entorno)
     }
 
     /// <summary>
-    /// Endurecimiento A (#199): <c>/enviar</c> de un folio ajeno o inexistente responde 404 antes que <c>CORREO_DESHABILITADO</c> (503) o
+    /// <c>/enviar</c> de un folio ajeno o inexistente responde 404 antes que <c>CORREO_DESHABILITADO</c> (503) o
     /// <c>CORREO_INVALIDO</c> (400): con esas respuestas se podía saber qué folios existen.
     /// </summary>
     [Fact]

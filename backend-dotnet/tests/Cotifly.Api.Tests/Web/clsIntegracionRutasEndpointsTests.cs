@@ -7,7 +7,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// Escenario cruzado de HU-021 (#132, #134 y #135 integradas) por HTTP con SQL Server real y el Nexo falso: una captura con dos rutas
+/// Escenario cruzado de la captura por rutas, el envío por camión y el margen por ruta, por HTTP con SQL Server real y el Nexo falso: una captura con dos rutas
 /// de distinta línea de negocio y un conexo capturado viaja a Nexo con la <c>lineaNegocio</c> de cada ruta en cada camión; el conexo
 /// que se agrega a la ruta 2 va a la línea del primer camión VIGENTE de esa ruta y vuelve a esa ruta, y el ajuste de margen de la ruta 2
 /// no toca la ruta 1.
@@ -24,7 +24,7 @@ public sealed class clsIntegracionRutasEndpointsTests : IDisposable
     private readonly clsEntornoApiWeb _entorno;
     private readonly clsNexoFalso _nexo = new clsNexoFalso()
         .ConCliente(clsCosteoEndpointsTests.Nit, "LONGYIN S.A.S.")
-        // HU-043.2 (#251): con precio de venta distinto del costo (S6-HU-38.2), para que las métricas lo distingan.
+        // Con precio de venta distinto del costo, para que las métricas lo distingan.
         .ConServicioConexo(Cargue, Cargue, "Cargue en puerto", "logistico", "UND", 150_000m, precioVenta: 200_000m)
         .ConServicioConexo(Almacenamiento, "ALM-01", "Almacenamiento", "logistico", "Día", 120_000m, precioVenta: 150_000m);
     private readonly clsApiWebPruebas _api;
@@ -42,14 +42,14 @@ public sealed class clsIntegracionRutasEndpointsTests : IDisposable
     {
         var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
 
-        // 1. Captura (#132) con Nexo caído: queda guardada en error_envio con sus dos rutas y el conexo capturado en la ruta 2.
+        // 1. Captura con Nexo caído: queda guardada en error_envio con sus dos rutas y el conexo capturado en la ruta 2.
         _nexo.AltaFalla = HttpStatusCode.ServiceUnavailable;
         using var envio = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, Formulario());
         var creada = await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created);
         creada.GetProperty("estado_costeo").GetString().Should().Be("error_envio");
         var folio = creada.GetProperty("folio").GetString()!;
 
-        // La ruta 2 lleva además un segundo camión (hasta el cubicador, #133), creado después del de la captura.
+        // La ruta 2 lleva además un segundo camión, creado después del de la captura.
         await clsBaseDatosPruebas.EjecutarAsync(_entorno.BaseDatos.CadenaCotifly,
             "INSERT INTO dbo_cotifly.CotizacionVehiculosLineaSolicitud (id, lineaSolicitudId, tipoVehiculo, carroceria, pesoKg, costoLevanteContenedor, "
             + "estadoCosteo, createdAt, updatedAt) "
@@ -59,7 +59,7 @@ public sealed class clsIntegracionRutasEndpointsTests : IDisposable
             + "FROM dbo_cotifly.CotizacionLineasSolicitud l JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId "
             + $"WHERE c.folio = '{folio}' AND l.orden = 2");
 
-        // 2. Envío por camión (#134): una línea por camión, cada una con la línea de negocio de Nexo de SU ruta.
+        // 2. Envío por camión: una línea por camión, cada una con la línea de negocio de Nexo de SU ruta.
         _nexo.AltaFalla = null;
         using var reintento = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/reintentar", ana.Access);
         await VerificarContratoAsync(reintento, "/web/cotizaciones/{folio}/costeo/reintentar", _post, HttpStatusCode.OK);
@@ -103,7 +103,7 @@ public sealed class clsIntegracionRutasEndpointsTests : IDisposable
             .Should().BeEquivalentTo(["Cargue en puerto", "Almacenamiento"], "el conexo vuelve a su ruta (#134/#135)");
         conConexo[0].GetProperty("servicios_conexos").GetArrayLength().Should().Be(0);
 
-        // 3. Margen por ruta (#135): solo la ruta 2 cambia.
+        // 3. Margen por ruta: solo la ruta 2 cambia.
         var precioRuta1 = conConexo[0].GetProperty("precio_final_linea").GetDecimal();
         var precioRuta2 = conConexo[1].GetProperty("precio_final_linea").GetDecimal();
         using var margen = await ConVersionAsync(_put, $"/web/cotizaciones/{folio}/costeo/margen", ana.Access,
@@ -126,7 +126,7 @@ public sealed class clsIntegracionRutasEndpointsTests : IDisposable
     [Fact]
     public async Task LasMetricasDeLaCadenaCompletaCuentanPorCotizacionYSumanPorRutaSinElCamionDescartado()
     {
-        // HU-021.10 (#137) sobre #132, #134 y #135: dos rutas de distinta línea, la ruta 2 con un camión descartado y un conexo
+        // Métricas sobre la captura por rutas: dos rutas de distinta línea, la ruta 2 con un camión descartado y un conexo
         // capturado más otro agregado, y un ajuste de margen solo en la ruta 2.
         var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         _nexo.AltaFalla = HttpStatusCode.ServiceUnavailable;
@@ -217,7 +217,7 @@ public sealed class clsIntegracionRutasEndpointsTests : IDisposable
 
     /// <summary>Dos rutas de distinta línea de negocio (Importacion y Exportacion); la ruta 2 captura un conexo del catálogo de Nexo.</summary>
     /// <summary>
-    /// #278 (bloqueante de la validación): la línea sembrada <c>DevolucionContenedor</c> (mapeo <c>DevolucionContenedor</c>, seeder y 0009)
+    /// La línea sembrada <c>DevolucionContenedor</c> (mapeo <c>DevolucionContenedor</c>, seeder y 0009)
     /// se captura sin <c>LINEA_NEGOCIO_INVALIDO</c> y viaja a Nexo con la escritura canónica del DU, que el Nexo falso acepta.
     /// </summary>
     [Fact]

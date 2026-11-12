@@ -8,7 +8,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// Licitaciones desde Excel (HU-011.2, ADR-017) por HTTP contra SQL Server real y un Nexo falso: análisis reenviado a Nexo, alta
+/// Licitaciones desde Excel (ADR-017) por HTTP contra SQL Server real y un Nexo falso: análisis reenviado a Nexo, alta
 /// multipart o JSON, reporte por fila, una sola solicitud con N líneas, polling línea por línea y la vista sin costos.
 /// </summary>
 [Collection(clsColeccionApiWeb.Nombre)]
@@ -72,7 +72,7 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
     [Fact]
     public async Task ElTopeDiarioDeIaDeNexoEs429IaTopeDiarioYNoUnaCaida()
     {
-        // #278 (DU §2.1): el cupo diario de IA del comercial (IA_TOPE_DIARIO) no es el cupo por minuto (DEMASIADAS_SOLICITUDES, 503).
+        // DU §2.1: el cupo diario de IA del comercial (IA_TOPE_DIARIO) no es el cupo por minuto (DEMASIADAS_SOLICITUDES, 503).
         var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         _nexo.AnalisisFalla = HttpStatusCode.TooManyRequests;
         _nexo.CodigoAnalisisFalla = "IA_TOPE_DIARIO";
@@ -122,7 +122,7 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
         json.GetProperty("archivo_nombre").ValueKind.Should().Be(JsonValueKind.Null);
         json.GetProperty("lineas").GetArrayLength().Should().Be(2);
 
-        // D5 (E2E 2026-10-16): el pliego manda 2026-10-20T17:00:00-05:00; la licitación respondía con el -05:00. Sale en UTC, como el resto.
+        // El pliego manda la hora de Bogotá (-05:00); la licitación responde en UTC, como el resto.
         json.GetProperty("deadline").GetString().Should().Be("2026-10-20T22:00:00+00:00");
         var folio = json.GetProperty("folio").GetString();
         using var leida = await _api.EnviarAsync(HttpMethod.Get, $"/web/licitaciones/{folio}", sesion.Access);
@@ -151,10 +151,10 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// OBS-1027-4 (#226, E2E real del 2026-10-27): con errores de fila y la línea "Licitaciones" de Nexo (o una fila con una línea que
+    /// Con errores de fila y la línea "Licitaciones" de Nexo (o una fila con una línea que
     /// no existe), el reporte trae todo en la misma respuesta: los errores de fila y <c>MARGEN_LINEA_DESCONOCIDA</c> en
     /// <c>linea_negocio</c> (del encabezado, <c>indice = null</c>, o de la fila), con las líneas válidas en <c>detalle.lineas_validas</c>.
-    /// Antes la línea solo se informaba al corregir las filas (dos idas y vueltas).
+    /// Así el comercial corrige todo en una sola ida y vuelta.
     /// </summary>
     [Fact]
     public async Task ConErroresDeFilaYLaLineaLicitacionesElReporteTraeTambienElErrorDeLaLinea()
@@ -188,7 +188,7 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// Validación de OBS-1027-4 (#226): el reporte no duplica y su orden es estable. Primero los errores de las filas (en su orden) y
+    /// El reporte no duplica y su orden es estable. Primero los errores de las filas (en su orden) y
     /// después los de la línea de negocio: el del encabezado y uno por cada fila que trae una línea distinta que no da margen. Una fila
     /// que repite la línea del encabezado (sin importar mayúsculas) no suma otro error; dos filas con la misma línea inválida, uno cada
     /// una. Dos envíos iguales dan el mismo reporte.
@@ -272,7 +272,7 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// DEF-1027-2 (#226, HU-036.2): la vista de la licitación (la del polling) trae <c>finalizada_at</c> siempre, <c>null</c> sin finalizar
+    /// La vista de la licitación (la del polling) trae <c>finalizada_at</c> siempre, <c>null</c> sin finalizar
     /// y, tras <c>POST .../finalizar</c>, la misma fecha que el resumen y el costeo, para habilitar "Finalizar" sin pedir el costeo.
     /// </summary>
     [Fact]
@@ -390,8 +390,8 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// Endurecimiento A (#199): <c>GET /web/licitaciones/{folio}</c> de un folio de formulario (o del chat) responde 404, como el Excel y
-    /// reintentar: antes respondía 200 con la vista de licitación de una cotización que no lo es.
+    /// <c>GET /web/licitaciones/{folio}</c> de un folio de formulario (o del chat) responde 404, como el Excel y
+    /// reintentar: nunca la vista de licitación de una cotización que no lo es.
     /// </summary>
     [Fact]
     public async Task LaVistaDeLicitacionSoloAbreLicitaciones()
@@ -448,7 +448,7 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
         var folio = (await CrearAsync(sesion, clsPliegoMuestra.Lineas(), clsPliegoMuestra.Excel(), HttpStatusCode.Created)).GetProperty("folio").GetString()!;
         var solicitud = _nexo.SolicitudesCreadas[^1];
 
-        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // Como el frontend
         using (var temprano = await _api.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access))
         {
             temprano.StatusCode.Should().Be(HttpStatusCode.Conflict, "sin todas las líneas costeadas no hay PDF del pliego");
@@ -459,7 +459,7 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
         _nexo.CostearLinea(solicitud, 2, 850_000m);
         await _api.ProcesarPollingAsync(folio);
 
-        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // Como el frontend
         using var respuesta = await _api.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
         var json = await VerificarContratoAsync(respuesta, "/web/cotizaciones/{folio}/costeo/pdf", HttpMethod.Post, HttpStatusCode.Created);
         var ruta = new Uri(new Uri("http://localhost"), json.GetProperty("pdf_url").GetString()!).AbsolutePath;
@@ -480,7 +480,7 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
         _nexo.CostearLinea(_nexo.SolicitudesCreadas[^1], 0, 1_000_003m);
         await _api.ProcesarPollingAsync(folio);
 
-        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // Como el frontend
         using var respuesta = await _api.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
         var json = await VerificarContratoAsync(respuesta, "/web/cotizaciones/{folio}/costeo/pdf", HttpMethod.Post, HttpStatusCode.Created);
         var ruta = new Uri(new Uri("http://localhost"), json.GetProperty("pdf_url").GetString()!).AbsolutePath;
@@ -492,7 +492,7 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
         texto.Should().NotContain("$1.000.003", "el flete de Nexo nunca va al PDF");
     }
 
-    // ---- HU-035.2 (#213): el pliego pasa por los controles del Excel subido (los del Excel de mercancías) ANTES de Nexo.
+    // ---- El pliego pasa por los controles del Excel subido (los del Excel de mercancías) ANTES de Nexo.
 
     public static TheoryData<string, string, string> PliegosMaliciosos() => new()
     {
@@ -574,7 +574,7 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// HU-035.2 (#213), validación: un original guardado ANTES de los controles (aquí, reemplazado en la base) que no los pasa no tumba
+    /// Un original guardado sin los controles (aquí, reemplazado en la base) que no los pasa no tumba
     /// la exportación: 400 con el código y el motivo de la lectura, nunca un 500 ni un cuelgue.
     /// </summary>
     [Theory]
@@ -642,9 +642,9 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
             Task.FromResult<Cotifly.Dominio.Comun.clsResultado<IReadOnlyDictionary<string, IReadOnlyList<int>>>>(_ocupado);
     }
 
-    // HU-044.10 (#293, parte 1): origen_lectura en el 201 y en la vista: analizar_excel con archivo (por defecto), null sin archivo.
+    // origen_lectura en el 201 y en la vista: analizar_excel con archivo (por defecto), null sin archivo.
     [Fact]
-    public async Task Hu293_LaRespuestaTraeElOrigenLectura()
+    public async Task LaRespuestaTraeElOrigenLectura()
     {
         var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
 
@@ -658,9 +658,9 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
             .GetProperty("origen_lectura").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
-    // HU-044.10 (#293, parte 2): con archivo, una línea con fila null es una línea agregada a mano; se crea y vuelve con fila null.
+    // Con archivo, una línea con fila null es una línea agregada a mano; se crea y vuelve con fila null.
     [Fact]
-    public async Task Hu293_UnaLineaAManoConArchivoSeCreaYVuelveConFilaNull()
+    public async Task UnaLineaAManoConArchivoSeCreaYVuelveConFilaNull()
     {
         var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         object[] lineas =
@@ -676,9 +676,9 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
         filas.Count(f => f.ValueKind == JsonValueKind.Null).Should().Be(1, "la línea agregada a mano vuelve con fila null");
     }
 
-    // HU-044.10 (#293, parte 3): la misma clave y el mismo cuerpo+archivo crean una sola licitación con el mismo folio.
+    // La misma clave y el mismo cuerpo+archivo crean una sola licitación con el mismo folio.
     [Fact]
-    public async Task Hu293_MismaClaveYMismoCuerpoCreanUnaSolaLicitacion()
+    public async Task MismaClaveYMismoCuerpoCreanUnaSolaLicitacion()
     {
         var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         var clave = Guid.NewGuid().ToString();
@@ -695,7 +695,7 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
     }
 
     [Fact]
-    public async Task Hu293_MismaClaveConOtroArchivoEs409()
+    public async Task MismaClaveConOtroArchivoEs409()
     {
         var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         var clave = Guid.NewGuid().ToString();
@@ -709,7 +709,7 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
     }
 
     [Fact]
-    public async Task Hu293_UnReportePorFilaNoGastaLaClave()
+    public async Task UnReportePorFilaNoGastaLaClave()
     {
         var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         var clave = Guid.NewGuid().ToString();
@@ -727,7 +727,7 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
     }
 
     [Fact]
-    public async Task Hu293_UnaClaveFueraDeLargoEsSolicitudInvalida()
+    public async Task UnaClaveFueraDeLargoEsSolicitudInvalida()
     {
         var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
 

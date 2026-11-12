@@ -10,7 +10,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// HU-042.2 (#243, ADR-027): <c>GET /web/admin/sap-margen/estado</c> y <c>POST /web/admin/sap-margen/sincronizar</c> por HTTP. Solo gerencia
+/// <c>GET /web/admin/sap-margen/estado</c> y <c>POST /web/admin/sap-margen/sincronizar</c> por HTTP (ADR-027). Solo gerencia
 /// (403 para el comercial), 503 <c>SAP_MARGEN_NO_CONFIGURADO</c> sin <c>SapTm:Url/User/Pass</c> y, configurada, una corrida forzada real con
 /// el SAP falso sobre una base AISLADA (con la collation de la base real): la compartida nunca debe tener una corrida <c>ok</c>. El worker no
 /// se registra en la API de estas pruebas: las corridas las fuerza la prueba.
@@ -31,7 +31,7 @@ public sealed class clsSapMargenAdminEndpointsTests(clsEntornoApiWeb entorno)
     [Fact]
     public async Task DeshabilitadaElEstadoRespondeConHabilitadaFalseYLaCorridaForzadaDa503()
     {
-        // SapTm__SincronizacionHabilitada es false por defecto (decisión del 2026-11-04), aunque hubiera credenciales de SAP.
+        // SapTm__SincronizacionHabilitada es false por defecto, aunque hubiera credenciales de SAP.
         var sap = new clsSapRentabFalso().ConFilas(clsSapRentabFalso.Set("40", 3));
         await using var aislada = await BaseAsync();
         using var api = Api(aislada.Cadena, sap, habilitada: false);

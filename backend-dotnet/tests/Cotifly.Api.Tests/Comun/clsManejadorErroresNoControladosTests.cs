@@ -16,7 +16,7 @@ using Microsoft.Extensions.Logging;
 namespace Cotifly.Api.Tests.Comun;
 
 /// <summary>
-/// Endurecimiento A (#199): el manejador global de errores no controlados. Un 500 responde <c>ErrorNegocio</c> <c>ERROR_INTERNO</c> con
+/// El manejador global de errores no controlados. Un 500 responde <c>ErrorNegocio</c> <c>ERROR_INTERNO</c> con
 /// el mensaje genérico (<c>ErrorWeb</c> en <c>/api/*</c>), sin el mensaje de la excepción ni la traza, con los encabezados de seguridad, y
 /// deja la excepción en el log con el id de correlación. Una petición abortada por el cliente no se responde ni se registra como error.
 /// </summary>
@@ -59,7 +59,7 @@ public sealed class clsManejadorErroresNoControladosTests
     }
 
     /// <summary>
-    /// Auditoría de la integración (#199): el manejador va antes de CORS en la tubería y el middleware de excepciones limpia los
+    /// El manejador va antes de CORS en la tubería y el middleware de excepciones limpia los
     /// encabezados; el 500 de un origen permitido igual debe llevar <c>Access-Control-Allow-Origin</c>, o el navegador lo convierte en un
     /// error de red opaco y la consola no puede leer el <c>id_correlacion</c>. Uno de otro origen no lo lleva.
     /// </summary>

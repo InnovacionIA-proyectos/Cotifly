@@ -8,7 +8,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// HU-034.1 (#201, parte A): <c>GET /web/licitaciones/{folio}</c> y <c>GET /web/licitaciones/{folio}/excel</c> para el gerente comercial de
+/// <c>GET /web/licitaciones/{folio}</c> y <c>GET /web/licitaciones/{folio}/excel</c> para el gerente comercial de
 /// la regional del dueño y para el director (cualquier regional), en solo lectura y sin costos, por HTTP contra SQL Server real y el Nexo
 /// falso. La regla es la del detalle de la cotización y del PDF: 404 fail-closed para cualquier otro y auditoría de cada intento gerencial.
 /// </summary>
@@ -142,7 +142,7 @@ public sealed class clsLicitacionSoloLecturaEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// Validación #201: ninguna otra acción sobre la licitación ajena responde algo distinto de 404/403 al gerente de la regional o al
+    /// Ninguna otra acción sobre la licitación ajena responde algo distinto de 404/403 al gerente de la regional o al
     /// director (ni 409, que delataría que la cargó), aunque manden el <c>If-Match</c> vigente; el costeo (con costos) sigue siendo solo
     /// del dueño, y nada cambia en la base ni se llama a Nexo.
     /// </summary>

@@ -9,7 +9,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// HU-044.2 (#253) por HTTP contra la API real y el Nexo falso: <c>POST /web/licitaciones/sugerir-mapeo</c> (propuesta con IA, plantilla
+/// Por HTTP contra la API real y el Nexo falso: <c>POST /web/licitaciones/sugerir-mapeo</c> (propuesta con IA, plantilla
 /// reconocida, sin propuesta con más de 100 columnas, importación apagada o NEXO caído, tope diario de IA) y su paso previo
 /// <c>POST /web/licitaciones/leer-estructura</c> (primera lectura, corrección con la receta exacta, reaplicar sin IA, IA no disponible,
 /// archivo rechazado sin llamar a NEXO, códigos de NEXO, sin reintentos).
@@ -293,7 +293,7 @@ public sealed class clsSugerenciaMapeoEndpointsTests : IDisposable
     [Fact]
     public async Task UnArchivoQueCotiflyNoPodriaAbrirIgualLlegaANexo()
     {
-        // #277: Cotifly no abre el libro. Estos bytes no son un .xlsx; decide NEXO (aquí, el falso lo lee).
+        // Cotifly no abre el libro. Estos bytes no son un .xlsx; decide NEXO (aquí, el falso lo lee).
         var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
 
         using var respuesta = await LeerAsync(sesion, Formulario(Encoding.ASCII.GetBytes("no soy un zip"), "raro.xlsm"));
@@ -428,7 +428,7 @@ public sealed class clsSugerenciaMapeoEndpointsTests : IDisposable
         _nexo.Peticiones.Should().BeEmpty();
     }
 
-    /// <summary>Guarda en el Nexo falso la plantilla del cliente para ORIGEN, DESTINO y TON (en Cotifly ese endpoint llega con #256).</summary>
+    /// <summary>Guarda en el Nexo falso la plantilla del cliente para ORIGEN, DESTINO y TON (directo, sin pasar por Cotifly).</summary>
     private async Task<Guid> GuardarPlantillaEnNexoAsync()
     {
         using var cliente = new HttpClient(_nexo, disposeHandler: false);

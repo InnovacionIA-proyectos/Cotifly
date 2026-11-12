@@ -6,9 +6,9 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// HU-042.2 (#243, decisión del 2026-11-04): de punta a punta por la API (<c>POST /web/solicitudes-costeo</c> → <c>GET .../costeo</c>) con la
-/// copia local de SAP TM real y su última corrida <c>ok</c> de hace 72 h: el aviso de la sincronización vieja (antes solo en el detalle del
-/// resolver, que el envío descartaba) sale en <c>aviso_margen</c> de la ruta, solo y junto al del margen anómalo (#139). Base AISLADA: la
+/// De punta a punta por la API (<c>POST /web/solicitudes-costeo</c> → <c>GET .../costeo</c>) con la copia local de SAP TM real y su
+/// última corrida <c>ok</c> de hace 72 h: el aviso de la sincronización vieja sale en <c>aviso_margen</c> de la ruta, solo y junto al
+/// del margen anómalo. Base AISLADA: la
 /// compartida no debe tener una corrida <c>ok</c> vieja.
 /// </summary>
 [Collection(clsColeccionApiWeb.Nombre)]
