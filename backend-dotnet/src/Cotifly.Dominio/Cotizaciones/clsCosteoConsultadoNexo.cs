@@ -145,8 +145,9 @@ public sealed record clsSituacionLineaNexo(string? EstadoLinea, string? MotivoPe
 
     /// <summary>
     /// <c>estadoLinea</c> de Nexo como código de Cotifly en <c>snake_case</c>: <c>porCostear</c> o <c>PorCostear</c> →
-    /// <c>por_costear</c>, <c>autoResuelta</c> → <c>auto_resuelta</c>, <c>revisada</c> → <c>revisada</c>. Vacío o <c>null</c> → <c>null</c>.
-    /// Los tres estados conocidos se reconocen con cualquier mayúscula o separador (<c>PORCOSTEAR</c>, <c>por_costear</c>, <c>Por Costear</c>
+    /// <c>por_costear</c>, <c>autoResuelta</c> → <c>auto_resuelta</c>, <c>revisada</c> → <c>revisada</c>, <c>rechazada</c> →
+    /// <c>rechazada</c>. Vacío o <c>null</c> → <c>null</c>. Los cuatro estados conocidos se reconocen con cualquier mayúscula o
+    /// separador (<c>PORCOSTEAR</c>, <c>por_costear</c>, <c>Por Costear</c>
     /// → <c>por_costear</c>); un valor nuevo pasa con la conversión de <c>camelCase</c> a <c>snake_case</c>.
     /// </summary>
     public static string? CodigoEstado(string? estadoLineaNexo)
