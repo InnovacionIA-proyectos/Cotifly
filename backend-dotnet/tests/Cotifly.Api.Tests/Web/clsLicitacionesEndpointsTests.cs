@@ -694,6 +694,30 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
         _nexo.SolicitudesCreadas.Should().HaveCount(1, "la repetición no reenvía a Nexo");
     }
 
+    // La API se cae después de confirmar el folio y antes de cerrar la clave: la fila queda en_curso, sin resultado, con el folio que se
+    // registró en la transacción de la licitación. Pasada la toma, el reintento relee esa licitación: 201 con el mismo folio, sin crear otra.
+    [Fact]
+    public async Task UnReintentoTrasUnaCaidaConLaTomaVencidaDevuelveElMismoFolioSinCrearOtra()
+    {
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var clave = Guid.NewGuid().ToString();
+        var json = clsPliegoMuestra.Json(clsCosteoEndpointsTests.Nit, clsPliegoMuestra.Lineas());
+        var excel = clsPliegoMuestra.Excel();
+        var folio = (await CrearConClaveAsync(sesion, json, excel, clave, HttpStatusCode.Created)).GetProperty("folio").GetString();
+        var fila = $"usuarioId = '{sesion.UsuarioId}' AND operacion = N'crear-licitacion' AND clave = N'{clave}'";
+        (await EscalarAsync($"SELECT folio FROM dbo_cotifly.CapturasIdempotentes WHERE {fila}")).Should().Be(folio, "el folio queda con la clave");
+        await clsBaseDatosPruebas.EjecutarAsync(_entorno.BaseDatos.CadenaCotifly,
+            $"UPDATE dbo_cotifly.CapturasIdempotentes SET estado = N'en_curso', resultado = NULL, tomadaPor = NEWID(), enCursoHasta = '2000-01-01T00:00:00+00:00' WHERE {fila}");
+
+        var reintento = await CrearConClaveAsync(sesion, json, excel, clave, HttpStatusCode.Created);
+
+        reintento.GetProperty("folio").GetString().Should().Be(folio);
+        (await EscalarAsync($"SELECT CAST(COUNT(*) AS nvarchar(10)) FROM dbo_cotifly.CotizacionesSolicitud WHERE usuarioId = '{sesion.UsuarioId}'"))
+            .Should().Be("1", "una sola licitación");
+        _nexo.SolicitudesCreadas.Should().HaveCount(1, "el reintento no reenvía a Nexo");
+        (await EscalarAsync($"SELECT estado FROM dbo_cotifly.CapturasIdempotentes WHERE {fila}")).Should().Be("terminada");
+    }
+
     [Fact]
     public async Task Hu293_MismaClaveConOtroArchivoEs409()
     {
