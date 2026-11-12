@@ -37,6 +37,18 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
     public const string HojaSinOriginal = "Licitación";
     public const string SinCosteo = "SIN COSTEO";
 
+    /// <summary>HU-044.10 (#293, parte 2): hoja nueva con las líneas agregadas a mano cuando se exporta sobre el Excel original (analizar_excel).</summary>
+    public const string HojaAgregadas = "Agregadas en Cotifly";
+
+    /// <summary>HU-044.10 (#293, parte 2): columna que marca una línea agregada a mano (la 10 de la hoja «Licitación», o en la hoja «Agregadas en Cotifly»).</summary>
+    public const string ColumnaReferencia = "Referencia";
+
+    /// <summary>HU-044.10 (#293, parte 2): valor de la columna <see cref="ColumnaReferencia"/> en una línea agregada a mano.</summary>
+    public const string ReferenciaAgregada = "Agregada en Cotifly";
+
+    /// <summary>HU-044.10 (#293, parte 2): etiqueta del conteo de líneas agregadas a mano en «Resumen Cotifly».</summary>
+    public const string EtiquetaAgregadas = "Líneas agregadas en Cotifly";
+
     /// <summary>HU-028.1 (#183): etiqueta del conteo de líneas rechazadas por la Mesa de Costeo en "Resumen Cotifly".</summary>
     public const string EtiquetaRechazadas = "Líneas rechazadas en NEXO (sin costeo)";
 
@@ -134,14 +146,27 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
 
     private static clsResultado<byte[]> Escribir(XLWorkbook libro, clsExportacionLicitacion datos, bool original)
     {
+        // HU-044.10 (#293, parte 2): una línea agregada a mano es una línea con fila null, pero SOLO cuando hay archivo (con analizar_excel
+        // y original, o con leer_estructura). Sin archivo, todas las líneas tienen fila null y NO son «agregadas a mano».
+        var conArchivo = datos.Original is { Length: > 0 } || datos.LeidaConIa;
+        var agregadas = conArchivo ? datos.Lineas.Where(l => l.Fila is null).ToList() : [];
+
         List<clsLineaExportacion> sinUbicar = [];
-        var escrito = original ? EscribirEnOriginal(libro, datos, sinUbicar) : EscribirSinOriginal(libro, datos);
+        var escrito = original
+            ? EscribirEnOriginal(libro, datos, sinUbicar)
+            : EscribirSinOriginal(libro, datos, marcarAgregadas: agregadas.Count > 0);
         if (escrito is not null)
         {
             return escrito;
         }
 
-        EscribirResumen(libro, datos, sinUbicar);
+        // Con analizar_excel y original, las de a mano no caben sobre el pliego: van a una hoja nueva «Agregadas en Cotifly».
+        if (original && agregadas.Count > 0)
+        {
+            EscribirAgregadas(libro, datos, agregadas);
+        }
+
+        EscribirResumen(libro, datos, sinUbicar, agregadas.Count);
         EscribirCamiones(libro, datos);
         using var memoria = new MemoryStream();
         libro.SaveAs(memoria);
@@ -203,7 +228,9 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
         }
 
         var porFila = datos.Lineas.Where(l => l.Fila is { } f && f < detectado.Datos.Count).ToDictionary(l => l.Fila!.Value);
-        sinUbicar.AddRange(datos.Lineas.Where(l => l.Fila is not { } f || f >= detectado.Datos.Count));
+        // HU-044.10 (#293, parte 2): una fila que ya no está en el pliego sigue en «sin ubicar»; una línea a mano (fila null) NO, va a la
+        // hoja «Agregadas en Cotifly».
+        sinUbicar.AddRange(datos.Lineas.Where(l => l.Fila is { } f && f >= detectado.Datos.Count));
 
         // "Sin enviar" solo entre la primera y la última fila enviada: una fila de totales o de notas del cliente al final (o al
         // principio) no es una ruta que el comercial dejó por fuera.
@@ -225,9 +252,35 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
         return null;
     }
 
-    private static clsErrorDominio? EscribirSinOriginal(XLWorkbook libro, clsExportacionLicitacion datos)
+    private static clsErrorDominio? EscribirSinOriginal(XLWorkbook libro, clsExportacionLicitacion datos, bool marcarAgregadas)
     {
         var hoja = libro.Worksheets.Add(HojaSinOriginal);
+        // HU-044.10 (#293, parte 2): con leer_estructura (o sin original), las líneas a mano van al final de la hoja «Licitación», con la
+        // columna «Referencia» (la 10, solo si hay alguna a mano).
+        var lineas = marcarAgregadas ? datos.Lineas.OrderBy(l => l.Fila is null ? 1 : 0).ToList() : (IReadOnlyList<clsLineaExportacion>)datos.Lineas;
+        EscribirFilasComoLicitacion(hoja, datos, lineas, marcarAgregadas);
+        return null;
+    }
+
+    /// <summary>
+    /// HU-044.10 (#293, parte 2): la hoja nueva «Agregadas en Cotifly» con las líneas agregadas a mano cuando se exportó sobre el Excel
+    /// original (analizar_excel): las columnas de la hoja «Licitación» más la columna «Referencia» = «Agregada en Cotifly».
+    /// </summary>
+    private static void EscribirAgregadas(XLWorkbook libro, clsExportacionLicitacion datos, IReadOnlyList<clsLineaExportacion> agregadas)
+    {
+        var nombre = HojaAgregadas;
+        for (var n = 2; libro.Worksheets.Contains(nombre); n++)
+        {
+            nombre = $"{HojaAgregadas} {n}";
+        }
+
+        EscribirFilasComoLicitacion(libro.Worksheets.Add(nombre), datos, agregadas, conReferencia: true);
+    }
+
+    /// <summary>Las filas con las columnas de la hoja «Licitación» (campos mapeados + columnas de Cotifly) y, si <paramref name="conReferencia"/>, la columna «Referencia».</summary>
+    private static void EscribirFilasComoLicitacion(
+        IXLWorksheet hoja, clsExportacionLicitacion datos, IReadOnlyList<clsLineaExportacion> lineas, bool conReferencia)
+    {
         string[] campos = ["Línea", "Origen", "Destino", "Tipo de vehículo", "Peso (kg)"];
         for (var c = 0; c < campos.Length; c++)
         {
@@ -237,8 +290,16 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
         var columna = campos.Length + 1;
         Encabezados(hoja, 1, columna, datos.Moneda);
         hoja.Range(1, 1, 1, campos.Length).Style.Font.SetBold().Fill.SetBackgroundColor(_encabezado);
+        var columnaReferencia = columna + ColumnasCotifly;
+        if (conReferencia)
+        {
+            hoja.Cell(1, columnaReferencia).Value = ColumnaReferencia;
+            hoja.Cell(1, columnaReferencia).Style.Font.SetBold().Fill.SetBackgroundColor(_encabezado);
+            hoja.Column(columnaReferencia).Width = 26;
+        }
+
         var fila = 2;
-        foreach (var linea in datos.Lineas)
+        foreach (var linea in lineas)
         {
             hoja.Cell(fila, 1).Value = linea.Orden;
             hoja.Cell(fila, 2).Value = linea.Origen;
@@ -250,11 +311,15 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
             }
 
             EscribirLinea(hoja, fila, columna, linea, datos);
+            if (conReferencia && linea.Fila is null)
+            {
+                hoja.Cell(fila, columnaReferencia).Value = ReferenciaAgregada;
+            }
+
             fila++;
         }
 
         hoja.Columns().AdjustToContents();
-        return null;
     }
 
     private static void Encabezados(IXLWorksheet hoja, int fila, int columna, string moneda)
@@ -363,7 +428,8 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
         }
     }
 
-    private static void EscribirResumen(XLWorkbook libro, clsExportacionLicitacion datos, IReadOnlyList<clsLineaExportacion> sinUbicar)
+    private static void EscribirResumen(
+        XLWorkbook libro, clsExportacionLicitacion datos, IReadOnlyList<clsLineaExportacion> sinUbicar, int agregadas)
     {
         var nombre = HojaResumen;
         for (var n = 2; libro.Worksheets.Contains(nombre); n++)
@@ -408,6 +474,11 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
         Dato("Líneas costeadas", costeadas);
         Dato("Líneas sin costeo", pendientes);
         Dato(EtiquetaRechazadas, rechazadas);
+        // HU-044.10 (#293, parte 2): solo si hubo líneas agregadas a mano, para que sin ellas el Excel quede igual que hoy.
+        if (agregadas > 0)
+        {
+            Dato(EtiquetaAgregadas, agregadas);
+        }
         if (pendientes == 0 && datos.PrecioTotal is { } total)
         {
             Dato(EtiquetaTotal, total, formato);

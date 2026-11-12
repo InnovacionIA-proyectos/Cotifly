@@ -141,6 +141,71 @@ public sealed class clsExportadorExcelLicitacionTests
         hoja.Cell(2, 8).GetString().Should().BeEmpty("sin conexos incluidos no hay nada que remitir al resumen");
     }
 
+    // HU-044.10 (#293, parte 2): con analizar_excel y original, las líneas a mano (fila null) van a una hoja nueva «Agregadas en Cotifly»
+    // (columnas de «Licitación» + «Referencia» = «Agregada en Cotifly»); «Resumen Cotifly» agrega la fila «Líneas agregadas en Cotifly».
+    [Fact]
+    public void Hu293_ConOriginalLasLineasAManoVanAUnaHojaAgregadasConReferencia()
+    {
+        var datos = Datos(clsPliegoMuestra.Excel(3)) with
+        {
+            Lineas =
+            [
+                new clsLineaExportacion(1, 0, "BUENAVENTURA", "BOGOTA, D.C.", "3S3", 32000m, "Costeada", 1_176_471m),
+                new clsLineaExportacion(2, null, "CALI", "MEDELLIN", "2", 9000m, "Pendiente de costeo", null),
+            ],
+        };
+
+        using var libro = new XLWorkbook(new MemoryStream(clsExportadorExcelLicitacionClosedXml.Generar(datos).Valor));
+
+        libro.Worksheets.Select(h => h.Name).Should().Contain(clsExportadorExcelLicitacionClosedXml.HojaAgregadas);
+        var agregadas = libro.Worksheet(clsExportadorExcelLicitacionClosedXml.HojaAgregadas);
+        agregadas.Cell(2, 2).GetString().Should().Be("CALI", "la línea a mano va a la hoja nueva");
+        agregadas.Cell(1, 10).GetString().Should().Be(clsExportadorExcelLicitacionClosedXml.ColumnaReferencia);
+        agregadas.Cell(2, 10).GetString().Should().Be(clsExportadorExcelLicitacionClosedXml.ReferenciaAgregada);
+        // La línea con fila (0) sigue sobre el pliego, no en la hoja nueva.
+        libro.Worksheet(clsPliegoMuestra.Hoja).Cell(clsPliegoMuestra.FilaExcel(0), 7).GetValue<decimal>().Should().Be(1_176_471m);
+        libro.Worksheet(clsExportadorExcelLicitacionClosedXml.HojaResumen).CellsUsed().Select(c => c.GetFormattedString())
+            .Should().Contain(clsExportadorExcelLicitacionClosedXml.EtiquetaAgregadas);
+    }
+
+    // HU-044.10 (#293, parte 2): con leer_estructura (o sin original), las líneas a mano van al final de la hoja «Licitación», con la
+    // columna «Referencia» (la 10, solo si hay alguna a mano).
+    [Fact]
+    public void Hu293_LeidaConIaLasLineasAManoVanAlFinalDeLicitacionConReferencia()
+    {
+        var datos = Datos(null) with
+        {
+            LeidaConIa = true,
+            Lineas =
+            [
+                new clsLineaExportacion(1, 0, "A", "B", "3S3", 10000m, "Costeada", 100m),
+                new clsLineaExportacion(2, null, "C", "D", "2", 9000m, "Pendiente de costeo", null),
+            ],
+        };
+
+        using var libro = new XLWorkbook(new MemoryStream(clsExportadorExcelLicitacionClosedXml.Generar(datos).Valor));
+
+        libro.Worksheets.Select(h => h.Name).Should().NotContain(clsExportadorExcelLicitacionClosedXml.HojaAgregadas);
+        var hoja = libro.Worksheet(clsExportadorExcelLicitacionClosedXml.HojaSinOriginal);
+        hoja.Cell(1, 10).GetString().Should().Be(clsExportadorExcelLicitacionClosedXml.ColumnaReferencia);
+        hoja.Cell(3, 2).GetString().Should().Be("C", "la línea a mano queda al final");
+        hoja.Cell(3, 10).GetString().Should().Be(clsExportadorExcelLicitacionClosedXml.ReferenciaAgregada);
+        hoja.Cell(2, 10).GetString().Should().BeEmpty("la línea con fila no se marca");
+        libro.Worksheet(clsExportadorExcelLicitacionClosedXml.HojaResumen).CellsUsed().Select(c => c.GetFormattedString())
+            .Should().Contain(clsExportadorExcelLicitacionClosedXml.EtiquetaAgregadas);
+    }
+
+    // HU-044.10 (#293, parte 2): sin líneas a mano, el Excel queda igual que hoy (sin hoja «Agregadas», sin columna «Referencia» ni la fila del resumen).
+    [Fact]
+    public void Hu293_SinLineasAManoElExcelQuedaIgualQueHoy()
+    {
+        using var libro = new XLWorkbook(new MemoryStream(clsExportadorExcelLicitacionClosedXml.Generar(Datos(clsPliegoMuestra.Excel(3))).Valor));
+
+        libro.Worksheets.Select(h => h.Name).Should().NotContain(clsExportadorExcelLicitacionClosedXml.HojaAgregadas);
+        libro.Worksheet(clsExportadorExcelLicitacionClosedXml.HojaResumen).CellsUsed().Select(c => c.GetFormattedString())
+            .Should().NotContain(clsExportadorExcelLicitacionClosedXml.EtiquetaAgregadas);
+    }
+
     [Fact]
     public void UnOriginalIlegibleOSinLaHojaEsUnErrorDeNegocio()
     {
