@@ -26,6 +26,9 @@ public sealed class clsLicitacionesController(
     public const string ParteArchivo = "archivo";
     public const string ParteLicitacion = "licitacion";
 
+    /// <summary>HU-044.10 (#293): encabezado de la clave de idempotencia de crear una licitación (ADR-018 §8).</summary>
+    public const string EncabezadoIdempotencia = "Idempotency-Key";
+
     /// <summary>
     /// 200 <c>AnalisisExcel</c>; 400 <c>ARCHIVO_REQUERIDO</c>, <c>FORMATO_NO_SOPORTADO</c>, <c>ARCHIVO_DEMASIADO_GRANDE</c>, <c>EXCEL_*</c>; 429
     /// <c>IA_TOPE_DIARIO</c> (#278: cupo diario de IA del comercial en Nexo); 503 sin Nexo.
@@ -91,7 +94,10 @@ public sealed class clsLicitacionesController(
         }
 
         clsCamposRetirados.Registrar(logger, "POST /web/licitaciones", cuerpo.CamposRetirados());
-        var resultado = await licitaciones.CrearAsync(UsuarioId, cuerpo.AEntrada(archivo), cancellationToken);
+        // HU-044.10 (#293, parte 3): Idempotency-Key opcional (8 a 64; CORS ya la permite). Un doble clic con la misma clave no crea otra
+        // licitación: relee la creada y responde 201 con su estado de ahora. El largo y el 409 por otra huella los resuelve el almacén.
+        var clave = Request.Headers[EncabezadoIdempotencia].ToString();
+        var resultado = await licitaciones.CrearUnaVezAsync(UsuarioId, cuerpo.AEntrada(archivo), clave.Length == 0 ? null : clave, cancellationToken);
         if (resultado.Errores.Count > 0 && resultado.Error is { } invalida)
         {
             return BadRequest(new clsReporteLicitacionWeb(clsErrorNegocioWeb.Desde(invalida).Error, resultado.Errores));

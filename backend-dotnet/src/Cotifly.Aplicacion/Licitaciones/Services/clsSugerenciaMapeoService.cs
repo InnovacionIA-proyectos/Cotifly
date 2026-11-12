@@ -1,6 +1,9 @@
+using Cotifly.Aplicacion.Cubicacion.Interfaces;
+using Cotifly.Aplicacion.Cubicacion.Services;
 using Cotifly.Aplicacion.Licitaciones.DTOs;
 using Cotifly.Aplicacion.Licitaciones.Interfaces;
 using Cotifly.Dominio.Comun;
+using Microsoft.Extensions.Logging;
 
 namespace Cotifly.Aplicacion.Licitaciones.Services;
 
@@ -36,7 +39,10 @@ public interface IClsSugerenciaMapeoService
 public sealed record clsEntradaLeerEstructura(clsArchivoSubido Archivo, string? NitCliente, string? Instrucciones, string? Receta);
 
 /// <inheritdoc cref="IClsSugerenciaMapeoService"/>
-public sealed class clsSugerenciaMapeoService(IClsImportacionExcelNexo importacion) : IClsSugerenciaMapeoService
+public sealed class clsSugerenciaMapeoService(
+    IClsImportacionExcelNexo importacion,
+    ILogger<clsSugerenciaMapeoService>? logger = null,
+    IClsCubicador? cubicador = null) : IClsSugerenciaMapeoService
 {
     /// <summary>Columnas que admite <c>sugerir-mapeo</c> de NEXO; con más, la hoja se mapea a mano (<c>DEMASIADAS_COLUMNAS</c>).</summary>
     public const int MaximoEncabezados = 100;
@@ -124,8 +130,18 @@ public sealed class clsSugerenciaMapeoService(IClsImportacionExcelNexo importaci
         }
 
         var archivo = new clsArchivoImportacion(clsArchivoExcel.NombreLimpio(entrada.Archivo.Nombre), entrada.Archivo.Contenido);
-        return await importacion.LeerEstructuraAsync(
+        var lectura = await importacion.LeerEstructuraAsync(
             usuarioId, new clsPeticionLeerEstructura(archivo, entrada.NitCliente, entrada.Instrucciones, entrada.Receta), cancellationToken);
+        if (lectura.EsFallo)
+        {
+            return lectura;
+        }
+
+        // HU-044.7 (#290): cada tabla pasa por la misma detección de mercancías de analizar-excel (columna de mercancía, columna de código y
+        // el código sugerido por fila). La receta y el resto de la respuesta de NEXO no se tocan; filas_excel sigue null en las tablas.
+        var registro = logger ?? (ILogger)Microsoft.Extensions.Logging.Abstractions.NullLogger<clsSugerenciaMapeoService>.Instance;
+        var conMercancias = await clsDetectorMercanciaExcel.ConMercanciasAsync(lectura.Valor.Tablas, cubicador, registro, cancellationToken);
+        return conMercancias.Aplicado ? lectura.Valor with { Tablas = conMercancias.Hojas } : lectura.Valor;
     }
 
     /// <summary>

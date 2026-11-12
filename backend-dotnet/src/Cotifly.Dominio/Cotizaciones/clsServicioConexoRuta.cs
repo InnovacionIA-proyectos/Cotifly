@@ -15,6 +15,9 @@ public sealed class clsServicioConexoRuta
     /// <summary>Largo de <c>categoriaServicioConexo</c> (script 05).</summary>
     public const int LargoMaximoCategoria = 20;
 
+    /// <summary>HU-046.3 (#269): largo de <c>codigoServicio</c> (script 21).</summary>
+    public const int LargoMaximoCodigoServicio = 40;
+
     private clsServicioConexoRuta()
     {
     }
@@ -43,6 +46,14 @@ public sealed class clsServicioConexoRuta
     /// <c>adicional</c>...), copiada al capturar o importar. <c>null</c> en las filas anteriores a #188: el costeo la lee del catálogo.
     /// </summary>
     public string? Categoria { get; private set; }
+
+    /// <summary>
+    /// HU-046.3 (#269, <c>codigoServicio</c> del script 21): el código del servicio en el catálogo de Nexo (p. ej. <c>AVT_AUTO</c>), con el
+    /// que la política de seguros sabe si el conexo cumple una medida (los ids de Nexo son de una fila de tarifa por trayecto, no del
+    /// servicio). Se guarda al agregar el conexo; <c>null</c> en las filas anteriores al 21 o si Nexo no lo informó: el backend las completa
+    /// la siguiente vez que lee el catálogo (<see cref="CompletarCodigoServicio"/>).
+    /// </summary>
+    public string? CodigoServicio { get; private set; }
 
     /// <summary>Costo unitario de Nexo al aplicarlo (<c>valorAplicado ÷ cantidad</c> o <c>costoUnitario</c> del catálogo). Interno.</summary>
     public decimal Precio { get; private set; }
@@ -73,7 +84,7 @@ public sealed class clsServicioConexoRuta
     /// </summary>
     internal static clsServicioConexoRuta Crear(
         Guid lineaSolicitudId, string idServicioConexo, string? nombre, decimal precio, decimal cantidad,
-        string? idServicioConexoCatalogo = null, string? categoria = null, decimal? precioVenta = null)
+        string? idServicioConexoCatalogo = null, string? categoria = null, decimal? precioVenta = null, string? codigoServicio = null)
     {
         var id = Validar(idServicioConexo, precio, cantidad, precioVenta);
         return new clsServicioConexoRuta
@@ -87,6 +98,7 @@ public sealed class clsServicioConexoRuta
             Cantidad = cantidad,
             IdServicioConexoCatalogo = Acotar(idServicioConexoCatalogo, LargoMaximoId),
             Categoria = Acotar(categoria, LargoMaximoCategoria),
+            CodigoServicio = Acotar(codigoServicio, LargoMaximoCodigoServicio),
         };
     }
 
@@ -98,7 +110,8 @@ public sealed class clsServicioConexoRuta
     /// al costo nuevo. Una venta conocida nunca vuelve al costo por una lectura sin venta.
     /// </summary>
     internal bool Actualizar(
-        string? nombre, decimal precio, decimal cantidad, string? idServicioConexoCatalogo = null, string? categoria = null, decimal? precioVenta = null)
+        string? nombre, decimal precio, decimal cantidad, string? idServicioConexoCatalogo = null, string? categoria = null, decimal? precioVenta = null,
+        string? codigoServicio = null)
     {
         Validar(IdServicioConexo, precio, cantidad, precioVenta);
         var antes = (Nombre, Precio, PrecioVenta, Cantidad);
@@ -110,7 +123,24 @@ public sealed class clsServicioConexoRuta
         Cantidad = cantidad;
         IdServicioConexoCatalogo ??= Acotar(idServicioConexoCatalogo, LargoMaximoId);
         Categoria ??= Acotar(categoria, LargoMaximoCategoria);
+        // HU-046.3 (#269): como el id del catálogo, completa el código de una fila que no lo tenía (no cuenta como cambio del precio).
+        CompletarCodigoServicio(codigoServicio);
         return antes != (Nombre, Precio, PrecioVenta, Cantidad);
+    }
+
+    /// <summary>
+    /// HU-046.3 (#269): guarda el código del servicio del catálogo de Nexo si la fila no lo tenía (filas anteriores al script 21 o sin el
+    /// código). Nunca reemplaza uno ya guardado ni guarda uno vacío o que no cabe en la columna. Devuelve si lo completó. No cambia el precio.
+    /// </summary>
+    internal bool CompletarCodigoServicio(string? codigoServicio)
+    {
+        if (CodigoServicio is not null || Acotar(codigoServicio, LargoMaximoCodigoServicio) is not { } codigo)
+        {
+            return false;
+        }
+
+        CodigoServicio = codigo;
+        return true;
     }
 
     /// <summary>

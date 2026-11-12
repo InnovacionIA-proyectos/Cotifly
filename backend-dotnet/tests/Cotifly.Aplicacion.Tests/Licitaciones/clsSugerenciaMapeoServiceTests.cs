@@ -1,3 +1,5 @@
+using Cotifly.Aplicacion.Cubicacion.DTOs;
+using Cotifly.Aplicacion.Cubicacion.Interfaces;
 using Cotifly.Aplicacion.Licitaciones.DTOs;
 using Cotifly.Aplicacion.Licitaciones.Interfaces;
 using Cotifly.Aplicacion.Licitaciones.Services;
@@ -174,6 +176,63 @@ public sealed class clsSugerenciaMapeoServiceTests
         enviada!.Archivo.NombreArchivo.Should().Be("EPM.xlsm", "el nombre original, sin la ruta del equipo del comercial");
         enviada.Archivo.Contenido.Should().Equal(1, 2, 3);
         (enviada.ClienteNit, enviada.Instrucciones, enviada.RecetaJson).Should().Be(("900555111", "el destino es la casilla", Receta));
+    }
+
+    // HU-044.7 (#290): cada tabla de leer-estructura pasa por la misma detección de mercancías de analizar-excel.
+    private static readonly IReadOnlyList<clsTipoMercanciaCubicador> _catalogoMercancias =
+    [
+        new("CAFE_EN_ESTIBAS", "Café en estibas", "GENERAL", Cubicable: true, CondicionadaCubicacion: false, null, Activo: true),
+    ];
+
+    private static clsLecturaEstructura LecturaConTablas() => new(
+        "pliego.xlsx", "ia", null, null, true, null, default, "resumen", ["duda"],
+        [new clsHojaDelArchivo("Pliego", false, 3, 3, true)],
+        [
+            // Una tabla con columna de mercancía y otra sin ella (origen/destino): solo la primera trae mercancias.
+            new clsHojaExcel("Rutas", 1, ["ORIGEN", "DESTINO", "Tipo de MERCANCÍA"],
+                [["Cali", "Bogotá", "Café en estibas"], ["Yumbo", "Medellín", ""]], 2),
+            new clsHojaExcel("Resumen", 1, ["ORIGEN", "DESTINO"], [["Cali", "Bogotá"]], 1),
+        ],
+        ["aviso"], null);
+
+    [Fact]
+    public async Task ConCatalogoCadaTablaTraeLaMercanciaDetectadaYLaRecetaNoSeToca()
+    {
+        var lectura = LecturaConTablas();
+        _nexo.LeerEstructuraAsync(_usuario, Arg.Any<clsPeticionLeerEstructura>(), Arg.Any<CancellationToken>()).Returns(lectura);
+        var cubicador = Substitute.For<IClsCubicador>();
+        cubicador.EstaConfigurado.Returns(true);
+        cubicador.ListarTiposMercanciaAsync(Arg.Any<CancellationToken>()).Returns(clsResultado<IReadOnlyList<clsTipoMercanciaCubicador>>.Exito(_catalogoMercancias));
+        var servicio = new clsSugerenciaMapeoService(_nexo, null, cubicador);
+
+        var resultado = await servicio.LeerEstructuraAsync(
+            _usuario, new clsEntradaLeerEstructura(new clsArchivoSubido("a.xlsx", [1]), null, null, null), TestContext.Current.CancellationToken);
+
+        var tablas = resultado.Valor.Tablas;
+        tablas[0].ColumnaMercancia.Should().Be("Tipo de MERCANCÍA");
+        tablas[0].Mercancias.Should().ContainSingle().Which.Should().Match<clsCodigoMercanciaFila>(
+            m => m.Fila == 0 && m.CodigoMercancia == "CAFE_EN_ESTIBAS" && m.Sugerido);
+        tablas[0].FilasExcel.Should().BeNull("las tablas de leer-estructura no traen filas_excel");
+        tablas[1].ColumnaMercancia.Should().BeNull();
+        tablas[1].Mercancias.Should().BeNull("una tabla sin columna de mercancía no trae mercancias");
+        resultado.Valor.Resumen.Should().Be("resumen");
+        resultado.Valor.Dudas.Should().Equal("duda");
+    }
+
+    [Fact]
+    public async Task SinCatalogoLaTablaTraeLaColumnaDeMercanciaPeroSinCodigoSugerido()
+    {
+        var lectura = LecturaConTablas();
+        _nexo.LeerEstructuraAsync(_usuario, Arg.Any<clsPeticionLeerEstructura>(), Arg.Any<CancellationToken>()).Returns(lectura);
+        // Sin cubicador (catálogo no disponible): la tabla igual trae columna_mercancia y mercancias, con el código en null.
+        var servicio = new clsSugerenciaMapeoService(_nexo);
+
+        var resultado = await servicio.LeerEstructuraAsync(
+            _usuario, new clsEntradaLeerEstructura(new clsArchivoSubido("a.xlsx", [1]), null, null, null), TestContext.Current.CancellationToken);
+
+        var mercancias = resultado.Valor.Tablas[0].Mercancias;
+        resultado.Valor.Tablas[0].ColumnaMercancia.Should().Be("Tipo de MERCANCÍA");
+        mercancias.Should().ContainSingle().Which.Should().Match<clsCodigoMercanciaFila>(m => m.Fila == 0 && m.CodigoMercancia == null && !m.Sugerido);
     }
 
     [Theory]

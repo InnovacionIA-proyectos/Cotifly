@@ -51,8 +51,10 @@ public sealed class clsCostosConexosNexo(clsCosteoNexo costeo) : IClsCostosConex
                 }
 
                 // HU-043.2 (#251): precioVenta (S6-HU-38.2) puede venir null (sin precio de venta: se cotiza al costo) o faltar (Nexo anterior).
+                // HU-046.3 (#269): y el codigoServicio, que se guarda con el conexo para la política de seguros.
                 encontrados[id] = new clsCostoConexoNexo(
-                    id, clsCosteoNexo.Texto(fila, "tipoServicio"), costo, clsCosteoNexo.Texto(fila, "categoria"), clsCosteoNexo.Decimal(fila, "precioVenta"));
+                    id, clsCosteoNexo.Texto(fila, "tipoServicio"), costo, clsCosteoNexo.Texto(fila, "categoria"), clsCosteoNexo.Decimal(fila, "precioVenta"),
+                    clsCosteoNexo.Texto(fila, "codigoServicio"));
                 pendientes.Remove(id);
             }
 

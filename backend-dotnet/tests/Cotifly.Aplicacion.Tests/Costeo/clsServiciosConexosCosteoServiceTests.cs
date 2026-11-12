@@ -424,7 +424,8 @@ public sealed class clsServiciosConexosCosteoServiceTests
             _cotizaciones, _nexo, _unidad, _auditoria, Options.Create(new clsOpcionesPdf()), almacen, _envioConexos,
             NullLogger<clsServiciosConexosCosteoService>.Instance, _categorias, _situaciones,
             Substitute.For<Cotifly.Aplicacion.Margen.Services.IClsAvisoSincronizacionMargenSap>(),
-            Substitute.For<Cotifly.Aplicacion.Cotizaciones.Repositories.IClsTarifaSeguroRepository>());
+            Substitute.For<Cotifly.Aplicacion.Cotizaciones.Repositories.IClsTarifaSeguroRepository>(),
+            Substitute.For<Cotifly.Aplicacion.Cotizaciones.Repositories.IClsPoliticaSegurosRepository>());
 
         await servicio.AgregarAsync(_ana, _cotizacion.Folio, [Item(1, Almacenamiento, 1m)], Version, "clave-12345", Ct);
 
@@ -540,7 +541,8 @@ public sealed class clsServiciosConexosCosteoServiceTests
         new(_cotizaciones, _nexo, _unidad, _auditoria, Options.Create(new clsOpcionesPdf()), Substitute.For<IClsAlmacenIdempotencia>(),
             _envioConexos, NullLogger<clsServiciosConexosCosteoService>.Instance, _categorias, _situaciones,
             Substitute.For<Cotifly.Aplicacion.Margen.Services.IClsAvisoSincronizacionMargenSap>(),
-            Substitute.For<Cotifly.Aplicacion.Cotizaciones.Repositories.IClsTarifaSeguroRepository>());
+            Substitute.For<Cotifly.Aplicacion.Cotizaciones.Repositories.IClsTarifaSeguroRepository>(),
+            Substitute.For<Cotifly.Aplicacion.Cotizaciones.Repositories.IClsPoliticaSegurosRepository>());
 
     private static readonly clsConexoNexo _cx2 = new("CX-2", "Almacenamiento", "logistico", 2m, 240_000m);
 
