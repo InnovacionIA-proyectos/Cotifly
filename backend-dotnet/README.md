@@ -53,7 +53,7 @@ En Linux, macOS o Git Bash: `sh backend-dotnet/scripts/levantar-local.sh` (y `--
 
 ## Convenciones en una línea
 
-Clases `cls*` e interfaces `ICls*` (el build falla si no), tablas PascalCase y columnas camelCase, esquema solo por scripts SQL (migraciones `db/migrations_mssql/000N_*.sql` y ajustes `db/scripts/NN_*.sql`; nunca migraciones EF), toda versión NuGet en `Directory.Packages.props`, cero warnings, ningún secreto en `appsettings*.json`, un cambio de contrato empieza en `specs/openapi.yaml`, y cada cambio de comportamiento trae su prueba ([ADR-010](specs/decisiones/ADR-010-metodologia-sdd-tdd-bdd.md)). Detalle en [docs/02-arquitectura.md](docs/02-arquitectura.md#24-convenciones-de-nombres).
+Clases `cls*` e interfaces `ICls*` (el build falla si no), tablas PascalCase y columnas camelCase, esquema solo por scripts SQL (migraciones `db/migrations_mssql/000N_*.sql` y ajustes `db/scripts/NN_*.sql`; nunca migraciones EF), toda versión NuGet en `Directory.Packages.props`, cero warnings, ningún secreto en `appsettings*.json`, un cambio de contrato empieza en `specs/openapi.yaml`, y cada cambio de comportamiento trae su prueba ([ADR-010](specs/decisiones/ADR-010-metodologia-sdd-tdd-bdd.md)). Los comentarios dicen qué hace el código y por qué, sin números de historia o issue, fechas ni notas de trabajo. Detalle en [docs/02-arquitectura.md](docs/02-arquitectura.md#24-convenciones-de-nombres) y [§2.4.1](docs/02-arquitectura.md#241-comentarios-en-el-código).
 
 ## Integración continua
 

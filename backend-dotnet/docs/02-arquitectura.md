@@ -147,6 +147,22 @@ En los controllers la ruta siempre es explícita (`[Route("health")]`); nunca `[
 
 Única excepción: la clase `Program` que genera el compilador para las instrucciones de nivel superior (`Program.cs` suprime IDE1006 solo en su primera línea). En .NET 10 `Program` ya es pública, así que no se declara `public partial class Program`.
 
+### 2.4.1 Comentarios en el código
+
+Los comentarios describen el código tal como es hoy. La trazabilidad (qué historia o qué issue originó un cambio, quién lo decidió y cuándo) vive en git, en los PR y en las issues, y no se repite en el código. Todo cambio nuevo sigue estas reglas, y la revisión del PR las verifica:
+
+1. **Qué y por qué.** Un comentario dice qué hace el código y por qué lo hace, en presente, breve y en español profesional. No cuenta la historia del cambio.
+2. **Sin referencias de trabajo.** No se citan números de historia ni de issue (`HU-0xx`, `#nnn`), fechas ni nombres de personas o equipos («decisión de…»). La excepción son los ADR, que son documentación estable: `ADR-0xx` se puede citar cuando explica una regla de negocio.
+3. **Sin notas de trabajo.** No se escriben frases como «antes…», «hoy…», «queda pendiente…», «ojo…» o «por ahora…». Lo que queda pendiente se registra en una issue, no en un comentario.
+4. **XML doc breve.** Los comentarios `///` de las clases y los métodos públicos se mantienen cortos: una o dos frases y, cuando aporta, las reglas que aplica o los códigos de error que devuelve.
+5. **Pruebas por comportamiento.** Las pruebas se nombran por el comportamiento que verifican, no por la historia que las originó. Un `/// <summary>` de prueba enuncia la regla que se prueba; si solo repetiría el nombre de una historia, se omite.
+
+Para encontrar comentarios que no cumplen la regla 2:
+
+```bash
+git grep -nE '^\s*(///|//).*(HU-[0-9]{3}|#[0-9]{2,3}\b)' -- 'backend-dotnet/src/*.cs' 'backend-dotnet/tests/*.cs'
+```
+
 ## 2.5 Modelo de dominio y persistencia
 
 **Modelo de dominio y persistencia (#9).** Una entidad por tabla de `dbo_cotifly`, sin dependencias técnicas; setters privados, fábricas `Crear`/`Registrar`/`Emitir` que devuelven `clsResultado<T>` con las invariantes baratas (folio obligatorio ≤ 50, versión ≥ 1, TRM 0 en COP, márgenes ≥ 0 y < 1 solo con el método `margen` (`markup` admite ≥ 1, `clsReglaMargen`), correo con al menos un `para`, destinatario `para|cc`, hash SHA-256 de 64 hex...). Los enums se guardan con su código snake_case (`clsCodigoEnum`: `sin_enviar`, `politica_linea`, `gerente_comercial`), que es lo que exigen los CHECK del esquema.
