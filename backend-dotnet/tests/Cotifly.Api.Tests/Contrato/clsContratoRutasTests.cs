@@ -319,6 +319,9 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         (typeof(Cotifly.Aplicacion.Precio.DTOs.clsSalidaPrecio), "SalidaPrecio"),
         (typeof(Cotifly.Aplicacion.Margen.DTOs.clsSalidaMargen), "SalidaMargen"),
         (typeof(Cotifly.Aplicacion.Pdf.DTOs.clsSalidaPdf), "SalidaPdf"),
+        // HU-045.3 (#265): aviso del seguro marcado sin valor de la mercancía (costeo, detalle y PDF).
+        (typeof(Cotifly.Aplicacion.Costeo.DTOs.clsAvisoSeguro), "AvisoSeguro"),
+        (typeof(Cotifly.Aplicacion.Costeo.DTOs.clsRutaAvisoSeguro), "RutaAvisoSeguro"),
         (typeof(clsErrorHerramienta), "ErrorHerramienta"),
         (typeof(clsErrorWeb), "ErrorWeb"),
         (typeof(clsErrorNegocioWeb), "ErrorNegocio"),
