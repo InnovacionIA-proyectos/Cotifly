@@ -28,7 +28,8 @@ public sealed class clsEsquemaPortableHerramientasTests
         new clsHerramientasAsistenteFolio(
             new clsContextoAsistenteFolio(),
             Substitute.For<IClsServiciosConexosCosteoService>(),
-            Substitute.For<IClsReSolicitudCosteoService>()),
+            Substitute.For<IClsReSolicitudCosteoService>(),
+            Substitute.For<IClsCategoriasConexos>()),
         clsNombresHerramientas.PluginAsistente);
 
     // Contrato sobre lo que recibe el modelo: las declaraciones que arma el runner del asistente.

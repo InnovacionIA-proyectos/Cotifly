@@ -1006,10 +1006,11 @@ public sealed class clsReSolicitudCosteoServiceTests
     }
 
     [Fact]
-    public void LosConexosConservadosSonLosDeLasRutasSinRepetirConElIdSiNoTienenNombre()
+    public void LosConexosConservadosSonLosDeLasRutasSinRepetirYSinNombreUsanLaCategoriaNuncaElId()
     {
-        // HU-021: los conexos son filas de la ruta (ya no hay "excluidos": todos van en el precio) y una fila sin nombre (migrada) se
-        // muestra con su id de Nexo (la tabla no guarda la categoría).
+        // HU-021: los conexos son filas de la ruta (ya no hay "excluidos": todos van en el precio). Corrección conexos (nombre nunca id): una
+        // fila sin nombre (migrada) se muestra con su categoría como respaldo LEGIBLE (aquí, sin categoría guardada, la de respaldo), NUNCA
+        // con su id interno de Nexo.
         var cotizacion = Vencida(_ana, "PCN-900555111-AP-05102026-002", 1_000_000m);
         var ruta = cotizacion.PrimeraRuta!;
         ruta.AgregarOActualizarConexo("CX-2", " cargue ", 85_000m, 2m);
@@ -1017,7 +1018,9 @@ public sealed class clsReSolicitudCosteoServiceTests
         ruta.AgregarOActualizarConexo("CX-4", "Stand-by", 10m, 1m);
         ruta.AgregarOActualizarConexo("CX-5", "Precinto", 10m, 1m);
 
-        clsReSolicitudCosteoService.ConexosConservados(cotizacion).Should().Equal("Cargue", "CX-3", "Stand-by", "Precinto");
+        var conservados = clsReSolicitudCosteoService.ConexosConservados(cotizacion);
+        conservados.Should().Equal("Cargue", clsCosteoCotizacionService.CategoriaConexo, "Stand-by", "Precinto");
+        conservados.Should().NotContain("CX-3", "el id interno nunca es la etiqueta visible");
     }
 
     [Fact]

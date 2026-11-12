@@ -235,7 +235,8 @@ public static class clsPropuestasAsistente
         };
         var cuerpo = new Dictionary<string, object?>(StringComparer.Ordinal) { ["items"] = new[] { item } };
         var unidad = string.IsNullOrWhiteSpace(servicio.Unidad) ? string.Empty : $" ({servicio.Unidad.Trim()})";
-        var resumen = $"Agregar {Numero(cantidad)}{unidad} de «{servicio.Nombre ?? servicio.Codigo ?? servicio.Id}» a la ruta {ruta.Orden} en Nexo. "
+        // Corrección conexos (nombre nunca id): nombre, si no el código, si no la categoría; nunca el id interno del servicio.
+        var resumen = $"Agregar {Numero(cantidad)}{unidad} de «{servicio.Nombre ?? servicio.Codigo ?? servicio.Categoria ?? "servicio conexo"}» a la ruta {ruta.Orden} en Nexo. "
                       // HU-043.2 (#251): el conexo no lleva el margen de la ruta.
                       + "Se cotiza a su precio de venta de Nexo, sin margen; queda incluido en el PDF."
                       + SufijoPdf(cotizacion);
