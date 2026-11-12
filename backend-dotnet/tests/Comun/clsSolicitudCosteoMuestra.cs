@@ -2,7 +2,7 @@ using Cotifly.Dominio.Cotizaciones;
 
 namespace Cotifly.Pruebas.Comun;
 
-/// <summary>Solicitud de costeo completa (formulario ampliado, HU-005.8) con dos posiciones de cubicaje, para las pruebas.</summary>
+/// <summary>Solicitud de costeo completa (formulario ampliado) con dos posiciones de cubicaje, para las pruebas.</summary>
 public static class clsSolicitudCosteoMuestra
 {
     public static readonly DateTimeOffset Deadline = new(2026, 10, 15, 17, 0, 0, TimeSpan.FromHours(-5));
@@ -31,7 +31,7 @@ public static class clsSolicitudCosteoMuestra
         Posiciones =
         [
             new clsPosicionCarga("Estiba de café", 20, 120m, 100m, 150m, 1425m),
-            // #278 (DU §8): con medidas, el peso por unidad es obligatorio (20 × 1.425 + 0,5 = 28.500,5 kg, el peso de la línea).
+            // DU §8: con medidas, el peso por unidad es obligatorio (20 × 1.425 + 0,5 = 28.500,5 kg, el peso de la línea).
             new clsPosicionCarga(null, 1, 1200m, 235m, 269m, 0.5m),
         ],
     };
@@ -40,7 +40,7 @@ public static class clsSolicitudCosteoMuestra
     public static readonly Guid TipoMercancia = Guid.Parse("6f1c2a52-8d1e-4f5b-9a63-0c1b2d3e4f50");
 
     /// <summary>
-    /// La misma solicitud como captura nueva (HU-021.6): sin vehículo ni carrocería (decisión 7), con los ids de municipio del Nexo falso
+    /// La misma solicitud como captura nueva: sin vehículo ni carrocería, con los ids de municipio del Nexo falso
     /// (Buenaventura 76109, Bogotá 11001) y las mercancías con su tipo del catálogo del cubicador.
     /// </summary>
     public static clsSolicitudCosteo CrearCaptura() => Crear() with
@@ -59,13 +59,13 @@ public static class clsSolicitudCosteoMuestra
     /// <summary>La primera ruta de <see cref="CrearCaptura"/> como línea de la captura, con la ciudad de devolución resuelta.</summary>
     public static clsLineaSolicitudCosteo RutaCaptura() => CrearCaptura().ALinea() with { CiudadDevolucionMunicipioId = 76109 };
 
-    /// <summary>Código (HU-023) del tipo de mercancía <see cref="TipoMercancia"/> en el catálogo del cubicador.</summary>
+    /// <summary>Código del tipo de mercancía <see cref="TipoMercancia"/> en el catálogo del cubicador.</summary>
     public const string CodigoMercancia = "CAFE_EN_ESTIBAS";
 
-    /// <summary><see cref="RutaCaptura"/> con el <c>codigoMercancia</c> de cada mercancía (HU-023.1: lo que viaja al cubicador).</summary>
+    /// <summary><see cref="RutaCaptura"/> con el <c>codigoMercancia</c> de cada mercancía (lo que viaja al cubicador).</summary>
     public static clsLineaSolicitudCosteo RutaConCodigos() => RutaCaptura();
 
-    /// <summary><see cref="RutaCaptura"/> solo con el <c>id_tipo_mercancia</c> obsoleto (transición de HU-023).</summary>
+    /// <summary><see cref="RutaCaptura"/> solo con el <c>id_tipo_mercancia</c> obsoleto.</summary>
     public static clsLineaSolicitudCosteo RutaSoloConId()
     {
         var ruta = RutaCaptura();

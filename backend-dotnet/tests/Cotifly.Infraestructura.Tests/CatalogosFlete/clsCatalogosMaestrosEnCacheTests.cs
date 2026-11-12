@@ -11,7 +11,7 @@ using NSubstitute;
 namespace Cotifly.Infraestructura.Tests.CatalogosFlete;
 
 /// <summary>
-/// HU-013.10 (G1/G2): caché de los catálogos maestros de Nexo y comportamiento sin Nexo. Vigente → no consulta; vencida y Nexo caído →
+/// Caché de los catálogos maestros de Nexo y comportamiento sin Nexo. Vigente → no consulta; vencida y Nexo caído →
 /// la copia de respaldo hasta <c>Nexo:HorasCatalogosVencidos</c>; después, o sin copia, <c>CATALOGOS_FLETE_NO_DISPONIBLE</c>.
 /// </summary>
 public sealed class clsCatalogosMaestrosEnCacheTests
@@ -91,7 +91,7 @@ public sealed class clsCatalogosMaestrosEnCacheTests
         proveedor.UltimaCopia.Should().BeNull();
     }
 
-    // Hallazgo M de #179: un fallo pasajero de clases-contenedor no reemplaza a la copia buena con la lista vacía.
+    // Un fallo pasajero de clases-contenedor no reemplaza a la copia buena con la lista vacía.
     private static readonly clsCatalogosMaestros _conContenedores = _catalogos with { ClasesContenedor = [new("CNT40.HC", "CNT40.HC")] };
 
     private static readonly clsCatalogosMaestros _contenedoresCaidos =

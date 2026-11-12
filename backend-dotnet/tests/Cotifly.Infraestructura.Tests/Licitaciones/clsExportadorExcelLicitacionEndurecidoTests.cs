@@ -9,8 +9,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Cotifly.Infraestructura.Tests.Licitaciones;
 
 /// <summary>
-/// HU-035.2 (#213), validación: la exportación abre con ClosedXML el Excel original GUARDADO de la licitación. Los originales guardados
-/// antes de los controles nunca los pasaron, así que la exportación pasa por la misma pieza (<see cref="clsLecturaExcelAcotada"/>): un
+/// La exportación abre con ClosedXML el Excel original GUARDADO de la licitación. Un original guardado
+/// pudo no haber pasado los controles, así que la exportación pasa por la misma pieza (<see cref="clsLecturaExcelAcotada"/>): un
 /// original malicioso es un error de negocio con su motivo (400, nunca un 500 ni un cuelgue), el cupo lleno es <c>SERVICIO_OCUPADO</c>, y
 /// el cupo se libera siempre (también si ClosedXML lanza o el llamador cancela). Sin original no se toma el cupo.
 /// </summary>
@@ -90,7 +90,7 @@ public sealed class clsExportadorExcelLicitacionEndurecidoTests
         lectura.Cupo.CurrentCount.Should().Be(1);
     }
 
-    /// <summary>HU-035.3 (#277): un original con la impresión configurada (y su <c>printerSettings*.bin</c>) se exporta.</summary>
+    /// <summary>Un original con la impresión configurada (y su <c>printerSettings*.bin</c>) se exporta.</summary>
     [Fact]
     public async Task UnOriginalConConfiguracionDeImpresionSeExporta()
     {

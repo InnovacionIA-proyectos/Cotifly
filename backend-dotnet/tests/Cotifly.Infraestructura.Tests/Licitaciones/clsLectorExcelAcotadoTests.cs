@@ -9,7 +9,7 @@ using DocumentFormat.OpenXml.Spreadsheet;
 namespace Cotifly.Infraestructura.Tests.Licitaciones;
 
 /// <summary>
-/// Lector del Excel de licitaciones contra archivos maliciosos (HU-011.2, ADR-017 §4) y paridad con la detección de Nexo: una celda
+/// Lector del Excel de licitaciones contra archivos maliciosos (ADR-017 §4) y paridad con la detección de Nexo: una celda
 /// lejana o una combinada enorme terminan rápido y con memoria acotada (o con un error de negocio), nunca tumban el proceso.
 /// </summary>
 public sealed class clsLectorExcelAcotadoTests

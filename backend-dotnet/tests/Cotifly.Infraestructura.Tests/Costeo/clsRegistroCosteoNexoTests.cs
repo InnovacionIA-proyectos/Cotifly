@@ -115,7 +115,7 @@ public sealed class clsRegistroCosteoNexoTests
     [Fact]
     public async Task Un429DeCatalogosNoSeReintentaYBloqueaSoloLosListadosHastaElRetryAfter()
     {
-        // HU-023.4 (#159): Nexo limita por ROL solo catalogos/* y la bandeja GET /api/solicitudes, con Retry-After: 30. Tras el 429 esas
+        // Nexo limita por ROL solo catalogos/* y la bandeja GET /api/solicitudes, con Retry-After: 30. Tras el 429 esas
         // rutas no vuelven a Nexo hasta el Retry-After; el polling (/api/solicitudes/{id}) y la búsqueda de clientes siguen saliendo.
         var tiempo = new clsTiempoManual();
         var nexo = new clsNexoClientesFalso()

@@ -7,8 +7,8 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Infraestructura.Tests.Pdf;
 
 /// <summary>
-/// #173 (E2E real del 2026-10-14): el PDF decía "Estas tarifas no incluyen: Acompañamiento vehicular" mientras itemizaba el conexo
-/// "Acompañante vehicular en moto". El "no incluye" se depura contra los conexos reales. Render real (MigraDoc) leído con PdfPig.
+/// El "no incluye" del PDF se depura contra los conexos reales: no dice "Estas tarifas no incluyen: Acompañamiento vehicular" si
+/// itemiza el conexo "Acompañante vehicular en moto". Render real (MigraDoc) leído con PdfPig.
 /// </summary>
 [Collection(clsColeccionRenderPdf.Nombre)]
 public sealed partial class clsPdfIncluyeConexosTests
@@ -45,7 +45,7 @@ public sealed partial class clsPdfIncluyeConexosTests
         TextoPdf().Should().Contain("Acompañamiento vehicular");
     }
 
-    /// <summary>#173 (E2E real): la captura pidió 2 h y el PDF decía 4 h fijas.</summary>
+    /// <summary>La nota imprime las horas que pidió la captura (2 h), no unas horas fijas.</summary>
     [Fact]
     public void LaNotaUsaLasHorasCapturadas()
     {
@@ -88,8 +88,8 @@ public sealed partial class clsPdfIncluyeConexosTests
 }
 
 /// <summary>
-/// #173: las pruebas que ocupan o miden el turno de render global (<c>clsGeneradorPdfMigraDoc.TurnoDeRender</c>) no corren en paralelo entre
-/// sí: un render de otra clase podía tomar el turno justo cuando la prueba de espera acotada lo necesitaba.
+/// Las pruebas que ocupan o miden el turno de render global (<c>clsGeneradorPdfMigraDoc.TurnoDeRender</c>) no corren en paralelo entre
+/// sí: un render de otra clase podría tomar el turno justo cuando la prueba de espera acotada lo necesitaba.
 /// </summary>
 [CollectionDefinition(Nombre)]
 public sealed class clsColeccionRenderPdf

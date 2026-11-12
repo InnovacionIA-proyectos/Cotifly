@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
-/// #125: el candado del folio (<c>sp_getapplock</c>) contra SQL Server real con <c>CandadoSql</c> corto. Otra transacción retiene el
+/// El candado del folio (<c>sp_getapplock</c>) contra SQL Server real con <c>CandadoSql</c> corto. Otra transacción retiene el
 /// candado: se reintenta solo la toma (la operación corre como mucho una vez) y, agotados los intentos, <c>SERVICIO_OCUPADO</c>
 /// en lugar de una excepción.
 /// </summary>

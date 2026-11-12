@@ -20,7 +20,7 @@ namespace Cotifly.Infraestructura.Tests.Persistencia;
 /// <summary>
 /// Flujo completo con el registro real (AddAplicacion + AddInfraestructura) sobre SQL Server 2019: generar el PDF (render
 /// MigraDoc, almacén en carpeta temporal, fila en <c>Cotizaciones</c>, evento en <c>EventosHerramienta</c> que pasa el CHECK
-/// <c>ISJSON</c>) y enviarlo por MailSender falso (HU-033, #199: deduplicación con el reloj de la aplicación, <c>reenviada</c>, fila
+/// <c>ISJSON</c>) y enviarlo por MailSender falso (deduplicación con el reloj de la aplicación, <c>reenviada</c>, fila
 /// <c>encolado</c> con el id de MailSender, el worker que la lleva a <c>enviado</c> o <c>fallido</c>, el reintento y el historial).
 /// </summary>
 [Collection(clsColeccionSqlServer.Nombre)]
@@ -59,7 +59,7 @@ public sealed class clsPdfCorreoIntegracionTests : clsPruebaIntegracion
         var cotizacion = await ConsultarAsync(s => s.GetRequiredService<IClsCotizacionRepository>().ObtenerPorFolioAsync(folio, Ct));
         cotizacion!.Id.Should().Be(resultado.Valor.CotizacionId);
         cotizacion.UsuarioId.Should().Be(usuario);
-        // HU-021: el chat también crea una ruta (línea de negocio, margen y precio) y un camión con el flete.
+        // El chat también crea una ruta (línea de negocio, margen y precio) y un camión con el flete.
         var ruta = cotizacion.Rutas.Should().ContainSingle().Subject;
         ruta.LineaNegocioId.Should().NotBeNull("'Distribución' con tilde se resuelve contra 'Distribucion' (issue #44)");
         ruta.OrigenMargen.Should().Be(OrigenMargen.PoliticaLinea);
@@ -106,7 +106,7 @@ public sealed class clsPdfCorreoIntegracionTests : clsPruebaIntegracion
             .Should().HaveCount(2).And.OnlyContain(r => r.To.SequenceEqual(new[] { clsMailSenderFalso.BuzonPruebas }) && r.Cc.Count == 0 && r.Bcc.Count == 0);
     }
 
-    // Carrera de estadoEnvio (#11): dos envíos simultáneos en ámbitos distintos (dos peticiones) a destinatarios distintos.
+    // Carrera de estadoEnvio: dos envíos simultáneos en ámbitos distintos (dos peticiones) a destinatarios distintos.
     [Fact]
     public async Task DosEnviosSimultaneosDejanUnoEnviadaYElSiguienteReenviada()
     {

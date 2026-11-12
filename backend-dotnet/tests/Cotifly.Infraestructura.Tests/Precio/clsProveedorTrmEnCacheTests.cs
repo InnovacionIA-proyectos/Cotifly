@@ -10,7 +10,7 @@ using NSubstitute;
 
 namespace Cotifly.Infraestructura.Tests.Precio;
 
-/// <summary>Caché por fecha de negocio de la TRM (<see cref="clsProveedorTrmEnCache"/>, HU-012.1) con un reloj falso.</summary>
+/// <summary>Caché por fecha de negocio de la TRM (<see cref="clsProveedorTrmEnCache"/>) con un reloj falso.</summary>
 public sealed class clsProveedorTrmEnCacheTests
 {
     private static readonly DateOnly _lunes = new(2026, 9, 28);

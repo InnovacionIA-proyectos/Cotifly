@@ -16,7 +16,7 @@ using NSubstitute;
 namespace Cotifly.Infraestructura.Tests.Licitaciones;
 
 /// <summary>
-/// Validación adversarial de HU-044.5 (#256) con respuestas raras de NEXO (un <see cref="clsNexoClientesFalso"/> que responde el cuerpo
+/// Validación adversarial de los formatos del cliente con respuestas raras de NEXO (un <see cref="clsNexoClientesFalso"/> que responde el cuerpo
 /// que se le pida) a través del adaptador real y del servicio de formatos del cliente: el filtro del diccionario, la receta opaca en la
 /// respuesta, cuerpos vacíos o rotos y los 404 sin el código esperado.
 /// </summary>
@@ -60,7 +60,7 @@ public sealed class clsFormatosClienteNexoAdversarialTests
     [Fact]
     public async Task UnaListaConNulosDelDiccionarioNoRompe()
     {
-        // Ajustado por el desarrollador: #252 (auditoría) decidió que un elemento null en una lista de NEXO es una respuesta con otra forma
+        // Un elemento null en una lista de NEXO es una respuesta con otra forma
         // (SinNulos → NEXO_NO_DISPONIBLE, falla cerrado). "No rompe" = 503 controlado, nunca un 500 ni términos a medias.
         var nexo = new clsNexoClientesFalso().Responder(HttpStatusCode.OK, "[null," + TerminoGeneral + ",null]");
         var servicio = Servicio(nexo, out var proveedor);
@@ -124,7 +124,7 @@ public sealed class clsFormatosClienteNexoAdversarialTests
     [InlineData("")]
     public async Task UnDeleteQueNexoNoConoceSinElCodigoEsperadoEsRechazadaNoNoEncontrada(string cuerpo)
     {
-        // Caracterización: si NEXO aún no tiene la ruta (PR #433) o responde 404 sin código, el front recibe 400 COSTEO_NEXO_RECHAZADA.
+        // Caracterización: si NEXO no tiene la ruta o responde 404 sin código, el front recibe 400 COSTEO_NEXO_RECHAZADA.
         var nexo = new clsNexoClientesFalso().Responder(HttpStatusCode.NotFound, cuerpo);
         var servicio = Servicio(nexo, out var proveedor);
         using var limpieza = proveedor;

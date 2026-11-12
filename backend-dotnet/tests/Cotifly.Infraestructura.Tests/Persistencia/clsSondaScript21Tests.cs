@@ -7,7 +7,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
-/// HU-046.3 (#269), la sonda y el script 21: cualquiera de sus columnas, sola, pide el 21; el 21 junto con un
+/// La sonda y el script 21: cualquiera de sus columnas, sola, pide el 21; el 21 junto con un
 /// script anterior pide el anterior; y todas juntas también son "falta 21" (base sin el script aplicado).
 /// </summary>
 public sealed class clsSondaScript21Tests

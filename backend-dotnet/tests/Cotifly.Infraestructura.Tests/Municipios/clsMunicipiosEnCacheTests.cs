@@ -10,7 +10,7 @@ using NSubstitute;
 namespace Cotifly.Infraestructura.Tests.Municipios;
 
 /// <summary>
-/// <see cref="clsMunicipiosEnCache"/> (HU-005.13): el catálogo de municipios de Nexo se reutiliza durante
+/// <see cref="clsMunicipiosEnCache"/>: el catálogo de municipios de Nexo se reutiliza durante
 /// <c>Nexo:MinutosCacheMunicipios</c>; los fallos y los catálogos vacíos no se guardan; las consultas simultáneas comparten una
 /// sola consulta a Nexo, con éxito o con fallo. Con un proveedor simulado y el reloj falso: sin red.
 /// </summary>

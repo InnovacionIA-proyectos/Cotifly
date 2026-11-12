@@ -9,7 +9,7 @@ namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
 /// Scripts <c>db/migrations_mssql</c> aplicados en SQL Server 2019 y verificación de deriva entre el modelo
-/// EF (Database First) y el esquema real (ADR-008): tablas, columnas, tipos y nulabilidad. Desde HU-021 la base compartida tiene
+/// EF (Database First) y el esquema real (ADR-008): tablas, columnas, tipos y nulabilidad. La base compartida tiene
 /// 0001 a 0010; las pruebas de los scripts anteriores (0002 a 0008) corren en una base AISLADA con el esquema viejo
 /// (<see cref="clsBaseDatosPruebas.ScriptsAntesDeHu021"/>), y <c>db/scripts/01_crear_esquema.sql</c> debe dejar el mismo esquema que
 /// la cadena de migraciones.
@@ -25,16 +25,16 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         "MargenAjustes", "MargenesPolitica", "Roles", "SapMapeoTrqType", "Sesiones",
         "TokensRefresco", "TokensRevocados", "UsuariosRoles", "UsuariosWeb",
 
-        // #191: la Idempotency-Key persistente (db/scripts/06; la base de las pruebas aplica toda la cadena de scripts).
+        // La Idempotency-Key persistente (db/scripts/06; la base de las pruebas aplica toda la cadena de scripts).
         "CapturasIdempotentes",
 
-        // HU-042.1/HU-042.2 (#242, #243): la copia local del margen de SAP TM y el log del job (db/scripts/17).
+        // La copia local del margen de SAP TM y el log del job (db/scripts/17).
         "SapMargenCliente", "SapMargenSyncLog",
 
-        // HU-045.1/HU-045.2 (#263, #264): la tasa del seguro de la mercancía (db/scripts/20).
+        // La tasa del seguro de la mercancía (db/scripts/20).
         "TarifasSeguro",
 
-        // HU-046.2/HU-046.3 (#268, #269): la política de seguros por valor de la mercancía (db/scripts/21).
+        // La política de seguros por valor de la mercancía (db/scripts/21).
         "PoliticaSeguroMedidaConexos", "PoliticaSeguroMedidas", "PoliticaSeguroTramoMedidas", "PoliticaSeguroTramos",
     ];
 
@@ -55,7 +55,7 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     [Fact]
     public async Task LaInstalacionDesdeCeroDejaElMismoEsquemaQueLasMigraciones()
     {
-        // HU-021: db/scripts/01_crear_esquema.sql (instalación de la base compartida) y 0001 → 0010 deben coincidir en columnas (tipo,
+        // db/scripts/01_crear_esquema.sql (instalación de la base compartida) y 0001 → 0010 deben coincidir en columnas (tipo,
         // largo, nulabilidad, collation y default), PK, UQ, FK, CHECK (con su definición), defaults e índices. El orden de las columnas
         // puede variar (las migraciones agregan con ALTER) y los respaldos del 0009 solo existen en la base migrada.
         await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbInstalada");
@@ -72,8 +72,8 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     [Fact]
     public async Task ElScript08RetiraLasVistasDelBorradorYEsIdempotente()
     {
-        // HU-014.3 (#152): sobre una base migrada que todavía tiene las vistas (0001 a 0010, 02, 04 y 07) las borra; repetirlo, o
-        // correrlo sobre una instalación desde cero (que ya no las tiene), no cambia nada.
+        // Sobre una base migrada que todavía tiene las vistas (0001 a 0010, 02, 04 y 07) las borra; repetirlo, o
+        // correrlo sobre una instalación desde cero (que no las tiene), no cambia nada.
         await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbRetiro08", clsBaseDatosPruebas.ScriptsHasta07);
         (await VistasAsync(migrada.Cadena)).Should().BeEquivalentTo(["vActividadPorComercial", "vAjustesMargenPorComercial"], "la cadena hasta el 07 las tiene");
 
@@ -89,7 +89,7 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     [Fact]
     public void LosCortesDeLaListaDeScriptsApuntanAlScriptQueNombran()
     {
-        // HU-014.3 (#152): al fusionar ramas que agregan scripts a clsBaseDatosPruebas.Scripts (08, 09, ...), git puede unir la lista sin
+        // Al fusionar ramas que agregan scripts a clsBaseDatosPruebas.Scripts (08, 09, ...), git puede unir la lista sin
         // conflicto y dejar una constante de corte apuntando a otro script; las pruebas que la usan siguen pasando sobre una base equivocada.
         var scripts = clsBaseDatosPruebas.Scripts;
 
@@ -109,23 +109,23 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         scripts[clsBaseDatosPruebas.ScriptsHasta16 - 3].Should().Be(clsBaseDatosPruebas.Script13, "ScriptsHasta16 incluye el 13 (el backend mapea MailSender y el resultado diferido)");
         scripts[clsBaseDatosPruebas.ScriptsHasta16 - 2].Should().Be(clsBaseDatosPruebas.Script14, "ScriptsHasta16 incluye el 14 (el backend mapea la cotización finalizada)");
         scripts[clsBaseDatosPruebas.ScriptsHasta16 - 1].Should().Be(clsBaseDatosPruebas.Script16, "ScriptsHasta16 llega hasta el 16 (el backend mapea TokensRefresco.rolSesion)");
-        // HU-042 (#242, #243, #247) y #261 punto 4: el 17, el 18 y el 19 van después del 16 y antes del 07 (el backend mapea sus tablas,
+        // El 17, el 18 y el 19 van después del 16 y antes del 07 (el backend mapea sus tablas,
         // lineaNegocioId y precioVenta, en ese orden).
         scripts[clsBaseDatosPruebas.ScriptsHasta16].Should().Be(clsBaseDatosPruebas.Script17, "después del 16 va el 17 (copia local del margen de SAP)");
         scripts[clsBaseDatosPruebas.ScriptsHasta16 + 1].Should().Be(clsBaseDatosPruebas.Script18, "después del 17 va el 18 (lineaNegocioId del mapeo)");
         scripts[clsBaseDatosPruebas.ScriptsHasta16 + 2].Should().Be(clsBaseDatosPruebas.Script19, "después del 18 va el 19 (precioVenta del conexo, #261)");
-        // HU-045 (#263, #264): el 20 (TarifasSeguro y el seguro de la ruta) va después del 19.
+        // El 20 (TarifasSeguro y el seguro de la ruta) va después del 19.
         scripts[clsBaseDatosPruebas.ScriptsHasta16 + 3].Should().Be(clsBaseDatosPruebas.Script20, "después del 19 va el 20 (seguro de la mercancía, #264)");
-        // HU-046 (#268, #269): el 21 (política de seguros y codigoServicio del conexo) va después del 20.
+        // El 21 (política de seguros y codigoServicio del conexo) va después del 20.
         scripts[clsBaseDatosPruebas.ScriptsHasta16 + 4].Should().Be(clsBaseDatosPruebas.Script21, "después del 20 va el 21 (política de seguros, #269)");
-        // HU-044.7 (#290): el 22 (origenLectura de la licitación) va después del 21.
+        // El 22 (origenLectura de la licitación) va después del 21.
         scripts[clsBaseDatosPruebas.ScriptsHasta16 + 5].Should().Be(clsBaseDatosPruebas.Script22, "después del 21 va el 22 (origenLectura, #290)");
-        // HU-040.3 (#258): el 23 (requiereAltaManual) va después del 22.
+        // El 23 (requiereAltaManual) va después del 22.
         scripts[clsBaseDatosPruebas.ScriptsHasta16 + 6].Should().Be(clsBaseDatosPruebas.Script23, "después del 22 va el 23 (requiereAltaManual, #258)");
         scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script23, "ScriptsSin07 llega hasta el 23");
         scripts[clsBaseDatosPruebas.ScriptsSin07].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsSin07 corta justo antes del 07");
         scripts[clsBaseDatosPruebas.ScriptsHasta07 - 1].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsHasta07 incluye el 07");
-        // HU-037.1 (#209): el 15 (rol director) va al final, después del 08: no agrega columnas y clsRolDirectorScriptTests usa
+        // El 15 (rol director) va al final, después del 08: no agrega columnas y clsRolDirectorScriptTests usa
         // Scripts.Length - 1 como "la base sin el 15".
         scripts[clsBaseDatosPruebas.ScriptsHasta07..].Should().Equal([clsBaseDatosPruebas.Script08, clsBaseDatosPruebas.Script15],
             "después del 07 van el 08 y el 15");
@@ -142,7 +142,7 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     [Fact]
     public async Task ElScript02DelCubicadorEsIdempotenteSobreUnaBaseMigradaYSobreUnaInstalacionDesdeCero()
     {
-        // HU-023.3 (#158): db/scripts/02_alter_cubicador.sql (de @scalderon-bs) va después del 0010 o del 01 y se puede repetir.
+        // db/scripts/02_alter_cubicador.sql va después del 0010 o del 01 y se puede repetir.
         await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem02", clsBaseDatosPruebas.Scripts.Length);
         await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script02);
 
@@ -155,9 +155,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
-    public async Task HU014_ElScript05EsIdempotenteSobreUnaBaseMigradaYSobreUnaInstalacionDesdeCero()
+    public async Task ElScript05EsIdempotenteSobreUnaBaseMigradaYSobreUnaInstalacionDesdeCero()
     {
-        // HU-014 (#188): db/scripts/05 (categoría del conexo; el 01 no la trae).
+        // db/scripts/05 (categoría del conexo; el 01 no la trae).
         await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem05", clsBaseDatosPruebas.Scripts.Length);
         await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script05);
 
@@ -166,10 +166,10 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
-    public async Task HU014_El03NumeraLosCamionesExistentesPorCreatedAtYElIndiceFiltradoRechazaUnOrdenRepetido()
+    public async Task El03NumeraLosCamionesExistentesPorCreatedAtYElIndiceFiltradoRechazaUnOrdenRepetido()
     {
-        // HU-014 (#188): sobre una base con camiones escritos SIN ordenVehiculo (02 sin el 03, como la base compartida antes de aplicarlo),
-        // el 03 los numera 1..n por ruta en el orden de createdAt (el desfase de 1 ms de antes de #188); después el índice único filtrado
+        // Sobre una base con camiones escritos SIN ordenVehiculo (02 sin el 03),
+        // el 03 los numera 1..n por ruta en el orden de createdAt; después el índice único filtrado
         // rechaza un orden repetido en la misma ruta y admite varios NULL.
         await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbOrden03", clsBaseDatosPruebas.ScriptsHasta02);
         var cadena = baseAislada.Cadena;
@@ -200,7 +200,7 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     [Fact]
     public async Task ElScript04EsIdempotenteSobreUnaBaseMigradaYSobreUnaInstalacionDesdeCero()
     {
-        // HU-023.5 (#160): la cola de la cubicación en segundo plano (propuesta pendiente 04; el 01 no la trae).
+        // La cola de la cubicación en segundo plano (db/scripts/04; el 01 no la trae).
         await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem04", clsBaseDatosPruebas.Scripts.Length);
         await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script04);
 
@@ -209,9 +209,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
-    public async Task I191_ElScript06EsIdempotenteSobreUnaBaseMigradaYSobreUnaInstalacionDesdeCero()
+    public async Task ElScript06EsIdempotenteSobreUnaBaseMigradaYSobreUnaInstalacionDesdeCero()
     {
-        // #191: CapturasIdempotentes (db/scripts/06; el 01 no la trae).
+        // CapturasIdempotentes (db/scripts/06; el 01 no la trae).
         await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem06", clsBaseDatosPruebas.Scripts.Length);
         await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script06);
 
@@ -224,9 +224,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
-    public async Task I191_ElScript06RecreaLaTablaVaciaDeLaPropuestaAnteriorYSeDetieneSiTieneFilas()
+    public async Task ElScript06RecreaLaTablaVaciaDeLaPropuestaAnteriorYSeDetieneSiTieneFilas()
     {
-        // La propuesta de #173 (sin operacion) nunca la usó el backend: vacía se recrea; con filas, el 06 se detiene sin tocarla.
+        // Una tabla anterior sin operacion no la usa el backend: vacía se recrea; con filas, el 06 se detiene sin tocarla.
         await using var vacia = await BaseDatos.CrearBaseConScriptsAsync("dbIdem06Vieja", clsBaseDatosPruebas.ScriptsHasta05);
         await clsBaseDatosPruebas.EjecutarAsync(vacia.Cadena, clsIdempotenciaSqlTests.TablaPropuestaAnterior);
 
@@ -246,9 +246,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
-    public async Task HU0181_ElScript09EsIdempotenteSobreUnaBaseMigradaYSobreUnaInstalacionDesdeCeroYDejaDecimal94Null()
+    public async Task ElScript09EsIdempotenteSobreUnaBaseMigradaYSobreUnaInstalacionDesdeCeroYDejaDecimal94Null()
     {
-        // HU-018.1 (#155): scorePrioridad en la cabecera (db/scripts/09; el 01 no lo trae).
+        // scorePrioridad en la cabecera (db/scripts/09; el 01 no lo trae).
         await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem09", clsBaseDatosPruebas.Scripts.Length);
         await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script09);
 
@@ -262,9 +262,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
-    public async Task HU0301_ElScript11EsIdempotenteSobreUnaBaseMigradaYSobreUnaInstalacionDesdeCeroYDejaDecimal122NullConSuCheck()
+    public async Task ElScript11EsIdempotenteSobreUnaBaseMigradaYSobreUnaInstalacionDesdeCeroYDejaDecimal122NullConSuCheck()
     {
-        // HU-030.1 (#184): pesoConTaraKg en la ruta (db/scripts/11; el 01 no lo trae).
+        // pesoConTaraKg en la ruta (db/scripts/11; el 01 no lo trae).
         await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem11", clsBaseDatosPruebas.Scripts.Length);
         await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script11);
 
@@ -282,9 +282,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
-    public async Task HU032_ElScript12EsIdempotenteDejaElVehiculoElegidoYLasMedidasNullYElCheckAdmiteSoloTresNullOTresPositivas()
+    public async Task ElScript12EsIdempotenteDejaElVehiculoElegidoYLasMedidasNullYElCheckAdmiteSoloTresNullOTresPositivas()
     {
-        // HU-032 (#197): tipoVehiculoElegido/carroceriaElegida en la ruta y medidas NULL (las tres o ninguna) en la mercancía.
+        // tipoVehiculoElegido/carroceriaElegida en la ruta y medidas NULL (las tres o ninguna) en la mercancía.
         await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem12", clsBaseDatosPruebas.Scripts.Length);
         await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script12);
 
@@ -304,9 +304,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
-    public async Task HU0447_ElScript22EsIdempotenteYDejaOrigenLecturaNotNullConSuDefaultYCheck()
+    public async Task ElScript22EsIdempotenteYDejaOrigenLecturaNotNullConSuDefaultYCheck()
     {
-        // HU-044.7 (#290): origenLectura en CotizacionArchivosLicitacion (db/scripts/22; el 01 lo trae en el CREATE).
+        // origenLectura en CotizacionArchivosLicitacion (db/scripts/22; el 01 lo trae en el CREATE).
         await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem22", clsBaseDatosPruebas.Scripts.Length);
         await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script22);
 
@@ -323,9 +323,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
-    public async Task HU033_ElScript13EsIdempotenteYDejaLasColumnasDeMailSenderYDelResultadoDiferidoConSusCheck()
+    public async Task ElScript13EsIdempotenteYDejaLasColumnasDeMailSenderYDelResultadoDiferidoConSusCheck()
     {
-        // HU-033 (#199): Correos con el seguimiento de MailSender (y el CHECK del estado) y la cabecera con la sincronización del resultado.
+        // Correos con el seguimiento de MailSender (y el CHECK del estado) y la cabecera con la sincronización del resultado.
         await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem13", clsBaseDatosPruebas.Scripts.Length);
         await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script13);
 
@@ -355,9 +355,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
-    public async Task HU036_ElScript14EsIdempotenteYDejaLaFinalizacionConSuFkAUsuariosWebYSuCheck()
+    public async Task ElScript14EsIdempotenteYDejaLaFinalizacionConSuFkAUsuariosWebYSuCheck()
     {
-        // HU-036 (#205): finalizadaAt y finalizadaPor (UNIQUEIDENTIFIER, el tipo de UsuariosWeb.id) en la cabecera, la FK y el CHECK.
+        // finalizadaAt y finalizadaPor (UNIQUEIDENTIFIER, el tipo de UsuariosWeb.id) en la cabecera, la FK y el CHECK.
         await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem14", clsBaseDatosPruebas.Scripts.Length);
         await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script14);
 
@@ -382,9 +382,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
-    public async Task HU036_ElScript14SeAplicaSobreUnaBaseConDatosSinTocarlos()
+    public async Task ElScript14SeAplicaSobreUnaBaseConDatosSinTocarlos()
     {
-        // HU-036 (#205): sin backfill. Sobre una base hasta el 13 con una cotización ya escrita, el 14 la deja sin finalizar.
+        // Sin backfill. Sobre una base hasta el 13 con una cotización ya escrita, el 14 la deja sin finalizar.
         await using var baseConDatos = await BaseDatos.CrearBaseConScriptsAsync("dbDatos14", clsBaseDatosPruebas.ScriptsHasta16 - 2);
         var cotizacion = Guid.NewGuid();
         await clsBaseDatosPruebas.EjecutarAsync(baseConDatos.Cadena,
@@ -399,9 +399,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
-    public async Task HU0401_ElScript16EsIdempotenteSobreUnaBaseMigradaYSobreUnaInstalacionDesdeCero()
+    public async Task ElScript16EsIdempotenteSobreUnaBaseMigradaYSobreUnaInstalacionDesdeCero()
     {
-        // HU-040.1 (#229): sin uq_usuariosRoles_usuarioId_activo, con uq_usuariosRoles_usuarioId_rolId y TokensRefresco.rolSesion con su CHECK.
+        // Sin uq_usuariosRoles_usuarioId_activo, con uq_usuariosRoles_usuarioId_rolId y TokensRefresco.rolSesion con su CHECK.
         await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem16", clsBaseDatosPruebas.Scripts.Length);
         await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script16);
 
@@ -424,9 +424,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
-    public async Task HU0401_ElScript16SeAplicaSobreUnaBaseConDatosSinTocarlosYDespuesAdmiteDosAsignacionesActivas()
+    public async Task ElScript16SeAplicaSobreUnaBaseConDatosSinTocarlosYDespuesAdmiteDosAsignacionesActivas()
     {
-        // HU-040.1 (#229): no destructivo. Sobre una base hasta el 14 (sin el 16) con un usuario, su asignación activa y un refresh, el 16
+        // No destructivo. Sobre una base hasta el 14 (sin el 16) con un usuario, su asignación activa y un refresh, el 16
         // no cambia ninguna fila; el refresh queda con rolSesion NULL. Antes del 16 la segunda asignación activa choca con el índice; después
         // entra, y el mismo rol dos veces sigue prohibido.
         await using var baseConDatos = await BaseDatos.CrearBaseConScriptsAsync("dbDatos16", clsBaseDatosPruebas.ScriptsHasta16 - 1);
@@ -466,9 +466,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
-    public async Task HU0401_ElScript16NoAflojaNadaSiFaltaLaUnicidadDeUsuarioYRol()
+    public async Task ElScript16NoAflojaNadaSiFaltaLaUnicidadDeUsuarioYRol()
     {
-        // HU-040.1 (#229): sin uq_usuariosRoles_usuarioId_rolId se podría duplicar el mismo rol activo: el 16 se detiene sin cambiar nada.
+        // Sin uq_usuariosRoles_usuarioId_rolId se podría duplicar el mismo rol activo: el 16 se detiene sin cambiar nada.
         await using var aislada = await BaseDatos.CrearBaseConScriptsAsync("dbPre16", clsBaseDatosPruebas.ScriptsHasta16 - 1);
         await clsBaseDatosPruebas.EjecutarAsync(aislada.Cadena,
             "ALTER TABLE dbo_cotifly.UsuariosRoles DROP CONSTRAINT uq_usuariosRoles_usuarioId_rolId;");
@@ -481,9 +481,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
-    public async Task HU042_LosScripts17Y18SonIdempotentesSobreUnaBaseMigradaYSobreUnaInstalacionDesdeCero()
+    public async Task LosScripts17Y18SonIdempotentesSobreUnaBaseMigradaYSobreUnaInstalacionDesdeCero()
     {
-        // HU-042.1 y HU-042.4 (#242, #247): repetir el 17 (tablas, SP) y el 18 (lineaNegocioId con su FK) no cambia el esquema.
+        // Repetir el 17 (tablas, SP) y el 18 (lineaNegocioId con su FK) no cambia el esquema.
         await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem17", clsBaseDatosPruebas.Scripts.Length);
         await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script17);
         await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script18);
@@ -508,9 +508,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
-    public async Task HU0403_ElScript23EsIdempotenteYMarcaDirectorComoSensible()
+    public async Task ElScript23EsIdempotenteYMarcaDirectorComoSensible()
     {
-        // HU-040.3 (#258): Roles.requiereAltaManual (BIT NOT NULL DEFAULT 0) y director marcado en 1; los ordinarios en 0. Re-aplicarlo no cambia nada.
+        // Roles.requiereAltaManual (BIT NOT NULL DEFAULT 0) y director marcado en 1; los ordinarios en 0. Re-aplicarlo no cambia nada.
         await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem23", clsBaseDatosPruebas.Scripts.Length);
         await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script23);
 
@@ -534,9 +534,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
-    public async Task HU0403_ElScript23SeAplicaSobreUnaBaseConDatosSinTocarLosDemasRoles()
+    public async Task ElScript23SeAplicaSobreUnaBaseConDatosSinTocarLosDemasRoles()
     {
-        // HU-040.3 (#258): sobre una base sin el 23 (hasta el 22 + el 15, que trae el CHECK y la fila director), con los tres roles, el 23
+        // Sobre una base sin el 23 (hasta el 22 + el 15, que trae el CHECK y la fila director), con los tres roles, el 23
         // agrega la columna y marca SOLO director; los demás quedan en 0.
         await using var baseConDatos = await BaseDatos.CrearBaseConScriptsAsync("dbDatos23", clsBaseDatosPruebas.ScriptsSin07 - 1);
         await clsBaseDatosPruebas.AplicarScriptAsync(baseConDatos.Cadena, clsBaseDatosPruebas.Script15); // CHECK con 'director' y la fila director
@@ -559,9 +559,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
-    public async Task HU0424_ElScript18SeDetieneSinTocarNadaSiUnMapeoNoCruzaConUnaLinea()
+    public async Task ElScript18SeDetieneSinTocarNadaSiUnMapeoNoCruzaConUnaLinea()
     {
-        // HU-042.4 (#247): una fila de SapMapeoTrqType con un texto que no existe en MargenesPolitica no se fuerza a NOT NULL.
+        // Una fila de SapMapeoTrqType con un texto que no existe en MargenesPolitica no se fuerza a NOT NULL.
         await using var aislada = await BaseDatos.CrearBaseConScriptsAsync("dbPre18", clsBaseDatosPruebas.ScriptsHasta16 + 1);
         await clsBaseDatosPruebas.EjecutarAsync(aislada.Cadena,
             "INSERT INTO dbo_cotifly.SapMapeoTrqType (trqType, salesOrg, lineaNegocio, activo) VALUES (N'OHUB', N'', N'Almacenamiento', 1);");
@@ -574,9 +574,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
-    public async Task HU032_ElCheckDelScript12RechazaLasMedidasParcialesConNull()
+    public async Task ElCheckDelScript12RechazaLasMedidasParcialesConNull()
     {
-        // Validación de HU-032: "NULL > 0" es UNKNOWN y un CHECK solo rechaza FALSE. Sin "IS NOT NULL", (NULL, 10, 10) pasaba el CHECK
+        // "NULL > 0" es UNKNOWN y un CHECK solo rechaza FALSE. Sin "IS NOT NULL", (NULL, 10, 10) pasaría el CHECK
         // "las tres NULL o las tres > 0". Se prueba la definición que deja el 12 sobre una tabla temporal con las mismas columnas.
         await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbCheck12");
 
@@ -599,9 +599,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
-    public async Task HU032_ElScript12ReemplazaElCheckDeUnaVersionPreviaSinIsNotNull()
+    public async Task ElScript12ReemplazaElCheckDeUnaVersionPreviaSinIsNotNull()
     {
-        // Validación de HU-032: un ambiente que aplicó la primera versión del 12 (CHECK sin "IS NOT NULL") queda con el CHECK corregido al
+        // Un ambiente que aplicó la primera versión del 12 (CHECK sin "IS NOT NULL") queda con el CHECK corregido al
         // volver a correrlo.
         await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbCheck12Previo");
         await clsBaseDatosPruebas.EjecutarAsync(instalada.Cadena, """
@@ -620,9 +620,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
-    public async Task HU0281_ElScript10EsIdempotenteSobreUnaBaseMigradaYSobreUnaInstalacionDesdeCero()
+    public async Task ElScript10EsIdempotenteSobreUnaBaseMigradaYSobreUnaInstalacionDesdeCero()
     {
-        // HU-028.2 (#182) / HU-028.1 (#183): motivoRechazo y rechazadaAt en el camión y 'rechazada' en los tres CHECK de estadoCosteo.
+        // motivoRechazo y rechazadaAt en el camión y 'rechazada' en los tres CHECK de estadoCosteo.
         await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem10", clsBaseDatosPruebas.Scripts.Length);
         await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script10);
 
@@ -640,7 +640,7 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
-    public async Task HU0281_ElScript10SeAplicaSobreUnaBaseConDatosYElCheckDelRechazoExigeElEstado()
+    public async Task ElScript10SeAplicaSobreUnaBaseConDatosYElCheckDelRechazoExigeElEstado()
     {
         // Sobre una base hasta el 09 con un camión ya escrito: el 10 se aplica sin tocar las filas; después el CHECK del rechazo solo admite
         // motivo y fecha con el camión en 'rechazada' (también con estadoCosteo NULL: el ISNULL del CHECK) y el de estadoCosteo admite 'rechazada'.
@@ -690,7 +690,7 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     [Fact]
     public async Task ElScript03SeAplicaSobreEl02EsIdempotenteYCorrigeElCheckDelMotivo()
     {
-        // HU-023.3 (#158); desde HU-014 (#188) está en db/scripts/ y el backend mapea sus columnas. En una base aislada (01 + 02 + 03 + ...),
+        // El 03 está en db/scripts/ y el backend mapea sus columnas. En una base aislada (01 + 02 + 03 + ...),
         // se vuelve a correr.
         const string Script03 = clsBaseDatosPruebas.Script03;
         await using var baseAislada = await BaseDatos.CrearBaseInstaladaAsync("dbScript03");
@@ -718,7 +718,7 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     [Fact]
     public async Task El0009MigraLasCotizacionesViejasARutasYCamionesYEl0010RecuperaLosNombres()
     {
-        // HU-021 (#131): una base con el esquema viejo (0001 a 0008) y datos de prueba pasa por el 0009 y el 0010.
+        // Una base con el esquema viejo (0001 a 0008) y datos de prueba pasa por el 0009 y el 0010.
         await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbMigra0009", clsBaseDatosPruebas.ScriptsAntesDeHu021);
         var cadena = baseAislada.Cadena;
         Guid formulario = Guid.NewGuid(), chat = Guid.NewGuid();
@@ -764,7 +764,7 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     [Fact]
     public async Task El0009ConservaAjustesCorreosYAuditoriaYRespaldaLaCotizacionDeItrQueBorra()
     {
-        // HU-021.12 (#139): migración de datos de las tablas que cuelgan de la cotización (MargenAjustes, Correos, CorreoDestinatarios) y de
+        // Migración de datos de las tablas que cuelgan de la cotización (MargenAjustes, Correos, CorreoDestinatarios) y de
         // la auditoría; la cotización de prueba de ITR se borra con todo lo suyo y queda en los Respaldo0009_*.
         await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbMigraDatos0009", clsBaseDatosPruebas.ScriptsAntesDeHu021);
         var cadena = baseAislada.Cadena;
@@ -818,9 +818,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
             .Should().Be("Importacion|1", "la vista adaptada lee la línea de negocio de la ruta del ajuste");
     }
 
-    // Idempotencia (#91): cada prueba re-aplica el script en una base AISLADA (nombre único, 0001 a 0005 aplicados) y no en la
+    // Idempotencia: cada prueba re-aplica el script en una base AISLADA (nombre único, 0001 a 0005 aplicados) y no en la
     // compartida. En la compartida, otras pruebas de la colección dejan cotizaciones del formulario ampliado sin línea (columnas de
-    // línea en Cotizaciones) y el backfill del 0005 les agrega su línea legítimamente al re-aplicarlo: el conteo global "crecía" sin
+    // línea en Cotizaciones) y el backfill del 0005 les agrega su línea legítimamente al re-aplicarlo: el conteo global "crecería" sin
     // que el script duplicara nada. En la base aislada nadie más escribe, así que se compara el esquema y el conteo de filas de
     // CADA tabla, y además las filas propias de la prueba.
     [Fact]
@@ -1014,7 +1014,7 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     [Fact]
     public async Task ElScript0007EsIdempotenteYAgregaNotasYMunicipios()
     {
-        // Mismo patrón que #91: base AISLADA, filas propias antes de re-aplicar y verificación de que siguen iguales.
+        // Mismo patrón que la prueba de idempotencia: base AISLADA, filas propias antes de re-aplicar y verificación de que siguen iguales.
         await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem0007", clsBaseDatosPruebas.ScriptsAntesDeHu021);
         var cadena = baseAislada.Cadena;
         var id = Guid.NewGuid();
@@ -1233,7 +1233,7 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
             return e.GetIndexes().Select(i =>
             {
                 var claves = i.Properties.Select((p, n) =>
-                    // EF guarda "todas descendentes" como lista vacía (HU-042.2: idx_sapMargenSyncLog_iniciado, una columna DESC).
+                    // EF guarda "todas descendentes" como lista vacía (idx_sapMargenSyncLog_iniciado, una columna DESC).
                     p.GetColumnName(objeto) + (i.IsDescending is { } d && (d.Count == 0 || d[n]) ? " DESC" : string.Empty));
                 var incluidas = (i.GetIncludeProperties() ?? [])
                     .Select(nombre => e.FindProperty(nombre)!.GetColumnName(objeto)!)
@@ -1255,7 +1255,7 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         bd.Should().Contain(x => x.StartsWith("CotizacionesSolicitud:ix_cotizaciones_costeoSiguienteConsultaAt unico=False", StringComparison.Ordinal)
             && x.EndsWith("filtro=costeosiguienteconsultaatisnotnull", StringComparison.Ordinal));
         bd.Should().Contain(x => x.StartsWith("UsuariosWeb:uq_usuariosWeb_nombreUsuario", StringComparison.Ordinal) && x.EndsWith("filtro=nombreusuarioisnotnull", StringComparison.Ordinal));
-        // HU-040.1 (#229): el 16 retira la unicidad de la asignación activa (multi-rol) y conserva la de usuario + rol.
+        // El 16 retira la unicidad de la asignación activa (multi-rol) y conserva la de usuario + rol.
         bd.Should().NotContain(x => x.Contains("uq_usuariosRoles_usuarioId_activo", StringComparison.Ordinal));
         bd.Should().Contain(x => x.StartsWith("UsuariosRoles:uq_usuariosRoles_usuarioId_rolId unico=True claves=(usuarioId,rolId)", StringComparison.Ordinal));
         bd.Should().Contain(x => x.StartsWith("Roles:uq_roles_idRolExterno unico=True", StringComparison.Ordinal) && x.EndsWith("filtro=idrolexternoisnotnull", StringComparison.Ordinal));
@@ -1292,7 +1292,7 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         var diferencias = modelo.GetEntityTypes().SelectMany(e =>
         {
             var (tabla, objeto) = Tabla(e);
-            // HU-042.2 (#243): las tablas del 17 (de Datos) no fijan COLLATE: heredan la de la base y el modelo no les asigna ninguna.
+            // Las tablas del 17 (de Datos) no fijan COLLATE: heredan la de la base y el modelo no les asigna ninguna.
             if (clsCotiflyDbContext.TablasConCollationDeLaBase.Contains(tabla))
             {
                 return e.GetProperties().Where(p => p.GetCollation() is not null).Select(p => $"{tabla}.{p.GetColumnName(objeto)}: EF fija collation '{p.GetCollation()}'");
@@ -1314,9 +1314,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     [Fact]
     public async Task ElSeedDel0001ConElCambioDeCatalogoDel0009DejaLasSeisLineasDeNexo()
     {
-        // HU-021 §10: el 0009 retira Almacenamiento, Almacenamiento3PL e ITR (sin equivalente en Nexo) y agrega DevolucionContenedor.
+        // El 0009 retira Almacenamiento, Almacenamiento3PL e ITR (sin equivalente en Nexo) y agrega DevolucionContenedor.
         // Base propia con todas las migraciones: la compartida recibe en paralelo líneas y mapeos temporales de otras pruebas
-        // (p. ej. clsMargenRepositoryTests), y aquí se verifica el catálogo exacto que deja el seed (#147, CI inestable).
+        // (p. ej. clsMargenRepositoryTests), y aquí se verifica el catálogo exacto que deja el seed.
         await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbSeedLineas", clsBaseDatosPruebas.Scripts.Length);
         var lineas = await LeerAsync("SELECT lineaNegocio FROM dbo_cotifly.MargenesPolitica", r => r.GetString(0), baseAislada.Cadena);
         var mapeos = await clsBaseDatosPruebas.EscalarAsync<int>(baseAislada.Cadena,
@@ -1436,7 +1436,7 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     [Fact]
     public async Task ReaplicarEl0002NoPisaElRolExternoQueFijoElDba()
     {
-        // El 0002 se re-aplica sobre el esquema en que nació (antes de HU-021: crea un índice en la tabla Cotizaciones).
+        // El 0002 se re-aplica sobre el esquema en que nació (anterior al 0009: crea un índice en la tabla Cotizaciones).
         await using var viejo = await EsquemaViejoAsync();
         await clsBaseDatosPruebas.EjecutarAsync(viejo.Cadena,
             $"UPDATE dbo_cotifly.Roles SET idRolExterno = {clsBaseDatosPruebas.RolExternoComercial} WHERE codigo = 'comercial'");
@@ -1474,7 +1474,7 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
             .Which.Message.Should().Contain("ck_cotizaciones_estadoEnvio");
     }
 
-    /// <summary>Base aislada con el esquema anterior a HU-021 (0001 a 0008), para las pruebas de esos scripts.</summary>
+    /// <summary>Base aislada con el esquema anterior al 0009 (0001 a 0008), para las pruebas de esos scripts.</summary>
     private Task<clsBaseAuxiliarPruebas> EsquemaViejoAsync() =>
         BaseDatos.CrearBaseConScriptsAsync("dbViejo", clsBaseDatosPruebas.ScriptsAntesDeHu021);
 
@@ -1562,7 +1562,7 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         (await FilasPorTablaAsync(cadena)).Should().Equal(filasAntes, $"re-aplicar el {script} no debe agregar ni quitar filas en ninguna tabla");
     }
 
-    /// <summary>HU-040.1 (#229): filas de UsuariosWeb, UsuariosRoles y TokensRefresco (sin rolSesion, que el 16 agrega), ordenadas.</summary>
+    /// <summary>Filas de UsuariosWeb, UsuariosRoles y TokensRefresco (sin rolSesion, que el 16 agrega), ordenadas.</summary>
     private Task<List<string>> HuellaIdentidadAsync(string cadena) =>
         LeerAsync(
             """

@@ -94,7 +94,7 @@ public sealed class clsMargenResolverIntegracionTests : clsPruebaIntegracion
     [Fact]
     public async Task SeRespetaLaOrganizacionDeVentasPedida()
     {
-        // HU-021: Almacenamiento (OHUB, organización 50000010) salió del catálogo con el 0009; se prueba con Nacional, cuyo registro
+        // Almacenamiento (OHUB, organización 50000010) no está en el catálogo desde el 0009; se prueba con Nacional, cuyo registro
         // de SAP TM es de la organización 50000005: pedida esa, hay margen de SAP; pedida otra, no lo hay.
         var r = (await ResolverAsync("Nacional", "15927", "50000005")).Valor.Salida;
         var otra = (await ResolverAsync("Nacional", "15927", "50000010")).Valor.Salida;

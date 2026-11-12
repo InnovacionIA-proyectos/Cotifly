@@ -15,7 +15,7 @@ namespace Cotifly.Infraestructura.Tests.Costeo;
 
 /// <summary>
 /// <see cref="clsCosteoNexo"/> contra un <see cref="HttpMessageHandler"/> falso (<see cref="clsNexoClientesFalso"/>): alta de la
-/// solicitud (HU-005.5). Sin la tubería de resiliencia (esa se prueba en <c>clsRegistroCosteoNexoTests</c>); nunca sale a la red.
+/// solicitud. Sin la tubería de resiliencia (esa se prueba en <c>clsRegistroCosteoNexoTests</c>); nunca sale a la red.
 /// </summary>
 public sealed class clsCosteoNexoTests : IDisposable
 {
@@ -119,7 +119,7 @@ public sealed class clsCosteoNexoTests : IDisposable
     }
 
     [Fact]
-    public async Task HU0181_ElScorePrioridadDelCapturaResultDtoSeCaptura()
+    public async Task ElScorePrioridadDelCapturaResultDtoSeCaptura()
     {
         _nexo.Responder(HttpStatusCode.Created, Creada.Replace("\"scorePrioridad\":0.73", "\"scorePrioridad\":62.5", StringComparison.Ordinal));
 
@@ -132,7 +132,7 @@ public sealed class clsCosteoNexoTests : IDisposable
     [InlineData("\"scorePrioridad\":0.73,", "")]
     [InlineData("\"scorePrioridad\":0.73", "\"scorePrioridad\":null")]
     [InlineData("\"scorePrioridad\":0.73", "\"scorePrioridad\":\"alto\"")]
-    public async Task HU0181_SinScorePrioridadEnNullONoNumericoQuedaNullYElAltaSigue(string original, string reemplazo)
+    public async Task SinScorePrioridadEnNullONoNumericoQuedaNullYElAltaSigue(string original, string reemplazo)
     {
         _nexo.Responder(HttpStatusCode.Created, Creada.Replace(original, reemplazo, StringComparison.Ordinal));
 
@@ -340,8 +340,8 @@ public sealed class clsCosteoNexoTests : IDisposable
     [InlineData(true)]
     public async Task UnaRutaConTresCamionesViajaComoTresLineasYElGrupoRutaIdSoloConLaOpcion(bool enviarReferencia)
     {
-        // HU-021.7 (#134): una línea por camión con los datos de su ruta y de su camión, sin posiciones (a Nexo le basta el peso). El id de
-        // la ruta viaja como grupoRutaId con Nexo:EnviarGrupoRutaId (HU-023 #176: encendida por defecto; apagada = interruptor de emergencia).
+        // Una línea por camión con los datos de su ruta y de su camión, sin posiciones (a Nexo le basta el peso). El id de
+        // la ruta viaja como grupoRutaId con Nexo:EnviarGrupoRutaId (encendida por defecto; apagada = interruptor de emergencia).
         _nexo.Responder(HttpStatusCode.Created, Creada);
         var cotizacion = Dominio.Cotizaciones.clsCotizacionSolicitud.Crear(new Dominio.Cotizaciones.clsDatosCotizacion { Folio = "PCN-CAM-1" }).Valor;
         var ruta = cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear(), 1);
@@ -367,8 +367,8 @@ public sealed class clsCosteoNexoTests : IDisposable
     [Fact]
     public void LaLineaDeLaSolicitudAceptaElNombreDelSwaggerYLosDatosDelCubicador()
     {
-        // El swagger de Nexo QA (2026-10-08) publica la ruta como "clsRuta"; Cotifly lee los dos nombres. HU-023.4: clsLineaCosteoDto trae
-        // grupoRutaId e idRecomendacionVehiculo y, con Nexo #297, numeroLinea.
+        // El swagger de Nexo QA publica la ruta como "clsRuta"; Cotifly lee los dos nombres. clsLineaCosteoDto trae
+        // grupoRutaId, idRecomendacionVehiculo y numeroLinea.
         using var documento = JsonDocument.Parse(
             """{"lineaId":"L1","rutaId":"b2b8c1e0-0000-4000-8000-000000000009","clsRuta":"BUENAVENTURA → BOGOTA","tipologia":"Contenedor","peso":10000,"tipoVehiculo":"3S3","grupoRutaId":"c3c8c1e0-0000-4000-8000-000000000001","idRecomendacionVehiculo":"d4d8c1e0-0000-4000-8000-000000000002","numeroLinea":2}""");
 
@@ -383,9 +383,9 @@ public sealed class clsCosteoNexoTests : IDisposable
     }
 
     [Fact]
-    public void Hu181_LaLineaTraeElEstadoYElMotivoPendienteDeNexo309()
+    public void LaLineaTraeElEstadoYElMotivoPendienteDeNexo()
     {
-        // Nexo #309 (S6-HU-24.1): al final de clsLineaCosteoDto, opcionales; estadoLinea con minúscula inicial.
+        // Al final de clsLineaCosteoDto, opcionales; estadoLinea con minúscula inicial.
         using var documento = JsonDocument.Parse(
             """{"lineaId":"L1","clsRuta":"BUENAVENTURA → BOGOTA","peso":10000,"numeroLinea":1,"tieneReglaSoloSicetac":false,"estadoLinea":"porCostear","motivoPendiente":"SICE-TAC no se usa: el período más reciente cargado es 202609 y el del mes actual es 202610 (sin mes de gracia). El Administrador de Tarifas debe validar el flete.","lineaNegocio":null}""");
 
@@ -398,9 +398,9 @@ public sealed class clsCosteoNexoTests : IDisposable
     }
 
     [Fact]
-    public void Hu183_LaLineaRechazadaTraeElEstadoYElMotivoDelRechazoDeNexo320()
+    public void LaLineaRechazadaTraeElEstadoYElMotivoDelRechazoDeNexo()
     {
-        // Nexo #320 (S6-HU-24.3): estadoLinea = "rechazada" y motivoRechazo al final de clsLineaCosteoDto; ni quién ni cuándo.
+        // estadoLinea = "rechazada" y motivoRechazo al final de clsLineaCosteoDto; ni quién ni cuándo.
         using var documento = JsonDocument.Parse(
             """{"lineaId":"L1","clsRuta":"A → B","peso":1,"numeroLinea":2,"estadoLinea":"rechazada","motivoPendiente":null,"motivoRechazo":"  Ruta sin operación  "}""");
 
@@ -415,9 +415,9 @@ public sealed class clsCosteoNexoTests : IDisposable
     [Theory]
     [InlineData("""{"lineaId":"L1","clsRuta":"A → B","peso":1,"estadoLinea":"porCostear"}""")]
     [InlineData("""{"lineaId":"L1","clsRuta":"A → B","peso":1,"estadoLinea":"rechazada","motivoRechazo":7}""")]
-    public void Hu183_SinMotivoRechazoONoTextoQuedaEnNullSinError(string json)
+    public void SinMotivoRechazoONoTextoQuedaEnNullSinError(string json)
     {
-        // Un Nexo con #309 y sin #320 no lo manda; uno que lo mandara con otro tipo tampoco rompe la lectura.
+        // Un Nexo que no rechaza líneas no lo manda; uno que lo mandara con otro tipo tampoco rompe la lectura.
         using var documento = JsonDocument.Parse(json);
 
         var linea = clsCosteoNexo.LeerLineaSolicitud(documento.RootElement);
@@ -430,9 +430,9 @@ public sealed class clsCosteoNexoTests : IDisposable
     [InlineData("""{"lineaId":"L1","clsRuta":"A → B","peso":1}""")]
     [InlineData("""{"lineaId":"L1","clsRuta":"A → B","peso":1,"estadoLinea":null,"motivoPendiente":null}""")]
     [InlineData("""{"lineaId":"L1","clsRuta":"A → B","peso":1,"estadoLinea":0,"motivoPendiente":{"texto":"x"}}""")]
-    public void Hu181_SinLosCamposDeNexo309OConOtroTipoQuedanEnNullSinError(string json)
+    public void SinLosCamposDeSituacionOConOtroTipoQuedanEnNullSinError(string json)
     {
-        // Un Nexo anterior a #309 no los manda; uno que mandara el enum como número tampoco rompe la lectura.
+        // Un Nexo que no expone la situación de la línea no los manda; uno que mandara el enum como número tampoco rompe la lectura.
         using var documento = JsonDocument.Parse(json);
 
         var linea = clsCosteoNexo.LeerLineaSolicitud(documento.RootElement);
@@ -445,7 +445,7 @@ public sealed class clsCosteoNexoTests : IDisposable
     [Fact]
     public async Task ConLasBanderasApagadasLaLineaDelCubicadorVaSinVehiculoNiCamposNuevos()
     {
-        // Contrato con Nexo #297 (S5-HU-20.5): con las banderas apagadas (interruptor de emergencia, HU-023 #176) no viajan grupoRutaId,
+        // Con las banderas apagadas (interruptor de emergencia) no viajan grupoRutaId,
         // idRecomendacionVehiculo ni los códigos del cubicador: la línea del camión del cubicador va sin vehículo ni carrocería (la resuelve
         // la Mesa). Nunca viaja el código de mercancía ni un campo de orden.
         _nexo.Responder(HttpStatusCode.Created, Creada);
@@ -504,7 +504,7 @@ public sealed class clsCosteoNexoTests : IDisposable
     [Fact]
     public async Task LasLineasViajanRutaPorRutaYCamionPorCamionYElVehiculoDigitadoDelRespaldoSiViaja()
     {
-        // Nexo #297 numera las líneas por el orden del arreglo (numeroLinea): ruta 1 con sus dos camiones del cubicador en el orden de la
+        // Nexo numera las líneas por el orden del arreglo (numeroLinea): ruta 1 con sus dos camiones del cubicador en el orden de la
         // recomendación y luego la ruta 2 (respaldo con Captura:AceptarVehiculoCliente: vehículo digitado, del catálogo de Nexo, sin
         // recomendación), que SÍ lleva su vehículo aunque Nexo:EnviarCodigosCubicador sea "nunca".
         _nexo.Responder(HttpStatusCode.Created, Creada);
@@ -533,9 +533,9 @@ public sealed class clsCosteoNexoTests : IDisposable
     }
 
     [Fact]
-    public void HU0311_GrupoRutaYDatosDelCubicadorEncendidosYCodigosDelCubicadorSiemprePorDefecto()
+    public void GrupoRutaYDatosDelCubicadorEncendidosYCodigosDelCubicadorSiemprePorDefecto()
     {
-        // HU-023 (#176): Nexo ya desplegó grupoRutaId, idRecomendacionVehiculo y numeroLinea. HU-031.1 (#194, decisión del 2026-10-20):
+        // Por defecto viajan grupoRutaId, idRecomendacionVehiculo y numeroLinea, y
         // los códigos del cubicador viajan siempre (resueltos por catálogo o alias; los demás, a la bandeja de normalización de Nexo).
         var opciones = new clsOpcionesNexo();
 
@@ -548,7 +548,7 @@ public sealed class clsCosteoNexoTests : IDisposable
     [Fact]
     public async Task ConLasBanderasPorDefectoLaLineaSueltaVaSinGrupoYLaRutaDeVariosCamionesConUnGuidContiguo()
     {
-        // HU-023 (#176, contrato con Nexo §3.1 y §3.3): ruta 1 con un camión (línea suelta: grupoRutaId = null), ruta 2 con dos camiones de
+        // Contrato con Nexo §3.1 y §3.3: ruta 1 con un camión (línea suelta: grupoRutaId = null), ruta 2 con dos camiones de
         // flota mixta (un GUID igual en sus dos líneas, contiguas) y ruta 3 con un camión. Con las opciones por defecto (sin tocar nada).
         _nexo.Responder(HttpStatusCode.Created, Creada);
         Guid r1 = Guid.NewGuid(), r2a = Guid.NewGuid(), r2b = Guid.NewGuid(), r3 = Guid.NewGuid();
@@ -576,7 +576,7 @@ public sealed class clsCosteoNexoTests : IDisposable
         Guid.TryParse(grupos[1], out _).Should().BeTrue();
         lineas.Select(l => l.GetProperty("idRecomendacionVehiculo").GetString()).Should().Equal(
             r1.ToString("D"), r2a.ToString("D"), r2b.ToString("D"), r3.ToString("D"));
-        // HU-031.1 (#194): por defecto (siempre) y sin catálogo ni alias de Nexo, los códigos del cubicador viajan tal cual.
+        // Por defecto (siempre) y sin catálogo ni alias de Nexo, los códigos del cubicador viajan tal cual.
         lineas.Select(l => l.GetProperty("tipoVehiculo").GetString()).Should().Equal("3S3", "3S3", "C2", "2S2");
         lineas.Skip(1).Take(2).Select(l => l.GetProperty("peso").GetDecimal()).Should().Equal([20_000m, 4_000m], "con varios camiones, el peso de cada uno");
     }
@@ -584,7 +584,7 @@ public sealed class clsCosteoNexoTests : IDisposable
     [Fact]
     public async Task Un429EnElGetEsNoDisponibleConElRetryAfterYNuncaRechazada()
     {
-        // HU-023.4 (#159): el cupo de Nexo (por rol) agotado no es un rechazo de los datos.
+        // El cupo de Nexo (por rol) agotado no es un rechazo de los datos.
         using var respuesta = new HttpResponseMessage(HttpStatusCode.TooManyRequests)
         {
             Content = new StringContent("""{"code":"DEMASIADAS_SOLICITUDES","message":"Ha alcanzado el límite."}""", System.Text.Encoding.UTF8, "application/json"),
@@ -602,7 +602,7 @@ public sealed class clsCosteoNexoTests : IDisposable
     }
 
     /// <summary>
-    /// #278: el adaptador contra el Nexo falso con las reglas del contrato único (DU §5 y §8). Lo que Cotifly ya valida en la captura, si
+    /// El adaptador contra el Nexo falso con las reglas del contrato único (DU §5 y §8). Lo que Cotifly ya valida en la captura, si
     /// llegara a Nexo, vuelve con el código de Nexo traducido; una solicitud válida (la muestra) pasa sin ningún rechazo.
     /// </summary>
     [Theory]
@@ -646,7 +646,7 @@ public sealed class clsCosteoNexoTests : IDisposable
     [InlineData("DEMASIADAS_SOLICITUDES", clsCodigosError.CosteoNexoNoDisponible)]
     public async Task Un429DelAltaDistingueElTopeDiarioDeIaDelCupoPorMinutoYNoSeReintenta(string codigoNexo, string esperado)
     {
-        // #278 (DU §2.1): IA_TOPE_DIARIO es el cupo diario de IA del comercial; DEMASIADAS_SOLICITUDES, el cupo por minuto (Retry-After).
+        // DU §2.1: IA_TOPE_DIARIO es el cupo diario de IA del comercial; DEMASIADAS_SOLICITUDES, el cupo por minuto (Retry-After).
         _nexo.Responder(HttpStatusCode.TooManyRequests, $$"""{"code":"{{codigoNexo}}","message":"Límite."}""");
 
         var resultado = await Adaptador().EnviarSolicitudAsync(_usuarioId, Solicitud(), Ct);
@@ -666,9 +666,9 @@ public sealed class clsCosteoNexoTests : IDisposable
     }
 
     [Fact]
-    public void Hu0432_ElConexoDeLaCotizacionTraeSuCostoYSuVentaPorSeparado()
+    public void ElConexoDeLaCotizacionTraeSuCostoYSuVentaPorSeparado()
     {
-        // Contrato de Nexo §7.1 (S6-HU-38.2): valorAplicado es el costo; precioVentaUnitario y valorVenta, la venta (nunca null).
+        // Contrato de Nexo §7.1: valorAplicado es el costo; precioVentaUnitario y valorVenta, la venta (nunca null).
         using var documento = JsonDocument.Parse(
             """{"id":"COT","lineas":[],"conexos":[{"id":"CX-1","nombre":"Escolta","categoria":"logistico","cantidad":2,"valorAplicado":100000,"precioVentaUnitario":70000,"valorVenta":140000}]}""");
 
@@ -680,9 +680,9 @@ public sealed class clsCosteoNexoTests : IDisposable
     }
 
     [Fact]
-    public void Hu0432_SinVentaEnLaRespuestaDeNexoElConexoSeLeeIgualConSuCosto()
+    public void SinVentaEnLaRespuestaDeNexoElConexoSeLeeIgualConSuCosto()
     {
-        // Orden de despliegue: un Nexo anterior a S6-HU-38.2 no manda la venta; el conexo no desaparece (se cotizará al costo).
+        // Si Nexo no manda la venta, el conexo no desaparece (se cotiza al costo).
         using var documento = JsonDocument.Parse(
             """{"id":"COT","lineas":[],"conexos":[{"id":"CX-1","nombre":"Escolta","cantidad":1,"valorAplicado":50000},{"id":"CX-2","cantidad":1,"valorAplicado":10000,"valorVenta":null}]}""");
 
@@ -692,7 +692,7 @@ public sealed class clsCosteoNexoTests : IDisposable
             .Should().Equal(("CX-1", 50_000m, (decimal?)null, (decimal?)null), ("CX-2", 10_000m, (decimal?)null, (decimal?)null));
     }
 
-    // --- HU-028 (#186): rechazar la solicitud anterior al editarla ---
+    // --- Rechazar la solicitud anterior al editarla ---
 
     [Fact]
     public async Task ElRechazoVaASolicitudesRechazarConElMotivoRecortadoA100YElComentario()

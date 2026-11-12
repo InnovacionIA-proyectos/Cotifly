@@ -21,10 +21,9 @@ using NSubstitute;
 namespace Cotifly.Infraestructura.Tests.Licitaciones;
 
 /// <summary>
-/// Pruebas adversariales del adaptador de importación inteligente (validación de #252, HU-044.1): cuántas veces se llama a NEXO ante cada
+/// Pruebas adversariales del adaptador de importación inteligente: cuántas veces se llama a NEXO ante cada
 /// fallo, tiempos por endpoint con la tubería real (acortada), respuestas raras de NEXO, NIT y receta como texto opaco, nada del Excel ni
-/// de la identidad en los logs, archivos grandes y nombres raros. Todo contra un NEXO grabador en memoria (sin red). Las de los defectos
-/// D1 a D5 del validador (antes con <c>Skip</c>) afirman el comportamiento corregido.
+/// de la identidad en los logs, archivos grandes y nombres raros. Todo contra un NEXO grabador en memoria (sin red).
 /// </summary>
 public sealed class clsImportacionExcelNexoAdversarialTests
 {

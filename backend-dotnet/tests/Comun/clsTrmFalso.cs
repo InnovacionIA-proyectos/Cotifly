@@ -8,7 +8,7 @@ using System.Text.RegularExpressions;
 namespace Cotifly.Pruebas.Comun;
 
 /// <summary>
-/// Datos abiertos de la Superintendencia Financiera falsos (conjunto <c>32sa-8pi3</c>, HU-012.1): un <see cref="HttpMessageHandler"/> que
+/// Datos abiertos de la Superintendencia Financiera falsos (conjunto <c>32sa-8pi3</c>): un <see cref="HttpMessageHandler"/> que
 /// nunca sale a la red. Por defecto responde como SODA: interpreta el <c>$where</c> recibido y devuelve la fila de <see cref="Historico"/>
 /// cuyo rango cubre la fecha, con el mismo formato real (<c>"valor":"3306.86"</c>, fechas con <c>.000</c>). Registra cada petición y
 /// permite encolar respuestas o fallos.
@@ -18,7 +18,7 @@ public sealed partial class clsTrmFalso : HttpMessageHandler
     /// <summary>URL del recurso en las pruebas (la real es <c>https://www.datos.gov.co/resource/32sa-8pi3.json</c>).</summary>
     public const string Url = "https://datos-abiertos-prueba.local/resource/32sa-8pi3.json";
 
-    /// <summary>TRM de la semana del 2026-09-21 (la del viernes 25 cubre sábado, domingo y lunes, como en la fuente real).</summary>
+    /// <summary>TRM de una semana de septiembre de 2026 (la del viernes cubre sábado, domingo y lunes, como en la fuente real).</summary>
     public static readonly IReadOnlyList<(decimal Valor, DateOnly Desde, DateOnly Hasta)> Historico =
     [
         (3290.10m, new DateOnly(2026, 9, 24), new DateOnly(2026, 9, 24)),

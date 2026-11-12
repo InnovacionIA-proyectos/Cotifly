@@ -14,7 +14,7 @@ using Microsoft.Extensions.Logging;
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
-/// HU-042.2 (#243, ADR-027): la sincronización del margen de SAP TM que hace el backend (<see cref="clsSincronizacionMargenSapSql"/>, el port
+/// ADR-027: la sincronización del margen de SAP TM que hace el backend (<see cref="clsSincronizacionMargenSapSql"/>, el port
 /// del script de Datos) contra SQL Server 2019 con el script 17 real (<c>SapMargenCliente</c>, <c>SapMargenSyncLog</c> y
 /// <c>sp_sincronizar_margen_sap</c>), un SAP falso que ignora <c>$filter</c> (<see cref="clsSapRentabFalso"/>) y un DW falso
 /// (<c>DWCubosOperacionesEBS.dbo.DimBPSolicitante</c>) en el mismo contenedor. Cada prueba usa una base AISLADA creada con la collation de la
@@ -269,8 +269,8 @@ public sealed class clsSincronizacionMargenSapIntegracionTests(clsBaseDatosPrueb
         estado.ProximaCorridaEstimada.Should().BeCloseTo(estado.UltimaCorridaOk.FinalizadoAt!.Value.AddMinutes(1440), TimeSpan.FromSeconds(1));
     }
 
-    // H1 (#243): la PK de #SapMargenStage tenía nombre; en tempdb el nombre de una restricción es global y la temporal de una segunda
-    // réplica fallaba con el 2714 antes del sp_getapplock (en vez de quedar 'omitido').
+    // La PK de #SapMargenStage no lleva nombre: en tempdb el nombre de una restricción es global y la temporal de una segunda
+    // réplica fallaría con el 2714 antes del sp_getapplock (en vez de quedar 'omitido').
     [Fact]
     public async Task DosConexionesPuedenTenerSuStageALaVez()
     {
@@ -294,7 +294,7 @@ public sealed class clsSincronizacionMargenSapIntegracionTests(clsBaseDatosPrueb
         await crearOtra.Should().NotThrowAsync("cada sesión tiene su #SapMargenStage; la PK sin nombre no choca en tempdb");
     }
 
-    // H2 (#243): un corte a mitad del cuerpo o un gzip corrupto escapaban de la sincronización (sin fila y 500 en el POST).
+    // Un corte a mitad del cuerpo o un gzip corrupto no escapan de la sincronización: queda su fila y el POST no da 500.
     [Theory]
     [InlineData("corte")]
     [InlineData("gzip")]
@@ -317,7 +317,7 @@ public sealed class clsSincronizacionMargenSapIntegracionTests(clsBaseDatosPrueb
         (await FilasAsync(cadena)).Should().BeEquivalentTo(antes);
     }
 
-    // H3 (#243): un error que el TRY del stored procedure no atrapa (207 de recompilación del MERGE) no dejaba ninguna fila.
+    // Un error que el TRY del stored procedure no atrapa (207 de recompilación del MERGE) también deja su fila.
     [Fact]
     public async Task UnFalloDelSpSinFilaPropiaQuedaRegistradoComoError()
     {
@@ -364,7 +364,7 @@ public sealed class clsSincronizacionMargenSapIntegracionTests(clsBaseDatosPrueb
         (await UltimaCorridaAsync(aislada.Cadena)).Estado.Should().Be("error");
     }
 
-    // H4 (#243): con dos réplicas a la vez, la que hizo el MERGE leía la fila 'omitido' de la otra (la más reciente desde su marca).
+    // Con dos réplicas a la vez, la que hizo el MERGE reporta su propia corrida y no la fila 'omitido' de la otra (la más reciente desde su marca).
     [Fact]
     public async Task ConOtraReplicaOmitidaMientrasSincronizaCadaUnaReportaSuPropiaCorrida()
     {
@@ -410,7 +410,7 @@ public sealed class clsSincronizacionMargenSapIntegracionTests(clsBaseDatosPrueb
         (await FilasAsync(aislada.Cadena)).Should().HaveCount(3);
     }
 
-    // Punto 5 (#243): sin el DW, o sin el BP en el DW, la fila conserva el NIT que ya tenía (el MERGE lo pisaba con NULL).
+    // Sin el DW, o sin el BP en el DW, la fila conserva el NIT que ya tenía (el MERGE no lo pisa con NULL).
     [Fact]
     public async Task SinElDwOSinElBpEnElDwSeConservaElNitAnterior()
     {
@@ -444,7 +444,7 @@ public sealed class clsSincronizacionMargenSapIntegracionTests(clsBaseDatosPrueb
         (await FilasAsync(aislada.Cadena)).Single(f => f.Bp == $"{p}2").Nit.Should().Be("800333444");
     }
 
-    // Punto 8 (#243): un BP con varios NIT en el DW toma siempre el menor y avisa.
+    // Un BP con varios NIT en el DW toma siempre el menor y avisa.
     [Fact]
     public async Task UnBpConVariosNitEnElDwTomaElMenorYAvisa()
     {
@@ -461,7 +461,7 @@ public sealed class clsSincronizacionMargenSapIntegracionTests(clsBaseDatosPrueb
         logs.Registros.Should().Contain(r => r.Registro.Nivel == LogLevel.Warning && r.Registro.Mensaje.Contains("varios NIT para 1 BP"));
     }
 
-    // Punto 7 (#243): con la base de Cotifly caída, el estado y la sincronización lanzan NoDisponible (503 en la administración).
+    // Con la base de Cotifly caída, el estado y la sincronización lanzan NoDisponible (503 en la administración).
     [Fact]
     public async Task ConLaBaseDeCotiflyCaidaElEstadoYLaSincronizacionNoEstanDisponibles()
     {
@@ -480,7 +480,7 @@ public sealed class clsSincronizacionMargenSapIntegracionTests(clsBaseDatosPrueb
         sap.Peticiones.Should().BeEmpty("la corrida forzada comprueba la base antes de descargar de SAP");
     }
 
-    // Ajuste del 2026-11-04: sin sincronización (deshabilitada o sin configuración válida) no hay próxima corrida que estimar.
+    // Sin sincronización (deshabilitada o sin configuración válida) no hay próxima corrida que estimar.
     [Theory]
     [InlineData("false", clsSapRentabFalso.Url)]
     [InlineData("true", "sap-tm-prd:8000/sin-esquema")]
@@ -495,7 +495,7 @@ public sealed class clsSincronizacionMargenSapIntegracionTests(clsBaseDatosPrueb
         estado.ProximaCorridaEstimada.Should().BeNull();
     }
 
-    // Ajuste del 2026-11-04: un error de una orden con la base respondiendo (229 sin permiso, 208 sin el objeto) en las lecturas previas
+    // Un error de una orden con la base respondiendo (229 sin permiso, 208 sin el objeto) en las lecturas previas
     // es un fallo de la corrida (fila 'error'), no "base no disponible".
     [Theory]
     [InlineData("229")]

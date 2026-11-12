@@ -8,7 +8,7 @@ using NSubstitute;
 
 namespace Cotifly.Infraestructura.Tests.Precio;
 
-/// <summary><see cref="clsProveedorTrmConRespaldo"/> (HU-012.1, ADR-014): DolarApi primero y la Superintendencia solo si la principal falla.</summary>
+/// <summary><see cref="clsProveedorTrmConRespaldo"/> (ADR-014): DolarApi primero y la Superintendencia solo si la principal falla.</summary>
 public sealed class clsProveedorTrmConRespaldoTests
 {
     private static readonly DateOnly _fecha = new(2026, 10, 5);

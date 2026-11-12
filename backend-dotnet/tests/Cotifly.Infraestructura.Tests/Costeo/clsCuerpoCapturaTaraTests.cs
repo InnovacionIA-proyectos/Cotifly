@@ -8,10 +8,10 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Infraestructura.Tests.Costeo;
 
 /// <summary>
-/// HU-030.1 (#184): el cuerpo de <c>POST /api/captura-solicitudes</c> (<see cref="clsCosteoNexo.CuerpoCaptura"/>) de una ruta de contenedor
-/// con peso con tara: <c>peso</c> = el peso con tara (repartido por camión). #250 (DU §8): con un solo camión la línea lleva además sus
+/// El cuerpo de <c>POST /api/captura-solicitudes</c> (<see cref="clsCosteoNexo.CuerpoCaptura"/>) de una ruta de contenedor
+/// con peso con tara: <c>peso</c> = el peso con tara (repartido por camión). Según DU §8, con un solo camión la línea lleva además sus
 /// <c>posiciones</c> (Nexo solo rechaza con <c>PESO_INCONSISTENTE</c> una suma que SUPERA el peso en más de 1 %; un peso mayor, la tara, es
-/// válido) y el Nexo falso aplica esa misma regla asimétrica; con varios camiones, sin posiciones como antes. Sin tara, el cuerpo no cambia.
+/// válido) y el Nexo falso aplica esa misma regla asimétrica; con varios camiones, sin posiciones. Sin tara, el cuerpo no cambia.
 /// </summary>
 public sealed class clsCuerpoCapturaTaraTests
 {
@@ -69,7 +69,7 @@ public sealed class clsCuerpoCapturaTaraTests
     [InlineData(20_000, true)]
     public void ElNexoFalsoSoloRechazaUnaSumaDePosicionesQueSuperaElPesoEnMasDeUnoPorCiento(double peso, bool rechaza)
     {
-        // #250 (DU §8): la regla de Nexo es asimétrica. Las posiciones suman 28000 kg: un peso mayor (con tara) es válido; uno menor solo
+        // DU §8: la regla de Nexo es asimétrica. Las posiciones suman 28000 kg: un peso mayor (con tara) es válido; uno menor solo
         // hasta 1 % (27723 kg: 28000 ≤ 27723 × 1,01); por debajo, PESO_INCONSISTENTE.
         var cuerpo = Cuerpo(Ruta("Contenedor", null, 28_000m));
         cuerpo["lineas"]![0]!["peso"] = (decimal)peso;

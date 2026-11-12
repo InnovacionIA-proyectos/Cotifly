@@ -14,7 +14,7 @@ using FunctionCallContent = Microsoft.Extensions.AI.FunctionCallContent;
 namespace Cotifly.Infraestructura.Tests.IA;
 
 /// <summary>
-/// Proveedores OpenAI-compatible como OmniRoute (HU-003.6, issue #84), con un <see cref="HttpMessageHandler"/> falso (sin red):
+/// Proveedores OpenAI-compatible como OmniRoute, con un <see cref="HttpMessageHandler"/> falso (sin red):
 /// <c>"stream": false</c> explícito con <c>openai_compatible</c> (<see cref="clsPoliticaSinStreaming"/>), el resto de proveedores sin
 /// cambios, y el contrato de lo que viaja en <c>tools</c>: las declaraciones portables, sin <c>condition</c> ni tipos en arreglo.
 /// </summary>
