@@ -201,7 +201,169 @@ public static class clsExcelMercanciasMuestra
     /// Cambia el XML de la primera hoja (<c>xl/worksheets/sheet1.xml</c>) de <paramref name="libro"/> por <paramref name="xmlHoja"/>,
     /// copiando el resto del paquete tal cual.
     /// </summary>
-    public static byte[] ConHojaXml(byte[] libro, string xmlHoja)
+    public static byte[] ConHojaXml(byte[] libro, string xmlHoja) => ConEntrada(libro, "xl/worksheets/sheet1.xml", _ => xmlHoja);
+
+    /// <summary>
+    /// HU-035.3 (#277): <paramref name="xlsx"/> con la configuración de impresión que guarda Excel al hacer «Configurar página» en cada
+    /// hoja: orientación, papel, área de impresión y títulos (nombres definidos <c>_xlnm.Print_Area</c> y <c>_xlnm.Print_Titles</c>),
+    /// encabezado y pie, saltos de página, ajuste a una página, márgenes, opciones de impresión y, como Excel, la parte binaria
+    /// <c>xl/printerSettings/printerSettingsN.bin</c> (un DEVMODE ficticio) enlazada desde <c>pageSetup r:id</c>.
+    /// </summary>
+    public static byte[] ConConfiguracionDeImpresion(byte[] xlsx)
+    {
+        ArgumentNullException.ThrowIfNull(xlsx);
+        using var memoria = new MemoryStream();
+        using (var libro = new XLWorkbook(new MemoryStream(xlsx)))
+        {
+            foreach (var hoja in libro.Worksheets)
+            {
+                var pagina = hoja.PageSetup;
+                pagina.PageOrientation = XLPageOrientation.Landscape;
+                pagina.PaperSize = XLPaperSize.LetterPaper;
+                pagina.PrintAreas.Add("A1:H40");
+                pagina.SetRowsToRepeatAtTop(1, 1);
+                pagina.Header.Center.AddText("Pliego de prueba");
+                pagina.Footer.Right.AddText(XLHFPredefinedText.PageNumber);
+                pagina.AddHorizontalPageBreak(20);
+                pagina.AddVerticalPageBreak(4);
+                pagina.FitToPages(1, 0);
+                pagina.Margins.Left = 0.4;
+                pagina.CenterHorizontally = true;
+                pagina.ShowGridlines = true;
+            }
+
+            libro.SaveAs(memoria);
+        }
+
+        using (var documento = SpreadsheetDocument.Open(memoria, true))
+        {
+            foreach (var hoja in documento.WorkbookPart!.WorksheetParts)
+            {
+                var ajustes = hoja.AddNewPart<SpreadsheetPrinterSettingsPart>();
+                using (var devmode = new MemoryStream(DevmodeFicticio()))
+                {
+                    ajustes.FeedData(devmode);
+                }
+
+                var pageSetup = hoja.Worksheet!.GetFirstChild<PageSetup>()
+                    ?? throw new InvalidOperationException("ClosedXML no escribió pageSetup.");
+                pageSetup.Id = hoja.GetIdOfPart(ajustes);
+                hoja.Worksheet.Save();
+            }
+        }
+
+        return memoria.ToArray();
+    }
+
+    /// <summary>
+    /// HU-035.3 (#277): <paramref name="xlsx"/> con una parte más, relacionada desde el libro, de tipo <paramref name="tipo"/> y contenido
+    /// <paramref name="datos"/> (partes binarias que guarda Excel, o partes XML maliciosas).
+    /// </summary>
+    public static byte[] ConParteExtra(byte[] xlsx, string tipo, byte[] datos)
+    {
+        ArgumentNullException.ThrowIfNull(xlsx);
+        using var memoria = new MemoryStream();
+        memoria.Write(xlsx);
+        using (var documento = SpreadsheetDocument.Open(memoria, true))
+        {
+            var parte = documento.WorkbookPart!.AddExtendedPart("http://cotifly.test/relaciones/extra", tipo, "dat");
+            using var flujo = new MemoryStream(datos);
+            parte.FeedData(flujo);
+        }
+
+        return memoria.ToArray();
+    }
+
+    /// <summary>
+    /// HU-035.3 (#277): cambia en <c>[Content_Types].xml</c> el tipo de la primera hoja por <paramref name="tipo"/> (un libro que intenta
+    /// que su hoja no se cuente como XML).
+    /// </summary>
+    public static byte[] ConTipoDeHoja(byte[] libro, string tipo) =>
+        ConTipoDeParte(libro, "/xl/worksheets/sheet1.xml", "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml", tipo);
+
+    /// <summary>
+    /// HU-035.3 (#277), auditoría: cambia en <c>[Content_Types].xml</c> el tipo de la parte principal (<c>xl/workbook.xml</c>) por
+    /// <paramref name="tipo"/>. El SDK de Open XML no fija el tipo del libro y lo abre igual.
+    /// </summary>
+    public static byte[] ConTipoDeLibro(byte[] libro, string tipo) =>
+        ConTipoDeParte(libro, "/xl/workbook.xml", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml", tipo);
+
+    /// <summary>
+    /// HU-035.3 (#277), auditoría: <paramref name="libro"/> con <paramref name="extra"/> elementos vacíos más dentro de
+    /// <c>xl/workbook.xml</c>, antes de su cierre (un libro principal denso).
+    /// </summary>
+    public static byte[] ConLibroDenso(byte[] libro, int extra) => ConEntrada(libro, "xl/workbook.xml", xml =>
+        xml.Replace("</x:workbook>", string.Concat(Enumerable.Repeat("<x:z/>", extra)) + "</x:workbook>", StringComparison.Ordinal)
+           .Replace("</workbook>", string.Concat(Enumerable.Repeat("<z/>", extra)) + "</workbook>", StringComparison.Ordinal));
+
+    /// <summary>HU-035.3 (#277), auditoría: <c>xl/workbook.xml</c> de <paramref name="libro"/> con un DTD y una entidad externa.</summary>
+    public static byte[] ConLibroConDtd(byte[] libro) => ConEntrada(libro, "xl/workbook.xml", xml =>
+        "<?xml version=\"1.0\"?><!DOCTYPE w [<!ENTITY e SYSTEM \"file:///etc/passwd\">]>"
+        + xml[(xml.IndexOf("?>", StringComparison.Ordinal) + 2)..].TrimStart('﻿'));
+
+    /// <summary>
+    /// Cambia el tipo de <paramref name="parte"/> en <c>[Content_Types].xml</c>: en su <c>Override</c> o, si el paquete la tipa por el
+    /// <c>Default</c> de su extensión (System.IO.Packaging lo hace con el libro), agregándole un <c>Override</c>, que manda sobre el
+    /// <c>Default</c>.
+    /// </summary>
+    private static byte[] ConTipoDeParte(byte[] libro, string parte, string tipoActual, string tipo) =>
+        ConEntrada(libro, "[Content_Types].xml", xml =>
+        {
+            var documento = System.Xml.Linq.XDocument.Parse(xml);
+            var raiz = documento.Root!;
+            var extension = parte[(parte.LastIndexOf('.') + 1)..];
+            var sobrescritura = raiz.Elements().SingleOrDefault(e => e.Name.LocalName == "Override" && (string?)e.Attribute("PartName") == parte);
+            if (sobrescritura is not null && (string?)sobrescritura.Attribute("ContentType") == tipoActual)
+            {
+                sobrescritura.SetAttributeValue("ContentType", tipo);
+            }
+            else if (sobrescritura is null && raiz.Elements().Any(e => e.Name.LocalName == "Default"
+                && string.Equals((string?)e.Attribute("Extension"), extension, StringComparison.OrdinalIgnoreCase)
+                && (string?)e.Attribute("ContentType") == tipoActual))
+            {
+                raiz.Add(new System.Xml.Linq.XElement(raiz.Name.Namespace + "Override",
+                    new System.Xml.Linq.XAttribute("PartName", parte), new System.Xml.Linq.XAttribute("ContentType", tipo)));
+            }
+            else
+            {
+                throw new InvalidOperationException($"No se encontró el tipo de {parte} en [Content_Types].xml.");
+            }
+
+            return documento.Declaration + documento.ToString(System.Xml.Linq.SaveOptions.DisableFormatting);
+        });
+
+    /// <summary>
+    /// HU-035.3 (#277), validación: <paramref name="libro"/> con <paramref name="extra"/> relaciones externas cortas más en
+    /// <c>xl/_rels/workbook.xml.rels</c>. Las relaciones no son partes: System.IO.Packaging las lee enteras al abrir el paquete.
+    /// </summary>
+    public static byte[] ConRelacionesDelLibro(byte[] libro, int extra) => ConEntrada(libro, "xl/_rels/workbook.xml.rels", xml =>
+    {
+        var relaciones = new StringBuilder();
+        for (var i = 0; i < extra; i++)
+        {
+            relaciones.Append("<Relationship Id=\"h").Append(i).Append("\" Type=\"http://x/h\" Target=\"http://x/\" TargetMode=\"External\"/>");
+        }
+
+        return xml.Replace("</Relationships>", relaciones + "</Relationships>", StringComparison.Ordinal) is var nuevo && nuevo != xml
+            ? nuevo
+            : throw new InvalidOperationException("No se encontró el cierre de xl/_rels/workbook.xml.rels.");
+    });
+
+    /// <summary>Un DEVMODE ficticio: nombre de impresora en UTF-16 relleno a 64 bytes y campos binarios (no es XML).</summary>
+    public static byte[] DevmodeFicticio()
+    {
+        var datos = new byte[220];
+        Encoding.Unicode.GetBytes("Impresora ficticia").CopyTo(datos, 0);
+        for (var i = 64; i < datos.Length; i++)
+        {
+            datos[i] = (byte)(i * 37);
+        }
+
+        return datos;
+    }
+
+    /// <summary>Copia <paramref name="libro"/> cambiando el texto de la entrada <paramref name="nombre"/> con <paramref name="cambio"/>.</summary>
+    private static byte[] ConEntrada(byte[] libro, string nombre, Func<string, string> cambio)
     {
         ArgumentNullException.ThrowIfNull(libro);
         using var salida = new MemoryStream();
@@ -211,13 +373,14 @@ public static class clsExcelMercanciasMuestra
             foreach (var entrada in origen.Entries)
             {
                 using var escritura = destino.CreateEntry(entrada.FullName, CompressionLevel.SmallestSize).Open();
-                if (entrada.FullName == "xl/worksheets/sheet1.xml")
+                using var lectura = entrada.Open();
+                if (entrada.FullName == nombre)
                 {
-                    escritura.Write(Encoding.UTF8.GetBytes(xmlHoja));
+                    using var texto = new StreamReader(lectura, Encoding.UTF8);
+                    escritura.Write(Encoding.UTF8.GetBytes(cambio(texto.ReadToEnd())));
                 }
                 else
                 {
-                    using var lectura = entrada.Open();
                     lectura.CopyTo(escritura);
                 }
             }

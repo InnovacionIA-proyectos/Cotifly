@@ -131,6 +131,9 @@ public sealed class clsBaseDatosHealthCheckTests
     [InlineData("TarifasSeguro.id|TarifasSeguro.tasa|CotizacionLineasSolicitud.incluyeSeguro", clsBaseDatosHealthCheck.DescripcionEsquemaSin20)]
     [InlineData("CotizacionLineasSolicitud.costoSeguro", clsBaseDatosHealthCheck.DescripcionEsquemaSin20)]
     [InlineData("CotizacionLineasSolicitud.costoSeguro|CotizacionServiciosConexos.precioVenta", clsBaseDatosHealthCheck.DescripcionEsquemaSin19)]
+    // HU-044.7 (#290): solo falta origenLectura → pide el 22; con una columna de un script anterior gana el anterior.
+    [InlineData("CotizacionArchivosLicitacion.origenLectura", clsBaseDatosHealthCheck.DescripcionEsquemaSin22)]
+    [InlineData("CotizacionArchivosLicitacion.origenLectura|CotizacionLineasSolicitud.costoSeguro", clsBaseDatosHealthCheck.DescripcionEsquemaSin20)]
     [InlineData("TarifasSeguro.tasa|Otra.columna", "esquema incompleto: falta Otra.columna, TarifasSeguro.tasa")]
     public void HU0452_SinEl20LaSondaPideEl20SoloCuandoNoFaltaUnScriptAnterior(string faltantes, string descripcion)
     {

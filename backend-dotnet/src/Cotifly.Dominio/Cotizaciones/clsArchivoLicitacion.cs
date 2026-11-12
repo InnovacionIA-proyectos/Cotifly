@@ -21,6 +21,15 @@ public sealed class clsArchivoLicitacion
     public const string TipoXlsx = clsArchivoExcel.TipoXlsx;
     public const string TipoXlsm = clsArchivoExcel.TipoXlsm;
 
+    /// <summary>HU-044.7 (#290): el Excel se leyó con <c>analizar-excel</c> (flujo de hoy; la exportación escribe sobre el original).</summary>
+    public const string OrigenAnalizarExcel = "analizar_excel";
+
+    /// <summary>HU-044.7 (#290): el Excel lo leyó la IA de NEXO (<c>leer-estructura</c>); la exportación arma un Excel nuevo.</summary>
+    public const string OrigenLeerEstructura = "leer_estructura";
+
+    /// <summary>Largo de columna de <see cref="OrigenLectura"/> en la base (el más largo de los dos valores, con holgura).</summary>
+    public const int LargoOrigenLectura = 20;
+
     private clsArchivoLicitacion()
     {
     }
@@ -33,9 +42,15 @@ public sealed class clsArchivoLicitacion
     /// <summary>SHA-256 en hexadecimal minúscula del contenido (integridad y trazabilidad).</summary>
     public string Sha256 { get; private set; } = string.Empty;
 
-    /// <summary>Hoja mapeada por el comercial (<c>hojas[h].nombre</c> del análisis).</summary>
+    /// <summary>Hoja mapeada por el comercial (<c>hojas[h].nombre</c> del análisis; con <c>leer_estructura</c>, el nombre de la tabla).</summary>
     public string Hoja { get; private set; } = string.Empty;
     public byte[] Contenido { get; private set; } = [];
+
+    /// <summary>
+    /// HU-044.7 (#290): cómo se leyó este Excel (<c>analizar_excel</c> o <c>leer_estructura</c>, <see cref="clsOrigenLectura"/>). Decide cómo
+    /// se exporta: con <c>leer_estructura</c> los precios NO se escriben sobre el original, sino en una hoja «Licitación» nueva.
+    /// </summary>
+    public string OrigenLectura { get; private set; } = OrigenAnalizarExcel;
     public DateTimeOffset CreatedAt { get; private set; }
 
     /// <summary>
@@ -43,7 +58,8 @@ public sealed class clsArchivoLicitacion
     /// (<c>ARCHIVO_REQUERIDO</c>) y de máximo <see cref="TamanoMaximoBytes"/> (<c>ARCHIVO_DEMASIADO_GRANDE</c>), y la hoja
     /// obligatoria (<c>LICITACION_INVALIDA</c>). El nombre se reduce al nombre de archivo (sin rutas) y a 255 caracteres.
     /// </summary>
-    public static clsResultado<clsArchivoLicitacion> Crear(Guid cotizacionId, string? nombreArchivo, byte[]? contenido, string? hoja)
+    public static clsResultado<clsArchivoLicitacion> Crear(
+        Guid cotizacionId, string? nombreArchivo, byte[]? contenido, string? hoja, string? origenLectura = null)
     {
         var invalido = ValidarArchivo(nombreArchivo, contenido);
         if (invalido is not null || contenido is null)
@@ -59,6 +75,14 @@ public sealed class clsArchivoLicitacion
                 $"El campo 'hoja' es obligatorio con el archivo y admite máximo {LargoHoja} caracteres.");
         }
 
+        // HU-044.7 (#290): el caso de uso ya validó origen_lectura antes de llamar aquí; vacío cae en analizar_excel (el flujo de hoy).
+        var origen = string.IsNullOrWhiteSpace(origenLectura) ? OrigenAnalizarExcel : origenLectura.Trim();
+        if (origen is not (OrigenAnalizarExcel or OrigenLeerEstructura))
+        {
+            return new clsErrorDominio(clsCodigosError.LicitacionInvalida,
+                $"El campo 'origen_lectura' debe ser '{OrigenAnalizarExcel}' o '{OrigenLeerEstructura}'.");
+        }
+
         return new clsArchivoLicitacion
         {
             CotizacionId = cotizacionId,
@@ -68,6 +92,7 @@ public sealed class clsArchivoLicitacion
             Sha256 = Convert.ToHexStringLower(SHA256.HashData(contenido)),
             Hoja = hoja.Trim(),
             Contenido = contenido,
+            OrigenLectura = origen,
         };
     }
 
