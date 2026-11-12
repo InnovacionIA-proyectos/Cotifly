@@ -15,7 +15,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Aplicacion.Correo.Services;
 
 /// <summary>
-/// HU-033 (#199, ADR-023): historial de envíos de una cotización con el estado de MailSender
+/// Historial de envíos de una cotización con el estado de MailSender
 /// (<c>GET /web/cotizaciones/{folio}/correos</c>) y reintento de un envío fallido
 /// (<c>POST /web/cotizaciones/{folio}/correos/{correoId}/reintentar</c>). Solo el dueño; una cotización ajena es 404.
 /// </summary>
@@ -89,8 +89,8 @@ public sealed class clsHistorialCorreosService(
                 : "Este envío nunca llegó a MailSender (se rechazó al encolarlo): envíalo de nuevo.");
         }
 
-        // DEF-1027B-2 (#228, validación): MailSender reintenta el correo TAL COMO LO GUARDÓ (asunto y destinatarios incluidos). Uno aceptado
-        // antes de #228 con un asunto o una dirección con saltos de línea saldría otra vez con las cabeceras inyectadas: no se reintenta.
+        // MailSender reintenta el correo TAL COMO LO GUARDÓ (asunto y destinatarios incluidos). Uno guardado con un asunto o una
+        // dirección con saltos de línea saldría otra vez con las cabeceras inyectadas: no se reintenta.
         if (TieneCabecerasInyectadas(correo))
         {
             logger.LogWarning("Reintento del correo {CorreoId} bloqueado: su asunto o un destinatario tiene caracteres de control (DEF-1027B-2).", correo.Id);
@@ -99,8 +99,8 @@ public sealed class clsHistorialCorreosService(
 
         var cronometro = Stopwatch.StartNew();
         var reclamo = reloj.AhoraUtc;
-        // Auditoría #199: un solo /retry por fallo. Sin la reserva, un doble clic (o dos réplicas) pedían dos reintentos y MailSender
-        // corría dos entregas del mismo correo a la vez.
+        // Un solo /retry por fallo. Sin la reserva, un doble clic (o dos réplicas) pedirían dos reintentos y MailSender
+        // correría dos entregas del mismo correo a la vez.
         if (!await correos.ReclamarReintentoAsync(correo.Id, reclamo, reclamo + opciones.Value.Seguimiento.Reclamo, cancellationToken))
         {
             return new clsErrorDominio(clsCodigosError.CorreoNoReintentable, "Este envío ya se está reintentando o cambió de estado: recarga el historial.");
@@ -161,14 +161,14 @@ public sealed class clsHistorialCorreosService(
             correo.EsReintentable && !TieneCabecerasInyectadas(correo));
     }
 
-    /// <summary>Mensaje de <c>CORREO_NO_REINTENTABLE</c> para un correo guardado con caracteres de control en una cabecera (#228).</summary>
+    /// <summary>Mensaje de <c>CORREO_NO_REINTENTABLE</c> para un correo guardado con caracteres de control en una cabecera.</summary>
     public const string MensajeCabecerasInyectadas =
         "Este envío no se puede reintentar: su asunto o un destinatario tiene saltos de línea u otros caracteres de control. Envíalo de nuevo "
         + "con un asunto de una sola línea.";
 
     /// <summary>
-    /// #228: ¿el correo guardado tiene caracteres de control en el asunto o en un destinatario? Solo pasa con datos anteriores a la
-    /// validación de DEF-1027B-2 (hoy el envío los rechaza con 400).
+    /// ¿El correo guardado tiene caracteres de control en el asunto o en un destinatario? Solo pasa con datos guardados sin la
+    /// validación del borrador (el envío los rechaza con 400).
     /// </summary>
     public static bool TieneCabecerasInyectadas(clsCorreo correo)
     {

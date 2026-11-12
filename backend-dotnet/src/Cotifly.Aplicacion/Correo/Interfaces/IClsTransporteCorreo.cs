@@ -5,9 +5,8 @@ namespace Cotifly.Aplicacion.Correo.Interfaces;
 
 /// <summary>
 /// Puerto del transporte de correo. La lógica de confirmación, dueño, deduplicación, protección y trazabilidad es de
-/// <c>clsCorreoService</c>; el transporte solo entrega el mensaje. HU-033 (#199, ADR-023): el único transporte es MailSender
-/// (<c>Correo:Modo=mailsender</c>), que encola el correo y responde 202 con su id; los modos <c>smtp_relay</c>, <c>smtp</c> y
-/// <c>wscorreos</c> se retiraron.
+/// <c>clsCorreoService</c>; el transporte solo entrega el mensaje. El único transporte es MailSender
+/// (<c>Correo:Modo=mailsender</c>, ADR-023), que encola el correo y responde 202 con su id.
 /// </summary>
 public interface IClsTransporteCorreo
 {
@@ -22,7 +21,7 @@ public interface IClsTransporteCorreo
 }
 
 /// <summary>
-/// HU-033: consulta y reintento de un correo ya encolado en el transporte (MailSender: <c>GET /api/v1/emails/{id}</c> y
+/// Consulta y reintento de un correo ya encolado en el transporte (MailSender: <c>GET /api/v1/emails/{id}</c> y
 /// <c>POST /api/v1/emails/{id}/retry</c>).
 /// </summary>
 public interface IClsSeguimientoCorreoExterno

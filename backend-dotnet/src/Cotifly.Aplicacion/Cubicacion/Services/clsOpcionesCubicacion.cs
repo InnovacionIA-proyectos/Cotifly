@@ -2,7 +2,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Cotifly.Aplicacion.Cubicacion.Services;
 
-/// <summary>Opciones de "Calcular cubicaje" (sección <c>Cubicacion</c>, HU-023.2, #157).</summary>
+/// <summary>Opciones de "Calcular cubicaje" (sección <c>Cubicacion</c>).</summary>
 public sealed class clsOpcionesCubicacion
 {
     public const string Seccion = "Cubicacion";

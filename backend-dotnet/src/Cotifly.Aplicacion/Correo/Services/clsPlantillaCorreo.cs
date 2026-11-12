@@ -7,66 +7,64 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Aplicacion.Correo.Services;
 
 /// <summary>
-/// Plantilla del correo portada del Python: asunto por defecto de <c>enviar_cotizacion</c> (<c>orquestador/web.py</c>), cuerpo
-/// <c>_PLANTILLA</c> y envoltura HTML corporativa <c>_cuerpo_html</c> (<c>mcp_server/correo.py</c>). HU-033 (#199, ADR-023, decisión 5):
-/// después del texto del comercial va un bloque FIJO con el precio de cada ruta y el VALOR TOTAL de la cotización, sin desglose (nunca
-/// costo, margen, flete ni conexos con precio), con la misma leyenda de impuestos del PDF. El correo viaja en HTML (MailSender envía
-/// una sola parte: <c>IsHtml=true</c>).
+/// Plantilla del correo: asunto por defecto, cuerpo por defecto y envoltura HTML corporativa (ADR-023). Después del texto del
+/// comercial va un bloque FIJO con el precio de cada ruta y el VALOR TOTAL de la cotización, sin desglose (nunca costo, margen,
+/// flete ni conexos con precio). El correo viaja en HTML (MailSender envía una sola parte: <c>IsHtml=true</c>).
 /// </summary>
 public static class clsPlantillaCorreo
 {
     /// <summary>
-    /// Cuerpo por defecto (<c>_PLANTILLA</c>). #262: sin la despedida; la pone el HTML al final, después del resumen y antes de la firma.
+    /// Cuerpo por defecto, sin la despedida: la pone el HTML al final, después del resumen y antes de la firma.
     /// </summary>
     public const string CuerpoPorDefecto =
         "Estimado cliente,\n\n"
         + "Adjuntamos la cotización solicitada. Quedamos atentos a cualquier inquietud.";
 
-    /// <summary>#262: firma cuando no se conocen los datos del comercial.</summary>
+    /// <summary>Firma cuando no se conocen los datos del comercial.</summary>
     public const string FirmaGenerica = "Equipo Comercial — Botero Soto";
 
-    /// <summary>#262: título del encabezado del correo (con el folio debajo, si se conoce).</summary>
+    /// <summary>Título del encabezado del correo (con el folio debajo, si se conoce).</summary>
     public const string TituloCorreo = "Cotización";
 
-    /// <summary>#262: texto del encabezado en lugar del logo (sin <c>Correo:LogoUrl</c> válida) y texto alterno del logo.</summary>
+    /// <summary>Texto del encabezado en lugar del logo (sin <c>Correo:LogoUrl</c> válida) y texto alterno del logo.</summary>
     public const string Marca = "Botero Soto";
 
-    /// <summary>#262: ancho del logo en el encabezado, en píxeles.</summary>
+    /// <summary>Ancho del logo en el encabezado, en píxeles.</summary>
     public const int AnchoLogo = 90;
 
     /// <summary>Título del bloque del resumen (encima de la ficha de la cotización).</summary>
     public const string TituloResumen = "Resumen de la cotización";
 
-    /// <summary>#262: título de la tabla de rutas.</summary>
+    /// <summary>Título de la tabla de rutas.</summary>
     public const string TituloRutas = "Rutas cotizadas";
 
-    /// <summary>#262: etiqueta de la ficha con cuántas rutas tienen precio (las que la Mesa no rechazó).</summary>
+    /// <summary>Etiqueta de la ficha con cuántas rutas tienen precio (las que la Mesa no rechazó).</summary>
     public const string EtiquetaRutasCosteadas = "Rutas costeadas";
 
     /// <summary>Etiqueta del total del bloque del resumen (la misma del PDF).</summary>
     public const string EtiquetaTotal = clsTextosEstandar.EtiquetaTotalGeneral;
 
     /// <summary>
-    /// #262 (decisión de producto del 2026-11-03): rutas que lista el resumen. Una licitación de cientos de rutas haría el correo muy
+    /// Rutas que lista el resumen. Una licitación de cientos de rutas haría el correo muy
     /// largo y Gmail recorta los mensajes de más de ~102 KB (escondería el total y la firma): pasado el tope, el resto se resume en una
     /// línea y el detalle queda en el PDF adjunto. El total siempre es el de TODAS las rutas.
     /// </summary>
     public const int MaximoRutasResumen = 10;
 
     /// <summary>
-    /// HU-045.3 (#265): debajo de la ruta que incluye el seguro de la mercancía. Sin el monto (HU-033: sin desglose; el PDF adjunto lo trae
+    /// Nota debajo de la ruta que incluye el seguro de la mercancía. Sin el monto (sin desglose; el PDF adjunto lo trae
     /// en su propia fila) ni la tasa.
     /// </summary>
     public const string TextoIncluyeSeguro = "Incluye el seguro de la mercancía";
 
-    /// <summary>#262: línea que remite al PDF adjunto.</summary>
+    /// <summary>Línea que remite al PDF adjunto.</summary>
     public const string TextoAdjunto =
         "En el PDF adjunto está el detalle de cada ruta, lo que incluye y no incluye la tarifa, la facturación y la vigencia.";
 
-    /// <summary>#262: ancho máximo del correo (en el celular ocupa el ancho de la pantalla).</summary>
+    /// <summary>Ancho máximo del correo (en el celular ocupa el ancho de la pantalla).</summary>
     public const int AnchoMaximo = 840;
 
-    // #262: diseño de cotización formal (lo escribe un comercial a su cliente): tarjeta blanca con la marca, el texto del comercial, la ficha
+    // Diseño de cotización formal (lo escribe un comercial a su cliente): tarjeta blanca con la marca, el texto del comercial, la ficha
     // de la cotización, la tabla de rutas con el total resaltado, las notas, la despedida con la firma y el pie legal. Sin iconos ni botones.
     // Solo estilos en línea y tablas (Gmail, Outlook y el celular); sin imágenes ni <style>.
     private const string Azul = "#005AA8";
@@ -82,8 +80,8 @@ public static class clsPlantillaCorreo
 
     /// <summary>
     /// Resumen para el cliente: una fila por ruta, en orden, con su precio final (transporte y conexos incluidos, <c>precioFinalLinea</c>) y
-    /// el total (<c>precioFinal</c>, la suma). Una ruta que rechazó la Mesa de Costeo sale "Sin costeo" y no suma (HU-028.1). HU-045.3 (#265):
-    /// el precio final de la ruta y el total incluyen el seguro de la mercancía; la ruta que lo incluye lo marca
+    /// el total (<c>precioFinal</c>, la suma). Una ruta que rechazó la Mesa de Costeo sale "Sin costeo" y no suma.
+    /// El precio final de la ruta y el total incluyen el seguro de la mercancía; la ruta que lo incluye lo marca
     /// (<see cref="clsRutaResumenCorreo.IncluyeSeguro"/>). <c>null</c> si la cotización todavía no tiene total.
     /// </summary>
     public static clsResumenCorreo? Resumen(clsCotizacionSolicitud cotizacion)
@@ -108,7 +106,7 @@ public static class clsPlantillaCorreo
         return new clsResumenCorreo(
             moneda.ToUpperInvariant(),
             total,
-            // HU-045.3 (#265, B1): con los centavos del seguro, si los hay.
+            // Con los centavos del seguro, si los hay.
             clsFormatoMoneda.FormatearExacto(total, moneda),
             rutas,
             clsTextosEstandar.LeyendaImpuestos,
@@ -116,7 +114,7 @@ public static class clsPlantillaCorreo
     }
 
     /// <summary>
-    /// #262: datos de la ficha del correo: folio, cliente y fecha de la cotización en la zona de negocio. Una cotización sin
+    /// Datos de la ficha del correo: folio, cliente y fecha de la cotización en la zona de negocio. Una cotización sin
     /// <c>CreatedAt</c> (todavía sin guardar) sale sin fecha.
     /// </summary>
     public static clsDatosCorreo Datos(clsCotizacionSolicitud cotizacion, IClsCalendarioNegocio calendario)
@@ -128,7 +126,7 @@ public static class clsPlantillaCorreo
     }
 
     /// <summary>
-    /// Cuerpo en HTML (#262, cotización formal): tarjeta de hasta <see cref="AnchoMaximo"/> px con el encabezado (<see cref="TituloCorreo"/> con
+    /// Cuerpo en HTML (cotización formal): tarjeta de hasta <see cref="AnchoMaximo"/> px con el encabezado (<see cref="TituloCorreo"/> con
     /// el folio a la izquierda y el logo de <paramref name="logoUrl"/> a la derecha), el aviso de pruebas (si el correo se redirige), el texto escapado (un <c>&lt;script&gt;</c> del comercial llega como texto) con los saltos de línea como <c>&lt;br&gt;</c>,
     /// el resumen (la ficha con el folio, la fecha y el cliente si se conocen, y las rutas costeadas), la tabla de rutas con el total (si hay),
     /// la nota del PDF adjunto y la despedida con la firma del comercial; debajo de la tarjeta, el pie legal.
@@ -154,7 +152,7 @@ public static class clsPlantillaCorreo
                + (FichaHtml(datos, resumen) is { Length: > 0 } ficha ? Fila(TituloSeccion(TituloResumen) + ficha) : string.Empty)
                + (resumen is null ? string.Empty : Fila(ResumenHtml(resumen)))
                + Fila(NotaHtml(TextoAdjunto))
-               // #261 (HU-046): el texto de seguros va aquí, después del resumen y antes de la despedida.
+               // El texto de seguros va aquí, después del resumen y antes de la despedida.
                + (string.IsNullOrWhiteSpace(textoSeguros) ? string.Empty : Fila(SegurosHtml(textoSeguros)))
                + Fila(FirmaHtml(firmaComercial), "20px 24px 24px 24px")
                + "</table>"
@@ -263,7 +261,7 @@ public static class clsPlantillaCorreo
         + $"<td style=\"padding:10px 14px 10px 10px;font-size:14px\"><b>Nota:</b> {WebUtility.HtmlEncode(nota)}</td></tr></table>";
 
     /// <summary>
-    /// HU-033 (auditoría #199): firma del comercial en el cuerpo ("Nombre · correo · Cel. teléfono"): con el <c>From</c> corporativo el
+    /// Firma del comercial en el cuerpo ("Nombre · correo · Cel. teléfono"): con el <c>From</c> corporativo el
     /// cliente sigue sabiendo a quién responder (MailSender no tiene <c>Reply-To</c>). <c>null</c> sin datos.
     /// </summary>
     public static string? FirmaComercial(string? nombre, string? correo, string? telefono)
@@ -277,7 +275,7 @@ public static class clsPlantillaCorreo
     }
 
     /// <summary>
-    /// #261 (HU-046): bloque del texto de seguros de la propuesta, después del resumen y antes de la despedida: recuadro gris claro con la
+    /// Bloque del texto de seguros de la propuesta, después del resumen y antes de la despedida: recuadro gris claro con la
     /// etiqueta <see cref="clsTextosEstandar.TituloSegurosPropuesta"/> en negrita y el texto escapado (los saltos de línea como <c>&lt;br&gt;</c>).
     /// </summary>
     private static string SegurosHtml(string textoSeguros) =>
@@ -297,8 +295,8 @@ public static class clsPlantillaCorreo
 
     /// <summary>
     /// Bloque fijo del resumen: tabla con una fila por ruta y su precio (hasta <see cref="MaximoRutasResumen"/>; el resto en una fila que
-    /// remite al PDF) y, al pie, el total de TODAS las rutas resaltado; en USD, debajo, la nota de la TRM. #262: la leyenda de impuestos ya no
-    /// va en el correo (decisión de producto del 2026-11-03); sigue en el PDF adjunto.
+    /// remite al PDF) y, al pie, el total de TODAS las rutas resaltado; en USD, debajo, la nota de la TRM. La leyenda de impuestos
+    /// no va en el correo: está en el PDF adjunto.
     /// </summary>
     public static string ResumenHtml(clsResumenCorreo resumen)
     {
@@ -336,7 +334,7 @@ public static class clsPlantillaCorreo
 }
 
 /// <summary>
-/// HU-033: resumen de la cotización para el cliente en el correo y en la vista previa (sin desglose).
+/// Resumen de la cotización para el cliente en el correo y en la vista previa (sin desglose).
 /// </summary>
 /// <param name="Moneda"><c>COP</c> o <c>USD</c>.</param>
 /// <param name="Total">Valor total (<c>precioFinal</c>, la suma de las rutas con precio).</param>
@@ -350,12 +348,12 @@ public sealed record clsResumenCorreo(
 /// <summary>Una ruta del resumen: su orden, "Origen → Destino" y su precio final (<c>null</c> si la Mesa la rechazó).</summary>
 public sealed record clsRutaResumenCorreo(int Orden, string Ruta, decimal? Precio, string PrecioTexto)
 {
-    /// <summary>HU-045.3 (#265): el precio de la ruta incluye el seguro de la mercancía (sin el monto ni la tasa: HU-033, sin desglose).</summary>
+    /// <summary>El precio de la ruta incluye el seguro de la mercancía (sin el monto ni la tasa: sin desglose).</summary>
     public bool IncluyeSeguro { get; init; }
 }
 
 /// <summary>
-/// #262: datos opcionales de la cotización para la ficha del correo (folio, fecha y cliente). Todos pueden ser <c>null</c>.
+/// Datos opcionales de la cotización para la ficha del correo (folio, fecha y cliente). Todos pueden ser <c>null</c>.
 /// </summary>
 /// <param name="Folio">Folio de la cotización.</param>
 /// <param name="Cliente">Nombre del cliente.</param>

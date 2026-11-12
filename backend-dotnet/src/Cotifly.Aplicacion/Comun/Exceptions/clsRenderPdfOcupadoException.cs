@@ -2,7 +2,7 @@ namespace Cotifly.Aplicacion.Comun.Exceptions;
 
 /// <summary>
 /// El render del PDF esperó su turno más de <c>Pdf:TiempoEsperaRenderSegundos</c>: otros PDF ocupaban el generador, que
-/// renderiza uno a la vez por proceso (PDFsharp-MigraDoc no es thread-safe, #92/#95). Los casos de uso la traducen a
+/// renderiza uno a la vez por proceso (PDFsharp-MigraDoc no es thread-safe). Los casos de uso la traducen a
 /// <c>PDF_RENDER_NO_DISPONIBLE</c> (503).
 /// </summary>
 public sealed class clsRenderPdfOcupadoException : Exception

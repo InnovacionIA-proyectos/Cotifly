@@ -11,15 +11,14 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Aplicacion.Agente.Services;
 
 /// <summary>
-/// Validador de la respuesta final del agente (HU-003.10, issue #16; equivalente .NET de <c>Instructor</c>, ADR-003 "Implementación
-/// (#16)"). Reemplaza al validador de paso de #12:
+/// Validador de la respuesta final del agente (equivalente .NET de <c>Instructor</c>, ADR-003):
 /// <list type="number">
 /// <item>Llamada final aparte y <b>sin herramientas</b> (algunos proveedores no combinan herramientas con JSON Schema), con
 /// <c>ChatResponseFormat.ForJsonSchema</c> sobre <see cref="clsRespuestaAgenteEstructurada"/> y una instrucción final con las
 /// reglas (en el modo sin esquema, también el esquema).</item>
 /// <item>Validación manual con <see cref="clsReglasRespuestaAgente"/> (forma, tipos, enums, largos, acciones, montos y folios).</item>
 /// <item>Si no valida: <b>un</b> reintento con la respuesta inválida y un mensaje de corrección que enumera los fallos (salvo con
-/// <see cref="clsContextoValidacionRespuesta.ReintentarSiFalla"/> en false: el asistente ya armó una propuesta, HU-013.16).</item>
+/// <see cref="clsContextoValidacionRespuesta.ReintentarSiFalla"/> en false: el asistente ya armó una propuesta).</item>
 /// <item>Si vuelve a fallar: respaldo <c>{tipo: error, texto: clsTextosAgente.RespuestaNoEstructurada}</c>.</item>
 /// </list>
 /// Proveedores sin JSON Schema: <c>IA:SoportaJsonSchema=false</c> pide la respuesta sin formato (el esquema va en la instrucción).
@@ -52,7 +51,7 @@ public sealed class clsValidadorRespuestaAgente : IClsValidadorRespuestaAgente
     private readonly Counter<long> _esquemaRechazado;
     private readonly clsInterruptorJsonSchema _interruptor;
 
-    /// <param name="interruptor">Apagado del esquema compartido con el redactor de textos (HU-013.5); sin él, uno propio.</param>
+    /// <param name="interruptor">Apagado del esquema compartido con el redactor de textos; sin él, uno propio.</param>
     public clsValidadorRespuestaAgente(
         IOptions<clsOpcionesAgente> opciones, ILogger<clsValidadorRespuestaAgente> logger, IMeterFactory medidores, IClsReloj reloj,
         clsInterruptorJsonSchema? interruptor = null)
@@ -228,8 +227,8 @@ public sealed class clsValidadorRespuestaAgente : IClsValidadorRespuestaAgente
         texto.Append("Reglas: tipo es ").Append(string.Join(" | ", clsReglasRespuestaAgente.Tipos)).Append("; ")
             .Append($"texto en español, de 1 a {clsRespuestaAgenteEstructurada.LargoMaximoTexto} caracteres; ")
             .Append("requiere_confirmacion es true solo con previsualizacion o confirmacion_requerida; ")
-            // Endurecimiento B (#199): calcular_precio era del agente retirado (#105); el asistente no calcula precios y la regla
-            // PrevisualizacionSinPrecio rechaza toda previsualizacion, así que el prompt lo dice igual.
+            // El asistente no calcula precios y la regla PrevisualizacionSinPrecio rechaza toda previsualizacion, así que el prompt
+            // lo dice.
             .Append("no uses previsualizacion: el asistente no calcula precios (responde con conversacional); ")
             .Append("acciones_sugeridas (").Append(string.Join(", ", clsReglasRespuestaAgente.Acciones))
             .Append(") solo con una previsualización pendiente de confirmar, si no null; ")

@@ -8,9 +8,9 @@ using Microsoft.Extensions.Logging;
 namespace Cotifly.Aplicacion.Costeo.Services;
 
 /// <summary>
-/// #173: categoría de cada conexo de la cotización según el catálogo de Nexo (<c>logistico</c>, <c>adicional</c>...). HU-014 (#188): desde el
-/// script 05 la categoría se guarda con el conexo (<c>categoriaServicioConexo</c>) y el costeo usa esa; este servicio solo resuelve los
-/// conexos SIN categoría guardada (filas anteriores a #188), por el id del catálogo si la fila lo tiene (script 03) o por el guardado y el
+/// Categoría de cada conexo de la cotización según el catálogo de Nexo (<c>logistico</c>, <c>adicional</c>...). La categoría se guarda
+/// con el conexo (<c>categoriaServicioConexo</c>, script 05) y el costeo usa esa; este servicio solo resuelve los
+/// conexos SIN categoría guardada, por el id del catálogo si la fila lo tiene (script 03) o por el guardado y el
 /// nombre. Nunca falla ni espera a Nexo: responde con el índice en memoria; si está frío o le falta un
 /// conexo, lo calienta EN SEGUNDO PLANO (la respuesta sale con la categoría de respaldo
 /// <see cref="clsCosteoCotizacionService.CategoriaConexo"/> y la siguiente ya trae la del catálogo). Así un GET o un PUT del costeo nunca
@@ -22,15 +22,15 @@ public interface IClsCategoriasConexos
     Task<IReadOnlyDictionary<string, string>> CategoriasAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// HU-046.3 (#269): <c>codigoServicio</c> del catálogo de Nexo por id guardado (<c>idServicioConexo</c>) de los conexos de
-    /// <paramref name="cotizacion"/> que NO lo tienen guardado (filas anteriores al script 21 o importadas de Nexo), con el mismo índice y
+    /// <c>codigoServicio</c> del catálogo de Nexo por id guardado (<c>idServicioConexo</c>) de los conexos de
+    /// <paramref name="cotizacion"/> que NO lo tienen guardado (columna del script 21 vacía o importadas de Nexo), con el mismo índice y
     /// la misma regla que <see cref="CategoriasAsync"/>: nunca espera a Nexo; si el índice está frío o le falta un conexo, lo calienta en
     /// segundo plano. Quien lo llama completa las filas (<see cref="clsCotizacionSolicitud.CompletarCodigosConexos"/>).
     /// </summary>
     Task<IReadOnlyDictionary<string, string>> CodigosAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Corrección conexos (nombre nunca id): nombre del catálogo de Nexo por id guardado (<c>idServicioConexo</c>) de los conexos de
+    /// Nombre del catálogo de Nexo por id guardado (<c>idServicioConexo</c>) de los conexos de
     /// <paramref name="cotizacion"/> que NO tienen el nombre guardado (filas migradas del JSON). Mismo mecanismo que
     /// <see cref="CategoriasAsync"/>: responde con el índice en memoria y lo calienta en segundo plano si está frío. Las superficies de
     /// usuario (asistente de IA, vista web del costeo) usan este nombre como respaldo cuando el guardado es <c>null</c>, antes de caer a la
@@ -103,9 +103,9 @@ public sealed class clsAlmacenCategoriasConexos
 }
 
 /// <summary>
-/// Categoría por id del catálogo y por nombre (solo los nombres con una sola categoría) y cuándo se leyó. HU-046.3 (#269): también el
+/// Categoría por id del catálogo y por nombre (solo los nombres con una sola categoría) y cuándo se leyó. También el
 /// <c>codigoServicio</c> por id y por nombre (solo los nombres con un solo código; Nexo repite el mismo servicio en una fila por trayecto).
-/// Corrección conexos: el nombre del catálogo por id (<see cref="NombresPorId"/>), para no mostrar nunca el id interno.
+/// Y el nombre del catálogo por id (<see cref="NombresPorId"/>), para no mostrar nunca el id interno.
 /// </summary>
 public sealed record clsIndiceCategorias(
     IReadOnlyDictionary<string, string> PorId, IReadOnlyDictionary<string, string> PorNombre, DateTimeOffset LeidoAt,
@@ -115,7 +115,7 @@ public sealed record clsIndiceCategorias(
     /// <summary>Categoría de un conexo guardado: por su id (del catálogo) o, si es el id de una fila de Nexo, por su nombre.</summary>
     public string? De(string id, string? nombre) => Buscar(PorId, PorNombre, id, nombre);
 
-    /// <summary>HU-046.3 (#269): <c>codigoServicio</c> de un conexo guardado, con la misma regla que <see cref="De"/>.</summary>
+    /// <summary><c>codigoServicio</c> de un conexo guardado, con la misma regla que <see cref="De"/>.</summary>
     public string? CodigoDe(string id, string? nombre) => Buscar(CodigoPorId, CodigoPorNombre, id, nombre);
 
     private static string? Buscar(
@@ -125,7 +125,7 @@ public sealed record clsIndiceCategorias(
         : null;
 
     /// <summary>
-    /// Corrección conexos (nombre nunca id): nombre del catálogo de un conexo guardado, por el id del catálogo si la fila lo tiene (script
+    /// Nombre del catálogo de un conexo guardado, por el id del catálogo si la fila lo tiene (script
     /// 03) o por el id guardado (que en un conexo capturado ya es el del catálogo). <c>null</c> si no está en el índice.
     /// </summary>
     public string? Nombre(string id, string? idCatalogo)
@@ -161,7 +161,7 @@ public sealed class clsCategoriasConexosService(
         clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        // HU-014 (#188): los que ya traen la categoría guardada (script 05) no dependen del catálogo.
+        // Los que ya traen la categoría guardada (script 05) no dependen del catálogo.
         var conexos = cotizacion.Rutas.SelectMany(r => r.Conexos).Where(c => c.Categoria is null).ToList();
         return Task.FromResult(Resolver(IndiceCalentando(cotizacion, conexos, De), conexos));
     }
@@ -169,9 +169,9 @@ public sealed class clsCategoriasConexosService(
     public Task<IReadOnlyDictionary<string, string>> CodigosAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        // HU-046.3 (#269): los que ya traen el codigoServicio guardado (script 21) no dependen del catálogo.
+        // Los que ya traen el codigoServicio guardado (script 21) no dependen del catálogo.
         var conexos = cotizacion.Rutas.SelectMany(r => r.Conexos).Where(c => c.CodigoServicio is null).ToList();
-        // B6 de la auditoría: con el índice vigente no se recalienta por un código que no está (el servicio salió del catálogo o el
+        // Con el índice vigente no se recalienta por un código que no está (el servicio salió del catálogo o el
         // nombre es ambiguo): sería una lectura de Nexo por minuto para siempre. Solo con el índice frío o vencido.
         var indice = IndiceCalentando(cotizacion, conexos, (_, _) => null, recalentarSiFalta: false);
         var codigos = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -207,7 +207,7 @@ public sealed class clsCategoriasConexosService(
         if ((indice is null || (recalentarSiFalta && conexos.Any(c => resolver(indice, c) is null)))
             && cotizacion.UsuarioId is { } usuarioId && almacen.ReservarIntento(ahora))
         {
-            // #173 (observación del validador): no se espera a Nexo; se calienta el índice en segundo plano con su propio ámbito.
+            // No se espera a Nexo; se calienta el índice en segundo plano con su propio ámbito.
             almacen.UltimaLectura = Task.Run(() => CalentarAsync(usuarioId, cotizacion.Folio, ahora), CancellationToken.None);
         }
 
@@ -218,7 +218,7 @@ public sealed class clsCategoriasConexosService(
         clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        // Corrección conexos: solo los que NO tienen el nombre guardado (filas migradas del JSON) dependen del catálogo; los demás ya lo traen.
+        // Solo los que NO tienen el nombre guardado (filas migradas del JSON) dependen del catálogo; los demás ya lo traen.
         var conexos = cotizacion.Rutas.SelectMany(r => r.Conexos).Where(c => string.IsNullOrWhiteSpace(c.Nombre)).ToList();
         if (conexos.Count == 0)
         {
@@ -237,7 +237,7 @@ public sealed class clsCategoriasConexosService(
     }
 
     /// <summary>
-    /// HU-027.1 (#179): las categorías que ya se conocen, sin leer el catálogo de Nexo NI calentarlo en segundo plano (a diferencia de
+    /// Las categorías que ya se conocen, sin leer el catálogo de Nexo NI calentarlo en segundo plano (a diferencia de
     /// <see cref="CategoriasAsync"/>): el detalle por folio solo lee lo que Cotifly tiene guardado o en memoria. Los conexos con la
     /// categoría guardada (script 05) no la necesitan; los demás que no estén en el índice usan la de respaldo.
     /// </summary>
@@ -249,7 +249,7 @@ public sealed class clsCategoriasConexosService(
     }
 
     /// <summary>
-    /// Corrección conexos (nombre nunca id): los nombres del catálogo que ya están en memoria, sin leer el catálogo de Nexo ni calentarlo
+    /// Los nombres del catálogo que ya están en memoria, sin leer el catálogo de Nexo ni calentarlo
     /// (como <see cref="EnMemoria"/>, para el detalle por folio). Solo los conexos sin nombre guardado que estén en el índice.
     /// </summary>
     public static IReadOnlyDictionary<string, string> NombresEnMemoria(clsAlmacenCategoriasConexos almacen, clsCotizacionSolicitud cotizacion)
@@ -301,11 +301,11 @@ public sealed class clsCategoriasConexosService(
     private static string? De(clsIndiceCategorias indice, clsServicioConexoRuta conexo) =>
         (conexo.IdServicioConexoCatalogo is { } catalogo ? indice.De(catalogo, null) : null) ?? indice.De(conexo.IdServicioConexo, conexo.Nombre);
 
-    /// <summary>Corrección conexos: nombre de un conexo en el índice, por el id del catálogo (script 03) o por el id guardado.</summary>
+    /// <summary>Nombre de un conexo en el índice, por el id del catálogo (script 03) o por el id guardado.</summary>
     private static string? Nombre(clsIndiceCategorias indice, clsServicioConexoRuta conexo) =>
         indice.Nombre(conexo.IdServicioConexo, conexo.IdServicioConexoCatalogo);
 
-    /// <summary>HU-046.3 (#269): <c>codigoServicio</c> de un conexo en el índice, con la misma regla que <see cref="De"/>.</summary>
+    /// <summary><c>codigoServicio</c> de un conexo en el índice, con la misma regla que <see cref="De"/>.</summary>
     private static string? CodigoDe(clsIndiceCategorias indice, clsServicioConexoRuta conexo) =>
         (conexo.IdServicioConexoCatalogo is { } catalogo ? indice.CodigoDe(catalogo, null) : null) ?? indice.CodigoDe(conexo.IdServicioConexo, conexo.Nombre);
 
@@ -330,7 +330,7 @@ public sealed class clsCategoriasConexosService(
         var porNombre = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
         var codigoPorId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var codigoPorNombre = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
-        // Corrección conexos: nombre del catálogo por id, para resolver el nombre de los conexos migrados sin nombre (no muestra el id crudo).
+        // Nombre del catálogo por id, para resolver el nombre de los conexos migrados sin nombre (no muestra el id crudo).
         var nombresPorId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         for (var pagina = 1; pagina <= MaximoPaginas; pagina++)
         {
@@ -343,7 +343,7 @@ public sealed class clsCategoriasConexosService(
 
             foreach (var servicio in leida.Valor.Items)
             {
-                // Corrección conexos: nombre del catálogo por id, aunque el servicio no traiga categoría ni código.
+                // Nombre del catálogo por id, aunque el servicio no traiga categoría ni código.
                 if (servicio.Nombre?.Trim() is { Length: > 0 } nombre)
                 {
                     nombresPorId[servicio.Id] = nombre;
@@ -351,7 +351,7 @@ public sealed class clsCategoriasConexosService(
 
                 // Un nombre con dos categorías (o dos códigos) distintos no sirve para resolver: queda en null y se ignora.
                 Indexar(porId, porNombre, servicio.Id, servicio.Nombre, servicio.Categoria);
-                // HU-046.3 (#269): el codigoServicio (Nexo repite el mismo código en una fila por trayecto, con ids distintos).
+                // El codigoServicio (Nexo repite el mismo código en una fila por trayecto, con ids distintos).
                 Indexar(codigoPorId, codigoPorNombre, servicio.Id, servicio.Nombre, servicio.Codigo);
             }
 

@@ -10,11 +10,11 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Aplicacion.Cubicacion.Services;
 
 /// <summary>
-/// "Calcular cubicaje" contra el cubicador (HU-023.2, #157; ADR-020). Vista previa <b>sin persistencia</b>: no toca la base de datos ni
+/// "Calcular cubicaje" contra el cubicador (ADR-020). Vista previa <b>sin persistencia</b>: no toca la base de datos ni
 /// Nexo. Pasos:
 /// <list type="number">
 /// <item>Sin cubicador configurado: 503 <c>CUBICADOR_NO_DISPONIBLE</c> sin llamar a nadie.</item>
-/// <item>Cada ítem viaja con su <c>codigoMercancia</c>, validado antes contra el catálogo del cubicador (una lectura con caché; D-1019-1);
+/// <item>Cada ítem viaja con su <c>codigoMercancia</c>, validado antes contra el catálogo del cubicador (una lectura con caché);
 /// sin código, la descripción se resuelve al tipo activo y cubicable más parecido (<see cref="clsSugeridorMercancia"/>). Un código
 /// desconocido, inactivo o no cubicable, o una descripción sin coincidencia: 400 con el ítem, sin llamar al cubicador.</item>
 /// <item><c>POST /recomendaciones</c> con <c>idLineaSolicitud = "PRUEBA-&lt;guid&gt;"</c>, <c>origenSistema = COTIFLY</c>, la clase de viaje
@@ -32,7 +32,7 @@ public sealed class clsCalculoCubicajeService(
 {
     private readonly clsOpcionesCubicacion _opciones = opciones?.Value ?? new clsOpcionesCubicacion();
 
-    /// <summary>Prefijo del <c>idLineaSolicitud</c> de la vista previa (decisión 2 de HU-023).</summary>
+    /// <summary>Prefijo del <c>idLineaSolicitud</c> de la vista previa </summary>
     public const string PrefijoPrueba = "PRUEBA-";
 
     public const string MensajeNoConfigurado =
@@ -51,9 +51,9 @@ public sealed class clsCalculoCubicajeService(
         clsCodigosError.CubicacionDemasiadoGrande,
         clsCodigosError.CubicadorNoAutorizado,
         clsCodigosError.CubicadorRespuestaInvalida,
-        // Opción C: sin cupo para llamar al cubicador (503 con Retry-After).
+        // Sin cupo para llamar al cubicador (503 con Retry-After).
         clsCodigosError.CubicadorOcupado,
-        // D1 (E2E 2026-10-16): el 422 del cubicador es un rechazo de los datos (400), con el ítem si lo señala.
+        // El 422 del cubicador es un rechazo de los datos (400), con el ítem si lo señala.
         clsCodigosLineaSolicitud.PosicionInvalida,
         clsCodigosError.CubicadorPeticionRechazada,
     };
@@ -134,7 +134,7 @@ public sealed class clsCalculoCubicajeService(
     private const string CodigoValidacion = "CUBICACION";
 
     /// <summary>
-    /// D1 (E2E 2026-10-16): las MISMAS reglas de la captura (<see cref="clsPosicionCarga.PrimerError"/>: cantidad de 1 a 100.000, medidas de
+    /// Las MISMAS reglas de la captura (<see cref="clsPosicionCarga.PrimerError"/>: cantidad de 1 a 100.000, medidas de
     /// 0,1 a 999.999 cm, peso por unidad mayor que 0, máximo 2 decimales) antes de llamar al cubicador, que con un valor fuera de rango
     /// responde 422. Medidas y peso: <c>DIMENSIONES_INVALIDAS</c>; la cantidad: <c>POSICION_INVALIDA</c> (el código de la captura). Los dos
     /// con <c>detalle.item</c> (base 0) y <c>detalle.campo</c>.
@@ -159,10 +159,10 @@ public sealed class clsCalculoCubicajeService(
     /// El código con el que viaja cada ítem: el suyo o el del tipo cubicable más parecido a su descripción. El catálogo de tipos de
     /// mercancía del cubicador (con caché) se lee una vez, la primera vez que hace falta.
     /// <list type="bullet">
-    /// <item>D-1019-1 (E2E 2026-10-19): un <c>codigo_mercancia</c> que no está en el catálogo o está inactivo es 400
+    /// <item>Un <c>codigo_mercancia</c> que no está en el catálogo o está inactivo es 400
     /// <c>MERCANCIA_DESCONOCIDA</c>, y uno con <c>cubicable: false</c> es 400 <c>MERCANCIA_NO_CUBICABLE</c>, los dos con <c>detalle.item</c>
     /// (base 0) y <c>detalle.campo = codigo_mercancia</c>, <b>sin llamar</b> a <c>POST /recomendaciones</c> (no ocupa el cupo ni el
-    /// motor). Las mismas reglas que la captura (HU-023.3). Se compara sin distinguir mayúsculas y viaja el código del catálogo.</item>
+    /// motor). Las mismas reglas que la captura. Se compara sin distinguir mayúsculas y viaja el código del catálogo.</item>
     /// <item>Sin catálogo (caído o no responde), un ítem con código no se bloquea: viaja como llegó y el cubicador decide (su rechazo trae
     /// el ítem si se puede saber cuál es). Un ítem con solo descripción sí necesita el catálogo.</item>
     /// </list>
@@ -207,8 +207,8 @@ public sealed class clsCalculoCubicajeService(
                 continue;
             }
 
-            // Cambio que rompe (documentado en CONTRATO_API_WEB §8.1 y §8.12): antes un ítem sin descripción se cubicaba; el cubicador
-            // necesita el código, así que ahora es 400 MERCANCIA_DESCONOCIDA.
+            // Un ítem sin código ni descripción es 400 MERCANCIA_DESCONOCIDA: el cubicador necesita el código (CONTRATO_API_WEB §8.1
+            // y §8.12).
             if (string.IsNullOrWhiteSpace(item.Descripcion))
             {
                 return SinMercancia(i, null);
@@ -287,7 +287,7 @@ public sealed class clsCalculoCubicajeService(
             : new clsErrorDominio(clsCodigosError.CubicadorNoDisponible, MensajeNoDisponible);
     }
 
-    /// <summary>Solo <c>item</c> y <c>campo</c> (el rechazo de una mercancía, D1) pasan al comercial; las marcas internas no.</summary>
+    /// <summary>Solo <c>item</c> y <c>campo</c> (el rechazo de una mercancía) pasan al comercial; las marcas internas no.</summary>
     private static Dictionary<string, object?>? DatosItem(IReadOnlyDictionary<string, object?>? datos)
     {
         if (datos is null || !datos.TryGetValue("item", out var item))

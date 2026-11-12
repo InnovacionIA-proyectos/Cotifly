@@ -8,8 +8,8 @@ using Microsoft.Extensions.Logging;
 namespace Cotifly.Aplicacion.Licitaciones.Services;
 
 /// <summary>
-/// Reglas de captura de las filas de una licitación que dependen de catálogos (HU-013.11, #108): códigos de catálogo (G2, con
-/// <see cref="IClsValidadorCatalogosCaptura"/>, la misma regla del formulario) e ids de municipio (G6, <see cref="clsMunicipiosLicitacion"/>).
+/// Reglas de captura de las filas de una licitación que dependen de catálogos: códigos de catálogo (con
+/// <see cref="IClsValidadorCatalogosCaptura"/>, la misma regla del formulario) e ids de municipio (<see cref="clsMunicipiosLicitacion"/>).
 /// Las usan la creación (<c>POST /web/licitaciones</c>) y todo reenvío de lo guardado: el reintento y la re-solicitud (mismo folio o
 /// <c>-vN</c>), para que una licitación guardada antes de una regla nueva nunca llegue a Nexo con texto libre.
 /// </summary>
@@ -27,7 +27,7 @@ public interface IClsValidadorFilasLicitacion
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Vuelve a validar las líneas guardadas de una licitación antes de reenviarlas a Nexo: forma y rangos, G3, códigos de catálogo y
+    /// Vuelve a validar las líneas guardadas de una licitación antes de reenviarlas a Nexo: forma y rangos, reglas condicionales, códigos de catálogo y
     /// municipios (las filas sin id se resuelven; las que ya lo tienen se respetan). Si alguna fila ya no pasa, <c>LICITACION_INVALIDA</c>
     /// con <c>detalle.motivo = LICITACION_REQUIERE_NUEVA_CARGA</c> y <c>detalle.errores</c> (las mismas filas de
     /// <c>ReporteLicitacionInvalida</c>): ni el reintento ni una <c>-vN</c> la arreglan, hay que cargarla de nuevo. Si un catálogo no
@@ -62,9 +62,9 @@ public sealed class clsValidadorFilasLicitacion(
         ValidarAsync(usuarioId, lineas, erroresPrevios, captura: true, cancellationToken);
 
     /// <summary>
-    /// <paramref name="captura"/>: captura nueva (HU-021.6, decisión 2): resuelve también las ciudades del contenedor, verifica cada id
+    /// <paramref name="captura"/>: captura nueva: resuelve también las ciudades del contenedor, verifica cada id
     /// contra el catálogo y copia el nombre del catálogo (un nombre distinto del cliente se ignora y queda en el log). Al revalidar lo
-    /// guardado solo se resuelven el origen y el destino sin id (las rutas anteriores a HU-021 solo guardaron el nombre de las ciudades).
+    /// guardado solo se resuelven el origen y el destino sin id (las rutas guardadas sin id solo tienen el nombre de las ciudades).
     /// </summary>
     private async Task<clsFilasLicitacionValidadas> ValidarAsync(
         Guid usuarioId,
@@ -84,7 +84,7 @@ public sealed class clsValidadorFilasLicitacion(
             errores.AddRange(codigos.Errores[i].Select(e => new clsErrorFilaLicitacion(indice, lineas[indice]?.Fila, e.Campo, e.Codigo, e.Mensaje)));
         }
 
-        // D-1019B-2 (#188 M1): el vehículo digitado se guarda escrito como en el catálogo de Nexo (como viaja), no como lo digitó el comercial.
+        // El vehículo digitado se guarda escrito como en el catálogo de Nexo (como viaja), no como lo digitó el comercial.
         IReadOnlyList<clsLineaLicitacionEntrada?> resultantes = codigos.Canonicas is { } canonicas && canonicas.Count == lineas.Count
             ? [.. lineas.Select((l, i) => l is null || ReferenceEquals(canonicas[i], l.Linea) || canonicas[i] is null ? l : l with { Linea = canonicas[i] })]
             : lineas;

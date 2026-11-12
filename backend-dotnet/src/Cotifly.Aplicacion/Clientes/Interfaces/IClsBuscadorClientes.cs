@@ -4,8 +4,8 @@ using Cotifly.Dominio.Comun;
 namespace Cotifly.Aplicacion.Clientes.Interfaces;
 
 /// <summary>
-/// Puerto de la búsqueda de clientes (ADR-005) de <c>GET /web/clientes?q=</c> (HU-005.2) y de la captura del costeo (la herramienta
-/// <c>buscar_cliente</c> del agente legado se retiró en HU-013.9, #105). La implementación real (<c>clsBuscadorClientesNexo</c>) consume
+/// Puerto de la búsqueda de clientes (ADR-005) de <c>GET /web/clientes?q=</c> y de la captura del
+/// costeo. La implementación real (<c>clsBuscadorClientesNexo</c>) consume
 /// <c>GET /api/captura-solicitudes/clientes</c> de Nexo, identificando al comercial ante Nexo con
 /// <c>X-Portal-clsUsuario-Id: {UsuariosWeb.idUsuarioExterno}</c> — de ahí que reciba <paramref name="usuarioId"/>
 /// además del texto. Sin <c>Nexo:UrlBase</c>, Infraestructura registra uno que responde

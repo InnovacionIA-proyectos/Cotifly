@@ -5,15 +5,15 @@ using Cotifly.Dominio.Comun;
 namespace Cotifly.Aplicacion.Costeo.Services;
 
 /// <summary>
-/// El servicio del CATÁLOGO de Nexo de cada conexo de una ruta (HU-021.9, #136). <c>CotizacionServiciosConexos.idServicioConexo</c> guarda
+/// El servicio del CATÁLOGO de Nexo de cada conexo de una ruta. <c>CotizacionServiciosConexos.idServicioConexo</c> guarda
 /// dos cosas distintas según de dónde vino el conexo:
 /// <list type="bullet">
-/// <item>capturado con la ruta (#132) o copiado a una <c>-vN</c>: el id del catálogo (<c>servicioConexoId</c>);</item>
-/// <item>agregado con <c>POST .../servicios-conexos</c> o importado desde Nexo (#124, #135): el id de la FILA de la cotización de Nexo
+/// <item>capturado con la ruta o copiado a una <c>-vN</c>: el id del catálogo (<c>servicioConexoId</c>);</item>
+/// <item>agregado con <c>POST .../servicios-conexos</c> o importado desde Nexo: el id de la FILA de la cotización de Nexo
 /// (<c>CotizacionConexoDto.id</c>), que no sirve para agregarlo a otra cotización.</item>
 /// </list>
-/// HU-014 (#188): desde el script 03 la fila guarda también el id del catálogo (<c>idServicioConexoCatalogo</c>). Si lo tiene, se usa ese
-/// id directamente (sin buscar por nombre). Las filas anteriores a #188 (en NULL) se resuelven como antes: primero por id en el catálogo
+/// La fila guarda también el id del catálogo (<c>idServicioConexoCatalogo</c>, script 03). Si lo tiene, se usa ese
+/// id directamente (sin buscar por nombre). Las filas con esa columna en NULL se resuelven primero por id en el catálogo
 /// (<see cref="IClsCostosConexosNexo"/>, con caché); si no está, por su nombre exacto en el catálogo de activos
 /// (<see cref="IClsServiciosConexosNexo.BuscarAsync"/>), solo si hay UNA coincidencia.
 /// </summary>
@@ -55,8 +55,8 @@ public sealed class clsResolutorConexosCatalogo(IClsCostosConexosNexo costos, IC
             return new clsResolucionConexosCatalogo(resueltos, sinCatalogo, null);
         }
 
-        // 1. Por id del catálogo. HU-014 (#188): si la fila lo guarda (idServicioConexoCatalogo, script 03) se usa ese y nunca se busca por
-        // nombre; si no (filas anteriores a #188), el id guardado, que en los capturados ya es el del catálogo. Si el lote falla, uno por
+        // 1. Por id del catálogo. Si la fila lo guarda (idServicioConexoCatalogo, script 03) se usa ese y nunca se busca por
+        // nombre; si no (columna en NULL), el id guardado, que en los capturados ya es el del catálogo. Si el lote falla, uno por
         // uno: el que está en la caché no depende de que el catálogo responda para los demás.
         var porId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase); // id guardado → id del catálogo a buscar
         foreach (var conexo in conexos)
@@ -116,7 +116,7 @@ public sealed class clsResolutorConexosCatalogo(IClsCostosConexosNexo costos, IC
 
         // 2. Por nombre exacto (una sola coincidencia activa): los que se guardaron con el id de la fila de Nexo. Si la búsqueda de un
         // nombre falla, solo sus conexos quedan sin catálogo.
-        // HU-014 (#188): uno que guarda el id del catálogo y el catálogo no lo tiene no se busca por nombre (queda irresoluble).
+        // Uno que guarda el id del catálogo y el catálogo no lo tiene no se busca por nombre (queda irresoluble).
         foreach (var grupo in conexos.Where(c => !conCatalogo.Contains(c.Id) && !resueltos.ContainsKey(c.Id) && !sinCatalogo.Contains(c.Id)
                                                  && !string.IsNullOrWhiteSpace(c.Nombre))
                      .GroupBy(c => c.Nombre!.Trim(), StringComparer.OrdinalIgnoreCase))

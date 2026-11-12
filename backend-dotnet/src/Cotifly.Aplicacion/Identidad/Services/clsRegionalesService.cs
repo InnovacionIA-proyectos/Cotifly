@@ -6,12 +6,12 @@ using Cotifly.Dominio.Comun;
 
 namespace Cotifly.Aplicacion.Identidad.Services;
 
-/// <summary>HU-037.3 (#211): respuesta de <c>GET /web/regionales</c> (esquema <c>Regionales</c>).</summary>
+/// <summary>Respuesta de <c>GET /web/regionales</c> (esquema <c>Regionales</c>).</summary>
 /// <param name="Regionales">Regionales visibles para el usuario, sin repetir y ordenadas (el gerente, solo la suya).</param>
 public sealed record clsRegionales(IReadOnlyList<string> Regionales);
 
 /// <summary>
-/// HU-037.3 (#211): <c>GET /web/regionales</c>, las regionales del selector del tablero y del listado regional. La regla (director: las de
+/// <c>GET /web/regionales</c>: las regionales del selector del tablero y del listado regional. La regla (director: las de
 /// todos los usuarios; gerente: la suya) es de <see cref="IClsRegionalUsuario.ListarRegionalesAsync"/>.
 /// </summary>
 public interface IClsRegionalesService

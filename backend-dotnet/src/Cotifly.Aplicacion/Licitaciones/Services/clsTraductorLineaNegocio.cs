@@ -20,7 +20,7 @@ public sealed record clsLineaNegocioTraducida(
 
 /// <summary>
 /// Traducción de una línea de negocio (el texto que devuelve NEXO en <c>aplicar-mapeo</c>, o el nombre de una línea de Cotifly) a la línea de
-/// negocio DE COTIFLY (ADR-029), con la misma regla de <c>normalizar-valores</c> (#255): en una licitación cada ruta lleva la línea de Cotifly
+/// negocio DE COTIFLY (ADR-029), con la misma regla de <c>normalizar-valores</c>: en una licitación cada ruta lleva la línea de Cotifly
 /// que tiene margen y a NEXO viaja su <c>mapeoLineasNexo</c>, así que el front nunca hace el mapeo inverso.
 /// </summary>
 /// <remarks>

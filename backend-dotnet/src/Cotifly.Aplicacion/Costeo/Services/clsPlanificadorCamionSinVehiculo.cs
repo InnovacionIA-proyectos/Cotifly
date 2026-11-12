@@ -5,7 +5,7 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Aplicacion.Costeo.Services;
 
 /// <summary>
-/// Camión de una ruta que no usa los vehículos del cubicador (HU-021.6; HU-021.5, #133; HU-032, #197): un solo camión con el VEHÍCULO
+/// Camión de una ruta que no usa los vehículos del cubicador: un solo camión con el VEHÍCULO
 /// ELEGIDO de la ruta (<c>tipo_vehiculo</c>/<c>carroceria</c>; sin vehículo si no trae, y entonces lo resuelve la Mesa de Costeo de Nexo) y
 /// el peso total de la ruta: el declarado o, si no hay, la suma de sus mercancías (<see cref="clsLineaSolicitudCosteo.SumaPesoPosiciones"/>).
 /// Lo usa <see cref="clsPlanificadorCamionesCubicador"/> para las rutas sin mercancías cubicables. Con
@@ -21,7 +21,7 @@ public sealed class clsPlanificadorCamionSinVehiculo : IClsPlanificadorCamiones
     }
 
     /// <summary>
-    /// El único camión, con <see cref="PesoTotal"/> y el vehículo elegido de la ruta tal cual (HU-032: validado en la captura); sin vehículo
+    /// El único camión, con <see cref="PesoTotal"/> y el vehículo elegido de la ruta tal cual (validado en la captura); sin vehículo
     /// ni carrocería si la ruta no los trae.
     /// </summary>
     public static IReadOnlyList<clsCamionPlaneado> Camiones(clsLineaSolicitudCosteo ruta) =>

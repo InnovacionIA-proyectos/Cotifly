@@ -6,7 +6,7 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Aplicacion.Costeo.Services;
 
 /// <summary>
-/// Única función de precio del costeo (ADR-018 §3, HU-013.7): la comparten el polling (<see cref="clsPrecioCosteoService"/>) y el
+/// Única función de precio del costeo (ADR-018 §3): la comparten el polling (<see cref="clsPrecioCosteoService"/>) y el
 /// ajuste de margen (<see cref="clsAjusteMargenCosteoService"/>). El costo de Nexo (siempre en pesos) pasa por
 /// <see cref="IClsPrecioService.Calcular"/> con el margen y el método; en otra moneda el precio se convierte con la
 /// <c>trmAplicada</c> FIJADA en la cotización (<see cref="IClsPrecioService.EnMoneda"/>), nunca con la TRM del día.

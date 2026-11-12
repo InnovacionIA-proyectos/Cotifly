@@ -21,7 +21,7 @@ public sealed class clsMaxIteracionesExcedidasException : Exception
 }
 
 /// <summary>
-/// HU-013.16 (#126): todos los modelos (el principal y los de <c>IA:Fallbacks</c>) fallaron por indisponibilidad (404 de ruta o
+/// Todos los modelos (el principal y los de <c>IA:Fallbacks</c>) fallaron por indisponibilidad (404 de ruta o
 /// modelo, 408, 5xx, red o tiempo agotado). El canal responde <c>clsTextosAgente.IaNoDisponible</c> con el código
 /// <c>IA_NO_DISPONIBLE</c>. Un 429 de todos no es esta excepción: se responde el texto del límite de peticiones.
 /// </summary>

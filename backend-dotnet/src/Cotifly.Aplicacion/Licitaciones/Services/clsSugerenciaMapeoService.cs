@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 namespace Cotifly.Aplicacion.Licitaciones.Services;
 
 /// <summary>
-/// HU-044.2 (#253): la propuesta de mapeo de columnas de una hoja (<c>POST /web/licitaciones/sugerir-mapeo</c>) y su paso previo, la
+/// La propuesta de mapeo de columnas de una hoja (<c>POST /web/licitaciones/sugerir-mapeo</c>) y su paso previo, la
 /// lectura con IA de un Excel de formato complejo (<c>POST /web/licitaciones/leer-estructura</c>). Cotifly no replica nada: es el puente
 /// hacia la importación inteligente de NEXO (<see cref="IClsImportacionExcelNexo"/>, ADR-028) y no guarda nada.
 /// </summary>
@@ -25,7 +25,7 @@ public interface IClsSugerenciaMapeoService
     /// <summary>
     /// Reenvía el Excel a <c>leer-estructura</c> de NEXO y devuelve su lectura sin alterar la <c>receta</c> ni las <c>tablas</c>. Antes de
     /// NEXO solo se valida el archivo (presente, tamaño y extensión, <see cref="clsArchivoExcel.ValidarArchivo"/>): Cotifly no abre el libro,
-    /// para no rechazar lo que NEXO sí lee (#277). Nunca se reintenta (cada llamada puede gastar IA).
+    /// para no rechazar lo que NEXO sí lee. Nunca se reintenta (cada llamada puede gastar IA).
     /// </summary>
     Task<clsResultado<clsLecturaEstructura>> LeerEstructuraAsync(
         Guid usuarioId, clsEntradaLeerEstructura entrada, CancellationToken cancellationToken = default);
@@ -86,13 +86,13 @@ public sealed class clsSugerenciaMapeoService(
             return new clsErrorDominio(clsCodigosError.EncabezadosRequeridos, MensajeEncabezadosRequeridos);
         }
 
-        // O1 (validador): el NIT se revisa antes que el límite de columnas, para que un NIT inválido no quede escondido en la hoja sin propuesta.
+        // El NIT se revisa antes que el límite de columnas, para que un NIT inválido no quede escondido en la hoja sin propuesta.
         if (NitInvalido(peticion.ClienteNit))
         {
             return new clsErrorDominio(clsCodigosError.ClienteNitInvalido, MensajeNitInvalido);
         }
 
-        // HU-044.9 (#292): antes de llamar a NEXO, Cotifly agrega las columnas derivadas (vehículo en el texto, contenedor con peso) con
+        // Antes de llamar a NEXO, Cotifly agrega las columnas derivadas (vehículo en el texto, contenedor con peso) con
         // nombre fijo al final. Se enriquece la muestra que de verdad viaja a NEXO (hasta 200 filas), para que la propuesta incluya esas
         // columnas y sus índices coincidan con los que agregará aplicar-mapeo. Un archivo sin esos textos vuelve con su misma firma.
         IReadOnlyList<IReadOnlyList<string>> muestra = [.. (peticion.Filas ?? []).Take(MaximoFilasMuestra)];
@@ -128,7 +128,7 @@ public sealed class clsSugerenciaMapeoService(
             return invalido;
         }
 
-        // Auditoría B7: el tope de NEXO es del envío completo. El archivo cabe solo, pero con la receta (hasta 60.000 caracteres) y las
+        // El tope de NEXO es del envío completo. El archivo cabe solo, pero con la receta (hasta 60.000 caracteres) y las
         // instrucciones puede no caber: se dice aquí con su propio código, sin llamar a NEXO y sin culpar al archivo.
         if (entrada.Archivo.Contenido.LongLength + Bytes(entrada.Receta) + Bytes(entrada.Instrucciones) + Bytes(entrada.NitCliente)
             > clsArchivoExcel.TamanoMaximoBytes)
@@ -144,7 +144,7 @@ public sealed class clsSugerenciaMapeoService(
             return lectura;
         }
 
-        // HU-044.7 (#290): cada tabla pasa por la misma detección de mercancías de analizar-excel (columna de mercancía, columna de código y
+        // Cada tabla pasa por la misma detección de mercancías de analizar-excel (columna de mercancía, columna de código y
         // el código sugerido por fila). La receta y el resto de la respuesta de NEXO no se tocan; filas_excel sigue null en las tablas.
         var registro = logger ?? (ILogger)Microsoft.Extensions.Logging.Abstractions.NullLogger<clsSugerenciaMapeoService>.Instance;
         var conMercancias = await clsDetectorMercanciaExcel.ConMercanciasAsync(lectura.Valor.Tablas, cubicador, registro, cancellationToken);

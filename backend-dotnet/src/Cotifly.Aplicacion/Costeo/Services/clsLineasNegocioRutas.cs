@@ -4,8 +4,8 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Aplicacion.Costeo.Services;
 
 /// <summary>
-/// Líneas de negocio de las rutas de una solicitud (HU-021.9, #136): cada ruta tiene la suya (decisión 8), así que el PDF, los textos y
-/// "Mis cotizaciones" ya no la leen de la cabecera. <see cref="NombresAsync"/> lee los nombres de <c>MargenesPolitica</c> una vez por
+/// Líneas de negocio de las rutas de una solicitud: cada ruta tiene la suya, así que el PDF, los textos y
+/// "Mis cotizaciones" no la leen de la cabecera. <see cref="NombresAsync"/> lee los nombres de <c>MargenesPolitica</c> una vez por
 /// línea distinta.
 /// </summary>
 public static class clsLineasNegocioRutas
