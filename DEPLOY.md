@@ -561,7 +561,7 @@ Los `IDROLES` de producción (comercial, gerente comercial y director) no son va
 | `Correo__MailSender__Remitente`, `__ModoRemitente`, `__DominiosRemitente` | no | Remitente corporativo, si el `From` es el comercial o el corporativo, y dominios aceptados como remitente | `notificaciones@boterosoto.com.co`, `comercial`, `boterosoto.com.co` | por defecto; TI revisa SPF/DMARC | no | TI / Backend |
 | `Correo__Proteccion__Modo` | no | `redirigir` manda todo al buzón de pruebas; `ninguno` entrega a los destinatarios reales (exige también `PermitirEnvioReal=true`) | `redirigir` | `redirigir` hasta salir en vivo; `ninguno` al salir, con SPF/DMARC revisados | no | Negocio / Backend |
 | `Correo__Proteccion__PermitirEnvioReal` | no | Segunda llave del envío real: con el correo habilitado, `Modo=ninguno` sin ella (o al revés) impide arrancar | `false` | `false` hasta salir en vivo; `true` al salir, junto con `Modo=ninguno` | no | Negocio / Backend |
-| `Correo__Proteccion__BuzonPruebas` | no | Buzón que recibe los correos redirigidos | vacío | por definir | no | Negocio |
+| `Correo__Proteccion__BuzonPruebas` | no | Buzón que recibe los correos redirigidos; obligatorio (un correo válido) con el correo habilitado y `Modo=redirigir`, o la API no arranca | vacío | por definir | no | Negocio |
 | `Correo__MaximoDestinatarios` | no | Tope de destinatarios entre para y cc (1 a 100) | `10` | por defecto | no | Backend |
 | `Correo__LogoUrl` | no | Logo del encabezado; URL pública | logo de `www.boterosoto.com.co` | por defecto | no | Backend |
 | `Correo__Seguimiento__IntervaloTickSegundos`, `__IntervaloConsultaSegundos`, `__EdadMaximaHoras`, `__Lote`, `__ReclamoSegundos` | no | Worker que consulta en MailSender el estado de cada correo | `15`, `30`, `24`, `50`, `60` | por defecto | no | Backend |
@@ -995,7 +995,9 @@ Internet / red corporativa
 
 **El overlay VXLAN entre el manager y el worker funciona**: el diagnóstico de HU-006.1
 ([docs/infra/HU-006.1-diagnostico-tls.md](docs/infra/HU-006.1-diagnostico-tls.md)) comprobó que Traefik, en el manager,
-llega por `dokploy-network` a servicios que corren en el worker. Lo que falta es **TLS** (HU-006.2): los dominios del
+llega por `dokploy-network` a servicios que corren en el worker. Queda un riesgo abierto del mismo diagnóstico (§3): la
+unidad `vxlan-offload-fix` del manager nunca ha corrido en un arranque; tras reiniciar el manager hay que comprobar que el
+overlay sigue cruzando entre nodos antes de descartar otra causa de un 502 o 504. Lo que falta es **TLS** (HU-006.2): los dominios del
 clúster son `*.10-10-40-17.sslip.io`, que apuntan a la IP privada `10.10.40.17`, y Traefik pide los certificados a
 Let's Encrypt con el reto HTTP-01, que exige un dominio que resuelva a una IP pública alcanzable desde internet. Let's
 Encrypt no valida esos nombres, así que el router `websecure` nunca obtiene un certificado válido. La solución
