@@ -261,6 +261,9 @@ services:
       Pdf__TiempoEsperaRenderSegundos: ${Pdf__TiempoEsperaRenderSegundos:-30}
       # Fijo (no se lee del entorno): la cotización legada del chat está retirada (HU-021.6); solo las pruebas la encienden.
       Pdf__PermitirCotizacionChat: "false"
+      # #261 (HU-046, política NOGE0076): texto de seguros de la propuesta (PDF y correo). Vacío por defecto: Jurídica carga el texto oficial
+      # en Dokploy; el marcador provisional del código es solo para dev/QA y nunca sale a un cliente hasta que esta variable tenga el oficial.
+      Pdf__TextoSeguros: ${Pdf__TextoSeguros:-}
 
       # Correo (HU-033, #199, ADR-023): deshabilitado por defecto; sale por el microservicio interno MailSender (URL solo en Dokploy).
       Correo__Habilitado: ${Correo__Habilitado:-false}

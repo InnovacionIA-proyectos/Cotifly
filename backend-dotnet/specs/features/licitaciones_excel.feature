@@ -261,3 +261,13 @@ Característica: Licitaciones desde Excel
     Cuando "ana" lista los formatos de lectura sin el NIT del cliente
     Entonces la respuesta tiene el estado 400 con el código de negocio "CLIENTE_REQUERIDO"
     Y Nexo no recibió la consulta de los formatos
+
+  # HU-044.3 (#254) — Con el mapeo confirmado, NEXO convierte TODAS las filas (toneladas a kg, coma decimal) y Cotifly las traduce a líneas
+  # de licitación con los mismos nombres del alta, más fila_excel y linea_nexo. Una línea de negocio sin equivalencia en Cotifly
+  # («Licitaciones», que es del catálogo de NEXO) vuelve en lineas[] (sin línea de negocio) y además en errores[] con el código nuevo.
+  Escenario: Aplicar el mapeo traduce las filas y marca la línea de negocio sin equivalencia
+    Cuando "ana" aplica el mapeo "origen,destino,peso:peso_toneladas_a_kg,lineaNegocio" del cliente "900555111" desde la fila 2 a las filas "Buenaventura;Bogotá;24,5;Nacional|Cali;Medellín;8;Licitaciones"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "MapeoAplicado" del contrato
+    Y la línea de la fila 0 va de "Buenaventura" a "Bogotá" con 24500 kg y la línea de negocio "Nacional"
+    Y la línea de la fila 1 va de "Cali" a "Medellín" con 8000 kg sin línea de negocio y con la línea de NEXO "Licitaciones"
+    Y la fila 3 del Excel trae el error "LINEA_NEGOCIO_SIN_EQUIVALENCIA" en el campo "linea_negocio"

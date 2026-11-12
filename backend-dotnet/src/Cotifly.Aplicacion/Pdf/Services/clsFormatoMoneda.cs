@@ -38,6 +38,19 @@ public static class clsFormatoMoneda
     }
 
     /// <summary>
+    /// HU-045.3 (#265, B1, decisión del usuario): como <see cref="Formatear"/>, pero en pesos un monto con centavos (el seguro de la mercancía
+    /// se guarda en centavos, y con él el precio de la ruta y los totales) se muestra con sus 2 decimales (<c>100.40</c> → <c>$100,40</c>), para
+    /// que lo impreso cuadre exacto con lo guardado. Sin centavos, igual que <see cref="Formatear"/> (<c>$1.250.000</c>).
+    /// </summary>
+    public static string FormatearExacto(decimal? valor, string? moneda = null) =>
+        valor is { } monto && !string.Equals(moneda?.Trim(), "USD", StringComparison.OrdinalIgnoreCase) && TieneCentavos(monto)
+            ? PrefijoPesos + ConDecimales(monto)
+            : Formatear(valor, moneda);
+
+    /// <summary>¿El monto tiene centavos (a 2 decimales)?</summary>
+    public static bool TieneCentavos(decimal monto) => Math.Round(monto, 2, MidpointRounding.ToEven) % 1m != 0m;
+
+    /// <summary>
     /// TRM (pesos por dólar) con su escala real, sin rellenar ni recortar (hasta 4 decimales, la de <c>trmAplicada</c>): <c>3306.86</c> →
     /// <c>$3.306,86</c>, <c>3306.8612</c> → <c>$3.306,8612</c>, <c>950</c> → <c>$950</c> (HU-012.3).
     /// </summary>

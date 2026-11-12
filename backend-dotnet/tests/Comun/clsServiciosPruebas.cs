@@ -34,6 +34,9 @@ public static class clsServiciosPruebas
             // HU-021.6: las pruebas del PDF legado (cotización "del chat") lo encienden; en producción está apagado.
             ["Pdf:PermitirCotizacionChat"] = "true",
 
+            // #261 (HU-046): el texto de seguros de la propuesta va vacío por defecto en las pruebas (como los ambientes): quien lo prueba lo fija.
+            ["Pdf:TextoSeguros"] = string.Empty,
+
             // La TRM (HU-012.1) nunca sale a la red: sin un manejador falso, las dos fuentes apuntan a hosts de prueba inexistentes.
             ["Trm:Url"] = clsTrmFalso.Url,
             ["Trm:UrlDolarApi"] = clsDolarApiFalso.Url,
