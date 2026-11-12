@@ -5,7 +5,7 @@ using Cotifly.Dominio.Margen;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// Lectura del costeo de Nexo camión por camión (HU-021.7, #134): N camiones por ruta con las líneas de Nexo en cualquier orden, empates
+/// Lectura del costeo de Nexo camión por camión: N camiones por ruta con las líneas de Nexo en cualquier orden, empates
 /// de camiones idénticos, el vehículo que pone la Mesa, el camión descartado que no se lee, los conexos que vuelven a su ruta y la nota
 /// del envío para la Mesa.
 /// </summary>
@@ -111,7 +111,7 @@ public sealed class clsCosteoPorCamionTests
     }
 
     /// <summary>
-    /// D2 (E2E 2026-10-16, ajuste del 2026-10-19): Nexo devolvió la carrocería del C2 como <c>Furgón</c>. La misma sigla escrita de otra
+    /// Nexo devuelve la carrocería del C2 como <c>Furgón</c>. La misma sigla escrita de otra
     /// forma no es un cambio: el camión del cubicador conserva su código canónico.
     /// </summary>
     [Fact]
@@ -133,7 +133,7 @@ public sealed class clsCosteoPorCamionTests
         c2.CostoFlete.Should().Be(500_000m, "el costo sí se toma de Nexo");
     }
 
-    /// <summary>D2 (decisión del 2026-10-19): "si la Mesa de Costeo realiza un cambio, nos acogemos a dichos cambios, incluido el tipo de vehículo".</summary>
+    /// <summary>Si la Mesa de Costeo cambia el camión, Cotifly adopta el cambio, incluido el tipo de vehículo.</summary>
     [Fact]
     public void D2_SiLaMesaCambiaElVehiculoDeUnCamionDelCubicadorSeAdopta()
     {
@@ -149,7 +149,7 @@ public sealed class clsCosteoPorCamionTests
     }
 
     /// <summary>
-    /// D2, validación (punto b): los porcentajes de llenado del cubicador se calcularon para su vehículo. Si la Mesa cambia de verdad el
+    /// Los porcentajes de llenado del cubicador se calcularon para su vehículo. Si la Mesa cambia de verdad el
     /// vehículo o la carrocería, quedan en <c>null</c> (no se muestra un dato falso); el volumen y el peso de la carga se conservan. Un
     /// cambio solo de escritura o llenar un camión vacío no los toca, y un ciclo siguiente con lo mismo no vuelve a cambiar nada.
     /// </summary>
@@ -223,7 +223,7 @@ public sealed class clsCosteoPorCamionTests
     }
 
     /// <summary>
-    /// D2: el cruce por <c>grupoRutaId</c> + <c>idRecomendacionVehiculo</c> no depende del vehículo, así que un camión al que la Mesa le
+    /// El cruce por <c>grupoRutaId</c> + <c>idRecomendacionVehiculo</c> no depende del vehículo, así que un camión al que la Mesa le
     /// cambió el vehículo (antes o después de adoptarlo) sigue emparejado con su línea.
     /// </summary>
     [Fact]
@@ -251,7 +251,7 @@ public sealed class clsCosteoPorCamionTests
             .WhoseValue.Should().Be("N-x");
     }
 
-    /// <summary>D2: el PDF y el Excel muestran el nombre del catálogo aunque la Mesa haya dejado el nombre o el código escrito distinto.</summary>
+    /// <summary>El PDF y el Excel muestran el nombre del catálogo aunque la Mesa haya dejado el nombre o el código escrito distinto.</summary>
     [Theory]
     [InlineData("ESTACAS", "Estacas")]
     [InlineData("Estacas", "Estacas")]
@@ -286,7 +286,7 @@ public sealed class clsCosteoPorCamionTests
     [Fact]
     public void SiLaMesaBorraLaLineaEnNexoElCamionQuedaDescartadoYNoFrenaNiRecibeConexos()
     {
-        // #134: un camión cuya línea ya no está en la solicitud de Nexo no se queda para siempre en pendiente_costeo: pasa a descartada,
+        // Un camión cuya línea ya no está en la solicitud de Nexo no se queda para siempre en pendiente_costeo: pasa a descartada,
         // sin línea ni costos de Nexo, y los conexos de la ruta van al siguiente camión.
         var cotizacion = Ruta(("3S3", 10_000m), ("2S2", 8_000m));
         Aplicar(cotizacion, Foto("EnCosteo", [("3S3", 10_000m, "N-a", 1_000_000m), ("2S2", 8_000m, "N-b", 1_550_000m)]));
@@ -355,12 +355,12 @@ public sealed class clsCosteoPorCamionTests
     }
 
     /// <summary>
-    /// HU-031.1 (#194): el camión del cubicador guarda <c>C2</c> y viajó como <c>2</c> (traducido por el alias de Nexo). Con la
+    /// El camión del cubicador guarda <c>C2</c> y viajó como <c>2</c> (traducido por el alias de Nexo). Con la
     /// equivalencia que registró el envío se empareja con la línea de Nexo que dice <c>2</c>, conserva su <c>C2</c> y sus porcentajes de
     /// llenado (no es un cambio de la Mesa) y las lecturas siguientes no cambian nada (sin oscilación).
     /// </summary>
     [Fact]
-    public void HU0311_ElCamionTraducidoPorAliasSeEmparejaYNoOscila()
+    public void ElCamionTraducidoPorAliasSeEmparejaYNoOscila()
     {
         var cotizacion = Ruta(("3S3", 10_000m));
         var camion = cotizacion.PrimeraRuta!.AgregarVehiculo(new clsCamionPlaneado("C2", null, 4_000m, Guid.NewGuid(), 22.5m, 81.25m, 47.06m));
@@ -385,7 +385,7 @@ public sealed class clsCosteoPorCamionTests
     }
 
     [Fact]
-    public void HU0311_SinLaEquivalenciaElCamionTraducidoNoSeEmparejaPorContenido()
+    public void SinLaEquivalenciaElCamionTraducidoNoSeEmparejaPorContenido()
     {
         // Lo que pasaría sin registrar la traducción: C2 contra 2 es una contradicción y el camión queda sin asociar.
         var cotizacion = Ruta(("3S3", 10_000m));
@@ -397,7 +397,7 @@ public sealed class clsCosteoPorCamionTests
     }
 
     [Fact]
-    public void HU0311_SiLaMesaCambiaDeVerdadElVehiculoTraducidoSeAdopta()
+    public void SiLaMesaCambiaDeVerdadElVehiculoTraducidoSeAdopta()
     {
         var cotizacion = Ruta(("3S3", 10_000m));
         var camion = cotizacion.PrimeraRuta!.AgregarVehiculo(new clsCamionPlaneado("C2", null, 4_000m, Guid.NewGuid(), 22.5m, 81.25m, 47.06m));

@@ -14,7 +14,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Web;
 
 /// <summary>
-/// Tablero de métricas (HU-010.1, ADR-016): rol revalidado, periodo por defecto y validado en fechas de Bogotá, alcance del
+/// Tablero de métricas (ADR-016): rol revalidado, periodo por defecto y validado en fechas de Bogotá, alcance del
 /// comercial y del gerente (regional resuelta, filtro por comercial de la regional, 403/404/409/503).
 /// </summary>
 public sealed class clsTableroMetricasServiceTests
@@ -29,7 +29,7 @@ public sealed class clsTableroMetricasServiceTests
 
     public clsTableroMetricasServiceTests()
     {
-        // HU-037.3 (#211): la regla real del alcance por rol sobre la regional simulada.
+        // La regla real del alcance por rol sobre la regional simulada.
         _regionales = clsRegionalSustituta.Crear(_usuarios);
     }
 
@@ -69,7 +69,6 @@ public sealed class clsTableroMetricasServiceTests
     [Fact]
     public async Task ConAnioElPeriodoEsElAnioCompletoEnBogotaAunqueTermineEnElFuturo()
     {
-        // HU-010.5 (#187).
         var gerente = PrepararRegional().Gerente;
         SinFilas();
 
@@ -245,7 +244,7 @@ public sealed class clsTableroMetricasServiceTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task HU0341_LaSerieDeLaRegionalTraeGananciasYCosteoPorMesYCuadraConLosIndicadores(bool filtrarPorLuis)
+    public async Task LaSerieDeLaRegionalTraeGananciasYCosteoPorMesYCuadraConLosIndicadores(bool filtrarPorLuis)
     {
         var (gerente, ana, luis) = PrepararRegional();
         var abril = new DateTimeOffset(2026, 4, 2, 12, 0, 0, _bogota);
@@ -265,9 +264,9 @@ public sealed class clsTableroMetricasServiceTests
     }
 
     [Fact]
-    public async Task HU0341_ConMesLaSerieTieneSoloEseMesYCuadraConLosIndicadores()
+    public async Task ConMesLaSerieTieneSoloEseMesYCuadraConLosIndicadores()
     {
-        // HU-010.5 + #201: anio=2026&mes=3 -> un solo punto, igual a los indicadores del periodo.
+        // anio=2026&mes=3 -> un solo punto, igual a los indicadores del periodo.
         var (gerente, ana, luis) = PrepararRegional();
         _metricas.ListarCotizacionesAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
             .Returns(new clsDatosMetricas([Fila(ana.Id, ganada: true), Fila(ana.Id, ganada: false), Fila(luis.Id, ganada: true)], false));
@@ -282,7 +281,7 @@ public sealed class clsTableroMetricasServiceTests
     }
 
     [Fact]
-    public async Task HU0341_UnComercialSinCotizacionesTieneTodosLosMesesEnCero()
+    public async Task UnComercialSinCotizacionesTieneTodosLosMesesEnCero()
     {
         var comercial = Usuario(RolInterno.Comercial);
         SinFilas();
@@ -309,7 +308,7 @@ public sealed class clsTableroMetricasServiceTests
     [Fact]
     public async Task ElDirectorSinRegionalVeATodosYFiltraUnComercialDeCualquierRegional()
     {
-        // HU-037.3 (#211): todas las regionales; regional y fuente en null.
+        // Todas las regionales; regional y fuente en null.
         var dora = UsuarioWeb("dora", "Dora");
         var ana = UsuarioWeb("ana", "Ana");
         var marta = clsUsuarioWeb.Crear("marta", "Marta", null, "Norte", DateTimeOffset.UtcNow).Valor;
@@ -342,7 +341,7 @@ public sealed class clsTableroMetricasServiceTests
     [Fact]
     public async Task ElGerenteQuePideSuRegionalConOtraEscrituraNoFiltraUnComercialDeOtraRegional()
     {
-        // Validación HU-037.3: ?regional= con la suya no amplía el alcance; un usuario_id de otra regional sigue siendo 404.
+        // ?regional= con la suya no amplía el alcance; un usuario_id de otra regional sigue siendo 404.
         var (gerente, _, _) = PrepararRegional();
         var marta = clsUsuarioWeb.Crear("marta", "Marta", null, "Norte", DateTimeOffset.UtcNow).Valor;
 
@@ -356,7 +355,7 @@ public sealed class clsTableroMetricasServiceTests
     [Fact]
     public async Task ElDirectorQueEligeUnaRegionalNoFiltraUnComercialDeOtra()
     {
-        // Validación HU-037.3: con ?regional= el alcance del director es esa regional; un comercial de otra es 404.
+        // Con ?regional= el alcance del director es esa regional; un comercial de otra es 404.
         PrepararRegional();
         var dora = UsuarioWeb("dora", "Dora");
         var marta = clsUsuarioWeb.Crear("marta", "Marta", null, "Norte", DateTimeOffset.UtcNow).Valor;

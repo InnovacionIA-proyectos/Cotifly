@@ -5,7 +5,7 @@ using Cotifly.Dominio.Cotizaciones;
 
 namespace Cotifly.Aplicacion.Tests.Licitaciones;
 
-/// <summary>Reporte por fila de una licitación (HU-011.2, <c>docs/conexion_nexo/HU-011-formato-excel-licitacion.md</c> §5).</summary>
+/// <summary>Reporte por fila de una licitación (<c>docs/conexion_nexo/HU-011-formato-excel-licitacion.md</c> §5).</summary>
 public sealed class clsValidadorLicitacionTests
 {
     private static readonly clsArchivoSubido _archivo = new("pliego.xlsx", [1]);
@@ -47,11 +47,11 @@ public sealed class clsValidadorLicitacionTests
         var errores = clsValidadorLicitacion.Validar(Entrada([Linea(null), Linea(1), Linea(1), Linea(-1), Linea(9)], _archivo, hoja: null), filasEnHoja: 5);
 
         errores.Should().Contain(e => e.Campo == "hoja" && e.Codigo == clsCodigosLineaSolicitud.CampoRequerido);
-        // HU-044.10 (#293, parte 2): la línea a mano (fila null, índice 0) ya NO es error; sí la repetida, la negativa y la fuera de la hoja.
+        // La línea a mano (fila null, índice 0) NO es error; sí la repetida, la negativa y la fuera de la hoja.
         errores.Where(e => e.Codigo == clsCodigosLineaSolicitud.FilaInvalida).Select(e => e.Indice).Should().Equal(2, 3, 4);
     }
 
-    // HU-044.10 (#293, parte 2): con archivo, una línea con fila null es una línea agregada a mano (válida). La unicidad ignora los null.
+    // Con archivo, una línea con fila null es una línea agregada a mano (válida). La unicidad ignora los null.
     [Fact]
     public void ConArchivoUnaLineaConFilaNullEsUnaLineaAMano() =>
         clsValidadorLicitacion.Validar(Entrada([Linea(0), Linea(null), Linea(1)], _archivo), filasEnHoja: 2).Should().BeEmpty();
@@ -73,8 +73,7 @@ public sealed class clsValidadorLicitacionTests
         error.Mensaje.Should().Be("La línea 2 está vacía.");
     }
 
-    // HU-013.15 (#124): los mensajes usan la numeración del Excel del comercial (o la línea, base 1), nunca el índice 'fila' (base 0).
-    // Hallazgo E2E: "La fila 3 no existe (3 filas con datos)" con fila = 3 (base 0) contaba desde 1 en el mensaje.
+    // Los mensajes usan la numeración del Excel del comercial (o la línea, base 1), nunca el índice 'fila' (base 0).
     private static readonly int[] _filasExcel = [4, 5, 7];
 
     [Fact]
@@ -102,7 +101,7 @@ public sealed class clsValidadorLicitacionTests
     {
         var errores = clsValidadorLicitacion.Validar(Entrada([Linea(0), Linea(null), Linea(-1)], _archivo), filasEnHoja: 3, _filasExcel);
 
-        // HU-044.10 (#293): la línea 2 (fila null) es una línea a mano válida; solo la negativa de la línea 3 queda.
+        // La línea 2 (fila null) es una línea a mano válida; solo la negativa de la línea 3 queda.
         errores.Select(e => e.Mensaje).Should().Equal("La línea 3 trae una 'fila' negativa.");
     }
 
@@ -121,7 +120,7 @@ public sealed class clsValidadorLicitacionTests
         clsValidadorLicitacion.ConFilaExcel(errores, null).Should().BeSameAs(errores, "sin archivo no hay fila de Excel");
     }
 
-    // Auditor de #124: filas_excel se compara con el total real de la hoja (Nexo corta 'filas' en 1000), no con 'filas'.
+    // filas_excel se compara con el total real de la hoja (Nexo corta 'filas' en 1000), no con 'filas'.
     [Theory]
     [InlineData(3, 3, 3, true)]
     [InlineData(4, 3, 3, false)]
@@ -163,7 +162,7 @@ public sealed class clsValidadorLicitacionTests
     public void SinArchivoLaFilaEsOpcional() =>
         clsValidadorLicitacion.Validar(Entrada([Linea(null), Linea(null)], hoja: null), filasEnHoja: null).Should().BeEmpty();
 
-    // HU-044.7 (#290): con leer_estructura la 'fila' es el índice dentro de la tabla (entrada.Hoja = nombre de la tabla); es obligatoria y
+    // Con leer_estructura la 'fila' es el índice dentro de la tabla (entrada.Hoja = nombre de la tabla); es obligatoria y
     // única, NO hay tope por la hoja (filasEnHoja llega null porque no se relee) y los mensajes nombran «línea N de la tabla X».
     private static clsEntradaLicitacion LeerEstructura(IReadOnlyList<clsLineaLicitacionEntrada> lineas, clsArchivoSubido? archivo = null, string? tabla = "Rutas 2026") =>
         Entrada(lineas, archivo, hoja: tabla) with { OrigenLectura = clsOrigenLectura.LeerEstructura };
@@ -180,13 +179,13 @@ public sealed class clsValidadorLicitacionTests
     {
         var errores = clsValidadorLicitacion.Validar(LeerEstructura([Linea(null), Linea(1), Linea(1), Linea(-1)], _archivo), filasEnHoja: null);
 
-        // HU-044.10 (#293, parte 2): también con leer_estructura la línea 1 (fila null) es una línea a mano válida; quedan la repetida y la negativa.
+        // También con leer_estructura la línea 1 (fila null) es una línea a mano válida; quedan la repetida y la negativa.
         errores.Where(e => e.Codigo == clsCodigosLineaSolicitud.FilaInvalida).Select(e => e.Indice).Should().Equal(2, 3);
         errores.Select(e => e.Mensaje).Should().Contain("La línea 3 de la tabla 'Rutas 2026' repite la 'fila' 1 de otra línea.")
             .And.Contain("La línea 4 de la tabla 'Rutas 2026' trae una 'fila' negativa.");
     }
 
-    // HU-044.10 (#293, parte 2): una línea a mano (fila null) también con leer_estructura; sus errores dicen «La línea N» (no «de la tabla»).
+    // Una línea a mano (fila null) también con leer_estructura; sus errores dicen «La línea N» (no «de la tabla»).
     [Fact]
     public void ConLeerEstructuraUnaLineaAManoVaciaDiceLaLineaNSinLaTabla()
     {

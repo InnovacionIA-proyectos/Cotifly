@@ -4,7 +4,7 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
 /// <summary>
-/// Captura por rutas (HU-021.6, #132): reglas de una captura nueva (municipios con id, mercancías con su tipo) y
+/// Captura por rutas: reglas de una captura nueva (municipios con id, mercancías con su tipo) y
 /// <see cref="clsCotizacionSolicitud.RegistrarCaptura"/> (rutas con su línea de negocio, camiones del planificador, conexos con el costo de
 /// Nexo y ciudades del contenedor por id + nombre).
 /// </summary>
@@ -36,7 +36,7 @@ public sealed class clsCapturaRutasTests
             ("destino_municipio_id", clsCodigosLineaSolicitud.CampoRequerido),
             ("ciudad_devolucion_municipio_id", clsCodigosLineaSolicitud.CampoRequerido),
             ("ciudad_levante_municipio_id", clsCodigosLineaSolicitud.CampoRequerido));
-        // HU-023.3: el codigo_mercancia solo se exige con el cubicador configurado (lo valida la captura, no la línea).
+        // El codigo_mercancia solo se exige con el cubicador configurado (lo valida la captura, no la línea).
     }
 
     [Fact]
@@ -92,7 +92,7 @@ public sealed class clsCapturaRutasTests
     [Fact]
     public void RegistrarCapturaUsaElIdDeRutaQueYaConoceElCubicadorYGuardaLaRecomendacionDeCadaCamion()
     {
-        // HU-021.5 (#133): el id de la ruta viaja al cubicador (IdLineaSolicitud) antes de guardar, así que la ruta nace con él.
+        // El id de la ruta viaja al cubicador (IdLineaSolicitud) antes de guardar, así que la ruta nace con él.
         var rutaId = Guid.NewGuid();
         var recomendacion = Guid.NewGuid();
 
@@ -110,7 +110,7 @@ public sealed class clsCapturaRutasTests
     }
 
     [Fact]
-    public void HU014_ReemplazarLosCamionesLosVuelveANumerarDesdeUnoYUnoAgregadoVaDespuesDelUltimo()
+    public void ReemplazarLosCamionesLosVuelveANumerarDesdeUnoYUnoAgregadoVaDespuesDelUltimo()
     {
         var ruta = clsCotizacionMuestra.Cabecera().RegistrarCaptura(clsSolicitudCosteoMuestra.CrearCaptura().Encabezado,
         [
@@ -124,7 +124,7 @@ public sealed class clsCapturaRutasTests
     }
 
     [Fact]
-    public void HU014_EnOrdenPoneLosNumeradosPorSuNumeroYDespuesLosQueNoTienenOrdenVehiculo()
+    public void EnOrdenPoneLosNumeradosPorSuNumeroYDespuesLosQueNoTienenOrdenVehiculo()
     {
         // Los numerados primero, por su número aunque el id diga otra cosa; las filas sin ordenVehiculo después, por createdAt.
         var linea = Guid.NewGuid();

@@ -4,7 +4,7 @@ using Cotifly.Dominio.Margen;
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
 /// <summary>
-/// Derivación de <c>estado_costeo</c> (HU-005.7, ADR-015 §4): la misma regla de la bandeja de Nexo, que cruza las líneas de la
+/// Derivación de <c>estado_costeo</c> (ADR-015 §4): la misma regla de la bandeja de Nexo, que cruza las líneas de la
 /// solicitud contra las líneas de la cotización por <c>LineaSolicitudId</c>. Y las transiciones del polling en la cotización.
 /// </summary>
 public sealed class clsDerivacionEstadoCosteoTests
@@ -108,7 +108,7 @@ public sealed class clsDerivacionEstadoCosteoTests
     [Fact]
     public void UnaEntregadaSinPrecioNiPdfQuedaMarcadaParaRelecturaHastaQueTengaPrecio()
     {
-        // HU-013.14 (ADR-018 §17): el rastro del resultado registrado antes de leer el costeo.
+        // ADR-018 §17: el rastro del resultado registrado antes de leer el costeo.
         var cotizacion = Enviada();
         cotizacion.EntregadaSinPrecio.Should().BeFalse("pendiente_costeo todavía no es entregada");
 
@@ -132,7 +132,7 @@ public sealed class clsDerivacionEstadoCosteoTests
     [Fact]
     public void LaPerdidaSinCosteoQuedaSoloEnCotiflyDetieneElPollingYNoSeRepite()
     {
-        // HU-013.17 (#127): el cliente desistió antes del costeo de Nexo.
+        // El cliente desistió antes del costeo de Nexo.
         var cotizacion = Enviada();
         cotizacion.AdmitePerdidaSinCosteo.Should().BeTrue();
 
@@ -163,7 +163,7 @@ public sealed class clsDerivacionEstadoCosteoTests
         return cotizacion;
     }
 
-    /// <summary>Como el polling (HU-021): primero el estado de cada camión, después la solicitud resume a sus rutas.</summary>
+    /// <summary>Como el polling: primero el estado de cada camión, después la solicitud resume a sus rutas.</summary>
     private static bool Consultar(clsCotizacionSolicitud cotizacion, EstadoCosteo estado, string? cotizacionNexoId, DateTimeOffset? siguiente)
     {
         foreach (var ruta in cotizacion.Rutas)

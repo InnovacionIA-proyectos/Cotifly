@@ -4,8 +4,8 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
 /// <summary>
-/// HU-045.3 (#265, ADR-032 §9): las rutas con el seguro marcado pero sin valor de la mercancía (la edición quitó el valor: el check queda
-/// sin tasa ni costo). Decisión del usuario del 2026-11-09: se avisan, no se bloquean.
+/// ADR-032 §9: las rutas con el seguro marcado pero sin valor de la mercancía (la edición quitó el valor: el check queda
+/// sin tasa ni costo) se avisan, no se bloquean.
 /// </summary>
 public sealed class clsSeguroEntregaTests
 {

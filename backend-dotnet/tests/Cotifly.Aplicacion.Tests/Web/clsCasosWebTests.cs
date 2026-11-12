@@ -179,7 +179,7 @@ public sealed class clsCasosWebTests
     [Fact]
     public async Task ElDirectorDescargaElPdfDeCualquierRegionalAunqueLaFuenteEsteCaidaYQuedaAuditado()
     {
-        // HU-037.3 (#211): el director no tiene alcance regional que comprobar.
+        // El director no tiene alcance regional que comprobar.
         var (director, _) = Registrar("director", null, RolInterno.Director);
         var (_, dueno) = Registrar("comercial.norte", "Norte", RolInterno.Comercial);
         _directorio.Configurado.Returns(true);

@@ -5,7 +5,7 @@ using Cotifly.Aplicacion.Licitaciones.Services;
 namespace Cotifly.Aplicacion.Tests.Licitaciones;
 
 /// <summary>
-/// HU-023.5 (#160): el código de mercancía de cada fila del análisis del Excel: la columna de la mercancía y la del código por su
+/// El código de mercancía de cada fila del análisis del Excel: la columna de la mercancía y la del código por su
 /// encabezado (sin tildes ni mayúsculas), la sugerencia por parecido (con tildes, mayúsculas y sin coincidencia) y la columna de código
 /// usada tal cual.
 /// </summary>

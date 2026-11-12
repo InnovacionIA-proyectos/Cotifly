@@ -15,7 +15,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// HU-036.4 (#208): con la cotización finalizada el polling NO cambia el precio guardado (mismo mecanismo que el PDF generado, ADR-015 §5):
+/// Con la cotización finalizada el polling NO cambia el precio guardado (mismo mecanismo que el PDF generado, ADR-015 §5):
 /// el <c>estado_costeo</c> sigue avanzando con Nexo, lo que trajo Nexo se audita (<c>costeo_nexo_precio_congelado</c>, una vez por aviso) y
 /// <c>motivoEstadoCosteo</c> dice qué rutas cambiaron, sin montos.
 /// </summary>
@@ -53,9 +53,9 @@ public sealed class clsPrecioCongeladoFinalizadaTests
     }
 
     [Fact]
-    public void Hu0432_UnaFinalizadaAntesDelCambioConConexosNoSeRecalculaConLaFormulaNueva()
+    public void UnaFinalizadaConLaFormulaAnteriorDeConexosNoSeRecalculaConLaNueva()
     {
-        // HU-043.2 (#251): la cotización se finalizó con la fórmula anterior ((flete + conexos) con margen); Nexo ya manda la venta de los
+        // La cotización se finalizó con la fórmula anterior ((flete + conexos) con margen); Nexo ya manda la venta de los
         // conexos. El polling no la recalcula: conserva su precio y sus costos.
         var cotizacion = clsCotizacionMuestra.LicitacionCosteada([2_000_000m], usuarioId: _ana, tipo: TipoSolicitud.Spot);
         clsCotizacionMuestra.ConConexo(cotizacion, "CX-1", "Cargue", 85_000m);
@@ -157,7 +157,7 @@ public sealed class clsPrecioCongeladoFinalizadaTests
         cotizacion.PrecioFinal.Should().Be(precio);
     }
 
-    // ------------------------------------------------------------------ Validación HU-036: el aviso se quita y la ruta rechazada después
+    // ------------------------------------------------------------------ El aviso se quita y la ruta rechazada después
 
     [Fact]
     public void SiNexoVuelveAlCostoFinalizadoElAvisoSeQuitaUnaSolaVez()
@@ -210,7 +210,7 @@ public sealed class clsPrecioCongeladoFinalizadaTests
         clsCosteoCotizacionService.ValidarTotal(cotizacion, "COP").Should().BeNull();
     }
 
-    // ------------------------------------------------------------------ Integración 1027: HU-039.1 (#218) con el precio congelado
+    // ------------------------------------------------------------------ Costo bruto de la ruta con el precio congelado
 
     [Fact]
     public void ConLaCotizacionFinalizadaElCostoBrutoDeLaRutaEsElGuardadoYNoElNuevoDeNexo()

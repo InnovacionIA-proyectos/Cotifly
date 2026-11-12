@@ -7,7 +7,7 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Aplicacion.Tests.Licitaciones;
 
 /// <summary>
-/// HU-044.10 (#293, parte 1): <c>origen_lectura</c> en la vista de la licitación (<see cref="clsLicitacionService.Vista"/>): <c>null</c> sin
+/// <c>origen_lectura</c> en la vista de la licitación (<see cref="clsLicitacionService.Vista"/>): <c>null</c> sin
 /// archivo, <c>leer_estructura</c> si lo leyó la IA de NEXO y <c>analizar_excel</c> si el archivo no guardó el valor (anterior al script 22).
 /// </summary>
 public sealed class clsLicitacionLeidaConIaTests

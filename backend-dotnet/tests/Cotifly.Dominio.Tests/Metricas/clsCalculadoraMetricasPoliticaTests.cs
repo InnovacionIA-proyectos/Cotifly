@@ -3,7 +3,7 @@ using Cotifly.Dominio.Metricas;
 namespace Cotifly.Dominio.Tests.Metricas;
 
 /// <summary>
-/// HU-016.1 (#154, parte B; decisiones P3 y P4 del 2026-10-27): el margen aplicado se compara con la política de las MISMAS rutas
+/// El margen aplicado se compara con la política de las MISMAS rutas
 /// (<see cref="clsRutaMetrica.MargenPolitica"/>), en promedio simple y ponderado por costo; el semáforo
 /// (<see cref="clsIndicadoresMetricas.DesviacionMargenPolitica"/>) usa el ponderado.
 /// </summary>
@@ -32,7 +32,7 @@ public sealed class clsCalculadoraMetricasPoliticaTests
         CreatedAtVigente = _marzo,
         Moneda = moneda,
         TrmAplicada = trm,
-        // HU-016.2 (#295): por defecto las cotizaciones de prueba están finalizadas, para que entren en la comparación con la política.
+        // Por defecto las cotizaciones de prueba están finalizadas, para que entren en la comparación con la política.
         Finalizada = true,
         Costo = rutas.All(r => r.Costo.HasValue) ? rutas.Sum(r => r.Costo!.Value) : null,
         PrecioFinal = rutas.All(r => r.PrecioFinal.HasValue) ? rutas.Sum(r => r.PrecioFinal!.Value) : null,
@@ -155,7 +155,7 @@ public sealed class clsCalculadoraMetricasPoliticaTests
         indicadores.DesviacionMargenPolitica.Should().Be(0m, "(0,05 × 1M − 0,05 × 1M) / 2M");
     }
 
-    // ---- Validación de HU-016.1 (#154): casos límite.
+    // ---- Casos límite.
 
     [Fact]
     public void UnaSolaRutaDaSuPropiaPoliticaYSuDiferencia()
@@ -207,7 +207,7 @@ public sealed class clsCalculadoraMetricasPoliticaTests
     [Fact]
     public void LaComparacionUsaLasRutasDeLaVersionVigenteYNoLasDeLaVersionGanada()
     {
-        // La ganada es una versión anterior (B3, #173): lo ganado sale de sus rutas, pero el margen aplicado es el de la vigente.
+        // La ganada es una versión anterior : lo ganado sale de sus rutas, pero el margen aplicado es el de la vigente.
         var cadena = Cotizacion(Ruta(1, 1_000_000m, 0.20m, 0.15m)) with
         {
             Ganada = true,
@@ -232,7 +232,7 @@ public sealed class clsCalculadoraMetricasPoliticaTests
             .Should().Be((0.15m, 0.15m, 0.05m, 0));
     }
 
-    // ---- margen_aplicado_promedio (decisión del 2026-10-27): el aplicado simple sobre las mismas comparables que la política simple.
+    // ---- margen_aplicado_promedio: el aplicado simple sobre las mismas comparables que la política simple.
 
     [Fact]
     public void ElAplicadoPromedioEsElSimpleDeLasMismasRutasQueLaPoliticaPromedio()
@@ -302,7 +302,7 @@ public sealed class clsCalculadoraMetricasPoliticaTests
         Indicadores(cadena).MargenAplicadoPromedio.Should().Be(0.2m);
     }
 
-    // ---- HU-016.2 (#295): la comparación con la política solo mira las cotizaciones finalizadas.
+    // ---- La comparación con la política solo mira las cotizaciones finalizadas.
 
     [Fact]
     public void UnaCotizacionSinFinalizarNoEntraEnLaComparacionPeroSiEnLaCantidad()

@@ -137,7 +137,7 @@ public sealed class clsMargenTests
     public void ConMetodoMargenUnAjusteExigeMargenesEnCeroUno(double politica, double aplicado) =>
         clsMargenAjuste.Registrar((decimal)politica, (decimal)aplicado, "motivo").Error.Codigo.Should().Be(clsMargenAjuste.CodigoError);
 
-    // Deuda de ADR-008 resuelta en #10: el ajuste valida por método; con markup admite m ≥ 1.
+    // ADR-008: el ajuste valida por método; con markup admite m ≥ 1.
     [Fact]
     public void ConMetodoMarkupUnAjustePuedeSerMayorOIgualAUno()
     {

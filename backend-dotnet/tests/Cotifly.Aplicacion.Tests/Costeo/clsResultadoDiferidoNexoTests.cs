@@ -15,7 +15,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// HU-033 (#199, ADR-023, decisión 6): resultado ganada/perdida diferido a Nexo. Marcado cuando Nexo todavía no tiene la cotización
+/// Resultado ganada/perdida (ADR-023) diferido a Nexo. Marcado cuando Nexo todavía no tiene la cotización
 /// Entregada, queda "pendiente de sincronizar" solo en Cotifly; el polling, al ver la entrega, lo envía a Nexo UNA vez y lo deja
 /// "sincronizado". Nunca se llama a <c>/entregar</c>. Descartada, vencida o con los intentos agotados queda "no_sincronizable".
 /// </summary>
@@ -102,13 +102,13 @@ public sealed class clsResultadoDiferidoNexoTests
     }
 
     /// <summary>
-    /// HU-018.1 (#155): con "Otro" Cotifly guarda "Otro: comentario"; a Nexo va el motivo de la lista ("Otro") y el comentario aparte, y
-    /// un motivo libre guardado antes de la lista sale igual (no se revalida).
+    /// Con "Otro" Cotifly guarda "Otro: comentario"; a Nexo va el motivo de la lista ("Otro") y el comentario aparte, y
+    /// un motivo libre ya guardado sale igual (no se revalida).
     /// </summary>
     [Theory]
     [InlineData("Otro: Cerró la planta", "Cerró la planta", "Otro")]
     [InlineData("Precio alto", null, "Precio alto")]
-    public async Task HU0181_UnaPerdidaPendienteConOtroViajaConElMotivoDeLaListaYElComentarioAparte(string guardado, string? comentario, string aNexo)
+    public async Task UnaPerdidaPendienteConOtroViajaConElMotivoDeLaListaYElComentarioAparte(string guardado, string? comentario, string aNexo)
     {
         Autocosteo();
         _cotizacion.RegistrarResultadoPendienteNexo(false, guardado, comentario, _reloj.AhoraUtc);
@@ -162,8 +162,7 @@ public sealed class clsResultadoDiferidoNexoTests
     }
 
     /// <summary>
-    /// Auditoría de la integración (#199): sin el id de la cotización de Nexo, la sincronización la LEE (DEF-C-1, nunca el POST de
-    /// "crear o recuperar"). Si Nexo todavía no la tiene (<c>COTIZACION_NO_ENTREGADA</c>), sigue pendiente y no cuenta un fallo: no
+    /// Sin el id de la cotización de Nexo, la sincronización la LEE (nunca el POST de "crear o recuperar"). Si Nexo todavía no la tiene (<c>COTIZACION_NO_ENTREGADA</c>), sigue pendiente y no cuenta un fallo: no
     /// agota los intentos ni la deja no_sincronizable.
     /// </summary>
     [Fact]

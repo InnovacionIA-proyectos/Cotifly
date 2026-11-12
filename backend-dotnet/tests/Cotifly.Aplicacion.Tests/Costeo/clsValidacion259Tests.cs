@@ -15,7 +15,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// #259 (validación adversarial): la variante 4a nunca manda los conexos de una ruta a la línea de OTRA ruta, elige bien con varias líneas en
+/// Validación adversarial del envío de conexos huérfanos: la variante 4a nunca manda los conexos de una ruta a la línea de OTRA ruta, elige bien con varias líneas en
 /// varios camiones, no duplica el POST y el invariante de agenda solo cuenta las rutas cotizables.
 /// </summary>
 public sealed class clsValidacion259Tests
@@ -84,7 +84,7 @@ public sealed class clsValidacion259Tests
         var cotizacion = DosRutasConConexoEnLaPrimera();
         Rechazar(cotizacion, cotizacion.RutasOrdenadas[0]);
         _nexo.LeerCotizacionAsync(_ana, "COT-1", Arg.Any<CancellationToken>()).Returns(CotizacionNexo(("L2", "CL2")));
-        // Auditoría M2 (#259): el reintento ya no recorre las rutas rechazadas (mismo alcance que #228), así que ni siquiera entra; si
+        // El reintento no recorre las rutas rechazadas (mismo alcance que el bloqueo de finalizar), así que ni siquiera entra; si
         // entrara por otra ruta, igual no hace POST a la línea de otra ruta.
         (await Envio().TieneReintentosAsync(cotizacion, Ct)).Should().BeFalse("el conexo de la ruta rechazada no cuenta para el reintento");
 

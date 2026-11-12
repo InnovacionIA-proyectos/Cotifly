@@ -16,9 +16,9 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Correo;
 
 /// <summary>
-/// HU-045.3 (#265, ADR-032 §9): el correo y su vista previa. Con la regla de HU-033 (sin desglose) cada ruta sigue con un solo valor, su
+/// El correo y su vista previa (ADR-032 §9). Sin desglose, cada ruta sigue con un solo valor, su
 /// precio final con el seguro, y el total lo incluye; la ruta que lo incluye lo dice, sin el monto ni la tasa. Una ruta con el seguro marcado
-/// sin valor de la mercancía no bloquea el envío (decisión del usuario del 2026-11-09).
+/// sin valor de la mercancía no bloquea el envío.
 /// </summary>
 public sealed class clsSeguroCorreoTests : IDisposable
 {
@@ -70,7 +70,7 @@ public sealed class clsSeguroCorreoTests : IDisposable
         clsPlantillaCorreo.ResumenHtml(resumen).Should().NotContain(System.Net.WebUtility.HtmlEncode(clsPlantillaCorreo.TextoIncluyeSeguro));
     }
 
-    /// <summary>Decisión del usuario del 2026-11-09: el seguro marcado sin valor de la mercancía no bloquea el envío; la ruta no dice que lo incluye.</summary>
+    /// <summary>El seguro marcado sin valor de la mercancía no bloquea el envío; la ruta no dice que lo incluye.</summary>
     [Fact]
     public async Task ConElSeguroMarcadoSinValorDeLaMercanciaSeEnviaSinDecirQueLoIncluye()
     {
@@ -99,7 +99,7 @@ public sealed class clsSeguroCorreoTests : IDisposable
             .And.NotContain(System.Net.WebUtility.HtmlEncode(clsPlantillaCorreo.TextoIncluyeSeguro));
     }
 
-    /// <summary>B1: en COP, el precio de la ruta y el total con centavos (el seguro) se muestran con sus 2 decimales.</summary>
+    /// <summary>En COP, el precio de la ruta y el total con centavos (el seguro) se muestran con sus 2 decimales.</summary>
     [Fact]
     public void ElResumenMuestraLosCentavosDelSeguro()
     {
@@ -113,7 +113,7 @@ public sealed class clsSeguroCorreoTests : IDisposable
         resumen.TotalTexto.Should().Be("$1.250.100,40");
     }
 
-    /// <summary>B5 (decisión del usuario): la vista previa del correo trae el mismo <c>aviso_seguro</c> que el costeo.</summary>
+    /// <summary>La vista previa del correo trae el mismo <c>aviso_seguro</c> que el costeo.</summary>
     [Fact]
     public async Task LaVistaPreviaTraeElAvisoDelSeguroSinValor()
     {

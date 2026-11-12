@@ -17,7 +17,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Licitaciones;
 
 /// <summary>
-/// <see cref="clsCubicacionLicitacionService"/> (HU-023.5, #160; B2 y E1 de #174) sin base de datos: el cupo del cubicador, el reclamo de
+/// <see cref="clsCubicacionLicitacionService"/> sin base de datos: el cupo del cubicador, el reclamo de
 /// la ruta, la ruta cubicada, la caída que se reintenta, el rechazo que queda fallido, el reintento del comercial con y sin respaldo, el
 /// envío único a Nexo (también cuando el candado del envío está ocupado) y la auditoría en <c>EventosHerramienta</c> sin montos.
 /// </summary>
@@ -50,7 +50,7 @@ public sealed class clsCubicacionLicitacionServiceTests
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(_licitacion.Folio, _usuario, Arg.Any<CancellationToken>()).Returns(_licitacion);
         _politicas.ObtenerPorIdAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns((clsMargenPolitica?)null);
         Responder(Plan("3S3"));
-        // Endurecimiento B (#199): el respaldo del reintento con usar_respaldo (por defecto, el camión sin vehículo del planificador).
+        // El respaldo del reintento con usar_respaldo (por defecto, el camión sin vehículo del planificador).
         _planificador.PlanificarRespaldoAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<clsLineaSolicitudCosteo>(), Arg.Any<CancellationToken>())
             .Returns(ci => clsResultado<clsPlanRuta>.Exito(new clsPlanRuta([new clsCamionPlaneado(null, null, ci.ArgAt<clsLineaSolicitudCosteo>(2).PesoKg)])));
     }
@@ -127,7 +127,7 @@ public sealed class clsCubicacionLicitacionServiceTests
     [Fact]
     public async Task ConElCubicadorOcupadoLaRutaVuelveALaColaSinRespaldoSinGastarIntentoYSinAuditar()
     {
-        // Opción C, validación de los defectos del 2026-10-16 (punto a): un "Calcular cubicaje" largo tiene el cupo global del proceso y la
+        // Un "Calcular cubicaje" largo tiene el cupo global del proceso y la
         // ruta de la licitación no lo consigue a tiempo (CUBICADOR_OCUPADO). No es una caída: ni respaldo ni un intento gastado.
         Fallar(clsCodigosError.CubicadorOcupado);
         var cola = Cola(1);
@@ -218,7 +218,7 @@ public sealed class clsCubicacionLicitacionServiceTests
     }
 
     /// <summary>
-    /// B2 (#174): las dos últimas rutas terminan juntas. La otra tiene el candado del envío (revisa, ve una ruta todavía pendiente y lo
+    /// Las dos últimas rutas terminan juntas. La otra tiene el candado del envío (revisa, ve una ruta todavía pendiente y lo
     /// suelta). Esta ruta, que ya guardó la suya, no se va sin enviar: espera, toma el candado, revisa y envía una sola vez.
     /// </summary>
     [Fact]
@@ -236,7 +236,7 @@ public sealed class clsCubicacionLicitacionServiceTests
     }
 
     /// <summary>
-    /// Revisión de #174: la espera del candado tiene tope (35 intentos, 15,75 s del reloj inyectado). Al agotarse, la ruta se rinde sin
+    /// La espera del candado tiene tope (35 intentos, 15,75 s del reloj inyectado). Al agotarse, la ruta se rinde sin
     /// enviar, queda cubicada y contada, y la recuperación envía la licitación cuando el candado se libera.
     /// </summary>
     [Fact]
@@ -303,7 +303,7 @@ public sealed class clsCubicacionLicitacionServiceTests
     }
 
     /// <summary>
-    /// Revisión de #174 (fallo intermitente): si algo falla DESPUÉS de guardar la ruta (la base al recargar, el candado), la ruta sigue
+    /// Si algo falla DESPUÉS de guardar la ruta (la base al recargar, el candado), la ruta sigue
     /// contada como cubicada y no vuelve a la cola; el envío queda para la recuperación.
     /// </summary>
     [Fact]
@@ -322,8 +322,8 @@ public sealed class clsCubicacionLicitacionServiceTests
     }
 
     /// <summary>
-    /// Causa del fallo intermitente de la revisión de #174: con la base cargada, abrir la conexión del candado del envío falló
-    /// (<c>Connection Timeout Expired</c>) con la ruta ya guardada; la excepción salía y la ruta no se contaba. Ahora cuenta como candado
+    /// Con la base cargada, abrir la conexión del candado del envío puede fallar
+    /// (<c>Connection Timeout Expired</c>) con la ruta ya guardada: la excepción no sale y la ruta cuenta como candado
     /// no obtenido: se reintenta y la licitación sale una vez.
     /// </summary>
     [Fact]
@@ -342,7 +342,7 @@ public sealed class clsCubicacionLicitacionServiceTests
     }
 
     /// <summary>
-    /// Doble envío medido bajo carga en la revisión de #174: otro proceso reclamó el envío (sube <c>versionNegocio</c>), obtuvo el alta en
+    /// Doble envío bajo carga: otro proceso reclamó el envío (sube <c>versionNegocio</c>), obtuvo el alta en
     /// Nexo y no pudo guardar el <c>solicitudNexoId</c>. Al tomar el candado la licitación se ve "lista" (sigue en <c>pendiente_envio</c>),
     /// pero la versión cambió desde que se leyó: no se reclama ni se envía otra vez; queda para la recuperación.
     /// </summary>
@@ -473,9 +473,9 @@ public sealed class clsCubicacionLicitacionServiceTests
     }
 
     /// <summary>
-    /// Endurecimiento B (#199, HU-032, ADR-022): con <c>usar_respaldo</c> la ruta caída lleva el respaldo del planificador con el vehículo
+    /// ADR-022: con <c>usar_respaldo</c> la ruta caída lleva el respaldo del planificador con el vehículo
     /// ELEGIDO de la ruta (como el camino en segundo plano): el camión con ese vehículo y el aviso <c>VEHICULO_ELEGIDO_USADO</c>, o sin
-    /// vehículo con <c>VEHICULO_ELEGIDO_INVALIDO</c>. Antes aceptaba el camión provisional sin vehículo.
+    /// vehículo con <c>VEHICULO_ELEGIDO_INVALIDO</c>; nunca el camión provisional sin vehículo.
     /// </summary>
     [Theory]
     [InlineData("3S3", clsAvisosVehiculo.ElegidoUsado)]
@@ -532,7 +532,7 @@ public sealed class clsCubicacionLicitacionServiceTests
         await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosAsync(Ct);
     }
 
-    // ------------------------------------------------------------------ Auditoría (E1)
+    // ------------------------------------------------------------------ Auditoría
 
     [Fact]
     public async Task CadaRutaProcesadaQuedaAuditadaSinMontosNiPesos()

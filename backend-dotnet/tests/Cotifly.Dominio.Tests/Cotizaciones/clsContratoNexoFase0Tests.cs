@@ -5,7 +5,7 @@ using Cotifly.Dominio.Margen;
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
 /// <summary>
-/// #278 (fase 0 del contrato único de NEXO, DU §5 y §8): línea de negocio cerrada a seis, <c>pesoKg</c> por unidad obligatorio en una
+/// Contrato único de NEXO (DU §5 y §8): línea de negocio cerrada a seis, <c>pesoKg</c> por unidad obligatorio en una
 /// mercancía con medidas, horas de cargue y descargue en pareja y el tope de 10.000 unidades por línea.
 /// </summary>
 public sealed class clsContratoNexoFase0Tests
@@ -149,7 +149,7 @@ public sealed class clsContratoNexoFase0Tests
     }
 
     /// <summary>
-    /// #278 (hallazgo de la validación): la pareja se valida DESPUÉS de completar la línea con el encabezado, igual en todos los flujos. Una
+    /// La pareja se valida DESPUÉS de completar la línea con el encabezado, igual en todos los flujos. Una
     /// línea con <c>horas_cargue = 2</c> y un encabezado 4 + 4 viaja como 2 + 4: es válida en el formulario de una línea y también por ruta.
     /// </summary>
     [Fact]

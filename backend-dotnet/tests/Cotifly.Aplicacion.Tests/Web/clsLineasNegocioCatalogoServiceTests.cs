@@ -7,7 +7,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Web;
 
 /// <summary>
-/// HU-016.1 (#154, decisión P4b del 2026-10-27): catálogo de líneas de negocio activas para el desplegable de la captura, sin la
+/// Catálogo de líneas de negocio activas para el desplegable de la captura, sin la
 /// política de margen.
 /// </summary>
 public sealed class clsLineasNegocioCatalogoServiceTests

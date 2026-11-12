@@ -3,7 +3,7 @@ using Cotifly.Dominio.Cotizaciones;
 
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
-/// <summary>Líneas de la solicitud de Nexo (HU-011.2, ADR-017): validación por campo, entidad, derivación por línea y archivo.</summary>
+/// <summary>Líneas de la solicitud de Nexo (ADR-017): validación por campo, entidad, derivación por línea y archivo.</summary>
 public sealed class clsLineasSolicitudTests
 {
     private static clsLineaSolicitudCosteo Linea(decimal? peso = 9000m) => new() { Origen = "YUMBO", Destino = "BOGOTA, D.C.", PesoKg = peso };
@@ -60,8 +60,8 @@ public sealed class clsLineasSolicitudTests
     }
 
     /// <summary>
-    /// D6 (E2E 2026-10-16): el mensaje de POSICION_INVALIDA decía <c>posiciones[1].largo_cm</c> y el campo <c>posiciones[0]</c> para la
-    /// misma mercancía. Ahora el campo va en base 0 con el nombre del contrato y el mensaje nombra la mercancía en base 1, sin índices.
+    /// El mensaje de POSICION_INVALIDA no mezcla bases: no dice <c>posiciones[1].largo_cm</c> con el campo <c>posiciones[0]</c> para la
+    /// misma mercancía. El campo va en base 0 con el nombre del contrato y el mensaje nombra la mercancía en base 1, sin índices.
     /// </summary>
     [Theory]
     [InlineData(0, "largo_cm")]
@@ -76,7 +76,7 @@ public sealed class clsLineasSolicitudTests
         var error = linea.Errores().Should().ContainSingle(e => e.Codigo == clsCodigosLineaSolicitud.PosicionInvalida).Subject;
 
         error.Campo.Should().Be($"mercancias[{indice}].{subcampo}");
-        // HU-032 (#197): una medida en 0 con las demás escritas es una medida que falta (medidas parciales); una negativa, fuera de rango.
+        // Una medida en 0 con las demás escritas es una medida que falta (medidas parciales); una negativa, fuera de rango.
         error.Mensaje.Should().StartWith(subcampo == "alto_cm"
             ? $"Mercancía {indice + 1}: el campo '{subcampo}' debe estar entre"
             : $"Mercancía {indice + 1}: faltan medidas ({subcampo})");
@@ -103,7 +103,7 @@ public sealed class clsLineasSolicitudTests
     [Fact]
     public void ElEncabezadoValidaLasHoras()
     {
-        // Decisión 1 de HU-021: referencia y valor estimado se eliminan del encabezado.
+        // Referencia y valor estimado no van en el encabezado.
         var encabezado = new clsEncabezadoSolicitudCosteo { Tipo = TipoSolicitud.Licitacion, HorasCargue = 241m, HorasDescargue = 4m };
 
         encabezado.Errores().Select(e => e.Campo).Should().BeEquivalentTo(["horas_cargue"]);
@@ -193,15 +193,15 @@ public sealed class clsLineasSolicitudTests
         ]);
         clsLineaSolicitudNexo[] nexo = [new("N1", "A → B", null, 1m, null, null), new("N2", "A → B", null, 1m, null, null), new("N3", "C → D", null, 1m, "2", null)];
 
-        // HU-032 (#197): la tercera contradice el vehículo, pero es un camión del respaldo y su ruta y su peso son únicos en la cotización:
-        // la Mesa de Costeo le cambió el vehículo en Nexo (D2) y se asocia. Las dos idénticas siguen ambiguas.
+        // La tercera contradice el vehículo, pero es un camión del respaldo y su ruta y su peso son únicos en la cotización:
+        // la Mesa de Costeo le cambió el vehículo en Nexo y se asocia. Las dos idénticas siguen ambiguas.
         clsEmparejadorLineasNexo.Emparejar(lineas, nexo).Should().ContainSingle().Which.Value.Should().Be("N3");
     }
 
     [Fact]
     public void LasMercanciasCuelganDeSuRutaConUnOrdenPropio()
     {
-        // HU-021: el orden es único por ruta (uq_cotizacionMercancias_lineaSolicitudId_orden), ya no por cotización.
+        // El orden es único por ruta (uq_cotizacionMercancias_lineaSolicitudId_orden), no por cotización.
         var posicion = new clsPosicionCarga(null, 1, 1, 1, 1, null);
         var cotizacion = Solicitud([Linea() with { Posiciones = [posicion, posicion] }, Linea() with { Posiciones = [posicion] }]);
 

@@ -15,7 +15,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// #259: un conexo no se queda en <c>estado_nexo = pendiente</c> para siempre. La línea del camión se elige con al menos una línea de Nexo
+/// Un conexo no se queda en <c>estado_nexo = pendiente</c> para siempre. La línea del camión se elige con al menos una línea de Nexo
 /// (la primera por id), en una cotización que ya no se costea va al primer camión vigente con línea (variante 4a) o queda
 /// <c>fallido_definitivo</c>, un conexo nunca intentado cuenta para el reintento y el polling no saca de la agenda una cotización con
 /// conexos pendientes.
@@ -175,7 +175,7 @@ public sealed class clsConexosHuerfanosNexoTests
         cotizacion.CosteoSiguienteConsultaAt.Should().Be(sigueAgendada ? clsCotizacionMuestra.Ahora + new clsOpcionesCosteoNexo().IntervaloReintentoConexos : null);
     }
 
-    // ------------------------------------------------------------------ Auditoría M2: rutas rechazadas y rutas sin camión vigente
+    // ------------------------------------------------------------------ Rutas rechazadas y rutas sin camión vigente
 
     [Fact]
     public async Task AuditoriaM2_LosConexosDeUnaRutaRechazadaNoSeEnviaNiQuedanFallidoDefinitivoNiTomanLaLineaDeOtraRuta()
@@ -207,7 +207,7 @@ public sealed class clsConexosHuerfanosNexoTests
             "la única línea de la cotización solo vale para una ruta SIN camiones");
     }
 
-    // ------------------------------------------------------------------ Auditoría B3 y B4: la consulta que entrega
+    // ------------------------------------------------------------------ La consulta que entrega
 
     [Fact]
     public async Task AuditoriaB4_LaConsultaQueEntregaNoSacaDeLaAgendaSiQuedaUnConexoPendiente()

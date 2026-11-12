@@ -16,7 +16,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Cotizaciones;
 
 /// <summary>
-/// HU-018.1 (#155, parte C): el Excel de la cotización. El dueño recibe la versión interna (costos de Nexo en COP, márgenes y precios por
+/// El Excel de la cotización. El dueño recibe la versión interna (costos de Nexo en COP, márgenes y precios por
 /// ruta y por camión, conexos y totales); el gerente de su regional y el director, la misma sin nada interno; los demás, 404. Respeta el
 /// precio congelado y las rutas rechazadas, y solo lee lo guardado.
 /// </summary>
@@ -113,7 +113,7 @@ public sealed class clsExportacionCotizacionServiceTests
             Arg.Is(clsExportacionCotizacionService.HerramientaAuditoria), Arg.Any<object?>(), Arg.Any<object?>(), Arg.Is(false), Arg.Any<int>(), Arg.Any<string?>());
     }
 
-    // Validación HU-018.1 (#155): sin regional comprobable (sin regional o fuente caída) se niega (fail-closed), queda auditado y no se
+    // Sin regional comprobable (sin regional o fuente caída) se niega (fail-closed), queda auditado y no se
     // genera nada; sin sesión, NoAutenticado sin leer la cotización.
     [Theory]
     [InlineData(Cotifly.Aplicacion.Comun.clsCodigosAplicacion.RegionalNoAsignada)]
@@ -134,7 +134,7 @@ public sealed class clsExportacionCotizacionServiceTests
             Arg.Is(clsExportacionCotizacionService.HerramientaAuditoria), Arg.Any<object?>(), Arg.Any<object?>(), Arg.Is(false), Arg.Any<int>(), Arg.Any<string?>());
     }
 
-    // Validación HU-018.1 (#155): el Excel de una versión -vN es el de esa versión, con su folio en el nombre del archivo.
+    // El Excel de una versión -vN es el de esa versión, con su folio en el nombre del archivo.
     [Fact]
     public async Task LaVersionNuevaSeExportaConSuFolio()
     {
@@ -161,8 +161,8 @@ public sealed class clsExportacionCotizacionServiceTests
     }
 
     /// <summary>
-    /// HU-028.1 (#183): la ruta rechazada por la Mesa sale sin precio, sin conexos, sin costos y no suma; el camión rechazado de una ruta que
-    /// sigue con precio no cuenta ni tiene precio ni costo (nunca un costo sin su precio, #218).
+    /// La ruta rechazada por la Mesa sale sin precio, sin conexos, sin costos y no suma; el camión rechazado de una ruta que
+    /// sigue con precio no cuenta ni tiene precio ni costo (nunca un costo sin su precio).
     /// </summary>
     [Fact]
     public void LasRutasYLosCamionesRechazadosNoTienenPrecioNiCostoYNoSuman()
@@ -189,7 +189,7 @@ public sealed class clsExportacionCotizacionServiceTests
     }
 
     /// <summary>
-    /// HU-036 (#208): con la cotización finalizada el precio queda congelado y el costo es el con que se finalizó: el Excel no recalcula con
+    /// Con la cotización finalizada el precio queda congelado y el costo es el con que se finalizó: el Excel no recalcula con
     /// lo que Nexo trae después.
     /// </summary>
     [Fact]
@@ -213,11 +213,11 @@ public sealed class clsExportacionCotizacionServiceTests
     }
 
     /// <summary>
-    /// HU-043.2 (#251): el Excel de la cotización y el de la licitación muestran el conexo a su VENTA, sin margen, y cuadran con el precio
+    /// El Excel de la cotización y el de la licitación muestran el conexo a su VENTA, sin margen, y cuadran con el precio
     /// de la ruta; los costos internos (del dueño) siguen con el costo del conexo.
     /// </summary>
     [Fact]
-    public void Hu0432_LosExcelMuestranElConexoASuVentaYCuadranConElTotal()
+    public void LosExcelMuestranElConexoASuVentaYCuadranConElTotal()
     {
         var cotizacion = clsCotizacionMuestra.LicitacionCosteada([1_000_000m, 2_000_000m], folio: "PCN-AP-27102026-009", usuarioId: _ana.Id);
         clsCotizacionMuestra.ConConexo(cotizacion, "CX-1", "Cargue", 100_000m, 2m, orden: 1, ventaUnitaria: 150_000m);

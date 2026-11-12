@@ -12,7 +12,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Margen;
 
 /// <summary>
-/// HU-042.2 (#243): <see cref="clsSapMargenAdminService"/>. Solo gerencia; sin configuración, <c>SAP_MARGEN_NO_CONFIGURADO</c>; una corrida en
+/// <see cref="clsSapMargenAdminService"/>. Solo gerencia; sin configuración, <c>SAP_MARGEN_NO_CONFIGURADO</c>; una corrida en
 /// curso, <c>SAP_MARGEN_SINCRONIZACION_EN_CURSO</c>; la corrida forzada se audita con su resultado y sin credenciales.
 /// </summary>
 public sealed class clsSapMargenAdminServiceTests

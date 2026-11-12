@@ -11,10 +11,10 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// HU-013.10 (#106, G2, G11 y G15): solo códigos de catálogo hacia Nexo. Tipo de vehículo, clase de viaje y clase de contenedor contra el
-/// catálogo maestro de Nexo (HU-023.1, #156: sin la lista fija de clases de contenedor, solo la provisional de extradimensionado);
-/// carrocería y tipología en código. HU-014 (#188, M1): el vehículo y la carrocería digitados (respaldo) deben ser códigos que Nexo
-/// conozca (ya no basta el catálogo del cubicador), con la equivalencia de Nexo (sin tildes ni mayúsculas, <c>_</c>/<c>-</c> = espacio).
+/// Solo códigos de catálogo hacia Nexo. Tipo de vehículo, clase de viaje y clase de contenedor contra el
+/// catálogo maestro de Nexo (sin lista fija de clases de contenedor, solo la provisional de extradimensionado);
+/// carrocería y tipología en código. El vehículo y la carrocería digitados (respaldo) deben ser códigos que Nexo
+/// conozca (no basta el catálogo del cubicador), con la equivalencia de Nexo (sin tildes ni mayúsculas, <c>_</c>/<c>-</c> = espacio).
 /// </summary>
 public sealed class clsValidadorCatalogosCapturaTests
 {
@@ -81,7 +81,7 @@ public sealed class clsValidadorCatalogosCapturaTests
     [Fact]
     public async Task UnaClaseDeContenedorSeValidaContraElCatalogoMaestroDeNexoYNoContraUnaListaFija()
     {
-        // HU-023.1 (#156; lo que le quedaba a HU-015.1): CNT45.XX solo existe en el catálogo de Nexo; CNT20.RE era de la lista fija.
+        // CNT45.XX solo existe en el catálogo de Nexo; CNT20.RE solo existe en una lista fija, que no se usa.
         (await Validador().ValidarAsync(_usuarioId, Linea() with { ClaseContenedor = "CNT45.XX" }, Ct)).Should().BeNull();
         (await Validador().ValidarAsync(_usuarioId, Linea() with { ClaseContenedor = "CNT20.RE" }, Ct))!.Mensaje.Should().Contain("clase_contenedor");
     }
@@ -116,14 +116,14 @@ public sealed class clsValidadorCatalogosCapturaTests
     [InlineData("2s3", "FURGON_REFRIGERADO")]
     [InlineData("2S3", "Furgon-Refrigerado")]
     [InlineData("3S3", "estibas")]
-    public async Task HU014_LaMismaSiglaEscritaDeOtraFormaEsUnCodigoConocido(string tipo, string carroceria) =>
+    public async Task LaMismaSiglaEscritaDeOtraFormaEsUnCodigoConocido(string tipo, string carroceria) =>
         (await Validador().ValidarAsync(_usuarioId, Linea() with { TipoVehiculo = tipo, Carroceria = carroceria }, Ct)).Should().BeNull();
 
     [Fact]
-    public async Task HU014_M1_UnCodigoQueSoloConoceElCubicadorSeRechazaConUn400Claro()
+    public async Task UnCodigoQueSoloConoceElCubicadorSeRechazaConUn400Claro()
     {
-        // M1 del auditor de #188: un código del cubicador que Nexo no conoce (ZT9) y CAMA_BAJA antes viajaban y la línea nacía en
-        // cuarentena. Ahora la captura los rechaza (CODIGO_NO_CATALOGO → 400) y dice qué espera.
+        // Un código del cubicador que Nexo no conoce (ZT9) y CAMA_BAJA dejarían la línea en cuarentena: la captura
+        // los rechaza (CODIGO_NO_CATALOGO → 400) y dice qué espera.
         var vehiculo = await Validador().ValidarAsync(_usuarioId, Linea() with { TipoVehiculo = "ZT9" }, Ct);
         var carroceria = await Validador().ValidarAsync(_usuarioId, Linea() with { Carroceria = "CAMA_BAJA" }, Ct);
 
@@ -138,17 +138,17 @@ public sealed class clsValidadorCatalogosCapturaTests
     [InlineData("C3")]
     [InlineData("2")]
     [InlineData("3")]
-    public async Task HU0448_ElCodigoNexoDeSiceTacYElCodigoSapDelRespaldoSonValidos(string tipo)
+    public async Task ElCodigoNexoDeSiceTacYElCodigoSapDelRespaldoSonValidos(string tipo)
     {
-        // HU-044.8 (#291): C2/C3 son códigos NEXO válidos; «2»/«3» (SAP) también se aceptan (el envío los traduce a C2/C3). Aunque el
+        // C2/C3 son códigos NEXO válidos; «2»/«3» (SAP) también se aceptan (el envío los traduce a C2/C3). Aunque el
         // catálogo maestro solo traiga 2S3/3S3, la equivalencia de SICE-TAC los reconoce.
         (await Validador().ValidarAsync(_usuarioId, Linea() with { TipoVehiculo = tipo }, Ct)).Should().BeNull();
     }
 
     [Fact]
-    public async Task HU014_UnTipoDeVehiculoSiempreSeValidaContraNexoYSinCatalogoNoSeAcepta()
+    public async Task UnTipoDeVehiculoSiempreSeValidaContraNexoYSinCatalogoNoSeAcepta()
     {
-        // Antes, un código del cubicador no consultaba Nexo. Ahora todo tipo_vehiculo se valida contra Nexo: sin catálogo no se acepta.
+        // Todo tipo_vehiculo se valida contra Nexo, también un código del cubicador: sin catálogo no se acepta.
         _maestros.ObtenerAsync(_usuarioId, Arg.Any<CancellationToken>())
             .Returns(clsResultado<clsCatalogosMaestros>.Fallo(new clsErrorDominio(clsCodigosError.CatalogosFleteNoDisponible, "caído")));
         var linea = Linea() with { TipoVehiculo = "3S3", ClaseViaje = null, ClaseContenedor = null };
@@ -245,7 +245,7 @@ public sealed class clsValidadorCatalogosCapturaTests
         await _maestros.DidNotReceiveWithAnyArgs().ObtenerAsync(default, Ct);
     }
 
-    // ------------------------------------------------------------------ HU-031.1 (#194): alias de Nexo
+    // ------------------------------------------------------------------ Alias de Nexo
 
     private readonly IClsAliasNexoProvider _alias = Substitute.For<IClsAliasNexoProvider>();
 
@@ -256,7 +256,7 @@ public sealed class clsValidadorCatalogosCapturaTests
     [InlineData("TB")]
     [InlineData("T.B")]
     [InlineData("t .b")]
-    public async Task HU0311_UnVehiculoDigitadoQueResuelveElAliasSeAcepta(string texto)
+    public async Task UnVehiculoDigitadoQueResuelveElAliasSeAcepta(string texto)
     {
         ConAlias(new clsFilaAliasNexo(TipoAliasNexo.Vehiculo, "TB", "TB", "3S3"), new clsFilaAliasNexo(TipoAliasNexo.Vehiculo, "T.B", "T.B", "3S3"));
 
@@ -264,7 +264,7 @@ public sealed class clsValidadorCatalogosCapturaTests
     }
 
     [Fact]
-    public async Task HU0311_UnVehiculoQueNiElCatalogoNiElAliasConocenSigueRechazandose()
+    public async Task UnVehiculoQueNiElCatalogoNiElAliasConocenSigueRechazandose()
     {
         ConAlias(new clsFilaAliasNexo(TipoAliasNexo.Vehiculo, "TB", "TB", "3S3"));
 
@@ -274,7 +274,7 @@ public sealed class clsValidadorCatalogosCapturaTests
     }
 
     [Fact]
-    public async Task HU0311_SinElDiccionarioSeValidaComoAntesYNoFalla()
+    public async Task SinElDiccionarioSeValidaSoloContraElCatalogoYNoFalla()
     {
         _alias.ObtenerAsync(_usuarioId, Arg.Any<CancellationToken>())
             .Returns(clsResultado<clsDiccionarioAliasNexo>.Fallo(new clsErrorDominio(clsCodigosError.CatalogosFleteNoDisponible, "caído")));
@@ -285,7 +285,7 @@ public sealed class clsValidadorCatalogosCapturaTests
     }
 
     [Fact]
-    public async Task HU0311_UnaClaseDeContenedorQueResuelveElAliasSeAceptaYSeGuardaConElCodigoOficial()
+    public async Task UnaClaseDeContenedorQueResuelveElAliasSeAceptaYSeGuardaConElCodigoOficial()
     {
         ConAlias(new clsFilaAliasNexo(TipoAliasNexo.Contenedor, "40 HC", "40 HC", "cnt40.hc"), new clsFilaAliasNexo(TipoAliasNexo.Contenedor, "40 FT", "40 FT", "CNT40.FT"));
         var lineas = new[] { Linea() with { ClaseContenedor = "40 hc" }, Linea() with { ClaseContenedor = "40-FT" }, Linea() with { ClaseContenedor = "45 XX" } };
@@ -299,7 +299,7 @@ public sealed class clsValidadorCatalogosCapturaTests
     }
 
     [Fact]
-    public async Task HU0311_ElVehiculoDigitadoPorAliasSeGuardaConElCodigoOficial()
+    public async Task ElVehiculoDigitadoPorAliasSeGuardaConElCodigoOficial()
     {
         ConAlias(new clsFilaAliasNexo(TipoAliasNexo.Vehiculo, "Turbo", "TURBO", "2s3"));
 
@@ -310,7 +310,7 @@ public sealed class clsValidadorCatalogosCapturaTests
     }
 
     [Fact]
-    public async Task HU0311_UnAliasDeVehiculoNoSirveParaLaClaseDeContenedor()
+    public async Task UnAliasDeVehiculoNoSirveParaLaClaseDeContenedor()
     {
         ConAlias(new clsFilaAliasNexo(TipoAliasNexo.Vehiculo, "40HC", "40HC", "3S3"));
 

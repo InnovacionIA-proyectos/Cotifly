@@ -5,7 +5,7 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// HU-045.2 (#264), validación adversarial de la vista: la tarifa del transporte no absorbe el seguro ni en dólares ni sin conexos (la
+/// Validación adversarial de la vista con seguro: la tarifa del transporte no absorbe el seguro ni en dólares ni sin conexos (la
 /// tolerancia por conexo es 0 en ese caso), y la ruta con el check pero sin valor no inventa un seguro.
 /// </summary>
 public sealed class clsSeguroVistaCosteoAdversarialTests
