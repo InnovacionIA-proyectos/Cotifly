@@ -1093,11 +1093,13 @@ public sealed partial class clsLineaSolicitud
         if (_conexos.FirstOrDefault(c => string.Equals(c.IdServicioConexo, id, StringComparison.OrdinalIgnoreCase)) is { } existente)
         {
             return existente.Actualizar(
-                conexo.Nombre, conexo.Precio, conexo.Cantidad, conexo.IdServicioConexoCatalogo, conexo.Categoria, conexo.PrecioVenta);
+                conexo.Nombre, conexo.Precio, conexo.Cantidad, conexo.IdServicioConexoCatalogo, conexo.Categoria, conexo.PrecioVenta,
+                conexo.CodigoServicio);
         }
 
         _conexos.Add(clsServicioConexoRuta.Crear(
-            Id, id, conexo.Nombre, conexo.Precio, conexo.Cantidad, conexo.IdServicioConexoCatalogo, conexo.Categoria, conexo.PrecioVenta));
+            Id, id, conexo.Nombre, conexo.Precio, conexo.Cantidad, conexo.IdServicioConexoCatalogo, conexo.Categoria, conexo.PrecioVenta,
+            conexo.CodigoServicio));
         return true;
     }
 

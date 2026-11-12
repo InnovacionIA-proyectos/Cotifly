@@ -52,6 +52,28 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
     public Task CuandoCreaEnMoneda(string alias, string licitacion, string moneda, string nit, int filas) =>
         CrearAsync(alias, licitacion, clsPliegoMuestra.Json(nit, clsPliegoMuestra.Lineas(filas), moneda: moneda), clsPliegoMuestra.Excel(filas));
 
+    // HU-044.7 (#290): licitación leída con la IA de NEXO (leer-estructura). Se adjunta un Excel (para guardarlo), pero la 'hoja' es el
+    // nombre de la tabla y la 'fila' el índice dentro de ella; la exportación no lo toca.
+    [When("{string} crea la licitación {string} del cliente {string} leída con leer-estructura de la tabla {string} con {int} filas")]
+    public Task CuandoCreaLeerEstructura(string alias, string licitacion, string nit, string tabla, int filas) =>
+        CrearAsync(alias, licitacion, clsPliegoMuestra.JsonLeerEstructura(nit, clsPliegoMuestra.Lineas(filas), tabla), clsPliegoMuestra.Excel(filas));
+
+    [Then("la licitación {string} quedó marcada como leída con la IA de NEXO")]
+    public async Task EntoncesMarcadaLeerEstructura(string licitacion) =>
+        (await clsBaseDatosPruebas.EscalarAsync<string>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
+            $"SELECT a.origenLectura FROM dbo_cotifly.CotizacionArchivosLicitacion a JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = a.cotizacionId WHERE c.folio = '{Folio(licitacion)}'"))
+            .Should().Be("leer_estructura");
+
+    [Then("el Excel exportado trae la hoja {string} y el resumen dice que se leyó con la IA de NEXO")]
+    public void EntoncesExcelHojaNuevaConNotaIa(string hojaNueva)
+    {
+        using var libro = Libro();
+        libro.Worksheets.Contains(hojaNueva).Should().BeTrue("la licitación leída con IA se exporta en una hoja nueva, no sobre el original");
+        libro.Worksheets.Contains(clsPliegoMuestra.Hoja).Should().BeFalse("no se escribe sobre la hoja original del cliente");
+        var resumen = libro.Worksheet("Resumen Cotifly");
+        resumen.CellsUsed().Select(c => c.GetString()).Should().Contain(t => t.Contains("IA de NEXO", StringComparison.Ordinal));
+    }
+
     [Then("la licitación {string} está en {string} con la TRM {string}")]
     public async Task EntoncesMonedaYTrm(string licitacion, string moneda, string trm)
     {

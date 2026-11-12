@@ -44,6 +44,12 @@ public sealed class clsLicitacionWebRequest
     /// <summary><c>COP</c> (por defecto) o <c>USD</c> (ADR-014 §5); otro valor o una cadena vacía es un error del reporte (campo <c>moneda</c>).</summary>
     public string? Moneda { get; init; }
 
+    /// <summary>
+    /// HU-044.7 (#290): cómo se leyó el Excel. <c>analizar_excel</c> (por defecto, el flujo de hoy) o <c>leer_estructura</c> (lectura con la IA
+    /// de NEXO: la exportación arma un Excel nuevo). Ausente o vacío es <c>analizar_excel</c>; cualquier otro valor es 400 <c>VALIDATION_ERROR</c>.
+    /// </summary>
+    public string? OrigenLectura { get; init; }
+
     public IReadOnlyList<clsLineaLicitacionWebRequest?>? Lineas { get; init; }
 
     /// <summary>Entrada del caso de uso, con el archivo original si vino en la parte <c>archivo</c> del multipart.</summary>
@@ -62,7 +68,8 @@ public sealed class clsLicitacionWebRequest
         Hoja,
         [.. (Lineas ?? []).Select(l => l is null ? null! : l.AEntrada())],
         archivo,
-        Moneda);
+        Moneda,
+        OrigenLectura);
 }
 
 /// <summary>

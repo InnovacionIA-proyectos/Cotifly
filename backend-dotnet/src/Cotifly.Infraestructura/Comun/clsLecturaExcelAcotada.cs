@@ -64,6 +64,9 @@ public sealed class clsLecturaExcelAcotada : IDisposable
     /// <summary>Tope de <c>_rels/.rels</c> al buscar el libro: un archivo de relaciones real tiene unos cientos de bytes.</summary>
     private const int MaximoRelacionesBytes = 64 * 1024;
 
+    /// <summary>Tipo del dibujo VML (comentarios, controles heredados): es XML aunque el tipo no termine en <c>+xml</c>.</summary>
+    private const string TipoVml = "application/vnd.openxmlformats-officedocument.vmlDrawing";
+
     private readonly SemaphoreSlim _cupo;
     private readonly TimeSpan _espera;
     private readonly ILogger<clsLecturaExcelAcotada> _logger;
@@ -186,8 +189,9 @@ public sealed class clsLecturaExcelAcotada : IDisposable
     }
 
     /// <summary>
-    /// Cuenta los elementos XML de todas las partes XML del paquete (las mismas que abriría ClosedXML, resueltas por sus relaciones) con
-    /// un lector de flujo, sin DTD ni entidades externas. <c>ARCHIVO_DEMASIADO_GRANDE</c> (<see cref="MotivoDescomprimido"/>) si pasan
+    /// Cuenta los elementos XML de <c>[Content_Types].xml</c>, de las relaciones (<c>.rels</c>, que System.IO.Packaging lee enteras al
+    /// abrir el paquete; validación de #277) y de todas las partes XML del paquete (las mismas que abriría ClosedXML, resueltas por sus
+    /// relaciones; ver <see cref="EsParteXml"/>) con un lector de flujo, sin DTD ni entidades externas. <c>ARCHIVO_DEMASIADO_GRANDE</c> (<see cref="MotivoDescomprimido"/>) si pasan
     /// de <see cref="MaximoElementosXml"/>; <c>EXCEL_INVALIDO</c> (<see cref="MotivoLibroIlegible"/>) si una parte no es XML válido o trae
     /// un DTD; <c>null</c> si se puede abrir. Se llama después de <see cref="VerificarPaquete"/>: el contenido descomprimido ya está acotado.
     /// </summary>
@@ -203,26 +207,44 @@ public sealed class clsLecturaExcelAcotada : IDisposable
             IgnoreProcessingInstructions = true,
             CloseInput = true,
         };
+        long elementos = 0;
+        bool Excede(Stream flujo)
+        {
+            using var lector = XmlReader.Create(flujo, ajustes);
+            while (lector.Read())
+            {
+                if (lector.NodeType == XmlNodeType.Element && ++elementos > MaximoElementosXml)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         try
         {
+            // Primero lo que System.IO.Packaging lee entero al abrir el paquete y no son partes: [Content_Types].xml y las relaciones.
+            using (var zip = new ZipArchive(new MemoryStream(contenido, writable: false), ZipArchiveMode.Read))
+            {
+                foreach (var entrada in zip.Entries)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (EsEntradaDelPaquete(entrada.FullName) && Excede(entrada.Open()))
+                    {
+                        return DemasiadosElementos();
+                    }
+                }
+            }
+
             using var documento = SpreadsheetDocument.Open(new MemoryStream(contenido, writable: false), isEditable: false);
-            long elementos = 0;
             foreach (var parte in documento.GetAllParts())
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (!parte.ContentType.Contains("xml", StringComparison.OrdinalIgnoreCase))
+                // La parte principal se cuenta siempre: el SDK no fija su tipo y la abre con cualquiera (ver EsParteXml).
+                if ((parte is WorkbookPart || EsParteXml(parte.ContentType)) && Excede(parte.GetStream(FileMode.Open, FileAccess.Read)))
                 {
-                    continue;
-                }
-
-                using var lector = XmlReader.Create(parte.GetStream(FileMode.Open, FileAccess.Read), ajustes);
-                while (lector.Read())
-                {
-                    if (lector.NodeType == XmlNodeType.Element && ++elementos > MaximoElementosXml)
-                    {
-                        return new clsErrorDominio(clsCodigosError.ArchivoDemasiadoGrande,
-                            "El Excel tiene demasiadas celdas para analizarlo: deja solo las hojas y filas que se necesitan.", MotivoDescomprimido);
-                    }
+                    return DemasiadosElementos();
                 }
             }
 
@@ -236,6 +258,26 @@ public sealed class clsLecturaExcelAcotada : IDisposable
         {
             return Invalido(MotivoLibroIlegible);
         }
+    }
+
+    /// <summary>
+    /// ¿La parte se lee como XML? HU-035.3 (#277): sí si su tipo, sin parámetros, termina en <c>+xml</c> o es <c>application/xml</c> o
+    /// <c>text/xml</c>, y también el dibujo VML (<see cref="TipoVml"/>, sin <c>+xml</c>), que ClosedXML lee como XML para los comentarios.
+    /// Las demás son binarias y se saltan: imágenes, <c>vbaProject</c>, objetos incrustados y la configuración de impresión que guarda
+    /// Excel (<c>xl/printerSettings/printerSettings1.bin</c>, de tipo <c>...spreadsheetml.printerSettings</c>). Antes bastaba «xml» en
+    /// el tipo y esas partes de <c>openxmlformats</c> llegaban al lector XML: un libro con la impresión configurada era
+    /// <c>LIBRO_ILEGIBLE</c>. Cambiar el tipo en <c>[Content_Types].xml</c> no salta el conteo: el SDK de Open XML exige el tipo de las
+    /// partes de tipo fijo (hoja, cadenas, estilos, VML...) y si no coincide el libro no abre (<c>LIBRO_ILEGIBLE</c>); la parte principal
+    /// (<c>xl/workbook.xml</c>) no tiene tipo fijo, así que <see cref="VerificarElementos"/> la cuenta siempre, declare el tipo que declare.
+    /// Las demás partes sin tipo fijo (imágenes, XML personalizado, propiedades, incrustadas, miniatura) ClosedXML no las lee como XML.
+    /// </summary>
+    internal static bool EsParteXml(string tipo)
+    {
+        var sinParametros = tipo.Split(';')[0].Trim();
+        return sinParametros.EndsWith("+xml", StringComparison.OrdinalIgnoreCase)
+            || sinParametros.Equals("application/xml", StringComparison.OrdinalIgnoreCase)
+            || sinParametros.Equals("text/xml", StringComparison.OrdinalIgnoreCase)
+            || sinParametros.Equals(TipoVml, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -282,6 +324,13 @@ public sealed class clsLecturaExcelAcotada : IDisposable
 
     /// <summary><c>EXCEL_INVALIDO</c> con <paramref name="motivo"/> en <c>detalle.motivo</c>.</summary>
     public static clsErrorDominio Invalido(string motivo) => new(clsCodigosError.ExcelInvalido, MensajeInvalido, motivo);
+
+    /// <summary>¿La entrada del zip es de las que lee System.IO.Packaging al abrir el paquete sin ser una parte?</summary>
+    private static bool EsEntradaDelPaquete(string nombre) =>
+        nombre.Equals("[Content_Types].xml", StringComparison.OrdinalIgnoreCase) || nombre.EndsWith(".rels", StringComparison.OrdinalIgnoreCase);
+
+    private static clsErrorDominio DemasiadosElementos() => new(clsCodigosError.ArchivoDemasiadoGrande,
+        "El Excel tiene demasiadas celdas para analizarlo: deja solo las hojas y filas que se necesitan.", MotivoDescomprimido);
 
     private static clsErrorDominio DemasiadoGrande() => new(clsCodigosError.ArchivoDemasiadoGrande,
         "El contenido del Excel descomprimido supera 64 MB: deja solo las hojas y filas que se necesitan.", MotivoDescomprimido);

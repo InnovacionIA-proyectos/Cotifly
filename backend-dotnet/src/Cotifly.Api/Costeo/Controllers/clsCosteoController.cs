@@ -7,6 +7,7 @@ using Cotifly.Aplicacion.Cotizaciones.DTOs;
 using Cotifly.Aplicacion.Cotizaciones.Services;
 using Cotifly.Dominio.Comun;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 
 namespace Cotifly.Api.Costeo.Controllers;
 
@@ -32,16 +33,24 @@ public sealed class clsCosteoController(
     /// HU-036.2 (#206): el comercial acepta el precio y finaliza la cotización. 200 <c>CotizacionResumen</c> con <c>finalizada_at</c> (y el
     /// <c>ETag</c> nuevo; re-finalizar es 200 sin cambios con el mismo <c>ETag</c>); 404 si no es suya; 409 <c>COTIZACION_NO_FINALIZABLE</c>
     /// (<c>estado_costeo</c> distinto de <c>autocosteo</c> y <c>entregada</c>) o <c>CONFLICTO_CONCURRENCIA</c>; 428 sin <c>If-Match</c>.
+    /// HU-046.3 (#269; contrato del 2026-11-10): cuerpo opcional <c>FinalizarWeb</c> con <c>justificacion</c>; sin ella, 409
+    /// <c>COTIZACION_NO_FINALIZABLE</c> con <c>detalle.motivo = medidas_obligatorias_faltantes</c> (y <c>detalle.rutas</c> con
+    /// <c>linea_orden</c>, <c>origen</c>, <c>destino</c> y sus medidas) si falta una medida obligatoria de la política de seguros; 400
+    /// <c>JUSTIFICACION_REQUERIDA</c> (con <c>detalle.minimo</c> y <c>detalle.maximo</c>) si la justificación viene fuera de 10 a 500
+    /// caracteres; 500 si la política de seguros no se puede leer.
     /// </summary>
     [HttpPost("cotizaciones/{folio}/finalizar")]
     [clsRequiereIfMatch]
     [ProducesResponseType<clsCotizacionResumen>(StatusCodes.Status200OK)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<clsErrorWeb>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status409Conflict)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status428PreconditionRequired)]
-    public async Task<IActionResult> Finalizar(string folio, CancellationToken cancellationToken)
+    public async Task<IActionResult> Finalizar(
+        string folio, [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] clsFinalizarWebRequest? cuerpo, CancellationToken cancellationToken)
     {
-        var resultado = await finalizacion.FinalizarAsync(UsuarioId, folio, clsConcurrenciaHttp.VersionDe(HttpContext), cancellationToken);
+        var resultado = await finalizacion.FinalizarAsync(
+            UsuarioId, folio, clsConcurrenciaHttp.VersionDe(HttpContext), cuerpo?.Justificacion, cancellationToken);
         if (resultado.EsFallo)
         {
             return Error(resultado.Error);

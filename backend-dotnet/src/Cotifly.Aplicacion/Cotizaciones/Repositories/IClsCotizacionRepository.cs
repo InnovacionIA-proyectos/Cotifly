@@ -10,8 +10,12 @@ namespace Cotifly.Aplicacion.Cotizaciones.Repositories;
 /// aislamiento por comercial (ADR-009): si la cotización no es del usuario, devuelven <c>null</c>
 /// igual que si no existiera (el endpoint responde 404).
 /// </summary>
-/// <summary>Datos del Excel original de una licitación sin su contenido.</summary>
-public sealed record clsArchivoLicitacionResumen(string NombreArchivo, string Hoja, int TamanoBytes);
+/// <summary>
+/// Datos del Excel original de una licitación sin su contenido. HU-044.10 (#293): <paramref name="OrigenLectura"/> es cómo se leyó el
+/// Excel (<c>analizar_excel</c> o <c>leer_estructura</c>); <c>null</c> en una licitación con archivo anterior al script 22 (la vista la
+/// trata como <c>analizar_excel</c>).
+/// </summary>
+public sealed record clsArchivoLicitacionResumen(string NombreArchivo, string Hoja, int TamanoBytes, string? OrigenLectura = null);
 
 public interface IClsCotizacionRepository
 {
@@ -199,4 +203,13 @@ public interface IClsCotizacionRepository
     /// 0 si no existe ninguna.
     /// </summary>
     Task<int> ObtenerVersionMaximaAsync(string folioBase, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// HU-046.3 (#269, B1 de la auditoría): guarda el <c>codigoServicio</c> de <paramref name="conexos"/> (ya completado en memoria) con una
+    /// actualización por fila <c>WHERE id = … AND codigoServicio IS NULL</c>, fuera del rastreador y sin tocar la cabecera, su versión ni
+    /// <c>updatedAt</c>: la usa la LECTURA del costeo, que no toma el candado de la cabecera. Una fila que otra petición ya completó o borró
+    /// no se toca (0 filas). Las propiedades quedan como guardadas en el rastreador (no las vuelve a escribir otro guardado). Devuelve
+    /// cuántas filas actualizó.
+    /// </summary>
+    Task<int> GuardarCodigosServicioAsync(IReadOnlyCollection<clsServicioConexoRuta> conexos, CancellationToken cancellationToken = default);
 }

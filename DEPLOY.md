@@ -674,6 +674,10 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
      Con HU-045.2 (#264, seguro de la mercancía): `…` → `19` → `20` → imagen → `08`. El `20` (de Datos, ya aplicado en la compartida el
      2026-11-03) va ANTES de la imagen: la imagen mapea `TarifasSeguro` y las tres columnas del seguro de la ruta ("falta 20"). Es
      seguro con la imagen anterior (tabla nueva y columnas con `DEFAULT 0`/NULL: las rutas quedan sin seguro).
+     Con HU-046.3 (#269, política de seguros): `…` → `20` → `21` → imagen → `08`. El `21` (de Datos, HU-046.2 #268, ya aplicado en la
+     compartida el 2026-11-03) va ANTES de la imagen: la imagen mapea las 4 tablas `PoliticaSeguro*` y `CotizacionServiciosConexos.codigoServicio`
+     ("falta 21"). Es seguro con la imagen anterior (tablas nuevas y una columna NULL). Las filas de conexos en NULL las completa el
+     backend al leer el catálogo de NEXO; la política se cambia con `db/scripts/operacion/cambiar_politica_seguros.sql`, sin redesplegar.
    - **#261 (punto 4): `db/scripts/19_precio_venta_conexos.sql` va en la misma ventana corta que la imagen de #261.** Deja
      `CotizacionServiciosConexos.precioVenta DECIMAL(18,2) NOT NULL` sin `DEFAULT` (backfill `precioVenta = precio`). No hay un orden
      sin ventana de falla:
@@ -756,6 +760,7 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
    | `esquema incompleto: falta 18` | Falta `SapMapeoTrqType.lineaNegocioId` (HU-042.4, #247) | Aplicar `db/scripts/18_sap_mapeo_fk_margenes_politica.sql` |
    | `esquema incompleto: falta 19` | Falta `CotizacionServiciosConexos.precioVenta` (HU-043.1, #245; mapeo en #261) | Aplicar `db/scripts/19_precio_venta_conexos.sql` |
    | `esquema incompleto: falta 20` | Faltan `TarifasSeguro` o `incluyeSeguro`/`tasaSeguroAplicada`/`costoSeguro` de la ruta (HU-045.1 #263; mapeo en HU-045.2 #264) | Aplicar `db/scripts/20_seguro_mercancia.sql` |
+   | `esquema incompleto: falta 21` | Faltan las tablas `PoliticaSeguro*` o `CotizacionServiciosConexos.codigoServicio` (HU-046.2 #268; mapeo en HU-046.3 #269) | Aplicar `db/scripts/21_politica_seguros.sql` |
    | `esquema incompleto: falta Tabla.columna, ...` (hasta 5) | Falta otra tabla o columna del modelo (por ejemplo un script intermedio sin aplicar) | Comparar con `db/scripts/01_crear_esquema.sql` y aplicar el script que la trae (lista en `docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md` §A.5) |
 
 1. **Staging.** Merge a `QA` → el pipeline (o `publicar-imagen.sh --canal qa`) publica `sha-<corto>`. En Dokploy, stack

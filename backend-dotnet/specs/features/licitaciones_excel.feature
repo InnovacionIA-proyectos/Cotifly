@@ -101,6 +101,20 @@ Característica: Licitaciones desde Excel
     Entonces la respuesta tiene el estado 201 y cumple el esquema "Licitacion" del contrato
     Y la línea 2 que recibió Nexo trae "claseContenedor" igual a "CNT20.OP"
 
+  # HU-021.15 (#297) — Con clase_viaje = Extradimensionado, clase_contenedor es OPCIONAL y solo admite las clases provisionales G15
+  # (CNT20.FT / CNT20.OP / CNT40.FT / CNT40.OP, exactas); vacía no es error y otra clase es VALOR_FUERA_DE_RANGO en clase_contenedor.
+  Escenario: En extradimensionado la clase de contenedor es opcional y solo admite las provisionales
+    Cuando "ana" crea la licitación "L1" del cliente "900555111" con estas filas:
+      | origen       | destino      | tipologia | clase_viaje       | clase_contenedor |
+      | BUENAVENTURA | BOGOTA, D.C. | CargaSeca | Extradimensionado | CNT40.FT         |
+      | CALI         | CARTAGENA    | CargaSeca | Extradimensionado |                  |
+      | BUENAVENTURA | CALI         | CargaSeca | Extradimensionado | CNT40.HC         |
+    Entonces la respuesta tiene el estado 400 con el reporte de la licitación
+    Y el reporte trae exactamente estos errores:
+      | linea | campo            | codigo                |
+      | 2     | clase_contenedor | VALOR_FUERA_DE_RANGO  |
+    Y Nexo no recibió ninguna solicitud
+
   Escenario: Nexo recibe por línea los ids de municipio y las horas, y el reintento manda lo mismo
     Dado que Nexo responde 503 al alta de solicitudes
     Cuando "ana" crea la licitación "L1" del cliente "900555111" con estas filas:
@@ -208,6 +222,18 @@ Característica: Licitaciones desde Excel
       | un libro con una entidad externa (XXE)   | EXCEL_INVALIDO           | LIBRO_ILEGIBLE              |
       | un .xls antiguo renombrado a .xlsx       | EXCEL_INVALIDO           | CIFRADO_O_XLS               |
       | un archivo de texto renombrado a .xlsx   | EXCEL_INVALIDO           | NO_ES_XLSX                  |
+
+  # HU-044.7 (#290) — Una licitación leída con la IA de NEXO (leer-estructura) se crea con origen_lectura = leer_estructura: la 'fila' es
+  # el índice dentro de la tabla (no de la hoja) y la exportación arma un Excel NUEVO (hoja «Licitación»), sin escribir sobre el original.
+  Escenario: Una licitación leída con leer-estructura se crea y se exporta en una hoja nueva
+    Cuando "ana" crea la licitación "L1" del cliente "900555111" leída con leer-estructura de la tabla "Rutas 2026" con 3 filas
+    Entonces la respuesta tiene el estado 201 y cumple el esquema "Licitacion" del contrato
+    Y la licitación "L1" quedó marcada como leída con la IA de NEXO
+    Cuando Nexo costea las líneas 1 y 2 de "L1" con un flete de 1000000
+    Y el polling consulta a Nexo por "L1"
+    Y "ana" exporta el Excel de la licitación "L1"
+    Entonces el Excel exportado trae la hoja "Licitación" y el resumen dice que se leyó con la IA de NEXO
+    Y el Excel no contiene el costo 1000000 de Nexo
 
   # HU-044.2 (#253) — La importación inteligente de NEXO propone el mapeo de una hoja: la plantilla del cliente, luego su diccionario y,
   # para lo que falte, la IA. El campo de cada columna es el nombre de NEXO; es solo una sugerencia que el comercial confirma.

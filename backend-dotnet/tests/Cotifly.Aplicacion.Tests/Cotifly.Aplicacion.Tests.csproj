@@ -15,6 +15,7 @@
     <!-- Formulario ampliado de muestra del costeo en Nexo (ADR-015). -->
     <Compile Include="..\Comun\clsSolicitudCosteoMuestra.cs" Link="Comun\clsSolicitudCosteoMuestra.cs" />
     <Compile Include="..\Comun\clsCotizacionMuestra.cs" Link="Comun\clsCotizacionMuestra.cs" />
+    <Compile Include="..\Comun\clsPoliticaSegurosMuestra.cs" Link="Comun\clsPoliticaSegurosMuestra.cs" />
     <!-- Modelo guionizado del agente (#12 parte C): IChatClient sin red. -->
     <Compile Include="..\Comun\clsChatClientGuionizado.cs" Link="Comun\clsChatClientGuionizado.cs" />
   </ItemGroup>

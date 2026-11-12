@@ -9,8 +9,15 @@ namespace Cotifly.Dominio.Cotizaciones;
 /// </summary>
 public static class clsCatalogosCaptura
 {
-    /// <summary>Clase de viaje que exige <c>clase_contenedor</c> (y la única que la admite).</summary>
+    /// <summary>Clase de viaje que exige <c>clase_contenedor</c> (obligatoria) y admite cualquier clase del catálogo.</summary>
     public const string ClaseViajeContenedor = "Contenedor";
+
+    /// <summary>
+    /// HU-021.15 (#297): clase de viaje de carga extradimensionada nacional. Admite <c>clase_contenedor</c> como OPCIONAL y solo una de
+    /// las clases provisionales G15 (flat track / open top, <see cref="ClasesContenedorProvisionales"/>); otra clase es
+    /// <c>VALOR_FUERA_DE_RANGO</c>.
+    /// </summary>
+    public const string ClaseViajeExtradimensionado = "Extradimensionado";
 
     /// <summary>
     /// HU-032 (#197): las clases de viaje de Nexo (<c>descripcion</c> de <c>GET /api/catalogos/clases-viaje</c>, el <c>valor</c> de
@@ -18,7 +25,7 @@ public static class clsCatalogosCaptura
     /// valida <c>clase_viaje</c> contra el catálogo vivo de Nexo; esta lista solo valida la configuración al arrancar
     /// (<c>Captura:ClasesSinVehiculoObligatorio</c>), que no puede consultar Nexo.
     /// </summary>
-    public static readonly IReadOnlyList<string> ClasesViaje = [ClaseViajeContenedor, "Cupo", "Carga Suelta", "Extradimensionado"];
+    public static readonly IReadOnlyList<string> ClasesViaje = [ClaseViajeContenedor, "Cupo", "Carga Suelta", ClaseViajeExtradimensionado];
 
     /// <summary>
     /// HU-032 (#197): la clase de viaje de <see cref="ClasesViaje"/> que coincide con <paramref name="valor"/> recortado y sin distinguir
