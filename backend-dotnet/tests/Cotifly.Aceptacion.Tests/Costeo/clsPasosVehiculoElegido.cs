@@ -9,7 +9,7 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Costeo;
 
 /// <summary>
-/// Pasos de <c>specs/features/vehiculo_elegido.feature</c> (HU-032, #197, ADR-022): el vehículo elegido como respaldo del cubicador,
+/// Pasos de <c>specs/features/vehiculo_elegido.feature</c> (ADR-022): el vehículo elegido como respaldo del cubicador,
 /// contra la API real, SQL Server en Testcontainers, el Nexo falso de <see cref="clsPasosCosteo"/> y el cubicador falso de
 /// <see cref="clsPasosCubicador"/>.
 /// </summary>

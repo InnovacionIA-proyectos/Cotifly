@@ -10,7 +10,7 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Costeo;
 
 /// <summary>
-/// Pasos de <c>specs/features/ajuste_margen_costeo.feature</c> (HU-013.2, #98, ADR-018 §3, §8 y §11): la API real en memoria, SQL Server
+/// Pasos de <c>specs/features/ajuste_margen_costeo.feature</c> (ADR-018 §3, §8 y §11): la API real en memoria, SQL Server
 /// 2019 con el 0006 y el Nexo falso de <see cref="clsPasosCosteo"/>. Las mutaciones envían <c>If-Match</c> con la versión vigente de
 /// la fila (leída de la base) salvo que el paso diga otra cosa.
 /// </summary>
@@ -20,7 +20,7 @@ public sealed class clsPasosAjusteMargen(clsContextoWeb web, clsPasosCosteo cost
     private readonly Dictionary<string, string> _duenos = new(StringComparer.OrdinalIgnoreCase);
     private string? _etagGuardado;
 
-    /// <summary>ETag que guardó el paso "leyó el costeo de ... y guardó su ETag" (lo reutilizan los pasos de los textos, HU-013.5).</summary>
+    /// <summary>ETag que guardó el paso "leyó el costeo de ... y guardó su ETag" (lo reutilizan los pasos de los textos).</summary>
     public string? EtagGuardado => _etagGuardado;
 
     [Given("{string} envió a costeo el formulario ampliado del cliente {string} como {string}")]
@@ -47,7 +47,7 @@ public sealed class clsPasosAjusteMargen(clsContextoWeb web, clsPasosCosteo cost
         await costeo.AgregarConexoEnCotiflyAsync(cotizacion, nombre, valor);
     }
 
-    /// <summary>HU-043.2 (#251): el conexo con su costo de Nexo y su precio de venta en el catálogo, distintos.</summary>
+    /// <summary>El conexo con su costo de Nexo y su precio de venta en el catálogo, distintos.</summary>
     [Given("que el costeo de {string} trae el servicio conexo {string} con un valor de Nexo de {int} y una venta de {int}")]
     public async Task DadoElConexoConVenta(string cotizacion, string nombre, int valor, int venta)
     {
@@ -127,7 +127,7 @@ public sealed class clsPasosAjusteMargen(clsContextoWeb web, clsPasosCosteo cost
         await CosteoAsync(cotizacion);
         foreach (var cuerpo in new[] { anterior, web.UltimoCuerpo })
         {
-            // HU-039.1 (#218): el dueño ve el costo bruto de la ruta (`costo_final`), nunca el costo de un conexo ni un campo `costo`.
+            // El dueño ve el costo bruto de la ruta (`costo_final`), nunca el costo de un conexo ni un campo `costo`.
             cuerpo.Should().NotContain(texto, "el costo de un conexo de Nexo nunca llega al comercial").And.NotContain("\"costo\"");
         }
     }
@@ -142,14 +142,14 @@ public sealed class clsPasosAjusteMargen(clsContextoWeb web, clsPasosCosteo cost
     [When("{string} genera el PDF del costeo de {string}")]
     public async Task CuandoGeneraElPdf(string alias, string cotizacion)
     {
-        // HU-036.3 (#207): como el frontend, finaliza antes del PDF (la regla en sí la prueba cotizacion_finalizada.feature).
+        // Como el frontend, finaliza antes del PDF (la regla en sí la prueba cotizacion_finalizada.feature).
         await costeo.FinalizarSiCorrespondeAsync(alias, costeo.Folio(cotizacion));
         await web.EnviarAsync(HttpMethod.Post, $"{Ruta(cotizacion)}/pdf", web.Sesion(alias).Access);
     }
 
     /// <summary>
-    /// HU-036 (sin backfill): una cotización cuyo PDF se generó ANTES del script 14 y nunca se finalizó. Se arma con el flujo de hoy
-    /// (finalizar y generar) y se deja sin la finalización, como la deja el 14 sobre una fila existente.
+    /// Una cotización cuyo PDF se generó antes del script 14 y nunca se finalizó (el script no rellena datos). Se arma con el flujo
+    /// vigente (finalizar y generar) y se deja sin la finalización, como la deja el 14 sobre una fila existente.
     /// </summary>
     [Given("que {string} generó el PDF del costeo de {string} antes de HU-036, sin finalizarla")]
     public async Task DadoQueGeneroElPdfSinFinalizar(string alias, string cotizacion)
@@ -174,7 +174,7 @@ public sealed class clsPasosAjusteMargen(clsContextoWeb web, clsPasosCosteo cost
     {
         costeo.Nexo.Entregar((await costeo.Columna(cotizacion, "costeoId"))!);
         await web.Api.ProcesarPollingAsync(costeo.Folio(cotizacion));
-        await costeo.FinalizarSiCorrespondeAsync(alias, costeo.Folio(cotizacion)); // HU-036.3: finaliza antes del resultado
+        await costeo.FinalizarSiCorrespondeAsync(alias, costeo.Folio(cotizacion)); // Como el frontend, finaliza antes del resultado
         await web.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{costeo.Folio(cotizacion)}/resultado", web.Sesion(alias).Access,
             clsApiWebPruebas.Json(new { resultado }));
         web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);

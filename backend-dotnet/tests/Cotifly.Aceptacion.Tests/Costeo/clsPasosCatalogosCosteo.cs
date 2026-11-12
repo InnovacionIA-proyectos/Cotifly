@@ -6,7 +6,7 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Costeo;
 
 /// <summary>
-/// Pasos de <c>specs/features/catalogos_formulario_costeo.feature</c> (HU-013.10, #106): los catálogos del formulario salen de los
+/// Pasos de <c>specs/features/catalogos_formulario_costeo.feature</c>: los catálogos del formulario salen de los
 /// catálogos maestros del Nexo falso (<c>GET /api/catalogos/*</c>) y a Nexo solo llegan códigos de catálogo. Reutiliza la API y el
 /// Nexo falso de <see cref="clsPasosCosteo"/>.
 /// </summary>

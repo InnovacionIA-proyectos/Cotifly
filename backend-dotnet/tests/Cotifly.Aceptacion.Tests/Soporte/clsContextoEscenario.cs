@@ -10,7 +10,7 @@ namespace Cotifly.Aceptacion.Tests.Soporte;
 /// <summary>
 /// Estado de un escenario (Reqnroll lo crea por escenario y lo inyecta en los pasos): proveedor de
 /// servicios real (<c>AddAplicacion</c> + <c>AddInfraestructura</c>) sobre la base de pruebas y la <c>dbsolucionesti</c>
-/// falsa, reloj falso, fuente SAP TM de muestra (o la copia local real, HU-042.2) y resultados.
+/// falsa, reloj falso, fuente SAP TM de muestra (o la copia local real) y resultados.
 /// </summary>
 public sealed class clsContextoEscenario : IDisposable
 {
@@ -21,21 +21,21 @@ public sealed class clsContextoEscenario : IDisposable
 
     public clsContextoEscenario()
     {
-        // Carpeta de PDFs fija durante el escenario: sobrevive a Reconfigurar (#11).
+        // Carpeta de PDFs fija durante el escenario: sobrevive a Reconfigurar.
         _configuracion = new Dictionary<string, string?>
         {
             ["Pdf:StorageDir"] = clsServiciosPruebas.CarpetaPdfsTemporal(),
 
-            // HU-021.6: los escenarios del PDF legado (cotización "del chat") lo encienden; en producción está apagado.
+            // Los escenarios del PDF legado (cotización "del chat") lo encienden; en producción está apagado.
             ["Pdf:PermitirCotizacionChat"] = "true",
 
-            // La TRM (HU-012.1) nunca sale a la red: los adaptadores reales consultan las fuentes falsas del escenario. Por defecto solo la
+            // La TRM nunca sale a la red: los adaptadores reales consultan las fuentes falsas del escenario. Por defecto solo la
             // Superintendencia; los escenarios de DolarApi eligen el proveedor con UsarProveedorTrm.
             ["Trm:Url"] = clsTrmFalso.Url,
             ["Trm:UrlDolarApi"] = clsDolarApiFalso.Url,
             ["Trm:Proveedor"] = "superfinanciera",
 
-            // HU-033 (#199): el correo sale por el MailSender falso; fuera de Production va al buzón de pruebas.
+            // El correo sale por el MailSender falso; fuera de Production va al buzón de pruebas.
             ["Correo:MailSender:UrlBase"] = clsMailSenderFalso.UrlBase,
             ["Correo:Proteccion:BuzonPruebas"] = clsMailSenderFalso.BuzonPruebas,
         };
@@ -47,22 +47,22 @@ public sealed class clsContextoEscenario : IDisposable
     /// <summary>Fuente SAP TM del escenario por defecto: la muestra del Python en memoria.</summary>
     public clsFuenteMargenMuestra FuenteSap { get; } = new();
 
-    /// <summary>Datos abiertos de la Superintendencia Financiera falsos (TRM, HU-012.1) que atienden al adaptador real.</summary>
+    /// <summary>Datos abiertos de la Superintendencia Financiera falsos (TRM) que atienden al adaptador real.</summary>
     public clsTrmFalso TrmFalso { get; } = new();
 
-    /// <summary>DolarApi falso (TRM, HU-012.1, ADR-014) que atiende al adaptador real.</summary>
+    /// <summary>DolarApi falso (TRM, ADR-014) que atiende al adaptador real.</summary>
     public clsDolarApiFalso DolarApiFalso { get; } = new();
 
     /// <summary>Comerciales del escenario por nombre de usuario.</summary>
     public Dictionary<string, Guid> Usuarios { get; } = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>HU-033 (#199): MailSender falso del escenario (nunca envía correos reales).</summary>
+    /// <summary>MailSender falso del escenario (nunca envía correos reales).</summary>
     public clsMailSenderFalso MailSender { get; } = new();
 
     /// <summary>Correos que recibió el MailSender falso.</summary>
     public int CorreosRecibidos => MailSender.Recibidos.Count;
 
-    /// <summary>HU-033 (#199): rehace el proveedor en otro ambiente (<c>Production</c> admite enviar sin protección).</summary>
+    /// <summary>Rehace el proveedor en otro ambiente (<c>Production</c> admite enviar sin protección).</summary>
     public void UsarEntorno(string entorno, IDictionary<string, string?> configuracion)
     {
         _entorno = entorno;
@@ -70,7 +70,7 @@ public sealed class clsContextoEscenario : IDisposable
     }
 
     /// <summary>
-    /// HU-033 (#199): una vuelta del worker de correos solo con los correos en curso de <paramref name="folio"/> (como lo haría el worker
+    /// Una vuelta del worker de correos solo con los correos en curso de <paramref name="folio"/> (como lo haría el worker
     /// con ellos; la agenda es compartida con otros escenarios). Devuelve cuántos procesó.
     /// </summary>
     public async Task<int> ProcesarCorreosAsync(string folio)
@@ -91,10 +91,10 @@ public sealed class clsContextoEscenario : IDisposable
         return procesados;
     }
 
-    /// <summary>Error de negocio de la última operación de PDF o correo (#11), o <c>null</c> si salió bien.</summary>
+    /// <summary>Error de negocio de la última operación de PDF o correo, o <c>null</c> si salió bien.</summary>
     public clsErrorDominio? UltimoErrorNegocio { get; set; }
 
-    /// <summary>Bytes del último PDF generado (#11).</summary>
+    /// <summary>Bytes del último PDF generado.</summary>
     public byte[]? UltimoPdf { get; set; }
 
     /// <summary>Error de la última operación que se esperaba que fallara.</summary>
@@ -104,7 +104,7 @@ public sealed class clsContextoEscenario : IDisposable
     public IReadOnlyList<string> FoliosConsultados { get; set; } = [];
 
     /// <summary>
-    /// HU-042.2 (#243): rehace el proveedor con la fuente real del margen de SAP TM (<c>clsFuenteMargenTablaLocal</c>, la copia local
+    /// Rehace el proveedor con la fuente real del margen de SAP TM (<c>clsFuenteMargenTablaLocal</c>, la copia local
     /// <c>dbo_cotifly.SapMargenCliente</c> de la base de aceptación) en vez de la muestra en memoria.
     /// </summary>
     public void UsarCopiaLocalSap()

@@ -9,8 +9,8 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Costeo;
 
 /// <summary>
-/// HU-044.5 (#256): pasos de las plantillas de mapeo y los formatos de lectura de <c>specs/features/licitaciones_excel.feature</c>. Usa el
-/// Nexo falso del escenario (<see cref="clsPasosCosteo"/>), con su importación inteligente (HU-044.1, #252).
+/// Pasos de las plantillas de mapeo y los formatos de lectura de <c>specs/features/licitaciones_excel.feature</c>. Usa el
+/// Nexo falso del escenario (<see cref="clsPasosCosteo"/>), con su importación inteligente.
 /// </summary>
 [Binding]
 public sealed class clsPasosFormatosCliente(clsContextoWeb web, clsPasosCosteo costeo)
@@ -48,8 +48,8 @@ public sealed class clsPasosFormatosCliente(clsContextoWeb web, clsPasosCosteo c
         costeo.Nexo.Llamadas(HttpMethod.Get, "/api/captura-solicitudes/recetas-lectura").Should().Be(0);
 
     /// <summary>
-    /// La siguiente carga del mismo formato: lo que NEXO responde a <c>sugerir-mapeo</c> con esos encabezados y ese NIT (el endpoint de
-    /// Cotifly que lo reenvía es de #253; aquí se le pregunta directo al Nexo falso, como lo haría Cotifly).
+    /// La siguiente carga del mismo formato: lo que NEXO responde a <c>sugerir-mapeo</c> con esos encabezados y ese NIT (aquí se le
+    /// pregunta directo al Nexo falso, como lo haría el endpoint de Cotifly que lo reenvía).
     /// </summary>
     [Then("la siguiente carga de la hoja {string} del cliente {string} sale de la plantilla sin IA")]
     public async Task EntoncesLaSiguienteCargaLaReconoce(string encabezados, string nit)

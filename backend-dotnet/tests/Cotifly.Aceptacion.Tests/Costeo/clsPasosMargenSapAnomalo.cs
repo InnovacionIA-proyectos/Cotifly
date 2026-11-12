@@ -11,7 +11,7 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Costeo;
 
 /// <summary>
-/// Pasos de <c>specs/features/margen_sap_anomalo.feature</c> (HU-009, #139, B1): la API real conectada al Nexo falso de
+/// Pasos de <c>specs/features/margen_sap_anomalo.feature</c>: la API real conectada al Nexo falso de
 /// <see cref="clsPasosCosteo"/> y a una fuente SAP TM que propone siempre el mismo <c>Value</c>.
 /// </summary>
 [Binding]
@@ -41,7 +41,7 @@ public sealed class clsPasosMargenSapAnomalo(clsPasosCosteo costeo, clsContextoW
         ruta.GetProperty("aviso_margen").GetString().Should().Contain(margen).And.Contain("política");
     }
 
-    /// <summary>Copia local de SAP TM que responde siempre el mismo margen (porcentaje de SAP: 75 = 75 %; HU-042.2).</summary>
+    /// <summary>Copia local de SAP TM que responde siempre el mismo margen (porcentaje de SAP: 75 = 75 %).</summary>
     private sealed class clsFuenteMargenFija(decimal valor) : IClsFuenteMargen
     {
         public string Modo => "fija";

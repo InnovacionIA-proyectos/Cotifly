@@ -4,7 +4,7 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Web;
 
 /// <summary>
-/// Pasos de <c>specs/features/detalle_cotizacion.feature</c> (HU-027.1, #179): <c>GET /web/cotizaciones/{folio}</c> con el dueño, el
+/// Pasos de <c>specs/features/detalle_cotizacion.feature</c>: <c>GET /web/cotizaciones/{folio}</c> con el dueño, el
 /// gerente de su regional (solo consulta) y los ajenos. Reutiliza las sesiones, las cotizaciones y la última respuesta de
 /// <see cref="clsContextoWeb"/>.
 /// </summary>

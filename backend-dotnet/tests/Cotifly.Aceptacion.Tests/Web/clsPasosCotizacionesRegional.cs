@@ -4,7 +4,7 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Web;
 
 /// <summary>
-/// Pasos de <c>specs/features/cotizaciones_regional.feature</c> (HU-016.1, #154): consulta de <c>GET /web/cotizaciones/regional</c> y
+/// Pasos de <c>specs/features/cotizaciones_regional.feature</c>: consulta de <c>GET /web/cotizaciones/regional</c> y
 /// comprobación del orden y del comercial dueño de cada fila. Reutiliza las sesiones, las cotizaciones y la última respuesta de
 /// <see cref="clsContextoWeb"/>.
 /// </summary>
@@ -15,7 +15,7 @@ public sealed class clsPasosCotizacionesRegional(clsContextoWeb web)
     public Task CuandoConsultaLaRegional(string alias) =>
         web.EnviarAsync(HttpMethod.Get, "/web/cotizaciones/regional", web.Sesion(alias).Access);
 
-    /// <summary>HU-037.3 (#211): <c>?regional=</c> con el nombre real de la regional (alias del escenario).</summary>
+    /// <summary><c>?regional=</c> con el nombre real de la regional (alias del escenario).</summary>
     [When("{string} consulta las cotizaciones de la regional {string}")]
     public Task CuandoConsultaUnaRegional(string alias, string regional) =>
         web.EnviarAsync(HttpMethod.Get, $"/web/cotizaciones/regional?regional={Uri.EscapeDataString(web.Regional(regional))}", web.Sesion(alias).Access);

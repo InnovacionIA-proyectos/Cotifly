@@ -9,8 +9,8 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Costeo;
 
 /// <summary>
-/// Pasos de <c>specs/features/integracion_cubicador.feature</c> (HU-021.5, #133; contrato de HU-023.1, #156): la API real conectada al
-/// Nexo falso de <see cref="clsPasosCosteo"/> y al cubicador falso (<see cref="clsCubicadorFalso"/>; el real aún no está publicado).
+/// Pasos de <c>specs/features/integracion_cubicador.feature</c>: la API real conectada al
+/// Nexo falso de <see cref="clsPasosCosteo"/> y al cubicador falso (<see cref="clsCubicadorFalso"/>).
 /// Las verificaciones del envío por camión y del emparejamiento son las de <see cref="clsPasosEnvioPorCamion"/>.
 /// </summary>
 [Binding]
@@ -18,7 +18,7 @@ public sealed class clsPasosCubicador(clsPasosCosteo costeo, clsContextoWeb web)
 {
     private readonly clsCubicadorFalso _cubicador = new();
 
-    /// <summary>El cubicador falso del escenario (HU-035.1, #202: los pasos del Excel de mercancías le agregan tipos).</summary>
+    /// <summary>El cubicador falso del escenario (los pasos del Excel de mercancías le agregan tipos).</summary>
     public clsCubicadorFalso Cubicador => _cubicador;
 
     private static string Cadena => clsEntornoAceptacion.BaseDatos.CadenaCotifly;
@@ -96,7 +96,7 @@ public sealed class clsPasosCubicador(clsPasosCosteo costeo, clsContextoWeb web)
             + $"IIF(v.idRecomendacionVehiculo IS NULL, '-', 'R')), ',') {DeLaRuta(cotizacion, orden)}"))
             .Should().Be($"-|-|{pesoKg.ToString(CultureInfo.InvariantCulture)}.00|-");
 
-    // HU-023.2 (#157): "Calcular cubicaje" contra el cubicador (specs/features/calcular_cubicaje.feature).
+    // "Calcular cubicaje" contra el cubicador (specs/features/calcular_cubicaje.feature).
 
     [When("{string} calcula el cubicaje con el código de mercancía {string}")]
     public Task CuandoCalculaConCodigo(string comercial, string codigo) =>
@@ -157,7 +157,7 @@ public sealed class clsPasosCubicador(clsPasosCosteo costeo, clsContextoWeb web)
             clsApiWebPruebas.Json(new { items = new[] { item }, clase_viaje = "Contenedor" }));
     }
 
-    // Opción D (E2E 2026-10-16, D3): "Calcular cubicaje" asíncrono (202 y GET /web/cubicacion/{id}).
+    // "Calcular cubicaje" asíncrono (202 y GET /web/cubicacion/{id}).
 
     private string? _consulta;
 

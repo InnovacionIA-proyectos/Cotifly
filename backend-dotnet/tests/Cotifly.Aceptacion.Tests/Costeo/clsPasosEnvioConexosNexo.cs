@@ -9,7 +9,7 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Costeo;
 
 /// <summary>
-/// Pasos de <c>specs/features/envio_conexos_nexo.feature</c> (decisión 10, HU-021.9): una ruta capturada con un servicio conexo del
+/// Pasos de <c>specs/features/envio_conexos_nexo.feature</c>: una ruta capturada con un servicio conexo del
 /// catálogo de Nexo, la Mesa que costea y entrega, y el polling que envía el conexo una sola vez a la línea del primer camión.
 /// </summary>
 [Binding]

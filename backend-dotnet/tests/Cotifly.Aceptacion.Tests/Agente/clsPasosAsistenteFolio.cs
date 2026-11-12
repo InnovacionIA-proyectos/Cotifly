@@ -17,7 +17,7 @@ using FunctionResultContent = Microsoft.Extensions.AI.FunctionResultContent;
 namespace Cotifly.Aceptacion.Tests.Agente;
 
 /// <summary>
-/// Pasos de <c>specs/features/asistente_folio.feature</c> (HU-013.6, #102, ADR-018 §2b): la API real en memoria conectada al Nexo falso
+/// Pasos de <c>specs/features/asistente_folio.feature</c> (ADR-018 §2b): la API real en memoria conectada al Nexo falso
 /// de <see cref="clsPasosCosteo"/>, cuyo <see cref="clsPasosCosteo.Modelo"/> guionizado es el <c>IChatClient</c> del asistente. Guarda
 /// cada respuesta del chat para verificar la acción propuesta, confirmarla como el frontend y comprobar que ninguna lleva montos.
 /// </summary>
@@ -82,7 +82,7 @@ public sealed partial class clsPasosAsistenteFolio(clsContextoWeb web, clsPasosC
     [Given("que Nexo costeó la solicitud de {string} con el conexo {string} de {int}")]
     public Task DadoElConexo(string cotizacion, string conexo, int valor) => ajuste.DadoElConexo(cotizacion, conexo, valor);
 
-    /// <summary>HU-043.2 (#251): el conexo con su costo y su venta distintos (el total no contiene el costo como subcadena).</summary>
+    /// <summary>El conexo con su costo y su venta distintos (el total no contiene el costo como subcadena).</summary>
     [Given("que Nexo costeó la solicitud de {string} con el conexo {string} de {int} y una venta de {int}")]
     public Task DadoElConexoConVenta(string cotizacion, string conexo, int valor, int venta) =>
         ajuste.DadoElConexoConVenta(cotizacion, conexo, valor, venta);
@@ -90,7 +90,7 @@ public sealed partial class clsPasosAsistenteFolio(clsContextoWeb web, clsPasosC
     [Given("que {string} tiene la cotización de chat {string} creada antes de HU-013")]
     public async Task DadoUnaCotizacionDeChat(string alias, string folio)
     {
-        // Como las crea el agente legado (HU-003): folio del servidor, sin estadoCosteo. El alias del .feature apunta al folio real.
+        // Como las crea el agente legado: folio del servidor, sin estadoCosteo. El alias del .feature apunta al folio real.
         var cotizacion = await web.Api.CrearCotizacionAsync(web.Sesion(alias).UsuarioId, "900555111", conPdf: false);
         (await clsBaseDatosPruebas.EscalarAsync<string>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
             $"SELECT estadoCosteo FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{cotizacion.Folio}'")).Should().BeNull();
