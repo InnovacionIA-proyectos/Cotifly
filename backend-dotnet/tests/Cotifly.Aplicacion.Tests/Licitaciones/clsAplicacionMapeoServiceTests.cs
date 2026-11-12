@@ -24,10 +24,14 @@ public sealed class clsAplicacionMapeoServiceTests
     private readonly IClsImportacionExcelNexo _nexo = Substitute.For<IClsImportacionExcelNexo>();
     private readonly IClsMargenPoliticaRepository _politicas = Substitute.For<IClsMargenPoliticaRepository>();
     private readonly IClsCubicador _cubicador = Substitute.For<IClsCubicador>();
+    private readonly IClsColumnasDerivadasService _columnas = Substitute.For<IClsColumnasDerivadasService>();
     private clsPeticionAplicarMapeo? _enviada;
 
     public clsAplicacionMapeoServiceTests()
     {
+        // HU-044.9 (#292): la detección de columnas derivadas se prueba aparte; aquí es un paso que devuelve las filas tal cual.
+        _columnas.EnriquecerFilasAsync(Arg.Any<Guid>(), Arg.Any<IReadOnlyList<IReadOnlyList<string?>?>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ci.ArgAt<IReadOnlyList<IReadOnlyList<string?>?>>(1));
         _politicas.ListarAsync(Arg.Any<CancellationToken>()).Returns(
         [
             Linea("Nacional", "Nacional"), Linea("Distribucion", null), Linea("Importacion", "PuertoAInterior"),
@@ -43,7 +47,7 @@ public sealed class clsAplicacionMapeoServiceTests
     }
 
     private clsAplicacionMapeoService Servicio(IClsCubicador? cubicador = null) =>
-        new(_nexo, _politicas, NullLogger<clsAplicacionMapeoService>.Instance, cubicador ?? _cubicador);
+        new(_nexo, _politicas, _columnas, NullLogger<clsAplicacionMapeoService>.Instance, cubicador ?? _cubicador);
 
     private Task<clsResultado<clsMapeoAplicado>> Aplicar(clsEntradaAplicacionMapeo entrada, IClsCubicador? cubicador = null) =>
         Servicio(cubicador).AplicarAsync(_usuario, entrada, TestContext.Current.CancellationToken);
@@ -368,6 +372,28 @@ public sealed class clsAplicacionMapeoServiceTests
         var resultado = await Aplicar(Entrada());
 
         (resultado.Error.Codigo, resultado.Error.Mensaje).Should().Be((codigo, "Mensaje de NEXO."));
+    }
+
+    [Fact]
+    public async Task LasFilasEnriquecidasConLasColumnasDerivadasViajanANexoYSeMapeanComoCualquierOtra()
+    {
+        // HU-044.9 (#292): aplicar-mapeo agrega la columna derivada al final de cada fila y el mapeo confirmado la referencia por índice.
+        _columnas.EnriquecerFilasAsync(_usuario, Arg.Any<IReadOnlyList<IReadOnlyList<string?>?>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => (IReadOnlyList<IReadOnlyList<string?>?>)[.. ci.ArgAt<IReadOnlyList<IReadOnlyList<string?>?>>(1)
+                .Select(f => (IReadOnlyList<string?>?)[.. f!, "Mula"])]);
+        NexoResponde(1, [Importada(2)]);
+
+        await Aplicar(Entrada(filas: 1) with
+        {
+            Columnas =
+            [
+                new clsColumnaEntradaMapeo(0, "origen", null), new clsColumnaEntradaMapeo(1, "destino", null),
+                new clsColumnaEntradaMapeo(2, "peso", "peso_toneladas_a_kg"), new clsColumnaEntradaMapeo(3, "tipoVehiculo", null),
+            ],
+        });
+
+        _enviada!.Filas.Single().Should().Equal("Origen 0", "Destino 0", "1,5", "Mula");
+        _enviada.Columnas.Should().Contain(c => c.Indice == 3 && c.Campo == "tipoVehiculo");
     }
 
     [Fact]

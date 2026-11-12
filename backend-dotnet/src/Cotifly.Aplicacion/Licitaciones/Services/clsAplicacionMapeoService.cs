@@ -56,6 +56,7 @@ public interface IClsAplicacionMapeoService
 public sealed class clsAplicacionMapeoService(
     IClsImportacionExcelNexo nexo,
     IClsMargenPoliticaRepository politicas,
+    IClsColumnasDerivadasService columnasDerivadas,
     ILogger<clsAplicacionMapeoService> logger,
     IClsCubicador? cubicador = null) : IClsAplicacionMapeoService
 {
@@ -74,7 +75,11 @@ public sealed class clsAplicacionMapeoService(
             return new clsErrorDominio(clsCodigosError.ErrorInterno, "Aplicar el mapeo exige el comercial autenticado.");
         }
 
-        var peticion = clsValidadorAplicacionMapeo.Validar(entrada);
+        // HU-044.9 (#292): antes de validar y mandar a NEXO, Cotifly agrega al final de cada fila las mismas columnas derivadas que propuso
+        // sugerir-mapeo (vehículo en el texto, contenedor con peso), con los índices que el mapeo confirmado ya referencia. NEXO las convierte
+        // como cualquier otra columna. Una petición mal formada (filas nulas) no se enriquece: la validación la rechaza igual.
+        var filasEnriquecidas = await columnasDerivadas.EnriquecerFilasAsync(usuarioId, entrada.Filas ?? [], cancellationToken);
+        var peticion = clsValidadorAplicacionMapeo.Validar(entrada with { Filas = filasEnriquecidas });
         if (peticion.EsFallo)
         {
             return peticion.Error;
