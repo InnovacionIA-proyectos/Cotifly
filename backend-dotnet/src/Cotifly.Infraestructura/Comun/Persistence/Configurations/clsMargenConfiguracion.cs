@@ -26,7 +26,7 @@ internal sealed class clsMargenPoliticaConfiguracion : IEntityTypeConfiguration<
 }
 
 /// <summary>
-/// <c>dbo_cotifly.SapMapeoTrqType</c> (script 0001 §2), PK compuesta. HU-042.4 (#247, <c>db/scripts/18_sap_mapeo_fk_margenes_politica.sql</c>):
+/// <c>dbo_cotifly.SapMapeoTrqType</c> (script 0001 §2), PK compuesta. Con <c>db/scripts/18_sap_mapeo_fk_margenes_politica.sql</c>,
 /// <c>lineaNegocioId</c> con su FK a <c>MargenesPolitica</c> (sin el 18, <c>/health/ready</c> dice "falta 18"); <c>lineaNegocio</c> (texto)
 /// sigue mapeada mientras exista en la tabla.
 /// </summary>
@@ -47,7 +47,7 @@ internal sealed class clsSapMapeoTrqTypeConfiguracion : IEntityTypeConfiguration
     }
 }
 
-/// <summary><c>dbo_cotifly.MargenAjustes</c> (script 0001 §5; 0009: la ruta ajustada, HU-021).</summary>
+/// <summary><c>dbo_cotifly.MargenAjustes</c> (script 0001 §5; 0009: la ruta ajustada).</summary>
 internal sealed class clsMargenAjusteConfiguracion : IEntityTypeConfiguration<clsMargenAjuste>
 {
     public void Configure(EntityTypeBuilder<clsMargenAjuste> builder)

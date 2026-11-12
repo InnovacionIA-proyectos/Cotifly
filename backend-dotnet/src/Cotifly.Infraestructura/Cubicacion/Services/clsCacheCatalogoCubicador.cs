@@ -2,7 +2,7 @@ namespace Cotifly.Infraestructura.Cubicacion.Services;
 
 /// <summary>
 /// Caché en memoria (singleton, una por catálogo: <typeparamref name="TFila"/>) de los catálogos del cubicador (tipos de mercancía,
-/// carrocerías y vehículos; HU-021.5, #133, y HU-023.1, #156), como la de los catálogos maestros de Nexo: solo guarda respuestas
+/// carrocerías y vehículos), como la de los catálogos maestros de Nexo: solo guarda respuestas
 /// exitosas y vence a los <c>Cubicador:MinutosCacheCatalogos</c>. Sin copia de respaldo: si el cubicador no responde, el endpoint del
 /// catálogo responde 503.
 /// </summary>

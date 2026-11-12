@@ -9,9 +9,8 @@ using Microsoft.AspNetCore.Mvc;
 namespace Cotifly.Api.Metricas.Controllers;
 
 /// <summary>
-/// Tablero de métricas (HU-010.1, ADR-016; tag <c>metricas</c> de <c>specs/openapi.yaml</c>): <c>comercial</c> (propias, comercial o
-/// gerente) y <c>regional</c> (<c>gerente_comercial</c> o <c>director</c>; HU-037). El borrador anterior (<c>actividad</c> y <c>ajustes-margen</c>)
-/// se retiró en HU-014.3 (#152).
+/// Tablero de métricas (ADR-016; tag <c>metricas</c> de <c>specs/openapi.yaml</c>): <c>comercial</c> (propias, comercial o
+/// gerente) y <c>regional</c> (<c>gerente_comercial</c> o <c>director</c>).
 /// </summary>
 [Route("web/metricas")]
 public sealed class clsMetricasController(
@@ -29,9 +28,9 @@ public sealed class clsMetricasController(
     }
 
     /// <summary>
-    /// 200 <c>MetricasRegional</c>. HU-010.5 (#187): <c>anio</c> (año completo) y <c>anio</c>+<c>mes</c> (mes completo), en fechas de
+    /// 200 <c>MetricasRegional</c>. <c>anio</c> (año completo) y <c>anio</c>+<c>mes</c> (mes completo), en fechas de
     /// Bogotá, reemplazan a <c>desde</c>/<c>hasta</c>. 400 fechas, <c>anio</c>, <c>mes</c> o <c>usuario_id</c> inválidos (o <c>mes</c> sin
-    /// <c>anio</c>); 403 si no es gerente ni director, o <c>REGIONAL_NO_PERMITIDA</c> si el gerente pide otra regional (HU-037.3, #211);
+    /// <c>anio</c>); 403 si no es gerente ni director, o <c>REGIONAL_NO_PERMITIDA</c> si el gerente pide otra regional;
     /// 404 comercial fuera del alcance; 409 <c>REGIONAL_NO_ASIGNADA</c>; 503 <c>REGIONAL_NO_DISPONIBLE</c>. <c>regional</c>: la del
     /// director (sin ella, todas).
     /// </summary>

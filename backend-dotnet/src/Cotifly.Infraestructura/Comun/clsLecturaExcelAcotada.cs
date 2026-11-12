@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 namespace Cotifly.Infraestructura.Comun;
 
 /// <summary>
-/// Controles compartidos para abrir con ClosedXML un Excel subido por un usuario (HU-035.1 #202 y HU-035.2 #213, ADR-024). Los usan el
+/// Controles compartidos para abrir con ClosedXML un Excel subido por un usuario (ADR-024). Los usan el
 /// lector del Excel de mercancías (<c>clsLectorGrillaExcelClosedXml</c>) y el del pliego de licitación
 /// (<c>clsLectorExcelLicitacionClosedXml</c>). Singleton: el cupo es uno para todas las lecturas de Excel del proceso.
 /// </summary>
@@ -190,7 +190,7 @@ public sealed class clsLecturaExcelAcotada : IDisposable
 
     /// <summary>
     /// Cuenta los elementos XML de <c>[Content_Types].xml</c>, de las relaciones (<c>.rels</c>, que System.IO.Packaging lee enteras al
-    /// abrir el paquete; validación de #277) y de todas las partes XML del paquete (las mismas que abriría ClosedXML, resueltas por sus
+    /// abrir el paquete) y de todas las partes XML del paquete (las mismas que abriría ClosedXML, resueltas por sus
     /// relaciones; ver <see cref="EsParteXml"/>) con un lector de flujo, sin DTD ni entidades externas. <c>ARCHIVO_DEMASIADO_GRANDE</c> (<see cref="MotivoDescomprimido"/>) si pasan
     /// de <see cref="MaximoElementosXml"/>; <c>EXCEL_INVALIDO</c> (<see cref="MotivoLibroIlegible"/>) si una parte no es XML válido o trae
     /// un DTD; <c>null</c> si se puede abrir. Se llama después de <see cref="VerificarPaquete"/>: el contenido descomprimido ya está acotado.
@@ -261,12 +261,11 @@ public sealed class clsLecturaExcelAcotada : IDisposable
     }
 
     /// <summary>
-    /// ¿La parte se lee como XML? HU-035.3 (#277): sí si su tipo, sin parámetros, termina en <c>+xml</c> o es <c>application/xml</c> o
+    /// ¿La parte se lee como XML? Sí si su tipo, sin parámetros, termina en <c>+xml</c> o es <c>application/xml</c> o
     /// <c>text/xml</c>, y también el dibujo VML (<see cref="TipoVml"/>, sin <c>+xml</c>), que ClosedXML lee como XML para los comentarios.
     /// Las demás son binarias y se saltan: imágenes, <c>vbaProject</c>, objetos incrustados y la configuración de impresión que guarda
-    /// Excel (<c>xl/printerSettings/printerSettings1.bin</c>, de tipo <c>...spreadsheetml.printerSettings</c>). Antes bastaba «xml» en
-    /// el tipo y esas partes de <c>openxmlformats</c> llegaban al lector XML: un libro con la impresión configurada era
-    /// <c>LIBRO_ILEGIBLE</c>. Cambiar el tipo en <c>[Content_Types].xml</c> no salta el conteo: el SDK de Open XML exige el tipo de las
+    /// Excel (<c>xl/printerSettings/printerSettings1.bin</c>, de tipo <c>...spreadsheetml.printerSettings</c>), que no es XML aunque su
+    /// tipo lo mencione. Cambiar el tipo en <c>[Content_Types].xml</c> no salta el conteo: el SDK de Open XML exige el tipo de las
     /// partes de tipo fijo (hoja, cadenas, estilos, VML...) y si no coincide el libro no abre (<c>LIBRO_ILEGIBLE</c>); la parte principal
     /// (<c>xl/workbook.xml</c>) no tiene tipo fijo, así que <see cref="VerificarElementos"/> la cuenta siempre, declare el tipo que declare.
     /// Las demás partes sin tipo fijo (imágenes, XML personalizado, propiedades, incrustadas, miniatura) ClosedXML no las lee como XML.

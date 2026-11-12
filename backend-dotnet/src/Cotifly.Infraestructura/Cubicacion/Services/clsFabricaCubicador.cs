@@ -6,7 +6,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Cubicacion.Services;
 
 /// <summary>
-/// Elige el adaptador del cubicador (HU-021.5, #133) según <c>Cubicador:UrlBase</c>: configurada → <see cref="clsCubicadorHttp"/> (cliente
+/// Elige el adaptador del cubicador según <c>Cubicador:UrlBase</c>: configurada → <see cref="clsCubicadorHttp"/> (cliente
 /// tipado <see cref="clsCubicadorHttp.NombreCliente"/>); vacía → <see cref="clsCubicadorNoDisponible"/>. Mismo patrón que
 /// <c>clsFabricaCosteoNexo</c>.
 /// </summary>

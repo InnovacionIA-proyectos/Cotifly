@@ -10,10 +10,8 @@ namespace Cotifly.Infraestructura.IA.Services;
 /// se inyectan para probarlo sin dormir.
 /// </summary>
 /// <remarks>
-/// HU-013.16 (#126): el port de <c>LimitadorRPM</c> del Python espaciaba TODAS las llamadas 60/rpm segundos (7,5 s con el valor por
-/// defecto 8), aunque el minuto tuviera cupo. Un turno del asistente hace dos o tres llamadas seguidas, así que esperaba 15 s solo
-/// por el limitador: era la mayor parte de los 17 a 24 s por turno medidos en E2E. La ventana deslizante respeta el mismo tope por
-/// minuto sin espaciar las llamadas de un turno.
+/// La ventana deslizante respeta el tope por minuto sin espaciar las llamadas de un turno: un turno del asistente hace dos o tres
+/// llamadas seguidas, y espaciarlas 60/rpm segundos (7,5 s con el valor por defecto 8) alargaría el turno sin necesidad.
 /// </remarks>
 public sealed class clsLimitadorRpm : IDisposable
 {
@@ -28,7 +26,7 @@ public sealed class clsLimitadorRpm : IDisposable
     private readonly TimeSpan _esperaMaxima;
 
     /// <param name="esperaMaxima">
-    /// Tope de espera por cupo (HU-013.16, <c>IA:EsperaMaximaRpmSegundos</c>). Si la llamada tendría que esperar más, no espera:
+    /// Tope de espera por cupo (<c>IA:EsperaMaximaRpmSegundos</c>). Si la llamada tendría que esperar más, no espera:
     /// lanza un 429 local y el canal responde el texto del límite (<c>clsTextosAgente.LimiteModelo</c>) en lugar de dejar al
     /// comercial hasta 60 s sin respuesta. Null = sin tope.
     /// </param>
@@ -109,7 +107,7 @@ public sealed class clsLimitadorRpm : IDisposable
 
 /// <summary>
 /// Decorador de <see cref="IChatClient"/> que respeta <see cref="clsLimitadorRpm"/> antes de cada llamada y registra la espera
-/// (HU-013.16: es una de las fases del tiempo de un turno del asistente).
+/// (es una de las fases del tiempo de un turno del asistente).
 /// </summary>
 public sealed class clsChatClientLimitado(IChatClient interno, clsLimitadorRpm limitador, ILogger<clsChatClientLimitado>? logger = null) : DelegatingChatClient(interno)
 {

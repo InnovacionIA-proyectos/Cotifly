@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace Cotifly.Infraestructura.Margen.Services;
 
-/// <summary>Una combinación de <c>RentabClienteSet</c> lista para <c>#SapMargenStage</c> (HU-042.2, #243).</summary>
+/// <summary>Una combinación de <c>RentabClienteSet</c> lista para <c>#SapMargenStage</c>.</summary>
 /// <param name="SalesOrgId">Organización de ventas, recortada y en mayúsculas.</param>
 /// <param name="TrqType">Tipo de solicitud de SAP, recortado y en mayúsculas.</param>
 /// <param name="BpSap">BP del cliente recortado, tal como lo manda SAP (con sus ceros: el consumo los normaliza al buscar).</param>
@@ -30,7 +30,7 @@ public sealed class clsSincronizacionMargenSapException : Exception
 
 /// <summary>
 /// Lectura del set completo de <c>RentabClienteSet</c> de SAP TM (OData v2: <c>{"d":{"results":[{"__metadata":{...}, "SalesOrgId",
-/// "TrqType", "OrderPartyId", "Value"}]}}</c>), HU-042.2 (#243). Todo o nada: una sola fila inválida descarta el set (la tabla no se toca)
+/// "TrqType", "OrderPartyId", "Value"}]}}</c>). Todo o nada: una sola fila inválida descarta el set (la tabla no se toca)
 /// con <see cref="clsSincronizacionMargenSapException"/>.
 /// </summary>
 /// <remarks>
@@ -183,7 +183,7 @@ public static class clsLectorRentabClienteSap
 }
 
 /// <summary>
-/// Guarda de mínimo de filas (HU-042.2, #243): un set parcial de SAP no debe desactivar al resto. El stored procedure solo se llama si SAP
+/// Guarda de mínimo de filas: un set parcial de SAP no debe desactivar al resto. El stored procedure solo se llama si SAP
 /// trajo al menos <c>max(SapTm:MinimoFilas, ceil(SapTm:MinimoPorcentajeActivas % × filas activas actuales))</c>.
 /// </summary>
 public static class clsGuardaMinimoFilasSap

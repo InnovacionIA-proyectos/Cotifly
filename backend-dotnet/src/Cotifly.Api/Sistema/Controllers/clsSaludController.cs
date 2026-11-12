@@ -18,7 +18,7 @@ public sealed class clsSaludController(IHostEnvironment entorno) : ControllerBas
         Ok(new clsRespuestaSalud("ok", NombreServicio, entorno.EnvironmentName));
 
     /// <summary>
-    /// Readiness: ejecuta los health checks con etiqueta <c>ready</c> (hoy, la base <c>dbo_cotifly</c>).
+    /// Readiness: ejecuta los health checks con etiqueta <c>ready</c> (la base <c>dbo_cotifly</c>).
     /// 200 <c>{"status":"ready"}</c> si todos pasan; 503 <c>{"status":"unavailable","detalle":...}</c> si no.
     /// </summary>
     [HttpGet("ready")]

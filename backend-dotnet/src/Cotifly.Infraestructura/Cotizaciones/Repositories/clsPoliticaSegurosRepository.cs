@@ -6,10 +6,10 @@ using Microsoft.EntityFrameworkCore;
 namespace Cotifly.Infraestructura.Cotizaciones.Repositories;
 
 /// <summary>
-/// Implementación EF de <see cref="IClsPoliticaSegurosRepository"/> (HU-046.3, #269): tres lecturas <c>AsNoTracking</c> por llamada (los
+/// Implementación EF de <see cref="IClsPoliticaSegurosRepository"/>: tres lecturas <c>AsNoTracking</c> por llamada (los
 /// tramos activos, sus reglas con medidas activas y los conexos de esas medidas), sin caché: un cambio de Datos en las tablas se ve en la
 /// siguiente petición. Las medidas de cada tramo salen por <c>nombre</c> y luego por <c>codigo</c>, y los conexos de cada medida ordenados
-/// (contrato del 2026-11-10; orden estable, las tablas no tienen columna de orden).
+/// (orden estable: las tablas no tienen columna de orden).
 /// </summary>
 public sealed class clsPoliticaSegurosRepository(clsCotiflyDbContext contexto) : IClsPoliticaSegurosRepository
 {

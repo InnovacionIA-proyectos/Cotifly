@@ -21,13 +21,13 @@ public sealed class clsCandadoSesionSql(IOptions<clsOpcionesConexiones> conexion
     public const string Prefijo = "cotifly:sesion:";
     private const int LargoMaximoRecurso = clsAppLockSql.LargoMaximoRecurso;
 
-    /// <summary>Margen sobre la espera para la respuesta del servidor (límite del cliente, #125).</summary>
+    /// <summary>Margen sobre la espera para la respuesta del servidor (límite del cliente).</summary>
     private static readonly TimeSpan _margenRespuesta = TimeSpan.FromSeconds(30);
 
-    /// <summary>Espera del acuse de una cancelación antes de cerrar la conexión (#125).</summary>
+    /// <summary>Espera del acuse de una cancelación antes de cerrar la conexión.</summary>
     private static readonly TimeSpan _gracia = TimeSpan.FromSeconds(5);
 
-    /// <summary><c>CommandTimeout</c> de respaldo (#125): alto, porque SqlClient lo mide con el reloj de pared.</summary>
+    /// <summary><c>CommandTimeout</c> de respaldo: alto, porque SqlClient lo mide con el reloj de pared.</summary>
     private const int ComandoSegundos = 120;
 
     public async Task<IAsyncDisposable?> IntentarTomarAsync(string spaceId, string threadId, TimeSpan espera, CancellationToken cancellationToken = default)
@@ -42,7 +42,7 @@ public sealed class clsCandadoSesionSql(IOptions<clsOpcionesConexiones> conexion
         {
             await conexion.OpenAsync(cancellationToken);
 
-            // Límite del cliente monotónico, CommandTimeout de respaldo y cierre si no se confirma la cancelación (clsAppLockSql, #125).
+            // Límite del cliente monotónico, CommandTimeout de respaldo y cierre si no se confirma la cancelación (clsAppLockSql).
             var toma = await clsAppLockSql.TomarAsync(
                 conexion, transaccion: null, recurso, "Session", new clsLimitesAppLock(espera, _margenRespuesta, _gracia, ComandoSegundos), tiempo, cancellationToken);
 
@@ -81,7 +81,7 @@ public sealed class clsCandadoSesionSql(IOptions<clsOpcionesConexiones> conexion
     {
         public async ValueTask DisposeAsync()
         {
-            // Mismos límites que la toma (#125). Si no se confirma, cerrar la conexión también libera el candado de sesión.
+            // Mismos límites que la toma. Si no se confirma, cerrar la conexión también libera el candado de sesión.
             if (conexion.State == ConnectionState.Open
                 && !await clsAppLockSql.LiberarAsync(
                     conexion, recurso, "Session", new clsLimitesAppLock(TimeSpan.Zero, _margenRespuesta, _gracia, ComandoSegundos), tiempo))

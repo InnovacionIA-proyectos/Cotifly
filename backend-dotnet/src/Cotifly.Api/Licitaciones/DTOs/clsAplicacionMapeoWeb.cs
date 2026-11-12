@@ -3,7 +3,7 @@ using Cotifly.Aplicacion.Licitaciones.DTOs;
 namespace Cotifly.Api.Licitaciones.DTOs;
 
 /// <summary>
-/// <c>AplicarMapeoWeb</c> (snake_case, HU-044.3, #254): el NIT de la licitación (opcional), el mapeo confirmado (<c>columnas[]</c> con
+/// <c>AplicarMapeoWeb</c> (snake_case): el NIT de la licitación (opcional), el mapeo confirmado (<c>columnas[]</c> con
 /// <c>indice</c>, <c>campo</c> de NEXO y <c>transformacion</c>), TODAS las filas de la hoja sin el encabezado (máx. 5000, celdas como texto)
 /// y <c>primera_fila</c> (la fila del encabezado + 1; por defecto 2). La forma la valida el caso de uso con los códigos de NEXO.
 /// </summary>

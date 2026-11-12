@@ -2,14 +2,14 @@ namespace Cotifly.Api.Comun;
 
 /// <summary>
 /// Marca una propiedad de un DTO de entrada de <c>/web/*</c> que ya NO está en <c>specs/openapi.yaml</c> pero que se sigue leyendo para
-/// no romper a un frontend que todavía la manda (HU-021.11, #138): el valor se ignora sin error y queda un aviso en el log
+/// no romper a un frontend que todavía la manda: el valor se ignora sin error y queda un aviso en el log
 /// (<see cref="clsCamposRetirados.Registrar"/>). La prueba de contrato excluye estas propiedades de la comparación exacta con el esquema
 /// y exige que el esquema NO las declare.
 /// </summary>
 [AttributeUsage(AttributeTargets.Property, Inherited = true, AllowMultiple = false)]
 public sealed class clsCampoRetiradoAttribute(string motivo) : Attribute
 {
-    /// <summary>Por qué se retiró (por ejemplo, "decisión 1 de HU-021").</summary>
+    /// <summary>Por qué se retiró el campo.</summary>
     public string Motivo { get; } = motivo;
 }
 

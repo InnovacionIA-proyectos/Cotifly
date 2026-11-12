@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Cubicacion.Services;
 
 /// <summary>
-/// Sonda <c>cubicador</c> de <c>GET /health/ready</c> (HU-023.1, #156; petición P7). Sin <c>Cubicador:UrlBase</c> o sin
+/// Sonda <c>cubicador</c> de <c>GET /health/ready</c>. Sin <c>Cubicador:UrlBase</c> o sin
 /// <c>Cubicador:RutaSalud</c> no consulta nada (sano). Con las dos, hace un GET liviano a la ruta de salud del cubicador:
 /// <list type="bullet">
 /// <item>responde → sano;</item>

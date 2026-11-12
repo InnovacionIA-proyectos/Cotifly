@@ -3,7 +3,7 @@ using Cotifly.Aplicacion.Licitaciones.DTOs;
 
 namespace Cotifly.Api.Licitaciones.DTOs;
 
-// HU-044.5 (#256): plantillas de mapeo, formatos de lectura (recetas) y diccionario del cliente en /web/*, en snake_case. Ninguno expone el
+// Plantillas de mapeo, formatos de lectura (recetas) y diccionario del cliente en /web/*, en snake_case. Ninguno expone el
 // id local del cliente en NEXO (Cotifly trabaja con el NIT de la licitación y no lo guarda).
 
 /// <summary>
@@ -83,7 +83,7 @@ public sealed record clsRecetaLecturaWeb(
 }
 
 /// <summary>
-/// <c>DiccionarioCliente</c>: los términos del diccionario que Cotifly puede mostrar (hoy, solo los generales) y el <c>aviso</c> cuando se
+/// <c>DiccionarioCliente</c>: los términos del diccionario que Cotifly puede mostrar (solo los generales) y el <c>aviso</c> cuando se
 /// pidió con NIT (<c>TERMINOS_CLIENTE_NO_DISPONIBLES</c>); <c>null</c> sin NIT.
 /// </summary>
 public sealed record clsDiccionarioClienteWeb(IReadOnlyList<clsTerminoDiccionarioWeb> Terminos, clsAvisoDiccionario? Aviso)

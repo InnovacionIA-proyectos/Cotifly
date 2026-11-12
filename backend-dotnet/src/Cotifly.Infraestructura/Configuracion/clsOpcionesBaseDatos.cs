@@ -1,7 +1,7 @@
 namespace Cotifly.Infraestructura.Configuracion;
 
 /// <summary>
-/// Ajustes de la base <c>dbo_cotifly</c> que no son la cadena de conexión (sección <c>BaseDatos</c>, HU-023 #176).
+/// Ajustes de la base <c>dbo_cotifly</c> que no son la cadena de conexión (sección <c>BaseDatos</c>).
 /// </summary>
 public sealed class clsOpcionesBaseDatos
 {

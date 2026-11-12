@@ -9,10 +9,10 @@ using Microsoft.Extensions.Logging;
 namespace Cotifly.Infraestructura.IA.Services;
 
 /// <summary>
-/// Decorador de <see cref="IChatClient"/> con proveedores de respaldo (<c>IA:Fallbacks</c>, ADR-003; equivalente a los
-/// <c>fallbacks</c> de LiteLLM del Python): si un proveedor responde 429, un 5xx, falla la red o agota su tiempo, la misma
+/// Decorador de <see cref="IChatClient"/> con proveedores de respaldo (<c>IA:Fallbacks</c>, ADR-003): si un proveedor responde
+/// 429, un 5xx, falla la red o agota su tiempo, la misma
 /// petición pasa al siguiente. Un error del cliente (400, 401...) o la cancelación del llamador se propagan sin probar otro, salvo
-/// el 400 "No credentials for provider" de un gateway como OmniRoute (#84): el gateway no tiene credenciales utilizables para ese
+/// el 400 "No credentials for provider" de un gateway como OmniRoute: el gateway no tiene credenciales utilizables para ese
 /// proveedor (sin configurar o todas en enfriamiento), que es indisponibilidad y no un error de la petición.
 /// </summary>
 public sealed class clsChatClientConRespaldo : IChatClient
@@ -51,7 +51,7 @@ public sealed class clsChatClientConRespaldo : IChatClient
             }
             catch (Exception ex) when (EsRecuperable(ex, cancellationToken) && Estado(ex) != 429)
             {
-                // HU-013.16 (#126): fallaron todos por indisponibilidad (no por cuota): el chat responde IA_NO_DISPONIBLE.
+                // Fallaron todos por indisponibilidad (no por cuota): el chat responde IA_NO_DISPONIBLE.
                 _logger.LogWarning("Ningún proveedor de IA respondió: el último falló ({Tipo}, estado {Estado}).", ex.GetType().Name, Estado(ex)?.ToString() ?? "sin estado");
                 throw new clsIaNoDisponibleException($"Fallaron los {_clientes.Count} proveedores de IA configurados.", ex);
             }
@@ -84,12 +84,11 @@ public sealed class clsChatClientConRespaldo : IChatClient
     /// gateway sin credenciales para el proveedor (<see cref="SinCredencialesDelGateway"/>).
     /// </summary>
     /// <remarks>
-    /// DEF-1027-1 (#226, E2E real del 2026-10-27): con el proveedor caído, el SDK de OpenAI agota sus reintentos y lanza un
+    /// Con el proveedor caído, el SDK de OpenAI agota sus reintentos y lanza un
     /// <see cref="AggregateException"/> ("Retry failed after 4 tries") con una <see cref="ClientResultException"/> sin estado HTTP por
-    /// intento, que envuelve el <see cref="HttpRequestException"/> con la <see cref="System.Net.Sockets.SocketException"/>. Antes solo se
-    /// miraba la excepción y su primera interna, así que eso no era indisponibilidad y el chat respondía <c>ERROR_INTERNO</c>. Ahora se
+    /// intento, que envuelve el <see cref="HttpRequestException"/> con la <see cref="System.Net.Sockets.SocketException"/>. Por eso se
     /// recorre toda la cadena (también las internas de un <see cref="AggregateException"/>) buscando la red caída, el socket o el tiempo
-    /// agotado.
+    /// agotado, y no solo la excepción y su primera interna.
     /// </remarks>
     public static bool EsRecuperable(Exception error, CancellationToken cancellationToken = default)
     {
@@ -101,7 +100,7 @@ public sealed class clsChatClientConRespaldo : IChatClient
 
         if (Estado(error) is { } estado)
         {
-            // HU-013.16 (#126): también un 404 (ruta o modelo inexistente; el gateway caído respondía el 404 de Traefik) y un 408. Un
+            // También un 404 (ruta o modelo inexistente, o un gateway caído detrás de Traefik) y un 408. Un
             // 400 de contenido no: el siguiente modelo recibiría la misma petición inválida.
             return estado is 404 or 408 or 429 || estado >= 500 || (estado == 400 && SinCredenciales(error));
         }

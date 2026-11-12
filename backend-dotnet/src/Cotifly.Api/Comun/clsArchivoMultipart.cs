@@ -4,8 +4,8 @@ using Cotifly.Dominio.Comun;
 namespace Cotifly.Api.Comun;
 
 /// <summary>
-/// Lectura del Excel que llega en una parte de un <c>multipart/form-data</c> (HU-011.2; HU-035.1, #202, la sacó del controller de
-/// licitaciones para compartirla con el Excel de mercancías). Un archivo de más de <see cref="clsArchivoExcel.TamanoMaximoBytes"/> no
+/// Lectura del Excel que llega en una parte de un <c>multipart/form-data</c>, compartida por las licitaciones y el Excel de
+/// mercancías. Un archivo de más de <see cref="clsArchivoExcel.TamanoMaximoBytes"/> no
 /// se copia: se devuelve un marcador de ese tamaño más un byte para que la validación responda <c>ARCHIVO_DEMASIADO_GRANDE</c>.
 /// </summary>
 public static class clsArchivoMultipart

@@ -3,7 +3,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Configuracion;
 
 /// <summary>
-/// Reglas de <see cref="clsOpcionesCubicador"/> (HU-021.5, #133) en todos los entornos: con <c>Cubicador:UrlBase</c>, debe ser una URL
+/// Reglas de <see cref="clsOpcionesCubicador"/> en todos los entornos: con <c>Cubicador:UrlBase</c>, debe ser una URL
 /// http o https absoluta sin usuario, consulta ni fragmento, y <c>Cubicador:ApiKey</c> es obligatoria (un cubicador configurado a medias
 /// fallaría en cada captura). La fortaleza de la llave en Production la revisa <see cref="clsValidadorSecretosOpciones{TOpciones}"/>.
 /// Los mensajes nombran la clave, nunca el valor de la llave.
@@ -43,7 +43,7 @@ public sealed class clsValidadorOpcionesCubicador : IValidateOptions<clsOpciones
             errores.Add($"'{Prefijo}ApiKey' es obligatoria con {Prefijo}UrlBase (viaja como Authorization: Bearer).");
         }
 
-        // D3b (E2E 2026-10-16): el POST /recomendaciones tiene su propio límite, coherente con el de las consultas y con el presupuesto.
+        // El POST /recomendaciones tiene su propio límite, coherente con el de las consultas y con el presupuesto.
         if (options.TiempoEsperaRecomendacionSegundos < options.TiempoEsperaSegundos)
         {
             errores.Add($"'{Prefijo}TiempoEsperaRecomendacionSegundos' ({options.TiempoEsperaRecomendacionSegundos}) no puede ser menor que "
@@ -63,7 +63,7 @@ public sealed class clsValidadorOpcionesCubicador : IValidateOptions<clsOpciones
                 + $"'{Prefijo}TiempoEsperaRecomendacionSegundos' ({options.TiempoEsperaRecomendacionSegundos}): si no, una sola ruta lenta agota la captura.");
         }
 
-        // Opción D (validación de los defectos del 2026-10-16): una cubicación rápida en proceso vence a los RetencionCubicacionMinutos de
+        // Una cubicación rápida en proceso vence a los RetencionCubicacionMinutos de
         // creada; si vence antes de que termine la llamada más larga, GET /web/cubicacion/{id} responde 404 y el resultado se pierde.
         var llamada = (int)Math.Ceiling(Cubicacion.Services.clsCubicadorHttp.DuracionMaximaLlamada(options).TotalSeconds);
         if (options.RetencionCubicacionMinutos * 60L < llamada)

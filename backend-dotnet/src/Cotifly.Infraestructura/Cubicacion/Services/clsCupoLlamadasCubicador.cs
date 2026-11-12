@@ -4,7 +4,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Cubicacion.Services;
 
 /// <summary>
-/// Opción C (D3, E2E 2026-10-16): cupo global de este proceso para <c>POST /recomendaciones</c>. El motor del cubicador corre en un solo
+/// Cupo global de este proceso para <c>POST /recomendaciones</c>. El motor del cubicador corre en un solo
 /// proceso y bloquea su API mientras calcula (26 a 31 s con 1.100 unidades): una segunda llamada en paralelo no se calcula antes, solo
 /// espera en su fila y gasta su propio límite. Un <see cref="SemaphoreSlim"/> singleton con <c>Cubicador:MaximoConcurrente</c> cupos (1 por
 /// defecto) lo comparten todos los que piden una recomendación: "Calcular cubicaje" (también en segundo plano), la captura, el recálculo
@@ -16,7 +16,7 @@ namespace Cotifly.Infraestructura.Cubicacion.Services;
 /// dos, otro POST pondría al motor a calcular otra carga y la reconsulta esperaría detrás.</item>
 /// <item>Los catálogos y la sonda de salud van fuera del cupo: son GET livianos, con caché y límite corto propio; meterlos en el cupo
 /// los haría esperar en Cotifly además de en el cubicador, sin aliviar al motor.</item>
-/// <item>Con varias réplicas el cupo es por proceso; la licitación además usa el cupo en la base (<c>IClsCupoCubicador</c>, P6).</item>
+/// <item>Con varias réplicas el cupo es por proceso; la licitación además usa el cupo en la base (<c>IClsCupoCubicador</c>).</item>
 /// </list>
 /// </remarks>
 public sealed class clsCupoLlamadasCubicador : IDisposable

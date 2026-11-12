@@ -5,7 +5,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Configuracion;
 
 /// <summary>
-/// HU-032 (#197, decisión del usuario del 2026-10-21): cada valor de <c>Captura:ClasesSinVehiculoObligatorio</c> debe ser una clase de
+/// Cada valor de <c>Captura:ClasesSinVehiculoObligatorio</c> debe ser una clase de
 /// viaje de Nexo (<see cref="clsCatalogosCaptura.ClasesViaje"/>). Se recorta y se compara sin distinguir mayúsculas (<c>Carga suelta</c>
 /// vale y se normaliza a <c>Carga Suelta</c>, <see cref="clsOpcionesCaptura.ClasesSinVehiculo"/>); los vacíos se ignoran, igual que en
 /// el getter (todos vacíos = la lista por defecto). Un valor desconocido (<c>CargaSuelta</c>, <c>Granel</c>) no eximiría ninguna ruta y

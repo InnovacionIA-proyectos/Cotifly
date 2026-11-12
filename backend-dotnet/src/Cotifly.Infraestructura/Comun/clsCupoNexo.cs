@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 namespace Cotifly.Infraestructura.Comun;
 
 /// <summary>
-/// Cupo de lecturas de Nexo (HU-023.4, #159, decisión 9 del 2026-10-13). Nexo limita sus listados (<c>GET /api/catalogos/*</c>,
+/// Cupo de lecturas de Nexo. Nexo limita sus listados (<c>GET /api/catalogos/*</c>,
 /// <c>GET /api/solicitudes</c>...) por ROL con ventanas de un minuto y, al pasarse, responde <c>429 DEMASIADAS_SOLICITUDES</c> con
 /// <c>Retry-After: 30</c>. La partición es el rol, no el usuario: todos los comerciales de Cotifly (y los usuarios de Nexo con el mismo
 /// rol) comparten el cupo. Por eso el bloqueo es uno para todo Cotifly (singleton): tras un 429, ningún GET a una ruta LIMITADA
@@ -16,7 +16,7 @@ namespace Cotifly.Infraestructura.Comun;
 /// </summary>
 public sealed class clsCupoNexo(TimeProvider tiempo)
 {
-    /// <summary>Espera si Nexo responde 429 sin <c>Retry-After</c> legible (la que manda Nexo hoy).</summary>
+    /// <summary>Espera si Nexo responde 429 sin <c>Retry-After</c> legible (la misma que manda Nexo).</summary>
     public static readonly TimeSpan EsperaPorDefecto = TimeSpan.FromSeconds(30);
 
     /// <summary>Tope de la espera: un <c>Retry-After</c> desmedido no deja a Cotifly sin Nexo más de cinco minutos.</summary>

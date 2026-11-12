@@ -3,12 +3,12 @@ using System.ComponentModel.DataAnnotations;
 namespace Cotifly.Infraestructura.Configuracion;
 
 /// <summary>
-/// Sincronización del margen de SAP TM que hace el backend (HU-042.2, #243, ADR-027; reemplaza el SQL Agent Job de la #242). Misma sección
+/// Sincronización del margen de SAP TM que hace el backend (ADR-027). Misma sección
 /// <c>SapTm</c> que <c>clsOpcionesMargen</c> (que solo lleva lo que lee Aplicación al cotizar).
 /// </summary>
 /// <remarks>
 /// <list type="bullet">
-/// <item><b>Interruptor.</b> <see cref="SincronizacionHabilitada"/> (<c>false</c> por defecto, decisión del 2026-11-04): apagado, el worker no
+/// <item><b>Interruptor.</b> <see cref="SincronizacionHabilitada"/> (<c>false</c> por defecto): apagado, el worker no
 /// corre aunque haya credenciales (así unas <c>SapTm__Url/User/Pass</c> que quedaron del modo <c>odata</c> viejo no lo activan solas). La
 /// lectura del margen desde la copia local no depende del interruptor.</item>
 /// <item><b>Inactiva sin credenciales.</b> Sin <see cref="Url"/>, <see cref="User"/> o <see cref="Pass"/> el worker no corre (lo anota en
@@ -54,7 +54,7 @@ public sealed class clsOpcionesSapTmSincronizacion
     [Range(5, 900)]
     public int TimeoutSegundos { get; set; } = 120;
 
-    /// <summary>Tamaño máximo de la respuesta de SAP ya descomprimida, en bytes. Por defecto 20 MB (hoy ~1500 filas, unos cientos de KB).</summary>
+    /// <summary>Tamaño máximo de la respuesta de SAP ya descomprimida, en bytes. Por defecto 20 MB (con ~1500 filas pesa unos cientos de KB).</summary>
     [Range(1024 * 1024, 512L * 1024 * 1024)]
     public long MaximoBytes { get; set; } = 20L * 1024 * 1024;
 

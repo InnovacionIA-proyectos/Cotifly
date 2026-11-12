@@ -9,8 +9,8 @@ namespace Cotifly.Infraestructura.Municipios.Services;
 
 /// <summary>
 /// Elige el proveedor de municipios según <c>Nexo:UrlBase</c>: configurada → <see cref="clsMunicipiosNexo"/> (cliente
-/// tipado, transitorio), envuelto en <see cref="clsMunicipiosEnCache"/> si <c>Nexo:MinutosCacheMunicipios</c> es mayor que cero
-/// (HU-005.13); vacía → <see cref="clsMunicipiosNoDisponible"/>. Mismo patrón que <c>clsFabricaBuscadorClientes</c>.
+/// tipado, transitorio), envuelto en <see cref="clsMunicipiosEnCache"/> si <c>Nexo:MinutosCacheMunicipios</c> es mayor que cero;
+/// vacía → <see cref="clsMunicipiosNoDisponible"/>. Mismo patrón que <c>clsFabricaBuscadorClientes</c>.
 /// </summary>
 internal static class clsFabricaMunicipios
 {

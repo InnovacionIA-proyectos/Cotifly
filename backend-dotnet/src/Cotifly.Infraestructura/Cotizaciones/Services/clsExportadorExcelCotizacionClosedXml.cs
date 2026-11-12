@@ -6,7 +6,7 @@ using Cotifly.Aplicacion.Cotizaciones.Interfaces;
 namespace Cotifly.Infraestructura.Cotizaciones.Services;
 
 /// <summary>
-/// HU-018.1 (#155, parte C): el Excel de una cotización con ClosedXML, con los estilos de la exportación de la licitación
+/// El Excel de una cotización con ClosedXML, con los estilos de la exportación de la licitación
 /// (<see cref="Licitaciones.Services.clsExportadorExcelLicitacionClosedXml"/>: encabezado en negrita con fondo, pesos sin decimales y
 /// dólares con dos). Cuatro hojas: <see cref="HojaResumen"/> (cabecera y totales), <see cref="HojaRutas"/> (una fila por ruta),
 /// <see cref="HojaCamiones"/> (una fila por camión) y <see cref="HojaConexos"/> (una fila por servicio conexo).
@@ -24,10 +24,10 @@ public sealed class clsExportadorExcelCotizacionClosedXml : IClsExportadorExcelC
     /// <summary>Texto de un precio que no hay (ruta rechazada, sin costeo o camión que no cuenta).</summary>
     public const string SinPrecio = "Sin precio";
 
-    /// <summary>HU-045.3 (#265): columna (hoja Rutas) y dato (Resumen) del seguro de la mercancía, con la moneda.</summary>
+    /// <summary>Columna (hoja Rutas) y dato (Resumen) del seguro de la mercancía, con la moneda.</summary>
     public const string EtiquetaSeguro = "Seguro de la mercancía";
 
-    /// <summary>HU-045.3 (#265): la ruta tiene el seguro marcado sin valor de la mercancía (no suma en su precio).</summary>
+    /// <summary>La ruta tiene el seguro marcado sin valor de la mercancía (no suma en su precio).</summary>
     public const string SeguroSinValorMercancia = "Sin valor de la mercancía";
 
     public const string VersionInterna = "Interna (con costos y márgenes)";
@@ -157,7 +157,7 @@ public sealed class clsExportadorExcelCotizacionClosedXml : IClsExportadorExcelC
         }
 
         var finInterno = campos.Count;
-        // HU-045.3 (#265): el seguro de la mercancía en su columna, aparte del transporte y de los conexos (NOGE0076).
+        // El seguro de la mercancía en su columna, aparte del transporte y de los conexos (NOGE0076).
         campos.AddRange([
             Precio("Precio transporte", datos.Moneda), Precio("Precio conexos", datos.Moneda), Precio(EtiquetaSeguro, datos.Moneda),
             Precio("Precio ruta", datos.Moneda),
@@ -349,7 +349,7 @@ public sealed class clsExportadorExcelCotizacionClosedXml : IClsExportadorExcelC
     }
 
     /// <summary>
-    /// HU-045.3 (#265): el seguro de la ruta; vacía si no lo incluye (o la ruta está rechazada) y <see cref="SeguroSinValorMercancia"/>
+    /// El seguro de la ruta; vacía si no lo incluye (o la ruta está rechazada) y <see cref="SeguroSinValorMercancia"/>
     /// resaltada si está marcado sin valor de la mercancía.
     /// </summary>
     private static void SeguroCelda(IXLCell celda, clsExcelRuta ruta, string formato)
@@ -367,7 +367,7 @@ public sealed class clsExportadorExcelCotizacionClosedXml : IClsExportadorExcelC
     }
 
     /// <summary>
-    /// HU-045.3 (#265, B1): en pesos (<see cref="FormatoPesos"/>), un monto con centavos (el seguro y lo que lo incluye) se muestra con 2
+    /// En pesos (<see cref="FormatoPesos"/>), un monto con centavos (el seguro y lo que lo incluye) se muestra con 2
     /// decimales para que cuadre con lo guardado; sin centavos, en pesos enteros como siempre.
     /// </summary>
     public static string ConCentavos(decimal valor, string formato) =>

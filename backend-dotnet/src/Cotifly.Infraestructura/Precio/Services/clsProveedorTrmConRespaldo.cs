@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 namespace Cotifly.Infraestructura.Precio.Services;
 
 /// <summary>
-/// Cadena de fuentes de la TRM con respaldo (HU-012.1, ADR-014 §1): consulta la <paramref name="principal"/> (DolarApi) y, solo si falla,
+/// Cadena de fuentes de la TRM con respaldo (ADR-014 §1): consulta la <paramref name="principal"/> (DolarApi) y, solo si falla,
 /// la de <paramref name="respaldo"/> (Superintendencia Financiera). Si la principal falla y el respaldo responde, deja un warning con la
 /// fuente usada (<see cref="clsTrm.Fuente"/>) para auditoría. Si las dos fallan, <c>TRM_NO_DISPONIBLE</c> con los dos motivos en el
 /// detalle. No lanza: los adaptadores tampoco lanzan por la fuente. La caché por día (<see cref="clsProveedorTrmEnCache"/>) va encima.

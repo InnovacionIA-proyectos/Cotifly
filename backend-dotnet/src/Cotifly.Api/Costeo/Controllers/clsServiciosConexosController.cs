@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Cotifly.Api.Costeo.Controllers;
 
 /// <summary>
-/// Servicios conexos del catálogo de Nexo (HU-013.3, ADR-018 §4, <c>specs/openapi.yaml</c>): el buscador (sin costos) y agregar
+/// Servicios conexos del catálogo de Nexo (ADR-018 §4, <c>specs/openapi.yaml</c>): el buscador (sin costos) y agregar
 /// conexos a la cotización en Nexo. Solo cotizaciones propias; una ajena responde 404 igual que una inexistente.
 /// </summary>
 [Route("web")]
