@@ -10,8 +10,12 @@ namespace Cotifly.Aplicacion.Cotizaciones.Repositories;
 /// aislamiento por comercial (ADR-009): si la cotización no es del usuario, devuelven <c>null</c>
 /// igual que si no existiera (el endpoint responde 404).
 /// </summary>
-/// <summary>Datos del Excel original de una licitación sin su contenido.</summary>
-public sealed record clsArchivoLicitacionResumen(string NombreArchivo, string Hoja, int TamanoBytes);
+/// <summary>
+/// Datos del Excel original de una licitación sin su contenido. HU-044.10 (#293): <paramref name="OrigenLectura"/> es cómo se leyó el
+/// Excel (<c>analizar_excel</c> o <c>leer_estructura</c>); <c>null</c> en una licitación con archivo anterior al script 22 (la vista la
+/// trata como <c>analizar_excel</c>).
+/// </summary>
+public sealed record clsArchivoLicitacionResumen(string NombreArchivo, string Hoja, int TamanoBytes, string? OrigenLectura = null);
 
 public interface IClsCotizacionRepository
 {

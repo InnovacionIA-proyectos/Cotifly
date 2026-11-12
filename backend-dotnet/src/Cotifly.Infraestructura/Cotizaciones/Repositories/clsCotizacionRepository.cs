@@ -231,7 +231,7 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
     public Task<clsArchivoLicitacionResumen?> ObtenerResumenArchivoLicitacionAsync(Guid cotizacionId, CancellationToken cancellationToken = default) =>
         contexto.ArchivosLicitacion.AsNoTracking()
             .Where(a => a.CotizacionId == cotizacionId)
-            .Select(a => new clsArchivoLicitacionResumen(a.NombreArchivo, a.Hoja, a.TamanoBytes))
+            .Select(a => new clsArchivoLicitacionResumen(a.NombreArchivo, a.Hoja, a.TamanoBytes, a.OrigenLectura))
             .FirstOrDefaultAsync(cancellationToken);
 
     public Task<clsArchivoLicitacion?> ObtenerArchivoLicitacionAsync(Guid cotizacionId, CancellationToken cancellationToken = default) =>

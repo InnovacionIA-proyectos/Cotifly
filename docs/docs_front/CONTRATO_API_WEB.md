@@ -611,6 +611,7 @@ recálculo de una ruta responden 409. Sin cubicador, como antes (sin `progreso_c
   "lineas_pendientes": 1,
   "archivo_nombre": null,
   "hoja": "Tarifas",
+  "origen_lectura": null,
   "lineas": [
     {
       "orden": 1, "fila": 0, "origen": "Cali", "destino": "Bogotá D.C.", "tipo_vehiculo": null, "peso_kg": 12000,
@@ -628,6 +629,13 @@ recálculo de una ruta responden 409. Sin cubicador, como antes (sin `progreso_c
   "cubicacion": null
 }
 ```
+
+`origen_lectura` dice cómo se leyó el Excel (`analizar_excel` o `leer_estructura`); `null` si la licitación no tiene archivo (HU-044.10,
+#293). **`Idempotency-Key` (HU-044.10, #293):** cabecera opcional (8 a 64); un doble clic con la misma clave y el mismo cuerpo+archivo
+relee la licitación y responde 201 con el mismo folio, sin crear otra. Solo el 201 consume la clave (un reporte por fila o un 503 no);
+la misma clave con otro cuerpo u otro archivo es 409 `IDEMPOTENCY_KEY_REUTILIZADA`. Una línea con `fila: null` y archivo es una línea
+agregada a mano: vuelve con `fila: null` y el Excel la pone en la hoja «Agregadas en Cotifly» (analizar_excel con original) o al final de
+la hoja «Licitación» (leer_estructura o sin original).
 
 **Código de mercancía sugerido (HU-023.5).** `POST /web/licitaciones/analizar-excel` trae en cada hoja `columna_mercancia`,
 `columna_codigo_mercancia` y `mercancias[]`: por fila (`fila`, índice en `filas`), `{texto, codigo_mercancia, nombre_mercancia,

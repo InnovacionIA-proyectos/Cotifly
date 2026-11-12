@@ -118,7 +118,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         scripts[clsBaseDatosPruebas.ScriptsHasta16 + 3].Should().Be(clsBaseDatosPruebas.Script20, "después del 19 va el 20 (seguro de la mercancía, #264)");
         // HU-046 (#268, #269): el 21 (política de seguros y codigoServicio del conexo) va después del 20.
         scripts[clsBaseDatosPruebas.ScriptsHasta16 + 4].Should().Be(clsBaseDatosPruebas.Script21, "después del 20 va el 21 (política de seguros, #269)");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script21, "ScriptsSin07 llega hasta el 21");
+        // HU-044.7 (#290): el 22 (origenLectura de la licitación) va después del 21.
+        scripts[clsBaseDatosPruebas.ScriptsHasta16 + 5].Should().Be(clsBaseDatosPruebas.Script22, "después del 21 va el 22 (origenLectura, #290)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script22, "ScriptsSin07 llega hasta el 22");
         scripts[clsBaseDatosPruebas.ScriptsSin07].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsSin07 corta justo antes del 07");
         scripts[clsBaseDatosPruebas.ScriptsHasta07 - 1].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsHasta07 incluye el 07");
         // HU-037.1 (#209): el 15 (rol director) va al final, después del 08: no agrega columnas y clsRolDirectorScriptTests usa
@@ -297,6 +299,25 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
             "SELECT definition FROM sys.check_constraints WHERE name = N'ck_cotizacionPosiciones_medidas' "
             + "AND parent_object_id = OBJECT_ID(N'dbo_cotifly.CotizacionMercancias')");
         definicion.Should().Contain("IS NULL").And.Contain("[largoCm]>(0)");
+    }
+
+    [Fact]
+    public async Task HU0447_ElScript22EsIdempotenteYDejaOrigenLecturaNotNullConSuDefaultYCheck()
+    {
+        // HU-044.7 (#290): origenLectura en CotizacionArchivosLicitacion (db/scripts/22; el 01 lo trae en el CREATE).
+        await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem22", clsBaseDatosPruebas.Scripts.Length);
+        await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script22);
+
+        await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbIdem22Inst");
+        await ReaplicarYVerificarIdempotenciaAsync(instalada.Cadena, clsBaseDatosPruebas.Script22);
+        (await clsBaseDatosPruebas.EscalarAsync<string>(instalada.Cadena,
+                "SELECT CONCAT(c.name, '|', TYPE_NAME(c.user_type_id), '|', c.max_length, '|', c.is_nullable) FROM sys.columns c "
+                + "WHERE c.object_id = OBJECT_ID(N'dbo_cotifly.CotizacionArchivosLicitacion') AND c.name = N'origenLectura'"))
+            .Should().Be("origenLectura|nvarchar|40|0");
+        (await clsBaseDatosPruebas.EscalarAsync<int>(instalada.Cadena,
+                "SELECT COUNT(*) FROM sys.check_constraints WHERE name = N'ck_cotizacionArchivosLicitacion_origenLectura' "
+                + "AND parent_object_id = OBJECT_ID(N'dbo_cotifly.CotizacionArchivosLicitacion')"))
+            .Should().Be(1);
     }
 
     [Fact]

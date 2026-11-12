@@ -384,8 +384,14 @@ internal sealed class clsArchivoLicitacionConfiguracion : IEntityTypeConfigurati
 {
     public void Configure(EntityTypeBuilder<clsArchivoLicitacion> builder)
     {
-        builder.ToTable("CotizacionArchivosLicitacion", t => t.HasCheckConstraint(
-            "ck_cotizacionArchivosLicitacion_tamano", "tamanoBytes BETWEEN 1 AND 10485760 AND DATALENGTH(contenido) = tamanoBytes"));
+        builder.ToTable("CotizacionArchivosLicitacion", t =>
+        {
+            t.HasCheckConstraint(
+                "ck_cotizacionArchivosLicitacion_tamano", "tamanoBytes BETWEEN 1 AND 10485760 AND DATALENGTH(contenido) = tamanoBytes");
+            // HU-044.7 (#290): origenLectura solo admite los dos valores de clsOrigenLectura.
+            t.HasCheckConstraint(
+                "ck_cotizacionArchivosLicitacion_origenLectura", "origenLectura IN ('analizar_excel', 'leer_estructura')");
+        });
 
         builder.HasKey(a => a.CotizacionId).HasName("pk_cotizacionArchivosLicitacion");
         builder.Property(a => a.CotizacionId).Columna("cotizacionId", "uniqueidentifier").ValueGeneratedNever();
@@ -395,6 +401,8 @@ internal sealed class clsArchivoLicitacionConfiguracion : IEntityTypeConfigurati
         builder.Property(a => a.Sha256).Columna("sha256", "nvarchar(64)").HasMaxLength(64).IsRequired();
         builder.Property(a => a.Hoja).Columna("hoja", "nvarchar(31)").HasMaxLength(clsArchivoLicitacion.LargoHoja).IsRequired();
         builder.Property(a => a.Contenido).Columna("contenido", "varbinary(max)").IsRequired();
+        // HU-044.7 (#290): cómo se leyó el Excel (analizar_excel por defecto; leer_estructura = lectura con IA de NEXO, se exporta sin tocar el original).
+        builder.Property(a => a.OrigenLectura).Columna("origenLectura", "nvarchar(20)").HasMaxLength(clsArchivoLicitacion.LargoOrigenLectura).IsRequired();
         builder.Property(a => a.CreatedAt).Fecha("createdAt");
 
         builder.HasOne<clsCotizacionSolicitud>().WithOne().HasForeignKey<clsArchivoLicitacion>(a => a.CotizacionId)
