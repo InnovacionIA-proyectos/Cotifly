@@ -115,7 +115,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         scripts[clsBaseDatosPruebas.ScriptsHasta16 + 3].Should().Be(clsBaseDatosPruebas.Script20, "después del 19 va el 20 (seguro de la mercancía, #264)");
         // HU-044.7 (#290): el 22 (origenLectura de la licitación) va después del 20.
         scripts[clsBaseDatosPruebas.ScriptsHasta16 + 4].Should().Be(clsBaseDatosPruebas.Script22, "después del 20 va el 22 (origenLectura, #290)");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script22, "ScriptsSin07 llega hasta el 22");
+        // HU-040.3 (#258): el 23 (requiereAltaManual) va después del 22.
+        scripts[clsBaseDatosPruebas.ScriptsHasta16 + 5].Should().Be(clsBaseDatosPruebas.Script23, "después del 22 va el 23 (requiereAltaManual, #258)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script23, "ScriptsSin07 llega hasta el 23");
         scripts[clsBaseDatosPruebas.ScriptsSin07].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsSin07 corta justo antes del 07");
         scripts[clsBaseDatosPruebas.ScriptsHasta07 - 1].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsHasta07 incluye el 07");
         // HU-037.1 (#209): el 15 (rol director) va al final, después del 08: no agrega columnas y clsRolDirectorScriptTests usa
@@ -498,6 +500,57 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
 
         (await clsBaseDatosPruebas.EscalarAsync<int>(instalada.Cadena, "SELECT COUNT(*) FROM dbo_cotifly.SapMapeoTrqType"))
             .Should().Be(5, "el seeder 02 llena lineaNegocioId cuando el 18 ya está aplicado");
+    }
+
+    [Fact]
+    public async Task HU0403_ElScript23EsIdempotenteYMarcaDirectorComoSensible()
+    {
+        // HU-040.3 (#258): Roles.requiereAltaManual (BIT NOT NULL DEFAULT 0) y director marcado en 1; los ordinarios en 0. Re-aplicarlo no cambia nada.
+        await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem23", clsBaseDatosPruebas.Scripts.Length);
+        await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script23);
+
+        await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbIdem23Inst");
+        await ReaplicarYVerificarIdempotenciaAsync(instalada.Cadena, clsBaseDatosPruebas.Script23);
+        foreach (var cadena in new[] { migrada.Cadena, instalada.Cadena })
+        {
+            (await clsBaseDatosPruebas.EscalarAsync<string>(cadena,
+                    "SELECT CONCAT(TYPE_NAME(c.user_type_id), '|', c.is_nullable) FROM sys.columns c "
+                    + "WHERE c.object_id = OBJECT_ID(N'dbo_cotifly.Roles') AND c.name = N'requiereAltaManual'"))
+                .Should().Be("bit|0");
+            // Las bases aisladas (sin seeder) traen solo `director` (del 15); comercial/gerente los siembra el seeder. Lo que importa: director
+            // queda marcado y ningún otro rol es sensible.
+            (await clsBaseDatosPruebas.EscalarAsync<int>(cadena,
+                    "SELECT CAST(requiereAltaManual AS int) FROM dbo_cotifly.Roles WHERE codigo = N'director'"))
+                .Should().Be(1, "director es sensible");
+            (await clsBaseDatosPruebas.EscalarAsync<int>(cadena,
+                    "SELECT COUNT(*) FROM dbo_cotifly.Roles WHERE requiereAltaManual = 1 AND codigo <> N'director'"))
+                .Should().Be(0, "ningún otro rol es sensible");
+        }
+    }
+
+    [Fact]
+    public async Task HU0403_ElScript23SeAplicaSobreUnaBaseConDatosSinTocarLosDemasRoles()
+    {
+        // HU-040.3 (#258): sobre una base sin el 23 (hasta el 22 + el 15, que trae el CHECK y la fila director), con los tres roles, el 23
+        // agrega la columna y marca SOLO director; los demás quedan en 0.
+        await using var baseConDatos = await BaseDatos.CrearBaseConScriptsAsync("dbDatos23", clsBaseDatosPruebas.ScriptsSin07 - 1);
+        await clsBaseDatosPruebas.AplicarScriptAsync(baseConDatos.Cadena, clsBaseDatosPruebas.Script15); // CHECK con 'director' y la fila director
+        await clsBaseDatosPruebas.EjecutarAsync(baseConDatos.Cadena, """
+            IF NOT EXISTS (SELECT 1 FROM dbo_cotifly.Roles WHERE codigo = 'comercial')
+                INSERT INTO dbo_cotifly.Roles (codigo, descripcion) VALUES (N'comercial', N'Comercial');
+            IF NOT EXISTS (SELECT 1 FROM dbo_cotifly.Roles WHERE codigo = 'gerente_comercial')
+                INSERT INTO dbo_cotifly.Roles (codigo, descripcion) VALUES (N'gerente_comercial', N'Gerente comercial');
+            """);
+        (await clsBaseDatosPruebas.EscalarAsync<int>(baseConDatos.Cadena,
+                "SELECT COUNT(*) FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo_cotifly.Roles') AND name = N'requiereAltaManual'"))
+            .Should().Be(0, "la base hasta el 22 todavía no tiene la columna");
+
+        await clsBaseDatosPruebas.AplicarScriptAsync(baseConDatos.Cadena, clsBaseDatosPruebas.Script23);
+
+        (await LeerAsync(
+                "SELECT CONCAT(codigo, '|', requiereAltaManual) FROM dbo_cotifly.Roles ORDER BY codigo",
+                r => r.GetString(0), baseConDatos.Cadena))
+            .Should().Equal("comercial|0", "director|1", "gerente_comercial|0");
     }
 
     [Fact]

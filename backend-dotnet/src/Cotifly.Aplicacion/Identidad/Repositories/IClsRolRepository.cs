@@ -21,6 +21,13 @@ public interface IClsRolRepository
     /// </summary>
     Task<IReadOnlyDictionary<Guid, RolInterno>> ListarRolesDeUsuariosAsync(IReadOnlyCollection<Guid> usuarios, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// HU-040.3 (#258): TODAS las asignaciones del usuario (activas e inactivas), rastreadas, para reconciliarlas en el login
+    /// (reactivar una fila inactiva o desactivar una sobrante, sin insertar duplicados; <c>uq_usuariosRoles_usuarioId_rolId</c>). Los
+    /// cambios sobre estas entidades se confirman con la unidad de trabajo.
+    /// </summary>
+    Task<IReadOnlyList<clsUsuarioRol>> ListarAsignacionesAsync(Guid usuarioId, CancellationToken cancellationToken = default);
+
     /// <summary>Agrega una asignación (se confirma con la unidad de trabajo).</summary>
     void AgregarAsignacion(clsUsuarioRol asignacion);
 }

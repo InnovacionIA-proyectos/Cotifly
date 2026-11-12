@@ -55,6 +55,41 @@ public sealed class clsUsuarioRol
         RegistrarRevision(revisor, ahora);
     }
 
+    /// <summary>
+    /// HU-040.3 (#258): la reconciliación del login DESACTIVA la asignación cuyo rol externo ya no la respalda (auto-revocar, fail-safe,
+    /// aplica a todos los roles). No hay revisor humano: <see cref="RevisadoPor"/> queda NULL y <see cref="RevisadoAt"/> marca el instante,
+    /// así se distingue de una revisión manual (<see cref="Retirar"/>, con revisor). Idempotente: sobre una fila ya inactiva no hace nada.
+    /// </summary>
+    public void Desactivar(DateTimeOffset ahora)
+    {
+        if (!Activo)
+        {
+            return;
+        }
+
+        Activo = false;
+        RevisadoPor = null;
+        RevisadoAt = ahora;
+    }
+
+    /// <summary>
+    /// HU-040.3 (#258): la reconciliación del login REACTIVA una fila existente (la unicidad <c>uq_usuariosRoles_usuarioId_rolId</c> impide
+    /// insertar el mismo rol dos veces) para auto-otorgar un rol ORDINARIO que volvió a tener respaldo externo. Sin revisor humano
+    /// (<see cref="RevisadoPor"/> NULL, <see cref="RevisadoAt"/> con el instante). Idempotente: sobre una fila ya activa no hace nada.
+    /// </summary>
+    public void Reactivar(DateTimeOffset ahora)
+    {
+        if (Activo)
+        {
+            return;
+        }
+
+        Activo = true;
+        AsignadoAt = ahora;
+        RevisadoPor = null;
+        RevisadoAt = ahora;
+    }
+
     /// <summary>Deja constancia de quién revisó la asignación y cuándo.</summary>
     public void RegistrarRevision(Guid revisor, DateTimeOffset ahora)
     {

@@ -184,6 +184,13 @@ paths:
           (o entra por primera vez con varios roles externos mapeados). NO trae tokens: trae `roles` (código y descripción),
           `user` (sin rol) y `ticketEleccion`, un ticket de UN SOLO USO que vence en 5 minutos (`ticketExpiraAt`). El
           frontend muestra el selector y llama a `POST /api/auth/elegir-rol`. Si el ticket vence, se vuelve a llamar al login.
+
+        **HU-040.3 (#258, ADR-009 OPCIÓN B+), reconciliación de roles (la forma de la respuesta NO cambia).** En el login, el
+        backend reconcilia las asignaciones internas con los roles externos vigentes: auto-otorga los roles ORDINARIOS
+        (`comercial`, `gerente_comercial`) que falten y auto-revoca los que perdieron su respaldo, en vez de rechazar. Por eso
+        un usuario con una sola asignación pero varios roles ordinarios externos puede recibir ahora `EleccionRolRequerida`
+        (antes entraba directo). Los roles SENSIBLES (hoy `director`) que falten NO se auto-otorgan: siguen con alta manual y
+        responden el 401 genérico. El refresh y `elegir-rol` no reconcilian (siguen estrictos).
         Cualquier falla (usuario inexistente, rol no autorizado, almacén caído) responde
         el mismo 401 genérico.
       security: []

@@ -183,7 +183,9 @@ public sealed class clsLoginRegionalTests
     [Fact]
     public async Task UnLoginRechazadoNoConsultaDimEjecutivoNiCambiaDatos()
     {
-        _e.PersonaExterna("APEREZ", 101, clsEscenarioIdentidad.RolExternoGerente);
+        // HU-040.3 (#258): con B+ un desajuste de rol ordinario ya no rechaza (reconcilia). Para un rechazo real se usa un rol externo sin
+        // mapeo (sin_rol_autorizado): ahí no se reconcilia ni se consulta DimEjecutivo ni se cambian datos.
+        _e.PersonaExterna("APEREZ", 101, clsEscenarioIdentidad.RolExternoSinMapeo);
         var usuario = _e.UsuarioLocal("APEREZ", 101, RolInterno.Comercial);
         _e.ConRegional("APEREZ", "Occidente");
 
