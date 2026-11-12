@@ -384,7 +384,7 @@ public sealed class clsResultadoCotizacionService(
     private async Task<clsResultado<clsCotizacionSolicitud>> SincronizarResultadoDeNexoAsync(
         clsCotizacionSolicitud cotizacion, Guid usuarioId, int versionLeida, bool pedido, clsErrorDominio rechazo, Stopwatch cronometro)
     {
-        // Solo LEE (GET por id o por solicitud), sin el POST /api/cotizaciones de "crear o recuperar".
+        // Lee (GET por id o por solicitud); el POST /api/cotizaciones de "crear o recuperar" solo con un Nexo sin la ruta de lectura.
         var leida = await nexo.LeerCotizacionAsync(usuarioId, cotizacion.SolicitudNexoId!, cotizacion.CotizacionNexoId, CancellationToken.None);
         bool? deNexo = leida.EsExitoso
             ? leida.Valor.Resultado.Trim().ToLowerInvariant() switch { "ganada" => true, "perdida" => false, _ => null }

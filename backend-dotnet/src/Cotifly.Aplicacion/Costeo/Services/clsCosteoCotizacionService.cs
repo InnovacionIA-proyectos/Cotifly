@@ -183,7 +183,8 @@ public sealed record clsRutaCosteo(
     /// conexos de los camiones que cuentan, sin margen), <b>siempre en COP</b> aunque la cotización esté en USD (el costeo de Nexo es en
     /// pesos y nunca se convierte). <c>null</c> en los mismos casos que <see cref="PrecioFinalLinea"/> (sin costeo listo o ruta
     /// <c>rechazada</c>). Solo lo ve el dueño: el detalle del gerente en solo consulta lo deja en <c>null</c>
-    /// (<see cref="clsCosteoCotizacion.SinCostoFinal"/>). Es una excepción a la regla de ADR-015 §5.
+    /// (<see cref="clsCosteoCotizacion.SinCostoFinal"/>). Es la excepción (reversa parcial) a la regla de ADR-015 §5
+    /// «el costo bruto nunca llega al comercial»: nunca se muestra como precio.
     /// </summary>
     public decimal? CostoFinal { get; init; }
 

@@ -25,8 +25,9 @@ public interface IClsCosteoNexo
     /// <summary>
     /// Estado y costeo de una solicitud: <c>GET /api/solicitudes/{id}</c> (estado y líneas; un 409 pasajero de concurrencia se
     /// reintenta una vez) y, salvo que esté <c>Descartada</c>, <c>GET /api/cotizaciones/por-solicitud/{id}</c> (la cotización de Nexo con
-    /// sus fletes y servicios conexos, o ninguna si Nexo todavía no la crea). Solo LEE: no usa el "crear o recuperar", que escribe en
-    /// Nexo en cada ciclo. Un id que Nexo ya no reconoce responde <c>COSTEO_NEXO_SOLICITUD_NO_ENCONTRADA</c>.
+    /// sus fletes y servicios conexos, o ninguna si Nexo todavía no la crea). Solo LEE: el "crear o recuperar" (un <c>POST</c> que
+    /// escribe en Nexo) queda solo para un Nexo sin esa ruta de lectura, como en <see cref="LeerCotizacionAsync"/>. Un id que Nexo ya
+    /// no reconoce responde <c>COSTEO_NEXO_SOLICITUD_NO_ENCONTRADA</c>.
     /// </summary>
     Task<clsResultado<clsCosteoConsultadoNexo>> ConsultarCosteoAsync(Guid usuarioId, string solicitudId, CancellationToken cancellationToken = default);
 

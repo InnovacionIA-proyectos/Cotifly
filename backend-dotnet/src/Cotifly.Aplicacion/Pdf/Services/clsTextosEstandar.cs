@@ -31,7 +31,8 @@ public static class clsTextosEstandar
     public const string EtiquetaTotalGeneral = "VALOR TOTAL DE LA COTIZACIÓN";
 
     /// <summary>
-    /// Leyenda de impuestos del total, la misma en el PDF y en el correo (un solo lugar para cambiarla).
+    /// Leyenda de impuestos del total del PDF (un solo lugar para cambiarla). También viaja en el resumen de la vista previa del correo
+    /// (<c>clsResumenCorreo.Leyenda</c>), pero el HTML del correo no la imprime: remite al PDF adjunto.
     /// </summary>
     public const string LeyendaImpuestos =
         "Valores por viaje según las rutas cotizadas, con los servicios conexos incluidos. No incluyen impuestos, tasas ni contribuciones "
