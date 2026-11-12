@@ -122,15 +122,27 @@ public sealed class clsValidadorCatalogosCapturaTests
     [Fact]
     public async Task HU014_M1_UnCodigoQueSoloConoceElCubicadorSeRechazaConUn400Claro()
     {
-        // M1 del auditor de #188: C2 y CAMA_BAJA son del catálogo del cubicador pero Nexo no los conoce; antes viajaban y la línea nacía en
+        // M1 del auditor de #188: un código del cubicador que Nexo no conoce (ZT9) y CAMA_BAJA antes viajaban y la línea nacía en
         // cuarentena. Ahora la captura los rechaza (CODIGO_NO_CATALOGO → 400) y dice qué espera.
-        var vehiculo = await Validador().ValidarAsync(_usuarioId, Linea() with { TipoVehiculo = "C2" }, Ct);
+        var vehiculo = await Validador().ValidarAsync(_usuarioId, Linea() with { TipoVehiculo = "ZT9" }, Ct);
         var carroceria = await Validador().ValidarAsync(_usuarioId, Linea() with { Carroceria = "CAMA_BAJA" }, Ct);
 
         vehiculo!.Codigo.Should().Be(clsCodigosError.SolicitudCosteoInvalida);
-        vehiculo.Mensaje.Should().Contain("tipo_vehiculo").And.Contain("'C2'").And.Contain("catálogo de Nexo");
+        vehiculo.Mensaje.Should().Contain("tipo_vehiculo").And.Contain("'ZT9'").And.Contain("catálogo de Nexo");
         carroceria!.Codigo.Should().Be(clsCodigosError.SolicitudCosteoInvalida);
         carroceria.Mensaje.Should().Contain("carroceria").And.Contain("FURGON REFRIGERADO", "las opciones son las carrocerías de Nexo");
+    }
+
+    [Theory]
+    [InlineData("C2")]
+    [InlineData("C3")]
+    [InlineData("2")]
+    [InlineData("3")]
+    public async Task HU0448_ElCodigoNexoDeSiceTacYElCodigoSapDelRespaldoSonValidos(string tipo)
+    {
+        // HU-044.8 (#291): C2/C3 son códigos NEXO válidos; «2»/«3» (SAP) también se aceptan (el envío los traduce a C2/C3). Aunque el
+        // catálogo maestro solo traiga 2S3/3S3, la equivalencia de SICE-TAC los reconoce.
+        (await Validador().ValidarAsync(_usuarioId, Linea() with { TipoVehiculo = tipo }, Ct)).Should().BeNull();
     }
 
     [Fact]

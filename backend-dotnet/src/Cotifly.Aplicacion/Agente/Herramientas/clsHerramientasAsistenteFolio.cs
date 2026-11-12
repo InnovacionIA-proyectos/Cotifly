@@ -27,7 +27,8 @@ namespace Cotifly.Aplicacion.Agente.Herramientas;
 public sealed class clsHerramientasAsistenteFolio(
     clsContextoAsistenteFolio contexto,
     IClsServiciosConexosCosteoService conexos,
-    IClsReSolicitudCosteoService reSolicitud)
+    IClsReSolicitudCosteoService reSolicitud,
+    IClsCategoriasConexos categorias)
 {
     /// <summary>Servicios del catálogo que ve el modelo por búsqueda.</summary>
     public const int MaximoServicios = 10;
@@ -42,9 +43,12 @@ public sealed class clsHerramientasAsistenteFolio(
 
     [KernelFunction(clsNombresHerramientas.ConsultarCotizacion)]
     [Description("Consulta la cotización de esta conversación: estado del costeo y del envío, cliente, línea, moneda y sus rutas (linea_orden, origen, destino, márgenes actual y sugerido como fracción, y servicios conexos con nombre y cantidad). Nunca trae valores en dinero.")]
-    public Task<clsResultadoHerramienta> ConsultarCotizacionAsync(CancellationToken cancellationToken = default)
+    public async Task<clsResultadoHerramienta> ConsultarCotizacionAsync(CancellationToken cancellationToken = default)
     {
         var cotizacion = contexto.Cotizacion;
+
+        // Corrección conexos (nombre nunca id): nombre del catálogo de Nexo de los conexos migrados sin nombre guardado; solo nombres, sin montos.
+        var nombres = await categorias.NombresAsync(cotizacion, cancellationToken);
 
         // HU-021: los campos de primer nivel son los de la ruta 1 (compatibilidad); cada ruta trae los suyos en `rutas` (HU-021.8, #135):
         // solo porcentajes, origen y destino, nunca montos.
@@ -69,20 +73,31 @@ public sealed class clsHerramientasAsistenteFolio(
             ["margen_sugerido"] = ruta?.SugeridoVigente,
             ["origen_margen"] = ruta?.OrigenMargen is { } origen ? clsCodigoEnum.ACodigo(origen) : null,
             ["conexos"] = cotizacion.RutasOrdenadas.SelectMany(r => r.Conexos)
-                .Select(c => new Dictionary<string, object?>(StringComparer.Ordinal) { ["nombre"] = c.Nombre ?? c.IdServicioConexo, ["cantidad"] = c.Cantidad, ["incluido"] = true })
+                .Select(c => new Dictionary<string, object?>(StringComparer.Ordinal) { ["nombre"] = NombreMostrado(c, nombres), ["cantidad"] = c.Cantidad, ["incluido"] = true })
                 .ToList(),
             ["numero_rutas"] = lineas.Count,
-            ["rutas"] = RutasSinMontos(cotizacion),
+            ["rutas"] = RutasSinMontos(cotizacion, nombres),
         };
 
-        return Task.FromResult(clsResultadoHerramienta.Exito(clsNombresHerramientas.ConsultarCotizacion, salida));
+        return clsResultadoHerramienta.Exito(clsNombresHerramientas.ConsultarCotizacion, salida);
     }
+
+    /// <summary>
+    /// Corrección conexos (nombre nunca id): el nombre que ve el modelo (y por él el comercial): el guardado; si es null (fila migrada), el
+    /// del catálogo de Nexo por id; si tampoco, la categoría como respaldo LEGIBLE. Nunca el id interno del conexo.
+    /// </summary>
+    private static string NombreMostrado(clsServicioConexoRuta conexo, IReadOnlyDictionary<string, string>? nombres) =>
+        conexo.Nombre
+        ?? (nombres is not null && nombres.TryGetValue(conexo.IdServicioConexo, out var delCatalogo) ? delCatalogo : null)
+        ?? conexo.Categoria
+        ?? clsCosteoCotizacionService.CategoriaConexo;
 
     /// <summary>
     /// Las rutas como las ve el modelo (HU-021.8, #135): orden, origen, destino, vehículo, márgenes (fracción) y conexos (nombre y
     /// cantidad). NUNCA montos: ni precio, ni costo, ni levante, ni valores de los conexos.
     /// </summary>
-    public static IReadOnlyList<IReadOnlyDictionary<string, object?>> RutasSinMontos(clsCotizacionSolicitud cotizacion)
+    public static IReadOnlyList<IReadOnlyDictionary<string, object?>> RutasSinMontos(
+        clsCotizacionSolicitud cotizacion, IReadOnlyDictionary<string, string>? nombres = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         return [.. cotizacion.RutasOrdenadas.Select(l => (IReadOnlyDictionary<string, object?>)new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -94,7 +109,7 @@ public sealed class clsHerramientasAsistenteFolio(
             ["margen_actual"] = l.MargenAplicado,
             ["margen_sugerido"] = l.SugeridoVigente,
             ["origen_margen"] = l.OrigenMargen is { } origen ? clsCodigoEnum.ACodigo(origen) : null,
-            ["conexos"] = l.Conexos.Select(c => new Dictionary<string, object?>(StringComparer.Ordinal) { ["nombre"] = c.Nombre ?? c.IdServicioConexo, ["cantidad"] = c.Cantidad }).ToList(),
+            ["conexos"] = l.Conexos.Select(c => new Dictionary<string, object?>(StringComparer.Ordinal) { ["nombre"] = NombreMostrado(c, nombres), ["cantidad"] = c.Cantidad }).ToList(),
         })];
     }
 

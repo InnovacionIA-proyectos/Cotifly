@@ -151,6 +151,9 @@ public static class clsDependenciasAplicacion
         // HU-023.5 (#160): cubicación de la licitación en segundo plano (el procesador lo registra Infraestructura).
         servicios.AddScoped<Licitaciones.Services.IClsCubicacionLicitacionService, Licitaciones.Services.clsCubicacionLicitacionService>();
         servicios.AddScoped<Licitaciones.Services.IClsValidadorFilasLicitacion, Licitaciones.Services.clsValidadorFilasLicitacion>();
+        // HU-044.9 (#292): columnas derivadas (vehículo dentro del texto, contenedor con peso o rango) que se agregan antes de sugerir-mapeo y
+        // aplicar-mapeo, con el diccionario de alias de NEXO (el mismo de /web/alias/resolver).
+        servicios.AddScoped<Licitaciones.Services.IClsColumnasDerivadasService, Licitaciones.Services.clsColumnasDerivadasService>();
         // HU-044.2 (#253): sugerir-mapeo y leer-estructura, puente hacia la importación inteligente de NEXO (el adaptador lo registra Infraestructura).
         servicios.AddScoped<Licitaciones.Services.IClsSugerenciaMapeoService, Licitaciones.Services.clsSugerenciaMapeoService>();
 
