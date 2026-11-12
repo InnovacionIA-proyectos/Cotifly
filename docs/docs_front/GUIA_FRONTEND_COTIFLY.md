@@ -2551,11 +2551,11 @@ los estados del costeo).
 | Botón | Habilitado cuando | Llamada | Notas |
 |---|---|---|---|
 | Ajustar margen | Costeo listo, sin finalizar, sin envío ni resultado | `PUT .../costeo/margen` (una ruta) o `PUT .../costeo/margen/lineas` (varias) | Justificación obligatoria por debajo del `margen_sugerido` (`JUSTIFICACION_REQUERIDA`) |
-| Servicios conexos | Igual que el margen | `GET /web/servicios-conexos`, `POST` o `PUT .../costeo/servicios-conexos` | Ver la sección 10, "Servicios conexos de Nexo" |
-| Seguro de la mercancía | Igual que el margen, por ruta | `PUT .../costeo/seguro` | Sección 5.18.3 |
+| Servicios conexos | Igual que el margen; no en licitaciones (`409 ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION`) | `GET /web/servicios-conexos`, `POST` o `PUT .../costeo/servicios-conexos` | Ver la sección 10, "Servicios conexos de Nexo" |
+| Seguro de la mercancía | Igual que el margen, por ruta; no en licitaciones (`409 ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION`) | `PUT .../costeo/seguro` | Sección 5.18.3 |
 | Editar solicitud | Según `edicion.permitida` de `GET .../solicitud` | `GET` y `PUT .../solicitud` | Sección 6.10 |
 | Cotizar costo | Sección 10, "Cotizar costo" | `POST .../costeo/re-solicitar` | Mismo folio (200) o versión `-vN` (201): navegar a la nueva |
-| Reintentar envío a Nexo | `estado_costeo = error_envio` sin "Rechazo definitivo" | `POST .../costeo/reintentar` | Sección 5.16 |
+| Reintentar envío a Nexo | `ganada` en `null` y `estado_costeo = error_envio` sin "Rechazo definitivo", o `pendiente_envio` con más de 2 minutos sin cambios; nunca con la cubicación de una licitación en curso | `POST .../costeo/reintentar` | Sección 5.16 |
 | Finalizar | `estado_costeo` en `autocosteo` o `entregada`, con `precio_final`, y `fechas.finalizada_at` en `null` | `POST .../finalizar` con `If-Match` | Acepta el precio y lo congela. Ante `medidas_obligatorias_faltantes`, ofrecer agregar las medidas o pedir una justificación (sección 5.18.4) |
 | Textos del PDF y "Redactar con IA" | Finalizada, sin envío ni resultado | `PUT .../costeo/textos` y `POST .../costeo/textos/redactar` | Sección 10, "Textos del PDF" |
 | Generar o regenerar PDF | Finalizada; sin PDF vigente o con `pdf_desactualizado = true` | `POST .../costeo/pdf` | Confirmar antes el teléfono del comercial (sección 5.10) |

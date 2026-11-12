@@ -53,8 +53,8 @@ desde este repositorio.
 | SAP TM, export JSON (`export_fuente.py`) y OData en vivo (`odata_fuente.py`) | ~~`clsFuenteMargenExportJson`, `clsFuenteMargenOData` (#13)~~ retirados en HU-042.2: `clsFuenteMargenTablaLocal` lee la copia local `dbo_cotifly.SapMargenCliente`, que sincroniza el worker `clsWorkerSincronizacionMargenSap` | `SapTm__*`, `ConnectionStrings__DwOperaciones` |
 | Tarifario en Google Drive (`DriveFlatFileProvider`) | **No se porta**: retirado el 2026-09-23, el costeo vendrá de Nexo (HU-005.5 en adelante) | ninguna |
 | Búsqueda de clientes (no existía en el Python) | `clsBuscadorClientesNexo`, más municipios y catálogos de flete de Nexo (la cubicación de Nexo se retiró en HU-023.2: "Calcular cubicaje" usa el cubicador, `Cubicador__UrlBase`) | `Nexo__UrlBase` ([Nexo](../../backend-dotnet/docs/03-infraestructura.md#nexo)) |
-| Sincronización a Google Sheets (Looker Studio) | **Diferida**, pendiente en ADR-012 (Looker directo a SQL Server, port a .NET o tablero de HU-010) | ninguna |
-| PDF en S3/MinIO (`almacen_pdf.py`) | **Diferido**: se mantiene el volumen `/data/pdfs` detrás de `IClsAlmacenPdf` (#11). S3 solo si HU-006.6 despliega varias réplicas sin volumen compartido (ADR-012) | ninguna |
+| Sincronización a Google Sheets (Looker Studio) | **No se porta** (ADR-012, aceptada): el tablero es el de métricas de Cotifly (alternativa C) | ninguna |
+| PDF en S3/MinIO (`almacen_pdf.py`) | **No se porta** (ADR-012, aceptada): volumen `/data/pdfs` detrás de `IClsAlmacenPdf` con una réplica. S3 solo con una ADR nueva si se despliegan varias réplicas sin volumen compartido | ninguna |
 
 ## Variables del stack Python
 
@@ -62,7 +62,7 @@ Variables del Python que **no** pasan al backend .NET (se retiran; no cargarlas 
 `DATABASE_URL`, `POSTGRES_*`, `MSSQL_SA_PASSWORD`, `MCP_URL`, `MCP_AUTH_TOKEN` (no hay MCP aparte, ADR-002),
 `WEB_SESSION_SECRET` (reemplazada por `Jwt__SigningKey`), `INTERNAL_API_TOKEN`, `LLM_MODEL`/`LLM_API_KEY`/`LLM_RPM`
 (reemplazadas por `IA__*`), `GCHAT_*` y `GOOGLE_SA_JSON` (Google Chat retirado en #105), y `DRIVE_TARIFARIO_*` (tarifario
-de Drive retirado), `TARIFA_*`, `S3_*` y `MINIO_*` (MinIO no se mantiene, ADR-012), `SHEETS_*` (diferida, ADR-012),
+de Drive retirado), `TARIFA_*`, `S3_*` y `MINIO_*` (MinIO no se mantiene, ADR-012), `SHEETS_*` (no se porta, ADR-012),
 `SMTP_*`/`SMTP_RELAY_*`/`CORREO_*` (reemplazadas por `Correo__*`), `SAP_TM_*`/`SAP_SALES_ORG_DEFAULT` (reemplazadas por
 `SapTm__*`: `SalesOrgDefault`, `AvisoSincronizacionHoras` y, desde el 2026-11-03, `Url`, `User`, `Pass`, `SapClient` y los ajustes del worker), `PDF_*` (reemplazadas por `Pdf__*`), `PUBLIC_HOST` (sigue como variable del manifiesto para Traefik, no
 de la app).
