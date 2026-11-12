@@ -5,7 +5,7 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
 /// <summary>
-/// HU-036.3 (#207): candados de la cotización finalizada en el agregado.
+/// Candados de la cotización finalizada en el agregado.
 /// <list type="bullet">
 /// <item>Parte A, después de finalizar: lo que cambia el precio (margen, conexos, re-solicitud en el mismo folio, levante, recálculo de
 /// camiones) responde <c>PDF_YA_ENVIADO</c> como con la entregada (<see cref="clsCotizacionSolicitud.ValidarCambioEtapaFinal"/>) y la
@@ -128,9 +128,9 @@ public sealed class clsCandadosFinalizadaTests
     }
 
     [Fact]
-    public void EntregadaAlClienteAntesDeHu036ElCierreNoExigeFinalizar()
+    public void EntregadaAlClienteSinFinalizarElCierreNoExigeFinalizar()
     {
-        // Sin backfill: las enviadas o con resultado ya las protege EntregadaAlCliente.
+        // Las enviadas o con resultado sin finalizar ya las protege EntregadaAlCliente.
         var enviada = clsCotizacionMuestra.Costeada();
         enviada.RegistrarEnvio();
         var conResultado = clsCotizacionMuestra.Costeada(estado: EstadoCosteo.Entregada);
@@ -167,7 +167,7 @@ public sealed class clsCandadosFinalizadaTests
     [Fact]
     public void ConConexosDeNexoPendientesDeLeerElCierreYElResultadoSiguenExigiendoFinalizar()
     {
-        // Validación HU-036: mientras no se pueda finalizar por un conexo sin leer, el PDF, el correo, los textos y el resultado esperan;
+        // Mientras no se pueda finalizar por un conexo sin leer, el PDF, el correo, los textos y el resultado esperan;
         // la regla del resultado no se apaga por no poder finalizar todavía.
         var cotizacion = clsCotizacionMuestra.Costeada();
         cotizacion.MarcarConexosPendientesDeLeer();
@@ -180,7 +180,7 @@ public sealed class clsCandadosFinalizadaTests
     [Fact]
     public void AntesDelCosteoElResultadoNoExigeFinalizar()
     {
-        // HU-013.17 (perdida solo en Cotifly) y HU-033 (ganada pendiente de sincronizar en pendiente_costeo) siguen como antes.
+        // La perdida solo en Cotifly y la ganada pendiente de sincronizar en pendiente_costeo no exigen finalizar.
         var pendiente = clsCotizacionMuestra.Costeada(flete: null);
         pendiente.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo);
         var conError = clsCotizacionMuestra.Formulario();

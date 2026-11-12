@@ -8,7 +8,7 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Aplicacion.Tests.Agente;
 
 /// <summary>
-/// HU-013.16 (#126): filtro de montos del asistente (<see cref="clsNumerosDelMensaje"/> y <see cref="clsReglasRespuestaAgente.Montos"/>),
+/// Filtro de montos del asistente (<see cref="clsNumerosDelMensaje"/> y <see cref="clsReglasRespuestaAgente.Montos"/>),
 /// del que depende la regla "la IA nunca escribe un monto que nada respalda" (ADR-018 §2b). Casos adversariales: separadores mixtos,
 /// espacios de miles, dígitos de otros sistemas, montos en letras, sufijos de miles y millones, USD y TRM, porcentajes y códigos de
 /// vehículo, y cifras del comercial frente a cifras inventadas. El contexto es el del asistente: la salida de
@@ -85,11 +85,11 @@ public sealed class clsFiltroMontosTests
     // ---------- Montos que el modelo NO puede escribir (nada los respalda) ----------
 
     [Theory]
-    // Huecos reales encontrados en HU-013.16: el espacio de miles partía el número y "$1" quedaba respaldado por "version": 1.
+    // El espacio de miles no parte el número y "$1" no queda respaldado por "version": 1.
     [InlineData("El nuevo precio es $1 109 756.")]
     [InlineData("El nuevo precio es $1 109 756.")]
     [InlineData("Queda en 1 109 756 pesos.")]
-    // Dígitos de otros sistemas: antes no se podían leer y el monto se descartaba.
+    // Dígitos de otros sistemas: se leen y el monto no se descarta.
     [InlineData("El precio queda en $３.４００.０００.")]
     // Montos en letras.
     [InlineData("Te sale en tres millones de pesos.")]
@@ -191,7 +191,7 @@ public sealed class clsFiltroMontosTests
         Codigos("Son USD 1.250.", contexto).Should().Contain(clsReglasRespuestaAgente.MontoNoRespaldado);
     }
 
-    // ---------- Tabla adversarial del validador de #126 ----------
+    // ---------- Tabla adversarial ----------
 
     // Ningún campo de las herramientas respalda un monto: "version": 1, "cantidad": 2 y el margen 0,15 dejaban pasar "$1", "USD 2",
     // "$0,15" y "$0". Los números partidos por espacios, saltos de línea o separadores Unicode se leen enteros.

@@ -5,7 +5,7 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Aplicacion.Tests.Licitaciones;
 
 /// <summary>
-/// HU-044.10 (#293, parte 3): la huella de <c>POST /web/licitaciones</c> con <c>Idempotency-Key</c>
+/// La huella de <c>POST /web/licitaciones</c> con <c>Idempotency-Key</c>
 /// (<see cref="clsLicitacionService.Huella"/>): el cuerpo más el nombre y el SHA-256 del archivo, nunca los bytes. La misma clave con la
 /// misma huella repite la respuesta; con otra huella es <c>IDEMPOTENCY_KEY_REUTILIZADA</c> (el flujo completo se prueba en los web tests).
 /// </summary>

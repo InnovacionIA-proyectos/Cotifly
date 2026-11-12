@@ -10,7 +10,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Licitaciones;
 
 /// <summary>
-/// Validación adversarial de HU-044.4 (#255): límites (0/1/1000/1001 valores, 150/151 caracteres con tildes, tildes descompuestas y
+/// Validación adversarial de <c>normalizar-valores</c>: límites (0/1/1000/1001 valores, 150/151 caracteres con tildes, tildes descompuestas y
 /// emojis), repetidos, campos raros, respuestas extrañas de NEXO (desordenadas, de más, de menos, de otro campo, sin estado) y la
 /// traducción de la línea de negocio a 0, 1 o varias líneas de Cotifly.
 /// </summary>

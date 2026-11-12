@@ -7,9 +7,9 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Dominio.Tests.Seguros;
 
 /// <summary>
-/// HU-046.3 (#269): la política de seguros sobre la cotización. Las medidas pendientes de las rutas cotizables (las rechazadas no
-/// cuentan), el bloqueo de "Finalizar" con <c>medidas_obligatorias_faltantes</c>, la justificación que salta SOLO ese bloqueo (decisión
-/// del 2026-11-06) y el <c>codigoServicio</c> de los conexos.
+/// La política de seguros sobre la cotización. Las medidas pendientes de las rutas cotizables (las rechazadas no
+/// cuentan), el bloqueo de "Finalizar" con <c>medidas_obligatorias_faltantes</c>, la justificación que salta SOLO ese bloqueo
+/// y el <c>codigoServicio</c> de los conexos.
 /// </summary>
 public sealed class clsPoliticaSegurosCotizacionTests
 {
@@ -225,7 +225,7 @@ public sealed class clsPoliticaSegurosCotizacionTests
     [Fact]
     public void UnConexoQueNoCuentaNoCumpleLaMedida()
     {
-        // Decisión del usuario (2026-11-09): el caso de uso excluye los conexos fallido_definitivo o incierto en Nexo.
+        // El caso de uso excluye los conexos fallido_definitivo o incierto en Nexo.
         var cotizacion = ConConexo(Costeada(400 * M), "AVT_AUTO");
 
         cotizacion.MedidasObligatoriasPendientes(_politica, (_, _) => false).Should().ContainSingle();

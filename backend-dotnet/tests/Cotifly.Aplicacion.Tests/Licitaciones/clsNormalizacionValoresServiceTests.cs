@@ -10,8 +10,8 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Licitaciones;
 
 /// <summary>
-/// HU-044.4 (#255, ADR-029): <c>normalizar-valores</c> valida en local con los límites de NEXO, reenvía por el puerto de la importación
-/// (#252), devuelve un resultado por valor distinto y traduce la línea de negocio de NEXO a la de Cotifly (lista cerrada de la fase 0).
+/// ADR-029: <c>normalizar-valores</c> valida en local con los límites de NEXO, reenvía por el puerto de la importación
+/// de NEXO, devuelve un resultado por valor distinto y traduce la línea de negocio de NEXO a la de Cotifly (lista cerrada de la fase 0).
 /// </summary>
 public sealed class clsNormalizacionValoresServiceTests
 {

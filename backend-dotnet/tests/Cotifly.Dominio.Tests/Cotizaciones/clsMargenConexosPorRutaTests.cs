@@ -6,7 +6,7 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
 /// <summary>
-/// HU-021.8 (#135, ADR-019, decisiones 3, 4 y 6): la ruta indicada por la petición, el margen POR RUTA (validado contra el sugerido de
+/// ADR-019: la ruta indicada por la petición, el margen POR RUTA (validado contra el sugerido de
 /// esa ruta, recalculando solo esa ruta y la cabecera), los conexos por ruta (quitar = borrar la fila, cambiar la cantidad) y el levante
 /// copiado a cada camión. Pliego de 3 rutas con margen de 15 %: fletes 850.000, 1.700.000 y 425.000 → precios 1.000.000, 2.000.000 y
 /// 500.000 (total 3.500.000).
@@ -17,7 +17,7 @@ public sealed class clsMargenConexosPorRutaTests
 
     private static clsCotizacionSolicitud TresRutas() => clsCotizacionMuestra.LicitacionCosteada([850_000m, 1_700_000m, 425_000m]);
 
-    // ------------------------------------------------------------------ Margen SAP anómalo (HU-009, #139)
+    // ------------------------------------------------------------------ Margen SAP anómalo
 
     [Fact]
     public void UnMargenSapAnomaloQuedaMarcadoPeroNoSeAplicaNiEsElSugerido()

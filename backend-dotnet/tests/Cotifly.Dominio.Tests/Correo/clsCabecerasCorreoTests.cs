@@ -3,8 +3,8 @@ using Cotifly.Dominio.Correo;
 namespace Cotifly.Dominio.Tests.Correo;
 
 /// <summary>
-/// DEF-1027B-2 (#228, E2E real del 2026-10-27B): reglas de lo que viaja como cabecera del correo (asunto y direcciones). Un asunto con
-/// CR/LF llegó a MailSender y al relay SMTP ("Hola\r\nBcc: intruso@..."): riesgo de inyección de cabeceras.
+/// Reglas de lo que viaja como cabecera del correo (asunto y direcciones). Un asunto con
+/// CR/LF llegaría a MailSender y al relay SMTP ("Hola\r\nBcc: intruso@..."): riesgo de inyección de cabeceras.
 /// </summary>
 public sealed class clsCabecerasCorreoTests
 {
@@ -22,7 +22,7 @@ public sealed class clsCabecerasCorreoTests
     [InlineData("Hola\u007Fmundo")]
     [InlineData("Hola\u001Bmundo")]
     [InlineData("Hola\r\n")]
-    // Validación #228: los demás separadores que algún parser trata como salto de línea (VT, FF, FS, GS, RS, US) y C1.
+    // Los demás separadores que algún parser trata como salto de línea (VT, FF, FS, GS, RS, US) y C1.
     [InlineData("Hola\u000BBcc: x@y.com")]
     [InlineData("Hola\u000CBcc: x@y.com")]
     [InlineData("Hola\u001CBcc: x@y.com")]
@@ -40,7 +40,7 @@ public sealed class clsCabecerasCorreoTests
     [InlineData("Cotización PCN-001 — Botero Soto")]
     [InlineData("Ñandú, acción y café ☕ 👍🏽")]
     [InlineData("[QA] Cotización PCN-001")]
-    // Validación #228: texto literal, sin saltos reales. MailSender lo codifica como cualquier otro asunto; ninguno abre otra cabecera.
+    // Texto literal, sin saltos reales. MailSender lo codifica como cualquier otro asunto; ninguno abre otra cabecera.
     [InlineData("Hola%0d%0aBcc: x@y.com")]
     [InlineData("Hola\\r\\nBcc: x@y.com")]
     [InlineData("=?utf-8?q?Hola=0D=0ABcc:_x@y.com?=")]
@@ -57,7 +57,7 @@ public sealed class clsCabecerasCorreoTests
     [InlineData("o'brien@empresa.ie")]
     [InlineData("josé@empresa.co")]
     [InlineData("x_y-z@mi-empresa.com")]
-    // Validación #228: dominios internacionalizados, en Unicode y en punycode.
+    // Dominios internacionalizados, en Unicode y en punycode.
     [InlineData("usuario@bücher.de")]
     [InlineData("usuario@xn--bcher-kva.de")]
     [InlineData("usuario@empresa.xn--p1ai")]
@@ -97,7 +97,7 @@ public sealed class clsCabecerasCorreoTests
     [InlineData(" cliente@empresa.com")]
     [InlineData("cliente\u200B@empresa.com")]
     [InlineData("cliente\u202E@empresa.com")]
-    // Validación #228: más vectores (ancho cero, BOM, NBSP, formas de ancho completo, marcas combinantes, emoji, ángulos y comentarios).
+    // Más vectores (ancho cero, BOM, NBSP, formas de ancho completo, marcas combinantes, emoji, ángulos y comentarios).
     [InlineData("cliente\uFEFF@empresa.com")]
     [InlineData("cliente@empresa\u200B.com")]
     [InlineData("cliente\u2060@empresa.com")]

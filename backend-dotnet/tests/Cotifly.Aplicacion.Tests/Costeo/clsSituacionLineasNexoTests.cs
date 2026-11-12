@@ -6,7 +6,7 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// #181 (Nexo #309): el estado de la línea de Nexo y el motivo por el que sigue pendiente, por camión: lo que el polling deja a la vista
+/// El estado de la línea de Nexo y el motivo por el que sigue pendiente, por camión: lo que el polling deja a la vista
 /// (en memoria, sin base) y cómo sale en <c>CamionCosteo</c> de <c>GET .../costeo</c>.
 /// </summary>
 public sealed class clsSituacionLineasNexoTests
@@ -47,7 +47,7 @@ public sealed class clsSituacionLineasNexoTests
     public void SinLosCamposDeNexoOSinCamionAsociadoNoHayNadaQueMostrar()
     {
         var cotizacion = Ruta(("3S3", 10_000m), ("2S2", 8_000m));
-        // Nexo anterior a #309 (sin estadoLinea ni motivoPendiente) y una sola línea: el 2S2 queda sin asociar.
+        // Un Nexo sin estadoLinea ni motivoPendiente y una sola línea: el 2S2 queda sin asociar.
         var foto = Foto([Detalle("N-a", "3S3", 10_000m)], []);
         clsLecturaCosteo.AplicarFoto(cotizacion, foto, _ahora, new clsOpcionesCosteoNexo(), new clsPrecioCosteoService());
 
@@ -98,7 +98,7 @@ public sealed class clsSituacionLineasNexoTests
             [camion.Id] = new("por_costear", "sin línea"),
         }).Should().Match<clsCamionCosteo>(c => c.EstadoLineaNexo == null && c.MotivoPendiente == null);
 
-        // Re-solicitud (HU-013.4): el camión conserva su id y vuelve a pendiente_costeo, pero olvida su línea; la foto en memoria de la
+        // Re-solicitud: el camión conserva su id y vuelve a pendiente_costeo, pero olvida su línea; la foto en memoria de la
         // solicitud anterior no se muestra hasta que el polling lea la nueva.
         cotizacion.PrepararReSolicitud();
         cotizacion.RegistrarEnvioCosteo("SOL-2", false, _ahora, _ahora);

@@ -4,7 +4,7 @@ using Cotifly.Aplicacion.Pdf.Services;
 
 namespace Cotifly.Aplicacion.Tests.Correo;
 
-/// <summary>#262: diseño del HTML del correo (cotización formal): resumen con su ficha, tabla de rutas con su tope, nota del PDF y firma.</summary>
+/// <summary>Diseño del HTML del correo (cotización formal): resumen con su ficha, tabla de rutas con su tope, nota del PDF y firma.</summary>
 public sealed class clsPlantillaCorreoTests
 {
     private static clsResumenCorreo Resumen(int rutas) => new(
@@ -88,7 +88,7 @@ public sealed class clsPlantillaCorreoTests
         posiciones.Should().NotContain(-1).And.BeInAscendingOrder();
     }
 
-    // #261 (HU-046): el texto de seguros va después de la nota del PDF adjunto y antes de la despedida, con su etiqueta.
+    // El texto de seguros va después de la nota del PDF adjunto y antes de la despedida, con su etiqueta.
     [Fact]
     public void ElTextoDeSegurosVaDespuesDelPdfAdjuntoYAntesDeLaDespedida()
     {

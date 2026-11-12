@@ -4,7 +4,7 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
 /// <summary>
-/// HU-044.8 (#291): la única fuente de equivalencia entre el código de vehículo de SAP («2», «3») y el código NEXO de SICE-TAC
+/// La única fuente de equivalencia entre el código de vehículo de SAP («2», «3») y el código NEXO de SICE-TAC
 /// (<c>C2</c>, <c>C3</c>), <c>tbl_mapeo_vehiculo_tarifario</c>.
 /// </summary>
 public sealed class clsEquivalenciaVehiculoNexoTests

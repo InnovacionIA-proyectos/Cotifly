@@ -16,7 +16,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// Textos del PDF del costeo (HU-013.5, ADR-018 §2a, §8 y §11): redactar con la IA (con respaldo), editar como comercial, la regla del
+/// Textos del PDF del costeo (ADR-018 §2a, §8 y §11): redactar con la IA (con respaldo), editar como comercial, la regla del
 /// PDF, el control de versión, <c>TEXTOS_EDITADOS</c> con su sobrescritura y el PDF que imprime los textos guardados.
 /// </summary>
 public sealed class clsTextosCosteoServiceTests
@@ -32,7 +32,7 @@ public sealed class clsTextosCosteoServiceTests
 
     public clsTextosCosteoServiceTests()
     {
-        // HU-036.3 (#207): los textos del PDF se redactan con la cotización finalizada.
+        // Los textos del PDF se redactan con la cotización finalizada.
         _cotizacion = clsAjusteMargenCosteoServiceTests.Finalizada(_ana, "PCN-900555111-AP-05102026-001");
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(_cotizacion.Folio, _ana, Arg.Any<CancellationToken>()).Returns(_cotizacion);
         _unidad.GuardarCambiosSiVersionAsync(_cotizacion.Id, Version, Arg.Any<CancellationToken>()).Returns(true);
@@ -92,7 +92,7 @@ public sealed class clsTextosCosteoServiceTests
     }
 
     [Fact]
-    public async Task HU0363_SinFinalizarNoSeRedactaNiSeEditaYNoSeLlamaALaIa()
+    public async Task SinFinalizarNoSeRedactaNiSeEditaYNoSeLlamaALaIa()
     {
         var sinFinalizar = clsAjusteMargenCosteoServiceTests.Costeada(_ana, "PCN-900555111-AP-05102026-077");
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(sinFinalizar.Folio, _ana, Arg.Any<CancellationToken>()).Returns(sinFinalizar);
@@ -109,7 +109,7 @@ public sealed class clsTextosCosteoServiceTests
     }
 
     [Fact]
-    public async Task HU0363_FinalizadaYSinEnviarLosTextosSiSeGuardan()
+    public async Task FinalizadaYSinEnviarLosTextosSiSeGuardan()
     {
         _cotizacion.Finalizada.Should().BeTrue();
 
@@ -239,7 +239,7 @@ public sealed class clsTextosCosteoServiceTests
         typeof(clsContextoRedaccion).GetProperties().Select(p => p.PropertyType)
             .Should().OnlyContain(t => t == typeof(string) || t == typeof(IReadOnlyList<clsRutaRedaccion>) || t == typeof(IReadOnlyList<string>),
                 "el contexto de la IA no tiene ningún campo numérico (ADR-018 §2a)");
-        // HU-021: ya no hay conexos excluidos; el conexo de la ruta va en el precio y en el PDF, así que la IA ve su nombre.
+        // No hay conexos excluidos: el conexo de la ruta va en el precio y en el PDF, así que la IA ve su nombre.
         contexto.Conexos.Should().Equal("Cargue");
         contexto.LineaNegocio.Should().Be("Nacional");
     }
@@ -285,10 +285,10 @@ public sealed class clsTextosCosteoServiceTests
             .EsValida.Should().BeTrue("el respaldo de tarifa única cumple las mismas reglas que la IA");
     }
 
-    // HU-013.18 (#296): indicaciones del comercial para el redactor con IA.
+    // Indicaciones del comercial para el redactor con IA.
 
     [Fact]
-    public async Task HU01318_LasIndicacionesLleganALaIaRecortadas()
+    public async Task LasIndicacionesLleganALaIaRecortadas()
     {
         var resultado = await Servicio().RedactarAsync(_ana, _cotizacion.Folio, false, Version,
             "  Destacar la experiencia en carga refrigerada, tono cercano.  ", Ct);
@@ -300,7 +300,7 @@ public sealed class clsTextosCosteoServiceTests
     }
 
     [Fact]
-    public async Task HU01318_SinCuerpoElContextoEsElDeSiempreSinIndicaciones()
+    public async Task SinCuerpoElContextoEsElDeSiempreSinIndicaciones()
     {
         await Servicio().RedactarAsync(_ana, _cotizacion.Folio, false, Version, cancellationToken: Ct);
 
@@ -313,7 +313,7 @@ public sealed class clsTextosCosteoServiceTests
     [InlineData("")]
     [InlineData("   ")]
     [InlineData("\t\r\n")]
-    public async Task HU01318_VacioOSoloEspaciosEsSinIndicaciones(string indicaciones)
+    public async Task VacioOSoloEspaciosEsSinIndicaciones(string indicaciones)
     {
         await Servicio().RedactarAsync(_ana, _cotizacion.Folio, false, Version, indicaciones, Ct);
 
@@ -323,7 +323,7 @@ public sealed class clsTextosCosteoServiceTests
     }
 
     [Fact]
-    public async Task HU01318_MasDe500CaracteresEs400SolicitudInvalidaSinLlamarALaIa()
+    public async Task MasDe500CaracteresEs400SolicitudInvalidaSinLlamarALaIa()
     {
         var resultado = await Servicio().RedactarAsync(_ana, _cotizacion.Folio, false, Version,
             new string('a', clsContextoRedaccion.LargoMaximoIndicaciones + 1), Ct);
@@ -334,7 +334,7 @@ public sealed class clsTextosCosteoServiceTests
     }
 
     [Fact]
-    public async Task HU01318_Exactamente500CaracteresSeAcepta()
+    public async Task Exactamente500CaracteresSeAcepta()
     {
         var resultado = await Servicio().RedactarAsync(_ana, _cotizacion.Folio, false, Version,
             new string('a', clsContextoRedaccion.LargoMaximoIndicaciones), Ct);
@@ -346,7 +346,7 @@ public sealed class clsTextosCosteoServiceTests
     }
 
     [Fact]
-    public async Task HU01318_LaAuditoriaRegistraConIndicacionesSiSiNoElTexto()
+    public async Task LaAuditoriaRegistraConIndicacionesSiSiNoElTexto()
     {
         await Servicio().RedactarAsync(_ana, _cotizacion.Folio, false, Version, "Tono cercano y directo.", Ct);
 
@@ -356,7 +356,7 @@ public sealed class clsTextosCosteoServiceTests
     }
 
     [Fact]
-    public async Task HU01318_SinIndicacionesLaAuditoriaRegistraConIndicacionesFalse()
+    public async Task SinIndicacionesLaAuditoriaRegistraConIndicacionesFalse()
     {
         await Servicio().RedactarAsync(_ana, _cotizacion.Folio, false, Version, cancellationToken: Ct);
 
@@ -380,7 +380,7 @@ public sealed class clsTextosCosteoServiceTests
     [Fact]
     public void EnUnPliegoElRespaldoEsElAsuntoDeLicitacionYLaIntroduccionMultiseccionComoLosImprimeElPdf()
     {
-        // HU-021: el pliego es la solicitud con varias rutas (o una licitación).
+        // El pliego es la solicitud con varias rutas (o una licitación).
         var pliego = clsCotizacionMuestra.Licitacion(2, usuarioId: _ana);
 
         var estandar = clsCosteoCotizacionService.TextosEstandar(pliego, "Nacional");
@@ -393,7 +393,7 @@ public sealed class clsTextosCosteoServiceTests
     }
 
     /// <summary>
-    /// HU-021.9 (#136): la línea de negocio, las rutas y los vehículos salen de las rutas y sus camiones, sin respaldo a la cabecera: con
+    /// La línea de negocio, las rutas y los vehículos salen de las rutas y sus camiones, sin respaldo a la cabecera: con
     /// rutas de dos líneas la IA recibe las dos, y el estándar (pliego) no lleva línea. Nunca montos.
     /// </summary>
     [Fact]

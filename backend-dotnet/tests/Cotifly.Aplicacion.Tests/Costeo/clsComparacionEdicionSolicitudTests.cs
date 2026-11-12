@@ -6,10 +6,10 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// D-1019B-1 (E2E real 2026-10-19, #186): "¿la edición cambió algo?" se decide por VALOR. Un <c>decimal</c> de SQL Server conserva la escala
+/// "¿La edición cambió algo?" se decide por VALOR. Un <c>decimal</c> de SQL Server conserva la escala
 /// de la columna (<c>36666.60</c>) y el del JSON reenviado no (<c>36666.6</c>); el <c>deadline</c> puede venir en otra zona; los códigos con
 /// otras mayúsculas o espacios y los conexos en otro orden son la misma solicitud. Un cambio real (+1 kg, otra cantidad) sí cuenta.
-/// D-1019B-2 (#188 M1): el vehículo digitado queda escrito como en el catálogo de Nexo.
+/// El vehículo digitado queda escrito como en el catálogo de Nexo.
 /// </summary>
 public sealed class clsComparacionEdicionSolicitudTests
 {

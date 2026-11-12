@@ -13,9 +13,9 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Licitaciones;
 
 /// <summary>
-/// HU-044.3 (#254): <c>aplicar-mapeo</c> valida la forma en local con los códigos de NEXO, reenvía por el puerto de la importación (#252) y
+/// <c>aplicar-mapeo</c> valida la forma en local con los códigos de NEXO, reenvía por el puerto de la importación y
 /// traduce cada línea de NEXO a la línea de licitación de Cotifly: fila (base 0 en las filas enviadas) y fila de Excel, línea de negocio de
-/// Cotifly y línea de NEXO (ADR-029, la regla de #255), peso sin tara, posiciones como mercancías con el código sugerido, los ids de municipio
+/// Cotifly y línea de NEXO (ADR-029), peso sin tara, posiciones como mercancías con el código sugerido, los ids de municipio
 /// en null y los errores por fila (los de NEXO con su campo; <c>LINEA_NEGOCIO_SIN_EQUIVALENCIA</c> va en lineas y en errores).
 /// </summary>
 public sealed class clsAplicacionMapeoServiceTests
@@ -29,7 +29,7 @@ public sealed class clsAplicacionMapeoServiceTests
 
     public clsAplicacionMapeoServiceTests()
     {
-        // HU-044.9 (#292): la detección de columnas derivadas se prueba aparte; aquí es un paso que devuelve las filas tal cual.
+        // La detección de columnas derivadas se prueba aparte; aquí es un paso que devuelve las filas tal cual.
         _columnas.EnriquecerFilasAsync(Arg.Any<Guid>(), Arg.Any<IReadOnlyList<IReadOnlyList<string?>?>>(), Arg.Any<CancellationToken>())
             .Returns(ci => ci.ArgAt<IReadOnlyList<IReadOnlyList<string?>?>>(1));
         _politicas.ListarAsync(Arg.Any<CancellationToken>()).Returns(
@@ -377,7 +377,7 @@ public sealed class clsAplicacionMapeoServiceTests
     [Fact]
     public async Task LasFilasEnriquecidasConLasColumnasDerivadasViajanANexoYSeMapeanComoCualquierOtra()
     {
-        // HU-044.9 (#292): aplicar-mapeo agrega la columna derivada al final de cada fila y el mapeo confirmado la referencia por índice.
+        // aplicar-mapeo agrega la columna derivada al final de cada fila y el mapeo confirmado la referencia por índice.
         _columnas.EnriquecerFilasAsync(_usuario, Arg.Any<IReadOnlyList<IReadOnlyList<string?>?>>(), Arg.Any<CancellationToken>())
             .Returns(ci => (IReadOnlyList<IReadOnlyList<string?>?>)[.. ci.ArgAt<IReadOnlyList<IReadOnlyList<string?>?>>(1)
                 .Select(f => (IReadOnlyList<string?>?)[.. f!, "Mula"])]);

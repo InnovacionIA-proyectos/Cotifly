@@ -4,7 +4,7 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
 /// <summary>
-/// HU-014 (#188, "enviar solo códigos conocidos"): ¿Nexo conoce el código? Con la equivalencia de Nexo y de <c>MismoCodigo</c> (D2): sin
+/// Enviar solo códigos conocidos: ¿Nexo conoce el código? Con la equivalencia de Nexo y de <c>MismoCodigo</c>: sin
 /// tildes ni mayúsculas y con <c>_</c>/<c>-</c> como espacio; devuelve el código escrito como en el catálogo de Nexo.
 /// </summary>
 public sealed class clsCodigosConocidosNexoTests

@@ -19,7 +19,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// Conexos por ruta (HU-021.8, #135, decisión 3): <c>PUT .../costeo/servicios-conexos</c> quita conexos (se BORRA la fila de la ruta) o
+/// Conexos por ruta: <c>PUT .../costeo/servicios-conexos</c> quita conexos (se BORRA la fila de la ruta) o
 /// cambia su cantidad con el costo unitario de Nexo; recalcula esa ruta y la cabecera con el margen de la ruta, invalida el PDF, sube la
 /// versión y AUDITA cada movimiento (sin montos). Pliego de 3 rutas al 15 % (precios 1.000.000, 2.000.000 y 500.000) con dos conexos
 /// en la ruta 2: Cargue (85.000 × 2) y Escolta (42.500 × 1).
@@ -141,7 +141,7 @@ public sealed class clsConexosPorRutaServiceTests
     [Fact]
     public async Task IncluidosComparaLosIdsConElMismoCriterioQueLaValidacion()
     {
-        // H1 (#135): "cx-2" pasa la validación (sin distinguir mayúsculas) y por eso CONSERVA "CX-2"; antes lo validaba y lo borraba.
+        // "cx-2" pasa la validación (sin distinguir mayúsculas) y por eso se CONSERVA "CX-2".
         var resultado = await Servicio().SeleccionarServiciosConexosAsync(_ana, "PCN-L1",
             new clsCambioServiciosConexos(clsRutaIndicada.DeOrden(2), ["cx-2"], null), Version, Ct);
 
@@ -152,7 +152,7 @@ public sealed class clsConexosPorRutaServiceTests
     [Fact]
     public async Task SinIncluidosNiConexosRespondeSolicitudInvalidaYNoBorraNada()
     {
-        // H2 (#135): {"linea_orden": 2} sin 'incluidos' ni 'conexos' no vacía la ruta.
+        // {"linea_orden": 2} sin 'incluidos' ni 'conexos' no vacía la ruta.
         var resultado = await Servicio().SeleccionarServiciosConexosAsync(_ana, "PCN-L1",
             new clsCambioServiciosConexos(clsRutaIndicada.DeOrden(2), null, null), Version, Ct);
 
@@ -191,7 +191,7 @@ public sealed class clsConexosPorRutaServiceTests
     }
 
     [Fact]
-    public async Task HU0363_FinalizadaNoCambiaLosConexosYPideLaVersionNueva()
+    public async Task FinalizadaNoCambiaLosConexosYPideLaVersionNueva()
     {
         _cotizacion.Finalizar(_ana, clsCotizacionMuestra.Ahora).Valor.Should().BeTrue();
 

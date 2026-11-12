@@ -60,7 +60,7 @@ public sealed class clsGenerarPdfServiceTests
     [Fact]
     public async Task PorDefectoCrearUnaCotizacionDesdeElChatEstaRetiradoYNoGuardaNada()
     {
-        // HU-021.6: la cotización "del chat" no tiene municipios (decisión 2); la única creación es el formulario (ADR-018).
+        // La cotización "del chat" no tiene municipios; la única creación es el formulario (ADR-018).
         _opciones.PermitirCotizacionChat = new clsOpcionesPdf().PermitirCotizacionChat;
 
         var resultado = await Servicio().GenerarAsync(Entrada(), Ct);
@@ -87,7 +87,7 @@ public sealed class clsGenerarPdfServiceTests
         salida.CotizacionId.Should().Be(_agregada!.Id);
 
         _agregada.Folio.Should().Be("PCN-19032026");
-        // HU-021: la línea de negocio, el costo, los márgenes y el método son de la ruta 1 (la del chat).
+        // La línea de negocio, el costo, los márgenes y el método son de la ruta 1 (la del chat).
         var ruta = _agregada.PrimeraRuta!;
         ruta.LineaNegocioId.Should().Be(_nacional.Id);
         _agregada.UsuarioId.Should().Be(_usuario.Id);
@@ -131,7 +131,7 @@ public sealed class clsGenerarPdfServiceTests
         _documento!.Referencia.Should().Be("PCN-NV-24092026-001");
     }
 
-    // test_generar_pdf_sin_referencia_error: ahora el folio lo genera el servidor (ADR-011) y es obligatorio.
+    // test_generar_pdf_sin_referencia_error: el folio lo genera el servidor (ADR-011) y es obligatorio.
     [Theory]
     [InlineData(null)]
     [InlineData("  ")]
@@ -199,7 +199,7 @@ public sealed class clsGenerarPdfServiceTests
         resultado.Error.Mensaje.Should().Contain("$3.600.000");
     }
 
-    // HU-012.3: la moneda de las filas es la de la cotización.
+    // La moneda de las filas es la de la cotización.
     [Fact]
     public async Task LaMonedaDeLasFilasDebeSerLaDeLaCotizacion()
     {
@@ -214,7 +214,7 @@ public sealed class clsGenerarPdfServiceTests
         _agregada!.Moneda.Should().Be("USD");
     }
 
-    // HU-012.2: en USD el precio final es el de pesos (costo y margen) convertido con la TRM de la trazabilidad, a 2 decimales.
+    // En USD el precio final es el de pesos (costo y margen) convertido con la TRM de la trazabilidad, a 2 decimales.
     [Fact]
     public async Task EnDolaresElPrecioFinalEsElDePesosConvertidoConLaTrm()
     {
@@ -232,7 +232,7 @@ public sealed class clsGenerarPdfServiceTests
             .And.NotContain("mínimo a pagar");
     }
 
-    // Coherencia de la conversión (HU-012.2): el valor en pesos de la trazabilidad debe salir del costo y el margen.
+    // Coherencia de la conversión: el valor en pesos de la trazabilidad debe salir del costo y el margen.
     [Fact]
     public async Task UnPrecioCopQueNoSaleDeCostoYMargenSeRechaza()
     {
@@ -246,7 +246,7 @@ public sealed class clsGenerarPdfServiceTests
         await _generador.DidNotReceive().GenerarAsync(Arg.Any<clsDocumentoCotizacion>(), Arg.Any<CancellationToken>());
     }
 
-    // HU-012.3 (2026-10-05): la nota ya no necesita el valor en pesos; sin PrecioCop ni costo el PDF en USD sale con la TRM aplicada.
+    // La nota no necesita el valor en pesos; sin PrecioCop ni costo el PDF en USD sale con la TRM aplicada.
     [Fact]
     public async Task SinPrecioCopNiCostoElPdfEnDolaresLlevaLaNotaConLaTrmAplicada()
     {
@@ -313,7 +313,7 @@ public sealed class clsGenerarPdfServiceTests
         await _generador.DidNotReceive().GenerarAsync(Arg.Any<clsDocumentoCotizacion>(), Arg.Any<CancellationToken>());
     }
 
-    // test_generar_pdf_linea_negocio_desconocida_hoy_falla_entero (issue #44): ahora se rechaza antes de renderizar.
+    // Una línea de negocio desconocida se rechaza antes de renderizar.
     [Fact]
     public async Task UnaLineaDesconocidaSeRechazaAntesDeRenderizar()
     {
@@ -327,7 +327,7 @@ public sealed class clsGenerarPdfServiceTests
         await _almacen.DidNotReceiveWithAnyArgs().GuardarNuevoAsync(default!, default!, Ct);
     }
 
-    // #41 (auditoría de #12, F4): con una línea inactiva no se cotiza.
+    // Con una línea inactiva no se cotiza.
     [Fact]
     public async Task UnaLineaInactivaSeRechazaAntesDeRenderizar()
     {
@@ -340,7 +340,7 @@ public sealed class clsGenerarPdfServiceTests
         await _generador.DidNotReceive().GenerarAsync(Arg.Any<clsDocumentoCotizacion>(), Arg.Any<CancellationToken>());
     }
 
-    // test_generar_pdf_idempotencia_versiona: en .NET el folio lo genera #12 y la colisión se informa.
+    // test_generar_pdf_idempotencia_versiona: el folio lo genera el servidor y la colisión se informa.
     [Fact]
     public async Task UnFolioExistenteEsFolioDuplicadoSinRenderizar()
     {
@@ -399,7 +399,7 @@ public sealed class clsGenerarPdfServiceTests
         await _almacen.DidNotReceiveWithAnyArgs().GuardarNuevoAsync(default!, default!, Ct);
     }
 
-    // #92, #95: el render es uno a la vez por proceso; si el turno no llega a tiempo es transitorio (503) y no se guarda nada.
+    // El render es uno a la vez por proceso; si el turno no llega a tiempo es transitorio (503) y no se guarda nada.
     [Fact]
     public async Task SiElTurnoDeRenderSeAgotaEsPdfRenderNoDisponible()
     {

@@ -45,7 +45,7 @@ public sealed class clsVistaPreviaCorreoServiceTests
         new(_cotizaciones, new clsDestinatariosPreviosService(_correos), _usuarios, Substitute.For<IClsCalendarioNegocio>(),
             Options.Create(_opciones), Options.Create(new clsOpcionesPdf { TextoSeguros = textoSeguros }));
 
-    // #261 (HU-046): la vista previa lleva el texto de seguros de la configuración (el mismo que el envío).
+    // La vista previa lleva el texto de seguros de la configuración (el mismo que el envío).
     [Fact]
     public async Task LaVistaPreviaLlevaElTextoDeSegurosDeLaConfiguracion()
     {
@@ -67,7 +67,7 @@ public sealed class clsVistaPreviaCorreoServiceTests
         vista.Adjunto.Should().Be("PCN-V1.pdf");
     }
 
-    // DEF-1027B-2 (#228): la vista previa aplica la misma validación que el envío (asunto y direcciones sin caracteres de control, formato
+    // La vista previa aplica la misma validación que el envío (asunto y direcciones sin caracteres de control, formato
     // estricto y el tope de destinatarios, 10 por defecto), así el comercial ve el error antes de enviar.
     [Theory]
     [InlineData(null, null, "Hola\r\nBcc: intruso@ejemplo.invalid", "CORREO_INVALIDO")]
@@ -157,7 +157,7 @@ public sealed class clsVistaPreviaCorreoServiceTests
     }
 
     /// <summary>
-    /// OBS-1027-5 (#226, ADR-023): al redirigir, el correo sale solo al buzón de pruebas, sin CC ni CCO. La vista previa ya no anuncia
+    /// Al redirigir (ADR-023), el correo sale solo al buzón de pruebas, sin CC ni CCO. La vista previa no anuncia
     /// la copia oculta al comercial (<c>copia_oculta = null</c>) y el aviso lo dice; con el envío real sigue anunciándola.
     /// </summary>
     [Fact]

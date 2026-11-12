@@ -3,7 +3,7 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
 /// <summary>
-/// HU-031.1 (#194): Cotifly guarda el código original (<c>C2</c>) y compara contra el que viajó traducido por el alias de Nexo (<c>2</c>).
+/// Cotifly guarda el código original (<c>C2</c>) y compara contra el que viajó traducido por el alias de Nexo (<c>2</c>).
 /// </summary>
 public sealed class clsEquivalenciasVehiculoTests
 {

@@ -163,9 +163,9 @@ public sealed class clsLoginClienteProServiceTests
     }
 
     [Fact]
-    public async Task HU0402_UnAltaConDosRolesExternosAsignaAmbosYPideElegirSinEmitirSesion()
+    public async Task UnAltaConDosRolesExternosAsignaAmbosYPideElegirSinEmitirSesion()
     {
-        // HU-040.2 (#230, ADR-025): ya no gana gerente_comercial: el alta asigna los dos roles y el login devuelve el selector.
+        // ADR-025: no gana gerente_comercial; el alta asigna los dos roles y el login devuelve el selector.
         _e.PersonaExterna("JEFE", 200, clsEscenarioIdentidad.RolExternoComercial, clsEscenarioIdentidad.RolExternoGerente);
         var asignados = new List<clsUsuarioRol>();
         _e.Roles.When(r => r.AgregarAsignacion(Arg.Any<clsUsuarioRol>())).Do(c => asignados.Add(c.Arg<clsUsuarioRol>()));
@@ -195,9 +195,9 @@ public sealed class clsLoginClienteProServiceTests
     }
 
     [Fact]
-    public async Task HU0403_SiElAlmacenFallaParaUnUsuarioExistenteElLoginSeRechazaYNoReconcilia()
+    public async Task SiElAlmacenFallaParaUnUsuarioExistenteElLoginSeRechazaYNoReconcilia()
     {
-        // HU-040.3 (#258, B+): la reconciliación solo ocurre sobre una lectura EXITOSA del almacén. Si falla, se rechaza el login entero
+        // La reconciliación solo ocurre sobre una lectura EXITOSA del almacén. Si falla, se rechaza el login entero
         // (almacen_no_disponible) y NUNCA se revoca ni se otorga por una lectura parcial (fail-closed).
         _e.PersonaExterna("JEFE", 200, clsEscenarioIdentidad.RolExternoComercial, clsEscenarioIdentidad.RolExternoGerente);
         var usuario = _e.UsuarioLocal("JEFE", 200, RolInterno.Comercial, RolInterno.GerenteComercial);
@@ -231,9 +231,9 @@ public sealed class clsLoginClienteProServiceTests
     }
 
     [Fact]
-    public async Task HU0403_SiElRolExternoOrdinarioCambioElLoginReconciliaOtorgaYRevoca()
+    public async Task SiElRolExternoOrdinarioCambioElLoginReconciliaOtorgaYRevoca()
     {
-        // HU-040.3 (#258, B+): antes esto era rol_externo_cambio (rechazo). Ahora el login reconcilia: external gerente, interno comercial;
+        // El login reconcilia en vez de rechazar con rol_externo_cambio: external gerente, interno comercial;
         // otorga gerente (crea la asignación) y revoca comercial (sobrante), y entra con gerente_comercial.
         _e.PersonaExterna("APEREZ", 101, clsEscenarioIdentidad.RolExternoGerente);
         var usuario = _e.UsuarioLocal("APEREZ", 101, RolInterno.Comercial);
@@ -255,9 +255,9 @@ public sealed class clsLoginClienteProServiceTests
     }
 
     [Fact]
-    public async Task HU0402_ConDosAsignacionesActivasRespaldadasPideElegirYNoEmiteSesion()
+    public async Task ConDosAsignacionesActivasRespaldadasPideElegirYNoEmiteSesion()
     {
-        // HU-040.1 (#229) dejaba entrar con la jerarquía; HU-040.2 (#230): con dos asignaciones activas se elige.
+        // Con dos asignaciones activas se elige; la jerarquía no decide.
         _e.PersonaExterna("JEFE", 200, clsEscenarioIdentidad.RolExternoComercial, clsEscenarioIdentidad.RolExternoGerente);
         var usuario = _e.UsuarioLocal("JEFE", 200, RolInterno.Comercial, RolInterno.GerenteComercial);
         var sesionAnterior = usuario.UltimaSesion;
@@ -274,10 +274,10 @@ public sealed class clsLoginClienteProServiceTests
     }
 
     [Fact]
-    public async Task HU0402_UnUsuarioConUnSoloRolExternoEntraSinSelectorYElRefreshLlevaElRolDeLaSesion()
+    public async Task UnUsuarioConUnSoloRolExternoEntraSinSelectorYElRefreshLlevaElRolDeLaSesion()
     {
         // Rol único (external y asignación de gerente): sesión directa y el refresh con el rol de la sesión. Sin roles ordinarios de más que
-        // reconciliar, el login no cambia nada (HU-040.3).
+        // reconciliar, el login no cambia nada.
         _e.PersonaExterna("JEFE", 200, clsEscenarioIdentidad.RolExternoGerente);
         _e.UsuarioLocal("JEFE", 200, RolInterno.GerenteComercial);
         clsTokenRefresco? refresh = null;
@@ -294,10 +294,10 @@ public sealed class clsLoginClienteProServiceTests
     }
 
     [Fact]
-    public async Task HU0403_SiGanaUnRolOrdinarioExternoQueFaltabaElLoginLoOtorgaYPasaAMultiRol()
+    public async Task SiGanaUnRolOrdinarioExternoQueFaltabaElLoginLoOtorgaYPasaAMultiRol()
     {
-        // HU-040.3 (#258, B+): external comercial+gerente, interno solo gerente. El login auto-otorga comercial (ordinario) y, al quedar dos
-        // roles efectivos, pide elegir (ya no entra directo como gerente). Es el cambio frente a ADR-025 para los roles ORDINARIOS.
+        // External comercial+gerente, interno solo gerente. El login auto-otorga comercial (ordinario) y, al quedar dos
+        // roles efectivos, pide elegir (no entra directo como gerente). En esto se aparta de ADR-025 para los roles ORDINARIOS.
         _e.PersonaExterna("JEFE", 200, clsEscenarioIdentidad.RolExternoComercial, clsEscenarioIdentidad.RolExternoGerente);
         var usuario = _e.UsuarioLocal("JEFE", 200, RolInterno.GerenteComercial);
         clsUsuarioRol? otorgado = null;
@@ -317,9 +317,9 @@ public sealed class clsLoginClienteProServiceTests
     [Theory]
     [InlineData(new[] { clsEscenarioIdentidad.RolExternoGerente }, "gerente_comercial", "comercial")]
     [InlineData(new[] { clsEscenarioIdentidad.RolExternoComercial }, "comercial", "gerente_comercial")]
-    public async Task HU0403_ConDosAsignacionesActivasElLoginRevocaLaSobranteYEntraConLaQueQueda(int[] externos, string rolEsperado, string revocado)
+    public async Task ConDosAsignacionesActivasElLoginRevocaLaSobranteYEntraConLaQueQueda(int[] externos, string rolEsperado, string revocado)
     {
-        // HU-040.3 (#258, B+): antes esto era rol_externo_cambio. Ahora el login revoca la asignación cuyo rol externo desapareció y entra con
+        // El login revoca la asignación cuyo rol externo desapareció y entra con
         // la que queda (rol único: sesión directa, sin selector).
         _e.PersonaExterna("JEFE", 200, externos);
         var usuario = _e.UsuarioLocal("JEFE", 200, RolInterno.Comercial, RolInterno.GerenteComercial);
@@ -337,9 +337,9 @@ public sealed class clsLoginClienteProServiceTests
     }
 
     [Fact]
-    public async Task HU0403_UnRolSensibleDirectorQueFaltaNoSeAutoOtorgaSigueRechazoYAltaManual()
+    public async Task UnRolSensibleDirectorQueFaltaNoSeAutoOtorgaSigueRechazoYAltaManual()
     {
-        // HU-040.3 (#258, B+): director es SENSIBLE (requiereAltaManual). external comercial+gerente+director, interno comercial+gerente: la
+        // Director es SENSIBLE (requiereAltaManual). external comercial+gerente+director, interno comercial+gerente: la
         // jerarquía da director, que falta y NO se auto-otorga. Sigue el rechazo (rol_externo_cambio) + alta manual, sin tocar ninguna fila.
         _e.PersonaExterna("JEFE", 200, clsEscenarioIdentidad.RolExternoComercial, clsEscenarioIdentidad.RolExternoGerente, clsEscenarioIdentidad.RolExternoDirector);
         var usuario = _e.UsuarioLocal("JEFE", 200, RolInterno.Comercial, RolInterno.GerenteComercial);
@@ -357,9 +357,9 @@ public sealed class clsLoginClienteProServiceTests
     }
 
     [Fact]
-    public async Task HU0403_UnDirectorSobranteSeAutoRevocaAunqueSeaSensible()
+    public async Task UnDirectorSobranteSeAutoRevocaAunqueSeaSensible()
     {
-        // HU-040.3 (#258, B+): la auto-revocación aplica a TODOS los roles (fail-safe), también a director. external comercial, interno
+        // La auto-revocación aplica a TODOS los roles (fail-safe), también a director. external comercial, interno
         // comercial+director: revoca director y entra como comercial.
         _e.PersonaExterna("JEFE", 200, clsEscenarioIdentidad.RolExternoComercial);
         var usuario = _e.UsuarioLocal("JEFE", 200, RolInterno.Comercial, RolInterno.Director);
@@ -372,9 +372,9 @@ public sealed class clsLoginClienteProServiceTests
     }
 
     [Fact]
-    public async Task HU0403_SinAsignacionActivaElLoginAutoOtorgaElRolOrdinarioRespaldado()
+    public async Task SinAsignacionActivaElLoginAutoOtorgaElRolOrdinarioRespaldado()
     {
-        // HU-040.3 (#258, B+): antes esto era sin_asignacion_activa (rechazo). Ahora el login crea la asignación del rol ordinario respaldado.
+        // Sin asignación activa no se rechaza (sin_asignacion_activa): el login crea la asignación del rol ordinario respaldado.
         _e.PersonaExterna("APEREZ", 101, clsEscenarioIdentidad.RolExternoComercial);
         var usuario = _e.UsuarioLocal("APEREZ", 101);
         clsUsuarioRol? otorgado = null;
@@ -390,9 +390,9 @@ public sealed class clsLoginClienteProServiceTests
     }
 
     [Fact]
-    public async Task HU0403_ElLoginReactivaLaFilaExistenteEnVezDeInsertarUnaNueva()
+    public async Task ElLoginReactivaLaFilaExistenteEnVezDeInsertarUnaNueva()
     {
-        // HU-040.3 (#258, B+): si ya hay una fila (retirada) del rol, se reactiva, sin insertar otra (uq_usuariosRoles_usuarioId_rolId).
+        // Si ya hay una fila (retirada) del rol, se reactiva, sin insertar otra (uq_usuariosRoles_usuarioId_rolId).
         _e.PersonaExterna("APEREZ", 101, clsEscenarioIdentidad.RolExternoComercial);
         var usuario = _e.UsuarioLocal("APEREZ", 101);
         var filas = _e.ConAsignaciones(usuario, (RolInterno.Comercial, false));

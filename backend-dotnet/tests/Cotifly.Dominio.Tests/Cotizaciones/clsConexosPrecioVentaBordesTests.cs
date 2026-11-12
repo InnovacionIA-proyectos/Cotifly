@@ -5,8 +5,8 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
 /// <summary>
-/// HU-043.2 (#251): bordes del precio de la ruta con los conexos a su venta, sin margen (venta 0, margen 0, USD sin TRM, redondeo de
-/// varias ventas, la heurística de la fórmula anterior, varias rutas y una lectura sin venta). Vienen de la validación de #251.
+/// Bordes del precio de la ruta con los conexos a su venta, sin margen (venta 0, margen 0, USD sin TRM, redondeo de
+/// varias ventas, la heurística de la fórmula anterior, varias rutas y una lectura sin venta).
 /// </summary>
 public sealed class clsConexosPrecioVentaBordesTests
 {
@@ -113,7 +113,7 @@ public sealed class clsConexosPrecioVentaBordesTests
     [Fact]
     public void UnaLecturaSinVentaConservaLaVentaConocida()
     {
-        // Un Nexo anterior a S6-HU-38.2 (o sin valorVenta) que vuelve a leer el conexo no devuelve al costo una venta ya conocida.
+        // Un Nexo sin valorVenta que vuelve a leer el conexo no devuelve al costo una venta ya conocida.
         var (cotizacion, ruta) = Ruta();
         cotizacion.CambiarConexos(1, [new clsCambioConexo("CX-1", "Cargue", 50_000m, 1m, PrecioVenta: 70_000m)], _ahora);
 

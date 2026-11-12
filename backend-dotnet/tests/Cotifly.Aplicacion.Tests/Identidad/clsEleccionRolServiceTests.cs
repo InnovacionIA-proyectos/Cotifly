@@ -10,7 +10,7 @@ using NSubstitute.ExceptionExtensions;
 namespace Cotifly.Aplicacion.Tests.Identidad;
 
 /// <summary>
-/// HU-040.2 (#230, ADR-025): <c>POST /api/auth/elegir-rol</c>. El ticket (firma y vigencia) está simulado: aquí se prueba el uso único, la
+/// ADR-025: <c>POST /api/auth/elegir-rol</c>. El ticket (firma y vigencia) está simulado: aquí se prueba el uso único, la
 /// revalidación contra ClientePro y las asignaciones, la emisión con el rol elegido y la auditoría de cada elección.
 /// </summary>
 public sealed class clsEleccionRolServiceTests

@@ -63,7 +63,7 @@ public sealed class clsCotizacionTests
     public void LaMonedaDebeSerUnCodigoIsoDeTresLetras() =>
         Crear(new clsDatosCotizacion { Folio = "F", Moneda = "PESOS" }).Mensaje.Should().Contain("ISO");
 
-    // HU-021: el margen, el costo y el precio son de la ruta; en la cotización del chat se validan al registrar su ruta.
+    // El margen, el costo y el precio son de la ruta; en la cotización del chat se validan al registrar su ruta.
     [Theory]
     [InlineData(-1)]
     [InlineData(1)]
@@ -139,7 +139,7 @@ public sealed class clsCotizacionTests
     [InlineData("Mejor precio")]
     public void MarcarGanadaDejaElMotivoDeRechazoEnNoAplica(string? motivo)
     {
-        // HU-021.13 (propuesta de refactor de BD §2.1): ganada no deja motivoRechazo en null.
+        // Una ganada no deja motivoRechazo en null.
         var cotizacion = Nueva();
 
         cotizacion.MarcarSeguimiento(true, motivo, _ahora);

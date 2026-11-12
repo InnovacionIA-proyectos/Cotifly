@@ -35,8 +35,8 @@ public sealed class clsPdfCosteoConcurrenciaTests
 
     public clsPdfCosteoConcurrenciaTests()
     {
-        // HU-021: la costeada ya viene del formulario (ruta 1 con la línea de negocio 3) y enviada a Nexo.
-        // HU-036.3 (#207): el PDF se genera con la cotización finalizada.
+        // La costeada ya viene del formulario (ruta 1 con la línea de negocio 3) y enviada a Nexo.
+        // El PDF se genera con la cotización finalizada.
         _cotizacion = clsAjusteMargenCosteoServiceTests.Finalizada(_ana, "PCN-900555111-AP-05102026-009");
         _cotizacion.ActualizarClienteDelCatalogo("CLIENTE S.A.S.", null);
         _politicas.ObtenerPorIdAsync(3, Arg.Any<CancellationToken>()).Returns(Cotifly.Dominio.Margen.clsMargenPolitica.Crear("Importacion", 0.15m).Valor);
@@ -50,7 +50,7 @@ public sealed class clsPdfCosteoConcurrenciaTests
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task HU0363_SinFinalizarElPdfEsCotizacionNoFinalizadaYNoSeRenderiza()
+    public async Task SinFinalizarElPdfEsCotizacionNoFinalizadaYNoSeRenderiza()
     {
         var sinFinalizar = clsAjusteMargenCosteoServiceTests.Costeada(_ana, "PCN-900555111-AP-05102026-078");
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(sinFinalizar.Folio, _ana, Arg.Any<CancellationToken>()).Returns(sinFinalizar);
@@ -65,7 +65,7 @@ public sealed class clsPdfCosteoConcurrenciaTests
     }
 
     [Fact]
-    public async Task HU0363_FinalizadaYYaEnviadaElPdfSigueSiendoPdfYaEnviado()
+    public async Task FinalizadaYYaEnviadaElPdfSigueSiendoPdfYaEnviado()
     {
         _cotizacion.RegistrarEnvio();
 
@@ -74,8 +74,8 @@ public sealed class clsPdfCosteoConcurrenciaTests
         resultado.Error.Codigo.Should().Be(clsCodigosError.PdfYaEnviado);
     }
 
-    // OBS-1027-6 (#226, E2E real del 2026-10-27): con el PDF vigente y la cotización ya entregada al cliente (enviada y, en el E2E, con
-    // resultado), el PDF responde PDF_YA_ENVIADO (crear una versión nueva), no PDF_YA_GENERADO: la entrega manda sobre el PDF vigente.
+    // Con el PDF vigente y la cotización ya entregada al cliente (enviada, con o sin resultado), el PDF
+    // responde PDF_YA_ENVIADO (crear una versión nueva), no PDF_YA_GENERADO: la entrega manda sobre el PDF vigente.
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -95,8 +95,8 @@ public sealed class clsPdfCosteoConcurrenciaTests
     }
 
     /// <summary>
-    /// DEF-1027B-1 (#228, E2E real del 2026-10-27B): el 409 <c>PDF_YA_ENVIADO</c> del PDF llegaba sin <c>detalle</c>. Trae la llamada para
-    /// crear la versión nueva, igual que margen, conexos, textos y re-solicitar (contrato §4.5).
+    /// El 409 <c>PDF_YA_ENVIADO</c> del PDF trae en <c>detalle</c> la llamada para crear la versión nueva, igual que
+    /// margen, conexos, textos y re-solicitar (contrato §4.5).
     /// </summary>
     [Theory]
     [InlineData(false, false)]
@@ -128,14 +128,13 @@ public sealed class clsPdfCosteoConcurrenciaTests
     }
 
     /// <summary>
-    /// Validación de OBS-1027-6 (#226): la precedencia nueva no cambia los demás casos. Una enviada ANTES de HU-036 (sin finalizar, sin
-    /// backfill) responde <c>PDF_YA_ENVIADO</c> con o sin PDF vigente (nunca <c>COTIZACION_NO_FINALIZADA</c>), y una sin finalizar ni
-    /// enviada con PDF vigente sigue siendo <c>PDF_YA_GENERADO</c> (el PDF vigente sigue antes de la finalización).
+    /// La precedencia de la entrega no cambia los demás casos. Una enviada sin finalizar responde
+    /// <c>PDF_YA_ENVIADO</c> con o sin PDF vigente (nunca <c>COTIZACION_NO_FINALIZADA</c>), y una sin finalizar ni enviada con PDF vigente sigue siendo <c>PDF_YA_GENERADO</c> (el PDF vigente sigue antes de la finalización).
     /// </summary>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task UnaEnviadaAntesDeHu036EsPdfYaEnviadoConOSinPdf(bool conPdf)
+    public async Task UnaEnviadaSinFinalizarEsPdfYaEnviadoConOSinPdf(bool conPdf)
     {
         var anterior = clsAjusteMargenCosteoServiceTests.Costeada(_ana, "PCN-900555111-AP-05102026-079");
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(anterior.Folio, _ana, Arg.Any<CancellationToken>()).Returns(anterior);

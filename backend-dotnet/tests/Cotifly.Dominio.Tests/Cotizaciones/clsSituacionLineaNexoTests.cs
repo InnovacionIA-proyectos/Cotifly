@@ -3,8 +3,8 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
 /// <summary>
-/// #181 (Nexo #309): el estado de la línea de Nexo pasa a código de Cotifly (<c>snake_case</c>) y el motivo pendiente se muestra tal cual;
-/// sin los campos (Nexo anterior a #309) la situación queda vacía. No toca el emparejamiento.
+/// El estado de la línea de Nexo pasa a código de Cotifly (<c>snake_case</c>) y el motivo pendiente se muestra tal cual;
+/// si Nexo no manda los campos, la situación queda vacía. No toca el emparejamiento.
 /// </summary>
 public sealed class clsSituacionLineaNexoTests
 {
@@ -48,7 +48,7 @@ public sealed class clsSituacionLineaNexoTests
     }
 
     [Fact]
-    public void Hu183_LaLineaRechazadaTraeSuMotivoYCuentaComoRechazo()
+    public void LaLineaRechazadaTraeSuMotivoYCuentaComoRechazo()
     {
         var rechazada = new clsLineaSolicitudNexo("L1", "A → B", null, 1m, null, null) { EstadoLinea = "Rechazada", MotivoRechazo = "  Sin tarifa  " };
 
@@ -63,7 +63,7 @@ public sealed class clsSituacionLineaNexoTests
     }
 
     [Fact]
-    public void Hu183_LaDerivacionNoEsperaLasLineasRechazadas()
+    public void LaDerivacionNoEsperaLasLineasRechazadas()
     {
         var detalle = new[]
         {

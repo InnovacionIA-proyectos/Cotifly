@@ -13,7 +13,7 @@ namespace Cotifly.Aplicacion.Tests.Identidad;
 
 /// <summary>
 /// Puertos simulados (NSubstitute) de la verificación doble, el login, el refresh y el logout, con un catálogo de roles
-/// como el de las pruebas de integración: <c>comercial</c> ↔ IDROLES 32 y <c>gerente_comercial</c> ↔ IDROLES 31 (los de dbSolucionesTI_Prueba, #173).
+/// como el de las pruebas de integración: <c>comercial</c> ↔ IDROLES 32 y <c>gerente_comercial</c> ↔ IDROLES 31 (los de dbSolucionesTI_Prueba).
 /// </summary>
 internal sealed class clsEscenarioIdentidad
 {
@@ -26,18 +26,18 @@ internal sealed class clsEscenarioIdentidad
     {
         Comercial = ConId(clsRol.Crear(RolInterno.Comercial, "Comercial", RolExternoComercial).Valor, 1);
         Gerente = ConId(clsRol.Crear(RolInterno.GerenteComercial, "Gerente comercial", RolExternoGerente).Valor, 2);
-        // HU-040.3 (#258): director es el rol SENSIBLE (requiereAltaManual), como en el script 23.
+        // Director es el rol SENSIBLE (requiereAltaManual), como en el script 23.
         Director = ConId(clsRol.Crear(RolInterno.Director, "Director comercial", RolExternoDirector, requiereAltaManual: true).Valor, 3);
         Roles.ListarActivosAsync(Arg.Any<CancellationToken>()).Returns(_ => (IReadOnlyList<clsRol>)Catalogo);
         Roles.ListarRolesAsignadosAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(Array.Empty<RolInterno>());
-        // HU-040.3 (#258): sin asignaciones por defecto (las pruebas las fijan con UsuarioLocal / ConAsignaciones).
+        // Sin asignaciones por defecto (las pruebas las fijan con UsuarioLocal / ConAsignaciones).
         Roles.ListarAsignacionesAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(Array.Empty<clsUsuarioRol>());
         Almacen.ObtenerRolesAsync(Arg.Any<long>(), Arg.Any<CancellationToken>()).Returns(Array.Empty<clsRolExterno>());
         Configuracion.VigenciaAcceso.Returns(TimeSpan.FromMinutes(60));
         Configuracion.VigenciaRefresh.Returns(TimeSpan.FromDays(30));
         Emisor.EmitirAcceso(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<RolInterno>())
             .Returns(c => new clsTokenAccesoEmitido($"jwt-{c.ArgAt<RolInterno>(2)}", $"jti-{Guid.NewGuid():N}", Reloj.AhoraUtc.AddMinutes(60)));
-        // HU-040.2 (#230): el ticket simulado es "ticket-{usuario}-{roles}" y vence en 5 minutos.
+        // El ticket simulado es "ticket-{usuario}-{roles}" y vence en 5 minutos.
         Tickets.Vigencia.Returns(TimeSpan.FromMinutes(5));
         Tickets.Emitir(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<RolInterno>>())
             .Returns(c => new clsTicketEleccionEmitido(
@@ -50,14 +50,14 @@ internal sealed class clsEscenarioIdentidad
     public IClsRolRepository Roles { get; } = Substitute.For<IClsRolRepository>();
     public IClsUsuarioWebRepository Usuarios { get; } = Substitute.For<IClsUsuarioWebRepository>();
 
-    /// <summary>Directorio de ejecutivos (<c>DimEjecutivo</c>, #81): sin configurar salvo que la prueba lo active con <see cref="ConRegional"/>.</summary>
+    /// <summary>Directorio de ejecutivos (<c>DimEjecutivo</c>): sin configurar salvo que la prueba lo active con <see cref="ConRegional"/>.</summary>
     public IClsDirectorioEjecutivos Directorio { get; } = Substitute.For<IClsDirectorioEjecutivos>();
     public IClsTokenRefrescoRepository Tokens { get; } = Substitute.For<IClsTokenRefrescoRepository>();
     public IClsTokenRevocadoRepository Revocados { get; } = Substitute.For<IClsTokenRevocadoRepository>();
     public IClsRevocacionAccesos Revocacion { get; } = Substitute.For<IClsRevocacionAccesos>();
     public IClsEmisorTokens Emisor { get; } = Substitute.For<IClsEmisorTokens>();
 
-    /// <summary>HU-040.2 (#230): ticket de elección del rol (simulado; la firma real se prueba en Infraestructura).</summary>
+    /// <summary>Ticket de elección del rol (simulado; la firma real se prueba en Infraestructura).</summary>
     public IClsEmisorTicketEleccion Tickets { get; } = Substitute.For<IClsEmisorTicketEleccion>();
     public IClsConfiguracionJwt Configuracion { get; } = Substitute.For<IClsConfiguracionJwt>();
     public IClsUnitOfWork UnidadTrabajo { get; } = Substitute.For<IClsUnitOfWork>();
@@ -71,7 +71,7 @@ internal sealed class clsEscenarioIdentidad
     public clsRol Comercial { get; }
     public clsRol Gerente { get; }
 
-    /// <summary>HU-037 (#210): <c>director</c> ↔ IDROLES 33 (valor de prueba; en la compartida es 31, #209).</summary>
+    /// <summary><c>director</c> ↔ IDROLES 33 (valor de prueba; en la compartida es 31).</summary>
     public clsRol Director { get; }
     public List<clsRol> Catalogo => [Comercial, Gerente, Director];
 
@@ -83,12 +83,12 @@ internal sealed class clsEscenarioIdentidad
     public clsRefreshTokenService Refresh() =>
         new(Verificador(), Tokens, Usuarios, Emisor, Reloj, Auditoria, LoggerRefresh);
 
-    /// <summary>HU-040.2 (#230): <c>POST /api/auth/elegir-rol</c>.</summary>
+    /// <summary><c>POST /api/auth/elegir-rol</c>.</summary>
     public clsEleccionRolService Eleccion() =>
         new(Verificador(), Tickets, Revocados, Tokens, Usuarios, Emisor, Configuracion, UnidadTrabajo, Reloj, Auditoria, LoggerEleccion);
 
     /// <summary>
-    /// HU-040.2 (#230): el ticket <paramref name="ticket"/> es válido para <paramref name="usuario"/> con <paramref name="roles"/> ofrecidos
+    /// El ticket <paramref name="ticket"/> es válido para <paramref name="usuario"/> con <paramref name="roles"/> ofrecidos
     /// y un <c>jti</c> fijo (devuelto).
     /// </summary>
     public string TicketValido(string ticket, clsUsuarioWeb usuario, params RolInterno[] roles)
@@ -142,13 +142,13 @@ internal sealed class clsEscenarioIdentidad
         }
 
         Roles.ListarRolesAsignadosAsync(usuario.Id, Arg.Any<CancellationToken>()).Returns(asignados.ToList());
-        // HU-040.3 (#258): la reconciliación del login lee las filas rastreadas; aquí son asignaciones activas.
+        // La reconciliación del login lee las filas rastreadas; aquí son asignaciones activas.
         ConAsignaciones(usuario, [.. asignados.Select(r => (r, true))]);
         return usuario;
     }
 
     /// <summary>
-    /// HU-040.3 (#258): fija las filas de <c>UsuariosRoles</c> del usuario (cada una con su estado activo/inactivo) para la reconciliación
+    /// Fija las filas de <c>UsuariosRoles</c> del usuario (cada una con su estado activo/inactivo) para la reconciliación
     /// del login. Devuelve las entidades creadas (en el orden dado) para comprobar sus cambios de estado. No toca
     /// <see cref="IClsRolRepository.ListarRolesAsignadosAsync"/> (lo fija <see cref="UsuarioLocal"/> con los activos).
     /// </summary>

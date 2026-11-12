@@ -11,7 +11,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Agente;
 
 /// <summary>
-/// Asistente por folio con el margen por ruta (HU-021.8, #135, decisión 6, ADR-018 §2b): con varias rutas y sin indicación PREGUNTA cuál
+/// Asistente por folio con el margen por ruta (ADR-018 §2b): con varias rutas y sin indicación PREGUNTA cuál
 /// (sin propuesta y sin montos); con la ruta, propone el <c>PUT .../costeo/margen</c> con <c>linea_orden</c> y un resumen con los precios
 /// del servidor; <c>consultar_cotizacion</c> le muestra las rutas solo con porcentajes, origen y destino. La IA nunca recibe montos.
 /// </summary>

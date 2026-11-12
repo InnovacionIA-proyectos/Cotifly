@@ -5,8 +5,7 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// HU-043.2 (#251): cruce de la venta de Nexo con los conexos ya guardados (polling) y la regla de una lectura sin venta. Vienen de la
-/// validación de #251.
+/// Cruce de la venta de Nexo con los conexos ya guardados (polling) y la regla de una lectura sin venta.
 /// </summary>
 public sealed class clsRefrescoVentaConexosTests
 {

@@ -3,7 +3,7 @@ using Cotifly.Dominio.Metricas;
 namespace Cotifly.Dominio.Tests.Metricas;
 
 /// <summary>
-/// HU-021.10 (#137), decisión 8 del 2026-10-08: los conteos del tablero son por cotización; los valores y la apertura por línea de
+/// Los conteos del tablero son por cotización; los valores y la apertura por línea de
 /// negocio, por ruta (<see cref="clsRutaMetrica"/>).
 /// </summary>
 public sealed class clsCalculadoraMetricasRutasTests
@@ -164,8 +164,8 @@ public sealed class clsCalculadoraMetricasRutasTests
     }
 
     /// <summary>
-    /// B3 (#173, observación del validador): la -v2 vigente no tiene precio y la v1 ganada sí. La apertura por línea de negocio saca lo
-    /// ganado de las rutas de la v1 (con su moneda y su TRM), igual que los indicadores; antes daba 0.
+    /// La -v2 vigente no tiene precio y la v1 ganada sí. La apertura por línea de negocio saca lo
+    /// ganado de las rutas de la v1 (con su moneda y su TRM), igual que los indicadores; no da 0.
     /// </summary>
     [Fact]
     public void LaAperturaPorLineaSacaLoGanadoDeLaVersionGanada()

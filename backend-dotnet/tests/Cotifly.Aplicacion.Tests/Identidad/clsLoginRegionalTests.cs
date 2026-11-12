@@ -9,7 +9,7 @@ using NSubstitute.ExceptionExtensions;
 namespace Cotifly.Aplicacion.Tests.Identidad;
 
 /// <summary>
-/// Regional y datos corporativos en el login (#81, ADR-016 §6): el alta JIT toma la regional de <c>DimEjecutivo</c>, cada login
+/// Regional y datos corporativos en el login (ADR-016 §6): el alta JIT toma la regional de <c>DimEjecutivo</c>, cada login
 /// siguiente la refresca junto con nombre y correo, un usuario ausente conserva la que tenga, y la fuente caída, lenta o sin
 /// configurar nunca bloquea el login. El refresh no la consulta.
 /// </summary>
@@ -183,7 +183,7 @@ public sealed class clsLoginRegionalTests
     [Fact]
     public async Task UnLoginRechazadoNoConsultaDimEjecutivoNiCambiaDatos()
     {
-        // HU-040.3 (#258): con B+ un desajuste de rol ordinario ya no rechaza (reconcilia). Para un rechazo real se usa un rol externo sin
+        // Un desajuste de rol ordinario no rechaza (reconcilia). Para un rechazo real se usa un rol externo sin
         // mapeo (sin_rol_autorizado): ahí no se reconcilia ni se consulta DimEjecutivo ni se cambian datos.
         _e.PersonaExterna("APEREZ", 101, clsEscenarioIdentidad.RolExternoSinMapeo);
         var usuario = _e.UsuarioLocal("APEREZ", 101, RolInterno.Comercial);
