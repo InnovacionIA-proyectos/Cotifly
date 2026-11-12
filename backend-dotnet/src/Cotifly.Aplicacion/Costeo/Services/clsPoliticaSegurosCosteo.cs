@@ -6,9 +6,9 @@ using Microsoft.Extensions.Logging;
 namespace Cotifly.Aplicacion.Costeo.Services;
 
 /// <summary>
-/// HU-046.3 (#269): la política de seguros en el costeo. Lee la política de sus tablas (sin caché), completa el <c>codigoServicio</c> de los
+/// La política de seguros en el costeo. Lee la política de sus tablas (sin caché), completa el <c>codigoServicio</c> de los
 /// conexos que no lo tienen con el índice del catálogo de Nexo (<see cref="IClsCategoriasConexos.CodigosAsync"/>) y arma el bloque
-/// <c>politica_seguros</c> de cada ruta (<see cref="clsRutaCosteo.PoliticaSeguros"/>). Decisión 7 de HU-046.1: una cotización finalizada no se
+/// <c>politica_seguros</c> de cada ruta (<see cref="clsRutaCosteo.PoliticaSeguros"/>). Una cotización finalizada no se
 /// recalcula (sin bloque); una ruta rechazada por la Mesa de Costeo no cuenta (sin bloque).
 /// </summary>
 public static class clsPoliticaSegurosCosteo
@@ -90,8 +90,8 @@ public static class clsPoliticaSegurosCosteo
     }
 
     /// <summary>
-    /// Decisión del usuario (2026-11-09): ¿el conexo cuenta para cumplir una medida? No si su envío a Nexo quedó <c>fallido_definitivo</c>
-    /// o <c>incierto</c> (nunca llegó o no se sabe); sí si está <c>enviado</c>, <c>pendiente</c> (lo bloquea #228 aparte) o sin estado.
+    /// ¿El conexo cuenta para cumplir una medida? No si su envío a Nexo quedó <c>fallido_definitivo</c>
+    /// o <c>incierto</c> (nunca llegó o no se sabe); sí si está <c>enviado</c>, <c>pendiente</c> (lo bloquea otra validación) o sin estado.
     /// </summary>
     public static bool CuentaParaLaPolitica(string? estadoNexo) =>
         estadoNexo is not (clsEnvioConexosNexoService.VisibleFallidoDefinitivo or clsEnvioConexosNexoService.VisibleIncierto);
@@ -104,7 +104,7 @@ public static class clsPoliticaSegurosCosteo
         return c => !excluidos.Contains(c.IdServicioConexo);
     }
 
-    /// <summary>El bloque <c>politica_seguros</c> de una ruta (contrato del 2026-11-10).</summary>
+    /// <summary>El bloque <c>politica_seguros</c> de una ruta.</summary>
     public static clsPoliticaSegurosRuta Bloque(clsEvaluacionPoliticaSeguro evaluacion)
     {
         ArgumentNullException.ThrowIfNull(evaluacion);
@@ -128,7 +128,7 @@ public static class clsPoliticaSegurosCosteo
 }
 
 /// <summary>
-/// <c>PoliticaSegurosRuta</c> (HU-046.3, #269; contrato del 2026-11-10): lo que exige la política de seguros a la ruta. <see cref="Tramo"/> es
+/// <c>PoliticaSegurosRuta</c>: lo que exige la política de seguros a la ruta. <see cref="Tramo"/> es
 /// <c>null</c> sin valor de la mercancía (o con valor 0) o si ningún tramo activo lo contiene; <see cref="Aviso"/> es
 /// <c>"SIN_VALOR_MERCANCIA"</c> o <c>null</c>. <see cref="Recomendadas"/> y <see cref="Obligatorias"/> traen la misma forma de medida.
 /// </summary>
@@ -142,7 +142,7 @@ public sealed record clsPoliticaSegurosRuta(
 public sealed record clsTramoPoliticaSegurosRuta(Guid Id, string Nombre, decimal ValorDesde, decimal? ValorHasta);
 
 /// <summary>
-/// Una medida de la política (contrato del 2026-11-10, <c>Medida = {codigo, nombre, es_cobrable, estado, conexos[]}</c>): su código, el nombre
+/// Una medida de la política (<c>Medida = {codigo, nombre, es_cobrable, estado, conexos[]}</c>): su código, el nombre
 /// que se muestra, si <see cref="EsCobrable"/>, el <see cref="Estado"/> (<c>cumplida</c> | <c>pendiente</c> | <c>sin_verificar</c>) y los
 /// <c>codigoServicio</c> de Nexo que la cumplen (<see cref="Conexos"/>, para el botón "agregar").
 /// </summary>

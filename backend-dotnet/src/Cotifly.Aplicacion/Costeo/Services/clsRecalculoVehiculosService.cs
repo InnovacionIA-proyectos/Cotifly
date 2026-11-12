@@ -12,14 +12,14 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Aplicacion.Costeo.Services;
 
 /// <summary>
-/// HU-023.3 (#158): recalcular los camiones de UNA ruta (<c>POST /web/cotizaciones/{folio}/rutas/{rutaId}/recalcular-vehiculos</c>) cuando
+/// Recalcula los camiones de UNA ruta (<c>POST /web/cotizaciones/{folio}/rutas/{rutaId}/recalcular-vehiculos</c>) cuando
 /// cambiaron sus mercancías o su peso: pide de nuevo los camiones al cubicador y reemplaza los de esa ruta, con su resultado.
 /// </summary>
 public interface IClsRecalculoVehiculosService
 {
     /// <summary>
     /// La vista del costeo con los camiones nuevos de la ruta, o el error: <c>COTIZACION_NO_ENCONTRADA</c>, <c>RUTA_INEXISTENTE</c>,
-    /// <c>CONFLICTO_CONCURRENCIA</c>, <c>PDF_YA_ENVIADO</c> (HU-036.3: entregada o finalizada; versión nueva en <c>detalle</c>),
+    /// <c>CONFLICTO_CONCURRENCIA</c>, <c>PDF_YA_ENVIADO</c> (entregada o finalizada; versión nueva en <c>detalle</c>),
     /// <c>ESTADO_NO_PERMITE</c> (la solicitud ya está en Nexo: usar re-solicitar con una versión nueva),
     /// <c>SOLICITUD_COSTEO_INVALIDA</c> (mercancías sin código: el comercial las vuelve a escoger) o el error del cubicador.
     /// </summary>
@@ -34,7 +34,7 @@ public interface IClsRecalculoVehiculosService
 /// <c>If-Match</c> con la fila bloqueada, y el reclamo del reenvío sube esa versión: un recálculo y un reenvío nunca se pisan.
 /// Después del envío, cambiar los camiones aquí los desincronizaría de las líneas de Nexo: se usa la re-solicitud con una versión nueva.
 /// La ruta se manda al cubicador con su mismo id (<c>idLineaSolicitud</c>): es una corrida nueva y Cotifly copia los
-/// <c>idRecomendacionVehiculo</c> de ESA respuesta (decisión 3 de HU-023; nunca "la última corrida").
+/// <c>idRecomendacionVehiculo</c> de ESA respuesta (nunca "la última corrida").
 /// </remarks>
 public sealed class clsRecalculoVehiculosService(
     IClsCotizacionRepository cotizaciones,
@@ -45,10 +45,10 @@ public sealed class clsRecalculoVehiculosService(
     ILogger<clsRecalculoVehiculosService> logger,
     IClsAuditoriaService auditoria) : IClsRecalculoVehiculosService
 {
-    /// <summary>Herramienta de la auditoría del recálculo (<c>EventosHerramienta.herramienta</c>, desviación E1 de #174).</summary>
+    /// <summary>Herramienta de la auditoría del recálculo (<c>EventosHerramienta.herramienta</c>).</summary>
     public const string HerramientaAuditoria = "recalcular_vehiculos_ruta";
 
-    /// <summary>HU-036.3 (#207): motivo de la versión nueva que sugiere <c>PDF_YA_ENVIADO</c>.</summary>
+    /// <summary>Motivo de la versión nueva que sugiere <c>PDF_YA_ENVIADO</c>.</summary>
     public const string MotivoVersion = "Cambio de los camiones de la ruta después de finalizar o enviar";
 
     public const string MensajeYaEnNexo =
@@ -97,7 +97,7 @@ public sealed class clsRecalculoVehiculosService(
         var ruta = resuelta.Valor;
         if (clsReglaPdfCosteo.Validar(cotizacion, MotivoVersion) is { } cerrada)
         {
-            // HU-036.3 (#207): entregada o finalizada, los camiones cambian en una versión nueva (con la llamada en el detalle).
+            // Entregada o finalizada, los camiones cambian en una versión nueva (con la llamada en el detalle).
             return (cerrada, ruta.Orden, null);
         }
 
@@ -106,7 +106,7 @@ public sealed class clsRecalculoVehiculosService(
             return (new clsErrorDominio(clsCodigosError.EstadoNoPermite, MensajeYaEnNexo), ruta.Orden, null);
         }
 
-        // HU-032 (#197): con el vehículo elegido de la ruta como respaldo (si el cubicador no escoge o falla, se valida contra Nexo y se usa).
+        // Con el vehículo elegido de la ruta como respaldo (si el cubicador no escoge o falla, se valida contra Nexo y se usa).
         var linea = ruta.ALineaConElegido();
         if (linea.Posiciones.Count == 0 || linea.Posiciones.Any(p => string.IsNullOrWhiteSpace(p.CodigoMercancia)))
         {

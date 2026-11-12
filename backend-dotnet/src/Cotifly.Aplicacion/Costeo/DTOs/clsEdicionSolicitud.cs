@@ -4,7 +4,7 @@ using Cotifly.Aplicacion.Licitaciones.DTOs;
 namespace Cotifly.Aplicacion.Costeo.DTOs;
 
 /// <summary>
-/// HU-028 (#186, ADR-021): entrada de <c>PUT /web/cotizaciones/{folio}/solicitud</c> (<c>EdicionSolicitudWeb</c>). Reemplazo completo del
+/// Entrada de <c>PUT /web/cotizaciones/{folio}/solicitud</c> (<c>EdicionSolicitudWeb</c>). Reemplazo completo del
 /// contenido editable: cada ruta con <see cref="clsRutaEdicionEntrada.LineaSolicitudId"/> es la misma ruta guardada; sin él, una ruta
 /// nueva; las guardadas que no vienen se quitan. Los campos bloqueados (<see cref="Tipo"/>, <see cref="NitCliente"/>,
 /// <see cref="ClienteNombre"/>, <see cref="OrigenCliente"/>) son opcionales: si vienen deben tener el valor guardado. <see cref="Moneda"/>
@@ -31,7 +31,7 @@ public sealed record clsEntradaEdicionSolicitud(
 }
 
 /// <summary>
-/// Una ruta de la edición: el id de la ruta guardada que se edita (<c>null</c> = nueva) y su contenido (como en la captura). HU-028.1 (#183):
+/// Una ruta de la edición: el id de la ruta guardada que se edita (<c>null</c> = nueva) y su contenido (como en la captura).
 /// <paramref name="ReincluirRechazados"/> (<c>reincluir_rechazados</c>) pide que los camiones de la ruta que rechazó la Mesa de Costeo
 /// vuelvan a viajar a Nexo sin el rechazo (por defecto no viajan); en una ruta nueva o sin rechazados no hace nada.
 /// </summary>
@@ -48,12 +48,12 @@ public sealed record clsAvisoEdicion(string Codigo, string Mensaje)
     public const string MargenDesvinculado = "MARGEN_RUTA_QUITADA";
     public const string SinCambios = "SIN_CAMBIOS";
 
-    /// <summary>HU-028.1 (#183): la edición dejó fuera del envío camiones (o rutas) que la Mesa de Costeo había rechazado.</summary>
+    /// <summary>La edición dejó fuera del envío camiones (o rutas) que la Mesa de Costeo había rechazado.</summary>
     public const string RechazadosOmitidos = "RECHAZADOS_OMITIDOS";
 }
 
 /// <summary>
-/// HU-028: respuesta de <c>PUT /web/cotizaciones/{folio}/solicitud</c> (<c>EdicionSolicitudResultado</c>): el modo aplicado, el folio
+/// Respuesta de <c>PUT /web/cotizaciones/{folio}/solicitud</c> (<c>EdicionSolicitudResultado</c>): el modo aplicado, el folio
 /// resultante (el mismo, o el de la <c>-vN</c>), la cotización resultante, los avisos, qué rutas se volvieron a cubicar, cuáles se
 /// agregaron (por orden) y cuáles se quitaron (por id), y cómo quedó la solicitud anterior en Nexo en el reemplazo.
 /// </summary>
@@ -70,7 +70,7 @@ public sealed record clsResultadoEdicionSolicitud(
     string? SolicitudNexoReemplazada)
 {
     /// <summary>
-    /// HU-028.1 (#183, hallazgo B3): qué camiones y rutas rechazados por la Mesa de Costeo quedaron fuera del envío, con sus motivos (el mismo
+    /// Qué camiones y rutas rechazados por la Mesa de Costeo quedaron fuera del envío, con sus motivos (el mismo
     /// texto que <c>cotizacion.aviso_rechazos</c> y el aviso <c>RECHAZADOS_OMITIDOS</c>); <c>null</c> si ninguno (no se serializa).
     /// </summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
@@ -81,7 +81,7 @@ public sealed record clsResultadoEdicionSolicitud(
 public sealed record clsEdicionAplicada(clsResultadoEdicionSolicitud Respuesta, string RowVersion, bool Creada);
 
 /// <summary>
-/// HU-028: <c>GET /web/cotizaciones/{folio}/solicitud</c> (<c>SolicitudEditable</c>): el modelo editable completo, los campos bloqueados
+/// <c>GET /web/cotizaciones/{folio}/solicitud</c> (<c>SolicitudEditable</c>): el modelo editable completo, los campos bloqueados
 /// con su valor, cómo se aplicaría la edición en el estado actual y las rutas con todo lo que se captura. Sin costos de Nexo.
 /// </summary>
 public sealed record clsSolicitudEditable(
@@ -108,7 +108,7 @@ public sealed record clsBloqueadosSolicitud(string? Tipo, string? NitCliente, st
 public sealed record clsEstadoEdicion(string? Modo, bool Permitida, string? MotivoNoPermitida, string? Mensaje, IReadOnlyList<clsAvisoEdicion> Avisos);
 
 /// <summary>
-/// Una ruta editable (<c>RutaEditable</c>): todo lo que se captura, con los municipios por id y nombre, y su margen. HU-028.1 (#183):
+/// Una ruta editable (<c>RutaEditable</c>): todo lo que se captura, con los municipios por id y nombre, y su margen.
 /// <paramref name="CamionesRechazados"/> y <paramref name="MotivoRechazo"/> (solo lectura) dicen si la Mesa de Costeo rechazó camiones de la
 /// ruta: no se reenvían salvo que el PUT traiga <c>reincluir_rechazados</c> en la ruta.
 /// </summary>
@@ -146,23 +146,23 @@ public sealed record clsRutaEditable(
     string? MotivoRechazo = null)
 {
     /// <summary>
-    /// HU-030.1 (#184): el peso total con tara de la ruta de contenedor (<c>peso_con_tara_kg</c>), como lo escribió el comercial;
+    /// El peso total con tara de la ruta de contenedor (<c>peso_con_tara_kg</c>), como lo escribió el comercial;
     /// <c>null</c> = sin tara. Se edita como los demás campos de la ruta: cambiarlo no vuelve a cubicar (el cubicador no usa la tara).
     /// </summary>
     public decimal? PesoConTaraKg { get; init; }
 
     /// <summary>
-    /// HU-032 (#197, ADR-022): el vehículo elegido de la ruta (<c>tipo_vehiculo</c>), el respaldo del cubicador; <c>null</c> si no eligió.
+    /// El vehículo elegido (ADR-022) de la ruta (<c>tipo_vehiculo</c>), el respaldo del cubicador; <c>null</c> si no eligió.
     /// No es el vehículo de los camiones (el del cubicador o el que puso la Mesa de Costeo): esos salen en <c>GET .../costeo</c>.
     /// </summary>
     public string? TipoVehiculo { get; init; }
 
-    /// <summary>HU-032 (#197): la carrocería elegida (<c>carroceria</c>); <c>null</c> si no eligió.</summary>
+    /// <summary>La carrocería elegida (<c>carroceria</c>); <c>null</c> si no eligió.</summary>
     public string? Carroceria { get; init; }
 }
 
 /// <summary>
-/// Una mercancía editable (<c>MercanciaEditable</c>), con su código del catálogo del cubicador. HU-032 (#197): las medidas son <c>null</c>
+/// Una mercancía editable (<c>MercanciaEditable</c>), con su código del catálogo del cubicador. Las medidas son <c>null</c>
 /// en una mercancía no cubicable (sin medidas ni tipo de mercancía).
 /// </summary>
 public sealed record clsMercanciaEditable(

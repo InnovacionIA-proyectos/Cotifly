@@ -22,7 +22,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Aplicacion.Costeo.Services;
 
 /// <summary>
-/// "Cotizar costo" (HU-013.4, ADR-018 §5): <c>POST /web/cotizaciones/{folio}/costeo/re-solicitar</c>. Es el botón de la pantalla, el
+/// "Cotizar costo" (ADR-018 §5): <c>POST /web/cotizaciones/{folio}/costeo/re-solicitar</c>. Es el botón de la pantalla, el
 /// Confirmar de la acción propuesta <c>re_solicitar_costeo</c> y la versión nueva que pide <c>PDF_YA_ENVIADO</c>.
 /// </summary>
 public interface IClsReSolicitudCosteoService
@@ -31,7 +31,7 @@ public interface IClsReSolicitudCosteoService
     /// Vuelve a pedir el costeo a Nexo, en el mismo folio (sin cambios de carga ni <c>nueva_version</c>) o en la versión <c>-vN</c>.
     /// Errores: <c>COTIZACION_NO_ENCONTRADA</c> (404, también si no es suya), <c>SOLICITUD_COSTEO_INVALIDA</c> (400: motivo, cambios
     /// de carga o reglas de la captura), <c>SOLICITUD_INVALIDA</c> (400 <c>ErrorWeb</c>: <c>Idempotency-Key</c> fuera de largo),
-    /// <c>IDEMPOTENCY_KEY_REUTILIZADA</c> (409: la misma clave con otra petición, D4), <c>CONFLICTO_CONCURRENCIA</c>, <c>ESTADO_NO_PERMITE</c> y <c>PDF_YA_ENVIADO</c> (409). Si Nexo falla, la
+    /// <c>IDEMPOTENCY_KEY_REUTILIZADA</c> (409: la misma clave con otra petición), <c>CONFLICTO_CONCURRENCIA</c>, <c>ESTADO_NO_PERMITE</c> y <c>PDF_YA_ENVIADO</c> (409). Si Nexo falla, la
     /// cotización (o la versión nueva) se devuelve igual, en <c>error_envio</c> con el motivo.
     /// </summary>
     Task<clsResultado<clsReSolicitudCosteo>> ReSolicitarAsync(
@@ -43,8 +43,8 @@ public interface IClsReSolicitudCosteoService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Las MISMAS validaciones de <see cref="ReSolicitarAsync"/> sin escribir nada ni enviar a Nexo (HU-013.6, #102): entrada, estado,
-    /// regla del PDF, líneas guardadas, política activa y, con cambios de carga, el catálogo de Nexo (G2/G3, solo lectura) y las reglas
+    /// Las MISMAS validaciones de <see cref="ReSolicitarAsync"/> sin escribir nada ni enviar a Nexo: entrada, estado,
+    /// regla del PDF, líneas guardadas, política activa y, con cambios de carga, el catálogo de Nexo (solo lectura) y las reglas
     /// de la captura sobre la combinación (rangos, peso frente a las posiciones). La usa la propuesta <c>re_solicitar_costeo</c> del
     /// asistente: una propuesta que el endpoint rechazaría nunca se arma. No valida el <c>If-Match</c> ni la TRM del día (cambian
     /// entre proponer y confirmar). <c>null</c> si pasa.
@@ -54,7 +54,7 @@ public interface IClsReSolicitudCosteoService
 
 /// <summary>
 /// Implementación de <see cref="IClsReSolicitudCosteoService"/>. Nexo no tiene una operación para reabrir ni para re-solicitar una
-/// solicitud (<c>docs/conexion_nexo/HU-013-preguntas-nexo.md</c>, pregunta 4): re-solicitar es una <b>captura nueva</b>
+/// solicitud: re-solicitar es una <b>captura nueva</b>
 /// (<c>POST /api/captura-solicitudes</c>) con lo guardado, enviada con <see cref="IClsEnvioCosteoService.EnviarGuardadaAsync"/> (el
 /// mismo envío normalizado del alta y de las licitaciones), con una nota de trazabilidad en <c>notas</c>.
 /// <list type="bullet">
@@ -67,13 +67,13 @@ public interface IClsReSolicitudCosteoService
 /// invalidado; después se envía a Nexo y el polling se reanuda con el id de la solicitud nueva.</item>
 /// <item><b>Versión nueva</b>: después de la reserva crea <c>{folio base}-vN</c> con
 /// <see cref="IClsGeneradorFolioService.CrearNuevaVersionAsync{TValor}"/> (formulario, líneas, posiciones y, si había, el margen
-/// negociado; cambios de carga validados por catálogo, #106 G2) y la envía. La original solo cambia su versión de negocio.</item>
-/// <item>Un margen negociado se conserva sobre el costo nuevo (decisión del 2026-10-06, <c>clsEnvioCosteoService</c>).</item>
+/// negociado; cambios de carga validados por catálogo) y la envía. La original solo cambia su versión de negocio.</item>
+/// <item>Un margen negociado se conserva sobre el costo nuevo (<c>clsEnvioCosteoService</c>).</item>
 /// <item><c>Idempotency-Key</c> (<see cref="IClsAlmacenIdempotencia"/>): la repetición devuelve el resultado de la primera.</item>
-/// <item>Los eventos de auditoría van SIN <c>ThreadId</c>: traen costos y no deben quedar al alcance del asistente (#102, ADR-018).</item>
-/// <item><b>Por ruta (HU-021.9, #136).</b> La versión nueva copia cada ruta con su línea de negocio, sus mercancías, sus camiones
+/// <item>Los eventos de auditoría van SIN <c>ThreadId</c>: traen costos y no deben quedar al alcance del asistente (ADR-018).</item>
+/// <item><b>Por ruta.</b> La versión nueva copia cada ruta con su línea de negocio, sus mercancías, sus camiones
 /// vigentes y sus conexos; si los cambios de carga cambian el peso o las mercancías de la ruta, sus camiones se borran y se vuelven a
-/// planificar con <see cref="IClsPlanificadorCamiones"/> (el cubicador cuando exista, #133). Los conexos son de Cotifly (decisión 3):
+/// planificar con <see cref="IClsPlanificadorCamiones"/> (el cubicador, si está configurado). Los conexos son de Cotifly:
 /// se conservan en el mismo folio y se copian a la versión nueva (<c>conexos_conservados</c>).</item>
 /// </list>
 /// </summary>
@@ -97,12 +97,12 @@ public sealed class clsReSolicitudCosteoService(
     IClsCubicador? cubicador = null,
     IClsTarifaSeguroRepository? tarifasSeguro = null) : IClsReSolicitudCosteoService
 {
-    /// <summary>HU-032 (#197): ¿el vehículo elegido cuenta? (<c>Captura:AceptarVehiculoCliente</c>, encendida por defecto).</summary>
+    /// <summary>¿El vehículo elegido cuenta? (<c>Captura:AceptarVehiculoCliente</c>, encendida por defecto).</summary>
     private bool AceptaVehiculo => opcionesCaptura?.Value.AceptarVehiculoCliente ?? true;
     /// <summary>Motivo de <c>ESTADO_NO_PERMITE</c>: cambios de carga en una licitación de varias rutas.</summary>
     public const string MotivoLicitacion = "LICITACION";
 
-    /// <summary>Motivo de <c>ESTADO_NO_PERMITE</c> (D9, #139): cambios de carga en un formulario de varias rutas.</summary>
+    /// <summary>Motivo de <c>ESTADO_NO_PERMITE</c>: cambios de carga en un formulario de varias rutas.</summary>
     public const string MotivoVariasRutas = "VARIAS_RUTAS";
 
     /// <summary>Herramienta de la auditoría (<c>EventosHerramienta.herramienta</c>, contrato).</summary>
@@ -165,8 +165,8 @@ public sealed class clsReSolicitudCosteoService(
 
         if (entrada.DatosCarga is not null)
         {
-            // HU-028 (#186, ADR-021): datos_carga queda obsoleto en favor de PUT /web/cotizaciones/{folio}/solicitud (varias rutas, todos los
-            // campos y el modo según el estado). Se sigue aceptando (con los defectos A, B y C corregidos) mientras el frontend migra.
+            // datos_carga es obsoleto en favor de PUT /web/cotizaciones/{folio}/solicitud (ADR-021: varias rutas, todos los
+            // campos y el modo según el estado). Se sigue aceptando por compatibilidad con el frontend.
             logger.LogWarning("CAMPO_OBSOLETO: re-solicitar de {Folio} trae datos_carga; usar PUT /web/cotizaciones/{{folio}}/solicitud (HU-028).", cotizacion.Folio);
         }
 
@@ -239,7 +239,7 @@ public sealed class clsReSolicitudCosteoService(
                 Reserva(entradaAuditoria, instantanea, cronometro), nota, cancellationToken)
             : await ReenviarAsync(cotizacion, usuarioId, versionEsperada, v.Lineas, v.Politica,
                 Reserva(entradaAuditoria, instantanea, cronometro), nota, cancellationToken);
-        // HU-028.1 (#183): sobre la cotización resultante (el mismo folio o la -vN): los camiones rechazados que quedaron fuera del envío.
+        // Sobre la cotización resultante (el mismo folio o la -vN): los camiones rechazados que quedaron fuera del envío.
         return (resultado.EsExitoso
             ? clsResultado<clsReSolicitudCosteo>.Exito(resultado.Valor with
             {
@@ -254,7 +254,7 @@ public sealed class clsReSolicitudCosteoService(
     public const string MotivoTodosRechazados = "TODOS_RECHAZADOS";
 
     /// <summary>
-    /// HU-028.1 (#183, decisión del 2026-10-20: "no reenviar los camiones rechazados por defecto"): el aviso de lo que se OMITIÓ del envío en
+    /// El aviso de lo que se OMITIÓ (por defecto no se reenvían los camiones rechazados) del envío en
     /// <paramref name="resultante"/> (la cotización ya re-solicitada o editada, en el mismo folio o la <c>-vN</c>): por ruta, cuántos camiones
     /// rechazados por la Mesa de Costeo no viajaron y su motivo, y las rutas que no viajaron completas (quedan <c>rechazada</c>, sin precio).
     /// <c>null</c> si no omitió nada. El rechazo queda en los camiones (y, el anterior, en la auditoría). Lo devuelven la re-solicitud
@@ -285,7 +285,7 @@ public sealed class clsReSolicitudCosteoService(
     }
 
     /// <summary>
-    /// HU-028.1 (#183): 409 <c>SIN_RUTAS_COTIZABLES</c> (<c>detalle.motivo = TODOS_RECHAZADOS</c>) cuando la Mesa de Costeo rechazó todos los
+    /// 409 <c>SIN_RUTAS_COTIZABLES</c> (<c>detalle.motivo = TODOS_RECHAZADOS</c>) cuando la Mesa de Costeo rechazó todos los
     /// camiones que viajarían: no hay nada que enviar a Nexo. Se responde antes de escribir.
     /// </summary>
     public static clsErrorDominio TodosRechazados(string folio) => new(clsCodigosError.SinRutasCotizables,
@@ -293,19 +293,18 @@ public sealed class clsReSolicitudCosteoService(
         + "reconsidere, edita la solicitud y marca reincluir_rechazados en las rutas (o cambia su carga).", MotivoTodosRechazados);
 
     /// <summary>
-    /// Regla de los servicios conexos al re-solicitar (HU-021.9, #136; rehace el aviso de #124 con la decisión 3 del 2026-10-08). Los
-    /// conexos son filas de la ruta en Cotifly, con el costo de Nexo como precio, y Cotifly es su fuente: el precio al cliente sale de
+    /// Regla de los servicios conexos al re-solicitar. Los conexos son filas de la ruta en Cotifly, con el costo de Nexo como precio, y Cotifly es su fuente: el precio al cliente sale de
     /// Cotifly. Por eso NO se descartan: en el mismo folio la ruta los conserva (solo se olvidan los costos de los camiones) y la versión
-    /// <c>-vN</c> los copia a la ruta del mismo orden, con la misma cantidad y el costo unitario del catálogo de hoy. En Nexo:
+    /// <c>-vN</c> los copia a la ruta del mismo orden, con la misma cantidad y el costo unitario vigente del catálogo. En Nexo:
     /// <list type="bullet">
     /// <item>la captura nueva es otra solicitud (y otra cotización) de Nexo, que empieza sin conexos; no se agregan en el momento: el
-    /// envío diferido de la decisión 10 (<see cref="IClsEnvioConexosNexoService"/>) los manda UNA vez desde el polling, cuando Nexo costea
+    /// envío diferido (<see cref="IClsEnvioConexosNexoService"/>) los manda UNA vez desde el polling, cuando Nexo costea
     /// la línea del primer camión vigente de la ruta, con la protección contra duplicados del POST incierto;</item>
     /// <item>la cotización anterior de Nexo queda como estaba (con los conexos que se le agregaron): no se puede borrar nada en ella, y la
     /// nota de la captura nueva dice que la reemplaza.</item>
     /// </list>
     /// Devuelve los nombres que se conservan, sin repetir y en orden, sin montos (<c>conexos_conservados</c> y el resumen de la propuesta
-    /// del asistente); corrección conexos (nombre nunca id): un conexo migrado sin nombre se muestra con su categoría como respaldo LEGIBLE,
+    /// del asistente); un conexo migrado sin nombre se muestra con su categoría como respaldo LEGIBLE,
     /// nunca con el id interno. <c>conexos_descartados</c> queda vacío (compatibilidad).
     /// </summary>
     public static IReadOnlyList<string> ConexosConservados(clsCotizacionSolicitud cotizacion)
@@ -335,7 +334,7 @@ public sealed class clsReSolicitudCosteoService(
     /// <summary>
     /// Única fuente de las reglas de la re-solicitud (todo lo que se valida antes de escribir, salvo la entrada y el <c>If-Match</c>):
     /// estado y regla del PDF, líneas guardadas, política activa y, en la versión nueva con cambios de carga, que sea de una línea, el
-    /// catálogo (G2) y las reglas de la captura sobre la combinación; en el mismo folio, las reglas sobre lo guardado.
+    /// catálogo y las reglas de la captura sobre la combinación; en el mismo folio, las reglas sobre lo guardado.
     /// </summary>
     private async Task<clsResultado<clsReSolicitudValidada>> ValidarReglasAsync(
         Guid usuarioId, clsCotizacionSolicitud cotizacion, clsEntradaReSolicitudCosteo entrada, CancellationToken cancellationToken)
@@ -353,7 +352,7 @@ public sealed class clsReSolicitudCosteoService(
                 $"La cotización {cotizacion.Folio} no tiene guardadas las líneas de la solicitud: no se puede volver a enviar a Nexo.");
         }
 
-        // HU-021: cada ruta tiene su línea de negocio (y su margen); ninguna puede estar inactiva. La de la ruta 1 es el respaldo del envío.
+        // Cada ruta tiene su línea de negocio (y su margen); ninguna puede estar inactiva. La de la ruta 1 es el respaldo del envío.
         clsMargenPolitica? politica = null;
         foreach (var lineaId in cotizacion.RutasOrdenadas.Select(r => r.LineaNegocioId).OfType<int>().Distinct())
         {
@@ -369,14 +368,14 @@ public sealed class clsReSolicitudCosteoService(
         var lineas = clsEnvioCosteoService.LineasGuardadas(cotizacion);
         var replanificar = false;
 
-        // HU-032 (#197): la versión nueva conserva el vehículo elegido de cada ruta (antes lo borraba); con la bandera apagada, ninguno.
+        // La versión nueva conserva el vehículo elegido de cada ruta; con la bandera apagada, ninguno.
         IReadOnlyList<(string? TipoVehiculo, string? Carroceria)> elegidos =
             [.. cotizacion.RutasOrdenadas.Select(r => AceptaVehiculo ? r.VehiculoElegido : (null, null))];
         if (entrada.VersionNueva && entrada.DatosCarga is { } pedidos)
         {
             if (lineas.Count != 1)
             {
-                // D9 (#139): datos_carga trae UNA carga, sin ruta: con varias rutas no se sabe a cuál aplica. El mensaje dice lo que es la
+                // datos_carga trae UNA carga, sin ruta: con varias rutas no se sabe a cuál aplica. El mensaje dice lo que es la
                 // cotización (licitación o formulario de varias rutas) y el motivo los distingue.
                 var esLicitacion = cotizacion.TipoSolicitud == TipoSolicitud.Licitacion;
                 return new clsErrorDominio(clsCodigosError.EstadoNoPermite,
@@ -394,13 +393,13 @@ public sealed class clsReSolicitudCosteoService(
             encabezado = cambios.Aplicar(encabezado);
             lineas = [cambios.Aplicar(anterior)];
             elegidos = [(lineas[0].TipoVehiculo, lineas[0].Carroceria)];
-            // HU-032 (#197): cambiar el vehículo elegido también es un cambio que viaja si los camiones dependen de él.
+            // Cambiar el vehículo elegido también es un cambio que viaja si los camiones dependen de él.
             replanificar = clsReglaRecubicacion.Exige(anterior, lineas[0], AceptaVehiculo && ruta.UsaVehiculoElegido);
 
-            // HU-032 (#197): sin mercancías cubicables el vehículo elegido es obligatorio (salvo en las clases de viaje exentas), con la
-            // MISMA regla de la captura (una mercancía con medidas y sin código, con el cubicador configurado, no la juzga). B3 (decisión del
-            // usuario del 2026-10-21): como en la edición, solo si la ruta cambia (replanificar: carga, clase de viaje o vehículo elegido);
-            // unos datos_carga que dejan la ruta como estaba no lo exigen (un folio anterior a HU-032 sin vehículo sigue re-solicitándose).
+            // Sin mercancías cubicables el vehículo elegido es obligatorio (salvo en las clases de viaje exentas), con la
+            // MISMA regla de la captura (una mercancía con medidas y sin código, con el cubicador configurado, no la juzga). Como en
+            // la edición, solo si la ruta cambia (replanificar: carga, clase de viaje o vehículo elegido); unos datos_carga que dejan
+            // la ruta como estaba no lo exigen (un folio sin vehículo elegido sigue re-solicitándose).
             if (AceptaVehiculo && replanificar
                 && clsCapturaRutasService.FaltaVehiculo(lineas[0], opcionesCaptura?.Value.ClasesSinVehiculo, cubicador is { EstaConfigurado: true }))
             {
@@ -411,8 +410,8 @@ public sealed class clsReSolicitudCosteoService(
                 };
             }
 
-            // G2 (#106): los cambios de carga solo traen códigos de catálogo, igual que la captura (nunca texto libre a Nexo). HU-032 (#197):
-            // el vehículo elegido se valida aquí solo si se va a usar (la ruta no se puede cubicar); si va al cubicador, se valida tarde.
+            // Los cambios de carga solo traen códigos de catálogo, igual que la captura (nunca texto libre a Nexo).
+            // El vehículo elegido se valida aquí solo si se va a usar (la ruta no se puede cubicar); si va al cubicador, se valida tarde.
             var vehiculoTardio = lineas[0].Cubicabilidad == CubicabilidadRuta.Cubicable;
             var paraCatalogo = vehiculoTardio ? lineas[0] with { TipoVehiculo = null, Carroceria = null } : lineas[0];
             if (await catalogos.ValidarAsync(usuarioId, paraCatalogo, cancellationToken) is { } noCatalogo)
@@ -420,7 +419,7 @@ public sealed class clsReSolicitudCosteoService(
                 return noCatalogo;
             }
 
-            // B4 (HU-032): lo validado se guarda escrito como en Nexo (Canonica, igual que la captura): "2s3"/"furgon" → 2S3/FURGON, un
+            // Lo validado se guarda escrito como en Nexo (Canonica, igual que la captura): "2s3"/"furgon" → 2S3/FURGON, un
             // alias de Nexo → su código oficial. Un vehículo que va al cubicador (validación tardía) queda como vino, recortado.
             if (await CanonicaAsync(usuarioId, paraCatalogo, cancellationToken) is { } canonica)
             {
@@ -432,7 +431,7 @@ public sealed class clsReSolicitudCosteoService(
         }
 
         // Lo guardado (o la combinación con los cambios) se valida con las reglas de la captura: nunca se envía algo que Nexo rechazaría.
-        // Una licitación sin cambios de carga pasa por todas las reglas, también catálogos y municipios (HU-013.11).
+        // Una licitación sin cambios de carga pasa por todas las reglas, también catálogos y municipios.
         if (!(entrada.VersionNueva && entrada.DatosCarga is not null) && cotizacion.TipoSolicitud == TipoSolicitud.Licitacion)
         {
             var revalidada = await filasLicitacion.RevalidarGuardadasAsync(usuarioId, cotizacion.Folio, encabezado, lineas, Filas(cotizacion), cancellationToken);
@@ -448,7 +447,7 @@ public sealed class clsReSolicitudCosteoService(
             return reglas;
         }
 
-        // HU-028.1 (#183, decisión del 2026-10-20): los camiones rechazados por la Mesa no viajan. Si no queda ninguno que viaje (todas las
+        // Los camiones rechazados por la Mesa no viajan. Si no queda ninguno que viaje (todas las
         // rutas rechazadas) no hay nada que enviar: 409 antes de escribir. Una ruta sin camiones en la -vN se vuelve a planificar (viaja).
         if (!replanificar && !cotizacion.RutasOrdenadas.Any(r => r.ViajaANexo || (entrada.VersionNueva && r.VehiculosVigentes.Count == 0)))
         {
@@ -459,7 +458,7 @@ public sealed class clsReSolicitudCosteoService(
     }
 
     /// <summary>
-    /// B4 (HU-032): <paramref name="linea"/> con <c>tipo_vehiculo</c>, <c>carroceria</c> y <c>clase_contenedor</c> escritos como en Nexo
+    /// <paramref name="linea"/> con <c>tipo_vehiculo</c>, <c>carroceria</c> y <c>clase_contenedor</c> escritos como en Nexo
     /// (<see cref="clsValidadorCatalogosCaptura.Canonica"/>, por <see cref="IClsValidadorCatalogosCaptura.ValidarLineasAsync"/>, como la
     /// captura); <c>null</c> si no hay nada que reescribir o el validador no la devolvió.
     /// </summary>
@@ -478,13 +477,13 @@ public sealed class clsReSolicitudCosteoService(
 
     /// <summary>
     /// ¿Los cambios de carga cambian lo que recibe el cubicador (peso, clase de viaje o mercancías)? Entonces sus camiones ya no sirven:
-    /// se borran y se vuelven a planificar (HU-021.9). Un campo que viene con el mismo valor no cuenta como cambio.
+    /// se borran y se vuelven a planificar. Un campo que viene con el mismo valor no cuenta como cambio.
     /// </summary>
     public static bool CambiaLaCarga(clsLineaSolicitudCosteo anterior, clsLineaSolicitudCosteo nueva)
     {
         ArgumentNullException.ThrowIfNull(anterior);
         ArgumentNullException.ThrowIfNull(nueva);
-        // HU-028 (#186), defecto C: la misma regla de la edición (peso, clase de viaje y mercancías por código, cantidad, medidas y peso).
+        // La misma regla de la edición (peso, clase de viaje y mercancías por código, cantidad, medidas y peso).
         return clsReglaRecubicacion.Exige(anterior, nueva);
     }
 
@@ -498,7 +497,7 @@ public sealed class clsReSolicitudCosteoService(
         clsMargenPolitica? Politica,
         bool Replanificar)
     {
-        /// <summary>HU-032 (#197): el vehículo elegido de cada ruta (en su orden) para la versión nueva.</summary>
+        /// <summary>El vehículo elegido de cada ruta (en su orden) para la versión nueva.</summary>
         public IReadOnlyList<(string? TipoVehiculo, string? Carroceria)> Elegidos { get; init; } = [];
     }
 
@@ -519,9 +518,8 @@ public sealed class clsReSolicitudCosteoService(
             clsEnvioCosteoService.CompletarMunicipios(cotizacion.RutasOrdenadas, lineasValidadas);
         }
 
-        // HU-021: la solicitud y cada ruta olvidan el costeo anterior (camiones en pendiente_envio, sin costos de Nexo ni precio). Los
-        // conexos y el margen ajustado de cada ruta se conservan (HU-021.9: los conexos son de Cotifly, decisión 3; el margen negociado,
-        // decisión del 2026-10-06): el precio vuelve con el costeo nuevo.
+        // La solicitud y cada ruta olvidan el costeo anterior (camiones en pendiente_envio, sin costos de Nexo ni precio). Los
+        // conexos (son de Cotifly) y el margen ajustado (negociado) de cada ruta se conservan: el precio vuelve con el costeo nuevo.
         cotizacion.PrepararReSolicitud();
 
         var pdfInvalidado = clsReglaPdfCosteo.InvalidarPdf(cotizacion, MotivoInvalidacionPdf.ReSolicitud, usuarioId, cotizaciones);
@@ -549,7 +547,7 @@ public sealed class clsReSolicitudCosteoService(
         CancellationToken cancellationToken)
     {
         // Encabezado y líneas ya validados (con los cambios de carga aplicados) por ValidarReglasAsync.
-        // La versión nueva es una cotización nueva (decisión del 2026-10-06): misma moneda, TRM del día. Sin TRM no se crea nada (ni
+        // La versión nueva es una cotización nueva: misma moneda, TRM del día. Sin TRM no se crea nada (ni
         // la reserva de la original, ni la versión, ni la captura en Nexo), igual que el formulario y las licitaciones.
         var moneda = await monedas.FijarAsync(original.Moneda, cancellationToken);
         if (moneda.EsFallo)
@@ -557,20 +555,20 @@ public sealed class clsReSolicitudCosteoService(
             return (moneda.Error, null, false);
         }
 
-        // HU-021.9: las rutas de la versión (con sus camiones copiados o vueltos a planificar) se arman ANTES de reservar: si el
-        // planificador (el cubicador, #133) falla, no se reserva ni se crea nada.
+        // Las rutas de la versión (con sus camiones copiados o vueltos a planificar) se arman ANTES de reservar: si el
+        // planificador (el cubicador) falla, no se reserva ni se crea nada.
         var rutas = await RutasDeLaVersionAsync(original, usuarioId, validada, cancellationToken);
         if (rutas.EsFallo)
         {
             return (rutas.Error, null, false);
         }
 
-        // HU-045.2 (#264, decisión 5): con datos_carga el valor de la mercancía puede cambiar; el seguro copiado toma entonces la tasa vigente.
+        // Con datos_carga el valor de la mercancía puede cambiar; el seguro copiado toma entonces la tasa vigente.
         var tasaSeguro = tarifasSeguro is not null && original.Rutas.Any(r => r.IncluyeSeguro)
             ? await tarifasSeguro.ObtenerTasaVigenteAsync(cancellationToken)
             : null;
 
-        // Endurecimiento B (#199): la reserva de la original va DENTRO del candado del folio -vN, en la misma transacción que la versión: un
+        // La reserva de la original va DENTRO del candado del folio -vN, en la misma transacción que la versión: un
         // SERVICIO_OCUPADO (o una versión que no se crea) deja la original como estaba, con su If-Match vigente.
         var creada = await folios.CrearNuevaVersionAsync<clsCotizacionSolicitud>(usuarioId, original.Id, async (folio, ct) =>
         {
@@ -585,13 +583,13 @@ public sealed class clsReSolicitudCosteoService(
                 return version.Error;
             }
 
-            // HU-021.9: la versión nueva copia cada ruta (con los cambios de carga) con su línea de negocio, sus mercancías, sus camiones
+            // La versión nueva copia cada ruta (con los cambios de carga) con su línea de negocio, sus mercancías, sus camiones
             // y sus conexos; el costeo empieza de cero y el margen negociado de cada ruta se conserva. Las reglas de la captura nueva no
             // se exigen: lo guardado ya se revalidó y las rutas migradas no tienen los ids que pide la captura nueva.
             var nueva = version.Valor;
             nueva.RegistrarCaptura(validada.Encabezado, rutas.Valor.Rutas, reglasCaptura: false);
             nueva.CopiarMargenesNegociadosDe(original);
-            // HU-045.2 (#264): el seguro de la mercancía de cada ruta (recalculado si datos_carga cambió valor_mercancia).
+            // El seguro de la mercancía de cada ruta (recalculado si datos_carga cambió valor_mercancia).
             nueva.CopiarSegurosDe(original, tasaSeguro);
             cotizaciones.Agregar(nueva);
             await unidadTrabajo.GuardarCambiosAsync(ct);
@@ -612,13 +610,13 @@ public sealed class clsReSolicitudCosteoService(
     private sealed record clsRutasVersion(IReadOnlyList<clsRutaCapturada> Rutas, IReadOnlyList<int> Replanificadas);
 
     /// <summary>
-    /// Las rutas de la versión nueva (HU-021.9), en el orden de la original: cada una con su línea validada (sin vehículo: es del camión),
-    /// su línea de negocio, su fila del pliego, sus conexos (mismo costo unitario de Nexo y cantidad, decisión 3) y sus camiones:
+    /// Las rutas de la versión nueva, en el orden de la original: cada una con su línea validada (sin vehículo: es del camión),
+    /// su línea de negocio, su fila del pliego, sus conexos (mismo costo unitario de Nexo y cantidad) y sus camiones:
     /// <list type="bullet">
     /// <item>si los cambios de carga cambian el peso o las mercancías (o la ruta no tiene camiones), se vuelven a planificar con
     /// <see cref="IClsPlanificadorCamiones"/>: los anteriores ya no sirven;</item>
     /// <item>si no, se copian los vigentes (los <c>descartada</c> en Nexo no, salvo que lo estén todos), con su vehículo, carrocería, peso y
-    /// recomendación; el levante se copia de la ruta (decisión 4).</item>
+    /// recomendación; el levante se copia de la ruta.</item>
     /// </list>
     /// </summary>
     private async Task<clsResultado<clsRutasVersion>> RutasDeLaVersionAsync(
@@ -630,7 +628,7 @@ public sealed class clsReSolicitudCosteoService(
             throw new InvalidOperationException($"La cotización {original.Folio} tiene {originales.Count} rutas y se validaron {validada.Lineas.Count}.");
         }
 
-        // HU-021.9: la -vN es una cotización nueva: cada conexo se copia con el id y el costo unitario del CATÁLOGO de Nexo de hoy, igual
+        // La -vN es una cotización nueva: cada conexo se copia con el id y el costo unitario vigentes del CATÁLOGO de Nexo, igual
         // que en la captura. Un conexo agregado con el POST o importado desde Nexo está guardado con el id de la fila de la cotización
         // anterior de Nexo: se resuelve por id o por nombre (clsResolutorConexosCatalogo). Sin catálogo no se crea nada (503, antes de
         // reservar). Uno que no se puede resolver conserva lo guardado (con un aviso en el log) y el envío diferido lo deja
@@ -653,23 +651,23 @@ public sealed class clsReSolicitudCosteoService(
         for (var i = 0; i < originales.Count; i++)
         {
             var ruta = originales[i];
-            // HU-032 (#197): la línea de la versión nueva lleva el vehículo ELEGIDO de la ruta (no el de su camión).
+            // La línea de la versión nueva lleva el vehículo ELEGIDO de la ruta (no el de su camión).
             var (tipoElegido, carroceriaElegida) = i < validada.Elegidos.Count ? validada.Elegidos[i] : (null, null);
             var linea = validada.Lineas[i] with { TipoVehiculo = tipoElegido, Carroceria = carroceriaElegida };
-            // En el orden estable de la ruta (ordenVehiculo, o createdAt en las filas anteriores a #188): el primero lleva los conexos
-            // (decisión 3). La versión nueva los numera otra vez 1..n.
-            // HU-028.1 (#183, decisión del 2026-10-20): los camiones rechazados por la Mesa se copian COMO RECHAZADOS (con su motivo y su
+            // En el orden estable de la ruta (ordenVehiculo, o createdAt en las filas sin él): el primero lleva los conexos.
+            // La versión nueva los numera otra vez 1..n.
+            // Los camiones rechazados por la Mesa se copian COMO RECHAZADOS (con su motivo y su
             // fecha: trazabilidad) y no viajan a Nexo; la ruta con todos rechazados queda rechazada, visible y sin precio. Copiarlos mantiene
             // el número de camiones de la ruta, del que depende cómo viajan los demás (con o sin posiciones, PesoLineaNexo).
             var vigentes = clsVehiculoLineaSolicitud.EnOrden(ruta.VehiculosVigentes).ToList();
-            // La ruta de la versión nueva es otra: un id nuevo, el mismo para el cubicador (idLineaSolicitud, #133) y para la ruta guardada.
+            // La ruta de la versión nueva es otra: un id nuevo, el mismo para el cubicador (idLineaSolicitud) y para la ruta guardada.
             var rutaId = Guid.NewGuid();
             IReadOnlyList<clsCamionPlaneado> camiones;
             clsCubicacionRuta? cubicacion = null;
             IReadOnlyList<clsAdvertenciaCubicador>? avisos = null;
             if (validada.Replanificar || vigentes.Count == 0)
             {
-                // HU-032 (#197): una ruta sin mercancías cubicables (también las anteriores al script 02, sin código) no llama al cubicador:
+                // Una ruta sin mercancías cubicables (también las que no tienen código, columna del script 02) no llama al cubicador:
                 // el planificador le pone el vehículo elegido (o ninguno) con el peso de la ruta.
                 var plan = await planificador.PlanificarAsync(usuarioId, rutaId, linea, cancellationToken);
                 if (plan.EsFallo)
@@ -713,9 +711,9 @@ public sealed class clsReSolicitudCosteoService(
                         continue;
                     }
 
-                    // HU-014 (#188): la versión nueva guarda el id del catálogo y la categoría (scripts 03 y 05). HU-043.2 (#251): y la
-                    // venta del catálogo de hoy (precioVenta ?? costoUnitario), como el costo.
-                    // HU-046.3 (#269): y el codigoServicio del catálogo (completa el de una fila anterior al script 21).
+                    // La versión nueva guarda el id del catálogo y la categoría (scripts 03 y 05), la venta vigente del
+                    // catálogo (precioVenta ?? costoUnitario), como el costo, y el codigoServicio del catálogo (completa el de una
+                    // fila sin él, script 21).
                     conexos.Add(new clsCambioConexo(
                         costo.Id, costo.Nombre ?? c.Nombre, costo.CostoUnitario, c.Cantidad, costo.Id, costo.Categoria ?? c.Categoria, costo.VentaUnitaria,
                         costo.Codigo ?? c.CodigoServicio));
@@ -760,7 +758,7 @@ public sealed class clsReSolicitudCosteoService(
         return await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, versionEsperada, cancellationToken);
     }
 
-    /// <summary>Evento de la reserva (fase <c>reservada</c>) con la instantánea del costeo anterior; sin <c>ThreadId</c> (#102).</summary>
+    /// <summary>Evento de la reserva (fase <c>reservada</c>) con la instantánea del costeo anterior; sin <c>ThreadId</c>.</summary>
     private static clsEventoHerramienta? Reserva(object entradaAuditoria, object instantanea, Stopwatch cronometro)
     {
         var evento = clsEventoHerramienta.Registrar(
@@ -775,7 +773,7 @@ public sealed class clsReSolicitudCosteoService(
 
     /// <summary>
     /// Instantánea completa del costeo (lo que se pierde al re-solicitar en el mismo folio): estado, ids de Nexo, precio, moneda y, por
-    /// ruta (HU-021), su margen (aplicado, sugeridos, origen y método), sus totales de costo, su precio, sus conexos y cada camión (id de
+    /// ruta, su margen (aplicado, sugeridos, origen y método), sus totales de costo, su precio, sus conexos y cada camión (id de
     /// Nexo, estado y costos); PDF y versión.
     /// </summary>
     public static object Instantanea(clsCotizacionSolicitud cotizacion)
@@ -807,13 +805,13 @@ public sealed class clsReSolicitudCosteoService(
                 costo_servicios_conexos = r.CostoServiciosConexos,
                 costo_final = r.CostoFinal,
                 precio_final_linea = r.PrecioFinalLinea,
-                // HU-043.2 (#251): con la venta unitaria, además del costo.
+                // Con la venta unitaria, además del costo.
                 servicios_conexos = r.Conexos.Select(c => new { id = c.IdServicioConexo, nombre = c.Nombre, precio = c.Precio, precio_venta = c.PrecioVenta, cantidad = c.Cantidad }).ToList(),
                 camiones = r.VehiculosOrdenados.Select(v => new
                 {
                     linea_solicitud_nexo_id = v.LineaSolicitudNexoId,
                     estado_costeo = v.EstadoCosteo is { } estadoCamion ? clsCodigoEnum.ACodigo(estadoCamion) : null,
-                    // HU-028.1 (#183): el rechazo de la Mesa queda en la auditoría (y en el camión, que no se reenvía salvo reinclusión).
+                    // El rechazo de la Mesa queda en la auditoría (y en el camión, que no se reenvía salvo reinclusión).
                     motivo_rechazo = v.MotivoRechazo,
                     rechazada_at = v.RechazadaAt,
                     costo_flete = v.CostoFlete,
@@ -835,7 +833,7 @@ public sealed class clsReSolicitudCosteoService(
 
     /// <summary>
     /// Motivo (1 a 300 caracteres) y <c>datos_carga</c> no vacío (<c>SOLICITUD_COSTEO_INVALIDA</c>). Pública: la usa también la propuesta
-    /// <c>re_solicitar_costeo</c> del asistente (HU-013.6) antes de armar el cuerpo.
+    /// <c>re_solicitar_costeo</c> del asistente antes de armar el cuerpo.
     /// </summary>
     public static clsErrorDominio? ValidarEntrada(clsEntradaReSolicitudCosteo entrada)
     {
