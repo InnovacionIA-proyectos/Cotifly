@@ -96,9 +96,17 @@ Los pliegos de licitación son justo esos archivos. La pregunta era si Cotifly r
   comentario de la issue del 2026-11-10:
   - `GET /web/diccionario-cliente` con NIT muestra los términos del cliente (`general = false`) y los generales; sin NIT, solo los
     generales (sin NIT NEXO devuelve los de todos los clientes). `aviso` va siempre en `null`.
-  - **Defensa en Cotifly, falla cerrado.** Un término sin `clienteId` en la respuesta (cambio de forma) nunca sale; si al pedir un NIT la
-    respuesta trae términos de más de un cliente, NEXO no filtró y solo salen los generales (con un warning sin el NIT). Cotifly sigue sin
-    resolver ni guardar el `clienteId` de NEXO (punto 3): solo compara que todos los términos con cliente sean del mismo.
+  - **Defensa en Cotifly, falla cerrado.** `TerminoClienteDto` trae `clienteId` y `clienteNombre`, pero no el NIT, y NEXO no tiene
+    una consulta que resuelva siempre el `clienteId` de un NIT (`GET /clientes` lo trae en `null` con el DW). Por eso la pertenencia
+    se demuestra por el comportamiento de NEXO en la misma operación, y un término de cliente solo sale (o se edita o borra) si:
+    1. la respuesta trae términos de un solo cliente, y
+    2. una consulta de control (`clienteNit = COTIFLYSINCLIENTE`, `incluirGenerales = false`) vuelve sin términos de cliente. Un NEXO
+       que ignora `clienteNit` responde ahí los mismos términos ajenos que al comercial y queda delatado.
+
+    Si falla cualquiera de las dos, solo salen los generales (con un warning sin el NIT) y editar o borrar responde
+    `TERMINO_NO_ENCONTRADO`; si la consulta de control falla, falla la operación. Un término sin `clienteId` nunca sale. La consulta
+    de control solo se hace cuando la respuesta trae términos de cliente. Cotifly sigue sin resolver ni guardar el `clienteId` de NEXO
+    (punto 3). Lo más fuerte sería que NEXO mandara el NIT en cada término: se le puede pedir.
   - **Escritura solo para un cliente y solo por el comercial.** `POST`, `PUT /{id}` y `DELETE /{id}?nit_cliente=` exigen el NIT (desde
     Cotifly no se crean términos generales) y la política `SoloComercial` (rol activo `comercial`; gerente y director solo consultan).
     Antes de editar o borrar se listan los términos del cliente: un término general responde `403 TERMINO_GENERAL_NO_EDITABLE` y un id

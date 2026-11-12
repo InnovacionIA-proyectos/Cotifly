@@ -355,7 +355,7 @@ public sealed class clsFormatosClienteEndpointsTests : IDisposable
             .Select(t => (Termino: t.GetProperty("termino").GetString(), General: t.GetProperty("general").GetBoolean())).ToList();
         terminos.Should().BeEquivalentTo([("Tractomula", true), ("ORIGEN", true), ("Mula del cliente", false)]);
         json.GetProperty("aviso").ValueKind.Should().Be(JsonValueKind.Null);
-        var enviada = _nexo.Peticiones.Single(p => p.Url.AbsolutePath == "/api/diccionario-cliente");
+        var enviada = _nexo.Peticiones.Single(p => p.Url.AbsolutePath == "/api/diccionario-cliente" && p.Url.Query.Contains("900555111", StringComparison.Ordinal));
         enviada.Url.Query.Should().Contain("clienteNit=900555111").And.Contain("tipo=valor").And.Contain("q=mula");
     }
 

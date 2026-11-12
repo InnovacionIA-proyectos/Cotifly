@@ -3280,6 +3280,10 @@ entiende NEXO. NEXO lo usa para proponer el mapeo y normalizar valores. Cotifly 
 - **`GET /web/diccionario-cliente?nit_cliente=&tipo=&q=`** → `DiccionarioCliente` `{terminos: TerminoDiccionario[], aviso}`. Cada
   término: `id`, `termino`, `tipo` (`columna` | `unidad` | `valor`), `concepto`, `contexto`, `ejemplo`, `activo`, `general`.
   - Con `nit_cliente`: los términos **de ese cliente** (`general = false`) y los **generales** (`general = true`).
+  - **Garantía (falla cerrado):** NEXO no manda el NIT de cada término, así que Cotifly solo muestra los del cliente si NEXO demuestra
+    en esa operación que filtró por el NIT (la respuesta es de un solo cliente y una consulta de control con un NIT sin cliente no trae
+    términos de cliente). Si no, salen solo los generales y editar o borrar un término de cliente responde 404
+    `TERMINO_NO_ENCONTRADO`. Un término de otro cliente no sale ni se edita.
   - Sin `nit_cliente`: solo los generales.
   - `aviso` va **siempre en `null`** (el aviso `TERMINOS_CLIENTE_NO_DISPONIBLES` se retiró).
 - **`GET /web/diccionario-cliente/opciones`** → `OpcionesDiccionarioCliente` `{tipos, campos_destino, unidades, contextos}`, para los

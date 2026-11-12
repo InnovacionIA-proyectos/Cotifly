@@ -4613,8 +4613,16 @@ paths:
         - **Con `nit_cliente`:** los términos de ese cliente (`general = false`) más los generales (`general = true`).
         - **Sin `nit_cliente`:** solo los generales (NEXO devolvería los términos de todos los clientes).
 
-        `aviso` va siempre en `null`. Si NEXO respondiera términos de más de un cliente (no filtró por el NIT), o un término sin
-        `clienteId`, Cotifly solo muestra los generales: un término de otro cliente nunca sale.
+        `aviso` va siempre en `null`.
+
+        **Garantía.** Los términos de NEXO no traen el NIT de su cliente, solo su id local de NEXO. Cotifly muestra (y deja editar o
+        borrar) un término de cliente solo si NEXO demuestra en esa misma operación que filtró por el NIT:
+        - la respuesta trae términos de un solo cliente;
+        - una consulta de control con un NIT que no es de ningún cliente, sin generales, vuelve sin términos de cliente.
+
+        Si alguna de las dos falla, solo salen los generales y editar o borrar un término de cliente responde `404 TERMINO_NO_ENCONTRADO`
+        sin escribir. Un término sin `clienteId` nunca sale. Así, un término de otro cliente no sale aunque NEXO deje de filtrar por NIT
+        (mientras ese término exista en NEXO, la consulta de control lo delata).
       security:
         - bearer: []
       parameters:

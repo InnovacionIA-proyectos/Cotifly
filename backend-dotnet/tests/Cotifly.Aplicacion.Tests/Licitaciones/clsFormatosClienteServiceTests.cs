@@ -22,6 +22,14 @@ public sealed class clsFormatosClienteServiceTests
 
     private readonly clsLoggerFalso<clsFormatosClienteService> _logger = new();
 
+    public clsFormatosClienteServiceTests()
+    {
+        // La consulta de control de un NEXO que filtra por NIT no trae términos de cliente.
+        _nexo.ObtenerDiccionarioClienteAsync(Arg.Any<Guid>(), clsFormatosClienteService.NitDeControl, Arg.Any<clsFiltroDiccionarioCliente?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(clsResultado<IReadOnlyList<clsTerminoCliente>>.Exito([]));
+    }
+
     private clsFormatosClienteService Servicio() => new(_nexo, _logger);
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

@@ -21,6 +21,14 @@ public sealed class clsDiccionarioClienteEscrituraServiceTests
     private readonly IClsImportacionExcelNexo _nexo = Substitute.For<IClsImportacionExcelNexo>();
     private readonly clsLoggerFalso<clsFormatosClienteService> _logger = new();
 
+    public clsDiccionarioClienteEscrituraServiceTests()
+    {
+        // La consulta de control de un NEXO que filtra por NIT no trae términos de cliente.
+        _nexo.ObtenerDiccionarioClienteAsync(Arg.Any<Guid>(), clsFormatosClienteService.NitDeControl, Arg.Any<clsFiltroDiccionarioCliente?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(clsResultado<IReadOnlyList<clsTerminoCliente>>.Exito([]));
+    }
+
     private clsFormatosClienteService Servicio() => new(_nexo, _logger);
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -232,6 +240,100 @@ public sealed class clsDiccionarioClienteEscrituraServiceTests
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.NexoNoDisponible);
         await _nexo.DidNotReceiveWithAnyArgs().EditarTerminoClienteAsync(default, default, default!, Ct);
+    }
+
+    // --- Pertenencia al NIT: consulta de control ---
+
+    private void ControlDevuelve(params clsTerminoCliente[] terminos) =>
+        _nexo.ObtenerDiccionarioClienteAsync(Arg.Any<Guid>(), clsFormatosClienteService.NitDeControl, Arg.Any<clsFiltroDiccionarioCliente?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(clsResultado<IReadOnlyList<clsTerminoCliente>>.Exito(terminos));
+
+    [Fact]
+    public async Task SiNexoIgnoraElNitYSoloHayTerminosDeUnClienteAjenoNoSeMuestranNiSeEditanNiSeBorran()
+    {
+        // NEXO responde lo mismo con cualquier NIT: el único término de cliente (de otro cliente) sale también en el control.
+        var ajeno = Termino(Guid.NewGuid(), _cliente, "Mula ajena");
+        var general = Termino(Guid.NewGuid(), null);
+        ListarDevuelve(general, ajeno);
+        ControlDevuelve(ajeno);
+
+        var consulta = await Servicio().ConsultarDiccionarioAsync(_usuario, Nit, null, null, Ct);
+        var editado = await Servicio().EditarTerminoAsync(_usuario, ajeno.Id, Entrada(), Ct);
+        var borrado = await Servicio().EliminarTerminoAsync(_usuario, ajeno.Id, Nit, Ct);
+
+        consulta.Valor.Terminos.Should().ContainSingle().Which.Id.Should().Be(general.Id);
+        editado.Error.Codigo.Should().Be(clsCodigosError.TerminoNoEncontrado);
+        borrado.Error.Codigo.Should().Be(clsCodigosError.TerminoNoEncontrado);
+        await _nexo.DidNotReceiveWithAnyArgs().EditarTerminoClienteAsync(default, default, default!, Ct);
+        await _nexo.DidNotReceiveWithAnyArgs().EliminarTerminoClienteAsync(default, default, Ct);
+        _logger.Registros.Should().Contain(r => r.Nivel == LogLevel.Warning);
+    }
+
+    [Fact]
+    public async Task LaConsultaDeControlVaSinGeneralesYConElNitDeControl()
+    {
+        var id = Guid.NewGuid();
+        ListarDevuelve(Termino(id, _cliente));
+        _nexo.EliminarTerminoClienteAsync(_usuario, id, Arg.Any<CancellationToken>()).Returns(clsResultado<bool>.Exito(true));
+
+        await Servicio().EliminarTerminoAsync(_usuario, id, Nit, Ct);
+
+        await _nexo.Received(1).ObtenerDiccionarioClienteAsync(_usuario, clsFormatosClienteService.NitDeControl,
+            Arg.Is<clsFiltroDiccionarioCliente?>(f => !f!.IncluirGenerales), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task UnControlConSoloGeneralesNoBloqueaLosTerminosDelCliente()
+    {
+        // Un NEXO que ignora incluirGenerales pero sí filtra por NIT devuelve generales en el control: no es señal de fuga.
+        var id = Guid.NewGuid();
+        ListarDevuelve(Termino(id, _cliente));
+        ControlDevuelve(Termino(Guid.NewGuid(), null));
+
+        var consulta = await Servicio().ConsultarDiccionarioAsync(_usuario, Nit, null, null, Ct);
+
+        consulta.Valor.Terminos.Should().ContainSingle(t => t.Id == id);
+    }
+
+    [Fact]
+    public async Task UnControlConUnTerminoSinClienteIdLeidoTambienCierra()
+    {
+        var id = Guid.NewGuid();
+        ListarDevuelve(Termino(id, _cliente));
+        ControlDevuelve(Termino(Guid.NewGuid(), null, clienteIdLeido: false));
+
+        var editado = await Servicio().EditarTerminoAsync(_usuario, id, Entrada(), Ct);
+
+        editado.Error.Codigo.Should().Be(clsCodigosError.TerminoNoEncontrado);
+    }
+
+    [Fact]
+    public async Task SiLaConsultaDeControlFallaNoSeEscribe()
+    {
+        var id = Guid.NewGuid();
+        ListarDevuelve(Termino(id, _cliente));
+        _nexo.ObtenerDiccionarioClienteAsync(Arg.Any<Guid>(), clsFormatosClienteService.NitDeControl, Arg.Any<clsFiltroDiccionarioCliente?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(clsResultado<IReadOnlyList<clsTerminoCliente>>.Fallo(new clsErrorDominio(clsCodigosError.NexoNoDisponible, "caído")));
+
+        var borrado = await Servicio().EliminarTerminoAsync(_usuario, id, Nit, Ct);
+
+        borrado.Error.Codigo.Should().Be(clsCodigosError.NexoNoDisponible);
+        await _nexo.DidNotReceiveWithAnyArgs().EliminarTerminoClienteAsync(default, default, Ct);
+    }
+
+    [Fact]
+    public async Task SinTerminosDeClienteNoHaceFaltaLaConsultaDeControl()
+    {
+        var general = Guid.NewGuid();
+        ListarDevuelve(Termino(general, null));
+
+        var editado = await Servicio().EditarTerminoAsync(_usuario, general, Entrada(), Ct);
+
+        editado.Error.Codigo.Should().Be(clsCodigosError.TerminoGeneralNoEditable);
+        await _nexo.DidNotReceive().ObtenerDiccionarioClienteAsync(Arg.Any<Guid>(), clsFormatosClienteService.NitDeControl,
+            Arg.Any<clsFiltroDiccionarioCliente?>(), Arg.Any<CancellationToken>());
     }
 
     // --- Borrar ---

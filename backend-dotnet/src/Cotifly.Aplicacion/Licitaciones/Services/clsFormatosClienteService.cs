@@ -101,6 +101,12 @@ public sealed partial class clsFormatosClienteService(IClsImportacionExcelNexo i
     public const string MensajeTerminoGeneral =
         "Este término es general (aplica a todos los clientes): no se puede editar ni borrar desde Cotifly.";
 
+    /// <summary>
+    /// NIT de la consulta de control del diccionario: letras que ningún cliente ni prospecto tiene como NIT. Con él, un NEXO que filtra por
+    /// NIT no devuelve ningún término de cliente.
+    /// </summary>
+    public const string NitDeControl = "COTIFLYSINCLIENTE";
+
     public const string MensajeClienteRequerido = "Indica el NIT del cliente de la licitación.";
 
     public const string MensajeRecetaRequerida = "Envía la receta de la lectura que confirmaste.";
@@ -197,9 +203,9 @@ public sealed partial class clsFormatosClienteService(IClsImportacionExcelNexo i
         }
 
         var nit = string.IsNullOrWhiteSpace(nitCliente) ? null : nitCliente;
-        var terminos = await importacion.ObtenerDiccionarioClienteAsync(
+        var terminos = await VisiblesAsync(
             usuarioId, nit, new clsFiltroDiccionarioCliente(tipo, q, SoloActivos: false, IncluirGenerales: true), cancellationToken);
-        return terminos.EsFallo ? terminos.Error : new clsConsultaDiccionarioCliente(Visibles(terminos.Valor, conNit: nit is not null));
+        return terminos.EsFallo ? terminos.Error : new clsConsultaDiccionarioCliente(terminos.Valor);
     }
 
     public async Task<clsResultado<clsOpcionesDiccionarioCliente>> ObtenerOpcionesDiccionarioAsync(
@@ -281,24 +287,55 @@ public sealed partial class clsFormatosClienteService(IClsImportacionExcelNexo i
 
     /// <summary>
     /// Los términos que Cotifly puede mostrar (y editar). Sin NIT, NEXO responde los de todos los clientes: solo salen los generales. Con NIT,
-    /// los generales y los del cliente; si la respuesta trae términos de más de un cliente, NEXO no filtró por el NIT y solo salen los
-    /// generales. Un término sin <c>clienteId</c> leído nunca sale: falla cerrado ante un cambio de forma de NEXO.
+    /// los generales y los del cliente, pero solo si está demostrado que NEXO filtró por el NIT; si no, solo los generales (falla cerrado).
     /// </summary>
-    private IReadOnlyList<clsTerminoCliente> Visibles(IReadOnlyList<clsTerminoCliente> terminos, bool conNit)
+    /// <remarks>
+    /// Los términos de NEXO no traen el NIT de su cliente (solo su <c>clienteId</c> local, que Cotifly no puede cruzar con el NIT), así que la
+    /// pertenencia se demuestra por el comportamiento de NEXO en la misma consulta:
+    /// <list type="bullet">
+    /// <item>la respuesta no puede traer términos de más de un cliente;</item>
+    /// <item>una consulta de control con un NIT que no es de ningún cliente (<see cref="NitDeControl"/>) y sin generales debe volver sin
+    /// términos de cliente. Si NEXO ignorara el NIT, devolvería ahí los mismos términos ajenos que en la consulta del comercial.</item>
+    /// </list>
+    /// Un término sin <c>clienteId</c> leído nunca sale. Si la consulta de control falla, falla toda la operación.
+    /// </remarks>
+    private async Task<clsResultado<IReadOnlyList<clsTerminoCliente>>> VisiblesAsync(
+        Guid usuarioId, string? nit, clsFiltroDiccionarioCliente filtro, CancellationToken cancellationToken)
     {
-        if (!conNit)
+        var terminos = await importacion.ObtenerDiccionarioClienteAsync(usuarioId, nit, filtro, cancellationToken);
+        if (terminos.EsFallo)
         {
-            return [.. terminos.Where(t => t.EsGeneral)];
+            return terminos.Error;
         }
 
-        var clientes = terminos.Where(EsDeUnCliente).Select(t => t.ClienteId).Distinct().Count();
+        IReadOnlyList<clsTerminoCliente> generales = [.. terminos.Valor.Where(t => t.EsGeneral)];
+        var delCliente = terminos.Valor.Where(EsDeUnCliente).ToList();
+        if (nit is null || delCliente.Count == 0)
+        {
+            return clsResultado<IReadOnlyList<clsTerminoCliente>>.Exito(generales);
+        }
+
+        var clientes = delCliente.Select(t => t.ClienteId).Distinct().Count();
         if (clientes > 1)
         {
             LogDiccionarioSinFiltrar(logger, clientes);
-            return [.. terminos.Where(t => t.EsGeneral)];
+            return clsResultado<IReadOnlyList<clsTerminoCliente>>.Exito(generales);
         }
 
-        return [.. terminos.Where(t => t.EsGeneral || EsDeUnCliente(t))];
+        var control = await importacion.ObtenerDiccionarioClienteAsync(
+            usuarioId, NitDeControl, new clsFiltroDiccionarioCliente(SoloActivos: false, IncluirGenerales: false), cancellationToken);
+        if (control.EsFallo)
+        {
+            return control.Error;
+        }
+
+        if (control.Valor.Any(t => !t.EsGeneral))
+        {
+            LogDiccionarioSinFiltroPorNit(logger);
+            return clsResultado<IReadOnlyList<clsTerminoCliente>>.Exito(generales);
+        }
+
+        return clsResultado<IReadOnlyList<clsTerminoCliente>>.Exito([.. terminos.Valor.Where(t => t.EsGeneral || EsDeUnCliente(t))]);
     }
 
     private static bool EsDeUnCliente(clsTerminoCliente termino) => termino.ClienteIdLeido && termino.ClienteId is not null;
@@ -309,14 +346,14 @@ public sealed partial class clsFormatosClienteService(IClsImportacionExcelNexo i
     /// </summary>
     private async Task<clsErrorDominio?> TerminoDelClienteAsync(Guid usuarioId, Guid terminoId, string nitCliente, CancellationToken cancellationToken)
     {
-        var lista = await importacion.ObtenerDiccionarioClienteAsync(
+        var lista = await VisiblesAsync(
             usuarioId, nitCliente, new clsFiltroDiccionarioCliente(SoloActivos: false, IncluirGenerales: true), cancellationToken);
         if (lista.EsFallo)
         {
             return lista.Error;
         }
 
-        var termino = Visibles(lista.Valor, conNit: true).FirstOrDefault(t => t.Id == terminoId);
+        var termino = lista.Valor.FirstOrDefault(t => t.Id == terminoId);
         return termino switch
         {
             null => new clsErrorDominio(clsCodigosError.TerminoNoEncontrado, MensajeTerminoNoEncontrado),
@@ -385,6 +422,10 @@ public sealed partial class clsFormatosClienteService(IClsImportacionExcelNexo i
     [LoggerMessage(Level = LogLevel.Warning,
         Message = "NEXO respondió el diccionario con términos de {Clientes} clientes al pedirlo por NIT: solo se muestran los generales.")]
     private static partial void LogDiccionarioSinFiltrar(ILogger logger, int clientes);
+
+    [LoggerMessage(Level = LogLevel.Warning,
+        Message = "NEXO respondió términos de cliente a la consulta de control del diccionario (no filtra por NIT): solo se muestran los generales.")]
+    private static partial void LogDiccionarioSinFiltroPorNit(ILogger logger);
 
     /// <summary><c>ERROR_INTERNO</c> si no hay comercial (la política lo garantiza: sería un error de Cotifly, nunca del cliente).</summary>
     private static clsResultado<T>? SinComercial<T>(Guid usuarioId) =>

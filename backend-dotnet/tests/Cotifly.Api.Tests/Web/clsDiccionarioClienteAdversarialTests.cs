@@ -105,12 +105,10 @@ public sealed class clsDiccionarioClienteAdversarialTests : IDisposable
     }
 
     /// <summary>
-    /// Si NEXO dejara de filtrar por NIT y en el diccionario solo hubiera términos de UN cliente (otro), la respuesta trae un único
-    /// cliente y la heurística "más de un cliente = no filtró" no lo detecta: el término ajeno se muestra y se edita como si fuera del NIT
-    /// pedido. Hoy NEXO QA filtra (no es explotable), pero la garantía de la documentación ("un término de otro cliente nunca sale") no se
-    /// cumple en este caso.
+    /// Si NEXO dejara de filtrar por NIT y en el diccionario solo hubiera términos de UN cliente (otro), la respuesta trae un único cliente;
+    /// la consulta de control con un NIT sin cliente devuelve ese mismo término y delata que NEXO no filtró: no se muestra ni se edita.
     /// </summary>
-    [Fact(Skip = "Observación del validador (rojo confirmado): con un NEXO que no filtra y un solo cliente con términos, el término ajeno se ve y se edita.")]
+    [Fact]
     public async Task SiNexoNoFiltraYSoloHayTerminosDeOtroClienteNoSeEditan()
     {
         var sesion = await ComercialAsync();
@@ -124,6 +122,55 @@ public sealed class clsDiccionarioClienteAdversarialTests : IDisposable
         editar.StatusCode.Should().Be(HttpStatusCode.NotFound);
         var json = await VerificarContratoAsync(consulta, Ruta, HttpMethod.Get, HttpStatusCode.OK);
         json.GetProperty("terminos").EnumerateArray().Should().OnlyContain(t => t.GetProperty("general").GetBoolean());
+    }
+
+    [Fact]
+    public async Task SiNexoNoFiltraYSoloHayTerminosDeOtroClienteNoSeBorran()
+    {
+        var sesion = await ComercialAsync();
+        var ajeno = TerminoDe(NitB, "Mula ajena");
+        _nexo.DiccionarioIgnoraNit = true;
+
+        using var borrar = await _api.EnviarAsync(HttpMethod.Delete, $"{Ruta}/{ajeno}?nit_cliente={NitANormalizado}", sesion.Access);
+
+        borrar.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await VerificarErrorNegocioAsync(borrar, "TERMINO_NO_ENCONTRADO");
+        _nexo.Diccionario.Should().Contain(t => t.Id == ajeno);
+        _nexo.Peticiones.Should().NotContain(p => p.Metodo == HttpMethod.Delete);
+    }
+
+    [Theory]
+    [InlineData("900.555.111-2")]
+    [InlineData("900555111")]
+    [InlineData(" 900 555 111-7 ")]
+    public async Task ElNitEnCualquierFormatoVeYEditaLosTerminosDeSuCliente(string nit)
+    {
+        var sesion = await ComercialAsync();
+        var mio = TerminoDe(NitA, "Mula mía");
+
+        using var consulta = await _api.EnviarAsync(HttpMethod.Get, $"{Ruta}?nit_cliente={Uri.EscapeDataString(nit)}", sesion.Access);
+        using var editar = await _api.EnviarAsync(HttpMethod.Put, $"{Ruta}/{mio}", sesion.Access, Cuerpo(nit: nit, termino: "Mula mía editada"));
+
+        var json = await VerificarContratoAsync(consulta, Ruta, HttpMethod.Get, HttpStatusCode.OK);
+        json.GetProperty("terminos").EnumerateArray().Should().Contain(t => t.GetProperty("id").GetGuid() == mio && !t.GetProperty("general").GetBoolean());
+        editar.StatusCode.Should().Be(HttpStatusCode.OK);
+        _nexo.Diccionario.Single(t => t.Id == mio).Termino.Should().Be("Mula mía editada");
+    }
+
+    [Fact]
+    public async Task UnTerminoSinDatosDeClienteNoSeMuestraNiSeEdita()
+    {
+        var sesion = await ComercialAsync();
+        var mio = TerminoDe(NitA, "Mula mía");
+        _nexo.DiccionarioSinClienteId = true;
+
+        using var consulta = await _api.EnviarAsync(HttpMethod.Get, $"{Ruta}?nit_cliente={NitANormalizado}", sesion.Access);
+        using var editar = await _api.EnviarAsync(HttpMethod.Put, $"{Ruta}/{mio}", sesion.Access, Cuerpo(termino: "Cambiada"));
+
+        var json = await VerificarContratoAsync(consulta, Ruta, HttpMethod.Get, HttpStatusCode.OK);
+        json.GetProperty("terminos").GetArrayLength().Should().Be(0, "sin clienteId no se sabe si es general ni de quién es");
+        editar.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        _nexo.Diccionario.Single(t => t.Id == mio).Termino.Should().Be("Mula mía");
     }
 
     // --- Términos generales: por ninguna vía ---
