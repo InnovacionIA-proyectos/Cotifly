@@ -25,7 +25,8 @@ namespace Cotifly.Infraestructura.Cubicacion.Services;
 /// <item>Logs con código estable: <see cref="EventoPendiente"/>, <see cref="EventoCompletada"/>, <see cref="EventoFallida"/> y
 /// <see cref="EventoLleno"/>. Un error del cubicador (un 400, una caída) deja la cubicación <c>fallida</c> con su código; una excepción
 /// inesperada, <c>fallida</c> con <c>CUBICADOR_NO_DISPONIBLE</c> (el detalle solo en el log).</item>
-/// <item>La captura y el recálculo son síncronos.</item>
+/// <item>La captura del formulario y el recálculo de camiones llaman al cubicador en la misma petición; la licitación cubica sus rutas
+/// en segundo plano con su propia cola (<c>clsCotizacionSolicitud.CubicacionEnCurso</c>), no con este servicio.</item>
 /// </list>
 /// </remarks>
 public sealed class clsCubicacionRapidaService(
