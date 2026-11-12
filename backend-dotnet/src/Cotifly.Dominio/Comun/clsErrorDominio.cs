@@ -3,7 +3,7 @@ namespace Cotifly.Dominio.Comun;
 /// <summary>
 /// Error de negocio con código estable (ej. <c>PRECIO_INVALIDO</c>, <c>MARGEN_LINEA_DESCONOCIDA</c>).
 /// Hacia afuera se serializa como <c>{"error": {"codigo", "mensaje", "detalle?"}}</c>
-/// (esquema ErrorNegocio del contrato #17).
+/// (esquema ErrorNegocio del contrato de la API).
 /// </summary>
 public sealed record clsErrorDominio
 {

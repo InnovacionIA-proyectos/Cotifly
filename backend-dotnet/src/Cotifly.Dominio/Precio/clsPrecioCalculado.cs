@@ -1,7 +1,7 @@
 namespace Cotifly.Dominio.Precio;
 
 /// <summary>
-/// Resultado de <see cref="clsCalculadoraPrecio"/> (mismos campos que <c>ResultadoPrecio</c> del Python).
+/// Resultado de <see cref="clsCalculadoraPrecio"/>.
 /// </summary>
 /// <param name="Precio">Precio al cliente en pesos enteros.</param>
 /// <param name="Costo">Costo recibido.</param>

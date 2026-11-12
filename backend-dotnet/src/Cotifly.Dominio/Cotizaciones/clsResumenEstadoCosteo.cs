@@ -1,14 +1,14 @@
 namespace Cotifly.Dominio.Cotizaciones;
 
 /// <summary>
-/// Resumen del estado del costeo (HU-021, <c>docs/database/CAMBIOS_BACKEND_REESTRUCTURACION_COTIZACIONES.md</c> §9.2, ADR-019): la
+/// Resumen del estado del costeo (<c>docs/database/CAMBIOS_BACKEND_REESTRUCTURACION_COTIZACIONES.md</c> §9.2, ADR-019): la
 /// MISMA regla para la ruta (resume a sus camiones) y para la cabecera (resume a sus rutas). Es "el más atrasado":
 /// <list type="number">
 /// <item>Sin elementos, o todos con estado <c>NULL</c> → <c>NULL</c> (no pasa por Nexo: cotización del chat o todavía sin camiones).</item>
 /// <item>Un <c>NULL</c> mezclado con estados cuenta como <see cref="EstadoCosteo.PendienteEnvio"/> si la solicitud todavía no se envió a
 /// Nexo, y como <see cref="EstadoCosteo.PendienteCosteo"/> si ya se envió (tiene <c>solicitudNexoId</c>): un camión sin estado dentro de
-/// una solicitud enviada no corta el polling ni permite reenviarla (regla del coordinador del 2026-10-08, ADR-019).</item>
-/// <item>Los <see cref="EstadoCosteo.Descartada"/> y (HU-028.1, #183) los <see cref="EstadoCosteo.Rechazada"/> se ignoran. Si no queda
+/// una solicitud enviada no corta el polling ni permite reenviarla (ADR-019).</item>
+/// <item>Los <see cref="EstadoCosteo.Descartada"/> y los <see cref="EstadoCosteo.Rechazada"/> se ignoran. Si no queda
 /// ninguno: <c>rechazada</c> si hay al menos uno rechazado (una ruta con todos sus camiones rechazados, o rechazados y descartados), si no
 /// <c>descartada</c>. La cabecera no usa ese <c>rechazada</c> tal cual: ver <see cref="clsCotizacionSolicitud.EstadoCabecera"/>.</item>
 /// <item>Si todos los que quedan tienen el mismo estado, se toma ese.</item>

@@ -3,7 +3,7 @@ using Cotifly.Dominio.Comun;
 namespace Cotifly.Dominio.Cotizaciones;
 
 /// <summary>
-/// Datos del formulario ampliado que viajan a Nexo en <c>POST /api/captura-solicitudes</c> (HU-005.3, HU-005.8): el encabezado
+/// Datos del formulario ampliado que viajan a Nexo en <c>POST /api/captura-solicitudes</c>: el encabezado
 /// de la solicitud y su única línea (una cotización de Cotifly = una solicitud de Nexo con una línea, ADR-015). Los límites son
 /// los de <c>CapturaSolicitudRequest</c>/<c>CapturaLineaRequest</c> de Nexo, para que un formulario válido en Cotifly no lo
 /// rechace Nexo por tamaño o rango. Los catálogos cerrados (<see cref="TipoVehiculo"/>, <see cref="Carroceria"/>,
@@ -20,7 +20,7 @@ public sealed record clsSolicitudCosteo
     public const int MaximoPosiciones = 200;
 
     /// <summary>
-    /// #278 (DU §8): tope de NEXO (y del cubicador) de unidades en total por línea: la suma de <c>cantidad</c> de las mercancías CON
+    /// Tope de NEXO (y del cubicador, DU §8) de unidades en total por línea: la suma de <c>cantidad</c> de las mercancías CON
     /// MEDIDAS (las que puede usar el cubicador y, si todas las de la ruta las traen, viajan como <c>posiciones[]</c>; en una ruta mixta no
     /// viajan, pero la regla es la misma para no depender de las demás mercancías). Si se pasa, <c>CUBICACION_DEMASIADO_GRANDE</c>. A
     /// diferencia de <see cref="MaximoPosiciones"/>, que cuenta todas las mercancías de la ruta.
@@ -44,7 +44,7 @@ public sealed record clsSolicitudCosteo
     /// <summary>Código de Nexo (va en el detalle): el peso difiere más del 1 % de la suma de las posiciones.</summary>
     public const string PesoInconsistente = "PESO_INCONSISTENTE";
 
-    /// <summary>HU-030.1 (#184): nombre en el contrato del peso total con tara de una ruta de contenedor.</summary>
+    /// <summary>Nombre en el contrato del peso total con tara de una ruta de contenedor.</summary>
     public const string CampoPesoConTara = "peso_con_tara_kg";
 
     public required TipoSolicitud Tipo { get; init; }
@@ -78,7 +78,7 @@ public sealed record clsSolicitudCosteo
     public decimal? PesoKg { get; init; }
     public decimal? ValorMercancia { get; init; }
 
-    /// <summary>HU-030.1 (#184): peso total con tara (ver <see cref="clsLineaSolicitudCosteo.PesoConTaraKg"/>).</summary>
+    /// <summary>Peso total con tara (ver <see cref="clsLineaSolicitudCosteo.PesoConTaraKg"/>).</summary>
     public decimal? PesoConTaraKg { get; init; }
 
     /// <summary>Posiciones de cubicaje (bultos), en el orden del formulario.</summary>
@@ -125,8 +125,8 @@ public sealed record clsSolicitudCosteo
     }
 
     /// <summary>
-    /// Validaciones condicionales de la captura (G3, HU-013.10): <c>clase_contenedor</c> obligatoria con <c>clase_viaje = Contenedor</c>,
-    /// opcional y solo de la lista provisional G15 con <c>Extradimensionado</c> (HU-021.15, #297), y no aplica con las demás; y
+    /// Validaciones condicionales de la captura: <c>clase_contenedor</c> obligatoria con <c>clase_viaje = Contenedor</c>,
+    /// opcional y solo de la lista provisional G15 con <c>Extradimensionado</c>, y no aplica con las demás; y
     /// <c>valor_aprovisionamiento</c> solo con una <c>ciudad_levante_contenedor</c> distinta del origen (Nexo lo descarta en otro caso). La
     /// regla es la de cada fila de una licitación (<see cref="clsLineaSolicitudCosteo.ErroresCondicionales"/>).
     /// </summary>
@@ -134,7 +134,7 @@ public sealed record clsSolicitudCosteo
         ALinea().ErroresCondicionales() is [var primero, ..] ? new clsErrorDominio(CodigoError, primero.Mensaje) : null;
 
     /// <summary>
-    /// #278 (DU §8): ¿las mercancías con medidas suman más de <see cref="MaximoUnidades"/> unidades? Las que no traen medidas nunca van al
+    /// ¿Las mercancías con medidas suman más de <see cref="MaximoUnidades"/> unidades? Las que no traen medidas nunca van al
     /// cubicador ni viajan como posiciones a NEXO, así que no cuentan; las que sí, cuentan siempre (también en una ruta mixta, donde no
     /// viajan como posiciones).
     /// </summary>
@@ -145,7 +145,7 @@ public sealed record clsSolicitudCosteo
     }
 
     /// <summary>
-    /// #278 (DU §5): el campo que falta si solo viene una de las horas (<c>horas_cargue</c> o <c>horas_descargue</c>); <c>null</c> si
+    /// El campo que falta si solo viene una de las horas (<c>horas_cargue</c> o <c>horas_descargue</c>); <c>null</c> si
     /// vienen las dos o ninguna. NEXO las exige en pareja.
     /// </summary>
     public static string? HoraFaltante(decimal? cargue, decimal? descargue) =>
@@ -209,7 +209,7 @@ public sealed record clsSolicitudCosteo
             Tipo = encabezado.Tipo,
             Deadline = encabezado.Deadline,
 
-            // G5 (HU-013.11): las horas de la línea, si las trae, son las que viajan a Nexo; si no, las del encabezado.
+            // Las horas de la línea, si las trae, son las que viajan a Nexo; si no, las del encabezado.
             HorasCargue = linea.HorasCargue ?? encabezado.HorasCargue,
             HorasDescargue = linea.HorasDescargue ?? encabezado.HorasDescargue,
             Notas = encabezado.Notas,
@@ -242,7 +242,7 @@ public sealed record clsSolicitudCosteo
     /// <summary>
     /// Regla de peso de Cotifly sobre la CARGA (sin tara): el peso de la línea es <see cref="PesoKg"/> o, si falta, la suma de las
     /// posiciones; debe ser &gt; 0 (<see cref="PesoRequerido"/>) y, si hay posiciones con peso, no diferir de su suma más del 1 % en
-    /// ningún sentido (<see cref="PesoInconsistente"/>). #250 (DU §8): Nexo ya no exige esa simetría (<c>peso</c> es el total con tara y
+    /// ningún sentido (<see cref="PesoInconsistente"/>). Nexo no exige esa simetría (DU §8: <c>peso</c> es el total con tara y
     /// solo rechaza una suma de posiciones mayor que <c>peso × 1,01</c>); esta regla propia es más estricta que la de Nexo y, al cumplirse,
     /// la garantiza sobre lo que viaja, porque el peso enviado nunca es menor que la carga (<see cref="clsLineaSolicitud.PesoLineaNexo"/>).
     /// Se valida antes de guardar y antes de cada reenvío.
@@ -283,9 +283,9 @@ public sealed record clsSolicitudCosteo
 /// <summary>Pieza o bulto a transportar (<c>CapturaPosicionRequest</c> de Nexo), dimensiones en centímetros y peso en kilogramos.</summary>
 /// <remarks>
 /// <paramref name="Descripcion"/> se guarda como <c>nombreMercancia</c>. <paramref name="CodigoMercancia"/> es el código estable del
-/// catálogo del cubicador (HU-023: lo que viaja en <c>POST /recomendaciones</c> y lo que se guarda, HU-023.3). <paramref name="IdTipoMercancia"/>
-/// es el uuid del catálogo que mandaba el contrato anterior (<c>id_tipo_mercancia</c>, obsoleto): la captura lo traduce al código con
-/// el catálogo y ya no se guarda (el script <c>02</c> quitó la columna).
+/// catálogo del cubicador (lo que viaja en <c>POST /recomendaciones</c> y lo que se guarda). <paramref name="IdTipoMercancia"/>
+/// es el uuid del catálogo (<c>id_tipo_mercancia</c>, obsoleto): la captura lo traduce al código con
+/// el catálogo y no se guarda (script <c>02</c>).
 /// </remarks>
 public sealed record clsPosicionCarga(
     string? Descripcion, int Cantidad, decimal LargoCm, decimal AnchoCm, decimal AltoCm, decimal? PesoKg, Guid? IdTipoMercancia = null,
@@ -309,10 +309,10 @@ public sealed record clsPosicionCarga(
     /// <summary>
     /// Primer error de la mercancía número <paramref name="numero"/> (1 = la primera) con el subcampo que lo causa
     /// (<c>descripcion</c>, <c>codigo_mercancia</c>, <see cref="CampoCantidad"/>, <c>largo_cm</c>, <c>ancho_cm</c>, <c>alto_cm</c> o
-    /// <c>peso_kg</c>), o <c>null</c>. D6 (E2E 2026-10-16): el mensaje nombra la mercancía en lenguaje natural con el número base 1
-    /// ("Mercancía 2: …") y nunca una ruta con índice (<c>posiciones[2]</c>), que chocaba con el campo base 0 del error; el campo con índice
+    /// <c>peso_kg</c>), o <c>null</c>. El mensaje nombra la mercancía en lenguaje natural con el número base 1
+    /// ("Mercancía 2: …") y nunca una ruta con índice (<c>posiciones[2]</c>), que chocaría con el campo base 0 del error; el campo con índice
     /// lo arma quien reporta (<c>mercancias[i]</c>, base 0, como el resto de errores de la captura). La misma regla la usa
-    /// "Calcular cubicaje" (D1) antes de llamar al cubicador.
+    /// "Calcular cubicaje" antes de llamar al cubicador.
     /// </summary>
     public clsErrorPosicion? PrimerError(int numero)
     {
@@ -328,14 +328,14 @@ public sealed record clsPosicionCarga(
                 : null)
             ?? ErrorMedidas(prefijo, Con)
             ?? Con("peso_kg", clsSolicitudCosteo.Rango("peso_kg", PesoKg, 0m, clsSolicitudCosteo.MaximoPeso))
-            // HU-023 (#176): la mercancía que viaja al cubicador (con tipo de mercancía) exige peso por unidad mayor que 0. También rige al
-            // revalidar lo guardado (reintento, re-solicitud): una ruta anterior a la regla con tipo de mercancía y sin peso no se reenvía y
-            // responde este mensaje; se corrige con una versión nueva (re-solicitar con la carga completa). Auditoría B2: se deja así a
-            // propósito (relajarla solo al revalidar exige llevar una bandera por las tres rutas de validación).
+            // La mercancía que viaja al cubicador (con tipo de mercancía) exige peso por unidad mayor que 0. También rige al
+            // revalidar lo guardado (reintento, re-solicitud): una ruta guardada con tipo de mercancía y sin peso no se reenvía y
+            // responde este mensaje; se corrige con una versión nueva (re-solicitar con la carga completa). Es a propósito: relajarla
+            // solo al revalidar exigiría llevar una bandera por las tres rutas de validación.
             ?? (VaAlCubicador() && PesoKg is not > 0m
                 ? new clsErrorPosicion("peso_kg", $"{prefijo}el peso por unidad (peso_kg) debe ser mayor que 0: el cubicador lo exige.")
                 : null)
-            // #278 (DU §5 y §8): se exige a toda mercancía con medidas, porque el cubicador las usa y, si todas las de la ruta las traen,
+            // Se exige (DU §5 y §8) a toda mercancía con medidas, porque el cubicador las usa y, si todas las de la ruta las traen,
             // viajan a NEXO como posiciones, donde pesoKg es obligatorio (en una ruta mixta no viajan, pero la regla no cambia). Es el peso
             // de UNA unidad: NEXO y el cubicador lo multiplican por la cantidad.
             ?? (ConMedidas && PesoKg is not > 0m
@@ -344,29 +344,29 @@ public sealed record clsPosicionCarga(
                 : null);
     }
 
-    /// <summary>¿La posición viaja al cubicador? (trae su tipo de mercancía: el código o, en la transición, el uuid anterior).</summary>
+    /// <summary>¿La posición viaja al cubicador? (trae su tipo de mercancía: el código o el uuid obsoleto).</summary>
     public bool VaAlCubicador() => !string.IsNullOrWhiteSpace(CodigoMercancia) || IdTipoMercancia is { } id && id != Guid.Empty;
 
-    /// <summary>HU-032 (#197): ¿no trae ninguna medida? (el contrato manda 0 cuando <c>largo_cm</c>, <c>ancho_cm</c> y <c>alto_cm</c> no vienen).</summary>
+    /// <summary>¿No trae ninguna medida? (el contrato manda 0 cuando <c>largo_cm</c>, <c>ancho_cm</c> y <c>alto_cm</c> no vienen).</summary>
     public bool SinMedidas => LargoCm == 0m && AnchoCm == 0m && AltoCm == 0m;
 
-    /// <summary>HU-032 (#197): ¿trae las tres medidas? Solo una mercancía con medidas viaja a Nexo como posición.</summary>
+    /// <summary>¿Trae las tres medidas? Solo una mercancía con medidas viaja a Nexo como posición.</summary>
     public bool ConMedidas => LargoCm > 0m && AnchoCm > 0m && AltoCm > 0m;
 
     /// <summary>
-    /// HU-032 (#197): ¿se puede cubicar? Trae su tipo de mercancía (código o, en la transición, el uuid), las tres medidas y el peso por
+    /// ¿Se puede cubicar? Trae su tipo de mercancía (código o el uuid obsoleto), las tres medidas y el peso por
     /// unidad mayor que 0: es lo que el cubicador necesita.
     /// </summary>
     public bool EsCubicable => VaAlCubicador() && ConMedidas && PesoKg is > 0m;
 
     /// <summary>
-    /// HU-032 (#197): mercancía "no cubicable" que se acepta: no trae NINGUNA medida ni tipo de mercancía (solo descripción, cantidad o
+    /// Mercancía "no cubicable" que se acepta: no trae NINGUNA medida ni tipo de mercancía (solo descripción, cantidad o
     /// peso). Se guarda con la ruta y no viaja como posición a Nexo; la ruta no se cubica y usa el vehículo elegido.
     /// </summary>
     public bool EsNoCubicable => SinMedidas && !VaAlCubicador();
 
     /// <summary>
-    /// HU-032 (#197): las medidas de la mercancía. Sin ninguna medida y sin tipo de mercancía es una mercancía no cubicable (válida). Con
+    /// Las medidas de la mercancía. Sin ninguna medida y sin tipo de mercancía es una mercancía no cubicable (válida). Con
     /// tipo de mercancía y sin medidas es un error: el comercial escogió la mercancía para cubicarla y el cubicador las necesita (si no las
     /// conoce, quita el código). Medidas parciales (por ejemplo, largo sin ancho) son un dato mal digitado: error en la primera que falta.
     /// Las que vienen deben estar entre <see cref="MedidaMinima"/> y <see cref="MedidaMaxima"/>.
@@ -397,7 +397,7 @@ public sealed record clsPosicionCarga(
 }
 
 /// <summary>
-/// HU-032 (#197): cómo se cubica una ruta según sus mercancías (<see cref="clsLineaSolicitudCosteo.Cubicabilidad"/>).
+/// Cómo se cubica una ruta según sus mercancías (<see cref="clsLineaSolicitudCosteo.Cubicabilidad"/>).
 /// </summary>
 public enum CubicabilidadRuta
 {

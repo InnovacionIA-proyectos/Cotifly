@@ -4,7 +4,7 @@ using Cotifly.Dominio.Comun;
 namespace Cotifly.Dominio.Cotizaciones;
 
 /// <summary>
-/// HU-028 (#186, ADR-021): el comercial edita la solicitud. Todo es editable salvo el cliente (NIT, nombre y origen), el <c>tipo</c>
+/// Edición de la solicitud por el comercial (ADR-021). Todo es editable salvo el cliente (NIT, nombre y origen), el <c>tipo</c>
 /// (spot/licitación) y la línea de negocio de cada ruta; una ruta nueva solo usa una línea que la solicitud ya tiene. El modo lo decide
 /// el estado (<see cref="ModoEdicion"/>).
 /// </summary>
@@ -13,7 +13,7 @@ public sealed partial class clsCotizacionSolicitud
     /// <summary>Motivo de <c>ESTADO_NO_PERMITE</c>: la cotización no nació del formulario de costeo (chat).</summary>
     public const string MotivoEdicionSinFormulario = "SIN_FORMULARIO";
 
-    /// <summary>Motivo de <c>ESTADO_NO_PERMITE</c>: las licitaciones no se editan en esta fase (fase 2 de HU-028).</summary>
+    /// <summary>Motivo de <c>ESTADO_NO_PERMITE</c>: las licitaciones no se editan.</summary>
     public const string MotivoEdicionLicitacion = "LICITACION";
 
     /// <summary>Motivo de <c>ESTADO_NO_PERMITE</c>: un envío a Nexo está en curso (<c>pendiente_envio</c> reciente).</summary>
@@ -26,12 +26,12 @@ public sealed partial class clsCotizacionSolicitud
     /// Cómo se aplica una edición en el estado actual, o <c>ESTADO_NO_PERMITE</c> con su motivo (<c>detalle.motivo</c>):
     /// <list type="number">
     /// <item>sin formulario de costeo (chat): <see cref="MotivoEdicionSinFormulario"/>;</item>
-    /// <item>licitación: <see cref="MotivoEdicionLicitacion"/> (fase 2);</item>
-    /// <item>entregada al cliente o con resultado, o (HU-036.3, #207) finalizada: <see cref="ModoEdicionSolicitud.NuevaVersion"/>;</item>
+    /// <item>licitación: <see cref="MotivoEdicionLicitacion"/>;</item>
+    /// <item>entregada al cliente o con resultado, o finalizada: <see cref="ModoEdicionSolicitud.NuevaVersion"/>;</item>
     /// <item>cubicación en segundo plano en curso o fallida: <see cref="MotivoEdicionCubicacionEnCurso"/>;</item>
     /// <item><c>pendiente_envio</c> reciente (menos de <see cref="EsperaReenvioPendiente"/>): <see cref="MotivoEdicionEnvioEnCurso"/>;</item>
     /// <item>sin <see cref="SolicitudNexoId"/>: <see cref="ModoEdicionSolicitud.EnSitio"/>; con él, <see cref="ModoEdicionSolicitud.Reemplazo"/>
-    /// (también en <c>pendiente_costeo</c>: se pierde el trabajo de la Mesa de Costeo, decisión 6).</item>
+    /// (también en <c>pendiente_costeo</c>: se pierde el trabajo de la Mesa de Costeo).</item>
     /// </list>
     /// </summary>
     public clsResultado<ModoEdicionSolicitud> ModoEdicion(DateTimeOffset ahora)
@@ -47,7 +47,7 @@ public sealed partial class clsCotizacionSolicitud
                 "es una licitación y su edición llega en una fase posterior; mientras tanto, re-solicita el costeo o carga el pliego de nuevo");
         }
 
-        // HU-036.3 (#207, decisión de Sara): la finalizada (precio aceptado) se edita como la entregada, en una versión nueva.
+        // La finalizada (precio aceptado) se edita como la entregada, en una versión nueva.
         if (EntregadaAlCliente || Finalizada)
         {
             return ModoEdicionSolicitud.NuevaVersion;
@@ -103,7 +103,7 @@ public sealed partial class clsCotizacionSolicitud
     }
 
     /// <summary>
-    /// Aplica la edición en sitio o como reemplazo (HU-028), con las reglas ya validadas por el caso de uso (si no se cumplen, lanza):
+    /// Aplica la edición en sitio o como reemplazo, con las reglas ya validadas por el caso de uso (si no se cumplen, lanza):
     /// <list type="number">
     /// <item>el encabezado (deadline y notas; el <c>tipo</c> no cambia) y, si cambia, la moneda con la TRM del día;</item>
     /// <item>las rutas guardadas que no vienen se quitan (con sus camiones, mercancías y conexos); las que vienen conservan su id, su
@@ -161,7 +161,7 @@ public sealed partial class clsCotizacionSolicitud
     }
 
     /// <summary>
-    /// Cabecera de la versión editada <paramref name="folio"/> (<c>-vN</c>, HU-028): la identidad de esta (cliente y comercial) con la
+    /// Cabecera de la versión editada <paramref name="folio"/> (<c>-vN</c>): la identidad de esta (cliente y comercial) con la
     /// moneda de la edición y la TRM del día. Las rutas las registra el caso de uso (<see cref="RegistrarCaptura"/>).
     /// </summary>
     public clsResultado<clsCotizacionSolicitud> CrearVersionEditada(clsFolio folio, string moneda, decimal trmDelDia)
@@ -187,7 +187,7 @@ public sealed partial class clsCotizacionSolicitud
     }
 
     /// <summary>
-    /// Versión editada (HU-028, decisión 3): el margen negociado de cada ruta de <paramref name="anterior"/> se copia a la ruta de esta
+    /// Versión editada: el margen negociado de cada ruta de <paramref name="anterior"/> se copia a la ruta de esta
     /// versión que la edita (<paramref name="rutaAnteriorDe"/>: id de la ruta nueva → id de la ruta original). Las rutas nuevas no tienen.
     /// </summary>
     public void CopiarMargenesNegociadosDe(clsCotizacionSolicitud anterior, IReadOnlyDictionary<Guid, Guid> rutaAnteriorDe)
