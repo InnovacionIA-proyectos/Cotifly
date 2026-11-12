@@ -231,7 +231,7 @@ Base de datos, scripts de esquema y permisos: [03-infraestructura](03-infraestru
 | `Precio/Services/clsProveedorTrmSuperfinanciera` | Infraestructura | Datos abiertos de la Superintendencia Financiera (`Trm:Url`, conjunto `32sa-8pi3`): SoQL `vigenciadesde <= F AND vigenciahasta >= F`, orden descendente, 1 fila, así los fines de semana y festivos reciben la TRM del rango que los cubre. Cliente con nombre `Trm` (`IHttpClientFactory`, se crea por consulta), resiliencia estándar con `Trm:TiempoEsperaSegundos` en total, un tercio por intento y 2 reintentos; fallo → `TRM_NO_DISPONIBLE` con un warning |
 | `Precio/Services/clsProveedorTrmEnCache` | Infraestructura | Decorador singleton registrado como `IClsProveedorTrm`, encima de la cadena: caché por fecha de negocio (America/Bogota): la primera TRM válida del día queda fija hasta las 00:00 del día siguiente (una fecha pasada, 6 horas), registra cada TRM en `clsMemoriaTrm`, consulta compartida por fecha (los simultáneos reciben el mismo resultado, también un fallo) y caché negativa de 20 s |
 
-Diferencias deliberadas con el Python: la línea se resuelve sin tildes ni espacios (la collation `CI_AS` distingue tildes); los textos de `detalle` son los del Python (`(cliente nuevo)`, `(sin registro en SAP TM)`; el de SAP pasó a `Margen propuesto SAP TM (tabla local, actualizado 2026-10-28) para cliente X en OPTN: 13.5%` en HU-042.2, con el valor sin ceros a la derecha) salvo el caso sin BP (`cliente nuevo: sin BP de SAP, no se consulta SAP TM`, ADR-004) y los de SAP no configurado o no disponible; los márgenes del ajuste y su diferencia se redondean a 4 decimales (escala de `DECIMAL(9,4)`) y no a 6; el margen negociado se valida por método (el Python no validaba, código `AJUSTE_MARGEN_INVALIDO`) y un motivo vacío se registra como `Ajuste manual del comercial`; empates exactos de medio peso (ver arriba).
+Reglas de resolución: la línea se resuelve sin tildes ni espacios (la collation `CI_AS` distingue tildes); los textos de `detalle` son `(cliente nuevo)`, `(sin registro en SAP TM)`, el de SAP (`Margen propuesto SAP TM (tabla local, actualizado AAAA-MM-DD) para cliente X en OPTN: 13.5%`, con el valor sin ceros a la derecha), el del caso sin BP (`cliente nuevo: sin BP de SAP, no se consulta SAP TM`, ADR-004) y los de SAP no configurado o no disponible; los márgenes del ajuste y su diferencia se redondean a 4 decimales (escala de `DECIMAL(9,4)`); el margen negociado se valida por método (código `AJUSTE_MARGEN_INVALIDO`) y un motivo vacío se registra como `Ajuste manual del comercial`; empates exactos de medio peso (ver arriba).
 
 **PDF y trazabilidad en USD (HU-012.2):** `clsGenerarPdfService` exige que el `PrecioFinal` de la trazabilidad sea el precio en pesos (costo y margen) convertido con su `TrmAplicada`, y compara la tarifa impresa con centavos. La cabecera (`CotizacionesSolicitud` desde el 0009) guarda `moneda`, `precioFinal` en esa moneda y `trmAplicada` (0 en COP, nunca nula; `DECIMAL(18,4)` del script 0001). Los costos de Nexo, en pesos, son de la ruta y del camión; cada precio se calcula en pesos y se convierte con la `trmAplicada` de la cabecera (ADR-019).
 
@@ -297,15 +297,15 @@ El filtro de auditoría del agente no vuelve a auditar `generar_pdf`, `enviar_co
 
 **Destinatarios previos:** hoy devuelve solo los del último envío exitoso del comercial al NIT (es lo que dice `openapi.yaml`); el backlog habla de "los correos ya usados", así que queda por confirmar si se quiere la unión de todos los envíos. Las cotizaciones que creó el chat legado sin cliente confirmado quedaron con `nitCliente` nulo y no tienen precarga.
 
-Diferencias deliberadas con el Python:
-- **Firma con datos reales:** nombre y correo de `UsuariosWeb` y "Cel" solo si `UsuariosWeb.telefono` tiene valor; el `comercial` del payload (LLM) solo aporta el cargo.
-- **Sin HTML:** no hay inyección posible; `extra_css` y `dibujo_html` desaparecen. Los saltos de línea del texto se respetan (en HTML se colapsaban).
-- **Folio:** no se versiona aquí (`FOLIO_DUPLICADO`); un PDF existente nunca se sobrescribe (el Python sobrescribía `{folio}.pdf`).
-- **Línea de negocio:** se resuelve antes de renderizar y sin tildes (el Python perdía la cotización entera con "Distribución", issue #44).
-- **Trazabilidad:** costo, márgenes, precio y origen llegan en `clsTrazabilidadCotizacion` desde el estado de la conversación, no del payload del LLM (`_datos_trazabilidad`).
-- **Variante multi:** usa el prefijo `US$` de la moneda de cada fila (el `money()` de `armar_multi.py` lo ignoraba).
-- **Almacén:** la lectura por referencia solo toma el nombre del archivo (el Python leía cualquier ruta local existente guardada en `pdfPath`).
-- **Correo:** `estadoEnvio` pasa a `reenviada`; la deduplicación se serializa por cotización dentro del proceso; el transporte es el microservicio MailSender (HU-033, ADR-023; `wscorreos`, `smtp` y `smtp_relay` se retiraron); `Correo:Habilitado=false` por defecto responde `CORREO_DESHABILITADO` (el Python ocultaba la herramienta).
+Reglas del PDF y del correo:
+- **Firma con datos reales:** nombre y correo de `UsuariosWeb` y "Cel" solo si `UsuariosWeb.telefono` tiene valor.
+- **Sin HTML:** el PDF se compone sin HTML, así que no hay inyección posible. Los saltos de línea del texto se respetan.
+- **Folio:** no se versiona aquí (`FOLIO_DUPLICADO`); un PDF existente nunca se sobrescribe.
+- **Línea de negocio:** se resuelve antes de renderizar y sin tildes.
+- **Trazabilidad:** costo, márgenes, precio y origen llegan en `clsTrazabilidadCotizacion` calculados por el servidor, nunca desde un texto del modelo de IA.
+- **Variante multi:** usa el prefijo `US$` de la moneda de cada fila.
+- **Almacén:** la lectura por referencia solo toma el nombre del archivo.
+- **Correo:** `estadoEnvio` pasa a `reenviada`; la deduplicación se serializa por cotización dentro del proceso; el transporte es el microservicio MailSender (ADR-023); `Correo:Habilitado=false` por defecto responde `CORREO_DESHABILITADO`.
 - **Incluye itemizado:** con `servicios_conexos` se lista el flete (origen y destinos) y cada servicio con su precio. Nexo (HU-005) todavía no entrega el costeo desglosado por servicio: mientras tanto los envía el formulario, y sin ellos queda el texto estándar.
 
 ## 2.9 Identidad: login SSO con verificación doble
@@ -400,8 +400,6 @@ Decisiones de la parte B:
 - **HU-004.9, "el comercial solo ve líneas activas":** hoy no hay ningún endpoint de comercial que liste líneas (el catálogo del formulario no está en el contrato); cuando exista debe filtrar `isActive = 1`.
 
 ## 2.11 Asistente IA por folio (/web/chat)
-
-> **Historia.** Hasta HU-013.9 (#105) esta sección describía el agente cotizador legado (`clsAgenteRunner`, plugin `cotizador` con `buscar_cliente`, `buscar_tarifa`, `calcular_precio`, `generar_pdf`, `enviar_correo`..., filtro de inyección y slot filling de [ADR-004](../specs/decisiones/ADR-004-estado-conversacion-slot-filling.md)) y la integración con Google Chat (`POST /chat/events`, verificación del JWT de Google, cola, worker, publicador y tarjetas; [ADR-011](../specs/decisiones/ADR-011-folio-e-identidad-google-chat.md)), ambos de #12 parte C. Los dos se retiraron en HU-013.9: el webhook responde 404, `POST /web/chat` sin `folio` responde 400 `FOLIO_REQUERIDO` y la cotización la arman el formulario, Nexo y el código ([ADR-018](../specs/decisiones/ADR-018-pipeline-determinista-ia-etapa-final.md)). Las tablas `Sesiones` y `EventosConversacion` conservan esas conversaciones como auditoría (las de Google Chat con `spaceId` `spaces/...`).
 
 **Asistente por folio (HU-013.6, #102, ADR-018 §2b y §14; único agente desde HU-013.9).** `POST /web/chat` es el asistente de UNA cotización: exige `folio`, solo lee y propone, y ningún monto llega al modelo. La acción propuesta (cuerpo, endpoint, `row_version` y resumen con precios) la arma el servidor y la ejecuta el frontend cuando el comercial pulsa Confirmar. Conserva el loop manual de ADR-003 y el validador de #16.
 

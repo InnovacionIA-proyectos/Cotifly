@@ -125,7 +125,7 @@ Desde el detalle de una cotización, el comercial conversa con el asistente (`PO
 3. El servidor arma la propuesta (`accion_propuesta`: endpoint, cuerpo, `row_version` y resumen con precios) con las mismas reglas del endpoint destino. Nada cambia hasta que el comercial pulsa Confirmar y el frontend llama a ese endpoint.
 4. Un turno a la vez por conversación; un segundo mensaje simultáneo recibe "Todavía estoy respondiendo tu mensaje anterior...".
 
-El recorrido técnico de un turno (candado, herramientas, validador) está en [2.12](02-arquitectura.md#212-turno-de-webchat-de-punta-a-punta). Google Chat, el canal conversacional alterno que existía hasta HU-013.9 (#105), se retiró: `POST /chat/events` responde 404.
+El recorrido técnico de un turno (candado, herramientas, validador) está en [2.12](02-arquitectura.md#212-turno-de-webchat-de-punta-a-punta). La consola web es el único canal: `POST /chat/events` responde 404.
 
 ## 4.7 Envío de correo
 

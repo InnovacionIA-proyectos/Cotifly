@@ -10,11 +10,8 @@ Runbook del despliegue de Cotifly en el clúster Docker Swarm + Dokploy (manager
 - **Backend vigente tras el corte: .NET 10** (`backend-dotnet/`, una sola imagen `cotifly-backend`, ADR-001 y ADR-002).
   Este documento describe su despliegue. Las decisiones están en
   [ADR-013](backend-dotnet/specs/decisiones/ADR-013-despliegue-dokploy.md).
-- **Stack Python: retirado del repositorio** (decisión del usuario, 2026-10-13: "todo lo referente a python muere en este
-  repo"). HU-022.1 (#146) borró el código Python, `deploy/` (manifiesto `docker-compose.swarm.yml` y
-  `rebuild-on-worker.sh`), los manifiestos que nunca se desplegaron y los scripts de respaldo del Python. El último
-  estado completo vive en el tag de git **`python-final`** (ver el [Anexo A](#anexo-a-stack-python-retirado-tag-python-final)).
-  El stack Python que corre hoy en Dokploy no se tocó: apagarlo es una acción de infraestructura aparte (§7).
+- **Stack Python y Google Chat: retirados.** El último estado del código Python está en el tag de git `python-final`.
+  Las acciones de infraestructura que quedan están en el §7.
 - La base de datos **no** es un contenedor del stack: es la instancia corporativa SQL Server 2019 (`tbsdatacenter`),
   base `dbTarifario_Nexo_Pruebas`, esquema `dbo_cotifly`, más la base de identidad del portal de solo lectura (ADR-008),
   que es **la misma que lee Nexo** en cada ambiente: `dbSolucionesTI_Prueba` en QA (#172, ADR-009). El login de
@@ -27,7 +24,8 @@ Runbook del despliegue de Cotifly en el clúster Docker Swarm + Dokploy (manager
 | #29 (HU-006.5) | Secretos fuera del repositorio | [§2](#2-secretos-y-variables-hu-0065-29), [§3](#3-tabla-de-variables-de-producción-plantilla-para-hu-0071-33) |
 | #28 (HU-006.4) | Registry, imagen versionada y release | [§4](#4-registry-imagen-versionada-y-release-hu-0064-28) |
 | #30 (HU-006.6) | Manifiestos del stack .NET + SQL Server externo | [§5](#5-manifiestos-del-stack-net-hu-0066-30) |
-| #31 (HU-006.7) | Backups de `dbo_cotifly` (y la verificación del JWT de Google Chat, retirado en #105) | [§6](#6-backups-de-dbo_cotifly-hu-0067-31), [§7](#7-google-chat-retirado-hu-0139-105) |
+| #31 (HU-006.7) | Backups de `dbo_cotifly` | [§6](#6-backups-de-dbo_cotifly-hu-0067-31) |
+| — | Limpieza de componentes retirados | [§7](#7-limpieza-de-componentes-retirados) |
 
 ## 2. Secretos y variables (HU-006.5, #29)
 
@@ -290,14 +288,8 @@ En este orden (los pasos 1 y 2 antes de la ventana; el 3 dentro de ella):
    En su siguiente login o refresh cada persona queda vinculada al `ID` del portal; hasta entonces, sus llamadas a Nexo no llevan identidad.
 4. **Pendiente externo:** Nexo QA debe configurar su `ConnectionStrings:IdentidadPortal`. Sin ella, Nexo QA valida contra su tabla `Usuarios` local.
 
-Variables del Python que **no** pasan al backend .NET (se retiran; no cargarlas en el stack nuevo):
-`DATABASE_URL`, `POSTGRES_*`, `MSSQL_SA_PASSWORD`, `MCP_URL`, `MCP_AUTH_TOKEN` (no hay MCP aparte, ADR-002),
-`WEB_SESSION_SECRET` (reemplazada por `Jwt__SigningKey`), `INTERNAL_API_TOKEN`, `LLM_MODEL`/`LLM_API_KEY`/`LLM_RPM`
-(reemplazadas por `IA__*`), `GCHAT_*` y `GOOGLE_SA_JSON` (Google Chat retirado en #105), y `DRIVE_TARIFARIO_*` (tarifario
-de Drive retirado), `TARIFA_*`, `S3_*` y `MINIO_*` (MinIO no se mantiene, ADR-012), `SHEETS_*` (diferida, ADR-012),
-`SMTP_*`/`SMTP_RELAY_*`/`CORREO_*` (reemplazadas por `Correo__*`), `SAP_TM_*`/`SAP_SALES_ORG_DEFAULT` (reemplazadas por
-`SapTm__*`: `SalesOrgDefault`, `AvisoSincronizacionHoras` y, desde el 2026-11-03, `Url`, `User`, `Pass`, `SapClient` y los ajustes del worker), `PDF_*` (reemplazadas por `Pdf__*`), `PUBLIC_HOST` (sigue como variable del manifiesto para Traefik, no
-de la app).
+Las variables del stack Python no pasan al backend .NET y no se cargan en el stack nuevo (lista en
+[`docs/archivo/COMPONENTES_RETIRADOS.md`](docs/archivo/COMPONENTES_RETIRADOS.md#variables-del-stack-python)).
 
 ### Rol director (HU-037, #209 a #212)
 
@@ -1116,34 +1108,17 @@ una vez con la imagen de la API.
 **Pendiente:** repetir la prueba con un respaldo real de `tbsdatacenter` en una instancia de pruebas corporativa, cuando
 exista el login `cotifly_respaldo` y la instancia de pruebas (DBA).
 
-## 7. Google Chat retirado (HU-013.9, #105)
+## 7. Limpieza de componentes retirados
 
-Decisión del 2026-10-05 (ADR-018 §15): Cotifly es un módulo de formularios dentro de ClientePro y Google Chat sale del
-alcance. Desde HU-013.9 el backend .NET **no tiene** el webhook `POST /chat/events` (responde 404), ni el verificador del
-JWT de Google, la cola, el worker, el publicador o las tarjetas, ni las opciones `GChat__*` y su validación al arrancar.
-El agente cotizador legado y el flag `Chat__CreacionHabilitada` también se retiraron: `POST /web/chat` exige `folio`.
+El backend .NET no tiene Google Chat (`POST /chat/events` responde 404), ni el agente cotizador por chat, ni el stack Python. El
+registro de lo retirado está en [`docs/archivo/COMPONENTES_RETIRADOS.md`](docs/archivo/COMPONENTES_RETIRADOS.md). Quedan estas acciones
+de infraestructura, cada una con confirmación explícita porque tocan el clúster o servicios reales:
 
-Al desplegar esta versión:
+- Quitar del *Environment* de Dokploy las variables `GChat__*`, `Chat__CreacionHabilitada` y `GCHAT_SA_SECRETO` (la API las ignora,
+  pero no deben confundir).
+- Borrar el secreto de Swarm de la cuenta de servicio (`cotifly_gchat_sa_v1`, `cotifly_staging_gchat_sa_v1`) y deshabilitar en Google
+  Cloud la app de Chat que apuntaba a `https://<PUBLIC_HOST>/chat/events`.
+- Apagar el stack Python que sigue en Dokploy (proyecto `bot-cotizador`, puerto 8091 del worker) y rotar sus credenciales por defecto.
 
-- Quitar del *Environment* de Dokploy las variables `GChat__*`, `Chat__CreacionHabilitada` y `GCHAT_SA_SECRETO` (si
-  quedan, la API las ignora y arranca igual, pero no deben confundir).
-- Borrar el secreto de Swarm de la cuenta de servicio (`cotifly_gchat_sa_v1`, `cotifly_staging_gchat_sa_v1`) y, en
-  Google Cloud, deshabilitar la app de Chat que apuntaba a `https://<PUBLIC_HOST>/chat/events`. Ambas acciones tocan
-  infraestructura real: solo con confirmación explícita.
-- Las tablas `Sesiones` y `EventosConversacion` **no se borran**: guardan la auditoría de las conversaciones de Google
-  Chat (`spaceId = spaces/...`) y siguen alimentándose con el asistente por folio (`web/{sesion_id}`).
-
-La verificación del JWT del webhook (HU-006.7) era del stack Python; su runbook está en el tag `python-final` (Anexo A).
-
-## Anexo A. Stack Python (retirado, tag `python-final`)
-
-El stack Python (orquestador, servidor MCP, `shared/`, Postgres y MinIO) se retiró del repositorio en HU-022.1 (#146),
-por decisión del usuario del 2026-10-13: "todo lo referente a python muere en este repo". Ya no es destino de rollback
-desde este repositorio.
-
-- **Dónde quedó:** el tag `python-final` guarda el último estado completo: el código, `deploy/docker-compose.swarm.yml`
-  (el stack que corre en Dokploy, proyecto `bot-cotizador`, puerto 8091 del worker), `deploy/rebuild-on-worker.sh`,
-  `infra/stack.dokploy.yml`, `infra/stack.staging.yml`, los scripts de respaldo y la versión completa de este anexo
-  (runbook de la Fase 15). Para consultarlo: `git show python-final:DEPLOY.md`.
-- **Lo que sigue desplegado:** el stack Python en Dokploy no se tocó desde aquí. Apagarlo, rotar sus credenciales por
-  defecto y deshabilitar la app de Google Chat son acciones de infraestructura con confirmación aparte (§7).
+Las tablas `Sesiones` y `EventosConversacion` no se borran: guardan la auditoría de las conversaciones y siguen alimentándose con el
+asistente por folio (`web/{sesion_id}`).
