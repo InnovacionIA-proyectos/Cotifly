@@ -150,12 +150,24 @@ public static class clsTextosEstandar
 
     private const string FacturacionComun = "Después de elaborado el estudio de crédito se indicarán los términos.";
 
+    /// <summary>
+    /// HU-045.3 (#265, ADR-032 §9): viñeta del seguro en la lista "Estas tarifas incluyen". PENDIENTE: el texto fijo oficial lo pasará Sara
+    /// (hoy no está confirmado; ver la "Pendiente de confirmar con Sara" del contrato de #265 del 2026-11-10, que advierte que el texto
+    /// «Seguro de la mercancía por un valor máximo de $100.000.000 por vehículo» puede chocar con la póliza específica de la ruta). Mientras
+    /// llega el oficial se usa un placeholder genérico, configurable sin recompilar con <c>Cotizacion__TextoSeguroIncluido</c> (variable de
+    /// entorno / configuración, igual que el resto de ajustes del servidor).
+    /// </summary>
+    public static readonly string SeguroIncluidoPlaceholder =
+        Environment.GetEnvironmentVariable("Cotizacion__TextoSeguroIncluido") is { Length: > 0 } textoConfigurado
+            ? textoConfigurado
+            : "Seguro de la mercancía según la póliza vigente (texto pendiente de confirmación)";
+
     private static readonly string[] _incluyeComun =
     [
         "Flete origen – destino en vehículo",
         "Seguimiento a la carga",
         "Candado satelital",
-        "Seguro de la mercancía por un valor máximo de $100.000.000 por vehículo",
+        SeguroIncluidoPlaceholder,
     ];
 
     private static readonly string[] _noIncluyeComun =

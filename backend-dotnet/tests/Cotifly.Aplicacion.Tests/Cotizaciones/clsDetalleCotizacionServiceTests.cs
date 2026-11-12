@@ -71,7 +71,7 @@ public sealed class clsDetalleCotizacionServiceTests
         detalle.RowVersion.Should().Be(clsCosteoCotizacionService.VersionEtag(cotizacion)).And.Be(detalle.Costeo.RowVersion);
         detalle.Captura.Should().ContainSingle().Which.LineaSolicitudId.Should().Be(cotizacion.PrimeraRuta!.Id);
         detalle.Captura[0].LineaNegocio.Should().Be("Nacional");
-        detalle.Totales.Should().Be(new clsTotalesCotizacion(1, cotizacion.PrimeraRuta.VehiculosQueCuentan.Count, null, 115m, 0m, 115m));
+        detalle.Totales.Should().Be(new clsTotalesCotizacion(1, cotizacion.PrimeraRuta.VehiculosQueCuentan.Count, null, 115m, 0m, 115m) { PrecioSeguro = 0m });
         // El dueño nunca carga la cotización sin filtrar por dueño ni queda en la auditoría.
         await _cotizaciones.DidNotReceiveWithAnyArgs().ObtenerPorFolioAsync(default!, Ct);
         await _auditoria.DidNotReceiveWithAnyArgs().RegistrarAsync(default!, default, default, default, default, default);
