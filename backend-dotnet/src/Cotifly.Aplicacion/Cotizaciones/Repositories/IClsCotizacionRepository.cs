@@ -203,4 +203,13 @@ public interface IClsCotizacionRepository
     /// 0 si no existe ninguna.
     /// </summary>
     Task<int> ObtenerVersionMaximaAsync(string folioBase, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// HU-046.3 (#269, B1 de la auditoría): guarda el <c>codigoServicio</c> de <paramref name="conexos"/> (ya completado en memoria) con una
+    /// actualización por fila <c>WHERE id = … AND codigoServicio IS NULL</c>, fuera del rastreador y sin tocar la cabecera, su versión ni
+    /// <c>updatedAt</c>: la usa la LECTURA del costeo, que no toma el candado de la cabecera. Una fila que otra petición ya completó o borró
+    /// no se toca (0 filas). Las propiedades quedan como guardadas en el rastreador (no las vuelve a escribir otro guardado). Devuelve
+    /// cuántas filas actualizó.
+    /// </summary>
+    Task<int> GuardarCodigosServicioAsync(IReadOnlyCollection<clsServicioConexoRuta> conexos, CancellationToken cancellationToken = default);
 }

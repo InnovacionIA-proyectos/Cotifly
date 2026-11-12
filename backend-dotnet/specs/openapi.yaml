@@ -2530,7 +2530,7 @@ paths:
       x-issue: '#206 (HU-036.2)'
       description: |
         HU-036.2 (#206). El comercial acepta el precio de la cotización y la **finaliza**. Solo el dueño, con `If-Match` (el `ETag`
-        de `GET .../costeo` o de "Mis cotizaciones"). Sin cuerpo.
+        de `GET .../costeo` o de "Mis cotizaciones"). Cuerpo **opcional** (`FinalizarWeb`, HU-046.3 #269): solo `justificacion`.
 
         - Solo con el costeo de Nexo listo: `estado_costeo` en `autocosteo` o `entregada` (todas las rutas que cuentan tienen precio;
           las `rechazada` no cuentan) y con `precio_final` (una `entregada` que Cotifly todavía no leyó espera la relectura del
@@ -2550,6 +2550,17 @@ paths:
           409 además vuelve a encolar la cotización para el envío diferido (finalizar nunca envía conexos a Nexo): el worker los
           envía o los deja `fallido_definitivo` en segundos y el siguiente intento de finalizar pasa. Si hay
           conexos pendientes de leer, ese motivo va primero.
+        - HU-046.3 (#269; contrato del 2026-11-10): tampoco mientras una ruta que cuenta (no `rechazada`) tiene una medida
+          **obligatoria** de la política de seguros pendiente (`rutas[].politica_seguros.obligatorias[].estado = pendiente` en
+          `GET .../costeo`; hoy, un acompañante vehicular desde 350 M): 409 `COTIZACION_NO_FINALIZABLE` con
+          `detalle.motivo = medidas_obligatorias_faltantes` y `detalle.rutas` (cada ruta con `linea_orden`, `origen`, `destino` y sus
+          `medidas`: `codigo` y `nombre`). Se revisa después del estado y de los conexos de Nexo. Con `justificacion` (de 10 a 500
+          caracteres, sin los espacios de los extremos) se finaliza igual: la justificación salta **solo** este bloqueo (los anteriores
+          bloquean con o sin ella) y queda en `EventosHerramienta` con las medidas que faltaban (códigos, sin montos). Fuera de ese largo:
+          400 `JUSTIFICACION_REQUERIDA` con `detalle.minimo = 10` y `detalle.maximo = 500`, validado justo después del `If-Match`. Una ruta
+          sin `valor_mercancia` (o con 0) no exige nada (el costeo trae `aviso = SIN_VALOR_MERCANCIA`). La política se lee de sus tablas en
+          cada finalización: un cambio de Datos se ve sin desplegar. Solo se evalúa si no bloquea otro motivo. Un conexo
+          `fallido_definitivo` o `incierto` en Nexo no cumple la medida. Si la política no se puede leer, 500.
         - Re-finalizar una ya finalizada es idempotente: 200 sin cambios (mismo `finalizada_at`, mismo `ETag`).
         - `If-Match` que no es la versión vigente: 409 `CONFLICTO_CONCURRENCIA`, sin cambios (también si ya estaba finalizada). Si
           el polling cambió el precio entre la lectura y el clic, la versión ya no coincide: el comercial recarga y nunca finaliza un
@@ -2564,6 +2575,14 @@ paths:
       parameters:
         - $ref: '#/components/parameters/Folio'
         - $ref: '#/components/parameters/IfMatchObligatorio'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FinalizarWeb'
+            example:
+              justificacion: "Riesgo aprobó el viaje sin acompañante (correo del 2026-11-06)."
       responses:
         '200':
           description: Cotización finalizada (o ya lo estaba)
@@ -2574,12 +2593,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CotizacionResumen'
+        '400':
+          description: 'Cuerpo inválido (`ErrorWeb`) o, HU-046.3 (#269), `JUSTIFICACION_REQUERIDA` con `detalle.minimo = 10` y `detalle.maximo = 500` si la justificación viene fuera de 10 a 500 caracteres.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
         '401':
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`COTIZACION_NO_FINALIZABLE` (`estado_costeo` distinto de `autocosteo` y `entregada`, con `detalle.estado_costeo`; o `detalle.motivo` = `conexos_pendientes_de_leer` o, #228, `conexos_pendientes_en_nexo` con `detalle.conexos_pendientes`) o `CONFLICTO_CONCURRENCIA`; sin cambios.'
+          description: '`COTIZACION_NO_FINALIZABLE` (`estado_costeo` distinto de `autocosteo` y `entregada`, con `detalle.estado_costeo`; o `detalle.motivo` = `conexos_pendientes_de_leer`, #228 `conexos_pendientes_en_nexo` con `detalle.conexos_pendientes` o, HU-046.3 #269, `medidas_obligatorias_faltantes` con `detalle.rutas`) o `CONFLICTO_CONCURRENCIA`; sin cambios.'
           content:
             application/json:
               schema:
@@ -8361,6 +8386,105 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ServicioConexoCosteo'
+        politica_seguros:
+          oneOf:
+            - $ref: '#/components/schemas/PoliticaSegurosRuta'
+            - $ref: '#/components/schemas/Nulo'
+          description: |
+            HU-046.3 (#269). Lo que exige la política de seguros a la ruta (tablas `PoliticaSeguro*` del script 21, leídas en cada
+            petición: un cambio de Datos se ve sin desplegar). En `GET .../costeo`, en el detalle por folio y en las respuestas de los
+            conexos, del margen y del seguro. `null` en una ruta `rechazada`, en una cotización finalizada (no se recalcula), si la política no se pudo leer y en
+            las demás respuestas (no lo reemplaces con `null`: vuelve a leer el costeo).
+
+    PoliticaSegurosRuta:
+      type: object
+      required: [tramo, aviso, recomendadas, obligatorias]
+      description: |
+        HU-046.3 (#269; contrato del 2026-11-10). El tramo se calcula con el `valor_mercancia` TOTAL de la ruta (no por camión):
+        `valor_desde` exclusivo y `valor_hasta` incluido (250.000.000 exacto cae en "> 150 – 250 M"). `valor_mercancia` y los límites están
+        SIEMPRE en pesos (COP), también en una cotización en USD. Sin `valor_mercancia` o con 0 no hay tramo: `tramo = null`, listas vacías
+        y `aviso = SIN_VALOR_MERCANCIA`. `recomendadas` y `obligatorias` traen la misma forma de medida (`MedidaPolitica`), partida por su
+        nivel. Las medidas van ordenadas por `nombre` y luego por `codigo`; los `conexos`, ordenados.
+      properties:
+        tramo:
+          oneOf:
+            - $ref: '#/components/schemas/TramoPoliticaSeguros'
+            - $ref: '#/components/schemas/Nulo'
+        aviso:
+          type: string
+          nullable: true
+          enum: [SIN_VALOR_MERCANCIA, null]
+          description: |
+            `SIN_VALOR_MERCANCIA` cuando la ruta no tiene `valor_mercancia` o lo tiene en 0 (no bloquea "Finalizar"); `null` en cualquier
+            otro caso.
+        recomendadas:
+          type: array
+          items:
+            $ref: '#/components/schemas/MedidaPolitica'
+        obligatorias:
+          type: array
+          items:
+            $ref: '#/components/schemas/MedidaPolitica'
+
+    TramoPoliticaSeguros:
+      type: object
+      required: [id, nombre, valor_desde, valor_hasta]
+      properties:
+        id:
+          type: string
+          format: uuid
+        nombre:
+          type: string
+          example: "> 350 – 500 M"
+        valor_desde:
+          type: number
+          description: Límite inferior en pesos, exclusivo.
+        valor_hasta:
+          type: number
+          nullable: true
+          description: Límite superior en pesos, incluido; `null` = sin tope.
+
+    MedidaPolitica:
+      type: object
+      required: [codigo, nombre, es_cobrable, estado, conexos]
+      description: |
+        HU-046.3 (#269; contrato del 2026-11-10). Una medida de la política, igual en `recomendadas` y en `obligatorias`.
+        `estado`: `incluir_seguro` se evalúa por su código (`cumplida` si la ruta tiene `incluye_seguro`, si no `pendiente`); una medida con
+        `conexos` es `cumplida` si la ruta tiene alguno (por `codigoServicio`, sin distinguir mayúsculas), si no `pendiente`; una medida sin
+        `conexos` es `sin_verificar`, que nunca bloquea. Un conexo cuyo `estado_nexo` es `fallido_definitivo` o `incierto` NO cumple ninguna
+        medida (decisión del 2026-11-09). Solo una **obligatoria** `pendiente` bloquea "Finalizar".
+      properties:
+        codigo:
+          type: string
+          example: acompanante_vehicular
+        nombre:
+          type: string
+          description: Lo que se muestra al comercial.
+        es_cobrable:
+          type: boolean
+        estado:
+          type: string
+          enum: [cumplida, pendiente, sin_verificar]
+        conexos:
+          type: array
+          description: Los `codigoServicio` de Nexo que la cumplen (para el botón "agregar"); basta uno. Vacío si la medida no tiene conexos.
+          items:
+            type: string
+          example: [AVP_MOTO, AVP_MOTO_ARMADA, AVT_AUTO, AVT_MOTO, AVT_MOTO_ARMADA]
+
+    FinalizarWeb:
+      type: object
+      description: |
+        HU-046.3 (#269; contrato del 2026-11-10). Cuerpo opcional de `POST .../finalizar`. `justificacion` (de 10 a 500 caracteres sin los
+        espacios de los extremos; ausente, null, vacía o solo espacios es como no mandarla) permite finalizar aunque falte una medida
+        obligatoria de la política de seguros; no salta ningún otro bloqueo. Fuera de ese largo: 400 `JUSTIFICACION_REQUERIDA` con
+        `detalle.minimo = 10` y `detalle.maximo = 500`.
+      properties:
+        justificacion:
+          type: string
+          nullable: true
+          minLength: 10
+          maxLength: 500
 
     CamionCosteo:
       type: object

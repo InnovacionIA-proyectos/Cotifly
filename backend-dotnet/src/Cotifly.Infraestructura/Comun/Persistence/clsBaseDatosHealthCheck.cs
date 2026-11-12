@@ -47,6 +47,8 @@ namespace Cotifly.Infraestructura.Comun.Persistence;
 /// <c>db/scripts/19_precio_venta_conexos.sql</c> (HU-043.1, #245; el backend la mapea desde #261);</item>
 /// <item><see cref="DescripcionEsquemaSin20"/>: solo faltan la tabla <c>TarifasSeguro</c> o las columnas del seguro de la ruta de
 /// <c>db/scripts/20_seguro_mercancia.sql</c> (HU-045.1, #263; el backend las mapea desde HU-045.2, #264);</item>
+/// <item><see cref="DescripcionEsquemaSin21"/>: solo faltan las 4 tablas de la política de seguros o <c>CotizacionServiciosConexos.codigoServicio</c>
+/// de <c>db/scripts/21_politica_seguros.sql</c> (HU-046.2, #268; el backend las mapea desde HU-046.3, #269);</item>
 /// <item><see cref="DescripcionEsquemaSin22"/>: solo falta <c>CotizacionArchivosLicitacion.origenLectura</c> de
 /// <c>db/scripts/22_origen_lectura_licitacion.sql</c> (HU-044.7, #290);</item>
 /// <item>cualquier otra ausencia: <c>esquema incompleto: falta Tabla.columna</c> (las primeras, sin datos de conexión).</item>
@@ -282,6 +284,36 @@ public sealed class clsBaseDatosHealthCheck(
         "CotizacionLineasSolicitud.costoSeguro",
     };
 
+    /// <summary>HU-046.3 (#269): está todo lo anterior, pero no lo de <c>db/scripts/21_politica_seguros.sql</c> (HU-046.2, #268).</summary>
+    public const string DescripcionEsquemaSin21 = "esquema incompleto: falta 21";
+
+    /// <summary>Columnas que agrega <c>db/scripts/21_politica_seguros.sql</c> (HU-046.2, #268): las 4 tablas de la política y el código del conexo.</summary>
+    public static readonly IReadOnlySet<string> Columnas21 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "PoliticaSeguroTramos.id",
+        "PoliticaSeguroTramos.nombre",
+        "PoliticaSeguroTramos.valorDesde",
+        "PoliticaSeguroTramos.valorHasta",
+        "PoliticaSeguroTramos.isActive",
+        "PoliticaSeguroTramos.updatedAt",
+        "PoliticaSeguroMedidas.id",
+        "PoliticaSeguroMedidas.codigo",
+        "PoliticaSeguroMedidas.nombre",
+        "PoliticaSeguroMedidas.esCobrable",
+        "PoliticaSeguroMedidas.isActive",
+        "PoliticaSeguroMedidas.updatedAt",
+        "PoliticaSeguroTramoMedidas.id",
+        "PoliticaSeguroTramoMedidas.tramoId",
+        "PoliticaSeguroTramoMedidas.medidaId",
+        "PoliticaSeguroTramoMedidas.nivel",
+        "PoliticaSeguroTramoMedidas.updatedAt",
+        "PoliticaSeguroMedidaConexos.id",
+        "PoliticaSeguroMedidaConexos.medidaId",
+        "PoliticaSeguroMedidaConexos.codigoServicio",
+        "PoliticaSeguroMedidaConexos.updatedAt",
+        "CotizacionServiciosConexos.codigoServicio",
+    };
+
     /// <summary>HU-044.7 (#290): está todo lo anterior, pero no <c>CotizacionArchivosLicitacion.origenLectura</c> de <c>db/scripts/22</c>.</summary>
     public const string DescripcionEsquemaSin22 = "esquema incompleto: falta 22";
 
@@ -423,13 +455,13 @@ public sealed class clsBaseDatosHealthCheck(
             return HealthCheckResult.Unhealthy(DescripcionEsquemaSin0009);
         }
 
-        // Faltan columnas de los ajustes que van después del 0009 (0010, 02 del cubicador, 03, 04, 05, 06, 09, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20 y 22):
+        // Faltan columnas de los ajustes que van después del 0009 (0010, 02 del cubicador, 03, 04, 05, 06, 09, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21 y 22):
         // se pide el primero que falta, en el orden en que se aplican.
         if (faltantes.All(f => Columnas0010.Contains(f) || Columnas02.Contains(f) || Columnas03.Contains(f) || Columnas04.Contains(f)
                                || Columnas05.Contains(f) || Columnas06.Contains(f) || Columnas09.Contains(f) || Columnas10.Contains(f)
                                || Columnas11.Contains(f) || Columnas12.Contains(f) || Columnas13.Contains(f)
                                || Columnas14.Contains(f) || Columnas16.Contains(f) || Columnas17.Contains(f) || Columnas18.Contains(f)
-                               || Columnas19.Contains(f) || Columnas20.Contains(f) || Columnas22.Contains(f)))
+                               || Columnas19.Contains(f) || Columnas20.Contains(f) || Columnas21.Contains(f) || Columnas22.Contains(f)))
         {
             return HealthCheckResult.Unhealthy(
                 faltantes.Any(Columnas0010.Contains) ? DescripcionEsquemaSin0010
@@ -449,6 +481,7 @@ public sealed class clsBaseDatosHealthCheck(
                 : faltantes.Any(Columnas18.Contains) ? DescripcionEsquemaSin18
                 : faltantes.Any(Columnas19.Contains) ? DescripcionEsquemaSin19
                 : faltantes.Any(Columnas20.Contains) ? DescripcionEsquemaSin20
+                : faltantes.Any(Columnas21.Contains) ? DescripcionEsquemaSin21
                 : DescripcionEsquemaSin22);
         }
 
