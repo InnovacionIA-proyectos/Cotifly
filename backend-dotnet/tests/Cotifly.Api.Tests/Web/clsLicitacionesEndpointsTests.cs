@@ -642,6 +642,115 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
             Task.FromResult<Cotifly.Dominio.Comun.clsResultado<IReadOnlyDictionary<string, IReadOnlyList<int>>>>(_ocupado);
     }
 
+    // HU-044.10 (#293, parte 1): origen_lectura en el 201 y en la vista: analizar_excel con archivo (por defecto), null sin archivo.
+    [Fact]
+    public async Task Hu293_LaRespuestaTraeElOrigenLectura()
+    {
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+
+        var conArchivo = await CrearAsync(sesion, clsPliegoMuestra.Lineas(), clsPliegoMuestra.Excel(), HttpStatusCode.Created);
+        conArchivo.GetProperty("origen_lectura").GetString().Should().Be("analizar_excel");
+        (await VistaAsync(sesion, conArchivo.GetProperty("folio").GetString()!)).GetProperty("origen_lectura").GetString().Should().Be("analizar_excel");
+
+        object[] lineas = [new { origen = "YUMBO", destino = "CALI", peso_kg = 1000, tipo_vehiculo = "3S3" }];
+        using var sinArchivo = await _api.EnviarAsync(HttpMethod.Post, "/web/licitaciones", sesion.Access, clsPliegoMuestra.Json(clsCosteoEndpointsTests.Nit, lineas, hoja: null));
+        (await VerificarContratoAsync(sinArchivo, "/web/licitaciones", HttpMethod.Post, HttpStatusCode.Created))
+            .GetProperty("origen_lectura").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    // HU-044.10 (#293, parte 2): con archivo, una línea con fila null es una línea agregada a mano; se crea y vuelve con fila null.
+    [Fact]
+    public async Task Hu293_UnaLineaAManoConArchivoSeCreaYVuelveConFilaNull()
+    {
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        object[] lineas =
+        [
+            new { fila = 0, origen = "BUENAVENTURA", destino = "BOGOTA, D.C.", tipologia = "CargaSeca", peso_kg = 32000m, valor_mercancia = 50_000_000m, tipo_vehiculo = "3S3" },
+            new { fila = (int?)null, origen = "CALI", destino = "MEDELLIN", tipologia = "CargaSeca", peso_kg = 9000m, valor_mercancia = 50_000_000m, tipo_vehiculo = "2" },
+        ];
+
+        var json = await CrearAsync(sesion, lineas, clsPliegoMuestra.Excel(), HttpStatusCode.Created);
+
+        var filas = json.GetProperty("lineas").EnumerateArray().Select(l => l.GetProperty("fila")).ToList();
+        filas.Should().HaveCount(2);
+        filas.Count(f => f.ValueKind == JsonValueKind.Null).Should().Be(1, "la línea agregada a mano vuelve con fila null");
+    }
+
+    // HU-044.10 (#293, parte 3): la misma clave y el mismo cuerpo+archivo crean una sola licitación con el mismo folio.
+    [Fact]
+    public async Task Hu293_MismaClaveYMismoCuerpoCreanUnaSolaLicitacion()
+    {
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var clave = Guid.NewGuid().ToString();
+        var json = clsPliegoMuestra.Json(clsCosteoEndpointsTests.Nit, clsPliegoMuestra.Lineas());
+        var excel = clsPliegoMuestra.Excel();
+
+        var primero = await CrearConClaveAsync(sesion, json, excel, clave, HttpStatusCode.Created);
+        var segundo = await CrearConClaveAsync(sesion, json, excel, clave, HttpStatusCode.Created);
+
+        segundo.GetProperty("folio").GetString().Should().Be(primero.GetProperty("folio").GetString(), "la repetición relee el mismo folio");
+        (await EscalarAsync($"SELECT CAST(COUNT(*) AS nvarchar(10)) FROM dbo_cotifly.CotizacionesSolicitud WHERE usuarioId = '{sesion.UsuarioId}'"))
+            .Should().Be("1", "una sola licitación");
+        _nexo.SolicitudesCreadas.Should().HaveCount(1, "la repetición no reenvía a Nexo");
+    }
+
+    [Fact]
+    public async Task Hu293_MismaClaveConOtroArchivoEs409()
+    {
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var clave = Guid.NewGuid().ToString();
+        var json = clsPliegoMuestra.Json(clsCosteoEndpointsTests.Nit, clsPliegoMuestra.Lineas());
+
+        await CrearConClaveAsync(sesion, json, clsPliegoMuestra.Excel(3), clave, HttpStatusCode.Created);
+
+        using var otra = await EnviarConClaveAsync(sesion, json, clsPliegoMuestra.Excel(4), clave);
+        (await VerificarContratoAsync(otra, "/web/licitaciones", HttpMethod.Post, HttpStatusCode.Conflict))
+            .GetProperty("error").GetProperty("codigo").GetString().Should().Be("IDEMPOTENCY_KEY_REUTILIZADA");
+    }
+
+    [Fact]
+    public async Task Hu293_UnReportePorFilaNoGastaLaClave()
+    {
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var clave = Guid.NewGuid().ToString();
+        object[] lineas = [new { fila = 0, origen = "BUENAVENTURA", destino = "", peso_kg = 32000m, tipo_vehiculo = "3S3" }];
+        var json = clsPliegoMuestra.Json(clsCosteoEndpointsTests.Nit, lineas);
+        var excel = clsPliegoMuestra.Excel();
+
+        var primero = await CrearConClaveAsync(sesion, json, excel, clave, HttpStatusCode.BadRequest);
+        var segundo = await CrearConClaveAsync(sesion, json, excel, clave, HttpStatusCode.BadRequest);
+
+        primero.GetProperty("error").GetProperty("codigo").GetString().Should().Be("LICITACION_INVALIDA");
+        // El reporte se vuelve a evaluar (no es una respuesta guardada): el 400 no consume la clave y nada queda guardado.
+        segundo.GetProperty("error").GetProperty("codigo").GetString().Should().Be("LICITACION_INVALIDA");
+        (await EscalarAsync($"SELECT CAST(COUNT(*) AS nvarchar(10)) FROM dbo_cotifly.CotizacionesSolicitud WHERE usuarioId = '{sesion.UsuarioId}'")).Should().Be("0");
+    }
+
+    [Fact]
+    public async Task Hu293_UnaClaveFueraDeLargoEsSolicitudInvalida()
+    {
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+
+        using var respuesta = await EnviarConClaveAsync(sesion, clsPliegoMuestra.Json(clsCosteoEndpointsTests.Nit, clsPliegoMuestra.Lineas()), clsPliegoMuestra.Excel(), "corta");
+
+        respuesta.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        _nexo.SolicitudesCreadas.Should().BeEmpty();
+    }
+
+    private async Task<HttpResponseMessage> EnviarConClaveAsync(clsSesionPrueba sesion, string json, byte[] excel, string clave)
+    {
+        using var peticion = new HttpRequestMessage(HttpMethod.Post, "/web/licitaciones") { Content = clsApiWebPruebas.Licitacion(json, excel) };
+        peticion.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", sesion.Access);
+        peticion.Headers.TryAddWithoutValidation("Idempotency-Key", clave);
+        return await _api.Cliente.SendAsync(peticion);
+    }
+
+    private async Task<JsonElement> CrearConClaveAsync(clsSesionPrueba sesion, string json, byte[] excel, string clave, HttpStatusCode esperado)
+    {
+        using var respuesta = await EnviarConClaveAsync(sesion, json, excel, clave);
+        return await VerificarContratoAsync(respuesta, "/web/licitaciones", HttpMethod.Post, esperado);
+    }
+
     private async Task<JsonElement> CrearAsync(clsSesionPrueba sesion, object[] lineas, byte[] excel, HttpStatusCode esperado)
     {
         using var respuesta = await _api.EnviarContenidoAsync(HttpMethod.Post, "/web/licitaciones", sesion.Access,

@@ -196,6 +196,13 @@ public sealed record clsLicitacion(
     /// serializa, como en <c>CotizacionResumen</c> y <c>CosteoCotizacion</c>.
     /// </summary>
     public DateTimeOffset? FinalizadaAt { get; init; }
+
+    /// <summary>
+    /// HU-044.10 (#293, parte 1): cómo se leyó el Excel de la licitación (<see cref="clsOrigenLectura.AnalizarExcel"/> o
+    /// <see cref="clsOrigenLectura.LeerEstructura"/>); <c>null</c> si la licitación no tiene archivo. Una licitación con archivo anterior al
+    /// script 22 (sin <c>origenLectura</c> guardado) cae en <see cref="clsOrigenLectura.AnalizarExcel"/>. Siempre se serializa.
+    /// </summary>
+    public string? OrigenLectura { get; init; }
 }
 
 /// <summary>
