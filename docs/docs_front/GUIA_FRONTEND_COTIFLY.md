@@ -1392,7 +1392,15 @@ El comercial marca en el costeo, ruta por ruta, si la ruta incluye el seguro de 
   PDF queda desactualizado.
 - **Recálculos:** si cambia `valor_mercancia` (editar la solicitud o `datos_carga` de re-solicitar), el seguro se recalcula con la tasa
   vigente. La versión nueva conserva el check.
-- **Todavía no:** la línea "Seguro de la mercancía" en el PDF, el Excel y el correo (HU-045.3, #265).
+- **En el PDF, el Excel, el correo y el detalle (HU-045.3, #265):** el PDF trae una fila "Seguro de la mercancía" por ruta, aparte del
+  flete (la fila de la ruta ya no lo incluye; el total sí). El Excel de la cotización trae la columna `Seguro de la mercancía ({moneda})`. El
+  correo no lo desglosa: el precio de la ruta lo incluye y `resumen.rutas[].incluye_seguro` indica que lo trae (el correo dice "Incluye el
+  seguro de la mercancía"). El detalle por folio trae `totales.precio_seguro`: mostrar `precio_transporte + precio_conexos +
+  precio_seguro = precio_final`. Nunca se exporta la tasa.
+- **Check marcado sin valor (HU-045.3, decisión del 2026-11-09: se avisa, no se bloquea):** `CosteoCotizacion` (y `costeo` del detalle)
+  y el 201 de "Generar PDF" y la vista previa del correo traen `aviso_seguro` (`{codigo: "SEGURO_SIN_VALOR_MERCANCIA", mensaje, rutas[]}`, o `null`). Mostrar el
+  `mensaje` y resaltar las rutas: su seguro no suma ni sale en el PDF. El comercial edita el valor de la mercancía o quita el check, mejor
+  **antes de Finalizar** (después, la corrección va en una versión nueva).
 
 ### 5.18.4 Política de seguros por ruta y "Finalizar" (HU-046.3, #269). Implementado, pendiente de QA
 
@@ -1418,8 +1426,9 @@ Contrato completo: `CONTRATOS_API_COTIFLY_FRONTEND.md` 4.4.3 (`politica_seguros`
 ### 5.19 PDF del costeo (`POST /web/cotizaciones/{folio}/costeo/pdf`). En QA
 
 - Sin cuerpo. El servidor arma el PDF: una fila con origen, destino, vehículo y el **valor final de la ruta** (transporte con su margen y conexos a su venta, sin margen, HU-043.2; sin desglose), los conexos listados como incluidos **sin precio** y, al final, el "VALOR TOTAL DE LA COTIZACIÓN" con la leyenda de impuestos (HU-033, #199; antes la tarifa del transporte y cada conexo con su precio).
-- 201 `SalidaPdf` `{cotizacion_id, folio, pdf_url, registrada_en_bd: true}`.
-- 400 `PDF_PAYLOAD_INVALIDO`. 404. 409 `COSTEO_NO_LISTO`, `PDF_YA_GENERADO` (ya hay un PDF **vigente**), `PDF_YA_ENVIADO` o `CONFLICTO_CONCURRENCIA` (`If-Match` opcional aquí). 503 `PDF_RENDER_NO_DISPONIBLE` (transitorio: reintentar; desde #92).
+- 201 `SalidaPdf` `{cotizacion_id, folio, pdf_url, registrada_en_bd: true, aviso_seguro: null}` (HU-045.3: `aviso_seguro` trae `{codigo, mensaje, rutas[]}` si alguna ruta tiene el seguro marcado sin valor de la mercancía; ver 5.18.3).
+- HU-045.3 (#265): la ruta con seguro de la mercancía lleva una fila propia, "Seguro de la mercancía", aparte del flete; el total no cambia.
+- 400 `PDF_PAYLOAD_INVALIDO`. HU-045.3: el 201 puede traer `aviso_seguro` (ver 5.18.3). 404. 409 `COSTEO_NO_LISTO`, `PDF_YA_GENERADO` (ya hay un PDF **vigente**), `PDF_YA_ENVIADO` o `CONFLICTO_CONCURRENCIA` (`If-Match` opcional aquí). 503 `PDF_RENDER_NO_DISPONIBLE` (transitorio: reintentar; desde #92).
 - **Ya no es "una sola vez".** Mientras la cotización no se haya enviado ni tenga resultado, ajustar el margen, los conexos o los textos, o re-solicitar en el mismo folio, invalida el PDF (`pdf_url = null`, `pdf_desactualizado = true`) y se **regenera** con este mismo endpoint (ADR-018 §11). Ya enviada o con resultado, los cambios van en una versión `-vN`. Antes de generarlo, confirmar el teléfono (`GET`/`PUT /web/usuario/telefono`).
 - Hoy se permite en `autocosteo` y en `entregada` (**a confirmar** con negocio si solo en `entregada`).
 

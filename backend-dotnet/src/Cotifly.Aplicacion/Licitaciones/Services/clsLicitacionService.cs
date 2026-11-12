@@ -208,6 +208,7 @@ public sealed class clsLicitacionService(
                 CamionesExportacion(l, vehiculos, carrocerias), CubicacionLegible(l))
             {
                 Rechazada = l.Rechazada,
+                ValorSeguro = Costeo.Services.clsCosteoCotizacionService.ValorSeguroPdf(cotizacion, l),
             })],
             conexos,
             ahora)

@@ -691,6 +691,10 @@ paths:
           no sale y responde 400 `CORREO_ENVIO_FALLIDO` (fila `fallido` en el historial).
         El orden es: dueño (404), correo deshabilitado (503), asunto con controles, destinatarios con controles, tope,
         formato de las direcciones, largos. Nada de esto llama a MailSender ni cambia el estado de envío.
+
+        HU-045.3 (#265): el precio de cada ruta y el total del bloque fijo incluyen el seguro de la mercancía (sin desglose, regla de HU-033);
+        la ruta que lo incluye dice "Incluye el seguro de la mercancía". Una ruta con el seguro marcado sin valor de la mercancía no bloquea
+        el envío (decisión del usuario del 2026-11-09): su precio no lo incluye y no lo menciona.
       security:
         - bearer: []
       parameters:
@@ -4004,6 +4008,15 @@ paths:
         HU-012.1. Acepta `If-Match` opcional (desde el `0006` de #98: si viene y no coincide, 409 `CONFLICTO_CONCURRENCIA`).
         Al regenerar un PDF desactualizado, el anterior se archiva en el almacén como `{folio}-hN.pdf` (queda en el
         historial) y el nuevo conserva el nombre `{folio}.pdf`.
+
+        **Seguro de la mercancía (HU-045.3, #265, ADR-032 §9).** Una ruta con el seguro (`incluye_seguro`, #264) lo trae en una fila propia,
+        "Seguro de la mercancía", aparte del flete (política NOGE0076): la fila de la ruta imprime su valor final SIN el seguro y la fila del
+        seguro su `valor_seguro`; en el pliego, el resumen agrega la fila del seguro debajo de la ruta (con su número). El "VALOR TOTAL DE LA
+        COTIZACIÓN" no cambia: la suma de los `precio_final_linea`, con el seguro. Nunca imprime la tasa. En COP, el seguro y los montos que
+        lo incluyen (resumen y total) se imprimen con sus centavos cuando los tienen (`$100,40`), para que lo impreso cuadre con lo guardado
+        (B1, decisión del usuario); sin centavos, en pesos enteros como siempre. Una ruta que cotiza con el seguro
+        marcado y sin valor de la mercancía (una edición quitó el valor) NO bloquea (decisión del usuario del 2026-11-09): el seguro no suma,
+        la ruta sale sin su fila y el 201 trae `aviso_seguro` (`AvisoSeguro`) con las rutas.
       security:
         - bearer: []
       parameters:
@@ -5509,6 +5522,85 @@ paths:
         '500':
           $ref: '#/components/responses/ErrorInterno'
 
+  /web/licitaciones/aplicar-mapeo:
+    post:
+      operationId: aplicarMapeoLicitacion
+      tags: [web]
+      summary: Aplica en NEXO el mapeo confirmado a todas las filas y las traduce a líneas de licitación de Cotifly
+      description: |
+        HU-044.3 (#254, ADR-028 y ADR-029; **provisional, se renumera al integrar**). Reenvía el mapeo confirmado y TODAS las filas de
+        la hoja a `POST {Nexo:UrlBase}/api/captura-solicitudes/aplicar-mapeo`, con la identidad del comercial (Rol Comercial). NEXO
+        convierte cada fila con las reglas de su captura (diccionario del cliente por `nit_cliente`, transformaciones como toneladas a
+        kg, «ORIGEN - DESTINO» o coma decimal) y Cotifly traduce cada línea al formato de `LineaLicitacionWeb`, lista para
+        `POST /web/licitaciones`, sin que el front arme las líneas a mano. No guarda nada.
+
+        **Líneas (`lineas[]`).** Usan los mismos nombres que `lineas[]` de `POST /web/licitaciones`, más `fila_excel` (el número de fila
+        de Excel que dio NEXO) y `linea_nexo` (la línea de negocio de NEXO). `fila` es el índice base 0 en las `filas` enviadas
+        (`fila = fila_excel - primera_fila`). Los ids de municipio van **siempre en `null`** (los resuelve el alta). `peso_kg` es la
+        carga sin tara. Una mercancía sin código recibe el más parecido del catálogo del cubicador (si lo hay); si no, queda sin código
+        y lo escoge el comercial.
+
+        **Línea de negocio.** `linea_negocio` es la de **Cotifly** (la misma traducción de `normalizar-valores`, ADR-029) y `linea_nexo`
+        la de NEXO. Si NEXO trae una línea sin equivalencia en Cotifly, la fila vuelve en `lineas[]` (con `linea_negocio = null`) **y** en
+        `errores[]` con el código `LINEA_NEGOCIO_SIN_EQUIVALENCIA`: el comercial elige la línea en la revisión.
+
+        **Errores por fila (`errores[]`).** Una fila con errores de NEXO va **solo** en `errores[]` (NEXO devuelve hasta 100 en la lista);
+        `campo` va tal como lo manda NEXO. No reemplaza las validaciones de `POST /web/licitaciones`: la línea se valida al crear.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AplicarMapeoWeb'
+      responses:
+        '200':
+          description: Las líneas traducidas y los errores por fila (también 200 con `errores[]` por fila)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MapeoAplicado'
+        '400':
+          description: |
+            Validación local, sin llamar a NEXO y con los códigos de NEXO: `MAPEO_REQUERIDO`, `DEMASIADAS_COLUMNAS` (más de 100
+            columnas, o una fila con más de 100 celdas), `COLUMNA_INVALIDA`, `COLUMNA_FUERA_DE_RANGO`, `CAMPO_INVALIDO`,
+            `CAMPO_DUPLICADO`, `TRANSFORMACION_INVALIDA`, `EXCEL_SIN_DATOS`, `DEMASIADAS_FILAS` (más de 5000, el tope de NEXO),
+            `FILA_INVALIDA`, `CLIENTE_NIT_INVALIDO`. De NEXO, el 400 del mapeo con su código (`CAMPO_REQUERIDO`,
+            `TRANSFORMACION_NO_APLICA`...). Un cuerpo que no es JSON: `ErrorWeb`.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorNegocio'
+                  - $ref: '#/components/schemas/ErrorWeb'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: '`NEXO_SIN_PERMISO`: NEXO respondió 401/403 para el comercial. Sin el rol Comercial en Cotifly, `ErrorWeb`'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorNegocio'
+                  - $ref: '#/components/schemas/ErrorWeb'
+        '415':
+          $ref: '#/components/responses/TipoContenidoNoSoportado'
+        '429':
+          description: '`IA_TOPE_DIARIO`: el comercial agotó su cupo diario de IA en NEXO'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '503':
+          description: '`NEXO_NO_DISPONIBLE`: la importación inteligente está apagada, NEXO no responde o respondió el 429 por minuto'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+
   /web/clientes/{nit}/destinatarios-previos:
     get:
       operationId: obtenerDestinatariosPrevios
@@ -6209,6 +6301,8 @@ components:
                 - ENCABEZADOS_REQUERIDOS
                 - DEMASIADAS_COLUMNAS
                 - DEMASIADAS_FILAS
+                - FILA_INVALIDA
+                - LINEA_NEGOCIO_SIN_EQUIVALENCIA
                 - ENCABEZADO_DEMASIADO_LARGO
                 - COLUMNA_FUERA_DE_RANGO
                 - COLUMNA_INVALIDA
@@ -6522,6 +6616,42 @@ components:
           type: string
         registrada_en_bd:
           type: boolean
+        aviso_seguro:
+          description: |
+            HU-045.3 (#265). Solo en `POST .../costeo/pdf`: las rutas con el seguro de la mercancía marcado sin valor de la mercancía (el
+            PDF salió sin su fila; no bloquea). `null` si no hay ninguna (y siempre en el PDF del chat).
+          oneOf:
+            - $ref: '#/components/schemas/AvisoSeguro'
+            - $ref: '#/components/schemas/Nulo'
+
+    AvisoSeguro:
+      type: object
+      required: [codigo, mensaje, rutas]
+      description: |
+        HU-045.3 (#265, decisión del usuario del 2026-11-09). Aviso, no error: rutas que cotizan con el seguro de la mercancía marcado
+        (`incluye_seguro = true`) y SIN valor de la mercancía (una edición quitó el valor). Su seguro no suma al precio ni sale en el PDF.
+        Mostrar `mensaje` y resaltar las rutas: el comercial edita el valor de la mercancía (en una versión nueva si ya está finalizada) o
+        quita el seguro.
+      properties:
+        codigo:
+          type: string
+          description: Siempre `SEGURO_SIN_VALOR_MERCANCIA` (el código del catálogo de errores; aquí es un aviso).
+        mensaje:
+          type: string
+        rutas:
+          type: array
+          items:
+            $ref: '#/components/schemas/RutaAvisoSeguro'
+
+    RutaAvisoSeguro:
+      type: object
+      required: [linea_orden, linea_solicitud_id]
+      properties:
+        linea_orden:
+          type: integer
+        linea_solicitud_id:
+          type: string
+          format: uuid
 
     RespuestaChat:
       type: object
@@ -7188,11 +7318,11 @@ components:
 
     TotalesCotizacion:
       type: object
-      required: [rutas, camiones, peso_kg, precio_transporte, precio_conexos, precio_final]
+      required: [rutas, camiones, peso_kg, precio_transporte, precio_conexos, precio_seguro, precio_final]
       description: |
         HU-027.1 (#179). Totales de la solicitud con las reglas del costeo y del PDF, en la moneda de la cotización. Los precios son `null`
-        mientras alguna ruta no tenga precio; `precio_transporte + precio_conexos = precio_final`. HU-043.2 (#251): el margen se aplica
-        solo al transporte; los conexos van a su precio de venta, sin margen.
+        mientras alguna ruta no tenga precio; `precio_transporte + precio_conexos + precio_seguro = precio_final` (HU-045.3, #265). HU-043.2
+        (#251): el margen se aplica solo al transporte; los conexos van a su precio de venta, sin margen, y el seguro (HU-045.2) tampoco lo lleva.
       properties:
         rutas:
           type: integer
@@ -7216,6 +7346,12 @@ components:
           description: |
             Suma del precio de los servicios conexos de todas las rutas. HU-043.2 (#251): su precio de VENTA (el `valorVenta` de Nexo o el
             `precioVenta` del catálogo; sin él, el costo), sin margen.
+        precio_seguro:
+          type: number
+          nullable: true
+          description: |
+            HU-045.3 (#265, B4 de la auditoría de #264). Suma del `valor_seguro` de las rutas que cotizan (0 si ninguna incluye el seguro de
+            la mercancía), sin margen. Nunca la tasa.
         precio_final:
           type: number
           nullable: true
@@ -7386,8 +7522,8 @@ components:
     ResumenCorreo:
       type: object
       description: |
-        HU-033 (#199, decisión 5). Bloque fijo del correo para el cliente: el precio final de cada ruta (transporte y conexos
-        incluidos) y el total general, sin desglose (nunca costo, margen, flete ni conexos con precio).
+        HU-033 (#199, decisión 5). Bloque fijo del correo para el cliente: el precio final de cada ruta (transporte, conexos y, HU-045.3,
+        #265, el seguro de la mercancía incluidos) y el total general, sin desglose (nunca costo, margen, flete, conexos ni seguro con precio).
       required: [moneda, total, total_texto, rutas, leyenda]
       properties:
         moneda:
@@ -7412,7 +7548,7 @@ components:
 
     RutaResumenCorreo:
       type: object
-      required: [orden, ruta, precio_texto]
+      required: [orden, ruta, precio_texto, incluye_seguro]
       properties:
         orden:
           type: integer
@@ -7425,6 +7561,11 @@ components:
           description: Precio final de la ruta; `null` si la Mesa de Costeo la rechazó (`precio_texto` = "Sin costeo").
         precio_texto:
           type: string
+        incluye_seguro:
+          type: boolean
+          description: |
+            HU-045.3 (#265). El precio de la ruta incluye el seguro de la mercancía (el correo dice "Incluye el seguro de la mercancía",
+            sin el monto ni la tasa).
 
     SeguimientoWeb:
       type: object
@@ -8315,6 +8456,291 @@ components:
           items:
             type: string
 
+    AplicarMapeoWeb:
+      type: object
+      description: HU-044.3 (#254, provisional). Cuerpo de `POST /web/licitaciones/aplicar-mapeo`.
+      required: [columnas, filas]
+      properties:
+        nit_cliente:
+          type: string
+          nullable: true
+          maxLength: 30
+          description: NIT del cliente de la licitación (con o sin puntos y dígito de verificación). Opcional.
+        columnas:
+          type: array
+          minItems: 1
+          maxItems: 100
+          description: El mapeo confirmado (al menos una columna con su campo).
+          items:
+            type: object
+            required: [indice, campo]
+            properties:
+              indice:
+                type: integer
+                minimum: 0
+                maximum: 99
+              campo:
+                type: string
+                maxLength: 50
+                description: Campo de NEXO (camelCase) o `ignorar`.
+              transformacion:
+                type: string
+                nullable: true
+                maxLength: 50
+                description: Transformación de NEXO (`peso_toneladas_a_kg`, `dividir_origen_destino`...); vacía o ausente = ninguna.
+        filas:
+          type: array
+          maxItems: 5000
+          description: Todas las filas de la hoja, sin el encabezado (máx. 5000, el tope de NEXO). Cada celda es texto.
+          items:
+            type: array
+            items:
+              type: string
+              nullable: true
+        primera_fila:
+          type: integer
+          nullable: true
+          minimum: 2
+          maximum: 1048576
+          description: Número de Excel de la primera fila enviada (la del encabezado + 1). Por defecto 2, como NEXO.
+
+    MapeoAplicado:
+      type: object
+      description: HU-044.3 (#254, provisional). Respuesta de `POST /web/licitaciones/aplicar-mapeo`.
+      required: [total_filas, filas_vacias, filas_con_errores, total_errores, lineas, errores]
+      properties:
+        total_filas:
+          type: integer
+          description: Total de filas que procesó NEXO.
+        filas_vacias:
+          type: integer
+          description: Filas sin datos que NEXO descartó.
+        filas_con_errores:
+          type: integer
+          description: Filas con error (las que rechazó NEXO más las que Cotifly marcó por su línea de negocio).
+        total_errores:
+          type: integer
+          description: Total de errores por fila (NEXO devuelve hasta 100 en `errores[]`; este número los cuenta todos).
+        lineas:
+          type: array
+          description: Las líneas traducidas, en el orden del archivo. Una fila sin equivalencia de línea de negocio también vuelve aquí.
+          items:
+            $ref: '#/components/schemas/LineaLicitacionImportada'
+        errores:
+          type: array
+          description: Errores por fila, ordenados por `fila_excel`.
+          items:
+            $ref: '#/components/schemas/ErrorFilaImportada'
+
+    ErrorFilaImportada:
+      type: object
+      description: HU-044.3 (#254). Un error de una fila de `aplicar-mapeo` (los mismos nombres que `ErrorFilaLicitacion`, sin `indice`).
+      required: [fila, fila_excel, campo, codigo, mensaje]
+      properties:
+        fila:
+          type: integer
+          nullable: true
+          minimum: 0
+          description: Índice base 0 de la fila en las `filas` enviadas; `null` si NEXO la numeró fuera de ellas.
+        fila_excel:
+          type: integer
+          description: Número de fila de Excel que dio NEXO (`primera_fila` + posición).
+        campo:
+          type: string
+          description: El campo (los de NEXO tal como los manda NEXO; `linea_negocio` en el de Cotifly; `fila` si es de toda la fila).
+        codigo:
+          type: string
+          description: Código del error (de NEXO, o `LINEA_NEGOCIO_SIN_EQUIVALENCIA` de Cotifly).
+        mensaje:
+          type: string
+
+    MercanciaImportada:
+      type: object
+      description: |
+        HU-044.3 (#254). Una posición de NEXO como mercancía de Cotifly: un subconjunto de `PosicionCargaWeb` con los mismos nombres. La
+        descripción de NEXO va en `descripcion` y en `nombre_mercancia` (los dos nombres del campo).
+      required: [codigo_mercancia, descripcion, nombre_mercancia, cantidad, largo_cm, ancho_cm, alto_cm, peso_kg]
+      properties:
+        codigo_mercancia:
+          type: string
+          nullable: true
+          maxLength: 64
+          description: Código del catálogo del cubicador (el del Excel o el sugerido por la descripción); `null` si no se encontró uno.
+        descripcion:
+          type: string
+          nullable: true
+          maxLength: 200
+        nombre_mercancia:
+          type: string
+          nullable: true
+          maxLength: 200
+        cantidad:
+          type: integer
+          minimum: 1
+          maximum: 100000
+        largo_cm:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 999999
+          description: '`null` las tres medidas si NEXO no trae ninguna.'
+        ancho_cm:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 999999
+        alto_cm:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 999999
+        peso_kg:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 999999.99
+          description: Peso por unidad en kg.
+
+    LineaLicitacionImportada:
+      type: object
+      description: |
+        HU-044.3 (#254). Una fila traducida a la línea de licitación de Cotifly: un subconjunto de `LineaLicitacionWeb` con los mismos
+        nombres y significado, MÁS `fila_excel` (el número de Excel) y `linea_nexo` (la línea de negocio de NEXO). Va tal cual en
+        `lineas[]` de `POST /web/licitaciones`. Los ids de municipio van siempre en `null`.
+      required:
+        - fila
+        - fila_excel
+        - linea_negocio
+        - linea_nexo
+        - origen
+        - destino
+        - origen_municipio_id
+        - destino_municipio_id
+        - horas_cargue
+        - horas_descargue
+        - tipo_vehiculo
+        - carroceria
+        - tipologia
+        - clase_viaje
+        - clase_contenedor
+        - exclusivo
+        - consolidado
+        - retorna_contenedor
+        - ciudad_devolucion_contenedor
+        - ciudad_devolucion_municipio_id
+        - levante_contenedor_diferente
+        - ciudad_levante_contenedor
+        - ciudad_levante_municipio_id
+        - peso_kg
+        - valor_mercancia
+        - mercancias
+      properties:
+        fila:
+          type: integer
+          nullable: true
+          minimum: 0
+          description: Índice base 0 en las `filas` enviadas (`fila = fila_excel - primera_fila`); `null` si NEXO la numeró fuera.
+        fila_excel:
+          type: integer
+          description: Número de fila de Excel que dio NEXO. No está en `LineaLicitacionWeb` (es solo para pintar la revisión).
+        linea_negocio:
+          type: string
+          nullable: true
+          description: Línea de negocio de **Cotifly** (ADR-029); `null` sin texto o sin equivalencia (entonces va también a `errores[]`).
+        linea_nexo:
+          type: string
+          nullable: true
+          description: Línea de negocio de NEXO de la que sale. No está en `LineaLicitacionWeb`.
+        origen:
+          type: string
+          maxLength: 150
+        destino:
+          type: string
+          maxLength: 150
+        origen_municipio_id:
+          type: integer
+          nullable: true
+          description: Siempre `null` (lo resuelve el alta por el texto de `origen`).
+        destino_municipio_id:
+          type: integer
+          nullable: true
+          description: Siempre `null`.
+        horas_cargue:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 240
+        horas_descargue:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 240
+        tipo_vehiculo:
+          type: string
+          nullable: true
+          maxLength: 100
+        carroceria:
+          type: string
+          nullable: true
+          maxLength: 100
+        tipologia:
+          type: string
+          nullable: true
+          maxLength: 50
+        clase_viaje:
+          type: string
+          nullable: true
+          maxLength: 50
+        clase_contenedor:
+          type: string
+          nullable: true
+          maxLength: 20
+        exclusivo:
+          type: boolean
+          nullable: true
+        consolidado:
+          type: boolean
+          nullable: true
+        retorna_contenedor:
+          type: boolean
+          nullable: true
+        ciudad_devolucion_contenedor:
+          type: string
+          nullable: true
+          maxLength: 150
+        ciudad_devolucion_municipio_id:
+          type: integer
+          nullable: true
+          description: Siempre `null`.
+        levante_contenedor_diferente:
+          type: boolean
+          nullable: true
+        ciudad_levante_contenedor:
+          type: string
+          nullable: true
+          maxLength: 150
+        ciudad_levante_municipio_id:
+          type: integer
+          nullable: true
+          description: Siempre `null`.
+        peso_kg:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 999999.99
+          description: La carga, sin tara (la tara solo aplica a Contenedor y la pone el comercial).
+        valor_mercancia:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 9999999999999.99
+        mercancias:
+          type: array
+          nullable: true
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/MercanciaImportada'
+
     CatalogosFlete:
       type: object
       required: [tipos_vehiculo, tipos_carroceria, clases_viaje, clases_contenedor]
@@ -8911,6 +9337,13 @@ components:
             seguro en una ruta (la de cada ruta que ya lo tiene es `rutas[].tasa_seguro`). Viene en `GET .../costeo`, en
             `PUT .../costeo/seguro`, en las respuestas del margen y de los conexos y en `costeo` del detalle por folio; `null` en las
             demás (PDF, textos, recálculo de vehículos) o si no se pudo leer: conservar la del último `GET`.
+        aviso_seguro:
+          description: |
+            HU-045.3 (#265). Las rutas con el seguro de la mercancía marcado sin valor de la mercancía (no suma ni sale en el PDF; no
+            bloquea); `null` si no hay ninguna. Viene en toda respuesta `CosteoCotizacion` y en `costeo` del detalle por folio.
+          oneOf:
+            - $ref: '#/components/schemas/AvisoSeguro'
+            - $ref: '#/components/schemas/Nulo'
         textos:
           description: HU-013.5. Asunto e introducción guardados para el PDF, o `null` si todavía no hay (el PDF usa los estándar).
           oneOf:
@@ -12013,6 +12446,13 @@ components:
           type: string
           nullable: true
           description: HU-033. Texto del aviso de pruebas para mostrar tal cual; `null` en producción.
+        aviso_seguro:
+          description: |
+            HU-045.3 (#265). Las rutas con el seguro de la mercancía marcado sin valor de la mercancía (no suma ni sale en el PDF; no
+            bloquea el envío); `null` si no hay ninguna. El mismo aviso de `CosteoCotizacion`.
+          oneOf:
+            - $ref: '#/components/schemas/AvisoSeguro'
+            - $ref: '#/components/schemas/Nulo'
 
     DatosNuevaVersion:
       type: object

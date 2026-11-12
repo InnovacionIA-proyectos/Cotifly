@@ -160,6 +160,10 @@ public static class clsDependenciasAplicacion
         // HU-044.4 (#255, ADR-029): POST /web/licitaciones/normalizar-valores con NEXO (el puerto de la importación lo registra Infraestructura).
         servicios.AddScoped<Licitaciones.Services.IClsNormalizacionValoresService, Licitaciones.Services.clsNormalizacionValoresService>();
 
+        // HU-044.3 (#254, ADR-028 y ADR-029): POST /web/licitaciones/aplicar-mapeo (el puerto de la importación y el cubicador los registra
+        // Infraestructura; el cubicador es opcional: sin él las mercancías sin código quedan sin sugerencia).
+        servicios.AddScoped<Licitaciones.Services.IClsAplicacionMapeoService, Licitaciones.Services.clsAplicacionMapeoService>();
+
         // Tablero de métricas agregadas (HU-010.1, ADR-016) y regional del usuario (DimEjecutivo o UsuariosWeb.regional).
         servicios.AddScoped<IClsRegionalUsuario, clsRegionalUsuarioService>();
         // HU-037.3 (#211): GET /web/regionales (selector del director y del gerente).

@@ -15,7 +15,7 @@ internal static class clsBloquePliego
     private static readonly double[] _proporciones = [8, 44, 28, 20];
     private static readonly string[] _columnas = ["N.º", "Ruta", "Vehículo y peso", "Tarifa"];
 
-    public static void Agregar(Section seccion, clsResumenPliegoDocumento resumen, clsDisenoPdf diseno)
+    public static void Agregar(Section seccion, clsResumenPliegoDocumento resumen, clsDisenoPdf diseno, IReadOnlyList<string>? textoSeguros = null)
     {
         clsBloqueTarifa.Titulo(seccion, resumen.Titulo, diseno.H1, diseno.MargenH1, diseno);
         Espacio(seccion, diseno.MargenTabla);
@@ -71,5 +71,11 @@ internal static class clsBloquePliego
 
         var nota = Parrafo(seccion.AddParagraph(), diseno.NotaGeneral, diseno.Alto, Atenuado, alineacion: ParagraphAlignment.Justify, antes: diseno.MargenNotaGeneral);
         AgregarTexto(nota, resumen.Nota);
+
+        // #261 (HU-046): el texto de seguros de la propuesta va justo después del resumen del pliego.
+        if (textoSeguros is { Count: > 0 } seguros)
+        {
+            clsBloqueTarifa.TextoSeguros(seccion, seguros, diseno);
+        }
     }
 }
