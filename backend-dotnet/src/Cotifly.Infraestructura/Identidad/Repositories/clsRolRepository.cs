@@ -65,6 +65,10 @@ public sealed class clsRolRepository(clsCotiflyDbContext contexto, ILogger<clsRo
         return filas.GroupBy(f => f.UsuarioId).ToDictionary(g => g.Key, g => g.Max(f => f.Codigo));
     }
 
+    public async Task<IReadOnlyList<clsUsuarioRol>> ListarAsignacionesAsync(Guid usuarioId, CancellationToken cancellationToken = default) =>
+        // HU-040.3 (#258): rastreadas (sin AsNoTracking) para que Reactivar/Desactivar las persista la unidad de trabajo del login.
+        await contexto.UsuariosRoles.Where(a => a.UsuarioId == usuarioId).ToListAsync(cancellationToken);
+
     public void AgregarAsignacion(clsUsuarioRol asignacion)
     {
         ArgumentNullException.ThrowIfNull(asignacion);

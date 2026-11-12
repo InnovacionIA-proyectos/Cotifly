@@ -157,6 +157,21 @@ public sealed class clsBaseDatosHealthCheckTests
     }
 
     [Theory]
+    // HU-040.3 (#258): solo falta requiereAltaManual → pide el 23; con una columna de un script anterior gana el anterior.
+    [InlineData("Roles.requiereAltaManual", clsBaseDatosHealthCheck.DescripcionEsquemaSin23)]
+    [InlineData("Roles.requiereAltaManual|CotizacionArchivosLicitacion.origenLectura", clsBaseDatosHealthCheck.DescripcionEsquemaSin22)]
+    [InlineData("Roles.requiereAltaManual|CotizacionServiciosConexos.codigoServicio", clsBaseDatosHealthCheck.DescripcionEsquemaSin21)]
+    [InlineData("Roles.requiereAltaManual|TokensRefresco.rolSesion", clsBaseDatosHealthCheck.DescripcionEsquemaSin16)]
+    [InlineData("Roles.requiereAltaManual|Otra.columna", "esquema incompleto: falta Otra.columna, Roles.requiereAltaManual")]
+    public void HU0403_SinEl23LaSondaPideEl23SoloCuandoNoFaltaUnScriptAnterior(string faltantes, string descripcion)
+    {
+        var resultado = clsBaseDatosHealthCheck.Clasificar(faltantes.Split('|'), cotizacionesViejas: false);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be(descripcion);
+    }
+
+    [Theory]
     [InlineData("CotizacionServiciosConexos.precioVenta", clsBaseDatosHealthCheck.DescripcionEsquemaSin19)]
     [InlineData("CotizacionServiciosConexos.precioVenta|TokensRefresco.rolSesion", clsBaseDatosHealthCheck.DescripcionEsquemaSin16)]
     [InlineData("CotizacionServiciosConexos.precioVenta|SapMapeoTrqType.lineaNegocioId", clsBaseDatosHealthCheck.DescripcionEsquemaSin18)]

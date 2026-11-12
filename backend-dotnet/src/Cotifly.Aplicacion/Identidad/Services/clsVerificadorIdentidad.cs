@@ -17,10 +17,26 @@ namespace Cotifly.Aplicacion.Identidad.Services;
 /// HU-040.2 (#230): roles con los que puede entrar, del catálogo y en el orden de la jerarquía. Uno (<see cref="Rol"/>) en el caso de
 /// rol único; varios si tiene dos o más asignaciones activas (todas respaldadas por ClientePro) o si es un alta con varios roles externos.
 /// </param>
-public sealed record clsIdentidadVerificada(clsUsuarioWeb Usuario, RolInterno Rol, bool EsNuevo, IReadOnlyList<clsRol> RolesDisponibles)
+/// <param name="RolesOtorgados">
+/// HU-040.3 (#258): roles ORDINARIOS que la reconciliación del login auto-otorgó en esta verificación (faltaban y tenían respaldo externo;
+/// se creó o reactivó la asignación). Vacío fuera del login o cuando no hubo cambios. Solo para la auditoría.
+/// </param>
+/// <param name="RolesRevocados">
+/// HU-040.3 (#258): roles que la reconciliación del login auto-revocó (su rol externo dejó de respaldarlos; aplica a todos, fail-safe).
+/// Vacío fuera del login o cuando no hubo cambios. Solo para la auditoría.
+/// </param>
+public sealed record clsIdentidadVerificada(
+    clsUsuarioWeb Usuario, RolInterno Rol, bool EsNuevo, IReadOnlyList<clsRol> RolesDisponibles,
+    IReadOnlyList<RolInterno>? RolesOtorgados = null, IReadOnlyList<RolInterno>? RolesRevocados = null)
 {
     /// <summary>HU-040.2 (#230): con varios roles disponibles el login no emite sesión: la persona elige con cuál entra.</summary>
     public bool RequiereEleccion => RolesDisponibles.Count > 1;
+
+    /// <summary>HU-040.3 (#258): roles ordinarios auto-otorgados en el login (nunca <c>null</c>).</summary>
+    public IReadOnlyList<RolInterno> Otorgados => RolesOtorgados ?? [];
+
+    /// <summary>HU-040.3 (#258): roles auto-revocados en el login (nunca <c>null</c>).</summary>
+    public IReadOnlyList<RolInterno> Revocados => RolesRevocados ?? [];
 
     /// <summary><c>true</c> si <paramref name="rol"/> está entre <see cref="RolesDisponibles"/>.</summary>
     public bool PuedeEntrarCon(RolInterno rol) => RolesDisponibles.Any(r => r.Codigo == rol);
@@ -52,8 +68,12 @@ public sealed record clsVerificacionIdentidad(clsIdentidadVerificada? Identidad,
 /// <item><b>Roles disponibles</b> (HU-040.2, #230, ADR-025): con una asignación activa, el rol de la jerarquía (rol único, igual que
 /// antes); con dos o más, todas ellas (regla <see cref="clsMotivosAcceso.ReglaMultiRol"/>): la persona elige al entrar.</item>
 /// </list>
-/// Cualquier diferencia de rol o de <c>NOMBREUSUARIO</c> es un rechazo con motivo; eso nunca se re-sincroniza solo. Los fallos
-/// del almacén son <see cref="clsMotivosAcceso.AlmacenNoDisponible"/> (fail-closed). Los fallos de <c>dbo_cotifly</c> se propagan.
+/// HU-040.3 (#258, ADR-009 OPCIÓN B+): <b>en el login</b> (<c>permitirAlta: true</c>) el rol interno se RECONCILIA con los roles externos
+/// vigentes: se auto-otorgan los roles ORDINARIOS que falten y se auto-revocan TODOS los que perdieron su respaldo (fail-safe); un rol
+/// SENSIBLE (<see cref="clsRol.RequiereAltaManual"/>) que falte sigue con rechazo + alta manual. <b>En el refresh y en la elección de rol</b>
+/// (<c>permitirAlta: false</c>) la verificación sigue ESTRICTA: cualquier desajuste de rol es un rechazo, no se reconcilia. Un
+/// <c>NOMBREUSUARIO</c> inconsistente siempre es rechazo. Los fallos del almacén son <see cref="clsMotivosAcceso.AlmacenNoDisponible"/>
+/// (fail-closed, nunca se reconcilia sobre una lectura fallida). Los fallos de <c>dbo_cotifly</c> se propagan.
 /// <para>
 /// <b>Datos corporativos (#81, solo en el login):</b> la regional se busca en <c>DimEjecutivo</c>
 /// (<see cref="IClsDirectorioEjecutivos"/>) al crear el usuario y en cada login siguiente ya verificado, que además refresca
@@ -147,28 +167,27 @@ public sealed class clsVerificadorIdentidad(
             return Rechazo(clsMotivosAcceso.IdentidadInconsistente, regla, porNombre.Id);
         }
 
-        var asignados = await roles.ListarRolesAsignadosAsync(porNombre.Id, cancellationToken);
-        if (asignados.Count == 0)
-        {
-            return Rechazo(clsMotivosAcceso.SinAsignacionActiva, regla, porNombre.Id);
-        }
-
-        // HU-040.1 (#229): se compara contra el CONJUNTO de asignaciones activas. El rol resuelto (jerarquía) debe estar asignado y
-        // ninguna asignación activa puede haber perdido su rol externo. Con una sola asignación equivale a la regla anterior
-        // (asignación == rol resuelto). HU-040.2 (#230): la regla no cambia; lo que cambia es que con dos o más se elige el rol.
-        if (!asignados.Contains(rol) || asignados.Any(a => !mapeados.Contains(a)))
-        {
-            return Rechazo(clsMotivosAcceso.RolExternoCambio, regla, porNombre.Id);
-        }
-
-        if (porNombre.IdUsuarioExterno is null)
-        {
-            porNombre.VincularUsuarioExterno(externo.IdUsuarioExterno);
-        }
-
         if (permitirAlta)
         {
-            // Login ya verificado (rol y NOMBREUSUARIO coinciden): solo se refrescan datos que no deciden el acceso.
+            // HU-040.3 (#258, ADR-009 OPCIÓN B+): en el LOGIN el rol interno se RECONCILIA con los roles externos vigentes, en vez de
+            // rechazar ante cualquier desajuste. Se auto-OTORGAN los roles ORDINARIOS que falten (creando o reactivando la asignación) y se
+            // auto-REVOCAN TODOS los que perdieron su respaldo externo (quitar privilegio es fail-safe). Los roles SENSIBLES
+            // (requiereAltaManual, p. ej. director) que falten NO se auto-otorgan: se mantiene el rechazo + alta manual + auditoría. Solo se
+            // reconcilia sobre la lectura EXITOSA del almacén: si el almacén falla ya se rechazó antes (almacen_no_disponible), así que nunca
+            // se revoca por una lectura parcial (fail-closed).
+            var asignaciones = await roles.ListarAsignacionesAsync(porNombre.Id, cancellationToken);
+            var (rechazo, efectivos, otorgados, revocados) = Reconciliar(catalogo, asignaciones, mapeados, rol, porNombre.Id, ahora);
+            if (rechazo is not null)
+            {
+                return Rechazo(rechazo, regla, porNombre.Id);
+            }
+
+            if (porNombre.IdUsuarioExterno is null)
+            {
+                porNombre.VincularUsuarioExterno(externo.IdUsuarioExterno);
+            }
+
+            // Login ya verificado: solo se refrescan datos que no deciden el acceso.
             var regional = await BuscarRegionalAsync(externo.NombreUsuario, cancellationToken);
             var correoAnterior = porNombre.Email;
             porNombre.ActualizarDatos(externo.NombreCompleto, externo.Email, regional);
@@ -179,12 +198,106 @@ public sealed class clsVerificadorIdentidad(
                     "El correo de '{NombreUsuario}' cambió en el almacén corporativo: sus cotizaciones nuevas salen con el correo nuevo.",
                     externo.NombreUsuario);
             }
+
+            // HU-040.2 (#230): con un rol efectivo, sesión directa; con varios, elige al entrar.
+            var disponiblesLogin = Disponibles(catalogo, efectivos);
+            return new clsVerificacionIdentidad(
+                new clsIdentidadVerificada(porNombre, rol, EsNuevo: false, disponiblesLogin, otorgados, revocados),
+                clsMotivosAcceso.UsuarioExistente, ReglaDe(disponiblesLogin, regla));
         }
 
-        // HU-040.2 (#230): con una asignación activa, rol único (la jerarquía, como antes); con varias, todas: elige al entrar.
+        // Refresh y elección de rol (permitirAlta: false): verificación ESTRICTA, NO reconcilia (ADR-009/ADR-025). Se compara contra el
+        // CONJUNTO de asignaciones activas: el rol de la jerarquía debe estar asignado y ninguna activa puede haber perdido su rol externo.
+        var asignados = await roles.ListarRolesAsignadosAsync(porNombre.Id, cancellationToken);
+        if (asignados.Count == 0)
+        {
+            return Rechazo(clsMotivosAcceso.SinAsignacionActiva, regla, porNombre.Id);
+        }
+
+        if (!asignados.Contains(rol) || asignados.Any(a => !mapeados.Contains(a)))
+        {
+            return Rechazo(clsMotivosAcceso.RolExternoCambio, regla, porNombre.Id);
+        }
+
+        if (porNombre.IdUsuarioExterno is null)
+        {
+            porNombre.VincularUsuarioExterno(externo.IdUsuarioExterno);
+        }
+
         var disponibles = asignados.Count == 1 ? Disponibles(catalogo, [rol]) : Disponibles(catalogo, asignados);
         return new clsVerificacionIdentidad(
             new clsIdentidadVerificada(porNombre, rol, EsNuevo: false, disponibles), clsMotivosAcceso.UsuarioExistente, ReglaDe(disponibles, regla));
+    }
+
+    /// <summary>
+    /// HU-040.3 (#258, ADR-009 OPCIÓN B+): reconcilia las asignaciones del usuario con los roles externos vigentes (<paramref name="mapeados"/>)
+    /// en el login. Devuelve el conjunto EFECTIVO de roles tras reconciliar y los deltas (para la auditoría), o un motivo de rechazo.
+    /// <list type="bullet">
+    /// <item>Auto-REVOCA (desactiva) toda asignación activa cuyo rol ya no está mapeado — todos los roles, incluidos los sensibles (fail-safe).</item>
+    /// <item>Auto-OTORGA los roles ORDINARIOS mapeados que falten, reactivando la fila existente (sin duplicar, <c>uq_usuariosRoles_usuarioId_rolId</c>)
+    /// o creando una nueva.</item>
+    /// <item>Un rol SENSIBLE (<see cref="clsRol.RequiereAltaManual"/>) que falte NO se auto-otorga: si es el rol de la jerarquía, se RECHAZA
+    /// (<c>rol_externo_cambio</c>) y queda para el alta manual, como antes.</item>
+    /// </list>
+    /// La comprobación del rol sensible se hace ANTES de mutar nada, así un rechazo no deja cambios a medias.
+    /// </summary>
+    private (string? Motivo, IReadOnlyList<RolInterno> Efectivos, IReadOnlyList<RolInterno> Otorgados, IReadOnlyList<RolInterno> Revocados)
+        Reconciliar(
+            IReadOnlyList<clsRol> catalogo, IReadOnlyList<clsUsuarioRol> asignaciones, IReadOnlyList<RolInterno> mapeados,
+            RolInterno rol, Guid usuarioId, DateTimeOffset ahora)
+    {
+        var porId = catalogo.ToDictionary(r => r.Id);
+        var porCodigo = catalogo.ToDictionary(r => r.Codigo);
+        var sensibles = catalogo.Where(r => r.RequiereAltaManual).Select(r => r.Codigo).ToHashSet();
+        var mapeadosSet = mapeados.ToHashSet();
+
+        // Asignaciones activas con rol activo y conocido (la misma visibilidad que ListarRolesAsignadosAsync).
+        var activas = asignaciones.Where(a => a.Activo && porId.ContainsKey(a.RolId)).ToList();
+        var activos = activas.Select(a => porId[a.RolId].Codigo).ToHashSet();
+
+        // El rol de la jerarquía (siempre ∈ mapeados) debe poder quedar efectivo. Si es SENSIBLE y no está asignado, no se auto-otorga:
+        // rechazo + alta manual (sin tocar ninguna fila).
+        if (sensibles.Contains(rol) && !activos.Contains(rol))
+        {
+            return (clsMotivosAcceso.RolExternoCambio, [], [], []);
+        }
+
+        var revocados = new List<RolInterno>();
+        foreach (var activa in activas)
+        {
+            var codigo = porId[activa.RolId].Codigo;
+            if (!mapeadosSet.Contains(codigo))
+            {
+                activa.Desactivar(ahora);
+                revocados.Add(codigo);
+            }
+        }
+
+        var otorgados = new List<RolInterno>();
+        foreach (var codigo in mapeados)
+        {
+            if (activos.Contains(codigo) || sensibles.Contains(codigo))
+            {
+                continue;
+            }
+
+            var rolCatalogo = porCodigo[codigo];
+            var existente = asignaciones.FirstOrDefault(a => a.RolId == rolCatalogo.Id);
+            if (existente is not null)
+            {
+                existente.Reactivar(ahora);
+            }
+            else
+            {
+                roles.AgregarAsignacion(clsUsuarioRol.Asignar(usuarioId, rolCatalogo.Id, ahora).Valor);
+            }
+
+            otorgados.Add(codigo);
+        }
+
+        // Conjunto efectivo: las activas que siguen respaldadas + las recién otorgadas (en el orden de la jerarquía).
+        var efectivos = activos.Where(mapeadosSet.Contains).Concat(otorgados).Distinct().Order().ToList();
+        return (null, efectivos, otorgados, revocados);
     }
 
     /// <summary>

@@ -48,6 +48,8 @@ internal sealed class clsRolConfiguracion : IEntityTypeConfiguration<clsRol>
         builder.Property(r => r.Descripcion).Columna("descripcion", "nvarchar(200)").HasMaxLength(clsRol.LargoMaximoDescripcion);
         builder.Property(r => r.IdRolExterno).Columna("idRolExterno", "int");
         builder.Property(r => r.Activo).Columna("activo", "bit");
+        // HU-040.3 (#258): rol sensible que no se auto-otorga en el login (script 23).
+        builder.Property(r => r.RequiereAltaManual).Columna("requiereAltaManual", "bit");
         builder.Property(r => r.UpdatedAt).Fecha("updatedAt");
         builder.HasIndex(r => r.Codigo).IsUnique().HasDatabaseName("uq_roles_codigo");
         builder.HasIndex(r => r.IdRolExterno).IsUnique()

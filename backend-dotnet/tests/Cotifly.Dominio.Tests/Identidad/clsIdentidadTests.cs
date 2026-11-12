@@ -131,6 +131,40 @@ public sealed class clsIdentidadTests
     }
 
     [Fact]
+    public void HU0403_UnRolNaceSinAltaManualYSePuedeMarcarComoSensible()
+    {
+        clsRol.Crear(RolInterno.Comercial, "Comercial").Valor.RequiereAltaManual.Should().BeFalse();
+        clsRol.Crear(RolInterno.Director, "Director comercial", requiereAltaManual: true).Valor.RequiereAltaManual.Should().BeTrue();
+    }
+
+    [Fact]
+    public void HU0403_DesactivarYReactivarNoLlevanRevisorYSonIdempotentes()
+    {
+        var usuario = Guid.NewGuid();
+        var asignacion = clsUsuarioRol.Asignar(usuario, 2, _ahora).Valor;
+
+        // Auto-revocar (sistema): sin revisor, con la fecha.
+        asignacion.Desactivar(_ahora.AddDays(1));
+        asignacion.Activo.Should().BeFalse();
+        asignacion.RevisadoPor.Should().BeNull("la auto-revocación del login no tiene revisor humano");
+        asignacion.RevisadoAt.Should().Be(_ahora.AddDays(1));
+
+        // Idempotente sobre una fila ya inactiva.
+        asignacion.Desactivar(_ahora.AddDays(2));
+        asignacion.RevisadoAt.Should().Be(_ahora.AddDays(1), "no vuelve a tocar una fila ya inactiva");
+
+        // Reactivar (sistema): sin revisor, reactiva la fila existente.
+        asignacion.Reactivar(_ahora.AddDays(3));
+        asignacion.Activo.Should().BeTrue();
+        asignacion.RevisadoPor.Should().BeNull();
+        asignacion.AsignadoAt.Should().Be(_ahora.AddDays(3));
+
+        // Idempotente sobre una fila ya activa.
+        asignacion.Reactivar(_ahora.AddDays(4));
+        asignacion.AsignadoAt.Should().Be(_ahora.AddDays(3));
+    }
+
+    [Fact]
     public void UnaAsignacionDeRolNaceActivaYAlRetirarlaQuedaLaRevision()
     {
         var usuario = Guid.NewGuid();

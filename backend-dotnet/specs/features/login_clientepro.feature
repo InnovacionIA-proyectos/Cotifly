@@ -37,14 +37,25 @@ Característica: Login SSO desde ClientePro con verificación doble
     Entonces la sesión se emite con el rol "gerente_comercial"
     Y existe un solo usuario "caro.sso" en Cotifly
 
-  Escenario: Si el rol externo cambió después del primer ingreso, se rechaza hasta que se revise
+  # HU-040.3 (#258, ADR-009 OPCIÓN B+): un rol ORDINARIO que cambió ya no rechaza; el login reconcilia (otorga el que falta, revoca el sobrante).
+  Escenario: Si un rol externo ordinario cambió después del primer ingreso, el login lo reconcilia y entra
     Dado la persona "dani.sso" con ID externo 5104 y nombre "Dani SSO" en el almacén corporativo con los roles externos "32"
     Y "dani.sso" ya inició sesión una vez
     Y en el almacén corporativo "dani.sso" pasa a tener los roles externos "31"
     Cuando "dani.sso" inicia sesión desde ClientePro
+    Entonces la sesión se emite con el rol "gerente_comercial"
+    Y el usuario "dani.sso" tiene asignado el rol "gerente_comercial"
+    Y el acceso de "dani.sso" queda auditado como exitoso
+
+  # HU-040.3 (#258): un rol SENSIBLE (director) que aparece NO se auto-otorga: sigue el rechazo + alta manual.
+  Escenario: Si aparece un rol sensible (director) que falta, no se auto-otorga y se rechaza hasta el alta manual
+    Dado la persona "deni.sso" con ID externo 5126 y nombre "Deni SSO" en el almacén corporativo con los roles externos "32"
+    Y "deni.sso" ya inició sesión una vez
+    Y en el almacén corporativo "deni.sso" pasa a tener los roles externos "32,33"
+    Cuando "deni.sso" inicia sesión desde ClientePro
     Entonces el login responde credenciales inválidas
-    Y el usuario "dani.sso" sigue con el rol "comercial"
-    Y el acceso de "dani.sso" queda auditado como rechazado por "rol_externo_cambio"
+    Y el usuario "deni.sso" sigue con el rol "comercial"
+    Y el acceso de "deni.sso" queda auditado como rechazado por "rol_externo_cambio"
 
   Escenario: Si el NOMBREUSUARIO cambió en el almacén, no se crea otro usuario y se rechaza
     Dado la persona "eli.sso" con ID externo 5105 y nombre "Eli SSO" en el almacén corporativo con los roles externos "32"
@@ -85,14 +96,16 @@ Característica: Login SSO desde ClientePro con verificación doble
     Cuando "dora.sso" elige el rol "director"
     Entonces la sesión se emite con el rol "director"
 
-  # HU-040.2: rol único. Quien ya tiene una sola asignación sigue con la jerarquía (director > gerente_comercial > comercial).
-  Escenario: Quien ya tenía una sola asignación entra como siempre aunque tenga varios roles externos
+  # HU-040.3 (#258, OPCIÓN B+): quien gana un rol ORDINARIO externo que le faltaba, el login se lo otorga y pasa a multi-rol (antes entraba
+  # directo con la jerarquía; ese era el comportamiento de ADR-025 para los existentes, ahora solo vale para los roles sensibles).
+  Escenario: Quien gana un rol ordinario externo que le faltaba pasa a multi-rol y elige
     Dado la persona "lola.sso" con ID externo 5122 y nombre "Lola SSO" en el almacén corporativo con los roles externos "31"
     Y "lola.sso" ya inició sesión una vez
     Y en el almacén corporativo "lola.sso" pasa a tener los roles externos "32,31"
     Cuando "lola.sso" inicia sesión desde ClientePro
-    Entonces la sesión se emite con el rol "gerente_comercial"
-    Y el acceso de "lola.sso" queda auditado con la regla "precedencia_gerente_comercial"
+    Entonces el login pide elegir entre los roles "comercial,gerente_comercial"
+    Y el usuario "lola.sso" tiene asignados los roles "comercial,gerente_comercial"
+    Y el acceso de "lola.sso" queda auditado con la regla "multi_rol"
 
   Escenario: El ticket de elección es de un solo uso
     Dado la persona "memo.sso" con ID externo 5123 y nombre "Memo SSO" en el almacén corporativo con los roles externos "32,31"
