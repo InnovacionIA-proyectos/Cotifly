@@ -459,7 +459,7 @@ pasa a *sí* cuando el responsable da el valor real (o confirma que se queda el 
 Dokploy de producción. "Por defecto" es el valor del código; el manifiesto declara cada variable con ese mismo valor
 (`${VAR:-<valor>}`, verificado por `clsManifiestosDespliegueTests`) salvo donde se indica. Una variable que no se carga en
 Dokploy queda con ese valor. La lista cubre todas las opciones que el backend enlaza a la configuración: no hay otras
-lecturas de configuración fuera de las clases de opciones, y `appsettings.json` solo define el nivel de log.
+lecturas de configuración fuera de las clases de opciones, y `appsettings.json` solo define el nivel de log y `AllowedHosts`.
 
 **Arranque, red y publicación**
 
@@ -979,8 +979,8 @@ Internet / red corporativa
   réplica no vería lo que leyó el polling de otra. Escalar exige guardarlos en la base.
 - **TLS:** los labels de Traefik (router `websecure`, `certresolver=letsencrypt`, HSTS, puerto 8080 y healthcheck de
   `/health/ready`) están escritos; que el certificado funcione depende de HU-006.2 (§5.3).
-  - **Versión de Traefik: v3.** Dokploy corre `traefik:v3.6.25` (verificado en el clúster con
-    `docker service inspect dokploy-traefik --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'`). En Traefik v3 los
+  - **Versión de Traefik: v3.** Dokploy corre `traefik:v3.6.25` (Traefik corre como contenedor suelto en el manager, no como servicio de Swarm; se verifica con
+    `docker ps --filter name=dokploy-traefik --format '{{.Image}}'`). En Traefik v3 los
     servicios de Swarm los lee el proveedor `swarm`, separado del proveedor `docker`, y la red por la que Traefik llega a
     la tarea se indica con **`traefik.swarm.network`**; `traefik.docker.network` (la etiqueta de v2, la que usaba el
     Python) pertenece al proveedor `docker` y el proveedor `swarm` no la lee. Sin la etiqueta correcta, como
