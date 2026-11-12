@@ -57,7 +57,8 @@ public sealed class clsDetalleCotizacionService(
     IOptions<clsOpcionesPdf> opcionesPdf,
     IClsSituacionLineasNexo? situacionesNexo = null,
     IClsTarifaSeguroRepository? tarifasSeguro = null,
-    Microsoft.Extensions.Logging.ILogger<clsDetalleCotizacionService>? logger = null) : IClsDetalleCotizacionService
+    Microsoft.Extensions.Logging.ILogger<clsDetalleCotizacionService>? logger = null,
+    IClsPoliticaSegurosRepository? politicaSeguros = null) : IClsDetalleCotizacionService
 {
     /// <summary>Herramienta de la auditoría de las consultas de un gerente a una cotización ajena (<c>EventosHerramienta.herramienta</c>).</summary>
     public const string HerramientaAuditoria = "consultar_detalle_cotizacion";
@@ -95,6 +96,12 @@ public sealed class clsDetalleCotizacionService(
                     tarifasSeguro, (Microsoft.Extensions.Logging.ILogger?)logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance,
                     cotizacion.Folio, cancellationToken),
             };
+
+        // HU-046.3 (#269): el bloque politica_seguros de cada ruta, como en GET .../costeo (sin completar códigos: el detalle no escribe ni
+        // lee el catálogo de Nexo; un conexo sin codigoServicio no cumple hasta que el costeo lo complete).
+        costeo = clsPoliticaSegurosCosteo.ConPolitica(costeo, cotizacion, await clsPoliticaSegurosCosteo.LeerSinFallarAsync(
+            politicaSeguros, (Microsoft.Extensions.Logging.ILogger?)logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance,
+            cotizacion.Folio, cancellationToken));
 
         // HU-039.1 (#218): el costo bruto de las rutas es solo del dueño; el gerente en solo consulta lo recibe en null (decisión
         // conservadora: hasta HU-039 el detalle nunca le mostraba costos).

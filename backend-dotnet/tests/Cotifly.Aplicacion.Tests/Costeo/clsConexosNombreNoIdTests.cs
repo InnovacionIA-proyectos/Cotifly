@@ -83,7 +83,7 @@ public sealed class clsConexosNombreNoIdTests
         var almacen = new clsAlmacenCategoriasConexos();
         almacen.Guardar(new clsIndiceCategorias(
             new Dictionary<string, string>(), new Dictionary<string, string>(), _ahora,
-            new Dictionary<string, string> { [IdConexo] = "Cargue" }));
+            NombresPorId: new Dictionary<string, string> { [IdConexo] = "Cargue" }));
 
         clsCategoriasConexosService.NombresEnMemoria(almacen, cotizacion)
             .Should().ContainKey(IdConexo).WhoseValue.Should().Be("Cargue");
