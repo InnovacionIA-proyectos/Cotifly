@@ -47,6 +47,9 @@ public static class clsTextosEstandar
     public const string TituloNoIncluye = "Estas tarifas no incluyen";
     public const string TituloFacturacion = "Facturación y forma de pago";
     public const string TituloSeguro = "Seguro";
+
+    /// <summary>#261 (HU-046): etiqueta del bloque del texto de seguros de la propuesta, después del resumen de precios (el texto vive en la configuración <c>Pdf:TextoSeguros</c>).</summary>
+    public const string TituloSegurosPropuesta = "Estructura de seguros";
     public const string TituloDiasLibres = "Días libres";
     public const string TituloStandByUnica = "Horas logísticas adicionales";
     public const string TituloStandByMulti = "Stand by";

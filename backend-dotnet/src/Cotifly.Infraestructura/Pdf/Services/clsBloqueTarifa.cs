@@ -42,6 +42,13 @@ internal static class clsBloqueTarifa
             TotalGeneral(seccion, total, diseno);
         }
 
+        // #261 (HU-046): el texto de seguros va después del resumen de precios. En el pliego el resumen es el bloque de clsBloquePliego, que
+        // lo pone allí; en la tarifa única (y multi) el resumen es el total general, así que va aquí, tras él.
+        if (documento.Variante != VarianteDocumento.Pliego && documento.TextoSeguros is { Count: > 0 } seguros)
+        {
+            TextoSeguros(seccion, seguros, diseno);
+        }
+
         if (documento.NotaGeneral is { } nota)
         {
             NotaGeneral(seccion, nota, diseno);
@@ -161,6 +168,26 @@ internal static class clsBloqueTarifa
         AgregarTexto(Parrafo(fila.Cells[1].AddParagraph(), diseno.CeldaTabla, diseno.Alto, Primario, negrita: true, ParagraphAlignment.Right), total.Valor);
         var nota = Parrafo(seccion.AddParagraph(), diseno.NotaCelda, diseno.Alto, Atenuado, alineacion: ParagraphAlignment.Justify, antes: 4);
         AgregarTexto(nota, total.Nota);
+    }
+
+    /// <summary>
+    /// #261 (HU-046): bloque del texto de seguros de la propuesta, después del resumen de precios: la etiqueta <see cref="clsTextosEstandar.TituloSegurosPropuesta"/>
+    /// en negrita y los párrafos justificados. Lo usan la tarifa única (tras el total general) y el pliego (tras el resumen, <see cref="clsBloquePliego"/>).
+    /// </summary>
+    public static void TextoSeguros(Section seccion, IReadOnlyList<string> parrafos, clsDisenoPdf diseno)
+    {
+        ArgumentNullException.ThrowIfNull(seccion);
+        ArgumentNullException.ThrowIfNull(parrafos);
+        ArgumentNullException.ThrowIfNull(diseno);
+        var titulo = Parrafo(seccion.AddParagraph(), diseno.H3, diseno.Alto, diseno.ColorH3, negrita: true, antes: diseno.MargenH3.Antes, despues: diseno.MargenH3.Despues);
+        titulo.Format.KeepWithNext = true;
+        AgregarTexto(titulo, clsTextosEstandar.TituloSegurosPropuesta);
+        foreach (var parrafo in parrafos)
+        {
+            AgregarTexto(
+                Parrafo(seccion.AddParagraph(), diseno.NotaGeneral, diseno.Alto, Atenuado, alineacion: ParagraphAlignment.Justify, despues: diseno.MargenNotaGeneral),
+                parrafo);
+        }
     }
 
     private static void NotaGeneral(Section seccion, string nota, clsDisenoPdf diseno)

@@ -782,7 +782,12 @@ public sealed partial class clsCosteoCotizacionService(
 
         // HU-033 (#199): al final de la tarifa, el total general (la suma del precio final de las rutas) con la leyenda de impuestos.
         // HU-045.3 (#265): el seguro de la mercancía de cada ruta en su propia fila, aparte del flete.
-        var conTotal = ConFilasSeguro(documento.Valor, cotizacion, moneda) with { TotalGeneral = TotalGeneral(cotizacion, moneda) };
+        // #261 (HU-046): después del resumen de precios, el texto de seguros de la propuesta (de la configuración Pdf:TextoSeguros).
+        var conTotal = ConFilasSeguro(documento.Valor, cotizacion, moneda) with
+        {
+            TotalGeneral = TotalGeneral(cotizacion, moneda),
+            TextoSeguros = ParrafosSeguros(opcionesPdf.Value.TextoSeguros),
+        };
         var aRenderizar = esPliego ? DocumentoPliego(conTotal, cotizacion, moneda, catalogo) : conTotal;
 
         clsPdfGenerado pdf;
@@ -938,6 +943,18 @@ public sealed partial class clsCosteoCotizacionService(
             // HU-045.3 (#265, B1): con los centavos del seguro, si los hay.
             $"{clsFormatoMoneda.FormatearExacto(total, moneda)} {moneda.Trim().ToUpperInvariant()}",
             clsTextosEstandar.NotaTotalGeneral + " " + clsTextosEstandar.LeyendaImpuestos);
+    }
+
+    /// <summary>
+    /// #261 (HU-046): el texto de seguros de la configuración (<c>Pdf:TextoSeguros</c>) partido en párrafos (separados por una línea en
+    /// blanco) y limpio de caracteres de control; <c>null</c> si está vacío (el PDF y el correo salen sin el bloque).
+    /// </summary>
+    public static IReadOnlyList<string>? ParrafosSeguros(string? textoSeguros)
+    {
+        var limpio = clsTextoSeguro.Limpiar(textoSeguros);
+        return string.IsNullOrWhiteSpace(limpio)
+            ? null
+            : [.. limpio.Split("\n\n", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
     }
 
     /// <summary>
