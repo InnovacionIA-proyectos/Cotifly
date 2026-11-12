@@ -38,15 +38,29 @@ public static class clsResolucionCodigosNexo
             return null;
         }
 
+        // HU-044.8 (#291): el código NEXO (C2, C3) es el canónico de SICE-TAC/Plaza; «2»/«3» del catálogo de SAP se
+        // traducen a él con la única fuente de equivalencia (tbl_mapeo_vehiculo_tarifario), antes del catálogo y del alias,
+        // para no mandar nunca «2»/«3» a Nexo (cuarentena) ni dejar que el alias (C2 → «2») los devuelva al código de SAP.
+        if (clsEquivalenciaVehiculoNexo.ACodigoNexo(texto) is { } codigoNexo)
+        {
+            return new clsCodigoResueltoNexo(codigoNexo, FuenteCodigoNexo.Catalogo);
+        }
+
         var lista = catalogo?.ToList();
         if (clsCodigosConocidosNexo.Resolver(lista, texto) is { } oficial)
         {
             return new clsCodigoResueltoNexo(oficial, FuenteCodigoNexo.Catalogo);
         }
 
-        return alias?.Resolver(TipoAliasNexo.Vehiculo, texto) is { } codigo
-            ? new clsCodigoResueltoNexo(clsCodigosConocidosNexo.Resolver(lista, codigo) ?? codigo, FuenteCodigoNexo.Alias)
-            : null;
+        if (alias?.Resolver(TipoAliasNexo.Vehiculo, texto) is not { } codigo)
+        {
+            return null;
+        }
+
+        // HU-044.8 (#291): el código al que resuelve el alias también pasa por la equivalencia de SICE-TAC. El catálogo de SAP trae
+        // «2»/«3», así que un alias como "Sencillo"→«2» o "Doble troque"→«3» debe viajar como C2/C3, nunca «2»/«3» (cuarentena).
+        var codigoAlias = clsEquivalenciaVehiculoNexo.ACodigoNexo(codigo) ?? clsCodigosConocidosNexo.Resolver(lista, codigo) ?? codigo;
+        return new clsCodigoResueltoNexo(codigoAlias, FuenteCodigoNexo.Alias);
     }
 
     /// <summary>

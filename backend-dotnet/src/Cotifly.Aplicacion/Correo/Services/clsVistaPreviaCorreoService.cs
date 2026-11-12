@@ -2,6 +2,7 @@ using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Correo.DTOs;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Identidad.Repositories;
+using Cotifly.Aplicacion.Pdf.Services;
 using Cotifly.Dominio.Comun;
 using Microsoft.Extensions.Options;
 
@@ -18,7 +19,8 @@ public sealed class clsVistaPreviaCorreoService(
     IClsDestinatariosPreviosService destinatariosPrevios,
     IClsUsuarioWebRepository usuarios,
     IClsCalendarioNegocio calendario,
-    IOptions<clsOpcionesCorreo> opciones) : IClsVistaPreviaCorreoService
+    IOptions<clsOpcionesCorreo> opciones,
+    IOptions<clsOpcionesPdf> opcionesPdf) : IClsVistaPreviaCorreoService
 {
     public async Task<clsResultado<clsVistaPreviaCorreo>> PrevisualizarAsync(
         Guid usuarioId, string folio, clsBorradorCorreo? borrador = null, CancellationToken cancellationToken = default)
@@ -70,8 +72,12 @@ public sealed class clsVistaPreviaCorreoService(
                 firmaComercial: clsPlantillaCorreo.FirmaComercial(usuario?.NombreCompleto, usuario?.Email, usuario?.Telefono),
                 // #262: los mismos datos de la ficha que el envío.
                 datos: clsPlantillaCorreo.Datos(cotizacion, calendario),
-                logoUrl: opciones.Value.LogoUrl),
+                logoUrl: opciones.Value.LogoUrl,
+                // #261 (HU-046): el texto de seguros de la configuración, el mismo que el envío.
+                textoSeguros: opcionesPdf.Value.TextoSeguros),
             Resumen = resumen,
+            // HU-045.3 (#265, B5): el mismo aviso del costeo, justo antes de enviar.
+            AvisoSeguro = Costeo.DTOs.clsAvisoSeguro.De(cotizacion),
             // OBS-1027-5 (#226, ADR-023): al redirigir el correo sale solo al buzón de pruebas, sin CC ni CCO (clsProteccionCorreo): la
             // vista previa no anuncia una copia oculta que no se envía.
             CopiaOculta = redirige ? null : clsCorreoService.CopiaOculta(usuario?.Email, para, cc),

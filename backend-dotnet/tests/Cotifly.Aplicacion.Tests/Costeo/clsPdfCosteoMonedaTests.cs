@@ -125,6 +125,31 @@ public sealed class clsPdfCosteoMonedaTests
         _documento!.NotaMoneda.Should().BeNull();
     }
 
+    // #261 (HU-046): el texto de seguros de la configuración (Pdf:TextoSeguros) llega al documento partido en párrafos, incluso en una
+    // cotización ya finalizada (Preparada la finaliza): el PDF se regenera con el texto vigente, no reescribe los ya generados.
+    [Fact]
+    public async Task ElPdfDelCosteoLlevaElTextoDeSegurosDeLaConfiguracionPartidoEnParrafos()
+    {
+        var cotizacion = Registrada(Preparada(clsAjusteMargenCosteoServiceTests.Costeada(_ana, "PCN-900555111-AP-05102026-013")));
+
+        var resultado = await ServicioConSeguros("Primer párrafo del seguro.\n\nSegundo párrafo del seguro.")
+            .GenerarPdfAsync(_ana, cotizacion.Folio, Version, Ct);
+
+        resultado.EsExitoso.Should().BeTrue(resultado.EsFallo ? resultado.Error.Mensaje : string.Empty);
+        _documento!.TextoSeguros.Should().Equal("Primer párrafo del seguro.", "Segundo párrafo del seguro.");
+    }
+
+    [Fact]
+    public async Task SinTextoDeSegurosEnLaConfiguracionElPdfNoLoTrae()
+    {
+        var cotizacion = Registrada(Preparada(clsAjusteMargenCosteoServiceTests.Costeada(_ana, "PCN-900555111-AP-05102026-014")));
+
+        var resultado = await ServicioConSeguros("   ").GenerarPdfAsync(_ana, cotizacion.Folio, Version, Ct);
+
+        resultado.EsExitoso.Should().BeTrue(resultado.EsFallo ? resultado.Error.Mensaje : string.Empty);
+        _documento!.TextoSeguros.Should().BeNull();
+    }
+
     /// <summary>
     /// Corrección del validador de #136, por el camino real de <c>GenerarPdfAsync</c> (payload, validador, constructor): un pliego con rutas
     /// de dos líneas de negocio sale con la cabecera "Varias" y cada sección con la línea de su ruta (antes: PDF_PAYLOAD_INVALIDO "Falta
@@ -194,5 +219,12 @@ public sealed class clsPdfCosteoMonedaTests
     private clsCosteoCotizacionService Servicio() => new(
         _cotizaciones, _politicas, _usuarios, _generador, _almacen, _unidad,
         Substitute.For<IClsCalendarioNegocio>(), Substitute.For<IClsAuditoriaService>(), Options.Create(new clsOpcionesPdf()),
+        NullLogger<clsCosteoCotizacionService>.Instance);
+
+    /// <summary>#261 (HU-046): el servicio con un texto de seguros concreto en la configuración.</summary>
+    private clsCosteoCotizacionService ServicioConSeguros(string? textoSeguros) => new(
+        _cotizaciones, _politicas, _usuarios, _generador, _almacen, _unidad,
+        Substitute.For<IClsCalendarioNegocio>(), Substitute.For<IClsAuditoriaService>(),
+        Options.Create(new clsOpcionesPdf { TextoSeguros = textoSeguros }),
         NullLogger<clsCosteoCotizacionService>.Instance);
 }

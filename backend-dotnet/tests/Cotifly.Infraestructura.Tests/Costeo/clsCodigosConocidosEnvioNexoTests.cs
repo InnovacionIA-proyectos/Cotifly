@@ -194,13 +194,14 @@ public sealed class clsCodigosConocidosEnvioNexoTests : IDisposable
     [InlineData("solo_conocidos")]
     public async Task HU0311_UnCodigoQueSoloConoceElAliasViajaConElCodigoOficialYQuedaRegistradaLaEquivalencia(string modo)
     {
-        ConAlias(new clsFilaAliasNexo(TipoAliasNexo.Vehiculo, "C2", "C2", "2s3"));
+        // HU-044.8 (#291): «C2» ya es el código NEXO de SICE-TAC; para probar la traducción por alias se usa «TB» (que no está en el catálogo).
+        ConAlias(new clsFilaAliasNexo(TipoAliasNexo.Vehiculo, "TB", "TB", "2s3"));
 
-        var creada = await Adaptador(modo).EnviarSolicitudAsync(_usuarioId, Solicitud([("C2", "FURGON"), ("3S3", "ESTACAS")], respaldo: false), Ct);
+        var creada = await Adaptador(modo).EnviarSolicitudAsync(_usuarioId, Solicitud([("TB", "FURGON"), ("3S3", "ESTACAS")], respaldo: false), Ct);
 
         Vehiculos().Should().Equal(("2S3", "FURGON"), ("3S3", "ESTACAS"));
-        creada.Valor.EquivalenciasVehiculo.Should().Equal(new Dictionary<string, string> { ["C2"] = "2S3" },
-            "el alias tradujo C2 al código oficial (escrito como en el catálogo de Nexo); 3S3 no cambió");
+        creada.Valor.EquivalenciasVehiculo.Should().Equal(new Dictionary<string, string> { ["TB"] = "2S3" },
+            "el alias tradujo TB al código oficial (escrito como en el catálogo de Nexo); 3S3 no cambió");
     }
 
     [Fact]
@@ -222,27 +223,28 @@ public sealed class clsCodigosConocidosEnvioNexoTests : IDisposable
     }
 
     [Theory]
-    [InlineData("siempre", "C2", "FURGON")]
+    [InlineData("siempre", "ZT9", "FURGON")]
     [InlineData("solo_conocidos", null, null)]
     public async Task HU0311_UnCodigoQueNiElCatalogoNiElAliasConocenSigueElModo(string modo, string? tipo, string? carroceria)
     {
         ConAlias(new clsFilaAliasNexo(TipoAliasNexo.Vehiculo, "TB", "TB", "2S3"));
 
-        var creada = await Adaptador(modo).EnviarSolicitudAsync(_usuarioId, Solicitud([("C2", "FURGON")], respaldo: false), Ct);
+        // HU-044.8 (#291): «ZT9» no está en el catálogo, ni en el alias, ni en la equivalencia de SICE-TAC (a diferencia de C2/C3).
+        var creada = await Adaptador(modo).EnviarSolicitudAsync(_usuarioId, Solicitud([("ZT9", "FURGON")], respaldo: false), Ct);
 
         Vehiculos().Should().Equal((tipo, carroceria));
         creada.Valor.EquivalenciasVehiculo.Should().BeEmpty();
     }
 
     [Theory]
-    [InlineData("siempre", "C2", "FURGON")]
+    [InlineData("siempre", "ZT9", "FURGON")]
     [InlineData("solo_conocidos", null, null)]
     public async Task HU0311_SiElAliasNoEstaDisponibleElEnvioSigueSinAlias(string modo, string? tipo, string? carroceria)
     {
         _alias.ObtenerAsync(_usuarioId, Arg.Any<CancellationToken>())
             .Returns(clsResultado<clsDiccionarioAliasNexo>.Fallo(new clsErrorDominio(clsCodigosError.CatalogosFleteNoDisponible, "caído")));
 
-        var creada = await Adaptador(modo).EnviarSolicitudAsync(_usuarioId, Solicitud([("C2", "FURGON")], respaldo: false), Ct);
+        var creada = await Adaptador(modo).EnviarSolicitudAsync(_usuarioId, Solicitud([("ZT9", "FURGON")], respaldo: false), Ct);
 
         creada.EsExitoso.Should().BeTrue("el alias caído nunca impide el envío");
         Vehiculos().Should().Equal((tipo, carroceria));
@@ -253,10 +255,10 @@ public sealed class clsCodigosConocidosEnvioNexoTests : IDisposable
     {
         _alias.ObtenerAsync(_usuarioId, Arg.Any<CancellationToken>()).Returns<Task<clsResultado<clsDiccionarioAliasNexo>>>(_ => throw new HttpRequestException("red"));
 
-        var creada = await Adaptador("siempre").EnviarSolicitudAsync(_usuarioId, Solicitud([("C2", "FURGON")], respaldo: false), Ct);
+        var creada = await Adaptador("siempre").EnviarSolicitudAsync(_usuarioId, Solicitud([("ZT9", "FURGON")], respaldo: false), Ct);
 
         creada.EsExitoso.Should().BeTrue();
-        Vehiculos().Should().Equal(("C2", "FURGON"));
+        Vehiculos().Should().Equal(("ZT9", "FURGON"));
     }
 
     [Fact]
@@ -273,9 +275,10 @@ public sealed class clsCodigosConocidosEnvioNexoTests : IDisposable
     [Fact]
     public async Task HU0311_UnAliasDeContenedorNoResuelveUnVehiculo()
     {
-        ConAlias(new clsFilaAliasNexo(TipoAliasNexo.Contenedor, "C2", "C2", "CNT20.ST"));
+        // HU-044.8 (#291): «ZZ9» solo existe como alias de contenedor y no está en la equivalencia de vehículo (C2/C3): no resuelve un vehículo.
+        ConAlias(new clsFilaAliasNexo(TipoAliasNexo.Contenedor, "ZZ9", "ZZ9", "CNT20.ST"));
 
-        await Adaptador("solo_conocidos").EnviarSolicitudAsync(_usuarioId, Solicitud([("C2", "FURGON")], respaldo: false), Ct);
+        await Adaptador("solo_conocidos").EnviarSolicitudAsync(_usuarioId, Solicitud([("ZZ9", "FURGON")], respaldo: false), Ct);
 
         Vehiculos().Should().Equal((null, null));
     }

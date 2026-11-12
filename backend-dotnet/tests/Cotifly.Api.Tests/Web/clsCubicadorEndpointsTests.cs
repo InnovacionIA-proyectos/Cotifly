@@ -80,7 +80,7 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         // viajaron todos, el polling empareja sin compararlos, aunque la Mesa le ponga otro vehículo.
         _cubicador.Recomendar = p => clsCubicadorFalso.PesoTotal(p) == 28_000m
             ? clsCubicadorFalso.Asignado(clsCubicadorFalso.Vehiculo("3S3", "FURGON", 16_000m), clsCubicadorFalso.Vehiculo("2S3", "ESTACAS", 12_000m))
-            : clsCubicadorFalso.Asignado(clsCubicadorFalso.Vehiculo("2", "FURGON", 12_500m));
+            : clsCubicadorFalso.Asignado(clsCubicadorFalso.Vehiculo("C2", "FURGON", 12_500m));
         var api = Api(new Dictionary<string, string?> { ["Nexo:EnviarCodigosCubicador"] = enviarCodigos });
         var lectura = Api(new Dictionary<string, string?> { ["Nexo:EnviarCodigosCubicador"] = leerConCodigos });
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
@@ -88,10 +88,10 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         using var envio = await api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, Formulario(dosRutas: true));
         var folio = (await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
 
-        (await CamionesAsync(folio)).Should().Equal("1|3S3|FURGON|16000.00|R", "1|2S3|ESTACAS|12000.00|R", "2|2|FURGON|12500.00|R");
+        (await CamionesAsync(folio)).Should().Equal("1|3S3|FURGON|16000.00|R", "1|2S3|ESTACAS|12000.00|R", "2|C2|FURGON|12500.00|R");
         var lineas = _nexo.UltimaAlta!["lineas"]!.AsArray().Select(l => l!).ToList();
         (string?, string?, decimal)[] esperadas = viajan
-            ? [("3S3", "FURGON", 16_000m), ("2S3", "ESTACAS", 12_000m), ("2", "FURGON", 12_500m)]
+            ? [("3S3", "FURGON", 16_000m), ("2S3", "ESTACAS", 12_000m), ("C2", "FURGON", 12_500m)]
             : [(null, null, 16_000m), (null, null, 12_000m), (null, null, 12_500m)];
         lineas.Select(l => (l["tipoVehiculo"]?.GetValue<string>(), l["carroceria"]?.GetValue<string>(), l["peso"]!.GetValue<decimal>()))
             .Should().Equal(esperadas);
@@ -177,17 +177,17 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// HU-031.1 (#194), de punta a punta con la bandera por defecto (<c>siempre</c>): el cubicador recomienda <c>C2</c>, que el catálogo de
-    /// Nexo no conoce pero su diccionario de alias traduce a <c>2</c>. Viaja <c>2</c>, Nexo lo autocostea (sin cuarentena), Cotifly guarda
-    /// <c>C2</c> con sus porcentajes de llenado y varias lecturas del polling no lo cambian (no es un "cambio de la Mesa", sin oscilación).
+    /// HU-044.8 (#291), de punta a punta con la bandera por defecto (<c>siempre</c>) y con <c>solo_conocidos</c>: el cubicador recomienda
+    /// <c>C2</c>, que es el código NEXO de SICE-TAC (el catálogo de SAP lo trae como «2»). Viaja <c>C2</c> (no «2»: «2» nacería en
+    /// cuarentena), Nexo lo autocostea, Cotifly guarda <c>C2</c> con sus porcentajes de llenado y varias lecturas del polling no lo
+    /// cambian (no es un "cambio de la Mesa", sin oscilación).
     /// </summary>
     [Theory]
     [InlineData(null)]
     [InlineData("solo_conocidos")]
-    public async Task HU0311_UnCodigoQueTraduceElAliasViajaOficialSeAutocosteaYNoOscilaEnElPolling(string? modo)
+    public async Task HU0448_ElCodigoNexoDelCubicadorViajaC2SeAutocosteaYNoOscilaEnElPolling(string? modo)
     {
         _nexo.AutoCostearSegunContrato = true;
-        _nexo.Alias.Add(("C2", "Vehiculo", "2", true));
         _cubicador.RecomendarSiempre(
             clsCubicadorFalso.Vehiculo("3S3", "FURGON", 16_000m, 62.5m, 81.25m, 47.06m),
             clsCubicadorFalso.Vehiculo("C2", "ESTACAS", 12_000m, 18m, 60m, 75m));
@@ -197,8 +197,8 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         using var envio = await api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, Formulario());
         var folio = (await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
 
-        _nexo.UltimaAlta!["lineas"]!.AsArray().Select(l => l!["tipoVehiculo"]!.GetValue<string>()).Should().Equal("3S3", "2");
-        _nexo.Cuarentenas.Should().Be(0, "el alias tradujo C2 a un código oficial");
+        _nexo.UltimaAlta!["lineas"]!.AsArray().Select(l => l!["tipoVehiculo"]!.GetValue<string>()).Should().Equal("3S3", "C2");
+        _nexo.Cuarentenas.Should().Be(0, "C2 es el código NEXO de SICE-TAC; «2» habría ido a cuarentena");
         var solicitud = _nexo.SolicitudesCreadas[^1];
         _nexo.EstadosLinea(solicitud).Should().Equal("AutoResuelta", "AutoResuelta");
 
@@ -215,8 +215,10 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
     }
 
     [Fact]
-    public async Task HU0311_ConElAliasCaidoElEnvioSigueYElCodigoViajaTalCual()
+    public async Task HU0448_ConElAliasCaidoElCodigoNexoC2ViajaIgualSinCuarentena()
     {
+        // HU-044.8 (#291): C2 no depende del diccionario de alias (lo resuelve la equivalencia de SICE-TAC), así que con el alias caído
+        // viaja igual como C2 y Nexo lo autocostea: nunca «2» (cuarentena).
         _nexo.AutoCostearSegunContrato = true;
         _nexo.CatalogosFallidos.Add("alias");
         _cubicador.RecomendarSiempre(clsCubicadorFalso.Vehiculo("C2", "ESTACAS", 28_000m));
@@ -227,7 +229,7 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created);
 
         _nexo.UltimaAlta!["lineas"]![0]!["tipoVehiculo"]!.GetValue<string>().Should().Be("C2");
-        _nexo.Cuarentenas.Should().Be(1, "sin alias, con siempre, Nexo la normaliza en su bandeja");
+        _nexo.Cuarentenas.Should().Be(0, "C2 es el código NEXO de SICE-TAC: no genera cuarentena");
     }
 
     [Fact]
@@ -236,7 +238,7 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         // Ruta 1 (28000 kg): dos vehículos; ruta 2 (12500 kg): uno.
         _cubicador.Recomendar = p => clsCubicadorFalso.PesoTotal(p) == 28_000m
             ? clsCubicadorFalso.Asignado(clsCubicadorFalso.Vehiculo("3S3", "FURGON", 16_000m), clsCubicadorFalso.Vehiculo("2S3", "ESTACAS", 12_000m))
-            : clsCubicadorFalso.Asignado(clsCubicadorFalso.Vehiculo("2", "FURGON", 12_500m));
+            : clsCubicadorFalso.Asignado(clsCubicadorFalso.Vehiculo("C2", "FURGON", 12_500m));
         var api = Api();
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
 
@@ -257,7 +259,7 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
 
         // Un camión por fila, con el vehículo, la carrocería, el peso (C2) y el id de la recomendación (C3); la mercancía con el nombre del catálogo.
         // En el orden de la recomendación (la fila 1 es el primer camión: recibe los conexos de la ruta, decisión 10).
-        (await CamionesAsync(folio)).Should().Equal("1|3S3|FURGON|16000.00|R", "1|2S3|ESTACAS|12000.00|R", "2|2|FURGON|12500.00|R");
+        (await CamionesAsync(folio)).Should().Equal("1|3S3|FURGON|16000.00|R", "1|2S3|ESTACAS|12000.00|R", "2|C2|FURGON|12500.00|R");
         (await clsBaseDatosPruebas.EscalarAsync<string>(Cadena,
             "SELECT STRING_AGG(m.nombreMercancia, ',') FROM dbo_cotifly.CotizacionMercancias m JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = m.lineaSolicitudId "
             + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}'"))
@@ -266,7 +268,7 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         // Envío por camión (#134): una línea por camión con su vehículo y su peso.
         var lineas = _nexo.UltimaAlta!["lineas"]!.AsArray().Select(l => l!).ToList();
         lineas.Select(l => (l["tipoVehiculo"]!.GetValue<string>(), l["peso"]!.GetValue<decimal>()))
-            .Should().Equal(("3S3", 16_000m), ("2S3", 12_000m), ("2", 12_500m));
+            .Should().Equal(("3S3", 16_000m), ("2S3", 12_000m), ("C2", 12_500m));
 
         // Emparejamiento (#134) con las líneas barajadas: cada camión recibe el flete de su línea.
         var solicitud = _nexo.SolicitudesCreadas[^1];
@@ -292,7 +294,7 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         _cubicador.RecomendarSiempre(
             clsCubicadorFalso.Vehiculo("3S3", "FURGON", 12_000m),
             clsCubicadorFalso.Vehiculo("2S3", "ESTACAS", 9_000m),
-            clsCubicadorFalso.Vehiculo("2", "FURGON", 7_000m));
+            clsCubicadorFalso.Vehiculo("C2", "FURGON", 7_000m));
         var api = Api();
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
 
@@ -300,12 +302,12 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         var folio = (await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
 
         // Tres camiones en el orden del cubicador.
-        (await CamionesAsync(folio)).Should().Equal("1|3S3|FURGON|12000.00|R", "1|2S3|ESTACAS|9000.00|R", "1|2|FURGON|7000.00|R");
+        (await CamionesAsync(folio)).Should().Equal("1|3S3|FURGON|12000.00|R", "1|2S3|ESTACAS|9000.00|R", "1|C2|FURGON|7000.00|R");
 
         // Tres líneas a Nexo, en ese orden, cada una con la línea de negocio de Nexo de la ruta.
         var lineas = _nexo.UltimaAlta!["lineas"]!.AsArray().Select(l => l!).ToList();
         lineas.Select(l => (l["tipoVehiculo"]!.GetValue<string>(), l["peso"]!.GetValue<decimal>(), l["lineaNegocio"]!.GetValue<string>()))
-            .Should().Equal(("3S3", 12_000m, "Puerto a interior"), ("2S3", 9_000m, "Puerto a interior"), ("2", 7_000m, "Puerto a interior"));
+            .Should().Equal(("3S3", 12_000m, "Puerto a interior"), ("2S3", 9_000m, "Puerto a interior"), ("C2", 7_000m, "Puerto a interior"));
 
         // Emparejamiento en el polling con las líneas barajadas: cada camión recibe el flete de SU línea.
         var solicitud = _nexo.SolicitudesCreadas[^1];
@@ -550,7 +552,7 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
     }
 
     [Fact]
-    public async Task LosCatalogosDeCarroceriasYVehiculosSalenDelCubicador()
+    public async Task HU0448_LasCarroceriasSalenDeNexoYLosVehiculosDelCubicador()
     {
         var api = Api();
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
@@ -558,8 +560,11 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         using var carrocerias = await api.EnviarAsync(_get, "/web/tipos-carroceria", ana.Access);
         using var vehiculos = await api.EnviarAsync(_get, "/web/tipos-vehiculo", ana.Access);
 
+        // HU-044.8 (#291): las carrocerías son las de NEXO (la lista de Cotifly clsCatalogosCaptura.Carrocerias), no las del cubicador.
         (await VerificarContratoAsync(carrocerias, "/web/tipos-carroceria", _get, HttpStatusCode.OK)).EnumerateArray()
-            .Select(c => c.GetProperty("codigo").GetString()).Should().BeEquivalentTo("FURGON", "ESTACAS", "CAMA_BAJA");
+            .Select(c => c.GetProperty("codigo").GetString())
+            .Should().BeEquivalentTo(Cotifly.Dominio.Cotizaciones.clsCatalogosCaptura.Carrocerias)
+            .And.NotContain("CAMA_BAJA", "CAMA_BAJA es del cubicador, no del catálogo de NEXO");
         var vehiculo = (await VerificarContratoAsync(vehiculos, "/web/tipos-vehiculo", _get, HttpStatusCode.OK)).EnumerateArray()
             .Single(v => v.GetProperty("codigo").GetString() == "2S2");
         vehiculo.GetProperty("nombre").GetString().Should().Be("Tractocamión 2S2", "el nombre del vehículo sale del catálogo (decisión 4)");
@@ -568,6 +573,21 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         _cubicador.SinTiposVehiculo = true;
         using var sinPublicar = await Api().EnviarAsync(_get, "/web/tipos-vehiculo", ana.Access);
         await VerificarContratoAsync(sinPublicar, "/web/tipos-vehiculo", _get, HttpStatusCode.ServiceUnavailable);
+    }
+
+    [Fact]
+    public async Task HU0448_LasCarroceriasDeNexoNoDependenDelCubicador()
+    {
+        // HU-044.8 (#291): aunque el cubicador no publique su catálogo de vehículos, GET /web/tipos-carroceria responde 200 con el
+        // catálogo de NEXO (ya no llama al cubicador para las carrocerías).
+        _cubicador.SinTiposVehiculo = true;
+        var api = Api();
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+
+        using var carrocerias = await api.EnviarAsync(_get, "/web/tipos-carroceria", ana.Access);
+
+        (await VerificarContratoAsync(carrocerias, "/web/tipos-carroceria", _get, HttpStatusCode.OK)).EnumerateArray()
+            .Select(c => c.GetProperty("codigo").GetString()).Should().BeEquivalentTo(Cotifly.Dominio.Cotizaciones.clsCatalogosCaptura.Carrocerias);
     }
 
     /// <summary>
@@ -583,19 +603,19 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         // vehículo con el peso de la ruta, que resuelve la Mesa de Costeo).
         _cubicador.Recomendar = p => clsCubicadorFalso.PesoTotal(p) == 28_000m
             ? clsCubicadorFalso.Asignado(clsCubicadorFalso.Vehiculo("3S3", "FURGON", 12_000m), clsCubicadorFalso.Vehiculo("2S3", "ESTACAS", 9_000m),
-                clsCubicadorFalso.Vehiculo("2", "FURGON", 7_000m))
+                clsCubicadorFalso.Vehiculo("C2", "FURGON", 7_000m))
             : clsCubicadorFalso.SinSeleccion("SUPERA_K_MAX");
         var api = Api();
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         using var envio = await api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, Formulario(dosRutas: true, conexo: true));
         var folio = (await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
-        string[] camionesEsperados = ["1|3S3|FURGON|12000.00|R", "1|2S3|ESTACAS|9000.00|R", "1|2|FURGON|7000.00|R", "2|||12500.00|-"];
+        string[] camionesEsperados = ["1|3S3|FURGON|12000.00|R", "1|2S3|ESTACAS|9000.00|R", "1|C2|FURGON|7000.00|R", "2|||12500.00|-"];
         (await CamionesAsync(folio)).Should().Equal(camionesEsperados);
 
         // 2. Envío por camión: una línea por camión, en orden, con la lineaNegocio de Nexo de su ruta.
         var lineas = _nexo.UltimaAlta!["lineas"]!.AsArray().Select(l => l!).ToList();
         lineas.Select(l => (l["tipoVehiculo"]?.GetValue<string>(), l["peso"]!.GetValue<decimal>(), l["lineaNegocio"]!.GetValue<string>()))
-            .Should().Equal(("3S3", 12_000m, "Puerto a interior"), ("2S3", 9_000m, "Puerto a interior"), ("2", 7_000m, "Puerto a interior"),
+            .Should().Equal(("3S3", 12_000m, "Puerto a interior"), ("2S3", 9_000m, "Puerto a interior"), ("C2", 7_000m, "Puerto a interior"),
                 ((string?)null, 12_500m, "Interior a puerto"));
 
         // 3. Polling con las líneas barajadas: cada camión recibe el flete de SU línea.
@@ -866,7 +886,7 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         _cubicador.Recomendar = p => clsCubicadorFalso.PesoTotal(p) switch
         {
             28_000m => clsCubicadorFalso.Asignado(clsCubicadorFalso.Vehiculo("3S3", "FURGON", 16_000m), clsCubicadorFalso.Vehiculo("2S3", "ESTACAS", 12_000m)),
-            _ => clsCubicadorFalso.Asignado(clsCubicadorFalso.Vehiculo("2", "FURGON", 12_500m)),
+            _ => clsCubicadorFalso.Asignado(clsCubicadorFalso.Vehiculo("C2", "FURGON", 12_500m)),
         };
         var api = Api();
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
@@ -878,7 +898,7 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
             new { fila = 1, origen = "CALI", origen_municipio_id = 76001, destino = "CARTAGENA", destino_municipio_id = 13001, tipologia = "CargaSeca", peso_kg = 12_500m,
                 valor_mercancia = 50_000_000m, mercancias = new[] { MercanciaPliego(10, 1250m) } },
             new { fila = 2, origen = "CUCUTA", origen_municipio_id = 54001, destino = "BOGOTA, D.C.", destino_municipio_id = 11001, tipologia = "CargaSeca", peso_kg = 8_000m,
-                valor_mercancia = 50_000_000m, tipo_vehiculo = "2" },
+                valor_mercancia = 50_000_000m, tipo_vehiculo = "C2" },
         ];
 
         // 1. Carga del pliego (Excel + filas mapeadas).
@@ -894,7 +914,7 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
 
         // 2. Cubicador por fila: dos camiones, uno y el respaldo; cada ruta con su fila de origen del Excel.
         // HU-032 (#197): la fila sin mercancías no va al cubicador y lleva su vehículo elegido.
-        (await CamionesAsync(folio)).Should().Equal("1|3S3|FURGON|16000.00|R", "1|2S3|ESTACAS|12000.00|R", "2|2|FURGON|12500.00|R", "3|2||8000.00|-");
+        (await CamionesAsync(folio)).Should().Equal("1|3S3|FURGON|16000.00|R", "1|2S3|ESTACAS|12000.00|R", "2|C2|FURGON|12500.00|R", "3|C2||8000.00|-");
         _cubicador.Recomendaciones.Should().HaveCount(2, "la fila sin mercancías no llama al cubicador");
         (await clsBaseDatosPruebas.EscalarAsync<string>(Cadena,
             "SELECT STRING_AGG(CONCAT(l.orden, '=', l.rutaOrigenIndice), ',') WITHIN GROUP (ORDER BY l.orden) FROM dbo_cotifly.CotizacionLineasSolicitud l "
@@ -905,7 +925,7 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         _nexo.UltimaAlta!["tipo"]!.GetValue<string>().Should().Be("licitacion");
         var lineas = _nexo.UltimaAlta!["lineas"]!.AsArray().Select(l => l!).ToList();
         lineas.Select(l => (l["tipoVehiculo"]?.GetValue<string>(), l["peso"]!.GetValue<decimal>()))
-            .Should().Equal(("3S3", 16_000m), ("2S3", 12_000m), ("2", 12_500m), ("2", 8_000m));
+            .Should().Equal(("3S3", 16_000m), ("2S3", 12_000m), ("C2", 12_500m), ("C2", 8_000m));
 
         // 4. Polling parcial (falta un camión de la ruta 1) y completo, con las líneas barajadas.
         var solicitud = _nexo.SolicitudesCreadas[^1];
