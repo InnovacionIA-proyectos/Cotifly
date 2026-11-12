@@ -4,6 +4,7 @@ using Cotifly.Aplicacion.Correo.Repositories;
 using Cotifly.Aplicacion.Correo.Services;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Identidad.Repositories;
+using Cotifly.Aplicacion.Pdf.Services;
 using Cotifly.Dominio.Identidad;
 using Cotifly.Pruebas.Comun;
 using Microsoft.Extensions.Options;
@@ -40,8 +41,19 @@ public sealed class clsVistaPreviaCorreoServiceTests
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    private clsVistaPreviaCorreoService Servicio() =>
-        new(_cotizaciones, new clsDestinatariosPreviosService(_correos), _usuarios, Substitute.For<IClsCalendarioNegocio>(), Options.Create(_opciones));
+    private clsVistaPreviaCorreoService Servicio(string? textoSeguros = null) =>
+        new(_cotizaciones, new clsDestinatariosPreviosService(_correos), _usuarios, Substitute.For<IClsCalendarioNegocio>(),
+            Options.Create(_opciones), Options.Create(new clsOpcionesPdf { TextoSeguros = textoSeguros }));
+
+    // #261 (HU-046): la vista previa lleva el texto de seguros de la configuración (el mismo que el envío).
+    [Fact]
+    public async Task LaVistaPreviaLlevaElTextoDeSegurosDeLaConfiguracion()
+    {
+        var vista = (await Servicio("Ampara la responsabilidad del transporte.").PrevisualizarAsync(_usuario, "PCN-V1", null, Ct)).Valor;
+
+        vista.CuerpoHtml.Should().Contain(System.Net.WebUtility.HtmlEncode(clsTextosEstandar.TituloSegurosPropuesta))
+            .And.Contain("Ampara la responsabilidad del transporte.");
+    }
 
     [Fact]
     public async Task SinBorradorPrecargaLosDestinatariosDelUltimoEnvioYLaPlantilla()

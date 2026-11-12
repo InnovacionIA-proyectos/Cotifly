@@ -128,7 +128,8 @@ public static class clsPlantillaCorreo
         string? avisoPruebas = null,
         string? firmaComercial = null,
         clsDatosCorreo? datos = null,
-        string? logoUrl = null)
+        string? logoUrl = null,
+        string? textoSeguros = null)
     {
         ArgumentNullException.ThrowIfNull(texto);
         return $"<div style=\"font-family:Arial,Helvetica,sans-serif;color:{Texto};font-size:14px;line-height:1.5;background-color:{FondoPagina};padding:24px 12px\">"
@@ -142,7 +143,8 @@ public static class clsPlantillaCorreo
                + (FichaHtml(datos, resumen) is { Length: > 0 } ficha ? Fila(TituloSeccion(TituloResumen) + ficha) : string.Empty)
                + (resumen is null ? string.Empty : Fila(ResumenHtml(resumen)))
                + Fila(NotaHtml(TextoAdjunto))
-               // #261: el texto de seguros va aquí, después del resumen y antes de la despedida.
+               // #261 (HU-046): el texto de seguros va aquí, después del resumen y antes de la despedida.
+               + (string.IsNullOrWhiteSpace(textoSeguros) ? string.Empty : Fila(SegurosHtml(textoSeguros)))
                + Fila(FirmaHtml(firmaComercial), "20px 24px 24px 24px")
                + "</table>"
                + $"<div style=\"max-width:{AnchoMaximo}px;margin:0 auto;padding:12px 0 0 0;text-align:center;font-size:11px;color:{TextoSuave}\">"
@@ -262,6 +264,16 @@ public static class clsPlantillaCorreo
             .ToList();
         return partes.Count == 0 ? null : string.Join(" · ", partes);
     }
+
+    /// <summary>
+    /// #261 (HU-046): bloque del texto de seguros de la propuesta, después del resumen y antes de la despedida: recuadro gris claro con la
+    /// etiqueta <see cref="clsTextosEstandar.TituloSegurosPropuesta"/> en negrita y el texto escapado (los saltos de línea como <c>&lt;br&gt;</c>).
+    /// </summary>
+    private static string SegurosHtml(string textoSeguros) =>
+        $"<div style=\"background-color:{FondoSuave};border:1px solid {Linea};border-radius:8px;padding:12px 14px;font-size:13px;color:{TextoSuave}\">"
+        + $"<b style=\"color:{Texto}\">{WebUtility.HtmlEncode(clsTextosEstandar.TituloSegurosPropuesta)}</b><br>"
+        + Escapar(textoSeguros)
+        + "</div>";
 
     /// <summary>Aviso de pruebas (correo redirigido), con franja naranja a la izquierda, antes del texto del comercial.</summary>
     public static string AvisoHtml(string aviso)
