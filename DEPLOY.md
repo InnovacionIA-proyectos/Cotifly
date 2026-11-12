@@ -267,6 +267,22 @@ A (#199, con la aprobación del usuario); se cargan en Dokploy así:
 | `Captura__ClasesSinVehiculoObligatorio__0`, `__1`... | por defecto (solo `Contenedor`) | por defecto (solo `Contenedor`) | HU-032 (#197): solo si negocio exime otra clase de viaje (p. ej. `Carga Suelta`); se declaran las dos |
 | `Pdf__PermitirCotizacionChat` | `false` | `false` | Nunca se enciende fuera de las pruebas |
 
+**Verificación de las banderas en los ambientes desplegados.** En el Dokploy del backend desplegado no están cargadas
+`Nexo__EnviarGrupoRutaId`, `Nexo__EnviarCodigosCubicador` ni `Captura__AceptarVehiculoCliente`, así que rige el valor por
+defecto del manifiesto, que es el del código (`clsManifiestosDespliegueTests` falla si difieren). `appsettings.json` no
+define ninguna de las tres, de modo que no hay otra capa que las cambie. Valores efectivos:
+
+| Bandera | Valor por defecto del código | Valor del manifiesto | ¿Queda en `false` o `solo_conocidos`? |
+|---|---|---|---|
+| `Nexo__EnviarGrupoRutaId` | `true` (`clsOpcionesNexo`) | `${Nexo__EnviarGrupoRutaId:-true}` | no |
+| `Nexo__EnviarCodigosCubicador` | vacío, que se lee como `siempre` (`clsOpcionesNexo.LeerModo`) | `${Nexo__EnviarCodigosCubicador:-siempre}` | no |
+| `Captura__AceptarVehiculoCliente` | `true` (`clsOpcionesCaptura`) | `${Captura__AceptarVehiculoCliente:-true}` | no |
+
+Ninguna queda en `false` ni en `solo_conocidos` mientras no se carguen en Dokploy. Si alguien las carga, vale la regla de
+arriba: `false` o `solo_conocidos` en `Nexo__EnviarCodigosCubicador`, o `false` en las otras dos, cambia el ambiente; en
+ese caso hay que borrar la variable de Dokploy o ponerle el valor de la tabla y redesplegar. La revisión de cada Dokploy
+(staging, QA y producción) es operativa.
+
 ### Identidad compartida con Nexo (#172)
 
 Cotifly manda a Nexo `X-Portal-clsUsuario-Id = UsuariosWeb.idUsuarioExterno`, que es el `ID` de `tblSAPUsuariosApp`. Nexo lo valida
@@ -437,34 +453,134 @@ Información de infraestructura que no es secreta pero sí interna: IPs `10.10.4
 
 ## 3. Tabla de variables de producción (plantilla para HU-007.1, #33)
 
-Se llena en #33, variable por variable, **sin escribir aquí ningún valor secreto**: la columna "Valor confirmado" dice
-solo *sí* o *no* (y para las variables no secretas puede llevar el valor). Los valores se cargan directamente en Dokploy
-(§2.1). "Equivalente Python" sirve para la tercera casilla de #33 (qué estaba bien en el despliegue previo).
+Se llena variable por variable, **sin escribir aquí ningún valor secreto**: para un secreto la columna "Valor de producción"
+dice solo *secreto, por definir* (o *secreto, cargado*), y el valor se carga directamente en Dokploy (§2.1). "Confirmado"
+pasa a *sí* cuando el responsable da el valor real (o confirma que se queda el valor por defecto) y está cargado en el
+Dokploy de producción. "Por defecto" es el valor del código; el manifiesto declara cada variable con ese mismo valor
+(`${VAR:-<valor>}`, verificado por `clsManifiestosDespliegueTests`) salvo donde se indica. Una variable que no se carga en
+Dokploy queda con ese valor. La lista cubre todas las opciones que el backend enlaza a la configuración: no hay otras
+lecturas de configuración fuera de las clases de opciones, y `appsettings.json` solo define el nivel de log.
 
-| Variable | Secreto | Fuente (quién la provee) | Valor confirmado | Responsable | Equivalente Python |
-|---|---|---|---|---|---|
-| `ASPNETCORE_ENVIRONMENT` | no | fijo: `Production` | no | Backend | — |
-| `ConnectionStrings__Cotifly` | sí | DBA: login `cotifly_app` y permisos por esquema (03-infraestructura §3.3) | no | DBA / Backend | `DATABASE_URL` |
-| `ConnectionStrings__Identidad` | sí | DBA: `SELECT` por columna en `dbsolucionesti` | no | DBA / Backend | — |
-| `ConnectionStrings__Regional` | sí | DBA: usuario SQL de solo lectura con `SELECT` únicamente sobre `dbo.DimEjecutivo` en `DWCubosEBSSAP`; infraestructura: salida desde el worker a `10.10.40.24:1433`. Opcional | no | DBA / Infraestructura | — |
-| `Regional__Esquema`, `__Tabla`, `__ColumnaUsuario`, `__ColumnaRegional`, `__Dominio` | no | DBA confirma el esquema real de `DimEjecutivo` (hoy `dbo`, `DimEjecutivo`, `USUARIO`, `REGIONAL`, dominio `boterosoto`, #81) | no | DBA | — |
-| `Regional__TiempoEsperaSegundos`, `Regional__TiempoEsperaLoginSegundos` | no | fijos: `10` y `3` salvo que se mida otra cosa en staging | no | Backend | — |
-| `Identidad__Esquema` y tablas | no | DBA confirma ubicación real | no | DBA | — |
-| `Jwt__SigningKey` | sí | generada por el equipo de despliegue (`openssl rand -base64 48`) | no | Backend | `WEB_SESSION_SECRET` |
-| `Cors__OrigenesPermitidos__0` | no | equipo de frontend (dominio de `clientepro-frontend`) | no | Frontend | — |
-| `ForwardedHeaders__Habilitado` / `RedesConocidas__0` | no | infraestructura (subred de `dokploy-network`) | no | Infraestructura | — |
-| `PUBLIC_HOST` (Traefik) | no | infraestructura (DNS y TLS, HU-006.2) | no | Infraestructura | `PUBLIC_HOST` |
-| `Pdf__BaseUrl` | no | `https://<PUBLIC_HOST>` | no | Backend | `PDF_BASE_URL` |
-| `IA__Proveedor` / `IA__Modelo` / `IA__Endpoint` | no | negocio (ADR-003). Propuesta con OmniRoute: `openai_compatible`, `gemini/gemini-3.5-flash-lite`, endpoint interno (por HTTPS si se publica, §2.2) | no | Negocio / Backend | `LLM_MODEL` |
-| `IA__ApiKey` (y respaldos) | sí | dueño de la cuenta del proveedor LLM (con OmniRoute, su administrador; rotar antes de staging, §2.2) | no | Negocio | `LLM_API_KEY` |
-| `IA__Fallbacks__0__*`, `IA__Fallbacks__1__*` | `ApiKey` sí | negocio (ADR-003). Propuesta con OmniRoute: `gemini/gemini-3.5-flash` y `gemini/gemini-3-flash-preview` | no | Negocio / Backend | fallbacks de LiteLLM |
-| `IA__SoportaJsonSchema` / `IA__MaxTokens` | no | con OmniRoute y Gemini: `false` y `1500` (§2.2) | no | Backend | `LLM_MAX_TOKENS` |
-| `Nexo__UrlBase` | no | equipo de Nexo (URL de producción, no la de pruebas) | no | Backend / Nexo | — |
-| `SapTm__Url` / `SapTm__User` / `SapTm__Pass` | `Pass` sí | SAP: el usuario técnico de `ZGW_RENTAB_CLI_SRV`; infraestructura: salida a `sap-tm-prd.boterosoto.local:8000` (HU-009.1) | no | SAP / Infraestructura / Backend | `SAP_TM_*` |
-| `ConnectionStrings__DwOperaciones` | sí | DBA: usuario de solo lectura con `SELECT` sobre `dbo.DimBPSolicitante` en `DWCubosOperacionesEBS`; infraestructura: salida a `10.10.40.24:1433`. Opcional | no | DBA / Infraestructura | — |
-| ~~`SapTm__Modo`, `SapTm__ExportPath`~~ | — | retiradas en HU-042.2 (ADR-027) | no aplica | — | `SAP_TM_*` |
-| `Correo__Habilitado` / `Correo__MailSender__UrlBase` / `Correo__Proteccion__BuzonPruebas` | no | Backend (URL de MailSender) y negocio (buzón de pruebas, por definir) | no | Backend | `CORREO_*`, `SMTP_RELAY_HOST` (retiradas: el relay lo usa MailSender) |
-| `MCP_AUTH_TOKEN`, `INTERNAL_API_TOKEN`, `S3_*`, `DRIVE_*`, `SHEETS_*` | — | se retiran (§2.2) | no aplica | Backend | sí |
+**Arranque, red y publicación**
+
+| Variable | Secreto | Descripción | Por defecto | Valor de producción | Confirmado | Responsable |
+|---|---|---|---|---|---|---|
+| `ASPNETCORE_ENVIRONMENT` | no | Entorno de ASP.NET Core; activa las validaciones de arranque de producción | `Production` (fijo en el manifiesto) | `Production` | sí | Backend |
+| `PUBLIC_HOST` (manifiesto) | no | Dominio del router de Traefik; no la lee la app | — (obligatoria del manifiesto) | por definir: depende del dominio con TLS (§5.3) | no | Infraestructura |
+| `Zona__ZonaHoraria` | no | Zona horaria de fechas y folios | `America/Bogota` (fijo en el manifiesto) | `America/Bogota` | sí | Backend |
+| `Cors__OrigenesPermitidos__0` | no | Origen permitido por CORS (frontend de ClientePro) | — (obligatoria del manifiesto) | por definir: dominio de `clientepro-frontend` | no | Frontend |
+| `ForwardedHeaders__Habilitado` | no | Confía en los encabezados reenviados por Traefik | `false` (el manifiesto lo fija en `true`) | `true` | sí | Backend |
+| `ForwardedHeaders__RedesConocidas__0` | no | Subred desde la que se aceptan encabezados reenviados | — (obligatoria del manifiesto) | por definir: subred de `dokploy-network` | no | Infraestructura |
+| `ForwardedHeaders__ProxiesConocidos__0` | no | IP fija de Traefik, alternativa más estrecha a la subred (§5.2) | vacío (no está en el manifiesto: vacía no arranca) | no se usa mientras Traefik no tenga IP estable | no | Infraestructura |
+| `ForwardedHeaders__LimiteSaltos` | no | Proxies que se recorren en `X-Forwarded-For` | `1` | por defecto | no | Backend |
+| `SeguridadHttp__LimiteCuerpoWebBytes`, `__LimiteCuerpoLicitacionBytes` | no | Tamaño máximo del cuerpo de `/web/*` y de la licitación (Excel) | `65536`, `12582912` | por defecto | no | Backend |
+
+**Base de datos e identidad**
+
+| Variable | Secreto | Descripción | Por defecto | Valor de producción | Confirmado | Responsable |
+|---|---|---|---|---|---|---|
+| `ConnectionStrings__Cotifly` | sí | Base de Cotifly (`dbo_cotifly`), login `cotifly_app` con permisos por esquema (03-infraestructura §3.3) | — (obligatoria) | secreto, por definir | no | DBA / Backend |
+| `ConnectionStrings__Identidad` | sí | Base de identidad del portal, la misma que lee Nexo en ese ambiente | — (obligatoria) | secreto, por definir: base de identidad de Nexo en producción | no | DBA / Backend |
+| `Identidad__Esquema`, `__TablaUsuarios`, `__TablaUsuarioRoles`, `__TablaRoles` | no | Ubicación de las tablas de identidad | `dbo`, `tblSAPUsuariosApp`, `tblSAPUsuarioRoles`, `tblSAPRoles` | por definir: el DBA confirma la ubicación real | no | DBA |
+| `BaseDatos__MotivoBusquedaAgotada` | no | Uso del motivo `BUSQUEDA_AGOTADA` del script 07: `auto`, `habilitado` o `deshabilitado` (§2.2) | `auto` | `auto` (o `habilitado` si el DBA no otorga `VIEW DEFINITION`) | no | DBA / Backend |
+| `CandadoSql__EsperaMilisegundos`, `__MargenRespuestaMilisegundos`, `__GraciaCancelacionMilisegundos`, `__ComandoSegundos`, `__Intentos`, `__PausaBaseMilisegundos` | no | Candado del folio en SQL Server (`sp_getapplock`): esperas, reintentos y límite de los comandos | `5000`, `15000`, `5000`, `120`, `3`, `200` | por defecto | no | Backend |
+| `ConnectionStrings__Regional` | sí (con valor) | DW de la regional del comercial (`dbo.DimEjecutivo` en `DWCubosEBSSAP`), solo lectura. Opcional; exige salida a `10.10.40.24:1433` | vacío (no configurada) | secreto, por definir | no | DBA / Infraestructura |
+| `Regional__Esquema`, `__Tabla`, `__ColumnaUsuario`, `__ColumnaRegional`, `__Dominio` | no | Esquema real de `DimEjecutivo` (#81); no se cargan vacías | `dbo`, `DimEjecutivo`, `USUARIO`, `REGIONAL`, `boterosoto` | por definir: el DBA confirma | no | DBA |
+| `Regional__TiempoEsperaSegundos`, `__TiempoEsperaLoginSegundos` | no | Espera de las consultas a `DimEjecutivo` y del login por ella | `10`, `3` | por defecto salvo que staging mida otra cosa | no | Backend |
+| `ConnectionStrings__DwOperaciones` | sí (con valor) | DW de operaciones (`dbo.DimBPSolicitante` en `DWCubosOperacionesEBS`): NIT por BP del margen de SAP. Opcional; exige salida a `10.10.40.24:1433` | vacío (no configurada) | secreto, por definir | no | DBA / Infraestructura |
+
+Los `IDROLES` de producción (comercial, gerente comercial y director) no son variables: van en `dbo_cotifly.Roles` (DBA,
+§2.2 "Rol director"). Si staging y producción comparten base sigue pendiente con el DBA (§5.2).
+
+**Autenticación**
+
+| Variable | Secreto | Descripción | Por defecto | Valor de producción | Confirmado | Responsable |
+|---|---|---|---|---|---|---|
+| `Jwt__SigningKey` | sí | Clave de firma de los JWT (≥ 32 bytes), propia de producción y distinta de la de staging (`openssl rand -base64 48`) | — (obligatoria) | secreto, por definir | no | Backend |
+| `Jwt__Issuer`, `__Audience`, `__AccessMinutes`, `__RefreshDays` | no | Emisor, audiencia y vida del token de acceso y del de renovación | `cotifly-api`, `clientepro`, `60`, `30` | por defecto | no | Backend |
+| `LimiteAuth__PeticionesPorVentana`, `__VentanaSegundos` | no | Límite por IP de `/api/auth/*` | `30`, `60` | por defecto | no | Backend |
+
+**Nexo y captura**
+
+| Variable | Secreto | Descripción | Por defecto | Valor de producción | Confirmado | Responsable |
+|---|---|---|---|---|---|---|
+| `Nexo__UrlBase` | no | Raíz del servicio de Nexo, sin `/api`; vacía = Nexo sin configurar | vacío | por definir: URL de producción de Nexo, no la de pruebas | no | Nexo / Backend |
+| `Nexo__MinutosCacheMunicipios`, `__MinutosCacheCatalogos`, `__HorasCatalogosVencidos` | no | Caché de municipios y catálogos de Nexo, y horas de respaldo con Nexo caído | `60`, `30`, `24` | por defecto | no | Backend |
+| `Nexo__EnviarGrupoRutaId`, `Nexo__EnviarDatosCubicador` | no | Envían a Nexo el grupo de la ruta y los datos del cubicador | `true`, `true` | `true`, `true` | no | Backend |
+| `Nexo__EnviarCodigosCubicador` | no | Códigos de vehículo y carrocería del cubicador: `siempre`, `solo_conocidos` o `nunca` | vacío = `siempre` (el manifiesto lo declara `siempre`) | `siempre` | no | Backend |
+| `Captura__AceptarVehiculoCliente` | no | Interruptor de reversa del vehículo elegido (ADR-022) | `true` | `true` | no | Backend |
+| `Captura__ClasesSinVehiculoObligatorio__0`, `__1` | no | Clases de viaje que no exigen el vehículo elegido | solo `Contenedor` | por defecto salvo decisión de negocio | no | Negocio |
+| `Resultado__MotivosPerdida__0` a `__5`, `Resultado__MotivoConComentario` | no | Lista de motivos de pérdida y el que exige comentario | vacíos = lista de Nexo; vacío = `Otro` | por defecto salvo decisión de negocio | no | Negocio |
+| `CosteoNexo__Habilitado` | no | Polling del costeo en Nexo | `true` | `true` | no | Backend |
+| `CosteoNexo__IntervaloInicialSegundos`, `__IntervaloMaximoMinutos`, `__FactorEdad`, `__EdadMaximaHoras`, `__IntervaloTickSegundos`, `__Lote`, `__ReclamoSegundos`, `__LecturaInmediataSegundos`, `__MaximoFallosRelectura` | no | Ritmo del polling del costeo y de la relectura de la línea | `5`, `15`, `0.25`, `72`, `5`, `20`, `120`, `6`, `10` | por defecto | no | Backend |
+| `CosteoNexo__MaximoReintentosConexos`, `__IntervaloReintentoConexosMinutos`, `__EsperaMaximaCatalogoConexosHoras` | no | Envío diferido de los conexos a Nexo | `5`, `5`, `24` | por defecto | no | Backend |
+| `CosteoNexo__MaximoFallosSincronizacionResultado`, `__EdadMaximaSincronizacionResultadoDias` | no | Sincronización diferida del resultado con Nexo | `10`, `30` | por defecto | no | Backend |
+| `ImportacionInteligente__Habilitada`, `__TimeoutSegundos`, `__TimeoutLecturaSegundos`, `__LimiteRespuestaMegabytes` | no | Importación del Excel de licitación con Nexo (ADR-028) | `true`, `90`, `240`, `20` | por defecto | no | Backend |
+
+**Cubicador**
+
+| Variable | Secreto | Descripción | Por defecto | Valor de producción | Confirmado | Responsable |
+|---|---|---|---|---|---|---|
+| `Cubicador__UrlBase` | no | URL del cubicador (`POST /recomendaciones`); vacía = cubicador sin configurar (cada ruta va al camión del respaldo) | vacío | por definir: URL del cubicador de producción | no | Cubicador / Backend |
+| `Cubicador__ApiKey` | **sí** | Clave hacia el cubicador; obligatoria con `UrlBase`, ≥ 16 caracteres en Production, distinta de la de staging | vacío | secreto, por definir | no | Cubicador / Backend |
+| `Cubicador__RutaSalud` | no | Ruta que consulta `/health/ready` en el cubicador; vacía = no se consulta | vacío | por definir cuando el cubicador la publique | no | Cubicador / Backend |
+| `Cubicador__RespaldoSiFalla` | no | Si el cubicador se cae, la ruta sigue con el camión del respaldo | `true` | `false` con `UrlBase` estable (§2.2) | no | Backend / Negocio |
+| `Cubicador__TiempoEsperaSegundos`, `__TiempoEsperaRecomendacionSegundos`, `__MinutosCacheCatalogos`, `__PresupuestoCapturaSegundos`, `__TiempoMaximoCatalogoSegundos` | no | Tiempos de las llamadas, caché de catálogos y presupuesto de la captura | `15`, `90`, `30`, `180`, `10` | por defecto | no | Backend |
+| `Cubicador__MaximoConcurrente`, `__EsperaMaximaCupoSegundos`, `__EsperaAntesReconsultaSegundos`, `__TiempoEsperaReconsultaSegundos`, `__EsperaSincronaCubicacionSegundos`, `__RetencionCubicacionMinutos`, `__MaximoCubicacionesEnMemoria` | no | Cupo de llamadas y cubicaciones asíncronas (opciones C y D, §2.2) | `1`, `60`, `5`, `60`, `8`, `15`, `500` | por defecto | no | Backend |
+| `Cubicador__LicitacionEnSegundoPlano`, `__ProcesadorHabilitado`, `__MaximoParalelo`, `__IntervaloTickSegundos`, `__LoteRutas`, `__ReclamoSegundos`, `__MaximoIntentos`, `__EsperaReintentoSegundos` | no | Licitación cubicada en segundo plano (`MaximoParalelo` ≤ `MaximoConcurrente`) | `true`, `true`, `1`, `5`, `50`, `300`, `3`, `30` | por defecto | no | Backend |
+| `Cubicacion__ParecidoMinimoMercancia`, `__MargenAmbiguedadMercancia`, `__IncluirSugerenciaLegada` | no | "Calcular cubicaje": parecido con el catálogo y plan B de la sugerencia legada | `0.7`, `0.05`, `false` | por defecto | no | Backend |
+
+**SAP TM (margen)**
+
+| Variable | Secreto | Descripción | Por defecto | Valor de producción | Confirmado | Responsable |
+|---|---|---|---|---|---|---|
+| `SapTm__SincronizacionHabilitada` | no | Interruptor del worker que copia el margen de SAP a `dbo_cotifly.SapMargenCliente`; apagado no corre aunque haya credenciales | `false` | `true` cuando haya salida a SAP y el usuario técnico esté habilitado | no | Backend |
+| `SapTm__Url`, `SapTm__User`, `SapTm__Pass`, `SapTm__SapClient` | `Pass` sí | Servicio OData `ZGW_RENTAB_CLI_SRV` y su usuario técnico; sin `Url`, `User` o `Pass` el worker queda inactivo | vacíos | por definir; `Pass`: secreto, por definir | no | SAP / Infraestructura / Backend |
+| `SapTm__SalesOrgDefault`, `__AvisoSincronizacionHoras` | no | Organización de ventas por defecto y antigüedad de la copia a partir de la cual se avisa | `50000005`, `48` | por defecto (SAP confirma la organización) | no | SAP / Backend |
+| `SapTm__ChequeoMinutos`, `__SincronizacionMinutos`, `__TimeoutSegundos`, `__MaximoBytes`, `__MinimoFilas`, `__MinimoPorcentajeActivas` | no | Ritmo, límites y umbrales de seguridad de la sincronización | `60`, `1440`, `120`, `20971520`, `100`, `80` | por defecto | no | Backend |
+| ~~`SapTm__Modo`, `SapTm__ExportPath`~~ | — | Retiradas en HU-042.2 (ADR-027) | — | no aplica | — | — |
+
+**TRM y PDF**
+
+| Variable | Secreto | Descripción | Por defecto | Valor de producción | Confirmado | Responsable |
+|---|---|---|---|---|---|---|
+| `Trm__Proveedor`, `__UrlDolarApi`, `__Url`, `__TiempoEsperaSegundos`, `__TiempoEsperaDolarApiSegundos` | no | TRM del día: DolarApi con respaldo en datos abiertos (exige salida a `co.dolarapi.com:443` y `www.datos.gov.co:443`) | `dolarapi_con_respaldo`, `https://co.dolarapi.com/v1/trm`, `https://www.datos.gov.co/resource/32sa-8pi3.json`, `10`, `4` | por defecto | no | Backend / Infraestructura |
+| `Pdf__StorageModo`, `Pdf__StorageDir` | no | Almacén de los PDF en el volumen | `volumen`, `/data/pdfs` (fijos en el manifiesto) | `volumen`, `/data/pdfs` | sí | Backend |
+| `Pdf__BaseUrl` | no | Base pública de `pdf_url` (`{BaseUrl}/pdfs/{folio}.pdf`); vacía deja la URL relativa, que el frontend resuelve contra la API | vacío | `https://<PUBLIC_HOST>` o vacía, por definir con el dominio | no | Backend |
+| `Pdf__TiempoEsperaRenderSegundos` | no | Tiempo máximo del render del PDF | `30` | por defecto | no | Backend |
+| `Pdf__PermitirCotizacionChat` | no | Cotización legada del chat (retirada) | `false` (fijo en el manifiesto) | `false` | sí | Backend |
+
+**Correo**
+
+| Variable | Secreto | Descripción | Por defecto | Valor de producción | Confirmado | Responsable |
+|---|---|---|---|---|---|---|
+| `Correo__Habilitado` | no | Enciende el envío de correos | `false` | `true` cuando el correo esté listo para producción | no | Negocio / Backend |
+| `Correo__Modo` | no | Transporte del correo | `mailsender` (fijo en el manifiesto) | `mailsender` | sí | Backend |
+| `Correo__MailSender__UrlBase` | no | URL del microservicio MailSender | vacío | por definir | no | Backend |
+| `Correo__MailSender__TimeoutSegundos`, `__Prioridad` | no | Tiempo de la llamada a MailSender y prioridad del mensaje | `15`, `Normal` | por defecto | no | Backend |
+| `Correo__MailSender__Remitente`, `__ModoRemitente`, `__DominiosRemitente` | no | Remitente corporativo, si el `From` es el comercial o el corporativo, y dominios aceptados como remitente | `notificaciones@boterosoto.com.co`, `comercial`, `boterosoto.com.co` | por defecto; TI revisa SPF/DMARC | no | TI / Backend |
+| `Correo__Proteccion__Modo` | no | `redirigir` manda todo al buzón de pruebas; `ninguno` entrega a los destinatarios reales (exige también `PermitirEnvioReal=true`) | `redirigir` | `redirigir` hasta salir en vivo; `ninguno` al salir, con SPF/DMARC revisados | no | Negocio / Backend |
+| `Correo__Proteccion__PermitirEnvioReal` | no | Segunda llave del envío real: con el correo habilitado, `Modo=ninguno` sin ella (o al revés) impide arrancar | `false` | `false` hasta salir en vivo; `true` al salir, junto con `Modo=ninguno` | no | Negocio / Backend |
+| `Correo__Proteccion__BuzonPruebas` | no | Buzón que recibe los correos redirigidos | vacío | por definir | no | Negocio |
+| `Correo__MaximoDestinatarios` | no | Tope de destinatarios entre para y cc (1 a 100) | `10` | por defecto | no | Backend |
+| `Correo__LogoUrl` | no | Logo del encabezado; URL pública | logo de `www.boterosoto.com.co` | por defecto | no | Backend |
+| `Correo__Seguimiento__IntervaloTickSegundos`, `__IntervaloConsultaSegundos`, `__EdadMaximaHoras`, `__Lote`, `__ReclamoSegundos` | no | Worker que consulta en MailSender el estado de cada correo | `15`, `30`, `24`, `50`, `60` | por defecto | no | Backend |
+
+**Agente de IA y sesiones**
+
+| Variable | Secreto | Descripción | Por defecto | Valor de producción | Confirmado | Responsable |
+|---|---|---|---|---|---|---|
+| `IA__Proveedor`, `IA__Modelo`, `IA__Endpoint` | no | Proveedor LLM (ADR-003); sin proveedor el agente no responde | vacíos | por definir. Propuesta con OmniRoute: `openai_compatible`, `gemini/gemini-3.5-flash-lite`, endpoint interno (por HTTPS si se publica, §2.2) | no | Negocio / Backend |
+| `IA__ApiKey` | sí | Clave del proveedor LLM (rotar antes de staging, §2.2) | vacío | secreto, por definir | no | Negocio |
+| `IA__Fallbacks__0__*`, `IA__Fallbacks__1__*` (`Proveedor`, `Modelo`, `Endpoint`, `ApiKey`) | `ApiKey` sí | Respaldos ante 429, 5xx o red caída; sin `Proveedor` no existe | vacíos | por definir. Propuesta con OmniRoute: `gemini/gemini-3.5-flash` y `gemini/gemini-3-flash-preview`; `ApiKey`: secreto, por definir | no | Negocio / Backend |
+| `IA__SoportaJsonSchema`, `IA__MaxTokens` | no | Salida estructurada del modelo y tope de tokens | `true`, `4096` | con OmniRoute y Gemini: `false` y `1500` (§2.2) | no | Backend |
+| `IA__TiempoRedaccionSegundos` | no | Segundos que se espera al modelo al redactar el asunto y la introducción del PDF (1 a 120); pasado ese tiempo se usan los textos estándar y la respuesta sale igual | `15` | por defecto | no | Backend |
+| `IA__MaxIteraciones`, `IA__MinutosSinJsonSchema`, `IA__JsonSchemaEstricto`, `IA__Rpm`, `IA__TimeoutSeg`, `IA__EsperaMaximaRpmSegundos`, `IA__PropuestaDirecta`, `IA__RespuestaFinalEnLoop` | no | Ajustes del bucle del agente, del ritmo y de los tiempos de la llamada al modelo | `12`, `30`, `false`, `8`, `60`, `20`, `true`, `true` | por defecto | no | Backend |
+| `LimiteChat__PeticionesPorVentana`, `__VentanaSegundos` | no | Límite de peticiones al chat | `20`, `60` | por defecto | no | Backend |
+| `Sesiones__LimiteTokens`, `__TtlHoras`, `__BarridoMinutos`, `__EsperaTurnoSegundos` | no | Tamaño, vida y barrido de las sesiones del agente | `6000`, `24`, `60`, `3` | por defecto | no | Backend |
+
+**Retiradas:** `MCP_AUTH_TOKEN`, `INTERNAL_API_TOKEN`, `S3_*`, `DRIVE_*`, `SHEETS_*` y el resto de variables del Python
+(§2.2): no aplica, no se cargan.
 
 ## 4. Registry, imagen versionada y release (HU-006.4, #28)
 
@@ -779,8 +895,8 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
 5. **Verificar la disponibilidad después de cada despliegue.** El rollback automático de Swarm solo mira la sonda de
    vida (`/health`, el `HEALTHCHECK`): una versión que arranca pero no llega a la base (cadena mal escrita, permisos,
    red a `tbsdatacenter`) queda *healthy* y **no** se revierte sola. Por eso, tras cada *Deploy*:
-   `curl -s -o /dev/null -w '%{http_code}' https://<PUBLIC_HOST>/health/ready` (en staging, mientras el overlay esté
-   caído, `http://10.10.40.31:8092/health/ready`) debe dar `200` en menos de 2 minutos. Si no:
+   `curl -s -o /dev/null -w '%{http_code}' https://<PUBLIC_HOST>/health/ready` (en staging, mientras no haya
+   TLS, `http://10.10.40.31:8092/health/ready`) debe dar `200` en menos de 2 minutos. Si no:
    `docker service rollback <stack>_cotifly-api` en el manager (o volver `COTIFLY_TAG` al valor anterior y *Deploy*).
 6. **Rollback manual:** volver `COTIFLY_TAG` al valor anterior y *Deploy*, o `docker service rollback <stack>_cotifly-api`.
 7. **Sin rollback al stack Python desde este repositorio.** Por decisión del usuario (2026-10-13) el Python se retiró
@@ -862,30 +978,45 @@ Internet / red corporativa
   se pierden con un reinicio o un despliegue (vuelven con la siguiente consulta del polling) y con más réplicas una
   réplica no vería lo que leyó el polling de otra. Escalar exige guardarlos en la base.
 - **TLS:** los labels de Traefik (router `websecure`, `certresolver=letsencrypt`, HSTS, puerto 8080 y healthcheck de
-  `/health/ready`) están escritos; que el certificado funcione depende de HU-006.2.
-  - **Versión de Traefik (informativo):** los manifiestos usan `traefik.docker.network`, la etiqueta de Traefik v2
-    (la que usa el Python). En Traefik v3 el proveedor de Swarm lee `traefik.swarm.network`. **Pendiente:** confirmar
-    la versión del Traefik de Dokploy (`docker service inspect dokploy-traefik --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'`)
-    y, si es v3, cambiar esa etiqueta en los dos manifiestos.
+  `/health/ready`) están escritos; que el certificado funcione depende de HU-006.2 (§5.3).
+  - **Versión de Traefik: v3.** Dokploy corre `traefik:v3.6.25` (verificado en el clúster con
+    `docker service inspect dokploy-traefik --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'`). En Traefik v3 los
+    servicios de Swarm los lee el proveedor `swarm`, separado del proveedor `docker`, y la red por la que Traefik llega a
+    la tarea se indica con **`traefik.swarm.network`**; `traefik.docker.network` (la etiqueta de v2, la que usaba el
+    Python) pertenece al proveedor `docker` y el proveedor `swarm` no la lee. Sin la etiqueta correcta, como
+    `cotifly-api` está en dos redes (`edge` y `salida`), Traefik puede tomar la IP de la red `salida`, que no comparte con
+    la tarea, y responder 502 o 504. Por eso los dos manifiestos usan `traefik.swarm.network=dokploy-network`.
+  - El resto de etiquetas de los manifiestos no cambió de v2 a v3: `traefik.enable`, los routers (`rule` con `Host(...)`,
+    `entrypoints`, `tls`, `tls.certresolver`, `middlewares`), el middleware `headers` (`stsSeconds`,
+    `stsIncludeSubdomains`) y, en los servicios, `loadbalancer.server.port` y `loadbalancer.healthcheck.*` se escriben
+    igual. La otra etiqueta de Swarm que v3 renombró (`traefik.docker.lbswarm` → `traefik.swarm.lbswarm`) no se usa.
 
-### 5.3 Anclado al worker mientras el overlay esté caído (HU-006.1)
+### 5.3 Anclado al worker y acceso sin TLS en staging (HU-006.1)
 
-El overlay VXLAN entre el manager y el worker está caído (HU-006.1, diagnóstico; HU-006.2, solución). Consecuencias
-para los manifiestos, iguales a las que ya asumía el Python:
+**El overlay VXLAN entre el manager y el worker funciona**: el diagnóstico de HU-006.1
+([docs/infra/HU-006.1-diagnostico-tls.md](docs/infra/HU-006.1-diagnostico-tls.md)) comprobó que Traefik, en el manager,
+llega por `dokploy-network` a servicios que corren en el worker. Lo que falta es **TLS** (HU-006.2): los dominios del
+clúster son `*.10-10-40-17.sslip.io`, que apuntan a la IP privada `10.10.40.17`, y Traefik pide los certificados a
+Let's Encrypt con el reto HTTP-01, que exige un dominio que resuelva a una IP pública alcanzable desde internet. Let's
+Encrypt no valida esos nombres, así que el router `websecure` nunca obtiene un certificado válido. La solución
+recomendada (opción B del diagnóstico) es un subdominio corporativo con el reto DNS-01; está pendiente de aprobación de
+Infraestructura y TI. Consecuencias para los manifiestos:
 
 - `placement.constraints: node.hostname == TBSNODO1-DKP`: la tarea corre en el worker, donde hay disco (el manager está
-  al límite) y donde vive el volumen local de PDFs.
-- Traefik corre en el manager y hoy no alcanza por la overlay a una tarea del worker. Por eso:
+  al límite) y donde vive el volumen local de PDFs. No depende del overlay: quitar la restricción exige un volumen de
+  PDFs compartido entre nodos (ADR-012).
+- Sin un dominio con certificado válido, Cotifly no puede publicarse por HTTPS a través de Traefik. Por eso:
 
   | | Staging (`stack.dotnet.staging.yml`) | Producción (`stack.dotnet.dokploy.yml`) |
   |---|---|---|
-  | Acceso mientras el overlay esté caído | Puerto en modo host `10.10.40.31:${COTIFLY_PUERTO_HOST:-8092}` → 8080, HTTP **sin TLS**, solo red corporativa (el Python usa 8091) | Ninguno: sin `ports`. **No se despliega hasta HU-006.2** |
+  | Acceso mientras no haya TLS | Puerto en modo host `10.10.40.31:${COTIFLY_PUERTO_HOST:-8092}` → 8080, HTTP **sin TLS**, solo red corporativa (el Python usa 8091). **Pendiente de TLS:** se quita cuando Traefik sirva el dominio con certificado válido | Ninguno: sin `ports`. **No se despliega hasta HU-006.2** |
   | Orden de actualización | `stop-first` (dos tareas no pueden usar el mismo puerto del nodo); `COTIFLY_ORDEN_UPDATE=start-first` al quitar el puerto | `start-first` |
   | Volumen / router | `cotifly_staging_pdfs` / `cotifly-api-staging` | `cotifly_pdfs` / `cotifly-api` |
   | `ASPNETCORE_ENVIRONMENT` | `Production` fijo (mismas validaciones de arranque) | `Production` fijo |
 
-- Al resolverse HU-006.2: quitar `ports` de staging, pasar a `start-first` y validar el acceso por Traefik con TLS. La
-  restricción de nodo puede quitarse solo con un volumen de PDFs compartido entre nodos.
+- Al resolverse HU-006.2 (dominio con certificado válido y `PUBLIC_HOST` definido): quitar `ports` (el modo host del
+  puerto 8092) de staging, pasar a `start-first` (`COTIFLY_ORDEN_UPDATE=start-first`) y validar el acceso por Traefik
+  con HTTPS desde fuera del clúster. Hasta entonces el modo host se mantiene: quitarlo antes dejaría staging sin acceso.
 
 ### 5.4 Variables del stack en Dokploy
 

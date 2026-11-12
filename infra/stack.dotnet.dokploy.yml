@@ -24,11 +24,12 @@
 #   - bot-back (interna, sin salida) no hace falta: no hay servicios internos. Si vuelve alguno (p. ej. MinIO,
 #     ADR-012), va en una overlay con internal: true y sin labels de Traefik.
 #
-# ANCLADO AL WORKER mientras el overlay VXLAN entre nodos esté caído (HU-006.1): la tarea corre en TBSNODO1-DKP
-# (10.10.40.31), donde hay disco y donde vive el volumen local de PDFs. Por la misma causa, Traefik (manager) no
-# alcanza hoy a la tarea del worker por la overlay: este manifiesto NO publica puertos (producción solo por Traefik y
-# TLS), así que no sirve hasta que HU-006.2 lo resuelva. Después, la restricción de nodo puede quitarse solo con un
-# volumen de PDFs compartido entre nodos (ADR-012).
+# ANCLADO AL WORKER: la tarea corre en TBSNODO1-DKP (10.10.40.31), donde hay disco (el manager está al límite) y donde
+# vive el volumen local de PDFs. El overlay VXLAN entre nodos funciona (diagnóstico de HU-006.1): Traefik, en el manager,
+# llega por dokploy-network a la tarea del worker. Lo que falta es TLS: los dominios *.10-10-40-17.sslip.io apuntan a una
+# IP privada y Let's Encrypt no los valida con el reto HTTP-01. Este manifiesto NO publica puertos (producción solo por
+# Traefik y TLS), así que no sirve hasta que HU-006.2 dé un dominio con certificado válido. La restricción de nodo puede
+# quitarse solo con un volumen de PDFs compartido entre nodos (ADR-012).
 #
 # Variables: todas llegan del entorno del stack en Dokploy (DEPLOY.md §2); ninguna tiene valor real aquí. Endurecimiento A (#199):
 # se declaran TODAS las opciones que el backend valida al arrancar, con el valor por defecto del código (lo verifica la prueba
@@ -334,7 +335,7 @@ services:
       # #181: el estado y el motivo pendiente de la línea de NEXO por camión también viven en memoria (DEPLOY.md, Una réplica).
       replicas: 1
       placement:
-        # Overlay entre nodos caído (HU-006.1): anclado al worker.
+        # Anclado al worker: disco y volumen local de PDFs (el overlay entre nodos funciona).
         constraints: [node.hostname == TBSNODO1-DKP]
       update_config:
         parallelism: 1
@@ -364,11 +365,13 @@ services:
           cpus: "0.25"
           memory: 384M
       labels:
-        # Traefik (Dokploy). Escritas para cuando la overlay funcione; TLS real depende de HU-006.2.
-        # traefik.docker.network es la etiqueta de Traefik v2. En Traefik v3 el proveedor Swarm usa traefik.swarm.network:
-        # confirmar la versión de Traefik de Dokploy (docker service inspect dokploy-traefik) y ajustar si es v3.
+        # Traefik (Dokploy). El certificado válido depende de HU-006.2 (dominio que Let's Encrypt pueda validar).
+        # Dokploy corre Traefik v3 (traefik:v3.6.25): en Swarm lo lee el proveedor swarm, que toma la red de
+        # traefik.swarm.network (traefik.docker.network es del proveedor docker y aquí se ignoraría). Sin ella, con dos redes
+        # (edge y salida), Traefik podría elegir la IP de "salida", que no comparte con la tarea. El resto de etiquetas
+        # (routers, middlewares headers, services loadbalancer y su healthcheck) se escriben igual en v2 y en v3.
         - traefik.enable=true
-        - traefik.docker.network=dokploy-network
+        - traefik.swarm.network=dokploy-network
         - traefik.http.routers.cotifly-api.rule=Host(`${PUBLIC_HOST:?falta PUBLIC_HOST}`)
         - traefik.http.routers.cotifly-api.entrypoints=websecure
         - traefik.http.routers.cotifly-api.tls=true
