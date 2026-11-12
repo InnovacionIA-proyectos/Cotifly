@@ -69,6 +69,25 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
 
     /// <summary>Columnas que agrega Cotifly a la derecha del pliego: precio, estado, conexos y camiones.</summary>
     public const int ColumnasCotifly = 4;
+
+    /// <summary>
+    /// HU-045.3 (#265): encabezado de la quinta columna, el seguro de la mercancía de la línea, con la moneda. Solo se agrega si alguna línea
+    /// lo incluye (<see cref="ConSeguro"/>): hoy las licitaciones no lo admiten, y así su archivo no cambia.
+    /// </summary>
+    public static string ColumnaSeguro(string moneda) => $"Seguro de la mercancía Cotifly ({moneda})";
+
+    /// <summary>HU-045.3 (#265): dato de la hoja Resumen Cotifly con la suma del seguro de las líneas (no está en el total).</summary>
+    public const string EtiquetaTotalSeguro = "Seguro de la mercancía (aparte del total)";
+
+    /// <summary>HU-045.3 (#265): ¿alguna línea incluye el seguro de la mercancía? Entonces va su columna.</summary>
+    public static bool ConSeguro(clsExportacionLicitacion datos)
+    {
+        ArgumentNullException.ThrowIfNull(datos);
+        return datos.Lineas.Any(l => l.ValorSeguro is not null);
+    }
+
+    /// <summary>Columnas que agrega Cotifly: <see cref="ColumnasCotifly"/> y, con seguro, una más.</summary>
+    private static int Columnas(clsExportacionLicitacion datos) => ColumnasCotifly + (ConSeguro(datos) ? 1 : 0);
     public const string ConexosDeLaLicitacion = "Aplican a toda la licitación (ver hoja Resumen Cotifly)";
 
     /// <summary>El total es la suma de los precios ya redondeados de las líneas, sin servicios conexos (ADR-017 §3).</summary>
@@ -213,15 +232,15 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
 
         // A la derecha de la última columna usada de VERDAD (el lector solo lee 200): nunca se pisa una celda del cliente.
         var columna = detectado.UltimaColumnaReal + 1;
-        if (columna + ColumnasCotifly - 1 > clsLectorExcelLicitacionClosedXml.UltimaColumnaExcel)
+        if (columna + Columnas(datos) - 1 > clsLectorExcelLicitacionClosedXml.UltimaColumnaExcel)
         {
             return new clsErrorDominio(clsCodigosError.ExcelInvalido, $"La hoja '{datos.Hoja}' no tiene columnas libres a la derecha para los precios.");
         }
-        Encabezados(hoja, detectado.Encabezado, columna, datos.Moneda);
+        Encabezados(hoja, detectado.Encabezado, columna, datos);
         if (detectado.FinEncabezado > detectado.Encabezado)
         {
             // Subencabezado: las columnas nuevas ocupan las dos filas del encabezado, como las del cliente.
-            for (var c = columna; c < columna + ColumnasCotifly; c++)
+            for (var c = columna; c < columna + Columnas(datos); c++)
             {
                 hoja.Range(detectado.Encabezado, c, detectado.FinEncabezado, c).Merge();
             }
@@ -288,7 +307,7 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
         }
 
         var columna = campos.Length + 1;
-        Encabezados(hoja, 1, columna, datos.Moneda);
+        Encabezados(hoja, 1, columna, datos);
         hoja.Range(1, 1, 1, campos.Length).Style.Font.SetBold().Fill.SetBackgroundColor(_encabezado);
         var columnaReferencia = columna + ColumnasCotifly;
         if (conReferencia)
@@ -322,14 +341,19 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
         hoja.Columns().AdjustToContents();
     }
 
-    private static void Encabezados(IXLWorksheet hoja, int fila, int columna, string moneda)
+    private static void Encabezados(IXLWorksheet hoja, int fila, int columna, clsExportacionLicitacion datos)
     {
-        hoja.Cell(fila, columna).Value = ColumnaPrecio(moneda);
+        hoja.Cell(fila, columna).Value = ColumnaPrecio(datos.Moneda);
         hoja.Cell(fila, columna + 1).Value = ColumnaEstado;
         hoja.Cell(fila, columna + 2).Value = ColumnaConexos;
         hoja.Cell(fila, columna + 3).Value = ColumnaCamiones;
-        hoja.Range(fila, columna, fila, columna + ColumnasCotifly - 1).Style.Font.SetBold().Fill.SetBackgroundColor(_encabezado);
-        for (var c = columna; c < columna + ColumnasCotifly; c++)
+        if (ConSeguro(datos))
+        {
+            hoja.Cell(fila, columna + 4).Value = ColumnaSeguro(datos.Moneda);
+        }
+
+        hoja.Range(fila, columna, fila, columna + Columnas(datos) - 1).Style.Font.SetBold().Fill.SetBackgroundColor(_encabezado);
+        for (var c = columna; c < columna + Columnas(datos); c++)
         {
             hoja.Column(c).Width = 26;
         }
@@ -356,6 +380,11 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
         var camiones = hoja.Cell(fila, columna + 3);
         camiones.Value = TextoCamiones(linea);
         camiones.Style.Alignment.SetWrapText(true);
+        if (linea.ValorSeguro is { } seguro)
+        {
+            hoja.Cell(fila, columna + 4).Value = seguro;
+            hoja.Cell(fila, columna + 4).Style.NumberFormat.Format = Cotizaciones.Services.clsExportadorExcelCotizacionClosedXml.ConCentavos(seguro, Formato(datos.Moneda));
+        }
     }
 
     /// <summary>
@@ -492,6 +521,12 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
         {
             Dato(EtiquetaTotal, $"Pendiente: {pendientes} línea(s) sin costeo");
             hoja.Cell(f - 1, 2).Style.Fill.SetBackgroundColor(_pendiente);
+        }
+
+        if (ConSeguro(datos))
+        {
+            var totalSeguro = datos.Lineas.Where(l => !l.Rechazada).Sum(l => l.ValorSeguro ?? 0m);
+            Dato(EtiquetaTotalSeguro, totalSeguro, Cotizaciones.Services.clsExportadorExcelCotizacionClosedXml.ConCentavos(totalSeguro, formato));
         }
 
         Dato("Generado", datos.GeneradoEn.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture));
