@@ -226,6 +226,21 @@ public sealed class clsCatalogosFleteNexoTests : IDisposable
     }
 
     [Fact]
+    public async Task LosTiposDeVehiculoSalenConElCodigoNexoC2C3EnVezDelCodigoSap()
+    {
+        // HU-044.8 (#291): el catálogo de SAP trae «2»/«3»; GET /web/catalogos-flete los expone como C2/C3 (el resto no cambia).
+        _nexo.TiposVehiculo.Clear();
+        _nexo.TiposVehiculo.AddRange([("2", "Camión 2 ejes", true), ("3", "Doble troque", true), ("2S3", "Tractocamión 2 ejes, semi 3", true)]);
+
+        var resultado = await new clsCatalogosFleteNexo(Maestros()).ObtenerAsync(_usuarioId, Ct);
+
+        resultado.Valor.TiposVehiculo.Should().Equal(
+            new clsOpcionCatalogo("C2", "Camión 2 ejes"),
+            new clsOpcionCatalogo("C3", "Doble troque"),
+            new clsOpcionCatalogo("2S3", "Tractocamión 2 ejes, semi 3"));
+    }
+
+    [Fact]
     public async Task LosCatalogosDeFleteExponenSoloLasClasesDeContenedorDeNexoConLaDescripcionComoValor()
     {
         // HU-027.1 (#179): en Nexo la descripcion de clases-contenedor es el código; el valor expuesto es el que valida la captura.

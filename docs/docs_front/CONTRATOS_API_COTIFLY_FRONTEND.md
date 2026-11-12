@@ -1025,7 +1025,7 @@ copia de hasta 24 h.
 
 ```json
 {
-  "tipos_vehiculo": [ { "valor": "3S3", "etiqueta": "Tractocamión 3S3" } ],
+  "tipos_vehiculo": [ { "valor": "C2", "etiqueta": "Sencillo" }, { "valor": "3S3", "etiqueta": "Tractocamión 3S3" } ],
   "tipos_carroceria": [ { "valor": "FURGON", "etiqueta": "Furgón" } ],
   "clases_viaje": [
     { "valor": "Contenedor", "etiqueta": "Contenedor" },
@@ -1059,6 +1059,11 @@ texto amigable para cada código, pero debe enviar el `valor`.
   queda vacío. No es un error del endpoint. Con la lista vacía, deshabilitar el selector de clase de contenedor y ofrecer Reintentar:
   una captura `Contenedor` con una clase que no sea provisional respondería 503 `CATALOGOS_FLETE_NO_DISPONIBLE`.
 - Reemplaza el catálogo fijo que tenía el frontend.
+
+**`tipos_vehiculo` (HU-044.8, #291).** El `valor` es el **código NEXO** canónico (`C2`, `C3`, `2L3`…): SAP entrega «2»/«3» y el
+backend los traduce a `C2`/`C3` con la única fuente de equivalencia (`tbl_mapeo_vehiculo_tarifario`); el resto de códigos no cambia. Es
+el valor que hay que guardar y enviar en `tipo_vehiculo`. **Rompe:** cambian el selector y los valores guardados (ver §7, fila de #291);
+el front ya no traduce «2»/«3» por su cuenta. La `etiqueta` (descripción de NEXO) no cambia.
 
 Notas: `tipologia` (7 valores fijos) no viene aquí; ver la sección 5.4.
 
@@ -1139,16 +1144,19 @@ Catálogo del cubicador para el desplegable de mercancías. Ordenado por nombre,
 
 #### 4.2.5 `GET /web/tipos-carroceria`
 
+**HU-044.8 (#291):** sale del **catálogo de carrocerías de NEXO** (ya no del cubicador), la misma lista que `tipos_carroceria` de
+`GET /web/catalogos-flete` y que valida la captura, y la misma de la que `POST /web/licitaciones/normalizar-valores` propone sus
+códigos. `codigo` = `nombre` (el front muestra el texto amigable). **Siempre 200** (ya no depende del cubicador).
+
 - **Rol:** ambos.
 
 ```json
-[ { "codigo": "FURGON", "nombre": "Furgón", "activo": true }, { "codigo": "ESTACAS", "nombre": "Estacas", "activo": true } ]
+[ { "codigo": "FURGON", "nombre": "FURGON", "activo": true }, { "codigo": "ESTACAS", "nombre": "ESTACAS", "activo": true } ]
 ```
 
 | HTTP | Código | UI |
 |---|---|---|
-| 200 | `TipoCarroceria[]` | Para mostrar el nombre de `carroceria` de los camiones |
-| 503 | `CUBICADOR_NO_DISPONIBLE` | Mostrar el código |
+| 200 | `TipoCarroceria[]` | Llenar el selector de carrocería; mostrar el texto amigable desde el front por `codigo` |
 
 #### 4.2.6 `GET /web/tipos-vehiculo`
 
@@ -4529,6 +4537,7 @@ fila_excel, campo, codigo, mensaje}`.
 | 91 | **HU-044.10 (#293, parte 2): líneas agregadas a mano (`fila: null`) con archivo.** `POST /web/licitaciones` acepta líneas con `fila: null` aunque haya archivo: son líneas agregadas a mano. La unicidad de `fila` ignora los `null`; sus errores por fila dicen «La línea N» (con `fila` y `fila_excel` en `null`) y una `fila null` no desplaza a las demás al releer la hoja. Una licitación hecha solo de líneas a mano es válida (con archivo sigue exigiendo `hoja`). En la vista, la línea vuelve con `fila: null`. En `GET /web/licitaciones/{folio}/excel`: con `analizar_excel` y original, las de a mano van a una hoja nueva «Agregadas en Cotifly» (columnas de «Licitación» + `Referencia` = «Agregada en Cotifly»); con `leer_estructura` o sin original, al final de la hoja «Licitación» con la columna `Referencia`; «Resumen Cotifly» agrega la fila «Líneas agregadas en Cotifly». Sin líneas a mano, el Excel queda igual que hoy. Sin endpoints nuevos; sin script | Agrega | Permitir agregar filas a mano (sin `fila`) a una licitación con archivo; pintar sus errores como «La línea N»; avisar que irán en una hoja/sección «Agregadas en Cotifly» del Excel |
 | 92 | **HU-044.10 (#293, parte 3): `Idempotency-Key` al crear la licitación.** `POST /web/licitaciones` (multipart o JSON) acepta la cabecera opcional `Idempotency-Key` (8 a 64; CORS ya la permite), ámbito `crear-licitacion` por comercial. La huella es el cuerpo más el nombre y el SHA-256 del archivo (no los bytes). Un doble clic con la misma clave y el mismo cuerpo+archivo relee la licitación creada y responde **201 con el mismo folio** y su estado de ahora, sin crear otra. Solo el 201 consume la clave: un reporte por fila (400) o un 503 **no** la consumen (la repetición se vuelve a evaluar y devuelve el reporte completo). La misma clave con otro cuerpo u otro archivo es 409 `IDEMPOTENCY_KEY_REUTILIZADA`; fuera de largo, 400 `ErrorWeb`. Sin endpoints nuevos; sin script | Agrega | Generar una `Idempotency-Key` (UUID) por intención al pulsar «Crear» y reenviarla en los reintentos; tratar el 409 `IDEMPOTENCY_KEY_REUTILIZADA` pidiendo una clave nueva |
 | P1 (provisional, se renumera al integrar) | **Corrección conexos: el nombre del servicio conexo nunca es el id interno.** `ServicioConexoCosteo.nombre` (en `servicios_conexos[]` de la vista del costeo, el detalle, el margen y los conexos) y los nombres de conexos que da el **asistente de IA** (`consultar_cotizacion`) y `conexos_conservados` traen **siempre el nombre** del servicio: el guardado o, si está en NULL (fila migrada del JSON), el resuelto del catálogo de NEXO por id; si el catálogo no responde o no lo tiene, la `categoria` como respaldo legible. La misma cadena se aplica ahora en las **exportaciones** (ampliación): el **PDF** de la cotización y del pliego ("Estas tarifas incluyen"), el **Excel** de la cotización (`GET /web/cotizaciones/{folio}/excel`) y el **Excel de licitación** (`GET /web/licitaciones/{folio}/excel` y el de "Ver detalle") imprimen el nombre del catálogo para un conexo heredado sin nombre y caen a la `categoria` con el catálogo frío; antes caían directo a la `categoria`. **Nunca** el `id` interno del conexo (que sigue en `servicios_conexos[].id`, solo para operar: incluir/excluir). **No cambia la forma de ninguna respuesta** ni del PDF/Excel (ningún campo ni columna nuevos; `nombre` sigue declarado `nullable` solo por compatibilidad, en la práctica siempre viene poblado). Sin endpoints, códigos ni script de base de datos | Corrige | Mostrar `servicios_conexos[].nombre` tal cual (ya nunca es el id); si algún front usaba `id` como etiqueta de respaldo, usar `nombre`. El PDF y los Excel ya muestran el nombre del catálogo, no la categoría, cuando el catálogo está caliente |
+| 93 (provisional, se renumera al integrar) | **HU-044.8 (#291): catálogos de vehículo y carrocería alineados con NEXO. ROMPE: cambian el selector y los valores guardados.** (a) **Vehículo en código NEXO.** `GET /web/catalogos-flete` devuelve `tipos_vehiculo[].valor` con el **código NEXO** (`C2`, `C3`, `2L3`…) en vez del código de SAP («2», «3»); la `etiqueta` (descripción) no cambia y el resto de códigos tampoco. Es el valor que el front debe guardar y enviar en `tipo_vehiculo` (`POST /web/solicitudes-costeo`, licitación, edición): mandar «2»/«3» dejaría la configuración en cuarentena en NEXO. El backend, además, traduce en la captura cualquier «2»/«3» que llegue (fronts anteriores o cotizaciones viejas) a `C2`/`C3` antes de enviar a NEXO; un alias de NEXO (`GET /web/alias/resolver`) que resuelva a «2»/«3» también viaja como `C2`/`C3`. La equivalencia sale de una sola fuente (`tbl_mapeo_vehiculo_tarifario`, `C2` ↔ «2», `C3` ↔ «3»). (b) **Carrocería del catálogo de NEXO.** `GET /web/tipos-carroceria` ya **no** sale del cubicador: devuelve el catálogo de carrocerías de NEXO (`ESTACAS`, `ESTIBAS`, `FURGON`, `FURGON REFRIGERADO`, `PLATAFORMA`, `PORTACONTENEDORES`, `TANQUE`, `TRAYLER`, `VOLCO`), la misma lista que `tipos_carroceria` de `GET /web/catalogos-flete` y que valida la captura, con `codigo` = `nombre`; **siempre 200** (ya no 503 `CUBICADOR_NO_DISPONIBLE`). Los códigos de carrocería que devuelve `POST /web/licitaciones/normalizar-valores` existen en esta lista. Sin campos, códigos ni endpoints nuevos | Rompe | Guardar y enviar el `valor` de `tipos_vehiculo` tal cual (ya es `C2`/`C3`): no volver a traducir en el front ni asumir «2»/«3»; re-mapear los valores guardados de cotizaciones viejas no hace falta (el backend los traduce). Llenar el selector de carrocería con `GET /web/tipos-carroceria` (ahora de NEXO, siempre 200): quitar cualquier dependencia del cubicador y tratar `codigo` = `nombre` (mostrar el texto amigable desde el front) |
 
 ---
 
