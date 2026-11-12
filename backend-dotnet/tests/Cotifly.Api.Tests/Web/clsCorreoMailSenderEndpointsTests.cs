@@ -7,7 +7,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// El envío por MailSender (ADR-023) (falso: nunca sale un correo real) por HTTP con SQL Server real. El 200 deja el envío
+/// El envío por MailSender (ADR-023; falso: nunca sale un correo real) por HTTP con SQL Server real. El 200 deja el envío
 /// <c>encolado</c> con el id de MailSender; el worker lo lleva a <c>enviado</c> o <c>fallido</c>; el historial lo muestra; el reintento solo
 /// aplica a un fallido propio; fuera de producción todo va al buzón de pruebas y la vista previa lo avisa. Contrato verificado.
 /// </summary>

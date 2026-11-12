@@ -89,7 +89,7 @@ public sealed class clsPollingSinEscriturasNexoTests : IDisposable
             await _api.ProcesarPollingAsync(folio);
         }
 
-        // Compatibilidad con un Nexo sin la ruta de lectura por solicitud, el primer ciclo hace UNA VEZ el "crear o recuperar" y guarda
+        // Compatibilidad con un Nexo sin la ruta de lectura por solicitud: el primer ciclo hace UNA VEZ el "crear o recuperar" y guarda
         // el id; los siguientes leen la cotización por su id.
         var cotizacionNexo = _nexo.CotizacionDe(solicitud);
         _nexo.Llamadas(HttpMethod.Post, "/api/cotizaciones").Should().Be(1, "una sola escritura por solicitud");
