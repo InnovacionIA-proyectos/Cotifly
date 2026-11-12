@@ -115,7 +115,7 @@ public sealed class clsCosteoPorCamionTests
     /// forma no es un cambio: el camión del cubicador conserva su código canónico.
     /// </summary>
     [Fact]
-    public void D2_SoloCambiaLaEscrituraSeConservaElCodigoDelCubicador()
+    public void SoloCambiaLaEscrituraSeConservaElCodigoDelCubicador()
     {
         var cotizacion = Ruta(("3S3", 10_000m));
         var ruta = cotizacion.PrimeraRuta!;
@@ -135,7 +135,7 @@ public sealed class clsCosteoPorCamionTests
 
     /// <summary>Si la Mesa de Costeo cambia el camión, Cotifly adopta el cambio, incluido el tipo de vehículo.</summary>
     [Fact]
-    public void D2_SiLaMesaCambiaElVehiculoDeUnCamionDelCubicadorSeAdopta()
+    public void SiLaMesaCambiaElVehiculoDeUnCamionDelCubicadorSeAdopta()
     {
         var cotizacion = Ruta(("3S3", 10_000m));
         var recomendacion = Guid.NewGuid();
@@ -158,7 +158,7 @@ public sealed class clsCosteoPorCamionTests
     [InlineData("C2", "ESTACAS", true)]
     [InlineData("c2", "Furgón", false)]
     [InlineData(null, null, false)]
-    public void D2_SiLaMesaCambiaElVehiculoLosPorcentajesDelCubicadorQuedanEnNull(string? vehiculoNexo, string? carroceriaNexo, bool anula)
+    public void SiLaMesaCambiaElVehiculoLosPorcentajesDelCubicadorQuedanEnNull(string? vehiculoNexo, string? carroceriaNexo, bool anula)
     {
         var cotizacion = Ruta(("3S3", 10_000m));
         var camion = cotizacion.PrimeraRuta!.AgregarVehiculo(new clsCamionPlaneado("C2", "FURGON", 4_000m, Guid.NewGuid(), 22.5m, 81.25m, 47.06m));
@@ -184,7 +184,7 @@ public sealed class clsCosteoPorCamionTests
     }
 
     [Fact]
-    public void D2_SiLaMesaCambiaLaCarroceriaDeUnCamionDelCubicadorSeAdopta()
+    public void SiLaMesaCambiaLaCarroceriaDeUnCamionDelCubicadorSeAdopta()
     {
         var cotizacion = Ruta(("3S3", 10_000m));
         var camion = cotizacion.PrimeraRuta!.AgregarVehiculo("C2", "FURGON", 4_000m, Guid.NewGuid());
@@ -195,7 +195,7 @@ public sealed class clsCosteoPorCamionTests
     }
 
     [Fact]
-    public void D2_UnCamionSinVehiculoSeLlenaConLoQueTraeNexo()
+    public void UnCamionSinVehiculoSeLlenaConLoQueTraeNexo()
     {
         var cotizacion = Ruta(("3S3", 10_000m));
         var conRecomendacionSinCarroceria = cotizacion.PrimeraRuta!.AgregarVehiculo("2S2", null, 8_000m, Guid.NewGuid());
@@ -212,7 +212,7 @@ public sealed class clsCosteoPorCamionTests
     }
 
     [Fact]
-    public void D2_UnValorVacioDeNexoNoBorraElDeCotifly()
+    public void UnValorVacioDeNexoNoBorraElDeCotifly()
     {
         var cotizacion = Ruta(("3S3", 10_000m));
         var camion = cotizacion.PrimeraRuta!.AgregarVehiculo("C2", "FURGON", 4_000m, Guid.NewGuid());
@@ -227,7 +227,7 @@ public sealed class clsCosteoPorCamionTests
     /// cambió el vehículo (antes o después de adoptarlo) sigue emparejado con su línea.
     /// </summary>
     [Fact]
-    public void D2_CambiarElVehiculoNoRompeElCruceConLaLineaDeNexo()
+    public void CambiarElVehiculoNoRompeElCruceConLaLineaDeNexo()
     {
         var cotizacion = Ruta(("3S3", 10_000m));
         var ruta = cotizacion.PrimeraRuta!;
@@ -259,7 +259,7 @@ public sealed class clsCosteoPorCamionTests
     [InlineData("Furgon Refrigerado", "Furgón refrigerado")]
     [InlineData("TANQUE", "TANQUE")]
     [InlineData(null, null)]
-    public void D2_ElNombreDelCatalogoSeEncuentraPorCodigoONombreEquivalente(string? guardado, string? esperado)
+    public void ElNombreDelCatalogoSeEncuentraPorCodigoONombreEquivalente(string? guardado, string? esperado)
     {
         var catalogo = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
