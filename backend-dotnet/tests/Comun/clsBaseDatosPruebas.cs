@@ -6,7 +6,7 @@ namespace Cotifly.Pruebas.Comun;
 
 /// <summary>
 /// SQL Server 2019 en Testcontainers con el esquema real (ADR-008, ADR-010):
-/// crea <c>dbTarifario_Nexo_Pruebas</c>, aplica <c>db/migrations_mssql/0001</c> a <c>0010</c>, <c>db/scripts/02_alter_cubicador.sql</c>, el <c>03</c> (HU-014, #188), la propuesta <c>db/scripts/04</c> (HU-023.5), el <c>05</c> (#188), el <c>06</c> (#191, Idempotency-Key), el <c>07</c>, el <c>08</c> (HU-014.3), el <c>09</c> (HU-018.1), el <c>10</c> (HU-028.1, #183), el <c>11</c> (HU-030.1, #184) y los siguientes hasta el <c>20</c> (HU-045, #264) partidos por <c>GO</c> (HU-021: el 0009
+/// crea <c>dbTarifario_Nexo_Pruebas</c>, aplica <c>db/migrations_mssql/0001</c> a <c>0010</c>, <c>db/scripts/02_alter_cubicador.sql</c>, el <c>03</c> (HU-014, #188), la propuesta <c>db/scripts/04</c> (HU-023.5), el <c>05</c> (#188), el <c>06</c> (#191, Idempotency-Key), el <c>07</c>, el <c>08</c> (HU-014.3), el <c>09</c> (HU-018.1), el <c>10</c> (HU-028.1, #183), el <c>11</c> (HU-030.1, #184) y los siguientes hasta el <c>21</c> (HU-046, #269) partidos por <c>GO</c> (HU-021: el 0009
 /// reestructura las cotizaciones en rutas y camiones y el 0010 agrega los nombres de municipio; las pruebas de esquema verifican además
 /// que <c>db/scripts/01_crear_esquema.sql</c> deja el mismo esquema, <see cref="CrearBaseInstaladaAsync"/>), y crea una <c>dbsolucionesti</c> falsa con las tres tablas del almacén corporativo y sus tipos reales:
 /// <c>dbo.tblSAPUsuariosApp</c> (ID NUMERIC, incluida la columna CLAVE, que el backend nunca debe leer),
@@ -74,7 +74,10 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
         Script19,
         // HU-045.1/HU-045.2 (#263, #264): TarifasSeguro y el seguro de la ruta (db/scripts/20; el backend los mapea). Va después del 19.
         Script20,
-        // HU-044.7 (#290): origenLectura en CotizacionArchivosLicitacion (db/scripts/22; el backend lo mapea). Va después del 20 y antes del 07.
+        // HU-046.2/HU-046.3 (#268, #269): las 4 tablas de la política de seguros con su carga aprobada y CotizacionServiciosConexos.codigoServicio
+        // (db/scripts/21; el backend los mapea). Va después del 20.
+        Script21,
+        // HU-044.7 (#290): origenLectura en CotizacionArchivosLicitacion (db/scripts/22; el backend lo mapea). Va después del 21 y antes del 07.
         Script22,
         // HU-040.3 (#258): Roles.requiereAltaManual (db/scripts/23; el backend lo mapea para no auto-otorgar los roles sensibles). Va después
         // del 22 y antes del 07.
@@ -102,6 +105,9 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
 
     /// <summary>HU-045.1/HU-045.2 (#263, #264): el 20 del seguro de la mercancía (relativa a <c>migrations_mssql</c>).</summary>
     public const string Script20 = "../scripts_bd/20_seguro_mercancia.sql";
+
+    /// <summary>HU-046.2/HU-046.3 (#268, #269): el 21 de la política de seguros (relativa a <c>migrations_mssql</c>).</summary>
+    public const string Script21 = "../scripts_bd/21_politica_seguros.sql";
 
     /// <summary>HU-044.7 (#290): el 22 de <c>origenLectura</c> en <c>CotizacionArchivosLicitacion</c> (relativa a <c>migrations_mssql</c>).</summary>
     public const string Script22 = "../scripts_bd/22_origen_lectura_licitacion.sql";
@@ -174,23 +180,23 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     public const string Script04 = "../scripts_bd/04_cubicacion_segundo_plano.sql";
 
     /// <summary>
-    /// Scripts hasta el 07 incluido (con el 09, el 10, el 11... y el 20, sin el 08): la base migrada que todavía tiene las vistas del borrador de
+    /// Scripts hasta el 07 incluido (con el 09, el 10, el 11... y el 21, sin el 08): la base migrada que todavía tiene las vistas del borrador de
     /// métricas. <c>Scripts[ScriptsHasta07 - 1]</c> es el 07 (lo verifica <c>clsEsquemaTests</c>).
-    /// HU-040.3 (#258): sube a 29 con el 23 insertado antes del 07.
+    /// HU-046 (#269) sube a 29 con el 21 y HU-040.3 (#258) a 30 con el 23, los dos insertados antes del 07.
     /// </summary>
-    public const int ScriptsHasta07 = 29;
+    public const int ScriptsHasta07 = 30;
 
     /// <summary>
     /// Todos los scripts anteriores al 07 en <see cref="Scripts"/> (sin el 07 ni los que van después). <c>Scripts[ScriptsSin07]</c> es el 07
     /// (lo verifica <c>clsEsquemaTests</c>). Si otra rama agrega un script que el backend mapea, va antes del 07 en la lista y este número
-    /// sube (hoy llega hasta el 23: <c>Scripts[ScriptsSin07 - 1]</c> es el 23, HU-040.3 #258; antes el 22, HU-044.7 #290; el 20, HU-045 #263/#264; el 19, HU-043.1 #245/#261; el 18, HU-042.4 #247; el 17,
+    /// sube (hoy llega hasta el 23: <c>Scripts[ScriptsSin07 - 1]</c> es el 23, HU-040.3 #258; antes el 22, HU-044.7 #290; antes el 21, HU-046 #268/#269; antes el 20, HU-045 #263/#264; el 19, HU-043.1 #245/#261; el 18, HU-042.4 #247; el 17,
     /// HU-042.1 #242; el 16, HU-040.1 #229; el 14, HU-036 #205; el 13, HU-033 #199; el 12, HU-032 #197, antes el 11, HU-030.1 #184, y antes
     /// el 10, HU-028.1 #183).
     /// HU-014 (#188): incluye el 03, que deja el CHECK del 07; para una base que de verdad no admite BUSQUEDA_AGOTADA,
     /// <see cref="CrearBaseSin07Async"/>.
-    /// HU-040.3 (#258): sube a 28 con el 23 (<c>Roles.requiereAltaManual</c>); <c>Scripts[ScriptsSin07 - 1]</c> es el 23.
+    /// HU-046 (#269) sube a 28 con el 21 y HU-040.3 (#258) a 29 con el 23 (<c>Roles.requiereAltaManual</c>); <c>Scripts[ScriptsSin07 - 1]</c> es el 23.
     /// </summary>
-    public const int ScriptsSin07 = 28;
+    public const int ScriptsSin07 = 29;
 
     /// <summary>
     /// HU-014 (#188): el CHECK del motivo tal como lo deja el <c>02</c> (4 motivos, sin <c>BUSQUEDA_AGOTADA</c> ni <c>ISNULL</c>). Con el 03
@@ -355,6 +361,8 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("19_precio_venta_conexos.sql"));
                 // HU-045.1/HU-045.2 (#263, #264): el 20 (seguro de la mercancía) va después del 19 por nombre.
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("20_seguro_mercancia.sql"));
+                // HU-046.2/HU-046.3 (#268, #269): el 21 (política de seguros) va después del 20 por nombre.
+                await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("21_politica_seguros.sql"));
                 // HU-040.3 (#258): el 23 (requiereAltaManual) va después del 15 (crea director) y del 20 por nombre; marca director como sensible.
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("23_rol_requiere_alta_manual.sql"));
                 if (conSeeders)
@@ -413,6 +421,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("18_sap_mapeo_fk_margenes_politica.sql"));
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("19_precio_venta_conexos.sql"));
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("20_seguro_mercancia.sql"));
+            await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("21_politica_seguros.sql"));
             // HU-040.3 (#258): el 23 (requiereAltaManual) marca director como sensible; va después del 15 y del 20 por nombre.
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("23_rol_requiere_alta_manual.sql"));
             foreach (var seeder in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "scripts_bd", "seeder"), "*.sql").Order(StringComparer.Ordinal))

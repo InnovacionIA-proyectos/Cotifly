@@ -714,14 +714,17 @@ public sealed class clsReSolicitudCosteoService(
 
                     // HU-014 (#188): la versión nueva guarda el id del catálogo y la categoría (scripts 03 y 05). HU-043.2 (#251): y la
                     // venta del catálogo de hoy (precioVenta ?? costoUnitario), como el costo.
+                    // HU-046.3 (#269): y el codigoServicio del catálogo (completa el de una fila anterior al script 21).
                     conexos.Add(new clsCambioConexo(
-                        costo.Id, costo.Nombre ?? c.Nombre, costo.CostoUnitario, c.Cantidad, costo.Id, costo.Categoria ?? c.Categoria, costo.VentaUnitaria));
+                        costo.Id, costo.Nombre ?? c.Nombre, costo.CostoUnitario, c.Cantidad, costo.Id, costo.Categoria ?? c.Categoria, costo.VentaUnitaria,
+                        costo.Codigo ?? c.CodigoServicio));
                     continue;
                 }
 
                 logger.LogWarning("El conexo {Conexo} de la ruta {Ruta} de {Folio} no está en el catálogo de Nexo (ni por id ni por nombre): la versión nueva conserva lo guardado.",
                     c.IdServicioConexo, ruta.Orden, original.Folio);
-                conexos.Add(new clsCambioConexo(c.IdServicioConexo, c.Nombre, c.Precio, c.Cantidad, c.IdServicioConexoCatalogo, c.Categoria, c.PrecioVenta));
+                conexos.Add(new clsCambioConexo(
+                    c.IdServicioConexo, c.Nombre, c.Precio, c.Cantidad, c.IdServicioConexoCatalogo, c.Categoria, c.PrecioVenta, c.CodigoServicio));
             }
 
             rutas.Add(new clsRutaCapturada(linea, ruta.LineaNegocioId ?? validada.Politica?.Id, ruta.RutaOrigenIndice, camiones, conexos, rutaId, cubicacion)

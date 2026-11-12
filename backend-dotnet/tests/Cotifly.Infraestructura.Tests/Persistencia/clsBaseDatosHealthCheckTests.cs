@@ -144,9 +144,23 @@ public sealed class clsBaseDatosHealthCheckTests
     }
 
     [Theory]
+    [InlineData("PoliticaSeguroTramos.id|PoliticaSeguroMedidas.codigo|CotizacionServiciosConexos.codigoServicio", clsBaseDatosHealthCheck.DescripcionEsquemaSin21)]
+    [InlineData("CotizacionServiciosConexos.codigoServicio", clsBaseDatosHealthCheck.DescripcionEsquemaSin21)]
+    [InlineData("PoliticaSeguroMedidaConexos.codigoServicio|TarifasSeguro.tasa", clsBaseDatosHealthCheck.DescripcionEsquemaSin20)]
+    [InlineData("PoliticaSeguroTramos.valorDesde|Otra.columna", "esquema incompleto: falta Otra.columna, PoliticaSeguroTramos.valorDesde")]
+    public void HU0463_SinEl21LaSondaPideEl21SoloCuandoNoFaltaUnScriptAnterior(string faltantes, string descripcion)
+    {
+        var resultado = clsBaseDatosHealthCheck.Clasificar(faltantes.Split('|'), cotizacionesViejas: false);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be(descripcion);
+    }
+
+    [Theory]
     // HU-040.3 (#258): solo falta requiereAltaManual → pide el 23; con una columna de un script anterior gana el anterior.
     [InlineData("Roles.requiereAltaManual", clsBaseDatosHealthCheck.DescripcionEsquemaSin23)]
     [InlineData("Roles.requiereAltaManual|CotizacionArchivosLicitacion.origenLectura", clsBaseDatosHealthCheck.DescripcionEsquemaSin22)]
+    [InlineData("Roles.requiereAltaManual|CotizacionServiciosConexos.codigoServicio", clsBaseDatosHealthCheck.DescripcionEsquemaSin21)]
     [InlineData("Roles.requiereAltaManual|TokensRefresco.rolSesion", clsBaseDatosHealthCheck.DescripcionEsquemaSin16)]
     [InlineData("Roles.requiereAltaManual|Otra.columna", "esquema incompleto: falta Otra.columna, Roles.requiereAltaManual")]
     public void HU0403_SinEl23LaSondaPideEl23SoloCuandoNoFaltaUnScriptAnterior(string faltantes, string descripcion)
@@ -393,6 +407,18 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
 
         resultado.Status.Should().Be(HealthStatus.Unhealthy);
         resultado.Description.Should().Be("esquema incompleto: falta 20");
+    }
+
+    [Fact]
+    public async Task HU0463_ConEl20PeroSinEl21EsUnhealthyPorqueLeFaltaEl21()
+    {
+        // HU-046.3 (#269): el modelo EF mapea las 4 tablas de la política de seguros y codigoServicio del conexo (db/scripts/21, HU-046.2 #268).
+        await using var sin21 = await baseDatos.CrearBaseConScriptsAsync("dbSin21", clsBaseDatosPruebas.ScriptsHasta16 + 4);
+
+        var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin21.Cadena);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be("esquema incompleto: falta 21");
     }
 
     [Fact]
