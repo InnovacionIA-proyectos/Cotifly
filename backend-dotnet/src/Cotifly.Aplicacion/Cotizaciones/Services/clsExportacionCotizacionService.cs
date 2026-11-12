@@ -10,6 +10,7 @@ using Cotifly.Aplicacion.Licitaciones.DTOs;
 using Cotifly.Aplicacion.Licitaciones.Services;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
+using Microsoft.Extensions.Logging;
 
 namespace Cotifly.Aplicacion.Cotizaciones.Services;
 
@@ -40,7 +41,9 @@ public sealed class clsExportacionCotizacionService(
     IClsRegionalUsuario regionales,
     IClsAuditoriaService auditoria,
     IClsExportadorExcelCotizacion exportador,
-    IClsReloj reloj) : IClsExportacionCotizacionService
+    IClsReloj reloj,
+    ILogger<clsExportacionCotizacionService> logger,
+    IClsCategoriasConexos? categoriasConexos = null) : IClsExportacionCotizacionService
 {
     /// <summary>Herramienta de la auditoría de las exportaciones de un gerente o director a una cotización ajena.</summary>
     public const string HerramientaAuditoria = "exportar_excel_cotizacion";
@@ -70,7 +73,10 @@ public sealed class clsExportacionCotizacionService(
         }
 
         var dueno = cotizacion.UsuarioId is { } duenoId ? await usuarios.ObtenerPorIdAsync(duenoId, cancellationToken) : null;
-        var datos = Datos(cotizacion, dueno?.NombreCompleto ?? dueno?.NombreUsuario, reloj.AhoraUtc);
+        // Corrección conexos (nombre nunca id): el nombre del catálogo de Nexo de los conexos heredados sin nombre guardado, para que el Excel
+        // imprima el nombre y no caiga a la categoría (ni al id). Reutiliza el índice en memoria de categorías; nunca falla (cae a la categoría).
+        var nombresConexos = await clsCosteoCotizacionService.NombresAsync(categoriasConexos, cotizacion, logger, cancellationToken);
+        var datos = Datos(cotizacion, dueno?.NombreCompleto ?? dueno?.NombreUsuario, reloj.AhoraUtc, nombresConexos);
         return new clsArchivoExportado(cotizacion.Folio + ".xlsx", exportador.Generar(soloLectura ? datos.SinCostos() : datos), TipoXlsx);
     }
 
@@ -80,11 +86,13 @@ public sealed class clsExportacionCotizacionService(
     /// de cada camión es su costo con el margen de la ruta. Como en el costeo (#218), nunca un costo sin su precio: los costos de una ruta
     /// o de un camión sin precio (rechazado, descartado o sin costeo) salen vacíos.
     /// </summary>
-    public static clsExcelCotizacion Datos(clsCotizacionSolicitud cotizacion, string? comercial, DateTimeOffset ahora)
+    public static clsExcelCotizacion Datos(
+        clsCotizacionSolicitud cotizacion, string? comercial, DateTimeOffset ahora,
+        IReadOnlyDictionary<string, string>? nombresConexos = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         var moneda = cotizacion.Moneda ?? clsCotizacionSolicitud.MonedaPesos;
-        var rutas = cotizacion.RutasOrdenadas.Select(r => Ruta(cotizacion, r, moneda)).ToList();
+        var rutas = cotizacion.RutasOrdenadas.Select(r => Ruta(cotizacion, r, moneda, nombresConexos)).ToList();
         var cotizables = rutas.Where(r => !r.Rechazada).ToList();
         var conPrecio = cotizacion.PrecioFinal is not null && cotizables.Count > 0 && cotizables.All(r => r.PrecioRuta is not null);
         var pesos = rutas.Select(r => r.PesoKg).OfType<decimal>().ToList();
@@ -117,10 +125,13 @@ public sealed class clsExportacionCotizacionService(
             totales);
     }
 
-    private static clsExcelRuta Ruta(clsCotizacionSolicitud cotizacion, clsLineaSolicitud ruta, string moneda)
+    private static clsExcelRuta Ruta(
+        clsCotizacionSolicitud cotizacion, clsLineaSolicitud ruta, string moneda, IReadOnlyDictionary<string, string>? nombresConexos = null)
     {
         var conPrecio = !ruta.Rechazada && ruta.PrecioFinalLinea is not null;
-        var precios = clsCosteoCotizacionService.ConexosConPrecio(cotizacion, ruta);
+        // Corrección conexos (nombre nunca id): ConexosConPrecio pobla Nombre con el guardado o el del catálogo de Nexo por id (nombresConexos)
+        // y cae a la categoría como respaldo legible; el Excel nunca imprime el id interno.
+        var precios = clsCosteoCotizacionService.ConexosConPrecio(cotizacion, ruta, nombres: nombresConexos);
         var conexos = precios
             .Select(c => new clsExcelConexo(
                 c.Nombre ?? c.Categoria, c.Categoria, c.Cantidad, c.Precio,
