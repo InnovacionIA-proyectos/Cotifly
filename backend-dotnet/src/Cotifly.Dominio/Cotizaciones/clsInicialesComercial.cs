@@ -4,7 +4,7 @@ using System.Text;
 namespace Cotifly.Dominio.Cotizaciones;
 
 /// <summary>
-/// Iniciales del comercial en el folio (ADR-011, decisión del 2026-09-25): siempre dos letras <c>A</c>–<c>Z</c> en mayúscula.
+/// Iniciales del comercial en el folio (ADR-011): siempre dos letras <c>A</c>–<c>Z</c> en mayúscula.
 /// </summary>
 /// <remarks>
 /// Regla, pensada para nombres colombianos ("nombres + dos apellidos"). <c>UsuariosWeb.nombreCompleto</c> se llena en el alta

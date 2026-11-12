@@ -5,7 +5,7 @@ using Cotifly.Dominio.Margen;
 namespace Cotifly.Dominio.Cotizaciones;
 
 /// <summary>
-/// Cabecera de la solicitud (<c>dbo_cotifly.CotizacionesSolicitud</c>, ex <c>Cotizaciones</c>; script 0009, HU-021, ADR-019): el
+/// Cabecera de la solicitud (<c>dbo_cotifly.CotizacionesSolicitud</c>, script 0009, ADR-019): el
 /// cliente, el estado general, el PDF, el seguimiento del costeo con Nexo y el precio total. Es la raíz del agregado: sus
 /// <see cref="Rutas"/> (con sus camiones, mercancías y conexos) se leen y se guardan con ella.
 /// <list type="bullet">
@@ -13,11 +13,11 @@ namespace Cotifly.Dominio.Cotizaciones;
 /// precio (<see cref="RecalcularPrecio"/>); se guarda y se recalcula en la misma transacción que cambia una ruta.</item>
 /// <item><see cref="EstadoCosteo"/> resume el de sus rutas (<see cref="clsResumenEstadoCosteo"/>), que a su vez resumen el de sus
 /// camiones. Los estados de toda la solicitud (envío, error de envío, vencimiento) llegan a cada camión.</item>
-/// <item>El margen es de cada ruta (de su línea de negocio). El ajuste del comercial es POR RUTA (HU-021.8, #135, decisión 6): la
+/// <item>El margen es de cada ruta (de su línea de negocio). El ajuste del comercial es POR RUTA: la
 /// petición indica la ruta (<see cref="ResolverRuta"/>), se valida contra el sugerido de esa ruta y solo se recalculan esa ruta y la
 /// cabecera (<see cref="AplicarMargenNegociado"/>).</item>
 /// </list>
-/// Una nueva versión es una fila nueva con <see cref="Version"/> + 1 y folio <c>-vN</c>, sin FK a la original (HU-002.4 Fase 2).
+/// Una nueva versión es una fila nueva con <see cref="Version"/> + 1 y folio <c>-vN</c>, sin FK a la original.
 /// <see cref="CreatedAt"/> y <see cref="UpdatedAt"/> los asigna la persistencia con el reloj de la aplicación.
 /// </summary>
 public sealed partial class clsCotizacionSolicitud
@@ -30,7 +30,7 @@ public sealed partial class clsCotizacionSolicitud
 
     /// <summary>
     /// Una cotización que quedó en <see cref="Cotizaciones.EstadoCosteo.PendienteEnvio"/> solo se puede reenviar pasado este
-    /// tiempo: antes, el envío original puede seguir esperando la respuesta de Nexo (hasta 30 s) y reenviar duplicaría la solicitud.
+    /// tiempo: mientras tanto, el envío original puede seguir esperando la respuesta de Nexo (hasta 30 s) y reenviar duplicaría la solicitud.
     /// </summary>
     public static readonly TimeSpan EsperaReenvioPendiente = TimeSpan.FromMinutes(2);
 
@@ -70,7 +70,7 @@ public sealed partial class clsCotizacionSolicitud
     public TipoSolicitud? TipoSolicitud { get; private set; }
     public DateTimeOffset? Deadline { get; private set; }
 
-    /// <summary>Encabezado: <c>notas</c> para la Mesa de Nexo (script 0007, G7 de HU-013.10).</summary>
+    /// <summary>Encabezado: <c>notas</c> para la Mesa de Nexo (script 0007).</summary>
     public string? Notas { get; private set; }
 
     // Seguimiento de la integración con Nexo (scripts 0004 y 0010, ADR-015). Cotifly consulta a Nexo una vez por solicitud completa.
@@ -85,11 +85,10 @@ public sealed partial class clsCotizacionSolicitud
     public string? CotizacionNexoId { get; private set; }
 
     /// <summary>
-    /// HU-018.1 (#155): <c>scorePrioridad</c> que Nexo devolvió al crear la solicitud (<c>201 CapturaResultDto</c> de
-    /// <c>POST /api/captura-solicitudes</c>, script <c>db/scripts/09</c>). <c>null</c> si Nexo no lo mandó, si todavía no se envió o si
-    /// se envió antes del 09. Se guarda redondeado a <see cref="DecimalesScorePrioridad"/> decimales; uno fuera de
-    /// ±<see cref="MaximoScorePrioridad"/> (lo que cabe en <c>decimal(9,4)</c>) se descarta. Consultarlo después por solicitud
-    /// (<c>scoreUrgencia</c>) sigue bloqueado por el contrato de Nexo (ADR-016).
+    /// <c>scorePrioridad</c> que Nexo devolvió al crear la solicitud (<c>201 CapturaResultDto</c> de
+    /// <c>POST /api/captura-solicitudes</c>, script <c>db/scripts/09</c>). <c>null</c> si Nexo no lo mandó o si la solicitud no se ha
+    /// enviado. Se guarda redondeado a <see cref="DecimalesScorePrioridad"/> decimales; uno fuera de
+    /// ±<see cref="MaximoScorePrioridad"/> (lo que cabe en <c>decimal(9,4)</c>) se descarta.
     /// </summary>
     public decimal? ScorePrioridad { get; private set; }
 
@@ -103,10 +102,10 @@ public sealed partial class clsCotizacionSolicitud
     public string? MotivoEstadoCosteo { get; private set; }
     public DateTimeOffset? CosteoEnviadoAt { get; private set; }
 
-    /// <summary>Agenda del polling (HU-005.6): <c>null</c> = no se consulta más.</summary>
+    /// <summary>Agenda del polling: <c>null</c> = no se consulta más.</summary>
     public DateTimeOffset? CosteoSiguienteConsultaAt { get; private set; }
 
-    /// <summary>Consultas seguidas a Nexo que fallaron (espaciado del polling y tope de la relectura, HU-013.14).</summary>
+    /// <summary>Consultas seguidas a Nexo que fallaron (espaciado del polling y tope de la relectura).</summary>
     public int CosteoConsultasFallidas { get; private set; }
 
     /// <summary>
@@ -116,7 +115,7 @@ public sealed partial class clsCotizacionSolicitud
     /// </summary>
     public int VersionNegocio { get; private set; }
 
-    /// <summary>Asunto e introducción del PDF guardados (JSON, HU-013.5, #101); <c>null</c> si todavía no hay.</summary>
+    /// <summary>Asunto e introducción del PDF guardados (JSON); <c>null</c> si no hay.</summary>
     public string? TextosCotizacion { get; private set; }
 
     /// <summary>
@@ -132,8 +131,8 @@ public sealed partial class clsCotizacionSolicitud
     public IReadOnlyList<clsLineaSolicitud> RutasOrdenadas => [.. _rutas.OrderBy(r => r.Orden)];
 
     /// <summary>
-    /// La ruta 1 (o <c>null</c> sin rutas). Lo que la solicitud muestra como "su" línea de negocio, margen y ruta mientras el contrato no
-    /// sea por ruta (adaptación de HU-021, #132-#137).
+    /// La ruta 1 (o <c>null</c> sin rutas): la que la solicitud muestra como "su" línea de negocio, margen y ruta en los campos de la
+    /// cabecera.
     /// </summary>
     public clsLineaSolicitud? PrimeraRuta => _rutas.Count == 0 ? null : _rutas.MinBy(r => r.Orden);
 
@@ -199,9 +198,9 @@ public sealed partial class clsCotizacionSolicitud
 
     /// <summary>
     /// Guarda el formulario de una línea (ya validado con <see cref="clsSolicitudCosteo.Validar"/>): el encabezado en la cabecera y la
-    /// ruta 1 con su línea de negocio, sus mercancías y un camión con el vehículo del formulario (adaptación "una ruta, un camión" hasta el
-    /// cubicador, #133). Todo queda en <see cref="Cotizaciones.EstadoCosteo.PendienteEnvio"/>: lo que llenó el comercial nunca se pierde
-    /// aunque Nexo no responda (HU-005.5). Devuelve la ruta.
+    /// ruta 1 con su línea de negocio, sus mercancías y un camión con el vehículo del formulario. Todo queda en
+    /// <see cref="Cotizaciones.EstadoCosteo.PendienteEnvio"/>: lo que llenó el comercial nunca se pierde aunque Nexo no responda.
+    /// Devuelve la ruta.
     /// </summary>
     public clsLineaSolicitud RegistrarSolicitudCosteo(clsSolicitudCosteo solicitud, int? lineaNegocioId)
     {
@@ -218,7 +217,7 @@ public sealed partial class clsCotizacionSolicitud
     }
 
     /// <summary>
-    /// Guarda una licitación (HU-011.2, ADR-017; validada fila por fila): el encabezado y una ruta por línea, cada una con
+    /// Guarda una licitación (ADR-017; validada fila por fila): el encabezado y una ruta por línea, cada una con
     /// <see cref="clsLineaSolicitud.RutaOrigenIndice"/> = su fila del Excel (<paramref name="filas"/>, en el mismo orden; <c>null</c> sin
     /// archivo), la línea de negocio, sus mercancías y un camión. Todo queda en <c>pendiente_envio</c>. Devuelve las rutas.
     /// </summary>
@@ -244,12 +243,12 @@ public sealed partial class clsCotizacionSolicitud
     }
 
     /// <summary>
-    /// Captura por rutas (HU-021.6, formulario y licitación): guarda el encabezado y, por cada ruta en orden, la ruta con su línea de
-    /// negocio, sus mercancías, sus camiones (<see cref="clsRutaCapturada.Camiones"/>, al menos uno: sin vehículo mientras no haya
-    /// cubicador) y sus conexos (precio = costo unitario de Nexo, decisión 3), y recalcula sus totales (los conexos ya suman al costo
+    /// Captura por rutas (formulario y licitación): guarda el encabezado y, por cada ruta en orden, la ruta con su línea de
+    /// negocio, sus mercancías, sus camiones (<see cref="clsRutaCapturada.Camiones"/>, al menos uno: sin vehículo si no hay
+    /// cubicador) y sus conexos (precio = costo unitario de Nexo), y recalcula sus totales (los conexos ya suman al costo
     /// de la ruta; sin flete no hay precio). Todo queda en <c>pendiente_envio</c>. Las líneas deben venir validadas
     /// (<see cref="clsLineaSolicitudCosteo.Errores"/> y <see cref="clsLineaSolicitudCosteo.ErroresCaptura"/> vacías): si no, lanza.
-    /// <paramref name="reglasCaptura"/> en <c>false</c> = copia de rutas ya guardadas (versión <c>-vN</c> de la re-solicitud, HU-021.9):
+    /// <paramref name="reglasCaptura"/> en <c>false</c> = copia de rutas ya guardadas (versión <c>-vN</c> de la re-solicitud):
     /// solo se exigen los límites de Nexo, porque las rutas migradas no tienen los ids que pide la captura nueva. Devuelve las rutas creadas.
     /// </summary>
     public IReadOnlyList<clsLineaSolicitud> RegistrarCaptura(
@@ -389,24 +388,24 @@ public sealed partial class clsCotizacionSolicitud
 
     /// <summary>
     /// Las líneas que viajan a Nexo: una por camión, ruta por ruta y en orden (<c>CAMBIOS_BACKEND</c> §5.3), cada una con el camión al
-    /// que corresponde. HU-028.1 (#183, decisión del 2026-10-20): los camiones rechazados por la Mesa NO viajan
+    /// que corresponde. Los camiones rechazados por la Mesa NO viajan
     /// (<see cref="clsLineaSolicitud.VehiculosQueViajan"/>), y una ruta con todos rechazados no aporta ninguna línea.
     /// </summary>
     public IReadOnlyList<(clsVehiculoLineaSolicitud Camion, clsLineaSolicitudCosteo Linea)> LineasNexo() =>
         [.. RutasOrdenadas.SelectMany(r => r.VehiculosOrdenados.Where(v => r.VehiculosQueViajan.Contains(v)).Select(v => (v, r.ALineaNexo(v))))];
 
     /// <summary>
-    /// HU-028.1 (#183): ¿alguna ruta manda líneas a Nexo? Con todas sus rutas sin camiones que viajen (todos rechazados por la Mesa de Costeo)
+    /// ¿Alguna ruta manda líneas a Nexo? Con todas sus rutas sin camiones que viajen (todos rechazados por la Mesa de Costeo)
     /// no hay nada que enviar: la re-solicitud y la edición responden 409 <c>SIN_RUTAS_COTIZABLES</c> antes de escribir.
     /// </summary>
     public bool TieneLineasQueViajan => _rutas.Any(r => r.ViajaANexo);
 
-    // ------------------------------------------------------------------ Envío y polling (HU-005.5, HU-005.6)
+    // ------------------------------------------------------------------ Envío y polling
 
     /// <summary>
     /// ¿Se puede (re)enviar la solicitud a Nexo? Sí desde <see cref="Cotizaciones.EstadoCosteo.ErrorEnvio"/>, y desde
     /// <see cref="Cotizaciones.EstadoCosteo.PendienteEnvio"/> cuando el último cambio tiene más de
-    /// <see cref="EsperaReenvioPendiente"/> (un envío que se cortó a medias, HU-005.5).
+    /// <see cref="EsperaReenvioPendiente"/> (un envío que se cortó a medias).
     /// </summary>
     public bool PuedeReenviarCosteo(DateTimeOffset ahora) =>
         Ganada is null
@@ -415,23 +414,23 @@ public sealed partial class clsCotizacionSolicitud
             || (EstadoCosteo == Cotizaciones.EstadoCosteo.PendienteEnvio && ahora - UpdatedAt >= EsperaReenvioPendiente));
 
     /// <summary>
-    /// HU-023.3 (#158): ¿se pueden reemplazar los camiones (recalcular una ruta con el cubicador)? Solo si la solicitud nunca llegó a
+    /// ¿Se pueden reemplazar los camiones (recalcular una ruta con el cubicador)? Solo si la solicitud nunca llegó a
     /// Nexo (<see cref="SolicitudNexoId"/> vacío) y no hay un envío en curso ni incierto: la misma regla que
     /// <see cref="PuedeReenviarCosteo"/> (un <c>pendiente_envio</c> reciente puede estar esperando a Nexo).
     /// </summary>
     public bool PuedeRecalcularCamiones(DateTimeOffset ahora) => SolicitudNexoId is null && PuedeReenviarCosteo(ahora);
 
-    // ------------------------------------------------------------------ Cubicación en segundo plano (HU-023.5, #160)
+    // ------------------------------------------------------------------ Cubicación en segundo plano
 
     /// <summary>
-    /// HU-023.5 (#160): ¿alguna ruta espera la cubicación en segundo plano o falló? Mientras tanto la solicitud no viaja a Nexo (ni por el
+    /// ¿Alguna ruta espera la cubicación en segundo plano o falló? Mientras tanto la solicitud no viaja a Nexo (ni por el
     /// reintento ni por el recálculo de una ruta): "todo o nada" hacia Nexo.
     /// </summary>
     public bool CubicacionEnCurso =>
         _rutas.Any(r => r.EstadoCubicacion is Cotizaciones.EstadoCubicacion.Pendiente or Cotizaciones.EstadoCubicacion.Fallida);
 
     /// <summary>
-    /// HU-023.5: ¿la cubicación en segundo plano terminó y la solicitud todavía no salió a Nexo? (alguna ruta pasó por la cola, todas
+    /// ¿La cubicación en segundo plano terminó y la solicitud todavía no salió a Nexo? (alguna ruta pasó por la cola, todas
     /// quedaron cubicadas y sigue en <c>pendiente_envio</c> sin <see cref="SolicitudNexoId"/>.)
     /// </summary>
     public bool ListaParaEnviarTrasCubicar =>
@@ -439,7 +438,7 @@ public sealed partial class clsCotizacionSolicitud
         && _rutas.Any(r => r.EstadoCubicacion is not null) && !CubicacionEnCurso;
 
     /// <summary>
-    /// HU-023.5: ¿la ruta se puede cubicar en segundo plano? La solicitud no ha salido a Nexo, sigue en <c>pendiente_envio</c> y la ruta
+    /// ¿La ruta se puede cubicar en segundo plano? La solicitud no ha salido a Nexo, sigue en <c>pendiente_envio</c> y la ruta
     /// está pendiente. Si no, el procesador la marca fallida (la cotización cambió por otro camino).
     /// </summary>
     public bool AdmiteCubicacionEnSegundoPlano(Guid rutaId) =>
@@ -447,7 +446,7 @@ public sealed partial class clsCotizacionSolicitud
         && _rutas.Any(r => r.Id == rutaId && r.EstadoCubicacion == Cotizaciones.EstadoCubicacion.Pendiente);
 
     /// <summary>
-    /// HU-023.5: guarda el plan del cubicador en la ruta pendiente <paramref name="rutaId"/> (reemplaza el camión provisional) y recalcula
+    /// Guarda el plan del cubicador en la ruta pendiente <paramref name="rutaId"/> (reemplaza el camión provisional) y recalcula
     /// los totales. <c>ESTADO_NO_PERMITE</c> si la ruta ya no se puede cubicar (<see cref="AdmiteCubicacionEnSegundoPlano"/>).
     /// </summary>
     public clsResultado<clsLineaSolicitud> CompletarCubicacionDeRuta(Guid rutaId, clsPlanRuta plan, DateTimeOffset ahora)
@@ -466,7 +465,7 @@ public sealed partial class clsCotizacionSolicitud
     }
 
     /// <summary>
-    /// HU-023.5: registra un intento fallido de cubicar la ruta <paramref name="rutaId"/> (ver <see cref="clsLineaSolicitud.RegistrarFalloCubicacion"/>).
+    /// Registra un intento fallido de cubicar la ruta <paramref name="rutaId"/> (ver <see cref="clsLineaSolicitud.RegistrarFalloCubicacion"/>).
     /// No hace nada si la ruta no es de esta cotización o ya no está pendiente.
     /// </summary>
     public bool RegistrarFalloCubicacionDeRuta(Guid rutaId, string codigo, string mensaje, DateTimeOffset? reintentarEn)
@@ -481,7 +480,7 @@ public sealed partial class clsCotizacionSolicitud
     }
 
     /// <summary>
-    /// Opción C: el cubicador estaba ocupado para la ruta <paramref name="rutaId"/>; vuelve a la cola desde <paramref name="disponibleAt"/>
+    /// El cubicador estaba ocupado para la ruta <paramref name="rutaId"/>; vuelve a la cola desde <paramref name="disponibleAt"/>
     /// sin gastar un intento (<see cref="clsLineaSolicitud.PosponerCubicacion"/>). No hace nada si la ruta no es de esta cotización o ya no
     /// está pendiente.
     /// </summary>
@@ -497,8 +496,8 @@ public sealed partial class clsCotizacionSolicitud
     }
 
     /// <summary>
-    /// HU-023.5: el comercial reintenta las rutas fallidas (vuelven a la cola) o, con <paramref name="usarRespaldo"/>, las acepta con el
-    /// respaldo de cada una en <paramref name="respaldos"/> (por id de ruta: el camión con el vehículo elegido y su aviso, HU-032) o, si no
+    /// El comercial reintenta las rutas fallidas (vuelven a la cola) o, con <paramref name="usarRespaldo"/>, las acepta con el
+    /// respaldo de cada una en <paramref name="respaldos"/> (por id de ruta: el camión con el vehículo elegido y su aviso) o, si no
     /// trae, con el camión sin vehículo. Devuelve cuántas cambió (0 = no había fallidas o la solicitud ya salió a Nexo).
     /// </summary>
     public int ReintentarCubicacionFallida(bool usarRespaldo, IReadOnlyDictionary<Guid, clsPlanRuta>? respaldos = null)
@@ -511,7 +510,7 @@ public sealed partial class clsCotizacionSolicitud
         return _rutas.Count(r => r.ReintentarCubicacion(usarRespaldo, respaldos is not null && respaldos.TryGetValue(r.Id, out var plan) ? plan : null));
     }
 
-    /// <summary>HU-023.5: ¿se pueden reintentar las rutas fallidas? Sin resultado, sin enviar a Nexo y en <c>pendiente_envio</c>.</summary>
+    /// <summary>¿Se pueden reintentar las rutas fallidas? Sin resultado, sin enviar a Nexo y en <c>pendiente_envio</c>.</summary>
     public bool AdmiteReintentoCubicacion =>
         Ganada is null && SolicitudNexoId is null && EstadoCosteo == Cotizaciones.EstadoCosteo.PendienteEnvio;
 
@@ -520,7 +519,7 @@ public sealed partial class clsCotizacionSolicitud
 
     /// <summary>
     /// ¿El resultado ganada/perdida se marca solo en Cotifly? Sí fuera del flujo de costeo (chat) y en <c>descartada</c> o
-    /// <c>costeo_vencido</c>, donde Nexo no acepta un resultado (HU-005.14).
+    /// <c>costeo_vencido</c>, donde Nexo no acepta un resultado.
     /// </summary>
     public bool ResultadoSoloLocal =>
         EstadoCosteo is null or Cotizaciones.EstadoCosteo.Descartada or Cotizaciones.EstadoCosteo.CosteoVencido;
@@ -542,11 +541,11 @@ public sealed partial class clsCotizacionSolicitud
     }
 
     /// <summary>
-    /// Nexo recibió la solicitud (HU-005.5): guarda su id (<see cref="SolicitudNexoId"/>), deja la solicitud y sus camiones en
+    /// Nexo recibió la solicitud: guarda su id (<see cref="SolicitudNexoId"/>), deja la solicitud y sus camiones en
     /// <see cref="Cotizaciones.EstadoCosteo.Autocosteo"/> si Nexo ya costeó todo o en <see cref="Cotizaciones.EstadoCosteo.PendienteCosteo"/>
-    /// si no, y agenda la primera consulta del polling (HU-005.6).
+    /// si no, y agenda la primera consulta del polling.
     /// </summary>
-    /// <param name="scorePrioridad">HU-018.1 (#155): el <c>scorePrioridad</c> de la respuesta de Nexo (ver <see cref="ScorePrioridad"/>);
+    /// <param name="scorePrioridad">El <c>scorePrioridad</c> de la respuesta de Nexo (ver <see cref="ScorePrioridad"/>);
     /// <c>null</c> lo deja vacío.</param>
     public void RegistrarEnvioCosteo(
         string solicitudNexoId, bool costeoCompleto, DateTimeOffset enviadoAt, DateTimeOffset primeraConsulta, decimal? scorePrioridad = null)
@@ -562,7 +561,7 @@ public sealed partial class clsCotizacionSolicitud
     }
 
     /// <summary>
-    /// HU-018.1 (#155): <paramref name="score"/> redondeado a <see cref="DecimalesScorePrioridad"/> decimales, o <c>null</c> si no vino o
+    /// <paramref name="score"/> redondeado a <see cref="DecimalesScorePrioridad"/> decimales, o <c>null</c> si no vino o
     /// no cabe en <c>decimal(9,4)</c> (un valor raro de Nexo no debe tumbar el registro del envío).
     /// </summary>
     public static decimal? NormalizarScorePrioridad(decimal? score)
@@ -603,8 +602,8 @@ public sealed partial class clsCotizacionSolicitud
 
     /// <summary>
     /// Sale del callejón de <see cref="SolicitudNexoDesconocida"/> (ADR-019): la deja en <c>error_envio</c> (no definitivo) con
-    /// <see cref="MotivoSolicitudNexoDesconocida"/>, y desde ahí funcionan el reintento, la re-solicitud y la perdida solo en Cotifly
-    /// (#127). Devuelve <c>true</c> si la marcó.
+    /// <see cref="MotivoSolicitudNexoDesconocida"/>, y desde ahí funcionan el reintento, la re-solicitud y la perdida solo en Cotifly.
+    /// Devuelve <c>true</c> si la marcó.
     /// </summary>
     public bool MarcarSolicitudNexoDesconocida()
     {
@@ -623,30 +622,30 @@ public sealed partial class clsCotizacionSolicitud
         && EstadoCosteo is Cotizaciones.EstadoCosteo.PendienteCosteo or Cotizaciones.EstadoCosteo.Autocosteo;
 
     /// <summary>
-    /// ¿Quedó en <c>entregada</c> sin precio y sin PDF? (HU-013.14, ADR-018 §17.) El polling la vuelve a leer una vez (aunque
+    /// ¿Quedó en <c>entregada</c> sin precio y sin PDF? (ADR-018 §17.) El polling la vuelve a leer una vez (aunque
     /// <c>entregada</c> sea terminal y aunque haya pasado la edad máxima) para aplicarle el precio.
     /// </summary>
     public bool EntregadaSinPrecio =>
         SolicitudNexoId is not null && EstadoCosteo == Cotizaciones.EstadoCosteo.Entregada && PrecioFinal is null && PdfPath is null
-        && !TodasLasRutasRechazadas; // HU-028.1 (#183): sin rutas que cotizar no hay precio que completar (no se relee)
+        && !TodasLasRutasRechazadas; // Sin rutas que cotizar no hay precio que completar (no se relee)
 
-    // ------------------------------------------------------------------ Rechazo de líneas en la Mesa de Costeo (HU-028.1, #183)
+    // ------------------------------------------------------------------ Rechazo de líneas en la Mesa de Costeo
 
     /// <summary>
-    /// HU-028.1 (#183): las rutas que cuentan en el precio, el PDF y el Excel: todas menos las <c>rechazada</c> (todos sus camiones
+    /// Las rutas que cuentan en el precio, el PDF y el Excel: todas menos las <c>rechazada</c> (todos sus camiones
     /// rechazados por la Mesa de Costeo de Nexo), en su orden.
     /// </summary>
     public IReadOnlyList<clsLineaSolicitud> RutasCotizables => [.. RutasOrdenadas.Where(r => !r.Rechazada)];
 
-    /// <summary>HU-028.1 (#183): ¿todas sus rutas quedaron rechazadas? (con al menos una ruta). Sin precio; el PDF responde <c>SIN_RUTAS_COTIZABLES</c>.</summary>
+    /// <summary>¿Todas sus rutas quedaron rechazadas? (con al menos una ruta). Sin precio; el PDF responde <c>SIN_RUTAS_COTIZABLES</c>.</summary>
     public bool TodasLasRutasRechazadas => _rutas.Count > 0 && _rutas.All(r => r.Rechazada);
 
-    /// <summary>HU-028.1 (#183): motivo visible en "Mis cotizaciones" cuando la Mesa de Costeo rechazó todas las rutas.</summary>
+    /// <summary>Motivo visible en "Mis cotizaciones" cuando la Mesa de Costeo rechazó todas las rutas.</summary>
     public const string MotivoTodasLasRutasRechazadas =
         "La Mesa de Costeo de Nexo rechazó todas las rutas: la cotización no tiene precio. Revisa el motivo de cada ruta en el costeo.";
 
     /// <summary>
-    /// HU-028.1 (#183): deja (o quita) en <see cref="MotivoEstadoCosteo"/> el aviso de <see cref="MotivoTodasLasRutasRechazadas"/>. Solo lo
+    /// Deja (o quita) en <see cref="MotivoEstadoCosteo"/> el aviso de <see cref="MotivoTodasLasRutasRechazadas"/>. Solo lo
     /// escribe si no hay otro motivo (no tapa una advertencia del costeo) y solo quita el suyo. Devuelve si cambió.
     /// </summary>
     public bool AvisarRutasRechazadas()
@@ -668,7 +667,7 @@ public sealed partial class clsCotizacionSolicitud
     }
 
     /// <summary>
-    /// HU-028.1 (#183): el estado de la cabecera a partir de sus rutas (§9.2) y de lo que deriva Nexo de la solicitud
+    /// El estado de la cabecera a partir de sus rutas (§9.2) y de lo que deriva Nexo de la solicitud
     /// (<paramref name="estadoNexo"/>). Sin rutas, o sin estado en ellas, el de Nexo. Si TODAS las rutas quedaron <c>rechazada</c>, la
     /// cabecera no queda <c>rechazada</c>: queda <c>entregada</c> (o <c>descartada</c>) si Nexo ya lo dice, y si no <c>pendiente_costeo</c>
     /// (la Mesa puede deshacer un rechazo o entregar; el polling sigue).
@@ -686,16 +685,16 @@ public sealed partial class clsCotizacionSolicitud
     }
 
     /// <summary>
-    /// ¿El polling la consulta solo para completar el precio? (HU-013.14.) Una <see cref="EntregadaSinPrecio"/>, o una con resultado
+    /// ¿El polling la consulta solo para completar el precio? Una <see cref="EntregadaSinPrecio"/>, o una con resultado
     /// registrado en Nexo cuyo costo Cotifly aún no leyó.
     /// </summary>
     public bool RequiereRelecturaCosteo =>
         EntregadaSinPrecio || (Ganada is not null && !PerdidaSoloEnCotifly && SeConsultaEnNexo && PrecioFinal is null && PdfPath is null);
 
-    /// <summary>Prefijo de <see cref="MotivoEstadoCosteo"/> de una perdida registrada solo en Cotifly (HU-013.17, #127).</summary>
+    /// <summary>Prefijo de <see cref="MotivoEstadoCosteo"/> de una perdida registrada solo en Cotifly.</summary>
     public const string PrefijoPerdidaSoloEnCotifly = "Perdida solo en Cotifly (el cliente desistió antes del costeo de Nexo): ";
 
-    /// <summary>¿Se marcó perdida solo en Cotifly porque el cliente desistió antes del costeo? (HU-013.17.)</summary>
+    /// <summary>¿Se marcó perdida solo en Cotifly porque el cliente desistió antes del costeo?</summary>
     public bool PerdidaSoloEnCotifly =>
         Ganada == false && MotivoEstadoCosteo?.StartsWith(PrefijoPerdidaSoloEnCotifly, StringComparison.Ordinal) == true;
 
@@ -704,7 +703,7 @@ public sealed partial class clsCotizacionSolicitud
         Ganada is null && EstadoCosteo is Cotizaciones.EstadoCosteo.PendienteCosteo or Cotizaciones.EstadoCosteo.ErrorEnvio;
 
     /// <summary>
-    /// El cliente desistió antes del costeo (HU-013.17, ADR-018 §17): perdida SOLO en Cotifly con el motivo del comercial. Detiene el
+    /// El cliente desistió antes del costeo (ADR-018 §17): perdida SOLO en Cotifly con el motivo del comercial. Detiene el
     /// polling y deja el estado de costeo como estaba (con el motivo visible); si Nexo costea después, el resultado no cambia.
     /// </summary>
     public void RegistrarPerdidaSinCosteo(string motivo, DateTimeOffset cuando)
@@ -721,13 +720,13 @@ public sealed partial class clsCotizacionSolicitud
     }
 
     /// <summary>
-    /// Agenda una relectura del costeo en Nexo para <paramref name="cuando"/> (HU-013.14): el resultado se registró pero el costeo no se
+    /// Agenda una relectura del costeo en Nexo para <paramref name="cuando"/>: el resultado se registró pero el costeo no se
     /// pudo leer en la misma operación, así que el polling la completa. No cambia el estado ni la versión de negocio.
     /// </summary>
     public void ProgramarRelecturaCosteo(DateTimeOffset cuando) => CosteoSiguienteConsultaAt = cuando;
 
     /// <summary>
-    /// Resultado de una consulta del polling (HU-005.6), con los camiones ya actualizados: el estado de la solicitud pasa a ser el
+    /// Resultado de una consulta del polling, con los camiones ya actualizados: el estado de la solicitud pasa a ser el
     /// resumen de sus rutas (§9.2; sin rutas, <paramref name="estadoNexo"/>, el que deriva la solicitud de Nexo), guarda el id de la
     /// cotización de Nexo y la siguiente consulta (<c>null</c> = no se consulta más) y reinicia los fallos seguidos. Devuelve <c>true</c>
     /// si el estado cambió.
@@ -756,7 +755,7 @@ public sealed partial class clsCotizacionSolicitud
     }
 
     /// <summary>
-    /// Se llegó a la edad máxima del polling (HU-005.6): sin costeo, la solicitud y sus camiones sin flete quedan en
+    /// Se llegó a la edad máxima del polling: sin costeo, la solicitud y sus camiones sin flete quedan en
     /// <see cref="Cotizaciones.EstadoCosteo.CosteoVencido"/> con el motivo; con costeo (<c>autocosteo</c>) solo deja de consultarse.
     /// Devuelve <c>true</c> si el estado cambió.
     /// </summary>
@@ -812,7 +811,7 @@ public sealed partial class clsCotizacionSolicitud
         MotivoEstadoCosteo = Recortar(motivo);
     }
 
-    /// <summary>Motivo que marca conexos agregados en Nexo que Cotifly todavía no pudo leer (HU-013.15, #124; HU-021).</summary>
+    /// <summary>Motivo que marca conexos agregados en Nexo que Cotifly todavía no pudo leer.</summary>
     public const string MotivoConexosPendientes =
         "Nexo agregó un servicio conexo que Cotifly todavía no pudo leer: aparecerá con su precio en la siguiente actualización del costeo.";
 
@@ -831,7 +830,7 @@ public sealed partial class clsCotizacionSolicitud
         }
     }
 
-    /// <summary>Id de la cotización de Nexo recuperado fuera del polling (al marcar el resultado, HU-005.14).</summary>
+    /// <summary>Id de la cotización de Nexo recuperado fuera del polling (al marcar el resultado).</summary>
     public void RegistrarCotizacionNexo(string cotizacionNexoId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(cotizacionNexoId);
@@ -839,7 +838,7 @@ public sealed partial class clsCotizacionSolicitud
     }
 
     /// <summary>
-    /// Entrega de la cotización en Nexo vista al marcar el resultado (entrega implícita, HU-005.14) con el precio ya aplicado: la
+    /// Entrega de la cotización en Nexo vista al marcar el resultado (entrega implícita) con el precio ya aplicado: la
     /// solicitud y sus camiones pasan a <c>entregada</c> y se deja de consultar.
     /// </summary>
     public bool RegistrarEntregaImplicita(string? cotizacionNexoId)
@@ -864,7 +863,7 @@ public sealed partial class clsCotizacionSolicitud
     }
 
     /// <summary>
-    /// Resumen del estado de las rutas (§9.2), con cada ruta resumida antes desde sus camiones. Un camión (o una ruta) sin estado cuenta
+    /// Resumen del estado de las rutas (§9.2), con cada ruta resumida primero desde sus camiones. Un camión (o una ruta) sin estado cuenta
     /// como <c>pendiente_costeo</c> si la solicitud ya se envió a Nexo (<see cref="SolicitudNexoId"/>) y como <c>pendiente_envio</c> si no.
     /// </summary>
     public Cotizaciones.EstadoCosteo? ResumirRutas()
@@ -884,7 +883,7 @@ public sealed partial class clsCotizacionSolicitud
     public bool AsignarLineaNexo(Guid camionId, string lineaSolicitudNexoId) => Camion(camionId).AsignarLineaNexo(lineaSolicitudNexoId);
 
     /// <summary>
-    /// La Mesa de Costeo borró en Nexo la línea del camión <paramref name="camionId"/> (#134): el camión queda <c>descartada</c>, sin línea
+    /// La Mesa de Costeo borró en Nexo la línea del camión <paramref name="camionId"/>: el camión queda <c>descartada</c>, sin línea
     /// ni costos de Nexo, y su ruta resume el estado sin él. Los totales los recalcula la siguiente <see cref="AplicarFotoNexo"/>.
     /// Devuelve si cambió.
     /// </summary>
@@ -901,7 +900,7 @@ public sealed partial class clsCotizacionSolicitud
     }
 
     /// <summary>
-    /// Aplica una lectura de Nexo a los camiones (HU-005.6): a cada uno su estado y, si <see cref="clsCosteoCamionNexo.ConCostos"/>, el
+    /// Aplica una lectura de Nexo a los camiones: a cada uno su estado y, si <see cref="clsCosteoCamionNexo.ConCostos"/>, el
     /// flete, el retorno y el vehículo que puso la Mesa de Costeo. Después cada ruta resume su estado y, si algún camión cambió de costos,
     /// se recalculan los totales y el precio de las rutas y de la solicitud (siempre: nadie toca los camiones por fuera). Con PDF el
     /// llamador manda solo estados (el precio de la versión se conserva, ADR-015 §5). Devuelve si algo cambió, o el error del módulo de
@@ -917,7 +916,7 @@ public sealed partial class clsCotizacionSolicitud
             var camion = Camion(lectura.CamionId);
             if (lectura.Estado == Cotizaciones.EstadoCosteo.Rechazada)
             {
-                // HU-028.1 (#183): la Mesa rechazó su línea: sin flete (si se leen costos) y con el motivo. Con PDF solo estado y motivo.
+                // La Mesa rechazó su línea: sin flete (si se leen costos) y con el motivo. Con PDF solo estado y motivo.
                 conCostos |= lectura.ConCostos;
                 cambio |= camion.RegistrarRechazo(lectura.MotivoRechazo, ahora, lectura.ConCostos);
                 continue;
@@ -925,7 +924,7 @@ public sealed partial class clsCotizacionSolicitud
 
             if (lectura.LineaNoRechazada)
             {
-                // HU-028.1 (#183): el detalle de Nexo dice que la línea ya no está rechazada (la Mesa lo deshizo antes de entregar): el
+                // El detalle de Nexo dice que la línea ya no está rechazada (la Mesa deshizo el rechazo): el
                 // camión lo deshace aunque la lectura ya diga "entregada" (deshacer, costear y entregar entre dos consultas del polling).
                 cambio |= camion.DeshacerRechazo();
             }
@@ -960,7 +959,7 @@ public sealed partial class clsCotizacionSolicitud
     }
 
     /// <summary>
-    /// Agrega o actualiza conexos en la ruta <paramref name="ordenRuta"/> (precio = costo unitario de Nexo; HU-043.2, #251: y su venta
+    /// Agrega o actualiza conexos en la ruta <paramref name="ordenRuta"/> (precio = costo unitario de Nexo, y su venta
     /// unitaria, que suma al precio de la ruta sin margen) y recalcula SIEMPRE los totales y el precio. Devuelve cuántos agregó o cambió, o
     /// el error del módulo de precio.
     /// </summary>
@@ -975,7 +974,7 @@ public sealed partial class clsCotizacionSolicitud
 
     /// <summary>
     /// Deja en la ruta <paramref name="ordenRuta"/> exactamente los conexos de <paramref name="cantidades"/> (id del conexo → cantidad
-    /// nueva; HU-021.8, #135, decisión 3): los que no están se BORRAN de la ruta (la tabla no tiene "incluido") y a los demás se les cambia
+    /// nueva): los que no están se BORRAN de la ruta (la tabla no tiene "incluido") y a los demás se les cambia
     /// la cantidad, con el mismo precio unitario de Nexo. Después recalcula esa ruta y la cabecera. Todos los ids deben ser conexos de la
     /// ruta (el caso de uso lo valida antes: aquí un id ajeno es un error de programación). Devuelve los movimientos (quitados y con
     /// cantidad nueva) para la auditoría, o el error del módulo de precio.
@@ -996,11 +995,11 @@ public sealed partial class clsCotizacionSolicitud
     }
 
     /// <summary>
-    /// El comercial cambia el valor de UN levante de contenedor de la ruta <paramref name="ordenRuta"/> (decisión 4): se guarda en la
+    /// El comercial cambia el valor de UN levante de contenedor de la ruta <paramref name="ordenRuta"/>: se guarda en la
     /// ruta, se copia a cada camión y se recalculan esa ruta y la cabecera. Solo mientras la cotización no se haya entregado al cliente
     /// (<c>PDF_YA_ENVIADO</c>, ADR-018 §11). Devuelve si cambió, o el error.
-    /// <para><b>Sin llamadores en producción</b> (solo sus pruebas): hoy el levante cambia en la versión nueva de la re-solicitud, que crea
-    /// los camiones con la copia. La captura por rutas (#132, integrada) solo copia el levante al crear los camiones y no edita rutas.</para>
+    /// <para>Solo la usan sus pruebas: el levante cambia en la versión nueva de la re-solicitud, que crea los camiones con la copia, y la
+    /// captura por rutas solo copia el levante al crear los camiones.</para>
     /// </summary>
     public clsResultado<bool> CambiarValorLevante(int ordenRuta, decimal? valor, DateTimeOffset ahora)
     {
@@ -1024,7 +1023,7 @@ public sealed partial class clsCotizacionSolicitud
         return recalculo.EsFallo ? recalculo.Error : true;
     }
 
-    // ------------------------------------------------------------------ Ruta indicada por la petición (HU-021.8, #135)
+    // ------------------------------------------------------------------ Ruta indicada por la petición
 
     /// <summary>
     /// La ruta a la que aplica una petición de la etapa final (margen o conexos), por su <c>linea_orden</c> o su id
@@ -1092,7 +1091,7 @@ public sealed partial class clsCotizacionSolicitud
     }
 
     /// <summary>
-    /// HU-043.2 (#251): actualiza la venta unitaria de conexos ya guardados con la que Nexo fijó (<paramref name="ventas"/>: ruta, id del
+    /// Actualiza la venta unitaria de conexos ya guardados con la que Nexo fijó (<paramref name="ventas"/>: ruta, id del
     /// conexo y venta). Con el precio congelado (<see cref="PrecioCongelado"/>: PDF o finalizada) no cambia nada. No recalcula: lo hace la
     /// lectura del costeo a continuación (<c>AplicarPrecio</c>). Devuelve cuántos cambió.
     /// </summary>
@@ -1140,9 +1139,9 @@ public sealed partial class clsCotizacionSolicitud
         ?? throw new ArgumentOutOfRangeException(nameof(camionId), $"El camión {camionId} no es de la cotización {Folio}.");
 
     /// <summary>
-    /// HU-023.3 (#158): reemplaza los camiones de la ruta <paramref name="rutaId"/> por el plan nuevo del cubicador (con su resultado) y
-    /// recalcula los totales. <c>PDF_YA_ENVIADO</c> si ya se entregó al cliente o está finalizada (<see cref="ValidarCambioEtapaFinal"/>,
-    /// HU-036.3); solo con <see cref="PuedeRecalcularCamiones"/> (nunca enviada a Nexo y sin envío en curso): <c>ESTADO_NO_PERMITE</c> si
+    /// Reemplaza los camiones de la ruta <paramref name="rutaId"/> por el plan nuevo del cubicador (con su resultado) y
+    /// recalcula los totales. <c>PDF_YA_ENVIADO</c> si ya se entregó al cliente o está finalizada
+    /// (<see cref="ValidarCambioEtapaFinal"/>); solo con <see cref="PuedeRecalcularCamiones"/> (nunca enviada a Nexo y sin envío en curso): <c>ESTADO_NO_PERMITE</c> si
     /// no; <c>RUTA_INEXISTENTE</c> si la ruta no es de esta cotización.
     /// </summary>
     public clsResultado<clsLineaSolicitud> ReemplazarCamionesDeRuta(Guid rutaId, clsPlanRuta plan, DateTimeOffset ahora)
@@ -1150,7 +1149,7 @@ public sealed partial class clsCotizacionSolicitud
         ArgumentNullException.ThrowIfNull(plan);
         if (ValidarCambioEtapaFinal() is { } cerrada)
         {
-            // HU-036.3 (#207): entregada o finalizada, los camiones solo cambian en una versión nueva.
+            // Entregada o finalizada: los camiones solo cambian en una versión nueva.
             return cerrada;
         }
 
@@ -1200,7 +1199,7 @@ public sealed partial class clsCotizacionSolicitud
 
     /// <summary>
     /// <see cref="PrecioFinal"/> = la suma de <see cref="clsLineaSolicitud.PrecioFinalLinea"/> de sus rutas cuando TODAS tienen precio; si
-    /// alguna no, la solicitud tampoco tiene (§9.1). HU-028.1 (#183): las rutas <c>rechazada</c> no cuentan (<see cref="RutasCotizables"/>);
+    /// alguna no, la solicitud tampoco tiene (§9.1). Las rutas <c>rechazada</c> no cuentan (<see cref="RutasCotizables"/>);
     /// con todas rechazadas, sin precio. Devuelve <c>true</c> si cambió.
     /// </summary>
     public bool RecalcularPrecio(DateTimeOffset ahora)
@@ -1218,7 +1217,7 @@ public sealed partial class clsCotizacionSolicitud
     }
 
     /// <summary>
-    /// Costo total de la solicitud (interno): la suma del costo final de sus rutas, o <c>null</c> si alguna no lo tiene. HU-028.1 (#183): sin
+    /// Costo total de la solicitud (interno): la suma del costo final de sus rutas, o <c>null</c> si alguna no lo tiene, sin
     /// las rutas <c>rechazada</c> (<see cref="RutasCotizables"/>).
     /// </summary>
     public decimal? CostoFinal
@@ -1230,10 +1229,10 @@ public sealed partial class clsCotizacionSolicitud
         }
     }
 
-    // ------------------------------------------------------------------ Margen (ADR-018 §3): por ruta (HU-021.8, #135, decisión 6)
+    // ------------------------------------------------------------------ Margen (ADR-018 §3): por ruta
 
     /// <summary>
-    /// Invariantes del ajuste de margen de la ruta <paramref name="ordenRuta"/> (ADR-018 §3 y §11, por ruta desde HU-021.8): forma
+    /// Invariantes del ajuste de margen de la ruta <paramref name="ordenRuta"/> (ADR-018 §3 y §11, por ruta): forma
     /// (<c>AJUSTE_MARGEN_INVALIDO</c>), ruta de la cotización (<c>RUTA_INEXISTENTE</c>), precio en ESA ruta (<c>COSTEO_NO_LISTO</c>;
     /// las demás rutas no lo necesitan), regla del PDF (<c>PDF_YA_ENVIADO</c>) y justificación si queda por debajo del sugerido DE ESA RUTA
     /// (<c>JUSTIFICACION_REQUERIDA</c>).
@@ -1256,9 +1255,9 @@ public sealed partial class clsCotizacionSolicitud
             return rechazada;
         }
 
-        // Decisión del usuario (2026-10-08, #135): el ajuste es ruta por ruta y solo ESA ruta necesita precio; las demás pueden seguir en
-        // costeo (el PDF sí exige todas, clsCosteoCotizacionService.ValidarTotal). La ruta debe venir del costeo de Nexo
-        // (autocosteo o entregada): una cotización del chat anterior a HU-013 no se ajusta por aquí.
+        // El ajuste es ruta por ruta y solo ESA ruta necesita precio; las demás pueden seguir en costeo (el PDF sí exige todas,
+        // clsCosteoCotizacionService.ValidarTotal). La ruta debe venir del costeo de Nexo (autocosteo o entregada): una cotización
+        // del chat no se ajusta por aquí.
         if (!ruta.TienePrecio || ruta.EstadoCosteo is not { } estadoRuta || !clsDerivacionEstadoCosteo.TieneCosteo(estadoRuta))
         {
             return new clsErrorDominio(clsCodigosError.CosteoNoListo, $"La cotización {Folio} todavía no tiene el costeo de Nexo con margen aplicado.");
@@ -1280,7 +1279,7 @@ public sealed partial class clsCotizacionSolicitud
     }
 
     /// <summary>
-    /// HU-041.1 (#231): vuelve la ruta <paramref name="ordenRuta"/> a su margen sugerido (<see cref="clsLineaSolicitud.RestaurarMargenSugerido"/>)
+    /// Vuelve la ruta <paramref name="ordenRuta"/> a su margen sugerido (<see cref="clsLineaSolicitud.RestaurarMargenSugerido"/>)
     /// y recalcula esa ruta y la cabecera. Devuelve si algo cambió, o el error del módulo de precio.
     /// </summary>
     public clsResultado<bool> RestaurarMargenSugerido(int ordenRuta, DateTimeOffset ahora)
@@ -1295,8 +1294,8 @@ public sealed partial class clsCotizacionSolicitud
 
     /// <summary>
     /// Regla del PDF (ADR-018 §11) para toda acción que cambia el precio en la etapa final (margen, conexos, conexos en Nexo, re-solicitud
-    /// en el mismo folio, recálculo de camiones y edición en sitio): ya entregada al cliente (<see cref="EntregadaAlCliente"/>) o, desde
-    /// HU-036.3 (#207), ya finalizada (<see cref="Finalizada"/>: el comercial aceptó el precio) responde <c>PDF_YA_ENVIADO</c>; si no,
+    /// en el mismo folio, recálculo de camiones y edición en sitio): ya entregada al cliente (<see cref="EntregadaAlCliente"/>) o
+    /// ya finalizada (<see cref="Finalizada"/>: el comercial aceptó el precio) responde <c>PDF_YA_ENVIADO</c>; si no,
     /// <c>null</c>. Los textos y el PDF NO usan esta regla: se permiten (y se exigen) con la cotización finalizada
     /// (<see cref="ValidarEntregaAlCliente"/> y <see cref="ValidarFinalizadaAntesDe"/>).
     /// </summary>
@@ -1307,8 +1306,8 @@ public sealed partial class clsCotizacionSolicitud
             : null);
 
     /// <summary>
-    /// <c>PDF_YA_ENVIADO</c> solo si ya se entregó al cliente (enviada o con resultado): la regla de ADR-018 §11 tal como era antes de
-    /// HU-036, para lo que se hace DESPUÉS de finalizar y antes de entregar (el PDF y sus textos).
+    /// <c>PDF_YA_ENVIADO</c> solo si ya se entregó al cliente (enviada o con resultado): la regla de ADR-018 §11 sin contar la finalización,
+    /// para lo que se hace DESPUÉS de finalizar y antes de entregar (el PDF y sus textos).
     /// </summary>
     public clsErrorDominio? ValidarEntregaAlCliente() => EntregadaAlCliente
         ? new clsErrorDominio(clsCodigosError.PdfYaEnviado,
@@ -1334,7 +1333,7 @@ public sealed partial class clsCotizacionSolicitud
     }
 
     /// <summary>
-    /// Guarda el asunto y la introducción del PDF (JSON de <c>textosCotizacion</c>, HU-013.5, #101). Los valida Aplicación; aquí solo se
+    /// Guarda el asunto y la introducción del PDF (JSON de <c>textosCotizacion</c>). Los valida Aplicación; aquí solo se
     /// exige que no venga vacío.
     /// </summary>
     public void RegistrarTextos(string textosJson)
@@ -1354,14 +1353,14 @@ public sealed partial class clsCotizacionSolicitud
     /// <summary>¿La cotización pertenece al comercial? (aislamiento por dueño, ADR-009).</summary>
     public bool EsDe(Guid usuarioId) => UsuarioId == usuarioId;
 
-    /// <summary>Valor de <c>motivoRechazo</c> de una cotización ganada (propuesta de refactor de BD §2.1, HU-021.13).</summary>
+    /// <summary>Valor de <c>motivoRechazo</c> de una cotización ganada (propuesta de refactor de BD §2.1).</summary>
     public const string MotivoRechazoNoAplica = "No aplica";
 
     /// <summary>
-    /// Marca la cotización como ganada o perdida. Regla de la propuesta §2.1 (HU-021.13): ganada deja <c>motivoRechazo</c> en
+    /// Marca la cotización como ganada o perdida. Regla de la propuesta §2.1: ganada deja <c>motivoRechazo</c> en
     /// <see cref="MotivoRechazoNoAplica"/> (no <c>null</c>), perdida guarda el motivo recibido y sin resultado (<c>ganada = null</c>)
     /// queda vacío. Es la única puerta de escritura del motivo, así que cubre <c>/seguimiento</c>, <c>/resultado</c> y la
-    /// sincronización desde Nexo. A Nexo se le sigue enviando el motivo tal como llega (su contrato no cambia).
+    /// sincronización desde Nexo. A Nexo se le envía el motivo tal como llega.
     /// </summary>
     public void MarcarSeguimiento(bool? ganada, string? motivoRechazo, DateTimeOffset cuando)
     {
@@ -1400,7 +1399,7 @@ public sealed partial class clsCotizacionSolicitud
     /// <summary>Sube la versión de negocio: lo llaman los casos de uso al confirmar un cambio que ve el comercial (ADR-018 §12).</summary>
     public void IncrementarVersionNegocio() => VersionNegocio = checked(VersionNegocio + 1);
 
-    // ------------------------------------------------------------------ Re-solicitud y versión nueva (HU-013.4, ADR-018 §5)
+    // ------------------------------------------------------------------ Re-solicitud y versión nueva (ADR-018 §5)
 
     /// <summary>
     /// Invariantes de "Cotizar costo" (re-solicitar el costeo a Nexo, ADR-018 §5 y §11), en este orden:
@@ -1445,8 +1444,8 @@ public sealed partial class clsCotizacionSolicitud
     }
 
     /// <summary>
-    /// Deja la cotización lista para volver a enviarla a Nexo en el mismo folio (HU-013.4): sin el costeo anterior (ids de la solicitud y
-    /// de la cotización de Nexo, precio y fecha de costeo; el caso de uso los deja antes en la auditoría), sin polling y en
+    /// Deja la cotización lista para volver a enviarla a Nexo en el mismo folio: sin el costeo anterior (ids de la solicitud y
+    /// de la cotización de Nexo, precio y fecha de costeo; el caso de uso los guarda primero en la auditoría), sin polling y en
     /// <see cref="Cotizaciones.EstadoCosteo.PendienteEnvio"/>. Cada ruta olvida sus costos de Nexo y su precio (conserva sus conexos y su
     /// levante, que son de Cotifly). El margen se vuelve a resolver al enviar.
     /// </summary>
@@ -1470,7 +1469,7 @@ public sealed partial class clsCotizacionSolicitud
 
     /// <summary>
     /// Cabecera de la versión <paramref name="folio"/> (<c>-vN</c>, ADR-011) con la identidad de esta: cliente, comercial y moneda. La TRM
-    /// NO se copia (decisión del 2026-10-06, ADR-014 §5): la versión nueva fija la del día (<paramref name="trmDelDia"/>). Las rutas las
+    /// NO se copia (ADR-014 §5): la versión nueva fija la del día (<paramref name="trmDelDia"/>). Las rutas las
     /// registra el caso de uso y el margen negociado se copia por ruta (<see cref="CopiarMargenesNegociadosDe"/>).
     /// </summary>
     public clsResultado<clsCotizacionSolicitud> CrearVersion(clsFolio folio, decimal trmDelDia)
@@ -1496,7 +1495,7 @@ public sealed partial class clsCotizacionSolicitud
 
     /// <summary>
     /// Versión nueva: el margen ajustado por el comercial en cada ruta de <paramref name="anterior"/> se copia a la ruta del mismo orden
-    /// (decisión del 2026-10-06: el envío lo conserva y solo refresca el sugerido).
+    /// (el envío lo conserva y solo refresca el sugerido).
     /// </summary>
     public void CopiarMargenesNegociadosDe(clsCotizacionSolicitud anterior)
     {
@@ -1512,7 +1511,7 @@ public sealed partial class clsCotizacionSolicitud
     }
 
     /// <summary>
-    /// HU-028.1 (#183): <c>RUTA_RECHAZADA</c> (409) si la Mesa de Costeo de Nexo rechazó la ruta (todos sus camiones): no tiene precio, así
+    /// <c>RUTA_RECHAZADA</c> (409) si la Mesa de Costeo de Nexo rechazó la ruta (todos sus camiones): no tiene precio, así
     /// que no admite margen ni conexos. <c>null</c> si no está rechazada.
     /// </summary>
     public clsErrorDominio? ValidarRutaNoRechazada(clsLineaSolicitud ruta)

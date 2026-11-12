@@ -1,18 +1,18 @@
 namespace Cotifly.Dominio.Cotizaciones;
 
 /// <summary>
-/// HU-044.8 (#291): la equivalencia entre el código de vehículo que trae el catálogo de Nexo desde SAP
+/// La equivalencia entre el código de vehículo que trae el catálogo de Nexo desde SAP
 /// (<c>GET /api/catalogos/tipos-vehiculo</c>: «2», «3») y el <b>código NEXO</b> canónico que entiende SICE-TAC/Plaza
 /// (<c>C2</c>, <c>C3</c>). Es la <c>tbl_mapeo_vehiculo_tarifario</c> de Nexo (<c>C2</c> ↔ «2», <c>C3</c> ↔ «3»): la
 /// <b>única fuente</b> de esta equivalencia en Cotifly, para que ni <c>GET /web/catalogos-flete</c>, ni la captura
 /// (<see cref="clsCodigosConocidosNexo"/> / <c>clsResolucionCodigosNexo</c>), ni el front repartan constantes propias.
 /// </summary>
 /// <remarks>
-/// <para><b>Por qué y no el diccionario de alias.</b> El diccionario de alias de Nexo (NEXO #321) resuelve texto libre
+/// <para><b>Por qué y no el diccionario de alias.</b> El diccionario de alias de Nexo resuelve texto libre
 /// hacia el código del catálogo (<c>C2</c> → «2»): justo el sentido contrario al que hace falta aquí. Mandar «2»/«3» a
 /// <c>POST /api/captura-solicitudes</c> deja la configuración en cuarentena y Plaza busca mal; hay que mandar siempre el
-/// código NEXO (<c>C2</c>, <c>C3</c>, <c>2L3</c>…). Decisión de producto del 2026-11-09: en Cotifly la traducción la hace
-/// el backend, para que ningún front tenga que acordarse.</para>
+/// código NEXO (<c>C2</c>, <c>C3</c>, <c>2L3</c>…). En Cotifly la traducción la hace el backend, para que ningún front
+/// tenga que acordarse.</para>
 /// <para>Solo «2» y «3» difieren entre SAP y Nexo; el resto de códigos (<c>2L2</c>, <c>2S3</c>, <c>3S3</c>…) es idéntico
 /// en los dos sistemas y no pasa por aquí (lo resuelve el catálogo tal cual).</para>
 /// </remarks>

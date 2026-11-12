@@ -1,7 +1,7 @@
 namespace Cotifly.Dominio.Cotizaciones;
 
 /// <summary>
-/// HU-033 (#199, ADR-023): estado de la sincronización del resultado ganada/perdida con Nexo
+/// Estado de la sincronización del resultado ganada/perdida con Nexo (ADR-023)
 /// (<c>CotizacionesSolicitud.sincronizacionResultadoNexo</c>, script 13). Códigos snake_case (<see cref="Comun.clsCodigoEnum"/>).
 /// <c>null</c> en la columna = sin resultado, o resultado anterior al 13 (ver <see cref="clsCotizacionSolicitud.EstadoSincronizacionResultado"/>).
 /// </summary>

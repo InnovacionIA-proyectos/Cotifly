@@ -1,9 +1,9 @@
 namespace Cotifly.Dominio.Cotizaciones;
 
 /// <summary>
-/// Camión de una ruta (<c>dbo_cotifly.CotizacionVehiculosLineaSolicitud</c>, script 0009, HU-021, ADR-019): una fila por camión. Nexo
+/// Camión de una ruta (<c>dbo_cotifly.CotizacionVehiculosLineaSolicitud</c>, script 0009, ADR-019): una fila por camión. Nexo
 /// cotiza cada camión como una línea de su solicitud, así que aquí viven el id de esa línea, su estado y sus costos. El levante es una
-/// copia del <see cref="clsLineaSolicitud.ValorLevanteContenedor"/> de su ruta (decisión 4 del 2026-10-08): cada camión paga el suyo.
+/// copia del <see cref="clsLineaSolicitud.ValorLevanteContenedor"/> de su ruta: cada camión paga el suyo.
 /// Vehículo y carrocería vacíos = "sin selección automática" del cubicador; la Mesa de Costeo de Nexo los resuelve
 /// (<see cref="AsignarVehiculo"/>). Los costos son internos (de Nexo): nunca van al comercial. <see cref="CreatedAt"/> y
 /// <see cref="UpdatedAt"/> los asigna la persistencia.
@@ -30,13 +30,13 @@ public sealed class clsVehiculoLineaSolicitud
     /// <summary>Peso que lleva el camión (es el que viaja a Nexo; con el cubicador, su <c>pesoTotalKg</c>).</summary>
     public decimal? PesoKg { get; private set; }
 
-    /// <summary>HU-023.3 (script <c>02</c>): volumen que lleva el camión según el cubicador (m³); <c>null</c> sin recomendación.</summary>
+    /// <summary>Volumen que lleva el camión según el cubicador (m³, script <c>02</c>); <c>null</c> sin recomendación.</summary>
     public decimal? VolumenTotalM3 { get; private set; }
 
-    /// <summary>HU-023.3: qué tan lleno va el camión en volumen (0 a 100); <c>null</c> sin recomendación.</summary>
+    /// <summary>Qué tan lleno va el camión en volumen (0 a 100); <c>null</c> sin recomendación.</summary>
     public decimal? PorcentajeLlenadoVolumen { get; private set; }
 
-    /// <summary>HU-023.3: qué tan lleno va el camión en peso (0 a 100); <c>null</c> sin recomendación.</summary>
+    /// <summary>Qué tan lleno va el camión en peso (0 a 100); <c>null</c> sin recomendación.</summary>
     public decimal? PorcentajeLlenadoPeso { get; private set; }
 
     /// <summary>Flete del camión que devolvió Nexo; <c>null</c> mientras no lo costea.</summary>
@@ -55,24 +55,24 @@ public sealed class clsVehiculoLineaSolicitud
     public EstadoCosteo? EstadoCosteo { get; private set; }
 
     /// <summary>
-    /// HU-028.1 (#183, <c>motivoRechazo</c>, script 10): por qué la Mesa de Costeo de Nexo rechazó la línea de este camión (Nexo #320), o
+    /// Por qué la Mesa de Costeo de Nexo rechazó la línea de este camión (<c>motivoRechazo</c>, script 10), o
     /// <c>null</c> si no está <see cref="Cotizaciones.EstadoCosteo.Rechazada"/> (o Nexo no mandó el motivo). Lo ve el comercial en el costeo,
     /// el detalle y la licitación; nunca va al PDF ni al Excel.
     /// </summary>
     public string? MotivoRechazo { get; private set; }
 
     /// <summary>
-    /// HU-028.1 (#183, <c>rechazadaAt</c>, script 10): cuándo VIO Cotifly el rechazo por primera vez (la lectura del polling que lo trajo).
-    /// <c>GET /api/solicitudes/{id}</c> de Nexo no expone su <c>rechazadaAt</c> ni quién rechazó (#320): esta es la mejor fecha que tiene
+    /// Cuándo VIO Cotifly el rechazo (<c>rechazadaAt</c>, script 10) por primera vez (la lectura del polling que lo trajo).
+    /// <c>GET /api/solicitudes/{id}</c> de Nexo no expone su <c>rechazadaAt</c> ni quién rechazó: esta es la mejor fecha que tiene
     /// Cotifly. <c>null</c> si el camión no está rechazado.
     /// </summary>
     public DateTimeOffset? RechazadaAt { get; private set; }
 
-    /// <summary>HU-028.1 (#183): ¿la Mesa de Costeo de Nexo rechazó la línea de este camión? No cuenta en el precio, en los totales ni en el PDF.</summary>
+    /// <summary>¿La Mesa de Costeo de Nexo rechazó la línea de este camión? No cuenta en el precio, en los totales ni en el PDF.</summary>
     public bool Rechazado => EstadoCosteo == Cotizaciones.EstadoCosteo.Rechazada;
 
     /// <summary>
-    /// HU-028.1 (#183, decisión del 2026-10-20: "no reenviar los camiones rechazados por defecto"): ¿el camión quedó rechazado por la Mesa de
+    /// ¿El camión quedó rechazado por la Mesa de
     /// Costeo en una solicitud ANTERIOR y no viajó en la actual? Es un camión rechazado sin línea de Nexo: la re-solicitud o la edición lo
     /// dejan fuera del envío (<see cref="DejarFueraDelEnvio"/>) y la <c>-vN</c> lo copia así (<see cref="clsRechazoHeredado"/>). Un rechazo
     /// leído de la solicitud actual siempre tiene su línea (el polling lo deriva de ella). El polling no lo lee ni lo empareja: su línea no
@@ -84,16 +84,16 @@ public sealed class clsVehiculoLineaSolicitud
     public DateTimeOffset UpdatedAt { get; private set; }
 
     /// <summary>
-    /// Posición del camión en su ruta (<c>ordenVehiculo</c>, <c>db/scripts/03</c>, HU-014 #188): 1 = el primero, la fila de la
-    /// recomendación del cubicador (HU-021.5), que lleva los conexos en Nexo (decisión 3). La ruta la numera al crear el camión
+    /// Posición del camión en su ruta (<c>ordenVehiculo</c>, <c>db/scripts/03</c>): 1 = el primero, la fila de la
+    /// recomendación del cubicador, que lleva los conexos en Nexo. La ruta la numera al crear el camión
     /// (<see cref="clsLineaSolicitud.AgregarVehiculo(clsCamionPlaneado)"/>) y es única por ruta (índice filtrado del 03). <c>null</c> en
-    /// las filas escritas sin ella (antes del backfill del 03, o por la imagen anterior a #188 con el 03 ya aplicado): esas se ordenan por
-    /// <see cref="CreatedAt"/>, que antes llevaba un desfase de 1 ms por posición (<see cref="EnOrden"/>).
+    /// las filas escritas sin ella (anteriores al backfill del 03): esas se ordenan por
+    /// <see cref="CreatedAt"/>, que lleva un desfase de 1 ms por posición (<see cref="EnOrden"/>).
     /// </summary>
     public int? OrdenVehiculo { get; private set; }
 
     /// <summary>
-    /// Orden estable de los camiones de una ruta (HU-014 #188): por <see cref="OrdenVehiculo"/> y, si es <c>null</c> (filas escritas sin
+    /// Orden estable de los camiones de una ruta: por <see cref="OrdenVehiculo"/> y, si es <c>null</c> (filas escritas sin
     /// él), por <see cref="CreatedAt"/>, que conserva el desfase de 1 ms por posición con que se escribieron; el id desempata. Los
     /// numerados van antes que los que no tienen número. En una ruta nueva todos están numerados; en una ruta vieja, ninguno (y un camión
     /// que se le agregue tampoco: <see cref="clsLineaSolicitud.AgregarVehiculo(clsCamionPlaneado)"/> lo deja sin número para que vaya al
@@ -112,7 +112,7 @@ public sealed class clsVehiculoLineaSolicitud
     public decimal? CostoTotal => CostoFlete is { } flete ? flete + (CostoRetornoContenedor ?? 0m) + (CostoLevanteContenedor ?? 0m) : null;
 
     /// <summary>
-    /// Camión nuevo de una ruta. <paramref name="levante"/> es el valor del levante de la ruta (decisión 4: se copia a cada camión; 0
+    /// Camión nuevo de una ruta. <paramref name="levante"/> es el valor del levante de la ruta (se copia a cada camión; 0
     /// si no aplica). Vehículo y carrocería pueden venir vacíos (sin selección automática del cubicador).
     /// </summary>
     internal static clsVehiculoLineaSolicitud Crear(
@@ -158,7 +158,7 @@ public sealed class clsVehiculoLineaSolicitud
         CostoRetornoContenedor = 0m;
     }
 
-    /// <summary>El levante de la ruta cambió (re-solicitud con cambios de carga): se vuelve a copiar (decisión 4).</summary>
+    /// <summary>El levante de la ruta cambió (re-solicitud con cambios de carga): se vuelve a copiar.</summary>
     internal void CopiarLevante(decimal? levante)
     {
         if (levante is < 0m)
@@ -178,9 +178,8 @@ public sealed class clsVehiculoLineaSolicitud
     }
 
     /// <summary>
-    /// El vehículo y la carrocería de la línea en Nexo (#134): la Mesa de Costeo se los puso a una línea que iba vacía o los cambió.
-    /// Decisión de negocio del 2026-10-19 (D2): "si la Mesa de Costeo realiza un cambio, nos acogemos a dichos cambios, incluido el tipo de
-    /// vehículo". Lo que Nexo trae manda, también en un camión del cubicador (con <see cref="IdRecomendacionVehiculo"/>), salvo dos casos:
+    /// El vehículo y la carrocería de la línea en Nexo: la Mesa de Costeo se los puso a una línea que iba vacía o los cambió.
+    /// Si la Mesa de Costeo hace un cambio, Cotifly lo acoge, incluido el tipo de vehículo. Lo que Nexo trae manda, también en un camión del cubicador (con <see cref="IdRecomendacionVehiculo"/>), salvo dos casos:
     /// <list type="bullet">
     /// <item>un valor vacío de Nexo no borra el de Cotifly;</item>
     /// <item>la misma sigla escrita de otra forma (<see cref="MismoCodigo"/>: mayúsculas, tildes, <c>_</c>, <c>-</c> o espacios; Nexo
@@ -209,7 +208,7 @@ public sealed class clsVehiculoLineaSolicitud
     }
 
     /// <summary>
-    /// La Mesa de Costeo borró en Nexo la línea de este camión (#134): ya no se va a costear. El camión pierde el id de la línea y los
+    /// La Mesa de Costeo borró en Nexo la línea de este camión: ya no se va a costear. El camión pierde el id de la línea y los
     /// costos de Nexo (el levante, de Cotifly, se conserva) y queda <see cref="Cotizaciones.EstadoCosteo.Descartada"/>: se ignora en el
     /// estado y en los totales de su ruta, no recibe conexos y el polling no lo vuelve a leer. Devuelve <c>true</c> si cambió.
     /// </summary>
@@ -234,7 +233,7 @@ public sealed class clsVehiculoLineaSolicitud
         == clsEmparejadorLineasNexo.Normalizar(b.Replace('_', ' ').Replace('-', ' '));
 
     /// <summary>
-    /// Nexo recibió la solicitud (o falló el envío): el camión toma el estado de la solicitud. HU-028.1 (#183): un camión rechazado conserva
+    /// Nexo recibió la solicitud (o falló el envío): el camión toma el estado de la solicitud. Un camión rechazado conserva
     /// el rechazo (<see cref="ConservaRechazo"/>) salvo <c>descartada</c>; solo lo deshace <see cref="DeshacerRechazo"/>, cuando el detalle de
     /// Nexo confirma que la línea ya no está rechazada, o la reinclusión que pide el comercial al editar (<see cref="ReiniciarCosteo"/>).
     /// </summary>
@@ -252,7 +251,7 @@ public sealed class clsVehiculoLineaSolicitud
     }
 
     /// <summary>
-    /// HU-028.1 (#183, Nexo #320): la Mesa de Costeo rechazó la línea de este camión con <paramref name="motivo"/>. El camión queda
+    /// La Mesa de Costeo rechazó la línea de este camión con <paramref name="motivo"/>. El camión queda
     /// <see cref="Cotizaciones.EstadoCosteo.Rechazada"/>, sin flete ni retorno de Nexo (una línea rechazada no tiene flete; el levante, de
     /// Cotifly, se conserva) y conserva su línea de Nexo (la línea sigue existiendo: la Mesa puede deshacer el rechazo). La fecha
     /// (<see cref="RechazadaAt"/>) es la primera lectura que lo vio: no cambia mientras siga rechazado. Con <paramref name="conCostos"/> en
@@ -281,17 +280,17 @@ public sealed class clsVehiculoLineaSolicitud
     }
 
     /// <summary>
-    /// HU-028.1 (#183): ¿se conserva el rechazo ante una lectura que trae <paramref name="estado"/>? Sí, mientras el camión esté rechazado y
+    /// ¿Se conserva el rechazo ante una lectura que trae <paramref name="estado"/>? Sí, mientras el camión esté rechazado y
     /// el estado no sea <c>descartada</c> (la solicitud o la línea ya no existen en Nexo). Una lectura que NO trae el estado de la línea (la
     /// respuesta del resultado, una foto sin detalle o con la línea ausente) no lo deshace: ni con <c>entregada</c> (Nexo no deja deshacer
-    /// un rechazo entregado, #320, 409) ni con <c>pendiente_costeo</c> o <c>autocosteo</c> (si no, una foto incompleta lo borraría y la
+    /// un rechazo entregado: 409) ni con <c>pendiente_costeo</c> o <c>autocosteo</c> (si no, una foto incompleta lo borraría y la
     /// siguiente lo volvería a poner con otra fecha: oscilaría). Solo lo deshace la confirmación del detalle (<see cref="DeshacerRechazo"/>).
     /// </summary>
     internal bool ConservaRechazo(EstadoCosteo estado) =>
         EstadoCosteo == Cotizaciones.EstadoCosteo.Rechazada && estado != Cotizaciones.EstadoCosteo.Descartada;
 
     /// <summary>
-    /// HU-028.1 (#183): Nexo confirma, con el estado de la línea en su detalle, que la Mesa de Costeo deshizo el rechazo: el camión sale de
+    /// Nexo confirma, con el estado de la línea en su detalle, que la Mesa de Costeo deshizo el rechazo: el camión sale de
     /// <c>rechazada</c> (queda <c>pendiente_costeo</c>, sin motivo ni fecha) y la misma lectura le aplica después su estado y sus costos,
     /// también <c>entregada</c>. Sin efecto si el camión no está rechazado. Devuelve si cambió.
     /// </summary>
@@ -335,7 +334,7 @@ public sealed class clsVehiculoLineaSolicitud
     }
 
     /// <summary>
-    /// Estado y costos del camión en la última consulta del polling (HU-005.6). <paramref name="flete"/> <c>null</c> = sin flete (el
+    /// Estado y costos del camión en la última consulta del polling. <paramref name="flete"/> <c>null</c> = sin flete (el
     /// retorno se olvida también). El levante no lo toca: es la copia de la ruta. Devuelve <c>true</c> si algo cambió.
     /// </summary>
     internal bool RegistrarCosteo(EstadoCosteo estado, decimal? flete, decimal? retorno)
@@ -347,7 +346,7 @@ public sealed class clsVehiculoLineaSolicitud
 
         if (ConservaRechazo(estado))
         {
-            // HU-028.1 (#183): la lectura no confirma que la Mesa deshizo el rechazo: el camión sigue rechazado y sin flete.
+            // La lectura no confirma que la Mesa deshizo el rechazo: el camión sigue rechazado y sin flete.
             return false;
         }
 
@@ -361,8 +360,8 @@ public sealed class clsVehiculoLineaSolicitud
     }
 
     /// <summary>
-    /// Re-solicitud en el mismo folio (HU-013.4): el camión vuelve a viajar a Nexo como una línea nueva. Se olvidan el id anterior en
-    /// Nexo, el estado y los costos de Nexo (el levante, que es de Cotifly, se conserva). HU-028.1 (#183): en un camión rechazado solo se
+    /// Re-solicitud en el mismo folio: el camión vuelve a viajar a Nexo como una línea nueva. Se olvidan el id anterior en
+    /// Nexo, el estado y los costos de Nexo (el levante, que es de Cotifly, se conserva). En un camión rechazado solo se
     /// llama si el comercial pidió reincluirlo (<see cref="clsLineaSolicitud.ReincluirRechazados"/>): entonces olvida también el rechazo (queda
     /// en la auditoría) y la Mesa lo evalúa otra vez. Por defecto un rechazado no se reinicia: <see cref="DejarFueraDelEnvio"/>.
     /// </summary>
@@ -377,7 +376,7 @@ public sealed class clsVehiculoLineaSolicitud
     }
 
     /// <summary>
-    /// HU-028.1 (#183, decisión del 2026-10-20): la re-solicitud o la edición NO reenvían un camión rechazado. Sigue rechazado, con su motivo y
+    /// La re-solicitud o la edición NO reenvían un camión rechazado. Sigue rechazado, con su motivo y
     /// su fecha (lo ve el comercial), pero olvida la línea de la solicitud anterior (no existe en la nueva: así el polling no lo lee, no lo
     /// empareja y no lo da por "línea borrada") y los costos de Nexo que conservaba (un rechazo leído con PDF guarda el flete de la versión;
     /// en la solicitud nueva ese flete no es de nadie). El levante, de Cotifly, se conserva. Sin efecto si no está rechazado.
@@ -395,7 +394,7 @@ public sealed class clsVehiculoLineaSolicitud
     }
 
     /// <summary>
-    /// HU-028.1 (#183): un camión recién copiado a una <c>-vN</c> trae el rechazo de la cotización de origen (<see cref="clsRechazoHeredado"/>):
+    /// Un camión recién copiado a una <c>-vN</c> trae el rechazo de la cotización de origen (<see cref="clsRechazoHeredado"/>):
     /// nace rechazado, con el mismo motivo y fecha, sin línea de Nexo y sin costos (<see cref="FueraDelEnvio"/>).
     /// </summary>
     internal void HeredarRechazo(clsRechazoHeredado rechazo)
@@ -409,7 +408,7 @@ public sealed class clsVehiculoLineaSolicitud
         CostoRetornoContenedor = null;
     }
 
-    /// <summary>HU-028.1 (#183): el rechazo de este camión para copiarlo a otra cotización, o <c>null</c> si no está rechazado.</summary>
+    /// <summary>El rechazo de este camión para copiarlo a otra cotización, o <c>null</c> si no está rechazado.</summary>
     public clsRechazoHeredado? RechazoParaCopiar => Rechazado ? new clsRechazoHeredado(MotivoRechazo, RechazadaAt) : null;
 
     private static string? Normalizar(string? valor) => string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();

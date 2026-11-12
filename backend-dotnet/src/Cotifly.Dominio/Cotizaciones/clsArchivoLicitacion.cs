@@ -4,13 +4,13 @@ using Cotifly.Dominio.Comun;
 namespace Cotifly.Dominio.Cotizaciones;
 
 /// <summary>
-/// Excel original del pliego de una licitación (<c>dbo_cotifly.CotizacionArchivosLicitacion</c>, script 0005, HU-011.2/HU-011.3,
+/// Excel original del pliego de una licitación (<c>dbo_cotifly.CotizacionArchivosLicitacion</c>, script 0005,
 /// ADR-017): se guarda tal como lo subió el comercial para regenerarlo con los precios sin tocar sus columnas. Uno por cotización,
 /// máximo <see cref="TamanoMaximoBytes"/>; solo lo lee el dueño de la cotización. <see cref="CreatedAt"/> lo asigna la persistencia.
 /// </summary>
 public sealed class clsArchivoLicitacion
 {
-    /// <summary>Límite del archivo: 10 MB menos 64 KB (<see cref="clsArchivoExcel.TamanoMaximoBytes"/>, compartido desde HU-035.1).</summary>
+    /// <summary>Límite del archivo: 10 MB menos 64 KB (<see cref="clsArchivoExcel.TamanoMaximoBytes"/>, compartido con el Excel de mercancías).</summary>
     public const int TamanoMaximoBytes = clsArchivoExcel.TamanoMaximoBytes;
 
     public const int LargoNombreArchivo = 255;
@@ -21,10 +21,10 @@ public sealed class clsArchivoLicitacion
     public const string TipoXlsx = clsArchivoExcel.TipoXlsx;
     public const string TipoXlsm = clsArchivoExcel.TipoXlsm;
 
-    /// <summary>HU-044.7 (#290): el Excel se leyó con <c>analizar-excel</c> (flujo de hoy; la exportación escribe sobre el original).</summary>
+    /// <summary>El Excel se leyó con <c>analizar-excel</c> (flujo por defecto; la exportación escribe sobre el original).</summary>
     public const string OrigenAnalizarExcel = "analizar_excel";
 
-    /// <summary>HU-044.7 (#290): el Excel lo leyó la IA de NEXO (<c>leer-estructura</c>); la exportación arma un Excel nuevo.</summary>
+    /// <summary>El Excel lo leyó la IA de NEXO (<c>leer-estructura</c>); la exportación arma un Excel nuevo.</summary>
     public const string OrigenLeerEstructura = "leer_estructura";
 
     /// <summary>Largo de columna de <see cref="OrigenLectura"/> en la base (el más largo de los dos valores, con holgura).</summary>
@@ -47,7 +47,7 @@ public sealed class clsArchivoLicitacion
     public byte[] Contenido { get; private set; } = [];
 
     /// <summary>
-    /// HU-044.7 (#290): cómo se leyó este Excel (<c>analizar_excel</c> o <c>leer_estructura</c>, <see cref="clsOrigenLectura"/>). Decide cómo
+    /// Cómo se leyó este Excel (<c>analizar_excel</c> o <c>leer_estructura</c>, <see cref="clsOrigenLectura"/>). Decide cómo
     /// se exporta: con <c>leer_estructura</c> los precios NO se escriben sobre el original, sino en una hoja «Licitación» nueva.
     /// </summary>
     public string OrigenLectura { get; private set; } = OrigenAnalizarExcel;
@@ -75,7 +75,7 @@ public sealed class clsArchivoLicitacion
                 $"El campo 'hoja' es obligatorio con el archivo y admite máximo {LargoHoja} caracteres.");
         }
 
-        // HU-044.7 (#290): el caso de uso ya validó origen_lectura antes de llamar aquí; vacío cae en analizar_excel (el flujo de hoy).
+        // El caso de uso ya validó origen_lectura; vacío cae en analizar_excel (el flujo por defecto).
         var origen = string.IsNullOrWhiteSpace(origenLectura) ? OrigenAnalizarExcel : origenLectura.Trim();
         if (origen is not (OrigenAnalizarExcel or OrigenLeerEstructura))
         {
@@ -97,7 +97,7 @@ public sealed class clsArchivoLicitacion
     }
 
     /// <summary>
-    /// Reglas genéricas del archivo (<see cref="clsArchivoExcel.ValidarArchivo"/>; HU-035.1, #202, las sacó a un lugar neutro para el Excel
+    /// Reglas genéricas del archivo (<see cref="clsArchivoExcel.ValidarArchivo"/>, compartidas con el Excel
     /// de mercancías): <c>ARCHIVO_REQUERIDO</c>, <c>ARCHIVO_DEMASIADO_GRANDE</c> o <c>FORMATO_NO_SOPORTADO</c>. <c>null</c> si es aceptable.
     /// </summary>
     public static clsErrorDominio? ValidarArchivo(string? nombreArchivo, byte[]? contenido) => clsArchivoExcel.ValidarArchivo(nombreArchivo, contenido);
