@@ -75,6 +75,12 @@ public sealed record clsVistaPreviaCorreo(string Asunto, string Cuerpo, IReadOnl
 
     /// <summary>HU-033: texto del aviso de pruebas para mostrar tal cual; <c>null</c> en producción.</summary>
     public string? Aviso { get; init; }
+
+    /// <summary>
+    /// HU-045.3 (#265, B5): las rutas con el seguro de la mercancía marcado sin valor de la mercancía (no suma ni sale en el PDF); <c>null</c>
+    /// si no hay ninguna. El mismo aviso de la vista del costeo.
+    /// </summary>
+    public Costeo.DTOs.clsAvisoSeguro? AvisoSeguro { get; init; }
 }
 
 /// <summary>

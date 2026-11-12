@@ -88,6 +88,27 @@ public sealed class clsPlantillaCorreoTests
         posiciones.Should().NotContain(-1).And.BeInAscendingOrder();
     }
 
+    // #261 (HU-046): el texto de seguros va después de la nota del PDF adjunto y antes de la despedida, con su etiqueta.
+    [Fact]
+    public void ElTextoDeSegurosVaDespuesDelPdfAdjuntoYAntesDeLaDespedida()
+    {
+        var html = clsPlantillaCorreo.Html("Hola", Resumen(1), textoSeguros: "Ampara la responsabilidad del transporte.");
+
+        html.Should().Contain(WebUtility.HtmlEncode(clsTextosEstandar.TituloSegurosPropuesta))
+            .And.Contain("Ampara la responsabilidad del transporte.");
+        var seguros = html.IndexOf("Ampara la responsabilidad del transporte.", StringComparison.Ordinal);
+        seguros.Should().BeGreaterThan(html.IndexOf(WebUtility.HtmlEncode(clsPlantillaCorreo.TextoAdjunto), StringComparison.Ordinal))
+            .And.BeLessThan(html.IndexOf(clsTextosEstandar.Despedida, StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void SinTextoDeSegurosElCorreoNoLlevaElBloque(string? textoSeguros) =>
+        clsPlantillaCorreo.Html("Hola", Resumen(1), textoSeguros: textoSeguros).Should()
+            .NotContain(WebUtility.HtmlEncode(clsTextosEstandar.TituloSegurosPropuesta));
+
     [Fact]
     public void SinFirmaDelComercialLaDespedidaVaConElEquipoComercial() =>
         clsPlantillaCorreo.Html("Hola").Should()
