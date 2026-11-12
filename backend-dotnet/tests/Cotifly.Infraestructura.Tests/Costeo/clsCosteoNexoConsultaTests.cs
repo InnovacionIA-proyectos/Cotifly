@@ -13,8 +13,8 @@ using NSubstitute;
 namespace Cotifly.Infraestructura.Tests.Costeo;
 
 /// <summary>
-/// <see cref="clsCosteoNexo.ConsultarCosteoAsync"/> (HU-005.6) contra un <see cref="HttpMessageHandler"/> falso: <c>GET
-/// /api/solicitudes/{id}</c> y luego <c>GET /api/cotizaciones/por-solicitud/{id}</c> (sin escribir en Nexo, E2E 2026-10-16), con la
+/// <see cref="clsCosteoNexo.ConsultarCosteoAsync"/> contra un <see cref="HttpMessageHandler"/> falso: <c>GET
+/// /api/solicitudes/{id}</c> y luego <c>GET /api/cotizaciones/por-solicitud/{id}</c> (sin escribir en Nexo), con la
 /// forma de <c>CONTRATO.md</c>.
 /// </summary>
 public sealed class clsCosteoNexoConsultaTests : IDisposable
@@ -120,7 +120,7 @@ public sealed class clsCosteoNexoConsultaTests : IDisposable
         _nexo.Peticiones.Should().OnlyContain(p => p.Metodo == HttpMethod.Get);
     }
 
-    /// <summary>E2E 2026-10-16 (observación 2): el 409 de dos lecturas a la vez se reintenta una sola vez.</summary>
+    /// <summary>El 409 de dos lecturas a la vez se reintenta una sola vez.</summary>
     [Fact]
     public async Task Un409PasajeroDeLaSolicitudSeReintentaUnaVez()
     {
@@ -244,7 +244,7 @@ public sealed class clsCosteoNexoConsultaTests : IDisposable
         resultado.Error.Mensaje.Should().Be("No se puede.");
     }
 
-    // DEF-C-1 (E2E 2026-10-22): leer la cotización para el resultado nunca escribe en Nexo si hay una ruta de lectura.
+    // Leer la cotización para el resultado nunca escribe en Nexo si hay una ruta de lectura.
     [Fact]
     public async Task LeerLaCotizacionConElIdConocidoHaceSoloUnGetPorId()
     {
@@ -283,7 +283,7 @@ public sealed class clsCosteoNexoConsultaTests : IDisposable
     [Fact]
     public async Task Un404CotizacionNoEncontradaDeNexoEsCotizacionNexoNoEncontradaYNoElNoEsTuya()
     {
-        // Endurecimiento B (#199): antes viajaba como COTIZACION_NO_ENCONTRADA y el comercial veía el 404 "no es tuya".
+        // No viaja como COTIZACION_NO_ENCONTRADA: el comercial lo vería como el 404 "no es tuya".
         _nexo.Responder(HttpStatusCode.NotFound, """{"code":"COTIZACION_NO_ENCONTRADA","message":"Cotización no encontrada."}""");
 
         var resultado = await Adaptador().MarcarResultadoAsync(_usuarioId, "COT-X", new Cotifly.Aplicacion.Costeo.DTOs.clsResultadoNexo(true, null, null), Ct);
@@ -320,8 +320,8 @@ public sealed class clsCosteoNexoConsultaTests : IDisposable
     [InlineData(true, true, true)]
     public async Task LosCodigosDelCubicadorSonLosQueViajaronNoLosDeLaBanderaActual(bool? registrado, bool banderaActual, bool esperado)
     {
-        // Validación de #159: enviado con Nexo:EnviarCodigosCubicador apagada y leído con ella encendida (o al revés), el emparejamiento debe
-        // comparar contra lo que viajó (registro del envío). Sin registro (solicitudes anteriores), "no viajaron".
+        // Enviado con Nexo:EnviarCodigosCubicador apagada y leído con ella encendida (o al revés), el emparejamiento debe
+        // comparar contra lo que viajó (registro del envío). Sin registro del envío, "no viajaron".
         var cotizaciones = Substitute.For<Aplicacion.Cotizaciones.Repositories.IClsCotizacionRepository>();
         cotizaciones.ObtenerCodigosCubicadorEnviadosAsync("SOL-1", Arg.Any<CancellationToken>()).Returns(registrado);
         _nexo.Responder(HttpStatusCode.OK, Solicitud).Responder(HttpStatusCode.Created, Cotizacion);
@@ -334,7 +334,7 @@ public sealed class clsCosteoNexoConsultaTests : IDisposable
     }
 
     [Fact]
-    public async Task HU0311_LaFotoTraeLosVehiculosTraducidosPorAliasQueRegistroElEnvio()
+    public async Task LaFotoTraeLosVehiculosTraducidosPorAliasQueRegistroElEnvio()
     {
         var cotizaciones = Substitute.For<Aplicacion.Cotizaciones.Repositories.IClsCotizacionRepository>();
         cotizaciones.ObtenerEquivalenciasVehiculoAsync("SOL-1", Arg.Any<CancellationToken>())
@@ -347,7 +347,7 @@ public sealed class clsCosteoNexoConsultaTests : IDisposable
     }
 
     [Fact]
-    public async Task HU0311_SiNoSePuedenLeerLasEquivalenciasLaFotoSigueSinEllas()
+    public async Task SiNoSePuedenLeerLasEquivalenciasLaFotoSigueSinEllas()
     {
         var cotizaciones = Substitute.For<Aplicacion.Cotizaciones.Repositories.IClsCotizacionRepository>();
         cotizaciones.ObtenerEquivalenciasVehiculoAsync("SOL-1", Arg.Any<CancellationToken>())

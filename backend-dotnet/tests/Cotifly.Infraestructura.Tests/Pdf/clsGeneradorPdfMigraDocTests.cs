@@ -13,7 +13,7 @@ namespace Cotifly.Infraestructura.Tests.Pdf;
 /// Render real con PDFsharp-MigraDoc y lectura con PdfPig (texto por página, fuentes, imágenes). Port de
 /// <c>test_render_pdf_genera_archivo_y_paginas</c> y de las comprobaciones de ADR-006: 3 páginas, datos clave, "Cel" solo
 /// con teléfono, bloque aduanero solo en Internacional, variante multi, fuentes embebidas (solo Liberation Sans),
-/// texto literal sin HTML. Deja los 3 PDF de la comparación visual de #11 en <c>tests/artefactos/</c> (no versionados).
+/// texto literal sin HTML. Deja los 3 PDF de la comparación visual en <c>tests/artefactos/</c> (no versionados).
 /// </summary>
 [Collection(clsColeccionRenderPdf.Nombre)]
 public sealed class clsGeneradorPdfMigraDocTests
@@ -26,12 +26,12 @@ public sealed class clsGeneradorPdfMigraDocTests
         return (pdf, clsLectorPdf.Leer(pdf.Contenido));
     }
 
-    /// <summary>Texto exacto de la nota de negocio (2026-10-05) con la TRM aplicada de los documentos de prueba.</summary>
+    /// <summary>Texto exacto de la nota de negocio con la TRM aplicada de los documentos de prueba.</summary>
     private const string NotaTrm3306 =
         "Esta cotización está bajo una TRM mínima de $3.306,86 y es de resaltar que la tarifa puede variar de acuerdo al "
         + "comportamiento de la misma a la fecha de elaboración de la CPI.";
 
-    // HU-012.3: PDF en dólares con la nota de TRM mínima bajo la tabla (texto exacto, espacios normalizados); en pesos, sin nota.
+    // PDF en dólares con la nota de TRM mínima bajo la tabla (texto exacto, espacios normalizados); en pesos, sin nota.
     [Fact]
     public void EnDolaresLaTarifaVaEnUsdConLaNotaDeTrmMinima()
     {
@@ -58,7 +58,7 @@ public sealed class clsGeneradorPdfMigraDocTests
 
     private static string Normalizar(string texto) => System.Text.RegularExpressions.Regex.Replace(texto, @"\s+", " ").Trim();
 
-    // #261 (HU-046): en la tarifa única el texto de seguros va después del resumen de precios (el total general).
+    // En la tarifa única el texto de seguros va después del resumen de precios (el total general).
     [Fact]
     public void ElTextoDeSegurosVaDespuesDelTotalGeneral()
     {
@@ -283,8 +283,8 @@ public sealed class clsGeneradorPdfMigraDocTests
         segundo.Disposicion.Should().Equal(primero.Disposicion, "cada letra queda en la misma posición");
     }
 
-    // #92, #95: PDFsharp-MigraDoc comparte estado global entre renders. Sin el candado del generador, renders simultáneos
-    // (peticiones concurrentes en producción, clases de prueba en paralelo) sacaban el mismo documento con otra maquetación:
+    // PDFsharp-MigraDoc comparte estado global entre renders. Sin el candado del generador, renders simultáneos
+    // (peticiones concurrentes en producción, clases de prueba en paralelo) sacarían el mismo documento con otra maquetación:
     // espacios medidos con la fuente de otro documento, palabras corridas y saltos de línea distintos.
     [Fact]
     public async Task LosRendersSimultaneosDanLaMismaMaquetacionQueUnRenderSolo()
@@ -318,7 +318,7 @@ public sealed class clsGeneradorPdfMigraDocTests
         }
     }
 
-    // #92, #95: el turno de render tiene espera acotada; si no llega a tiempo, error transitorio y el generador sigue sano.
+    // El turno de render tiene espera acotada; si no llega a tiempo, error transitorio y el generador sigue sano.
     [Fact]
     public async Task SiElTurnoDeRenderNoLlegaATiempoLanzaRenderOcupado()
     {

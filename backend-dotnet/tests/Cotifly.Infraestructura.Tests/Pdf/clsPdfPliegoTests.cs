@@ -15,9 +15,9 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Infraestructura.Tests.Pdf;
 
 /// <summary>
-/// PDF de pliego (HU-011.5, ADR-017 §6) renderizado con PDFsharp-MigraDoc y leído con PdfPig: resumen con todas las rutas y el total
-/// general, una sección por ruta (HU-021.9; o solo el resumen en pliegos grandes), nunca costos, el encabezado del resumen en cada página y
-/// pliegos de hasta 1000 rutas. En USD, la nota de TRM mínima (ADR-014 §5). HU-033 (#199, decisión 5): cada ruta imprime UN valor final
+/// PDF de pliego (ADR-017 §6) renderizado con PDFsharp-MigraDoc y leído con PdfPig: resumen con todas las rutas y el total
+/// general, una sección por ruta (o solo el resumen en pliegos grandes), nunca costos, el encabezado del resumen en cada página y
+/// pliegos de hasta 1000 rutas. En USD, la nota de TRM mínima (ADR-014 §5). Cada ruta imprime UN valor final
 /// (transporte y conexos incluidos), los conexos se listan como incluidos sin precio y al final va el total general (= precioFinal).
 /// </summary>
 public sealed class clsPdfPliegoTests
@@ -30,7 +30,7 @@ public sealed class clsPdfPliegoTests
     private static decimal Costo(int i) => 1_000_000m + (i * 85_000m) + 7m;
 
     /// <summary>
-    /// Licitación de <paramref name="numero"/> rutas costeadas (HU-021: una ruta por fila con un camión; el flete en el camión y el precio
+    /// Licitación de <paramref name="numero"/> rutas costeadas (una ruta por fila con un camión; el flete en el camión y el precio
     /// en la ruta con el 15 % de la política) y un conexo de 170.007 en la ruta 1 (los conexos son filas de la ruta: todos van en el PDF).
     /// </summary>
     internal static (clsCotizacionSolicitud Cotizacion, IReadOnlyList<clsLineaSolicitud> Lineas) Pliego(
@@ -80,7 +80,7 @@ public sealed class clsPdfPliegoTests
     }
 
     /// <summary>
-    /// HU-021 (corrección del núcleo) y HU-033 (#199): el Excel de la licitación y el PDF del pliego cuadran. El Excel conserva el transporte de
+    /// El Excel de la licitación y el PDF del pliego cuadran. El Excel conserva el transporte de
     /// la ruta y los conexos aparte; el PDF imprime el valor final de cada ruta (transporte + sus conexos) y su total es el precio final. Los
     /// conexos se cobran una sola vez: total del Excel + conexos = total del PDF = precioFinal.
     /// </summary>
@@ -133,7 +133,7 @@ public sealed class clsPdfPliegoTests
         Math.Abs(tarifa - transporteSolo!.Value).Should().BeLessThanOrEqualTo(1m, "a lo sumo una unidad por conexo");
     }
 
-    // #261 (HU-046): en el pliego el texto de seguros va justo después del resumen del pliego, una sola vez (no se repite al final).
+    // En el pliego el texto de seguros va justo después del resumen del pliego, una sola vez (no se repite al final).
     [Fact]
     public void ElTextoDeSegurosDelPliegoVaDespuesDelResumenYUnaSolaVez()
     {
@@ -194,7 +194,7 @@ public sealed class clsPdfPliegoTests
         }
     }
 
-    /// <summary>HU-021.9 (#136): el pliego trae una sección por ruta (en su orden), con su origen, su destino, sus camiones y su tarifa.</summary>
+    /// <summary>El pliego trae una sección por ruta (en su orden), con su origen, su destino, sus camiones y su tarifa.</summary>
     [Fact]
     public void ElPliegoTraeUnaSeccionPorRutaConSuPrecioYSusCamiones()
     {
@@ -210,7 +210,7 @@ public sealed class clsPdfPliegoTests
         payload.Secciones!.Select(s => s.Filas![0].Tarifa).Should().Equal(lineas.Select(l => l.PrecioFinalLinea), "HU-033: el valor final de la ruta");
     }
 
-    /// <summary>HU-021.9: con rutas de varias líneas de negocio, cada sección lleva la de su ruta.</summary>
+    /// <summary>Con rutas de varias líneas de negocio, cada sección lleva la de su ruta.</summary>
     [Fact]
     public void CadaSeccionDelPliegoLlevaLaLineaDeNegocioDeSuRuta()
     {
@@ -226,7 +226,7 @@ public sealed class clsPdfPliegoTests
     }
 
     /// <summary>
-    /// HU-021.9 y HU-033: un pliego de 3 rutas renderizado: cada ruta en su sección con su valor final (con sus conexos), el resumen y el
+    /// Un pliego de 3 rutas renderizado: cada ruta en su sección con su valor final (con sus conexos), el resumen y el
     /// total general = precio final (Σ precioFinalLinea), sin costos ni márgenes ni el precio de los conexos aparte.
     /// </summary>
     [Fact]
@@ -305,7 +305,7 @@ public sealed class clsPdfPliegoTests
     }
 
     /// <summary>
-    /// OBS-C-3 (E2E 2026-10-22, endurecimiento B de #199): una cotización SPOT de dos rutas sale con el layout de varias rutas, pero sin
+    /// Una cotización SPOT de dos rutas sale con el layout de varias rutas, pero sin
     /// "licitación" ni "pliego" en sus textos; la licitación los conserva.
     /// </summary>
     [Fact]
@@ -328,7 +328,7 @@ public sealed class clsPdfPliegoTests
         clsCosteoCotizacionService.TextosEstandar(Pliego(3, tipo: tipo).Cotizacion, "Nacional").Asunto.Should().Be(asunto);
     }
 
-    /// <summary>HU-021.9 (#136): <c>EsPliego</c> = "tiene más de una ruta"; una licitación de una fila sale con el PDF de una ruta.</summary>
+    /// <summary><c>EsPliego</c> = "tiene más de una ruta"; una licitación de una fila sale con el PDF de una ruta.</summary>
     [Fact]
     public void UnaLicitacionDeUnaLineaSaleConElPdfDeUnaRuta()
     {
@@ -343,7 +343,7 @@ public sealed class clsPdfPliegoTests
     }
 
     /// <summary>
-    /// HU-021.9: el PDF de una ruta con dos camiones iguales los agrupa ("2 × 3S3 - FURGON") con el peso total. HU-033 (#199): imprime UN valor
+    /// El PDF de una ruta con dos camiones iguales los agrupa ("2 × 3S3 - FURGON") con el peso total. Imprime UN valor
     /// final (precio de la ruta = precio final, con el conexo incluido), el conexo como incluido sin precio y el total general. Nunca los costos.
     /// </summary>
     [Fact]
@@ -355,7 +355,7 @@ public sealed class clsPdfPliegoTests
         var texto = GenerarRuta(cotizacion, "COP", 0m);
 
         clsCosteoCotizacionService.Camiones(ruta).Should().Be("2 × 3S3 - FURGON (20000 KG)");
-        // HU-023.1: con el catálogo del cubicador se imprimen los nombres; un código que no está (o sin catálogo) queda tal cual.
+        // Con el catálogo del cubicador se imprimen los nombres; un código que no está (o sin catálogo) queda tal cual.
         var catalogo = new clsNombresCatalogoCubicador(
             new Dictionary<string, string> { ["3S3"] = "Tractocamión 3S3" }, new Dictionary<string, string> { ["FURGON"] = "Furgón" });
         clsCosteoCotizacionService.Camiones(ruta, catalogo).Should().Be("2 × Tractocamión 3S3 - Furgón (20000 KG)");
@@ -375,7 +375,7 @@ public sealed class clsPdfPliegoTests
         }
     }
 
-    /// <summary>HU-021.9 + ADR-014 §5: el PDF de una ruta en USD imprime la tarifa en US$ y la nota de TRM mínima tal como estaba.</summary>
+    /// <summary>ADR-014 §5: el PDF de una ruta en USD imprime la tarifa en US$ y la nota de TRM mínima.</summary>
     [Fact]
     public void ElPdfDeUnaRutaEnDolaresLlevaLaNotaDeTrmMinima()
     {
@@ -391,7 +391,7 @@ public sealed class clsPdfPliegoTests
             + "comportamiento de la misma a la fecha de elaboración de la CPI.");
     }
 
-    /// <summary>HU-021.9: el PDF exige todas las rutas con precio (el ajuste de margen es por ruta, el PDF no).</summary>
+    /// <summary>El PDF exige todas las rutas con precio (el ajuste de margen es por ruta, el PDF no).</summary>
     [Fact]
     public void SinPrecioEnAlgunaRutaElPdfEsCosteoNoListo()
     {

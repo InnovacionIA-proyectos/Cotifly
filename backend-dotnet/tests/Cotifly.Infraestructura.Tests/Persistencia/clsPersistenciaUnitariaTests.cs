@@ -43,7 +43,7 @@ public sealed class clsPersistenciaUnitariaTests
         clsConvertidorEstadoConversacion.Deserializar(json).Should().Be(estado);
     }
 
-    // HU-013.9 (#105): el JSON del slot-filling legado (sesiones antiguas de Google Chat) se lee sin fallar; los campos retirados se ignoran.
+    // El JSON del slot-filling legado (sesiones antiguas de Google Chat) se lee sin fallar; los campos retirados se ignoran.
     [Fact]
     public void ElJsonDelSlotFillingLegadoSeLeeIgnorandoLosCamposRetirados()
     {

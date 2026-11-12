@@ -24,7 +24,7 @@ using Polly.Timeout;
 namespace Cotifly.Infraestructura.Tests.Licitaciones;
 
 /// <summary>
-/// Adaptador de la importación inteligente con NEXO (HU-044.1, #252, ADR-028): registro por <c>Nexo:UrlBase</c> e
+/// Adaptador de la importación inteligente con NEXO (ADR-028): registro por <c>Nexo:UrlBase</c> e
 /// <c>ImportacionInteligente:Habilitada</c>, identidad del comercial, cliente por NIT normalizado, receta opaca, sin reintentos en lo que
 /// gasta IA, <c>429 IA_TOPE_DIARIO</c> sin bloqueo global y la traducción de los errores de NEXO. Todo contra Nexo falsos (sin red).
 /// </summary>
@@ -528,7 +528,7 @@ public sealed class clsImportacionExcelNexoTests
     [Fact]
     public async Task ElDiccionarioDistingueUnClienteIdNuloDeUnoQueNexoNoMando()
     {
-        // #256 (B2): solo un clienteId presente (null o un GUID) cuenta como leído; si NEXO deja de mandarlo, ningún término es general.
+        // Solo un clienteId presente (null o un GUID) cuenta como leído; si NEXO deja de mandarlo, ningún término es general.
         var nexo = new clsNexoFalso();
         nexo.Diccionario.Add((Guid.NewGuid(), "Mula de otro cliente", "valor", "3S2", "tipoVehiculo"));
         var importacion = Importacion(nexo, out var proveedor);

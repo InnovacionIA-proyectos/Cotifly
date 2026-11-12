@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Tests.Identidad;
 
 /// <summary>
-/// Registro de la regional (<c>DimEjecutivo</c>, #81 y ADR-016 §6): opciones por defecto de la tabla real, límite del login y
+/// Registro de la regional (<c>DimEjecutivo</c>, ADR-016 §6): opciones por defecto de la tabla real, límite del login y
 /// validación de la sección <c>Regional</c>. Sin base de datos: la conexión no se abre.
 /// </summary>
 public sealed class clsRegistroRegionalTests

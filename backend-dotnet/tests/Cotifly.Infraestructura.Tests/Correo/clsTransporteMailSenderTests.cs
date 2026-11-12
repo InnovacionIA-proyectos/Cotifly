@@ -12,7 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Cotifly.Infraestructura.Tests.Correo;
 
 /// <summary>
-/// HU-033 (#199, ADR-023): transporte <c>mailsender</c> por el registro real (cliente HTTP tipado con su tubería de resiliencia) contra un
+/// ADR-023: transporte <c>mailsender</c> por el registro real (cliente HTTP tipado con su tubería de resiliencia) contra un
 /// MailSender falso en proceso (<see cref="clsMailSenderFalso"/>): nunca sale a la red ni envía correos reales. Cubre el formulario
 /// multipart (From, To/Cc/Bcc repetidos, Subject, Body HTML, IsHtml, Priority, Metadata y el PDF), el <c>X-Correlation-ID</c>, el 202, los
 /// rechazos 400/413/422, la caída, el tiempo agotado, la consulta del estado (0-6) y el reintento.
@@ -95,7 +95,7 @@ public sealed class clsTransporteMailSenderTests : IDisposable
     }
 
     [Theory]
-    // Auditoría #199 (SPF/DMARC): el comercial va en el From solo si es UNA dirección válida de un dominio permitido.
+    // SPF/DMARC: el comercial va en el From solo si es UNA dirección válida de un dominio permitido.
     [InlineData("comercial", "boterosoto.com.co", "nvargas@boterosoto.com.co", "nvargas@boterosoto.com.co")]
     [InlineData("comercial", "boterosoto.com.co", "NVargas@BoteroSoto.com.co", "NVargas@BoteroSoto.com.co")]
     [InlineData("comercial", "boterosoto.com.co", "nvargas@gmail.com", "notificaciones@boterosoto.com.co")]
@@ -105,7 +105,7 @@ public sealed class clsTransporteMailSenderTests : IDisposable
     [InlineData("corporativo", "boterosoto.com.co", "nvargas@boterosoto.com.co", "notificaciones@boterosoto.com.co")]
     [InlineData("CORPORATIVO", "", "nvargas@boterosoto.com.co", "notificaciones@boterosoto.com.co")]
     [InlineData("comercial", "", "nvargas@cualquiera.com", "nvargas@cualquiera.com")]
-    // Validación #228: lo que MailAddress acepta pero VerificarCabeceras bloquearía sale con el corporativo (no falla el envío).
+    // Lo que MailAddress acepta pero VerificarCabeceras bloquearía sale con el corporativo (no falla el envío).
     [InlineData("comercial", "boterosoto.com.co", "\"n vargas\"@boterosoto.com.co", "notificaciones@boterosoto.com.co")]
     [InlineData("comercial", "", "nvargas@intranet", "notificaciones@boterosoto.com.co")]
     [InlineData("comercial", "", "nvargas@[10.0.0.1]", "notificaciones@boterosoto.com.co")]
@@ -154,7 +154,7 @@ public sealed class clsTransporteMailSenderTests : IDisposable
     }
 
     /// <summary>
-    /// DEF-1027B-2 (#228): defensa en profundidad. Aunque el caso de uso ya lo rechaza, si algo con caracteres de control o una dirección
+    /// Defensa en profundidad. Aunque el caso de uso ya lo rechaza, si algo con caracteres de control o una dirección
     /// mal formada llega al transporte (otro llamador, un dato viejo de la base), NO sale el POST multipart: excepción controlada, no
     /// incierta (MailSender no recibió nada).
     /// </summary>
@@ -167,7 +167,7 @@ public sealed class clsTransporteMailSenderTests : IDisposable
     [InlineData("bcc")]
     [InlineData("adjunto")]
     [InlineData("correlacion")]
-    public async Task DEF1027B2_UnaCabeceraInvalidaNoLlegaAMailSender(string campo)
+    public async Task UnaCabeceraInvalidaNoLlegaAMailSender(string campo)
     {
         var mensaje = Mensaje();
         mensaje = campo switch

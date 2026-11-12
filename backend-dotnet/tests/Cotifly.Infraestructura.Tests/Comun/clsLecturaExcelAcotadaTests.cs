@@ -10,11 +10,10 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Cotifly.Infraestructura.Tests.Comun;
 
 /// <summary>
-/// HU-035.3 (#277): <see cref="clsLecturaExcelAcotada.VerificarElementos"/> cuenta como XML solo las partes cuyo tipo (sin parámetros)
-/// es XML (<c>+xml</c>, <c>application/xml</c>, <c>text/xml</c>) y el dibujo VML que ClosedXML también lee. Antes leía como XML toda
-/// parte con «xml» en el tipo, también las binarias de <c>openxmlformats</c> como <c>printerSettings*.bin</c>, y un libro con la
-/// impresión configurada era <c>LIBRO_ILEGIBLE</c>. Los topes y el rechazo del DTD no cambian: las partes XML ilegibles, con DTD o
-/// demasiado densas se siguen rechazando, también si el paquete le quita el tipo XML a una parte que ClosedXML lee como XML.
+/// <see cref="clsLecturaExcelAcotada.VerificarElementos"/> cuenta como XML solo las partes cuyo tipo (sin parámetros)
+/// es XML (<c>+xml</c>, <c>application/xml</c>, <c>text/xml</c>) y el dibujo VML que ClosedXML también lee: las partes binarias de
+/// <c>openxmlformats</c>, como <c>printerSettings*.bin</c>, no cuentan, así que un libro con la impresión configurada se lee. Las
+/// partes XML ilegibles, con DTD o demasiado densas se rechazan, también si el paquete le quita el tipo XML a una parte que ClosedXML lee como XML.
 /// </summary>
 public sealed class clsLecturaExcelAcotadaTests : IDisposable
 {
@@ -69,7 +68,7 @@ public sealed class clsLecturaExcelAcotadaTests : IDisposable
         resultado.Valor.Hojas.Single().Filas.Should().HaveCount(2);
     }
 
-    /// <summary>Partes binarias que Excel guarda en un libro válido: se saltan como hoy se saltan las imágenes o el proyecto VBA.</summary>
+    /// <summary>Partes binarias que Excel guarda en un libro válido: se saltan como las imágenes o el proyecto VBA.</summary>
     public static TheoryData<string> PartesBinarias() => new()
     {
         TipoImpresora,
@@ -146,9 +145,9 @@ public sealed class clsLecturaExcelAcotadaTests : IDisposable
     }
 
     /// <summary>
-    /// Auditoría de #277 (M1): la parte principal (<c>xl/workbook.xml</c>) no tiene tipo fijo en el SDK de Open XML, que la abre con
+    /// La parte principal (<c>xl/workbook.xml</c>) no tiene tipo fijo en el SDK de Open XML, que la abre con
     /// cualquier tipo, y ClosedXML la lee igual. Se cuenta siempre: un libro principal denso es <c>DESCOMPRIMIDO_EXCEDE_LIMITE</c> y con
-    /// DTD es <c>LIBRO_ILEGIBLE</c>, declare el tipo que declare. Con <c>...sheet.main</c> sin <c>+xml</c> era una regresión de esta rama.
+    /// DTD es <c>LIBRO_ILEGIBLE</c>, declare el tipo que declare (también <c>...sheet.main</c> sin <c>+xml</c>).
     /// </summary>
     [Theory]
     [InlineData("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main")]
@@ -168,8 +167,8 @@ public sealed class clsLecturaExcelAcotadaTests : IDisposable
     }
 
     /// <summary>
-    /// Validación de #277 (hueco anterior): las relaciones (<c>.rels</c>) y <c>[Content_Types].xml</c> no son partes y no entraban en el
-    /// conteo, aunque System.IO.Packaging las lee enteras al abrir el paquete. Ahora se cuentan antes de abrirlo, en el mismo tope: una
+    /// Las relaciones (<c>.rels</c>) y <c>[Content_Types].xml</c> no son partes, pero System.IO.Packaging las lee enteras al abrir el
+    /// paquete: se cuentan antes de abrirlo, en el mismo tope. Una
     /// hoja de 525.000 elementos más 500.000 relaciones pasa de 1.000.000 y es <c>DESCOMPRIMIDO_EXCEDE_LIMITE</c>.
     /// </summary>
     [Fact]

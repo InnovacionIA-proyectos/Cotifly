@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Cotifly.Infraestructura.Tests.Licitaciones;
 
 /// <summary>
-/// HU-035.2 (#213): el lector del pliego de licitación pasa por los mismos controles del Excel subido que el de mercancías (#202), con la
+/// El lector del pliego de licitación pasa por los mismos controles del Excel subido que el de mercancías, con la
 /// pieza compartida <see cref="clsLecturaExcelAcotada"/>: bomba zip, libro denso, XXE y <c>.xls</c> renombrado terminan en un error de
 /// negocio con su motivo, rápido y sin cargar el libro en ClosedXML; el cupo de lecturas es uno para los dos lectores y la cancelación
 /// lo libera.
@@ -109,9 +109,9 @@ public sealed class clsLectorExcelLicitacionEndurecidoTests : IDisposable
     }
 
     /// <summary>
-    /// Validación de #213: un libro válido cuyo libro no está en <c>xl/workbook.xml</c> (aquí un <c>.xlsm</c> del SDK de Open XML, con el
+    /// Un libro válido cuyo libro no está en <c>xl/workbook.xml</c> (aquí un <c>.xlsm</c> del SDK de Open XML, con el
     /// libro en <c>xl/workbook2.xml</c>) pasa los controles: el libro se busca por la relación <c>officeDocument</c>, como ClosedXML.
-    /// Antes era <c>SIN_LIBRO</c> y, en la exportación, un original que siempre se había exportado dejaba de exportarse.
+    /// No es <c>SIN_LIBRO</c>, y en la exportación ese original se exporta.
     /// </summary>
     [Fact]
     public async Task UnLibroValidoFueraDeXlWorkbookXmlPasaLosControlesEnLosDosLectores()

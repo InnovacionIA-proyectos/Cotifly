@@ -16,7 +16,7 @@ namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
 /// Regional desde la tabla de ejecutivos (<c>DWCubosEBSSAP.DimEjecutivo</c> falsa, ADR-016 §6): cruce por <c>nombreUsuario</c>
-/// sin el dominio de <c>USUARIO</c> (<c>boterosoto\</c>, #81), sin distinguir mayúsculas ni espacios, usuario con dos regionales
+/// sin el dominio de <c>USUARIO</c> (<c>boterosoto\</c>), sin distinguir mayúsculas ni espacios, usuario con dos regionales
 /// ignorado, elección del adaptador por <c>ConnectionStrings:Regional</c>, regla completa con <c>UsuariosWeb</c> como respaldo y
 /// login que llena y refresca <c>UsuariosWeb.regional</c> sin bloquearse si la fuente cae.
 /// </summary>
@@ -132,7 +132,7 @@ public sealed class clsDirectorioEjecutivosIntegracionTests(clsBaseDatosPruebas 
     [Fact]
     public async Task QuitaElDominioDeUsuarioYComparaSinDistinguirMayusculas()
     {
-        // #81: DimEjecutivo.USUARIO viene como 'boterosoto\usuario'; NOMBREUSUARIO de ClientePro viene sin dominio.
+        // DimEjecutivo.USUARIO viene como 'boterosoto\usuario'; NOMBREUSUARIO de ClientePro viene sin dominio.
         var cadena = await BaseDatos.CadenaDirectorioEjecutivosAsync();
         var sufijo = Guid.NewGuid().ToString("N")[..8];
         var (perez, gomez, doble, sinDominio, ausente, regional) =

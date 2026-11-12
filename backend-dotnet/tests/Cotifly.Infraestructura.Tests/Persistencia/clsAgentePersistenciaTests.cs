@@ -12,7 +12,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
-/// Persistencia del asistente (#12 parte C, HU-013.9) contra SQL Server 2019: barrido de sesiones inactivas (port de
+/// Persistencia del asistente contra SQL Server 2019: barrido de sesiones inactivas (port de
 /// <c>test_archivar_inactivas_por_timeout</c>), sesiones legadas de Google Chat legibles como auditoría y candado por sesión.
 /// </summary>
 [Collection(clsColeccionSqlServer.Nombre)]
@@ -41,7 +41,7 @@ public sealed class clsAgentePersistenciaTests(clsBaseDatosPruebas baseDatos) : 
         (await ConsultarAsync(s => s.GetRequiredService<IClsSesionRepository>().ObtenerAsync(fresca, fresca, Ct)))!.Estado.Should().Be(EstadoSesion.Activa);
     }
 
-    // HU-013.9 (#105): las sesiones de Google Chat y del chat sin folio quedan en la base como auditoría con el JSON del slot-filling
+    // Las sesiones de Google Chat y del chat sin folio quedan en la base como auditoría con el JSON del slot-filling
     // legado. Se siguen leyendo (los campos retirados se ignoran, el folio se conserva) y la lectura no reescribe la fila.
     [Fact]
     public async Task UnaSesionLegadaDeGoogleChatSeLeeSinPerderSuJsonDeAuditoria()
@@ -61,7 +61,7 @@ public sealed class clsAgentePersistenciaTests(clsBaseDatosPruebas baseDatos) : 
             $"SELECT estadoAgente FROM dbo_cotifly.Sesiones WHERE spaceId = '{space}' AND threadId = '{hilo}'")).Should().Be(JsonLegado);
     }
 
-    // Riesgo 4 (auditoría de #12): un turno a la vez por sesión, entre conexiones (y réplicas), con sp_getapplock de sesión.
+    // Un turno a la vez por sesión, entre conexiones (y réplicas), con sp_getapplock de sesión.
     [Fact]
     public async Task ElCandadoDeLaSesionNoSeTomaDosVecesYSeLiberaAlDesecharlo()
     {

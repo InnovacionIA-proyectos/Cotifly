@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Cotifly.Infraestructura.Tests.Mercancias;
 
 /// <summary>
-/// Lectura local del Excel de mercancías (HU-035.1, #202, ADR-024): la grilla cruda con formato estable, el encabezado detectado, los
+/// Lectura local del Excel de mercancías (ADR-024): la grilla cruda con formato estable, el encabezado detectado, los
 /// topes con su truncado y los archivos corruptos o maliciosos, que terminan en un error de negocio (nunca una excepción) rápido y con
 /// memoria acotada.
 /// </summary>
@@ -312,7 +312,7 @@ public sealed class clsLectorGrillaExcelTests : IDisposable
         (await lector.LeerAsync("mercancias.xlsx", clsExcelMercanciasMuestra.Excel(1), Ct)).EsExitoso.Should().BeTrue("al liberarse el cupo se lee");
     }
 
-    // ---- Validación de HU-035.1 (#202): densidad, XXE, cupo con cancelación, fechas 1904, combinadas, hojas ocultas y recorte con emoji.
+    // ---- Validación: densidad, XXE, cupo con cancelación, fechas 1904, combinadas, hojas ocultas y recorte con emoji.
 
     [Fact]
     public async Task UnLibroPequenoPeroMuyDensoSeRechazaSinCargarloEnClosedXml()

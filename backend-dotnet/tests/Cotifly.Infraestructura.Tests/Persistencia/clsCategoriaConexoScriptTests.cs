@@ -3,7 +3,7 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
-/// #173: <c>db/scripts/05_categoria_conexo.sql</c> (en <c>db/scripts/</c> desde HU-014, #188) en una base aislada instalada desde cero:
+/// <c>db/scripts/05_categoria_conexo.sql</c> en una base aislada instalada desde cero:
 /// deja la columna de la categoría del conexo (NULL en las filas anteriores) y se puede repetir.
 /// </summary>
 [Collection(clsColeccionSqlServer.Nombre)]
@@ -26,7 +26,7 @@ public sealed class clsCategoriaConexoScriptTests(clsBaseDatosPruebas baseDatos)
     }
 
     /// <summary>
-    /// #173/#191: el <c>06_idempotencia_captura.sql</c> (ya en <c>db/scripts/</c>) crea la tabla de claves con
+    /// El <c>06_idempotencia_captura.sql</c> crea la tabla de claves con
     /// <c>UNIQUE (usuarioId, operacion, clave)</c> y se puede repetir.
     /// </summary>
     [Fact]

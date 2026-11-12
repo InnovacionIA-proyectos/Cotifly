@@ -10,9 +10,9 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
-/// HU-042.2 (#243): un set con la forma completa de <c>RentabClienteSet</c> real (1.276 filas, dos organizaciones, ocho TrqType, 10 márgenes
+/// Un set con la forma completa de <c>RentabClienteSet</c> real (1.276 filas, dos organizaciones, ocho TrqType, 10 márgenes
 /// negativos y 6 mayores que 60, <c>Value</c> como texto con hasta 17 decimales, BP sin ceros) pasa la guarda y queda tal cual en la copia
-/// (redondeado a 4 decimales; los anómalos se guardan: el que decide no aplicarlos es el envío a Nexo, #139). El set es SINTÉTICO (el real
+/// (redondeado a 4 decimales; los anómalos se guardan: el que decide no aplicarlos es el envío a Nexo). El set es SINTÉTICO (el real
 /// tiene BP y márgenes de clientes y no se versiona); con <see cref="VariableSetReal"/> apuntando a una copia local del real, la misma
 /// prueba lo carga (se omite si no está).
 /// </summary>

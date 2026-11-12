@@ -4,7 +4,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
-/// HU-045.2 (#264), validación adversarial de la sonda: cualquiera de las columnas del script 20, sola, pide el 20; el 20 junto con un
+/// Validación adversarial de la sonda: cualquiera de las columnas del script 20, sola, pide el 20; el 20 junto con un
 /// script anterior pide el anterior; y todas juntas también son "falta 20" (base sin el script aplicado).
 /// </summary>
 public sealed class clsSondaScript20AdversarialTests

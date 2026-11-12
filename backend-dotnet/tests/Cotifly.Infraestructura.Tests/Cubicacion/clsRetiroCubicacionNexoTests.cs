@@ -7,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Cotifly.Infraestructura.Tests.Cubicacion;
 
 /// <summary>
-/// HU-023.2 (#157): la cubicación rápida de Nexo (<c>POST /api/cubicacion</c>) se retiró. Ningún adaptador ni registro la usa: "Calcular
+/// Ningún adaptador ni registro usa la cubicación rápida de Nexo (<c>POST /api/cubicacion</c>): "Calcular
 /// cubicaje" va al cubicador por <see cref="IClsCubicador"/>, aun con <c>Nexo:UrlBase</c> configurada.
 /// </summary>
 public sealed class clsRetiroCubicacionNexoTests

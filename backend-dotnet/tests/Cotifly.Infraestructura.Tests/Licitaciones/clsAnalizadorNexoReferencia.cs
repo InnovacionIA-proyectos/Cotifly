@@ -4,7 +4,7 @@ namespace Cotifly.Infraestructura.Tests.Licitaciones;
 
 /// <summary>
 /// Oráculo de las pruebas de paridad: copia literal de la regla de <c>ExcelSolicitudesAdapter.AnalizarAsync</c> de Nexo (repo
-/// <c>NEXO</c>, <c>src/CabinaFletes.Infrastructure/Solicitudes/Adaptadores/ExcelSolicitudesAdapter.cs</c>, leído el 2026-10-01), con la
+/// <c>NEXO</c>, <c>src/CabinaFletes.Infrastructure/Solicitudes/Adaptadores/ExcelSolicitudesAdapter.cs</c>), con la
 /// misma versión de ClosedXML que Nexo. Si Nexo cambia su analizador, se actualiza esta copia y la prueba dice si Cotifly sigue igual.
 /// </summary>
 internal static class clsAnalizadorNexoReferencia

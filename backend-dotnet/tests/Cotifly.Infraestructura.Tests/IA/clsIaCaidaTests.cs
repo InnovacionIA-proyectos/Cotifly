@@ -10,10 +10,10 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Cotifly.Infraestructura.Tests.IA;
 
 /// <summary>
-/// DEF-1027-1 (#226, E2E real del 2026-10-27): con el proveedor de IA caído, el SDK de OpenAI reintenta y, al agotar los intentos,
+/// Con el proveedor de IA caído, el SDK de OpenAI reintenta y, al agotar los intentos,
 /// lanza un <see cref="AggregateException"/> ("Retry failed after 4 tries") cuyas internas son <see cref="ClientResultException"/> sin
-/// estado HTTP que envuelven el <see cref="HttpRequestException"/> con la <see cref="SocketException"/> ("Connection refused"). Antes no
-/// se reconocía como indisponibilidad y el chat respondía <c>ERROR_INTERNO</c>; ahora la red caída, el socket y el tiempo agotado,
+/// estado HTTP que envuelven el <see cref="HttpRequestException"/> con la <see cref="SocketException"/> ("Connection refused"). La red
+/// caída, el socket y el tiempo agotado,
 /// también dentro de un <see cref="AggregateException"/>, son <c>IA_NO_DISPONIBLE</c>. La cancelación del llamador sigue sin serlo.
 /// </summary>
 public sealed class clsIaCaidaTests
@@ -74,7 +74,7 @@ public sealed class clsIaCaidaTests
     }
 
     /// <summary>
-    /// Validación de #226: un error del cliente (credenciales malas, 401/403, o un 400 de contenido) sigue sin ser indisponibilidad
+    /// Un error del cliente (credenciales malas, 401/403, o un 400 de contenido) sigue sin ser indisponibilidad
     /// aunque llegue dentro de un <see cref="AggregateException"/> o con un socket en su cadena: el código HTTP manda sobre la red.
     /// </summary>
     [Fact]
@@ -91,7 +91,7 @@ public sealed class clsIaCaidaTests
     }
 
     /// <summary>
-    /// Validación de #226: la cancelación del llamador no salta al respaldo aunque venga envuelta (en otra excepción o en un
+    /// La cancelación del llamador no salta al respaldo aunque venga envuelta (en otra excepción o en un
     /// <see cref="AggregateException"/> junto a un fallo de red), y con dos proveedores el respaldo no recibe la petición.
     /// </summary>
     [Fact]
@@ -115,7 +115,7 @@ public sealed class clsIaCaidaTests
     }
 
     /// <summary>
-    /// Validación de #226: una cadena de internas cíclica (solo se puede armar por reflexión) o muy profunda no cuelga el filtro: el
+    /// Una cadena de internas cíclica (solo se puede armar por reflexión) o muy profunda no cuelga el filtro: el
     /// recorrido tiene tope en <see cref="EsRecuperable"/>, en el código HTTP y en la lectura del 400 del gateway.
     /// </summary>
     [Fact]

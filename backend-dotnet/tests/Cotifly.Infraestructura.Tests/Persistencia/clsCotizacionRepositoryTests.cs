@@ -31,7 +31,7 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
         leida.OrigenCliente.Should().Be(OrigenCliente.Cliente);
         leida.PrecioFinal.Should().Be(1_500_000m);
 
-        // HU-021: la línea de negocio, el margen y el costo viven en la ruta; el flete, en su camión.
+        // La línea de negocio, el margen y el costo viven en la ruta; el flete, en su camión.
         var ruta = leida.Rutas.Should().ContainSingle().Subject;
         (ruta.LineaNegocioId, ruta.MargenAplicado, ruta.OrigenMargen, ruta.CostoFinal, ruta.PrecioFinalLinea)
             .Should().Be(((int?)1, (decimal?)0.15m, (OrigenMargen?)OrigenMargen.PoliticaLinea, (decimal?)1_275_000m, (decimal?)1_500_000m));
@@ -45,7 +45,7 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
     }
 
     /// <summary>
-    /// HU-021 (corrección del núcleo): recargar reconstruye las colecciones desde la base. Una fila que otro proceso borró desaparece (y
+    /// Recargar reconstruye las colecciones desde la base. Una fila que otro proceso borró desaparece (y
     /// el guardado siguiente no la reinserta) y una que otro proceso agregó aparece.
     /// </summary>
     [Fact]
@@ -82,12 +82,12 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
     }
 
     /// <summary>
-    /// #261 punto 4 (script 19, HU-043.1 #245): <c>precioVenta</c> es NOT NULL sin DEFAULT. Agregar un conexo no falla (antes, SQL
-    /// Server respondía 515 porque EF no mandaba la columna) y guarda <c>precioVenta = precio</c>; actualizarlo lo mantiene igual al
-    /// precio. Mientras llega HU-043.2 (#251) el precio de venta es el costo.
+    /// Script 19: <c>precioVenta</c> es NOT NULL sin DEFAULT. Agregar un conexo no falla (EF manda la columna; sin ella, SQL
+    /// Server respondería 515) y guarda <c>precioVenta = precio</c>; actualizarlo lo mantiene igual al
+    /// precio.
     /// </summary>
     [Fact]
-    public async Task Issue261_AgregarYActualizarUnConexoGuardaPrecioVentaIgualAlPrecio()
+    public async Task AgregarYActualizarUnConexoGuardaPrecioVentaIgualAlPrecio()
     {
         var cotizacion = NuevaCotizacion(null);
         cotizacion.CambiarConexos(1, [new clsCambioConexo("CX-PV", "Cargue", 12_345.67m, 2m)], Reloj.AhoraUtc);
@@ -235,7 +235,7 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
         var deAna = NuevaCotizacion(ana);
         await GuardarAsync(deAna);
 
-        // La regla vive en IClsSeguimientoService desde #11 (deuda de ADR-008); aquí se prueba con el repositorio real.
+        // La regla vive en IClsSeguimientoService (ADR-008); aquí se prueba con el repositorio real.
         var marcada = await ConsultarAsync(s => s.GetRequiredService<IClsSeguimientoService>()
             .MarcarAsync(luis, deAna.Folio, true, null, Ct));
         var leida = await ConsultarAsync(s => s.GetRequiredService<IClsCotizacionRepository>().ObtenerPorFolioAsync(deAna.Folio, Ct));
@@ -304,11 +304,11 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
     }
 
     /// <summary>
-    /// HU-032 (#197, script 12): el vehículo elegido de la ruta (<c>tipoVehiculoElegido</c> y <c>carroceriaElegida</c>) y una mercancía no
+    /// Script 12: el vehículo elegido de la ruta (<c>tipoVehiculoElegido</c> y <c>carroceriaElegida</c>) y una mercancía no
     /// cubicable (sin medidas: <c>largoCm</c>, <c>anchoCm</c> y <c>altoCm</c> en NULL) se guardan y se reconstruyen igual.
     /// </summary>
     [Fact]
-    public async Task HU032_ElVehiculoElegidoYUnaMercanciaSinMedidasSeGuardanYSeReconstruyenIgual()
+    public async Task ElVehiculoElegidoYUnaMercanciaSinMedidasSeGuardanYSeReconstruyenIgual()
     {
         var solicitud = clsSolicitudCosteoMuestra.Crear() with
         {
@@ -354,11 +354,11 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
     }
 
     /// <summary>
-    /// HU-018.1 (#155): el <c>scorePrioridad</c> de Nexo se guarda en <c>CotizacionesSolicitud.scorePrioridad</c> (<c>decimal(9,4)</c>, script
+    /// El <c>scorePrioridad</c> de Nexo se guarda en <c>CotizacionesSolicitud.scorePrioridad</c> (<c>decimal(9,4)</c>, script
     /// 09) y se lee de vuelta; sin score, la columna queda en NULL.
     /// </summary>
     [Fact]
-    public async Task HU0181_ElScorePrioridadSeGuardaEnLaCabeceraConCuatroDecimalesYSeLeeDeVuelta()
+    public async Task ElScorePrioridadSeGuardaEnLaCabeceraConCuatroDecimalesYSeLeeDeVuelta()
     {
         var conScore = Formulario(null);
         conScore.RegistrarEnvioCosteo($"SOL-{Guid.NewGuid():N}", false, Reloj.AhoraUtc, Reloj.AhoraUtc.AddYears(50), 0.123456m);
@@ -379,12 +379,12 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
     }
 
     /// <summary>
-    /// HU-028.1 (#183, script 10): el rechazo de la Mesa de Costeo que lee el polling se guarda en el camión (estado <c>rechazada</c>,
+    /// Script 10: el rechazo de la Mesa de Costeo que lee el polling se guarda en el camión (estado <c>rechazada</c>,
     /// <c>motivoRechazo</c> y <c>rechazadaAt</c>) y en la ruta (<c>rechazada</c>, sin precio); si la Mesa lo deshace, el camión vuelve a
     /// <c>pendiente_costeo</c> y la base queda sin motivo ni fecha (el CHECK del 10 lo exige).
     /// </summary>
     [Fact]
-    public async Task HU0281_ElRechazoDeLaLineaSeGuardaEnElCamionYSeBorraAlDeshacerlo()
+    public async Task ElRechazoDeLaLineaSeGuardaEnElCamionYSeBorraAlDeshacerlo()
     {
         var cotizacion = Formulario(null);
         cotizacion.RegistrarEnvioCosteo($"SOL-{Guid.NewGuid():N}", false, Reloj.AhoraUtc, Reloj.AhoraUtc.AddYears(50));
@@ -465,7 +465,7 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
     }
 
     /// <summary>
-    /// #259 (auditoría M1 y B2): reencolar desde finalizar solo agenda una cotización que está fuera de la agenda; nunca pisa un reclamo
+    /// Reencolar desde finalizar solo agenda una cotización que está fuera de la agenda; nunca pisa un reclamo
     /// vigente del polling ni adelanta una agenda programada, aunque la cotización en memoria se haya leído antes.
     /// </summary>
     [Fact]
@@ -528,13 +528,13 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
     }
 
     /// <summary>
-    /// HU-014 (#188, script 03): los camiones se guardan numerados 1..n en <c>ordenVehiculo</c> en el orden de la recomendación, y un
+    /// Script 03: los camiones se guardan numerados 1..n en <c>ordenVehiculo</c> en el orden de la recomendación, y un
     /// recálculo (<see cref="clsLineaSolicitud.ReemplazarCamiones"/>: borra los anteriores e inserta los nuevos en el mismo guardado) los
     /// vuelve a numerar 1..n sin chocar con el índice único filtrado <c>(lineaSolicitudId, ordenVehiculo)</c>. El conexo guarda el id del
     /// catálogo (03) y la categoría (05).
     /// </summary>
     [Fact]
-    public async Task HU014_LosCamionesSeGuardanNumeradosYUnRecalculoLosRenumeraSinChocarConElIndiceUnico()
+    public async Task LosCamionesSeGuardanNumeradosYUnRecalculoLosRenumeraSinChocarConElIndiceUnico()
     {
         var cotizacion = CapturaDeTresCamiones();
         await GuardarAsync(cotizacion);
@@ -562,12 +562,11 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
     }
 
     /// <summary>
-    /// HU-014 (#188): una ruta escrita antes de #188 (o por la imagen anterior con el 03 ya aplicado) tiene <c>ordenVehiculo</c> en NULL:
-    /// se lee en el orden de <c>createdAt</c> (el desfase de 1 ms de entonces), y un camión que se le agregue después queda también sin
+    /// Una ruta con <c>ordenVehiculo</c> en NULL (escrita sin el 03) se lee en el orden de <c>createdAt</c>, y un camión que se le agregue después queda también sin
     /// número y va al final por su <c>createdAt</c>.
     /// </summary>
     [Fact]
-    public async Task HU014_UnaRutaSinOrdenVehiculoSeOrdenaPorCreatedAtYUnCamionNuevoVaAlFinal()
+    public async Task UnaRutaSinOrdenVehiculoSeOrdenaPorCreatedAtYUnCamionNuevoVaAlFinal()
     {
         var cotizacion = CapturaDeTresCamiones();
         await GuardarAsync(cotizacion);
@@ -589,11 +588,11 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
     }
 
     /// <summary>
-    /// Validación de #188: recálculos que reusan TODOS los números anteriores (3 → 3 en otro orden) y que los superan (3 → 5, y luego
+    /// Recálculos que reusan TODOS los números anteriores (3 → 3 en otro orden) y que los superan (3 → 5, y luego
     /// 5 → 1) en el mismo guardado: EF borra antes de insertar y el índice único filtrado no salta.
     /// </summary>
     [Fact]
-    public async Task HU014_RecalculosQueReusanOSuperanLosNumerosNoChocanConElIndiceUnico()
+    public async Task RecalculosQueReusanOSuperanLosNumerosNoChocanConElIndiceUnico()
     {
         var cotizacion = CapturaDeTresCamiones();
         await GuardarAsync(cotizacion);
@@ -617,12 +616,12 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
     }
 
     /// <summary>
-    /// Validación de #188 (concurrencia): dos recálculos de la misma ruta leídos a la vez y guardados sin control de versión. El segundo
+    /// Concurrencia: dos recálculos de la misma ruta leídos a la vez y guardados sin control de versión. El segundo
     /// falla (sus DELETE ya no encuentran filas o su INSERT choca con el índice único) y la base queda con UNA numeración 1..n, sin
     /// números repetidos ni camiones de las dos versiones mezclados.
     /// </summary>
     [Fact]
-    public async Task HU014_DosRecalculosConcurrentesDeLaMismaRutaNoDejanNumerosRepetidos()
+    public async Task DosRecalculosConcurrentesDeLaMismaRutaNoDejanNumerosRepetidos()
     {
         var cotizacion = CapturaDeTresCamiones();
         await GuardarAsync(cotizacion);
@@ -659,7 +658,7 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
         + "FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = v.lineaSolicitudId "
         + $"WHERE l.cotizacionSolicitudId = '{cotizacionId}'");
 
-    /// <summary>Formulario de una ruta y un camión (HU-021) con folio único, sin guardar.</summary>
+    /// <summary>Formulario de una ruta y un camión con folio único, sin guardar.</summary>
     private static clsCotizacionSolicitud Formulario(Guid? usuarioId) =>
         clsCotizacionMuestra.Formulario(folio: FolioUnico(), usuarioId: usuarioId, lineaNegocioId: 1);
 }

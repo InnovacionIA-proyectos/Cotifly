@@ -13,7 +13,7 @@ using NSubstitute;
 namespace Cotifly.Infraestructura.Tests.Clientes;
 
 /// <summary>
-/// Selección del buscador de clientes por <c>Nexo:UrlBase</c> (<see cref="clsFabricaBuscadorClientes"/>, HU-005.2) y tubería de
+/// Selección del buscador de clientes por <c>Nexo:UrlBase</c> (<see cref="clsFabricaBuscadorClientes"/>) y tubería de
 /// resiliencia del cliente HTTP de Nexo.
 /// </summary>
 public sealed class clsRegistroBuscadorClientesTests

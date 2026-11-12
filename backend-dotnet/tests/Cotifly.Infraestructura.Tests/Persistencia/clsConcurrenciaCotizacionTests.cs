@@ -84,7 +84,7 @@ public sealed class clsConcurrenciaCotizacionTests(clsBaseDatosPruebas baseDatos
     }
 
     /// <summary>
-    /// Endurecimiento B (#199): la reserva de la original para una versión nueva se compara DENTRO de la transacción del candado del folio
+    /// La reserva de la original para una versión nueva se compara DENTRO de la transacción del candado del folio
     /// (<see cref="IClsUnitOfWork.VersionVigenteEnTransaccionAsync"/>): con la versión vigente lo guardado en esa transacción queda; si la
     /// operación falla después, la transacción se deshace y la versión de la original no cambia.
     /// </summary>
@@ -121,7 +121,7 @@ public sealed class clsConcurrenciaCotizacionTests(clsBaseDatosPruebas baseDatos
     }
 
     /// <summary>
-    /// Auditoría de la integración (#199), concurrencia real: mientras la versión nueva tiene reservada la original DENTRO del candado (la
+    /// Concurrencia real: mientras la versión nueva tiene reservada la original DENTRO del candado (la
     /// fila con <c>UPDLOCK</c>), una edición en sitio con el mismo <c>If-Match</c> (<see cref="IClsUnitOfWork.GuardarCambiosSiVersionAsync"/>)
     /// espera, sin interbloqueo, y al confirmarse la reserva pierde (<c>false</c>): la versión sube una sola vez.
     /// </summary>

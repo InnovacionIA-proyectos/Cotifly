@@ -10,10 +10,10 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
-/// HU-023 (#176): el quinto motivo <c>BUSQUEDA_AGOTADA</c> y el script <c>db/scripts/07_motivo_busqueda_agotada.sql</c>, en bases aisladas
+/// El quinto motivo <c>BUSQUEDA_AGOTADA</c> y el script <c>db/scripts/07_motivo_busqueda_agotada.sql</c>, en bases aisladas
 /// (Testcontainers). Con el 07 se guarda el motivo real; sin él, el backend lo detecta en <c>sys.check_constraints</c> y guarda NULL con
 /// un aviso visible en la ruta. El CHECK del 07 rechaza un motivo con resultado <c>ASIGNADO</c> o NULL, se puede correr dos veces y el 03
-/// no lo pisa. HU-014 (#188): el 03 (que deja el mismo CHECK) ya está en la cadena de las pruebas, así que la base "sin el 07" es
+/// no lo pisa. El 03 (que deja el mismo CHECK) ya está en la cadena de las pruebas, así que la base "sin el 07" es
 /// <see cref="clsBaseDatosPruebas.CrearBaseSin07Async"/> (CHECK del 02).
 /// </summary>
 [Collection(clsColeccionSqlServer.Nombre)]
@@ -131,7 +131,7 @@ public sealed class clsMotivoBusquedaAgotadaTests(clsBaseDatosPruebas baseDatos)
         "SELECT object_id FROM sys.check_constraints WHERE name = N'ck_cotizacionLineasSolicitud_motivoSinSeleccion'";
 
     /// <summary>
-    /// HU-023 (#176, auditoría A1): en cualquier orden (03 → 07, 07 → 03, "sin ISNULL" → 07, "sin ISNULL" → 03, 03 → 03) el CHECK termina
+    /// En cualquier orden (03 → 07, 07 → 03, "sin ISNULL" → 07, "sin ISNULL" → 03, 03 → 03) el CHECK termina
     /// EXACTAMENTE en el del 07 (5 motivos e ISNULL), y volver a correr el 03 y el 07 no lo toca (mismo <c>object_id</c>).
     /// </summary>
     [Theory]

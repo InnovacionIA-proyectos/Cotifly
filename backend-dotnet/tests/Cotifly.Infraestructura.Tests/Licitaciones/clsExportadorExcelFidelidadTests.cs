@@ -10,7 +10,7 @@ using DocumentFormat.OpenXml.Packaging;
 namespace Cotifly.Infraestructura.Tests.Licitaciones;
 
 /// <summary>
-/// Exportación (HU-011.3) contra originales difíciles: un .xlsm sale como .xlsx real, textos que empiezan con "=" no son fórmulas,
+/// Exportación contra originales difíciles: un .xlsm sale como .xlsx real, textos que empiezan con "=" no son fórmulas,
 /// se conservan fórmulas, formatos, combinadas, hojas ocultas, validaciones, comentarios, nombres y tablas del cliente, no se pisan
 /// datos a la derecha, una fila de totales no queda "Sin enviar", 1000 líneas en tiempo razonable, una línea sin fila en el pliego
 /// aparece en el resumen y ninguna parte del paquete trae costos.

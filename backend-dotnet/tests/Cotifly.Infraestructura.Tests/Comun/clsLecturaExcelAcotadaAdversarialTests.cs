@@ -13,7 +13,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Cotifly.Infraestructura.Tests.Comun;
 
 /// <summary>
-/// HU-035.3 (#277), validación adversarial: <see cref="clsLecturaExcelAcotada.EsParteXml"/> salta las partes que no son XML por su
+/// Validación adversarial: <see cref="clsLecturaExcelAcotada.EsParteXml"/> salta las partes que no son XML por su
 /// tipo. Estas pruebas intentan que una parte que ClosedXML sí lee como XML se escape del conteo disfrazando su tipo en
 /// <c>[Content_Types].xml</c> (octet-stream, printerSettings, vacío, parámetros, mayúsculas, espacios, Default en vez de Override,
 /// extensión <c>.bin</c>). El oráculo: si <see cref="clsLecturaExcelAcotada.Verificar"/> deja pasar el libro, ClosedXML no puede haber
@@ -398,7 +398,7 @@ public sealed class clsLecturaExcelAcotadaAdversarialTests
     }
 
     /// <summary>
-    /// D1 descartado (auditoría de #277): un VML con <c>&lt;br&gt;</c> sin cerrar (XML mal formado, como el que a veces trae el texto de
+    /// Un VML con <c>&lt;br&gt;</c> sin cerrar (XML mal formado, como el que a veces trae el texto de
     /// un comentario) tampoco lo abre ClosedXML 0.104.2, que no lo corrige: el control da <c>LIBRO_ILEGIBLE</c> y coincide con ClosedXML.
     /// No rechaza nada que ClosedXML pudiera abrir, y la lectura responde un error de negocio, nunca un 500.
     /// </summary>
