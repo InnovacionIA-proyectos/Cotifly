@@ -30,6 +30,18 @@ public sealed class clsSeguroVistaCosteoTests
         ruta.ValorSeguro.Should().Be(690_000m);
         ruta.PrecioFinalLinea.Should().Be(1_940_000m);
         ruta.CostoFinal.Should().Be(1_000_000m, "el seguro no es costo de Nexo");
+        // HU-018.2 (#294): el costo del transporte (solo el flete) y el valor de la mercancía salen en la misma vista; el seguro no los toca.
+        ruta.CostoTransporte.Should().Be(1_000_000m, "el seguro no entra en el costo del transporte");
+        ruta.ValorMercancia.Should().Be(200_000_000m);
+    }
+
+    [Fact]
+    public void EnDolaresElValorDeLaMercanciaYElCostoDelTransporteSiguenEnPesos()
+    {
+        var ruta = clsCosteoCotizacionService.Vista(ConSeguro("USD", 4_000m), null).Rutas.Single();
+
+        ruta.ValorMercancia.Should().Be(200_000_000m, "el valor de la mercancía va en COP aunque la cotización esté en USD");
+        ruta.CostoTransporte.Should().Be(1_000_000m, "el costo del transporte va en COP aunque la cotización esté en USD");
     }
 
     [Fact]

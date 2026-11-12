@@ -20,6 +20,14 @@ public interface IClsCategoriasConexos
 {
     /// <summary>Categoría por id guardado (<c>idServicioConexo</c>) de los conexos de <paramref name="cotizacion"/> que se pudieron resolver.</summary>
     Task<IReadOnlyDictionary<string, string>> CategoriasAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// HU-046.3 (#269): <c>codigoServicio</c> del catálogo de Nexo por id guardado (<c>idServicioConexo</c>) de los conexos de
+    /// <paramref name="cotizacion"/> que NO lo tienen guardado (filas anteriores al script 21 o importadas de Nexo), con el mismo índice y
+    /// la misma regla que <see cref="CategoriasAsync"/>: nunca espera a Nexo; si el índice está frío o le falta un conexo, lo calienta en
+    /// segundo plano. Quien lo llama completa las filas (<see cref="clsCotizacionSolicitud.CompletarCodigosConexos"/>).
+    /// </summary>
+    Task<IReadOnlyDictionary<string, string>> CodigosAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -85,14 +93,24 @@ public sealed class clsAlmacenCategoriasConexos
     }
 }
 
-/// <summary>Categoría por id del catálogo y por nombre (solo los nombres con una sola categoría) y cuándo se leyó.</summary>
+/// <summary>
+/// Categoría por id del catálogo y por nombre (solo los nombres con una sola categoría) y cuándo se leyó. HU-046.3 (#269): también el
+/// <c>codigoServicio</c> por id y por nombre (solo los nombres con un solo código; Nexo repite el mismo servicio en una fila por trayecto).
+/// </summary>
 public sealed record clsIndiceCategorias(
-    IReadOnlyDictionary<string, string> PorId, IReadOnlyDictionary<string, string> PorNombre, DateTimeOffset LeidoAt)
+    IReadOnlyDictionary<string, string> PorId, IReadOnlyDictionary<string, string> PorNombre, DateTimeOffset LeidoAt,
+    IReadOnlyDictionary<string, string>? CodigoPorId = null, IReadOnlyDictionary<string, string>? CodigoPorNombre = null)
 {
     /// <summary>Categoría de un conexo guardado: por su id (del catálogo) o, si es el id de una fila de Nexo, por su nombre.</summary>
-    public string? De(string id, string? nombre) =>
-        PorId.TryGetValue(id, out var porId) ? porId
-        : nombre is not null && PorNombre.TryGetValue(nombre.Trim(), out var porNombre) ? porNombre
+    public string? De(string id, string? nombre) => Buscar(PorId, PorNombre, id, nombre);
+
+    /// <summary>HU-046.3 (#269): <c>codigoServicio</c> de un conexo guardado, con la misma regla que <see cref="De"/>.</summary>
+    public string? CodigoDe(string id, string? nombre) => Buscar(CodigoPorId, CodigoPorNombre, id, nombre);
+
+    private static string? Buscar(
+        IReadOnlyDictionary<string, string>? porId, IReadOnlyDictionary<string, string>? porNombre, string id, string? nombre) =>
+        porId is not null && porId.TryGetValue(id, out var deId) ? deId
+        : nombre is not null && porNombre is not null && porNombre.TryGetValue(nombre.Trim(), out var deNombre) ? deNombre
         : null;
 }
 
@@ -118,21 +136,55 @@ public sealed class clsCategoriasConexosService(
         ArgumentNullException.ThrowIfNull(cotizacion);
         // HU-014 (#188): los que ya traen la categoría guardada (script 05) no dependen del catálogo.
         var conexos = cotizacion.Rutas.SelectMany(r => r.Conexos).Where(c => c.Categoria is null).ToList();
+        return Task.FromResult(Resolver(IndiceCalentando(cotizacion, conexos, De), conexos));
+    }
+
+    public Task<IReadOnlyDictionary<string, string>> CodigosAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        // HU-046.3 (#269): los que ya traen el codigoServicio guardado (script 21) no dependen del catálogo.
+        var conexos = cotizacion.Rutas.SelectMany(r => r.Conexos).Where(c => c.CodigoServicio is null).ToList();
+        // B6 de la auditoría: con el índice vigente no se recalienta por un código que no está (el servicio salió del catálogo o el
+        // nombre es ambiguo): sería una lectura de Nexo por minuto para siempre. Solo con el índice frío o vencido.
+        var indice = IndiceCalentando(cotizacion, conexos, (_, _) => null, recalentarSiFalta: false);
+        var codigos = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (indice is not null)
+        {
+            foreach (var conexo in conexos)
+            {
+                if (CodigoDe(indice, conexo) is { } codigo)
+                {
+                    codigos[conexo.IdServicioConexo] = codigo;
+                }
+            }
+        }
+
+        return Task.FromResult<IReadOnlyDictionary<string, string>>(codigos);
+    }
+
+    /// <summary>
+    /// El índice vigente (o el último, vencido) para <paramref name="conexos"/>; si está frío o no resuelve alguno con
+    /// <paramref name="resolver"/>, lo calienta en segundo plano (a lo sumo un intento por <see cref="clsAlmacenCategoriasConexos.EsperaTrasFallo"/>).
+    /// </summary>
+    private clsIndiceCategorias? IndiceCalentando(
+        clsCotizacionSolicitud cotizacion, IReadOnlyList<clsServicioConexoRuta> conexos, Func<clsIndiceCategorias, clsServicioConexoRuta, string?> resolver,
+        bool recalentarSiFalta = true)
+    {
         if (conexos.Count == 0)
         {
-            return Task.FromResult<IReadOnlyDictionary<string, string>>(new Dictionary<string, string>());
+            return null;
         }
 
         var ahora = reloj.AhoraUtc;
         var indice = almacen.Vigente(ahora);
-        if ((indice is null || conexos.Any(c => De(indice, c) is null))
+        if ((indice is null || (recalentarSiFalta && conexos.Any(c => resolver(indice, c) is null)))
             && cotizacion.UsuarioId is { } usuarioId && almacen.ReservarIntento(ahora))
         {
             // #173 (observación del validador): no se espera a Nexo; se calienta el índice en segundo plano con su propio ámbito.
             almacen.UltimaLectura = Task.Run(() => CalentarAsync(usuarioId, cotizacion.Folio, ahora), CancellationToken.None);
         }
 
-        return Task.FromResult(Resolver(indice ?? almacen.Ultimo(), conexos));
+        return indice ?? almacen.Ultimo();
     }
 
     /// <summary>
@@ -170,6 +222,10 @@ public sealed class clsCategoriasConexosService(
     private static string? De(clsIndiceCategorias indice, clsServicioConexoRuta conexo) =>
         (conexo.IdServicioConexoCatalogo is { } catalogo ? indice.De(catalogo, null) : null) ?? indice.De(conexo.IdServicioConexo, conexo.Nombre);
 
+    /// <summary>HU-046.3 (#269): <c>codigoServicio</c> de un conexo en el índice, con la misma regla que <see cref="De"/>.</summary>
+    private static string? CodigoDe(clsIndiceCategorias indice, clsServicioConexoRuta conexo) =>
+        (conexo.IdServicioConexoCatalogo is { } catalogo ? indice.CodigoDe(catalogo, null) : null) ?? indice.CodigoDe(conexo.IdServicioConexo, conexo.Nombre);
+
     private async Task CalentarAsync(Guid usuarioId, string folio, DateTimeOffset ahora)
     {
         try
@@ -189,6 +245,8 @@ public sealed class clsCategoriasConexosService(
     {
         var porId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var porNombre = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        var codigoPorId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var codigoPorNombre = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
         for (var pagina = 1; pagina <= MaximoPaginas; pagina++)
         {
             var leida = await catalogo.BuscarAsync(usuarioId, new clsFiltroCatalogoConexos(null, null, pagina, TamanoPagina), cancellationToken);
@@ -200,18 +258,10 @@ public sealed class clsCategoriasConexosService(
 
             foreach (var servicio in leida.Valor.Items)
             {
-                if (string.IsNullOrWhiteSpace(servicio.Categoria))
-                {
-                    continue;
-                }
-
-                var categoria = servicio.Categoria.Trim();
-                porId[servicio.Id] = categoria;
-                if (servicio.Nombre?.Trim() is { Length: > 0 } nombre)
-                {
-                    // Un nombre con dos categorías distintas no sirve para resolver: queda en null y se ignora.
-                    porNombre[nombre] = porNombre.TryGetValue(nombre, out var previa) && previa != categoria ? null : categoria;
-                }
+                // Un nombre con dos categorías (o dos códigos) distintos no sirve para resolver: queda en null y se ignora.
+                Indexar(porId, porNombre, servicio.Id, servicio.Nombre, servicio.Categoria);
+                // HU-046.3 (#269): el codigoServicio (Nexo repite el mismo código en una fila por trayecto, con ids distintos).
+                Indexar(codigoPorId, codigoPorNombre, servicio.Id, servicio.Nombre, servicio.Codigo);
             }
 
             if (leida.Valor.Items.Count < TamanoPagina || pagina * TamanoPagina >= leida.Valor.Total)
@@ -220,11 +270,28 @@ public sealed class clsCategoriasConexosService(
             }
         }
 
-        var indice = new clsIndiceCategorias(
-            porId, porNombre.Where(p => p.Value is not null).ToDictionary(p => p.Key, p => p.Value!, StringComparer.OrdinalIgnoreCase), ahora);
+        var indice = new clsIndiceCategorias(porId, SinAmbiguos(porNombre), ahora, codigoPorId, SinAmbiguos(codigoPorNombre));
         almacen.Guardar(indice);
         return indice;
     }
+
+    private static void Indexar(Dictionary<string, string> porId, Dictionary<string, string?> porNombre, string id, string? nombre, string? valor)
+    {
+        if (string.IsNullOrWhiteSpace(valor))
+        {
+            return;
+        }
+
+        var limpio = valor.Trim();
+        porId[id] = limpio;
+        if (nombre?.Trim() is { Length: > 0 } clave)
+        {
+            porNombre[clave] = porNombre.TryGetValue(clave, out var previo) && !string.Equals(previo, limpio, StringComparison.Ordinal) ? null : limpio;
+        }
+    }
+
+    private static Dictionary<string, string> SinAmbiguos(Dictionary<string, string?> porNombre) =>
+        porNombre.Where(p => p.Value is not null).ToDictionary(p => p.Key, p => p.Value!, StringComparer.OrdinalIgnoreCase);
 
     private static readonly Action<ILogger, string, string, Exception?> _logCatalogoNoDisponible = LoggerMessage.Define<string, string>(
         LogLevel.Warning, new EventId(1732, nameof(_logCatalogoNoDisponible)),

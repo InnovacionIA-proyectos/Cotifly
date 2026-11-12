@@ -124,9 +124,11 @@ public sealed record clsCosteoCotizacion(
 
     /// <summary>
     /// HU-039.1 (#218): la misma vista sin el costo bruto de las rutas (<see cref="clsRutaCosteo.CostoFinal"/> en <c>null</c>), para quien
-    /// la consulta sin ser el dueño (el gerente comercial en solo consulta del detalle).
+    /// la consulta sin ser el dueño (el gerente comercial en solo consulta del detalle). HU-018.2 (#294): también deja en <c>null</c>
+    /// <see cref="clsRutaCosteo.CostoTransporte"/> (es costo); el valor de la mercancía (<see cref="clsRutaCosteo.ValorMercancia"/>) no es
+    /// costo y se conserva.
     /// </summary>
-    public clsCosteoCotizacion SinCostoFinal() => this with { Rutas = [.. Rutas.Select(r => r with { CostoFinal = null })] };
+    public clsCosteoCotizacion SinCostoFinal() => this with { Rutas = [.. Rutas.Select(r => r with { CostoFinal = null, CostoTransporte = null })] };
 }
 
 /// <summary>
@@ -179,6 +181,22 @@ public sealed record clsRutaCosteo(
     /// 2026-10-27.
     /// </summary>
     public decimal? CostoFinal { get; init; }
+
+    /// <summary>
+    /// HU-018.2 (#294): costo del transporte de la ruta = fletes + retorno + levante (<see cref="clsLineaSolicitud.CostoTransporte"/>),
+    /// <b>sin</b> conexos ni margen, <b>siempre en COP</b> aunque la cotización esté en USD (el costeo de Nexo es en pesos y nunca se
+    /// convierte). Sale con el precio, igual que <see cref="CostoFinal"/>: <c>null</c> sin costeo listo o con la ruta <c>rechazada</c>.
+    /// Solo lo ve el dueño: el detalle del gerente o del director en solo lectura lo deja en <c>null</c>
+    /// (<see cref="clsCosteoCotizacion.SinCostoFinal"/>). Dato existente de HU-039, solo expuesto (sin lógica nueva).
+    /// </summary>
+    public decimal? CostoTransporte { get; init; }
+
+    /// <summary>
+    /// HU-018.2 (#294): valor de la mercancía de la ruta (<see cref="clsLineaSolicitud.ValorMercancia"/>), en pesos (COP) aunque la
+    /// cotización esté en USD; <c>null</c> si no se declaró. No es un costo de Nexo, es solo lectura y va en todas las respuestas con la
+    /// vista del costeo (incluido el detalle del gerente: <see cref="clsCosteoCotizacion.SinCostoFinal"/> no lo toca).
+    /// </summary>
+    public decimal? ValorMercancia { get; init; }
 
     /// <summary>HU-021.9 (#136): línea de negocio de la ruta (id de <c>MargenesPolitica</c>; define su margen).</summary>
     public int? LineaNegocioId { get; init; }
@@ -256,6 +274,14 @@ public sealed record clsRutaCosteo(
 
     /// <summary>HU-009 (#139, B1): aviso al comercial cuando <see cref="MargenSapAnomalo"/>; <c>null</c> si no.</summary>
     public string? AvisoMargen { get; init; }
+
+    /// <summary>
+    /// HU-046.3 (#269): lo que exige la política de seguros a la ruta (tramo por el valor total de la mercancía, medidas recomendadas,
+    /// obligatorias con su estado y los conexos que las cumplen, y un aviso sin valor de la mercancía). En <c>GET .../costeo</c> y en las
+    /// respuestas de los conexos, del margen y del seguro; <c>null</c> en una ruta rechazada por la Mesa, en una cotización finalizada (no se
+    /// recalcula, decisión 7), si la política no se pudo leer y en las demás respuestas.
+    /// </summary>
+    public clsPoliticaSegurosRuta? PoliticaSeguros { get; init; }
 
     /// <summary>
     /// HU-028.1 (#183, Nexo #320): por qué la Mesa de Costeo de Nexo rechazó camiones de la ruta (los motivos distintos de sus camiones
@@ -338,7 +364,8 @@ public sealed class clsCosteoCotizacionService(
     IClsCategoriasConexos? categoriasConexos = null,
     IClsSituacionLineasNexo? situacionesNexo = null,
     Margen.Services.IClsAvisoSincronizacionMargenSap? avisoSincronizacion = null,
-    IClsTarifaSeguroRepository? tarifasSeguro = null) : IClsCosteoCotizacionService
+    IClsTarifaSeguroRepository? tarifasSeguro = null,
+    IClsPoliticaSegurosRepository? politicaSeguros = null) : IClsCosteoCotizacionService
 {
     public const string HerramientaPdf = "generar_pdf_costeo";
 
@@ -359,10 +386,13 @@ public sealed class clsCosteoCotizacionService(
             return NoEncontrada();
         }
 
+        // HU-046.3 (#269): los conexos sin codigoServicio (anteriores al script 21 o importados de Nexo) se completan con el catálogo.
+        await CompletarCodigosConexosAsync(cotizacion, cancellationToken);
+
         // Decisión 10 (HU-021.9): el estado del envío diferido de cada conexo a Nexo (incierto o fallido definitivo quedan a la vista).
         var estadosNexo = envioConexos is null ? null : await envioConexos.EstadosAsync(cotizacion, cancellationToken);
         // #181: el estado y el motivo pendiente de la línea de Nexo de cada camión, de la última lectura del polling (en memoria).
-        return Vista(cotizacion, opcionesPdf.Value.BaseUrl, estadosNexo, await CategoriasAsync(categoriasConexos, cotizacion, logger, cancellationToken),
+        var vista = Vista(cotizacion, opcionesPdf.Value.BaseUrl, estadosNexo, await CategoriasAsync(categoriasConexos, cotizacion, logger, cancellationToken),
             situacionesNexo?.Obtener(cotizacion.Id),
             await Margen.Services.clsAvisoSincronizacionMargenSap.ConsultarSinFallarAsync(avisoSincronizacion, cotizacion, cancellationToken))
             with
@@ -370,7 +400,40 @@ public sealed class clsCosteoCotizacionService(
                 // HU-045.2 (#264): la tasa vigente, para mostrarla antes de marcar el seguro.
                 TasaSeguroVigente = await TasaSeguroVigenteSinFallarAsync(tarifasSeguro, logger, cotizacion.Folio, cancellationToken),
             };
+
+        // HU-046.3 (#269): el bloque politica_seguros de cada ruta, con la política leída de sus tablas en esta petición.
+        return clsPoliticaSegurosCosteo.ConPolitica(
+            vista, cotizacion, await clsPoliticaSegurosCosteo.LeerSinFallarAsync(politicaSeguros, logger, cotizacion.Folio, cancellationToken));
     }
+
+    /// <summary>
+    /// HU-046.3 (#269): completa el <c>codigoServicio</c> de los conexos que no lo tienen con el índice del catálogo de Nexo y lo guarda.
+    /// Nunca falla la lectura del costeo: si no se puede guardar, se deja en el log y se completa en otra lectura. B1 de la auditoría: se
+    /// guarda fila por fila con <c>WHERE codigoServicio IS NULL</c> (<see cref="IClsCotizacionRepository.GuardarCodigosServicioAsync"/>),
+    /// sin la unidad de trabajo: la lectura no toma el candado de la cabecera, no sube la versión de negocio ni cambia el <c>ETag</c>, y
+    /// una fila que otra petición borró o completó no se toca.
+    /// </summary>
+    private async Task CompletarCodigosConexosAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken)
+    {
+        var completados = await clsPoliticaSegurosCosteo.CompletarCodigosAsync(categoriasConexos, cotizacion, logger, cancellationToken);
+        if (completados.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            await cotizaciones.GuardarCodigosServicioAsync(completados, CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logCodigosNoGuardados(logger, cotizacion.Folio, ex);
+        }
+    }
+
+    private static readonly Action<ILogger, string, Exception?> _logCodigosNoGuardados = LoggerMessage.Define<string>(
+        LogLevel.Warning, new EventId(1737, nameof(_logCodigosNoGuardados)),
+        "No se pudo guardar el codigoServicio de los conexos de {Folio}; se completa en otra lectura del costeo.");
 
     /// <summary>
     /// HU-045.2 (#264): la tasa vigente del seguro (<see cref="clsCosteoCotizacion.TasaSeguroVigente"/>). Nunca falla: sin repositorio o si la
@@ -491,14 +554,16 @@ public sealed class clsCosteoCotizacionService(
         {
             // La misma selección y las mismas cantidades no cambian nada (ni invalidan el PDF): idempotente.
             return (await VistaConEstadosAsync(cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, logger, cancellationToken, categoriasConexos, situacionesNexo?.Obtener(cotizacion.Id),
-                await Margen.Services.clsAvisoSincronizacionMargenSap.ConsultarSinFallarAsync(avisoSincronizacion, cotizacion, cancellationToken), tarifasSeguro), [], false);
+                await Margen.Services.clsAvisoSincronizacionMargenSap.ConsultarSinFallarAsync(avisoSincronizacion, cotizacion, cancellationToken), tarifasSeguro,
+                politicaSeguros), [], false);
         }
 
         var pdfInvalidado = clsReglaPdfCosteo.InvalidarPdf(cotizacion, MotivoInvalidacionPdf.ServiciosConexos, usuarioId, cotizaciones);
         cotizacion.IncrementarVersionNegocio();
         return await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, versionEsperada, cancellationToken)
             ? (await VistaConEstadosAsync(cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, logger, CancellationToken.None, categoriasConexos, situacionesNexo?.Obtener(cotizacion.Id),
-                await Margen.Services.clsAvisoSincronizacionMargenSap.ConsultarSinFallarAsync(avisoSincronizacion, cotizacion, CancellationToken.None), tarifasSeguro), movimientos, pdfInvalidado)
+                await Margen.Services.clsAvisoSincronizacionMargenSap.ConsultarSinFallarAsync(avisoSincronizacion, cotizacion, CancellationToken.None), tarifasSeguro,
+                politicaSeguros), movimientos, pdfInvalidado)
             : (clsReglaPdfCosteo.Conflicto(cotizacion.Folio), [], false);
     }
 
@@ -1325,14 +1390,21 @@ public sealed class clsCosteoCotizacionService(
         clsCotizacionSolicitud cotizacion, string? baseUrlPdf, IClsEnvioConexosNexoService? envioConexos, ILogger logger,
         CancellationToken cancellationToken = default, IClsCategoriasConexos? categoriasConexos = null,
         IReadOnlyDictionary<Guid, clsSituacionLineaNexo>? situaciones = null, Margen.DTOs.clsSincronizacionSapVieja? sincronizacionVieja = null,
-        IClsTarifaSeguroRepository? tarifasSeguro = null)
+        IClsTarifaSeguroRepository? tarifasSeguro = null, IClsPoliticaSegurosRepository? politicaSeguros = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(logger);
         var vista = await VistaConEstadosSinTasaAsync(cotizacion, baseUrlPdf, envioConexos, logger, cancellationToken, categoriasConexos, situaciones, sincronizacionVieja);
-        return tarifasSeguro is null
+        if (tarifasSeguro is not null)
+        {
+            vista = vista with { TasaSeguroVigente = await TasaSeguroVigenteSinFallarAsync(tarifasSeguro, logger, cotizacion.Folio, cancellationToken) };
+        }
+
+        // HU-046.3 (#269): con la política, también el bloque politica_seguros de cada ruta (el frontend refresca el panel con la respuesta).
+        return politicaSeguros is null
             ? vista
-            : vista with { TasaSeguroVigente = await TasaSeguroVigenteSinFallarAsync(tarifasSeguro, logger, cotizacion.Folio, cancellationToken) };
+            : clsPoliticaSegurosCosteo.ConPolitica(
+                vista, cotizacion, await clsPoliticaSegurosCosteo.LeerSinFallarAsync(politicaSeguros, logger, cotizacion.Folio, cancellationToken));
     }
 
     private static async Task<clsCosteoCotizacion> VistaConEstadosSinTasaAsync(
@@ -1462,6 +1534,10 @@ public sealed class clsCosteoCotizacionService(
         {
             // HU-039.1 (#218): el costo bruto sale con el precio, como el margen aplicado (nunca un costo sin precio).
             CostoFinal = ruta.PrecioFinalLinea is null ? null : ruta.CostoFinal,
+            // HU-018.2 (#294): el costo del transporte sale con el precio, igual que el costo bruto (null sin precio o con la ruta rechazada).
+            CostoTransporte = ruta.PrecioFinalLinea is null ? null : ruta.CostoTransporte,
+            // HU-018.2 (#294): el valor de la mercancía siempre (no es costo ni depende del precio), en COP aunque la cotización sea en USD.
+            ValorMercancia = ruta.ValorMercancia,
             MargenSapAnomalo = ruta.MargenSapAnomalo,
             // HU-028.1 (#183): los motivos del rechazo de sus camiones (la ruta puede seguir con precio por los no rechazados).
             MotivoRechazo = ruta.MotivoRechazo,

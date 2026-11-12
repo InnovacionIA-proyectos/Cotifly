@@ -50,7 +50,7 @@ public sealed class clsMisCotizacionesService(
 
         var filas = await cotizaciones.ListarConLineaPorUsuarioAsync(usuarioId, IClsCotizacionRepository.LimitePorDefecto, cancellationToken);
         var baseUrl = opcionesPdf.Value.BaseUrl;
-        var resumen = filas.Select(f => clsCotizacionResumen.Desde(f.Cotizacion, f.LineaNegocio, baseUrl, f.MargenAplicado, f.OrigenMargen)).ToList();
+        var resumen = filas.Select(f => clsCotizacionResumen.Desde(f.Cotizacion, f.LineaNegocio, baseUrl, f.MargenAplicado, f.OrigenMargen, f.Carga)).ToList();
         return new clsMisCotizaciones(resumen.Count, resumen);
     }
 

@@ -1524,7 +1524,7 @@ Cada ruta (`RutaCapturaWeb`):
 | `destino_municipio_id`, `destino` | entero; string | Sí; recomendado | Igual que el origen |
 | `tipologia` | string o null | No | Hasta 50. `Contenedor`, `CargaSuelta`, `GranelSolido`, `GranelLiquido`, `Alimentos`, `Refrigerados`, `CargaSeca` |
 | `clase_viaje` | string o null | No | Hasta 50. `valor` de `clases_viaje` de `GET /web/catalogos-flete` (`Contenedor`, `Cupo`, `Carga Suelta`, `Extradimensionado`) |
-| `clase_contenedor` | string o null | Condicional | Hasta 20. **Obligatoria** con `clase_viaje = Contenedor` y **solo** admitida con ella. `CNT20.IT`, `CNT20.RE`, `CNT20.ST`, `CNT40.HC`, `CNT40.RE`, `CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP` |
+| `clase_contenedor` | string o null | Condicional | Hasta 20. **Obligatoria** con `clase_viaje = Contenedor` (cualquier clase del catálogo: `CNT20.IT`, `CNT20.RE`, `CNT20.ST`, `CNT40.HC`, `CNT40.RE`, y las provisionales). Con `Extradimensionado` (HU-021.15, #297) es **opcional** y **solo** admite las provisionales G15 `CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP` (otra = `VALOR_FUERA_DE_RANGO`). Con las demás clases de viaje no aplica (`CAMPO_NO_APLICA`, el mensaje nombra Contenedor y Extradimensionado) |
 | `exclusivo`, `consolidado` | bool o null | No | — |
 | `retorna_contenedor` | bool o null | No | — |
 | `ciudad_devolucion_municipio_id`, `ciudad_devolucion_contenedor` | entero; string (hasta 150) | Condicional | Con `retorna_contenedor`. Id + nombre, como el origen |
@@ -1646,6 +1646,11 @@ Respuesta **201** (`CotizacionResumen` + `cubicacion`):
   "trm_aplicada": 0,
   "deadline": "2026-10-15T22:00:00+00:00",
   "score_prioridad": 62.5,
+  "origen": "Buenaventura",
+  "destino": "Bogotá D.C.",
+  "numero_rutas": 2,
+  "peso_total_kg": 37500,
+  "valor_mercancia": 430000000,
   "cubicacion": [
     {
       "linea_orden": 1,
@@ -1785,6 +1790,8 @@ polling.
       "estado_costeo": "autocosteo",
       "precio_final_linea": 5294118,
       "costo_final": 4500000,
+      "costo_transporte": 4320000,
+      "valor_mercancia": 250000000,
       "margen_aplicado": 0.15,
       "margen_sugerido": 0.15,
       "origen_margen": "politica_linea",
@@ -1816,6 +1823,8 @@ polling.
       "estado_costeo": "autocosteo",
       "precio_final_linea": 3529412,
       "costo_final": 3000000,
+      "costo_transporte": 3000000,
+      "valor_mercancia": 180000000,
       "margen_aplicado": 0.15,
       "margen_sugerido": 0.18,
       "origen_margen": "negociado",
@@ -1873,6 +1882,23 @@ Notas:
   tasa con que se calculó: no cambia aunque cambie la vigente) y `valor_seguro` (el seguro en la moneda de la cotización, ya sumado en
   `precio_final_linea`, sin margen). Con el check y sin `valor_mercancia`, `valor_seguro` y `tasa_seguro` llegan en `null`: mostrar
   "Falta el valor de la mercancía". El check se cambia con 4.4.15.
+- **Política de seguros (HU-046.3, #269; contrato del 2026-11-10).** Cada ruta trae `politica_seguros`: lo que exige la política de
+  seguros por el valor de la mercancía de la ruta (tablas de Datos, leídas en cada petición; un cambio se ve sin desplegar). Forma:
+  `{tramo: {id, nombre, valor_desde, valor_hasta} | null, aviso: "SIN_VALOR_MERCANCIA" | null, recomendadas: [Medida], obligatorias:
+  [Medida]}`, con `Medida = {codigo, nombre, es_cobrable, estado, conexos: [codigoServicio]}`. El `estado`: `incluir_seguro` se evalúa por
+  su código (`cumplida` si la ruta tiene `incluye_seguro`, si no `pendiente`); una medida con `conexos` es `cumplida` si la ruta tiene
+  alguno (por `codigoServicio`, sin distinguir mayúsculas), si no `pendiente`; una medida sin `conexos` es `sin_verificar`, que nunca
+  bloquea. El tramo usa el `valor_mercancia` TOTAL de la ruta (no por camión), con `valor_desde` exclusivo y `valor_hasta` incluido
+  (250.000.000 exacto es "> 150 – 250 M"). `valor_mercancia` y los límites están **siempre en pesos (COP)**, también en una cotización en
+  USD. Un conexo con `estado_nexo` `fallido_definitivo` o `incierto` **no** cumple ninguna medida (decisión del 2026-11-09). Sin
+  `valor_mercancia` o con 0: `tramo = null`, listas vacías y `aviso = "SIN_VALOR_MERCANCIA"`; no bloquea. Solo una **obligatoria**
+  `pendiente` bloquea "Finalizar". Las medidas van ordenadas por `nombre` y luego por `codigo`; los `conexos`, ordenados. El botón
+  "Agregar" ofrece los servicios cuyo `codigo` del catálogo de NEXO (`GET /web/servicios-conexos` → `codigo`) está en `conexos`. Hoy solo
+  el acompañante vehicular es obligatorio (350 – 700 M: parcial o total; 700 – 1.000 M: total); las demás son recomendaciones (mostrar
+  `nombre`). `politica_seguros = null` en una ruta `rechazada`, en una cotización finalizada (no se recalcula), si la política no se pudo
+  leer y en las respuestas que no la calculan (PDF, textos, recálculo de vehículos): no borrar el panel por un `null`; refrescar con
+  `GET .../costeo`. Viene también en el detalle por folio, en las respuestas de los conexos (4.4.5, 4.4.7, 4.4.13, 4.4.14), del margen
+  (4.4.4, 4.4.12) y del seguro (4.4.15).
 
 #### 4.4.4 `PUT /web/cotizaciones/{folio}/costeo/margen`
 
@@ -2069,7 +2095,12 @@ Respuesta (los dos casos traen siempre `conexos_conservados` y `conexos_descarta
   "conexos_descartados": [],
   "conexos_conservados": ["Cargue con montacargas"],
   "deadline": "2026-10-15T22:00:00+00:00",
-  "score_prioridad": 58
+  "score_prioridad": 58,
+  "origen": "Buenaventura",
+  "destino": "Bogotá D.C.",
+  "numero_rutas": 2,
+  "peso_total_kg": 37500,
+  "valor_mercancia": 430000000
 }
 ```
 
@@ -2479,15 +2510,25 @@ antigua. Sin filtros ni paginación en el servidor: filtrar y ordenar en el clie
       "created_at": "2026-10-15T15:20:11.532+00:00",
       "trm_aplicada": 0,
       "deadline": "2026-10-15T22:00:00+00:00",
-      "score_prioridad": 62.5
+      "score_prioridad": 62.5,
+      "origen": "Buenaventura",
+      "destino": "Bogotá D.C.",
+      "numero_rutas": 2,
+      "peso_total_kg": 37500.5,
+      "valor_mercancia": 430000000
     }
   ]
 }
 ```
 
+HU-018.2 (#294): la carga de cada fila viene siempre. `origen` y `destino` son los de la **ruta 1** (la de menor orden; `null` sin rutas o sin
+nombre); `numero_rutas` cuenta todas las rutas, también las rechazadas (`0` sin rutas); `peso_total_kg` es la suma del `peso_kg` declarado (sin
+tara) de todas las rutas y `valor_mercancia` la suma del valor de la mercancía de todas (en COP aunque la cotización esté en USD); las dos
+sumas son `null` si ninguna ruta trae el dato. Son de solo lectura y también salen en `GET /web/cotizaciones/regional`.
+
 | HTTP | UI |
 |---|---|
-| 200 | Tabla. `linea_negocio = "Varias"` si las rutas tienen líneas distintas (mostrarlo tal cual). `margen_aplicado` y `origen_margen` son los de la ruta 1. Mostrar "v2", "v3" si `version > 1`. Badge "Ajuste fuera de política" con `origen_margen = negociado`. No trae costo |
+| 200 | Tabla. `linea_negocio = "Varias"` si las rutas tienen líneas distintas (mostrarlo tal cual). `margen_aplicado` y `origen_margen` son los de la ruta 1. Mostrar "v2", "v3" si `version > 1`. Badge "Ajuste fuera de política" con `origen_margen = negociado`. No trae costo. La carga (`origen`, `destino`, `numero_rutas`, `peso_total_kg`, `valor_mercancia`) sirve para columnas o filtros de la tabla |
 
 Acciones por fila:
 
@@ -2681,9 +2722,16 @@ de `totales`. Para prellenar "Editar solicitud" y armar el `PUT`, `GET .../solic
 El comercial **acepta el precio** y finaliza la cotización. Desde ahí el precio queda congelado (ver 3.5).
 
 - **Rol:** ambos (dueño). Una ajena responde 404.
-- **Headers:** `If-Match` **obligatorio** (el `ETag`/`row_version` de `GET .../costeo` o del detalle). Sin cuerpo.
+- **Headers:** `If-Match` **obligatorio** (el `ETag`/`row_version` de `GET .../costeo` o del detalle). Cuerpo **opcional** (HU-046.3,
+  #269; contrato del 2026-11-10): `{"justificacion": "…"}` (de 10 a 500 caracteres sin los espacios de los extremos; ausente, null, vacía
+  o solo espacios es como no mandarla).
 - Solo con el costeo de NEXO listo: `estado_costeo` en `autocosteo` o `entregada`, con `precio_final` (una `entregada` sin precio
   espera la relectura del polling).
+- **Política de seguros (HU-046.3, #269; contrato del 2026-11-10):** si una ruta que cuenta tiene una medida obligatoria `pendiente`
+  (`politica_seguros.obligatorias[].estado`), 409 `COTIZACION_NO_FINALIZABLE` con `detalle.motivo = medidas_obligatorias_faltantes` y
+  `detalle.rutas = [{linea_orden, origen, destino, medidas: [{codigo, nombre}]}]`. Se revisa después del estado y de los conexos de NEXO.
+  Con `justificacion` se finaliza igual (queda auditada). La justificación salta **solo** este bloqueo: los conexos pendientes de leer o en
+  NEXO y el estado del costeo bloquean con o sin ella.
 - La finalización no cambia `estado_costeo`: sigue avanzando con NEXO (p. ej. `autocosteo` → `entregada`).
 
 | HTTP | Código | UI |
@@ -2691,6 +2739,9 @@ El comercial **acepta el precio** y finaliza la cotización. Desde ahí el preci
 | 200 | — | `CotizacionResumen` con `finalizada_at` y el `ETag` nuevo. Re-finalizar una ya finalizada es 200 **sin cambios** (mismo `finalizada_at`, mismo `ETag`) |
 | 404 | `ErrorWeb` | No existe o no es tuya |
 | 409 | `COTIZACION_NO_FINALIZABLE` | `estado_costeo` distinto de `autocosteo` y `entregada` (`detalle.estado_costeo` trae el actual), un conexo de Nexo pendiente de leer (`detalle.motivo = conexos_pendientes_de_leer`) o, desde #228, conexos que todavía no están en Nexo (`servicios_conexos[].estado_nexo = pendiente`; `detalle.motivo = conexos_pendientes_en_nexo`, `detalle.conexos_pendientes`): deshabilitar "Finalizar" hasta que haya precio o hasta la siguiente actualización del costeo |
+| 409 | `COTIZACION_NO_FINALIZABLE` + `medidas_obligatorias_faltantes` | HU-046.3 (#269): faltan medidas obligatorias de la política de seguros (`detalle.rutas` con `linea_orden`, `origen`, `destino` y `medidas: [{codigo, nombre}]`). Ofrecer "Agregar" con los `conexos` de cada medida (de `GET .../costeo`) o pedir una justificación y reintentar con `{"justificacion": "…"}` |
+| 400 | `JUSTIFICACION_REQUERIDA` (`ErrorNegocio`, `detalle.minimo = 10`, `detalle.maximo = 500`) | HU-046.3 (#269; contrato del 2026-11-10): la justificación viene fuera de 10 a 500 caracteres. Un cuerpo que no es JSON válido es 400 `ErrorWeb` |
+| 500 | — | HU-046.3: la política de seguros no se pudo leer; no se finalizó. Reintentar |
 | 409 | `CONFLICTO_CONCURRENCIA` | El `If-Match` no es la versión vigente (por ejemplo, el polling cambió el precio después de que lo leíste): recargar el costeo, mostrar el precio nuevo y volver a pedir la confirmación |
 | 428 | `PRECONDICION_REQUERIDA` | Falta `If-Match` |
 
@@ -2802,15 +2853,20 @@ filas antes de guardar.
 | `deadline` | fecha y hora o null | No | ISO-8601 con desfase. En la respuesta (`Licitacion.deadline`) llega **en UTC** (`+00:00`), como en la captura y el costeo (D5, E2E 2026-10-16; antes llegaba con `-05:00`) |
 | `notas` | string o null | No | Hasta 2000 |
 | `horas_cargue`, `horas_descargue` | número o null | No | 0 a 240 |
-| `hoja` | string o null | Con archivo | Hasta 31. `hojas[h].nombre` |
+| `hoja` | string o null | Con archivo | Hasta 31. `hojas[h].nombre` (con `leer_estructura`, el nombre de la tabla) |
+| `origen_lectura` | `"analizar_excel"`, `"leer_estructura"` o null | No | HU-044.7 (#290). Cómo se leyó el Excel; `analizar_excel` por defecto. Otro valor, 400 `VALIDATION_ERROR` (`detalle.campos = ["origen_lectura"]`) |
 | `moneda` | `"COP"`, `"USD"` o null | No | COP por defecto |
 | `lineas` | `LineaLicitacionWeb[]` | Sí | 1 a 1000 |
+
+Cabecera **`Idempotency-Key`** opcional (8 a 64, HU-044.10 #293): un doble clic con la misma clave y el mismo cuerpo+archivo relee la
+licitación y responde 201 con el mismo folio. Solo el 201 consume la clave (reporte por fila o 503 no); otra huella, 409
+`IDEMPOTENCY_KEY_REUTILIZADA`; fuera de largo, 400 `ErrorWeb`. La respuesta trae `origen_lectura` (cómo se leyó; `null` sin archivo).
 
 `LineaLicitacionWeb` (cada fila; mismas reglas que una ruta de la captura):
 
 | Campo | Tipo | Obligatorio | Reglas |
 |---|---|---|---|
-| `fila` | entero o null | Con archivo | Índice base 0 en `hojas[h].filas`. Único por licitación |
+| `fila` | entero o null | No | Índice base 0 en `hojas[h].filas` (con `leer_estructura`, dentro de la tabla). Único (los `null` se ignoran). **`null` con archivo = línea agregada a mano** (HU-044.10 #293): sus errores dicen «La línea N» y el Excel la pone en «Agregadas en Cotifly» o al final de «Licitación». Una licitación solo de líneas a mano es válida |
 | `linea_negocio` | string o null | No | Sin ella, la de la licitación |
 | `origen`, `destino` | string | Sí | Hasta 150. Texto del pliego; sin id, el servidor lo resuelve (`MUNICIPIO_AMBIGUO`, `MUNICIPIO_NO_ENCONTRADO`) |
 | `origen_municipio_id`, `destino_municipio_id` | entero o null | Recomendado | Si vienen, se respetan |
@@ -2870,6 +2926,7 @@ Respuesta **201** (`Licitacion`), con el cubicador configurado (cubicación en s
   "lineas_pendientes": 1,
   "archivo_nombre": null,
   "hoja": "Tarifas",
+  "origen_lectura": null,
   "lineas": [
     {
       "orden": 1, "fila": 0, "origen": "Cali", "destino": "Bogotá D.C.", "tipo_vehiculo": null, "peso_kg": 12000,
@@ -3740,6 +3797,11 @@ Vista "Todas las cotizaciones" del gerente: las cotizaciones de los comerciales 
       "trm_aplicada": 0,
       "deadline": "2026-10-15T22:00:00+00:00",
       "score_prioridad": 62.5,
+      "origen": "Buenaventura",
+      "destino": "Bogotá D.C.",
+      "numero_rutas": 2,
+      "peso_total_kg": 37500,
+      "valor_mercancia": 430000000,
       "comercial": { "usuario_id": "5f0c2a8e-4b1d-4c55-9a51-2f7d0c1e9b10", "nombre_usuario": "APEREZ", "nombre_completo": "Ana Pérez" }
     }
   ]
@@ -4115,7 +4177,7 @@ hasta reintentar), `completa`. `progreso_cubicacion = null` si ninguna ruta pas�
 |---|---|
 | `clase_viaje` | `valor` de `clases_viaje` (`GET /web/catalogos-flete`): `Contenedor`, `Cupo`, `Carga Suelta`, `Extradimensionado`. Comparación exacta, distingue mayúsculas |
 | `tipologia` | `Contenedor`, `CargaSuelta`, `GranelSolido`, `GranelLiquido`, `Alimentos`, `Refrigerados`, `CargaSeca` |
-| `clase_contenedor` | `valor` de `clases_contenedor` (`GET /web/catalogos-flete`, HU-027.1): `CNT20.IT`, `CNT20.RE`, `CNT20.ST`, `CNT40.HC`, `CNT40.RE`. Además, la lista provisional de extradimensionado `CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP`, que no viene en el catálogo. HU-031.1 (#194): también un **alias** del diccionario de NEXO que traduce a una de ellas ("40 HC" → `CNT40.HC`), que se guarda con el código. Obligatoria con `clase_viaje = Contenedor` y solo admitida con ella |
+| `clase_contenedor` | `valor` de `clases_contenedor` (`GET /web/catalogos-flete`, HU-027.1): `CNT20.IT`, `CNT20.RE`, `CNT20.ST`, `CNT40.HC`, `CNT40.RE`. Además, la lista provisional de extradimensionado `CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP`, que no viene en el catálogo. HU-031.1 (#194): también un **alias** del diccionario de NEXO que traduce a una de ellas ("40 HC" → `CNT40.HC`), que se guarda con el código. Obligatoria con `clase_viaje = Contenedor`; con `Extradimensionado` (HU-021.15, #297) opcional y solo las provisionales G15 (`CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP`); con las demás no aplica |
 
 Enviar siempre el **código**, nunca la etiqueta ni texto libre (`CODIGO_NO_CATALOGO` o `SOLICITUD_COSTEO_INVALIDA`).
 
@@ -4217,6 +4279,7 @@ parecido del catálogo, `sugerido = true`, con `similitud` de 0 a 1), `null` (si
 | `RESULTADO_YA_DEFINIDO` | `ganada` o `perdida` | El resultado que tiene NEXO (Cotifly ya lo guardó) |
 | `COTIZACION_NO_FINALIZABLE` | `conexos_pendientes_de_leer` | NEXO agregó un conexo que Cotifly todavía no leyó: esperar la siguiente actualización del costeo |
 | `COTIZACION_NO_FINALIZABLE` | `conexos_pendientes_en_nexo` | #228: hay conexos con `estado_nexo = pendiente` (`detalle.conexos_pendientes` dice cuántos): esperar a que el polling los deje `enviado`. Desde #259 el mismo 409 vuelve a encolar el envío: refrescar el costeo y reintentar "Finalizar" en unos segundos |
+| `COTIZACION_NO_FINALIZABLE` | `medidas_obligatorias_faltantes` | HU-046.3 (#269; contrato del 2026-11-10): una ruta que cuenta no tiene una medida obligatoria de la política de seguros (`detalle.rutas` con `linea_orden`, `origen`, `destino` y `medidas: [{codigo, nombre}]`): agregar el conexo (los `conexos` salen de `GET .../costeo`) o reintentar con `{"justificacion": "…"}`. Se evalúa después de los otros motivos |
 | `COSTEO_NEXO_RECHAZADA`, `CONEXO_INVALIDO`, `COSTEO_NEXO_*` | Código de NEXO (o `HTTP 401`) | Nunca el texto de NEXO |
 
 ---
@@ -4236,7 +4299,7 @@ parecido del catálogo, `sugerido = true`, con `similitud` de 0 a 1), `null` (si
 | `CLIENTE_BUSQUEDA_NO_DISPONIBLE` | 503 (antes 400) | Buscador de clientes no disponible (no es "sin resultados"); `mensaje` dice qué falta | "Buscador no disponible", Reintentar |
 | `CONEXO_INVALIDO` | 400 | NEXO no aceptó el servicio, o la ruta no existe | Mostrar mensaje; recargar el costeo antes de reintentar |
 | `CONFLICTO_CONCURRENCIA` | 409 | El `If-Match` no coincide; nada cambió | Recargar el costeo y repetir |
-| `COTIZACION_NO_FINALIZABLE` | 409 | HU-036.2 (#206): `POST .../finalizar` con `estado_costeo` distinto de `autocosteo` y `entregada` (`detalle.estado_costeo`), con un conexo de NEXO pendiente de leer (`detalle.motivo = conexos_pendientes_de_leer`) o (#228) con conexos que NEXO todavía no tiene (`detalle.motivo = conexos_pendientes_en_nexo`, `detalle.conexos_pendientes`) | Deshabilitar "Finalizar" hasta que el costeo tenga precio (o hasta la siguiente actualización del costeo) |
+| `COTIZACION_NO_FINALIZABLE` | 409 | HU-036.2 (#206): `POST .../finalizar` con `estado_costeo` distinto de `autocosteo` y `entregada` (`detalle.estado_costeo`), con un conexo de NEXO pendiente de leer (`detalle.motivo = conexos_pendientes_de_leer`) o (#228) con conexos que NEXO todavía no tiene (`detalle.motivo = conexos_pendientes_en_nexo`, `detalle.conexos_pendientes`) o (HU-046.3, #269) con medidas obligatorias de la política de seguros pendientes (`detalle.motivo = medidas_obligatorias_faltantes`, `detalle.rutas`) | Deshabilitar "Finalizar" hasta que el costeo tenga precio (o hasta la siguiente actualización del costeo). Con `medidas_obligatorias_faltantes`: agregar el conexo o finalizar con `justificacion` |
 | `COTIZACION_NO_FINALIZADA` | 409 | HU-036.3 (#207): PDF, envío por correo, textos del PDF o resultado (con el costeo listo) sobre una cotización sin finalizar. `detalle` = `{accion: finalizar, metodo: POST, endpoint}` | "Finaliza la cotización antes de …": ofrecer "Finalizar" con `detalle.endpoint` |
 | `CORREO_DEMASIADOS_DESTINATARIOS` | 400 | #228: más destinatarios entre `para` y `cc` que el tope (máximo 10 por defecto, configurable) en `POST .../enviar` o en la vista previa; `detalle = {maximo, recibidos}` | "Puedes enviar a máximo {maximo} destinatarios" |
 | `CORREO_DESHABILITADO` | 503 | Correo apagado en el servidor | "El envío de correo no está habilitado en este ambiente" |
@@ -4463,7 +4526,17 @@ fila_excel, campo, codigo, mensaje}`.
 | 80 | **#259: un conexo ya no se queda en `estado_nexo = pendiente` para siempre en una cotización entregada.** (a) Si NEXO deja la línea de un camión partida en varias líneas de su cotización, el conexo va a la primera por id (antes no se enviaba nunca y "Finalizar" respondía `conexos_pendientes_en_nexo` para siempre). (b) Con la cotización ya fuera del costeo (entregada, descartada, vencida), si el primer camión vigente no tiene línea en NEXO el conexo va al primer camión vigente que sí la tiene; si ninguno la tiene queda `fallido_definitivo` (con `aviso_conexos_nexo`, no bloquea "Finalizar"). Los conexos de una ruta `rechazada` no cambian (no se envían ni pasan a `fallido_definitivo`; tampoco bloquean). (c) `POST .../finalizar` con `conexos_pendientes_en_nexo` sigue respondiendo el mismo 409, pero, si la cotización estaba fuera de la agenda del polling, vuelve a encolar el envío diferido (sin enviar nada a NEXO en la petición): en unos segundos el conexo queda `enviado` o `fallido_definitivo` y el siguiente "Finalizar" pasa; así se reparan solas las cotizaciones que ya estaban atascadas. Sin códigos, estados, campos ni endpoints nuevos; sin script de base de datos (ADR-031) | Cambia | Con `conexos_pendientes_en_nexo`, en vez de dejar "Finalizar" deshabilitado indefinidamente: refrescar el costeo a los pocos segundos y permitir reintentar. Mostrar `fallido_definitivo` con `aviso_conexos_nexo` como hasta ahora |
 | 81 | **HU-016.2 (#295): la comparación del margen contra la política solo con cotizaciones finalizadas.** En `IndicadoresMetricas` (`indicadores` y `comerciales[].indicadores` de `GET /web/metricas/comercial` y `/regional`), los cinco campos de la comparación con la política —`margen_politica_promedio`, `margen_aplicado_promedio`, `margen_politica_ponderado`, `desviacion_margen_politica` y `rutas_sin_margen_politica`— salen ahora **solo de las cotizaciones finalizadas** (`finalizadaAt`, script 14): una cotización sin finalizar todavía puede cambiar de margen, así que no debe pesar en la desviación. Una finalizada en la v1 con una v2 sin finalizar no cuenta (se mira la versión vigente). **Cambia el significado** (el universo) de esos cinco campos; **no cambia ningún nombre ni tipo**. Sin ninguna cotización finalizada, los cuatro márgenes salen `null` y `rutas_sin_margen_politica` = 0. El **resto del tablero no cambia**: `cantidad`, `margen_promedio`, `margen_ponderado`, los montos, la serie mensual y la apertura por línea (`por_linea_negocio`) siguen contando con TODAS las cotizaciones (una abierta sí entra en `cantidad`). Sin endpoints, códigos ni script de base de datos nuevos | Cambia | Si ya se muestra la comparación de margen contra política, aclarar en pantalla que es **solo sobre cotizaciones finalizadas**; el resto de los indicadores sigue igual. No hay cambios de forma ni de integración |
 | 82 | **HU-013.18 (#296): indicaciones del comercial para el redactor con IA.** `POST /web/cotizaciones/{folio}/costeo/textos/redactar` (4.4.8) acepta ahora un **cuerpo JSON opcional** `{indicaciones_redaccion: string \| null}` (`RedactarTextosWeb`). Sin cuerpo, todo igual que hoy. `indicaciones_redaccion` orienta la carta de la IA (una **preferencia** de enfoque o tono, p. ej. "destacar la experiencia en carga refrigerada, tono cercano"); **no** es `notas` (la de la Mesa de Costeo). Hasta 500 caracteres (recortada); vacía, solo espacios o `null` = sin indicaciones. **Más de 500: 400 `SOLICITUD_INVALIDA`** sin llamar a la IA. Es una preferencia que **nunca** pasa por encima de las reglas estrictas del redactor (si pide montos, condiciones, otros nombres o cambiar el formato, esa parte se ignora) y la salida se valida igual (si no pasa, textos estándar). **No se guarda** en la cotización; la auditoría solo registra `con_indicaciones` (sí/no), nunca el texto. El reintento tras `TEXTOS_EDITADOS` (409, `?sobrescribir=true`) lleva las mismas indicaciones. Sin campos nuevos en la respuesta (`TextosCotizacion` igual que hoy), sin estados ni endpoints nuevos; sin script de base de datos | Agrega | En el editor de textos del PDF, ofrecer un campo opcional "Indicaciones para la IA" (máx. 500) y enviarlo en `indicaciones_redaccion` al pedir "Redactar con IA"; con `SOLICITUD_INVALIDA` marcar el campo (más de 500); reenviar las mismas indicaciones en el reintento con `?sobrescribir=true` |
-| 83 (provisional, se renumera al integrar) | **HU-044.8 (#291): catálogos de vehículo y carrocería alineados con NEXO. ROMPE: cambian el selector y los valores guardados.** (a) **Vehículo en código NEXO.** `GET /web/catalogos-flete` devuelve `tipos_vehiculo[].valor` con el **código NEXO** (`C2`, `C3`, `2L3`…) en vez del código de SAP («2», «3»); la `etiqueta` (descripción) no cambia y el resto de códigos tampoco. Es el valor que el front debe guardar y enviar en `tipo_vehiculo` (`POST /web/solicitudes-costeo`, licitación, edición): mandar «2»/«3» dejaría la configuración en cuarentena en NEXO. El backend, además, traduce en la captura cualquier «2»/«3» que llegue (fronts anteriores o cotizaciones viejas) a `C2`/`C3` antes de enviar a NEXO; un alias de NEXO (`GET /web/alias/resolver`) que resuelva a «2»/«3» también viaja como `C2`/`C3`. La equivalencia sale de una sola fuente (`tbl_mapeo_vehiculo_tarifario`, `C2` ↔ «2», `C3` ↔ «3»). (b) **Carrocería del catálogo de NEXO.** `GET /web/tipos-carroceria` ya **no** sale del cubicador: devuelve el catálogo de carrocerías de NEXO (`ESTACAS`, `ESTIBAS`, `FURGON`, `FURGON REFRIGERADO`, `PLATAFORMA`, `PORTACONTENEDORES`, `TANQUE`, `TRAYLER`, `VOLCO`), la misma lista que `tipos_carroceria` de `GET /web/catalogos-flete` y que valida la captura, con `codigo` = `nombre`; **siempre 200** (ya no 503 `CUBICADOR_NO_DISPONIBLE`). Los códigos de carrocería que devuelve `POST /web/licitaciones/normalizar-valores` existen en esta lista. Sin campos, códigos ni endpoints nuevos | Rompe | Guardar y enviar el `valor` de `tipos_vehiculo` tal cual (ya es `C2`/`C3`): no volver a traducir en el front ni asumir «2»/«3»; re-mapear los valores guardados de cotizaciones viejas no hace falta (el backend los traduce). Llenar el selector de carrocería con `GET /web/tipos-carroceria` (ahora de NEXO, siempre 200): quitar cualquier dependencia del cubicador y tratar `codigo` = `nombre` (mostrar el texto amigable desde el front) |
+| 83 | **HU-021.15 (#297): clase de contenedor con `clase_viaje = Extradimensionado`.** NEXO admite contenedores flat track y open top para la carga extradimensionada nacional (lista provisional G15). Con `clase_viaje = Extradimensionado`, `clase_contenedor` pasa a ser **opcional** y solo admite `CNT20.FT`, `CNT20.OP`, `CNT40.FT` o `CNT40.OP` (exactos, ignorando los espacios alrededor); otra clase es `{"campo":"clase_contenedor","codigo":"VALOR_FUERA_DE_RANGO"}` (antes `CAMPO_NO_APLICA`). Con `Contenedor` no cambia (obligatoria, cualquier clase del catálogo); con `Cupo` o `Carga Suelta`, `CAMPO_NO_APLICA` (el mensaje nombra ahora Contenedor y Extradimensionado). `peso_con_tara_kg` sigue solo con `Contenedor`. La misma regla en la captura (`POST /web/solicitudes-costeo`), la edición (`PUT .../solicitud`) y cada fila de `POST /web/licitaciones`. Ningún campo nuevo. Sin script de base de datos | Agrega | Habilitar el selector de clase de contenedor (con las 4 provisionales G15) también con `Extradimensionado`, sin marcarlo obligatorio; con otra clase, pintar `VALOR_FUERA_DE_RANGO` en `clase_contenedor` |
+| 84 | **HU-018.2 (#294): valor de la mercancía por ruta en la vista del costeo.** Cada `rutas[]` de `CosteoCotizacion` (`RutaCosteo`) trae `valor_mercancia` (número o `null`, **siempre presente**): el mismo `valor_mercancia` de `GET .../solicitud`, en pesos (COP) aunque la cotización esté en USD. Es de **solo lectura** (dato ya existente, sin lógica nueva), lo ve también el gerente o el director (`solo_lectura = true` **no** lo oculta) y sale en todas las respuestas con la vista del costeo: `GET .../costeo`, `PUT .../costeo/seguro`, las respuestas de margen y de conexos y el `costeo` del detalle por folio. Sin campos, códigos ni endpoints nuevos de endpoint (sigue el mismo conteo) | Agrega | Mostrar el valor de la mercancía de cada ruta en el costeo sin volver a pedir la solicitud |
+| 85 | **HU-018.2 (#294): costo del transporte por ruta en la vista del costeo.** Cada `rutas[]` de `RutaCosteo` trae `costo_transporte` (número o `null`, en `required`): fletes + retorno + levante, **sin** conexos ni margen (el costo bruto `costo_final` menos el costo de los conexos), **siempre en COP** aunque la cotización esté en USD. Sale junto con el precio, igual que `costo_final`: `null` sin precio o con la ruta `rechazada`, y en el detalle del gerente o del director en solo consulta (`solo_lectura = true`) siempre `null`. Es un dato de HU-039 que se expone, sin desglose por camión ni por conexo; no sale en el PDF, el correo, el Excel ni "Mis cotizaciones" | Agrega | Mostrar el costo del transporte por ruta (solo para el dueño) separado del costo bruto y de los conexos |
+| 86 | **HU-018.2 (#294): la carga en el listado de cotizaciones.** `CotizacionResumen` trae cinco campos **nuevos, siempre presentes**: `origen` y `destino` (municipios de la **ruta 1**, la de menor orden; `null` sin rutas o sin nombre), `numero_rutas` (cuántas rutas tiene, también las rechazadas; `0` sin rutas), `peso_total_kg` (suma del `peso_kg` declarado, sin tara, de todas las rutas; `null` si ninguna lo trae) y `valor_mercancia` (suma del valor de la mercancía de todas las rutas, en COP aunque la cotización esté en USD; `null` si ninguna lo trae). Los consumen `GET /web/mis-cotizaciones` y `GET /web/cotizaciones/regional`. Sin endpoints nuevos | Agrega | Mostrar origen, destino, número de rutas, peso total y valor de la mercancía como columnas o filtros de la tabla de cotizaciones |
+| 87 | **HU-035.3 (#277): un Excel con la impresión configurada ya no es `LIBRO_ILEGIBLE`.** `POST /web/licitaciones/analizar-excel`, `POST /web/licitaciones` (con archivo), `POST /web/mercancias/analizar-excel` y `GET /web/licitaciones/{folio}/excel` rechazaban con 400 `EXCEL_INVALIDO` (`detalle.motivo = LIBRO_ILEGIBLE`) libros válidos con partes binarias de Office, sobre todo la configuración de impresión que guarda Excel (`xl/printerSettings/printerSettings1.bin`, al usar *Configurar página*) y los objetos incrustados. Ahora el control lee como XML solo las partes XML y salta las binarias. Los topes (entradas, 64 MB descomprimidos, 1.000.000 de elementos XML), el rechazo del DTD y los motivos no cambian. Sin cambios de contrato | Corrige | Nada obligatorio; el mensaje de `LIBRO_ILEGIBLE` («copia la tabla a un libro nuevo») sigue valiendo para los libros de verdad ilegibles |
+| 88 | **HU-046.3 (#269): la política de seguros se alinea con el contrato autoritativo del 2026-11-10 (el front de #150 ya está construido contra él).** El bloque `rutas[].politica_seguros` pasa a `{tramo: {id, nombre, valor_desde, valor_hasta} \| null, aviso: "SIN_VALOR_MERCANCIA" \| null, recomendadas: [Medida], obligatorias: [Medida]}` con `Medida = {codigo, nombre, es_cobrable, estado, conexos}` (ver 4.4.3). Cambios respecto de la fila 77: el tramo trae `id`; las listas se llaman `recomendadas` y `obligatorias` (antes `medidas_recomendadas`/`medidas_obligatorias`); toda medida (recomendada u obligatoria) trae `es_cobrable` y `estado`, con un tercer estado `sin_verificar` (medida sin conexos, nunca bloquea) y `incluir_seguro` evaluado por su código contra `incluye_seguro`; `aviso` es el código `SIN_VALOR_MERCANCIA` o `null` (se retira `aviso_codigo` y el aviso `sin_tramo`); las medidas van por `nombre` y luego `codigo`. En `POST .../finalizar`: `justificacion` de **10 a 500** caracteres (antes hasta 1000) — fuera de largo, **400 `JUSTIFICACION_REQUERIDA`** con `detalle.minimo = 10` y `detalle.maximo = 500` (antes `SOLICITUD_INVALIDA`), validado tras el `If-Match`; el `detalle.rutas` del 409 pasa a `[{linea_orden, origen, destino, medidas: [{codigo, nombre}]}]` (sin `linea_solicitud_id` ni `conexos`); si la política no se puede leer, **500** (antes 503 `SERVICIO_OCUPADO`) | Cambia | Leer el bloque con los nombres nuevos (`recomendadas`/`obligatorias`, `tramo.id`, `es_cobrable`, `estado` con `sin_verificar`, `aviso = SIN_VALOR_MERCANCIA`); el botón "Agregar" usa `conexos` de cada medida; en "Finalizar" validar la justificación 10–500 y tratar `JUSTIFICACION_REQUERIDA` (400) con `detalle.minimo`/`detalle.maximo` |
+| 89 | **HU-044.7 (#290): crear la licitación desde la lectura con IA (`origen_lectura`) y exportarla en una hoja nueva.** `POST /web/licitaciones` acepta en el encabezado `origen_lectura` = `analizar_excel` (por defecto; ausente o vacío cae aquí y el flujo de hoy NO cambia) o `leer_estructura` (la leyó la IA de NEXO con `leer-estructura`); cualquier otro valor es 400 `VALIDATION_ERROR` con `detalle.campos = ["origen_lectura"]`. Con `leer_estructura`: `hoja` es el **nombre de la tabla** (`tablas[t].nombre`, solo referencia), `fila` es el índice (base 0) **dentro de la tabla**, obligatorio y único; Cotifly no relee la hoja ni calcula `filas_excel`, los errores por fila dicen «línea N de la tabla X», y `GET /web/licitaciones/{folio}/excel` arma un Excel **nuevo** (hoja «Licitación» + «Resumen Cotifly» + «Camiones Cotifly»), sin escribir sobre el original, con una nota en el resumen de que se leyó con la IA de NEXO. Además, cada tabla de `POST /web/licitaciones/leer-estructura` pasa por la detección de mercancías de `analizar-excel`: trae `columna_mercancia`, `columna_codigo_mercancia` y `mercancias` (o `null` si no tiene esas columnas), con `mercancias[].fila` = índice dentro de `tablas[t].filas` y `filas_excel` siempre `null`. Script `db/scripts/22` (`origenLectura` en `CotizacionArchivosLicitacion`). Sin endpoints nuevos | Agrega | Al crear una licitación leída con `leer-estructura`, enviar `origen_lectura = "leer_estructura"`, la `hoja` con el nombre de la tabla y la `fila` como índice dentro de la tabla; mostrar los errores «de la tabla» sin `filas_excel`; usar `tablas[].mercancias` para prellenar el `codigo_mercancia` como en `analizar-excel`; avisar que el Excel exportado será una hoja nueva, no el archivo original |
+| 90 | **HU-044.10 (#293, parte 1): `origen_lectura` en la respuesta de la licitación.** `GET /web/licitaciones/{folio}`, el 201 de `POST /web/licitaciones` y la respuesta de reintentar la cubicación traen `origen_lectura` (`analizar_excel`, `leer_estructura` o `null`): cómo se leyó el Excel. `null` si la licitación no tiene archivo; una licitación con archivo anterior al script 22 llega como `analizar_excel`. Siempre presente. Sin endpoints nuevos | Agrega | Mostrar u ocultar el origen de la lectura; saber si la exportación será sobre el original (`analizar_excel`) o una hoja nueva (`leer_estructura`) |
+| 91 | **HU-044.10 (#293, parte 2): líneas agregadas a mano (`fila: null`) con archivo.** `POST /web/licitaciones` acepta líneas con `fila: null` aunque haya archivo: son líneas agregadas a mano. La unicidad de `fila` ignora los `null`; sus errores por fila dicen «La línea N» (con `fila` y `fila_excel` en `null`) y una `fila null` no desplaza a las demás al releer la hoja. Una licitación hecha solo de líneas a mano es válida (con archivo sigue exigiendo `hoja`). En la vista, la línea vuelve con `fila: null`. En `GET /web/licitaciones/{folio}/excel`: con `analizar_excel` y original, las de a mano van a una hoja nueva «Agregadas en Cotifly» (columnas de «Licitación» + `Referencia` = «Agregada en Cotifly»); con `leer_estructura` o sin original, al final de la hoja «Licitación» con la columna `Referencia`; «Resumen Cotifly» agrega la fila «Líneas agregadas en Cotifly». Sin líneas a mano, el Excel queda igual que hoy. Sin endpoints nuevos; sin script | Agrega | Permitir agregar filas a mano (sin `fila`) a una licitación con archivo; pintar sus errores como «La línea N»; avisar que irán en una hoja/sección «Agregadas en Cotifly» del Excel |
+| 92 | **HU-044.10 (#293, parte 3): `Idempotency-Key` al crear la licitación.** `POST /web/licitaciones` (multipart o JSON) acepta la cabecera opcional `Idempotency-Key` (8 a 64; CORS ya la permite), ámbito `crear-licitacion` por comercial. La huella es el cuerpo más el nombre y el SHA-256 del archivo (no los bytes). Un doble clic con la misma clave y el mismo cuerpo+archivo relee la licitación creada y responde **201 con el mismo folio** y su estado de ahora, sin crear otra. Solo el 201 consume la clave: un reporte por fila (400) o un 503 **no** la consumen (la repetición se vuelve a evaluar y devuelve el reporte completo). La misma clave con otro cuerpo u otro archivo es 409 `IDEMPOTENCY_KEY_REUTILIZADA`; fuera de largo, 400 `ErrorWeb`. Sin endpoints nuevos; sin script | Agrega | Generar una `Idempotency-Key` (UUID) por intención al pulsar «Crear» y reenviarla en los reintentos; tratar el 409 `IDEMPOTENCY_KEY_REUTILIZADA` pidiendo una clave nueva |
+| 93 (provisional, se renumera al integrar) | **HU-044.8 (#291): catálogos de vehículo y carrocería alineados con NEXO. ROMPE: cambian el selector y los valores guardados.** (a) **Vehículo en código NEXO.** `GET /web/catalogos-flete` devuelve `tipos_vehiculo[].valor` con el **código NEXO** (`C2`, `C3`, `2L3`…) en vez del código de SAP («2», «3»); la `etiqueta` (descripción) no cambia y el resto de códigos tampoco. Es el valor que el front debe guardar y enviar en `tipo_vehiculo` (`POST /web/solicitudes-costeo`, licitación, edición): mandar «2»/«3» dejaría la configuración en cuarentena en NEXO. El backend, además, traduce en la captura cualquier «2»/«3» que llegue (fronts anteriores o cotizaciones viejas) a `C2`/`C3` antes de enviar a NEXO; un alias de NEXO (`GET /web/alias/resolver`) que resuelva a «2»/«3» también viaja como `C2`/`C3`. La equivalencia sale de una sola fuente (`tbl_mapeo_vehiculo_tarifario`, `C2` ↔ «2», `C3` ↔ «3»). (b) **Carrocería del catálogo de NEXO.** `GET /web/tipos-carroceria` ya **no** sale del cubicador: devuelve el catálogo de carrocerías de NEXO (`ESTACAS`, `ESTIBAS`, `FURGON`, `FURGON REFRIGERADO`, `PLATAFORMA`, `PORTACONTENEDORES`, `TANQUE`, `TRAYLER`, `VOLCO`), la misma lista que `tipos_carroceria` de `GET /web/catalogos-flete` y que valida la captura, con `codigo` = `nombre`; **siempre 200** (ya no 503 `CUBICADOR_NO_DISPONIBLE`). Los códigos de carrocería que devuelve `POST /web/licitaciones/normalizar-valores` existen en esta lista. Sin campos, códigos ni endpoints nuevos | Rompe | Guardar y enviar el `valor` de `tipos_vehiculo` tal cual (ya es `C2`/`C3`): no volver a traducir en el front ni asumir «2»/«3»; re-mapear los valores guardados de cotizaciones viejas no hace falta (el backend los traduce). Llenar el selector de carrocería con `GET /web/tipos-carroceria` (ahora de NEXO, siempre 200): quitar cualquier dependencia del cubicador y tratar `codigo` = `nombre` (mostrar el texto amigable desde el front) |
 
 ---
 

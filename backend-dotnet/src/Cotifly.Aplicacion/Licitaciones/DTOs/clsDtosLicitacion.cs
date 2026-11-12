@@ -66,6 +66,30 @@ public sealed record clsCodigoMercanciaFila(
 public sealed record clsArchivoSubido(string? Nombre, byte[] Contenido);
 
 /// <summary>
+/// HU-044.7 (#290): cómo se leyó el Excel de la licitación. <see cref="AnalizarExcel"/> es el flujo de siempre (<c>analizar-excel</c>:
+/// la <c>fila</c> es el índice en <c>hojas[h].filas</c> y la exportación escribe los precios sobre el Excel original). Con
+/// <see cref="LeerEstructura"/> la leyó la IA de NEXO (<c>leer-estructura</c>): la <c>hoja</c> es el nombre de la tabla (solo referencia), la
+/// <c>fila</c> es el índice dentro de la tabla y la exportación arma un Excel NUEVO sin tocar el original.
+/// </summary>
+public static class clsOrigenLectura
+{
+    public const string AnalizarExcel = clsArchivoLicitacion.OrigenAnalizarExcel;
+    public const string LeerEstructura = clsArchivoLicitacion.OrigenLeerEstructura;
+
+    /// <summary>Código del error cuando <c>origen_lectura</c> trae un valor desconocido (el mismo <c>VALIDATION_ERROR</c> del contrato).</summary>
+    public const string CodigoValidacion = "VALIDATION_ERROR";
+
+    /// <summary>Normaliza el valor recibido: vacío o <c>null</c> es <see cref="AnalizarExcel"/> (el flujo de hoy no cambia).</summary>
+    public static string Normalizar(string? valor) => string.IsNullOrWhiteSpace(valor) ? AnalizarExcel : valor.Trim();
+
+    /// <summary>¿El valor es aceptable? Vacío, <see cref="AnalizarExcel"/> o <see cref="LeerEstructura"/>; cualquier otro es un error.</summary>
+    public static bool EsValido(string? valor) => Normalizar(valor) is AnalizarExcel or LeerEstructura;
+
+    /// <summary>¿La licitación se leyó con la IA de NEXO (<see cref="LeerEstructura"/>)?</summary>
+    public static bool EsLeerEstructura(string? valor) => Normalizar(valor) == LeerEstructura;
+}
+
+/// <summary>
 /// Una ruta de la captura (fila de una licitación o ruta del formulario, HU-021.6): los campos de <c>CapturaLineaRequest</c>, la fila
 /// del Excel de donde salió (<c>null</c> en el formulario), su línea de negocio (<c>null</c> = la del encabezado) y sus servicios
 /// conexos del catálogo de Nexo (id y cantidad; el precio se toma del catálogo, decisión 3).
@@ -92,7 +116,8 @@ public sealed record clsEntradaLicitacion(
     string? Hoja,
     IReadOnlyList<clsLineaLicitacionEntrada> Lineas,
     clsArchivoSubido? Archivo,
-    string? Moneda = null);
+    string? Moneda = null,
+    string? OrigenLectura = null);
 
 /// <summary>
 /// Un error del reporte de validación (<c>ErrorFilaLicitacion</c>): <paramref name="Indice"/> es la posición en <c>lineas[]</c>
@@ -171,6 +196,13 @@ public sealed record clsLicitacion(
     /// serializa, como en <c>CotizacionResumen</c> y <c>CosteoCotizacion</c>.
     /// </summary>
     public DateTimeOffset? FinalizadaAt { get; init; }
+
+    /// <summary>
+    /// HU-044.10 (#293, parte 1): cómo se leyó el Excel de la licitación (<see cref="clsOrigenLectura.AnalizarExcel"/> o
+    /// <see cref="clsOrigenLectura.LeerEstructura"/>); <c>null</c> si la licitación no tiene archivo. Una licitación con archivo anterior al
+    /// script 22 (sin <c>origenLectura</c> guardado) cae en <see cref="clsOrigenLectura.AnalizarExcel"/>. Siempre se serializa.
+    /// </summary>
+    public string? OrigenLectura { get; init; }
 }
 
 /// <summary>
@@ -252,7 +284,14 @@ public sealed record clsExportacionLicitacion(
     byte[]? Original,
     IReadOnlyList<clsLineaExportacion> Lineas,
     IReadOnlyList<clsConexoExportacion> ServiciosConexos,
-    DateTimeOffset GeneradoEn);
+    DateTimeOffset GeneradoEn)
+{
+    /// <summary>
+    /// HU-044.7 (#290): la licitación se leyó con la IA de NEXO (<c>leer-estructura</c>). El exportador NO escribe sobre el Excel original
+    /// (<see cref="Original"/> llega <c>null</c>): arma la hoja «Licitación» nueva y el resumen deja la nota de que se leyó con la IA.
+    /// </summary>
+    public bool LeidaConIa { get; init; }
+}
 
 /// <summary>
 /// Una línea exportada: dónde va (fila del análisis), qué es, su estado legible y su precio (<c>null</c> = sin costeo). HU-023.5 (#160):

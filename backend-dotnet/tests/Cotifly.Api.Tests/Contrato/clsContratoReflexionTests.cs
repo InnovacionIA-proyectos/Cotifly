@@ -87,6 +87,9 @@ public sealed class clsContratoReflexionTests(clsCotiflyApiFactory factory) : IC
         "ErrorFilaLicitacion.codigo",
         "MensajeWeb.moneda", "SalidaPrecio.moneda", "ResumenCorreo.moneda", "EdicionSolicitudWeb.moneda", "SolicitudEditable.moneda",
         "SolicitudCosteoWeb.moneda", "LicitacionWeb.moneda", "Licitacion.moneda",
+        // HU-044.7 (#290): origen_lectura son las constantes de clsOrigenLectura (analizar_excel / leer_estructura), no un enum C#.
+        // HU-044.10 (#293): también en la respuesta Licitacion.origen_lectura.
+        "LicitacionWeb.origen_lectura", "Licitacion.origen_lectura",
         "SalidaPrecio.metodo", "LineaNegocio.metodo_calculo", "ActualizarLineaNegocio.metodo_calculo", "DatosNuevaVersion.metodo_calculo",
         "RutaNuevaVersion.metodo_calculo", "SalidaPrecio.trm_fuente",
         "AccionPropuesta.tipo", "AccionPropuesta.metodo", "RespuestaChatError.error", "RespuestaChatError.codigo",
@@ -100,6 +103,10 @@ public sealed class clsContratoReflexionTests(clsCotiflyApiFactory factory) : IC
         "CubicacionEnProceso.estado", "EstadoCubicacion.estado",
         // HU-042.2 (#243): el estado de la corrida es el texto del CHECK de SapMargenSyncLog (constantes de clsCorridaSincronizacionMargenSap).
         "CorridaSincronizacionMargenSap.estado", "ResultadoSincronizacionMargenSap.estado",
+        // HU-046.3 (#269; contrato del 2026-11-10): cumplida | pendiente | sin_verificar, constantes de clsMedidaEvaluada (texto, no enum).
+        "MedidaPolitica.estado",
+        // HU-046.3 (#269; contrato del 2026-11-10): SIN_VALOR_MERCANCIA | null, constante de clsPoliticaSeguros (texto, no enum).
+        "PoliticaSegurosRuta.aviso",
         // HU-044.5 (#256): el tipo del término es el texto de NEXO, reenviado tal cual; el código del aviso es la constante
         // clsFormatosClienteService.AvisoTerminosClienteNoDisponibles.
         "TerminoDiccionario.tipo", "AvisoDiccionario.codigo",
