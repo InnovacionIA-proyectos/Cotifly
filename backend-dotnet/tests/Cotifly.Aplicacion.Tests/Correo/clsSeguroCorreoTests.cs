@@ -6,6 +6,7 @@ using Cotifly.Aplicacion.Correo.Services;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Aplicacion.Pdf.Interfaces;
+using Cotifly.Aplicacion.Pdf.Services;
 using Cotifly.Aplicacion.Tests.Costeo;
 using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Dominio.Identidad;
@@ -90,6 +91,7 @@ public sealed class clsSeguroCorreoTests : IDisposable
         var servicio = new clsCorreoService(_cotizaciones, _correos, _usuarios, _almacen, _transporte, _unidad, new clsRelojFalso(),
             Substitute.For<IClsCalendarioNegocio>(), _candado,
             Options.Create(new clsOpcionesCorreo { Habilitado = true, Proteccion = new() { Modo = "ninguno", PermitirEnvioReal = true } }),
+            Options.Create(new clsOpcionesPdf { TextoSeguros = null }),
             new clsLoggerFalso<clsCorreoService>());
 
         var resultado = await servicio.EnviarAsync(new clsEntradaEnviarCorreo(_comercial.Id, ["cliente@empresa.com"], Folio: "PCN-C9"), Ct);
@@ -123,7 +125,7 @@ public sealed class clsSeguroCorreoTests : IDisposable
         var previos = Substitute.For<IClsDestinatariosPreviosService>();
         previos.ObtenerAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns(new clsDestinatarios([], []));
         var servicio = new clsVistaPreviaCorreoService(_cotizaciones, previos, _usuarios, Substitute.For<IClsCalendarioNegocio>(),
-            Options.Create(new clsOpcionesCorreo { Habilitado = true }));
+            Options.Create(new clsOpcionesCorreo { Habilitado = true }), Options.Create(new clsOpcionesPdf { TextoSeguros = null }));
 
         var vista = await servicio.PrevisualizarAsync(_comercial.Id, "PCN-C9", cancellationToken: Ct);
 
