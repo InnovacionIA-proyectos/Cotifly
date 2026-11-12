@@ -1,3 +1,4 @@
+using Cotifly.Aplicacion.Comun;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
@@ -45,6 +46,17 @@ public interface IClsLicitacionService
     Task<clsResultadoLicitacion> CrearAsync(Guid usuarioId, clsEntradaLicitacion entrada, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// HU-044.10 (#293, parte 3): <see cref="CrearAsync"/> con <c>Idempotency-Key</c> opcional (<see cref="IClsAlmacenIdempotencia"/>).
+    /// Sin clave (o sin almacén), llama directo a <see cref="CrearAsync"/>. Con clave, la repetición con la misma clave y el mismo
+    /// cuerpo+archivo devuelve el mismo folio releyendo la licitación (201 con su estado de ahora). Solo el 201 (licitación creada)
+    /// consume la clave: un reporte por fila (400) o un 503 NO la consumen, así la repetición se vuelve a evaluar. La misma clave con
+    /// otro cuerpo u otro archivo es <c>IDEMPOTENCY_KEY_REUTILIZADA</c> (409) y fuera de largo (8 a 64), <c>SOLICITUD_INVALIDA</c> (400).
+    /// La huella es el cuerpo más el nombre y el SHA-256 del archivo (no los bytes).
+    /// </summary>
+    Task<clsResultadoLicitacion> CrearUnaVezAsync(
+        Guid usuarioId, clsEntradaLicitacion entrada, string? claveIdempotencia, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// La licitación con el estado y el precio de cada línea (nunca el costo de Nexo). HU-023.5 (#160): con los camiones de cada ruta, el
     /// progreso de la cubicación en segundo plano y los avisos del cubicador. HU-034.1 (#201, parte A): además del dueño, la ve en solo
     /// lectura (<see cref="clsLicitacion.SoloLectura"/>) el usuario autenticado si es el director o el gerente de la regional del dueño
@@ -85,9 +97,13 @@ public sealed class clsLicitacionService(
     Cotizaciones.Services.IClsAccesoCotizacionAjena ajenas,
     IOptions<clsOpcionesCaptura>? opcionesCaptura = null,
     IClsCubicador? cubicador = null,
-    IOptions<clsOpcionesCubicacionLicitacion>? opcionesCubicacion = null) : IClsLicitacionService
+    IOptions<clsOpcionesCubicacionLicitacion>? opcionesCubicacion = null,
+    IClsAlmacenIdempotencia? idempotencia = null) : IClsLicitacionService
 {
     public const string TipoXlsx = clsArchivoLicitacion.TipoXlsx;
+
+    /// <summary>HU-044.10 (#293): ámbito de las claves de idempotencia de crear una licitación (con el comercial).</summary>
+    public const string OperacionIdempotencia = "crear-licitacion";
 
     /// <summary>HU-034.1 (#201): auditoría de la consulta de una licitación ajena (gerente o director), permitida o no.</summary>
     public const string HerramientaConsulta = "consultar_licitacion";
@@ -140,7 +156,10 @@ public sealed class clsLicitacionService(
             ? await cotizaciones.ObtenerArchivoLicitacionAsync(cotizacion.Id, cancellationToken)
             : null;
         var nombres = await NombresCubicadorAsync(cotizacion, cancellationToken);
-        var datos = DatosExportacion(cotizacion, archivo, reloj.AhoraUtc, nombres.Vehiculos, nombres.Carrocerias);
+        // HU-044.7 (#290): una licitación leída con la IA de NEXO (leer_estructura) se exporta en un Excel NUEVO: no se pasa el original al
+        // exportador (arma la hoja «Licitación» como sin archivo) y el resumen deja la nota de que se leyó con la IA.
+        var leidaConIa = archivo is { OrigenLectura: clsOrigenLectura.LeerEstructura };
+        var datos = DatosExportacion(cotizacion, leidaConIa ? null : archivo, reloj.AhoraUtc, nombres.Vehiculos, nombres.Carrocerias, leidaConIa);
         var generado = await exportador.GenerarAsync(datos, cancellationToken);
         if (generado.EsFallo)
         {
@@ -163,7 +182,8 @@ public sealed class clsLicitacionService(
         clsArchivoLicitacion? archivo,
         DateTimeOffset ahora,
         IReadOnlyDictionary<string, string>? vehiculos = null,
-        IReadOnlyDictionary<string, string>? carrocerias = null)
+        IReadOnlyDictionary<string, string>? carrocerias = null,
+        bool leidaConIa = false)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         var lineas = cotizacion.RutasOrdenadas;
@@ -191,7 +211,10 @@ public sealed class clsLicitacionService(
                 ValorSeguro = Costeo.Services.clsCosteoCotizacionService.ValorSeguroPdf(cotizacion, l),
             })],
             conexos,
-            ahora);
+            ahora)
+        {
+            LeidaConIa = leidaConIa,
+        };
     }
 
     /// <summary>HU-023.5: los camiones de la ruta para el Excel, con los nombres del catálogo del cubicador (o el código).</summary>
@@ -323,28 +346,12 @@ public sealed class clsLicitacionService(
     /// </summary>
     private async Task<clsAnalisisExcel> ConMercanciasAsync(clsAnalisisExcel analisis, CancellationToken cancellationToken)
     {
-        var columnas = analisis.Hojas.Select(h => (Hoja: h, Texto: ColumnaMercancia(h.Encabezados), Codigo: ColumnaCodigoMercancia(h.Encabezados))).ToList();
-        if (columnas.All(c => c.Texto is null && c.Codigo is null))
-        {
-            return analisis;
-        }
-
-        // HU-035.1 (#202): la lectura del catálogo y la detección viven en clsDetectorMercanciaExcel (compartidas con el Excel de mercancías).
-        var catalogo = await clsDetectorMercanciaExcel.CatalogoAsync(cubicador, logger, cancellationToken);
-        var porCodigo = clsDetectorMercanciaExcel.PorCodigo(catalogo);
-
-        return analisis with
-        {
-            CatalogoMercanciasDisponible = catalogo is not null,
-            Hojas = [.. columnas.Select(c => c.Texto is null && c.Codigo is null
-                ? c.Hoja
-                : c.Hoja with
-                {
-                    ColumnaMercancia = c.Texto is { } t ? c.Hoja.Encabezados[t] : null,
-                    ColumnaCodigoMercancia = c.Codigo is { } k ? c.Hoja.Encabezados[k] : null,
-                    Mercancias = MercanciasDeHoja(c.Hoja, c.Texto, c.Codigo, catalogo, porCodigo),
-                })],
-        };
+        // HU-035.1 (#202): la lectura del catálogo y la detección viven en clsDetectorMercanciaExcel (compartidas con el Excel de mercancías
+        // y, desde HU-044.7 #290, con las tablas de leer-estructura).
+        var resultado = await clsDetectorMercanciaExcel.ConMercanciasAsync(analisis.Hojas, cubicador, logger, cancellationToken);
+        return resultado.Aplicado
+            ? analisis with { CatalogoMercanciasDisponible = resultado.CatalogoDisponible, Hojas = resultado.Hojas }
+            : analisis;
     }
 
     /// <summary>Por cada fila con mercancía (texto o código), su código (<see cref="clsDetectorMercanciaExcel.Mercancias"/>).</summary>
@@ -393,6 +400,78 @@ public sealed class clsLicitacionService(
         return mismoTotal && ubicadas >= hoja.Filas.Count;
     }
 
+    public async Task<clsResultadoLicitacion> CrearUnaVezAsync(
+        Guid usuarioId, clsEntradaLicitacion entrada, string? claveIdempotencia, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(entrada);
+        if (claveIdempotencia is null || idempotencia is null)
+        {
+            return await CrearAsync(usuarioId, entrada, cancellationToken);
+        }
+
+        // PENDIENTE (#293, confirmar con Sara): si la primera petición se cae DESPUÉS de crear el folio y ANTES de responder, la repetición
+        // crea otra licitación (aquí no hay el registro previo al folio que la captura usa para CAPTURA_EN_CURSO, #173). NO se replica ese
+        // mecanismo hasta confirmarlo.
+        // #191: el almacén guarda solo el folio (texto). Si la acción corrió en esta petición se devuelve su resultado completo (incluido
+        // el reporte por fila, que NO consume la clave); si es una repetición de un 201, la licitación guardada se relee por su folio.
+        clsResultadoLicitacion? ejecutada = null;
+        var guardado = await idempotencia.EjecutarUnaVezAsync<string>(
+            $"{OperacionIdempotencia}:{usuarioId}",
+            claveIdempotencia,
+            Huella(entrada),
+            async ct =>
+            {
+                var resultado = await CrearAsync(usuarioId, entrada, ct);
+                ejecutada = resultado;
+                return resultado.Cotizacion is { } creada
+                    ? (clsResultado<string>)creada.Folio
+                    : resultado.Error ?? new clsErrorDominio(clsCodigosError.ErrorInterno, "No se pudo crear la licitación.");
+            },
+            // Solo el 201 (licitación creada) consume la clave; el reporte por fila (400) y el 503 NO (el folio nunca se guardó).
+            _ => ejecutada?.Cotizacion is not null,
+            cancellationToken);
+        if (guardado.EsFallo)
+        {
+            // La acción corrió y falló (reporte por fila o error de negocio): se devuelve su resultado completo; si no corrió (misma clave
+            // con otra huella → 409, o fuera de largo → 400), el error del almacén.
+            return ejecutada ?? clsResultadoLicitacion.Fallo(guardado.Error);
+        }
+
+        if (ejecutada is { Cotizacion: not null })
+        {
+            return ejecutada;
+        }
+
+        // Repetición de un 201: se relee la licitación por su folio y se responde 201 con su estado de ahora.
+        var cotizacion = await cotizaciones.ObtenerPorFolioDelUsuarioAsync(guardado.Valor, usuarioId, cancellationToken);
+        return cotizacion is null
+            ? clsResultadoLicitacion.Fallo(new clsErrorDominio(clsCodigosError.CotizacionNoEncontrada, "Cotización no encontrada o no es tuya."))
+            : clsResultadoLicitacion.Exito(cotizacion);
+    }
+
+    /// <summary>
+    /// HU-044.10 (#293): huella (SHA-256) de la petición de crear una licitación: el cuerpo (sin los bytes del archivo) más el nombre y el
+    /// SHA-256 del archivo. La misma clave con otro cuerpo u otro archivo es <c>IDEMPOTENCY_KEY_REUTILIZADA</c> (409).
+    /// </summary>
+    public static string Huella(clsEntradaLicitacion entrada)
+    {
+        ArgumentNullException.ThrowIfNull(entrada);
+        var archivo = entrada.Archivo;
+        return clsHuellaIdempotencia.Calcular(new
+        {
+            entrada.NitCliente,
+            entrada.ClienteNombre,
+            entrada.LineaNegocio,
+            entrada.Encabezado,
+            entrada.Hoja,
+            entrada.Lineas,
+            entrada.Moneda,
+            entrada.OrigenLectura,
+            archivo_nombre = archivo?.Nombre,
+            archivo_sha256 = archivo is null ? null : Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(archivo.Contenido)),
+        });
+    }
+
     public async Task<clsResultadoLicitacion> CrearAsync(Guid usuarioId, clsEntradaLicitacion entrada, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(entrada);
@@ -406,6 +485,20 @@ public sealed class clsLicitacionService(
         {
             return clsResultadoLicitacion.Fallo(new clsErrorDominio(clsCodigosError.LicitacionInvalida, "El tipo de una licitación es 'licitacion'."));
         }
+
+        // HU-044.7 (#290): origen_lectura decide cómo se mapea la fila y cómo se exporta. Vacío = analizar_excel (el flujo de hoy no cambia);
+        // un valor desconocido es 400 VALIDATION_ERROR en origen_lectura (el mismo código del contrato), con detalle.campos.
+        if (!clsOrigenLectura.EsValido(entrada.OrigenLectura))
+        {
+            return clsResultadoLicitacion.Fallo(new clsErrorDominio(
+                clsOrigenLectura.CodigoValidacion,
+                $"El campo 'origen_lectura' debe ser '{clsOrigenLectura.AnalizarExcel}' o '{clsOrigenLectura.LeerEstructura}'.")
+            {
+                Datos = new Dictionary<string, object?>(StringComparer.Ordinal) { ["campos"] = new List<string> { "origen_lectura" } },
+            });
+        }
+
+        var leerEstructura = clsOrigenLectura.EsLeerEstructura(entrada.OrigenLectura);
 
         // HU-032 (#197): el vehículo elegido de cada fila es el respaldo del cubicador (y obligatorio en una fila sin mercancías
         // cubicables, salvo Contenedor). Con Captura:AceptarVehiculoCliente apagada se ignora (decisión 7 de HU-021).
@@ -425,7 +518,9 @@ public sealed class clsLicitacionService(
                 return clsResultadoLicitacion.Fallo(invalido);
             }
 
-            if (!string.IsNullOrWhiteSpace(entrada.Hoja) && entrada.Hoja.Trim().Length <= clsArchivoLicitacion.LargoHoja)
+            // HU-044.7 (#290): con leer_estructura la 'hoja' es el nombre de la tabla (solo referencia) y la 'fila' es el índice dentro de la
+            // tabla, no de la hoja: NO se relee el Excel original ni se calcula filas_excel (el archivo se guarda para exportarlo en una hoja nueva).
+            if (!leerEstructura && !string.IsNullOrWhiteSpace(entrada.Hoja) && entrada.Hoja.Trim().Length <= clsArchivoLicitacion.LargoHoja)
             {
                 var filas = await lector.FilasDeDatosAsync(archivo.Contenido, entrada.Hoja.Trim(), cancellationToken);
                 if (filas.EsFallo)
@@ -553,7 +648,7 @@ public sealed class clsLicitacionService(
             cotizaciones.Agregar(cotizacion.Valor);
             if (entrada.Archivo is { } original)
             {
-                var guardado = clsArchivoLicitacion.Crear(id, original.Nombre, original.Contenido, entrada.Hoja);
+                var guardado = clsArchivoLicitacion.Crear(id, original.Nombre, original.Contenido, entrada.Hoja, entrada.OrigenLectura);
                 if (guardado.EsFallo)
                 {
                     return guardado.Error;
@@ -657,8 +752,16 @@ public sealed class clsLicitacionService(
         {
             LineasRechazadas = ordenadas.Count(l => l.Rechazada),
             FinalizadaAt = cotizacion.FinalizadaAt?.ToUniversalTime(),
+            OrigenLectura = OrigenLecturaVista(archivo),
         };
     }
+
+    /// <summary>
+    /// HU-044.10 (#293, parte 1): el <c>origen_lectura</c> de la vista. <c>null</c> si la licitación no tiene archivo;
+    /// <see cref="clsOrigenLectura.AnalizarExcel"/> si el archivo no guardó un <c>origenLectura</c> (anterior al script 22); si no, el valor.
+    /// </summary>
+    public static string? OrigenLecturaVista(clsArchivoLicitacionResumen? archivo) =>
+        archivo is null ? null : clsOrigenLectura.Normalizar(archivo.OrigenLectura);
 
     /// <summary>
     /// OBS-1027-4 (#226): los errores de la línea de negocio para el reporte por fila, con la misma regla que el alta (sin política,

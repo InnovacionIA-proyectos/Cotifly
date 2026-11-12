@@ -2247,8 +2247,10 @@ paths:
             `SOLICITUD_COSTEO_INVALIDA` (campo obligatorio, largo o rango fuera de los límites de Nexo, más de 200
             posiciones, o la regla de peso de Nexo: `detalle.motivo` = `PESO_REQUERIDO` si la línea no trae peso > 0 ni
             posiciones con peso, `PESO_INCONSISTENTE` si el peso difiere más del 1 % de `sum(cantidad × peso_kg)`; HU-013.10:
-            un catálogo que no es código de catálogo, `clase_contenedor` sin `clase_viaje = Contenedor` o sin ella con
-            `Contenedor`, `valor_levante_contenedor` (ex `valor_aprovisionamiento`; el error lo nombra así desde #228) sin una `ciudad_levante_contenedor` distinta del origen; el mensaje nombra
+            un catálogo que no es código de catálogo, `clase_contenedor` sin `clase_viaje = Contenedor` ni `Extradimensionado`
+            (HU-021.15, #297) o sin ella con `Contenedor`, con `Extradimensionado` solo las clases provisionales G15
+            (`CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP`; otra es `VALOR_FUERA_DE_RANGO`),
+            `valor_levante_contenedor` (ex `valor_aprovisionamiento`; el error lo nombra así desde #228) sin una `ciudad_levante_contenedor` distinta del origen; el mensaje nombra
             el campo), `MARGEN_LINEA_DESCONOCIDA` (la línea no existe o está inactiva) o `FOLIO_CONSECUTIVO_AGOTADO`.
             Con `moneda = USD` (HU-013.7): `TRM_NO_DISPONIBLE` si ninguna fuente de la TRM respondió; `moneda` con otro valor
             es `SOLICITUD_COSTEO_INVALIDA` (el mensaje nombra el campo `moneda`).
@@ -2532,7 +2534,7 @@ paths:
       x-issue: '#206 (HU-036.2)'
       description: |
         HU-036.2 (#206). El comercial acepta el precio de la cotización y la **finaliza**. Solo el dueño, con `If-Match` (el `ETag`
-        de `GET .../costeo` o de "Mis cotizaciones"). Sin cuerpo.
+        de `GET .../costeo` o de "Mis cotizaciones"). Cuerpo **opcional** (`FinalizarWeb`, HU-046.3 #269): solo `justificacion`.
 
         - Solo con el costeo de Nexo listo: `estado_costeo` en `autocosteo` o `entregada` (todas las rutas que cuentan tienen precio;
           las `rechazada` no cuentan) y con `precio_final` (una `entregada` que Cotifly todavía no leyó espera la relectura del
@@ -2552,6 +2554,17 @@ paths:
           409 además vuelve a encolar la cotización para el envío diferido (finalizar nunca envía conexos a Nexo): el worker los
           envía o los deja `fallido_definitivo` en segundos y el siguiente intento de finalizar pasa. Si hay
           conexos pendientes de leer, ese motivo va primero.
+        - HU-046.3 (#269; contrato del 2026-11-10): tampoco mientras una ruta que cuenta (no `rechazada`) tiene una medida
+          **obligatoria** de la política de seguros pendiente (`rutas[].politica_seguros.obligatorias[].estado = pendiente` en
+          `GET .../costeo`; hoy, un acompañante vehicular desde 350 M): 409 `COTIZACION_NO_FINALIZABLE` con
+          `detalle.motivo = medidas_obligatorias_faltantes` y `detalle.rutas` (cada ruta con `linea_orden`, `origen`, `destino` y sus
+          `medidas`: `codigo` y `nombre`). Se revisa después del estado y de los conexos de Nexo. Con `justificacion` (de 10 a 500
+          caracteres, sin los espacios de los extremos) se finaliza igual: la justificación salta **solo** este bloqueo (los anteriores
+          bloquean con o sin ella) y queda en `EventosHerramienta` con las medidas que faltaban (códigos, sin montos). Fuera de ese largo:
+          400 `JUSTIFICACION_REQUERIDA` con `detalle.minimo = 10` y `detalle.maximo = 500`, validado justo después del `If-Match`. Una ruta
+          sin `valor_mercancia` (o con 0) no exige nada (el costeo trae `aviso = SIN_VALOR_MERCANCIA`). La política se lee de sus tablas en
+          cada finalización: un cambio de Datos se ve sin desplegar. Solo se evalúa si no bloquea otro motivo. Un conexo
+          `fallido_definitivo` o `incierto` en Nexo no cumple la medida. Si la política no se puede leer, 500.
         - Re-finalizar una ya finalizada es idempotente: 200 sin cambios (mismo `finalizada_at`, mismo `ETag`).
         - `If-Match` que no es la versión vigente: 409 `CONFLICTO_CONCURRENCIA`, sin cambios (también si ya estaba finalizada). Si
           el polling cambió el precio entre la lectura y el clic, la versión ya no coincide: el comercial recarga y nunca finaliza un
@@ -2566,6 +2579,14 @@ paths:
       parameters:
         - $ref: '#/components/parameters/Folio'
         - $ref: '#/components/parameters/IfMatchObligatorio'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FinalizarWeb'
+            example:
+              justificacion: "Riesgo aprobó el viaje sin acompañante (correo del 2026-11-06)."
       responses:
         '200':
           description: Cotización finalizada (o ya lo estaba)
@@ -2576,12 +2597,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CotizacionResumen'
+        '400':
+          description: 'Cuerpo inválido (`ErrorWeb`) o, HU-046.3 (#269), `JUSTIFICACION_REQUERIDA` con `detalle.minimo = 10` y `detalle.maximo = 500` si la justificación viene fuera de 10 a 500 caracteres.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
         '401':
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`COTIZACION_NO_FINALIZABLE` (`estado_costeo` distinto de `autocosteo` y `entregada`, con `detalle.estado_costeo`; o `detalle.motivo` = `conexos_pendientes_de_leer` o, #228, `conexos_pendientes_en_nexo` con `detalle.conexos_pendientes`) o `CONFLICTO_CONCURRENCIA`; sin cambios.'
+          description: '`COTIZACION_NO_FINALIZABLE` (`estado_costeo` distinto de `autocosteo` y `entregada`, con `detalle.estado_costeo`; o `detalle.motivo` = `conexos_pendientes_de_leer`, #228 `conexos_pendientes_en_nexo` con `detalle.conexos_pendientes` o, HU-046.3 #269, `medidas_obligatorias_faltantes` con `detalle.rutas`) o `CONFLICTO_CONCURRENCIA`; sin cambios.'
           content:
             application/json:
               schema:
@@ -4710,8 +4737,17 @@ paths:
 
         Dos formas de cuerpo: `multipart/form-data` con la parte `licitacion` (JSON `LicitacionWeb`) y, opcional, la parte
         `archivo` (el Excel original, para exportarlo después con los precios, HU-011.3); o `application/json` con el
-        `LicitacionWeb` sin archivo. Con archivo, `hoja` y la `fila` de cada línea son obligatorias y se verifican contra el
-        archivo con la misma regla de detección de Nexo.
+        `LicitacionWeb` sin archivo. Con archivo, `hoja` es obligatoria; la `fila` de cada línea se verifica contra el archivo con la misma
+        regla de detección de Nexo, salvo las líneas agregadas a mano (`fila: null`, HU-044.10 #293), que no apuntan a ninguna fila del Excel.
+
+        **Origen de la lectura (HU-044.7, #290).** `origen_lectura` dice cómo se leyó el Excel. `analizar_excel` (por defecto;
+        ausente o vacío cae aquí y **el flujo de hoy NO cambia**): la `fila` es el índice en `hojas[h].filas` de `analizar-excel`,
+        Cotifly relee la hoja para validar y calcular `filas_excel`, y la exportación escribe los precios sobre el Excel original.
+        `leer_estructura`: lo leyó la IA de NEXO (`leer-estructura`); la `hoja` es el **nombre de la tabla** (solo referencia), la
+        `fila` es el índice (base 0) **dentro de la tabla**, obligatoria y única; Cotifly **no relee** la hoja ni calcula
+        `filas_excel`, los errores por fila dicen «línea N de la tabla X» y la exportación arma un Excel **nuevo** (hoja
+        «Licitación»), sin tocar el original (`GET /web/licitaciones/{folio}/excel`). Un `origen_lectura` desconocido es 400
+        `VALIDATION_ERROR` con `detalle.campos = ["origen_lectura"]`.
 
         Moneda (ADR-014 §5): `moneda` opcional, `COP` por defecto o `USD`. En USD la TRM del día (DolarApi con respaldo en la
         Superintendencia Financiera) se consulta antes de guardar y queda en `trm_aplicada`; el polling calcula cada precio en
@@ -4738,8 +4774,16 @@ paths:
         mientras `progreso_cubicacion.estado = en_curso`. Si una ruta falla (`fallida`, con `error_cubicacion`), la licitación
         no sale a Nexo hasta `POST /web/licitaciones/{folio}/cubicacion/reintentar`. Sin cubicador, como antes: un camión sin
         vehículo por ruta y el envío a Nexo de una vez.
+
+        **Idempotency-Key (HU-044.10, #293).** Cabecera opcional (ámbito `crear-licitacion` por comercial). Una repetición con la misma
+        clave y el mismo cuerpo+archivo (la huella es el cuerpo más el nombre y el SHA-256 del archivo, no los bytes) relee la licitación
+        creada y responde **201 con su estado de ahora**, sin crear otro folio. Solo el **201** consume la clave: un reporte por fila (400)
+        o un 503 NO la consumen y la repetición se vuelve a evaluar (devuelve el reporte completo). La misma clave con otro cuerpo u otro
+        archivo es 409 `IDEMPOTENCY_KEY_REUTILIZADA`; fuera de 8 a 64 caracteres, 400 `ErrorWeb`.
       security:
         - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -4767,7 +4811,8 @@ paths:
         '400':
           description: |
             `ReporteLicitacionInvalida` (`LICITACION_INVALIDA` con todas las filas que fallaron; nada queda guardado), o
-            `ErrorNegocio` (`ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE`, `EXCEL_INVALIDO`; HU-035.2,
+            `ErrorNegocio` (`VALIDATION_ERROR` con `detalle.campos = ["origen_lectura"]` si `origen_lectura` no es `analizar_excel`
+            ni `leer_estructura`, HU-044.7 #290; `ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE`, `EXCEL_INVALIDO`; HU-035.2,
             #213: el archivo pasa por los controles del análisis y un rechazo trae su `detalle.motivo`; `EXCEL_SIN_DATOS` si la hoja no existe, `EXCEL_INVALIDO` también con más de 10.000 rangos combinados, `MARGEN_LINEA_DESCONOCIDA` (la
             línea no existe, o está inactiva: `detalle.motivo` lo dice; HU-013.15: en los dos casos `detalle.lineas_validas` trae las
             líneas activas de Cotifly y, con `linea_negocio = Licitaciones` (la línea del catálogo de Nexo, que no da margen), `detalle.motivo =
@@ -4803,6 +4848,14 @@ paths:
                 oneOf:
                   - $ref: '#/components/schemas/ErrorNegocio'
                   - $ref: '#/components/schemas/ErrorWeb'
+        '409':
+          description: |
+            HU-044.10 (#293). `IDEMPOTENCY_KEY_REUTILIZADA`: la misma `Idempotency-Key` con otro cuerpo u otro archivo; no se crea nada
+            (generar una clave nueva por intención).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
         '503':
           description: |
             HU-013.11: `CATALOGOS_FLETE_NO_DISPONIBLE` (alguna fila trae `tipo_vehiculo` o `clase_viaje` y no hay catálogo maestro
@@ -4942,6 +4995,11 @@ paths:
         Se puede exportar en cualquier momento. Siempre un `.xlsx` real: un `.xlsm` se convierte sin macros, y gráficos,
         imágenes o tablas dinámicas del original pueden perderse. El total del resumen es sin servicios conexos. `Sin enviar`
         solo marca filas entre la primera y la última línea enviada. Solo licitaciones (404 si no).
+
+        HU-044.7 (#290): una licitación creada con `origen_lectura = leer_estructura` (leída con la IA de NEXO) se exporta en un Excel
+        **nuevo**: NO se escribe sobre el archivo original (NEXO reorganizó las filas, así que el índice de una fila ya no corresponde a
+        una fila de la hoja). Se arma la hoja `Licitación` (como sin archivo) más `Resumen Cotifly` y `Camiones Cotifly`, y el resumen
+        deja la nota de que se leyó con la IA de NEXO y que los precios no van sobre el original.
 
         HU-034.1 (#201, parte A). Acceso: el dueño, un `director` (cualquier regional) o un `gerente_comercial` de la regional del
         dueño, con la regla de `GET /web/licitaciones/{folio}` (fail-closed, 404 para cualquier otro). Gerente y director reciben **el
@@ -5862,7 +5920,9 @@ components:
                 licitación. `IA_TOPE_DIARIO` (429) es el cupo diario de IA del comercial y no bloquea a los demás. Sin la importación
                 habilitada, NEXO caído o sin respuesta a tiempo: `NEXO_NO_DISPONIBLE` (503). Los endpoints `/web` llegan con #253 a #256.
                 HU-044.2 (#253): `VALIDATION_ERROR` (400) es el de NEXO en `leer-estructura` (la forma del formulario), con su mensaje y
-                solo los nombres de los campos en `detalle.campos`. `LECTURA_DEMASIADO_GRANDE` (400) lo responde Cotifly en
+                solo los nombres de los campos en `detalle.campos`. HU-044.7 (#290): el mismo `VALIDATION_ERROR` (400) lo responde Cotifly en
+                `POST /web/licitaciones` cuando `origen_lectura` no es `analizar_excel` ni `leer_estructura` (con `detalle.campos = ["origen_lectura"]`).
+                `LECTURA_DEMASIADO_GRANDE` (400) lo responde Cotifly en
                 `leer-estructura`, sin llamar a NEXO, cuando el archivo cabe solo pero no con la receta y las instrucciones.
               enum:
                 - MARGEN_LINEA_DESCONOCIDA
@@ -6426,7 +6486,7 @@ components:
 
     CotizacionResumen:
       type: object
-      required: [id, folio, version, moneda, estado_envio]
+      required: [id, folio, version, moneda, estado_envio, origen, destino, numero_rutas, peso_total_kg, valor_mercancia]
       properties:
         id:
           type: string
@@ -6549,6 +6609,30 @@ components:
           description: |
             HU-036.2 (#206). Cuándo el comercial finalizó la cotización (`POST .../finalizar`: aceptó el precio), ISO 8601 en UTC.
             `null` sin finalizar (las anteriores al script `14` no tienen backfill). Siempre presente.
+        origen:
+          type: string
+          nullable: true
+          description: |
+            HU-018.2 (#294). Municipio de origen de la RUTA 1 (la de menor orden); `null` sin rutas o si esa ruta no tiene nombre. Siempre
+            presente. Lo consumen `GET /web/mis-cotizaciones` y `GET /web/cotizaciones/regional`.
+        destino:
+          type: string
+          nullable: true
+          description: HU-018.2 (#294). Municipio de destino de la RUTA 1 (la de menor orden); `null` sin rutas o sin nombre. Siempre presente.
+        numero_rutas:
+          type: integer
+          description: HU-018.2 (#294). Cuántas rutas tiene la cotización, también las rechazadas (`0` sin rutas). Siempre presente.
+        peso_total_kg:
+          type: number
+          nullable: true
+          description: |
+            HU-018.2 (#294). Suma del `peso_kg` declarado (sin tara) de todas las rutas; `null` si ninguna lo trae. Siempre presente.
+        valor_mercancia:
+          type: number
+          nullable: true
+          description: |
+            HU-018.2 (#294). Suma del valor de la mercancía de todas las rutas, en COP aunque la cotización esté en USD; `null` si ninguna
+            lo trae. Siempre presente.
         conexos_descartados:
           type: array
           deprecated: true
@@ -8182,7 +8266,7 @@ components:
 
     RutaCosteo:
       type: object
-      required: [linea_orden, linea_solicitud_id, origen, destino, estado_costeo, precio_final_linea, costo_final, margen_aplicado, margen_sugerido, origen_margen, servicios_conexos, camiones, mercancias]
+      required: [linea_orden, linea_solicitud_id, origen, destino, estado_costeo, precio_final_linea, costo_final, costo_transporte, valor_mercancia, margen_aplicado, margen_sugerido, origen_margen, servicios_conexos, camiones, mercancias]
       description: |
         HU-021.8 (#135). Una ruta del costeo. Desde HU-039.1 (#218) trae su costo bruto (`costo_final`, en COP) para el dueño; nunca
         el desglose (fletes, retorno, levante, conexos) ni el costo de cada camión o de cada conexo. El ajuste de margen (`PUT .../costeo/margen`) y los cambios de
@@ -8326,6 +8410,23 @@ components:
             cotización finalizada (HU-036.4) es el costo con que se finalizó, como el precio congelado. No sale
             en el PDF, el correo, el Excel, el chat ni "Mis cotizaciones". Reversa de la regla de ADR-015 §5 ("el costo bruto nunca
             llega al comercial"), confirmada por la Gerencia Comercial el 2026-10-27.
+        costo_transporte:
+          type: number
+          nullable: true
+          description: |
+            HU-018.2 (#294). Costo del transporte de la ruta: fletes + retorno + levante, **sin** servicios conexos ni margen. **Siempre en
+            COP (pesos), aunque la cotización esté en USD** (el costeo de Nexo es en pesos y nunca se convierte; en USD `precio_final_linea`
+            va en dólares, el costo no). Sale junto con el precio, igual que `costo_final`: `null` en los mismos casos
+            (`precio_final_linea = null`: sin costeo listo o ruta `rechazada`). Solo lo ve el dueño: en `GET /web/cotizaciones/{folio}`
+            consultado por un gerente comercial o por el director (`solo_lectura = true`) siempre es `null`. Dato de HU-039 que se expone,
+            sin desglose por camión ni por conexo; no sale en el PDF, el correo, el Excel ni "Mis cotizaciones".
+        valor_mercancia:
+          type: number
+          nullable: true
+          description: |
+            HU-018.2 (#294). Valor de la mercancía de la ruta (el mismo `valor_mercancia` de `GET .../solicitud`), en pesos (COP) aunque la
+            cotización esté en USD. `null` si no se declaró. No es un costo: es de solo lectura, lo ve también el gerente o el director
+            (`solo_lectura = true`) y está en todas las respuestas con la vista del costeo. Siempre presente.
         margen_aplicado:
           type: number
           nullable: true
@@ -8345,6 +8446,105 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ServicioConexoCosteo'
+        politica_seguros:
+          oneOf:
+            - $ref: '#/components/schemas/PoliticaSegurosRuta'
+            - $ref: '#/components/schemas/Nulo'
+          description: |
+            HU-046.3 (#269). Lo que exige la política de seguros a la ruta (tablas `PoliticaSeguro*` del script 21, leídas en cada
+            petición: un cambio de Datos se ve sin desplegar). En `GET .../costeo`, en el detalle por folio y en las respuestas de los
+            conexos, del margen y del seguro. `null` en una ruta `rechazada`, en una cotización finalizada (no se recalcula), si la política no se pudo leer y en
+            las demás respuestas (no lo reemplaces con `null`: vuelve a leer el costeo).
+
+    PoliticaSegurosRuta:
+      type: object
+      required: [tramo, aviso, recomendadas, obligatorias]
+      description: |
+        HU-046.3 (#269; contrato del 2026-11-10). El tramo se calcula con el `valor_mercancia` TOTAL de la ruta (no por camión):
+        `valor_desde` exclusivo y `valor_hasta` incluido (250.000.000 exacto cae en "> 150 – 250 M"). `valor_mercancia` y los límites están
+        SIEMPRE en pesos (COP), también en una cotización en USD. Sin `valor_mercancia` o con 0 no hay tramo: `tramo = null`, listas vacías
+        y `aviso = SIN_VALOR_MERCANCIA`. `recomendadas` y `obligatorias` traen la misma forma de medida (`MedidaPolitica`), partida por su
+        nivel. Las medidas van ordenadas por `nombre` y luego por `codigo`; los `conexos`, ordenados.
+      properties:
+        tramo:
+          oneOf:
+            - $ref: '#/components/schemas/TramoPoliticaSeguros'
+            - $ref: '#/components/schemas/Nulo'
+        aviso:
+          type: string
+          nullable: true
+          enum: [SIN_VALOR_MERCANCIA, null]
+          description: |
+            `SIN_VALOR_MERCANCIA` cuando la ruta no tiene `valor_mercancia` o lo tiene en 0 (no bloquea "Finalizar"); `null` en cualquier
+            otro caso.
+        recomendadas:
+          type: array
+          items:
+            $ref: '#/components/schemas/MedidaPolitica'
+        obligatorias:
+          type: array
+          items:
+            $ref: '#/components/schemas/MedidaPolitica'
+
+    TramoPoliticaSeguros:
+      type: object
+      required: [id, nombre, valor_desde, valor_hasta]
+      properties:
+        id:
+          type: string
+          format: uuid
+        nombre:
+          type: string
+          example: "> 350 – 500 M"
+        valor_desde:
+          type: number
+          description: Límite inferior en pesos, exclusivo.
+        valor_hasta:
+          type: number
+          nullable: true
+          description: Límite superior en pesos, incluido; `null` = sin tope.
+
+    MedidaPolitica:
+      type: object
+      required: [codigo, nombre, es_cobrable, estado, conexos]
+      description: |
+        HU-046.3 (#269; contrato del 2026-11-10). Una medida de la política, igual en `recomendadas` y en `obligatorias`.
+        `estado`: `incluir_seguro` se evalúa por su código (`cumplida` si la ruta tiene `incluye_seguro`, si no `pendiente`); una medida con
+        `conexos` es `cumplida` si la ruta tiene alguno (por `codigoServicio`, sin distinguir mayúsculas), si no `pendiente`; una medida sin
+        `conexos` es `sin_verificar`, que nunca bloquea. Un conexo cuyo `estado_nexo` es `fallido_definitivo` o `incierto` NO cumple ninguna
+        medida (decisión del 2026-11-09). Solo una **obligatoria** `pendiente` bloquea "Finalizar".
+      properties:
+        codigo:
+          type: string
+          example: acompanante_vehicular
+        nombre:
+          type: string
+          description: Lo que se muestra al comercial.
+        es_cobrable:
+          type: boolean
+        estado:
+          type: string
+          enum: [cumplida, pendiente, sin_verificar]
+        conexos:
+          type: array
+          description: Los `codigoServicio` de Nexo que la cumplen (para el botón "agregar"); basta uno. Vacío si la medida no tiene conexos.
+          items:
+            type: string
+          example: [AVP_MOTO, AVP_MOTO_ARMADA, AVT_AUTO, AVT_MOTO, AVT_MOTO_ARMADA]
+
+    FinalizarWeb:
+      type: object
+      description: |
+        HU-046.3 (#269; contrato del 2026-11-10). Cuerpo opcional de `POST .../finalizar`. `justificacion` (de 10 a 500 caracteres sin los
+        espacios de los extremos; ausente, null, vacía o solo espacios es como no mandarla) permite finalizar aunque falte una medida
+        obligatoria de la política de seguros; no salta ningún otro bloqueo. Fuera de ese largo: 400 `JUSTIFICACION_REQUERIDA` con
+        `detalle.minimo = 10` y `detalle.maximo = 500`.
+      properties:
+        justificacion:
+          type: string
+          nullable: true
+          minLength: 10
+          maxLength: 500
 
     CamionCosteo:
       type: object
@@ -8777,7 +8977,8 @@ components:
         del elegido.
         Si trae `posiciones`, reemplaza todas las anteriores. La combinación resultante (lo guardado más los cambios) se
         valida igual que en la captura, con las condiciones de G3 (`docs/conexion_nexo/HU-013-preguntas-nexo.md`): `clase_contenedor`
-        solo con `clase_viaje = Contenedor`, `ciudad_devolucion_contenedor` con `retorna_contenedor`,
+        obligatoria con `clase_viaje = Contenedor`, opcional y solo de la lista provisional G15 (`CNT20.FT`, `CNT20.OP`, `CNT40.FT`,
+        `CNT40.OP`) con `Extradimensionado` (HU-021.15, #297) y no aplica con las demás, `ciudad_devolucion_contenedor` con `retorna_contenedor`,
         `ciudad_levante_contenedor` con `levante_contenedor_diferente` y `valor_aprovisionamiento` solo con un levante
         distinto del origen, y la regla de peso.
       properties:
@@ -10360,7 +10561,12 @@ components:
             $ref: '#/components/schemas/HojaDelArchivo'
         tablas:
           type: array
-          description: Una por hoja, o una sola si la receta las une. Misma forma que las hojas de `analizar-excel`; cada una va a `sugerir-mapeo` sin transformarla.
+          description: |
+            Una por hoja, o una sola si la receta las une. Misma forma que las hojas de `analizar-excel`; cada una va a `sugerir-mapeo` sin
+            transformarla. HU-044.7 (#290): cada tabla pasa por la misma detección de mercancías de `analizar-excel`, así que trae
+            `columna_mercancia`, `columna_codigo_mercancia` y `mercancias` (o `null` si la tabla no tiene columna de mercancía ni de código);
+            `mercancias[].fila` es el índice dentro de `tablas[t].filas` (la misma convención que la `fila` de `LineaLicitacionWeb`) y
+            `filas_excel` siempre es `null` en las tablas. La `receta` y el resto de la respuesta de NEXO no se tocan.
           items:
             $ref: '#/components/schemas/HojaExcel'
         avisos:
@@ -10511,8 +10717,10 @@ components:
           por código, igual que en `SolicitudCosteoWeb` (comparación exacta, distinguiendo mayúsculas; se acepta la lista
           provisional `CNT20.FT`, `CNT20.OP`, `CNT40.FT` y `CNT40.OP`). Un texto libre del pliego (`Tractomula`, `3s3`) es
           `CODIGO_NO_CATALOGO` en esa fila: el frontend mapea los valores del pliego a los códigos de `GET /web/catalogos-flete`.
-        - **Condicionales (G3).** `clase_contenedor` es obligatoria con `clase_viaje = Contenedor` (`CAMPO_REQUERIDO`) y solo se
-          admite con ella (`CAMPO_NO_APLICA`); `valor_levante_contenedor` (ex `valor_aprovisionamiento`; el error lo nombra así desde #228) solo con una `ciudad_levante_contenedor` distinta del
+        - **Condicionales (G3).** `clase_contenedor` es obligatoria con `clase_viaje = Contenedor` (`CAMPO_REQUERIDO`); con
+          `Extradimensionado` (HU-021.15, #297) es opcional y solo admite las clases provisionales G15 (`CNT20.FT`, `CNT20.OP`,
+          `CNT40.FT`, `CNT40.OP`; otra es `VALOR_FUERA_DE_RANGO`); con las demás clases de viaje no aplica (`CAMPO_NO_APLICA`);
+          `valor_levante_contenedor` (ex `valor_aprovisionamiento`; el error lo nombra así desde #228) solo con una `ciudad_levante_contenedor` distinta del
           origen (`CAMPO_NO_APLICA`).
         - **Municipios (G6).** Si la fila no trae `origen_municipio_id`/`destino_municipio_id`, Cotifly resuelve el texto de
           `origen`/`destino` en el catálogo de `GET /web/municipios` con la regla determinista de HU-005.13 (sin tildes ni
@@ -10540,9 +10748,14 @@ components:
           nullable: true
           minimum: 0
           description: |
-            Índice (base 0) en `hojas[h].filas`. Obligatorio si se adjunta el archivo; único por licitación. Es un dato técnico:
-            al comercial se le muestra `hojas[h].filas_excel[fila]` (fila del Excel) y los mensajes de error nunca usan este índice
-            (HU-013.15, #124).
+            Con `origen_lectura = analizar_excel` (por defecto): índice (base 0) en `hojas[h].filas` de `analizar-excel`; único por
+            licitación. Es un dato técnico: al comercial se le muestra `hojas[h].filas_excel[fila]` (fila del Excel) y los mensajes de error
+            nunca usan este índice (HU-013.15, #124). Con `origen_lectura = leer_estructura` (HU-044.7, #290): índice (base 0) dentro de
+            `tablas[t].filas`, único; no hay `filas_excel` (no se relee la hoja) y los mensajes de error nombran «línea N de la tabla X».
+            HU-044.10 (#293, parte 2): **`null` es una línea agregada a mano** (válida con o sin archivo, con cualquier `origen_lectura`): la
+            unicidad ignora los `null`, sus errores dicen «La línea N» (con `fila` y `fila_excel` en `null`) y en la exportación va a la hoja
+            «Agregadas en Cotifly» (analizar_excel con original) o al final de la hoja «Licitación» (leer_estructura o sin original). Una
+            licitación hecha solo de líneas a mano es válida (con archivo sigue exigiendo `hoja`).
         origen:
           type: string
           maxLength: 150
@@ -10736,7 +10949,20 @@ components:
           type: string
           nullable: true
           maxLength: 31
-          description: Hoja mapeada (`hojas[h].nombre`). Obligatoria con el archivo.
+          description: |
+            Con `origen_lectura = analizar_excel` (por defecto): la hoja mapeada (`hojas[h].nombre`), obligatoria con el archivo; Cotifly la
+            relee para calcular `filas_excel`. Con `origen_lectura = leer_estructura`: el **nombre de la tabla** (`tablas[t].nombre`), solo de
+            referencia (no se relee ninguna hoja original).
+        origen_lectura:
+          type: string
+          nullable: true
+          enum: [analizar_excel, leer_estructura, null]
+          description: |
+            HU-044.7 (#290). Cómo se leyó el Excel. `analizar_excel` (por defecto; ausente o vacío cae aquí y el flujo de hoy NO cambia): la
+            `fila` de cada línea es el índice en `hojas[h].filas` de `analizar-excel` y la exportación escribe los precios sobre el Excel
+            original. `leer_estructura`: lo leyó la IA de NEXO (`leer-estructura`), la `hoja` es el nombre de la tabla, la `fila` es el índice
+            dentro de la tabla y la exportación arma un Excel **nuevo** (hoja «Licitación») sin tocar el original. Cualquier otro valor es 400
+            `VALIDATION_ERROR` (con `detalle.campos = ["origen_lectura"]`).
         moneda:
           type: string
           nullable: true
@@ -11116,7 +11342,7 @@ components:
     Licitacion:
       type: object
       required: [folio, cliente_nombre, nit_cliente, deadline, estado_costeo, motivo_estado_costeo, moneda, trm_aplicada,
-                 precio_final, lineas_costeadas, lineas_pendientes, archivo_nombre, hoja, lineas, finalizada_at, solo_lectura]
+                 precio_final, lineas_costeadas, lineas_pendientes, archivo_nombre, hoja, origen_lectura, lineas, finalizada_at, solo_lectura]
       description: |
         Licitación vista por el comercial (HU-011.2). Solo precios. Sin `referencia` desde HU-021.11 (#138, decisión 1: siempre
         era `null`).
@@ -11169,6 +11395,14 @@ components:
         hoja:
           type: string
           nullable: true
+        origen_lectura:
+          type: string
+          nullable: true
+          enum: [analizar_excel, leer_estructura, null]
+          description: |
+            HU-044.10 (#293). Cómo se leyó el Excel de esta licitación: `analizar_excel` o `leer_estructura` (`LicitacionWeb.origen_lectura`).
+            `null` si la licitación no tiene archivo. Una licitación con archivo anterior al script 22 (sin `origenLectura` guardado) llega
+            como `analizar_excel`. Siempre presente (también en el 201 de `POST /web/licitaciones` y en la respuesta de reintentar la cubicación).
         lineas:
           type: array
           items:

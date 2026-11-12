@@ -464,7 +464,12 @@ es `Varias`:
   "pdf_url": null,
   "created_at": "2026-10-09T15:20:11.532+00:00",
   "deadline": "2026-10-15T22:00:00+00:00",
-  "score_prioridad": 62.5
+  "score_prioridad": 62.5,
+  "origen": "Buenaventura",
+  "destino": "Bogotá D.C.",
+  "numero_rutas": 2,
+  "peso_total_kg": 37500.5,
+  "valor_mercancia": 430000000
 }
 ```
 
@@ -606,6 +611,7 @@ recálculo de una ruta responden 409. Sin cubicador, como antes (sin `progreso_c
   "lineas_pendientes": 1,
   "archivo_nombre": null,
   "hoja": "Tarifas",
+  "origen_lectura": null,
   "lineas": [
     {
       "orden": 1, "fila": 0, "origen": "Cali", "destino": "Bogotá D.C.", "tipo_vehiculo": null, "peso_kg": 12000,
@@ -623,6 +629,13 @@ recálculo de una ruta responden 409. Sin cubicador, como antes (sin `progreso_c
   "cubicacion": null
 }
 ```
+
+`origen_lectura` dice cómo se leyó el Excel (`analizar_excel` o `leer_estructura`); `null` si la licitación no tiene archivo (HU-044.10,
+#293). **`Idempotency-Key` (HU-044.10, #293):** cabecera opcional (8 a 64); un doble clic con la misma clave y el mismo cuerpo+archivo
+relee la licitación y responde 201 con el mismo folio, sin crear otra. Solo el 201 consume la clave (un reporte por fila o un 503 no);
+la misma clave con otro cuerpo u otro archivo es 409 `IDEMPOTENCY_KEY_REUTILIZADA`. Una línea con `fila: null` y archivo es una línea
+agregada a mano: vuelve con `fila: null` y el Excel la pone en la hoja «Agregadas en Cotifly» (analizar_excel con original) o al final de
+la hoja «Licitación» (leer_estructura o sin original).
 
 **Código de mercancía sugerido (HU-023.5).** `POST /web/licitaciones/analizar-excel` trae en cada hoja `columna_mercancia`,
 `columna_codigo_mercancia` y `mercancias[]`: por fila (`fila`, índice en `filas`), `{texto, codigo_mercancia, nombre_mercancia,
@@ -678,8 +691,10 @@ primer nivel son los de la ruta 1:
       "destino": "Bogotá D.C.",
       "estado_costeo": "autocosteo",
       "peso_kg": 28500.5,
+      "valor_mercancia": 250000000,
       "precio_final_linea": 5294118,
       "costo_final": 4500000,
+      "costo_transporte": 4320000,
       "margen_aplicado": 0.15,
       "margen_sugerido": 0.15,
       "origen_margen": "politica_linea",
@@ -695,7 +710,22 @@ primer nivel son los de la ruta 1:
       ],
       "aviso_conexos_nexo": "No se pudo confirmar en Nexo el envío del servicio conexo «Cargue con montacargas»: revísalo en la cotización de Nexo.",
       "margen_sap_anomalo": true,
-      "aviso_margen": "SAP TM propuso un margen de 72.5 % para esta ruta, fuera del rango normal (0 a 60 %): no se aplicó y la ruta usa el margen de la política de su línea de negocio. Revísalo antes de enviar la cotización."
+      "aviso_margen": "SAP TM propuso un margen de 72.5 % para esta ruta, fuera del rango normal (0 a 60 %): no se aplicó y la ruta usa el margen de la política de su línea de negocio. Revísalo antes de enviar la cotización.",
+      "politica_seguros": {
+        "tramo": { "nombre": "> 350 – 500 M", "valor_desde": 350000000, "valor_hasta": 500000000 },
+        "medidas_recomendadas": [
+          { "codigo": "candado_satelital", "nombre": "Candado satelital" },
+          { "codigo": "esquema_basico", "nombre": "Esquema básico de seguridad" },
+          { "codigo": "gps", "nombre": "GPS" },
+          { "codigo": "incluir_seguro", "nombre": "Incluir el seguro de la mercancía" },
+          { "codigo": "restriccion_nocturna", "nombre": "Restricción de tránsito nocturno" }
+        ],
+        "medidas_obligatorias": [
+          { "codigo": "acompanante_vehicular", "nombre": "Acompañante vehicular (parcial o total)", "estado": "pendiente", "conexos": ["AVP_MOTO", "AVP_MOTO_ARMADA", "AVT_AUTO", "AVT_MOTO", "AVT_MOTO_ARMADA"] }
+        ],
+        "aviso": null,
+        "aviso_codigo": null
+      }
     },
     {
       "linea_orden": 2,
@@ -705,8 +735,10 @@ primer nivel son los de la ruta 1:
       "destino": "Yumbo",
       "estado_costeo": "autocosteo",
       "peso_kg": 9000,
+      "valor_mercancia": 180000000,
       "precio_final_linea": 3529412,
       "costo_final": 3000000,
+      "costo_transporte": 3000000,
       "margen_aplicado": 0.15,
       "margen_sugerido": 0.18,
       "origen_margen": "negociado",
@@ -720,7 +752,14 @@ primer nivel son los de la ruta 1:
       "servicios_conexos": [],
       "aviso_conexos_nexo": null,
       "margen_sap_anomalo": false,
-      "aviso_margen": null
+      "aviso_margen": null,
+      "politica_seguros": {
+        "tramo": null,
+        "medidas_recomendadas": [],
+        "medidas_obligatorias": [],
+        "aviso": "La ruta no tiene valor de la mercancía: no se puede saber qué exige la política de seguros. Registra el valor para ver sus medidas.",
+        "aviso_codigo": "sin_valor_mercancia"
+      }
     }
   ]
 }
@@ -793,6 +832,15 @@ el gerente o el director en solo consulta lo reciben siempre en `null`. Con la c
 finalizó, como el precio congelado. No hay desglose ni costo por camión o por conexo, y no sale en "Mis
 cotizaciones", el listado regional, el PDF, el correo, el Excel ni el asistente. Es una reversa de la regla de ADR-015 §5 ("el costo
 bruto nunca llega al comercial"), confirmada por la Gerencia Comercial el 2026-10-27.
+
+**Costo del transporte y valor de la mercancía por ruta (HU-018.2, #294).** Cada `rutas[]` trae ahora dos campos más de solo lectura:
+`costo_transporte` = fletes + retorno + levante, **sin** conexos ni margen (el costo bruto `costo_final` menos el costo de los conexos),
+y `valor_mercancia` = el valor de la mercancía declarado en la ruta (el mismo de `GET .../solicitud`). Los dos van **siempre en COP**
+aunque la cotización esté en USD. `costo_transporte` sale junto con el precio, igual que `costo_final` (`null` sin costeo o ruta `rechazada`),
+es del dueño y el detalle del gerente o del director en solo consulta lo deja en `null`. `valor_mercancia` no es un costo: sale siempre
+(también para el gerente) y es `null` si no se declaró. En el ejemplo, la ruta 1 cuesta 4.320.000 de transporte (de 4.500.000 de costo bruto,
+con 180.000 de conexo) y la ruta 2, 3.000.000 (sin conexos, igual que su costo bruto). Son datos que ya existían en el dominio: esto solo los
+expone, sin lógica de negocio nueva. No salen en el PDF, el correo, el Excel ni "Mis cotizaciones".
 
 `deadline` y `score_prioridad` (HU-018.1, #155) son de la **cabecera** (toda la solicitud), no de cada ruta, y vienen siempre
 (también en las respuestas de las mutaciones): `deadline` es la fecha límite del formulario en UTC (`null` si no se dio) y
@@ -967,11 +1015,22 @@ líneas distintas), y `precio_final` es la suma de las rutas, con conexos:
       "pdf_url": "/pdfs/PCN-900555111-DG-09102026-001.pdf",
       "created_at": "2026-10-09T15:20:11.532+00:00",
       "deadline": "2026-10-15T22:00:00+00:00",
-      "score_prioridad": 62.5
+      "score_prioridad": 62.5,
+      "origen": "Buenaventura",
+      "destino": "Bogotá D.C.",
+      "numero_rutas": 2,
+      "peso_total_kg": 37500.5,
+      "valor_mercancia": 430000000
     }
   ]
 }
 ```
+
+HU-018.2 (#294): la carga de cada fila viene siempre: `origen` y `destino` son los de la **ruta 1** (la de menor orden; `null` sin rutas o
+sin nombre), `numero_rutas` cuenta todas las rutas (también las rechazadas; `0` sin rutas), `peso_total_kg` es la suma del `peso_kg`
+declarado (sin tara) de todas las rutas y `valor_mercancia` la suma del valor de la mercancía de todas (en COP aunque la cotización esté en
+USD); las dos sumas son `null` si ninguna ruta trae el dato. Son de solo lectura (datos que ya existían en el dominio) y salen también en el
+listado regional (§8.10.1).
 
 `GET /web/cotizaciones/{id}/nueva-version`: `rutas[]` trae la línea de negocio y el margen de cada ruta.
 
@@ -1050,6 +1109,11 @@ gerente, 403 para el comercial; 409 `REGIONAL_NO_ASIGNADA` y 503 `REGIONAL_NO_DI
       "created_at": "2026-10-09T15:20:11.532+00:00",
       "deadline": "2026-10-15T22:00:00+00:00",
       "score_prioridad": 62.5,
+      "origen": "Cali",
+      "destino": "Bogotá D.C.",
+      "numero_rutas": 1,
+      "peso_total_kg": 12000,
+      "valor_mercancia": 180000000,
       "comercial": {
         "usuario_id": "5f0c2a8e-4b1d-4c55-9a51-2f7d0c1e9b10",
         "nombre_usuario": "APEREZ",
@@ -1503,7 +1567,12 @@ Reglas que conviene saber:
     "pdf_url": null,
     "created_at": "2026-10-09T15:20:11.532+00:00",
     "deadline": "2026-10-15T22:00:00+00:00",
-    "score_prioridad": 0.5
+    "score_prioridad": 0.5,
+    "origen": "Buenaventura",
+    "destino": "Bogotá D.C.",
+    "numero_rutas": 2,
+    "peso_total_kg": 30500.5,
+    "valor_mercancia": 250000000
   },
   "avisos": [
     { "codigo": "REEMPLAZA_SOLICITUD_NEXO", "mensaje": "La solicitud actual se rechaza en Nexo y se captura de nuevo en el mismo folio." },
@@ -1648,6 +1717,11 @@ frontend ya conoce, con sus mismas reglas y nombres:
     "created_at": "2026-10-09T15:20:11.532+00:00",
     "deadline": "2026-10-15T22:00:00+00:00",
     "score_prioridad": 62.5,
+    "origen": "Buenaventura",
+    "destino": "Bogotá D.C.",
+    "numero_rutas": 2,
+    "peso_total_kg": 41000.5,
+    "valor_mercancia": 430000000,
     "comercial": { "usuario_id": "5f0c2a8e-4b1d-4c55-9a51-2f7d0c1e9b10", "nombre_usuario": "DGUERRA", "nombre_completo": "Duban Guerra" }
   },
   "costeo": {
@@ -1679,8 +1753,10 @@ frontend ya conoce, con sus mismas reglas y nombres:
         "destino": "Bogotá D.C.",
         "estado_costeo": "entregada",
         "peso_kg": 28500.5,
+        "valor_mercancia": 250000000,
         "precio_final_linea": 5294118,
         "costo_final": 4500000,
+        "costo_transporte": 4320000,
         "margen_aplicado": 0.15,
         "margen_sugerido": 0.15,
         "origen_margen": "politica_linea",
@@ -1706,8 +1782,10 @@ frontend ya conoce, con sus mismas reglas y nombres:
         "destino": "Cartagena",
         "estado_costeo": "entregada",
         "peso_kg": 12500,
+        "valor_mercancia": 180000000,
         "precio_final_linea": 3529412,
         "costo_final": 3000000,
+        "costo_transporte": 3000000,
         "margen_aplicado": 0.15,
         "margen_sugerido": 0.15,
         "origen_margen": "politica_linea",
@@ -1950,7 +2028,8 @@ Un archivo corrupto o malicioso es 400 con código, nunca 500 (`detalle.motivo` 
 El comercial **acepta el precio** de la cotización y la finaliza. Columnas propias en la cabecera (`finalizadaAt`, `finalizadaPor`,
 `db/scripts/14_cotizacion_finalizada.sql`), no un `estado_costeo`: el estado sigue avanzando con Nexo.
 
-**#206, el endpoint.** `If-Match` obligatorio (428 sin él), solo el dueño (404 para una ajena), sin cuerpo.
+**#206, el endpoint.** `If-Match` obligatorio (428 sin él), solo el dueño (404 para una ajena). Cuerpo opcional (HU-046.3, #269):
+`{"justificacion": "…"}`.
 
 - Solo con el costeo de Nexo listo (`estado_costeo` en `autocosteo` o `entregada`). En otro estado, 409 `COTIZACION_NO_FINALIZABLE` con el
   estado actual en `detalle.estado_costeo`.
@@ -1965,6 +2044,11 @@ El comercial **acepta el precio** de la cotización y la finaliza. Columnas prop
   relectura lo confirma), así una entregada, que el polling ya no consulta, no queda bloqueada. Validación de #228: con algún conexo
   `pendiente`, finalizar relee la cotización de Nexo y deja `enviado` lo que Nexo ya muestra antes de contar (un registro viejo que quedó
   `pendiente` aunque Nexo tenga el conexo no bloquea para siempre); si Nexo no responde, cuenta el registro y responde el 409.
+- HU-046.3 (#269): tampoco mientras una ruta que cuenta tiene una medida **obligatoria** de la política de seguros `pendiente`
+  (`rutas[].politica_seguros.medidas_obligatorias[]` de `GET .../costeo`; hoy, el acompañante vehicular desde 350 M): 409
+  `COTIZACION_NO_FINALIZABLE` con `detalle.motivo = "medidas_obligatorias_faltantes"` y `detalle.rutas` (por ruta, sus medidas con
+  `codigo`, `nombre` y los `conexos` que la cumplen). Con `justificacion` (no vacía, hasta 1000 caracteres; 400 si no cabe) se finaliza
+  igual y queda auditada; la justificación salta solo este bloqueo. Una ruta sin `valor_mercancia` no exige nada.
 - Re-finalizar una ya finalizada: 200 sin cambios (mismo `finalizada_at`, mismo `ETag`).
 - `If-Match` que no es la versión vigente: 409 `CONFLICTO_CONCURRENCIA` (también si ya estaba finalizada). Si el polling cambió el precio
   entre la lectura y el clic, la versión ya no coincide: el comercial recarga y nunca finaliza un precio que no vio.
@@ -1991,6 +2075,33 @@ El comercial **acepta el precio** de la cotización y la finaliza. Columnas prop
     "codigo": "COTIZACION_NO_FINALIZABLE",
     "mensaje": "Hay servicios conexos que todavía no están en la cotización de Nexo (estado_nexo = pendiente): espera la siguiente actualización del costeo para finalizar la cotización con un precio que Nexo respalde.",
     "detalle": { "estado_costeo": "autocosteo", "motivo": "conexos_pendientes_en_nexo", "conexos_pendientes": 1 }
+  }
+}
+```
+
+<!-- respuesta: POST /web/cotizaciones/{folio}/finalizar 409 (medidas obligatorias de la política de seguros, HU-046.3) -->
+```json
+{
+  "error": {
+    "codigo": "COTIZACION_NO_FINALIZABLE",
+    "mensaje": "La política de seguros exige medidas que la cotización no tiene (ruta 1: Acompañante vehicular (parcial o total)). Agrega el servicio conexo que la cumple o finaliza con una justificación.",
+    "detalle": {
+      "estado_costeo": "autocosteo",
+      "motivo": "medidas_obligatorias_faltantes",
+      "rutas": [
+        {
+          "linea_orden": 1,
+          "linea_solicitud_id": "3f0c6e7a-1b2c-4d5e-8f90-a1b2c3d4e5f6",
+          "medidas": [
+            {
+              "codigo": "acompanante_vehicular",
+              "nombre": "Acompañante vehicular (parcial o total)",
+              "conexos": ["AVP_MOTO", "AVP_MOTO_ARMADA", "AVT_AUTO", "AVT_MOTO", "AVT_MOTO_ARMADA"]
+            }
+          ]
+        }
+      ]
+    }
   }
 }
 ```

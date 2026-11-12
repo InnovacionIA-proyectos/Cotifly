@@ -21,6 +21,8 @@ public sealed class clsCostoBrutoRutaTests
 
         ruta.CostoFinal.Should().Be(2_700_000m, "flete + retorno, sin margen");
         ruta.CostoFinal.Should().Be(cotizacion.PrimeraRuta!.CostoFinal);
+        // HU-018.2 (#294): sin conexos, el costo del transporte es el costo bruto (fletes + retorno + levante).
+        ruta.CostoTransporte.Should().Be(2_700_000m);
         ruta.PrecioFinalLinea.Should().Be(3_176_471m);
     }
 
@@ -32,6 +34,28 @@ public sealed class clsCostoBrutoRutaTests
         var ruta = clsCosteoCotizacionService.Vista(cotizacion, null).Rutas.Single();
 
         ruta.CostoFinal.Should().Be(2_720_000m, "2.550.000 de flete + 2 × 85.000 de conexo");
+        // HU-018.2 (#294): el costo del transporte NO incluye los conexos, solo fletes + retorno + levante.
+        ruta.CostoTransporte.Should().Be(2_550_000m, "solo el flete; los conexos quedan fuera del transporte");
+    }
+
+    [Fact]
+    public void ElCostoDelTransporteSaleConElPrecioEnPesosAunqueLaCotizacionSeaEnDolares()
+    {
+        var cotizacion = clsCotizacionMuestra.LicitacionCosteada([1_234_567m, 2_345_678m], moneda: "USD", trm: 4_000m);
+
+        var vista = clsCosteoCotizacionService.Vista(cotizacion, null);
+
+        // Sin conexos, el costo del transporte es el costo bruto, siempre en COP (no se convierte a USD).
+        vista.Rutas.Select(r => r.CostoTransporte).Should().Equal(1_234_567m, 2_345_678m);
+    }
+
+    [Fact]
+    public void SinPrecioElCostoDelTransporteTambienEsNulo()
+    {
+        var ruta = clsCosteoCotizacionService.Vista(clsCotizacionMuestra.Costeada(flete: null), null).Rutas.Single();
+
+        ruta.PrecioFinalLinea.Should().BeNull();
+        ruta.CostoTransporte.Should().BeNull("costo_transporte sale en los mismos casos que costo_final");
     }
 
     [Fact]
@@ -75,10 +99,11 @@ public sealed class clsCostoBrutoRutaTests
 
         var sinCosto = vista.SinCostoFinal();
 
-        sinCosto.Rutas.Should().OnlyContain(r => r.CostoFinal == null);
+        // HU-018.2 (#294): la vista del gerente quita el costo bruto Y el costo del transporte (los dos son costo); nada más cambia.
+        sinCosto.Rutas.Should().OnlyContain(r => r.CostoFinal == null && r.CostoTransporte == null);
         sinCosto.Should().BeEquivalentTo(vista, o => o.Excluding(v => v.Rutas));
-        sinCosto.Rutas.Should().BeEquivalentTo(vista.Rutas, o => o.Excluding(r => r.CostoFinal));
-        vista.Rutas.Should().OnlyContain(r => r.CostoFinal != null, "la vista del dueño no cambia");
+        sinCosto.Rutas.Should().BeEquivalentTo(vista.Rutas, o => o.Excluding(r => r.CostoFinal).Excluding(r => r.CostoTransporte));
+        vista.Rutas.Should().OnlyContain(r => r.CostoFinal != null && r.CostoTransporte != null, "la vista del dueño no cambia");
     }
     /// <summary>
     /// Validador (#218): el costo bruto que ve el dueño es exactamente el costo del que sale el precio de la ruta (también en USD con la

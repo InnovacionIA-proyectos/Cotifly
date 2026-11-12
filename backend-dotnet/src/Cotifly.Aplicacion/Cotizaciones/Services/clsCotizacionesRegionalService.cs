@@ -73,7 +73,7 @@ public sealed class clsCotizacionesRegionalService(
             // Defensa: nunca una fila de alguien fuera de la regional, aunque el repositorio la devolviera.
             if (fila.Cotizacion.UsuarioId is { } dueno && porId.TryGetValue(dueno, out var miembro))
             {
-                resumen.Add(clsCotizacionResumen.Desde(fila.Cotizacion, fila.LineaNegocio, baseUrl, fila.MargenAplicado, fila.OrigenMargen) with
+                resumen.Add(clsCotizacionResumen.Desde(fila.Cotizacion, fila.LineaNegocio, baseUrl, fila.MargenAplicado, fila.OrigenMargen, fila.Carga) with
                 {
                     Comercial = new clsComercialCotizacion(miembro.Id, miembro.NombreUsuario, miembro.NombreCompleto),
                 });
