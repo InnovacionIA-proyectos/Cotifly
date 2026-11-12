@@ -55,11 +55,15 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
             "HU-043.2 (#251): 2.550.000 / (1 - 0,15) + 200.000 de venta del conexo (costo 170.000), sin margen: el precio de la ruta incluye los conexos");
         json.GetProperty("precio_final").GetDecimal().Should().Be(3_200_000m);
         json.GetProperty("servicios_conexos")[0].GetProperty("precio").GetDecimal().Should().Be(200_000m);
-        foreach (var cuerpo in new[] { cuerpoLista, cuerpoCosteo })
-        {
-            cuerpo.Should().NotContain("2550000").And.NotContain("170000", "el costo de Nexo no se expone");
-            cuerpo.Should().NotContain("\"costo\"");
-        }
+        // "Mis cotizaciones" no expone ningún costo de Nexo (ni el bruto, ni el transporte, ni el de un conexo).
+        cuerpoLista.Should().NotContain("2550000").And.NotContain("170000").And.NotContain("2720000", "el costo de Nexo no se expone en el listado");
+        cuerpoLista.Should().NotContain("\"costo\"");
+        // HU-018.2 (#294): el costeo del dueño SÍ expone el costo bruto (costo_final) y el costo del transporte (costo_transporte = fletes +
+        // retorno), pero nunca el costo de un conexo (170.000) ni un campo `costo` suelto (desglose).
+        json.GetProperty("rutas")[0].GetProperty("costo_transporte").GetDecimal().Should().Be(2_550_000m, "fletes + retorno, sin el conexo");
+        json.GetProperty("rutas")[0].GetProperty("costo_final").GetDecimal().Should().Be(2_720_000m, "costo bruto con el conexo");
+        cuerpoCosteo.Should().NotContain("170000", "el costo de un conexo no se expone");
+        cuerpoCosteo.Should().NotContain("\"costo\"");
     }
 
     [Fact]

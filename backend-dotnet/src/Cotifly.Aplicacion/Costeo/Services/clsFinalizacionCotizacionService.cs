@@ -5,6 +5,7 @@ using Cotifly.Aplicacion.Costeo.Interfaces;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
+using Cotifly.Dominio.Seguros;
 using Microsoft.Extensions.Logging;
 
 namespace Cotifly.Aplicacion.Costeo.Services;
@@ -20,7 +21,16 @@ public interface IClsFinalizacionCotizacionService
     /// existe o no es del comercial), <c>CONFLICTO_CONCURRENCIA</c> (el <c>If-Match</c> no es la versión vigente, también si ya estaba
     /// finalizada) o <c>COTIZACION_NO_FINALIZABLE</c> (<c>estado_costeo</c> distinto de <c>autocosteo</c> y <c>entregada</c>, conexos de Nexo
     /// pendientes de leer o, #228, conexos que todavía no están en Nexo: <c>detalle.motivo = conexos_pendientes_en_nexo</c>).
+    /// HU-046.3 (#269): también <c>COTIZACION_NO_FINALIZABLE</c> con <c>detalle.motivo = medidas_obligatorias_faltantes</c> si una ruta
+    /// cotizable no tiene una medida obligatoria de la política de seguros, salvo con <paramref name="justificacion"/> (que salta SOLO ese
+    /// bloqueo y queda auditada); <c>JUSTIFICACION_REQUERIDA</c> (400, con <c>detalle.minimo</c> y <c>detalle.maximo</c>) si la justificación
+    /// viene fuera de <see cref="clsCotizacionSolicitud.LargoMinimoJustificacion"/> a <see cref="clsCotizacionSolicitud.LargoMaximoJustificacion"/>
+    /// caracteres; 500 si la política no se puede leer.
     /// </summary>
+    Task<clsResultado<clsCotizacionSolicitud>> FinalizarAsync(
+        Guid usuarioId, string folio, int versionEsperada, string? justificacion, CancellationToken cancellationToken = default);
+
+    /// <summary><see cref="FinalizarAsync(Guid, string, int, string?, CancellationToken)"/> sin justificación.</summary>
     Task<clsResultado<clsCotizacionSolicitud>> FinalizarAsync(
         Guid usuarioId, string folio, int versionEsperada, CancellationToken cancellationToken = default);
 }
@@ -36,6 +46,10 @@ public interface IClsFinalizacionCotizacionService
 /// gana, la vuelta del polling que se cruzó no guarda (conflicto) y la siguiente ve la cotización finalizada (precio congelado, #208).</para>
 /// <para>Cada finalización que cambia algo, o que se rechaza, queda en <c>EventosHerramienta</c> (<see cref="HerramientaAuditoria"/>,
 /// sin montos). Re-finalizar no audita (no cambia nada).</para>
+/// <para>HU-046.3 (#269): la política de seguros se lee de sus tablas en cada finalización (sin caché) y se evalúa sobre las rutas
+/// cotizables, después de completar el <c>codigoServicio</c> de los conexos que no lo tienen con el índice del catálogo de Nexo. Si la
+/// política no se puede leer, la finalización falla (no se finaliza sin evaluarla). La justificación queda en la entrada de la auditoría y,
+/// si saltó el bloqueo, las medidas que faltaban en la salida (códigos, sin montos).</para>
 /// </remarks>
 public sealed class clsFinalizacionCotizacionService(
     IClsCotizacionRepository cotizaciones,
@@ -44,14 +58,23 @@ public sealed class clsFinalizacionCotizacionService(
     IClsAuditoriaService auditoria,
     IClsEnvioConexosNexoService envioConexos,
     IClsServiciosConexosNexo nexo,
-    ILogger<clsFinalizacionCotizacionService> logger) : IClsFinalizacionCotizacionService
+    ILogger<clsFinalizacionCotizacionService> logger,
+    IClsPoliticaSegurosRepository? politicaSeguros = null,
+    IClsCategoriasConexos? categoriasConexos = null) : IClsFinalizacionCotizacionService
 {
     /// <summary>Herramienta de la auditoría de la finalización (<c>EventosHerramienta.herramienta</c>).</summary>
     public const string HerramientaAuditoria = "finalizar_cotizacion";
 
+    public Task<clsResultado<clsCotizacionSolicitud>> FinalizarAsync(
+        Guid usuarioId, string folio, int versionEsperada, CancellationToken cancellationToken = default) =>
+        FinalizarAsync(usuarioId, folio, versionEsperada, null, cancellationToken);
+
     public async Task<clsResultado<clsCotizacionSolicitud>> FinalizarAsync(
-        Guid usuarioId, string folio, int versionEsperada, CancellationToken cancellationToken = default)
+        Guid usuarioId, string folio, int versionEsperada, string? justificacion, CancellationToken cancellationToken = default)
     {
+        // HU-046.3 (#269, contrato del 2026-11-10): una justificación vacía (ausente, null o solo espacios) es como no mandarla. El largo
+        // (10 a 500 caracteres sin los espacios de los extremos) se valida DENTRO, justo después del If-Match.
+        var motivo = string.IsNullOrWhiteSpace(justificacion) ? null : justificacion.Trim();
         var cotizacion = usuarioId == Guid.Empty || string.IsNullOrWhiteSpace(folio)
             ? null
             : await cotizaciones.ObtenerPorFolioDelUsuarioAsync(folio, usuarioId, cancellationToken);
@@ -61,18 +84,21 @@ public sealed class clsFinalizacionCotizacionService(
         }
 
         var cronometro = Stopwatch.StartNew();
-        var (resultado, cambio) = await FinalizarAsync(cotizacion, usuarioId, versionEsperada, cancellationToken);
+        var (resultado, cambio, omitidas) = await FinalizarAsync(cotizacion, usuarioId, versionEsperada, motivo, cancellationToken);
         if (resultado.EsFallo || cambio)
         {
             await auditoria.RegistrarAsync(
                 HerramientaAuditoria,
-                new { folio = cotizacion.Folio, version_esperada = versionEsperada },
+                new { folio = cotizacion.Folio, version_esperada = versionEsperada, justificacion = motivo },
                 resultado.EsExitoso
                     ? (object)new
                     {
                         finalizada_at = cotizacion.FinalizadaAt,
                         estado_costeo = cotizacion.EstadoCosteo is { } estado ? clsCodigoEnum.ACodigo(estado) : null,
                         version = cotizacion.VersionNegocio,
+                        // HU-046.3 (#269): las medidas obligatorias que faltaban y que la justificación dejó pasar (vacío si no faltaba ninguna).
+                        justificacion_aplicada = omitidas.Count > 0,
+                        medidas_omitidas = omitidas.Select(r => new { linea_orden = r.LineaOrden, medidas = r.Medidas.Select(m => m.Codigo).ToList() }).ToList(),
                     }
                     : new { error = new { codigo = resultado.Error.Codigo, mensaje = resultado.Error.Mensaje } },
                 resultado.EsExitoso,
@@ -83,34 +109,100 @@ public sealed class clsFinalizacionCotizacionService(
         return resultado;
     }
 
-    private async Task<(clsResultado<clsCotizacionSolicitud> Resultado, bool Cambio)> FinalizarAsync(
-        clsCotizacionSolicitud cotizacion, Guid usuarioId, int versionEsperada, CancellationToken cancellationToken)
+    private async Task<(clsResultado<clsCotizacionSolicitud> Resultado, bool Cambio, IReadOnlyList<clsMedidasFaltantesRuta> Omitidas)> FinalizarAsync(
+        clsCotizacionSolicitud cotizacion, Guid usuarioId, int versionEsperada, string? justificacion, CancellationToken cancellationToken)
     {
         if (!cotizacion.TieneVersion(versionEsperada))
         {
-            return (clsReglaPdfCosteo.Conflicto(cotizacion.Folio), false);
+            return (clsReglaPdfCosteo.Conflicto(cotizacion.Folio), false, []);
         }
 
-        var pendientesEnNexo = cotizacion.Finalizada || !cotizacion.AdmiteFinalizar || cotizacion.ConexosPendientesDeLeer
-            ? 0
-            : await ConexosPendientesEnNexoAsync(cotizacion, usuarioId, cancellationToken);
-        var finalizada = cotizacion.Finalizar(usuarioId, reloj.AhoraUtc, pendientesEnNexo);
+        // HU-046.3 (#269, contrato del 2026-11-10): la justificación, cuando viene, va de 10 a 500 caracteres (ya sin los espacios de los
+        // extremos); fuera de ese largo es 400 JUSTIFICACION_REQUERIDA con detalle.minimo y detalle.maximo. Se valida justo después del If-Match.
+        if (justificacion is { } j &&
+            (j.Length < clsCotizacionSolicitud.LargoMinimoJustificacion || j.Length > clsCotizacionSolicitud.LargoMaximoJustificacion))
+        {
+            return (JustificacionFueraDeLargo(), false, []);
+        }
+
+        var evaluable = !cotizacion.Finalizada && cotizacion.AdmiteFinalizar && !cotizacion.ConexosPendientesDeLeer;
+        var pendientesEnNexo = evaluable ? await ConexosPendientesEnNexoAsync(cotizacion, usuarioId, cancellationToken) : 0;
+        // HU-046.3 (#269): la política de seguros de hoy (decisión 7: una finalizada no se recalcula; re-finalizar no la mira). B3 de la
+        // auditoría: solo si nada más bloquea (con conexos pendientes en Nexo el 409 es ese y no se lee la política).
+        // ORDEN (#259): MedidasPendientesAsync va DESPUÉS de ConexosPendientesEnNexoAsync. Esta guarda con GuardarCambiosAsync SIN versión
+        // (el registro del envío diferido); si se invirtiera, los codigoServicio completados en memoria se guardarían sin la versión del
+        // If-Match. Los códigos solo se guardan con la escritura versionada de la finalización.
+        IReadOnlyList<clsMedidasFaltantesRuta> medidas = [];
+        if (evaluable && pendientesEnNexo == 0)
+        {
+            medidas = await MedidasPendientesAsync(cotizacion, cancellationToken);
+        }
+
+        var finalizada = cotizacion.Finalizar(usuarioId, reloj.AhoraUtc, pendientesEnNexo, medidas, justificacion);
         if (finalizada.EsFallo)
         {
-            return (finalizada.Error, false);
+            return (finalizada.Error, false, []);
         }
 
         if (!finalizada.Valor)
         {
             // Ya estaba finalizada: 200 sin cambios (mismo ETag), como re-marcar el mismo resultado.
-            return (cotizacion, false);
+            return (cotizacion, false, []);
         }
 
         cotizacion.IncrementarVersionNegocio();
         return await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, versionEsperada, cancellationToken)
-            ? (cotizacion, true)
-            : (clsReglaPdfCosteo.Conflicto(cotizacion.Folio), false);
+            ? (cotizacion, true, medidas)
+            : (clsReglaPdfCosteo.Conflicto(cotizacion.Folio), false, []);
     }
+
+    /// <summary>
+    /// HU-046.3 (#269): las medidas obligatorias pendientes de las rutas cotizables con la política leída AHORA de sus tablas. Antes completa
+    /// en memoria el <c>codigoServicio</c> de los conexos que no lo tienen (se guarda con la finalización). Sin repositorio (pruebas que no
+    /// lo registran) no exige nada. Contrato del 2026-11-10: si la política no se puede leer, Finalizar responde 500 (la excepción se propaga,
+    /// se registra en el log y nada se guarda): no se finaliza sin evaluarla.
+    /// </summary>
+    private async Task<IReadOnlyList<clsMedidasFaltantesRuta>> MedidasPendientesAsync(
+        clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken)
+    {
+        if (politicaSeguros is null)
+        {
+            return [];
+        }
+
+        await clsPoliticaSegurosCosteo.CompletarCodigosAsync(categoriasConexos, cotizacion, logger, cancellationToken);
+        clsPoliticaSeguros politica;
+        try
+        {
+            politica = await politicaSeguros.ObtenerAsync(cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "No se pudo leer la política de seguros al finalizar {Folio}: no se finaliza sin evaluarla (500).", cotizacion.Folio);
+            throw;
+        }
+
+        // Decisión del usuario (2026-11-09): un conexo fallido_definitivo o incierto en Nexo no cumple la medida.
+        var estados = await envioConexos.EstadosAsync(cotizacion, cancellationToken);
+        return cotizacion.MedidasObligatoriasPendientes(politica,
+            (ruta, conexo) => clsPoliticaSegurosCosteo.CuentaParaLaPolitica(estados.GetValueOrDefault((ruta.Id, conexo.IdServicioConexo))));
+    }
+
+    /// <summary>
+    /// 400 <c>JUSTIFICACION_REQUERIDA</c> (contrato del 2026-11-10) cuando la justificación viene fuera de 10 a 500 caracteres, con
+    /// <c>detalle.minimo</c> y <c>detalle.maximo</c>.
+    /// </summary>
+    private static clsErrorDominio JustificacionFueraDeLargo() =>
+        new(clsCodigosError.JustificacionRequerida,
+            $"La justificación va de {clsCotizacionSolicitud.LargoMinimoJustificacion} a {clsCotizacionSolicitud.LargoMaximoJustificacion} "
+            + "caracteres.")
+        {
+            Datos = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["minimo"] = clsCotizacionSolicitud.LargoMinimoJustificacion,
+                ["maximo"] = clsCotizacionSolicitud.LargoMaximoJustificacion,
+            },
+        };
 
     /// <summary>
     /// #228: conexos de las rutas cotizables (las rechazadas por la Mesa no cuentan: su conexo nunca llegará a Nexo) que todavía no están en

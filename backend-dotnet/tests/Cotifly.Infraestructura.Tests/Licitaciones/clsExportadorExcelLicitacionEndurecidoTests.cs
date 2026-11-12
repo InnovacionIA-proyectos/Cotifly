@@ -90,6 +90,20 @@ public sealed class clsExportadorExcelLicitacionEndurecidoTests
         lectura.Cupo.CurrentCount.Should().Be(1);
     }
 
+    /// <summary>HU-035.3 (#277): un original con la impresión configurada (y su <c>printerSettings*.bin</c>) se exporta.</summary>
+    [Fact]
+    public async Task UnOriginalConConfiguracionDeImpresionSeExporta()
+    {
+        var (lectura, exportador) = ConCupo(simultaneos: 1);
+        using var cupoPropio = lectura;
+
+        var resultado = await exportador.GenerarAsync(Datos(clsExcelMercanciasMuestra.ConConfiguracionDeImpresion(clsPliegoMuestra.Excel(3))), Ct);
+
+        resultado.EsExitoso.Should().BeTrue(resultado.EsFallo ? resultado.Error.Detalle : null);
+        using var libro = new ClosedXML.Excel.XLWorkbook(new MemoryStream(resultado.Valor));
+        libro.Worksheet(clsPliegoMuestra.Hoja).Cell(clsPliegoMuestra.FilaExcel(0), 7).GetValue<decimal>().Should().Be(1_176_471m);
+    }
+
     [Fact]
     public async Task ConElCupoLlenoElOriginalEsServicioOcupadoYSinOriginalSeExportaIgual()
     {

@@ -365,6 +365,8 @@ internal sealed class clsServicioConexoRutaConfiguracion : IEntityTypeConfigurat
         // HU-014 (#188): id del catálogo de Nexo (script 03) y su categoría (script 05). NULL en las filas anteriores a #188.
         builder.Property(c => c.IdServicioConexoCatalogo).Columna("idServicioConexoCatalogo", "nvarchar(64)").HasMaxLength(clsServicioConexoRuta.LargoMaximoId);
         builder.Property(c => c.Categoria).Columna("categoriaServicioConexo", "nvarchar(20)").HasMaxLength(clsServicioConexoRuta.LargoMaximoCategoria);
+        // HU-046.3 (#269): el código del servicio en el catálogo de Nexo (script 21). NULL en las filas anteriores: el backend las completa.
+        builder.Property(c => c.CodigoServicio).Columna("codigoServicio", "nvarchar(40)").HasMaxLength(clsServicioConexoRuta.LargoMaximoCodigoServicio);
         builder.Property(c => c.Precio).Columna("precio", "decimal(18,2)");
         // precioVenta (script 19, NOT NULL sin DEFAULT): la venta unitaria del conexo, que se cotiza sin margen (HU-043.2, #251).
         builder.Property(c => c.PrecioVenta).Columna("precioVenta", "decimal(18,2)");
@@ -382,8 +384,14 @@ internal sealed class clsArchivoLicitacionConfiguracion : IEntityTypeConfigurati
 {
     public void Configure(EntityTypeBuilder<clsArchivoLicitacion> builder)
     {
-        builder.ToTable("CotizacionArchivosLicitacion", t => t.HasCheckConstraint(
-            "ck_cotizacionArchivosLicitacion_tamano", "tamanoBytes BETWEEN 1 AND 10485760 AND DATALENGTH(contenido) = tamanoBytes"));
+        builder.ToTable("CotizacionArchivosLicitacion", t =>
+        {
+            t.HasCheckConstraint(
+                "ck_cotizacionArchivosLicitacion_tamano", "tamanoBytes BETWEEN 1 AND 10485760 AND DATALENGTH(contenido) = tamanoBytes");
+            // HU-044.7 (#290): origenLectura solo admite los dos valores de clsOrigenLectura.
+            t.HasCheckConstraint(
+                "ck_cotizacionArchivosLicitacion_origenLectura", "origenLectura IN ('analizar_excel', 'leer_estructura')");
+        });
 
         builder.HasKey(a => a.CotizacionId).HasName("pk_cotizacionArchivosLicitacion");
         builder.Property(a => a.CotizacionId).Columna("cotizacionId", "uniqueidentifier").ValueGeneratedNever();
@@ -393,6 +401,8 @@ internal sealed class clsArchivoLicitacionConfiguracion : IEntityTypeConfigurati
         builder.Property(a => a.Sha256).Columna("sha256", "nvarchar(64)").HasMaxLength(64).IsRequired();
         builder.Property(a => a.Hoja).Columna("hoja", "nvarchar(31)").HasMaxLength(clsArchivoLicitacion.LargoHoja).IsRequired();
         builder.Property(a => a.Contenido).Columna("contenido", "varbinary(max)").IsRequired();
+        // HU-044.7 (#290): cómo se leyó el Excel (analizar_excel por defecto; leer_estructura = lectura con IA de NEXO, se exporta sin tocar el original).
+        builder.Property(a => a.OrigenLectura).Columna("origenLectura", "nvarchar(20)").HasMaxLength(clsArchivoLicitacion.LargoOrigenLectura).IsRequired();
         builder.Property(a => a.CreatedAt).Fecha("createdAt");
 
         builder.HasOne<clsCotizacionSolicitud>().WithOne().HasForeignKey<clsArchivoLicitacion>(a => a.CotizacionId)

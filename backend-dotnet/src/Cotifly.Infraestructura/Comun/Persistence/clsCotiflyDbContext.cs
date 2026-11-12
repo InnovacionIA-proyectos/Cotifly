@@ -49,6 +49,18 @@ public sealed class clsCotiflyDbContext(DbContextOptions<clsCotiflyDbContext> op
     /// <summary>HU-045.2 (#264): la tasa del seguro de la mercancía (script 20; EF solo la lee, la cambia Datos).</summary>
     public DbSet<clsTarifaSeguro> TarifasSeguro => Set<clsTarifaSeguro>();
 
+    /// <summary>HU-046.3 (#269): los tramos de la política de seguros (script 21; EF solo los lee, la cambia Datos).</summary>
+    public DbSet<clsPoliticaSeguroTramoFila> PoliticaSeguroTramos => Set<clsPoliticaSeguroTramoFila>();
+
+    /// <summary>HU-046.3 (#269): las medidas de la política de seguros (script 21).</summary>
+    public DbSet<clsPoliticaSeguroMedidaFila> PoliticaSeguroMedidas => Set<clsPoliticaSeguroMedidaFila>();
+
+    /// <summary>HU-046.3 (#269): qué medida aplica en cada tramo y con qué nivel (script 21).</summary>
+    public DbSet<clsPoliticaSeguroTramoMedidaFila> PoliticaSeguroTramoMedidas => Set<clsPoliticaSeguroTramoMedidaFila>();
+
+    /// <summary>HU-046.3 (#269): los códigos de conexo de Nexo que cumplen cada medida (script 21).</summary>
+    public DbSet<clsPoliticaSeguroMedidaConexoFila> PoliticaSeguroMedidaConexos => Set<clsPoliticaSeguroMedidaConexoFila>();
+
     /// <summary>HU-042.2 (#243): copia local del margen de SAP TM (script 17; la escribe <c>sp_sincronizar_margen_sap</c>, que llama la sincronización del backend; EF solo la lee).</summary>
     public DbSet<clsSapMargenClienteFila> SapMargenCliente => Set<clsSapMargenClienteFila>();
 

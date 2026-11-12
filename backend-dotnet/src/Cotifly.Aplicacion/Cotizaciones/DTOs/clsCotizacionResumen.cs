@@ -85,6 +85,30 @@ public sealed record clsCotizacionResumen(
     public DateTimeOffset? FinalizadaAt { get; init; }
 
     /// <summary>
+    /// HU-018.2 (#294): municipio de origen de la RUTA 1 (la de menor orden); <c>null</c> sin rutas o si esa ruta no tiene nombre. Siempre
+    /// se serializa. La consumen <c>GET /web/mis-cotizaciones</c> y <c>GET /web/cotizaciones/regional</c>.
+    /// </summary>
+    public string? Origen { get; init; }
+
+    /// <summary>HU-018.2 (#294): municipio de destino de la RUTA 1 (la de menor orden); <c>null</c> sin rutas o sin nombre. Siempre se serializa.</summary>
+    public string? Destino { get; init; }
+
+    /// <summary>HU-018.2 (#294): cuántas rutas tiene la cotización, también las rechazadas (0 sin rutas). Siempre se serializa.</summary>
+    public int NumeroRutas { get; init; }
+
+    /// <summary>
+    /// HU-018.2 (#294): suma del peso declarado (<c>peso_kg</c>, sin tara) de todas las rutas; <c>null</c> si ninguna lo trae. Siempre se
+    /// serializa.
+    /// </summary>
+    public decimal? PesoTotalKg { get; init; }
+
+    /// <summary>
+    /// HU-018.2 (#294): suma del valor de la mercancía de todas las rutas, en COP aunque la cotización esté en USD; <c>null</c> si ninguna
+    /// lo trae. Siempre se serializa.
+    /// </summary>
+    public decimal? ValorMercancia { get; init; }
+
+    /// <summary>
     /// Solo en la respuesta de <c>POST /web/solicitudes-costeo</c> (HU-023.3, #158): por cada ruta que pasó por el cubicador, su resultado
     /// y sus avisos (mercancías condicionadas, advertencias y extradimensión, que no se guardan). <c>null</c> (no se serializa) si ninguna
     /// ruta llamó al cubicador o en el resto de respuestas.
@@ -114,14 +138,19 @@ public sealed record clsCotizacionResumen(
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         var ruta = cotizacion.PrimeraRuta;
-        return Desde(cotizacion, lineaNegocio, baseUrlPdf, ruta?.MargenAplicado, ruta?.OrigenMargen);
+        // HU-018.2 (#294): la carga del listado se arma desde las rutas del agregado (origen/destino de la de menor orden y las sumas).
+        var carga = clsCargaCotizacion.Desde(cotizacion.RutasOrdenadas.Select(
+            r => new clsCargaCotizacion.Ruta(r.Orden, r.OrigenNombre, r.DestinoNombre, r.PesoKg, r.ValorMercancia)));
+        return Desde(cotizacion, lineaNegocio, baseUrlPdf, ruta?.MargenAplicado, ruta?.OrigenMargen, carga);
     }
 
     /// <summary>Resumen con el margen y el origen del margen ya leídos (lista de "Mis cotizaciones", sin cargar el agregado).</summary>
     public static clsCotizacionResumen Desde(
-        clsCotizacionSolicitud cotizacion, string? lineaNegocio, string? baseUrlPdf, decimal? margenAplicado, Dominio.Margen.OrigenMargen? origenMargen)
+        clsCotizacionSolicitud cotizacion, string? lineaNegocio, string? baseUrlPdf, decimal? margenAplicado, Dominio.Margen.OrigenMargen? origenMargen,
+        clsCargaCotizacion? carga = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
+        var datosCarga = carga ?? clsCargaCotizacion.Vacia;
         return new clsCotizacionResumen(
             cotizacion.Id,
             cotizacion.Folio,
@@ -148,7 +177,51 @@ public sealed record clsCotizacionResumen(
             SincronizacionResultadoNexo = cotizacion.EstadoSincronizacionResultado,
             ErrorSincronizacionResultadoNexo = cotizacion.Ganada is null ? null : cotizacion.ErrorSincronizacionResultado,
             FinalizadaAt = cotizacion.FinalizadaAt?.ToUniversalTime(),
+            Origen = datosCarga.Origen,
+            Destino = datosCarga.Destino,
+            NumeroRutas = datosCarga.NumeroRutas,
+            PesoTotalKg = datosCarga.PesoTotalKg,
+            ValorMercancia = datosCarga.ValorMercancia,
         };
+    }
+}
+
+/// <summary>
+/// HU-018.2 (#294): la carga de una cotización resumida para el listado (<c>origen</c> y <c>destino</c> de la ruta de menor orden,
+/// cuántas rutas tiene y las sumas de peso y de valor de la mercancía). Son datos que ya existen en el dominio; esto solo los expone,
+/// sin recalcular nada. Se arma desde el agregado (<see cref="clsCotizacionResumen.Desde(clsCotizacionSolicitud, string?, string?)"/>)
+/// o desde la proyección liviana del listado (<c>clsCotizacionConLinea.Carga</c>), que no carga el agregado.
+/// </summary>
+public sealed record clsCargaCotizacion(string? Origen, string? Destino, int NumeroRutas, decimal? PesoTotalKg, decimal? ValorMercancia)
+{
+    /// <summary>Sin rutas: todo en <c>null</c> y <c>0</c> rutas.</summary>
+    public static readonly clsCargaCotizacion Vacia = new(null, null, 0, null, null);
+
+    /// <summary>Una ruta con lo mínimo para armar la carga del resumen (sin cargar el agregado entero).</summary>
+    public readonly record struct Ruta(int Orden, string? Origen, string? Destino, decimal? PesoKg, decimal? ValorMercancia);
+
+    /// <summary>
+    /// Arma la carga desde las rutas: <c>origen</c>/<c>destino</c> son los de la ruta de menor orden; <c>numero_rutas</c> las cuenta todas
+    /// (también las rechazadas); <c>peso_total_kg</c> y <c>valor_mercancia</c> suman las que lo traigan (<c>null</c> si ninguna lo trae).
+    /// </summary>
+    public static clsCargaCotizacion Desde(IEnumerable<Ruta> rutas)
+    {
+        ArgumentNullException.ThrowIfNull(rutas);
+        var lista = rutas.ToList();
+        if (lista.Count == 0)
+        {
+            return Vacia;
+        }
+
+        var menor = lista.MinBy(r => r.Orden);
+        var pesos = lista.Where(r => r.PesoKg is not null).Select(r => r.PesoKg!.Value).ToList();
+        var valores = lista.Where(r => r.ValorMercancia is not null).Select(r => r.ValorMercancia!.Value).ToList();
+        return new clsCargaCotizacion(
+            menor.Origen,
+            menor.Destino,
+            lista.Count,
+            pesos.Count == 0 ? null : pesos.Sum(),
+            valores.Count == 0 ? null : valores.Sum());
     }
 }
 
@@ -161,6 +234,12 @@ public sealed record clsCotizacionConLinea(
 {
     /// <summary>Texto de la línea de negocio cuando las rutas de la solicitud tienen líneas distintas.</summary>
     public const string Varias = "Varias";
+
+    /// <summary>
+    /// HU-018.2 (#294): la carga del resumen (origen/destino de la ruta de menor orden y las sumas), leída en la misma proyección del
+    /// listado sin cargar el agregado. <see cref="clsCargaCotizacion.Vacia"/> si la proyección no la trae.
+    /// </summary>
+    public clsCargaCotizacion Carga { get; init; } = clsCargaCotizacion.Vacia;
 }
 
 /// <summary><c>MisCotizaciones</c>: <c>{total, cotizaciones}</c>, máximo 100, de la más reciente a la más antigua.</summary>

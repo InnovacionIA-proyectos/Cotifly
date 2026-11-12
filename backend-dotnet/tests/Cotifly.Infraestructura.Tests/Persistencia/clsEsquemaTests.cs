@@ -33,6 +33,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
 
         // HU-045.1/HU-045.2 (#263, #264): la tasa del seguro de la mercancía (db/scripts/20).
         "TarifasSeguro",
+
+        // HU-046.2/HU-046.3 (#268, #269): la política de seguros por valor de la mercancía (db/scripts/21).
+        "PoliticaSeguroMedidaConexos", "PoliticaSeguroMedidas", "PoliticaSeguroTramoMedidas", "PoliticaSeguroTramos",
     ];
 
     /// <summary>Filtro de las tablas de respaldo que deja el 0009 (<c>Respaldo0009_*</c>): no son del modelo.</summary>
@@ -113,7 +116,11 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         scripts[clsBaseDatosPruebas.ScriptsHasta16 + 2].Should().Be(clsBaseDatosPruebas.Script19, "después del 18 va el 19 (precioVenta del conexo, #261)");
         // HU-045 (#263, #264): el 20 (TarifasSeguro y el seguro de la ruta) va después del 19.
         scripts[clsBaseDatosPruebas.ScriptsHasta16 + 3].Should().Be(clsBaseDatosPruebas.Script20, "después del 19 va el 20 (seguro de la mercancía, #264)");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script20, "ScriptsSin07 llega hasta el 20");
+        // HU-046 (#268, #269): el 21 (política de seguros y codigoServicio del conexo) va después del 20.
+        scripts[clsBaseDatosPruebas.ScriptsHasta16 + 4].Should().Be(clsBaseDatosPruebas.Script21, "después del 20 va el 21 (política de seguros, #269)");
+        // HU-044.7 (#290): el 22 (origenLectura de la licitación) va después del 21.
+        scripts[clsBaseDatosPruebas.ScriptsHasta16 + 5].Should().Be(clsBaseDatosPruebas.Script22, "después del 21 va el 22 (origenLectura, #290)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script22, "ScriptsSin07 llega hasta el 22");
         scripts[clsBaseDatosPruebas.ScriptsSin07].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsSin07 corta justo antes del 07");
         scripts[clsBaseDatosPruebas.ScriptsHasta07 - 1].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsHasta07 incluye el 07");
         // HU-037.1 (#209): el 15 (rol director) va al final, después del 08: no agrega columnas y clsRolDirectorScriptTests usa
@@ -292,6 +299,25 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
             "SELECT definition FROM sys.check_constraints WHERE name = N'ck_cotizacionPosiciones_medidas' "
             + "AND parent_object_id = OBJECT_ID(N'dbo_cotifly.CotizacionMercancias')");
         definicion.Should().Contain("IS NULL").And.Contain("[largoCm]>(0)");
+    }
+
+    [Fact]
+    public async Task HU0447_ElScript22EsIdempotenteYDejaOrigenLecturaNotNullConSuDefaultYCheck()
+    {
+        // HU-044.7 (#290): origenLectura en CotizacionArchivosLicitacion (db/scripts/22; el 01 lo trae en el CREATE).
+        await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem22", clsBaseDatosPruebas.Scripts.Length);
+        await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script22);
+
+        await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbIdem22Inst");
+        await ReaplicarYVerificarIdempotenciaAsync(instalada.Cadena, clsBaseDatosPruebas.Script22);
+        (await clsBaseDatosPruebas.EscalarAsync<string>(instalada.Cadena,
+                "SELECT CONCAT(c.name, '|', TYPE_NAME(c.user_type_id), '|', c.max_length, '|', c.is_nullable) FROM sys.columns c "
+                + "WHERE c.object_id = OBJECT_ID(N'dbo_cotifly.CotizacionArchivosLicitacion') AND c.name = N'origenLectura'"))
+            .Should().Be("origenLectura|nvarchar|40|0");
+        (await clsBaseDatosPruebas.EscalarAsync<int>(instalada.Cadena,
+                "SELECT COUNT(*) FROM sys.check_constraints WHERE name = N'ck_cotizacionArchivosLicitacion_origenLectura' "
+                + "AND parent_object_id = OBJECT_ID(N'dbo_cotifly.CotizacionArchivosLicitacion')"))
+            .Should().Be(1);
     }
 
     [Fact]
@@ -1164,8 +1190,8 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         });
 
         ef.Should().BeEquivalentTo(bd);
-        bd.Where(x => x.Contains(":ix_", StringComparison.Ordinal)).Should().HaveCount(18,
-            "el 0002 crea 10 índices ix_, el 0004 uno, el 0006 uno (historial de PDF), el 0009 quita el de posiciones por línea y agrega el de camiones y el de ajustes por ruta, la propuesta 04 el de la cola del cubicador, el script 06 (#191) el de vencimiento y el filtrado por folio de las Idempotency-Key y el 13 (#199) la agenda del worker de correos");
+        bd.Where(x => x.Contains(":ix_", StringComparison.Ordinal)).Should().HaveCount(19,
+            "el 0002 crea 10 índices ix_, el 0004 uno, el 0006 uno (historial de PDF), el 0009 quita el de posiciones por línea y agrega el de camiones y el de ajustes por ruta, la propuesta 04 el de la cola del cubicador, el script 06 (#191) el de vencimiento y el filtrado por folio de las Idempotency-Key y el 13 (#199) la agenda del worker de correos, y el 21 (#269) el de las reglas de la política de seguros por medida");
         bd.Should().Contain("Correos:ix_correos_siguienteConsultaAt unico=False claves=(siguienteConsultaAt) include=() filtro=siguienteconsultaatisnotnull");
         bd.Should().Contain(x => x.StartsWith("Correos:ux_correos_idMailSender unico=True claves=(idMailSender)", StringComparison.Ordinal)
             && x.EndsWith("filtro=idmailsenderisnotnull", StringComparison.Ordinal));
