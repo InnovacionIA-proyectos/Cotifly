@@ -4,7 +4,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Aplicacion.Cotizaciones.Services;
 
 /// <summary>
-/// HU-018.1 (#155, parte B): opciones del resultado ganada/perdida (sección <see cref="Seccion"/>). La lista de motivos de pérdida es
+/// Opciones del resultado ganada/perdida (sección <see cref="Seccion"/>). La lista de motivos de pérdida es
 /// configurable; sin configurar es la de NEXO (<c>mesa-costeo-page.component.ts</c>): <see cref="MotivosPorDefecto"/>.
 /// </summary>
 public sealed class clsOpcionesResultado
@@ -69,22 +69,22 @@ public sealed class clsOpcionesResultado
     }
 }
 
-/// <summary>HU-018.1 (#155): un motivo de pérdida de <c>GET /web/motivos-perdida</c> (<c>MotivoPerdida</c>).</summary>
+/// <summary>Un motivo de pérdida de <c>GET /web/motivos-perdida</c> (<c>MotivoPerdida</c>).</summary>
 /// <param name="Motivo">El texto exacto que se envía en <c>motivo</c> (o en <c>motivo_rechazo</c> de <c>/seguimiento</c>).</param>
 /// <param name="RequiereComentario">Si exige <c>comentario</c> (el motivo <c>Otro</c>).</param>
 public sealed record clsMotivoPerdida(string Motivo, bool RequiereComentario);
 
-/// <summary>HU-018.1 (#155): respuesta de <c>GET /web/motivos-perdida</c> (<c>MotivosPerdida</c>): la lista en su orden.</summary>
+/// <summary>Respuesta de <c>GET /web/motivos-perdida</c> (<c>MotivosPerdida</c>): la lista en su orden.</summary>
 public sealed record clsMotivosPerdida(IReadOnlyList<clsMotivoPerdida> Motivos);
 
 /// <summary>
-/// HU-018.1 (#155): un motivo de pérdida válido. <see cref="Motivo"/> es el de la lista (con su escritura) y va a Nexo en <c>motivo</c>;
+/// Un motivo de pérdida válido. <see cref="Motivo"/> es el de la lista (con su escritura) y va a Nexo en <c>motivo</c>;
 /// <see cref="Comentario"/> va a Nexo en <c>comentario</c>; <see cref="ParaCotifly"/> es lo que se guarda en <c>motivoRechazo</c>.
 /// </summary>
 public sealed record clsMotivoPerdidaValidado(string Motivo, string? Comentario, string ParaCotifly);
 
 /// <summary>
-/// HU-018.1 (#155, parte B): la lista de motivos de pérdida y su validación, común a <c>POST .../resultado</c> y a
+/// La lista de motivos de pérdida y su validación, común a <c>POST .../resultado</c> y a
 /// <c>POST .../seguimiento</c>. Solo valida lo nuevo: los resultados ya guardados (motivo libre o sin motivo) no se revalidan.
 /// </summary>
 public interface IClsCatalogoMotivosPerdida
@@ -100,7 +100,7 @@ public interface IClsCatalogoMotivosPerdida
     clsResultado<clsMotivoPerdidaValidado> Validar(string? motivo, string? comentario);
 
     /// <summary>
-    /// El <c>motivo</c> que va a Nexo a partir del <c>motivoRechazo</c> guardado (la sincronización diferida, HU-033): con el motivo
+    /// El <c>motivo</c> que va a Nexo a partir del <c>motivoRechazo</c> guardado (la sincronización diferida): con el motivo
     /// <c>Otro</c> se guarda <c>"Otro: comentario"</c> y a Nexo va solo <c>Otro</c> (el comentario va aparte). Otro valor sale igual.
     /// </summary>
     string? MotivoParaNexo(string? guardado);

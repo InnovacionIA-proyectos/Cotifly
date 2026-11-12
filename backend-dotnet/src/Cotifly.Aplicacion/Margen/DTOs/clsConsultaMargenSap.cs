@@ -1,7 +1,7 @@
 namespace Cotifly.Aplicacion.Margen.DTOs;
 
 /// <summary>
-/// Respuesta de la fuente del margen de SAP TM (HU-042.2, #243). Con <see cref="EstadoConsultaMargenSap.ConValor"/>,
+/// Respuesta de la fuente del margen de SAP TM. Con <see cref="EstadoConsultaMargenSap.ConValor"/>,
 /// <see cref="Porcentaje"/> trae el valor tal como lo manda SAP (13.5 = 13,5 %; el resolver lo divide por 100 una sola vez).
 /// </summary>
 /// <param name="Estado">Qué encontró la fuente.</param>

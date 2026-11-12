@@ -12,9 +12,9 @@ namespace Cotifly.Aplicacion.Cotizaciones.DTOs;
 /// <param name="Cliente">Nombre del cliente (<c>clienteNombre</c>).</param>
 /// <param name="LineaNegocio">Nombre de la línea (JOIN con <c>MargenesPolitica</c> por <c>lineaNegocioId</c>).</param>
 /// <param name="PdfUrl"><c>{Pdf:BaseUrl}/pdfs/{archivo}</c>, o <c>null</c> si la cotización no tiene PDF.</param>
-/// <param name="TrmAplicada">TRM con que se convirtió el precio a USD (HU-012.2); 0 en COP.</param>
+/// <param name="TrmAplicada">TRM con que se convirtió el precio a USD; 0 en COP.</param>
 /// <param name="ConexosDescartados">
-/// Solo en la respuesta de <c>POST .../costeo/re-solicitar</c> (HU-013.15, #124). Desde HU-021.9 (#136) siempre vacía: los conexos se
+/// Solo en la respuesta de <c>POST .../costeo/re-solicitar</c>. Siempre vacía: los conexos se
 /// conservan (<c>conexos_conservados</c>). En el resto de respuestas es <c>null</c> y no se serializa.
 /// </param>
 public sealed record clsCotizacionResumen(
@@ -40,14 +40,14 @@ public sealed record clsCotizacionResumen(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? ConexosDescartados = null)
 {
     /// <summary>
-    /// Solo en la respuesta de <c>POST .../costeo/re-solicitar</c> (HU-021.9, #136): nombres de los servicios conexos que la cotización
+    /// Solo en la respuesta de <c>POST .../costeo/re-solicitar</c>: nombres de los servicios conexos que la cotización
     /// resultante conserva o copió (sin montos); siguen en el precio de su ruta. En el resto de respuestas es <c>null</c> y no se serializa.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<string>? ConexosConservados { get; init; }
 
     /// <summary>
-    /// HU-028.1 (#183, decisión del 2026-10-20): solo en la respuesta de <c>POST .../costeo/re-solicitar</c> y de
+    /// Solo en la respuesta de <c>POST .../costeo/re-solicitar</c> y de
     /// <c>PUT .../solicitud</c> cuando se omitieron del envío camiones rechazados por la Mesa de Costeo de Nexo: qué rutas, cuántos camiones y
     /// sus motivos (en la <c>-vN</c>, que se copiaron como rechazados). Para reconsiderarlos, la edición con <c>reincluir_rechazados</c>. En el
     /// resto de respuestas es <c>null</c> y no se serializa.
@@ -56,60 +56,60 @@ public sealed record clsCotizacionResumen(
     public string? AvisoRechazos { get; init; }
 
     /// <summary>
-    /// HU-018.1 (#155): fecha límite de la solicitud (cabecera) en UTC, como <c>created_at</c> (se guarda con el desplazamiento con que llegó,
+    /// Fecha límite de la solicitud (cabecera) en UTC, como <c>created_at</c> (se guarda con el desplazamiento con que llegó,
     /// -05:00 si vino sin zona); <c>null</c> si no se dio. Siempre se serializa.
     /// </summary>
     public DateTimeOffset? Deadline { get; init; }
 
     /// <summary>
-    /// HU-018.1 (#155): <c>scorePrioridad</c> que Nexo devolvió al crear la solicitud; <c>null</c> si no lo mandó, si no se ha enviado o si
+    /// <c>scorePrioridad</c> que Nexo devolvió al crear la solicitud; <c>null</c> si no lo mandó, si no se ha enviado o si
     /// se envió antes del script 09. Siempre se serializa.
     /// </summary>
     public decimal? ScorePrioridad { get; init; }
 
     /// <summary>
-    /// HU-033 (#199): estado del resultado ganada/perdida frente a Nexo: <c>null</c> sin resultado; <c>pendiente</c> (guardado solo en
+    /// Estado del resultado ganada/perdida frente a Nexo: <c>null</c> sin resultado; <c>pendiente</c> (guardado solo en
     /// Cotifly, se envía a Nexo cuando la Mesa entregue: "pendiente de sincronizar con NEXO"); <c>sincronizado</c>; <c>no_sincronizable</c>
     /// (ya no se podrá enviar: ver <see cref="ErrorSincronizacionResultadoNexo"/>); <c>solo_cotifly</c> (nunca va a Nexo: perdida antes del
     /// costeo, cotización sin Nexo, descartada o vencida). Siempre se serializa.
     /// </summary>
     public string? SincronizacionResultadoNexo { get; init; }
 
-    /// <summary>HU-033 (#199): último error al enviar el resultado pendiente, o por qué ya no se puede enviar; <c>null</c> si no hay.</summary>
+    /// <summary>Último error al enviar el resultado pendiente, o por qué ya no se puede enviar; <c>null</c> si no hay.</summary>
     public string? ErrorSincronizacionResultadoNexo { get; init; }
 
     /// <summary>
-    /// HU-036.2 (#206): cuándo el comercial finalizó la cotización (aceptó el precio), en UTC; <c>null</c> sin finalizar. Siempre se
+    /// Cuándo el comercial finalizó la cotización (aceptó el precio), en UTC; <c>null</c> sin finalizar. Siempre se
     /// serializa.
     /// </summary>
     public DateTimeOffset? FinalizadaAt { get; init; }
 
     /// <summary>
-    /// HU-018.2 (#294): municipio de origen de la RUTA 1 (la de menor orden); <c>null</c> sin rutas o si esa ruta no tiene nombre. Siempre
+    /// Municipio de origen de la RUTA 1 (la de menor orden); <c>null</c> sin rutas o si esa ruta no tiene nombre. Siempre
     /// se serializa. La consumen <c>GET /web/mis-cotizaciones</c> y <c>GET /web/cotizaciones/regional</c>.
     /// </summary>
     public string? Origen { get; init; }
 
-    /// <summary>HU-018.2 (#294): municipio de destino de la RUTA 1 (la de menor orden); <c>null</c> sin rutas o sin nombre. Siempre se serializa.</summary>
+    /// <summary>Municipio de destino de la RUTA 1 (la de menor orden); <c>null</c> sin rutas o sin nombre. Siempre se serializa.</summary>
     public string? Destino { get; init; }
 
-    /// <summary>HU-018.2 (#294): cuántas rutas tiene la cotización, también las rechazadas (0 sin rutas). Siempre se serializa.</summary>
+    /// <summary>Cuántas rutas tiene la cotización, también las rechazadas (0 sin rutas). Siempre se serializa.</summary>
     public int NumeroRutas { get; init; }
 
     /// <summary>
-    /// HU-018.2 (#294): suma del peso declarado (<c>peso_kg</c>, sin tara) de todas las rutas; <c>null</c> si ninguna lo trae. Siempre se
+    /// Suma del peso declarado (<c>peso_kg</c>, sin tara) de todas las rutas; <c>null</c> si ninguna lo trae. Siempre se
     /// serializa.
     /// </summary>
     public decimal? PesoTotalKg { get; init; }
 
     /// <summary>
-    /// HU-018.2 (#294): suma del valor de la mercancía de todas las rutas, en COP aunque la cotización esté en USD; <c>null</c> si ninguna
+    /// Suma del valor de la mercancía de todas las rutas, en COP aunque la cotización esté en USD; <c>null</c> si ninguna
     /// lo trae. Siempre se serializa.
     /// </summary>
     public decimal? ValorMercancia { get; init; }
 
     /// <summary>
-    /// Solo en la respuesta de <c>POST /web/solicitudes-costeo</c> (HU-023.3, #158): por cada ruta que pasó por el cubicador, su resultado
+    /// Solo en la respuesta de <c>POST /web/solicitudes-costeo</c>: por cada ruta que pasó por el cubicador, su resultado
     /// y sus avisos (mercancías condicionadas, advertencias y extradimensión, que no se guardan). <c>null</c> (no se serializa) si ninguna
     /// ruta llamó al cubicador o en el resto de respuestas.
     /// </summary>
@@ -117,14 +117,14 @@ public sealed record clsCotizacionResumen(
     public IReadOnlyList<clsCubicacionRutaResumen>? Cubicacion { get; init; }
 
     /// <summary>
-    /// #173: avisos de una respuesta que salió incompleta después de guardar (hoy solo <c>RESUMEN_INCOMPLETO</c>: falló la lectura del
+    /// Avisos de una respuesta que salió incompleta después de guardar (<c>RESUMEN_INCOMPLETO</c>: falló la lectura del
     /// nombre de la línea). <c>null</c> (no se serializa) cuando el resumen está completo.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<string>? Avisos { get; init; }
 
     /// <summary>
-    /// Solo en <c>GET /web/cotizaciones/regional</c> (HU-016.1, #154): el comercial dueño de la cotización. <c>null</c> (no se serializa) en
+    /// Solo en <c>GET /web/cotizaciones/regional</c>: el comercial dueño de la cotización. <c>null</c> (no se serializa) en
     /// el resto de respuestas, donde la cotización siempre es del usuario autenticado.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -132,13 +132,13 @@ public sealed record clsCotizacionResumen(
 
     /// <summary>
     /// Resumen de una cotización con el nombre de su línea y la base pública de los PDF. El margen y su origen son los de la ruta 1
-    /// (HU-021: el margen es por ruta; el de cada ruta está en <c>CosteoCotizacion.rutas[]</c>, #138).
+    /// (el margen es por ruta; el de cada ruta está en <c>CosteoCotizacion.rutas[]</c>).
     /// </summary>
     public static clsCotizacionResumen Desde(clsCotizacionSolicitud cotizacion, string? lineaNegocio, string? baseUrlPdf)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         var ruta = cotizacion.PrimeraRuta;
-        // HU-018.2 (#294): la carga del listado se arma desde las rutas del agregado (origen/destino de la de menor orden y las sumas).
+        // La carga del listado se arma desde las rutas del agregado (origen/destino de la de menor orden y las sumas).
         var carga = clsCargaCotizacion.Desde(cotizacion.RutasOrdenadas.Select(
             r => new clsCargaCotizacion.Ruta(r.Orden, r.OrigenNombre, r.DestinoNombre, r.PesoKg, r.ValorMercancia)));
         return Desde(cotizacion, lineaNegocio, baseUrlPdf, ruta?.MargenAplicado, ruta?.OrigenMargen, carga);
@@ -187,7 +187,7 @@ public sealed record clsCotizacionResumen(
 }
 
 /// <summary>
-/// HU-018.2 (#294): la carga de una cotización resumida para el listado (<c>origen</c> y <c>destino</c> de la ruta de menor orden,
+/// La carga de una cotización resumida para el listado (<c>origen</c> y <c>destino</c> de la ruta de menor orden,
 /// cuántas rutas tiene y las sumas de peso y de valor de la mercancía). Son datos que ya existen en el dominio; esto solo los expone,
 /// sin recalcular nada. Se arma desde el agregado (<see cref="clsCotizacionResumen.Desde(clsCotizacionSolicitud, string?, string?)"/>)
 /// o desde la proyección liviana del listado (<c>clsCotizacionConLinea.Carga</c>), que no carga el agregado.
@@ -227,7 +227,7 @@ public sealed record clsCargaCotizacion(string? Origen, string? Destino, int Num
 
 /// <summary>
 /// Cabecera con la línea de negocio, el margen y el origen del margen de su ruta 1 (o "Varias" si sus rutas tienen líneas distintas):
-/// lectura de "Mis cotizaciones" sin cargar el agregado (HU-021).
+/// lectura de "Mis cotizaciones" sin cargar el agregado.
 /// </summary>
 public sealed record clsCotizacionConLinea(
     clsCotizacionSolicitud Cotizacion, string? LineaNegocio, decimal? MargenAplicado = null, Dominio.Margen.OrigenMargen? OrigenMargen = null)
@@ -236,7 +236,7 @@ public sealed record clsCotizacionConLinea(
     public const string Varias = "Varias";
 
     /// <summary>
-    /// HU-018.2 (#294): la carga del resumen (origen/destino de la ruta de menor orden y las sumas), leída en la misma proyección del
+    /// La carga del resumen (origen/destino de la ruta de menor orden y las sumas), leída en la misma proyección del
     /// listado sin cargar el agregado. <see cref="clsCargaCotizacion.Vacia"/> si la proyección no la trae.
     /// </summary>
     public clsCargaCotizacion Carga { get; init; } = clsCargaCotizacion.Vacia;
@@ -245,15 +245,15 @@ public sealed record clsCotizacionConLinea(
 /// <summary><c>MisCotizaciones</c>: <c>{total, cotizaciones}</c>, máximo 100, de la más reciente a la más antigua.</summary>
 public sealed record clsMisCotizaciones(int Total, IReadOnlyList<clsCotizacionResumen> Cotizaciones);
 
-/// <summary><c>ComercialCotizacion</c> (HU-016.1, #154): dueño de una cotización del listado regional (<c>UsuariosWeb</c>).</summary>
+/// <summary><c>ComercialCotizacion</c>: dueño de una cotización del listado regional (<c>UsuariosWeb</c>).</summary>
 public sealed record clsComercialCotizacion(Guid UsuarioId, string? NombreUsuario, string? NombreCompleto);
 
 /// <summary>
-/// <c>CotizacionesRegional</c> (HU-016.1, #154): las cotizaciones de los miembros de la regional del gerente comercial, con la forma de
+/// <c>CotizacionesRegional</c>: las cotizaciones de los miembros de la regional del gerente comercial, con la forma de
 /// <c>MisCotizaciones</c> y el comercial dueño en cada fila. Máximo 100 en total, de la más reciente a la más antigua.
 /// </summary>
 /// <param name="FuenteRegional"><c>dim_ejecutivo</c> o <c>usuarios_web</c> (de dónde salió la regional del gerente).</param>
-/// <param name="Regional">La regional del alcance; <c>null</c> si el director ve todas (HU-037.3, #211).</param>
+/// <param name="Regional">La regional del alcance; <c>null</c> si el director ve todas.</param>
 /// <param name="FuenteRegional">De dónde salió la regional del gerente; <c>null</c> para el director.</param>
 public sealed record clsCotizacionesRegional(string? Regional, string? FuenteRegional, int Total, IReadOnlyList<clsCotizacionResumen> Cotizaciones);
 
@@ -280,14 +280,14 @@ public sealed record clsDatosNuevaVersion(
     string? Moneda)
 {
     /// <summary>
-    /// HU-021.9 (#136): las rutas de la cotización, en orden, con su línea de negocio y su margen: la versión nueva copia cada ruta con
+    /// Las rutas de la cotización, en orden, con su línea de negocio y su margen: la versión nueva copia cada ruta con
     /// los suyos. Los campos de margen de primer nivel son los de la ruta 1 (compatibilidad) y <see cref="LineaNegocio"/> es la de la ruta
     /// 1 o "Varias" si sus rutas tienen líneas distintas.
     /// </summary>
     public IReadOnlyList<clsRutaNuevaVersion> Rutas { get; init; } = [];
 }
 
-/// <summary><c>RutaNuevaVersion</c> (HU-021.9, #136): una ruta de la cotización que se copia en la versión nueva, sin costos.</summary>
+/// <summary><c>RutaNuevaVersion</c>: una ruta de la cotización que se copia en la versión nueva, sin costos.</summary>
 public sealed record clsRutaNuevaVersion(
     int LineaOrden,
     int? LineaNegocioId,
@@ -299,17 +299,17 @@ public sealed record clsRutaNuevaVersion(
     string? OrigenMargen,
     string? MetodoCalculo);
 
-/// <summary>Cotización que toca consultar en Nexo (agenda del polling, HU-005.6) y la marca con la que se reclama.</summary>
+/// <summary>Cotización que toca consultar en Nexo (agenda del polling) y la marca con la que se reclama.</summary>
 public sealed record clsConsultaCosteoPendiente(Guid Id, DateTimeOffset SiguienteConsultaAt);
 
 /// <summary>
-/// HU-023.5 (#160): una ruta de la cola de la cubicación en segundo plano: su id, el de su cotización y el <c>cubicacionDisponibleAt</c>
+/// Una ruta de la cola de la cubicación en segundo plano: su id, el de su cotización y el <c>cubicacionDisponibleAt</c>
 /// leído (para el reclamo optimista).
 /// </summary>
 public sealed record clsRutaPorCubicar(Guid RutaId, Guid CotizacionId, DateTimeOffset? DisponibleAt);
 
 /// <summary>
-/// <c>CubicacionRuta</c> (HU-023.3, #158): lo que respondió el cubicador para una ruta de la captura. <see cref="Resultado"/>,
+/// <c>CubicacionRuta</c>: lo que respondió el cubicador para una ruta de la captura. <see cref="Resultado"/>,
 /// <see cref="MotivoSinSeleccion"/> y <see cref="Condicionada"/> se guardan (y salen también en <c>GET .../costeo</c>); los avisos no.
 /// </summary>
 public sealed record clsCubicacionRutaResumen(
@@ -323,7 +323,7 @@ public sealed record clsCubicacionRutaResumen(
     clsExtradimensionCubicador? Extradimension)
 {
     /// <summary>
-    /// Las rutas de <paramref name="cotizacion"/> que pasaron por el cubicador o que tienen avisos (HU-032, #197: los del vehículo, como
+    /// Las rutas de <paramref name="cotizacion"/> que pasaron por el cubicador o que tienen avisos (los del vehículo, como
     /// <c>VEHICULO_ELEGIDO_USADO</c> o <c>MERCANCIAS_NO_CUBICABLES</c>, también en una ruta que no llamó al cubicador), en orden; <c>null</c>
     /// si ninguna.
     /// </summary>

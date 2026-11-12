@@ -4,7 +4,7 @@ using Cotifly.Dominio.Identidad;
 namespace Cotifly.Aplicacion.Identidad.Interfaces;
 
 /// <summary>
-/// HU-040.2 (#230, ADR-025): ticket de elección del rol. Lo emite el login cuando la persona verificada tiene varios roles, y es lo único
+/// Ticket de elección del rol (ADR-025). Lo emite el login cuando la persona verificada tiene varios roles, y es lo único
 /// que acepta <c>POST /api/auth/elegir-rol</c>. Es un JWT HS256 firmado con una clave DERIVADA de la del access (otra clave, otra
 /// audiencia y otro <c>typ</c>): no sirve como access token ni un access sirve como ticket. Vigencia corta (<see cref="Vigencia"/>); el
 /// uso único lo controla el caso de uso (consume el <c>jti</c>).

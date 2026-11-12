@@ -7,13 +7,13 @@ public enum VarianteDocumento
     MultiSeccion,
 
     /// <summary>
-    /// Pliego de licitación (HU-011.5, ADR-017 §6): el diseño multi-sección (tablas por origen) con un resumen de todas las líneas y
+    /// Pliego de licitación (ADR-017 §6): el diseño multi-sección (tablas por origen) con un resumen de todas las líneas y
     /// el total antes de las tablas.
     /// </summary>
     Pliego,
 }
 
-/// <summary>Resumen del pliego (HU-011.5): una fila por línea con su tarifa ya formateada y el total del pliego.</summary>
+/// <summary>Resumen del pliego: una fila por línea con su tarifa ya formateada y el total del pliego.</summary>
 public sealed record clsResumenPliegoDocumento(string Titulo, IReadOnlyList<clsFilaPliegoDocumento> Filas, string EtiquetaTotal, string Total, string Nota);
 
 /// <summary>Fila del resumen del pliego: número de línea, ruta, vehículo y peso, y tarifa formateada.</summary>
@@ -65,7 +65,7 @@ public sealed record clsDocumentoCotizacion
     public string? NotaDecreto { get; init; }
 
     /// <summary>
-    /// Nota de la cotización en dólares (HU-012.3): TRM mínima, la aplicada en la cotización (<c>clsTextosEstandar.NotaTrmMinima</c>). Solo en USD (en ambas variantes); en COP
+    /// Nota de la cotización en dólares: TRM mínima, la aplicada en la cotización (<c>clsTextosEstandar.NotaTrmMinima</c>). Solo en USD (en ambas variantes); en COP
     /// es <c>null</c> y el PDF no trae ninguna aclaración de TRM.
     /// </summary>
     public string? NotaMoneda { get; init; }
@@ -74,13 +74,13 @@ public sealed record clsDocumentoCotizacion
     public required IReadOnlyList<clsBloqueDocumento> BloquesAdicionales { get; init; }
 
     /// <summary>
-    /// HU-033 (#199, decisión 5): total general al final de la tarifa (etiqueta, valor con moneda y nota con la leyenda de impuestos);
+    /// Total general al final de la tarifa (etiqueta, valor con moneda y nota con la leyenda de impuestos);
     /// <c>null</c> = sin bloque (el PDF del chat).
     /// </summary>
     public clsTotalDocumento? TotalGeneral { get; init; }
 
     /// <summary>
-    /// #261 (HU-046, política NOGE0076): párrafos del texto de seguros de la propuesta, que van después del resumen de precios (<c>null</c> o
+    /// Párrafos del texto de seguros de la propuesta (política NOGE0076), que van después del resumen de precios (<c>null</c> o
     /// vacío = sin bloque). Se lee de configuración (<c>Pdf:TextoSeguros</c>); no lo arma <c>clsConstructorDocumentoCotizacion</c>: lo pone el
     /// caso de uso (<c>clsCosteoCotizacionService</c>), así el PDF del chat legado y las pruebas del constructor no lo traen.
     /// </summary>
@@ -127,7 +127,7 @@ public sealed record clsDatoDocumento(string Etiqueta, string Valor);
 /// <summary>Frase de cierre centrada; <see cref="Enlace"/> se imprime como hipervínculo en la línea siguiente.</summary>
 public sealed record clsFraseFinalDocumento(string Texto, string? Enlace);
 
-/// <summary>HU-033 (#199): total general del PDF (<c>VALOR TOTAL DE LA COTIZACIÓN</c>, el valor formateado con la moneda y la nota con la leyenda).</summary>
+/// <summary>Total general del PDF (<c>VALOR TOTAL DE LA COTIZACIÓN</c>, el valor formateado con la moneda y la nota con la leyenda).</summary>
 public sealed record clsTotalDocumento(string Etiqueta, string Valor, string Nota);
 
 /// <summary>Firma del comercial. <see cref="Celular"/> sale de <c>UsuariosWeb.telefono</c>; si es nulo no se imprime "Cel".</summary>

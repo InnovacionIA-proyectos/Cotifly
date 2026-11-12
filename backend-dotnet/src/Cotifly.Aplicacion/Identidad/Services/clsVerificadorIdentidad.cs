@@ -10,32 +10,32 @@ namespace Cotifly.Aplicacion.Identidad.Services;
 /// <param name="Usuario">Usuario de <c>UsuariosWeb</c> (seguido por el contexto: si es nuevo, falta confirmarlo).</param>
 /// <param name="Rol">
 /// Rol interno de la jerarquía (<c>director</c> &gt; <c>gerente_comercial</c> &gt; <c>comercial</c>). Con un solo rol disponible es el
-/// rol de la sesión; con varios (<see cref="RequiereEleccion"/>) NO se usa para emitir: la persona elige (HU-040.2, ADR-025).
+/// rol de la sesión; con varios (<see cref="RequiereEleccion"/>) NO se usa para emitir: la persona elige (ADR-025).
 /// </param>
 /// <param name="EsNuevo"><c>true</c> si se creó en esta verificación (primer ingreso, JIT).</param>
 /// <param name="RolesDisponibles">
-/// HU-040.2 (#230): roles con los que puede entrar, del catálogo y en el orden de la jerarquía. Uno (<see cref="Rol"/>) en el caso de
+/// Roles con los que puede entrar, del catálogo y en el orden de la jerarquía. Uno (<see cref="Rol"/>) en el caso de
 /// rol único; varios si tiene dos o más asignaciones activas (todas respaldadas por ClientePro) o si es un alta con varios roles externos.
 /// </param>
 /// <param name="RolesOtorgados">
-/// HU-040.3 (#258): roles ORDINARIOS que la reconciliación del login auto-otorgó en esta verificación (faltaban y tenían respaldo externo;
+/// Roles ORDINARIOS que la reconciliación del login auto-otorgó en esta verificación (faltaban y tenían respaldo externo;
 /// se creó o reactivó la asignación). Vacío fuera del login o cuando no hubo cambios. Solo para la auditoría.
 /// </param>
 /// <param name="RolesRevocados">
-/// HU-040.3 (#258): roles que la reconciliación del login auto-revocó (su rol externo dejó de respaldarlos; aplica a todos, fail-safe).
+/// Roles que la reconciliación del login auto-revocó (su rol externo dejó de respaldarlos; aplica a todos, fail-safe).
 /// Vacío fuera del login o cuando no hubo cambios. Solo para la auditoría.
 /// </param>
 public sealed record clsIdentidadVerificada(
     clsUsuarioWeb Usuario, RolInterno Rol, bool EsNuevo, IReadOnlyList<clsRol> RolesDisponibles,
     IReadOnlyList<RolInterno>? RolesOtorgados = null, IReadOnlyList<RolInterno>? RolesRevocados = null)
 {
-    /// <summary>HU-040.2 (#230): con varios roles disponibles el login no emite sesión: la persona elige con cuál entra.</summary>
+    /// <summary>Con varios roles disponibles el login no emite sesión: la persona elige con cuál entra.</summary>
     public bool RequiereEleccion => RolesDisponibles.Count > 1;
 
-    /// <summary>HU-040.3 (#258): roles ordinarios auto-otorgados en el login (nunca <c>null</c>).</summary>
+    /// <summary>Roles ordinarios auto-otorgados en el login (nunca <c>null</c>).</summary>
     public IReadOnlyList<RolInterno> Otorgados => RolesOtorgados ?? [];
 
-    /// <summary>HU-040.3 (#258): roles auto-revocados en el login (nunca <c>null</c>).</summary>
+    /// <summary>Roles auto-revocados en el login (nunca <c>null</c>).</summary>
     public IReadOnlyList<RolInterno> Revocados => RolesRevocados ?? [];
 
     /// <summary><c>true</c> si <paramref name="rol"/> está entre <see cref="RolesDisponibles"/>.</summary>
@@ -45,7 +45,7 @@ public sealed record clsIdentidadVerificada(
 /// <summary>Resultado de la verificación: la identidad o el motivo del rechazo, más la regla de rol aplicada.</summary>
 /// <param name="UsuarioIdRechazado">
 /// Id interno (<c>UsuariosWeb.id</c>) del usuario rechazado, cuando ya existe (p. ej. <c>rol_externo_cambio</c>): va a la auditoría para que
-/// el gerente o el administrador lo revise (auditoría de #12).
+/// el gerente o el administrador lo revise.
 /// </param>
 public sealed record clsVerificacionIdentidad(clsIdentidadVerificada? Identidad, string Motivo, string? Regla, Guid? UsuarioIdRechazado = null)
 {
@@ -53,29 +53,27 @@ public sealed record clsVerificacionIdentidad(clsIdentidadVerificada? Identidad,
 }
 
 /// <summary>
-/// Verificación DOBLE de la identidad (ADR-009, decisión del 2026-09-25), común al login y al refresh:
+/// Verificación DOBLE de la identidad (ADR-009), común al login y al refresh:
 /// <list type="number">
 /// <item><b>Externa</b> (almacén corporativo, solo lectura): la persona existe y sus roles de ClientePro, traducidos con
 /// <c>Roles.idRolExterno</c>, dan <c>comercial</c>, <c>gerente_comercial</c> o <c>director</c>. Con varios gana el de mayor alcance,
 /// <c>director</c> &gt; <c>gerente_comercial</c> &gt; <c>comercial</c> (reglas <see cref="clsMotivosAcceso.ReglaPrecedenciaDirector"/> y
-/// <see cref="clsMotivosAcceso.ReglaPrecedenciaGerente"/>, auditadas; HU-037, #210).</item>
+/// <see cref="clsMotivosAcceso.ReglaPrecedenciaGerente"/>, auditadas).</item>
 /// <item><b>Interna</b> (<c>dbo_cotifly</c>): el <c>NOMBREUSUARIO</c> del almacén (nunca el del request) ubica al usuario.
 /// Si no existe y el ID externo tampoco está vinculado a otra cuenta, se crea (JIT) con su asignación en
-/// <c>UsuariosRoles</c> (HU-040.2: una por cada rol externo mapeado). Si existe, el rol de la jerarquía debe estar entre sus asignaciones
-/// activas, cada asignación activa debe seguir respaldada por un rol externo vigente y su vínculo debe ser el mismo ID externo. HU-040.1
-/// (#229, script 16): el esquema admite varias asignaciones activas; con una sola, la regla es la de siempre (la asignación es exactamente
-/// el rol resuelto).</item>
-/// <item><b>Roles disponibles</b> (HU-040.2, #230, ADR-025): con una asignación activa, el rol de la jerarquía (rol único, igual que
-/// antes); con dos o más, todas ellas (regla <see cref="clsMotivosAcceso.ReglaMultiRol"/>): la persona elige al entrar.</item>
+/// <c>UsuariosRoles</c> (una por cada rol externo mapeado). Si existe, el rol de la jerarquía debe estar entre sus asignaciones
+/// activas, cada asignación activa debe seguir respaldada por un rol externo vigente y su vínculo debe ser el mismo ID externo. El
+/// esquema admite varias asignaciones activas (script 16); con una sola, la asignación es exactamente el rol resuelto.</item>
+/// <item><b>Roles disponibles</b> (ADR-025): con una asignación activa, el rol de la jerarquía (rol único); con dos o más, todas ellas (regla <see cref="clsMotivosAcceso.ReglaMultiRol"/>): la persona elige al entrar.</item>
 /// </list>
-/// HU-040.3 (#258, ADR-009 OPCIÓN B+): <b>en el login</b> (<c>permitirAlta: true</c>) el rol interno se RECONCILIA con los roles externos
+/// <b>En el login</b> (ADR-009) (<c>permitirAlta: true</c>) el rol interno se RECONCILIA con los roles externos
 /// vigentes: se auto-otorgan los roles ORDINARIOS que falten y se auto-revocan TODOS los que perdieron su respaldo (fail-safe); un rol
 /// SENSIBLE (<see cref="clsRol.RequiereAltaManual"/>) que falte sigue con rechazo + alta manual. <b>En el refresh y en la elección de rol</b>
 /// (<c>permitirAlta: false</c>) la verificación sigue ESTRICTA: cualquier desajuste de rol es un rechazo, no se reconcilia. Un
 /// <c>NOMBREUSUARIO</c> inconsistente siempre es rechazo. Los fallos del almacén son <see cref="clsMotivosAcceso.AlmacenNoDisponible"/>
 /// (fail-closed, nunca se reconcilia sobre una lectura fallida). Los fallos de <c>dbo_cotifly</c> se propagan.
 /// <para>
-/// <b>Datos corporativos (#81, solo en el login):</b> la regional se busca en <c>DimEjecutivo</c>
+/// <b>Datos corporativos (solo en el login):</b> la regional se busca en <c>DimEjecutivo</c>
 /// (<see cref="IClsDirectorioEjecutivos"/>) al crear el usuario y en cada login siguiente ya verificado, que además refresca
 /// nombre y correo desde el almacén (<see cref="clsUsuarioWeb.ActualizarDatos"/>). Solo se sobrescribe con valores no vacíos:
 /// un usuario que no aparece en <c>DimEjecutivo</c> conserva la regional que tenga (la del DBA, o NULL). Esa búsqueda nunca
@@ -150,7 +148,7 @@ public sealed class clsVerificadorIdentidad(
             var nuevo = clsUsuarioWeb.Crear(
                 externo.NombreUsuario, externo.NombreCompleto, externo.Email, regional, ahora, externo.IdUsuarioExterno);
             usuarios.Agregar(nuevo.Valor);
-            // HU-040.2 (#230): el alta asigna TODOS los roles externos mapeados (multi-rol desde el primer ingreso); con uno solo, uno.
+            // El alta asigna TODOS los roles externos mapeados (multi-rol desde el primer ingreso); con uno solo, uno.
             var disponiblesAlta = Disponibles(catalogo, mapeados);
             foreach (var disponible in disponiblesAlta)
             {
@@ -169,7 +167,7 @@ public sealed class clsVerificadorIdentidad(
 
         if (permitirAlta)
         {
-            // HU-040.3 (#258, ADR-009 OPCIÓN B+): en el LOGIN el rol interno se RECONCILIA con los roles externos vigentes, en vez de
+            // En el LOGIN (ADR-009) el rol interno se RECONCILIA con los roles externos vigentes, en vez de
             // rechazar ante cualquier desajuste. Se auto-OTORGAN los roles ORDINARIOS que falten (creando o reactivando la asignación) y se
             // auto-REVOCAN TODOS los que perdieron su respaldo externo (quitar privilegio es fail-safe). Los roles SENSIBLES
             // (requiereAltaManual, p. ej. director) que falten NO se auto-otorgan: se mantiene el rechazo + alta manual + auditoría. Solo se
@@ -199,7 +197,7 @@ public sealed class clsVerificadorIdentidad(
                     externo.NombreUsuario);
             }
 
-            // HU-040.2 (#230): con un rol efectivo, sesión directa; con varios, elige al entrar.
+            // Con un rol efectivo, sesión directa; con varios, elige al entrar.
             var disponiblesLogin = Disponibles(catalogo, efectivos);
             return new clsVerificacionIdentidad(
                 new clsIdentidadVerificada(porNombre, rol, EsNuevo: false, disponiblesLogin, otorgados, revocados),
@@ -230,14 +228,14 @@ public sealed class clsVerificadorIdentidad(
     }
 
     /// <summary>
-    /// HU-040.3 (#258, ADR-009 OPCIÓN B+): reconcilia las asignaciones del usuario con los roles externos vigentes (<paramref name="mapeados"/>)
+    /// Reconcilia (ADR-009) las asignaciones del usuario con los roles externos vigentes (<paramref name="mapeados"/>)
     /// en el login. Devuelve el conjunto EFECTIVO de roles tras reconciliar y los deltas (para la auditoría), o un motivo de rechazo.
     /// <list type="bullet">
     /// <item>Auto-REVOCA (desactiva) toda asignación activa cuyo rol ya no está mapeado — todos los roles, incluidos los sensibles (fail-safe).</item>
     /// <item>Auto-OTORGA los roles ORDINARIOS mapeados que falten, reactivando la fila existente (sin duplicar, <c>uq_usuariosRoles_usuarioId_rolId</c>)
     /// o creando una nueva.</item>
     /// <item>Un rol SENSIBLE (<see cref="clsRol.RequiereAltaManual"/>) que falte NO se auto-otorga: si es el rol de la jerarquía, se RECHAZA
-    /// (<c>rol_externo_cambio</c>) y queda para el alta manual, como antes.</item>
+    /// (<c>rol_externo_cambio</c>) y queda para el alta manual.</item>
     /// </list>
     /// La comprobación del rol sensible se hace ANTES de mutar nada, así un rechazo no deja cambios a medias.
     /// </summary>
@@ -303,7 +301,7 @@ public sealed class clsVerificadorIdentidad(
     /// <summary>
     /// Traduce los roles externos con el catálogo (<c>Roles.idRolExterno</c>, solo roles activos y mapeados). Sin ninguno:
     /// <c>null</c>. Con varios roles internos gana el de mayor alcance: <c>director</c> &gt; <c>gerente_comercial</c> &gt;
-    /// <c>comercial</c> (HU-037, #210; reglas explícitas y auditadas, <c>precedencia_director</c> y <c>precedencia_gerente_comercial</c>;
+    /// <c>comercial</c> (reglas explícitas y auditadas, <c>precedencia_director</c> y <c>precedencia_gerente_comercial</c>;
     /// si luego pierde el rol que ganó, su asignación deja de coincidir y queda en revisión).
     /// </summary>
     public static (RolInterno? Rol, string? Regla) ResolverRol(IEnumerable<clsRol> catalogo, IEnumerable<clsRolExterno> rolesExternos)
@@ -392,7 +390,7 @@ public sealed class clsVerificadorIdentidad(
         return [.. catalogo.Where(r => buscados.Contains(r.Codigo)).OrderBy(r => r.Codigo)];
     }
 
-    /// <summary>HU-040.2 (#230): con varios roles disponibles la regla auditada es <see cref="clsMotivosAcceso.ReglaMultiRol"/>.</summary>
+    /// <summary>Con varios roles disponibles la regla auditada es <see cref="clsMotivosAcceso.ReglaMultiRol"/>.</summary>
     private static string? ReglaDe(IReadOnlyCollection<clsRol> disponibles, string? regla) =>
         disponibles.Count > 1 ? clsMotivosAcceso.ReglaMultiRol : regla;
 
@@ -400,7 +398,7 @@ public sealed class clsVerificadorIdentidad(
 }
 
 /// <summary>
-/// Verificación doble de la identidad (login y refresh; hasta HU-013.9 también cada turno de Google Chat, retirado). Interfaz
+/// Verificación doble de la identidad (login y refresh). Interfaz
 /// para poder simularla en las pruebas.
 /// </summary>
 public interface IClsVerificadorIdentidad

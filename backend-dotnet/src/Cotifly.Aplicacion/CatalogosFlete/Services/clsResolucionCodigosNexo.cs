@@ -3,13 +3,13 @@ using Cotifly.Dominio.Cotizaciones;
 
 namespace Cotifly.Aplicacion.CatalogosFlete.Services;
 
-/// <summary>De dónde salió el código oficial de un texto (HU-031.1, #194).</summary>
+/// <summary>De dónde salió el código oficial de un texto.</summary>
 public enum FuenteCodigoNexo
 {
     /// <summary>El texto ya es un código del catálogo oficial de Nexo (exacto o con la equivalencia de <see cref="clsCodigosConocidosNexo"/>).</summary>
     Catalogo,
 
-    /// <summary>El texto es un alias del diccionario de Nexo (NEXO #321).</summary>
+    /// <summary>El texto es un alias del diccionario de Nexo.</summary>
     Alias,
 }
 
@@ -17,9 +17,9 @@ public enum FuenteCodigoNexo
 public sealed record clsCodigoResueltoNexo(string Codigo, FuenteCodigoNexo Fuente);
 
 /// <summary>
-/// HU-031.1 (#194): resuelve un tipo de vehículo o una clase de contenedor escritos a mano a un código oficial de Nexo, en este orden:
+/// Resuelve un tipo de vehículo o una clase de contenedor escritos a mano a un código oficial de Nexo, en este orden:
 /// (1) el catálogo oficial (<c>GET /api/catalogos/tipos-vehiculo</c>, o <c>clases-contenedor</c> más la lista provisional G15); (2) el
-/// diccionario de alias (NEXO #321). Lo usan el envío a Nexo (<c>clsCosteoNexo</c>), la validación de la captura
+/// diccionario de alias. Lo usan el envío a Nexo (<c>clsCosteoNexo</c>), la validación de la captura
 /// (<c>clsValidadorCatalogosCaptura</c>) y <c>GET /web/alias/resolver</c>, para que los tres respondan lo mismo.
 /// </summary>
 /// <remarks>
@@ -38,7 +38,7 @@ public static class clsResolucionCodigosNexo
             return null;
         }
 
-        // HU-044.8 (#291): el código NEXO (C2, C3) es el canónico de SICE-TAC/Plaza; «2»/«3» del catálogo de SAP se
+        // El código NEXO (C2, C3) es el canónico de SICE-TAC/Plaza; «2»/«3» del catálogo de SAP se
         // traducen a él con la única fuente de equivalencia (tbl_mapeo_vehiculo_tarifario), antes del catálogo y del alias,
         // para no mandar nunca «2»/«3» a Nexo (cuarentena) ni dejar que el alias (C2 → «2») los devuelva al código de SAP.
         if (clsEquivalenciaVehiculoNexo.ACodigoNexo(texto) is { } codigoNexo)
@@ -57,7 +57,7 @@ public static class clsResolucionCodigosNexo
             return null;
         }
 
-        // HU-044.8 (#291): el código al que resuelve el alias también pasa por la equivalencia de SICE-TAC. El catálogo de SAP trae
+        // El código al que resuelve el alias también pasa por la equivalencia de SICE-TAC. El catálogo de SAP trae
         // «2»/«3», así que un alias como "Sencillo"→«2» o "Doble troque"→«3» debe viajar como C2/C3, nunca «2»/«3» (cuarentena).
         var codigoAlias = clsEquivalenciaVehiculoNexo.ACodigoNexo(codigo) ?? clsCodigosConocidosNexo.Resolver(lista, codigo) ?? codigo;
         return new clsCodigoResueltoNexo(codigoAlias, FuenteCodigoNexo.Alias);

@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 namespace Cotifly.Aplicacion.Licitaciones.Services;
 
 /// <summary>
-/// HU-044.5 (#256): lo que NEXO recuerda de cada cliente para la importación del Excel de licitación. Las <b>plantillas de mapeo</b>
+/// Lo que NEXO recuerda de cada cliente para la importación del Excel de licitación. Las <b>plantillas de mapeo</b>
 /// (<c>/web/licitaciones/plantillas-mapeo</c>), los <b>formatos de lectura</b> o recetas (<c>/web/licitaciones/recetas-lectura</c>) y la
 /// consulta del <b>diccionario del cliente</b> (<c>/web/diccionario-cliente</c>). Cotifly es solo el puente
 /// (<see cref="IClsImportacionExcelNexo"/>, ADR-028): no guarda copia y la auditoría la lleva NEXO.
@@ -33,7 +33,7 @@ public interface IClsFormatosClienteService
 
     /// <summary>
     /// <c>PUT recetas-lectura</c>: guarda el formato confirmado. Antes de NEXO solo valida el archivo (presente, tamaño y extensión, sin abrir
-    /// el libro, #277), que venga la receta (<c>RECETA_REQUERIDA</c>) y el NIT. Nunca se reintenta: NEXO ejecuta la receta al guardarla.
+    /// el libro), que venga la receta (<c>RECETA_REQUERIDA</c>) y el NIT. Nunca se reintenta: NEXO ejecuta la receta al guardarla.
     /// </summary>
     Task<clsResultado<clsRecetaGuardadaResultado>> GuardarRecetaAsync(
         Guid usuarioId, clsEntradaGuardarReceta entrada, CancellationToken cancellationToken = default);
@@ -60,7 +60,7 @@ public interface IClsFormatosClienteService
 public sealed partial class clsFormatosClienteService(IClsImportacionExcelNexo importacion, ILogger<clsFormatosClienteService> logger)
     : IClsFormatosClienteService
 {
-    /// <summary>Código del aviso del diccionario consultado con NIT: por ahora solo se ven los términos generales.</summary>
+    /// <summary>Código del aviso del diccionario consultado con NIT: solo se ven los términos generales.</summary>
     public const string AvisoTerminosClienteNoDisponibles = "TERMINOS_CLIENTE_NO_DISPONIBLES";
 
     public const string MensajeTerminosClienteNoDisponibles =
@@ -110,7 +110,7 @@ public sealed partial class clsFormatosClienteService(IClsImportacionExcelNexo i
             return sinComercial;
         }
 
-        // Cotifly no abre el libro (#277): solo presencia, tamaño y extensión. Lo demás (la receta contra el archivo) lo decide NEXO.
+        // Cotifly no abre el libro: solo presencia, tamaño y extensión. Lo demás (la receta contra el archivo) lo decide NEXO.
         if (clsArchivoExcel.ValidarArchivo(entrada.Archivo.Nombre, entrada.Archivo.Contenido) is { } invalido)
         {
             return invalido;
@@ -169,9 +169,9 @@ public sealed partial class clsFormatosClienteService(IClsImportacionExcelNexo i
             return terminos.Error;
         }
 
-        // NEXO QA (2026-11-06) ignora clienteNit en este GET y responde los términos de todos los clientes: un término con cliente nunca
+        // NEXO puede ignorar clienteNit en este GET y responder los términos de todos los clientes: un término con cliente nunca
         // sale de Cotifly, ni siquiera con el NIT (ClienteId es el id de NEXO, que Cotifly no puede cruzar con el NIT; ADR-028).
-        // #256 (B2): falla cerrado: un término sin clienteId explícito (cambio de forma de NEXO) o con nombre de cliente no es general.
+        // Falla cerrado: un término sin clienteId explícito (cambio de forma de NEXO) o con nombre de cliente no es general.
         IReadOnlyList<clsTerminoCliente> generales = [.. terminos.Valor.Where(t => t.EsGeneral)];
         var aviso = nit is null ? null : new clsAvisoDiccionario(AvisoTerminosClienteNoDisponibles, MensajeTerminosClienteNoDisponibles);
         return new clsConsultaDiccionarioCliente(generales, aviso);
@@ -181,7 +181,7 @@ public sealed partial class clsFormatosClienteService(IClsImportacionExcelNexo i
         Guid usuarioId, CancellationToken cancellationToken = default) =>
         SinComercial<clsOpcionesDiccionarioCliente>(usuarioId) ?? await importacion.ObtenerOpcionesDiccionarioAsync(usuarioId, cancellationToken);
 
-    // #256 (B1): el borrado también deja rastro en Cotifly (además de la auditoría de NEXO), para soporte cuando un formato "desaparece".
+    // El borrado también deja rastro en Cotifly (además de la auditoría de NEXO), para soporte cuando un formato "desaparece".
     // Solo el comercial y el id: ni el NIT ni el nombre del cliente.
     [LoggerMessage(Level = LogLevel.Information, Message = "El comercial {UsuarioId} borró en NEXO la plantilla de mapeo {PlantillaId}.")]
     private static partial void LogPlantillaBorrada(ILogger logger, Guid usuarioId, Guid plantillaId);

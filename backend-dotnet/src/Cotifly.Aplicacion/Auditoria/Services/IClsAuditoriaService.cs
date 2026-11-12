@@ -10,7 +10,7 @@ namespace Cotifly.Aplicacion.Auditoria.Services;
 /// <remarks>
 /// Quién audita qué: los casos de uso <c>generar_pdf</c>, <c>enviar_correo</c> y <c>registrar_ajuste_margen</c> se auditan
 /// solos (decoradores <c>cls*Auditado</c>), así quedan registrados también cuando los llama un endpoint web. El filtro de
-/// invocación de herramientas del agente (#12) usa <see cref="RegistrarAsync"/> para el resto de herramientas y debe omitir
+/// invocación de herramientas del agente usa <see cref="RegistrarAsync"/> para el resto de herramientas y debe omitir
 /// esas tres para no duplicar el evento (<see cref="clsAuditoriaService.HerramientasAuditadasPorCasoDeUso"/>).
 /// </remarks>
 public interface IClsAuditoriaService

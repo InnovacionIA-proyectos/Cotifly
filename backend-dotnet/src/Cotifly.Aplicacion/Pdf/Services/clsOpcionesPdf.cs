@@ -19,31 +19,31 @@ public sealed class clsOpcionesPdf
 
     /// <summary>
     /// Segundos que un PDF espera su turno de render (<c>Pdf__TiempoEsperaRenderSegundos</c>, por defecto 30). El render es
-    /// uno a la vez por proceso (PDFsharp-MigraDoc no es thread-safe, #92/#95); si la espera se agota responde
+    /// uno a la vez por proceso (PDFsharp-MigraDoc no es thread-safe); si la espera se agota responde
     /// <c>PDF_RENDER_NO_DISPONIBLE</c> (503).
     /// </summary>
     [Range(1, 600)]
     public int TiempoEsperaRenderSegundos { get; set; } = 30;
 
     /// <summary>
-    /// <c>Pdf__PermitirCotizacionChat</c> (por defecto <c>false</c>, HU-021.6): habilita <c>clsGenerarPdfService</c>, el camino legado que
-    /// crea una cotización "del chat" sin municipios (se salta la decisión 2 de HU-021). Desde ADR-018 la única creación es el formulario
+    /// <c>Pdf__PermitirCotizacionChat</c> (por defecto <c>false</c>): habilita <c>clsGenerarPdfService</c>, el camino legado que
+    /// crea una cotización "del chat" sin municipios (no exige los municipios de la ruta). Según ADR-018 la única creación es el formulario
     /// (<c>POST /web/solicitudes-costeo</c>) y el asistente solo propone; apagado responde <c>COTIZACION_CHAT_RETIRADA</c>. Solo las
     /// pruebas del render del PDF legado lo encienden.
     /// </summary>
     public bool PermitirCotizacionChat { get; set; }
 
-    /// <summary>#261 (HU-046): marcador genérico provisional del texto de seguros de la propuesta (lo reemplaza Jurídica por el oficial en la configuración).</summary>
+    /// <summary>Marcador genérico provisional del texto de seguros de la propuesta; el texto oficial se pone en la configuración.</summary>
     public const string TextoSegurosPorDefecto =
         "[TEXTO DE SEGUROS PROVISIONAL] El área jurídica definirá en la configuración (Pdf:TextoSeguros) el texto oficial de la estructura "
         + "de seguros y el modelo de subrogación que debe incluir la propuesta comercial. Mientras tanto se muestra este marcador.";
 
     /// <summary>
-    /// #261 (HU-046, política NOGE0076): texto de la estructura de seguros y el modelo de subrogación que va en la propuesta: en el PDF de la
+    /// Texto (política NOGE0076) de la estructura de seguros y el modelo de subrogación que va en la propuesta: en el PDF de la
     /// cotización y de la licitación, después del resumen de precios, y en el cuerpo del correo, antes de la firma. Se lee de configuración
-    /// (<c>Pdf:TextoSeguros</c>, variable <c>Pdf__TextoSeguros</c>) para que Jurídica lo cambie sin tocar el código; el texto OFICIAL lo
-    /// define el área jurídica y NO vive en el repositorio. El valor por defecto es un marcador genérico provisional (<see cref="TextoSegurosPorDefecto"/>);
-    /// vacío = sin bloque. Solo sale en los PDF y correos que se generan desde este cambio: no reescribe los ya generados ni enviados.
+    /// (<c>Pdf:TextoSeguros</c>, variable <c>Pdf__TextoSeguros</c>) para cambiarlo sin tocar el código; el texto OFICIAL
+    /// NO vive en el repositorio. El valor por defecto es un marcador genérico provisional (<see cref="TextoSegurosPorDefecto"/>);
+    /// vacío = sin bloque. No reescribe los PDF ni los correos ya generados o enviados.
     /// </summary>
     [MaxLength(8000)]
     public string? TextoSeguros { get; set; } = TextoSegurosPorDefecto;

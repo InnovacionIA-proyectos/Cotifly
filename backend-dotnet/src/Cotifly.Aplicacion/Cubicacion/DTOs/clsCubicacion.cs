@@ -4,7 +4,7 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Aplicacion.Cubicacion.DTOs;
 
 /// <summary>
-/// Ítem de carga de "Calcular cubicaje" (<c>POST /web/cubicacion</c>, HU-023.2, #157): un bulto o grupo de bultos idénticos, con medidas
+/// Ítem de carga de "Calcular cubicaje" (<c>POST /web/cubicacion</c>): un bulto o grupo de bultos idénticos, con medidas
 /// en <b>centímetros</b> y peso por unidad en <b>kilogramos</b>. El tipo de mercancía va por <paramref name="CodigoMercancia"/> (catálogo
 /// del cubicador). Mientras el frontend no tenga el desplegable, sin código se usa <paramref name="Descripcion"/>: Cotifly la resuelve al
 /// tipo más parecido del catálogo (<c>clsSugeridorMercancia</c>).
@@ -20,7 +20,7 @@ public sealed record clsItemCubicacion(
     string? CodigoMercancia, string? Descripcion, int Cantidad, decimal LargoCm, decimal AnchoCm, decimal AltoCm, decimal? PesoKg);
 
 /// <summary>
-/// Respuesta de "Calcular cubicaje" (<c>POST /web/cubicacion</c>, HU-023.2, #157): lo que respondió el cubicador a una corrida de prueba
+/// Respuesta de "Calcular cubicaje" (<c>POST /web/cubicacion</c>): lo que respondió el cubicador a una corrida de prueba
 /// (<c>PRUEBA-&lt;guid&gt;</c>) que Cotifly no guarda. Una <b>lista de vehículos</b> (flota mixta: pueden ser de tipos distintos), el
 /// resultado con su motivo, la marca de condicionada, las mercancías que la condicionan, las advertencias, la extradimensión y el código
 /// con el que viajó cada ítem. Ya no trae clase de viaje ni clase de contenedor: el cubicador no las sugiere.
@@ -49,7 +49,7 @@ public sealed record clsResultadoCubicacion(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] clsSugerenciaVehiculoLegada? Sugerencia = null)
 {
     /// <summary>
-    /// HU-023 (#176): con <c>SIN_SELECCION_AUTOMATICA</c>, el texto para el comercial según el motivo (<c>BUSQUEDA_AGOTADA</c> no dice que
+    /// Con <c>SIN_SELECCION_AUTOMATICA</c>, el texto para el comercial según el motivo (<c>BUSQUEDA_AGOTADA</c> no dice que
     /// la carga no cabe: es un límite del algoritmo); <c>null</c> con <c>ASIGNADO</c>.
     /// </summary>
     public string? MensajeSinSeleccion { get; init; }
@@ -107,17 +107,17 @@ public sealed record clsVehiculoCubicacion(
     decimal PorcentajeLlenadoVolumen,
     decimal PorcentajeLlenadoPeso)
 {
-    /// <summary>HU-023 (#176): número del camión en la recomendación (desde 1), si el cubicador lo trae.</summary>
+    /// <summary>Número del camión en la recomendación (desde 1), si el cubicador lo trae.</summary>
     public int? NumeroVehiculo { get; init; }
 
-    /// <summary>HU-023 (#176): el cubicador avisa que el camión va con poco llenado.</summary>
+    /// <summary>El cubicador avisa que el camión va con poco llenado.</summary>
     public bool AlertaBajoLlenado { get; init; }
 
-    /// <summary>HU-023 (#176): el camión lleva mercancías de tipos distintos.</summary>
+    /// <summary>El camión lleva mercancías de tipos distintos.</summary>
     public bool Heterogenea { get; init; }
 
     /// <summary>
-    /// HU-023 (#176): lo que lleva el camión, una fila por posición de la petición (<c>indice_posicion</c>, base 0, puede faltar). Dos
+    /// Lo que lleva el camión, una fila por posición de la petición (<c>indice_posicion</c>, base 0, puede faltar). Dos
     /// filas pueden compartir código: quien agrupe por código debe sumar.
     /// </summary>
     public IReadOnlyList<clsMercanciaVehiculo> Mercancias { get; init; } = [];

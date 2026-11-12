@@ -3,7 +3,7 @@ using Cotifly.Aplicacion.Redaccion.DTOs;
 namespace Cotifly.Aplicacion.Redaccion.Interfaces;
 
 /// <summary>
-/// Puerto del redactor de la IA (HU-013.5, ADR-018 §2a): pide al modelo el asunto y la introducción del PDF en JSON con el esquema de
+/// Puerto del redactor de la IA (ADR-018 §2a): pide al modelo el asunto y la introducción del PDF en JSON con el esquema de
 /// <see cref="Services.clsReglasTextosCotizacion"/>. Solo recibe <see cref="clsContextoRedaccion"/> (sin montos). No valida ni aplica
 /// el respaldo: eso lo hace <see cref="Services.IClsRedaccionCotizacionService"/>. Puede lanzar (proveedor caído, cancelación).
 /// </summary>

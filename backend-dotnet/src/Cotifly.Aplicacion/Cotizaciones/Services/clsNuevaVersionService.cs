@@ -8,7 +8,7 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Aplicacion.Cotizaciones.Services;
 
 /// <summary>
-/// Datos para prellenar una versión nueva (<c>GET /web/cotizaciones/{id}/nueva-version</c>, HU-004.4). Solo lectura: no
+/// Datos para prellenar una versión nueva (<c>GET /web/cotizaciones/{id}/nueva-version</c>). Solo lectura: no
 /// modifica la cotización original. La versión nueva se crea después con
 /// <see cref="IClsGeneradorFolioService.CrearNuevaVersionAsync{TValor}"/>.
 /// </summary>
@@ -34,7 +34,7 @@ public sealed class clsNuevaVersionService(IClsCotizacionRepository cotizaciones
         var folio = clsFolio.Desde(origen.Folio);
         var folioBase = folio.EsExitoso ? folio.Valor.Base : origen.Folio;
         var maxima = await cotizaciones.ObtenerVersionMaximaAsync(folioBase, cancellationToken);
-        // HU-021.9 (#136): la línea de negocio y el margen son de cada ruta (la versión nueva los copia por ruta). Los de primer nivel
+        // La línea de negocio y el margen son de cada ruta (la versión nueva los copia por ruta). Los de primer nivel
         // son los de la ruta 1 (o "Varias" si las rutas tienen líneas distintas) y el costo es el total.
         var ruta = origen.PrimeraRuta;
         var nombres = await clsLineasNegocioRutas.NombresAsync(origen, politicas, cancellationToken);

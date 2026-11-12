@@ -1,7 +1,7 @@
 namespace Cotifly.Aplicacion.Precio.DTOs;
 
 /// <summary>
-/// TRM que aplica a una moneda el día de negocio (HU-012.2): en COP, <see cref="Valor"/> 0 y sin vigencia; en USD, la del día con su rango
+/// TRM que aplica a una moneda el día de negocio: en COP, <see cref="Valor"/> 0 y sin vigencia; en USD, la del día con su rango
 /// y la fuente que la entregó (<c>dolarapi</c> o <c>superfinanciera</c>, ADR-014).
 /// </summary>
 public sealed record clsTrmDelDia(decimal Valor, DateOnly? VigenciaDesde, DateOnly? VigenciaHasta, string? Fuente = null)

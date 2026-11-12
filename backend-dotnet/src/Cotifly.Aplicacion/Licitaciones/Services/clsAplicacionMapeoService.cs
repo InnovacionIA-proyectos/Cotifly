@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Cotifly.Aplicacion.Licitaciones.Services;
 
-/// <summary>HU-044.3 (#254): <c>POST /web/licitaciones/aplicar-mapeo</c>.</summary>
+/// <summary><c>POST /web/licitaciones/aplicar-mapeo</c>.</summary>
 public interface IClsAplicacionMapeoService
 {
     /// <summary>
@@ -27,7 +27,7 @@ public interface IClsAplicacionMapeoService
 
 /// <summary>
 /// Implementación de <see cref="IClsAplicacionMapeoService"/>. NEXO convierte las filas con las reglas de su captura (diccionario del
-/// cliente por NIT, transformaciones como toneladas a kg o «ORIGEN - DESTINO», coma decimal) por el puerto de la #252
+/// cliente por NIT, transformaciones como toneladas a kg o «ORIGEN - DESTINO», coma decimal) por el puerto de la importación
 /// (<see cref="IClsImportacionExcelNexo"/>, sin IA: se reintenta una vez). Cotifly traduce cada <see cref="clsLineaImportada"/> a
 /// <see cref="clsLineaMapeada"/> (<c>LineaLicitacionImportada</c>, subconjunto de <c>LineaLicitacionWeb</c> con los mismos nombres, más
 /// <c>fila_excel</c> y <c>linea_nexo</c>), campo por campo:
@@ -42,14 +42,14 @@ public interface IClsAplicacionMapeoService
 /// equivalencia en Cotifly (ninguna la mapea, inactiva, mapeo inválido o varias), la fila vuelve igual en <c>lineas[]</c> (con
 /// <c>linea_negocio = null</c>) <b>y</b> en <c>errores[]</c> (<c>LINEA_NEGOCIO_SIN_EQUIVALENCIA</c>): el comercial elige. Vacía: sin línea
 /// propia (vale la de la licitación), sin error.</item>
-/// <item><b><c>peso</c> → <c>peso_kg</c></b> (la carga, sin tara; decisión del usuario sobre DU §8). <c>peso_con_tara_kg</c> nunca sale del
+/// <item><b><c>peso</c> → <c>peso_kg</c></b> (la carga, sin tara). <c>peso_con_tara_kg</c> nunca sale del
 /// Excel: la tara solo aplica a Contenedor y la pone el comercial.</item>
 /// <item><b><c>posiciones</c> → <c>mercancias[]</c></b>: <c>descripcion</c> → <c>descripcion</c> y <c>nombre_mercancia</c> (los dos nombres del
 /// campo), cantidad, medidas en cm (las tres <c>null</c> si NEXO no trae ninguna) y <c>peso_kg</c> por unidad. <c>codigoTipoMercancia</c> →
 /// <c>codigo_mercancia</c> tal cual; sin él, el tipo cubicable más parecido a la descripción en el catálogo del cubicador
 /// (<see cref="clsSugeridorMercancia"/>, como el análisis del Excel); sin sugerencia (o sin catálogo), sin código: lo escoge el comercial.</item>
 /// <item>Los ids de municipio no salen (los resuelve <c>POST /web/licitaciones</c>): van siempre en <c>null</c>. <c>referencia</c> y
-/// <c>deadline</c> son de la solicitud, no de la línea, y se descartan (decisión 1 de HU-021). Los demás campos pasan con su mismo nombre.</item>
+/// <c>deadline</c> son de la solicitud, no de la línea, y se descartan. Los demás campos pasan con su mismo nombre.</item>
 /// </list>
 /// <para>Nada de esto reemplaza las validaciones de <c>POST /web/licitaciones</c>: la línea vuelve para revisarse y se valida al crear.</para>
 /// </remarks>
@@ -75,7 +75,7 @@ public sealed class clsAplicacionMapeoService(
             return new clsErrorDominio(clsCodigosError.ErrorInterno, "Aplicar el mapeo exige el comercial autenticado.");
         }
 
-        // HU-044.9 (#292): antes de validar y mandar a NEXO, Cotifly agrega al final de cada fila las mismas columnas derivadas que propuso
+        // Antes de validar y mandar a NEXO, Cotifly agrega al final de cada fila las mismas columnas derivadas que propuso
         // sugerir-mapeo (vehículo en el texto, contenedor con peso), con los índices que el mapeo confirmado ya referencia. NEXO las convierte
         // como cualquier otra columna. Una petición mal formada (filas nulas) no se enriquece: la validación la rechaza igual.
         var filasEnriquecidas = await columnasDerivadas.EnriquecerFilasAsync(usuarioId, entrada.Filas ?? [], cancellationToken);
@@ -142,7 +142,7 @@ public sealed class clsAplicacionMapeoService(
         var propios = erroresCotifly.Count;
         var errores = new List<clsErrorFilaImportada>(propios + deNexo.Errores.Count);
         errores.AddRange(erroresCotifly);
-        // Los errores de NEXO llevan su campo tal como lo manda NEXO (comentario del 2026-11-10); sin campo, toda la fila.
+        // Los errores de NEXO llevan su campo tal como lo manda NEXO; sin campo, toda la fila.
         errores.AddRange(deNexo.Errores.Select(e => new clsErrorFilaImportada(
             Indice(e.Fila), e.Fila, string.IsNullOrWhiteSpace(e.Campo) ? CampoFila : e.Campo.Trim(), e.Codigo, e.Mensaje)));
 

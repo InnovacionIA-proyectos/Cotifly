@@ -31,16 +31,16 @@ public static class clsCodigosAcceso
     public const string HerramientaRefresh = "refresh_sesion";
     public const string HerramientaLogout = "logout";
 
-    /// <summary>HU-040.2 (#230): <c>POST /api/auth/elegir-rol</c> (cada elección, aceptada o rechazada).</summary>
+    /// <summary><c>POST /api/auth/elegir-rol</c> (cada elección, aceptada o rechazada).</summary>
     public const string HerramientaEleccionRol = "elegir_rol";
 
-    /// <summary>HU-040.2 (#230): largo máximo del ticket de elección que se intenta validar (un JWT HS256 pequeño).</summary>
+    /// <summary>Largo máximo del ticket de elección que se intenta validar (un JWT HS256 pequeño).</summary>
     public const int LargoMaximoTicket = 4096;
 
     /// <summary>Prefijo del hilo de auditoría de acceso: <c>auth/{idUsuario}</c>.</summary>
     public const string PrefijoHilo = "auth/";
 
-    /// <summary>HU-040.3 (#258): actor de los deltas de la reconciliación de roles en la auditoría (no es una persona: lo hace el login).</summary>
+    /// <summary>Actor de los deltas de la reconciliación de roles en la auditoría (no es una persona: lo hace el login).</summary>
     public const string ActorReconciliacion = "sistema/login";
 
     public static clsErrorDominio ErrorCredencialesInvalidas() => new(CredencialesInvalidas, MensajeCredencialesInvalidas);
@@ -57,10 +57,10 @@ public static class clsMotivosAcceso
     public const string Renovado = "renovado";
     public const string SesionCerrada = "sesion_cerrada";
 
-    /// <summary>HU-040.2 (#230): la verificación pasó con varios roles; se emitió el ticket de elección, todavía sin sesión.</summary>
+    /// <summary>La verificación pasó con varios roles; se emitió el ticket de elección, todavía sin sesión.</summary>
     public const string EleccionRolPendiente = "eleccion_rol_pendiente";
 
-    /// <summary>HU-040.2 (#230): sesión emitida con el rol elegido.</summary>
+    /// <summary>Sesión emitida con el rol elegido.</summary>
     public const string RolElegido = "rol_elegido";
 
     // Rechazos (todos responden el mismo 401 genérico).
@@ -78,34 +78,34 @@ public static class clsMotivosAcceso
     public const string RefreshReutilizado = "refresh_reutilizado";
     public const string RotacionConcurrente = "rotacion_concurrente";
 
-    // HU-040.2 (#230): rechazos de la elección del rol (todos responden el mismo 401 "Inicia sesión de nuevo.").
+    // Rechazos de la elección del rol (todos responden el mismo 401 "Inicia sesión de nuevo.").
     public const string TicketInvalido = "ticket_invalido";
     public const string TicketVencido = "ticket_vencido";
     public const string TicketReutilizado = "ticket_reutilizado";
     public const string RolNoDisponible = "rol_no_disponible";
 
-    /// <summary>HU-040.2 (#230): refresh anterior al 16 (sin <c>rolSesion</c>) de un usuario que ahora tiene varios roles: debe elegir.</summary>
+    /// <summary>Refresh sin <c>rolSesion</c> (emitido antes del script 16) de un usuario que tiene varios roles: debe elegir.</summary>
     public const string EleccionRolRequerida = "eleccion_rol_requerida";
 
     // Reglas de resolución del rol interno (nunca implícitas: quedan en la auditoría).
     public const string ReglaMapeoUnico = "mapeo_unico";
     public const string ReglaPrecedenciaGerente = "precedencia_gerente_comercial";
 
-    /// <summary>HU-037 (#210): con el rol de director y otro rol mapeado gana <c>director</c>.</summary>
+    /// <summary>Con el rol de director y otro rol mapeado gana <c>director</c>.</summary>
     public const string ReglaPrecedenciaDirector = "precedencia_director";
 
     /// <summary>
-    /// HU-040.2 (#230, ADR-025): el usuario tiene varias asignaciones activas (o es un alta con varios roles externos): no gana ninguno,
-    /// elige con cuál entra.
+    /// El usuario tiene varias asignaciones activas (o es un alta con varios roles externos): no gana ninguno,
+    /// elige con cuál entra (ADR-025).
     /// </summary>
     public const string ReglaMultiRol = "multi_rol";
 
-    // HU-040.3 (#258, ADR-009): deltas de la reconciliación de roles en el login (actor "sistema/login", sin revisor humano). Van en la
+    // Deltas de la reconciliación (ADR-009) de roles en el login (actor "sistema/login", sin revisor humano). Van en la
     // auditoría del login como listas de códigos; no son motivos de rechazo.
 
-    /// <summary>HU-040.3 (#258): rol ORDINARIO que faltaba y el login auto-otorgó (creó o reactivó la asignación) por su respaldo externo.</summary>
+    /// <summary>Rol ORDINARIO que faltaba y el login auto-otorgó (creó o reactivó la asignación) por su respaldo externo.</summary>
     public const string RolOtorgadoAuto = "rol_otorgado_auto";
 
-    /// <summary>HU-040.3 (#258): asignación que el login auto-revocó (desactivó) porque su rol externo ya no la respalda (fail-safe, todos los roles).</summary>
+    /// <summary>Asignación que el login auto-revocó (desactivó) porque su rol externo ya no la respalda (fail-safe, todos los roles).</summary>
     public const string RolRevocadoAuto = "rol_revocado_auto";
 }

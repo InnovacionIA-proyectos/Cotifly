@@ -22,7 +22,7 @@ public sealed class clsOpcionesAgente
     public int MaxIteraciones { get; set; } = 12;
 
     /// <summary>
-    /// ¿El proveedor acepta <c>response_format</c> con JSON Schema en la llamada final (HU-003.10, #16)? Por defecto true. Con false
+    /// ¿El proveedor acepta <c>response_format</c> con JSON Schema en la llamada final? Por defecto true. Con false
     /// la respuesta final se pide sin formato y el esquema va solo en las instrucciones; la validación manual es la misma. Si el
     /// proveedor rechaza el esquema en tiempo de ejecución, el validador lo detecta y pasa a ese modo solo.
     /// </summary>
@@ -44,15 +44,15 @@ public sealed class clsOpcionesAgente
     public bool JsonSchemaEstricto { get; set; }
 
     /// <summary>
-    /// HU-013.16 (#126): si la ronda de herramientas armó una propuesta, el turno pasa directo a la respuesta final, sin otra llamada
+    /// Si la ronda de herramientas armó una propuesta, el turno pasa directo a la respuesta final, sin otra llamada
     /// con herramientas (una propuesta por mensaje). Ahorra una llamada al modelo en los turnos de propuesta. Por defecto true.
     /// </summary>
     public bool PropuestaDirecta { get; set; } = true;
 
     /// <summary>
-    /// HU-013.16 (#126): la respuesta del modelo sin herramientas que cierra el loop se valida como respuesta final (mismas reglas de
-    /// <c>clsReglasRespuestaAgente</c>: forma, montos y folios). Si pasa, no se hace la llamada final aparte; si no, se hace como
-    /// siempre. El prompt pide ese JSON al terminar. Ahorra una llamada por turno. Por defecto true.
+    /// La respuesta del modelo sin herramientas que cierra el loop se valida como respuesta final (mismas reglas de
+    /// <c>clsReglasRespuestaAgente</c>: forma, montos y folios). Si pasa, no se hace la llamada final aparte; si no, se hace la
+    /// llamada final. El prompt pide ese JSON al terminar. Ahorra una llamada por turno. Por defecto true.
     /// </summary>
     public bool RespuestaFinalEnLoop { get; set; } = true;
 }

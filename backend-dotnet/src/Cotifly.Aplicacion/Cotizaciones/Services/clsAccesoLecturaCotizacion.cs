@@ -15,8 +15,8 @@ namespace Cotifly.Aplicacion.Cotizaciones.Services;
 public sealed record clsCotizacionLeida(clsCotizacionSolicitud Cotizacion, bool SoloLectura);
 
 /// <summary>
-/// Quién puede LEER una cotización por folio (HU-027.1 #179, HU-037.3 #211): la regla del detalle (<c>GET /web/cotizaciones/{folio}</c>),
-/// que comparte el Excel de la cotización (HU-018.1, #155, parte C).
+/// Quién puede LEER una cotización por folio: la regla del detalle (<c>GET /web/cotizaciones/{folio}</c>),
+/// que comparte el Excel de la cotización.
 /// <list type="bullet">
 /// <item>el dueño, siempre;</item>
 /// <item>el <c>director</c> (cualquier regional) o un <c>gerente_comercial</c> cuya regional efectiva incluye al dueño
@@ -99,7 +99,7 @@ public sealed class clsAccesoLecturaCotizacion(
             return (false, null);
         }
 
-        // HU-037.3 (#211): el director ve las de cualquier regional; el gerente, las de su regional (IClsRegionalUsuario).
+        // El director ve las de cualquier regional; el gerente, las de su regional (IClsRegionalUsuario).
         var miembro = await regionales.PuedeVerDeAsync(gerente, rol, duenoId, cancellationToken);
         return miembro.EsFallo ? (false, miembro.Error.Codigo) : (miembro.Valor, null);
     }

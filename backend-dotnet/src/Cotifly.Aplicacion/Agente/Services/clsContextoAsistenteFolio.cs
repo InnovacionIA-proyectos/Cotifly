@@ -4,10 +4,9 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Aplicacion.Agente.Services;
 
 /// <summary>
-/// Contexto del turno del asistente por folio (HU-013.6, #102; uno por ámbito de DI): el comercial, el hilo de la sesión, la cotización
+/// Contexto del turno del asistente por folio (uno por ámbito de DI): el comercial, el hilo de la sesión, la cotización
 /// de la conversación (ya validado que es del comercial), su línea de negocio y la propuesta del turno. Las herramientas leen la
 /// cotización de aquí, nunca de un argumento del LLM: el asistente solo opera sobre ESA cotización. El filtro de auditoría lee el hilo.
-/// Desde HU-013.9 (#105) reemplaza también al contexto del agente legado (<c>clsContextoTurnoAgente</c>, retirado).
 /// </summary>
 public sealed class clsContextoAsistenteFolio
 {
@@ -25,7 +24,7 @@ public sealed class clsContextoAsistenteFolio
     public string? LineaNegocio { get; private set; }
 
     /// <summary>
-    /// #278: la línea de NEXO de esa línea de negocio (<c>MargenesPolitica.mapeoLineasNexo</c>), o <c>null</c>. Decide las horas por defecto
+    /// La línea de NEXO de esa línea de negocio (<c>MargenesPolitica.mapeoLineasNexo</c>), o <c>null</c>. Decide las horas por defecto
     /// del DU (1 + 1 en una devolución de contenedor) cuando el asistente propone una sola hora.
     /// </summary>
     public string? LineaNegocioNexo { get; private set; }

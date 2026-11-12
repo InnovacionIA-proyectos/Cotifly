@@ -23,7 +23,7 @@ using FunctionResultContent = Microsoft.Extensions.AI.FunctionResultContent;
 
 namespace Cotifly.Aplicacion.Agente.Services;
 
-/// <summary>Un turno del asistente IA sobre una cotización (HU-013.6, #102).</summary>
+/// <summary>Un turno del asistente IA sobre una cotización.</summary>
 public interface IClsAsistenteFolioRunner
 {
     /// <summary>
@@ -36,13 +36,13 @@ public interface IClsAsistenteFolioRunner
 }
 
 /// <summary>
-/// Asistente por folio (HU-013.6, #102, ADR-018 §2b), único agente de Cotifly desde HU-013.9 (#105). Loop manual (ADR-003: <see cref="IChatClient"/> con las
+/// Asistente por folio (ADR-018 §2b), único agente de Cotifly. Loop manual (ADR-003: <see cref="IChatClient"/> con las
 /// declaraciones portables y <c>kernel.InvokeAsync</c> por llamada, con el filtro de auditoría; respuesta final aparte con
 /// <see cref="IClsValidadorRespuestaAgente"/>), pero:
 /// <list type="bullet">
 /// <item>Solo sobre la cotización del folio, del comercial del token (otra → 404 antes de tocar la sesión o el modelo). La sesión
 /// queda ligada al comercial (<c>spaceId</c>) y al folio (<c>threadId</c> con el folio).</item>
-/// <item>Solo el plugin <c>asistente</c> (<see cref="clsHerramientasAsistenteFolio"/>): leer y proponer. Una herramienta retirada
+/// <item>Solo el plugin <c>asistente</c> (<see cref="clsHerramientasAsistenteFolio"/>): leer y proponer. Una herramienta fuera del plugin
 /// (<c>generar_pdf</c>, <c>calcular_precio</c>...) responde <c>HERRAMIENTA_DESCONOCIDA</c> como cualquier inexistente.</item>
 /// <item><b>Nunca escribe datos de negocio:</b> solo guarda el turno (eventos de la conversación y el estado de la sesión). La
 /// propuesta (con su <c>resumen</c> con precios) sale en la respuesta y NO queda en el historial que vuelve al modelo.</item>
@@ -166,7 +166,7 @@ public sealed class clsAsistenteFolioRunner(
     }
 
     /// <summary>
-    /// Log de duración por fase del turno (HU-013.16, #126): total, preparación, llamadas al modelo con herramientas, herramientas,
+    /// Log de duración por fase del turno: total, preparación, llamadas al modelo con herramientas, herramientas,
     /// respuesta final y guardado, más llamadas, iteraciones, cierre, reintentos del validador, tokens y modelos (un modelo distinto del
     /// principal es un respaldo de <c>IA:Fallbacks</c>). La espera del limitador <c>IA:Rpm</c> va incluida en las llamadas y la registra
     /// Infraestructura aparte. Sin textos del comercial ni del modelo.
@@ -198,7 +198,7 @@ public sealed class clsAsistenteFolioRunner(
     private static long Ms(TimeSpan duracion) => (long)Math.Round(duracion.TotalMilliseconds);
 
     /// <summary>
-    /// Loop del turno (HU-013.16, #126: menos llamadas sin relajar ninguna regla). Cada ronda pide herramientas al modelo y las corre.
+    /// Loop del turno (menos llamadas sin relajar ninguna regla). Cada ronda pide herramientas al modelo y las corre.
     /// Termina cuando el modelo responde sin herramientas o, con <c>IA:PropuestaDirecta</c>, en cuanto una ronda arma una propuesta.
     /// La respuesta sin herramientas se valida como respuesta final con las mismas reglas (<c>IA:RespuestaFinalEnLoop</c>): si pasa, no
     /// hay llamada final aparte. Si no, o tras una propuesta, la llamada final la hace el validador, sin reintento si ya hay propuesta
@@ -307,7 +307,7 @@ public sealed class clsAsistenteFolioRunner(
     }
 
     /// <summary>
-    /// El tipo de la respuesta lo decide el servidor, no el modelo (auditoría de #126): con una propuesta armada siempre es
+    /// El tipo de la respuesta lo decide el servidor, no el modelo: con una propuesta armada siempre es
     /// <c>confirmacion_requerida</c> (el comercial la confirma con el botón) y sin propuesta nunca lo es (no hay nada que confirmar).
     /// </summary>
     private static clsRespuestaAgenteEstructurada Coherente(clsRespuestaAgenteEstructurada respuesta, bool hayPropuesta) =>

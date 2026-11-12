@@ -18,10 +18,10 @@ public sealed record clsAliasResuelto(string Texto, bool Reconocido, string? Cod
 public sealed record clsAliasResueltos(string Tipo, IReadOnlyList<clsAliasResuelto> Resultados);
 
 /// <summary>
-/// HU-031.1 (#194): <c>GET /web/alias/resolver</c>. El front de Cotifly no puede llamar a Nexo (CORS e identidad por header), así que el
+/// <c>GET /web/alias/resolver</c>. El front de Cotifly no puede llamar a Nexo (CORS e identidad por header), así que el
 /// backend resuelve por él un tipo de vehículo o una clase de contenedor escritos a mano (por ejemplo, al importar el Excel de una
 /// licitación), con la misma regla que la captura y el envío (<see cref="clsResolucionCodigosNexo"/>: catálogo oficial y, si no, el
-/// diccionario de alias de Nexo, NEXO #321).
+/// diccionario de alias de Nexo).
 /// </summary>
 public interface IClsResolucionAliasService
 {
