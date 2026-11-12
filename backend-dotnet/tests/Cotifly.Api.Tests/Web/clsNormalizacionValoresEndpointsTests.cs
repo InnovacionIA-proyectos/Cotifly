@@ -30,6 +30,8 @@ public sealed class clsNormalizacionValoresEndpointsTests : IDisposable
         _api = clsApiWebPruebas.ConNexo(entorno.BaseDatos, _nexo);
         _nexo.ValoresNormalizados.AddRange(
         [
+            new("carroceria", "Sencillo furgonado", "resuelto", "FURGON", "catalogo", Descripcion: "Furgón"),
+            new("carroceria", "Volqueta", "resuelto", "VOLCO", "catalogo", Descripcion: "Volco"),
             new("tipoVehiculo", "TB", "resuelto", "2L2", "alias", Descripcion: "Turbo"),
             new("ciudad", "La Union", "ambiguo", null, "catalogo", 0.5,
                 Candidatos: [(5400, "05400", "La Unión", "Antioquia"), (52399, "52399", "La Unión", "Nariño")]),
@@ -68,6 +70,26 @@ public sealed class clsNormalizacionValoresEndpointsTests : IDisposable
         enviado["clienteNit"]!.GetValue<string>().Should().Be("900123456");
         enviado["valores"]!.AsArray().Select(v => v!["campo"]!.GetValue<string>()).Should().AllBe("tipoVehiculo");
         _nexo.Peticiones.Last(p => p.Url.AbsolutePath == RutaNexo).IdPortalUsuario.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task HU0448_LasCarroceriasQueProponeNormalizarExistenEnTiposCarroceria()
+    {
+        // HU-044.8 (#291): normalizar-valores propone carrocerías del catálogo de NEXO; GET /web/tipos-carroceria sale del mismo catálogo,
+        // así que todo código que proponga está en el selector.
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+
+        using var normalizadas = await _api.EnviarAsync(HttpMethod.Post, Ruta, sesion.Access,
+            Cuerpo("900123456", ("carroceria", "Sencillo furgonado"), ("carroceria", "Volqueta")));
+        var propuestas = (await VerificarContratoAsync(normalizadas, Ruta, HttpMethod.Post, HttpStatusCode.OK))
+            .GetProperty("valores").EnumerateArray().Select(v => v.GetProperty("codigo").GetString()).ToList();
+
+        using var selector = await _api.EnviarAsync(HttpMethod.Get, "/web/tipos-carroceria", sesion.Access);
+        var catalogo = (await VerificarContratoAsync(selector, "/web/tipos-carroceria", HttpMethod.Get, HttpStatusCode.OK))
+            .EnumerateArray().Select(c => c.GetProperty("codigo").GetString()).ToList();
+
+        propuestas.Should().Equal("FURGON", "VOLCO");
+        propuestas.Should().OnlyContain(c => catalogo.Contains(c), "cada carrocería propuesta existe en GET /web/tipos-carroceria");
     }
 
     [Fact]

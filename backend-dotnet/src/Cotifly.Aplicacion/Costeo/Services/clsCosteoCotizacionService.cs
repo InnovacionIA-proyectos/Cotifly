@@ -116,6 +116,12 @@ public sealed record clsCosteoCotizacion(
     public decimal? TasaSeguroVigente { get; init; }
 
     /// <summary>
+    /// HU-045.3 (#265): aviso de las rutas con el seguro de la mercancía marcado sin valor de la mercancía (no suma ni sale en el PDF);
+    /// <c>null</c> si no hay ninguna.
+    /// </summary>
+    public clsAvisoSeguro? AvisoSeguro { get; init; }
+
+    /// <summary>
     /// HU-021.8 (#135): las rutas en orden, cada una con su margen (aplicado, sugerido y origen), su precio y sus conexos. El ajuste de
     /// margen y los cambios de conexos dicen a cuál aplican con <c>linea_orden</c> o <c>linea_solicitud_id</c>. HU-039.1 (#218): el único
     /// costo que trae es el costo bruto de cada ruta (<see cref="clsRutaCosteo.CostoFinal"/>), solo para el dueño.
@@ -348,7 +354,7 @@ public sealed record clsMercanciaCosteo(
 public sealed record clsPdfCosteoGenerado(clsSalidaPdf Pdf, string? RowVersion);
 
 /// <summary>Implementación de <see cref="IClsCosteoCotizacionService"/>.</summary>
-public sealed class clsCosteoCotizacionService(
+public sealed partial class clsCosteoCotizacionService(
     IClsCotizacionRepository cotizaciones,
     IClsMargenPoliticaRepository politicas,
     IClsUsuarioWebRepository usuarios,
@@ -394,7 +400,8 @@ public sealed class clsCosteoCotizacionService(
         // #181: el estado y el motivo pendiente de la línea de Nexo de cada camión, de la última lectura del polling (en memoria).
         var vista = Vista(cotizacion, opcionesPdf.Value.BaseUrl, estadosNexo, await CategoriasAsync(categoriasConexos, cotizacion, logger, cancellationToken),
             situacionesNexo?.Obtener(cotizacion.Id),
-            await Margen.Services.clsAvisoSincronizacionMargenSap.ConsultarSinFallarAsync(avisoSincronizacion, cotizacion, cancellationToken))
+            await Margen.Services.clsAvisoSincronizacionMargenSap.ConsultarSinFallarAsync(avisoSincronizacion, cotizacion, cancellationToken),
+            await NombresAsync(categoriasConexos, cotizacion, logger, cancellationToken))
             with
             {
                 // HU-045.2 (#264): la tasa vigente, para mostrarla antes de marcar el seguro.
@@ -741,9 +748,12 @@ public sealed class clsCosteoCotizacionService(
         var esPliego = EsPliego(cotizacion);
         // HU-023.1: el PDF muestra el nombre del vehículo y de la carrocería del catálogo del cubicador (Cotifly guarda solo el código).
         var catalogo = await NombresCubicadorAsync(cotizacion, cancellationToken);
+        // Corrección conexos (nombre nunca id): el nombre del catálogo de Nexo de los conexos heredados sin nombre guardado, para que el PDF
+        // imprima el nombre y no caiga a la categoría (ni al id). Reutiliza el índice en memoria de categorías; nunca falla (cae a la categoría).
+        var nombresConexos = await NombresAsync(categoriasConexos, cotizacion, logger, cancellationToken);
         var payload = esPliego
-            ? PayloadPliego(cotizacion, lineaNegocio, moneda, nombres, catalogo)
-            : Payload(cotizacion, lineaNegocio, moneda, catalogo);
+            ? PayloadPliego(cotizacion, lineaNegocio, moneda, nombres, catalogo, nombresConexos)
+            : Payload(cotizacion, lineaNegocio, moneda, catalogo, nombresConexos);
         AplicarTextos(payload, cotizacion);
         var invalido = esPliego
             ? clsValidadorCotizacionPdfPayload.Validar(payload, MaximoLineasPliego, MaximoLineasPliego)
@@ -754,10 +764,11 @@ public sealed class clsCosteoCotizacionService(
         }
 
         // En el pliego cada fila tiene su propio precio: aquí solo la moneda. En una ruta, la tarifa impresa es el precio FINAL de la ruta
-        // (HU-033, #199, decisión 5: transporte y conexos incluidos, sin desglose), que debe ser exactamente su precioFinalLinea. Sin costo ni
-        // margen en la trazabilidad: el PDF ya no los refleja (no hay nada que recalcular contra ellos).
+        // (HU-033, #199, decisión 5: transporte y conexos incluidos, sin desglose) menos el seguro de la mercancía, que va en su propia fila
+        // (HU-045.3, #265): debe ser exactamente PrecioRutaPdf (precioFinalLinea − valor_seguro). Sin costo ni margen en la trazabilidad: el PDF
+        // ya no los refleja (no hay nada que recalcular contra ellos).
         var primera = cotizacion.PrimeraRuta;
-        var precioRuta = esPliego || primera is null ? null : PrecioRutaPdf(primera);
+        var precioRuta = esPliego || primera is null ? null : PrecioRutaPdf(cotizacion, primera);
         var traza = new clsTrazabilidadCotizacion(
             null, primera?.MargenPoliticaSugerido, null, null, primera?.MetodoCalculo,
             precioRuta, cotizacion.NitCliente, null, moneda, cotizacion.TrmAplicada, cotizacion.SolicitudNexoId);
@@ -774,7 +785,13 @@ public sealed class clsCosteoCotizacionService(
         }
 
         // HU-033 (#199): al final de la tarifa, el total general (la suma del precio final de las rutas) con la leyenda de impuestos.
-        var conTotal = documento.Valor with { TotalGeneral = TotalGeneral(cotizacion, moneda) };
+        // HU-045.3 (#265): el seguro de la mercancía de cada ruta en su propia fila, aparte del flete.
+        // #261 (HU-046): después del resumen de precios, el texto de seguros de la propuesta (de la configuración Pdf:TextoSeguros).
+        var conTotal = ConFilasSeguro(documento.Valor, cotizacion, moneda) with
+        {
+            TotalGeneral = TotalGeneral(cotizacion, moneda),
+            TextoSeguros = ParrafosSeguros(opcionesPdf.Value.TextoSeguros),
+        };
         var aRenderizar = esPliego ? DocumentoPliego(conTotal, cotizacion, moneda, catalogo) : conTotal;
 
         clsPdfGenerado pdf;
@@ -826,7 +843,11 @@ public sealed class clsCosteoCotizacionService(
         }
 
         return new clsPdfCosteoGenerado(
-            new clsSalidaPdf(cotizacion.Id, cotizacion.Folio, clsUrlPdf.Construir(opcionesPdf.Value.BaseUrl, nombre), RegistradaEnBd: true),
+            // HU-045.3 (#265): el seguro marcado sin valor de la mercancía no bloquea (decisión del 2026-11-09): sale sin su fila y se avisa.
+            new clsSalidaPdf(cotizacion.Id, cotizacion.Folio, clsUrlPdf.Construir(opcionesPdf.Value.BaseUrl, nombre), RegistradaEnBd: true)
+            {
+                AvisoSeguro = clsAvisoSeguro.De(cotizacion),
+            },
             VersionEtag(cotizacion));
     }
 
@@ -902,12 +923,14 @@ public sealed class clsCosteoCotizacionService(
 
     /// <summary>
     /// HU-033 (#199, decisión 5): precio que imprime el PDF para una ruta: su precio FINAL (<c>precioFinalLinea</c>: transporte y servicios
-    /// conexos con su margen), un solo valor sin desglose; <c>null</c> si la Mesa de Costeo la rechazó (sale "Sin costeo").
+    /// conexos), un solo valor sin desglose; <c>null</c> si la Mesa de Costeo la rechazó (sale "Sin costeo"). HU-045.3 (#265, NOGE0076): sin
+    /// el seguro de la mercancía, que va en su propia fila (<see cref="ValorSeguroPdf"/>).
     /// </summary>
-    public static decimal? PrecioRutaPdf(clsLineaSolicitud ruta)
+    public static decimal? PrecioRutaPdf(clsCotizacionSolicitud cotizacion, clsLineaSolicitud ruta)
     {
+        ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(ruta);
-        return ruta.Rechazada ? null : ruta.PrecioFinalLinea;
+        return ruta.Rechazada || ruta.PrecioFinalLinea is not { } precio ? null : precio - (ValorSeguroPdf(cotizacion, ruta) ?? 0m);
     }
 
     /// <summary>
@@ -921,18 +944,35 @@ public sealed class clsCosteoCotizacionService(
         var total = cotizacion.RutasCotizables.Sum(r => r.PrecioFinalLinea ?? 0m);
         return new clsTotalDocumento(
             clsTextosEstandar.EtiquetaTotalGeneral,
-            $"{clsFormatoMoneda.Formatear(total, moneda)} {moneda.Trim().ToUpperInvariant()}",
+            // HU-045.3 (#265, B1): con los centavos del seguro, si los hay.
+            $"{clsFormatoMoneda.FormatearExacto(total, moneda)} {moneda.Trim().ToUpperInvariant()}",
             clsTextosEstandar.NotaTotalGeneral + " " + clsTextosEstandar.LeyendaImpuestos);
+    }
+
+    /// <summary>
+    /// #261 (HU-046): el texto de seguros de la configuración (<c>Pdf:TextoSeguros</c>) partido en párrafos (separados por una línea en
+    /// blanco) y limpio de caracteres de control; <c>null</c> si está vacío (el PDF y el correo salen sin el bloque).
+    /// </summary>
+    public static IReadOnlyList<string>? ParrafosSeguros(string? textoSeguros)
+    {
+        var limpio = clsTextoSeguro.Limpiar(textoSeguros);
+        return string.IsNullOrWhiteSpace(limpio)
+            ? null
+            : [.. limpio.Split("\n\n", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
     }
 
     /// <summary>
     /// HU-033 (#199): los conexos de las rutas para el PDF: solo su nombre (van en "Estas tarifas incluyen"), sin precio; el precio de la
     /// ruta ya los incluye. En el pliego, con el número de su ruta.
     /// </summary>
-    private static List<clsServicioConexoPayload>? ConexosSinPrecio(clsCotizacionSolicitud cotizacion, IEnumerable<clsLineaSolicitud> rutas, bool conRuta)
+    private static List<clsServicioConexoPayload>? ConexosSinPrecio(
+        clsCotizacionSolicitud cotizacion, IEnumerable<clsLineaSolicitud> rutas, bool conRuta,
+        IReadOnlyDictionary<string, string>? nombres = null)
     {
+        // Corrección conexos (nombre nunca id): ConexosConPrecio ya pobla Nombre con el nombre guardado o el del catálogo de Nexo por id
+        // (nombres), y cae a la categoría como respaldo legible; el PDF nunca imprime el id interno.
         var conexos = rutas
-            .SelectMany(r => ConexosConPrecio(cotizacion, r).Select(c => conRuta ? $"{c.Nombre ?? c.Categoria} (ruta {r.Orden})" : c.Nombre ?? c.Categoria))
+            .SelectMany(r => ConexosConPrecio(cotizacion, r, nombres: nombres).Select(c => conRuta ? $"{c.Nombre ?? c.Categoria} (ruta {r.Orden})" : c.Nombre ?? c.Categoria))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Select(d => new clsServicioConexoPayload { Descripcion = d })
             .ToList();
@@ -945,7 +985,8 @@ public sealed class clsCosteoCotizacionService(
     /// listan en "Estas tarifas incluyen" sin precio.
     /// </summary>
     public static clsCotizacionPdfPayload Payload(
-        clsCotizacionSolicitud cotizacion, string? lineaNegocio, string moneda, clsNombresCatalogoCubicador? catalogo = null)
+        clsCotizacionSolicitud cotizacion, string? lineaNegocio, string moneda, clsNombresCatalogoCubicador? catalogo = null,
+        IReadOnlyDictionary<string, string>? nombresConexos = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         var ruta = cotizacion.PrimeraRuta;
@@ -964,12 +1005,12 @@ public sealed class clsCosteoCotizacionService(
                     {
                         Destino = ruta?.DestinoNombre,
                         VehiculoPeso = ruta is null ? null : Camiones(ruta, catalogo),
-                        Tarifa = ruta is null ? null : PrecioRutaPdf(ruta),
+                        Tarifa = ruta is null ? null : PrecioRutaPdf(cotizacion, ruta),
                         Moneda = moneda,
                     },
                 ],
             },
-            ServiciosConexos = ruta is null ? null : ConexosSinPrecio(cotizacion, [ruta], conRuta: false),
+            ServiciosConexos = ruta is null ? null : ConexosSinPrecio(cotizacion, [ruta], conRuta: false, nombresConexos),
             // #173: la nota general usa las horas de cargue y descargue capturadas en la ruta (antes, 4 h fijas).
             HorasCargue = ruta?.HorasCargue,
             HorasDescargue = ruta?.HorasDescargue,
@@ -984,7 +1025,7 @@ public sealed class clsCosteoCotizacionService(
     /// </summary>
     public static clsCotizacionPdfPayload PayloadPliego(
         clsCotizacionSolicitud cotizacion, string? lineaNegocio, string moneda, IReadOnlyDictionary<int, string>? lineasPorId = null,
-        clsNombresCatalogoCubicador? catalogo = null)
+        clsNombresCatalogoCubicador? catalogo = null, IReadOnlyDictionary<string, string>? nombresConexos = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         var rutas = cotizacion.RutasOrdenadas;
@@ -1005,7 +1046,7 @@ public sealed class clsCosteoCotizacionService(
                             Destino = r.DestinoNombre,
                             VehiculoPeso = Camiones(r, catalogo),
                             // HU-028.1 (#183): una ruta rechazada por la Mesa sale "Sin costeo", sin precio y sin motivo.
-                            Tarifa = PrecioRutaPdf(r),
+                            Tarifa = PrecioRutaPdf(cotizacion, r),
                             Moneda = moneda,
                             Nota = r.Rechazada ? TextoSinCosteo : null,
                         },
@@ -1024,31 +1065,48 @@ public sealed class clsCosteoCotizacionService(
             MetodoCalculo = cotizacion.PrimeraRuta?.MetodoCalculo,
             Asunto = clsTextosEstandar.AsuntoVariasRutas(EsLicitacion(cotizacion), rutas.Count),
             Secciones = secciones,
-            ServiciosConexos = ConexosSinPrecio(cotizacion, rutas, conRuta: true),
+            ServiciosConexos = ConexosSinPrecio(cotizacion, rutas, conRuta: true, nombresConexos),
         };
     }
 
     /// <summary>
     /// Resumen del pliego: una fila por ruta, en orden, con su precio FINAL (HU-033, #199: transporte y servicios conexos incluidos, sin
     /// desglose), y el total general (la suma de esos precios, igual a <c>PrecioFinal</c>). HU-028.1 (#183): una ruta rechazada por la Mesa
-    /// de Costeo sale <see cref="TextoSinCosteo"/> (sin precio y sin motivo) y no suma en el total.
+    /// de Costeo sale <see cref="TextoSinCosteo"/> (sin precio y sin motivo) y no suma en el total. HU-045.3 (#265): el seguro de la mercancía
+    /// de una ruta va en la fila siguiente, con el mismo número de ruta (<see cref="EtiquetaSeguroPdf"/>), y también suma en el total.
     /// </summary>
     public static clsResumenPliegoDocumento ResumenPliego(clsCotizacionSolicitud cotizacion, string moneda, clsNombresCatalogoCubicador? catalogo = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        var rutas = cotizacion.RutasOrdenadas;
-        var tarifas = rutas.Select(PrecioRutaPdf).ToList();
-        var filas = rutas.Select((r, i) => new clsFilaPliegoDocumento(
-            r.Orden.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            clsTextoSeguro.LimpiarLinea($"{r.OrigenNombre} → {r.DestinoNombre}") ?? string.Empty,
-            Camiones(r, catalogo) ?? "—",
-            r.Rechazada ? TextoSinCosteo : tarifas[i] is { } precio ? clsFormatoMoneda.Formatear(precio, moneda) : "—")).ToList();
+        var filas = new List<clsFilaPliegoDocumento>();
+        var total = 0m;
+        var conSeguro = false;
+        foreach (var r in cotizacion.RutasOrdenadas)
+        {
+            var numero = r.Orden.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var tarifa = PrecioRutaPdf(cotizacion, r);
+            filas.Add(new clsFilaPliegoDocumento(
+                numero,
+                clsTextoSeguro.LimpiarLinea($"{r.OrigenNombre} → {r.DestinoNombre}") ?? string.Empty,
+                Camiones(r, catalogo) ?? "—",
+                r.Rechazada ? TextoSinCosteo : tarifa is { } precio ? clsFormatoMoneda.FormatearExacto(precio, moneda) : "—"));
+            total += tarifa ?? 0m;
+            if (!r.Rechazada && ValorSeguroPdf(cotizacion, r) is { } seguro)
+            {
+                filas.Add(new clsFilaPliegoDocumento(numero, EtiquetaSeguroPdf, "—", clsFormatoMoneda.FormatearExacto(seguro, moneda)));
+                total += seguro;
+                conSeguro = true;
+            }
+        }
+
+        var rutas = cotizacion.RutasOrdenadas.Count;
         return new clsResumenPliegoDocumento(
             EsLicitacion(cotizacion) ? clsTextosEstandar.TituloResumenPliego : clsTextosEstandar.TituloResumenRutas,
             filas,
-            $"{clsTextosEstandar.EtiquetaTotalGeneral} ({filas.Count} RUTAS)",
-            clsFormatoMoneda.Formatear(tarifas.Sum(t => t ?? 0m), moneda),
-            "Valor por viaje de cada ruta con sus servicios conexos incluidos; el total es la suma de un viaje por ruta.");
+            $"{clsTextosEstandar.EtiquetaTotalGeneral} ({rutas} RUTAS)",
+            clsFormatoMoneda.FormatearExacto(total, moneda),
+            "Valor por viaje de cada ruta con sus servicios conexos incluidos; el total es la suma de un viaje por ruta."
+            + (conSeguro ? " " + NotaResumenSeguroPdf : string.Empty));
     }
 
     /// <summary>
@@ -1274,7 +1332,8 @@ public sealed class clsCosteoCotizacionService(
     /// guardados en la ruta y se ven en la captura).
     /// </summary>
     public static IReadOnlyList<clsServicioConexoPrecio> ConexosConPrecio(
-        clsCotizacionSolicitud cotizacion, clsLineaSolicitud ruta, IReadOnlyDictionary<string, string>? categorias = null)
+        clsCotizacionSolicitud cotizacion, clsLineaSolicitud ruta, IReadOnlyDictionary<string, string>? categorias = null,
+        IReadOnlyDictionary<string, string>? nombres = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(ruta);
@@ -1287,18 +1346,27 @@ public sealed class clsCosteoCotizacionService(
         return [.. ruta.Conexos.OrderBy(c => c.CreatedAt).ThenBy(c => c.IdServicioConexo, StringComparer.Ordinal)
             .Select(c => (Conexo: c, Error: PrecioConexo(cotizacion, ruta, c, anterior, out var precio), Precio: precio))
             .Where(x => x.Error is null && x.Precio is not null)
-            .Select(x => new clsServicioConexoPrecio(
-                x.Conexo.IdServicioConexo,
-                x.Conexo.Nombre,
-                // HU-014 (#188): la categoría guardada (script 05); si no la tiene (fila anterior), la del catálogo o la de respaldo.
-                x.Conexo.Categoria
-                ?? (categorias is not null && categorias.TryGetValue(x.Conexo.IdServicioConexo, out var categoria) ? categoria : CategoriaConexo),
-                x.Conexo.Cantidad,
-                x.Precio!.Value,
-                true,
-                ruta.Orden)
+            .Select(x =>
             {
-                ServicioId = x.Conexo.IdServicioConexoCatalogo,
+                // HU-014 (#188): la categoría guardada (script 05); si no la tiene (fila anterior), la del catálogo o la de respaldo.
+                var categoria = x.Conexo.Categoria
+                    ?? (categorias is not null && categorias.TryGetValue(x.Conexo.IdServicioConexo, out var cat) ? cat : CategoriaConexo);
+                // Corrección conexos (nombre nunca id): el nombre guardado; si es null (fila migrada), el del catálogo de Nexo por id; si
+                // tampoco, la categoría como respaldo LEGIBLE. El id interno queda en Id para operar (incluir/excluir), nunca como etiqueta.
+                var nombre = x.Conexo.Nombre
+                    ?? (nombres is not null && nombres.TryGetValue(x.Conexo.IdServicioConexo, out var n) ? n : null)
+                    ?? categoria;
+                return new clsServicioConexoPrecio(
+                    x.Conexo.IdServicioConexo,
+                    nombre,
+                    categoria,
+                    x.Conexo.Cantidad,
+                    x.Precio!.Value,
+                    true,
+                    ruta.Orden)
+                {
+                    ServicioId = x.Conexo.IdServicioConexoCatalogo,
+                };
             })];
     }
 
@@ -1413,19 +1481,20 @@ public sealed class clsCosteoCotizacionService(
         IReadOnlyDictionary<Guid, clsSituacionLineaNexo>? situaciones, Margen.DTOs.clsSincronizacionSapVieja? sincronizacionVieja)
     {
         var categorias = await CategoriasAsync(categoriasConexos, cotizacion, logger, cancellationToken);
+        var nombres = await NombresAsync(categoriasConexos, cotizacion, logger, cancellationToken);
         if (envioConexos is null)
         {
-            return Vista(cotizacion, baseUrlPdf, null, categorias, situaciones, sincronizacionVieja);
+            return Vista(cotizacion, baseUrlPdf, null, categorias, situaciones, sincronizacionVieja, nombres);
         }
 
         try
         {
-            return Vista(cotizacion, baseUrlPdf, await envioConexos.EstadosAsync(cotizacion, cancellationToken), categorias, situaciones, sincronizacionVieja);
+            return Vista(cotizacion, baseUrlPdf, await envioConexos.EstadosAsync(cotizacion, cancellationToken), categorias, situaciones, sincronizacionVieja, nombres);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             _logEstadosNoDisponibles(logger, cotizacion.Folio, ex);
-            return Vista(cotizacion, baseUrlPdf, null, categorias, situaciones, sincronizacionVieja);
+            return Vista(cotizacion, baseUrlPdf, null, categorias, situaciones, sincronizacionVieja, nombres);
         }
     }
 
@@ -1454,6 +1523,31 @@ public sealed class clsCosteoCotizacionService(
         }
     }
 
+    /// <summary>
+    /// Corrección conexos (nombre nunca id): nombre del catálogo de Nexo de los conexos sin nombre guardado (<see cref="IClsCategoriasConexos.NombresAsync"/>),
+    /// para que la vista muestre el nombre y no el id. Nunca falla: sin servicio o si la lectura lanza, <c>null</c> (la vista cae a la categoría).
+    /// </summary>
+    public static async Task<IReadOnlyDictionary<string, string>?> NombresAsync(
+        IClsCategoriasConexos? categoriasConexos, clsCotizacionSolicitud cotizacion, ILogger logger, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        ArgumentNullException.ThrowIfNull(logger);
+        if (categoriasConexos is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await categoriasConexos.NombresAsync(cotizacion, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            _logCategoriasNoDisponibles(logger, cotizacion.Folio, ex);
+            return null;
+        }
+    }
+
     private static readonly Action<ILogger, string, Exception?> _logCategoriasNoDisponibles = LoggerMessage.Define<string>(
         LogLevel.Warning, new EventId(1733, nameof(_logCategoriasNoDisponibles)),
         "No se pudo leer la categoría de los conexos de {Folio} en el catálogo de Nexo; se usa la categoría por defecto.");
@@ -1469,7 +1563,7 @@ public sealed class clsCosteoCotizacionService(
     public static clsCosteoCotizacion Vista(
         clsCotizacionSolicitud cotizacion, string? baseUrlPdf, IReadOnlyDictionary<(Guid Ruta, string Conexo), string>? estadosNexo = null,
         IReadOnlyDictionary<string, string>? categorias = null, IReadOnlyDictionary<Guid, clsSituacionLineaNexo>? situaciones = null,
-        Margen.DTOs.clsSincronizacionSapVieja? sincronizacionVieja = null)
+        Margen.DTOs.clsSincronizacionSapVieja? sincronizacionVieja = null, IReadOnlyDictionary<string, string>? nombres = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
 
@@ -1484,7 +1578,7 @@ public sealed class clsCosteoCotizacionService(
             cotizacion.PrecioFinal,
             cotizacion.PrecioFinal is null ? null : ruta?.MargenAplicado,
             cotizacion.Moneda ?? clsCotizacionSolicitud.MonedaPesos,
-            [.. cotizacion.RutasOrdenadas.SelectMany(r => ConEstadoNexo(r, ConexosConPrecio(cotizacion, r, categorias), estadosNexo))],
+            [.. cotizacion.RutasOrdenadas.SelectMany(r => ConEstadoNexo(r, ConexosConPrecio(cotizacion, r, categorias, nombres), estadosNexo))],
             clsUrlPdf.DesdeReferencia(baseUrlPdf, cotizacion.PdfPath),
             ruta?.MargenSugeridoMostrado,
             ruta?.OrigenMargen is { } origen ? clsCodigoEnum.ACodigo(origen) : null,
@@ -1499,7 +1593,8 @@ public sealed class clsCosteoCotizacionService(
             SincronizacionResultadoNexo = cotizacion.EstadoSincronizacionResultado,
             ErrorSincronizacionResultadoNexo = cotizacion.Ganada is null ? null : cotizacion.ErrorSincronizacionResultado,
             FinalizadaAt = cotizacion.FinalizadaAt?.ToUniversalTime(),
-            Rutas = [.. cotizacion.RutasOrdenadas.Select(r => RutaCosteo(cotizacion, r, estadosNexo, categorias, situaciones, sincronizacionVieja))],
+            AvisoSeguro = clsAvisoSeguro.De(cotizacion),
+            Rutas = [.. cotizacion.RutasOrdenadas.Select(r => RutaCosteo(cotizacion, r, estadosNexo, categorias, situaciones, sincronizacionVieja, nombres))],
         };
     }
 
@@ -1511,14 +1606,15 @@ public sealed class clsCosteoCotizacionService(
     public static clsRutaCosteo RutaCosteo(
         clsCotizacionSolicitud cotizacion, clsLineaSolicitud ruta, IReadOnlyDictionary<(Guid Ruta, string Conexo), string>? estadosNexo = null,
         IReadOnlyDictionary<string, string>? categorias = null, IReadOnlyDictionary<Guid, clsSituacionLineaNexo>? situaciones = null,
-        Margen.DTOs.clsSincronizacionSapVieja? sincronizacionVieja = null)
+        Margen.DTOs.clsSincronizacionSapVieja? sincronizacionVieja = null, IReadOnlyDictionary<string, string>? nombres = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(ruta);
-        var conexos = ConEstadoNexo(ruta, ConexosConPrecio(cotizacion, ruta, categorias), estadosNexo);
+        var conexos = ConEstadoNexo(ruta, ConexosConPrecio(cotizacion, ruta, categorias, nombres), estadosNexo);
         var revisar = conexos
             .Where(c => c.EstadoNexo is clsEnvioConexosNexoService.VisibleIncierto or clsEnvioConexosNexoService.VisibleFallidoDefinitivo)
-            .Select(c => $"«{c.Nombre ?? c.Id}»")
+            // Corrección conexos (nombre nunca id): Nombre ya viene poblado (catálogo o categoría); la categoría es el respaldo, nunca el id.
+            .Select(c => $"«{c.Nombre ?? c.Categoria}»")
             .ToList();
         return new clsRutaCosteo(
             ruta.Orden,

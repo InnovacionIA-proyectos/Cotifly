@@ -41,7 +41,8 @@ public sealed class clsAliasEndpointsTests : IDisposable
         json.GetProperty("tipo").GetString().Should().Be("vehiculo");
         json.GetProperty("resultados").EnumerateArray()
             .Select(r => (r.GetProperty("texto").GetString(), r.GetProperty("reconocido").GetBoolean(), r.GetProperty("codigo").GetString(), r.GetProperty("fuente").GetString()))
-            .Should().Equal(("tb", true, "2S3", "alias"), ("3s3", true, "3S3", "catalogo"), ("C2", true, "2", "alias"), ("Viejo", false, null, null),
+            // HU-044.8 (#291): C2 es el código NEXO canónico; la equivalencia de SICE-TAC lo resuelve como «catalogo», no vía alias a «2».
+            .Should().Equal(("tb", true, "2S3", "alias"), ("3s3", true, "3S3", "catalogo"), ("C2", true, "C2", "catalogo"), ("Viejo", false, null, null),
                 ("Tractomula", false, null, null));
         _nexo.Peticiones.Count(p => p.Url.AbsolutePath == "/api/catalogos/alias").Should().Be(1, "una sola petición para todo el lote");
     }

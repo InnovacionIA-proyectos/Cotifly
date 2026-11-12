@@ -32,4 +32,19 @@ public sealed class clsOpcionesPdf
     /// pruebas del render del PDF legado lo encienden.
     /// </summary>
     public bool PermitirCotizacionChat { get; set; }
+
+    /// <summary>#261 (HU-046): marcador genérico provisional del texto de seguros de la propuesta (lo reemplaza Jurídica por el oficial en la configuración).</summary>
+    public const string TextoSegurosPorDefecto =
+        "[TEXTO DE SEGUROS PROVISIONAL] El área jurídica definirá en la configuración (Pdf:TextoSeguros) el texto oficial de la estructura "
+        + "de seguros y el modelo de subrogación que debe incluir la propuesta comercial. Mientras tanto se muestra este marcador.";
+
+    /// <summary>
+    /// #261 (HU-046, política NOGE0076): texto de la estructura de seguros y el modelo de subrogación que va en la propuesta: en el PDF de la
+    /// cotización y de la licitación, después del resumen de precios, y en el cuerpo del correo, antes de la firma. Se lee de configuración
+    /// (<c>Pdf:TextoSeguros</c>, variable <c>Pdf__TextoSeguros</c>) para que Jurídica lo cambie sin tocar el código; el texto OFICIAL lo
+    /// define el área jurídica y NO vive en el repositorio. El valor por defecto es un marcador genérico provisional (<see cref="TextoSegurosPorDefecto"/>);
+    /// vacío = sin bloque. Solo sale en los PDF y correos que se generan desde este cambio: no reescribe los ya generados ni enviados.
+    /// </summary>
+    [MaxLength(8000)]
+    public string? TextoSeguros { get; set; } = TextoSegurosPorDefecto;
 }

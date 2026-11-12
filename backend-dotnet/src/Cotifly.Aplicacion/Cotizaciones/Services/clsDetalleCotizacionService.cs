@@ -86,7 +86,9 @@ public sealed class clsDetalleCotizacionService(
         var estadosNexo = await envioConexos.EstadosAsync(cotizacion, cancellationToken);
         var costeo = clsCosteoCotizacionService.Vista(
             cotizacion, opcionesPdf.Value.BaseUrl, estadosNexo, clsCategoriasConexosService.EnMemoria(categorias, cotizacion),
-            situacionesNexo?.Obtener(cotizacion.Id))
+            situacionesNexo?.Obtener(cotizacion.Id),
+            // Corrección conexos (nombre nunca id): el nombre del catálogo que ya esté en memoria (sin leer Nexo), como respaldo del guardado.
+            nombres: clsCategoriasConexosService.NombresEnMemoria(categorias, cotizacion))
             with
             {
                 // HU-045.2 (#264): la tasa vigente del seguro, como en GET .../costeo.
@@ -131,8 +133,9 @@ public sealed class clsDetalleCotizacionService(
     }
 
     /// <summary>
-    /// Totales de la solicitud con las reglas del costeo y del PDF: la tarifa de cada ruta es <see cref="clsCosteoCotizacionService.PrecioTransporte"/>
-    /// y los conexos los de <c>costeo.rutas[].servicios_conexos</c>. Sin precio en alguna ruta, los precios salen <c>null</c>.
+    /// Totales de la solicitud con las reglas del costeo y del PDF: la tarifa de cada ruta es <see cref="clsCosteoCotizacionService.PrecioTransporte"/>,
+    /// los conexos los de <c>costeo.rutas[].servicios_conexos</c> y (HU-045.3, #265) el seguro el <c>valor_seguro</c> de cada ruta. Sin precio en
+    /// alguna ruta, los precios salen <c>null</c>.
     /// </summary>
     internal static clsTotalesCotizacion Totales(clsCotizacionSolicitud cotizacion, clsCosteoCotizacion costeo)
     {
@@ -153,6 +156,7 @@ public sealed class clsDetalleCotizacionService(
         {
             RutasRechazadas = rutas.Count(r => r.Rechazada),
             CamionesRechazados = rutas.Sum(r => r.Vehiculos.Count(v => v.Rechazado)),
+            PrecioSeguro = conPrecio ? costeo.Rutas.Where(r => ordenesCotizables.Contains(r.LineaOrden)).Sum(r => r.ValorSeguro ?? 0m) : null,
         };
     }
 

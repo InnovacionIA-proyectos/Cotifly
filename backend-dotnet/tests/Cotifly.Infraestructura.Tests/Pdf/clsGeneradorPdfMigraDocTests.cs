@@ -58,6 +58,30 @@ public sealed class clsGeneradorPdfMigraDocTests
 
     private static string Normalizar(string texto) => System.Text.RegularExpressions.Regex.Replace(texto, @"\s+", " ").Trim();
 
+    // #261 (HU-046): en la tarifa única el texto de seguros va después del resumen de precios (el total general).
+    [Fact]
+    public void ElTextoDeSegurosVaDespuesDelTotalGeneral()
+    {
+        var documento = clsDocumentosPrueba.Nacional() with
+        {
+            TotalGeneral = new clsTotalDocumento(clsTextosEstandar.EtiquetaTotalGeneral, "$5.000.000 COP", "Nota del total."),
+            TextoSeguros = ["El transportador ampara su responsabilidad del contrato de transporte."],
+        };
+
+        var (_, lector) = Generar(documento);
+        var texto = Normalizar(lector.Texto);
+
+        texto.Should().Contain(clsTextosEstandar.TituloSegurosPropuesta)
+            .And.Contain("El transportador ampara su responsabilidad del contrato de transporte.");
+        texto.IndexOf(clsTextosEstandar.TituloSegurosPropuesta, StringComparison.Ordinal).Should()
+            .BeGreaterThan(texto.IndexOf(clsTextosEstandar.EtiquetaTotalGeneral, StringComparison.Ordinal),
+                "el texto de seguros va después del resumen de precios");
+    }
+
+    [Fact]
+    public void SinTextoDeSegurosLaTarifaUnicaNoTraeElBloque() =>
+        Normalizar(Generar(clsDocumentosPrueba.Nacional()).Lector.Texto).Should().NotContain(clsTextosEstandar.TituloSegurosPropuesta);
+
     [Fact]
     public void LaVarianteMultiEnDolaresTambienTraeLaAclaracion()
     {

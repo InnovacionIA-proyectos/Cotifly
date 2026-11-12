@@ -98,7 +98,8 @@ public sealed class clsLicitacionService(
     IOptions<clsOpcionesCaptura>? opcionesCaptura = null,
     IClsCubicador? cubicador = null,
     IOptions<clsOpcionesCubicacionLicitacion>? opcionesCubicacion = null,
-    IClsAlmacenIdempotencia? idempotencia = null) : IClsLicitacionService
+    IClsAlmacenIdempotencia? idempotencia = null,
+    Costeo.Services.IClsCategoriasConexos? categoriasConexos = null) : IClsLicitacionService
 {
     public const string TipoXlsx = clsArchivoLicitacion.TipoXlsx;
 
@@ -156,10 +157,11 @@ public sealed class clsLicitacionService(
             ? await cotizaciones.ObtenerArchivoLicitacionAsync(cotizacion.Id, cancellationToken)
             : null;
         var nombres = await NombresCubicadorAsync(cotizacion, cancellationToken);
-        // HU-044.7 (#290): una licitación leída con la IA de NEXO (leer_estructura) se exporta en un Excel NUEVO: no se pasa el original al
-        // exportador (arma la hoja «Licitación» como sin archivo) y el resumen deja la nota de que se leyó con la IA.
+        // Corrección conexos (nombre nunca id): nombre del catálogo de Nexo de los conexos heredados sin nombre guardado.
+        var nombresConexos = await Costeo.Services.clsCosteoCotizacionService.NombresAsync(categoriasConexos, cotizacion, logger, cancellationToken);
+        // HU-044.7 (#290): una licitación leída con la IA de NEXO (leer_estructura) se exporta en un Excel NUEVO (sin pasar el original).
         var leidaConIa = archivo is { OrigenLectura: clsOrigenLectura.LeerEstructura };
-        var datos = DatosExportacion(cotizacion, leidaConIa ? null : archivo, reloj.AhoraUtc, nombres.Vehiculos, nombres.Carrocerias, leidaConIa);
+        var datos = DatosExportacion(cotizacion, leidaConIa ? null : archivo, reloj.AhoraUtc, nombres.Vehiculos, nombres.Carrocerias, nombresConexos, leidaConIa);
         var generado = await exportador.GenerarAsync(datos, cancellationToken);
         if (generado.EsFallo)
         {
@@ -183,6 +185,7 @@ public sealed class clsLicitacionService(
         DateTimeOffset ahora,
         IReadOnlyDictionary<string, string>? vehiculos = null,
         IReadOnlyDictionary<string, string>? carrocerias = null,
+        IReadOnlyDictionary<string, string>? nombresConexos = null,
         bool leidaConIa = false)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
@@ -190,8 +193,10 @@ public sealed class clsLicitacionService(
         // HU-028.1 (#183): una ruta rechazada por la Mesa de Costeo sale "SIN COSTEO" (sin precio ni motivo), sin sus conexos, y no suma.
         var tarifas = lineas.Select(l => l.Rechazada ? null : Costeo.Services.clsCosteoCotizacionService.PrecioTransporte(cotizacion, l)).ToList();
         var cotizables = lineas.Select((l, i) => (Ruta: l, Tarifa: tarifas[i])).Where(x => !x.Ruta.Rechazada).ToList();
+        // Corrección conexos (nombre nunca id): ConexosConPrecio pobla Nombre con el guardado o el del catálogo de Nexo por id (nombresConexos)
+        // y cae a la categoría como respaldo legible; el export nunca imprime el id interno.
         var conexos = lineas.Where(r => !r.Rechazada)
-            .SelectMany(r => Costeo.Services.clsCosteoCotizacionService.ConexosConPrecio(cotizacion, r))
+            .SelectMany(r => Costeo.Services.clsCosteoCotizacionService.ConexosConPrecio(cotizacion, r, nombres: nombresConexos))
             .Select(s => new clsConexoExportacion(s.Nombre ?? s.Categoria, s.Categoria, s.Cantidad, s.Precio))
             .ToList();
         return new clsExportacionLicitacion(
@@ -208,6 +213,7 @@ public sealed class clsLicitacionService(
                 CamionesExportacion(l, vehiculos, carrocerias), CubicacionLegible(l))
             {
                 Rechazada = l.Rechazada,
+                ValorSeguro = Costeo.Services.clsCosteoCotizacionService.ValorSeguroPdf(cotizacion, l),
             })],
             conexos,
             ahora)

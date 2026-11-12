@@ -42,6 +42,21 @@ public sealed class clsCatalogosFleteEndpointsTests : IDisposable
     }
 
     [Fact]
+    public async Task HU0448_LosTiposDeVehiculoSalenConElCodigoNexoC2EnVezDelCodigoSap()
+    {
+        // HU-044.8 (#291): el catálogo de SAP trae «2»; GET /web/catalogos-flete lo expone como C2 (el código NEXO de SICE-TAC).
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        _nexo.TiposVehiculo.Clear();
+        _nexo.TiposVehiculo.AddRange([("2", "Camión 2 ejes", true), ("3", "Doble troque", true), ("2S3", "Tractocamión 2S3", true)]);
+
+        using var respuesta = await _api.EnviarAsync(HttpMethod.Get, Ruta, sesion.Access);
+        var json = await VerificarContratoAsync(respuesta, Ruta, HttpMethod.Get, HttpStatusCode.OK);
+
+        json.GetProperty("tipos_vehiculo").EnumerateArray().Select(v => v.GetProperty("valor").GetString())
+            .Should().Equal("C2", "C3", "2S3");
+    }
+
+    [Fact]
     public async Task ConLasClasesDeContenedorVaciasEnNexoResponde200ConLaListaVacia()
     {
         // Nexo responde [] cuando su base de SAP no está configurada.

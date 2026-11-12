@@ -35,6 +35,15 @@ public sealed class clsCatalogosFleteNexo(IClsCatalogosMaestrosProvider maestros
             return resultado.Error;
         }
 
-        return new clsCatalogosFlete(resultado.Valor.TiposVehiculo, Carrocerias, resultado.Valor.ClasesViaje, resultado.Valor.ClasesContenedor);
+        return new clsCatalogosFlete(TiposVehiculoNexo(resultado.Valor.TiposVehiculo), Carrocerias, resultado.Valor.ClasesViaje, resultado.Valor.ClasesContenedor);
     }
+
+    /// <summary>
+    /// HU-044.8 (#291): los tipos de vehículo con el <b>código NEXO</b> canónico (<c>C2</c>, <c>C3</c>) en vez del código SAP
+    /// que trae el catálogo maestro («2», «3»), con la única fuente de equivalencia (<see cref="clsEquivalenciaVehiculoNexo"/>) y
+    /// la misma descripción. El resto de códigos no cambia. Así el selector del front y los valores que guarda ya son el código
+    /// que entiende SICE-TAC/Plaza, y una solicitud no nace en cuarentena en Nexo.
+    /// </summary>
+    internal static IReadOnlyList<clsOpcionCatalogo> TiposVehiculoNexo(IReadOnlyList<clsOpcionCatalogo> tiposVehiculo) =>
+        [.. tiposVehiculo.Select(o => clsEquivalenciaVehiculoNexo.ACodigoNexo(o.Valor) is { } codigoNexo ? o with { Valor = codigoNexo } : o)];
 }

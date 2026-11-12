@@ -1025,7 +1025,7 @@ copia de hasta 24 h.
 
 ```json
 {
-  "tipos_vehiculo": [ { "valor": "3S3", "etiqueta": "Tractocamión 3S3" } ],
+  "tipos_vehiculo": [ { "valor": "C2", "etiqueta": "Sencillo" }, { "valor": "3S3", "etiqueta": "Tractocamión 3S3" } ],
   "tipos_carroceria": [ { "valor": "FURGON", "etiqueta": "Furgón" } ],
   "clases_viaje": [
     { "valor": "Contenedor", "etiqueta": "Contenedor" },
@@ -1059,6 +1059,11 @@ texto amigable para cada código, pero debe enviar el `valor`.
   queda vacío. No es un error del endpoint. Con la lista vacía, deshabilitar el selector de clase de contenedor y ofrecer Reintentar:
   una captura `Contenedor` con una clase que no sea provisional respondería 503 `CATALOGOS_FLETE_NO_DISPONIBLE`.
 - Reemplaza el catálogo fijo que tenía el frontend.
+
+**`tipos_vehiculo` (HU-044.8, #291).** El `valor` es el **código NEXO** canónico (`C2`, `C3`, `2L3`…): SAP entrega «2»/«3» y el
+backend los traduce a `C2`/`C3` con la única fuente de equivalencia (`tbl_mapeo_vehiculo_tarifario`); el resto de códigos no cambia. Es
+el valor que hay que guardar y enviar en `tipo_vehiculo`. **Rompe:** cambian el selector y los valores guardados (ver §7, fila de #291);
+el front ya no traduce «2»/«3» por su cuenta. La `etiqueta` (descripción de NEXO) no cambia.
 
 Notas: `tipologia` (7 valores fijos) no viene aquí; ver la sección 5.4.
 
@@ -1139,16 +1144,19 @@ Catálogo del cubicador para el desplegable de mercancías. Ordenado por nombre,
 
 #### 4.2.5 `GET /web/tipos-carroceria`
 
+**HU-044.8 (#291):** sale del **catálogo de carrocerías de NEXO** (ya no del cubicador), la misma lista que `tipos_carroceria` de
+`GET /web/catalogos-flete` y que valida la captura, y la misma de la que `POST /web/licitaciones/normalizar-valores` propone sus
+códigos. `codigo` = `nombre` (el front muestra el texto amigable). **Siempre 200** (ya no depende del cubicador).
+
 - **Rol:** ambos.
 
 ```json
-[ { "codigo": "FURGON", "nombre": "Furgón", "activo": true }, { "codigo": "ESTACAS", "nombre": "Estacas", "activo": true } ]
+[ { "codigo": "FURGON", "nombre": "FURGON", "activo": true }, { "codigo": "ESTACAS", "nombre": "ESTACAS", "activo": true } ]
 ```
 
 | HTTP | Código | UI |
 |---|---|---|
-| 200 | `TipoCarroceria[]` | Para mostrar el nombre de `carroceria` de los camiones |
-| 503 | `CUBICADOR_NO_DISPONIBLE` | Mostrar el código |
+| 200 | `TipoCarroceria[]` | Llenar el selector de carrocería; mostrar el texto amigable desde el front por `codigo` |
 
 #### 4.2.6 `GET /web/tipos-vehiculo`
 
@@ -2466,7 +2474,22 @@ Notas:
   seguro de esa ruta se recalcula con la tasa vigente. La versión nueva (`-vN`) conserva el check de cada ruta.
 - El seguro se puede marcar antes de que llegue el costeo: la ruta no tiene precio hasta que NEXO costee (como con los conexos).
 - `costo_final` de la ruta no incluye el seguro (no es costo de NEXO).
-- El PDF, el Excel y el correo todavía no muestran la línea "Seguro de la mercancía" (llega con HU-045.3, #265); el total ya lo incluye.
+- HU-045.3 (#265): el PDF lo muestra en su propia fila por ruta ("Seguro de la mercancía", aparte del flete), el Excel en su columna, el
+  correo dentro del precio de la ruta ("Incluye el seguro de la mercancía", sin el monto) y el detalle en `totales.precio_seguro`. Ver 4.7.1,
+  4.5.8, 4.6.5, 4.8 y 4.5.5. Nunca se exporta la tasa.
+- HU-045.3 (#265, decisión del usuario del 2026-11-09): si una edición deja una ruta **con el check marcado y sin valor de la
+  mercancía** (`incluye_seguro = true` y `valor_seguro = null`), el seguro no suma y **no se bloquea nada**: `CosteoCotizacion` (y
+  `costeo` del detalle) y el 201 del PDF traen `aviso_seguro` (`AvisoSeguro`) con las rutas, y el PDF sale sin la fila del seguro en
+  esas rutas. Mostrar `aviso_seguro.mensaje` y resaltar las rutas (quitar el check o editar el valor, en una versión nueva si ya está
+  finalizada):
+
+```json
+"aviso_seguro": {
+  "codigo": "SEGURO_SIN_VALOR_MERCANCIA",
+  "mensaje": "El seguro de la mercancía está marcado en la ruta 1 sin valor de la mercancía: no se suma al precio ni sale en el PDF. ...",
+  "rutas": [ { "linea_orden": 1, "linea_solicitud_id": "0f8fad5b-d9cb-469f-a165-70867728950e" } ]
+}
+```
 
 ### 4.5 Cotizaciones
 
@@ -2692,7 +2715,7 @@ hace falta combinar `GET /web/mis-cotizaciones` (cliente, NIT, `estado_envio`, `
 | `captura` | `RutaEditable[]` (4.4.10) | Cada ruta como se capturó: municipios por id y nombre y condiciones. Se cruza con `costeo.rutas[]` por `linea_solicitud_id` |
 | `tipo`, `notas` | | `spot` / `licitacion` (`null` en las del chat) y las notas |
 | `fechas` | `FechasCotizacion` | `created_at`, `updated_at`, `costeo_enviado_at`, `costeo_listo_at`, `marcado_at` y `finalizada_at` (HU-036.2; UTC, `null` si no aplica) |
-| `totales` | `TotalesCotizacion` | `rutas`, `camiones` (los que cuentan en el precio), `peso_kg`, `precio_transporte`, `precio_conexos`, `precio_final` (`transporte + conexos = final`; los precios en `null` sin costeo). HU-043.2 (#251): `precio_transporte` = (flete + retorno + levante) con el margen; `precio_conexos` = suma de las **ventas** de los conexos, sin margen |
+| `totales` | `TotalesCotizacion` | `rutas`, `camiones` (los que cuentan en el precio), `peso_kg`, `precio_transporte`, `precio_conexos`, `precio_seguro`, `precio_final` (`transporte + conexos + seguro = final`; los precios en `null` sin costeo). HU-043.2 (#251): `precio_transporte` = (flete + retorno + levante) con el margen; `precio_conexos` = suma de las **ventas** de los conexos, sin margen. HU-045.3 (#265): `precio_seguro` = suma del `valor_seguro` de las rutas (0 si ninguna lo incluye) |
 | `row_version` | | Para el `If-Match` de las acciones que siguen |
 | `solo_lectura` | | `true` si lo ve un gerente: esconder las acciones (le responden 404); descargar el PDF sí puede |
 
@@ -2774,6 +2797,9 @@ moneda de la cotización; `Sin precio` donde no hay.
 - **Gerente comercial de la regional del dueño y director (HU-037):** el mismo Excel en **solo lectura, sin ninguna columna de costo ni
   de margen** (con el margen y el precio se deduce el costo). Cada descarga queda en la auditoría.
 - Respeta el precio congelado (HU-036) y las rutas rechazadas por la Mesa (sin precio, sin conexos, no suman). Solo lee lo guardado.
+- **Seguro de la mercancía (HU-045.3, #265):** en `Rutas`, la columna `Seguro de la mercancía ({moneda})` entre `Precio conexos` y
+  `Precio ruta` (vacía sin seguro; `Sin valor de la mercancía` si el check está marcado sin valor), y su total en la fila `Total` y en el
+  `Resumen`. Transporte + conexos + seguro = precio de la ruta. Es venta, no costo: también va en la versión de solo lectura. Nunca la tasa.
 - **Respuesta:** `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, como blob; nombre `{folio}.xlsx` en
   `Content-Disposition`.
 
@@ -3001,7 +3027,9 @@ Reintenta las rutas con `estado_cubicacion = fallida`. Solo antes de enviar la l
 
 Descarga el Excel original del cliente con columnas agregadas: `Precio final Cotifly ({moneda})`, `Estado costeo Cotifly`,
 `Servicios conexos Cotifly` y `Camiones Cotifly`, más las hojas `Resumen Cotifly` y `Camiones Cotifly`. Sin archivo original, una hoja
-`Licitación` con los campos mapeados. Nunca incluye costos de NEXO. Se puede exportar en cualquier momento.
+`Licitación` con los campos mapeados. Nunca incluye costos de NEXO. Se puede exportar en cualquier momento. HU-045.3 (#265): si alguna
+línea incluye el seguro de la mercancía, una quinta columna `Seguro de la mercancía Cotifly ({moneda})` y, en `Resumen Cotifly`, su suma
+(aparte del total). Hoy las licitaciones no admiten el seguro (4.4.15), así que el archivo no cambia.
 
 - **Rol:** el dueño; también el gerente de la regional del dueño o el director (HU-034.1, #201), que reciben **el mismo archivo** (el
   Excel nunca tuvo costos: no hay columnas que quitar). **Respuesta:** `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`. Descargar como blob. El nombre
@@ -3033,6 +3061,17 @@ tabla de `leer-estructura` (4.6.7): se mandan sus `encabezados` y `filas` tal cu
   IA_NO_DISPONIBLE` (o un `IA_*` del proveedor). Con plantilla reconocida: `PLANTILLA_RECONOCIDA` y `plantilla_id`.
 - **Peso (DU §8):** la sugerencia no trae pesos, así que la regla del peso total con tara no aplica aquí; se aplica al convertir las filas
   (#254) y en la captura.
+- **Columnas derivadas (HU-044.9, #292):** antes de llamar a NEXO, Cotifly revisa las columnas de texto y agrega columnas derivadas **con
+  nombre fijo al final**, solo si al menos una fila reconoce un valor (si no, la hoja mantiene su firma de plantilla y no aparecen). Por eso la
+  propuesta puede traer más `columnas` que `encabezados` de la hoja original: `Vehículo detectado` (el vehículo dentro de un texto, con el
+  diccionario de alias de NEXO —el mismo de `GET /web/alias/resolver`—, p. ej. «Venezuela Mula» → `Mula`), `Contenedor detectado` (del patrón
+  `C20`/`C40`/`20'`/`40'`, normalizado a `20'` o `40'`) y `Peso detectado (kg)` (un peso o un rango en toneladas o kg; **del rango se toma el
+  valor más alto**: «C20 de 0 a 8 Ton» → `20'` y `8000`). La celda original no se modifica. `sugerir-mapeo` puede proponerlas para
+  `tipoVehiculo`, `claseContenedor` y `pesoKg`, y `aplicar-mapeo` (#254) las agrega igual, al final de cada fila, y las convierte como cualquier
+  otra columna. **Índices:** las columnas derivadas se ubican después de las columnas de la hoja (ancho de la fila más ancha, el mismo criterio
+  en los dos endpoints), así que sus índices coinciden entre `sugerir-mapeo` y `aplicar-mapeo` **salvo** que una categoría (vehículo, contenedor
+  o peso) se reconozca solo en filas fuera de la muestra que recibe `sugerir-mapeo` (hasta 200): con pliegos de menos de 200 filas y una muestra
+  representativa coinciden. Por eso conviene mandar a `sugerir-mapeo` una muestra representativa de las filas.
 
 ```json
 {
@@ -3300,15 +3339,21 @@ Endurecimiento B (#199, OBS-C-3): los textos de varias rutas dependen del tipo. 
 PLIEGO" y "RUTA n: PLIEGO DE TRANSPORTE …". Spot de varias rutas: "… de Transporte (N rutas)", "RESUMEN DE LAS RUTAS" y "RUTA n: TARIFA
 DE TRANSPORTE …". Este endpoint no responde `FOLIO_INVALIDO`.
 
+HU-045.3 (#265, política NOGE0076): una ruta con el seguro de la mercancía lleva una fila propia, **"Seguro de la mercancía"**, con su
+`valor_seguro`, y la fila de la ruta imprime su valor **sin** el seguro; en el pliego, el resumen agrega esa fila debajo de la ruta (mismo
+número). El "VALOR TOTAL DE LA COTIZACIÓN" sigue siendo la suma de los `precio_final_linea` (con el seguro). Nunca se imprime la tasa.
+El seguro se guarda en centavos (#264): en COP, el seguro y los montos que lo incluyen se imprimen con sus centavos cuando los tienen
+(`$100,40`, `$3.750.200,80`), en el PDF, el correo y el Excel; sin centavos, en pesos enteros como siempre.
+
 - **Rol:** ambos (dueño). **Headers:** `If-Match` opcional. **Sin cuerpo.**
 
 ```json
-{ "cotizacion_id": "5b0f8a3e-2c1d-4e6f-9a7b-3c2d1e0f9a8b", "folio": "PCN-900555111-DG-15102026-001", "pdf_url": "/pdfs/PCN-900555111-DG-15102026-001.pdf", "registrada_en_bd": true }
+{ "cotizacion_id": "5b0f8a3e-2c1d-4e6f-9a7b-3c2d1e0f9a8b", "folio": "PCN-900555111-DG-15102026-001", "pdf_url": "/pdfs/PCN-900555111-DG-15102026-001.pdf", "registrada_en_bd": true, "aviso_seguro": null }
 ```
 
 | HTTP | Código | UI |
 |---|---|---|
-| 201 | `SalidaPdf` | Descargar con `pdf_url`. Guardar el `ETag` de la respuesta (la versión cambió) |
+| 201 | `SalidaPdf` | Descargar con `pdf_url`. Guardar el `ETag` de la respuesta (la versión cambió). HU-045.3 (#265): si trae `aviso_seguro` (no `null`), mostrar su `mensaje`: esas rutas salieron sin la fila del seguro |
 | 400 | `PDF_PAYLOAD_INVALIDO` | "No se pudo generar el PDF: faltan datos" |
 | 404 | `ErrorWeb` | — |
 | 409 | `COSTEO_NO_LISTO` | Todas las rutas deben tener precio |
@@ -3346,6 +3391,9 @@ con la leyenda de impuestos del PDF. **Por defecto, en todos los ambientes**, to
 sin CC ni CCO, con los destinatarios originales en el cuerpo, y `redirigido_a` con el buzón); la vista previa lo avisa
 (`entorno_pruebas`). Solo producción con `Correo:Proteccion:Modo=ninguno` **y** `Correo:Proteccion:PermitirEnvioReal=true` escribe a
 los destinatarios reales.
+
+HU-045.3 (#265): el precio de cada ruta y el total del bloque fijo incluyen el seguro de la mercancía, sin desglose (regla de HU-033); la
+ruta que lo incluye dice "Incluye el seguro de la mercancía" (`resumen.rutas[].incluye_seguro = true`), sin el monto ni la tasa.
 
 #### 4.8.1 `GET /web/clientes/{nit}/destinatarios-previos`
 
@@ -3401,6 +3449,7 @@ Renderiza el correo sin enviarlo.
 | `resumen` | Precio por ruta y total, sin desglose; `null` si la cotización todavía no tiene total. Una ruta rechazada trae `precio = null` y `precio_texto = "Sin costeo"` |
 | `copia_oculta` | "Recibirás una copia oculta en ..." solo si no es `null`. Con `entorno_pruebas = true` siempre es `null`: el correo redirigido sale sin CC ni CCO (OBS-1027-5 de #226, ADR-023) |
 | `entorno_pruebas`, `redirigido_a`, `aviso` | Con `entorno_pruebas = true`, mostrar `aviso` tal cual en un recuadro de advertencia |
+| `aviso_seguro` | HU-045.3 (#265): `AvisoSeguro` o `null`, el mismo del costeo. Si viene, mostrar su `mensaje` antes de Enviar: esas rutas tienen el seguro marcado sin valor de la mercancía (no se cobra). No bloquea el envío |
 
 | HTTP | UI |
 |---|---|
@@ -4358,7 +4407,7 @@ parecido del catálogo, `sugerido = true`, con `similitud` de 0 a 1), `null` (si
 | `SIN_RUTAS_COTIZABLES` | 409 | HU-028.1 (#183, D1): la Mesa rechazó todas las rutas; `POST .../costeo/pdf` no genera el PDF. En `re-solicitar` y `PUT .../solicitud` (`detalle.motivo = TODOS_RECHAZADOS`): ningún camión viajaría a NEXO | Esconder "Generar PDF"; mostrar `motivo_estado_costeo`. Al re-solicitar o editar: ofrecer reincluir los rechazados en la edición |
 | `SAP_MARGEN_NO_CONFIGURADO` | 503 | HU-042.2 (#243): `/web/admin/sap-margen/*` en un ambiente sin las credenciales de SAP | "Sincronización no configurada" (solo administración) |
 | `SAP_MARGEN_NO_DISPONIBLE` | 503 | HU-042.2 (#243): `/web/admin/sap-margen/*` con la base de Cotifly sin responder | Reintentar |
-| `SEGURO_SIN_VALOR_MERCANCIA` | 400 | HU-045.2 (#264): `PUT .../costeo/seguro` en una ruta sin `valor_mercancia` (`detalle.linea_orden`, `detalle.linea_solicitud_id`) | Desmarcar el check; pedir el valor de la mercancía editando la solicitud |
+| `SEGURO_SIN_VALOR_MERCANCIA` | 400 | HU-045.2 (#264): `PUT .../costeo/seguro` en una ruta sin `valor_mercancia` (`detalle.linea_orden`, `detalle.linea_solicitud_id`). HU-045.3 (#265): también es el `codigo` del aviso `aviso_seguro` (no es un error: no bloquea) | Desmarcar el check; pedir el valor de la mercancía editando la solicitud |
 | `SAP_MARGEN_SINCRONIZACION_EN_CURSO` | 409 | HU-042.2 (#243): `POST /web/admin/sap-margen/sincronizar` con otra corrida en curso | Reintentar en un momento; nada cambió |
 | `SERVICIO_OCUPADO` | 503 | Otra operación retiene el folio (con `Retry-After: 1`) | Reintentar en 1 s |
 | `SOLICITUD_COSTEO_INVALIDA` | 400 | Formulario o carga inválidos (`detalle.errores[]` en la captura) | Pintar errores por campo |
@@ -4528,6 +4577,12 @@ fila_excel, campo, codigo, mensaje}`.
 | 90 | **HU-044.10 (#293, parte 1): `origen_lectura` en la respuesta de la licitación.** `GET /web/licitaciones/{folio}`, el 201 de `POST /web/licitaciones` y la respuesta de reintentar la cubicación traen `origen_lectura` (`analizar_excel`, `leer_estructura` o `null`): cómo se leyó el Excel. `null` si la licitación no tiene archivo; una licitación con archivo anterior al script 22 llega como `analizar_excel`. Siempre presente. Sin endpoints nuevos | Agrega | Mostrar u ocultar el origen de la lectura; saber si la exportación será sobre el original (`analizar_excel`) o una hoja nueva (`leer_estructura`) |
 | 91 | **HU-044.10 (#293, parte 2): líneas agregadas a mano (`fila: null`) con archivo.** `POST /web/licitaciones` acepta líneas con `fila: null` aunque haya archivo: son líneas agregadas a mano. La unicidad de `fila` ignora los `null`; sus errores por fila dicen «La línea N» (con `fila` y `fila_excel` en `null`) y una `fila null` no desplaza a las demás al releer la hoja. Una licitación hecha solo de líneas a mano es válida (con archivo sigue exigiendo `hoja`). En la vista, la línea vuelve con `fila: null`. En `GET /web/licitaciones/{folio}/excel`: con `analizar_excel` y original, las de a mano van a una hoja nueva «Agregadas en Cotifly» (columnas de «Licitación» + `Referencia` = «Agregada en Cotifly»); con `leer_estructura` o sin original, al final de la hoja «Licitación» con la columna `Referencia`; «Resumen Cotifly» agrega la fila «Líneas agregadas en Cotifly». Sin líneas a mano, el Excel queda igual que hoy. Sin endpoints nuevos; sin script | Agrega | Permitir agregar filas a mano (sin `fila`) a una licitación con archivo; pintar sus errores como «La línea N»; avisar que irán en una hoja/sección «Agregadas en Cotifly» del Excel |
 | 92 | **HU-044.10 (#293, parte 3): `Idempotency-Key` al crear la licitación.** `POST /web/licitaciones` (multipart o JSON) acepta la cabecera opcional `Idempotency-Key` (8 a 64; CORS ya la permite), ámbito `crear-licitacion` por comercial. La huella es el cuerpo más el nombre y el SHA-256 del archivo (no los bytes). Un doble clic con la misma clave y el mismo cuerpo+archivo relee la licitación creada y responde **201 con el mismo folio** y su estado de ahora, sin crear otra. Solo el 201 consume la clave: un reporte por fila (400) o un 503 **no** la consumen (la repetición se vuelve a evaluar y devuelve el reporte completo). La misma clave con otro cuerpo u otro archivo es 409 `IDEMPOTENCY_KEY_REUTILIZADA`; fuera de largo, 400 `ErrorWeb`. Sin endpoints nuevos; sin script | Agrega | Generar una `Idempotency-Key` (UUID) por intención al pulsar «Crear» y reenviarla en los reintentos; tratar el 409 `IDEMPOTENCY_KEY_REUTILIZADA` pidiendo una clave nueva |
+| 93 | **HU-045.3 (#265, ADR-032 §9): el seguro de la mercancía en el PDF, el Excel, el correo y el detalle.** PDF (4.7.1): una fila **"Seguro de la mercancía"** por ruta, aparte del flete (NOGE0076), con la nota "Póliza específica para la mercancía de esta ruta; su valor va aparte del flete."; la fila de la ruta imprime su valor **sin** el seguro, y `tarifa + seguro = precio_final_linea` (el total general sigue siendo `precio_final`). En el pliego, la misma fila por ruta y en el resumen una fila "Seguro de la mercancía (ruta N)" que suma al total (también en el modo compacto de más de 20 rutas). Excel de la cotización (4.5.8): columna `Seguro de la mercancía ({moneda})` en `Rutas` entre "Precio conexos" y "Precio ruta" (vacía sin seguro) y su fila en `Resumen` (también en solo lectura); Excel de la licitación (4.6.5): columna `Seguro de la mercancía Cotifly ({moneda})` y, en Resumen Cotifly, el seguro total y el total con conexos y seguro (hoy las licitaciones no admiten seguro, así que no se verá hasta habilitarlo). Correo (4.8): el precio de la ruta y el total lo incluyen, sin desglose (regla de HU-033); bajo la ruta, "Incluye el seguro de la mercancía" (sin el valor); campo **nuevo** `resumen.rutas[].incluye_seguro` (boolean, siempre presente, en `required` de `RutaResumenCorreo`): `true` si el precio de la ruta incluye el seguro; `false` sin seguro, rechazada o sin precio. Detalle (4.5.5): campo **nuevo** `totales.precio_seguro`, y ahora `precio_transporte + precio_conexos + precio_seguro = precio_final`. Campo **nuevo** `aviso_seguro` (`AvisoSeguro`, o `null`) en `CosteoCotizacion`, en `SalidaPdf` y en `VistaPreviaCorreo`: rutas con el check marcado sin valor de la mercancía (no suma ni sale en el PDF; no bloquea, decisión del 2026-11-09). Si el precio congelado de una ruta no alcanza a cubrir el seguro, la ruta se muestra como sin seguro. En COP, el seguro y los montos que lo incluyen se muestran con centavos cuando los tienen. Nunca se exporta la tasa ni el valor de la mercancía. El texto fijo de "Estas tarifas incluyen" relativo al seguro queda como placeholder genérico configurable hasta que Sara pase el oficial | Agrega | Mostrar `totales.precio_seguro` en el desglose del detalle; en el correo, la marca de `incluye_seguro`; mostrar `aviso_seguro.mensaje` (costeo, detalle y respuesta del PDF) y resaltar sus rutas |
+| 94 | **HU-044.3 (#254, ADR-028 y ADR-029): aplicar el mapeo confirmado y traducir las filas a líneas de Cotifly.** Endpoint **nuevo** `POST /web/licitaciones/aplicar-mapeo` (todavía sin número de sección reservado; `aplicar-mapeo` se añade a 4.6 al integrar): `{nit_cliente?, columnas[{indice, campo, transformacion}], filas[][], primera_fila? = 1}` (todas las filas sin el encabezado, **máx. 5000**, el tope de NEXO). Reenvía el mapeo a NEXO, que convierte las filas (diccionario del cliente, transformaciones: toneladas, «ORIGEN - DESTINO», coma decimal), y devuelve `{total_filas, filas_vacias, filas_con_errores, total_errores, lineas[], errores[]}`. `lineas[]` usa los mismos nombres de `lineas[]` de `POST /web/licitaciones` **más `fila_excel` y `linea_nexo`**; `fila` es el índice base 0 en las `filas` enviadas (`fila = fila_excel - primera_fila`); los ids de municipio van **siempre en `null`**; `mercancias[]` es `{descripcion, nombre_mercancia, cantidad, largo_cm, ancho_cm, alto_cm, peso_kg, codigo_mercancia}` (una mercancía sin código recibe el más parecido del catálogo del cubicador, o ninguno). `linea_negocio` es la de **Cotifly** y `linea_nexo` la de NEXO; una fila sin equivalencia de línea de negocio va en `lineas[]` (con `linea_negocio = null`) **y** en `errores[]` con el código **nuevo `LINEA_NEGOCIO_SIN_EQUIVALENCIA`**. Una fila con errores de NEXO va **solo** en `errores[]` (`{fila, fila_excel, campo, codigo, mensaje}`, hasta 100; `campo` tal como lo manda NEXO). Errores HTTP: `CLIENTE_NIT_INVALIDO`, `MAPEO_REQUERIDO`, `DEMASIADAS_COLUMNAS`, `DEMASIADAS_FILAS` y los 400 de NEXO con su código (400); `NEXO_SIN_PERMISO` (403); `IA_TOPE_DIARIO` (429); `NEXO_NO_DISPONIBLE` (503). No reemplaza las validaciones de `POST /web/licitaciones`. Sin script de base de datos | Agrega | Tras confirmar el mapeo (y normalizar valores), llamar a `aplicar-mapeo` con todas las filas; volcar `lineas[]` en la revisión tal cual (son líneas de `POST /web/licitaciones` más `fila_excel`/`linea_nexo`), pintar cada error de `errores[]` por `fila_excel`, dejar que el comercial elija la línea de negocio de las filas con `LINEA_NEGOCIO_SIN_EQUIVALENCIA` y confirmar el código sugerido de las mercancías sin código; con 429 o 503, reintentar o mapear a mano |
+| 95 | **#261 (HU-046, política NOGE0076): texto de seguros en la propuesta.** El PDF de la cotización y de la licitación trae, **después del resumen de precios**, y el cuerpo del correo (`cuerpo_html` de la vista previa y del envío), **antes de la firma**, un bloque "Estructura de seguros" con el texto de la póliza y el modelo de subrogación. El texto **se lee de configuración** (`Pdf:TextoSeguros`, lo edita Jurídica sin desplegar código) para que el área jurídica cargue el oficial; por ahora el código trae un marcador provisional y en los ambientes va **vacío** (sin bloque) hasta que se configure. Solo sale en los PDF y correos **nuevos**: no reescribe los ya generados ni enviados. Sin campos, códigos ni endpoints nuevos; sin script de base de datos | Agrega | Ninguna acción: el `cuerpo_html` se renderiza tal cual y el PDF se descarga igual. Si se configura el texto, aparecerá el bloque automáticamente |
+| 96 | **HU-044.9 (#292): datos metidos en otra columna (vehículo dentro del texto y contenedor con rango de peso).** Antes de `sugerir-mapeo` (4.6.6) y `aplicar-mapeo` (#254), Cotifly revisa las columnas de texto de la hoja y, cuando reconoce un vehículo dentro de un texto o un contenedor con un peso, agrega columnas derivadas **con nombre fijo al final**, solo si al menos una fila reconoce un valor (si no, la hoja mantiene su firma de plantilla). Los nombres fijos son **`Vehículo detectado`** (el vehículo reconocido con el diccionario de alias de NEXO —el mismo de `GET /web/alias/resolver`—, p. ej. «Venezuela Mula» → `Mula`), **`Contenedor detectado`** (del patrón `C20`/`C40`/`20'`/`40'`, normalizado a `20'` o `40'`) y **`Peso detectado (kg)`** (un peso o un rango en toneladas o kg, en kg). **Regla del rango: se toma el valor más alto** (decisión 2026-11-09: «C20 de 0 a 8 Ton» → `20'` y `8000`; «Conten. x 40' Hasta 25 ton» → `40'` y `25000`; «de 5.000 a 8.000 kg» → `8000`); un solo valor se toma tal cual; `t`/`ton`/`tons`/`toneladas` se convierten a kg y `kg` queda igual. La celda original **no se modifica**; un texto no reconocido deja la celda derivada vacía (el comercial la completa). `sugerir-mapeo` puede proponer esas columnas para `tipoVehiculo`, `claseContenedor` y `pesoKg`, y `aplicar-mapeo` las convierte como cualquier otra. Las columnas derivadas se ubican después de las columnas de la hoja con el mismo criterio de ancho en los dos endpoints, así que sus índices coinciden **salvo** que una categoría se reconozca solo en filas fuera de la muestra (≤200) que recibe `sugerir-mapeo` (limitación conocida; con pliegos <200 filas y muestra representativa coinciden). Fuera de alcance: rutas con varias paradas. **Sin endpoints, campos, códigos ni script de base de datos nuevos** (solo aparecen más columnas en la propuesta de `sugerir-mapeo`) | Agrega | Mostrar las columnas derivadas (`Vehículo detectado`, `Contenedor detectado`, `Peso detectado (kg)`) que lleguen en `columnas[]` de `sugerir-mapeo` como columnas más de la hoja, con su mapeo propuesto, y enviarlas igual a `aplicar-mapeo`; el comercial revisa y corrige el valor detectado como cualquier otro |
+| 97 | **HU-044.8 (#291): catálogos de vehículo y carrocería alineados con NEXO. ROMPE: cambian el selector y los valores guardados.** (a) **Vehículo en código NEXO.** `GET /web/catalogos-flete` devuelve `tipos_vehiculo[].valor` con el **código NEXO** (`C2`, `C3`, `2L3`…) en vez del código de SAP («2», «3»); la `etiqueta` (descripción) no cambia y el resto de códigos tampoco. Es el valor que el front debe guardar y enviar en `tipo_vehiculo` (`POST /web/solicitudes-costeo`, licitación, edición): mandar «2»/«3» dejaría la configuración en cuarentena en NEXO. El backend, además, traduce en la captura cualquier «2»/«3» que llegue (fronts anteriores o cotizaciones viejas) a `C2`/`C3` antes de enviar a NEXO; un alias de NEXO (`GET /web/alias/resolver`) que resuelva a «2»/«3» también viaja como `C2`/`C3`. La equivalencia sale de una sola fuente (`tbl_mapeo_vehiculo_tarifario`, `C2` ↔ «2», `C3` ↔ «3»). (b) **Carrocería del catálogo de NEXO.** `GET /web/tipos-carroceria` ya **no** sale del cubicador: devuelve el catálogo de carrocerías de NEXO (`ESTACAS`, `ESTIBAS`, `FURGON`, `FURGON REFRIGERADO`, `PLATAFORMA`, `PORTACONTENEDORES`, `TANQUE`, `TRAYLER`, `VOLCO`), la misma lista que `tipos_carroceria` de `GET /web/catalogos-flete` y que valida la captura, con `codigo` = `nombre`; **siempre 200** (ya no 503 `CUBICADOR_NO_DISPONIBLE`). Los códigos de carrocería que devuelve `POST /web/licitaciones/normalizar-valores` existen en esta lista. Sin campos, códigos ni endpoints nuevos | Rompe | Guardar y enviar el `valor` de `tipos_vehiculo` tal cual (ya es `C2`/`C3`): no volver a traducir en el front ni asumir «2»/«3»; re-mapear los valores guardados de cotizaciones viejas no hace falta (el backend los traduce). Llenar el selector de carrocería con `GET /web/tipos-carroceria` (ahora de NEXO, siempre 200): quitar cualquier dependencia del cubicador y tratar `codigo` = `nombre` (mostrar el texto amigable desde el front) |
+| 98 | **Corrección conexos: el nombre del servicio conexo nunca es el id interno.** `ServicioConexoCosteo.nombre` (en `servicios_conexos[]` de la vista del costeo, el detalle, el margen y los conexos) y los nombres de conexos que da el **asistente de IA** (`consultar_cotizacion`) y `conexos_conservados` traen **siempre el nombre** del servicio: el guardado o, si está en NULL (fila migrada del JSON), el resuelto del catálogo de NEXO por id; si el catálogo no responde o no lo tiene, la `categoria` como respaldo legible. La misma cadena se aplica ahora en las **exportaciones** (ampliación): el **PDF** de la cotización y del pliego ("Estas tarifas incluyen"), el **Excel** de la cotización (`GET /web/cotizaciones/{folio}/excel`) y el **Excel de licitación** (`GET /web/licitaciones/{folio}/excel` y el de "Ver detalle") imprimen el nombre del catálogo para un conexo heredado sin nombre y caen a la `categoria` con el catálogo frío; antes caían directo a la `categoria`. **Nunca** el `id` interno del conexo (que sigue en `servicios_conexos[].id`, solo para operar: incluir/excluir). **No cambia la forma de ninguna respuesta** ni del PDF/Excel (ningún campo ni columna nuevos; `nombre` sigue declarado `nullable` solo por compatibilidad, en la práctica siempre viene poblado). Sin endpoints, códigos ni script de base de datos | Corrige | Mostrar `servicios_conexos[].nombre` tal cual (ya nunca es el id); si algún front usaba `id` como etiqueta de respaldo, usar `nombre`. El PDF y los Excel ya muestran el nombre del catálogo, no la categoría, cuando el catálogo está caliente |
 
 ---
 
@@ -4619,6 +4674,19 @@ fila_excel, campo, codigo, mensaje}`.
 ---
 
 ## 9. Notas de versión
+
+**2026-11-11 (rama `292-datos-en-otra-columna`, #292, HU-044.9).** Columnas derivadas de datos metidos en otra columna (fila 84 de §7).
+Antes de `sugerir-mapeo` y `aplicar-mapeo`, Cotifly agrega columnas con nombre fijo al final (solo si al menos una fila reconoce algo; si
+no, la hoja mantiene su firma):
+
+- `Vehículo detectado`: el vehículo dentro de un texto, con el diccionario de alias de NEXO (el mismo de `GET /web/alias/resolver`): «Venezuela
+  Mula» → `Mula`.
+- `Contenedor detectado`: del patrón `C20`/`C40`/`20'`/`40'`, normalizado a `20'` o `40'`.
+- `Peso detectado (kg)`: un peso o un rango en toneladas o kg, en kg. **Del rango se toma el valor más alto** (decisión 2026-11-09): «C20 de 0
+  a 8 Ton» → `20'` y `8000`; «Conten. x 40' Hasta 25 ton» → `40'` y `25000`; «de 5.000 a 8.000 kg» → `8000`. `t`/`ton`/`tons`/`toneladas` →
+  kg; `kg` igual.
+- La celda original no se modifica; un texto no reconocido deja la celda derivada vacía. `aplicar-mapeo` las convierte como cualquier otra
+  columna. Sin endpoints, campos, códigos ni script de base de datos nuevos. Fuera de alcance: rutas con varias paradas.
 
 **2026-11-06 (rama `253-sugerir-mapeo`, #253, HU-044.2).** Sugerencia de mapeo y lectura con IA del Excel de licitación (fila 76 de
 §7):

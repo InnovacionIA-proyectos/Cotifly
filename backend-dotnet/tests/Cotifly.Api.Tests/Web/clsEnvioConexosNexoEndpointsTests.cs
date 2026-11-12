@@ -690,6 +690,38 @@ public sealed class clsEnvioConexosNexoEndpointsTests : IDisposable
         Conexos(post.GetProperty("servicios_conexos")).Should().Equal(delGet);
     }
 
+    /// <summary>
+    /// Corrección conexos (nombre nunca id): un conexo con el nombre en NULL en la base (fila migrada del JSON) sale en el GET del costeo con
+    /// el nombre resuelto del catálogo de Nexo; con la caché fría cae a la categoría (LEGIBLE) y nunca muestra el id interno del conexo.
+    /// </summary>
+    [Fact]
+    public async Task UnConexoSinNombreEnLaBaseSaleConElNombreDelCatalogoNuncaConElId()
+    {
+        var (sesion, folio) = await CapturarAsync();
+        _nexo.CostearLinea(_nexo.SolicitudesCreadas[^1], 0, 1_000_000m);
+        await _api.ProcesarPollingAsync(folio);
+
+        // Simula una fila migrada: el nombre guardado queda en NULL (el id interno sigue en idServicioConexo).
+        await clsBaseDatosPruebas.EjecutarAsync(_entorno.BaseDatos.CadenaCotifly,
+            "UPDATE s SET nombreServicioConexo = NULL FROM dbo_cotifly.CotizacionServiciosConexos s JOIN dbo_cotifly.CotizacionLineasSolicitud l "
+            + $"ON l.id = s.lineaSolicitudId JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}'");
+
+        // Caché fría: no espera a Nexo; responde con un respaldo LEGIBLE (la categoría), nunca el id, y calienta el catálogo en segundo plano.
+        using var frio = await _api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", sesion.Access);
+        var conexoFrio = (await VerificarContratoAsync(frio, "/web/cotizaciones/{folio}/costeo", _get, HttpStatusCode.OK))
+            .GetProperty("rutas")[0].GetProperty("servicios_conexos")[0];
+        conexoFrio.GetProperty("nombre").GetString().Should().NotBe(Cargue, "nunca el id interno del conexo");
+        conexoFrio.GetProperty("nombre").GetString().Should().Be(clsCosteoCotizacionService.CategoriaConexo, "con la caché fría, la categoría de respaldo");
+        await _api.Factory.Services.GetRequiredService<clsAlmacenCategoriasConexos>().UltimaLectura.WaitAsync(TimeSpan.FromSeconds(30), Ct);
+
+        // Con el catálogo ya en memoria: el nombre resuelto del catálogo de Nexo.
+        using var get = await _api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", sesion.Access);
+        var conexo = (await VerificarContratoAsync(get, "/web/cotizaciones/{folio}/costeo", _get, HttpStatusCode.OK))
+            .GetProperty("rutas")[0].GetProperty("servicios_conexos")[0];
+        conexo.GetProperty("id").GetString().Should().Be(Cargue, "el id interno sigue disponible para operar");
+        conexo.GetProperty("nombre").GetString().Should().Be("Cargue en puerto", "el nombre sale del catálogo de Nexo");
+    }
+
     private async Task<HttpResponseMessage> EnviarConVersionAsync(clsApiWebPruebas api, HttpMethod metodo, string ruta, string token, string cuerpo, string? ifMatch)
     {
         using var peticion = new HttpRequestMessage(metodo, ruta);

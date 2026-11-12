@@ -31,16 +31,17 @@ public sealed class clsExportadorExcelCotizacionTests
             "Ruta", "Origen", "Destino", "Estado", "Motivo de rechazo", "Peso (kg)", "Camiones",
             "Costo fletes (COP)", "Costo retorno (COP)", "Costo levante (COP)", "Costo conexos (COP)", "Costo bruto (COP)",
             "Margen aplicado", "Margen sugerido", "Origen del margen", "Método de cálculo",
-            "Precio transporte (USD)", "Precio conexos (USD)", "Precio ruta (USD)");
+            "Precio transporte (USD)", "Precio conexos (USD)", "Seguro de la mercancía (USD)", "Precio ruta (USD)");
         Encabezados(libro.Worksheet("Camiones")).Should().Contain(["Costo camión (COP)", "Margen", "Precio transporte (USD)"]);
         Encabezados(libro.Worksheet("Conexos")).Should().Equal("Ruta", "Origen → destino", "Servicio", "Categoría", "Cantidad", "Costo (COP)", "Precio (USD)");
         Numeros(libro).Should().Contain([CostoFlete, CostoConexo, Margen]);
         var rutas = libro.Worksheet("Rutas");
         rutas.Cell(2, 13).Style.NumberFormat.Format.Should().Be("0.00%");
-        rutas.Cell(2, 19).Style.NumberFormat.Format.Should().Be("#,##0.00", "dólares con dos decimales");
+        rutas.Cell(2, 20).Style.NumberFormat.Format.Should().Be("#,##0.00", "dólares con dos decimales");
         rutas.Cell(2, 8).Style.NumberFormat.Format.Should().Be("#,##0", "el costo siempre en pesos");
         rutas.Cell(3, 4).GetString().Should().Be("Rechazada en NEXO");
-        rutas.Cell(3, 19).GetString().Should().Be(clsExportadorExcelCotizacionClosedXml.SinPrecio);
+        rutas.Cell(3, 20).GetString().Should().Be(clsExportadorExcelCotizacionClosedXml.SinPrecio);
+        rutas.Cell(2, 19).IsEmpty().Should().BeTrue("HU-045.3: sin seguro la celda queda vacía");
         rutas.Cell(4, 1).GetString().Should().Be("Total");
         rutas.Cell(4, 12).GetValue<decimal>().Should().Be(1_200_010m, "el costo bruto total va en la columna del costo bruto");
         Dato(libro, "Versión del archivo").Should().Be(clsExportadorExcelCotizacionClosedXml.VersionInterna);
@@ -61,8 +62,8 @@ public sealed class clsExportadorExcelCotizacionTests
         Numeros(libro).Should().NotContain([CostoFlete, CostoConexo, Margen, 1_200_010m]);
         Encabezados(libro.Worksheet("Rutas")).Should().Equal(
             "Ruta", "Origen", "Destino", "Estado", "Motivo de rechazo", "Peso (kg)", "Camiones",
-            "Precio transporte (USD)", "Precio conexos (USD)", "Precio ruta (USD)");
-        libro.Worksheet("Rutas").Cell(2, 10).GetValue<decimal>().Should().Be(310.25m, "los precios se conservan");
+            "Precio transporte (USD)", "Precio conexos (USD)", "Seguro de la mercancía (USD)", "Precio ruta (USD)");
+        libro.Worksheet("Rutas").Cell(2, 11).GetValue<decimal>().Should().Be(310.25m, "los precios se conservan");
         Dato(libro, "Versión del archivo").Should().Be(clsExportadorExcelCotizacionClosedXml.VersionSoloLectura);
 
         // Ninguna parte del paquete (ni cadenas compartidas ni estilos) trae los costos ni el margen.

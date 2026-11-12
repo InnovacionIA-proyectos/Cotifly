@@ -59,7 +59,9 @@ public sealed record clsExcelCotizacion(
 /// <param name="CamionesQueCuentan">Camiones que cuentan en el precio (sin descartados ni rechazados).</param>
 /// <param name="PrecioTransporte">Tarifa del transporte de la ruta (sin conexos), en la moneda; la del PDF.</param>
 /// <param name="PrecioConexos">Suma de los precios de sus conexos.</param>
-/// <param name="PrecioRuta">Precio de la ruta (<c>precioFinalLinea</c>: transporte + conexos; congelado si la cotización está finalizada).</param>
+/// <param name="PrecioRuta">
+/// Precio de la ruta (<c>precioFinalLinea</c>: transporte + conexos + seguro de la mercancía; congelado si la cotización está finalizada).
+/// </param>
 /// <param name="Camiones">Sus camiones en orden.</param>
 /// <param name="Conexos">Sus servicios conexos con precio.</param>
 /// <param name="Interno">Costos de Nexo (COP) y margen de la ruta; <c>null</c> en la versión sin costos.</param>
@@ -79,6 +81,15 @@ public sealed record clsExcelRuta(
     IReadOnlyList<clsExcelConexo> Conexos,
     clsExcelInternoRuta? Interno)
 {
+    /// <summary>
+    /// HU-045.3 (#265): el seguro de la mercancía de la ruta en la moneda (venta sin margen, no costo de Nexo: lo ven todos); <c>null</c> sin
+    /// seguro, sin valor calculado o con la ruta rechazada. Nunca la tasa.
+    /// </summary>
+    public decimal? ValorSeguro { get; init; }
+
+    /// <summary>HU-045.3 (#265): la ruta tiene el seguro marcado sin valor de la mercancía (no suma en el precio).</summary>
+    public bool SeguroSinValor { get; init; }
+
     /// <summary>La ruta sin datos internos (ni los de sus camiones y conexos).</summary>
     public clsExcelRuta SinCostos() => this with
     {
@@ -165,7 +176,14 @@ public sealed record clsExcelTotales(
     decimal? PrecioTransporte,
     decimal? PrecioConexos,
     decimal? PrecioFinal,
-    clsExcelInternoTotales? Interno);
+    clsExcelInternoTotales? Interno)
+{
+    /// <summary>
+    /// HU-045.3 (#265): suma del seguro de la mercancía de las rutas (0 si ninguna lo incluye); <c>null</c> si alguna ruta no tiene precio.
+    /// Transporte + conexos + seguro = final.
+    /// </summary>
+    public decimal? PrecioSeguro { get; init; }
+}
 
 /// <summary>Costo bruto total de las rutas que cuentan (COP). Solo el dueño.</summary>
 /// <param name="CostoBruto">Suma de los costos brutos; <c>null</c> si alguna ruta no lo tiene.</param>

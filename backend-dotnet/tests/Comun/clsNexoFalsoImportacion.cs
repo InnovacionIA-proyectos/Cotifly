@@ -41,6 +41,18 @@ public sealed partial class clsNexoFalso
     /// <summary>Mensaje del rechazo forzado (el que Cotifly debe reenviar tal cual).</summary>
     public string MensajeImportacionFalla { get; set; } = "Rechazo de la importación (prueba).";
 
+    /// <summary>
+    /// HU-044.3 (#254): respuesta cruda fija de <c>aplicar-mapeo</c> (JSON como lo manda NEXO). Para las pruebas que necesitan posiciones,
+    /// línea de negocio o <c>claseViaje</c> que el falso no arma a partir de columnas planas; si tiene valor, gana sobre la conversión por columnas.
+    /// </summary>
+    public string? AplicarMapeoFijo { get; set; }
+
+    /// <summary>Campos de texto de una línea que el falso copia tal cual de su celda (además de origen y destino, que tienen su propia regla).</summary>
+    private static readonly HashSet<string> _camposTextoLinea = new(StringComparer.Ordinal)
+    {
+        "tipoVehiculo", "carroceria", "tipologia", "lineaNegocio", "claseViaje", "claseContenedor", "ciudadDevolucionContenedor", "ciudadLevanteContenedor",
+    };
+
     /// <summary>NIT (normalizados) que no son de ningún cliente ni prospecto: guardar con ellos da <c>400 CLIENTE_NIT_INVALIDO</c>.</summary>
     public HashSet<string> NitsDesconocidos { get; } = new(StringComparer.Ordinal);
 
@@ -250,8 +262,13 @@ public sealed partial class clsNexoFalso
         _ => "ignorar",
     };
 
-    private static HttpResponseMessage AplicarMapeo(JsonNode? json)
+    private HttpResponseMessage AplicarMapeo(JsonNode? json)
     {
+        if (AplicarMapeoFijo is { } fijo)
+        {
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(fijo, System.Text.Encoding.UTF8, "application/json") };
+        }
+
         var columnas = json?["columnas"]?.AsArray()
             .Select(c => (Indice: c!["indice"]!.GetValue<int>(), Campo: c["campo"]!.GetValue<string>(), Transformacion: c["transformacion"]?.GetValue<string>()))
             .ToList() ?? [];
@@ -265,37 +282,103 @@ public sealed partial class clsNexoFalso
             return Error(HttpStatusCode.BadRequest, "CAMPO_DUPLICADO", "Dos columnas apuntan al mismo campo.");
         }
 
+        var divide = columnas.FirstOrDefault(c => c.Campo == "origen" && c.Transformacion == "dividir_origen_destino");
         var origen = columnas.FirstOrDefault(c => c.Campo == "origen");
         var destino = columnas.FirstOrDefault(c => c.Campo == "destino");
-        if (origen.Campo is null || destino.Campo is null)
+        var dividir = divide.Campo is not null;
+        if (!dividir && (origen.Campo is null || destino.Campo is null))
         {
             return Error(HttpStatusCode.BadRequest, "CAMPO_REQUERIDO", "El mapeo debe tener una columna de origen y una de destino.");
         }
 
         var peso = columnas.FirstOrDefault(c => c.Campo == "peso");
+        var valor = columnas.FirstOrDefault(c => c.Campo == "valorMercancia");
+        var texto = columnas.Where(c => _camposTextoLinea.Contains(c.Campo)).GroupBy(c => c.Campo).ToDictionary(g => g.Key, g => g.First().Indice, StringComparer.Ordinal);
         var filas = json?["filas"]?.AsArray().Select(f => f?.AsArray().Select(c => c?.GetValue<string>() ?? string.Empty).ToList() ?? []).ToList() ?? [];
         var primeraFila = json?["primeraFila"]?.GetValue<int>() ?? 2;
-        var lineas = new List<object>();
+        var lineas = new List<JsonObject>();
         var errores = new List<object>();
         for (var i = 0; i < filas.Count; i++)
         {
-            string Celda(int indice) => indice < filas[i].Count ? filas[i][indice] : string.Empty;
-            if (string.IsNullOrWhiteSpace(Celda(origen.Indice)) || string.IsNullOrWhiteSpace(Celda(destino.Indice)))
+            string Celda(int indice) => indice >= 0 && indice < filas[i].Count ? filas[i][indice] : string.Empty;
+            string o, d;
+            if (dividir)
             {
-                errores.Add(new { fila = primeraFila + i, campo = "origen", codigo = "LINEA_INCOMPLETA", mensaje = "Falta el origen o el destino." });
+                var partes = Celda(divide.Indice).Split(" - ", 2);
+                o = partes[0].Trim();
+                d = partes.Length > 1 ? partes[1].Trim() : string.Empty;
+            }
+            else
+            {
+                o = Celda(origen.Indice).Trim();
+                d = Celda(destino.Indice).Trim();
+            }
+
+            if (string.IsNullOrWhiteSpace(o))
+            {
+                errores.Add(new { fila = primeraFila + i, campo = "origen", codigo = "LINEA_INCOMPLETA", mensaje = "Falta el origen." });
                 continue;
             }
 
-            decimal? kilos = peso.Campo is not null && decimal.TryParse(Celda(peso.Indice), System.Globalization.CultureInfo.InvariantCulture, out var valor)
-                ? peso.Transformacion == "peso_toneladas_a_kg" ? valor * 1000 : valor
-                : null;
-            lineas.Add(new { fila = primeraFila + i, origen = Celda(origen.Indice), destino = Celda(destino.Indice), peso = kilos });
+            if (string.IsNullOrWhiteSpace(d))
+            {
+                errores.Add(new { fila = primeraFila + i, campo = "destino", codigo = "LINEA_INCOMPLETA", mensaje = "Falta el destino." });
+                continue;
+            }
+
+            if (!Numero(peso, Celda(peso.Indice), out var kilos))
+            {
+                errores.Add(new { fila = primeraFila + i, campo = "peso", codigo = "VALOR_INVALIDO", mensaje = "El peso no es un número." });
+                continue;
+            }
+
+            if (!Numero(valor, Celda(valor.Indice), out var monto))
+            {
+                errores.Add(new { fila = primeraFila + i, campo = "valorMercancia", codigo = "VALOR_INVALIDO", mensaje = "El valor de la mercancía no es un número." });
+                continue;
+            }
+
+            var linea = new JsonObject
+            {
+                ["fila"] = primeraFila + i, ["origen"] = o, ["destino"] = d,
+                ["peso"] = kilos.HasValue && peso.Transformacion == "peso_toneladas_a_kg" ? kilos * 1000 : kilos,
+                ["valorMercancia"] = monto,
+            };
+            foreach (var (campo, indice) in texto)
+            {
+                var celda = Celda(indice).Trim();
+                linea[campo] = celda.Length == 0 ? null : celda;
+            }
+
+            lineas.Add(linea);
         }
 
         return Json(HttpStatusCode.OK, new
         {
             totalFilas = filas.Count, filasVacias = 0, filasConErrores = errores.Count, lineas, errores, totalErrores = errores.Count,
         });
+    }
+
+    /// <summary>
+    /// El número de una celda de una columna numérica, en el formato de Colombia (punto de miles y coma decimal, «1.500.000,50»). Si la
+    /// columna no está mapeada o la celda está vacía, <paramref name="valor"/> es <c>null</c> y es válido; si no se puede leer, <c>false</c>.
+    /// </summary>
+    private static bool Numero((int Indice, string Campo, string? Transformacion) columna, string celda, out decimal? valor)
+    {
+        valor = null;
+        if (columna.Campo is null || string.IsNullOrWhiteSpace(celda))
+        {
+            return true;
+        }
+
+        var limpio = celda.Trim().Replace(".", string.Empty, StringComparison.Ordinal).Replace(',', '.');
+        if (!decimal.TryParse(limpio, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var leido))
+        {
+            return false;
+        }
+
+        valor = leido;
+        return true;
     }
 
     private HttpResponseMessage NormalizarValores(JsonNode? json)
