@@ -303,6 +303,12 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         (typeof(Cotifly.Api.Licitaciones.DTOs.clsNormalizacionValoresWebRequest), "NormalizarValoresWeb"),
         (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsNormalizacionValores), "NormalizacionValores"),
         (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsValorNormalizacionWeb), "ValorNormalizado"),
+        // HU-044.3 (#254): aplicar el mapeo confirmado y traducir las filas a líneas de Cotifly.
+        (typeof(Cotifly.Api.Licitaciones.DTOs.clsAplicarMapeoWebRequest), "AplicarMapeoWeb"),
+        (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsMapeoAplicado), "MapeoAplicado"),
+        (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsLineaMapeada), "LineaLicitacionImportada"),
+        (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsMercanciaMapeada), "MercanciaImportada"),
+        (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsErrorFilaImportada), "ErrorFilaImportada"),
         (typeof(Cotifly.Aplicacion.Clientes.DTOs.clsResultadoBusquedaClientes), "ResultadoBusquedaClientes"),
         (typeof(Cotifly.Aplicacion.Clientes.DTOs.clsClienteEncontrado), "ClienteEncontrado"),
         (typeof(Cotifly.Api.Cubicacion.DTOs.clsCubicacionWebRequest), "CubicacionRequest"),

@@ -151,6 +151,9 @@ public static class clsDependenciasAplicacion
         // HU-023.5 (#160): cubicación de la licitación en segundo plano (el procesador lo registra Infraestructura).
         servicios.AddScoped<Licitaciones.Services.IClsCubicacionLicitacionService, Licitaciones.Services.clsCubicacionLicitacionService>();
         servicios.AddScoped<Licitaciones.Services.IClsValidadorFilasLicitacion, Licitaciones.Services.clsValidadorFilasLicitacion>();
+        // HU-044.9 (#292): columnas derivadas (vehículo dentro del texto, contenedor con peso o rango) que se agregan antes de sugerir-mapeo y
+        // aplicar-mapeo, con el diccionario de alias de NEXO (el mismo de /web/alias/resolver).
+        servicios.AddScoped<Licitaciones.Services.IClsColumnasDerivadasService, Licitaciones.Services.clsColumnasDerivadasService>();
         // HU-044.2 (#253): sugerir-mapeo y leer-estructura, puente hacia la importación inteligente de NEXO (el adaptador lo registra Infraestructura).
         servicios.AddScoped<Licitaciones.Services.IClsSugerenciaMapeoService, Licitaciones.Services.clsSugerenciaMapeoService>();
 
@@ -159,6 +162,10 @@ public static class clsDependenciasAplicacion
 
         // HU-044.4 (#255, ADR-029): POST /web/licitaciones/normalizar-valores con NEXO (el puerto de la importación lo registra Infraestructura).
         servicios.AddScoped<Licitaciones.Services.IClsNormalizacionValoresService, Licitaciones.Services.clsNormalizacionValoresService>();
+
+        // HU-044.3 (#254, ADR-028 y ADR-029): POST /web/licitaciones/aplicar-mapeo (el puerto de la importación y el cubicador los registra
+        // Infraestructura; el cubicador es opcional: sin él las mercancías sin código quedan sin sugerencia).
+        servicios.AddScoped<Licitaciones.Services.IClsAplicacionMapeoService, Licitaciones.Services.clsAplicacionMapeoService>();
 
         // Tablero de métricas agregadas (HU-010.1, ADR-016) y regional del usuario (DimEjecutivo o UsuariosWeb.regional).
         servicios.AddScoped<IClsRegionalUsuario, clsRegionalUsuarioService>();

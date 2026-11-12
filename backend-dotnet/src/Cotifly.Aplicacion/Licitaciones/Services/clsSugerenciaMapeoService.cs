@@ -41,6 +41,7 @@ public sealed record clsEntradaLeerEstructura(clsArchivoSubido Archivo, string? 
 /// <inheritdoc cref="IClsSugerenciaMapeoService"/>
 public sealed class clsSugerenciaMapeoService(
     IClsImportacionExcelNexo importacion,
+    IClsColumnasDerivadasService columnasDerivadas,
     ILogger<clsSugerenciaMapeoService>? logger = null,
     IClsCubicador? cubicador = null) : IClsSugerenciaMapeoService
 {
@@ -91,14 +92,20 @@ public sealed class clsSugerenciaMapeoService(
             return new clsErrorDominio(clsCodigosError.ClienteNitInvalido, MensajeNitInvalido);
         }
 
+        // HU-044.9 (#292): antes de llamar a NEXO, Cotifly agrega las columnas derivadas (vehículo en el texto, contenedor con peso) con
+        // nombre fijo al final. Se enriquece la muestra que de verdad viaja a NEXO (hasta 200 filas), para que la propuesta incluya esas
+        // columnas y sus índices coincidan con los que agregará aplicar-mapeo. Un archivo sin esos textos vuelve con su misma firma.
+        IReadOnlyList<IReadOnlyList<string>> muestra = [.. (peticion.Filas ?? []).Take(MaximoFilasMuestra)];
+        var enriquecida = await columnasDerivadas.EnriquecerAsync(usuarioId, encabezados, muestra, cancellationToken);
+        encabezados = enriquecida.Encabezados;
+
         // NEXO rechaza más de 100 columnas: no se le llama y la hoja sigue en manual (no es un error para el comercial).
         if (encabezados.Count > MaximoEncabezados)
         {
             return SinPropuesta(encabezados, clsCodigosError.DemasiadasColumnas);
         }
 
-        IReadOnlyList<IReadOnlyList<string>> filas = [.. (peticion.Filas ?? []).Take(MaximoFilasMuestra)];
-        var sugerencia = await importacion.SugerirMapeoAsync(usuarioId, new clsPeticionSugerirMapeo(peticion.ClienteNit, encabezados, filas), cancellationToken);
+        var sugerencia = await importacion.SugerirMapeoAsync(usuarioId, new clsPeticionSugerirMapeo(peticion.ClienteNit, encabezados, enriquecida.Filas), cancellationToken);
 
         // Importación apagada, NEXO caído o sin respuesta a tiempo: la hoja sin propuesta (el adaptador ya dejó el motivo en el log).
         return sugerencia.EsFallo && sugerencia.Error.Codigo == clsCodigosError.NexoNoDisponible
