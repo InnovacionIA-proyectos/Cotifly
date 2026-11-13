@@ -9,8 +9,9 @@ namespace Cotifly.Aplicacion.Tests.Licitaciones;
 /// <summary>
 /// Datos metidos en otra columna. Antes de <c>sugerir-mapeo</c> y <c>aplicar-mapeo</c>, Cotifly agrega columnas derivadas con
 /// nombre fijo: el vehículo reconocido dentro de un texto («Venezuela Mula» → Mula, con el diccionario de alias de NEXO) y el contenedor con su
-/// peso o rango («C20 de 0 a 8 Ton» → 20' y 8.000 kg, del rango el valor más alto). Solo se agregan si al menos una fila reconoce algo, al
-/// final, sin tocar la celda original; un archivo sin esos textos mantiene su firma de plantilla.
+/// peso o rango («C20 de 0 a 8 Ton» → 20' y 8.000 kg, del rango el valor más alto). Si al menos una fila reconoce algo se agregan siempre las
+/// tres, en posiciones fijas desde el número de encabezados, sin tocar la celda original; un archivo sin esos textos mantiene su firma de
+/// plantilla.
 /// </summary>
 public sealed class clsColumnasDerivadasServiceTests
 {
@@ -41,10 +42,10 @@ public sealed class clsColumnasDerivadasServiceTests
     {
         var hoja = await Servicio().EnriquecerAsync(_usuario, ["Zona"], Filas("Venezuela Mula", "Bogotá"), Ct);
 
-        hoja.Encabezados.Should().Equal("Zona", clsColumnasDerivadasService.EncabezadoVehiculo);
-        hoja.Filas[0].Should().Equal("Venezuela Mula", "Mula");
+        hoja.Encabezados.Should().Equal("Zona", clsColumnasDerivadasService.EncabezadoVehiculo, clsColumnasDerivadasService.EncabezadoContenedor, clsColumnasDerivadasService.EncabezadoPeso);
+        hoja.Filas[0].Should().Equal("Venezuela Mula", "Mula", string.Empty, string.Empty);
         // Sin vehículo reconocido la celda derivada queda vacía.
-        hoja.Filas[1].Should().Equal("Bogotá", string.Empty);
+        hoja.Filas[1].Should().Equal("Bogotá", string.Empty, string.Empty, string.Empty);
     }
 
     [Theory]
@@ -59,30 +60,28 @@ public sealed class clsColumnasDerivadasServiceTests
     {
         var hoja = await Servicio().EnriquecerAsync(_usuario, ["Servicio"], Filas(texto), Ct);
 
-        hoja.Encabezados.Should().Equal(
-            "Servicio", clsColumnasDerivadasService.EncabezadoContenedor, clsColumnasDerivadasService.EncabezadoPeso);
-        hoja.Filas[0].Should().Equal(texto, contenedor, peso);
+        hoja.Encabezados.Should().Equal("Servicio", clsColumnasDerivadasService.EncabezadoVehiculo, clsColumnasDerivadasService.EncabezadoContenedor, clsColumnasDerivadasService.EncabezadoPeso);
+        hoja.Filas[0].Should().Equal(texto, string.Empty, contenedor, peso);
     }
 
     [Fact]
-    public async Task DelRangoSeTomaElValorMasAltoYUnSoloPesoSinContenedorSoloAgregaElPeso()
+    public async Task DelRangoSeTomaElValorMasAltoYSinContenedorEsaCeldaQuedaVacia()
     {
         // «de 5.000 a 8.000 kg» → 8.000 kg y sin contenedor (no hay C20/C40/20'/40').
         var hoja = await Servicio().EnriquecerAsync(_usuario, ["Carga"], Filas("de 5.000 a 8.000 kg"), Ct);
 
-        hoja.Encabezados.Should().Equal("Carga", clsColumnasDerivadasService.EncabezadoPeso);
-        hoja.Filas[0].Should().Equal("de 5.000 a 8.000 kg", "8000");
+        hoja.Encabezados.Should().Equal("Carga", clsColumnasDerivadasService.EncabezadoVehiculo, clsColumnasDerivadasService.EncabezadoContenedor, clsColumnasDerivadasService.EncabezadoPeso);
+        hoja.Filas[0].Should().Equal("de 5.000 a 8.000 kg", string.Empty, string.Empty, "8000");
     }
 
     [Fact]
-    public async Task UnTextoConVehiculoYPesoAgregaLasDosColumnasEnOrdenFijo()
+    public async Task UnTextoConVehiculoYPesoLlenaEsasDosColumnas()
     {
         // «Turbo hasta 4.5 ton»: el punto es decimal (4,5 t = 4.500 kg) y Turbo es un alias de vehículo.
         var hoja = await Servicio().EnriquecerAsync(_usuario, ["Tipo de servicio"], Filas("Turbo hasta 4.5 ton"), Ct);
 
-        hoja.Encabezados.Should().Equal(
-            "Tipo de servicio", clsColumnasDerivadasService.EncabezadoVehiculo, clsColumnasDerivadasService.EncabezadoPeso);
-        hoja.Filas[0].Should().Equal("Turbo hasta 4.5 ton", "Turbo", "4500");
+        hoja.Encabezados.Should().Equal("Tipo de servicio", clsColumnasDerivadasService.EncabezadoVehiculo, clsColumnasDerivadasService.EncabezadoContenedor, clsColumnasDerivadasService.EncabezadoPeso);
+        hoja.Filas[0].Should().Equal("Turbo hasta 4.5 ton", "Turbo", string.Empty, "4500");
     }
 
     [Fact]
@@ -98,13 +97,14 @@ public sealed class clsColumnasDerivadasServiceTests
     }
 
     [Fact]
-    public async Task LasColumnasDerivadasSeAgreganSoloSiAlMenosUnaFilaReconoceAlgo()
+    public async Task ConUnaSolaCategoriaReconocidaSeAgreganLasTres()
     {
-        // Ninguna fila trae contenedor, solo vehículo: no se agrega la columna de contenedor ni la de peso.
+        // Ninguna fila trae contenedor ni peso, solo vehículo: igual van las tres, para que los índices no dependan de lo detectado.
         var hoja = await Servicio().EnriquecerAsync(_usuario, ["Zona"], Filas("Mula", "Turbo"), Ct);
 
-        hoja.Encabezados.Should().Equal("Zona", clsColumnasDerivadasService.EncabezadoVehiculo);
-        hoja.Filas.Select(f => f[^1]).Should().Equal("Mula", "Turbo");
+        hoja.Encabezados.Should().Equal("Zona", clsColumnasDerivadasService.EncabezadoVehiculo, clsColumnasDerivadasService.EncabezadoContenedor, clsColumnasDerivadasService.EncabezadoPeso);
+        hoja.Filas.Select(f => f[1]).Should().Equal("Mula", "Turbo");
+        hoja.Filas.Should().OnlyContain(f => f[2] == string.Empty && f[3] == string.Empty);
     }
 
     [Fact]
@@ -123,10 +123,10 @@ public sealed class clsColumnasDerivadasServiceTests
     {
         IReadOnlyList<IReadOnlyList<string?>?> filas = [["Venezuela Mula", "x"], ["Bogotá", "y"]];
 
-        var enriquecidas = await Servicio().EnriquecerFilasAsync(_usuario, filas, Ct);
+        var enriquecidas = await Servicio().EnriquecerFilasAsync(_usuario, filas, numeroEncabezados: null, forzar: false, Ct);
 
-        enriquecidas[0].Should().Equal("Venezuela Mula", "x", "Mula");
-        enriquecidas[1].Should().Equal("Bogotá", "y", string.Empty);
+        enriquecidas[0].Should().Equal("Venezuela Mula", "x", "Mula", string.Empty, string.Empty);
+        enriquecidas[1].Should().Equal("Bogotá", "y", string.Empty, string.Empty, string.Empty);
     }
 
     [Fact]
@@ -135,7 +135,7 @@ public sealed class clsColumnasDerivadasServiceTests
         // Una fila null es una petición mal formada: no se enriquece, para que aplicar-mapeo la rechace con FILA_INVALIDA.
         IReadOnlyList<IReadOnlyList<string?>?> filas = [["Venezuela Mula"], null];
 
-        var enriquecidas = await Servicio().EnriquecerFilasAsync(_usuario, filas, Ct);
+        var enriquecidas = await Servicio().EnriquecerFilasAsync(_usuario, filas, 1, forzar: true, Ct);
 
         enriquecidas.Should().BeSameAs(filas);
     }
@@ -148,10 +148,76 @@ public sealed class clsColumnasDerivadasServiceTests
 
         var hoja = await Servicio().EnriquecerAsync(_usuario, ["Zona"], Filas("Mula C20 de 0 a 8 Ton"), Ct);
 
-        // El vehículo necesita el diccionario de alias de NEXO; el contenedor y el peso son locales y siguen funcionando, sin error.
-        hoja.Encabezados.Should().Equal(
-            "Zona", clsColumnasDerivadasService.EncabezadoContenedor, clsColumnasDerivadasService.EncabezadoPeso);
-        hoja.Filas[0].Should().Equal("Mula C20 de 0 a 8 Ton", "20'", "8000");
+        // El vehículo necesita el diccionario de alias de NEXO; el contenedor y el peso son locales y siguen funcionando, sin error. La
+        // columna del vehículo no desaparece: queda vacía en su posición.
+        hoja.Encabezados.Should().Equal("Zona", clsColumnasDerivadasService.EncabezadoVehiculo, clsColumnasDerivadasService.EncabezadoContenedor, clsColumnasDerivadasService.EncabezadoPeso);
+        hoja.Filas[0].Should().Equal("Mula C20 de 0 a 8 Ton", string.Empty, "20'", "8000");
+    }
+
+    [Fact]
+    public async Task UnaFilaFueraDeLaMuestraConContenedorNoCorreLosIndicesEntreSugerirYAplicar()
+    {
+        // Las 200 primeras filas (la muestra de sugerir-mapeo) solo traen peso; la fila 500 trae además un contenedor.
+        IReadOnlyList<string> encabezados = ["Origen", "Destino", "Servicio"];
+        var todas = Enumerable.Range(0, 600)
+            .Select(i => (IReadOnlyList<string>)["Cali", "Bogotá", i == 499 ? "C20 hasta 12 ton" : "hasta 8 ton"]).ToList();
+
+        var sugerir = await Servicio().EnriquecerAsync(_usuario, encabezados, [.. todas.Take(200)], Ct);
+        var aplicar = await Servicio().EnriquecerFilasAsync(
+            _usuario, [.. todas.Select(f => (IReadOnlyList<string?>?)[.. f])], encabezados.Count, forzar: false, Ct);
+
+        var indicePeso = sugerir.Encabezados.ToList().IndexOf(clsColumnasDerivadasService.EncabezadoPeso);
+        indicePeso.Should().Be(5);
+        aplicar.Should().OnlyContain(f => f!.Count == 6);
+        aplicar[0]![indicePeso].Should().Be("8000");
+        aplicar[499]![indicePeso].Should().Be("12000", "el peso de cada línea sale de la columna que propuso sugerir-mapeo");
+        aplicar[499]![4].Should().Be("20'");
+    }
+
+    [Fact]
+    public async Task LasFilasMasCortasQueLosEncabezadosSeRellenanYLasDerivadasEmpiezanEnElNumeroDeEncabezados()
+    {
+        IReadOnlyList<string> encabezados = ["A", "B", "C"];
+        // Una fila corta (sin las celdas vacías del final) y otra con una celda sin encabezado, que se descarta.
+        IReadOnlyList<IReadOnlyList<string>> filas = [["Mula"], ["x", "8 ton", "", "sobra"]];
+
+        var sugerir = await Servicio().EnriquecerAsync(_usuario, encabezados, filas, Ct);
+        var aplicar = await Servicio().EnriquecerFilasAsync(
+            _usuario, [.. filas.Select(f => (IReadOnlyList<string?>?)[.. f])], encabezados.Count, forzar: false, Ct);
+
+        sugerir.Encabezados.Should().Equal("A", "B", "C", clsColumnasDerivadasService.EncabezadoVehiculo, clsColumnasDerivadasService.EncabezadoContenedor, clsColumnasDerivadasService.EncabezadoPeso);
+        sugerir.Filas[0].Should().Equal("Mula", string.Empty, string.Empty, "Mula", string.Empty, string.Empty);
+        sugerir.Filas[1].Should().Equal("x", "8 ton", string.Empty, string.Empty, string.Empty, "8000");
+        aplicar.Should().BeEquivalentTo(sugerir.Filas, o => o.WithStrictOrdering());
+    }
+
+    [Fact]
+    public async Task ConElDiccionarioCaidoEnAplicarLaColumnaDelVehiculoQuedaVaciaEnSuPosicion()
+    {
+        var caido = clsResultado<clsDiccionarioAliasNexo>.Fallo(new clsErrorDominio(clsCodigosError.CatalogosFleteNoDisponible, "caído"));
+        // Primera llamada (sugerir) con diccionario; segunda (aplicar) sin él.
+        _alias.ObtenerAsync(_usuario, Arg.Any<CancellationToken>()).Returns(clsResultado<clsDiccionarioAliasNexo>.Exito(_diccionario), caido);
+
+        var sugerir = await Servicio().EnriquecerAsync(_usuario, ["Servicio"], Filas("Mula hasta 8 ton"), Ct);
+        var aplicar = await Servicio().EnriquecerFilasAsync(_usuario, [["Mula hasta 8 ton"]], 1, forzar: false, Ct);
+
+        sugerir.Filas[0].Should().Equal("Mula hasta 8 ton", "Mula", string.Empty, "8000");
+        aplicar[0].Should().Equal("Mula hasta 8 ton", string.Empty, string.Empty, "8000");
+    }
+
+    [Fact]
+    public async Task SiElMapeoUsaUnaDerivadaSeAgreganAunqueNadaSeReconozca()
+    {
+        // Solo había vehículo y el diccionario cayó en aplicar-mapeo: sin forzar no habría columnas y el índice mapeado no existiría.
+        _alias.ObtenerAsync(_usuario, Arg.Any<CancellationToken>())
+            .Returns(clsResultado<clsDiccionarioAliasNexo>.Fallo(new clsErrorDominio(clsCodigosError.CatalogosFleteNoDisponible, "caído")));
+        IReadOnlyList<IReadOnlyList<string?>?> filas = [["Mula"]];
+
+        var forzadas = await Servicio().EnriquecerFilasAsync(_usuario, filas, 1, forzar: true, Ct);
+        var sinForzar = await Servicio().EnriquecerFilasAsync(_usuario, filas, 1, forzar: false, Ct);
+
+        forzadas[0].Should().Equal("Mula", string.Empty, string.Empty, string.Empty);
+        sinForzar.Should().BeSameAs(filas);
     }
 
     [Fact]

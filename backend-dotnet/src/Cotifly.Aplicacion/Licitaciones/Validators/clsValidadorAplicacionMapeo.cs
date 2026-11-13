@@ -36,7 +36,8 @@ public static class clsValidadorAplicacionMapeo
     /// <c>COLUMNA_FUERA_DE_RANGO</c> (índice fuera de 0..99), <c>CAMPO_INVALIDO</c> (campo vacío o mal formado),
     /// <c>CAMPO_DUPLICADO</c> (dos columnas al mismo campo, salvo <c>ignorar</c>), <c>TRANSFORMACION_INVALIDA</c> (mal formada),
     /// <c>EXCEL_SIN_DATOS</c> (sin filas), <c>DEMASIADAS_FILAS</c> (más de <see cref="MaximoFilas"/>), <c>FILA_INVALIDA</c> (una fila
-    /// <c>null</c> o una <c>primera_fila</c> fuera de 2..1.048.576) o <c>DEMASIADAS_COLUMNAS</c> (una fila con más de 100 celdas). Las
+    /// <c>null</c> o una <c>primera_fila</c> fuera de 2..1.048.576), <c>DEMASIADAS_COLUMNAS</c> (una fila con más de 100 celdas) o
+    /// <c>COLUMNA_INVALIDA</c> (<c>numero_encabezados</c> fuera de 1..100). Las
     /// posiciones del mensaje son base 1.
     /// </summary>
     public static clsResultado<clsPeticionAplicarMapeo> Validar(clsEntradaAplicacionMapeo entrada)
@@ -57,6 +58,12 @@ public static class clsValidadorAplicacionMapeo
         if (filas.EsFallo)
         {
             return filas.Error;
+        }
+
+        if (entrada.NumeroEncabezados is { } encabezados && encabezados is < 1 or > MaximoColumnas)
+        {
+            return new clsErrorDominio(clsCodigosError.ColumnaInvalida,
+                $"'numero_encabezados' debe estar entre 1 y {MaximoColumnas}: son los encabezados de la hoja.");
         }
 
         if (entrada.PrimeraFila is { } primera && primera is < PrimeraFilaPorDefecto or > UltimaFilaExcel)

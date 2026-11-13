@@ -16,10 +16,17 @@ public sealed record clsPeticionSugerirMapeo(
 /// <summary>
 /// Propuesta de mapeo de NEXO. <paramref name="MotivoSinIa"/>: <c>PLANTILLA_RECONOCIDA</c>, <c>DICCIONARIO_COMPLETO</c>,
 /// <c>IA_NO_DISPONIBLE</c> o un <c>IA_*</c> del proveedor; <c>null</c> si la IA participó. <paramref name="PlantillaId"/>: la plantilla del
-/// cliente que se reconoció.
+/// cliente que se reconoció. <see cref="ColumnasDerivadas"/>: las columnas que agregó Cotifly al final de la hoja (vacía si ninguna); no
+/// viene de NEXO.
 /// </summary>
 public sealed record clsSugerenciaMapeo(
-    bool IaUsada, string? MotivoSinIa, IReadOnlyList<clsColumnaMapeada> Columnas, IReadOnlyList<string> Dudas, Guid? PlantillaId);
+    bool IaUsada, string? MotivoSinIa, IReadOnlyList<clsColumnaMapeada> Columnas, IReadOnlyList<string> Dudas, Guid? PlantillaId)
+{
+    public IReadOnlyList<clsColumnaDerivadaMapeo> ColumnasDerivadas { get; init; } = [];
+}
+
+/// <summary>Una columna derivada que Cotifly agregó a la hoja: su índice base 0 (el mismo en <c>aplicar-mapeo</c>) y su nombre fijo.</summary>
+public sealed record clsColumnaDerivadaMapeo(int Indice, string Nombre);
 
 /// <summary>
 /// Una columna de la propuesta: <paramref name="Indice"/> base 0, <paramref name="Campo"/> de NEXO (o <c>ignorar</c>),
