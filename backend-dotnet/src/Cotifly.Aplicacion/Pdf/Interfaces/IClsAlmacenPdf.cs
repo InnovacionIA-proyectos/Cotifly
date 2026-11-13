@@ -1,8 +1,8 @@
 namespace Cotifly.Aplicacion.Pdf.Interfaces;
 
 /// <summary>
-/// Puerto del almacén de PDFs (port de <c>shared/almacen_pdf.py</c>). Hoy solo el volumen <c>/data/pdfs</c>
-/// (<c>clsAlmacenPdfVolumen</c>); S3/MinIO queda diferido (ADR-012). Los nombres deben cumplir
+/// Puerto del almacén de PDFs. La implementación es el volumen <c>/data/pdfs</c>
+/// (<c>clsAlmacenPdfVolumen</c>; ver ADR-012). Los nombres deben cumplir
 /// <c>^[A-Za-z0-9_-]+\.pdf$</c> (mismo patrón que <c>GET /pdfs/{archivo}</c>): nunca rutas.
 /// </summary>
 public interface IClsAlmacenPdf

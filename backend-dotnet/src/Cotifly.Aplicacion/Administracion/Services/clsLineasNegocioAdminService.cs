@@ -11,8 +11,8 @@ using Cotifly.Dominio.Margen;
 namespace Cotifly.Aplicacion.Administracion.Services;
 
 /// <summary>
-/// Administración de las políticas de margen por línea de negocio (HU-004.9, <c>GET/PUT /web/admin/lineas-negocio</c>). Solo
-/// el rol <c>gerente_comercial</c> (HU-010), revalidado aquí además de la política del endpoint. No crea ni borra líneas.
+/// Administración de las políticas de margen por línea de negocio (<c>GET/PUT /web/admin/lineas-negocio</c>). Solo
+/// el rol <c>gerente_comercial</c>, revalidado aquí además de la política del endpoint. No crea ni borra líneas.
 /// </summary>
 public interface IClsLineasNegocioAdminService
 {

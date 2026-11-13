@@ -6,10 +6,10 @@ namespace Cotifly.Aplicacion.Agente.DTOs;
 
 /// <summary>
 /// Respuesta de <c>POST /web/chat</c> (<c>RespuestaChat</c> de <c>specs/openapi.yaml</c>): el texto del asistente, las herramientas
-/// del turno, <see cref="Errores"/> (HU-012.4: los errores de negocio de las herramientas, para que el frontend no interprete el texto)
-/// y <see cref="AccionPropuesta"/> (HU-013.6: la acción que propuso el asistente por folio). <see cref="Precio"/>, <see cref="Margen"/> y
-/// <see cref="Pdf"/> están obsoletos (deprecated en el contrato) y siempre van en <c>null</c>: los llenaba el agente legado, retirado
-/// en HU-013.9 (#105); se conservan para no romper a clientes que todavía los leen.
+/// del turno, <see cref="Errores"/> (los errores de negocio de las herramientas, para que el frontend no interprete el texto)
+/// y <see cref="AccionPropuesta"/> (la acción que propuso el asistente por folio). <see cref="Precio"/>, <see cref="Margen"/> y
+/// <see cref="Pdf"/> están obsoletos (deprecated en el contrato) y siempre van en <c>null</c>; se conservan para no romper a
+/// clientes que todavía los leen.
 /// </summary>
 public sealed record clsRespuestaChat(
     string Texto,
@@ -21,13 +21,13 @@ public sealed record clsRespuestaChat(
     clsAccionPropuesta? AccionPropuesta = null)
 {
     /// <summary>
-    /// Errores de las herramientas del turno, en orden; vacío (nunca <c>null</c>) si ninguna falló. Endurecimiento A (#199): el contrato
+    /// Errores de las herramientas del turno, en orden; vacío (nunca <c>null</c>) si ninguna falló: el contrato
     /// declara <c>errores</c> como arreglo no anulable.
     /// </summary>
     public IReadOnlyList<clsErrorHerramienta> Errores { get; init; } = Errores ?? [];
 
     /// <summary>
-    /// Respuesta del asistente por folio (HU-013.6, #102, ADR-018 §2b): <c>precio</c>, <c>margen</c> y <c>pdf</c> siempre en <c>null</c>
+    /// Respuesta del asistente por folio (ADR-018 §2b): <c>precio</c>, <c>margen</c> y <c>pdf</c> siempre en <c>null</c>
     /// (obsoletos) y la acción propuesta armada por el servidor, si la hubo. Si el validador no obtuvo un texto válido del modelo pero
     /// el turno sí armó una propuesta, el texto es <paramref name="textoSinRespuesta"/> y la propuesta sale igual.
     /// </summary>
@@ -55,7 +55,7 @@ public sealed record clsErrorHerramienta(string Herramienta, string Codigo);
 /// </summary>
 /// <param name="Texto">Texto para el comercial.</param>
 /// <param name="Codigo">
-/// HU-013.16 (#126): motivo estable del error (<c>IA_NO_DISPONIBLE</c>, <c>LIMITE_MODELO</c>, <c>TURNO_EN_CURSO</c>,
+/// Motivo estable del error (<c>IA_NO_DISPONIBLE</c>, <c>LIMITE_MODELO</c>, <c>TURNO_EN_CURSO</c>,
 /// <c>MAX_ITERACIONES</c>, <c>RESPUESTA_NO_ESTRUCTURADA</c> o <c>ERROR_INTERNO</c>; ver <c>clsTextosAgente</c>).
 /// </param>
 public sealed record clsRespuestaChatError(string Texto, string Codigo)

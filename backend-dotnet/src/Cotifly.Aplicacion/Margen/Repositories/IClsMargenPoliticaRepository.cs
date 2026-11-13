@@ -7,13 +7,13 @@ public interface IClsMargenPoliticaRepository
 {
     /// <summary>
     /// Política de la línea por nombre exacto (la collation de la columna no distingue mayúsculas).
-    /// La resolución tolerante a tildes es del caso de uso de margen (#10). Incluye líneas inactivas.
+    /// La resolución tolerante a tildes es del caso de uso de margen. Incluye líneas inactivas.
     /// </summary>
     Task<clsMargenPolitica?> ObtenerPorLineaAsync(string lineaNegocio, CancellationToken cancellationToken = default);
 
     /// <summary>Política por id (<c>Cotizaciones.lineaNegocioId</c>).</summary>
     Task<clsMargenPolitica?> ObtenerPorIdAsync(int id, CancellationToken cancellationToken = default);
 
-    /// <summary>Todas las líneas, ordenadas por nombre (administración, HU-010).</summary>
+    /// <summary>Todas las líneas, ordenadas por nombre (administración).</summary>
     Task<IReadOnlyList<clsMargenPolitica>> ListarAsync(CancellationToken cancellationToken = default);
 }

@@ -5,7 +5,7 @@ namespace Cotifly.Aplicacion.Agente.Herramientas;
 
 /// <summary>
 /// Valores posibles de un número escrito en un texto, según sus separadores. Es la base del filtro de montos del asistente
-/// (<c>clsReglasRespuestaAgente.Montos</c>): de él depende que el modelo no escriba un monto que nada respalda (ADR-018 §2b, HU-013.16).
+/// (<c>clsReglasRespuestaAgente.Montos</c>): de él depende que el modelo no escriba un monto que nada respalda (ADR-018 §2b).
 /// Lee los formatos habituales en Colombia y los que puede devolver un modelo:
 /// <c>2.850.000</c>, <c>2,850,000</c>, <c>2850000</c>, <c>2'850.000</c>, <c>2’850.000</c>, <c>2 850 000</c> (espacio normal, duro o
 /// fino), <c>2.850.000,50</c>, <c>2,850,000.50</c> y dígitos de otros sistemas (<c>３.４００</c>), que se pasan a ASCII.
@@ -13,8 +13,7 @@ namespace Cotifly.Aplicacion.Agente.Herramientas;
 /// <remarks>
 /// Cada ambigüedad de separadores da un candidato (<c>2.850</c> puede ser 2850 o 2,85): el validador acepta el monto si
 /// <b>alguno</b> coincide con un respaldo, y lo rechaza si ninguno coincide. Un número que no se puede leer no da candidatos, y el
-/// validador lo trata como un monto sin respaldo (nunca lo deja pasar). Hasta HU-013.9 la clase también leía un mensaje entero para
-/// el costo manual del agente cotizador legado (<c>Numeros</c>/<c>Contiene</c>); ese uso se retiró con el agente (#105).
+/// validador lo trata como un monto sin respaldo (nunca lo deja pasar).
 /// </remarks>
 public static class clsNumerosDelMensaje
 {

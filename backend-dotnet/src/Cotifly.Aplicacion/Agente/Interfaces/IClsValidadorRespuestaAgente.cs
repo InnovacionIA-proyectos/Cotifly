@@ -5,7 +5,7 @@ using Microsoft.Extensions.AI;
 namespace Cotifly.Aplicacion.Agente.Interfaces;
 
 /// <summary>
-/// Respuesta final validada del agente (HU-003.10, issue #16, ADR-003 "Salida estructurada"). Terminado el loop de herramientas,
+/// Respuesta final validada del agente (ADR-003 "Salida estructurada"). Terminado el loop de herramientas,
 /// el runner delega aquí la llamada final: una llamada aparte, sin herramientas, que pide
 /// <see cref="clsRespuestaAgenteEstructurada"/> con <c>ChatResponseFormat.ForJsonSchema</c>, la valida a mano y, si no pasa,
 /// reintenta una vez con un mensaje de corrección. Si vuelve a fallar devuelve el respaldo controlado
@@ -36,9 +36,9 @@ public sealed record clsContextoValidacionRespuesta(
     IReadOnlyCollection<string> HerramientasDeclaradas)
 {
     /// <summary>
-    /// ¿Se reintenta una vez si la respuesta no valida? Por defecto true. HU-013.16 (#126): el asistente lo apaga cuando el turno ya
+    /// ¿Se reintenta una vez si la respuesta no valida? Por defecto true. El asistente lo apaga cuando el turno ya
     /// armó una propuesta, porque esa respuesta tiene su texto fijo del servidor (<c>clsTextosAgente.PropuestaSinTexto</c>) y el
-    /// reintento solo agregaba una llamada.
+    /// reintento solo agregaría una llamada.
     /// </summary>
     public bool ReintentarSiFalla { get; init; } = true;
 }

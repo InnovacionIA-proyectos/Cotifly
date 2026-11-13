@@ -6,9 +6,8 @@ using Microsoft.Extensions.Logging;
 namespace Cotifly.Aplicacion.Cubicacion.Services;
 
 /// <summary>
-/// Detección de la columna de mercancía de un Excel y código sugerido por fila contra el catálogo del cubicador (HU-023.5, #160). Nació
-/// en el análisis del pliego de licitaciones y HU-035.1 (#202) la sacó aquí, sin nada de Nexo ni de licitaciones, para reutilizarla en
-/// el Excel de mercancías de una ruta. Determinista: solo la lectura del catálogo (<see cref="CatalogoAsync"/>) llama al cubicador.
+/// Detección de la columna de mercancía de un Excel y código sugerido por fila contra el catálogo del cubicador. No depende
+/// de Nexo ni de licitaciones: la usan el análisis del pliego de licitaciones y el Excel de mercancías de una ruta. Determinista: solo la lectura del catálogo (<see cref="CatalogoAsync"/>) llama al cubicador.
 /// </summary>
 public static class clsDetectorMercanciaExcel
 {
@@ -43,7 +42,7 @@ public static class clsDetectorMercanciaExcel
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            // HU-035.1: el adaptador traduce sus fallos a un resultado, pero una excepción inesperada tampoco tumba el análisis.
+            // El adaptador traduce sus fallos a un resultado, pero una excepción inesperada tampoco tumba el análisis.
             logger.LogWarning(ex, "El catálogo de tipos de mercancía del cubicador falló: el análisis va sin sugerencias de código.");
             return null;
         }
@@ -57,7 +56,7 @@ public static class clsDetectorMercanciaExcel
     public sealed record clsHojasConMercancias(IReadOnlyList<clsHojaExcel> Hojas, bool CatalogoDisponible, bool Aplicado);
 
     /// <summary>
-    /// HU-023.5 (#160) / HU-044.7 (#290): a cada hoja (o tabla) con columna de mercancía o de código le agrega
+    /// A cada hoja (o tabla) con columna de mercancía o de código le agrega
     /// <see cref="clsHojaExcel.ColumnaMercancia"/>, <see cref="clsHojaExcel.ColumnaCodigoMercancia"/> y <see cref="clsHojaExcel.Mercancias"/>
     /// (por fila: el código de la columna del Excel tal cual o el más parecido del catálogo del cubicador). El catálogo se lee una sola vez
     /// (con caché) y solo si alguna hoja tiene una de esas columnas; si no responde, el detalle sigue sin sugerencias por parecido. Es la
@@ -111,7 +110,7 @@ public static class clsDetectorMercanciaExcel
         static string? Celda(IReadOnlyList<string> fila, int? columna) =>
             columna is { } c && c < fila.Count && !string.IsNullOrWhiteSpace(fila[c]) ? fila[c].Trim() : null;
 
-        // Solo los tipos cubicables: uno que no se puede cubicar se rechazaría al guardar (HU-023.3).
+        // Solo los tipos cubicables: uno que no se puede cubicar se rechazaría al guardar.
         var cubicables = catalogo?.Where(t => t.Cubicable).ToList();
         var sugerencias = new Dictionary<string, clsMercanciaSugerida?>(StringComparer.Ordinal);
         var resultado = new List<clsCodigoMercanciaFila>();

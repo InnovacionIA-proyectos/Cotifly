@@ -4,7 +4,7 @@ using Cotifly.Dominio.Correo;
 namespace Cotifly.Aplicacion.Correo.Services;
 
 /// <summary>
-/// HU-033 (#199, ADR-023, decisión 3): protección de los ambientes que no son producción (<c>Correo:Proteccion:Modo=redirigir</c>). El
+/// Protección de los ambientes que no son producción (<c>Correo:Proteccion:Modo=redirigir</c>, ADR-023). El
 /// mensaje que llega al transporte va SOLO al buzón de pruebas (sin CC ni CCO reales), con <c>[QA]</c> en el asunto y un aviso al inicio
 /// del cuerpo con los destinatarios originales (para, CC y CCO). En la base se guardan los destinatarios ORIGINALES y el buzón en
 /// <c>Correos.redirigidoA</c>, así la deduplicación, los destinatarios previos y el historial se comportan igual que en producción.
@@ -58,7 +58,7 @@ public static class clsProteccionCorreo
     {
         ArgumentNullException.ThrowIfNull(opciones);
         var buzon = opciones.BuzonPruebas?.Trim();
-        // Validación #228: también el formato estricto que el transporte exige al To; si no, todo correo redirigido se bloquearía allí.
+        // También el formato estricto que el transporte exige al To; si no, todo correo redirigido se bloquearía allí.
         return !string.IsNullOrEmpty(buzon) && clsCabecerasCorreo.EsDireccionValida(buzon) && System.Net.Mail.MailAddress.TryCreate(buzon, out var direccion)
                && string.Equals(direccion.Address, buzon, StringComparison.OrdinalIgnoreCase)
             ? buzon

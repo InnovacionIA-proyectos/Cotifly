@@ -6,7 +6,7 @@ using Cotifly.Aplicacion.CatalogosFlete.Interfaces;
 namespace Cotifly.Aplicacion.Licitaciones.Services;
 
 /// <summary>
-/// HU-044.9 (#292): datos metidos en otra columna. ANTES de <c>sugerir-mapeo</c> (#253) y <c>aplicar-mapeo</c> (#254), Cotifly revisa las
+/// Datos metidos en otra columna. ANTES de <c>sugerir-mapeo</c> y <c>aplicar-mapeo</c>, Cotifly revisa las
 /// columnas de texto de la hoja y, cuando reconoce un vehículo dentro de un texto («Venezuela Mula») o un contenedor con un peso o un rango
 /// («C20 de 0 a 8 Ton»), agrega columnas derivadas <b>con nombre fijo</b> al final, para que NEXO las mapee como cualquier otra. NEXO no
 /// parte el texto de una celda; esto lo hace Cotifly sin tocar la celda original.
@@ -20,8 +20,8 @@ namespace Cotifly.Aplicacion.Licitaciones.Services;
 /// de <c>GET /web/alias/resolver</c>). Se devuelve el texto reconocido tal cual aparece («Mula»); NEXO lo resuelve de nuevo al convertir. Sin el
 /// diccionario (NEXO caído) no se detecta vehículo, sin error.</item>
 /// <item><b>Contenedor detectado:</b> del patrón <c>C20</c>/<c>C40</c>/<c>20'</c>/<c>40'</c>, normalizado a <c>20'</c> o <c>40'</c>.</item>
-/// <item><b>Peso detectado (kg):</b> un peso o un rango en toneladas o kg. <b>Del rango se toma el valor más alto</b> (decisión 2026-11-09:
-/// «C20 de 0 a 8 Ton» → 8.000 kg); un solo valor se toma tal cual; <c>t</c>/<c>ton</c>/<c>tons</c>/<c>toneladas</c> se convierten a kg y
+/// <item><b>Peso detectado (kg):</b> un peso o un rango en toneladas o kg. <b>Del rango se toma el valor más alto</b>
+/// («C20 de 0 a 8 Ton» → 8.000 kg); un solo valor se toma tal cual; <c>t</c>/<c>ton</c>/<c>tons</c>/<c>toneladas</c> se convierten a kg y
 /// <c>kg</c> queda igual. Se emite en kg como número simple (sin separador de miles).</item>
 /// <item>Si un texto no se reconoce, la celda derivada de esa fila queda vacía, sin error (el comercial la completa en la revisión). Fuera de
 /// alcance: las rutas con varias paradas.</item>

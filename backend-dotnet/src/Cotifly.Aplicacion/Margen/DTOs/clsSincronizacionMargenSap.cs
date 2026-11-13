@@ -1,8 +1,8 @@
 namespace Cotifly.Aplicacion.Margen.DTOs;
 
 /// <summary>
-/// HU-042.2 (#243, ADR-027): una corrida de la sincronización del margen de SAP TM tal como quedó en <c>dbo_cotifly.SapMargenSyncLog</c>
-/// (<c>CorridaSincronizacionMargenSap</c> del contrato). Las filas solo vienen en las corridas que llegaron al stored procedure.
+/// Una corrida de la sincronización del margen de SAP TM tal como quedó en <c>dbo_cotifly.SapMargenSyncLog</c>
+/// (<c>CorridaSincronizacionMargenSap</c> del contrato; ADR-027). Las filas solo vienen en las corridas que llegaron al stored procedure.
 /// </summary>
 /// <param name="Estado"><c>ok</c>, <c>error</c> u <c>omitido</c> (CHECK <c>ck_sapMargenSyncLog_status</c>).</param>
 /// <param name="IniciadoAt">Inicio de la corrida.</param>
@@ -31,7 +31,7 @@ public sealed record clsCorridaSincronizacionMargenSap(
 }
 
 /// <summary>
-/// HU-042.2 (#243): <c>GET /web/admin/sap-margen/estado</c> (<c>EstadoSincronizacionMargenSap</c> del contrato).
+/// <c>GET /web/admin/sap-margen/estado</c> (<c>EstadoSincronizacionMargenSap</c> del contrato).
 /// </summary>
 /// <param name="UltimaCorrida">La corrida más reciente, cualquiera sea su estado (<c>null</c> si nunca hubo una).</param>
 /// <param name="UltimaCorridaOk">La corrida <c>ok</c> más reciente: de ella depende la próxima (<c>null</c> si nunca la hubo).</param>
@@ -57,7 +57,7 @@ public sealed record clsEstadoSincronizacionMargenSap(
     bool Habilitada);
 
 /// <summary>
-/// HU-042.2 (#243): resultado de un intento de sincronización. El worker usa todos los estados; <c>POST /web/admin/sap-margen/sincronizar</c>
+/// Resultado de un intento de sincronización. El worker usa todos los estados; <c>POST /web/admin/sap-margen/sincronizar</c>
 /// responde 200 solo con <c>ok</c>, <c>error</c> u <c>omitido</c> (<c>ResultadoSincronizacionMargenSap</c> del contrato): "no toca", "en
 /// curso" y "no configurada" son errores del caso de uso.
 /// </summary>

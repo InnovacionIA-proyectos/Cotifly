@@ -3,7 +3,7 @@ namespace Cotifly.Aplicacion.Margen.Repositories;
 /// <summary>
 /// Puerto del mapeo TrqType ↔ línea de negocio (<c>SapMapeoTrqType</c>). Solo filas activas; una fila
 /// con la organización de ventas pedida tiene prioridad sobre el comodín <c>salesOrg = ''</c>.
-/// HU-042.4 (#247): la línea se relaciona por su id de <c>MargenesPolitica</c> (<c>lineaNegocioId</c>), nunca por el texto.
+/// La línea se relaciona por su id de <c>MargenesPolitica</c> (<c>lineaNegocioId</c>), nunca por el texto.
 /// </summary>
 public interface IClsSapMapeoRepository
 {

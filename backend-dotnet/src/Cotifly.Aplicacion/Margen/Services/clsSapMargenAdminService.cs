@@ -11,7 +11,7 @@ using Cotifly.Dominio.Identidad;
 namespace Cotifly.Aplicacion.Margen.Services;
 
 /// <summary>
-/// Administración de la sincronización del margen de SAP TM (HU-042.2, #243, ADR-027): <c>GET /web/admin/sap-margen/estado</c> y
+/// Administración de la sincronización del margen de SAP TM (ADR-027): <c>GET /web/admin/sap-margen/estado</c> y
 /// <c>POST /web/admin/sap-margen/sincronizar</c>. Solo los roles gerenciales (gerente comercial y director), como el resto de
 /// <c>/web/admin/*</c>; se revalida aquí además de la política del endpoint.
 /// </summary>

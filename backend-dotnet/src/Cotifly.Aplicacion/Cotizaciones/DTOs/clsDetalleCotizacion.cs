@@ -5,12 +5,12 @@ using Cotifly.Aplicacion.Costeo.Services;
 namespace Cotifly.Aplicacion.Cotizaciones.DTOs;
 
 /// <summary>
-/// <c>DetalleCotizacion</c> (HU-027.1, #179): <c>GET /web/cotizaciones/{folio}</c>, la cotización completa en una llamada para "Ver detalle"
-/// (HU-021-FE.7, #75) y para recargar esa página. Es una composición de las proyecciones que ya existen, sin reglas nuevas:
+/// <c>DetalleCotizacion</c>: <c>GET /web/cotizaciones/{folio}</c>, la cotización completa en una llamada para "Ver detalle"
+/// y para recargar esa página. Es una composición de las proyecciones que ya existen, sin reglas nuevas:
 /// <list type="bullet">
 /// <item><see cref="Cotizacion"/>: la fila de "Mis cotizaciones" (<c>CotizacionResumen</c>) con el comercial dueño (<c>comercial</c>).</item>
 /// <item><see cref="Costeo"/>: lo mismo que <c>GET .../costeo</c> (<c>CosteoCotizacion</c>): rutas con camiones, porcentajes, mercancías,
-/// conexos con precio, margen, precio por ruta, costo bruto por ruta (HU-039.1, #218: solo el dueño; con <see cref="SoloLectura"/> va
+/// conexos con precio, margen, precio por ruta, costo bruto por ruta (solo el dueño; con <see cref="SoloLectura"/> va
 /// en <c>null</c>) y avisos; <c>pdf_desactualizado</c> y <c>textos</c>.</item>
 /// <item><see cref="Captura"/>: cada ruta como la capturó el comercial (<c>RutaEditable</c> de <c>GET .../solicitud</c>): municipios por id
 /// y nombre y condiciones. Se cruza con <c>costeo.rutas[]</c> por <c>linea_solicitud_id</c>.</item>
@@ -33,7 +33,7 @@ public sealed record clsDetalleCotizacion(
     IReadOnlyList<clsRutaEditable> Captura,
     clsTotalesCotizacion Totales) : IClsConVersionFila;
 
-/// <summary><c>FechasCotizacion</c> (#179): las fechas de la cabecera (todas en UTC).</summary>
+/// <summary><c>FechasCotizacion</c>: las fechas de la cabecera (todas en UTC).</summary>
 /// <param name="CreatedAt">Creación.</param>
 /// <param name="UpdatedAt">Último cambio de la fila.</param>
 /// <param name="CosteoEnviadoAt">Último envío a Nexo; <c>null</c> si nunca llegó.</param>
@@ -42,16 +42,16 @@ public sealed record clsDetalleCotizacion(
 public sealed record clsFechasCotizacion(
     DateTimeOffset? CreatedAt, DateTimeOffset? UpdatedAt, DateTimeOffset? CosteoEnviadoAt, DateTimeOffset? CosteoListoAt, DateTimeOffset? MarcadoAt)
 {
-    /// <summary>HU-036.2 (#206): cuándo el comercial finalizó la cotización; <c>null</c> sin finalizar. Siempre se serializa.</summary>
+    /// <summary>Cuándo el comercial finalizó la cotización; <c>null</c> sin finalizar. Siempre se serializa.</summary>
     public DateTimeOffset? FinalizadaAt { get; init; }
 }
 
 /// <summary>
-/// <c>TotalesCotizacion</c> (#179): conteos y precios de toda la solicitud, derivados de <c>costeo.rutas[]</c> con las reglas del costeo y
+/// <c>TotalesCotizacion</c>: conteos y precios de toda la solicitud, derivados de <c>costeo.rutas[]</c> con las reglas del costeo y
 /// del PDF (nunca costos de Nexo). Los precios son <c>null</c> mientras alguna ruta no tenga precio.
 /// </summary>
 /// <param name="Rutas">Número de rutas.</param>
-/// <param name="Camiones">Camiones que cuentan en el precio (los descartados en Nexo no, salvo que lo estén todos; HU-028.1, #183: los
+/// <param name="Camiones">Camiones que cuentan en el precio (los descartados en Nexo no, salvo que lo estén todos; los
 /// rechazados por la Mesa de Costeo nunca).</param>
 /// <param name="PesoKg">Suma del peso declarado de las rutas; <c>null</c> si ninguna lo trae.</param>
 /// <param name="PrecioTransporte">Suma de la tarifa de transporte de las rutas (la del PDF).</param>
@@ -60,14 +60,14 @@ public sealed record clsFechasCotizacion(
 public sealed record clsTotalesCotizacion(
     int Rutas, int Camiones, decimal? PesoKg, decimal? PrecioTransporte, decimal? PrecioConexos, decimal? PrecioFinal)
 {
-    /// <summary>HU-028.1 (#183): rutas rechazadas por la Mesa de Costeo de Nexo (todos sus camiones): no cuentan en los precios.</summary>
+    /// <summary>Rutas rechazadas por la Mesa de Costeo de Nexo (todos sus camiones): no cuentan en los precios.</summary>
     public int RutasRechazadas { get; init; }
 
-    /// <summary>HU-028.1 (#183): camiones rechazados por la Mesa de Costeo de Nexo (de cualquier ruta).</summary>
+    /// <summary>Camiones rechazados por la Mesa de Costeo de Nexo (de cualquier ruta).</summary>
     public int CamionesRechazados { get; init; }
 
     /// <summary>
-    /// HU-045.3 (#265, B4 de la auditoría de #264): suma del seguro de la mercancía de las rutas (<c>valor_seguro</c>, 0 si ninguna lo
+    /// Suma del seguro de la mercancía de las rutas (<c>valor_seguro</c>, 0 si ninguna lo
     /// incluye), con la misma regla de <c>null</c> que los demás precios: <c>precio_transporte + precio_conexos + precio_seguro = precio_final</c>.
     /// </summary>
     public decimal? PrecioSeguro { get; init; }

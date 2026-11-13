@@ -14,8 +14,8 @@ namespace Cotifly.Aplicacion.Identidad.Services;
 /// <summary>
 /// <c>POST /api/auth/login-clientepro</c> (patrón "Login SSO — Cliente Pro", ADR-009). Errores:
 /// <see cref="clsCodigosAcceso.SolicitudInvalida"/> (400) y <see cref="clsCodigosAcceso.CredencialesInvalidas"/> (401
-/// genérico para todo rechazo; el motivo real queda en la auditoría y en el log). HU-040.2 (#230, ADR-025): con un solo rol devuelve la
-/// sesión como siempre; con varios, la elección pendiente (ticket de un solo uso para <c>POST /api/auth/elegir-rol</c>), sin sesión.
+/// genérico para todo rechazo; el motivo real queda en la auditoría y en el log). Con un solo rol devuelve la
+/// sesión; con varios (ADR-025), la elección pendiente (ticket de un solo uso para <c>POST /api/auth/elegir-rol</c>), sin sesión.
 /// </summary>
 public interface IClsLoginClienteProService
 {
@@ -29,7 +29,7 @@ public interface IClsLoginClienteProService
 /// <c>EventosHerramienta</c> (herramienta <c>login_clientepro</c>, hilo <c>auth/{idUsuario}</c>). Cualquier excepción
 /// inesperada también responde el 401 genérico (fail-closed); solo la cancelación del llamador se propaga.
 /// <para>
-/// HU-040.2 (#230, ADR-025): si la persona tiene varios roles disponibles NO se emite sesión: se guardan el alta y los datos corporativos
+/// Si la persona tiene varios roles disponibles NO se emite sesión (ADR-025): se guardan el alta y los datos corporativos
 /// refrescados, se emite el ticket de elección (<see cref="IClsEmisorTicketEleccion"/>, 5 minutos, un solo uso) y se audita
 /// <c>eleccion_rol_pendiente</c> con los roles ofrecidos. <c>ultimaSesion</c> se actualiza cuando elige.
 /// </para>
@@ -79,13 +79,13 @@ public sealed class clsLoginClienteProService(
             usuarioRechazado = verificacion.UsuarioIdRechazado;
             if (verificacion.Identidad is { } identidad)
             {
-                // HU-040.3 (#258): deltas de la reconciliación de roles, para la auditoría (solo códigos; sin datos sensibles).
+                // Deltas de la reconciliación de roles, para la auditoría (solo códigos; sin datos sensibles).
                 rolesOtorgados = identidad.Otorgados.Count > 0 ? [.. identidad.Otorgados.Select(clsCodigoEnum.ACodigo)] : null;
                 rolesRevocados = identidad.Revocados.Count > 0 ? [.. identidad.Revocados.Select(clsCodigoEnum.ACodigo)] : null;
                 clsResultadoLogin emitido;
                 if (identidad.RequiereEleccion)
                 {
-                    // HU-040.2 (#230): sin sesión todavía. El ticket va ligado al usuario y a los roles que se le ofrecen.
+                    // Sin sesión todavía. El ticket va ligado al usuario y a los roles que se le ofrecen.
                     emitido = clsResultadoLogin.ConEleccion(EleccionPendiente(identidad));
                 }
                 else
@@ -137,7 +137,7 @@ public sealed class clsLoginClienteProService(
                 UsuarioId = resultado?.Sesion?.Usuario.Id ?? resultado?.Eleccion?.UsuarioId ?? usuarioRechazado,
                 Rol = resultado?.Sesion?.Usuario.Rol,
                 RolesDisponibles = resultado?.Eleccion?.Roles.Select(r => r.Codigo).ToList(),
-                // HU-040.3 (#258): deltas de la reconciliación de roles (actor "sistema/login", sin revisor humano); solo cuando hubo cambios y
+                // Deltas de la reconciliación de roles (actor "sistema/login", sin revisor humano); solo cuando hubo cambios y
                 // se guardaron (si el login no terminó aceptado/elección, los cambios no se persistieron y no se auditan como aplicados).
                 RolesOtorgados = resultado is null ? null : rolesOtorgados,
                 RolesRevocados = resultado is null ? null : rolesRevocados,
@@ -171,7 +171,7 @@ internal static class clsEmisionSesion
 {
     /// <summary>
     /// Genera un refresh opaco y su entidad (solo con el hash). <paramref name="familiaId"/> nulo inicia familia. <paramref name="rol"/>
-    /// es el rol de la sesión (HU-040.1, <c>TokensRefresco.rolSesion</c>).
+    /// es el rol de la sesión (<c>TokensRefresco.rolSesion</c>).
     /// </summary>
     public static string NuevoRefresh(
         Guid usuarioId, DateTimeOffset ahora, TimeSpan vigencia, Guid? familiaId, RolInterno rol, out clsTokenRefresco entidad)

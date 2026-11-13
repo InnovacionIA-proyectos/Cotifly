@@ -1,7 +1,7 @@
 namespace Cotifly.Aplicacion.Costeo.DTOs;
 
 /// <summary>
-/// Un paso del envío diferido de los conexos de una ruta a la cotización de Nexo (decisión 10 del usuario, HU-021.9, #136). Se guarda en
+/// Un paso del envío diferido de los conexos de una ruta a la cotización de Nexo. Se guarda en
 /// <c>EventosHerramienta</c> (<see cref="Herramienta"/>, sin columna nueva en el esquema), atado a la SOLICITUD de Nexo
 /// (<see cref="SolicitudNexoId"/>): una re-solicitud o una <c>-vN</c> es otra solicitud y sus conexos se vuelven a enviar una vez.
 /// El estado vigente de un conexo es el del registro de su intento más alto; dentro del mismo intento, el resultado manda sobre
@@ -14,7 +14,7 @@ namespace Cotifly.Aplicacion.Costeo.DTOs;
 /// <param name="Estado"><see cref="EnCurso"/>, <see cref="Enviado"/>, <see cref="Incierto"/>, <see cref="Fallido"/>, <see cref="EnEspera"/>
 /// o <see cref="FallidoDefinitivo"/>.</param>
 /// <param name="Conexos">Ids de los conexos de la ruta (<c>IdServicioConexo</c>) a los que aplica el registro.</param>
-/// <param name="PreviosNexo">Ids de los conexos que la cotización de Nexo ya tenía antes del POST (como el registro de #135).</param>
+/// <param name="PreviosNexo">Ids de los conexos que la cotización de Nexo ya tenía antes del POST (como <see cref="clsConexosPendientesNexo"/>).</param>
 public sealed record clsEnvioConexosNexo(
     string Folio, string SolicitudNexoId, Guid LineaSolicitudId, int Intento, string Estado, IReadOnlyList<string> Conexos,
     IReadOnlyList<string> PreviosNexo)

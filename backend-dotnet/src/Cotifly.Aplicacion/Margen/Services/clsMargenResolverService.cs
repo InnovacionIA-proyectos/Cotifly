@@ -12,22 +12,22 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Aplicacion.Margen.Services;
 
 /// <summary>
-/// Port de <c>MargenResolver</c> (<c>mcp_server/margen/servicio.py</c>), en el mismo orden:
+/// Resolución del margen de una línea, en este orden:
 /// <list type="number">
 /// <item>Línea → política (<c>MargenesPolitica</c>, por nombre) → TrqType con <c>SapMapeoTrqType</c> por el id de la política
-/// (HU-042.4, #247; la fila de la organización pedida gana sobre el comodín <c>''</c>). Sin política no hay TrqType.</item>
-/// <item>Si hay BP del cliente y TrqType: consulta la copia local de SAP TM (HU-042.2, #243, ADR-027) por (salesOrg, TrqType, BP).
+/// (la fila de la organización pedida gana sobre el comodín <c>''</c>). Sin política no hay TrqType.</item>
+/// <item>Si hay BP del cliente y TrqType: consulta la copia local de SAP TM (ADR-027) por (salesOrg, TrqType, BP).
 /// Con valor → <c>sap_tm</c>, valor/100 a 6 decimales y anomalía fuera de [0, 60 %]; el detalle dice que viene de la tabla local, la
 /// fecha de la fila y, si la última sincronización exitosa es vieja, un aviso (el dato se usa igual).</item>
 /// <item>Sin BP no se consulta SAP (ADR-004, nunca con el NIT); sin BP, sin TrqType, sin registro (o fila inactiva) o con la
 /// copia nunca sincronizada (no configurada) → política de la línea (<c>politica_linea</c>) con el motivo en <c>detalle</c>.</item>
 /// <item>Si la fuente falla (base caída, tiempo agotado) → política de la línea con el motivo "SAP TM no disponible" y un warning en
-/// el log (decisión de #13, Gherkin "Resiliencia si SAP no responde" de HU-009: la cotización no se interrumpe).</item>
-/// <item>Sin política → <c>MARGEN_LINEA_DESCONOCIDA</c>. Antes de HU-042.4 un TrqType mapeado por texto permitía un margen de SAP sin
-/// política; con la FK eso ya no es posible y el código <c>MARGEN_FUENTE_NO_DISPONIBLE</c> se retiró del contrato.</item>
+/// el log (resiliencia si SAP no responde: la cotización no se interrumpe).</item>
+/// <item>Sin política → <c>MARGEN_LINEA_DESCONOCIDA</c>: el TrqType se relaciona con la política por FK, así que no
+/// hay margen de SAP sin política.</item>
 /// </list>
-/// A diferencia del Python, el nombre de la línea se compara sin tildes, mayúsculas ni espacios
-/// contra las líneas de <c>MargenesPolitica</c> (la collation <c>CI_AS</c> distingue tildes, deuda de ADR-008).
+/// El nombre de la línea se compara sin tildes, mayúsculas ni espacios
+/// contra las líneas de <c>MargenesPolitica</c> (la collation <c>CI_AS</c> distingue tildes; ver ADR-008).
 /// </summary>
 public sealed class clsMargenResolverService(
     IClsMargenPoliticaRepository politicas,
@@ -44,12 +44,12 @@ public sealed class clsMargenResolverService(
     public const string MotivoSinRegistro = "sin registro en SAP TM";
 
     /// <summary>
-    /// La copia local de SAP TM nunca se sincronizó (ninguna corrida <c>ok</c> de la sincronización del backend, HU-042.2): ambiente sin las
+    /// La copia local de SAP TM nunca se sincronizó (ninguna corrida <c>ok</c> de la sincronización del backend): ambiente sin las
     /// credenciales de SAP o con todas las corridas fallidas.
     /// </summary>
     public const string MotivoNoConfigurado = "SAP TM no configurado: se usa la política de la línea";
 
-    /// <summary>La fuente SAP TM no se pudo leer (decisión de #13: respaldo en la política).</summary>
+    /// <summary>La fuente SAP TM no se pudo leer (respaldo en la política).</summary>
     public const string MotivoNoDisponible = "SAP TM no disponible: se usa la política de la línea";
 
     private readonly string _salesOrgDefault = opciones.Value.SalesOrgDefault.Trim();
@@ -71,7 +71,7 @@ public sealed class clsMargenResolverService(
         var politica = await BuscarPoliticaAsync(lineaRecibida, cancellationToken);
         if (politica is { Activa: false })
         {
-            // #41 (auditoría F4): el comercial no cotiza con una línea inactiva (la administración sí la ve y la reactiva).
+            // El comercial no cotiza con una línea inactiva (la administración sí la ve y la reactiva).
             return LineaInactiva(politica.LineaNegocio);
         }
 
@@ -80,11 +80,11 @@ public sealed class clsMargenResolverService(
             ? clsReglaMargen.MetodoMargen
             : politica.MetodoCalculo.Trim();
 
-        // HU-042.4 (#247): el TrqType se busca por el id de la política (FK de SapMapeoTrqType), no por el texto. Sin política no hay
+        // El TrqType se busca por el id de la política (FK de SapMapeoTrqType), no por el texto. Sin política no hay
         // TrqType, así que tampoco se consulta SAP TM.
         var trqType = politica is null ? null : await mapeo.TrqTypeDeAsync(politica.Id, salesOrg, cancellationToken);
 
-        // 1) SAP TM (copia local, HU-042.2): solo con BP del cliente y TrqType mapeado.
+        // 1) SAP TM (copia local): solo con BP del cliente y TrqType mapeado.
         clsConsultaMargenSap? consulta = null;
         var caidaSap = false;
         if (politica is not null && bp is not null && trqType is not null)
@@ -159,7 +159,7 @@ public sealed class clsMargenResolverService(
             : null;
 
     /// <summary>
-    /// HU-042.2 (#243): detalle de un margen de SAP TM leído de la copia local, con la fecha en que cambió la fila (en la zona de la
+    /// Detalle de un margen de SAP TM leído de la copia local, con la fecha en que cambió la fila (en la zona de la
     /// propia fila) y, si la última sincronización exitosa tiene más de <see cref="clsOpcionesMargen.AvisoSincronizacionHoras"/>, el aviso
     /// de que puede estar desactualizado (el dato se usa igual: la copia no caduca).
     /// </summary>
@@ -178,7 +178,7 @@ public sealed class clsMargenResolverService(
         return detalle;
     }
 
-    /// <summary>Detalle de <c>MARGEN_LINEA_DESCONOCIDA</c> cuando la línea existe pero está inactiva (#41).</summary>
+    /// <summary>Detalle de <c>MARGEN_LINEA_DESCONOCIDA</c> cuando la línea existe pero está inactiva.</summary>
     public const string DetalleLineaInactiva = "línea inactiva";
 
     /// <summary>Error de una línea inactiva: <c>MARGEN_LINEA_DESCONOCIDA</c> con el detalle <see cref="DetalleLineaInactiva"/>.</summary>
@@ -186,7 +186,7 @@ public sealed class clsMargenResolverService(
         new(clsCodigosError.MargenLineaDesconocida, $"La línea '{linea}' está inactiva: no se puede cotizar con ella.", DetalleLineaInactiva);
 
     /// <summary>
-    /// #278 (DU §8): <c>LINEA_NEGOCIO_INVALIDO</c> si el <c>mapeoLineasNexo</c> de <paramref name="politica"/> (lo que viaja a NEXO como
+    /// <c>LINEA_NEGOCIO_INVALIDO</c> si el <c>mapeoLineasNexo</c> de <paramref name="politica"/> (lo que viaja a NEXO como
     /// <c>lineaNegocio</c> de las rutas de esa línea) no es una de las seis líneas de NEXO; <c>null</c> si es válido o no tiene mapeo (sin
     /// línea). Se valida ANTES de llamar a NEXO, que lo rechazaría con el mismo código.
     /// </summary>
@@ -229,10 +229,9 @@ public sealed class clsMargenResolverService(
     public const string DetalleLineaDeNexo = "LINEA_DE_NEXO";
 
     /// <summary>
-    /// <c>MARGEN_LINEA_DESCONOCIDA</c> con las líneas que sí se pueden usar (HU-013.15, #124) en <c>detalle.lineas_validas</c>. Con
+    /// <c>MARGEN_LINEA_DESCONOCIDA</c> con las líneas que sí se pueden usar en <c>detalle.lineas_validas</c>. Con
     /// <paramref name="esLicitacion"/> y la línea "Licitaciones" del catálogo de Nexo, el mensaje explica que esa línea es de Nexo y
-    /// no da margen (<c>detalle.motivo = LINEA_DE_NEXO</c>): una licitación se crea con la línea de Cotifly que da el margen (decisión
-    /// del 2026-10-08, pregunta abierta en <c>docs/conexion_nexo/HU-013-preguntas-nexo.md</c>).
+    /// no da margen (<c>detalle.motivo = LINEA_DE_NEXO</c>): una licitación se crea con la línea de Cotifly que da el margen.
     /// </summary>
     public static clsErrorDominio LineaDesconocida(string? linea, IReadOnlyList<string> activas, bool esLicitacion = false)
     {

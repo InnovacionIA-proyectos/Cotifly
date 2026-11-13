@@ -13,10 +13,10 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Aplicacion.Costeo.Services;
 
 /// <summary>
-/// Asunto e introducción del PDF del costeo (HU-013.5, ADR-018 §2a y §11): <c>POST /web/cotizaciones/{folio}/costeo/textos/redactar</c>
+/// Asunto e introducción del PDF del costeo (ADR-018 §2a y §11): <c>POST /web/cotizaciones/{folio}/costeo/textos/redactar</c>
 /// (la IA, con el texto estándar de respaldo) y <c>PUT .../costeo/textos</c> (el comercial). Solo el dueño
 /// (<c>COTIZACION_NO_ENCONTRADA</c> → 404); exigen la versión de la fila (<c>CONFLICTO_CONCURRENCIA</c>), la cotización finalizada
-/// (HU-036.3, #207: <c>COTIZACION_NO_FINALIZADA</c>) y siguen la regla del PDF (<c>PDF_YA_ENVIADO</c> si ya se entregó al cliente; si no,
+/// (<c>COTIZACION_NO_FINALIZADA</c>) y siguen la regla del PDF (<c>PDF_YA_ENVIADO</c> si ya se entregó al cliente; si no,
 /// invalidan el PDF vigente).
 /// </summary>
 public interface IClsTextosCosteoService
@@ -24,7 +24,7 @@ public interface IClsTextosCosteoService
     /// <summary>
     /// Redacta y guarda los textos (<c>fuente = ia</c>, o <c>estandar</c> si la IA no sirvió: nunca falla por la IA). Con textos editados
     /// por el comercial responde <c>TEXTOS_EDITADOS</c> sin llamar a la IA, salvo con <paramref name="sobrescribir"/>.
-    /// <paramref name="indicacionesRedaccion"/> (HU-013.18, #296) son las indicaciones opcionales del comercial para orientar a la IA
+    /// <paramref name="indicacionesRedaccion"/> son las indicaciones opcionales del comercial para orientar a la IA
     /// (recortadas; vacías o solo espacios equivalen a sin indicaciones); si pasan de <see cref="clsContextoRedaccion.LargoMaximoIndicaciones"/>
     /// caracteres responde <c>SOLICITUD_INVALIDA</c> (400) sin llamar a la IA. No se guardan en la cotización.
     /// </summary>
@@ -58,16 +58,16 @@ public sealed class clsTextosCosteoService(
     /// <summary>Motivo de la versión nueva que sugiere <c>PDF_YA_ENVIADO</c>.</summary>
     public const string MotivoVersion = "Cambio de los textos del PDF después del envío";
 
-    /// <summary>HU-036.3 (#207): cierre del mensaje de <c>COTIZACION_NO_FINALIZADA</c> al redactar.</summary>
+    /// <summary>Cierre del mensaje de <c>COTIZACION_NO_FINALIZADA</c> al redactar.</summary>
     public const string AccionRedactar = "redactar los textos del PDF";
 
-    /// <summary>HU-036.3 (#207): cierre del mensaje de <c>COTIZACION_NO_FINALIZADA</c> al editar los textos.</summary>
+    /// <summary>Cierre del mensaje de <c>COTIZACION_NO_FINALIZADA</c> al editar los textos.</summary>
     public const string AccionEditar = "editar los textos del PDF";
 
     public async Task<clsResultado<clsTextosGuardados>> RedactarAsync(
         Guid usuarioId, string folio, bool sobrescribir, int versionEsperada, string? indicacionesRedaccion = null, CancellationToken cancellationToken = default)
     {
-        // HU-013.18 (#296): las indicaciones del comercial se normalizan antes de nada; si pasan del tope, 400 SOLICITUD_INVALIDA sin llamar a la IA.
+        // Las indicaciones del comercial se normalizan antes de nada; si pasan del tope, 400 SOLICITUD_INVALIDA sin llamar a la IA.
         if (!NormalizarIndicaciones(indicacionesRedaccion, out var indicaciones, out var errorIndicaciones))
         {
             return errorIndicaciones!;
@@ -89,7 +89,7 @@ public sealed class clsTextosCosteoService(
             return entregada;
         }
 
-        // HU-036.3 (#207): los textos del PDF se redactan con el precio ya aceptado.
+        // Los textos del PDF se redactan con el precio ya aceptado.
         if (cotizacion.ValidarFinalizadaAntesDe(AccionRedactar) is { } sinFinalizar)
         {
             return sinFinalizar;
@@ -101,11 +101,11 @@ public sealed class clsTextosCosteoService(
                 $"Los textos de la cotización {cotizacion.Folio} los editó el comercial: confirma para reemplazarlos (sobrescribir=true).");
         }
 
-        // HU-021.9 (#136): la línea de negocio sale de las rutas (sin respaldo a la cabecera): el estándar lleva la de la solicitud si
+        // La línea de negocio sale de las rutas (sin respaldo a la cabecera): el estándar lleva la de la solicitud si
         // todas sus rutas tienen la misma (como el PDF) y la IA recibe las de sus rutas.
         var nombres = await clsLineasNegocioRutas.NombresAsync(cotizacion, politicas, cancellationToken);
         var estandar = clsCosteoCotizacionService.TextosEstandar(cotizacion, clsLineasNegocioRutas.Comun(cotizacion, nombres));
-        // HU-013.18 (#296): las indicaciones del comercial, si vienen, se adjuntan al contexto como una preferencia (no se guardan).
+        // Las indicaciones del comercial, si vienen, se adjuntan al contexto como una preferencia (no se guardan).
         var contexto = Contexto(cotizacion, clsLineasNegocioRutas.ParaRedaccion(cotizacion, nombres)) with { IndicacionesComercial = indicaciones };
         var redactado = await redaccion.RedactarAsync(contexto, estandar, cancellationToken);
         var textos = new clsTextosCotizacion(redactado.Asunto, redactado.Introduccion, redactado.Fuente, Editado: false, tiempo.GetUtcNow());
@@ -115,7 +115,7 @@ public sealed class clsTextosCosteoService(
         // Se audita DESPUÉS de guardar: con CONFLICTO_CONCURRENCIA queda guardado = false (la fuente no llegó a la cotización).
         await auditoria.RegistrarAsync(
             clsRedaccionCotizacionService.HerramientaAuditoria,
-            // HU-013.18 (#296): la auditoría solo registra SI hubo indicaciones (con_indicaciones), nunca el texto.
+            // La auditoría solo registra SI hubo indicaciones (con_indicaciones), nunca el texto.
             new { folio = cotizacion.Folio, sobrescribir, con_indicaciones = indicaciones is not null },
             new
             {
@@ -216,8 +216,8 @@ public sealed class clsTextosCosteoService(
     }
 
     /// <summary>
-    /// Contexto de la IA desde la cotización (ADR-018 §2a; por ruta desde HU-021.9, #136): cliente, líneas de negocio de las rutas
-    /// (<paramref name="lineaNegocio"/>), rutas (origen y destino de cada ruta; HU-028.1, #183: sin las rechazadas por la Mesa de Costeo),
+    /// Contexto de la IA desde la cotización, por ruta (ADR-018 §2a): cliente, líneas de negocio de las rutas
+    /// (<paramref name="lineaNegocio"/>), rutas (origen y destino de cada ruta, sin las rechazadas por la Mesa de Costeo),
     /// tipos de vehículo de sus camiones vigentes (sin repetir; un camión descartado o rechazado en Nexo no cuenta), nombres de los conexos de las rutas y moneda, cada texto recortado a <see cref="clsContextoRedaccion.LargoMaximoCampo"/>.
     /// Nada sale de la cabecera salvo el cliente y la moneda. Nada más: ni costos, ni margen, ni precios, ni la TRM, ni el folio, el NIT o
     /// el comercial.
@@ -225,7 +225,7 @@ public sealed class clsTextosCosteoService(
     public static clsContextoRedaccion Contexto(clsCotizacionSolicitud cotizacion, string? lineaNegocio)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        // HU-028.1 (#183): sin las rutas que la Mesa de Costeo de Nexo rechazó (el PDF las muestra "Sin costeo"): el texto de la IA no debe
+        // Sin las rutas que la Mesa de Costeo de Nexo rechazó (el PDF las muestra "Sin costeo"): el texto de la IA no debe
         // ofrecer al cliente una ruta ni unos conexos que no se cotizaron.
         var ordenadas = cotizacion.RutasCotizables;
         List<clsRutaRedaccion> rutas = [.. ordenadas
@@ -234,7 +234,7 @@ public sealed class clsTextosCosteoService(
         var vehiculos = ordenadas.SelectMany(r => clsVehiculoLineaSolicitud.EnOrden(r.VehiculosQueCuentan))
             .Select(v => v.TipoVehiculo?.Trim()).OfType<string>().Where(t => t.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        // Corrección conexos (nombre nunca id): el nombre guardado o, si es null (fila migrada), la categoría como respaldo LEGIBLE; nunca el
+        // El nombre guardado o, si es null (fila migrada), la categoría como respaldo LEGIBLE; nunca el
         // id interno (el texto lo redacta la IA para el cliente).
         var conexos = ordenadas.SelectMany(r => r.Conexos)
             .Select(s => Recortar(s.Nombre ?? s.Categoria ?? clsCosteoCotizacionService.CategoriaConexo)!)
@@ -250,7 +250,7 @@ public sealed class clsTextosCosteoService(
     }
 
     /// <summary>
-    /// HU-013.18 (#296): normaliza las indicaciones del comercial. Recorta los espacios; vacío o solo espacios queda en <c>null</c> (sin
+    /// Normaliza las indicaciones del comercial. Recorta los espacios; vacío o solo espacios queda en <c>null</c> (sin
     /// indicaciones); por encima de <see cref="clsContextoRedaccion.LargoMaximoIndicaciones"/> devuelve <c>false</c> con 400
     /// <c>SOLICITUD_INVALIDA</c> (el llamador no debe seguir a la IA).
     /// </summary>

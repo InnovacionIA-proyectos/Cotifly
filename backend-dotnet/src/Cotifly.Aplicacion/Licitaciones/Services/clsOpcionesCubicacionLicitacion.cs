@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 namespace Cotifly.Aplicacion.Licitaciones.Services;
 
 /// <summary>
-/// HU-023.5 (#160): cubicación de la licitación en segundo plano. Comparte la sección <c>Cubicador</c> con la conexión al cubicador
+/// Cubicación de la licitación en segundo plano. Comparte la sección <c>Cubicador</c> con la conexión al cubicador
 /// (<c>clsOpcionesCubicador</c>, en Infraestructura); estas son las claves del proceso en segundo plano, validadas al arrancar.
 /// </summary>
 public sealed class clsOpcionesCubicacionLicitacion
@@ -12,7 +12,7 @@ public sealed class clsOpcionesCubicacionLicitacion
 
     /// <summary>
     /// Con el cubicador configurado, ¿la licitación se guarda sin esperar al cubicador y sus rutas se cubican en segundo plano? Por defecto
-    /// <c>true</c>. Con <c>false</c> vuelve el comportamiento de HU-023.3 (todas las rutas mientras el comercial espera, todo o nada).
+    /// <c>true</c>. Con <c>false</c> se cubican todas las rutas mientras el comercial espera (todo o nada).
     /// </summary>
     public bool LicitacionEnSegundoPlano { get; set; } = true;
 
@@ -23,8 +23,8 @@ public sealed class clsOpcionesCubicacionLicitacion
     public bool ProcesadorHabilitado { get; set; } = true;
 
     /// <summary>
-    /// Petición P6: llamadas al cubicador en paralelo como máximo, <b>entre todas las réplicas</b> (un cupo por llamada con
-    /// <c>sp_getapplock</c> en la base). Opción C (D3, E2E 2026-10-16): por defecto 1, porque el cubicador calcula una carga a la vez; al
+    /// Llamadas al cubicador en paralelo como máximo, <b>entre todas las réplicas</b> (un cupo por llamada con
+    /// <c>sp_getapplock</c> en la base). Por defecto 1, porque el cubicador calcula una carga a la vez; al
     /// arrancar se valida que no supere el cupo global de este proceso (<c>Cubicador:MaximoConcurrente</c>): más rutas en paralelo solo
     /// esperarían ese cupo con la ruta ya reclamada.
     /// </summary>
@@ -41,7 +41,7 @@ public sealed class clsOpcionesCubicacionLicitacion
 
     /// <summary>
     /// Cuánto tiene una réplica la ruta reclamada (s). Pasado, otra la puede tomar (la réplica se cayó a mitad). Debe ser mayor que lo que
-    /// puede durar la llamada de la ruta más 30 s de margen (opción C: la espera por el cupo global, <c>Cubicador:EsperaMaximaCupoSegundos</c>
+    /// puede durar la llamada de la ruta más 30 s de margen (la espera por el cupo global, <c>Cubicador:EsperaMaximaCupoSegundos</c>
     /// = 60; el POST, <c>Cubicador:TiempoEsperaRecomendacionSegundos</c> = 90 + 2; la espera antes de la reconsulta, 5, y la reconsulta,
     /// <c>Cubicador:TiempoEsperaReconsultaSegundos</c> = 60: 247 con los valores por defecto): una llamada en curso no se repite en otra
     /// réplica. Por defecto 300.

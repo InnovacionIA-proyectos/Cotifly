@@ -4,7 +4,7 @@ using System.Text;
 namespace Cotifly.Aplicacion.Pdf.Services;
 
 /// <summary>
-/// Limpieza de los textos del payload antes de maquetarlos. El PDF ya no se arma con HTML (ADR-006), así que no hace falta
+/// Limpieza de los textos del payload antes de maquetarlos. El PDF no se arma con HTML (ADR-006), así que no hace falta
 /// escapar marcado: un <c>&lt;script&gt;</c> se imprime literal. Lo que sí se quita son los caracteres de control (salvo el
 /// salto de línea), los separadores de línea Unicode y los caracteres de formato invisibles, que podrían romper la
 /// maquetación o esconder texto; los tabuladores pasan a espacio.

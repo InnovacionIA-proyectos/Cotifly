@@ -11,7 +11,7 @@ using Cotifly.Dominio.Margen;
 
 namespace Cotifly.Aplicacion.Licitaciones.Services;
 
-/// <summary>HU-044.4 (#255): <c>POST /web/licitaciones/normalizar-valores</c>.</summary>
+/// <summary><c>POST /web/licitaciones/normalizar-valores</c>.</summary>
 public interface IClsNormalizacionValoresService
 {
     /// <summary>
@@ -25,10 +25,10 @@ public interface IClsNormalizacionValoresService
 
 /// <summary>
 /// Implementación de <see cref="IClsNormalizacionValoresService"/> (ADR-029). Reenvía a NEXO por el puerto de la importación
-/// (<see cref="IClsImportacionExcelNexo"/>, #252) y traduce la línea de negocio a la de Cotifly.
+/// (<see cref="IClsImportacionExcelNexo"/>) y traduce la línea de negocio a la de Cotifly.
 /// </summary>
 /// <remarks>
-/// <para><b>Línea de negocio.</b> En una licitación cada ruta lleva su línea de negocio DE COTIFLY (decisión del 2026-11-05), que es la
+/// <para><b>Línea de negocio.</b> En una licitación cada ruta lleva su línea de negocio DE COTIFLY, que es la
 /// que tiene margen; a NEXO viaja su <c>mapeoLineasNexo</c>. Por eso:</para>
 /// <list type="number">
 /// <item>Un texto que ya es el nombre de una línea de Cotifly (misma regla que el alta, <see cref="clsReglasMargen.MismaLinea"/>) se

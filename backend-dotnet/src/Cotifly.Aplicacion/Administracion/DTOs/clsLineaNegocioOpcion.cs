@@ -1,7 +1,7 @@
 namespace Cotifly.Aplicacion.Administracion.DTOs;
 
 /// <summary>
-/// HU-016.1 (#154, decisión P4b del 2026-10-27): una línea de negocio activa para el desplegable de la captura (esquema
+/// Una línea de negocio activa para el desplegable de la captura (esquema
 /// <c>LineaNegocioOpcion</c>; la Api la serializa como <c>linea_negocio</c> y <c>etiqueta</c>). <b>Sin margen ni método</b>: la política
 /// de margen solo la ve la administración (<see cref="clsLineaNegocioAdmin"/>).
 /// </summary>
