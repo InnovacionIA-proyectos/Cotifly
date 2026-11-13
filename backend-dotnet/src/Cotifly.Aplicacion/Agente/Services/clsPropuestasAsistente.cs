@@ -298,11 +298,6 @@ public static class clsPropuestasAsistente
                           : ".")
                       + SinCambio(rutas, cambian, "ya tiene ese margen", "ya tienen ese margen");
         var limpia = clsMargenAjuste.LimpiarJustificacion(justificacion);
-        if (limpia is not null)
-        {
-            resumen += $" Justificación: {Cita(limpia)}.";
-        }
-
         if (cambios.Any(c => c.Ruta.Conexos.Count > 0))
         {
             // El margen es solo del transporte; los conexos van a su precio de venta y no cambian con el ajuste.
@@ -310,6 +305,12 @@ public static class clsPropuestasAsistente
         }
 
         resumen += SufijoPdf(cotizacion);
+        // La cita va al final: si el resumen se recorta, se pierde ella (viaja completa en el cuerpo) y no los avisos.
+        if (limpia is not null)
+        {
+            resumen += $" Justificación: {Cita(limpia)}.";
+        }
+
         var cuerpo = CuerpoLineas(todas, forma.Valor);
         cuerpo["margen"] = nuevo;
         cuerpo["justificacion"] = limpia;
