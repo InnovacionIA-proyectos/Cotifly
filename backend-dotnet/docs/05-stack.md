@@ -31,7 +31,7 @@ Todas las versiones se fijan en `Directory.Packages.props` (Central Package Mana
 | Microsoft.Extensions.Http.Resilience | 10.10.0 | MIT (trae Polly 8, BSD-3-Clause) | Infraestructura | Reintentos y límites de los clientes HTTP (Nexo, TRM, MailSender, cubicador) |
 | PDFsharp-MigraDoc | 6.2.4 | MIT | Infraestructura | Maquetación del PDF (ADR-006) |
 | Microsoft.AspNetCore.Authentication.JwtBearer | 10.0.12 | MIT | Api | Validación del access token |
-| Microsoft.IdentityModel.JsonWebTokens | 8.19.2 | MIT | Infraestructura | Emisión del JWT (hasta HU-013.9 también el token de la cuenta de servicio de Google y la verificación del JWT de Google Chat) |
+| Microsoft.IdentityModel.JsonWebTokens | 8.19.2 | MIT | Infraestructura | Emisión del JWT |
 | Microsoft.SemanticKernel.Core | 1.80.1 | MIT | Aplicacion | Kernel, `KernelFunction`, `IFunctionInvocationFilter` |
 | Microsoft.Extensions.AI | 10.10.0 | MIT | Infraestructura | `ChatClientBuilder`, `UseLogging` |
 | Microsoft.Extensions.AI.Abstractions | 10.10.1 | MIT | transitiva, fijada en CPM | `IChatClient`, `ChatResponseFormat`, `AIJsonUtilities` |

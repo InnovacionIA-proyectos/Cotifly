@@ -38,7 +38,7 @@ Todos los endpoints de esta guía están en la rama `QA` y son el contrato vigen
 | **Obsoleto** | Sigue respondiendo, pero no se debe usar en pantallas nuevas | No en pantallas nuevas |
 
 La creación de cotizaciones es solo por formulario (`POST /web/solicitudes-costeo`) o por Excel de licitación
-(`POST /web/licitaciones`); el formulario spot es solo en COP (ADR-015 §5) y las licitaciones admiten USD (sección 5.24).
+(`POST /web/licitaciones`); ambos admiten COP y USD (secciones 5.15 y 5.24).
 
 ## 2. Arquitectura y comunicación
 
@@ -2157,22 +2157,19 @@ Responsabilidades del frontend:
 4. Interceptor con refresh single-flight, un solo reintento y SSO silencioso si el refresh falla.
 5. Al cerrar la sesión de ClientePro, llamar a `logout` de Cotifly y borrar los tokens.
 
-### 6.2 Cotización por chat. Retirada en #105
+### 6.2 Creación de cotizaciones
 
-La cotización por chat (slot-filling, municipios, previsualización, confirmación y PDF por `POST /web/chat`) y el selector de moneda del chat se retiraron con el agente cotizador legado (#102 la apagó, #105 borró el código). Las cotizaciones se crean con el formulario (6.4) y la moneda va en él (`moneda` de `SolicitudCosteoWeb`, #103). El chat es el asistente de una cotización ya creada (sección 10, "Asistente por folio").
+Las cotizaciones se crean solo con el formulario por rutas (6.4) o con el Excel de licitación (6.9). La moneda va en el formulario (`moneda` de `SolicitudCosteoWeb`). El chat no crea cotizaciones: es el asistente de una cotización ya creada y se abre desde su detalle (6.11).
 
 ### 6.3 Cotización en USD
 
-El selector de moneda del chat se retiró (#105): la cotización en dólares se pide en el formulario (5.15, #103) o en la licitación (5.24), que fijan la TRM del día al crear la cotización. Lo que sigue vigente para el frontend:
+La cotización en dólares se pide en el formulario (5.15) o en la licitación (5.24), que fijan la TRM del día al crear la cotización.
 
-1. (Retirado con el chat.)
-2. (Retirado con el chat.)
-3. Mostrar en USD: `US$ precio` y "TRM aplicada: `trm_aplicada`". Ya no se muestra un "mínimo a pagar" en pesos (decisión de negocio del 2026-10-05). Costo y utilidad, si se muestran, en COP.
-4. `TRM_NO_DISPONIBLE` al crear: no se crea nada; ofrecer Reintentar o cambiar a COP.
-5. (Retirado con el chat: la TRM queda fijada al crear la cotización.)
-6. "Mis cotizaciones": columna `moneda` (y `trm_aplicada` si es USD).
-7. El PDF en USD trae, debajo de la tabla, la nota de negocio (2026-10-05): "Esta cotización está bajo una TRM mínima de {TRM} y es de resaltar que la tarifa puede variar de acuerdo al comportamiento de la misma a la fecha de elaboración de la CPI.", con `{TRM}` = la `trm_aplicada` de la cotización (la del día en que se cotizó) en formato `$3.273,49`. Los PDF en COP no la llevan. No hace falta nada en el frontend; si se muestra una vista previa del texto, usar ese mismo formato.
-8. El formulario ampliado de Nexo (spot) soporta USD desde #103 (HU-013.7): enviar `moneda` en `POST /web/solicitudes-costeo` (sección 5.15). Las **licitaciones** también: ver 5.24 (`moneda`).
+1. Mostrar en USD: `US$ precio` y "TRM aplicada: `trm_aplicada`". No se muestra un "mínimo a pagar" en pesos. Costo y utilidad, si se muestran, en COP.
+2. `TRM_NO_DISPONIBLE` al crear: no se crea nada; ofrecer Reintentar o cambiar a COP.
+3. "Mis cotizaciones": columna `moneda` (y `trm_aplicada` si es USD).
+4. El PDF en USD trae, debajo de la tabla, la nota de negocio: "Esta cotización está bajo una TRM mínima de {TRM} y es de resaltar que la tarifa puede variar de acuerdo al comportamiento de la misma a la fecha de elaboración de la CPI.", con `{TRM}` = la `trm_aplicada` de la cotización (la del día en que se cotizó) en formato `$3.273,49`. Los PDF en COP no la llevan. No hace falta nada en el frontend; si se muestra una vista previa del texto, usar ese mismo formato.
+5. El formulario por rutas (spot) admite USD: enviar `moneda` en `POST /web/solicitudes-costeo` (sección 5.15). Las **licitaciones** también: ver 5.24 (`moneda`).
 
 ### 6.4 Formulario ampliado con costeo en Nexo. En QA
 
@@ -2511,6 +2508,85 @@ Botón **"Editar solicitud"** en el detalle de la cotización (y en "Mis cotizac
    - 503 (o 403) con `detalle.motivo = RECHAZO_NEXO_FALLIDO`: "NEXO no respondió (o no dio permiso); no se cambió nada". Recargar y
      ofrecer Reintentar. El `detalle.motivo` ya no trae el texto técnico de NEXO (endurecimiento B de #199).
 
+### 6.11 Detalle de una cotización ("Ver detalle")
+
+La página de detalle se abre desde "Mis cotizaciones" (o desde el listado regional del gerente) y desde la navegación posterior a la
+creación. Concentra la consulta de la cotización y las acciones del cierre comercial. El asistente IA se abre solo desde aquí.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as Comercial
+    participant F as Frontend
+    participant A as Cotifly API
+    F->>A: GET /web/cotizaciones/folio
+    A-->>F: 200 DetalleCotizacion y ETag
+    opt Costeo en curso
+        F->>A: GET /web/cotizaciones/folio/costeo (cada 15 a 30 s)
+        A-->>F: CosteoCotizacion y ETag
+    end
+    U->>F: Ajusta margen, conexos, seguro o textos
+    F->>A: PUT o POST .../costeo/... con If-Match
+    A-->>F: CosteoCotizacion y ETag nuevo
+    U->>F: Finalizar
+    F->>A: POST /web/cotizaciones/folio/finalizar con If-Match
+    A-->>F: 200 CotizacionResumen con finalizada_at
+    U->>F: Generar PDF
+    F->>A: POST /web/cotizaciones/folio/costeo/pdf
+    A-->>F: 201 pdf_url
+    U->>F: Enviar por correo y marcar el resultado
+    F->>A: POST .../enviar y POST .../resultado
+```
+
+**Carga de la página.**
+
+1. `GET /web/cotizaciones/{folio}` (sección 5.29) trae en una sola respuesta la cabecera (`cotizacion`), el costeo por ruta (`costeo`),
+   la captura (`captura`), `fechas`, `totales` y `solo_lectura`. Guardar el `ETag`: es el `If-Match` de las acciones.
+2. Pintar las rutas cruzando `costeo.rutas[]` con `captura[]` por `linea_solicitud_id`, y los totales desde `totales`. Usar una fuente por
+   dato (sección 5.29).
+3. El detalle no consulta NEXO. Mientras el costeo está en curso (`pendiente_envio`, `pendiente_costeo` o `autocosteo` sin precio),
+   refrescar con `GET .../costeo` según la regla de polling de la sección 6.4 (paso 10). Al recibir un `ETag` nuevo, reemplazar el guardado.
+4. Con `solo_lectura = true` (gerente comercial o director), esconder todas las acciones salvo la descarga del PDF y del Excel.
+5. 404: "La cotización no existe o no tienes acceso".
+
+**Botones y cuándo se habilitan.** El orden del cierre es: costeo listo, Finalizar, textos y PDF, envío y resultado (sección 7.1 para
+los estados del costeo).
+
+| Botón | Habilitado cuando | Llamada | Notas |
+|---|---|---|---|
+| Ajustar margen | Costeo listo, sin finalizar, sin envío ni resultado | `PUT .../costeo/margen` (una ruta) o `PUT .../costeo/margen/lineas` (varias) | Justificación obligatoria por debajo del `margen_sugerido` (`JUSTIFICACION_REQUERIDA`) |
+| Servicios conexos | Igual que el margen; no en licitaciones (`409 ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION`) | `GET /web/servicios-conexos`, `POST` o `PUT .../costeo/servicios-conexos` | Ver la sección 10, "Servicios conexos de Nexo" |
+| Seguro de la mercancía | Igual que el margen, por ruta; no en licitaciones (`409 ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION`) | `PUT .../costeo/seguro` | Sección 5.18.3 |
+| Editar solicitud | Según `edicion.permitida` de `GET .../solicitud` | `GET` y `PUT .../solicitud` | Sección 6.10 |
+| Cotizar costo | Sección 10, "Cotizar costo" | `POST .../costeo/re-solicitar` | Mismo folio (200) o versión `-vN` (201): navegar a la nueva |
+| Reintentar envío a Nexo | `ganada` en `null` y `estado_costeo = error_envio` sin "Rechazo definitivo", o `pendiente_envio` con más de 2 minutos sin cambios; nunca con la cubicación de una licitación en curso | `POST .../costeo/reintentar` | Sección 5.16 |
+| Finalizar | `estado_costeo` en `autocosteo` o `entregada`, con `precio_final`, y `fechas.finalizada_at` en `null` | `POST .../finalizar` con `If-Match` | Acepta el precio y lo congela. Ante `medidas_obligatorias_faltantes`, ofrecer agregar las medidas o pedir una justificación (sección 5.18.4) |
+| Textos del PDF y "Redactar con IA" | Finalizada, sin envío ni resultado | `PUT .../costeo/textos` y `POST .../costeo/textos/redactar` | Sección 10, "Textos del PDF" |
+| Generar o regenerar PDF | Finalizada; sin PDF vigente o con `pdf_desactualizado = true` | `POST .../costeo/pdf` | Confirmar antes el teléfono del comercial (sección 5.10) |
+| Descargar PDF | `pdf_url` con valor | `GET /pdfs/{archivo}` como blob | También en solo consulta |
+| Exportar Excel | Con `precio_final` | `GET /web/cotizaciones/{folio}/excel` como blob | El dueño recibe la versión interna con costos y margen; el gerente y el director, la versión sin costos. `409 COSTEO_NO_LISTO` sin precio |
+| Enviar por correo | Finalizada y con `pdf_url` | `vista-previa` y `enviar` | Sección 6.6 |
+| Ganada / Perdida | `ganada` en `null` y, con el costeo listo, finalizada (reglas por estado en la sección 6.5) | `POST .../resultado` con `If-Match` | Motivos de `GET /web/motivos-perdida`; ruteo frente a `/seguimiento` en la sección 6.5 |
+| Nueva versión | Sección 6.5 | `POST .../costeo/re-solicitar` con `nueva_version: true` | Ya enviada o con resultado, los cambios responden `409 PDF_YA_ENVIADO` con esta llamada en `detalle` |
+| Asistente | Siempre que la cotización sea del usuario | `POST /web/chat` con el `folio` | Ver abajo |
+
+Sin finalizar, el PDF, los textos, el envío y el resultado responden `409 COTIZACION_NO_FINALIZADA`. Ya finalizada, lo que cambia el
+precio (margen, conexos, re-solicitar en el mismo folio, recalcular camiones, editar en sitio) responde `409 PDF_YA_ENVIADO` con la
+versión nueva en `detalle`. Si NEXO trae otro costo después de finalizar, el precio no cambia y `motivo_estado_costeo` avisa qué ruta
+cambió: para cotizar con el costo nuevo, crear una versión nueva.
+
+**Asistente del folio.** Panel lateral o modal dentro del detalle, ligado a la cotización abierta:
+
+1. Generar un `sesion_id` por cotización abierta y enviar siempre el `folio` (sin él, `400 FOLIO_REQUERIDO`).
+2. Mostrar "escribiendo..." y deshabilitar el envío durante el turno, con un timeout de cliente de al menos 120 s (sección 2.8.1).
+3. Si la respuesta trae `accion_propuesta`, mostrar su `resumen` con **Confirmar** y aplicar el patrón propuesta → Confirmar de la
+   sección 10. Al confirmar, actualizar el detalle con la respuesta del endpoint y guardar el `ETag` nuevo.
+4. Con `error: true`, mostrar el `texto` como aviso y reactivar el envío.
+5. El asistente consulta y propone; no genera ni envía el PDF, no redacta los textos y no crea cotizaciones. Conversar no cambia el `ETag`.
+
+**Concurrencia.** Toda acción con `If-Match` puede responder `409 CONFLICTO_CONCURRENCIA` si el polling u otra pestaña cambió la
+cotización: recargar el detalle (o el costeo), mostrar los valores nuevos y volver a pedir la confirmación.
+
 ## 7. Estados y reglas de UI
 
 ### 7.1 Máquina de estados de `estado_costeo` (En QA)
@@ -2563,7 +2639,7 @@ UI por estado:
 
 | Elemento | `comercial` | `gerente_comercial` | Regla del backend |
 |---|---|---|---|
-| Cotizador (Nueva cotización, Asistente, Mis cotizaciones) | Sí | El backend **lo permite** (política `Comercial`: "el gerente también cotiza"). HU-004.3 dice "solo comercial": **a confirmar** con negocio | `/web/*` acepta ambos roles |
+| Cotizador (Nueva cotización, Licitación, Mis cotizaciones; el asistente se abre desde el detalle) | Sí | El backend **lo permite** (política `Comercial`: "el gerente también cotiza"). HU-004.3 dice "solo comercial": **a confirmar** con negocio | `/web/*` acepta ambos roles |
 | Tablero propio (`/web/metricas/comercial`) | Sí (HU-010.2) | El backend lo permite (ve solo lo suyo); **a confirmar** si se muestra | Política `Comercial` |
 | Tablero de regional (`/web/metricas/regional`) | No (403) | Sí (HU-010.3): su regional, filtrable por comercial | Política `GerenteComercial`; 409 sin regional |
 | Administrar márgenes | No | Sí | `/web/admin/*` solo `gerente_comercial` (403 si no). HU-004.10 dice "rol admin": es `gerente_comercial` |
@@ -2601,7 +2677,7 @@ UI por estado:
 |---|---|---|
 | Login SSO, interceptor con refresh single-flight, logout, guards por `user.rol` | `/api/auth/*` | HU-004.3 (#34, cerrado); verificar el interceptor frente a #17 (refresh de ClientePro) |
 | Modal de celular y confirmación del teléfono antes del PDF | `/web/usuario/telefono` | HU-004.3 (#34), HU-004.4 (#35) |
-| Vista "Asistente" y formulario simple por chat: progreso, previsualización, Confirmo, Ajustar, descarga del PDF por blob | `/web/chat`, `/pdfs` | HU-004.4 (#35, **cerrado con criterios sin marcar**: verificar), HU-004.6 (#37) |
+| Detalle de la cotización con sus botones, el asistente del folio (propuesta y Confirmar) y la descarga del PDF por blob | `/web/cotizaciones/{folio}`, `/web/chat` con `folio`, `/pdfs` | Sección 6.11 |
 | "Mis cotizaciones": tabla, versión, badges, motivo, Ganada/Perdida/Limpiar por `/seguimiento`, Nueva versión | `/web/mis-cotizaciones`, `/seguimiento`, `/nueva-version` | HU-004.5 (#36; quedan sin marcar los botones de resultado y el deshabilitado por estado) |
 | Correo: destinatarios previos, vista previa y envío | `destinatarios-previos`, `vista-previa`, `enviar` | HU-004.5 (#36) |
 | Buscador de clientes con etiqueta Prospecto | `/web/clientes` | HU-005.2 / HU-005.11 (#44, cerrado) |
@@ -2609,7 +2685,7 @@ UI por estado:
 | Campos del formulario ampliado con catálogos reales de vehículo, carrocería y clase de viaje | `/web/catalogos-flete` | HU-005.3 (#39, cerrado). Reemplazar el hardcode de esos tres por el endpoint |
 | Cubicaje por posiciones y sugerencia de vehículo | `/web/cubicacion` | HU-005.4 (#40, cerrado) |
 | Pantalla de márgenes para `gerente_comercial` | `/web/admin/lineas-negocio` | HU-004.10 (#46, cerrado; corregir "rol admin" a `gerente_comercial`) |
-| Selector COP/USD en el formulario por chat, visualización en USD, `TRM_NO_DISPONIBLE`, TRM vencida, columna `moneda` y `trm_aplicada` en "Mis cotizaciones" | `/web/chat` (`moneda`, `errores`), `/web/mis-cotizaciones` | HU-012.4 (#55). Ya está en QA desde #70 y #71 |
+| Moneda en el formulario por rutas, visualización en USD, `TRM_NO_DISPONIBLE`, columna `moneda` y `trm_aplicada` en "Mis cotizaciones" | `/web/solicitudes-costeo` (`moneda`), `/web/mis-cotizaciones` | Sección 6.3 |
 | Pruebas QA del módulo migrado | Todo lo anterior | HU-004.8 (#38) |
 
 ### 8.2 Flujos de Nexo, licitaciones y tableros (backend en QA)
@@ -2675,7 +2751,7 @@ Ajenos a Cotifly: clientepro-frontend #45 (embarqa; no confundir con el issue #4
 
 ## 10. Contrato de HU-013: pipeline determinista e IA en la etapa final
 
-**Estado: implementado en el backend** (ajuste de margen y concurrencia #98, servicios conexos #99, "Cotizar costo" #100, textos del PDF #101, asistente por folio #102 y moneda del formulario #103). Ningún endpoint de esta sección queda con `x-estado: pendiente` en `backend-dotnet/specs/openapi.yaml`: ya se puede integrar. Quedan pendientes #104 (la guía completa de estos flujos) y #105 (retiro de Google Chat y del código legado del chat). Decisión: ADR-018 (2026-10-05). Fuente de verdad: el spec. Esta sección solo resume.
+**Estado: implementado en el backend** (ajuste de margen y concurrencia #98, servicios conexos #99, "Cotizar costo" #100, textos del PDF #101, asistente por folio #102 y moneda del formulario #103). Ningún endpoint de esta sección queda con `x-estado: pendiente` en `backend-dotnet/specs/openapi.yaml`: ya se puede integrar. El flujo de pantalla que los reúne está en la sección 6.11. Decisión: ADR-018. Fuente de verdad: el spec. Esta sección solo resume.
 
 **Qué cambia.** La cotización sale siempre del formulario y del costeo de Nexo (sección 6.4):
 
@@ -2774,4 +2850,4 @@ La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones.
 
 **Catálogos del formulario.** Enviar siempre el **código** de catálogo (`valor` de `GET /web/catalogos-flete`) en `tipo_vehiculo`, `carroceria`, `clase_viaje`, `clase_contenedor` y `tipologia`, nunca texto libre: Nexo crea vehículos duplicados si el texto no coincide. `deadline` va con fecha, hora y zona (`2026-10-10T17:00:00-05:00`). Más detalle en `docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md` y `docs/conexion_nexo/HU-013-preguntas-nexo.md`.
 
-La guía completa de estos flujos llega con HU-013.8 (#104).
+El flujo de pantalla que usa estos endpoints está en la sección 6.11, "Detalle de una cotización".
