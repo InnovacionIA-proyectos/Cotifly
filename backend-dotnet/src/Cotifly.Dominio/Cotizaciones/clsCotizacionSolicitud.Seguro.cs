@@ -8,24 +8,14 @@ namespace Cotifly.Dominio.Cotizaciones;
 /// </summary>
 public sealed partial class clsCotizacionSolicitud
 {
-    /// <summary>Motivo de <c>ESTADO_NO_PERMITE</c> (<c>detalle.motivo</c>): la licitación no admite el seguro.</summary>
-    public const string MotivoSeguroLicitacion = "LICITACION";
-
     /// <summary>
-    /// Invariantes de un cambio del seguro de la ruta <paramref name="ruta"/>, en este orden: licitación
-    /// (<c>ESTADO_NO_PERMITE</c> con <c>detalle.motivo = LICITACION</c>), ruta
+    /// Invariantes de un cambio del seguro de la ruta <paramref name="ruta"/>, en este orden: ruta
     /// rechazada por la Mesa (<c>RUTA_RECHAZADA</c>) y la regla del PDF y de la finalizada (<c>PDF_YA_ENVIADO</c>, el mismo 409 que el
     /// margen). La falta de valor de la mercancía la decide <see cref="clsLineaSolicitud.IncluirSeguro"/>.
     /// </summary>
     public clsErrorDominio? ValidarCambioSeguro(clsLineaSolicitud ruta)
     {
         ArgumentNullException.ThrowIfNull(ruta);
-        if (TipoSolicitud == Cotizaciones.TipoSolicitud.Licitacion)
-        {
-            return new clsErrorDominio(clsCodigosError.EstadoNoPermite,
-                $"La cotización {Folio} es una licitación: el seguro de la mercancía todavía no aplica a las licitaciones.", MotivoSeguroLicitacion);
-        }
-
         return ValidarRutaNoRechazada(ruta) ?? ValidarCambioEtapaFinal();
     }
 

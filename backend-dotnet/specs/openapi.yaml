@@ -2892,8 +2892,8 @@ paths:
         - **Regla del PDF (ADR-018 §11, HU-036):** enviada al cliente, con resultado o **finalizada**: 409 `PDF_YA_ENVIADO` (el mismo
           del margen, con la llamada de la versión nueva en `detalle`). Si no, se permite aunque haya PDF: queda invalidado
           (`pdf_desactualizado = true`; en el historial con el motivo `servicios_conexos`).
-        - **Licitación:** 409 `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION` (la HU no la incluye todavía). Ruta rechazada por
-          la Mesa: 409 `RUTA_RECHAZADA`.
+        - **Licitación** (HU-045.5, #330; decisión del 2026-11-12): admite el seguro igual que el formulario, por línea (`linea_orden`)
+          con el `valor_mercancia` de cada línea del pliego. Ruta rechazada por la Mesa: 409 `RUTA_RECHAZADA`.
         - Marcar una ruta que ya tiene el seguro (o quitarlo de una que no lo tiene) responde 200 sin cambios (idempotente).
         - No se envía a Nexo (decisión 6). Se audita en `EventosHerramienta` (`cambiar_seguro_costeo`) sin montos ni tasa.
         - `If-Match` **obligatorio** (428 `PRECONDICION_REQUERIDA` sin él; 409 `CONFLICTO_CONCURRENCIA` si no coincide). Solo el dueño.
@@ -2941,7 +2941,7 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`PDF_YA_ENVIADO` (enviada, con resultado o finalizada), `RUTA_RECHAZADA`, `ESTADO_NO_PERMITE` (licitación, `detalle.motivo = LICITACION`) o `CONFLICTO_CONCURRENCIA`; sin cambios'
+          description: '`PDF_YA_ENVIADO` (enviada, con resultado o finalizada), `RUTA_RECHAZADA` o `CONFLICTO_CONCURRENCIA`; sin cambios'
           content:
             application/json:
               schema:
@@ -5236,6 +5236,11 @@ paths:
         guardado antes de esos controles que no los pasa responde **400** `EXCEL_INVALIDO` o `ARCHIVO_DEMASIADO_GRANDE` con
         `detalle.motivo` (los mismos motivos del análisis), como cualquier original ilegible; nunca un 500. Con el cupo lleno 15 s,
         **503** `SERVICIO_OCUPADO` con `Retry-After`. Sin original no se toma el cupo.
+
+        HU-045.5 (#330, ADR-032 §9): si alguna línea incluye el seguro de la mercancía, agrega la columna
+        `Seguro de la mercancía Cotifly ({moneda})` (después de las de Cotifly) con el `valor_seguro` de cada línea, y en `Resumen Cotifly`
+        la fila `Seguro de la mercancía (aparte del total)`: el total sigue siendo la tarifa del transporte. Nunca la tasa. Sin seguro,
+        el archivo no cambia.
       security:
         - bearer: []
       parameters:
