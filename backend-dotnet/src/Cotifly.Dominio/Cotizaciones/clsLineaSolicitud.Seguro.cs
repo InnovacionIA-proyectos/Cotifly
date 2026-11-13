@@ -4,15 +4,15 @@ using Cotifly.Dominio.Precio;
 namespace Cotifly.Dominio.Cotizaciones;
 
 /// <summary>
-/// HU-045.2 (#264, ADR-032; script <c>db/scripts/20_seguro_mercancia.sql</c>): el seguro de la mercancía de la ruta (póliza específica,
+/// El seguro de la mercancía de la ruta (ADR-032; póliza específica,
 /// NOGE0076). Se marca en el costeo, se calcula en pesos con la tasa vigente copiada en la ruta y se suma al precio sin margen. Las reglas
-/// que exige la base (CHECK del 20): sin seguro, la tasa y el costo van en <c>null</c>; con costo hay tasa; el costo no es negativo.
+/// que exige la base (CHECK del script 20): sin seguro, la tasa y el costo van en <c>null</c>; con costo hay tasa; el costo no es negativo.
 /// </summary>
 public sealed partial class clsLineaSolicitud
 {
     /// <summary>
-    /// HU-045.2 (#264, decisión del usuario del 2026-11-09: sin redondeo por ahora): <c>valorMercancia × tasa</c> en pesos, exacto (el valor
-    /// de la mercancía es siempre en pesos, decisión 2). Lo que se guarda en la ruta es <see cref="SeguroGuardado"/>.
+    /// <c>valorMercancia × tasa</c> en pesos, exacto y sin redondeo (el valor
+    /// de la mercancía es siempre en pesos). Lo que se guarda en la ruta es <see cref="SeguroGuardado"/>.
     /// </summary>
     public static decimal CalcularSeguro(decimal valorMercancia, decimal tasa) => valorMercancia * tasa;
 
@@ -20,7 +20,7 @@ public sealed partial class clsLineaSolicitud
     public const int DecimalesCostoSeguro = 2;
 
     /// <summary>
-    /// HU-045.2 (#264): el seguro tal como lo guarda la columna <c>costoSeguro DECIMAL(18,2)</c>: <see cref="CalcularSeguro"/> sin redondear a
+    /// El seguro tal como lo guarda la columna <c>costoSeguro DECIMAL(18,2)</c>: <see cref="CalcularSeguro"/> sin redondear a
     /// pesos, llevado a la escala de la columna (centavos) con el mismo criterio con que SQL Server/SqlClient ajustan un decimal de más
     /// escala (la mitad se aleja de cero). Así el seguro en memoria es exactamente el que se relee de la base.
     /// </summary>
@@ -28,8 +28,8 @@ public sealed partial class clsLineaSolicitud
         Math.Round(CalcularSeguro(valorMercancia, tasa), DecimalesCostoSeguro, MidpointRounding.AwayFromZero);
 
     /// <summary>
-    /// HU-045.2 (#264): el seguro de la ruta en la moneda de la solicitud: <see cref="CostoSeguro"/> en pesos o, en dólares, convertido con la
-    /// <paramref name="trm"/> fijada en la solicitud (decisión 2, como el resto del precio). <paramref name="valor"/> queda en <c>null</c> sin
+    /// El seguro de la ruta en la moneda de la solicitud: <see cref="CostoSeguro"/> en pesos o, en dólares, convertido con la
+    /// <paramref name="trm"/> fijada en la solicitud (como el resto del precio). <paramref name="valor"/> queda en <c>null</c> sin
     /// seguro o sin costo calculado (ruta sin valor de la mercancía). Devuelve el error del módulo de precio (TRM inválida), o <c>null</c>.
     /// </summary>
     public clsErrorDominio? ValorSeguro(string? moneda, decimal trm, out decimal? valor)
@@ -57,14 +57,14 @@ public sealed partial class clsLineaSolicitud
     }
 
     /// <summary>
-    /// HU-045.2 (#264): incluye el seguro con la <paramref name="tasaVigente"/> (la activa de <c>TarifasSeguro</c>). Sin
-    /// <see cref="ValorMercancia"/> responde <c>SEGURO_SIN_VALOR_MERCANCIA</c> (decisión 4) y nada cambia. Si ya estaba incluido no cambia
+    /// Incluye el seguro con la <paramref name="tasaVigente"/> (la activa de <c>TarifasSeguro</c>). Sin
+    /// <see cref="ValorMercancia"/> responde <c>SEGURO_SIN_VALOR_MERCANCIA</c> y nada cambia. Si ya estaba incluido no cambia
     /// nada: conserva su tasa aunque la vigente sea otra (un cambio de tasa no mueve lo ya cotizado). No recalcula el precio: desde fuera se
     /// usa <see cref="clsCotizacionSolicitud.CambiarSeguro"/>. Devuelve si cambió.
     /// </summary>
     internal clsResultado<bool> IncluirSeguro(decimal tasaVigente)
     {
-        // D1 de la validación: marcar una ruta que ya lo tiene es idempotente aunque no traiga tasa (no se usa).
+        // Marcar una ruta que ya lo tiene es idempotente aunque no traiga tasa (no se usa).
         if (IncluyeSeguro)
         {
             return false;
@@ -88,7 +88,7 @@ public sealed partial class clsLineaSolicitud
         return true;
     }
 
-    /// <summary>HU-045.2 (#264): quita el seguro (la tasa y el costo quedan en <c>null</c>, como exige la base). Devuelve si cambió.</summary>
+    /// <summary>Quita el seguro (la tasa y el costo quedan en <c>null</c>, como exige la base). Devuelve si cambió.</summary>
     internal bool QuitarSeguro()
     {
         if (!IncluyeSeguro && TasaSeguroAplicada is null && CostoSeguro is null)
@@ -103,7 +103,7 @@ public sealed partial class clsLineaSolicitud
     }
 
     /// <summary>
-    /// HU-045.2 (#264, decisión 5): el valor de la mercancía de la ruta pasó de <paramref name="valorAnterior"/> al actual. Si la ruta incluye
+    /// El valor de la mercancía de la ruta pasó de <paramref name="valorAnterior"/> al actual. Si la ruta incluye
     /// el seguro y el valor cambió, vuelve a tomar la tasa (<paramref name="tasaVigente"/>; sin ella, la que ya tenía la ruta) y recalcula el
     /// costo; sin valor, el seguro sigue marcado pero sin tasa ni costo (no suma al precio). No recalcula el precio. Devuelve si cambió.
     /// </summary>
@@ -128,7 +128,7 @@ public sealed partial class clsLineaSolicitud
     }
 
     /// <summary>
-    /// HU-045.2 (#264): versión nueva (<c>-vN</c> de la re-solicitud o de la edición): la ruta equivalente de la versión anterior incluía el
+    /// Versión nueva (<c>-vN</c> de la re-solicitud o de la edición): la ruta equivalente de la versión anterior incluía el
     /// seguro, así que esta también, con la misma tasa y el mismo costo; si el valor de la mercancía cambió, se recalcula con la
     /// <paramref name="tasaVigente"/> (<see cref="ActualizarSeguroPorValor"/>), como el margen negociado que se copia.
     /// </summary>

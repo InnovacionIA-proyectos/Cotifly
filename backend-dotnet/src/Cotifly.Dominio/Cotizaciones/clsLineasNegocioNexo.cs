@@ -4,10 +4,10 @@ using System.Text;
 namespace Cotifly.Dominio.Cotizaciones;
 
 /// <summary>
-/// #278 (contrato único de NEXO del 2026-11-04, DU §8): las líneas de negocio que acepta <c>POST /api/captura-solicitudes</c> en
-/// <c>lineas[].lineaNegocio</c>. Son exactamente seis; NEXO también las acepta en camelCase (<c>puertoAInterior</c>), en mayúsculas o con
-/// guiones, y un valor vacío es "sin línea". Cualquier otro texto lo rechaza con <c>400 LINEA_NEGOCIO_INVALIDO</c> (antes se perdía en
-/// silencio). Cotifly toma el <c>MargenesPolitica.mapeoLineasNexo</c> de la línea de negocio de cada ruta, lo valida con esta lista
+/// Las líneas de negocio que acepta <c>POST /api/captura-solicitudes</c> en
+/// <c>lineas[].lineaNegocio</c> (contrato único de NEXO, DU §8). Son exactamente seis; NEXO también las acepta en camelCase (<c>puertoAInterior</c>), en mayúsculas o con
+/// guiones, y un valor vacío es "sin línea". Cualquier otro texto lo rechaza con <c>400 LINEA_NEGOCIO_INVALIDO</c>.
+/// Cotifly toma el <c>MargenesPolitica.mapeoLineasNexo</c> de la línea de negocio de cada ruta, lo valida con esta lista
 /// ANTES de llamar a NEXO y envía su forma canónica (<see cref="Canonica"/>: el nombre de la lista, con espacios y tildes).
 /// </summary>
 public static class clsLineasNegocioNexo

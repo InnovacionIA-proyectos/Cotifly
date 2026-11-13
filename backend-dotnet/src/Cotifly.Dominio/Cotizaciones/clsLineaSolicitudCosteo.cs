@@ -3,7 +3,7 @@ using Cotifly.Dominio.Comun;
 namespace Cotifly.Dominio.Cotizaciones;
 
 /// <summary>
-/// Códigos por campo del reporte de validación de una licitación (HU-011.2, <c>docs/conexion_nexo/HU-011-formato-excel-licitacion.md</c> §5).
+/// Códigos por campo del reporte de validación de una licitación (<c>docs/conexion_nexo/HU-011-formato-excel-licitacion.md</c> §5).
 /// Espejo de <c>CapturarSolicitudValidador</c> y de los atributos de <c>CapturaLineaRequest</c> de Nexo; viajan en
 /// <c>errores[].codigo</c>, no como <c>ErrorNegocio</c>.
 /// </summary>
@@ -21,56 +21,56 @@ public static class clsCodigosLineaSolicitud
     public const string FilaInvalida = "FILA_INVALIDA";
     public const string CampoRequerido = "CAMPO_REQUERIDO";
 
-    /// <summary>G3 (HU-013.11): el campo no aplica con los demás valores de la línea (Nexo lo descartaría).</summary>
+    /// <summary>El campo no aplica con los demás valores de la línea (Nexo lo descartaría).</summary>
     public const string CampoNoAplica = "CAMPO_NO_APLICA";
 
-    /// <summary>G2 (HU-013.11): el valor no es un código de catálogo (texto libre, o mayúsculas distintas del código).</summary>
+    /// <summary>El valor no es un código de catálogo (texto libre, o mayúsculas distintas del código).</summary>
     public const string CodigoNoCatalogo = "CODIGO_NO_CATALOGO";
 
-    /// <summary>G6 (HU-013.11): el texto del origen o destino coincide con varios municipios del catálogo de Nexo.</summary>
+    /// <summary>El texto del origen o destino coincide con varios municipios del catálogo de Nexo.</summary>
     public const string MunicipioAmbiguo = "MUNICIPIO_AMBIGUO";
 
-    /// <summary>G6 (HU-013.11): el texto del origen o destino no coincide con ningún municipio del catálogo de Nexo.</summary>
+    /// <summary>El texto del origen o destino no coincide con ningún municipio del catálogo de Nexo.</summary>
     public const string MunicipioNoEncontrado = "MUNICIPIO_NO_ENCONTRADO";
 
-    /// <summary>HU-021.6 (decisión 2): el id de municipio que llegó no existe en el catálogo de municipios de Nexo.</summary>
+    /// <summary>El id de municipio que llegó no existe en el catálogo de municipios de Nexo.</summary>
     public const string MunicipioInexistente = "MUNICIPIO_INEXISTENTE";
 
-    /// <summary>HU-021.6: la ruta pide dos veces el mismo servicio conexo (la cantidad ya dice cuántos son).</summary>
+    /// <summary>La ruta pide dos veces el mismo servicio conexo (la cantidad ya dice cuántos son).</summary>
     public const string ConexoDuplicado = "CONEXO_DUPLICADO";
 
-    /// <summary>HU-021.6: el servicio conexo no está (activo) en el catálogo de Nexo.</summary>
+    /// <summary>El servicio conexo no está (activo) en el catálogo de Nexo.</summary>
     public const string ConexoNoEncontrado = "CONEXO_NO_ENCONTRADO";
 
-    /// <summary>HU-021.6: la ruta pide más servicios conexos de los admitidos.</summary>
+    /// <summary>La ruta pide más servicios conexos de los admitidos.</summary>
     public const string DemasiadosConexos = "DEMASIADOS_CONEXOS";
 
-    /// <summary>HU-021.5 (#133): el <c>id_tipo_mercancia</c> (obsoleto) no está en el catálogo del cubicador (<c>GET /web/tipos-mercancia</c>).</summary>
+    /// <summary>El <c>id_tipo_mercancia</c> (obsoleto) no está en el catálogo del cubicador (<c>GET /web/tipos-mercancia</c>).</summary>
     public const string TipoMercanciaInexistente = "TIPO_MERCANCIA_INEXISTENTE";
 
-    /// <summary>HU-023.3 (#158): el <c>codigo_mercancia</c> no está (activo) en el catálogo del cubicador.</summary>
+    /// <summary>El <c>codigo_mercancia</c> no está (activo) en el catálogo del cubicador.</summary>
     public const string MercanciaDesconocida = "MERCANCIA_DESCONOCIDA";
 
-    /// <summary>HU-023.3 (#158): el catálogo del cubicador marca la mercancía como no cubicable.</summary>
+    /// <summary>El catálogo del cubicador marca la mercancía como no cubicable.</summary>
     public const string MercanciaNoCubicable = "MERCANCIA_NO_CUBICABLE";
 
     /// <summary>
-    /// HU-030.1 (#184): el <c>peso_con_tara_kg</c> de la ruta es menor que su peso de carga (<c>peso_kg</c> o, sin él, la suma de las
+    /// El <c>peso_con_tara_kg</c> de la ruta es menor que su peso de carga (<c>peso_kg</c> o, sin él, la suma de las
     /// mercancías): el peso con tara es la carga MÁS la tara de los contenedores. Con otra clase de viaje el campo es
     /// <see cref="CampoNoAplica"/>.
     /// </summary>
     public const string PesoConTaraMenorQueCarga = "PESO_CON_TARA_MENOR_QUE_CARGA";
 
     /// <summary>
-    /// HU-032 (#197): la ruta no se puede cubicar (no todas sus mercancías son cubicables, o solo trae el peso) y no trae
+    /// La ruta no se puede cubicar (no todas sus mercancías son cubicables, o solo trae el peso) y no trae
     /// <c>tipo_vehiculo</c>. Salvo en Contenedor (Nexo deduce el vehículo), el vehículo elegido es obligatorio.
     /// </summary>
     public const string VehiculoRequerido = "VEHICULO_REQUERIDO";
 
     /// <summary>
-    /// #278 (DU §8): las mercancías con medidas de la ruta (las que usa el cubicador y que viajan a NEXO como <c>posiciones[]</c> cuando
+    /// Las mercancías con medidas de la ruta (las que usa el cubicador y que viajan a NEXO como <c>posiciones[]</c> cuando
     /// todas las de la ruta las traen) suman más de
-    /// <see cref="clsSolicitudCosteo.MaximoUnidades"/> unidades. Mismo código que NEXO y el cubicador.
+    /// <see cref="clsSolicitudCosteo.MaximoUnidades"/> unidades (DU §8). Mismo código que NEXO y el cubicador.
     /// </summary>
     public const string CubicacionDemasiadoGrande = clsCodigosError.CubicacionDemasiadoGrande;
 }
@@ -80,7 +80,7 @@ public sealed record clsErrorCampo(string Campo, string Codigo, string Mensaje);
 
 /// <summary>
 /// Encabezado de una solicitud de Nexo (<c>CapturaSolicitudRequest</c> sin las líneas): uno por cotización, con los límites de
-/// Nexo. Lo comparten el formulario de una línea (<see cref="clsSolicitudCosteo"/>) y las licitaciones (HU-011, ADR-017).
+/// Nexo. Lo comparten el formulario de una línea (<see cref="clsSolicitudCosteo"/>) y las licitaciones (ADR-017).
 /// </summary>
 public sealed record clsEncabezadoSolicitudCosteo
 {
@@ -89,7 +89,7 @@ public sealed record clsEncabezadoSolicitudCosteo
     public decimal? HorasCargue { get; init; }
     public decimal? HorasDescargue { get; init; }
 
-    /// <summary><c>notas</c> de Nexo (máx. 2000): nota para la Mesa, distinta de la personalización del PDF (G7, HU-013.10).</summary>
+    /// <summary><c>notas</c> de Nexo (máx. 2000): nota para la Mesa, distinta de la personalización del PDF.</summary>
     public string? Notas { get; init; }
 
     /// <summary>Todos los errores del encabezado (vacía si Nexo lo aceptaría).</summary>
@@ -103,7 +103,7 @@ public sealed record clsEncabezadoSolicitudCosteo
     }
 
     /// <summary>
-    /// #278 (DU §5): el error de pareja que nace del encabezado. Si el encabezado trae una sola hora y alguna de <paramref name="lineas"/> no
+    /// El error de pareja que nace del encabezado (DU §5). Si el encabezado trae una sola hora y alguna de <paramref name="lineas"/> no
     /// trae ninguna (la hereda tal cual), <see cref="clsCodigosLineaSolicitud.CampoRequerido"/> en el campo del encabezado que falta, una
     /// sola vez; esas rutas no repiten el error (<see cref="clsLineaSolicitudCosteo.ErroresHorasPropias"/>). Si todas traen horas propias,
     /// las del encabezado no viajan y no hay error.
@@ -123,12 +123,12 @@ public sealed record clsEncabezadoSolicitudCosteo
 
 /// <summary>
 /// Una línea de la solicitud de Nexo (<c>CapturaLineaRequest</c>): origen, destino, catálogos con el código de Nexo tal cual,
-/// pesos, valores y posiciones de cubicaje. Una licitación lleva N (HU-011.2); el formulario de HU-005.5, una.
+/// pesos, valores y posiciones de cubicaje. Una licitación lleva N; el formulario, una.
 /// </summary>
 public sealed record clsLineaSolicitudCosteo
 {
     /// <summary>
-    /// DEF-1027B-3 (#228): nombre del contrato del valor de un levante (<c>rutas[]</c> de la captura y filas de la licitación); los errores
+    /// Nombre del contrato del valor de un levante (<c>rutas[]</c> de la captura y filas de la licitación); los errores
     /// de <see cref="ValorAprovisionamiento"/> lo nombran así.
     /// </summary>
     public const string CampoValorLevante = "valor_levante_contenedor";
@@ -139,10 +139,10 @@ public sealed record clsLineaSolicitudCosteo
     public required string Origen { get; init; }
     public required string Destino { get; init; }
 
-    /// <summary>Id de <c>tbl_municipios</c> de Nexo del origen (<c>origenMunicipioId</c>, G6); <c>null</c> si vino como texto.</summary>
+    /// <summary>Id de <c>tbl_municipios</c> de Nexo del origen (<c>origenMunicipioId</c>); <c>null</c> si vino como texto.</summary>
     public int? OrigenMunicipioId { get; init; }
 
-    /// <summary>Id de <c>tbl_municipios</c> de Nexo del destino (<c>destinoMunicipioId</c>, G6).</summary>
+    /// <summary>Id de <c>tbl_municipios</c> de Nexo del destino (<c>destinoMunicipioId</c>).</summary>
     public int? DestinoMunicipioId { get; init; }
 
     public string? TipoVehiculo { get; init; }
@@ -154,18 +154,18 @@ public sealed record clsLineaSolicitudCosteo
     public bool? Consolidado { get; init; }
     public bool? RetornaContenedor { get; init; }
 
-    /// <summary>Nombre del municipio donde se devuelve el contenedor (copia, decisión 2 de HU-021).</summary>
+    /// <summary>Nombre del municipio donde se devuelve el contenedor (copia del catálogo).</summary>
     public string? CiudadDevolucionContenedor { get; init; }
 
-    /// <summary>Id de <c>tbl_municipios</c> de Nexo de la ciudad de devolución del contenedor (HU-021.6, decisión 2).</summary>
+    /// <summary>Id de <c>tbl_municipios</c> de Nexo de la ciudad de devolución del contenedor.</summary>
     public int? CiudadDevolucionMunicipioId { get; init; }
 
     public bool? LevanteContenedorDiferente { get; init; }
 
-    /// <summary>Nombre del municipio donde se levanta el contenedor (copia, decisión 2 de HU-021).</summary>
+    /// <summary>Nombre del municipio donde se levanta el contenedor (copia del catálogo).</summary>
     public string? CiudadLevanteContenedor { get; init; }
 
-    /// <summary>Id de <c>tbl_municipios</c> de Nexo de la ciudad de levante del contenedor (HU-021.6, decisión 2).</summary>
+    /// <summary>Id de <c>tbl_municipios</c> de Nexo de la ciudad de levante del contenedor.</summary>
     public int? CiudadLevanteMunicipioId { get; init; }
 
     public decimal? ValorAprovisionamiento { get; init; }
@@ -173,10 +173,10 @@ public sealed record clsLineaSolicitudCosteo
     public decimal? ValorMercancia { get; init; }
 
     /// <summary>
-    /// HU-030.1 (#184): peso total CON la tara de los contenedores que escribe el comercial para la ruta (<c>peso_con_tara_kg</c>, kg);
-    /// <c>null</c> = sin tara (a Nexo va el peso de carga, como antes). Solo con <c>clase_viaje = Contenedor</c> y nunca menor que el peso
+    /// Peso total CON la tara de los contenedores que escribe el comercial para la ruta (<c>peso_con_tara_kg</c>, kg);
+    /// <c>null</c> = sin tara (a Nexo va el peso de carga). Solo con <c>clase_viaje = Contenedor</c> y nunca menor que el peso
     /// de carga (<see cref="PesoCarga"/>). No va al cubicador (que recibe el peso por mercancía, sin tara): solo cambia el <c>peso</c> de
-    /// las líneas de Nexo de la ruta (<see cref="clsLineaSolicitud.PesoLineaNexo"/>). #250 (DU §8): con un solo camión la línea conserva sus
+    /// las líneas de Nexo de la ruta (<see cref="clsLineaSolicitud.PesoLineaNexo"/>). Con un solo camión la línea conserva sus
     /// posiciones (Nexo acepta un peso mayor que su suma: la tara); con varios, ninguna línea lleva posiciones, con tara o sin ella.
     /// </summary>
     public decimal? PesoConTaraKg { get; init; }
@@ -184,14 +184,14 @@ public sealed record clsLineaSolicitudCosteo
     /// <summary>¿La ruta es de contenedor (<c>clase_viaje = Contenedor</c>, recortado, como se guarda)?</summary>
     public bool EsContenedor => string.Equals(ClaseViaje?.Trim(), clsCatalogosCaptura.ClaseViajeContenedor, StringComparison.Ordinal);
 
-    /// <summary>HU-021.15 (#297): ¿la ruta es extradimensionada (<c>clase_viaje = Extradimensionado</c>, recortado, como se guarda)?</summary>
+    /// <summary>¿La ruta es extradimensionada (<c>clase_viaje = Extradimensionado</c>, recortado, como se guarda)?</summary>
     public bool EsExtradimensionado => string.Equals(ClaseViaje?.Trim(), clsCatalogosCaptura.ClaseViajeExtradimensionado, StringComparison.Ordinal);
 
     /// <summary>Peso de la carga (sin tara): <see cref="PesoKg"/> o, sin él, la suma de las mercancías con peso; <c>null</c> si no hay.</summary>
     public decimal? PesoCarga => PesoKg ?? (SumaPesoPosiciones is var suma && suma > 0 ? suma : null);
 
     /// <summary>
-    /// Horas de cargue propias de la línea (<c>horasCargue</c> de <c>CapturaLineaRequest</c>, G5 de HU-013.11); <c>null</c> = las del
+    /// Horas de cargue propias de la línea (<c>horasCargue</c> de <c>CapturaLineaRequest</c>); <c>null</c> = las del
     /// encabezado. Solo las licitaciones las traen por fila; el formulario de una línea usa las del encabezado.
     /// </summary>
     public decimal? HorasCargue { get; init; }
@@ -206,21 +206,21 @@ public sealed record clsLineaSolicitudCosteo
     public IReadOnlyList<clsPosicionCarga> Posiciones { get; init; } = [];
 
     /// <summary>
-    /// Ruta de Cotifly de la que sale la línea (HU-021.7, #134; petición N1 a Nexo): solo la llena <see cref="clsLineaSolicitud.ALineaNexo"/>
-    /// al armar una línea por camión. No la captura el comercial ni se valida. Viaja a Nexo como <c>grupoRutaId</c> (HU-023.4, #159) solo
-    /// con <c>Nexo:EnviarGrupoRutaId</c>; mientras tanto, el emparejamiento usa el contenido de la línea y el orden de envío.
+    /// Ruta de Cotifly de la que sale la línea: solo la llena <see cref="clsLineaSolicitud.ALineaNexo"/>
+    /// al armar una línea por camión. No la captura el comercial ni se valida. Viaja a Nexo como <c>grupoRutaId</c> solo
+    /// con <c>Nexo:EnviarGrupoRutaId</c>; sin esa opción, el emparejamiento usa el contenido de la línea y el orden de envío.
     /// </summary>
     public Guid? RutaId { get; init; }
 
     /// <summary>
-    /// Camión de la recomendación del cubicador del que sale la línea (HU-023.4, #159): solo la llena
+    /// Camión de la recomendación del cubicador del que sale la línea: solo la llena
     /// <see cref="clsLineaSolicitud.ALineaNexo"/>. Viaja a Nexo como <c>idRecomendacionVehiculo</c> (texto, hasta 64) solo con
     /// <c>Nexo:EnviarDatosCubicador</c>. <c>null</c> en un camión sin recomendación (respaldo o "sin selección automática").
     /// </summary>
     public Guid? IdRecomendacionVehiculo { get; init; }
 
     /// <summary>
-    /// Línea de negocio de Nexo de la ruta (<c>lineaNegocio</c> de <c>CapturaLineaRequest</c>, #134): la llena el envío con el
+    /// Línea de negocio de Nexo de la ruta (<c>lineaNegocio</c> de <c>CapturaLineaRequest</c>): la llena el envío con el
     /// <c>mapeoLineasNexo</c> de la línea de negocio de SU ruta. <c>null</c> = la de la solicitud. No la captura el comercial.
     /// </summary>
     public string? LineaNegocioNexo { get; init; }
@@ -229,7 +229,7 @@ public sealed record clsLineaSolicitudCosteo
     public decimal SumaPesoPosiciones => Posiciones.Where(p => p?.PesoKg is > 0).Sum(p => p.Cantidad * p.PesoKg!.Value);
 
     /// <summary>
-    /// HU-032 (#197): cómo se cubica la ruta según sus mercancías (<see cref="clsPosicionCarga.EsCubicable"/>). Solo
+    /// Cómo se cubica la ruta según sus mercancías (<see cref="clsPosicionCarga.EsCubicable"/>). Solo
     /// <see cref="CubicabilidadRuta.Cubicable"/> llama al cubicador; en los demás casos la ruta usa el vehículo elegido.
     /// </summary>
     public CubicabilidadRuta Cubicabilidad
@@ -250,7 +250,7 @@ public sealed record clsLineaSolicitudCosteo
     }
 
     /// <summary>
-    /// HU-032 (#197): ¿la ruta exige el vehículo elegido? Sí cuando no se puede cubicar (no todas sus mercancías son cubicables) y su clase
+    /// ¿La ruta exige el vehículo elegido? Sí cuando no se puede cubicar (no todas sus mercancías son cubicables) y su clase
     /// de viaje no es una de <paramref name="clasesSinVehiculo"/> (<c>Captura:ClasesSinVehiculoObligatorio</c>; <c>null</c> = solo
     /// <see cref="clsCatalogosCaptura.ClaseViajeContenedor"/>, el valor por defecto): en Cupo, Nexo no autocostea una línea sin vehículo
     /// (COTIFLY-CONTRATO §4); en Contenedor lo deduce por peso y clase. La clase se compara recortada y exacta, como se guarda y como la
@@ -262,9 +262,8 @@ public sealed record clsLineaSolicitudCosteo
              && (clasesSinVehiculo ?? clsCatalogosCaptura.ClasesSinVehiculoPorDefecto).Contains(clase, StringComparer.Ordinal));
 
     /// <summary>
-    /// HU-032 (#197): las posiciones que pueden viajar a Nexo: todas, si todas traen sus tres medidas; ninguna si alguna es una mercancía
-    /// sin medidas (no cubicable). Mandar solo una parte daría a Nexo un detalle incompleto de la carga (con el 1 % simétrico de NEXO#308
-    /// además la habría rechazado con <c>PESO_INCONSISTENTE</c>; con la regla asimétrica del DU §8, #250, ya no): sin posiciones, a Nexo le
+    /// Las posiciones que pueden viajar a Nexo: todas, si todas traen sus tres medidas; ninguna si alguna es una mercancía
+    /// sin medidas (no cubicable). Mandar solo una parte daría a Nexo un detalle incompleto de la carga: sin posiciones, a Nexo le
     /// basta el peso de la ruta.
     /// </summary>
     public IReadOnlyList<clsPosicionCarga> PosicionesParaNexo => Posiciones.All(p => p is not null && p.ConMedidas) ? Posiciones : [];
@@ -278,7 +277,7 @@ public sealed record clsLineaSolicitudCosteo
     {
         var errores = new List<clsErrorCampo>();
 
-        // HU-021.6 (decisión 2): con el id de municipio el nombre no es obligatorio (se copia del catálogo de Nexo al resolverlo).
+        // Con el id de municipio el nombre no es obligatorio (se copia del catálogo de Nexo al resolverlo).
         if (OrigenMunicipioId is null)
         {
             Obligatorio(errores, "origen", Origen, clsSolicitudCosteo.LargoCiudad);
@@ -329,7 +328,7 @@ public sealed record clsLineaSolicitudCosteo
 
         for (var i = 0; i < Posiciones.Count; i++)
         {
-            // D6 (E2E 2026-10-16): el campo va en base 0 y con el nombre del contrato (mercancias[i].subcampo, como
+            // El campo va en base 0 y con el nombre del contrato (mercancias[i].subcampo, como
             // mercancias[i].codigo_mercancia); el mensaje nombra la mercancía en base 1 ("Mercancía 2: ..."), sin rutas con índice.
             var posicion = Posiciones[i];
             var error = posicion is null
@@ -351,8 +350,8 @@ public sealed record clsLineaSolicitudCosteo
         }
         else if (suma > 0 && Math.Abs(peso.Value - suma) / peso.Value > clsSolicitudCosteo.ToleranciaPeso)
         {
-            // #250 (DU §8): regla propia de Cotifly sobre la carga sin tara, simétrica y más estricta que la de Nexo (que solo rechaza
-            // una suma mayor que peso × 1,01); al cumplirse, garantiza la de Nexo sobre lo que viaja (ver clsSolicitudCosteo.ValidarPeso).
+            // Regla propia de Cotifly sobre la carga sin tara, simétrica y más estricta que la de Nexo (que solo rechaza
+            // una suma mayor que peso × 1,01, DU §8); al cumplirse, garantiza la de Nexo sobre lo que viaja (ver clsSolicitudCosteo.ValidarPeso).
             errores.Add(new clsErrorCampo("peso_kg", clsCodigosLineaSolicitud.PesoInconsistente,
                 $"El peso total ({peso.Value:0.##} kg) no coincide con la suma de las posiciones ({suma:0.##} kg)."));
         }
@@ -361,7 +360,7 @@ public sealed record clsLineaSolicitudCosteo
     }
 
     /// <summary>
-    /// #278 (DU §5): Nexo recibe <c>horasCargue</c> y <c>horasDescargue</c> de la línea las dos o ninguna. Se valida la pareja que viaja:
+    /// Nexo recibe <c>horasCargue</c> y <c>horasDescargue</c> de la línea las dos o ninguna (DU §5). Se valida la pareja que viaja:
     /// la de la línea completada con la del <paramref name="encabezado"/> campo a campo (como la guarda la ruta y la arma
     /// <see cref="clsSolicitudCosteo.Desde"/>), igual en el formulario de una línea, la captura por rutas, la edición, la licitación y la
     /// re-solicitud. Sin encabezado (lo guardado, ya completado), la de la línea. <see cref="clsCodigosLineaSolicitud.CampoRequerido"/> en
@@ -375,7 +374,7 @@ public sealed record clsLineaSolicitudCosteo
     }
 
     /// <summary>
-    /// #278: <see cref="ErroresHorasEnPareja"/> de una ruta de la ENTRADA (captura, edición, licitación): una ruta sin horas propias no
+    /// <see cref="ErroresHorasEnPareja"/> de una ruta de la ENTRADA (captura, edición, licitación): una ruta sin horas propias no
     /// reporta nada, porque su pareja es la del encabezado y ese error va en el encabezado
     /// (<see cref="clsEncabezadoSolicitudCosteo.ErroresHorasHeredadas"/>).
     /// </summary>
@@ -383,13 +382,13 @@ public sealed record clsLineaSolicitudCosteo
         HorasCargue is null && HorasDescargue is null ? [] : ErroresHorasEnPareja(encabezado);
 
     /// <summary>
-    /// Validaciones condicionales de la captura (G3, HU-013.10/HU-013.11), las mismas para el formulario, la edición y para cada fila de
+    /// Validaciones condicionales de la captura, las mismas para el formulario, la edición y para cada fila de
     /// una licitación:
     /// <list type="bullet">
     /// <item>con <c>clase_viaje = Contenedor</c>, <c>clase_contenedor</c> es obligatoria (<c>CAMPO_REQUERIDO</c>) y admite cualquier clase
     /// del catálogo;</item>
-    /// <item>HU-021.15 (#297): con <c>clase_viaje = Extradimensionado</c>, <c>clase_contenedor</c> es OPCIONAL y, si viene, solo una de las
-    /// clases provisionales G15 (<see cref="clsCatalogosCaptura.ClasesContenedorProvisionales"/>, flat track / open top); otra es
+    /// <item>con <c>clase_viaje = Extradimensionado</c>, <c>clase_contenedor</c> es OPCIONAL y, si viene, solo una de las
+    /// clases provisionales (<see cref="clsCatalogosCaptura.ClasesContenedorProvisionales"/>, flat track / open top); otra es
     /// <c>VALOR_FUERA_DE_RANGO</c>;</item>
     /// <item>con cualquier otra clase de viaje (Cupo, Carga Suelta...), <c>clase_contenedor</c> no aplica (<c>CAMPO_NO_APLICA</c>);</item>
     /// <item><c>valor_aprovisionamiento</c> solo con una <c>ciudad_levante_contenedor</c> distinta del origen (Nexo lo descarta en otro caso).</item>
@@ -410,7 +409,7 @@ public sealed record clsLineaSolicitudCosteo
         }
         else if (EsExtradimensionado)
         {
-            // HU-021.15 (#297): opcional; con valor, solo las clases provisionales G15 (recortadas), si no VALOR_FUERA_DE_RANGO.
+            // Opcional; con valor, solo las clases provisionales (recortadas), si no VALOR_FUERA_DE_RANGO.
             if (conClase && !clsCatalogosCaptura.Contiene(clsCatalogosCaptura.ClasesContenedorProvisionales, ClaseContenedor!.Trim()))
             {
                 errores.Add(new clsErrorCampo("clase_contenedor", clsCodigosLineaSolicitud.ValorFueraDeRango,
@@ -425,7 +424,7 @@ public sealed record clsLineaSolicitudCosteo
 
         if (ValorAprovisionamiento is not null && !LevanteDistintoDelOrigen)
         {
-            // DEF-1027B-3 (#228): el campo del contrato (rutas[] y licitación), no el heredado que el cliente ya no envía.
+            // El campo del contrato (rutas[] y licitación), no el nombre anterior.
             errores.Add(new clsErrorCampo(CampoValorLevante, clsCodigosLineaSolicitud.CampoNoAplica,
                 $"El campo '{CampoValorLevante}' (antes '{CampoValorLevanteAnterior}') solo aplica con una ciudad_levante_contenedor distinta del origen."));
         }
@@ -435,7 +434,7 @@ public sealed record clsLineaSolicitudCosteo
     }
 
     /// <summary>
-    /// HU-030.1 (#184): <c>peso_con_tara_kg</c> solo con <c>clase_viaje = Contenedor</c> (<see cref="clsCodigosLineaSolicitud.CampoNoAplica"/>)
+    /// <c>peso_con_tara_kg</c> solo con <c>clase_viaje = Contenedor</c> (<see cref="clsCodigosLineaSolicitud.CampoNoAplica"/>)
     /// y nunca menor que el peso de carga (<see cref="clsCodigosLineaSolicitud.PesoConTaraMenorQueCarga"/>). El tope (Nexo: hasta
     /// <see cref="clsSolicitudCosteo.MaximoPeso"/> kg con 2 decimales) lo revisa <see cref="Errores"/> con el rango de los demás pesos.
     /// </summary>
@@ -484,12 +483,12 @@ public sealed record clsLineaSolicitudCosteo
     }
 
     /// <summary>
-    /// Reglas que solo aplican a una captura NUEVA (formulario o licitación, HU-021.6), después de resolver los municipios. No se aplican
+    /// Reglas que solo aplican a una captura NUEVA (formulario o licitación), después de resolver los municipios. No se aplican
     /// al revalidar lo guardado (rutas migradas o anteriores a estas reglas):
     /// <list type="bullet">
-    /// <item>decisión 2: el origen y el destino llevan su id de municipio (<c>CAMPO_REQUERIDO</c> en <c>origen_municipio_id</c> /
+    /// <item>el origen y el destino llevan su id de municipio (<c>CAMPO_REQUERIDO</c> en <c>origen_municipio_id</c> /
     /// <c>destino_municipio_id</c>); una ciudad de devolución o de levante con nombre lleva también su id;</item>
-    /// <item>el código de cada mercancía (<c>codigo_mercancia</c>, HU-023.3) NO se exige aquí: solo es obligatorio con el cubicador
+    /// <item>el código de cada mercancía (<c>codigo_mercancia</c>) NO se exige aquí: solo es obligatorio con el cubicador
     /// configurado y lo exige <c>clsCapturaRutasService</c> (sin cubicador no hay de dónde sacarlo y la ruta va al respaldo).</item>
     /// </list>
     /// </summary>
@@ -549,7 +548,7 @@ public sealed record clsLineaSolicitudCosteo
     }
 
     /// <summary>
-    /// #278 (DU §5): NEXO recibe <c>horasCargue</c> y <c>horasDescargue</c> las dos o ninguna (sin ellas aplica su valor por defecto, 4 + 4).
+    /// NEXO recibe (DU §5) <c>horasCargue</c> y <c>horasDescargue</c> las dos o ninguna (sin ellas aplica su valor por defecto, 4 + 4).
     /// Si solo viene una, <see cref="clsCodigosLineaSolicitud.CampoRequerido"/> en la que falta.
     /// </summary>
     internal static void HorasEnPareja(List<clsErrorCampo> errores, decimal? cargue, decimal? descargue)

@@ -7,7 +7,7 @@ namespace Cotifly.Dominio.Comun;
 /// Traduce los enums del dominio a su código textual estable y de vuelta.
 /// El código es el nombre del miembro en snake_case minúsculas (<c>SinEnviar</c> → <c>sin_enviar</c>,
 /// <c>SapTm</c> → <c>sap_tm</c>, <c>GerenteComercial</c> → <c>gerente_comercial</c>): es el valor que
-/// guardan las columnas de <c>dbo_cotifly</c> y el que expone el contrato #17.
+/// guardan las columnas de <c>dbo_cotifly</c> y el que expone el contrato de la API.
 /// </summary>
 public static class clsCodigoEnum
 {

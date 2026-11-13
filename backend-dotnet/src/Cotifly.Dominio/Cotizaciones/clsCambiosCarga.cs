@@ -1,7 +1,7 @@
 namespace Cotifly.Dominio.Cotizaciones;
 
 /// <summary>
-/// Cambios de carga de una re-solicitud del costeo (<c>DatosCargaWeb</c>, HU-013.4, ADR-018 §5): solo los campos de línea que cambian,
+/// Cambios de carga de una re-solicitud del costeo (<c>DatosCargaWeb</c>, ADR-018 §5): solo los campos de línea que cambian,
 /// con los nombres del contrato. Un campo que no viene se conserva; uno que viene en <c>null</c> se borra (<see cref="Presentes"/>
 /// distingue los dos casos). <c>posiciones</c>, si viene, reemplaza todas las anteriores. Origen, destino, cliente y línea de negocio no
 /// se cambian por esta vía (eso es otra cotización). La combinación resultante se valida igual que en la captura
@@ -29,7 +29,7 @@ public sealed record clsCambiosCarga
     public const string CampoValorMercancia = "valor_mercancia";
     public const string CampoPosiciones = "posiciones";
 
-    /// <summary>HU-030.1 (#184): el peso total con tara de una ruta de contenedor (<see cref="clsLineaSolicitudCosteo.PesoConTaraKg"/>).</summary>
+    /// <summary>El peso total con tara de una ruta de contenedor (<see cref="clsLineaSolicitudCosteo.PesoConTaraKg"/>).</summary>
     public const string CampoPesoConTara = clsSolicitudCosteo.CampoPesoConTara;
 
     /// <summary>Campos que acepta <c>datos_carga</c> (los de línea de la captura más las horas del encabezado).</summary>
@@ -54,13 +54,13 @@ public sealed record clsCambiosCarga
     public bool? RetornaContenedor { get; init; }
     public string? CiudadDevolucionContenedor { get; init; }
 
-    /// <summary>HU-028 (#186), defecto B: id del municipio de devolución (<c>GET /web/municipios</c>), como en la captura.</summary>
+    /// <summary>Id del municipio de devolución (<c>GET /web/municipios</c>), como en la captura.</summary>
     public int? CiudadDevolucionMunicipioId { get; init; }
 
     public bool? LevanteContenedorDiferente { get; init; }
     public string? CiudadLevanteContenedor { get; init; }
 
-    /// <summary>HU-028 (#186), defecto B: id del municipio de levante.</summary>
+    /// <summary>Id del municipio de levante.</summary>
     public int? CiudadLevanteMunicipioId { get; init; }
 
     public decimal? ValorAprovisionamiento { get; init; }
@@ -69,7 +69,7 @@ public sealed record clsCambiosCarga
     public decimal? PesoKg { get; init; }
     public decimal? ValorMercancia { get; init; }
 
-    /// <summary>HU-030.1 (#184): peso total con tara (solo con <c>clase_viaje = Contenedor</c>; <c>null</c> lo quita).</summary>
+    /// <summary>Peso total con tara (solo con <c>clase_viaje = Contenedor</c>; <c>null</c> lo quita).</summary>
     public decimal? PesoConTaraKg { get; init; }
 
     /// <summary>Posiciones nuevas (solo si <c>posiciones</c> está en <see cref="Presentes"/>; <c>null</c> = sin posiciones).</summary>
@@ -113,7 +113,7 @@ public sealed record clsCambiosCarga
             ValorMercancia = Valor(CampoValorMercancia, ValorMercancia, linea.ValorMercancia),
             PesoConTaraKg = Valor(CampoPesoConTara, PesoConTaraKg, linea.PesoConTaraKg),
 
-            // HU-021: las horas son de la ruta (la cabecera ya no las guarda).
+            // Las horas son de la ruta, no de la cabecera.
             HorasCargue = Valor(CampoHorasCargue, HorasCargue, linea.HorasCargue),
             HorasDescargue = Valor(CampoHorasDescargue, HorasDescargue, linea.HorasDescargue),
             Posiciones = Presentes.Contains(CampoPosiciones) ? Posiciones ?? [] : linea.Posiciones,
@@ -123,7 +123,7 @@ public sealed record clsCambiosCarga
     private T Valor<T>(string campo, T nuevo, T anterior) => Presentes.Contains(campo) ? nuevo : anterior;
 
     /// <summary>
-    /// Defecto B: el id de la ciudad del contenedor. Si viene, el nuevo; si solo cambia el nombre (sin el id), el id anterior ya no le
+    /// El id de la ciudad del contenedor. Si viene, el nuevo; si solo cambia el nombre (sin el id), el id anterior ya no le
     /// corresponde y se borra (la revalidación lo exige o lo resuelve); si no cambia nada, se conserva.
     /// </summary>
     private int? Municipio(string campoId, string campoNombre, int? nuevo, int? anterior) =>
