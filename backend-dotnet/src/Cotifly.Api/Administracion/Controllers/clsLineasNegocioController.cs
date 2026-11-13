@@ -10,7 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Cotifly.Api.Administracion.Controllers;
 
 /// <summary>
-/// Políticas de margen por línea de negocio (HU-004.9, <c>specs/openapi.yaml</c> tag <c>admin</c>). Solo
+/// Políticas de margen por línea de negocio (<c>specs/openapi.yaml</c> tag <c>admin</c>). Solo
 /// <c>gerente_comercial</c>: política <see cref="clsPoliticas.GerenteComercial"/> aquí y revalidación del rol en el caso de uso.
 /// No crea ni borra líneas.
 /// </summary>

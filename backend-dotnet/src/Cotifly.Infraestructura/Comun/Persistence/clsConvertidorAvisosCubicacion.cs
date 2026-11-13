@@ -6,10 +6,10 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Cotifly.Infraestructura.Comun.Persistence;
 
 /// <summary>
-/// HU-023.5 (#160): guarda <see cref="clsAvisosCubicacion"/> (mercancías condicionadas, advertencias y extradimensión del cubicador) como
-/// JSON en <c>CotizacionLineasSolicitud.avisosCubicacion</c> (propuesta <c>db/scripts/pendientes/04</c>, con <c>CHECK (ISJSON(...) = 1)</c>). Cada lista se
+/// Guarda <see cref="clsAvisosCubicacion"/> (mercancías condicionadas, advertencias y extradimensión del cubicador) como
+/// JSON en <c>CotizacionLineasSolicitud.avisosCubicacion</c> (<c>db/scripts/pendientes/04</c>, con <c>CHECK (ISJSON(...) = 1)</c>). Cada lista se
 /// recorta a <see cref="MaximoElementos"/> y cada texto a <see cref="LargoMaximoTexto"/>: los avisos los escribe un sistema externo y no
-/// pueden crecer sin límite. Un JSON que ya no se puede leer (forma vieja) vale <c>null</c>: los avisos son informativos. EF no llama al
+/// pueden crecer sin límite. Un JSON que no se puede leer (forma vieja) vale <c>null</c>: los avisos son informativos. EF no llama al
 /// convertidor con <c>null</c>: sin avisos la columna queda en <c>NULL</c>.
 /// </summary>
 public sealed class clsConvertidorAvisosCubicacion : ValueConverter<clsAvisosCubicacion?, string>
@@ -39,7 +39,7 @@ public sealed class clsConvertidorAvisosCubicacion : ValueConverter<clsAvisosCub
 
         var acotados = new clsAvisosCubicacion(
             [.. (avisos.MercanciasCondicionadas ?? []).Take(MaximoElementos).Select(m => new clsMercanciaCondicionada(Recortar(m.CodigoMercancia)!, Recortar(m.Comentario)))],
-            // HU-032 (#197): los avisos del vehículo conservan el vehículo elegido y los finales.
+            // Los avisos del vehículo conservan el vehículo elegido y los finales.
             [.. (avisos.Advertencias ?? []).Take(MaximoElementos).Select(a => a with
             {
                 Codigo = Recortar(a.Codigo),
@@ -80,7 +80,7 @@ public sealed class clsConvertidorAvisosCubicacion : ValueConverter<clsAvisosCub
         }
     }
 
-    /// <summary>HU-023 (#176): la forma anterior de la extradimensión (<c>{extradimensionado: true, …}</c>) se lee como <c>hayExtradimension</c>.</summary>
+    /// <summary>La forma anterior de la extradimensión (<c>{extradimensionado: true, …}</c>) se lee como <c>hayExtradimension</c>.</summary>
     private static bool MarcaVieja(string json) =>
         System.Text.Json.Nodes.JsonNode.Parse(json)?["extradimension"]?["extradimensionado"] is System.Text.Json.Nodes.JsonValue marca
         && marca.TryGetValue<bool>(out var valor) && valor;

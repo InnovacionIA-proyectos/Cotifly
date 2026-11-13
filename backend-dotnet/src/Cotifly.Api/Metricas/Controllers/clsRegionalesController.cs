@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Cotifly.Api.Metricas.Controllers;
 
 /// <summary>
-/// HU-037.3 (#211): <c>GET /web/regionales</c>, las regionales del selector del tablero (<c>/web/metricas/regional</c>) y del listado
+/// <c>GET /web/regionales</c>, las regionales del selector del tablero (<c>/web/metricas/regional</c>) y del listado
 /// regional (<c>/web/cotizaciones/regional</c>). <c>gerente_comercial</c> (la suya) o <c>director</c> (todas); un comercial recibe 403.
 /// </summary>
 [Route("web")]

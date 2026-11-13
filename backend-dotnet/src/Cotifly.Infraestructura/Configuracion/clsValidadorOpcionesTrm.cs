@@ -3,7 +3,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Configuracion;
 
 /// <summary>
-/// Reglas de <see cref="clsOpcionesTrm"/> que DataAnnotations no cubre (HU-012.1): <c>Trm:Proveedor</c> debe ser uno de
+/// Reglas de <see cref="clsOpcionesTrm"/> que DataAnnotations no cubre: <c>Trm:Proveedor</c> debe ser uno de
 /// <see cref="clsOpcionesTrm.Proveedores"/>, y <c>Trm:Url</c> y <c>Trm:UrlDolarApi</c> deben ser URLs https absolutas, sin usuario,
 /// consulta ni fragmento (a la de la Superintendencia el adaptador le agrega <c>?$where=...</c>). Con una opción inválida la API no
 /// arranca: cada cotización en USD fallaría.

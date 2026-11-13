@@ -3,7 +3,7 @@ using Cotifly.Aplicacion.Precio.DTOs;
 namespace Cotifly.Infraestructura.Precio.Services;
 
 /// <summary>
-/// Última TRM válida conocida por esta réplica (HU-012.1, ADR-014 §1), de cualquier fecha y fuente: la registra la caché
+/// Última TRM válida conocida por esta réplica (ADR-014 §1), de cualquier fecha y fuente: la registra la caché
 /// (<see cref="clsProveedorTrmEnCache"/>) con cada TRM que entrega, y DolarApi la usa para rechazar un valor que se desvíe más de
 /// <see cref="clsProveedorTrmDolarApi.DesviacionMaxima"/>. Singleton, seguro entre hilos. Vacía al arrancar: sin referencia no se compara.
 /// </summary>

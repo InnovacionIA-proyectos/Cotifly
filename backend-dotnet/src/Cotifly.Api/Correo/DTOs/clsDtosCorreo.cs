@@ -7,7 +7,7 @@ namespace Cotifly.Api.Correo.DTOs;
 public sealed record clsEnvioWebRequest(IReadOnlyList<string>? Para, IReadOnlyList<string>? Cc, string? Asunto, string? Cuerpo);
 
 /// <summary>
-/// <c>RespuestaEnvio</c>: <c>{enviado: true, message_id}</c>. HU-033 (#199): <c>enviado</c> = MailSender aceptó el correo (202) y
+/// <c>RespuestaEnvio</c>: <c>{enviado: true, message_id}</c>. <c>enviado</c> = MailSender aceptó el correo (202) y
 /// <c>message_id</c> es su id; además <c>correo_id</c> (el envío en Cotifly, para el historial y el reintento), <c>estado</c>
 /// (<c>encolado</c>) y <c>redirigido_a</c> (buzón de pruebas fuera de producción, o <c>null</c>).
 /// </summary>
@@ -20,5 +20,5 @@ public sealed record clsRespuestaEnvio(bool Enviado, string? MessageId)
     public string? RedirigidoA { get; init; }
 }
 
-/// <summary>HU-033 (#199): <c>HistorialCorreos</c>: <c>{folio, correos}</c>, del más reciente al más antiguo.</summary>
+/// <summary><c>HistorialCorreos</c>: <c>{folio, correos}</c>, del más reciente al más antiguo.</summary>
 public sealed record clsHistorialCorreosRespuesta(string Folio, IReadOnlyList<Cotifly.Aplicacion.Correo.DTOs.clsEnvioCorreoHistorial> Correos);

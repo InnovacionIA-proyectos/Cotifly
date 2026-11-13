@@ -7,10 +7,10 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Configuracion;
 
 /// <summary>
-/// Transporte del correo (sección <c>Correo</c>, la misma de <c>clsOpcionesCorreo</c> de Aplicación). HU-033 (#199, ADR-023): el único
+/// Transporte del correo (sección <c>Correo</c>, la misma de <c>clsOpcionesCorreo</c> de Aplicación; ADR-023): el único
 /// transporte es el microservicio interno MailSender (<c>POST /api/v1/emails</c>, multipart, 202 con un id), que encola el correo, lo
-/// entrega por el relay corporativo y lo reintenta. Los modos <c>smtp_relay</c> (MailKit directo al relay), <c>smtp</c> y
-/// <c>wscorreos</c> se retiraron: con el correo habilitado la API no arranca con ellos.
+/// entrega por el relay corporativo y lo reintenta. Con el correo habilitado, los modos <c>smtp_relay</c>, <c>smtp</c> y
+/// <c>wscorreos</c> impiden arrancar la API.
 /// </summary>
 public sealed class clsOpcionesCorreoTransporte
 {
@@ -31,7 +31,7 @@ public sealed class clsOpcionesCorreoTransporte
 }
 
 /// <summary>
-/// HU-033: <c>Correo:MailSender</c>. La URL va SOLO en configuración (variable <c>Correo__MailSender__UrlBase</c> del stack); MailSender no
+/// <c>Correo:MailSender</c>. La URL va SOLO en configuración (variable <c>Correo__MailSender__UrlBase</c> del stack); MailSender no
 /// tiene autenticación (red interna), así que no hay secreto.
 /// </summary>
 public sealed class clsOpcionesMailSender
@@ -56,7 +56,7 @@ public sealed class clsOpcionesMailSender
     public string Remitente { get; set; } = "notificaciones@boterosoto.com.co";
 
     /// <summary>
-    /// HU-033 (auditoría #199): de quién es el <c>From</c>. <c>comercial</c> (por defecto): el correo del comercial, porque MailSender no tiene
+    /// De quién es el <c>From</c>. <c>comercial</c> (por defecto): el correo del comercial, porque MailSender no tiene
     /// <c>Reply-To</c> y así las respuestas le llegan a él. <c>corporativo</c>: siempre <see cref="Remitente"/>, para cuando SPF/DMARC del
     /// dominio no autoricen al relay a enviar como cada comercial (un 550 5.7.1 es un fallo permanente).
     /// </summary>
@@ -83,7 +83,7 @@ public sealed class clsOpcionesMailSender
             return Remitente;
         }
 
-        // Validación #228: además, el formato estricto de las cabeceras (clsCabecerasCorreo). Una dirección que MailAddress acepta pero el
+        // Además, el formato estricto de las cabeceras (clsCabecerasCorreo). Una dirección que MailAddress acepta pero el
         // transporte bloquearía (parte local entre comillas, dominio de una sola etiqueta) sale con el remitente corporativo, no falla el envío.
         var candidato = correoComercial.Trim();
         if (!clsCabecerasCorreo.EsDireccionValida(candidato) || !MailAddress.TryCreate(candidato, out var direccion)
@@ -129,7 +129,7 @@ public sealed class clsValidadorOpcionesCorreoTransporte : IValidateOptions<clsO
             errores.Add($"'{Prefijo}MailSender:UrlBase' es obligatorio con {Prefijo}Habilitado=true y debe ser una URL http(s) absoluta.");
         }
 
-        // Validación #228: el mismo formato estricto que el transporte exige al From (si no, ningún correo saldría).
+        // El mismo formato estricto que el transporte exige al From (si no, ningún correo saldría).
         if (!clsCabecerasCorreo.EsDireccionValida(mailSender.Remitente))
         {
             errores.Add($"'{Prefijo}MailSender:Remitente' debe ser un correo válido (una sola dirección, sin nombre ni espacios).");
@@ -155,7 +155,7 @@ public sealed class clsValidadorOpcionesCorreoTransporte : IValidateOptions<clsO
 }
 
 /// <summary>
-/// HU-033 (#199, decisión 3): reglas de <see cref="clsOpcionesCorreo"/>. La protección es segura por defecto y NO depende del ambiente (QA y
+/// Reglas de <see cref="clsOpcionesCorreo"/>. La protección es segura por defecto y NO depende del ambiente (QA y
 /// staging corren como <c>Production</c>): con el correo habilitado, el envío real exige las dos llaves <c>Proteccion:Modo=ninguno</c> y
 /// <c>Proteccion:PermitirEnvioReal=true</c> (una sin la otra impide arrancar) y, además, <c>Production</c>; en cualquier otro caso se redirige
 /// y el <c>BuzonPruebas</c> válido es obligatorio. El modo siempre debe ser uno conocido.
@@ -198,7 +198,7 @@ public sealed class clsValidadorOpcionesCorreo(IHostEnvironment entorno) : IVali
             }
         }
 
-        // #228: el tope de destinatarios vale siempre (también con el correo deshabilitado, porque la vista previa lo aplica).
+        // El tope de destinatarios vale siempre (también con el correo deshabilitado, porque la vista previa lo aplica).
         if (options.MaximoDestinatarios is < 1 or > clsOpcionesCorreo.LimiteMaximoDestinatarios)
         {
             errores.Add($"'{Prefijo}MaximoDestinatarios' debe estar entre 1 y {clsOpcionesCorreo.LimiteMaximoDestinatarios} "

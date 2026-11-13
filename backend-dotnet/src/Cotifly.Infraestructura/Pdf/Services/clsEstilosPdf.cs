@@ -12,7 +12,7 @@ namespace Cotifly.Infraestructura.Pdf.Services;
 /// </summary>
 internal static class clsEstilosPdf
 {
-    // Tokens del design system de Botero Soto (diccionario C del Python).
+    // Tokens del design system de Botero Soto.
     public static readonly Color Primario = Hex("#005AA8");
     public static readonly Color Secundario = Hex("#009A44");
     public static readonly Color Acento = Hex("#0072CE");

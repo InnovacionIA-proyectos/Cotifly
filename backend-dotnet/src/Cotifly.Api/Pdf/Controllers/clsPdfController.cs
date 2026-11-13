@@ -8,10 +8,10 @@ using Microsoft.Net.Http.Headers;
 namespace Cotifly.Api.Pdf.Controllers;
 
 /// <summary>
-/// Descarga del PDF (<c>GET /pdfs/{archivo}</c>; en el Python era público, hallazgo corregido). Solo con <b>Bearer</b> (consola
+/// Descarga del PDF (<c>GET /pdfs/{archivo}</c>). Solo con <b>Bearer</b> (consola
 /// web): dueño o <c>gerente_comercial</c> cuya regional efectiva incluye al dueño (misma regla que el listado regional); cualquier otro caso 404 <c>ErrorWeb</c>, igual que si no existiera.
-/// Sin sesión, 401 (lo escriben los eventos de JwtBearer con <c>ErrorWeb</c>). La URL firmada <c>?t=</c> (ADR-011 §3), que solo emitía
-/// Google Chat, se retiró en HU-013.9 (#105): el parámetro se ignora.
+/// Sin sesión, 401 (lo escriben los eventos de JwtBearer con <c>ErrorWeb</c>). El parámetro <c>?t=</c> de la URL firmada
+/// (ADR-011 §3) se ignora.
 /// </summary>
 [ApiController]
 [Route("pdfs")]

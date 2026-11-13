@@ -9,9 +9,9 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Margen.Services;
 
 /// <summary>
-/// Descarga del set completo de <c>RentabClienteSet</c> de SAP TM para la sincronización (HU-042.2, #243, ADR-027): un solo
+/// Descarga del set completo de <c>RentabClienteSet</c> de SAP TM para la sincronización (ADR-027): un solo
 /// <c>GET {SapTm:Url}/RentabClienteSet?$format=json</c> (más <c>&amp;sap-client=NNN</c> si hay mandante), SIN <c>$filter</c>: SAP lo ignora
-/// y siempre devuelve todo (~1500 filas, confirmado por Datos con curl).
+/// y siempre devuelve todo (~1500 filas).
 /// </summary>
 /// <remarks>
 /// <list type="bullet">

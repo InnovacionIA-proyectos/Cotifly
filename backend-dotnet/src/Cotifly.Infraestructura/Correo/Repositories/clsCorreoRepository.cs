@@ -22,7 +22,7 @@ public sealed class clsCorreoRepository(clsCotiflyDbContext contexto) : IClsCorr
             .Include(c => c.Destinatarios)
             .Where(c => c.CotizacionId == cotizacionId && c.CreatedAt >= desde
                         && (_cuentan.Contains(c.Estado)
-                            // Auditoría #199: un envío incierto (sin respuesta al encolar) también cuenta en la ventana de 5 minutos.
+                            // Un envío incierto (sin respuesta al encolar) también cuenta en la ventana de 5 minutos.
                             || (c.Estado == EstadoCorreo.Fallido && c.IdMailSender == null && c.Error != null && c.Error.StartsWith(clsCorreo.PrefijoIncierto))))
             .OrderByDescending(c => c.CreatedAt)
             .ToListAsync(cancellationToken);

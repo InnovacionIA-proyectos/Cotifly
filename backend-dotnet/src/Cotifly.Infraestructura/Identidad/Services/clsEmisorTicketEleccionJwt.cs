@@ -13,7 +13,7 @@ using Microsoft.IdentityModel.Tokens;
 namespace Cotifly.Infraestructura.Identidad.Services;
 
 /// <summary>
-/// HU-040.2 (#230, ADR-025): <see cref="IClsEmisorTicketEleccion"/> con <see cref="JsonWebTokenHandler"/>. JWT HS256 de 5 minutos con
+/// <see cref="IClsEmisorTicketEleccion"/> con <see cref="JsonWebTokenHandler"/> (ADR-025). JWT HS256 de 5 minutos con
 /// <c>iss</c> (el del access), <c>aud</c> <see cref="Audiencia"/>, <c>typ</c> <see cref="Tipo"/>, <c>sub</c> (usuario), <c>jti</c>,
 /// <c>username</c> y <c>roles</c> (los ofrecidos). Se firma con una clave DERIVADA de <c>Jwt:SigningKey</c>
 /// (HMAC-SHA256 de la clave con <see cref="EtiquetaDerivacion"/>): aunque una validación olvidara la audiencia, la firma de un access no

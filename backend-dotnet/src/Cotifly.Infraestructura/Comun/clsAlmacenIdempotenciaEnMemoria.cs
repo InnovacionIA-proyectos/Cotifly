@@ -9,11 +9,11 @@ namespace Cotifly.Infraestructura.Comun;
 /// simultáneas y el resultado que se guarda queda <see cref="IClsAlmacenIdempotencia.Vigencia"/>.
 /// </summary>
 /// <remarks>
-/// #191: la API ya no la usa (registra <see cref="Persistence.clsAlmacenIdempotenciaSql"/>, sobre la tabla del script 06); queda para las
+/// La API registra <see cref="Persistence.clsAlmacenIdempotenciaSql"/> (sobre la tabla del script 06); este almacén queda para las
 /// pruebas que no tienen base. Un reinicio olvida las claves y no se comparte entre réplicas.
 /// <para>Cada entrada cuenta cuántas peticiones la están usando (bajo <see cref="_candado"/>): la purga solo quita una entrada sin
 /// usuarios, así dos peticiones con la misma clave nunca obtienen semáforos distintos.</para>
-/// <para>Memoria acotada (arrastre de #99 en #102): la purga de vencidas y fallidas corre cada <see cref="IntervaloPurga"/> (no en cada
+/// <para>Memoria acotada: la purga de vencidas y fallidas corre cada <see cref="IntervaloPurga"/> (no en cada
 /// petición) o al llegar al tope; con <see cref="MaximoEntradasPorDefecto"/> claves recordadas, una clave nueva desaloja un lote (el 10 %
 /// del tope) de las guardadas más próximas a vencer que nadie esté usando. Una clave desalojada antes de su vigencia deja como defensa el
 /// <c>If-Match</c> (la repetición responde <c>CONFLICTO_CONCURRENCIA</c>), igual que tras un reinicio.</para>

@@ -3,10 +3,10 @@ using System.ComponentModel.DataAnnotations;
 namespace Cotifly.Infraestructura.Configuracion;
 
 /// <summary>
-/// Cubicador (motor de selección de vehículos; sección <c>Cubicador</c>, HU-021.5, #133). Sin <see cref="UrlBase"/> (valor por defecto:
+/// Cubicador (motor de selección de vehículos; sección <c>Cubicador</c>). Sin <see cref="UrlBase"/> (valor por defecto:
 /// cubicador no configurado) se registra <c>clsCubicadorNoDisponible</c> y la captura crea un camión por ruta con el vehículo elegido de la
-/// ruta (HU-032, #197; sin vehículo si la ruta no lo trae o con <c>Captura:AceptarVehiculoCliente</c> apagada). Con <see cref="UrlBase"/>, <see cref="ApiKey"/> es obligatoria: viaja como
-/// <c>Authorization: Bearer {ApiKey}</c> (C5). Reglas en <see cref="clsValidadorOpcionesCubicador"/>; ningún mensaje ni log incluye la llave.
+/// ruta (sin vehículo si la ruta no lo trae o con <c>Captura:AceptarVehiculoCliente</c> apagada). Con <see cref="UrlBase"/>, <see cref="ApiKey"/> es obligatoria: viaja como
+/// <c>Authorization: Bearer {ApiKey}</c>. Reglas en <see cref="clsValidadorOpcionesCubicador"/>; ningún mensaje ni log incluye la llave.
 /// </summary>
 public sealed class clsOpcionesCubicador
 {
@@ -24,17 +24,17 @@ public sealed class clsOpcionesCubicador
 
     /// <summary>
     /// Límite de cada intento de las consultas al cubicador (segundos): los catálogos y la sonda de salud. Corto a propósito: un GET que no
-    /// responde se reintenta. Por defecto 15. D3b/D7 (E2E 2026-10-16): el <c>POST /recomendaciones</c> tiene su propio límite,
-    /// <see cref="TiempoEsperaRecomendacionSegundos"/>, y su reconsulta también (<see cref="TiempoEsperaReconsultaSegundos"/>, opción C).
+    /// responde se reintenta. Por defecto 15. El <c>POST /recomendaciones</c> tiene su propio límite,
+    /// <see cref="TiempoEsperaRecomendacionSegundos"/>, y su reconsulta también (<see cref="TiempoEsperaReconsultaSegundos"/>).
     /// </summary>
     [Range(1, 120)]
     public int TiempoEsperaSegundos { get; set; } = 15;
 
     /// <summary>
-    /// D3b (E2E 2026-10-16): límite del <c>POST /recomendaciones</c> (segundos). El motor del cubicador tarda 26 a 31 s con cargas grandes
+    /// Límite del <c>POST /recomendaciones</c> (segundos). El motor del cubicador tarda 26 a 31 s con cargas grandes
     /// (1.100 unidades) y bloquea su API mientras calcula (un solo proceso, cálculo síncrono), así que el límite general
-    /// (<see cref="TiempoEsperaSegundos"/>) dejaba esas cargas en el respaldo o en 503. Un POST nunca se reintenta: sin respuesta se
-    /// reconsulta con GET (<see cref="EsperaAntesReconsultaSegundos"/>, <see cref="TiempoEsperaReconsultaSegundos"/>). Opción C: por
+    /// (<see cref="TiempoEsperaSegundos"/>) dejaría esas cargas en el respaldo o en 503. Un POST nunca se reintenta: sin respuesta se
+    /// reconsulta con GET (<see cref="EsperaAntesReconsultaSegundos"/>, <see cref="TiempoEsperaReconsultaSegundos"/>). Por
     /// defecto 90; de 1 a 300 (el <c>HttpClient</c> del cubicador no tiene límite propio: manda la tubería). Al arrancar se valida que no
     /// sea menor que <see cref="TiempoEsperaSegundos"/> ni mayor que <see cref="PresupuestoCapturaSegundos"/>.
     /// </summary>
@@ -42,7 +42,7 @@ public sealed class clsOpcionesCubicador
     public int TiempoEsperaRecomendacionSegundos { get; set; } = 90;
 
     /// <summary>
-    /// Opción C: espera antes de reconsultar con <c>GET /recomendaciones</c> un POST que no respondió (segundos). El cubicador atiende las
+    /// Espera antes de reconsultar con <c>GET /recomendaciones</c> un POST que no respondió (segundos). El cubicador atiende las
     /// peticiones en orden: si el motor sigue calculando, el GET se queda en la fila y responde cuando termina. Por defecto 5; de 0 a 60.
     /// </summary>
     [Range(0, 60)]
@@ -65,7 +65,7 @@ public sealed class clsOpcionesCubicador
     public int MaximoConcurrente { get; set; } = 1;
 
     /// <summary>
-    /// Opción C: cuánto espera una llamada a que se libere el cupo (<see cref="MaximoConcurrente"/>) antes de rendirse con
+    /// Cuánto espera una llamada a que se libere el cupo (<see cref="MaximoConcurrente"/>) antes de rendirse con
     /// <c>CUBICADOR_OCUPADO</c> (segundos). La espera cuenta dentro del tiempo de quien llama (el presupuesto de la captura, el reclamo de
     /// la licitación) y se cancela con él. Por defecto 60 (lo que tardan dos cargas grandes); de 0 a 600 (0 = no espera).
     /// </summary>
@@ -73,7 +73,7 @@ public sealed class clsOpcionesCubicador
     public int EsperaMaximaCupoSegundos { get; set; } = 60;
 
     /// <summary>
-    /// Opción D: cuánto espera <c>POST /web/cubicacion</c> al cubicador antes de responder 202 y seguir en segundo plano (segundos). Si el
+    /// Cuánto espera <c>POST /web/cubicacion</c> al cubicador antes de responder 202 y seguir en segundo plano (segundos). Si el
     /// cálculo termina antes, responde 200 como siempre. Por defecto 8; de 0 a 30 (0 = siempre 202).
     /// </summary>
     [Range(0, 30)]
@@ -99,17 +99,17 @@ public sealed class clsOpcionesCubicador
 
     /// <summary>
     /// Si el cubicador configurado falla en la captura (caído, sin respuesta a tiempo, respuesta inválida), ¿la ruta sigue con el camión
-    /// del respaldo (el vehículo elegido si lo hay y es válido; si no, sin vehículo, ADR-022; con un warning en el log)? Por defecto <c>true</c> (regla del coordinador, ADR-019): el cubicador real ya está
-    /// conectado y una caída no detiene la captura; con <c>Captura:AceptarVehiculoCliente</c> ese camión lleva el vehículo elegido (HU-032). Con
-    /// <c>false</c> la captura falla con <c>CUBICADOR_NO_DISPONIBLE</c> y no se guarda ni se envía nada a Nexo (regla de la issue #133).
+    /// del respaldo (el vehículo elegido si lo hay y es válido; si no, sin vehículo, ADR-022; con un warning en el log)? Por defecto <c>true</c> (ADR-019): el cubicador real está
+    /// conectado y una caída no detiene la captura; con <c>Captura:AceptarVehiculoCliente</c> ese camión lleva el vehículo elegido. Con
+    /// <c>false</c> la captura falla con <c>CUBICADOR_NO_DISPONIBLE</c> y no se guarda ni se envía nada a Nexo.
     /// </summary>
     public bool RespaldoSiFalla { get; set; } = true;
 
     /// <summary>
     /// Tiempo máximo de llamadas al cubicador en una misma captura (segundos; una licitación hace un POST por fila). Se revisa antes de
     /// cada llamada: pasado, las rutas restantes no lo llaman y van al respaldo o, con <see cref="RespaldoSiFalla"/> = <c>false</c>, la
-    /// captura falla con 503. La espera por el cupo (<see cref="EsperaMaximaCupoSegundos"/>) cuenta dentro. Por defecto 180 (opción C:
-    /// caben una espera por el cupo y dos recomendaciones lentas); debe ser al menos <see cref="TiempoEsperaRecomendacionSegundos"/>, para
+    /// captura falla con 503. La espera por el cupo (<see cref="EsperaMaximaCupoSegundos"/>) cuenta dentro. Por defecto 180 (caben
+    /// una espera por el cupo y dos recomendaciones lentas); debe ser al menos <see cref="TiempoEsperaRecomendacionSegundos"/>, para
     /// que una sola ruta lenta no agote la captura (se valida al arrancar).
     /// </summary>
     [Range(1, 3600)]

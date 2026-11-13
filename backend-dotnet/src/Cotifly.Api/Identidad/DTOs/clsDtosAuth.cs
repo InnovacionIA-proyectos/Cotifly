@@ -9,7 +9,7 @@ public sealed record clsLoginClienteProRequest(
     [property: JsonPropertyName("nombreUsuario")] string? NombreUsuario,
     [property: JsonPropertyName("roles")] IReadOnlyList<string>? Roles);
 
-/// <summary>HU-040.2 (#230): <c>ElegirRolRequest</c>: el ticket del login con varios roles y el código del rol elegido.</summary>
+/// <summary><c>ElegirRolRequest</c>: el ticket del login con varios roles y el código del rol elegido.</summary>
 public sealed record clsElegirRolRequest(
     [property: JsonPropertyName("ticket")] string? Ticket,
     [property: JsonPropertyName("rol")] string? Rol);
@@ -41,7 +41,7 @@ public sealed record clsLoginResponse(
 }
 
 /// <summary>
-/// HU-040.2 (#230, ADR-025): <c>EleccionRolRequerida</c>, la respuesta 200 del login cuando la persona tiene varios roles. No trae sesión:
+/// <c>EleccionRolRequerida</c> (ADR-025), la respuesta 200 del login cuando la persona tiene varios roles. No trae sesión:
 /// el frontend muestra <c>roles</c> y llama a <c>POST /api/auth/elegir-rol</c> con <c>ticketEleccion</c> antes de <c>ticketExpiraAt</c>.
 /// </summary>
 public sealed record clsEleccionRolResponse(
@@ -63,12 +63,12 @@ public sealed record clsEleccionRolResponse(
     }
 }
 
-/// <summary>HU-040.2 (#230): <c>RolDisponible</c> (código del claim <c>rol</c> y descripción para el selector).</summary>
+/// <summary><c>RolDisponible</c> (código del claim <c>rol</c> y descripción para el selector).</summary>
 public sealed record clsRolDisponibleRespuesta(
     [property: JsonPropertyName("codigo")] string Codigo,
     [property: JsonPropertyName("descripcion")] string Descripcion);
 
-/// <summary>HU-040.2 (#230): <c>UsuarioEleccion</c>, quién está eligiendo (sin rol todavía).</summary>
+/// <summary><c>UsuarioEleccion</c>, quién está eligiendo (sin rol todavía).</summary>
 public sealed record clsUsuarioEleccionRespuesta(
     [property: JsonPropertyName("id")] string Id,
     [property: JsonPropertyName("username")] string Username,

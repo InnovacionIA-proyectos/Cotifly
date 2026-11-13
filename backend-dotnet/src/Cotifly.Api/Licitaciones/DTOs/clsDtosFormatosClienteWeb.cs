@@ -3,7 +3,7 @@ using Cotifly.Aplicacion.Licitaciones.DTOs;
 
 namespace Cotifly.Api.Licitaciones.DTOs;
 
-// HU-044.5 (#256): plantillas de mapeo, formatos de lectura (recetas) y diccionario del cliente en /web/*, en snake_case. Ninguno expone el
+// Plantillas de mapeo, formatos de lectura (recetas) y diccionario del cliente en /web/*, en snake_case. Ninguno expone el
 // id local del cliente en NEXO (Cotifly trabaja con el NIT de la licitación y no lo guarda).
 
 /// <summary>

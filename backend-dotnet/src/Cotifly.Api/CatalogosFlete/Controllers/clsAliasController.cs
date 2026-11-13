@@ -6,8 +6,8 @@ using Microsoft.AspNetCore.Mvc;
 namespace Cotifly.Api.CatalogosFlete.Controllers;
 
 /// <summary>
-/// HU-031.1 (#194): resolver un tipo de vehículo o una clase de contenedor escritos a mano contra Nexo (catálogo oficial y diccionario de
-/// alias, NEXO #321). El front no puede llamar a Nexo directamente: el backend es el intermediario, como con los catálogos de flete.
+/// Resuelve un tipo de vehículo o una clase de contenedor escritos a mano contra Nexo (catálogo oficial y diccionario de
+/// alias). El front no puede llamar a Nexo directamente: el backend es el intermediario, como con los catálogos de flete.
 /// </summary>
 [Route("web/alias")]
 public sealed class clsAliasController(IClsContextoUsuario usuario, IClsResolucionAliasService resolucion) : clsControladorWebBase(usuario)

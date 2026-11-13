@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Agente.Services;
 
 /// <summary>
-/// Archiva las sesiones inactivas (port de <c>_barrido_sesiones</c> y <c>archivar_inactivas</c> del Python): cada
+/// Archiva las sesiones inactivas: cada
 /// <c>Sesiones:BarridoMinutos</c>, las activas sin actividad en <c>Sesiones:TtlHoras</c> pasan a <c>archivada</c> (la traza queda en
 /// la base). Un fallo es un warning; el barrido nunca tumba el servicio.
 /// </summary>

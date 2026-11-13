@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 namespace Cotifly.Infraestructura.Configuracion;
 
 /// <summary>
-/// Fuentes de la TRM (sección <c>Trm</c>, HU-012.1, ADR-014). <c>Trm__Proveedor</c> elige la cadena:
+/// Fuentes de la TRM (sección <c>Trm</c>, ADR-014). <c>Trm__Proveedor</c> elige la cadena:
 /// <list type="bullet">
 /// <item><c>dolarapi_con_respaldo</c> (por defecto): DolarApi (<c>Trm__UrlDolarApi</c>) y, si falla, la Superintendencia Financiera.</item>
 /// <item><c>dolarapi</c>: solo DolarApi.</item>

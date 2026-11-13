@@ -9,8 +9,8 @@ namespace Cotifly.Infraestructura.Pdf.Services;
 /// <summary>
 /// Bloque "NUESTRA TARIFA PARA SU SOLICITUD ES:": subtítulo, tabla(s) de tarifa (<c>table.tar</c>: franja verde con el
 /// título, franja azul con el origen, encabezados en mayúscula y filas con la tarifa en azul), nota general, nota de decretos
-/// (<c>.nota-decreto</c>), aclaración de la cotización en dólares (HU-012.3, mismo recuadro), detalle adicional (aduana, extradimensionada, refrigerada) y las dos columnas incluye / no incluye.
-/// HU-033 (#199): después de las tablas, el total general de la cotización (<see cref="clsDocumentoCotizacion.TotalGeneral"/>).
+/// (<c>.nota-decreto</c>), aclaración de la cotización en dólares (mismo recuadro), detalle adicional (aduana, extradimensionada, refrigerada) y las dos columnas incluye / no incluye.
+/// Después de las tablas, el total general de la cotización (<see cref="clsDocumentoCotizacion.TotalGeneral"/>).
 /// </summary>
 internal static class clsBloqueTarifa
 {
@@ -42,7 +42,7 @@ internal static class clsBloqueTarifa
             TotalGeneral(seccion, total, diseno);
         }
 
-        // #261 (HU-046): el texto de seguros va después del resumen de precios. En el pliego el resumen es el bloque de clsBloquePliego, que
+        // El texto de seguros va después del resumen de precios. En el pliego el resumen es el bloque de clsBloquePliego, que
         // lo pone allí; en la tarifa única (y multi) el resumen es el total general, así que va aquí, tras él.
         if (documento.Variante != VarianteDocumento.Pliego && documento.TextoSeguros is { Count: > 0 } seguros)
         {
@@ -59,8 +59,8 @@ internal static class clsBloqueTarifa
             NotaResaltada(seccion, clsTextosEstandar.EtiquetaTiemposLogisticos, decreto, diseno);
         }
 
-        // HU-012.3: en USD, la nota de TRM mínima con la TRM aplicada, en el mismo recuadro de la nota de decretos y SIN etiqueta: el PDF
-        // muestra solo el texto exacto que definió negocio (ambas variantes y el pliego).
+        // En USD, la nota de TRM mínima con la TRM aplicada, en el mismo recuadro de la nota de decretos y SIN etiqueta: el PDF
+        // muestra solo el texto exacto que define negocio (ambas variantes y el pliego).
         if (documento.NotaMoneda is { } moneda)
         {
             NotaResaltada(seccion, null, moneda, diseno);
@@ -149,7 +149,7 @@ internal static class clsBloqueTarifa
     }
 
     /// <summary>
-    /// HU-033 (#199): total general: una fila con fondo claro y borde azul, la etiqueta en negrita a la izquierda y el valor en azul a la
+    /// Total general: una fila con fondo claro y borde azul, la etiqueta en negrita a la izquierda y el valor en azul a la
     /// derecha; debajo, la nota con la leyenda de impuestos.
     /// </summary>
     private static void TotalGeneral(Section seccion, clsTotalDocumento total, clsDisenoPdf diseno)
@@ -171,7 +171,7 @@ internal static class clsBloqueTarifa
     }
 
     /// <summary>
-    /// #261 (HU-046): bloque del texto de seguros de la propuesta, después del resumen de precios: la etiqueta <see cref="clsTextosEstandar.TituloSegurosPropuesta"/>
+    /// Bloque del texto de seguros de la propuesta, después del resumen de precios: la etiqueta <see cref="clsTextosEstandar.TituloSegurosPropuesta"/>
     /// en negrita y los párrafos justificados. Lo usan la tarifa única (tras el total general) y el pliego (tras el resumen, <see cref="clsBloquePliego"/>).
     /// </summary>
     public static void TextoSeguros(Section seccion, IReadOnlyList<string> parrafos, clsDisenoPdf diseno)

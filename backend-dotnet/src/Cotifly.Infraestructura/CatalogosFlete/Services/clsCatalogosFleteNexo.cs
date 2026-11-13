@@ -6,13 +6,12 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Infraestructura.CatalogosFlete.Services;
 
 /// <summary>
-/// Catálogos de <c>GET /web/catalogos-flete</c> a partir de los catálogos maestros de Nexo (HU-013.10, #106, G1): los tipos de
+/// Catálogos de <c>GET /web/catalogos-flete</c> a partir de los catálogos maestros de Nexo: los tipos de
 /// vehículo (<c>valor</c> = <c>codigo</c>, <c>etiqueta</c> = <c>descripcion</c>) y las clases de viaje (<c>valor</c> y
 /// <c>etiqueta</c> = <c>descripcion</c>) salen de <see cref="IClsCatalogosMaestrosProvider"/> (con caché); la carrocería sigue en
-/// código (<see cref="clsCatalogosCaptura.Carrocerias"/>) hasta que Nexo publique su catálogo. Ya no consulta
-/// <c>GET /api/biblioteca-sap-historico/filtros</c> (el histórico de tarifas).
-/// HU-027.1 (#179): también expone las clases de contenedor del catálogo maestro (<c>valor</c> y <c>etiqueta</c> =
-/// <c>descripcion</c>, que en Nexo es el código, ej. <c>CNT40.HC</c>), sin la lista provisional G15
+/// código (<see cref="clsCatalogosCaptura.Carrocerias"/>) porque Nexo no publica ese catálogo.
+/// También expone las clases de contenedor del catálogo maestro (<c>valor</c> y <c>etiqueta</c> =
+/// <c>descripcion</c>, que en Nexo es el código, ej. <c>CNT40.HC</c>), sin la lista provisional
 /// (<see cref="clsCatalogosCaptura.ClasesContenedorProvisionales"/>). Si Nexo responde <c>[]</c> (base SAP sin configurar) o ese
 /// catálogo opcional falla, la lista va vacía y la respuesta sigue siendo 200.
 /// </summary>
@@ -39,7 +38,7 @@ public sealed class clsCatalogosFleteNexo(IClsCatalogosMaestrosProvider maestros
     }
 
     /// <summary>
-    /// HU-044.8 (#291): los tipos de vehículo con el <b>código NEXO</b> canónico (<c>C2</c>, <c>C3</c>) en vez del código SAP
+    /// Los tipos de vehículo con el <b>código NEXO</b> canónico (<c>C2</c>, <c>C3</c>) en vez del código SAP
     /// que trae el catálogo maestro («2», «3»), con la única fuente de equivalencia (<see cref="clsEquivalenciaVehiculoNexo"/>) y
     /// la misma descripción. El resto de códigos no cambia. Así el selector del front y los valores que guarda ya son el código
     /// que entiende SICE-TAC/Plaza, y una solicitud no nace en cuarentena en Nexo.

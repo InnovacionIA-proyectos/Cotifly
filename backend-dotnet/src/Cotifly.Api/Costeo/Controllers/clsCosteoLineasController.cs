@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Cotifly.Api.Costeo.Controllers;
 
 /// <summary>
-/// HU-041.1 (#231, ADR-026, <c>specs/openapi.yaml</c>): margen y servicios conexos para varias rutas (o todas) en UNA operación atómica. Las
+/// Margen y servicios conexos para varias rutas (o todas) en UNA operación atómica (ADR-026, <c>specs/openapi.yaml</c>). Las
 /// mismas reglas que los endpoints por ruta; si una ruta no admite el cambio no cambia ninguna y el error trae su <c>detalle.linea_orden</c>.
 /// <c>If-Match</c> obligatorio e <c>Idempotency-Key</c> opcional. Solo cotizaciones propias; una ajena responde 404 igual que una inexistente.
 /// </summary>

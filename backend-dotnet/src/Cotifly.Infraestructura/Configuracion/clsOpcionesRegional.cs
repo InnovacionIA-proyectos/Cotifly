@@ -4,7 +4,7 @@ namespace Cotifly.Infraestructura.Configuracion;
 
 /// <summary>
 /// Ubicación de la tabla de ejecutivos con su regional (sección <c>Regional</c>; conexión <c>ConnectionStrings:Regional</c>,
-/// base <c>DWCubosEBSSAP</c>, tabla <c>dbo.DimEjecutivo</c>, verificada en #81). Sigue siendo configurable por si el DBA mueve la
+/// base <c>DWCubosEBSSAP</c>, tabla <c>dbo.DimEjecutivo</c>). Es configurable por si el DBA mueve la
 /// tabla o renombra columnas (ADR-016 §6). Sin conexión no se consulta nada y la regional sale de <c>UsuariosWeb.regional</c>.
 /// </summary>
 public sealed class clsOpcionesRegional
@@ -25,7 +25,7 @@ public sealed class clsOpcionesRegional
     /// <summary>
     /// Columna que coincide con <c>UsuariosWeb.nombreUsuario</c> (el <c>NOMBREUSUARIO</c> de ClientePro). Por defecto <c>USUARIO</c>,
     /// que viene con el dominio pegado (<c>boterosoto\usuario</c>): el adaptador parte el valor en la última <c>\</c>, compara el
-    /// nombre y valida el dominio contra <see cref="Dominio"/> (#81). Un valor sin <c>\</c> se compara tal cual.
+    /// nombre y valida el dominio contra <see cref="Dominio"/>. Un valor sin <c>\</c> se compara tal cual.
     /// </summary>
     [Required(AllowEmptyStrings = false)]
     [RegularExpression(PatronIdentificador)]
@@ -34,7 +34,7 @@ public sealed class clsOpcionesRegional
     /// <summary>
     /// Dominio que se acepta en la columna de usuario (<c>boterosoto\usuario</c>, sin distinguir mayúsculas). Por defecto
     /// <c>boterosoto</c>. Una fila de otro dominio (<c>otrodominio\jperez</c>) no cuenta; una sin dominio (sin <c>\</c>) sí.
-    /// Vacío: se acepta cualquier dominio (#81).
+    /// Vacío: se acepta cualquier dominio.
     /// </summary>
     [RegularExpression("^[A-Za-z0-9_.-]*$")]
     public string Dominio { get; set; } = "boterosoto";
@@ -50,7 +50,7 @@ public sealed class clsOpcionesRegional
 
     /// <summary>
     /// Límite total (conexión y consulta) de la búsqueda de la regional durante el login, en segundos (1 a 10; por defecto 3). Se
-    /// usa el menor entre este valor y <see cref="TiempoEsperaSegundos"/>. Si se agota, el login sigue sin refrescar la regional (#81).
+    /// usa el menor entre este valor y <see cref="TiempoEsperaSegundos"/>. Si se agota, el login sigue sin refrescar la regional.
     /// </summary>
     [Range(1, 10)]
     public int TiempoEsperaLoginSegundos { get; set; } = 3;

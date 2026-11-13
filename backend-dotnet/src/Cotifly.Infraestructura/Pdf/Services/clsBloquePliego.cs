@@ -6,7 +6,7 @@ using static Cotifly.Infraestructura.Pdf.Services.clsEstilosPdf;
 namespace Cotifly.Infraestructura.Pdf.Services;
 
 /// <summary>
-/// Resumen del pliego (HU-011.5, ADR-017 §6): tabla con una fila por ruta (número, ruta, vehículo y peso, tarifa) con los mismos
+/// Resumen del pliego (ADR-017 §6): tabla con una fila por ruta (número, ruta, vehículo y peso, tarifa) con los mismos
 /// colores de <see cref="clsBloqueTarifa"/> (franja verde con el título, encabezado gris, tarifa en azul), el total del pliego en
 /// la franja azul y la nota de referencia. El encabezado de la tabla se repite en cada página: un pliego de muchas rutas sigue legible.
 /// </summary>
@@ -72,7 +72,7 @@ internal static class clsBloquePliego
         var nota = Parrafo(seccion.AddParagraph(), diseno.NotaGeneral, diseno.Alto, Atenuado, alineacion: ParagraphAlignment.Justify, antes: diseno.MargenNotaGeneral);
         AgregarTexto(nota, resumen.Nota);
 
-        // #261 (HU-046): el texto de seguros de la propuesta va justo después del resumen del pliego.
+        // El texto de seguros de la propuesta va justo después del resumen del pliego.
         if (textoSeguros is { Count: > 0 } seguros)
         {
             clsBloqueTarifa.TextoSeguros(seccion, seguros, diseno);

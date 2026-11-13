@@ -21,7 +21,7 @@ public sealed class clsCorreoController(
 {
     /// <summary>
     /// 200 <c>RespuestaEnvio</c> (MailSender aceptó el correo: queda <c>encolado</c>); 400 <c>ErrorWeb</c> (destinatarios, asunto o cuerpo
-    /// inválidos; #228: también un asunto o una dirección con caracteres de control) o <c>ErrorNegocio</c> (duplicado, sin PDF, más de 20
+    /// inválidos, también un asunto o una dirección con caracteres de control) o <c>ErrorNegocio</c> (duplicado, sin PDF, más de 20
     /// destinatarios con <c>CORREO_DEMASIADOS_DESTINATARIOS</c>, MailSender lo rechazó o no respondió); 404 si no es suya; 409 si la cotización
     /// cambió; 503 <c>ErrorNegocio</c> <c>CORREO_DESHABILITADO</c>.
     /// </summary>
@@ -48,7 +48,7 @@ public sealed class clsCorreoController(
     }
 
     /// <summary>
-    /// HU-033 (#199): 200 <c>HistorialCorreos</c>, los envíos de la cotización con el estado de MailSender (<c>encolado</c>, <c>enviando</c>,
+    /// 200 <c>HistorialCorreos</c>, los envíos de la cotización con el estado de MailSender (<c>encolado</c>, <c>enviando</c>,
     /// <c>enviado</c> o <c>fallido</c> con su error); 404 si no es suya.
     /// </summary>
     [HttpGet("correos")]
@@ -61,7 +61,7 @@ public sealed class clsCorreoController(
     }
 
     /// <summary>
-    /// HU-033 (#199): reintenta en MailSender un envío <c>fallido</c>. 200 <c>EnvioCorreo</c> (vuelve a <c>encolado</c>); 404 si la cotización
+    /// Reintenta en MailSender un envío <c>fallido</c>. 200 <c>EnvioCorreo</c> (vuelve a <c>encolado</c>); 404 si la cotización
     /// no es suya o el envío no es de ella; 409 <c>CORREO_NO_REINTENTABLE</c>; 400 <c>CORREO_ENVIO_FALLIDO</c> si MailSender no respondió;
     /// 503 <c>CORREO_DESHABILITADO</c>.
     /// </summary>
@@ -83,7 +83,7 @@ public sealed class clsCorreoController(
     }
 
     /// <summary>
-    /// 200 <c>VistaPreviaCorreo</c> (no envía nada; el cuerpo es opcional); 404 si no es suya. #228: el borrador se valida como en el
+    /// 200 <c>VistaPreviaCorreo</c> (no envía nada; el cuerpo es opcional); 404 si no es suya. El borrador se valida como en el
     /// envío: 400 <c>ErrorWeb</c> (asunto o destinatarios con caracteres de control, direcciones mal formadas, largos) o <c>ErrorNegocio</c>
     /// <c>CORREO_DEMASIADOS_DESTINATARIOS</c>.
     /// </summary>

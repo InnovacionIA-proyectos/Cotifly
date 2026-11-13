@@ -15,10 +15,9 @@ using Microsoft.AspNetCore.RateLimiting;
 namespace Cotifly.Api.Agente.Controllers;
 
 /// <summary>
-/// Asistente de la consola web (<c>POST /web/chat</c>). Desde HU-013.6 (#102, ADR-018 §2b) trabaja sobre UNA cotización: con
+/// Asistente de la consola web (<c>POST /web/chat</c>). Trabaja sobre UNA cotización (ADR-018 §2b): con
 /// <c>folio</c> corre el asistente de solo lectura y propuesta (<see cref="IClsAsistenteFolioRunner"/>) en la sesión
-/// <c>web/{sesion_id}</c> ligada al comercial del token y al folio; sin <c>folio</c> responde siempre 400 <c>FOLIO_REQUERIDO</c>
-/// (HU-013.9, #105: el agente cotizador legado y el flag <c>Chat:CreacionHabilitada</c> se retiraron).
+/// <c>web/{sesion_id}</c> ligada al comercial del token y al folio; sin <c>folio</c> responde siempre 400 <c>FOLIO_REQUERIDO</c>.
 /// </summary>
 [Route("web")]
 public sealed partial class clsChatWebController(
@@ -33,8 +32,8 @@ public sealed partial class clsChatWebController(
 
     /// <summary>
     /// 200 <c>RespuestaChat</c> (o <c>RespuestaChatError</c> con <c>error: true</c> ante un fallo del asistente o del proveedor de IA,
-    /// o si la respuesta final no pasó la validación ni con el reintento y no hubo propuesta, HU-003.10);
-    /// 400 <c>sesion_id</c>, <c>folio</c> o cuerpo inválido, o <c>FOLIO_REQUERIDO</c> (HU-013.6) sin folio; 401 sin sesión;
+    /// o si la respuesta final no pasó la validación ni con el reintento y no hubo propuesta);
+    /// 400 <c>sesion_id</c>, <c>folio</c> o cuerpo inválido, o <c>FOLIO_REQUERIDO</c> sin folio; 401 sin sesión;
     /// 404 si la sesión es de otro comercial o el folio no es suyo; 429 límite de la API.
     /// </summary>
     [HttpPost("chat")]
