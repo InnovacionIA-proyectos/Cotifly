@@ -6,8 +6,8 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Aplicacion.Tests.Licitaciones;
 
 /// <summary>
-/// HU-013.11 (#108, G6): el origen y el destino de cada fila de una licitación se resuelven a ids de municipio de Nexo antes de
-/// guardar, con la regla determinista de HU-005.13. Una sola coincidencia se usa; varias o ninguna son un error de la fila (nunca
+/// G6: el origen y el destino de cada fila de una licitación se resuelven a ids de municipio de Nexo antes de
+/// guardar, con la regla determinista del resolvedor de municipios. Una sola coincidencia se usa; varias o ninguna son un error de la fila (nunca
 /// se adivina).
 /// </summary>
 public sealed class clsMunicipiosLicitacionTests

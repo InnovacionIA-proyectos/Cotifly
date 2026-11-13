@@ -7,8 +7,8 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// #259 (validación adversarial), por HTTP con SQL Server real y el Nexo falso: una ruta que la Mesa rechazó entera no manda sus conexos a la
-/// línea de OTRA ruta (una ruta rechazada no se envía, auditoría M2; una con camiones pero ninguno vigente no tiene destino); finalizar
+/// Validación adversarial de los conexos de rutas rechazadas, por HTTP con SQL Server real y el Nexo falso: una ruta que la Mesa rechazó entera no manda sus conexos a la
+/// línea de OTRA ruta (una ruta rechazada no se envía; una con camiones pero ninguno vigente no tiene destino); finalizar
 /// repetido no duplica el POST.
 /// </summary>
 [Collection(clsColeccionApiWeb.Nombre)]
@@ -130,7 +130,7 @@ public sealed class clsValidacion259EndpointsTests : IDisposable
     private Task<DateTimeOffset?> AgendaAsync(string folio) => clsBaseDatosPruebas.EscalarAsync<DateTimeOffset?>(_entorno.BaseDatos.CadenaCotifly,
         $"SELECT costeoSiguienteConsultaAt FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'");
 
-    /// <summary><paramref name="rutas"/> rutas (un camión cada una) con el Cargue capturado en cada ruta (el formulario de #259).</summary>
+    /// <summary><paramref name="rutas"/> rutas (un camión cada una) con el Cargue capturado en cada ruta.</summary>
     private static string Formulario(int rutas) => clsApiWebPruebas.Json(new
     {
         tipo = "spot",

@@ -9,7 +9,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// HU-028 (#186, ADR-021): "Editar solicitud" por HTTP con SQL Server real y el Nexo falso. <c>GET .../solicitud</c> devuelve el modelo
+/// "Editar solicitud" (ADR-021) por HTTP con SQL Server real y el Nexo falso. <c>GET .../solicitud</c> devuelve el modelo
 /// editable con el <c>ETag</c>; el <c>PUT</c> con ese modelo cambiado aplica la edición en sitio, como reemplazo (rechaza la solicitud
 /// anterior en Nexo y captura en el mismo folio) o en una versión <c>-vN</c>. Cubre 200, 201, 400, 404, 409, 428 y 503, la idempotencia y
 /// la persistencia de las rutas agregadas y quitadas (orden único por solicitud y ajustes de margen sin ruta).
@@ -145,8 +145,8 @@ public sealed class clsEdicionSolicitudEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// Endurecimiento B (#199): con el 403 de Nexo al rechazar, el cliente recibe 403 <c>NEXO_SIN_PERMISO</c> con
-    /// <c>detalle.motivo = RECHAZO_NEXO_FALLIDO</c>; antes el texto crudo de Nexo ("HTTP 403 ...") pisaba el motivo.
+    /// Con el 403 de Nexo al rechazar, el cliente recibe 403 <c>NEXO_SIN_PERMISO</c> con
+    /// <c>detalle.motivo = RECHAZO_NEXO_FALLIDO</c>; el texto crudo de Nexo ("HTTP 403 ...") no pisa el motivo.
     /// </summary>
     [Fact]
     public async Task SiNexoNiegaElRechazoEs403ConElMotivoDeCotiflyYSinElTextoDeNexo()
@@ -172,7 +172,7 @@ public sealed class clsEdicionSolicitudEndpointsTests : IDisposable
     public async Task YaConResultadoSeCreaLaVersionNuevaYLaOriginalNoCambia()
     {
         var (sesion, folio) = await EntregadaAsync();
-        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // Como el frontend
         using (var resultado = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access,
                    """{"resultado":"ganada","motivo":"Precio"}"""))
         {
@@ -246,9 +246,9 @@ public sealed class clsEdicionSolicitudEndpointsTests : IDisposable
     }
 
     [Fact]
-    public async Task D1019B1_ElGetReenviadoComoLoReescribeUnClienteEsSinCambiosYNoTocaNexo()
+    public async Task ElGetReenviadoComoLoReescribeUnClienteEsSinCambiosYNoTocaNexo()
     {
-        // E2E real 2026-10-19 (D-1019B-1): el decimal leído de SQL Server conserva la escala de la columna (28500.50) y el que reenvía un
+        // El decimal leído de SQL Server conserva la escala de la columna (28500.50) y el que reenvía un
         // cliente que reescribe el JSON no (28500.5); el deadline puede volver en otra zona y los conexos en otro orden. Es la misma
         // solicitud: 200 sin_cambios, sin rechazar ni capturar en Nexo, sin subir la versión.
         var (sesion, folio) = await EnviarAsync(ConConexos());
@@ -274,7 +274,7 @@ public sealed class clsEdicionSolicitudEndpointsTests : IDisposable
     }
 
     [Fact]
-    public async Task D1019B1_UnKiloMasSiEsUnCambioAunqueElRestoVengaConOtraEscala()
+    public async Task UnKiloMasSiEsUnCambioAunqueElRestoVengaConOtraEscala()
     {
         var (sesion, folio) = await EnviarAsync(ConConexos());
         var (modelo, etag) = await ModeloAsync(sesion, folio);
@@ -292,7 +292,7 @@ public sealed class clsEdicionSolicitudEndpointsTests : IDisposable
     }
 
     [Fact]
-    public async Task D1019B1_CambiarLaCantidadDeUnConexoSiEsUnCambioYNoRecubica()
+    public async Task CambiarLaCantidadDeUnConexoSiEsUnCambioYNoRecubica()
     {
         var (sesion, folio) = await EnviarAsync(ConConexos());
         var (modelo, etag) = await ModeloAsync(sesion, folio);

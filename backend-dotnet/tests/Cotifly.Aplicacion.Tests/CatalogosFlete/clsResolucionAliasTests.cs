@@ -8,7 +8,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.CatalogosFlete;
 
 /// <summary>
-/// HU-031.1 (#194): el diccionario de alias de Nexo (NEXO #321) con la misma normalización que Nexo, la resolución catálogo → alias y
+/// El diccionario de alias de Nexo con la misma normalización que Nexo, la resolución catálogo → alias y
 /// <c>GET /web/alias/resolver</c> (<see cref="clsResolucionAliasService"/>).
 /// </summary>
 public sealed class clsResolucionAliasTests
@@ -71,8 +71,8 @@ public sealed class clsResolucionAliasTests
 
         clsResolucionCodigosNexo.Vehiculo(tipos, _diccionario, "3s3").Should().Be(new clsCodigoResueltoNexo("3S3", FuenteCodigoNexo.Catalogo));
         clsResolucionCodigosNexo.Vehiculo(tipos, _diccionario, "Turbo").Should().Be(new clsCodigoResueltoNexo("2L2", FuenteCodigoNexo.Alias));
-        // HU-044.8 (#291): el código NEXO (C2/C3) y «2»/«3» del catálogo de SAP se resuelven con la equivalencia de SICE-TAC, antes del
-        // catálogo y del alias; «2»/«3» NUNCA viajan (cuarentena) y el alias C2 → «2» ya no los devuelve al código de SAP.
+        // El código NEXO (C2/C3) y «2»/«3» del catálogo de SAP se resuelven con la equivalencia de SICE-TAC, antes del
+        // catálogo y del alias; «2»/«3» NUNCA viajan (cuarentena) y el alias C2 → «2» no los devuelve al código de SAP.
         clsResolucionCodigosNexo.Vehiculo(tipos, _diccionario, "C2").Should().Be(new clsCodigoResueltoNexo("C2", FuenteCodigoNexo.Catalogo));
         clsResolucionCodigosNexo.Vehiculo(tipos, null, "C2").Should().Be(new clsCodigoResueltoNexo("C2", FuenteCodigoNexo.Catalogo), "la equivalencia no necesita el diccionario de alias");
         clsResolucionCodigosNexo.Vehiculo(null, _diccionario, "C2").Should().Be(new clsCodigoResueltoNexo("C2", FuenteCodigoNexo.Catalogo));

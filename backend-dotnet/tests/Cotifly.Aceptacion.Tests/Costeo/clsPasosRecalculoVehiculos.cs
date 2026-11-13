@@ -6,7 +6,7 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Costeo;
 
 /// <summary>
-/// Pasos de <c>specs/features/recalculo_vehiculos_ruta.feature</c> (HU-023.3, #158; E3 y E1 de #174): <c>POST .../rutas/{rutaId}/recalcular-vehiculos</c>
+/// Pasos de <c>specs/features/recalculo_vehiculos_ruta.feature</c>: <c>POST .../rutas/{rutaId}/recalcular-vehiculos</c>
 /// con y sin <c>If-Match</c>, la versión vieja, la solicitud ya en Nexo y una ruta ajena, con los camiones guardados y la auditoría.
 /// </summary>
 [Binding]

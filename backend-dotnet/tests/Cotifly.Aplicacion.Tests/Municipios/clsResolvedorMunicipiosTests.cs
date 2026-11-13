@@ -5,7 +5,7 @@ using Cotifly.Dominio.Agente;
 namespace Cotifly.Aplicacion.Tests.Municipios;
 
 /// <summary>
-/// <see cref="clsResolvedorMunicipios"/> (HU-005.13): el texto libre del comercial contra el catálogo de municipios de Nexo. Una
+/// <see cref="clsResolvedorMunicipios"/>: el texto libre del comercial contra el catálogo de municipios de Nexo. Una
 /// coincidencia se usa; varias (mismo nombre en varios departamentos) o una aproximada se preguntan; ninguna no se inventa. El
 /// catálogo de prueba trae los casi homónimos reales (Cartagena de Indias y Cartagena del Chairá; Santiago de Cali, Calima y
 /// California) para que las ciudades principales no terminen en "preguntar" sin necesidad.

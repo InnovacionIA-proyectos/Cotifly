@@ -21,7 +21,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// "Cotizar costo" (HU-013.4, ADR-018 §5): re-solicitar es una captura nueva en Nexo con lo guardado (Nexo no tiene "reabrir"), en el
+/// "Cotizar costo" (ADR-018 §5): re-solicitar es una captura nueva en Nexo con lo guardado (Nexo no tiene "reabrir"), en el
 /// mismo folio (reclamado con el control de versión, sin el costeo anterior y con el PDF invalidado) o en la versión <c>-vN</c> (la
 /// original no se toca), con idempotencia y auditoría.
 /// </summary>
@@ -56,7 +56,7 @@ public sealed class clsReSolicitudCosteoServiceTests
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(_cotizacion.Folio, _ana, Arg.Any<CancellationToken>()).Returns(_cotizacion);
         _cotizaciones.When(r => r.Agregar(Arg.Any<clsCotizacionSolicitud>())).Do(ci => _agregada = ci.Arg<clsCotizacionSolicitud>());
         _politicas.ObtenerPorIdAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(_politica);
-        // B4 (HU-032): el validador devuelve la línea escrita como en Nexo (aquí, en mayúsculas, como Canonica).
+        // El validador devuelve la línea escrita como en Nexo (aquí, en mayúsculas, como Canonica).
         _catalogos.ValidarLineasAsync(Arg.Any<Guid>(), Arg.Any<IReadOnlyList<clsLineaSolicitudCosteo>>(), Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
@@ -76,7 +76,7 @@ public sealed class clsReSolicitudCosteoServiceTests
             _eventos.Add($"reservar:{clsCodigoEnum.ACodigo(_cotizacion.EstadoCosteo!.Value)}:v{_cotizacion.VersionNegocio}");
             return true;
         });
-        // Endurecimiento B (#199): la reserva de la versión nueva se compara dentro de la transacción del candado del folio -vN.
+        // La reserva de la versión nueva se compara dentro de la transacción del candado del folio -vN.
         _unidad.VersionVigenteEnTransaccionAsync(Arg.Any<Guid>(), Version, Arg.Any<CancellationToken>()).Returns(ci =>
         {
             _eventos.Add($"reservar-en-candado:v{Version}");
@@ -101,7 +101,7 @@ public sealed class clsReSolicitudCosteoServiceTests
         _catalogoNexo.BuscarAsync(Arg.Any<Guid>(), Arg.Any<clsFiltroCatalogoConexos>(), Arg.Any<CancellationToken>())
             .Returns(clsResultado<clsPaginaCatalogoConexosNexo>.Exito(new clsPaginaCatalogoConexosNexo(0, [])));
 
-        // El planificador por defecto (hasta el cubicador, #133): un camión sin vehículo con el peso total de la ruta.
+        // El planificador por defecto: un camión sin vehículo con el peso total de la ruta.
         _planificador.PlanificarAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<clsLineaSolicitudCosteo>(), Arg.Any<CancellationToken>())
             .Returns(ci => new clsPlanificadorCamionSinVehiculo().PlanificarAsync(ci.ArgAt<Guid>(0), ci.ArgAt<Guid>(1), ci.ArgAt<clsLineaSolicitudCosteo>(2)));
     }
@@ -134,7 +134,7 @@ public sealed class clsReSolicitudCosteoServiceTests
         instantanea.Herramienta.Should().Be(clsReSolicitudCosteoService.HerramientaAuditoria);
         instantanea.ThreadId.Should().BeNull("los costos no quedan al alcance del asistente (#102)");
         instantanea.Input.Should().Contain("El costeo venció").And.Contain(_ana.ToString());
-        // HU-021: la instantánea es por ruta y camión; el costo y el precio de la ruta incluyen el conexo Cargue (85.000).
+        // La instantánea es por ruta y camión; el costo y el precio de la ruta incluyen el conexo Cargue (85.000).
         instantanea.OutputResumen.Should().Contain("\"costo\":2635000").And.Contain("sol-vieja").And.Contain("linea-vieja")
             .And.Contain("\"costo_flete\":2550000").And.Contain("\"margen_aplicado\":0.15").And.Contain("\"margen_politica_sugerido\":0.15")
             .And.Contain("Cargue").And.Contain("\"precio_final\":3085000").And.Contain("PCN-1.pdf")
@@ -228,18 +228,18 @@ public sealed class clsReSolicitudCosteoServiceTests
         nueva.UsuarioId.Should().Be(_ana);
         nueva.SolicitudNexoId.Should().Be("sol-nueva");
 
-        // HU-021: la versión nueva es un agregado nuevo: la ruta con los cambios de carga, sus mercancías y su camión.
+        // La versión nueva es un agregado nuevo: la ruta con los cambios de carga, sus mercancías y su camión.
         var ruta = nueva.Rutas.Should().ContainSingle().Subject;
         ruta.PesoKg.Should().Be(28_400m);
         ruta.LineaNegocioId.Should().Be(3);
         ruta.Mercancias.Should().HaveCount(2).And.OnlyContain(m => m.LineaSolicitudId == ruta.Id);
 
-        // HU-021.9: el peso cambió, así que el camión anterior (3S3) se borra y se vuelve a planificar. HU-032 (#197): el tipo_vehiculo de
+        // El peso cambió, así que el camión anterior (3S3) se borra y se vuelve a planificar. El tipo_vehiculo de
         // datos_carga es el vehículo elegido nuevo de la ruta (la carrocería elegida se conserva) y la versión nueva lo guarda.
         var camion = ruta.Vehiculos.Should().ContainSingle().Subject;
         (camion.TipoVehiculo, camion.Carroceria, camion.PesoKg).Should().Be(("2S3", "PORTACONTENEDORES", 28_400m));
         (ruta.TipoVehiculoElegido, ruta.CarroceriaElegida).Should().Be(("2S3", "PORTACONTENEDORES"));
-        // Las mercancías de la muestra no tienen codigo_mercancia (filas anteriores al script 02): no se pueden cubicar. HU-032: el
+        // Las mercancías de la muestra no tienen codigo_mercancia (filas anteriores al script 02): no se pueden cubicar. El
         // planificador no llama al cubicador y la ruta lleva el vehículo elegido con el peso de la ruta.
         await _planificador.Received(1).PlanificarAsync(_ana, Arg.Any<Guid>(), Arg.Is<clsLineaSolicitudCosteo>(l => l.TipoVehiculo == "2S3"), Arg.Any<CancellationToken>());
         resultado.Valor.RutasReplanificadas.Should().Equal(1);
@@ -250,16 +250,16 @@ public sealed class clsReSolicitudCosteoServiceTests
         _eventos.Should().StartWith(new[] { "reservar-en-candado:v4", "instantanea" },
             "la versión de la original se reserva dentro del candado del folio -vN, antes de crear la nueva (endurecimiento B)");
         _cotizacion.VersionNegocio.Should().Be(Version + 1, "la reserva sube la versión de la original");
-        // HU-032: la ruta no se puede cubicar, así que el vehículo elegido se valida contra Nexo antes de crear la versión.
+        // La ruta no se puede cubicar, así que el vehículo elegido se valida contra Nexo antes de crear la versión.
         await _catalogos.Received(1).ValidarAsync(_ana, Arg.Is<clsLineaSolicitudCosteo>(l => l.TipoVehiculo == "2S3"), Arg.Any<CancellationToken>());
     }
 
-    // --- HU-028 (#186): defectos A y C de datos_carga ---
+    // --- Datos de carga: la clase de viaje y los cambios que replanifican ---
 
     [Fact]
     public async Task CambiarSoloLaClaseDeViajeVuelveAPlanificarLosCamiones()
     {
-        // Defecto C: la clase de viaje viaja al cubicador; antes solo contaban el peso y las mercancías.
+        // La clase de viaje viaja al cubicador, igual que el peso y las mercancías.
         var cambios = new clsCambiosCarga
         {
             Presentes = new HashSet<string> { clsCambiosCarga.CampoClaseViaje, clsCambiosCarga.CampoClaseContenedor },
@@ -276,7 +276,7 @@ public sealed class clsReSolicitudCosteoServiceTests
     [Fact]
     public async Task LasMercanciasDeDatosCargaConservanSuCodigoYSePidenAlCubicador()
     {
-        // Defecto A: sin codigo_mercancia la -vN caía en el respaldo de un camión sin vehículo.
+        // Con codigo_mercancia la -vN cubica las mercancías en lugar de caer en un camión sin vehículo.
         var cambios = new clsCambiosCarga
         {
             Presentes = new HashSet<string> { clsCambiosCarga.CampoPosiciones, clsCambiosCarga.CampoPesoKg },
@@ -292,7 +292,7 @@ public sealed class clsReSolicitudCosteoServiceTests
         _agregada!.PrimeraRuta!.Mercancias.Should().ContainSingle().Which.CodigoMercancia.Should().Be("BEBIDAS");
     }
 
-    // --- HU-021.9 (#136): la versión nueva copia por ruta y vuelve a planificar los camiones solo si cambian el peso o las mercancías ---
+    // --- La versión nueva copia por ruta y vuelve a planificar los camiones solo si cambian el peso o las mercancías ---
 
     [Fact]
     public async Task SinCambiosDeCargaLaVersionNuevaCopiaCadaRutaConSusCamionesSusConexosYSuLineaDeNegocio()
@@ -335,7 +335,7 @@ public sealed class clsReSolicitudCosteoServiceTests
     }
 
     /// <summary>
-    /// Corrección del validador de #136: en el mismo folio un camión descartado en Nexo (la Mesa borró su línea) no se reenvía. La ruta
+    /// En el mismo folio un camión descartado en Nexo (la Mesa borró su línea) no se reenvía. La ruta
     /// tenía 450.000 + 450.000 + 1.000.000 (el descartado): reenviarlo daba 3 líneas y el precio subía de 1.058.824 a 2.235.294.
     /// </summary>
     [Fact]
@@ -405,11 +405,11 @@ public sealed class clsReSolicitudCosteoServiceTests
     }
 
     /// <summary>
-    /// HU-043.2 (#251): la -vN toma la venta del catálogo de hoy (<c>precioVenta</c>), distinta de la guardada, igual que el costo; y un
+    /// La -vN toma la venta vigente del catálogo (<c>precioVenta</c>), distinta de la guardada, igual que el costo; y un
     /// conexo que ya no está en el catálogo conserva su costo y su venta guardados.
     /// </summary>
     [Fact]
-    public async Task Hu0432_LaVersionNuevaTomaLaVentaDelCatalogoYUnConexoFueraDelCatalogoConservaLaSuya()
+    public async Task LaVersionNuevaTomaLaVentaDelCatalogoYUnConexoFueraDelCatalogoConservaLaSuya()
     {
         var licitacion = VencidaDeDosRutas();
         var id = Guid.NewGuid().ToString("D");
@@ -430,7 +430,7 @@ public sealed class clsReSolicitudCosteoServiceTests
     }
 
     /// <summary>
-    /// Corrección de la segunda validación de #136: un conexo agregado con el POST (o importado de Nexo) está guardado con el id de la FILA
+    /// Un conexo agregado con el POST (o importado de Nexo) está guardado con el id de la FILA
     /// de la cotización anterior de Nexo. La -vN lo copia con el id del CATÁLOGO, resuelto por su nombre, y si el mismo servicio ya estaba
     /// capturado en la ruta, se suman las cantidades en una sola fila.
     /// </summary>
@@ -440,7 +440,7 @@ public sealed class clsReSolicitudCosteoServiceTests
         var licitacion = VencidaDeDosRutas();
         var catalogo = Guid.NewGuid().ToString("D");
         var filaNexo = Guid.NewGuid().ToString("D");
-        licitacion.RutasOrdenadas[0].AgregarOActualizarConexo(catalogo, "Cargue en puerto", 150_000m, 1m);   // capturado (#132)
+        licitacion.RutasOrdenadas[0].AgregarOActualizarConexo(catalogo, "Cargue en puerto", 150_000m, 1m);   // capturado
         licitacion.RutasOrdenadas[0].AgregarOActualizarConexo(filaNexo, "Cargue en puerto", 150_000m, 2m);   // agregado con el POST
         _costos.CostosAsync(_ana, Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
             .Returns(ci => Task.FromResult(clsResultado<IReadOnlyDictionary<string, clsCostoConexoNexo>>.Exito(
@@ -458,12 +458,12 @@ public sealed class clsReSolicitudCosteoServiceTests
     }
 
     /// <summary>
-    /// HU-014 (#188, script 03): un conexo importado de Nexo guarda el id de la FILA en <c>idServicioConexo</c> y el del CATÁLOGO en
+    /// Un conexo importado de Nexo guarda el id de la FILA en <c>idServicioConexo</c> y el del CATÁLOGO en
     /// <c>idServicioConexoCatalogo</c>. La -vN lo resuelve directo por ese id (sin buscar por nombre en el catálogo) y la copia guarda el id
     /// del catálogo y la categoría (script 05).
     /// </summary>
     [Fact]
-    public async Task HU014_ConElIdDelCatalogoGuardadoLaVersionNuevaNoBuscaPorNombreYCopiaIdYCategoria()
+    public async Task ConElIdDelCatalogoGuardadoLaVersionNuevaNoBuscaPorNombreYCopiaIdYCategoria()
     {
         var licitacion = VencidaDeDosRutas();
         var catalogo = Guid.NewGuid().ToString("D");
@@ -521,7 +521,7 @@ public sealed class clsReSolicitudCosteoServiceTests
         ruta.Mercancias.Should().ContainSingle().Which.Cantidad.Should().Be(10);
         // Sin persistencia createdAt es el mismo: el orden estable cae en el id (aleatorio), así que se compara sin orden.
         ruta.Vehiculos.Select(v => (v.TipoVehiculo, v.PesoKg)).Should().BeEquivalentTo([("2S3", (decimal?)8_000m), ((string?)null, (decimal?)6_250m)]);
-        // El cubicador recibe el id de la ruta NUEVA (idLineaSolicitud, #133): el mismo con el que se guarda en la -vN.
+        // El cubicador recibe el id de la ruta NUEVA (idLineaSolicitud): el mismo con el que se guarda en la -vN.
         await _planificador.Received(1).PlanificarAsync(_ana, ruta.Id,
             Arg.Is<clsLineaSolicitudCosteo>(l => l.Posiciones.Count == 1 && l.PesoKg == 14_250m), Arg.Any<CancellationToken>());
         ruta.Conexos.Should().ContainSingle(c => c.Nombre == "Cargue", "los conexos de la ruta se copian aunque cambie la carga");
@@ -568,7 +568,7 @@ public sealed class clsReSolicitudCosteoServiceTests
         await _envio.DidNotReceiveWithAnyArgs().EnviarGuardadaAsync(default!, default, default, default);
     }
 
-    // --- Margen ajustado (decisión del usuario del 2026-10-06): se conserva al re-solicitar, por ruta (HU-021.9) ---
+    // --- Margen ajustado: se conserva al re-solicitar, por ruta ---
 
     [Fact]
     public async Task EnElMismoFolioElMargenAjustadoDeLaRutaSeConserva()
@@ -623,7 +623,7 @@ public sealed class clsReSolicitudCosteoServiceTests
         return licitacion;
     }
 
-    // --- HU-028.1 (#183, decisión del 2026-10-20): los camiones rechazados por la Mesa de Costeo no se reenvían por defecto ---
+    // --- Los camiones rechazados por la Mesa de Costeo no se reenvían por defecto ---
 
     /// <summary>
     /// <see cref="VencidaDeDosRutas"/> con el segundo camión de la ruta 1 rechazado ("Sin cupo") y, si <paramref name="todaLaRuta2"/>, el
@@ -649,7 +649,7 @@ public sealed class clsReSolicitudCosteoServiceTests
     }
 
     [Fact]
-    public async Task HU0281_EnElMismoFolioLosCamionesRechazadosNoViajanSiguenRechazadosYLaRespuestaAvisaQueSeOmitieron()
+    public async Task EnElMismoFolioLosCamionesRechazadosNoViajanSiguenRechazadosYLaRespuestaAvisaQueSeOmitieron()
     {
         var licitacion = ConRechazos();
         IReadOnlyList<clsVehiculoLineaSolicitud>? enviados = null;
@@ -669,7 +669,7 @@ public sealed class clsReSolicitudCosteoServiceTests
     }
 
     [Fact]
-    public async Task HU0281_LaVersionNuevaCopiaLosRechazadosComoRechazadosSinEnviarlos()
+    public async Task LaVersionNuevaCopiaLosRechazadosComoRechazadosSinEnviarlos()
     {
         var licitacion = ConRechazos();
 
@@ -691,7 +691,7 @@ public sealed class clsReSolicitudCosteoServiceTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task HU0281_ConTodosLosCamionesRechazadosNoHayNadaQueEnviarYResponde409SinTocarNada(bool versionNueva)
+    public async Task ConTodosLosCamionesRechazadosNoHayNadaQueEnviarYResponde409SinTocarNada(bool versionNueva)
     {
         var licitacion = ConRechazos(todos: true);
 
@@ -772,7 +772,7 @@ public sealed class clsReSolicitudCosteoServiceTests
     }
 
     /// <summary>
-    /// Endurecimiento B (#199, revisión 3b del auditor): con el candado del folio -vN ocupado (<c>SERVICIO_OCUPADO</c>), la original no
+    /// Con el candado del folio -vN ocupado (<c>SERVICIO_OCUPADO</c>), la original no
     /// cambia: no se reserva su versión (el <c>If-Match</c> sigue valiendo), no se crea la versión ni se llama a Nexo.
     /// </summary>
     [Fact]
@@ -792,7 +792,7 @@ public sealed class clsReSolicitudCosteoServiceTests
         await _envio.DidNotReceiveWithAnyArgs().EnviarGuardadaAsync(default!, default, default, default);
     }
 
-    // --- HU-032 (#197): VEHICULO_REQUERIDO alineado con la captura (B3 y B4) ---
+    // --- VEHICULO_REQUERIDO alineado con la captura ---
 
     /// <summary>Datos de carga que pasan la ruta a Cupo, quitan el vehículo y dejan una mercancía con medidas y sin código.</summary>
     private static clsCambiosCarga SinVehiculoConMercanciaSinCodigo() => new()
@@ -912,7 +912,7 @@ public sealed class clsReSolicitudCosteoServiceTests
         await _envio.DidNotReceiveWithAnyArgs().EnviarGuardadaAsync(default!, default, default, default);
         _agregada.Should().BeNull("la -vN copia las mismas filas: tampoco se crea");
 
-        // La misma regla corre al validar la propuesta del asistente (HU-013.6): nunca propone re-solicitar una licitación inválida.
+        // La misma regla corre al validar la propuesta del asistente: nunca propone re-solicitar una licitación inválida.
         var propuesta = await Servicio().ValidarAsync(_ana, licitacion, Entrada() with { NuevaVersion = versionNueva }, Ct);
         propuesta!.Detalle.Should().Be(clsValidadorFilasLicitacion.MotivoRequiereNuevaCarga);
     }
@@ -920,7 +920,7 @@ public sealed class clsReSolicitudCosteoServiceTests
     [Fact]
     public async Task UnaLicitacionNoAdmiteCambiosDeCarga()
     {
-        // HU-021: una segunda ruta en la misma solicitud la vuelve un pliego.
+        // Una segunda ruta en la misma solicitud la vuelve un pliego.
         _cotizacion.AgregarRuta(_cotizacion.PrimeraRuta!.ALinea(), 1, 3);
         var cambios = new clsCambiosCarga { Presentes = new HashSet<string> { clsCambiosCarga.CampoPesoKg }, PesoKg = 1000m };
 
@@ -974,7 +974,7 @@ public sealed class clsReSolicitudCosteoServiceTests
         clsReSolicitudCosteoService.Huella("F", Entrada()).Should().NotBe(clsReSolicitudCosteoService.Huella("G", Entrada()));
     }
 
-    // --- HU-021.9 (#136; rehace #124 con la decisión 3): los conexos son de Cotifly y se conservan; a Nexo los manda el envío diferido ---
+    // --- Los conexos son de Cotifly y se conservan; a Nexo los manda el envío diferido ---
 
     [Fact]
     public async Task EnElMismoFolioLosConexosSeConservanEnLaRutaYSeAvisanSinMontos()
@@ -1008,7 +1008,7 @@ public sealed class clsReSolicitudCosteoServiceTests
     [Fact]
     public void LosConexosConservadosSonLosDeLasRutasSinRepetirYSinNombreUsanLaCategoriaNuncaElId()
     {
-        // HU-021: los conexos son filas de la ruta (ya no hay "excluidos": todos van en el precio). Corrección conexos (nombre nunca id): una
+        // Los conexos son filas de la ruta y todos van en el precio. Una
         // fila sin nombre (migrada) se muestra con su categoría como respaldo LEGIBLE (aquí, sin categoría guardada, la de respaldo), NUNCA
         // con su id interno de Nexo.
         var cotizacion = Vencida(_ana, "PCN-900555111-AP-05102026-002", 1_000_000m);
@@ -1058,7 +1058,7 @@ public sealed class clsReSolicitudCosteoServiceTests
 
     /// <summary>
     /// Cotización del formulario enviada a Nexo (solicitud <c>sol-vieja</c>), con el flete de su camión (<c>linea-vieja</c>), el conexo
-    /// Cargue (85.000) en la ruta, precio (HU-021: (costo + conexo) con el 15 %) y en <c>costeo_vencido</c>.
+    /// Cargue (85.000) en la ruta, precio ((costo + conexo) con el 15 %) y en <c>costeo_vencido</c>.
     /// </summary>
     public static clsCotizacionSolicitud Vencida(Guid usuarioId, string folio, decimal costo, TipoSolicitud tipo = TipoSolicitud.Spot)
     {

@@ -7,7 +7,7 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Costeo;
 
 /// <summary>
-/// Pasos de <c>specs/features/mercancias_excel.feature</c> (HU-035.1, #202, ADR-024): el Excel de mercancías de una ruta leído en
+/// Pasos de <c>specs/features/mercancias_excel.feature</c> (ADR-024): el Excel de mercancías de una ruta leído en
 /// Cotifly sin Nexo. Reutiliza el Nexo falso de <see cref="clsPasosCosteo"/> y el cubicador falso de <see cref="clsPasosCubicador"/>;
 /// los archivos salen de <see cref="clsExcelMercanciasMuestra"/>.
 /// </summary>

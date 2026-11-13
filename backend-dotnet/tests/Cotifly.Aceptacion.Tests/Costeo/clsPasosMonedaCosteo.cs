@@ -11,10 +11,10 @@ namespace Cotifly.Aceptacion.Tests.Costeo;
 
 /// <summary>
 /// Pasos de <c>specs/features/moneda_formulario_costeo.feature</c> y del escenario en USD de <c>ajuste_margen_costeo.feature</c>
-/// (HU-013.7, #103, ADR-014 §5): la API real en memoria, SQL Server 2019 en Testcontainers, el Nexo falso y las fuentes de la TRM falsas
+/// (ADR-014 §5): la API real en memoria, SQL Server 2019 en Testcontainers, el Nexo falso y las fuentes de la TRM falsas
 /// de <see cref="clsPasosCosteo"/> (DolarApi principal y Superfinanciera de respaldo). Los montos en dólares se escriben con punto decimal y
 /// se comparan con la cultura invariante. El envío en pesos ("que ... envió a costeo el formulario ampliado ...") y el costeo con un
-/// conexo son de <see cref="clsPasosAjusteMargen"/> y de <c>clsPasosServiciosConexos</c> (#98, #99): aquí no se repiten.
+/// conexo son de <see cref="clsPasosAjusteMargen"/> y de <c>clsPasosServiciosConexos</c>: aquí no se repiten.
 /// </summary>
 [Binding]
 public sealed partial class clsPasosMonedaCosteo(clsContextoWeb web, clsPasosCosteo costeo)
@@ -63,7 +63,7 @@ public sealed partial class clsPasosMonedaCosteo(clsContextoWeb web, clsPasosCos
     }
 
     /// <summary>
-    /// Re-solicitud en USD (HU-013.4 + HU-013.7): la cotización se creó con el formulario en USD y la TRM fijada fue la de un día anterior.
+    /// Re-solicitud en USD: la cotización se creó con el formulario en USD y la TRM fijada fue la de un día anterior.
     /// La caché de la TRM fija una sola TRM por día de negocio, así que el "día anterior" se simula cambiando solo la TRM guardada; la moneda
     /// es la que fijó el formulario.
     /// </summary>

@@ -12,7 +12,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Licitaciones;
 
 /// <summary>
-/// HU-013.11 (#108): el reintento y la re-solicitud de una licitación vuelven a pasar sus filas guardadas por todas las reglas de
+/// El reintento y la re-solicitud de una licitación vuelven a pasar sus filas guardadas por todas las reglas de
 /// captura (forma, G3, catálogos y municipios). Lo que ya no pasa pide una carga nueva; nunca llega texto libre a Nexo.
 /// </summary>
 public sealed class clsValidadorFilasLicitacionTests
@@ -105,12 +105,12 @@ public sealed class clsValidadorFilasLicitacionTests
     }
 
     /// <summary>
-    /// HU-014 (#188, revisión de M1): el reintento y la re-solicitud de una licitación cubicada revalidan lo guardado. El camión del
+    /// El reintento y la re-solicitud de una licitación cubicada revalidan lo guardado. El camión del
     /// cubicador trae un código que Nexo no conoce (<c>2S2</c>, <c>CAMA_BAJA</c>): no es dato digitado y lo que viaja lo decide
     /// <c>Nexo:EnviarCodigosCubicador</c>, así que no debe pedir una carga nueva.
     /// </summary>
     [Fact]
-    public async Task HU014ElVehiculoDelCamionDelCubicadorNoBloqueaElReintentoDeLaLicitacion()
+    public async Task ElVehiculoDelCamionDelCubicadorNoBloqueaElReintentoDeLaLicitacion()
     {
         var cotizacion = LicitacionCon(new clsCamionPlaneado("2S2", "CAMA_BAJA", 9000m, Guid.NewGuid()));
 
@@ -123,9 +123,9 @@ public sealed class clsValidadorFilasLicitacionTests
         cotizacion.PrimeraRuta!.Vehiculos[0].TipoVehiculo.Should().Be("2S2", "el camión guardado no cambia");
     }
 
-    /// <summary>HU-014 (#188, M1): el vehículo digitado del respaldo (sin recomendación) sí se revalida contra Nexo.</summary>
+    /// <summary>El vehículo digitado del respaldo (sin recomendación) sí se revalida contra Nexo.</summary>
     [Fact]
-    public async Task HU014ElVehiculoDigitadoDelRespaldoSiSeRevalidaContraNexo()
+    public async Task ElVehiculoDigitadoDelRespaldoSiSeRevalidaContraNexo()
     {
         var cotizacion = LicitacionCon(new clsCamionPlaneado("2S2", null, 9000m));
 

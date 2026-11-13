@@ -5,7 +5,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Aplicacion.Tests.Cotizaciones;
 
 /// <summary>
-/// HU-018.1 (#155, parte B): la lista de motivos de pérdida (por defecto la de Nexo, configurable) y su validación, común a
+/// La lista de motivos de pérdida (por defecto la de Nexo, configurable) y su validación, común a
 /// <c>/resultado</c>, <c>/seguimiento</c> y la sincronización diferida.
 /// </summary>
 public sealed class clsCatalogoMotivosPerdidaTests
@@ -61,7 +61,7 @@ public sealed class clsCatalogoMotivosPerdidaTests
         Catalogo().MotivoParaNexo(guardado).Should().Be(aNexo);
     }
 
-    // Validación HU-018.1 (#155): con Resultado:MotivoConComentario en otra escritura que la lista, a Nexo va la de la lista (la del envío
+    // Con Resultado:MotivoConComentario en otra escritura que la lista, a Nexo va la de la lista (la del envío
     // directo), también en la sincronización diferida.
     [Fact]
     public void ConElMotivoConComentarioEnOtraEscrituraANexoVaLaDeLaLista()
@@ -75,7 +75,7 @@ public sealed class clsCatalogoMotivosPerdidaTests
         catalogo.MotivoParaNexo(validado.ParaCotifly).Should().Be("Otra razón", "como en el envío directo");
     }
 
-    // Validación HU-018.1 (#155): la tilde aparte (NFD) es el mismo motivo, en la lista configurada y en lo que llega.
+    // La tilde aparte (NFD) es el mismo motivo, en la lista configurada y en lo que llega.
     [Fact]
     public void ElMotivoYLaListaSeComparanEnLaFormaUnicodeCompuesta()
     {

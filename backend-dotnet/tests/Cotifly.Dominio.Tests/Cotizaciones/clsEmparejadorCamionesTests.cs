@@ -3,7 +3,7 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
 /// <summary>
-/// Emparejamiento de los camiones de Cotifly con las líneas de la solicitud de Nexo (HU-021.7, #134): N camiones por ruta, líneas en
+/// Emparejamiento de los camiones de Cotifly con las líneas de la solicitud de Nexo: N camiones por ruta, líneas en
 /// cualquier orden, empates de camiones idénticos de una ruta resueltos en orden estable, la Mesa que le pone vehículo a una línea vacía
 /// y la referencia de ruta de Nexo (N1) cuando exista.
 /// </summary>
@@ -161,8 +161,8 @@ public sealed class clsEmparejadorCamionesTests
     [Fact]
     public void UnaLineaHuerfanaDeOtraRutaIgualNoSeLaLlevaElCamionDeLaOtraRuta()
     {
-        // Regresión (#134, validador): la ruta 1 tenía un 2S2 de 8 t que se descartó antes de asociarse, así que su línea quedó huérfana en
-        // Nexo; la ruta 2 (mismo origen y destino) tiene un 2S2 de 8 t. Antes la ruta 2 se quedaba con la primera por id (la de la ruta 1).
+        // La ruta 1 tenía un 2S2 de 8 t que se descartó antes de asociarse, así que su línea quedó huérfana en
+        // Nexo; la ruta 2 (mismo origen y destino) tiene un 2S2 de 8 t y no se queda con la primera por id (la de la ruta 1).
         var cotizacion = Solicitud(2);
         var rutas = cotizacion.RutasOrdenadas;
         var deLaRuta2 = clsCamionParaEmparejar.Desde(rutas[1], rutas[1].Vehiculos[0]);
@@ -243,7 +243,7 @@ public sealed class clsEmparejadorCamionesTests
         asociados.Should().BeGreaterThan(0, "el fuzz también asocia");
     }
 
-    // ------------------------------------------------------------------ HU-023.4 (#159): datos del cubicador en Nexo
+    // ------------------------------------------------------------------ Datos del cubicador en Nexo
 
     private static readonly Guid _recomendacionA = Guid.Parse("aaaaaaaa-0000-4000-8000-000000000001");
     private static readonly Guid _recomendacionB = Guid.Parse("bbbbbbbb-0000-4000-8000-000000000002");
@@ -346,7 +346,7 @@ public sealed class clsEmparejadorCamionesTests
     [Fact]
     public void ConUnSoloCamionLaLineaLlevaElPesoDeclaradoDeLaRutaYNoElDelCubicador()
     {
-        // Decisión 6 (2026-10-13): el cubicador dice 26 t (más de 1 % lejos de las posiciones, 28 500,5 kg); la línea lleva el peso de la ruta,
+        // El cubicador dice 26 t (más de 1 % lejos de las posiciones, 28 500,5 kg); la línea lleva el peso de la ruta,
         // que cuadra con las posiciones, y así Nexo no responde PESO_INCONSISTENTE. El peso del cubicador se guarda en el camión.
         var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-CUB-3" }).Valor;
         var linea = LineaCaptura((null, null, 28_500.5m)) with
@@ -398,7 +398,7 @@ public sealed class clsEmparejadorCamionesTests
     [InlineData(true, true, 0, false)]
     [InlineData(true, true, 3, false)]
     [InlineData(true, true, 3, true)]
-    // HU-023 (#176): contrato vigente (banderas encendidas por defecto): la línea suelta (ruta de un camión) viaja con grupoRutaId = null.
+    // Contrato vigente (banderas encendidas por defecto): la línea suelta (ruta de un camión) viaja con grupoRutaId = null.
     [InlineData(true, true, 0, true, true)]
     [InlineData(true, true, 1, true, true)]
     [InlineData(true, true, 2, true, true)]
@@ -406,9 +406,9 @@ public sealed class clsEmparejadorCamionesTests
     [InlineData(true, false, 3, true, true)]
     public void FuzzConElCubicadorNoCruzaMasQueAntesYConGrupoRutaNuncaCruza(bool grupoEnGet, bool recomendacionEnGet, int modo, bool codigos, bool lineaSuelta = false)
     {
-        // Contrato #297: con Nexo:EnviarCodigosCubicador apagada (codigos = false) la línea del camión del cubicador viaja sin vehículo ni
+        // Con Nexo:EnviarCodigosCubicador apagada (codigos = false) la línea del camión del cubicador viaja sin vehículo ni
         // carrocería y el emparejador no los compara; Nexo devuelve numeroLinea (posición en el arreglo).
-        // Regresión de la validación de #159: rutas de 1 a 3 camiones del cubicador (pesos que no cuadran con la ruta), respaldo, la Mesa
+        // Rutas de 1 a 3 camiones del cubicador (pesos que no cuadran con la ruta), respaldo, la Mesa
         // que cambia el vehículo (modo & 1) o borra líneas antes del primer polling (modo & 2). Se compara contra lo que hacía QA (el peso
         // del camión en los dos lados): no puede cruzar más costos entre rutas que antes, y con grupoRutaId en el GET no cruza ninguno.
         var azar = new Random(159 + modo);
@@ -477,7 +477,7 @@ public sealed class clsEmparejadorCamionesTests
         crucesRama.Should().BeLessThanOrEqualTo(crucesQa, "no puede cruzar más costos entre rutas que QA");
         if (grupoEnGet && (!lineaSuelta || recomendacionEnGet))
         {
-            // HU-023 (#176): la línea suelta no trae grupoRutaId; la protege su idRecomendacionVehiculo. Sin él (bandera de datos del
+            // La línea suelta no trae grupoRutaId; la protege su idRecomendacionVehiculo. Sin él (bandera de datos del
             // cubicador apagada), la línea suelta se empareja por contenido como en QA: no cruza más que QA, pero puede cruzar.
             crucesRama.Should().Be(0, "con grupoRutaId (o, en la línea suelta, idRecomendacionVehiculo) en el GET ninguna línea va a otra ruta");
         }
@@ -486,7 +486,7 @@ public sealed class clsEmparejadorCamionesTests
     [Fact]
     public void LaLineaSueltaSinGrupoRutaIdSeAsociaPorSuCamionDelCubicadorAunqueHayaOtraRutaIgual()
     {
-        // HU-023 (#176, contrato con Nexo §3.3): una ruta de un solo camión viaja con grupoRutaId = null. Dos rutas iguales (mismo texto,
+        // Contrato con Nexo §3.3: una ruta de un solo camión viaja con grupoRutaId = null. Dos rutas iguales (mismo texto,
         // peso y vehículo), cada una con un camión: el idRecomendacionVehiculo del GET basta para no cruzarlas, en cualquier orden.
         var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-SUELTA-1" }).Valor;
         cotizacion.RegistrarCaptura(new clsEncabezadoSolicitudCosteo { Tipo = TipoSolicitud.Spot },
@@ -514,8 +514,8 @@ public sealed class clsEmparejadorCamionesTests
     [Fact]
     public void LaLineaSueltaSinGrupoNiRecomendacionSeAsociaPorContenido()
     {
-        // HU-023 (#176): un camión de respaldo (sin recomendación) en una ruta de un camión: grupoRutaId = null y sin idRecomendacionVehiculo;
-        // se asocia por el texto de la ruta y el contenido, como antes.
+        // Un camión de respaldo (sin recomendación) en una ruta de un camión: grupoRutaId = null y sin idRecomendacionVehiculo;
+        // se asocia por el texto de la ruta y el contenido.
         var (cotizacion, ruta) = RutaCubicada(10_000m, new clsCamionPlaneado(null, null, 10_000m));
 
         var pares = clsEmparejadorLineasNexo.Emparejar(Camiones(cotizacion), [Linea("N-1", ruta, 10_000m, null, null)]);
@@ -526,7 +526,7 @@ public sealed class clsEmparejadorCamionesTests
     [Fact]
     public void ConElGrupoRutaElNumeroDeLineaDeNexoDesempataLosCamionesIdenticos()
     {
-        // Nexo #297: numeroLinea es la posición en el arreglo del alta. Con el grupo, el orden del alta manda sobre el id de Nexo.
+        // numeroLinea es la posición en el arreglo del alta. Con el grupo, el orden del alta manda sobre el id de Nexo.
         var (cotizacion, ruta) = RutaCubicada(20_000m,
             new clsCamionPlaneado("3S3", "FURGON", 10_000m, _recomendacionA), new clsCamionPlaneado("3S3", "FURGON", 10_000m, _recomendacionB));
         var grupo = ruta.Id.ToString("D");

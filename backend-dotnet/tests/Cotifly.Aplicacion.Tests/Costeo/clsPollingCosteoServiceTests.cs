@@ -14,7 +14,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// Polling del costeo (HU-005.6, ADR-015 §4): espaciado por edad, reclamo por cotización, derivación del estado, errores de Nexo
+/// Polling del costeo (ADR-015 §4): espaciado por edad, reclamo por cotización, derivación del estado, errores de Nexo
 /// que no detienen el polling, edad máxima y auditoría de cada cambio.
 /// </summary>
 public sealed class clsPollingCosteoServiceTests
@@ -52,7 +52,7 @@ public sealed class clsPollingCosteoServiceTests
 
         resultado.Should().Be(ResultadoConsultaCosteo.SinCambio);
         _cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo);
-        // HU-021: el esquema 0009 ya no guarda la fecha de la última consulta (CosteoUltimaConsultaAt); queda la agenda.
+        // Solo se guarda la agenda de la siguiente consulta.
         _cotizacion.CosteoSiguienteConsultaAt.Should().Be(_reloj.AhoraUtc.AddSeconds(5), "al principio se pregunta cada 5 s");
         _cotizacion.CotizacionNexoId.Should().Be("COT-1");
         _cotizacion.VersionNegocio.Should().Be(0, "una consulta sin cambios (solo la agenda) no sube la versión de negocio");
@@ -278,14 +278,14 @@ public sealed class clsPollingCosteoServiceTests
         usd.RegistrarEnvioCosteo("SOL-2", false, _reloj.AhoraUtc, _reloj.AhoraUtc);
         usd.PrimeraRuta!.RegistrarMargenCosteo(0.15m, 0.15m, Cotifly.Dominio.Margen.OrigenMargen.PoliticaLinea, "margen");
 
-        // HU-021: la lectura completa actualiza el camión (flete) y la ruta saca el precio con su margen.
+        // La lectura completa actualiza el camión (flete) y la ruta saca el precio con su margen.
         clsLecturaCosteo.AplicarFoto(usd, Foto("EnCosteo", conFlete: true), _reloj.AhoraUtc, _opciones, new clsPrecioCosteoService()).Should().BeTrue();
 
         usd.PrecioFinal.Should().Be(588.24m, "2.000.000 / 0,85 = 2.352.941 COP, / 4.000 (la TRM fijada) = 588,24 USD");
         usd.CostoFinal.Should().Be(2_000_000m, "el costo sigue en pesos");
     }
 
-    // HU-013.14 (ADR-018 §17): el precio que llega después del resultado y la reparación de las entregadas sin precio.
+    // ADR-018 §17: el precio que llega después del resultado y la reparación de las entregadas sin precio.
     [Fact]
     public async Task ElPrecioQueLlegaDespuesDelResultadoSeAplicaAunqueYaEsteGanada()
     {
@@ -412,7 +412,7 @@ public sealed class clsPollingCosteoServiceTests
     }
 
     /// <summary>
-    /// Una lectura anterior dejó la cotización en <paramref name="estado"/> (sin flete). HU-021: el estado de la cabecera es el resumen
+    /// Una lectura anterior dejó la cotización en <paramref name="estado"/> (sin flete). El estado de la cabecera es el resumen
     /// de sus camiones, así que primero lo toma el camión.
     /// </summary>
     private void EstadoLeido(EstadoCosteo estado, string? cotizacionNexoId, DateTimeOffset? siguiente)
@@ -432,7 +432,7 @@ public sealed class clsPollingCosteoServiceTests
         _cotizaciones, _nexo, _unidad, _auditoria, _reloj, Options.Create(_opciones), NullLogger<clsPollingCosteoService>.Instance,
         new clsPrecioCosteoService(), situacionesNexo: situaciones);
 
-    /// <summary>Foto sin flete cuya única línea trae (o no, Nexo anterior a #309) el estado y el motivo pendiente.</summary>
+    /// <summary>Foto sin flete cuya única línea trae (o no, si Nexo no manda esos campos) el estado y el motivo pendiente.</summary>
     private static clsCosteoConsultadoNexo FotoConSituacion(string? estadoLinea, string? motivo) =>
         Foto("EnCosteo", conFlete: false) with
         {
@@ -440,7 +440,7 @@ public sealed class clsPollingCosteoServiceTests
         };
 
     [Fact]
-    public async Task Hu181_ElPollingDejaAlaVistaElEstadoYElMotivoPendienteDeLaLineaDeCadaCamion()
+    public async Task ElPollingDejaAlaVistaElEstadoYElMotivoPendienteDeLaLineaDeCadaCamion()
     {
         var situaciones = new clsSituacionLineasNexoEnMemoria(_reloj);
         NexoResponde(FotoConSituacion("porCostear", "Línea sin vehículo: requiere consulta completa"));
@@ -457,7 +457,7 @@ public sealed class clsPollingCosteoServiceTests
     }
 
     [Fact]
-    public async Task Hu181_ConUnNexoSinLosCamposNoHayNadaQueMostrarNiFalla()
+    public async Task ConUnNexoSinLosCamposNoHayNadaQueMostrarNiFalla()
     {
         var situaciones = new clsSituacionLineasNexoEnMemoria(_reloj);
         NexoResponde(FotoConSituacion(null, null));
@@ -469,7 +469,7 @@ public sealed class clsPollingCosteoServiceTests
     }
 
     [Fact]
-    public async Task Hu181_SiLaFotoNoSeGuardaPorConflictoNoSeMuestraSuMotivo()
+    public async Task SiLaFotoNoSeGuardaPorConflictoNoSeMuestraSuMotivo()
     {
         var situaciones = new clsSituacionLineasNexoEnMemoria(_reloj);
         NexoResponde(FotoConSituacion("porCostear", "Consulta completa"));

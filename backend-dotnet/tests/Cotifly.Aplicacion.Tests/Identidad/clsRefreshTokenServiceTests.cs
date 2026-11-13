@@ -137,9 +137,9 @@ public sealed class clsRefreshTokenServiceTests
     }
 
     [Fact]
-    public async Task HU0403_ElRefreshSigueEstrictoNoReconciliaRolesAunqueCambienEnClientePro()
+    public async Task ElRefreshSigueEstrictoNoReconciliaRolesAunqueCambienEnClientePro()
     {
-        // HU-040.3 (#258, B+): la reconciliación es SOLO del login. En el refresh (permitirAlta: false) un rol externo que cambió se rechaza,
+        // La reconciliación es SOLO del login. En el refresh (permitirAlta: false) un rol externo que cambió se rechaza,
         // sin otorgar ni revocar asignaciones (no se leen las filas rastreadas).
         SesionVigente();
         _e.PersonaExterna("APEREZ", 101, clsEscenarioIdentidad.RolExternoGerente);
@@ -152,9 +152,9 @@ public sealed class clsRefreshTokenServiceTests
     }
 
     [Fact]
-    public async Task HU0402_ElRefreshConservaElRolElegidoAunqueLaJerarquiaDigaOtro()
+    public async Task ElRefreshConservaElRolElegidoAunqueLaJerarquiaDigaOtro()
     {
-        // HU-040.2 (#230): eligió comercial teniendo también gerente: el refresh no vuelve a preguntar ni sube a gerente.
+        // Eligió comercial teniendo también gerente: el refresh no vuelve a preguntar ni sube a gerente.
         var (_, token) = SesionMultiRol(RolInterno.Comercial);
         clsTokenRefresco? nuevo = null;
         _e.Tokens.RotarAsync(token.Id, Arg.Do<clsTokenRefresco>(t => nuevo = t), _e.Reloj.AhoraUtc, Arg.Any<CancellationToken>()).Returns(true);
@@ -167,9 +167,9 @@ public sealed class clsRefreshTokenServiceTests
     }
 
     [Fact]
-    public async Task HU0402_SiLeRetiraronElRolElegidoElRefreshEsRolExternoCambio()
+    public async Task SiLeRetiraronElRolElegidoElRefreshEsRolExternoCambio()
     {
-        // Eligió gerente; después Datos le retiró esa asignación (le queda comercial): 401 como hoy, con rol_externo_cambio.
+        // Eligió gerente; después Datos le retiró esa asignación (le queda comercial): 401 con rol_externo_cambio.
         var (usuario, _) = SesionMultiRol(RolInterno.GerenteComercial);
         _e.Roles.ListarRolesAsignadosAsync(usuario.Id, Arg.Any<CancellationToken>()).Returns([RolInterno.Comercial]);
         _e.PersonaExterna("JEFE", 200, clsEscenarioIdentidad.RolExternoComercial);
@@ -182,7 +182,7 @@ public sealed class clsRefreshTokenServiceTests
     }
 
     [Fact]
-    public async Task HU0402_UnRefreshSinRolDeUnUsuarioQueAhoraTieneVariosRolesPideVolverAEntrar()
+    public async Task UnRefreshSinRolDeUnUsuarioQueAhoraTieneVariosRolesPideVolverAEntrar()
     {
         // Refresh emitido antes del script 16 (rolSesion NULL): con varios roles no se adivina cuál; 401 eleccion_rol_requerida.
         var (_, _) = SesionMultiRol(rolSesion: null);
@@ -194,7 +194,7 @@ public sealed class clsRefreshTokenServiceTests
     }
 
     [Fact]
-    public async Task HU0402_UnRefreshSinRolDeUnUsuarioConRolUnicoRotaComoHoyYGuardaElRol()
+    public async Task UnRefreshSinRolDeUnUsuarioConRolUnicoRotaYGuardaElRol()
     {
         var (_, token) = SesionVigente();
         clsTokenRefresco? nuevo = null;

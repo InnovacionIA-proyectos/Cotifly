@@ -22,7 +22,7 @@ using NSubstitute.ExceptionExtensions;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// Costeo en dólares del formulario (HU-013.7, ADR-014 §5): la vista expone la TRM fijada, y el PDF lleva el flete y los conexos en
+/// Costeo en dólares del formulario (ADR-014 §5): la vista expone la TRM fijada, y el PDF lleva el flete y los conexos en
 /// USD (convertidos con esa TRM), pasa la validación de coherencia contra el costo en COP y trae la nota de TRM mínima. En COP, sin nota.
 /// </summary>
 public sealed class clsPdfCosteoMonedaTests
@@ -77,12 +77,12 @@ public sealed class clsPdfCosteoMonedaTests
         _documento.NotaMoneda.Should().Contain("TRM mínima de $4.000,00");
     }
 
-    // HU-021: el precio ya no se guarda aparte del costo (la ruta lo calcula con su margen), así que la cotización no puede traer un
+    // El precio no se guarda aparte del costo (la ruta lo calcula con su margen), así que la cotización no puede traer un
     // precio incoherente; la guarda de coherencia del PDF se prueba con el payload alterado y la trazabilidad que arma el servicio.
     [Fact]
     public void UnPrecioEnDolaresQueNoEsElPrecioFinalDeLaRutaNoSeImprime()
     {
-        // HU-033 (#199): la tarifa impresa es el precio final de la ruta (precioFinalLinea, con el conexo): 750,00 + 21,25 = 771,25 (HU-043.2: conexo sin margen).
+        // La tarifa impresa es el precio final de la ruta (precioFinalLinea, con el conexo): 750,00 + 21,25 = 771,25 (conexo sin margen).
         var cotizacion = EnDolares();
         var ruta = cotizacion.PrimeraRuta!;
         var payload = clsCosteoCotizacionService.Payload(cotizacion, "Importacion", "USD");
@@ -99,7 +99,7 @@ public sealed class clsPdfCosteoMonedaTests
             .Should().BeNull("el payload que arma el servicio imprime el precio final de la ruta");
     }
 
-    // #92, #95: con el turno de render agotado no se guarda el PDF ni cambia la versión.
+    // Con el turno de render agotado no se guarda el PDF ni cambia la versión.
     [Fact]
     public async Task SiElTurnoDeRenderSeAgotaElPdfDelCosteoEsPdfRenderNoDisponible()
     {
@@ -125,7 +125,7 @@ public sealed class clsPdfCosteoMonedaTests
         _documento!.NotaMoneda.Should().BeNull();
     }
 
-    // #261 (HU-046): el texto de seguros de la configuración (Pdf:TextoSeguros) llega al documento partido en párrafos, incluso en una
+    // El texto de seguros de la configuración (Pdf:TextoSeguros) llega al documento partido en párrafos, incluso en una
     // cotización ya finalizada (Preparada la finaliza): el PDF se regenera con el texto vigente, no reescribe los ya generados.
     [Fact]
     public async Task ElPdfDelCosteoLlevaElTextoDeSegurosDeLaConfiguracionPartidoEnParrafos()
@@ -151,9 +151,8 @@ public sealed class clsPdfCosteoMonedaTests
     }
 
     /// <summary>
-    /// Corrección del validador de #136, por el camino real de <c>GenerarPdfAsync</c> (payload, validador, constructor): un pliego con rutas
-    /// de dos líneas de negocio sale con la cabecera "Varias" y cada sección con la línea de su ruta (antes: PDF_PAYLOAD_INVALIDO "Falta
-    /// 'linea_negocio'").
+    /// Por el camino real de <c>GenerarPdfAsync</c> (payload, validador, constructor): un pliego con rutas
+    /// de dos líneas de negocio sale con la cabecera "Varias" y cada sección con la línea de su ruta, sin PDF_PAYLOAD_INVALIDO.
     /// </summary>
     [Fact]
     public async Task UnPliegoConRutasDeLineasDistintasSaleConCadaSeccionEnSuLinea()
@@ -173,7 +172,7 @@ public sealed class clsPdfCosteoMonedaTests
             .LineaNegocio.Should().Be("Varias");
     }
 
-    /// <summary>Corrección del auditor de #136: en USD la tarifa absorbe a lo sumo 0,01 por conexo, no un dólar entero.</summary>
+    /// <summary>En USD la tarifa absorbe a lo sumo 0,01 por conexo, no un dólar entero.</summary>
     [Fact]
     public void EnDolaresLaTarifaSoloAbsorbeElRedondeoDeUnCentavoPorConexo()
     {
@@ -190,7 +189,7 @@ public sealed class clsPdfCosteoMonedaTests
 
     /// <summary>
     /// Costeada en USD con la TRM 4.000 fijada: flete 2.550.000 COP al 15 % (750,00 USD) y el conexo Cargue de 85.000 (21,25 USD, sin margen) en la
-    /// ruta (HU-021: el precio de la ruta, 771,25 USD, incluye el conexo; HU-043.2: a su venta).
+    /// ruta (el precio de la ruta, 771,25 USD, incluye el conexo a su venta).
     /// </summary>
     private clsCotizacionSolicitud EnDolares()
     {
@@ -200,11 +199,11 @@ public sealed class clsPdfCosteoMonedaTests
         return Preparada(clsCotizacionMuestra.ConVersionNegocio(cotizacion, Version));
     }
 
-    /// <summary>HU-021: la costeada ya viene del formulario y enviada; solo falta el cliente del catálogo.</summary>
+    /// <summary>La costeada ya viene del formulario y enviada; solo falta el cliente del catálogo.</summary>
     private static clsCotizacionSolicitud Preparada(clsCotizacionSolicitud cotizacion)
     {
         cotizacion.ActualizarClienteDelCatalogo("CLIENTE S.A.S.", null);
-        // HU-036.3 (#207): el PDF se genera con la cotización finalizada.
+        // El PDF se genera con la cotización finalizada.
         cotizacion.Finalizar(cotizacion.UsuarioId ?? Guid.NewGuid(), clsCotizacionMuestra.Ahora);
         return cotizacion;
     }
@@ -221,7 +220,7 @@ public sealed class clsPdfCosteoMonedaTests
         Substitute.For<IClsCalendarioNegocio>(), Substitute.For<IClsAuditoriaService>(), Options.Create(new clsOpcionesPdf()),
         NullLogger<clsCosteoCotizacionService>.Instance);
 
-    /// <summary>#261 (HU-046): el servicio con un texto de seguros concreto en la configuración.</summary>
+    /// <summary>El servicio con un texto de seguros concreto en la configuración.</summary>
     private clsCosteoCotizacionService ServicioConSeguros(string? textoSeguros) => new(
         _cotizaciones, _politicas, _usuarios, _generador, _almacen, _unidad,
         Substitute.For<IClsCalendarioNegocio>(), Substitute.For<IClsAuditoriaService>(),

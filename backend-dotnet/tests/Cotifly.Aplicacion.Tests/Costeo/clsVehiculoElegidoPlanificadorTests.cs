@@ -9,7 +9,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// HU-032 (#197, ADR-022): el vehículo elegido como respaldo del cubicador en <see cref="clsPlanificadorCamionesCubicador"/>. Orden de
+/// El vehículo elegido (ADR-022) como respaldo del cubicador en <see cref="clsPlanificadorCamionesCubicador"/>. Orden de
 /// decisión por ruta: sin mercancías cubicables no se llama al cubicador y va el elegido (con <c>MERCANCIAS_NO_CUBICABLES</c> si es mixta);
 /// con todas cubicables manda el cubicador si asigna (<c>VEHICULO_AJUSTADO_POR_CUBICADOR</c> si el elegido era otro) y, si no escoge o
 /// falla, va el elegido validado TARDE contra Nexo (<c>VEHICULO_ELEGIDO_USADO</c> o, si no es de Nexo, sin vehículo con
@@ -183,7 +183,7 @@ public sealed class clsVehiculoElegidoPlanificadorTests
         aviso.VehiculosFinales.Should().Equal(new clsVehiculoAviso(null, null));
     }
 
-    // --- Endurecimiento B (#199): el respaldo sin llamar al cubicador (usar_respaldo de la licitación) ---
+    // --- El respaldo sin llamar al cubicador (usar_respaldo de la licitación) ---
 
     [Fact]
     public async Task ElRespaldoSinCubicadorUsaElElegidoValidadoConSuAvisoYNoLlamaAlCubicador()

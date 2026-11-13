@@ -7,7 +7,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// HU-033 (#199, ADR-023): el envío por MailSender (falso: nunca sale un correo real) por HTTP con SQL Server real. El 200 deja el envío
+/// El envío por MailSender (ADR-023; falso: nunca sale un correo real) por HTTP con SQL Server real. El 200 deja el envío
 /// <c>encolado</c> con el id de MailSender; el worker lo lleva a <c>enviado</c> o <c>fallido</c>; el historial lo muestra; el reintento solo
 /// aplica a un fallido propio; fuera de producción todo va al buzón de pruebas y la vista previa lo avisa. Contrato verificado.
 /// </summary>
@@ -121,11 +121,10 @@ public sealed class clsCorreoMailSenderEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// DEF-1027B-2 (#228, E2E real 2026-10-27B): el asunto "Hola\r\nBcc: intruso@ejemplo.invalid" respondió 200 y llegó al relay. Ahora es 400
-    /// <c>ErrorWeb</c> sin llamar a MailSender ni tocar el estado de envío; lo mismo una dirección con CR/LF o con una coma.
+    /// El asunto "Hola\r\nBcc: intruso@ejemplo.invalid" es 400 <c>ErrorWeb</c> sin llamar a MailSender ni tocar el estado de envío; lo mismo una dirección con CR/LF o con una coma.
     /// </summary>
     [Fact]
-    public async Task DEF1027B2_UnAsuntoOUnaDireccionConSaltosDeLineaEs400SinLlegarAMailSender()
+    public async Task UnAsuntoOUnaDireccionConSaltosDeLineaEs400SinLlegarAMailSender()
     {
         var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         var cotizacion = await _api.CrearCotizacionAsync(ana.UsuarioId, "900111556");
@@ -155,11 +154,10 @@ public sealed class clsCorreoMailSenderEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// #228: el E2E aceptó 60 destinatarios en <c>para</c>. Tope entre <c>para</c> y <c>cc</c>, 10 por defecto (decisión del 2026-10-27):
-    /// 400 <c>ErrorNegocio</c> con detalle.
+    /// Tope de destinatarios entre <c>para</c> y <c>cc</c>, 10 por defecto: por encima, 400 <c>ErrorNegocio</c> con detalle.
     /// </summary>
     [Fact]
-    public async Task Tope228_MasDe10DestinatariosEs400ConDetalleYNoLlegaAMailSender()
+    public async Task MasDe10DestinatariosEs400ConDetalleYNoLlegaAMailSender()
     {
         var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         var cotizacion = await _api.CrearCotizacionAsync(ana.UsuarioId, "900111557");
@@ -174,9 +172,9 @@ public sealed class clsCorreoMailSenderEndpointsTests : IDisposable
         _api.MailSender.Recibidos.Should().BeEmpty();
     }
 
-    /// <summary>#228: con <c>Correo:MaximoDestinatarios</c> configurado, el tope y <c>detalle.maximo</c> son ese valor (envío y vista previa).</summary>
+    /// <summary>Con <c>Correo:MaximoDestinatarios</c> configurado, el tope y <c>detalle.maximo</c> son ese valor (envío y vista previa).</summary>
     [Fact]
-    public async Task Tope228_ElTopeConfiguradoMandaEnElEnvioYEnLaVistaPrevia()
+    public async Task ElTopeConfiguradoMandaEnElEnvioYEnLaVistaPrevia()
     {
         using var api = new clsApiWebPruebas(_entorno.BaseDatos, correoHabilitado: true,
             extra: new Dictionary<string, string?> { ["Correo:MaximoDestinatarios"] = "3" });
@@ -218,10 +216,10 @@ public sealed class clsCorreoMailSenderEndpointsTests : IDisposable
         json.GetProperty("entorno_pruebas").GetBoolean().Should().BeTrue();
         json.GetProperty("redirigido_a").GetString().Should().Be(clsMailSenderFalso.BuzonPruebas);
         json.GetProperty("aviso").GetString().Should().Contain("Ambiente de pruebas");
-        // OBS-1027-5 (#226): al redirigir el correo sale sin CC ni CCO, así que la vista previa no anuncia la copia oculta al comercial.
+        // Al redirigir, el correo sale sin CC ni CCO, así que la vista previa no anuncia la copia oculta al comercial.
         json.GetProperty("copia_oculta").ValueKind.Should().Be(JsonValueKind.Null);
         json.GetProperty("aviso").GetString().Should().Contain("sin CC ni CCO");
-        // #262: el HTML es el del correo (encabezado "Cotización" con el logo).
+        // El HTML es el del correo (encabezado "Cotización" con el logo).
         json.GetProperty("cuerpo_html").GetString().Should().Contain(">Cotizaci&#243;n<").And.Contain("<img src=\"https://");
         _api.MailSender.Recibidos.Should().BeEmpty("la vista previa no envía nada");
     }
@@ -229,8 +227,8 @@ public sealed class clsCorreoMailSenderEndpointsTests : IDisposable
     [Fact]
     public async Task AuditoriaUnReintentoDeUnCorreoDeMasDe24HorasNoVenceEnLaPrimeraConsulta()
     {
-        // Auditoría #199: la edad máxima se medía desde createdAt, así que reintentar un fallido viejo (por ejemplo, el que venció a las 24 h)
-        // lo devolvía a "fallido" en la primera consulta sin preguntarle a MailSender. Ahora se mide desde la última aceptación (encoladoAt).
+        // La edad máxima se mide desde la última aceptación (encoladoAt), no desde createdAt: reintentar un fallido viejo (por ejemplo, el
+        // que venció a las 24 h) no lo devuelve a "fallido" en la primera consulta sin preguntarle a MailSender.
         var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         var cotizacion = await _api.CrearCotizacionAsync(ana.UsuarioId, "900111666");
         using var envio = await _api.EnviarAsync(_post, $"/web/cotizaciones/{cotizacion.Folio}/enviar", ana.Access,
@@ -255,7 +253,7 @@ public sealed class clsCorreoMailSenderEndpointsTests : IDisposable
     [Fact]
     public async Task AuditoriaDosReintentosSimultaneosPidenUnSoloRetryAMailSender()
     {
-        // Auditoría #199: un doble clic pedía dos /retry y MailSender corría dos entregas del mismo correo a la vez (correo duplicado).
+        // Un doble clic pide dos /retry: MailSender no debe correr dos entregas del mismo correo a la vez (correo duplicado).
         var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         var cotizacion = await _api.CrearCotizacionAsync(ana.UsuarioId, "900111777");
         using var envio = await _api.EnviarAsync(_post, $"/web/cotizaciones/{cotizacion.Folio}/enviar", ana.Access,
@@ -313,8 +311,8 @@ public sealed class clsCorreoMailSenderEndpointsTests : IDisposable
     [Fact]
     public async Task AuditoriaSinRespuestaAlEncolarElEnvioQuedaInciertoYBloqueaElReenvioInmediato()
     {
-        // Auditoría #199: un tiempo agotado en el POST pudo dejar el correo encolado en MailSender. Antes se deshacía la reserva y la fila
-        // "fallido" no contaba en la deduplicación: un reenvío inmediato duplicaba el correo al cliente.
+        // Un tiempo agotado en el POST pudo dejar el correo encolado en MailSender: la reserva no se deshace y cuenta en la deduplicación,
+        // para que un reenvío inmediato no duplique el correo al cliente.
         using var api = new clsApiWebPruebas(_entorno.BaseDatos, correoHabilitado: true,
             extra: new Dictionary<string, string?> { ["Correo:MailSender:TimeoutSegundos"] = "1" });
         api.MailSender.Caido = false;

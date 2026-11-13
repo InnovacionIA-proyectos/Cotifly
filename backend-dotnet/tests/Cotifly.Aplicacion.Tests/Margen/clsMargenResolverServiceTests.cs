@@ -37,7 +37,7 @@ public sealed class clsMargenResolverServiceTests
     private readonly clsLoggerFalso<clsMargenResolverService> _logger = new();
     private readonly clsRelojFalso _reloj = new();
 
-    // HU-042.4 (#247): cada política tiene su id (1, 2, ...) y el mapeo responde el TrqType por ese id, como la FK de SapMapeoTrqType.
+    // Cada política tiene su id (1, 2, ...) y el mapeo responde el TrqType por ese id, como la FK de SapMapeoTrqType.
     private readonly List<clsMargenPolitica> _lineas = [.. _trqTypeSemilla.Keys.Select((l, i) => ConId(clsMargenPolitica.Crear(l, 0.15m).Valor, i + 1))];
 
     public clsMargenResolverServiceTests()
@@ -176,7 +176,7 @@ public sealed class clsMargenResolverServiceTests
         resultado.Error.Codigo.Should().Be(clsCodigosError.MargenLineaDesconocida);
     }
 
-    // #13: el Value se muestra tal como llega de SAP, como el f"{value}%" del Python (no con 2 decimales fijos).
+    // El Value se muestra tal como llega de SAP, como el f"{value}%" del Python (no con 2 decimales fijos).
     [Theory]
     [InlineData("Importacion", "580", "OPIM: 5%")]
     [InlineData("Distribucion", "2044", "OPDS: 9.75%")]
@@ -184,7 +184,7 @@ public sealed class clsMargenResolverServiceTests
     public async Task ElDetalleMuestraElValueTalComoLlegaDeSap(string linea, string bp, string esperado) =>
         (await ResolverOk(linea, bp)).Detalle.Should().Contain(esperado);
 
-    // Decisión de #13 (Gherkin "Resiliencia si SAP no responde" de HU-009): SAP caído → política, con warning.
+    // Resiliencia si SAP no responde: SAP caído → política, con warning.
     [Fact]
     public async Task SiLaFuenteSapFallaSeUsaLaPoliticaYSeRegistraUnWarning()
     {
@@ -201,8 +201,8 @@ public sealed class clsMargenResolverServiceTests
             .Which.Mensaje.Should().Contain("SAP TM").And.Contain("OPTN").And.Contain("timeout simulado");
     }
 
-    // HU-042.4 (#247): sin política no hay TrqType (el mapeo se busca por el id de la política), así que no se consulta SAP y una fuente
-    // caída ya no cambia el error: es MARGEN_LINEA_DESCONOCIDA (antes, MARGEN_FUENTE_NO_DISPONIBLE).
+    // Sin política no hay TrqType (el mapeo se busca por el id de la política), así que no se consulta SAP y una fuente
+    // caída no cambia el error: es MARGEN_LINEA_DESCONOCIDA.
     [Fact]
     public async Task SiLaLineaNoTienePoliticaNoSeConsultaSapAunqueLaFuenteEsteCaida()
     {
@@ -248,7 +248,7 @@ public sealed class clsMargenResolverServiceTests
         _fuente.Consultas.Should().BeEmpty();
     }
 
-    // HU-042.2 (#243): una copia local que nunca se sincronizó (ambiente sin la sincronización del backend o con ella deshabilitada) es
+    // Una copia local que nunca se sincronizó (ambiente sin la sincronización del backend o con ella deshabilitada) es
     // "no configurado", no "caído".
     [Fact]
     public async Task ConLaFuenteNoConfiguradaSeUsaLaPoliticaSinError()
@@ -296,7 +296,7 @@ public sealed class clsMargenResolverServiceTests
         resultado.Valor.Salida.TrqType.Should().BeNull();
     }
 
-    // HU-042.4 (#247): antes un TrqType mapeado por texto daba un margen de SAP sin política; con la FK, sin política no hay TrqType.
+    // El TrqType se mapea por el id de la política: sin política no hay TrqType ni margen de SAP.
     [Fact]
     public async Task SinPoliticaNoHayTrqTypeNiSeConsultaSap()
     {
@@ -316,7 +316,7 @@ public sealed class clsMargenResolverServiceTests
         await _mapeo.Received(1).TrqTypeDeAsync(IdDe("Exportacion"), "50000005", Arg.Any<CancellationToken>());
     }
 
-    // HU-042.2 (#243): la copia local no caduca; con la última sincronización exitosa más vieja que SapTm:AvisoSincronizacionHoras el
+    // La copia local no caduca; con la última sincronización exitosa más vieja que SapTm:AvisoSincronizacionHoras el
     // detalle lo avisa y el margen de SAP se usa igual.
     [Fact]
     public async Task ConLaSincronizacionViejaSeUsaElMargenDeSapYElDetalleLoAvisa()
@@ -404,7 +404,7 @@ public sealed class clsMargenResolverServiceTests
         _fuente.Consultas.Should().Equal(("50000005", "OPTN", "15927"));
     }
 
-    // #41 (auditoría de #12, F4): el comercial no cotiza con una línea inactiva (la administración sí la ve).
+    // El comercial no cotiza con una línea inactiva (la administración sí la ve).
     [Fact]
     public async Task UnaLineaInactivaNoSeCotiza()
     {
@@ -417,7 +417,7 @@ public sealed class clsMargenResolverServiceTests
         resultado.Error.Mensaje.Should().Contain("inactiva");
     }
 
-    // HU-013.15 (#124): "Licitaciones" es una línea del catálogo de Nexo, no de Cotifly; el error dice qué líneas usar.
+    // "Licitaciones" es una línea del catálogo de Nexo, no de Cotifly; el error dice qué líneas usar.
     [Fact]
     public async Task LasLineasActivasSonLasDeCotiflyOrdenadasSinLasInactivas()
     {

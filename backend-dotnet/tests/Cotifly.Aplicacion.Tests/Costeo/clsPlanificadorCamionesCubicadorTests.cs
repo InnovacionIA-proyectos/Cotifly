@@ -13,7 +13,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// <see cref="clsPlanificadorCamionesCubicador"/> (HU-021.5, #133; contrato de HU-023.1, #156): un camión por vehículo (flota mixta) con
+/// <see cref="clsPlanificadorCamionesCubicador"/>: un camión por vehículo (flota mixta) con
 /// el volumen y los porcentajes, "sin selección" y "condicionada" como resultado, los rechazos y la respuesta inválida sin respaldo, y el
 /// respaldo (un camión sin vehículo) sin cubicador o cuando se cae.
 /// </summary>
@@ -201,7 +201,7 @@ public sealed class clsPlanificadorCamionesCubicadorTests
         _logger.Registros.Should().Contain(r => r.Mensaje.Contains("detalle interno"));
     }
 
-    /// <summary>D-1019-1: el rechazo conserva la mercancía que señala el cubicador (item y campo); las marcas internas no pasan.</summary>
+    /// <summary>El rechazo conserva la mercancía que señala el cubicador (item y campo); las marcas internas no pasan.</summary>
     [Fact]
     public async Task UnRechazoDeMercanciaConservaElItemYElCampoSinMarcasInternas()
     {
@@ -302,7 +302,7 @@ public sealed class clsPlanificadorCamionesCubicadorTests
     [InlineData(false)]
     public async Task CubicadorOcupadoEsRespaldoEnLaCapturaYErrorSinRespaldoEnSegundoPlano(bool respaldoSiFalla)
     {
-        // Opción C, validación de los defectos del 2026-10-16 (punto a): la licitación en segundo plano no convierte CUBICADOR_OCUPADO en
+        // La licitación en segundo plano no convierte CUBICADOR_OCUPADO en
         // un camión sin vehículo ni en CUBICADOR_NO_DISPONIBLE (que gastaría un intento): lo recibe tal cual y la ruta vuelve a la cola.
         _cubicador.RespaldoSiFalla.Returns(respaldoSiFalla);
         var ocupado = new clsErrorDominio(clsCodigosError.CubicadorOcupado, "ocupado", "sin cupo tras 60 s")
@@ -337,7 +337,7 @@ public sealed class clsPlanificadorCamionesCubicadorTests
     [InlineData(true)]
     public void LaBanderaDeRespaldoDecideSiElVehiculoDelClienteSeConservaOSeIgnora(bool aceptar)
     {
-        // HU-021.11 (#138): Captura:AceptarVehiculoCliente (encendida por defecto desde #188; apagada rige la decisión 7).
+        // Captura:AceptarVehiculoCliente (encendida por defecto) decide si el vehículo que trae el cliente se conserva.
         var logger = new clsLoggerFalso<clsPlanificadorCamionesCubicadorTests>();
         var rutas = new List<clsLineaLicitacionEntrada?> { new(null, Ruta() with { TipoVehiculo = "3S3", Carroceria = "FURGON" }), null };
 
@@ -346,7 +346,7 @@ public sealed class clsPlanificadorCamionesCubicadorTests
         resultado[0]!.Linea.TipoVehiculo.Should().Be(aceptar ? "3S3" : null);
         resultado[0]!.Linea.Carroceria.Should().Be(aceptar ? "FURGON" : null);
         resultado[1].Should().BeNull();
-        // HU-032 (#197): encendida, el vehículo elegido es parte normal de la captura (sin aviso en el log); apagada se ignora con un warning.
+        // Encendida, el vehículo elegido es parte normal de la captura (sin aviso en el log); apagada se ignora con un warning.
         if (aceptar)
         {
             logger.Registros.Should().BeEmpty();

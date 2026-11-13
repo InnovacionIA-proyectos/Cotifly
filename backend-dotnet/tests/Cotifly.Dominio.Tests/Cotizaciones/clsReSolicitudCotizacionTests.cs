@@ -4,7 +4,7 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
 /// <summary>
-/// Invariantes de "Cotizar costo" (HU-013.4, ADR-018 §5 y §11): estados que permiten re-solicitar en el mismo folio o crear la
+/// Invariantes de "Cotizar costo" (ADR-018 §5 y §11): estados que permiten re-solicitar en el mismo folio o crear la
 /// versión nueva, regla del PDF, limpieza del costeo anterior, copia de la identidad en la versión <c>-vN</c> y cambios de carga.
 /// </summary>
 public sealed class clsReSolicitudCotizacionTests
@@ -202,7 +202,7 @@ public sealed class clsReSolicitudCotizacionTests
     [Fact]
     public void LasCiudadesDelContenedorLlevanSuIdYUnNombreNuevoSinIdBorraElAnterior()
     {
-        // HU-028 (#186), defecto B: datos_carga llevaba las ciudades de devolución y de levante solo como texto.
+        // datos_carga lleva las ciudades de devolución y de levante con su id, no solo como texto.
         var linea = Solicitud().ALinea() with { CiudadDevolucionContenedor = "Buenaventura", CiudadDevolucionMunicipioId = 76109 };
         var conId = new clsCambiosCarga
         {
@@ -277,7 +277,7 @@ public sealed class clsReSolicitudCotizacionTests
         return cotizacion;
     }
 
-    /// <summary>Como el polling (HU-021): el estado llega a cada camión y la solicitud resume a sus rutas.</summary>
+    /// <summary>Como el polling: el estado llega a cada camión y la solicitud resume a sus rutas.</summary>
     private static void Consultar(clsCotizacionSolicitud cotizacion, EstadoCosteo estado, string? cotizacionNexoId)
     {
         foreach (var ruta in cotizacion.Rutas)

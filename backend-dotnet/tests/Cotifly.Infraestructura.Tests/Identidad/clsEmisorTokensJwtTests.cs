@@ -44,7 +44,7 @@ public sealed class clsEmisorTokensJwtTests
         jwt.Claims.Select(c => c.Type).Should().NotContain(["password", "clave"]);
     }
 
-    // Auditoría de #12: sin nbf, un token emitido por una instancia con el reloj adelantado vale al instante en otra atrasada.
+    // Sin nbf, un token emitido por una instancia con el reloj adelantado vale al instante en otra atrasada.
     [Fact]
     public async Task ElAccessNoLlevaNbfYValeAunqueElValidadorTengaElRelojAtrasado()
     {

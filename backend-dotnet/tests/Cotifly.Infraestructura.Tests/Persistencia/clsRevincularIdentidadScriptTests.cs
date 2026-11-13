@@ -3,7 +3,7 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
-/// #172: <c>db/scripts/operacion/revincular_identidad_dbSolucionesTI_Prueba.sql</c> en una base aislada instalada desde cero. Respalda
+/// <c>db/scripts/operacion/revincular_identidad_dbSolucionesTI_Prueba.sql</c> en una base aislada instalada desde cero. Respalda
 /// los vínculos <c>UsuariosWeb.idUsuarioExterno</c>, los pone en NULL y, si se repite, no toca los vínculos nuevos.
 /// </summary>
 [Collection(clsColeccionSqlServer.Nombre)]

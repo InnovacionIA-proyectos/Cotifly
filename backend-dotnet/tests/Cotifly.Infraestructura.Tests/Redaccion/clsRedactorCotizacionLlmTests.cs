@@ -20,7 +20,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Tests.Redaccion;
 
 /// <summary>
-/// Redactor del asunto y la introducción del PDF (HU-013.5, ADR-018 §2a) de punta a punta sin red: <see cref="clsRedaccionCotizacionService"/>
+/// Redactor del asunto y la introducción del PDF (ADR-018 §2a) de punta a punta sin red: <see cref="clsRedaccionCotizacionService"/>
 /// sobre <see cref="clsRedactorCotizacionLlm"/> y un <see cref="IChatClient"/> guionizado. La IA nunca recibe montos y, si tarda, falla
 /// o su salida no pasa la validación, salen los textos estándar de la variante (exactamente los del PDF).
 /// </summary>
@@ -276,10 +276,10 @@ public sealed class clsRedactorCotizacionLlmTests
             .And.Contain("Nunca escribas montos").And.Contain("No inventes condiciones").And.Contain("\"introduccion\"");
     }
 
-    // HU-013.18 (#296): indicaciones del comercial para el redactor con IA.
+    // Indicaciones del comercial para el redactor con IA.
 
     [Fact]
-    public async Task HU01318_LasIndicacionesVanAlModeloComoIndicacionesComercial()
+    public async Task LasIndicacionesVanAlModeloComoIndicacionesComercial()
     {
         _modelo.Responder(Json(AsuntoIa, IntroIa));
         var contexto = Contexto() with { IndicacionesComercial = "Tono cercano, resaltar la carga refrigerada." };
@@ -291,7 +291,7 @@ public sealed class clsRedactorCotizacionLlmTests
     }
 
     [Fact]
-    public async Task HU01318_SinIndicacionesElContextoNoLlevaIndicacionesComercial()
+    public async Task SinIndicacionesElContextoNoLlevaIndicacionesComercial()
     {
         _modelo.Responder(Json(AsuntoIa, IntroIa));
 
@@ -302,7 +302,7 @@ public sealed class clsRedactorCotizacionLlmTests
     }
 
     [Fact]
-    public void HU01318_ElPromptTrataLasIndicacionesComoPreferenciaQueNoPasaSobreLasReglas()
+    public void ElPromptTrataLasIndicacionesComoPreferenciaQueNoPasaSobreLasReglas()
     {
         clsRedactorCotizacionLlm.Prompt.Should().Contain("indicaciones_comercial").And.Contain("preferencia")
             .And.Contain("Nunca").And.Contain("ignora esa parte");
@@ -319,8 +319,8 @@ public sealed class clsRedactorCotizacionLlmTests
         new("CLIENTE SAS", "Nacional", [new clsRutaRedaccion("Buenaventura", "Bogotá D.C.")], "3S3", ["Cargue"], "COP");
 
     /// <summary>
-    /// Cotización en USD costeada (flete 2.550.000, margen 15 %, TRM 4.000) y un conexo (Cargue, 85.000). HU-021: los conexos son filas de
-    /// la ruta (todas van en el precio); el que antes estaba excluido ya no existe.
+    /// Cotización en USD costeada (flete 2.550.000, margen 15 %, TRM 4.000) y un conexo (Cargue, 85.000). Los conexos son filas de
+    /// la ruta (todos van en el precio).
     /// </summary>
     private static clsCotizacionSolicitud CotizacionCosteada()
     {

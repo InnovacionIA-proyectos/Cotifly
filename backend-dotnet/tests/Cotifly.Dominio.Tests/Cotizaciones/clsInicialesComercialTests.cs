@@ -3,7 +3,7 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
 /// <summary>
-/// Iniciales del comercial para el folio (ADR-011, decisión del 2026-09-25): dos letras A–Z en mayúscula, la primera del primer
+/// Iniciales del comercial para el folio (ADR-011): dos letras A–Z en mayúscula, la primera del primer
 /// nombre y la primera del primer apellido (la penúltima palabra cuando hay tres o más), sin partículas ni tildes.
 /// </summary>
 public sealed class clsInicialesComercialTests

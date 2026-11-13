@@ -24,7 +24,7 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
     /// <summary>Tiempo máximo del redactor en la API de aceptación (<c>IA:TiempoRedaccionSegundos</c>; en producción, 15).</summary>
     public const int TiempoRedaccionSegundos = 1;
 
-    /// <summary>Modelo guionizado del escenario (HU-013.5): la API nunca llama a un proveedor de IA real.</summary>
+    /// <summary>Modelo guionizado del escenario: la API nunca llama a un proveedor de IA real.</summary>
     public clsChatClientGuionizado Modelo { get; } = new();
 
     [Given("la API web de Cotifly conectada a Nexo con el cliente {string} de BP {string}")]
@@ -35,7 +35,7 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
             extra: new Dictionary<string, string?> { ["IA:TiempoRedaccionSegundos"] = TiempoRedaccionSegundos.ToString(System.Globalization.CultureInfo.InvariantCulture) }));
     }
 
-    /// <summary>HU-023.4 (#159): la misma API con <c>Nexo:EnviarGrupoRutaId</c> y <c>Nexo:EnviarDatosCubicador</c> encendidas.</summary>
+    /// <summary>La misma API con <c>Nexo:EnviarGrupoRutaId</c> y <c>Nexo:EnviarDatosCubicador</c> encendidas.</summary>
     [Given("la API web de Cotifly conectada a Nexo con el grupo de ruta y los datos del cubicador y el cliente {string} de BP {string}")]
     public void DadoLaApiConNexoYDatosDelCubicador(string nit, string bp)
     {
@@ -77,7 +77,7 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
     public Task CuandoEnviaACosteo(string alias, string nit, string cotizacion) => EnviarACosteoAsync(alias, nit, cotizacion, null);
 
     /// <summary>
-    /// <c>POST /web/solicitudes-costeo</c> con el formulario ampliado; <paramref name="moneda"/> (HU-013.7) solo viaja si no es <c>null</c>.
+    /// <c>POST /web/solicitudes-costeo</c> con el formulario ampliado; <paramref name="moneda"/> solo viaja si no es <c>null</c>.
     /// Con 201 asocia el alias al folio del servidor.
     /// </summary>
     public async Task EnviarACosteoAsync(string alias, string nit, string cotizacion, string? moneda, string? deadline = null)
@@ -185,7 +185,7 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
     [When("{string} marca el resultado de {string} como {string} con el motivo {string} y el comentario {string}")]
     public async Task CuandoMarcaResultado(string alias, string cotizacion, string resultado, string motivo, string comentario)
     {
-        // HU-036.3 (#207): con el costeo listo el comercial finaliza antes de marcar el resultado.
+        // Con el costeo listo el comercial finaliza antes de marcar el resultado.
         await FinalizarSiCorrespondeAsync(alias, Folio(cotizacion));
         await web.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{Folio(cotizacion)}/resultado", web.Sesion(alias).Access,
             clsApiWebPruebas.Json(new { resultado, motivo, comentario }));
@@ -224,7 +224,7 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
         (await Columna(cotizacion, "motivoRechazo")).Should().BeNull();
     }
 
-    // HU-013.14 (ADR-018 §17): consistencia del costeo al entregar y al registrar el resultado.
+    // Consistencia del costeo (ADR-018 §17) al entregar y al registrar el resultado.
     [Given("que Nexo costea la solicitud en la misma petición del alta")]
     public void DadoQueNexoAutoCostea() => _nexo.AutoCostear = true;
 
@@ -264,7 +264,7 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
         json.GetProperty("precio_final").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null);
     }
 
-    // HU-013.17 (#127): perdida solo en Cotifly cuando el cliente desiste antes del costeo.
+    // Perdida solo en Cotifly cuando el cliente desiste antes del costeo.
     [When("{string} marca {string} como perdida porque {string}")]
     public async Task CuandoMarcaPerdidaSinCosteo(string alias, string cotizacion, string motivo)
     {
@@ -300,7 +300,7 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
     public clsNexoFalso Nexo => _nexo;
 
     /// <summary>
-    /// HU-036.3 (#207): lo que hace el frontend antes del PDF y del resultado: si el costeo de <paramref name="folio"/> está listo
+    /// Lo que hace el frontend antes del PDF y del resultado: si el costeo de <paramref name="folio"/> está listo
     /// (<c>autocosteo</c> o <c>entregada</c> con precio), sin finalizar y sin entregar al cliente, el comercial lo finaliza con el
     /// <c>ETag</c> vigente. Si no corresponde (sin precio, ya finalizada, chat), no hace nada. Las respuestas de estas llamadas no quedan
     /// como la última del escenario.
@@ -331,14 +331,14 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
         finalizar.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
         finalizar.Headers.TryAddWithoutValidation("If-Match", costeo.Headers.ETag?.Tag);
         using var respuesta = await web.Api.Cliente.SendAsync(finalizar);
-        // Una enviada al cliente sin resultado (antes de HU-036) responde 200 igual; lo único inesperado es un error.
+        // Una enviada al cliente sin resultado y sin finalizar responde 200 igual; lo único inesperado es un error.
         respuesta.StatusCode.Should().Be(HttpStatusCode.OK, await respuesta.Content.ReadAsStringAsync());
     }
 
     /// <summary>
-    /// HU-021 (decisión 3): el dueño de <paramref name="cotizacion"/> agrega en Cotifly (ruta 1) un conexo de costo <paramref name="valor"/>;
-    /// Cotifly lo crea en Nexo y guarda el valor que Nexo calcula. El polling ya no importa los conexos que aparezcan en Nexo. HU-043.2
-    /// (#251): <paramref name="venta"/> es su precio de venta en el catálogo de Nexo (<c>null</c>: se cotiza al costo).
+    /// El dueño de <paramref name="cotizacion"/> agrega en Cotifly (ruta 1) un conexo de costo <paramref name="valor"/>;
+    /// Cotifly lo crea en Nexo y guarda el valor que Nexo calcula. El polling no importa los conexos que aparezcan en Nexo.
+    /// <paramref name="venta"/> es su precio de venta en el catálogo de Nexo (<c>null</c>: se cotiza al costo).
     /// </summary>
     public async Task AgregarConexoEnCotiflyAsync(string cotizacion, string nombre, decimal valor, decimal? venta = null)
     {
@@ -351,13 +351,13 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
     /// <summary>Conexos que la propia prueba agregó en Cotifly (cada uno es un <c>POST .../conexos</c> a Nexo).</summary>
     public int ConexosAgregadosPorLaPrueba { get; private set; }
 
-    /// <summary>Fuente principal de la TRM del escenario (DolarApi falsa, HU-013.7).</summary>
+    /// <summary>Fuente principal de la TRM del escenario (DolarApi falsa).</summary>
     public clsDolarApiFalso DolarApi => _dolarApi;
 
-    /// <summary>Fuente de respaldo de la TRM del escenario (Superfinanciera falsa, HU-013.7).</summary>
+    /// <summary>Fuente de respaldo de la TRM del escenario (Superfinanciera falsa).</summary>
     public clsTrmFalso Superfinanciera => _superfinanciera;
 
-    /// <summary>Asocia el alias de la cotización al folio que devolvió el servidor (pasos de otros archivos, HU-013.10).</summary>
+    /// <summary>Asocia el alias de la cotización al folio que devolvió el servidor (pasos de otros archivos).</summary>
     public void Registrar(string cotizacion, string folio) => _folios[cotizacion] = folio;
 
     public string Folio(string cotizacion) =>
@@ -366,7 +366,7 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
     public Task<string?> Columna(string cotizacion, string columna) => ColumnaDelFolio(Folio(cotizacion), columna);
 
     /// <summary>
-    /// Una columna de la cotización <paramref name="folio"/>. HU-021: <c>costeoId</c> es <c>solicitudNexoId</c>; el costo, el margen y su
+    /// Una columna de la cotización <paramref name="folio"/>. <c>costeoId</c> es <c>solicitudNexoId</c>; el costo, el margen y su
     /// origen, los de la ruta 1; la carga (peso, vehículo, carrocería), la de su primer camión; el resto, de la cabecera.
     /// </summary>
     public static Task<string?> ColumnaDelFolio(string folio, string columna)
@@ -389,7 +389,7 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
     {
         var json = Formulario(nit);
         json = moneda is null ? json : json[..json.LastIndexOf('}')] + ",\"moneda\":" + System.Text.Json.JsonSerializer.Serialize(moneda) + "}";
-        // HU-018.1 (#155): la fecha límite del formulario (cabecera).
+        // La fecha límite del formulario (cabecera).
         return deadline is null ? json : json[..json.LastIndexOf('}')] + ",\"deadline\":" + System.Text.Json.JsonSerializer.Serialize(deadline) + "}";
     }
 
@@ -405,7 +405,7 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
         clase_contenedor = "CNT40.HC",
         peso_kg = 28500,
 
-        // Formato plano anterior (una ruta, HU-021.6 lo conserva): los municipios se resuelven por nombre y cada mercancía lleva su tipo.
+        // Formato plano (una ruta, se conserva por compatibilidad): los municipios se resuelven por nombre y cada mercancía lleva su tipo.
         posiciones = new object[]
         {
             new { codigo_mercancia = CodigoMercancia, descripcion = "Estiba", cantidad = 20, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = 1424.95m },
@@ -413,10 +413,10 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
         },
     });
 
-    /// <summary>Tipo de mercancía del catálogo del cubicador de las mercancías del formulario (HU-021.6).</summary>
+    /// <summary>Tipo de mercancía del catálogo del cubicador de las mercancías del formulario.</summary>
     public const string TipoMercancia = "6f1c2a52-8d1e-4f5b-9a63-0c1b2d3e4f50";
 
-    /// <summary>HU-023.3: código del tipo de mercancía en el catálogo del cubicador (lo que manda el contrato nuevo).</summary>
+    /// <summary>Código del tipo de mercancía en el catálogo del cubicador (lo que manda el contrato).</summary>
     public const string CodigoMercancia = "CAFE_EN_ESTIBAS";
 
     public void Dispose()

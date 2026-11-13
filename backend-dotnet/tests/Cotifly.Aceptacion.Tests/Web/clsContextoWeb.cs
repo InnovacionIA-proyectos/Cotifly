@@ -38,11 +38,11 @@ public sealed class clsContextoWeb : IDisposable
     /// <summary>Encabezado <c>ETag</c> de la última respuesta (concurrencia optimista, ADR-018 §8), o <c>null</c>.</summary>
     public string? UltimoEtag { get; private set; }
 
-    /// <summary>Encabezado <c>Location</c> de la última respuesta (201 de la versión nueva, HU-013.4), o <c>null</c>.</summary>
+    /// <summary>Encabezado <c>Location</c> de la última respuesta (201 de la versión nueva), o <c>null</c>.</summary>
     public string? UltimaUbicacion { get; private set; }
 
     /// <summary>
-    /// <c>createdAt</c> explícito y creciente para las cotizaciones de los pasos "tiene la cotización web" (#117): una por minuto desde
+    /// <c>createdAt</c> explícito y creciente para las cotizaciones de los pasos "tiene la cotización web": una por minuto desde
     /// <see cref="clsRelojFijable.HoraBase"/>, así "la más reciente primero" sigue el orden del <c>.feature</c> y no el del reloj real.
     /// </summary>
     public DateTimeOffset SiguienteHoraCreacion() => _horaBase.AddMinutes(_creadas++);
@@ -52,7 +52,7 @@ public sealed class clsContextoWeb : IDisposable
     /// <summary>API ya armada por el escenario (ej. conectada al Nexo falso del costeo, ADR-015).</summary>
     public void Iniciar(clsApiWebPruebas api) => _api = api;
 
-    /// <summary>API con configuración y reemplazos de prueba (el agente guionizado y Google falso, #12 parte C).</summary>
+    /// <summary>API con configuración y reemplazos de prueba (el agente guionizado y Google falso).</summary>
     public void Iniciar(IDictionary<string, string?>? extra, Action<Microsoft.AspNetCore.Hosting.IWebHostBuilder> configurar) =>
         _api = new clsApiWebPruebas(clsEntornoAceptacion.BaseDatos, extra: extra, configurar: configurar);
 

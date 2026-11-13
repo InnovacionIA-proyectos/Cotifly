@@ -10,7 +10,7 @@ using Microsoft.OpenApi;
 namespace Cotifly.Api.Tests.Contrato;
 
 /// <summary>
-/// HU-021.11 (#138): el "documento" que la API genera de sí misma (sus endpoints con sus <c>ProducesResponseType</c> y los DTOs de
+/// El "documento" que la API genera de sí misma (sus endpoints con sus <c>ProducesResponseType</c> y los DTOs de
 /// <see cref="clsContratoRutasTests.MapaDtos"/>) contra <c>specs/openapi.yaml</c>:
 /// <list type="bullet">
 /// <item>cada esquema alcanzable desde una operación de <c>/web/*</c> o <c>/pdfs</c> tiene su DTO (la comparación exacta de propiedades

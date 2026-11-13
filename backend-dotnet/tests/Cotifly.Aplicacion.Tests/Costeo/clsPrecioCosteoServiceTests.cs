@@ -7,8 +7,8 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// Margen sobre el costeo de Nexo (HU-005.7, ADR-015 §5): el costo de Nexo pasa por la fórmula del módulo de Precio (HU-003.4) con el
-/// margen guardado al enviar; nunca se muestra como precio final. HU-021: el costo es del camión y el precio de la ruta; la lectura
+/// Margen sobre el costeo de Nexo (ADR-015 §5): el costo de Nexo pasa por la fórmula del módulo de Precio con el margen guardado al
+/// enviar; nunca se muestra como precio final. El costo es del camión y el precio de la ruta; la lectura
 /// completa es <see cref="clsLecturaCosteo.AplicarFoto"/> (camiones, estado de la solicitud y precio).
 /// </summary>
 public sealed class clsPrecioCosteoServiceTests
@@ -32,9 +32,9 @@ public sealed class clsPrecioCosteoServiceTests
         cotizacion.CosteoListoAt.Should().Be(_ahora);
     }
 
-    // HU-021 (decisión 3): Cotifly es la fuente de los conexos de la ruta; la lectura del costeo NO importa los conexos de Nexo, salvo
-    // los que Cotifly agregó y no pudo leer (marca ConexosPendientesDeLeer). Ya no hay "incluido/excluido": el conexo de la ruta va en
-    // su precio. HU-043.2 (#251): a su venta (valorVenta de Nexo), sin margen; sin venta (Nexo anterior), al costo.
+    // Cotifly es la fuente de los conexos de la ruta; la lectura del costeo NO importa los conexos de Nexo, salvo los que Cotifly agregó
+    // y no pudo leer (marca ConexosPendientesDeLeer). El conexo de la ruta va en su precio a su venta (valorVenta de Nexo), sin margen;
+    // sin venta, al costo.
     [Fact]
     public void LosConexosDeNexoSoloSeTraenConLaMarcaYVanEnElPrecioASuVentaSinMargen()
     {
@@ -81,7 +81,7 @@ public sealed class clsPrecioCosteoServiceTests
     {
         var cotizacion = Cotizacion(conMargen: false);
 
-        // HU-021: la lectura sí cambia el camión (estado y flete), pero la ruta queda sin precio.
+        // La lectura sí cambia el camión (estado y flete), pero la ruta queda sin precio.
         Aplicar(cotizacion, Foto(2_000_000m), _ahora);
 
         cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.Autocosteo);
@@ -130,7 +130,7 @@ public sealed class clsPrecioCosteoServiceTests
     private bool Aplicar(clsCotizacionSolicitud cotizacion, clsCosteoConsultadoNexo foto, DateTimeOffset ahora, clsConexosPendientesNexo? pendientes = null) =>
         clsLecturaCosteo.AplicarFoto(cotizacion, foto, ahora, new clsOpcionesCosteoNexo(), _servicio, pendientes);
 
-    // ------------------------------------------------------------------ Regresión #135: reimportación de conexos
+    // ------------------------------------------------------------------ Reimportación de conexos
 
     [Fact]
     public void ConLaMarcaSoloSeImportanLosConexosNuevosYUnQuitadoEnCotiflyNoVuelve()

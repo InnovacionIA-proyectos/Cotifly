@@ -6,8 +6,8 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
 /// <summary>
-/// Agregado de HU-021 (#130, ADR-019): cabecera → rutas → camiones, mercancías y conexos. Reglas de <c>CAMBIOS_BACKEND</c> §9: totales
-/// guardados por ruta y cabecera (§9.1), levante copiado a cada camión (decisión 4) y resumen del estado "el más atrasado" (§9.2).
+/// Agregado de la cotización por rutas (ADR-019): cabecera → rutas → camiones, mercancías y conexos. Reglas de <c>CAMBIOS_BACKEND</c> §9: totales
+/// guardados por ruta y cabecera (§9.1), levante copiado a cada camión y resumen del estado "el más atrasado" (§9.2).
 /// </summary>
 public sealed class clsAgregadoRutasTests
 {
@@ -223,9 +223,9 @@ public sealed class clsAgregadoRutasTests
     }
 
     [Fact]
-    public void Issue261_ElPrecioDeVentaDelConexoSigueAlPrecioAlCrearActualizarYAjustarLaCantidad()
+    public void ElPrecioDeVentaDelConexoSigueAlPrecioAlCrearActualizarYAjustarLaCantidad()
     {
-        // #261 punto 4; desde HU-043.2 (#251), sin precio de venta conocido precioVenta = precio (se cotiza al costo); el costo no cambia.
+        // Sin precio de venta conocido precioVenta = precio (se cotiza al costo); el costo no cambia.
         var ruta = clsCotizacionMuestra.Formulario().PrimeraRuta!;
 
         ruta.AgregarOActualizarConexo("CX-1", "Cargue", 10_000m, 2m);
@@ -239,10 +239,10 @@ public sealed class clsAgregadoRutasTests
     }
 
     [Fact]
-    public void HU014_ElIdDelCatalogoYLaCategoriaSeGuardanAlCrearYCompletanUnaFilaViejaSinPisarLosGuardados()
+    public void ElIdDelCatalogoYLaCategoriaSeGuardanAlCrearYCompletanUnaFilaViejaSinPisarLosGuardados()
     {
         var ruta = clsCotizacionMuestra.Formulario().PrimeraRuta!;
-        ruta.AgregarOActualizarConexo("FILA-1", "Cargue", 10_000m, 1m);   // fila anterior a #188: sin id del catálogo ni categoría
+        ruta.AgregarOActualizarConexo("FILA-1", "Cargue", 10_000m, 1m);   // fila sin id del catálogo ni categoría
         ruta.AgregarOActualizarConexo(new clsCambioConexo("CAT-2", "Escolta", 5_000m, 1m, "CAT-2", " adicional "));
 
         ruta.AgregarOActualizarConexo(new clsCambioConexo("fila-1", null, 10_000m, 1m, "CAT-1", "logistico"))
@@ -259,7 +259,7 @@ public sealed class clsAgregadoRutasTests
     }
 
     [Fact]
-    public void HU014_EnOrdenConFilasMezcladasPoneLosNumeradosPrimeroYLosNullDetras()
+    public void EnOrdenConFilasMezcladasPoneLosNumeradosPrimeroYLosNullDetras()
     {
         var ruta = Guid.NewGuid();
         var sinNumeroA = clsVehiculoLineaSolicitud.Crear(ruta, "N1", null, 1m, null, null, null);
@@ -276,7 +276,7 @@ public sealed class clsAgregadoRutasTests
     }
 
     [Fact]
-    public void HU014_AgregarVehiculoNumeraDespuesDelMayorYNuncaRepite()
+    public void AgregarVehiculoNumeraDespuesDelMayorYNuncaRepite()
     {
         var ruta = clsCotizacionMuestra.Formulario().PrimeraRuta!;
         var antes = ruta.VehiculosOrdenados.Select(v => v.OrdenVehiculo).ToList();
@@ -287,7 +287,7 @@ public sealed class clsAgregadoRutasTests
         ruta.VehiculosOrdenados.Last().Should().BeSameAs(nuevo);
     }
 
-    // ------------------------------------------------------------------ Margen por ruta (HU-021.8, #135, decisión 6)
+    // ------------------------------------------------------------------ Margen por ruta
 
     [Fact]
     public void ElAjusteDeUnaRutaSoloCambiaEsaRutaYElTotal()
@@ -310,7 +310,7 @@ public sealed class clsAgregadoRutasTests
         var cotizacion = clsCotizacionMuestra.LicitacionCosteada([1_000_000m]);
         cotizacion.AgregarRuta(new clsLineaSolicitudCosteo { Origen = "A", Destino = "B", PesoKg = 1m }, 1, 3);
 
-        // Decisión del usuario (#135): el ajuste es ruta por ruta; la ruta 2 sin costeo no bloquea el de la ruta 1.
+        // El ajuste es ruta por ruta; la ruta 2 sin costeo no bloquea el de la ruta 1.
         cotizacion.ValidarAjusteMargen(1, 0.20m, null).Should().BeNull();
         cotizacion.ValidarAjusteMargen(2, 0.20m, null)!.Codigo.Should().Be(clsCodigosError.CosteoNoListo);
         cotizacion.AplicarMargenNegociado(1, 0.20m, _ahora).Valor.Should().BeTrue();
@@ -337,7 +337,7 @@ public sealed class clsAgregadoRutasTests
     [Fact]
     public void ReemplazarLosCamionesDeUnaRutaGuardaElPlanDelCubicadorSoloAntesDeEnviarANexo()
     {
-        // HU-023.3 (#158): recalcular una ruta (pendiente_envio) reemplaza sus camiones y guarda el resultado del cubicador.
+        // Recalcular una ruta (pendiente_envio) reemplaza sus camiones y guarda el resultado del cubicador.
         var cotizacion = clsCotizacionMuestra.Formulario();
         var ruta = cotizacion.PrimeraRuta!;
         var id = Guid.NewGuid();
@@ -369,7 +369,7 @@ public sealed class clsAgregadoRutasTests
     {
         var posicion = new clsPosicionCarga("Naranja", 10, 100m, 80m, 60m, 20m);
 
-        // HU-023.3 (#158): el código del catálogo del cubicador (codigo_mercancia) reemplaza al uuid.
+        // El código del catálogo del cubicador (codigo_mercancia) reemplaza al uuid.
         clsMercancia.Crear(Guid.NewGuid(), 1, null, posicion).Error.Mensaje.Should().Contain("codigo_mercancia");
         clsMercancia.Crear(Guid.NewGuid(), 1, " ", posicion).EsFallo.Should().BeTrue();
         clsMercancia.Crear(Guid.NewGuid(), 1, new string('X', 65), posicion).EsFallo.Should().BeTrue("codigoMercancia es NVARCHAR(64)");
@@ -410,7 +410,7 @@ public sealed class clsAgregadoRutasTests
         lineas.Should().OnlyContain(l => l.Linea.Origen == "Buenaventura" && l.Linea.Destino == "Bogotá D.C.");
     }
 
-    // ------------------------------------------------------------------ Correcciones del núcleo (2026-10-08, ADR-019)
+    // ------------------------------------------------------------------ Correcciones del núcleo (ADR-019)
 
     [Fact]
     public void UnCamionSinEstadoEnUnaSolicitudEnviadaCuentaComoPendienteDeCosteo()

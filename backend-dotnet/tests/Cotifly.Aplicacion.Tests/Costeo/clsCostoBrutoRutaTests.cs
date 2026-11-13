@@ -6,9 +6,9 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// HU-039.1 (#218): <c>RutaCosteo.costo_final</c>, el costo bruto de la ruta (fletes + retorno + levante + conexos, sin margen) que la
-/// vista del costeo expone al dueño. Siempre en COP y <c>null</c> en los mismos casos que <c>precio_final_linea</c>. Reversa de la regla
-/// de ADR-015 §5 confirmada por la Gerencia Comercial el 2026-10-27.
+/// <c>RutaCosteo.costo_final</c>, el costo bruto de la ruta (fletes + retorno + levante + conexos, sin margen) que la
+/// vista del costeo expone al dueño. Siempre en COP y <c>null</c> en los mismos casos que <c>precio_final_linea</c>. Revierte la regla
+/// de ADR-015 §5.
 /// </summary>
 public sealed class clsCostoBrutoRutaTests
 {
@@ -21,7 +21,7 @@ public sealed class clsCostoBrutoRutaTests
 
         ruta.CostoFinal.Should().Be(2_700_000m, "flete + retorno, sin margen");
         ruta.CostoFinal.Should().Be(cotizacion.PrimeraRuta!.CostoFinal);
-        // HU-018.2 (#294): sin conexos, el costo del transporte es el costo bruto (fletes + retorno + levante).
+        // Sin conexos, el costo del transporte es el costo bruto (fletes + retorno + levante).
         ruta.CostoTransporte.Should().Be(2_700_000m);
         ruta.PrecioFinalLinea.Should().Be(3_176_471m);
     }
@@ -34,7 +34,7 @@ public sealed class clsCostoBrutoRutaTests
         var ruta = clsCosteoCotizacionService.Vista(cotizacion, null).Rutas.Single();
 
         ruta.CostoFinal.Should().Be(2_720_000m, "2.550.000 de flete + 2 × 85.000 de conexo");
-        // HU-018.2 (#294): el costo del transporte NO incluye los conexos, solo fletes + retorno + levante.
+        // El costo del transporte NO incluye los conexos, solo fletes + retorno + levante.
         ruta.CostoTransporte.Should().Be(2_550_000m, "solo el flete; los conexos quedan fuera del transporte");
     }
 
@@ -99,15 +99,15 @@ public sealed class clsCostoBrutoRutaTests
 
         var sinCosto = vista.SinCostoFinal();
 
-        // HU-018.2 (#294): la vista del gerente quita el costo bruto Y el costo del transporte (los dos son costo); nada más cambia.
+        // La vista del gerente quita el costo bruto Y el costo del transporte (los dos son costo); nada más cambia.
         sinCosto.Rutas.Should().OnlyContain(r => r.CostoFinal == null && r.CostoTransporte == null);
         sinCosto.Should().BeEquivalentTo(vista, o => o.Excluding(v => v.Rutas));
         sinCosto.Rutas.Should().BeEquivalentTo(vista.Rutas, o => o.Excluding(r => r.CostoFinal).Excluding(r => r.CostoTransporte));
         vista.Rutas.Should().OnlyContain(r => r.CostoFinal != null && r.CostoTransporte != null, "la vista del dueño no cambia");
     }
     /// <summary>
-    /// Validador (#218): el costo bruto que ve el dueño es exactamente el costo del que sale el precio de la ruta (también en USD con la
-    /// TRM fijada), y la suma de las rutas es el costo interno de la cotización. HU-043.2 (#251): el margen se aplica solo al transporte
+    /// El costo bruto que ve el dueño es exactamente el costo del que sale el precio de la ruta (también en USD con la
+    /// TRM fijada), y la suma de las rutas es el costo interno de la cotización. El margen se aplica solo al transporte
     /// (costo bruto − costo de los conexos) y los conexos suman su venta sin margen.
     /// </summary>
     [Theory]
@@ -134,7 +134,7 @@ public sealed class clsCostoBrutoRutaTests
         vista.Rutas.Sum(r => r.CostoFinal).Should().Be(cotizacion.CostoFinal, "la suma de las rutas es el costo de la cotización");
     }
 
-    /// <summary>Validador (#218): el costo bruto no cambia con el margen; solo cambia el precio.</summary>
+    /// <summary>El costo bruto no cambia con el margen; solo cambia el precio.</summary>
     [Fact]
     public void AjustarElMargenNoCambiaElCostoBrutoSoloElPrecio()
     {

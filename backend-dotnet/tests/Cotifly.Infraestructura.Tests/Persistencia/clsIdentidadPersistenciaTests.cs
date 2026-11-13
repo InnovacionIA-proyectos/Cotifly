@@ -145,16 +145,16 @@ public sealed class clsIdentidadPersistenciaTests(clsBaseDatosPruebas baseDatos)
         roles.Single(r => r.Codigo == RolInterno.Director).IdRolExterno.Should().Be(clsBaseDatosPruebas.RolExternoDirector);
         roles.Single(r => r.Codigo == RolInterno.Comercial).IdRolExterno.Should().Be(clsBaseDatosPruebas.RolExternoComercial);
         roles.Single(r => r.Codigo == RolInterno.GerenteComercial).IdRolExterno.Should().Be(clsBaseDatosPruebas.RolExternoGerente);
-        // HU-040.3 (#258, script 23): director es sensible (requiereAltaManual); los ordinarios no.
+        // Script 23: director es sensible (requiereAltaManual); los ordinarios no.
         roles.Single(r => r.Codigo == RolInterno.Director).RequiereAltaManual.Should().BeTrue();
         roles.Single(r => r.Codigo == RolInterno.Comercial).RequiereAltaManual.Should().BeFalse();
         roles.Single(r => r.Codigo == RolInterno.GerenteComercial).RequiereAltaManual.Should().BeFalse();
     }
 
     [Fact]
-    public async Task HU0403_ListarAsignacionesTraeActivasEInactivasYReactivarODesactivarSeGuardan()
+    public async Task ListarAsignacionesTraeActivasEInactivasYReactivarODesactivarSeGuardan()
     {
-        // HU-040.3 (#258): la reconciliación del login lee las filas rastreadas y las reactiva/desactiva; aquí se comprueba el ida y vuelta.
+        // La reconciliación del login lee las filas rastreadas y las reactiva/desactiva; aquí se comprueba el ida y vuelta.
         var usuario = await CrearUsuarioAsync();
         var roles = await ConsultarAsync(s => s.GetRequiredService<IClsRolRepository>().ListarActivosAsync(Ct));
         var comercial = roles.Single(r => r.Codigo == RolInterno.Comercial);
@@ -209,7 +209,7 @@ public sealed class clsIdentidadPersistenciaTests(clsBaseDatosPruebas baseDatos)
     [Fact]
     public async Task ListarTodosTraeATodosLosUsuariosYLosRolesSeLeenConMasDeDosMilIds()
     {
-        // HU-037.3 (#211): el alcance del director sin regional (todos los usuarios) y sus roles, sin el tope de 2100 parámetros.
+        // El alcance del director sin regional (todos los usuarios) y sus roles, sin el tope de 2100 parámetros.
         var uno = await CrearUsuarioAsync();
         var dos = await CrearUsuarioAsync();
         var gerente = (await ConsultarAsync(s => s.GetRequiredService<IClsRolRepository>().ListarActivosAsync(Ct)))
@@ -229,9 +229,9 @@ public sealed class clsIdentidadPersistenciaTests(clsBaseDatosPruebas baseDatos)
     }
 
     [Fact]
-    public async Task HU0401_UnUsuarioPuedeTenerVariasAsignacionesActivasPeroNoElMismoRolDosVeces()
+    public async Task UnUsuarioPuedeTenerVariasAsignacionesActivasPeroNoElMismoRolDosVeces()
     {
-        // HU-040.1 (#229, script 16): sin uq_usuariosRoles_usuarioId_activo caben varias asignaciones activas (una por rol); la unicidad
+        // Script 16: sin uq_usuariosRoles_usuarioId_activo caben varias asignaciones activas (una por rol); la unicidad
         // usuario + rol sigue.
         var usuario = await CrearUsuarioAsync();
         var roles = await ConsultarAsync(s => s.GetRequiredService<IClsRolRepository>().ListarActivosAsync(Ct));
@@ -260,9 +260,9 @@ public sealed class clsIdentidadPersistenciaTests(clsBaseDatosPruebas baseDatos)
     }
 
     [Fact]
-    public async Task HU0401_ElRefreshGuardaElRolDeLaSesionYUnoSinRolSeLeeComoNulo()
+    public async Task ElRefreshGuardaElRolDeLaSesionYUnoSinRolSeLeeComoNulo()
     {
-        // HU-040.1 (#229, script 16): TokensRefresco.rolSesion (NULL en los refresh emitidos antes del 16) y su CHECK.
+        // Script 16: TokensRefresco.rolSesion (NULL en los refresh emitidos antes del 16) y su CHECK.
         var usuario = await CrearUsuarioAsync();
         var hashConRol = Convert.ToHexStringLower(Guid.NewGuid().ToByteArray()) + Convert.ToHexStringLower(Guid.NewGuid().ToByteArray());
         var hashSinRol = Convert.ToHexStringLower(Guid.NewGuid().ToByteArray()) + Convert.ToHexStringLower(Guid.NewGuid().ToByteArray());

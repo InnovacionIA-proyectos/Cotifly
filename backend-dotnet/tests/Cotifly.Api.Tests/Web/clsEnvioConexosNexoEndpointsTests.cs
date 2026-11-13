@@ -9,7 +9,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// Decisión 10 del usuario (HU-021.9, #136): los conexos capturados con la ruta llegan a la cotización de Nexo con un envío diferido. El
+/// Los conexos capturados con la ruta llegan a la cotización de Nexo con un envío diferido. El
 /// polling los envía UNA vez, pegados a la línea del primer camión vigente de su ruta, la primera vez que Nexo costea esa línea. Por HTTP
 /// con SQL Server real y el Nexo falso: envío único, POST incierto con relectura (sin duplicados), camión descartado y dos réplicas.
 /// </summary>
@@ -158,12 +158,12 @@ public sealed class clsEnvioConexosNexoEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// #228 (observación del E2E real 2026-10-27B): con un conexo que Nexo todavía no tiene (<c>estado_nexo = pendiente</c>: el envío diferido
+    /// Con un conexo que Nexo todavía no tiene (<c>estado_nexo = pendiente</c>: el envío diferido
     /// falló y se reintentará) finalizar es 409 <c>COTIZACION_NO_FINALIZABLE</c> con <c>detalle.motivo = conexos_pendientes_en_nexo</c>, sin
     /// tocar nada. Cuando el polling lo deja en Nexo (<c>enviado</c>), se finaliza.
     /// </summary>
     [Fact]
-    public async Task Obs228_ConUnConexoPendienteEnNexoNoSeFinalizaHastaQueElPollingLoEnvie()
+    public async Task ConUnConexoPendienteEnNexoNoSeFinalizaHastaQueElPollingLoEnvie()
     {
         var (sesion, folio) = await CapturarAsync();
         var solicitud = _nexo.SolicitudesCreadas[^1];
@@ -187,12 +187,12 @@ public sealed class clsEnvioConexosNexoEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// #228: un conexo agregado con <c>POST .../costeo/servicios-conexos</c> ya está en Nexo (Nexo lo creó y la relectura lo confirma): queda
+    /// Un conexo agregado con <c>POST .../costeo/servicios-conexos</c> ya está en Nexo (Nexo lo creó y la relectura lo confirma): queda
     /// <c>enviado</c> en el momento, no <c>pendiente</c>. Si no, en una cotización entregada (el polling ya no la consulta) quedaría
     /// <c>pendiente</c> para siempre y nunca se podría finalizar.
     /// </summary>
     [Fact]
-    public async Task Obs228_UnConexoAgregadoPorElPostQuedaEnviadoYNoImpideFinalizarUnaEntregada()
+    public async Task UnConexoAgregadoPorElPostQuedaEnviadoYNoImpideFinalizarUnaEntregada()
     {
         var (sesion, folio) = await CapturarAsync();
         var solicitud = _nexo.SolicitudesCreadas[^1];
@@ -213,12 +213,12 @@ public sealed class clsEnvioConexosNexoEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// Validación #228: un conexo agregado con el POST ANTES de #228 (o cuyo registro falló) quedó sin el registro <c>enviado</c>: se ve
-    /// <c>pendiente</c> aunque Nexo ya lo tiene, y en una entregada el polling ya no pasa. Finalizar relee Nexo, lo deja <c>enviado</c> y
-    /// finaliza; antes de la corrección quedaba bloqueada para siempre.
+    /// Un conexo agregado con el POST sin el registro <c>enviado</c> (dato heredado o registro fallido) se ve <c>pendiente</c> aunque
+    /// Nexo ya lo tiene, y en una entregada el polling ya no pasa. Finalizar relee Nexo, lo deja <c>enviado</c> y finaliza, sin quedar
+    /// bloqueada para siempre.
     /// </summary>
     [Fact]
-    public async Task Validacion228_UnPendienteQueNexoYaTieneNoBloqueaParaSiempreUnaEntregada()
+    public async Task UnPendienteQueNexoYaTieneNoBloqueaParaSiempreUnaEntregada()
     {
         var (sesion, folio) = await CapturarAsync();
         var solicitud = _nexo.SolicitudesCreadas[^1];
@@ -231,7 +231,7 @@ public sealed class clsEnvioConexosNexoEndpointsTests : IDisposable
             agregar.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
-        // Como antes de #228: el POST no dejaba registro del envío diferido.
+        // Dato heredado: el POST no dejó registro del envío diferido.
         await clsBaseDatosPruebas.EjecutarAsync(_entorno.BaseDatos.CadenaCotifly,
             $"WITH u AS (SELECT TOP 1 * FROM dbo_cotifly.EventosHerramienta WHERE herramienta = 'conexos_envio_nexo' AND input LIKE '%{folio}%' ORDER BY createdAt DESC) DELETE FROM u");
         (await RutasAsync(sesion, folio))[0].GetProperty("servicios_conexos").EnumerateArray().Select(c => c.GetProperty("estado_nexo").GetString())
@@ -251,7 +251,7 @@ public sealed class clsEnvioConexosNexoEndpointsTests : IDisposable
         $"SELECT CAST(IIF(finalizadaAt IS NULL, 0, 1) AS bit) FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'");
 
     /// <summary>
-    /// Corrección de la segunda validación de #136: un conexo agregado con el POST queda guardado con el id de la FILA de la cotización de
+    /// Un conexo agregado con el POST queda guardado con el id de la FILA de la cotización de
     /// Nexo. En esa misma solicitud no se reenvía (ya está); en la solicitud nueva de la re-solicitud (mismo folio) y en la -vN viaja con el
     /// id del CATÁLOGO, junto con el capturado, en un solo POST que Nexo acepta.
     /// </summary>
@@ -308,7 +308,7 @@ public sealed class clsEnvioConexosNexoEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// Corrección de la tercera validación de #136: una caída del catálogo de conexos de Nexo no consume intentos ni deja nada
+    /// Una caída del catálogo de conexos de Nexo no consume intentos ni deja nada
     /// fallido_definitivo. En la solicitud nueva de una re-solicitud viajan el Cargue (id del catálogo, en la caché) y el Almacenamiento
     /// (guardado con el id de la fila de Nexo: se resuelve por nombre). Con el catálogo caído 10 ciclos, el Cargue llega igual y el
     /// Almacenamiento espera (una sola fila en_espera); cuando el catálogo vuelve, llega. Cada uno, una sola vez.
@@ -505,7 +505,7 @@ public sealed class clsEnvioConexosNexoEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// Endurecimiento B (#199): si el catálogo de conexos de Nexo responde 403 al leer el costo de los conexos de la captura, la captura
+    /// Si el catálogo de conexos de Nexo responde 403 al leer el costo de los conexos de la captura, la captura
     /// responde 403 <c>NEXO_SIN_PERMISO</c> (declarado en el contrato) sin guardar nada ni capturar en Nexo.
     /// </summary>
     [Fact]
@@ -521,7 +521,7 @@ public sealed class clsEnvioConexosNexoEndpointsTests : IDisposable
         _nexo.SolicitudesCreadas.Should().BeEmpty("nada se captura en Nexo");
     }
 
-    /// <summary>Endurecimiento B (#199): lo mismo en la re-solicitud con versión nueva, que relee el costo de los conexos.</summary>
+    /// <summary>Lo mismo en la re-solicitud con versión nueva, que relee el costo de los conexos.</summary>
     [Fact]
     public async Task ConElCatalogoDeConexosEn403LaReSolicitudEs403NexoSinPermisoSinCrearVersion()
     {
@@ -604,8 +604,8 @@ public sealed class clsEnvioConexosNexoEndpointsTests : IDisposable
         + $"AND input LIKE '%{folio}%' AND outputResumen LIKE '%\"estado\":\"{estado}\"%'");
 
     /// <summary>
-    /// #173: las respuestas de <c>PUT .../costeo/margen</c> y <c>PUT .../costeo/servicios-conexos</c> traen el <c>estado_nexo</c> de cada
-    /// conexo igual que el GET (antes salía <c>null</c>), y la categoría es la del catálogo de Nexo (<c>adicional</c>), no <c>logistico</c> fijo.
+    /// Las respuestas de <c>PUT .../costeo/margen</c> y <c>PUT .../costeo/servicios-conexos</c> traen el <c>estado_nexo</c> de cada
+    /// conexo igual que el GET (no <c>null</c>), y la categoría es la del catálogo de Nexo (<c>adicional</c>), no <c>logistico</c> fijo.
     /// </summary>
     [Fact]
     public async Task LosPutDeMargenYDeConexosTraenElEstadoNexoYLaCategoriaDelCatalogoComoElGet()
@@ -620,7 +620,7 @@ public sealed class clsEnvioConexosNexoEndpointsTests : IDisposable
         nexo.CostearLinea(nexo.SolicitudesCreadas[^1], 0, 1_000_000m);
         await api.ProcesarPollingAsync(folio);
 
-        // HU-014 (#188, script 05): la captura guardó la categoría del catálogo con el conexo; el costeo la usa sin leer el catálogo.
+        // Script 05: la captura guardó la categoría del catálogo con el conexo; el costeo la usa sin leer el catálogo.
         using var guardada = await api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", sesion.Access);
         (await VerificarContratoAsync(guardada, "/web/cotizaciones/{folio}/costeo", _get, HttpStatusCode.OK))
             .GetProperty("rutas")[0].GetProperty("servicios_conexos")[0].GetProperty("categoria").GetString()
@@ -631,7 +631,7 @@ public sealed class clsEnvioConexosNexoEndpointsTests : IDisposable
                 + $"ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}'"))
             .Should().Be($"{Cargue}|adicional");
 
-        // Una fila anterior a #188 (sin categoría guardada): con la caché fría el GET no espera al catálogo de Nexo; responde con la
+        // Una fila anterior al script 05 (sin categoría guardada): con la caché fría el GET no espera al catálogo de Nexo; responde con la
         // categoría de respaldo y la calienta en segundo plano.
         await clsBaseDatosPruebas.EjecutarAsync(_entorno.BaseDatos.CadenaCotifly,
             "UPDATE s SET categoriaServicioConexo = NULL FROM dbo_cotifly.CotizacionServiciosConexos s JOIN dbo_cotifly.CotizacionLineasSolicitud l "
@@ -665,8 +665,8 @@ public sealed class clsEnvioConexosNexoEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// DEF-1027-3 (#226, E2E real del 2026-10-27): la respuesta de <c>POST .../costeo/servicios-conexos</c> trae el <c>estado_nexo</c> (y
-    /// la categoría) de cada conexo igual que el <c>GET .../costeo</c> inmediato; antes salía <c>null</c>.
+    /// La respuesta de <c>POST .../costeo/servicios-conexos</c> trae el <c>estado_nexo</c> (y la categoría) de cada conexo igual que
+    /// el <c>GET .../costeo</c> inmediato, no <c>null</c>.
     /// </summary>
     [Fact]
     public async Task ElPostDeConexosTraeElEstadoNexoComoElGet()

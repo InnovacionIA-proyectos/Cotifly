@@ -2,7 +2,7 @@ using Cotifly.Dominio.Metricas;
 
 namespace Cotifly.Dominio.Tests.Metricas;
 
-/// <summary>Definiciones de los indicadores del tablero (HU-010.1, ADR-016 §4), una por prueba.</summary>
+/// <summary>Definiciones de los indicadores del tablero (ADR-016 §4), una por prueba.</summary>
 public sealed class clsCalculadoraMetricasTests
 {
     private static readonly Guid _ana = Guid.NewGuid();
@@ -206,7 +206,7 @@ public sealed class clsCalculadoraMetricasTests
     [Fact]
     public void B3LoGanadoSaleDeLaVersionGanadaYNoDeLaVigente()
     {
-        // #173: la -v2 vigente no tiene precio; la v1 (ganada) costó 4.000.000 y se cotizó en 5.000.000.
+        // La -v2 vigente no tiene precio; la v1 (ganada) costó 4.000.000 y se cotizó en 5.000.000.
         var cadena = Fila(precio: null, costo: null, ganada: true, versiones: 2) with
         {
             VersionResultado = new clsVersionResultadoMetrica(5_000_000m, "COP", 0m, 4_000_000m),
@@ -227,7 +227,7 @@ public sealed class clsCalculadoraMetricasTests
     }
 
     [Fact]
-    public void HU0341_CadaMesTraeSusGananciasYSuCosteoConLaReglaDeLosIndicadores()
+    public void CadaMesTraeSusGananciasYSuCosteoConLaReglaDeLosIndicadores()
     {
         var abril = new DateTimeOffset(2026, 4, 10, 12, 0, 0, _bogota);
         var marzo = new[]
@@ -242,7 +242,7 @@ public sealed class clsCalculadoraMetricasTests
             Fila(precio: 1_000m, costo: 500_000m, ganada: true, moneda: "USD", trm: 0m, creada: abril),
             // Ganada sin costo: suma valor ganado, no ganancia.
             Fila(precio: 300_000m, costo: null, ganada: true, creada: abril),
-            // B3 (#173): lo ganado sale de la versión ganada, no de la vigente sin precio ni costo.
+            // Lo ganado sale de la versión ganada, no de la vigente sin precio ni costo.
             Fila(precio: null, costo: null, ganada: true, creada: abril, versiones: 2) with
             {
                 VersionResultado = new clsVersionResultadoMetrica(5_000_000m, "COP", 0m, 4_000_000m),
@@ -260,7 +260,7 @@ public sealed class clsCalculadoraMetricasTests
     }
 
     [Fact]
-    public void HU0341_LaSumaDeLosMesesCuadraConLosIndicadoresDelPeriodo()
+    public void LaSumaDeLosMesesCuadraConLosIndicadoresDelPeriodo()
     {
         // Montos de 2 decimales como en la base (DECIMAL(18,2)) y valores en USD redondeados por fila: la suma no se descuadra.
         var azar = new Random(201);
@@ -310,7 +310,7 @@ public sealed class clsCalculadoraMetricasTests
     }
 
     [Fact]
-    public void HU0341_DiciembreYEneroDelAnioSiguienteSonMesesDistintosEnHoraDeBogota()
+    public void DiciembreYEneroDelAnioSiguienteSonMesesDistintosEnHoraDeBogota()
     {
         // 23:30 del 31 de diciembre en Bogotá ya es 1 de enero en UTC: cuenta en diciembre. 00:30 del 1 de enero cuenta en enero.
         var diciembre = Fila(precio: 1_000_000m, costo: 900_000m, ganada: true, creada: new DateTimeOffset(2025, 12, 31, 23, 30, 0, _bogota));
@@ -325,7 +325,7 @@ public sealed class clsCalculadoraMetricasTests
     }
 
     [Fact]
-    public void HU0341_UnMesConGanadasPorDebajoDelCostoTieneGananciasNegativas()
+    public void UnMesConGanadasPorDebajoDelCostoTieneGananciasNegativas()
     {
         // Una ganada vendida por debajo del costo resta: la serie no recorta en 0 (como indicadores.ganancias).
         var serie = clsCalculadoraMetricas.SerieMensual(
@@ -336,7 +336,7 @@ public sealed class clsCalculadoraMetricasTests
     }
 
     [Fact]
-    public void HU0341_MontosEnElTopeDeLaBaseNoSeDesbordanYCuadran()
+    public void MontosEnElTopeDeLaBaseNoSeDesbordanYCuadran()
     {
         // DECIMAL(18,2): 9.999.999.999.999.999,99 por fila; en USD, × una TRM de 5.000. 600 filas en 12 meses.
         const decimal Tope = 9_999_999_999_999_999.99m;
@@ -360,9 +360,9 @@ public sealed class clsCalculadoraMetricasTests
     }
 
     [Fact]
-    public void HU0341_ElRefactorAMontosDeNoCambiaLosIndicadores()
+    public void ElRefactorAMontosDeNoCambiaLosIndicadores()
     {
-        // Las fórmulas de los indicadores antes de #201, escritas a mano, contra filas al azar (USD con y sin TRM, B3, sin costo).
+        // Las fórmulas de los indicadores escritas a mano, contra filas al azar (USD con y sin TRM, ganada en una versión anterior, sin costo).
         var azar = new Random(3401);
         decimal? Monto() => azar.Next(8) == 0 ? null : azar.Next(1, 90_000_000) + (azar.Next(100) / 100m);
         var filas = Enumerable.Range(0, 300).Select(_ =>

@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
-/// HU-023 (#176, auditoría A2): el detector del script 07 distingue "no aplicado" de "no se puede verificar" (sin VIEW DEFINITION), y
+/// El detector del script 07 distingue "no aplicado" de "no se puede verificar" (sin VIEW DEFINITION), y
 /// <c>BaseDatos:MotivoBusquedaAgotada</c> (<c>auto|habilitado|deshabilitado</c>) lo fija sin consultar. Sin base (no requiere Docker).
 /// </summary>
 public sealed class clsDetectorMotivosBdTests

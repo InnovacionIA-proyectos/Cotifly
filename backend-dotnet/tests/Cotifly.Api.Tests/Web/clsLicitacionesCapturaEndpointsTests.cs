@@ -8,9 +8,9 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// HU-013.11 (#108): las filas de <c>POST /web/licitaciones</c> cumplen las reglas de captura del formulario, por HTTP contra SQL
-/// Server real y el Nexo falso: códigos de catálogo (G2), reglas condicionales (G3), ids de municipio resueltos sin adivinar (G6),
-/// horas por línea (G5) y lo mismo en el primer envío y el reintento.
+/// Las filas de <c>POST /web/licitaciones</c> cumplen las reglas de captura del formulario, por HTTP contra SQL
+/// Server real y el Nexo falso: códigos de catálogo, reglas condicionales, ids de municipio resueltos sin adivinar,
+/// horas por línea y lo mismo en el primer envío y el reintento.
 /// </summary>
 [Collection(clsColeccionApiWeb.Nombre)]
 [Trait("Categoria", "Integracion")]
@@ -24,8 +24,8 @@ public sealed class clsLicitacionesCapturaEndpointsTests : IDisposable
     public clsLicitacionesCapturaEndpointsTests(clsEntornoApiWeb entorno)
     {
         _entorno = entorno;
-        // HU-014 (#188): Captura:AceptarVehiculoCliente está encendida por defecto. Estas pruebas verifican la decisión 7 (el vehículo del
-        // pliego se ignora), así que la apagan; el camino con la bandera encendida lo cubren clsCosteoEndpointsTests y la captura web.
+        // Captura:AceptarVehiculoCliente está encendida por defecto. Estas pruebas verifican que el vehículo del pliego se ignora, así
+        // que la apagan; el camino con la bandera encendida lo cubren clsCosteoEndpointsTests y la captura web.
         _api = clsApiWebPruebas.ConNexo(entorno.BaseDatos, _nexo, new Dictionary<string, string?> { ["Captura:AceptarVehiculoCliente"] = "false" });
     }
 
@@ -56,11 +56,11 @@ public sealed class clsLicitacionesCapturaEndpointsTests : IDisposable
             .Select(e => (e.GetProperty("indice").GetInt32(), e.GetProperty("campo").GetString(), e.GetProperty("codigo").GetString()))
             .Should().BeEquivalentTo(new[]
             {
-                // HU-021.6 (decisión 7): las filas 1 y 2 traen vehículo y carrocería fuera de catálogo, pero ya no se capturan: se ignoran.
+                // Las filas 1 y 2 traen vehículo y carrocería fuera de catálogo, pero no se capturan: se ignoran.
                 (3, "tipologia", "CODIGO_NO_CATALOGO"),
                 (4, "clase_contenedor", "CAMPO_NO_APLICA"),
                 (5, "clase_contenedor", "CAMPO_REQUERIDO"),
-                (6, "valor_levante_contenedor", "CAMPO_NO_APLICA"), // DEF-1027B-3 (#228): el nombre del contrato aunque llegue el viejo
+                (6, "valor_levante_contenedor", "CAMPO_NO_APLICA"), // El nombre del contrato aunque llegue el viejo
                 (7, "origen", "MUNICIPIO_AMBIGUO"),
                 (8, "destino", "MUNICIPIO_NO_ENCONTRADO"),
                 (9, "clase_contenedor", "CAMPO_NO_APLICA"),
@@ -149,7 +149,7 @@ public sealed class clsLicitacionesCapturaEndpointsTests : IDisposable
         await VerificarErrorNegocioAsync(sinIds, "MUNICIPIOS_NO_DISPONIBLE");
         _nexo.SolicitudesCreadas.Should().BeEmpty();
 
-        // HU-021.6 (decisión 2): el nombre se copia del catálogo por el id, así que con ids tampoco se guarda sin catálogo.
+        // El nombre se copia del catálogo por el id, así que con ids tampoco se guarda sin catálogo.
         using var conIds = await _api.EnviarAsync(HttpMethod.Post, Ruta, sesion.Access,
             Cuerpo([Valida() with { origen_municipio_id = 76109, destino_municipio_id = 11001 }]));
         conIds.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
@@ -183,7 +183,7 @@ public sealed class clsLicitacionesCapturaEndpointsTests : IDisposable
         _nexo.AltaFalla = null;
         var altasAntes = Altas().Count;
 
-        // Como una licitación guardada antes de #108: texto libre y sin ids de municipio.
+        // Como una licitación heredada: texto libre y sin ids de municipio.
         await clsBaseDatosPruebas.EjecutarAsync(_entorno.BaseDatos.CadenaCotifly,
             "UPDATE l SET origenMunicipioId = NULL FROM dbo_cotifly.CotizacionLineasSolicitud l "
             + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}' AND l.orden = 2; "
@@ -226,11 +226,11 @@ public sealed class clsLicitacionesCapturaEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// HU-030.1 (#184): una fila de contenedor de la licitación acepta <c>peso_con_tara_kg</c> (igual que la captura): se guarda en la ruta y
+    /// Una fila de contenedor de la licitación acepta <c>peso_con_tara_kg</c> (igual que la captura): se guarda en la ruta y
     /// viaja a Nexo como el peso de su línea (la fila no trae mercancías: sin posiciones). En una fila de otra clase de viaje es <c>CAMPO_NO_APLICA</c> en esa fila.
     /// </summary>
     [Fact]
-    public async Task HU0301_UnaFilaDeContenedorConPesoConTaraLoGuardaYLoMandaANexoYEnOtraClaseEsCampoNoAplica()
+    public async Task UnaFilaDeContenedorConPesoConTaraLoGuardaYLoMandaANexoYEnOtraClaseEsCampoNoAplica()
     {
         var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         var contenedor = Valida() with { tipologia = "Contenedor", clase_viaje = "Contenedor", clase_contenedor = "CNT40.HC", peso_con_tara_kg = 31_800m };

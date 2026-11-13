@@ -14,7 +14,7 @@ using NSubstitute;
 namespace Cotifly.Infraestructura.Tests.CatalogosFlete;
 
 /// <summary>
-/// HU-031.1 (#194): el diccionario de alias de Nexo (<c>GET /api/catalogos/alias</c>, NEXO #321) en vivo y con caché. Encontrado, no
+/// El diccionario de alias de Nexo (<c>GET /api/catalogos/alias</c>) en vivo y con caché. Encontrado, no
 /// encontrado, error y caída: nunca lanza; la caché sirve la copia con Nexo caído y no insiste durante un minuto tras un fallo.
 /// </summary>
 public sealed class clsAliasNexoTests : IDisposable
@@ -143,8 +143,8 @@ public sealed class clsAliasNexoTests : IDisposable
     }
 
     /// <summary>
-    /// Validación #194: un comercial sin <c>idUsuarioExterno</c> no consulta Nexo, y ese "no disponible" no es una caída de Nexo: la caché no
-    /// frena durante un minuto a los demás comerciales (antes, el primero sin identidad dejaba a todos sin diccionario).
+    /// Un comercial sin <c>idUsuarioExterno</c> no consulta Nexo, y ese "no disponible" no es una caída de Nexo: la caché no
+    /// frena durante un minuto a los demás comerciales.
     /// </summary>
     [Fact]
     public async Task UnComercialSinIdentidadEnNexoNoDejaSinDiccionarioALosDemas()

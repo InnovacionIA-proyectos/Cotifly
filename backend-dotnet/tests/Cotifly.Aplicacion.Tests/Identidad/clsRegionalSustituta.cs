@@ -7,7 +7,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Identidad;
 
 /// <summary>
-/// HU-037.3 (#211): un <see cref="IClsRegionalUsuario"/> simulado que aplica la regla REAL del alcance por rol
+/// Un <see cref="IClsRegionalUsuario"/> simulado que aplica la regla REAL del alcance por rol
 /// (<see cref="clsRegionalUsuarioService.ComponerAlcanceAsync"/> y <see cref="clsRegionalUsuarioService.ComponerPermisoAsync"/>) sobre sus
 /// propias respuestas de <c>ResolverAsync</c>, <c>ListarMiembrosAsync</c> y <c>EsMiembroDeMiRegionalAsync</c>. Así las pruebas de los
 /// consumidores (tablero, listado regional, detalle y PDF) siguen simulando la regional sin copiar la regla.

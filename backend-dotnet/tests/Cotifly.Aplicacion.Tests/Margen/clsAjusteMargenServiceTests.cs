@@ -11,7 +11,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Margen;
 
 /// <summary>
-/// Margen negociado (HU-003.4): valida por método, persiste el ajuste con el comercial, devuelve origen
+/// Margen negociado: valida por método, persiste el ajuste con el comercial, devuelve origen
 /// <c>negociado</c> y calcula el precio con el margen manual. Paridad con <c>registrar_ajuste_margen</c>
 /// (<c>diferencia = aplicado − política</c>, <c>AJUSTE_COTIZACION_INVALIDA</c>).
 /// </summary>
@@ -149,7 +149,7 @@ public sealed class clsAjusteMargenServiceTests
     [Fact]
     public async Task ConUnaCotizacionDeUnaRutaElAjusteGuardaEsaRuta()
     {
-        // HU-021.8 (#135): MargenAjustes.lineaSolicitudId apunta a la ruta real (la única de la cotización, o la indicada).
+        // MargenAjustes.lineaSolicitudId apunta a la ruta real (la única de la cotización, o la indicada).
         var cotizacion = Cotifly.Pruebas.Comun.clsCotizacionMuestra.Costeada(folio: "PCN-RUTA-1", usuarioId: _usuario);
         _cotizaciones.ObtenerPorIdDelUsuarioAsync(cotizacion.Id, _usuario, Arg.Any<CancellationToken>()).Returns(Task.FromResult<clsCotizacionSolicitud?>(cotizacion));
         clsMargenAjuste? agregado = null;

@@ -206,7 +206,7 @@ public sealed class clsFolioIntegracionTests(clsBaseDatosPruebas baseDatos) : cl
     }
 
     /// <summary>
-    /// HU-021.9 (#136): con rutas de líneas de negocio distintas, "Mis cotizaciones" dice "Varias"; el margen y su origen son los de la
+    /// Con rutas de líneas de negocio distintas, "Mis cotizaciones" dice "Varias"; el margen y su origen son los de la
     /// ruta 1 (los de cada ruta están en el costeo). Contra SQL Server real.
     /// </summary>
     [Fact]

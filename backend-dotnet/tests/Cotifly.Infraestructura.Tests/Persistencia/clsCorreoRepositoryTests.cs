@@ -7,8 +7,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
-/// Consultas de <c>Correos</c>/<c>CorreoDestinatarios</c>. La regla de deduplicación pasó a <c>clsCorreoService</c> (#11,
-/// deuda de ADR-008); aquí se prueban los datos que la alimentan (envíos exitosos desde un instante) y la consulta de
+/// Consultas de <c>Correos</c>/<c>CorreoDestinatarios</c>. La regla de deduplicación vive en <c>clsCorreoService</c>
+/// (ADR-008); aquí se prueban los datos que la alimentan (envíos exitosos desde un instante) y la consulta de
 /// destinatarios previos por cliente.
 /// </summary>
 [Collection(clsColeccionSqlServer.Nombre)]

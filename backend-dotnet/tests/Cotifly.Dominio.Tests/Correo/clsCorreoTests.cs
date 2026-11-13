@@ -33,7 +33,7 @@ public sealed class clsCorreoTests
     [InlineData("cliente@")]
     [InlineData("con espacio@empresa.com")]
     [InlineData("")]
-    // Auditoría #199: MailSender separa una entrada con "," o ";" en varias direcciones; una sola dirección por destinatario.
+    // MailSender separa una entrada con "," o ";" en varias direcciones; una sola dirección por destinatario.
     [InlineData("a@empresa.com,b@otra.com")]
     [InlineData("a@empresa.com;b@otra.com")]
     [InlineData("Cliente <a@empresa.com>")]

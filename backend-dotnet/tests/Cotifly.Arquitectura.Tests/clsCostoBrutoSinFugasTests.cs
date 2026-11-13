@@ -11,11 +11,11 @@ using Cotifly.Aplicacion.Metricas.DTOs;
 namespace Cotifly.Arquitectura.Tests;
 
 /// <summary>
-/// HU-039.1 (#218): el costo bruto de la ruta (<see cref="clsRutaCosteo.CostoFinal"/>) solo sale por la vista del costeo del dueño
+/// El costo bruto de la ruta (<see cref="clsRutaCosteo.CostoFinal"/>) solo sale por la vista del costeo del dueño
 /// (<c>GET .../costeo</c>, las acciones que la devuelven y el detalle). Reversa acotada de ADR-015 §5: ni el chat o asistente, ni el PDF, ni
 /// el correo, ni el Excel de la licitación, ni las métricas, ni "Mis cotizaciones" o el listado regional usan esa vista, y fuera de las
 /// métricas ninguno trae un costo propio en su respuesta. Las métricas sí traen sus agregados de costeo (<c>costeo_total</c>,
-/// <c>costeo_ganadas</c>, <c>ganancias</c>, HU-010 y HU-034): son sumas de periodo, no el costo de una ruta, y no empiezan por
+/// <c>costeo_ganadas</c>, <c>ganancias</c>): son sumas de periodo, no el costo de una ruta, y no empiezan por
 /// <c>Costo</c>, por eso pasan <see cref="LasRespuestasDeLosDemasCaminosNoTienenCampoDeCosto"/>.
 /// </summary>
 public sealed class clsCostoBrutoSinFugasTests
@@ -75,13 +75,13 @@ public sealed class clsCostoBrutoSinFugasTests
     }
 
     /// <summary>
-    /// Validador (#218): en todo el árbol del detalle por folio (cabecera, costeo, captura y totales) el único campo de costo es el costo
+    /// En todo el árbol del detalle por folio (cabecera, costeo, captura y totales) el único campo de costo es el costo
     /// bruto de las rutas del costeo, el que <c>SinCostoFinal()</c> pone en <c>null</c> para el gerente.
     /// </summary>
     [Fact]
     public void ElDetalleSoloTraeElCostoBrutoEnLasRutasDeSuCosteo()
     {
-        // HU-018.2 (#294): la ruta del costeo trae ahora DOS campos de costo: el costo bruto y el costo del transporte (fletes + retorno +
+        // La ruta del costeo trae DOS campos de costo: el costo bruto y el costo del transporte (fletes + retorno +
         // levante, sin conexos ni margen). Siguen sin aparecer el desglose (fletes, retorno, levante) ni el costo de cada camión o conexo.
         var raiz = $"{nameof(clsDetalleCotizacion)}.{nameof(clsDetalleCotizacion.Costeo)}.{nameof(clsCosteoCotizacion.Rutas)}";
         CamposConCosto(typeof(clsDetalleCotizacion), nameof(clsDetalleCotizacion), []).Should()
@@ -91,13 +91,13 @@ public sealed class clsCostoBrutoSinFugasTests
     [Fact]
     public void LaRutaDelCosteoSoloTraeElCostoBrutoYElCostoDelTransporteSinDesglose()
     {
-        // HU-018.2 (#294): dos campos de costo (CostoFinal y CostoTransporte); nunca fletes, retorno, levante ni el costo de cada camión o conexo.
+        // Dos campos de costo (CostoFinal y CostoTransporte); nunca fletes, retorno, levante ni el costo de cada camión o conexo.
         CamposConCosto(typeof(clsRutaCosteo), nameof(clsRutaCosteo), []).Should()
             .Equal($"{nameof(clsRutaCosteo)}.{nameof(clsRutaCosteo.CostoFinal)}", $"{nameof(clsRutaCosteo)}.{nameof(clsRutaCosteo.CostoTransporte)}");
     }
 
     /// <summary>
-    /// HU-018.1 (#155, parte C): en el Excel de la cotización (<c>GET /web/cotizaciones/{folio}/excel</c>) todo campo de costo
+    /// En el Excel de la cotización (<c>GET /web/cotizaciones/{folio}/excel</c>) todo campo de costo
     /// (<c>Costo*</c>) o de margen (<c>Margen*</c>: con el margen y el precio se deduce el costo) cuelga de una propiedad <c>Interno</c>, que
     /// es lo que <see cref="clsExcelCotizacion.SinCostos"/> quita para el gerente y el director. Un campo de costo nuevo fuera de
     /// <c>Interno</c> rompe esta prueba antes de llegar al Excel del lector que no es dueño.
@@ -114,7 +114,7 @@ public sealed class clsCostoBrutoSinFugasTests
     }
 
     /// <summary>
-    /// HU-018.1 (#155, parte C): el Excel de la cotización no usa la vista del costeo (<see cref="clsCosteoCotizacion"/>): arma su propio
+    /// El Excel de la cotización no usa la vista del costeo (<see cref="clsCosteoCotizacion"/>): arma su propio
     /// modelo desde lo guardado, con lo interno aparte.
     /// </summary>
     [Fact]
@@ -134,7 +134,7 @@ public sealed class clsCostoBrutoSinFugasTests
     }
 
     /// <summary>
-    /// HU-018.1 (#155, parte C): <see cref="clsExcelCotizacion.SinCostos"/> deja en <c>null</c> TODAS las propiedades <c>Interno</c> del
+    /// <see cref="clsExcelCotizacion.SinCostos"/> deja en <c>null</c> TODAS las propiedades <c>Interno</c> del
     /// árbol (cabecera, rutas, camiones, conexos y totales), con todas llenas en la versión del dueño.
     /// </summary>
     [Fact]

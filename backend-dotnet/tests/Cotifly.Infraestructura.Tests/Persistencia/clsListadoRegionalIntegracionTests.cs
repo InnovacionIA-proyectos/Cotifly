@@ -6,7 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
-/// HU-016.1 (#154): <see cref="IClsCotizacionRepository.ListarPorUsuariosAsync"/> contra SQL Server 2019 real: solo las cotizaciones de
+/// <see cref="IClsCotizacionRepository.ListarPorUsuariosAsync"/> contra SQL Server 2019 real: solo las cotizaciones de
 /// los usuarios pedidos (<c>WHERE usuarioId IN (...)</c>), con la misma proyección, el mismo orden (<c>createdAt DESC, folio DESC</c>) y el
 /// mismo tope que "Mis cotizaciones", aplicado al conjunto.
 /// </summary>
@@ -36,7 +36,7 @@ public sealed class clsListadoRegionalIntegracionTests(clsBaseDatosPruebas baseD
             (sinLinea.Folio, ana, (string?)null),
             (deLuis.Folio, luis, "Nacional"),
             (deAna.Folio, ana, "Nacional"));
-        // HU-018.2 (#294): la proyección también trae la carga sin cargar el agregado; la cotización sin rutas cuenta 0 y las demás 1.
+        // La proyección también trae la carga sin cargar el agregado; la cotización sin rutas cuenta 0 y las demás 1.
         filas.Select(f => f.Carga.NumeroRutas).Should().Equal(0, 1, 1);
     }
 
@@ -60,7 +60,7 @@ public sealed class clsListadoRegionalIntegracionTests(clsBaseDatosPruebas baseD
     [Fact]
     public async Task ConMasDeDosMilUsuariosNoChocaConElTopeDeParametrosDeSqlServer()
     {
-        // HU-037.3 (#211): el director sin regional pide las de todos los usuarios; la lista viaja como un solo parámetro.
+        // El director sin regional pide las de todos los usuarios; la lista viaja como un solo parámetro.
         var ana = await CrearUsuarioAsync();
         var deAna = NuevaCotizacion(ana);
         await GuardarAsync(deAna);

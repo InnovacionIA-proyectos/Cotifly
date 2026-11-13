@@ -17,7 +17,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// Ajuste de margen sobre el costeo (HU-013.2, ADR-018 §3, §8 y §11): precio recalculado con el módulo de Precio (el mismo cálculo
+/// Ajuste de margen sobre el costeo (ADR-018 §3, §8 y §11): precio recalculado con el módulo de Precio (el mismo cálculo
 /// que <see cref="clsPrecioService"/>), ajuste en <c>MargenAjustes</c>, PDF invalidado con historial, control de versión y auditoría.
 /// </summary>
 public sealed class clsAjusteMargenCosteoServiceTests
@@ -47,7 +47,7 @@ public sealed class clsAjusteMargenCosteoServiceTests
 
         resultado.EsExitoso.Should().BeTrue();
         var vista = resultado.Valor;
-        // HU-043.2 (#251): el precio de la ruta (y el total) es el flete con el margen de la ruta + la venta del conexo (85.000), sin margen.
+        // El precio de la ruta (y el total) es el flete con el margen de la ruta + la venta del conexo (85.000), sin margen.
         vista.PrecioFinal.Should().Be(_precios.Calcular(2_550_000m, 0.18m).Valor.Precio + 85_000m, "equivalencia con clsPrecioService");
         vista.PrecioFinal.Should().Be(3_194_756m);
         vista.MargenAplicado.Should().Be(0.18m);
@@ -133,7 +133,7 @@ public sealed class clsAjusteMargenCosteoServiceTests
     }
 
     [Fact]
-    public async Task HU0363_FinalizadaRespondePdfYaEnviadoConLaLlamadaParaCrearLaVersionSinTocarElPrecio()
+    public async Task FinalizadaRespondePdfYaEnviadoConLaLlamadaParaCrearLaVersionSinTocarElPrecio()
     {
         _cotizacion.Finalizar(_ana, clsCotizacionMuestra.Ahora);
         var precio = _cotizacion.PrecioFinal;
@@ -176,7 +176,7 @@ public sealed class clsAjusteMargenCosteoServiceTests
         await _auditoria.DidNotReceiveWithAnyArgs().RegistrarAsync(default!, default, default, default, default, default);
     }
 
-    // ------------------------------------------------------------------ HU-021.8 (#135, decisión 6): margen por ruta
+    // ------------------------------------------------------------------ Margen por ruta
 
     [Fact]
     public async Task ConUnaSolaRutaElAjusteSinRutaLaTomaYElAjusteGuardaEsaRuta()
@@ -285,8 +285,8 @@ public sealed class clsAjusteMargenCosteoServiceTests
         new(_cotizaciones, _ajustes, _unidad, _auditoria, Options.Create(new clsOpcionesPdf()));
 
     /// <summary>
-    /// Cotización costeada por Nexo: flete 2.550.000 con margen de la política (15 %) y el conexo Cargue de 85.000 en la ruta. HU-021:
-    /// el conexo es una fila de la ruta y su precio va en el de la ruta (2.635.000 / 0,85 = 3.100.000); ya no hay conexos "excluidos".
+    /// Cotización costeada por Nexo: flete 2.550.000 con margen de la política (15 %) y el conexo Cargue de 85.000 en la ruta. El
+    /// conexo es una fila de la ruta y su precio va en el de la ruta.
     /// </summary>
     public static clsCotizacionSolicitud Costeada(Guid usuarioId, string folio)
     {
@@ -303,7 +303,7 @@ public sealed class clsAjusteMargenCosteoServiceTests
     }
 
     /// <summary>
-    /// HU-036.3 (#207): <see cref="Costeada"/> ya finalizada por <paramref name="usuarioId"/> (el comercial aceptó el precio): la base de
+    /// <see cref="Costeada"/> ya finalizada por <paramref name="usuarioId"/> (el comercial aceptó el precio): la base de
     /// las pruebas del PDF y de los textos, que exigen la cotización finalizada.
     /// </summary>
     public static clsCotizacionSolicitud Finalizada(Guid usuarioId, string folio)

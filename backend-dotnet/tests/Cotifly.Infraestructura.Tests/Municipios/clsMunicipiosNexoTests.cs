@@ -53,7 +53,7 @@ public sealed class clsMunicipiosNexoTests : IDisposable
     [Fact]
     public async Task LaBusquedaVaContraCiudadesConElTextoYElDepartamentoYCompletaElPais()
     {
-        // HU-023 (#176, contrato con Nexo §3.1): los ids de origen/destino salen de GET /api/captura-solicitudes/ciudades (sin "pais").
+        // Contrato con Nexo §3.1: los ids de origen/destino salen de GET /api/captura-solicitudes/ciudades (sin "pais").
         _nexo.ResponderCandidatos(
             """
             [{"id":5001,"codigoDane":"05001","municipio":"Medellín","departamento":"Antioquia","nombreTarifasPlaza":null,"zonaTarificacion":null}]
@@ -185,7 +185,7 @@ public sealed class clsMunicipiosNexoTests : IDisposable
     [Fact]
     public async Task UnTiempoAgotadoQueNoPidioElLlamadorEsMunicipiosNoDisponible()
     {
-        // Así llega el tiempo agotado de HttpClient (deuda de #122: GET /web/municipios lo traduce a 503).
+        // Así llega el tiempo agotado de HttpClient (GET /web/municipios lo traduce a 503).
         _nexo.Fallar(new TaskCanceledException("Tiempo agotado (prueba).", new TimeoutException()))
             .Fallar(new TaskCanceledException("Tiempo agotado (prueba).", new TimeoutException()));
 

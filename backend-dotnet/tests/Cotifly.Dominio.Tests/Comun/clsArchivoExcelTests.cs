@@ -4,8 +4,8 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Dominio.Tests.Comun;
 
 /// <summary>
-/// HU-035.1 (#202): las reglas genéricas del Excel subido (presente, tamaño y extensión), en un lugar neutro y compartidas por el pliego
-/// de licitaciones y el Excel de mercancías: el pliego sigue respondiendo exactamente lo mismo.
+/// Las reglas genéricas del Excel subido (presente, tamaño y extensión), en un lugar neutro y compartidas por el pliego
+/// de licitaciones y el Excel de mercancías: el pliego responde exactamente lo mismo que con sus reglas propias.
 /// </summary>
 public sealed class clsArchivoExcelTests
 {

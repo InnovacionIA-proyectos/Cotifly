@@ -8,7 +8,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// <c>POST /web/cotizaciones/{folio}/resultado</c> (HU-005.14, ADR-015 §6) por HTTP con SQL Server real y el Nexo falso: dos
+/// <c>POST /web/cotizaciones/{folio}/resultado</c> (ADR-015 §6) por HTTP con SQL Server real y el Nexo falso: dos
 /// escrituras (Nexo primero), 409 de Nexo y Nexo caído sin cambio local, 404 para una ajena.
 /// </summary>
 [Collection(clsColeccionApiWeb.Nombre)]
@@ -34,7 +34,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
     {
         var (sesion, folio, solicitud) = await EnviarAsync(entregar: true);
 
-        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // Como el frontend
         using var respuesta = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access,
             """{"resultado":"perdida","motivo":"Valor muy alto","comentario":"Pidió 5 % menos"}""");
         var json = await VerificarContratoAsync(respuesta, Ruta, _post, HttpStatusCode.OK);
@@ -47,7 +47,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// HU-033 (#199, decisión 6): un borrador en Nexo (autocosteo) ya no es 409. El resultado queda solo en Cotifly, "pendiente" de
+    /// Un borrador en Nexo (autocosteo) no es 409. El resultado queda solo en Cotifly, "pendiente" de
     /// sincronizar; el polling, al ver la entrega de la Mesa, lo envía a Nexo una sola vez (con el comentario) y queda "sincronizado". El
     /// estado se ve en el detalle, en el costeo y en "Mis cotizaciones".
     /// </summary>
@@ -57,7 +57,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
         var (sesion, folio, solicitud) = await EnviarAsync(entregar: false);
         var antes = _nexo.Peticiones.Count;
 
-        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // Como el frontend
         using var respuesta = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access,
             """{"resultado":"ganada","comentario":"Contrato firmado"}""");
         var json = await VerificarContratoAsync(respuesta, Ruta, _post, HttpStatusCode.OK);
@@ -90,7 +90,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
     {
         var (sesion, folio, _) = await EnviarAsync(entregar: true);
 
-        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // Como el frontend
         using var respuesta = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"ganada"}""");
 
         (await VerificarContratoAsync(respuesta, Ruta, _post, HttpStatusCode.OK)).GetProperty("sincronizacion_resultado_nexo").GetString().Should().Be("sincronizado");
@@ -131,7 +131,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
         _nexo.Descartar(_nexo.SolicitudesCreadas[^1]);
         await _api.ProcesarPollingAsync(folio);
 
-        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // Como el frontend
         using var resultado = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"perdida","motivo":"Cliente desistió del servicio"}""");
         using var seguimiento = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/seguimiento", sesion.Access, """{"ganada":false,"motivo_rechazo":"Cliente desistió del servicio"}""");
 
@@ -144,11 +144,11 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
     public async Task CambiarUnResultadoYaDefinidoEs409SinCambioLocal()
     {
         var (sesion, folio, _) = await EnviarAsync(entregar: true);
-        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // Como el frontend
         using var primera = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"ganada"}""");
         primera.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // Como el frontend
         using var segunda = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"perdida","motivo":"Valor muy alto"}""");
 
         segunda.StatusCode.Should().Be(HttpStatusCode.Conflict);
@@ -164,7 +164,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
         var luis = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         _nexo.Caido = HttpStatusCode.ServiceUnavailable;
 
-        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // Como el frontend
         using var caido = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"ganada"}""");
         _nexo.Caido = null;
         using var ajena = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", luis.Access, """{"resultado":"ganada"}""");
@@ -187,7 +187,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
         await VerificarErrorNegocioAsync(respuesta, "USAR_RESULTADO_NEXO");
         using (var error = JsonDocument.Parse(await respuesta.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)))
         {
-            // HU-021.13: el detalle trae a dónde ir y que exige If-Match.
+            // El detalle trae a dónde ir y que exige If-Match.
             var detalle = error.RootElement.GetProperty("error").GetProperty("detalle");
             detalle.GetProperty("metodo").GetString().Should().Be("POST");
             detalle.GetProperty("endpoint").GetString().Should().Be($"/web/cotizaciones/{folio}/resultado");
@@ -197,7 +197,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
         (await EscalarAsync($"SELECT COALESCE(CAST(ganada AS nvarchar(5)), 'null') FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'")).Should().Be("null");
     }
 
-    // HU-013.14 (ADR-018 §17): el resultado y el costeo nunca quedan inconsistentes, gane quien gane la carrera con el polling.
+    // El resultado y el costeo (ADR-018 §17) nunca quedan inconsistentes, gane quien gane la carrera con el polling.
     [Fact]
     public async Task EntregadaEnNexoSinLeerYLuegoGanadaQuedaConPrecioPdfYMetrica()
     {
@@ -206,7 +206,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
         _nexo.Entregar(solicitud);
         (await EscalarAsync($"SELECT estadoCosteo FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'")).Should().Be("pendiente_costeo", "el polling aún no lo vio");
 
-        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // Como el frontend
         using var respuesta = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"ganada"}""");
         var json = await VerificarContratoAsync(respuesta, Ruta, _post, HttpStatusCode.OK);
 
@@ -216,7 +216,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
         _nexo.Resultado(solicitud).Should().Be("Ganada");
         (await EscalarAsync(SqlEstado(folio))).Should().Be("entregada|1|3000000|sin-agenda");
 
-        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // Como el frontend
         using var pdf = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
         pdf.StatusCode.Should().Be(HttpStatusCode.Conflict);
         await VerificarErrorNegocioAsync(pdf, "PDF_YA_ENVIADO"); // regla del PDF (§11) con resultado; ya no COSTEO_NO_LISTO
@@ -236,7 +236,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
         await _api.ProcesarPollingAsync(folio);
         var consultasAntes = Consultas(solicitud);
 
-        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // Como el frontend
         using var respuesta = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"perdida","motivo":"Valor muy alto"}""");
 
         (await VerificarContratoAsync(respuesta, Ruta, _post, HttpStatusCode.OK)).GetProperty("precio_final").GetDecimal().Should().Be(3_000_000m);
@@ -255,7 +255,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
         _nexo.Entregar(solicitud);
         _nexo.FallarConsultaTrasResultado = true;
 
-        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // Como el frontend
         using var respuesta = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"ganada"}""");
         var json = await VerificarContratoAsync(respuesta, Ruta, _post, HttpStatusCode.OK);
 
@@ -274,7 +274,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
     [Fact]
     public async Task LasEntregadasQueQuedaronSinPrecioSeReparanConLaRelectura()
     {
-        // Así quedaba una cotización con el defecto (antes de HU-013.14): entregada, ganada, sin precio y sin agenda.
+        // Una cotización inconsistente heredada: entregada, ganada, sin precio y sin agenda.
         var (_, folio, solicitud) = await EnviarSinPollingAsync();
         _nexo.Costear(solicitud, 2_550_000m);
         _nexo.Entregar(solicitud);
@@ -294,14 +294,14 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
         (await EscalarAsync(SqlDiagnosticoEntregadasSinPrecio + $" AND c.folio = '{folio}'")).Should().BeNull();
     }
 
-    // HU-013.17 (#127): el cliente desiste antes del costeo; la perdida queda solo en Cotifly.
+    // El cliente desiste antes del costeo; la perdida queda solo en Cotifly.
     [Fact]
     public async Task LaPerdidaSinCosteoQuedaSoloEnCotiflyConIfMatchYCuentaEnLasMetricas()
     {
         var (sesion, folio, solicitud) = await EnviarSinPollingAsync();
         var cuerpo = """{"resultado":"perdida","motivo":"Cliente desistió del servicio"}""";
 
-        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // Como el frontend
         using var sinIfMatch = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, cuerpo);
         sinIfMatch.StatusCode.Should().Be((HttpStatusCode)428);
 
@@ -336,7 +336,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
     public async Task SiNexoYaTieneOtroResultadoCotiflyLoTomaYRespondeConflicto()
     {
         var (sesion, folio, solicitud) = await EnviarAsync(entregar: true);
-        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // Como el frontend
         using (var primera = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"ganada"}"""))
         {
             primera.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -346,7 +346,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
         await clsBaseDatosPruebas.EjecutarAsync(_entorno.BaseDatos.CadenaCotifly,
             $"UPDATE dbo_cotifly.CotizacionesSolicitud SET ganada = NULL, marcadoAt = NULL WHERE folio = '{folio}'");
 
-        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // Como el frontend
         using var contraria = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"perdida","motivo":"Valor muy alto"}""");
 
         contraria.StatusCode.Should().Be(HttpStatusCode.Conflict);
@@ -356,16 +356,16 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// DEF-C-1 (E2E 2026-10-22): perdida sobre una ganada sincronizada. Nexo responde 409 <c>RESULTADO_YA_DEFINIDO</c> y Cotifly LEE el
-    /// resultado de Nexo (<c>GET /api/cotizaciones/{id}</c>, el id ya conocido); antes hacía <c>POST /api/cotizaciones</c> ("crear o
-    /// recuperar", una escritura). Además (OBS-C-2) repetir la ganada ya sincronizada responde 200 sin volver a llamar a Nexo.
+    /// Perdida sobre una ganada sincronizada. Nexo responde 409 <c>RESULTADO_YA_DEFINIDO</c> y Cotifly LEE el resultado de Nexo
+    /// (<c>GET /api/cotizaciones/{id}</c>, el id ya conocido), sin escribir con <c>POST /api/cotizaciones</c> ("crear o recuperar").
+    /// Repetir la ganada ya sincronizada responde 200 sin volver a llamar a Nexo.
     /// </summary>
     [Fact]
     public async Task ElResultadoYaDefinidoYElRepetidoNoEscribenDeMasEnNexo()
     {
         var (sesion, folio, solicitud) = await EnviarAsync(entregar: true);
         var cotizacionNexo = _nexo.CotizacionDe(solicitud)!;
-        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // Como el frontend
         using (var ganada = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"ganada"}"""))
         {
             ganada.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -375,13 +375,13 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
         var marcarAntes = _nexo.Llamadas(HttpMethod.Post, $"/api/cotizaciones/{cotizacionNexo}/resultado");
         marcarAntes.Should().Be(1);
 
-        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // Como el frontend
         using var repetida = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"ganada"}""");
         (await VerificarContratoAsync(repetida, Ruta, _post, HttpStatusCode.OK)).GetProperty("sincronizacion_resultado_nexo").GetString()
             .Should().Be("sincronizado");
         _nexo.Llamadas(HttpMethod.Post, $"/api/cotizaciones/{cotizacionNexo}/resultado").Should().Be(marcarAntes, "OBS-C-2: idempotente en Cotifly");
 
-        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // Como el frontend
         using var contraria = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"perdida","motivo":"Valor muy alto"}""");
         contraria.StatusCode.Should().Be(HttpStatusCode.Conflict);
         await VerificarErrorNegocioAsync(contraria, "RESULTADO_YA_DEFINIDO");
@@ -394,8 +394,8 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// E2E 2026-10-22: una perdida en <c>pendiente_costeo</c> cuya solicitud Nexo ya no reconoce (404 <c>SOLICITUD_NO_ENCONTRADA</c>) queda
-    /// como perdida <c>solo_cotifly</c>, igual que en <c>error_envio</c> (antes respondía <c>COSTEO_NEXO_SOLICITUD_NO_ENCONTRADA</c>).
+    /// Una perdida en <c>pendiente_costeo</c> cuya solicitud Nexo ya no reconoce (404 <c>SOLICITUD_NO_ENCONTRADA</c>) queda
+    /// como perdida <c>solo_cotifly</c>, igual que en <c>error_envio</c> (no <c>COSTEO_NEXO_SOLICITUD_NO_ENCONTRADA</c>).
     /// </summary>
     [Fact]
     public async Task LaPerdidaConLaSolicitudInexistenteEnNexoQuedaSoloEnCotifly()
@@ -405,7 +405,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
         using var costeo = await _api.EnviarAsync(HttpMethod.Get, $"/web/cotizaciones/{folio}/costeo", sesion.Access);
         var etag = costeo.Headers.ETag!.Tag;
 
-        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // Como el frontend
         using var respuesta = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access,
             """{"resultado":"perdida","motivo":"Cliente desistió del servicio"}""", ifMatch: etag);
 
@@ -416,7 +416,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// Endurecimiento B (#199): si Nexo ya no reconoce la cotización de Nexo del folio (404 <c>COTIZACION_NO_ENCONTRADA</c> al marcar), el
+    /// Si Nexo ya no reconoce la cotización de Nexo del folio (404 <c>COTIZACION_NO_ENCONTRADA</c> al marcar), el
     /// comercial recibe 409 <c>COTIZACION_NEXO_NO_ENCONTRADA</c> con el código de Nexo en <c>detalle.motivo</c>, no el 404 "no es tuya".
     /// </summary>
     [Fact]
@@ -425,7 +425,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
         var (sesion, folio, solicitud) = await EnviarAsync(entregar: true);
         _nexo.Olvidar(solicitud);
 
-        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // Como el frontend
         using var respuesta = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"ganada"}""");
 
         respuesta.StatusCode.Should().Be(HttpStatusCode.Conflict);

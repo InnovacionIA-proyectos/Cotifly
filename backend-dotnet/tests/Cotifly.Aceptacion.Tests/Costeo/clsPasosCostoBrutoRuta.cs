@@ -6,7 +6,7 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Costeo;
 
 /// <summary>
-/// Pasos de <c>specs/features/costo_bruto_ruta.feature</c> (HU-039.1, #218): <c>rutas[].costo_final</c> en el costeo y en el detalle,
+/// Pasos de <c>specs/features/costo_bruto_ruta.feature</c>: <c>rutas[].costo_final</c> en el costeo y en el detalle,
 /// solo para el dueño, y su ausencia en los demás caminos. Las cotizaciones son las de <see cref="clsPasosCosteo"/> (alias → folio); el
 /// envío, el costeo de Nexo, los conexos y el PDF son pasos de <see cref="clsPasosAjusteMargen"/> y <see cref="clsPasosMonedaCosteo"/>.
 /// </summary>
@@ -25,7 +25,7 @@ public sealed class clsPasosCostoBrutoRuta(clsContextoWeb web, clsPasosCosteo co
     public Task CuandoPrevisualiza(string alias, string cotizacion) =>
         web.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{costeo.Folio(cotizacion)}/correo/vista-previa", web.Sesion(alias).Access);
 
-    /// <summary>Validador (#218): el alias de la <c>-vN</c> que acaba de crear la re-solicitud (folio de la última respuesta).</summary>
+    /// <summary>El alias de la <c>-vN</c> que acaba de crear la re-solicitud (folio de la última respuesta).</summary>
     [Then("la versión nueva de la respuesta queda registrada como {string}")]
     public void EntoncesRegistraLaVersionNueva(string alias) => costeo.Registrar(alias, web.UltimoJson().GetProperty("folio").GetString()!);
 

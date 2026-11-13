@@ -5,7 +5,7 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Infraestructura.Tests.Configuracion;
 
 /// <summary>
-/// Identidad del comercial ante Nexo en un solo lugar (HU-023.4, #159, decisión 1 del 2026-10-13): todos los adaptadores mandan
+/// Identidad del comercial ante Nexo en un solo lugar: todos los adaptadores mandan
 /// <c>X-Portal-clsUsuario-Id</c>, el encabezado que valida <c>clsIdentidadPortalAuthenticationHandler</c> de Nexo. Cada adaptador lo
 /// prueba con su falso (<c>IdPortalUsuario</c> lee el encabezado nuevo y el falso responde 401 sin él).
 /// </summary>

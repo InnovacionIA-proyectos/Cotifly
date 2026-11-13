@@ -10,9 +10,9 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// <c>POST /web/chat</c> con el asistente por folio (HU-013.6, #102, ADR-018 §2b) por HTTP contra la base real y el modelo guionizado:
+/// <c>POST /web/chat</c> con el asistente por folio (ADR-018 §2b) por HTTP contra la base real y el modelo guionizado:
 /// sin folio 400 <c>FOLIO_REQUERIDO</c> (sin llamar al modelo), folio ajeno o inexistente 404, folio demasiado largo 400, y una
-/// cotización creada por el chat antes de HU-013 (<c>estadoCosteo = null</c>) sigue disponible para consultarla, sin montos hacia el
+/// cotización creada por el chat legado (<c>estadoCosteo = null</c>) sigue disponible para consultarla, sin montos hacia el
 /// modelo y sin cambiar la base.
 /// </summary>
 [Collection(clsColeccionApiWeb.Nombre)]
@@ -78,7 +78,7 @@ public sealed class clsAsistenteFolioEndpointTests(clsEntornoApiWeb entorno)
         (await VerificarContratoAsync(respuesta, RutaChat, _post, HttpStatusCode.BadRequest)).GetProperty("error").GetString().Should().Be("folio inválido");
     }
 
-    // Las cotizaciones creadas por el chat antes de HU-013 (estadoCosteo = null) siguen siendo del comercial: el asistente las consulta,
+    // Las cotizaciones creadas por el chat legado (estadoCosteo = null) siguen siendo del comercial: el asistente las consulta,
     // no recibe sus montos (costo 1.000.000, precio 1.176.471) y una propuesta de margen responde COSTEO_NO_LISTO sin tocar la base.
     [Fact]
     public async Task SobreUnaCotizacionDeChatAnteriorConsultaSinMontosYNoCambiaLaBase()
@@ -110,7 +110,7 @@ public sealed class clsAsistenteFolioEndpointTests(clsEntornoApiWeb entorno)
             $"SELECT COUNT(*) FROM dbo_cotifly.MargenAjustes WHERE folio = '{cotizacion.Folio}'")).Should().Be(0);
     }
 
-    // HU-013.9 (#105): el flag Chat:CreacionHabilitada se retiró. Si un despliegue viejo lo trae en true, se ignora: sin folio sigue
+    // El flag Chat:CreacionHabilitada no existe: si un despliegue lo trae en true, se ignora. Sin folio sigue
     // FOLIO_REQUERIDO y con folio responde el asistente, que no conoce las herramientas del agente legado.
     [Fact]
     public async Task UnFlagDeCreacionHeredadoSeIgnora()

@@ -5,9 +5,9 @@ using System.Text;
 namespace Cotifly.Pruebas.Comun;
 
 /// <summary>
-/// Nexo falso para el buscador de clientes (HU-005.2): un <see cref="HttpMessageHandler"/> que nunca sale a la red.
+/// Nexo falso para el buscador de clientes: un <see cref="HttpMessageHandler"/> que nunca sale a la red.
 /// Registra cada petición (URL y cabecera <c>X-Portal-clsUsuario-Id</c>) y permite encolar respuestas o fallos. Como Nexo, responde 401
-/// <c>SESION_INVALIDA</c> a una petición sin esa cabecera (HU-023.4, #159).
+/// <c>SESION_INVALIDA</c> a una petición sin esa cabecera.
 /// </summary>
 public sealed class clsNexoClientesFalso : HttpMessageHandler
 {
@@ -30,7 +30,7 @@ public sealed class clsNexoClientesFalso : HttpMessageHandler
         return this;
     }
 
-    /// <summary>Encola el 429 del rate limiter de Nexo (<c>DEMASIADAS_SOLICITUDES</c>) con <c>Retry-After: {segundos}</c> (HU-023.4).</summary>
+    /// <summary>Encola el 429 del rate limiter de Nexo (<c>DEMASIADAS_SOLICITUDES</c>) con <c>Retry-After: {segundos}</c>.</summary>
     public clsNexoClientesFalso ResponderLimite(int segundos = 30)
     {
         _respuestas.Enqueue(_ =>

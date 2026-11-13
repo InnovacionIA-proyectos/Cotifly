@@ -16,7 +16,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Aplicacion.Tests.Agente;
 
 /// <summary>
-/// Validador de la respuesta final del agente (HU-003.10, issue #16): esquema, reglas de validación manual, reintento con
+/// Validador de la respuesta final del agente: esquema, reglas de validación manual, reintento con
 /// corrección, respaldo controlado, proveedores sin JSON Schema, métricas y logs sin datos del texto. El modelo es el guionizado.
 /// </summary>
 public sealed class clsValidadorRespuestaAgenteTests : IDisposable
@@ -78,7 +78,7 @@ public sealed class clsValidadorRespuestaAgenteTests : IDisposable
         new(clsEstadoConversacion.Vacio, [], mensajes.Length == 0 ? ["hola"] : mensajes, _declaradas);
 
     /// <summary>
-    /// Salidas del turno con montos: costo 2.850.000, margen 15 %, precio 3.352.941, utilidad 502.941. Desde HU-013.9 el estado no
+    /// Salidas del turno con montos: costo 2.850.000, margen 15 %, precio 3.352.941, utilidad 502.941. El estado no
     /// tiene montos: solo las salidas de las herramientas y lo que escribió el comercial respaldan un monto.
     /// </summary>
     private static clsContextoValidacionRespuesta ConPrecio(params string[] mensajes) =>
@@ -98,7 +98,7 @@ public sealed class clsValidadorRespuestaAgenteTests : IDisposable
             ["Confirmo"],
             _declaradas);
 
-    /// <summary>Contexto de la batería del validador de #16: precio 3.294.798, costo 2.850.000, NIT 9000472281, tarifa USD 1.200.</summary>
+    /// <summary>Contexto de la batería del validador: precio 3.294.798, costo 2.850.000, NIT 9000472281, tarifa USD 1.200.</summary>
     private static clsContextoValidacionRespuesta Bateria(params string[] mensajes) =>
         new(
             clsEstadoConversacion.Vacio with { Moneda = "COP", FolioEnProgreso = "PCN-24092026-001-v2" },
@@ -179,7 +179,7 @@ public sealed class clsValidadorRespuestaAgenteTests : IDisposable
         validacion.Respuesta!.Tipo.Should().Be(TipoRespuestaAgente.Error);
     }
 
-    // Gemini vía OmniRoute (#84) ignora response_format y envuelve el JSON en prosa y un bloque de código: se toma el primer objeto
+    // Gemini vía OmniRoute ignora response_format y envuelve el JSON en prosa y un bloque de código: se toma el primer objeto
     // embebido que cumple toda la forma.
     [Theory]
     [InlineData("Claro, aquí tienes la respuesta:\n```json\n{0}\n```")]
@@ -210,7 +210,7 @@ public sealed class clsValidadorRespuestaAgenteTests : IDisposable
         Codigos(validacion).Should().Equal(clsReglasRespuestaAgente.JsonInvalido);
     }
 
-    // M1: con dos objetos distintos que cumplen la forma (un ejemplo citado antes o después, un JSON que pegó el comercial) no se
+    // Con dos objetos distintos que cumplen la forma (un ejemplo citado antes o después, un JSON que pegó el comercial) no se
     // adivina: json_invalido fuerza el reintento de corrección. El mismo objeto repetido (bloque y objeto suelto) cuenta una vez.
     [Theory]
     [InlineData("Respuesta: {0}\nPor ejemplo, el formato es:\n```json\n{1}\n```")]
@@ -254,7 +254,7 @@ public sealed class clsValidadorRespuestaAgenteTests : IDisposable
         clsReglasRespuestaAgente.Validar(crudo, SinDatos()).Respuesta!.Texto.Should().Be("REAL");
     }
 
-    // B4: miles de llaves o cercas sin cerrar no cuestan O(n²) ni lanzan.
+    // Miles de llaves o cercas sin cerrar no cuestan O(n²) ni lanzan.
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -359,7 +359,7 @@ public sealed class clsValidadorRespuestaAgenteTests : IDisposable
     public void RequiereConfirmacionDebeCoincidirConElTipo(string tipo, bool requiere) =>
         Codigos(clsReglasRespuestaAgente.Validar(Json("Texto.", tipo, requiere), ConPrecio())).Should().Contain(clsReglasRespuestaAgente.IncoherenciaConfirmacion);
 
-    // HU-013.9 (#105): el asistente no calcula precios; la previsualización era del agente legado y nunca es válida.
+    // El asistente no calcula precios: la previsualización de precio nunca es válida.
     [Fact]
     public void UnaPrevisualizacionNuncaEsValida()
     {
@@ -415,7 +415,7 @@ public sealed class clsValidadorRespuestaAgenteTests : IDisposable
         validacion.Fallos[0].Detalle.Should().Contain("no lo escribió el comercial como dinero");
     }
 
-    // HU-013.9 (#105): el estado ya no guarda montos, así que un precio de un turno anterior no queda respaldado.
+    // El estado no guarda montos, así que un precio de un turno anterior no queda respaldado.
     [Fact]
     public void ElEstadoNoRespaldaMontos()
     {
@@ -434,7 +434,7 @@ public sealed class clsValidadorRespuestaAgenteTests : IDisposable
             .Fallos.Should().BeEmpty("el folio del estado respalda la versión y el folio base; sus dígitos no se leen como un monto");
     }
 
-    // Falsos positivos de la batería del validador de #16: NIT, teléfono y NIT con puntos no son montos.
+    // Falsos positivos: NIT, teléfono y NIT con puntos no son montos.
     [Theory]
     [InlineData("El valor para el cliente con NIT 9000472281 es $3.294.798.")]
     [InlineData("Si necesitas ajustar el valor, llama al 3001234567.")]
@@ -450,7 +450,7 @@ public sealed class clsValidadorRespuestaAgenteTests : IDisposable
     public void LosIdentificadoresFechasYUnidadesNoSonMontos(string texto) =>
         clsReglasRespuestaAgente.Validar(Json(texto), Bateria()).Fallos.Should().BeEmpty();
 
-    // Falsos negativos de la batería del validador de #16: montos sin palabra clave, pegados a la moneda, con sufijo de millones o
+    // Falsos negativos: montos sin palabra clave, pegados a la moneda, con sufijo de millones o
     // después del primero de la ventana.
     [Theory]
     [InlineData("Te lo dejo en 3.400.000.")]
@@ -499,7 +499,7 @@ public sealed class clsValidadorRespuestaAgenteTests : IDisposable
         montos[1].Candidatos.Should().Contain(3_500_000m);
     }
 
-    // HU-013.6 (#102): un número junto a "TRM" es un monto aunque no lleve moneda (el asistente nunca ve la TRM).
+    // Un número junto a "TRM" es un monto aunque no lleve moneda (el asistente nunca ve la TRM).
     [Theory]
     [InlineData("La TRM aplicada es 4000.", 4000)]
     [InlineData("Con una TRM de 3.306,86 queda así.", 3306.86)]
@@ -589,7 +589,7 @@ public sealed class clsValidadorRespuestaAgenteTests : IDisposable
         _modelo.Llamadas[0].Mensajes[^1].Text.Should().Contain("\"requiere_confirmacion\"", "el esquema va en la instrucción");
     }
 
-    // Respuesta típica de Gemini vía OmniRoute (#84) con IA:SoportaJsonSchema=false: prosa y bloque json. Pasa sin reintento.
+    // Respuesta típica de Gemini vía OmniRoute con IA:SoportaJsonSchema=false: prosa y bloque json. Pasa sin reintento.
     [Fact]
     public async Task SinJsonSchemaUnaRespuestaEnvueltaEnProsaPasaSinReintento()
     {

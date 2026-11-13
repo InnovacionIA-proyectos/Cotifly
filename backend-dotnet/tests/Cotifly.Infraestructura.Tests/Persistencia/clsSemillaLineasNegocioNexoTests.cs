@@ -5,7 +5,7 @@ using Cotifly.Dominio.Margen;
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
-/// #278 (bloqueante de la validación): los <c>mapeoLineasNexo</c> que siembran <c>dbo_cotifly.MargenesPolitica</c>, leídos de los scripts
+/// Los <c>mapeoLineasNexo</c> que siembran <c>dbo_cotifly.MargenesPolitica</c>, leídos de los scripts
 /// reales (copiados a la salida por <c>tests/Directory.Build.props</c>), son todos líneas de NEXO válidas. Si uno no lo fuera, toda captura
 /// con esa línea respondería 400 <c>LINEA_NEGOCIO_INVALIDO</c>. No necesita base de datos.
 /// </summary>

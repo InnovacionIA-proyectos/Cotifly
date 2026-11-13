@@ -6,7 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Cotifly.Api.Tests.Comun;
 
-/// <summary>Traducción de errores de los casos de uso a HTTP en <c>/web/*</c>: tabla "Para #12" de docs/07-api.md (§7.4) y el contrato.</summary>
+/// <summary>Traducción de errores de los casos de uso a HTTP en <c>/web/*</c>: la tabla de códigos HTTP de docs/07-api.md (§7.4) y el contrato.</summary>
 public sealed class clsRespuestasWebTests
 {
     [Theory]
@@ -41,8 +41,8 @@ public sealed class clsRespuestasWebTests
     }
 
     /// <summary>
-    /// Endurecimiento A (#199): <c>ERROR_INTERNO</c> era 400 (rama por defecto) y <c>REGISTRO_DUPLICADO</c> llegaba con el nombre de la
-    /// restricción. Los dos son 500 <c>ERROR_INTERNO</c> con el mensaje genérico, sin <c>detalle</c>.
+    /// <c>ERROR_INTERNO</c> y <c>REGISTRO_DUPLICADO</c> son 500 <c>ERROR_INTERNO</c> con el mensaje genérico, sin <c>detalle</c> (nunca
+    /// el nombre de la restricción).
     /// </summary>
     [Theory]
     [InlineData(clsCodigosError.ErrorInterno, "No se encontró el comercial autenticado en UsuariosWeb.", null)]

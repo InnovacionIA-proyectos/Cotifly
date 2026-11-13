@@ -77,7 +77,7 @@ public sealed class clsDependenciasAplicacionTests
             .Which.Should().Match<ServiceDescriptor>(d => d.ImplementationType == implementacion && d.Lifetime == ciclo);
     }
 
-    // HU-013.9 (#105): el agente cotizador legado, el slot-filling y el procesamiento de Google Chat ya no se registran.
+    // El agente cotizador legado, el slot-filling y el procesamiento de Google Chat no se registran.
     [Theory]
     [InlineData("Cotifly.Aplicacion.Agente.Services.IClsAgenteRunner")]
     [InlineData("Cotifly.Aplicacion.Agente.Services.IClsEstadoConversacionService")]
@@ -88,12 +88,12 @@ public sealed class clsDependenciasAplicacionTests
     public void ElAgenteLegadoYGoogleChatYaNoExisten(string tipo) =>
         typeof(clsDependenciasAplicacion).Assembly.GetType(tipo).Should().BeNull();
 
-    /// <summary>HU-023.2 (#157): el puerto de la cubicación rápida de Nexo se retiró; "Calcular cubicaje" usa el cubicador.</summary>
+    /// <summary>El puerto de la cubicación rápida de Nexo no se registra; "Calcular cubicaje" usa el cubicador.</summary>
     [Fact]
     public void ElPuertoDeLaCubicacionDeNexoYaNoExiste() =>
         typeof(clsDependenciasAplicacion).Assembly.GetType("Cotifly.Aplicacion.Cubicacion.Interfaces.IClsCubicacionProvider").Should().BeNull();
 
-    /// <summary>Los casos de uso auditados (#11) se registran como decorador sobre la implementación concreta.</summary>
+    /// <summary>Los casos de uso auditados se registran como decorador sobre la implementación concreta.</summary>
     [Theory]
     [InlineData(typeof(IClsAjusteMargenService), typeof(clsAjusteMargenService), typeof(clsAjusteMargenServiceAuditado))]
     [InlineData(typeof(IClsGenerarPdfService), typeof(clsGenerarPdfService), typeof(clsGenerarPdfServiceAuditado))]

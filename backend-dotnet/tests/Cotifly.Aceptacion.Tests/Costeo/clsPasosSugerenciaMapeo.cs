@@ -8,8 +8,8 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Costeo;
 
 /// <summary>
-/// HU-044.2 (#253): pasos de la sugerencia de mapeo de <c>specs/features/licitaciones_excel.feature</c>. Usa el Nexo falso del escenario
-/// (<see cref="clsPasosCosteo"/>), con su importación inteligente (HU-044.1, #252).
+/// Pasos de la sugerencia de mapeo de <c>specs/features/licitaciones_excel.feature</c>. Usa el Nexo falso del escenario
+/// (<see cref="clsPasosCosteo"/>), con su importación inteligente.
 /// </summary>
 [Binding]
 public sealed class clsPasosSugerenciaMapeo(clsContextoWeb web, clsPasosCosteo costeo)
@@ -32,7 +32,7 @@ public sealed class clsPasosSugerenciaMapeo(clsContextoWeb web, clsPasosCosteo c
     [Given("que el cliente {string} tiene en Nexo la plantilla de mapeo de {string} a {string}")]
     public async Task DadoLaPlantilla(string nit, string encabezados, string campos)
     {
-        // En Cotifly, guardar la plantilla llega con #256: aquí se guarda directo en el Nexo falso, como lo haría NEXO.
+        // La plantilla se guarda directo en el Nexo falso, como lo haría NEXO.
         var cuerpo = JsonSerializer.Serialize(new
         {
             clienteNit = nit,

@@ -3,7 +3,7 @@ using Cotifly.Dominio.Metricas;
 namespace Cotifly.Dominio.Tests.Metricas;
 
 /// <summary>
-/// HU-045.2 (#264, hallazgo M1 de la auditoría): el seguro de la mercancía está en el precio de la ruta (<c>precioFinalLinea</c>) pero no
+/// El seguro de la mercancía está en el precio de la ruta (<c>precioFinalLinea</c>) pero no
 /// en su costo (<c>costoFinal</c>). Es un traslado (la prima de la póliza), no ganancia: <c>margen_ponderado</c> y <c>ganancias</c> lo
 /// restan del precio en COP. El valor cotizado y el valor ganado sí lo incluyen (se le cobra al cliente).
 /// </summary>

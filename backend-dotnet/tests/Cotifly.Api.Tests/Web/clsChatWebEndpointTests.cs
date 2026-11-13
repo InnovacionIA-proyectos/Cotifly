@@ -10,8 +10,8 @@ namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
 /// Reglas del canal <c>POST /web/chat</c> por HTTP contra la base real con el modelo guionizado, comunes al asistente por folio
-/// (HU-013.6; desde HU-013.9 el agente cotizador legado ya no existe): 400 por <c>sesion_id</c> o mensaje, 401 sin sesión, validación
-/// de la respuesta final con reintento y respaldo (HU-003.10), 200 <c>error: true</c> ante un fallo del proveedor, 429 propio y el
+/// (el agente cotizador legado no existe): 400 por <c>sesion_id</c> o mensaje, 401 sin sesión, validación
+/// de la respuesta final con reintento y respaldo, 200 <c>error: true</c> ante un fallo del proveedor, 429 propio y el
 /// retiro de la URL firmada del PDF (<c>?t=</c>, ADR-011 §3).
 /// </summary>
 [Collection(clsColeccionApiWeb.Nombre)]
@@ -69,7 +69,7 @@ public sealed class clsChatWebEndpointTests(clsEntornoApiWeb entorno)
         (await respuesta.Content.ReadAsStringAsync(Ct)).Should().Be("""{"error":"Inicia sesión de nuevo."}""");
     }
 
-    // HU-003.10 (#16): una respuesta final malformada se reintenta una vez con la corrección y llega la válida; con el JSON Schema.
+    // Una respuesta final malformada se reintenta una vez con la corrección y llega la válida; con el JSON Schema.
     [Fact]
     public async Task UnaRespuestaFinalMalformadaSeCorrigeConUnReintento()
     {
@@ -95,7 +95,7 @@ public sealed class clsChatWebEndpointTests(clsEntornoApiWeb entorno)
             .Should().Be("La cotización está lista para generar el PDF.");
     }
 
-    // HU-003.10 (#16): si el reintento también falla y no hubo propuesta, 200 RespuestaChatError con el texto de respaldo.
+    // Si el reintento también falla y no hubo propuesta, 200 RespuestaChatError con el texto de respaldo.
     [Fact]
     public async Task SiLaRespuestaFinalNoValidaNiConElReintentoEs200ConErrorYElRespaldo()
     {
@@ -133,9 +133,9 @@ public sealed class clsChatWebEndpointTests(clsEntornoApiWeb entorno)
             .Should().Be("Ocurrió un error interno procesando tu solicitud. Inténtalo de nuevo.");
     }
 
-    // DEF-1027-1 (#226, E2E real del 2026-10-27): con el proveedor caído (conexión rechazada), el SDK real reintenta y lanza un
-    // AggregateException ("Retry failed after 4 tries") que antes no se traducía: el chat respondía ERROR_INTERNO. Con la cadena real
-    // de la fábrica (respaldo y limitador), el turno responde 200 con IA_NO_DISPONIBLE y su texto, como dice el contrato.
+    // Con el proveedor caído (conexión rechazada), el SDK real reintenta y lanza un AggregateException ("Retry failed after 4 tries").
+    // Con la cadena real de la fábrica (respaldo y limitador), el turno responde 200 con IA_NO_DISPONIBLE y su texto, como dice el
+    // contrato, y no ERROR_INTERNO.
     [Fact]
     public async Task ConElProveedorCaidoElTurnoEsIaNoDisponibleNoErrorInterno()
     {
@@ -188,7 +188,7 @@ public sealed class clsChatWebEndpointTests(clsEntornoApiWeb entorno)
         await VerificarContratoAsync(segunda, RutaChat, _post, HttpStatusCode.TooManyRequests);
     }
 
-    // HU-013.9 (#105): la URL firmada (?t=, ADR-011 §3) se retiró; el parámetro se ignora y sin Bearer el PDF responde 401.
+    // La URL firmada (?t=, ADR-011 §3) no existe; el parámetro se ignora y sin Bearer el PDF responde 401.
     [Fact]
     public async Task ElPdfExigeBearerAunqueVengaUnTokenDeEnlaceFirmado()
     {

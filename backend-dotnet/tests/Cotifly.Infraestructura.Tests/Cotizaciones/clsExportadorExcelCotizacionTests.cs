@@ -9,7 +9,7 @@ using DocumentFormat.OpenXml.Validation;
 namespace Cotifly.Infraestructura.Tests.Cotizaciones;
 
 /// <summary>
-/// HU-018.1 (#155, parte C): el Excel de la cotización con ClosedXML. La versión del dueño trae las columnas de costo (COP) y de margen;
+/// El Excel de la cotización con ClosedXML. La versión del dueño trae las columnas de costo (COP) y de margen;
 /// la del gerente y del director no trae ninguna (ni encabezados ni valores). El archivo es un <c>.xlsx</c> válido (abre sin reparaciones)
 /// y 50 rutas con 3 camiones se generan en menos de 2 s.
 /// </summary>
@@ -87,7 +87,7 @@ public sealed class clsExportadorExcelCotizacionTests
     }
 
     /// <summary>
-    /// Validación HU-018.1 (#155): en la versión del gerente y el director no hay dónde esconder un costo o un margen: cada número del
+    /// En la versión del gerente y el director no hay dónde esconder un costo o un margen: cada número del
     /// libro es uno de los que ven todos (orden, pesos, camiones, cantidades, TRM y precios), y el paquete no trae fórmulas, comentarios,
     /// nombres definidos, filas, columnas u hojas ocultas, ni el origen o el método del margen, ni el color de las columnas internas.
     /// </summary>

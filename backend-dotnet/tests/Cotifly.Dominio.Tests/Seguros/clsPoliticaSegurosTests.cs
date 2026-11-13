@@ -4,7 +4,7 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Dominio.Tests.Seguros;
 
 /// <summary>
-/// HU-046.3 (#269; contrato del 2026-11-10): el evaluador de la política de seguros con la carga aprobada (HU-046.1 #267). Tramo por ruta con
+/// El evaluador de la política de seguros con la carga aprobada. Tramo por ruta con
 /// el valor total, <c>valorDesde</c> exclusivo y <c>valorHasta</c> incluido; cada medida (recomendada u obligatoria) trae su estado
 /// (<c>cumplida</c> | <c>pendiente</c> | <c>sin_verificar</c>); las obligatorias se cumplen con cualquiera de sus conexos; una medida sin
 /// conexos queda <c>sin_verificar</c> y nunca bloquea; valor 0 o vacío da el aviso <c>SIN_VALOR_MERCANCIA</c>.

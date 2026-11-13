@@ -10,10 +10,10 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
-/// Filas del tablero de HU-010.1 (ADR-016 Â§2) sobre SQL Server real: una por cadena <c>(usuarioId, folio base)</c> con los valores
-/// de la versiÃ³n vigente, el periodo por la primera creaciÃ³n de la cadena, el resultado mÃ¡s reciente de la cadena, los campos de
-/// moneda, el resumen de <c>MargenAjustes</c> y las ciudades de la ruta 1 solo si el esquema las tiene (0010). HU-021 (decisiÃ³n 8): los
-/// conteos son por cotizaciÃ³n; el costo es la suma de sus rutas y el margen, el promedio de sus rutas ponderado por costo.
+/// Filas del tablero (ADR-016 §2) sobre SQL Server real: una por cadena <c>(usuarioId, folio base)</c> con los valores
+/// de la versión vigente, el periodo por la primera creación de la cadena, el resultado más reciente de la cadena, los campos de
+/// moneda, el resumen de <c>MargenAjustes</c> y las ciudades de la ruta 1 solo si el esquema las tiene (0010). Los
+/// conteos son por cotización; el costo es la suma de sus rutas y el margen, el promedio de sus rutas ponderado por costo.
 /// </summary>
 [Collection(clsColeccionSqlServer.Nombre)]
 [Trait("Categoria", "Integracion")]
@@ -135,7 +135,7 @@ public sealed class clsMetricasTableroRepositoryTests(clsBaseDatosPruebas baseDa
     [Fact]
     public async Task SinLosNombresDeMunicipioDel0010NoHayCiudades()
     {
-        // HU-021: las ciudades son los nombres de la ruta 1 (0010). La base compartida ya tiene el 0010 (y el modelo EF lo mapea): la fila
+        // Las ciudades son los nombres de la ruta 1 (0010). La base compartida ya tiene el 0010 (y el modelo EF lo mapea): la fila
         // se inserta con SQL en una base auxiliar que llega hasta el 0009.
         await using var sin0010 = await BaseDatos.CrearBaseConScriptsAsync("dbMetricasSin0010", clsBaseDatosPruebas.ScriptsHasta0009);
         var cadena = sin0010.Cadena;
@@ -215,7 +215,7 @@ public sealed class clsMetricasTableroRepositoryTests(clsBaseDatosPruebas baseDa
     [Fact]
     public async Task UnaCotizacionGanadaConTresRutasDeDistintasLineasEsUnaFilaConSusTresRutasYLosAjustesDeCadaUna()
     {
-        // HU-021.10 (#137), decisión 8: una fila por cotización (conteos) con sus rutas (valores y apertura por línea). Los ajustes
+        // Una fila por cotización (conteos) con sus rutas (valores y apertura por línea). Los ajustes
         // cuentan en su ruta (lineaSolicitudId); el que no tiene ruta va a la ruta 1, como en la migración del 0009.
         var ana = await CrearUsuarioAsync();
         var cotizacion = NuevaCotizacion(ana);
@@ -257,8 +257,8 @@ public sealed class clsMetricasTableroRepositoryTests(clsBaseDatosPruebas baseDa
     [Fact]
     public async Task CadaRutaTraeSuMargenDePoliticaYLaRechazadaNoSale()
     {
-        // HU-016.1 (#154): la referencia del margen aplicado es el margenPoliticaSugerido de cada ruta de la versión vigente.
-        // HU-016.2 (#295): la comparación solo mira las finalizadas, así que la cotización se finaliza para que sus rutas entren.
+        // La referencia del margen aplicado es el margenPoliticaSugerido de cada ruta de la versión vigente.
+        // La comparación solo mira las finalizadas, así que la cotización se finaliza para que sus rutas entren.
         var ana = await CrearUsuarioAsync();
         var cotizacion = NuevaCotizacion(ana);
         await GuardarAsync(cotizacion);
@@ -281,11 +281,11 @@ public sealed class clsMetricasTableroRepositoryTests(clsBaseDatosPruebas baseDa
     }
 
     /// <summary>
-    /// HU-016.2 (#295): solo las cotizaciones finalizadas (<c>finalizadaAt</c>) entran en la comparación del margen contra la política. Una
+    /// Solo las cotizaciones finalizadas (<c>finalizadaAt</c>) entran en la comparación del margen contra la política. Una
     /// abierta cuenta en la cantidad, pero su ruta sin política no infla <c>rutas_sin_margen_politica</c> ni mueve la desviación.
     /// </summary>
     [Fact]
-    public async Task HU0162_SoloLasFinalizadasEntranEnLaComparacionConLaPoliticaPeroTodasCuentanEnLaCantidad()
+    public async Task SoloLasFinalizadasEntranEnLaComparacionConLaPoliticaPeroTodasCuentanEnLaCantidad()
     {
         var ana = await CrearUsuarioAsync();
         var finalizada = NuevaCotizacion(ana);
@@ -310,11 +310,11 @@ public sealed class clsMetricasTableroRepositoryTests(clsBaseDatosPruebas baseDa
     }
 
     /// <summary>
-    /// HU-016.2 (#295): se mira la versión vigente. Una cadena con la v1 finalizada y una v2 sin finalizar (la vigente) NO entra en la
+    /// Se mira la versión vigente. Una cadena con la v1 finalizada y una v2 sin finalizar (la vigente) NO entra en la
     /// comparación con la política.
     /// </summary>
     [Fact]
-    public async Task HU0162_UnaV1FinalizadaConV2SinFinalizarNoEntraEnLaComparacion()
+    public async Task UnaV1FinalizadaConV2SinFinalizarNoEntraEnLaComparacion()
     {
         var ana = await CrearUsuarioAsync();
         var folio = FolioUnico();
@@ -342,9 +342,9 @@ public sealed class clsMetricasTableroRepositoryTests(clsBaseDatosPruebas baseDa
     }
 
     [Fact]
-    public async Task HU0452_ElSeguroDeLaRutaSeLeeYNoCuentaComoGanancia()
+    public async Task ElSeguroDeLaRutaSeLeeYNoCuentaComoGanancia()
     {
-        // HU-045.2 (#264, M1 de la auditoría): costoSeguro (script 20) está en el precio de la ruta pero no es ganancia.
+        // costoSeguro (script 20) está en el precio de la ruta pero no es ganancia.
         var ana = await CrearUsuarioAsync();
         var cotizacion = NuevaCotizacion(ana);
         await GuardarAsync(cotizacion);

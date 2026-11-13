@@ -16,7 +16,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Agente;
 
 /// <summary>
-/// HU-013.16 (#126): forma del turno del asistente (menos llamadas al modelo sin relajar ninguna regla), turnos concurrentes en la
+/// Forma del turno del asistente (menos llamadas al modelo sin relajar ninguna regla), turnos concurrentes en la
 /// misma sesión, el corte por <c>IA:MaxIteraciones</c> y el log de duración por fase. Con el <see cref="IChatClient"/> guionizado.
 /// </summary>
 public sealed partial class clsAsistenteFolioRunnerTests
@@ -98,7 +98,7 @@ public sealed partial class clsAsistenteFolioRunnerTests
         resultado.Valor.AccionPropuesta.Should().NotBeNull();
     }
 
-    // ---------- Lo que ve el modelo (auditoría de #126) ----------
+    // ---------- Lo que ve el modelo ----------
 
     // Las salidas de consultar_cotizacion y buscar_servicio_conexo no llevan descripciones, precios, costos, valores, totales ni TRM:
     // ninguna clave con esos nombres (la búsqueda solo trae "total", el número de resultados) y ningún monto de la cotización.

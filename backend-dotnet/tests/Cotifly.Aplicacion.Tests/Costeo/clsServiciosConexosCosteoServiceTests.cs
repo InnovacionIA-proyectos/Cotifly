@@ -19,7 +19,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// Servicios conexos desde el catálogo de Nexo (HU-013.3, ADR-018 §4, §8 y §11): el catálogo sin costos, la traducción de
+/// Servicios conexos desde el catálogo de Nexo (ADR-018 §4, §8 y §11): el catálogo sin costos, la traducción de
 /// <c>linea_orden</c> al <c>lineaId</c> de la cotización de Nexo, el POST sin <c>valorAplicado</c>, la relectura con el margen de la
 /// cotización (función común <see cref="clsPrecioMonedaCosteo"/>), la regla del PDF, el control de versión y los errores.
 /// </summary>
@@ -41,7 +41,7 @@ public sealed class clsServiciosConexosCosteoServiceTests
 
     public clsServiciosConexosCosteoServiceTests()
     {
-        // HU-021: la línea de Nexo es la del primer camión de la ruta (lineaSolicitudNexoId), guardada por el polling.
+        // La línea de Nexo es la del primer camión de la ruta (lineaSolicitudNexoId), guardada por el polling.
         _cotizacion = clsAjusteMargenCosteoServiceTests.Costeada(_ana, "PCN-900555111-AP-05102026-001");
         _cotizacion.RegistrarCotizacionNexo(CotizacionNexo);
         _cotizacion.Vehiculos[0].AsignarLineaNexo("LS-1");
@@ -55,7 +55,7 @@ public sealed class clsServiciosConexosCosteoServiceTests
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     /// <summary>
-    /// DEF-1027-3 (#226): la respuesta del POST trae el <c>estado_nexo</c> de cada conexo con el estado del envío diferido (el que no
+    /// La respuesta del POST trae el <c>estado_nexo</c> de cada conexo con el estado del envío diferido (el que no
     /// aparece en los estados, <c>pendiente</c>), igual que <c>GET .../costeo</c>. Las dependencias son obligatorias: sin ellas no hay
     /// servicio, en vez de una respuesta con <c>estado_nexo = null</c>.
     /// </summary>
@@ -85,12 +85,12 @@ public sealed class clsServiciosConexosCosteoServiceTests
         await _nexo.Received(1).AgregarAsync(_ana, CotizacionNexo, Arg.Is<IReadOnlyList<clsConexoParaNexo>>(i =>
             i.Count == 1 && i[0].LineaId == "LC-1" && i[0].ServicioConexoId == Almacenamiento && i[0].Cantidad == 2m), Arg.Any<CancellationToken>());
         var nuevo = resultado.Valor.ServiciosConexos.Single(s => s.Id == "CX-2");
-        // HU-043.2 (#251): esta respuesta de Nexo no trae valorVenta (Nexo anterior a S6-HU-38.2): el conexo va al costo, sin margen.
+        // Esta respuesta de Nexo no trae valorVenta: el conexo va al costo, sin margen.
         nuevo.Precio.Should().Be(240_000m);
         nuevo.Incluido.Should().BeTrue("un conexo agregado queda incluido");
 
-        // HU-021: el conexo queda como fila de la ruta (costo unitario de Nexo = 240.000 / 2) y el precio de la ruta lo incluye; ya no hay
-        // conexos excluidos (el Cargue de la ruta también va en el precio).
+        // El conexo queda como fila de la ruta (costo unitario de Nexo = 240.000 / 2) y el precio de la ruta lo incluye, igual que el
+        // Cargue que la ruta ya tenía.
         var fila = _cotizacion.PrimeraRuta!.Conexos.Single(c => c.IdServicioConexo == "CX-2");
         (fila.Precio, fila.Cantidad, fila.Nombre).Should().Be((120_000m, 2m, "Almacenamiento"));
         resultado.Valor.ServiciosConexos.Single(s => s.Id == "CX-1").Incluido.Should().BeTrue();
@@ -110,7 +110,7 @@ public sealed class clsServiciosConexosCosteoServiceTests
     [Fact]
     public async Task ConVariosCamionesElConexoViajaPegadoALaLineaDelPrimerCamionDeLaRuta()
     {
-        // HU-021.7 (#134, decisión 3): la ruta 1 viaja a Nexo como tres líneas (una por camión); el conexo va con el lineaId de la línea de
+        // La ruta 1 viaja a Nexo como tres líneas (una por camión); el conexo va con el lineaId de la línea de
         // la cotización de Nexo del PRIMER camión (orden estable), después del costeo, con la versión reservada.
         var ruta = _cotizacion.PrimeraRuta!;
         ruta.AgregarVehiculo("3S3", null, 10_000m);
@@ -147,8 +147,7 @@ public sealed class clsServiciosConexosCosteoServiceTests
     [Fact]
     public async Task LoQueGuardaNoLoCambiaLaSiguienteConsultaDelPollingParaNoSubirLaVersion()
     {
-        // HU-021: el JSON de conexos ya no existe; lo equivalente es que la siguiente lectura del costeo con los mismos conexos en Nexo no
-        // cambie nada (ni duplique el conexo ni mueva el precio).
+        // La siguiente lectura del costeo con los mismos conexos en Nexo no cambia nada (ni duplica el conexo ni mueva el precio).
         await Servicio().AgregarAsync(_ana, _cotizacion.Folio, [Item(1, Almacenamiento, 2m)], Version, null, Ct);
         var precio = _cotizacion.PrecioFinal;
 
@@ -200,7 +199,7 @@ public sealed class clsServiciosConexosCosteoServiceTests
     [Fact]
     public async Task UnaLineaSinIdDeNexoGuardadoRespondeLineaSinCotizacionNexoSinLlamarANexo()
     {
-        // HU-021: el camión todavía no tiene su línea de Nexo (el polling no la ha asociado).
+        // El camión todavía no tiene su línea de Nexo (el polling no la ha asociado).
         var sinLinea = clsAjusteMargenCosteoServiceTests.Costeada(_ana, "PCN-SIN-LINEA");
         sinLinea.RegistrarCotizacionNexo(CotizacionNexo);
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(sinLinea.Folio, _ana, Arg.Any<CancellationToken>()).Returns(sinLinea);
@@ -264,7 +263,7 @@ public sealed class clsServiciosConexosCosteoServiceTests
     }
 
     [Fact]
-    public async Task HU0363_FinalizadaRespondePdfYaEnviadoSinLlamarANexo()
+    public async Task FinalizadaRespondePdfYaEnviadoSinLlamarANexo()
     {
         _cotizacion.Finalizar(_ana, clsCotizacionMuestra.Ahora);
 
@@ -326,12 +325,12 @@ public sealed class clsServiciosConexosCosteoServiceTests
         resultado.Error.Datos.Should().ContainKey("agregado_en_nexo").WhoseValue.Should().Be(true, "un 2xx de Nexo siempre es efecto");
         await _nexo.Received(1).AgregarAsync(_ana, CotizacionNexo, Arg.Any<IReadOnlyList<clsConexoParaNexo>>(), Arg.Any<CancellationToken>());
 
-        // HU-021 (decisión 3): el polling ya no importa los conexos de Nexo por su cuenta; para que la siguiente lectura traiga el conexo,
-        // se guarda la marca ConexosPendientesDeLeer con la versión reservada (antes no se guardaba nada sin PDF).
+        // El polling no importa los conexos de Nexo por su cuenta; para que la siguiente lectura traiga el conexo, se guarda la marca
+        // ConexosPendientesDeLeer con la versión reservada.
         _cotizacion.ConexosPendientesDeLeer.Should().BeTrue();
         _cotizacion.PrimeraRuta!.Conexos.Select(c => c.IdServicioConexo).Should().Equal("CX-1");
 
-        // HU-021.8 (#135): con la marca se guardan la ruta pedida y los conexos que Nexo YA tenía antes del POST (CX-1).
+        // Con la marca se guardan la ruta pedida y los conexos que Nexo YA tenía antes del POST (CX-1).
         _cotizaciones.Received(1).RegistrarConexosPendientesNexo(Arg.Is<clsConexosPendientesNexo>(p =>
             p.Folio == _cotizacion.Folio && p.LineaSolicitudId == _cotizacion.PrimeraRuta!.Id && p.Previos.SequenceEqual(new[] { "CX-1" })));
         await _unidad.Received(1).GuardarCambiosSiVersionAsync(_cotizacion.Id, Version + 1, Arg.Any<CancellationToken>());
@@ -448,8 +447,8 @@ public sealed class clsServiciosConexosCosteoServiceTests
     [Fact]
     public void EnDolaresElConexoSeConvierteConLaTrmFijadaDeLaCotizacion()
     {
-        // HU-021: el conexo de Nexo queda en la ruta y su precio sale en la moneda de la solicitud. HU-043.2 (#251): a su venta (aquí, sin
-        // valorVenta, el costo), sin margen.
+        // El conexo de Nexo queda en la ruta y su precio sale en la moneda de la solicitud, a su venta (aquí, sin valorVenta, el costo),
+        // sin margen.
         var usd = clsCotizacionMuestra.Costeada(flete: 2_550_000m, margen: 0.15m, folio: "PCN-U", moneda: "USD", trm: 4000m);
         var ruta = usd.PrimeraRuta!;
         var precioAntes = usd.PrecioFinal;
@@ -462,7 +461,7 @@ public sealed class clsServiciosConexosCosteoServiceTests
     }
 
     [Fact]
-    public void Hu0432_ElConexoDeNexoGuardaElCostoEnPrecioYLaVentaEnPrecioVentaYSeCotizaASuVentaSinMargen()
+    public void ElConexoDeNexoGuardaElCostoEnPrecioYLaVentaEnPrecioVentaYSeCotizaASuVentaSinMargen()
     {
         var cotizacion = clsCotizacionMuestra.Costeada(flete: 2_550_000m, margen: 0.15m, folio: "PCN-V");
         var ruta = cotizacion.PrimeraRuta!;
@@ -480,10 +479,10 @@ public sealed class clsServiciosConexosCosteoServiceTests
 
     [Theory]
     [InlineData(null, 300_000.0, 150_000.0)]   // sin precioVentaUnitario: valorVenta ÷ cantidad
-    [InlineData(null, null, 120_000.0)]        // Nexo anterior a S6-HU-38.2: al costo, y el conexo no desaparece
+    [InlineData(null, null, 120_000.0)]        // sin ninguna venta: al costo, y el conexo no desaparece
     [InlineData(-1.0, -1.0, 120_000.0)]        // una venta negativa no se usa
     [InlineData(0.0, 0.0, 0.0)]                // venta 0: un conexo sin cobro, no "al costo" (el contrato solo define null como al costo)
-    public void Hu0432_SinPrecioVentaUnitarioSeUsaElValorVentaYSinNingunoElCosto(double? unitaria, double? valorVenta, double esperada)
+    public void SinPrecioVentaUnitarioSeUsaElValorVentaYSinNingunoElCosto(double? unitaria, double? valorVenta, double esperada)
     {
         var cotizacion = clsCotizacionMuestra.Costeada(flete: 2_550_000m, margen: 0.15m, folio: "PCN-V");
         var ruta = cotizacion.PrimeraRuta!;

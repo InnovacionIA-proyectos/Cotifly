@@ -10,7 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
-/// HU-028 (#186, ADR-021) contra SQL Server 2019: la edición de la solicitud se guarda en UNA transacción con el control de versión sin
+/// ADR-021 contra SQL Server 2019: la edición de la solicitud se guarda en UNA transacción con el control de versión sin
 /// violar los índices únicos (<c>uq_cotizacionLineasSolicitud_cotizacionId_orden</c>, <c>uq_cotizacionMercancias_lineaSolicitudId_orden</c>,
 /// <c>uq_cotizacionServiciosConexos_lineaSolicitudId_idServicioConexo</c>) ni las FK sin cascada de la base (camiones, mercancías, conexos y
 /// <c>MargenAjustes</c> de la ruta quitada).

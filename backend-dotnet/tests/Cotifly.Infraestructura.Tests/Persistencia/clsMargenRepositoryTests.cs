@@ -10,7 +10,7 @@ namespace Cotifly.Infraestructura.Tests.Persistencia;
 public sealed class clsMargenRepositoryTests(clsBaseDatosPruebas baseDatos) : clsPruebaIntegracion(baseDatos)
 {
     // Organización ficticia: la base es compartida y una fila específica de la organización por defecto
-    // (50000005) le ganaría al comodín en las pruebas del resolver de margen (#10).
+    // (50000005) le ganaría al comodín en las pruebas del resolver de margen.
     private const string OrganizacionDePrueba = "99990001";
 
     [Theory]
@@ -47,7 +47,7 @@ public sealed class clsMargenRepositoryTests(clsBaseDatosPruebas baseDatos) : cl
 
         porId!.LineaNegocio.Should().Be("Nacional");
         porId.MapeoLineasNexo.Should().Be("Nacional");
-        // HU-021 (§10): el 0009 retira Almacenamiento, Almacenamiento3PL e ITR y agrega DevolucionContenedor.
+        // El 0009 retira Almacenamiento, Almacenamiento3PL e ITR y agrega DevolucionContenedor.
         todas.Select(l => l.LineaNegocio).Should().Contain(["DevolucionContenedor", "Importacion", "Nacional"]).And.NotContain("ITR")
             .And.BeInAscendingOrder(StringComparer.OrdinalIgnoreCase);
     }
@@ -83,7 +83,7 @@ public sealed class clsMargenRepositoryTests(clsBaseDatosPruebas baseDatos) : cl
         trqType.Should().Be("OPTN");
     }
 
-    // HU-042.4 (#247): el script 18 rellena lineaNegocioId cruzando por el texto; las filas sembradas quedan con el id de su línea.
+    // El script 18 rellena lineaNegocioId cruzando por el texto; las filas sembradas quedan con el id de su línea.
     [Fact]
     public async Task ElScript18DejaCadaMapeoSembradoConElIdDeSuLinea()
     {
@@ -93,7 +93,7 @@ public sealed class clsMargenRepositoryTests(clsBaseDatosPruebas baseDatos) : cl
         cruces.Where(c => c.TrqType.StartsWith('O')).Should().OnlyContain(c => c.LineaTexto == c.LineaPorId);
     }
 
-    // HU-042.4 (#247): la resolución usa el id, no el texto; un mapeo cuyo texto ya no coincide (la línea se renombró) sigue funcionando.
+    // La resolución usa el id, no el texto; un mapeo cuyo texto ya no coincide (la línea se renombró) sigue funcionando.
     [Fact]
     public async Task ElMapeoSeResuelvePorElIdAunqueElTextoNoCoincida()
     {

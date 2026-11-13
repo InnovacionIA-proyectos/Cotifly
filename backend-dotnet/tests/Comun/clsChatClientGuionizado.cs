@@ -46,18 +46,18 @@ public sealed class clsChatClientGuionizado : IChatClient
 
     /// <summary>
     /// Cierra el turno: la respuesta sin herramientas que termina el loop y la de la llamada final (ADR-003) como respuesta
-    /// estructurada válida (HU-003.10) de tipo <c>conversacional</c> con <paramref name="texto"/>.
+    /// estructurada válida de tipo <c>conversacional</c> con <paramref name="texto"/>.
     /// </summary>
     public clsChatClientGuionizado Cerrar(string texto) => Responder(texto).ResponderFinal(texto);
 
     /// <summary>
-    /// Cierra un turno que armó una propuesta: con <c>IA:PropuestaDirecta</c> (HU-013.16) el runner pasa directo a la llamada final, que
+    /// Cierra un turno que armó una propuesta: con <c>IA:PropuestaDirecta</c> el runner pasa directo a la llamada final, que
     /// recibe esta respuesta estructurada de tipo <c>confirmacion_requerida</c>.
     /// </summary>
     public clsChatClientGuionizado Proponer(string texto) => ResponderFinal(texto, "confirmacion_requerida", true);
 
     /// <summary>
-    /// Cierra el turno en la misma llamada del loop (HU-013.16, <c>IA:RespuestaFinalEnLoop</c>): la respuesta sin herramientas ya es
+    /// Cierra el turno en la misma llamada del loop (<c>IA:RespuestaFinalEnLoop</c>): la respuesta sin herramientas ya es
     /// el JSON válido de la respuesta final, así que no hay llamada final aparte.
     /// </summary>
     public clsChatClientGuionizado CerrarEnLoop(string texto, string tipo = "conversacional", bool requiereConfirmacion = false) =>
@@ -96,7 +96,7 @@ public sealed class clsChatClientGuionizado : IChatClient
 
     /// <summary>
     /// La siguiente llamada tarda <paramref name="demora"/> antes de seguir el guion (o hasta que la cancelen: entonces lanza
-    /// <see cref="OperationCanceledException"/>, como un proveedor real). Para probar el tiempo máximo del redactor (HU-013.5).
+    /// <see cref="OperationCanceledException"/>, como un proveedor real). Para probar el tiempo máximo del redactor.
     /// </summary>
     public clsChatClientGuionizado Demorar(TimeSpan demora)
     {

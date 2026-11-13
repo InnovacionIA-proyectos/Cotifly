@@ -20,10 +20,9 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// HU-045.3 (#265, ADR-032 §9): el PDF del costeo muestra el seguro de la mercancía en una línea propia por ruta, aparte del flete (política
-/// NOGE0076): la fila del flete imprime el precio de la ruta SIN el seguro y la fila "Seguro de la mercancía" su valor; el total general sigue
-/// siendo la suma de los precios finales. Nunca la tasa. Una ruta con el seguro marcado sin valor de la mercancía sale sin su fila y con un
-/// aviso (decisión del usuario del 2026-11-09).
+/// El PDF del costeo muestra el seguro de la mercancía en una línea propia por ruta, aparte del flete (ADR-032 §9, política NOGE0076):
+/// la fila del flete imprime el precio de la ruta SIN el seguro y la fila "Seguro de la mercancía" su valor; el total general sigue siendo
+/// la suma de los precios finales. Nunca la tasa. Una ruta con el seguro marcado sin valor de la mercancía sale sin su fila y con un aviso.
 /// </summary>
 public sealed class clsSeguroPdfCosteoTests
 {
@@ -112,7 +111,7 @@ public sealed class clsSeguroPdfCosteoTests
     }
 
     /// <summary>
-    /// Decisión del usuario del 2026-11-09 (#264): el seguro no se redondea a pesos (se guarda en centavos). B1: en el PDF, el seguro y el
+    /// El seguro no se redondea a pesos (se guarda en centavos). En el PDF, el seguro y el
     /// total con centavos los muestran (2 decimales), así cuadran exacto con lo guardado; el flete, sin centavos, sigue en pesos enteros.
     /// </summary>
     [Fact]
@@ -128,7 +127,7 @@ public sealed class clsSeguroPdfCosteoTests
     }
 
     /// <summary>
-    /// B3 de la auditoría: si las secciones no siguen a las rutas, la fila del seguro no se omite en silencio (la ruta ya imprime su precio
+    /// Si las secciones no siguen a las rutas, la fila del seguro no se omite en silencio (la ruta ya imprime su precio
     /// sin el seguro y el total no cuadraría a la vista): es un error de programación.
     /// </summary>
     [Fact]
@@ -146,7 +145,7 @@ public sealed class clsSeguroPdfCosteoTests
     }
 
     /// <summary>
-    /// B1 de la auditoría (decisión del usuario): en COP, el seguro y los totales con centavos se muestran con sus 2 decimales, así lo impreso
+    /// En COP, el seguro y los totales con centavos se muestran con sus 2 decimales, así lo impreso
     /// cuadra exacto con lo guardado: dos rutas con seguro de $100,40 (valor 100.400 × 0,1 %).
     /// </summary>
     [Fact]
@@ -192,7 +191,7 @@ public sealed class clsSeguroPdfCosteoTests
     }
 
     /// <summary>
-    /// Decisión del usuario del 2026-11-09: el seguro marcado sin valor de la mercancía no bloquea. El PDF sale sin la fila del seguro en esa
+    /// El seguro marcado sin valor de la mercancía no bloquea. El PDF sale sin la fila del seguro en esa
     /// ruta (no suma) y la respuesta y la vista del costeo traen el aviso con las rutas.
     /// </summary>
     [Fact]

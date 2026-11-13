@@ -8,10 +8,10 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// Validación de #228 (DEF-1027B-2, ADR-023): vectores de inyección de cabeceras en <c>POST .../enviar</c>, en la vista previa y en el
+/// Vectores de inyección (ADR-023) de cabeceras en <c>POST .../enviar</c>, en la vista previa y en el
 /// reintento, por HTTP con SQL Server de pruebas y MailSender falso (registra el multipart; nunca sale un correo). Ningún vector llega a
 /// MailSender ni cambia el estado de envío; el tope (10 por defecto) no se salta con duplicados, mayúsculas ni repartiendo entre <c>para</c> y
-/// <c>cc</c>; un correo guardado antes de #228 con el asunto inyectado no se reintenta.
+/// <c>cc</c>; un correo ya guardado con el asunto inyectado no se reintenta.
 /// </summary>
 [Collection(clsColeccionApiWeb.Nombre)]
 [Trait("Categoria", "Integracion")]
@@ -70,7 +70,7 @@ public sealed class clsCabecerasCorreoEndpointsTests : IDisposable
 
     [Theory]
     [MemberData(nameof(VectoresDeInyeccion))]
-    public async Task Validacion228_NingunVectorDeInyeccionLlegaAMailSender(string cuerpo)
+    public async Task NingunVectorDeInyeccionLlegaAMailSender(string cuerpo)
     {
         var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         var cotizacion = await _api.CrearCotizacionAsync(ana.UsuarioId, "900228001");
@@ -90,7 +90,7 @@ public sealed class clsCabecerasCorreoEndpointsTests : IDisposable
 
     /// <summary>UTF-8 inválido (CR "overlong" <c>C0 8D</c>, LF <c>C0 8A</c>): el JSON no se puede leer, 400 sin llegar a MailSender.</summary>
     [Fact]
-    public async Task Validacion228_UnCrLfOverlongEnUtf8NoSeLeeComoSaltoYNoLlegaAMailSender()
+    public async Task UnCrLfOverlongEnUtf8NoSeLeeComoSaltoYNoLlegaAMailSender()
     {
         var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         var cotizacion = await _api.CrearCotizacionAsync(ana.UsuarioId, "900228002");
@@ -116,7 +116,7 @@ public sealed class clsCabecerasCorreoEndpointsTests : IDisposable
     [InlineData("Hola\\r\\nBcc: intruso@ejemplo.invalid")]
     [InlineData("=?utf-8?q?Hola=0D=0ABcc:_intruso@ejemplo.invalid?=")]
     [InlineData("Hola\u200BBcc: intruso@ejemplo.invalid")]
-    public async Task Validacion228_UnAsuntoLiteralSinSaltosSaleEnUnaSolaCabecera(string asunto)
+    public async Task UnAsuntoLiteralSinSaltosSaleEnUnaSolaCabecera(string asunto)
     {
         var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         var cotizacion = await _api.CrearCotizacionAsync(ana.UsuarioId, "900228003");
@@ -137,7 +137,7 @@ public sealed class clsCabecerasCorreoEndpointsTests : IDisposable
 
     /// <summary>El tope (20 entre para y cc) cuenta cada entrada: no se salta con duplicados, mayúsculas ni repartiendo en cc.</summary>
     [Fact]
-    public async Task Validacion228_ElTopeNoSeSaltaConDuplicadosMayusculasNiCc()
+    public async Task ElTopeNoSeSaltaConDuplicadosMayusculasNiCc()
     {
         var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         var cotizacion = await _api.CrearCotizacionAsync(ana.UsuarioId, "900228004");
@@ -175,11 +175,11 @@ public sealed class clsCabecerasCorreoEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// Un correo aceptado ANTES de #228 con el asunto inyectado (MailSender lo guardó así) no se reintenta: <c>/retry</c> lo reenviaría con
+    /// Un correo ya aceptado con el asunto inyectado (MailSender lo guardó así) no se reintenta: <c>/retry</c> lo reenviaría con
     /// las mismas cabeceras. 409 <c>CORREO_NO_REINTENTABLE</c> sin llamar a MailSender, y el historial lo muestra no reintentable.
     /// </summary>
     [Fact]
-    public async Task Validacion228_UnCorreoViejoConElAsuntoInyectadoNoSeReintenta()
+    public async Task UnCorreoGuardadoConElAsuntoInyectadoNoSeReintenta()
     {
         var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         var cotizacion = await _api.CrearCotizacionAsync(ana.UsuarioId, "900228005");

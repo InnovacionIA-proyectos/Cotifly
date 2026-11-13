@@ -6,7 +6,7 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
 /// <summary>
-/// Invariantes del ajuste de margen sobre el costeo y de la regla del PDF (HU-013.2, ADR-018 §3 y §11): margen de 0 a 0,99,
+/// Invariantes del ajuste de margen sobre el costeo y de la regla del PDF (ADR-018 §3 y §11): margen de 0 a 0,99,
 /// justificación por debajo del sugerido, costo disponible y sin envío ni resultado.
 /// </summary>
 public sealed class clsAjusteMargenCotizacionTests

@@ -11,7 +11,7 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Costeo;
 
 /// <summary>
-/// Pasos de <c>specs/features/resolicitar_costeo.feature</c> (HU-013.4, #100, ADR-018 §5): la API real en memoria, SQL Server 2019 y el
+/// Pasos de <c>specs/features/resolicitar_costeo.feature</c> (ADR-018 §5): la API real en memoria, SQL Server 2019 y el
 /// Nexo falso de <see cref="clsPasosCosteo"/>. Las re-solicitudes envían <c>If-Match</c> con la versión vigente de la fila (leída de la
 /// base) salvo que el paso diga otra cosa.
 /// </summary>
@@ -75,7 +75,7 @@ public sealed class clsPasosReSolicitudCosteo(clsContextoWeb web, clsPasosCosteo
     [Given("{string} marcó el resultado de {string} como {string} con el motivo {string}")]
     public async Task DadoElResultado(string alias, string cotizacion, string resultado, string motivo)
     {
-        await costeo.FinalizarSiCorrespondeAsync(alias, costeo.Folio(cotizacion)); // HU-036.3: finaliza antes del resultado
+        await costeo.FinalizarSiCorrespondeAsync(alias, costeo.Folio(cotizacion)); // Como el frontend, finaliza antes del resultado
         await web.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{costeo.Folio(cotizacion)}/resultado", web.Sesion(alias).Access,
             clsApiWebPruebas.Json(new { resultado, motivo }));
         web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);
@@ -134,7 +134,7 @@ public sealed class clsPasosReSolicitudCosteo(clsContextoWeb web, clsPasosCosteo
         }
     }
 
-    /// <summary>Respuestas del doble clic del escenario (también las llenan los pasos de servicios conexos, #99).</summary>
+    /// <summary>Respuestas del doble clic del escenario (también las llenan los pasos de servicios conexos).</summary>
     public List<(HttpStatusCode Estado, string Cuerpo)> RespuestasDobleClic => _dobleClic;
 
     [Then("las dos respuestas tienen el estado {int} y el mismo cuerpo")]
@@ -217,8 +217,8 @@ public sealed class clsPasosReSolicitudCosteo(clsContextoWeb web, clsPasosCosteo
         (await ColumnaFolioAsync(FolioNuevo, "tipoVehiculo")).Should().Be(vehiculo);
     }
 
-    // HU-021.9 (#136): con el peso cambiado los camiones se vuelven a planificar (hasta el cubicador, uno sin vehículo) y el
-    // tipo_vehiculo de datos_carga se ignora (decisión 7).
+    // Con el peso cambiado los camiones se vuelven a planificar (uno sin vehículo) y el
+    // tipo_vehiculo de datos_carga se ignora.
     [Then("la versión nueva queda en el estado de costeo {string} con el peso {int} en un camión sin vehículo")]
     public async Task EntoncesLaVersionNuevaSinVehiculo(string estado, int peso)
     {
@@ -295,7 +295,7 @@ public sealed class clsPasosReSolicitudCosteo(clsContextoWeb web, clsPasosCosteo
     public async Task DadoEnMoneda(string cotizacion, string moneda, string trm)
     {
         // Cotización en USD de un día anterior, sin pasar por la TRM de hoy: así la caché del día queda vacía y "sin TRM" falla de verdad.
-        // El alta con el formulario en USD (#103) la cubre el escenario anterior.
+        // El alta con el formulario en USD la cubre el escenario anterior.
         await clsBaseDatosPruebas.EjecutarAsync(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
             $"UPDATE dbo_cotifly.CotizacionesSolicitud SET moneda = '{moneda}', trmAplicada = {trm} WHERE folio = '{costeo.Folio(cotizacion)}'");
     }
@@ -331,7 +331,7 @@ public sealed class clsPasosReSolicitudCosteo(clsContextoWeb web, clsPasosCosteo
             .EndWith($"Re-solicitud de {costeo.Folio(cotizacion)}; reemplaza la solicitud {_costeoIdLeido}.");
 
 
-    // HU-021.9 (#136; rehace #124): los conexos se conservan (siguen en el precio de su ruta) y se avisan solo con su nombre.
+    // Los conexos se conservan (siguen en el precio de su ruta) y se avisan solo con su nombre.
     [Then("la respuesta avisa que se conservan los servicios conexos {string}")]
     public void EntoncesSeConservanLosConexos(string nombres)
     {

@@ -5,7 +5,7 @@ using Microsoft.Data.SqlClient;
 namespace Cotifly.Pruebas.Comun;
 
 /// <summary>
-/// Proxy TCP de pruebas hacia el SQL Server del contenedor (#125). Con <see cref="Congelar"/> deja de reenviar en ambos sentidos
+/// Proxy TCP de pruebas hacia el SQL Server del contenedor. Con <see cref="Congelar"/> deja de reenviar en ambos sentidos
 /// pero mantiene vivas las conexiones TCP: simula un servidor que no responde sin cortar la conexión. Si el cliente cierra su
 /// lado, el proxy cierra el del servidor (así SQL Server ve la desconexión y deshace la transacción de esa sesión).
 /// </summary>

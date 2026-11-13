@@ -15,7 +15,7 @@ using NSubstitute;
 namespace Cotifly.Infraestructura.Tests.Costeo;
 
 /// <summary>
-/// Adaptador de servicios conexos de Nexo (HU-013.3, ADR-018 §4): rutas y cuerpos del swagger de Nexo, el catálogo sin
+/// Adaptador de servicios conexos de Nexo (ADR-018 §4): rutas y cuerpos del swagger de Nexo, el catálogo sin
 /// <c>costoUnitario</c>, el POST sin <c>valorAplicado</c> y sin reintentos, el límite de tamaño de respuesta y la traducción de los
 /// errores (403 → <c>NEXO_SIN_PERMISO</c>, 400/404 al agregar → <c>CONEXO_INVALIDO</c>, el resto → <c>NEXO_NO_DISPONIBLE</c>).
 /// </summary>
@@ -71,7 +71,7 @@ public sealed class clsServiciosConexosNexoTests
     [Fact]
     public async Task LosCostosDeLaCapturaRecorrenElCatalogoDeActivosHastaEncontrarLosIdsPedidos()
     {
-        // HU-021.6 (decisión 3): Nexo no tiene GET por id; el costo unitario se lee de las páginas del catálogo de activos.
+        // Nexo no tiene GET por id; el costo unitario se lee de las páginas del catálogo de activos.
         var primera = string.Join(',', Enumerable.Range(0, clsCostosConexosNexo.TamanoPagina).Select(i =>
             $$"""{"id":"S-{{i}}","tipoServicio":"Servicio {{i}}","costoUnitario":{{1000 + i}},"activo":true}"""));
         var nexo = new clsNexoClientesFalso()
@@ -92,9 +92,9 @@ public sealed class clsServiciosConexosNexoTests
     }
 
     [Fact]
-    public async Task Hu0432_LosCostosDeLaCapturaTraenElPrecioDeVentaDelCatalogoOElCostoSiNoTiene()
+    public async Task LosCostosDeLaCapturaTraenElPrecioDeVentaDelCatalogoOElCostoSiNoTiene()
     {
-        // S6-HU-38.2: el catálogo trae precioVenta, que puede ser null (sin precio de venta: se cotiza al costo) o faltar (Nexo anterior).
+        // El catálogo trae precioVenta, que puede ser null (sin precio de venta: se cotiza al costo) o faltar.
         var nexo = new clsNexoClientesFalso()
             .Responder(HttpStatusCode.OK, """
                 {"items":[{"id":"S-1","tipoServicio":"Cargue","costoUnitario":50000,"precioVenta":70000,"activo":true},
@@ -210,7 +210,7 @@ public sealed class clsServiciosConexosNexoTests
             error.Detalle.Should().Be("SERVICIO_CONEXO_NO_ENCONTRADO", "solo el código de Nexo viaja en detalle.motivo, nunca su texto");
         }
 
-        // Arrastre de #99 (#102): tampoco en NEXO_NO_DISPONIBLE (401, otro 4xx al buscar, 5xx) viaja el texto crudo de Nexo.
+        // Tampoco en NEXO_NO_DISPONIBLE (401, otro 4xx al buscar, 5xx) viaja el texto crudo de Nexo.
         (error.Detalle ?? string.Empty).Should().NotContain("No existe", "el texto de Nexo nunca llega al comercial ni al asistente");
     }
 

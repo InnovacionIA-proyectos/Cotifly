@@ -11,9 +11,9 @@ using SharpYaml.Serialization;
 namespace Cotifly.Api.Tests.Configuracion;
 
 /// <summary>
-/// Endurecimiento A (#199): los manifiestos de Dokploy (<c>infra/stack.dotnet.dokploy.yml</c> y <c>infra/stack.dotnet.staging.yml</c>) no
-/// usan <c>env_file</c>, así que una variable que no declaran NO llega al contenedor aunque esté cargada en Dokploy (así quedaron fuera
-/// <c>Cubicador__*</c>, <c>Correo__Seguimiento__*</c>...). Estas pruebas leen el YAML y lo comparan con las clases de opciones que la API
+/// Los manifiestos de Dokploy (<c>infra/stack.dotnet.dokploy.yml</c> y <c>infra/stack.dotnet.staging.yml</c>) no
+/// usan <c>env_file</c>, así que una variable que no declaran NO llega al contenedor aunque esté cargada en Dokploy (por ejemplo,
+/// <c>Cubicador__*</c> o <c>Correo__Seguimiento__*</c>). Estas pruebas leen el YAML y lo comparan con las clases de opciones que la API
 /// enlaza a la configuración (todas con <c>ValidateOnStart</c>):
 /// <list type="bullet">
 /// <item>cada opción enlazada (incluidas las anidadas y el primer elemento de las listas) está declarada en los dos manifiestos, salvo

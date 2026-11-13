@@ -14,7 +14,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// HU-044.3 (#254): <c>POST /web/licitaciones/aplicar-mapeo</c> por HTTP contra SQL Server real, el Nexo falso y el cubicador falso, con el
+/// <c>POST /web/licitaciones/aplicar-mapeo</c> por HTTP contra SQL Server real, el Nexo falso y el cubicador falso, con el
 /// cuerpo validado contra <c>specs/openapi.yaml</c>: transformaciones de NEXO (toneladas, «ORIGEN - DESTINO», coma decimal), errores por
 /// fila con su número, posiciones como mercancías, línea de negocio de Cotifly y de NEXO, peso sin tara, 5000/5001 filas y los errores de NEXO.
 /// </summary>

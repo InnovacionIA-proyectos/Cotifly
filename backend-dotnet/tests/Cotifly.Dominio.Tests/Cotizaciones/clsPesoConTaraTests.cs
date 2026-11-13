@@ -3,10 +3,10 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
 /// <summary>
-/// HU-030.1 (#184): peso con tara de una ruta de contenedor. Solo con <c>clase_viaje = Contenedor</c> y nunca menor que el peso de carga;
+/// Peso con tara de una ruta de contenedor. Solo con <c>clase_viaje = Contenedor</c> y nunca menor que el peso de carga;
 /// viaja a Nexo como el peso de las líneas de la ruta (la tara repartida por partes iguales entre sus camiones, el resto del redondeo en
-/// el último). #250 (DU §8: <c>peso</c> es el total con tara y Nexo solo rechaza la suma de las posiciones que lo SUPERA en más de 1 %):
-/// con un solo camión la línea lleva sus posiciones; con varios, sin posiciones como antes. Sin tara, todo como antes.
+/// el último). DU §8 (<c>peso</c> es el total con tara y Nexo solo rechaza la suma de las posiciones que lo SUPERA en más de 1 %):
+/// con un solo camión la línea lleva sus posiciones; con varios, sin posiciones. Sin tara, nada cambia.
 /// </summary>
 public sealed class clsPesoConTaraTests
 {
@@ -146,7 +146,7 @@ public sealed class clsPesoConTaraTests
     [Fact]
     public void ConVariosCamionesQueNoSumanLaCargaDeclaradaLaSumaDeLasLineasSigueSiendoElPesoConTara()
     {
-        // Validación #184: la carga declarada es 28000 kg, pero los camiones del cubicador suman 27800 kg (sus pesos salen de las
+        // La carga declarada es 28000 kg, pero los camiones del cubicador suman 27800 kg (sus pesos salen de las
         // mercancías y la regla del 1 % admite la diferencia). La tara se calcula sobre lo que viaja: 35600 − 27800 = 7800 (3900 por
         // camión); con la carga declarada habrían viajado 35400 kg en lugar de los 35600 que escribió el comercial.
         var ruta = Ruta(Linea(pesoKg: 28_000m, pesoConTaraKg: 35_600m) with { Posiciones = [] }, 16_000m, 11_800m);
@@ -189,7 +189,7 @@ public sealed class clsPesoConTaraTests
     [Fact]
     public void ConUnCamionYTaraElEmparejadorComparaConElMismoPesoQueViajoConLasPosiciones()
     {
-        // #250: que la línea lleve ahora sus posiciones no cambia su peso: el emparejador del polling sigue comparando con el peso con tara.
+        // Que la línea lleve sus posiciones no cambia su peso: el emparejador del polling sigue comparando con el peso con tara.
         var ruta = Ruta(Linea(pesoConTaraKg: 31_800m), 27_500m);
         var camion = ruta.Vehiculos[0];
 
@@ -202,7 +202,7 @@ public sealed class clsPesoConTaraTests
     [InlineData("Extradimensionado")]
     public void EnCargaSueltaYExtradimensionadoLaTaraSigueSinAplicar(string claseViaje)
     {
-        // #250 (alcance del 2026-11-05): la tara aplica SOLO a Contenedor; las demás clases mandan el peso de la carga.
+        // La tara aplica SOLO a Contenedor; las demás clases mandan el peso de la carga.
         Linea(claseViaje: claseViaje, pesoConTaraKg: 30_000m).Errores()
             .Should().ContainSingle(e => e.Campo == "peso_con_tara_kg" && e.Codigo == clsCodigosLineaSolicitud.CampoNoAplica);
         var ruta = Ruta(Linea(claseViaje: claseViaje), 28_000m);
@@ -218,7 +218,7 @@ public sealed class clsPesoConTaraTests
     [InlineData(null, 31_800d)]
     public void LaLineaDeUnSoloCamionNuncaSuperaLaReglaAsimetricaDeNexo(double? pesoKg, double? conTara)
     {
-        // #250 (DU §8): Nexo rechaza la línea si la suma de sus posiciones supera el peso en más de 1 %. Lo que viaja ya lo cumple sin
+        // DU §8: Nexo rechaza la línea si la suma de sus posiciones supera el peso en más de 1 %. Lo que viaja ya lo cumple sin
         // guarda propia: la carga cuadra al 1 % con las posiciones (|peso − suma| ≤ 1 % del peso, revalidado antes de cada envío) y el
         // peso que viaja nunca es menor que esa carga (la tara se suma, y una tara negativa cuenta como 0). 27723 kg es el borde (28000 kg
         // de mercancías: 1 % del peso).
