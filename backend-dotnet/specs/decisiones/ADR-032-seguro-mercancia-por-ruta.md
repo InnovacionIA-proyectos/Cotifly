@@ -100,7 +100,7 @@ tabla `TarifasSeguro` (una sola tasa activa) y las columnas `incluyeSeguro`, `ta
 ## Pendientes (de decisión)
 
 1. Nombre del campo en la API (`valor_seguro` frente a `costo_seguro` de la issue) y el de la base (`costoSeguro`, de Datos).
-2. (Resuelta el 2026-11-09: licitaciones fuera por ahora.)
+2. (Resuelta el 2026-11-09: licitaciones fuera por ahora. Habilitadas el 2026-11-12, HU-045.5: ver la decisión 6.)
 3. (Resuelta el 2026-11-09: el motivo sigue siendo `servicios_conexos`.)
 4. ¿Marcar el seguro exige el costeo listo, como el margen? Hoy no (se puede marcar antes).
 5. Una versión nueva (`-vN`) conserva el check; ¿debería volver a tomar la tasa vigente aunque no cambie el valor?

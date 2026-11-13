@@ -275,7 +275,7 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
     {
         var hoja = libro.Worksheets.Add(HojaSinOriginal);
         // Con leer_estructura (o sin original), las líneas a mano van al final de la hoja «Licitación», con la
-        // columna «Referencia» (la 10, solo si hay alguna a mano).
+        // columna «Referencia» (después de las de Cotifly y del seguro, solo si hay alguna a mano).
         var lineas = marcarAgregadas ? datos.Lineas.OrderBy(l => l.Fila is null ? 1 : 0).ToList() : (IReadOnlyList<clsLineaExportacion>)datos.Lineas;
         EscribirFilasComoLicitacion(hoja, datos, lineas, marcarAgregadas);
         return null;
@@ -309,7 +309,7 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
         var columna = campos.Length + 1;
         Encabezados(hoja, 1, columna, datos);
         hoja.Range(1, 1, 1, campos.Length).Style.Font.SetBold().Fill.SetBackgroundColor(_encabezado);
-        var columnaReferencia = columna + ColumnasCotifly;
+        var columnaReferencia = columna + Columnas(datos);
         if (conReferencia)
         {
             hoja.Cell(1, columnaReferencia).Value = ColumnaReferencia;
