@@ -137,29 +137,13 @@ public sealed class clsCosteoLineasService(
     private async Task<clsResultado<clsCosteoCotizacion>> EjecutarMargenAsync(
         Guid usuarioId, string folio, clsMargenLineasEntrada entrada, int versionEsperada, CancellationToken cancellationToken)
     {
-        var lineas = ValidarSeleccion(entrada.Seleccion);
+        var lineas = ValidarFormaMargen(entrada);
         if (lineas.EsFallo)
         {
             return lineas.Error;
         }
 
         var revertir = entrada.RevertirSugerido == true;
-        if (revertir == (entrada.Margen is not null))
-        {
-            return Invalida("Envía 'margen' (el mismo para todas las rutas elegidas) o 'revertir_sugerido: true', no los dos.");
-        }
-
-        if (entrada.Margen is { } margenPedido && clsLineaSolicitud.ValidarForma(margenPedido, entrada.Justificacion) is { } forma)
-        {
-            return forma;
-        }
-
-        if (entrada.Justificacion is { Length: > clsLineaSolicitud.LargoMaximoJustificacion })
-        {
-            return new clsErrorDominio(clsCodigosError.AjusteMargenInvalido,
-                $"La justificación admite hasta {clsLineaSolicitud.LargoMaximoJustificacion} caracteres.");
-        }
-
         var cotizacion = await PropiaAsync(usuarioId, folio, cancellationToken);
         if (cotizacion is null)
         {
@@ -211,64 +195,14 @@ public sealed class clsCosteoLineasService(
             return (clsReglaPdfCosteo.Conflicto(cotizacion.Folio), [], false);
         }
 
-        // La regla del PDF y de la cotización finalizada es de la cotización, no de una ruta: va antes que las rutas.
-        if (clsReglaPdfCosteo.Validar(cotizacion, MotivoVersionMargen) is { } cerrada)
+        // 1) Validar TODAS las rutas sin tocar nada.
+        var plan = PlanMargen(cotizacion, lineas, margen, revertir, justificacion);
+        if (plan.EsFallo)
         {
-            return (cerrada, [], false);
+            return (plan.Error, [], false);
         }
 
-        var rutas = Rutas(cotizacion, lineas);
-        if (rutas.EsFallo)
-        {
-            return (rutas.Error, [], false);
-        }
-
-        // 1) Validar TODAS las rutas sin tocar nada (las mismas invariantes del ajuste por ruta).
-        var plan = new List<(clsLineaSolicitud Ruta, decimal Margen)>();
-        foreach (var ruta in rutas.Valor)
-        {
-            if (cotizacion.ValidarRutaNoRechazada(ruta) is { } rechazada)
-            {
-                return (rechazada, [], false);
-            }
-
-            decimal margenRuta;
-            if (revertir)
-            {
-                if (ruta.MargenSugeridoParaRestaurar is not { } sugerido)
-                {
-                    return (ConRuta(new clsErrorDominio(clsCodigosError.AjusteMargenInvalido,
-                        $"La ruta {ruta.Orden} de la cotización {cotizacion.Folio} no tiene margen sugerido al que volver."), ruta), [], false);
-                }
-
-                margenRuta = sugerido.Margen;
-            }
-            else
-            {
-                margenRuta = margen!.Value;
-            }
-
-            if (cotizacion.ValidarAjusteMargen(ruta.Orden, margenRuta, justificacion) is { } invalido)
-            {
-                return (ConRuta(invalido, ruta), [], false);
-            }
-
-            var redondeado = clsMargenAjuste.RedondearMargen(margenRuta);
-            if (!CambiaMargen(ruta, redondeado, revertir))
-            {
-                continue;
-            }
-
-            // Vista previa: si el módulo de precio rechaza el margen de esta ruta, la cotización queda intacta.
-            if (clsAjusteMargenCosteoService.Recalcular(cotizacion, ruta, redondeado) is { EsFallo: true } previa)
-            {
-                return (ConRuta(previa.Error, ruta), [], false);
-            }
-
-            plan.Add((ruta, redondeado));
-        }
-
-        if (plan.Count == 0)
+        if (plan.Valor.Cambios.Count == 0)
         {
             // Idempotente: todas las rutas ya tienen ese margen; ni ajuste, ni PDF invalidado, ni versión nueva.
             return (await VistaAsync(cotizacion, cancellationToken), [], false);
@@ -277,7 +211,7 @@ public sealed class clsCosteoLineasService(
         // 2) Aplicar (ya validado) y guardar todo junto.
         var ahora = cotizacion.CosteoListoAt ?? cotizacion.UpdatedAt;
         var cambios = new List<clsCambioMargenRuta>();
-        foreach (var (ruta, nuevo) in plan)
+        foreach (var (ruta, nuevo, _) in plan.Valor.Cambios)
         {
             var anterior = ruta.MargenAplicado;
             var sugerido = ruta.SugeridoVigente;
@@ -322,6 +256,109 @@ public sealed class clsCosteoLineasService(
         return (await VistaAsync(cotizacion, CancellationToken.None), cambios, pdfInvalidado);
     }
 
+    /// <summary>
+    /// Forma del cuerpo de <c>PUT .../costeo/margen/lineas</c>, sin la cotización: la selección, <c>margen</c> o <c>revertir_sugerido</c>
+    /// (exactamente uno) y los límites del margen y de la justificación. Devuelve las líneas pedidas en orden (vacía = todas).
+    /// </summary>
+    public static clsResultado<IReadOnlyList<int>> ValidarFormaMargen(clsMargenLineasEntrada entrada)
+    {
+        ArgumentNullException.ThrowIfNull(entrada);
+        var lineas = ValidarSeleccion(entrada.Seleccion);
+        if (lineas.EsFallo)
+        {
+            return lineas.Error;
+        }
+
+        if ((entrada.RevertirSugerido == true) == (entrada.Margen is not null))
+        {
+            return Invalida("Envía 'margen' (el mismo para todas las rutas elegidas) o 'revertir_sugerido: true', no los dos.");
+        }
+
+        if (entrada.Margen is { } margenPedido && clsLineaSolicitud.ValidarForma(margenPedido, entrada.Justificacion) is { } forma)
+        {
+            return forma;
+        }
+
+        if (entrada.Justificacion is { Length: > clsLineaSolicitud.LargoMaximoJustificacion })
+        {
+            return new clsErrorDominio(clsCodigosError.AjusteMargenInvalido,
+                $"La justificación admite hasta {clsLineaSolicitud.LargoMaximoJustificacion} caracteres.");
+        }
+
+        return lineas;
+    }
+
+    /// <summary>
+    /// Qué haría el margen en lote sobre <paramref name="cotizacion"/>, SIN cambiarla: la regla del PDF, las rutas elegidas, y por ruta
+    /// las mismas invariantes del ajuste por ruta (no rechazada, límites, justificación contra su sugerido) y la vista previa del precio.
+    /// Las rutas que ya tienen ese margen quedan fuera de <see cref="clsPlanMargenLineas.Cambios"/>. El primer error lleva la ruta.
+    /// </summary>
+    public static clsResultado<clsPlanMargenLineas> PlanMargen(
+        clsCotizacionSolicitud cotizacion, IReadOnlyList<int> lineas, decimal? margen, bool revertir, string? justificacion)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        ArgumentNullException.ThrowIfNull(lineas);
+
+        // La regla del PDF y de la cotización finalizada es de la cotización, no de una ruta: va antes que las rutas.
+        if (clsReglaPdfCosteo.Validar(cotizacion, MotivoVersionMargen) is { } cerrada)
+        {
+            return cerrada;
+        }
+
+        var rutas = Rutas(cotizacion, lineas);
+        if (rutas.EsFallo)
+        {
+            return rutas.Error;
+        }
+
+        var cambios = new List<clsCambioMargenPlan>();
+        foreach (var ruta in rutas.Valor)
+        {
+            if (cotizacion.ValidarRutaNoRechazada(ruta) is { } rechazada)
+            {
+                return rechazada;
+            }
+
+            decimal margenRuta;
+            if (revertir)
+            {
+                if (ruta.MargenSugeridoParaRestaurar is not { } sugerido)
+                {
+                    return ConRuta(new clsErrorDominio(clsCodigosError.AjusteMargenInvalido,
+                        $"La ruta {ruta.Orden} de la cotización {cotizacion.Folio} no tiene margen sugerido al que volver."), ruta);
+                }
+
+                margenRuta = sugerido.Margen;
+            }
+            else
+            {
+                margenRuta = margen ?? throw new ArgumentNullException(nameof(margen));
+            }
+
+            if (cotizacion.ValidarAjusteMargen(ruta.Orden, margenRuta, justificacion) is { } invalido)
+            {
+                return ConRuta(invalido, ruta);
+            }
+
+            var redondeado = clsMargenAjuste.RedondearMargen(margenRuta);
+            if (!CambiaMargen(ruta, redondeado, revertir))
+            {
+                continue;
+            }
+
+            // Vista previa: si el módulo de precio rechaza el margen de esta ruta, la cotización queda intacta.
+            var previa = clsAjusteMargenCosteoService.Recalcular(cotizacion, ruta, redondeado);
+            if (previa.EsFallo)
+            {
+                return ConRuta(previa.Error, ruta);
+            }
+
+            cambios.Add(new clsCambioMargenPlan(ruta, redondeado, previa.Valor.PrecioRuta));
+        }
+
+        return new clsPlanMargenLineas(rutas.Valor, cambios);
+    }
+
     /// <summary>¿El margen <paramref name="redondeado"/> (o volver al sugerido) cambia la ruta?</summary>
     private static bool CambiaMargen(clsLineaSolicitud ruta, decimal redondeado, bool revertir) =>
         revertir
@@ -351,32 +388,13 @@ public sealed class clsCosteoLineasService(
     private async Task<clsResultado<clsCosteoCotizacion>> EjecutarConexoAsync(
         Guid usuarioId, string folio, clsConexoLineasEntrada entrada, int versionEsperada, bool agregar, CancellationToken cancellationToken)
     {
-        var lineas = ValidarSeleccion(entrada.Seleccion);
-        if (lineas.EsFallo)
+        var forma = ValidarFormaConexo(entrada, agregar);
+        if (forma.EsFallo)
         {
-            return lineas.Error;
+            return forma.Error;
         }
 
-        if (!Guid.TryParse(entrada.ServicioId, out var servicioGuid))
-        {
-            return Invalida("'servicio_id' debe ser el id (UUID) de un servicio del catálogo de Nexo (GET /web/servicios-conexos).");
-        }
-
-        var servicio = servicioGuid.ToString("D");
-        if (agregar)
-        {
-            if (entrada.Cantidad is not { } cantidad || cantidad < clsServiciosConexosCosteoService.CantidadMinima
-                || cantidad > clsServiciosConexosCosteoService.CantidadMaxima || decimal.Round(cantidad, 2) != cantidad)
-            {
-                return Invalida($"'cantidad' debe estar entre {clsServiciosConexosCosteoService.CantidadMinima.ToString(CultureInfo.InvariantCulture)} y "
-                    + $"{clsServiciosConexosCosteoService.CantidadMaxima.ToString(CultureInfo.InvariantCulture)}, con hasta 2 decimales.");
-            }
-        }
-        else if (entrada.Cantidad is not null)
-        {
-            return Invalida("Quitar un conexo no lleva 'cantidad'.");
-        }
-
+        var (lineas, servicio) = forma.Valor;
         var cotizacion = await PropiaAsync(usuarioId, folio, cancellationToken);
         if (cotizacion is null)
         {
@@ -385,11 +403,11 @@ public sealed class clsCosteoLineasService(
 
         var cronometro = Stopwatch.StartNew();
         var (resultado, rutas, pdfInvalidado) = agregar
-            ? await AgregarAsync(cotizacion, usuarioId, lineas.Valor, servicio, entrada.Cantidad!.Value, versionEsperada, cancellationToken)
-            : await QuitarAsync(cotizacion, usuarioId, lineas.Valor, servicio, versionEsperada, cancellationToken);
+            ? await AgregarAsync(cotizacion, usuarioId, lineas, servicio, entrada.Cantidad!.Value, versionEsperada, cancellationToken)
+            : await QuitarAsync(cotizacion, usuarioId, lineas, servicio, versionEsperada, cancellationToken);
         await auditoria.RegistrarAsync(
             agregar ? HerramientaAgregarConexo : HerramientaQuitarConexo,
-            new { folio = cotizacion.Folio, lineas = lineas.Valor, todas = lineas.Valor.Count == 0, servicio_id = servicio, cantidad = entrada.Cantidad },
+            new { folio = cotizacion.Folio, lineas, todas = lineas.Count == 0, servicio_id = servicio, cantidad = entrada.Cantidad },
             resultado.EsExitoso
                 // Sin montos: en qué rutas se agregó o se quitó.
                 ? (object)new
@@ -414,24 +432,13 @@ public sealed class clsCosteoLineasService(
             return (clsReglaPdfCosteo.Conflicto(cotizacion.Folio), [], false);
         }
 
-        var rutas = Rutas(cotizacion, lineas);
-        if (rutas.EsFallo)
+        var plan = PlanAgregarConexo(cotizacion, lineas, servicio, cantidad);
+        if (plan.EsFallo)
         {
-            return (rutas.Error, [], false);
+            return (plan.Error, [], false);
         }
 
-        // Las mismas precondiciones del POST por ruta (costeo con margen, regla del PDF, ruta rechazada, línea de Nexo), ruta
-        // por ruta y sin tocar nada. Las de la cotización salen igual en cualquier ruta: sin detalle de ruta.
-        var conexo = new clsConexoValidado(null, servicio, cantidad);
-        foreach (var ruta in rutas.Valor)
-        {
-            if (clsServiciosConexosCosteoService.ValidarPrecondiciones(cotizacion, [conexo with { LineaSolicitudId = ruta.Id }]) is { } noPermitido)
-            {
-                return (DeRuta(noPermitido) ? ConRuta(noPermitido, ruta) : noPermitido, [], false);
-            }
-        }
-
-        var destino = rutas.Valor.Where(r => !TieneServicio(r, servicio)).ToList();
+        var destino = plan.Valor.Cambian;
         if (destino.Count == 0)
         {
             // Idempotente: todas las rutas elegidas ya tienen el conexo (para cambiar su cantidad: PUT .../costeo/servicios-conexos).
@@ -520,39 +527,17 @@ public sealed class clsCosteoLineasService(
             return (clsReglaPdfCosteo.Conflicto(cotizacion.Folio), [], false);
         }
 
-        // Las mismas reglas del PUT por ruta: costeo con precio y regla del PDF (de la cotización), ruta existente y no rechazada.
-        if (!cotizacion.TieneCostoDisponible)
+        var plan = PlanQuitarConexo(cotizacion, lineas, servicio);
+        if (plan.EsFallo)
         {
-            return (new clsErrorDominio(clsCodigosError.CosteoNoListo,
-                $"La cotización {cotizacion.Folio} todavía no tiene el costeo de Nexo con margen aplicado."), [], false);
-        }
-
-        if (clsReglaPdfCosteo.Validar(cotizacion, MotivoVersionConexos) is { } cerrada)
-        {
-            return (cerrada, [], false);
-        }
-
-        var rutas = Rutas(cotizacion, lineas);
-        if (rutas.EsFallo)
-        {
-            return (rutas.Error, [], false);
-        }
-
-        if (rutas.Valor.Select(cotizacion.ValidarRutaNoRechazada).FirstOrDefault(e => e is not null) is { } rechazada)
-        {
-            return (rechazada, [], false);
+            return (plan.Error, [], false);
         }
 
         var ahora = cotizacion.CosteoListoAt ?? cotizacion.UpdatedAt;
         var cambios = new List<clsCambioConexoRuta>();
-        foreach (var ruta in rutas.Valor)
+        foreach (var ruta in plan.Valor.Cambian)
         {
             var quitar = ruta.Conexos.Where(c => EsServicio(c, servicio)).ToList();
-            if (quitar.Count == 0)
-            {
-                continue;
-            }
-
             var quedan = ruta.Conexos.Where(c => !quitar.Contains(c))
                 .ToDictionary(c => c.IdServicioConexo, c => c.Cantidad, clsCosteoCotizacionService.ComparadorIdConexo);
             var ajustados = cotizacion.AjustarConexosRuta(ruta.Orden, quedan, ahora);
@@ -578,6 +563,101 @@ public sealed class clsCosteoLineasService(
         }
 
         return (await VistaAsync(cotizacion, CancellationToken.None), cambios, pdfInvalidado);
+    }
+
+    /// <summary>
+    /// Forma del cuerpo de los conexos en lote, sin la cotización: la selección, el <c>servicio_id</c> (UUID del catálogo de Nexo) y, al
+    /// agregar, la <c>cantidad</c> (al quitar no se envía). Devuelve las líneas pedidas (vacía = todas) y el id normalizado.
+    /// </summary>
+    public static clsResultado<(IReadOnlyList<int> Lineas, string Servicio)> ValidarFormaConexo(clsConexoLineasEntrada entrada, bool agregar)
+    {
+        ArgumentNullException.ThrowIfNull(entrada);
+        var lineas = ValidarSeleccion(entrada.Seleccion);
+        if (lineas.EsFallo)
+        {
+            return lineas.Error;
+        }
+
+        if (!Guid.TryParse(entrada.ServicioId, out var servicioGuid))
+        {
+            return Invalida("'servicio_id' debe ser el id (UUID) de un servicio del catálogo de Nexo (GET /web/servicios-conexos).");
+        }
+
+        if (agregar)
+        {
+            if (entrada.Cantidad is not { } cantidad || cantidad < clsServiciosConexosCosteoService.CantidadMinima
+                || cantidad > clsServiciosConexosCosteoService.CantidadMaxima || decimal.Round(cantidad, 2) != cantidad)
+            {
+                return Invalida($"'cantidad' debe estar entre {clsServiciosConexosCosteoService.CantidadMinima.ToString(CultureInfo.InvariantCulture)} y "
+                    + $"{clsServiciosConexosCosteoService.CantidadMaxima.ToString(CultureInfo.InvariantCulture)}, con hasta 2 decimales.");
+            }
+        }
+        else if (entrada.Cantidad is not null)
+        {
+            return Invalida("Quitar un conexo no lleva 'cantidad'.");
+        }
+
+        return clsResultado<(IReadOnlyList<int>, string)>.Exito((lineas.Valor, servicioGuid.ToString("D")));
+    }
+
+    /// <summary>
+    /// Qué haría agregar el conexo en lote, SIN cambiar la cotización: las mismas precondiciones del <c>POST</c> por ruta
+    /// (costeo con margen, regla del PDF, ruta rechazada, línea de Nexo), ruta por ruta. <see cref="clsPlanConexoLineas.Cambian"/> son las
+    /// rutas que todavía no lo tienen. No lee el catálogo de Nexo.
+    /// </summary>
+    public static clsResultado<clsPlanConexoLineas> PlanAgregarConexo(
+        clsCotizacionSolicitud cotizacion, IReadOnlyList<int> lineas, string servicio, decimal cantidad)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        var rutas = Rutas(cotizacion, lineas);
+        if (rutas.EsFallo)
+        {
+            return rutas.Error;
+        }
+
+        // Las de la cotización salen igual en cualquier ruta: sin detalle de ruta.
+        var conexo = new clsConexoValidado(null, servicio, cantidad);
+        foreach (var ruta in rutas.Valor)
+        {
+            if (clsServiciosConexosCosteoService.ValidarPrecondiciones(cotizacion, [conexo with { LineaSolicitudId = ruta.Id }]) is { } noPermitido)
+            {
+                return DeRuta(noPermitido) ? ConRuta(noPermitido, ruta) : noPermitido;
+            }
+        }
+
+        return new clsPlanConexoLineas(rutas.Valor, [.. rutas.Valor.Where(r => !TieneServicio(r, servicio))]);
+    }
+
+    /// <summary>
+    /// Qué haría quitar el conexo en lote, SIN cambiar la cotización: las mismas reglas del <c>PUT</c> por ruta (costeo con precio y
+    /// regla del PDF, ruta existente y no rechazada). <see cref="clsPlanConexoLineas.Cambian"/> son las rutas que lo tienen.
+    /// </summary>
+    public static clsResultado<clsPlanConexoLineas> PlanQuitarConexo(clsCotizacionSolicitud cotizacion, IReadOnlyList<int> lineas, string servicio)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        if (!cotizacion.TieneCostoDisponible)
+        {
+            return new clsErrorDominio(clsCodigosError.CosteoNoListo,
+                $"La cotización {cotizacion.Folio} todavía no tiene el costeo de Nexo con margen aplicado.");
+        }
+
+        if (clsReglaPdfCosteo.Validar(cotizacion, MotivoVersionConexos) is { } cerrada)
+        {
+            return cerrada;
+        }
+
+        var rutas = Rutas(cotizacion, lineas);
+        if (rutas.EsFallo)
+        {
+            return rutas.Error;
+        }
+
+        if (rutas.Valor.Select(cotizacion.ValidarRutaNoRechazada).FirstOrDefault(e => e is not null) is { } rechazada)
+        {
+            return rechazada;
+        }
+
+        return new clsPlanConexoLineas(rutas.Valor, [.. rutas.Valor.Where(r => TieneServicio(r, servicio))]);
     }
 
     /// <summary>
@@ -725,3 +805,12 @@ public sealed class clsCosteoLineasService(
 
     private sealed record clsCambioConexoRuta(int Orden, Guid RutaId, decimal? Anterior, decimal? Nueva);
 }
+
+/// <summary>Plan del margen en lote: las rutas elegidas y las que cambian (con su margen redondeado y su precio nuevo).</summary>
+public sealed record clsPlanMargenLineas(IReadOnlyList<clsLineaSolicitud> Rutas, IReadOnlyList<clsCambioMargenPlan> Cambios);
+
+/// <summary>Una ruta que cambia de margen: el margen redondeado y el precio de la ruta con él (vista previa, sin guardar).</summary>
+public sealed record clsCambioMargenPlan(clsLineaSolicitud Ruta, decimal Margen, decimal PrecioRuta);
+
+/// <summary>Plan de un conexo en lote: las rutas elegidas y las que cambian (al agregar, las que no lo tienen; al quitar, las que sí).</summary>
+public sealed record clsPlanConexoLineas(IReadOnlyList<clsLineaSolicitud> Rutas, IReadOnlyList<clsLineaSolicitud> Cambian);

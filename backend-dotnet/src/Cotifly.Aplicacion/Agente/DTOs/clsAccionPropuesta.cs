@@ -6,7 +6,8 @@ namespace Cotifly.Aplicacion.Agente.DTOs;
 /// cantidad). El frontend la muestra con <see cref="Resumen"/> y un botón Confirmar; solo al confirmar llama a <see cref="Metodo"/>
 /// <see cref="Endpoint"/> con <see cref="Cuerpo"/> tal cual e <c>If-Match: </c><see cref="RowVersion"/>. La IA nunca la ejecuta.
 /// </summary>
-/// <param name="Tipo"><c>ajustar_margen</c> | <c>re_solicitar_costeo</c> | <c>agregar_servicios_conexos</c>.</param>
+/// <param name="Tipo"><c>ajustar_margen</c> | <c>re_solicitar_costeo</c> | <c>agregar_servicios_conexos</c> | <c>ajustar_margen_lineas</c> |
+/// <c>agregar_servicios_conexos_lineas</c> | <c>quitar_servicios_conexos_lineas</c> (los tres últimos, el mismo cambio en varias rutas).</param>
 /// <param name="Metodo"><c>PUT</c> | <c>POST</c>.</param>
 /// <param name="Endpoint">Ruta relativa con el folio de la conversación (nunca otro).</param>
 /// <param name="Cuerpo">Cuerpo JSON exacto del endpoint destino (claves snake_case del contrato).</param>
@@ -26,6 +27,9 @@ public sealed record clsAccionPropuesta(
     public const string TipoAjustarMargen = "ajustar_margen";
     public const string TipoReSolicitarCosteo = "re_solicitar_costeo";
     public const string TipoAgregarServiciosConexos = "agregar_servicios_conexos";
+    public const string TipoAjustarMargenLineas = "ajustar_margen_lineas";
+    public const string TipoAgregarServiciosConexosLineas = "agregar_servicios_conexos_lineas";
+    public const string TipoQuitarServiciosConexosLineas = "quitar_servicios_conexos_lineas";
 
     /// <summary>Largo máximo de <see cref="Resumen"/> (contrato).</summary>
     public const int LargoMaximoResumen = 300;

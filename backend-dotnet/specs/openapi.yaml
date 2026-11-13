@@ -369,7 +369,10 @@ paths:
         es siempre 400 `FOLIO_REQUERIDO`; `cotizacion_origen_id` y `moneda` quedan obsoletos y se ignoran. La sesión queda
         ligada al comercial y al folio (el mismo `sesion_id` con otro folio es otra conversación).
         Herramientas de solo lectura o propuesta: `consultar_cotizacion`, `proponer_ajuste_margen`,
-        `proponer_re_solicitud` y `buscar_servicio_conexo`. **Ninguna entrega montos de dinero al LLM** (ni precio, ni
+        `proponer_re_solicitud`, `buscar_servicio_conexo`, `proponer_ajuste_margen_rutas`, `proponer_agregar_conexo_rutas` y
+        `proponer_quitar_conexo_rutas`. El mismo margen, o el mismo servicio conexo agregado o quitado, en varias rutas es UNA
+        sola propuesta hacia el endpoint en lote (`ajustar_margen_lineas`, `agregar_servicios_conexos_lineas`,
+        `quitar_servicios_conexos_lineas`), con sus mismas validaciones. **Ninguna entrega montos de dinero al LLM** (ni precio, ni
         costo, ni totales, ni valores de conexos): `consultar_cotizacion` da solo estado, ruta, línea, moneda, nombres de
         conexos y los porcentajes de margen actual y sugerido (ADR-018 §2b). El `resumen` con montos de la acción
         propuesta lo arma el servidor después del LLM. La respuesta es `{texto, accion_propuesta?}`: la acción
@@ -6737,19 +6740,30 @@ components:
       required: [tipo, metodo, endpoint, cuerpo, resumen, row_version]
       description: |
         Acción final propuesta por el asistente (ADR-018). La arman herramientas deterministas (`proponer_ajuste_margen`,
-        `proponer_re_solicitud`, `buscar_servicio_conexo`) con datos validados por el servidor: el LLM elige la acción y
+        `proponer_re_solicitud`, `buscar_servicio_conexo`, `proponer_ajuste_margen_rutas`, `proponer_agregar_conexo_rutas`,
+        `proponer_quitar_conexo_rutas`) con datos validados por el servidor: el LLM elige la acción y
         sus argumentos de texto, pero `endpoint`, `metodo` y `row_version` los pone el servidor, y `cuerpo` se valida
         contra el esquema del endpoint destino antes de responder. Ejecutarla es exactamente igual que usar el botón de la
         pantalla: mismas validaciones y mismos errores.
       properties:
         tipo:
           type: string
-          enum: [ajustar_margen, re_solicitar_costeo, agregar_servicios_conexos]
+          enum: [ajustar_margen, re_solicitar_costeo, agregar_servicios_conexos, ajustar_margen_lineas,
+                 agregar_servicios_conexos_lineas, quitar_servicios_conexos_lineas]
           description: |
             `ajustar_margen` → `PUT /web/cotizaciones/{folio}/costeo/margen` (`AjusteMargenWeb`);
             `re_solicitar_costeo` → `POST /web/cotizaciones/{folio}/costeo/re-solicitar` (`ReSolicitudCosteoWeb`);
             `agregar_servicios_conexos` → `POST /web/cotizaciones/{folio}/costeo/servicios-conexos`
-            (`AgregarServiciosConexosWeb`).
+            (`AgregarServiciosConexosWeb`);
+            `ajustar_margen_lineas` → `PUT /web/cotizaciones/{folio}/costeo/margen/lineas` (`MargenLineasWeb`:
+            `{"todas": true, "margen": 0.2, "justificacion": null}` o `{"lineas": [1, 3], ...}`);
+            `agregar_servicios_conexos_lineas` → `POST /web/cotizaciones/{folio}/costeo/servicios-conexos/lineas`
+            (`ConexoLineasWeb`: `{"todas": true, "servicio_id": "<uuid>", "cantidad": 2}` o con `lineas`);
+            `quitar_servicios_conexos_lineas` → `POST /web/cotizaciones/{folio}/costeo/servicios-conexos/lineas/quitar`
+            (`QuitarConexoLineasWeb`: `{"todas": true, "servicio_id": "<uuid>"}` o con `lineas`).
+            En los tres últimos el cuerpo lleva `todas` o `lineas` (ordenada), nunca los dos. `If-Match` siempre; al
+            confirmar los dos de conexos, el frontend envía `Idempotency-Key` (un UUID nuevo por clic); en el de margen es
+            opcional.
         metodo:
           type: string
           enum: [PUT, POST]
@@ -6764,6 +6778,9 @@ components:
             - $ref: '#/components/schemas/AjusteMargenWeb'
             - $ref: '#/components/schemas/ReSolicitudCosteoWeb'
             - $ref: '#/components/schemas/AgregarServiciosConexosWeb'
+            - $ref: '#/components/schemas/MargenLineasWeb'
+            - $ref: '#/components/schemas/ConexoLineasWeb'
+            - $ref: '#/components/schemas/QuitarConexoLineasWeb'
         resumen:
           type: string
           maxLength: 300

@@ -12,15 +12,16 @@ namespace Cotifly.Aplicacion.Tests.Agente;
 
 /// <summary>
 /// Declaraciones portables de las herramientas: el esquema de Semantic Kernel trae la descripción en la clave
-/// no estándar <c>condition</c> y la nulabilidad como arreglo de tipos, que Gemini (vía OmniRoute) rechaza con 400. Contrato: las 4
+/// no estándar <c>condition</c> y la nulabilidad como arreglo de tipos, que Gemini (vía OmniRoute) rechaza con 400. Contrato: las 7
 /// herramientas del asistente por folio solo usan palabras portables y
 /// conservan nombres, descripciones, tipos y obligatorios.
 /// </summary>
 public sealed class clsEsquemaPortableHerramientasTests
 {
-    private static readonly string[] _cuatroHerramientas =
+    private static readonly string[] _sieteHerramientas =
     [
         "consultar_cotizacion", "proponer_ajuste_margen", "proponer_re_solicitud", "buscar_servicio_conexo",
+        "proponer_ajuste_margen_rutas", "proponer_agregar_conexo_rutas", "proponer_quitar_conexo_rutas",
     ];
 
     /// <summary>Plugin real del asistente (las dependencias no se invocan: solo se leen los esquemas).</summary>
@@ -34,11 +35,11 @@ public sealed class clsEsquemaPortableHerramientasTests
 
     // Contrato sobre lo que recibe el modelo: las declaraciones que arma el runner del asistente.
     [Fact]
-    public void LasCuatroHerramientasQueVeElModeloSoloUsanJsonSchemaPortable()
+    public void LasSieteHerramientasQueVeElModeloSoloUsanJsonSchemaPortable()
     {
         var declaraciones = Declaraciones();
 
-        declaraciones.Select(d => d.Name).Should().BeEquivalentTo(_cuatroHerramientas);
+        declaraciones.Select(d => d.Name).Should().BeEquivalentTo(_sieteHerramientas);
         foreach (var declaracion in declaraciones)
         {
             declaracion.Description.Should().NotBeNullOrWhiteSpace($"{declaracion.Name} lleva la descripción a nivel de función");
