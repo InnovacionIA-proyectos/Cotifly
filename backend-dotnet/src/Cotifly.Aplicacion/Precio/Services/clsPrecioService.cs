@@ -9,7 +9,7 @@ namespace Cotifly.Aplicacion.Precio.Services;
 /// <summary>
 /// Implementación de <see cref="IClsPrecioService"/>: delega en la regla pura <see cref="clsCalculadoraPrecio"/>
 /// (paridad con <c>mcp_server/precio.py</c>, precio en pesos) y, en USD, convierte con <see cref="clsConversorMoneda"/> y la TRM
-/// oficial del día de negocio (<see cref="IClsProveedorTrm"/> con la fecha de <see cref="IClsCalendarioNegocio"/>, HU-012.2, ADR-014).
+/// oficial del día de negocio (<see cref="IClsProveedorTrm"/> con la fecha de <see cref="IClsCalendarioNegocio"/>, ADR-014).
 /// La TRM nunca viene del LLM.
 /// </summary>
 public sealed class clsPrecioService(IClsProveedorTrm trm, IClsCalendarioNegocio calendario) : IClsPrecioService

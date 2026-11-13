@@ -2,7 +2,7 @@ using Cotifly.Dominio.Agente;
 
 namespace Cotifly.Aplicacion.Municipios.DTOs;
 
-/// <summary>Cómo coincidió el texto del comercial con el catálogo de municipios (HU-005.13).</summary>
+/// <summary>Cómo coincidió el texto del comercial con el catálogo de municipios.</summary>
 public enum CoincidenciaMunicipio
 {
     /// <summary>Un solo municipio: se usa directo.</summary>

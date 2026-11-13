@@ -1,6 +1,6 @@
 namespace Cotifly.Aplicacion.Margen.DTOs;
 
-/// <summary>Resultado de consultar la fuente del margen de SAP TM (<see cref="Interfaces.IClsFuenteMargen"/>, HU-042.2).</summary>
+/// <summary>Resultado de consultar la fuente del margen de SAP TM (<see cref="Interfaces.IClsFuenteMargen"/>).</summary>
 public enum EstadoConsultaMargenSap
 {
     /// <summary>

@@ -4,10 +4,10 @@ namespace Cotifly.Aplicacion.Margen.Services;
 
 /// <summary>
 /// Opciones de la resolución de margen (sección <c>SapTm</c>: <c>SapTm__SalesOrgDefault</c> y <c>SapTm__AvisoSincronizacionHoras</c>).
-/// Infraestructura la enlaza y la valida al arrancar. HU-042.2 (#243, ADR-027): el margen de SAP TM sale de la copia local que sincroniza
-/// el worker del backend; sus variables (<c>Url</c>, <c>User</c>, <c>Pass</c>, <c>SapClient</c> y los ajustes del worker) son de
-/// <c>clsOpcionesSapTmSincronizacion</c> (Infraestructura), en la misma sección. <c>SapTm__Modo</c> y <c>SapTm__ExportPath</c> se retiraron:
-/// si llegan, la API arranca igual y avisa que las ignora.
+/// Infraestructura la enlaza y la valida al arrancar. El margen de SAP TM sale de la copia local que sincroniza
+/// el worker del backend (ADR-027); sus variables (<c>Url</c>, <c>User</c>, <c>Pass</c>, <c>SapClient</c> y los ajustes del worker) son de
+/// <c>clsOpcionesSapTmSincronizacion</c> (Infraestructura), en la misma sección. Si llegan <c>SapTm__Modo</c> o <c>SapTm__ExportPath</c>,
+/// la API arranca igual y avisa que las ignora.
 /// </summary>
 public sealed class clsOpcionesMargen
 {
@@ -19,7 +19,7 @@ public sealed class clsOpcionesMargen
     public string SalesOrgDefault { get; set; } = "50000005";
 
     /// <summary>
-    /// HU-042.2 (#243): horas desde la última sincronización exitosa de la copia local a partir de las cuales el detalle del margen de
+    /// Horas desde la última sincronización exitosa de la copia local a partir de las cuales el detalle del margen de
     /// SAP TM avisa que el dato puede estar desactualizado. El dato se sigue usando (la copia no caduca). Debe ser mayor que cero.
     /// </summary>
     [Range(1, 24 * 365)]

@@ -4,7 +4,7 @@ using Cotifly.Dominio.Identidad;
 namespace Cotifly.Aplicacion.Identidad.Interfaces;
 
 /// <summary>
-/// Regional de un usuario y miembros de una regional (HU-010.1, ADR-016 §6). Regla: la regional efectiva de un usuario es la
+/// Regional de un usuario y miembros de una regional (ADR-016 §6). Regla: la regional efectiva de un usuario es la
 /// de <c>DimEjecutivo</c> (si está configurada y el usuario aparece) o, si no, <c>UsuariosWeb.regional</c> (la fija el DBA).
 /// Errores: <c>REGIONAL_NO_ASIGNADA</c> (sin regional efectiva) y <c>REGIONAL_NO_DISPONIBLE</c> (<c>DimEjecutivo</c>
 /// configurada pero caída).
@@ -26,7 +26,7 @@ public interface IClsRegionalUsuario
     Task<clsResultado<bool>> EsMiembroDeMiRegionalAsync(clsUsuarioWeb gerente, Guid usuarioId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// HU-037.3 (#211): el alcance de regionales de <paramref name="usuario"/> con su <paramref name="rol"/>, la única regla que usan el
+    /// El alcance de regionales de <paramref name="usuario"/> con su <paramref name="rol"/>, la única regla que usan el
     /// tablero y el listado regional (ADR-016 §11):
     /// <list type="bullet">
     /// <item><c>director</c>: sin <paramref name="regional"/>, todos los usuarios de <c>UsuariosWeb</c> (<see cref="clsAlcanceRegional.Todas"/>);
@@ -42,14 +42,14 @@ public interface IClsRegionalUsuario
         clsUsuarioWeb usuario, RolInterno rol, string? regional = null, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// HU-037.3 (#211): <c>true</c> si <paramref name="usuario"/> con <paramref name="rol"/> puede consultar lo de <paramref name="duenoId"/>
+    /// <c>true</c> si <paramref name="usuario"/> con <paramref name="rol"/> puede consultar lo de <paramref name="duenoId"/>
     /// (detalle y PDF de una cotización ajena): el <c>director</c> siempre; el <c>gerente_comercial</c> si el dueño es miembro de su
     /// regional (<see cref="EsMiembroDeMiRegionalAsync"/>); cualquier otro rol, nunca. Ante un error, quien llama niega (fail-closed).
     /// </summary>
     Task<clsResultado<bool>> PuedeVerDeAsync(clsUsuarioWeb usuario, RolInterno rol, Guid duenoId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// HU-037.3 (#211, <c>GET /web/regionales</c>): las regionales que puede pedir <paramref name="usuario"/>. <c>director</c>: las
+    /// Las regionales (<c>GET /web/regionales</c>) que puede pedir <paramref name="usuario"/>. <c>director</c>: las
     /// regionales efectivas de todos los usuarios de <c>UsuariosWeb</c> (la de <c>DimEjecutivo</c> o, si no aparece, la guardada), sin
     /// repetir y ordenadas. <c>gerente_comercial</c>: solo la suya. Otro rol: <c>SIN_PERMISO</c>. Errores además:
     /// <c>REGIONAL_NO_ASIGNADA</c> (gerente) y <c>REGIONAL_NO_DISPONIBLE</c>.
@@ -58,7 +58,7 @@ public interface IClsRegionalUsuario
 }
 
 /// <summary>
-/// HU-037.3 (#211): alcance de regionales resuelto por <see cref="IClsRegionalUsuario.ResolverAlcanceAsync"/>.
+/// Alcance de regionales resuelto por <see cref="IClsRegionalUsuario.ResolverAlcanceAsync"/>.
 /// </summary>
 /// <param name="Regional">La regional del alcance (la del gerente o la que pidió el director); <c>null</c> = todas (solo el director).</param>
 /// <param name="Fuente">De dónde salió la regional del gerente (<see cref="clsRegionalResuelta.FuenteDimEjecutivo"/> o

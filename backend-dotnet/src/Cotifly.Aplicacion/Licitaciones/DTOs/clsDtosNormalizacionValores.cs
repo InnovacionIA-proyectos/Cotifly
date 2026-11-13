@@ -1,6 +1,6 @@
 namespace Cotifly.Aplicacion.Licitaciones.DTOs;
 
-// HU-044.4 (#255, ADR-029): POST /web/licitaciones/normalizar-valores. Lo que llega del front y lo que vuelve, ya en los nombres de
+// ADR-029: POST /web/licitaciones/normalizar-valores. Lo que llega del front y lo que vuelve, ya en los nombres de
 // Cotifly (la Api los escribe en snake_case). La forma de NEXO (camelCase, campo tipoVehiculo/lineaNegocio) la arma el adaptador.
 
 /// <summary>

@@ -25,20 +25,20 @@ public static class clsTextosEstandar
     public const string TituloTarifa = "NUESTRA TARIFA PARA SU SOLICITUD ES:";
 
     /// <summary>
-    /// HU-033 (#199, decisión 5): etiqueta del total general al final de la tarifa del PDF y en el resumen del correo. El total es la suma del
+    /// Etiqueta del total general al final de la tarifa del PDF y en el resumen del correo. El total es la suma del
     /// precio final de cada ruta (transporte y servicios conexos incluidos), sin desglose.
     /// </summary>
     public const string EtiquetaTotalGeneral = "VALOR TOTAL DE LA COTIZACIÓN";
 
     /// <summary>
-    /// HU-033 (#199): leyenda de impuestos del total, la misma en el PDF y en el correo. El PDF no traía ninguna: este texto es el que se
-    /// propone y queda pendiente de validación de negocio (un solo lugar para cambiarlo).
+    /// Leyenda de impuestos del total del PDF (un solo lugar para cambiarla). También viaja en el resumen de la vista previa del correo
+    /// (<c>clsResumenCorreo.Leyenda</c>), pero el HTML del correo no la imprime: remite al PDF adjunto.
     /// </summary>
     public const string LeyendaImpuestos =
         "Valores por viaje según las rutas cotizadas, con los servicios conexos incluidos. No incluyen impuestos, tasas ni contribuciones "
         + "que se causen según la normativa vigente.";
 
-    /// <summary>HU-033 (#199): nota del total general del PDF: el precio de cada ruta ya incluye su transporte y sus servicios conexos.</summary>
+    /// <summary>Nota del total general del PDF: el precio de cada ruta ya incluye su transporte y sus servicios conexos.</summary>
     public const string NotaTotalGeneral = "El valor de cada ruta incluye el transporte y los servicios conexos indicados; el total es la suma de las rutas.";
     public const string TituloTablaPorDefecto = "COTIZACIÓN — BSSL";
     public const string PrefijoOrigen = "ORIGEN Y/O LUGAR DE CARGUE: ";
@@ -48,7 +48,7 @@ public static class clsTextosEstandar
     public const string TituloFacturacion = "Facturación y forma de pago";
     public const string TituloSeguro = "Seguro";
 
-    /// <summary>#261 (HU-046): etiqueta del bloque del texto de seguros de la propuesta, después del resumen de precios (el texto vive en la configuración <c>Pdf:TextoSeguros</c>).</summary>
+    /// <summary>Etiqueta del bloque del texto de seguros de la propuesta, después del resumen de precios (el texto vive en la configuración <c>Pdf:TextoSeguros</c>).</summary>
     public const string TituloSegurosPropuesta = "Estructura de seguros";
     public const string TituloDiasLibres = "Días libres";
     public const string TituloStandByUnica = "Horas logísticas adicionales";
@@ -93,8 +93,7 @@ public static class clsTextosEstandar
         + "Asimismo, el Decreto 16075 regula el manejo y la devolución de los contenedores vacíos.";
 
     /// <summary>
-    /// Nota de la cotización en USD (HU-012.3, ADR-014 §4). Texto exacto definido por negocio el 2026-10-05, que reemplaza la aclaración del
-    /// piso mínimo en pesos: la TRM es la aplicada en la cotización (<c>trmAplicada</c>, la del día en que se cotizó, nunca la del día en que
+    /// Nota de la cotización en USD (ADR-014 §4), con el texto exacto definido por negocio: la TRM es la aplicada en la cotización (<c>trmAplicada</c>, la del día en que se cotizó, nunca la del día en que
     /// se genera o reimprime el PDF) con 2 decimales (<see cref="clsFormatoMoneda.FormatearTrmNota"/>). Los PDF en COP no la llevan.
     /// </summary>
     /// <param name="trmAplicada">TRM de la cotización (&gt; 0).</param>
@@ -109,7 +108,7 @@ public static class clsTextosEstandar
     public const decimal HorasLaborPorDefecto = 4m;
 
     /// <summary>
-    /// #173: nota general de la tarifa con las horas REALES de cargue y descargue de la ruta (sin dato, <see cref="HorasLaborPorDefecto"/>)
+    /// Nota general de la tarifa con las horas REALES de cargue y descargue de la ruta (sin dato, <see cref="HorasLaborPorDefecto"/>)
     /// y sin decir que no incluye un servicio que sí va itemizado: si la cotización lleva el conexo de cargue o de descargue, la frase
     /// "no incluyen servicios de cargue ni descargue" se ajusta o se quita. Sin horas ni conexos es el texto de siempre.
     /// </summary>
@@ -151,10 +150,8 @@ public static class clsTextosEstandar
     private const string FacturacionComun = "Después de elaborado el estudio de crédito se indicarán los términos.";
 
     /// <summary>
-    /// HU-045.3 (#265, ADR-032 §9): viñeta del seguro en la lista "Estas tarifas incluyen". PENDIENTE: el texto fijo oficial lo pasará Sara
-    /// (hoy no está confirmado; ver la "Pendiente de confirmar con Sara" del contrato de #265 del 2026-11-10, que advierte que el texto
-    /// «Seguro de la mercancía por un valor máximo de $100.000.000 por vehículo» puede chocar con la póliza específica de la ruta). Mientras
-    /// llega el oficial se usa un placeholder genérico, configurable sin recompilar con <c>Cotizacion__TextoSeguroIncluido</c> (variable de
+    /// Viñeta del seguro en la lista "Estas tarifas incluyen" (ADR-032 §9). Es un texto genérico, porque uno con un valor máximo fijo por
+    /// vehículo puede chocar con la póliza específica de la ruta; se configura sin recompilar con <c>Cotizacion__TextoSeguroIncluido</c> (variable de
     /// entorno / configuración, igual que el resto de ajustes del servidor).
     /// </summary>
     public static readonly string SeguroIncluidoPlaceholder =
@@ -225,21 +222,21 @@ public static class clsTextosEstandar
 
     /// <summary>
     /// Asunto estándar del PDF (el que imprime <c>clsConstructorDocumentoCotizacion</c> si la cotización no trae uno): respaldo del
-    /// redactor de la IA (HU-013.5).
+    /// redactor de la IA.
     /// </summary>
     public static string AsuntoEstandar(string? lineaNegocio) =>
         $"presentación oferta de servicios de Transporte {clsTextoSeguro.LimpiarLinea(lineaNegocio) ?? string.Empty}".TrimEnd();
 
     /// <summary>
-    /// Asunto estándar del PDF de pliego (HU-011.5: licitación o cotización de varias rutas), el que imprime si no hay textos de la IA
-    /// ni del comercial: respaldo del redactor de la IA (HU-013.5).
+    /// Asunto estándar del PDF de pliego (licitación o cotización de varias rutas), el que imprime si no hay textos de la IA
+    /// ni del comercial: respaldo del redactor de la IA.
     /// </summary>
     public static string AsuntoLicitacion(string? referencia, int rutas) => referencia is null
         ? $"presentación oferta de servicios de Transporte para su licitación ({rutas} rutas)"
         : $"presentación oferta de servicios de Transporte para la licitación {referencia} ({rutas} rutas)";
 
     /// <summary>
-    /// OBS-C-3 (E2E 2026-10-22, endurecimiento B de #199): asunto estándar del PDF de varias rutas según el tipo de la solicitud. Solo una
+    /// Asunto estándar del PDF de varias rutas según el tipo de la solicitud. Solo una
     /// licitación dice "para su licitación" (<see cref="AsuntoLicitacion"/>); una cotización spot de varias rutas (formulario) dice
     /// "presentación oferta de servicios de Transporte (N rutas)".
     /// </summary>
@@ -247,16 +244,16 @@ public static class clsTextosEstandar
         ? AsuntoLicitacion(null, rutas)
         : $"presentación oferta de servicios de Transporte ({rutas} rutas)";
 
-    /// <summary>Título del resumen de una licitación de varias rutas (HU-011.5).</summary>
+    /// <summary>Título del resumen de una licitación de varias rutas.</summary>
     public const string TituloResumenPliego = "RESUMEN DEL PLIEGO";
 
-    /// <summary>OBS-C-3 (endurecimiento B de #199): título del resumen de una cotización spot de varias rutas (no es un pliego).</summary>
+    /// <summary>Título del resumen de una cotización spot de varias rutas (no es un pliego).</summary>
     public const string TituloResumenRutas = "RESUMEN DE LAS RUTAS";
 
     /// <summary>
     /// Introducción estándar de la variante (párrafos separados por una línea en blanco), la misma que imprime el PDF sin textos de la
     /// IA ni del comercial: la de <see cref="TarifaUnica"/> o, en un pliego, la de <see cref="MultiSeccion"/> (con sus viñetas
-    /// <c>·</c>; pasa de 900 caracteres). Respaldo del redactor de la IA (HU-013.5).
+    /// <c>·</c>; pasa de 900 caracteres). Respaldo del redactor de la IA.
     /// </summary>
     public static string IntroduccionEstandar(bool esPliego) => string.Join("\n\n", (esPliego ? MultiSeccion : TarifaUnica).Intro);
 

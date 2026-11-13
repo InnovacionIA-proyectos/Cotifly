@@ -4,8 +4,8 @@ namespace Cotifly.Aplicacion.Correo.Repositories;
 
 /// <summary>
 /// Puerto de los correos de la cotización y sus destinatarios (<c>Correos</c>, <c>CorreoDestinatarios</c>). La regla de deduplicación
-/// (ventana de 5 minutos, mismo conjunto de <c>para</c>) vive en <c>clsCorreoService</c> (deuda de ADR-008 resuelta en #11). HU-033
-/// (#199): un envío "cuenta" si salió o sigue en curso en MailSender (<see cref="clsCorreo.CuentaComoEnvio"/>), y el worker de
+/// (ventana de 5 minutos, mismo conjunto de <c>para</c>) vive en <c>clsCorreoService</c>. Un envío
+/// "cuenta" si salió o sigue en curso en MailSender (<see cref="clsCorreo.CuentaComoEnvio"/>), y el worker de
 /// correos consulta la agenda <c>siguienteConsultaAt</c>.
 /// </summary>
 public interface IClsCorreoRepository
@@ -28,28 +28,28 @@ public interface IClsCorreoRepository
     /// <summary>Correos de una cotización con sus destinatarios, del más reciente al más antiguo.</summary>
     Task<IReadOnlyList<clsCorreo>> ListarPorCotizacionAsync(Guid cotizacionId, CancellationToken cancellationToken = default);
 
-    /// <summary>HU-033: un correo con sus destinatarios, con seguimiento de cambios (para actualizar su estado), o <c>null</c>.</summary>
+    /// <summary>Un correo con sus destinatarios, con seguimiento de cambios (para actualizar su estado), o <c>null</c>.</summary>
     Task<clsCorreo?> ObtenerAsync(Guid correoId, CancellationToken cancellationToken = default);
 
-    /// <summary>HU-033: correos con la consulta del estado vencida (<c>siguienteConsultaAt ≤ ahora</c>), los más atrasados primero.</summary>
+    /// <summary>Correos con la consulta del estado vencida (<c>siguienteConsultaAt ≤ ahora</c>), los más atrasados primero.</summary>
     Task<IReadOnlyList<clsConsultaCorreoPendiente>> ListarConsultasPendientesAsync(DateTimeOffset ahora, int lote, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// HU-033: reserva la consulta de un correo (varias réplicas): mueve <c>siguienteConsultaAt</c> de <paramref name="esperada"/> a
+    /// Reserva la consulta de un correo (varias réplicas): mueve <c>siguienteConsultaAt</c> de <paramref name="esperada"/> a
     /// <paramref name="reclamoHasta"/> en una sola sentencia. <c>false</c> si otra réplica ya la tomó.
     /// </summary>
     Task<bool> ReclamarConsultaAsync(Guid correoId, DateTimeOffset esperada, DateTimeOffset reclamoHasta, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Auditoría #199: reserva el reintento de un correo <c>fallido</c> con id de MailSender en una sola sentencia (pasa a <c>encolado</c>, con
+    /// Reserva el reintento de un correo <c>fallido</c> con id de MailSender en una sola sentencia (pasa a <c>encolado</c>, con
     /// <paramref name="encoladoAt"/> y la consulta en <paramref name="consultaAt"/>). <c>false</c> si ya no está fallido: un doble clic o
     /// dos réplicas no piden dos <c>/retry</c> (MailSender correría dos entregas a la vez y el cliente recibiría el correo dos veces).
     /// </summary>
     Task<bool> ReclamarReintentoAsync(Guid correoId, DateTimeOffset encoladoAt, DateTimeOffset consultaAt, CancellationToken cancellationToken = default);
 
-    /// <summary>Auditoría #199: deshace la reserva de <see cref="ReclamarReintentoAsync"/> cuando MailSender no aceptó el reintento (vuelve a <c>fallido</c>).</summary>
+    /// <summary>Deshace la reserva de <see cref="ReclamarReintentoAsync"/> cuando MailSender no aceptó el reintento (vuelve a <c>fallido</c>).</summary>
     Task LiberarReintentoAsync(Guid correoId, DateTimeOffset encoladoAt, CancellationToken cancellationToken = default);
 }
 
-/// <summary>HU-033: un correo de la agenda del worker (su id y la consulta reservada).</summary>
+/// <summary>Un correo de la agenda del worker (su id y la consulta reservada).</summary>
 public sealed record clsConsultaCorreoPendiente(Guid Id, DateTimeOffset SiguienteConsultaAt);

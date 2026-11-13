@@ -6,7 +6,7 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Aplicacion.Licitaciones.Services;
 
 /// <summary>
-/// Ids y nombres de municipio de Nexo de las rutas (G6 de HU-013.11; HU-021.6, decisión 2: id obligatorio y copia del nombre). Lo usan
+/// Ids y nombres de municipio de Nexo de las rutas (id obligatorio y copia del nombre). Lo usan
 /// las licitaciones y el formulario, con el catálogo de <c>GET /web/municipios</c> (con caché) y la regla determinista de
 /// <see cref="clsResolvedorMunicipios"/>. Nunca adivina. Dos modos:
 /// <list type="bullet">

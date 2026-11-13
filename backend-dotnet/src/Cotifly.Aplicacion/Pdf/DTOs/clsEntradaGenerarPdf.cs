@@ -7,7 +7,7 @@ namespace Cotifly.Aplicacion.Pdf.DTOs;
 /// <param name="UsuarioId">Comercial autenticado: dueño de la cotización y fuente de la firma (<c>UsuariosWeb</c>).</param>
 /// <param name="Cotizacion">Payload del PDF (esquema de <c>ejemplo-solicitud.json</c>).</param>
 /// <param name="Folio">
-/// Folio ya generado por el servidor (#12, ADR-011); obligatorio. La <c>referencia</c> del payload no se usa (el LLM no
+/// Folio ya generado por el servidor (ADR-011); obligatorio. La <c>referencia</c> del payload no se usa (el LLM no
 /// inventa folios). Si ya existe → <c>FOLIO_DUPLICADO</c>.
 /// </param>
 /// <param name="Version">Versión de la cotización (1 la original; una nueva versión la pasa con su folio <c>-vN</c>).</param>
@@ -33,7 +33,7 @@ public sealed record clsEntradaGenerarPdf(
 /// <param name="OrigenCliente"><c>cliente</c> | <c>prospecto</c>.</param>
 /// <param name="Moneda">ISO de 3 letras (por defecto <c>COP</c>); con otra moneda la TRM debe ser mayor que 0.</param>
 /// <param name="PrecioCop">
-/// Valor cotizado en pesos de una cotización en USD, antes de convertir (HU-012.2); no se imprime en el PDF. No tiene columna propia: es el
+/// Valor cotizado en pesos de una cotización en USD, antes de convertir; no se imprime en el PDF. No tiene columna propia: es el
 /// precio en pesos de <c>Costo</c> y <c>MargenAplicado</c> (persistidos), y se verifica contra ellos.
 /// </param>
 public sealed record clsTrazabilidadCotizacion(

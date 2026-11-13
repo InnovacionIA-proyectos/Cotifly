@@ -1,7 +1,7 @@
 namespace Cotifly.Aplicacion.Costeo.DTOs;
 
 /// <summary>
-/// La ruta a la que aplica una petición de la etapa final (margen o conexos; HU-021.8, #135, decisión 6): su <c>linea_orden</c> o su
+/// La ruta a la que aplica una petición de la etapa final (margen o conexos): su <c>linea_orden</c> o su
 /// <c>linea_solicitud_id</c>, o ninguno. La resuelve el dominio (<c>clsCotizacionSolicitud.ResolverRuta</c>): sin ninguno, la única ruta;
 /// con varias, <c>RUTA_REQUERIDA</c>.
 /// </summary>

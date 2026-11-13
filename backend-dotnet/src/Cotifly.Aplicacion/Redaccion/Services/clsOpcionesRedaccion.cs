@@ -2,7 +2,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Cotifly.Aplicacion.Redaccion.Services;
 
-/// <summary>Redactor del asunto y la introducción del PDF (HU-013.5, sección <c>IA</c>, la misma del proveedor y el modelo).</summary>
+/// <summary>Redactor del asunto y la introducción del PDF (sección <c>IA</c>, la misma del proveedor y el modelo).</summary>
 public sealed class clsOpcionesRedaccion
 {
     public const string Seccion = "IA";

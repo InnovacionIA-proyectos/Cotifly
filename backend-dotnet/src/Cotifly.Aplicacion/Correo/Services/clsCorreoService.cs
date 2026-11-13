@@ -16,19 +16,18 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Aplicacion.Correo.Services;
 
 /// <summary>
-/// Implementación de <see cref="IClsCorreoService"/> (port de <c>ServicioCorreo</c> de <c>mcp_server/correo.py</c> y de
-/// <c>enviar_cotizacion</c> de <c>orquestador/web.py</c>; HU-033, #199, ADR-023: el transporte es MailSender). Invariantes:
+/// Implementación de <see cref="IClsCorreoService"/>; el transporte es MailSender (ADR-023). Invariantes:
 /// <list type="bullet">
 /// <item>Ningún correo sale sin el comercial autenticado (<c>confirmado_por</c>), que además debe ser el dueño de la cotización. El dueño se
 /// comprueba antes que nada más (correo deshabilitado, destinatarios): un folio ajeno o inexistente siempre es <c>COTIZACION_NO_ENCONTRADA</c>.</item>
 /// <item>Deduplicación: un envío a los mismos destinatarios <c>para</c> (sin distinguir mayúsculas ni orden) en los últimos 5 minutos que
 /// salió o sigue en curso en MailSender (<c>enviado</c>, <c>encolado</c>, <c>enviando</c>) se rechaza; los fallidos no cuentan. La regla
-/// vive aquí, no en el repositorio (deuda de ADR-008), y se mide con <see cref="IClsReloj"/>. Los envíos de una misma cotización se
+/// vive aquí, no en el repositorio (ADR-008), y se mide con <see cref="IClsReloj"/>. Los envíos de una misma cotización se
 /// serializan (<see cref="clsCandadoEnvios"/>) y, dentro del candado, la cotización se recarga de la base.</item>
 /// <item>El PDF sale del almacén; sin PDF → <c>CORREO_PDF_NO_ENCONTRADO</c>.</item>
 /// <item>Remitente: el correo del comercial en <c>UsuariosWeb</c> (MailSender no admite <c>Reply-To</c>: así las respuestas le llegan a
-/// él). Copia oculta: el mismo comercial (decisión 4), salvo que ya esté en <c>para</c> o <c>cc</c>.</item>
-/// <item>Cuerpo HTML con el bloque fijo del resumen: precio por ruta y total, sin desglose (decisión 5).</item>
+/// él). Copia oculta: el mismo comercial, salvo que ya esté en <c>para</c> o <c>cc</c>.</item>
+/// <item>Cuerpo HTML con el bloque fijo del resumen: precio por ruta y total, sin desglose.</item>
 /// <item>Fuera de producción (<c>Correo:Proteccion:Modo=redirigir</c>) el mensaje va solo al buzón de pruebas, con <c>[QA]</c> en el asunto
 /// y los destinatarios originales en el cuerpo (<see cref="clsProteccionCorreo"/>); en la base quedan los originales y el buzón.</item>
 /// <item>MailSender acepta (202): fila <c>encolado</c> con su id y la consulta agendada (el worker de correos la lleva a <c>enviado</c> o
@@ -62,11 +61,11 @@ public sealed class clsCorreoService(
     public const int MaxAsunto = 300;
     public const int MaxCuerpo = 5000;
 
-    /// <summary>DEF-1027B-2 (#228): mensaje de <c>CORREO_INVALIDO</c> para un asunto con saltos de línea u otros caracteres de control.</summary>
+    /// <summary>Mensaje de <c>CORREO_INVALIDO</c> para un asunto con saltos de línea u otros caracteres de control.</summary>
     public const string MensajeAsuntoConControl =
         "El asunto no puede tener saltos de línea ni otros caracteres de control (va como cabecera del correo): escríbelo en una sola línea.";
 
-    /// <summary>HU-036.3 (#207): cierre del mensaje de <c>COTIZACION_NO_FINALIZADA</c> al enviar la cotización.</summary>
+    /// <summary>Cierre del mensaje de <c>COTIZACION_NO_FINALIZADA</c> al enviar la cotización.</summary>
     public const string AccionEnviar = "enviarla al cliente";
 
     /// <summary>Largo máximo del <c>X-Correlation-ID</c> que guarda MailSender.</summary>
@@ -80,7 +79,7 @@ public sealed class clsCorreoService(
             return new clsErrorDominio(clsCodigosError.ConfirmacionRequerida, "Falta 'confirmado_por': el envío no está autorizado.");
         }
 
-        // Endurecimiento A (#199): primero el dueño. Un folio ajeno o inexistente responde 404 antes que CORREO_DESHABILITADO (503) o
+        // Primero el dueño. Un folio ajeno o inexistente responde 404 antes que CORREO_DESHABILITADO (503) o
         // CORREO_INVALIDO (400), que si no dejarían enumerar los folios de otros comerciales (como en reintentar).
         var cotizacion = await BuscarCotizacionAsync(entrada, cancellationToken);
         if (cotizacion is null)
@@ -93,7 +92,7 @@ public sealed class clsCorreoService(
             return new clsErrorDominio(clsCodigosError.CorreoDeshabilitado, "El envío de correo desde Cotifly está deshabilitado (Correo:Habilitado=false).");
         }
 
-        // DEF-1027B-2 (#228): el borrador se valida TAL COMO LLEGA (antes de recortar), así un CR/LF al final tampoco se sanea en silencio.
+        // El borrador se valida TAL COMO LLEGA (antes de recortar), así un CR/LF al final tampoco se sanea en silencio.
         if (ValidarBorrador(entrada.Para, entrada.Cc, entrada.Asunto, entrada.Cuerpo, exigePara: true, opciones.Value.MaximoDestinatarios) is { } invalida)
         {
             return invalida;
@@ -111,7 +110,7 @@ public sealed class clsCorreoService(
         // La cotización se leyó antes del candado: otro envío pudo cambiar estadoEnvio mientras tanto.
         await cotizaciones.RecargarAsync(cotizacion, cancellationToken);
 
-        // HU-036.3 (#207): la cotización sale al cliente con el precio que aceptó el comercial.
+        // La cotización sale al cliente con el precio que aceptó el comercial.
         if (cotizacion.ValidarFinalizadaAntesDe(AccionEnviar) is { } sinFinalizar)
         {
             return sinFinalizar;
@@ -170,7 +169,7 @@ public sealed class clsCorreoService(
         }
         catch (InvalidOperationException ex)
         {
-            // Falla cerrado (HU-033): hay que redirigir y no hay buzón válido. Nada sale y la cotización no cambia.
+            // Falla cerrado: hay que redirigir y no hay buzón válido. Nada sale y la cotización no cambia.
             logger.LogError("Correo de la cotización {Folio} bloqueado por la protección: {Motivo}", cotizacion.Folio, ex.Message);
             return new clsErrorDominio(clsCodigosError.CorreoEnvioFallido, ex.Message);
         }
@@ -197,7 +196,7 @@ public sealed class clsCorreoService(
                 cotizacion.Folio, transporte.Modo, ex.Incierto, ex.Message);
             if (ex.Incierto)
             {
-                // Auditoría #199: MailSender no respondió al POST y pudo encolarlo. La reserva se CONSERVA (el PDF pudo salir: es la foto
+                // MailSender no respondió al POST y pudo encolarlo. La reserva se CONSERVA (el PDF pudo salir: es la foto
                 // entregada) y la fila incierta cuenta para la deduplicación de 5 minutos, así un reenvío inmediato no duplica el correo.
                 await RegistrarFallidoAsync(cotizacion, correoId, para, cc, asunto, entrada.UsuarioId, clsCorreo.PrefijoIncierto + ex.Message, redirigidoA);
                 return new clsErrorDominio(clsCodigosError.CorreoEnvioFallido, ex.Message);
@@ -333,7 +332,7 @@ public sealed class clsCorreoService(
     }
 
     /// <summary>
-    /// DEF-1027B-2 y tope (#228, ADR-023): el borrador del comercial (<c>EnvioWeb</c>) tal como llega, antes de recortar nada. Lo usan el
+    /// Valida el borrador del comercial (<c>EnvioWeb</c>, ADR-023) tal como llega, antes de recortar nada. Lo usan el
     /// envío y la vista previa, en este orden:
     /// <list type="number">
     /// <item>asunto con caracteres de control (CR, LF, NUL, tabulador, U+0085, U+2028, U+2029...): <c>CORREO_INVALIDO</c>

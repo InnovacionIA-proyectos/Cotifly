@@ -3,7 +3,7 @@ using Cotifly.Aplicacion.Margen.DTOs;
 namespace Cotifly.Aplicacion.Margen.Interfaces;
 
 /// <summary>
-/// Puerto de la sincronización del margen de SAP TM hacia la copia local (HU-042.2, #243, ADR-027): la hace el backend (no un SQL Agent
+/// Puerto de la sincronización del margen de SAP TM hacia la copia local (ADR-027): la hace el backend (no un SQL Agent
 /// Job). Una corrida descarga <c>RentabClienteSet</c> completo, resuelve el NIT por BP en el DW, carga <c>#SapMargenStage</c> y llama a
 /// <c>dbo_cotifly.sp_sincronizar_margen_sap</c>. La implementación vive en Infraestructura; la usan el worker y la administración.
 /// </summary>

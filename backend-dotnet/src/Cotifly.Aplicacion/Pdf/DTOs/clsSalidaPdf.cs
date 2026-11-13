@@ -8,7 +8,7 @@ namespace Cotifly.Aplicacion.Pdf.DTOs;
 public sealed record clsSalidaPdf(Guid CotizacionId, string Folio, string PdfUrl, bool RegistradaEnBd)
 {
     /// <summary>
-    /// HU-045.3 (#265): en el PDF del costeo, las rutas con el seguro de la mercancía marcado sin valor de la mercancía (el PDF salió sin
+    /// En el PDF del costeo, las rutas con el seguro de la mercancía marcado sin valor de la mercancía (el PDF salió sin
     /// su fila); <c>null</c> si no hay ninguna o en el PDF del chat.
     /// </summary>
     public Costeo.DTOs.clsAvisoSeguro? AvisoSeguro { get; init; }

@@ -23,13 +23,13 @@ public interface IClsUsuarioWebRepository
 
     /// <summary>
     /// Usuarios con <c>regional</c> igual a <paramref name="regional"/> (recortada, sin distinguir mayúsculas) o cuyo
-    /// <c>nombreUsuario</c> está en <paramref name="nombresUsuario"/> (candidatos a miembros de una regional, HU-010.1).
+    /// <c>nombreUsuario</c> está en <paramref name="nombresUsuario"/> (candidatos a miembros de una regional).
     /// </summary>
     Task<IReadOnlyList<clsUsuarioWeb>> ListarPorRegionalONombresAsync(
         string regional, IReadOnlyCollection<string> nombresUsuario, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// HU-037.3 (#211): todos los usuarios de <c>UsuariosWeb</c> (solo lectura), el alcance del director sin regional elegida. La tabla
+    /// Todos los usuarios de <c>UsuariosWeb</c> (solo lectura), el alcance del director sin regional elegida. La tabla
     /// tiene a las personas que entraron a Cotifly (decenas o cientos), así que no se pagina.
     /// </summary>
     Task<IReadOnlyList<clsUsuarioWeb>> ListarTodosAsync(CancellationToken cancellationToken = default);

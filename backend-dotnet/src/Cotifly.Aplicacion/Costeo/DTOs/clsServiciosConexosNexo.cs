@@ -1,7 +1,7 @@
 namespace Cotifly.Aplicacion.Costeo.DTOs;
 
 /// <summary>
-/// Filtro del catálogo de servicios conexos de Nexo (HU-013.3, <c>GET /api/servicios-conexos</c>). Cotifly siempre pide solo los
+/// Filtro del catálogo de servicios conexos de Nexo (<c>GET /api/servicios-conexos</c>). Cotifly siempre pide solo los
 /// activos (<c>soloActivos=true</c>); <paramref name="Q"/> busca en el nombre o el código y <paramref name="Categoria"/> es el segmento
 /// del catálogo (<c>logistico</c> | <c>adicional</c>).
 /// </summary>
@@ -42,7 +42,7 @@ public sealed record clsConexoParaNexo(string LineaId, string ServicioConexoId, 
 public sealed record clsAgregadoNexo(bool Seguro, Cotifly.Dominio.Cotizaciones.clsCotizacionNexo? Cotizacion, string? Detalle = null);
 
 /// <summary>
-/// <c>ServicioConexoCatalogo</c> del contrato (HU-013.3): el servicio del catálogo de Nexo sin ningún costo.
+/// <c>ServicioConexoCatalogo</c> del contrato: el servicio del catálogo de Nexo sin ningún costo.
 /// </summary>
 public sealed record clsServicioConexoCatalogo(
     string Id,

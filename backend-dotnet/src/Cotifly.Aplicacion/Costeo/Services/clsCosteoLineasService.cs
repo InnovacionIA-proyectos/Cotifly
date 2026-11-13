@@ -17,7 +17,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Aplicacion.Costeo.Services;
 
 /// <summary>
-/// HU-041.1 (#231, ADR-026): margen y servicios conexos para varias rutas (o todas) de la cotización en UNA operación. Cada operación
+/// Margen y servicios conexos (ADR-026) para varias rutas (o todas) de la cotización en UNA operación. Cada operación
 /// cumple las mismas reglas que N llamadas a los endpoints por ruta (<c>PUT .../costeo/margen</c>, <c>POST</c> y <c>PUT
 /// .../costeo/servicios-conexos</c>), pero es atómica: si una ruta no admite el cambio no cambia ninguna y el error dice cuál la bloqueó
 /// (<c>detalle.linea_orden</c> y <c>detalle.linea_solicitud_id</c>). El PDF vigente se invalida una sola vez y queda una sola entrada de
@@ -291,7 +291,7 @@ public sealed class clsCosteoLineasService(
             }
             else
             {
-                // HU-021.8: el ajuste queda con la ruta REAL (lineaSolicitudId) y el sugerido de esa ruta, como por ruta.
+                // El ajuste queda con la ruta REAL (lineaSolicitudId) y el sugerido de esa ruta, como por ruta.
                 var registro = clsMargenAjuste.RegistrarNegociacionCosteo(
                     sugerido ?? anterior ?? nuevo, nuevo, justificacion, usuarioId, cotizacion.Id, cotizacion.Folio, ruta.MetodoCalculo, ruta.Id);
                 if (registro.EsFallo)
@@ -438,7 +438,7 @@ public sealed class clsCosteoLineasService(
             return (await VistaAsync(cotizacion, cancellationToken), [], false);
         }
 
-        // El costo es el del catálogo de Nexo, como un conexo capturado con la ruta (decisión 3). Nexo se lee ANTES de cambiar nada.
+        // El costo es el del catálogo de Nexo, como un conexo capturado con la ruta. Nexo se lee ANTES de cambiar nada.
         var costos = await costosConexos.CostosAsync(usuarioId, [servicio], cancellationToken);
         if (costos.EsFallo)
         {
@@ -453,9 +453,9 @@ public sealed class clsCosteoLineasService(
         }
 
         var ahora = cotizacion.CosteoListoAt ?? cotizacion.UpdatedAt;
-        // HU-043.2 (#251): con la venta del catálogo (precioVenta ?? costoUnitario), la misma que Nexo fija al recibir el conexo del envío
+        // Con la venta del catálogo (precioVenta ?? costoUnitario), la misma que Nexo fija al recibir el conexo del envío
         // diferido (el POST a Nexo nunca lleva precio: solo servicioConexoId y cantidad).
-        // HU-046.3 (#269): con el codigoServicio del catálogo, para la política de seguros.
+        // Con el codigoServicio del catálogo, para la política de seguros.
         var cambio = new clsCambioConexo(
             deCatalogo.Id, deCatalogo.Nombre, deCatalogo.CostoUnitario, cantidad, deCatalogo.Id, deCatalogo.Categoria, deCatalogo.VentaUnitaria,
             deCatalogo.Codigo);
@@ -581,7 +581,7 @@ public sealed class clsCosteoLineasService(
     }
 
     /// <summary>
-    /// ¿El conexo de la ruta es el servicio <paramref name="servicio"/> del catálogo? Por el id del catálogo guardado (#188) o por su id, si
+    /// ¿El conexo de la ruta es el servicio <paramref name="servicio"/> del catálogo? Por el id del catálogo guardado o por su id, si
     /// se guardó con el del catálogo (un conexo capturado o agregado en lote).
     /// </summary>
     public static bool EsServicio(clsServicioConexoRuta conexo, string servicio)

@@ -7,7 +7,7 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Aplicacion.Cotizaciones.Services;
 
 /// <summary>
-/// Genera el folio de una cotización y la crea en la misma transacción (ADR-011, aprobado el 2026-09-25). El folio lo decide
+/// Genera el folio de una cotización y la crea en la misma transacción (ADR-011). El folio lo decide
 /// siempre el servidor, nunca el LLM: <c>PCN-[{nitCliente}-]{INICIALES}-DDMMAAAA-{NNN}[-vN]</c> (<see cref="clsFolio"/>).
 /// </summary>
 /// <remarks>

@@ -6,7 +6,7 @@ using Microsoft.SemanticKernel;
 namespace Cotifly.Aplicacion.Agente.Herramientas;
 
 /// <summary>
-/// Declaraciones de las herramientas con un JSON Schema portable (HU-003.6, issue #84; ADR-003 "Esquemas portables"). El esquema que
+/// Declaraciones de las herramientas con un JSON Schema portable (ADR-003 "Esquemas portables"). El esquema que
 /// arma Semantic Kernel (<see cref="KernelFunction.JsonSchema"/>, 1.80.1) no lo aceptan todos los proveedores:
 /// <list type="bullet">
 /// <item>lleva la descripción de la función en una clave no estándar <c>condition</c> en la raíz, y Gemini (también vía OmniRoute)
@@ -15,14 +15,14 @@ namespace Cotifly.Aplicacion.Agente.Herramientas;
 /// </list>
 /// Aquí se reconstruye el esquema con una lista blanca: <see cref="PalabrasPermitidas"/> y los formatos de
 /// <see cref="FormatosPermitidos"/>. Un campo anulable queda con su único tipo no nulo y fuera de <c>required</c>; la descripción va
-/// a nivel de función. Los nombres, tipos, descripciones y obligatorios no cambian: los demás proveedores ven lo mismo de antes.
+/// a nivel de función. Los nombres, tipos, descripciones y obligatorios no cambian: los demás proveedores ven el mismo contrato.
 /// Lo que no tiene forma portable (un campo sin tipo, un objeto sin propiedades, un arreglo sin <c>items</c>, uniones, tuplas,
 /// diccionarios o <c>$ref</c>) no se degrada en silencio: <see cref="Declarar(KernelFunction, IReadOnlyDictionary{string, JsonElement}?)"/>
 /// lanza <see cref="InvalidOperationException"/> con la ruta del campo, y la prueba de contrato lo detecta antes de desplegar.
 /// </summary>
 /// <remarks>
 /// El adaptador de OpenAI de Microsoft.Extensions.AI agrega <c>"additionalProperties": false</c> a la raíz de cada declaración al
-/// serializar la petición; es parte del contrato de OpenAI y Gemini vía OmniRoute lo acepta (probado el 2026-10-01).
+/// serializar la petición; es parte del contrato de OpenAI y Gemini vía OmniRoute lo acepta.
 /// </remarks>
 public static class clsEsquemaPortableHerramientas
 {
@@ -39,7 +39,7 @@ public static class clsEsquemaPortableHerramientas
     /// <summary>
     /// Declaraciones portables (solo nombre, descripción y esquema; el modelo nunca invoca la función directamente).
     /// <paramref name="tipados"/> reemplaza el esquema de parámetros que Semantic Kernel declara sin tipo (herramienta → parámetro →
-    /// esquema; lo usaba el payload de <c>generar_pdf</c> del agente legado, retirado en HU-013.9); la descripción del parámetro se conserva.
+    /// esquema); la descripción del parámetro se conserva.
     /// </summary>
     public static IList<AITool> Declarar(
         IEnumerable<KernelFunction> funciones, IReadOnlyDictionary<string, IReadOnlyDictionary<string, JsonElement>>? tipados = null)

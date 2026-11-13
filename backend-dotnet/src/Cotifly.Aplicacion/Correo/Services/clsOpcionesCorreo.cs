@@ -2,38 +2,38 @@ namespace Cotifly.Aplicacion.Correo.Services;
 
 /// <summary>
 /// Opciones del envío de correo que consume el caso de uso (sección <c>Correo</c>; el transporte lee la misma sección en
-/// <c>clsOpcionesCorreoTransporte</c> de Infraestructura). Port de <c>correo_habilitado</c> de <c>shared/config.py</c>; HU-033 (#199,
-/// ADR-023) agrega la protección fuera de producción y la consulta del estado en MailSender.
+/// <c>clsOpcionesCorreoTransporte</c> de Infraestructura): habilitación, tope de destinatarios, logo, protección fuera de producción
+/// y consulta del estado en MailSender (ADR-023).
 /// </summary>
 public sealed class clsOpcionesCorreo
 {
     public const string Seccion = "Correo";
 
-    /// <summary>#228 (decisión del 2026-10-27): tope de destinatarios por defecto entre <c>para</c> y <c>cc</c>.</summary>
+    /// <summary>Tope de destinatarios por defecto entre <c>para</c> y <c>cc</c>.</summary>
     public const int MaximoDestinatariosPorDefecto = 10;
 
-    /// <summary>#228: valor más alto que admite <see cref="MaximoDestinatarios"/>; uno mayor (o menor que 1) impide arrancar.</summary>
+    /// <summary>Valor más alto que admite <see cref="MaximoDestinatarios"/>; uno mayor (o menor que 1) impide arrancar.</summary>
     public const int LimiteMaximoDestinatarios = 100;
 
     /// <summary>
-    /// Si es <c>false</c> (por defecto, igual que el Python: "funcionalidad diferida") ningún correo sale y el envío responde
+    /// Si es <c>false</c> (por defecto) ningún correo sale y el envío responde
     /// <c>CORREO_DESHABILITADO</c>; la vista previa, los destinatarios previos y el historial siguen funcionando.
     /// </summary>
     public bool Habilitado { get; set; }
 
     /// <summary>
-    /// #228 (decisión del 2026-10-27): tope de destinatarios entre <c>para</c> y <c>cc</c> juntos, sin contar la copia oculta al comercial
+    /// Tope de destinatarios entre <c>para</c> y <c>cc</c> juntos, sin contar la copia oculta al comercial
     /// (<c>Correo:MaximoDestinatarios</c>, variable <c>Correo__MaximoDestinatarios</c>). Por defecto <see cref="MaximoDestinatariosPorDefecto"/>;
     /// de 1 a <see cref="LimiteMaximoDestinatarios"/>, o la API no arranca. Pasado el tope, el envío y la vista previa responden
     /// <c>CORREO_DEMASIADOS_DESTINATARIOS</c> con <c>detalle.maximo</c> = este valor. MailSender no tiene tope propio.
     /// </summary>
     public int MaximoDestinatarios { get; set; } = MaximoDestinatariosPorDefecto;
 
-    /// <summary>#262: logo publicado en la web de Botero Soto (el mismo archivo de la marca a color, 792 × 612).</summary>
+    /// <summary>Logo publicado en la web de Botero Soto (el mismo archivo de la marca a color, 792 × 612).</summary>
     public const string LogoUrlPorDefecto = "https://www.boterosoto.com.co/wp-content/uploads/Logo-Botero-Soto-Soluciones-Logisticas-2022.png";
 
     /// <summary>
-    /// #262: logo del encabezado del correo (<c>Correo:LogoUrl</c>, variable <c>Correo__LogoUrl</c>). Debe ser una URL http(s) PÚBLICA: el
+    /// Logo del encabezado del correo (<c>Correo:LogoUrl</c>, variable <c>Correo__LogoUrl</c>). Debe ser una URL http(s) PÚBLICA: el
     /// correo del cliente descarga la imagen desde internet al abrirlo (Gmail, desde sus servidores), así que una URL de la red interna sale
     /// rota. Por defecto <see cref="LogoUrlPorDefecto"/>; vacía o inválida, el encabezado lleva el texto "Botero Soto" en su lugar.
     /// </summary>
@@ -47,7 +47,7 @@ public sealed class clsOpcionesCorreo
 }
 
 /// <summary>
-/// HU-033 (#199): <c>Correo:Proteccion</c>. SEGURA POR DEFECTO, sin depender de <c>ASPNETCORE_ENVIRONMENT</c> (QA y staging corren como
+/// <c>Correo:Proteccion</c>. SEGURA POR DEFECTO, sin depender de <c>ASPNETCORE_ENVIRONMENT</c> (QA y staging corren como
 /// <c>Production</c>): todo correo se redirige al buzón de pruebas salvo que se configuren EXPLÍCITAMENTE las dos llaves
 /// <c>Correo:Proteccion:Modo=ninguno</c> y <c>Correo:Proteccion:PermitirEnvioReal=true</c> (solo en producción). Un modo desconocido,
 /// <c>ninguno</c> sin la confirmación o la confirmación sin <c>ninguno</c> siguen redirigiendo; con el correo habilitado la API no arranca con
@@ -87,7 +87,7 @@ public sealed class clsOpcionesProteccionCorreo
 }
 
 /// <summary>
-/// HU-033 (#199): <c>Correo:Seguimiento</c>, la consulta del estado en MailSender que hace el worker de correos
+/// <c>Correo:Seguimiento</c>, la consulta del estado en MailSender que hace el worker de correos
 /// (<c>clsWorkerEstadoCorreos</c>). Los reintentos de entrega los hace MailSender (5 intentos con espera exponencial de 30 s a 15 min).
 /// </summary>
 public sealed class clsOpcionesSeguimientoCorreo

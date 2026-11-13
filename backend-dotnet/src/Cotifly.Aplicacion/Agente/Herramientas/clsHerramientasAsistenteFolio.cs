@@ -12,7 +12,7 @@ using Microsoft.SemanticKernel;
 namespace Cotifly.Aplicacion.Agente.Herramientas;
 
 /// <summary>
-/// Plugin <c>asistente</c> de Semantic Kernel (HU-013.6, #102, ADR-018 §2b): las herramientas del asistente por folio. Solo LEEN o
+/// Plugin <c>asistente</c> de Semantic Kernel (ADR-018 §2b): las herramientas del asistente por folio. Solo LEEN o
 /// PROPONEN; ninguna escribe en la base ni llama a Nexo con efecto. Reglas:
 /// <list type="bullet">
 /// <item>La cotización sale de <see cref="clsContextoAsistenteFolio"/> (la del folio de la conversación, ya validada como del
@@ -37,7 +37,7 @@ public sealed class clsHerramientasAsistenteFolio(
     public const string MensajePropuesta =
         "Propuesta lista. El comercial verá un resumen con los valores calculados por el sistema y un botón Confirmar: explícale en una o dos frases qué hará, sin escribir valores en dinero, y pídele que la revise y la confirme. Tú no la ejecutas.";
 
-    /// <summary>Instrucción cuando la cotización tiene varias rutas y el comercial no dijo a cuál aplica la acción (HU-021.8, decisión 6).</summary>
+    /// <summary>Instrucción cuando la cotización tiene varias rutas y el comercial no dijo a cuál aplica la acción.</summary>
     public const string MensajePreguntarRuta =
         "La cotización tiene varias rutas y el comercial no dijo a cuál aplica. Muéstrale las rutas (número, origen y destino, sin valores en dinero) y pregúntale cuál; después vuelve a llamar con su lineaOrden. No supongas la ruta.";
 
@@ -47,10 +47,10 @@ public sealed class clsHerramientasAsistenteFolio(
     {
         var cotizacion = contexto.Cotizacion;
 
-        // Corrección conexos (nombre nunca id): nombre del catálogo de Nexo de los conexos migrados sin nombre guardado; solo nombres, sin montos.
+        // Nombre (nunca id) del catálogo de Nexo para los conexos sin nombre guardado; solo nombres, sin montos.
         var nombres = await categorias.NombresAsync(cotizacion, cancellationToken);
 
-        // HU-021: los campos de primer nivel son los de la ruta 1 (compatibilidad); cada ruta trae los suyos en `rutas` (HU-021.8, #135):
+        // Los campos de primer nivel son los de la ruta 1 (compatibilidad); cada ruta trae los suyos en `rutas`:
         // solo porcentajes, origen y destino, nunca montos.
         var lineas = cotizacion.RutasOrdenadas;
         var ruta = cotizacion.PrimeraRuta;
@@ -93,7 +93,7 @@ public sealed class clsHerramientasAsistenteFolio(
         ?? clsCosteoCotizacionService.CategoriaConexo;
 
     /// <summary>
-    /// Las rutas como las ve el modelo (HU-021.8, #135): orden, origen, destino, vehículo, márgenes (fracción) y conexos (nombre y
+    /// Las rutas como las ve el modelo: orden, origen, destino, vehículo, márgenes (fracción) y conexos (nombre y
     /// cantidad). NUNCA montos: ni precio, ni costo, ni levante, ni valores de los conexos.
     /// </summary>
     public static IReadOnlyList<IReadOnlyDictionary<string, object?>> RutasSinMontos(
@@ -134,7 +134,7 @@ public sealed class clsHerramientasAsistenteFolio(
         var herramienta = clsNombresHerramientas.ProponerAjusteMargen;
         var cotizacion = contexto.Cotizacion;
 
-        // HU-021.8 (decisión 6): con varias rutas y sin indicación, el asistente pregunta cuál; nunca supone la ruta 1.
+        // Con varias rutas y sin indicación, el asistente pregunta cuál; nunca supone la ruta 1.
         if (lineaOrden is null && cotizacion.Rutas.Count > 1)
         {
             return Task.FromResult(PreguntarRuta(herramienta, cotizacion));
@@ -176,7 +176,7 @@ public sealed class clsHerramientasAsistenteFolio(
     {
         var herramienta = clsNombresHerramientas.ProponerReSolicitud;
         var cotizacion = contexto.Cotizacion;
-        // #278: con una sola hora, la otra se completa (la guardada o la de Nexo por defecto): Nexo las recibe en pareja.
+        // Con una sola hora, la otra se completa (la guardada o la de Nexo por defecto): Nexo las recibe en pareja.
         var cambios = clsPropuestasAsistente.CompletarHoras(
             new clsCambiosCargaAsistente(pesoKg, horasCargue, horasDescargue, exclusivo, consolidado), cotizacion, contexto.LineaNegocioNexo);
         var entrada = clsPropuestasAsistente.EntradaReSolicitud(motivo, cambios, nuevaVersion);
@@ -198,8 +198,8 @@ public sealed class clsHerramientasAsistenteFolio(
                 ? campos.Keys.ToList()
                 : [],
 
-            // HU-021.9 (#136; rehace #124): solo los nombres (sin montos) de los conexos que la re-solicitud conserva, para que el modelo
-            // lo diga: siguen en el precio de su ruta (decisión 3).
+            // Solo los nombres (sin montos) de los conexos que la re-solicitud conserva, para que el modelo
+            // lo diga: siguen en el precio de su ruta.
             ["conexos_conservados"] = clsReSolicitudCosteoService.ConexosConservados(cotizacion).Select(clsPropuestasAsistente.NombreConexo).ToList(),
             ["mensaje"] = MensajePropuesta,
         });
@@ -254,7 +254,7 @@ public sealed class clsHerramientasAsistenteFolio(
         var cotizacion = contexto.Cotizacion;
         if (lineaOrden is null && cotizacion.Rutas.Count > 1)
         {
-            // HU-021.8: los conexos son de una ruta; con varias, se pregunta cuál (la búsqueda ya está en la salida).
+            // Los conexos son de una ruta; con varias, se pregunta cuál (la búsqueda ya está en la salida).
             salida["requiere_ruta"] = true;
             salida["rutas"] = RutasSinMontos(cotizacion);
             salida["mensaje"] = MensajePreguntarRuta;
