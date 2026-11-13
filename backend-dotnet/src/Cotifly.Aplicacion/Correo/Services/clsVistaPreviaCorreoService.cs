@@ -10,9 +10,9 @@ namespace Cotifly.Aplicacion.Correo.Services;
 
 /// <summary>
 /// Implementación de <see cref="IClsVistaPreviaCorreoService"/>: mismo asunto, cuerpo, resumen y adjunto que usaría
-/// <see cref="clsCorreoService"/>, sin tocar el transporte ni la base. HU-033 (#199): trae el cuerpo en HTML con el resumen (precio por
+/// <see cref="clsCorreoService"/>, sin tocar el transporte ni la base. Trae el cuerpo en HTML con el resumen (precio por
 /// ruta y total, sin desglose), la copia oculta al comercial y, si el ambiente redirige los correos, el aviso "ambiente de pruebas"
-/// (entonces sin copia oculta: el correo redirigido sale sin CC ni CCO, OBS-1027-5 de #226).
+/// (entonces sin copia oculta: el correo redirigido sale sin CC ni CCO).
 /// </summary>
 public sealed class clsVistaPreviaCorreoService(
     IClsCotizacionRepository cotizaciones,
@@ -36,7 +36,7 @@ public sealed class clsVistaPreviaCorreoService(
             return NoEncontrada();
         }
 
-        // DEF-1027B-2 y tope (#228): la misma validación que el envío, sobre lo que trae el borrador (sin para, se precargan los previos).
+        // La misma validación que el envío, sobre lo que trae el borrador (sin para, se precargan los previos).
         if (borrador is not null
             && clsCorreoService.ValidarBorrador(
                 borrador.Para, borrador.Cc, borrador.Asunto, borrador.Cuerpo, exigePara: false, opciones.Value.MaximoDestinatarios) is { } invalido)
@@ -61,7 +61,7 @@ public sealed class clsVistaPreviaCorreoService(
         var resumen = clsPlantillaCorreo.Resumen(cotizacion);
         var usuario = await usuarios.ObtenerPorIdAsync(usuarioId, cancellationToken);
         var proteccion = opciones.Value.Proteccion;
-        // HU-033: se redirige salvo con las dos llaves del envío real; sin un buzón válido el envío no sale (la vista previa lo avisa).
+        // Se redirige salvo con las dos llaves del envío real; sin un buzón válido el envío no sale (la vista previa lo avisa).
         var redirige = proteccion.Redirige;
         var buzon = redirige ? clsProteccionCorreo.BuzonValido(proteccion) : null;
         return new clsVistaPreviaCorreo(asunto, cuerpo, para, cc, clsCorreoService.NombreAdjunto(cotizacion))
@@ -70,15 +70,15 @@ public sealed class clsVistaPreviaCorreoService(
                 cuerpo,
                 resumen,
                 firmaComercial: clsPlantillaCorreo.FirmaComercial(usuario?.NombreCompleto, usuario?.Email, usuario?.Telefono),
-                // #262: los mismos datos de la ficha que el envío.
+                // Los mismos datos de la ficha que el envío.
                 datos: clsPlantillaCorreo.Datos(cotizacion, calendario),
                 logoUrl: opciones.Value.LogoUrl,
-                // #261 (HU-046): el texto de seguros de la configuración, el mismo que el envío.
+                // El texto de seguros de la configuración, el mismo que el envío.
                 textoSeguros: opcionesPdf.Value.TextoSeguros),
             Resumen = resumen,
-            // HU-045.3 (#265, B5): el mismo aviso del costeo, justo antes de enviar.
+            // El mismo aviso del costeo, justo antes de enviar.
             AvisoSeguro = Costeo.DTOs.clsAvisoSeguro.De(cotizacion),
-            // OBS-1027-5 (#226, ADR-023): al redirigir el correo sale solo al buzón de pruebas, sin CC ni CCO (clsProteccionCorreo): la
+            // Al redirigir (ADR-023) el correo sale solo al buzón de pruebas, sin CC ni CCO (clsProteccionCorreo): la
             // vista previa no anuncia una copia oculta que no se envía.
             CopiaOculta = redirige ? null : clsCorreoService.CopiaOculta(usuario?.Email, para, cc),
             EntornoPruebas = redirige,

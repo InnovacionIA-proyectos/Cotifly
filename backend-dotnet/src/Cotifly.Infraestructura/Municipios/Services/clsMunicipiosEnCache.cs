@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Municipios.Services;
 
 /// <summary>
-/// Foto en memoria (singleton) del catálogo de municipios de Nexo (HU-005.13) y la consulta en curso. Una sola por proceso: el
+/// Foto en memoria (singleton) del catálogo de municipios de Nexo y la consulta en curso. Una sola por proceso: el
 /// catálogo es el mismo para todos los comerciales (Nexo lo devuelve completo, sin filtrar por usuario) y no es sensible
 /// (municipios y departamentos).
 /// </summary>
@@ -32,10 +32,9 @@ public sealed class clsCacheCatalogoMunicipios
 }
 
 /// <summary>
-/// Decorador de <see cref="IClsMunicipiosProvider"/> que reutiliza el catálogo de Nexo durante <c>Nexo:MinutosCacheMunicipios</c>
-/// (HU-005.13). <c>clsFabricaMunicipios</c> lo pone delante de <see cref="clsMunicipiosNexo"/> cuando Nexo está configurado y los
-/// minutos son mayores que cero. Lo usan <c>GET /web/municipios</c> y la validación de la captura y de licitaciones (la herramienta
-/// <c>resolver_municipio</c> del agente legado se retiró en HU-013.9, #105).
+/// Decorador de <see cref="IClsMunicipiosProvider"/> que reutiliza el catálogo de Nexo durante <c>Nexo:MinutosCacheMunicipios</c>.
+/// <c>clsFabricaMunicipios</c> lo pone delante de <see cref="clsMunicipiosNexo"/> cuando Nexo está configurado y los
+/// minutos son mayores que cero. Lo usan <c>GET /web/municipios</c> y la validación de la captura y de licitaciones.
 /// </summary>
 /// <remarks>
 /// <list type="bullet">
@@ -62,7 +61,7 @@ public sealed class clsMunicipiosEnCache(
     ILogger<clsMunicipiosEnCache> logger)
     : IClsMunicipiosProvider
 {
-    /// <summary>HU-023 (#176): la búsqueda (<c>/ciudades</c>) no se guarda en memoria: va directo a Nexo.</summary>
+    /// <summary>La búsqueda (<c>/ciudades</c>) no se guarda en memoria: va directo a Nexo.</summary>
     public Task<clsResultado<IReadOnlyList<clsMunicipio>>> BuscarAsync(
         Guid usuarioId, string? texto, string? departamento, CancellationToken cancellationToken = default) =>
         interno.BuscarAsync(usuarioId, texto, departamento, cancellationToken);

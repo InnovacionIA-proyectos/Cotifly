@@ -5,7 +5,7 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Aplicacion.Costeo.Interfaces;
 
 /// <summary>
-/// Puerto de los servicios conexos de Nexo (HU-013.3, ADR-018 §4). La implementación real usa el mismo cliente HTTP del costeo
+/// Puerto de los servicios conexos de Nexo (ADR-018 §4). La implementación real usa el mismo cliente HTTP del costeo
 /// (<c>NexoCosteo</c>: 30 s, reintentos solo en GET, nunca en POST) y la misma identidad del comercial
 /// (<c>X-Portal-clsUsuario-Id</c>), con un límite de tamaño de respuesta. Nunca lanza por fallos de Nexo; los errores ya vienen
 /// traducidos: <c>NEXO_NO_DISPONIBLE</c> (sin configurar, caído, sin respuesta a tiempo, 5xx, 401, comercial sin

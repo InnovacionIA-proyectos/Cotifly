@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Aplicacion.Margen.Services;
 
 /// <summary>
-/// HU-042.2 (#243, decisión del 2026-11-04): ¿la copia del margen de SAP TM está vieja para una cotización con rutas cuyo margen sugerido
+/// ¿La copia del margen de SAP TM está vieja para una cotización con rutas cuyo margen sugerido
 /// viene de SAP? Lo usa la vista del costeo (<c>aviso_margen</c>, junto al aviso del margen anómalo). Se evalúa al leer el costeo (la ruta
 /// no guarda cuándo se resolvió su margen): el aviso dice que la copia de la que salió el sugerido no se ha vuelto a sincronizar.
 /// </summary>
@@ -39,7 +39,7 @@ public sealed class clsAvisoSincronizacionMargenSap(IClsFuenteMargen fuente, IOp
             : null;
     }
 
-    /// <summary>El sugerido de la ruta salió de SAP TM: aplicado (<c>sap_tm</c>) o anómalo (se aplicó la política, #139).</summary>
+    /// <summary>El sugerido de la ruta salió de SAP TM: aplicado (<c>sap_tm</c>) o anómalo (se aplicó la política).</summary>
     public static bool TieneSugeridoDeSap(clsLineaSolicitud ruta)
     {
         ArgumentNullException.ThrowIfNull(ruta);

@@ -4,7 +4,7 @@ using Cotifly.Dominio.Comun;
 namespace Cotifly.Aplicacion.Margen.Services;
 
 /// <summary>
-/// Caso de uso del margen negociado (HU-003.4, <c>registrar_ajuste_margen</c>): acepta el margen manual del
+/// Caso de uso del margen negociado (<c>registrar_ajuste_margen</c>): acepta el margen manual del
 /// comercial, lo registra en <c>MargenAjustes</c> y lo devuelve con origen <c>negociado</c>.
 /// </summary>
 public interface IClsAjusteMargenService

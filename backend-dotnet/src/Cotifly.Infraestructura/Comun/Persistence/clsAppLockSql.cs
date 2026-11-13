@@ -4,7 +4,7 @@ using Microsoft.Data.SqlClient;
 
 namespace Cotifly.Infraestructura.Comun.Persistence;
 
-/// <summary>Límites de una llamada a <c>sp_getapplock</c> o <c>sp_releaseapplock</c> (#125).</summary>
+/// <summary>Límites de una llamada a <c>sp_getapplock</c> o <c>sp_releaseapplock</c>.</summary>
 /// <param name="Espera"><c>@LockTimeout</c>: cuánto espera el servidor por el candado.</param>
 /// <param name="Margen">Margen para la respuesta del servidor; <paramref name="Espera"/> + margen es el límite del cliente.</param>
 /// <param name="Gracia">Tiempo que se espera el acuse de la cancelación antes de cerrar la conexión.</param>
@@ -17,15 +17,15 @@ internal sealed record clsLimitesAppLock(TimeSpan Espera, TimeSpan Margen, TimeS
 internal sealed record clsResultadoAppLock(int? Codigo, bool ConexionCerrada);
 
 /// <summary>
-/// Llamadas a <c>sp_getapplock</c> / <c>sp_releaseapplock</c> compartidas por los candados de SQL Server (#125).
+/// Llamadas a <c>sp_getapplock</c> / <c>sp_releaseapplock</c> compartidas por los candados de SQL Server.
 /// </summary>
 /// <remarks>
 /// <para>
 /// El límite principal del cliente no es <c>CommandTimeout</c>: SqlClient calcula ese plazo con el reloj de pared
 /// (<c>DateTime.UtcNow</c>), y si el reloj salta hacia adelante más que el plazo mientras el comando está en curso, la siguiente
-/// lectura de red ya lo ve vencido y lanza <c>Execution Timeout Expired</c> (258) al instante, sin haber esperado. Eso pasó en las
-/// suites del lote 2: el reloj del contenedor de pruebas saltaba unos 63–65 s (hacia atrás y luego hacia adelante) y los
-/// <c>sp_getapplock</c> con <c>CommandTimeout = 30</c> fallaban en 0,1 s. Aquí el límite lo pone un
+/// lectura de red ya lo ve vencido y lanza <c>Execution Timeout Expired</c> (258) al instante, sin haber esperado: con un reloj de
+/// contenedor que salta unos 63–65 s (hacia atrás y luego hacia adelante), un <c>sp_getapplock</c> con <c>CommandTimeout = 30</c>
+/// falla en 0,1 s. Aquí el límite lo pone un
 /// <see cref="CancellationTokenSource"/> sobre el <see cref="TimeProvider"/> (temporizadores monotónicos) y la espera por el
 /// candado la acota el servidor con <c>@LockTimeout</c>.
 /// </para>

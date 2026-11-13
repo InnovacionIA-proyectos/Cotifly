@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Cotifly.Api.Costeo.Controllers;
 
 /// <summary>
-/// HU-028 (#186, ADR-021): el comercial edita la solicitud ("Editar solicitud"). Solo cotizaciones propias; una ajena responde 404 igual
+/// El comercial edita la solicitud ("Editar solicitud", ADR-021). Solo cotizaciones propias; una ajena responde 404 igual
 /// que una inexistente.
 /// </summary>
 [Route("web")]

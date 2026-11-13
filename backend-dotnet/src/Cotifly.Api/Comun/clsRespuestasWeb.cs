@@ -41,14 +41,14 @@ public sealed record clsErrorNegocioWeb([property: JsonPropertyName("error")] cl
 }
 
 /// <summary>
-/// Traducción única de los errores de los casos de uso a HTTP en <c>/web/*</c> (tabla "Para #12" de docs/07-api.md, §7.4, y
+/// Traducción única de los errores de los casos de uso a HTTP en <c>/web/*</c> (tabla de errores de docs/07-api.md, §7.4, y
 /// <c>specs/openapi.yaml</c>). Un 404 nunca distingue "no existe" de "no es tuya".
 /// </summary>
 public static class clsRespuestasWeb
 {
     public const string MensajeNoEsTuya = "Cotización no encontrada o no es tuya.";
 
-    /// <summary>Segundos del encabezado <c>Retry-After</c> del 503 <c>SERVICIO_OCUPADO</c> (#125).</summary>
+    /// <summary>Segundos del encabezado <c>Retry-After</c> del 503 <c>SERVICIO_OCUPADO</c>.</summary>
     public const int SegundosReintentoServicioOcupado = 1;
 
     /// <summary>Opción C: segundos del encabezado <c>Retry-After</c> del 503 <c>CUBICADOR_OCUPADO</c> (el cubicador calcula otra carga).</summary>
@@ -72,7 +72,7 @@ public static class clsRespuestasWeb
         clsCodigosError.TextosEditados,
         clsCodigosError.ResultadoYaDefinido,
         clsCodigosError.CotizacionNoEntregada,
-        // Endurecimiento B (#199): Nexo no reconoce la cotización de Nexo del folio (no es el 404 "no es tuya").
+        // Nexo no reconoce la cotización de Nexo del folio (no es el 404 "no es tuya").
         clsCodigosError.CotizacionNexoNoEncontrada,
         clsCodigosError.UsarResultadoNexo,
         clsCodigosError.SolicitudNoTransicionable,
@@ -80,18 +80,18 @@ public static class clsRespuestasWeb
         clsCodigosError.PdfYaEnviado,
         clsCodigosError.LineaSinCotizacionNexo,
         clsCodigosError.EstadoNoPermite,
-        // HU-028.1 (#183): ruta rechazada por la Mesa de Costeo (margen o conexos) y PDF con todas las rutas rechazadas.
+        // Ruta rechazada por la Mesa de Costeo (margen o conexos) y PDF con todas las rutas rechazadas.
         clsCodigosError.RutaRechazada,
         clsCodigosError.SinRutasCotizables,
-        // HU-033 (#199): el envío no se puede reintentar en MailSender (no está fallido o MailSender no lo conoce).
+        // El envío no se puede reintentar en MailSender (no está fallido o MailSender no lo conoce).
         clsCodigosError.CorreoNoReintentable,
-        // HU-036.2 (#206): finalizar una cotización sin el costeo de Nexo listo.
+        // Finalizar una cotización sin el costeo de Nexo listo.
         clsCodigosError.CotizacionNoFinalizable,
-        // HU-036.3 (#207): PDF, correo, resultado y textos exigen la cotización finalizada.
+        // PDF, correo, resultado y textos exigen la cotización finalizada.
         clsCodigosError.CotizacionNoFinalizada,
-        // D4 (E2E 2026-10-16): la misma Idempotency-Key con otro cuerpo (antes 400 ErrorWeb).
+        // La misma Idempotency-Key con otro cuerpo.
         clsCodigosAplicacion.IdempotencyKeyReutilizada,
-        // HU-042.2 (#243): ya hay una sincronización del margen de SAP TM en curso en esta réplica.
+        // Ya hay una sincronización del margen de SAP TM en curso en esta réplica.
         clsCodigosError.SapMargenSincronizacionEnCurso,
         // El cliente ya tiene ese término del diccionario en NEXO (mismo tipo y contexto).
         clsCodigosError.TerminoDuplicado,
@@ -102,14 +102,14 @@ public static class clsRespuestasWeb
         ArgumentNullException.ThrowIfNull(error);
         return error.Codigo switch
         {
-            // #125: reintentable de inmediato; Retry-After le dice al cliente cuándo.
+            // Reintentable de inmediato; Retry-After le dice al cliente cuándo.
             clsCodigosError.ServicioOcupado =>
                 new clsResultadoReintentable(clsErrorNegocioWeb.Desde(error), SegundosReintentoServicioOcupado) { StatusCode = StatusCodes.Status503ServiceUnavailable },
             clsCodigosError.CubicadorOcupado =>
                 new clsResultadoReintentable(clsErrorNegocioWeb.Desde(error), SegundosReintentoCubicadorOcupado) { StatusCode = StatusCodes.Status503ServiceUnavailable },
             clsCodigosError.CotizacionNoEncontrada => new NotFoundObjectResult(new clsErrorWeb(MensajeNoEsTuya)),
             clsCodigosAplicacion.NoEncontrado => new NotFoundObjectResult(new clsErrorWeb(error.Mensaje)),
-            // HU-044.5 (#256): lo que NEXO no encuentra al borrar es 404 CON su código (no el 404 "no es tuya" sin código).
+            // Lo que NEXO no encuentra al borrar es 404 CON su código (no el 404 "no es tuya" sin código).
             clsCodigosError.PlantillaNoEncontrada or clsCodigosError.RecetaNoEncontrada or clsCodigosError.TerminoNoEncontrado =>
                 new NotFoundObjectResult(clsErrorNegocioWeb.Desde(error)),
             clsCodigosAplicacion.NoAutenticado or clsTelefonoComercialService.CodigoUsuarioNoEncontrado =>
@@ -118,21 +118,21 @@ public static class clsRespuestasWeb
             clsCodigosError.CorreoDeshabilitado or clsCodigosError.CosteoNexoNoDisponible or clsCodigosError.CosteoNexoTiempoAgotado
                 or clsCodigosAplicacion.RegionalNoDisponible or clsCodigosError.CatalogosFleteNoDisponible or clsCodigosError.NexoNoDisponible
                 or clsCodigosError.MunicipiosNoDisponible or clsCodigosError.PdfRenderNoDisponible
-                // OBS-1021B-3 (E2E 2026-10-21): la búsqueda de clientes sin Nexo es 503, como los demás catálogos (antes 400).
+                // La búsqueda de clientes sin Nexo es 503, como los demás catálogos.
                 or clsCodigosError.ClienteBusquedaNoDisponible
                 or clsCodigosError.CubicadorNoDisponible or clsCodigosError.CubicadorRespuestaInvalida or clsCodigosError.CubicadorNoAutorizado
-                // HU-042.2 (#243): la sincronización del margen de SAP TM no está configurada en el ambiente.
+                // La sincronización del margen de SAP TM no está configurada en el ambiente.
                 or clsCodigosError.SapMargenNoConfigurado or clsCodigosError.SapMargenNoDisponible =>
                 new ObjectResult(clsErrorNegocioWeb.Desde(error)) { StatusCode = StatusCodes.Status503ServiceUnavailable },
             clsCodigosAplicacion.RegionalNoAsignada => new ConflictObjectResult(clsErrorNegocioWeb.Desde(error)),
             clsCodigosError.NexoSinPermiso or clsCodigosAplicacion.RegionalNoPermitida or clsCodigosError.TerminoGeneralNoEditable =>
                 new ObjectResult(clsErrorNegocioWeb.Desde(error)) { StatusCode = StatusCodes.Status403Forbidden },
-            // Endurecimiento A (#199): un error interno es 500, nunca 400; REGISTRO_DUPLICADO (una restricción única que el caso de uso no
+            // Un error interno es 500, nunca 400; REGISTRO_DUPLICADO (una restricción única que el caso de uso no
             // tradujo) también, sin el nombre técnico de la restricción: el detalle queda solo en el log.
             clsCodigosError.ErrorInterno or clsViolacionUnicidadException.CodigoRegistroDuplicado => new clsResultadoErrorInterno(error),
             clsCodigosError.PrecondicionRequerida =>
                 new ObjectResult(clsErrorNegocioWeb.Desde(error)) { StatusCode = StatusCodes.Status428PreconditionRequired },
-            // #278: el cupo diario de IA del comercial en Nexo (sin Retry-After: no se libera hasta el día siguiente).
+            // El cupo diario de IA del comercial en Nexo (sin Retry-After: no se libera hasta el día siguiente).
             clsCodigosError.IaTopeDiario =>
                 new ObjectResult(clsErrorNegocioWeb.Desde(error)) { StatusCode = StatusCodes.Status429TooManyRequests },
             _ when _conflicto.Contains(error.Codigo) => new ConflictObjectResult(clsErrorNegocioWeb.Desde(error)),
@@ -146,7 +146,7 @@ public static class clsRespuestasWeb
 }
 
 /// <summary>
-/// Endurecimiento A (#199): 500 <c>ErrorNegocio</c> <c>ERROR_INTERNO</c> con el mensaje genérico de
+/// 500 <c>ErrorNegocio</c> <c>ERROR_INTERNO</c> con el mensaje genérico de
 /// <see cref="clsManejadorErroresNoControlados"/>, para un error de dominio que no es del cliente (<c>ERROR_INTERNO</c>,
 /// <c>REGISTRO_DUPLICADO</c>). El código, el mensaje y el detalle originales (por ejemplo, el nombre de la restricción) van solo al log, con
 /// el id de correlación de la petición.
@@ -178,7 +178,7 @@ public sealed partial class clsResultadoErrorInterno : ObjectResult
     private static partial void LogErrorInterno(ILogger logger, string codigo, string mensaje, string? detalle, string idCorrelacion, string metodo, string ruta);
 }
 
-/// <summary><see cref="ObjectResult"/> que agrega <c>Retry-After</c> (segundos) a la respuesta (#125).</summary>
+/// <summary><see cref="ObjectResult"/> que agrega <c>Retry-After</c> (segundos) a la respuesta.</summary>
 public sealed class clsResultadoReintentable(object? valor, int segundos) : ObjectResult(valor)
 {
     public int Segundos { get; } = segundos;
@@ -193,7 +193,7 @@ public sealed class clsResultadoReintentable(object? valor, int segundos) : Obje
 
 /// <summary>
 /// Errores de cliente que genera MVC sin pasar por un caso de uso (415 sin <c>Content-Type</c> JSON, 404/405 de acciones...):
-/// siempre <c>ErrorWeb</c> (<c>{"error": "..."}</c>, contrato #17), nunca <c>ProblemDetails</c>.
+/// siempre <c>ErrorWeb</c> (<c>{"error": "..."}</c>), nunca <c>ProblemDetails</c>.
 /// </summary>
 public sealed class clsFabricaErroresCliente : IClientErrorFactory
 {

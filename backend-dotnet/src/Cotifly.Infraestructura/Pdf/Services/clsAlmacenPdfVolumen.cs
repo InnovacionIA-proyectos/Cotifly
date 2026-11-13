@@ -12,8 +12,7 @@ namespace Cotifly.Infraestructura.Pdf.Services;
 /// ruta final quede dentro de la carpeta (sin <c>..</c> ni rutas absolutas). Guardar nunca reemplaza un archivo existente.
 /// </summary>
 /// <remarks>
-/// Diferencia con el Python: <c>leer_por_ruta</c> leía cualquier archivo local cuya ruta estuviera en <c>pdfPath</c>; aquí
-/// solo se toma el nombre del archivo y se lee dentro del almacén.
+/// Solo se toma el nombre del archivo de <c>pdfPath</c> y se lee dentro del almacén: nunca un archivo local arbitrario.
 /// </remarks>
 public sealed partial class clsAlmacenPdfVolumen(IOptions<clsOpcionesAlmacenPdf> opciones, ILogger<clsAlmacenPdfVolumen> logger) : IClsAlmacenPdf
 {

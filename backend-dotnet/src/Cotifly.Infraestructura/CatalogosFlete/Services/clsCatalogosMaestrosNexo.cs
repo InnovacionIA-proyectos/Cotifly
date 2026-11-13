@@ -14,11 +14,10 @@ using Polly;
 namespace Cotifly.Infraestructura.CatalogosFlete.Services;
 
 /// <summary>
-/// Catálogos maestros de Nexo en vivo (HU-013.10, #106, G1): <c>GET {Nexo:UrlBase}/api/catalogos/tipos-vehiculo</c>
+/// Catálogos maestros de Nexo en vivo: <c>GET {Nexo:UrlBase}/api/catalogos/tipos-vehiculo</c>
 /// (<c>clsTipoVehiculoDto {codigo, descripcion, esCatalogoOficial}</c>), <c>clases-viaje</c> (<c>{id, descripcion}</c>),
-/// <c>clases-contenedor</c> (<c>{id, descripcion, ...}</c>) y <c>lineas-negocio</c> (<c>{id, descripcion}</c>), verificados en el
-/// swagger de Nexo QA el 2026-10-05. Reemplaza a <c>GET /api/biblioteca-sap-historico/filtros</c> (histórico de tarifas, no el
-/// catálogo maestro). Cada petición identifica al comercial con <c>X-Portal-clsUsuario-Id: {idUsuarioExterno}</c> (Nexo responde 401
+/// <c>clases-contenedor</c> (<c>{id, descripcion, ...}</c>) y <c>lineas-negocio</c> (<c>{id, descripcion}</c>). Cada petición
+/// identifica al comercial con <c>X-Portal-clsUsuario-Id: {idUsuarioExterno}</c> (Nexo responde 401
 /// <c>SESION_INVALIDA</c> sin él). Comparte el cliente HTTP con nombre
 /// <see cref="Cotifly.Infraestructura.Clientes.Services.clsBuscadorClientesNexo.NombreCliente"/> y su tubería de resiliencia.
 /// </summary>
@@ -27,9 +26,8 @@ namespace Cotifly.Infraestructura.CatalogosFlete.Services;
 /// obligatorios: si uno falla (o queda vacío) el resultado es <c>CATALOGOS_FLETE_NO_DISPONIBLE</c>. Si fallan
 /// <c>clases-contenedor</c> o <c>lineas-negocio</c>, quedan vacíos con un warning, marcados como no disponibles (<see cref="clsCatalogosMaestros.ClasesContenedorNoDisponible"/>,
 /// <see cref="clsCatalogosMaestros.LineasNegocioNoDisponible"/>; un <c>[]</c> real de Nexo no se marca) para que la caché conserve la
-/// copia anterior, y el formulario sigue (ya no hay lista fija de
-/// clases de contenedor: con la lista vacía <c>GET /web/catalogos-flete</c> la entrega vacía y la captura de una clase que no es
-/// provisional responde <c>CATALOGOS_FLETE_NO_DISPONIBLE</c>, HU-023.1 y HU-027.1). Filas sin <c>codigo</c> (tipos de vehículo) o sin <c>descripcion</c> se descartan, y
+/// copia anterior, y el formulario sigue (con la lista de clases de contenedor vacía, <c>GET /web/catalogos-flete</c> la entrega
+/// vacía y la captura de una clase que no es provisional responde <c>CATALOGOS_FLETE_NO_DISPONIBLE</c>). Filas sin <c>codigo</c> (tipos de vehículo) o sin <c>descripcion</c> se descartan, y
 /// también los tipos de vehículo con <c>esCatalogoOficial = false</c> (no se ofrecen ni se aceptan).</para>
 /// <para><b>Límites.</b> Cada respuesta se lee hasta <see cref="MaximoBytes"/> y <see cref="MaximoFilas"/>; pasarse es
 /// <c>NoDisponible</c> (no se guarda un catálogo truncado).</para>

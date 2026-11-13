@@ -57,7 +57,7 @@ public sealed class clsConfiguracionJwt : IClsConfiguracionJwt
 /// <summary>
 /// <see cref="IClsEmisorTokens"/> con <see cref="JsonWebTokenHandler"/>: JWT HS256 con <c>iss</c>, <c>aud</c>, <c>iat</c>,
 /// <c>exp</c> (del reloj de la aplicación), <c>sub</c>, <c>jti</c> (GUID nuevo), <c>username</c> y <c>rol</c> (código snake_case del rol
-/// interno). Sin <c>nbf</c> (#12, auditoría): con varias instancias o un reloj que salta, un <c>nbf</c> apenas en el futuro rechazaba
+/// interno). Sin <c>nbf</c>: con varias instancias o un reloj que salta, un <c>nbf</c> apenas en el futuro rechazaría
 /// tokens recién emitidos (401 intermitente); la vigencia la controla <c>exp</c>.
 /// </summary>
 public sealed class clsEmisorTokensJwt(IClsConfiguracionJwt configuracion, IClsReloj reloj) : IClsEmisorTokens

@@ -3,7 +3,7 @@ using System.Globalization;
 namespace Cotifly.Dominio.Metricas;
 
 /// <summary>
-/// Reglas puras del tablero de métricas (HU-010.1, ADR-016 §4): agrega cotizaciones (<see cref="clsCotizacionMetrica"/>, una por
+/// Reglas puras del tablero de métricas (ADR-016 §4): agrega cotizaciones (<see cref="clsCotizacionMetrica"/>, una por
 /// cadena de versiones) en indicadores, serie mensual y concentración por ciudad. El periodo y el alcance ya vienen aplicados por
 /// quien consulta. Redondeo siempre half-to-even.
 /// </summary>
@@ -11,7 +11,7 @@ namespace Cotifly.Dominio.Metricas;
 /// Partición del universo: <c>cantidad = ganadas + perdidas + sin_resultado + pendientes_por_cotizar</c>. Las ganadas y perdidas
 /// cuentan por su resultado aunque no tengan precio; <c>sin_resultado</c> son las que tienen precio y aún no tienen resultado, y
 /// <c>pendientes_por_cotizar</c> las que no tienen ni precio ni resultado.
-/// HU-021.10 (decisión 8): los conteos son por cotización (una cotización con rutas de varias líneas de negocio cuenta una vez); los
+/// Los conteos son por cotización (una cotización con rutas de varias líneas de negocio cuenta una vez); los
 /// valores salen de sus rutas (<see cref="clsCotizacionMetrica.Rutas"/>): el margen ponderado y la apertura por línea
 /// (<see cref="PorLineaNegocio"/>) son por ruta.
 /// </remarks>
@@ -39,7 +39,7 @@ public static class clsCalculadoraMetricas
             .ToList();
         var numDiferencias = universo.Sum(f => f.NumDiferencias);
         var montos = MontosDe(universo);
-        // HU-016.2 (#295): la comparación contra la política solo mira las cotizaciones finalizadas (su margen ya no cambia). El resto
+        // La comparación contra la política solo mira las cotizaciones finalizadas (su margen ya no cambia). El resto
         // del tablero (cantidad, márgenes, montos, serie, apertura por línea) sigue con TODAS.
         var politica = PoliticaDe(universo.Where(f => f.Finalizada).SelectMany(f => f.Rutas));
 
@@ -80,7 +80,7 @@ public static class clsCalculadoraMetricas
 
     /// <summary>
     /// Serie por mes de negocio (<paramref name="fechaNegocio"/> convierte la primera creación de la cadena a la fecha de Bogotá)
-    /// con todos los meses de <paramref name="desde"/> a <paramref name="hasta"/>, también los vacíos. HU-034.1 (#201): los montos de
+    /// con todos los meses de <paramref name="desde"/> a <paramref name="hasta"/>, también los vacíos. Los montos de
     /// cada mes (<c>valor_*</c>, <c>costeo_*</c> y <c>ganancias</c>) salen de <see cref="MontosDe"/>, la misma regla de
     /// <see cref="Indicadores"/>, así que la suma de los meses del periodo da los montos de los indicadores del periodo (los montos de
     /// origen tienen 2 decimales y el redondeo a 2 no los altera).
@@ -143,14 +143,14 @@ public static class clsCalculadoraMetricas
     }
 
     /// <summary>
-    /// Apertura por línea de negocio, por ruta (HU-021.10, decisión 8). Agrupa las rutas de <paramref name="filas"/> por
+    /// Apertura por línea de negocio, por ruta. Agrupa las rutas de <paramref name="filas"/> por
     /// <see cref="clsRutaMetrica.LineaNegocioId"/>:
     /// <list type="bullet">
     /// <item><c>cotizaciones</c>/<c>ganadas</c>/<c>perdidas</c> = cotizaciones distintas con al menos una ruta de la línea (la cotización
     /// de tres líneas cuenta en las tres; su resultado es el de la cotización);</item>
     /// <item><c>costeo_total</c> = Σ <c>costoFinal</c>; <c>valor_cotizado_cop</c> = Σ <c>precioFinalLinea</c> en COP con la TRM de su
     /// cotización (<see cref="clsCotizacionMetrica.ACop"/>, redondeado por ruta); las de ganadas, solo las rutas de cotizaciones
-    /// ganadas; <c>ganancias</c> = Σ(valor en COP − costo − seguro, HU-045.2) de esas rutas con precio y costo;</item>
+    /// ganadas; <c>ganancias</c> = Σ(valor en COP − costo − seguro) de esas rutas con precio y costo;</item>
     /// <item><c>margen_ponderado</c> = Σ(precio en COP − costo) / Σ precio en COP de las rutas con costo y precio &gt; 0;</item>
     /// <item><c>ajustes_margen</c> y <c>desviacion_promedio_margen</c> = los <c>MargenAjustes</c> de esas rutas.</item>
     /// </list>
@@ -161,7 +161,7 @@ public static class clsCalculadoraMetricas
         ArgumentNullException.ThrowIfNull(filas);
         var universo = filas.ToList();
         var vigentes = universo.SelectMany(f => f.Rutas.Select(r => (Cotizacion: f, Ruta: r))).ToLookup(x => x.Ruta.LineaNegocioId);
-        // B3 (#173): lo ganado sale de las rutas de la versión ganada (con su moneda y su TRM), como en los indicadores.
+        // Lo ganado sale de las rutas de la versión ganada (con su moneda y su TRM), como en los indicadores.
         var ganadasPorLinea = universo
             .Where(f => f.Ganada == true)
             .SelectMany(f => f.RutasDelResultado.Select(r => (Cotizacion: f, Ruta: r)))
@@ -189,7 +189,7 @@ public static class clsCalculadoraMetricas
                         ganadas
                             .Select(x => (Valor: x.Cotizacion.ACopResultado(x.Ruta.PrecioFinal), x.Ruta.Costo, x.Ruta.Seguro))
                             .Where(x => x.Valor.HasValue && x.Costo.HasValue)
-                            // HU-045.2 (#264): el seguro de la ruta es un traslado, no ganancia.
+                            // El seguro de la ruta es un traslado, no ganancia.
                             .Sum(x => x.Valor!.Value - x.Costo!.Value - (x.Seguro ?? 0m)),
                         DecimalesMonto),
                     MargenPonderadoDe(g),
@@ -203,12 +203,12 @@ public static class clsCalculadoraMetricas
     }
 
     /// <summary>
-    /// Montos en COP de un conjunto de cotizaciones, con una sola regla para los indicadores y para cada mes de la serie (HU-034.1, #201):
+    /// Montos en COP de un conjunto de cotizaciones, con una sola regla para los indicadores y para cada mes de la serie:
     /// <list type="bullet">
-    /// <item><c>costeo_total</c> = Σ <see cref="clsCotizacionMetrica.Costo"/> (COP, nunca se convierte; sin las rutas rechazadas, #183);</item>
+    /// <item><c>costeo_total</c> = Σ <see cref="clsCotizacionMetrica.Costo"/> (COP, nunca se convierte; sin las rutas rechazadas);</item>
     /// <item><c>valor_cotizado_cop</c> = Σ <see cref="clsCotizacionMetrica.ValorCop"/> (USD × TRM; en USD sin TRM no suma);</item>
-    /// <item>de las ganadas, la versión con el resultado (B3, #173): <c>costeo_ganadas</c> = Σ <see cref="clsCotizacionMetrica.CostoResultado"/>,
-    /// <c>valor_ganado_cop</c> = Σ <see cref="clsCotizacionMetrica.ValorResultadoCop"/> y <c>ganancias</c> = Σ(valor − costo − seguro, HU-045.2) de las que
+    /// <item>de las ganadas, la versión con el resultado: <c>costeo_ganadas</c> = Σ <see cref="clsCotizacionMetrica.CostoResultado"/>,
+    /// <c>valor_ganado_cop</c> = Σ <see cref="clsCotizacionMetrica.ValorResultadoCop"/> y <c>ganancias</c> = Σ(valor − costo − seguro) de las que
     /// tienen ambos.</item>
     /// </list>
     /// </summary>
@@ -245,14 +245,14 @@ public static class clsCalculadoraMetricas
 
     /// <summary>
     /// Margen agregado sobre el precio: Σ(precio en COP − costo) / Σ precio en COP de las rutas con costo &gt; 0 y precio &gt; 0 (4 decimales),
-    /// con el precio SIN el seguro de la mercancía (HU-045.2, #264: es un traslado);
+    /// con el precio SIN el seguro de la mercancía (es un traslado);
     /// <c>null</c> si no hay ninguna. El precio de la ruta se pasa a COP con la TRM de su cotización (<see cref="clsCotizacionMetrica.ACop"/>),
     /// porque el costo siempre está en COP.
     /// </summary>
     private static decimal? MargenPonderadoDe(IEnumerable<(clsCotizacionMetrica Cotizacion, clsRutaMetrica Ruta)> rutas)
     {
         var validas = rutas
-            // HU-045.2 (#264): el seguro (en COP) sale del precio: es un traslado, no margen.
+            // El seguro (en COP) sale del precio: es un traslado, no margen.
             .Select(x => (Precio: x.Cotizacion.ACop(x.Ruta.PrecioFinal) - (x.Ruta.Seguro ?? 0m), x.Ruta.Costo))
             .Where(x => x.Costo > 0m && x.Precio > 0m)
             .ToList();
@@ -261,13 +261,13 @@ public static class clsCalculadoraMetricas
     }
 
     /// <summary>
-    /// HU-016.1 (#154, decisiones P3 y P4 del 2026-10-27): el margen aplicado contra la política de las MISMAS rutas. Comparables = las
-    /// rutas con margen aplicado y con política (el universo ya trae solo las de la versión vigente y sin las rechazadas). HU-016.2 (#295):
-    /// quien llama ya filtró las rutas a las de las cotizaciones finalizadas (sin ninguna, los cuatro márgenes dan <c>null</c> y
+    /// El margen aplicado contra la política de las MISMAS rutas. Comparables = las
+    /// rutas con margen aplicado y con política (el universo ya trae solo las de la versión vigente y sin las rechazadas).
+    /// Quien llama ya filtró las rutas a las de las cotizaciones finalizadas (sin ninguna, los cuatro márgenes dan <c>null</c> y
     /// <c>SinPolitica</c> queda en 0). Simple sobre
     /// todas ellas; ponderado y desviación sobre las que tienen costo &gt; 0 (el costo siempre está en COP, así que la moneda y la TRM no
     /// influyen). La desviación es Σ((aplicado − política) × costo) / Σ costo, redondeada una sola vez. El promedio simple del margen
-    /// aplicado (decisión del 2026-10-27) sale de las mismas comparables que el simple de la política, para compararlos directamente.
+    /// aplicado sale de las mismas comparables que el simple de la política, para compararlos directamente.
     /// </summary>
     private static clsComparacionPolitica PoliticaDe(IEnumerable<clsRutaMetrica> rutas)
     {

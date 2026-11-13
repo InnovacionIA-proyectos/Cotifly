@@ -6,7 +6,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Licitaciones.Services;
 
 /// <summary>
-/// Manejador del cliente <see cref="clsImportacionExcelNexo.NombreCliente"/> (HU-044.1, #252, ADR-028), por dentro de la tubería de
+/// Manejador del cliente <see cref="clsImportacionExcelNexo.NombreCliente"/> (ADR-028), por dentro de la tubería de
 /// resiliencia: lee el cuerpo completo de la respuesta de NEXO antes de devolverla, así el tiempo de cada intento cubre también el cuerpo (un
 /// NEXO que manda las cabeceras y se queda colgado agota el intento, no espera sin límite) y el tamaño queda acotado a
 /// <c>ImportacionInteligente:LimiteRespuestaMegabytes</c>. Una respuesta mayor lanza <see cref="InvalidDataException"/>, que la tubería no

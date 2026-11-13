@@ -9,7 +9,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 namespace Cotifly.Infraestructura.Comun.Persistence;
 
 /// <summary>
-/// #191: <see cref="IClsRegistroCapturasIdempotentes"/> sobre la misma fila de <c>dbo_cotifly.CapturasIdempotentes</c> que reserva la
+/// <see cref="IClsRegistroCapturasIdempotentes"/> sobre la misma fila de <c>dbo_cotifly.CapturasIdempotentes</c> que reserva la
 /// clave (<see cref="clsAlmacenIdempotenciaSql"/>): el folio confirmado, el <c>solicitudNexoId</c> y el <c>scorePrioridad</c> de la
 /// captura sobreviven a un reinicio y los ve cualquier réplica.
 /// </summary>

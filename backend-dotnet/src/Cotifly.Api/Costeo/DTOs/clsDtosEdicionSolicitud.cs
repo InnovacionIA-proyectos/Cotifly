@@ -4,7 +4,7 @@ using Cotifly.Aplicacion.Costeo.DTOs;
 namespace Cotifly.Api.Costeo.DTOs;
 
 /// <summary>
-/// HU-028 (#186): <c>EdicionSolicitudWeb</c>, el cuerpo de <c>PUT /web/cotizaciones/{folio}/solicitud</c>. Reemplazo completo del contenido
+/// <c>EdicionSolicitudWeb</c>, el cuerpo de <c>PUT /web/cotizaciones/{folio}/solicitud</c>. Reemplazo completo del contenido
 /// editable con la forma de la captura (<see cref="clsSolicitudCosteoWebRequest"/>) más el id de cada ruta que se conserva. Los campos
 /// bloqueados (<c>tipo</c>, <c>nit_cliente</c>, <c>cliente_nombre</c>, <c>origen_cliente</c>) son opcionales y, si vienen, deben traer el
 /// valor guardado. Los límites los valida el caso de uso (todos los errores en <c>detalle.errores</c>).
@@ -19,7 +19,7 @@ public sealed class clsEdicionSolicitudWebRequest
     /// <summary>Línea de negocio por defecto de una ruta nueva (una de la solicitud).</summary>
     public string? LineaNegocio { get; init; }
 
-    /// <summary>ISO 8601; sin zona se interpreta en hora de Bogotá (G4).</summary>
+    /// <summary>ISO 8601; sin zona se interpreta en hora de Bogotá.</summary>
     [JsonConverter(typeof(Comun.clsConvertidorFechaBogota))]
     public DateTimeOffset? Deadline { get; init; }
     public string? Notas { get; init; }
@@ -44,7 +44,7 @@ public sealed class clsEdicionSolicitudWebRequest
 }
 
 /// <summary>
-/// <c>RutaEdicionWeb</c> (HU-028): una ruta de la edición, con los campos de <c>RutaCapturaWeb</c> más <c>linea_solicitud_id</c> (el id de
+/// <c>RutaEdicionWeb</c>: una ruta de la edición, con los campos de <c>RutaCapturaWeb</c> más <c>linea_solicitud_id</c> (el id de
 /// la ruta guardada que se edita; sin él, una ruta nueva). La línea de negocio de una ruta guardada no cambia.
 /// </summary>
 public sealed class clsRutaEdicionWebRequest : clsRutaCapturaWebRequest
@@ -52,7 +52,7 @@ public sealed class clsRutaEdicionWebRequest : clsRutaCapturaWebRequest
     public Guid? LineaSolicitudId { get; init; }
 
     /// <summary>
-    /// HU-028.1 (#183): <c>true</c> = los camiones de esta ruta que rechazó la Mesa de Costeo vuelven a viajar a Nexo, sin el rechazo, para
+    /// <c>true</c> = los camiones de esta ruta que rechazó la Mesa de Costeo vuelven a viajar a Nexo, sin el rechazo, para
     /// que la Mesa los reconsidere. Ausente o <c>false</c> (por defecto): siguen rechazados y no viajan.
     /// </summary>
     public bool? ReincluirRechazados { get; init; }

@@ -4,7 +4,7 @@ using Cotifly.Dominio.Comun;
 namespace Cotifly.Infraestructura.Comun.Persistence;
 
 /// <summary>
-/// #191: el <see cref="clsResultado{TValor}"/> que consume una <c>Idempotency-Key</c>, como JSON para la columna <c>resultado</c> de
+/// El <see cref="clsResultado{TValor}"/> que consume una <c>Idempotency-Key</c>, como JSON para la columna <c>resultado</c> de
 /// <c>dbo_cotifly.CapturasIdempotentes</c>, y de vuelta. El valor se guarda con <c>System.Text.Json</c> (los resultados de la captura,
 /// los conexos, la re-solicitud y la edición son records); el error, con su código, mensaje, detalle y <c>Datos</c>.
 /// </summary>

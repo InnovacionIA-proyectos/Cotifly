@@ -6,9 +6,9 @@ using Cotifly.Dominio.Agente;
 namespace Cotifly.Aplicacion.Municipios.Services;
 
 /// <summary>
-/// Resuelve un origen o destino escrito en texto libre contra el catálogo de municipios de Nexo (HU-005.13). Determinista y sin
-/// estado: quien lo usa le pasa el catálogo que devolvió <c>IClsMunicipiosProvider</c> (la herramienta <c>resolver_municipio</c> del
-/// agente legado se retiró en HU-013.9, #105; el resolvedor se conserva para otros flujos, como las licitaciones). Nexo expone un
+/// Resuelve un origen o destino escrito en texto libre contra el catálogo de municipios de Nexo. Determinista y sin
+/// estado: quien lo usa le pasa el catálogo que devolvió <c>IClsMunicipiosProvider</c> (lo usan flujos como las
+/// licitaciones). Nexo expone un
 /// solo endpoint sin filtro (<c>GET /api/captura-solicitudes/municipios</c>, mapeo aprobado en
 /// <c>docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md</c>), así que la búsqueda se hace aquí, no en Nexo.
 /// </summary>

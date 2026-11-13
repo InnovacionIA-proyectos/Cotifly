@@ -6,7 +6,7 @@ using Cotifly.Dominio.Comun;
 namespace Cotifly.Infraestructura.Costeo.Services;
 
 /// <summary>
-/// Costo unitario de los conexos del catálogo de Nexo para la captura (HU-021.6, decisión 3): <c>GET /api/servicios-conexos</c> de
+/// Costo unitario de los conexos del catálogo de Nexo para la captura: <c>GET /api/servicios-conexos</c> de
 /// los activos, página por página (Nexo no tiene <c>GET</c> por id), hasta encontrar todos los ids pedidos o terminar el catálogo
 /// (máximo <see cref="MaximoPaginas"/> páginas de <see cref="TamanoPagina"/>). Reutiliza el envío de <see cref="clsCosteoNexo"/>
 /// (cliente <c>NexoCosteo</c>, identidad del comercial, límite de respuesta) y la traducción de errores de
@@ -50,8 +50,8 @@ public sealed class clsCostosConexosNexo(clsCosteoNexo costeo) : IClsCostosConex
                     continue;
                 }
 
-                // HU-043.2 (#251): precioVenta (S6-HU-38.2) puede venir null (sin precio de venta: se cotiza al costo) o faltar (Nexo anterior).
-                // HU-046.3 (#269): y el codigoServicio, que se guarda con el conexo para la política de seguros.
+                // precioVenta puede venir null (sin precio de venta: se cotiza al costo) o faltar.
+                // También el codigoServicio, que se guarda con el conexo para la política de seguros.
                 encontrados[id] = new clsCostoConexoNexo(
                     id, clsCosteoNexo.Texto(fila, "tipoServicio"), costo, clsCosteoNexo.Texto(fila, "categoria"), clsCosteoNexo.Decimal(fila, "precioVenta"),
                     clsCosteoNexo.Texto(fila, "codigoServicio"));
@@ -96,7 +96,7 @@ public sealed class clsAlmacenCostosConexos
 }
 
 /// <summary>
-/// Caché de <see cref="IClsCostosConexosNexo"/> (HU-021.6): la validación y la preparación de una misma captura, y las capturas seguidas,
+/// Caché de <see cref="IClsCostosConexosNexo"/>: la validación y la preparación de una misma captura, y las capturas seguidas,
 /// no vuelven a recorrer el catálogo de Nexo durante 5 minutos. El precio que se guarda en la ruta es el costo de Nexo al momento de
 /// capturar; el reintento y el polling no vuelven a cotizar los conexos.
 /// </summary>

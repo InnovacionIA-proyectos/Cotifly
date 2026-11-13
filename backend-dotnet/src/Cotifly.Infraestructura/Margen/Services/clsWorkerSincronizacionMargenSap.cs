@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Margen.Services;
 
 /// <summary>
-/// Worker de la sincronización del margen de SAP TM (HU-042.2, #243, ADR-027; reemplaza el SQL Agent Job de la #242). Mismo molde que
+/// Worker de la sincronización del margen de SAP TM (ADR-027). Mismo molde que
 /// <c>clsWorkerCosteoNexo</c> y <c>clsLimpiezaIdempotenciaHostedService</c>: <see cref="PeriodicTimer"/> con <see cref="TimeProvider"/>, una
 /// ronda por chequeo en su propio ámbito de DI y ninguna excepción tumba el host.
 /// </summary>

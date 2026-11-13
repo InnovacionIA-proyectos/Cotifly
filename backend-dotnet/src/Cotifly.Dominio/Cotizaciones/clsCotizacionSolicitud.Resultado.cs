@@ -3,7 +3,7 @@ using Cotifly.Dominio.Comun;
 namespace Cotifly.Dominio.Cotizaciones;
 
 /// <summary>
-/// HU-033 (#199, ADR-023, script 13): resultado ganada/perdida diferido a Nexo. Si el comercial marca el resultado cuando la cotización
+/// Resultado ganada/perdida diferido a Nexo (ADR-023, script 13). Si el comercial marca el resultado cuando la cotización
 /// todavía no está Entregada en Nexo (Nexo responde <c>COTIZACION_NO_ENTREGADA</c>), el resultado se guarda SOLO en Cotifly como
 /// <see cref="SincronizacionResultadoNexo.Pendiente"/> y el polling del costeo lo envía a Nexo UNA vez cuando ve la entrega. Cotifly
 /// nunca entrega la cotización en Nexo (no llama a <c>/entregar</c>: eso es de la Mesa de Costeo).
@@ -21,7 +21,7 @@ public sealed partial class clsCotizacionSolicitud
 
     /// <summary>
     /// Comentario del comercial para Nexo mientras el resultado está pendiente (Cotifly no persiste el comentario de un resultado que ya
-    /// fue a Nexo, HU-005.14): se borra al sincronizar.
+    /// fue a Nexo): se borra al sincronizar.
     /// </summary>
     public string? ComentarioResultadoPendiente { get; private set; }
 
@@ -39,7 +39,7 @@ public sealed partial class clsCotizacionSolicitud
 
     /// <summary>
     /// Lo que ve el frontend (<c>sincronizacion_resultado_nexo</c>): <c>null</c> sin resultado; <c>solo_cotifly</c> si el resultado nunca
-    /// va a Nexo (seguimiento de una cotización sin Nexo, descartada o vencida, o la perdida antes del costeo de HU-013.17);
+    /// va a Nexo (seguimiento de una cotización sin Nexo, descartada o vencida, o la perdida antes del costeo);
     /// <c>pendiente</c>, <c>sincronizado</c> o <c>no_sincronizable</c> según la columna; y <c>sincronizado</c> para un resultado anterior
     /// al script 13 marcado en Nexo.
     /// </summary>

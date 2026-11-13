@@ -7,14 +7,14 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Margen.Services;
 
 /// <summary>
-/// NIT por BP para la sincronización del margen de SAP TM (HU-042.2, #243): <c>dbo.DimBPSolicitante</c> (columnas <c>BP</c> y <c>NIT</c>) de
+/// NIT por BP para la sincronización del margen de SAP TM: <c>dbo.DimBPSolicitante</c> (columnas <c>BP</c> y <c>NIT</c>) de
 /// <c>DWCubosOperacionesEBS</c>, por <c>ConnectionStrings:DwOperaciones</c> (usuario de solo lectura). Solo <c>SELECT</c> parametrizado, en
 /// lotes de <see cref="TamanoLote"/> BP (SQL Server admite 2100 parámetros), como el script de Datos y
 /// <c>clsDirectorioEjecutivosDimEjecutivo</c>.
 /// </summary>
 /// <remarks>
 /// El BP se busca tal como lo manda SAP (igual que el script de Datos; si <c>DimBPSolicitante.BP</c> guarda ceros a la izquierda no cruza:
-/// pendiente de confirmar con Datos, ADR-027 §13). Los parámetros son <c>VARCHAR(20)</c>, como un cubo (un <c>NVARCHAR</c> contra una columna
+/// ver ADR-027 §13). Los parámetros son <c>VARCHAR(20)</c>, como un cubo (un <c>NVARCHAR</c> contra una columna
 /// <c>VARCHAR</c> obliga a convertir la columna y no usa su índice). Las columnas se leen como texto (<c>CAST ... AS nvarchar</c>, por si el
 /// cubo las tiene numéricas) y recortadas. Un NIT vacío o de más de 20 caracteres (el largo de <c>SapMargenCliente.nit</c>) se descarta. Un
 /// BP con varios NIT distintos se queda, de forma determinista, con el menor en orden ordinal y se anota un warning (el script tomaba el

@@ -11,7 +11,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Margen.Services;
 
 /// <summary>
-/// Coordinación de la sincronización dentro de una réplica (HU-042.2, #243): un solo intento a la vez (el worker y la corrida forzada desde
+/// Coordinación de la sincronización dentro de una réplica: un solo intento a la vez (el worker y la corrida forzada desde
 /// la administración comparten este candado; entre réplicas lo resuelve el <c>sp_getapplock</c> del stored procedure) y el próximo chequeo
 /// del worker, para estimar la próxima corrida. Singleton.
 /// </summary>
@@ -67,8 +67,8 @@ public sealed class clsCoordinacionSincronizacionMargenSap : IDisposable
 }
 
 /// <summary>
-/// Sincronización del margen de SAP TM hacia <c>dbo_cotifly.SapMargenCliente</c> (HU-042.2, #243, ADR-027): el port en C# del script
-/// <c>db/jobs/sincronizar_margen_sap.ps1</c> de Datos, que ya no se instala. Una corrida:
+/// Sincronización del margen de SAP TM hacia <c>dbo_cotifly.SapMargenCliente</c> (ADR-027), equivalente en C# del script
+/// <c>db/jobs/sincronizar_margen_sap.ps1</c> de Datos. Una corrida:
 /// <list type="number">
 /// <item>sin forzar, revisa la última corrida <c>ok</c> de <c>SapMargenSyncLog</c> y sale si es más reciente que
 /// <c>SapTm:SincronizacionMinutos</c> ("no toca": no llama a SAP);</item>
@@ -442,7 +442,7 @@ public sealed class clsSincronizacionMargenSapSql(
     /// La fila que el stored procedure acaba de escribir: la PRIMERA iniciada entre <paramref name="marca"/> (hora del servidor tomada justo
     /// antes del <c>EXEC</c>, en la misma conexión) y la hora del servidor al consultar. El stored procedure fija su <c>iniciadoAt</c> al
     /// empezar, así que su fila es la primera de ese rango; una réplica que llegó después mientras esta tenía el candado dejó su
-    /// <c>omitido</c> más tarde y no se confunde (antes se tomaba la más reciente).
+    /// <c>omitido</c> más tarde y no se confunde.
     /// </summary>
     private static async Task<clsCorridaSincronizacionMargenSap?> CorridaDelSpAsync(SqlConnection conexion, DateTimeOffset marca, CancellationToken cancellationToken)
     {

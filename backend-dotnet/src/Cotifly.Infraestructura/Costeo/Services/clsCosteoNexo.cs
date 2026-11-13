@@ -19,9 +19,9 @@ namespace Cotifly.Infraestructura.Costeo.Services;
 
 /// <summary>
 /// Costeo contra Nexo en vivo (ADR-015). Rutas de <c>CONTRATO.md</c> de Nexo bajo <c>{Nexo:UrlBase}</c> (la raíz del servicio, sin
-/// <c>/api</c>): <c>POST /api/captura-solicitudes</c> (HU-005.5), <c>GET /api/solicitudes/{id}</c> y
-/// <c>GET /api/cotizaciones/{id}</c> y <c>GET /api/cotizaciones/por-solicitud/{id}</c> (HU-005.6 y el resultado; sin escribir en Nexo, E2E
-/// 2026-10-16 y DEF-C-1 del 2026-10-22) y, solo con un Nexo sin esa ruta, <c>POST /api/cotizaciones</c> ("crear o recuperar"). Igual que el resto de adaptadores de Nexo, identifica al comercial
+/// <c>/api</c>): <c>POST /api/captura-solicitudes</c>, <c>GET /api/solicitudes/{id}</c> y
+/// <c>GET /api/cotizaciones/{id}</c> y <c>GET /api/cotizaciones/por-solicitud/{id}</c> (el polling y el resultado, sin escribir en
+/// Nexo) y, solo con un Nexo sin esa ruta, <c>POST /api/cotizaciones</c> ("crear o recuperar"). Igual que el resto de adaptadores de Nexo, identifica al comercial
 /// con <c>X-Portal-clsUsuario-Id: {UsuariosWeb.idUsuarioExterno}</c> y nunca un token de Cotifly; se registra vía
 /// <c>clsFabricaCosteoNexo</c> (sin <c>Nexo:UrlBase</c> → <see cref="clsCosteoNexoNoDisponible"/>).
 /// </summary>
@@ -100,7 +100,7 @@ public sealed class clsCosteoNexo(
         if (respuesta.EsFallo)
         {
             // Un 400 del alta es validación de los datos (Nexo no cambia de opinión con los mismos datos): error definitivo, salvo la
-            // configuración de Nexo (DWCUBOS_NO_CONFIGURADO). Los códigos de captura de Nexo se traducen a los de Cotifly (G16).
+            // configuración de Nexo (DWCUBOS_NO_CONFIGURADO). Los códigos de captura de Nexo se traducen a los de Cotifly.
             if (respuesta.Error.Codigo == clsCodigosError.CosteoNexoRechazada && respuesta.Error.Detalle?.StartsWith("HTTP 400", StringComparison.Ordinal) == true)
             {
                 return TraducirRechazoCaptura(respuesta.Error.Detalle);
@@ -144,7 +144,7 @@ public sealed class clsCosteoNexo(
         var solicitud = await EnviarAsync(usuarioId, HttpMethod.Get, rutaSolicitud, null, cancellationToken);
         if (solicitud.EsFallo && EsConflictoPasajero(solicitud.Error))
         {
-            // E2E 2026-10-16 (observación 2): "abrir" la solicitud en Nexo cambia su estado, y dos lecturas a la vez (el polling y la Mesa
+            // "Abrir" la solicitud en Nexo cambia su estado, y dos lecturas a la vez (el polling y la Mesa
             // o el comercial) chocan con un 409 de concurrencia que al reintentar da 200. Se reintenta UNA vez, tras una espera corta.
             logger.LogInformation("Nexo respondió un 409 pasajero a GET {Ruta}; se reintenta una vez.", rutaSolicitud);
             await Task.Delay(EsperaConflictoPasajero, cancellationToken);
@@ -175,7 +175,7 @@ public sealed class clsCosteoNexo(
         List<clsLineaSolicitudNexo> contenidoLineas;
         using (var documento = solicitud.Valor)
         {
-            // lineas[] de primer nivel (LineaCosteoDto): el contenido de cada línea para asociarla por contenido (ADR-017 §3, #134).
+            // lineas[] de primer nivel (LineaCosteoDto): el contenido de cada línea para asociarla por contenido (ADR-017 §3).
             contenidoLineas = documento.RootElement.ValueKind == JsonValueKind.Object && documento.RootElement.TryGetProperty("lineas", out var d)
                       && d.ValueKind == JsonValueKind.Array
                 ? [.. d.EnumerateArray()
@@ -216,8 +216,8 @@ public sealed class clsCosteoNexo(
     }
 
     /// <summary>
-    /// HU-031.1 (#194): los códigos de vehículo que viajaron traducidos por el alias en el alta de <paramref name="solicitudId"/> (lo que
-    /// registró el envío). Vacío sin repositorio, sin registro o si la lectura falla: entonces se compara como antes (sin traducción).
+    /// Los códigos de vehículo que viajaron traducidos por el alias en el alta de <paramref name="solicitudId"/> (lo que
+    /// registró el envío). Vacío sin repositorio, sin registro o si la lectura falla: entonces se compara sin traducción.
     /// </summary>
     private async Task<IReadOnlyDictionary<string, string>> EquivalenciasEnviadasAsync(string solicitudId, CancellationToken cancellationToken)
     {
@@ -270,18 +270,18 @@ public sealed class clsCosteoNexo(
         && error.Detalle?.StartsWith("HTTP 409", StringComparison.Ordinal) == true
         && !error.Detalle.StartsWith("HTTP 409 " + CodigoNexoDescartada, StringComparison.Ordinal);
 
-    /// <summary>Ruta de Nexo que devuelve la cotización de una solicitud SIN crearla (S5-HU-20.1, #286): 200 con ella o 204 si no hay.</summary>
+    /// <summary>Ruta de Nexo que devuelve la cotización de una solicitud SIN crearla: 200 con ella o 204 si no hay.</summary>
     public const string RutaCotizacionPorSolicitud = "/api/cotizaciones/por-solicitud/";
 
     /// <summary>
-    /// La cotización de Nexo de la solicitud SIN escribir en Nexo (E2E 2026-10-16: el polling hacía un <c>POST /api/cotizaciones</c>,
-    /// "crear o recuperar", en cada ciclo: 69 escrituras en 20 minutos para 5 solicitudes).
+    /// La cotización de Nexo de la solicitud SIN escribir en Nexo (un <c>POST /api/cotizaciones</c>, "crear o recuperar", en cada
+    /// ciclo del polling multiplicaría las escrituras).
     /// <list type="number">
     /// <item>Con el id ya guardado (<c>cotizacionNexoId</c>, lo guarda el polling la primera vez que la ve): <c>GET /api/cotizaciones/{id}</c>.
-    /// Si esa lectura no la trae (Nexo ya no la reconoce o falló), se busca por la solicitud.</item>
+    /// Si esa lectura no la trae (Nexo no la reconoce o falló), se busca por la solicitud.</item>
     /// <item><c>GET /api/cotizaciones/por-solicitud/{id}</c>: 200 → la cotización (con sus fletes y conexos); 204 → <c>null</c> (Nexo
     /// todavía no la crea: no hay fletes; la crean el autocosteo o la Mesa al costear).</item>
-    /// <item>Solo si esa ruta no existe (404/405 sin código de Nexo: un Nexo anterior a #286) se usa el "crear o recuperar" de siempre, que
+    /// <item>Solo si esa ruta no existe (404/405 sin código de Nexo: un Nexo sin esa ruta) se usa el "crear o recuperar", que
     /// con el id guardado ocurre una sola vez por solicitud.</item>
     /// </list>
     /// </summary>
@@ -303,7 +303,7 @@ public sealed class clsCosteoNexo(
                 }
             }
 
-            // Si Nexo no la devuelve (ya no la reconoce, o falló esa lectura), se busca por la solicitud: otra lectura, nunca una escritura.
+            // Si Nexo no la devuelve (no la reconoce, o falló esa lectura), se busca por la solicitud: otra lectura, nunca una escritura.
             logger.LogWarning("Nexo no devolvió la cotización {Cotizacion} guardada para la solicitud {Solicitud} ({Codigo}): se busca por la solicitud.",
                 cotizacionNexoId, solicitudId, porId.EsFallo ? porId.Error.Codigo : "sin id");
         }
@@ -337,7 +337,7 @@ public sealed class clsCosteoNexo(
 
     /// <summary>
     /// ¿Viajaron los códigos del cubicador en el alta de <paramref name="solicitudId"/>? Lo que registró el envío
-    /// (<see cref="clsEnvioNexoRegistrado"/>), NUNCA la bandera actual (la validación de #159 midió 110 a 140 cruces de costo al leer con la
+    /// (<see cref="clsEnvioNexoRegistrado"/>), NUNCA la bandera actual (leer con la bandera cambiada produce cruces de costo).
     /// bandera cambiada). Sin registro, <c>false</c>: no se compara el vehículo de los camiones del cubicador (el caso seguro).
     /// </summary>
     private async Task<bool> CodigosEnviadosAsync(string solicitudId, CancellationToken cancellationToken)
@@ -377,7 +377,7 @@ public sealed class clsCosteoNexo(
 
     /// <summary>
     /// "Crear o recuperar": devuelve la entregada, el borrador existente o uno vacío nuevo (lo mismo que hace la Mesa de Nexo al abrir la
-    /// solicitud). ES UNA ESCRITURA en Nexo: ni el polling ni el resultado la usan (leen con <see cref="LeerCotizacionAsync"/>, DEF-C-1); queda
+    /// solicitud). ES UNA ESCRITURA en Nexo: ni el polling ni el resultado la usan (leen con <see cref="LeerCotizacionAsync"/>); queda
     /// solo para un Nexo sin la ruta de lectura <see cref="RutaCotizacionPorSolicitud"/>, una vez por lectura.
     /// </summary>
     public async Task<clsResultado<clsCotizacionNexo>> ObtenerCotizacionAsync(Guid usuarioId, string solicitudId, CancellationToken cancellationToken = default)
@@ -459,12 +459,12 @@ public sealed class clsCosteoNexo(
         return string.IsNullOrEmpty(limpio) ? null : limpio.Length <= largo ? limpio : limpio[..largo];
     }
 
-    /// <summary>Códigos 400 de <c>POST /api/captura-solicitudes</c> de catálogo, línea o peso (G16): los datos de la solicitud.</summary>
+    /// <summary>Códigos 400 de <c>POST /api/captura-solicitudes</c> de catálogo, línea o peso: los datos de la solicitud.</summary>
     public static readonly IReadOnlySet<string> CodigosCapturaDatos =
         new HashSet<string>(StringComparer.Ordinal) { "ENUM_INVALIDO", "LINEA_INCOMPLETA", "PESO_REQUERIDO", "PESO_INCONSISTENTE" };
 
     /// <summary>
-    /// Códigos 400 de la captura sobre el cliente (G16): BP o id que Nexo no reconoce. Reintentables: el reintento vuelve a resolver el
+    /// Códigos 400 de la captura sobre el cliente: BP o id que Nexo no reconoce. Reintentables: el reintento vuelve a resolver el
     /// cliente en el catálogo de Nexo, así que una corrección en SAP o Nexo lo destraba.
     /// </summary>
     public static readonly IReadOnlySet<string> CodigosCapturaCliente =
@@ -482,23 +482,23 @@ public sealed class clsCosteoNexo(
     public const string MensajeDwCubos =
         "Nexo no tiene configurado el cálculo de cubicaje (DWCubos): intenta de nuevo más tarde o avisa al equipo de Nexo.";
 
-    /// <summary>Mensaje de <c>LINEA_NEGOCIO_INVALIDO</c> cuando lo responde Nexo (#278): lo corrige soporte en el mapeo (no hay endpoint para editarlo).</summary>
+    /// <summary>Mensaje de <c>LINEA_NEGOCIO_INVALIDO</c> cuando lo responde Nexo: lo corrige soporte en el mapeo (no hay endpoint para editarlo).</summary>
     public static readonly string MensajeLineaNegocioInvalida =
         $"Nexo no acepta la línea de negocio de la solicitud (solo {clsLineasNegocioNexo.Lista}): avisa a soporte para que corrija la configuración de la línea de negocio y después reintenta el envío.";
 
-    /// <summary>Mensaje de <c>CUBICACION_DEMASIADO_GRANDE</c> cuando lo responde Nexo (#278).</summary>
+    /// <summary>Mensaje de <c>CUBICACION_DEMASIADO_GRANDE</c> cuando lo responde Nexo.</summary>
     public const string MensajeCubicacionDemasiadoGrande =
         "Nexo rechazó la solicitud: una línea trae más de 200 mercancías o más de 10.000 unidades en total. Parte la carga en varias rutas y crea la cotización de nuevo.";
 
-    /// <summary>Mensaje de <c>IA_TOPE_DIARIO</c> (429 de Nexo, #278): el cupo diario de IA del comercial en Nexo.</summary>
+    /// <summary>Mensaje de <c>IA_TOPE_DIARIO</c> (429 de Nexo): el cupo diario de IA del comercial en Nexo.</summary>
     public const string MensajeIaTopeDiario =
         "Agotaste tu cupo diario de IA en Nexo: intenta de nuevo mañana o captura la solicitud sin el análisis automático.";
 
     /// <summary>
-    /// Traduce un 400 del alta (G16, <c>docs/conexion_nexo/HU-013-preguntas-nexo.md</c> §3): <c>ENUM_INVALIDO</c>, <c>LINEA_INCOMPLETA</c>,
+    /// Traduce un 400 del alta: <c>ENUM_INVALIDO</c>, <c>LINEA_INCOMPLETA</c>,
     /// <c>PESO_REQUERIDO</c> y <c>PESO_INCONSISTENTE</c> → <c>SOLICITUD_COSTEO_INVALIDA</c> (definitivo); <c>CLIENTE_REQUERIDO</c>,
     /// <c>CLIENTE_INVALIDO</c> y <c>CLIENTE_BP_INVALIDO</c> → <c>COSTEO_NEXO_RECHAZADA</c> con un motivo de cliente (reintentable);
-    /// <c>DWCUBOS_NO_CONFIGURADO</c> → <c>COSTEO_NEXO_NO_DISPONIBLE</c> (reintentable); #278 (contrato único de NEXO, DU §9):
+    /// <c>DWCUBOS_NO_CONFIGURADO</c> → <c>COSTEO_NEXO_NO_DISPONIBLE</c> (reintentable); según el contrato único de NEXO (§9):
     /// <c>LINEA_NEGOCIO_INVALIDO</c> → <c>LINEA_NEGOCIO_INVALIDO</c> (reintentable: lo corrige soporte en el mapeo) y
     /// <c>CUBICACION_DEMASIADO_GRANDE</c> → <c>CUBICACION_DEMASIADO_GRANDE</c> (definitivo); cualquier otro (<c>VALIDATION_ERROR</c>...) →
     /// <c>COSTEO_NEXO_SOLICITUD_INVALIDA</c>. El detalle conserva <c>HTTP 400 {code}: {message}</c> de Nexo.
@@ -532,9 +532,9 @@ public sealed class clsCosteoNexo(
     }
 
     /// <summary>
-    /// <c>CotizacionDto</c> de Nexo, o <c>null</c> si no trae <c>id</c>. Líneas sin <c>valorFlete</c> se descartan. HU-043.2 (#251): de cada
-    /// conexo se leen también <c>precioVentaUnitario</c> y <c>valorVenta</c> (contrato §7.1); si Nexo no los trae (versión anterior a
-    /// S6-HU-38.2) quedan en <c>null</c> y el conexo se lee igual, con su costo (<c>valorAplicado</c>).
+    /// <c>CotizacionDto</c> de Nexo, o <c>null</c> si no trae <c>id</c>. Líneas sin <c>valorFlete</c> se descartan. De cada
+    /// conexo se leen también <c>precioVentaUnitario</c> y <c>valorVenta</c> (contrato §7.1); si Nexo no los trae quedan en
+    /// <c>null</c> y el conexo se lee igual, con su costo (<c>valorAplicado</c>).
     /// </summary>
     internal static clsCotizacionNexo? LeerCotizacion(JsonElement raiz)
     {
@@ -550,7 +550,7 @@ public sealed class clsCosteoNexo(
             {
                 if (Decimal(linea, "valorFlete") is { } flete)
                 {
-                    // id = la línea de la COTIZACIÓN de Nexo (clsCotizacionLineaDto.id): el lineaId de los conexos (HU-013.3).
+                    // id = la línea de la COTIZACIÓN de Nexo (clsCotizacionLineaDto.id): el lineaId de los conexos.
                     lineas.Add(new clsLineaCosteoNexo(
                         Texto(linea, "lineaSolicitudId"), flete, Decimal(linea, "valorAprovisionamiento"), Decimal(linea, "valorRetornoContenedor"), Texto(linea, "id")));
                 }
@@ -581,12 +581,12 @@ public sealed class clsCosteoNexo(
 
     /// <summary>
     /// Una línea de <c>lineas[]</c> de <c>SolicitudCosteoDto</c> (<c>LineaCosteoDto</c>). La ruta <c>"Origen → Destino"</c> viaja en
-    /// <c>ruta</c>; el swagger de Nexo QA (2026-10-08) la publica como <c>clsRuta</c> (renombre de su DTO), así que se aceptan los dos
+    /// <c>ruta</c>; el swagger de Nexo la publica como <c>clsRuta</c> (renombre de su DTO), así que se aceptan los dos
     /// nombres. <c>grupoRutaId</c> es el id de la ruta de Cotifly e <c>idRecomendacionVehiculo</c> el camión del cubicador que Nexo guardó
-    /// en la línea (HU-023.4, #159; <c>null</c> si la línea viajó sin ellos). <c>grupoRutaId</c> no es su <c>rutaId</c>, que es de su
-    /// catálogo de rutas. #181 (Nexo #309): <c>estadoLinea</c> y <c>motivoPendiente</c> van al final de la línea y son opcionales; si Nexo no
-    /// los manda (versión anterior), o no son texto, quedan en <c>null</c> sin error. El emparejamiento no los usa. HU-028.1 (#183, Nexo
-    /// #320): <c>estadoLinea = "rechazada"</c> y <c>motivoRechazo</c> dicen que la Mesa de Costeo rechazó la línea (el camión queda
+    /// en la línea (<c>null</c> si la línea viajó sin ellos). <c>grupoRutaId</c> no es su <c>rutaId</c>, que es de su
+    /// catálogo de rutas. <c>estadoLinea</c> y <c>motivoPendiente</c> van al final de la línea y son opcionales; si Nexo no
+    /// los manda, o no son texto, quedan en <c>null</c> sin error. El emparejamiento no los usa.
+    /// <c>estadoLinea = "rechazada"</c> y <c>motivoRechazo</c> dicen que la Mesa de Costeo rechazó la línea (el camión queda
     /// <c>rechazada</c>, con su motivo guardado).
     /// </summary>
     internal static clsLineaSolicitudNexo LeerLineaSolicitud(JsonElement linea) =>
@@ -598,11 +598,11 @@ public sealed class clsCosteoNexo(
             NumeroLinea = Entero(linea, "numeroLinea") ?? Entero(linea, "orden"),
             EstadoLinea = Cadena(linea, "estadoLinea"),
             MotivoPendiente = Cadena(linea, "motivoPendiente"),
-            // HU-028.1 (#183, Nexo #320): opcional y al final de la línea, como los de #309; sin él (Nexo anterior) queda null.
+            // Opcional y al final de la línea, como estadoLinea; sin él queda null.
             MotivoRechazo = Cadena(linea, "motivoRechazo"),
         };
 
-    /// <summary>La propiedad si es un texto; <c>null</c> si falta, es <c>null</c> o es de otro tipo (#181: campos opcionales de Nexo).</summary>
+    /// <summary>La propiedad si es un texto; <c>null</c> si falta, es <c>null</c> o es de otro tipo (campos opcionales de Nexo).</summary>
     internal static string? Cadena(JsonElement objeto, string propiedad) =>
         objeto.ValueKind == JsonValueKind.Object && objeto.TryGetProperty(propiedad, out var valor) && valor.ValueKind == JsonValueKind.String
             ? valor.GetString()
@@ -629,7 +629,7 @@ public sealed class clsCosteoNexo(
         resiliencia.Retry.Delay = TimeSpan.FromMilliseconds(300);
         resiliencia.Retry.BackoffType = DelayBackoffType.Exponential;
         resiliencia.Retry.UseJitter = true;
-        // HU-023.4 (#159): un 429 no se reintenta (respeta el Retry-After vía clsCupoNexoHandler). Antes de DisableForUnsafeHttpMethods,
+        // Un 429 no se reintenta (respeta el Retry-After vía clsCupoNexoHandler). Antes de DisableForUnsafeHttpMethods,
         // que compone sobre el ShouldHandle vigente.
         Comun.clsCupoNexoHandler.NoReintentar429(resiliencia);
         resiliencia.Retry.DisableForUnsafeHttpMethods();
@@ -637,22 +637,22 @@ public sealed class clsCosteoNexo(
     }
 
     /// <summary>
-    /// <c>CapturaSolicitudRequest</c> de Nexo (camelCase) con sus líneas en orden (una por camión, ruta por ruta; HU-021, ADR-019). Sin
-    /// <c>valorEstimado</c> ni <c>referencia</c> (decisión 1 del 2026-10-08: se eliminan y dejan de enviarse a Nexo):
-    /// <c>tipo</c> en minúscula (<c>spot</c> | <c>licitacion</c>, como lo valida Nexo), el cliente por BP o por id (G14), la línea de
-    /// negocio de Nexo de la ruta de cada línea (#134; si no la trae, la de la solicitud) y los catálogos con el código de Nexo tal cual. HU-013.10: <c>notas</c> en el encabezado (G7),
-    /// <c>origenMunicipioId</c>/<c>destinoMunicipioId</c> por línea (G6) y en cada línea las horas de cargue y descargue de la línea
-    /// (HU-013.11, filas de una licitación) o, si no las trae, las del encabezado (G5: sin ellas Nexo aplica a la línea su valor por
+    /// <c>CapturaSolicitudRequest</c> de Nexo (camelCase) con sus líneas en orden (una por camión, ruta por ruta; ADR-019). Sin
+    /// <c>valorEstimado</c> ni <c>referencia</c>, que no se envían a Nexo:
+    /// <c>tipo</c> en minúscula (<c>spot</c> | <c>licitacion</c>, como lo valida Nexo), el cliente por BP o por id, la línea de
+    /// negocio de Nexo de la ruta de cada línea (si no la trae, la de la solicitud) y los catálogos con el código de Nexo tal cual. <c>notas</c> en el encabezado,
+    /// <c>origenMunicipioId</c>/<c>destinoMunicipioId</c> por línea y en cada línea las horas de cargue y descargue de la línea
+    /// (filas de una licitación) o, si no las trae, las del encabezado (sin ellas Nexo aplica a la línea su valor por
     /// defecto, 4 h + 4 h). <c>deadline</c> viaja en ISO 8601 con su
-    /// desplazamiento (G4). Los nulos no viajan. HU-023.4 (#159): con <paramref name="enviarGrupoRutaId"/> (<c>Nexo:EnviarGrupoRutaId</c>)
+    /// desplazamiento. Los nulos no viajan. Con <paramref name="enviarGrupoRutaId"/> (<c>Nexo:EnviarGrupoRutaId</c>)
     /// cada línea lleva <c>grupoRutaId</c> = el id de su ruta de Cotifly; con <paramref name="enviarDatosCubicador"/>
     /// (<c>Nexo:EnviarDatosCubicador</c>) cada línea lleva <c>idRecomendacionVehiculo</c> (el camión del cubicador). Las dos encendidas por
-    /// defecto desde #176 (Nexo ya las desplegó); quedan como interruptor de emergencia. Contrato con Nexo #297
-    /// (S5-HU-20.5): el código de mercancía NO viaja (ni <c>codigoTipoMercancia</c>); no hay campo de orden de entrada: Nexo numera las
+    /// defecto; quedan como interruptor de emergencia. Según el contrato con Nexo,
+    /// el código de mercancía NO viaja (ni <c>codigoTipoMercancia</c>); no hay campo de orden de entrada: Nexo numera las
     /// líneas por el orden del arreglo (<c>numeroLinea</c> en el GET), que aquí es ruta por ruta y, dentro de cada una, el orden de los
     /// camiones. El vehículo y la carrocería de cada línea los decide <see cref="VehiculoLinea"/> según <paramref name="modoCodigosCubicador"/>
-    /// (<c>Nexo:EnviarCodigosCubicador</c>, <c>siempre</c> por defecto desde HU-031.1 #194), <paramref name="vehiculosNexo"/> (los
-    /// códigos de <c>GET /api/catalogos/tipos-vehiculo</c>; <c>null</c> si no están disponibles) y <paramref name="alias"/> (el diccionario de alias de Nexo, #194; <c>null</c> si no hace falta o no está disponible). Los valores por defecto de los parámetros
+    /// (<c>Nexo:EnviarCodigosCubicador</c>, <c>siempre</c> por defecto), <paramref name="vehiculosNexo"/> (los
+    /// códigos de <c>GET /api/catalogos/tipos-vehiculo</c>; <c>null</c> si no están disponibles) y <paramref name="alias"/> (el diccionario de alias de Nexo; <c>null</c> si no hace falta o no está disponible). Los valores por defecto de los parámetros
     /// de este método son para las pruebas; el adaptador pasa siempre los de <see cref="clsOpcionesNexo"/> y el catálogo.
     /// </summary>
     internal static object CuerpoCaptura(
@@ -661,14 +661,14 @@ public sealed class clsCosteoNexo(
         Aplicacion.CatalogosFlete.DTOs.clsDiccionarioAliasNexo? alias = null)
     {
         var e = solicitud.Encabezado;
-        // HU-023 (#176, contrato con Nexo §3.3): una ruta con un solo camión es una "línea suelta" y viaja con grupoRutaId = null.
+        // Contrato con Nexo §3.3: una ruta con un solo camión es una "línea suelta" y viaja con grupoRutaId = null.
         var camionesPorRuta = solicitud.Lineas.Where(l => l.RutaId is not null).GroupBy(l => l.RutaId!.Value).ToDictionary(g => g.Key, g => g.Count());
         return new clsCapturaSolicitudWire(
             solicitud.Cliente.Bp,
             solicitud.Cliente.Id,
             clsCodigoEnum.ACodigo(e.Tipo),
             e.Deadline,
-            // #278 (DU §5): Nexo recibe las horas en pareja. Una re-solicitud que cambia una sola hora deja el encabezado con una (los
+            // Contrato de NEXO §5: Nexo recibe las horas en pareja. Una re-solicitud que cambia una sola hora deja el encabezado con una (los
             // cambios de carga se aplican también a él): en la cabecera viajan solo si vienen las dos; cada línea lleva su pareja.
             e.HorasCargue is not null && e.HorasDescargue is not null ? e.HorasCargue : null,
             e.HorasCargue is not null && e.HorasDescargue is not null ? e.HorasDescargue : null,
@@ -684,7 +684,7 @@ public sealed class clsCosteoNexo(
                 LineaNegocioWire(s.LineaNegocioNexo ?? solicitud.LineaNegocioNexo), s.ClaseViaje, s.ClaseContenedor,
                 s.Exclusivo, s.Consolidado, s.RetornaContenedor, s.CiudadDevolucionContenedor, s.LevanteContenedorDiferente,
                 s.CiudadLevanteContenedor, s.ValorAprovisionamiento, s.HorasCargue ?? e.HorasCargue, s.HorasDescargue ?? e.HorasDescargue, s.PesoKg, s.ValorMercancia,
-                // HU-032 (#197): una mercancía sin medidas (no cubicable) no viaja como posición; con ella la línea va sin posiciones.
+                // Una mercancía sin medidas (no cubicable) no viaja como posición; con ella la línea va sin posiciones.
                 s.PosicionesParaNexo.Count == 0
                     ? null
                     : [.. s.PosicionesParaNexo.Select(p => new clsCapturaPosicionWire(p.Descripcion, p.Cantidad, p.LargoCm, p.AnchoCm, p.AltoCm, p.PesoKg))],
@@ -694,7 +694,7 @@ public sealed class clsCosteoNexo(
     }
 
     /// <summary>
-    /// #278 (DU §8): la <c>lineaNegocio</c> que viaja, en la escritura canónica del DU (<c>Puerto a interior</c>, no <c>PuertoAInterior</c>)
+    /// La <c>lineaNegocio</c> que viaja, en la escritura canónica del contrato de NEXO (§8; <c>Puerto a interior</c>, no <c>PuertoAInterior</c>)
     /// para no depender de las variantes que acepte Nexo. Un valor que no es una de las seis viaja tal cual (recortado): el envío ya lo
     /// valida antes y, si llegara, Nexo responde <c>LINEA_NEGOCIO_INVALIDO</c> en vez de perderlo en silencio. Vacío = sin línea.
     /// </summary>
@@ -702,7 +702,7 @@ public sealed class clsCosteoNexo(
         string.IsNullOrWhiteSpace(lineaNegocio) ? null : clsLineasNegocioNexo.Canonica(lineaNegocio) ?? lineaNegocio.Trim();
 
     /// <summary>
-    /// <c>grupoRutaId</c> de la línea (HU-023, #176): el id de su ruta de Cotifly (un GUID por recomendación, igual en todas sus líneas,
+    /// <c>grupoRutaId</c> de la línea: el id de su ruta de Cotifly (un GUID por recomendación, igual en todas sus líneas,
     /// que van contiguas porque las líneas se arman ruta por ruta) solo si la ruta tiene más de un camión; <c>null</c> para una línea suelta
     /// o con <c>Nexo:EnviarGrupoRutaId</c> apagada.
     /// </summary>
@@ -712,17 +712,17 @@ public sealed class clsCosteoNexo(
             : null;
 
     /// <summary>
-    /// El <c>tipoVehiculo</c> y la <c>carroceria</c> que viajan en la línea (HU-014 #188; HU-031.1 #194, decisión del usuario del
-    /// 2026-10-20). El vehículo se resuelve en este orden: (1) el catálogo oficial de Nexo (<c>GET /api/catalogos/tipos-vehiculo</c>, con la
+    /// El <c>tipoVehiculo</c> y la <c>carroceria</c> que viajan en la línea. El vehículo se resuelve en este orden: (1) el catálogo
+    /// oficial de Nexo (<c>GET /api/catalogos/tipos-vehiculo</c>, con la
     /// equivalencia de <see cref="clsCodigosConocidosNexo"/>: exacto o, sin ambigüedad, sin tildes, mayúsculas ni <c>_</c>/<c>-</c>); (2) el
-    /// diccionario de alias de Nexo (NEXO #321: <c>C2</c> → <c>2</c>, <c>TB</c> → <c>2L2</c>). Lo que se resuelve viaja ESCRITO COMO EN
+    /// diccionario de alias de Nexo (<c>C2</c> → <c>2</c>, <c>TB</c> → <c>2L2</c>). Lo que se resuelve viaja ESCRITO COMO EN
     /// NEXO (así Nexo lo reconoce sin depender de su normalización, no nace en cuarentena y la línea se autocostea). Cotifly conserva su
-    /// código (el del cubicador): el emparejamiento y la regla "la Mesa manda" (D2) comparan contra el código que viajó
+    /// código (el del cubicador): el emparejamiento y la regla "la Mesa manda" comparan contra el código que viajó
     /// (<see cref="clsSolicitudCreadaNexo.EquivalenciasVehiculo"/>, <see cref="EquivalenciasVehiculo"/>).
     /// <list type="bullet">
     /// <item><b>Camión del cubicador</b> (con <c>idRecomendacionVehiculo</c>): <c>nunca</c> → sin vehículo ni carrocería (interruptor de
-    /// emergencia: ni siquiera se consulta el alias); <c>siempre</c> (por defecto desde #194) → el código resuelto o, si ni el catálogo ni
-    /// el alias lo conocen, tal cual (Nexo lo pone en cuarentena y lo normaliza en su bandeja, NEXO #322); <c>solo_conocidos</c> → el
+    /// emergencia: ni siquiera se consulta el alias); <c>siempre</c> (por defecto) → el código resuelto o, si ni el catálogo ni
+    /// el alias lo conocen, tal cual (Nexo lo pone en cuarentena y lo normaliza en su bandeja); <c>solo_conocidos</c> → el
     /// vehículo solo si se resolvió y, solo entonces, la carrocería si está en la lista de carrocerías de Nexo
     /// (<see cref="clsCatalogosCaptura.Carrocerias"/>: Nexo no publica un catálogo de carrocerías y el diccionario no las cubre); si no,
     /// la línea va sin vehículo ni carrocería (la resuelve la Mesa).</item>
@@ -754,11 +754,11 @@ public sealed class clsCosteoNexo(
     }
 
     /// <summary>
-    /// HU-031.1 (#194): los códigos de vehículo de Cotifly que viajaron con OTRO código porque el alias los tradujo (<c>C2</c> → <c>2</c>).
+    /// Los códigos de vehículo de Cotifly que viajaron con OTRO código porque el alias los tradujo (<c>C2</c> → <c>2</c>).
     /// No incluye la misma sigla escrita de otra forma (<c>2s3</c> → <c>2S3</c>): esa ya la reconoce
     /// <see cref="clsVehiculoLineaSolicitud.MismoCodigo"/>. El envío la registra con el <c>solicitudNexoId</c>
     /// (<see cref="clsEnvioNexoRegistrado"/>) y el polling compara contra ella: sin esto, el emparejamiento por contenido no reconocería la
-    /// línea (<c>C2</c> contra <c>2</c>) y la regla "la Mesa manda" (D2) tomaría el <c>2</c> de Nexo como un cambio de la Mesa (y borraría
+    /// línea (<c>C2</c> contra <c>2</c>) y la regla "la Mesa manda" tomaría el <c>2</c> de Nexo como un cambio de la Mesa (y borraría
     /// los porcentajes de llenado del cubicador).
     /// </summary>
     internal static IReadOnlyDictionary<string, string> EquivalenciasVehiculo(
@@ -783,7 +783,7 @@ public sealed class clsCosteoNexo(
 
     /// <summary>
     /// Deja en el log los códigos del cubicador que ni el catálogo ni el alias de Nexo conocen: con <c>solo_conocidos</c> su línea viajó sin
-    /// vehículo; con <c>siempre</c>, tal cual (Nexo la pone en cuarentena para normalizarla en su bandeja, NEXO #322). Y los que resolvió
+    /// vehículo; con <c>siempre</c>, tal cual (Nexo la pone en cuarentena para normalizarla en su bandeja). Y los que resolvió
     /// el alias.
     /// </summary>
     private void AvisarCodigosDesconocidos(
@@ -825,14 +825,14 @@ public sealed class clsCosteoNexo(
     }
 
     /// <summary>
-    /// HU-031.1 (#194): el diccionario de alias de Nexo, solo si alguna línea que viaja con vehículo trae un código que el catálogo oficial
-    /// no reconoce. <c>null</c> si no hace falta o no está disponible (Nexo caído y sin copia, Nexo sin #321): el envío NUNCA falla por
+    /// El diccionario de alias de Nexo, solo si alguna línea que viaja con vehículo trae un código que el catálogo oficial
+    /// no reconoce. <c>null</c> si no hace falta o no está disponible (Nexo caído y sin copia, o sin el endpoint): el envío NUNCA falla por
     /// esto; sigue con el modo configurado sin alias y deja un warning.
     /// </summary>
     private async Task<Aplicacion.CatalogosFlete.DTOs.clsDiccionarioAliasNexo?> AliasAsync(
         Guid usuarioId, clsSolicitudNexo solicitud, IReadOnlyCollection<string>? vehiculosNexo, CancellationToken cancellationToken)
     {
-        // HU-044.8 (#291): el código NEXO (C2/C3) y «2»/«3» los resuelve la equivalencia de SICE-TAC sin alias, así que un
+        // El código NEXO (C2/C3) y «2»/«3» los resuelve la equivalencia de SICE-TAC sin alias, así que un
         // camión con esos códigos no fuerza a bajar el diccionario de Nexo; solo lo hace un código que ni el catálogo ni la
         // equivalencia conocen (clsResolucionCodigosNexo incluye la equivalencia antes del catálogo).
         if (alias is null || !solicitud.Lineas.Any(l => !string.IsNullOrWhiteSpace(l.TipoVehiculo)
@@ -899,7 +899,7 @@ public sealed class clsCosteoNexo(
     /// <summary>
     /// Envía la petición con la identidad del comercial y traduce los fallos. Devuelve el JSON de una respuesta 2xx (el llamador lo
     /// libera) o el error de negocio. Con <paramref name="limiteBytes"/>, una respuesta 2xx más grande se descarta sin leerla entera
-    /// (<c>COSTEO_NEXO_NO_DISPONIBLE</c>, "respuesta demasiado grande"); lo usan los servicios conexos (HU-013.3).
+    /// (<c>COSTEO_NEXO_NO_DISPONIBLE</c>, "respuesta demasiado grande"); lo usan los servicios conexos.
     /// </summary>
     internal async Task<clsResultado<JsonDocument>> EnviarAsync(
         Guid usuarioId, HttpMethod metodo, string ruta, object? cuerpo, CancellationToken cancellationToken, long? limiteBytes = null,
@@ -930,11 +930,11 @@ public sealed class clsCosteoNexo(
             using var respuesta = await http.SendAsync(peticion, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             if (respuesta.StatusCode == HttpStatusCode.TooManyRequests)
             {
-                // HU-023.4 (#159): cupo de Nexo agotado (por rol). No es un rechazo de los datos: no disponible, reintentable cuando pase el
+                // Cupo de Nexo agotado (por rol). No es un rechazo de los datos: no disponible, reintentable cuando pase el
                 // Retry-After (clsCupoNexoHandler ya bloqueó las lecturas hasta entonces).
                 var (codigo429, _, detalle429) = await LeerErrorNexoAsync(respuesta, cancellationToken);
 
-                // #278 (DU §2.1): IA_TOPE_DIARIO es el cupo DIARIO de IA del comercial, no el cupo por minuto: no sirve esperar el
+                // IA_TOPE_DIARIO es el cupo DIARIO de IA del comercial (contrato de NEXO §2.1), no el cupo por minuto: no sirve esperar el
                 // Retry-After. Ninguno de los dos se reintenta (un POST nunca, y la captura no reenvía sola).
                 return codigo429 == clsCodigosError.IaTopeDiario
                     ? new clsErrorDominio(clsCodigosError.IaTopeDiario, MensajeIaTopeDiario, detalle429)
@@ -946,7 +946,7 @@ public sealed class clsCosteoNexo(
                 var (codigoNexo, mensajeNexo, detalle) = await LeerErrorNexoAsync(respuesta, cancellationToken);
                 logger.LogWarning("Nexo rechazó {Metodo} {Ruta}: {Detalle}", metodo, ruta, detalle);
 
-                // Conflictos de estado de Nexo que el llamador distingue (HU-005.14): viajan con el código de Nexo.
+                // Conflictos de estado de Nexo que el llamador distingue: viajan con el código de Nexo.
                 if (respuesta.StatusCode == HttpStatusCode.Conflict
                     && codigoNexo is clsCodigosError.ResultadoYaDefinido or clsCodigosError.CotizacionNoEntregada or clsCodigosError.SolicitudNoTransicionable)
                 {
@@ -955,7 +955,7 @@ public sealed class clsCosteoNexo(
 
                 if (respuesta.StatusCode == HttpStatusCode.NotFound && codigoNexo == clsCodigosError.CotizacionNoEncontrada)
                 {
-                    // Endurecimiento B (#199): nunca el COTIZACION_NO_ENCONTRADA local (404 "no es tuya"): la cotización es del comercial y lo
+                    // Nunca el COTIZACION_NO_ENCONTRADA local (404 "no es tuya"): la cotización es del comercial y lo
                     // que Nexo no reconoce es SU cotización. 409 con el código de Nexo en detalle.motivo; el texto técnico queda en el log.
                     return new clsErrorDominio(clsCodigosError.CotizacionNexoNoEncontrada, MensajeCotizacionNexoNoEncontrada, codigoNexo);
                 }
@@ -1020,7 +1020,7 @@ public sealed class clsCosteoNexo(
     }
 
     /// <summary>
-    /// POST con efecto en Nexo (agregar conexos, HU-013.3) que distingue si el efecto pudo ocurrir: nunca se cancela a mitad (sin
+    /// POST con efecto en Nexo (agregar conexos) que distingue si el efecto pudo ocurrir: nunca se cancela a mitad (sin
     /// token del llamador) y nunca se reintenta. <see cref="FasePostNexo.NoEnviado"/> (sin configurar, comercial sin
     /// <c>idUsuarioExterno</c>, circuito abierto): sin efecto. <see cref="FasePostNexo.Rechazado"/> (4xx): sin efecto, con el detalle
     /// <c>HTTP {estado} {código}: {mensaje}</c>. <see cref="FasePostNexo.Exito"/> (cualquier 2xx): CON efecto, con el JSON solo si es un
@@ -1067,7 +1067,7 @@ public sealed class clsCosteoNexo(
             var estado = (int)respuesta.StatusCode;
             if (respuesta.StatusCode == HttpStatusCode.TooManyRequests)
             {
-                // Un 429 no aplicó nada: equivale a no haber enviado (reintentable), nunca a un rechazo de los datos (HU-023.4).
+                // Un 429 no aplicó nada: equivale a no haber enviado (reintentable), nunca a un rechazo de los datos.
                 var (_, _, detalle429) = await LeerErrorNexoAsync(respuesta, CancellationToken.None);
                 logger.LogWarning("Nexo respondió 429 a POST {Ruta}: {Detalle}", ruta, detalle429);
                 return new clsRespuestaPostNexo(FasePostNexo.NoEnviado, null, ConEspera(detalle429, respuesta));
@@ -1218,7 +1218,7 @@ public sealed class clsCosteoNexo(
 
     private sealed record clsResultadoWire(string Resultado, string? Motivo, string? Comentario);
 
-    /// <summary><c>clsRechazarSolicitudRequest</c> de Nexo (HU-028): <c>motivo</c> (1-100) y <c>comentario</c> opcional (hasta 500).</summary>
+    /// <summary><c>clsRechazarSolicitudRequest</c> de Nexo: <c>motivo</c> (1-100) y <c>comentario</c> opcional (hasta 500).</summary>
     private sealed record clsRechazoWire(string Motivo, string? Comentario);
 
     private sealed record clsCapturaPosicionWire(string? Descripcion, int Cantidad, decimal LargoCm, decimal AnchoCm, decimal AltoCm, decimal? PesoKg);

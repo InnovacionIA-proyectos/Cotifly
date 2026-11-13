@@ -12,7 +12,7 @@ using Microsoft.Extensions.Logging;
 namespace Cotifly.Aplicacion.Identidad.Services;
 
 /// <summary>
-/// HU-040.2 (#230, ADR-025): <c>POST /api/auth/elegir-rol</c>. Errores: <see cref="clsCodigosAcceso.SolicitudInvalida"/> (400, cuerpo
+/// <c>POST /api/auth/elegir-rol</c> (ADR-025). Errores: <see cref="clsCodigosAcceso.SolicitudInvalida"/> (400, cuerpo
 /// inválido o un <c>rol</c> que no es un código de rol) y <see cref="clsCodigosAcceso.SesionExpirada"/> (401 "Inicia sesión de nuevo."
 /// para todo rechazo; el motivo real queda en la auditoría).
 /// </summary>

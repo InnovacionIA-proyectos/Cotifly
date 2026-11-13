@@ -7,7 +7,7 @@ using Cotifly.Dominio.Comun;
 namespace Cotifly.Infraestructura.Precio.Services;
 
 /// <summary>
-/// Caché de la TRM por fecha de negocio (HU-012.1, ADR-014 §2): la primera TRM válida que se obtiene para un día queda fija hasta el fin de
+/// Caché de la TRM por fecha de negocio (ADR-014 §2): la primera TRM válida que se obtiene para un día queda fija hasta el fin de
 /// ese día en America/Bogota, así todas las cotizaciones del día usan la misma TRM (mañana y tarde). Decorador de
 /// <see cref="IClsProveedorTrm"/> (singleton). Cada TRM que entrega se registra en <see cref="clsMemoriaTrm"/>.
 /// </summary>

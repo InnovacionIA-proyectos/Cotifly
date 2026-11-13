@@ -1,8 +1,8 @@
 namespace Cotifly.Aplicacion.Margen.DTOs;
 
 /// <summary>
-/// Margen manual que el comercial negocia sobre el sugerido (HU-003.4; herramienta <c>registrar_ajuste_margen</c>
-/// y control editable de HU-004.4).
+/// Margen manual que el comercial negocia sobre el sugerido (herramienta <c>registrar_ajuste_margen</c>
+/// y control editable del margen).
 /// </summary>
 /// <param name="MargenPolitica">Margen sugerido (el que resolvió <c>obtener_margen</c>).</param>
 /// <param name="MargenAplicado">Margen que el comercial decide aplicar.</param>
@@ -13,9 +13,9 @@ namespace Cotifly.Aplicacion.Margen.DTOs;
 /// <param name="CotizacionId">Cotización a la que pertenece el ajuste (debe existir y ser del comercial).</param>
 /// <param name="Folio">Folio de la cotización, si ya existe.</param>
 /// <param name="TrqType">TrqType de la línea, solo informativo para la salida.</param>
-/// <param name="ThreadId">Hilo de la conversación, solo para la auditoría (#11).</param>
+/// <param name="ThreadId">Hilo de la conversación, solo para la auditoría.</param>
 /// <param name="LineaSolicitudId">
-/// Ruta de la cotización a la que aplica el ajuste (HU-021.8, #135): se guarda en <c>MargenAjustes.lineaSolicitudId</c>. Sin ella, la
+/// Ruta de la cotización a la que aplica el ajuste: se guarda en <c>MargenAjustes.lineaSolicitudId</c>. Sin ella, la
 /// única ruta de la cotización; con varias, <c>RUTA_REQUERIDA</c>.
 /// </param>
 public sealed record clsEntradaAjusteMargen(

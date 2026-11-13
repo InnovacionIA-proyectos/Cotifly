@@ -15,18 +15,17 @@ using Microsoft.Extensions.Logging;
 namespace Cotifly.Aplicacion.Cotizaciones.Services;
 
 /// <summary>
-/// HU-018.1 (#155, parte C): <c>GET /web/cotizaciones/{folio}/excel</c>, el Excel de una cotización desde "Ver detalle". Acceso con la
+/// <c>GET /web/cotizaciones/{folio}/excel</c>, el Excel de una cotización desde "Ver detalle". Acceso con la
 /// regla del detalle (<see cref="clsAccesoLecturaCotizacion"/>):
 /// <list type="bullet">
 /// <item>el dueño recibe la versión interna: por ruta y por camión, con sus costos de Nexo (COP), su margen, su precio, los conexos
 /// (precio y costo) y los totales;</item>
-/// <item>el gerente de su regional y el director (HU-037) reciben el mismo Excel en solo lectura, SIN ninguna columna de costo ni de
-/// margen (<see cref="clsExcelCotizacion.SinCostos"/>: con el margen y el precio se deduce el costo; criterio de <c>SinCostoFinal()</c>
-/// de HU-039.1, #218). Cada consulta de un gerente o director queda en la auditoría (<see cref="HerramientaAuditoria"/>);</item>
+/// <item>el gerente de su regional y el director reciben el mismo Excel en solo lectura, SIN ninguna columna de costo ni de
+/// margen (<see cref="clsExcelCotizacion.SinCostos"/>: con el margen y el precio se deduce el costo; criterio de <c>SinCostoFinal()</c>). Cada consulta de un gerente o director queda en la auditoría (<see cref="HerramientaAuditoria"/>);</item>
 /// <item>cualquier otro: <c>COTIZACION_NO_ENCONTRADA</c> (404). Sin rutas también 404; sin precio, <c>COSTEO_NO_LISTO</c> (409).</item>
 /// </list>
-/// Solo lee lo guardado (ni Nexo ni el cubicador): con la cotización finalizada o con PDF los precios y los costos son los congelados
-/// (HU-036). Las rutas rechazadas por la Mesa salen sin precio, sin conexos y no suman (HU-028.1).
+/// Solo lee lo guardado (ni Nexo ni el cubicador): con la cotización finalizada o con PDF los precios y los costos son los congelados.
+/// Las rutas rechazadas por la Mesa salen sin precio, sin conexos y no suman.
 /// </summary>
 public interface IClsExportacionCotizacionService
 {
@@ -83,7 +82,7 @@ public sealed class clsExportacionCotizacionService(
     /// <summary>
     /// La versión interna (la del dueño) a partir de lo guardado. Precios con las reglas del costeo y del PDF
     /// (<see cref="clsCosteoCotizacionService.PrecioTransporte"/> y <see cref="clsCosteoCotizacionService.ConexosConPrecio"/>); el precio
-    /// de cada camión es su costo con el margen de la ruta. Como en el costeo (#218), nunca un costo sin su precio: los costos de una ruta
+    /// de cada camión es su costo con el margen de la ruta. Como en el costeo, nunca un costo sin su precio: los costos de una ruta
     /// o de un camión sin precio (rechazado, descartado o sin costeo) salen vacíos.
     /// </summary>
     public static clsExcelCotizacion Datos(
@@ -107,7 +106,7 @@ public sealed class clsExportacionCotizacionService(
             new clsExcelInternoTotales(
                 conPrecio && cotizables.All(r => r.Interno?.CostoBruto is not null) ? cotizables.Sum(r => r.Interno!.CostoBruto!.Value) : null))
         {
-            // HU-045.3 (#265): el seguro de la mercancía aparte del transporte y de los conexos.
+            // El seguro de la mercancía aparte del transporte y de los conexos.
             PrecioSeguro = conPrecio ? cotizables.Sum(r => r.ValorSeguro ?? 0m) : null,
         };
 

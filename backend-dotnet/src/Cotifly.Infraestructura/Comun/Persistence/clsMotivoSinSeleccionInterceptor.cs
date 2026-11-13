@@ -12,7 +12,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Comun.Persistence;
 
 /// <summary>
-/// HU-023 (#176): lo que se sabe del script <c>07</c> en una base, según <c>sys.check_constraints</c>.
+/// Lo que se sabe del script <c>07</c> en una base, según <c>sys.check_constraints</c>.
 /// </summary>
 public enum EstadoScript07
 {
@@ -30,11 +30,11 @@ public enum EstadoScript07
 }
 
 /// <summary>
-/// HU-023 (#176): ¿la base admite el motivo <c>BUSQUEDA_AGOTADA</c>? Según <c>BaseDatos:MotivoBusquedaAgotada</c>
+/// ¿La base admite el motivo <c>BUSQUEDA_AGOTADA</c>? Según <c>BaseDatos:MotivoBusquedaAgotada</c>
 /// (<see cref="clsOpcionesBaseDatos"/>): <c>habilitado</c> o <c>deshabilitado</c> lo fijan sin consultar; <c>auto</c> (por defecto) lo
 /// detecta leyendo la definición de <c>ck_cotizacionLineasSolicitud_motivoSinSeleccion</c> en <c>sys.check_constraints</c> (el script
 /// <c>db/scripts/07</c> la reemplaza por una con los 5 motivos). Sin <c>VIEW DEFINITION</c> la definición llega NULL: eso es
-/// <see cref="EstadoScript07.NoVerificable"/>, no "falta el 07" (auditoría A2). La detección se guarda por cadena de conexión durante
+/// <see cref="EstadoScript07.NoVerificable"/>, no "falta el 07". La detección se guarda por cadena de conexión durante
 /// <see cref="Vigencia"/>: así un ambiente queda bien en cuanto el DBA corre el 07, sin reiniciar. Si la consulta falla o no se puede
 /// verificar, se asume que NO lo admite (lo seguro: el respaldo guarda NULL y un aviso, nunca rompe el guardado). Singleton.
 /// </summary>
@@ -132,8 +132,8 @@ public sealed class clsDetectorMotivosBd(IClsReloj reloj, IOptions<clsOpcionesBa
 }
 
 /// <summary>
-/// HU-023 (#176), opción A con autodetección: antes de guardar, una ruta cuyo <c>motivoSinSeleccion</c> no está en el <c>CHECK</c> del 02
-/// (hoy solo <c>BUSQUEDA_AGOTADA</c>) se guarda tal cual si la base tiene el script 07 (<see cref="clsDetectorMotivosBd"/>); si no, el
+/// Antes de guardar, una ruta cuyo <c>motivoSinSeleccion</c> no está en el <c>CHECK</c> del 02
+/// (<c>BUSQUEDA_AGOTADA</c>) se guarda tal cual si la base tiene el script 07 (<see cref="clsDetectorMotivosBd"/>); si no, el
 /// motivo va en <c>NULL</c> y el valor real queda como advertencia visible de la ruta (<see cref="clsLineaSolicitud.DegradarMotivoSinSeleccion"/>).
 /// Solo consulta la base cuando hay un motivo nuevo que guardar.
 /// </summary>

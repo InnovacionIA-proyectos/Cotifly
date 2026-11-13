@@ -6,7 +6,7 @@ using System.Text.Json.Nodes;
 namespace Cotifly.Infraestructura.IA.Services;
 
 /// <summary>
-/// Política del pipeline del SDK de OpenAI para <c>openai_compatible</c> (HU-003.6, issue #84): agrega <c>"stream": false</c> al
+/// Política del pipeline del SDK de OpenAI para <c>openai_compatible</c>: agrega <c>"stream": false</c> al
 /// cuerpo de <c>POST .../chat/completions</c> cuando no lo trae. El SDK no envía <c>stream</c> en el modo sin streaming (la API de
 /// OpenAI asume false), pero gateways como OmniRoute asumen true y responden SSE (<c>text/event-stream</c>), que el SDK no puede
 /// leer como un <c>chat.completion</c>. Una petición que ya trae <c>stream</c> (el modo streaming) o cuyo cuerpo no es un objeto JSON

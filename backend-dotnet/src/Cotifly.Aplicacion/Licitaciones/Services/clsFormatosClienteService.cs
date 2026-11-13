@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 namespace Cotifly.Aplicacion.Licitaciones.Services;
 
 /// <summary>
-/// HU-044.5 (#256): lo que NEXO recuerda de cada cliente para la importación del Excel de licitación. Las <b>plantillas de mapeo</b>
+/// Lo que NEXO recuerda de cada cliente para la importación del Excel de licitación. Las <b>plantillas de mapeo</b>
 /// (<c>/web/licitaciones/plantillas-mapeo</c>), los <b>formatos de lectura</b> o recetas (<c>/web/licitaciones/recetas-lectura</c>) y la
 /// consulta del <b>diccionario del cliente</b> (<c>/web/diccionario-cliente</c>). Cotifly es solo el puente
 /// (<see cref="IClsImportacionExcelNexo"/>, ADR-028): no guarda copia y la auditoría la lleva NEXO.
@@ -35,7 +35,7 @@ public interface IClsFormatosClienteService
 
     /// <summary>
     /// <c>PUT recetas-lectura</c>: guarda el formato confirmado. Antes de NEXO solo valida el archivo (presente, tamaño y extensión, sin abrir
-    /// el libro, #277), que venga la receta (<c>RECETA_REQUERIDA</c>) y el NIT. Nunca se reintenta: NEXO ejecuta la receta al guardarla.
+    /// el libro), que venga la receta (<c>RECETA_REQUERIDA</c>) y el NIT. Nunca se reintenta: NEXO ejecuta la receta al guardarla.
     /// </summary>
     Task<clsResultado<clsRecetaGuardadaResultado>> GuardarRecetaAsync(
         Guid usuarioId, clsEntradaGuardarReceta entrada, CancellationToken cancellationToken = default);
@@ -151,7 +151,7 @@ public sealed partial class clsFormatosClienteService(IClsImportacionExcelNexo i
             return sinComercial;
         }
 
-        // Cotifly no abre el libro (#277): solo presencia, tamaño y extensión. Lo demás (la receta contra el archivo) lo decide NEXO.
+        // Cotifly no abre el libro: solo presencia, tamaño y extensión. Lo demás (la receta contra el archivo) lo decide NEXO.
         if (clsArchivoExcel.ValidarArchivo(entrada.Archivo.Nombre, entrada.Archivo.Contenido) is { } invalido)
         {
             return invalido;
@@ -401,7 +401,7 @@ public sealed partial class clsFormatosClienteService(IClsImportacionExcelNexo i
             ? new clsErrorDominio(clsCodigosAplicacion.SolicitudInvalida, $"El campo {campo} admite hasta {maximo} caracteres.")
             : null;
 
-    // #256 (B1): el borrado también deja rastro en Cotifly (además de la auditoría de NEXO), para soporte cuando un formato "desaparece".
+    // El borrado también deja rastro en Cotifly (además de la auditoría de NEXO), para soporte cuando un formato "desaparece".
     // Solo el comercial y el id: ni el NIT ni el nombre del cliente.
     [LoggerMessage(Level = LogLevel.Information, Message = "El comercial {UsuarioId} borró en NEXO la plantilla de mapeo {PlantillaId}.")]
     private static partial void LogPlantillaBorrada(ILogger logger, Guid usuarioId, Guid plantillaId);

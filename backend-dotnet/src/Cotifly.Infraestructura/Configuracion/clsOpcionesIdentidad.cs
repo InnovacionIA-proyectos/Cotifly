@@ -3,9 +3,9 @@ using System.ComponentModel.DataAnnotations;
 namespace Cotifly.Infraestructura.Configuracion;
 
 /// <summary>
-/// Ubicación de las tablas del almacén corporativo en la base de identidad del portal (QA: <c>dbSolucionesTI_Prueba</c>, #172) (sección <c>Identidad</c>): usuarios, roles de
-/// cada usuario y catálogo de roles de ClientePro. Configurable porque el esquema real está pendiente de confirmar con el
-/// DBA (ADR-008). Se leen solo las columnas que usa el login (nunca <c>CLAVE</c>).
+/// Ubicación de las tablas del almacén corporativo en la base de identidad del portal (QA: <c>dbSolucionesTI_Prueba</c>) (sección <c>Identidad</c>): usuarios, roles de
+/// cada usuario y catálogo de roles de ClientePro. Configurable por si el DBA cambia el esquema
+/// (ADR-008). Se leen solo las columnas que usa el login (nunca <c>CLAVE</c>).
 /// </summary>
 public sealed class clsOpcionesIdentidad
 {

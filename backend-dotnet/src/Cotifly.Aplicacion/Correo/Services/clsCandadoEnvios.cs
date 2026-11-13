@@ -1,10 +1,10 @@
 namespace Cotifly.Aplicacion.Correo.Services;
 
 /// <summary>
-/// Serializa los envíos de una misma cotización dentro del proceso: sin esto, dos envíos simultáneos pasaban ambos la
-/// deduplicación (deuda de ADR-008, también en el Python). Usa un número fijo de semáforos repartidos por el id de la
+/// Serializa los envíos de una misma cotización dentro del proceso: sin esto, dos envíos simultáneos pasarían ambos la
+/// deduplicación (ADR-008). Usa un número fijo de semáforos repartidos por el id de la
 /// cotización (memoria acotada; dos cotizaciones pueden compartir semáforo y esperarse, sin otra consecuencia).
-/// Con varias réplicas hace falta un candado en la base (<c>sp_getapplock</c>): pendiente para HU-006.6 si se escala.
+/// Solo cubre un proceso: con varias réplicas haría falta un candado en la base (<c>sp_getapplock</c>).
 /// </summary>
 public sealed class clsCandadoEnvios : IDisposable
 {

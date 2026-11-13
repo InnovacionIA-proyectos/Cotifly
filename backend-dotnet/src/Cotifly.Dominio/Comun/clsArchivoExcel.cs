@@ -1,8 +1,8 @@
 namespace Cotifly.Dominio.Comun;
 
 /// <summary>
-/// Reglas genéricas de un Excel subido por el comercial (HU-035.1, #202): las que nacieron con el pliego de licitaciones
-/// (<c>clsArchivoLicitacion</c>, HU-011.2) y comparten el análisis del Excel de mercancías de una ruta. Sin nada propio de
+/// Reglas genéricas de un Excel subido por el comercial: las comparten el pliego de licitaciones
+/// (<c>clsArchivoLicitacion</c>) y el análisis del Excel de mercancías de una ruta. Sin nada propio de
 /// licitaciones: presente y no vacío, tamaño máximo y extensión <c>.xlsx</c>/<c>.xlsm</c>.
 /// </summary>
 public static class clsArchivoExcel

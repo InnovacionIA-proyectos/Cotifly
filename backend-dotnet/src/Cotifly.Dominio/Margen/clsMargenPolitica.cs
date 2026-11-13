@@ -25,8 +25,8 @@ public sealed class clsMargenPolitica
     public DateTimeOffset UpdatedAt { get; private set; }
 
     /// <summary>
-    /// Crea una línea con margen ≥ 0 (y &lt; 1 si el método es <c>margen</c>, ver <see cref="clsReglaMargen"/>). #278 (DU §8): el
-    /// <paramref name="mapeoLineasNexo"/>, si viene, debe ser una de las seis líneas de NEXO (<see cref="Cotizaciones.clsLineasNegocioNexo"/>).
+    /// Crea una línea con margen ≥ 0 (y &lt; 1 si el método es <c>margen</c>, ver <see cref="clsReglaMargen"/>). El
+    /// <paramref name="mapeoLineasNexo"/>, si viene, debe ser una de las seis líneas de NEXO (DU §8, <see cref="Cotizaciones.clsLineasNegocioNexo"/>).
     /// </summary>
     public static clsResultado<clsMargenPolitica> Crear(
         string lineaNegocio, decimal margen, string metodoCalculo = MetodoMargen, string? mapeoLineasNexo = null)
@@ -55,7 +55,7 @@ public sealed class clsMargenPolitica
         };
     }
 
-    /// <summary>Cambia el margen de la línea (administración de líneas, HU-010).</summary>
+    /// <summary>Cambia el margen de la línea (administración de líneas).</summary>
     public clsResultado<clsMargenPolitica> CambiarMargen(decimal margen)
     {
         if (clsReglaMargen.Validar(CodigoError, "margen", margen, MetodoCalculo) is { } error)
@@ -68,7 +68,7 @@ public sealed class clsMargenPolitica
     }
 
     /// <summary>
-    /// Edición de la línea desde la administración (HU-004.9, <c>PUT /web/admin/lineas-negocio/{id}</c>): margen, método y
+    /// Edición de la línea desde la administración (<c>PUT /web/admin/lineas-negocio/{id}</c>): margen, método y
     /// estado a la vez. El método debe ser <c>margen</c> o <c>markup</c> y el margen válido para ese método
     /// (<see cref="clsReglaMargen"/>); si algo falla la línea no cambia.
     /// </summary>

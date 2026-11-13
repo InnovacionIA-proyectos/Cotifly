@@ -13,7 +13,7 @@ using Polly;
 namespace Cotifly.Infraestructura.Clientes.Services;
 
 /// <summary>
-/// Búsqueda de clientes contra Nexo en vivo (HU-005.2, ADR-005): <c>GET {Nexo:UrlBase}/api/captura-solicitudes/clientes?q=</c>,
+/// Búsqueda de clientes contra Nexo en vivo (ADR-005): <c>GET {Nexo:UrlBase}/api/captura-solicitudes/clientes?q=</c>,
 /// el mismo catálogo (clientes de <c>DimBPSolicitante</c> y prospectos) que usa el formulario "Nueva solicitud" de Nexo.
 /// Nexo no tiene login propio: cada petición identifica al comercial con <c>X-Portal-clsUsuario-Id: {idUsuarioExterno}</c>
 /// (<c>UsuariosWeb.idUsuarioExterno</c>, la misma fila de <c>tblSAPUsuariosApp</c> que usa el login de ClientePro) — nunca un
@@ -22,8 +22,7 @@ namespace Cotifly.Infraestructura.Clientes.Services;
 /// </summary>
 /// <remarks>
 /// <para><b>Coincidencia exacta.</b> La respuesta de Nexo (<c>ClienteBusquedaDto[]</c>) no distingue "exacta" de "por
-/// similitud": ese criterio sigue pendiente de definir con el equipo de Nexo (ADR-005, tabla de pendientes). Mientras tanto
-/// se asume exacta únicamente cuando hay un solo candidato — nunca por el contenido del texto buscado.</para>
+/// similitud" (ADR-005): se asume exacta únicamente cuando hay un solo candidato — nunca por el contenido del texto buscado.</para>
 /// <para><b>Fallos.</b> Nunca lanza: usuario sin <c>idUsuarioExterno</c>, HTTP, red o tiempo agotado devuelven
 /// <c>CLIENTE_BUSQUEDA_NO_DISPONIBLE</c> (Result), igual que <see cref="clsBuscadorClientesNoDisponible"/> — el llamante
 /// (la herramienta del agente o <c>GET /web/clientes</c>) decide qué mostrar. Una sola línea de warning por fallo, sin la
@@ -38,7 +37,7 @@ public sealed class clsBuscadorClientesNexo(
 
     public const string Mensaje = "La búsqueda de clientes en Nexo no está disponible en este momento: intenta de nuevo o ingresa el NIT manualmente.";
 
-    /// <summary>OBS-1021B-3: el comercial no tiene <c>idUsuarioExterno</c> (no está vinculado a Nexo): el mensaje dice qué falta.</summary>
+    /// <summary>El comercial no tiene <c>idUsuarioExterno</c> (no está vinculado a Nexo): el mensaje dice qué falta.</summary>
     public const string MensajeSinUsuarioNexo =
         "La búsqueda de clientes no está disponible: tu usuario no está vinculado a Nexo (falta idUsuarioExterno). "
         + "Ingresa el NIT manualmente o pide a soporte que lo vincule.";
@@ -63,7 +62,7 @@ public sealed class clsBuscadorClientesNexo(
         ArgumentNullException.ThrowIfNull(texto);
         if (_urlBase is null)
         {
-            // OBS-1021B-3: el mensaje dice qué falta (la configuración de Nexo), no "intenta de nuevo".
+            // El mensaje dice qué falta (la configuración de Nexo), no "intenta de nuevo".
             return NoDisponible("Nexo sin configurar (Nexo:UrlBase)", mensaje: clsBuscadorClientesNoDisponible.Mensaje);
         }
 
@@ -130,7 +129,7 @@ public sealed class clsBuscadorClientesNexo(
         resiliencia.Retry.Delay = _esperaEntreIntentos;
         resiliencia.Retry.BackoffType = DelayBackoffType.Exponential;
         resiliencia.Retry.UseJitter = true;
-        // HU-023.4 (#159): un 429 no se reintenta; lo maneja clsCupoNexoHandler con el Retry-After (el cupo de Nexo es por rol).
+        // Un 429 no se reintenta; lo maneja clsCupoNexoHandler con el Retry-After (el cupo de Nexo es por rol).
         Comun.clsCupoNexoHandler.NoReintentar429(resiliencia);
         resiliencia.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(30);
     }

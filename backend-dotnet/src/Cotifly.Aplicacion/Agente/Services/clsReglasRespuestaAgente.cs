@@ -24,35 +24,35 @@ public sealed record clsValidacionRespuesta(clsRespuestaAgenteEstructurada? Resp
 }
 
 /// <summary>
-/// Esquema y reglas de la respuesta final del agente (HU-003.10, #16, ADR-003 "Salida estructurada"). La validación es manual
+/// Esquema y reglas de la respuesta final del agente (ADR-003 "Salida estructurada"). La validación es manual
 /// aunque el proveedor haya recibido el JSON Schema: no todos lo cumplen (o lo aceptan) y las reglas de negocio no caben en él.
 /// </summary>
 /// <remarks>
 /// Reglas, en orden (las de negocio solo se evalúan si la forma es correcta):
 /// <list type="number">
 /// <item>Forma: JSON completo (se toleran las cercas <c>```json</c>), un objeto, sin campos desconocidos ni repetidos. Si la
-/// respuesta trae texto alrededor del JSON (prosa y un bloque de código, como Gemini vía OmniRoute, #84), se toma el primer objeto
+/// respuesta trae texto alrededor del JSON (prosa y un bloque de código, como Gemini vía OmniRoute), se toma el primer objeto
 /// embebido que cumple toda la forma, solo si es el único distinto; con dos o más (un ejemplo citado, un JSON pegado por el
 /// comercial) o con ninguno, el fallo es <c>json_invalido</c>.</item>
 /// <item>Campos: <c>tipo</c> ∈ {conversacional, previsualizacion, confirmacion_requerida, error}; <c>texto</c> string de 1 a 4000
 /// caracteres sin contar espacios al borde; <c>requiere_confirmacion</c> booleano; <c>acciones_sugeridas</c> ausente, null o una
 /// lista de {confirmar_pdf, ajustar_margen}.</item>
 /// <item>Coherencia: <c>requiere_confirmacion</c> es true exactamente con previsualizacion y confirmacion_requerida; el asistente
-/// por folio no calcula precios, así que una previsualizacion nunca es válida (HU-013.9: el agente cotizador legado, el único que
-/// previsualizaba, se retiró); una acción sugerida exige su herramienta declarada en el turno (ninguna del asistente lo es: las
+/// por folio no calcula precios, así que una previsualizacion nunca es válida; una
+/// acción sugerida exige su herramienta declarada en el turno (ninguna del asistente lo es: las
 /// propuestas van en <c>accion_propuesta</c>, que arma el servidor).</item>
 /// <item>Montos (<see cref="Montos"/>): con moneda (<c>$</c>, <c>COP</c>, <c>USD</c>, <c>US$</c>, <c>EUR</c>, <c>€</c>, pesos,
 /// dólares, euros), con sufijo de millones (<c>millones</c>, <c>mill</c>, <c>M</c>, <c>MM</c>), de miles de millones (<c>mil
 /// millones</c>) o de miles (<c>mil</c>, <c>k</c>), con separadores de miles (punto, coma, apóstrofo o espacio normal, duro o fino)
 /// de 1.000.000 o más, de 1.000 o más en la ventana de 40 caracteres tras "precio", "costo", "cuesta", "utilidad", "tarifa", "valor",
 /// "vale", "total", "flete", "descuento", "IVA", "TRM", "tasa", "tipo de cambio", "monto", "importe", "presupuesto", "cobr…" o
-/// "pag…" (todos los números de la ventana), y en letras ("tres millones", "dos mil quinientos pesos", HU-013.16). Los dígitos de
+/// "pag…" (todos los números de la ventana), y en letras ("tres millones", "dos mil quinientos pesos"). Los dígitos de
 /// otros sistemas (<c>３</c>) se leen como ASCII y un número ilegible es un monto sin respaldo. Se descartan fechas, años sueltos tras
 /// una palabra clave, números tras NIT/tel/teléfono/cel/celular/cédula/CC/folio/llamar, los seguidos de una unidad (kg, ton, km,
 /// metros, días, horas, vehículos, posiciones, viajes, %) y las cifras dentro de un código (<c>3S3</c>, <c>900.047.228-1</c>), de un
 /// radicado u orden o de una fecha con puntos. Con una palabra de dinero justo antes ("precio 950") cualquier cifra es monto. Todo
 /// se lee sobre <see cref="Normalizar"/> (dígitos Unicode, separadores de ancho completo y números partidos por espacios o saltos de
-/// línea). Desde HU-013.16 (#126) <b>ninguna salida de herramienta respalda un monto</b> (no le entregan montos al modelo): un monto
+/// línea). <b>Ninguna salida de herramienta respalda un monto</b> (no le entregan montos al modelo): un monto
 /// solo pasa si su valor es EXACTAMENTE el de uno que el comercial escribió como dinero, si está en letras y el comercial escribió el
 /// mismo texto, o si no lleva marca de dinero y es parte de un texto completo de las salidas que el modelo repite ("3M Colombia").
 /// El estado de la conversación no respalda montos: no los tiene.</item>
@@ -89,7 +89,7 @@ public static partial class clsReglasRespuestaAgente
     private const string CampoAcciones = "acciones_sugeridas";
     private static readonly string[] _campos = [CampoTipo, CampoTexto, CampoRequiere, CampoAcciones];
 
-    /// <summary>Objetos embebidos que se prueban, como máximo, en una respuesta con texto alrededor del JSON (#84).</summary>
+    /// <summary>Objetos embebidos que se prueban, como máximo, en una respuesta con texto alrededor del JSON.</summary>
     private const int MaximoCandidatos = 100;
 
     /// <summary>Reinicios de la búsqueda tras una llave sin cerrar (acota el costo con texto patológico).</summary>
@@ -175,7 +175,7 @@ public static partial class clsReglasRespuestaAgente
             return directa;
         }
 
-        // Texto alrededor del JSON (#84): Gemini vía OmniRoute ignora response_format y responde prosa con un bloque ```json. Se acepta
+        // Texto alrededor del JSON: Gemini vía OmniRoute ignora response_format y responde prosa con un bloque ```json. Se acepta
         // el objeto embebido que cumple toda la forma solo si es el ÚNICO distinto: con dos (un ejemplo citado, un JSON que pegó el
         // comercial) no se adivina cuál es la respuesta y el fallo es json_invalido, que fuerza el reintento de corrección.
         clsRespuestaAgenteEstructurada? unica = null;
@@ -532,7 +532,7 @@ public static partial class clsReglasRespuestaAgente
     }
 
     /// <summary>
-    /// Texto normalizado para leer cifras (HU-013.16, #126): dígitos Unicode a ASCII, separadores de ancho completo y árabes a punto o
+    /// Texto normalizado para leer cifras: dígitos Unicode a ASCII, separadores de ancho completo y árabes a punto o
     /// coma, y sin los espacios ni saltos de línea que parten un número (<c>$ 1 . 400 . 000</c>, <c>3⏎400⏎000</c>,
     /// <c>3 400 000</c>). Los folios <c>PCN-…</c> se cubren con espacios del mismo largo (sus dígitos no son montos).
     /// </summary>
@@ -581,7 +581,7 @@ public static partial class clsReglasRespuestaAgente
             }
         }
 
-        // HU-013.16 (#126): montos en letras. Con unidad ("tres millones", "dos mil quinientos pesos") siempre; sin unidad
+        // Montos en letras. Con unidad ("tres millones", "dos mil quinientos pesos") siempre; sin unidad
         // ("doscientos mil") solo si llevan "mil" y van tras una palabra de dinero ("el flete queda en doscientos mil").
         foreach (Match enLetras in ExpresionMontoEnLetras().Matches(limpio))
         {
@@ -663,8 +663,8 @@ public static partial class clsReglasRespuestaAgente
     }
 
     /// <summary>
-    /// ¿Algo respalda el monto? (HU-013.16, #126). Las herramientas del asistente nunca le entregan montos al modelo, así que ningún
-    /// campo de sus salidas respalda dinero (antes, <c>"version": 1</c> o <c>"cantidad": 2</c> dejaban pasar "$1" o "USD 2"):
+    /// ¿Algo respalda el monto? Las herramientas del asistente nunca le entregan montos al modelo, así que ningún
+    /// campo de sus salidas respalda dinero (ni <c>"version": 1</c> ni <c>"cantidad": 2</c> dejan pasar "$1" o "USD 2"):
     /// <list type="bullet">
     /// <item>Un número respalda solo si uno de sus valores posibles es <b>exactamente</b> (sin redondear) el de un monto que el
     /// comercial escribió como dinero (moneda, sufijo, palabra de dinero o millones agrupados), normalizado igual.</item>
@@ -846,13 +846,13 @@ public static partial class clsReglasRespuestaAgente
     [GeneratedRegex(@"(?<![0-9A-Za-z-])PCN-[0-9A-Za-z]+(?:-[0-9A-Za-z]+)*", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]
     private static partial Regex ExpresionFolio();
 
-    // Un número (con separadores de miles o decimales; miles también con espacio normal, duro o fino: "3 109 756", HU-013.16) y,
+    // Un número (con separadores de miles o decimales; miles también con espacio normal, duro o fino: "3 109 756") y,
     // opcional, el sufijo: "mil millones" (mm); millones/millón/mill sin distinguir mayúsculas o M/MM solo en mayúscula (m; una "m"
     // suelta puede ser metros); o miles (k): "mil" sin distinguir mayúsculas, k o K.
     [GeneratedRegex(@"(?<!\d)(?<n>\d{1,3}(?:[    ]\d{3}(?!\d))+(?:[.,]\d{1,2}(?!\d))?|\d(?:[\d.,'’]*\d)?)(?:\s?(?:(?<mm>(?i:mil\s+millones))|(?<m>(?i:millones|millón|millon|mill)|MM|M)|(?<k>(?i:mil)|k|K))(?![A-Za-zÀ-ÿ]))?", RegexOptions.CultureInvariant, 1000)]
     private static partial Regex ExpresionNumero();
 
-    // Montos en letras (HU-013.16): números escritos con palabras seguidos de millón/millones o de una moneda ("tres millones",
+    // Montos en letras: números escritos con palabras seguidos de millón/millones o de una moneda ("tres millones",
     // "dos mil quinientos pesos", "medio millón de dólares"). "mil" sin moneda no basta: "mil gracias" no es dinero. Tras una cifra
     // ("3 mil millones") no se cuenta: ese monto ya lo lee ExpresionNumero con su sufijo.
     [GeneratedRegex(@"(?<!\p{L})(?<!\p{N}\s*)(?:un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieci\p{L}+|veinte|veinti\p{L}+|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|cien|ciento|doscient[oa]s|trescient[oa]s|cuatrocient[oa]s|quinient[oa]s|seiscient[oa]s|setecient[oa]s|ochocient[oa]s|novecient[oa]s|mil|medio)(?:\s+(?:y\s+)?(?:un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieci\p{L}+|veinte|veinti\p{L}+|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|cien|ciento|doscient[oa]s|trescient[oa]s|cuatrocient[oa]s|quinient[oa]s|seiscient[oa]s|setecient[oa]s|ochocient[oa]s|novecient[oa]s|mil|medio))*(?:\s+(?:de\s+)?(?<u>mill[oó]n(?:es)?|pesos|d[oó]lares|euros|USD|COP))?(?!\p{L})", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]
@@ -873,7 +873,7 @@ public static partial class clsReglasRespuestaAgente
     [GeneratedRegex(@"\b(?:NIT|tel|tel[eé]fono|cel|celular|c[eé]dula|CC|folio|llam\w*|whatsapp|m[oó]vil|radicados?|orden(?:es)?(?: de compra)?|pedidos?|factura|consecutivo|gu[ií]a|n[°º]|no\.)(?![\p{L}])[^\d]{0,15}\z", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]
     private static partial Regex ExpresionContextoNoMonetario();
 
-    // HU-013.16 (#126): espacios o saltos de línea que parten un número ("$ 1 . 400 . 000", "3⏎400⏎000", "1⏎400.000"). Solo antes de
+    // Espacios o saltos de línea que parten un número ("$ 1 . 400 . 000", "3⏎400⏎000", "1⏎400.000"). Solo antes de
     // un separador o de un grupo de tres dígitos, para no pegar cifras sueltas de una lista.
     [GeneratedRegex(@"(?<=\d)\s+(?=[.,]\s*\d{3}(?!\d))|(?<=\d\s*[.,])\s+(?=\d{3}(?!\d))", RegexOptions.CultureInvariant, 1000)]
     private static partial Regex ExpresionEspacioJuntoASeparador();

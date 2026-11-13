@@ -39,7 +39,7 @@ public sealed partial class clsUnitOfWork(clsCotiflyDbContext contexto) : IClsUn
 
     public async Task<int> GuardarCambiosAsync(CancellationToken cancellationToken = default)
     {
-        // HU-021: guardar el agregado escribe varias tablas (cabecera, rutas, camiones, conexos) y puede chocar con otra petición o con el
+        // Guardar el agregado escribe varias tablas (cabecera, rutas, camiones, conexos) y puede chocar con otra petición o con el
         // polling. Sin una transacción abierta por el llamador, SaveChanges usa la suya: si SQL Server la elige como víctima (1205) la
         // revierte entera y el rastreador de cambios queda igual, así que se repite. Lo crítico es el guardado después del alta en Nexo
         // (clsEnvioCosteoService): perderlo dejaría la solicitud en Nexo sin solicitudNexoId y el reintento la duplicaría.
@@ -83,7 +83,7 @@ public sealed partial class clsUnitOfWork(clsCotiflyDbContext contexto) : IClsUn
         await using var transaccion = await contexto.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
         try
         {
-            // UPDLOCK retiene la fila de la cabecera (CotizacionesSolicitud, HU-021) hasta confirmar: entre la comparación y el UPDATE nadie
+            // UPDLOCK retiene la fila de la cabecera (CotizacionesSolicitud) hasta confirmar: entre la comparación y el UPDATE nadie
             // más (polling, otra petición) la escribe. Todos los flujos bloquean primero la cabecera y después escriben sus rutas, camiones y
             // conexos: el mismo orden evita interbloqueos.
             var actual = await contexto.Database

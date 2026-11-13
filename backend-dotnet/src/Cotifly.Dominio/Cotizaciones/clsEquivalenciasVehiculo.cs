@@ -1,13 +1,13 @@
 namespace Cotifly.Dominio.Cotizaciones;
 
 /// <summary>
-/// HU-031.1 (#194): Cotifly guarda el código de vehículo ORIGINAL (el del cubicador, o el que digitó el comercial) y a Nexo viaja el código
+/// Cotifly guarda el código de vehículo ORIGINAL (el del cubicador, o el que digitó el comercial) y a Nexo viaja el código
 /// oficial que resolvió el diccionario de alias de Nexo (<c>C2</c> → <c>2</c>). El envío registra esas traducciones (código de Cotifly →
 /// código enviado) y el polling compara contra el código ENVIADO, no contra el guardado:
 /// <list type="bullet">
 /// <item>el emparejamiento por contenido ve el camión con el código que viajó (<see cref="Enviado"/>), así que <c>C2</c> empareja con la línea
 /// de Nexo que dice <c>2</c>;</item>
-/// <item>la regla "la Mesa manda" (D2) recibe el código guardado cuando Nexo devuelve el mismo código que se le envió (<see cref="DeNexo"/>):
+/// <item>la regla "la Mesa manda" recibe el código guardado cuando Nexo devuelve el mismo código que se le envió (<see cref="DeNexo"/>):
 /// no es un cambio de la Mesa, el camión conserva <c>C2</c> (y sus porcentajes de llenado) y la lectura siguiente tampoco cambia nada. Si la
 /// Mesa sí cambia el vehículo (<c>2</c> → <c>3S3</c>), el cambio pasa como siempre.</item>
 /// </list>

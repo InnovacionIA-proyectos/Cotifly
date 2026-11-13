@@ -12,7 +12,7 @@ using Microsoft.AspNetCore.RateLimiting;
 namespace Cotifly.Api.Identidad.Controllers;
 
 /// <summary>
-/// Login SSO desde ClientePro, elección del rol (HU-040.2, ADR-025), refresh y logout (<c>/api/auth/*</c> de <c>specs/openapi.yaml</c>, ADR-009). Sin lógica de
+/// Login SSO desde ClientePro, elección del rol (ADR-025), refresh y logout (<c>/api/auth/*</c> de <c>specs/openapi.yaml</c>, ADR-009). Sin lógica de
 /// negocio: delega en los casos de uso de Aplicación. Límite de peticiones por IP (<see cref="clsConfiguracionAutenticacion.PoliticaLimiteAuth"/>).
 /// </summary>
 [ApiController]
@@ -25,7 +25,7 @@ public sealed class clsAuthController : ControllerBase
     private const long LargoMaximoCuerpo = 4096;
 
     /// <summary>
-    /// 200 <c>LoginResponse</c> (un solo rol) o 200 <c>EleccionRolRequerida</c> (varios roles, HU-040.2: sin sesión, con el ticket de
+    /// 200 <c>LoginResponse</c> (un solo rol) o 200 <c>EleccionRolRequerida</c> (varios roles: sin sesión, con el ticket de
     /// <c>elegir-rol</c>); 400 cuerpo inválido; 401 <c>{"error":"Credenciales inválidas"}</c>.
     /// </summary>
     [HttpPost("login-clientepro")]
@@ -51,7 +51,7 @@ public sealed class clsAuthController : ControllerBase
     }
 
     /// <summary>
-    /// HU-040.2 (#230, ADR-025): 200 <c>LoginResponse</c> con el rol elegido; 400 cuerpo inválido (sin ticket o un <c>rol</c> que no es un
+    /// Elección del rol (ADR-025): 200 <c>LoginResponse</c> con el rol elegido; 400 cuerpo inválido (sin ticket o un <c>rol</c> que no es un
     /// código de rol); 401 <c>{"error":"Inicia sesión de nuevo."}</c> para todo rechazo (ticket vencido, inválido o ya usado, rol no
     /// ofrecido o retirado). El ticket se consume aunque la elección falle. Mismo límite de peticiones por IP que el login.
     /// </summary>

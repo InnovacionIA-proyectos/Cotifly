@@ -11,8 +11,8 @@ using Cotifly.Dominio.Identidad;
 namespace Cotifly.Aplicacion.Cotizaciones.Services;
 
 /// <summary>
-/// HU-034.1 (#201, parte A): la cotización AJENA que el usuario autenticado puede consultar en solo lectura, con la regla del detalle
-/// (<see cref="IClsDetalleCotizacionService"/>) y del PDF: el <c>director</c> (cualquier regional, HU-037.3 #211) o un
+/// La cotización AJENA que el usuario autenticado puede consultar en solo lectura, con la regla del detalle
+/// (<see cref="IClsDetalleCotizacionService"/>) y del PDF: el <c>director</c> (cualquier regional) o un
 /// <c>gerente_comercial</c> cuya regional efectiva incluye al dueño (<see cref="IClsRegionalUsuario.PuedeVerDeAsync"/>). Lo usan la vista y
 /// el Excel de la licitación. El dueño NO pasa por aquí: quien llama busca primero la cotización propia.
 /// </summary>
@@ -48,7 +48,7 @@ public sealed class clsAccesoCotizacionAjenaService(
         }
 
         var cotizacion = await cotizaciones.ObtenerPorFolioAsync(folio, cancellationToken);
-        // #201 (validación): el tipo se filtra antes de auditar; si no, un folio spot pedido como licitación quedaba "permitido" y luego 404.
+        // El tipo se filtra antes de auditar: así un folio spot pedido como licitación no queda "permitido" y luego en 404.
         if (cotizacion is null || cotizacion.EsDe(usuarioId) || (tipo is not null && cotizacion.TipoSolicitud != tipo))
         {
             return null;

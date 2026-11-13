@@ -4,9 +4,8 @@ using System.Text;
 namespace Cotifly.Dominio.Agente;
 
 /// <summary>
-/// Municipio del catálogo de Nexo (HU-005.13) que resolvió <c>clsResolvedorMunicipios</c> para un origen o un destino, o un
-/// candidato cuando el texto coincide con varios (mismo nombre en más de un departamento). Lo usaba la herramienta
-/// <c>resolver_municipio</c> del agente legado (retirada en HU-013.9, #105) y hoy lo usa la validación de licitaciones (HU-013.11).
+/// Municipio del catálogo de Nexo que resolvió <c>clsResolvedorMunicipios</c> para un origen o un destino, o un
+/// candidato cuando el texto coincide con varios (mismo nombre en más de un departamento). Lo usa la validación de licitaciones.
 /// No se persiste en <c>Cotizaciones</c>. Conserva el namespace <c>Dominio.Agente</c> por compatibilidad.
 /// </summary>
 /// <param name="Id">Id del municipio en el catálogo de Nexo.</param>

@@ -73,7 +73,7 @@ public static class clsDependenciasInfraestructura
         ArgumentNullException.ThrowIfNull(servicios);
         ArgumentNullException.ThrowIfNull(configuracion);
 
-        // Opciones (cada HU agrega las suyas aquí: #12 Jwt, luego IA, Nexo, TRM...).
+        // Opciones de configuración validadas al arrancar.
         servicios.AddOpcionesValidadas<clsOpcionesZona>(configuracion, clsOpcionesZona.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesZona>, clsValidadorOpcionesZona>();
         servicios.AddOpcionesValidadas<clsOpcionesConexiones>(configuracion, clsOpcionesConexiones.Seccion);
@@ -87,7 +87,7 @@ public static class clsDependenciasInfraestructura
         servicios.AddOpcionesValidadas<clsOpcionesAlmacenPdf>(configuracion, clsOpcionesAlmacenPdf.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesAlmacenPdf>, clsValidadorOpcionesAlmacenPdf>();
         servicios.AddOpcionesValidadas<clsOpcionesCorreo>(configuracion, clsOpcionesCorreo.Seccion);
-        // HU-033 (#199): fuera de Production, con el correo habilitado, la protección "redirigir" con buzón de pruebas es obligatoria.
+        // Fuera de Production, con el correo habilitado, la protección "redirigir" con buzón de pruebas es obligatoria.
         servicios.AddSingleton<IValidateOptions<clsOpcionesCorreo>, clsValidadorOpcionesCorreo>();
         servicios.AddOpcionesValidadas<clsOpcionesCorreoTransporte>(configuracion, clsOpcionesCorreoTransporte.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesCorreoTransporte>, clsValidadorOpcionesCorreoTransporte>();
@@ -100,20 +100,20 @@ public static class clsDependenciasInfraestructura
         servicios.AddSingleton<IValidateOptions<clsOpcionesIA>, clsValidadorOpcionesIA>();
         servicios.AddOpcionesValidadas<clsOpcionesNexo>(configuracion, clsOpcionesNexo.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesCosteoNexo>(configuracion, clsOpcionesCosteoNexo.Seccion);
-        // HU-044.1 (#252, ADR-028): interruptor y tiempos de la importación inteligente con NEXO.
+        // Interruptor y tiempos de la importación inteligente con NEXO (ADR-028).
         servicios.AddOpcionesValidadas<clsOpcionesImportacionInteligente>(configuracion, clsOpcionesImportacionInteligente.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesCaptura>(configuracion, clsOpcionesCaptura.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesCaptura>, clsValidadorOpcionesCaptura>();
-        // HU-018.1 (#155): lista de motivos de pérdida (por defecto la de Nexo) y el motivo que exige comentario.
+        // Lista de motivos de pérdida (por defecto la de Nexo) y el motivo que exige comentario.
         servicios.AddOpcionesValidadas<Aplicacion.Cotizaciones.Services.clsOpcionesResultado>(configuracion, Aplicacion.Cotizaciones.Services.clsOpcionesResultado.Seccion);
         servicios.AddSingleton<IValidateOptions<Aplicacion.Cotizaciones.Services.clsOpcionesResultado>, clsValidadorOpcionesResultado>();
-        // HU-032 (#197, M1): warning al arrancar si la lista de clases exentas no incluye Contenedor (no lo impide).
+        // Warning al arrancar si la lista de clases exentas no incluye Contenedor (no lo impide).
         servicios.AddHostedService<clsAvisosArranqueCaptura>();
         servicios.AddOpcionesValidadas<clsOpcionesTrm>(configuracion, clsOpcionesTrm.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesTrm>, clsValidadorOpcionesTrm>();
         servicios.AddOpcionesValidadas<clsOpcionesCandadoSql>(configuracion, clsOpcionesCandadoSql.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesCubicador>(configuracion, clsOpcionesCubicador.Seccion);
-        // HU-023.2 (#157): "Calcular cubicaje" (parecido de la descripción y el plan B de la sugerencia legada).
+        // "Calcular cubicaje" (parecido de la descripción y el plan B de la sugerencia legada).
         servicios.AddOpcionesValidadas<Aplicacion.Cubicacion.Services.clsOpcionesCubicacion>(configuracion, Aplicacion.Cubicacion.Services.clsOpcionesCubicacion.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesCubicador>, clsValidadorOpcionesCubicador>();
         servicios.AddOpcionesValidadas<Aplicacion.Licitaciones.Services.clsOpcionesCubicacionLicitacion>(
@@ -125,7 +125,7 @@ public static class clsDependenciasInfraestructura
         servicios.TryAddSingleton<IClsReloj, clsRelojSistema>();
         servicios.TryAddSingleton<IClsCalendarioNegocio, clsCalendarioNegocio>();
 
-        // Idempotency-Key de la captura y de las mutaciones de la etapa final (ADR-018 §8, #100, #173). #191: en la tabla del 06
+        // Idempotency-Key de la captura y de las mutaciones de la etapa final (ADR-018 §8), en la tabla del 06
         // (dbo_cotifly.CapturasIdempotentes), compartida entre réplicas y a prueba de reinicios; sin la tabla, /health/ready dice
         // "falta 06" (no se degrada a memoria). El registro de la captura en curso usa la misma fila, dentro de la transacción del folio.
         servicios.TryAddSingleton<IClsAlmacenIdempotencia, clsAlmacenIdempotenciaSql>();
@@ -134,15 +134,15 @@ public static class clsDependenciasInfraestructura
 
         AgregarPersistencia(servicios);
 
-        // Margen de SAP TM: la copia local y su sincronización con SAP desde el backend (HU-042.2, #243). TryAdd: un adaptador
+        // Margen de SAP TM: la copia local y su sincronización con SAP desde el backend. TryAdd: un adaptador
         // registrado antes (pruebas) se respeta.
         AgregarFuenteMargen(servicios, configuracion);
 
-        // TRM oficial del día para cotizar en USD (HU-012.1, ADR-014).
+        // TRM oficial del día para cotizar en USD (ADR-014).
         AgregarTrm(servicios);
 
-        // Catálogos del formulario de captura que también proxean Nexo (municipios, tipos de vehículo/carrocería/viaje). La cubicación
-        // rápida de Nexo (POST /api/cubicacion) se retiró en HU-023.2 (#157): "Calcular cubicaje" usa el cubicador (AgregarCubicador).
+        // Catálogos del formulario de captura que también proxean Nexo (municipios, tipos de vehículo/carrocería/viaje).
+        // "Calcular cubicaje" usa el cubicador (AgregarCubicador).
         AgregarMunicipios(servicios);
         AgregarCatalogosFlete(servicios);
         AgregarCubicador(servicios);
@@ -158,16 +158,16 @@ public static class clsDependenciasInfraestructura
     }
 
     /// <summary>
-    /// Asistente IA (#12 parte C, ADR-003, ADR-018): <see cref="IChatClient"/> por <c>IA:Proveedor</c>, redactor del PDF, búsqueda de
-    /// clientes en Nexo (HU-005.2, elegida por <c>Nexo:UrlBase</c>: ver <see cref="AgregarBuscadorClientes"/>),
-    /// candado por sesión y barrido de sesiones inactivas. Google Chat (webhook, cola, worker y publicador) se retiró en HU-013.9 (#105).
+    /// Asistente IA (ADR-003, ADR-018): <see cref="IChatClient"/> por <c>IA:Proveedor</c>, redactor del PDF, búsqueda de
+    /// clientes en Nexo (elegida por <c>Nexo:UrlBase</c>: ver <see cref="AgregarBuscadorClientes"/>),
+    /// candado por sesión y barrido de sesiones inactivas.
     /// TryAdd: un adaptador registrado antes (pruebas) se respeta.
     /// </summary>
     private static void AgregarAgente(IServiceCollection servicios)
     {
         servicios.TryAddSingleton<IChatClient>(clsChatClientFactory.Crear);
 
-        // Redactor del asunto y la introducción del PDF (HU-013.5) sobre el mismo IChatClient; el respaldo lo aplica Aplicación.
+        // Redactor del asunto y la introducción del PDF sobre el mismo IChatClient; el respaldo lo aplica Aplicación.
         servicios.TryAddScoped<Aplicacion.Redaccion.Interfaces.IClsRedactorCotizacion, Redaccion.Services.clsRedactorCotizacionLlm>();
         AgregarBuscadorClientes(servicios);
 
@@ -176,20 +176,20 @@ public static class clsDependenciasInfraestructura
     }
 
     /// <summary>
-    /// Login SSO ClientePro (#12, ADR-009): almacén corporativo de solo lectura, emisión de JWT y purga horaria de tokens
+    /// Login SSO ClientePro (ADR-009): almacén corporativo de solo lectura, emisión de JWT y purga horaria de tokens
     /// vencidos. TryAdd: un adaptador registrado antes (pruebas) se respeta.
     /// </summary>
     private static void AgregarIdentidad(IServiceCollection servicios)
     {
         servicios.TryAddSingleton<IClsConfiguracionJwt, clsConfiguracionJwt>();
         servicios.TryAddSingleton<IClsEmisorTokens, clsEmisorTokensJwt>();
-        // HU-040.2 (#230, ADR-025): ticket de elección del rol (JWT de 5 minutos con clave derivada).
+        // Ticket de elección del rol (ADR-025; JWT de 5 minutos con clave derivada).
         servicios.TryAddSingleton<IClsEmisorTicketEleccion, clsEmisorTicketEleccionJwt>();
         servicios.TryAddScoped<IClsAlmacenIdentidadExterno, clsAlmacenIdentidadSolucionesTi>();
         servicios.AddHostedService<clsLimpiezaTokensHostedService>();
 
-        // Regional del usuario (HU-010.1, ADR-016): tabla de ejecutivos de DWCubosEBSSAP si hay ConnectionStrings:Regional. La
-        // usan el tablero del gerente y el login (clsVerificadorIdentidad, #81), que comparten el adaptador y la caché.
+        // Regional del usuario (ADR-016): tabla de ejecutivos de DWCubosEBSSAP si hay ConnectionStrings:Regional. La
+        // usan el tablero del gerente y el login (clsVerificadorIdentidad), que comparten el adaptador y la caché.
         servicios.TryAddSingleton<clsCacheDirectorioEjecutivos>();
         servicios.TryAddScoped<clsDirectorioEjecutivosDimEjecutivo>();
         servicios.TryAddSingleton<clsDirectorioEjecutivosNoDisponible>();
@@ -197,7 +197,7 @@ public static class clsDependenciasInfraestructura
     }
 
     /// <summary>
-    /// PDF (MigraDoc con fuentes embebidas, almacén en volumen) y correo por MailSender (HU-033, #199, ADR-023): cliente HTTP tipado
+    /// PDF (MigraDoc con fuentes embebidas, almacén en volumen) y correo por MailSender (ADR-023): cliente HTTP tipado
     /// <see cref="clsTransporteMailSender"/> con <c>Correo:MailSender:UrlBase</c> y su tubería (tiempo <c>TimeoutSegundos</c>, sin reintentar los
     /// POST, sin registrar cabeceras), y el worker que consulta el estado de los correos encolados (<see cref="clsWorkerEstadoCorreos"/>).
     /// TryAdd: un adaptador registrado antes (pruebas) se respeta.
@@ -226,7 +226,7 @@ public static class clsDependenciasInfraestructura
     }
 
     /// <summary>
-    /// Margen de SAP TM (HU-042.2, #243, ADR-027). Al cotizar, <see cref="clsFuenteMargenTablaLocal"/> lee la copia local
+    /// Margen de SAP TM (ADR-027). Al cotizar, <see cref="clsFuenteMargenTablaLocal"/> lee la copia local
     /// <c>dbo_cotifly.SapMargenCliente</c> con el <c>DbContext</c> de la petición (scoped). La copia la mantiene el propio backend:
     /// <see cref="clsWorkerSincronizacionMargenSap"/> llama a <see cref="clsSincronizacionMargenSapSql"/> (singleton, con su candado por réplica),
     /// que descarga <c>RentabClienteSet</c> con el cliente HTTP con nombre <see cref="clsClienteRentabSap.NombreCliente"/> (sin cookies, gzip,
@@ -256,7 +256,7 @@ public static class clsDependenciasInfraestructura
     }
 
     /// <summary>
-    /// TRM (HU-012.1, ADR-014): la cadena que elige <c>Trm:Proveedor</c> (<see cref="ProveedorTrm"/>) detrás de la caché por día
+    /// TRM (ADR-014): la cadena que elige <c>Trm:Proveedor</c> (<see cref="ProveedorTrm"/>) detrás de la caché por día
     /// <see cref="clsProveedorTrmEnCache"/>, todo singleton. Por defecto DolarApi (<see cref="clsProveedorTrmDolarApi"/>) con respaldo en los
     /// datos abiertos de la Superintendencia Financiera (<see cref="clsProveedorTrmSuperfinanciera"/>). Cada fuente tiene su cliente HTTP con
     /// nombre (se crea por consulta con <c>IHttpClientFactory</c>), la tubería estándar de resiliencia con el tiempo de
@@ -315,7 +315,7 @@ public static class clsDependenciasInfraestructura
 
     /// <summary>
     /// Búsqueda de clientes elegida por <c>Nexo:UrlBase</c> al resolver (<see cref="clsFabricaBuscadorClientes"/>): configurada
-    /// → <see cref="clsBuscadorClientesNexo"/>; vacía → <see cref="clsBuscadorClientesNoDisponible"/> (#10, HU-005.2). Cliente
+    /// → <see cref="clsBuscadorClientesNexo"/>; vacía → <see cref="clsBuscadorClientesNoDisponible"/>. Cliente
     /// tipado con la tubería estándar de resiliencia (8 s en total) y sin registrar el header <c>X-Portal-clsUsuario-Id</c> en los
     /// logs. TryAdd: un adaptador registrado antes (pruebas) se respeta.
     /// </summary>
@@ -351,7 +351,7 @@ public static class clsDependenciasInfraestructura
     /// <summary>
     /// Catálogos de tipo de vehículo/carrocería/clase de viaje elegidos por <c>Nexo:UrlBase</c> al resolver
     /// (<see cref="clsFabricaCatalogosFlete.Crear"/>): configurada → <see cref="clsCatalogosFleteNexo"/> sobre los catálogos maestros
-    /// (<see cref="clsFabricaCatalogosMaestros.Crear"/>, HU-013.10); vacía → <see cref="clsCatalogosFleteNoDisponible"/>. Los
+    /// (<see cref="clsFabricaCatalogosMaestros.Crear"/>); vacía → <see cref="clsCatalogosFleteNoDisponible"/>. Los
     /// catálogos maestros usan el mismo cliente HTTP tipado (nombre <see cref="clsBuscadorClientesNexo.NombreCliente"/>) que la
     /// búsqueda de clientes: es el mismo servicio Nexo.
     /// No repite la configuración de resiliencia/redacción por la misma razón que <see cref="AgregarMunicipios"/>.
@@ -359,13 +359,13 @@ public static class clsDependenciasInfraestructura
     /// </summary>
     private static void AgregarCatalogosFlete(IServiceCollection servicios)
     {
-        // Catálogos maestros de Nexo (HU-013.10, G1/G2): GET /api/catalogos/*, con caché en memoria y copia de respaldo.
+        // Catálogos maestros de Nexo: GET /api/catalogos/*, con caché en memoria y copia de respaldo.
         servicios.TryAddScoped<clsCatalogosMaestrosNoDisponible>();
         servicios.TryAddSingleton<clsCacheCatalogosMaestros>();
         servicios.AddHttpClient<clsCatalogosMaestrosNexo>(clsBuscadorClientesNexo.NombreCliente);
         servicios.TryAddScoped<IClsCatalogosMaestrosProvider>(clsFabricaCatalogosMaestros.Crear);
 
-        // HU-031.1 (#194): diccionario de alias de Nexo (NEXO #321), mismo cliente HTTP y las mismas reglas de caché que los maestros.
+        // Diccionario de alias de Nexo, mismo cliente HTTP y las mismas reglas de caché que los maestros.
         servicios.TryAddSingleton<clsCacheAliasNexo>();
         servicios.AddHttpClient<clsAliasNexo>(clsBuscadorClientesNexo.NombreCliente);
         servicios.TryAddScoped<IClsAliasNexoProvider>(clsFabricaAliasNexo.Crear);
@@ -376,12 +376,12 @@ public static class clsDependenciasInfraestructura
     }
 
     /// <summary>
-    /// Cubicador (HU-021.5, #133) elegido por <c>Cubicador:UrlBase</c> al resolver (<see cref="clsFabricaCubicador.Crear"/>): configurado →
+    /// Cubicador elegido por <c>Cubicador:UrlBase</c> al resolver (<see cref="clsFabricaCubicador.Crear"/>): configurado →
     /// <see cref="clsCubicadorHttp"/>; vacío → <see cref="clsCubicadorNoDisponible"/> (la captura crea un camión sin vehículo por ruta). Cliente
     /// HTTP propio (<see cref="clsCubicadorHttp.NombreCliente"/>) con su tubería: <c>Cubicador:TiempoEsperaSegundos</c> para las consultas y
-    /// <c>Cubicador:TiempoEsperaRecomendacionSegundos</c> para el POST (D3b), sin
+    /// <c>Cubicador:TiempoEsperaRecomendacionSegundos</c> para el POST, sin
     /// reintentar los POST y sin registrar cabeceras (la llave viaja en <c>Authorization</c>). Los eventos de Polly de cada intento bajan a
-    /// Debug, como en SAP TM. Los catálogos (tipos de mercancía, carrocerías y vehículos, HU-023.1) se guardan en <see cref="clsCacheCatalogoCubicador{TFila}"/> (singleton por catálogo). TryAdd: un
+    /// Debug, como en SAP TM. Los catálogos (tipos de mercancía, carrocerías y vehículos) se guardan en <see cref="clsCacheCatalogoCubicador{TFila}"/> (singleton por catálogo). TryAdd: un
     /// adaptador registrado antes (pruebas) se respeta.
     /// </summary>
     private static void AgregarCubicador(IServiceCollection servicios)
@@ -408,7 +408,7 @@ public static class clsDependenciasInfraestructura
         servicios.TryAddSingleton<IClsCubicacionRapidaService>(sp => sp.GetRequiredService<clsCubicacionRapidaService>());
         servicios.AddHostedService(sp => sp.GetRequiredService<clsCubicacionRapidaService>());
 
-        // HU-023.5 (#160): cubicación de la licitación en segundo plano, con cupos de llamadas compartidos entre réplicas (P6).
+        // Cubicación de la licitación en segundo plano, con cupos de llamadas compartidos entre réplicas.
         servicios.TryAddScoped<IClsCupoCubicador, clsCupoCubicadorSql>();
         servicios.AddHostedService<clsWorkerCubicacionLicitacion>();
 
@@ -427,7 +427,7 @@ public static class clsDependenciasInfraestructura
     /// <see cref="clsCosteoNexo"/>; vacía → <see cref="clsCosteoNexoNoDisponible"/>. A diferencia de clientes, municipios, catálogos y
     /// cubicación, usa su propio cliente HTTP (<see cref="clsCosteoNexo.NombreCliente"/>) con su propia tubería: 30 s (el alta de Nexo
     /// auto-costea en línea) y sin reintentar los POST (el alta no es idempotente). Sin registrar cabeceras en los logs. TryAdd: un
-    /// adaptador registrado antes (pruebas) se respeta. El polling (HU-005.6) corre en <see cref="clsWorkerCosteoNexo"/>.
+    /// adaptador registrado antes (pruebas) se respeta. El polling corre en <see cref="clsWorkerCosteoNexo"/>.
     /// </summary>
     private static void AgregarCosteo(IServiceCollection servicios)
     {
@@ -440,14 +440,14 @@ public static class clsDependenciasInfraestructura
         servicios.TryAddScoped<IClsCosteoNexo>(clsFabricaCosteoNexo.Crear);
         servicios.AddHostedService<clsWorkerCosteoNexo>();
 
-        // Servicios conexos de Nexo (HU-013.3, ADR-018 §4): mismo cliente NexoCosteo y misma identidad, vía clsCosteoNexo.
+        // Servicios conexos de Nexo (ADR-018 §4): mismo cliente NexoCosteo y misma identidad, vía clsCosteoNexo.
         servicios.TryAddScoped<clsServiciosConexosNoDisponible>();
         servicios.TryAddScoped<Aplicacion.Costeo.Interfaces.IClsServiciosConexosNexo>(sp =>
             string.IsNullOrWhiteSpace(sp.GetRequiredService<IOptions<clsOpcionesNexo>>().Value.UrlBase)
                 ? sp.GetRequiredService<clsServiciosConexosNoDisponible>()
                 : new clsServiciosConexosNexo(sp.GetRequiredService<clsCosteoNexo>()));
 
-        // Costo unitario de los conexos del catálogo para capturarlos con la ruta (HU-021.6, decisión 3): mismo cliente y misma identidad.
+        // Costo unitario de los conexos del catálogo para capturarlos con la ruta: mismo cliente y misma identidad.
         // Con caché en memoria de 5 minutos (clsAlmacenCostosConexos): el precio guardado es el costo de Nexo al capturar.
         servicios.TryAddSingleton<clsAlmacenCostosConexos>();
         servicios.TryAddScoped<Aplicacion.Costeo.Interfaces.IClsCostosConexosNexo>(sp =>
@@ -458,7 +458,7 @@ public static class clsDependenciasInfraestructura
                     sp.GetRequiredService<clsAlmacenCostosConexos>(),
                     sp.GetRequiredService<Aplicacion.Comun.Interfaces.IClsReloj>()));
 
-        // Licitaciones (HU-011, ADR-017): el análisis del Excel va a Nexo por el mismo cliente NexoCosteo (POST sin reintentos);
+        // Licitaciones (ADR-017): el análisis del Excel va a Nexo por el mismo cliente NexoCosteo (POST sin reintentos);
         // sin Nexo:UrlBase responde COSTEO_NEXO_NO_DISPONIBLE. La lectura del original es local (ClosedXML).
         servicios.TryAddScoped<Licitaciones.Services.clsAnalizadorExcelNoDisponible>();
         servicios.AddHttpClient<Licitaciones.Services.clsAnalizadorExcelNexo>(clsCosteoNexo.NombreCliente);
@@ -467,20 +467,20 @@ public static class clsDependenciasInfraestructura
                 ? sp.GetRequiredService<Licitaciones.Services.clsAnalizadorExcelNoDisponible>()
                 : sp.GetRequiredService<Licitaciones.Services.clsAnalizadorExcelNexo>());
         AgregarImportacionInteligente(servicios);
-        // HU-035.2 (#213): los controles del Excel subido (bomba zip, libro denso, XXE) y el cupo de lecturas simultáneas son una sola
+        // Los controles del Excel subido (bomba zip, libro denso, XXE) y el cupo de lecturas simultáneas son una sola
         // pieza para el pliego y el Excel de mercancías. Singleton: el cupo es de todo el proceso.
         servicios.TryAddSingleton<clsLecturaExcelAcotada>();
         servicios.TryAddSingleton<Aplicacion.Licitaciones.Interfaces.IClsLectorExcelLicitacion, Licitaciones.Services.clsLectorExcelLicitacionClosedXml>();
         servicios.TryAddSingleton<Aplicacion.Licitaciones.Interfaces.IClsExportadorExcelLicitacion, Licitaciones.Services.clsExportadorExcelLicitacionClosedXml>();
-        // HU-018.1 (#155, parte C): Excel de la cotización ("Ver detalle"). Solo escribe (no abre archivos del cliente): sin el cupo de lecturas.
+        // Excel de la cotización ("Ver detalle"). Solo escribe (no abre archivos del cliente): sin el cupo de lecturas.
         servicios.TryAddSingleton<Aplicacion.Cotizaciones.Interfaces.IClsExportadorExcelCotizacion, Cotizaciones.Services.clsExportadorExcelCotizacionClosedXml>();
 
-        // HU-035.1 (#202, ADR-024): Excel de mercancías de una ruta, leído localmente (ClosedXML, sin Nexo), con el cupo compartido.
+        // Excel de mercancías de una ruta (ADR-024), leído localmente (ClosedXML, sin Nexo), con el cupo compartido.
         servicios.TryAddSingleton<Aplicacion.Mercancias.Interfaces.IClsLectorGrillaExcel, Mercancias.Services.clsLectorGrillaExcelClosedXml>();
     }
 
     /// <summary>
-    /// Importación inteligente del Excel con NEXO (HU-044.1, #252, ADR-028), elegida al resolver: con <c>Nexo:UrlBase</c> y
+    /// Importación inteligente del Excel con NEXO (ADR-028), elegida al resolver: con <c>Nexo:UrlBase</c> y
     /// <c>ImportacionInteligente:Habilitada</c> → <see cref="Licitaciones.Services.clsImportacionExcelNexo"/>; si no →
     /// <see cref="Licitaciones.Services.clsImportacionExcelNoDisponible"/>. Cliente HTTP propio
     /// (<see cref="Licitaciones.Services.clsImportacionExcelNexo.NombreCliente"/>) con su tubería: los tiempos de
@@ -515,7 +515,7 @@ public static class clsDependenciasInfraestructura
     }
 
     /// <summary>
-    /// Cupo de lecturas de Nexo (HU-023.4, #159): un bloqueo para todo Cotifly tras un 429 (Nexo limita por rol) y el manejador que lo
+    /// Cupo de lecturas de Nexo: un bloqueo para todo Cotifly tras un 429 (Nexo limita por rol) y el manejador que lo
     /// aplica en los dos clientes de Nexo, por fuera de la tubería de resiliencia. Idempotente (lo piden clientes y costeo).
     /// </summary>
     private static void AgregarCupoNexo(IServiceCollection servicios)
@@ -527,7 +527,7 @@ public static class clsDependenciasInfraestructura
     private static void AgregarPersistencia(IServiceCollection servicios)
     {
         servicios.AddSingleton<clsMarcasTiempoInterceptor>();
-        // HU-023 (#176): BUSQUEDA_AGOTADA se guarda tal cual con el script 07 y, sin él, en NULL con un aviso (autodetectado).
+        // BUSQUEDA_AGOTADA se guarda tal cual con el script 07 y, sin él, en NULL con un aviso (autodetectado).
         servicios.TryAddSingleton<clsDetectorMotivosBd>();
         servicios.AddSingleton<clsMotivoSinSeleccionInterceptor>();
 
@@ -541,15 +541,15 @@ public static class clsDependenciasInfraestructura
                 proveedor.GetRequiredService<clsMotivoSinSeleccionInterceptor>(), proveedor.GetRequiredService<clsMarcasTiempoInterceptor>());
         });
 
-        // Base de identidad del portal (la misma de Nexo; QA: dbSolucionesTI_Prueba, #172): solo lectura (login, #12).
+        // Base de identidad del portal (la misma de Nexo; QA: dbSolucionesTI_Prueba): solo lectura (login).
         servicios.AddDbContext<clsIdentidadDbContext>((proveedor, opciones) =>
             ConfigurarSqlServer(opciones, proveedor.GetRequiredService<IOptions<clsOpcionesConexiones>>().Value.Identidad));
 
         servicios.AddScoped<IClsUnitOfWork, clsUnitOfWork>();
         servicios.AddScoped<IClsCotizacionRepository, clsCotizacionRepository>();
-        // HU-045.2 (#264): la tasa vigente del seguro de la mercancía (TarifasSeguro, script 20; solo lectura).
+        // La tasa vigente del seguro de la mercancía (TarifasSeguro, script 20; solo lectura).
         servicios.AddScoped<IClsTarifaSeguroRepository, clsTarifaSeguroRepository>();
-        // HU-046.3 (#269): la política de seguros (las 4 tablas PoliticaSeguro*, script 21; solo lectura y sin caché).
+        // La política de seguros (las 4 tablas PoliticaSeguro*, script 21; solo lectura y sin caché).
         servicios.AddScoped<IClsPoliticaSegurosRepository, clsPoliticaSegurosRepository>();
         servicios.AddScoped<IClsMargenPoliticaRepository, clsMargenPoliticaRepository>();
         servicios.AddScoped<IClsSapMapeoRepository, clsSapMapeoRepository>();

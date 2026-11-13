@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 
 namespace Cotifly.Aplicacion.CatalogosFlete.DTOs;
 
-/// <summary>Los dos tipos de elemento del diccionario de alias de Nexo (NEXO #321): tipo de vehículo y clase de contenedor.</summary>
+/// <summary>Los dos tipos de elemento del diccionario de alias de Nexo: tipo de vehículo y clase de contenedor.</summary>
 public enum TipoAliasNexo
 {
     /// <summary><c>tipo=vehiculo</c> (Nexo lo guarda como <c>Vehiculo</c>): "TB", "T.B", "Turbo" → <c>2L2</c>.</summary>
@@ -15,7 +15,7 @@ public enum TipoAliasNexo
 }
 
 /// <summary>
-/// HU-031.1 (#194): el diccionario de alias de Nexo (<c>tbl_alias_elementos</c>, NEXO #315/#321) descargado con
+/// El diccionario de alias de Nexo (<c>tbl_alias_elementos</c>) descargado con
 /// <c>GET /api/catalogos/alias</c>: por tipo, el texto normalizado → el código oficial. Solo trae los alias activos.
 /// </summary>
 /// <remarks>
@@ -80,7 +80,7 @@ public sealed class clsDiccionarioAliasNexo
     }
 
     /// <summary>
-    /// Copia de <c>clsResolucionDeCatalogos.Normalizar</c> de Nexo (S5-HU-20.5/#297, S6-HU-27.2/#321): la clave con la que Nexo compara un
+    /// Copia de <c>clsResolucionDeCatalogos.Normalizar</c> de Nexo: la clave con la que Nexo compara un
     /// texto contra el diccionario. Vacío si no hay texto.
     /// </summary>
     public static string Normalizar(string? texto)

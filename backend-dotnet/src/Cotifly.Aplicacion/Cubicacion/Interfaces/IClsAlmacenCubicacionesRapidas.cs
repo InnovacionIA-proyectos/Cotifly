@@ -4,10 +4,10 @@ using Cotifly.Dominio.Comun;
 namespace Cotifly.Aplicacion.Cubicacion.Interfaces;
 
 /// <summary>
-/// Opción D (D3, E2E 2026-10-16): dónde viven las cubicaciones rápidas que siguieron en segundo plano mientras el front las consulta.
+/// Dónde viven las cubicaciones rápidas que siguieron en segundo plano mientras el front las consulta.
 /// Con una réplica de la API basta la memoria del proceso (<c>Cubicador:RetencionCubicacionMinutos</c>,
 /// <c>Cubicador:MaximoCubicacionesEnMemoria</c>): si el proceso se reinicia, se pierden y el front recibe 404 (vuelve a cubicar). Con
-/// varias réplicas haría falta una tabla (no existe todavía).
+/// varias réplicas haría falta una tabla.
 /// </summary>
 public interface IClsAlmacenCubicacionesRapidas
 {

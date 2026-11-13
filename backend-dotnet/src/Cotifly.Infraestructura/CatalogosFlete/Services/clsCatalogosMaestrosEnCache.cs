@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.CatalogosFlete.Services;
 
 /// <summary>
-/// Foto en memoria (singleton) de los catálogos maestros de Nexo y la consulta en curso (HU-013.10). Una sola por proceso: los
+/// Foto en memoria (singleton) de los catálogos maestros de Nexo y la consulta en curso. Una sola por proceso: los
 /// catálogos son los mismos para todos los comerciales y no son sensibles.
 /// </summary>
 public sealed class clsCacheCatalogosMaestros
@@ -39,7 +39,7 @@ public sealed class clsCacheCatalogosMaestros
 }
 
 /// <summary>
-/// Decorador de <see cref="IClsCatalogosMaestrosProvider"/> con caché (HU-013.10, G1 y G2). <c>clsFabricaCatalogosMaestros</c> lo
+/// Decorador de <see cref="IClsCatalogosMaestrosProvider"/> con caché. <c>clsFabricaCatalogosMaestros</c> lo
 /// pone delante de <see cref="clsCatalogosMaestrosNexo"/> cuando Nexo está configurado.
 /// </summary>
 /// <remarks>
@@ -48,15 +48,15 @@ public sealed class clsCacheCatalogosMaestros
 /// <item><b>Vencida</b>: se consulta Nexo. Si Nexo falla y la foto tiene menos de <c>Nexo:HorasCatalogosVencidos</c> (24 por
 /// defecto), se sirve la foto vencida y se registra un warning: los catálogos maestros cambian poco y un código que era válido hace
 /// unas horas lo sigue siendo. Pasado ese límite, o sin foto, responde <c>CATALOGOS_FLETE_NO_DISPONIBLE</c> (nunca se ofrece ni se
-/// envía texto libre: ver ADR-018 y <c>docs/conexion_nexo/HU-013-preguntas-nexo.md</c> G2).</item>
+/// envía texto libre: ver ADR-018).</item>
 /// <item><b>Una consulta a la vez</b> y <b>sin caché negativa</b>, igual que <c>clsMunicipiosEnCache</c>: un fallo por un comercial
 /// sin <c>idUsuarioExterno</c> no deja sin catálogos a los demás.</item>
 /// <item><b>Solo fotos completas:</b> se guarda una respuesta exitosa con tipos de vehículo y clases de viaje no vacíos.</item>
-/// <item><b>Catálogos opcionales caídos</b> (<c>clases-contenedor</c>, <c>lineas-negocio</c>; hallazgo M de #179): si uno <b>falló</b>
+/// <item><b>Catálogos opcionales caídos</b> (<c>clases-contenedor</c>, <c>lineas-negocio</c>): si uno <b>falló</b>
 /// (<see cref="clsCatalogosMaestros.ClasesContenedorNoDisponible"/>) y la copia anterior lo tenía con menos de
 /// <c>Nexo:HorasCatalogosVencidos</c>, la copia nueva conserva esa lista (con su fecha original), en vez de quedarse vacía durante
 /// <c>Nexo:MinutosCacheCatalogos</c>. Un <c>[]</c> real de Nexo (no marcado como fallo) se respeta; sin copia anterior, o vencida, la
-/// lista queda vacía como antes. Una lista conservada que supera ese límite deja de servirse aunque la foto siga vigente.</item>
+/// lista queda vacía. Una lista conservada que supera ese límite deja de servirse aunque la foto siga vigente.</item>
 /// </list>
 /// </remarks>
 public sealed class clsCatalogosMaestrosEnCache(

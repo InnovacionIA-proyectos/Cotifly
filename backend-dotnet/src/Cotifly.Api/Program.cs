@@ -12,7 +12,7 @@ using Cotifly.Aplicacion;
 using Cotifly.Infraestructura;
 using Microsoft.OpenApi;
 
-// HEALTHCHECK del Dockerfile (#27): "dotnet Cotifly.Api.dll --healthcheck" solo consulta
+// HEALTHCHECK del Dockerfile: "dotnet Cotifly.Api.dll --healthcheck" solo consulta
 // GET /health del proceso que ya corre en el contenedor y termina (0 sano, 1 no sano).
 // No construye el host web ni valida la configuración.
 #pragma warning disable IDE1006
@@ -22,7 +22,7 @@ if (clsSondaSalud.EsSolicitada(args))
     return await clsSondaSalud.EjecutarAsync();
 }
 
-// Fallos de arranque (#27). Si este ensamblado es el proceso (contenedor, "dotnet Cotifly.Api.dll"),
+// Fallos de arranque. Si este ensamblado es el proceso (contenedor, "dotnet Cotifly.Api.dll"),
 // cualquier excepción al construir o arrancar el host se registra UNA vez y el proceso termina con 1:
 // dejarla escapar en el PID 1 del contenedor aborta el proceso (código 139) y repite la traza.
 // Bajo WebApplicationFactory (pruebas) el ensamblado de entrada es el de pruebas: la excepción se
@@ -38,8 +38,8 @@ try
         .AddAplicacion()
         .AddInfraestructura(builder.Configuration);
 
-    // Errores de validación automática como ErrorWeb ({"error": "..."}, contrato #17), no ProblemDetails.
-    // JSON por grupo (#12, ADR-002): /web/* en snake_case (clsJsonSnakeCaseAttribute); /api/auth/* y /health sin cambios.
+    // Errores de validación automática como ErrorWeb ({"error": "..."}), no ProblemDetails.
+    // JSON por grupo (ADR-002): /web/* en snake_case (clsJsonSnakeCaseAttribute); /api/auth/* y /health sin cambios.
     // ETag de la versión de la cotización en las respuestas 2xx que la traen (ADR-018 §8).
     builder.Services.AddControllers(o => o.Filters.Add<clsEtagVersionFilter>())
         .ConfigureApiBehaviorOptions(o => o.InvalidModelStateResponseFactory = clsErrorWeb.RespuestaValidacion)
@@ -67,11 +67,11 @@ try
         });
     });
 
-    // CORS del frontend de ClientePro, encabezados reenviados de Traefik y límites HTTP (#12 parte B).
+    // CORS del frontend de ClientePro, encabezados reenviados de Traefik y límites HTTP.
     builder.Services.AddSeguridadHttp();
     builder.WebHost.ConfigureKestrel(k => k.AddServerHeader = false);
 
-    // JwtBearer + revocación por jti + políticas por rol + límite de /api/auth/* (#12, ADR-009).
+    // JwtBearer + revocación por jti + políticas por rol + límite de /api/auth/* (ADR-009).
     builder.Services.AddAutenticacionCotifly();
 
     app = builder.Build();
@@ -84,7 +84,7 @@ catch (Exception ex) when (esProcesoPropio)
     return 1;
 }
 
-// Endurecimiento A (#199): primero, para atrapar lo que escape de todo lo demás. 500 ErrorNegocio ERROR_INTERNO (ErrorWeb en /api/*), sin
+// Primero, para atrapar lo que escape de todo lo demás. 500 ErrorNegocio ERROR_INTERNO (ErrorWeb en /api/*), sin
 // detalles técnicos, con la excepción en el log junto al id de correlación de la petición.
 app.UseManejadorErroresNoControlados();
 

@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Comun.Persistence;
 
 /// <summary>
-/// Readiness de la base <c>dbo_cotifly</c> para <c>GET /health/ready</c> (rehecha para HU-021, ADR-019): la cadena debe estar
+/// Readiness de la base <c>dbo_cotifly</c> para <c>GET /health/ready</c> (ADR-019): la cadena debe estar
 /// configurada, la base debe responder y el esquema debe tener TODAS las tablas y columnas que mapea el modelo EF (se leen del propio
 /// modelo, así la sonda no se queda atrás cuando cambia el esquema). Si falta algo, la descripción dice qué script falta:
 /// <list type="bullet">
@@ -16,43 +16,41 @@ namespace Cotifly.Infraestructura.Comun.Persistence;
 /// <item><see cref="DescripcionEsquemaSin0009"/>: la base sigue con <c>Cotizaciones</c> (esquema anterior a la reestructuración);</item>
 /// <item><see cref="DescripcionEsquemaSin0010"/>: solo faltan las columnas del 0010 (nombres de municipio, id de la solicitud de Nexo,
 /// nombre del conexo);</item>
-/// <item><see cref="DescripcionEsquemaSin02"/>: solo faltan las columnas del cubicador de <c>db/scripts/02_alter_cubicador.sql</c>
-/// (HU-023.3, #158);</item>
+/// <item><see cref="DescripcionEsquemaSin02"/>: solo faltan las columnas del cubicador de <c>db/scripts/02_alter_cubicador.sql</c>;</item>
 /// <item><see cref="DescripcionEsquemaSin03"/>: solo faltan <c>ordenVehiculo</c> o <c>idServicioConexoCatalogo</c> de
-/// <c>db/scripts/03_orden_vehiculo_y_conexo_catalogo.sql</c> (HU-014, #188);</item>
-/// <item><see cref="DescripcionEsquemaSin04"/>: solo faltan las columnas de la cubicación en segundo plano (HU-023.5, #160);</item>
-/// <item><see cref="DescripcionEsquemaSin05"/>: solo falta <c>categoriaServicioConexo</c> de <c>db/scripts/05_categoria_conexo.sql</c>
-/// (HU-014, #188);</item>
+/// <c>db/scripts/03_orden_vehiculo_y_conexo_catalogo.sql</c>;</item>
+/// <item><see cref="DescripcionEsquemaSin04"/>: solo faltan las columnas de la cubicación en segundo plano;</item>
+/// <item><see cref="DescripcionEsquemaSin05"/>: solo falta <c>categoriaServicioConexo</c> de <c>db/scripts/05_categoria_conexo.sql</c>;</item>
 /// <item><see cref="DescripcionEsquemaSin06"/>: solo falta la tabla <c>CapturasIdempotentes</c> (o alguna de sus columnas) de
-/// <c>db/scripts/06_idempotencia_captura.sql</c> (#191: la <c>Idempotency-Key</c> persistente; no se degrada a memoria);</item>
+/// <c>db/scripts/06_idempotencia_captura.sql</c> (la <c>Idempotency-Key</c> persistente; no se degrada a memoria);</item>
 /// <item><see cref="DescripcionEsquemaSin09"/>: solo falta <c>CotizacionesSolicitud.scorePrioridad</c> de
-/// <c>db/scripts/09_score_prioridad.sql</c> (HU-018.1, #155);</item>
+/// <c>db/scripts/09_score_prioridad.sql</c>;</item>
 /// <item><see cref="DescripcionEsquemaSin10"/>: solo faltan <c>motivoRechazo</c> o <c>rechazadaAt</c> del camión de
-/// <c>db/scripts/10_rechazo_linea.sql</c> (HU-028.1, #183);</item>
+/// <c>db/scripts/10_rechazo_linea.sql</c>;</item>
 /// <item><see cref="DescripcionEsquemaSin11"/>: solo falta <c>CotizacionLineasSolicitud.pesoConTaraKg</c> de
-/// <c>db/scripts/11_peso_con_tara.sql</c> (HU-030.1, #184);</item>
+/// <c>db/scripts/11_peso_con_tara.sql</c>;</item>
 /// <item><see cref="DescripcionEsquemaSin12"/>: solo faltan <c>tipoVehiculoElegido</c> o <c>carroceriaElegida</c> de la ruta de
-/// <c>db/scripts/12_vehiculo_elegido.sql</c> (HU-032, #197; el mismo script deja las medidas de la mercancía en NULL);</item>
-/// <item><see cref="DescripcionEsquemaSin13"/>: solo faltan columnas de <c>db/scripts/13_correo_mailsender.sql</c> (HU-033, #199: el
+/// <c>db/scripts/12_vehiculo_elegido.sql</c> (el mismo script deja las medidas de la mercancía en NULL);</item>
+/// <item><see cref="DescripcionEsquemaSin13"/>: solo faltan columnas de <c>db/scripts/13_correo_mailsender.sql</c> (el
 /// seguimiento de MailSender en <c>Correos</c> y el resultado diferido a Nexo en la cabecera);</item>
 /// <item><see cref="DescripcionEsquemaSin14"/>: solo faltan <c>finalizadaAt</c> o <c>finalizadaPor</c> de la cabecera de
-/// <c>db/scripts/14_cotizacion_finalizada.sql</c> (HU-036, #205);</item>
+/// <c>db/scripts/14_cotizacion_finalizada.sql</c>;</item>
 /// <item><see cref="DescripcionEsquemaSin16"/>: solo falta <c>TokensRefresco.rolSesion</c> de
-/// <c>db/scripts/16_multiples_roles_activos.sql</c> (HU-040.1, #229);</item>
+/// <c>db/scripts/16_multiples_roles_activos.sql</c>;</item>
 /// <item><see cref="DescripcionEsquemaSin17"/>: solo faltan las tablas <c>SapMargenCliente</c> o <c>SapMargenSyncLog</c> de
-/// <c>db/scripts/17_sap_margen_sincronizacion.sql</c> (HU-042.1 #242; las lee HU-042.2 #243);</item>
+/// <c>db/scripts/17_sap_margen_sincronizacion.sql</c>;</item>
 /// <item><see cref="DescripcionEsquemaSin18"/>: solo falta <c>SapMapeoTrqType.lineaNegocioId</c> de
-/// <c>db/scripts/18_sap_mapeo_fk_margenes_politica.sql</c> (HU-042.4, #247);</item>
+/// <c>db/scripts/18_sap_mapeo_fk_margenes_politica.sql</c>;</item>
 /// <item><see cref="DescripcionEsquemaSin19"/>: solo falta <c>CotizacionServiciosConexos.precioVenta</c> de
-/// <c>db/scripts/19_precio_venta_conexos.sql</c> (HU-043.1, #245; el backend la mapea desde #261);</item>
+/// <c>db/scripts/19_precio_venta_conexos.sql</c>;</item>
 /// <item><see cref="DescripcionEsquemaSin20"/>: solo faltan la tabla <c>TarifasSeguro</c> o las columnas del seguro de la ruta de
-/// <c>db/scripts/20_seguro_mercancia.sql</c> (HU-045.1, #263; el backend las mapea desde HU-045.2, #264);</item>
+/// <c>db/scripts/20_seguro_mercancia.sql</c>;</item>
 /// <item><see cref="DescripcionEsquemaSin21"/>: solo faltan las 4 tablas de la política de seguros o <c>CotizacionServiciosConexos.codigoServicio</c>
-/// de <c>db/scripts/21_politica_seguros.sql</c> (HU-046.2, #268; el backend las mapea desde HU-046.3, #269);</item>
+/// de <c>db/scripts/21_politica_seguros.sql</c>;</item>
 /// <item><see cref="DescripcionEsquemaSin22"/>: solo falta <c>CotizacionArchivosLicitacion.origenLectura</c> de
-/// <c>db/scripts/22_origen_lectura_licitacion.sql</c> (HU-044.7, #290);</item>
+/// <c>db/scripts/22_origen_lectura_licitacion.sql</c>;</item>
 /// <item><see cref="DescripcionEsquemaSin23"/>: solo falta <c>Roles.requiereAltaManual</c> de
-/// <c>db/scripts/23_rol_requiere_alta_manual.sql</c> (HU-040.3, #258);</item>
+/// <c>db/scripts/23_rol_requiere_alta_manual.sql</c>;</item>
 /// <item>cualquier otra ausencia: <c>esquema incompleto: falta Tabla.columna</c> (las primeras, sin datos de conexión).</item>
 /// </list>
 /// La sonda tiene un tiempo máximo propio (<see cref="TiempoMaximo"/>). Las descripciones no incluyen la cadena ni el servidor.
@@ -65,16 +63,16 @@ public sealed class clsBaseDatosHealthCheck(
     public const string DescripcionNoDisponible = "La base de datos de Cotifly no está disponible.";
     public const string DescripcionEsquemaIncompleto = "esquema incompleto: falta 0002";
 
-    /// <summary>La base tiene el esquema anterior (<c>Cotizaciones</c>): falta la reestructuración de HU-021.</summary>
+    /// <summary>La base tiene el esquema anterior (<c>Cotizaciones</c>): falta la reestructuración del 0009.</summary>
     public const string DescripcionEsquemaSin0009 = "esquema incompleto: falta 0009";
 
     /// <summary>Está el 0009, pero no el 0010 (nombres de municipio, id de la solicitud de Nexo y nombre del conexo).</summary>
     public const string DescripcionEsquemaSin0010 = "esquema incompleto: falta 0010";
 
-    /// <summary>HU-023.3 (#158): están el 0009 y el 0010, pero no las columnas del cubicador de <c>db/scripts/02_alter_cubicador.sql</c>.</summary>
+    /// <summary>Están el 0009 y el 0010, pero no las columnas del cubicador de <c>db/scripts/02_alter_cubicador.sql</c>.</summary>
     public const string DescripcionEsquemaSin02 = "esquema incompleto: falta 02";
 
-    /// <summary>Columnas que agrega <c>db/scripts/02_alter_cubicador.sql</c> (HU-023.3).</summary>
+    /// <summary>Columnas que agrega <c>db/scripts/02_alter_cubicador.sql</c>.</summary>
     public static readonly IReadOnlySet<string> Columnas02 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "CotizacionMercancias.codigoMercancia",
@@ -87,20 +85,20 @@ public sealed class clsBaseDatosHealthCheck(
         "CotizacionLineasSolicitud.condicionada",
     };
 
-    /// <summary>HU-014 (#188): están el 0010 y el 02, pero no las columnas de <c>db/scripts/03_orden_vehiculo_y_conexo_catalogo.sql</c>.</summary>
+    /// <summary>Están el 0010 y el 02, pero no las columnas de <c>db/scripts/03_orden_vehiculo_y_conexo_catalogo.sql</c>.</summary>
     public const string DescripcionEsquemaSin03 = "esquema incompleto: falta 03";
 
-    /// <summary>Columnas que agrega <c>db/scripts/03_orden_vehiculo_y_conexo_catalogo.sql</c> (HU-023.3; las mapea el backend desde #188).</summary>
+    /// <summary>Columnas que agrega <c>db/scripts/03_orden_vehiculo_y_conexo_catalogo.sql</c>.</summary>
     public static readonly IReadOnlySet<string> Columnas03 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "CotizacionVehiculosLineaSolicitud.ordenVehiculo",
         "CotizacionServiciosConexos.idServicioConexoCatalogo",
     };
 
-    /// <summary>HU-023.5 (#160): están el 0010, el 02 y el 03, pero no las columnas de la cubicación en segundo plano del <c>04</c>.</summary>
+    /// <summary>Están el 0010, el 02 y el 03, pero no las columnas de la cubicación en segundo plano del <c>04</c>.</summary>
     public const string DescripcionEsquemaSin04 = "esquema incompleto: falta 04";
 
-    /// <summary>Columnas que agrega <c>db/scripts/pendientes/04_cubicacion_segundo_plano.sql</c> (pendiente de @scalderon-bs y del DBA) (HU-023.5).</summary>
+    /// <summary>Columnas que agrega <c>db/scripts/pendientes/04_cubicacion_segundo_plano.sql</c>.</summary>
     public static readonly IReadOnlySet<string> Columnas04 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "CotizacionLineasSolicitud.estadoCubicacion",
@@ -110,16 +108,16 @@ public sealed class clsBaseDatosHealthCheck(
         "CotizacionLineasSolicitud.avisosCubicacion",
     };
 
-    /// <summary>HU-014 (#188): está todo hasta el 04, pero no <c>categoriaServicioConexo</c> de <c>db/scripts/05_categoria_conexo.sql</c>.</summary>
+    /// <summary>Está todo hasta el 04, pero no <c>categoriaServicioConexo</c> de <c>db/scripts/05_categoria_conexo.sql</c>.</summary>
     public const string DescripcionEsquemaSin05 = "esquema incompleto: falta 05";
 
-    /// <summary>Columnas que agrega <c>db/scripts/05_categoria_conexo.sql</c> (#173; la mapea el backend desde #188).</summary>
+    /// <summary>Columnas que agrega <c>db/scripts/05_categoria_conexo.sql</c>.</summary>
     public static readonly IReadOnlySet<string> Columnas05 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "CotizacionServiciosConexos.categoriaServicioConexo",
     };
 
-    /// <summary>#191: está todo hasta el 05, pero no la tabla <c>CapturasIdempotentes</c> de <c>db/scripts/06_idempotencia_captura.sql</c>.</summary>
+    /// <summary>Está todo hasta el 05, pero no la tabla <c>CapturasIdempotentes</c> de <c>db/scripts/06_idempotencia_captura.sql</c>.</summary>
     public const string DescripcionEsquemaSin06 = "esquema incompleto: falta 06";
 
     /// <summary>
@@ -147,39 +145,39 @@ public sealed class clsBaseDatosHealthCheck(
         "CapturasIdempotentes.expiraAt",
     };
 
-    /// <summary>HU-018.1 (#155): está todo lo anterior, pero no la columna <c>scorePrioridad</c> de <c>db/scripts/09_score_prioridad.sql</c>.</summary>
+    /// <summary>Está todo lo anterior, pero no la columna <c>scorePrioridad</c> de <c>db/scripts/09_score_prioridad.sql</c>.</summary>
     public const string DescripcionEsquemaSin09 = "esquema incompleto: falta 09";
 
-    /// <summary>Columnas que agrega <c>db/scripts/09_score_prioridad.sql</c> (HU-018.1).</summary>
+    /// <summary>Columnas que agrega <c>db/scripts/09_score_prioridad.sql</c>.</summary>
     public static readonly IReadOnlySet<string> Columnas09 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "CotizacionesSolicitud.scorePrioridad",
     };
 
-    /// <summary>HU-028.1 (#183): está todo lo anterior, pero no las columnas del rechazo de <c>db/scripts/10_rechazo_linea.sql</c>.</summary>
+    /// <summary>Está todo lo anterior, pero no las columnas del rechazo de <c>db/scripts/10_rechazo_linea.sql</c>.</summary>
     public const string DescripcionEsquemaSin10 = "esquema incompleto: falta 10";
 
-    /// <summary>Columnas que agrega <c>db/scripts/10_rechazo_linea.sql</c> (HU-028.2, #182; las mapea el backend desde #183).</summary>
+    /// <summary>Columnas que agrega <c>db/scripts/10_rechazo_linea.sql</c>.</summary>
     public static readonly IReadOnlySet<string> Columnas10 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "CotizacionVehiculosLineaSolicitud.motivoRechazo",
         "CotizacionVehiculosLineaSolicitud.rechazadaAt",
     };
 
-    /// <summary>HU-030.1 (#184): está todo lo anterior, pero no la columna <c>pesoConTaraKg</c> de <c>db/scripts/11_peso_con_tara.sql</c>.</summary>
+    /// <summary>Está todo lo anterior, pero no la columna <c>pesoConTaraKg</c> de <c>db/scripts/11_peso_con_tara.sql</c>.</summary>
     public const string DescripcionEsquemaSin11 = "esquema incompleto: falta 11";
 
-    /// <summary>Columnas que agrega <c>db/scripts/11_peso_con_tara.sql</c> (HU-030.1).</summary>
+    /// <summary>Columnas que agrega <c>db/scripts/11_peso_con_tara.sql</c>.</summary>
     public static readonly IReadOnlySet<string> Columnas11 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "CotizacionLineasSolicitud.pesoConTaraKg",
     };
 
-    /// <summary>HU-032 (#197): está todo lo anterior, pero no las columnas del vehículo elegido de <c>db/scripts/12_vehiculo_elegido.sql</c>.</summary>
+    /// <summary>Está todo lo anterior, pero no las columnas del vehículo elegido de <c>db/scripts/12_vehiculo_elegido.sql</c>.</summary>
     public const string DescripcionEsquemaSin12 = "esquema incompleto: falta 12";
 
     /// <summary>
-    /// Columnas que agrega <c>db/scripts/12_vehiculo_elegido.sql</c> (HU-032). El mismo script (en la misma transacción) deja
+    /// Columnas que agrega <c>db/scripts/12_vehiculo_elegido.sql</c>. El mismo script (en la misma transacción) deja
     /// <c>largoCm</c>, <c>anchoCm</c> y <c>altoCm</c> de la mercancía en NULL: con las columnas, también está eso.
     /// </summary>
     public static readonly IReadOnlySet<string> Columnas12 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -188,10 +186,10 @@ public sealed class clsBaseDatosHealthCheck(
         "CotizacionLineasSolicitud.carroceriaElegida",
     };
 
-    /// <summary>HU-033 (#199): está todo lo anterior, pero no las columnas de <c>db/scripts/13_correo_mailsender.sql</c>.</summary>
+    /// <summary>Está todo lo anterior, pero no las columnas de <c>db/scripts/13_correo_mailsender.sql</c>.</summary>
     public const string DescripcionEsquemaSin13 = "esquema incompleto: falta 13";
 
-    /// <summary>Columnas que agrega <c>db/scripts/13_correo_mailsender.sql</c> (HU-033, #199).</summary>
+    /// <summary>Columnas que agrega <c>db/scripts/13_correo_mailsender.sql</c>.</summary>
     public static readonly IReadOnlySet<string> Columnas13 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "Correos.idMailSender",
@@ -208,29 +206,29 @@ public sealed class clsBaseDatosHealthCheck(
         "CotizacionesSolicitud.intentosSincronizacionResultado",
     };
 
-    /// <summary>HU-036 (#205): está todo lo anterior, pero no las columnas de <c>db/scripts/14_cotizacion_finalizada.sql</c>.</summary>
+    /// <summary>Está todo lo anterior, pero no las columnas de <c>db/scripts/14_cotizacion_finalizada.sql</c>.</summary>
     public const string DescripcionEsquemaSin14 = "esquema incompleto: falta 14";
 
-    /// <summary>Columnas que agrega <c>db/scripts/14_cotizacion_finalizada.sql</c> (HU-036, #205).</summary>
+    /// <summary>Columnas que agrega <c>db/scripts/14_cotizacion_finalizada.sql</c>.</summary>
     public static readonly IReadOnlySet<string> Columnas14 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "CotizacionesSolicitud.finalizadaAt",
         "CotizacionesSolicitud.finalizadaPor",
     };
 
-    /// <summary>HU-040.1 (#229): está todo lo anterior, pero no <c>TokensRefresco.rolSesion</c> de <c>db/scripts/16_multiples_roles_activos.sql</c>.</summary>
+    /// <summary>Está todo lo anterior, pero no <c>TokensRefresco.rolSesion</c> de <c>db/scripts/16_multiples_roles_activos.sql</c>.</summary>
     public const string DescripcionEsquemaSin16 = "esquema incompleto: falta 16";
 
-    /// <summary>Columnas que agrega <c>db/scripts/16_multiples_roles_activos.sql</c> (HU-040.1, #229).</summary>
+    /// <summary>Columnas que agrega <c>db/scripts/16_multiples_roles_activos.sql</c>.</summary>
     public static readonly IReadOnlySet<string> Columnas16 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "TokensRefresco.rolSesion",
     };
 
-    /// <summary>HU-042.2 (#243): está todo lo anterior, pero no las tablas de la copia local del margen de SAP de <c>db/scripts/17</c>.</summary>
+    /// <summary>Está todo lo anterior, pero no las tablas de la copia local del margen de SAP de <c>db/scripts/17</c>.</summary>
     public const string DescripcionEsquemaSin17 = "esquema incompleto: falta 17";
 
-    /// <summary>Columnas de las dos tablas que crea <c>db/scripts/17_sap_margen_sincronizacion.sql</c> (HU-042.1, #242).</summary>
+    /// <summary>Columnas de las dos tablas que crea <c>db/scripts/17_sap_margen_sincronizacion.sql</c>.</summary>
     public static readonly IReadOnlySet<string> Columnas17 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "SapMargenCliente.id",
@@ -252,28 +250,28 @@ public sealed class clsBaseDatosHealthCheck(
         "SapMargenSyncLog.mensajeError",
     };
 
-    /// <summary>HU-042.4 (#247): está todo lo anterior, pero no <c>SapMapeoTrqType.lineaNegocioId</c> de <c>db/scripts/18</c>.</summary>
+    /// <summary>Está todo lo anterior, pero no <c>SapMapeoTrqType.lineaNegocioId</c> de <c>db/scripts/18</c>.</summary>
     public const string DescripcionEsquemaSin18 = "esquema incompleto: falta 18";
 
-    /// <summary>Columnas que agrega <c>db/scripts/18_sap_mapeo_fk_margenes_politica.sql</c> (HU-042.4, #247).</summary>
+    /// <summary>Columnas que agrega <c>db/scripts/18_sap_mapeo_fk_margenes_politica.sql</c>.</summary>
     public static readonly IReadOnlySet<string> Columnas18 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "SapMapeoTrqType.lineaNegocioId",
     };
 
-    /// <summary>#261 punto 4: está todo lo anterior, pero no <c>precioVenta</c> de <c>db/scripts/19_precio_venta_conexos.sql</c> (HU-043.1, #245).</summary>
+    /// <summary>Está todo lo anterior, pero no <c>precioVenta</c> de <c>db/scripts/19_precio_venta_conexos.sql</c>.</summary>
     public const string DescripcionEsquemaSin19 = "esquema incompleto: falta 19";
 
-    /// <summary>Columnas que agrega <c>db/scripts/19_precio_venta_conexos.sql</c> (HU-043.1, #245).</summary>
+    /// <summary>Columnas que agrega <c>db/scripts/19_precio_venta_conexos.sql</c>.</summary>
     public static readonly IReadOnlySet<string> Columnas19 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "CotizacionServiciosConexos.precioVenta",
     };
 
-    /// <summary>HU-045.2 (#264): está todo lo anterior, pero no lo de <c>db/scripts/20_seguro_mercancia.sql</c> (HU-045.1, #263).</summary>
+    /// <summary>Está todo lo anterior, pero no lo de <c>db/scripts/20_seguro_mercancia.sql</c>.</summary>
     public const string DescripcionEsquemaSin20 = "esquema incompleto: falta 20";
 
-    /// <summary>Columnas que agrega <c>db/scripts/20_seguro_mercancia.sql</c> (HU-045.1, #263): la tabla de la tasa y el seguro de la ruta.</summary>
+    /// <summary>Columnas que agrega <c>db/scripts/20_seguro_mercancia.sql</c>: la tabla de la tasa y el seguro de la ruta.</summary>
     public static readonly IReadOnlySet<string> Columnas20 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "TarifasSeguro.id",
@@ -286,10 +284,10 @@ public sealed class clsBaseDatosHealthCheck(
         "CotizacionLineasSolicitud.costoSeguro",
     };
 
-    /// <summary>HU-046.3 (#269): está todo lo anterior, pero no lo de <c>db/scripts/21_politica_seguros.sql</c> (HU-046.2, #268).</summary>
+    /// <summary>Está todo lo anterior, pero no lo de <c>db/scripts/21_politica_seguros.sql</c>.</summary>
     public const string DescripcionEsquemaSin21 = "esquema incompleto: falta 21";
 
-    /// <summary>Columnas que agrega <c>db/scripts/21_politica_seguros.sql</c> (HU-046.2, #268): las 4 tablas de la política y el código del conexo.</summary>
+    /// <summary>Columnas que agrega <c>db/scripts/21_politica_seguros.sql</c>: las 4 tablas de la política y el código del conexo.</summary>
     public static readonly IReadOnlySet<string> Columnas21 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "PoliticaSeguroTramos.id",
@@ -316,19 +314,19 @@ public sealed class clsBaseDatosHealthCheck(
         "CotizacionServiciosConexos.codigoServicio",
     };
 
-    /// <summary>HU-044.7 (#290): está todo lo anterior, pero no <c>CotizacionArchivosLicitacion.origenLectura</c> de <c>db/scripts/22</c>.</summary>
+    /// <summary>Está todo lo anterior, pero no <c>CotizacionArchivosLicitacion.origenLectura</c> de <c>db/scripts/22</c>.</summary>
     public const string DescripcionEsquemaSin22 = "esquema incompleto: falta 22";
 
-    /// <summary>Columna que agrega <c>db/scripts/22_origen_lectura_licitacion.sql</c> (HU-044.7, #290).</summary>
+    /// <summary>Columna que agrega <c>db/scripts/22_origen_lectura_licitacion.sql</c>.</summary>
     public static readonly IReadOnlySet<string> Columnas22 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "CotizacionArchivosLicitacion.origenLectura",
     };
 
-    /// <summary>HU-040.3 (#258): está todo lo anterior, pero no <c>Roles.requiereAltaManual</c> de <c>db/scripts/23</c>.</summary>
+    /// <summary>Está todo lo anterior, pero no <c>Roles.requiereAltaManual</c> de <c>db/scripts/23</c>.</summary>
     public const string DescripcionEsquemaSin23 = "esquema incompleto: falta 23";
 
-    /// <summary>Columna que agrega <c>db/scripts/23_rol_requiere_alta_manual.sql</c> (HU-040.3, #258; el login la lee para no auto-otorgar los roles sensibles).</summary>
+    /// <summary>Columna que agrega <c>db/scripts/23_rol_requiere_alta_manual.sql</c> (el login la lee para no auto-otorgar los roles sensibles).</summary>
     public static readonly IReadOnlySet<string> Columnas23 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "Roles.requiereAltaManual",
@@ -340,25 +338,25 @@ public sealed class clsBaseDatosHealthCheck(
     public const string DescripcionDisponible = "La base de datos de Cotifly responde.";
 
     /// <summary>
-    /// HU-023 (#176): sana, con un aviso informativo: falta <c>db/scripts/07_motivo_busqueda_agotada.sql</c> (el motivo
+    /// Sana, con un aviso informativo: falta <c>db/scripts/07_motivo_busqueda_agotada.sql</c> (el motivo
     /// <c>BUSQUEDA_AGOTADA</c> se guarda en NULL y queda como advertencia de la ruta).
     /// </summary>
     public const string DescripcionSin07 =
         "La base de datos de Cotifly responde. Aviso: falta el script 07 (BUSQUEDA_AGOTADA se guarda en NULL con un aviso en la ruta).";
 
     /// <summary>
-    /// HU-023 (#176, auditoría A2): sana, con un aviso: el login no puede leer la definición del CHECK del motivo (le falta
-    /// <c>VIEW DEFINITION</c>), así que no se sabe si el 07 está aplicado. Mientras tanto se degrada como sin el 07.
+    /// Sana, con un aviso: el login no puede leer la definición del CHECK del motivo (le falta
+    /// <c>VIEW DEFINITION</c>), así que no se sabe si el 07 está aplicado. Se degrada como sin el 07.
     /// </summary>
     public const string DescripcionSin07NoVerificable =
         "La base de datos de Cotifly responde. Aviso: no se puede verificar el script 07 (falta VIEW DEFINITION para el login de la API); "
         + "BUSQUEDA_AGOTADA se guarda en NULL con un aviso en la ruta. Otorgue VIEW DEFINITION o configure BaseDatos__MotivoBusquedaAgotada.";
 
-    /// <summary>HU-023 (#176): sana; <c>BaseDatos:MotivoBusquedaAgotada=deshabilitado</c> (BUSQUEDA_AGOTADA se guarda en NULL a propósito).</summary>
+    /// <summary>Sana; <c>BaseDatos:MotivoBusquedaAgotada=deshabilitado</c> (BUSQUEDA_AGOTADA se guarda en NULL a propósito).</summary>
     public const string DescripcionMotivoDeshabilitado =
         "La base de datos de Cotifly responde. Aviso: BUSQUEDA_AGOTADA deshabilitado por configuración (BaseDatos__MotivoBusquedaAgotada); se guarda en NULL con un aviso en la ruta.";
 
-    /// <summary>HU-023 (#176): sana, pero <c>BaseDatos:MotivoBusquedaAgotada=habilitado</c> y la base no tiene el 07: guardar ese motivo fallará.</summary>
+    /// <summary>Sana, pero <c>BaseDatos:MotivoBusquedaAgotada=habilitado</c> y la base no tiene el 07: guardar ese motivo fallará.</summary>
     public const string DescripcionMotivoHabilitadoSin07 =
         "La base de datos de Cotifly responde. Aviso: BaseDatos__MotivoBusquedaAgotada=habilitado pero falta el script 07: guardar una ruta con BUSQUEDA_AGOTADA fallará.";
 
@@ -371,7 +369,7 @@ public sealed class clsBaseDatosHealthCheck(
     /// </summary>
     public const string CheckEstadoEnvio = "CotizacionesSolicitud.ck_cotizaciones_estadoEnvio";
 
-    /// <summary>Columnas (y el <c>CHECK</c> de <c>estadoEnvio</c>) que agrega el 0010 (borrador pendiente de aprobación).</summary>
+    /// <summary>Columnas (y el <c>CHECK</c> de <c>estadoEnvio</c>) que agrega el 0010.</summary>
     public static readonly IReadOnlySet<string> Columnas0010 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         CheckEstadoEnvio,
@@ -410,7 +408,7 @@ public sealed class clsBaseDatosHealthCheck(
                 return clasificado;
             }
 
-            // HU-023 (#176): el 07 (BUSQUEDA_AGOTADA en el CHECK del motivo) no es obligatorio: sin él, el motivo se guarda en NULL con
+            // El 07 (BUSQUEDA_AGOTADA en el CHECK del motivo) no es obligatorio: sin él, el motivo se guarda en NULL con
             // un aviso. Solo se informa en la descripción; la sonda sigue sana. Con "deshabilitado" no se consulta.
             var modo = opcionesBaseDatos.Value.MotivoBusquedaAgotadaNormalizado;
             EstadoScript07? estado = modo == clsOpcionesBaseDatos.ModoDeshabilitado
@@ -430,7 +428,7 @@ public sealed class clsBaseDatosHealthCheck(
     }
 
     /// <summary>
-    /// HU-023 (#176): la sonda sana con el aviso del script 07 según <c>BaseDatos:MotivoBusquedaAgotada</c> (<paramref name="modo"/>,
+    /// La sonda sana con el aviso del script 07 según <c>BaseDatos:MotivoBusquedaAgotada</c> (<paramref name="modo"/>,
     /// normalizado) y lo que dijo la base (<paramref name="estado"/>; <c>null</c> si no se consultó).
     /// </summary>
     public static HealthCheckResult ConAvisoScript07(HealthCheckResult sana, string modo, EstadoScript07? estado) => modo switch
@@ -454,7 +452,7 @@ public sealed class clsBaseDatosHealthCheck(
             return HealthCheckResult.Healthy(DescripcionDisponible);
         }
 
-        // HU-040.1 (#229): TokensRefresco.rolSesion es del 16, no del 0002.
+        // TokensRefresco.rolSesion es del 16, no del 0002.
         if (faltantes.Any(f => (f.StartsWith("TokensRefresco.", StringComparison.OrdinalIgnoreCase) && !Columnas16.Contains(f))
                                || string.Equals(f, "Sesiones.estadoAgente", StringComparison.OrdinalIgnoreCase)))
         {

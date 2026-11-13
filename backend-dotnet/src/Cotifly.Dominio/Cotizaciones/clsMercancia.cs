@@ -3,9 +3,9 @@ using Cotifly.Dominio.Comun;
 namespace Cotifly.Dominio.Cotizaciones;
 
 /// <summary>
-/// Mercancía de una ruta (<c>dbo_cotifly.CotizacionMercancias</c>, ex <c>CotizacionPosiciones</c>; script 0009, HU-021, ADR-019): lo que
+/// Mercancía de una ruta (<c>dbo_cotifly.CotizacionMercancias</c>, ex <c>CotizacionPosiciones</c>; script 0009, ADR-019): lo que
 /// el comercial declara que va a mandar en la ruta, en su orden. Cuelga solo de la ruta (el reparto por camión lo guarda el cubicador).
-/// <see cref="CodigoMercancia"/> es el código estable del catálogo del cubicador (HU-023.3, #158; script <c>02</c>: reemplaza a
+/// <see cref="CodigoMercancia"/> es el código estable del catálogo del cubicador (script <c>02</c>, en lugar de
 /// <c>idTipoMercancia</c>): obligatorio en las mercancías nuevas (<see cref="Crear"/> y la captura lo exige), vacío en las filas
 /// anteriores al <c>02</c> (si hay que recalcular sus camiones, el comercial vuelve a escoger la mercancía).
 /// <see cref="CreatedAt"/> lo asigna la persistencia.
@@ -35,7 +35,7 @@ public sealed class clsMercancia
     public int Cantidad { get; private set; }
 
     /// <summary>
-    /// Medidas en cm. HU-032 (#197, script <c>db/scripts/12</c>): las tres son <c>null</c> en una mercancía no cubicable (sin medidas ni tipo
+    /// Medidas en cm (script <c>db/scripts/12</c>): las tres son <c>null</c> en una mercancía no cubicable (sin medidas ni tipo
     /// de mercancía, <see cref="clsPosicionCarga.EsNoCubicable"/>); si no, las tres mayores que 0.
     /// </summary>
     public decimal? LargoCm { get; private set; }
@@ -61,7 +61,7 @@ public sealed class clsMercancia
     }
 
     /// <summary>
-    /// Mercancías de una captura ya validada (formulario y licitación; la captura nueva exige el código, HU-023.3) o de una copia de
+    /// Mercancías de una captura ya validada (formulario y licitación; la captura nueva exige el código) o de una copia de
     /// rutas guardadas (re-solicitud, <c>-vN</c>), con su <see cref="clsPosicionCarga.CodigoMercancia"/> si lo trae. La forma ya la
     /// validó <see cref="clsSolicitudCosteo.Validar"/> o <see cref="clsLineaSolicitudCosteo.Errores"/>.
     /// </summary>
@@ -72,7 +72,7 @@ public sealed class clsMercancia
     }
 
     /// <summary>
-    /// HU-028 (#186): la mercancía toma el contenido editado de <paramref name="p"/> en el mismo orden (ya validado por la captura), con su
+    /// La mercancía toma el contenido editado de <paramref name="p"/> en el mismo orden (ya validado por la captura), con su
     /// <see cref="clsPosicionCarga.CodigoMercancia"/>. Se actualiza en su lugar para no repetir el orden de la ruta al guardar.
     /// </summary>
     internal void Actualizar(int orden, clsPosicionCarga p)
@@ -90,11 +90,11 @@ public sealed class clsMercancia
     }
 
     /// <summary>La mercancía como posición de la captura (para reenviarla a Nexo o pedir la recomendación del cubicador).</summary>
-    /// <remarks>HU-032 (#197): una mercancía sin medidas vuelve con 0 en las tres (como llega del contrato).</remarks>
+    /// <remarks>Una mercancía sin medidas vuelve con 0 en las tres (como llega del contrato).</remarks>
     public clsPosicionCarga APosicion() =>
         new(NombreMercancia, Cantidad, LargoCm ?? 0m, AnchoCm ?? 0m, AltoCm ?? 0m, PesoKg, CodigoMercancia: CodigoMercancia);
 
-    /// <summary>HU-032 (#197): la medida que se guarda: <c>null</c> si la mercancía no trae ninguna (<see cref="clsPosicionCarga.SinMedidas"/>).</summary>
+    /// <summary>La medida que se guarda: <c>null</c> si la mercancía no trae ninguna (<see cref="clsPosicionCarga.SinMedidas"/>).</summary>
     private static decimal? Medida(clsPosicionCarga p, decimal valor) => p.SinMedidas ? null : valor;
 
     private static clsMercancia Nueva(Guid lineaSolicitudId, int orden, clsPosicionCarga p)

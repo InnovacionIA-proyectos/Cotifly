@@ -9,14 +9,14 @@ using static Cotifly.Infraestructura.Comun.Persistence.clsCotiflyDbContext;
 namespace Cotifly.Infraestructura.Comun.Persistence.Configurations;
 
 /// <summary>
-/// <c>dbo_cotifly.CotizacionesSolicitud</c> (ex <c>Cotizaciones</c>; scripts 0001, 0004, 0006, 0007, 0009 y 0010; HU-021, ADR-019): la
+/// <c>dbo_cotifly.CotizacionesSolicitud</c> (ex <c>Cotizaciones</c>; scripts 0001, 0004, 0006, 0007, 0009 y 0010; ADR-019): la
 /// cabecera de la solicitud, raíz del agregado. Las restricciones conservan los nombres <c>cotizaciones</c> (los deja así el 0009 y los
 /// repite <c>db/scripts/01_crear_esquema.sql</c>).
 /// </summary>
 internal sealed class clsCotizacionSolicitudConfiguracion : IEntityTypeConfiguration<clsCotizacionSolicitud>
 {
     /// <summary>
-    /// Los estados del CHECK de <c>estadoCosteo</c> de las tres tablas (cabecera, ruta y camión). HU-028.1 (#183):
+    /// Los estados del CHECK de <c>estadoCosteo</c> de las tres tablas (cabecera, ruta y camión).
     /// <c>db/scripts/10_rechazo_linea.sql</c> agrega <c>rechazada</c> en las tres.
     /// </summary>
     public const string EstadosCosteo =
@@ -32,11 +32,11 @@ internal sealed class clsCotizacionSolicitudConfiguracion : IEntityTypeConfigura
             t.HasCheckConstraint("ck_cotizaciones_textosCotizacion_json", "textosCotizacion IS NULL OR ISJSON(textosCotizacion) = 1");
             t.HasCheckConstraint("ck_cotizaciones_versionNegocio", "versionNegocio >= 0");
             t.HasCheckConstraint("ck_cotizaciones_estadoCosteo", $"estadoCosteo IS NULL OR estadoCosteo IN {EstadosCosteo}");
-            // HU-033 (#199): db/scripts/13_correo_mailsender.sql.
+            // db/scripts/13_correo_mailsender.sql.
             t.HasCheckConstraint("ck_cotizaciones_sincronizacionResultadoNexo",
                 "sincronizacionResultadoNexo IS NULL OR sincronizacionResultadoNexo IN ('pendiente', 'sincronizado', 'no_sincronizable')");
             t.HasCheckConstraint("ck_cotizaciones_intentosSincronizacionResultado", "intentosSincronizacionResultado >= 0");
-            // HU-036 (#205): db/scripts/14_cotizacion_finalizada.sql (las dos NULL o las dos con valor).
+            // db/scripts/14_cotizacion_finalizada.sql (las dos NULL o las dos con valor).
             t.HasCheckConstraint("ck_cotizaciones_finalizada",
                 "(finalizadaAt IS NULL AND finalizadaPor IS NULL) OR (finalizadaAt IS NOT NULL AND finalizadaPor IS NOT NULL)");
         });
@@ -76,9 +76,9 @@ internal sealed class clsCotizacionSolicitudConfiguracion : IEntityTypeConfigura
             .HasConversion(new clsConvertidorCodigoEnum<EstadoCosteo>());
         builder.Property(c => c.CotizacionNexoId).Columna("cotizacionNexoId", "nvarchar(64)").HasMaxLength(clsCotizacionSolicitud.LargoMaximoIdNexo);
         builder.Property(c => c.SolicitudNexoId).Columna("solicitudNexoId", "nvarchar(64)").HasMaxLength(clsCotizacionSolicitud.LargoMaximoIdNexo);
-        // HU-018.1 (#155): db/scripts/09_score_prioridad.sql (sin él, /health/ready dice "falta 09").
+        // db/scripts/09_score_prioridad.sql (sin él, /health/ready dice "falta 09").
         builder.Property(c => c.ScorePrioridad).Columna("scorePrioridad", "decimal(9,4)");
-        // HU-033 (#199): resultado diferido a Nexo, db/scripts/13_correo_mailsender.sql (sin él, /health/ready dice "falta 13").
+        // Resultado diferido a Nexo, db/scripts/13_correo_mailsender.sql (sin él, /health/ready dice "falta 13").
         builder.Property(c => c.SincronizacionResultado).Columna("sincronizacionResultadoNexo", "nvarchar(20)").HasMaxLength(20)
             .HasConversion(new clsConvertidorCodigoEnum<SincronizacionResultadoNexo>());
         builder.Property(c => c.ComentarioResultadoPendiente).Columna("comentarioResultadoPendiente", "nvarchar(500)")
@@ -87,7 +87,7 @@ internal sealed class clsCotizacionSolicitudConfiguracion : IEntityTypeConfigura
         builder.Property(c => c.ErrorSincronizacionResultado).Columna("errorSincronizacionResultado", "nvarchar(1000)")
             .HasMaxLength(clsCotizacionSolicitud.LargoMaximoErrorSincronizacion);
         builder.Property(c => c.IntentosSincronizacionResultado).Columna("intentosSincronizacionResultado", "int");
-        // HU-036 (#205, #206): cotización finalizada, db/scripts/14_cotizacion_finalizada.sql (sin él, /health/ready dice "falta 14").
+        // Cotización finalizada, db/scripts/14_cotizacion_finalizada.sql (sin él, /health/ready dice "falta 14").
         builder.Property(c => c.FinalizadaAt).Fecha("finalizadaAt");
         builder.Property(c => c.FinalizadaPor).Columna("finalizadaPor", "uniqueidentifier");
         builder.Property(c => c.MotivoEstadoCosteo).Columna("motivoEstadoCosteo", "nvarchar(1000)").HasMaxLength(clsCotizacionSolicitud.LargoMaximoMotivoCosteo);
@@ -100,7 +100,7 @@ internal sealed class clsCotizacionSolicitudConfiguracion : IEntityTypeConfigura
         builder.HasIndex(c => c.Folio).IsUnique().HasDatabaseName("uq_cotizaciones_folio");
         // Script 0002: (usuarioId, createdAt DESC) para "mis cotizaciones" (más recientes primero).
         builder.HasIndex(c => new { c.UsuarioId, c.CreatedAt }).IsDescending(false, true).HasDatabaseName("ix_cotizaciones_usuarioId_createdAt");
-        // Script 0004: agenda del polling de Nexo (HU-005.6).
+        // Script 0004: agenda del polling de Nexo.
         builder.HasIndex(c => c.CosteoSiguienteConsultaAt).HasDatabaseName("ix_cotizaciones_costeoSiguienteConsultaAt")
             .HasFilter("[costeoSiguienteConsultaAt] IS NOT NULL");
 
@@ -123,7 +123,7 @@ internal sealed class clsCotizacionSolicitudConfiguracion : IEntityTypeConfigura
     }
 }
 
-/// <summary><c>dbo_cotifly.CotizacionLineasSolicitud</c>: la ruta (scripts 0005, 0007, 0008, 0009 y 0010; HU-021, ADR-019).</summary>
+/// <summary><c>dbo_cotifly.CotizacionLineasSolicitud</c>: la ruta (scripts 0005, 0007, 0008, 0009 y 0010; ADR-019).</summary>
 internal sealed class clsLineaSolicitudConfiguracion : IEntityTypeConfiguration<clsLineaSolicitud>
 {
     public void Configure(EntityTypeBuilder<clsLineaSolicitud> builder)
@@ -145,22 +145,22 @@ internal sealed class clsLineaSolicitudConfiguracion : IEntityTypeConfiguration<
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_horas",
                 "(horasCargue IS NULL OR (horasCargue >= 0 AND horasCargue <= 240)) AND (horasDescargue IS NULL OR (horasDescargue >= 0 AND horasDescargue <= 240))");
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_origenMargen", "origenMargen IS NULL OR origenMargen IN ('sap_tm', 'politica_linea', 'negociado')");
-            // HU-023.3 (#158): script 02_alter_cubicador.sql.
+            // Script 02_alter_cubicador.sql.
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_resultadoCubicacion",
                 "resultadoCubicacion IS NULL OR resultadoCubicacion IN ('ASIGNADO', 'SIN_SELECCION_AUTOMATICA')");
-            // HU-023 (#176): db/scripts/07 agrega BUSQUEDA_AGOTADA y exige el resultado con ISNULL (sin el 07, el 02 admite 4 motivos y el
+            // db/scripts/07 agrega BUSQUEDA_AGOTADA y exige el resultado con ISNULL (sin el 07, el 02 admite 4 motivos y el
             // backend guarda BUSQUEDA_AGOTADA en NULL con un aviso: clsMotivoSinSeleccionInterceptor).
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_motivoSinSeleccion",
                 "motivoSinSeleccion IS NULL OR (motivoSinSeleccion IN ('EXTRADIMENSIONADO', 'SIN_CANDIDATOS_DIMENSIONALES', 'SUPERA_K_MAX', 'SIN_CARROCERIA_COMPATIBLE', "
                 + "'BUSQUEDA_AGOTADA') AND ISNULL(resultadoCubicacion, '') = 'SIN_SELECCION_AUTOMATICA')");
-            // HU-023.5 (#160): db/scripts/pendientes/04 (cubicación de la licitación en segundo plano).
+            // db/scripts/pendientes/04 (cubicación de la licitación en segundo plano).
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_estadoCubicacion",
                 "estadoCubicacion IS NULL OR estadoCubicacion IN ('pendiente', 'cubicada', 'fallida')");
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_cubicacionIntentos", "cubicacionIntentos >= 0");
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_avisosCubicacion", "avisosCubicacion IS NULL OR ISJSON(avisosCubicacion) = 1");
-            // HU-030.1 (#184): db/scripts/11_peso_con_tara.sql.
+            // db/scripts/11_peso_con_tara.sql.
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_pesoConTaraKg", "pesoConTaraKg IS NULL OR pesoConTaraKg > 0");
-            // HU-045.2 (#264): db/scripts/20_seguro_mercancia.sql (HU-045.1, #263).
+            // db/scripts/20_seguro_mercancia.sql.
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_seguroMontos",
                 "(costoSeguro IS NULL OR costoSeguro >= 0) AND (tasaSeguroAplicada IS NULL OR (tasaSeguroAplicada > 0 AND tasaSeguroAplicada < 1)) "
                 + "AND (costoSeguro IS NULL OR tasaSeguroAplicada IS NOT NULL)");
@@ -174,12 +174,12 @@ internal sealed class clsLineaSolicitudConfiguracion : IEntityTypeConfiguration<
         builder.Property(l => l.Orden).Columna("orden", "int");
         builder.Property(l => l.RutaOrigenIndice).Columna("rutaOrigenIndice", "int");
         builder.Property(l => l.LineaNegocioId).Columna("lineaNegocioId", "int");
-        // HU-023.3 (#158): lo que respondió el cubicador para la ruta (script 02).
+        // Lo que respondió el cubicador para la ruta (script 02).
         builder.Property(l => l.IdRecomendacion).Columna("idRecomendacion", "uniqueidentifier");
         builder.Property(l => l.ResultadoCubicacion).Columna("resultadoCubicacion", "nvarchar(30)").HasMaxLength(30);
         builder.Property(l => l.MotivoSinSeleccion).Columna("motivoSinSeleccion", "nvarchar(40)").HasMaxLength(40);
         builder.Property(l => l.Condicionada).Columna("condicionada", "bit").HasDefaultValue(false);
-        // HU-023.5 (#160, db/scripts/pendientes/04): los avisos se guardan (JSON) y la cola de la cubicación en segundo plano.
+        // Los avisos se guardan (JSON) y la cola de la cubicación en segundo plano (db/scripts/pendientes/04).
         builder.Property(l => l.AvisosCubicacion).Columna("avisosCubicacion", "nvarchar(max)")
             .HasConversion(new clsConvertidorAvisosCubicacion());
         builder.Property(l => l.EstadoCubicacion).Columna("estadoCubicacion", "nvarchar(20)").HasMaxLength(20)
@@ -206,9 +206,9 @@ internal sealed class clsLineaSolicitudConfiguracion : IEntityTypeConfiguration<
         builder.Property(l => l.HorasDescargue).Columna("horasDescargue", "decimal(6,2)");
         builder.Property(l => l.PesoKg).Columna("pesoKg", "decimal(12,2)");
         builder.Property(l => l.ValorMercancia).Columna("valorMercancia", "decimal(18,2)");
-        // HU-030.1 (#184): db/scripts/11_peso_con_tara.sql (sin él, /health/ready dice "falta 11").
+        // db/scripts/11_peso_con_tara.sql (sin él, /health/ready dice "falta 11").
         builder.Property(l => l.PesoConTaraKg).Columna("pesoConTaraKg", "decimal(12,2)");
-        // HU-032 (#197): db/scripts/12_vehiculo_elegido.sql (sin él, /health/ready dice "falta 12").
+        // db/scripts/12_vehiculo_elegido.sql (sin él, /health/ready dice "falta 12").
         builder.Property(l => l.TipoVehiculoElegido).Columna("tipoVehiculoElegido", "nvarchar(100)").HasMaxLength(clsSolicitudCosteo.LargoCatalogo);
         builder.Property(l => l.CarroceriaElegida).Columna("carroceriaElegida", "nvarchar(100)").HasMaxLength(clsSolicitudCosteo.LargoCatalogo);
         builder.Property(l => l.ValorLevanteContenedor).Columna("valorLevanteContenedor", "decimal(18,2)");
@@ -224,7 +224,7 @@ internal sealed class clsLineaSolicitudConfiguracion : IEntityTypeConfiguration<
             .HasConversion(new clsConvertidorCodigoEnum<OrigenMargen>());
         builder.Property(l => l.MetodoCalculo).Columna("metodoCalculo", "nvarchar(20)").HasMaxLength(20);
         builder.Property(l => l.PrecioFinalLinea).Columna("precioFinalLinea", "decimal(18,2)");
-        // HU-045.2 (#264): db/scripts/20_seguro_mercancia.sql (sin él, /health/ready dice "falta 20").
+        // db/scripts/20_seguro_mercancia.sql (sin él, /health/ready dice "falta 20").
         builder.Property(l => l.IncluyeSeguro).Columna("incluyeSeguro", "bit").HasDefaultValue(false);
         builder.Property(l => l.TasaSeguroAplicada).Columna("tasaSeguroAplicada", "decimal(9,6)");
         builder.Property(l => l.CostoSeguro).Columna("costoSeguro", "decimal(18,2)");
@@ -234,7 +234,7 @@ internal sealed class clsLineaSolicitudConfiguracion : IEntityTypeConfiguration<
         builder.Property(l => l.UpdatedAt).Fecha("updatedAt");
 
         builder.HasIndex(l => new { l.CotizacionSolicitudId, l.Orden }).IsUnique().HasDatabaseName("uq_cotizacionLineasSolicitud_cotizacionId_orden");
-        // HU-023.5 (#160): la cola de la cubicación en segundo plano (solo las rutas pendientes).
+        // La cola de la cubicación en segundo plano (solo las rutas pendientes).
         builder.HasIndex(l => new { l.CubicacionDisponibleAt, l.CreatedAt }).HasDatabaseName("ix_cotizacionLineasSolicitud_cubicacionPendiente")
             .HasFilter("[estadoCubicacion] = N'pendiente'");
         builder.HasOne<clsMargenPolitica>().WithMany().HasForeignKey(l => l.LineaNegocioId)
@@ -257,7 +257,7 @@ internal sealed class clsLineaSolicitudConfiguracion : IEntityTypeConfiguration<
     }
 }
 
-/// <summary><c>dbo_cotifly.CotizacionVehiculosLineaSolicitud</c>: un camión por fila (script 0009, HU-021, ADR-019).</summary>
+/// <summary><c>dbo_cotifly.CotizacionVehiculosLineaSolicitud</c>: un camión por fila (script 0009, ADR-019).</summary>
 internal sealed class clsVehiculoLineaSolicitudConfiguracion : IEntityTypeConfiguration<clsVehiculoLineaSolicitud>
 {
     public void Configure(EntityTypeBuilder<clsVehiculoLineaSolicitud> builder)
@@ -269,13 +269,13 @@ internal sealed class clsVehiculoLineaSolicitudConfiguracion : IEntityTypeConfig
                 + "AND (costoLevanteContenedor IS NULL OR costoLevanteContenedor >= 0)");
             t.HasCheckConstraint("ck_cotizacionVehiculosLineaSolicitud_estadoCosteo",
                 $"estadoCosteo IS NULL OR estadoCosteo IN {clsCotizacionSolicitudConfiguracion.EstadosCosteo}");
-            // HU-023.3 (#158): script 02_alter_cubicador.sql.
+            // Script 02_alter_cubicador.sql.
             t.HasCheckConstraint("ck_cotizacionVehiculosLineaSolicitud_llenado",
                 "(volumenTotalM3 IS NULL OR volumenTotalM3 >= 0) AND (porcentajeLlenadoVolumen IS NULL OR (porcentajeLlenadoVolumen >= 0 AND porcentajeLlenadoVolumen <= 100)) "
                 + "AND (porcentajeLlenadoPeso IS NULL OR (porcentajeLlenadoPeso >= 0 AND porcentajeLlenadoPeso <= 100))");
-            // HU-014 (#188): db/scripts/03_orden_vehiculo_y_conexo_catalogo.sql.
+            // db/scripts/03_orden_vehiculo_y_conexo_catalogo.sql.
             t.HasCheckConstraint("ck_cotizacionVehiculosLineaSolicitud_ordenVehiculo", "ordenVehiculo IS NULL OR ordenVehiculo >= 1");
-            // HU-028.1 (#183): db/scripts/10_rechazo_linea.sql (motivo y fecha solo con el camión rechazado).
+            // db/scripts/10_rechazo_linea.sql (motivo y fecha solo con el camión rechazado).
             t.HasCheckConstraint("ck_cotizacionVehiculosLineaSolicitud_rechazo",
                 "ISNULL(estadoCosteo, N'') = N'rechazada' OR (motivoRechazo IS NULL AND rechazadaAt IS NULL)");
         });
@@ -299,11 +299,11 @@ internal sealed class clsVehiculoLineaSolicitudConfiguracion : IEntityTypeConfig
         builder.Property(v => v.CreatedAt).Fecha("createdAt");
         builder.Property(v => v.UpdatedAt).Fecha("updatedAt");
 
-        // HU-014 (#188, script 03): el orden del camión en su ruta (antes, un desfase de 1 ms en createdAt). NULL en filas viejas.
+        // El orden del camión en su ruta (script 03). NULL en filas viejas.
         builder.Property(v => v.OrdenVehiculo).Columna("ordenVehiculo", "int");
 
-        // HU-028.1 (#183): db/scripts/10_rechazo_linea.sql (sin él, /health/ready dice "falta 10"). El motivo de la Mesa de Costeo de Nexo
-        // (#320, hasta 500) y cuándo lo vio Cotifly.
+        // db/scripts/10_rechazo_linea.sql (sin él, /health/ready dice "falta 10"). El motivo de la Mesa de Costeo de Nexo
+        // (hasta 500) y cuándo lo vio Cotifly.
         builder.Property(v => v.MotivoRechazo).Columna("motivoRechazo", "nvarchar(500)").HasMaxLength(clsSituacionLineaNexo.LargoMaximoMotivoRechazo);
         builder.Property(v => v.RechazadaAt).Fecha("rechazadaAt");
         builder.Ignore(v => v.RechazoParaCopiar); // derivada: el rechazo para copiarlo a la -vN (no es una entidad)
@@ -316,7 +316,7 @@ internal sealed class clsVehiculoLineaSolicitudConfiguracion : IEntityTypeConfig
     }
 }
 
-/// <summary><c>dbo_cotifly.CotizacionMercancias</c> (ex <c>CotizacionPosiciones</c>; scripts 0004, 0005 y 0009; HU-021).</summary>
+/// <summary><c>dbo_cotifly.CotizacionMercancias</c> (ex <c>CotizacionPosiciones</c>; scripts 0004, 0005 y 0009).</summary>
 internal sealed class clsMercanciaConfiguracion : IEntityTypeConfiguration<clsMercancia>
 {
     public void Configure(EntityTypeBuilder<clsMercancia> builder)
@@ -324,7 +324,7 @@ internal sealed class clsMercanciaConfiguracion : IEntityTypeConfiguration<clsMe
         builder.ToTable("CotizacionMercancias", t =>
         {
             t.HasCheckConstraint("ck_cotizacionPosiciones_cantidad", "cantidad >= 1");
-            // HU-032 (#197): db/scripts/12 (una mercancía no cubicable va sin ninguna medida; si trae, las tres > 0).
+            // db/scripts/12 (una mercancía no cubicable va sin ninguna medida; si trae, las tres > 0).
             t.HasCheckConstraint("ck_cotizacionPosiciones_medidas",
                 "((largoCm IS NULL AND anchoCm IS NULL AND altoCm IS NULL) OR (largoCm IS NOT NULL AND anchoCm IS NOT NULL AND altoCm IS NOT NULL "
                 + "AND largoCm > 0 AND anchoCm > 0 AND altoCm > 0)) AND (pesoKg IS NULL OR pesoKg >= 0)");
@@ -334,7 +334,7 @@ internal sealed class clsMercanciaConfiguracion : IEntityTypeConfiguration<clsMe
         builder.Property(m => m.Id).Columna("id", "uniqueidentifier").ValueGeneratedNever();
         builder.Property(m => m.LineaSolicitudId).Columna("lineaSolicitudId", "uniqueidentifier");
         builder.Property(m => m.Orden).Columna("orden", "int");
-        // HU-023.3 (#158): script 02 (reemplaza a idTipoMercancia).
+        // Código del catálogo del cubicador (script 02).
         builder.Property(m => m.CodigoMercancia).Columna("codigoMercancia", "nvarchar(64)").HasMaxLength(clsPosicionCarga.LargoCodigoMercancia);
         builder.Property(m => m.NombreMercancia).Columna("nombreMercancia", "nvarchar(200)").HasMaxLength(clsPosicionCarga.LargoDescripcion);
         builder.Property(m => m.Cantidad).Columna("cantidad", "int");
@@ -348,12 +348,12 @@ internal sealed class clsMercanciaConfiguracion : IEntityTypeConfiguration<clsMe
     }
 }
 
-/// <summary><c>dbo_cotifly.CotizacionServiciosConexos</c>: los conexos de cada ruta (scripts 0009 y 0010; HU-021, ADR-019).</summary>
+/// <summary><c>dbo_cotifly.CotizacionServiciosConexos</c>: los conexos de cada ruta (scripts 0009 y 0010; ADR-019).</summary>
 internal sealed class clsServicioConexoRutaConfiguracion : IEntityTypeConfiguration<clsServicioConexoRuta>
 {
     public void Configure(EntityTypeBuilder<clsServicioConexoRuta> builder)
     {
-        // #261 punto 4: el script 19 (HU-043.1, #245) agrega "AND precioVenta >= 0" al CHECK, con el mismo nombre.
+        // El script 19 agrega "AND precioVenta >= 0" al CHECK, con el mismo nombre.
         builder.ToTable("CotizacionServiciosConexos", t =>
             t.HasCheckConstraint("ck_cotizacionServiciosConexos_montos", "precio >= 0 AND cantidad > 0 AND precioVenta >= 0"));
 
@@ -362,13 +362,13 @@ internal sealed class clsServicioConexoRutaConfiguracion : IEntityTypeConfigurat
         builder.Property(c => c.LineaSolicitudId).Columna("lineaSolicitudId", "uniqueidentifier");
         builder.Property(c => c.IdServicioConexo).Columna("idServicioConexo", "nvarchar(64)").HasMaxLength(clsServicioConexoRuta.LargoMaximoId).IsRequired();
         builder.Property(c => c.Nombre).Columna("nombreServicioConexo", "nvarchar(200)").HasMaxLength(clsServicioConexoRuta.LargoMaximoNombre);
-        // HU-014 (#188): id del catálogo de Nexo (script 03) y su categoría (script 05). NULL en las filas anteriores a #188.
+        // Id del catálogo de Nexo (script 03) y su categoría (script 05). NULL en las filas viejas.
         builder.Property(c => c.IdServicioConexoCatalogo).Columna("idServicioConexoCatalogo", "nvarchar(64)").HasMaxLength(clsServicioConexoRuta.LargoMaximoId);
         builder.Property(c => c.Categoria).Columna("categoriaServicioConexo", "nvarchar(20)").HasMaxLength(clsServicioConexoRuta.LargoMaximoCategoria);
-        // HU-046.3 (#269): el código del servicio en el catálogo de Nexo (script 21). NULL en las filas anteriores: el backend las completa.
+        // El código del servicio en el catálogo de Nexo (script 21). NULL en las filas viejas: el backend las completa.
         builder.Property(c => c.CodigoServicio).Columna("codigoServicio", "nvarchar(40)").HasMaxLength(clsServicioConexoRuta.LargoMaximoCodigoServicio);
         builder.Property(c => c.Precio).Columna("precio", "decimal(18,2)");
-        // precioVenta (script 19, NOT NULL sin DEFAULT): la venta unitaria del conexo, que se cotiza sin margen (HU-043.2, #251).
+        // precioVenta (script 19, NOT NULL sin DEFAULT): la venta unitaria del conexo, que se cotiza sin margen.
         builder.Property(c => c.PrecioVenta).Columna("precioVenta", "decimal(18,2)");
         builder.Property(c => c.Cantidad).Columna("cantidad", "decimal(10,2)");
         builder.Property(c => c.CreatedAt).Fecha("createdAt");
@@ -379,7 +379,7 @@ internal sealed class clsServicioConexoRutaConfiguracion : IEntityTypeConfigurat
     }
 }
 
-/// <summary><c>dbo_cotifly.CotizacionArchivosLicitacion</c> (script 0005 §3, HU-011.2/HU-011.3, ADR-017).</summary>
+/// <summary><c>dbo_cotifly.CotizacionArchivosLicitacion</c> (script 0005 §3, ADR-017).</summary>
 internal sealed class clsArchivoLicitacionConfiguracion : IEntityTypeConfiguration<clsArchivoLicitacion>
 {
     public void Configure(EntityTypeBuilder<clsArchivoLicitacion> builder)
@@ -388,7 +388,7 @@ internal sealed class clsArchivoLicitacionConfiguracion : IEntityTypeConfigurati
         {
             t.HasCheckConstraint(
                 "ck_cotizacionArchivosLicitacion_tamano", "tamanoBytes BETWEEN 1 AND 10485760 AND DATALENGTH(contenido) = tamanoBytes");
-            // HU-044.7 (#290): origenLectura solo admite los dos valores de clsOrigenLectura.
+            // origenLectura solo admite los dos valores de clsOrigenLectura.
             t.HasCheckConstraint(
                 "ck_cotizacionArchivosLicitacion_origenLectura", "origenLectura IN ('analizar_excel', 'leer_estructura')");
         });
@@ -401,7 +401,7 @@ internal sealed class clsArchivoLicitacionConfiguracion : IEntityTypeConfigurati
         builder.Property(a => a.Sha256).Columna("sha256", "nvarchar(64)").HasMaxLength(64).IsRequired();
         builder.Property(a => a.Hoja).Columna("hoja", "nvarchar(31)").HasMaxLength(clsArchivoLicitacion.LargoHoja).IsRequired();
         builder.Property(a => a.Contenido).Columna("contenido", "varbinary(max)").IsRequired();
-        // HU-044.7 (#290): cómo se leyó el Excel (analizar_excel por defecto; leer_estructura = lectura con IA de NEXO, se exporta sin tocar el original).
+        // Cómo se leyó el Excel (analizar_excel por defecto; leer_estructura = lectura con IA de NEXO, se exporta sin tocar el original).
         builder.Property(a => a.OrigenLectura).Columna("origenLectura", "nvarchar(20)").HasMaxLength(clsArchivoLicitacion.LargoOrigenLectura).IsRequired();
         builder.Property(a => a.CreatedAt).Fecha("createdAt");
 
@@ -436,8 +436,8 @@ internal sealed class clsCotizacionPdfHistorialConfiguracion : IEntityTypeConfig
 }
 
 /// <summary>
-/// <c>dbo_cotifly.TarifasSeguro</c> (HU-045.1 #263, script <c>db/scripts/20_seguro_mercancia.sql</c>): la tasa del seguro de la mercancía.
-/// HU-045.2 (#264) solo la lee (<c>clsTarifaSeguroRepository</c>).
+/// <c>dbo_cotifly.TarifasSeguro</c> (<c>db/scripts/20_seguro_mercancia.sql</c>): la tasa del seguro de la mercancía.
+/// Solo se lee (<c>clsTarifaSeguroRepository</c>).
 /// </summary>
 internal sealed class clsTarifaSeguroConfiguracion : IEntityTypeConfiguration<clsTarifaSeguro>
 {

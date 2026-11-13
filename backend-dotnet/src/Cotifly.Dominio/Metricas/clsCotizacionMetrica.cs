@@ -1,7 +1,7 @@
 namespace Cotifly.Dominio.Metricas;
 
 /// <summary>
-/// Una cotización vista por el tablero de métricas (HU-010.1, ADR-016 §2): una fila por <b>cadena de versiones</b>
+/// Una cotización vista por el tablero de métricas (ADR-016 §2): una fila por <b>cadena de versiones</b>
 /// <c>(usuarioId, folio base)</c>. Los valores (precio, costo, margen, moneda, costeo, ciudades, deadline, ajustes) son los de la
 /// versión vigente (la de mayor <c>version</c>); la fecha del periodo es la primera creación de la cadena y el resultado es el
 /// más reciente de toda la cadena.
@@ -22,7 +22,7 @@ public sealed record clsCotizacionMetrica
     public DateTimeOffset? CreatedAtVigente { get; init; }
 
     /// <summary>
-    /// HU-016.2 (#295): la versión vigente de la cadena está finalizada (<c>finalizadaAt</c> no nulo, script 14). Solo las finalizadas
+    /// La versión vigente de la cadena está finalizada (<c>finalizadaAt</c> no nulo, script 14). Solo las finalizadas
     /// entran en la comparación del margen contra la política (<see cref="clsCalculadoraMetricas.Indicadores"/>): mientras la cotización
     /// no se finaliza su margen aún puede cambiar y no debe pesar en la desviación. El resto del tablero cuenta con TODAS.
     /// </summary>
@@ -33,7 +33,7 @@ public sealed record clsCotizacionMetrica
 
     /// <summary>
     /// Costo en COP de la versión vigente (nunca se convierte): la suma del <c>costoFinal</c> de sus rutas, <c>null</c> si alguna no lo
-    /// tiene (HU-021).
+    /// tiene.
     /// </summary>
     public decimal? Costo { get; init; }
 
@@ -46,7 +46,7 @@ public sealed record clsCotizacionMetrica
     public decimal TrmAplicada { get; init; }
 
     /// <summary>
-    /// HU-045.2 (#264): suma del <c>costoSeguro</c> de las rutas de la versión vigente, en COP; <c>null</c> sin seguro. Está dentro de
+    /// Suma del <c>costoSeguro</c> de las rutas de la versión vigente, en COP; <c>null</c> sin seguro. Está dentro de
     /// <see cref="PrecioFinal"/> pero no es ganancia: <c>ganancias</c> lo resta (<see cref="GananciaResultadoCop"/>).
     /// </summary>
     public decimal? Seguro { get; init; }
@@ -82,13 +82,13 @@ public sealed record clsCotizacionMetrica
     public decimal? SumaDiferenciasAbsolutas { get; init; }
 
     /// <summary>
-    /// Rutas de la versión vigente (HU-021.10, decisión 8), ordenadas por <c>orden</c>: de ellas salen el margen ponderado y la apertura
+    /// Rutas de la versión vigente, ordenadas por <c>orden</c>: de ellas salen el margen ponderado y la apertura
     /// por línea de negocio. <see cref="Costo"/> y <see cref="MargenAplicado"/> ya las resumen para la cotización.
     /// </summary>
     public IReadOnlyList<clsRutaMetrica> Rutas { get; init; } = [];
 
     /// <summary>
-    /// B3 (#173): la versión de la cadena que tiene el resultado (<see cref="Ganada"/>), con su precio, moneda, TRM y costo. Si la v1 se
+    /// La versión de la cadena que tiene el resultado (<see cref="Ganada"/>), con su precio, moneda, TRM y costo. Si la v1 se
     /// marcó ganada después de crear la <c>-v2</c>, el valor ganado es el de la v1, no el de la vigente (que puede no tener precio).
     /// <c>null</c> = la misma vigente.
     /// </summary>
@@ -100,18 +100,18 @@ public sealed record clsCotizacionMetrica
     /// <summary>Costo en COP de la versión con el resultado (<see cref="VersionResultado"/>, o la vigente).</summary>
     public decimal? CostoResultado => VersionResultado is { } v ? v.Costo : Costo;
 
-    /// <summary>HU-045.2 (#264): seguro en COP de la versión con el resultado (<see cref="VersionResultado"/>, o la vigente).</summary>
+    /// <summary>Seguro en COP de la versión con el resultado (<see cref="VersionResultado"/>, o la vigente).</summary>
     public decimal? SeguroResultado => VersionResultado is { } v ? v.Seguro : Seguro;
 
     /// <summary>
-    /// <c>ganancias</c> de la cotización: valor en COP − costo − seguro (HU-045.2, #264: el seguro es un traslado) de la versión con el
+    /// <c>ganancias</c> de la cotización: valor en COP − costo − seguro (el seguro es un traslado) de la versión con el
     /// resultado; <c>null</c> si falta el valor o el costo.
     /// </summary>
     public decimal? GananciaResultadoCop =>
         ValorResultadoCop is { } valor && CostoResultado is { } costo ? valor - costo - (SeguroResultado ?? 0m) : null;
 
     /// <summary>
-    /// B3 (#173): rutas de la versión que tiene el resultado cuando NO es la vigente; <c>null</c> = las de la vigente
+    /// Rutas de la versión que tiene el resultado cuando NO es la vigente; <c>null</c> = las de la vigente
     /// (<see cref="Rutas"/>). La apertura por línea de negocio saca de aquí lo ganado.
     /// </summary>
     public IReadOnlyList<clsRutaMetrica>? RutasResultado { get; init; }
@@ -149,5 +149,5 @@ public sealed record clsCotizacionMetrica
     };
 }
 
-/// <summary>B3 (#173): precio, moneda, TRM y costo de la versión de la cadena que tiene el resultado.</summary>
+/// <summary>Precio, moneda, TRM y costo de la versión de la cadena que tiene el resultado.</summary>
 public sealed record clsVersionResultadoMetrica(decimal? PrecioFinal, string? Moneda, decimal TrmAplicada, decimal? Costo, decimal? Seguro = null);

@@ -10,8 +10,8 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Aplicacion.Costeo.Services;
 
 /// <summary>
-/// Envío diferido de los conexos de las rutas a la cotización de Nexo (decisión 10 del usuario, HU-021.9, #136). Los conexos se capturan
-/// con la ruta (#132) o se copian en una re-solicitud o una <c>-vN</c>, pero el <c>POST /api/cotizaciones/{id}/conexos</c> exige la
+/// Envío diferido de los conexos de las rutas a la cotización de Nexo. Los conexos se capturan
+/// con la ruta o se copian en una re-solicitud o una <c>-vN</c>, pero el <c>POST /api/cotizaciones/{id}/conexos</c> exige la
 /// cotización de Nexo y la línea del camión, que solo existen cuando Nexo costea: el polling los envía la primera vez que ve esa línea.
 /// </summary>
 public interface IClsEnvioConexosNexoService
@@ -26,7 +26,7 @@ public interface IClsEnvioConexosNexoService
 
     /// <summary>
     /// ¿Tiene conexos por reintentar: <see cref="clsEnvioConexosNexo.Fallido"/> (por debajo del tope) o <see cref="clsEnvioConexosNexo.EnEspera"/>?
-    /// #259: con la cotización de Nexo ya creada, también los que nunca se intentaron (sin registro).
+    /// Con la cotización de Nexo ya creada, también los que nunca se intentaron (sin registro).
     /// </summary>
     Task<bool> TieneReintentosAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken = default);
 
@@ -44,7 +44,7 @@ public interface IClsEnvioConexosNexoService
     Task<IReadOnlyDictionary<(Guid Ruta, string Conexo), string>> EstadosAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// #228: deja como <see cref="clsEnvioConexosNexo.Enviado"/> los conexos de las rutas que <paramref name="cotizacionNexo"/> (recién leída
+    /// Deja como <see cref="clsEnvioConexosNexo.Enviado"/> los conexos de las rutas que <paramref name="cotizacionNexo"/> (recién leída
     /// después de <c>POST .../costeo/servicios-conexos</c>) ya muestra y que todavía no figuraban enviados: Nexo los creó en ese momento, así
     /// que no quedan <c>pendiente</c> esperando un polling que, en una cotización entregada, ya no pasa. No guarda: el registro sale con la
     /// unidad de trabajo del llamador. Nunca llama a Nexo.
@@ -60,16 +60,16 @@ public interface IClsEnvioConexosNexoService
 /// conexos se vuelven a enviar una vez.</item>
 /// <item><b>Sin duplicados.</b> Un conexo que la cotización de Nexo ya muestra (por <c>servicioConexoId</c> o por su id) no se envía y
 /// queda como enviado. Antes del POST se guarda <see cref="clsEnvioConexosNexo.EnCurso"/> con los conexos que Nexo ya tenía (el mismo
-/// criterio del registro de #135): si el proceso muere a mitad, el siguiente ciclo lo trata como incierto y no repite el POST. Un POST
+/// criterio de <see cref="clsConexosPendientesNexo"/>): si el proceso muere a mitad, el siguiente ciclo lo trata como incierto y no repite el POST. Un POST
 /// incierto (sin respuesta) se relee: si Nexo lo muestra queda enviado; si no, queda <see cref="clsEnvioConexosNexo.Incierto"/>, no se
 /// vuelve a enviar (Nexo no tiene DELETE ni idempotencia en ese POST) y el costeo lo muestra para que se revise en Nexo.</item>
 /// <item><b>Tope.</b> Tras <c>CosteoNexo:MaximoReintentosConexos</c> POST rechazados por Nexo queda
 /// <see cref="clsEnvioConexosNexo.FallidoDefinitivo"/> (warning y visible en el costeo). Si Nexo no responde ANTES del POST (catálogo de
 /// conexos o lectura de la cotización) el conexo queda <see cref="clsEnvioConexosNexo.EnEspera"/>: no consume un intento ni llega al
 /// tope.</item>
-/// <item><b>Primer camión vigente.</b> Van pegados a la línea del primer camión no descartado de la ruta (decisión 3); mientras esa línea
-/// no esté en la cotización de Nexo y la cotización se siga costeando, se espera. #259: con varias líneas para el mismo camión va a la
-/// primera por id; con la cotización ya fuera del costeo, al primer camión vigente que tenga línea (variante 4a) o, si ninguno la tiene,
+/// <item><b>Primer camión vigente.</b> Van pegados a la línea del primer camión no descartado de la ruta; mientras esa línea
+/// no esté en la cotización de Nexo y la cotización se siga costeando, se espera. Con varias líneas para el mismo camión va a la
+/// primera por id; con la cotización ya fuera del costeo, al primer camión vigente que tenga línea (ADR-031) o, si ninguno la tiene,
 /// queda <see cref="clsEnvioConexosNexo.FallidoDefinitivo"/> (<see cref="LineaDestino"/>).</item>
 /// <item><b>El precio no cambia.</b> En Cotifly el conexo sigue con el costo del catálogo de Nexo que se guardó en la ruta; la lectura no lo
 /// importa otra vez (<c>clsLecturaCosteo.ConexosNuevos</c> lo reconoce por su <c>servicioConexoId</c>).</item>
@@ -108,8 +108,8 @@ public sealed class clsEnvioConexosNexoService(
 
         var registros = await cotizaciones.ListarEnviosConexosNexoAsync(cotizacion.Folio, solicitud, cancellationToken);
         var total = clsResultadoEnvioConexos.Nada;
-        // #259 (auditoría M2): una ruta rechazada por la Mesa no tiene línea vigente ni precio: sus conexos no se envían ni se dan por
-        // fallidos (quedan como estaban; #228 tampoco los cuenta para finalizar).
+        // Una ruta rechazada por la Mesa no tiene línea vigente ni precio: sus conexos no se envían ni se dan por
+        // fallidos (quedan como estaban; tampoco cuentan para finalizar).
         foreach (var ruta in cotizacion.RutasOrdenadas.Where(r => r.Conexos.Count > 0 && !r.Rechazada))
         {
             total = total.Mas(await EnviarRutaAsync(cotizacion, ruta, cotizacionNexo, cotizacionNexoId, solicitud, usuarioId,
@@ -127,7 +127,7 @@ public sealed class clsEnvioConexosNexoService(
             return false;
         }
 
-        // #259: con la cotización de Nexo ya creada, un conexo que nunca se intentó (sin registro) también espera: si no, una cotización que
+        // Con la cotización de Nexo ya creada, un conexo que nunca se intentó (sin registro) también espera: si no, una cotización que
         // salió de la agenda con él nunca lo procesaría.
         var registros = await cotizaciones.ListarEnviosConexosNexoAsync(cotizacion.Folio, solicitud, cancellationToken);
         var conCotizacionNexo = cotizacion.CotizacionNexoId is not null;
@@ -165,7 +165,7 @@ public sealed class clsEnvioConexosNexoService(
         {
             var propios = registros.Where(r => r.LineaSolicitudId == ruta.Id).ToList();
             var estados = Estados(propios);
-            // #259: también los que nunca se intentaron (sin registro): quedan en espera, con su tope, y no huérfanos.
+            // También los que nunca se intentaron (sin registro): quedan en espera, con su tope, y no huérfanos.
             var pendientes = ruta.Conexos.Select(c => c.IdServicioConexo)
                 .Where(id => estados.GetValueOrDefault(id) is not { } estado || PorReintentar(estado)).ToList();
             if (pendientes.Count == 0)
@@ -303,7 +303,7 @@ public sealed class clsEnvioConexosNexoService(
         var lineaId = porEnviar.Count == 0 ? null : LineaDestino(cotizacion, ruta, cotizacionNexo);
         if (lineaId is null)
         {
-            // #259: con la cotización ya fuera del costeo (entregada, descartada, vencida) la línea no va a aparecer: sin ningún camión
+            // Con la cotización ya fuera del costeo (entregada, descartada, vencida) la línea no va a aparecer: sin ningún camión
             // vigente con línea en Nexo, los conexos quedan fallido_definitivo (warning y aviso en el costeo, no bloquean finalizar). Nunca
             // se sale en silencio dejándolos pendiente sin nadie que los procese.
             if (porEnviar.Count > 0 && !cotizacion.SeConsultaEnNexo)
@@ -452,8 +452,8 @@ public sealed class clsEnvioConexosNexoService(
     }
 
     /// <summary>
-    /// Línea de la cotización de Nexo a la que van los conexos de <paramref name="ruta"/>: la del primer camión vigente (decisión 3). #259
-    /// (variante 4a, ADR-031, decisión del usuario del 2026-11-06, extiende la decisión 3): si ese camión no tiene línea y la cotización
+    /// Línea de la cotización de Nexo a la que van los conexos de <paramref name="ruta"/>: la del primer camión vigente. Según
+    /// ADR-031, si ese camión no tiene línea y la cotización
     /// ya no se costea en Nexo (<see cref="clsCotizacionSolicitud.SeConsultaEnNexo"/> falso: la línea ya no va a aparecer), la del primer
     /// camión vigente que SÍ tiene línea; un camión entregado sin flete se trata como uno rechazado. <c>null</c> si no hay ninguna (o si,
     /// en costeo, el primer camión todavía no la tiene: se espera).
@@ -463,8 +463,8 @@ public sealed class clsEnvioConexosNexoService(
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(ruta);
         ArgumentNullException.ThrowIfNull(cotizacionNexo);
-        // Auditoría M2: la única línea de la cotización (LineaDeNexo sin camión) solo vale para una ruta SIN camiones; una ruta cuyos camiones
-        // están todos descartados o rechazados no tiene destino (antes podía tomar la línea de otra ruta).
+        // La única línea de la cotización (LineaDeNexo sin camión) solo vale para una ruta SIN camiones; una ruta cuyos camiones
+        // están todos descartados o rechazados no tiene destino (no toma la línea de otra ruta).
         var primerCamion = clsServiciosConexosCosteoService.PrimerCamion(ruta);
         var primera = primerCamion is not null ? clsServiciosConexosCosteoService.LineaDeNexo(cotizacionNexo, primerCamion)
             : ruta.VehiculosOrdenados.Count == 0 ? clsServiciosConexosCosteoService.LineaDeNexo(cotizacionNexo, null)

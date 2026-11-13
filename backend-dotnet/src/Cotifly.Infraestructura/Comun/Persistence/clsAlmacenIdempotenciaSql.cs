@@ -10,7 +10,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Comun.Persistence;
 
 /// <summary>
-/// #191: <see cref="IClsAlmacenIdempotencia"/> sobre <c>dbo_cotifly.CapturasIdempotentes</c> (<c>db/scripts/06_idempotencia_captura.sql</c>):
+/// <see cref="IClsAlmacenIdempotencia"/> sobre <c>dbo_cotifly.CapturasIdempotentes</c> (<c>db/scripts/06_idempotencia_captura.sql</c>):
 /// la clave sobrevive a un reinicio de la API y la comparten todas las réplicas (despliegue <c>start-first</c>, <c>replicas</c> &gt; 1).
 /// </summary>
 /// <remarks>
@@ -19,7 +19,7 @@ namespace Cotifly.Infraestructura.Comun.Persistence;
 /// la fila <c>en_curso</c>. El <c>UNIQUE (usuarioId, operacion, clave)</c> decide entre dos peticiones simultáneas de DOS réplicas: una
 /// inserta y la otra choca, lee la fila y responde 409 <c>ESTADO_NO_PERMITE</c> con <c>detalle.motivo = CAPTURA_EN_CURSO</c> sin ejecutar
 /// nada (entre réplicas no hay a quién esperar). Dentro de UNA réplica (el doble clic, el caso común) un semáforo por clave las
-/// serializa como antes: la segunda espera a la primera y recibe su resultado guardado.</item>
+/// serializa: la segunda espera a la primera y recibe su resultado guardado.</item>
 /// <item><b>Huella</b>: la misma clave con otra huella es <c>IDEMPOTENCY_KEY_REUTILIZADA</c>, esté terminada o en curso. Una fila
 /// <c>libre</c> sin folio se puede retomar con otro cuerpo (la clave no se consumió, como en memoria); con folio, no.</item>
 /// <item><b>Resultado</b>: lo que <c>seGuarda</c> acepta queda en <c>resultado</c> (<see cref="clsResultadoIdempotenteJson"/>) por
@@ -311,7 +311,7 @@ public sealed class clsAlmacenIdempotenciaSql(
 }
 
 /// <summary>
-/// #191: la clave de una fila de <c>CapturasIdempotentes</c>: el ámbito <c>"{operacion}:{usuarioId}"</c> de los servicios partido en sus
+/// La clave de una fila de <c>CapturasIdempotentes</c>: el ámbito <c>"{operacion}:{usuarioId}"</c> de los servicios partido en sus
 /// dos columnas, y la <c>Idempotency-Key</c>.
 /// </summary>
 public sealed record clsLlaveIdempotencia(string Operacion, Guid UsuarioId, string Clave)

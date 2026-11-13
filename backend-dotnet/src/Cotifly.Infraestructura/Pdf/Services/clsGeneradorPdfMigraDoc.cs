@@ -29,7 +29,7 @@ namespace Cotifly.Infraestructura.Pdf.Services;
 public sealed partial class clsGeneradorPdfMigraDoc : IClsGeneradorPdf
 {
     /// <summary>
-    /// Turno de render del proceso (#92, #95, ADR-006). PDFsharp-MigraDoc 6.2 comparte estado global entre documentos al medir
+    /// Turno de render del proceso (ADR-006). PDFsharp-MigraDoc 6.2 comparte estado global entre documentos al medir
     /// y escribir el texto: con dos renders a la vez, el mismo documento sale con otra maquetación (espacios medidos con la
     /// fuente de otro documento, palabras corridas hasta cientos de puntos, saltos de línea distintos). El generador es
     /// singleton y lo usan peticiones concurrentes, así que el turno es de proceso, no de instancia. Dentro solo hay CPU:
@@ -143,7 +143,7 @@ public sealed partial class clsGeneradorPdfMigraDoc : IClsGeneradorPdf
             clsBloqueCondiciones.Agregar(seccion, documento, diseno);
             seccion.AddPageBreak();
 
-            // HU-011.5: el pliego abre con el resumen de todas sus rutas y el total; luego una sección por ruta (HU-021.9).
+            // El pliego abre con el resumen de todas sus rutas y el total; luego una sección por ruta.
             if (documento.Variante == VarianteDocumento.Pliego && documento.Pliego is { } pliego)
             {
                 clsBloquePliego.Agregar(seccion, pliego, diseno, documento.TextoSeguros);

@@ -3,13 +3,13 @@ using Cotifly.Aplicacion.Comun.Interfaces;
 namespace Cotifly.Aplicacion.Costeo.Services;
 
 /// <summary>
-/// #173: registro de las capturas con <c>Idempotency-Key</c> desde que el folio queda confirmado, ANTES de llamar a Nexo. Si la petición
+/// Registro de las capturas con <c>Idempotency-Key</c> desde que el folio queda confirmado, ANTES de llamar a Nexo. Si la petición
 /// falla después de enviar a Nexo (por ejemplo, el guardado del <c>solicitudNexoId</c>), <see cref="IClsAlmacenIdempotencia"/> no guarda
 /// el resultado; con este registro el reintento con la misma clave no vuelve a llamar a Nexo: responde con el folio o con
 /// <c>ESTADO_NO_PERMITE</c> (<c>detalle.motivo = CAPTURA_EN_CURSO</c>).
 /// </summary>
 /// <remarks>
-/// #191: la implementación de la API es <c>clsRegistroCapturasIdempotentesSql</c> (Infraestructura), sobre la tabla
+/// La implementación de la API es <c>clsRegistroCapturasIdempotentesSql</c> (Infraestructura), sobre la tabla
 /// <c>dbo_cotifly.CapturasIdempotentes</c> de <c>db/scripts/06_idempotencia_captura.sql</c>, la misma fila que reserva la clave en
 /// <c>clsAlmacenIdempotenciaSql</c>: sobrevive a un reinicio y a un despliegue <c>start-first</c> (dos réplicas a la vez).
 /// <see cref="RegistrarAsync"/> participa en la transacción abierta del <c>DbContext</c> del ámbito: la captura lo llama dentro de la
@@ -25,7 +25,7 @@ public interface IClsRegistroCapturasIdempotentes
     Task RegistrarAsync(string ambito, string clave, clsCapturaIdempotente captura, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// #173: la captura vigente de <paramref name="folio"/> (con cualquier clave), o <c>null</c>. La usa el reintento: si Nexo ya tiene
+    /// La captura vigente de <paramref name="folio"/> (con cualquier clave), o <c>null</c>. La usa el reintento: si Nexo ya tiene
     /// la solicitud (el guardado posterior falló), se vincula ese id en lugar de reenviar.
     /// </summary>
     Task<clsCapturaIdempotente?> BuscarPorFolioAsync(string folio, CancellationToken cancellationToken = default);
@@ -33,15 +33,15 @@ public interface IClsRegistroCapturasIdempotentes
 
 /// <summary>
 /// Una captura con clave: la huella del cuerpo, el folio confirmado y el id de la solicitud de Nexo en cuanto se conoce, con el
-/// <c>scorePrioridad</c> que Nexo devolvió con ese id (HU-018.1, #155). El reintento que vincula por el registro (#173) lo guarda igual
-/// que el primer envío; <c>null</c> si Nexo no lo mandó o el registro es anterior a este campo (el vínculo sigue, sin score).
+/// <c>scorePrioridad</c> que Nexo devolvió con ese id. El reintento que vincula por el registro lo guarda igual
+/// que el primer envío; <c>null</c> si Nexo no lo mandó o el registro no tiene este campo (el vínculo sigue, sin score).
 /// </summary>
 public sealed record clsCapturaIdempotente(
     string Huella, Guid CotizacionId, string Folio, string? SolicitudNexoId, DateTimeOffset RegistradaAt, decimal? ScorePrioridad = null);
 
 /// <summary>
 /// Implementación en memoria de <see cref="IClsRegistroCapturasIdempotentes"/> (vigencia de 24 h, como la clave). Solo para pruebas: se
-/// pierde al reiniciar y no se comparte entre réplicas (la API usa la tabla del 06, #191).
+/// pierde al reiniciar y no se comparte entre réplicas (la API usa la tabla del script 06).
 /// </summary>
 public sealed class clsRegistroCapturasIdempotentesEnMemoria(IClsReloj reloj) : IClsRegistroCapturasIdempotentes
 {

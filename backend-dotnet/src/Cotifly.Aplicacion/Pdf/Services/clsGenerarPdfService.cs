@@ -23,10 +23,10 @@ namespace Cotifly.Aplicacion.Pdf.Services;
 /// <list type="number">
 /// <item>Folio de la entrada (lo genera el servidor, ADR-011; <c>referencia</c> del payload no se usa) y payload válidos (<c>PDF_PAYLOAD_INVALIDO</c>).</item>
 /// <item>Comercial desde <c>UsuariosWeb</c>: nombre, correo y celular de la firma (nunca del LLM; sin teléfono no hay "Cel").</item>
-/// <item>Línea contra <c>MargenesPolitica</c> sin tildes ni mayúsculas (<c>MARGEN_LINEA_DESCONOCIDA</c> antes de renderizar, issue #44).</item>
-/// <item>Folio libre (<c>FOLIO_DUPLICADO</c>): el folio lo genera #12 (ADR-011); aquí no se versiona como en el Python.</item>
+/// <item>Línea contra <c>MargenesPolitica</c> sin tildes ni mayúsculas (<c>MARGEN_LINEA_DESCONOCIDA</c> antes de renderizar).</item>
+/// <item>Folio libre (<c>FOLIO_DUPLICADO</c>): el folio lo genera el servidor (ADR-011); aquí no se versiona.</item>
 /// <item>Cotización válida en el dominio (márgenes, TRM, moneda) antes de renderizar, para no dejar PDFs sin fila.</item>
-/// <item>Coherencia entre lo impreso y la trazabilidad (ADR-003, ADR-004, HU-012.3): cada fila y servicio en la moneda de la
+/// <item>Coherencia entre lo impreso y la trazabilidad (ADR-003, ADR-004): cada fila y servicio en la moneda de la
 /// cotización; con <c>PrecioFinal</c>, costo/margen deben dar ese precio y la tarifa de cada fila debe ser ese precio.</item>
 /// <item>Render (<c>PDF_RENDER_NO_DISPONIBLE</c> si falla), guardado sin reemplazar un archivo existente y registro.
 /// Si la base rechaza la fila, el PDF recién guardado se borra (compensación).</item>
@@ -51,7 +51,7 @@ public sealed partial class clsGenerarPdfService(
             throw new ArgumentException("generar_pdf exige el comercial autenticado (usuarioId).", nameof(entrada));
         }
 
-        // HU-021.6: la cotización "del chat" (sin municipios) se salta la decisión 2; apagada por defecto (Pdf:PermitirCotizacionChat).
+        // La cotización "del chat" (sin municipios) no exige los municipios de la ruta; está apagada por defecto (Pdf:PermitirCotizacionChat).
         if (!opciones.Value.PermitirCotizacionChat)
         {
             return new clsErrorDominio(clsCodigosError.CotizacionChatRetirada,
@@ -131,7 +131,7 @@ public sealed partial class clsGenerarPdfService(
         }
         catch (clsRenderPdfOcupadoException)
         {
-            // El turno de render no llegó a tiempo (#92/#95): ya quedó en el log del generador; es transitorio (503).
+            // El turno de render no llegó a tiempo: ya quedó en el log del generador; es transitorio (503).
             return new clsErrorDominio(clsCodigosError.PdfRenderNoDisponible, "El generador de PDF está ocupado. Reintenta en unos segundos.");
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -163,7 +163,7 @@ public sealed partial class clsGenerarPdfService(
                 return FolioDuplicado(folio!);
             }
 
-            // Endurecimiento A (#199): otra restricción única no es un error del cliente; su nombre técnico queda solo en el log.
+            // Otra restricción única no es un error del cliente; su nombre técnico queda solo en el log.
             LogRestriccionInesperada(logger, folio!, ex.Restriccion ?? "(desconocida)");
             return new clsErrorDominio(clsCodigosError.ErrorInterno, "No se pudo registrar el PDF de la cotización.");
         }
@@ -198,16 +198,15 @@ public sealed partial class clsGenerarPdfService(
     }
 
     /// <summary>
-    /// Lo impreso debe cuadrar con la trazabilidad del estado (ADR-003: el LLM no pone números; ADR-004: el filtro de #12
+    /// Lo impreso debe cuadrar con la trazabilidad del estado (ADR-003: el LLM no pone números; ADR-004: el filtro de precios
     /// sobrescribe costo, margen y tarifa de las filas y los precios de los servicios desde el estado):
     /// <list type="bullet">
-    /// <item>Cada fila y cada servicio conexo con moneda explícita debe estar en la moneda de la cotización (HU-012.3).</item>
+    /// <item>Cada fila y cada servicio conexo con moneda explícita debe estar en la moneda de la cotización.</item>
     /// <item>Con <c>PrecioCop</c> y costo + margen aplicado, <c>PrecioCop</c> debe ser el precio en pesos calculado (coherencia de la conversión).</item>
     /// <item>Con <c>PrecioFinal</c> y costo + margen aplicado, el precio calculado con el método debe ser <c>PrecioFinal</c> (en USD, el precio en
-    /// pesos convertido con la TRM de la trazabilidad, HU-012.2).</item>
+    /// pesos convertido con la TRM de la trazabilidad).</item>
     /// <item>Con <c>PrecioFinal</c>, la tarifa impresa de cada fila (dada o calculada) debe ser <c>PrecioFinal</c>. La tabla
-    /// Cotizaciones guarda un solo precio: una cotización con varias tarifas distintas no puede traer <c>PrecioFinal</c>
-    /// (pendiente de modelo si negocio necesita guardar un precio por fila).</item>
+    /// Cotizaciones guarda un solo precio: una cotización con varias tarifas distintas no puede traer <c>PrecioFinal</c>.</item>
     /// </list>
     /// </summary>
     public static clsErrorDominio? ValidarCoherencia(clsCotizacionPdfPayload payload, clsTrazabilidadCotizacion traza, string metodo, string moneda)
@@ -247,7 +246,7 @@ public sealed partial class clsGenerarPdfService(
 
         if (traza.Costo is { } costo && traza.MargenAplicado is { } margenAplicado)
         {
-            // El costo está en COP; en otra moneda el precio esperado es el de pesos convertido con la TRM de la trazabilidad (HU-012.2).
+            // El costo está en COP; en otra moneda el precio esperado es el de pesos convertido con la TRM de la trazabilidad.
             var calculado = clsCalculadoraPrecio.Calcular(costo, margenAplicado, metodo)
                 .Coincidir(
                     p => clsConversorMoneda.EsPesos(moneda) ? p.Precio : clsConversorMoneda.PesosADolares(p.Precio, traza.TrmAplicada),
@@ -326,7 +325,7 @@ public sealed partial class clsGenerarPdfService(
             return Invalido(creada.Error.Mensaje);
         }
 
-        // HU-021 (CAMBIOS_BACKEND §2): el chat también crea una ruta (línea de negocio, margen y precio) y un camión (costo del flete).
+        // El chat también crea una ruta (línea de negocio, margen y precio) y un camión (costo del flete).
         creada.Valor.RegistrarCotizacionChat(politica.Id, traza.Costo, traza.MargenPolitica, traza.MargenAplicado, origenMargen, metodo, traza.PrecioFinal);
         return creada;
     }

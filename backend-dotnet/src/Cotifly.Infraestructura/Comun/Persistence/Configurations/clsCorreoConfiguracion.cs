@@ -12,7 +12,7 @@ internal sealed class clsCorreoConfiguracion : IEntityTypeConfiguration<clsCorre
 {
     public void Configure(EntityTypeBuilder<clsCorreo> builder)
     {
-        // HU-033 (#199): db/scripts/13_correo_mailsender.sql agrega el CHECK del estado con encolado y enviando.
+        // db/scripts/13_correo_mailsender.sql agrega el CHECK del estado con encolado y enviando.
         builder.ToTable("Correos", t => t.HasCheckConstraint("ck_correos_estado", "estado IS NULL OR estado IN ('encolado', 'enviando', 'enviado', 'fallido')"));
         builder.HasKey(c => c.Id).HasName("pk_correos");
         builder.Property(c => c.Id).Columna("id", "uniqueidentifier").ValueGeneratedNever();
@@ -24,7 +24,7 @@ internal sealed class clsCorreoConfiguracion : IEntityTypeConfiguration<clsCorre
             .HasConversion(new clsConvertidorCodigoEnum<EstadoCorreo>());
         builder.Property(c => c.Error).Columna("error", TipoTexto);
         builder.Property(c => c.CreatedAt).Fecha("createdAt");
-        // HU-033 (#199): db/scripts/13_correo_mailsender.sql (sin él, /health/ready dice "falta 13").
+        // db/scripts/13_correo_mailsender.sql (sin él, /health/ready dice "falta 13").
         builder.Property(c => c.IdMailSender).Columna("idMailSender", "uniqueidentifier");
         builder.Property(c => c.RedirigidoA).Columna("redirigidoA", "nvarchar(320)").HasMaxLength(clsCorreoDestinatario.LargoMaximoEmail);
         builder.Property(c => c.IntentosEntrega).Columna("intentosEntrega", "int");

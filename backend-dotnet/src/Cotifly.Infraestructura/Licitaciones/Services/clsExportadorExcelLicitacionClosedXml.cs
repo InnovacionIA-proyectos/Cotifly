@@ -8,22 +8,22 @@ using Cotifly.Infraestructura.Comun;
 namespace Cotifly.Infraestructura.Licitaciones.Services;
 
 /// <summary>
-/// Exportación del Excel de una licitación con ClosedXML (HU-011.3, ADR-017 §5).
+/// Exportación del Excel de una licitación con ClosedXML (ADR-017 §5).
 /// <list type="bullet">
 /// <item><b>Con el original:</b> abre el archivo del cliente, ubica la hoja mapeada y sus filas con la regla de Nexo
 /// (<see cref="clsLectorExcelLicitacionClosedXml.Detectar"/>) y agrega cuatro columnas a la derecha de la última usada: precio final
-/// (en la moneda de la cotización), estado del costeo, servicios conexos y (HU-023.5, #160) los camiones de la ruta. No modifica ninguna
+/// (en la moneda de la cotización), estado del costeo, servicios conexos y los camiones de la ruta. No modifica ninguna
 /// celda existente. Las filas del pliego
 /// que no se enviaron quedan "Sin enviar".</item>
 /// <item><b>Sin original:</b> una hoja <c>Licitación</c> con los campos mapeados y las mismas columnas.</item>
 /// <item>Siempre una hoja <see cref="HojaResumen"/> con el folio, el cliente, la moneda (y la TRM en USD), el total y los conexos, y una
-/// hoja <see cref="HojaCamiones"/> con un camión por fila (HU-023.5).</item>
+/// hoja <see cref="HojaCamiones"/> con un camión por fila.</item>
 /// </list>
 /// Las líneas sin costeo llevan <see cref="SinCosteo"/> en la columna del precio, con fondo amarillo. Nunca escribe costos de Nexo (no
 /// los recibe). Siempre guarda <c>.xlsx</c>: ClosedXML no conserva las macros de un <c>.xlsm</c>.
-/// <para><b>Original guardado</b> (HU-035.2, #213): antes de abrirlo con ClosedXML pasa por los mismos controles del Excel subido
+/// <para><b>Original guardado</b>: antes de abrirlo con ClosedXML pasa por los mismos controles del Excel subido
 /// (<see cref="clsLecturaExcelAcotada"/>: firma, 1000 entradas, 64 MB descomprimidos, 1.000.000 de elementos XML sin DTD) y por el cupo
-/// de lecturas de Excel del proceso. Un original guardado antes de esos controles que no los pasa responde <c>EXCEL_INVALIDO</c> o
+/// de lecturas de Excel del proceso. Un original guardado que no los pasa responde <c>EXCEL_INVALIDO</c> o
 /// <c>ARCHIVO_DEMASIADO_GRANDE</c> con <c>detalle.motivo</c> (400, como un original ilegible), y el cupo lleno <c>SERVICIO_OCUPADO</c>
 /// (503); nunca un 500 ni una lectura sin tope. Sin original no se abre nada del cliente y no se toma el cupo.</para>
 /// </summary>
@@ -37,49 +37,49 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
     public const string HojaSinOriginal = "Licitación";
     public const string SinCosteo = "SIN COSTEO";
 
-    /// <summary>HU-044.10 (#293, parte 2): hoja nueva con las líneas agregadas a mano cuando se exporta sobre el Excel original (analizar_excel).</summary>
+    /// <summary>Hoja nueva con las líneas agregadas a mano cuando se exporta sobre el Excel original (analizar_excel).</summary>
     public const string HojaAgregadas = "Agregadas en Cotifly";
 
-    /// <summary>HU-044.10 (#293, parte 2): columna que marca una línea agregada a mano (la 10 de la hoja «Licitación», o en la hoja «Agregadas en Cotifly»).</summary>
+    /// <summary>Columna que marca una línea agregada a mano (la 10 de la hoja «Licitación», o en la hoja «Agregadas en Cotifly»).</summary>
     public const string ColumnaReferencia = "Referencia";
 
-    /// <summary>HU-044.10 (#293, parte 2): valor de la columna <see cref="ColumnaReferencia"/> en una línea agregada a mano.</summary>
+    /// <summary>Valor de la columna <see cref="ColumnaReferencia"/> en una línea agregada a mano.</summary>
     public const string ReferenciaAgregada = "Agregada en Cotifly";
 
-    /// <summary>HU-044.10 (#293, parte 2): etiqueta del conteo de líneas agregadas a mano en «Resumen Cotifly».</summary>
+    /// <summary>Etiqueta del conteo de líneas agregadas a mano en «Resumen Cotifly».</summary>
     public const string EtiquetaAgregadas = "Líneas agregadas en Cotifly";
 
-    /// <summary>HU-028.1 (#183): etiqueta del conteo de líneas rechazadas por la Mesa de Costeo en "Resumen Cotifly".</summary>
+    /// <summary>Etiqueta del conteo de líneas rechazadas por la Mesa de Costeo en "Resumen Cotifly".</summary>
     public const string EtiquetaRechazadas = "Líneas rechazadas en NEXO (sin costeo)";
 
-    /// <summary>HU-028.1 (#183): total de "Resumen Cotifly" cuando la Mesa de Costeo rechazó todas las líneas.</summary>
+    /// <summary>Total de "Resumen Cotifly" cuando la Mesa de Costeo rechazó todas las líneas.</summary>
     public const string TodasRechazadas = "Sin costeo: todas las líneas fueron rechazadas en NEXO";
 
-    /// <summary>HU-028.1 (#183): columna de la hoja "Camiones Cotifly" que marca el camión rechazado por la Mesa de Costeo.</summary>
+    /// <summary>Columna de la hoja "Camiones Cotifly" que marca el camión rechazado por la Mesa de Costeo.</summary>
     public const string ColumnaCosteoCamion = "Costeo";
     public const string SinEnviar = "Sin enviar";
     public const string ColumnaEstado = "Estado costeo Cotifly";
     public const string ColumnaConexos = "Servicios conexos Cotifly";
 
-    /// <summary>HU-023.5 (#160): columna con los camiones de cada ruta (uno por línea de la celda).</summary>
+    /// <summary>Columna con los camiones de cada ruta (uno por línea de la celda).</summary>
     public const string ColumnaCamiones = "Camiones Cotifly";
 
-    /// <summary>HU-023.5 (#160): hoja con un camión por fila (vehículo, carrocería, peso, volumen y llenado).</summary>
+    /// <summary>Hoja con un camión por fila (vehículo, carrocería, peso, volumen y llenado).</summary>
     public const string HojaCamiones = "Camiones Cotifly";
 
     /// <summary>Columnas que agrega Cotifly a la derecha del pliego: precio, estado, conexos y camiones.</summary>
     public const int ColumnasCotifly = 4;
 
     /// <summary>
-    /// HU-045.3 (#265): encabezado de la quinta columna, el seguro de la mercancía de la línea, con la moneda. Solo se agrega si alguna línea
-    /// lo incluye (<see cref="ConSeguro"/>): hoy las licitaciones no lo admiten, y así su archivo no cambia.
+    /// Encabezado de la quinta columna, el seguro de la mercancía de la línea, con la moneda. Solo se agrega si alguna línea
+    /// lo incluye (<see cref="ConSeguro"/>): las licitaciones no lo admiten, así que su archivo no cambia.
     /// </summary>
     public static string ColumnaSeguro(string moneda) => $"Seguro de la mercancía Cotifly ({moneda})";
 
-    /// <summary>HU-045.3 (#265): dato de la hoja Resumen Cotifly con la suma del seguro de las líneas (no está en el total).</summary>
+    /// <summary>Dato de la hoja Resumen Cotifly con la suma del seguro de las líneas (no está en el total).</summary>
     public const string EtiquetaTotalSeguro = "Seguro de la mercancía (aparte del total)";
 
-    /// <summary>HU-045.3 (#265): ¿alguna línea incluye el seguro de la mercancía? Entonces va su columna.</summary>
+    /// <summary>¿Alguna línea incluye el seguro de la mercancía? Entonces va su columna.</summary>
     public static bool ConSeguro(clsExportacionLicitacion datos)
     {
         ArgumentNullException.ThrowIfNull(datos);
@@ -94,7 +94,7 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
     public const string EtiquetaTotal = "Total de la licitación (sin servicios conexos)";
 
     /// <summary>
-    /// HU-044.7 (#290): nota del resumen cuando la licitación se leyó con la IA de NEXO (<c>leer_estructura</c>): los precios van en la hoja
+    /// Nota del resumen cuando la licitación se leyó con la IA de NEXO (<c>leer_estructura</c>): los precios van en la hoja
     /// «Licitación» nueva, no sobre el archivo original del cliente.
     /// </summary>
     public const string NotaLeidaConIa =
@@ -151,7 +151,7 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
             }
 
             // Un original que ClosedXML abrió pero no puede recorrer o volver a guardar es un problema del archivo del cliente, no del
-            // servidor: EXCEL_INVALIDO (LIBRO_ILEGIBLE), como en la lectura (HU-035.2, #213).
+            // servidor: EXCEL_INVALIDO (LIBRO_ILEGIBLE), como en la lectura.
             try
             {
                 return Escribir(libro, datos, original: true);
@@ -165,7 +165,7 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
 
     private static clsResultado<byte[]> Escribir(XLWorkbook libro, clsExportacionLicitacion datos, bool original)
     {
-        // HU-044.10 (#293, parte 2): una línea agregada a mano es una línea con fila null, pero SOLO cuando hay archivo (con analizar_excel
+        // Una línea agregada a mano es una línea con fila null, pero SOLO cuando hay archivo (con analizar_excel
         // y original, o con leer_estructura). Sin archivo, todas las líneas tienen fila null y NO son «agregadas a mano».
         var conArchivo = datos.Original is { Length: > 0 } || datos.LeidaConIa;
         var agregadas = conArchivo ? datos.Lineas.Where(l => l.Fila is null).ToList() : [];
@@ -247,7 +247,7 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
         }
 
         var porFila = datos.Lineas.Where(l => l.Fila is { } f && f < detectado.Datos.Count).ToDictionary(l => l.Fila!.Value);
-        // HU-044.10 (#293, parte 2): una fila que ya no está en el pliego sigue en «sin ubicar»; una línea a mano (fila null) NO, va a la
+        // Una fila que no está en el pliego sigue en «sin ubicar»; una línea a mano (fila null) NO, va a la
         // hoja «Agregadas en Cotifly».
         sinUbicar.AddRange(datos.Lineas.Where(l => l.Fila is { } f && f >= detectado.Datos.Count));
 
@@ -274,7 +274,7 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
     private static clsErrorDominio? EscribirSinOriginal(XLWorkbook libro, clsExportacionLicitacion datos, bool marcarAgregadas)
     {
         var hoja = libro.Worksheets.Add(HojaSinOriginal);
-        // HU-044.10 (#293, parte 2): con leer_estructura (o sin original), las líneas a mano van al final de la hoja «Licitación», con la
+        // Con leer_estructura (o sin original), las líneas a mano van al final de la hoja «Licitación», con la
         // columna «Referencia» (la 10, solo si hay alguna a mano).
         var lineas = marcarAgregadas ? datos.Lineas.OrderBy(l => l.Fila is null ? 1 : 0).ToList() : (IReadOnlyList<clsLineaExportacion>)datos.Lineas;
         EscribirFilasComoLicitacion(hoja, datos, lineas, marcarAgregadas);
@@ -282,7 +282,7 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
     }
 
     /// <summary>
-    /// HU-044.10 (#293, parte 2): la hoja nueva «Agregadas en Cotifly» con las líneas agregadas a mano cuando se exportó sobre el Excel
+    /// La hoja nueva «Agregadas en Cotifly» con las líneas agregadas a mano cuando se exportó sobre el Excel
     /// original (analizar_excel): las columnas de la hoja «Licitación» más la columna «Referencia» = «Agregada en Cotifly».
     /// </summary>
     private static void EscribirAgregadas(XLWorkbook libro, clsExportacionLicitacion datos, IReadOnlyList<clsLineaExportacion> agregadas)
@@ -388,7 +388,7 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
     }
 
     /// <summary>
-    /// HU-023.5 (#160): la celda de camiones de una ruta: un camión por línea (<c>"1 × Tractocamión 3S3 / Furgón · 16.000 kg · 81,25 % vol."</c>)
+    /// La celda de camiones de una ruta: un camión por línea (<c>"1 × Tractocamión 3S3 / Furgón · 16.000 kg · 81,25 % vol."</c>)
     /// y, si la cubicación no terminó, su estado.
     /// </summary>
     public static string TextoCamiones(clsLineaExportacion linea)
@@ -403,7 +403,7 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
         return string.Join("\n", lineas);
     }
 
-    /// <summary>HU-023.5 (#160): hoja con un camión por fila, para filtrar y sumar (la celda de la ruta es para leer).</summary>
+    /// <summary>Hoja con un camión por fila, para filtrar y sumar (la celda de la ruta es para leer).</summary>
     private static void EscribirCamiones(XLWorkbook libro, clsExportacionLicitacion datos)
     {
         var nombre = HojaCamiones;
@@ -439,7 +439,7 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
                 Numero(hoja.Cell(fila, 8), camion.PorcentajeLlenadoVolumen, "0.##");
                 Numero(hoja.Cell(fila, 9), camion.PorcentajeLlenadoPeso, "0.##");
                 hoja.Cell(fila, 10).Value = linea.Cubicacion ?? string.Empty;
-                // HU-028.1 (#183): el camión rechazado por la Mesa de Costeo, sin el motivo.
+                // El camión rechazado por la Mesa de Costeo, sin el motivo.
                 hoja.Cell(fila, 11).Value = camion.Rechazado ? clsCamionExportacion.TextoRechazado : string.Empty;
                 fila++;
             }
@@ -486,7 +486,7 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
             f++;
         }
 
-        // HU-028.1 (#183): las rechazadas por la Mesa de Costeo no son pendientes ni suman en el total.
+        // Las rechazadas por la Mesa de Costeo no son pendientes ni suman en el total.
         var rechazadas = datos.Lineas.Count(l => l.Rechazada);
         var costeadas = datos.Lineas.Count(l => l.PrecioFinal is not null && !l.Rechazada);
         var pendientes = datos.Lineas.Count - costeadas - rechazadas;
@@ -503,7 +503,7 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
         Dato("Líneas costeadas", costeadas);
         Dato("Líneas sin costeo", pendientes);
         Dato(EtiquetaRechazadas, rechazadas);
-        // HU-044.10 (#293, parte 2): solo si hubo líneas agregadas a mano, para que sin ellas el Excel quede igual que hoy.
+        // Solo si hubo líneas agregadas a mano, para que sin ellas el Excel no cambie.
         if (agregadas > 0)
         {
             Dato(EtiquetaAgregadas, agregadas);
@@ -530,7 +530,7 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
         }
 
         Dato("Generado", datos.GeneradoEn.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture));
-        // HU-044.7 (#290): si la leyó la IA de NEXO, se avisa que los precios van en la hoja nueva, no sobre el original.
+        // Si la leyó la IA de NEXO, se avisa que los precios van en la hoja nueva, no sobre el original.
         if (datos.LeidaConIa)
         {
             hoja.Cell(f, 1).Value = NotaLeidaConIa;

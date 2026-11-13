@@ -2,7 +2,7 @@ using Cotifly.Aplicacion.Cotizaciones.DTOs;
 
 namespace Cotifly.Aplicacion.Cotizaciones.Interfaces;
 
-/// <summary>HU-018.1 (#155, parte C): escribe el <c>.xlsx</c> de una cotización (ClosedXML en Infraestructura). Solo escribe: no lee Excel.</summary>
+/// <summary>Escribe el <c>.xlsx</c> de una cotización (ClosedXML en Infraestructura). Solo escribe: no lee Excel.</summary>
 public interface IClsExportadorExcelCotizacion
 {
     /// <summary>

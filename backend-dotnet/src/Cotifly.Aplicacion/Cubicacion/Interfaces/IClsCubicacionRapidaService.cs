@@ -4,9 +4,9 @@ using Cotifly.Dominio.Comun;
 namespace Cotifly.Aplicacion.Cubicacion.Interfaces;
 
 /// <summary>
-/// Opción D (D3, E2E 2026-10-16): "Calcular cubicaje" (<c>POST /web/cubicacion</c>) sin colgar la UI. El cálculo
+/// "Calcular cubicaje" (<c>POST /web/cubicacion</c>) sin colgar la UI. El cálculo
 /// (<see cref="IClsCalculoCubicajeService.CalcularAsync"/>) corre en segundo plano con el token del host, no con el de la petición: si el
-/// cliente corta, sigue. Se espera hasta <c>Cubicador:EsperaSincronaCubicacionSegundos</c>: si termina, responde como siempre (200 o el
+/// cliente corta, sigue. Se espera hasta <c>Cubicador:EsperaSincronaCubicacionSegundos</c>: si termina, responde con el resultado (200 o el
 /// error); si no, devuelve el id para consultar (<c>GET /web/cubicacion/{id}</c>).
 /// </summary>
 public interface IClsCubicacionRapidaService

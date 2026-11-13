@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Cotifly.Api.Mercancias.Controllers;
 
 /// <summary>
-/// Excel de mercancías de una ruta (HU-035.1, #202, ADR-024, <c>specs/openapi.yaml</c>): Cotifly lo lee localmente, SIN Nexo, y devuelve
+/// Excel de mercancías de una ruta (ADR-024, <c>specs/openapi.yaml</c>): Cotifly lo lee localmente, SIN Nexo, y devuelve
 /// la grilla cruda para que el frontend mapee las columnas a tipo, cantidad, medidas y peso. Mismo rol que la captura (comercial o
 /// gerente, la política de <see cref="clsControladorWebBase"/>) y el límite del cuerpo de las licitaciones (12 MB). El cuerpo se lee a
 /// mano para que la sesión se valide antes que el tipo de contenido.

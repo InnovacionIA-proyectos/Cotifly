@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 namespace Cotifly.Infraestructura.Configuracion;
 
 /// <summary>
-/// Candado transaccional de SQL Server (<c>sp_getapplock</c>, sección <c>CandadoSql</c>, #125) que serializa el folio (ADR-011).
+/// Candado transaccional de SQL Server (<c>sp_getapplock</c>, sección <c>CandadoSql</c>) que serializa el folio (ADR-011).
 /// La sección crítica dura milisegundos (consecutivo + inserción); estos valores solo importan con la base degradada.
 /// </summary>
 public sealed class clsOpcionesCandadoSql

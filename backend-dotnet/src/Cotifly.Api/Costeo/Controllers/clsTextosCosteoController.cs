@@ -10,7 +10,7 @@ using Microsoft.AspNetCore.Mvc.ModelBinding;
 namespace Cotifly.Api.Costeo.Controllers;
 
 /// <summary>
-/// Asunto e introducción del PDF del costeo (HU-013.5, ADR-018 §2a, <c>specs/openapi.yaml</c>): la IA los redacta con el texto
+/// Asunto e introducción del PDF del costeo (ADR-018 §2a, <c>specs/openapi.yaml</c>): la IA los redacta con el texto
 /// estándar de respaldo y el comercial los edita. Solo el dueño (404 si no es suya); <c>If-Match</c> obligatorio (428/409) y la regla
 /// del PDF (ADR-018 §11). Las respuestas 200 traen el <c>ETag</c> nuevo.
 /// </summary>
@@ -19,9 +19,9 @@ public sealed class clsTextosCosteoController(IClsContextoUsuario usuario, IClsT
 {
     /// <summary>
     /// 200 <c>TextosCotizacion</c> (de la IA o los estándar si la IA tardó, falló o su salida no pasó la validación: nunca un error por
-    /// la IA); 400 <c>SOLICITUD_INVALIDA</c> (HU-013.18, #296: <c>indicaciones_redaccion</c> de más de 500 caracteres); 404; 409
+    /// la IA); 400 <c>SOLICITUD_INVALIDA</c> (<c>indicaciones_redaccion</c> de más de 500 caracteres); 404; 409
     /// <c>TEXTOS_EDITADOS</c> (salvo <c>?sobrescribir=true</c>), <c>PDF_YA_ENVIADO</c> o <c>CONFLICTO_CONCURRENCIA</c>; 428 sin <c>If-Match</c>.
-    /// El cuerpo es opcional (HU-013.18, #296): sin él, la redacción es igual que hoy.
+    /// El cuerpo es opcional: sin él, la IA redacta sin indicaciones.
     /// </summary>
     [HttpPost("cotizaciones/{folio}/costeo/textos/redactar")]
     [clsRequiereIfMatch]
