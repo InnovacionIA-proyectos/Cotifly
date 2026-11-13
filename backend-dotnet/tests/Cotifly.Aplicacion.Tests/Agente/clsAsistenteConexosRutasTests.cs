@@ -72,6 +72,23 @@ public sealed class clsAsistenteConexosRutasTests
     }
 
     [Fact]
+    public async Task AgregarEnUnaLicitacionSeProponeComoEnUnaSpot()
+    {
+        var cotizacion = clsCotizacionMuestra.LicitacionCosteada([850_000m, 1_700_000m, 425_000m], folio: "PCN-L3");
+        Catalogo("cargue", Servicio(Cargue, "Cargue en puerto"));
+
+        var resultado = await Herramientas(cotizacion).ProponerAgregarConexoRutasAsync("cargue", 2m, null, true, null, Ct);
+
+        resultado.EsExitoso.Should().BeTrue(resultado.Error?.Mensaje);
+        var propuesta = _contexto.Propuesta!;
+        propuesta.Tipo.Should().Be(clsAccionPropuesta.TipoAgregarServiciosConexosLineas);
+        propuesta.Endpoint.Should().Be("/web/cotizaciones/PCN-L3/costeo/servicios-conexos/lineas");
+        propuesta.Cuerpo["todas"].Should().Be(true);
+        propuesta.Resumen.Should().StartWith("Agregar 2 (Unidad) de «Cargue en puerto» a todas las rutas (3) en Nexo.");
+        SinMontos(resultado);
+    }
+
+    [Fact]
     public async Task ConVariasRutasYSinIndicarCualesPreguntaAntesDeBuscar()
     {
         var herramientas = Herramientas(Spot());
