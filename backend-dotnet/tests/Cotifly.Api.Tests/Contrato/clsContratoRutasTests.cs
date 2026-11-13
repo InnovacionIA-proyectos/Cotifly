@@ -264,6 +264,7 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         (typeof(Cotifly.Api.Licitaciones.DTOs.clsRecetaLecturaWeb), "RecetaLectura"),
         (typeof(Cotifly.Api.Licitaciones.DTOs.clsDiccionarioClienteWeb), "DiccionarioCliente"),
         (typeof(Cotifly.Api.Licitaciones.DTOs.clsTerminoDiccionarioWeb), "TerminoDiccionario"),
+        (typeof(Cotifly.Api.Licitaciones.DTOs.clsTerminoDiccionarioWebRequest), "TerminoDiccionarioWeb"),
         (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsAvisoDiccionario), "AvisoDiccionario"),
         (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsOpcionesDiccionarioCliente), "OpcionesDiccionarioCliente"),
         // HU-035.1 (#202): grilla cruda del Excel de mercancías de una ruta, leída en Cotifly sin Nexo.

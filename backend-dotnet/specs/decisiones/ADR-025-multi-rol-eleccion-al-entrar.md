@@ -44,6 +44,10 @@ asignaciones activas del usuario en `UsuariosRoles` y **r** el rol de la jerarqu
 - **El multi-rol de un usuario existente lo habilita Datos**, agregando la asignación (procedimiento en `DEPLOY.md`, "Multi-rol"). Así, al
   desplegar, nadie cambia de comportamiento: quien hoy entra con un rol sigue entrando igual. Las altas nuevas con varios roles externos
   ya nacen multi-rol.
+  - **Actualizado por HU-040.3 (#258, ADR-009 OPCIÓN B+):** esto vale **solo para los roles SENSIBLES** (`requiereAltaManual`, hoy `director`).
+    Para los roles **ordinarios** (`comercial`, `gerente_comercial`), el login ya los **reconcilia solo**: a un usuario con una sola asignación
+    pero varios roles ordinarios externos, el login le otorga el que falta y pasa a multi-rol (elige al entrar). La alternativa "lo habilita
+    Datos" sigue solo para director.
 - El Director (HU-037) no es una excepción: un director con otra asignación activa también elige (ver Pendientes, decisión de negocio).
 
 ### 3. Flujo
@@ -131,6 +135,8 @@ Frontend (ClientePro)            API Cotifly                                  Ba
 
 - Un usuario con una sola asignación no nota nada (mismo contrato, misma respuesta, mismas reglas). Los refresh vigentes antes del
   despliegue siguen funcionando (rol único); el de un usuario que Datos pase a multi-rol responde 401 y vuelve a entrar.
+  - **Con HU-040.3 (#258):** un usuario con una sola asignación pero varios roles ordinarios externos SÍ cambia: el login lo pasa a multi-rol
+    (selector) en su siguiente ingreso. Su refresh vigente (rol único) responde 401 la primera vez y vuelve a entrar a elegir.
 - `GET /web/metricas/regional` (`comerciales[].rol`) informa, con varias asignaciones, la de mayor alcance.
 - El script 16 va antes de la imagen (`/health/ready` "falta 16") y es seguro con la imagen anterior.
 - El frontend tiene una pantalla nueva (selector de rol) y una llamada nueva; documentado en `docs/docs_front/CONTRATOS_API_COTIFLY_FRONTEND.md`.

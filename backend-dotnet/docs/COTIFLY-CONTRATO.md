@@ -204,6 +204,9 @@ Cotifly ──POST /api/captura-solicitudes─────► NEXO   (la captura
 | `DELETE /api/captura-solicitudes/plantillas-mapeo/{id}` | | `204` · `404 PLANTILLA_NO_ENCONTRADA` |
 | `GET /api/diccionario-cliente` | `?clienteNit=&incluirGenerales=&tipo=&q=&soloActivos=` | `TerminoClienteDto[]` |
 | `GET /api/diccionario-cliente/opciones` | | `{ tipos, camposDestino, unidades, contextos }` |
+| `POST /api/diccionario-cliente` | `{ clienteNit, termino, tipo, concepto, contexto?, ejemplo?, activo }` (nunca `clienteId`) | `201 TerminoClienteDto` · `409 TERMINO_DUPLICADO` |
+| `PUT /api/diccionario-cliente/{id}` | `{ termino, tipo, concepto, contexto?, ejemplo?, activo }` (el cliente no cambia) | `200 TerminoClienteDto` · `404 TERMINO_NO_ENCONTRADO` |
+| `DELETE /api/diccionario-cliente/{id}` | | `204` · `404 TERMINO_NO_ENCONTRADO` |
 | `POST /api/captura-solicitudes/leer-estructura` | multipart: `archivo`, `clienteNit?`, `instrucciones?`, `receta?` (texto JSON) | `LecturaEstructuraDto` |
 | `PUT /api/captura-solicitudes/recetas-lectura` | multipart: `archivo`, `receta`, `clienteNit`, `nombre?`, `instrucciones?` | `201`/`200 RecetaGuardadaDto` |
 | `GET /api/captura-solicitudes/recetas-lectura` | `?clienteNit=` (siempre) | `RecetaGuardadaDto[]` |
@@ -228,6 +231,12 @@ Decisiones que fijan cómo llama Cotifly:
   `COSTEO_NEXO_RECHAZADA`; 401/403 → `NEXO_SIN_PERMISO`; 413 → `ARCHIVO_DEMASIADO_GRANDE`; red, tiempo, 5xx o el 429 por minuto →
   `NEXO_NO_DISPONIBLE`.
 
-> **Discrepancia abierta (NEXO QA, 2026-11-06):** `GET /api/diccionario-cliente` acepta solo `clienteId`, no `clienteNit` (NEXO#410
-> cubrió plantillas y mapeo, no el diccionario). Cotifly manda `clienteNit` igual; mientras NEXO no lo acepte, la respuesta trae los
-> términos de todos los clientes más los generales.
+> **Diccionario por NIT (NEXO QA desde el 2026-11-06):** con `clienteNit`, `GET /api/diccionario-cliente` responde los términos de
+> ese cliente más los generales. Cotifly lo pide siempre con el NIT de la licitación al editar o borrar (para comprobar que el término
+> es del cliente y no general) y sin NIT solo muestra los generales. Crear, editar y borrar: rol `Comercial` en NEXO y rol activo
+> `comercial` en Cotifly; ninguna escritura se reintenta.
+> **Consulta de control (dependencia de NEXO):** cuando la respuesta con NIT trae términos de cliente, Cotifly hace un segundo
+> `GET /api/diccionario-cliente?clienteNit=COTIFLYSINCLIENTE&incluirGenerales=false` y exige que vuelva sin términos de cliente (ver
+> ADR-028). Depende de dos reglas de NEXO que no deben cambiar sin avisar: un NIT sin cliente local responde `200` sin términos propios
+> (no `400`) y `COTIFLYSINCLIENTE` nunca se crea como cliente. Si NEXO empezara a rechazar ese NIT, la consulta del diccionario de un
+> cliente con términos fallaría con el error de NEXO y no se podría editar ni borrar ninguno.

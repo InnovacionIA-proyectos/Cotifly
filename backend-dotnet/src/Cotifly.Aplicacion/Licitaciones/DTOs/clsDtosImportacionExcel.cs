@@ -136,6 +136,12 @@ public sealed record clsTerminoCliente(
     public bool EsGeneral => ClienteIdLeido && ClienteId is null && string.IsNullOrWhiteSpace(ClienteNombre);
 }
 
+/// <summary>
+/// Los campos editables de un término del diccionario del cliente, tal como viajan a NEXO al crearlo o editarlo. El cliente va aparte: al
+/// crear, por NIT; al editar no cambia.
+/// </summary>
+public sealed record clsDatosTerminoCliente(string Termino, string Tipo, string Concepto, string? Contexto, string? Ejemplo, bool Activo);
+
 /// <summary>Los valores que acepta el diccionario de NEXO (tipos, campos de NEXO, unidades y contextos), para armar los formularios.</summary>
 public sealed record clsOpcionesDiccionarioCliente(
     IReadOnlyList<string> Tipos, IReadOnlyList<string> CamposDestino, IReadOnlyList<string> Unidades, IReadOnlyList<string> Contextos);

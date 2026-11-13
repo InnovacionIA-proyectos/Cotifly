@@ -389,22 +389,39 @@ public sealed class clsFormatosClienteAdversarialTests : IDisposable
     // --- Diccionario: nada del cliente sale de Cotifly ---
 
     [Fact]
-    public async Task ConNitYNexoDevolviendoTerminosDeVariosClientesSoloSalenLosGeneralesSinDatosDeCliente()
+    public async Task ConNitYNexoSinFiltrarPorClienteSoloSalenLosGeneralesSinDatosDeCliente()
     {
         var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
-        var clienteDelNit = Guid.NewGuid();
+        var clienteDelNit = clsNexoFalso.ClienteIdDeNit(NitA);
         _nexo.Diccionario.Add((clienteDelNit, "Mula del propio cliente", "valor", "3S2", "tipoVehiculo"));
         _nexo.Diccionario.Add((Guid.NewGuid(), "Patineta de otro", "valor", "2S2", "tipoVehiculo"));
         _nexo.Diccionario.Add((Guid.Empty, "Término con cliente vacío", "columna", "origen", null));
+        _nexo.DiccionarioIgnoraNit = true;
 
         using var respuesta = await _api.EnviarAsync(HttpMethod.Get, $"{RutaDiccionario}?nit_cliente={NitA}", sesion.Access);
 
         var json = await VerificarContratoAsync(respuesta, RutaDiccionario, HttpMethod.Get, HttpStatusCode.OK);
         json.GetProperty("terminos").EnumerateArray().Select(t => t.GetProperty("termino").GetString())
-            .Should().Equal(["Tractomula", "ORIGEN"], "ni los del propio cliente: la decisión es solo generales más aviso");
-        json.GetProperty("aviso").GetProperty("codigo").GetString().Should().Be("TERMINOS_CLIENTE_NO_DISPONIBLES");
+            .Should().Equal(["Tractomula", "ORIGEN"], "si NEXO responde términos de varios clientes, no se puede saber cuáles son del NIT");
+        json.GetProperty("aviso").ValueKind.Should().Be(JsonValueKind.Null);
         var texto = json.GetRawText();
         texto.Should().NotContain("cliente_id").And.NotContain("clienteId").And.NotContain("cliente_nombre").And.NotContain(clienteDelNit.ToString());
+    }
+
+    [Fact]
+    public async Task ConNitSaleElTerminoDelClienteSinElIdNiElNombreDelClienteDeNexo()
+    {
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var clienteDelNit = clsNexoFalso.ClienteIdDeNit(NitA);
+        _nexo.Diccionario.Add((clienteDelNit, "Mula del propio cliente", "valor", "3S2", "tipoVehiculo"));
+        _nexo.Diccionario.Add((Guid.NewGuid(), "Patineta de otro", "valor", "2S2", "tipoVehiculo"));
+
+        using var respuesta = await _api.EnviarAsync(HttpMethod.Get, $"{RutaDiccionario}?nit_cliente={NitA}", sesion.Access);
+
+        var json = await VerificarContratoAsync(respuesta, RutaDiccionario, HttpMethod.Get, HttpStatusCode.OK);
+        json.GetProperty("terminos").EnumerateArray().Select(t => t.GetProperty("termino").GetString())
+            .Should().Equal(["Tractomula", "ORIGEN", "Mula del propio cliente"]);
+        json.GetRawText().Should().NotContain("cliente_nombre").And.NotContain("Cliente ficticio").And.NotContain(clienteDelNit.ToString());
     }
 
     [Fact]

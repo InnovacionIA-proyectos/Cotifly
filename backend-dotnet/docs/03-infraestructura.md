@@ -555,4 +555,4 @@ flowchart LR
     api --> trm2[datos.gov.co<br/>TRM respaldo]
 ```
 
-Manifiestos de Swarm del backend .NET (HU-006.6, #30): `infra/stack.dotnet.staging.yml` e `infra/stack.dotnet.dokploy.yml`. Una réplica anclada al worker mientras el overlay entre nodos siga caído (HU-006.1), red `dokploy-network` solo para la entrada desde Traefik y una overlay propia con egreso para SQL Server y los servicios externos; SQL Server es externo, no un servicio del stack. Detalle y validación en [`DEPLOY.md`](../../DEPLOY.md) §5.
+Manifiestos de Swarm del backend .NET (HU-006.6, #30): `infra/stack.dotnet.staging.yml` e `infra/stack.dotnet.dokploy.yml`. Una réplica anclada al worker (disco y volumen local de PDFs; el overlay entre nodos funciona, lo pendiente es TLS: HU-006.2), red `dokploy-network` solo para la entrada desde Traefik y una overlay propia con egreso para SQL Server y los servicios externos; SQL Server es externo, no un servicio del stack. Detalle y validación en [`DEPLOY.md`](../../DEPLOY.md) §5.

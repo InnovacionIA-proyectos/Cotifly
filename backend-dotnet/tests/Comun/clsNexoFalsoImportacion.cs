@@ -56,9 +56,22 @@ public sealed partial class clsNexoFalso
     /// <summary>NIT (normalizados) que no son de ningún cliente ni prospecto: guardar con ellos da <c>400 CLIENTE_NIT_INVALIDO</c>.</summary>
     public HashSet<string> NitsDesconocidos { get; } = new(StringComparer.Ordinal);
 
-    /// <summary>Términos del diccionario de NEXO (<c>ClienteId</c> null = generales).</summary>
-    public List<(Guid? ClienteId, string Termino, string Tipo, string Concepto, string? Contexto)> Diccionario { get; } =
+    /// <summary>
+    /// Términos del diccionario de NEXO (<c>ClienteId</c> null = generales; el de un cliente por NIT es <see cref="ClienteIdDeNit"/>). Se
+    /// agregan como tuplas <c>(ClienteId, Termino, Tipo, Concepto, Contexto)</c>; cada uno tiene un id estable para editarlo o borrarlo.
+    /// </summary>
+    public List<clsTerminoFalso> Diccionario { get; } =
         [(null, "Tractomula", "valor", "3S3", "tipoVehiculo"), (null, "ORIGEN", "columna", "origen", null)];
+
+    /// <summary>
+    /// Con <c>true</c>, <c>GET diccionario-cliente</c> ignora <c>clienteNit</c> y responde los términos de todos los clientes (un NEXO que
+    /// no filtra por NIT).
+    /// </summary>
+    public bool DiccionarioIgnoraNit { get; set; }
+
+    /// <summary>El id local que el falso le da al cliente de un NIT (el mismo NIT, normalizado como NEXO, da siempre el mismo id).</summary>
+    public static Guid ClienteIdDeNit(string nit) =>
+        new(System.Security.Cryptography.MD5.HashData(System.Text.Encoding.UTF8.GetBytes(NitComoNexo(nit) ?? string.Empty)));
 
     /// <summary>
     /// #256 (B2): simula un cambio de forma de NEXO en <c>GET diccionario-cliente</c>: los términos llegan SIN la propiedad <c>clienteId</c>
@@ -185,18 +198,140 @@ public sealed partial class clsNexoFalso
             }),
             ("GET", "/api/diccionario-cliente") => consulta["tipo"] is { } tipo && tipo is not ("columna" or "unidad" or "valor")
                 ? Error(HttpStatusCode.BadRequest, "TIPO_TERMINO_INVALIDO", "El tipo de término no es válido.")
-                : Json(HttpStatusCode.OK, Diccionario.Select(TerminoDto).ToList()),
+                : Json(HttpStatusCode.OK, TerminosConsultados(consulta).Select(TerminoDto).ToList()),
+            ("POST", "/api/diccionario-cliente") => CrearTermino(json),
+            ("PUT", var r) when r.StartsWith("/api/diccionario-cliente/", StringComparison.Ordinal) =>
+                EditarTermino(r["/api/diccionario-cliente/".Length..], json),
+            ("DELETE", var r) when r.StartsWith("/api/diccionario-cliente/", StringComparison.Ordinal) =>
+                Diccionario.RemoveAll(t => t.Id.ToString() == r["/api/diccionario-cliente/".Length..]) > 0
+                    ? new HttpResponseMessage(HttpStatusCode.NoContent)
+                    : Error(HttpStatusCode.NotFound, "TERMINO_NO_ENCONTRADO", "El término no existe."),
             _ => Error(HttpStatusCode.NotFound, "RUTA_NO_ENCONTRADA", $"{metodo} {ruta}"),
         };
     }
 
+    /// <summary>
+    /// Como NEXO: con <c>clienteNit</c>, los términos de ese cliente y (salvo <c>incluirGenerales=false</c>) los generales; sin NIT, los de
+    /// todos los clientes. Con <see cref="DiccionarioIgnoraNit"/>, siempre todos.
+    /// </summary>
+    private IEnumerable<clsTerminoFalso> TerminosConsultados(System.Collections.Specialized.NameValueCollection consulta)
+    {
+        if (DiccionarioIgnoraNit || NitComoNexo(consulta["clienteNit"]) is not { } nit)
+        {
+            return Diccionario;
+        }
+
+        var cliente = ClienteIdDeNit(nit);
+        var generales = consulta["incluirGenerales"] != "false";
+        return Diccionario.Where(t => t.ClienteId == cliente || (generales && t.ClienteId is null));
+    }
+
+    private HttpResponseMessage CrearTermino(JsonNode? json)
+    {
+        if (json?["clienteId"] is not null)
+        {
+            return Error(HttpStatusCode.BadRequest, "VALIDATION_ERROR", "Cotifly no debe mandar clienteId.");
+        }
+
+        var nit = NitComoNexo(json?["clienteNit"]?.GetValue<string>());
+        if (nit is not null && NitsDesconocidos.Contains(nit))
+        {
+            return Error(HttpStatusCode.BadRequest, "CLIENTE_NIT_INVALIDO", $"El NIT '{nit}' no corresponde a ningún cliente ni prospecto.");
+        }
+
+        var termino = new clsTerminoFalso(nit is null ? null : ClienteIdDeNit(nit), Texto(json, "termino"), Texto(json, "tipo"), Texto(json, "concepto"),
+            json?["contexto"]?.GetValue<string>())
+        {
+            Ejemplo = json?["ejemplo"]?.GetValue<string>(),
+            Activo = json?["activo"]?.GetValue<bool>() ?? true,
+        };
+        if (ValidarTermino(termino, otroId: null) is { } invalido)
+        {
+            return invalido;
+        }
+
+        Diccionario.Add(termino);
+        return Json(HttpStatusCode.Created, TerminoDto(termino));
+    }
+
+    private HttpResponseMessage EditarTermino(string id, JsonNode? json)
+    {
+        if (json?["clienteId"] is not null || json?["clienteNit"] is not null)
+        {
+            return Error(HttpStatusCode.BadRequest, "VALIDATION_ERROR", "El cliente no cambia al editar.");
+        }
+
+        var actual = Diccionario.FirstOrDefault(t => t.Id.ToString() == id);
+        if (actual is null)
+        {
+            return Error(HttpStatusCode.NotFound, "TERMINO_NO_ENCONTRADO", "El término no existe.");
+        }
+
+        var editado = new clsTerminoFalso(actual.ClienteId, Texto(json, "termino"), Texto(json, "tipo"), Texto(json, "concepto"),
+            json?["contexto"]?.GetValue<string>())
+        {
+            Id = actual.Id,
+            Ejemplo = json?["ejemplo"]?.GetValue<string>(),
+            Activo = json?["activo"]?.GetValue<bool>() ?? true,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        };
+        if (ValidarTermino(editado, actual.Id) is { } invalido)
+        {
+            return invalido;
+        }
+
+        Diccionario[Diccionario.IndexOf(actual)] = editado;
+        return Json(HttpStatusCode.OK, TerminoDto(editado));
+    }
+
+    private static string Texto(JsonNode? json, string propiedad) => json?[propiedad]?.GetValue<string>() ?? string.Empty;
+
+    /// <summary>Las reglas de NEXO (§3.19.1) que el falso simula; el duplicado compara el término como NEXO.</summary>
+    private HttpResponseMessage? ValidarTermino(clsTerminoFalso t, Guid? otroId)
+    {
+        if (string.IsNullOrWhiteSpace(t.Termino))
+        {
+            return Error(HttpStatusCode.BadRequest, "TERMINO_REQUERIDO", "Escriba el término.");
+        }
+
+        if (t.Tipo is not ("columna" or "unidad" or "valor"))
+        {
+            return Error(HttpStatusCode.BadRequest, "TIPO_TERMINO_INVALIDO", "El tipo de término no es válido.");
+        }
+
+        if (string.IsNullOrWhiteSpace(t.Concepto))
+        {
+            return Error(HttpStatusCode.BadRequest, "CONCEPTO_REQUERIDO", "Indique el concepto.");
+        }
+
+        if (t.Tipo == "columna" && t.Concepto is not ("origen" or "destino" or "peso" or "tipoVehiculo" or "ignorar"))
+        {
+            return Error(HttpStatusCode.BadRequest, "CAMPO_DESTINO_INVALIDO", "El campo de NEXO no existe.");
+        }
+
+        if (t.Tipo == "valor" && t.Contexto is not ("tipoVehiculo" or "carroceria" or "lineaNegocio"))
+        {
+            return Error(HttpStatusCode.BadRequest, "CONTEXTO_INVALIDO", "El contexto no es válido.");
+        }
+
+        if (t.Tipo != "valor" && t.Contexto is not null)
+        {
+            return Error(HttpStatusCode.BadRequest, "CONTEXTO_NO_APLICA", "El contexto solo aplica a los valores.");
+        }
+
+        var duplicado = Diccionario.Any(o => o.Id != otroId && o.ClienteId == t.ClienteId && o.Tipo == t.Tipo && o.Contexto == t.Contexto
+            && NormalizarComoNexo(o.Termino) == NormalizarComoNexo(t.Termino));
+        return duplicado ? Error(HttpStatusCode.Conflict, "TERMINO_DUPLICADO", "El término ya existe para ese cliente.") : null;
+    }
+
     /// <summary>Un término como lo manda NEXO (con <see cref="DiccionarioSinClienteId"/>, sin la propiedad <c>clienteId</c>).</summary>
-    private JsonObject TerminoDto((Guid? ClienteId, string Termino, string Tipo, string Concepto, string? Contexto) t)
+    private JsonObject TerminoDto(clsTerminoFalso t)
     {
         var termino = new JsonObject
         {
-            ["id"] = Guid.NewGuid(), ["clienteNombre"] = null, ["termino"] = t.Termino, ["tipo"] = t.Tipo, ["concepto"] = t.Concepto,
-            ["contexto"] = t.Contexto, ["ejemplo"] = null, ["activo"] = true, ["createdAt"] = DateTimeOffset.UtcNow, ["updatedAt"] = null,
+            ["id"] = t.Id, ["clienteNombre"] = t.ClienteId is null ? null : "Cliente ficticio", ["termino"] = t.Termino, ["tipo"] = t.Tipo,
+            ["concepto"] = t.Concepto, ["contexto"] = t.Contexto, ["ejemplo"] = t.Ejemplo, ["activo"] = t.Activo, ["createdAt"] = t.CreatedAt,
+            ["updatedAt"] = t.UpdatedAt,
         };
         if (!DiccionarioSinClienteId)
         {
@@ -417,14 +552,14 @@ public sealed partial class clsNexoFalso
             }
 
             var alias = Diccionario.FirstOrDefault(t => t.Tipo == "valor" && t.Contexto == v.Campo && NormalizarComoNexo(t.Termino) == NormalizarComoNexo(v.Valor));
-            var resuelto = alias.Termino is not null || IaImportacionDisponible;
+            var resuelto = alias is not null || IaImportacionDisponible;
             return new
             {
                 campo = v.Campo, valor = v.Valor, estado = resuelto ? "resuelto" : "sin_resolver",
-                codigo = alias.Termino is not null ? alias.Concepto : resuelto ? NormalizarComoNexo(v.Valor) : null,
+                codigo = alias is not null ? alias.Concepto : resuelto ? NormalizarComoNexo(v.Valor) : null,
                 descripcion = (string?)null, municipioId = (int?)null,
-                origen = alias.Termino is not null ? "diccionario" : resuelto ? "ia" : "ninguno",
-                confianza = alias.Termino is not null ? 1.0 : resuelto ? 0.8 : 0.0, nota = (string?)null, candidatos = (object[]?)null,
+                origen = alias is not null ? "diccionario" : resuelto ? "ia" : "ninguno",
+                confianza = alias is not null ? 1.0 : resuelto ? 0.8 : 0.0, nota = (string?)null, candidatos = (object[]?)null,
             };
         }).ToList();
         var todosPorRegla = resultado.All(r => r.origen is not ("ia" or "ninguno"));
@@ -623,3 +758,20 @@ public sealed partial class clsNexoFalso
 public sealed record clsNormalizacionFalsa(
     string Campo, string Valor, string Estado, string? Codigo, string Origen, double Confianza = 1, string? Descripcion = null,
     int? MunicipioId = null, string? Nota = null, IReadOnlyList<(int MunicipioId, string CodigoDane, string Municipio, string Departamento)>? Candidatos = null);
+
+/// <summary>Un término del diccionario del Nexo falso. Se crea desde la tupla <c>(ClienteId, Termino, Tipo, Concepto, Contexto)</c>.</summary>
+public sealed record clsTerminoFalso(Guid? ClienteId, string Termino, string Tipo, string Concepto, string? Contexto)
+{
+    public Guid Id { get; init; } = Guid.NewGuid();
+
+    public string? Ejemplo { get; init; }
+
+    public bool Activo { get; init; } = true;
+
+    public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
+
+    public DateTimeOffset? UpdatedAt { get; init; }
+
+    public static implicit operator clsTerminoFalso((Guid? ClienteId, string Termino, string Tipo, string Concepto, string? Contexto) t) =>
+        new(t.ClienteId, t.Termino, t.Tipo, t.Concepto, t.Contexto);
+}

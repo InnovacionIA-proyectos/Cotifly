@@ -11,7 +11,8 @@ namespace Cotifly.Aplicacion.Licitaciones.Interfaces;
 /// </summary>
 /// <remarks>
 /// <para><b>Errores (nunca lanza por NEXO).</b> Un 400/404 de NEXO con un código conocido llega con ese código y el mensaje de NEXO
-/// (<c>DEMASIADAS_COLUMNAS</c>, <c>CAMPO_INVALIDO</c>, <c>RECETA_INVALIDA</c>, <c>CLIENTE_NIT_INVALIDO</c>...); <c>429 IA_TOPE_DIARIO</c> →
+/// (<c>DEMASIADAS_COLUMNAS</c>, <c>CAMPO_INVALIDO</c>, <c>RECETA_INVALIDA</c>, <c>CLIENTE_NIT_INVALIDO</c>...), igual que el
+/// <c>409 TERMINO_DUPLICADO</c> del diccionario; <c>429 IA_TOPE_DIARIO</c> →
 /// <c>IA_TOPE_DIARIO</c> (cupo diario de IA del comercial, sin bloquear a nadie más); 401/403 → <c>NEXO_SIN_PERMISO</c>; red, tiempo
 /// agotado, 5xx, circuito abierto, el 429 por minuto o la importación apagada → <c>NEXO_NO_DISPONIBLE</c>.</para>
 /// <para><b>Sin IA no es un error.</b> Con la IA de NEXO apagada o caída la respuesta es 200 con <c>iaUsada = false</c> y <c>motivoSinIa</c>.</para>
@@ -48,10 +49,25 @@ public interface IClsImportacionExcelNexo
     Task<clsResultado<bool>> EliminarPlantillaMapeoAsync(Guid usuarioId, Guid plantillaId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// <c>GET diccionario-cliente</c> con <c>clienteNit</c> y los filtros. Ver ADR-028: el NEXO de QA aún no filtra este endpoint por NIT.
+    /// <c>GET diccionario-cliente</c> con <c>clienteNit</c> y los filtros: con NIT, los términos de ese cliente más (si se piden) los
+    /// generales; sin NIT, NEXO devuelve los de todos los clientes y filtrar es tarea de quien llama.
     /// </summary>
     Task<clsResultado<IReadOnlyList<clsTerminoCliente>>> ObtenerDiccionarioClienteAsync(
         Guid usuarioId, string? clienteNit, clsFiltroDiccionarioCliente? filtro = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// <c>POST diccionario-cliente</c>: crea el término para el cliente del NIT (obligatorio: sin él NEXO lo crearía general, así que
+    /// responde <c>CLIENTE_REQUERIDO</c> sin llamar a NEXO). Nunca se reintenta.
+    /// </summary>
+    Task<clsResultado<clsTerminoCliente>> CrearTerminoClienteAsync(
+        Guid usuarioId, string clienteNit, clsDatosTerminoCliente datos, CancellationToken cancellationToken = default);
+
+    /// <summary><c>PUT diccionario-cliente/{id}</c>: reemplaza los campos editables (el cliente no cambia). Nunca se reintenta.</summary>
+    Task<clsResultado<clsTerminoCliente>> EditarTerminoClienteAsync(
+        Guid usuarioId, Guid terminoId, clsDatosTerminoCliente datos, CancellationToken cancellationToken = default);
+
+    /// <summary><c>DELETE diccionario-cliente/{id}</c>. <c>TERMINO_NO_ENCONTRADO</c> si NEXO no lo tiene.</summary>
+    Task<clsResultado<bool>> EliminarTerminoClienteAsync(Guid usuarioId, Guid terminoId, CancellationToken cancellationToken = default);
 
     /// <summary><c>GET diccionario-cliente/opciones</c>: tipos, campos de NEXO, unidades y contextos.</summary>
     Task<clsResultado<clsOpcionesDiccionarioCliente>> ObtenerOpcionesDiccionarioAsync(Guid usuarioId, CancellationToken cancellationToken = default);

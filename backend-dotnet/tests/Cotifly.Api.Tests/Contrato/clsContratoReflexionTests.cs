@@ -107,9 +107,8 @@ public sealed class clsContratoReflexionTests(clsCotiflyApiFactory factory) : IC
         "MedidaPolitica.estado",
         // HU-046.3 (#269; contrato del 2026-11-10): SIN_VALOR_MERCANCIA | null, constante de clsPoliticaSeguros (texto, no enum).
         "PoliticaSegurosRuta.aviso",
-        // HU-044.5 (#256): el tipo del término es el texto de NEXO, reenviado tal cual; el código del aviso es la constante
-        // clsFormatosClienteService.AvisoTerminosClienteNoDisponibles.
-        "TerminoDiccionario.tipo", "AvisoDiccionario.codigo",
+        // El tipo del término es el texto de NEXO, reenviado tal cual.
+        "TerminoDiccionario.tipo",
         // HU-044.4 (#255): el campo son las constantes de clsCamposNormalizacion y el estado es el texto de NEXO, que Cotifly reenvía.
         "ValorNormalizado.campo", "ValorNormalizado.estado",
     };

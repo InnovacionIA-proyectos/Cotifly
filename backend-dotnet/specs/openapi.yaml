@@ -184,6 +184,13 @@ paths:
           (o entra por primera vez con varios roles externos mapeados). NO trae tokens: trae `roles` (código y descripción),
           `user` (sin rol) y `ticketEleccion`, un ticket de UN SOLO USO que vence en 5 minutos (`ticketExpiraAt`). El
           frontend muestra el selector y llama a `POST /api/auth/elegir-rol`. Si el ticket vence, se vuelve a llamar al login.
+
+        **HU-040.3 (#258, ADR-009 OPCIÓN B+), reconciliación de roles (la forma de la respuesta NO cambia).** En el login, el
+        backend reconcilia las asignaciones internas con los roles externos vigentes: auto-otorga los roles ORDINARIOS
+        (`comercial`, `gerente_comercial`) que falten y auto-revoca los que perdieron su respaldo, en vez de rechazar. Por eso
+        un usuario con una sola asignación pero varios roles ordinarios externos puede recibir ahora `EleccionRolRequerida`
+        (antes entraba directo). Los roles SENSIBLES (hoy `director`) que falten NO se auto-otorgan: siguen con alta manual y
+        responden el 401 genérico. El refresh y `elegir-rol` no reconcilian (siguen estrictos).
         Cualquier falla (usuario inexistente, rol no autorizado, almacén caído) responde
         el mismo 401 genérico.
       security: []
@@ -4621,24 +4628,31 @@ paths:
     get:
       operationId: consultarDiccionarioCliente
       tags: [web]
-      summary: Consulta el diccionario de NEXO (por ahora, solo los términos generales)
+      summary: Consulta el diccionario de NEXO (los términos del cliente y los generales)
       description: |
-        HU-044.5 (#256, ADR-028). Reenvía a `GET {Nexo:UrlBase}/api/diccionario-cliente` con los filtros `tipo` y `q`. **Solo lectura.**
+        HU-044.5 (#256, ADR-028). Reenvía a `GET {Nexo:UrlBase}/api/diccionario-cliente` con `clienteNit` y los filtros `tipo` y `q`.
+        Lo pueden consultar el `comercial`, el `gerente_comercial` y el `director`.
 
-        **Solo términos generales (`general = true`).** El NEXO de QA todavía no filtra este endpoint por `clienteNit` y devuelve los
-        términos de todos los clientes; para no mostrarle a un comercial los términos de otro cliente, Cotifly descarta todo término
-        con cliente. Con `nit_cliente`, además, responde el `aviso` `TERMINOS_CLIENTE_NO_DISPONIBLES` para que la interfaz explique
-        que los términos propios del cliente aún no se ven. Cuando NEXO filtre por NIT, esta regla se revisa (ADR-028).
+        - **Con `nit_cliente`:** los términos de ese cliente (`general = false`) más los generales (`general = true`).
+        - **Sin `nit_cliente`:** solo los generales (NEXO devolvería los términos de todos los clientes).
 
-        Crear, editar y borrar términos (`POST`, `PUT /{id}`, `DELETE /{id}`) **todavía no existen**: esperan el contrato de NEXO
-        (§3.19.1, S6-HU-34.10).
+        `aviso` va siempre en `null`.
+
+        **Garantía.** Los términos de NEXO no traen el NIT de su cliente, solo su id local de NEXO. Cotifly muestra (y deja editar o
+        borrar) un término de cliente solo si NEXO demuestra en esa misma operación que filtró por el NIT:
+        - la respuesta trae términos de un solo cliente;
+        - una consulta de control con un NIT que no es de ningún cliente, sin generales, vuelve sin términos de cliente.
+
+        Si alguna de las dos falla, solo salen los generales y editar o borrar un término de cliente responde `404 TERMINO_NO_ENCONTRADO`
+        sin escribir. Un término sin `clienteId` nunca sale. Así, un término de otro cliente no sale aunque NEXO deje de filtrar por NIT
+        (mientras ese término exista en NEXO, la consulta de control lo delata).
       security:
         - bearer: []
       parameters:
         - name: nit_cliente
           in: query
           required: false
-          description: NIT de la licitación. Hoy solo cambia el `aviso`.
+          description: NIT del cliente, con o sin puntos y dígito de verificación. Sin él, solo los términos generales.
           schema:
             type: string
         - name: tipo
@@ -4655,7 +4669,7 @@ paths:
             type: string
       responses:
         '200':
-          description: Los términos generales y, con NIT, el aviso
+          description: Los términos del cliente y los generales (sin NIT, solo los generales); `aviso` siempre `null`
           content:
             application/json:
               schema:
@@ -4678,6 +4692,68 @@ paths:
                   - $ref: '#/components/schemas/ErrorNegocio'
         '503':
           description: '`NEXO_NO_DISPONIBLE`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+
+    post:
+      operationId: crearTerminoDiccionario
+      tags: [web]
+      summary: Crea en NEXO un término del diccionario del cliente
+      description: |
+        HU-044.5 (#256, ADR-028). Reenvía a `POST {Nexo:UrlBase}/api/diccionario-cliente` con el cliente por `clienteNit` (nunca por
+        `clienteId`). **Solo el rol activo `comercial`** (política `SoloComercial`). `nit_cliente` es obligatorio: desde Cotifly no se
+        crean términos generales. Antes de NEXO, Cotifly valida los vacíos (con los códigos de NEXO) y los largos. Sin reintentos.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TerminoDiccionarioWeb'
+      responses:
+        '201':
+          description: El término creado (`general = false`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TerminoDiccionario'
+        '400':
+          description: |
+            `ErrorNegocio`: `CLIENTE_REQUERIDO` (sin `nit_cliente`), `TERMINO_REQUERIDO`, `TIPO_TERMINO_INVALIDO` o `CONCEPTO_REQUERIDO`
+            (vacíos), sin llamar a NEXO; `CLIENTE_NIT_INVALIDO`, `CLIENTE_NO_ENCONTRADO`, `TIPO_TERMINO_INVALIDO`, `CAMPO_DESTINO_INVALIDO`,
+            `UNIDAD_INVALIDA`, `CONTEXTO_INVALIDO`, `CONTEXTO_NO_APLICA` o `EJEMPLO_MUY_LARGO` de NEXO, con su mensaje;
+            `COSTEO_NEXO_RECHAZADA` (`detalle.motivo` = el código de NEXO) si NEXO responde otro 4xx, otro 409 o un 404 sin código.
+            `ErrorWeb`: cuerpo inválido o un campo más largo de lo permitido (`termino` 200, `tipo` 100, `concepto` 100, `contexto` 50,
+            `ejemplo` 500).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: '`ErrorWeb` "No tienes permiso para esta operación." si el rol activo del token no es `comercial` (el gerente y el director consultan el diccionario pero no lo editan). `ErrorNegocio` `NEXO_SIN_PERMISO`: NEXO respondió 401 o 403'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
+        '409':
+          description: '`TERMINO_DUPLICADO` (de NEXO): el cliente ya tiene ese término con el mismo tipo y contexto (sin distinguir mayúsculas, tildes ni espacios)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '503':
+          description: '`NEXO_NO_DISPONIBLE`: la importación apagada en el ambiente, NEXO caído o sin respuesta a tiempo (una sola llamada, sin reintentos)'
           content:
             application/json:
               schema:
@@ -4718,6 +4794,139 @@ paths:
                   - $ref: '#/components/schemas/ErrorNegocio'
         '503':
           description: '`NEXO_NO_DISPONIBLE`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+
+  /web/diccionario-cliente/{id}:
+    put:
+      operationId: editarTerminoDiccionario
+      tags: [web]
+      summary: Edita en NEXO un término del diccionario del cliente
+      description: |
+        HU-044.5 (#256, ADR-028). **Solo el rol activo `comercial`.** Antes de editar, Cotifly lista los términos del cliente de
+        `nit_cliente` en NEXO: si el `id` es de un término general responde `403 TERMINO_GENERAL_NO_EDITABLE`, y si no está entre los
+        del cliente, `404 TERMINO_NO_ENCONTRADO`; en ninguno de los dos casos llama a la escritura de NEXO. Después reenvía a
+        `PUT {Nexo:UrlBase}/api/diccionario-cliente/{id}` con los campos editables (el cliente del término no cambia). Sin reintentos.
+      security:
+        - bearer: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TerminoDiccionarioWeb'
+      responses:
+        '200':
+          description: El término editado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TerminoDiccionario'
+        '400':
+          description: |
+            `ErrorNegocio`: `CLIENTE_REQUERIDO` (sin `nit_cliente`), `TERMINO_REQUERIDO`, `TIPO_TERMINO_INVALIDO` o `CONCEPTO_REQUERIDO`
+            (vacíos), sin llamar a NEXO; `CLIENTE_NIT_INVALIDO`, `CLIENTE_NO_ENCONTRADO`, `TIPO_TERMINO_INVALIDO`, `CAMPO_DESTINO_INVALIDO`,
+            `UNIDAD_INVALIDA`, `CONTEXTO_INVALIDO`, `CONTEXTO_NO_APLICA` o `EJEMPLO_MUY_LARGO` de NEXO, con su mensaje;
+            `COSTEO_NEXO_RECHAZADA` (`detalle.motivo` = el código de NEXO) si NEXO responde otro 4xx, otro 409 o un 404 sin código.
+            `ErrorWeb`: cuerpo inválido o un campo más largo de lo permitido (`termino` 200, `tipo` 100, `concepto` 100, `contexto` 50,
+            `ejemplo` 500).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: '`ErrorWeb` "No tienes permiso para esta operación." si el rol activo del token no es `comercial` (el gerente y el director consultan el diccionario pero no lo editan). `ErrorNegocio` `NEXO_SIN_PERMISO`: NEXO respondió 401 o 403. `ErrorNegocio` `TERMINO_GENERAL_NO_EDITABLE`: el término es general (aplica a todos los clientes)'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
+        '404':
+          description: '`TERMINO_NO_ENCONTRADO`: el término no existe o no es del cliente de `nit_cliente` (también un `id` que no es un GUID, sin llamar a NEXO)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '409':
+          description: '`TERMINO_DUPLICADO` (de NEXO): el cliente ya tiene ese término con el mismo tipo y contexto (sin distinguir mayúsculas, tildes ni espacios)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '503':
+          description: '`NEXO_NO_DISPONIBLE`: la importación apagada en el ambiente, NEXO caído o sin respuesta a tiempo (una sola llamada, sin reintentos)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+    delete:
+      operationId: eliminarTerminoDiccionario
+      tags: [web]
+      summary: Borra en NEXO un término del diccionario del cliente
+      description: |
+        HU-044.5 (#256, ADR-028). **Solo el rol activo `comercial`.** `nit_cliente` es obligatorio. Como al editar, Cotifly comprueba
+        antes en NEXO que el término sea del cliente (`403 TERMINO_GENERAL_NO_EDITABLE` si es general, `404 TERMINO_NO_ENCONTRADO` si
+        no está) y luego reenvía a `DELETE {Nexo:UrlBase}/api/diccionario-cliente/{id}`. Sin reintentos.
+      security:
+        - bearer: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: nit_cliente
+          in: query
+          required: true
+          description: NIT del cliente dueño del término, con o sin puntos y dígito de verificación.
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Borrado
+        '400':
+          description: '`CLIENTE_REQUERIDO` (sin `nit_cliente`) o `CLIENTE_NIT_INVALIDO`, sin llamar a NEXO; `COSTEO_NEXO_RECHAZADA` (`detalle.motivo` = el código de NEXO) si NEXO responde otro 4xx o un 404 sin código'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: '`ErrorWeb` "No tienes permiso para esta operación." si el rol activo del token no es `comercial` (el gerente y el director consultan el diccionario pero no lo editan). `ErrorNegocio` `NEXO_SIN_PERMISO`: NEXO respondió 401 o 403. `ErrorNegocio` `TERMINO_GENERAL_NO_EDITABLE`: el término es general (aplica a todos los clientes)'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
+        '404':
+          description: '`TERMINO_NO_ENCONTRADO`: el término no existe o no es del cliente de `nit_cliente` (también un `id` que no es un GUID, sin llamar a NEXO)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '503':
+          description: '`NEXO_NO_DISPONIBLE`: la importación apagada en el ambiente, NEXO caído o sin respuesta a tiempo (una sola llamada, sin reintentos)'
           content:
             application/json:
               schema:
@@ -6012,6 +6221,10 @@ components:
                 `POST /web/licitaciones` cuando `origen_lectura` no es `analizar_excel` ni `leer_estructura` (con `detalle.campos = ["origen_lectura"]`).
                 `LECTURA_DEMASIADO_GRANDE` (400) lo responde Cotifly en
                 `leer-estructura`, sin llamar a NEXO, cuando el archivo cabe solo pero no con la receta y las instrucciones.
+                HU-044.5 (#256), diccionario del cliente: `TERMINO_REQUERIDO`, `CONCEPTO_REQUERIDO`, `CAMPO_DESTINO_INVALIDO`,
+                `UNIDAD_INVALIDA`, `CONTEXTO_INVALIDO`, `CONTEXTO_NO_APLICA` y `EJEMPLO_MUY_LARGO` (400, de NEXO; los vacíos los responde
+                Cotifly antes de llamar), `TERMINO_DUPLICADO` (409, de NEXO), `TERMINO_NO_ENCONTRADO` (404: no existe o no es del cliente) y
+                `TERMINO_GENERAL_NO_EDITABLE` (403, de Cotifly: los términos generales no se editan ni se borran).
               enum:
                 - MARGEN_LINEA_DESCONOCIDA
                 - PRECIO_INVALIDO
@@ -6129,6 +6342,16 @@ components:
                 - RECETA_SIN_FILAS
                 - RECETA_NO_ENCONTRADA
                 - TIPO_TERMINO_INVALIDO
+                - TERMINO_REQUERIDO
+                - CONCEPTO_REQUERIDO
+                - CAMPO_DESTINO_INVALIDO
+                - UNIDAD_INVALIDA
+                - CONTEXTO_INVALIDO
+                - CONTEXTO_NO_APLICA
+                - EJEMPLO_MUY_LARGO
+                - TERMINO_DUPLICADO
+                - TERMINO_NO_ENCONTRADO
+                - TERMINO_GENERAL_NO_EDITABLE
                 - VALIDATION_ERROR
                 - LECTURA_DEMASIADO_GRANDE
             mensaje:
@@ -11611,15 +11834,15 @@ components:
       type: object
       required: [terminos, aviso]
       description: |
-        HU-044.5 (#256). La consulta del diccionario de NEXO. Hoy solo trae los términos generales; `aviso` viene cuando se pidió con
-        `nit_cliente` (`TERMINOS_CLIENTE_NO_DISPONIBLES`) y es `null` sin NIT.
+        HU-044.5 (#256). La consulta del diccionario de NEXO: con `nit_cliente`, los términos del cliente y los generales; sin él, solo
+        los generales. `aviso` está reservado y hoy siempre es `null`.
       properties:
         terminos:
           type: array
           items:
             $ref: '#/components/schemas/TerminoDiccionario'
         aviso:
-          description: '`null` sin `nit_cliente`.'
+          description: Reservado. Hoy siempre `null`.
           oneOf:
             - $ref: '#/components/schemas/AvisoDiccionario'
             - $ref: '#/components/schemas/Nulo'
@@ -11652,18 +11875,53 @@ components:
           type: boolean
         general:
           type: boolean
-          description: Aplica a todos los clientes. Hoy siempre `true` (ver la operación).
+          description: Aplica a todos los clientes (no se edita ni se borra desde Cotifly). `false` = es del cliente consultado.
 
     AvisoDiccionario:
       type: object
       required: [codigo, mensaje]
-      description: HU-044.5 (#256). Aviso de la consulta del diccionario (no es un error).
+      description: HU-044.5 (#256). Aviso de la consulta del diccionario (no es un error). Reservado; hoy no se emite ninguno.
       properties:
         codigo:
           type: string
-          enum: [TERMINOS_CLIENTE_NO_DISPONIBLES]
         mensaje:
           type: string
+
+    TerminoDiccionarioWeb:
+      type: object
+      required: [nit_cliente, termino, tipo, concepto]
+      description: |
+        HU-044.5 (#256). Crear o editar un término del diccionario del cliente. Las reglas de cada `tipo` (qué `concepto` y `contexto`
+        acepta) las valida NEXO; `GET /web/diccionario-cliente/opciones` da los valores.
+      properties:
+        nit_cliente:
+          type: string
+          description: NIT del cliente, con o sin puntos y dígito de verificación. Obligatorio (desde Cotifly no se crean términos generales).
+        termino:
+          type: string
+          maxLength: 200
+          description: Tal como lo escribe el cliente.
+        tipo:
+          type: string
+          maxLength: 100
+          description: '`columna`, `unidad` o `valor`.'
+        concepto:
+          type: string
+          maxLength: 100
+          description: El campo de NEXO (`columna`), la unidad canónica `kg` o `t` (`unidad`) o el valor de NEXO (`valor`).
+        contexto:
+          type: string
+          nullable: true
+          maxLength: 50
+          description: Obligatorio en `valor` (el campo al que pertenece); no se acepta en los otros tipos.
+        ejemplo:
+          type: string
+          nullable: true
+          maxLength: 500
+        activo:
+          type: boolean
+          nullable: true
+          description: Por defecto `true`.
 
     OpcionesDiccionarioCliente:
       type: object

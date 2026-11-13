@@ -137,6 +137,21 @@ public sealed class clsRefreshTokenServiceTests
     }
 
     [Fact]
+    public async Task HU0403_ElRefreshSigueEstrictoNoReconciliaRolesAunqueCambienEnClientePro()
+    {
+        // HU-040.3 (#258, B+): la reconciliación es SOLO del login. En el refresh (permitirAlta: false) un rol externo que cambió se rechaza,
+        // sin otorgar ni revocar asignaciones (no se leen las filas rastreadas).
+        SesionVigente();
+        _e.PersonaExterna("APEREZ", 101, clsEscenarioIdentidad.RolExternoGerente);
+
+        var resultado = await _e.Refresh().RenovarAsync(RefreshPlano, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosAcceso.SesionExpirada);
+        _e.Roles.DidNotReceiveWithAnyArgs().AgregarAsignacion(default!);
+        await _e.Roles.DidNotReceiveWithAnyArgs().ListarAsignacionesAsync(default, Ct);
+    }
+
+    [Fact]
     public async Task HU0402_ElRefreshConservaElRolElegidoAunqueLaJerarquiaDigaOtro()
     {
         // HU-040.2 (#230): eligió comercial teniendo también gerente: el refresh no vuelve a preguntar ni sube a gerente.
