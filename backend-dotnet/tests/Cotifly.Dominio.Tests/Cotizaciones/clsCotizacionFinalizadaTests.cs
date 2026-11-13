@@ -5,7 +5,7 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
 /// <summary>
-/// HU-036.2 (#206): finalizar la cotización en el agregado (<see cref="clsCotizacionSolicitud.Finalizar"/>). Solo con el costeo de Nexo
+/// Finalizar la cotización en el agregado (<see cref="clsCotizacionSolicitud.Finalizar"/>). Solo con el costeo de Nexo
 /// listo (<c>autocosteo</c> o <c>entregada</c>); re-finalizar no cambia nada; el estado de costeo sigue siendo el de Nexo.
 /// </summary>
 public sealed class clsCotizacionFinalizadaTests
@@ -93,7 +93,7 @@ public sealed class clsCotizacionFinalizadaTests
     [Fact]
     public void UnaEntregadaQueCotiflyTodaviaNoLeyoNoSeFinalizaSinPrecio()
     {
-        // HU-013.14: entregada en Nexo sin el precio leído (EntregadaSinPrecio). Finalizarla congelaría un precio vacío (#208).
+        // Entregada en Nexo sin el precio leído (EntregadaSinPrecio). Finalizarla congelaría un precio vacío.
         var cotizacion = clsCotizacionMuestra.Formulario();
         cotizacion.RegistrarEnvioCosteo("SOL-1", false, _ahora, _ahora);
         cotizacion.RegistrarEntregaImplicita("COT-1");
@@ -110,7 +110,7 @@ public sealed class clsCotizacionFinalizadaTests
     [Fact]
     public void ConConexosDeNexoPendientesDeLeerNoSeFinalizaHastaQueElPollingLosTraiga()
     {
-        // Validación HU-036: el conexo ya está en Nexo pero no en el precio de Cotifly; con el precio congelado (#208) nunca entraría.
+        // El conexo ya está en Nexo pero no en el precio de Cotifly; con el precio congelado nunca entraría.
         var cotizacion = clsCotizacionMuestra.Costeada();
         cotizacion.MarcarConexosPendientesDeLeer();
 
@@ -127,7 +127,7 @@ public sealed class clsCotizacionFinalizadaTests
     }
 
     /// <summary>
-    /// #228 (observación del E2E real 2026-10-27B): con un conexo que todavía no está en la cotización de Nexo (<c>estado_nexo =
+    /// Con un conexo que todavía no está en la cotización de Nexo (<c>estado_nexo =
     /// pendiente</c>) el precio finalizado incluiría un conexo que Nexo no creó. Igual que con los pendientes de leer: 409 con su motivo.
     /// </summary>
     [Fact]
@@ -196,9 +196,9 @@ public sealed class clsCotizacionFinalizadaTests
     }
 
     [Fact]
-    public void HU0364_ElPrecioQuedaCongeladoConLaFinalizacionOConElPdf()
+    public void ElPrecioQuedaCongeladoConLaFinalizacionOConElPdf()
     {
-        // HU-036.4 (#208): el polling conserva el precio con la cotización finalizada, como con el PDF generado (ADR-015 §5).
+        // El polling conserva el precio con la cotización finalizada, como con el PDF generado (ADR-015 §5).
         var sinNada = clsCotizacionMuestra.Costeada();
         var conPdf = clsCotizacionMuestra.Costeada();
         conPdf.AsignarPdf("PCN-1.pdf");

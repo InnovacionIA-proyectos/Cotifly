@@ -7,7 +7,7 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// #191 (deuda del PR #195): la huella de la <c>Idempotency-Key</c> compara los números por valor: un reintento que el cliente vuelve a
+/// La huella de la <c>Idempotency-Key</c> compara los números por valor: un reintento que el cliente vuelve a
 /// serializar con otra escala de decimales es la misma petición; otro valor, otra petición.
 /// </summary>
 public sealed class clsHuellaIdempotenciaTests

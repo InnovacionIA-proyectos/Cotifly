@@ -12,7 +12,7 @@ using NSubstitute.ExceptionExtensions;
 namespace Cotifly.Aplicacion.Tests.Mercancias;
 
 /// <summary>
-/// HU-035.1 (#202, ADR-024): el análisis del Excel de mercancías valida el archivo antes de leerlo, nunca depende de Nexo y agrega el
+/// ADR-024: el análisis del Excel de mercancías valida el archivo antes de leerlo, nunca depende de Nexo y agrega el
 /// código de mercancía sugerido por fila con el catálogo del cubicador, que es opcional: caído o con una excepción, el análisis sigue.
 /// </summary>
 public sealed class clsAnalisisExcelMercanciasServiceTests

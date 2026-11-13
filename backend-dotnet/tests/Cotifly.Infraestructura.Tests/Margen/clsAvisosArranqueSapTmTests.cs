@@ -10,9 +10,9 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Tests.Margen;
 
 /// <summary>
-/// <see cref="clsAvisosArranqueSapTm"/> (HU-042.2, #243): las variables de los modos de SAP TM que se retiraron (<c>Modo</c> y
+/// <see cref="clsAvisosArranqueSapTm"/>: las variables de los modos de SAP TM que ya no existen (<c>Modo</c> y
 /// <c>ExportPath</c>) no impiden arrancar; cada una deja un warning "variable obsoleta, se ignora" con su nombre y sin su valor. <c>Url</c>,
-/// <c>User</c>, <c>Pass</c> y <c>SapClient</c> volvieron con la sincronización del backend: ya no avisan.
+/// <c>User</c>, <c>Pass</c> y <c>SapClient</c> los usa la sincronización del backend: no avisan.
 /// </summary>
 public sealed class clsAvisosArranqueSapTmTests
 {

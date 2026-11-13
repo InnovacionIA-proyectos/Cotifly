@@ -11,7 +11,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Tests.Margen;
 
 /// <summary>
-/// Registro de la fuente del margen de SAP TM (HU-042.2, #243: la copia local, sin modos) y de las opciones de la sección <c>SapTm</c>
+/// Registro de la fuente del margen de SAP TM (la copia local, sin modos) y de las opciones de la sección <c>SapTm</c>
 /// (<c>SalesOrgDefault</c> y <c>AvisoSincronizacionHoras</c>). La lectura de la tabla se prueba contra SQL Server en
 /// <c>clsFuenteMargenTablaLocalIntegracionTests</c>.
 /// </summary>
@@ -74,7 +74,7 @@ public sealed class clsRegistroFuenteMargenTests
         leer.Should().Throw<OptionsValidationException>().Which.Message.Should().Contain("SalesOrgDefault");
     }
 
-    // HU-042.2 (#243): umbral del aviso de sincronización vieja; 48 h por defecto y siempre mayor que cero.
+    // Umbral del aviso de sincronización vieja; 48 h por defecto y siempre mayor que cero.
     [Theory]
     [InlineData(null, 48)]
     [InlineData("72", 72)]

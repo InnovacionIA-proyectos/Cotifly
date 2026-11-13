@@ -8,7 +8,7 @@ using Cotifly.Dominio.Sesiones;
 
 namespace Cotifly.Dominio.Tests.Comun;
 
-/// <summary>Los códigos de los enums son los que exigen los CHECK del esquema y el contrato #17.</summary>
+/// <summary>Los códigos de los enums son los que exigen los CHECK del esquema y el contrato.</summary>
 public sealed class clsCodigoEnumTests
 {
     [Fact]

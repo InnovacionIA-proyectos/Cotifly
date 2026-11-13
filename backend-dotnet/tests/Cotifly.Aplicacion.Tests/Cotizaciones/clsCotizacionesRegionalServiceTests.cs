@@ -17,7 +17,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Cotizaciones;
 
 /// <summary>
-/// HU-016.1 (#154): listado regional del gerente comercial. Rol revalidado, regional resuelta en el servidor (409/503 sin consultar
+/// Listado regional del gerente comercial. Rol revalidado, regional resuelta en el servidor (409/503 sin consultar
 /// cotizaciones), solo los miembros de la regional, misma forma que "Mis cotizaciones" más el comercial dueño, mismo tope.
 /// </summary>
 public sealed class clsCotizacionesRegionalServiceTests
@@ -28,7 +28,7 @@ public sealed class clsCotizacionesRegionalServiceTests
 
     public clsCotizacionesRegionalServiceTests()
     {
-        // HU-037.3 (#211): la regla real del alcance por rol sobre la regional simulada.
+        // La regla real del alcance por rol sobre la regional simulada.
         _regionales = clsRegionalSustituta.Crear(_usuarios);
     }
 
@@ -122,7 +122,7 @@ public sealed class clsCotizacionesRegionalServiceTests
     [Fact]
     public async Task ElListadoRegionalConservaLaCargaDeCadaFila()
     {
-        // HU-018.2 (#294): la carga (origen/destino de la ruta 1, número de rutas y sumas) viaja con cada fila del listado regional.
+        // La carga (origen/destino de la ruta 1, número de rutas y sumas) viaja con cada fila del listado regional.
         var ana = UsuarioWeb("ana", "Ana");
         var gloria = PrepararRegional([ana]);
         var carga = new clsCargaCotizacion("Cali", "Bogotá D.C.", 2, 24_000m, 300_000_000m);

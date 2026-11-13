@@ -7,7 +7,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Licitaciones;
 
 /// <summary>
-/// HU-044.9 (#292): datos metidos en otra columna. Antes de <c>sugerir-mapeo</c> y <c>aplicar-mapeo</c>, Cotifly agrega columnas derivadas con
+/// Datos metidos en otra columna. Antes de <c>sugerir-mapeo</c> y <c>aplicar-mapeo</c>, Cotifly agrega columnas derivadas con
 /// nombre fijo: el vehículo reconocido dentro de un texto («Venezuela Mula» → Mula, con el diccionario de alias de NEXO) y el contenedor con su
 /// peso o rango («C20 de 0 a 8 Ton» → 20' y 8.000 kg, del rango el valor más alto). Solo se agregan si al menos una fila reconoce algo, al
 /// final, sin tocar la celda original; un archivo sin esos textos mantiene su firma de plantilla.
@@ -52,7 +52,7 @@ public sealed class clsColumnasDerivadasServiceTests
     [InlineData("Conten. x 40' Hasta 25 ton", "40'", "25000")]
     [InlineData("C40 de 5.000 a 8.000 kg", "40'", "8000")]
     [InlineData("20' hasta 8 ton", "20'", "8000")]
-    // #292 (hallazgo del validador): el «20»/«40» del código del contenedor no debe leerse como extremo bajo del rango de peso.
+    // El «20»/«40» del código del contenedor no debe leerse como extremo bajo del rango de peso.
     [InlineData("C20 hasta 8 ton", "20'", "8000")]
     [InlineData("C40 a 25 ton", "40'", "25000")]
     public async Task UnContenedorConPesoORangoDaLaClaseYElPesoMasAltoEnKg(string texto, string contenedor, string peso)

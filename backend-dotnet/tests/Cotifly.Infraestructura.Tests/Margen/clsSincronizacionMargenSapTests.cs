@@ -15,7 +15,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Tests.Margen;
 
 /// <summary>
-/// HU-042.2 (#243, ADR-027): piezas sin base de la sincronización del margen de SAP TM: lectura de <c>RentabClienteSet</c>, guarda de mínimo
+/// ADR-027: piezas sin base de la sincronización del margen de SAP TM: lectura de <c>RentabClienteSet</c>, guarda de mínimo
 /// de filas, próxima corrida estimada, opciones, descarga (con el SAP falso) y el worker sin configuración. La corrida contra SQL Server está
 /// en <c>clsSincronizacionMargenSapIntegracionTests</c>.
 /// </summary>
@@ -234,7 +234,7 @@ public sealed class clsSincronizacionMargenSapTests
     [InlineData("gzip")]
     public async Task UnCorteAMitadDelCuerpoOUnGzipCorruptoEsUnErrorDeSincronizacion(string caso)
     {
-        // H2 (#243): antes la IOException/InvalidDataException escapaba de la sincronización (sin fila 'error' y 500 en el POST).
+        // La IOException/InvalidDataException no escapa de la sincronización (queda la fila 'error' y el POST no da 500).
         Exception error = caso == "corte"
             ? new HttpIOException(HttpRequestError.ResponseEnded, "The response ended prematurely.")
             : new InvalidDataException("The archive entry was compressed using an unsupported compression method.");

@@ -21,7 +21,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// HU-028 (#186, ADR-021): <see cref="clsEdicionSolicitudService"/> con la captura real (<see cref="clsCapturaRutasService"/>) y el resto
+/// Edición de la solicitud (ADR-021): <see cref="clsEdicionSolicitudService"/> con la captura real (<see cref="clsCapturaRutasService"/>) y el resto
 /// sustituido: los tres modos (en sitio, reemplazo y versión nueva), el rechazo en Nexo (con éxito, ya descartada y fallido sin volver a
 /// capturar), el margen que sobrevive, las rutas agregadas y quitadas, los campos bloqueados, la recubicación solo de lo que cambia, el
 /// GET y la idempotencia.
@@ -87,7 +87,7 @@ public sealed class clsEdicionSolicitudServiceTests
             _eventos.Add($"guardar:v{ci.ArgAt<int>(1)}");
             return true;
         });
-        // Endurecimiento B (#199): la reserva de la versión nueva se compara dentro de la transacción del candado del folio -vN.
+        // La reserva de la versión nueva se compara dentro de la transacción del candado del folio -vN.
         _unidad.VersionVigenteEnTransaccionAsync(Arg.Any<Guid>(), Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(ci =>
         {
             _eventos.Add($"reservar-en-candado:v{ci.ArgAt<int>(1)}");
@@ -239,7 +239,7 @@ public sealed class clsEdicionSolicitudServiceTests
     [Fact]
     public async Task SiElPollingGuardaEntreElRechazoYLaEdicionSeRecargaYSeAplicaUnaVezMas()
     {
-        // Validación HU-028: el polling ve la solicitud anterior descartada y guarda (v5 → v6) entre el rechazo y la edición. Sigue siendo
+        // El polling ve la solicitud anterior descartada y guarda (v5 → v6) entre el rechazo y la edición. Sigue siendo
         // la misma solicitud y se puede reemplazar: se recarga, se aplica sobre v6 y se captura UNA sola vez.
         var cotizacion = Registrar(EnNexo());
         _unidad.GuardarCambiosSiVersionAsync(cotizacion.Id, 5, Arg.Any<CancellationToken>()).Returns(_ =>
@@ -346,7 +346,7 @@ public sealed class clsEdicionSolicitudServiceTests
     }
 
     /// <summary>
-    /// Endurecimiento B (#199, revisión 3b del auditor): en <c>nueva_version</c>, si el candado del folio -vN está ocupado
+    /// En <c>nueva_version</c>, si el candado del folio -vN está ocupado
     /// (<c>SERVICIO_OCUPADO</c>), la original no cambia: ni su <c>versionNegocio</c> (el <c>If-Match</c> sigue valiendo) ni nada más.
     /// </summary>
     [Fact]
@@ -529,7 +529,7 @@ public sealed class clsEdicionSolicitudServiceTests
     [Fact]
     public async Task UnConexoAgregadoEnNexoSaleConElIdDelCatalogoSumadoYReenviarElGetNoCambiaNada()
     {
-        // Validación HU-028: un servicio capturado (id del catálogo) y el mismo agregado después en Nexo (id de la fila de Nexo, #124/#135).
+        // Un servicio capturado (id del catálogo) y el mismo agregado después en Nexo (id de la fila de Nexo).
         // El GET los debe mostrar como UNA fila con el id del catálogo (si no, el PUT con ese cuerpo es CONEXO_DUPLICADO), y reenviar el
         // GET tal cual es sin_cambios: no se rechaza en Nexo ni se pierde el trabajo de la Mesa.
         var cotizacion = Registrar(EnNexo());
@@ -571,7 +571,7 @@ public sealed class clsEdicionSolicitudServiceTests
         (editable.Edicion.Permitida, editable.Edicion.MotivoNoPermitida, editable.Edicion.Modo).Should().Be((false, "LICITACION", (string?)null));
     }
 
-    // --- HU-028.1 (#183, decisión del 2026-10-20): los camiones rechazados por la Mesa no se reenvían salvo reincluir_rechazados ---
+    // --- Los camiones rechazados por la Mesa no se reenvían salvo reincluir_rechazados ---
 
     /// <summary>
     /// Dos rutas en Nexo (en costeo: modo reemplazo). La ruta 1 tiene dos camiones y la Mesa rechazó el segundo ("Sin cupo"); la ruta 2 tiene
@@ -602,7 +602,7 @@ public sealed class clsEdicionSolicitudServiceTests
     }
 
     [Fact]
-    public async Task HU0281_ElReemplazoNoReenviaLosRechazadosYAvisaQueSeOmitieron()
+    public async Task ElReemplazoNoReenviaLosRechazadosYAvisaQueSeOmitieron()
     {
         var cotizacion = ConRechazos();
         IReadOnlyList<clsVehiculoLineaSolicitud>? enviados = null;
@@ -625,7 +625,7 @@ public sealed class clsEdicionSolicitudServiceTests
     }
 
     [Fact]
-    public async Task HU0281_ConReincluirRechazadosLosDeEsaRutaVuelvenAViajarSinElRechazoAunqueNadaMasCambie()
+    public async Task ConReincluirRechazadosLosDeEsaRutaVuelvenAViajarSinElRechazoAunqueNadaMasCambie()
     {
         var cotizacion = ConRechazos();
         IReadOnlyList<clsVehiculoLineaSolicitud>? enviados = null;
@@ -649,7 +649,7 @@ public sealed class clsEdicionSolicitudServiceTests
     }
 
     [Fact]
-    public async Task HU0281_ElMismoCuerpoSinReincluirSigueSiendoSinCambiosYNoAvisaRechazos()
+    public async Task ElMismoCuerpoSinReincluirSigueSiendoSinCambiosYNoAvisaRechazos()
     {
         var cotizacion = ConRechazos();
 
@@ -662,7 +662,7 @@ public sealed class clsEdicionSolicitudServiceTests
     }
 
     [Fact]
-    public async Task HU0281_SiNingunaRutaViajaResponde409SinTocarNadaYConReincluirSeEnvia()
+    public async Task SiNingunaRutaViajaResponde409SinTocarNadaYConReincluirSeEnvia()
     {
         var cotizacion = ConRechazos(todos: true);
 
@@ -683,7 +683,7 @@ public sealed class clsEdicionSolicitudServiceTests
     }
 
     [Fact]
-    public async Task HU0281_LaVersionNuevaEditadaCopiaLosRechazadosComoRechazadosYElGetLosMuestra()
+    public async Task LaVersionNuevaEditadaCopiaLosRechazadosComoRechazadosYElGetLosMuestra()
     {
         var cotizacion = ConRechazos();
         cotizacion.RegistrarEnvio();
@@ -752,7 +752,7 @@ public sealed class clsEdicionSolicitudServiceTests
     }
 
     /// <summary>
-    /// El cuerpo de la edición con el contenido guardado (como lo arma el frontend con el GET, HU-032: con el vehículo elegido de la ruta),
+    /// El cuerpo de la edición con el contenido guardado (como lo arma el frontend con el GET, con el vehículo elegido de la ruta),
     /// con <paramref name="cambio"/> por ruta.
     /// </summary>
     private static clsEntradaEdicionSolicitud EntradaDe(

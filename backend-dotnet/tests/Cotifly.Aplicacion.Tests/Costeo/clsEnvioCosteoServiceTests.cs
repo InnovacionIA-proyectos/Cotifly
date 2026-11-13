@@ -27,7 +27,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// Envío a costeo en Nexo (HU-005.5, ADR-015 §3): la cotización se confirma antes de llamar a Nexo; cualquier fallo la deja en
+/// Envío a costeo en Nexo (ADR-015 §3): la cotización se confirma antes de llamar a Nexo; cualquier fallo la deja en
 /// <c>error_envio</c> con el motivo (nunca se pierde) y se puede reintentar sin volver a llenar el formulario.
 /// </summary>
 public sealed class clsEnvioCosteoServiceTests
@@ -56,7 +56,7 @@ public sealed class clsEnvioCosteoServiceTests
 
     public clsEnvioCosteoServiceTests()
     {
-        // HU-021.6: el validador real de las rutas, con catálogos que dejan pasar y el catálogo de municipios del Nexo falso.
+        // El validador real de las rutas, con catálogos que dejan pasar y el catálogo de municipios del Nexo falso.
         _filas = new clsValidadorFilasLicitacion(_catalogos, _municipios);
         _catalogos.ValidarLineasAsync(Arg.Any<Guid>(), Arg.Any<IReadOnlyList<clsLineaSolicitudCosteo>>(), Arg.Any<CancellationToken>())
             .Returns(ci => new clsValidacionCatalogoLineas([.. ci.ArgAt<IReadOnlyList<clsLineaSolicitudCosteo>>(1).Select(_ => (IReadOnlyList<clsErrorCampo>)[])], null));
@@ -110,7 +110,7 @@ public sealed class clsEnvioCosteoServiceTests
         cotizacion.CosteoSiguienteConsultaAt.Should().Be(_reloj.AhoraUtc.AddSeconds(5));
         cotizacion.PrecioFinal.Should().BeNull("el costo de Nexo todavía no pasó por el margen");
 
-        // HU-021: la cabecera se guarda con su agregado: la ruta 1 con sus dos mercancías y un camión, también en pendiente_costeo.
+        // La cabecera se guarda con su agregado: la ruta 1 con sus dos mercancías y un camión, también en pendiente_costeo.
         _creada.Should().BeSameAs(cotizacion);
         var ruta = cotizacion.Rutas.Should().ContainSingle().Subject;
         ruta.Mercancias.Should().HaveCount(2);
@@ -118,7 +118,7 @@ public sealed class clsEnvioCosteoServiceTests
     }
 
     [Fact]
-    public async Task HU0181_ElScorePrioridadQueDevuelveNexoSeGuardaEnLaCabeceraConElIdDeLaSolicitud()
+    public async Task ElScorePrioridadQueDevuelveNexoSeGuardaEnLaCabeceraConElIdDeLaSolicitud()
     {
         _nexo.EnviarSolicitudAsync(Arg.Any<Guid>(), Arg.Any<clsSolicitudNexo>(), Arg.Any<CancellationToken>())
             .Returns(new clsSolicitudCreadaNexo("sol-1", 1, 0, 1, false) { ScorePrioridad = 62.5m });
@@ -130,7 +130,7 @@ public sealed class clsEnvioCosteoServiceTests
     }
 
     [Fact]
-    public async Task HU0181_SiNexoNoMandaScorePrioridadQuedaNull()
+    public async Task SiNexoNoMandaScorePrioridadQuedaNull()
     {
         var cotizacion = (await Servicio().EnviarAsync(_ana, Entrada(), Ct)).Valor;
 
@@ -154,7 +154,7 @@ public sealed class clsEnvioCosteoServiceTests
     {
         var cotizacion = (await Servicio().EnviarAsync(_ana, Entrada(), Ct)).Valor;
 
-        // HU-021: el margen es de la ruta (de su línea de negocio).
+        // El margen es de la ruta (de su línea de negocio).
         var ruta = cotizacion.PrimeraRuta!;
         ruta.MargenAplicado.Should().Be(0.18m);
         ruta.MargenPoliticaSugerido.Should().Be(0.15m);
@@ -192,7 +192,7 @@ public sealed class clsEnvioCosteoServiceTests
     {
         var cotizacion = await CotizacionEnErrorAsync();
 
-        // HU-021: las mercancías guardadas son de la ruta (se leen con el agregado); se simula una fila que ya no cuadra con el peso.
+        // Las mercancías guardadas son de la ruta (se leen con el agregado); se simula una fila que ya no cuadra con el peso.
         var ruta = cotizacion.PrimeraRuta!;
         var mercancias = (List<clsMercancia>)typeof(clsLineaSolicitud)
             .GetField("_mercancias", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(ruta)!;
@@ -210,7 +210,7 @@ public sealed class clsEnvioCosteoServiceTests
     [Fact]
     public async Task SiNexoYaCosteoLaLineaSeLeeElCostoEnLaMismaPeticionYQuedaEnAutocosteoConPrecio()
     {
-        // HU-013.14 (opción A de ADR-018 §17): "autocosteo" nunca sale sin precio_final.
+        // ADR-018 §17 (opción A): "autocosteo" nunca sale sin precio_final.
         _nexo.EnviarSolicitudAsync(Arg.Any<Guid>(), Arg.Any<clsSolicitudNexo>(), Arg.Any<CancellationToken>())
             .Returns(new clsSolicitudCreadaNexo("sol-2", 1, 1, 0, false));
         _nexo.ConsultarCosteoAsync(_ana, "sol-2", Arg.Any<CancellationToken>()).Returns(FotoCosteada(2_050_000m));
@@ -462,7 +462,7 @@ public sealed class clsEnvioCosteoServiceTests
     [Fact]
     public async Task UnaLineaMapeadaAUnaLineaQueNexoNoAceptaNoGuardaNadaNiLlamaANexo()
     {
-        // #278 (DU §8): solo seis líneas de negocio de Nexo; un mapeo de texto libre ya no se manda (Nexo lo rechazaría).
+        // Nexo acepta solo seis líneas de negocio; un mapeo de texto libre no se manda (Nexo lo rechazaría).
         _margen.ResolverLineaAsync("Importación", Arg.Any<CancellationToken>()).Returns(ConMapeo(clsMargenPolitica.Crear("Importacion", 0.15m).Valor, "Importaciones"));
 
         var resultado = await Servicio().EnviarAsync(_ana, Entrada(), Ct);
@@ -509,7 +509,7 @@ public sealed class clsEnvioCosteoServiceTests
     [Fact]
     public async Task UnaSolaHoraEnElEncabezadoQueLaRutaHeredaSeReportaEnElEncabezadoYNoEnLaRuta()
     {
-        // #278: la ruta no trae horas propias y hereda (4, null) del encabezado: el error va en el encabezado (ruta = null), una vez.
+        // La ruta no trae horas propias y hereda (4, null) del encabezado: el error va en el encabezado (ruta = null), una vez.
         var resultado = await Servicio().EnviarAsync(_ana, Entrada() with { Solicitud = clsSolicitudCosteoMuestra.CrearCaptura() with { HorasDescargue = null } }, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.SolicitudCosteoInvalida);
@@ -538,7 +538,7 @@ public sealed class clsEnvioCosteoServiceTests
         resultado.Valor.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo);
         resultado.Valor.SolicitudNexoId.Should().Be("sol-1");
         resultado.Valor.MotivoEstadoCosteo.Should().BeNull();
-        // HU-021 (decisión 1): referencia y valor_estimado ya no viajan a Nexo; lo guardado (mercancías y ruta) sí.
+        // La referencia y el valor_estimado no viajan a Nexo; lo guardado (mercancías y ruta) sí.
         await _nexo.Received(1).EnviarSolicitudAsync(_ana,
             Arg.Is<clsSolicitudNexo>(s => s.Solicitud.Posiciones.Count == 2 && s.Solicitud.Origen == "Buenaventura" && s.Solicitud.PesoKg == 28_500.5m),
             Arg.Any<CancellationToken>());
@@ -687,7 +687,7 @@ public sealed class clsEnvioCosteoServiceTests
     [InlineData(true)]
     public async Task UnMargenNegociadoSeConservaAlReenviarYElSugeridoSeRefrescaFalleONoLaResolucion(bool resolucionFalla)
     {
-        // HU-013.4 (decisión del 2026-10-06): re-solicitar no pisa el margen ajustado por el comercial.
+        // Re-solicitar no pisa el margen ajustado por el comercial.
         var cotizacion = Negociada(0.22m);
         if (resolucionFalla)
         {
@@ -697,7 +697,7 @@ public sealed class clsEnvioCosteoServiceTests
 
         await Servicio().EnviarGuardadaAsync(cotizacion, _politica, _ana, "Re-solicitud de F; reemplaza la solicitud sol-1.");
 
-        // HU-021: el margen negociado y su sugerido son de la ruta.
+        // El margen negociado y su sugerido son de la ruta.
         var ruta = cotizacion.PrimeraRuta!;
         ruta.MargenAplicado.Should().Be(0.22m);
         ruta.OrigenMargen.Should().Be(OrigenMargen.Negociado);
@@ -711,7 +711,7 @@ public sealed class clsEnvioCosteoServiceTests
     [Fact]
     public async Task CadaLineaViajaConLaLineaDeNegocioDeSuRutaYUnaPorCamion()
     {
-        // #134: la línea de negocio de Nexo viaja por línea, la de SU ruta; antes viajaba la de la ruta 1 en todas.
+        // La línea de negocio de Nexo viaja por línea, la de SU ruta, no la de la ruta 1 en todas.
         var nacional = clsMargenPolitica.Crear("Nacional", 0.2m, mapeoLineasNexo: "Nacional").Valor;
         _politicas.ObtenerPorIdAsync(7, Arg.Any<CancellationToken>()).Returns(nacional);
         var cotizacion = Negociada(0.22m);
@@ -758,7 +758,7 @@ public sealed class clsEnvioCosteoServiceTests
         return cotizacion;
     }
 
-    // ------------------------------------------------------------------ HU-021.6: captura por rutas
+    // ------------------------------------------------------------------ Captura por rutas
 
     [Fact]
     public async Task CadaRutaSeGuardaConSuLineaDeNegocioYUnCamionSinVehiculoConElPesoTotal()
@@ -787,9 +787,9 @@ public sealed class clsEnvioCosteoServiceTests
     }
 
     [Fact]
-    public async Task HU032_ElVehiculoElegidoDeUnaRutaSinMercanciasSeConservaSeValidaYVaEnSuCamion()
+    public async Task ElVehiculoElegidoDeUnaRutaSinMercanciasSeConservaSeValidaYVaEnSuCamion()
     {
-        // HU-032 (#197): la ruta solo trae el peso: no se cubica y lleva el vehículo elegido (validado contra Nexo antes de guardar).
+        // La ruta solo trae el peso: no se cubica y lleva el vehículo elegido (validado contra Nexo antes de guardar).
         var conVehiculo = Ruta(76109, "Buenaventura", 11001, "Bogotá D.C.");
         conVehiculo = conVehiculo with { Linea = conVehiculo.Linea with { TipoVehiculo = "3S3", Carroceria = "FURGON" } };
 
@@ -805,7 +805,7 @@ public sealed class clsEnvioCosteoServiceTests
     [Fact]
     public async Task ConLaBanderaApagadaElVehiculoYLaCarroceriaQueLleganSeIgnoran()
     {
-        // HU-032 (#197): Captura:AceptarVehiculoCliente = false es el interruptor de reversa (comportamiento anterior: decisión 7).
+        // Captura:AceptarVehiculoCliente = false es el interruptor de reversa: el vehículo lo define la Mesa de Costeo.
         var conVehiculo = Ruta(76109, "Buenaventura", 11001, "Bogotá D.C.");
         conVehiculo = conVehiculo with { Linea = conVehiculo.Linea with { TipoVehiculo = "3S3", Carroceria = "FURGON" } };
         var apagada = Options.Create(new clsOpcionesCaptura { AceptarVehiculoCliente = false });
@@ -851,7 +851,7 @@ public sealed class clsEnvioCosteoServiceTests
     [Fact]
     public async Task SinCubicadorConfiguradoUnaMercanciaSinCodigoSeGuardaSinCodigoYLaRutaVaAlRespaldo()
     {
-        // HU-023.3 (auditor): sin cubicador GET /web/tipos-mercancia responde 503 y no hay de dónde sacar el código.
+        // Sin cubicador GET /web/tipos-mercancia responde 503 y no hay de dónde sacar el código.
         var ruta = Ruta(76109, "Buenaventura", 11001, "Bogotá D.C.");
         ruta = ruta with { Linea = ruta.Linea with { Posiciones = [new clsPosicionCarga("Cajas", 1, 10m, 10m, 10m, 28_500.5m, Guid.NewGuid())] } };
 
@@ -871,7 +871,7 @@ public sealed class clsEnvioCosteoServiceTests
         var sinLinea = Ruta(76109, "Buenaventura", 11001, "Bogotá D.C.");
         sinLinea = sinLinea with { Linea = sinLinea.Linea with { PesoKg = null, Posiciones = [] } };
 
-        // HU-023.3: con el cubicador configurado el codigo_mercancia es obligatorio.
+        // Con el cubicador configurado el codigo_mercancia es obligatorio.
         var resultado = await ServicioCon(Cubicador()).CapturarAsync(_ana, Captura(sinTipo, ambigua, sinLinea), Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.SolicitudCosteoInvalida);
@@ -968,7 +968,7 @@ public sealed class clsEnvioCosteoServiceTests
     [Fact]
     public async Task ConElCubicadorLaRutaTieneUnCamionPorRecomendacionYLaMercanciaElNombreDelCatalogo()
     {
-        // HU-021.5 (#133) y HU-023.1 (#156): la ruta viaja al cubicador con el id que tendrá al guardarse, cada mercancía con su código
+        // La ruta viaja al cubicador con el id que tendrá al guardarse, cada mercancía con su código
         // (traducido del id_tipo_mercancia con el catálogo) y cada vehículo de la recomendación es un camión (flota mixta).
         var cubicador = Cubicador();
         clsPeticionRecomendacion? enviada = null;
@@ -1065,7 +1065,7 @@ public sealed class clsEnvioCosteoServiceTests
     [Fact]
     public async Task ElReintentoDeUnFormularioMigradoSinIdsLosResuelvePorElNombre()
     {
-        // HU-021.6: una cotización anterior a la decisión 2 (sin ids de municipio) no viaja a Nexo sin ellos.
+        // Una cotización migrada sin ids de municipio los resuelve por el nombre antes de viajar a Nexo.
         var cotizacion = clsCotizacionMuestra.Formulario(usuarioId: _ana);
         cotizacion.RegistrarErrorEnvioCosteo("Nexo caído");
         Registrada(cotizacion);
@@ -1115,7 +1115,7 @@ public sealed class clsEnvioCosteoServiceTests
         return politica;
     }
 
-    /// <summary>#278: la política con un mapeo a Nexo cualquiera (como lo leería EF de la base, sin pasar por <c>Crear</c>).</summary>
+    /// <summary>La política con un mapeo a Nexo cualquiera (como lo leería EF de la base, sin pasar por <c>Crear</c>).</summary>
     private static clsMargenPolitica ConMapeo(clsMargenPolitica politica, string? mapeo)
     {
         typeof(clsMargenPolitica).GetProperty(nameof(clsMargenPolitica.MapeoLineasNexo))!.SetValue(politica, mapeo);
@@ -1145,7 +1145,7 @@ public sealed class clsEnvioCosteoServiceTests
             NullLogger<clsCapturaRutasService>.Instance, cubicador));
 
     /// <summary>
-    /// #173 (observación del validador): Nexo recibe la solicitud y el guardado posterior falla. El almacén de idempotencia no guarda un
+    /// Nexo recibe la solicitud y el guardado posterior falla. El almacén de idempotencia no guarda un
     /// resultado (la petición lanzó), pero la clave quedó registrada con el folio ANTES de llamar a Nexo y con el solicitudNexoId después:
     /// el reintento con la misma clave NO vuelve a llamar a Nexo y responde ESTADO_NO_PERMITE (CAPTURA_EN_CURSO) con el folio.
     /// </summary>
@@ -1174,7 +1174,7 @@ public sealed class clsEnvioCosteoServiceTests
     }
 
     /// <summary>
-    /// #173 (segunda ronda del validador): timeout en el guardado posterior a Nexo y después "reintentar" desde la consola. El folio quedó
+    /// Timeout en el guardado posterior a Nexo y después "reintentar" desde la consola. El folio quedó
     /// en pendiente_envio sin solicitudNexoId; el registro de la clave sí conoce el id de Nexo: se vincula (pendiente_costeo) y NO se reenvía.
     /// </summary>
     [Fact]
@@ -1215,8 +1215,8 @@ public sealed class clsEnvioCosteoServiceTests
     }
 
     /// <summary>
-    /// HU-018.1 (#155) + #173: el reintento que vincula por el registro de la Idempotency-Key guarda también el scorePrioridad que Nexo
-    /// devolvió con el id (antes quedaba null porque el registro no lo tenía).
+    /// El reintento que vincula por el registro de la Idempotency-Key guarda también el scorePrioridad que Nexo
+    /// devolvió con el id, tomado del registro.
     /// </summary>
     [Fact]
     public async Task ElReintentoQueVinculaPorElRegistroGuardaElScorePrioridadDeNexo()
@@ -1243,7 +1243,7 @@ public sealed class clsEnvioCosteoServiceTests
     }
 
     /// <summary>
-    /// Un registro sin score (Nexo no lo mandó, o la captura se registró antes de guardar el score en el registro): la vinculación sigue y
+    /// Un registro sin score (Nexo no lo mandó o el registro no lo guardó): la vinculación sigue y
     /// el score queda null, sin romper el flujo ni llamar a Nexo.
     /// </summary>
     [Fact]

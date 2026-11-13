@@ -8,7 +8,7 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Costeo;
 
 /// <summary>
-/// Pasos de <c>specs/features/motivo_perdida.feature</c> (HU-018.1, #155, parte B): la lista de motivos de pérdida
+/// Pasos de <c>specs/features/motivo_perdida.feature</c>: la lista de motivos de pérdida
 /// (<c>GET /web/motivos-perdida</c>) y su validación en <c>POST .../resultado</c> y <c>POST .../seguimiento</c>. Reutiliza el Nexo falso, los
 /// folios y las columnas de <see cref="clsPasosCosteo"/>.
 /// </summary>
@@ -50,13 +50,13 @@ public sealed class clsPasosMotivoPerdida(clsContextoWeb web, clsPasosCosteo cos
         costeo.Nexo.MotivoDelResultado(solicitud).Should().Be((motivo, comentario), "a Nexo va el motivo de la lista y el comentario aparte");
     }
 
-    /// <summary>La excepción de HU-005.14: las descartadas y las de costeo vencido se marcan con <c>/seguimiento</c>, solo en Cotifly.</summary>
+    /// <summary>La excepción a la regla del motivo: las descartadas y las de costeo vencido se marcan con <c>/seguimiento</c>, solo en Cotifly.</summary>
     [When("{string} marca con el seguimiento la cotización {string} como perdida con el motivo {string} y el comentario {string}")]
     public Task CuandoMarcaConElSeguimiento(string alias, string cotizacion, string motivo, string comentario) =>
         web.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{costeo.Folio(cotizacion)}/seguimiento", web.Sesion(alias).Access,
             clsApiWebPruebas.Json(new { ganada = false, motivo_rechazo = motivo, comentario = comentario.Length == 0 ? null : comentario }));
 
-    /// <summary>Una perdida guardada antes de HU-018.1 sin motivo (dato heredado): no se revalida.</summary>
+    /// <summary>Una perdida guardada sin motivo (dato heredado): no se revalida.</summary>
     [When("la cotización {string} quedó perdida sin motivo antes de la lista de motivos")]
     public Task CuandoQuedoPerdidaSinMotivo(string cotizacion) =>
         clsBaseDatosPruebas.EjecutarAsync(clsEntornoAceptacion.BaseDatos.CadenaCotifly,

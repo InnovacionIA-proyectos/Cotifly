@@ -5,7 +5,7 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
 /// <summary>
-/// HU-045.2 (#264), validación adversarial: valores límite del redondeo, la TRM, la tasa, el seguro en cero, la vista previa del margen y
+/// Bordes del seguro de la mercancía: valores límite del redondeo, la TRM, la tasa, el seguro en cero, la vista previa del margen y
 /// las transiciones del check (quitar, volver a marcar, editar el valor, copiar a la versión nueva). Complementa
 /// <see cref="clsSeguroMercanciaTests"/> sin repetirla.
 /// </summary>
@@ -19,7 +19,7 @@ public sealed class clsSeguroMercanciaAdversarialTests
         clsCotizacionMuestra.Costeada(flete: 1_000_000m, margen: 0.20m, moneda: moneda, trm: trm,
             solicitud: clsSolicitudCosteoMuestra.Crear() with { ValorMercancia = valor });
 
-    // Decisión del usuario del 2026-11-09: el seguro NO se redondea a pesos. Se calcula exacto y se guarda con la escala de la columna
+    // El seguro NO se redondea a pesos. Se calcula exacto y se guarda con la escala de la columna
     // costoSeguro DECIMAL(18,2) (centavos), con el criterio de SQL Server al ajustar la escala (la mitad se aleja de cero).
     [Theory]
     [InlineData("1000", "0.0005", "0.5", "0.50")]

@@ -15,7 +15,7 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Precio;
 
 /// <summary>
-/// Pasos de <c>specs/features/moneda_trm.feature</c> (HU-012): TRM oficial con el adaptador real contra los datos abiertos falsos,
+/// Pasos de <c>specs/features/moneda_trm.feature</c>: TRM oficial con el adaptador real contra los datos abiertos falsos,
 /// conversión con el caso de uso real y la cotización en USD generada y guardada con el registro real (el texto del PDF se verifica con los
 /// pasos de <c>clsPasosPdf</c>).
 /// </summary>

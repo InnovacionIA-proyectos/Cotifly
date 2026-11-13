@@ -7,7 +7,7 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Infraestructura.Tests.Comun;
 
 /// <summary>
-/// <c>Idempotency-Key</c> en memoria (ADR-018 §8, #100): la repetición devuelve el resultado guardado sin ejecutar otra vez, también
+/// <c>Idempotency-Key</c> en memoria (ADR-018 §8): la repetición devuelve el resultado guardado sin ejecutar otra vez, también
 /// cuando llega a la vez (doble clic); otra huella con la misma clave es un error; los fallos no consumen la clave; vence en 24 h.
 /// </summary>
 public sealed class clsAlmacenIdempotenciaEnMemoriaTests
@@ -61,7 +61,7 @@ public sealed class clsAlmacenIdempotenciaEnMemoriaTests
 
         var otra = await almacen.EjecutarUnaVezAsync(Ambito, Clave, "h2", Accion("v2"), null, Ct);
 
-        // D4 (E2E 2026-10-16): un código estable (409 ErrorNegocio), no SOLICITUD_INVALIDA (400 ErrorWeb).
+        // Un código estable (409 ErrorNegocio), no SOLICITUD_INVALIDA (400 ErrorWeb).
         otra.Error.Codigo.Should().Be(clsCodigosAplicacion.IdempotencyKeyReutilizada);
         _ejecuciones.Should().Be(1);
     }
@@ -146,7 +146,7 @@ public sealed class clsAlmacenIdempotenciaEnMemoriaTests
         almacen.Cantidad.Should().Be(1, "la clave vencida se purgó");
     }
 
-    // Arrastre de #99 (#102): la purga no corre en cada petición, sino cada IntervaloPurga (o al llegar al tope).
+    // La purga no corre en cada petición, sino cada IntervaloPurga (o al llegar al tope).
     [Fact]
     public async Task LaPurgaEsPeriodicaYNoEnCadaPeticion()
     {
@@ -165,7 +165,7 @@ public sealed class clsAlmacenIdempotenciaEnMemoriaTests
         almacen.Purgas.Should().Be(purgas + 1);
     }
 
-    // Arrastre de #99 (#102): tope de claves (20.000 por defecto); al llenarse desaloja por lotes (10 % del tope), primero las más
+    // Tope de claves (20.000 por defecto); al llenarse desaloja por lotes (10 % del tope), primero las más
     // próximas a vencer.
     [Fact]
     public async Task AlLlegarAlTopeDesalojaUnLoteDeLasClavesMasProximasAVencer()

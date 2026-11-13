@@ -17,7 +17,7 @@ using Microsoft.OpenApi;
 namespace Cotifly.Api.Tests.Contrato;
 
 /// <summary>
-/// Endurecimiento A (#199): prueba de contrato por reflexión. Para cada DTO de <see cref="clsContratoRutasTests.MapaDtos"/> compara,
+/// Prueba de contrato por reflexión. Para cada DTO de <see cref="clsContratoRutasTests.MapaDtos"/> compara,
 /// propiedad por propiedad (las que el esquema declara; que los nombres sean exactamente los del esquema lo prueba
 /// <see cref="clsContratoRutasTests"/>):
 /// <list type="bullet">
@@ -42,7 +42,7 @@ public sealed class clsContratoReflexionTests(clsCotiflyApiFactory factory) : IC
     public static readonly IReadOnlyDictionary<string, (Type Enum, string[] Excluidos, string[] Extra)> EnumsDelDominio =
         new Dictionary<string, (Type, string[], string[])>(StringComparer.Ordinal)
         {
-            // La cabecera nunca queda "rechazada" (HU-028.1, #183): solo las rutas y los camiones.
+            // La cabecera nunca queda "rechazada": solo las rutas y los camiones.
             ["CotizacionResumen.estado_costeo"] = (typeof(Cotifly.Dominio.Cotizaciones.EstadoCosteo), ["rechazada"], []),
             ["CosteoCotizacion.estado_costeo"] = (typeof(Cotifly.Dominio.Cotizaciones.EstadoCosteo), ["rechazada"], []),
             ["Licitacion.estado_costeo"] = (typeof(Cotifly.Dominio.Cotizaciones.EstadoCosteo), ["rechazada"], []),
@@ -65,7 +65,7 @@ public sealed class clsContratoReflexionTests(clsCotiflyApiFactory factory) : IC
             ["RespuestaEnvio.estado"] = (typeof(Cotifly.Dominio.Correo.EstadoCorreo), [], []),
             ["EnvioCorreo.estado"] = (typeof(Cotifly.Dominio.Correo.EstadoCorreo), [], []),
             ["LineaLicitacion.estado_cubicacion"] = (typeof(Cotifly.Dominio.Cotizaciones.EstadoCubicacion), [], []),
-            // solo_cotifly no es un estado guardado: es la lectura de una cotización cuyo resultado nunca va a Nexo (HU-033).
+            // solo_cotifly no es un estado guardado: es la lectura de una cotización cuyo resultado nunca va a Nexo.
             ["CotizacionResumen.sincronizacion_resultado_nexo"] = (typeof(Cotifly.Dominio.Cotizaciones.SincronizacionResultadoNexo), [], ["solo_cotifly"]),
             ["CosteoCotizacion.sincronizacion_resultado_nexo"] = (typeof(Cotifly.Dominio.Cotizaciones.SincronizacionResultadoNexo), [], ["solo_cotifly"]),
             ["DetalleCotizacion.tipo"] = (typeof(Cotifly.Dominio.Cotizaciones.TipoSolicitud), [], []),
@@ -87,8 +87,8 @@ public sealed class clsContratoReflexionTests(clsCotiflyApiFactory factory) : IC
         "ErrorFilaLicitacion.codigo",
         "MensajeWeb.moneda", "SalidaPrecio.moneda", "ResumenCorreo.moneda", "EdicionSolicitudWeb.moneda", "SolicitudEditable.moneda",
         "SolicitudCosteoWeb.moneda", "LicitacionWeb.moneda", "Licitacion.moneda",
-        // HU-044.7 (#290): origen_lectura son las constantes de clsOrigenLectura (analizar_excel / leer_estructura), no un enum C#.
-        // HU-044.10 (#293): también en la respuesta Licitacion.origen_lectura.
+        // origen_lectura son las constantes de clsOrigenLectura (analizar_excel / leer_estructura), no un enum C#; también en la
+        // respuesta Licitacion.origen_lectura.
         "LicitacionWeb.origen_lectura", "Licitacion.origen_lectura",
         "SalidaPrecio.metodo", "LineaNegocio.metodo_calculo", "ActualizarLineaNegocio.metodo_calculo", "DatosNuevaVersion.metodo_calculo",
         "RutaNuevaVersion.metodo_calculo", "SalidaPrecio.trm_fuente",
@@ -101,15 +101,15 @@ public sealed class clsContratoReflexionTests(clsCotiflyApiFactory factory) : IC
         "ResultadoWeb.resultado", "CosteoCotizacion.resultado", "ServicioConexoCosteo.estado_nexo", "TextosCotizacion.fuente",
         "EdicionSolicitudResultado.solicitud_nexo_reemplazada", "CodigoMercanciaFila.origen",
         "CubicacionEnProceso.estado", "EstadoCubicacion.estado",
-        // HU-042.2 (#243): el estado de la corrida es el texto del CHECK de SapMargenSyncLog (constantes de clsCorridaSincronizacionMargenSap).
+        // El estado de la corrida es el texto del CHECK de SapMargenSyncLog (constantes de clsCorridaSincronizacionMargenSap).
         "CorridaSincronizacionMargenSap.estado", "ResultadoSincronizacionMargenSap.estado",
-        // HU-046.3 (#269; contrato del 2026-11-10): cumplida | pendiente | sin_verificar, constantes de clsMedidaEvaluada (texto, no enum).
+        // cumplida | pendiente | sin_verificar, constantes de clsMedidaEvaluada (texto, no enum).
         "MedidaPolitica.estado",
-        // HU-046.3 (#269; contrato del 2026-11-10): SIN_VALOR_MERCANCIA | null, constante de clsPoliticaSeguros (texto, no enum).
+        // SIN_VALOR_MERCANCIA | null, constante de clsPoliticaSeguros (texto, no enum).
         "PoliticaSegurosRuta.aviso",
         // El tipo del término es el texto de NEXO, reenviado tal cual.
         "TerminoDiccionario.tipo",
-        // HU-044.4 (#255): el campo son las constantes de clsCamposNormalizacion y el estado es el texto de NEXO, que Cotifly reenvía.
+        // El campo son las constantes de clsCamposNormalizacion y el estado es el texto de NEXO, que Cotifly reenvía.
         "ValorNormalizado.campo", "ValorNormalizado.estado",
     };
 
@@ -247,7 +247,7 @@ public sealed class clsContratoReflexionTests(clsCotiflyApiFactory factory) : IC
         usadasFueraDelContrato.Should().BeEmpty($"{string.Join(", ", usadasFueraDelContrato)}: cada código de clsCodigosError que el código emite está en el enum de ErrorNegocio.codigo");
         muertasEnElContrato.Should().BeEmpty($"{string.Join(", ", muertasEnElContrato)}: el enum de ErrorNegocio.codigo no anuncia códigos que ningún código emite");
 
-        // Integración de los endurecimientos A y B (#199): FOLIO_INVALIDO vive en clsFolio.CodigoInvalido (Dominio), no en clsCodigosError;
+        // FOLIO_INVALIDO vive en clsFolio.CodigoInvalido (Dominio), no en clsCodigosError;
         // está en el enum porque el código lo emite (re-solicitar -vN y nueva_version), aunque no sea una constante de clsCodigosError.
         constantes.Should().NotContain(Cotifly.Dominio.Cotizaciones.clsFolio.CodigoInvalido, "FOLIO_INVALIDO no es de clsCodigosError");
         enumContrato.Should().Contain(Cotifly.Dominio.Cotizaciones.clsFolio.CodigoInvalido);

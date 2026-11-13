@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Tests.Precio;
 
 /// <summary>
-/// <see cref="clsProveedorTrmSuperfinanciera"/> (HU-012.1, ADR-014) contra los datos abiertos falsos (<see cref="clsTrmFalso"/>): nunca sale
+/// <see cref="clsProveedorTrmSuperfinanciera"/> (ADR-014) contra los datos abiertos falsos (<see cref="clsTrmFalso"/>): nunca sale
 /// a la red. Aquí el cliente no lleva la tubería de resiliencia (se prueba en <c>clsRegistroTrmTests</c>).
 /// </summary>
 public sealed class clsProveedorTrmSuperfinancieraTests : IDisposable

@@ -11,7 +11,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Cubicacion;
 
 /// <summary>
-/// <see cref="clsCalculoCubicajeService"/> ("Calcular cubicaje", HU-023.2, #157): la petición de prueba (<c>PRUEBA-&lt;guid&gt;</c>), la
+/// <see cref="clsCalculoCubicajeService"/> ("Calcular cubicaje"): la petición de prueba (<c>PRUEBA-&lt;guid&gt;</c>), la
 /// lista de vehículos con los nombres del catálogo, los cuatro motivos de "sin selección", la condicionada, la resolución de la
 /// descripción y los errores (sin cubicador, caída, rechazo y sin coincidencia).
 /// </summary>
@@ -292,8 +292,8 @@ public sealed class clsCalculoCubicajeServiceTests
     }
 
     /// <summary>
-    /// D-1019-1 (E2E 2026-10-19): un código que no está en el catálogo, o que está inactivo, es 400 MERCANCIA_DESCONOCIDA con el ítem (base
-    /// 0) y el campo, y no se llama al cubicador (no ocupa el cupo ni el motor). Antes lo detectaba el cubicador y llegaba sin el ítem.
+    /// Un código que no está en el catálogo, o que está inactivo, es 400 MERCANCIA_DESCONOCIDA con el ítem (base
+    /// 0) y el campo, y no se llama al cubicador (no ocupa el cupo ni el motor).
     /// </summary>
     [Theory]
     [InlineData("NO_EXISTE_XYZ")]
@@ -390,8 +390,8 @@ public sealed class clsCalculoCubicajeServiceTests
         ]));
 
     /// <summary>
-    /// D1 (E2E 2026-10-16): con largo, ancho o alto fuera de 0,1 a 999.999 o el peso por unidad en 0, el cubicador respondía 422 y el
-    /// comercial veía 503 "Avisa a soporte". Cotifly valida antes con las reglas de la captura: 400 DIMENSIONES_INVALIDAS con el ítem.
+    /// Con largo, ancho o alto fuera de 0,1 a 999.999 o el peso por unidad en 0, el cubicador responde 422 y el comercial no sabría qué
+    /// corregir. Cotifly valida antes con las reglas de la captura: 400 DIMENSIONES_INVALIDAS con el ítem.
     /// </summary>
     [Theory]
     [InlineData(0, 100, 150, 800, "largo_cm")]

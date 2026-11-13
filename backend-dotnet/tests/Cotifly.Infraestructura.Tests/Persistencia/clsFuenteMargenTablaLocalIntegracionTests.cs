@@ -11,7 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
-/// HU-042.2 (#243, ADR-027) y HU-042.4 (#247): <see cref="IClsMargenResolverService"/> con el registro real (la fuente es
+/// ADR-027: <see cref="IClsMargenResolverService"/> con el registro real (la fuente es
 /// <see cref="clsFuenteMargenTablaLocal"/>) sobre SQL Server 2019 con <c>SapMargenCliente</c> sembrada con la muestra del Python y
 /// algunas filas propias. Las pruebas usan bases AISLADAS: la compartida de la colección nunca tiene una corrida <c>ok</c> en
 /// <c>SapMargenSyncLog</c> (así <c>clsMargenSapNoConfiguradoIntegracionTests</c> y el resto ven "SAP TM no configurado").
@@ -20,7 +20,7 @@ namespace Cotifly.Infraestructura.Tests.Persistencia;
 [Trait("Categoria", "Integracion")]
 public sealed class clsFuenteMargenTablaLocalIntegracionTests(clsBaseDatosPruebas baseDatos)
 {
-    /// <summary>Fin de la corrida <c>ok</c> sembrada: 2 h antes del reloj falso de las pruebas (2026-09-24 13:00 UTC).</summary>
+    /// <summary>Fin de la corrida <c>ok</c> sembrada: 2 h antes del reloj falso de las pruebas.</summary>
     private static readonly DateTimeOffset _sincronizacionOk = new(2026, 9, 24, 6, 0, 0, TimeSpan.FromHours(-5));
 
     /// <summary>Organización específica con un mapeo propio de Nacional (gana sobre el comodín en esa organización).</summary>
@@ -78,7 +78,7 @@ public sealed class clsFuenteMargenTablaLocalIntegracionTests(clsBaseDatosPrueba
     [Fact]
     public async Task UnMargenFueraDeRangoSeMarcaAnomaloParaQueElEnvioUseLaPolitica()
     {
-        // #139: el envío a Nexo aplica la política y guarda el de SAP como marca (clsMargenSapAnomaloEndpointsTests, también con esta fuente).
+        // El envío a Nexo aplica la política y guarda el de SAP como marca (clsMargenSapAnomaloEndpointsTests, también con esta fuente).
         var negativo = await ResolverOkAsync("Nacional", "5000");
         var atipico = await ResolverOkAsync("Importacion", "5001");
 
@@ -117,7 +117,7 @@ public sealed class clsFuenteMargenTablaLocalIntegracionTests(clsBaseDatosPrueba
         r.TrqType.Should().Be("OPTN");
     }
 
-    // HU-042.4 (#247): el TrqType sale de SapMapeoTrqType por el id de la política; la fila de la organización gana sobre el comodín.
+    // El TrqType sale de SapMapeoTrqType por el id de la política; la fila de la organización gana sobre el comodín.
     [Fact]
     public async Task ElMapeoPorIdDeUnaOrganizacionGanaSobreElComodinYLleganAlMargenDeEsaOrganizacion()
     {

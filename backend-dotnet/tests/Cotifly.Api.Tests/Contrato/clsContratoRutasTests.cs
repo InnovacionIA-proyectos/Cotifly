@@ -32,17 +32,16 @@ namespace Cotifly.Api.Tests.Contrato;
 public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) : IClassFixture<clsCotiflyApiFactory>
 {
     /// <summary>
-    /// Operaciones del contrato que todavía no existen, con la issue que las implementa (SDD: el contrato llega antes que el
-    /// endpoint). Son las marcadas con <c>x-estado: pendiente</c> en el spec. Cuando una issue implementa su endpoint, quita su
-    /// entrada: la prueba falla si un pendiente ya existe o si deja de estar en el contrato. HU-013.1 (#97, ADR-018).
+    /// Operaciones del contrato que todavía no existen (SDD: el contrato llega antes que el endpoint, ADR-018). Son las marcadas
+    /// con <c>x-estado: pendiente</c> en el spec. Al implementar un endpoint se quita su entrada: la prueba falla si un pendiente ya
+    /// existe o si deja de estar en el contrato.
     /// </summary>
     public static readonly IReadOnlyDictionary<string, string> PendientesDeImplementar = new Dictionary<string, string>(StringComparer.Ordinal)
     {
     };
 
     /// <summary>
-    /// Propiedades que el contrato ya declara en el esquema de un DTO de <c>/web/*</c> y que el DTO todavía no tiene, con la issue
-    /// que las agrega (HU-013.1, #97). Se excluyen de la comparación exacta de propiedades; la prueba falla si el DTO ya las tiene
+    /// Propiedades que el contrato ya declara en el esquema de un DTO de <c>/web/*</c> y que el DTO todavía no tiene. Se excluyen de la comparación exacta de propiedades; la prueba falla si el DTO ya las tiene
     /// (quítalas de aquí) o si el esquema ya no las declara. En los esquemas de respuesta son opcionales, así que las respuestas
     /// actuales siguen cumpliendo el contrato.
     /// </summary>
@@ -147,7 +146,7 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
     }
 
     /// <summary>
-    /// Cada DTO de <c>/web/*</c> (entrada o salida) con su esquema del contrato. #138: lo usa también
+    /// Cada DTO de <c>/web/*</c> (entrada o salida) con su esquema del contrato. Lo usa también
     /// <see cref="clsContratoDocumentoTests"/> (cada esquema alcanzable desde <c>/web/*</c> tiene su DTO, los <c>ProducesResponseType</c>
     /// de cada acción coinciden con el contrato y los <c>required</c> no anulables de las respuestas no son anulables en C#).
     /// </summary>
@@ -155,27 +154,27 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
     [
         (typeof(clsCotizacionResumen), "CotizacionResumen"),
         (typeof(clsMisCotizaciones), "MisCotizaciones"),
-        // HU-016.1 (#154): listado regional del gerente comercial.
+        // Listado regional del gerente comercial.
         (typeof(clsCotizacionesRegional), "CotizacionesRegional"),
         (typeof(clsComercialCotizacion), "ComercialCotizacion"),
-        // HU-027.1 (#179): detalle por folio.
+        // Detalle por folio.
         (typeof(clsDetalleCotizacion), "DetalleCotizacion"),
         (typeof(clsFechasCotizacion), "FechasCotizacion"),
         (typeof(clsTotalesCotizacion), "TotalesCotizacion"),
-        // HU-018.1 (#155, parte B): lista de motivos de pérdida.
+        // Lista de motivos de pérdida.
         (typeof(Cotifly.Aplicacion.Cotizaciones.Services.clsMotivosPerdida), "MotivosPerdida"),
         (typeof(Cotifly.Aplicacion.Cotizaciones.Services.clsMotivoPerdida), "MotivoPerdida"),
         (typeof(clsDatosNuevaVersion), "DatosNuevaVersion"),
         (typeof(clsLineaNegocioAdmin), "LineaNegocio"),
-        // HU-016.1 (#154): GET /web/lineas-negocio, el desplegable de la captura sin margen.
+        // GET /web/lineas-negocio, el desplegable de la captura sin margen.
         (typeof(Cotifly.Aplicacion.Administracion.DTOs.clsLineaNegocioOpcion), "LineaNegocioOpcion"),
-        // HU-042.2 (#243): estado y corrida forzada de la sincronización del margen de SAP TM.
+        // Estado y corrida forzada de la sincronización del margen de SAP TM.
         (typeof(Cotifly.Aplicacion.Margen.DTOs.clsEstadoSincronizacionMargenSap), "EstadoSincronizacionMargenSap"),
         (typeof(Cotifly.Aplicacion.Margen.DTOs.clsResultadoSincronizacionMargenSap), "ResultadoSincronizacionMargenSap"),
         (typeof(Cotifly.Aplicacion.Margen.DTOs.clsCorridaSincronizacionMargenSap), "CorridaSincronizacionMargenSap"),
         (typeof(clsMetricasComercial), "MetricasComercial"),
         (typeof(clsMetricasRegional), "MetricasRegional"),
-        // HU-037.3 (#211): GET /web/regionales.
+        // GET /web/regionales.
         (typeof(Cotifly.Aplicacion.Identidad.Services.clsRegionales), "Regionales"),
         (typeof(clsComercialRegional), "ComercialRegional"),
         (typeof(clsPeriodoMetricas), "PeriodoMetricas"),
@@ -188,7 +187,7 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         (typeof(clsDestinatarios), "Destinatarios"),
         (typeof(clsVistaPreviaCorreo), "VistaPreviaCorreo"),
         (typeof(clsRespuestaEnvio), "RespuestaEnvio"),
-        // HU-033 (#199): historial de envíos por MailSender, reintento y el resumen sin desglose de la vista previa.
+        // Historial de envíos por MailSender, reintento y el resumen sin desglose de la vista previa.
         (typeof(Cotifly.Api.Correo.DTOs.clsHistorialCorreosRespuesta), "HistorialCorreos"),
         (typeof(Cotifly.Aplicacion.Correo.DTOs.clsEnvioCorreoHistorial), "EnvioCorreo"),
         (typeof(Cotifly.Aplicacion.Correo.Services.clsResumenCorreo), "ResumenCorreo"),
@@ -196,7 +195,7 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         (typeof(clsSeguimientoWebRequest), "SeguimientoWeb"),
         (typeof(clsEnvioWebRequest), "EnvioWeb"),
         (typeof(clsActualizarLineaNegocioRequest), "ActualizarLineaNegocio"),
-        // Endurecimiento A (#199): el PUT del teléfono y la vista previa del correo tienen su propio esquema de entrada.
+        // El PUT del teléfono y la vista previa del correo tienen su propio esquema de entrada.
         (typeof(clsTelefonoRequest), "TelefonoComercialWeb"),
         (typeof(clsEnvioWebRequest), "BorradorCorreoWeb"),
         (typeof(clsRespuestaChat), "RespuestaChat"),
@@ -214,14 +213,14 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         (typeof(Cotifly.Api.Costeo.DTOs.clsSeleccionServiciosConexosWebRequest), "SeleccionServiciosConexos"),
         (typeof(Cotifly.Api.Costeo.DTOs.clsResultadoWebRequest), "ResultadoWeb"),
         (typeof(Cotifly.Api.Costeo.DTOs.clsAjusteMargenWebRequest), "AjusteMargenWeb"),
-        // HU-045.2 (#264): el check del seguro de la mercancía por ruta.
+        // El check del seguro de la mercancía por ruta.
         (typeof(Cotifly.Api.Costeo.DTOs.clsSeguroRutaWebRequest), "SeguroRutaWeb"),
-        // HU-046.3 (#269): la política de seguros de la ruta en el costeo y la justificación de "Finalizar".
+        // La política de seguros de la ruta en el costeo y la justificación de "Finalizar".
         (typeof(Cotifly.Aplicacion.Costeo.Services.clsPoliticaSegurosRuta), "PoliticaSegurosRuta"),
         (typeof(Cotifly.Aplicacion.Costeo.Services.clsTramoPoliticaSegurosRuta), "TramoPoliticaSeguros"),
         (typeof(Cotifly.Aplicacion.Costeo.Services.clsMedidaPolitica), "MedidaPolitica"),
         (typeof(Cotifly.Api.Costeo.DTOs.clsFinalizarWebRequest), "FinalizarWeb"),
-        // HU-041.1 (#231): margen y conexos para varias rutas en una operación.
+        // Margen y conexos para varias rutas en una operación.
         (typeof(Cotifly.Api.Costeo.DTOs.clsMargenLineasWebRequest), "MargenLineasWeb"),
         (typeof(Cotifly.Api.Costeo.DTOs.clsConexoLineasWebRequest), "ConexoLineasWeb"),
         (typeof(Cotifly.Api.Costeo.DTOs.clsQuitarConexoLineasWebRequest), "QuitarConexoLineasWeb"),
@@ -234,7 +233,7 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         (typeof(Cotifly.Aplicacion.Costeo.DTOs.clsServicioConexoCatalogo), "ServicioConexoCatalogo"),
         (typeof(Cotifly.Api.Costeo.DTOs.clsReSolicitudCosteoWebRequest), "ReSolicitudCosteoWeb"),
         (typeof(Cotifly.Api.Costeo.DTOs.clsDatosCargaWebRequest), "DatosCargaWeb"),
-        // HU-028 (#186): editar la solicitud (GET y PUT /web/cotizaciones/{folio}/solicitud).
+        // Editar la solicitud (GET y PUT /web/cotizaciones/{folio}/solicitud).
         (typeof(Cotifly.Api.Costeo.DTOs.clsEdicionSolicitudWebRequest), "EdicionSolicitudWeb"),
         (typeof(Cotifly.Api.Costeo.DTOs.clsRutaEdicionWebRequest), "RutaEdicionWeb"),
         (typeof(Cotifly.Aplicacion.Costeo.DTOs.clsResultadoEdicionSolicitud), "EdicionSolicitudResultado"),
@@ -253,10 +252,10 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsHojaExcel), "HojaExcel"),
         (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsLicitacion), "Licitacion"),
         (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsLineaLicitacion), "LineaLicitacion"),
-        // HU-023.5 (#160): código de mercancía sugerido por fila y camiones de cada ruta de la licitación.
+        // Código de mercancía sugerido por fila y camiones de cada ruta de la licitación.
         (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsCodigoMercanciaFila), "CodigoMercanciaFila"),
         (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsCamionLicitacion), "CamionLicitacion"),
-        // HU-044.5 (#256): plantillas de mapeo, formatos de lectura y diccionario del cliente en NEXO.
+        // Plantillas de mapeo, formatos de lectura y diccionario del cliente en NEXO.
         (typeof(Cotifly.Api.Licitaciones.DTOs.clsPlantillaMapeoWebRequest), "PlantillaMapeoWeb"),
         (typeof(Cotifly.Api.Licitaciones.DTOs.clsColumnaPlantillaWebRequest), "ColumnaPlantilla"),
         (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsColumnaConfirmada), "ColumnaPlantilla"),
@@ -267,31 +266,31 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         (typeof(Cotifly.Api.Licitaciones.DTOs.clsTerminoDiccionarioWebRequest), "TerminoDiccionarioWeb"),
         (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsAvisoDiccionario), "AvisoDiccionario"),
         (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsOpcionesDiccionarioCliente), "OpcionesDiccionarioCliente"),
-        // HU-035.1 (#202): grilla cruda del Excel de mercancías de una ruta, leída en Cotifly sin Nexo.
+        // Grilla cruda del Excel de mercancías de una ruta, leída en Cotifly sin Nexo.
         (typeof(Cotifly.Aplicacion.Mercancias.DTOs.clsAnalisisExcelMercancias), "AnalisisExcelMercancias"),
         (typeof(Cotifly.Aplicacion.Mercancias.DTOs.clsHojaExcelMercancias), "HojaExcelMercancias"),
-        // HU-044.2 (#253): sugerir-mapeo y leer-estructura con la importación inteligente de NEXO.
+        // sugerir-mapeo y leer-estructura con la importación inteligente de NEXO.
         (typeof(Cotifly.Api.Licitaciones.DTOs.clsSugerirMapeoWebRequest), "SugerirMapeoWeb"),
         (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsSugerenciaMapeo), "SugerenciaMapeo"),
         (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsColumnaMapeada), "ColumnaMapeada"),
         (typeof(Cotifly.Api.Licitaciones.DTOs.clsLecturaEstructuraWeb), "LecturaEstructura"),
         (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsHojaDelArchivo), "HojaDelArchivo"),
         (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsCambiosDeFormato), "CambiosDeFormato"),
-        // #138: los esquemas alcanzables desde /web/* que no tenían DTO en esta lista.
+        // Los demás esquemas alcanzables desde /web/*.
         (typeof(Cotifly.Api.Costeo.DTOs.clsRutaCapturaWebRequest), "RutaCapturaWeb"),
         (typeof(Cotifly.Api.Costeo.DTOs.clsConexoCapturaWebRequest), "ConexoCapturaWeb"),
         (typeof(Cotifly.Api.Costeo.DTOs.clsCantidadConexoWebRequest), "CantidadConexoWeb"),
         (typeof(Cotifly.Aplicacion.Cubicacion.DTOs.clsTipoMercanciaCubicador), "TipoMercancia"),
         (typeof(Cotifly.Aplicacion.Cubicacion.DTOs.clsTipoCarroceriaCubicador), "TipoCarroceria"),
         (typeof(Cotifly.Aplicacion.Cubicacion.DTOs.clsTipoVehiculoCubicador), "TipoVehiculo"),
-        // HU-023.3 (#158): la cubicación por ruta en la respuesta de la captura.
+        // La cubicación por ruta en la respuesta de la captura.
         (typeof(Cotifly.Aplicacion.Cotizaciones.DTOs.clsCubicacionRutaResumen), "CubicacionRuta"),
         (typeof(Cotifly.Dominio.Cotizaciones.clsMercanciaCondicionada), "MercanciaCondicionada"),
         (typeof(Cotifly.Dominio.Cotizaciones.clsAvisosCubicacion), "AvisosCubicacion"),
         (typeof(Cotifly.Dominio.Cotizaciones.clsAdvertenciaCubicador), "AdvertenciaCubicador"),
         (typeof(Cotifly.Dominio.Cotizaciones.clsVehiculoAviso), "VehiculoAviso"),
         (typeof(Cotifly.Dominio.Cotizaciones.clsExtradimensionCubicador), "ExtradimensionCubicador"),
-        // HU-023 (#176): extradimensión con la estructura vigente y lo que lleva cada camión por posición.
+        // Extradimensión con la estructura vigente y lo que lleva cada camión por posición.
         (typeof(Cotifly.Dominio.Cotizaciones.clsMedidasEstandarCubicador), "MedidasEstandarCubicador"),
         (typeof(Cotifly.Dominio.Cotizaciones.clsPiezaExtradimension), "PiezaExtradimension"),
         (typeof(Cotifly.Aplicacion.Cubicacion.DTOs.clsMercanciaVehiculo), "MercanciaVehiculo"),
@@ -300,11 +299,11 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         (typeof(Cotifly.Aplicacion.CatalogosFlete.DTOs.clsOpcionCatalogo), "OpcionCatalogo"),
         (typeof(Cotifly.Aplicacion.CatalogosFlete.Services.clsAliasResueltos), "AliasResueltos"),
         (typeof(Cotifly.Aplicacion.CatalogosFlete.Services.clsAliasResuelto), "AliasResuelto"),
-        // HU-044.4 (#255): normalización de los textos del Excel de licitación con NEXO.
+        // Normalización de los textos del Excel de licitación con NEXO.
         (typeof(Cotifly.Api.Licitaciones.DTOs.clsNormalizacionValoresWebRequest), "NormalizarValoresWeb"),
         (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsNormalizacionValores), "NormalizacionValores"),
         (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsValorNormalizacionWeb), "ValorNormalizado"),
-        // HU-044.3 (#254): aplicar el mapeo confirmado y traducir las filas a líneas de Cotifly.
+        // Aplicar el mapeo confirmado y traducir las filas a líneas de Cotifly.
         (typeof(Cotifly.Api.Licitaciones.DTOs.clsAplicarMapeoWebRequest), "AplicarMapeoWeb"),
         (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsMapeoAplicado), "MapeoAplicado"),
         (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsLineaMapeada), "LineaLicitacionImportada"),
@@ -314,19 +313,19 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         (typeof(Cotifly.Aplicacion.Clientes.DTOs.clsClienteEncontrado), "ClienteEncontrado"),
         (typeof(Cotifly.Api.Cubicacion.DTOs.clsCubicacionWebRequest), "CubicacionRequest"),
         (typeof(Cotifly.Aplicacion.Cubicacion.DTOs.clsItemCubicacion), "ItemCubicacion"),
-        // HU-023.2 (#157): "Calcular cubicaje" contra el cubicador (lista de vehículos).
+        // "Calcular cubicaje" contra el cubicador (lista de vehículos).
         (typeof(Cotifly.Aplicacion.Cubicacion.DTOs.clsResultadoCubicacion), "ResultadoCubicacion"),
         (typeof(Cotifly.Aplicacion.Cubicacion.DTOs.clsVehiculoCubicacion), "VehiculoCubicacion"),
         (typeof(Cotifly.Aplicacion.Cubicacion.DTOs.clsMercanciaCubicada), "MercanciaCubicada"),
         (typeof(Cotifly.Aplicacion.Cubicacion.DTOs.clsSugerenciaVehiculoLegada), "SugerenciaVehiculoLegada"),
-        // Opción D (E2E 2026-10-16, D3): "Calcular cubicaje" asíncrono (202 y GET /web/cubicacion/{id}).
+        // "Calcular cubicaje" asíncrono (202 y GET /web/cubicacion/{id}).
         (typeof(Cotifly.Api.Cubicacion.DTOs.clsCubicacionEnProcesoWeb), "CubicacionEnProceso"),
         (typeof(Cotifly.Api.Cubicacion.DTOs.clsEstadoCubicacionWeb), "EstadoCubicacion"),
         (typeof(Cotifly.Api.Cubicacion.DTOs.clsErrorCubicacionWeb), "ErrorCubicacion"),
         (typeof(Cotifly.Aplicacion.Precio.DTOs.clsSalidaPrecio), "SalidaPrecio"),
         (typeof(Cotifly.Aplicacion.Margen.DTOs.clsSalidaMargen), "SalidaMargen"),
         (typeof(Cotifly.Aplicacion.Pdf.DTOs.clsSalidaPdf), "SalidaPdf"),
-        // HU-045.3 (#265): aviso del seguro marcado sin valor de la mercancía (costeo, detalle y PDF).
+        // Aviso del seguro marcado sin valor de la mercancía (costeo, detalle y PDF).
         (typeof(Cotifly.Aplicacion.Costeo.DTOs.clsAvisoSeguro), "AvisoSeguro"),
         (typeof(Cotifly.Aplicacion.Costeo.DTOs.clsRutaAvisoSeguro), "RutaAvisoSeguro"),
         (typeof(clsErrorHerramienta), "ErrorHerramienta"),
@@ -361,7 +360,7 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
                 .OfType<System.Text.Json.Serialization.JsonIgnoreAttribute>()
                 .Any(a => a.Condition == System.Text.Json.Serialization.JsonIgnoreCondition.Always) != true)
             .ToList();
-        // #138: un campo retirado del contrato se sigue leyendo (se ignora y queda en el log), pero el esquema ya no lo declara.
+        // Un campo retirado del contrato se sigue leyendo (se ignora y queda en el log), pero el esquema ya no lo declara.
         var retiradas = todas.Where(EsRetirada).Select(p => p.Name).ToList();
         var delDto = todas.Where(p => !EsRetirada(p)).Select(p => p.Name).ToList();
 
@@ -387,7 +386,7 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         }
     }
 
-    /// <summary>¿La propiedad está marcada como retirada del contrato (<see cref="clsCampoRetiradoAttribute"/>, #138)?</summary>
+    /// <summary>¿La propiedad está marcada como retirada del contrato (<see cref="clsCampoRetiradoAttribute"/>)?</summary>
     private static bool EsRetirada(System.Text.Json.Serialization.Metadata.JsonPropertyInfo propiedad) =>
         propiedad.AttributeProvider?.IsDefined(typeof(clsCampoRetiradoAttribute), inherit: true) ?? false;
 

@@ -8,7 +8,7 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Web;
 
 /// <summary>
-/// Pasos de <c>specs/features/admin_lineas_negocio.feature</c> (HU-004.9). Los números van sin comillas en el <c>.feature</c> y se
+/// Pasos de <c>specs/features/admin_lineas_negocio.feature</c>. Los números van sin comillas en el <c>.feature</c> y se
 /// leen con cultura invariante (la del <c>.feature</c> es español, donde el punto es separador de miles).
 /// </summary>
 [Binding]
@@ -44,7 +44,7 @@ public sealed class clsPasosAdmin(clsContextoWeb web)
     [Then("el listado de líneas incluye las 8 líneas sembradas y {string}")]
     public void EntoncesElListadoIncluye(string alias) =>
         web.UltimoJson().EnumerateArray().Select(l => l.GetProperty("linea_negocio").GetString()).Should().Contain(
-            ["Nacional", "Distribucion", "Importacion", "Exportacion", "Internacional", "DevolucionContenedor", web.Lineas[alias].Nombre]); // HU-021 (0009)
+            ["Nacional", "Distribucion", "Importacion", "Exportacion", "Internacional", "DevolucionContenedor", web.Lineas[alias].Nombre]); // Las líneas que deja el 0009 más la del escenario
 
     [Then("cada línea trae id, linea_negocio, margen, metodo_calculo e is_active")]
     public async Task EntoncesCadaLineaCumpleElContrato()
@@ -79,7 +79,7 @@ public sealed class clsPasosAdmin(clsContextoWeb web)
         MargenDe(resultado, "despues").Should().Be(decimal.Parse(despues, CultureInfo.InvariantCulture));
     }
 
-    /// <summary>HU-016.1 (#154): una línea de prueba inactiva (no debe salir en el desplegable).</summary>
+    /// <summary>Una línea de prueba inactiva (no debe salir en el desplegable).</summary>
     [Given(@"^la línea de negocio de prueba ""([^""]+)"" con margen " + Numero + @", método ""([^""]+)"" e inactiva$")]
     public async Task DadoLaLineaDePruebaInactiva(string alias, string margen, string metodo)
     {

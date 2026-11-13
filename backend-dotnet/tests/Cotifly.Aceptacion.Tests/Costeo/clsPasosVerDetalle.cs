@@ -6,7 +6,7 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Costeo;
 
 /// <summary>
-/// HU-018.1 (#155), pasos de <c>specs/features/costeo_nexo.feature</c>: "Ver detalle" (<c>GET .../costeo</c>) trae la fecha límite de la
+/// Pasos de <c>specs/features/costeo_nexo.feature</c>: "Ver detalle" (<c>GET .../costeo</c>) trae la fecha límite de la
 /// solicitud y el <c>scorePrioridad</c> que Nexo devolvió al crear la solicitud (guardado en <c>CotizacionesSolicitud.scorePrioridad</c>).
 /// </summary>
 [Binding]

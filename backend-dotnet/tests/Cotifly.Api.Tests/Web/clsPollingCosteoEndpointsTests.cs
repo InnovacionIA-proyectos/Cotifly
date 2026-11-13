@@ -7,7 +7,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// Polling del costeo (HU-005.6, ADR-015 §4) de punta a punta: envío por HTTP, cambios en el Nexo falso, una vuelta del worker
+/// Polling del costeo (ADR-015 §4) de punta a punta: envío por HTTP, cambios en el Nexo falso, una vuelta del worker
 /// (<c>clsWorkerCosteoNexo.ProcesarLoteAsync</c>) y el estado visible en "Mis cotizaciones", contra SQL Server real.
 /// </summary>
 [Collection(clsColeccionApiWeb.Nombre)]

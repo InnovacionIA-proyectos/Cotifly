@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// Cupo de lecturas de Nexo de punta a punta (HU-023.4, #159; hueco de la matriz HU-023, #174): por HTTP con SQL Server real y el Nexo
+/// Cupo de lecturas de Nexo de punta a punta: por HTTP con SQL Server real y el Nexo
 /// falso. Nexo responde 429 a un catálogo con <c>Retry-After</c>; desde ahí Cotifly no vuelve a leer catálogos de Nexo (los bloquea en
 /// local) hasta que pase ese tiempo, mientras el polling de la solicitud (<c>GET /api/solicitudes/{id}</c>, sin límite en Nexo) sigue.
 /// El reloj del cupo es manual (<see cref="clsTiempoManual"/>) para probar el <c>Retry-After</c> sin esperar.
@@ -88,8 +88,7 @@ public sealed class clsCupoNexoEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// Deuda de #122: <c>GET /web/municipios</c> responde 503 si Nexo responde 429, pero los municipios no comparten el cupo de listados
-    /// (decisión de HU-023.4): ese 429 no bloquea los catálogos ni lleva <c>Retry-After</c>, y un cupo bloqueado por un catálogo no
+    /// <c>GET /web/municipios</c> responde 503 si Nexo responde 429, pero los municipios no comparten el cupo de listados: ese 429 no bloquea los catálogos ni lleva <c>Retry-After</c>, y un cupo bloqueado por un catálogo no
     /// deja sin municipios.
     /// </summary>
     [Fact]

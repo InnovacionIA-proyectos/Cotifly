@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Tests.Configuracion;
 
 /// <summary>
-/// HU-018.1 (#155, parte B): <c>Resultado:MotivosPerdida</c> y <c>Resultado:MotivoConComentario</c> se enlazan desde la configuración (la
+/// <c>Resultado:MotivosPerdida</c> y <c>Resultado:MotivoConComentario</c> se enlazan desde la configuración (la
 /// lista configurada reemplaza a la de Nexo) y una configuración inválida no deja arrancar.
 /// </summary>
 public sealed class clsValidadorOpcionesResultadoTests

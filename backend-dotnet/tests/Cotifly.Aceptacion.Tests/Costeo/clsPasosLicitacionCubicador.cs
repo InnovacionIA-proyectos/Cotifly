@@ -7,7 +7,7 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Costeo;
 
 /// <summary>
-/// Pasos de <c>specs/features/licitacion_cubicador.feature</c> (HU-023.5, #160): la licitación con el cubicador se guarda sin esperar,
+/// Pasos de <c>specs/features/licitacion_cubicador.feature</c>: la licitación con el cubicador se guarda sin esperar,
 /// el procesador en segundo plano cubica sus rutas (solo las de esta licitación: la base es compartida) y la solicitud sale a Nexo una vez.
 /// </summary>
 [Binding]

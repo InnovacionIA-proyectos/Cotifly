@@ -3,7 +3,7 @@ using Cotifly.Aplicacion.Comun.Interfaces;
 namespace Cotifly.Pruebas.Comun;
 
 /// <summary>
-/// <see cref="IClsReloj"/> de las APIs de prueba en memoria (#117): da la hora del <see cref="TimeProvider"/> salvo dentro de
+/// <see cref="IClsReloj"/> de las APIs de prueba en memoria: da la hora del <see cref="TimeProvider"/> salvo dentro de
 /// <see cref="Fijar"/>, que fija una hora explícita solo para el flujo asíncrono que lo llama (<see cref="AsyncLocal{T}"/>): las
 /// pruebas que corren en paralelo sobre la misma API no la ven. Así el orden por <c>createdAt</c> no depende del reloj real,
 /// que en el contenedor de pruebas llega a saltar hacia atrás.

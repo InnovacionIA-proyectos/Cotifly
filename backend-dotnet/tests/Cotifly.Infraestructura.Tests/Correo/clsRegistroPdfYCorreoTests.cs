@@ -15,8 +15,8 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Tests.Correo;
 
 /// <summary>
-/// Registro y configuración de PDF y correo (#11; HU-033, #199, ADR-023): adaptadores por defecto, el transporte MailSender (único modo;
-/// <c>smtp_relay</c>, <c>smtp</c> y <c>wscorreos</c> retirados), <c>Correo:Habilitado=false</c> por defecto, la protección obligatoria fuera
+/// Registro y configuración de PDF y correo (ADR-023): adaptadores por defecto, el transporte MailSender (único
+/// modo), <c>Correo:Habilitado=false</c> por defecto, la protección obligatoria fuera
 /// de Production, <c>Pdf:StorageModo</c> (S3 diferido, ADR-012) y la fecha de negocio en la zona configurada.
 /// </summary>
 public sealed class clsRegistroPdfYCorreoTests
@@ -83,15 +83,15 @@ public sealed class clsRegistroPdfYCorreoTests
     }
 
     /// <summary>
-    /// Validación #228: el remitente corporativo debe pasar el formato estricto con que el transporte revisa el <c>From</c>; antes bastaba
-    /// MailAddress (acepta un nombre con ángulos o un dominio de una etiqueta) y ningún correo habría salido.
+    /// El remitente corporativo debe pasar el formato estricto con que el transporte revisa el <c>From</c>; no basta con
+    /// MailAddress (acepta un nombre con ángulos o un dominio de una etiqueta): con él, ningún correo saldría.
     /// </summary>
     [Theory]
     [InlineData("Notificaciones <notificaciones@boterosoto.com.co>")]
     [InlineData("notificaciones@intranet")]
     [InlineData(" notificaciones@boterosoto.com.co")]
     [InlineData("\"notificaciones\"@boterosoto.com.co")]
-    public void Validacion228_ElRemitenteCorporativoUsaElFormatoEstricto(string remitente)
+    public void ElRemitenteCorporativoUsaElFormatoEstricto(string remitente)
     {
         var resultado = new clsValidadorOpcionesCorreoTransporte().Validate(null, new clsOpcionesCorreoTransporte
         {
@@ -118,7 +118,7 @@ public sealed class clsRegistroPdfYCorreoTests
     [InlineData("Production", true, "redirigir", "qa@pruebas.local", false, null)]
     [InlineData("Production", true, "redirigir", null, false, "Proteccion:BuzonPruebas")]
     [InlineData("Production", false, "lista_blanca", null, false, "Proteccion:Modo")]
-    // Auditoría #199: segura por defecto y sin depender del ambiente (QA y staging corren como Production): el envío real exige las dos
+    // Segura por defecto y sin depender del ambiente (QA y staging corren como Production): el envío real exige las dos
     // llaves; una sola no arranca.
     [InlineData("Production", true, "ninguno", null, false, "PermitirEnvioReal=true")]
     [InlineData("Production", true, "ninguno", "qa@pruebas.local", false, "PermitirEnvioReal=true")]
@@ -144,7 +144,7 @@ public sealed class clsRegistroPdfYCorreoTests
         }
     }
 
-    // #228 (decisión del 2026-10-27): el tope de destinatarios es 10 por defecto, configurable de 1 a 100, y se valida aunque el correo
+    // El tope de destinatarios es 10 por defecto, configurable de 1 a 100, y se valida aunque el correo
     // esté deshabilitado (la vista previa también lo aplica).
     [Theory]
     [InlineData(10, true, null)]
@@ -153,7 +153,7 @@ public sealed class clsRegistroPdfYCorreoTests
     [InlineData(0, false, "MaximoDestinatarios")]
     [InlineData(-1, true, "MaximoDestinatarios")]
     [InlineData(101, false, "MaximoDestinatarios")]
-    public void Tope228_ElTopeDeDestinatariosSeValida(int maximo, bool habilitado, string? error)
+    public void ElTopeDeDestinatariosSeValida(int maximo, bool habilitado, string? error)
     {
         var resultado = new clsValidadorOpcionesCorreo(new clsEntornoFalso("Development")).Validate(null, new clsOpcionesCorreo
         {
@@ -174,7 +174,7 @@ public sealed class clsRegistroPdfYCorreoTests
     }
 
     [Fact]
-    public void Tope228_ElTopeSeLeeDeCorreoMaximoDestinatarios()
+    public void ElTopeSeLeeDeCorreoMaximoDestinatarios()
     {
         using var porDefecto = Proveedor();
         using var configurado = Proveedor(new Dictionary<string, string?> { ["Correo:MaximoDestinatarios"] = "15" });

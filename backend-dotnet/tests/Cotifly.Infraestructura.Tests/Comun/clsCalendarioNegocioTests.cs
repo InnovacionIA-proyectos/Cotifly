@@ -6,7 +6,7 @@ using NSubstitute;
 
 namespace Cotifly.Infraestructura.Tests.Comun;
 
-/// <summary>Fechas de negocio en America/Bogota (UTC−5, sin horario de verano) para los límites y meses del tablero (HU-010.1).</summary>
+/// <summary>Fechas de negocio en America/Bogota (UTC−5, sin horario de verano) para los límites y meses del tablero.</summary>
 public sealed class clsCalendarioNegocioTests
 {
     private static clsCalendarioNegocio Calendario(DateTimeOffset ahora)

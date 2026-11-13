@@ -6,7 +6,7 @@ using System.Text.Json;
 namespace Cotifly.Pruebas.Comun;
 
 /// <summary>
-/// HU-033 (#199): MailSender falso para las pruebas: un <see cref="HttpMessageHandler"/> que nunca sale a la red y responde con la forma
+/// MailSender falso para las pruebas: un <see cref="HttpMessageHandler"/> que nunca sale a la red y responde con la forma
 /// del microservicio real (<c>InnovacionIA/MailSender</c>): <c>POST /api/v1/emails</c> (multipart, 202 <c>{id, status, statusUrl}</c>),
 /// <c>GET /api/v1/emails/{id}</c> (<c>EmailStatusResponse</c> con <c>status</c> numérico) y <c>POST /api/v1/emails/{id}/retry</c>. Las pruebas
 /// cambian el estado de cada correo (<see cref="Entregar"/>, <see cref="Fallar"/>, <see cref="Olvidar"/>) y simulan rechazos (400/413/422),

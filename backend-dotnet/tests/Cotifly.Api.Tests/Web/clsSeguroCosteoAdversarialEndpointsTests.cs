@@ -7,7 +7,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// HU-045.2 (#264), validación adversarial de <c>PUT /web/cotizaciones/{folio}/costeo/seguro</c> por HTTP con SQL Server real y el Nexo
+/// Validación adversarial de <c>PUT /web/cotizaciones/{folio}/costeo/seguro</c> por HTTP con SQL Server real y el Nexo
 /// falso: idempotencia, rutas que no existen, cotizaciones ajenas, cuerpos mal formados, dos PUT con el mismo <c>If-Match</c>, el PDF
 /// vigente, la auditoría de los errores y un cambio de la tasa vigente en la base. Complementa <see cref="clsSeguroCosteoEndpointsTests"/>.
 /// </summary>
@@ -169,10 +169,10 @@ public sealed class clsSeguroCosteoAdversarialEndpointsTests : IDisposable
     public async Task ConElPdfVigenteSinEnviarLoInvalidaLoArchivaYSubeLaVersion()
     {
         var (sesion, folio) = await CosteadaAsync();
-        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // Como el frontend
         using var pdf = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
         pdf.StatusCode.Should().Be(HttpStatusCode.Created);
-        // Como clsMargenCosteoEndpointsTests: PDF anterior a HU-036 (sin finalizar) para tener un PDF vigente sin enviar.
+        // Como clsMargenCosteoEndpointsTests: PDF generado sin finalizar para tener un PDF vigente sin enviar.
         await _api.DesfinalizarComoAnteriorAHu036Async(folio);
 
         using var seguro = await PutAsync(sesion, folio, """{"incluye_seguro":true}""", pdf.Headers.ETag?.Tag);

@@ -10,7 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
-/// HU-046.3 (#269): <see cref="clsPoliticaSegurosRepository"/> sobre las tablas reales del script 21 (con la carga aprobada que siembra el
+/// <see cref="clsPoliticaSegurosRepository"/> sobre las tablas reales del script 21 (con la carga aprobada que siembra el
 /// mismo script). Los cambios se hacen en una base AISLADA: la compartida conserva la política aprobada para las demás pruebas.
 /// </summary>
 [Collection(clsColeccionSqlServer.Nombre)]

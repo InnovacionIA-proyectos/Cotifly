@@ -5,7 +5,7 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// HU-045.2 (#264): la vista del costeo con el seguro de la mercancía (<c>incluye_seguro</c>, <c>tasa_seguro</c>, <c>valor_seguro</c> en la
+/// La vista del costeo con el seguro de la mercancía (<c>incluye_seguro</c>, <c>tasa_seguro</c>, <c>valor_seguro</c> en la
 /// moneda de la cotización) y la tarifa del transporte, que no lo absorbe (va aparte, como los conexos).
 /// </summary>
 public sealed class clsSeguroVistaCosteoTests
@@ -30,7 +30,7 @@ public sealed class clsSeguroVistaCosteoTests
         ruta.ValorSeguro.Should().Be(690_000m);
         ruta.PrecioFinalLinea.Should().Be(1_940_000m);
         ruta.CostoFinal.Should().Be(1_000_000m, "el seguro no es costo de Nexo");
-        // HU-018.2 (#294): el costo del transporte (solo el flete) y el valor de la mercancía salen en la misma vista; el seguro no los toca.
+        // El costo del transporte (solo el flete) y el valor de la mercancía salen en la misma vista; el seguro no los toca.
         ruta.CostoTransporte.Should().Be(1_000_000m, "el seguro no entra en el costo del transporte");
         ruta.ValorMercancia.Should().Be(200_000_000m);
     }

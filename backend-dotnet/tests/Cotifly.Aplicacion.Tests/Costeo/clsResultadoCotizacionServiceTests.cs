@@ -14,7 +14,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// Resultado ganada/perdida en Nexo (HU-005.14, ADR-015 §6): dos escrituras, la local solo con 200 de Nexo; los 409 de Nexo y su
+/// Resultado ganada/perdida en Nexo (ADR-015 §6): dos escrituras, la local solo con 200 de Nexo; los 409 de Nexo y su
 /// caída no cambian nada local; <c>comentario</c> solo se reenvía.
 /// </summary>
 public sealed class clsResultadoCotizacionServiceTests
@@ -46,7 +46,7 @@ public sealed class clsResultadoCotizacionServiceTests
     [Theory]
     [InlineData(EstadoCosteo.Autocosteo)]
     [InlineData(EstadoCosteo.Entregada)]
-    public async Task HU0363_ConElCosteoListoSinFinalizarNoSeMarcaNiSeLlamaANexo(EstadoCosteo estado)
+    public async Task ConElCosteoListoSinFinalizarNoSeMarcaNiSeLlamaANexo(EstadoCosteo estado)
     {
         Estado(estado, null);
         _cotizacion.Vehiculos[0].RegistrarCosteo(estado, 1_000_000m, null);
@@ -63,9 +63,9 @@ public sealed class clsResultadoCotizacionServiceTests
     }
 
     [Fact]
-    public async Task HU0363_YaEnviadaAntesDeHu036ElResultadoNoExigeFinalizar()
+    public async Task YaEnviadaAlClienteSinFinalizarElResultadoNoExigeFinalizar()
     {
-        // Sin backfill: una cotización enviada al cliente antes de HU-036 (sin finalizar) sigue marcando su resultado como siempre.
+        // Una cotización ya enviada al cliente sin finalizar marca su resultado sin exigir la finalización.
         _cotizacion.Vehiculos[0].RegistrarCosteo(EstadoCosteo.Entregada, 2_000_000m, null);
         _cotizacion.RecalcularTotales(_reloj.AhoraUtc);
         _cotizacion.RegistrarEnvio();
@@ -132,7 +132,7 @@ public sealed class clsResultadoCotizacionServiceTests
         await _nexo.DidNotReceiveWithAnyArgs().ConsultarCosteoAsync(default, default!, Ct);
     }
 
-    // HU-013.14 (ADR-018 §17): Nexo entregó, Cotifly aún no lo leyó y el comercial marca el resultado.
+    // ADR-018 §17: Nexo entregó, Cotifly aún no lo leyó y el comercial marca el resultado.
     [Fact]
     public async Task EntregadaEnNexoSinLeerYLuegoGanadaAplicaElPrecioEnLaMismaEscritura()
     {
@@ -192,7 +192,7 @@ public sealed class clsResultadoCotizacionServiceTests
         _unidad.GuardarCambiosSiVersionAsync(_cotizacion.Id, 0, Arg.Any<CancellationToken>()).Returns(false);
         _unidad.GuardarCambiosSiVersionAsync(_cotizacion.Id, 1, Arg.Any<CancellationToken>()).Returns(true);
 
-        // HU-021: la recarga trae lo que guardó el polling (otro flete, 1.700.000 → 2.000.000): si la foto se reaplicara, volvería a 2.352.941.
+        // La recarga trae lo que guardó el polling (otro flete, 1.700.000 → 2.000.000): si la foto se reaplicara, volvería a 2.352.941.
         _cotizaciones.When(r => r.RecargarAsync(_cotizacion, Arg.Any<CancellationToken>())).Do(_ => ConPrecio(EstadoCosteo.Entregada, 1_700_000m));
 
         var resultado = await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "ganada", null, null, Ct);
@@ -236,7 +236,7 @@ public sealed class clsResultadoCotizacionServiceTests
     [Fact]
     public async Task UnaGanadaConMotivoDeMasDe100CaracteresNoSeRechazaYNoLeLlegaANexo()
     {
-        // HU-021.13: en una ganada el motivo no se guarda ("No aplica"), así que su largo no se valida; a Nexo no se le envía (no cabe).
+        // En una ganada el motivo no se guarda ("No aplica"), así que su largo no se valida; a Nexo no se le envía (no cabe).
         var resultado = await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "ganada", new string('m', 101), "Nota", Ct);
 
         resultado.Valor.Ganada.Should().BeTrue();
@@ -260,7 +260,7 @@ public sealed class clsResultadoCotizacionServiceTests
     [Fact]
     public async Task EnPendienteDeCosteoSinEntregaLaGanadaQuedaPendienteDeSincronizarSinPedirElResultadoANexo()
     {
-        // HU-033 (#199, decisión 6): antes era COTIZACION_NO_ENTREGADA; ahora se guarda solo en Cotifly y se envía cuando la Mesa entregue.
+        // El resultado se guarda solo en Cotifly y se envía a Nexo cuando la Mesa entregue.
         Estado(EstadoCosteo.PendienteCosteo, _reloj.AhoraUtc.AddMinutes(5));
         _nexo.ConsultarCosteoAsync(_ana, "SOL-1", Arg.Any<CancellationToken>()).Returns(
             new clsCosteoConsultadoNexo("EnCosteo", ["L1"], new clsCotizacionNexo("COT-1", clsCotizacionNexo.EstadoBorrador, "SinDefinir", [], [])));
@@ -281,7 +281,7 @@ public sealed class clsResultadoCotizacionServiceTests
     [Fact]
     public async Task EnPendienteDeCosteoSinEntregaLaPerdidaSigueSiendoSoloEnCotifly()
     {
-        // #127 (HU-013.17): el cliente desistió antes del costeo: no queda pendiente de sincronizar, se detiene el polling.
+        // El cliente desistió antes del costeo: no queda pendiente de sincronizar, se detiene el polling.
         Estado(EstadoCosteo.PendienteCosteo, _reloj.AhoraUtc.AddMinutes(5));
         _nexo.ConsultarCosteoAsync(_ana, "SOL-1", Arg.Any<CancellationToken>()).Returns(
             new clsCosteoConsultadoNexo("EnCosteo", ["L1"], new clsCotizacionNexo("COT-1", clsCotizacionNexo.EstadoBorrador, "SinDefinir", [], [])));
@@ -352,7 +352,7 @@ public sealed class clsResultadoCotizacionServiceTests
     [Fact]
     public async Task EnPendienteDeCosteoConLaEntregaSinLeerSeMarcaYSeAplicaElPrecio()
     {
-        // HU-013.14: Nexo costeó y entregó, y el polling (espaciado por edad) aún no lo vio.
+        // Nexo costeó y entregó, y el polling (espaciado por edad) aún no lo vio.
         Estado(EstadoCosteo.PendienteCosteo, _reloj.AhoraUtc.AddMinutes(10));
 
         var resultado = await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "ganada", null, null, Ct);
@@ -380,7 +380,7 @@ public sealed class clsResultadoCotizacionServiceTests
         await _nexo.DidNotReceiveWithAnyArgs().ConsultarCosteoAsync(default, default!, Ct);
     }
 
-    // HU-013.14: Nexo aceptó un resultado y Cotifly no lo guardó; luego el comercial pide el contrario.
+    // Nexo aceptó un resultado y Cotifly no lo guardó; luego el comercial pide el contrario.
     [Fact]
     public async Task SiNexoYaTieneOtroResultadoSeGuardaElDeNexoYSeRespondeElConflicto()
     {
@@ -414,7 +414,7 @@ public sealed class clsResultadoCotizacionServiceTests
         await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
     }
 
-    // HU-013.17 (#127): el cliente desiste antes del costeo.
+    // El cliente desiste antes del costeo.
     [Fact]
     public async Task EnErrorEnvioLaPerdidaQuedaSoloEnCotiflyConMotivoEIfMatch()
     {
@@ -497,7 +497,7 @@ public sealed class clsResultadoCotizacionServiceTests
         (await Servicio().MarcarAsync(_ana, cotizacion.Folio, "perdida", "Cliente desistió del servicio", null, versionEsperada: 0, Ct)).Error.Codigo.Should().Be(clsCodigosError.ConflictoConcurrencia);
     }
 
-    // DEF-C-1 (E2E 2026-10-22): con RESULTADO_YA_DEFINIDO se lee la cotización de Nexo por su id conocido, sin "crear o recuperar".
+    // Con RESULTADO_YA_DEFINIDO se lee la cotización de Nexo por su id conocido, sin "crear o recuperar".
     [Fact]
     public async Task ConResultadoYaDefinidoLeeLaCotizacionDeNexoConSuIdSinEscribir()
     {
@@ -511,7 +511,7 @@ public sealed class clsResultadoCotizacionServiceTests
         await _nexo.Received(1).LeerCotizacionAsync(_ana, "SOL-1", "COT-1", Arg.Any<CancellationToken>());
     }
 
-    // OBS-C-2 (E2E 2026-10-22): repetir el mismo resultado ya sincronizado no vuelve a escribir en Nexo.
+    // Repetir el mismo resultado ya sincronizado no vuelve a escribir en Nexo.
     [Theory]
     [InlineData("ganada")]
     [InlineData("perdida")]
@@ -529,7 +529,7 @@ public sealed class clsResultadoCotizacionServiceTests
         await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
     }
 
-    // E2E 2026-10-22: Nexo ya no reconoce la solicitud (404) en pendiente_costeo: la perdida queda solo en Cotifly, como en error_envio.
+    // Nexo ya no reconoce la solicitud (404) en pendiente_costeo: la perdida queda solo en Cotifly, como en error_envio.
     [Fact]
     public async Task EnPendienteDeCosteoConLaSolicitudInexistenteEnNexoLaPerdidaQuedaSoloEnCotifly()
     {
@@ -613,12 +613,12 @@ public sealed class clsResultadoCotizacionServiceTests
         (await Servicio().MarcarAsync(_ana, chat.Folio, "ganada", null, null, Ct)).Error.Codigo.Should().Be(clsCodigosError.CosteoNoListo);
     }
 
-    // HU-018.1 (#155, parte B): el motivo de una perdida es de la lista (la de Nexo) y "Otro" exige comentario.
+    // El motivo de una perdida es de la lista (la de Nexo) y "Otro" exige comentario.
     [Theory]
     [InlineData(null)]
     [InlineData("  ")]
     [InlineData("Precio alto")]
-    public async Task HU0181_UnaPerdidaConUnMotivoFueraDeLaListaEs400SinLlamarANexo(string? motivo)
+    public async Task UnaPerdidaConUnMotivoFueraDeLaListaEs400SinLlamarANexo(string? motivo)
     {
         var resultado = await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "perdida", motivo, "Comentario", Ct);
 
@@ -630,7 +630,7 @@ public sealed class clsResultadoCotizacionServiceTests
     }
 
     [Fact]
-    public async Task HU0181_ConElMotivoOtroSinComentarioEs400()
+    public async Task ConElMotivoOtroSinComentarioEs400()
     {
         var resultado = await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "perdida", "Otro", "   ", Ct);
 
@@ -640,7 +640,7 @@ public sealed class clsResultadoCotizacionServiceTests
     }
 
     [Fact]
-    public async Task HU0181_ConOtroANexoVaElMotivoYElComentarioAparteYCotiflyGuardaAmbos()
+    public async Task ConOtroANexoVaElMotivoYElComentarioAparteYCotiflyGuardaAmbos()
     {
         var resultado = await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "perdida", " otro ", " Cerró la planta ", Ct);
 
@@ -651,7 +651,7 @@ public sealed class clsResultadoCotizacionServiceTests
     }
 
     [Fact]
-    public async Task HU0181_ElMotivoSeComparaSinMayusculasYViajaConLaEscrituraDeLaLista()
+    public async Task ElMotivoSeComparaSinMayusculasYViajaConLaEscrituraDeLaLista()
     {
         await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "perdida", "VALOR muy ALTO", "Pidió 5 % menos", Ct);
 
@@ -661,7 +661,7 @@ public sealed class clsResultadoCotizacionServiceTests
     }
 
     [Fact]
-    public async Task HU0181_LaListaConfiguradaReemplazaALaDeNexo()
+    public async Task LaListaConfiguradaReemplazaALaDeNexo()
     {
         var opciones = new clsOpcionesResultado { MotivosPerdida = ["Plazo", "  ", "Otra razón"], MotivoConComentario = "Otra razón" };
         var catalogo = new clsCatalogoMotivosPerdida(Options.Create(opciones));
@@ -675,13 +675,13 @@ public sealed class clsResultadoCotizacionServiceTests
     }
 
     [Fact]
-    public async Task HU0181_LaGanadaNoValidaElMotivoContraLaLista()
+    public async Task LaGanadaNoValidaElMotivoContraLaLista()
     {
         (await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "ganada", "Mejor precio", null, Ct)).Valor.Ganada.Should().BeTrue();
     }
 
     [Fact]
-    public async Task HU0181_UnaPerdidaConOtroPendienteGuardaElComentarioParaNexo()
+    public async Task UnaPerdidaConOtroPendienteGuardaElComentarioParaNexo()
     {
         Estado(EstadoCosteo.Autocosteo, null);
         ConPrecio(EstadoCosteo.Autocosteo, 1_000_000m);
@@ -695,12 +695,12 @@ public sealed class clsResultadoCotizacionServiceTests
         _cotizacion.ComentarioResultadoPendiente.Should().Be("Compró con la competencia");
     }
 
-    // Validación HU-018.1 (#155): el motivo se valida después de las respuestas que no escriben nada. Una descartada sigue siendo 409
+    // El motivo se valida después de las respuestas que no escriben nada. Una descartada sigue siendo 409
     // COSTEO_NO_LISTO (lleva a /seguimiento) aunque la perdida venga sin motivo, en vez de un 400 que lo oculta.
     [Theory]
     [InlineData(EstadoCosteo.Descartada, null)]
     [InlineData(EstadoCosteo.CosteoVencido, "Precio alto")]
-    public async Task HU0181_UnaDescartadaOVencidaSigueSiendoCosteoNoListoAunqueElMotivoNoSeaDeLaLista(EstadoCosteo estado, string? motivo)
+    public async Task UnaDescartadaOVencidaSigueSiendoCosteoNoListoAunqueElMotivoNoSeaDeLaLista(EstadoCosteo estado, string? motivo)
     {
         Estado(estado, null);
 
@@ -708,11 +708,11 @@ public sealed class clsResultadoCotizacionServiceTests
         _nexo.ReceivedCalls().Should().BeEmpty();
     }
 
-    // HU-033 / OBS-C-2: repetir una perdida ya registrada (sincronizada o pendiente) es idempotente aunque el reintento no traiga el motivo.
+    // Repetir una perdida ya registrada (sincronizada o pendiente) es idempotente aunque el reintento no traiga el motivo.
     [Theory]
     [InlineData(null)]
     [InlineData("Precio alto")]
-    public async Task HU0181_RepetirUnaPerdidaYaSincronizadaSinMotivoDeLaListaSigueSiendo200SinCambios(string? motivo)
+    public async Task RepetirUnaPerdidaYaSincronizadaSinMotivoDeLaListaSigueSiendo200SinCambios(string? motivo)
     {
         _cotizacion.MarcarSeguimiento(false, "Valor muy alto", _reloj.AhoraUtc);
         _cotizacion.MarcarResultadoSincronizado(_reloj.AhoraUtc);
@@ -727,7 +727,7 @@ public sealed class clsResultadoCotizacionServiceTests
     }
 
     [Fact]
-    public async Task HU0181_RepetirUnaPerdidaPendienteDeSincronizarSinMotivoSigueSiendo200SinCambios()
+    public async Task RepetirUnaPerdidaPendienteDeSincronizarSinMotivoSigueSiendo200SinCambios()
     {
         Estado(EstadoCosteo.Autocosteo, null);
         ConPrecio(EstadoCosteo.Autocosteo, 1_000_000m);
@@ -747,7 +747,7 @@ public sealed class clsResultadoCotizacionServiceTests
     }
 
     [Fact]
-    public async Task HU0181_SinMotivoDeLaListaNoSeTocaLaCotizacionNiSeLeeElCosteoEnNexo()
+    public async Task SinMotivoDeLaListaNoSeTocaLaCotizacionNiSeLeeElCosteoEnNexo()
     {
         // En pendiente_costeo la perdida lee primero el costeo de Nexo: el motivo inválido se rechaza antes de esa lectura.
         var cotizacion = SinCosteo(enError: false);
@@ -761,7 +761,7 @@ public sealed class clsResultadoCotizacionServiceTests
     }
 
     [Fact]
-    public async Task HU0181_UnMotivoConLaTildeAparteEsElDeLaListaYANexoViajaConSuEscritura()
+    public async Task UnMotivoConLaTildeAparteEsElDeLaListaYANexoViajaConSuEscritura()
     {
         var descompuesto = "Cliente desistió del servicio".Normalize(System.Text.NormalizationForm.FormD);
         descompuesto.Should().NotBe("Cliente desistió del servicio");
@@ -778,7 +778,7 @@ public sealed class clsResultadoCotizacionServiceTests
     [InlineData("Otr\u043E")] // con la "o" cirílica
     [InlineData("Valor  muy alto")]
     [InlineData("Valor muy alto.")]
-    public async Task HU0181_UnMotivoParecidoPeroDistintoNoSeAcepta(string motivo)
+    public async Task UnMotivoParecidoPeroDistintoNoSeAcepta(string motivo)
     {
         (await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "perdida", motivo, "comentario", Ct)).Error.Codigo
             .Should().Be(clsCodigosError.MotivoNoPermitido);
@@ -789,7 +789,7 @@ public sealed class clsResultadoCotizacionServiceTests
         _cotizaciones, _nexo, _unidad, _auditoria, _reloj, new clsPrecioCosteoService(), Options.Create(new clsOpcionesCosteoNexo()), motivos);
 
     /// <summary>
-    /// Una lectura anterior dejó la cotización en <paramref name="estado"/> (sin flete). HU-021: el estado de la cabecera es el resumen de
+    /// Una lectura anterior dejó la cotización en <paramref name="estado"/> (sin flete). El estado de la cabecera es el resumen de
     /// sus camiones, así que primero lo toma el camión.
     /// </summary>
     private void Estado(EstadoCosteo estado, DateTimeOffset? siguiente)
@@ -799,7 +799,7 @@ public sealed class clsResultadoCotizacionServiceTests
     }
 
     /// <summary>
-    /// El polling ya aplicó el costeo (el camión con su flete y la ruta y la solicitud con el precio, margen guardado) y, como lo hace el comercial antes de marcar el resultado (HU-036.3, #207), la cotización finalizada.
+    /// El polling ya aplicó el costeo (el camión con su flete y la ruta y la solicitud con el precio, margen guardado) y, como lo hace el comercial antes de marcar el resultado, la cotización finalizada.
     /// </summary>
     private void ConPrecio(EstadoCosteo estado, decimal flete)
     {

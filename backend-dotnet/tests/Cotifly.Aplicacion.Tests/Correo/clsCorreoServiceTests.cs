@@ -22,7 +22,7 @@ namespace Cotifly.Aplicacion.Tests.Correo;
 /// <summary>
 /// Caso de uso <c>enviar_correo</c> con puertos simulados. Port de <c>tests/test_correo.py</c> (confirmación obligatoria,
 /// cotización inexistente, PDF ausente, duplicado &lt; 5 min, distinto destinatario, fallo del transporte) más dueño,
-/// correo deshabilitado, <c>reenviada</c> (bug del Python) y fila <c>fallido</c>. HU-033 (#199): MailSender encola (fila
+/// correo deshabilitado, <c>reenviada</c> y fila <c>fallido</c>. MailSender encola (fila
 /// <c>encolado</c> con su id), copia oculta al comercial, protección "redirigir", correlación, metadatos y el resumen con el total.
 /// </summary>
 public sealed class clsCorreoServiceTests : IDisposable
@@ -75,10 +75,10 @@ public sealed class clsCorreoServiceTests : IDisposable
         new(_cotizaciones, _correos, _usuarios, _almacen, _transporte, _unidadTrabajo, _reloj, _calendario, _candado, Options.Create(_opciones),
             Options.Create(new clsOpcionesPdf { TextoSeguros = _textoSeguros }), _logger);
 
-    /// <summary>#261 (HU-046): el texto de seguros de la configuración para el cuerpo del correo (null = sin bloque; los tests que lo prueban lo fijan).</summary>
+    /// <summary>El texto de seguros de la configuración para el cuerpo del correo (null = sin bloque; los tests que lo prueban lo fijan).</summary>
     private string? _textoSeguros;
 
-    // #261 (HU-046): el correo que sale lleva el texto de seguros de la configuración (Pdf:TextoSeguros) en el cuerpo HTML.
+    // El correo que sale lleva el texto de seguros de la configuración (Pdf:TextoSeguros) en el cuerpo HTML.
     [Fact]
     public async Task ElCorreoLlevaElTextoDeSegurosDeLaConfiguracion()
     {
@@ -176,7 +176,7 @@ public sealed class clsCorreoServiceTests : IDisposable
     [InlineData(null, false)]
     public async Task AuditoriaSinLasDosLlavesDelEnvioRealTodoVaAlBuzonDePruebas(string? modo, bool permitir)
     {
-        // Auditoría #199: segura por defecto. "ninguno" sin PermitirEnvioReal (o la confirmación sin "ninguno", o un modo desconocido) redirige.
+        // Segura por defecto. "ninguno" sin PermitirEnvioReal (o la confirmación sin "ninguno", o un modo desconocido) redirige.
         _opciones.Proteccion = new clsOpcionesProteccionCorreo { Modo = modo, PermitirEnvioReal = permitir, BuzonPruebas = "qa@pruebas.local" };
 
         var resultado = await Servicio().EnviarAsync(Entrada(para: ["cliente@empresa.com"], cc: ["jefe@empresa.com"]), Ct);
@@ -193,11 +193,11 @@ public sealed class clsCorreoServiceTests : IDisposable
     [InlineData("")]
     [InlineData("sin-arroba")]
     [InlineData("qa@pruebas.local,cliente@empresa.com")]
-    [InlineData("\"qa pruebas\"@pruebas.local")] // Validación #228: MailAddress lo acepta; el transporte lo bloquearía
+    [InlineData("\"qa pruebas\"@pruebas.local")] // MailAddress lo acepta; el transporte lo bloquearía
     [InlineData("qa@localhost")]
     public async Task AuditoriaSiHayQueRedirigirYNoHayBuzonValidoNoSaleNada(string? buzon)
     {
-        // Falla cerrado: antes, sin buzón el mensaje salía SIN redirigir a los destinatarios reales.
+        // Falla cerrado: sin buzón válido el mensaje no sale (nunca a los destinatarios reales sin redirigir).
         _opciones.Proteccion = new clsOpcionesProteccionCorreo { Modo = "ninguno", BuzonPruebas = buzon };
 
         var resultado = await Servicio().EnviarAsync(Entrada(), Ct);
@@ -233,7 +233,7 @@ public sealed class clsCorreoServiceTests : IDisposable
     {
         await Servicio().EnviarAsync(Entrada(), Ct);
 
-        // #262: sin CreatedAt (la cotización de la prueba no pasó por la persistencia) la ficha sale sin fecha y no se consulta el calendario.
+        // Sin CreatedAt (la cotización de la prueba no pasó por la persistencia) la ficha sale sin fecha y no se consulta el calendario.
         _enviado!.CuerpoHtml.Should().Contain(">PCN-C1<").And.NotContain(">Fecha<");
         _calendario.DidNotReceive().FechaDe(Arg.Any<DateTimeOffset>());
     }
@@ -243,7 +243,7 @@ public sealed class clsCorreoServiceTests : IDisposable
     {
         await Servicio().EnviarAsync(Entrada(), Ct);
 
-        // #262: el nombre en negrita y, debajo, el correo (y el celular si lo tiene).
+        // El nombre en negrita y, debajo, el correo (y el celular si lo tiene).
         _enviado!.CuerpoHtml.Should().Contain(">Nathaly Vargas</div>").And.Contain(">nvargas@boterosoto.com.co");
     }
 
@@ -270,7 +270,7 @@ public sealed class clsCorreoServiceTests : IDisposable
     public async Task ElCuerpoLlevaElTotalDeLaCotizacionSinDesglose()
     {
         var costeada = clsCotizacionMuestra.Costeada(folio: "PCN-C2", usuarioId: _comercial.Id);
-        costeada.Finalizar(_comercial.Id, clsCotizacionMuestra.Ahora); // HU-036.3 (#207): sale al cliente con el precio aceptado
+        costeada.Finalizar(_comercial.Id, clsCotizacionMuestra.Ahora); // Sale al cliente con el precio aceptado
         costeada.AsignarPdf("/data/pdfs/PCN-C2.pdf");
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync("PCN-C2", _comercial.Id, Arg.Any<CancellationToken>()).Returns(costeada);
         _almacen.LeerPorReferenciaAsync("/data/pdfs/PCN-C2.pdf", Arg.Any<CancellationToken>()).Returns("%PDF-1.4"u8.ToArray());
@@ -282,13 +282,13 @@ public sealed class clsCorreoServiceTests : IDisposable
         _enviado!.CuerpoHtml.Should().Contain(System.Net.WebUtility.HtmlEncode(clsPlantillaCorreo.TituloResumen))
             .And.Contain(System.Net.WebUtility.HtmlEncode(clsPlantillaCorreo.EtiquetaTotal))
             .And.Contain(total + " COP")
-            // #262 (decisión del 2026-11-03): la leyenda de impuestos ya no va en el correo, solo en el PDF adjunto.
+            // La leyenda de impuestos no va en el correo, solo en el PDF adjunto.
             .And.NotContain(System.Net.WebUtility.HtmlEncode(Cotifly.Aplicacion.Pdf.Services.clsTextosEstandar.LeyendaImpuestos));
         _enviado.CuerpoHtml.Should().NotContainAny("Costo", "costo", "Margen", "margen", "Flete", "flete");
     }
 
     [Fact]
-    public async Task HU0363_EnElFlujoDeCosteoSinFinalizarNoSeEnviaNiLlegaAMailSender()
+    public async Task EnElFlujoDeCosteoSinFinalizarNoSeEnviaNiLlegaAMailSender()
     {
         var costeada = clsCotizacionMuestra.Costeada(folio: "PCN-C3", usuarioId: _comercial.Id);
         costeada.AsignarPdf("/data/pdfs/PCN-C3.pdf");
@@ -355,7 +355,7 @@ public sealed class clsCorreoServiceTests : IDisposable
         await NoSeEnvioNadaAsync();
     }
 
-    // test_cotizacion_no_encontrada + aislamiento por dueño (HU-003.6)
+    // test_cotizacion_no_encontrada + aislamiento por dueño
     [Fact]
     public async Task UnaCotizacionAjenaOInexistenteNoSeEnvia()
     {
@@ -368,7 +368,7 @@ public sealed class clsCorreoServiceTests : IDisposable
     }
 
     /// <summary>
-    /// Endurecimiento A (#199): el dueño se comprueba primero. Un folio ajeno o inexistente es <c>COTIZACION_NO_ENCONTRADA</c> (404) aunque el
+    /// El dueño se comprueba primero. Un folio ajeno o inexistente es <c>COTIZACION_NO_ENCONTRADA</c> (404) aunque el
     /// correo esté deshabilitado (503) o los destinatarios sean inválidos (400): si no, esas respuestas dejarían enumerar folios.
     /// </summary>
     [Theory]
@@ -484,7 +484,7 @@ public sealed class clsCorreoServiceTests : IDisposable
         resultado.Error.Codigo.Should().Be(clsCodigosError.CorreoEnvioFallido);
     }
 
-    // Carrera de estadoEnvio (#11): la cotización se recarga DENTRO del candado, antes de registrar el envío.
+    // Carrera de estadoEnvio: la cotización se recarga DENTRO del candado, antes de registrar el envío.
     [Fact]
     public async Task LaCotizacionSeRecargaDentroDelCandadoAntesDeEnviar()
     {
@@ -561,8 +561,8 @@ public sealed class clsCorreoServiceTests : IDisposable
         (await Servicio().EnviarAsync(Entrada(cuerpo: new string('a', 5001)), Ct)).Error.Codigo.Should().Be(clsCorreo.CodigoError);
     }
 
-    // DEF-1027B-2 (#228, E2E real del 2026-10-27B): "Hola\r\nBcc: intruso@ejemplo.invalid" llegó a MailSender y al relay SMTP. Un asunto
-    // con caracteres de control se RECHAZA (no se sanea en silencio), también al final (antes, el Trim lo limpiaba).
+    // Inyección de cabeceras ("Hola\r\nBcc: intruso@ejemplo.invalid"): un asunto
+    // con caracteres de control se RECHAZA (no se sanea en silencio), también al final (el Trim no lo limpia).
     [Theory]
     [InlineData("Hola\r\nBcc: intruso@ejemplo.invalid")]
     [InlineData("Hola\nBcc: intruso@ejemplo.invalid")]
@@ -609,8 +609,8 @@ public sealed class clsCorreoServiceTests : IDisposable
         await NoSeEnvioNadaAsync();
     }
 
-    // #228: MailSender no limita los destinatarios (EmailRequestValidator solo valida el formato): Cotifly fija el tope entre para y cc,
-    // 10 por defecto y configurable con Correo__MaximoDestinatarios (decisión del 2026-10-27).
+    // MailSender no limita los destinatarios (EmailRequestValidator solo valida el formato): Cotifly fija el tope entre para y cc,
+    // 10 por defecto y configurable con Correo__MaximoDestinatarios.
     [Fact]
     public void Tope228_ElTopePorDefectoEs10()
     {

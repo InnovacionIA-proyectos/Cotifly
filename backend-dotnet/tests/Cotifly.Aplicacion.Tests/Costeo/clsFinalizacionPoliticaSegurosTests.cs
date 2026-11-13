@@ -15,9 +15,9 @@ using NSubstitute.ExceptionExtensions;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// HU-046.3 (#269): "Finalizar" con la política de seguros. Sin el acompañante desde 350 M responde <c>COTIZACION_NO_FINALIZABLE</c> con
+/// "Finalizar" con la política de seguros. Sin el acompañante desde 350 M responde <c>COTIZACION_NO_FINALIZABLE</c> con
 /// <c>medidas_obligatorias_faltantes</c>; con justificación finaliza y la audita (sin montos); la justificación no salta los conexos
-/// pendientes en Nexo (decisión del 2026-11-06); la política se lee en cada finalización (sin caché); los códigos en NULL se completan
+/// pendientes en Nexo; la política se lee en cada finalización (sin caché); los códigos en NULL se completan
 /// con el catálogo antes de evaluar.
 /// </summary>
 public sealed class clsFinalizacionPoliticaSegurosTests
@@ -134,7 +134,7 @@ public sealed class clsFinalizacionPoliticaSegurosTests
     [InlineData(501)]
     public async Task UnaJustificacionFueraDeLargoEsJustificacionRequeridaConMinimoYMaximo(int largo)
     {
-        // Contrato del 2026-11-10: 400 JUSTIFICACION_REQUERIDA con detalle.minimo = 10 y detalle.maximo = 500, validado tras el If-Match.
+        // 400 JUSTIFICACION_REQUERIDA con detalle.minimo = 10 y detalle.maximo = 500, validado tras el If-Match.
         var resultado = await Servicio().FinalizarAsync(_ana, _cotizacion.Folio, Version, new string('x', largo), Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.JustificacionRequerida);
@@ -146,7 +146,7 @@ public sealed class clsFinalizacionPoliticaSegurosTests
     [Fact]
     public async Task UnaJustificacionConEspaciosDeMasSeRecortaAntesDeMedirElLargo()
     {
-        // 9 caracteres reales rodeados de espacios: tras recortar queda fuera de largo (contrato del 2026-11-10).
+        // 9 caracteres reales rodeados de espacios: tras recortar queda fuera de largo.
         var resultado = await Servicio().FinalizarAsync(_ana, _cotizacion.Folio, Version, "   " + new string('x', 9) + "   ", Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.JustificacionRequerida);
@@ -192,7 +192,7 @@ public sealed class clsFinalizacionPoliticaSegurosTests
     [Fact]
     public async Task SiLaPoliticaNoSePuedeLeerLaExcepcionSePropagaYNoFinaliza()
     {
-        // Contrato del 2026-11-10: si la política no se puede leer, Finalizar responde 500 (la excepción se propaga); no se finaliza sin evaluarla.
+        // Si la política no se puede leer, Finalizar responde 500 (la excepción se propaga); no se finaliza sin evaluarla.
         _politicas.ObtenerAsync(Arg.Any<CancellationToken>()).ThrowsAsync(new InvalidOperationException("tabla caída"));
 
         await FluentActions.Awaiting(() => Servicio().FinalizarAsync(_ana, _cotizacion.Folio, Version, "Riesgo lo aprobó el equipo.", Ct))
@@ -205,7 +205,7 @@ public sealed class clsFinalizacionPoliticaSegurosTests
     [Fact]
     public async Task ConConexosPendientesEnNexoNoSeLeeLaPolitica()
     {
-        // B3 de la auditoría: el 409 es el de los conexos pendientes; la política no se lee (ni su fallo tapa ese 409).
+        // El 409 es el de los conexos pendientes; la política no se lee (ni su fallo tapa ese 409).
         _envioConexos.EstadosAsync(Arg.Any<clsCotizacionSolicitud>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<(Guid, string), string> { [(_cotizacion.PrimeraRuta!.Id, "S-1")] = clsEnvioConexosNexoService.VisiblePendiente });
         _nexo.LeerCotizacionAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -224,7 +224,7 @@ public sealed class clsFinalizacionPoliticaSegurosTests
     [InlineData(clsEnvioConexosNexoService.VisibleEnviado, true)]
     public async Task UnAcompananteFallidoOInciertoEnNexoNoCumpleLaObligacion(string estado, bool finaliza)
     {
-        // Decisión del usuario (2026-11-09): solo cuenta un conexo enviado o pendiente (este último lo bloquea #228 aparte).
+        // Solo cuenta un conexo enviado o pendiente (este último bloquea la finalización por su cuenta).
         Usar(400 * M, "AVT_AUTO");
         _envioConexos.EstadosAsync(Arg.Any<clsCotizacionSolicitud>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<(Guid, string), string> { [(_cotizacion.PrimeraRuta!.Id, "FILA-AVT_AUTO")] = estado });

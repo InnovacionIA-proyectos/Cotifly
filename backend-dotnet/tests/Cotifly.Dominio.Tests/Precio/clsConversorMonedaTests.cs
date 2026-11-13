@@ -3,7 +3,7 @@ using Cotifly.Dominio.Precio;
 
 namespace Cotifly.Dominio.Tests.Precio;
 
-/// <summary>Monedas y conversión de pesos a dólares (<see cref="clsConversorMoneda"/>, HU-012.2).</summary>
+/// <summary>Monedas y conversión de pesos a dólares (<see cref="clsConversorMoneda"/>).</summary>
 public sealed class clsConversorMonedaTests
 {
     [Theory]

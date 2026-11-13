@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
-/// HU-036 (#205, #206) contra SQL Server 2019 con <c>db/scripts/14_cotizacion_finalizada.sql</c>: la finalización se guarda y se lee
+/// La finalización de la cotización contra SQL Server 2019 con <c>db/scripts/14_cotizacion_finalizada.sql</c>: la finalización se guarda y se lee
 /// (<c>finalizadaAt</c>, <c>finalizadaPor</c> con su FK a <c>UsuariosWeb</c>), el CHECK exige las dos columnas juntas, y la concurrencia con
 /// el polling: quien confirma primero con la versión vigente gana y el otro no escribe nada.
 /// </summary>

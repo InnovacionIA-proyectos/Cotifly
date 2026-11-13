@@ -14,12 +14,12 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Tests.Precio;
 
 /// <summary>
-/// Registro de la TRM en <c>AddInfraestructura</c> (HU-012.1, ADR-014): cadena según <c>Trm:Proveedor</c> (por defecto DolarApi con respaldo
+/// Registro de la TRM en <c>AddInfraestructura</c> (ADR-014): cadena según <c>Trm:Proveedor</c> (por defecto DolarApi con respaldo
 /// en la Superintendencia), caché por día, tubería de resiliencia y opciones validadas. Las dos fuentes son falsas: nunca sale a la red.
 /// </summary>
 public sealed class clsRegistroTrmTests : IDisposable
 {
-    // 10:00 del lunes 2026-10-05 en Bogotá: la publicación por defecto del DolarApi falso es de ese día.
+    // Un lunes a las 10:00 en Bogotá: la publicación por defecto del DolarApi falso es de ese día.
     private static readonly DateOnly _lunes = new(2026, 10, 5);
     private readonly clsTrmFalso _superfinanciera = new();
     private readonly clsDolarApiFalso _dolarApi = new();

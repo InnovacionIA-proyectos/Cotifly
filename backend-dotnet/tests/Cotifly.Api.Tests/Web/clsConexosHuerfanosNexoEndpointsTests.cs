@@ -7,11 +7,9 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// #259: un conexo capturado con la ruta ya no queda en <c>estado_nexo = pendiente</c> para siempre (bloqueando finalizar) cuando la cotización
-/// se entrega sin UNA línea de Nexo para el primer camión. Reproducido el 2026-11-06: la Mesa dejó la línea de un camión partida en dos
-/// líneas de la cotización con el mismo <c>lineaSolicitudId</c>; el costo las suma (hay precio) pero el envío diferido exigía exactamente una,
-/// así que nunca se enviaba, la entrega apagaba el polling y finalizar respondía <c>conexos_pendientes_en_nexo</c> para siempre. Por HTTP con
-/// SQL Server real y el Nexo falso.
+/// Un conexo capturado con la ruta no queda en <c>estado_nexo = pendiente</c> para siempre (bloqueando finalizar) cuando la cotización
+/// se entrega sin UNA línea de Nexo para el primer camión, por ejemplo cuando la Mesa deja la línea de un camión partida en dos líneas
+/// de la cotización con el mismo <c>lineaSolicitudId</c> (el costo las suma y hay precio). Por HTTP con SQL Server real y el Nexo falso.
 /// </summary>
 [Collection(clsColeccionApiWeb.Nombre)]
 [Trait("Categoria", "Integracion")]
@@ -74,7 +72,7 @@ public sealed class clsConexosHuerfanosNexoEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// Camino 2 (antes la reproducción del lote #231): en una entregada con la línea partida, el conexo agregado por lote (<c>en_espera</c>)
+    /// Camino 2: en una entregada con la línea partida, el conexo agregado por lote (<c>en_espera</c>)
     /// llega a Nexo en la siguiente vuelta del polling, a la misma línea, y la cotización sale de la agenda sin dejarlo huérfano.
     /// </summary>
     [Fact]
@@ -108,7 +106,7 @@ public sealed class clsConexosHuerfanosNexoEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// Variante 4a (decisión del usuario del 2026-11-06): la Mesa entrega sin la línea del primer camión vigente (camión sin flete, tratado
+    /// Variante 4a: la Mesa entrega sin la línea del primer camión vigente (camión sin flete, tratado
     /// como rechazado): los conexos van a la línea del primer camión vigente que sí la tiene. Mientras se costeaba, se esperaba.
     /// </summary>
     [Fact]
@@ -155,7 +153,7 @@ public sealed class clsConexosHuerfanosNexoEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// Cotizaciones que ya quedaron atascadas antes de #259 (entregada, conexo sin registro que Nexo no tiene, sin agenda): finalizar responde
+    /// Cotizaciones ya atascadas (entregada, conexo sin registro que Nexo no tiene, sin agenda): finalizar responde
     /// 409 <c>conexos_pendientes_en_nexo</c> y la vuelve a encolar SIN enviar nada a Nexo; una vuelta del polling envía el conexo y el
     /// siguiente finalizar pasa.
     /// </summary>

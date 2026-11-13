@@ -5,7 +5,7 @@ namespace Cotifly.Infraestructura.Tests.Pdf;
 
 /// <summary>
 /// Documentos de prueba armados con el constructor real a partir de <c>ejemplo-solicitud.json</c> (los tres casos de la
-/// comparación visual de #11: nacional, internacional con bloques condicionales y multi-sección).
+/// comparación visual: nacional, internacional con bloques condicionales y multi-sección).
 /// </summary>
 internal static class clsDocumentosPrueba
 {
@@ -18,7 +18,7 @@ internal static class clsDocumentosPrueba
     public static clsDocumentoCotizacion Documento(clsCotizacionPdfPayload payload, clsFirmaDocumento? firma = null, string folio = "PCN-19032026") =>
         clsConstructorDocumentoCotizacion.Construir(payload, folio, firma ?? Firma, new DateOnly(2026, 9, 24), "COP", 0m).Valor;
 
-    /// <summary>Solicitud de ejemplo en USD (HU-012.3): una fila de US$996,35 con la TRM aplicada 3.306,86 y la nota de TRM mínima.</summary>
+    /// <summary>Solicitud de ejemplo en USD: una fila de US$996,35 con la TRM aplicada 3.306,86 y la nota de TRM mínima.</summary>
     public static clsDocumentoCotizacion Dolares()
     {
         var payload = Payload();

@@ -7,7 +7,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// "Calcular cubicaje" (<c>POST /web/cubicacion</c>, HU-023.2, #157) por HTTP con SQL Server real, el Nexo falso y el cubicador falso
+/// "Calcular cubicaje" (<c>POST /web/cubicacion</c>) por HTTP con SQL Server real, el Nexo falso y el cubicador falso
 /// (<see cref="clsCubicadorFalso"/>): la corrida de prueba <c>PRUEBA-&lt;guid&gt;</c>, la lista de vehículos (flota mixta) con los nombres
 /// del catálogo, cada motivo de "sin selección", la condicionada, la descripción resuelta al código más parecido, la mercancía desconocida,
 /// el cubicador caído o sin configurar y que no se guarda nada en la base ni se llama a Nexo. Cada respuesta se valida contra el contrato.
@@ -183,9 +183,8 @@ public sealed class clsCalcularCubicajeEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// D-1019-1 (E2E 2026-10-19): un <c>codigo_mercancia</c> que no está en el catálogo (o está inactivo, o no es cubicable) se rechaza
-    /// ANTES de llamar al cubicador, con el ítem (base 0) y el campo, como D1. Antes llegaba sin <c>detalle.item</c> y después de ocupar el
-    /// cupo y el motor del cubicador.
+    /// Un <c>codigo_mercancia</c> que no está en el catálogo (o está inactivo, o no es cubicable) se rechaza ANTES de llamar al
+    /// cubicador (sin ocupar el cupo ni el motor), con el ítem (base 0) en <c>detalle.item</c> y el campo, como las medidas inválidas.
     /// </summary>
     [Theory]
     [InlineData("NO_EXISTE_XYZ", "MERCANCIA_DESCONOCIDA")]
@@ -225,7 +224,7 @@ public sealed class clsCalcularCubicajeEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// D-1019-1: sin el catálogo de mercancías (el cubicador no lo entrega) no se bloquea: el código viaja y decide el cubicador. Su 400
+    /// Sin el catálogo de mercancías (el cubicador no lo entrega) no se bloquea: el código viaja y decide el cubicador. Su 400
     /// <c>MERCANCIA_DESCONOCIDA</c> cita el código entre comillas y Cotifly lo usa para señalar el ítem.
     /// </summary>
     [Fact]
@@ -282,8 +281,8 @@ public sealed class clsCalcularCubicajeEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// D1 (E2E 2026-10-16): con largo, ancho o alto ≤ 0 o cantidad 0 el cubicador real respondía 422 y el comercial veía 503
-    /// CUBICADOR_RESPUESTA_INVALIDA ("Avisa a soporte"). Ahora Cotifly valida antes con las reglas de la captura y no llama al cubicador.
+    /// Con largo, ancho o alto ≤ 0 o cantidad 0, Cotifly valida antes con las reglas de la captura y no llama al cubicador (que
+    /// respondería 422 y el comercial vería 503 CUBICADOR_RESPUESTA_INVALIDA).
     /// </summary>
     [Theory]
     [InlineData("largo_cm", 0, "DIMENSIONES_INVALIDAS")]

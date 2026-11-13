@@ -13,7 +13,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// HU-032 (#197): la validación de la captura (<see cref="clsCapturaRutasService.ValidarAsync"/>) con el vehículo elegido: obligatorio sin
+/// La validación de la captura (<see cref="clsCapturaRutasService.ValidarAsync"/>) con el vehículo elegido: obligatorio sin
 /// mercancías cubicables salvo en Contenedor (<c>VEHICULO_REQUERIDO</c>), validado contra Nexo antes de guardar solo si se va a usar, y las
 /// mercancías sin medidas ni código aceptadas aunque el cubicador exija el código.
 /// </summary>
@@ -136,7 +136,7 @@ public sealed class clsVehiculoElegidoCapturaTests
         _validadas.Should().ContainSingle().Which!.Linea.TipoVehiculo.Should().Be("3S3", "sin cubicador el elegido se usa seguro");
     }
 
-    // --- Captura:ClasesSinVehiculoObligatorio (decisión del usuario del 2026-10-21) ---
+    // --- Captura:ClasesSinVehiculoObligatorio ---
 
     [Fact]
     public async Task PorDefectoCargaSueltaSinVehiculoEsVehiculoRequerido()
@@ -166,7 +166,7 @@ public sealed class clsVehiculoElegidoCapturaTests
     [Fact]
     public async Task ConLaClaseDeViajeMalEscritaSoloSeReportaElErrorDeLaClaseSinVehiculoRequerido()
     {
-        // B4: la exención depende de la clase de viaje; si la clase ya tiene un error (CODIGO_NO_CATALOGO del validador de catálogos), la
+        // La exención depende de la clase de viaje; si la clase ya tiene un error (CODIGO_NO_CATALOGO del validador de catálogos), la
         // ruta no se juzga: el comercial ve un error, no dos.
         _filas.ValidarAsync(Arg.Any<Guid>(), Arg.Any<IReadOnlyList<clsLineaLicitacionEntrada?>>(), Arg.Any<IReadOnlyList<clsErrorFilaLicitacion>>(),
                 Arg.Any<CancellationToken>())

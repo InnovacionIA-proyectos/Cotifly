@@ -3,7 +3,7 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
-/// #173: <c>db/scripts/operacion/corregir_rol_comercial_32.sql</c> en una base aislada instalada desde cero. Respalda <c>Roles</c>,
+/// <c>db/scripts/operacion/corregir_rol_comercial_32.sql</c> en una base aislada instalada desde cero. Respalda <c>Roles</c>,
 /// pasa <c>comercial</c> de 34 a 32 sin tocar <c>gerente_comercial</c> (31) y, si se repite, no cambia nada más.
 /// </summary>
 [Collection(clsColeccionSqlServer.Nombre)]
@@ -24,7 +24,7 @@ public sealed class clsCorregirRolComercialScriptTests(clsBaseDatosPruebas baseD
         (await Escalar(aislada.Cadena, "SELECT idRolExterno FROM dbo_cotifly.Roles WHERE codigo = 'gerente_comercial'")).Should().Be(31);
         (await Escalar(aislada.Cadena, "SELECT idRolExterno FROM dbo_cotifly.RespaldoRoles_173 WHERE codigo = 'comercial' AND respaldadoAt IS NOT NULL"))
             .Should().Be(34);
-        // Respalda todas las filas: comercial, gerente_comercial y director (script 15, HU-037.1).
+        // Respalda todas las filas: comercial, gerente_comercial y director (script 15).
         (await Escalar(aislada.Cadena, "SELECT COUNT(*) FROM dbo_cotifly.RespaldoRoles_173")).Should().Be(3);
 
         await clsBaseDatosPruebas.EjecutarScriptAsync(aislada.Cadena, Script);

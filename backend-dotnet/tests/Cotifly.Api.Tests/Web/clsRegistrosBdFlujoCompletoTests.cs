@@ -11,7 +11,7 @@ namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
 /// SQL Server 2019 (Testcontainers) instalado DESDE CERO con <c>db/scripts/01_crear_esquema.sql</c> y los seeders de <c>db/seeder/</c>
-/// (regla de las pruebas de esquema de HU-021.12, #139: el esquema vigente de la base compartida, no las migraciones 0001 a 0010).
+/// (regla de las pruebas de esquema: el esquema vigente de la base compartida, no las migraciones 0001 a 0010).
 /// </summary>
 public sealed class clsEntornoApiWebInstalada : IAsyncLifetime
 {
@@ -30,7 +30,7 @@ public sealed class clsColeccionApiWebInstalada : ICollectionFixture<clsEntornoA
 }
 
 /// <summary>
-/// HU-021.12 (#139): un flujo completo por HTTP (formulario de dos rutas → cubicador falso → Nexo falso por camión → polling → margen de
+/// Un flujo completo por HTTP (formulario de dos rutas → cubicador falso → Nexo falso por camión → polling → margen de
 /// la ruta 2 → PDF de pliego → correo por el relay falso → entrega) sobre la base instalada desde cero, verificando FILA POR FILA lo que
 /// queda en <c>CotizacionesSolicitud</c>, <c>CotizacionLineasSolicitud</c>, <c>CotizacionVehiculosLineaSolicitud</c>,
 /// <c>CotizacionMercancias</c>, <c>CotizacionServiciosConexos</c>, <c>MargenAjustes</c>, <c>EventosHerramienta</c> y <c>Correos</c>:
@@ -42,7 +42,7 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
 {
     private const string TipoCafe = clsCosteoEndpointsTests.TipoMercancia;
 
-    /// <summary>Código del catálogo del cubicador de "Café en estibas" (HU-023.3: la mercancía guarda el código, no el id).</summary>
+    /// <summary>Código del catálogo del cubicador de "Café en estibas" (la mercancía guarda el código, no el id).</summary>
     private const string CodigoCafe = "CAFE_EN_ESTIBAS";
     private const string Cargue = "SC-CARGUE-BD";
     private static readonly HttpMethod _get = HttpMethod.Get;
@@ -51,7 +51,7 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
     private readonly clsBaseDatosPruebas _bd;
     private readonly clsNexoFalso _nexo = new clsNexoFalso()
         .ConCliente(clsCosteoEndpointsTests.Nit, "LONGYIN S.A.S.")
-        // HU-043.2 (#251): con precio de venta (180.000) distinto del costo (150.000).
+        // Con precio de venta (180.000) distinto del costo (150.000).
         .ConServicioConexo(Cargue, Cargue, "Cargue en puerto", "logistico", "UND", 150_000m, precioVenta: 180_000m);
     private readonly clsCubicadorFalso _cubicador = new();
     private readonly clsApiWebPruebas _api;
@@ -63,7 +63,7 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
         _cubicador.TiposMercancia.Add((Guid.Parse(TipoCafe), "Café en estibas"));
 
         // Ruta 1 (28000 kg): dos camiones del cubicador; ruta 2: el cubicador no puede escoger (SUPERA_K_MAX) → un camión sin vehículo
-        // con su peso, que resuelve la Mesa de Costeo (HU-023.3).
+        // con su peso, que resuelve la Mesa de Costeo.
         _cubicador.Recomendar = p => clsCubicadorFalso.PesoTotal(p) == 28_000m
             ? clsCubicadorFalso.Asignado(clsCubicadorFalso.Vehiculo("3S3", "FURGON", 16_000m), clsCubicadorFalso.Vehiculo("2S3", "ESTACAS", 12_000m))
             : clsCubicadorFalso.SinSeleccion("SUPERA_K_MAX");
@@ -87,7 +87,7 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
         (await clsBaseDatosPruebas.EscalarAsync<string>(Cadena,
             "SELECT STRING_AGG(CONCAT(lineaNegocio, '=', ISNULL(mapeoLineasNexo, '-')), ',') WITHIN GROUP (ORDER BY lineaNegocio) FROM dbo_cotifly.MargenesPolitica"))
             .Should().Be("DevolucionContenedor=DevolucionContenedor,Distribucion=-,Exportacion=InteriorAPuerto,Importacion=PuertoAInterior,Internacional=Andino,Nacional=Nacional");
-        // HU-037.1 (#209): comercial y gerente_comercial del seeder, más director del script 15.
+        // Comercial y gerente_comercial del seeder, más director del script 15.
         (await clsBaseDatosPruebas.EscalarAsync<int>(Cadena, "SELECT COUNT(*) FROM dbo_cotifly.Roles")).Should().Be(3);
     }
 
@@ -135,7 +135,7 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
             "1|2S3|ESTACAS|12000.00|R|150000.00|-|-|pendiente_costeo",
             "2|-|-|12500.00|-|0.00|-|-|pendiente_costeo");
 
-        // Mercancías: cuelgan de la ruta, con el código del catálogo del cubicador (HU-023.3) y su nombre copiado.
+        // Mercancías: cuelgan de la ruta, con el código del catálogo del cubicador y su nombre copiado.
         (await Filas($"""
             SELECT CONCAT(l.orden, '|', m.orden, '|', m.codigoMercancia, '|', m.nombreMercancia, '|', m.cantidad, '|', m.largoCm, 'x', m.anchoCm, 'x', m.altoCm, '|', m.pesoKg)
             FROM dbo_cotifly.CotizacionMercancias m JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = m.lineaSolicitudId
@@ -176,7 +176,7 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
                 l.costoFinal, '|', l.margenAplicado, '|', l.origenMargen, '|', l.metodoCalculo, '|', l.precioFinalLinea, '|', l.estadoCosteo)
             FROM dbo_cotifly.CotizacionLineasSolicitud l WHERE l.cotizacionSolicitudId = '{id}' ORDER BY l.orden
             """)).Should().Equal(
-            // HU-043.2 (#251): 2.300.000 / 0,85 = 2.705.882 + 180.000 de venta del conexo, sin margen; costoFinal sigue con su costo.
+            // 2.300.000 / 0,85 = 2.705.882 + 180.000 de venta del conexo, sin margen; costoFinal sigue con su costo.
             "1|1800000.00|200000.00|300000.00|150000.00|2450000.00|0.1500|politica_linea|margen|2885882.00|autocosteo",
             "2|600000.00|0.00|0.00|0.00|600000.00|0.1500|politica_linea|margen|705882.00|autocosteo");
         await VerificarTotalesCuadranAsync(id);
@@ -223,7 +223,7 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
         await VerificarTotalesCuadranAsync(id);
 
         // ---------------------------------------------------------------- 4. PDF de pliego y correo
-        await _api.FinalizarSiCorrespondeAsync(ana.Access, folio); // HU-036.3: como el frontend
+        await _api.FinalizarSiCorrespondeAsync(ana.Access, folio); // Como el frontend
         using (var pdf = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", ana.Access))
         {
             await VerificarContratoAsync(pdf, "/web/cotizaciones/{folio}/costeo/pdf", _post, HttpStatusCode.Created);
@@ -238,7 +238,7 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
             correo.StatusCode.Should().Be(HttpStatusCode.OK, await correo.Content.ReadAsStringAsync(Ct));
         }
 
-        // HU-033 (#199): sale por MailSender (falso). Fuera de Production va al buzón de pruebas con [QA], sin CC ni CCO reales y con los
+        // Sale por MailSender (falso). Fuera de Production va al buzón de pruebas con [QA], sin CC ni CCO reales y con los
         // destinatarios originales en el cuerpo; el cuerpo trae el precio por ruta y el total, sin desglose.
         var recibido = _api.MailSender.Recibidos.Should().ContainSingle().Subject;
         recibido.To.Should().Equal(clsMailSenderFalso.BuzonPruebas);
@@ -333,7 +333,7 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
 
     /// <summary>
     /// Para cada ruta de la solicitud: los totales guardados cuadran con sus camiones y conexos (§9.1), el precio sale del transporte con
-    /// el margen + la venta de los conexos sin margen (HU-043.2, #251), y el precio de la cabecera es la suma de los de sus rutas.
+    /// el margen + la venta de los conexos sin margen, y el precio de la cabecera es la suma de los de sus rutas.
     /// </summary>
     private async Task VerificarTotalesCuadranAsync(Guid id)
     {

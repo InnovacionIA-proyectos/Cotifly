@@ -8,9 +8,9 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// HU-045.2 (#264, ADR-032): <c>PUT /web/cotizaciones/{folio}/costeo/seguro</c> por HTTP con SQL Server real (script 20 aplicado: tasa
+/// <c>PUT /web/cotizaciones/{folio}/costeo/seguro</c> por HTTP con SQL Server real (script 20 aplicado: tasa
 /// vigente 0,345 %) y el Nexo falso. El formulario de prueba trae <c>valor_mercancia = 250.000.000</c>: el seguro es 862.500 y se suma al
-/// precio sin margen.
+/// precio sin margen (ADR-032).
 /// </summary>
 [Collection(clsColeccionApiWeb.Nombre)]
 [Trait("Categoria", "Integracion")]
@@ -237,8 +237,8 @@ public sealed class clsSeguroCosteoEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// B6: editar la solicitud (HU-028) en sitio (sin llegar a Nexo) y como reemplazo (ya en Nexo) con otro <c>valor_mercancia</c>
-    /// recalcula el seguro de la ruta con la tasa vigente (decisión 5).
+    /// Editar la solicitud en sitio (sin llegar a Nexo) y como reemplazo (ya en Nexo) con otro <c>valor_mercancia</c>
+    /// recalcula el seguro de la ruta con la tasa vigente.
     /// </summary>
     [Theory]
     [InlineData(true, "en_sitio")]

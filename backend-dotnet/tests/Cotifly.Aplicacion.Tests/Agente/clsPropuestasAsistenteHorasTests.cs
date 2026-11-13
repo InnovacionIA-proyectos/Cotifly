@@ -9,7 +9,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Agente;
 
 /// <summary>
-/// #278 (DU §5): el asistente propone a veces una sola hora ("cambia el cargue a 8 h"). Nexo recibe las horas en pareja, así que la otra
+/// DU §5: el asistente propone a veces una sola hora ("cambia el cargue a 8 h"). Nexo recibe las horas en pareja, así que la otra
 /// se completa con la guardada en la ruta o, si no hay, con la de Nexo por defecto (4, o 1 en una devolución de contenedor).
 /// </summary>
 public sealed class clsPropuestasAsistenteHorasTests
@@ -62,7 +62,7 @@ public sealed class clsPropuestasAsistenteHorasTests
     }
 
     /// <summary>
-    /// #278: el valor por defecto sale del mapeo a NEXO de la línea (<c>mapeoLineasNexo</c>), no del nombre de la línea de Cotifly: una
+    /// El valor por defecto sale del mapeo a NEXO de la línea (<c>mapeoLineasNexo</c>), no del nombre de la línea de Cotifly: una
     /// línea "Contenedores Vacíos" mapeada a "Devolución de contenedor" completa con 1, y "DevolucionContenedor" mapeada a Nacional, con 4.
     /// </summary>
     [Theory]

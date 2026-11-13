@@ -106,9 +106,9 @@ public sealed class clsAuthEndpointTests(clsBaseDatosPruebas baseDatos) : IClass
     }
 
     [Fact]
-    public async Task HU0402_UnComercialQueTambienEsDirectorEligeDirectorYUsaLoDelGerenteYLaConsola()
+    public async Task UnComercialQueTambienEsDirectorEligeDirectorYUsaLoDelGerenteYLaConsola()
     {
-        // HU-040.2 (#230): ya no gana director por jerarquía: el login ofrece los dos roles y entra con el que elige.
+        // Con dos roles no gana ninguno por jerarquía: el login ofrece los dos y entra con el que elige.
         var persona = await PersonaAsync(clsBaseDatosPruebas.RolExternoComercial, clsBaseDatosPruebas.RolExternoDirector);
         using var factory = Crear();
         using var cliente = factory.CreateClient();
@@ -125,7 +125,7 @@ public sealed class clsAuthEndpointTests(clsBaseDatosPruebas baseDatos) : IClass
     }
 
     [Fact]
-    public async Task HU0402_ConDosRolesElLoginNoEmiteSesionYResponde200ConElSelectorDelContrato()
+    public async Task ConDosRolesElLoginNoEmiteSesionYResponde200ConElSelectorDelContrato()
     {
         var persona = await PersonaAsync(clsBaseDatosPruebas.RolExternoComercial, clsBaseDatosPruebas.RolExternoGerente);
         using var factory = Crear();
@@ -160,7 +160,7 @@ public sealed class clsAuthEndpointTests(clsBaseDatosPruebas baseDatos) : IClass
     }
 
     [Fact]
-    public async Task HU0402_ElegirEmiteUnTokenLimitadoAlRolElegidoYElRefreshLoConserva()
+    public async Task ElegirEmiteUnTokenLimitadoAlRolElegidoYElRefreshLoConserva()
     {
         // Elige comercial teniendo también gerente: el access y cada renovación quedan como comercial (no sube por jerarquía).
         var persona = await PersonaAsync(clsBaseDatosPruebas.RolExternoComercial, clsBaseDatosPruebas.RolExternoGerente);
@@ -186,7 +186,7 @@ public sealed class clsAuthEndpointTests(clsBaseDatosPruebas baseDatos) : IClass
     }
 
     [Fact]
-    public async Task HU0402_UnTicketYaUsadoEs401InclusoConOtroRolYDosUsosSimultaneosSoloUnoGana()
+    public async Task UnTicketYaUsadoEs401InclusoConOtroRolYDosUsosSimultaneosSoloUnoGana()
     {
         var persona = await PersonaAsync(clsBaseDatosPruebas.RolExternoComercial, clsBaseDatosPruebas.RolExternoGerente);
         using var factory = Crear();
@@ -218,7 +218,7 @@ public sealed class clsAuthEndpointTests(clsBaseDatosPruebas baseDatos) : IClass
     }
 
     [Fact]
-    public async Task HU0402_UnRolNoOfrecidoUnTicketAlteradoOUnAccessComoTicketSon401()
+    public async Task UnRolNoOfrecidoUnTicketAlteradoOUnAccessComoTicketSon401()
     {
         var persona = await PersonaAsync(clsBaseDatosPruebas.RolExternoComercial, clsBaseDatosPruebas.RolExternoGerente);
         var unico = await PersonaAsync(clsBaseDatosPruebas.RolExternoComercial);
@@ -247,7 +247,7 @@ public sealed class clsAuthEndpointTests(clsBaseDatosPruebas baseDatos) : IClass
     }
 
     [Fact]
-    public async Task HU0402_SiLeQuitanElRolEnClienteProEntreElLoginYLaEleccionEs401()
+    public async Task SiLeQuitanElRolEnClienteProEntreElLoginYLaEleccionEs401()
     {
         var nombre = $"api{Guid.NewGuid():N}"[..20];
         var idExterno = await baseDatos.CrearPersonaExternaAsync(nombre, "Persona de prueba", $"{nombre}@boterosoto.com.co",
@@ -264,7 +264,7 @@ public sealed class clsAuthEndpointTests(clsBaseDatosPruebas baseDatos) : IClass
     }
 
     [Fact]
-    public async Task HU0402_SiLeQuitanElRolElegidoElRefreshEs401ComoHoy()
+    public async Task SiLeQuitanElRolElegidoElRefreshEs401()
     {
         var nombre = $"api{Guid.NewGuid():N}"[..20];
         var idExterno = await baseDatos.CrearPersonaExternaAsync(nombre, "Persona de prueba", $"{nombre}@boterosoto.com.co",
@@ -282,7 +282,7 @@ public sealed class clsAuthEndpointTests(clsBaseDatosPruebas baseDatos) : IClass
     }
 
     [Fact]
-    public async Task HU0402_UnTicketVencidoEs401()
+    public async Task UnTicketVencidoEs401()
     {
         var persona = await PersonaAsync(clsBaseDatosPruebas.RolExternoComercial, clsBaseDatosPruebas.RolExternoGerente);
         var reloj = new clsRelojFalso(DateTimeOffset.UtcNow);
@@ -302,7 +302,7 @@ public sealed class clsAuthEndpointTests(clsBaseDatosPruebas baseDatos) : IClass
     [InlineData("""{"ticket":"x"}""")]
     [InlineData("""{"ticket":"x","rol":"administrador"}""")]
     [InlineData("{no es json")]
-    public async Task HU0402_UnCuerpoDeElegirRolInvalidoResponde400ConErrorWeb(string cuerpo)
+    public async Task UnCuerpoDeElegirRolInvalidoResponde400ConErrorWeb(string cuerpo)
     {
         using var factory = Crear();
         using var cliente = factory.CreateClient();
@@ -316,7 +316,7 @@ public sealed class clsAuthEndpointTests(clsBaseDatosPruebas baseDatos) : IClass
     }
 
     [Fact]
-    public async Task HU0402_ElegirRolTieneElMismoLimiteDePeticionesPorIpQueElLogin()
+    public async Task ElegirRolTieneElMismoLimiteDePeticionesPorIpQueElLogin()
     {
         using var factory = Crear(new Dictionary<string, string?> { ["LimiteAuth:PeticionesPorVentana"] = "2", ["LimiteAuth:VentanaSegundos"] = "60" });
         using var cliente = factory.CreateClient();
@@ -334,7 +334,7 @@ public sealed class clsAuthEndpointTests(clsBaseDatosPruebas baseDatos) : IClass
     [Fact]
     public async Task UnDirectorNuevoSeDaDeAltaConSuRolYVuelveAEntrarComoDirector()
     {
-        // Validación HU-037 (JIT): el alta crea la asignación `director` en UsuariosRoles y el segundo login la encuentra igual.
+        // Alta JIT: crea la asignación `director` en UsuariosRoles y el segundo login la encuentra igual.
         var persona = await PersonaAsync(clsBaseDatosPruebas.RolExternoDirector);
         using var factory = Crear();
         using var cliente = factory.CreateClient();
@@ -356,7 +356,7 @@ public sealed class clsAuthEndpointTests(clsBaseDatosPruebas baseDatos) : IClass
     [Fact]
     public async Task UnGerenteQuePasaADirectorEnClienteProQuedaEnRevisionHastaQueSeLeReasigneElRol()
     {
-        // Validación HU-037: ascender (o degradar) en ClientePro no cambia solo el rol de Cotifly. El login y el refresh se rechazan
+        // Ascender (o degradar) en ClientePro no cambia solo el rol de Cotifly. El login y el refresh se rechazan
         // (rol_externo_cambio) hasta que el DBA reasigna UsuariosRoles. El access ya emitido conserva su rol hasta vencer (60 min,
         // JWT sin estado, ADR-009): es el riesgo residual documentado.
         var nombre = $"api{Guid.NewGuid():N}"[..20];
@@ -386,9 +386,9 @@ public sealed class clsAuthEndpointTests(clsBaseDatosPruebas baseDatos) : IClass
     }
 
     [Fact]
-    public async Task HU0401_ConElScript16LoginYRefreshFuncionanConUnaYConDosAsignacionesActivas()
+    public async Task ConElScript16LoginYRefreshFuncionanConUnaYConDosAsignacionesActivas()
     {
-        // HU-040.1 (#229) y HU-040.2 (#230): la base de pruebas tiene el 16. Una persona con un rol entra y renueva como siempre (sin
+        // La base de pruebas tiene el 16. Una persona con un rol entra y renueva como siempre (sin
         // selector); a otra Datos le agregó una segunda asignación activa (comercial + gerente, las dos respaldadas en ClientePro): elige y
         // renueva con el rol elegido. Cada refresh guarda el rol de la sesión (TokensRefresco.rolSesion).
         var uno = await PersonaAsync(clsBaseDatosPruebas.RolExternoComercial);
@@ -646,13 +646,13 @@ public sealed class clsAuthEndpointTests(clsBaseDatosPruebas baseDatos) : IClass
             b.ConfigureServices(s => s.AddControllers().AddApplicationPart(typeof(clsProtegidoPruebaController).Assembly));
             if (reloj is not null)
             {
-                // HU-040.2 (#230): el ticket de elección vence con el reloj de la aplicación.
+                // El ticket de elección vence con el reloj de la aplicación.
                 b.ConfigureTestServices(s => s.AddSingleton(reloj));
             }
         });
     }
 
-    /// <summary>HU-040.2 (#230): login de una persona con varios roles: el ticket y los códigos de los roles ofrecidos.</summary>
+    /// <summary>Login de una persona con varios roles: el ticket y los códigos de los roles ofrecidos.</summary>
     private static async Task<(string Ticket, List<string?> Roles)> LoginConEleccionAsync(HttpClient cliente, string idUsuario)
     {
         using var respuesta = await cliente.PostAsJsonAsync("/api/auth/login-clientepro", new { idUsuario }, Ct);
@@ -663,7 +663,7 @@ public sealed class clsAuthEndpointTests(clsBaseDatosPruebas baseDatos) : IClass
             [.. json.RootElement.GetProperty("roles").EnumerateArray().Select(r => r.GetProperty("codigo").GetString())]);
     }
 
-    /// <summary>HU-040.2 (#230): <c>POST /api/auth/elegir-rol</c> que debe responder 200.</summary>
+    /// <summary><c>POST /api/auth/elegir-rol</c> que debe responder 200.</summary>
     private static async Task<(string Access, string Refresh)> ElegirAsync(HttpClient cliente, string ticket, string rol)
     {
         using var respuesta = await cliente.PostAsJsonAsync("/api/auth/elegir-rol", new { ticket, rol }, Ct);

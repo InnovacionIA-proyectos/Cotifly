@@ -7,7 +7,7 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Infraestructura.Tests.Licitaciones;
 
 /// <summary>
-/// Exportación del Excel de la licitación (HU-011.3, ADR-017 §5): el original del cliente intacto, tres columnas nuevas a la
+/// Exportación del Excel de la licitación (ADR-017 §5): el original del cliente intacto, tres columnas nuevas a la
 /// derecha, las líneas sin costeo marcadas y una hoja de resumen; sin original, una hoja con los campos mapeados.
 /// </summary>
 public sealed class clsExportadorExcelLicitacionTests
@@ -54,9 +54,9 @@ public sealed class clsExportadorExcelLicitacionTests
     }
 
     [Fact]
-    public void Hu183_UnaLineaRechazadaSaleSinCosteoNoEsPendienteYElTotalSeMuestraSinElla()
+    public void UnaLineaRechazadaSaleSinCosteoNoEsPendienteYElTotalSeMuestraSinElla()
     {
-        // HU-028.1 (#183): "SIN COSTEO" en el precio, "Rechazada en NEXO" en el estado (sin motivo), contada aparte en el resumen y marcada en
+        // "SIN COSTEO" en el precio, "Rechazada en NEXO" en el estado (sin motivo), contada aparte en el resumen y marcada en
         // la hoja de camiones; el total (sin ella) se muestra porque no queda ninguna pendiente.
         var datos = Datos(clsPliegoMuestra.Excel(3), total: 1_176_471m) with
         {
@@ -85,7 +85,7 @@ public sealed class clsExportadorExcelLicitacionTests
     }
 
     [Fact]
-    public void Hu183_ConTodasLasLineasRechazadasElTotalDiceSinCosteo()
+    public void ConTodasLasLineasRechazadasElTotalDiceSinCosteo()
     {
         var datos = Datos(null, total: null) with
         {
@@ -141,10 +141,10 @@ public sealed class clsExportadorExcelLicitacionTests
         hoja.Cell(2, 8).GetString().Should().BeEmpty("sin conexos incluidos no hay nada que remitir al resumen");
     }
 
-    // HU-044.10 (#293, parte 2): con analizar_excel y original, las líneas a mano (fila null) van a una hoja nueva «Agregadas en Cotifly»
+    // Con analizar_excel y original, las líneas a mano (fila null) van a una hoja nueva «Agregadas en Cotifly»
     // (columnas de «Licitación» + «Referencia» = «Agregada en Cotifly»); «Resumen Cotifly» agrega la fila «Líneas agregadas en Cotifly».
     [Fact]
-    public void Hu293_ConOriginalLasLineasAManoVanAUnaHojaAgregadasConReferencia()
+    public void ConOriginalLasLineasAManoVanAUnaHojaAgregadasConReferencia()
     {
         var datos = Datos(clsPliegoMuestra.Excel(3)) with
         {
@@ -168,10 +168,10 @@ public sealed class clsExportadorExcelLicitacionTests
             .Should().Contain(clsExportadorExcelLicitacionClosedXml.EtiquetaAgregadas);
     }
 
-    // HU-044.10 (#293, parte 2): con leer_estructura (o sin original), las líneas a mano van al final de la hoja «Licitación», con la
+    // Con leer_estructura (o sin original), las líneas a mano van al final de la hoja «Licitación», con la
     // columna «Referencia» (la 10, solo si hay alguna a mano).
     [Fact]
-    public void Hu293_LeidaConIaLasLineasAManoVanAlFinalDeLicitacionConReferencia()
+    public void LeidaConIaLasLineasAManoVanAlFinalDeLicitacionConReferencia()
     {
         var datos = Datos(null) with
         {
@@ -195,9 +195,9 @@ public sealed class clsExportadorExcelLicitacionTests
             .Should().Contain(clsExportadorExcelLicitacionClosedXml.EtiquetaAgregadas);
     }
 
-    // HU-044.10 (#293, parte 2): sin líneas a mano, el Excel queda igual que hoy (sin hoja «Agregadas», sin columna «Referencia» ni la fila del resumen).
+    // Sin líneas a mano, el Excel no cambia (sin hoja «Agregadas», sin columna «Referencia» ni la fila del resumen).
     [Fact]
-    public void Hu293_SinLineasAManoElExcelQuedaIgualQueHoy()
+    public void SinLineasAManoElExcelNoCambia()
     {
         using var libro = new XLWorkbook(new MemoryStream(clsExportadorExcelLicitacionClosedXml.Generar(Datos(clsPliegoMuestra.Excel(3))).Valor));
 

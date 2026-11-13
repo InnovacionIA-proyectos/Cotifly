@@ -142,7 +142,7 @@ public sealed class clsProveedoresIATests
         }
     }
 
-    // OmniRoute (#84) responde 400 "No credentials for provider: gemini" cuando todas sus credenciales del proveedor están en
+    // OmniRoute responde 400 "No credentials for provider: gemini" cuando todas sus credenciales del proveedor están en
     // enfriamiento: es indisponibilidad, pasa al respaldo. Cualquier otro 400 no.
     [Theory]
     [InlineData("No credentials for provider: gemini", true)]
@@ -169,7 +169,7 @@ public sealed class clsProveedoresIATests
         }
     }
 
-    // HU-013.16 (E2E de #126): el gateway caído respondía el 404 de Traefik y no se probaban los respaldos. Ahora el 404 pasa al
+    // El gateway caído responde el 404 de Traefik: ese 404 pasa al
     // siguiente modelo y, si fallan todos por indisponibilidad, el chat responde IA_NO_DISPONIBLE con su texto propio.
     [Fact]
     public async Task UnPrincipalCon404PruebaTodosLosRespaldosYSiFallanEsIaNoDisponible()
@@ -239,8 +239,8 @@ public sealed class clsProveedoresIATests
         clsChatClientConRespaldo.EsRecuperable(new InvalidOperationException("argumento"), Ct).Should().BeFalse();
     }
 
-    // HU-013.16 (#126): ventana deslizante. Las llamadas seguidas de un turno pasan sin espera mientras el minuto tenga cupo; la que
-    // pasa del tope espera a que la más vieja salga de la ventana (antes: intervalo fijo de 60/rpm entre TODAS las llamadas).
+    // Ventana deslizante. Las llamadas seguidas de un turno pasan sin espera mientras el minuto tenga cupo; la que
+    // pasa del tope espera a que la más vieja salga de la ventana (no hay un intervalo fijo de 60/rpm entre todas las llamadas).
     [Fact]
     public async Task ElLimitadorDejaPasarLasLlamadasDelMinutoYEsperaSoloAlPasarDelTope()
     {
@@ -269,7 +269,7 @@ public sealed class clsProveedoresIATests
         esperas.Should().Equal(TimeSpan.FromSeconds(50), TimeSpan.FromSeconds(2));
     }
 
-    // Auditoría de #126: con el tope de espera agotado no se espera hasta 60 s sin mensaje; sale un 429 local que el canal convierte
+    // Con el tope de espera agotado no se espera hasta 60 s sin mensaje; sale un 429 local que el canal convierte
     // en el texto del límite (clsTextosAgente.LimiteModelo). Una espera menor que el tope sí se hace.
     [Fact]
     public async Task SiElCupoTardaMasQueElTopeLaLlamadaFallaConUn429SinEsperar()

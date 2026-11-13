@@ -4,7 +4,7 @@ using Cotifly.Api.Costeo.DTOs;
 namespace Cotifly.Api.Tests.Comun;
 
 /// <summary>
-/// HU-028 (#186): defectos A y B de <c>datos_carga</c> (<c>DatosCargaWeb</c>, obsoleto pero aceptado): las mercancías conservan
+/// <c>datos_carga</c> (<c>DatosCargaWeb</c>, obsoleto pero aceptado): las mercancías conservan
 /// <c>codigo_mercancia</c> y <c>nombre_mercancia</c>, y las ciudades de devolución y de levante llevan su id de municipio.
 /// </summary>
 public sealed class clsDatosCargaWebTests

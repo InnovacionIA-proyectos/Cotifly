@@ -5,8 +5,8 @@ using Cotifly.Dominio.Margen;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// Integración 1021: el peso con tara de una ruta de contenedor (HU-030.1, #184) junto con el rechazo de la línea por la Mesa de Costeo
-/// (HU-028.1, #183, decisión del 2026-10-20: los camiones rechazados no se reenvían). Regla: la tara total es el peso con tara menos la
+/// El peso con tara de una ruta de contenedor junto con el rechazo de la línea por la Mesa de Costeo (los camiones rechazados no se
+/// reenvían). Regla: la tara total es el peso con tara menos la
 /// suma de los pesos de carga de las líneas de TODOS los camiones; la tara de un contenedor es esa tara dividida entre el número TOTAL de
 /// camiones (uno por contenedor); solo la llevan los camiones que viajan (los que no están <c>FueraDelEnvio</c>) y el último que viaja
 /// suma el resto del redondeo. Un rechazado fuera del envío no viaja ni lleva tara.

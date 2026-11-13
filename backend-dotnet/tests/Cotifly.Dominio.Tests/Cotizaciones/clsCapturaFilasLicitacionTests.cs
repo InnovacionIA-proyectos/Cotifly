@@ -3,7 +3,7 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
 /// <summary>
-/// HU-013.11 (#108): las filas de una licitación cumplen las reglas de captura del formulario. G3 (contenedor y aprovisionamiento)
+/// Las filas de una licitación cumplen las reglas de captura del formulario. G3 (contenedor y aprovisionamiento)
 /// por fila con su código, y G5 (horas de cargue y descargue propias de la línea) guardadas y reenviadas.
 /// </summary>
 public sealed class clsCapturaFilasLicitacionTests
@@ -33,7 +33,7 @@ public sealed class clsCapturaFilasLicitacionTests
         (Linea() with { ClaseViaje = "Cupo", ClaseContenedor = "CNT20.FT" }).ErroresCondicionales()[0].Mensaje
             .Should().Contain("Contenedor").And.Contain("Extradimensionado");
 
-    // HU-021.15 (#297): con Extradimensionado la clase es opcional y solo las provisionales G15 (flat track / open top).
+    // Con Extradimensionado la clase es opcional y solo las provisionales G15 (flat track / open top).
     [Theory]
     [InlineData("CNT20.FT")]
     [InlineData("CNT20.OP")]

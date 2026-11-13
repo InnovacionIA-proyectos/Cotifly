@@ -3,7 +3,7 @@ namespace Cotifly.Pruebas.Comun;
 /// <summary>
 /// <see cref="TimeProvider"/> manual para las pruebas: el tiempo solo avanza con <see cref="Avanzar"/>, que dispara los temporizadores
 /// vencidos (los de <c>CancellationTokenSource(TimeSpan, TimeProvider)</c> y <c>Task.WaitAsync(TimeSpan, TimeProvider)</c>). Así una
-/// prueba del tiempo máximo del redactor (HU-013.5) no espera los 15 s reales.
+/// prueba del tiempo máximo del redactor no espera los 15 s reales.
 /// </summary>
 public sealed class clsTiempoManual : TimeProvider
 {
