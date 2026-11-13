@@ -4,6 +4,8 @@ using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Identidad.Repositories;
+using Cotifly.Aplicacion.Licitaciones.DTOs;
+using Cotifly.Aplicacion.Licitaciones.Services;
 using Cotifly.Aplicacion.Margen.Repositories;
 using Cotifly.Aplicacion.Pdf.DTOs;
 using Cotifly.Aplicacion.Pdf.Interfaces;
@@ -222,6 +224,27 @@ public sealed class clsSeguroPdfCosteoTests
 
         resultado.Valor.Pdf.AvisoSeguro.Should().BeNull();
         clsCosteoCotizacionService.Vista(cotizacion, null).AvisoSeguro.Should().BeNull();
+    }
+
+    /// <summary>
+    /// El Excel de la licitación trae los conexos de cada línea y cuadra con el precio final: ruta 1 = 1.250.000 + Cargue (venta 100.000 × 2),
+    /// ruta 2 = 2.500.000 + seguro 345.000; tarifas + conexos + seguro = precio_final = 4.295.000.
+    /// </summary>
+    [Fact]
+    public void ElExcelDeLaLicitacionTraeLosConexosDeCadaLineaYCuadraConElPrecioFinal()
+    {
+        var cotizacion = clsCotizacionMuestra.ConConexo(DosRutas(), "CX-1", "Cargue", 85_000m, 2m, orden: 1, ventaUnitaria: 100_000m);
+
+        var datos = clsLicitacionService.DatosExportacion(cotizacion, null, clsCotizacionMuestra.Ahora);
+
+        cotizacion.PrecioFinal.Should().Be(4_295_000m);
+        datos.Lineas.Select(l => (l.PrecioFinal, l.ValorConexos, l.ValorSeguro)).Should().Equal(
+            (1_250_000m, 200_000m, null), (2_500_000m, null, 345_000m));
+        datos.ServiciosConexos.Should().ContainSingle().Which.Should().Match<clsConexoExportacion>(c => c.LineaOrden == 1 && c.Precio == 200_000m);
+        datos.ConConexos.Should().BeTrue();
+        datos.PrecioFinal.Should().Be(cotizacion.PrecioFinal);
+        (datos.PrecioTotal + datos.Lineas.Sum(l => (l.ValorConexos ?? 0m) + (l.ValorSeguro ?? 0m)))
+            .Should().Be(cotizacion.PrecioFinal, "tarifas + conexos + seguro = precio_final");
     }
 
     /// <summary>Formulario de una ruta: flete 1.000.000 al 20 % (1.250.000) y valor de la mercancía 200.000.000 (seguro 690.000).</summary>

@@ -291,6 +291,15 @@ public sealed record clsExportacionLicitacion(
     /// (<see cref="Original"/> llega <c>null</c>): arma la hoja «Licitación» nueva y el resumen deja la nota de que se leyó con la IA.
     /// </summary>
     public bool LeidaConIa { get; init; }
+
+    /// <summary>
+    /// <c>precio_final</c> de la cotización (tarifas + conexos + seguro de las rutas cotizables); <c>null</c> sin precio. Es el
+    /// valor total que imprime el resumen cuando hay conexos, el mismo del PDF y el correo.
+    /// </summary>
+    public decimal? PrecioFinal { get; init; }
+
+    /// <summary>¿Alguna ruta cotizable tiene conexos? Entonces el resumen trae su total y el valor total de la cotización.</summary>
+    public bool ConConexos => ServiciosConexos.Count > 0;
 }
 
 /// <summary>
@@ -321,6 +330,12 @@ public sealed record clsLineaExportacion(
     /// <c>null</c> sin seguro o con la línea rechazada. Nunca la tasa.
     /// </summary>
     public decimal? ValorSeguro { get; init; }
+
+    /// <summary>
+    /// La venta de los conexos de la línea (sin margen), aparte de <see cref="PrecioFinal"/>; <c>null</c> sin conexos o con la
+    /// línea rechazada.
+    /// </summary>
+    public decimal? ValorConexos { get; init; }
 }
 
 /// <summary>
@@ -367,8 +382,12 @@ public sealed record clsCamionExportacion(
     }
 }
 
-/// <summary>Servicio conexo incluido, con su precio con margen.</summary>
-public sealed record clsConexoExportacion(string Nombre, string Categoria, decimal Cantidad, decimal Precio);
+/// <summary>Servicio conexo incluido, con su precio (la venta sin margen).</summary>
+public sealed record clsConexoExportacion(string Nombre, string Categoria, decimal Cantidad, decimal Precio)
+{
+    /// <summary>La línea (<c>linea_orden</c>) a la que pertenece.</summary>
+    public int LineaOrden { get; init; }
+}
 
 /// <summary>Archivo para descargar.</summary>
 public sealed record clsArchivoExportado(string Nombre, byte[] Contenido, string TipoContenido);

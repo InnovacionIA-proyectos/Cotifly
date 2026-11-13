@@ -292,8 +292,8 @@ public static class clsCodigosError
     public const string SinRutasCotizables = "SIN_RUTAS_COTIZABLES";
 
     /// <summary>
-    /// El estado o el tipo de la cotización no permite la acción (una licitación no admite conexos, con
-    /// <c>detalle.motivo = LICITACION</c>; re-solicitar con un costeo en curso); 409 (ADR-018 §4 y §5).
+    /// El estado o el tipo de la cotización no permite la acción (editar o re-solicitar una licitación, con
+    /// <c>detalle.motivo = LICITACION</c>; re-solicitar con un costeo en curso); 409 (ADR-018 §5).
     /// </summary>
     public const string EstadoNoPermite = "ESTADO_NO_PERMITE";
 

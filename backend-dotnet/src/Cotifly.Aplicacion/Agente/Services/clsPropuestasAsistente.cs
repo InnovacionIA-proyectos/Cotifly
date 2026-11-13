@@ -206,7 +206,7 @@ public static class clsPropuestasAsistente
     /// <summary>
     /// <c>agregar_servicios_conexos</c> → <c>POST .../costeo/servicios-conexos</c> <c>{items: [{linea_orden, servicio_id, cantidad}]}</c>
     /// sobre la ruta <paramref name="lineaOrden"/> (sin ella, la única ruta). Errores: los del endpoint antes de llamar a Nexo
-    /// (<c>SOLICITUD_INVALIDA</c> por la forma, <c>ESTADO_NO_PERMITE</c>, <c>COSTEO_NO_LISTO</c>, <c>PDF_YA_ENVIADO</c>,
+    /// (<c>SOLICITUD_INVALIDA</c> por la forma, <c>COSTEO_NO_LISTO</c>, <c>PDF_YA_ENVIADO</c>,
     /// <c>RUTA_REQUERIDA</c>, <c>CONEXO_INVALIDO</c> y <c>LINEA_SIN_COTIZACION_NEXO</c>).
     /// </summary>
     public static clsResultado<clsAccionPropuesta> AgregarConexo(

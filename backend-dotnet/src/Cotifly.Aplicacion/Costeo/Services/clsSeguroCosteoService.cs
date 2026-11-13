@@ -24,7 +24,7 @@ public interface IClsSeguroCosteoService
     /// <c>linea_orden</c> o su id; sin ninguno, la única ruta) y recalcula el precio de esa ruta y el total (el seguro se suma sin margen; en
     /// USD, convertido con la TRM fijada). Al incluirlo toma la tasa vigente de <c>TarifasSeguro</c>. Errores: <c>COTIZACION_NO_ENCONTRADA</c>
     /// (404), <c>CONFLICTO_CONCURRENCIA</c> (409), <c>RUTA_REQUERIDA</c> y <c>RUTA_INEXISTENTE</c> (400), <c>SEGURO_SIN_VALOR_MERCANCIA</c>
-    /// (400), <c>ESTADO_NO_PERMITE</c> (409, licitación), <c>RUTA_RECHAZADA</c> y <c>PDF_YA_ENVIADO</c> (409, enviada o finalizada, el mismo
+    /// (400), <c>RUTA_RECHAZADA</c> y <c>PDF_YA_ENVIADO</c> (409, enviada o finalizada, el mismo
     /// del margen). Marcar una ruta que ya lo tiene (o quitarlo de una que no lo tiene) responde igual sin registrar nada.
     /// </summary>
     Task<clsResultado<clsCosteoCotizacion>> CambiarAsync(

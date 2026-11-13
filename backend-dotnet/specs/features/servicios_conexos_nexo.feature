@@ -195,8 +195,8 @@ Característica: Servicios conexos del catálogo de Nexo
     Cuando "ana" agrega a "C1" en la línea 1 el servicio conexo "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d" con la cantidad 1 sin If-Match
     Entonces la respuesta tiene el estado 428 con el código de negocio "PRECONDICION_REQUERIDA"
 
-  Escenario: Una licitación no admite conexos en esta iteración
+  Escenario: Una licitación admite conexos como un formulario
     Dado que "ana" creó la licitación "L1" del cliente "900555111" y Nexo costeó todas sus líneas
     Cuando "ana" agrega a "L1" en la línea 1 el servicio conexo "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d" con la cantidad 1
-    Entonces la respuesta tiene el estado 409 con el código de negocio "ESTADO_NO_PERMITE"
-    Y el detalle del error tiene el motivo "LICITACION"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "CosteoCotizacion" del contrato
+    Y "L1" tiene 1 servicio conexo incluido

@@ -15,10 +15,10 @@ public sealed class clsExportadorExcelLicitacionTests
     private static clsExportacionLicitacion Datos(byte[]? original, string moneda = "COP", decimal trm = 0m, decimal? total = null, bool conexos = true) => new(
         "PCN-900555111-DG-01102026-001", "Agencia JF", "900555111", moneda, trm, total, clsPliegoMuestra.Hoja, original,
         [
-            new clsLineaExportacion(1, 0, "BUENAVENTURA", "BOGOTA, D.C.", "3S3", 32000m, "Costeada", 1_176_471m),
+            new clsLineaExportacion(1, 0, "BUENAVENTURA", "BOGOTA, D.C.", "3S3", 32000m, "Costeada", 1_176_471m) { ValorConexos = conexos ? 200_000m : null },
             new clsLineaExportacion(2, 2, "CUCUTA", "BOGOTA, D.C.", "2", 8000m, "Pendiente de costeo", null),
         ],
-        conexos ? [new clsConexoExportacion("Cargue", "logistico", 1m, 200_000m)] : [],
+        conexos ? [new clsConexoExportacion("Cargue", "logistico", 1m, 200_000m) { LineaOrden = 1 }] : [],
         new DateTimeOffset(2026, 10, 1, 15, 0, 0, TimeSpan.Zero));
 
     [Fact]
@@ -44,7 +44,7 @@ public sealed class clsExportadorExcelLicitacionTests
         hojaDespues.Cell(3, 9).GetString().Should().Be(clsExportadorExcelLicitacionClosedXml.ColumnaConexos);
         hojaDespues.Cell(clsPliegoMuestra.FilaExcel(0), 7).GetValue<decimal>().Should().Be(1_176_471m);
         hojaDespues.Cell(clsPliegoMuestra.FilaExcel(0), 7).Style.NumberFormat.Format.Should().Be("#,##0");
-        hojaDespues.Cell(clsPliegoMuestra.FilaExcel(0), 9).GetString().Should().Be(clsExportadorExcelLicitacionClosedXml.ConexosDeLaLicitacion);
+        hojaDespues.Cell(clsPliegoMuestra.FilaExcel(0), 9).GetValue<decimal>().Should().Be(200_000m, "los conexos de la línea, no un texto");
         hojaDespues.Cell(clsPliegoMuestra.FilaExcel(1), 8).GetString().Should().Be(clsExportadorExcelLicitacionClosedXml.SinEnviar, "la fila 1 del pliego no se envió");
         var pendiente = hojaDespues.Cell(clsPliegoMuestra.FilaExcel(2), 7);
         pendiente.GetString().Should().Be(clsExportadorExcelLicitacionClosedXml.SinCosteo);
@@ -109,6 +109,64 @@ public sealed class clsExportadorExcelLicitacionTests
         textos.Should().Contain("Cargue");
         resumen.CellsUsed().Should().Contain(c => c.DataType == XLDataType.Number && c.GetValue<decimal>() == 200_000m, "el conexo va con su precio");
         textos.Should().NotContain("9", "con líneas pendientes el total no se muestra");
+    }
+
+    [Fact]
+    public void ConConexosElResumenCuadraConElPrecioFinalYCadaConexoDiceSuLinea()
+    {
+        // Línea 1: tarifa 1.000.000 + Cargue 200.000; línea 2: tarifa 800.000 + seguro 690.000,50. precio_final = 2.690.000,50.
+        var datos = new clsExportacionLicitacion(
+            "PCN-900555111-DG-12112026-001", "Agencia JF", "900555111", "COP", 0m, 1_800_000m, null, null,
+            [
+                new clsLineaExportacion(1, null, "BUENAVENTURA", "BOGOTA, D.C.", "3S3", 32000m, "Costeada", 1_000_000m) { ValorConexos = 200_000m },
+                new clsLineaExportacion(2, null, "CUCUTA", "BOGOTA, D.C.", "2", 8000m, "Costeada", 800_000m) { ValorSeguro = 690_000.50m },
+            ],
+            [new clsConexoExportacion("Cargue", "logistico", 1m, 200_000m) { LineaOrden = 1 }],
+            new DateTimeOffset(2026, 11, 12, 15, 0, 0, TimeSpan.Zero))
+        {
+            PrecioFinal = 2_690_000.50m,
+        };
+
+        using var libro = new XLWorkbook(new MemoryStream(clsExportadorExcelLicitacionClosedXml.Generar(datos).Valor));
+
+        var hoja = libro.Worksheet(clsExportadorExcelLicitacionClosedXml.HojaSinOriginal);
+        hoja.Cell(1, 8).GetString().Should().Be(clsExportadorExcelLicitacionClosedXml.ColumnaConexos);
+        hoja.Cell(2, 8).GetValue<decimal>().Should().Be(200_000m);
+        hoja.Cell(2, 8).Style.NumberFormat.Format.Should().Be("#,##0");
+        hoja.Cell(3, 8).IsEmpty().Should().BeTrue("la línea 2 no tiene conexos");
+        var filas = libro.Worksheet(clsExportadorExcelLicitacionClosedXml.HojaResumen).RowsUsed().ToList();
+        decimal Valor(string etiqueta) => filas.Single(f => f.Cell(1).GetString() == etiqueta).Cell(2).GetValue<decimal>();
+        var total = Valor(clsExportadorExcelLicitacionClosedXml.EtiquetaTotal);
+        var conexos = Valor(clsExportadorExcelLicitacionClosedXml.EtiquetaTotalConexos);
+        var seguro = Valor(clsExportadorExcelLicitacionClosedXml.EtiquetaTotalSeguro);
+        var valorTotal = Valor(clsExportadorExcelLicitacionClosedXml.EtiquetaValorTotal(conSeguro: true));
+        (total, conexos, seguro).Should().Be((1_800_000m, 200_000m, 690_000.50m));
+        valorTotal.Should().Be(2_690_000.50m).And.Be(total + conexos + seguro, "el valor total es precio_final y cuadra con el desglose");
+        var encabezado = filas.Single(f => f.Cell(4).GetString() == clsExportadorExcelLicitacionClosedXml.ColumnaLineaConexo);
+        var cargue = filas[filas.IndexOf(encabezado) + 1];
+        (cargue.Cell(1).GetString(), cargue.Cell(4).GetValue<int>()).Should().Be(("Cargue", 1));
+    }
+
+    [Fact]
+    public void SinConexosNiSeguroElResumenNoTraeElValorTotalAparte()
+    {
+        var datos = Datos(null, total: 1_176_471m, conexos: false) with
+        {
+            Lineas = [new clsLineaExportacion(1, null, "BUENAVENTURA", "BOGOTA, D.C.", "3S3", 32000m, "Costeada", 1_176_471m)],
+            PrecioFinal = 1_176_471m,
+        };
+
+        using var libro = new XLWorkbook(new MemoryStream(clsExportadorExcelLicitacionClosedXml.Generar(datos).Valor));
+
+        var textos = libro.Worksheet(clsExportadorExcelLicitacionClosedXml.HojaResumen).CellsUsed().Select(c => c.GetString()).ToList();
+        textos.Should().Contain(clsExportadorExcelLicitacionClosedXml.EtiquetaTotal);
+        textos.Should().NotContain([
+            clsExportadorExcelLicitacionClosedXml.EtiquetaTotalConexos,
+            clsExportadorExcelLicitacionClosedXml.EtiquetaValorTotal(conSeguro: false),
+            clsExportadorExcelLicitacionClosedXml.EtiquetaValorTotal(conSeguro: true),
+            clsExportadorExcelLicitacionClosedXml.ColumnaLineaConexo,
+        ]);
+        libro.Worksheet(clsExportadorExcelLicitacionClosedXml.HojaSinOriginal).Cell(2, 8).IsEmpty().Should().BeTrue();
     }
 
     [Fact]

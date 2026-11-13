@@ -176,8 +176,8 @@ public sealed class clsLicitacionService(
 
     /// <summary>
     /// Datos de la exportación (una fila por ruta): la tarifa del transporte de la ruta (sin conexos; el PDF del pliego, en cambio, imprime el valor final de la ruta con los conexos incluidos),
-    /// estado legible y los servicios conexos de las rutas con su precio, aparte. El total es la suma de las tarifas (sin conexos):
-    /// los conexos no se cobran dos veces. Origen y destino son los nombres copiados de la ruta; el vehículo, el de su camión (o los de sus camiones). El costo de
+    /// estado legible y los servicios conexos de las rutas con su precio, aparte (cada uno con su línea, y su suma en la línea). El total es la suma de las tarifas (sin conexos):
+    /// los conexos no se cobran dos veces; tarifas + conexos + seguro dan <c>precio_final</c>, que también va en los datos. Origen y destino son los nombres copiados de la ruta; el vehículo, el de su camión (o los de sus camiones). El costo de
     /// Nexo no entra a este objeto: el exportador no lo puede escribir. Cada línea lleva sus camiones con el nombre del
     /// vehículo y de la carrocería del catálogo del cubicador (<paramref name="vehiculos"/> y <paramref name="carrocerias"/>, por código; si
     /// no están, el código) y el estado de su cubicación.
@@ -198,9 +198,13 @@ public sealed class clsLicitacionService(
         var cotizables = lineas.Select((l, i) => (Ruta: l, Tarifa: tarifas[i])).Where(x => !x.Ruta.Rechazada).ToList();
         // ConexosConPrecio pobla Nombre con el guardado o el del catálogo de Nexo por id (nombresConexos)
         // y cae a la categoría como respaldo legible; el export nunca imprime el id interno.
-        var conexos = lineas.Where(r => !r.Rechazada)
-            .SelectMany(r => Costeo.Services.clsCosteoCotizacionService.ConexosConPrecio(cotizacion, r, nombres: nombresConexos))
-            .Select(s => new clsConexoExportacion(s.Nombre ?? s.Categoria, s.Categoria, s.Cantidad, s.Precio))
+        // Una ruta rechazada no tiene conexos con precio (ConexosConPrecio la deja vacía).
+        var conexosPorLinea = lineas.Select(r => Costeo.Services.clsCosteoCotizacionService.ConexosConPrecio(cotizacion, r, nombres: nombresConexos)).ToList();
+        var conexos = lineas
+            .SelectMany((r, i) => conexosPorLinea[i].Select(s => new clsConexoExportacion(s.Nombre ?? s.Categoria, s.Categoria, s.Cantidad, s.Precio)
+            {
+                LineaOrden = r.Orden,
+            }))
             .ToList();
         return new clsExportacionLicitacion(
             cotizacion.Folio,
@@ -217,11 +221,13 @@ public sealed class clsLicitacionService(
             {
                 Rechazada = l.Rechazada,
                 ValorSeguro = Costeo.Services.clsCosteoCotizacionService.ValorSeguroPdf(cotizacion, l),
+                ValorConexos = conexosPorLinea[i].Count == 0 ? null : conexosPorLinea[i].Sum(c => c.Precio),
             })],
             conexos,
             ahora)
         {
             LeidaConIa = leidaConIa,
+            PrecioFinal = cotizacion.PrecioFinal,
         };
     }
 

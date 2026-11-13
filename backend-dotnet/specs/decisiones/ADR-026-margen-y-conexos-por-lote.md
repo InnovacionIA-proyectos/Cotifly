@@ -30,8 +30,8 @@ varias líneas) no se pueden deshacer si Cotifly falla después: no hay forma de
    `Idempotency-Key`. Caso de uso único: `clsCosteoLineasService`.
 2. **Las mismas reglas que N llamadas por ruta, validadas antes de tocar nada.** Se reutilizan las reglas del dominio y de los casos de
    uso por ruta (`ValidarAjusteMargen`, `clsAjusteMargenCosteoService.Recalcular`, `clsServiciosConexosCosteoService.ValidarPrecondiciones`,
-   `clsReglaPdfCosteo`, `ValidarRutaNoRechazada`). Orden: forma (400 `ErrorWeb`), dueño (404), `If-Match` (409), reglas de la cotización
-   (licitación, costeo listo, `PDF_YA_ENVIADO` con la versión nueva, que también cubre la cotización finalizada de HU-036.3) y después ruta
+   `clsReglaPdfCosteo`, `ValidarRutaNoRechazada`); una licitación las sigue igual que una Spot (HU-041.3, #331). Orden: forma (400 `ErrorWeb`), dueño (404), `If-Match` (409), reglas de la cotización
+   (costeo listo, `PDF_YA_ENVIADO` con la versión nueva, que también cubre la cotización finalizada de HU-036.3) y después ruta
    por ruta. La primera ruta que no admite el cambio corta la operación: **ninguna ruta cambia** y el error lleva
    `detalle.linea_orden` y `detalle.linea_solicitud_id` (sin códigos de error nuevos). Solo si todas pasan se aplican los cambios y se
    guardan en **una** escritura con el control de versión (`GuardarCambiosSiVersionAsync`): una carrera con otra mutación da 409
