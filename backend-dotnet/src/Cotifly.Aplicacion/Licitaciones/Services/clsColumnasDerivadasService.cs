@@ -13,12 +13,14 @@ namespace Cotifly.Aplicacion.Licitaciones.Services;
 /// </summary>
 /// <remarks>
 /// <list type="bullet">
-/// <item>Las columnas se agregan <b>solo si al menos una fila</b> tiene un valor reconocido para esa columna, en el orden fijo
-/// <see cref="EncabezadoVehiculo"/>, <see cref="EncabezadoContenedor"/>, <see cref="EncabezadoPeso"/>. Un archivo sin esos textos mantiene su
-/// firma de plantilla (los mismos encabezados en el mismo orden).</item>
+/// <item>Si al menos una fila reconoce algo se agregan <b>siempre las tres</b>, en orden y posiciones fijas: <see cref="EncabezadoVehiculo"/>
+/// en el índice = número de encabezados de la hoja, <see cref="EncabezadoContenedor"/> en el siguiente y <see cref="EncabezadoPeso"/> en el
+/// otro, aunque alguna quede vacía. Así los índices no dependen de qué filas se revisaron ni de si NEXO respondió. Las filas se ajustan al
+/// número de encabezados (las cortas se rellenan; las celdas sin encabezado se descartan). Un archivo sin esos textos mantiene su firma de
+/// plantilla (los mismos encabezados en el mismo orden).</item>
 /// <item><b>Vehículo detectado:</b> el vehículo reconocido con el <b>diccionario de alias de NEXO</b> (<c>GET /api/catalogos/alias</c>, el mismo
 /// de <c>GET /web/alias/resolver</c>). Se devuelve el texto reconocido tal cual aparece («Mula»); NEXO lo resuelve de nuevo al convertir. Sin el
-/// diccionario (NEXO caído) no se detecta vehículo, sin error.</item>
+/// diccionario (NEXO caído) no se detecta vehículo, sin error: la columna queda vacía en su posición.</item>
 /// <item><b>Contenedor detectado:</b> del patrón <c>C20</c>/<c>C40</c>/<c>20'</c>/<c>40'</c>, normalizado a <c>20'</c> o <c>40'</c>.</item>
 /// <item><b>Peso detectado (kg):</b> un peso o un rango en toneladas o kg. <b>Del rango se toma el valor más alto</b>
 /// («C20 de 0 a 8 Ton» → 8.000 kg); un solo valor se toma tal cual; <c>t</c>/<c>ton</c>/<c>tons</c>/<c>toneladas</c> se convierten a kg y
@@ -37,12 +39,14 @@ public interface IClsColumnasDerivadasService
         Guid usuarioId, IReadOnlyList<string> encabezados, IReadOnlyList<IReadOnlyList<string>> filas, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Enriquece solo las filas (el caso de <c>aplicar-mapeo</c>, que no manda encabezados): agrega las mismas columnas derivadas al final de
-    /// cada fila. Si alguna fila es <c>null</c> (petición mal formada que valida <c>aplicar-mapeo</c>) o no se reconoce ninguna columna, las
-    /// filas vuelven sin cambios.
+    /// Enriquece solo las filas (el caso de <c>aplicar-mapeo</c>): agrega las mismas columnas derivadas, en las mismas posiciones, a partir de
+    /// <paramref name="numeroEncabezados"/> (sin él, de la fila más ancha). Con <paramref name="forzar"/> (el mapeo usa una derivada) se agregan
+    /// aunque ninguna fila reconozca algo. Si alguna fila es <c>null</c> (petición mal formada que valida <c>aplicar-mapeo</c>) o no hay nada
+    /// que agregar, las filas vuelven sin cambios.
     /// </summary>
     Task<IReadOnlyList<IReadOnlyList<string?>?>> EnriquecerFilasAsync(
-        Guid usuarioId, IReadOnlyList<IReadOnlyList<string?>?> filas, CancellationToken cancellationToken = default);
+        Guid usuarioId, IReadOnlyList<IReadOnlyList<string?>?> filas, int? numeroEncabezados, bool forzar,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>Una hoja con las columnas derivadas agregadas (o los mismos encabezados y filas si no se reconoció ninguna).</summary>
@@ -73,26 +77,24 @@ public sealed class clsColumnasDerivadasService(IClsAliasNexoProvider alias) : I
             return new clsHojaEnriquecida(encabezados, filas);
         }
 
-        // Las filas de la muestra se normalizan al ancho de los encabezados; así el ancho base (dónde empiezan las columnas derivadas) sale del
-        // MISMO criterio que en aplicar-mapeo: AnchoBase = la fila más ancha. Con filas rectangulares (lo normal) coincide con el número de
-        // columnas de la hoja y con el que usa aplicar-mapeo.
-        IReadOnlyList<IReadOnlyList<string>> filasBase = [.. filas.Select(f => Rellenar(f, encabezados.Count))];
-        var anchoBase = AnchoBase(filasBase);
+        var anchoBase = encabezados.Count;
+        IReadOnlyList<IReadOnlyList<string>> filasBase = [.. filas.Select(f => Ajustar(f, anchoBase))];
         var deteccion = await DetectarAsync(usuarioId, filasBase, cancellationToken);
-        var columnas = ColumnasAAgregar(deteccion, anchoBase);
+        var columnas = ColumnasAAgregar(deteccion, anchoBase, forzar: false);
         if (columnas.Count == 0)
         {
             return new clsHojaEnriquecida(encabezados, filas);
         }
 
-        var encabezadosNuevos = new List<string>(Rellenar(encabezados, anchoBase));
+        var encabezadosNuevos = new List<string>(encabezados);
         encabezadosNuevos.AddRange(columnas.Select(c => c.Encabezado));
-        var filasNuevas = filasBase.Select((f, i) => CombinarFila(f, deteccion[i], columnas, anchoBase)).ToList();
+        var filasNuevas = filasBase.Select((f, i) => CombinarFila(f, deteccion[i], columnas)).ToList();
         return new clsHojaEnriquecida(encabezadosNuevos, filasNuevas);
     }
 
     public async Task<IReadOnlyList<IReadOnlyList<string?>?>> EnriquecerFilasAsync(
-        Guid usuarioId, IReadOnlyList<IReadOnlyList<string?>?> filas, CancellationToken cancellationToken = default)
+        Guid usuarioId, IReadOnlyList<IReadOnlyList<string?>?> filas, int? numeroEncabezados, bool forzar,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(filas);
         // Una fila null es una petición mal formada: no se enriquece, para que aplicar-mapeo la rechace con FILA_INVALIDA.
@@ -102,17 +104,18 @@ public sealed class clsColumnasDerivadasService(IClsAliasNexoProvider alias) : I
         }
 
         IReadOnlyList<IReadOnlyList<string>> limpias = [.. filas.Select(f => (IReadOnlyList<string>)[.. f!.Select(c => c ?? string.Empty)])];
-        // Mismo criterio de ancho base que sugerir-mapeo: la fila más ancha. Con filas rectangulares coincide con el número de columnas de la
-        // hoja, así los índices de las columnas derivadas calzan con los que propuso sugerir-mapeo y confirmó el mapeo.
-        var anchoBase = AnchoBase(limpias);
+        // El mismo ancho base que sugerir-mapeo (el número de encabezados), para que los índices calcen con el mapeo confirmado. Sin él (un
+        // front anterior) queda la fila más ancha, que coincide cuando las filas vienen rectangulares.
+        var anchoBase = numeroEncabezados is > 0 and <= MaximoColumnas ? numeroEncabezados.Value : limpias.Max(f => f.Count);
+        limpias = [.. limpias.Select(f => Ajustar(f, anchoBase))];
         var deteccion = await DetectarAsync(usuarioId, limpias, cancellationToken);
-        var columnas = ColumnasAAgregar(deteccion, anchoBase);
+        var columnas = ColumnasAAgregar(deteccion, anchoBase, forzar);
         if (columnas.Count == 0)
         {
             return filas;
         }
 
-        return limpias.Select((f, i) => (IReadOnlyList<string?>?)CombinarFila(f, deteccion[i], columnas, anchoBase)).ToList();
+        return limpias.Select((f, i) => (IReadOnlyList<string?>?)CombinarFila(f, deteccion[i], columnas)).ToList();
     }
 
     /// <summary>La detección por fila (vehículo, contenedor, peso), con el diccionario de alias de NEXO leído una sola vez.</summary>
@@ -128,7 +131,7 @@ public sealed class clsColumnasDerivadasService(IClsAliasNexoProvider alias) : I
     /// <c>GET /web/alias/resolver</c>), con memoria por texto. Se busca en el diccionario de alias, no en el catálogo de códigos oficiales: así
     /// un número suelto de una celda («2», «3») nunca se confunde con un código de vehículo. Se exige además que el texto tenga al menos una
     /// letra (un alias de vehículo es una palabra). Si NEXO no entrega el diccionario, el predicado siempre es <c>false</c>: no se detecta
-    /// vehículo y no se agrega la columna, sin error.
+    /// vehículo, sin error (si se agregan las columnas, la del vehículo queda vacía).
     /// </summary>
     private async Task<Func<string, bool>> ResolutorVehiculoAsync(Guid usuarioId, CancellationToken cancellationToken)
     {
@@ -152,64 +155,28 @@ public sealed class clsColumnasDerivadasService(IClsAliasNexoProvider alias) : I
         };
     }
 
-    /// <summary>Las columnas derivadas a agregar: solo las que tienen al menos un valor reconocido, en orden fijo y sin pasar el tope de NEXO.</summary>
-    private static IReadOnlyList<clsColumnaDerivada> ColumnasAAgregar(IReadOnlyList<clsFilaDetectada> deteccion, int anchoBase)
+    /// <summary>
+    /// Las columnas derivadas a agregar: las tres en orden fijo si alguna fila reconoce algo (o con <paramref name="forzar"/>), ninguna si no;
+    /// sin pasar el tope de NEXO.
+    /// </summary>
+    private static IReadOnlyList<clsColumnaDerivada> ColumnasAAgregar(IReadOnlyList<clsFilaDetectada> deteccion, int anchoBase, bool forzar)
     {
-        var columnas = new List<clsColumnaDerivada>(3);
-        if (deteccion.Any(d => d.Vehiculo is not null))
+        if (!forzar && !deteccion.Any(d => d.Vehiculo is not null || d.Contenedor is not null || d.Peso is not null))
         {
-            columnas.Add(new clsColumnaDerivada(EncabezadoVehiculo, d => d.Vehiculo));
-        }
-
-        if (deteccion.Any(d => d.Contenedor is not null))
-        {
-            columnas.Add(new clsColumnaDerivada(EncabezadoContenedor, d => d.Contenedor));
-        }
-
-        if (deteccion.Any(d => d.Peso is not null))
-        {
-            columnas.Add(new clsColumnaDerivada(EncabezadoPeso, d => d.Peso));
+            return [];
         }
 
         // Nunca se pasa de 100 columnas (el tope de NEXO): si no caben todas, se agregan las que quepan en el mismo orden fijo.
-        var caben = Math.Max(0, MaximoColumnas - anchoBase);
-        return caben >= columnas.Count ? columnas : [.. columnas.Take(caben)];
+        return [.. _columnasDerivadas.Take(Math.Max(0, MaximoColumnas - anchoBase))];
     }
 
-    /// <summary>El ancho base de un bloque de filas: la fila más ancha (0 si no hay filas). El MISMO criterio en sugerir-mapeo y aplicar-mapeo.</summary>
-    private static int AnchoBase(IReadOnlyList<IReadOnlyList<string>> filas) => filas.Count == 0 ? 0 : filas.Max(f => f.Count);
+    /// <summary>La fila con exactamente <paramref name="ancho"/> celdas: rellena con vacías o descarta las que no tienen encabezado.</summary>
+    private static IReadOnlyList<string> Ajustar(IReadOnlyList<string> fila, int ancho) =>
+        fila.Count == ancho ? fila : [.. fila.Take(ancho), .. Enumerable.Repeat(string.Empty, Math.Max(0, ancho - fila.Count))];
 
-    /// <summary>Los valores rellenados con celdas vacías hasta <paramref name="ancho"/> (los mismos si ya alcanzan ese ancho).</summary>
-    private static IReadOnlyList<string> Rellenar(IReadOnlyList<string> valores, int ancho)
-    {
-        if (valores.Count >= ancho)
-        {
-            return valores;
-        }
-
-        var lista = new List<string>(valores);
-        while (lista.Count < ancho)
-        {
-            lista.Add(string.Empty);
-        }
-
-        return lista;
-    }
-
-    /// <summary>Una fila con las columnas derivadas al final, rellenando a <paramref name="anchoBase"/> para que los índices coincidan.</summary>
-    private static IReadOnlyList<string> CombinarFila(
-        IReadOnlyList<string>? fila, clsFilaDetectada deteccion, IReadOnlyList<clsColumnaDerivada> columnas, int anchoBase)
-    {
-        var celdas = new List<string>(anchoBase + columnas.Count);
-        celdas.AddRange(fila ?? []);
-        while (celdas.Count < anchoBase)
-        {
-            celdas.Add(string.Empty);
-        }
-
-        celdas.AddRange(columnas.Select(c => c.Valor(deteccion) ?? string.Empty));
-        return celdas;
-    }
+    /// <summary>Una fila (ya ajustada al ancho base) con las columnas derivadas al final.</summary>
+    private static IReadOnlyList<string> CombinarFila(IReadOnlyList<string> fila, clsFilaDetectada deteccion, IReadOnlyList<clsColumnaDerivada> columnas) =>
+        [.. fila, .. columnas.Select(c => c.Valor(deteccion) ?? string.Empty)];
 
     /// <summary>Reconoce el vehículo, el contenedor y el peso de una fila (el primer valor de izquierda a derecha por cada columna).</summary>
     private static clsFilaDetectada DetectarFila(IReadOnlyList<string> fila, Func<string, bool> esVehiculo)
@@ -343,6 +310,13 @@ public sealed class clsColumnasDerivadasService(IClsAliasNexoProvider alias) : I
 
     private static readonly Regex _miles = new(
         @"^\d{1,3}(\.\d{3})+$", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
+
+    private static readonly clsColumnaDerivada[] _columnasDerivadas =
+    [
+        new(EncabezadoVehiculo, d => d.Vehiculo),
+        new(EncabezadoContenedor, d => d.Contenedor),
+        new(EncabezadoPeso, d => d.Peso),
+    ];
 
     /// <summary>La detección de una fila.</summary>
     private sealed record clsFilaDetectada(string? Vehiculo, string? Contenedor, string? Peso);

@@ -97,20 +97,27 @@ public sealed class clsSugerenciaMapeoService(
         // columnas y sus índices coincidan con los que agregará aplicar-mapeo. Un archivo sin esos textos vuelve con su misma firma.
         IReadOnlyList<IReadOnlyList<string>> muestra = [.. (peticion.Filas ?? []).Take(MaximoFilasMuestra)];
         var enriquecida = await columnasDerivadas.EnriquecerAsync(usuarioId, encabezados, muestra, cancellationToken);
+        IReadOnlyList<clsColumnaDerivadaMapeo> derivadas =
+            [.. enriquecida.Encabezados.Skip(encabezados.Count).Select((nombre, i) => new clsColumnaDerivadaMapeo(encabezados.Count + i, nombre))];
         encabezados = enriquecida.Encabezados;
 
         // NEXO rechaza más de 100 columnas: no se le llama y la hoja sigue en manual (no es un error para el comercial).
         if (encabezados.Count > MaximoEncabezados)
         {
-            return SinPropuesta(encabezados, clsCodigosError.DemasiadasColumnas);
+            return SinPropuesta(encabezados, clsCodigosError.DemasiadasColumnas) with { ColumnasDerivadas = derivadas };
         }
 
         var sugerencia = await importacion.SugerirMapeoAsync(usuarioId, new clsPeticionSugerirMapeo(peticion.ClienteNit, encabezados, enriquecida.Filas), cancellationToken);
 
         // Importación apagada, NEXO caído o sin respuesta a tiempo: la hoja sin propuesta (el adaptador ya dejó el motivo en el log).
-        return sugerencia.EsFallo && sugerencia.Error.Codigo == clsCodigosError.NexoNoDisponible
-            ? SinPropuesta(encabezados, clsCodigosError.NexoNoDisponible)
-            : sugerencia;
+        if (sugerencia.EsFallo)
+        {
+            return sugerencia.Error.Codigo == clsCodigosError.NexoNoDisponible
+                ? SinPropuesta(encabezados, clsCodigosError.NexoNoDisponible) with { ColumnasDerivadas = derivadas }
+                : sugerencia;
+        }
+
+        return sugerencia.Valor with { ColumnasDerivadas = derivadas };
     }
 
     public async Task<clsResultado<clsLecturaEstructura>> LeerEstructuraAsync(

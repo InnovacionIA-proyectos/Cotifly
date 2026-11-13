@@ -100,6 +100,40 @@ public sealed class clsSugerenciaMapeoServiceTests
         enviada.Filas!.Single().Should().Equal("Venezuela Mula", "Mula");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LaRespuestaTraeLasColumnasDerivadasConSuIndiceAunqueNexoNoResponda(bool nexoCaido)
+    {
+        _columnas.EnriquecerAsync(_usuario, Arg.Any<IReadOnlyList<string>>(), Arg.Any<IReadOnlyList<IReadOnlyList<string>>>(), Arg.Any<CancellationToken>())
+            .Returns(new clsHojaEnriquecida(
+                ["COL0", "COL1", clsColumnasDerivadasService.EncabezadoVehiculo, clsColumnasDerivadasService.EncabezadoContenedor,
+                    clsColumnasDerivadasService.EncabezadoPeso],
+                [["Mula 8 ton", "x", "Mula", "", "8000"]]));
+        _nexo.SugerirMapeoAsync(_usuario, Arg.Any<clsPeticionSugerirMapeo>(), Arg.Any<CancellationToken>())
+            .Returns(nexoCaido
+                ? clsResultado<clsSugerenciaMapeo>.Fallo(new clsErrorDominio(clsCodigosError.NexoNoDisponible, "caído"))
+                : new clsSugerenciaMapeo(true, null, [], [], null));
+
+        var resultado = await Servicio().SugerirAsync(_usuario, Peticion(2, filas: 1), TestContext.Current.CancellationToken);
+
+        resultado.Valor.ColumnasDerivadas.Should().Equal(
+            new clsColumnaDerivadaMapeo(2, clsColumnasDerivadasService.EncabezadoVehiculo),
+            new clsColumnaDerivadaMapeo(3, clsColumnasDerivadasService.EncabezadoContenedor),
+            new clsColumnaDerivadaMapeo(4, clsColumnasDerivadasService.EncabezadoPeso));
+    }
+
+    [Fact]
+    public async Task SinColumnasDerivadasLaListaVieneVacia()
+    {
+        _nexo.SugerirMapeoAsync(_usuario, Arg.Any<clsPeticionSugerirMapeo>(), Arg.Any<CancellationToken>())
+            .Returns(new clsSugerenciaMapeo(true, null, [], [], null));
+
+        var resultado = await Servicio().SugerirAsync(_usuario, Peticion(2), TestContext.Current.CancellationToken);
+
+        resultado.Valor.ColumnasDerivadas.Should().BeEmpty();
+    }
+
     [Fact]
     public async Task SinEncabezadosEsEncabezadosRequeridosSinLlamarANexo()
     {
@@ -119,7 +153,8 @@ public sealed class clsSugerenciaMapeoServiceTests
 
         var resultado = await Servicio().SugerirAsync(_usuario, Peticion(1, filas: 3), TestContext.Current.CancellationToken);
 
-        resultado.Valor.Should().BeSameAs(propuesta);
+        // Cotifly solo le suma columnas_derivadas (vacía aquí); lo de NEXO pasa igual.
+        resultado.Valor.Should().BeEquivalentTo(propuesta);
         enviada!.ClienteNit.Should().Be("900.555.111-2", "el adaptador normaliza el NIT como NEXO");
         enviada.Filas.Should().HaveCount(3);
     }

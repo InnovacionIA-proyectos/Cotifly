@@ -2284,7 +2284,8 @@ columnas en `ignorar` e `ia_usada = false`. `IA_TOPE_DIARIO` es 429.
     { "indice": 2, "columna": "TON", "campo": "peso", "transformacion": "peso_toneladas_a_kg", "confianza": 1.0, "origen": "plantilla", "nota": null }
   ],
   "dudas": [],
-  "plantilla_id": "3f2b8c1d-7a6e-4d5c-9b8a-1e2f3a4b5c6d"
+  "plantilla_id": "3f2b8c1d-7a6e-4d5c-9b8a-1e2f3a4b5c6d",
+  "columnas_derivadas": []
 }
 ```
 

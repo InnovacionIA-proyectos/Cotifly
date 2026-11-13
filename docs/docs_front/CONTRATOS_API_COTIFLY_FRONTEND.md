@@ -3061,17 +3061,20 @@ tabla de `leer-estructura` (4.6.7): se mandan sus `encabezados` y `filas` tal cu
   IA_NO_DISPONIBLE` (o un `IA_*` del proveedor). Con plantilla reconocida: `PLANTILLA_RECONOCIDA` y `plantilla_id`.
 - **Peso (DU §8):** la sugerencia no trae pesos, así que la regla del peso total con tara no aplica aquí; se aplica al convertir las filas
   (#254) y en la captura.
-- **Columnas derivadas (HU-044.9, #292):** antes de llamar a NEXO, Cotifly revisa las columnas de texto y agrega columnas derivadas **con
-  nombre fijo al final**, solo si al menos una fila reconoce un valor (si no, la hoja mantiene su firma de plantilla y no aparecen). Por eso la
+- **Columnas derivadas (HU-044.9, #292; HU-044.11, #328):** antes de llamar a NEXO, Cotifly revisa las columnas de texto y, si al menos una
+  fila reconoce un valor, agrega **siempre las tres** columnas derivadas **con nombre fijo al final** (si no, la hoja mantiene su firma de
+  plantilla y no aparecen). Por eso la
   propuesta puede traer más `columnas` que `encabezados` de la hoja original: `Vehículo detectado` (el vehículo dentro de un texto, con el
   diccionario de alias de NEXO —el mismo de `GET /web/alias/resolver`—, p. ej. «Venezuela Mula» → `Mula`), `Contenedor detectado` (del patrón
   `C20`/`C40`/`20'`/`40'`, normalizado a `20'` o `40'`) y `Peso detectado (kg)` (un peso o un rango en toneladas o kg; **del rango se toma el
   valor más alto**: «C20 de 0 a 8 Ton» → `20'` y `8000`). La celda original no se modifica. `sugerir-mapeo` puede proponerlas para
   `tipoVehiculo`, `claseContenedor` y `pesoKg`, y `aplicar-mapeo` (#254) las agrega igual, al final de cada fila, y las convierte como cualquier
-  otra columna. **Índices:** las columnas derivadas se ubican después de las columnas de la hoja (ancho de la fila más ancha, el mismo criterio
-  en los dos endpoints), así que sus índices coinciden entre `sugerir-mapeo` y `aplicar-mapeo` **salvo** que una categoría (vehículo, contenedor
-  o peso) se reconozca solo en filas fuera de la muestra que recibe `sugerir-mapeo` (hasta 200): con pliegos de menos de 200 filas y una muestra
-  representativa coinciden. Por eso conviene mandar a `sugerir-mapeo` una muestra representativa de las filas.
+  otra columna. **Índices fijos:** `Vehículo detectado` = número de `encabezados`, `Contenedor detectado` = +1 y `Peso detectado (kg)` = +2,
+  aunque alguna quede vacía (también la de vehículo si el diccionario de alias de NEXO no responde). Las filas se ajustan al número de
+  encabezados (las cortas se rellenan; las celdas sin encabezado se descartan). La respuesta las trae en **`columnas_derivadas: [{indice,
+  nombre}]`** (vacía si no se agregó ninguna): mostrarlas como opciones del selector, incluirlas al guardar la plantilla y mandar
+  **`numero_encabezados`** (= `encabezados.length`) a `aplicar-mapeo`, que las agrega en los mismos índices aunque las filas de más allá de la
+  muestra reconozcan otra cosa.
 
 ```json
 {
@@ -3092,7 +3095,8 @@ tabla de `leer-estructura` (4.6.7): se mandan sus `encabezados` y `filas` tal cu
     { "indice": 3, "columna": "OBSERVACIONES", "campo": "ignorar", "transformacion": "ninguna", "confianza": 0.0, "origen": "ninguno", "nota": null }
   ],
   "dudas": ["¿TON es el peso total?"],
-  "plantilla_id": null
+  "plantilla_id": null,
+  "columnas_derivadas": []
 }
 ```
 
@@ -4619,6 +4623,7 @@ fila_excel, campo, codigo, mensaje}`.
 | 98 | **Corrección conexos: el nombre del servicio conexo nunca es el id interno.** `ServicioConexoCosteo.nombre` (en `servicios_conexos[]` de la vista del costeo, el detalle, el margen y los conexos) y los nombres de conexos que da el **asistente de IA** (`consultar_cotizacion`) y `conexos_conservados` traen **siempre el nombre** del servicio: el guardado o, si está en NULL (fila migrada del JSON), el resuelto del catálogo de NEXO por id; si el catálogo no responde o no lo tiene, la `categoria` como respaldo legible. La misma cadena se aplica ahora en las **exportaciones** (ampliación): el **PDF** de la cotización y del pliego ("Estas tarifas incluyen"), el **Excel** de la cotización (`GET /web/cotizaciones/{folio}/excel`) y el **Excel de licitación** (`GET /web/licitaciones/{folio}/excel` y el de "Ver detalle") imprimen el nombre del catálogo para un conexo heredado sin nombre y caen a la `categoria` con el catálogo frío; antes caían directo a la `categoria`. **Nunca** el `id` interno del conexo (que sigue en `servicios_conexos[].id`, solo para operar: incluir/excluir). **No cambia la forma de ninguna respuesta** ni del PDF/Excel (ningún campo ni columna nuevos; `nombre` sigue declarado `nullable` solo por compatibilidad, en la práctica siempre viene poblado). Sin endpoints, códigos ni script de base de datos | Corrige | Mostrar `servicios_conexos[].nombre` tal cual (ya nunca es el id); si algún front usaba `id` como etiqueta de respaldo, usar `nombre`. El PDF y los Excel ya muestran el nombre del catálogo, no la categoría, cuando el catálogo está caliente |
 | 99 | **HU-044.5 (#256, parte 2): escritura del diccionario del cliente y consulta por NIT.** `GET /web/diccionario-cliente` con `nit_cliente` trae ahora los términos **del cliente** (`general = false`) más los generales; sin NIT, solo los generales. `aviso` va **siempre en `null`**: se retira `TERMINOS_CLIENTE_NO_DISPONIBLES`. Endpoints **nuevos** (4.6.11): `POST /web/diccionario-cliente` (201), `PUT /web/diccionario-cliente/{id}` (200) y `DELETE /web/diccionario-cliente/{id}?nit_cliente=` (204), con `{nit_cliente, termino, tipo, concepto, contexto?, ejemplo?, activo? = true}` y `nit_cliente` **obligatorio**. **Solo el rol activo `comercial`** escribe (gerente y director: 403 `ErrorWeb`). Códigos **nuevos** en `ErrorNegocio`: `TERMINO_GENERAL_NO_EDITABLE` (403), `TERMINO_NO_ENCONTRADO` (404), `TERMINO_DUPLICADO` (409), `TERMINO_REQUERIDO`, `CONCEPTO_REQUERIDO`, `CAMPO_DESTINO_INVALIDO`, `UNIDAD_INVALIDA`, `CONTEXTO_INVALIDO`, `CONTEXTO_NO_APLICA` y `EJEMPLO_MUY_LARGO` (400). Largos de más: 400 `ErrorWeb`. Son **74 endpoints** (eran 71) | Agrega y rompe (`aviso`) | Mostrar los términos del cliente; dejar de leer el `aviso`; formulario de términos solo para el `comercial`; no ofrecer editar ni borrar los generales |
 | 100 | **Idempotencia de crear la licitación ante una caída.** `POST /web/licitaciones` con `Idempotency-Key` asocia el folio a la clave en la misma transacción que crea la licitación. Si la API se cae después de crear el folio y antes de responder, la repetición con la misma clave y el mismo cuerpo+archivo responde 409 `ESTADO_NO_PERMITE` (`detalle.motivo = CAPTURA_EN_CURSO`, ahora con `detalle.folio`) mientras la primera se considera en curso (hasta 10 min) y, después, **201 con el mismo folio** y su estado de ahora, que puede ser `pendiente_envio` o `error_envio` (antes, pasados esos 10 min, creaba una segunda licitación). Mismos códigos; sin endpoints nuevos; sin script | Cambia | Seguir reenviando la misma `Idempotency-Key` en los reintentos. Ante el 409 `CAPTURA_EN_CURSO` al crear la licitación: no crear con otra clave; esperar unos segundos y repetir con la MISMA clave, o abrir `detalle.folio`. Un 201 con `pendiente_envio`/`error_envio` se muestra como cualquier licitación en ese estado (reintentar el costeo solo a pedido del comercial, nunca automático) |
+| 101 | **HU-044.11 (#328): columnas derivadas estables entre `sugerir-mapeo` y `aplicar-mapeo`.** Si al menos una fila reconoce un vehículo, un contenedor o un peso, Cotifly agrega **siempre las tres** columnas derivadas, en posiciones fijas a partir del número de encabezados: `Vehículo detectado` = `encabezados.length`, `Contenedor detectado` = +1, `Peso detectado (kg)` = +2, aunque alguna quede vacía (la de vehículo también si el diccionario de alias de NEXO no responde). Antes solo se agregaban las detectadas y el ancho base salía de la fila más ancha, así que una fila fuera de la muestra de 200 podía correr las columnas y hacer que un campo leyera otra. `sugerir-mapeo` trae el campo **nuevo `columnas_derivadas: [{indice, nombre}]`** (vacío si no se agregó ninguna). `aplicar-mapeo` acepta el campo **nuevo opcional `numero_encabezados`** (1 a 100; fuera de rango, 400 `COLUMNA_INVALIDA`): las derivadas empiezan ahí y se agregan también si el mapeo usa un índice desde ese número; sin él, desde la fila más ancha, como antes. Las filas se ajustan al número de encabezados antes de agregarlas. Sin endpoints, códigos ni script de base de datos nuevos | Agrega | Mostrar las columnas de `columnas_derivadas` como opciones del selector de mapeo (no como «Sin mapear») y no quitarlas al guardar la plantilla; mandar `numero_encabezados = encabezados.length` en `aplicar-mapeo` |
 
 ---
 

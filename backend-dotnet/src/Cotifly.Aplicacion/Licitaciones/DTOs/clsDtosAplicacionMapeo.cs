@@ -6,13 +6,15 @@ namespace Cotifly.Aplicacion.Licitaciones.DTOs;
 /// <summary>
 /// Entrada del caso de uso: el NIT de la licitación (opcional; con él NEXO usa el diccionario de ese cliente), el mapeo confirmado, TODAS
 /// las filas de la hoja sin el encabezado (máx. 5000, el tope de NEXO) y el número de Excel de la primera fila enviada (<c>null</c> = 2, como
-/// NEXO). <c>null</c> dentro de las listas es una parte mal formada (lo reporta la validación).
+/// NEXO). <c>null</c> dentro de las listas es una parte mal formada (lo reporta la validación). <paramref name="NumeroEncabezados"/>: los
+/// encabezados de la hoja (1 a 100), de donde empiezan las columnas derivadas, igual que en <c>sugerir-mapeo</c> (<c>null</c> = la fila más ancha).
 /// </summary>
 public sealed record clsEntradaAplicacionMapeo(
     string? NitCliente,
     IReadOnlyList<clsColumnaEntradaMapeo?>? Columnas,
     IReadOnlyList<IReadOnlyList<string?>?>? Filas,
-    int? PrimeraFila);
+    int? PrimeraFila,
+    int? NumeroEncabezados = null);
 
 /// <summary>Una columna confirmada: índice base 0, campo de NEXO (camelCase, o <c>ignorar</c>) y transformación de NEXO (vacía = <c>ninguna</c>).</summary>
 public sealed record clsColumnaEntradaMapeo(int? Indice, string? Campo, string? Transformacion);
