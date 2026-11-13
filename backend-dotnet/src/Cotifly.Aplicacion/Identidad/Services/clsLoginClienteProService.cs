@@ -68,6 +68,8 @@ public sealed class clsLoginClienteProService(
         string? regla = null;
         Guid? usuarioRechazado = null;
         clsResultadoLogin? resultado = null;
+        IReadOnlyList<string>? rolesOtorgados = null;
+        IReadOnlyList<string>? rolesRevocados = null;
         try
         {
             var ahora = reloj.AhoraUtc;
@@ -77,6 +79,9 @@ public sealed class clsLoginClienteProService(
             usuarioRechazado = verificacion.UsuarioIdRechazado;
             if (verificacion.Identidad is { } identidad)
             {
+                // HU-040.3 (#258): deltas de la reconciliación de roles, para la auditoría (solo códigos; sin datos sensibles).
+                rolesOtorgados = identidad.Otorgados.Count > 0 ? [.. identidad.Otorgados.Select(clsCodigoEnum.ACodigo)] : null;
+                rolesRevocados = identidad.Revocados.Count > 0 ? [.. identidad.Revocados.Select(clsCodigoEnum.ACodigo)] : null;
                 clsResultadoLogin emitido;
                 if (identidad.RequiereEleccion)
                 {
@@ -132,6 +137,12 @@ public sealed class clsLoginClienteProService(
                 UsuarioId = resultado?.Sesion?.Usuario.Id ?? resultado?.Eleccion?.UsuarioId ?? usuarioRechazado,
                 Rol = resultado?.Sesion?.Usuario.Rol,
                 RolesDisponibles = resultado?.Eleccion?.Roles.Select(r => r.Codigo).ToList(),
+                // HU-040.3 (#258): deltas de la reconciliación de roles (actor "sistema/login", sin revisor humano); solo cuando hubo cambios y
+                // se guardaron (si el login no terminó aceptado/elección, los cambios no se persistieron y no se auditan como aplicados).
+                RolesOtorgados = resultado is null ? null : rolesOtorgados,
+                RolesRevocados = resultado is null ? null : rolesRevocados,
+                ActorReconciliacion = resultado is null || (rolesOtorgados is null && rolesRevocados is null)
+                    ? null : clsCodigosAcceso.ActorReconciliacion,
             },
             resultado is not null,
             clsEmisionSesion.DuracionMs(inicio),

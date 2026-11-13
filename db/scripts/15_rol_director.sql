@@ -106,6 +106,31 @@ BEGIN CATCH
 END CATCH;
 GO
 
+-- HU-040.3 (#258): si la columna requiereAltaManual ya existe (el 23 corrió antes, p. ej. en el orden del arreglo de pruebas), este 15 deja
+-- marcado `director` como sensible, para que el resultado no dependa del orden entre el 15 y el 23. En el orden normal (15 antes del 23) la
+-- columna todavía no existe aquí y es el 23 el que marca `director`. Idempotente en ambos casos.
+SET XACT_ABORT ON;
+BEGIN TRY
+    BEGIN TRANSACTION;
+
+    -- La columna puede no existir todavía (orden normal: 15 antes del 23). El UPDATE va en SQL dinámico porque SQL Server resuelve los
+    -- nombres de columna al COMPILAR el lote: referirse directo a requiereAltaManual rompería el lote aunque el IF no lo ejecute.
+    IF COL_LENGTH(N'dbo_cotifly.Roles', N'requiereAltaManual') IS NOT NULL
+    BEGIN
+        EXEC (N'UPDATE dbo_cotifly.Roles SET requiereAltaManual = 1 WHERE codigo = N''director'' AND requiereAltaManual = 0;');
+        IF @@ROWCOUNT > 0
+            PRINT N'Rol director marcado como sensible (requiereAltaManual = 1), porque la columna del 23 ya existe.';
+    END
+
+    COMMIT TRANSACTION;
+END TRY
+BEGIN CATCH
+    IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+    PRINT N'15 NO se aplicó completo (marca de director sensible): se deshizo este paso. Error:';
+    THROW;
+END CATCH;
+GO
+
 PRINT N'15 aplicado: rol interno director.';
 GO
 

@@ -40,6 +40,9 @@ public static class clsCodigosAcceso
     /// <summary>Prefijo del hilo de auditoría de acceso: <c>auth/{idUsuario}</c>.</summary>
     public const string PrefijoHilo = "auth/";
 
+    /// <summary>HU-040.3 (#258): actor de los deltas de la reconciliación de roles en la auditoría (no es una persona: lo hace el login).</summary>
+    public const string ActorReconciliacion = "sistema/login";
+
     public static clsErrorDominio ErrorCredencialesInvalidas() => new(CredencialesInvalidas, MensajeCredencialesInvalidas);
 
     public static clsErrorDominio ErrorSesionExpirada() => new(SesionExpirada, MensajeSesionExpirada);
@@ -96,4 +99,13 @@ public static class clsMotivosAcceso
     /// elige con cuál entra.
     /// </summary>
     public const string ReglaMultiRol = "multi_rol";
+
+    // HU-040.3 (#258, ADR-009): deltas de la reconciliación de roles en el login (actor "sistema/login", sin revisor humano). Van en la
+    // auditoría del login como listas de códigos; no son motivos de rechazo.
+
+    /// <summary>HU-040.3 (#258): rol ORDINARIO que faltaba y el login auto-otorgó (creó o reactivó la asignación) por su respaldo externo.</summary>
+    public const string RolOtorgadoAuto = "rol_otorgado_auto";
+
+    /// <summary>HU-040.3 (#258): asignación que el login auto-revocó (desactivó) porque su rol externo ya no la respalda (fail-safe, todos los roles).</summary>
+    public const string RolRevocadoAuto = "rol_revocado_auto";
 }
