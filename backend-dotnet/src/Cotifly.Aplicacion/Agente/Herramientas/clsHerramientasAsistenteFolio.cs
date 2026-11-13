@@ -41,6 +41,10 @@ public sealed class clsHerramientasAsistenteFolio(
     public const string MensajePreguntarRuta =
         "La cotización tiene varias rutas y el comercial no dijo a cuál aplica. Muéstrale las rutas (número, origen y destino, sin valores en dinero) y pregúntale cuál; después vuelve a llamar con su lineaOrden. No supongas la ruta.";
 
+    /// <summary>Instrucción cuando la cotización tiene varias rutas y el comercial no dijo a cuáles aplica el cambio en lote.</summary>
+    public const string MensajePreguntarRutas =
+        "La cotización tiene varias rutas y el comercial no dijo a cuáles aplica. Muéstrale las rutas (número, origen y destino, sin valores en dinero) y pregúntale si es a todas o a cuáles; después vuelve a llamar con todas=true o con lineas. No supongas las rutas.";
+
     [KernelFunction(clsNombresHerramientas.ConsultarCotizacion)]
     [Description("Consulta la cotización de esta conversación: estado del costeo y del envío, cliente, línea, moneda y sus rutas (linea_orden, origen, destino, márgenes actual y sugerido como fracción, y servicios conexos con nombre y cantidad). Nunca trae valores en dinero.")]
     public async Task<clsResultadoHerramienta> ConsultarCotizacionAsync(CancellationToken cancellationToken = default)
@@ -114,13 +118,13 @@ public sealed class clsHerramientasAsistenteFolio(
     }
 
     /// <summary>Respuesta que hace PREGUNTAR la ruta (sin propuesta): las rutas sin montos y la instrucción.</summary>
-    private static clsResultadoHerramienta PreguntarRuta(string herramienta, clsCotizacionSolicitud cotizacion) =>
+    private static clsResultadoHerramienta PreguntarRuta(string herramienta, clsCotizacionSolicitud cotizacion, string mensaje = MensajePreguntarRuta) =>
         clsResultadoHerramienta.Exito(herramienta, new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             ["propuesta"] = null,
             ["requiere_ruta"] = true,
             ["rutas"] = RutasSinMontos(cotizacion),
-            ["mensaje"] = MensajePreguntarRuta,
+            ["mensaje"] = mensaje,
         });
 
     [KernelFunction(clsNombresHerramientas.ProponerAjusteMargen)]
@@ -222,21 +226,7 @@ public sealed class clsHerramientasAsistenteFolio(
         }
 
         var servicios = pagina.Valor.Items;
-        var salida = new Dictionary<string, object?>(StringComparer.Ordinal)
-        {
-            ["total"] = pagina.Valor.Total,
-            ["servicios"] = servicios
-                .Select(s => new Dictionary<string, object?>(StringComparer.Ordinal)
-                {
-                    ["id"] = s.Id,
-                    ["nombre"] = s.Nombre,
-                    ["codigo"] = s.Codigo,
-                    ["categoria"] = s.Categoria,
-                    ["unidad"] = s.Unidad,
-                })
-                .ToList(),
-            ["propuesta"] = null,
-        };
+        var salida = SalidaBusqueda(pagina.Valor);
         if (cantidad is not { } valor)
         {
             return clsResultadoHerramienta.Exito(herramienta, salida);
@@ -245,9 +235,7 @@ public sealed class clsHerramientasAsistenteFolio(
         var elegido = Elegir(servicios, servicioId);
         if (elegido is null)
         {
-            salida["mensaje"] = servicios.Count == 0
-                ? "No hay servicios activos con ese texto en el catálogo de Nexo: pide otro nombre."
-                : "Hay varios servicios posibles: muéstralos y pregunta cuál agregar; después vuelve a llamar con su servicioId.";
+            salida["mensaje"] = MensajeSinElegir(servicios);
             return clsResultadoHerramienta.Exito(herramienta, salida);
         }
 
@@ -273,6 +261,218 @@ public sealed class clsHerramientasAsistenteFolio(
         salida["mensaje"] = MensajePropuesta;
         return clsResultadoHerramienta.Exito(herramienta, salida);
     }
+
+    [KernelFunction(clsNombresHerramientas.ProponerAjusteMargenRutas)]
+    [Description("Propone el MISMO margen en varias rutas de esta cotización (todas o las que diga el comercial) en UNA sola propuesta. No lo aplica: el comercial lo confirma con un botón. El margen va como fracción (0.18 = 18 %), entre 0 y 0.99; si queda por debajo del margen sugerido de alguna ruta la justificación es obligatoria: pídesela antes. Pasa todas=true o lineas, nunca los dos; si la cotización tiene varias rutas y el comercial no dijo a cuáles, pregúntale antes (sin valores en dinero).")]
+    public Task<clsResultadoHerramienta> ProponerAjusteMargenRutasAsync(
+        [Description("Margen nuevo como fracción (0.18 = 18 %), el mismo para todas las rutas elegidas.")] decimal margen,
+        [Description("Justificación del comercial (obligatoria si el margen queda por debajo del sugerido de alguna ruta).")] string? justificacion = null,
+        [Description("true si el margen va en todas las rutas de la cotización.")] bool? todas = null,
+        [Description("Rutas a las que aplica (linea_orden de consultar_cotizacion), si no son todas.")] int[]? lineas = null,
+        CancellationToken cancellationToken = default)
+    {
+        var herramienta = clsNombresHerramientas.ProponerAjusteMargenRutas;
+        var cotizacion = contexto.Cotizacion;
+        if (Seleccion(cotizacion, todas, lineas) is not { } seleccion)
+        {
+            return Task.FromResult(PreguntarRuta(herramienta, cotizacion, MensajePreguntarRutas));
+        }
+
+        var propuesta = clsPropuestasAsistente.AjustarMargenLineas(cotizacion, margen, justificacion, seleccion.Todas, seleccion.Lineas);
+        if (propuesta.EsFallo)
+        {
+            return Task.FromResult(clsResultadoHerramienta.Fallo(herramienta, SinDatos(propuesta.Error)));
+        }
+
+        contexto.Proponer(propuesta.Valor);
+        var salida = SalidaLineas(propuesta.Valor);
+        salida["margen_propuesto"] = propuesta.Valor.Cuerpo["margen"];
+        salida["con_justificacion"] = propuesta.Valor.Cuerpo["justificacion"] is not null;
+        salida["mensaje"] = MensajePropuesta;
+        return Task.FromResult(clsResultadoHerramienta.Exito(herramienta, salida));
+    }
+
+    [KernelFunction(clsNombresHerramientas.ProponerAgregarConexoRutas)]
+    [Description("Propone agregar el MISMO servicio conexo del catálogo de Nexo, con la misma cantidad, a varias rutas de esta cotización (todas o las que diga el comercial) en UNA sola propuesta, que el comercial confirma con un botón. Pasa todas=true o lineas, nunca los dos; si la cotización tiene varias rutas y el comercial no dijo a cuáles, pregúntale antes. Si hay varios servicios parecidos, muéstralos (sin valores) y pregunta cuál; después llama de nuevo con el mismo texto y su servicioId.")]
+    public async Task<clsResultadoHerramienta> ProponerAgregarConexoRutasAsync(
+        [Description("Texto a buscar en el nombre o el código del servicio (hasta 100 caracteres).")] string texto,
+        [Description("Cantidad a agregar en cada ruta (0.01 a 999999.99).")] decimal cantidad,
+        [Description("Id del servicio elegido de una búsqueda anterior, si había varios.")] string? servicioId = null,
+        [Description("true si el servicio va en todas las rutas de la cotización.")] bool? todas = null,
+        [Description("Rutas a las que se agrega (linea_orden de consultar_cotizacion), si no son todas.")] int[]? lineas = null,
+        CancellationToken cancellationToken = default)
+    {
+        var herramienta = clsNombresHerramientas.ProponerAgregarConexoRutas;
+        var cotizacion = contexto.Cotizacion;
+
+        // Las rutas se preguntan antes de buscar: así la siguiente llamada ya trae las rutas y solo falta elegir el servicio.
+        if (Seleccion(cotizacion, todas, lineas) is not { } seleccion)
+        {
+            return PreguntarRuta(herramienta, cotizacion, MensajePreguntarRutas);
+        }
+
+        var pagina = await conexos.BuscarAsync(contexto.UsuarioId, texto, null, 1, MaximoServicios, cancellationToken);
+        if (pagina.EsFallo)
+        {
+            return clsResultadoHerramienta.Fallo(herramienta, SinDatos(pagina.Error));
+        }
+
+        var salida = SalidaBusqueda(pagina.Valor);
+        var elegido = Elegir(pagina.Valor.Items, servicioId);
+        if (elegido is null)
+        {
+            salida["mensaje"] = MensajeSinElegir(pagina.Valor.Items);
+            return clsResultadoHerramienta.Exito(herramienta, salida);
+        }
+
+        var propuesta = clsPropuestasAsistente.AgregarConexoLineas(cotizacion, elegido, cantidad, seleccion.Todas, seleccion.Lineas);
+        if (propuesta.EsFallo)
+        {
+            return clsResultadoHerramienta.Fallo(herramienta, SinDatos(propuesta.Error));
+        }
+
+        contexto.Proponer(propuesta.Valor);
+        foreach (var (clave, valor) in SalidaLineas(propuesta.Valor))
+        {
+            salida[clave] = valor;
+        }
+
+        salida["servicio_propuesto"] = elegido.Id;
+        salida["mensaje"] = MensajePropuesta;
+        return clsResultadoHerramienta.Exito(herramienta, salida);
+    }
+
+    [KernelFunction(clsNombresHerramientas.ProponerQuitarConexoRutas)]
+    [Description("Propone quitar un servicio conexo que YA tiene esta cotización de varias rutas (todas o las que diga el comercial) en UNA sola propuesta, que el comercial confirma con un botón. Lo busca por nombre (sin importar tildes ni mayúsculas) o por id entre los conexos de la cotización. Si no coincide con ninguno o con varios, devuelve los que tiene: muéstraselos por nombre y pregunta cuál; después llama de nuevo con su servicioId. Pasa todas=true o lineas, nunca los dos; si la cotización tiene varias rutas y el comercial no dijo de cuáles, pregúntale antes.")]
+    public async Task<clsResultadoHerramienta> ProponerQuitarConexoRutasAsync(
+        [Description("Nombre del servicio conexo a quitar, con las palabras del comercial.")] string servicio,
+        [Description("servicio_id de un conexo de la cotización devuelto por una llamada anterior, si había varios.")] string? servicioId = null,
+        [Description("true si el servicio se quita de todas las rutas de la cotización.")] bool? todas = null,
+        [Description("Rutas de las que se quita (linea_orden de consultar_cotizacion), si no son todas.")] int[]? lineas = null,
+        CancellationToken cancellationToken = default)
+    {
+        var herramienta = clsNombresHerramientas.ProponerQuitarConexoRutas;
+        var cotizacion = contexto.Cotizacion;
+        var nombres = await categorias.NombresAsync(cotizacion, cancellationToken);
+        var deLaCotizacion = cotizacion.RutasOrdenadas.SelectMany(r => r.Conexos)
+            .GroupBy(c => c.IdServicioConexoCatalogo ?? c.IdServicioConexo, StringComparer.OrdinalIgnoreCase)
+            .Select(g => (Id: g.Key, Nombre: NombreMostrado(g.First(), nombres)))
+            .ToList();
+        var coincidencias = Coincidencias(deLaCotizacion, servicio, servicioId);
+        if (coincidencias.Count != 1)
+        {
+            return clsResultadoHerramienta.Exito(herramienta, new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["propuesta"] = null,
+                ["conexos"] = (coincidencias.Count == 0 ? deLaCotizacion : coincidencias)
+                    .Select(c => new Dictionary<string, object?>(StringComparer.Ordinal) { ["servicio_id"] = c.Id, ["nombre"] = c.Nombre })
+                    .ToList(),
+                ["mensaje"] = deLaCotizacion.Count == 0
+                    ? "La cotización no tiene servicios conexos: no hay nada que quitar. Díselo al comercial."
+                    : coincidencias.Count == 0
+                        ? "La cotización no tiene ese servicio conexo. Muéstrale al comercial, por nombre, los que sí tiene y pregúntale cuál quitar."
+                        : "Varios servicios conexos de la cotización coinciden. Muéstralos por nombre y pregunta cuál quitar; después vuelve a llamar con su servicioId.",
+            });
+        }
+
+        if (Seleccion(cotizacion, todas, lineas) is not { } seleccion)
+        {
+            return PreguntarRuta(herramienta, cotizacion, MensajePreguntarRutas);
+        }
+
+        var (id, nombre) = coincidencias[0];
+        var propuesta = clsPropuestasAsistente.QuitarConexoLineas(cotizacion, id, nombre, seleccion.Todas, seleccion.Lineas);
+        if (propuesta.EsFallo)
+        {
+            return clsResultadoHerramienta.Fallo(herramienta, SinDatos(propuesta.Error));
+        }
+
+        contexto.Proponer(propuesta.Valor);
+        var salida = SalidaLineas(propuesta.Valor);
+        salida["servicio"] = nombre;
+        salida["mensaje"] = MensajePropuesta;
+        return clsResultadoHerramienta.Exito(herramienta, salida);
+    }
+
+    /// <summary>
+    /// Las rutas del cambio en lote: <paramref name="todas"/> o <paramref name="lineas"/> tal como vienen (su forma la valida la regla del
+    /// endpoint en lote); sin ninguna, la única ruta; <c>null</c> si hay varias y hay que preguntar.
+    /// </summary>
+    private static (bool Todas, IReadOnlyList<int>? Lineas)? Seleccion(clsCotizacionSolicitud cotizacion, bool? todas, int[]? lineas)
+    {
+        if (todas == true || lineas is { Length: > 0 })
+        {
+            return (todas == true, lineas);
+        }
+
+        if (cotizacion.Rutas.Count != 1)
+        {
+            return null;
+        }
+
+        return (false, new[] { cotizacion.Rutas.First().Orden });
+    }
+
+    /// <summary>
+    /// Conexos de la cotización que coinciden: por <paramref name="servicioId"/> si viene; si no, por id o por nombre exacto (sin tildes ni
+    /// mayúsculas) y, sin ninguno exacto, los que contienen el texto.
+    /// </summary>
+    public static IReadOnlyList<(string Id, string Nombre)> Coincidencias(
+        IReadOnlyList<(string Id, string Nombre)> conexosCotizacion, string? servicio, string? servicioId)
+    {
+        ArgumentNullException.ThrowIfNull(conexosCotizacion);
+        if (!string.IsNullOrWhiteSpace(servicioId))
+        {
+            return [.. conexosCotizacion.Where(c => string.Equals(c.Id, servicioId.Trim(), StringComparison.OrdinalIgnoreCase))];
+        }
+
+        var buscado = Normalizar(servicio);
+        if (buscado.Length == 0)
+        {
+            return [];
+        }
+
+        var exactos = conexosCotizacion
+            .Where(c => Normalizar(c.Nombre) == buscado || string.Equals(c.Id, servicio!.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
+        return exactos.Count > 0 ? exactos : [.. conexosCotizacion.Where(c => Normalizar(c.Nombre).Contains(buscado, StringComparison.Ordinal))];
+    }
+
+    /// <summary>Texto para comparar nombres: sin tildes, en minúsculas y sin espacios repetidos.</summary>
+    private static string Normalizar(string? texto)
+    {
+        var descompuesto = (texto ?? string.Empty).Normalize(System.Text.NormalizationForm.FormD);
+        var sinTildes = new string([.. descompuesto.Where(c => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark)]);
+        return string.Join(' ', sinTildes.ToLowerInvariant().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    /// <summary>Lo que ve el modelo de una propuesta en lote: el tipo y las rutas del cuerpo (<c>todas</c> o <c>lineas</c>), sin montos.</summary>
+    private static Dictionary<string, object?> SalidaLineas(clsAccionPropuesta propuesta) => new(StringComparer.Ordinal)
+    {
+        ["propuesta"] = propuesta.Tipo,
+        ["todas"] = propuesta.Cuerpo.ContainsKey("todas"),
+        ["lineas"] = propuesta.Cuerpo.TryGetValue("lineas", out var lineas) ? lineas : null,
+    };
+
+    /// <summary>Resultado de una búsqueda en el catálogo para el modelo: id, nombre, código, categoría y unidad, nunca valores.</summary>
+    private static Dictionary<string, object?> SalidaBusqueda(clsPaginaServiciosConexos pagina) => new(StringComparer.Ordinal)
+    {
+        ["total"] = pagina.Total,
+        ["servicios"] = pagina.Items
+            .Select(s => new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["id"] = s.Id,
+                ["nombre"] = s.Nombre,
+                ["codigo"] = s.Codigo,
+                ["categoria"] = s.Categoria,
+                ["unidad"] = s.Unidad,
+            })
+            .ToList(),
+        ["propuesta"] = null,
+    };
+
+    private static string MensajeSinElegir(IReadOnlyList<clsServicioConexoCatalogo> servicios) => servicios.Count == 0
+        ? "No hay servicios activos con ese texto en el catálogo de Nexo: pide otro nombre."
+        : "Hay varios servicios posibles: muéstralos y pregunta cuál agregar; después vuelve a llamar con su servicioId.";
 
     /// <summary>
     /// El servicio a proponer: el de <paramref name="servicioId"/> si está en la página; si no, el único resultado. <c>null</c> si hay

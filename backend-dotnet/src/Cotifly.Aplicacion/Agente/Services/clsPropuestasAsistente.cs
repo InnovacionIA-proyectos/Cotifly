@@ -1,5 +1,6 @@
 using System.Globalization;
 using Cotifly.Aplicacion.Agente.DTOs;
+using Cotifly.Aplicacion.Comun;
 using Cotifly.Aplicacion.Costeo.DTOs;
 using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Aplicacion.Pdf.Services;
@@ -243,6 +244,225 @@ public static class clsPropuestasAsistente
         return new clsAccionPropuesta(
             clsAccionPropuesta.TipoAgregarServiciosConexos, MetodoPost, RutaServiciosConexos(cotizacion.Folio), cuerpo, Recortar(resumen),
             clsCosteoCotizacionService.VersionEtag(cotizacion));
+    }
+
+    public static string RutaMargenLineas(string folio) => $"{Base(folio)}/costeo/margen/lineas";
+
+    public static string RutaConexosLineas(string folio) => $"{Base(folio)}/costeo/servicios-conexos/lineas";
+
+    public static string RutaQuitarConexosLineas(string folio) => $"{RutaConexosLineas(folio)}/quitar";
+
+    /// <summary>Rutas que se nombran una a una en el resumen; con más, solo se cuentan.</summary>
+    public const int MaximoRutasNombradas = 8;
+
+    /// <summary>
+    /// <c>ajustar_margen_lineas</c> → <c>PUT .../costeo/margen/lineas</c> <c>{todas | lineas, margen, justificacion}</c>, con las MISMAS
+    /// validaciones del endpoint en lote (<see cref="clsCosteoLineasService.ValidarFormaMargen"/> y
+    /// <see cref="clsCosteoLineasService.PlanMargen"/>). Si ninguna ruta cambia, <c>AJUSTE_MARGEN_INVALIDO</c>. El error de una ruta llega
+    /// como «Ruta N: …» y los del módulo de precio con un texto fijo (su mensaje puede nombrar valores).
+    /// </summary>
+    public static clsResultado<clsAccionPropuesta> AjustarMargenLineas(
+        clsCotizacionSolicitud cotizacion, decimal margen, string? justificacion, bool todas, IReadOnlyList<int>? lineas)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        var forma = clsCosteoLineasService.ValidarFormaMargen(
+            new clsMargenLineasEntrada(Seleccion(todas, lineas), margen, null, justificacion));
+        if (forma.EsFallo)
+        {
+            return ParaModelo(forma.Error, sinMontos: true);
+        }
+
+        var plan = clsCosteoLineasService.PlanMargen(cotizacion, forma.Valor, margen, false, justificacion);
+        if (plan.EsFallo)
+        {
+            return ParaModelo(plan.Error, sinMontos: true);
+        }
+
+        var nuevo = clsMargenAjuste.RedondearMargen(margen);
+        var (rutas, cambios) = plan.Valor;
+        if (cambios.Count == 0)
+        {
+            return new clsErrorDominio(clsCodigosError.AjusteMargenInvalido,
+                $"{Capitalizar(ListaRutas(rutas.Select(r => r.Orden)))} ya {(rutas.Count == 1 ? "tiene" : "tienen")} el margen {Porcentaje(nuevo)}: no hay nada que ajustar.");
+        }
+
+        // El total con los precios nuevos de las rutas que cambian y el vigente de las demás (sin las rechazadas, como el endpoint).
+        var precios = cotizacion.RutasCotizables
+            .Select(r => cambios.FirstOrDefault(c => c.Ruta.Id == r.Id)?.PrecioRuta ?? r.PrecioFinalLinea).ToList();
+        decimal? total = precios.All(p => p is not null) ? precios.Sum() : null;
+        var moneda = cotizacion.Moneda ?? clsCotizacionSolicitud.MonedaPesos;
+        var cambian = cambios.Select(c => c.Ruta.Orden).ToList();
+        var resumen = $"Ajustar el margen a {Porcentaje(nuevo)} en {(todas && cambian.Count == rutas.Count ? $"todas las rutas ({rutas.Count})" : ListaRutas(cambian))}"
+                      + (total is { } nuevoTotal && cotizacion.PrecioFinal is { } anterior
+                          ? $": el total pasa de {clsFormatoMoneda.Formatear(anterior, moneda)} a {clsFormatoMoneda.Formatear(nuevoTotal, moneda)} {moneda}."
+                          : ".")
+                      + SinCambio(rutas, cambian, "ya tiene ese margen", "ya tienen ese margen");
+        var limpia = clsMargenAjuste.LimpiarJustificacion(justificacion);
+        if (limpia is not null)
+        {
+            resumen += $" Justificación: {Cita(limpia)}.";
+        }
+
+        if (cambios.Any(c => c.Ruta.Conexos.Count > 0))
+        {
+            // El margen es solo del transporte; los conexos van a su precio de venta y no cambian con el ajuste.
+            resumen += " Los servicios conexos no cambian: se cotizan a su precio de venta, sin margen.";
+        }
+
+        resumen += SufijoPdf(cotizacion);
+        var cuerpo = CuerpoLineas(todas, forma.Valor);
+        cuerpo["margen"] = nuevo;
+        cuerpo["justificacion"] = limpia;
+        return new clsAccionPropuesta(
+            clsAccionPropuesta.TipoAjustarMargenLineas, MetodoPut, RutaMargenLineas(cotizacion.Folio), cuerpo, Recortar(resumen),
+            clsCosteoCotizacionService.VersionEtag(cotizacion));
+    }
+
+    /// <summary>
+    /// <c>agregar_servicios_conexos_lineas</c> → <c>POST .../costeo/servicios-conexos/lineas</c> <c>{todas | lineas, servicio_id, cantidad}</c>,
+    /// con las MISMAS validaciones del endpoint en lote antes de leer el catálogo (<see cref="clsCosteoLineasService.ValidarFormaConexo"/>
+    /// y <see cref="clsCosteoLineasService.PlanAgregarConexo"/>). Si todas las rutas ya lo tienen, <c>CONEXO_INVALIDO</c>. El costo del
+    /// catálogo se lee al confirmar.
+    /// </summary>
+    public static clsResultado<clsAccionPropuesta> AgregarConexoLineas(
+        clsCotizacionSolicitud cotizacion, clsServicioConexoCatalogo servicio, decimal cantidad, bool todas, IReadOnlyList<int>? lineas)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        ArgumentNullException.ThrowIfNull(servicio);
+        var forma = clsCosteoLineasService.ValidarFormaConexo(new clsConexoLineasEntrada(Seleccion(todas, lineas), servicio.Id, cantidad), agregar: true);
+        if (forma.EsFallo)
+        {
+            return ParaModelo(forma.Error);
+        }
+
+        var (pedidas, servicioId) = forma.Valor;
+        var plan = clsCosteoLineasService.PlanAgregarConexo(cotizacion, pedidas, servicioId, cantidad);
+        if (plan.EsFallo)
+        {
+            return ParaModelo(plan.Error);
+        }
+
+        // Nombre, si no el código, si no la categoría; nunca el id interno del servicio.
+        var nombre = NombreConexo(servicio.Nombre ?? servicio.Codigo ?? servicio.Categoria ?? "servicio conexo");
+        var (rutas, cambian) = plan.Valor;
+        if (cambian.Count == 0)
+        {
+            return new clsErrorDominio(clsCodigosError.ConexoInvalido,
+                $"{Capitalizar(ListaRutas(rutas.Select(r => r.Orden)))} ya {(rutas.Count == 1 ? "tiene" : "tienen")} «{nombre}»: para cambiar la cantidad, hazlo desde el detalle de la cotización.");
+        }
+
+        var unidad = string.IsNullOrWhiteSpace(servicio.Unidad) ? string.Empty : $" ({servicio.Unidad.Trim()})";
+        var ordenes = cambian.Select(r => r.Orden).ToList();
+        var resumen = $"Agregar {Numero(cantidad)}{unidad} de «{nombre}» a {(todas && cambian.Count == rutas.Count ? $"todas las rutas ({rutas.Count})" : ListaRutas(ordenes))} en Nexo. "
+                      // El conexo no lleva el margen de la ruta.
+                      + "Se cotiza a su precio de venta de Nexo, sin margen; queda incluido en el PDF."
+                      + SinCambio(rutas, ordenes, "ya lo tiene", "ya lo tienen")
+                      + SufijoPdf(cotizacion);
+        var cuerpo = CuerpoLineas(todas, pedidas);
+        cuerpo["servicio_id"] = servicioId;
+        cuerpo["cantidad"] = cantidad;
+        return new clsAccionPropuesta(
+            clsAccionPropuesta.TipoAgregarServiciosConexosLineas, MetodoPost, RutaConexosLineas(cotizacion.Folio), cuerpo, Recortar(resumen),
+            clsCosteoCotizacionService.VersionEtag(cotizacion));
+    }
+
+    /// <summary>
+    /// <c>quitar_servicios_conexos_lineas</c> → <c>POST .../costeo/servicios-conexos/lineas/quitar</c> <c>{todas | lineas, servicio_id}</c>,
+    /// con las MISMAS validaciones del endpoint en lote (<see cref="clsCosteoLineasService.ValidarFormaConexo"/> y
+    /// <see cref="clsCosteoLineasService.PlanQuitarConexo"/>). Si ninguna ruta elegida lo tiene, <c>CONEXO_INVALIDO</c>.
+    /// </summary>
+    public static clsResultado<clsAccionPropuesta> QuitarConexoLineas(
+        clsCotizacionSolicitud cotizacion, string servicioId, string nombre, bool todas, IReadOnlyList<int>? lineas)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        var forma = clsCosteoLineasService.ValidarFormaConexo(new clsConexoLineasEntrada(Seleccion(todas, lineas), servicioId), agregar: false);
+        if (forma.EsFallo)
+        {
+            return ParaModelo(forma.Error);
+        }
+
+        var (pedidas, servicio) = forma.Valor;
+        var plan = clsCosteoLineasService.PlanQuitarConexo(cotizacion, pedidas, servicio);
+        if (plan.EsFallo)
+        {
+            return ParaModelo(plan.Error);
+        }
+
+        var limpio = NombreConexo(nombre);
+        var (rutas, cambian) = plan.Valor;
+        if (cambian.Count == 0)
+        {
+            return new clsErrorDominio(clsCodigosError.ConexoInvalido,
+                $"{Capitalizar(ListaRutas(rutas.Select(r => r.Orden)))} no {(rutas.Count == 1 ? "tiene" : "tienen")} «{limpio}»: no hay nada que quitar.");
+        }
+
+        var ordenes = cambian.Select(r => r.Orden).ToList();
+        var resumen = $"Quitar «{limpio}» de {(todas && cambian.Count == rutas.Count ? $"todas las rutas ({rutas.Count})" : ListaRutas(ordenes))}: "
+                      + "sale del precio de esas rutas y del PDF."
+                      + SinCambio(rutas, ordenes, "no lo tiene", "no lo tienen")
+                      + SufijoPdf(cotizacion);
+        var cuerpo = CuerpoLineas(todas, pedidas);
+        cuerpo["servicio_id"] = servicio;
+        return new clsAccionPropuesta(
+            clsAccionPropuesta.TipoQuitarServiciosConexosLineas, MetodoPost, RutaQuitarConexosLineas(cotizacion.Folio), cuerpo, Recortar(resumen),
+            clsCosteoCotizacionService.VersionEtag(cotizacion));
+    }
+
+    /// <summary>"la ruta 2", "las rutas 1 y 3", "las rutas 1, 2 y 4" o, con muchas, "12 rutas".</summary>
+    public static string ListaRutas(IEnumerable<int> ordenes)
+    {
+        var lista = ordenes.Order().ToList();
+        return lista.Count switch
+        {
+            1 => $"la ruta {lista[0]}",
+            > MaximoRutasNombradas => $"{lista.Count} rutas",
+            _ => $"las rutas {string.Join(", ", lista.Take(lista.Count - 1))} y {lista[^1]}",
+        };
+    }
+
+    private static clsSeleccionLineas Seleccion(bool todas, IReadOnlyList<int>? lineas) =>
+        new(lineas?.Select(l => (int?)l).ToList(), todas ? true : null);
+
+    /// <summary>Selección del cuerpo: <c>todas: true</c> o la lista ordenada de <c>lineas</c>, nunca las dos.</summary>
+    private static Dictionary<string, object?> CuerpoLineas(bool todas, IReadOnlyList<int> lineas) =>
+        todas
+            ? new(StringComparer.Ordinal) { ["todas"] = true }
+            : new(StringComparer.Ordinal) { ["lineas"] = lineas.ToList() };
+
+    /// <summary>Aviso de las rutas elegidas que no cambian, con un espacio inicial; vacío si cambian todas.</summary>
+    private static string SinCambio(IReadOnlyList<clsLineaSolicitud> rutas, IReadOnlyList<int> cambian, string singular, string plural)
+    {
+        var quedan = rutas.Select(r => r.Orden).Where(o => !cambian.Contains(o)).ToList();
+        return quedan.Count == 0
+            ? string.Empty
+            : $" {Capitalizar(ListaRutas(quedan))} {(quedan.Count == 1 ? singular : plural)} y no {(quedan.Count == 1 ? "cambia" : "cambian")}.";
+    }
+
+    private static string Capitalizar(string texto) => texto.Length == 0 ? texto : char.ToUpperInvariant(texto[0]) + texto[1..];
+
+    /// <summary>Códigos del margen en lote cuyo mensaje no nombra valores; los demás (módulo de precio) van al modelo con un texto fijo.</summary>
+    private static readonly HashSet<string> _codigosSinMontos =
+    [
+        clsCodigosAplicacion.SolicitudInvalida, clsCodigosError.AjusteMargenInvalido, clsCodigosError.JustificacionRequerida,
+        clsCodigosError.CosteoNoListo, clsCodigosError.PdfYaEnviado, clsCodigosError.EstadoNoPermite, clsCodigosError.RutaInexistente,
+        clsCodigosError.RutaRechazada, clsCodigosError.SinRutasCotizables,
+    ];
+
+    /// <summary>
+    /// Error del endpoint en lote para el modelo: si es de una ruta (<c>detalle.linea_orden</c>), el mensaje empieza con «Ruta N: ». Con
+    /// <paramref name="sinMontos"/>, un código fuera de <see cref="_codigosSinMontos"/> va con un texto fijo.
+    /// </summary>
+    private static clsErrorDominio ParaModelo(clsErrorDominio error, bool sinMontos = false)
+    {
+        var mensaje = sinMontos && !_codigosSinMontos.Contains(error.Codigo)
+            ? "No se pudo calcular la vista previa del precio con ese margen. Pide al comercial que lo ajuste desde el detalle de la cotización."
+            : error.Mensaje;
+        if (error.Datos is { } datos && datos.TryGetValue("linea_orden", out var orden) && orden is not null)
+        {
+            mensaje = $"Ruta {orden}: {mensaje}";
+        }
+
+        return new clsErrorDominio(error.Codigo, mensaje, error.Detalle) { Datos = error.Datos };
     }
 
     /// <summary>Margen como porcentaje legible: <c>0.18</c> → <c>18 %</c>, <c>0.125</c> → <c>12,5 %</c>.</summary>

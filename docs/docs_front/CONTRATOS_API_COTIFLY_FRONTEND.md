@@ -3589,7 +3589,8 @@ Pide a MailSender que reintente un envío `fallido` (`reintentable = true`). Sin
 #### 4.9.1 `POST /web/chat`
 
 Un turno del asistente sobre **una** cotización ya creada. El asistente lee la cotización y **propone** acciones (ajustar margen,
-re-solicitar el costeo, agregar un conexo); nunca las ejecuta. No crea cotizaciones, no genera ni envía PDF.
+re-solicitar el costeo, agregar un conexo; o el mismo margen, o el mismo conexo agregado o quitado, en varias rutas a la vez); nunca las
+ejecuta. No crea cotizaciones, no genera ni envía PDF.
 
 - **Rol:** ambos. **Límite:** 20 turnos por minuto por comercial (429).
 
@@ -3646,8 +3647,19 @@ Patrón **propuesta → Confirmar**:
 1. Mostrar `accion_propuesta.resumen` (lo arma el servidor; el `texto` del asistente nunca trae montos). En `ajustar_margen`, dejar
    editar la `justificacion` antes de confirmar.
 2. Solo al pulsar Confirmar: llamar `accion_propuesta.metodo` sobre `accion_propuesta.endpoint` (relativo a la URL base) con
-   `accion_propuesta.cuerpo` tal cual e `If-Match: "<accion_propuesta.row_version>"`. En `re_solicitar_costeo` y
-   `agregar_servicios_conexos`, agregar `Idempotency-Key` (UUID nuevo por clic).
+   `accion_propuesta.cuerpo` tal cual e `If-Match: "<accion_propuesta.row_version>"`. En `re_solicitar_costeo`,
+   `agregar_servicios_conexos`, `agregar_servicios_conexos_lineas` y `quitar_servicios_conexos_lineas`, agregar `Idempotency-Key`
+   (UUID nuevo por clic); en `ajustar_margen_lineas` es opcional.
+
+   El mismo margen, o el mismo conexo agregado o quitado, en varias rutas llega como **una sola** propuesta hacia el endpoint en lote
+   (el mismo de la edición manual). Su cuerpo lleva `todas: true` o `lineas` (ordenada), nunca los dos. El `resumen` dice a qué rutas
+   aplica y cuáles no cambian (por ejemplo, las que ya tienen ese margen o ese conexo):
+
+   | `tipo` | `metodo` y `endpoint` | `cuerpo` |
+   |---|---|---|
+   | `ajustar_margen_lineas` | `PUT /web/cotizaciones/{folio}/costeo/margen/lineas` | `{"todas": true, "margen": 0.2, "justificacion": null}` o `{"lineas": [1, 3], "margen": 0.2, "justificacion": "..."}` |
+   | `agregar_servicios_conexos_lineas` | `POST /web/cotizaciones/{folio}/costeo/servicios-conexos/lineas` | `{"todas": true, "servicio_id": "<uuid>", "cantidad": 2}` o `{"lineas": [1, 3], "servicio_id": "<uuid>", "cantidad": 2}` |
+   | `quitar_servicios_conexos_lineas` | `POST /web/cotizaciones/{folio}/costeo/servicios-conexos/lineas/quitar` | `{"todas": true, "servicio_id": "<uuid>"}` o `{"lineas": [1, 3], "servicio_id": "<uuid>"}` |
 3. La respuesta y los errores son los del endpoint normal. Ante 409 `CONFLICTO_CONCURRENCIA`, la cotización cambió: recargar y pedir una
    propuesta nueva.
 4. Cancelar no llama a nada. Conversar nunca cambia la cotización.
@@ -4319,7 +4331,7 @@ parecido del catálogo, `sugerido = true`, con `similitud` de 0 a 1), `null` (si
 | Enum | Valores | Significado |
 |---|---|---|
 | `textos.fuente` | `ia`, `estandar` | Redactados por la IA y validados; o los textos estándar (la IA tardó, falló, no pasó la validación o no se ha redactado) |
-| `accion_propuesta.tipo` | `ajustar_margen`, `re_solicitar_costeo`, `agregar_servicios_conexos` | `PUT .../costeo/margen`; `POST .../costeo/re-solicitar`; `POST .../costeo/servicios-conexos` |
+| `accion_propuesta.tipo` | `ajustar_margen`, `re_solicitar_costeo`, `agregar_servicios_conexos`, `ajustar_margen_lineas`, `agregar_servicios_conexos_lineas`, `quitar_servicios_conexos_lineas` | `PUT .../costeo/margen`; `POST .../costeo/re-solicitar`; `POST .../costeo/servicios-conexos`; `PUT .../costeo/margen/lineas`; `POST .../costeo/servicios-conexos/lineas`; `POST .../costeo/servicios-conexos/lineas/quitar` |
 | `accion_propuesta.metodo` | `PUT`, `POST` | — |
 | `avisos` | `RESUMEN_INCOMPLETO` | La captura se guardó pero falló una lectura secundaria: no reenviar, recargar |
 
@@ -4615,6 +4627,7 @@ fila_excel, campo, codigo, mensaje}`.
 | 98 | **Corrección conexos: el nombre del servicio conexo nunca es el id interno.** `ServicioConexoCosteo.nombre` (en `servicios_conexos[]` de la vista del costeo, el detalle, el margen y los conexos) y los nombres de conexos que da el **asistente de IA** (`consultar_cotizacion`) y `conexos_conservados` traen **siempre el nombre** del servicio: el guardado o, si está en NULL (fila migrada del JSON), el resuelto del catálogo de NEXO por id; si el catálogo no responde o no lo tiene, la `categoria` como respaldo legible. La misma cadena se aplica ahora en las **exportaciones** (ampliación): el **PDF** de la cotización y del pliego ("Estas tarifas incluyen"), el **Excel** de la cotización (`GET /web/cotizaciones/{folio}/excel`) y el **Excel de licitación** (`GET /web/licitaciones/{folio}/excel` y el de "Ver detalle") imprimen el nombre del catálogo para un conexo heredado sin nombre y caen a la `categoria` con el catálogo frío; antes caían directo a la `categoria`. **Nunca** el `id` interno del conexo (que sigue en `servicios_conexos[].id`, solo para operar: incluir/excluir). **No cambia la forma de ninguna respuesta** ni del PDF/Excel (ningún campo ni columna nuevos; `nombre` sigue declarado `nullable` solo por compatibilidad, en la práctica siempre viene poblado). Sin endpoints, códigos ni script de base de datos | Corrige | Mostrar `servicios_conexos[].nombre` tal cual (ya nunca es el id); si algún front usaba `id` como etiqueta de respaldo, usar `nombre`. El PDF y los Excel ya muestran el nombre del catálogo, no la categoría, cuando el catálogo está caliente |
 | 99 | **HU-044.5 (#256, parte 2): escritura del diccionario del cliente y consulta por NIT.** `GET /web/diccionario-cliente` con `nit_cliente` trae ahora los términos **del cliente** (`general = false`) más los generales; sin NIT, solo los generales. `aviso` va **siempre en `null`**: se retira `TERMINOS_CLIENTE_NO_DISPONIBLES`. Endpoints **nuevos** (4.6.11): `POST /web/diccionario-cliente` (201), `PUT /web/diccionario-cliente/{id}` (200) y `DELETE /web/diccionario-cliente/{id}?nit_cliente=` (204), con `{nit_cliente, termino, tipo, concepto, contexto?, ejemplo?, activo? = true}` y `nit_cliente` **obligatorio**. **Solo el rol activo `comercial`** escribe (gerente y director: 403 `ErrorWeb`). Códigos **nuevos** en `ErrorNegocio`: `TERMINO_GENERAL_NO_EDITABLE` (403), `TERMINO_NO_ENCONTRADO` (404), `TERMINO_DUPLICADO` (409), `TERMINO_REQUERIDO`, `CONCEPTO_REQUERIDO`, `CAMPO_DESTINO_INVALIDO`, `UNIDAD_INVALIDA`, `CONTEXTO_INVALIDO`, `CONTEXTO_NO_APLICA` y `EJEMPLO_MUY_LARGO` (400). Largos de más: 400 `ErrorWeb`. Son **74 endpoints** (eran 71) | Agrega y rompe (`aviso`) | Mostrar los términos del cliente; dejar de leer el `aviso`; formulario de términos solo para el `comercial`; no ofrecer editar ni borrar los generales |
 | 100 | **Idempotencia de crear la licitación ante una caída.** `POST /web/licitaciones` con `Idempotency-Key` asocia el folio a la clave en la misma transacción que crea la licitación. Si la API se cae después de crear el folio y antes de responder, la repetición con la misma clave y el mismo cuerpo+archivo responde 409 `ESTADO_NO_PERMITE` (`detalle.motivo = CAPTURA_EN_CURSO`, ahora con `detalle.folio`) mientras la primera se considera en curso (hasta 10 min) y, después, **201 con el mismo folio** y su estado de ahora, que puede ser `pendiente_envio` o `error_envio` (antes, pasados esos 10 min, creaba una segunda licitación). Mismos códigos; sin endpoints nuevos; sin script | Cambia | Seguir reenviando la misma `Idempotency-Key` en los reintentos. Ante el 409 `CAPTURA_EN_CURSO` al crear la licitación: no crear con otra clave; esperar unos segundos y repetir con la MISMA clave, o abrir `detalle.folio`. Un 201 con `pendiente_envio`/`error_envio` se muestra como cualquier licitación en ese estado (reintentar el costeo solo a pedido del comercial, nunca automático) |
+| 102 | **HU-041.2 (#329): el asistente propone el mismo margen o el mismo conexo en varias rutas en UNA sola propuesta.** `accion_propuesta.tipo` trae tres valores **nuevos**: `ajustar_margen_lineas` (`PUT .../costeo/margen/lineas`, cuerpo `{todas \| lineas, margen, justificacion}`), `agregar_servicios_conexos_lineas` (`POST .../costeo/servicios-conexos/lineas`, `{todas \| lineas, servicio_id, cantidad}`) y `quitar_servicios_conexos_lineas` (`POST .../costeo/servicios-conexos/lineas/quitar`, `{todas \| lineas, servicio_id}`): los mismos endpoints en lote de la edición manual, con sus mismas validaciones y errores. El cuerpo lleva `todas: true` o `lineas` (ordenada), nunca los dos. El `resumen` (hasta 300, armado por el servidor) dice qué rutas no cambian. Herramientas nuevas en `herramientas`: `proponer_ajuste_margen_rutas`, `proponer_agregar_conexo_rutas` y `proponer_quitar_conexo_rutas`. Sin endpoints nuevos; sin script | Agrega | Al confirmar, llamar a `metodo` `endpoint` con `cuerpo` tal cual e `If-Match`; en los dos de conexos, `Idempotency-Key` (UUID nuevo por clic) |
 
 ---
 
