@@ -37,7 +37,8 @@ info:
       conexos). NO sumarle el `precio` de los conexos: se cobrarían dos veces. El `precio` de
       cada conexo es informativo (desglose en pantalla). La excepción son la vista de la licitación
       (`Licitacion.precio_final` y `lineas[].precio_final`) y su Excel: allí cada fila es la tarifa del transporte y
-      el total va sin conexos, que se listan aparte una sola vez. Tarifa + conexos = precio de la ruta, exacto. El
+      el total va sin conexos, que se listan aparte una sola vez (en el Excel, además, el valor de los conexos de cada línea y el
+      valor total con conexos, igual a `precio_final`). Tarifa + conexos (+ seguro) = precio de la ruta, exacto. El
       PDF (de una ruta o del pliego), desde HU-033 (#199), imprime el valor final de cada ruta (conexos incluidos,
       sin desglose) y el total general "VALOR TOTAL DE LA COTIZACIÓN".
     - Concurrencia optimista (HU-013, ADR-018 §8): `GET /web/cotizaciones/{folio}/costeo` devuelve el
@@ -3500,9 +3501,8 @@ paths:
           (`clsCotizacionLineaDto.id`) junto a `lineaSolicitudId` en `clsLineaCosteoNexo`
           (`Cotifly.Dominio/Cotizaciones/clsCosteoConsultadoNexo.cs`) al leer la cotización.
         - Solo con costeo disponible (409 `COSTEO_NO_LISTO`). Regla del PDF (ADR-018 §11): ya enviada o con resultado, 409
-          `PDF_YA_ENVIADO`; si no, invalida el PDF actual (`pdf_desactualizado`). Una licitación responde 409
-          `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION` (ADR-017 §6); una solicitud del formulario con varias rutas
-          sí admite conexos, por ruta (HU-021.8).
+          `PDF_YA_ENVIADO`; si no, invalida el PDF actual (`pdf_desactualizado`). Una licitación y una solicitud del formulario
+          con varias rutas admiten conexos igual, por ruta (HU-021.8; licitaciones desde HU-041.3, #331).
         - Nexo 400 o 404 del servicio: 400 `CONEXO_INVALIDO` (el código de Nexo en `detalle.motivo`); 403:
           `NEXO_SIN_PERMISO`; caído o sin respuesta: 503 `NEXO_NO_DISPONIBLE`. En todos esos casos no se agrega nada en
           Cotifly, pero la versión ya se reservó (ver el punto siguiente): el `ETag` cambió y hay que recargar el costeo. En
@@ -3569,7 +3569,7 @@ paths:
         '409':
           description: |
             `COSTEO_NO_LISTO`, `RUTA_RECHAZADA` (HU-028.1, #183: la Mesa de Costeo rechazó la ruta), `LINEA_SIN_COTIZACION_NEXO`,
-            `PDF_YA_ENVIADO`, `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION`, `CONFLICTO_CONCURRENCIA` o
+            `PDF_YA_ENVIADO`, `CONFLICTO_CONCURRENCIA` o
             `IDEMPOTENCY_KEY_REUTILIZADA` (la misma `Idempotency-Key` con otro cuerpo; antes 400 `ErrorWeb`): sin cambios.
             Endurecimiento A (#199):
             - `ESTADO_NO_PERMITE` con `detalle.motivo = CAPTURA_EN_CURSO` (y `detalle.folio`): otra petición con la misma
@@ -3695,8 +3695,8 @@ paths:
         `cantidad`, a las rutas elegidas (`lineas` o `todas: true`, como en `PUT .../costeo/margen/lineas`). Atómica: si una ruta no lo
         admite, no cambia ninguna y el error trae `detalle.linea_orden` y `detalle.linea_solicitud_id` de la que bloqueó.
 
-        - Las mismas reglas que `POST .../costeo/servicios-conexos` por ruta: no en licitaciones (409 `ESTADO_NO_PERMITE`,
-          `detalle.motivo = LICITACION`), costeo con margen (409 `COSTEO_NO_LISTO`), regla del PDF y cotización finalizada (409
+        - Las mismas reglas que `POST .../costeo/servicios-conexos` por ruta (también en licitaciones, como en una Spot): costeo con
+          margen (409 `COSTEO_NO_LISTO`), regla del PDF y cotización finalizada (409
           `PDF_YA_ENVIADO`), ruta no rechazada (409 `RUTA_RECHAZADA`) y con su línea en la cotización de Nexo (409
           `LINEA_SIN_COTIZACION_NEXO`).
         - **Nexo (ADR-026).** Cotifly NO llama al `POST` de conexos de Nexo dentro de esta petición (no podría deshacer un éxito
@@ -3755,7 +3755,7 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`COSTEO_NO_LISTO`, `RUTA_RECHAZADA` o `LINEA_SIN_COTIZACION_NEXO` (con `detalle.linea_orden` y `detalle.linea_solicitud_id`), `ESTADO_NO_PERMITE` (licitación), `SIN_RUTAS_COTIZABLES`, `PDF_YA_ENVIADO`, `CONFLICTO_CONCURRENCIA` o `IDEMPOTENCY_KEY_REUTILIZADA`; ninguna ruta cambia'
+          description: '`COSTEO_NO_LISTO`, `RUTA_RECHAZADA` o `LINEA_SIN_COTIZACION_NEXO` (con `detalle.linea_orden` y `detalle.linea_solicitud_id`), `SIN_RUTAS_COTIZABLES`, `PDF_YA_ENVIADO`, `CONFLICTO_CONCURRENCIA` o `IDEMPOTENCY_KEY_REUTILIZADA`; ninguna ruta cambia'
           content:
             application/json:
               schema:
@@ -5244,6 +5244,12 @@ paths:
         `Seguro de la mercancía Cotifly ({moneda})` (después de las de Cotifly) con el `valor_seguro` de cada línea, y en `Resumen Cotifly`
         la fila `Seguro de la mercancía (aparte del total)`: el total sigue siendo la tarifa del transporte. Nunca la tasa. Sin seguro,
         el archivo no cambia.
+
+        HU-041.3 (#331): la columna `Servicios conexos Cotifly` trae la venta de los conexos de esa línea, sin margen (vacía si no tiene
+        o si la línea está rechazada), en el formato de la moneda; la tabla de conexos de `Resumen Cotifly` lleva la columna `Línea`. Con
+        conexos, el resumen agrega después del total `Servicios conexos (total)` y `Valor total de la cotización (con servicios conexos)`
+        (o `(con servicios conexos y seguro)` si alguna línea lo incluye), igual a `precio_final` (el del PDF y el correo): tarifas +
+        conexos + seguro. Sin conexos ni seguro, el archivo no cambia. Aplica igual al Excel de una Spot de varias rutas.
       security:
         - bearer: []
       parameters:

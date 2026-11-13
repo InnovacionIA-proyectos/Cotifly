@@ -309,12 +309,18 @@ public sealed class clsCosteoLineasServiceTests
     }
 
     [Fact]
-    public async Task UnaLicitacionNoAdmiteConexosNiSeLeeElCatalogo()
+    public async Task UnaLicitacionAdmiteElConexoEnTodasLasRutasComoUnaSpot()
     {
-        var resultado = await Servicio().AgregarConexoAsync(_ana, Folio, Conexo(null, Cargue, 1m), Version, null, Ct);
+        _cotizaciones.ListarEnviosConexosNexoAsync(Folio, Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns([]);
 
-        resultado.Error.Codigo.Should().Be(clsCodigosError.EstadoNoPermite);
-        await _costos.DidNotReceiveWithAnyArgs().CostosAsync(default, default!, Ct);
+        var resultado = await Servicio().AgregarConexoAsync(_ana, Folio, Conexo(null, Cargue, 2m), Version, null, Ct);
+
+        resultado.EsExitoso.Should().BeTrue(resultado.EsFallo ? resultado.Error.Codigo + ": " + resultado.Error.Mensaje : string.Empty);
+        _cotizacion.Rutas.Should().HaveCount(5).And.OnlyContain(r => r.Conexos.Count == 1 && r.PrecioFinalLinea == 1_200_000m,
+            "850.000 / 0,85 = 1.000.000 + 100.000 × 2 de venta, sin margen");
+        _cotizacion.PrecioFinal.Should().Be(6_000_000m);
+        _cotizaciones.Received(5).RegistrarEnvioConexosNexo(Arg.Is<clsEnvioConexosNexo>(e =>
+            e.Estado == clsEnvioConexosNexo.EnEspera && e.Conexos.Single() == Cargue));
     }
 
     [Fact]

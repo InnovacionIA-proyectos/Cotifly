@@ -223,17 +223,30 @@ public sealed class clsServiciosConexosCosteoServiceTests
     }
 
     [Fact]
-    public async Task UnaLicitacionNoAdmiteConexosConElMotivoLicitacion()
+    public async Task UnaLicitacionAdmiteConexosComoUnaSpot()
     {
+        // Como en una Spot: el conexo de la ruta 2 va a la línea de Nexo del primer camión de ESA ruta y su precio suma la venta sin margen.
         var licitacion = clsCotizacionMuestra.ConVersionNegocio(
             clsCotizacionMuestra.LicitacionCosteada([1_000_000m, 1_550_000m], folio: "PCN-LIC", usuarioId: _ana), Version);
+        licitacion.RegistrarCotizacionNexo(CotizacionNexo);
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(licitacion.Folio, _ana, Arg.Any<CancellationToken>()).Returns(licitacion);
+        _unidad.GuardarCambiosSiVersionAsync(licitacion.Id, Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(true);
+        var nexo = new clsCotizacionNexo(CotizacionNexo, "Borrador", "SinDefinir",
+            [new clsLineaCosteoNexo("L1", 1_000_000m, null, null, "LC-1"), new clsLineaCosteoNexo("L2", 1_550_000m, null, null, "LC-2")], []);
+        _nexo.LeerCotizacionAsync(_ana, CotizacionNexo, Arg.Any<CancellationToken>()).Returns(Ok(nexo));
+        PostResponde(new clsAgregadoNexo(true, nexo with { Conexos = [_cx2 with { CotizacionLineaId = "LC-2" }] }));
+        var ruta2 = licitacion.RutasOrdenadas[1];
+        var (precioRuta, precioFinal) = (ruta2.PrecioFinalLinea, licitacion.PrecioFinal);
 
-        var resultado = await Servicio().AgregarAsync(_ana, licitacion.Folio, [Item(1, Almacenamiento, 1m)], Version, null, Ct);
+        var resultado = await Servicio().AgregarAsync(_ana, licitacion.Folio, [Item(2, Almacenamiento, 2m)], Version, null, Ct);
 
-        resultado.Error.Codigo.Should().Be(clsCodigosError.EstadoNoPermite);
-        resultado.Error.Detalle.Should().Be("LICITACION");
-        _nexo.ReceivedCalls().Should().BeEmpty();
+        resultado.EsExitoso.Should().BeTrue(resultado.EsFallo ? resultado.Error.Codigo + ": " + resultado.Error.Mensaje : null);
+        await _nexo.Received(1).AgregarAsync(_ana, CotizacionNexo, Arg.Is<IReadOnlyList<clsConexoParaNexo>>(i => i.Count == 1 && i[0].LineaId == "LC-2"),
+            Arg.Any<CancellationToken>());
+        ruta2.Conexos.Select(c => c.IdServicioConexo).Should().Equal("CX-2");
+        licitacion.RutasOrdenadas[0].Conexos.Should().BeEmpty();
+        ruta2.PrecioFinalLinea.Should().Be(precioRuta + 240_000m, "la venta del conexo, sin margen");
+        licitacion.PrecioFinal.Should().Be(precioFinal + 240_000m);
     }
 
     [Fact]

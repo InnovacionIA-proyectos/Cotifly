@@ -134,7 +134,8 @@ Reglas de dinero que la UI debe respetar:
   `precio` de `servicios_conexos`: ese `precio` es
   solo el desglose. Si se suma, se cobra dos veces.
 - Excepción: en la **vista de la licitación** (`Licitacion.precio_final`, `lineas[].precio_final`) y en su **Excel**, cada fila es la
-  tarifa del transporte **sin** conexos; los conexos se listan aparte. Tarifa + conexos = precio de la ruta. **Es una diferencia
+  tarifa del transporte **sin** conexos; los conexos se listan aparte (en el Excel, el valor de los conexos de cada línea en su columna y,
+  en el resumen, el valor total con conexos, igual a `precio_final`). Tarifa + conexos (+ seguro) = precio de la ruta. **Es una diferencia
   intencional (ADR-023 §8):** la vista y el Excel son internos y siguen desglosados; el
   PDF y el correo, que ve el cliente, muestran el valor final. La UI no debe "corregir" una contra la otra: en la vista de la licitación,
   si muestra un total por ruta comparable con el PDF, es `lineas[].precio_final` + sus conexos.
@@ -690,7 +691,8 @@ sequenceDiagram
   de las medidas no se acepta con respaldo. El respaldo usa el **vehículo elegido** de la ruta, como el
   segundo plano: si es de NEXO, el camión lo lleva con `VEHICULO_ELEGIDO_USADO`; si no, va sin vehículo con
   `VEHICULO_ELEGIDO_INVALIDO`; sin elegido, sin vehículo.
-- Las licitaciones no admiten conexos por `POST .../costeo/servicios-conexos` (409 `ESTADO_NO_PERMITE`, `detalle.motivo = LICITACION`).
+- Las licitaciones admiten conexos igual que una Spot: por ruta (`POST .../costeo/servicios-conexos`), en lote
+  (`POST .../costeo/servicios-conexos/lineas` y `.../lineas/quitar`) y desde el asistente. A NEXO van por ruta, a la línea del primer camión.
 
 ### 3.7 Editar la solicitud (HU-028, #186)
 
@@ -1998,7 +2000,6 @@ Agrega conexos del catálogo a una ruta. Se agregan en NEXO (fuente del costo) y
 | 409 | `COSTEO_NO_LISTO` | Sin precio todavía |
 | 409 | `LINEA_SIN_COTIZACION_NEXO` | Esa ruta aún no tiene línea en la cotización de NEXO: esperar el costeo |
 | 409 | `PDF_YA_ENVIADO` | Versión nueva |
-| 409 | `ESTADO_NO_PERMITE` (`detalle.motivo = LICITACION`) | Las licitaciones no admiten conexos |
 | 409 | `CONFLICTO_CONCURRENCIA` | Recargar. Si trae `detalle.agregado_en_nexo = true`, no volver a agregar |
 | 409 | `IDEMPOTENCY_KEY_REUTILIZADA` | La misma clave con otro cuerpo: nada se ejecutó; generar una clave nueva |
 | 428 | `PRECONDICION_REQUERIDA` | — |
@@ -2384,7 +2385,7 @@ operación atómica. Las mismas reglas que el `POST` por ruta (4.4.5). Si una ru
 | 403 | `NEXO_SIN_PERMISO` | Avisar a soporte (nada cambió) |
 | 404 | `ErrorWeb` | — |
 | 409 | `COSTEO_NO_LISTO`, `RUTA_RECHAZADA`, `LINEA_SIN_COTIZACION_NEXO` (con la ruta en `detalle`) | Señalar la ruta que bloquea; ninguna cambió |
-| 409 | `ESTADO_NO_PERMITE` (`detalle.motivo = LICITACION`), `SIN_RUTAS_COTIZABLES`, `PDF_YA_ENVIADO`, `CONFLICTO_CONCURRENCIA`, `IDEMPOTENCY_KEY_REUTILIZADA` | Como en el `POST` por ruta |
+| 409 | `SIN_RUTAS_COTIZABLES`, `PDF_YA_ENVIADO`, `CONFLICTO_CONCURRENCIA`, `IDEMPOTENCY_KEY_REUTILIZADA` | Como en el `POST` por ruta |
 | 428 | `PRECONDICION_REQUERIDA` | — |
 | 503 | `NEXO_NO_DISPONIBLE` | No se pudo leer el catálogo de NEXO; nada cambió: reintentar |
 
@@ -3030,6 +3031,12 @@ Descarga el Excel original del cliente con columnas agregadas: `Precio final Cot
 `Licitación` con los campos mapeados. Nunca incluye costos de NEXO. Se puede exportar en cualquier momento. Si alguna
 línea incluye el seguro de la mercancía, una quinta columna `Seguro de la mercancía Cotifly ({moneda})` y, en `Resumen Cotifly`, su suma
 (aparte del total). Sin seguro, el archivo no cambia. Las licitaciones también admiten el seguro (4.4.15).
+
+`Servicios conexos Cotifly` trae, en el formato de la moneda, la venta de los conexos de esa línea, sin margen (vacía si no tiene o si
+la línea está rechazada). La tabla de conexos de `Resumen Cotifly` lleva la columna `Línea`. Con conexos, el resumen agrega después del
+total `Servicios conexos (total)` y `Valor total de la cotización (con servicios conexos)` (o `(con servicios conexos y seguro)`),
+igual a `precio_final`: tarifas + conexos + seguro, el mismo valor del PDF y del correo. Sin conexos ni seguro, el archivo no cambia.
+Aplica igual al Excel de una Spot de varias rutas.
 
 - **Rol:** el dueño; también el gerente de la regional del dueño o el director, que reciben **el mismo archivo** (el
   Excel nunca tuvo costos: no hay columnas que quitar). **Respuesta:** `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`. Descargar como blob. El nombre
@@ -4636,6 +4643,7 @@ fila_excel, campo, codigo, mensaje}`.
 | 101 | **HU-045.5 (#330): el seguro de la mercancía en las licitaciones.** `PUT /web/cotizaciones/{folio}/costeo/seguro` (4.4.15) ya no responde 409 `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION`: en una licitación el seguro se marca por línea (`linea_orden` o `linea_solicitud_id`) con el `valor_mercancia` de esa línea del pliego, la tasa vigente y sin margen, igual que en el formulario. Las demás reglas no cambian: 400 `SEGURO_SIN_VALOR_MERCANCIA` (línea sin valor), 409 `RUTA_RECHAZADA` y 409 `PDF_YA_ENVIADO`. El PDF del pliego y el Excel de la licitación (4.6.5) ya traían la fila y la columna del seguro; con seguro y líneas agregadas a mano, la columna `Referencia` va después de la del seguro. El motivo `LICITACION` de editar la solicitud y de re-solicitar no cambia. Sin endpoints nuevos | Cambia | Mostrar el check "Incluir seguro" también en las licitaciones (el front ya quitó el bloqueo); quitar el manejo del 409 `LICITACION` del seguro |
 | 102 | **HU-044.11 (#328): columnas derivadas estables entre `sugerir-mapeo` y `aplicar-mapeo`.** Si al menos una fila reconoce un vehículo, un contenedor o un peso, Cotifly agrega **siempre las tres** columnas derivadas, en posiciones fijas a partir del número de encabezados: `Vehículo detectado` = `encabezados.length`, `Contenedor detectado` = +1, `Peso detectado (kg)` = +2, aunque alguna quede vacía (la de vehículo también si el diccionario de alias de NEXO no responde). Antes solo se agregaban las detectadas y el ancho base salía de la fila más ancha, así que una fila fuera de la muestra de 200 podía correr las columnas y hacer que un campo leyera otra. `sugerir-mapeo` trae el campo **nuevo `columnas_derivadas: [{indice, nombre}]`** (vacío si no se agregó ninguna). `aplicar-mapeo` acepta el campo **nuevo opcional `numero_encabezados`** (1 a 100; fuera de rango, 400 `COLUMNA_INVALIDA`): las derivadas empiezan ahí y se agregan también si el mapeo usa un índice desde ese número; sin él, desde la fila más ancha, como antes. Las filas se ajustan al número de encabezados antes de agregarlas. Sin endpoints, códigos ni script de base de datos nuevos | Agrega | Mostrar las columnas de `columnas_derivadas` como opciones del selector de mapeo (no como «Sin mapear») y no quitarlas al guardar la plantilla (sus nombres van también en `encabezados`; las plantillas guardadas con una o dos derivadas hay que volver a guardarlas); mandar `numero_encabezados = encabezados.length` en `aplicar-mapeo` |
 | 103 | **HU-041.2 (#329): el asistente propone el mismo margen o el mismo conexo en varias rutas en UNA sola propuesta.** `accion_propuesta.tipo` trae tres valores **nuevos**: `ajustar_margen_lineas` (`PUT .../costeo/margen/lineas`, cuerpo `{todas \| lineas, margen, justificacion}`), `agregar_servicios_conexos_lineas` (`POST .../costeo/servicios-conexos/lineas`, `{todas \| lineas, servicio_id, cantidad}`) y `quitar_servicios_conexos_lineas` (`POST .../costeo/servicios-conexos/lineas/quitar`, `{todas \| lineas, servicio_id}`): los mismos endpoints en lote de la edición manual, con sus mismas validaciones y errores. El cuerpo lleva `todas: true` o `lineas` (ordenada), nunca los dos. El `resumen` (hasta 300, armado por el servidor) dice qué rutas no cambian. Herramientas nuevas en `herramientas`: `proponer_ajuste_margen_rutas`, `proponer_agregar_conexo_rutas` y `proponer_quitar_conexo_rutas`. Sin endpoints nuevos; sin script | Agrega | Al confirmar, llamar a `metodo` `endpoint` con `cuerpo` tal cual e `If-Match`; en los dos de conexos, `Idempotency-Key` (UUID nuevo por clic) |
+| 104 | **HU-041.3 (#331): servicios conexos en las licitaciones y el Excel del pliego por línea.** Una licitación costeada admite conexos igual que una Spot: `POST /web/cotizaciones/{folio}/costeo/servicios-conexos` (4.4.5), `POST .../servicios-conexos/lineas` y `.../lineas/quitar` y las propuestas del asistente ya no responden 409 `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION`. Siguen `COSTEO_NO_LISTO`, `PDF_YA_ENVIADO`, `RUTA_RECHAZADA` y `LINEA_SIN_COTIZACION_NEXO`. El precio de la ruta suma la venta del conexo sin margen; a NEXO va por ruta, a la línea del primer camión (en lote, con el envío diferido, `estado_nexo = pendiente`). Editar o re-solicitar una licitación sigue respondiendo `LICITACION`. `GET /web/licitaciones/{folio}/excel` (4.6.5): la columna `Servicios conexos Cotifly` trae el valor de los conexos de la línea (antes «Aplican a toda la licitación»), la tabla de conexos del resumen lleva `Línea` y, con conexos, el resumen agrega `Servicios conexos (total)` y `Valor total de la cotización (con servicios conexos)` (o `... y seguro)`), igual a `precio_final`. Sin conexos ni seguro, el Excel no cambia. Sin endpoints nuevos, códigos nuevos ni script | Cambia | Habilitar "Agregar conexo" (por ruta, en lote y desde el asistente) en las licitaciones, como en una Spot; dejar de tratar el 409 `LICITACION` de los conexos |
 
 ---
 

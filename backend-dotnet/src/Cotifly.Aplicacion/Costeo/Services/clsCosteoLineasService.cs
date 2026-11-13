@@ -39,7 +39,7 @@ public interface IClsCosteoLineasService
     /// <summary>
     /// <c>POST /web/cotizaciones/{folio}/costeo/servicios-conexos/lineas</c>: agrega un servicio del catálogo de Nexo, con su costo del
     /// catálogo, a las rutas elegidas (las que ya lo tienen no cambian). Queda <c>estado_nexo = pendiente</c> y el envío diferido lo lleva a
-    /// Nexo (ADR-026). Además de los de <see cref="AjustarMargenAsync"/>: <c>ESTADO_NO_PERMITE</c> (409, licitación),
+    /// Nexo (ADR-026). Además de los de <see cref="AjustarMargenAsync"/>:
     /// <c>LINEA_SIN_COTIZACION_NEXO</c> (409), <c>CONEXO_INVALIDO</c> (400, el servicio no está activo en el catálogo) y los de Nexo al leer
     /// el catálogo (<c>NEXO_NO_DISPONIBLE</c> 503, <c>NEXO_SIN_PERMISO</c> 403), sin cambiar nada.
     /// </summary>
@@ -601,8 +601,8 @@ public sealed class clsCosteoLineasService(
     }
 
     /// <summary>
-    /// Qué haría agregar el conexo en lote, SIN cambiar la cotización: las mismas precondiciones del <c>POST</c> por ruta (licitación,
-    /// costeo con margen, regla del PDF, ruta rechazada, línea de Nexo), ruta por ruta. <see cref="clsPlanConexoLineas.Cambian"/> son las
+    /// Qué haría agregar el conexo en lote, SIN cambiar la cotización: las mismas precondiciones del <c>POST</c> por ruta
+    /// (costeo con margen, regla del PDF, ruta rechazada, línea de Nexo), ruta por ruta. <see cref="clsPlanConexoLineas.Cambian"/> son las
     /// rutas que todavía no lo tienen. No lee el catálogo de Nexo.
     /// </summary>
     public static clsResultado<clsPlanConexoLineas> PlanAgregarConexo(

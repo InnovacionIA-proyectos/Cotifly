@@ -51,7 +51,7 @@ public static class clsCotizacionMuestra
 
     /// <summary>
     /// Licitación de <paramref name="rutas"/> rutas (un camión cada una), guardada en <c>pendiente_envio</c>. Con <paramref name="tipo"/>
-    /// <c>Spot</c>, un formulario de varias rutas (los conexos no se admiten en licitaciones). <paramref name="valores"/>: el valor de la
+    /// <c>Spot</c>, un formulario de varias rutas. <paramref name="valores"/>: el valor de la
     /// mercancía de cada ruta, en orden (sin él, ninguna lo trae).
     /// </summary>
     public static clsCotizacionSolicitud Licitacion(

@@ -12,7 +12,7 @@ namespace Cotifly.Infraestructura.Licitaciones.Services;
 /// <list type="bullet">
 /// <item><b>Con el original:</b> abre el archivo del cliente, ubica la hoja mapeada y sus filas con la regla de Nexo
 /// (<see cref="clsLectorExcelLicitacionClosedXml.Detectar"/>) y agrega cuatro columnas a la derecha de la última usada: precio final
-/// (en la moneda de la cotización), estado del costeo, servicios conexos y los camiones de la ruta. No modifica ninguna
+/// (en la moneda de la cotización), estado del costeo, el valor de los servicios conexos de la línea y los camiones de la ruta. No modifica ninguna
 /// celda existente. Las filas del pliego
 /// que no se enviaron quedan "Sin enviar".</item>
 /// <item><b>Sin original:</b> una hoja <c>Licitación</c> con los campos mapeados y las mismas columnas.</item>
@@ -88,7 +88,16 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
 
     /// <summary>Columnas que agrega Cotifly: <see cref="ColumnasCotifly"/> y, con seguro, una más.</summary>
     private static int Columnas(clsExportacionLicitacion datos) => ColumnasCotifly + (ConSeguro(datos) ? 1 : 0);
-    public const string ConexosDeLaLicitacion = "Aplican a toda la licitación (ver hoja Resumen Cotifly)";
+
+    /// <summary>Dato del resumen con la suma de los conexos de las líneas (solo si hay conexos).</summary>
+    public const string EtiquetaTotalConexos = "Servicios conexos (total)";
+
+    /// <summary>Dato del resumen con <c>precio_final</c> (solo si hay conexos; sin ellos el total ya es la suma de las tarifas).</summary>
+    public static string EtiquetaValorTotal(bool conSeguro) =>
+        conSeguro ? "Valor total de la cotización (con servicios conexos y seguro)" : "Valor total de la cotización (con servicios conexos)";
+
+    /// <summary>Columna de la tabla de conexos del resumen con la línea de cada uno (solo si hay conexos).</summary>
+    public const string ColumnaLineaConexo = "Línea";
 
     /// <summary>El total es la suma de los precios ya redondeados de las líneas, sin servicios conexos (ADR-017 §3).</summary>
     public const string EtiquetaTotal = "Total de la licitación (sin servicios conexos)";
@@ -376,7 +385,12 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
         }
 
         hoja.Cell(fila, columna + 1).Value = linea.Estado;
-        hoja.Cell(fila, columna + 2).Value = datos.ServiciosConexos.Count == 0 ? string.Empty : ConexosDeLaLicitacion;
+        if (linea.ValorConexos is { } conexos)
+        {
+            hoja.Cell(fila, columna + 2).Value = conexos;
+            hoja.Cell(fila, columna + 2).Style.NumberFormat.Format = Formato(datos.Moneda);
+        }
+
         var camiones = hoja.Cell(fila, columna + 3);
         camiones.Value = TextoCamiones(linea);
         camiones.Style.Alignment.SetWrapText(true);
@@ -529,6 +543,16 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
             Dato(EtiquetaTotalSeguro, totalSeguro, Cotizaciones.Services.clsExportadorExcelCotizacionClosedXml.ConCentavos(totalSeguro, formato));
         }
 
+        // Sin conexos el resumen no cambia; con ellos, su suma y el valor total, que es precio_final (no una suma propia).
+        if (datos.ConConexos)
+        {
+            Dato(EtiquetaTotalConexos, datos.ServiciosConexos.Sum(c => c.Precio), formato);
+            if (pendientes == 0 && datos.PrecioFinal is { } final)
+            {
+                Dato(EtiquetaValorTotal(ConSeguro(datos)), final, Cotizaciones.Services.clsExportadorExcelCotizacionClosedXml.ConCentavos(final, formato));
+            }
+        }
+
         Dato("Generado", datos.GeneradoEn.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture));
         // Si la leyó la IA de NEXO, se avisa que los precios van en la hoja nueva, no sobre el original.
         if (datos.LeidaConIa)
@@ -546,7 +570,12 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
         hoja.Cell(f, 1).Value = "Servicio";
         hoja.Cell(f, 2).Value = "Cantidad";
         hoja.Cell(f, 3).Value = ColumnaPrecio(datos.Moneda);
-        hoja.Range(f, 1, f, 3).Style.Font.SetBold().Fill.SetBackgroundColor(_encabezado);
+        if (datos.ConConexos)
+        {
+            hoja.Cell(f, 4).Value = ColumnaLineaConexo;
+        }
+
+        hoja.Range(f, 1, f, datos.ConConexos ? 4 : 3).Style.Font.SetBold().Fill.SetBackgroundColor(_encabezado);
         f++;
         if (datos.ServiciosConexos.Count == 0)
         {
@@ -559,6 +588,7 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
             hoja.Cell(f, 2).Value = conexo.Cantidad;
             hoja.Cell(f, 3).Value = conexo.Precio;
             hoja.Cell(f, 3).Style.NumberFormat.Format = formato;
+            hoja.Cell(f, 4).Value = conexo.LineaOrden;
             f++;
         }
 

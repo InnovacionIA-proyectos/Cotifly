@@ -32,7 +32,7 @@ public interface IClsServiciosConexosCosteoService
     /// <summary>
     /// Agrega los conexos en Nexo, relee la cotización de Nexo y les aplica el margen (quedan incluidos). Errores en este orden:
     /// <c>SOLICITUD_INVALIDA</c> (400, forma de <paramref name="items"/>), <c>COTIZACION_NO_ENCONTRADA</c> (404, también ajena),
-    /// <c>CONFLICTO_CONCURRENCIA</c> (409), <c>ESTADO_NO_PERMITE</c> (409, licitación), <c>COSTEO_NO_LISTO</c> y <c>PDF_YA_ENVIADO</c>
+    /// <c>CONFLICTO_CONCURRENCIA</c> (409), <c>COSTEO_NO_LISTO</c> y <c>PDF_YA_ENVIADO</c>
     /// (409), <c>CONEXO_INVALIDO</c> (400, línea inexistente), <c>LINEA_SIN_COTIZACION_NEXO</c> (409) y los de Nexo. Si Nexo aceptó
     /// pero la relectura falla, <c>NEXO_NO_DISPONIBLE</c> con <c>agregado_en_nexo = true</c> (el polling lo recoge).
     /// <paramref name="claveIdempotencia"/> (<c>Idempotency-Key</c>, opcional): la repetición con la misma clave devuelve el resultado
@@ -90,9 +90,6 @@ public sealed class clsServiciosConexosCosteoService(
 
     /// <summary>Valor de <c>agregado_en_nexo</c> cuando Nexo no respondió al POST y la relectura no confirma el conexo.</summary>
     public const string AgregadoDesconocido = "desconocido";
-
-    /// <summary>Motivo (<c>detalle.motivo</c>) de <c>ESTADO_NO_PERMITE</c> en una licitación.</summary>
-    public const string MotivoLicitacion = "LICITACION";
 
     public const int MaximoItems = 20;
     public const decimal CantidadMinima = 0.01m;
@@ -260,7 +257,7 @@ public sealed class clsServiciosConexosCosteoService(
 
     /// <summary>
     /// Única fuente de las reglas de la cotización para agregar conexos, sin tocar Nexo (la usan el endpoint y la propuesta
-    /// <c>agregar_servicios_conexos</c> del asistente), en este orden: licitación (<c>ESTADO_NO_PERMITE</c>), costeo con
+    /// <c>agregar_servicios_conexos</c> del asistente; una licitación las sigue igual que una Spot), en este orden: costeo con
     /// margen (<c>COSTEO_NO_LISTO</c>), regla del PDF (<c>PDF_YA_ENVIADO</c>), la ruta (<see cref="RutaDe"/>: <c>RUTA_REQUERIDA</c>,
     /// <c>CONEXO_INVALIDO</c> si no existe, <c>SOLICITUD_INVALIDA</c> si los items son de rutas distintas) y ruta sin cotización de Nexo
     /// (<c>LINEA_SIN_COTIZACION_NEXO</c>). <c>null</c> si pasa.
@@ -269,13 +266,6 @@ public sealed class clsServiciosConexosCosteoService(
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(items);
-        if (cotizacion.TipoSolicitud == TipoSolicitud.Licitacion)
-        {
-            // ADR-017 §6 y ADR-018 §4: el PDF de pliego no imprime conexos; las licitaciones no los admiten en esta iteración.
-            return new clsErrorDominio(clsCodigosError.EstadoNoPermite,
-                $"La cotización {cotizacion.Folio} es una licitación: no admite servicios conexos en esta iteración.", MotivoLicitacion);
-        }
-
         if (!cotizacion.TieneCostoDisponible || cotizacion.RutasCotizables.Any(r => r.MargenAplicado is null || r.MetodoCalculo is null))
         {
             return new clsErrorDominio(clsCodigosError.CosteoNoListo,
