@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Cotifly.Infraestructura.Comun.Persistence.Configurations;
 
-/// <summary><c>dbo_cotifly.CapturasIdempotentes</c> (<c>db/scripts/06_idempotencia_captura.sql</c>, #191).</summary>
+/// <summary><c>dbo_cotifly.CapturasIdempotentes</c> (<c>db/scripts/06_idempotencia_captura.sql</c>).</summary>
 internal sealed class clsCapturaIdempotenteConfiguracion : IEntityTypeConfiguration<clsCapturaIdempotenteFila>
 {
     public void Configure(EntityTypeBuilder<clsCapturaIdempotenteFila> builder)

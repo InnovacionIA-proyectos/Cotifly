@@ -12,8 +12,8 @@ namespace Cotifly.Infraestructura.Licitaciones.Services;
 /// regla, esta clase debe cambiar igual (lo cubre la prueba de paridad con el pliego de ejemplo).
 /// </summary>
 /// <remarks>
-/// <para><b>Antes de abrirlo</b> (HU-035.2, #213), los controles compartidos de <see cref="clsLecturaExcelAcotada"/>, los mismos del Excel
-/// de mercancías (#202): firma <c>PK</c>, 1000 entradas, 64 MB descomprimidos contados de verdad (bomba zip), 1.000.000 de elementos XML
+/// <para><b>Antes de abrirlo</b>, los controles compartidos de <see cref="clsLecturaExcelAcotada"/>, los mismos del Excel
+/// de mercancías: firma <c>PK</c>, 1000 entradas, 64 MB descomprimidos contados de verdad (bomba zip), 1.000.000 de elementos XML
 /// contados en flujo sin DTD ni resolutor (libro denso, XXE) y el cupo de lecturas simultáneas del proceso (<c>SERVICIO_OCUPADO</c>).
 /// Un libro que ClosedXML no puede abrir o leer es <c>EXCEL_INVALIDO</c> con <c>detalle.motivo = LIBRO_ILEGIBLE</c>, nunca un 500.</para>
 /// <para><b>Acotado contra archivos maliciosos</b> (a diferencia de Nexo, que recorre todo el rango usado): una celda lejana

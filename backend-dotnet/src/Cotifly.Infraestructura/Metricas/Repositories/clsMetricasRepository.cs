@@ -9,13 +9,13 @@ using Microsoft.EntityFrameworkCore;
 namespace Cotifly.Infraestructura.Metricas.Repositories;
 
 /// <summary>
-/// Implementación de <see cref="IClsMetricasRepository"/> con <c>Database.SqlQueryRaw</c> y SQL parametrizado. El tablero de HU-010.1
+/// Implementación de <see cref="IClsMetricasRepository"/> con <c>Database.SqlQueryRaw</c> y SQL parametrizado. El tablero
 /// (<see cref="ListarCotizacionesAsync"/>) lee <c>CotizacionesSolicitud</c> y sus rutas con SQL propio y no con entidades sin clave del
 /// <see cref="clsCotiflyDbContext"/>: el modelo EF es Database First de tablas y la prueba de deriva lo compara con el catálogo en ambos
-/// sentidos (HU-021, ADR-019, decisión 8 del 2026-10-08): los conteos son por cotización; el costo es la suma del costo final de sus
+/// sentidos (ADR-019): los conteos son por cotización; el costo es la suma del costo final de sus
 /// rutas, el margen el promedio de sus rutas ponderado por costo y la ciudad la de la ruta 1. Una segunda consulta (<see cref="SqlRutas"/>)
 /// trae las rutas de las versiones vigentes, con su línea de negocio y sus ajustes, para el margen ponderado y la apertura por línea
-/// (#137). Los nombres de municipio son del 0010 y pueden no existir todavía.
+/// de negocio. Los nombres de municipio son del 0010 y pueden no existir todavía.
 /// </summary>
 public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMetricasRepository
 {
@@ -35,17 +35,17 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
     /// <c>(usuarioId, folio base)</c>. Valores de la versión vigente (mayor <c>version</c>); periodo por la primera creación de la
     /// cadena (<c>MIN(createdAt)</c>); resultado = el último no nulo de la cadena (mayor <c>marcadoAt</c>, sin fecha al final, y
     /// luego mayor <c>version</c>); ajustes de la vigente con <c>OUTER APPLY</c> por <c>cotizacionId</c> (índice del 0002).
-    /// HU-016.2 (#295): <c>Finalizada</c> = la versión vigente tiene <c>finalizadaAt</c> (script 14): solo las finalizadas entran en la
+    /// <c>Finalizada</c> = la versión vigente tiene <c>finalizadaAt</c> (script 14): solo las finalizadas entran en la
     /// comparación del margen contra la política. <c>{5}</c> es <c>c.finalizadaAt</c> o <c>NULL</c> en una base anterior al 14 (como el seguro).
     /// <c>{0}</c>/<c>{1}</c>/<c>{2}</c>: origen y destino de la ruta 1 y <c>deadline</c> (o <c>NULL</c> si la columna no existe);
-    /// <c>{3}</c>: la lectura de la ruta 1; <c>{4}</c> (HU-045.2, #264): <c>costoSeguro</c> o NULL sin el script 20 (fragmentos fijos del
+    /// <c>{3}</c>: la lectura de la ruta 1; <c>{4}</c>: <c>costoSeguro</c> o NULL sin el script 20 (fragmentos fijos del
     /// código, nunca datos del usuario). Costo = suma de <c>costoFinal</c> de las
-    /// rutas (solo si todas lo tienen); margen = promedio de las rutas ponderado por su costo (sin costo, el promedio simple). HU-028.1
-    /// (#183): las rutas <c>rechazada</c> por la Mesa de Costeo no cuentan (ni en el costo ni en el margen): el valor cotizado
+    /// rutas (solo si todas lo tienen); margen = promedio de las rutas ponderado por su costo (sin costo, el promedio simple). Las
+    /// rutas <c>rechazada</c> por la Mesa de Costeo no cuentan (ni en el costo ni en el margen): el valor cotizado
     /// (<c>precioFinal</c>) ya las excluye.
-    /// I1 (HU-023): <c>WITH (FORCESEEK)</c> obliga a buscar la cabecera por <c>ix_cotizaciones_usuarioId_createdAt</c> (filtro por
+    /// <c>WITH (FORCESEEK)</c> obliga a buscar la cabecera por <c>ix_cotizaciones_usuarioId_createdAt</c> (filtro por
     /// <c>usuarioId</c>), así la lectura no toma candados S en filas de otros comerciales y no se cruza con su polling. La solución de
-    /// fondo, que también cubre el choque con las escrituras del mismo comercial, es <c>READ_COMMITTED_SNAPSHOT</c>: decisión del DBA.
+    /// fondo, que también cubre el choque con las escrituras del mismo comercial, es <c>READ_COMMITTED_SNAPSHOT</c> (lo decide el DBA).
     /// </summary>
     private const string SqlCotizaciones = """
         WITH base AS (
@@ -111,10 +111,10 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
 
     /// <summary>
     /// Rutas de las versiones vigentes (<c>@cotizaciones</c>, JSON de ids) con su línea de negocio y el resumen de sus
-    /// <c>MargenAjustes</c> (HU-021.10, decisión 8). Un ajuste cuenta en la ruta de su <c>lineaSolicitudId</c>; si no tiene ruta, o la
+    /// <c>MargenAjustes</c>. Un ajuste cuenta en la ruta de su <c>lineaSolicitudId</c>; si no tiene ruta, o la
     /// ruta no es de su cotización, cuenta en la primera ruta (menor <c>orden</c>), como la migración del 0009. Así la suma de las rutas
-    /// da exactamente los ajustes de la cotización (<c>OUTER APPLY</c> por <c>cotizacionId</c> de <see cref="SqlCotizaciones"/>). HU-028.1
-    /// (#183): las rutas <c>rechazada</c> no salen (no tienen precio; una ruta rechazada no admite ajustes de margen). HU-016.1 (#154): cada
+    /// da exactamente los ajustes de la cotización (<c>OUTER APPLY</c> por <c>cotizacionId</c> de <see cref="SqlCotizaciones"/>). Las
+    /// rutas <c>rechazada</c> no salen (no tienen precio; una ruta rechazada no admite ajustes de margen). Cada
     /// ruta trae también su <c>margenPoliticaSugerido</c>, la referencia del margen aplicado (sin script: la columna es del esquema base).
     /// </summary>
     private const string SqlRutas = """
@@ -163,7 +163,7 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
                 ? "OUTER APPLY (SELECT TOP (1) l1.origenNombre, l1.destinoNombre FROM dbo_cotifly.CotizacionLineasSolicitud l1 WHERE l1.cotizacionSolicitudId = c.id ORDER BY l1.orden) r1"
                 : string.Empty,
             ExpresionSeguro(columnas.Seguro, "l.costoSeguro"),
-            // HU-016.2 (#295): finalizadaAt (script 14) o NULL en una base anterior (como el seguro): entonces ninguna cuenta como finalizada.
+            // finalizadaAt (script 14) o NULL en una base sin el 14: entonces ninguna cuenta como finalizada.
             columnas.Finalizada ? "c.finalizadaAt" : "CAST(NULL AS datetimeoffset)");
         var usuariosJson = JsonSerializer.Serialize(usuarios.Distinct());
         var filas = await ConReintentoPorInterbloqueoAsync(() => contexto.Database.SqlQueryRaw<clsFilaMetrica>(
@@ -172,7 +172,7 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
                 new SqlParameter("@desde", System.Data.SqlDbType.DateTimeOffset) { Value = desde },
                 new SqlParameter("@hasta", System.Data.SqlDbType.DateTimeOffset) { Value = hastaExclusivo })
             .ToListAsync(cancellationToken));
-        // B3 (#173): también las rutas de la versión ganada cuando no es la vigente (apertura por línea de negocio).
+        // También las rutas de la versión ganada cuando no es la vigente (apertura por línea de negocio).
         var rutas = await ListarRutasAsync(
             [.. filas.Select(f => f.CotizacionId).Concat(filas.Select(f => f.CotizacionResultadoId).OfType<Guid>()).Distinct()], columnas.Seguro,
             cancellationToken);
@@ -192,9 +192,9 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
                 TrmAplicada = f.TrmAplicada,
                 MargenAplicado = f.MargenAplicado,
                 Ganada = f.Ganada,
-                // HU-016.2 (#295): solo las finalizadas entran en la comparación del margen contra la política.
+                // Solo las finalizadas entran en la comparación del margen contra la política.
                 Finalizada = f.Finalizada,
-                // B3 (#173): precio y costo de la versión que tiene el resultado (la ganada puede no ser la vigente).
+                // Precio y costo de la versión que tiene el resultado (la ganada puede no ser la vigente).
                 VersionResultado = f.Ganada is null
                     ? null
                     : new clsVersionResultadoMetrica(f.PrecioResultado, f.MonedaResultado, f.TrmResultado ?? 0m, f.CostoResultado, f.SeguroResultado),
@@ -247,25 +247,23 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
     }
 
     /// <summary>
-    /// HU-045.2 (#264): la columna del seguro de la ruta, o <c>NULL</c> en una base sin el script 20 (fragmento fijo del código, nunca datos
+    /// La columna del seguro de la ruta, o <c>NULL</c> en una base sin el script 20 (fragmento fijo del código, nunca datos
     /// del usuario). En producción <c>/health/ready</c> exige el 20; las pruebas del tablero también corren sobre bases anteriores.
     /// </summary>
     private static string ExpresionSeguro(bool existe, string columna) => existe ? columna : "CAST(NULL AS decimal(18,2))";
 
     /// <summary>
-    /// HU-021: la consulta del tablero lee la cabecera y sus rutas (dos tablas) mientras el costeo y el polling las escriben en una
+    /// La consulta del tablero lee la cabecera y sus rutas (dos tablas) mientras el costeo y el polling las escriben en una
     /// transacción; SQL Server puede elegirla como víctima de un interbloqueo (error 1205). Es una lectura sin efectos: se repite.
     /// </summary>
     /// <remarks>
-    /// I1 (#174), causa medida con el grafo del interbloqueo: en READ COMMITTED la lectura retiene el candado S de la fila de la cabecera
+    /// Causa, medida con el grafo del interbloqueo: en READ COMMITTED la lectura retiene el candado S de la fila de la cabecera
     /// (<c>pk_cotizaciones</c>) mientras busca sus rutas (<c>pk_cotizacionLineasSolicitud</c>), y un guardado del polling tiene la ruta en X
-    /// y espera la cabecera. La lectura recorre también filas de otros comerciales, así que choca con escrituras ajenas. Con tres
-    /// intentos a 50 y 100 ms la siguiente escritura del polling volvía a cruzarse: ~3 % de lecturas fallidas con escrituras intermitentes.
-    /// Seis intentos con espera exponencial y variación aleatoria (100 ms a 1,6 s, unos 3 s en total) dejan pasar la ráfaga. La causa de
-    /// fondo era el recorrido de toda la cabecera en <see cref="SqlCotizaciones"/>: desde la integración final de HU-023 la consulta
-    /// lleva <c>WITH (FORCESEEK)</c> (índice <c>ix_cotizaciones_usuarioId_createdAt</c>) y no toca filas ajenas (medido: 0 fallos en
-    /// 887 lecturas). El choque con escrituras del mismo comercial sigue posible y lo cubre este reintento; la solución de fondo es
-    /// <c>READ_COMMITTED_SNAPSHOT</c>, decisión del DBA (matriz de HU-023 §7.2 y <c>docs/10-operacion.md</c>).
+    /// y espera la cabecera. Con pocos reintentos cortos la siguiente escritura del polling vuelve a cruzarse; seis intentos con espera
+    /// exponencial y variación aleatoria (100 ms a 1,6 s, unos 3 s en total) dejan pasar la ráfaga. <see cref="SqlCotizaciones"/> lleva
+    /// <c>WITH (FORCESEEK)</c> (índice <c>ix_cotizaciones_usuarioId_createdAt</c>) para no tocar filas de otros comerciales. El choque con
+    /// escrituras del mismo comercial sigue posible y lo cubre este reintento; la solución de fondo es
+    /// <c>READ_COMMITTED_SNAPSHOT</c>, que decide el DBA (<c>docs/10-operacion.md</c>).
     /// </remarks>
     private static async Task<T> ConReintentoPorInterbloqueoAsync<T>(Func<Task<T>> consulta)
     {
@@ -293,10 +291,10 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
         public bool Ciudades { get; set; }
         public bool Deadline { get; set; }
 
-        /// <summary>HU-045.2 (#264): ¿existe <c>costoSeguro</c> del script 20? (las pruebas de bases anteriores no lo tienen).</summary>
+        /// <summary>¿Existe <c>costoSeguro</c> del script 20? (las pruebas de bases anteriores no lo tienen).</summary>
         public bool Seguro { get; set; }
 
-        /// <summary>HU-016.2 (#295): ¿existe <c>finalizadaAt</c> del script 14? (las pruebas de bases anteriores al 14 no lo tienen).</summary>
+        /// <summary>¿Existe <c>finalizadaAt</c> del script 14? (las pruebas de bases anteriores al 14 no lo tienen).</summary>
         public bool Finalizada { get; set; }
     }
 
@@ -315,7 +313,7 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
         public decimal? MargenAplicado { get; set; }
         public bool? Ganada { get; set; }
 
-        /// <summary>HU-016.2 (#295): la versión vigente está finalizada (<c>finalizadaAt</c> no nulo, script 14); filtra la comparación con la política.</summary>
+        /// <summary>La versión vigente está finalizada (<c>finalizadaAt</c> no nulo, script 14); filtra la comparación con la política.</summary>
         public bool Finalizada { get; set; }
         public Guid? CotizacionResultadoId { get; set; }
         public decimal? PrecioResultado { get; set; }
@@ -323,7 +321,7 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
         public decimal? TrmResultado { get; set; }
         public decimal? CostoResultado { get; set; }
 
-        /// <summary>HU-045.2 (#264): Σ <c>costoSeguro</c> de las rutas no rechazadas de la vigente y de la versión con el resultado (COP).</summary>
+        /// <summary>Σ <c>costoSeguro</c> de las rutas no rechazadas de la vigente y de la versión con el resultado (COP).</summary>
         public decimal? Seguro { get; set; }
         public decimal? SeguroResultado { get; set; }
         public DateTimeOffset? CosteoListoAt { get; set; }
@@ -336,7 +334,7 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
         public decimal? SumaDiferenciasAbsolutas { get; set; }
     }
 
-    /// <summary>Fila cruda de una ruta del tablero (HU-021.10).</summary>
+    /// <summary>Fila cruda de una ruta del tablero.</summary>
     internal sealed class clsFilaRuta
     {
         public Guid CotizacionId { get; set; }
@@ -347,10 +345,10 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
         public decimal? PrecioFinal { get; set; }
         public decimal? MargenAplicado { get; set; }
 
-        /// <summary>HU-045.2 (#264): <c>costoSeguro</c> de la ruta (COP), o <c>null</c> sin seguro.</summary>
+        /// <summary><c>costoSeguro</c> de la ruta (COP), o <c>null</c> sin seguro.</summary>
         public decimal? Seguro { get; set; }
 
-        /// <summary>HU-016.1 (#154): <c>margenPoliticaSugerido</c> de la ruta.</summary>
+        /// <summary><c>margenPoliticaSugerido</c> de la ruta.</summary>
         public decimal? MargenPolitica { get; set; }
 
         public int NumAjustes { get; set; }

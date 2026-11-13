@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Costeo.Services;
 
 /// <summary>
-/// Polling del costeo en Nexo (HU-005.6, ADR-015 §4): cada <c>CosteoNexo:IntervaloTickSegundos</c> lee la agenda
+/// Polling del costeo en Nexo (ADR-015 §4): cada <c>CosteoNexo:IntervaloTickSegundos</c> lee la agenda
 /// (<c>costeoSiguienteConsultaAt</c>) en un ámbito de DI y procesa cada cotización en <b>su propio ámbito</b>, así un fallo (de Nexo o
 /// de la base) no contamina a las demás. Tolera a Nexo caído (el caso de uso reprograma con espaciado) y nunca termina por una
 /// excepción de una vuelta. No corre sin <c>Nexo:UrlBase</c> o con <c>CosteoNexo:Habilitado=false</c> (lo anota una vez).
@@ -50,7 +50,7 @@ public sealed class clsWorkerCosteoNexo(
     }
 
     /// <summary>
-    /// Reparación de HU-013.14 (ADR-018 §17), una vez al arrancar: agenda la relectura de las cotizaciones que quedaron en
+    /// Reparación (ADR-018 §17), una vez al arrancar: agenda la relectura de las cotizaciones que quedaron en
     /// <c>entregada</c> sin precio. Un fallo se anota y no impide el polling.
     /// </summary>
     public static async Task RepararEntregadasSinPrecioAsync(IServiceScopeFactory ambitos, ILogger logger, CancellationToken cancellationToken)

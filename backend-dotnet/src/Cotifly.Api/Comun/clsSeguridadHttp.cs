@@ -23,7 +23,7 @@ public sealed class clsOpcionesCors
 }
 
 /// <summary>
-/// Encabezados reenviados por el proxy (sección <c>ForwardedHeaders</c>, Traefik en Swarm, HU-006): con
+/// Encabezados reenviados por el proxy (sección <c>ForwardedHeaders</c>, Traefik en Swarm): con
 /// <see cref="Habilitado"/> la API toma la IP real del cliente de <c>X-Forwarded-For</c> (la usa el límite de peticiones) y el
 /// esquema de <c>X-Forwarded-Proto</c>, pero solo si la conexión viene de un proxy o una red conocidos.
 /// </summary>
@@ -55,8 +55,8 @@ public sealed class clsOpcionesSeguridadHttp
     public long LimiteCuerpoWebBytes { get; set; } = 64 * 1024;
 
     /// <summary>
-    /// Tamaño máximo del cuerpo en <c>/web/licitaciones*</c> (HU-011, ADR-017): el Excel (hasta 10 MB) más el JSON de hasta 1000
-    /// líneas; desde HU-035.1 (#202) también en <c>POST /web/mercancias/analizar-excel</c> (<see cref="RutaExcelMercancias"/>). Por
+    /// Tamaño máximo del cuerpo en <c>/web/licitaciones*</c> (ADR-017) y en <c>POST /web/mercancias/analizar-excel</c>
+    /// (<see cref="RutaExcelMercancias"/>): el Excel (hasta 10 MB) más el JSON de hasta 1000 líneas. Por
     /// defecto 12 MB; 413 al pasarlo.
     /// </summary>
     [Range(1024, 64 * 1024 * 1024)]
@@ -65,7 +65,7 @@ public sealed class clsOpcionesSeguridadHttp
     /// <summary>Prefijo de las rutas con el límite de <see cref="LimiteCuerpoLicitacionBytes"/>.</summary>
     public const string PrefijoLicitaciones = "/web/licitaciones";
 
-    /// <summary>HU-035.1 (#202): el análisis del Excel de mercancías, con el mismo límite de <see cref="LimiteCuerpoLicitacionBytes"/>.</summary>
+    /// <summary>El análisis del Excel de mercancías, con el mismo límite de <see cref="LimiteCuerpoLicitacionBytes"/>.</summary>
     public const string RutaExcelMercancias = "/web/mercancias/analizar-excel";
 
     /// <summary>¿La ruta lleva un Excel (límite de <see cref="LimiteCuerpoLicitacionBytes"/>) y no el de <see cref="LimiteCuerpoWebBytes"/>?</summary>
@@ -142,7 +142,7 @@ public sealed class clsValidadorOpcionesEncabezadosReenviados : IValidateOptions
 }
 
 /// <summary>
-/// Endurecimiento HTTP de la Api (#12 parte B): CORS por configuración, encabezados reenviados de Traefik, encabezados de
+/// Endurecimiento HTTP de la Api: CORS por configuración, encabezados reenviados de Traefik, encabezados de
 /// seguridad en todas las respuestas y límite del cuerpo en <c>/web/*</c>.
 /// </summary>
 public static class clsSeguridadHttp
@@ -154,7 +154,7 @@ public static class clsSeguridadHttp
 
     /// <summary>
     /// Encabezados que admite CORS: los de autenticación y cuerpo, el <c>If-Match</c> de la concurrencia optimista (ADR-018 §8) y la
-    /// <c>Idempotency-Key</c> de la captura, los conexos y la re-solicitud (#173). Lista explícita, nunca cualquier encabezado.
+    /// <c>Idempotency-Key</c> de la captura, los conexos y la re-solicitud. Lista explícita, nunca cualquier encabezado.
     /// </summary>
     public static readonly string[] EncabezadosCors = ["Authorization", "Content-Type", "If-Match", "Idempotency-Key"];
 

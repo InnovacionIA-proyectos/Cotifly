@@ -6,13 +6,13 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Configuracion;
 
 /// <summary>
-/// Patrón base de configuración de Cotifly (HU-001, principio asignado a HU-003.2):
+/// Patrón base de configuración de Cotifly:
 /// cada sección se enlaza a una clase de opciones, se valida con DataAnnotations y con
 /// el validador de secretos, y se valida al arrancar (<c>ValidateOnStart</c>): con
 /// configuración inválida la aplicación no arranca.
 /// </summary>
 /// <remarks>
-/// Cómo agrega su opción una HU (ej. #9 <c>ConnectionStrings</c>, #12 <c>Jwt</c>/<c>IA</c>):
+/// Cómo se agrega una opción (ej. <c>ConnectionStrings</c>, <c>Jwt</c>/<c>IA</c>):
 /// <list type="number">
 /// <item>Crear <c>clsOpcionesXxx</c> en <c>Configuracion/</c> con <c>const string Seccion</c>,
 /// DataAnnotations (<c>[Required]</c>, <c>[Range]</c>…) y <c>[clsSecreto]</c> en las propiedades secretas.</item>

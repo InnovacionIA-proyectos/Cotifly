@@ -12,7 +12,7 @@ namespace Cotifly.Infraestructura.Identidad.Services;
 /// esquema, tabla y columnas vienen de la configuración, validados como identificadores y citados con corchetes. Las columnas
 /// se leen como texto (<c>CAST ... AS nvarchar</c>), sin espacios, tabuladores ni saltos de línea a los lados y en mayúsculas para
 /// comparar. La columna de usuario (<c>USUARIO</c>, <c>boterosoto\usuario</c>) se parte en la ÚLTIMA <c>\</c>: el nombre se
-/// compara en SQL y el dominio se valida aquí contra <see cref="clsOpcionesRegional.Dominio"/> (#81); una fila de otro dominio no
+/// compara en SQL y el dominio se valida aquí contra <see cref="clsOpcionesRegional.Dominio"/>; una fila de otro dominio no
 /// cuenta. Los fallos de la base se propagan (el tablero responde 503; el login sigue sin refrescar) y no se guardan; las
 /// respuestas exitosas se reutilizan 60 s (<see cref="clsCacheDirectorioEjecutivos"/>).
 /// </summary>

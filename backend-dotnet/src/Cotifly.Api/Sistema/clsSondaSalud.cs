@@ -4,7 +4,7 @@ using System.Net;
 namespace Cotifly.Api.Sistema;
 
 /// <summary>
-/// Sonda del <c>HEALTHCHECK</c> del Dockerfile (#27, ADR-007). La imagen runtime (chiseled) no trae
+/// Sonda del <c>HEALTHCHECK</c> del Dockerfile (ADR-007). La imagen runtime (chiseled) no trae
 /// shell ni <c>curl</c>, así que el propio binario hace de sonda: <c>dotnet Cotifly.Api.dll --healthcheck</c>
 /// hace <c>GET /health</c> contra el Kestrel del mismo contenedor y termina con 0 si responde 200, o con 1
 /// en cualquier otro caso (equivale al <c>urllib</c> del HEALTHCHECK de <c>orquestador/Dockerfile</c>).

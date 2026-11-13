@@ -6,10 +6,9 @@ using Microsoft.EntityFrameworkCore;
 namespace Cotifly.Infraestructura.Margen.Repositories;
 
 /// <summary>
-/// Implementación EF Core de <see cref="IClsSapMapeoRepository"/>. Igual que el Python
-/// (<c>MapeoTrqTypeRepo</c>): filtra por <c>salesOrg IN (@salesOrg, '')</c> y ordena <c>salesOrg DESC</c>
-/// para que la fila específica gane sobre el comodín. HU-042.4 (#247): la línea se cruza por <c>lineaNegocioId</c>
-/// (FK a <c>MargenesPolitica</c>); la columna de texto <c>lineaNegocio</c> ya no se lee para resolver.
+/// Implementación EF Core de <see cref="IClsSapMapeoRepository"/>: filtra por <c>salesOrg IN (@salesOrg, '')</c> y ordena
+/// <c>salesOrg DESC</c> para que la fila específica gane sobre el comodín. La línea se cruza por <c>lineaNegocioId</c>
+/// (FK a <c>MargenesPolitica</c>), no por la columna de texto <c>lineaNegocio</c>.
 /// </summary>
 public sealed class clsSapMapeoRepository(clsCotiflyDbContext contexto) : IClsSapMapeoRepository
 {

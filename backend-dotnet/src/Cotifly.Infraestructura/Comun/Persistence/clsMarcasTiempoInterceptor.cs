@@ -13,7 +13,7 @@ namespace Cotifly.Infraestructura.Comun.Persistence;
 /// <item>Filas nuevas: <c>CreatedAt</c> (si la entidad no trae uno) y <c>UpdatedAt</c>.</item>
 /// <item>Filas modificadas: <c>UpdatedAt</c>.</item>
 /// </list>
-/// HU-014 (#188): los camiones ya no llevan el desfase de 1 ms por posición en <c>CreatedAt</c> (HU-021.5): su orden va en la columna
+/// Los camiones no llevan un desfase en <c>CreatedAt</c>: su orden va en la columna
 /// <c>ordenVehiculo</c> del script 03 (<see cref="clsVehiculoLineaSolicitud.OrdenVehiculo"/>).
 /// Aplica a toda entidad que tenga esas propiedades (se detectan en el modelo EF, sin interfaces en Dominio).
 /// </summary>

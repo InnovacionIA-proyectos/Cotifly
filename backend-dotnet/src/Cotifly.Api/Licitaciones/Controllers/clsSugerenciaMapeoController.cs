@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Cotifly.Api.Licitaciones.Controllers;
 
 /// <summary>
-/// HU-044.2 (#253, ADR-028, <c>specs/openapi.yaml</c>): la importación inteligente del Excel de licitación con NEXO. <c>sugerir-mapeo</c>
+/// La importación inteligente del Excel de licitación con NEXO (ADR-028, <c>specs/openapi.yaml</c>). <c>sugerir-mapeo</c>
 /// propone el mapeo de las columnas de una hoja y <c>leer-estructura</c> lee con IA un Excel de formato complejo y devuelve tablas con la
 /// forma de <c>analizar-excel</c>. Cotifly es solo el puente: no guarda nada. Rol Comercial (<see cref="clsControladorWebBase"/>).
 /// </summary>
@@ -22,7 +22,7 @@ public sealed class clsSugerenciaMapeoController(IClsContextoUsuario usuario, IC
     public const string ParteInstrucciones = "instrucciones";
     public const string ParteReceta = "receta";
 
-    /// <summary>400 <c>ErrorWeb</c> de un formulario con una parte repetida (<c>{0}</c> = el nombre de la parte). El mismo de #256.</summary>
+    /// <summary>400 <c>ErrorWeb</c> de un formulario con una parte repetida (<c>{0}</c> = el nombre de la parte). El mismo de los formatos del cliente.</summary>
     public const string MensajeParteRepetida = "Formulario inválido: la parte '{0}' viene más de una vez.";
 
     /// <summary>
@@ -89,7 +89,7 @@ public sealed class clsSugerenciaMapeoController(IClsContextoUsuario usuario, IC
     }
 
     /// <summary>
-    /// D1 (validador de #253, igual que #256): la primera parte que vino más de una vez, o <c>null</c>. Dos partes con el mismo nombre se
+    /// La primera parte que vino más de una vez, o <c>null</c>. Dos partes con el mismo nombre se
     /// unirían con coma: dos NIT que la normalización funde en otro NIT, o una receta que deja de ser la que devolvió NEXO. No se adivina
     /// cuál vale: se rechaza el formulario sin llamar a NEXO.
     /// </summary>

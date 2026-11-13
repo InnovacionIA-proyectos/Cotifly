@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Correo.Services;
 
 /// <summary>
-/// HU-033 (#199, ADR-023): consulta del estado de los correos encolados en MailSender, mismo patrón que el polling del costeo
+/// Consulta del estado de los correos encolados en MailSender (ADR-023), mismo patrón que el polling del costeo
 /// (<c>clsWorkerCosteoNexo</c>): cada <c>Correo:Seguimiento:IntervaloTickSegundos</c> lee la agenda (<c>Correos.siguienteConsultaAt</c>) en
 /// un ámbito de DI y procesa cada correo en <b>su propio ámbito</b>; un fallo no contamina a los demás y una excepción de una vuelta no lo
 /// detiene. Varias réplicas no consultan el mismo correo a la vez (reclamo con <c>siguienteConsultaAt</c>). No corre con

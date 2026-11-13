@@ -17,18 +17,18 @@ using Polly;
 namespace Cotifly.Infraestructura.Cubicacion.Services;
 
 /// <summary>
-/// Cubicador en vivo (HU-021.5, #133, con el contrato de HU-023.1, #156), mismo patrón que <c>clsCosteoNexo</c>: cliente HTTP propio
+/// Cubicador en vivo, mismo patrón que <c>clsCosteoNexo</c>: cliente HTTP propio
 /// (<see cref="NombreCliente"/>), <b>sin reintentar los POST</b>, opciones validadas (<see cref="clsOpcionesCubicador"/>) y todo vía
 /// <see cref="clsResultado{TValor}"/>. Rutas bajo <c>{Cubicador:UrlBase}</c>:
 /// <list type="bullet">
 /// <item><c>POST /recomendaciones</c> con <c>{idLineaSolicitud, origenSistema: "COTIFLY", claseViajeSeleccionada?, usuarioId,
 /// mercancias: [{codigoMercancia, cantidad, largoCm, anchoCm, altoCm, pesoKg}]}</c>; responde <c>{idRecomendacion, resultado,
 /// motivoSinSeleccion, condicionada, mercanciasCondicionadas[], vehiculos[], advertencias[], extradimension}</c>.</item>
-/// <item><c>GET /tipos-mercancia</c>, <c>GET /tipos-carroceria</c> y <c>GET /vehiculos-catalogo</c> (HU-023, #176), con caché
+/// <item><c>GET /tipos-mercancia</c>, <c>GET /tipos-carroceria</c> y <c>GET /vehiculos-catalogo</c>, con caché
 /// (<see cref="clsCacheCatalogoCubicador{TFila}"/>).</item>
-/// <item>HU-023 (#176): tope de 10.000 unidades antes de llamar (<c>CUBICACION_DEMASIADO_GRANDE</c>); un POST sin respuesta (tiempo agotado
+/// <item>Tope de 10.000 unidades antes de llamar (<c>CUBICACION_DEMASIADO_GRANDE</c>); un POST sin respuesta (tiempo agotado
 /// o red) no se reintenta: se reconsulta <c>GET /recomendaciones?idLineaSolicitud=…&amp;origenSistema=COTIFLY</c> y, si la corrida existe y
-/// su huella coincide con la petición (<see cref="DiferenciaConLaCarga"/>), se usa; un 422 del POST es un rechazo de los datos (D1: 400
+/// su huella coincide con la petición (<see cref="DiferenciaConLaCarga"/>), se usa; un 422 del POST es un rechazo de los datos (400
 /// <c>DIMENSIONES_INVALIDAS</c>, <c>POSICION_INVALIDA</c> o <c>CUBICADOR_PETICION_RECHAZADA</c>) y el de una consulta
 /// <c>CUBICADOR_RESPUESTA_INVALIDA</c> (los dos visibles, nunca al respaldo); el
 /// <c>comentarioCondicion</c> de las mercancías condicionadas sale de <c>GET /tipos-mercancia</c>. Los códigos se comparan sin distinguir
@@ -47,7 +47,7 @@ namespace Cotifly.Infraestructura.Cubicacion.Services;
 /// llave ni la traza. La cancelación del llamador se propaga.</item>
 /// <item><b>Observabilidad</b>: el resultado de cada recomendación queda en un log informativo con la ruta, el resultado, el motivo, la
 /// marca de condicionada y el número de vehículos (sin datos del cliente).</item>
-/// <item><b>Cupo global</b> (opción C, D3 del E2E 2026-10-16): el POST y su reconsulta ocupan uno de los
+/// <item><b>Cupo global</b>: el POST y su reconsulta ocupan uno de los
 /// <c>Cubicador:MaximoConcurrente</c> cupos del proceso (<see cref="clsCupoLlamadasCubicador"/>). Si no se libera ninguno en
 /// <c>Cubicador:EsperaMaximaCupoSegundos</c>, no se llama: <c>CUBICADOR_OCUPADO</c> marcado como caída (log <see cref="EventoOcupado"/>).
 /// Los catálogos y la salud van fuera del cupo.</item>
@@ -71,7 +71,7 @@ public sealed class clsCubicadorHttp(
     public const string RutaRecomendaciones = "/recomendaciones";
     public const string RutaTiposMercancia = "/tipos-mercancia";
     public const string RutaTiposCarroceria = "/tipos-carroceria";
-    /// <summary>HU-023 (#176): el catálogo canónico de vehículos (<c>2L2</c>, <c>C2</c>, <c>3S3</c>…); <c>/vehiculos</c> es el del motor 3D.</summary>
+    /// <summary>El catálogo canónico de vehículos (<c>2L2</c>, <c>C2</c>, <c>3S3</c>…); <c>/vehiculos</c> es el del motor 3D.</summary>
     public const string RutaTiposVehiculo = "/vehiculos-catalogo";
 
     public const string MensajeNoDisponible = "El cubicador no está disponible en este momento: intenta de nuevo más tarde.";
@@ -82,13 +82,13 @@ public sealed class clsCubicadorHttp(
     public const string MensajeNoAutorizado = "El cubicador rechazó la llave de Cotifly: avisa a soporte (Cubicador:ApiKey).";
 
     /// <summary>
-    /// D1 (E2E 2026-10-16): mensaje de un 422 de <c>POST /recomendaciones</c> que no señala una mercancía (<c>CUBICADOR_PETICION_RECHAZADA</c>,
+    /// Mensaje de un 422 de <c>POST /recomendaciones</c> que no señala una mercancía (<c>CUBICADOR_PETICION_RECHAZADA</c>,
     /// 400). Un 422 de una consulta (GET) sigue siendo <c>CUBICADOR_RESPUESTA_INVALIDA</c> con <see cref="MensajeConsultaRechazada"/>.
     /// </summary>
     public const string MensajePeticionRechazada =
         "El cubicador rechazó los datos de la carga (medidas, peso o cantidad): revísalos y vuelve a intentarlo. No se guardó nada.";
 
-    /// <summary>HU-023 (#176): mensaje de un 422 de una consulta al cubicador (la petición de Cotifly no cumple su esquema).</summary>
+    /// <summary>Mensaje de un 422 de una consulta al cubicador (la petición de Cotifly no cumple su esquema).</summary>
     public const string MensajeConsultaRechazada =
         "El cubicador rechazó el formato de la petición de Cotifly (422): no se guardó nada. Avisa a soporte.";
 
@@ -136,7 +136,7 @@ public sealed class clsCubicadorHttp(
     /// <summary>Opción C: log de una recomendación que no consiguió cupo a tiempo (código estable para alertas).</summary>
     public static readonly EventId EventoOcupado = new(2102, "CUBICADOR_OCUPADO");
 
-    /// <summary>Opción C: log de una recomendación que esperó el cupo global (cuánto) antes de llamar.</summary>
+    /// <summary>Log de una recomendación que esperó el cupo global (cuánto) antes de llamar.</summary>
     public static readonly EventId EventoEsperaCupo = new(2103, "CUBICADOR_ESPERA_CUPO");
 
     /// <summary>Mensaje de <c>CUBICADOR_OCUPADO</c> para el comercial.</summary>
@@ -149,7 +149,7 @@ public sealed class clsCubicadorHttp(
     private readonly clsCupoLlamadasCubicador _cupo = cupo ?? new clsCupoLlamadasCubicador(opciones);
 
     /// <summary>
-    /// Opción C: lo más que puede durar una llamada a <see cref="RecomendarAsync"/>: la espera por el cupo, el POST (con su holgura de
+    /// Lo más que puede durar una llamada a <see cref="RecomendarAsync"/>: la espera por el cupo, el POST (con su holgura de
     /// 2 s), la espera antes de reconsultar y la reconsulta. Lo usa la validación del reclamo de la licitación.
     /// </summary>
     public static TimeSpan DuracionMaximaLlamada(clsOpcionesCubicador opciones)
@@ -165,7 +165,7 @@ public sealed class clsCubicadorHttp(
         ArgumentNullException.ThrowIfNull(peticion);
         if (clsMercanciaCubicador.ExcedeTope(peticion.Mercancias))
         {
-            // HU-023 (#176): el tope de 10.000 unidades se valida antes de llamar (el cubicador respondería el mismo 400).
+            // El tope de 10.000 unidades se valida antes de llamar (el cubicador respondería el mismo 400).
             logger.LogWarning("La ruta {IdLineaSolicitud} supera las {Maximo} unidades del cubicador: no se le llama.",
                 peticion.IdLineaSolicitud, clsMercanciaCubicador.MaximoUnidades);
             return new clsErrorDominio(clsCodigosError.CubicacionDemasiadoGrande, clsMercanciaCubicador.MensajeDemasiadoGrande);
@@ -213,7 +213,7 @@ public sealed class clsCubicadorHttp(
                 return ConMercanciaSenalada(respuesta.Error, peticion);
             }
 
-            // HU-023 (#176, guía §4 y §7): el POST no se reintenta a ciegas. Sin respuesta (tiempo agotado o red), la corrida pudo quedar
+            // El POST no se reintenta a ciegas (guía del cubicador §4 y §7). Sin respuesta (tiempo agotado o red), la corrida pudo quedar
             // creada: se reconsulta la última de la línea y, si existe y corresponde a esta carga, se usa. Si no, sigue la caída.
             var reconsultada = await ReconsultarAsync(peticion, cancellationToken);
             if (reconsultada is null)
@@ -244,11 +244,11 @@ public sealed class clsCubicadorHttp(
     public const string CampoCodigoMercancia = "codigo_mercancia";
 
     /// <summary>
-    /// D-1019-1 (E2E 2026-10-19): un 400 <c>MERCANCIA_DESCONOCIDA</c> o <c>MERCANCIA_NO_CUBICABLE</c> del cubicador llega con la mercancía
+    /// Un 400 <c>MERCANCIA_DESCONOCIDA</c> o <c>MERCANCIA_NO_CUBICABLE</c> del cubicador llega con la mercancía
     /// (<c>item</c>, base 0, y <c>campo = codigo_mercancia</c>): la que señala el cuerpo (<c>item</c>/<c>indice</c>, si existe en la petición)
 /// o, si no la señala, la
     /// única cuyo código cita el mensaje entre comillas (<c>'NO_EXISTE_XYZ' no esta en el catalogo…</c>). Si no se puede saber cuál es
-    /// (ningún código citado, o dos códigos distintos), queda sin ítem como antes.
+    /// (ningún código citado, o dos códigos distintos), queda sin ítem.
     /// </summary>
     private static clsErrorDominio ConMercanciaSenalada(clsErrorDominio error, clsPeticionRecomendacion peticion)
     {
@@ -374,11 +374,11 @@ public sealed class clsCubicadorHttp(
 
     /// <summary>
     /// Tolerancia del peso por fila del detalle (kg): solo el redondeo del <c>pesoKg</c> de cada fila. El cubicador
-    /// confirmó (2026-10-15) que redondea el <c>pesoKg</c> a 2 decimales (la guía no lo fijaba y el ejemplo trae <c>10000.0</c>): la
+    /// redondea el <c>pesoKg</c> a 2 decimales (el ejemplo de su guía trae <c>10000.0</c>): la
     /// diferencia por fila es de 0,005 kg como mucho, así que el medio kilo por fila que se tolera tiene margen de sobra. Se dejó en
     /// medio kilo porque también cubre un redondeo a kilo entero, a un decimal y el ruido de un <c>double</c> serializado (con 0,05 justo en el borde, <c>12.299999999999999</c> por
     /// <c>12.35</c> se rechazaba). Se suma por fila de la posición; nada relativo: un cambio de peso de medio kilo o más por fila no pasa,
-    /// y uno menor no cambia ni el camión ni el costeo (auditoría de f3c79d5).
+    /// y uno menor no cambia ni el camión ni el costeo.
     /// </summary>
     public const decimal ToleranciaPesoFilaKg = 0.5m;
 
@@ -386,7 +386,7 @@ public sealed class clsCubicadorHttp(
     public const decimal ToleranciaUnidad = 0.01m;
 
     /// <summary>
-    /// HU-023 (#176, auditoría A3): ¿la corrida reconsultada es la de ESTA petición? Devuelve <c>null</c> si su huella coincide, o por qué
+    /// ¿La corrida reconsultada es la de ESTA petición? Devuelve <c>null</c> si su huella coincide, o por qué
     /// no (para el log). La guía del cubicador (§5.1, §5.2, §7) dice que el <c>GET</c> devuelve la última corrida con la misma forma del
     /// <c>POST</c>: por camión, <c>mercancias[]</c> con <c>indicePosicion</c>, <c>codigoMercancia</c>, <c>cantidad</c>, <c>pesoKg</c>
     /// (total de la fila) y <c>volumenM3</c>; <b>no devuelve medidas</b>, y una corrida anterior al cambio trae <c>indicePosicion</c> en
@@ -755,8 +755,8 @@ public sealed class clsCubicadorHttp(
 
     /// <summary>
     /// Tubería del cliente <see cref="NombreCliente"/>: <paramref name="tiempo"/> por intento de cada GET (catálogos, salud),
-    /// <paramref name="tiempoRecomendacion"/> para el POST (D3b, E2E 2026-10-16: <c>Cubicador:TiempoEsperaRecomendacionSegundos</c>; el
-    /// motor tarda hasta ~30 s con cargas grandes) y <paramref name="tiempoReconsulta"/> por intento de la reconsulta (opción C:
+    /// <paramref name="tiempoRecomendacion"/> para el POST (<c>Cubicador:TiempoEsperaRecomendacionSegundos</c>; el
+    /// motor tarda hasta ~30 s con cargas grandes) y <paramref name="tiempoReconsulta"/> por intento de la reconsulta (
     /// <c>Cubicador:TiempoEsperaReconsultaSegundos</c>; la petición lleva <see cref="OpcionReconsulta"/>). En total, lo que caben el intento
     /// y los <see cref="ReintentosLectura"/> reintentos de un GET con sus esperas (<see cref="TiempoTotal"/>), el POST o la reconsulta, lo
     /// que sea mayor (un POST no se reintenta; la reconsulta y los catálogos tienen además su propio tope). El circuito con una ventana de
@@ -897,14 +897,14 @@ public sealed class clsCubicadorHttp(
 
             if (respuesta.StatusCode == HttpStatusCode.UnprocessableEntity && metodo == HttpMethod.Post)
             {
-                // D1 (E2E 2026-10-16): el 422 del POST es la validación de los DATOS de la carga (medida, peso o cantidad fuera de rango):
+                // El 422 del POST es la validación de los DATOS de la carga (medida, peso o cantidad fuera de rango):
                 // un 400 para el comercial con la mercancía, no "avisa a soporte". Cotifly ya valida antes; esto cubre lo que se escape.
                 return await PeticionRechazadaAsync(respuesta, ruta, cancellationToken);
             }
 
             if (respuesta.StatusCode == HttpStatusCode.UnprocessableEntity)
             {
-                // HU-023 (#176): un 422 es la validación del esquema del cubicador (falta un campo o llega uno viejo): un error de contrato
+                // Un 422 es la validación del esquema del cubicador (falta un campo o llega uno viejo): un error de contrato
                 // de Cotifly, visible y nunca al respaldo.
                 logger.LogError("El cubicador respondió 422 a {Metodo} {Ruta}: la petición de Cotifly no cumple su esquema.", metodo, ruta);
                 return new clsErrorDominio(clsCodigosError.CubicadorRespuestaInvalida, MensajeConsultaRechazada, $"HTTP 422 en {metodo} {ruta}");
@@ -966,7 +966,7 @@ public sealed class clsCubicadorHttp(
                 var error = Propiedad(raiz, "error") is { ValueKind: JsonValueKind.Object } anidado ? anidado : raiz;
                 codigo = Texto(error, "codigo", "code")?.Trim().ToUpperInvariant();
                 mensaje = Recortar(Texto(error, "mensaje", "message"));
-                // D-1019-1: si el cubicador señala la mercancía (hoy no lo hace), se conserva.
+                // Si el cubicador señala la mercancía, se conserva.
                 var senal = Propiedad(error, "detalle", "detail") is { ValueKind: JsonValueKind.Object } detalle ? detalle : error;
                 if (Propiedad(senal, "item", "indice") is { ValueKind: JsonValueKind.Number } numero && numero.TryGetInt32(out var indice) && indice >= 0)
                 {
@@ -993,7 +993,7 @@ public sealed class clsCubicadorHttp(
     }
 
     /// <summary>
-    /// D1 (E2E 2026-10-16): un 422 de <c>POST /recomendaciones</c> (FastAPI: <c>{"detail": [{"loc": ["body", "mercancias", 0, "largoCm"],
+    /// Un 422 de <c>POST /recomendaciones</c> (FastAPI: <c>{"detail": [{"loc": ["body", "mercancias", 0, "largoCm"],
     /// "msg": "..."}]}</c>). Si señala una mercancía: <c>DIMENSIONES_INVALIDAS</c> (medidas o peso) o <c>POSICION_INVALIDA</c> (cantidad), con
     /// <c>item</c> (base 0) y <c>campo</c> en los datos; si no, <c>CUBICADOR_PETICION_RECHAZADA</c>. Los tres son 400 para el comercial y
     /// nunca van al respaldo (no son una caída).
@@ -1122,7 +1122,7 @@ public sealed class clsCubicadorHttp(
         var mercancias = new List<clsMercanciaVehiculo>();
         foreach (var m in Arreglo(fila, "mercancias"))
         {
-            // HU-023 (#176): una fila por posición; dos filas pueden compartir código (no se agrupan aquí: quien agrupe suma).
+            // Una fila por posición; dos filas pueden compartir código (no se agrupan aquí: quien agrupe suma).
             if (m.ValueKind == JsonValueKind.Object && Codigo(m, "codigoMercancia") is { } codigoMercancia)
             {
                 mercancias.Add(new clsMercanciaVehiculo(
@@ -1161,7 +1161,7 @@ public sealed class clsCubicadorHttp(
     };
 
     /// <summary>
-    /// <c>extradimension</c> con la estructura vigente (HU-023, #176; guía §5.3): <c>{hayExtradimension, medidasEstandar{largoMaxCm,
+    /// <c>extradimension</c> con la estructura vigente (guía del cubicador §5.3): <c>{hayExtradimension, medidasEstandar{largoMaxCm,
     /// anchoMaxCm, altoMaxCm, pesoMaxKg}, piezas[]{indicePosicion, idTipoMercancia, codigoMercancia, excesos[]}}</c>. Un booleano suelto o
     /// la marca vieja <c>extradimensionado</c> se leen como <c>hayExtradimension</c> sin piezas.
     /// </summary>
@@ -1299,7 +1299,7 @@ public sealed class clsCubicadorHttp(
         };
     }
 
-    // --- Forma de la petición de POST /recomendaciones (camelCase, contrato de HU-023) ---
+    // --- Forma de la petición de POST /recomendaciones (camelCase, contrato del cubicador) ---
 
     private sealed record clsRecomendacionWire(
         string IdLineaSolicitud, string OrigenSistema, string? ClaseViajeSeleccionada, string? UsuarioId, IReadOnlyList<clsMercanciaWire> Mercancias);

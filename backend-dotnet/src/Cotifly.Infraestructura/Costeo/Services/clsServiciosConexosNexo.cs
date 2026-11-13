@@ -8,7 +8,7 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Infraestructura.Costeo.Services;
 
 /// <summary>
-/// Servicios conexos contra Nexo en vivo (HU-013.3, ADR-018 §4): <c>GET /api/servicios-conexos</c>, <c>GET /api/cotizaciones/{id}</c>
+/// Servicios conexos contra Nexo en vivo (ADR-018 §4): <c>GET /api/servicios-conexos</c>, <c>GET /api/cotizaciones/{id}</c>
 /// y <c>POST /api/cotizaciones/{id}/conexos</c>. Reutiliza el envío de <see cref="clsCosteoNexo"/> (cliente <c>NexoCosteo</c>: 30 s,
 /// reintentos solo en GET, el POST nunca se reintenta; identidad <c>X-Portal-clsUsuario-Id</c> del comercial; una línea de warning por
 /// fallo) con un límite de <see cref="LimiteRespuestaBytes"/> por respuesta, y traduce los errores al vocabulario del contrato:
@@ -139,7 +139,7 @@ public sealed class clsServiciosConexosNexo(clsCosteoNexo costeo) : IClsServicio
     }
 
     /// <summary>
-    /// Error del envío de Nexo → error del contrato de HU-013.3. El detalle de <see cref="clsCosteoNexo"/> empieza por
+    /// Error del envío de Nexo → error del contrato de los servicios conexos. El detalle de <see cref="clsCosteoNexo"/> empieza por
     /// <c>HTTP {estado} {código de Nexo}: {mensaje}</c> en los 4xx (y "HTTP 403" en el 403, que allá es "no disponible").
     /// </summary>
     public static clsErrorDominio Traducir(clsErrorDominio error, bool agregando)
@@ -163,7 +163,7 @@ public sealed class clsServiciosConexosNexo(clsCosteoNexo costeo) : IClsServicio
     }
 
     /// <summary>
-    /// Detalle de un error HTTP de Nexo sin su texto crudo (arrastre de #99 en #102): <c>HTTP 401 CODIGO: mensaje</c> → <c>CODIGO</c>, y
+    /// Detalle de un error HTTP de Nexo sin su texto crudo: <c>HTTP 401 CODIGO: mensaje</c> → <c>CODIGO</c>, y
     /// sin código de Nexo, solo <c>HTTP 401</c>. Los demás detalles (propios de Cotifly, sin texto de Nexo) quedan igual.
     /// </summary>
     public static string SoloCodigo(string detalle)

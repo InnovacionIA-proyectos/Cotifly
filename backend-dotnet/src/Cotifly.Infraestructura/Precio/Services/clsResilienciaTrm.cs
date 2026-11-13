@@ -4,7 +4,7 @@ using Polly;
 namespace Cotifly.Infraestructura.Precio.Services;
 
 /// <summary>
-/// Tubería estándar de resiliencia común a las fuentes de la TRM (HU-012.1, ADR-014): <paramref name="total"/> para toda la consulta,
+/// Tubería estándar de resiliencia común a las fuentes de la TRM (ADR-014): <paramref name="total"/> para toda la consulta,
 /// un tercio por intento y <see cref="Reintentos"/> reintentos ante 5xx, 408, 429, fallos de red o intento agotado (GET, idempotente).
 /// Cada fuente le pasa su propio tiempo: <c>Trm:TiempoEsperaSegundos</c> (Superintendencia) y <c>Trm:TiempoEsperaDolarApiSegundos</c>
 /// (DolarApi, más corto para no demorar el respaldo).

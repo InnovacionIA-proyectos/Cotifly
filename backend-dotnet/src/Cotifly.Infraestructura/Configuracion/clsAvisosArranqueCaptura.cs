@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Configuracion;
 
 /// <summary>
-/// HU-032 (#197, M1 de la auditoría): avisos al arrancar sobre <c>Captura:ClasesSinVehiculoObligatorio</c>. La lista configurada
+/// Avisos al arrancar sobre <c>Captura:ClasesSinVehiculoObligatorio</c>. La lista configurada
 /// REEMPLAZA a la de por defecto (solo Contenedor), así que un ambiente que configura solo <c>__0=Carga Suelta</c> pasa a exigir el
 /// vehículo elegido en Contenedor. No impide arrancar (puede ser intencional), pero deja un warning con código estable
 /// (<see cref="CodigoContenedorExigeVehiculo"/>, EventId <see cref="EventoContenedorExigeVehiculo"/>) para que operación lo vea.

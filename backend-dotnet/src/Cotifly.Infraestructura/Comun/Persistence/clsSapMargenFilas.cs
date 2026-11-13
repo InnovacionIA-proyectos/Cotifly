@@ -1,7 +1,7 @@
 namespace Cotifly.Infraestructura.Comun.Persistence;
 
 /// <summary>
-/// HU-042.2 (#243): fila de <c>dbo_cotifly.SapMargenCliente</c> (<c>db/scripts/17_sap_margen_sincronizacion.sql</c>, HU-042.1 #242), la
+/// Fila de <c>dbo_cotifly.SapMargenCliente</c> (<c>db/scripts/17_sap_margen_sincronizacion.sql</c>), la
 /// copia local del margen recomendado de SAP TM. La escribe <c>sp_sincronizar_margen_sap</c>, que llama la sincronización del backend
 /// (<see cref="Margen.Services.clsSincronizacionMargenSapSql"/>); EF solo la lee (<see cref="Margen.Services.clsFuenteMargenTablaLocal"/>,
 /// <c>AsNoTracking</c>).
@@ -15,7 +15,7 @@ public sealed class clsSapMargenClienteFila
     /// <summary>Código crudo de SAP; la línea de negocio sale de <c>SapMapeoTrqType</c>.</summary>
     public string TrqType { get; private set; } = string.Empty;
 
-    /// <summary>BP del cliente tal como lo manda SAP (hoy sin ceros a la izquierda).</summary>
+    /// <summary>BP del cliente tal como lo manda SAP (sin ceros a la izquierda).</summary>
     public string BpSap { get; private set; } = string.Empty;
 
     public string? Nit { get; private set; }
@@ -33,7 +33,7 @@ public sealed class clsSapMargenClienteFila
 }
 
 /// <summary>
-/// HU-042.2 (#243): fila de <c>dbo_cotifly.SapMargenSyncLog</c> (<c>db/scripts/17</c>), una por corrida de la sincronización
+/// Fila de <c>dbo_cotifly.SapMargenSyncLog</c> (<c>db/scripts/17</c>), una por corrida de la sincronización
 /// (append-only). El backend solo lee la última corrida <c>ok</c> para saber si la copia existe y qué tan vieja es.
 /// </summary>
 public sealed class clsSapMargenSyncLogFila

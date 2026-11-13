@@ -46,7 +46,7 @@ public sealed class clsMunicipiosNexo(
             : ConsultarAsync(usuarioId, ConstruirUrl(_urlBase), null, cancellationToken);
 
     /// <summary>
-    /// HU-023 (#176): <c>GET /api/captura-solicitudes/ciudades?q=&amp;departamento=</c> (contrato con Nexo §3.1: de aquí salen los
+    /// <c>GET /api/captura-solicitudes/ciudades?q=&amp;departamento=</c> (contrato con Nexo §3.1: de aquí salen los
     /// <c>origenMunicipioId</c>/<c>destinoMunicipioId</c>). Nexo devuelve como mucho 50 filas de Colombia (<c>CiudadBusquedaDto</c>, sin
     /// <c>pais</c>: se completa con <see cref="PaisCiudades"/>).
     /// </summary>
@@ -87,7 +87,7 @@ public sealed class clsMunicipiosNexo(
             using var documento = await JsonDocument.ParseAsync(cuerpo, cancellationToken: cancellationToken);
             if (documento.RootElement.ValueKind != JsonValueKind.Array)
             {
-                // Un 200 que no es un arreglo no es un catálogo vacío: es una respuesta que no se entiende (HU-005.13).
+                // Un 200 que no es un arreglo no es un catálogo vacío: es una respuesta que no se entiende.
                 return NoDisponible("la respuesta no es un arreglo");
             }
 

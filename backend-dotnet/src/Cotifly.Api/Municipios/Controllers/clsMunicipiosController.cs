@@ -13,8 +13,8 @@ public sealed class clsMunicipiosController(IClsContextoUsuario usuario, IClsMun
     /// <summary>
     /// 200 municipios; 503 <c>MUNICIPIOS_NO_DISPONIBLE</c> si el catálogo de Nexo no responde (caído, 5xx, tiempo agotado, un 429 de
     /// Nexo, que no bloquea el cupo de catálogos porque los municipios no están limitados, sin configurar o el comercial sin <c>idUsuarioExterno</c>), igual que <c>GET /web/catalogos-flete</c> y que la
-    /// captura y la licitación. Un error de validación del caso de uso sería 400 (traducción única de <c>clsRespuestasWeb</c>); hoy
-    /// <c>q</c> y <c>departamento</c> son texto libre y se recortan a 100 caracteres, así que no hay entrada inválida. HU-023 (#176): con <c>q</c> o
+    /// captura y la licitación. Un error de validación del caso de uso sería 400 (traducción única de <c>clsRespuestasWeb</c>), pero
+    /// <c>q</c> y <c>departamento</c> son texto libre y se recortan a 100 caracteres, así que no hay entrada inválida. Con <c>q</c> o
     /// <c>departamento</c> es la búsqueda de Nexo <c>GET /api/captura-solicitudes/ciudades</c> (máximo 50, solo Colombia; de ahí salen
     /// los ids que viajan como <c>origen_municipio_id</c>/<c>destino_municipio_id</c>); sin filtros, el catálogo completo (sin paginar).
     /// </summary>
@@ -26,7 +26,7 @@ public sealed class clsMunicipiosController(IClsContextoUsuario usuario, IClsMun
         var resultado = string.IsNullOrWhiteSpace(q) && string.IsNullOrWhiteSpace(departamento)
             ? await municipios.ObtenerAsync(UsuarioId, cancellationToken)
             : await municipios.BuscarAsync(UsuarioId, q, departamento, cancellationToken);
-        // Alineado con la captura y la licitación (pendiente de #122): MUNICIPIOS_NO_DISPONIBLE es 503 también aquí.
+        // Alineado con la captura y la licitación: MUNICIPIOS_NO_DISPONIBLE es 503 también aquí.
         return resultado.Coincidir<IActionResult>(m => Ok(m), Error);
     }
 }

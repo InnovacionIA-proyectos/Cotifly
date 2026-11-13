@@ -5,9 +5,9 @@ using Microsoft.Extensions.Logging;
 namespace Cotifly.Infraestructura.Comun.Persistence;
 
 /// <summary>
-/// #191: purga periódica (cada hora; la primera, a los dos minutos de arrancar) de las <c>Idempotency-Key</c> vencidas de
+/// Purga periódica (cada hora; la primera, a los dos minutos de arrancar) de las <c>Idempotency-Key</c> vencidas de
 /// <c>dbo_cotifly.CapturasIdempotentes</c>, en lotes de <see cref="clsAlmacenIdempotenciaSql.LotePurga"/> hasta vaciarlas (con un tope
-/// por ronda). Las vencidas ya no cuentan aunque sigan en la tabla (la toma las ignora y las borra al reusar la clave): esto solo acota el
+/// por ronda). Las vencidas no cuentan aunque sigan en la tabla (la toma las ignora y las borra al reusar la clave): esto solo acota el
 /// tamaño. Con varias réplicas cada una purga; el <c>DELETE</c> es idempotente. Un fallo (base caída, sin el 06) queda como warning y se
 /// reintenta en la ronda siguiente: nunca detiene la API. Si el almacén registrado no es el de SQL (pruebas), no hace nada.
 /// </summary>

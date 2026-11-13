@@ -10,14 +10,14 @@ using Microsoft.Extensions.Logging;
 namespace Cotifly.Infraestructura.Mercancias.Services;
 
 /// <summary>
-/// Lectura local del Excel de mercancías como grilla cruda con ClosedXML (HU-035.1, #202, ADR-024), la misma librería del Excel de
+/// Lectura local del Excel de mercancías como grilla cruda con ClosedXML (ADR-024), la misma librería del Excel de
 /// licitaciones. No usa Nexo ni su regla de análisis salvo la detección del encabezado (la primera de las 15 primeras filas usadas con 3
 /// valores distintos; si ninguna, la primera fila con datos).
 /// </summary>
 /// <remarks>
 /// <para><b>Acotado contra archivos maliciosos o corruptos</b> (nunca un 500 por el contenido):</para>
 /// <list type="bullet">
-/// <item>antes de abrirlo, los controles compartidos de <see cref="clsLecturaExcelAcotada"/> (HU-035.2, #213: los mismos del pliego de
+/// <item>antes de abrirlo, los controles compartidos de <see cref="clsLecturaExcelAcotada"/> (los mismos del pliego de
 /// licitación): firma, 1000 entradas, 64 MB descomprimidos contados de verdad, 1.000.000 de elementos XML contados en flujo sin DTD y
 /// el cupo de lecturas simultáneas del proceso (<c>SERVICIO_OCUPADO</c>);</item>
 /// <item>las fórmulas nunca se evalúan: se devuelve el valor que Excel guardó (<see cref="IXLCell.CachedValue"/>);</item>
@@ -25,7 +25,7 @@ namespace Cotifly.Infraestructura.Mercancias.Services;
 /// <item>la cancelación del llamador se respeta.</item>
 /// </list>
 /// <para><b>Hojas ocultas</b> (<c>hidden</c> y <c>veryHidden</c>): se leen como las visibles y vienen marcadas con
-/// <see cref="clsHojaExcelMercancias.Oculta"/> (decisión del usuario, #202).</para>
+/// <see cref="clsHojaExcelMercancias.Oculta"/>.</para>
 /// <para><b>Formato estable</b> (sin depender de la cultura ni del formato visual de la celda): números invariantes con hasta 15 cifras
 /// significativas, fechas ISO (<c>yyyy-MM-dd</c> o <c>yyyy-MM-ddTHH:mm:ss</c>), duraciones <c>HH:mm:ss</c>, booleanos
 /// <c>true</c>/<c>false</c>, errores con su texto de Excel y el texto sin espacios al borde y con los saltos de línea como un espacio.</para>

@@ -10,8 +10,8 @@ using Microsoft.AspNetCore.Mvc;
 namespace Cotifly.Api.Cubicacion.Controllers;
 
 /// <summary>
-/// "Calcular cubicaje" del formulario (HU-023.2, #157): vista previa contra el cubicador, sin persistencia en la base. Dado un conjunto de
-/// bultos con su tipo de mercancía, devuelve la lista de vehículos que recomienda el cubicador. Opción D (D3, E2E 2026-10-16): si el
+/// "Calcular cubicaje" del formulario: vista previa contra el cubicador, sin persistencia en la base. Dado un conjunto de
+/// bultos con su tipo de mercancía, devuelve la lista de vehículos que recomienda el cubicador. Si el
 /// cubicador no responde dentro de <c>Cubicador:EsperaSincronaCubicacionSegundos</c>, responde 202 y el cálculo sigue en segundo plano
 /// (<c>GET /web/cubicacion/{id}</c>).
 /// </summary>
@@ -32,7 +32,7 @@ public sealed class clsCubicacionController(
     /// responde a tiempo; 202 <c>CubicacionEnProceso</c> (<c>Location</c> y <c>Retry-After</c>) si sigue calculando: consultar
     /// <c>GET /web/cubicacion/{id}</c>. 400 si falta <c>items</c> (<c>ITEMS_REQUERIDOS</c>), si un ítem tiene medidas o peso fuera de rango
     /// (<c>DIMENSIONES_INVALIDAS</c>) o una cantidad fuera de rango (<c>POSICION_INVALIDA</c>), los dos con <c>detalle.item</c> y validados
-    /// antes de llamar (D1), si una mercancía no se reconoce (<c>MERCANCIA_DESCONOCIDA</c>) o si el cubicador rechaza la carga
+    /// antes de llamar, si una mercancía no se reconoce (<c>MERCANCIA_DESCONOCIDA</c>) o si el cubicador rechaza la carga
     /// (<c>MERCANCIA_NO_CUBICABLE</c>, <c>DIMENSIONES_INVALIDAS</c>, <c>MERCANCIAS_REQUERIDAS</c>, o un 422: <c>CUBICADOR_PETICION_RECHAZADA</c>);
     /// 503 si el cubicador no está configurado o no responde (<c>CUBICADOR_NO_DISPONIBLE</c>), rechazó la llave
     /// (<c>CUBICADOR_NO_AUTORIZADO</c>), respondió fuera del contrato (<c>CUBICADOR_RESPUESTA_INVALIDA</c>) o está ocupado con otras cargas
@@ -83,7 +83,7 @@ public sealed class clsCubicacionController(
     [ProducesResponseType<clsErrorWeb>(StatusCodes.Status404NotFound)]
     public IActionResult Consultar(string id)
     {
-        // Endurecimiento A (#199): un id que no es un GUID responde el mismo 404 ErrorWeb (antes un 404 de enrutamiento sin cuerpo).
+        // Un id que no es un GUID responde el mismo 404 ErrorWeb que una cubicación que no existe.
         if (!Guid.TryParse(id, out var guid) || rapida.Obtener(UsuarioId, guid) is not { } cubicacion)
         {
             return NotFound(new clsErrorWeb(MensajeNoEncontrada));

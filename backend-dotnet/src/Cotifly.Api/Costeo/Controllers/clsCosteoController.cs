@@ -30,10 +30,10 @@ public sealed class clsCosteoController(
     IClsSeguroCosteoService seguro) : clsControladorWebBase(usuario)
 {
     /// <summary>
-    /// HU-036.2 (#206): el comercial acepta el precio y finaliza la cotización. 200 <c>CotizacionResumen</c> con <c>finalizada_at</c> (y el
+    /// El comercial acepta el precio y finaliza la cotización. 200 <c>CotizacionResumen</c> con <c>finalizada_at</c> (y el
     /// <c>ETag</c> nuevo; re-finalizar es 200 sin cambios con el mismo <c>ETag</c>); 404 si no es suya; 409 <c>COTIZACION_NO_FINALIZABLE</c>
     /// (<c>estado_costeo</c> distinto de <c>autocosteo</c> y <c>entregada</c>) o <c>CONFLICTO_CONCURRENCIA</c>; 428 sin <c>If-Match</c>.
-    /// HU-046.3 (#269; contrato del 2026-11-10): cuerpo opcional <c>FinalizarWeb</c> con <c>justificacion</c>; sin ella, 409
+    /// Cuerpo opcional <c>FinalizarWeb</c> con <c>justificacion</c>; sin ella, 409
     /// <c>COTIZACION_NO_FINALIZABLE</c> con <c>detalle.motivo = medidas_obligatorias_faltantes</c> (y <c>detalle.rutas</c> con
     /// <c>linea_orden</c>, <c>origen</c>, <c>destino</c> y sus medidas) si falta una medida obligatoria de la política de seguros; 400
     /// <c>JUSTIFICACION_REQUERIDA</c> (con <c>detalle.minimo</c> y <c>detalle.maximo</c>) si la justificación viene fuera de 10 a 500
@@ -61,7 +61,7 @@ public sealed class clsCosteoController(
     }
 
     /// <summary>
-    /// HU-023.3 (#158): 200 <c>CosteoCotizacion</c> con los camiones de la ruta recalculados por el cubicador (cuando cambiaron sus
+    /// 200 <c>CosteoCotizacion</c> con los camiones de la ruta recalculados por el cubicador (cuando cambiaron sus
     /// mercancías o su peso, antes de enviar a Nexo); 400 <c>SOLICITUD_COSTEO_INVALIDA</c> (mercancías sin código), <c>RUTA_INEXISTENTE</c>
     /// o un rechazo del cubicador (<c>MERCANCIA_DESCONOCIDA</c>...); 404; 409 <c>ESTADO_NO_PERMITE</c> (ya está en Nexo: usar
     /// re-solicitar) o <c>CONFLICTO_CONCURRENCIA</c>; 428 sin <c>If-Match</c>; 503 si el cubicador no responde (sin respaldo) o su
@@ -77,7 +77,7 @@ public sealed class clsCosteoController(
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> RecalcularVehiculos(string folio, string rutaId, CancellationToken cancellationToken)
     {
-        // Endurecimiento A (#199): un id de ruta que no es un GUID responde 404, igual que una ruta que no existe (antes 400 "Cuerpo inválido").
+        // Un id de ruta que no es un GUID responde 404, igual que una ruta que no existe.
         if (!Guid.TryParse(rutaId, out var ruta))
         {
             return clsRespuestasWeb.NoEsTuya();
@@ -88,10 +88,10 @@ public sealed class clsCosteoController(
     }
 
     /// <summary>
-    /// 200 <c>CotizacionResumen</c> con <c>ganada</c> y <c>motivo_rechazo</c> (Nexo respondió 200, o HU-033: Nexo aún no la tiene
+    /// 200 <c>CotizacionResumen</c> con <c>ganada</c> y <c>motivo_rechazo</c> (Nexo respondió 200, o Nexo aún no la tiene
     /// entregada y el resultado queda pendiente de sincronizar); 400; 404 si no es suya; 409 <c>RESULTADO_YA_DEFINIDO</c>,
     /// <c>COTIZACION_NO_ENTREGADA</c> (ganada en <c>error_envio</c>, <c>pendiente_envio</c> ya en Nexo, o error de Nexo al leer el costeo), <c>COSTEO_NO_LISTO</c> o <c>CONFLICTO_CONCURRENCIA</c>; 428 en la
-    /// perdida solo en Cotifly sin <c>If-Match</c> (HU-013.17); 503 si Nexo no responde. El 200 trae el <c>ETag</c> nuevo.
+    /// perdida solo en Cotifly sin <c>If-Match</c>; 503 si Nexo no responde. El 200 trae el <c>ETag</c> nuevo.
     /// </summary>
     [HttpPost("cotizaciones/{folio}/resultado")]
     [ProducesResponseType<clsCotizacionResumen>(StatusCodes.Status200OK)]
@@ -100,7 +100,7 @@ public sealed class clsCosteoController(
     public async Task<IActionResult> MarcarResultado(string folio, [FromBody] clsResultadoWebRequest cuerpo, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(cuerpo);
-        // If-Match opcional (compatibilidad); la perdida solo en Cotifly (HU-013.17) lo exige: 428 sin él, 409 si no coincide.
+        // If-Match opcional (compatibilidad); la perdida solo en Cotifly lo exige: 428 sin él, 409 si no coincide.
         var resultado = await resultadoCotizacion.MarcarAsync(
             UsuarioId, folio, cuerpo.Resultado, cuerpo.Motivo, cuerpo.Comentario, clsConcurrenciaHttp.LeerIfMatch(Request), cancellationToken);
         if (resultado.EsExitoso)
@@ -113,7 +113,7 @@ public sealed class clsCosteoController(
 
     /// <summary>
     /// 200 <c>CosteoCotizacion</c> (estado, precio final y servicios conexos con su precio; de los costos de Nexo solo el bruto de cada
-    /// ruta, HU-039.1, #218); 404 si no es suya.
+    /// ruta); 404 si no es suya.
     /// </summary>
     [HttpGet("cotizaciones/{folio}/costeo")]
     [ProducesResponseType<clsCosteoCotizacion>(StatusCodes.Status200OK)]
@@ -122,7 +122,7 @@ public sealed class clsCosteoController(
         (await costeo.ObtenerAsync(UsuarioId, folio, cancellationToken)).Coincidir<IActionResult>(c => Ok(c), Error);
 
     /// <summary>
-    /// HU-013.2 (ADR-018 §3; por ruta desde HU-021.8, #135): 200 <c>CosteoCotizacion</c> con el margen de la ruta ajustado y los precios
+    /// Ajuste del margen de una ruta (ADR-018 §3): 200 <c>CosteoCotizacion</c> con el margen de la ruta ajustado y los precios
     /// recalculados (y el <c>ETag</c> nuevo); 400 <c>AJUSTE_MARGEN_INVALIDO</c>, <c>JUSTIFICACION_REQUERIDA</c>, <c>RUTA_REQUERIDA</c> (con
     /// <c>detalle.rutas</c>) o <c>RUTA_INEXISTENTE</c>; 404; 409 <c>COSTEO_NO_LISTO</c>, <c>PDF_YA_ENVIADO</c> o
     /// <c>CONFLICTO_CONCURRENCIA</c>; 428 sin <c>If-Match</c>.
@@ -148,7 +148,7 @@ public sealed class clsCosteoController(
     }
 
     /// <summary>
-    /// HU-045.2 (#264): 200 <c>CosteoCotizacion</c> con el seguro de la mercancía de la ruta incluido o quitado, sus precios recalculados y
+    /// 200 <c>CosteoCotizacion</c> con el seguro de la mercancía de la ruta incluido o quitado, sus precios recalculados y
     /// la tasa vigente (y el <c>ETag</c> nuevo); 400 <c>SOLICITUD_INVALIDA</c> (sin <c>incluye_seguro</c>), <c>SEGURO_SIN_VALOR_MERCANCIA</c>,
     /// <c>RUTA_REQUERIDA</c> (con <c>detalle.rutas</c>) o <c>RUTA_INEXISTENTE</c>; 404; 409 <c>PDF_YA_ENVIADO</c> (enviada o finalizada, como
     /// el margen), <c>RUTA_RECHAZADA</c>, <c>ESTADO_NO_PERMITE</c> (licitación) o <c>CONFLICTO_CONCURRENCIA</c>; 428 sin <c>If-Match</c>. Con PDF
@@ -176,7 +176,7 @@ public sealed class clsCosteoController(
     }
 
     /// <summary>
-    /// 200 <c>CosteoCotizacion</c> con los conexos de la ruta quitados o con su cantidad nueva (y el <c>ETag</c> nuevo; HU-021.8, #135);
+    /// 200 <c>CosteoCotizacion</c> con los conexos de la ruta quitados o con su cantidad nueva (y el <c>ETag</c> nuevo);
     /// 400 id desconocido, forma inválida, <c>RUTA_REQUERIDA</c> o <c>RUTA_INEXISTENTE</c>; 404; 409 <c>COSTEO_NO_LISTO</c>,
     /// <c>PDF_YA_ENVIADO</c> o <c>CONFLICTO_CONCURRENCIA</c>; 428 sin <c>If-Match</c>. Con PDF vigente lo invalida (ADR-018 §11).
     /// </summary>
@@ -197,7 +197,7 @@ public sealed class clsCosteoController(
     /// <summary>
     /// 201 <c>SalidaPdf</c> (y el <c>ETag</c> nuevo); 404; 409 <c>COSTEO_NO_LISTO</c>, <c>PDF_YA_GENERADO</c>, <c>PDF_YA_ENVIADO</c> o
     /// <c>CONFLICTO_CONCURRENCIA</c> (solo con <c>If-Match</c>, que aquí es opcional); 400 <c>PDF_PAYLOAD_INVALIDO</c>; 503
-    /// <c>PDF_RENDER_NO_DISPONIBLE</c> (falló el render o no hubo turno a tiempo, #92/#95).
+    /// <c>PDF_RENDER_NO_DISPONIBLE</c> (falló el render o no hubo turno a tiempo).
     /// </summary>
     [HttpPost("cotizaciones/{folio}/costeo/pdf")]
     [ProducesResponseType<Aplicacion.Pdf.DTOs.clsSalidaPdf>(StatusCodes.Status201Created)]
@@ -217,9 +217,9 @@ public sealed class clsCosteoController(
 
     /// <summary>
     /// 201 <c>CotizacionResumen</c> aunque Nexo falle (queda en <c>error_envio</c> con el motivo); 400 <c>SOLICITUD_COSTEO_INVALIDA</c>
-    /// (con todos los errores en <c>detalle.errores</c>, HU-021.6), <c>MARGEN_LINEA_DESCONOCIDA</c> o <c>FOLIO_CONSECUTIVO_AGOTADO</c>; 503
+    /// (con todos los errores en <c>detalle.errores</c>), <c>MARGEN_LINEA_DESCONOCIDA</c> o <c>FOLIO_CONSECUTIVO_AGOTADO</c>; 503
     /// <c>CATALOGOS_FLETE_NO_DISPONIBLE</c>, <c>MUNICIPIOS_NO_DISPONIBLE</c> o <c>NEXO_NO_DISPONIBLE</c> (conexos) si no se pudo validar
-    /// contra los catálogos de Nexo (nada queda guardado). <c>Idempotency-Key</c> opcional (#173): la repetición devuelve la misma
+    /// contra los catálogos de Nexo (nada queda guardado). <c>Idempotency-Key</c> opcional: la repetición devuelve la misma
     /// cotización; si la primera falló después de confirmar el folio, 409 <c>ESTADO_NO_PERMITE</c> (<c>CAPTURA_EN_CURSO</c>) sin volver a
     /// llamar a Nexo. Si la lectura secundaria del resumen falla después de guardar, igual responde 201 con <c>avisos = [RESUMEN_INCOMPLETO]</c>.
     /// </summary>
@@ -238,7 +238,7 @@ public sealed class clsCosteoController(
             return Error(entrada.Error);
         }
 
-        // #173: con Idempotency-Key, un reintento del mismo POST (timeout, 500) devuelve la cotización de la primera sin otro folio
+        // Con Idempotency-Key, un reintento del mismo POST (timeout, 500) devuelve la cotización de la primera sin otro folio
         // ni otra solicitud en Nexo. El resumen se arma tolerando fallos de la lectura secundaria: lo esencial ya quedó guardado.
         var clave = Request.Headers[EncabezadoIdempotencia].ToString();
         var resultado = await envio.CapturarUnaVezAsync(UsuarioId, entrada.Valor, clave.Length == 0 ? null : clave, cancellationToken);
@@ -246,7 +246,7 @@ public sealed class clsCosteoController(
             ? Error(resultado.Error)
             : StatusCode(StatusCodes.Status201Created, (await misCotizaciones.ResumirAsync(resultado.Valor, CancellationToken.None)) with
             {
-                // HU-023.3: el resultado del cubicador por ruta y sus avisos (estos no se guardan: solo viajan en esta respuesta).
+                // El resultado del cubicador por ruta y sus avisos (estos no se guardan: solo viajan en esta respuesta).
                 Cubicacion = clsCubicacionRutaResumen.De(resultado.Valor),
             });
     }
@@ -255,10 +255,10 @@ public sealed class clsCosteoController(
     public const string EncabezadoIdempotencia = "Idempotency-Key";
 
     /// <summary>
-    /// HU-013.4 (ADR-018 §5), "Cotizar costo": 200 <c>CotizacionResumen</c> si se reenvió en el mismo folio o 201 con <c>Location</c> si
+    /// "Cotizar costo" (ADR-018 §5): 200 <c>CotizacionResumen</c> si se reenvió en el mismo folio o 201 con <c>Location</c> si
     /// se creó la versión <c>-vN</c> (los dos con el <c>ETag</c> de la cotización resultante); 400 <c>SOLICITUD_COSTEO_INVALIDA</c> o
     /// <c>ErrorWeb</c> (<c>Idempotency-Key</c> fuera de largo); 404; 409 <c>IDEMPOTENCY_KEY_REUTILIZADA</c> (la misma clave con otro
-    /// cuerpo, D4), <c>ESTADO_NO_PERMITE</c>, <c>PDF_YA_ENVIADO</c> o
+    /// cuerpo), <c>ESTADO_NO_PERMITE</c>, <c>PDF_YA_ENVIADO</c> o
     /// <c>CONFLICTO_CONCURRENCIA</c>; 428 sin <c>If-Match</c>.
     /// </summary>
     [HttpPost("cotizaciones/{folio}/costeo/re-solicitar")]
@@ -289,13 +289,13 @@ public sealed class clsCosteoController(
         var valor = resultado.Valor;
         clsConcurrenciaHttp.EscribirEtag(Response, valor.RowVersion);
 
-        // HU-021.9 (#136): la respuesta trae siempre los conexos que se conservan (lista vacía si no había); conexos_descartados (#124)
-        // queda vacío por compatibilidad: con la decisión 3 la re-solicitud ya no descarta conexos.
+        // La respuesta trae siempre los conexos que se conservan (lista vacía si no había); conexos_descartados
+        // queda vacío por compatibilidad: la re-solicitud no descarta conexos.
         var resumen = valor.Cotizacion with
         {
             ConexosDescartados = valor.ConexosDescartados ?? [],
             ConexosConservados = valor.ConexosConservados ?? [],
-            // HU-028.1 (#183): solo si la cotización de origen tenía camiones rechazados por la Mesa de Costeo.
+            // Solo si la cotización de origen tenía camiones rechazados por la Mesa de Costeo.
             AvisoRechazos = valor.AvisoRechazos,
         };
         return valor.VersionNueva
@@ -305,7 +305,7 @@ public sealed class clsCosteoController(
 
     /// <summary>
     /// 200 <c>CotizacionResumen</c> tras el reenvío; 404 si no es suya; 409 <c>COSTEO_NO_REINTENTABLE</c>. Se conserva por compatibilidad:
-    /// <c>POST .../costeo/re-solicitar</c> lo amplía (HU-013.4).
+    /// <c>POST .../costeo/re-solicitar</c> lo amplía.
     /// </summary>
     [HttpPost("cotizaciones/{folio}/costeo/reintentar")]
     [ProducesResponseType<clsCotizacionResumen>(StatusCodes.Status200OK)]

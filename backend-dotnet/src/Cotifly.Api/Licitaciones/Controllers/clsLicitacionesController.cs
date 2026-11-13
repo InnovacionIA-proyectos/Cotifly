@@ -11,10 +11,10 @@ using Microsoft.AspNetCore.Mvc;
 namespace Cotifly.Api.Licitaciones.Controllers;
 
 /// <summary>
-/// Licitaciones desde Excel (HU-011, ADR-017, <c>specs/openapi.yaml</c>): analizar el pliego en Nexo, crear la licitación con sus
+/// Licitaciones desde Excel (ADR-017, <c>specs/openapi.yaml</c>): analizar el pliego en Nexo, crear la licitación con sus
 /// líneas mapeadas y verla. El cuerpo se lee a mano (multipart o JSON) para que la sesión se valide antes que el tipo de contenido
 /// y el límite del cuerpo sea el de <c>SeguridadHttp:LimiteCuerpoLicitacionBytes</c>. Solo cotizaciones propias, salvo la vista y el
-/// Excel, que también ven el gerente de la regional del dueño y el director en solo lectura (HU-034.1, #201).
+/// Excel, que también ven el gerente de la regional del dueño y el director en solo lectura.
 /// </summary>
 [Route("web")]
 public sealed class clsLicitacionesController(
@@ -26,12 +26,12 @@ public sealed class clsLicitacionesController(
     public const string ParteArchivo = "archivo";
     public const string ParteLicitacion = "licitacion";
 
-    /// <summary>HU-044.10 (#293): encabezado de la clave de idempotencia de crear una licitación (ADR-018 §8).</summary>
+    /// <summary>Encabezado de la clave de idempotencia de crear una licitación (ADR-018 §8).</summary>
     public const string EncabezadoIdempotencia = "Idempotency-Key";
 
     /// <summary>
     /// 200 <c>AnalisisExcel</c>; 400 <c>ARCHIVO_REQUERIDO</c>, <c>FORMATO_NO_SOPORTADO</c>, <c>ARCHIVO_DEMASIADO_GRANDE</c>, <c>EXCEL_*</c>; 429
-    /// <c>IA_TOPE_DIARIO</c> (#278: cupo diario de IA del comercial en Nexo); 503 sin Nexo.
+    /// <c>IA_TOPE_DIARIO</c> (cupo diario de IA del comercial en Nexo); 503 sin Nexo.
     /// </summary>
     [HttpPost("licitaciones/analizar-excel")]
     [ProducesResponseType<clsAnalisisExcel>(StatusCodes.Status200OK)]
@@ -94,7 +94,7 @@ public sealed class clsLicitacionesController(
         }
 
         clsCamposRetirados.Registrar(logger, "POST /web/licitaciones", cuerpo.CamposRetirados());
-        // HU-044.10 (#293, parte 3): Idempotency-Key opcional (8 a 64; CORS ya la permite). Un doble clic con la misma clave no crea otra
+        // Idempotency-Key opcional (8 a 64; CORS ya la permite). Un doble clic con la misma clave no crea otra
         // licitación: relee la creada y responde 201 con su estado de ahora. El largo y el 409 por otra huella los resuelve el almacén.
         var clave = Request.Headers[EncabezadoIdempotencia].ToString();
         var resultado = await licitaciones.CrearUnaVezAsync(UsuarioId, cuerpo.AEntrada(archivo), clave.Length == 0 ? null : clave, cancellationToken);
@@ -114,8 +114,8 @@ public sealed class clsLicitacionesController(
 
     /// <summary>
     /// 200 <c>Licitacion</c> con el estado y el precio de cada línea (nunca el costo de Nexo), sus camiones y el progreso de la cubicación en
-    /// segundo plano (HU-023.5: <c>progreso_cubicacion</c>, para consultarlo cada pocos segundos mientras esté <c>en_curso</c>). HU-034.1
-    /// (#201): también para el director y el gerente de la regional del dueño, con <c>solo_lectura = true</c>; 404 para cualquier otro.
+    /// segundo plano (<c>progreso_cubicacion</c>, para consultarlo cada pocos segundos mientras esté <c>en_curso</c>). También
+    /// para el director y el gerente de la regional del dueño, con <c>solo_lectura = true</c>; 404 para cualquier otro.
     /// </summary>
     [HttpGet("licitaciones/{folio}")]
     [ProducesResponseType<clsLicitacion>(StatusCodes.Status200OK)]
@@ -124,7 +124,7 @@ public sealed class clsLicitacionesController(
         (await licitaciones.ObtenerAsync(UsuarioId, folio, cancellationToken)).Coincidir<IActionResult>(l => Ok(l), Error);
 
     /// <summary>
-    /// HU-023.5 (#160): reintenta las rutas con la cubicación fallida (vuelven a la cola) o, con <c>usar_respaldo</c>, las acepta con un
+    /// Reintenta las rutas con la cubicación fallida (vuelven a la cola) o, con <c>usar_respaldo</c>, las acepta con un
     /// camión sin vehículo (lo resuelve la Mesa de Costeo) y, si no queda nada pendiente, envía la licitación a Nexo. 200 <c>Licitacion</c>;
     /// 404 si no es una licitación suya; 409 <c>ESTADO_NO_PERMITE</c> si no tiene rutas fallidas.
     /// </summary>
@@ -158,9 +158,9 @@ public sealed class clsLicitacionesController(
     }
 
     /// <summary>
-    /// 200 xlsx: el Excel original del cliente con las columnas de precio final, estado, servicios conexos y camiones (HU-011.3, HU-023.5),
-    /// más las hojas "Resumen Cotifly" y "Camiones Cotifly"; sin original, una hoja con los campos mapeados. Nunca trae costos de Nexo. HU-034.1
-    /// (#201): el mismo archivo para el director y el gerente de la regional del dueño. 404 si no la puede ver o no es licitación. HU-035.2 (#213): el original guardado pasa por los controles del Excel subido (400
+    /// 200 xlsx: el Excel original del cliente con las columnas de precio final, estado, servicios conexos y camiones,
+    /// más las hojas "Resumen Cotifly" y "Camiones Cotifly"; sin original, una hoja con los campos mapeados. Nunca trae costos de Nexo.
+    /// El mismo archivo para el director y el gerente de la regional del dueño. 404 si no la puede ver o no es licitación. El original guardado pasa por los controles del Excel subido (400
     /// <c>EXCEL_INVALIDO</c> o <c>ARCHIVO_DEMASIADO_GRANDE</c> con <c>detalle.motivo</c>) y por el cupo de lecturas (503
     /// <c>SERVICIO_OCUPADO</c> con <c>Retry-After</c>).
     /// </summary>

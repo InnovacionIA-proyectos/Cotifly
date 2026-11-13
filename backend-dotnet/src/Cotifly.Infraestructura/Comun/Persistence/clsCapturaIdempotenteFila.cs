@@ -1,7 +1,7 @@
 namespace Cotifly.Infraestructura.Comun.Persistence;
 
 /// <summary>
-/// #191: fila de <c>dbo_cotifly.CapturasIdempotentes</c> (<c>db/scripts/06_idempotencia_captura.sql</c>). Solo describe la tabla en el
+/// Fila de <c>dbo_cotifly.CapturasIdempotentes</c> (<c>db/scripts/06_idempotencia_captura.sql</c>). Solo describe la tabla en el
 /// modelo EF (la sonda <c>/health/ready</c> y las pruebas de esquema la leen de ahí): la leen y escriben
 /// <see cref="clsAlmacenIdempotenciaSql"/> y <see cref="clsRegistroCapturasIdempotentesSql"/> con SQL propio (INSERT que choca con el
 /// UNIQUE, UPDATE condicionado por la toma), nunca el <c>ChangeTracker</c>.

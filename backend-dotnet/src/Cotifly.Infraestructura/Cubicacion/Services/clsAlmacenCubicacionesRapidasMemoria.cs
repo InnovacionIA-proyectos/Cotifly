@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Cubicacion.Services;
 
 /// <summary>
-/// Opción D (D3, E2E 2026-10-16): cubicaciones rápidas en la memoria del proceso. La API corre con <b>una réplica</b>
+/// Cubicaciones rápidas en la memoria del proceso. La API corre con <b>una réplica</b>
 /// (<c>infra/stack.dotnet.*.yml</c>, <c>replicas: 1</c>), así que basta. Cada cubicación vive <c>Cubicador:RetencionCubicacionMinutos</c>
 /// (15 por defecto) desde su último cambio y caben <c>Cubicador:MaximoCubicacionesEnMemoria</c> (500). Lleno, se descartan primero las
 /// terminadas más viejas; si todas siguen en proceso, no se acepta otra.
