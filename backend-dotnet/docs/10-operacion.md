@@ -187,7 +187,7 @@ Riesgos registrados en #12 y #16:
 | **Frontera de confianza del login (CRÍTICO)** | `/api/auth/login-clientepro` es anónimo y confía en `idUsuario`: quien alcance la API y conozca un `NOMBREUSUARIO` (o enumere IDs) obtiene un JWT. Mitigaciones y dueño en ADR-009 ("Riesgo abierto"): aserción firmada por el backend de ClientePro o validación de su token; mientras tanto, restringir la red al origen de ClientePro y considerar quitar el respaldo por `ID` numérico |
 | Folio con iniciales (ADR-011) | Formato `PCN-[{nit}-]{INICIALES}-DDMMAAAA-{NNN}[-vN]`; consecutivo por iniciales y día con el candado `cotifly:folio:DDMMAAAA:INICIALES`. Dos comerciales con las mismas iniciales comparten la secuencia del día (no chocan, pero el `NNN` no empieza en `001` para cada uno). Las iniciales salen de `DESCRIPCIONUSUARIO` (vía `UsuariosWeb.nombreCompleto`) con limitaciones conocidas (orden nombre y apellido, texto agregado, abreviaturas); **pendiente** revisar una muestra real antes de producción. Si el comercial cambia de nombre, solo cambian sus folios nuevos |
 | Latencia del chat | Desde #126 (ADR-018 §19), un turno usa de 1 a 3 llamadas al modelo (una propuesta, 2). El limitador `IA:Rpm` es una ventana deslizante de 60 s que no espacia las llamadas de un mismo turno. `IA:Rpm` es un tope GLOBAL del proceso, compartido por todos los comerciales y el redactor: con 8 caben unos 4 turnos por minuto y, por encima, los turnos esperan. Se sube según el plan del proveedor. Cada turno deja el log "Turno del asistente de {folio}" con la duración por fase, y el limitador registra "esperó N ms por IA:Rpm" |
-| Google Chat retirado (#105) | Ya no hay webhook (`POST /chat/events` → 404), cola ni worker. Las sesiones de Google Chat (`spaceId = spaces/...`) quedan en `Sesiones` y `EventosConversacion` como auditoría; el barrido de sesiones las archiva como a cualquier otra |
+| Sesiones de conversaciones anteriores | `Sesiones` y `EventosConversacion` conservan conversaciones de canales retirados (`spaceId = spaces/...`) como auditoría; el barrido de sesiones las archiva como a cualquier otra |
 | Revocación de `jti` | Un logout tarda hasta 60 s en verse en las demás réplicas (foto de `TokensRevocados`) |
 | Límites de peticiones | `LimiteAuth` y `LimiteChat` son por proceso: con N réplicas el límite efectivo es N veces mayor |
 | `generar_pdf` multi-destino | Resuelto por el esquema de HU-021 (ADR-019): cada ruta guarda su precio (`precioFinalLinea`) y la cabecera la suma (`precioFinal`); el PDF de pliego imprime una sección por ruta. La herramienta `generar_pdf` del agente legado ya no existe y `clsGenerarPdfService` está apagado (`Pdf__PermitirCotizacionChat=false`, `COTIZACION_CHAT_RETIRADA`) |
@@ -231,7 +231,7 @@ Notas abiertas desde el PR de #10 (Precio, Margen y Tarifas), con su estado al c
 - Un margen SAP negativo (anómalo) como referencia de una negociación hoy se rechaza por método: decidir.
 - ~~Líneas inactivas en `MargenesPolitica`: hoy se siguen usando~~ Resuelto en #12 (auditoría F4, #41): el comercial no cotiza con una línea inactiva (`obtener_margen` y `generar_pdf` responden `MARGEN_LINEA_DESCONOCIDA` con el detalle `línea inactiva`); la administración sí la lista y la reactiva.
 - Anomalía con `markup`: un margen > 0.6 se marca anómalo aunque con markup sea normal; decidir el umbral por método.
-- Redondeo half-to-even sobre el valor exacto (diferencia máxima 1 peso con el Python): confirmar con negocio.
+- Redondeo half-to-even sobre el valor exacto: confirmar con negocio.
 - ~~HU-012: convertir a USD después de calcular el precio en COP.~~ Decidido en ADR-014 (#50 a #52): el precio se calcula en COP y se convierte con la TRM oficial del día.
 - Riesgo de secuenciación HU-004 vs HU-005: sin Nexo no hay fuente de costeo (`TARIFA_FUENTE_NO_DISPONIBLE`, el comercial ingresa el costo).
 
@@ -260,7 +260,6 @@ Otras decisiones abiertas:
 | Criterio de coincidencia exacta de la búsqueda de clientes y URL base de Nexo por ambiente | Duban con el equipo de Nexo | ADR-005, [03-infraestructura](03-infraestructura.md#nexo) |
 | Destinatarios previos: último envío o unión de todos | Negocio | [02-arquitectura](02-arquitectura.md#28-pdf-correo-y-auditoría) |
 | Fuente `Stilu` del PDF (sin licencia disponible) | Negocio | ADR-006 |
-| Sincronización a Google Sheets y S3/MinIO | Duban con Gerencia Comercial e infraestructura | ADR-012 |
 | Salida HTTPS a `co.dolarapi.com` (fuente principal de la TRM, agregador no oficial) y a `www.datos.gov.co` (respaldo oficial) | Infraestructura | ADR-014 |
 | Nueva versión (v2) de una cotización en USD: hoy se siembra con la TRM de la original (`trmAplicada` copiada) y, al recalcular, toma la TRM del día. ¿La v2 debe conservar la TRM original o usar la del día? | Gerencia Comercial | ADR-014 |
 | OmniRoute (#84): qué credencial tiene cargada para cada proveedor (una clave gratuita de AI Studio permite a Google usar los datos), residencia de los datos y si OmniRoute registra los prompts. Hasta confirmarlo, solo datos ficticios en pruebas | Negocio / jurídica / dueño de OmniRoute | ADR-003 |
