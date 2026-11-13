@@ -615,7 +615,9 @@ normalice. Reemplaza "solo códigos conocidos" (#188) como valor por defecto; `s
 - **Pruebas**: `clsResolucionAliasTests` (normalizador, orden, servicio), `clsAliasNexoTests` (encontrado, inactivo, error, caída, caché),
   `clsCodigosConocidosEnvioNexoTests` (tres modos con y sin alias, alias caído o que lanza, respaldo), `clsEquivalenciasVehiculoTests`,
   `clsCosteoPorCamionTests` (emparejamiento y D2 sin oscilación), `clsValidadorCatalogosCapturaTests` (respaldo y contenedor por alias) y,
-  por HTTP, `clsAliasEndpointsTests` y `HU0311_UnCodigoQueTraduceElAliasViajaOficialSeAutocosteaYNoOscilaEnElPolling`.
+  por HTTP, `clsAliasEndpointsTests` y `ElCodigoNexoDelCubicadorViajaC2SeAutocosteaYNoOscilaEnElPolling` (C2 viaja como código NEXO
+  de SICE-TAC; el emparejamiento sin oscilación del camión traducido por alias lo cubre
+  `clsCosteoPorCamionTests.ElCamionTraducidoPorAliasSeEmparejaYNoOscila`).
 
 ## Consecuencias
 
