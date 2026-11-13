@@ -44,7 +44,11 @@ tabla `TarifasSeguro` (una sola tasa activa) y las columnas `incluyeSeguro`, `ta
 5. **Nombre del campo: `valor_seguro`, no `costo_seguro`.** La issue pide `costo_seguro` en el GET; `clsCostoBrutoSinFugasTests`
    exige que el único campo `Costo*` de `RutaCosteo` sea `costo_final` (el costo de Nexo, #218). El seguro es venta (se le cobra al
    cliente sin margen), no costo de Botero: se publica como `valor_seguro` y la prueba de arquitectura no se relaja.
-6. **Licitaciones fuera.** La HU no las menciona: el endpoint responde 409 `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION`.
+6. **Licitaciones (actualizada el 2026-11-12).** Al principio quedaron fuera (409 `ESTADO_NO_PERMITE` con `detalle.motivo =
+   LICITACION`). Desde HU-045.5 (#330, decisión de Sara del 2026-11-12) el seguro también aplica a las licitaciones: cada línea del
+   pliego trae su `valor_mercancia` y el endpoint la trata igual que una ruta del formulario (mismas reglas: `RUTA_RECHAZADA`,
+   `PDF_YA_ENVIADO` y `SEGURO_SIN_VALOR_MERCANCIA`). La vista del costeo, el recálculo, el PDF, el Excel del pliego y la copia a las
+   versiones nuevas ya trataban igual a las licitaciones. La política de seguros también les aplica (decisión del 2026-11-13).
 7. **Recalcular por el valor de la mercancía** en los tres caminos que lo cambian: la edición en sitio o como reemplazo (HU-028,
    `clsEdicionSolicitud.TasaSeguroVigente`), la versión editada y la versión nueva de la re-solicitud con `datos_carga.valor_mercancia`
    (HU-013.4). La re-solicitud en el mismo folio no cambia el valor.
@@ -56,7 +60,7 @@ tabla `TarifasSeguro` (una sola tasa activa) y las columnas `incluyeSeguro`, `ta
      comparando la fila con su precio); en el pliego, el resumen agrega la fila del seguro debajo de la ruta. El total general no cambia.
    - **Excel de la cotización:** columna `Seguro de la mercancía ({moneda})` entre los conexos y el precio de la ruta, con su total; es
      venta, así que también va en la versión de solo lectura. **Excel de la licitación:** una quinta columna solo si alguna línea lo
-     incluye (hoy ninguna: las licitaciones no lo admiten, y su archivo no cambia).
+     incluye, y su suma en `Resumen Cotifly` aparte del total; sin seguro, el archivo no cambia.
    - **Correo y vista previa** (HU-033, sin desglose): el precio de la ruta y el total ya lo incluyen; la ruta lo dice
      ("Incluye el seguro de la mercancía", `resumen.rutas[].incluye_seguro`) sin el monto.
    - **Detalle por folio:** `totales.precio_seguro` (B4 de la auditoría de #264): `precio_transporte + precio_conexos + precio_seguro =
@@ -88,14 +92,15 @@ tabla `TarifasSeguro` (una sola tasa activa) y las columnas `incluyeSeguro`, `ta
 
 1. **Sin redondeo** del seguro a pesos por ahora (se guarda en centavos, la escala de la columna). El precio de la ruta en COP puede
    tener centavos cuando hay seguro.
-2. **Licitaciones fuera** por ahora (409 `ESTADO_NO_PERMITE`, `motivo = LICITACION`); se habilitan después.
+2. **Licitaciones fuera** por ahora (409 `ESTADO_NO_PERMITE`, `motivo = LICITACION`); se habilitan después. (Habilitadas el
+   2026-11-12, HU-045.5: ver la decisión 6.)
 3. El historial del PDF se queda con el motivo **`servicios_conexos`** (no se pide un motivo propio a Datos).
 4. Seguro marcado sin valor de la mercancía (tras una edición): se **avisa**, no se bloquea; el aviso lo implementa HU-045.3 (#265).
 
 ## Pendientes (de decisión)
 
 1. Nombre del campo en la API (`valor_seguro` frente a `costo_seguro` de la issue) y el de la base (`costoSeguro`, de Datos).
-2. (Resuelta el 2026-11-09: licitaciones fuera por ahora.)
+2. (Resuelta el 2026-11-09: licitaciones fuera por ahora. Habilitadas el 2026-11-12, HU-045.5: ver la decisión 6.)
 3. (Resuelta el 2026-11-09: el motivo sigue siendo `servicios_conexos`.)
 4. ¿Marcar el seguro exige el costeo listo, como el margen? Hoy no (se puede marcar antes).
 5. Una versión nueva (`-vN`) conserva el check; ¿debería volver a tomar la tasa vigente aunque no cambie el valor?

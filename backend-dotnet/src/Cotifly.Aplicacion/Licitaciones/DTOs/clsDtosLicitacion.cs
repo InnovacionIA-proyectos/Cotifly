@@ -318,7 +318,7 @@ public sealed record clsLineaExportacion(
 
     /// <summary>
     /// El seguro de la mercancía de la línea en la moneda, aparte de <see cref="PrecioFinal"/> (la tarifa del transporte);
-    /// <c>null</c> sin seguro o con la línea rechazada. Las licitaciones no lo admiten. Nunca la tasa.
+    /// <c>null</c> sin seguro o con la línea rechazada. Nunca la tasa.
     /// </summary>
     public decimal? ValorSeguro { get; init; }
 }

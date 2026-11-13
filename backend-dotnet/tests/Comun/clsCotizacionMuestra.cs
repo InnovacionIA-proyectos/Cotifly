@@ -51,11 +51,13 @@ public static class clsCotizacionMuestra
 
     /// <summary>
     /// Licitación de <paramref name="rutas"/> rutas (un camión cada una), guardada en <c>pendiente_envio</c>. Con <paramref name="tipo"/>
-    /// <c>Spot</c>, un formulario de varias rutas (los conexos no se admiten en licitaciones).
+    /// <c>Spot</c>, un formulario de varias rutas (los conexos no se admiten en licitaciones). <paramref name="valores"/>: el valor de la
+    /// mercancía de cada ruta, en orden (sin él, ninguna lo trae).
     /// </summary>
     public static clsCotizacionSolicitud Licitacion(
         int rutas = 2, string folio = "PCN-AP-28092026-010", Guid? usuarioId = null, int? lineaNegocioId = 3,
-        string moneda = clsCotizacionSolicitud.MonedaPesos, decimal trm = 0m, TipoSolicitud tipo = TipoSolicitud.Licitacion)
+        string moneda = clsCotizacionSolicitud.MonedaPesos, decimal trm = 0m, TipoSolicitud tipo = TipoSolicitud.Licitacion,
+        IReadOnlyList<decimal?>? valores = null)
     {
         var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion
         {
@@ -70,6 +72,7 @@ public static class clsCotizacionMuestra
             TipoVehiculo = "3S3",
             Carroceria = "FURGON",
             PesoKg = 10_000m + i,
+            ValorMercancia = valores?[i - 1],
         }).ToList();
         cotizacion.RegistrarSolicitudLicitacion(
             new clsEncabezadoSolicitudCosteo { Tipo = tipo }, lineas, [.. Enumerable.Range(0, rutas).Select(i => (int?)i)], lineaNegocioId);
@@ -79,10 +82,11 @@ public static class clsCotizacionMuestra
     /// <summary>Licitación enviada, con margen y con el flete de cada ruta (en orden) aplicado.</summary>
     public static clsCotizacionSolicitud LicitacionCosteada(
         IReadOnlyList<decimal> fletes, decimal margen = 0.15m, EstadoCosteo estado = EstadoCosteo.Autocosteo, string folio = "PCN-AP-28092026-010",
-        Guid? usuarioId = null, string moneda = clsCotizacionSolicitud.MonedaPesos, decimal trm = 0m, TipoSolicitud tipo = TipoSolicitud.Licitacion)
+        Guid? usuarioId = null, string moneda = clsCotizacionSolicitud.MonedaPesos, decimal trm = 0m, TipoSolicitud tipo = TipoSolicitud.Licitacion,
+        IReadOnlyList<decimal?>? valores = null)
     {
         ArgumentNullException.ThrowIfNull(fletes);
-        var cotizacion = Licitacion(fletes.Count, folio, usuarioId, moneda: moneda, trm: trm, tipo: tipo);
+        var cotizacion = Licitacion(fletes.Count, folio, usuarioId, moneda: moneda, trm: trm, tipo: tipo, valores: valores);
         cotizacion.RegistrarEnvioCosteo("SOL-1", false, Ahora, Ahora);
         foreach (var ruta in cotizacion.Rutas)
         {
