@@ -183,15 +183,26 @@ public sealed class clsSeguroMercanciaTests
         cotizacion.PrimeraRuta!.PrecioFinalLinea.Should().BeNull("sin flete no hay precio, como con los conexos");
     }
 
+    /// <summary>
+    /// La licitación admite el seguro como el formulario: cada línea con su valor de la mercancía. La línea 1 (200.000.000) suma 690.000 sin
+    /// margen; la línea 2, sin valor, responde <c>SEGURO_SIN_VALOR_MERCANCIA</c> y no cambia.
+    /// </summary>
     [Fact]
-    public void LaLicitacionNoAdmiteElSeguroTodavia()
+    public void LaLicitacionAdmiteElSeguroEnLasLineasConValorDeLaMercancia()
     {
-        var licitacion = clsCotizacionMuestra.LicitacionCosteada([1_000_000m, 2_000_000m]);
+        var licitacion = clsCotizacionMuestra.LicitacionCosteada([1_000_000m, 2_000_000m], margen: 0.20m, valores: [200_000_000m, null]);
+        var linea = licitacion.RutasOrdenadas[0];
 
-        var cambio = licitacion.CambiarSeguro(1, true, Tasa, _ahora);
+        licitacion.CambiarSeguro(1, true, Tasa, _ahora).Valor.Should().BeTrue();
 
-        cambio.Error.Codigo.Should().Be(clsCodigosError.EstadoNoPermite);
-        cambio.Error.Detalle.Should().Be(clsCotizacionSolicitud.MotivoSeguroLicitacion);
+        linea.CostoSeguro.Should().Be(690_000m, "200.000.000 × 0,345 %");
+        linea.PrecioFinalLinea.Should().Be(1_940_000m, "1.250.000 + 690.000: el seguro no lleva margen");
+        licitacion.PrecioFinal.Should().Be(4_440_000m, "1.940.000 + 2.500.000: el total de la licitación incluye el seguro");
+
+        var sinValor = licitacion.CambiarSeguro(2, true, Tasa, _ahora);
+
+        sinValor.Error.Codigo.Should().Be(clsCodigosError.SeguroSinValorMercancia);
+        licitacion.RutasOrdenadas[1].IncluyeSeguro.Should().BeFalse();
     }
 
     [Fact]

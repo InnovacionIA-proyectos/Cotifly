@@ -1388,8 +1388,8 @@ El comercial marca en el costeo, ruta por ruta, si la ruta incluye el seguro de 
 - **Sin valor de la mercancía:** 400 `SEGURO_SIN_VALOR_MERCANCIA`: desmarcar el check y pedir el valor editando la solicitud. Si una
   edición deja la ruta sin valor, el check sigue marcado con `valor_seguro = null`: mostrar "Falta el valor de la mercancía".
 - **Candados:** finalizada, enviada o con resultado: 409 `PDF_YA_ENVIADO` (como el margen, con la llamada de la versión nueva). En las
-  licitaciones el check no aplica (409 `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION`): ocultarlo. Con PDF vigente sin enviar, el
-  PDF queda desactualizado.
+  licitaciones el check también aplica, por línea (HU-045.5, #330): cada línea del pliego trae su `valor_mercancia`. Con PDF vigente sin
+  enviar, el PDF queda desactualizado.
 - **Recálculos:** si cambia `valor_mercancia` (editar la solicitud o `datos_carga` de re-solicitar), el seguro se recalcula con la tasa
   vigente. La versión nueva conserva el check.
 - **En el PDF, el Excel, el correo y el detalle (HU-045.3, #265):** el PDF trae una fila "Seguro de la mercancía" por ruta, aparte del

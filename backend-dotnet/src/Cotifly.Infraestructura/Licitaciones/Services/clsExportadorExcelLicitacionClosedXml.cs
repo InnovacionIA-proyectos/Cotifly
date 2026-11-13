@@ -72,7 +72,7 @@ public sealed class clsExportadorExcelLicitacionClosedXml(clsLecturaExcelAcotada
 
     /// <summary>
     /// Encabezado de la quinta columna, el seguro de la mercancía de la línea, con la moneda. Solo se agrega si alguna línea
-    /// lo incluye (<see cref="ConSeguro"/>): las licitaciones no lo admiten, así que su archivo no cambia.
+    /// lo incluye (<see cref="ConSeguro"/>): sin seguro, el archivo no cambia.
     /// </summary>
     public static string ColumnaSeguro(string moneda) => $"Seguro de la mercancía Cotifly ({moneda})";
 
