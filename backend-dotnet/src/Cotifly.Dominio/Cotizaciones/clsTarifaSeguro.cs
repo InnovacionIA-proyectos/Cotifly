@@ -1,9 +1,9 @@
 namespace Cotifly.Dominio.Cotizaciones;
 
 /// <summary>
-/// HU-045.1/HU-045.2 (#263, #264; <c>dbo_cotifly.TarifasSeguro</c>, script <c>db/scripts/20_seguro_mercancia.sql</c>): una tasa del seguro de
-/// la mercancía, como fracción (0.003450 = 0,345 %). Solo una está activa (índice único filtrado <c>uq_tarifasSeguro_activa</c>): es la que
-/// se copia en la ruta al marcar el seguro. El backend solo la lee; la cambia Datos con
+/// Una tasa del seguro de la mercancía (<c>dbo_cotifly.TarifasSeguro</c>, script <c>db/scripts/20_seguro_mercancia.sql</c>), como
+/// fracción (0.003450 = 0,345 %). Solo una está activa (índice único filtrado <c>uq_tarifasSeguro_activa</c>): es la que
+/// se copia en la ruta al marcar el seguro. El backend solo la lee; se cambia con
 /// <c>db/scripts/operacion/cambiar_tasa_seguro.sql</c> (desactiva la vigente e inserta la nueva).
 /// </summary>
 public sealed class clsTarifaSeguro

@@ -4,7 +4,7 @@ namespace Cotifly.Dominio.Cotizaciones;
 
 /// <summary>
 /// Datos con los que nace la cabecera de una solicitud. Solo <see cref="Folio"/> es obligatorio; el resto se valida en
-/// <see cref="clsCotizacionSolicitud.Crear"/>. La línea de negocio, el costo, el margen y el precio son de cada ruta (HU-021, ADR-019).
+/// <see cref="clsCotizacionSolicitud.Crear"/>. La línea de negocio, el costo, el margen y el precio son de cada ruta (ADR-019).
 /// </summary>
 public sealed record clsDatosCotizacion
 {

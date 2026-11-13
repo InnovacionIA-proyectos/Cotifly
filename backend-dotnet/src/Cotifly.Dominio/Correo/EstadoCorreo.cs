@@ -1,7 +1,7 @@
 namespace Cotifly.Dominio.Correo;
 
 /// <summary>
-/// Estado de un correo de la cotización (<c>Correos.estado</c>, CHECK <c>ck_correos_estado</c> del script 13). HU-033 (#199, ADR-023):
+/// Estado de un correo de la cotización (<c>Correos.estado</c>, CHECK <c>ck_correos_estado</c> del script 13, ADR-023):
 /// MailSender encola el correo (202) y lo entrega en segundo plano, así que el estado es asíncrono:
 /// <list type="bullet">
 /// <item><see cref="Encolado"/>: MailSender lo aceptó (202) y no lo ha entregado al relay (<c>Queued</c>/<c>Draft</c>).</item>

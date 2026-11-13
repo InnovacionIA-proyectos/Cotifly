@@ -1,9 +1,9 @@
 namespace Cotifly.Dominio.Cotizaciones;
 
 /// <summary>
-/// HU-023.5 (#160): estado de la cubicación en segundo plano de una ruta de licitación (<c>CotizacionLineasSolicitud.estadoCubicacion</c>,
-/// propuesta <c>db/scripts/pendientes/04</c>). Códigos snake_case (<see cref="Comun.clsCodigoEnum"/>). <c>null</c> en la columna = la ruta se cubicó al
-/// guardarla (formulario, licitación sin cubicador o anterior a HU-023.5): no hay nada pendiente.
+/// Estado de la cubicación en segundo plano de una ruta de licitación (<c>CotizacionLineasSolicitud.estadoCubicacion</c>,
+/// script <c>db/scripts/pendientes/04</c>). Códigos snake_case (<see cref="Comun.clsCodigoEnum"/>). <c>null</c> en la columna = la ruta se cubicó al
+/// guardarla (formulario, licitación sin cubicador o ruta anterior a la cubicación en segundo plano): no hay nada pendiente.
 /// </summary>
 public enum EstadoCubicacion
 {

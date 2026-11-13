@@ -6,8 +6,8 @@ using Cotifly.Dominio.Comun;
 namespace Cotifly.Dominio.Cotizaciones;
 
 /// <summary>
-/// Folio de una cotización, generado siempre por el servidor (ADR-011, aprobado el 2026-09-25; iniciales: decisión del
-/// 2026-09-25): <c>PCN-[{nitCliente}-]{INICIALES}-DDMMAAAA-{NNN}[-vN]</c>, p. ej. <c>PCN-DG-25092026-001</c> o
+/// Folio de una cotización, generado siempre por el servidor (ADR-011):
+/// <c>PCN-[{nitCliente}-]{INICIALES}-DDMMAAAA-{NNN}[-vN]</c>, p. ej. <c>PCN-DG-25092026-001</c> o
 /// <c>PCN-9000472281-DG-25092026-001-v2</c>.
 /// <list type="bullet">
 /// <item><c>{nitCliente}</c>: solo si la cotización tiene NIT; se guardan únicamente sus dígitos (máximo
@@ -17,7 +17,7 @@ namespace Cotifly.Dominio.Cotizaciones;
 /// <item><c>{NNN}</c>: consecutivo diario de esas iniciales, de <c>001</c> a <c>999</c>.</item>
 /// <item><c>-vN</c>: solo en las versiones nuevas (N ≥ 2), sobre el folio base de la v1.</item>
 /// </list>
-/// Los folios anteriores al formato (<c>PCN-DDMMAAAA</c> del Python, o <c>PCN-[nit-]DDMMAAAA-NNN</c> sin iniciales) no se
+/// Los folios anteriores al formato (<c>PCN-DDMMAAAA</c>, o <c>PCN-[nit-]DDMMAAAA-NNN</c> sin iniciales) no se
 /// interpretan, pero sí admiten versiones: su base es el folio sin el sufijo <c>-vN</c>.
 /// </summary>
 public sealed partial record clsFolio

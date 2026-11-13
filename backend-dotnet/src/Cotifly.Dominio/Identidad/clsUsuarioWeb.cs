@@ -27,7 +27,7 @@ public sealed class clsUsuarioWeb
     public DateTimeOffset? UltimaSesion { get; private set; }
     public long? IdUsuarioExterno { get; private set; }
 
-    /// <summary>Alta JIT del comercial a partir de su fila en <c>tblSAPUsuariosApp</c> (HU-003.6).</summary>
+    /// <summary>Alta JIT del comercial a partir de su fila en <c>tblSAPUsuariosApp</c>.</summary>
     public static clsResultado<clsUsuarioWeb> Crear(
         string nombreUsuario, string? nombreCompleto, string? email, string? regional, DateTimeOffset ahora, long? idUsuarioExterno = null)
     {

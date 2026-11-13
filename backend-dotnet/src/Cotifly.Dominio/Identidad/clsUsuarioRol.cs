@@ -7,8 +7,8 @@ namespace Cotifly.Dominio.Identidad;
 /// login (JIT) con el rol que resulta de su rol externo; en los siguientes el rol externo actual debe coincidir con la
 /// asignación activa, y si no, el acceso se rechaza hasta que un gerente o administrador la revise
 /// (<see cref="RevisadoPor"/>, <see cref="RevisadoAt"/>). La asignación nunca se re-sincroniza sola.
-/// HU-040.1 (#229, script 16): un usuario puede tener varias asignaciones activas, una por rol (multi-rol); el mismo rol no se
-/// asigna dos veces (<c>uq_usuariosRoles_usuarioId_rolId</c>).
+/// Un usuario puede tener varias asignaciones activas, una por rol (multi-rol); el mismo rol no se
+/// asigna dos veces (<c>uq_usuariosRoles_usuarioId_rolId</c>, script 16).
 /// </summary>
 public sealed class clsUsuarioRol
 {
@@ -56,7 +56,7 @@ public sealed class clsUsuarioRol
     }
 
     /// <summary>
-    /// HU-040.3 (#258): la reconciliación del login DESACTIVA la asignación cuyo rol externo ya no la respalda (auto-revocar, fail-safe,
+    /// La reconciliación del login DESACTIVA la asignación cuyo rol externo ya no la respalda (auto-revocar, fail-safe,
     /// aplica a todos los roles). No hay revisor humano: <see cref="RevisadoPor"/> queda NULL y <see cref="RevisadoAt"/> marca el instante,
     /// así se distingue de una revisión manual (<see cref="Retirar"/>, con revisor). Idempotente: sobre una fila ya inactiva no hace nada.
     /// </summary>
@@ -73,7 +73,7 @@ public sealed class clsUsuarioRol
     }
 
     /// <summary>
-    /// HU-040.3 (#258): la reconciliación del login REACTIVA una fila existente (la unicidad <c>uq_usuariosRoles_usuarioId_rolId</c> impide
+    /// La reconciliación del login REACTIVA una fila existente (la unicidad <c>uq_usuariosRoles_usuarioId_rolId</c> impide
     /// insertar el mismo rol dos veces) para auto-otorgar un rol ORDINARIO que volvió a tener respaldo externo. Sin revisor humano
     /// (<see cref="RevisadoPor"/> NULL, <see cref="RevisadoAt"/> con el instante). Idempotente: sobre una fila ya activa no hace nada.
     /// </summary>
