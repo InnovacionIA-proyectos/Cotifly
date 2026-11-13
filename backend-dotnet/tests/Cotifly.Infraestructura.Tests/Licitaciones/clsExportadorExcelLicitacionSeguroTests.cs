@@ -7,8 +7,7 @@ namespace Cotifly.Infraestructura.Tests.Licitaciones;
 
 /// <summary>
 /// ADR-032 §9: el Excel de la licitación agrega la columna del seguro de la mercancía (después de las cuatro de Cotifly) solo
-/// si alguna línea lo incluye, y su suma en la hoja de resumen, aparte del total. Sin seguro (las licitaciones no lo admiten) el
-/// archivo no cambia.
+/// si alguna línea lo incluye, y su suma en la hoja de resumen, aparte del total. Sin seguro, el archivo no cambia.
 /// </summary>
 public sealed class clsExportadorExcelLicitacionSeguroTests
 {
@@ -45,5 +44,27 @@ public sealed class clsExportadorExcelLicitacionSeguroTests
         hoja.Row(1).CellsUsed().Select(c => c.GetString()).Should().NotContain(clsExportadorExcelLicitacionClosedXml.ColumnaSeguro("COP"));
         libro.Worksheet(clsExportadorExcelLicitacionClosedXml.HojaResumen).CellsUsed().Select(c => c.GetString())
             .Should().NotContain(clsExportadorExcelLicitacionClosedXml.EtiquetaTotalSeguro);
+    }
+
+    [Fact]
+    public void ConSeguroYLineasAManoLaReferenciaVaDespuesDelSeguro()
+    {
+        var datos = Datos(null, 690_000m) with
+        {
+            LeidaConIa = true,
+            Lineas =
+            [
+                new clsLineaExportacion(1, 0, "A", "B", "3S3", 10000m, "Costeada", 100m),
+                new clsLineaExportacion(2, null, "C", "D", "2", 9000m, "Costeada", 100m) { ValorSeguro = 690_000m },
+            ],
+        };
+
+        using var libro = new XLWorkbook(new MemoryStream(clsExportadorExcelLicitacionClosedXml.Generar(datos).Valor));
+
+        var hoja = libro.Worksheet(clsExportadorExcelLicitacionClosedXml.HojaSinOriginal);
+        hoja.Cell(1, 10).GetString().Should().Be(clsExportadorExcelLicitacionClosedXml.ColumnaSeguro("COP"));
+        hoja.Cell(3, 10).GetValue<decimal>().Should().Be(690_000m, "la Referencia no pisa el seguro de la línea a mano");
+        hoja.Cell(1, 11).GetString().Should().Be(clsExportadorExcelLicitacionClosedXml.ColumnaReferencia);
+        hoja.Cell(3, 11).GetString().Should().Be(clsExportadorExcelLicitacionClosedXml.ReferenciaAgregada);
     }
 }

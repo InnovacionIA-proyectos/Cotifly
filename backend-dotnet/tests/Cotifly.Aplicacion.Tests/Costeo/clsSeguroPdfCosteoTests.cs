@@ -239,7 +239,7 @@ public sealed class clsSeguroPdfCosteoTests
     }
 
     /// <summary>
-    /// Spot de dos rutas al 20 % (1.000.000 → 1.250.000 y 2.000.000 → 2.500.000). Por defecto, la 1 sin seguro y la 2 (valor 100.000.000)
+    /// Licitación de dos rutas al 20 % (1.000.000 → 1.250.000 y 2.000.000 → 2.500.000). Por defecto, la 1 sin seguro y la 2 (valor 100.000.000)
     /// con seguro de 345.000; con <paramref name="valores"/> y <paramref name="tasa"/>, cada ruta con valor lleva el seguro.
     /// </summary>
     internal clsCotizacionSolicitud DosRutas(decimal?[]? valores = null, decimal tasa = Tasa)
@@ -260,7 +260,7 @@ public sealed class clsSeguroPdfCosteoTests
             PesoKg = 10_000m + i,
             ValorMercancia = valores[i - 1],
         }).ToList();
-        cotizacion.RegistrarSolicitudLicitacion(new clsEncabezadoSolicitudCosteo { Tipo = TipoSolicitud.Spot }, lineas, [0, 1], 3);
+        cotizacion.RegistrarSolicitudLicitacion(new clsEncabezadoSolicitudCosteo { Tipo = TipoSolicitud.Licitacion }, lineas, [0, 1], 3);
         cotizacion.RegistrarEnvioCosteo("SOL-1", false, clsCotizacionMuestra.Ahora, clsCotizacionMuestra.Ahora);
         foreach (var ruta in cotizacion.Rutas)
         {

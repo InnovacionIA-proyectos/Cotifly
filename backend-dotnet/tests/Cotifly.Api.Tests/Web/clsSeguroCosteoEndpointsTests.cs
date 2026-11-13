@@ -218,9 +218,12 @@ public sealed class clsSeguroCosteoEndpointsTests : IDisposable
         (await FilaRutaAsync(folio)).Should().Be("0||");
     }
 
-    /// <summary>B6: la licitación todavía no admite el seguro: 409 <c>ESTADO_NO_PERMITE</c> con <c>detalle.motivo = LICITACION</c>.</summary>
+    /// <summary>
+    /// La licitación admite el seguro: el pliego de prueba trae <c>valor_mercancia = 50.000.000</c> en cada línea, así que el seguro de la
+    /// línea 1 es 172.500 y se guarda con la tasa vigente.
+    /// </summary>
     [Fact]
-    public async Task LaLicitacionRespondeEstadoNoPermite()
+    public async Task LaLicitacionAdmiteElSeguro()
     {
         var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         using var alta = await _api.EnviarContenidoAsync(HttpMethod.Post, "/web/licitaciones", sesion.Access,
@@ -230,10 +233,12 @@ public sealed class clsSeguroCosteoEndpointsTests : IDisposable
         using var seguro = await EnviarConVersionAsync(_put, $"/web/cotizaciones/{folio}/costeo/seguro", sesion.Access,
             """{"incluye_seguro":true,"linea_orden":1}""", await EtagAsync(sesion, folio));
 
-        seguro.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        await VerificarErrorNegocioAsync(seguro, "ESTADO_NO_PERMITE");
-        using var cuerpo = JsonDocument.Parse(await seguro.Content.ReadAsStringAsync(Ct));
-        cuerpo.RootElement.GetProperty("error").GetProperty("detalle").GetProperty("motivo").GetString().Should().Be("LICITACION");
+        var json = await VerificarContratoAsync(seguro, Ruta, _put, HttpStatusCode.OK);
+        var linea = json.GetProperty("rutas")[0];
+        linea.GetProperty("incluye_seguro").GetBoolean().Should().BeTrue();
+        linea.GetProperty("tasa_seguro").GetDecimal().Should().Be(0.003450m);
+        linea.GetProperty("valor_seguro").GetDecimal().Should().Be(172_500m, "50.000.000 × 0,345 %");
+        (await FilaRutaAsync(folio)).Should().Be("1|0.003450|172500.00");
     }
 
     /// <summary>

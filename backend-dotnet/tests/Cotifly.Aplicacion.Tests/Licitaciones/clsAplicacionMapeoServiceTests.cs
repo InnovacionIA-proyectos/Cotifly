@@ -30,7 +30,8 @@ public sealed class clsAplicacionMapeoServiceTests
     public clsAplicacionMapeoServiceTests()
     {
         // La detección de columnas derivadas se prueba aparte; aquí es un paso que devuelve las filas tal cual.
-        _columnas.EnriquecerFilasAsync(Arg.Any<Guid>(), Arg.Any<IReadOnlyList<IReadOnlyList<string?>?>>(), Arg.Any<CancellationToken>())
+        _columnas.EnriquecerFilasAsync(
+                Arg.Any<Guid>(), Arg.Any<IReadOnlyList<IReadOnlyList<string?>?>>(), Arg.Any<int?>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
             .Returns(ci => ci.ArgAt<IReadOnlyList<IReadOnlyList<string?>?>>(1));
         _politicas.ListarAsync(Arg.Any<CancellationToken>()).Returns(
         [
@@ -329,6 +330,8 @@ public sealed class clsAplicacionMapeoServiceTests
         { "FILA_INVALIDA", Entrada(primeraFila: 1) },
         { "FILA_INVALIDA", Entrada(primeraFila: 1_048_576) },
         { "DEMASIADAS_COLUMNAS", Entrada() with { Filas = [[.. Enumerable.Repeat("x", 101)]] } },
+        { "COLUMNA_INVALIDA", Entrada() with { NumeroEncabezados = 0 } },
+        { "COLUMNA_INVALIDA", Entrada() with { NumeroEncabezados = 101 } },
     };
 
     [Theory]
@@ -378,7 +381,8 @@ public sealed class clsAplicacionMapeoServiceTests
     public async Task LasFilasEnriquecidasConLasColumnasDerivadasViajanANexoYSeMapeanComoCualquierOtra()
     {
         // aplicar-mapeo agrega la columna derivada al final de cada fila y el mapeo confirmado la referencia por índice.
-        _columnas.EnriquecerFilasAsync(_usuario, Arg.Any<IReadOnlyList<IReadOnlyList<string?>?>>(), Arg.Any<CancellationToken>())
+        _columnas.EnriquecerFilasAsync(
+                _usuario, Arg.Any<IReadOnlyList<IReadOnlyList<string?>?>>(), Arg.Any<int?>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
             .Returns(ci => (IReadOnlyList<IReadOnlyList<string?>?>)[.. ci.ArgAt<IReadOnlyList<IReadOnlyList<string?>?>>(1)
                 .Select(f => (IReadOnlyList<string?>?)[.. f!, "Mula"])]);
         NexoResponde(1, [Importada(2)]);
@@ -394,6 +398,20 @@ public sealed class clsAplicacionMapeoServiceTests
 
         _enviada!.Filas.Single().Should().Equal("Origen 0", "Destino 0", "1,5", "Mula");
         _enviada.Columnas.Should().Contain(c => c.Indice == 3 && c.Campo == "tipoVehiculo");
+    }
+
+    [Theory]
+    [InlineData(2, true)]
+    [InlineData(3, false)]
+    public async Task LasDerivadasEmpiezanEnElNumeroDeEncabezadosYSeFuerzanSiElMapeoUsaUna(int numeroEncabezados, bool forzar)
+    {
+        // El mapeo de Entrada() usa los índices 0 a 2: con 2 encabezados el índice 2 es una columna derivada.
+        NexoResponde(1, [Importada(2)]);
+
+        await Aplicar(Entrada(filas: 1) with { NumeroEncabezados = numeroEncabezados });
+
+        await _columnas.Received(1).EnriquecerFilasAsync(
+            _usuario, Arg.Any<IReadOnlyList<IReadOnlyList<string?>?>>(), numeroEncabezados, forzar, Arg.Any<CancellationToken>());
     }
 
     [Fact]

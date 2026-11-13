@@ -2461,7 +2461,6 @@ ruta con transporte 1.250.000 con margen):
 | 404 | `ErrorWeb` | — |
 | 409 | `PDF_YA_ENVIADO` | Enviada, con resultado o **finalizada** (el mismo 409 que el margen): ofrecer "Crear versión nueva" con `detalle` |
 | 409 | `RUTA_RECHAZADA` | La Mesa rechazó la ruta: no tiene precio |
-| 409 | `ESTADO_NO_PERMITE` (`detalle.motivo = LICITACION`) | Ocultar el check en las licitaciones: todavía no admiten el seguro |
 | 409 | `CONFLICTO_CONCURRENCIA` | Recargar y repetir |
 | 428 | `PRECONDICION_REQUERIDA` | Falta `If-Match` |
 
@@ -2473,6 +2472,8 @@ Notas:
   seguro de esa ruta se recalcula con la tasa vigente. La versión nueva (`-vN`) conserva el check de cada ruta.
 - El seguro se puede marcar antes de que llegue el costeo: la ruta no tiene precio hasta que NEXO costee (como con los conexos).
 - `costo_final` de la ruta no incluye el seguro (no es costo de NEXO).
+- La **licitación** también admite el seguro, por línea (`linea_orden`), con el `valor_mercancia` de cada línea del pliego y las
+  mismas reglas: mostrar el check también en las licitaciones.
 - El PDF lo muestra en su propia fila por ruta ("Seguro de la mercancía", aparte del flete), el Excel en su columna, el
   correo dentro del precio de la ruta ("Incluye el seguro de la mercancía", sin el monto) y el detalle en `totales.precio_seguro`. Ver 4.7.1,
   4.5.8, 4.6.5, 4.8 y 4.5.5. Nunca se exporta la tasa.
@@ -3028,7 +3029,7 @@ Descarga el Excel original del cliente con columnas agregadas: `Precio final Cot
 `Servicios conexos Cotifly` y `Camiones Cotifly`, más las hojas `Resumen Cotifly` y `Camiones Cotifly`. Sin archivo original, una hoja
 `Licitación` con los campos mapeados. Nunca incluye costos de NEXO. Se puede exportar en cualquier momento. Si alguna
 línea incluye el seguro de la mercancía, una quinta columna `Seguro de la mercancía Cotifly ({moneda})` y, en `Resumen Cotifly`, su suma
-(aparte del total). Las licitaciones no admiten el seguro (4.4.15), así que el archivo no cambia.
+(aparte del total). Sin seguro, el archivo no cambia. Las licitaciones también admiten el seguro (4.4.15).
 
 - **Rol:** el dueño; también el gerente de la regional del dueño o el director, que reciben **el mismo archivo** (el
   Excel nunca tuvo costos: no hay columnas que quitar). **Respuesta:** `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`. Descargar como blob. El nombre
@@ -3058,18 +3059,22 @@ tabla de `leer-estructura` (4.6.7): se mandan sus `encabezados` y `filas` tal cu
   las columnas en `campo = ignorar`, `origen = ninguno`, `confianza = 0` e `ia_usada = false`. La pantalla sigue en mapeo manual.
 - Con la IA de NEXO apagada NEXO responde lo que resolvieron la plantilla y el diccionario, `ia_usada = false` y `motivo_sin_ia =
   IA_NO_DISPONIBLE` (o un `IA_*` del proveedor). Con plantilla reconocida: `PLANTILLA_RECONOCIDA` y `plantilla_id`.
-- **Peso (DU §8):** la sugerencia no trae pesos, así que la regla del peso total con tara no aplica aquí; se aplica al convertir las filas y en la captura.
-- **Columnas derivadas:** antes de llamar a NEXO, Cotifly revisa las columnas de texto y agrega columnas derivadas **con
-  nombre fijo al final**, solo si al menos una fila reconoce un valor (si no, la hoja mantiene su firma de plantilla y no aparecen). Por eso la
+- **Peso (DU §8):** la sugerencia no trae pesos, así que la regla del peso total con tara no aplica aquí; se aplica al convertir las filas
+  y en la captura.
+- **Columnas derivadas:** antes de llamar a NEXO, Cotifly revisa las columnas de texto y, si al menos una
+  fila reconoce un valor, agrega **siempre las tres** columnas derivadas **con nombre fijo al final** (si no, la hoja mantiene su firma de
+  plantilla y no aparecen). Por eso la
   propuesta puede traer más `columnas` que `encabezados` de la hoja original: `Vehículo detectado` (el vehículo dentro de un texto, con el
   diccionario de alias de NEXO —el mismo de `GET /web/alias/resolver`—, p. ej. «Venezuela Mula» → `Mula`), `Contenedor detectado` (del patrón
   `C20`/`C40`/`20'`/`40'`, normalizado a `20'` o `40'`) y `Peso detectado (kg)` (un peso o un rango en toneladas o kg; **del rango se toma el
   valor más alto**: «C20 de 0 a 8 Ton» → `20'` y `8000`). La celda original no se modifica. `sugerir-mapeo` puede proponerlas para
   `tipoVehiculo`, `claseContenedor` y `pesoKg`, y `aplicar-mapeo` las agrega igual, al final de cada fila, y las convierte como cualquier
-  otra columna. **Índices:** las columnas derivadas se ubican después de las columnas de la hoja (ancho de la fila más ancha, el mismo criterio
-  en los dos endpoints), así que sus índices coinciden entre `sugerir-mapeo` y `aplicar-mapeo` **salvo** que una categoría (vehículo, contenedor
-  o peso) se reconozca solo en filas fuera de la muestra que recibe `sugerir-mapeo` (hasta 200): con pliegos de menos de 200 filas y una muestra
-  representativa coinciden. Por eso conviene mandar a `sugerir-mapeo` una muestra representativa de las filas.
+  otra columna. **Índices fijos:** `Vehículo detectado` = número de `encabezados`, `Contenedor detectado` = +1 y `Peso detectado (kg)` = +2,
+  aunque alguna quede vacía (también la de vehículo si el diccionario de alias de NEXO no responde). Las filas se ajustan al número de
+  encabezados (las cortas se rellenan; las celdas sin encabezado se descartan). La respuesta las trae en **`columnas_derivadas: [{indice,
+  nombre}]`** (vacía si no se agregó ninguna): mostrarlas como opciones del selector, al guardar la plantilla incluir sus nombres en `encabezados` (si no, NEXO responde `COLUMNA_FUERA_DE_RANGO`) y mandar
+  **`numero_encabezados`** (= `encabezados.length`) a `aplicar-mapeo`, que las agrega en los mismos índices aunque las filas de más allá de la
+  muestra reconozcan otra cosa.
 
 ```json
 {
@@ -3090,7 +3095,8 @@ tabla de `leer-estructura` (4.6.7): se mandan sus `encabezados` y `filas` tal cu
     { "indice": 3, "columna": "OBSERVACIONES", "campo": "ignorar", "transformacion": "ninguna", "confianza": 0.0, "origen": "ninguno", "nota": null }
   ],
   "dudas": ["¿TON es el peso total?"],
-  "plantilla_id": null
+  "plantilla_id": null,
+  "columnas_derivadas": []
 }
 ```
 
@@ -4627,7 +4633,9 @@ fila_excel, campo, codigo, mensaje}`.
 | 98 | **Corrección conexos: el nombre del servicio conexo nunca es el id interno.** `ServicioConexoCosteo.nombre` (en `servicios_conexos[]` de la vista del costeo, el detalle, el margen y los conexos) y los nombres de conexos que da el **asistente de IA** (`consultar_cotizacion`) y `conexos_conservados` traen **siempre el nombre** del servicio: el guardado o, si está en NULL (fila migrada del JSON), el resuelto del catálogo de NEXO por id; si el catálogo no responde o no lo tiene, la `categoria` como respaldo legible. La misma cadena se aplica ahora en las **exportaciones** (ampliación): el **PDF** de la cotización y del pliego ("Estas tarifas incluyen"), el **Excel** de la cotización (`GET /web/cotizaciones/{folio}/excel`) y el **Excel de licitación** (`GET /web/licitaciones/{folio}/excel` y el de "Ver detalle") imprimen el nombre del catálogo para un conexo heredado sin nombre y caen a la `categoria` con el catálogo frío; antes caían directo a la `categoria`. **Nunca** el `id` interno del conexo (que sigue en `servicios_conexos[].id`, solo para operar: incluir/excluir). **No cambia la forma de ninguna respuesta** ni del PDF/Excel (ningún campo ni columna nuevos; `nombre` sigue declarado `nullable` solo por compatibilidad, en la práctica siempre viene poblado). Sin endpoints, códigos ni script de base de datos | Corrige | Mostrar `servicios_conexos[].nombre` tal cual (ya nunca es el id); si algún front usaba `id` como etiqueta de respaldo, usar `nombre`. El PDF y los Excel ya muestran el nombre del catálogo, no la categoría, cuando el catálogo está caliente |
 | 99 | **HU-044.5 (#256, parte 2): escritura del diccionario del cliente y consulta por NIT.** `GET /web/diccionario-cliente` con `nit_cliente` trae ahora los términos **del cliente** (`general = false`) más los generales; sin NIT, solo los generales. `aviso` va **siempre en `null`**: se retira `TERMINOS_CLIENTE_NO_DISPONIBLES`. Endpoints **nuevos** (4.6.11): `POST /web/diccionario-cliente` (201), `PUT /web/diccionario-cliente/{id}` (200) y `DELETE /web/diccionario-cliente/{id}?nit_cliente=` (204), con `{nit_cliente, termino, tipo, concepto, contexto?, ejemplo?, activo? = true}` y `nit_cliente` **obligatorio**. **Solo el rol activo `comercial`** escribe (gerente y director: 403 `ErrorWeb`). Códigos **nuevos** en `ErrorNegocio`: `TERMINO_GENERAL_NO_EDITABLE` (403), `TERMINO_NO_ENCONTRADO` (404), `TERMINO_DUPLICADO` (409), `TERMINO_REQUERIDO`, `CONCEPTO_REQUERIDO`, `CAMPO_DESTINO_INVALIDO`, `UNIDAD_INVALIDA`, `CONTEXTO_INVALIDO`, `CONTEXTO_NO_APLICA` y `EJEMPLO_MUY_LARGO` (400). Largos de más: 400 `ErrorWeb`. Son **74 endpoints** (eran 71) | Agrega y rompe (`aviso`) | Mostrar los términos del cliente; dejar de leer el `aviso`; formulario de términos solo para el `comercial`; no ofrecer editar ni borrar los generales |
 | 100 | **Idempotencia de crear la licitación ante una caída.** `POST /web/licitaciones` con `Idempotency-Key` asocia el folio a la clave en la misma transacción que crea la licitación. Si la API se cae después de crear el folio y antes de responder, la repetición con la misma clave y el mismo cuerpo+archivo responde 409 `ESTADO_NO_PERMITE` (`detalle.motivo = CAPTURA_EN_CURSO`, ahora con `detalle.folio`) mientras la primera se considera en curso (hasta 10 min) y, después, **201 con el mismo folio** y su estado de ahora, que puede ser `pendiente_envio` o `error_envio` (antes, pasados esos 10 min, creaba una segunda licitación). Mismos códigos; sin endpoints nuevos; sin script | Cambia | Seguir reenviando la misma `Idempotency-Key` en los reintentos. Ante el 409 `CAPTURA_EN_CURSO` al crear la licitación: no crear con otra clave; esperar unos segundos y repetir con la MISMA clave, o abrir `detalle.folio`. Un 201 con `pendiente_envio`/`error_envio` se muestra como cualquier licitación en ese estado (reintentar el costeo solo a pedido del comercial, nunca automático) |
-| 102 | **HU-041.2 (#329): el asistente propone el mismo margen o el mismo conexo en varias rutas en UNA sola propuesta.** `accion_propuesta.tipo` trae tres valores **nuevos**: `ajustar_margen_lineas` (`PUT .../costeo/margen/lineas`, cuerpo `{todas \| lineas, margen, justificacion}`), `agregar_servicios_conexos_lineas` (`POST .../costeo/servicios-conexos/lineas`, `{todas \| lineas, servicio_id, cantidad}`) y `quitar_servicios_conexos_lineas` (`POST .../costeo/servicios-conexos/lineas/quitar`, `{todas \| lineas, servicio_id}`): los mismos endpoints en lote de la edición manual, con sus mismas validaciones y errores. El cuerpo lleva `todas: true` o `lineas` (ordenada), nunca los dos. El `resumen` (hasta 300, armado por el servidor) dice qué rutas no cambian. Herramientas nuevas en `herramientas`: `proponer_ajuste_margen_rutas`, `proponer_agregar_conexo_rutas` y `proponer_quitar_conexo_rutas`. Sin endpoints nuevos; sin script | Agrega | Al confirmar, llamar a `metodo` `endpoint` con `cuerpo` tal cual e `If-Match`; en los dos de conexos, `Idempotency-Key` (UUID nuevo por clic) |
+| 101 | **HU-045.5 (#330): el seguro de la mercancía en las licitaciones.** `PUT /web/cotizaciones/{folio}/costeo/seguro` (4.4.15) ya no responde 409 `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION`: en una licitación el seguro se marca por línea (`linea_orden` o `linea_solicitud_id`) con el `valor_mercancia` de esa línea del pliego, la tasa vigente y sin margen, igual que en el formulario. Las demás reglas no cambian: 400 `SEGURO_SIN_VALOR_MERCANCIA` (línea sin valor), 409 `RUTA_RECHAZADA` y 409 `PDF_YA_ENVIADO`. El PDF del pliego y el Excel de la licitación (4.6.5) ya traían la fila y la columna del seguro; con seguro y líneas agregadas a mano, la columna `Referencia` va después de la del seguro. El motivo `LICITACION` de editar la solicitud y de re-solicitar no cambia. Sin endpoints nuevos | Cambia | Mostrar el check "Incluir seguro" también en las licitaciones (el front ya quitó el bloqueo); quitar el manejo del 409 `LICITACION` del seguro |
+| 102 | **HU-044.11 (#328): columnas derivadas estables entre `sugerir-mapeo` y `aplicar-mapeo`.** Si al menos una fila reconoce un vehículo, un contenedor o un peso, Cotifly agrega **siempre las tres** columnas derivadas, en posiciones fijas a partir del número de encabezados: `Vehículo detectado` = `encabezados.length`, `Contenedor detectado` = +1, `Peso detectado (kg)` = +2, aunque alguna quede vacía (la de vehículo también si el diccionario de alias de NEXO no responde). Antes solo se agregaban las detectadas y el ancho base salía de la fila más ancha, así que una fila fuera de la muestra de 200 podía correr las columnas y hacer que un campo leyera otra. `sugerir-mapeo` trae el campo **nuevo `columnas_derivadas: [{indice, nombre}]`** (vacío si no se agregó ninguna). `aplicar-mapeo` acepta el campo **nuevo opcional `numero_encabezados`** (1 a 100; fuera de rango, 400 `COLUMNA_INVALIDA`): las derivadas empiezan ahí y se agregan también si el mapeo usa un índice desde ese número; sin él, desde la fila más ancha, como antes. Las filas se ajustan al número de encabezados antes de agregarlas. Sin endpoints, códigos ni script de base de datos nuevos | Agrega | Mostrar las columnas de `columnas_derivadas` como opciones del selector de mapeo (no como «Sin mapear») y no quitarlas al guardar la plantilla (sus nombres van también en `encabezados`; las plantillas guardadas con una o dos derivadas hay que volver a guardarlas); mandar `numero_encabezados = encabezados.length` en `aplicar-mapeo` |
+| 103 | **HU-041.2 (#329): el asistente propone el mismo margen o el mismo conexo en varias rutas en UNA sola propuesta.** `accion_propuesta.tipo` trae tres valores **nuevos**: `ajustar_margen_lineas` (`PUT .../costeo/margen/lineas`, cuerpo `{todas \| lineas, margen, justificacion}`), `agregar_servicios_conexos_lineas` (`POST .../costeo/servicios-conexos/lineas`, `{todas \| lineas, servicio_id, cantidad}`) y `quitar_servicios_conexos_lineas` (`POST .../costeo/servicios-conexos/lineas/quitar`, `{todas \| lineas, servicio_id}`): los mismos endpoints en lote de la edición manual, con sus mismas validaciones y errores. El cuerpo lleva `todas: true` o `lineas` (ordenada), nunca los dos. El `resumen` (hasta 300, armado por el servidor) dice qué rutas no cambian. Herramientas nuevas en `herramientas`: `proponer_ajuste_margen_rutas`, `proponer_agregar_conexo_rutas` y `proponer_quitar_conexo_rutas`. Sin endpoints nuevos; sin script | Agrega | Al confirmar, llamar a `metodo` `endpoint` con `cuerpo` tal cual e `If-Match`; en los dos de conexos, `Idempotency-Key` (UUID nuevo por clic) |
 
 ---
 

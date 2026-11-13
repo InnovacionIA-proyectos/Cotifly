@@ -2895,8 +2895,8 @@ paths:
         - **Regla del PDF (ADR-018 §11, HU-036):** enviada al cliente, con resultado o **finalizada**: 409 `PDF_YA_ENVIADO` (el mismo
           del margen, con la llamada de la versión nueva en `detalle`). Si no, se permite aunque haya PDF: queda invalidado
           (`pdf_desactualizado = true`; en el historial con el motivo `servicios_conexos`).
-        - **Licitación:** 409 `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION` (la HU no la incluye todavía). Ruta rechazada por
-          la Mesa: 409 `RUTA_RECHAZADA`.
+        - **Licitación** (HU-045.5, #330; decisión del 2026-11-12): admite el seguro igual que el formulario, por línea (`linea_orden`)
+          con el `valor_mercancia` de cada línea del pliego. Ruta rechazada por la Mesa: 409 `RUTA_RECHAZADA`.
         - Marcar una ruta que ya tiene el seguro (o quitarlo de una que no lo tiene) responde 200 sin cambios (idempotente).
         - No se envía a Nexo (decisión 6). Se audita en `EventosHerramienta` (`cambiar_seguro_costeo`) sin montos ni tasa.
         - `If-Match` **obligatorio** (428 `PRECONDICION_REQUERIDA` sin él; 409 `CONFLICTO_CONCURRENCIA` si no coincide). Solo el dueño.
@@ -2944,7 +2944,7 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`PDF_YA_ENVIADO` (enviada, con resultado o finalizada), `RUTA_RECHAZADA`, `ESTADO_NO_PERMITE` (licitación, `detalle.motivo = LICITACION`) o `CONFLICTO_CONCURRENCIA`; sin cambios'
+          description: '`PDF_YA_ENVIADO` (enviada, con resultado o finalizada), `RUTA_RECHAZADA` o `CONFLICTO_CONCURRENCIA`; sin cambios'
           content:
             application/json:
               schema:
@@ -5239,6 +5239,11 @@ paths:
         guardado antes de esos controles que no los pasa responde **400** `EXCEL_INVALIDO` o `ARCHIVO_DEMASIADO_GRANDE` con
         `detalle.motivo` (los mismos motivos del análisis), como cualquier original ilegible; nunca un 500. Con el cupo lleno 15 s,
         **503** `SERVICIO_OCUPADO` con `Retry-After`. Sin original no se toma el cupo.
+
+        HU-045.5 (#330, ADR-032 §9): si alguna línea incluye el seguro de la mercancía, agrega la columna
+        `Seguro de la mercancía Cotifly ({moneda})` (después de las de Cotifly) con el `valor_seguro` de cada línea, y en `Resumen Cotifly`
+        la fila `Seguro de la mercancía (aparte del total)`: el total sigue siendo la tarifa del transporte. Nunca la tasa. Sin seguro,
+        el archivo no cambia.
       security:
         - bearer: []
       parameters:
@@ -5304,6 +5309,15 @@ paths:
 
         **Peso (DU §8):** la sugerencia no trae pesos, solo propone columnas, así que la regla del peso total con tara no se aplica aquí.
         Se aplica al convertir las filas (`aplicar-mapeo`, #254) y en la captura.
+
+        **Columnas derivadas (HU-044.9 y HU-044.11).** Antes de llamar a NEXO, Cotifly revisa los textos de la muestra y, si al menos una
+        fila reconoce un vehículo, un contenedor o un peso, agrega **siempre las tres** columnas con nombre fijo, en posiciones fijas a
+        partir del número de `encabezados`: `Vehículo detectado` (índice = número de encabezados), `Contenedor detectado` (+1) y
+        `Peso detectado (kg)` (+2), aunque alguna quede vacía (también la de vehículo si el diccionario de alias de NEXO no responde). Las
+        filas se ajustan al número de encabezados (las cortas se rellenan; las celdas sin encabezado se descartan). Vienen en `columnas`
+        como cualquier otra y, con su índice y nombre, en `columnas_derivadas` (vacía si no se agregó ninguna): el front las muestra como
+        opciones del selector, al guardar la plantilla incluye sus nombres en `encabezados` (si no, NEXO responde `COLUMNA_FUERA_DE_RANGO`) y manda `numero_encabezados` a `aplicar-mapeo` para que las agregue en
+        los mismos índices.
       security:
         - bearer: []
       requestBody:
@@ -5565,6 +5579,11 @@ paths:
 
         **Errores por fila (`errores[]`).** Una fila con errores de NEXO va **solo** en `errores[]` (NEXO devuelve hasta 100 en la lista);
         `campo` va tal como lo manda NEXO. No reemplaza las validaciones de `POST /web/licitaciones`: la línea se valida al crear.
+
+        **Columnas derivadas (HU-044.9 y HU-044.11).** Cotifly agrega a cada fila las mismas tres columnas derivadas de `sugerir-mapeo`
+        (`Vehículo detectado`, `Contenedor detectado`, `Peso detectado (kg)`), en los mismos índices: desde `numero_encabezados` (sin él,
+        desde la fila más ancha). Las filas se ajustan a ese número antes de agregarlas. Se agregan si alguna fila reconoce algo o si el
+        mapeo usa un índice desde `numero_encabezados` (aunque esta vez NEXO no entregue el diccionario de alias: la de vehículo queda vacía).
       security:
         - bearer: []
       requestBody:
@@ -8536,6 +8555,14 @@ components:
           minimum: 2
           maximum: 1048576
           description: Número de Excel de la primera fila enviada (la del encabezado + 1). Por defecto 2, como NEXO.
+        numero_encabezados:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 100
+          description: |
+            HU-044.11. Cuántos `encabezados` se mandaron a `sugerir-mapeo`: las columnas derivadas empiezan en ese índice (el mismo de
+            `columnas_derivadas`). Opcional: sin él, desde la fila más ancha. Fuera de 1..100: 400 `COLUMNA_INVALIDA`.
 
     MapeoAplicado:
       type: object
@@ -11084,7 +11111,7 @@ components:
 
     SugerenciaMapeo:
       type: object
-      required: [ia_usada, motivo_sin_ia, columnas, dudas, plantilla_id]
+      required: [ia_usada, motivo_sin_ia, columnas, dudas, plantilla_id, columnas_derivadas]
       description: HU-044.2 (#253). La propuesta de mapeo de NEXO para una hoja, una entrada por encabezado.
       properties:
         ia_usada:
@@ -11111,6 +11138,27 @@ components:
           format: uuid
           nullable: true
           description: La plantilla del cliente que NEXO reconoció (`motivo_sin_ia = PLANTILLA_RECONOCIDA`).
+        columnas_derivadas:
+          type: array
+          description: |
+            HU-044.11. Las columnas que Cotifly agregó al final de la hoja (las tres o ninguna; con 98 o 99 encabezados solo caben las que llegan a 100 columnas), con su índice en `columnas` y en
+            `aplicar-mapeo`. Vacía si no se agregó ninguna.
+          items:
+            $ref: '#/components/schemas/ColumnaDerivada'
+
+    ColumnaDerivada:
+      type: object
+      required: [indice, nombre]
+      description: HU-044.11. Una columna derivada de `sugerir-mapeo`.
+      properties:
+        indice:
+          type: integer
+          minimum: 0
+          maximum: 99
+          description: Índice base 0 (número de encabezados + 0, 1 o 2).
+        nombre:
+          type: string
+          description: Nombre fijo, en este orden de índice - `Vehículo detectado`, `Contenedor detectado` o `Peso detectado (kg)`.
 
     ColumnaMapeada:
       type: object
