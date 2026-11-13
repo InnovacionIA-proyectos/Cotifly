@@ -5308,7 +5308,7 @@ paths:
         `Peso detectado (kg)` (+2), aunque alguna quede vacía (también la de vehículo si el diccionario de alias de NEXO no responde). Las
         filas se ajustan al número de encabezados (las cortas se rellenan; las celdas sin encabezado se descartan). Vienen en `columnas`
         como cualquier otra y, con su índice y nombre, en `columnas_derivadas` (vacía si no se agregó ninguna): el front las muestra como
-        opciones del selector, las incluye al guardar la plantilla y manda `numero_encabezados` a `aplicar-mapeo` para que las agregue en
+        opciones del selector, al guardar la plantilla incluye sus nombres en `encabezados` (si no, NEXO responde `COLUMNA_FUERA_DE_RANGO`) y manda `numero_encabezados` a `aplicar-mapeo` para que las agregue en
         los mismos índices.
       security:
         - bearer: []
@@ -11119,7 +11119,7 @@ components:
         columnas_derivadas:
           type: array
           description: |
-            HU-044.11. Las columnas que Cotifly agregó al final de la hoja (las tres o ninguna), con su índice en `columnas` y en
+            HU-044.11. Las columnas que Cotifly agregó al final de la hoja (las tres o ninguna; con 98 o 99 encabezados solo caben las que llegan a 100 columnas), con su índice en `columnas` y en
             `aplicar-mapeo`. Vacía si no se agregó ninguna.
           items:
             $ref: '#/components/schemas/ColumnaDerivada'
