@@ -5,20 +5,18 @@ using Cotifly.Dominio.Margen;
 namespace Cotifly.Dominio.Precio;
 
 /// <summary>
-/// Cálculo determinista del precio (port de <c>mcp_server/precio.py</c>). El LLM nunca hace la aritmética.
+/// Cálculo determinista del precio. El LLM nunca hace la aritmética.
 /// <list type="bullet">
 /// <item><c>margen</c>: precio = costo / (1 − m) (margen sobre el precio de venta), exige 0 ≤ m &lt; 1.</item>
 /// <item><c>markup</c>: precio = costo × (1 + m) (recargo sobre el costo), exige m ≥ 0 y admite m ≥ 1.</item>
 /// </list>
 /// El precio se redondea a pesos enteros y la utilidad (precio − costo) a 2 decimales, ambos con
-/// <see cref="MidpointRounding.ToEven"/> sobre <see cref="decimal"/> (el <c>round()</c> de Python, ADR-010 §6).
-/// Paridad con Python salvo empates exactos de medio peso: .NET redondea el valor exacto (half-to-even) y Python
-/// arrastra el error de <c>float</c>; diferencia máxima 1 peso (~0,04 % de casos). Ej.: 55 con markup 0.1 = 60.5
-/// → 60 (Python 61); 6349 con margen 0.44 = 11337.5 → 11338 (Python 11337).
+/// <see cref="MidpointRounding.ToEven"/> sobre <see cref="decimal"/> (ADR-010 §6): un empate exacto de medio peso va al par
+/// (55 con markup 0.1 = 60.5 → 60; 6349 con margen 0.44 = 11337.5 → 11338).
 /// </summary>
 public static class clsCalculadoraPrecio
 {
-    /// <summary>Calcula el precio o devuelve <c>PRECIO_INVALIDO</c> con el mismo mensaje que el Python.</summary>
+    /// <summary>Calcula el precio o devuelve <c>PRECIO_INVALIDO</c>.</summary>
     /// <param name="costo">Costo en pesos (&gt; 0).</param>
     /// <param name="margen">Margen como fracción decimal (0.135 = 13,5 %).</param>
     /// <param name="metodo"><c>margen</c> o <c>markup</c> (sin distinguir mayúsculas); nulo o vacío equivale a <c>margen</c>, el valor por defecto de la herramienta.</param>

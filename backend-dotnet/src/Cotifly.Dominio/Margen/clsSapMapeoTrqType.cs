@@ -8,10 +8,10 @@ namespace Cotifly.Dominio.Margen;
 /// y una fila con organización específica tiene prioridad sobre él.
 /// </summary>
 /// <remarks>
-/// HU-042.4 (#247, script <c>db/scripts/18_sap_mapeo_fk_margenes_politica.sql</c>): la línea se relaciona por
-/// <see cref="LineaNegocioId"/> (FK a <c>MargenesPolitica(id)</c>, el mismo id de <c>CotizacionLineasSolicitud.lineaNegocioId</c>).
-/// <see cref="LineaNegocio"/> (texto) sigue en la tabla mientras dura la transición en dos pasos: el backend ya no la usa para
-/// resolver, solo la escribe al crear un mapeo porque la columna es <c>NOT NULL</c>. Datos la retira en un script posterior.
+/// La línea se relaciona por <see cref="LineaNegocioId"/> (FK a <c>MargenesPolitica(id)</c>, el mismo id de
+/// <c>CotizacionLineasSolicitud.lineaNegocioId</c>; script <c>db/scripts/18_sap_mapeo_fk_margenes_politica.sql</c>).
+/// <see cref="LineaNegocio"/> (texto) es una columna de transición: el backend no la usa para resolver, solo la escribe al crear un
+/// mapeo porque la columna es <c>NOT NULL</c>.
 /// </remarks>
 public sealed class clsSapMapeoTrqType
 {
@@ -25,10 +25,10 @@ public sealed class clsSapMapeoTrqType
     public string TrqType { get; private set; } = string.Empty;
     public string SalesOrg { get; private set; } = SalesOrgComodin;
 
-    /// <summary>Id de la línea en <c>MargenesPolitica</c> (HU-042.4): la relación que usa el backend.</summary>
+    /// <summary>Id de la línea en <c>MargenesPolitica</c>: la relación que usa el backend.</summary>
     public int LineaNegocioId { get; private set; }
 
-    /// <summary>Nombre de la línea en texto (columna de transición, de solo lectura para la resolución; HU-042.4).</summary>
+    /// <summary>Nombre de la línea en texto (columna de transición, que la resolución no lee).</summary>
     public string LineaNegocio { get; private set; } = string.Empty;
     public bool Activo { get; private set; }
 
@@ -36,7 +36,7 @@ public sealed class clsSapMapeoTrqType
 
     /// <summary>
     /// Mapeo activo del TrqType a la línea <paramref name="lineaNegocioId"/> (id de <c>MargenesPolitica</c>). <paramref name="lineaNegocio"/>
-    /// es el nombre de esa misma línea, para la columna de texto que todavía existe (HU-042.4).
+    /// es el nombre de esa misma línea, para la columna de texto de transición.
     /// </summary>
     public static clsResultado<clsSapMapeoTrqType> Crear(string trqType, int lineaNegocioId, string lineaNegocio, string? salesOrg = SalesOrgComodin)
     {

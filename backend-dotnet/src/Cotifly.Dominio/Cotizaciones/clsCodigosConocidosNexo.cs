@@ -1,10 +1,9 @@
 namespace Cotifly.Dominio.Cotizaciones;
 
 /// <summary>
-/// ¿Nexo conoce un código de vehículo o de carrocería? HU-014 (#188, decisión del usuario del 2026-10-19: "enviar solo códigos
-/// conocidos"). Nexo pone en cuarentena (S5-HU-18.4) un código que no está en su catálogo y compara los nombres sin tildes, sin
+/// ¿Nexo conoce un código de vehículo o de carrocería? A Nexo solo se envían códigos conocidos: Nexo pone en cuarentena un código que no está en su catálogo y compara los nombres sin tildes, sin
 /// mayúsculas y con <c>_</c>/<c>-</c> equivalentes a espacio (<c>COTIFLY-CONTRATO.md</c> §3.4). Aquí se usa la MISMA equivalencia que el
-/// resto de Cotifly (<see cref="clsVehiculoLineaSolicitud.MismoCodigo"/>, D2) y se devuelve el código TAL COMO ESTÁ en el catálogo de
+/// resto de Cotifly (<see cref="clsVehiculoLineaSolicitud.MismoCodigo"/>) y se devuelve el código TAL COMO ESTÁ en el catálogo de
 /// Nexo: así Nexo lo reconoce sin depender de su normalización.
 /// </summary>
 /// <remarks>

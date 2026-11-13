@@ -3,7 +3,7 @@ using Cotifly.Dominio.Comun;
 namespace Cotifly.Dominio.Margen;
 
 /// <summary>
-/// Rango válido de un margen según el método de cálculo (paridad con el Python, <c>calcular_precio</c>):
+/// Rango válido de un margen según el método de cálculo:
 /// <list type="bullet">
 /// <item><c>margen</c>: precio = costo / (1 − m), exige 0 ≤ m &lt; 1.</item>
 /// <item><c>markup</c> (u otro método): precio = costo × (1 + m), exige m ≥ 0 y admite m ≥ 1.</item>

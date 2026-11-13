@@ -4,13 +4,13 @@ namespace Cotifly.Dominio.Identidad;
 
 /// <summary>
 /// Rol interno de Cotifly y su rol externo de ClientePro (<c>dbo_cotifly.Roles</c>, script 0002, ADR-009).
-/// <see cref="IdRolExterno"/> es el <c>IDROLES</c> de <c>tblSAPRoles</c> en la base de identidad del portal (QA: <c>dbSolucionesTI_Prueba</c>, #172); mientras sea <c>null</c>
+/// <see cref="IdRolExterno"/> es el <c>IDROLES</c> de <c>tblSAPRoles</c> en la base de identidad del portal (QA: <c>dbSolucionesTI_Prueba</c>); mientras sea <c>null</c>
 /// ningún rol externo da acceso con este rol (fail-closed). El script siembra <c>comercial</c> y
 /// <c>gerente_comercial</c> sin rol externo: los IDROLES reales los fija el DBA.
 /// <para>
-/// HU-040.3 (#258, ADR-009): <see cref="RequiereAltaManual"/> marca los roles SENSIBLES (por ejemplo <c>director</c>): el login NO los
+/// <see cref="RequiereAltaManual"/> marca los roles SENSIBLES (por ejemplo <c>director</c>): el login NO los
 /// auto-otorga aunque el rol externo los respalde (siguen con alta manual y auditoría), pero sí los auto-revoca si pierden su respaldo
-/// (quitar privilegio es fail-safe). El flag es dato del catálogo (script 23), no una lista fija en el código.
+/// (quitar privilegio es fail-safe, ADR-009). El flag es dato del catálogo (script 23), no una lista fija en el código.
 /// </para>
 /// </summary>
 public sealed class clsRol
@@ -29,8 +29,8 @@ public sealed class clsRol
     public bool Activo { get; private set; }
 
     /// <summary>
-    /// HU-040.3 (#258): rol SENSIBLE que NO se auto-otorga en el login (sigue con alta manual y auditoría); la auto-revocación sí aplica.
-    /// Dato del catálogo (<c>dbo_cotifly.Roles.requiereAltaManual</c>, script 23), no una lista en el código. Lo marca el DBA (hoy <c>director</c>).
+    /// Rol SENSIBLE que NO se auto-otorga en el login (sigue con alta manual y auditoría); la auto-revocación sí aplica.
+    /// Dato del catálogo (<c>dbo_cotifly.Roles.requiereAltaManual</c>, script 23), no una lista en el código. Lo marca el DBA (por ejemplo, <c>director</c>).
     /// </summary>
     public bool RequiereAltaManual { get; private set; }
 
