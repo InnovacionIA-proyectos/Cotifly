@@ -273,6 +273,7 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         (typeof(Cotifly.Api.Licitaciones.DTOs.clsSugerirMapeoWebRequest), "SugerirMapeoWeb"),
         (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsSugerenciaMapeo), "SugerenciaMapeo"),
         (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsColumnaMapeada), "ColumnaMapeada"),
+        (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsColumnaDerivadaMapeo), "ColumnaDerivada"),
         (typeof(Cotifly.Api.Licitaciones.DTOs.clsLecturaEstructuraWeb), "LecturaEstructura"),
         (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsHojaDelArchivo), "HojaDelArchivo"),
         (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsCambiosDeFormato), "CambiosDeFormato"),
