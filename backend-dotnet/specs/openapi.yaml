@@ -4991,7 +4991,11 @@ paths:
         clave y el mismo cuerpo+archivo (la huella es el cuerpo más el nombre y el SHA-256 del archivo, no los bytes) relee la licitación
         creada y responde **201 con su estado de ahora**, sin crear otro folio. Solo el **201** consume la clave: un reporte por fila (400)
         o un 503 NO la consumen y la repetición se vuelve a evaluar (devuelve el reporte completo). La misma clave con otro cuerpo u otro
-        archivo es 409 `IDEMPOTENCY_KEY_REUTILIZADA`; fuera de 8 a 64 caracteres, 400 `ErrorWeb`.
+        archivo es 409 `IDEMPOTENCY_KEY_REUTILIZADA`; fuera de 8 a 64 caracteres, 400 `ErrorWeb`. El folio queda asociado a la clave en
+        la misma transacción que crea la licitación: si la API se cae antes de responder, la repetición con la misma clave responde 409
+        `ESTADO_NO_PERMITE` (`detalle.motivo = CAPTURA_EN_CURSO`, con `detalle.folio`) mientras la primera petición se considera en curso
+        (hasta 10 min) y, después, **201 con el mismo folio** y su estado de ahora, sin crear otra licitación ni volver a enviarla a Nexo:
+        ese 201 puede traer `estado_costeo = pendiente_envio` o `error_envio`, que se recupera con `POST /web/cotizaciones/{folio}/costeo/reintentar`.
       security:
         - bearer: []
       parameters:
@@ -5063,7 +5067,9 @@ paths:
         '409':
           description: |
             HU-044.10 (#293). `IDEMPOTENCY_KEY_REUTILIZADA`: la misma `Idempotency-Key` con otro cuerpo u otro archivo; no se crea nada
-            (generar una clave nueva por intención).
+            (generar una clave nueva por intención). `ESTADO_NO_PERMITE` con `detalle.motivo = CAPTURA_EN_CURSO`: otra petición con la
+            misma clave sigue en curso (en otra réplica, o la API se cayó a mitad y su toma aún no vence, hasta 10 min); si ya creó la
+            licitación, trae `detalle.folio`. No se crea nada: esperar unos segundos y repetir con la MISMA clave, o abrir `detalle.folio`.
           content:
             application/json:
               schema:

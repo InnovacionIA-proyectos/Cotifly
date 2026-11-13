@@ -349,6 +349,55 @@ public sealed class clsIdempotenciaSqlTests(clsBaseDatosPruebas baseDatos) : cls
     }
 
     [Fact]
+    public async Task UnaLicitacionCuyaPeticionSeCayoTrasConfirmarElFolioSeRetomaConEseFolio()
+    {
+        // Crear licitación registra el folio con la clave en la transacción que lo confirma y la petición se corta antes de cerrar la toma.
+        var clave = NuevaClave();
+        var ambitoLicitacion = $"crear-licitacion:{_usuario}";
+        var folio = $"PCN-{Guid.NewGuid():N}"[..30];
+        var cortada = new TaskCompletionSource();
+        var registrada = new TaskCompletionSource();
+        var original = Replica().EjecutarUnaVezAsync<string>(ambitoLicitacion, clave, HuellaA, async ct =>
+        {
+            await using (var ambito = NuevoAmbito())
+            {
+                var contexto = ambito.ServiceProvider.GetRequiredService<clsCotiflyDbContext>();
+                await using var transaccion = await contexto.Database.BeginTransactionAsync(ct);
+                await ambito.ServiceProvider.GetRequiredService<IClsRegistroCapturasIdempotentes>().RegistrarAsync(
+                    ambitoLicitacion, clave, new clsCapturaIdempotente(HuellaA, Guid.NewGuid(), folio, null, Reloj.AhoraUtc), ct);
+                await transaccion.CommitAsync(ct);
+            }
+
+            registrada.SetResult();
+            await cortada.Task.WaitAsync(ct);
+            return "nunca";
+        }, r => r.EsExitoso, Ct);
+        await registrada.Task.WaitAsync(TimeSpan.FromSeconds(30), Ct);
+
+        var mientras = await Replica().EjecutarUnaVezAsync(ambitoLicitacion, clave, HuellaA, Accion(new clsValorPrueba("F-OTRA", 1m, [])), null, Ct);
+        Reloj.Avanzar(clsAlmacenIdempotenciaSql.TiempoMaximoEnCurso + TimeSpan.FromSeconds(1));
+        var otroCuerpo = await Replica().EjecutarUnaVezAsync(ambitoLicitacion, clave, HuellaB, Accion(new clsValorPrueba("F-OTRA", 1m, [])), null, Ct);
+        string? folioVisto = null;
+        var retoma = await Replica().EjecutarUnaVezAsync<string>(ambitoLicitacion, clave, HuellaA, async ct =>
+        {
+            await using var ambito = NuevoAmbito();
+            folioVisto = (await ambito.ServiceProvider.GetRequiredService<IClsRegistroCapturasIdempotentes>().BuscarAsync(ambitoLicitacion, clave, ct))?.Folio;
+            return folioVisto ?? "sin-folio";
+        }, r => r.EsExitoso, Ct);
+        cortada.SetCanceled(Ct);
+        await FluentActions.Awaiting(() => original).Should().ThrowAsync<OperationCanceledException>();
+
+        mientras.Error.Detalle.Should().Be(clsCodigosAplicacion.MotivoCapturaEnCurso, "dentro de la toma, el reintento no ejecuta");
+        otroCuerpo.Error.Codigo.Should().Be(clsCodigosAplicacion.IdempotencyKeyReutilizada, "con folio, la clave es de ese cuerpo");
+        retoma.Valor.Should().Be(folio, "quien retoma ve el folio registrado y no crea otra licitación");
+        _ejecuciones.Should().Be(0);
+        (await EstadoAsync(clave, "crear-licitacion")).Should().Be("terminada", "la petición original ya no tenía la toma");
+        await using var lectura = NuevoAmbito();
+        (await lectura.ServiceProvider.GetRequiredService<IClsRegistroCapturasIdempotentes>().BuscarPorFolioAsync(folio, Ct))
+            .Should().BeNull("el reintento del costeo solo vincula registros de la captura");
+    }
+
+    [Fact]
     public async Task LaApiRegistraElAlmacenYElRegistroDeSql()
     {
         await using var ambito = NuevoAmbito();

@@ -51,7 +51,9 @@ public interface IClsLicitacionService
     /// cuerpo+archivo devuelve el mismo folio releyendo la licitación (201 con su estado de ahora). Solo el 201 (licitación creada)
     /// consume la clave: un reporte por fila (400) o un 503 NO la consumen, así la repetición se vuelve a evaluar. La misma clave con
     /// otro cuerpo u otro archivo es <c>IDEMPOTENCY_KEY_REUTILIZADA</c> (409) y fuera de largo (8 a 64), <c>SOLICITUD_INVALIDA</c> (400).
-    /// La huella es el cuerpo más el nombre y el SHA-256 del archivo (no los bytes).
+    /// La huella es el cuerpo más el nombre y el SHA-256 del archivo (no los bytes). Con <see cref="IClsRegistroCapturasIdempotentes"/>, el
+    /// folio queda asociado a la clave en la misma transacción que crea la licitación: si la API se cae antes de responder, la repetición
+    /// (pasada la toma en curso) relee esa licitación y responde 201 con el mismo folio, sin crear otra.
     /// </summary>
     Task<clsResultadoLicitacion> CrearUnaVezAsync(
         Guid usuarioId, clsEntradaLicitacion entrada, string? claveIdempotencia, CancellationToken cancellationToken = default);
@@ -99,7 +101,8 @@ public sealed class clsLicitacionService(
     IClsCubicador? cubicador = null,
     IOptions<clsOpcionesCubicacionLicitacion>? opcionesCubicacion = null,
     IClsAlmacenIdempotencia? idempotencia = null,
-    Costeo.Services.IClsCategoriasConexos? categoriasConexos = null) : IClsLicitacionService
+    Costeo.Services.IClsCategoriasConexos? categoriasConexos = null,
+    IClsRegistroCapturasIdempotentes? registroIdempotente = null) : IClsLicitacionService
 {
     public const string TipoXlsx = clsArchivoLicitacion.TipoXlsx;
 
@@ -414,26 +417,37 @@ public sealed class clsLicitacionService(
             return await CrearAsync(usuarioId, entrada, cancellationToken);
         }
 
-        // PENDIENTE (#293, confirmar con Sara): si la primera petición se cae DESPUÉS de crear el folio y ANTES de responder, la repetición
-        // crea otra licitación (aquí no hay el registro previo al folio que la captura usa para CAPTURA_EN_CURSO, #173). NO se replica ese
-        // mecanismo hasta confirmarlo.
-        // #191: el almacén guarda solo el folio (texto). Si la acción corrió en esta petición se devuelve su resultado completo (incluido
-        // el reporte por fila, que NO consume la clave); si es una repetición de un 201, la licitación guardada se relee por su folio.
+        // El almacén guarda solo el folio (texto). Si la acción corrió en esta petición se devuelve su resultado completo (incluido el
+        // reporte por fila, que NO consume la clave); si es una repetición de un 201, la licitación guardada se relee por su folio.
+        var ambito = $"{OperacionIdempotencia}:{usuarioId}";
+        var huella = Huella(entrada);
         clsResultadoLicitacion? ejecutada = null;
         var guardado = await idempotencia.EjecutarUnaVezAsync<string>(
-            $"{OperacionIdempotencia}:{usuarioId}",
+            ambito,
             claveIdempotencia,
-            Huella(entrada),
+            huella,
             async ct =>
             {
-                var resultado = await CrearAsync(usuarioId, entrada, ct);
+                // La clave ya tiene una licitación confirmada: la petición que la creó se cortó antes de cerrar la toma (la API se cayó
+                // entre el folio y la respuesta). Se responde con ese folio y nunca se crea otra licitación ni se vuelve a enviar a Nexo.
+                if (registroIdempotente is not null && await registroIdempotente.BuscarAsync(ambito, claveIdempotencia, ct) is { } previa)
+                {
+                    return string.Equals(previa.Huella, huella, StringComparison.OrdinalIgnoreCase)
+                        ? previa.Folio
+                        : new clsErrorDominio(clsCodigosAplicacion.IdempotencyKeyReutilizada, clsCodigosAplicacion.MensajeIdempotencyKeyReutilizada);
+                }
+
+                var resultado = await CrearInternoAsync(usuarioId, entrada, registroIdempotente is null
+                    ? null
+                    : (c, ctRegistro) => registroIdempotente.RegistrarAsync(ambito, claveIdempotencia,
+                        new clsCapturaIdempotente(huella, c.Id, c.Folio, null, reloj.AhoraUtc), ctRegistro), ct);
                 ejecutada = resultado;
                 return resultado.Cotizacion is { } creada
                     ? (clsResultado<string>)creada.Folio
                     : resultado.Error ?? new clsErrorDominio(clsCodigosError.ErrorInterno, "No se pudo crear la licitación.");
             },
-            // Solo el 201 (licitación creada) consume la clave; el reporte por fila (400) y el 503 NO (el folio nunca se guardó).
-            _ => ejecutada?.Cotizacion is not null,
+            // Solo una licitación creada (o la ya registrada con la clave) consume la clave; el reporte por fila (400) y el 503 NO.
+            r => r.EsExitoso,
             cancellationToken);
         if (guardado.EsFallo)
         {
@@ -477,7 +491,19 @@ public sealed class clsLicitacionService(
         });
     }
 
-    public async Task<clsResultadoLicitacion> CrearAsync(Guid usuarioId, clsEntradaLicitacion entrada, CancellationToken cancellationToken = default)
+    public Task<clsResultadoLicitacion> CrearAsync(Guid usuarioId, clsEntradaLicitacion entrada, CancellationToken cancellationToken = default) =>
+        CrearInternoAsync(usuarioId, entrada, null, cancellationToken);
+
+    /// <summary>
+    /// <see cref="CrearAsync"/> con <paramref name="alConfirmar"/>: se llama con la licitación recién guardada DENTRO de la transacción
+    /// que confirma el folio, antes de enviarla a Nexo. Así la <c>Idempotency-Key</c> queda asociada al folio junto con la licitación
+    /// (o no queda ninguna de las dos).
+    /// </summary>
+    private async Task<clsResultadoLicitacion> CrearInternoAsync(
+        Guid usuarioId,
+        clsEntradaLicitacion entrada,
+        Func<clsCotizacionSolicitud, CancellationToken, Task>? alConfirmar,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(entrada);
         ArgumentNullException.ThrowIfNull(entrada.Encabezado);
@@ -663,6 +689,12 @@ public sealed class clsLicitacionService(
             }
 
             await unidadTrabajo.GuardarCambiosAsync(ct);
+            if (alConfirmar is not null)
+            {
+                // La clave se registra con el folio en la misma transacción que lo confirma (la del candado del folio).
+                await alConfirmar(cotizacion.Valor, ct);
+            }
+
             return cotizacion.Valor;
         }, cancellationToken);
         if (creada.EsFallo)
