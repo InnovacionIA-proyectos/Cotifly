@@ -420,7 +420,7 @@ public sealed class clsCosteoLineasService(
             return (rutas.Error, [], false);
         }
 
-        // Las mismas precondiciones del POST por ruta (licitación, costeo con margen, regla del PDF, ruta rechazada, línea de Nexo), ruta
+        // Las mismas precondiciones del POST por ruta (costeo con margen, regla del PDF, ruta rechazada, línea de Nexo), ruta
         // por ruta y sin tocar nada. Las de la cotización salen igual en cualquier ruta: sin detalle de ruta.
         var conexo = new clsConexoValidado(null, servicio, cantidad);
         foreach (var ruta in rutas.Valor)

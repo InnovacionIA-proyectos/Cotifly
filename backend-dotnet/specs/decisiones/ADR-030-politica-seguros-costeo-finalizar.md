@@ -53,7 +53,7 @@ saber qué medida es un acompañante; solo cruza los `codigoServicio` de los con
 7. **Decisiones del usuario (2026-11-09):**
    - Un conexo cuyo envío a Nexo quedó `fallido_definitivo` o `incierto` **no** cumple ninguna medida; solo cuentan `enviado` y
      `pendiente` (este último lo bloquea #228 aparte). Se aplica en el costeo (con el `estado_nexo` de la vista) y en "Finalizar".
-   - Licitaciones de 350 M o más: se quedan como están. No admiten conexos (HU-041.1), así que se finalizan con justificación.
+   - Licitaciones de 350 M o más: se quedan como están. No admitían conexos (HU-041.1), así que se finalizaban con justificación. Desde HU-041.3 (2026-11-12) admiten conexos como una Spot y pueden cumplir las medidas.
 
 ## Consecuencias
 
