@@ -8,8 +8,8 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Precio;
 
 /// <summary>
-/// <see cref="clsPrecioService"/> adapta la regla pura al contrato <c>SalidaPrecio</c> y, en USD, convierte con la TRM del día de negocio
-/// (HU-012.2). Los casos de paridad de <c>tests/test_precio.py</c> están en <c>Cotifly.Dominio.Tests/Precio/clsCalculadoraPrecioTests</c>.
+/// <see cref="clsPrecioService"/> adapta la regla pura al contrato <c>SalidaPrecio</c> y, en USD, convierte con la TRM del día de negocio.
+/// Los casos de paridad de <c>tests/test_precio.py</c> están en <c>Cotifly.Dominio.Tests/Precio/clsCalculadoraPrecioTests</c>.
 /// </summary>
 public sealed class clsPrecioServiceTests
 {

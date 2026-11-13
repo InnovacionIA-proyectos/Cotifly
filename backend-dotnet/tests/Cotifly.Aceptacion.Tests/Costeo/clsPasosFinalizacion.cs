@@ -9,7 +9,7 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Costeo;
 
 /// <summary>
-/// Pasos de <c>specs/features/cotizacion_finalizada.feature</c> (HU-036): <c>POST /web/cotizaciones/{folio}/finalizar</c> contra la API real
+/// Pasos de <c>specs/features/cotizacion_finalizada.feature</c>: <c>POST /web/cotizaciones/{folio}/finalizar</c> contra la API real
 /// en memoria, SQL Server 2019 con el script 14 y el Nexo falso de <see cref="clsPasosCosteo"/>. Las mutaciones envían <c>If-Match</c>
 /// con la versión vigente de la fila (leída de la base) salvo que el paso diga otra cosa.
 /// </summary>

@@ -31,10 +31,10 @@ public sealed class clsPasosIdentidad(clsContextoEscenario contexto)
     private readonly Dictionary<string, string> _usuariosDimEjecutivo = new(StringComparer.OrdinalIgnoreCase);
     private clsResultado<clsSesionEmitida>? _login;
 
-    /// <summary>HU-040.2 (#230): la elección pendiente del último login (varios roles), o <c>null</c>.</summary>
+    /// <summary>La elección pendiente del último login (varios roles), o <c>null</c>.</summary>
     private clsEleccionRolPendiente? _eleccion;
 
-    /// <summary>HU-040.2 (#230): el ticket de la última elección (para probar que es de un solo uso).</summary>
+    /// <summary>El ticket de la última elección (para probar que es de un solo uso).</summary>
     private string? _ticketUsado;
     private clsResultado<clsSesionEmitida>? _renovacion;
     private IReadOnlyList<clsResultado<clsSesionEmitida>> _renovacionesSimultaneas = [];
@@ -57,7 +57,7 @@ public sealed class clsPasosIdentidad(clsContextoEscenario contexto)
         var resultado = await LoginAsync(Real(nombreUsuario));
         if (_eleccion is not null)
         {
-            // HU-040.2 (#230): con varios roles el login deja la elección pendiente (sin sesión).
+            // Con varios roles el login deja la elección pendiente (sin sesión).
             return;
         }
 
@@ -380,7 +380,7 @@ public sealed class clsPasosIdentidad(clsContextoEscenario contexto)
             .IniciarSesionAsync(new clsSolicitudLoginClientePro(idUsuario, "Nombre informativo", roles)));
         _eleccion = resultado.EsExitoso ? resultado.Valor.Eleccion : null;
 
-        // HU-040.2 (#230): con varios roles el login no emite sesión (queda la elección pendiente en _eleccion).
+        // Con varios roles el login no emite sesión (queda la elección pendiente en _eleccion).
         return resultado.Coincidir<clsResultado<clsSesionEmitida>>(
             l => l.Sesion is { } sesion ? sesion : new clsErrorDominio("ELECCION_PENDIENTE", "Elección de rol pendiente."),
             e => e);

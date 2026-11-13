@@ -549,8 +549,8 @@ Extradimensionado con el piso SICE-TAC sin revisión (`COTIFLY-CONTRATO.md` §4)
   siempre (en cualquier modo), escrito como en Nexo si se puede resolver.
 - **Pruebas**: `clsCodigosConocidosNexoTests` (equivalencias, ambigüedad, cultura `tr-TR`), `clsCodigosConocidosEnvioNexoTests` (tres modos,
   catálogo caído o que lanza, respaldo, configuración y arranque), `clsValidadorCatalogosCapturaTests` (M1) y, por HTTP con el Nexo falso
-  que aplica §3.4 y §4 (`AutoCostearSegunContrato`), `HU014_SoloViajanLosCodigosQueNexoConoceYElDesconocidoQuedaPorCostearEnCupoSinCuarentena`
-  y `HU014_ConSiempreUnCodigoQueNexoNoConoceViajaYNaceEnCuarentena`.
+  que aplica §3.4 y §4 (`AutoCostearSegunContrato`), `SoloViajanLosCodigosQueNexoConoceYElDesconocidoQuedaPorCostearEnCupoSinCuarentena`
+  y `ConSiempreUnCodigoQueNexoNoConoceViajaYNaceEnCuarentena`.
 
 ## Decisión — HU-031.1 (#194): alias de Nexo y `siempre` por defecto (decisiones del usuario del 2026-10-20)
 

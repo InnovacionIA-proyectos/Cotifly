@@ -10,7 +10,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Licitaciones;
 
 /// <summary>
-/// HU-044.5 (#256): plantillas de mapeo, recetas de lectura y diccionario del cliente son un puente hacia NEXO. Los listados exigen el NIT
+/// Plantillas de mapeo, recetas de lectura y diccionario del cliente son un puente hacia NEXO. Los listados exigen el NIT
 /// (sin él NEXO devolvería los de todos los clientes) y no llaman a NEXO sin él; el PUT de la receta solo valida el archivo (sin abrirlo) y
 /// que venga la receta; el diccionario devuelve, con NIT, los términos del cliente y los generales.
 /// </summary>
@@ -183,7 +183,7 @@ public sealed class clsFormatosClienteServiceTests
     [Fact]
     public async Task ElFiltroDeGeneralesFallaCerradoSiNexoNoMandaElClienteIdOTraeNombreDeCliente()
     {
-        // #256 B2: un término es general solo si NEXO mandó clienteId = null explícito y sin nombre de cliente. Un cambio de forma en NEXO
+        // Un término es general solo si NEXO mandó clienteId = null explícito y sin nombre de cliente. Un cambio de forma en NEXO
         // (clienteId ausente, renombrado o anidado) no puede hacer pasar por generales los términos de otros clientes.
         _nexo.ObtenerDiccionarioClienteAsync(_usuario, null, Arg.Any<clsFiltroDiccionarioCliente?>(), Arg.Any<CancellationToken>())
             .Returns(clsResultado<IReadOnlyList<clsTerminoCliente>>.Exito([

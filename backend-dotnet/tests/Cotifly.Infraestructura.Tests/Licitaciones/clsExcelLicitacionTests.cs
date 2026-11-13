@@ -17,7 +17,7 @@ using NSubstitute;
 namespace Cotifly.Infraestructura.Tests.Licitaciones;
 
 /// <summary>
-/// Excel de licitaciones (HU-011.2, ADR-017): lectura local del original con la regla de Nexo (ClosedXML), análisis reenviado a
+/// Excel de licitaciones (ADR-017): lectura local del original con la regla de Nexo (ClosedXML), análisis reenviado a
 /// Nexo (falso, nunca el real) y el alta de Nexo con N líneas.
 /// </summary>
 public sealed class clsExcelLicitacionTests : IDisposable
@@ -94,7 +94,7 @@ public sealed class clsExcelLicitacionTests : IDisposable
     [InlineData(HttpStatusCode.Unauthorized, "SESION_INVALIDA", clsCodigosError.CosteoNexoNoDisponible)]
     [InlineData(HttpStatusCode.RequestEntityTooLarge, "PAYLOAD_TOO_LARGE", clsCodigosError.ArchivoDemasiadoGrande)]
     [InlineData(HttpStatusCode.InternalServerError, "X", clsCodigosError.CosteoNexoNoDisponible)]
-    // #278 (DU §2.1): el cupo diario de IA no es el cupo por minuto; ninguno es un rechazo de los datos.
+    // DU §2.1: el cupo diario de IA no es el cupo por minuto; ninguno es un rechazo de los datos.
     [InlineData(HttpStatusCode.TooManyRequests, "IA_TOPE_DIARIO", clsCodigosError.IaTopeDiario)]
     [InlineData(HttpStatusCode.TooManyRequests, "DEMASIADAS_SOLICITUDES", clsCodigosError.CosteoNexoNoDisponible)]
     public async Task LosErroresDeNexoSeTraducen(HttpStatusCode estado, string codigoNexo, string esperado)
@@ -107,7 +107,7 @@ public sealed class clsExcelLicitacionTests : IDisposable
         analisis.Error.Codigo.Should().Be(esperado);
     }
 
-    // HU-013.15 (#124): el 503 (y cualquier error de Nexo) lleva en el detalle solo el código de Nexo, nunca su texto crudo.
+    // El 503 (y cualquier error de Nexo) lleva en el detalle solo el código de Nexo, nunca su texto crudo.
     [Theory]
     [InlineData(HttpStatusCode.Unauthorized, "SESION_INVALIDA")]
     [InlineData(HttpStatusCode.Forbidden, "SIN_PERMISO_CABINA_FLETES")]
@@ -123,7 +123,7 @@ public sealed class clsExcelLicitacionTests : IDisposable
         analisis.Error.Detalle.Should().Be(codigoNexo);
     }
 
-    // HU-013.15 (#124): las filas con datos de todas las hojas en una sola lectura, con los números de fila de Excel.
+    // Las filas con datos de todas las hojas en una sola lectura, con los números de fila de Excel.
     [Fact]
     public void LasFilasDeDatosPorHojaTraenLasFilasDelExcelDeCadaHojaConEncabezado()
     {

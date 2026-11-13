@@ -18,7 +18,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Tests.Agente;
 
 /// <summary>
-/// Registro del asistente en Infraestructura (HU-013.9, #105): sin Google Chat (ni verificador del JWT, ni cola, ni worker, ni
+/// Registro del asistente en Infraestructura: sin Google Chat (ni verificador del JWT, ni cola, ni worker, ni
 /// publicador, ni opciones <c>GChat</c>, ni la URL firmada del PDF), con el candado por sesión y el barrido de sesiones.
 /// </summary>
 public sealed class clsRegistroAgenteInfraestructuraTests
@@ -57,7 +57,7 @@ public sealed class clsRegistroAgenteInfraestructuraTests
         proveedor.GetRequiredService<IOptions<clsOpcionesSesiones>>().Value.LimiteTokens.Should().Be(6000);
     }
 
-    // HU-013.9 (#105): ninguna clase de opciones se enlaza a las secciones GChat (Google Chat) o Chat (flag de creación del agente
+    // Ninguna clase de opciones se enlaza a las secciones GChat (Google Chat) o Chat (flag de creación del agente
     // legado): las variables GChat__* y Chat__* heredadas de un despliegue viejo no se leen ni se validan.
     [Fact]
     public void NingunaOpcionSeEnlazaALasSeccionesGChatOChat()

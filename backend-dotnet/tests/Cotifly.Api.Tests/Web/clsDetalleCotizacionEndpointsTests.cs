@@ -8,7 +8,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// HU-027.1 (#179, parte A): <c>GET /web/cotizaciones/{folio}</c> por HTTP contra SQL Server real y el Nexo falso. Detalle completo en una
+/// <c>GET /web/cotizaciones/{folio}</c> por HTTP contra SQL Server real y el Nexo falso. Detalle completo en una
 /// llamada (cabecera, costeo por ruta, rutas capturadas, totales y <c>ETag</c>) sin consultar Nexo; acceso del dueño, del gerente de su
 /// regional (solo consulta) y 404 para el gerente de otra regional y para el comercial ajeno.
 /// </summary>
@@ -147,9 +147,9 @@ public sealed class clsDetalleCotizacionEndpointsTests : IDisposable
         deGerente.GetProperty("solo_lectura").GetBoolean().Should().BeTrue();
         deGerente.GetProperty("cotizacion").GetProperty("comercial").GetProperty("usuario_id").GetString().Should().Be(ana.UsuarioId.ToString());
         deGerente.GetProperty("cotizacion").GetProperty("comercial").GetProperty("nombre_completo").GetString().Should().Be("Ana Occidente");
-        // HU-039.1 (#218): el gerente ve el mismo costeo que el dueño salvo el costo bruto de las rutas, que solo es del dueño.
+        // El gerente ve el mismo costeo que el dueño salvo el costo bruto de las rutas, que solo es del dueño.
         deDueno.GetProperty("costeo").GetProperty("rutas")[0].GetProperty("costo_final").GetDecimal().Should().Be(1_000_000m);
-        // HU-018.2 (#294): el costo del transporte también es costo y el gerente lo ve en null; el valor de la mercancía NO es costo y se conserva.
+        // El costo del transporte también es costo y el gerente lo ve en null; el valor de la mercancía NO es costo y se conserva.
         deDueno.GetProperty("costeo").GetProperty("rutas")[0].GetProperty("costo_transporte").ValueKind.Should().Be(JsonValueKind.Number);
         deGerente.GetProperty("costeo").GetProperty("rutas").EnumerateArray()
             .Should().OnlyContain(r => r.GetProperty("costo_final").ValueKind == JsonValueKind.Null
@@ -168,7 +168,7 @@ public sealed class clsDetalleCotizacionEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// Validación #179: después de editar (reemplazo en NEXO quitando una ruta y agregando otra) y de crear la <c>-v2</c>, <c>captura</c> y
+    /// Después de editar (reemplazo en NEXO quitando una ruta y agregando otra) y de crear la <c>-v2</c>, <c>captura</c> y
     /// <c>costeo.rutas[]</c> siguen cruzando 1 a 1 por <c>linea_solicitud_id</c> (sin la ruta quitada); y con <c>solo_lectura</c> el gerente
     /// de la regional sigue recibiendo 404 en las acciones del dueño.
     /// </summary>
@@ -206,7 +206,7 @@ public sealed class clsDetalleCotizacionEndpointsTests : IDisposable
         _nexo.CostearLinea(solicitud, 1, 800_000m);
         _nexo.Entregar(solicitud);
         await _api.ProcesarPollingAsync(folio);
-        await _api.FinalizarSiCorrespondeAsync(ana.Access, folio); // HU-036.3: como el frontend
+        await _api.FinalizarSiCorrespondeAsync(ana.Access, folio); // Como el frontend
         using (var resultado = await _api.EnviarAsync(_post, $"{Ruta(folio)}/resultado", ana.Access, """{"resultado":"ganada","motivo":"Precio"}"""))
         {
             resultado.StatusCode.Should().Be(HttpStatusCode.OK, await resultado.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
@@ -332,7 +332,7 @@ public sealed class clsDetalleCotizacionEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// El costeo serializado sin los costos de <c>rutas[]</c> (HU-039.1: <c>costo_final</c>; HU-018.2, #294: también <c>costo_transporte</c>):
+    /// El costeo serializado sin los costos de <c>rutas[]</c> (<c>costo_final</c> y <c>costo_transporte</c>):
     /// los únicos campos que cambian entre el dueño y el gerente (el valor de la mercancía no es costo y se conserva en los dos).
     /// </summary>
     private static string SinCostoFinal(JsonElement costeo)

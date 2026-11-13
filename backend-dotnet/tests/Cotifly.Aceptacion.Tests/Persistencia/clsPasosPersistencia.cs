@@ -162,7 +162,7 @@ public sealed class clsPasosPersistencia(clsContextoEscenario contexto)
             Version = VersionDelFolio(folio),
             UsuarioId = Usuario(nombreUsuario),
         }).Valor;
-        // HU-021: la línea de negocio y el precio son de la ruta; el precio de la cotización, la suma de sus rutas.
+        // La línea de negocio y el precio son de la ruta; el precio de la cotización, la suma de sus rutas.
         cotizacion.RegistrarCotizacionChat(lineaNegocioId, null, null, null, null, null, precio);
 
         return contexto.EnAmbitoAsync(s =>
@@ -172,7 +172,7 @@ public sealed class clsPasosPersistencia(clsContextoEscenario contexto)
         });
     }
 
-    /// <summary>Marca como ganada con el caso de uso de seguimiento (#11); <c>null</c> si no es del comercial.</summary>
+    /// <summary>Marca como ganada con el caso de uso de seguimiento; <c>null</c> si no es del comercial.</summary>
     private async Task<clsCotizacionSolicitud?> MarcarGanadaAsync(string nombreUsuario, string folio)
     {
         var resultado = await contexto.ConsultarAsync(s => s.GetRequiredService<IClsSeguimientoService>()

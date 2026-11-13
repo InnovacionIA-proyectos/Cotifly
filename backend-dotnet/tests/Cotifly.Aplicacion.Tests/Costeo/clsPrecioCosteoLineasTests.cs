@@ -6,9 +6,9 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// Margen y precio ruta por ruta (HU-011.2, ADR-017; HU-021, ADR-019): cada camión recibe su línea de Nexo por contenido, su estado y su
+/// Margen y precio ruta por ruta (ADR-017, ADR-019): cada camión recibe su línea de Nexo por contenido, su estado y su
 /// flete; cada ruta tiene precio en cuanto todos sus camiones tienen flete, y la solicitud suma los precios de sus rutas solo cuando todas
-/// lo tienen. Con una ruta el resultado es idéntico al del formulario (HU-005.7).
+/// lo tienen. Con una ruta el resultado es idéntico al del formulario.
 /// </summary>
 public sealed class clsPrecioCosteoLineasTests
 {
@@ -18,7 +18,7 @@ public sealed class clsPrecioCosteoLineasTests
     [Fact]
     public void ConUnaRutaElResultadoEsElMismoQueElDelFormulario()
     {
-        // HU-021: el "legado" (columnas de la cabecera) ya no existe; el formulario y la licitación de una ruta comparten el agregado.
+        // El formulario y la licitación de una ruta comparten el agregado.
         var formulario = Formulario();
         var licitacion = Cotizacion(1);
         var fotoFormulario = Foto("EnCosteo", [("L1", 2_000_000m)], ["L1"], detalle: false);
@@ -95,7 +95,7 @@ public sealed class clsPrecioCosteoLineasTests
         cotizacion.PrecioFinal.Should().Be(359.39m + 718.79m + 305.48m, "el total es la suma de las rutas en USD");
         cotizacion.CostoFinal.Should().Be(3_850_000m, "el costo de Nexo se guarda en pesos");
 
-        // HU-021: el conexo es de la ruta (la lectura del costeo no lo importa). HU-043.2 (#251): su precio es su venta (aquí el costo)
+        // El conexo es de la ruta (la lectura del costeo no lo importa); su precio es su venta (aquí el costo)
         // sin margen, convertida a USD con la trmAplicada: 170.000 / 3.273,49 = 51,93.
         clsCotizacionMuestra.ConConexo(cotizacion, "CX", "Cargue", 170_000m);
         clsCosteoCotizacionService.ConexosConPrecio(cotizacion, cotizacion.PrimeraRuta!).Should().ContainSingle().Which.Precio.Should().Be(51.93m);

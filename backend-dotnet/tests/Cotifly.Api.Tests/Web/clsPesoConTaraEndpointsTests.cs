@@ -8,11 +8,11 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// HU-030.1 (#184): peso con tara de una ruta de contenedor, por HTTP con SQL Server real, el Nexo falso (que valida
-/// <c>PESO_INCONSISTENTE</c> como Nexo: #250, DU §8, solo una suma de posiciones que SUPERA el peso en más de 1 %) y el cubicador falso. El
+/// Peso con tara de una ruta de contenedor, por HTTP con SQL Server real, el Nexo falso (que valida
+/// <c>PESO_INCONSISTENTE</c> como Nexo: DU §8, solo una suma de posiciones que SUPERA el peso en más de 1 %) y el cubicador falso. El
 /// comercial escribe <c>peso_con_tara_kg</c> por ruta (captura, edición y licitación); se guarda en
 /// <c>CotizacionLineasSolicitud.pesoConTaraKg</c> (script 11) y viaja a Nexo como el peso de las líneas de la ruta (repartida la tara por
-/// camión). #250: con un solo camión la línea lleva además sus posiciones; con varios, sin posiciones. Al cubicador va lo mismo que antes.
+/// camión). Con un solo camión la línea lleva además sus posiciones; con varios, sin posiciones. Al cubicador va el peso sin tara.
 /// </summary>
 [Collection(clsColeccionApiWeb.Nombre)]
 [Trait("Categoria", "Integracion")]
@@ -156,8 +156,8 @@ public sealed class clsPesoConTaraEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// HU-028 (#186) + HU-030.1: el comercial agrega (o corrige) el peso con tara en "Editar solicitud". Se guarda, el GET lo devuelve y la
-    /// captura nueva en Nexo lleva el peso con tara y, con un solo camión, sus posiciones (#250). Cambiar solo la tara no vuelve a cubicar.
+    /// El comercial agrega (o corrige) el peso con tara en "Editar solicitud". Se guarda, el GET lo devuelve y la
+    /// captura nueva en Nexo lleva el peso con tara y, con un solo camión, sus posiciones. Cambiar solo la tara no vuelve a cubicar.
     /// </summary>
     [Fact]
     public async Task EnLaEdicionSeAgregaElPesoConTaraSinRecubicarYLaCapturaNuevaLoLleva()
@@ -271,7 +271,7 @@ public sealed class clsPesoConTaraEndpointsTests : IDisposable
     }
 }
 
-/// <summary>HU-030.1 (#184): el formulario de prueba con <c>peso_con_tara_kg</c> en su primera ruta.</summary>
+/// <summary>El formulario de prueba con <c>peso_con_tara_kg</c> en su primera ruta.</summary>
 internal static class clsFormularioConTara
 {
     public static string ConTara(this string formulario, decimal pesoConTaraKg)

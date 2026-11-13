@@ -8,7 +8,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// HU-032 (#197, ADR-022): el vehículo elegido como respaldo del cubicador por HTTP con SQL Server real (script 12), el Nexo falso y el
+/// El vehículo elegido (ADR-022) como respaldo del cubicador por HTTP con SQL Server real (script 12), el Nexo falso y el
 /// cubicador falso: captura de una ruta sin mercancías cubicables, con mercancías sin medidas y con "sin selección"; la edición que solo
 /// cambia el vehículo; la re-solicitud con <c>datos_carga.tipo_vehiculo</c>; y la licitación con filas sin medidas, que no esperan al
 /// cubicador.
@@ -220,7 +220,7 @@ public sealed class clsVehiculoElegidoEndpointsTests : IDisposable
             .Should().Contain("VEHICULO_AJUSTADO_POR_CUBICADOR");
     }
 
-    // --- Validación de HU-032 (validador/auditor): bordes por HTTP ---
+    // --- Bordes por HTTP ---
 
     [Fact]
     public async Task ConPosicionesCubicablesUnElegidoQueNexoNoConoceNoBloqueaYSiElCubicadorAsignaMandaElCubicador()
@@ -413,9 +413,8 @@ public sealed class clsVehiculoElegidoEndpointsTests : IDisposable
     [Fact]
     public async Task EditarUnFolioAnteriorSoloConPesoYSinVehiculoReenviandoElMismoCuerpoEsSinCambios()
     {
-        // B3 (decisión del usuario del 2026-10-21): una ruta que no cambia no exige el vehículo. Una ruta de Cupo solo con peso y sin vehículo
-        // era válida antes de HU-032 (se simula una ruta anterior al 12: sin elegido y con su camión sin vehículo): el mismo cuerpo del GET
-        // es "sin cambios", no VEHICULO_REQUERIDO.
+        // Una ruta que no cambia no exige el vehículo. Una ruta de Cupo solo con peso y sin vehículo (heredada: anterior al script 12, sin
+        // elegido y con su camión sin vehículo): el mismo cuerpo del GET es "sin cambios", no VEHICULO_REQUERIDO.
         var api = Api();
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         var folio = await FolioAnteriorSinVehiculoAsync(api, ana, enviado: false);
@@ -432,7 +431,7 @@ public sealed class clsVehiculoElegidoEndpointsTests : IDisposable
     [InlineData("9000.0")]
     public async Task EditarUnFolioAnteriorSinVehiculoConElMismoPesoEnOtraEscalaSigueSinCambios(string peso)
     {
-        // "Cambia" se compara por valor, como sin_cambios (D-1019B-1): 9000.00 es el mismo peso que 9000.
+        // "Cambia" se compara por valor, como sin_cambios: 9000.00 es el mismo peso que 9000.
         var api = Api();
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         var folio = await FolioAnteriorSinVehiculoAsync(api, ana, enviado: false);
@@ -449,7 +448,7 @@ public sealed class clsVehiculoElegidoEndpointsTests : IDisposable
     [InlineData("2s3")]
     public async Task ConNexoCaidoElMismoCuerpoDelGetEsSinCambiosSinConsultarNexo(string? vehiculoReescrito)
     {
-        // OBS-1021B-1 (E2E 2026-10-21): "¿cambió algo?" va antes de los catálogos de Nexo. Con Nexo caído, el mismo cuerpo del GET (también
+        // "¿Cambió algo?" va antes de los catálogos de Nexo. Con Nexo caído, el mismo cuerpo del GET (también
         // con el vehículo escrito de otra forma, que Nexo canonizaría a 2S3) es sin_cambios y no hace ninguna llamada a Nexo.
         var api = Api();
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
@@ -576,7 +575,7 @@ public sealed class clsVehiculoElegidoEndpointsTests : IDisposable
     [Fact]
     public async Task LaReSolicitudConDatosDeCargaGuardaElVehiculoEscritoComoEnNexo()
     {
-        // B4 (HU-032): como la captura, el vehículo validado se guarda con la escritura del catálogo de Nexo (Canonica).
+        // Como la captura, el vehículo validado se guarda con la escritura del catálogo de Nexo (Canonica).
         var api = Api();
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         using var envio = await api.EnviarAsync(_post, Captura, ana.Access, Formulario("2S3", 9_000m));
@@ -621,7 +620,7 @@ public sealed class clsVehiculoElegidoEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// Un folio "anterior a HU-032": una ruta de Cupo solo con peso, sin vehículo elegido y con su camión sin vehículo (se captura con el
+    /// Un folio heredado (anterior al script 12): una ruta de Cupo solo con peso, sin vehículo elegido y con su camión sin vehículo (se captura con el
     /// vehículo y se borra en la base). <paramref name="enviado"/>: costeado y vencido (para re-solicitar); si no, en <c>error_envio</c>.
     /// </summary>
     private async Task<string> FolioAnteriorSinVehiculoAsync(clsApiWebPruebas api, clsSesionPrueba sesion, bool enviado)

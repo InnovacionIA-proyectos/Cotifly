@@ -5,16 +5,15 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
-/// Lectura del tablero de métricas (<see cref="IClsMetricasRepository.ListarCotizacionesAsync"/>) contra la base real. Las pruebas de
-/// las vistas del borrador (<c>vActividadPorComercial</c>, <c>vAjustesMargenPorComercial</c>) se retiraron con ellas (HU-014.3, #152).
+/// Lectura del tablero de métricas (<see cref="IClsMetricasRepository.ListarCotizacionesAsync"/>) contra la base real.
 /// </summary>
 [Collection(clsColeccionSqlServer.Nombre)]
 [Trait("Categoria", "Integracion")]
 public sealed class clsMetricasRepositoryTests(clsBaseDatosPruebas baseDatos) : clsPruebaIntegracion(baseDatos)
 {
     /// <summary>
-    /// B3 (#173): se crea la <c>-v2</c> (vigente, todavía sin precio) y DESPUÉS se marca ganada la original. El tablero muestra la cadena con
-    /// los datos de la vigente, pero el valor ganado y la ganancia salen de la versión ganada (antes daban 0).
+    /// Se crea la <c>-v2</c> (vigente, todavía sin precio) y DESPUÉS se marca ganada la original. El tablero muestra la cadena con
+    /// los datos de la vigente, pero el valor ganado y la ganancia salen de la versión ganada.
     /// </summary>
     [Fact]
     public async Task ElValorGanadoSaleDeLaVersionGanadaAunqueLaVigenteSeaLaV2SinPrecio()
@@ -48,11 +47,11 @@ public sealed class clsMetricasRepositoryTests(clsBaseDatosPruebas baseDatos) : 
     }
 
     /// <summary>
-    /// HU-028.1 (#183), hallazgo B2: un ajuste de margen hecho en una ruta que la Mesa de Costeo rechazó después no cuenta en ninguna ruta (la
+    /// Un ajuste de margen hecho en una ruta que la Mesa de Costeo rechazó después no cuenta en ninguna ruta (la
     /// ruta rechazada no sale): tampoco en la cabecera. Con todas las rutas rechazadas, un ajuste sin ruta tampoco (no hay ruta que lo lleve).
     /// </summary>
     [Fact]
-    public async Task HU0281_LosAjustesDeUnaRutaRechazadaNoCuentanNiEnLaCabeceraNiEnLasRutas()
+    public async Task LosAjustesDeUnaRutaRechazadaNoCuentanNiEnLaCabeceraNiEnLasRutas()
     {
         var ana = await CrearUsuarioAsync();
         var cotizacion = NuevaCotizacion(ana);

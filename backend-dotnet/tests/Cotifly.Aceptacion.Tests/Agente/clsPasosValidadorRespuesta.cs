@@ -6,9 +6,9 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Agente;
 
 /// <summary>
-/// Pasos de <c>validador_respuesta_ia.feature</c> (HU-003.10, #16): el guion de la llamada final del modelo (respuestas crudas,
-/// válidas o malformadas) y las aserciones sobre el esquema pedido y el mensaje de corrección del reintento. Desde HU-013.9 (#105)
-/// el modelo guionizado es el del asistente por folio (<see cref="clsPasosCosteo.Modelo"/>).
+/// Pasos de <c>validador_respuesta_ia.feature</c>: el guion de la llamada final del modelo (respuestas crudas,
+/// válidas o malformadas) y las aserciones sobre el esquema pedido y el mensaje de corrección del reintento. El
+/// modelo guionizado es el del asistente por folio (<see cref="clsPasosCosteo.Modelo"/>).
 /// </summary>
 [Binding]
 public sealed class clsPasosValidadorRespuesta(clsContextoWeb web, clsPasosCosteo costeo)

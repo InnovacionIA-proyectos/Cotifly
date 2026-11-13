@@ -11,9 +11,9 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Agente;
 
 /// <summary>
-/// Declaraciones portables de las herramientas (HU-003.6, issue #84): el esquema de Semantic Kernel trae la descripción en la clave
+/// Declaraciones portables de las herramientas: el esquema de Semantic Kernel trae la descripción en la clave
 /// no estándar <c>condition</c> y la nulabilidad como arreglo de tipos, que Gemini (vía OmniRoute) rechaza con 400. Contrato: las 4
-/// herramientas del asistente por folio (HU-013.6; las 9 del agente legado se retiraron en HU-013.9) solo usan palabras portables y
+/// herramientas del asistente por folio solo usan palabras portables y
 /// conservan nombres, descripciones, tipos y obligatorios.
 /// </summary>
 public sealed class clsEsquemaPortableHerramientasTests
@@ -141,7 +141,7 @@ public sealed class clsEsquemaPortableHerramientasTests
         Requeridos(portable).Should().Equal("fecha");
     }
 
-    // Lo que no tiene forma portable falla al declarar (con la ruta del campo), nunca se degrada en silencio (#84, B2).
+    // Lo que no tiene forma portable falla al declarar (con la ruta del campo), nunca se degrada en silencio.
     [Theory]
     [InlineData("""{"x":{"anyOf":[{"type":"string"},{"type":"number"}],"description":"d"}}""", "x", "anyOf con 2")]
     [InlineData("""{"x":{"anyOf":[{"type":"string"},{"type":"null"}],"oneOf":[{"type":"number"},{"type":"null"}]}}""", "x", "anyOf y oneOf")]
@@ -191,7 +191,7 @@ public sealed class clsEsquemaPortableHerramientasTests
         var esRaiz = !ruta.Contains('.', StringComparison.Ordinal) && !ruta.EndsWith("[]", StringComparison.Ordinal);
         if (!esRaiz)
         {
-            // Garantías del sanitizador (B2): todo campo con tipo, objetos con propiedades y arreglos con items.
+            // Garantías del sanitizador: todo campo con tipo, objetos con propiedades y arreglos con items.
             nodo.TryGetProperty("type", out var tipoNodo).Should().BeTrue($"{ruta}: todo campo declara type");
             if (tipoNodo.GetString() == "object")
             {

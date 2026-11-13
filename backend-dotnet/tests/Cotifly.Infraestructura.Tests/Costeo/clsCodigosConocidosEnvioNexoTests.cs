@@ -20,9 +20,9 @@ using NSubstitute;
 namespace Cotifly.Infraestructura.Tests.Costeo;
 
 /// <summary>
-/// HU-014 (#188) y HU-031.1 (#194). <c>Nexo:EnviarCodigosCubicador</c> con tres modos (<c>siempre</c> por defecto desde #194,
+/// <c>Nexo:EnviarCodigosCubicador</c> con tres modos (<c>siempre</c> por defecto,
 /// <c>solo_conocidos</c>, <c>nunca</c>): el código se resuelve contra <c>GET /api/catalogos/tipos-vehiculo</c> de Nexo (con la
-/// equivalencia de <c>MismoCodigo</c>) y, si no está, contra el diccionario de alias de Nexo (NEXO #321); lo resuelto viaja escrito como en
+/// equivalencia de <c>MismoCodigo</c>) y, si no está, contra el diccionario de alias de Nexo; lo resuelto viaja escrito como en
 /// Nexo. Con <c>solo_conocidos</c> lo no resuelto va sin vehículo; con <c>siempre</c>, tal cual. Sin catálogo ni alias, nada se resuelve.
 /// </summary>
 public sealed class clsCodigosConocidosEnvioNexoTests : IDisposable
@@ -181,7 +181,7 @@ public sealed class clsCodigosConocidosEnvioNexoTests : IDisposable
     }
 
     [Fact]
-    public async Task HU0311_SinBanderaElModoEsSiempre()
+    public async Task SinBanderaElModoEsSiempre()
     {
         var creada = await Adaptador(null).EnviarSolicitudAsync(_usuarioId, Solicitud(), Ct);
 
@@ -192,9 +192,9 @@ public sealed class clsCodigosConocidosEnvioNexoTests : IDisposable
     [Theory]
     [InlineData("siempre")]
     [InlineData("solo_conocidos")]
-    public async Task HU0311_UnCodigoQueSoloConoceElAliasViajaConElCodigoOficialYQuedaRegistradaLaEquivalencia(string modo)
+    public async Task UnCodigoQueSoloConoceElAliasViajaConElCodigoOficialYQuedaRegistradaLaEquivalencia(string modo)
     {
-        // HU-044.8 (#291): «C2» ya es el código NEXO de SICE-TAC; para probar la traducción por alias se usa «TB» (que no está en el catálogo).
+        // «C2» ya es el código NEXO de SICE-TAC; para probar la traducción por alias se usa «TB» (que no está en el catálogo).
         ConAlias(new clsFilaAliasNexo(TipoAliasNexo.Vehiculo, "TB", "TB", "2s3"));
 
         var creada = await Adaptador(modo).EnviarSolicitudAsync(_usuarioId, Solicitud([("TB", "FURGON"), ("3S3", "ESTACAS")], respaldo: false), Ct);
@@ -205,7 +205,7 @@ public sealed class clsCodigosConocidosEnvioNexoTests : IDisposable
     }
 
     [Fact]
-    public async Task HU0311_ConNuncaNoSeConsultaElAliasNiViajaElVehiculo()
+    public async Task ConNuncaNoSeConsultaElAliasNiViajaElVehiculo()
     {
         var creada = await Adaptador("nunca").EnviarSolicitudAsync(_usuarioId, Solicitud([("C2", "FURGON")], respaldo: false), Ct);
 
@@ -215,7 +215,7 @@ public sealed class clsCodigosConocidosEnvioNexoTests : IDisposable
     }
 
     [Fact]
-    public async Task HU0311_SiElCatalogoConoceTodosLosCodigosNoSeConsultaElAlias()
+    public async Task SiElCatalogoConoceTodosLosCodigosNoSeConsultaElAlias()
     {
         await Adaptador("siempre").EnviarSolicitudAsync(_usuarioId, Solicitud([("3s3", "FURGON")]), Ct);
 
@@ -225,11 +225,11 @@ public sealed class clsCodigosConocidosEnvioNexoTests : IDisposable
     [Theory]
     [InlineData("siempre", "ZT9", "FURGON")]
     [InlineData("solo_conocidos", null, null)]
-    public async Task HU0311_UnCodigoQueNiElCatalogoNiElAliasConocenSigueElModo(string modo, string? tipo, string? carroceria)
+    public async Task UnCodigoQueNiElCatalogoNiElAliasConocenSigueElModo(string modo, string? tipo, string? carroceria)
     {
         ConAlias(new clsFilaAliasNexo(TipoAliasNexo.Vehiculo, "TB", "TB", "2S3"));
 
-        // HU-044.8 (#291): «ZT9» no está en el catálogo, ni en el alias, ni en la equivalencia de SICE-TAC (a diferencia de C2/C3).
+        // «ZT9» no está en el catálogo, ni en el alias, ni en la equivalencia de SICE-TAC (a diferencia de C2/C3).
         var creada = await Adaptador(modo).EnviarSolicitudAsync(_usuarioId, Solicitud([("ZT9", "FURGON")], respaldo: false), Ct);
 
         Vehiculos().Should().Equal((tipo, carroceria));
@@ -239,7 +239,7 @@ public sealed class clsCodigosConocidosEnvioNexoTests : IDisposable
     [Theory]
     [InlineData("siempre", "ZT9", "FURGON")]
     [InlineData("solo_conocidos", null, null)]
-    public async Task HU0311_SiElAliasNoEstaDisponibleElEnvioSigueSinAlias(string modo, string? tipo, string? carroceria)
+    public async Task SiElAliasNoEstaDisponibleElEnvioSigueSinAlias(string modo, string? tipo, string? carroceria)
     {
         _alias.ObtenerAsync(_usuarioId, Arg.Any<CancellationToken>())
             .Returns(clsResultado<clsDiccionarioAliasNexo>.Fallo(new clsErrorDominio(clsCodigosError.CatalogosFleteNoDisponible, "caído")));
@@ -251,7 +251,7 @@ public sealed class clsCodigosConocidosEnvioNexoTests : IDisposable
     }
 
     [Fact]
-    public async Task HU0311_SiLeerElAliasLanzaElEnvioSigue()
+    public async Task SiLeerElAliasLanzaElEnvioSigue()
     {
         _alias.ObtenerAsync(_usuarioId, Arg.Any<CancellationToken>()).Returns<Task<clsResultado<clsDiccionarioAliasNexo>>>(_ => throw new HttpRequestException("red"));
 
@@ -262,7 +262,7 @@ public sealed class clsCodigosConocidosEnvioNexoTests : IDisposable
     }
 
     [Fact]
-    public async Task HU0311_ElVehiculoDigitadoDelRespaldoTambienSeResuelvePorAlias()
+    public async Task ElVehiculoDigitadoDelRespaldoTambienSeResuelvePorAlias()
     {
         ConAlias(new clsFilaAliasNexo(TipoAliasNexo.Vehiculo, "Turbo", "TURBO", "3S3"));
 
@@ -273,9 +273,9 @@ public sealed class clsCodigosConocidosEnvioNexoTests : IDisposable
     }
 
     [Fact]
-    public async Task HU0311_UnAliasDeContenedorNoResuelveUnVehiculo()
+    public async Task UnAliasDeContenedorNoResuelveUnVehiculo()
     {
-        // HU-044.8 (#291): «ZZ9» solo existe como alias de contenedor y no está en la equivalencia de vehículo (C2/C3): no resuelve un vehículo.
+        // «ZZ9» solo existe como alias de contenedor y no está en la equivalencia de vehículo (C2/C3): no resuelve un vehículo.
         ConAlias(new clsFilaAliasNexo(TipoAliasNexo.Contenedor, "ZZ9", "ZZ9", "CNT20.ST"));
 
         await Adaptador("solo_conocidos").EnviarSolicitudAsync(_usuarioId, Solicitud([("ZZ9", "FURGON")], respaldo: false), Ct);

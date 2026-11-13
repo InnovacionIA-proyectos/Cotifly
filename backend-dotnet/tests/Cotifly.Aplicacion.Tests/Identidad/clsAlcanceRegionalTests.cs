@@ -10,7 +10,7 @@ using NSubstitute.ExceptionExtensions;
 namespace Cotifly.Aplicacion.Tests.Identidad;
 
 /// <summary>
-/// HU-037.3 (#211, ADR-016 §11): el alcance de regionales por rol, centralizado en <see cref="IClsRegionalUsuario"/>. El director ve todas
+/// ADR-016 §11: el alcance de regionales por rol, centralizado en <see cref="IClsRegionalUsuario"/>. El director ve todas
 /// (o la que elige); el gerente solo la suya (otra: <c>REGIONAL_NO_PERMITIDA</c>) y sigue fallando cerrado sin regional; el comercial no
 /// tiene alcance. Las regionales del selector salen de la misma regla de la regional efectiva.
 /// </summary>

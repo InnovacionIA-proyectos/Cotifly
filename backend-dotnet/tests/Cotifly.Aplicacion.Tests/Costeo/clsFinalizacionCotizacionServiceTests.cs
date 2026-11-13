@@ -12,7 +12,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// HU-036.2 (#206): el caso de uso de <c>POST .../finalizar</c>. Dueño (404), <c>If-Match</c> (409 <c>CONFLICTO_CONCURRENCIA</c>), regla
+/// El caso de uso de <c>POST .../finalizar</c>. Dueño (404), <c>If-Match</c> (409 <c>CONFLICTO_CONCURRENCIA</c>), regla
 /// del dominio (409 <c>COTIZACION_NO_FINALIZABLE</c>), idempotencia (200 sin guardar ni subir la versión) y auditoría.
 /// </summary>
 public sealed class clsFinalizacionCotizacionServiceTests
@@ -115,7 +115,7 @@ public sealed class clsFinalizacionCotizacionServiceTests
     }
 
     /// <summary>
-    /// #228: un conexo de una ruta cotizable con <c>estado_nexo = pendiente</c> (todavía no está en la cotización de Nexo) impide finalizar:
+    /// Un conexo de una ruta cotizable con <c>estado_nexo = pendiente</c> (todavía no está en la cotización de Nexo) impide finalizar:
     /// 409 <c>COTIZACION_NO_FINALIZABLE</c> con <c>detalle.motivo = conexos_pendientes_en_nexo</c>, sin guardar. Los enviados, inciertos o
     /// fallidos definitivos no lo impiden (ya no se esperan del polling).
     /// </summary>
@@ -189,9 +189,8 @@ public sealed class clsFinalizacionCotizacionServiceTests
     }
 
     /// <summary>
-    /// Validación #228: un registro en <c>pendiente</c> aunque Nexo YA tenga el conexo (agregado con el POST antes de #228, o con el registro
-    /// fallido) bloqueaba para siempre una entregada, que el polling ya no consulta. Finalizar relee Nexo, deja enviados los que muestra y
-    /// cuenta otra vez.
+    /// Un registro en <c>pendiente</c> aunque Nexo YA tenga el conexo (por ejemplo, con el registro fallido) no bloquea para siempre una
+    /// entregada, que el polling ya no consulta: finalizar relee Nexo, deja enviados los que muestra y cuenta otra vez.
     /// </summary>
     [Fact]
     public async Task Validacion228_UnPendienteQueNexoYaMuestraSeConfirmaAlFinalizarYNoBloquea()
@@ -228,14 +227,14 @@ public sealed class clsFinalizacionCotizacionServiceTests
     }
 
     /// <summary>
-    /// #259: con un conexo que sigue pendiente después de releer Nexo y la cotización fuera de la agenda (una entregada que el polling ya no
+    /// Con un conexo que sigue pendiente después de releer Nexo y la cotización fuera de la agenda (una entregada que el polling ya no
     /// consulta), finalizar la vuelve a encolar para el envío diferido y sigue respondiendo 409, SIN hacer el POST de conexos (lo hace el
     /// worker con su reclamo). También si Nexo no responde la relectura.
     /// </summary>
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task Issue259_ConConexosPendientesFueraDeLaAgendaFinalizarLaReencolaSinEnviarANexo(bool nexoResponde)
+    public async Task ConConexosPendientesFueraDeLaAgendaFinalizarLaReencolaSinEnviarANexo(bool nexoResponde)
     {
         var entregada = Entregada();
         entregada.CosteoSiguienteConsultaAt.Should().BeNull("entregada: el polling ya no la consulta");
@@ -249,7 +248,7 @@ public sealed class clsFinalizacionCotizacionServiceTests
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.CotizacionNoFinalizable);
         resultado.Error.Datos!["motivo"].Should().Be(clsCotizacionSolicitud.CodigoConexosPendientesEnNexo);
-        // Auditoría M1: con la actualización condicional del repositorio (nunca pisa un reclamo vigente), no con la unidad de trabajo.
+        // Con la actualización condicional del repositorio (nunca pisa un reclamo vigente), no con la unidad de trabajo.
         await _cotizaciones.Received(1).ReencolarConsultaCosteoAsync(entregada.Id, _ahora, Arg.Any<CancellationToken>());
         entregada.Finalizada.Should().BeFalse();
         await _nexo.DidNotReceiveWithAnyArgs().AgregarAsync(default, default!, default!, Ct);
@@ -258,13 +257,13 @@ public sealed class clsFinalizacionCotizacionServiceTests
     }
 
     /// <summary>
-    /// Auditoría B2: con la cotización ya en la agenda (reclamada por una réplica o esperando el siguiente reintento, aunque sea en una
+    /// Con la cotización ya en la agenda (reclamada por una réplica o esperando el siguiente reintento, aunque sea en una
     /// hora) finalizar no la mueve: varios clics no adelantan la espera de los reintentos ni agotan su tope.
     /// </summary>
     [Theory]
     [InlineData(30)]
     [InlineData(3600)]
-    public async Task Issue259_SiYaEstaEnLaAgendaNoSeReencola(int segundos)
+    public async Task SiYaEstaEnLaAgendaNoSeReencola(int segundos)
     {
         var entregada = Entregada();
         entregada.ProgramarRelecturaCosteo(_ahora.AddSeconds(segundos));

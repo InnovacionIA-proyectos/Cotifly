@@ -6,7 +6,7 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Costeo;
 
 /// <summary>
-/// Pasos de <c>specs/features/licitacion_solo_lectura.feature</c> (HU-034.1, #201, parte A): la licitación y su Excel para el gerente de
+/// Pasos de <c>specs/features/licitacion_solo_lectura.feature</c>: la licitación y su Excel para el gerente de
 /// la regional del dueño y el director, en solo lectura, sin costos y auditados. Reutiliza las licitaciones y los Excel bajados de
 /// <see cref="clsPasosLicitaciones"/> y las sesiones de <see cref="clsContextoWeb"/>.
 /// </summary>

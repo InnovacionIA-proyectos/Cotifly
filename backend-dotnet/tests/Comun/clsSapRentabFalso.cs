@@ -7,7 +7,7 @@ using System.Text.Json;
 namespace Cotifly.Pruebas.Comun;
 
 /// <summary>
-/// SAP TM falso para la sincronización del margen (HU-042.2, #243): un <see cref="HttpMessageHandler"/> que nunca sale a la red y, como el
+/// SAP TM falso para la sincronización del margen: un <see cref="HttpMessageHandler"/> que nunca sale a la red y, como el
 /// real, IGNORA <c>$filter</c> y cualquier otro parámetro: siempre devuelve el set completo de <c>RentabClienteSet</c> en OData v2, con
 /// <c>__metadata</c> en cada fila y <c>Value</c> como texto (<c>Edm.Decimal</c>), incluso con artefactos de flotante como
 /// <c>"13.592356781"</c>. Registra cada petición (URL y cabeceras) y permite encolar fallos y respuestas crudas.

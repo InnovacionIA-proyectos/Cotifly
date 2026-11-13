@@ -8,7 +8,7 @@ using System.Text.Json.Nodes;
 namespace Cotifly.Pruebas.Comun;
 
 /// <summary>
-/// Cubicador falso (HU-021.5, #133; contrato de HU-023.1, #156): un <see cref="HttpMessageHandler"/> que nunca sale a la red y sirve
+/// Cubicador falso: un <see cref="HttpMessageHandler"/> que nunca sale a la red y sirve
 /// <c>POST /recomendaciones</c>, <c>GET /tipos-mercancia</c>, <c>GET /tipos-carroceria</c>, <c>GET /tipos-vehiculo</c> (P1) y
 /// <c>GET /health</c> (P7). Registra cada petición (método, URL, <c>Authorization</c> y cuerpo) y permite simular las respuestas: flota
 /// mixta, "sin selección" con cada motivo, condicionada, extradimensión, cada error del contrato, caída, demora o un cuerpo crudo. Los
@@ -38,7 +38,7 @@ public sealed class clsCubicadorFalso : HttpMessageHandler
     /// <summary>Catálogo de carrocerías (<c>GET /tipos-carroceria</c>).</summary>
     public List<(string Codigo, string Nombre)> TiposCarroceria { get; } = [("FURGON", "Furgón"), ("ESTACAS", "Estacas"), ("CAMA_BAJA", "Cama baja")];
 
-    /// <summary>Catálogo de vehículos (<c>GET /vehiculos-catalogo</c>, HU-023 #176); con <see cref="SinTiposVehiculo"/> la ruta responde 404.</summary>
+    /// <summary>Catálogo de vehículos (<c>GET /vehiculos-catalogo</c>); con <see cref="SinTiposVehiculo"/> la ruta responde 404.</summary>
     public List<(string Codigo, string Nombre)> TiposVehiculo { get; } =
         [("2S2", "Tractocamión 2S2"), ("2S3", "Tractocamión 2S3"), ("3S3", "Tractocamión 3S3"), ("C2", "Sencillo C2"), ("C3", "Dobletroque C3")];
 
@@ -46,16 +46,16 @@ public sealed class clsCubicadorFalso : HttpMessageHandler
     public bool SinTiposVehiculo { get; set; }
 
     /// <summary>
-    /// HU-023 (#176): corridas guardadas por <c>idLineaSolicitud</c> (la última gana), las que devuelve
+    /// Corridas guardadas por <c>idLineaSolicitud</c> (la última gana), las que devuelve
     /// <c>GET /recomendaciones?idLineaSolicitud=…&amp;origenSistema=COTIFLY</c>. Cada <c>POST</c> que responde guarda la suya; con
     /// <see cref="TiempoAgotadoTrasGuardar"/> el POST guarda la corrida y después no responde (se cuelga hasta la cancelación).
     /// </summary>
     public ConcurrentDictionary<string, string> Corridas { get; } = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>HU-023 (#176): el POST guarda la corrida y se cuelga (simula un tiempo agotado con la corrida ya creada).</summary>
+    /// <summary>El POST guarda la corrida y se cuelga (simula un tiempo agotado con la corrida ya creada).</summary>
     public bool TiempoAgotadoTrasGuardar { get; set; }
 
-    /// <summary>HU-023 (#176): el POST se cuelga SIN guardar la corrida (la reconsulta no encuentra nada: 404).</summary>
+    /// <summary>El POST se cuelga SIN guardar la corrida (la reconsulta no encuentra nada: 404).</summary>
     public bool TiempoAgotadoSinGuardar { get; set; }
 
     /// <summary>Las peticiones a <c>GET /recomendaciones</c> (reconsultas).</summary>
@@ -83,13 +83,13 @@ public sealed class clsCubicadorFalso : HttpMessageHandler
     /// <summary>Si tiene valor, la recomendación responde ese error con <c>{codigo, mensaje}</c>.</summary>
     public (HttpStatusCode Estado, string Codigo)? ErrorRecomendacion { get; set; }
 
-    /// <summary>D1: cuerpo crudo del error de <see cref="ErrorRecomendacion"/> (por ejemplo el <c>{"detail": [...]}</c> de un 422 de FastAPI).</summary>
+    /// <summary>Cuerpo crudo del error de <see cref="ErrorRecomendacion"/> (por ejemplo el <c>{"detail": [...]}</c> de un 422 de FastAPI).</summary>
     public string? CuerpoErrorRecomendacion { get; set; }
 
-    /// <summary>HU-023.5: error de la recomendación según la petición (por ejemplo, una sola ruta); <c>null</c> = responde normal.</summary>
+    /// <summary>Error de la recomendación según la petición (por ejemplo, una sola ruta); <c>null</c> = responde normal.</summary>
     public Func<JsonNode, (HttpStatusCode Estado, string Codigo)?>? ErrorPara { get; set; }
 
-    /// <summary>HU-023.5: espera de cada <c>POST /recomendaciones</c> (para medir cuántas llamadas hay en paralelo).</summary>
+    /// <summary>Espera de cada <c>POST /recomendaciones</c> (para medir cuántas llamadas hay en paralelo).</summary>
     public TimeSpan? DemoraRecomendacion { get; set; }
 
     /// <summary>
@@ -116,7 +116,7 @@ public sealed class clsCubicadorFalso : HttpMessageHandler
     private int _enCurso;
     private int _maximoEnCurso;
 
-    /// <summary>HU-023.5: máximo de <c>POST /recomendaciones</c> en curso a la vez que ha visto el falso (petición P6).</summary>
+    /// <summary>Máximo de <c>POST /recomendaciones</c> en curso a la vez que ha visto el falso (petición P6).</summary>
     public int MaximoEnParalelo => Volatile.Read(ref _maximoEnCurso);
 
     /// <summary>Un vehículo de la respuesta <c>ASIGNADO</c>, con un id nuevo.</summary>
@@ -137,7 +137,7 @@ public sealed class clsCubicadorFalso : HttpMessageHandler
     /// <summary>Respuesta <c>ASIGNADO</c> con estos vehículos (flota mixta si son de tipos distintos).</summary>
     public static Dictionary<string, object?> Asignado(params object[] vehiculos) => Respuesta("ASIGNADO", null, vehiculos);
 
-    /// <summary>Un vehículo con los campos de HU-023 (#176): número, nombre, alertas y lo que lleva por posición.</summary>
+    /// <summary>Un vehículo con los campos del contrato: número, nombre, alertas y lo que lleva por posición.</summary>
     public static Dictionary<string, object?> VehiculoCompleto(
         int numero, string codigoVehiculo, string nombreVehiculo, string codigoCarroceria, decimal pesoTotalKg, bool alertaBajoLlenado,
         bool heterogenea, params object[] mercancias)
@@ -391,8 +391,8 @@ public sealed record clsTipoMercanciaFalso(
 public sealed record clsPeticionCubicador(HttpMethod Metodo, Uri Url, string? Autorizacion, string? Cuerpo);
 
 /// <summary>
-/// Ejemplos de respuesta de cada caso del contrato del cubicador (petición P2: mientras el cubicador no los publique, se arman con la
-/// hoja de ruta del 2026-10-08, sección 2). Cuando lleguen los reales, se reemplazan aquí y las pruebas del adaptador los validan.
+/// Ejemplos de respuesta de cada caso del contrato del cubicador (petición P2), armados con la
+/// hoja de ruta del contrato (sección 2). Las pruebas del adaptador los validan.
 /// </summary>
 public static class clsEjemplosContratoCubicador
 {
@@ -430,11 +430,11 @@ public static class clsEjemplosContratoCubicador
     /// <summary>Un error del contrato: <c>{codigo, mensaje}</c>.</summary>
     public static string Error(string codigo) => $$"""{"codigo":"{{codigo}}","mensaje":"Mensaje del cubicador para {{codigo}}."}""";
 
-    /// <summary>Los cinco motivos de "sin selección" (HU-023 #176: BUSQUEDA_AGOTADA).</summary>
+    /// <summary>Los cinco motivos de "sin selección" (con BUSQUEDA_AGOTADA).</summary>
     public static readonly IReadOnlyList<string> Motivos =
         ["EXTRADIMENSIONADO", "SIN_CANDIDATOS_DIMENSIONALES", "SUPERA_K_MAX", "SIN_CARROCERIA_COMPATIBLE", "BUSQUEDA_AGOTADA"];
 
-    /// <summary>Los rechazos 400 del contrato (HU-023 #176: CUBICACION_DEMASIADO_GRANDE).</summary>
+    /// <summary>Los rechazos 400 del contrato (CUBICACION_DEMASIADO_GRANDE).</summary>
     public static readonly IReadOnlyList<string> Rechazos =
         ["MERCANCIAS_REQUERIDAS", "MERCANCIA_DESCONOCIDA", "MERCANCIA_NO_CUBICABLE", "DIMENSIONES_INVALIDAS", "CUBICACION_DEMASIADO_GRANDE"];
 

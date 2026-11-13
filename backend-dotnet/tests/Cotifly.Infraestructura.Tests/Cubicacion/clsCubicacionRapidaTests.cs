@@ -12,7 +12,7 @@ using NSubstitute;
 namespace Cotifly.Infraestructura.Tests.Cubicacion;
 
 /// <summary>
-/// Opción D (D3, E2E 2026-10-16): el almacén en memoria de las cubicaciones rápidas (retención, límite de entradas, aislamiento por
+/// El almacén en memoria de las cubicaciones rápidas (retención, límite de entradas, aislamiento por
 /// usuario) y el servicio que las corre en segundo plano (espera síncrona, 202, el cálculo que sigue aunque la petición se cancele,
 /// errores que quedan <c>fallida</c> y apagado ordenado).
 /// </summary>
@@ -254,7 +254,7 @@ public sealed class clsCubicacionRapidaTests
     [Fact]
     public async Task TrasDesecharseUnaPeticionNuevaEsCubicadorNoDisponibleSinExcepcion()
     {
-        // B1: antes, IniciarAsync leía _apagado.Token con la fuente ya desechada -> ObjectDisposedException -> 500.
+        // IniciarAsync no lee _apagado.Token con la fuente ya desechada (sería ObjectDisposedException -> 500).
         var entorno = new clsEntorno(_reloj, 0, _ => Task.FromResult<clsResultado<clsResultadoCubicacion>>(Resultado()));
         await entorno.Servicio.StopAsync(Ct);
         entorno.Dispose();
@@ -269,7 +269,7 @@ public sealed class clsCubicacionRapidaTests
     [Fact]
     public async Task LasPeticionesQueEntranDuranteElApagadoSeRechazanOSeEsperanTodas()
     {
-        // B1: Task.WhenAll(_enCurso.Values) tomaba la foto antes de que entrara la última tarea. Ahora toda petición concurrente con
+        // Task.WhenAll(_enCurso.Values) no puede tomar la foto antes de que entre la última tarea: toda petición concurrente con
         // StopAsync o se rechaza (CUBICADOR_NO_DISPONIBLE) o queda registrada antes de la foto y StopAsync la espera.
         using var entorno = new clsEntorno(_reloj, 0, async token =>
         {

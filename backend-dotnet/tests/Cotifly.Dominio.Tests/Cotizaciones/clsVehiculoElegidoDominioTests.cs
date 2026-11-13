@@ -3,7 +3,7 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
 /// <summary>
-/// HU-032 (#197, ADR-022) en el dominio: la clasificación de cubicabilidad de las mercancías y de la ruta (medidas parciales y código sin
+/// ADR-022 en el dominio: la clasificación de cubicabilidad de las mercancías y de la ruta (medidas parciales y código sin
 /// medidas son error; sin medidas ni código, "no cubicable"), lo que viaja a Nexo (sin posiciones si alguna no tiene medidas), el vehículo
 /// elegido guardado en la ruta, la regla de recubicación con el vehículo y el emparejamiento del camión del respaldo por ruta y peso cuando
 /// la Mesa de Costeo le cambió el vehículo.
@@ -235,7 +235,7 @@ public sealed class clsVehiculoElegidoDominioTests
         clsEmparejadorLineasNexo.Emparejar(Camiones(cotizacion), nexo).Should().BeEmpty();
     }
 
-    // --- Validación de HU-032: bordes del respaldo por ruta y peso (dos rutas con el mismo origen, destino y peso) ---
+    // --- Bordes del respaldo por ruta y peso (dos rutas con el mismo origen, destino y peso) ---
 
     [Fact]
     public void DosRutasConElMismoOrigenDestinoYPesoNoSeAsocianPorRutaYPesoAunqueUnaYaCuadrePorVehiculo()
@@ -264,10 +264,10 @@ public sealed class clsVehiculoElegidoDominioTests
     [Fact]
     public void UnParPorVehiculoEquivocadoNoArrastraEnCascadaAlRespaldoPorRutaYPeso()
     {
-        // Regresión de la validación de HU-032: la ruta 1 (C2) y la ruta 2 (2S2) tienen el mismo origen, destino y peso; la Mesa cambió la
+        // La ruta 1 (C2) y la ruta 2 (2S2) tienen el mismo origen, destino y peso; la Mesa cambió la
         // línea de la ruta 1 a X9 y la de la ruta 2 a C2. Por contenido la línea de la ruta 2 cuadra con el camión de la ruta 1 (un cruce que
-        // ya existía). Antes, con la unicidad medida sobre lo que quedaba, la línea de la ruta 1 parecía "única" para la ruta 2 y se cruzaba
-        // también; ahora la combinación no es única en la cotización y la ruta 2 queda sin asociar.
+        // es posible). Si la unicidad se midiera sobre lo que queda, la línea de la ruta 1 parecería "única" para la ruta 2 y se cruzaría
+        // también; la combinación no es única en la cotización y la ruta 2 queda sin asociar.
         var cotizacion = Capturar(
             new clsRutaCapturada(Linea("Buenaventura", "Bogotá", 8_000m, "C2"), 3, 0, [new clsCamionPlaneado("C2", null, 8_000m)], []),
             new clsRutaCapturada(Linea("Buenaventura", "Bogotá", 8_000m, "2S2"), 3, 1, [new clsCamionPlaneado("2S2", null, 8_000m)], []));

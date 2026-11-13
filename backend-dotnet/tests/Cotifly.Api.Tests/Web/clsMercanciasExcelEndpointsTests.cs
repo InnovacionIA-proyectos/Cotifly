@@ -10,7 +10,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// HU-035.1 (#202, ADR-024): <c>POST /web/mercancias/analizar-excel</c> por HTTP contra SQL Server real (sesiones), el Nexo falso (que
+/// <c>POST /web/mercancias/analizar-excel</c> (ADR-024) por HTTP contra SQL Server real (sesiones), el Nexo falso (que
 /// nunca debe recibir el archivo) y el cubicador falso: la grilla cruda cumple el contrato, el catálogo es opcional y los archivos
 /// corruptos o maliciosos son 400 con código; sin multipart 415, sin sesión 401 y un cuerpo de más de 12 MB 413.
 /// </summary>

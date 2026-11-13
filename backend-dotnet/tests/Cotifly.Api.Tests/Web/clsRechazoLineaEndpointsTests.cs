@@ -7,7 +7,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// Rechazo de una línea en la Mesa de Costeo de Nexo (HU-028.1, #183, Nexo #320) sobre el formulario web por rutas, de punta a punta: envío
+/// Rechazo de una línea en la Mesa de Costeo de Nexo sobre el formulario web por rutas, de punta a punta: envío
 /// por HTTP, rechazo en el Nexo falso, una vuelta del polling y <c>GET .../costeo</c> validado contra el contrato OpenAPI, con SQL Server
 /// real. La ruta rechazada no tiene precio ni suma en el total, no admite margen (409 <c>RUTA_RECHAZADA</c>) y, con todas rechazadas, el
 /// PDF se bloquea (409 <c>SIN_RUTAS_COTIZABLES</c>).
@@ -94,7 +94,7 @@ public sealed class clsRechazoLineaEndpointsTests : IDisposable
         costeo.GetProperty("precio_final").ValueKind.Should().Be(JsonValueKind.Null);
         Rutas(costeo).Should().OnlyContain(r => r.GetProperty("estado_costeo").GetString() == "rechazada");
 
-        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // HU-036.3: como el frontend
+        await _api.FinalizarSiCorrespondeAsync(sesion.Access, folio); // Como el frontend
         using var pdf = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
         pdf.StatusCode.Should().Be(HttpStatusCode.Conflict);
         await VerificarErrorNegocioAsync(pdf, "SIN_RUTAS_COTIZABLES");

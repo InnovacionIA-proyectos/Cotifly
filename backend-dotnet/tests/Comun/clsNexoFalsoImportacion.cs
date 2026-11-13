@@ -5,7 +5,7 @@ using System.Text.Json.Nodes;
 namespace Cotifly.Pruebas.Comun;
 
 /// <summary>
-/// Importación inteligente de NEXO en el Nexo falso (HU-044.1, #252, ADR-028), con la forma de CONTRATO.md §3.3 y §3.19.1 de NEXO:
+/// Importación inteligente de NEXO en el Nexo falso (ADR-028), con la forma de CONTRATO.md §3.3 y §3.19.1 de NEXO:
 /// <c>sugerir-mapeo</c>, <c>aplicar-mapeo</c>, <c>normalizar-valores</c>, <c>plantillas-mapeo</c>, <c>leer-estructura</c>,
 /// <c>recetas-lectura</c> y <c>diccionario-cliente</c>. Simula la respuesta normal, la IA no disponible (<see cref="IaImportacionDisponible"/>:
 /// 200 con <c>iaUsada = false</c> y <c>motivoSinIa</c>), un rechazo forzado (<see cref="ImportacionFalla"/> con
@@ -33,7 +33,7 @@ public sealed partial class clsNexoFalso
     public string CodigoImportacionFalla { get; set; } = "IA_TOPE_DIARIO";
 
     /// <summary>
-    /// Validador #253: si tiene valor, toda ruta de la importación responde 200 con este cuerpo crudo (respuestas raras de NEXO: JSON
+    /// Si tiene valor, toda ruta de la importación responde 200 con este cuerpo crudo (respuestas raras de NEXO: JSON
     /// inválido, nulos en listas, receta que no es objeto, <c>cambios</c> con datos).
     /// </summary>
     public string? CuerpoImportacionCrudo { get; set; }
@@ -42,7 +42,7 @@ public sealed partial class clsNexoFalso
     public string MensajeImportacionFalla { get; set; } = "Rechazo de la importación (prueba).";
 
     /// <summary>
-    /// HU-044.3 (#254): respuesta cruda fija de <c>aplicar-mapeo</c> (JSON como lo manda NEXO). Para las pruebas que necesitan posiciones,
+    /// Respuesta cruda fija de <c>aplicar-mapeo</c> (JSON como lo manda NEXO). Para las pruebas que necesitan posiciones,
     /// línea de negocio o <c>claseViaje</c> que el falso no arma a partir de columnas planas; si tiene valor, gana sobre la conversión por columnas.
     /// </summary>
     public string? AplicarMapeoFijo { get; set; }
@@ -74,13 +74,13 @@ public sealed partial class clsNexoFalso
         new(System.Security.Cryptography.MD5.HashData(System.Text.Encoding.UTF8.GetBytes(NitComoNexo(nit) ?? string.Empty)));
 
     /// <summary>
-    /// #256 (B2): simula un cambio de forma de NEXO en <c>GET diccionario-cliente</c>: los términos llegan SIN la propiedad <c>clienteId</c>
+    /// Simula un cambio de forma de NEXO en <c>GET diccionario-cliente</c>: los términos llegan SIN la propiedad <c>clienteId</c>
     /// (ni siquiera <c>null</c>). Cotifly no debe tomarlos por generales.
     /// </summary>
     public bool DiccionarioSinClienteId { get; set; }
 
     /// <summary>
-    /// HU-044.4 (#255): resultados fijos de <c>normalizar-valores</c> por campo de NEXO y texto (comparado como NEXO), para simular el
+    /// Resultados fijos de <c>normalizar-valores</c> por campo de NEXO y texto (comparado como NEXO), para simular el
     /// alias, el catálogo y la ciudad ambigua con candidatos. Ganan sobre el diccionario y la "IA" del falso.
     /// </summary>
     public List<clsNormalizacionFalsa> ValoresNormalizados { get; } = [];
@@ -754,7 +754,7 @@ public sealed partial class clsNexoFalso
     }
 }
 
-/// <summary>HU-044.4 (#255): un resultado fijo de <c>normalizar-valores</c> del Nexo falso (campo de NEXO en camelCase).</summary>
+/// <summary>Un resultado fijo de <c>normalizar-valores</c> del Nexo falso (campo de NEXO en camelCase).</summary>
 public sealed record clsNormalizacionFalsa(
     string Campo, string Valor, string Estado, string? Codigo, string Origen, double Confianza = 1, string? Descripcion = null,
     int? MunicipioId = null, string? Nota = null, IReadOnlyList<(int MunicipioId, string CodigoDane, string Municipio, string Departamento)>? Candidatos = null);

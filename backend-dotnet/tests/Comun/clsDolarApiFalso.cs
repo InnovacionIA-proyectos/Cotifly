@@ -6,9 +6,9 @@ using System.Text;
 namespace Cotifly.Pruebas.Comun;
 
 /// <summary>
-/// DolarApi falso (<c>GET /v1/trm</c>, HU-012.1, ADR-014): un <see cref="HttpMessageHandler"/> que nunca sale a la red. Por defecto
+/// DolarApi falso (<c>GET /v1/trm</c>, ADR-014): un <see cref="HttpMessageHandler"/> que nunca sale a la red. Por defecto
 /// responde la TRM de <see cref="Valor"/> publicada en <see cref="FechaActualizacion"/> con el formato real
-/// (<c>{"unidad":"COP","nombre":"TRM","valor":3273.49,"fechaActualizacion":"2026-10-05T19:01:18.476Z"}</c>). Registra cada petición y
+/// (<c>{"unidad":"COP","nombre":"TRM","valor":3273.49,"fechaActualizacion":"AAAA-MM-DDTHH:mm:ss.fffZ"}</c>). Registra cada petición y
 /// permite encolar respuestas o fallos.
 /// </summary>
 public sealed class clsDolarApiFalso : HttpMessageHandler
@@ -23,7 +23,7 @@ public sealed class clsDolarApiFalso : HttpMessageHandler
     public decimal Valor { get; set; } = 3273.49m;
 
     /// <summary>
-    /// Instante de refresco que responde por defecto: 08:01 del 2026-10-05 en Bogotá, antes del corte de las 12:00 (ADR-014 §1), así la TRM
+    /// Instante de refresco que responde por defecto: las 08:01 en Bogotá, antes del corte de las 12:00 (ADR-014 §1), así la TRM
     /// se acepta para ese día.
     /// </summary>
     public DateTimeOffset FechaActualizacion { get; set; } = new(2026, 10, 5, 13, 1, 18, 476, TimeSpan.Zero);

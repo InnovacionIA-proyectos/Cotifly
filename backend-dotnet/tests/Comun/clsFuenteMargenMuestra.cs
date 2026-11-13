@@ -8,8 +8,8 @@ namespace Cotifly.Pruebas.Comun;
 
 /// <summary>
 /// Fuente de margen en memoria con las filas de la muestra de <c>RentabClienteSet</c> del Python (mismos SalesOrgId, TrqType,
-/// OrderPartyId y Value). Registra las consultas y puede simular la fuente caída o nunca sincronizada. La fuente real (la copia local
-/// de HU-042.2, <c>clsFuenteMargenTablaLocal</c>) se prueba contra SQL Server sembrando estas mismas filas en <c>SapMargenCliente</c>.
+/// OrderPartyId y Value). Registra las consultas y puede simular la fuente caída o nunca sincronizada. La fuente real (la copia local,
+/// <c>clsFuenteMargenTablaLocal</c>) se prueba contra SQL Server sembrando estas mismas filas en <c>SapMargenCliente</c>.
 /// </summary>
 public sealed class clsFuenteMargenMuestra : IClsFuenteMargen
 {
@@ -28,7 +28,7 @@ public sealed class clsFuenteMargenMuestra : IClsFuenteMargen
         ("50000005", "OPIM", "5001", "99.9"),
     ];
 
-    /// <summary>Fecha de las filas en la copia local (la de <c>actualizadoAt</c>): 2026-09-23, hora de Colombia.</summary>
+    /// <summary>Fecha de las filas en la copia local (la de <c>actualizadoAt</c>), en hora de Colombia.</summary>
     public static readonly DateTimeOffset ActualizadoMuestra = new(2026, 9, 23, 8, 0, 0, TimeSpan.FromHours(-5));
 
     private readonly ConcurrentQueue<(string SalesOrg, string TrqType, string Bp)> _consultas = new();
@@ -36,7 +36,7 @@ public sealed class clsFuenteMargenMuestra : IClsFuenteMargen
     public string Modo => "muestra";
 
     /// <summary>
-    /// Si es false, se comporta como una copia local que nunca se sincronizó (HU-042.2): responde "no configurada" y no registra la
+    /// Si es false, se comporta como una copia local que nunca se sincronizó: responde "no configurada" y no registra la
     /// consulta (la fuente real tampoco lee la tabla en ese caso).
     /// </summary>
     public bool EstaConfigurada { get; set; } = true;
@@ -46,7 +46,7 @@ public sealed class clsFuenteMargenMuestra : IClsFuenteMargen
 
     /// <summary>
     /// Fin de la última sincronización exitosa que informa la fuente. Por defecto, 2 h antes del reloj falso de las pruebas
-    /// (<c>clsRelojFalso</c>, 2026-09-24 13:00 UTC): una copia al día.
+    /// (<c>clsRelojFalso</c>): una copia al día.
     /// </summary>
     public DateTimeOffset? UltimaSincronizacion { get; set; } = new DateTimeOffset(2026, 9, 24, 6, 0, 0, TimeSpan.FromHours(-5));
 

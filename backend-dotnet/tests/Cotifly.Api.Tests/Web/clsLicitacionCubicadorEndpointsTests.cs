@@ -10,9 +10,9 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// HU-023.5 (#160): licitación con el cubicador, por HTTP con SQL Server real, el Nexo falso y el cubicador falso. El código de mercancía
+/// Licitación con el cubicador, por HTTP con SQL Server real, el Nexo falso y el cubicador falso. El código de mercancía
 /// sugerido al analizar el Excel (parecido sin tildes ni mayúsculas, sin coincidencia y la columna de código del Excel), la cubicación de
-/// las rutas en segundo plano con el límite de llamadas en paralelo (P6) y el progreso visible, una ruta que falla, dos réplicas y el
+/// las rutas en segundo plano con el límite de llamadas en paralelo y el progreso visible, una ruta que falla, dos réplicas y el
 /// Excel exportado con los camiones.
 /// </summary>
 [Collection(clsColeccionApiWeb.Nombre)]
@@ -200,12 +200,12 @@ public sealed class clsLicitacionCubicadorEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// HU-030.1 (#184, validación): una fila de contenedor con <c>peso_con_tara_kg</c> se guarda sin cubicar (camión provisional) y la tara
+    /// Una fila de contenedor con <c>peso_con_tara_kg</c> se guarda sin cubicar (camión provisional) y la tara
     /// se aplica DESPUÉS de la cubicación en segundo plano: cada línea lleva el peso de su camión más su parte de la tara, sin posiciones,
     /// y al cubicador va el peso por mercancía (sin tara).
     /// </summary>
     [Fact]
-    public async Task HU0301_UnaFilaDeContenedorConTaraSeCubicaEnSegundoPlanoYSaleANexoConLaTaraRepartidaSinPosiciones()
+    public async Task UnaFilaDeContenedorConTaraSeCubicaEnSegundoPlanoYSaleANexoConLaTaraRepartidaSinPosiciones()
     {
         _cubicador.RecomendarSiempre(clsCubicadorFalso.Vehiculo("3S3", "FURGON", 6_000m), clsCubicadorFalso.Vehiculo("2S3", "ESTACAS", 4_000m));
         var api = Api();
@@ -251,7 +251,7 @@ public sealed class clsLicitacionCubicadorEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// #250 (DU §8): la misma fila de contenedor con tara, cubicada en UN solo camión, sale a Nexo con el peso con tara y sus posiciones
+    /// DU §8: la misma fila de contenedor con tara, cubicada en UN solo camión, sale a Nexo con el peso con tara y sus posiciones
     /// (la carga sin tara): Nexo solo rechaza una suma de posiciones que supera el peso en más de 1 %, y un peso mayor (la tara) es válido.
     /// </summary>
     [Fact]
@@ -383,9 +383,9 @@ public sealed class clsLicitacionCubicadorEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// Endurecimiento B (#199, HU-032, ADR-022): <c>usar_respaldo = true</c> sobre una ruta caída aplica el vehículo ELEGIDO de la ruta, como
+    /// <c>usar_respaldo = true</c> (ADR-022) sobre una ruta caída aplica el vehículo ELEGIDO de la ruta, como
     /// el camino en segundo plano: válido en Nexo → el camión lo lleva con <c>VEHICULO_ELEGIDO_USADO</c>; inválido → sin vehículo con
-    /// <c>VEHICULO_ELEGIDO_INVALIDO</c>. Antes aceptaba el camión provisional sin vehículo. Sin volver a llamar al cubicador.
+    /// <c>VEHICULO_ELEGIDO_INVALIDO</c>, en vez de aceptar el camión provisional sin vehículo. Sin volver a llamar al cubicador.
     /// </summary>
     [Theory]
     [InlineData("3S3", "3S3", "VEHICULO_ELEGIDO_USADO")]
@@ -461,7 +461,7 @@ public sealed class clsLicitacionCubicadorEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// Endurecimiento B (#199): una licitación con servicios conexos cuyo catálogo en Nexo responde 403 es 403 <c>NEXO_SIN_PERMISO</c>
+    /// Una licitación con servicios conexos cuyo catálogo en Nexo responde 403 es 403 <c>NEXO_SIN_PERMISO</c>
     /// (declarado en el contrato); nada se guarda ni se captura en Nexo.
     /// </summary>
     [Fact]
@@ -524,7 +524,7 @@ public sealed class clsLicitacionCubicadorEndpointsTests : IDisposable
     [Fact]
     public async Task ExportarCotizacionSirveParaCualquierCotizacionPropiaYExportarLicitacionNo()
     {
-        // HU-018.1, parte C ("Ver detalle") reusa la exportación de la licitación con cualquier cotización con rutas.
+        // "Ver detalle" reusa la exportación de la licitación con cualquier cotización con rutas.
         var api = Api();
         var sesion = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         var cotizacion = await api.CrearCotizacionAsync(sesion.UsuarioId, clsCosteoEndpointsTests.Nit, conPdf: false);
@@ -660,8 +660,8 @@ public sealed class clsLicitacionCubicadorEndpointsTests : IDisposable
 
     private clsApiWebPruebas Api(bool conCubicador = true, int maximoParalelo = 4, Dictionary<string, string?>? extra = null)
     {
-        // Integración final HU-023: desde #159 los códigos del cubicador (tipoVehiculo/carroceria) viajan a Nexo solo con
-        // Nexo:EnviarCodigosCubicador (contrato de Nexo #297). Estas pruebas verifican que el alta lleva los camiones del cubicador.
+        // Los códigos del cubicador (tipoVehiculo/carroceria) viajan a Nexo solo con
+        // Nexo:EnviarCodigosCubicador. Estas pruebas verifican que el alta lleva los camiones del cubicador.
         var valores = new Dictionary<string, string?>
         {
             ["Cubicador:MaximoParalelo"] = maximoParalelo.ToString(System.Globalization.CultureInfo.InvariantCulture),

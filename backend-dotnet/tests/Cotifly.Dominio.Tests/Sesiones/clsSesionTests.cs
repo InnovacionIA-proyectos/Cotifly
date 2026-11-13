@@ -97,7 +97,7 @@ public sealed class clsSesionTests
         clsEventoConversacion.Crear("s", "t", clsEventoConversacion.RolHerramienta, null).Valor.Rol.Should().Be("herramienta");
     }
 
-    // HU-013.9 (#105): el estado es solo el folio de la conversación (sin slot-filling) y compara por valor.
+    // El estado es solo el folio de la conversación (sin slot-filling) y compara por valor.
     [Fact]
     public void ElEstadoDeConversacionEsElFolioYComparaPorValor()
     {

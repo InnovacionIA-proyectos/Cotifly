@@ -5,7 +5,7 @@ using Cotifly.Infraestructura.Cotizaciones.Services;
 namespace Cotifly.Infraestructura.Tests.Cotizaciones;
 
 /// <summary>
-/// HU-045.3 (#265, ADR-032 §9): el Excel de la cotización trae el seguro de la mercancía de cada ruta en su columna (aparte del transporte y
+/// ADR-032 §9: el Excel de la cotización trae el seguro de la mercancía de cada ruta en su columna (aparte del transporte y
 /// de los conexos), su total en la fila de totales y en el Resumen, y lo ven también el gerente y el director (es venta, no costo). La ruta
 /// con el seguro marcado sin valor de la mercancía lo dice. Nunca la tasa.
 /// </summary>
@@ -40,7 +40,7 @@ public sealed class clsExportadorExcelCotizacionSeguroTests
     }
 
     /// <summary>
-    /// B1 (decisión del usuario): en COP, una celda con centavos (el seguro, el precio de la ruta y los totales que lo incluyen) se formatea con
+    /// En COP, una celda con centavos (el seguro, el precio de la ruta y los totales que lo incluyen) se formatea con
     /// 2 decimales para que lo que se ve cuadre con lo guardado; sin centavos sigue en pesos enteros.
     /// </summary>
     [Fact]

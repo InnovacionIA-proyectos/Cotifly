@@ -45,7 +45,7 @@ public abstract class clsPruebaIntegracion : IAsyncDisposable
 
     /// <param name="baseDatos">SQL Server compartido de la colección.</param>
     /// <param name="configurar">Reemplazos de prueba sobre el registro real.</param>
-    /// <param name="configuracion">Claves de configuración adicionales (ej. <c>Correo:Habilitado</c>, #11).</param>
+    /// <param name="configuracion">Claves de configuración adicionales (ej. <c>Correo:Habilitado</c>).</param>
     protected clsPruebaIntegracion(clsBaseDatosPruebas baseDatos, Action<IServiceCollection>? configurar, IDictionary<string, string?>? configuracion)
     {
         ArgumentNullException.ThrowIfNull(baseDatos);
@@ -102,7 +102,7 @@ public abstract class clsPruebaIntegracion : IAsyncDisposable
     }
 
     /// <summary>
-    /// Cotización válida en memoria (sin guardar), como la del chat (HU-021): cabecera, una ruta con la línea de negocio 1, el margen y
+    /// Cotización válida en memoria (sin guardar), como la del chat: cabecera, una ruta con la línea de negocio 1, el margen y
     /// el precio, y un camión con el costo del flete.
     /// </summary>
     protected static clsCotizacionSolicitud NuevaCotizacion(Guid? usuarioId, string? folio = null, decimal precio = 1_500_000m)

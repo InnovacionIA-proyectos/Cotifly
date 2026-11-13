@@ -13,7 +13,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
-/// #191: la <c>Idempotency-Key</c> persistente sobre <c>dbo_cotifly.CapturasIdempotentes</c> (<c>db/scripts/06</c>) con SQL Server real.
+/// La <c>Idempotency-Key</c> persistente sobre <c>dbo_cotifly.CapturasIdempotentes</c> (<c>db/scripts/06</c>) con SQL Server real.
 /// Cada "réplica" es una instancia propia de <see cref="clsAlmacenIdempotenciaSql"/> (su propia conexión), así un reinicio o dos
 /// réplicas se prueban sin levantar dos APIs: la repetición devuelve lo guardado sin ejecutar, dos peticiones a la vez → una ejecuta y la
 /// otra recibe <c>CAPTURA_EN_CURSO</c>, la clave vence en 24 h, una toma huérfana se retoma pasado su tiempo y el registro de la captura
@@ -23,7 +23,7 @@ namespace Cotifly.Infraestructura.Tests.Persistencia;
 [Trait("Categoria", "Integracion")]
 public sealed class clsIdempotenciaSqlTests(clsBaseDatosPruebas baseDatos) : clsPruebaIntegracion(baseDatos)
 {
-    /// <summary>La tabla de la propuesta de #173 (sin <c>operacion</c> ni las columnas de #191), para las pruebas de la sonda y del 06.</summary>
+    /// <summary>Una versión anterior de la tabla (sin <c>operacion</c> ni las columnas de toma y resultado), para las pruebas de la sonda y del 06.</summary>
     public const string TablaPropuestaAnterior = """
         CREATE TABLE dbo_cotifly.CapturasIdempotentes (
             id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY DEFAULT NEWID(), usuarioId UNIQUEIDENTIFIER NOT NULL, clave NVARCHAR(64) NOT NULL,
@@ -289,7 +289,7 @@ public sealed class clsIdempotenciaSqlTests(clsBaseDatosPruebas baseDatos) : cls
     [Fact]
     public async Task ElRegistroDeLaCapturaQuedaEnLaTransaccionDelFolio()
     {
-        // #191: el folio y su clave se confirman o se deshacen juntos.
+        // El folio y su clave se confirman o se deshacen juntos.
         var clave = NuevaClave();
         var ambitoCaptura = $"{clsEnvioCosteoService.OperacionIdempotencia}:{_usuario}";
         var captura = new clsCapturaIdempotente(HuellaA, Guid.NewGuid(), $"PCN-{Guid.NewGuid():N}"[..30], null, Reloj.AhoraUtc);

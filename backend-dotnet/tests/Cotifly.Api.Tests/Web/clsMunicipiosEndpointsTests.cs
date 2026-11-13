@@ -6,7 +6,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// <c>GET /web/municipios</c> con Nexo sin responder (deuda de #122): 503 <c>MUNICIPIOS_NO_DISPONIBLE</c>, como
+/// <c>GET /web/municipios</c> con Nexo sin responder: 503 <c>MUNICIPIOS_NO_DISPONIBLE</c>, como
 /// <c>GET /web/catalogos-flete</c> y la captura, y no 400. Por HTTP contra SQL Server real y el Nexo falso, con el cuerpo validado
 /// contra <c>specs/openapi.yaml</c>. Sin caché de municipios, para que cada petición vaya a Nexo.
 /// </summary>
@@ -62,8 +62,8 @@ public sealed class clsMunicipiosEndpointsTests : IDisposable
     [Fact]
     public async Task Un429DeNexoSigueSiendoNexoNoDisponible()
     {
-        // Comportamiento existente (HU-023.4, #159): un 429 de Nexo lo tratan los adaptadores como "Nexo no disponible", nunca como un
-        // rechazo de la petición del comercial. En este endpoint eso ahora es 503, como en GET /web/catalogos-flete.
+        // Un 429 de Nexo lo tratan los adaptadores como "Nexo no disponible", nunca como un rechazo de la petición del comercial. En
+        // este endpoint es 503, como en GET /web/catalogos-flete.
         var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         _nexo.MunicipiosFalla = HttpStatusCode.TooManyRequests;
 

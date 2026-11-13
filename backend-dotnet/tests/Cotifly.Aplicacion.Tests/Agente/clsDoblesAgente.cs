@@ -4,7 +4,7 @@ using Cotifly.Dominio.Sesiones;
 
 namespace Cotifly.Aplicacion.Tests.Agente;
 
-// Dobles de prueba del asistente por folio (antes junto al arnés del agente legado, retirado en HU-013.9, #105).
+// Dobles de prueba del asistente por folio.
 
 /// <summary><see cref="System.Diagnostics.Metrics.IMeterFactory"/> mínimo para pruebas: un medidor nuevo por llamada.</summary>
 internal sealed class clsFabricaMedidoresPrueba : System.Diagnostics.Metrics.IMeterFactory

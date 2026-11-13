@@ -360,7 +360,7 @@ public sealed class clsConstructorDocumentoCotizacionTests
         documento.Incluye.Should().Contain("Levante: US$100,00");
     }
 
-    // HU-012.3 (texto de negocio del 2026-10-05): en USD la nota de TRM mínima con la TRM aplicada a 2 decimales; en COP ninguna nota.
+    // En USD la nota de TRM mínima con la TRM aplicada a 2 decimales; en COP ninguna nota.
     [Fact]
     public void EnDolaresElDocumentoLlevaLaNotaDeTrmMinima()
     {
@@ -397,7 +397,7 @@ public sealed class clsConstructorDocumentoCotizacionTests
     public void EnPesosNoHayNotaDeTrm() =>
         clsConstructorDocumentoCotizacion.Construir(clsEjemploPdf.Payload(), "PCN-1", _firma, _hoy, "COP", 0m).Valor.NotaMoneda.Should().BeNull();
 
-    // Auditoría de HU-012.3: sin TRM no hay PDF en dólares (antes salía sin aclaración en silencio).
+    // Sin TRM no hay PDF en dólares (nunca sale sin la aclaración).
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]

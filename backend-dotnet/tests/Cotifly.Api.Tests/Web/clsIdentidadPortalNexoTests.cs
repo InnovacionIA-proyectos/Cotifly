@@ -7,7 +7,7 @@ using Cotifly.Pruebas.Web;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// #172: Cotifly y Nexo resuelven la identidad del portal contra la misma base (en QA, <c>dbSolucionesTI_Prueba</c>). ClientePro
+/// Cotifly y Nexo resuelven la identidad del portal contra la misma base (en QA, <c>dbSolucionesTI_Prueba</c>). ClientePro
 /// manda el NOMBRE de usuario (<c>idUsuario: "dguerra"</c>) y sus roles; Cotifly busca por <c>NOMBREUSUARIO</c>, guarda el <c>ID</c>
 /// de esa fila en <c>UsuariosWeb.idUsuarioExterno</c> y ese mismo número es el que viaja a Nexo en <c>X-Portal-clsUsuario-Id</c>.
 /// </summary>
@@ -15,7 +15,7 @@ namespace Cotifly.Api.Tests.Web;
 [Trait("Categoria", "Integracion")]
 public sealed class clsIdentidadPortalNexoTests : IDisposable
 {
-    /// <summary>ID de la persona en el portal (ejemplo de #172: dguerra es 10123 en <c>dbSolucionesTI_Prueba</c>).</summary>
+    /// <summary>ID de la persona en el portal (ejemplo: dguerra es 10123 en <c>dbSolucionesTI_Prueba</c>).</summary>
     private const long IdPortal = 10123;
 
     private readonly clsEntornoApiWeb _entorno;
@@ -33,7 +33,7 @@ public sealed class clsIdentidadPortalNexoTests : IDisposable
     [Fact]
     public async Task ElLoginPorNombreDeUsuarioGuardaElIdDeLaFilaYEseEsElQueViajaANexo()
     {
-        // La fila del portal: NOMBREUSUARIO en mayúsculas, ID NUMERIC 10123 y roles en la base (25 y 34 sin mapeo: el 34 es AdministracionZonasGeocerca, #173; + el de comercial).
+        // La fila del portal: NOMBREUSUARIO en mayúsculas, ID NUMERIC 10123 y roles en la base (25 y 34 sin mapeo: el 34 es AdministracionZonasGeocerca; + el de comercial).
         await _entorno.BaseDatos.CrearPersonaExternaConIdAsync(IdPortal, "DGUERRA", "Persona de prueba 172", "persona172@example.com",
             25, 34, clsBaseDatosPruebas.RolExternoComercial);
 

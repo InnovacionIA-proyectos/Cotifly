@@ -32,7 +32,7 @@ public sealed class clsFormatosTests
     public void RedondeaAPesosHalfToEven(string valor, string esperado) =>
         clsFormatoMoneda.Formatear(decimal.Parse(valor, CultureInfo.InvariantCulture)).Should().Be(esperado);
 
-    // HU-012.3: en dólares el precio lleva centavos (convertido con la TRM); la TRM se imprime con 2 decimales.
+    // En dólares el precio lleva centavos (convertido con la TRM); la TRM se imprime con 2 decimales.
     [Theory]
     [InlineData("996.35", "US$996,35")]
     [InlineData("996.355", "US$996,36")]
@@ -52,7 +52,7 @@ public sealed class clsFormatosTests
     public void LaTrmSeFormateaConSuEscalaReal(string trm, string esperado) =>
         clsFormatoMoneda.FormatearTrm(decimal.Parse(trm, CultureInfo.InvariantCulture)).Should().Be(esperado);
 
-    // HU-012.3 (2026-10-05): en la nota del PDF en USD la TRM va siempre con 2 decimales (half-to-even), es-CO.
+    // En la nota del PDF en USD la TRM va siempre con 2 decimales (half-to-even), es-CO.
     [Theory]
     [InlineData("3273.49", "$3.273,49")]
     [InlineData("3273.4900", "$3.273,49")]

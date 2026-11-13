@@ -19,7 +19,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Tests.Cubicacion;
 
 /// <summary>
-/// <see cref="clsCubicadorHttp"/> (HU-021.5, #133; contrato de HU-023.1, #156) contra el cubicador falso (<see cref="clsCubicadorFalso"/>, un
+/// <see cref="clsCubicadorHttp"/> contra el cubicador falso (<see cref="clsCubicadorFalso"/>, un
 /// <see cref="HttpMessageHandler"/> que nunca sale a la red) y los ejemplos del contrato (<see cref="clsEjemplosContratoCubicador"/>, P2):
 /// forma de <c>POST /recomendaciones</c>, lectura de cada resultado, rechazo de la respuesta incompleta (fallo silencioso), traducción de
 /// los errores, catálogos con caché y sonda de salud. La tubería (sin reintento del POST, tiempo agotado) se prueba con el registro real
@@ -41,7 +41,7 @@ public sealed class clsCubicadorHttpTests : IDisposable
         RutaId, claseViaje, "1234567",
         [new clsMercanciaCubicador("CAFE_EN_ESTIBAS", 20, 120m, 100m, 150m, 700m), new clsMercanciaCubicador("BOBINAS", 1, 1200m, 235m, 269m, null)]);
 
-    /// <summary>HU-023 (#176, A3): la petición con el peso de todas las posiciones (20 × 700 kg y 1 × 1.700 kg), para comprobar la huella.</summary>
+    /// <summary>La petición con el peso de todas las posiciones (20 × 700 kg y 1 × 1.700 kg), para comprobar la huella.</summary>
     private static clsPeticionRecomendacion PeticionConPesos() => new(
         RutaId, "Carga Suelta", "1234567",
         [new clsMercanciaCubicador("CAFE_EN_ESTIBAS", 20, 120m, 100m, 150m, 700m), new clsMercanciaCubicador("BOBINAS", 1, 1200m, 235m, 269m, 1_700m)]);
@@ -226,7 +226,7 @@ public sealed class clsCubicadorHttpTests : IDisposable
     }
 
     /// <summary>
-    /// D-1019-1 (E2E 2026-10-19): el 400 MERCANCIA_DESCONOCIDA/MERCANCIA_NO_CUBICABLE del cubicador no trae el índice, pero cita el código
+    /// El 400 MERCANCIA_DESCONOCIDA/MERCANCIA_NO_CUBICABLE del cubicador no trae el índice, pero cita el código
     /// entre comillas: Cotifly señala esa mercancía (base 0) con <c>campo = codigo_mercancia</c>. Si el cuerpo trae <c>item</c>, manda ese.
     /// </summary>
     [Theory]
@@ -436,7 +436,7 @@ public sealed class clsCubicadorHttpTests : IDisposable
     }
 
     /// <summary>
-    /// D3b/D7 y opción C (E2E 2026-10-16): el motor tarda 26-31 s con cargas grandes y bloquea su API. El POST /recomendaciones espera
+    /// El motor tarda 26-31 s con cargas grandes y bloquea su API. El POST /recomendaciones espera
     /// 90 s; la reconsulta espera 5 s y tiene 60 s; las consultas (catálogos, salud) siguen cortas (15 s); un solo POST a la vez (cupo
     /// global y licitación); el presupuesto y el reclamo de la licitación alcanzan; "Calcular cubicaje" espera 8 s antes del 202.
     /// </summary>
@@ -480,7 +480,7 @@ public sealed class clsCubicadorHttpTests : IDisposable
         new clsValidadorOpcionesCubicador().Validate(null, Valido(new clsOpcionesCubicador { RetencionCubicacionMinutos = 4 })).Succeeded.Should().BeTrue();
     }
 
-    /// <summary>D7 (E2E 2026-10-16): <c>.env.example</c> decía 15 s y el código usaba 30. Los valores documentados son los del código.</summary>
+    /// <summary>Los valores documentados en <c>.env.example</c> son los del código.</summary>
     [Fact]
     public void ElEnvExampleDocumentaLosTiemposDelCodigo()
     {
@@ -734,7 +734,7 @@ public sealed class clsCubicadorHttpTests : IDisposable
 
 
     /// <summary>
-    /// D3b: una recomendación que tarda más que el límite de las consultas pero menos que el suyo responde; un catálogo con la misma demora
+    /// Una recomendación que tarda más que el límite de las consultas pero menos que el suyo responde; un catálogo con la misma demora
     /// agota su límite corto.
     /// </summary>
     [Fact]
@@ -805,7 +805,7 @@ public sealed class clsCubicadorHttpTests : IDisposable
         _cubicador.Recomendaciones.Should().ContainSingle("HU-023 (#176): el POST nunca se reintenta; solo se reconsulta con GET");
     }
 
-    // ---------------------------------------------------------------- HU-023 (#176): contrato vigente del cubicador
+    // ---------------------------------------------------------------- Contrato del cubicador
 
     [Fact]
     public async Task ElEjemploDeLaGuiaConFlotaMixtaLeeNumeroNombreAlertasYCadaPosicionSinAgruparElCodigoRepetido()
@@ -913,7 +913,7 @@ public sealed class clsCubicadorHttpTests : IDisposable
 
         var r = await Cubicador().RecomendarAsync(Peticion(), Ct);
 
-        // D1 (E2E 2026-10-16): antes era CUBICADOR_RESPUESTA_INVALIDA (503, "avisa a soporte").
+        // No es CUBICADOR_RESPUESTA_INVALIDA (503, "avisa a soporte").
         r.Error.Codigo.Should().Be(clsCodigosError.CubicadorPeticionRechazada);
         r.Error.Mensaje.Should().StartWith(clsCubicadorHttp.MensajePeticionRechazada);
         r.Error.Detalle.Should().Contain("422");
@@ -921,7 +921,7 @@ public sealed class clsCubicadorHttpTests : IDisposable
         _cubicador.Peticiones.Count(p => p.Metodo == HttpMethod.Post).Should().Be(1, "un 422 no se reintenta");
     }
 
-    /// <summary>D1 (E2E 2026-10-16): el 422 de FastAPI que señala una mercancía llega como 400 con el ítem (base 0) y el campo.</summary>
+    /// <summary>El 422 de FastAPI que señala una mercancía llega como 400 con el ítem (base 0) y el campo.</summary>
     [Theory]
     [InlineData("largoCm", "DIMENSIONES_INVALIDAS")]
     [InlineData("pesoKg", "DIMENSIONES_INVALIDAS")]
@@ -1077,7 +1077,7 @@ public sealed class clsCubicadorHttpTests : IDisposable
     [InlineData("12.35", "exacto")]
     public void LaHuellaToleraElRedondeoDelCubicadorEnUnaFilaConDecimales(string pesoFila, string porque)
     {
-        // Auditoría de f3c79d5: 1 unidad de 12,35 kg (máximo 2 decimales en Cotifly); el cubicador confirmó (2026-10-15) que redondea
+        // 1 unidad de 12,35 kg (máximo 2 decimales en Cotifly); el cubicador redondea
         // el pesoKg a 2 decimales; estos casos más gruesos (un decimal, kilo entero) siguen cubiertos por la tolerancia de 0,5 kg.
         var peticion = new clsPeticionRecomendacion(
             RutaId, "Carga Suelta", "1234567", [new clsMercanciaCubicador("CAFE_EN_ESTIBAS", 1, 120m, 100m, 150m, 12.35m)]);

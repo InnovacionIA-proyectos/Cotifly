@@ -7,7 +7,7 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
 /// <summary>
-/// HU-028 (#186, ADR-021): el comercial edita la solicitud. Reglas del dominio: el modo según el estado (en sitio, reemplazo o versión
+/// ADR-021: el comercial edita la solicitud. Reglas del dominio: el modo según el estado (en sitio, reemplazo o versión
 /// nueva; la licitación y el chat no se editan), los campos bloqueados (cliente, tipo y línea de negocio de cada ruta) y la aplicación de
 /// la edición (rutas que se conservan con su id y su margen, rutas nuevas y quitadas, mercancías, conexos y levante).
 /// </summary>
@@ -285,9 +285,9 @@ public sealed class clsEdicionSolicitudTests
     }
 
     [Fact]
-    public void HU014LaEdicionNumeraLosCamionesYGuardaElIdDelCatalogoYLaCategoriaDelConexo()
+    public void LaEdicionNumeraLosCamionesYGuardaElIdDelCatalogoYLaCategoriaDelConexo()
     {
-        // Integración #188 → #186: ordenVehiculo 1..n en la ruta recubicada y en la nueva; el conexo con su id del catálogo y su categoría.
+        // ordenVehiculo 1..n en la ruta recubicada y en la nueva; el conexo con su id del catálogo y su categoría.
         var cotizacion = DeDosRutas();
         var r1 = cotizacion.RutasOrdenadas[0];
 

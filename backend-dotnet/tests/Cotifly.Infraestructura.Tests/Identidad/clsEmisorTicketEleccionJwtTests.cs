@@ -11,7 +11,7 @@ using Microsoft.IdentityModel.Tokens;
 namespace Cotifly.Infraestructura.Tests.Identidad;
 
 /// <summary>
-/// HU-040.2 (#230, ADR-025): el ticket de elección del rol. Vida de 5 minutos con el reloj de la aplicación, firma con una clave derivada
+/// ADR-025: el ticket de elección del rol. Vida de 5 minutos con el reloj de la aplicación, firma con una clave derivada
 /// (ni el access sirve como ticket ni el ticket como access), audiencia y <c>typ</c> propios, y cualquier alteración lo invalida.
 /// </summary>
 public sealed class clsEmisorTicketEleccionJwtTests

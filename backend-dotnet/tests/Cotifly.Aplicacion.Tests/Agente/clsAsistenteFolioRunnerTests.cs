@@ -29,7 +29,7 @@ using FunctionResultContent = Microsoft.Extensions.AI.FunctionResultContent;
 namespace Cotifly.Aplicacion.Tests.Agente;
 
 /// <summary>
-/// Asistente por folio (HU-013.6, #102, ADR-018 §2b) con el <see cref="IChatClient"/> guionizado y datos ficticios: el folio debe ser
+/// Asistente por folio (ADR-018 §2b) con el <see cref="IChatClient"/> guionizado y datos ficticios: el folio debe ser
 /// del comercial, las herramientas solo leen o proponen, la propuesta (cuerpo, endpoint, <c>row_version</c> y resumen con precios) la
 /// arma el servidor, ningún mensaje que recibe el modelo trae montos (COP ni USD) y la cotización no cambia.
 /// </summary>
@@ -107,7 +107,7 @@ public sealed partial class clsAsistenteFolioRunnerTests
 
         var resultado = await Runner().EjecutarTurnoAsync(Solicitud("Súbele el margen al 18 %"), Ct);
 
-        // HU-013.16: tras la propuesta el turno va directo a la llamada final (sin herramientas): 3 llamadas, no 4.
+        // Tras la propuesta el turno va directo a la llamada final (sin herramientas): 3 llamadas, no 4.
         _modelo.Llamadas.Should().HaveCount(3);
         _modelo.Llamadas[2].Herramientas.Should().BeEmpty();
         resultado.Valor.DetenerPor.Should().Be(clsAsistenteFolioRunner.CierrePropuesta);
@@ -121,7 +121,7 @@ public sealed partial class clsAsistenteFolioRunnerTests
         accion.Cuerpo["margen"].Should().Be(0.18m);
         accion.Cuerpo["justificacion"].Should().BeNull();
         accion.RowVersion.Should().Be("7");
-        // HU-021: el precio de la ruta incluye el conexo, así que el resumen habla del precio total. HU-043.2 (#251): el margen es solo del
+        // El precio de la ruta incluye el conexo, así que el resumen habla del precio total. El margen es solo del
         // flete (2.550.000 / 0,85 = 3.000.000 → / 0,82 = 3.109.756) y el conexo suma su venta sin margen (85.000).
         accion.Resumen.Should().Be(
             "Ajustar el margen de 15 % a 18 %: el precio total pasa de $3.085.000 a $3.194.756 COP. Los servicios conexos no cambian: se cotizan a su precio de venta, sin margen.");
@@ -187,7 +187,7 @@ public sealed partial class clsAsistenteFolioRunnerTests
         SinCambios(cotizacion);
     }
 
-    // Validador de #102: una propuesta que el endpoint rechazaría (peso que no cuadra con las posiciones) nunca se arma.
+    // Una propuesta que el endpoint rechazaría (peso que no cuadra con las posiciones) nunca se arma.
     [Fact]
     public async Task SiElCasoDeUsoRechazaLaReSolicitudNoHayPropuestaYElModeloRecibeElMotivo()
     {
@@ -219,11 +219,11 @@ public sealed partial class clsAsistenteFolioRunnerTests
         accion.Resumen.Should().NotContain("servicios conexos", "sin conexos no hay nada que avisar");
     }
 
-    // HU-021.9 (#136; rehace #124): el comercial ve ANTES de confirmar qué conexos se conservan (solo nombres) y el modelo recibe los mismos nombres.
+    // El comercial ve ANTES de confirmar qué conexos se conservan (solo nombres) y el modelo recibe los mismos nombres.
     [Fact]
     public async Task LaReSolicitudEnElMismoFolioAvisaLosConexosQueSeConservan()
     {
-        // HU-021: los conexos son filas de la ruta (costo unitario de Nexo y cantidad).
+        // Los conexos son filas de la ruta (costo unitario de Nexo y cantidad).
         var cotizacion = Vencida();
         clsCotizacionMuestra.ConConexo(cotizacion, "CX-1", "Cargue", 85_000m);
         clsCotizacionMuestra.ConConexo(cotizacion, "CX-2", "Stand-by", 20_000m, 2m);
@@ -241,8 +241,8 @@ public sealed partial class clsAsistenteFolioRunnerTests
         salida.Should().Contain("conexos_conservados").And.Contain("Stand-by").And.NotContain("85000").And.NotContain("47059");
     }
 
-    // Auditor de #124: peor caso (folio de 29 caracteres, -vN con 5 cambios de carga y 5 conexos de nombre largo). El aviso cabe
-    // completo, con "y N más": se acorta la descripción de los cambios, nunca el aviso (HU-021.9: ahora avisa los que se conservan).
+    // Peor caso (folio de 29 caracteres, -vN con 5 cambios de carga y 5 conexos de nombre largo). El aviso cabe
+    // completo, con "y N más": se acorta la descripción de los cambios, nunca el aviso (que nombra los conexos que se conservan).
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -313,7 +313,7 @@ public sealed partial class clsAsistenteFolioRunnerTests
         resultado.Valor.Salidas.Single().Error!.Codigo.Should().Be(clsCodigosError.EstadoNoPermite);
     }
 
-    // Auditor de #102: las reglas de conexos son las del endpoint (ValidarPrecondiciones), también LINEA_SIN_COTIZACION_NEXO.
+    // Las reglas de conexos son las del endpoint (ValidarPrecondiciones), también LINEA_SIN_COTIZACION_NEXO.
     [Fact]
     public async Task SinCotizacionDeNexoElConexoNoSePropone()
     {
@@ -348,7 +348,7 @@ public sealed partial class clsAsistenteFolioRunnerTests
         item["linea_orden"].Should().Be(1);
         item["servicio_id"].Should().Be(IdServicio);
         item["cantidad"].Should().Be(2m);
-        // HU-043.2 (#251): el conexo se cotiza a su precio de venta, sin el margen de la ruta.
+        // El conexo se cotiza a su precio de venta, sin el margen de la ruta.
         accion.Resumen.Should().Contain("Almacenamiento").And.Contain("Se cotiza a su precio de venta de Nexo, sin margen; queda incluido en el PDF.")
             .And.NotContain("15 %").And.NotContain("margen de la ruta");
         _modelo.Llamadas[1].ResultadosHerramientas.Single().Should().Contain(IdServicio).And.NotContainEquivalentOf("costo");
@@ -426,7 +426,7 @@ public sealed partial class clsAsistenteFolioRunnerTests
 
         var resultado = await Runner().EjecutarTurnoAsync(Solicitud("¿Cuánto es en dólares?"), Ct);
 
-        // HU-043.2 (#251): 2.550.000 con el margen + 85.000 del conexo sin margen, en dólares: 771,25 al 15 % y 798,69 al 18 %.
+        // 2.550.000 con el margen + 85.000 del conexo sin margen, en dólares: 771,25 al 15 % y 798,69 al 18 %.
         resultado.Valor.AccionPropuesta!.Resumen.Should().Contain("US$798,69").And.Contain("USD");
         VerificarSinMontos("costo", "2550000", "771", "79869", "trm_aplicada", "4.000", "21,25", "85000");
         _modelo.Llamadas[1].ResultadosHerramientas[0].Should().Contain("\"moneda\":\"USD\"");
@@ -445,7 +445,7 @@ public sealed partial class clsAsistenteFolioRunnerTests
         raiz.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(
             "folio", "version", "estado_costeo", "estado_envio", "tiene_resultado", "tiene_pdf", "pdf_desactualizado", "cliente", "linea_negocio",
             "origen", "destino", "tipo_vehiculo", "moneda", "margen_actual", "margen_sugerido", "origen_margen", "conexos", "numero_rutas", "rutas");
-        // HU-021.8 (#135): cada ruta solo con porcentajes, origen, destino, vehículo y conexos (nombre y cantidad).
+        // Cada ruta solo con porcentajes, origen, destino, vehículo y conexos (nombre y cantidad).
         raiz.GetProperty("rutas")[0].EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(
             "linea_orden", "origen", "destino", "tipo_vehiculo", "margen_actual", "margen_sugerido", "origen_margen", "conexos");
         raiz.GetProperty("rutas")[0].GetProperty("conexos")[0].EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo("nombre", "cantidad");
@@ -529,7 +529,7 @@ public sealed partial class clsAsistenteFolioRunnerTests
         _ => string.Empty,
     };
 
-    // HU-021: el precio y el margen se comparan con los que tenía al registrarla (la vencida no tiene precio; el margen es de la ruta 1).
+    // El precio y el margen se comparan con los que tenía al registrarla (la vencida no tiene precio; el margen es de la ruta 1).
     private void SinCambios(clsCotizacionSolicitud cotizacion)
     {
         var inicial = _inicial[cotizacion];
@@ -557,7 +557,7 @@ public sealed partial class clsAsistenteFolioRunnerTests
 
     /// <summary>
     /// Costeada en USD con la TRM 4.000 fijada: flete 2.550.000 COP y el conexo Cargue (85.000 COP) en la ruta, al 15 % = 775 USD
-    /// (HU-021: el conexo va en el precio de la ruta; el conexo solo, 100.000 COP = 25 USD).
+    /// (el conexo va en el precio de la ruta; el conexo solo, 100.000 COP = 25 USD).
     /// </summary>
     private clsCotizacionSolicitud EnDolares()
     {
@@ -569,7 +569,7 @@ public sealed partial class clsAsistenteFolioRunnerTests
     /// <summary>Del formulario, enviada a Nexo y con el polling vencido (72 h sin costeo): admite re-solicitar.</summary>
     private clsCotizacionSolicitud Vencida()
     {
-        // HU-021: sin flete no hay precio (ya no se fuerza con reflexión); el margen resuelto al enviar queda en la ruta.
+        // Sin flete no hay precio; el margen resuelto al enviar queda en la ruta.
         var cotizacion = clsCotizacionMuestra.Formulario(Folio, _ana.Id);
         cotizacion.RegistrarEnvioCosteo("SOL-1", false, DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch);
         cotizacion.PrimeraRuta!.RegistrarMargenCosteo(0.15m, 0.15m, OrigenMargen.PoliticaLinea, "margen");

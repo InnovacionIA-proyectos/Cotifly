@@ -33,7 +33,7 @@ public sealed class clsMisCotizacionesYNuevaVersionTests
             OrigenCliente = OrigenCliente.Cliente,
             PdfPath = $"/data/pdfs/{folio}.pdf",
         }).Valor;
-        // HU-021: la línea de negocio, el costo, el margen y el método son de la ruta 1.
+        // La línea de negocio, el costo, el margen y el método son de la ruta 1.
         cotizacion.RegistrarCotizacionChat(1, 100m, 0.15m, 0.1m, OrigenMargen.Negociado, "markup", 110m);
         return cotizacion;
     }
@@ -43,7 +43,7 @@ public sealed class clsMisCotizacionesYNuevaVersionTests
     {
         var cotizacion = Cotizacion("PCN-DG-25092026-001");
         _cotizaciones.ListarConLineaPorUsuarioAsync(_ana, 100, Arg.Any<CancellationToken>())
-            // HU-021: el listado no carga el agregado; el repositorio trae el margen y su origen de la ruta 1.
+            // El listado no carga el agregado; el repositorio trae el margen y su origen de la ruta 1.
             .Returns([new clsCotizacionConLinea(cotizacion, "Nacional", 0.1m, OrigenMargen.Negociado)]);
         var servicio = new clsMisCotizacionesService(_cotizaciones, _politicas, Options.Create(new clsOpcionesPdf { BaseUrl = "https://api.cotifly/" }));
 
@@ -113,7 +113,7 @@ public sealed class clsMisCotizacionesYNuevaVersionTests
         });
     }
 
-    // --- HU-021.9 (#136): "Mis cotizaciones" con varias líneas de negocio; el margen y su origen salen de la ruta ---
+    // --- "Mis cotizaciones" con varias líneas de negocio; el margen y su origen salen de la ruta ---
 
     /// <summary>Licitación de dos rutas costeadas: la ruta 1 con la línea 3 (margen ajustado a 0,2) y la ruta 2 con la línea 7.</summary>
     private clsCotizacionSolicitud DeDosLineas()
@@ -150,8 +150,8 @@ public sealed class clsMisCotizacionesYNuevaVersionTests
     }
 
     /// <summary>
-    /// #173 (E2E real del 2026-10-14): la captura ya guardó y envió a Nexo, y la lectura secundaria del nombre de la línea se agota
-    /// ("Execution Timeout Expired"). El resumen no lanza (el controlador respondía 500 y un reintento duplicaba la solicitud en Nexo):
+    /// La captura ya guardó y envió a Nexo, y la lectura secundaria del nombre de la línea se agota
+    /// ("Execution Timeout Expired"). El resumen no lanza (con un 500, un reintento duplicaría la solicitud en Nexo):
     /// sale con lo que está en memoria, sin la línea y con el aviso RESUMEN_INCOMPLETO.
     /// </summary>
     [Fact]
@@ -196,7 +196,7 @@ public sealed class clsMisCotizacionesYNuevaVersionTests
         datos.Rutas[1].Should().BeEquivalentTo(new { LineaOrden = 2, LineaNegocioId = 7, LineaNegocio = "Contenedores", MargenAplicado = 0.15m, OrigenMargen = "politica_linea" });
     }
 
-    // --- HU-018.2 (#294): la carga en el resumen (origen/destino de la ruta 1, número de rutas y sumas de peso y valor) ---
+    // --- La carga en el resumen (origen/destino de la ruta 1, número de rutas y sumas de peso y valor) ---
 
     [Fact]
     public async Task ElResumenDesdeElAgregadoTraeLaCargaDeLasRutas()

@@ -16,7 +16,7 @@ using NSubstitute;
 namespace Cotifly.Infraestructura.Tests.CatalogosFlete;
 
 /// <summary>
-/// HU-013.10 (#106, G1): <see cref="clsCatalogosMaestrosNexo"/> consume los catálogos maestros de Nexo
+/// <see cref="clsCatalogosMaestrosNexo"/> consume los catálogos maestros de Nexo
 /// (<c>GET /api/catalogos/tipos-vehiculo</c>, <c>clases-viaje</c>, <c>clases-contenedor</c> y <c>lineas-negocio</c>) contra el Nexo
 /// falso con estado (<see cref="clsNexoFalso"/>), y <see cref="clsCatalogosFleteNexo"/> arma la respuesta de
 /// <c>GET /web/catalogos-flete</c> con ellos y la carrocería en código. Nunca sale a la red.
@@ -104,7 +104,7 @@ public sealed class clsCatalogosFleteNexoTests : IDisposable
     [Fact]
     public async Task UnaListaVaciaRealDeNexoNoSeMarcaComoFallo()
     {
-        // Hallazgo M de #179: [] (base de SAP sin configurar) es una respuesta legítima, no un fallo pasajero.
+        // [] (base de SAP sin configurar) es una respuesta legítima, no un fallo pasajero.
         _nexo.ClasesContenedor.Clear();
         _nexo.LineasNegocio.Clear();
 
@@ -118,7 +118,7 @@ public sealed class clsCatalogosFleteNexoTests : IDisposable
     [Fact]
     public async Task ConLaCacheUnFalloPasajeroDeClasesDeContenedorConservaLasDeLaCopiaAnterior()
     {
-        // Hallazgo M de #179, de punta a punta con el Nexo falso: la copia nueva (vigente 30 min) no deja el selector vacío.
+        // De punta a punta con el Nexo falso: la copia nueva (vigente 30 min) no deja el selector vacío.
         var reloj = new clsRelojFalso();
         var cache = new clsCacheCatalogosMaestros();
         clsCatalogosMaestrosEnCache Proveedor() => new(
@@ -228,7 +228,7 @@ public sealed class clsCatalogosFleteNexoTests : IDisposable
     [Fact]
     public async Task LosTiposDeVehiculoSalenConElCodigoNexoC2C3EnVezDelCodigoSap()
     {
-        // HU-044.8 (#291): el catálogo de SAP trae «2»/«3»; GET /web/catalogos-flete los expone como C2/C3 (el resto no cambia).
+        // El catálogo de SAP trae «2»/«3»; GET /web/catalogos-flete los expone como C2/C3 (el resto no cambia).
         _nexo.TiposVehiculo.Clear();
         _nexo.TiposVehiculo.AddRange([("2", "Camión 2 ejes", true), ("3", "Doble troque", true), ("2S3", "Tractocamión 2 ejes, semi 3", true)]);
 
@@ -243,7 +243,7 @@ public sealed class clsCatalogosFleteNexoTests : IDisposable
     [Fact]
     public async Task LosCatalogosDeFleteExponenSoloLasClasesDeContenedorDeNexoConLaDescripcionComoValor()
     {
-        // HU-027.1 (#179): en Nexo la descripcion de clases-contenedor es el código; el valor expuesto es el que valida la captura.
+        // En Nexo la descripcion de clases-contenedor es el código; el valor expuesto es el que valida la captura.
         var resultado = await new clsCatalogosFleteNexo(Maestros()).ObtenerAsync(_usuarioId, Ct);
 
         resultado.EsExitoso.Should().BeTrue();
@@ -256,7 +256,7 @@ public sealed class clsCatalogosFleteNexoTests : IDisposable
     [Fact]
     public async Task CadaClaseDeContenedorExpuestaLaAceptaLaValidacionDeLaCaptura()
     {
-        // HU-027.1 (#179): el valor que ofrece GET /web/catalogos-flete es el mismo con que se valida clase_contenedor.
+        // El valor que ofrece GET /web/catalogos-flete es el mismo con que se valida clase_contenedor.
         var maestros = Maestros();
         var validador = new clsValidadorCatalogosCaptura(maestros, NullLogger<clsValidadorCatalogosCaptura>.Instance);
         var clases = (await new clsCatalogosFleteNexo(maestros).ObtenerAsync(_usuarioId, Ct)).Valor.ClasesContenedor;

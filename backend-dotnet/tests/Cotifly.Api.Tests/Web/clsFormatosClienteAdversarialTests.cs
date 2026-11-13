@@ -10,7 +10,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// Validación adversarial de HU-044.5 (#256) por HTTP contra la API real y el Nexo falso: borrado sin dueño, ids raros, NIT inválidos sin
+/// Validación adversarial de las plantillas de mapeo, las recetas de lectura y el diccionario del cliente por HTTP contra la API real y el Nexo falso: borrado sin dueño, ids raros, NIT inválidos sin
 /// llamar a NEXO, receta opaca byte a byte, límites y nombres engañosos del archivo, partes repetidas del multipart, inyección de
 /// parámetros en el diccionario, que no salga nada del cliente en el diccionario, roles y concurrencia.
 /// </summary>

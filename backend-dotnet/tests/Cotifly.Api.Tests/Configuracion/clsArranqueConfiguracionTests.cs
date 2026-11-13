@@ -41,7 +41,7 @@ public sealed class clsArranqueConfiguracionTests
         opciones.ZonaHoraria.Should().Be("UTC");
     }
 
-    // --- HU-032 (#197): Captura:ClasesSinVehiculoObligatorio ---
+    // --- Captura:ClasesSinVehiculoObligatorio ---
 
     [Fact]
     public void SinConfigurarLasClasesSinVehiculoObligatorioSonSoloContenedor()
@@ -79,7 +79,7 @@ public sealed class clsArranqueConfiguracionTests
     [Fact]
     public void LasClasesSinVehiculoObligatorioSeAceptanSinDistinguirMayusculasYSeNormalizanALaEscrituraDeNexo()
     {
-        // Ajuste de la auditoría: "Carga suelta" ya no impide arrancar; se guarda como el catálogo ("Carga Suelta"), que es con lo que se
+        // "Carga suelta" no impide arrancar; se guarda como el catálogo ("Carga Suelta"), que es con lo que se
         // compara (exacto) la clase de viaje de la ruta.
         using var factory = Crear(new()
         {
@@ -116,7 +116,7 @@ public sealed class clsArranqueConfiguracionTests
         opciones.ClasesSinVehiculo.Should().Equal("Contenedor");
     }
 
-    // --- #228 (decisión del 2026-10-27): Correo:MaximoDestinatarios ---
+    // --- Correo:MaximoDestinatarios ---
 
     [Fact]
     public void SinConfigurarElTopeDeDestinatariosEs10()

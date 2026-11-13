@@ -7,8 +7,8 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// HU-043.2 (#251): desglose (transporte + conexos), heurística de la fórmula anterior, PDF sin costo, vista previa del margen e
-/// importación de Nexo con datos raros. Vienen de la validación de #251.
+/// Conexos a su precio de venta: desglose (transporte + conexos), heurística de la fórmula anterior, PDF sin costo, vista previa del
+/// margen e importación de Nexo con datos raros.
 /// </summary>
 public sealed class clsConexosPrecioVentaAplicacionTests
 {

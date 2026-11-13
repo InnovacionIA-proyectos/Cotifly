@@ -39,7 +39,7 @@ public sealed class clsPropuestasConexoNombreNoIdAdversarialTests
         resumen.Should().Contain("«CAR-01»").And.NotContain(Id);
     }
 
-    // Caso del defecto que documentó el validador: antes caía al GUID interno; ahora cae a la categoría, nunca al id.
+    // Sin nombre ni código cae a la categoría, nunca al GUID interno.
     [Fact]
     public void SinNombreNiCodigoUsaLaCategoriaNuncaElId()
     {

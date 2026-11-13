@@ -6,7 +6,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// HU-031.1 (#194): <c>GET /web/alias/resolver</c> resuelve contra el catálogo y el diccionario de alias de Nexo (NEXO #321), en lote, por
+/// <c>GET /web/alias/resolver</c> resuelve contra el catálogo y el diccionario de alias de Nexo, en lote, por
 /// HTTP contra SQL Server real y el Nexo falso, con el cuerpo validado contra <c>specs/openapi.yaml</c>. Sin caché, para que cada petición
 /// vaya a Nexo.
 /// </summary>
@@ -41,7 +41,7 @@ public sealed class clsAliasEndpointsTests : IDisposable
         json.GetProperty("tipo").GetString().Should().Be("vehiculo");
         json.GetProperty("resultados").EnumerateArray()
             .Select(r => (r.GetProperty("texto").GetString(), r.GetProperty("reconocido").GetBoolean(), r.GetProperty("codigo").GetString(), r.GetProperty("fuente").GetString()))
-            // HU-044.8 (#291): C2 es el código NEXO canónico; la equivalencia de SICE-TAC lo resuelve como «catalogo», no vía alias a «2».
+            // C2 es el código NEXO canónico; la equivalencia de SICE-TAC lo resuelve como «catalogo», no vía alias a «2».
             .Should().Equal(("tb", true, "2S3", "alias"), ("3s3", true, "3S3", "catalogo"), ("C2", true, "C2", "catalogo"), ("Viejo", false, null, null),
                 ("Tractomula", false, null, null));
         _nexo.Peticiones.Count(p => p.Url.AbsolutePath == "/api/catalogos/alias").Should().Be(1, "una sola petición para todo el lote");

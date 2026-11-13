@@ -10,7 +10,7 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Costeo;
 
 /// <summary>
-/// Pasos de <c>specs/features/servicios_conexos_nexo.feature</c> (HU-013.3, #99, ADR-018 §4, §8 y §11): la API real en memoria, SQL
+/// Pasos de <c>specs/features/servicios_conexos_nexo.feature</c> (ADR-018 §4, §8 y §11): la API real en memoria, SQL
 /// Server 2019 y el Nexo falso de <see cref="clsPasosCosteo"/> con su catálogo de servicios conexos. Las mutaciones envían
 /// <c>If-Match</c> con la versión vigente de la fila (leída de la base) salvo que el paso diga otra cosa.
 /// </summary>
@@ -26,7 +26,7 @@ public sealed class clsPasosServiciosConexos(
         ArgumentNullException.ThrowIfNull(tabla);
         foreach (var fila in tabla.Rows)
         {
-            // HU-043.2 (#251): columna opcional precio_venta (vacía o ausente: sin precio de venta, se cotiza al costo).
+            // Columna opcional precio_venta (vacía o ausente: sin precio de venta, se cotiza al costo).
             var venta = fila.TryGetValue("precio_venta", out var texto) && texto.Length > 0
                 ? decimal.Parse(texto, CultureInfo.InvariantCulture)
                 : (decimal?)null;
@@ -235,14 +235,14 @@ public sealed class clsPasosServiciosConexos(
         web.EnviarAsync(HttpMethod.Post, Ruta(cotizacion), web.Sesion(alias).Access, cuerpo, ifMatch);
 
     /// <summary>
-    /// Conexos guardados, leídos de la base sin depender de la sesión del dueño. HU-021: son filas de la ruta
+    /// Conexos guardados, leídos de la base sin depender de la sesión del dueño. Son filas de la ruta
     /// (<c>CotizacionServiciosConexos</c>): todas están incluidas y el precio es su valor con el margen de la ruta.
     /// </summary>
     private async Task<List<JsonElement>> ConexosAsync(string cotizacion)
     {
         var json = await clsBaseDatosPruebas.EscalarAsync<string>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
             "SELECT s.idServicioConexo AS id, s.nombreServicioConexo AS nombre, CAST(1 AS bit) AS incluido, "
-            // HU-043.2 (#251): el precio del conexo es su venta (precioVenta × cantidad, a pesos enteros), sin el margen de la ruta.
+            // El precio del conexo es su venta (precioVenta × cantidad, a pesos enteros), sin el margen de la ruta.
             + "ROUND(s.precioVenta * s.cantidad, 0) AS precio "
             + "FROM dbo_cotifly.CotizacionServiciosConexos s JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = s.lineaSolicitudId "
             + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{Folio(cotizacion)}' FOR JSON PATH");

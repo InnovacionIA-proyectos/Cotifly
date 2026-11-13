@@ -11,7 +11,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// Campaña de QA de HU-021 + HU-023 (rama de integración <c>hu-023-integracion</c>): un E2E por flujo, por HTTP contra la API real en
+/// Un E2E por flujo, por HTTP contra la API real en
 /// memoria, sobre la base instalada DESDE CERO (<c>db/scripts/01_crear_esquema.sql</c> + <c>02_alter_cubicador.sql</c> +
 /// <c>pendientes/04_cubicacion_segundo_plano.sql</c>), con el Nexo, el cubicador, la TRM, el relay SMTP y el modelo falsos (nunca los
 /// reales). Cada flujo verifica en la base las filas que deja.
@@ -76,7 +76,7 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
         (await Escalar<int>($"SELECT COUNT(DISTINCT v.idRecomendacionVehiculo) {DeLosCamiones(id)}")).Should().Be(3, "cada camión con su recomendación");
 
         // El alta: una línea por camión, con su ruta (grupoRutaId) y su camión (idRecomendacionVehiculo); la ruta de UN camión lleva el
-        // peso DECLARADO (12500, no el 12480 del cubicador) y sus posiciones SIN codigoTipoMercancia (contrato de Nexo #297, #159); la de dos
+        // peso DECLARADO (12500, no el 12480 del cubicador) y sus posiciones SIN codigoTipoMercancia (contrato de Nexo); la de dos
         // camiones, el peso de cada uno.
         var alta = _nexo.UltimaAlta!["lineas"]!.AsArray().Select(l => l!).ToList();
         alta.Should().HaveCount(3);
@@ -87,7 +87,7 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
             var grupo = linea["grupoRutaId"]?.GetValue<string>();
             var recomendacion = linea["idRecomendacionVehiculo"]?.GetValue<string>()?.ToLowerInvariant();
             var orden = camiones.Single(c => c.A == recomendacion).B;
-            // HU-023 (#176, contrato con Nexo §3.3): la ruta de dos camiones lleva su grupo; la de UN camión (línea suelta), null.
+            // Contrato con Nexo §3.3: la ruta de dos camiones lleva su grupo; la de UN camión (línea suelta), null.
             if (orden == "1")
             {
                 grupo.Should().NotBeNull("Nexo:EnviarGrupoRutaId está encendida y la ruta 1 tiene dos camiones");
@@ -135,7 +135,7 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
             SELECT CONCAT(l.orden, '|', l.costoFletesTotal, '|', l.costoServiciosConexos, '|', l.costoFinal, '|', l.margenAplicado, '|', l.precioFinalLinea, '|', l.estadoCosteo)
             FROM dbo_cotifly.CotizacionLineasSolicitud l WHERE l.cotizacionSolicitudId = '{id}' ORDER BY l.orden
             """)).Should().Equal(
-            "1|2100000.00|150000.00|2250000.00|0.1500|2620588.00|autocosteo",   // HU-043.2: 2.100.000 / 0,85 + 150.000, conexo sin margen
+            "1|2100000.00|150000.00|2250000.00|0.1500|2620588.00|autocosteo",   // 2.100.000 / 0,85 + 150.000, conexo sin margen
             "2|600000.00|0.00|600000.00|0.1500|705882.00|autocosteo");
 
         // 3. Conexo diferido: viaja a la línea de Nexo del PRIMER camión de la ruta 1.
@@ -158,7 +158,7 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
         precio.Should().Be(2_620_588m + 857_143m);
 
         // 5. PDF y correo.
-        await api.FinalizarSiCorrespondeAsync(ana.Access, folio); // HU-036.3: como el frontend
+        await api.FinalizarSiCorrespondeAsync(ana.Access, folio); // Como el frontend
         using (var pdf = await api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", ana.Access))
         {
             await VerificarContratoAsync(pdf, "/web/cotizaciones/{folio}/costeo/pdf", _post, HttpStatusCode.Created);
@@ -171,7 +171,7 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
 
         (await Fila($"SELECT CONCAT(estadoEnvio, '|', IIF(pdfPath IS NULL, '-', 'P'), '|', pdfDesactualizado) FROM dbo_cotifly.CotizacionesSolicitud WHERE id = '{id}'"))
             .Should().Be("enviada|P|0");
-        // HU-033 (#199): MailSender lo encola (202) y el worker de correos confirma la entrega.
+        // MailSender lo encola (202) y el worker de correos confirma la entrega.
         (await Escalar<int>($"SELECT COUNT(*) FROM dbo_cotifly.Correos WHERE cotizacionId = '{id}' AND estado = 'encolado' AND idMailSender IS NOT NULL")).Should().Be(1);
         api.MailSender.Entregar(api.MailSender.Recibidos[^1].Id);
         (await api.ProcesarCorreosAsync(folio)).Should().Be(1);
@@ -216,7 +216,7 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
         await api.ProcesarPollingAsync(folioV2);
         var precioV2 = await Escalar<decimal>($"SELECT precioFinal FROM dbo_cotifly.CotizacionesSolicitud WHERE id = '{idV2}'");
         precioV2.Should().BePositive();
-        await api.FinalizarSiCorrespondeAsync(ana.Access, folioV2); // HU-036.3: como el frontend
+        await api.FinalizarSiCorrespondeAsync(ana.Access, folioV2); // Como el frontend
         using (var ganada = await api.EnviarAsync(_post, $"/web/cotizaciones/{folioV2}/resultado", ana.Access, """{"resultado":"ganada"}""",
             await EtagAsync(api, ana, folioV2)))
         {
@@ -247,7 +247,7 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
     {
         _cubicador.Recomendar = p => clsCubicadorFalso.Asignado(clsCubicadorFalso.Vehiculo("3S3", "FURGON", clsCubicadorFalso.PesoTotal(p)));
 
-        // Cuatro llamadas en paralelo y el cubicador sin demora: las dos últimas rutas pueden terminar juntas (B2, #174). La que no obtiene
+        // Cuatro llamadas en paralelo y el cubicador sin demora: las dos últimas rutas pueden terminar juntas. La que no obtiene
         // el candado del envío espera y vuelve a revisar, así que la licitación sale de una vez y una sola vez.
         var api = Api(conCubicador: true, datosCubicador: true, mas: new Dictionary<string, string?> { ["Cubicador:MaximoParalelo"] = "4", ["Cubicador:MaximoConcurrente"] = "4" });
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
@@ -281,7 +281,7 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
         var solicitud = _nexo.SolicitudesCreadas[^1];
         var lineas = _nexo.UltimaAlta!["lineas"]!.AsArray();
         lineas.Should().HaveCount(10);
-        // HU-023 (#176): cada ruta tiene un solo camión, así que todas son líneas sueltas (grupoRutaId = null).
+        // Cada ruta tiene un solo camión, así que todas son líneas sueltas (grupoRutaId = null).
         lineas.Should().OnlyContain(l => l!["idRecomendacionVehiculo"] != null && l["grupoRutaId"] == null && l["tipoVehiculo"]!.GetValue<string>() == "3S3");
         (await Fila($"SELECT estadoCosteo FROM dbo_cotifly.CotizacionesSolicitud WHERE id = '{id}'")).Should().Be("pendiente_costeo");
 
@@ -293,7 +293,7 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
             WHERE c.id = '{id}' GROUP BY c.estadoCosteo, c.precioFinal
             """)).Should().Be("autocosteo|20000000.00|10", "10 rutas de 1.700.000 con el 15 % de Nacional");
 
-        await api.FinalizarSiCorrespondeAsync(ana.Access, folio); // HU-036.3: como el frontend
+        await api.FinalizarSiCorrespondeAsync(ana.Access, folio); // Como el frontend
         using (var pdf = await api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", ana.Access))
         {
             await VerificarContratoAsync(pdf, "/web/cotizaciones/{folio}/costeo/pdf", _post, HttpStatusCode.Created);
@@ -308,9 +308,8 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
     }
 
     /// <summary>
-    /// Regresión de B2 (#174): 20 licitaciones de 10 rutas seguidas, con <c>Cubicador:MaximoParalelo = 4</c> y el cubicador sin demora. Antes
-    /// del arreglo, cuando las dos últimas rutas terminaban juntas, ninguna enviaba (3 de 5 corridas). Cada licitación debe salir a Nexo al
-    /// terminar su última ruta, sin esperar a la recuperación, y una sola vez.
+    /// 20 licitaciones de 10 rutas seguidas, con <c>Cubicador:MaximoParalelo = 4</c> y el cubicador sin demora: aunque las dos últimas
+    /// rutas terminen juntas, cada licitación sale a Nexo al terminar su última ruta, sin esperar a la recuperación, y una sola vez.
     /// </summary>
     [Fact]
     public async Task F2_LasDosUltimasRutasQueTerminanJuntasEnvianLaLicitacionUnaSolaVezEnVeinteRepeticiones()
@@ -318,7 +317,7 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
         var api = Api(conCubicador: true, datosCubicador: true, mas: new Dictionary<string, string?> { ["Cubicador:MaximoParalelo"] = "4", ["Cubicador:MaximoConcurrente"] = "4" });
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
 
-        // COTIFLY_REPETICIONES_B2 sube las repeticiones para las corridas de carga (50 en la revisión de #174).
+        // COTIFLY_REPETICIONES_B2 sube las repeticiones para las corridas de carga.
         var repeticiones = int.TryParse(Environment.GetEnvironmentVariable("COTIFLY_REPETICIONES_B2"), out var pedidas) && pedidas > 0 ? pedidas : 20;
         for (var repeticion = 1; repeticion <= repeticiones; repeticion++)
         {
@@ -564,7 +563,7 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
             await VerificarErrorNegocioAsync(seguimiento, "USAR_RESULTADO_NEXO");
         }
 
-        await api.FinalizarSiCorrespondeAsync(ana.Access, folio); // HU-036.3: como el frontend
+        await api.FinalizarSiCorrespondeAsync(ana.Access, folio); // Como el frontend
         using (var perdida = await api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", ana.Access,
             """{"resultado":"perdida","motivo":"Valor muy alto","comentario":"Pidió 5 % menos"}""", await EtagAsync(api, ana, folio)))
         {
@@ -611,7 +610,7 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
             extra["Nexo:EnviarGrupoRutaId"] = "true";
             extra["Nexo:EnviarDatosCubicador"] = "true";
 
-            // Integración final HU-023: con #159 los códigos de vehículo y carrocería del cubicador viajan solo con esta bandera (Nexo #297).
+            // Los códigos de vehículo y carrocería del cubicador viajan solo con esta bandera.
             // El E2E simula Nexo con el contrato completo; la bandera apagada la cubren clsCosteoNexoTests y el fuzz del emparejador.
             extra["Nexo:EnviarCodigosCubicador"] = "true";
         }

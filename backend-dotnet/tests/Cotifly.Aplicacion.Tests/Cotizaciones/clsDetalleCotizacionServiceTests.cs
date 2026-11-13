@@ -21,7 +21,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Cotizaciones;
 
 /// <summary>
-/// HU-027.1 (#179): detalle por folio. Composición de las proyecciones existentes (resumen, costeo y captura) sin reglas nuevas, acceso
+/// Detalle por folio. Composición de las proyecciones existentes (resumen, costeo y captura) sin reglas nuevas, acceso
 /// del dueño y del gerente de su regional (solo consulta, auditado, fail-closed) y 404 para cualquier otro; nunca consulta Nexo.
 /// </summary>
 public sealed class clsDetalleCotizacionServiceTests
@@ -78,7 +78,7 @@ public sealed class clsDetalleCotizacionServiceTests
     }
 
     /// <summary>
-    /// Validación #179: en USD (TRM con decimales) y con varias rutas con conexos, cada precio se redondea por separado y aun así
+    /// En USD (TRM con decimales) y con varias rutas con conexos, cada precio se redondea por separado y aun así
     /// <c>precio_transporte + precio_conexos = precio_final</c> (la tarifa absorbe el redondeo), igual a la suma de las rutas del costeo; y
     /// <c>captura</c> se cruza 1 a 1 con <c>costeo.rutas[]</c> por <c>linea_solicitud_id</c>.
     /// </summary>
@@ -106,11 +106,11 @@ public sealed class clsDetalleCotizacionServiceTests
     }
 
     /// <summary>
-    /// HU-043.2 (#251): <c>precio_transporte</c> es (flete + retorno + levante) con el margen y <c>precio_conexos</c> la suma de las VENTAS
+    /// <c>precio_transporte</c> es (flete + retorno + levante) con el margen y <c>precio_conexos</c> la suma de las VENTAS
     /// de los conexos, sin margen; suman el precio final. El costo de los conexos no sale en ninguna parte del detalle para el comercial.
     /// </summary>
     [Fact]
-    public async Task Hu0432_LosTotalesSeparanElTransporteConMargenYLaVentaDeLosConexosSinMargen()
+    public async Task LosTotalesSeparanElTransporteConMargenYLaVentaDeLosConexosSinMargen()
     {
         var cotizacion = clsCotizacionMuestra.Costeada(flete: 2_550_000m, margen: 0.15m, folio: "PCN-AP-01102026-007", usuarioId: _ana.Id);
         clsCotizacionMuestra.ConConexo(cotizacion, "CX-1", "Cargue", 85_000m, 2m, ventaUnitaria: 100_000m);
@@ -126,11 +126,11 @@ public sealed class clsDetalleCotizacionServiceTests
     }
 
     /// <summary>
-    /// HU-043.2 (#251): una cotización FINALIZADA antes del cambio conserva sus valores: el precio congelado (con el margen sobre los
-    /// conexos) no se recalcula y el desglose se sigue mostrando como entonces, así que transporte + conexos sigue dando su precio.
+    /// Una cotización FINALIZADA con la fórmula anterior conserva sus valores: el precio congelado (con el margen sobre los
+    /// conexos) no se recalcula y el desglose se muestra como se congeló, así que transporte + conexos sigue dando su precio.
     /// </summary>
     [Fact]
-    public async Task Hu0432_UnaCotizacionFinalizadaAntesDelCambioConservaSuPrecioYSuDesglose()
+    public async Task UnaCotizacionFinalizadaConLaFormulaAnteriorConservaSuPrecioYSuDesglose()
     {
         var cotizacion = clsCotizacionMuestra.Costeada(flete: 2_550_000m, margen: 0.15m, folio: "PCN-AP-01102026-008", usuarioId: _ana.Id);
         clsCotizacionMuestra.ConConexo(cotizacion, "CX-1", "Cargue", 85_000m);
@@ -148,7 +148,7 @@ public sealed class clsDetalleCotizacionServiceTests
         (detalle.Totales.PrecioTransporte + detalle.Totales.PrecioConexos).Should().Be(detalle.Totales.PrecioFinal);
     }
 
-    /// <summary>Fusión #181: el detalle trae por camión el estado y el motivo pendiente de la línea de Nexo, igual que <c>GET .../costeo</c>.</summary>
+    /// <summary>El detalle trae por camión el estado y el motivo pendiente de la línea de Nexo, igual que <c>GET .../costeo</c>.</summary>
     [Fact]
     public async Task ElDetalleTraeElEstadoYElMotivoPendienteDeLaLineaDeNexoComoElCosteo()
     {
@@ -216,9 +216,9 @@ public sealed class clsDetalleCotizacionServiceTests
     }
 
     /// <summary>
-    /// HU-039.1 (#218): el costo bruto de la ruta (<c>costeo.rutas[].costo_final</c>) es solo del dueño. El gerente de su regional ve el
-    /// mismo detalle en solo consulta, pero con <c>costo_final</c> en <c>null</c> (decisión conservadora: hasta HU-039 el detalle nunca le
-    /// mostraba costos).
+    /// El costo bruto de la ruta (<c>costeo.rutas[].costo_final</c>) es solo del dueño. El gerente de su regional ve el
+    /// mismo detalle en solo consulta, pero con <c>costo_final</c> en <c>null</c>: el costo bruto no se le
+    /// muestra a quien solo consulta.
     /// </summary>
     [Fact]
     public async Task ElDuenoVeElCostoBrutoDeLaRutaYElGerenteEnSoloConsultaNo()
@@ -242,7 +242,7 @@ public sealed class clsDetalleCotizacionServiceTests
     [Fact]
     public async Task ElDirectorVeLaDeCualquierRegionalEnSoloConsultaYQuedaAuditadoConSuRol()
     {
-        // HU-037.3 (#211): sin consultar regionales (el director no tiene alcance regional).
+        // Sin consultar regionales (el director no tiene alcance regional).
         var dora = UsuarioWeb("dora", "Dora");
         _usuarios.ObtenerPorIdAsync(dora.Id, Arg.Any<CancellationToken>()).Returns(dora);
         var cotizacion = Cotizada("PCN-AP-01102026-001", _ana.Id);

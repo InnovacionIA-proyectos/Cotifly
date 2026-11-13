@@ -4,7 +4,7 @@ using Cotifly.Api.Sistema;
 namespace Cotifly.Api.Tests.Sistema;
 
 /// <summary>
-/// Sonda del HEALTHCHECK del Dockerfile (#27): <c>dotnet Cotifly.Api.dll --healthcheck</c>
+/// Sonda del HEALTHCHECK del Dockerfile: <c>dotnet Cotifly.Api.dll --healthcheck</c>
 /// hace GET a <c>/health</c> del propio contenedor y termina con 0 (sano) o 1 (no sano),
 /// sin levantar el host web.
 /// </summary>

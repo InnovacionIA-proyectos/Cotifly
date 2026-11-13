@@ -6,8 +6,8 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// HU-027.1 (#179): <c>GET /web/catalogos-flete</c> expone <c>clases_contenedor</c> con los valores de Nexo
-/// (<c>GET /api/catalogos/clases-contenedor</c>, cuya <c>descripcion</c> es el código), sin la lista provisional G15, y con la lista
+/// <c>GET /web/catalogos-flete</c> expone <c>clases_contenedor</c> con los valores de Nexo
+/// (<c>GET /api/catalogos/clases-contenedor</c>, cuya <c>descripcion</c> es el código), sin una lista fija propia, y con la lista
 /// vacía cuando Nexo responde <c>[]</c> o ese catálogo falla (200, nunca 503). Por HTTP contra SQL Server real y el Nexo falso, con el
 /// cuerpo validado contra <c>specs/openapi.yaml</c>. Sin caché de catálogos, para que cada petición vaya a Nexo.
 /// </summary>
@@ -42,9 +42,9 @@ public sealed class clsCatalogosFleteEndpointsTests : IDisposable
     }
 
     [Fact]
-    public async Task HU0448_LosTiposDeVehiculoSalenConElCodigoNexoC2EnVezDelCodigoSap()
+    public async Task LosTiposDeVehiculoSalenConElCodigoNexoC2EnVezDelCodigoSap()
     {
-        // HU-044.8 (#291): el catálogo de SAP trae «2»; GET /web/catalogos-flete lo expone como C2 (el código NEXO de SICE-TAC).
+        // El catálogo de SAP trae «2»; GET /web/catalogos-flete lo expone como C2 (el código NEXO de SICE-TAC).
         var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         _nexo.TiposVehiculo.Clear();
         _nexo.TiposVehiculo.AddRange([("2", "Camión 2 ejes", true), ("3", "Doble troque", true), ("2S3", "Tractocamión 2S3", true)]);

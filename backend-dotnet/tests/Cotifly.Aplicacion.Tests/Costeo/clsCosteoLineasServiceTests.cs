@@ -19,7 +19,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// HU-041.1 (#231, ADR-026): margen y servicios conexos para varias rutas en una operación. Licitación de 5 rutas al 15 % (flete 850.000
+/// Margen y servicios conexos para varias rutas en una operación. Licitación de 5 rutas al 15 % (flete 850.000
 /// cada una: precio 1.000.000) para el margen y un formulario de 3 rutas para los conexos (las licitaciones no los admiten). Todo o nada:
 /// una ruta que no admite el cambio deja todas como estaban y el error dice cuál; una invalidación del PDF y una auditoría por operación.
 /// </summary>
@@ -54,7 +54,7 @@ public sealed class clsCosteoLineasServiceTests
         _reloj.AhoraUtc.Returns(clsCotizacionMuestra.Ahora);
         _costos.CostosAsync(_ana, Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
             .Returns(clsResultado<IReadOnlyDictionary<string, clsCostoConexoNexo>>.Exito(
-                // HU-043.2 (#251): costo 85.000 y precio de venta 100.000 en el catálogo de Nexo.
+                // Costo 85.000 y precio de venta 100.000 en el catálogo de Nexo.
                 new Dictionary<string, clsCostoConexoNexo> { [Cargue] = new(Cargue, "Cargue en puerto", 85_000m, "logistico", 100_000m) }));
         _auditoria.RegistrarAsync(Arg.Do<string>(h => _herramientaAuditada = h), Arg.Any<object?>(), Arg.Do<object?>(s => _salidaAuditada = s),
             Arg.Any<bool>(), Arg.Any<int>(), Arg.Any<string?>()).Returns(Task.CompletedTask);

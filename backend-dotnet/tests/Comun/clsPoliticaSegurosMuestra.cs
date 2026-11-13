@@ -3,7 +3,7 @@ using Cotifly.Dominio.Seguros;
 namespace Cotifly.Pruebas.Comun;
 
 /// <summary>
-/// HU-046.3 (#269): la carga inicial aprobada de la política de seguros (HU-046.1 #267, la que siembra <c>db/scripts/21_politica_seguros.sql</c>)
+/// La carga inicial aprobada de la política de seguros (la que siembra <c>db/scripts/21_politica_seguros.sql</c>)
 /// como objeto del dominio, para las pruebas sin base de datos. Las de integración leen la de verdad del script 21.
 /// </summary>
 public static class clsPoliticaSegurosMuestra

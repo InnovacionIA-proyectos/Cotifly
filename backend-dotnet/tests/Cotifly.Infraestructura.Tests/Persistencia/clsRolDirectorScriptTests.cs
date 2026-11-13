@@ -9,7 +9,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
-/// HU-037.1 (#209) y HU-037.2 (#210): <c>db/scripts/15_rol_director.sql</c> (CHECK de <c>Roles</c> con <c>director</c> y la fila sin rol
+/// <c>db/scripts/15_rol_director.sql</c> (CHECK de <c>Roles</c> con <c>director</c> y la fila sin rol
 /// externo), el script de operación de prueba <c>db/scripts/operacion/mapeo_prueba_rol_director_209.sql</c> (gerente 31 → 25 y luego director
 /// → 31, por el índice único de <c>idRolExterno</c>) y el repositorio de roles, que ignora los códigos que este backend no conoce.
 /// </summary>
@@ -93,7 +93,7 @@ public sealed class clsRolDirectorScriptTests(clsBaseDatosPruebas baseDatos) : c
     [Fact]
     public async Task ElRepositorioIgnoraUnRolDelCatalogoQueEsteBackendNoConoce()
     {
-        // Un rol futuro en Roles (como `director` para un backend anterior a HU-037) no tumba el login de todos: se ignora.
+        // Un rol futuro en Roles (como `director` para un backend que no lo conoce) no tumba el login de todos: se ignora.
         await using var aislada = await BaseDatos.CrearBaseInstaladaAsync("dbDirectorDesc");
         await RolesAsync(aislada.Cadena, comercial: 32, gerente: 31);
         await clsBaseDatosPruebas.EjecutarAsync(aislada.Cadena, """
@@ -117,7 +117,7 @@ public sealed class clsRolDirectorScriptTests(clsBaseDatosPruebas baseDatos) : c
         activos.Select(r => r.Codigo).Should().BeEquivalentTo([RolInterno.Comercial, RolInterno.GerenteComercial, RolInterno.Director]);
         asignados.Should().BeEmpty();
         porUsuario.Should().BeEmpty();
-        // No pasa en silencio: el catálogo avisa el id del rol ignorado (validación HU-037).
+        // No pasa en silencio: el catálogo avisa el id del rol ignorado.
         logger.Registros.Should().ContainSingle(r => r.Nivel == Microsoft.Extensions.Logging.LogLevel.Warning)
             .Which.Mensaje.Should().Contain($"(id {idAuditor})").And.Contain("no conoce");
     }

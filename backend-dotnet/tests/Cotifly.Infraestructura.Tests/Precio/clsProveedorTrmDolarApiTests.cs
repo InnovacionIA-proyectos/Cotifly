@@ -11,7 +11,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Tests.Precio;
 
 /// <summary>
-/// <see cref="clsProveedorTrmDolarApi"/> (HU-012.1, ADR-014) contra el DolarApi falso (<see cref="clsDolarApiFalso"/>): nunca sale a la red.
+/// <see cref="clsProveedorTrmDolarApi"/> (ADR-014) contra el DolarApi falso (<see cref="clsDolarApiFalso"/>): nunca sale a la red.
 /// Aquí el cliente no lleva la tubería de resiliencia (se prueba en <c>clsRegistroTrmTests</c>). Fechas de negocio en America/Bogota.
 /// </summary>
 public sealed class clsProveedorTrmDolarApiTests : IDisposable
@@ -84,13 +84,13 @@ public sealed class clsProveedorTrmDolarApiTests : IDisposable
         }
     }
 
-    // ADR-014 §1 (verificado el 2026-10-05): fechaActualizacion es la hora del refresco de DolarApi, no la vigencia. Solo vale para la
+    // ADR-014 §1: fechaActualizacion es la hora del refresco de DolarApi, no la vigencia. Solo vale para la
     // fecha pedida si DolarApi refrescó ese día en Bogotá antes de las 12:00; pasado el corte puede traer ya la TRM de mañana.
     [Theory]
     [InlineData("2026-10-05T05:00:00Z", true)]    // 00:00 del lunes en Bogotá
     [InlineData("2026-10-05T16:59:59Z", true)]    // 11:59:59 en Bogotá
     [InlineData("2026-10-05T17:00:00Z", false)]   // 12:00 en Bogotá: corte
-    [InlineData("2026-10-05T20:02:00.074Z", false)] // 15:02 en Bogotá (la respuesta real del 2026-10-05): puede ser la de mañana
+    [InlineData("2026-10-05T20:02:00.074Z", false)] // 15:02 en Bogotá (como una respuesta real): puede ser la de mañana
     [InlineData("2026-10-05T04:59:59Z", false)]   // 23:59 del domingo en Bogotá: otro día
     [InlineData("2026-10-02T15:00:00Z", false)]   // viernes: puede ser otra vigencia
     [InlineData("2026-10-06T13:00:00Z", false)]   // martes: futura

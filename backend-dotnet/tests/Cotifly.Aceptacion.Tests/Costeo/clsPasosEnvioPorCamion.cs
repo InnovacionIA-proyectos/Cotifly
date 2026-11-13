@@ -7,10 +7,10 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Costeo;
 
 /// <summary>
-/// Pasos de <c>specs/features/envio_nexo_por_camion.feature</c> (HU-021.7, #134, ADR-019): una línea por camión hacia Nexo, el
+/// Pasos de <c>specs/features/envio_nexo_por_camion.feature</c> (ADR-019): una línea por camión hacia Nexo, el
 /// emparejamiento de las líneas que devuelve Nexo con los camiones, la Mesa que pone vehículo, el camión descartado y los conexos en el
-/// primer camión. Usa la API, la base y el Nexo falso de <see cref="clsPasosCosteo"/>. Mientras el cubicador (#133) no crea camiones, los
-/// camiones extra de una ruta se agregan en la base.
+/// primer camión. Usa la API, la base y el Nexo falso de <see cref="clsPasosCosteo"/>. Los camiones extra
+/// de una ruta se agregan en la base.
 /// </summary>
 [Binding]
 public sealed class clsPasosEnvioPorCamion(clsPasosCosteo costeo)

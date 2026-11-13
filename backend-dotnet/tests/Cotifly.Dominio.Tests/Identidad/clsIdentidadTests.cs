@@ -131,14 +131,14 @@ public sealed class clsIdentidadTests
     }
 
     [Fact]
-    public void HU0403_UnRolNaceSinAltaManualYSePuedeMarcarComoSensible()
+    public void UnRolNaceSinAltaManualYSePuedeMarcarComoSensible()
     {
         clsRol.Crear(RolInterno.Comercial, "Comercial").Valor.RequiereAltaManual.Should().BeFalse();
         clsRol.Crear(RolInterno.Director, "Director comercial", requiereAltaManual: true).Valor.RequiereAltaManual.Should().BeTrue();
     }
 
     [Fact]
-    public void HU0403_DesactivarYReactivarNoLlevanRevisorYSonIdempotentes()
+    public void DesactivarYReactivarNoLlevanRevisorYSonIdempotentes()
     {
         var usuario = Guid.NewGuid();
         var asignacion = clsUsuarioRol.Asignar(usuario, 2, _ahora).Valor;

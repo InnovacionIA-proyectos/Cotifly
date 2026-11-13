@@ -13,7 +13,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Cotifly.Infraestructura.Tests.IA;
 
 /// <summary>
-/// Endurecimiento de la integración con OmniRoute (HU-003.6, issue #84; hallazgos del validador): respaldo solo ante el 400 cuyo
+/// Endurecimiento de la integración con OmniRoute: respaldo solo ante el 400 cuyo
 /// <c>error.message</c> empieza con "No credentials for provider:", 429 de enfriamiento sin reintentos del SDK, casos límite de
 /// <see cref="clsPoliticaSinStreaming"/> y respaldos vacíos en la configuración. Con el SDK real de OpenAI y un manejador falso.
 /// </summary>

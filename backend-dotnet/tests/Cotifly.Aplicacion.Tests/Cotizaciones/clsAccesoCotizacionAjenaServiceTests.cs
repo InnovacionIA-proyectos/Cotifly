@@ -16,7 +16,7 @@ using NSubstitute.ExceptionExtensions;
 namespace Cotifly.Aplicacion.Tests.Cotizaciones;
 
 /// <summary>
-/// HU-034.1 (#201, parte A): <see cref="clsAccesoCotizacionAjenaService"/>, la cotización ajena que puede consultar en solo lectura el
+/// <see cref="clsAccesoCotizacionAjenaService"/>, la cotización ajena que puede consultar en solo lectura el
 /// gerente de la regional del dueño o el director, con la regla real de <see cref="clsRegionalUsuarioService"/> (fail-closed) y auditada.
 /// </summary>
 public sealed class clsAccesoCotizacionAjenaServiceTests
@@ -144,7 +144,7 @@ public sealed class clsAccesoCotizacionAjenaServiceTests
     [InlineData(RolInterno.Director)]
     public async Task UnFolioDeOtroTipoNoSeAuditaComoPermitidoNiSeDevuelve(RolInterno rol)
     {
-        // #201 (validación): el folio spot de su regional pedido como licitación respondía 404 pero quedaba auditado como "permitido".
+        // El folio spot de su regional pedido como licitación es 404 y no queda auditado como "permitido".
         var (gerencial, _) = Registrar("gerencial", "Occidente", rol);
         var (_, dueno) = Registrar("dueno", "Occidente", RolInterno.Comercial);
         var spot = Cotizacion("SPOT-1", dueno.Id, TipoSolicitud.Spot);

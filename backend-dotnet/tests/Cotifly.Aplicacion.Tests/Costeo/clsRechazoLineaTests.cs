@@ -7,7 +7,7 @@ using Cotifly.Dominio.Margen;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// HU-028.1 (#183, Nexo #320): la Mesa de Costeo rechaza una línea (un camión de Cotifly) con un motivo. El polling lo lee del detalle de la
+/// La Mesa de Costeo rechaza una línea (un camión de Cotifly) con un motivo. El polling lo lee del detalle de la
 /// foto (<c>estadoLinea = "rechazada"</c> y <c>motivoRechazo</c>), lo guarda en el camión y la regla se refleja en la ruta, la cabecera, el
 /// precio, el PDF, el Excel, la licitación, el margen, los conexos, la re-solicitud y la <c>-vN</c>.
 /// </summary>
@@ -40,7 +40,7 @@ public sealed class clsRechazoLineaTests
     }
 
     /// <summary>
-    /// HU-039.1 (#218, validador): con un camión rechazado y otro vigente, el costo bruto de la ruta es solo el del vigente (el mismo con
+    /// Con un camión rechazado y otro vigente, el costo bruto de la ruta es solo el del vigente (el mismo con
     /// el que se calcula su precio), y la otra ruta trae el suyo.
     /// </summary>
     [Fact]
@@ -174,7 +174,7 @@ public sealed class clsRechazoLineaTests
     [Fact]
     public void SiLaMesaDeshaceCosteaYEntregaEntreDosConsultasElCamionTomaSuFleteYLaRutaVuelveAlTotal()
     {
-        // Validación #183: el polling puede tardar hasta 15 min entre consultas. Si en ese tiempo la Mesa deshace el rechazo, costea la
+        // El polling puede tardar hasta 15 min entre consultas. Si en ese tiempo la Mesa deshace el rechazo, costea la
         // línea y entrega, la foto trae "entregada" CON el detalle de la línea (no rechazada): manda el detalle, no se conserva el rechazo.
         var cotizacion = DosRutas();
         Aplicar(cotizacion, Foto("EnCosteo", [Linea("N-1", "A"), Linea("N-2", "C", rechazo: "Revisar"), Linea("N-3", "C", rechazo: "Revisar")],
@@ -196,7 +196,7 @@ public sealed class clsRechazoLineaTests
     [Fact]
     public void UnaFotoSinElEstadoDeLaLineaNoDeshaceElRechazoNiLoHaceOscilar()
     {
-        // Validación #183: una lectura en costeo sin el detalle de la línea (Nexo no devolvió lineas[], o la línea no vino) no es la
+        // Una lectura en costeo sin el detalle de la línea (Nexo no devolvió lineas[], o la línea no vino) no es la
         // confirmación de que la Mesa deshizo el rechazo: se conserva, con su fecha, y la siguiente lectura completa no lo "re-crea".
         var cotizacion = DosRutas();
         var rechazo = Foto("EnCosteo", [Linea("N-1", "A"), Linea("N-2", "C", rechazo: "Sin tarifa"), Linea("N-3", "C")], [("N-1", 1_000_000m), ("N-3", 500_000m)]);
@@ -218,8 +218,8 @@ public sealed class clsRechazoLineaTests
     [Fact]
     public void UnRechazoDespuesDelPdfConservaElPrecioDeLaVersionYLoAdvierte()
     {
-        // Validación #183: con PDF el precio de la versión se conserva (ADR-015 §5), pero si la Mesa rechaza una línea que el PDF cotizó el
-        // comercial debe saberlo (antes no había aviso: la línea rechazada no trae flete en Nexo y no "difería").
+        // Con PDF el precio de la versión se conserva (ADR-015 §5), pero si la Mesa rechaza una línea que el PDF cotizó el comercial debe
+        // saberlo: la línea rechazada no trae flete en Nexo, así que no hay diferencia de precio que lo avise.
         var cotizacion = DosRutas();
         var completa = Foto("EnCosteo", [Linea("N-1", "A"), Linea("N-2", "C"), Linea("N-3", "C")], [("N-1", 1_000_000m), ("N-2", 300_000m), ("N-3", 200_000m)]);
         Aplicar(cotizacion, completa);
@@ -267,7 +267,7 @@ public sealed class clsRechazoLineaTests
     public void ConUnNexoSinElEstadoDeLaLineaNoHayRechazo()
     {
         var cotizacion = DosRutas();
-        // Nexo anterior a #309/#320: sin estadoLinea ni motivoRechazo.
+        // Un Nexo que no manda estadoLinea ni motivoRechazo.
         Aplicar(cotizacion, Foto("EnCosteo", [Linea("N-1", "A") with { EstadoLinea = null }, Linea("N-2", "C") with { EstadoLinea = null },
             Linea("N-3", "C") with { EstadoLinea = null }], [("N-1", 1_000_000m)]));
 
@@ -281,7 +281,7 @@ public sealed class clsRechazoLineaTests
     [Fact]
     public void LaReSolicitudNoReenviaElCamionRechazadoLoConservaRechazadoYElPollingDeLaSolicitudNuevaNoLoEmpareja()
     {
-        // Decisión del 2026-10-20 ("no reenviar los camiones rechazados por defecto"): la ruta 2 tiene un camión rechazado y otro vigente.
+        // Los camiones rechazados no se reenvían por defecto: la ruta 2 tiene un camión rechazado y otro vigente.
         var cotizacion = DosRutas();
         Aplicar(cotizacion, Foto("EnCosteo", [Linea("N-1", "A"), Linea("N-2", "C", rechazo: "Sin tarifa"), Linea("N-3", "C")],
             [("N-1", 1_000_000m), ("N-3", 500_000m)]));

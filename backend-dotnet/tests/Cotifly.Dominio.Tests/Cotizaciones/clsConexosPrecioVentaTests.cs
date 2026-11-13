@@ -5,7 +5,7 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
 /// <summary>
-/// HU-043.2 (#251): los servicios conexos se cotizan a su precio de VENTA (<c>precioVenta</c>, script 19), sin margen. El precio de la
+/// Los servicios conexos se cotizan a su precio de VENTA (<c>precioVenta</c>, script 19), sin margen. El precio de la
 /// ruta es (fletes + retorno + levante) con el margen de la ruta + la venta de sus conexos; el costo (<c>CostoFinal</c>,
 /// <c>CostoServiciosConexos</c>) sigue siendo el costo real de Nexo.
 /// </summary>
@@ -121,8 +121,8 @@ public sealed class clsConexosPrecioVentaTests
     [Fact]
     public void UnPrecioGuardadoConLaFormulaAnteriorSeReconoceParaNoDescuadrarElDesglose()
     {
-        // Una ruta finalizada (o con PDF) antes de HU-043.2 guardó (transporte + conexos) con margen y ya no se recalcula: su desglose se
-        // sigue mostrando como entonces (conexos con el margen de la ruta) para que transporte + conexos dé su precio.
+        // Una ruta finalizada (o con PDF) con la fórmula anterior guardó (transporte + conexos) con margen y no se recalcula: su desglose se
+        // muestra como se guardó (conexos con el margen de la ruta) para que transporte + conexos dé su precio.
         var (cotizacion, ruta) = RutaConConexo(ventaUnitaria: null);
         ruta.PrecioConFormulaAnterior(cotizacion.Moneda, cotizacion.TrmAplicada).Should().BeFalse("el precio es el de la fórmula nueva");
 

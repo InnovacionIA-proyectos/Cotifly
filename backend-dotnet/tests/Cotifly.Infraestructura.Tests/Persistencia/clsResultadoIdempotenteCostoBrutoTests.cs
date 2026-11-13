@@ -6,7 +6,7 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
-/// HU-039.1 (#218): la repetición con la misma <c>Idempotency-Key</c> de <c>POST .../costeo/servicios-conexos</c> devuelve el
+/// La repetición con la misma <c>Idempotency-Key</c> de <c>POST .../costeo/servicios-conexos</c> devuelve el
 /// <c>CosteoCotizacion</c> guardado en <c>dbo_cotifly.CapturasIdempotentes</c> (<see cref="clsResultadoIdempotenteJson"/>). El costo bruto
 /// de cada ruta (<see cref="clsRutaCosteo.CostoFinal"/>, propiedad <c>init</c>) vuelve igual, también en <c>null</c>: la repetición del dueño
 /// no lo pierde ni lo inventa. El ámbito de la clave es <c>"conexos:{usuarioId}"</c>, así que nunca se reenvía a otro usuario.

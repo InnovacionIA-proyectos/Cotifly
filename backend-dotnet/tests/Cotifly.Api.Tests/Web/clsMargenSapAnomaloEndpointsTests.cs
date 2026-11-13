@@ -10,7 +10,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// HU-009 (#139, B1): SAP TM propone un margen de 75 % (fuera de [0, 60 %], "anómalo"). Ese margen no se aplica a ciegas: la ruta usa el
+/// SAP TM propone un margen de 75 % (fuera de [0, 60 %], "anómalo"). Ese margen no se aplica a ciegas: la ruta usa el
 /// de la política de su línea, el de SAP queda guardado como marca (<c>margenSAPSugerido</c>) y <c>GET .../costeo</c> lo avisa. Vale en la
 /// captura, en la versión nueva (<c>-vN</c>, re-solicitud) y en la licitación, que comparten la resolución del margen al enviar a Nexo.
 /// </summary>
@@ -101,7 +101,7 @@ public sealed class clsMargenSapAnomaloEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// Bordes que redondea la columna <c>decimal(9,4)</c> (#139): el margen de SAP se redondea a 4 decimales ANTES de evaluar la anomalía,
+    /// Bordes que redondea la columna <c>decimal(9,4)</c>: el margen de SAP se redondea a 4 decimales ANTES de evaluar la anomalía,
     /// así lo evaluado y lo guardado coinciden: 60,004 % → 0,6000 (60 %, válido) y -0,004 % → 0 (válido), los dos aplicados como SAP TM.
     /// </summary>
     [Theory]
@@ -125,12 +125,12 @@ public sealed class clsMargenSapAnomaloEndpointsTests : IDisposable
     }
 
     /// <summary>
-    /// HU-042.2 (#243): lo mismo con la fuente real, la copia local <c>SapMargenCliente</c> que sincroniza Datos (sin reemplazo de la
+    /// Lo mismo con la fuente real, la copia local <c>SapMargenCliente</c> que sincroniza Datos (sin reemplazo de la
     /// fuente). El BP del cliente es único (y llega con ceros a la izquierda) para no tocar otras pruebas; la corrida <c>ok</c> sembrada
     /// solo cambia el motivo de las demás pruebas de "no configurado" a "sin registro" (ninguna lo verifica en esta colección).
     /// </summary>
     [Fact]
-    public async Task HU0422_ConLaCopiaLocalUnMargenSapAnomaloTambienUsaLaPoliticaYQuedaAvisado()
+    public async Task ConLaCopiaLocalUnMargenSapAnomaloTambienUsaLaPoliticaYQuedaAvisado()
     {
         var bp = $"77{Random.Shared.Next(100_000, 999_999)}";
         await clsBaseDatosPruebas.EjecutarAsync(_entorno.BaseDatos.CadenaCotifly, $"""
@@ -182,7 +182,7 @@ public sealed class clsMargenSapAnomaloEndpointsTests : IDisposable
         return costeo.Headers.ETag?.Tag;
     }
 
-    /// <summary>Copia local de SAP TM que responde siempre el mismo margen (porcentaje de SAP: 75 = 75 %; HU-042.2).</summary>
+    /// <summary>Copia local de SAP TM que responde siempre el mismo margen (porcentaje de SAP: 75 = 75 %).</summary>
     private sealed class clsFuenteMargenFija(decimal valor) : IClsFuenteMargen
     {
         public string Modo => "fija";

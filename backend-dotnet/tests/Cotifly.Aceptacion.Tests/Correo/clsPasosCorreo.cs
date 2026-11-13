@@ -14,7 +14,7 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Correo;
 
 /// <summary>
-/// Pasos de <c>specs/features/correo.feature</c> (y los de envío que reutiliza <c>auditoria.feature</c>). HU-033 (#199): el transporte es el
+/// Pasos de <c>specs/features/correo.feature</c> (y los de envío que reutiliza <c>auditoria.feature</c>). El transporte es el
 /// MailSender falso del escenario (<see cref="clsContextoEscenario.MailSender"/>); nunca sale un correo real.
 /// </summary>
 [Binding]
@@ -40,7 +40,7 @@ public sealed class clsPasosCorreo(clsContextoEscenario contexto)
     [Given("MailSender no responde a tiempo al encolar")]
     public void DadoMailSenderLento()
     {
-        // Auditoría #199: el POST se corta por tiempo (1 s) mientras MailSender tarda 3 s: pudo quedar encolado, el resultado es incierto.
+        // El POST se corta por tiempo (1 s) mientras MailSender tarda 3 s: pudo quedar encolado, el resultado es incierto.
         contexto.Reconfigurar(new Dictionary<string, string?> { ["Correo:MailSender:TimeoutSegundos"] = "1" });
         contexto.MailSender.Demora = TimeSpan.FromSeconds(3);
     }

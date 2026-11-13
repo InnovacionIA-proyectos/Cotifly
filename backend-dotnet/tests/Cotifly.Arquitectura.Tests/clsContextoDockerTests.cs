@@ -7,7 +7,7 @@ namespace Cotifly.Arquitectura.Tests;
 /// <summary>
 /// El contexto de <c>docker build</c> (<c>.dockerignore</c>, lista blanca) debe incluir todo lo que los <c>.csproj</c> de <c>src/</c>
 /// embeben o copian (<c>EmbeddedResource</c>, <c>None</c>/<c>Content</c> con archivo): si un recurso queda fuera, la imagen no compila
-/// (CS1566, visto en #12 con el prompt del agente en Markdown, excluido por <c>**/*.md</c>).
+/// (CS1566; por ejemplo, un prompt del agente en Markdown excluido por <c>**/*.md</c>).
 /// </summary>
 /// <remarks>
 /// Se eligió evaluar el <c>.dockerignore</c> real con las reglas de Docker (en vez de prohibir recursos <c>.md</c>) porque protege

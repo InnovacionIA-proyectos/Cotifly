@@ -5,9 +5,9 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
 /// <summary>
-/// HU-045.2 (#264, ADR-032): el seguro de la mercancía por ruta. <c>costoSeguro = round(valorMercancia × tasa, 0)</c> en pesos, sin margen,
-/// sumado al precio de la ruta después del margen y de la venta de los conexos (decisión 1); en USD, convertido con la TRM de la solicitud
-/// (decisión 2). La tasa se copia en la ruta al marcarlo y otra vez si cambia el valor de la mercancía (decisión 5).
+/// ADR-032: el seguro de la mercancía por ruta. <c>costoSeguro = valorMercancia × tasa</c> en pesos, sin redondear a pesos (se guarda
+/// con los 2 decimales de la columna) y sin margen, sumado al precio de la ruta después del margen y de la venta de los conexos; en USD,
+/// convertido con la TRM de la solicitud. La tasa se copia en la ruta al marcarlo y otra vez si cambia el valor de la mercancía.
 /// </summary>
 public sealed class clsSeguroMercanciaTests
 {
@@ -133,7 +133,7 @@ public sealed class clsSeguroMercanciaTests
     [Fact]
     public void ElSeguroNoSeRedondeaAPesos()
     {
-        // Decisión del usuario del 2026-11-09: sin redondeo por ahora; se guarda con la escala de la columna (DECIMAL(18,2)).
+        // Sin redondeo; se guarda con la escala de la columna (DECIMAL(18,2)).
         clsLineaSolicitud.CalcularSeguro(123_456_789m, Tasa).Should().Be(425_925.92205m, "123.456.789 × 0,345 %, exacto");
         clsLineaSolicitud.SeguroGuardado(123_456_789m, Tasa).Should().Be(425_925.92m, "en centavos, la escala de costoSeguro");
         clsLineaSolicitud.CalcularSeguro(300_000_000m, Tasa).Should().Be(1_035_000m, "escenario de la HU");
@@ -281,7 +281,7 @@ public sealed class clsSeguroMercanciaTests
         FluentActions.Invoking(() => ruta.IncluirSeguro(1m)).Should().Throw<ArgumentOutOfRangeException>();
     }
 
-    /// <summary>Edición en sitio de la ruta <paramref name="ruta"/> (HU-028) con otro valor de la mercancía y la tasa vigente leída.</summary>
+    /// <summary>Edición en sitio de la ruta <paramref name="ruta"/> con otro valor de la mercancía y la tasa vigente leída.</summary>
     private static clsEdicionSolicitud Edicion(clsLineaSolicitud ruta, decimal? valor, decimal? tasaVigente)
     {
         var linea = clsSolicitudCosteoMuestra.RutaCaptura() with { ValorMercancia = valor };

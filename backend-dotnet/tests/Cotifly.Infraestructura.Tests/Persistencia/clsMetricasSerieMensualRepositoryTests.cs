@@ -8,10 +8,10 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
-/// HU-034.1 (#201): ganancias y costeo por mes de la serie del tablero sobre SQL Server real. Las filas son las mismas del tablero
+/// Ganancias y costeo por mes de la serie del tablero sobre SQL Server real. Las filas son las mismas del tablero
 /// (<see cref="IClsMetricasRepository.ListarCotizacionesAsync"/>, una consulta para todo el periodo, sin consultas por mes) y la serie
 /// las agrupa por el mes de Bogotá de la primera creación de la cadena con la regla de los indicadores: COP o USD × TRM, sin las rutas
-/// rechazadas (#183), lo ganado de la versión ganada (B3, #173). La suma de los meses cuadra con los indicadores del periodo.
+/// rechazadas, lo ganado de la versión ganada. La suma de los meses cuadra con los indicadores del periodo.
 /// </summary>
 [Collection(clsColeccionSqlServer.Nombre)]
 [Trait("Categoria", "Integracion")]

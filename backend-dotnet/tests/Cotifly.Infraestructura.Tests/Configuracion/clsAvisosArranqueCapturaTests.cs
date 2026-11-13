@@ -10,7 +10,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Tests.Configuracion;
 
 /// <summary>
-/// HU-032 (#197, M1 de la auditoría): <see cref="clsAvisosArranqueCaptura"/> avisa al arrancar, sin impedirlo, cuando
+/// <see cref="clsAvisosArranqueCaptura"/> avisa al arrancar, sin impedirlo, cuando
 /// <c>Captura:ClasesSinVehiculoObligatorio</c> no incluye Contenedor (la lista configurada reemplaza a la de por defecto).
 /// </summary>
 public sealed class clsAvisosArranqueCapturaTests

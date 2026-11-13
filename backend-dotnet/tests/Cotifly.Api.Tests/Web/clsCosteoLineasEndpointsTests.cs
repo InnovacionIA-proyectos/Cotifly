@@ -8,7 +8,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// HU-041.1 (#231, ADR-026): margen y servicios conexos para varias rutas en una operación, por HTTP contra la API real en memoria, SQL
+/// Margen y servicios conexos (ADR-026) para varias rutas en una operación, por HTTP contra la API real en memoria, SQL
 /// Server en Testcontainers y el Nexo falso. Formulario de 5 rutas (un camión cada una). Cada respuesta se valida contra
 /// <c>specs/openapi.yaml</c>; la base confirma lo que quedó guardado: todo o nada, una invalidación del PDF y una auditoría por operación.
 /// </summary>
@@ -275,7 +275,7 @@ public sealed class clsCosteoLineasEndpointsTests : IDisposable
         return (sesion, folio);
     }
 
-    /// <summary>Un PDF generado antes de HU-036 (sin finalizar): el margen lo invalida.</summary>
+    /// <summary>Un PDF generado sin finalizar la cotización (anterior al script 14): el margen lo invalida.</summary>
     private Task PdfAnteriorAHu036Async(string folio) => clsBaseDatosPruebas.EjecutarAsync(_entorno.BaseDatos.CadenaCotifly,
         $"UPDATE dbo_cotifly.CotizacionesSolicitud SET pdfPath = '{folio}.pdf', pdfDesactualizado = 0 WHERE folio = '{folio}'");
 

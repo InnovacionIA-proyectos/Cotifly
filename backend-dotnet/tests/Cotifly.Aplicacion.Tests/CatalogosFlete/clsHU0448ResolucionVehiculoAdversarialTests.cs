@@ -4,7 +4,7 @@ using Cotifly.Aplicacion.CatalogosFlete.Services;
 namespace Cotifly.Aplicacion.Tests.CatalogosFlete;
 
 /// <summary>
-/// HU-044.8 (#291) — pruebas ADVERSARIALES del validador: el objetivo de negocio es que a NEXO NUNCA le llegue «2»/«3»
+/// Pruebas ADVERSARIALES de la resolución del vehículo: el objetivo de negocio es que a NEXO NUNCA le llegue «2»/«3»
 /// (una solicitud con «2»/«3» nace en cuarentena en NEXO y Plaza busca mal). Aquí se tensan los caminos por los que un
 /// «2»/«3» podría colarse pese a la equivalencia de <see cref="Cotifly.Dominio.Cotizaciones.clsEquivalenciaVehiculoNexo"/>.
 /// </summary>
@@ -46,7 +46,7 @@ public sealed class clsHU0448ResolucionVehiculoAdversarialTests
     [Fact]
     public void ElAliasQueApuntaAlPropioC2NoRevierteAlCodigoSap()
     {
-        // El alias C2 → «2» (el caso que menciona el issue): la equivalencia corre ANTES del alias, así que «C2» viaja como C2.
+        // El alias C2 → «2»: la equivalencia corre ANTES del alias, así que «C2» viaja como C2.
         var dic = new clsDiccionarioAliasNexo([new(TipoAliasNexo.Vehiculo, "C2", "C2", "2")]);
         clsResolucionCodigosNexo.Vehiculo(_catalogoSap, dic, "C2").Should()
             .Be(new clsCodigoResueltoNexo("C2", FuenteCodigoNexo.Catalogo), "el alias C2 → «2» queda sin efecto");

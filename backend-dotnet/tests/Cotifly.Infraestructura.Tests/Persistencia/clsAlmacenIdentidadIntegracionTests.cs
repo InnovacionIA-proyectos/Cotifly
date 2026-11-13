@@ -102,7 +102,7 @@ public sealed class clsAlmacenIdentidadIntegracionTests(clsBaseDatosPruebas base
     [Fact]
     public async Task LosRolesSeLeenSinLaColumnaIdDeTblSapUsuarioRoles()
     {
-        // #172: Nexo mapea tblSAPUsuarioRoles de dbSolucionesTI_Prueba solo con IDUSUARIO e IDROLES (INT). La tabla falsa no tiene ID
+        // Nexo mapea tblSAPUsuarioRoles de dbSolucionesTI_Prueba solo con IDUSUARIO e IDROLES (INT). La tabla falsa no tiene ID
         // y Cotifly no debe pedirla: la consulta de roles solo nombra esas dos columnas.
         var sql = await ConsultarAsync(s =>
         {
@@ -116,7 +116,7 @@ public sealed class clsAlmacenIdentidadIntegracionTests(clsBaseDatosPruebas base
     [Fact]
     public async Task UnIdNumericDelPortalSeConvierteAlMismoNumeroEnLosRoles()
     {
-        // #172: el ID numeric(18,0) del portal (p. ej. 10123) es el idUsuarioExterno y el IDUSUARIO (INT) de sus roles.
+        // El ID numeric(18,0) del portal (p. ej. 10123) es el idUsuarioExterno y el IDUSUARIO (INT) de sus roles.
         var nombre = $"p{Guid.NewGuid():N}"[..20];
         var id = await BaseDatos.CrearPersonaExternaAsync(nombre, null, null, clsBaseDatosPruebas.RolExternoComercial);
 

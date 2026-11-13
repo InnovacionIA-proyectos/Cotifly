@@ -6,7 +6,7 @@ namespace Cotifly.Pruebas.Comun;
 /// <summary>
 /// Lectura de los PDF generados con PdfPig (Apache-2.0, solo pruebas): texto por página con las palabras separadas por un
 /// espacio (así "Yumbo, 19 de marzo de 2026" se compara tal cual), número de páginas, fuentes usadas, imágenes, la posición
-/// de cada palabra e imagen (referencia de maquetación, #92) y la disposición de cada letra (posición y tamaño: detecta
+/// de cada palabra e imagen (referencia de maquetación) y la disposición de cada letra (posición y tamaño: detecta
 /// cambios de maquetación que el texto extraído no muestra).
 /// </summary>
 public sealed class clsLectorPdf

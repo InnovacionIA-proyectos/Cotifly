@@ -2,7 +2,7 @@ using Cotifly.Dominio.Cotizaciones;
 
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
-/// <summary>Formulario ampliado (HU-005.8): mismos límites que <c>CapturaSolicitudRequest</c> de Nexo.</summary>
+/// <summary>Formulario ampliado: mismos límites que <c>CapturaSolicitudRequest</c> de Nexo.</summary>
 public sealed class clsSolicitudCosteoTests
 {
     [Fact]

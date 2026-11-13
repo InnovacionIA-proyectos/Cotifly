@@ -9,7 +9,7 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Licitaciones;
 
 /// <summary>
-/// HU-044.2 (#253): sugerir-mapeo y leer-estructura son un puente hacia la importación inteligente de NEXO. La sugerencia nunca deja al
+/// sugerir-mapeo y leer-estructura son un puente hacia la importación inteligente de NEXO. La sugerencia nunca deja al
 /// comercial sin pantalla (más de 100 columnas, importación apagada o NEXO caído → la hoja sin propuesta e <c>ia_usada = false</c>), pero
 /// el tope diario de IA y los rechazos sí llegan como error. La lectura solo valida el archivo (sin abrirlo) y pasa la receta exacta.
 /// </summary>
@@ -20,7 +20,7 @@ public sealed class clsSugerenciaMapeoServiceTests
     private readonly IClsColumnasDerivadasService _columnas = Substitute.For<IClsColumnasDerivadasService>();
 
     public clsSugerenciaMapeoServiceTests() =>
-        // HU-044.9 (#292): la detección de columnas derivadas se prueba aparte; aquí es un paso que devuelve la hoja tal cual.
+        // La detección de columnas derivadas se prueba aparte; aquí es un paso que devuelve la hoja tal cual.
         _columnas.EnriquecerAsync(Arg.Any<Guid>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<IReadOnlyList<IReadOnlyList<string>>>(), Arg.Any<CancellationToken>())
             .Returns(ci => new clsHojaEnriquecida(ci.ArgAt<IReadOnlyList<string>>(1), ci.ArgAt<IReadOnlyList<IReadOnlyList<string>>>(2)));
 
@@ -63,7 +63,7 @@ public sealed class clsSugerenciaMapeoServiceTests
     [InlineData("1234567890123456789012345678901")]
     public async Task ConUnNitInvalidoYMasDeCienColumnasGanaElNitInvalido(string nit)
     {
-        // O1 (val253): el NIT se valida antes que el límite de columnas, con la regla de NEXO (antes del guion, letras y dígitos, máx. 30).
+        // El NIT se valida antes que el límite de columnas, con la regla de NEXO (antes del guion, letras y dígitos, máx. 30).
         var peticion = Peticion(101) with { ClienteNit = nit };
 
         var resultado = await Servicio().SugerirAsync(_usuario, peticion, TestContext.Current.CancellationToken);
@@ -87,7 +87,7 @@ public sealed class clsSugerenciaMapeoServiceTests
     [Fact]
     public async Task LaHojaEnriquecidaConLasColumnasDerivadasViajaANexo()
     {
-        // HU-044.9 (#292): la hoja que llega a NEXO lleva las columnas derivadas agregadas antes de sugerir-mapeo.
+        // La hoja que llega a NEXO lleva las columnas derivadas agregadas antes de sugerir-mapeo.
         _columnas.EnriquecerAsync(_usuario, Arg.Any<IReadOnlyList<string>>(), Arg.Any<IReadOnlyList<IReadOnlyList<string>>>(), Arg.Any<CancellationToken>())
             .Returns(new clsHojaEnriquecida(["COL0", clsColumnasDerivadasService.EncabezadoVehiculo], [["Venezuela Mula", "Mula"]]));
         clsPeticionSugerirMapeo? enviada = null;
@@ -185,7 +185,7 @@ public sealed class clsSugerenciaMapeoServiceTests
     [Fact]
     public async Task LaLecturaNoAbreElLibroYPasaLaRecetaExacta()
     {
-        // Bytes que no son un .xlsx: Cotifly no abre el libro (#277), lo decide NEXO.
+        // Bytes que no son un .xlsx: Cotifly no abre el libro, lo decide NEXO.
         const string Receta = "  {\"version\":1,\"hojas\":[]}\n";
         clsPeticionLeerEstructura? enviada = null;
         var lectura = new clsLecturaEstructura("EPM.xlsm", "manual", null, null, false, "SIN_INSTRUCCION", default, null, [], [], [], [], null);
@@ -200,7 +200,7 @@ public sealed class clsSugerenciaMapeoServiceTests
         (enviada.ClienteNit, enviada.Instrucciones, enviada.RecetaJson).Should().Be(("900555111", "el destino es la casilla", Receta));
     }
 
-    // HU-044.7 (#290): cada tabla de leer-estructura pasa por la misma detección de mercancías de analizar-excel.
+    // Cada tabla de leer-estructura pasa por la misma detección de mercancías de analizar-excel.
     private static readonly IReadOnlyList<clsTipoMercanciaCubicador> _catalogoMercancias =
     [
         new("CAFE_EN_ESTIBAS", "Café en estibas", "GENERAL", Cubicable: true, CondicionadaCubicacion: false, null, Activo: true),
@@ -264,7 +264,7 @@ public sealed class clsSugerenciaMapeoServiceTests
     [InlineData(50, 50, true)]
     public async Task ElArchivoConLaRecetaYLasInstruccionesNoPuedePasarElTopeDeNexo(int bytesReceta, int bytesInstrucciones, bool rechaza)
     {
-        // Auditoría B7: el archivo solo cabe (justo en el tope); con la receta o las instrucciones (en bytes UTF-8) ya no.
+        // El archivo solo cabe (justo en el tope); con la receta o las instrucciones (en bytes UTF-8) ya no.
         _nexo.LeerEstructuraAsync(_usuario, Arg.Any<clsPeticionLeerEstructura>(), Arg.Any<CancellationToken>())
             .Returns(new clsErrorDominio(clsCodigosError.NexoNoDisponible, "x"));
         static string? Texto(int bytes) => bytes == 0 ? null : new string('ñ', bytes / 2);

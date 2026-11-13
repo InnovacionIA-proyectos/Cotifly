@@ -3,7 +3,7 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
 /// <summary>
-/// HU-033 (#199, ADR-023, script 13): resultado ganada/perdida diferido a Nexo en el agregado. El resultado marcado antes de la entrega
+/// ADR-023 (script 13): resultado ganada/perdida diferido a Nexo en el agregado. El resultado marcado antes de la entrega
 /// queda <c>pendiente</c> con su comentario (recortado a 500), cada envío fallido suma un intento y guarda el error (recortado a 1000),
 /// Nexo lo acepta (<c>sincronizado</c>) o ya no se puede enviar (<c>no_sincronizable</c>); y lo que ve el frontend
 /// (<see cref="clsCotizacionSolicitud.EstadoSincronizacionResultado"/>) según el caso.
@@ -116,13 +116,13 @@ public sealed class clsResultadoDiferidoTests
         var chat = Chat();
         chat.MarcarSeguimiento(true, null, _ahora);
 
-        // Costeo vencido: Nexo no acepta el resultado (HU-005.14).
+        // Costeo vencido: Nexo no acepta el resultado.
         var vencida = Enviada();
         vencida.VencerPollingCosteo("72 h");
         vencida.EstadoCosteo.Should().Be(EstadoCosteo.CosteoVencido);
         vencida.MarcarSeguimiento(false, "Sin respuesta", _ahora);
 
-        // HU-013.17: perdida antes del costeo, solo en Cotifly.
+        // Perdida antes del costeo, solo en Cotifly.
         var desistida = Enviada();
         desistida.RegistrarPerdidaSinCosteo("El cliente desistió", _ahora);
 

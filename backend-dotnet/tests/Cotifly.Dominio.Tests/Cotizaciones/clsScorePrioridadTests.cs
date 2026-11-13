@@ -4,7 +4,7 @@ using Cotifly.Pruebas.Comun;
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
 /// <summary>
-/// HU-018.1 (#155): el <c>scorePrioridad</c> que Nexo devuelve al crear la solicitud se guarda en la cabecera
+/// El <c>scorePrioridad</c> que Nexo devuelve al crear la solicitud se guarda en la cabecera
 /// (<c>CotizacionesSolicitud.scorePrioridad</c>, <c>decimal(9,4)</c>, script 09).
 /// </summary>
 public sealed class clsScorePrioridadTests

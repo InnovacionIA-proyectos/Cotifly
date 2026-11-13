@@ -6,7 +6,7 @@ using Microsoft.OpenApi.Reader;
 namespace Cotifly.Api.Tests.Contrato;
 
 /// <summary>
-/// Pruebas sobre el contrato congelado <c>specs/openapi.yaml</c> (#17, SDD, ADR-010).
+/// Pruebas sobre el contrato congelado <c>specs/openapi.yaml</c> (SDD, ADR-010).
 /// El archivo se copia a la salida del proyecto de pruebas desde backend-dotnet/specs.
 /// </summary>
 public sealed class clsContratoOpenApiTests(clsCotiflyApiFactory factory) : IClassFixture<clsCotiflyApiFactory>

@@ -4,7 +4,7 @@ using Cotifly.Aplicacion.Cubicacion.Services;
 namespace Cotifly.Aplicacion.Tests.Cubicacion;
 
 /// <summary>
-/// <see cref="clsSugeridorMercancia"/> (HU-023.2, #157; la misma lógica que usará la licitación, HU-023.5, #160): el tipo de mercancía más
+/// <see cref="clsSugeridorMercancia"/> (la misma lógica que usa la licitación): el tipo de mercancía más
 /// parecido a un texto libre, sin tildes ni mayúsculas; nada si no se parece lo suficiente, si los números no coinciden o si la mejor
 /// coincidencia es ambigua.
 /// </summary>
@@ -63,7 +63,7 @@ public sealed class clsSugeridorMercanciaTests
     [InlineData("Cajas de cartón vacías", "CAJAS")]
     public void ResuelveDescripcionesReales(string texto, string esperado) => Esperar(texto, esperado);
 
-    /// <summary>Validación de la #157: estas tres coincidencias equivocadas ya no se sugieren.</summary>
+    /// <summary>Estas tres coincidencias equivocadas no se sugieren.</summary>
     [Theory]
     [InlineData("Contenedor 40 pies", "CONTENEDOR_20")]
     [InlineData("Carga seca", "CARGA_GENERAL")]
