@@ -92,7 +92,8 @@ public sealed partial class clsAsistenteFolioRunnerTests
 
         resultado.EsExitoso.Should().BeTrue();
         _modelo.Llamadas[0].Herramientas.Should().BeEquivalentTo(
-            "consultar_cotizacion", "proponer_ajuste_margen", "proponer_re_solicitud", "buscar_servicio_conexo");
+            "consultar_cotizacion", "proponer_ajuste_margen", "proponer_re_solicitud", "buscar_servicio_conexo",
+            "proponer_ajuste_margen_rutas", "proponer_agregar_conexo_rutas", "proponer_quitar_conexo_rutas");
         _modelo.Llamadas[0].Sistema.Should().Contain(Folio);
         resultado.Valor.AccionPropuesta.Should().BeNull();
     }
@@ -128,6 +129,41 @@ public sealed partial class clsAsistenteFolioRunnerTests
         resultado.Valor.Texto.Should().NotContain("3.194.756", "el texto es del LLM y el LLM no conoce los montos");
         resultado.Valor.HerramientasInvocadas.Should().Equal("consultar_cotizacion", "proponer_ajuste_margen");
         SinCambios(cotizacion);
+    }
+
+    // Criterio de aceptación: «pon 20 % en todas las rutas» es UNA propuesta hacia el endpoint en lote y la IA no ve montos.
+    [Fact]
+    public async Task ElMismoMargenEnTodasLasRutasEsUnaSolaPropuestaHaciaElEndpointEnLote()
+    {
+        var cotizacion = Registrar(clsAjusteMargenCosteoServiceTests.Costeada(_ana.Id, Folio));
+        _modelo.Llamar("proponer_ajuste_margen_rutas", new { margen = 0.2, todas = true })
+            .Proponer("Te propongo el 20 % en todas las rutas. Revisa el resumen y confírmalo con el botón.");
+
+        var resultado = await Runner().EjecutarTurnoAsync(Solicitud("Pon 20 % en todas las rutas"), Ct);
+
+        var accion = resultado.Valor.AccionPropuesta!;
+        accion.Tipo.Should().Be("ajustar_margen_lineas");
+        accion.Metodo.Should().Be("PUT");
+        accion.Endpoint.Should().Be($"/web/cotizaciones/{Folio}/costeo/margen/lineas");
+        accion.Cuerpo["todas"].Should().Be(true);
+        accion.Cuerpo["margen"].Should().Be(0.2m);
+        accion.Resumen.Should().StartWith("Ajustar el margen a 20 % en todas las rutas (1): el total pasa de $3.085.000 a");
+        VerificarSinMontos("3.085.000", "3.272.500");
+        SinCambios(cotizacion);
+    }
+
+    // El modelo manda las rutas como arreglo JSON: llegan a la herramienta y al cuerpo como la lista ordenada de linea_orden.
+    [Fact]
+    public async Task LasRutasQueMandaElModeloComoArregloLleganAlCuerpo()
+    {
+        Registrar(clsAjusteMargenCosteoServiceTests.Costeada(_ana.Id, Folio));
+        _modelo.Llamar("proponer_ajuste_margen_rutas", new { margen = 0.2, lineas = new[] { 1 } })
+            .Proponer("Te propongo el 20 % en la ruta 1. Revisa el resumen y confírmalo con el botón.");
+
+        var resultado = await Runner().EjecutarTurnoAsync(Solicitud("Pon 20 % en la ruta 1"), Ct);
+
+        resultado.Valor.AccionPropuesta!.Cuerpo["lineas"].Should().BeEquivalentTo(new[] { 1 });
+        resultado.Valor.AccionPropuesta.Cuerpo.Should().NotContainKey("todas");
     }
 
     [Theory]

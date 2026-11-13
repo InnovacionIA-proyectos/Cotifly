@@ -69,4 +69,7 @@ public static class clsNombresHerramientas
     public const string ProponerAjusteMargen = "proponer_ajuste_margen";
     public const string ProponerReSolicitud = "proponer_re_solicitud";
     public const string BuscarServicioConexo = "buscar_servicio_conexo";
+    public const string ProponerAjusteMargenRutas = "proponer_ajuste_margen_rutas";
+    public const string ProponerAgregarConexoRutas = "proponer_agregar_conexo_rutas";
+    public const string ProponerQuitarConexoRutas = "proponer_quitar_conexo_rutas";
 }
