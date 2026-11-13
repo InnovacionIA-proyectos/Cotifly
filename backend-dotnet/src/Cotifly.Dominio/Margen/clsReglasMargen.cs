@@ -16,7 +16,7 @@ public static class clsReglasMargen
     /// <summary>Límite superior (inclusivo) del rango normal (60 %); por encima el margen es anómalo.</summary>
     public const decimal UmbralMax = 0.6m;
 
-    /// <summary>Decimales con que se expresa un margen (paridad con <c>round(x, 6)</c> del Python).</summary>
+    /// <summary>Decimales con que se expresa un margen.</summary>
     public const int Decimales = 6;
 
     /// <summary>
